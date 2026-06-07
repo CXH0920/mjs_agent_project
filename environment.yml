@@ -1,0 +1,21 @@
+# 名将杀 Agent 开发环境
+# 使用：conda env create -f environment.yml
+name: myenv
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - pydantic>=2.0
+    - httpx>=0.28
+    - beautifulsoup4>=4.14
+    - opencv-python>=4.13
+    - opencv-python-headless>=4.13
+    - easyocr>=1.7
+    - mss>=10.2
+    - PyQt6>=6.11
+    - pytest>=9.0
+    - pillow>=12.0
+    - numpy>=2.0
