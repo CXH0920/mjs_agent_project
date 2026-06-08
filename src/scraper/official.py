@@ -131,52 +131,68 @@ def _clean_html(html_text: str | None) -> str:
 
 def _split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     """
-    拆分技能描述 HTML 为结构化段落。
-    返回 {"description": ..., "settlement": ...}
-    丢弃："技能典故"、"设计思路" 段落。
+    先按 HTML 段落结构拆分原始 HTML，再逐段清洗。
+    只保留：技能描述 -> description，结算详情/结算详解 -> settlement
+    丢弃：技能典故、设计思路
+    拆分锚点：<p><strong>段落标题</strong></p>
     """
     if not raw_desc:
         return {"description": "", "settlement": ""}
 
     text = str(raw_desc)
 
-    # 替换 <p><strong>段落标题</strong></p> 为标记行
-    title_pattern = "|".join(re.escape(t) for t in SKILL_SECTION_TITLES)
-    text = re.sub(
-        rf"<p>\s*<strong>\s*({title_pattern})\s*</strong>\s*</p>",
-        r"\n【\1】\n",
-        text,
+    # 构建段落标题正则
+    titles = "|".join(re.escape(t) for t in SKILL_SECTION_TITLES)
+    section_pattern = re.compile(
+        rf"<p>(?:<[^>]+>)*\s*<strong>\s*({titles})\s*</strong>(?:<[^>]+>)*\s*</p>",
+        re.IGNORECASE,
     )
 
-    # 剥离其余 HTML 标签
-    text = re.sub(r"<[^>]+>", "", text)
-    text = html_module.unescape(text)
+    # 第一步：按 HTML 结构拆分出各段落
+    sections = {}
+    current_title = None
+    current_parts = []
+    last_end = 0
 
-    # 按标记行拆分段落
-    sections: dict[str, str] = {}
-    current_key: str | None = None
-    current_lines: list[str] = []
+    for m in section_pattern.finditer(text):
+        if current_title:
+            between = text[last_end:m.start()]
+            if between.strip():
+                current_parts.append(between)
+            sections[current_title] = current_parts
 
-    for line in text.split("\n"):
-        line = line.strip()
-        title_match = re.match(r"【(.+?)】", line)
-        if title_match:
-            if current_key:
-                sections[current_key] = "\n".join(current_lines).strip()
-            current_key = title_match.group(1).strip()
-            current_lines = []
-        elif current_key and line:
-            current_lines.append(line)
+        current_title = m.group(1).strip()
+        current_parts = []
+        last_end = m.end()
 
-    if current_key:
-        sections[current_key] = "\n".join(current_lines).strip()
+    if current_title and last_end < len(text):
+        remaining = text[last_end:]
+        if remaining.strip():
+            current_parts.append(remaining)
+        sections[current_title] = current_parts
 
-    # 提取需要的部分，丢弃 技能典故/设计思路
-    description = sections.get("技能描述", "")
-    settlement = sections.get("结算详情", "") or sections.get("结算详解", "")
+    # 第二步：逐段清洗 HTML
+    def _clean_html_parts(parts):
+        result = []
+        for part in parts:
+            cleaned = re.sub(r"<[^>]+>", "", part)
+            cleaned = html_module.unescape(cleaned)
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            if cleaned:
+                result.append(cleaned)
+        return "\n".join(result)
+
+    description = _clean_html_parts(sections.get("技能描述", []))
+    # 结算部分存在两种历史命名，取非空的那个
+    settlement_parts = (
+        sections.get("结算详情")
+        or sections.get("结算详解")
+        or []
+    )
+    settlement = _clean_html_parts(settlement_parts)
 
     if not description:
-        logger.warning("技能【技能描述】段落缺失: '%s'", str(raw_desc)[:60])
+        logger.warning("技能【技能描述】段落缺失: '%s'", str(raw_desc)[:80])
 
     return {"description": description, "settlement": settlement}
 def _transform(raw: dict) -> dict | None:
