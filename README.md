@@ -1,4 +1,4 @@
-﻿# 名将杀 Agent
+# 名将杀 Agent
 
 名将杀桌面辅助工具，面向名将杀手游的轻度玩家，运行于 PC 端 MuMu 模拟器。
 
@@ -102,31 +102,51 @@ python -m src.scraper.official --verbose
 使用 DeepSeek API 批量生成攻略和相性评分数据。
 
 > 前置条件：需要 DeepSeek 开放平台 API Key，并已通过官网爬虫采集了武将基础数据。
+> 在项目根目录的 `config.env` 中配置 API Key（参见下方说明）。
 
 ```bash
 # 预览模式（估算成本，不调用 API）
 python -m src.scraper.ai_batch --dry-run --guide --synergy
 
 # 仅生成攻略（149 个武将）
-python -m src.scraper.ai_batch --guide --api-key "sk-xxx"
+python -m src.scraper.ai_batch --guide
 
 # 仅生成相性评分（11,026 对，耗时较长）
-python -m src.scraper.ai_batch --synergy --api-key "sk-xxx"
+python -m src.scraper.ai_batch --synergy
 
 # 同时生成攻略和相性
-python -m src.scraper.ai_batch --guide --synergy --api-key "sk-xxx"
+python -m src.scraper.ai_batch --guide --synergy
 
-# 指定模型和评分过滤下限
-python -m src.scraper.ai_batch --guide --synergy --api-key "sk-xxx" --model deepseek-v4-pro --score-threshold 2
+# 指定评分过滤下限
+python -m src.scraper.ai_batch --guide --synergy --score-threshold 2
 
-# 使用环境变量设置 API Key（推荐）
+# 使用环境变量设置 API Key（备用方案）
 $env:DEEPSEEK_API_KEY = "sk-xxx"
 python -m src.scraper.ai_batch --guide --synergy
 ```
 
+### config.env 配置说明
+
+在项目根目录创建 `config.env` 文件，格式如下：
+
+```env
+# DeepSeek API 配置
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-v4-pro
+
+# 运行时参数
+REQUESTS_PER_MINUTE=30
+HTTP_TIMEOUT=300
+MAX_RETRIES=3
+```
+
+配置优先级：**config.env > 环境变量 > 默认值**
+
 > 支持断点续传：中断后重新运行会跳过已生成的数据。
 > 输出经过 Pydantic 模型校验，不合法的数据不会写入文件。
 > 相性评分可通过 `--score-threshold` 过滤低分组合，减少无关数据。
+> 所有配置项均可在 `config.env` 中设置，无需 CLI 参数。
 
 ### 5. 数据验证与查询
 

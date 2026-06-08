@@ -226,7 +226,7 @@ class Card(BaseModel):
 | 2.2 | 爬虫实现 + 数据清洗 | official.py（爬取→解析→HTML清洗→字段映射→Pydantic校验） | ✅ 已完成 |
 | 2.3 | 攻略生成 Prompt 设计与实现 | docs/prompts/hero_guide.md | ✅ 已完成 |
 | 2.4 | 相性评分 Prompt 设计 | docs/prompts/synergy_score.md | ✅ 已完成 |
-| 2.5 | 批量生成脚本 | ai_batch.py（调用 DeepSeek API + 断点续传 + Pydantic 校验输出） | ✅ 已完成 |
+| 2.5 | 批量生成脚本 | ai_batch.py（调用 DeepSeek API + 断点续传 + Pydantic 校验输出，支持 config.env 配置） | ✅ 已完成 |
 
 ### 数据清洗说明（2.1 → 2.2）
 
@@ -250,11 +250,29 @@ class Card(BaseModel):
 
 **配置方式（优先级从高到低）：**
 
-| 方式 | 示例 |
-|------|------|
-| `--api-key` 参数 | `--api-key "sk-xxxxxxxx"` |
-| `DEEPSEEK_API_KEY` 环境变量 | `$env:DEEPSEEK_API_KEY="sk-xxx"` |
-| `OPENAI_API_KEY` 环境变量（回退） | 兼容旧配置 |
+| 优先级 | 方式 | 示例 |
+|--------|------|------|
+| 1（最高） | config.env 配置文件 | DEEPSEEK_API_KEY=sk-xxx |
+| 2 | DEEPSEEK_API_KEY / OPENAI_API_KEY 环境变量 | ${env:DEEPSEEK_API_KEY}="sk-xxx" |
+| 3（最低） | 内置默认值 | --- |
+
+> **推荐方式**：在项目根目录的 config.env 中配置 API Key（KEY=VALUE 格式），避免每次输入。
+> 所有运行时参数（速率限制、超时、重试次数）也支持通过 config.env 配置。
+>
+> config.env 完整结构：
+> `json
+> {
+>   "ai": {
+>     "api_key": "sk-xxx",
+>     "api_url": "https://api.deepseek.com/v1/chat/completions",
+>     "model": "deepseek-v4-pro",
+>     "requests_per_minute": 30,
+>     "http_timeout": 300,
+>     "max_retries": 3
+>   }
+> }
+> `
+
 
 **可选参数：**
 - `--api-url`：自定义 API 端点（默认 `https://api.deepseek.com/v1/chat/completions`）

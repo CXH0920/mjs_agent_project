@@ -297,3 +297,193 @@ class TestLoadHeroes:
         """加载不存在的文件应返回空列表"""
         result = load_heroes("/nonexistent/heroes.json")
         assert result == []
+
+
+
+class TestConfigLoading:
+    def test_parse_env_file_nonexistent(self):
+        """不存在的 .env 文件应返回空 dict"""
+        from scraper.ai_batch import parse_env_file
+        result = parse_env_file("/nonexistent/config.env")
+        assert result == {}
+
+    def test_parse_env_file_valid(self):
+        """解析有效的 .env 文件"""
+        import tempfile, os, shutil
+        from scraper.ai_batch import parse_env_file
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            env_path.write_text(
+                "DEEPSEEK_API_KEY=sk-test\n"
+                "DEEPSEEK_MODEL=deepseek-v4-pro\n",
+                encoding="utf-8"
+            )
+            result = parse_env_file(env_path)
+            assert result["DEEPSEEK_API_KEY"] == "sk-test"
+            assert result["DEEPSEEK_MODEL"] == "deepseek-v4-pro"
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_parse_env_file_with_comments(self):
+        """解析包含注释和空行的 .env 文件"""
+        import tempfile, os, shutil
+        from scraper.ai_batch import parse_env_file
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            env_path.write_text(
+                "# This is a comment\n"
+                "DEEPSEEK_API_KEY=sk-test\n"
+                "\n"
+                "# Another comment\n"
+                "DEEPSEEK_MODEL=deepseek-v4-pro\n",
+                encoding="utf-8"
+            )
+            result = parse_env_file(env_path)
+            assert result["DEEPSEEK_API_KEY"] == "sk-test"
+            assert result["DEEPSEEK_MODEL"] == "deepseek-v4-pro"
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_parse_env_file_quotes(self):
+        """解析包含引号值的 .env 文件"""
+        import tempfile, os, shutil
+        from scraper.ai_batch import parse_env_file
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            env_path.write_text(
+                'DEEPSEEK_API_KEY="sk-test"\n'
+                "DEEPSEEK_API_URL='https://custom.url/api'\n",
+                encoding="utf-8"
+            )
+            result = parse_env_file(env_path)
+            assert result["DEEPSEEK_API_KEY"] == "sk-test"
+            assert result["DEEPSEEK_API_URL"] == "https://custom.url/api"
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_parse_env_file_empty(self):
+        """空文件应返回空 dict"""
+        import tempfile, os, shutil
+        from scraper.ai_batch import parse_env_file
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            env_path.write_text("", encoding="utf-8")
+            result = parse_env_file(env_path)
+            assert result == {}
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_get_api_config_from_env_file(self):
+        """get_api_config 应从 config.env 读取值"""
+        import tempfile, os, shutil
+        from scraper.ai_batch import get_api_config
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            env_path.write_text(
+                "DEEPSEEK_API_KEY=sk-from-env\n"
+                "DEEPSEEK_API_URL=https://custom.api/chat\n"
+                "DEEPSEEK_MODEL=custom-model\n",
+                encoding="utf-8"
+            )
+            # Temporarily override DEFAULT_ENV_FILE
+            import scraper.ai_batch
+            original = scraper.ai_batch.DEFAULT_ENV_FILE
+            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            try:
+                result = get_api_config()
+                assert result["api_key"] == "sk-from-env"
+                assert result["api_url"] == "https://custom.api/chat"
+                assert result["model"] == "custom-model"
+            finally:
+                scraper.ai_batch.DEFAULT_ENV_FILE = original
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_get_api_config_env_var_fallback(self):
+        """环境变量作为 config.env 的回退"""
+        from scraper.ai_batch import get_api_config
+
+        import tempfile, os, shutil
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "empty.env"
+            env_path.write_text("", encoding="utf-8")
+
+            import scraper.ai_batch
+            original = scraper.ai_batch.DEFAULT_ENV_FILE
+            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+
+            old_deepseek = os.environ.get("DEEPSEEK_API_KEY", "")
+            os.environ["DEEPSEEK_API_KEY"] = "sk-from-envvar"
+            try:
+                result = get_api_config()
+                assert result["api_key"] == "sk-from-envvar"
+            finally:
+                scraper.ai_batch.DEFAULT_ENV_FILE = original
+                if old_deepseek:
+                    os.environ["DEEPSEEK_API_KEY"] = old_deepseek
+                else:
+                    del os.environ["DEEPSEEK_API_KEY"]
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_get_runtime_params_defaults(self):
+        """get_runtime_params 应返回默认值"""
+        from scraper.ai_batch import get_runtime_params
+
+        import tempfile, os, shutil
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "empty.env"
+            env_path.write_text("", encoding="utf-8")
+
+            import scraper.ai_batch
+            original = scraper.ai_batch.DEFAULT_ENV_FILE
+            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            try:
+                params = get_runtime_params()
+                assert params["requests_per_minute"] == 30
+                assert params["max_retries"] == 3
+                assert params["http_timeout"] == 300
+            finally:
+                scraper.ai_batch.DEFAULT_ENV_FILE = original
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_get_runtime_params_custom(self):
+        """get_runtime_params 应从 config.env 读取自定义值"""
+        from scraper.ai_batch import get_runtime_params
+
+        import tempfile, os, shutil
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            env_path.write_text(
+                "REQUESTS_PER_MINUTE=10\n"
+                "MAX_RETRIES=5\n"
+                "HTTP_TIMEOUT=120\n",
+                encoding="utf-8"
+            )
+
+            import scraper.ai_batch
+            original = scraper.ai_batch.DEFAULT_ENV_FILE
+            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            try:
+                params = get_runtime_params()
+                assert params["requests_per_minute"] == 10
+                assert params["max_retries"] == 5
+                assert params["http_timeout"] == 120
+            finally:
+                scraper.ai_batch.DEFAULT_ENV_FILE = original
+        finally:
+            shutil.rmtree(tmpdir)

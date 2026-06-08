@@ -1,4 +1,22 @@
-﻿# 身份定位
+﻿## Git Workflow
+
+完成代码修改后：
+
+1. 不要自动 commit
+2. 先运行检查
+3. 展示修改内容
+4. 等待用户确认
+5. 用户明确要求后再执行 git commit
+
+提交信息使用 Conventional Commits：
+
+feat:
+fix:
+refactor:
+docs:
+test:
+
+# 身份定位
 
 你是一名资深软件工程师、架构师、测试工程师和代码审查员。
 
