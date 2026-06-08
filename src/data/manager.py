@@ -73,7 +73,12 @@ class DataManager:
             self._heroes = {}
             return
         with self.heroes_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except (json.JSONDecodeError, EOFError):
+                logger.warning("????????: %s", self.heroes_file)
+                self._heroes = {}
+                return
         self._heroes = {h["id"]: Hero.model_validate(h) for h in data}
         logger.debug("加载 %d 个武将", len(self._heroes))
 
@@ -90,7 +95,12 @@ class DataManager:
             self._synergies = {}
             return
         with self.synergies_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except (json.JSONDecodeError, EOFError):
+                logger.warning("????????: %s", self.synergies_file)
+                self._synergies = {}
+                return
         self._synergies = {}
         for s in data:
             key = self._synergy_key(s["hero_a_id"], s["hero_b_id"])
@@ -110,7 +120,14 @@ class DataManager:
             self._guides = {}
             return
         with self.guides_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except (json.JSONDecodeError, EOFError):
+                logger.warning("????????: %s", self.guides_file)
+                self._guides = {}
+                return
+        if isinstance(data, dict):
+            data = [data]
         self._guides = {g["hero_id"]: HeroGuide.model_validate(g) for g in data}
         logger.debug("加载 %d 份攻略", len(self._guides))
 

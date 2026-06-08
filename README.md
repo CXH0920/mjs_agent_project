@@ -65,7 +65,7 @@ conda activate myenv
 #### 1.3 安装依赖
 
 ```
-pip install pydantic httpx beautifulsoup4 opencv-python easyocr mss PyQt6 pytest
+pip install pydantic httpx beautifulsoup4 opencv-python easyocr mss PySide6 pytest
 ```
 
 > 本项目核心数据模型依赖 `pydantic`，运行测试依赖 `pytest`，其余为后续阶段的预装依赖。
@@ -226,7 +226,7 @@ data/ 目录包含 **149 个武将**数据（含完整技能描述），6 条相
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | 二 | 数据采集工具（官网爬虫 2.1/2.2 + AI 批量生成 2.3-2.5，使用 deepseek-v4-pro 模型） | ✅ 已完成 |
-| 三 | PyQt 桌面应用（主窗口、武将浏览器、API 配置） | 待开发 |
+| 三 | PySide 桌面应用（主窗口、武将浏览器、API 配置） | 待开发 |
 | 四 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | 待开发 |
 | 五 | 推荐引擎（相性查询、推荐展示） | 待开发 |
 | 六 | 文档与收尾 | 待开发 |
