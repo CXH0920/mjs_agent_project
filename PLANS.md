@@ -290,10 +290,11 @@ class Card(BaseModel):
 
 | # | 任务 | 产出 | 状态 |
 |---|---|---|---|
-| 3.1 | 主窗口框架 | main_window.py | ⏳ 待开发 |
-| 3.2 | 武将浏览器 | hero_browser.py（列表 + 详情 + 攻略） | ⏳ 待开发 |
-| 3.3 | API 配置对话框 | settings_dialog.py | ⏳ 待开发 |
-| 3.4 | 应用入口集成 | main.py | ⏳ 待开发 |
+| 3.1 | 主窗口框架 | main_window.py | ✅ 已完成 |
+| 3.2 | 武将浏览器 | hero_browser.py（列表 + 详情 + 攻略） | ✅ 已完成 |
+| 3.3 | API 配置对话框 | settings_dialog.py | ✅ 已完成 |
+| 3.4 | 应用入口集成 | main.py | ✅ 已完成 |
+| 3.5 | 菜单栏——武将获取子菜单 | main_window.py（新增 `_fetch_all_heroes`） | ✅ 已完成 |
 
 ### 阶段四：屏幕采集与识别
 

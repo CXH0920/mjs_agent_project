@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QProcess
 
 from PySide6.QtGui import QAction
 
@@ -174,6 +174,13 @@ class MainWindow(QMainWindow):
 
         data_menu.addAction(reload_action)
 
+        # 武将获取子菜单
+        fetch_menu = data_menu.addMenu("武将获取")
+
+        fetch_all_action = QAction("全量获取", self)
+        fetch_all_action.triggered.connect(self._fetch_all_heroes)
+        fetch_menu.addAction(fetch_all_action)
+
 
 
         # 帮助菜单
@@ -311,6 +318,39 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "已刷新", "数据已重新加载")
 
 
+
+
+    def _fetch_all_heroes(self) -> None:
+        """全量获取武将数据"""
+        reply = QMessageBox.question(
+            self,
+            "确认操作",
+            "是否全量获取武将数据？\n此操作将从官网重新采集所有武将信息。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._status_label.setText("正在采集武将数据...")
+
+        self._fetch_proc = QProcess(self)
+        self._fetch_proc.finished.connect(self._on_fetch_finished)
+        self._fetch_proc.errorOccurred.connect(self._on_fetch_error)
+        self._fetch_proc.start(sys.executable, ["-m", "src.scraper.official"])
+
+    def _on_fetch_finished(self, exit_code: int) -> None:
+        """采集完成回调"""
+        if exit_code == 0:
+            self._status_label.setText("武将数据采集完成")
+            QMessageBox.information(self, "提示", "武将数据已采集完成\n请通过 数据 > 重新加载数据 刷新")
+        else:
+            self._status_label.setText("武将数据采集失败")
+
+    def _on_fetch_error(self, error: QProcess.ProcessError) -> None:
+        """采集出错回调"""
+        self._status_label.setText("采集出错")
+        QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{self._fetch_proc.errorString()}")
 
     def _update_status(self) -> None:
 
