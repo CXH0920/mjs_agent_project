@@ -97,7 +97,37 @@ python -m src.scraper.official --verbose
 > 需要网络连接访问 https://mjs.ztgame.com/baike/
 > 每次运行会覆盖目标文件，建议先备份
 
-### 4. AI 批量生成武将攻略和相性评分
+### 3.5 增量采集（增量爬虫）
+
+`Bash
+# 增量模式：只爬取本地还没有的武将，追加写入 data/heroes.json
+python -m src.scraper.incremental --incremental
+
+# 预览增量结果（不写入文件）
+python -m src.scraper.incremental --incremental --dry-run
+
+# 按武将名称采集（支持模糊匹配，多个用逗号分隔）
+python -m src.scraper.incremental --hero 诸葛亮
+python -m src.scraper.incremental --hero 诸葛亮,关羽,张飞
+
+# 按武将 ID 采集（多个用逗号分隔）
+python -m src.scraper.incremental --hero-id 52,114,141
+
+# 增量 + 指定名称组合（只处理本地没有的诸葛亮）
+python -m src.scraper.incremental --incremental --hero 诸葛亮
+
+# 指定输出路径
+python -m src.scraper.incremental --hero 诸葛亮 --output data/my_heroes.json
+
+# 启用详细日志
+python -m src.scraper.incremental --hero 诸葛亮 --verbose
+`
+
+> 需要网络连接访问 https://mjs.ztgame.com/baike/
+> 增量模式会自动去重，不会重复添加已存在的武将
+> 指定名称/ID 模式支持 --dry-run 预览数据，确认无误后再移除该参数执行写入
+
+### 5. AI 批量生成武将攻略和相性评分
 
 使用 DeepSeek API 批量生成攻略和相性评分数据。
 
@@ -148,7 +178,7 @@ MAX_RETRIES=3
 > 相性评分可通过 `--score-threshold` 过滤低分组合，减少无关数据。
 > 所有配置项均可在 `config.env` 中设置，无需 CLI 参数。
 
-### 5. 数据验证与查询
+### 6. 数据验证与查询
 
 ```
 python -c "import sys; sys.path.insert(0, '.'); from src.data.manager import DataManager; dm = DataManager(); dm.load_all(); print(f'武将: {len(dm.list_heroes())} 个'); print(f'相性: {len(dm.list_synergies())} 条'); print(f'攻略: {len(dm.list_guides())} 份'); zg = dm.get_hero(114); print(f'ID=114: {zg.name} ({zg.faction}) - {zg.position}'); sg = dm.get_synergy(114, 141); print(f'{zg.name} <-> 关羽: 相性 {sg.score} 分 (评级 {sg.synergy_rating})'); wei = dm.list_heroes_by_faction('曹魏'); print(f'曹魏武将: {len(wei)} 个')"

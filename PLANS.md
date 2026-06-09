@@ -111,6 +111,7 @@ G:\py_savepoint\test_project\
 │   └── scraper/                 # 数据采集
 │       ├── __init__.py
 │       ├── official.py          # 官网爬虫
+│       ├── incremental.py       # 增量爬虫
 │       └── ai_batch.py          # AI 批量生成攻略
 │
 ├── data/                        # 本地 JSON 数据文件
@@ -223,7 +224,7 @@ class Card(BaseModel):
 | # | 任务 | 产出 | 状态 |
 |---|---|---|---|
 | 2.1 | 官网结构探查 | 分析官网 HTML 结构 → docs/field_mapping.md | ✅ 已完成 |
-| 2.2 | 爬虫实现 + 数据清洗 | official.py（爬取→解析→HTML清洗→字段映射→Pydantic校验） | ✅ 已完成 |
+| 2.2 | 爬虫实现 + 数据清洗 | official.py + incremental.py（爬取→解析→HTML清洗→字段映射→Pydantic校验→增量爬虫） | ✅ 已完成 |
 | 2.3 | 攻略生成 Prompt 设计与实现 | docs/prompts/hero_guide.md | ✅ 已完成 |
 | 2.4 | 相性评分 Prompt 设计 | docs/prompts/synergy_score.md | ✅ 已完成 |
 | 2.5 | 批量生成脚本 | ai_batch.py（调用 DeepSeek API + 断点续传 + Pydantic 校验输出，支持 config.env 配置） | ✅ 已完成 |
