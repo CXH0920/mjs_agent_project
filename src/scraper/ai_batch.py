@@ -474,13 +474,18 @@ class AIBatchGenerator:
 
         user_prompt = self._build_guide_prompt(hero)
         content, usage = self._call_llm(system_prompt, user_prompt)
-        if content is None:
+        if not content:
+            if content is None:
+                logger.error("攻略 API 调用失败: %s", hero["name"])
+            else:
+                logger.error("攻略 API 返回空内容: %s", hero["name"])
             return None, usage
 
         try:
             data = self._extract_json(content)
         except json.JSONDecodeError as e:
-            logger.error("攻略 JSON 解析失败 %s: %s", hero["name"], e)
+            preview = repr(content[:200])
+            logger.error("攻略 JSON 解析失败 %s (前200字符: %s...): %s", hero["name"], preview, e)
             return None, usage
 
         data["hero_id"] = hero["id"]
@@ -513,13 +518,18 @@ class AIBatchGenerator:
 
         user_prompt = self._build_synergy_prompt(hero_a, hero_b)
         content, usage = self._call_llm(system_prompt, user_prompt)
-        if content is None:
+        if not content:
+            if content is None:
+                logger.error("相性 API 调用失败: %s <-> %s", hero_a["name"], hero_b["name"])
+            else:
+                logger.error("相性 API 返回空内容: %s <-> %s", hero_a["name"], hero_b["name"])
             return None, usage
 
         try:
             data = self._extract_json(content)
         except json.JSONDecodeError as e:
-            logger.error("相性 JSON 解析失败 %s <-> %s: %s", hero_a["name"], hero_b["name"], e)
+            preview = repr(content[:200])
+            logger.error("相性 JSON 解析失败 %s <-> %s (前200字符: %s...): %s", hero_a["name"], hero_b["name"], preview, e)
             return None, usage
 
         data["hero_a_id"] = hero_a["id"]
@@ -712,18 +722,26 @@ def main():
     existing_synergy_keys = set()
 
     if guide_path.exists():
-        with open(guide_path, "r", encoding="utf-8") as f:
-            for g in json.load(f):
-                existing_guides[g["hero_id"]] = g
-        logger.info("已有 %d 份攻略", len(existing_guides))
+        try:
+            with open(guide_path, "r", encoding="utf-8") as f:
+                for g in json.load(f):
+                    existing_guides[g["hero_id"]] = g
+            logger.info("已有 %d 份攻略", len(existing_guides))
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("攻略文件损坏或为空 (%s)，将重新生成", guide_path.name)
+            guide_path.unlink(missing_ok=True)
 
     if synergy_path.exists():
-        with open(synergy_path, "r", encoding="utf-8") as f:
-            existing_synergy_list = json.load(f)
-        for s in existing_synergy_list:
-            key = tuple(sorted([s["hero_a_id"], s["hero_b_id"]]))
-            existing_synergy_keys.add(key)
-        logger.info("已有 %d 对相性", len(existing_synergy_list))
+        try:
+            with open(synergy_path, "r", encoding="utf-8") as f:
+                existing_synergy_list = json.load(f)
+            for s in existing_synergy_list:
+                key = tuple(sorted([s["hero_a_id"], s["hero_b_id"]]))
+                existing_synergy_keys.add(key)
+            logger.info("已有 %d 对相性", len(existing_synergy_list))
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("相性文件损坏或为空 (%s)，将重新生成", synergy_path.name)
+            synergy_path.unlink(missing_ok=True)
 
     # Token 累计统计
     total_prompt_tokens = 0

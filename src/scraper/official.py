@@ -51,7 +51,7 @@ HEADERS = {
 GENDER_MAP = {1: "男", 2: "女"}
 
 # 技能描述段落标题（用于拆分 HTML）
-SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能典故", "设计思路"]
+SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能详解", "技能详情", "技能典故", "设计思路"]
 
 
 # ============================================================
@@ -141,6 +141,9 @@ def _split_skill_desc(raw_desc: str | None) -> dict[str, str]:
 
     text = str(raw_desc)
 
+    # 预处理：合并相邻的 <strong> 标签（如 <strong>结</strong><strong>算详解</strong>）
+    text = re.sub(r"</strong>\s*<strong>", "", text)
+
     # 构建段落标题正则
     titles = "|".join(re.escape(t) for t in SKILL_SECTION_TITLES)
     section_pattern = re.compile(
@@ -183,10 +186,12 @@ def _split_skill_desc(raw_desc: str | None) -> dict[str, str]:
         return "\n".join(result)
 
     description = _clean_html_parts(sections.get("技能描述", []))
-    # 结算部分存在两种历史命名，取非空的那个
+    # 结算部分存在多种历史命名，取非空的那个
     settlement_parts = (
         sections.get("结算详情")
         or sections.get("结算详解")
+        or sections.get("技能详解")
+        or sections.get("技能详情")
         or []
     )
     settlement = _clean_html_parts(settlement_parts)
