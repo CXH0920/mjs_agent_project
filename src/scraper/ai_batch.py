@@ -271,7 +271,7 @@ class AIBatchGenerator:
                         {"role": "user", "content": user_prompt},
                     ],
                     "temperature": 0.3,
-                    "max_tokens": 4096,
+                    "max_tokens": 16384,
                 }
                 resp = self.client.post(self.api_url, headers=headers, json=payload)
 
@@ -331,11 +331,12 @@ class AIBatchGenerator:
     # ----------------------------------------------------------
 
     @staticmethod
+    @staticmethod
     def _extract_json(text):
         """从 LLM 响应中提取 JSON
 
-        支持：纯 JSON、`json ... `、` ... `、
-              以及正文 + --- + JSON 四种格式。
+        策略：先在全文找最外层的 { ... } 尝试解析，
+              失败后回退到代码块提取。
         """
         text = text.strip()
         # 1. 尝试直接解析
@@ -343,23 +344,31 @@ class AIBatchGenerator:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
-        # 2. 尝试从 markdown 代码块提取
-        for marker in ("`json", "`"):
+        # 2. 在全文找到最外层的 { ... } 提取
+        brace_start = text.find("{")
+        if brace_start >= 0:
+            depth = 0
+            for i in range(brace_start, len(text)):
+                ch = text[i]
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[brace_start:i + 1]
+                        try:
+                            return json.loads(candidate)
+                        except json.JSONDecodeError:
+                            pass
+                        break
+        # 3. 尝试从 markdown 代码块提取（回退）
+        for marker in ("```json", "```"):
             start = text.find(marker)
             if start >= 0:
                 start = text.index("\n", start) + 1
-                end = text.find("`", start)
+                end = text.find("```", start)
                 if end > start:
                     return json.loads(text[start:end].strip())
-        # 3. 尝试从 --- 分隔线后提取
-        parts = re.split(r"\n---\n", text)
-        if len(parts) > 1:
-            candidate = parts[-1].strip()
-            if candidate:
-                try:
-                    return json.loads(candidate)
-                except json.JSONDecodeError:
-                    pass
         raise json.JSONDecodeError("无法从响应中提取 JSON", text, 0)
 
     @staticmethod
@@ -484,8 +493,7 @@ class AIBatchGenerator:
         try:
             data = self._extract_json(content)
         except json.JSONDecodeError as e:
-            preview = repr(content[:200])
-            logger.error("攻略 JSON 解析失败 %s (前200字符: %s...): %s", hero["name"], preview, e)
+            logger.error('攻略 JSON 解析失败 %s (完整响应):\n%s\n', hero["name"], content)
             return None, usage
 
         data["hero_id"] = hero["id"]
@@ -528,8 +536,7 @@ class AIBatchGenerator:
         try:
             data = self._extract_json(content)
         except json.JSONDecodeError as e:
-            preview = repr(content[:200])
-            logger.error("相性 JSON 解析失败 %s <-> %s (前200字符: %s...): %s", hero_a["name"], hero_b["name"], preview, e)
+            logger.error('相性 JSON 解析失败 %s <-> %s (完整响应):\n%s\n', hero_a["name"], hero_b["name"], content)
             return None, usage
 
         data["hero_a_id"] = hero_a["id"]

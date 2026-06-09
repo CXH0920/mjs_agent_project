@@ -237,7 +237,7 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 | Skill | 武将技能 | name, description(技能描述), settlement(结算详情) |
 | SynergyScore | 武将间相性评分 | hero_a_id, hero_b_id, score(-10~10), synergy_rating(S/A/B/C/D), combo_ceiling, combo_stability, adaptability |
 | HeroGuide | 武将攻略指南 | hero_id, key_points, counters(list[int]), synergizes_with(list[int]), description, tips_for_beginners |
-| Card | 对局内基础卡牌 | id, name, card_type(行动牌/战法牌/装备牌/延时牌/基本牌), card_desc, card_detail, card_amount |
+| Card | 对局内基础卡牌 | id, name, card_type(行动牌/战法牌/装备牌), card_desc, card_detail, card_amount |
 | IncrementalUpdate | 增量更新结构 | added/modified/removed 三类变更数据 |
 
 **官网数据解析说明**：Hero、Card 模型通过 alidation_alias 支持中文字段名映射（如 角色ID、名称、体力上限），方便官网爬虫数据直接解析。
@@ -257,7 +257,7 @@ data/ 目录包含 **149 个武将**数据（含完整技能描述），6 条相
 
 ### 单元测试
 
-	ests/test_models.py 包含 **25 个测试用例**，覆盖：
+	tests/test_models.py 包含 **25 个测试用例**，覆盖：
 - Skill 创建、空值校验
 - Hero 创建、别名解析、默认值、边界校验
 - SynergyScore 评分校验、评级枚举、取值范围
@@ -272,7 +272,7 @@ data/ 目录包含 **149 个武将**数据（含完整技能描述），6 条相
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | 二 | 数据采集工具（官网爬虫 2.1/2.2 + AI 批量生成 2.3-2.5，使用 deepseek-v4-pro 模型） | ✅ 已完成 |
-| 三 | PySide 桌面应用（主窗口、武将浏览器、API 配置） | 待开发 |
+| 三 | PySide 桌面应用（主窗口、武将浏览器、API 配置） | ✅ 已完成 |
 | 四 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | 待开发 |
 | 五 | 推荐引擎（相性查询、推荐展示） | 待开发 |
 | 六 | 文档与收尾 | 待开发 |
