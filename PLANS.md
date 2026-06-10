@@ -120,6 +120,7 @@ G:\py_savepoint\test_project\
 │   │   └── guide.py             # 攻略服务
 │   │
 │   └── scraper/                 # 数据采集
+    │       ├── crawler.py          # 爬虫核心模块（公开 API）
 │       ├── __init__.py
 │       ├── official.py          # 官网爬虫
 │       ├── incremental.py       # 增量/指定爬虫
@@ -237,7 +238,8 @@ class Card(BaseModel):
 | # | 任务 | 产出 | 状态 |
 |---|---|---|---|
 | 2.1 | 官网结构探查 | 分析官网 HTML 结构 → docs/field_mapping.md | ✅ 已完成 |
-| 2.2 | 爬虫实现 + 数据清洗 | official.py + incremental.py（爬取→解析→HTML清洗→字段映射→Pydantic校验→增量爬虫） | ✅ 已完成 |
+| 2.2 | 爬虫实现 + 数据清洗 | crawler.py（公共模块）+ official.py + incremental.py（爬取→解析→HTML清洗→字段映射→Pydantic校验→增量爬虫） | ✅ 已完成 |
+| 2.2b | 增量爬虫解耦 | 将 incremental.py 对 official.py 私有函数的依赖抽取为 crawler.py 公开 API，解除耦合 | ✅ 已完成 |
 | 2.3 | 攻略生成 Prompt 设计与实现 | docs/prompts/hero_guide.md | ✅ 已完成 |
 | 2.4 | 相性评分 Prompt 设计 | docs/prompts/synergy_score.md | ✅ 已完成 |
 | 2.5 | 批量生成脚本 | ai_batch.py / ai_guide.py / ai_synergy.py（调用 DeepSeek API + 断点续传 + Pydantic 校验输出，配置逻辑在 src/config/env.py 中统一管理） | ✅ 已完成 |

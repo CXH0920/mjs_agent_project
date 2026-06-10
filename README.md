@@ -23,11 +23,15 @@ test_project/
 │   │   └── env.py               # .env 文件解析/加载/保存
 │   ├── data/
 │   │   ├── models.py          # 数据模型 (Pydantic)
-│   │   └── manager.py         # 统一入口 + 增量更新函数
+│   │   ├── manager.py         # 统一入口 + 增量更新函数
+│   │   ├── hero_manager.py    # 武将数据管理器
+│   │   ├── synergy_manager.py # 相性评分数据管理器
+│   │   └── guide_manager.py   # 攻略数据管理器
 │   ├── capture/           # 采集层（待开发）
 │   ├── business/          # 业务层（待开发）
 │   ├── ui/                # UI 层（已完成）
 │   └── scraper/           # 数据采集
+    │       ├── crawler.py         # 爬虫核心模块（公开 API）
 │       ├── official.py        # 官网爬虫
 │       ├── incremental.py     # 增量/指定爬虫
 │       ├── ai_batch.py        # AI 批量生成主入口（共享基础设施）

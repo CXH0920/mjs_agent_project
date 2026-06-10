@@ -16,16 +16,16 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any
 
-# 复用 official.py 的完整清洗流程
-from src.scraper.official import (
-    _fetch,
-    _find_chunk_url,
-    _extract_js_array,
-    _js_to_json,
-    _transform,
-    _validate_heroes,
+# 复用爬虫核心模块的公开 API
+from src.scraper.crawler import (
+    fetch,
+    find_chunk_url,
+    extract_js_array,
+    js_to_json,
+    transform,
+    validate_heroes,
+    fetch_all_raw,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,18 +58,6 @@ def load_existing_names(path: Path) -> dict[str, int]:
     with open(path, "r", encoding="utf-8") as f:
         heroes = json.load(f)
     return {h["name"]: h["id"] for h in heroes if h.get("name")}
-
-
-def fetch_all_raw() -> list[dict]:
-    """从官网获取全部武将的原始数据"""
-    print("  -> \u5b9a\u4f4d\u6570\u636e\u6e90...", flush=True)
-    html = _fetch("https://mjs.ztgame.com/baike/")
-    chunk_url = _find_chunk_url(html)
-    print(f"  -> {chunk_url}", flush=True)
-    js_text = _fetch(chunk_url)
-    raw_list = _js_to_json(_extract_js_array(js_text))
-    print(f"  -> \u5b98\u7f51\u539f\u59cb\u6570\u636e: {len(raw_list)} \u6761", flush=True)
-    return raw_list
 
 
 def filter_by_ids(raw_list: list[dict], target_ids: set[int]) -> list[dict]:
@@ -111,7 +99,7 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     两者皆否    : 全量覆盖写入
     """
     print("\n[清洗与字段映射...]", flush=True)
-    transformed = [_transform(r) for r in raw_list if _transform(r)]
+    transformed = [transform(r) for r in raw_list if transform(r)]
     print(f"  -> \u6e05\u6d17\u540e: {len(transformed)} \u6761", flush=True)
 
     if not transformed:
@@ -119,7 +107,7 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
         return
 
     print("\n[Pydantic \u6a21\u578b\u6821\u9a8c...]", flush=True)
-    validated = _validate_heroes(transformed)
+    validated = validate_heroes(transformed)
     print(f"  -> \u6821\u9a8c\u901a\u8fc7: {len(validated)} \u6761", flush=True)
 
     # 预览模式
