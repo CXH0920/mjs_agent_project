@@ -42,6 +42,14 @@ from PySide6.QtWidgets import (
 
     QWidget,
 
+    QDialog,
+    QGridLayout,
+    QCheckBox,
+    QLineEdit,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
 )
 
 
@@ -53,22 +61,11 @@ from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
 
 
-
-logger = logging.getLogger(__name__)
-
-
-
 # 默认数据路径
-
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
-
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
-
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
-
-
 
 
 
@@ -180,6 +177,14 @@ class MainWindow(QMainWindow):
         fetch_all_action = QAction("全量获取", self)
         fetch_all_action.triggered.connect(self._fetch_all_heroes)
         fetch_menu.addAction(fetch_all_action)
+
+        fetch_inc_action = QAction("增量获取", self)
+        fetch_inc_action.triggered.connect(self._fetch_incremental)
+        fetch_menu.addAction(fetch_inc_action)
+
+        fetch_spec_action = QAction("指定获取", self)
+        fetch_spec_action.triggered.connect(self._fetch_specific)
+        fetch_menu.addAction(fetch_spec_action)
 
 
 
@@ -319,6 +324,138 @@ class MainWindow(QMainWindow):
 
 
 
+
+    def _toggle_all_factions(self, btn: QPushButton) -> None:
+        """全选 / 取消全选 势力复选框"""
+        check = btn.text() == "全部选中"
+        for cb in self._faction_checkboxes:
+            cb.blockSignals(True)
+            cb.setChecked(check)
+            cb.blockSignals(False)
+        btn.setText("取消全选" if check else "全部选中")
+        # 触发过滤
+        if hasattr(self, '_hero_browser'):
+            pass
+
+    def _fetch_specific(self) -> None:
+        """指定获取武将"""
+        all_heroes = sorted(self._dm.list_heroes(), key=lambda h: h.id)
+        factions = self._dm.list_factions()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("选择武将")
+        dialog.setMinimumWidth(420)
+        dialog.setMinimumHeight(500)
+        layout = QVBoxLayout(dialog)
+
+        # 武将名称搜索
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("搜索武将名称...")
+        layout.addWidget(search_input)
+
+        # 势力筛选（复选框）
+        faction_layout = QGridLayout()
+        faction_layout.setSpacing(6)
+        self._faction_checkboxes: list[QCheckBox] = []
+        for idx, f in enumerate(factions):
+            cb = QCheckBox(f)
+            cb.setChecked(True)
+            row, col = divmod(idx, 10)
+            faction_layout.addWidget(cb, row, col)
+            self._faction_checkboxes.append(cb)
+
+        # 全选/取消全选 按钮放在最后一行
+        toggle_btn = QPushButton("全部选中")
+        toggle_btn.clicked.connect(lambda: self._toggle_all_factions(toggle_btn))
+        row_count = (len(factions) - 1) // 10 + 1
+        faction_layout.addWidget(toggle_btn, row_count, 0, 1, 3)
+
+        layout.addLayout(faction_layout)
+        count_label = QLabel()
+        layout.addWidget(count_label)
+
+        # 武将列表（多选）
+        list_widget = QListWidget()
+        list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        layout.addWidget(list_widget, 1)
+
+        # 过滤逻辑
+        def _apply_filter() -> None:
+            keyword = search_input.text().strip()
+            selected_factions = {cb.text() for cb in self._faction_checkboxes if cb.isChecked()}
+
+            filtered = []
+            for hero in all_heroes:
+                if hero.faction not in selected_factions:
+                    continue
+                if keyword and keyword not in hero.name:
+                    continue
+                filtered.append(hero)
+
+            list_widget.blockSignals(True)
+            list_widget.clear()
+            for hero in filtered:
+                item = QListWidgetItem(f"{hero.name}  [{hero.faction}]")
+                item.setData(Qt.ItemDataRole.UserRole, hero.id)
+                list_widget.addItem(item)
+            list_widget.blockSignals(False)
+            count_label.setText(f"已筛选: {len(filtered)} / {len(all_heroes)} 个武将")
+
+        # 连接信号
+        search_input.textChanged.connect(_apply_filter)
+        for cb in self._faction_checkboxes:
+            cb.toggled.connect(_apply_filter)
+
+        _apply_filter()
+
+        # 按钮
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("确定")
+        cancel_btn = QPushButton("取消")
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected_ids = []
+        for item in list_widget.selectedItems():
+            hid = item.data(Qt.ItemDataRole.UserRole)
+            selected_ids.append(str(hid))
+
+        if not selected_ids:
+            return
+
+        self._status_label.setText("正在采集指定武将...")
+
+        ids_str = ",".join(selected_ids)
+        self._fetch_proc = QProcess(self)
+        self._fetch_proc.finished.connect(self._on_fetch_finished)
+        self._fetch_proc.errorOccurred.connect(self._on_fetch_error)
+        self._fetch_proc.start(sys.executable, ["-m", "src.scraper.incremental", "--hero-id", ids_str])
+    def _fetch_incremental(self) -> None:
+        """增量获取武将数据"""
+        reply = QMessageBox.question(
+            self,
+            "确认操作",
+            "是否增量获取武将数据？\n仅爬取本地还未拥有的武将并追加写入。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._status_label.setText("正在增量采集武将数据...")
+
+        self._fetch_proc = QProcess(self)
+        self._fetch_proc.finished.connect(self._on_fetch_finished)
+        self._fetch_proc.errorOccurred.connect(self._on_fetch_error)
+        self._fetch_proc.start(sys.executable, ["-m", "src.scraper.incremental", "--incremental"])
 
     def _fetch_all_heroes(self) -> None:
         """全量获取武将数据"""

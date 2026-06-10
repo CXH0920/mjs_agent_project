@@ -261,23 +261,17 @@ class Card(BaseModel):
 > 所有运行时参数（速率限制、超时、重试次数）也支持通过 config.env 配置。
 >
 > config.env 完整结构：
-> `json
-> {
->   "ai": {
->     "api_key": "sk-xxx",
->     "api_url": "https://api.deepseek.com/v1/chat/completions",
->     "model": "deepseek-v4-pro",
->     "requests_per_minute": 30,
->     "http_timeout": 300,
->     "max_retries": 3
->   }
-> }
-> `
+> ```env
+> DEEPSEEK_API_KEY=sk-xxx
+> DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+> DEEPSEEK_MODEL=deepseek-v4-pro
+> REQUESTS_PER_MINUTE=30
+> HTTP_TIMEOUT=300
+> MAX_RETRIES=3
+> ```
 
 
 **可选参数：**
-- `--api-url`：自定义 API 端点（默认 `https://api.deepseek.com/v1/chat/completions`）
-- `--model`：模型名称（默认 `deepseek-v4-pro`）
 - `--score-threshold`：相性评分过滤下限（默认 0，仅保存 >= 此值的相性）
 - `--dry-run`：预估 Token 消耗和费用，不实际调用 API
 
@@ -295,7 +289,7 @@ class Card(BaseModel):
 | 3.2 | 武将浏览器 | hero_browser.py（列表 + 详情 + 攻略） | ✅ 已完成 |
 | 3.3 | API 配置对话框 | settings_dialog.py | ✅ 已完成 |
 | 3.4 | 应用入口集成 | main.py | ✅ 已完成 |
-| 3.5 | 菜单栏——武将获取子菜单 | main_window.py（新增 `_fetch_all_heroes`） | ✅ 已完成 |
+| 3.5 | 菜单栏——武将获取子菜单 | main_window.py（新增 `_fetch_all_heroes` / `_fetch_incremental` / `_fetch_specific`，支持全量/增量/指定获取三种模式） | ✅ 已完成 |
 
 ### 阶段四：屏幕采集与识别
 
