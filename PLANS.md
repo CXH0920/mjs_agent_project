@@ -98,7 +98,8 @@ G:\py_savepoint\test_project\
 │   │   ├── __init__.py
 │   │   ├── main_window.py       # 主窗口
 │   │   ├── hero_browser.py      # 武将浏览器
-│   │   └── settings_dialog.py   # API 配置对话框（使用 config 模块）
+│   │   ├── settings_dialog.py   # API 配置对话框（使用 config 模块）
+│   │   └── fetch_dialog.py     # 指定获取选择对话框（独立组件）
 │   │
 │   ├── capture/                 # 采集层
 │   │   ├── __init__.py
@@ -116,6 +117,7 @@ G:\py_savepoint\test_project\
 │   │
 │   ├── business/                # 业务层
 │   │   ├── __init__.py
+│   │   ├── fetch_service.py     # 采集业务服务（QProcess 管理 + 信号通知）
 │   │   ├── recommendation.py    # 推荐引擎
 │   │   └── guide.py             # 攻略服务
 │   │

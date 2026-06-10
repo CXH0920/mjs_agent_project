@@ -28,8 +28,10 @@ test_project/
 │   │   ├── synergy_manager.py # 相性评分数据管理器
 │   │   └── guide_manager.py   # 攻略数据管理器
 │   ├── capture/           # 采集层（待开发）
-│   ├── business/          # 业务层（待开发）
+│   ├── business/          # 业务层
+│   ├── fetch_service.py     # 采集业务服务（QProcess 管理）
 │   ├── ui/                # UI 层（已完成）
+│   ├── fetch_dialog.py          # 指定获取选择对话框
 │   └── scraper/           # 数据采集
     │       ├── crawler.py         # 爬虫核心模块（公开 API）
 │       ├── official.py        # 官网爬虫

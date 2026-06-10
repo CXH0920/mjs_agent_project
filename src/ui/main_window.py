@@ -1,19 +1,20 @@
-﻿"""
+"""
 名将杀 Agent - 主窗口框架
 
 提供菜单栏、Tab 切换、状态栏和应用主框架。
+采集业务流程委托给 HeroFetchService，对话框委托给 HeroFetchDialog。
 """
 
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QProcess
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -21,19 +22,13 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
-    QDialog,
-    QGridLayout,
-    QCheckBox,
-    QLineEdit,
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
 )
 
 from src.data.manager import HeroManager, SynergyManager, GuideManager
 from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
+from src.ui.fetch_dialog import HeroFetchDialog
+from src.business.fetch_service import HeroFetchService
 
 # 默认数据路径
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
@@ -61,6 +56,9 @@ class MainWindow(QMainWindow):
         self._synergy_mgr = synergy_manager or SynergyManager(synergies_file=DEFAULT_SYNERGIES_FILE)
         self._guide_mgr = guide_manager or GuideManager(guides_file=DEFAULT_GUIDES_FILE)
 
+        self._fetch_service = HeroFetchService(self)
+        self._connect_fetch_signals()
+
         self.setWindowTitle("名将杀 Agent")
         self.setMinimumSize(960, 640)
         self.resize(1100, 720)
@@ -70,6 +68,34 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_status_bar()
         self._update_status()
+
+    # ---------------------------------------------------------------
+    # 采集服务信号连接
+    # ---------------------------------------------------------------
+
+    def _connect_fetch_signals(self) -> None:
+        """连接采集服务的信号到状态栏"""
+        self._fetch_service.status_changed.connect(self._on_fetch_status)
+        self._fetch_service.fetch_completed.connect(self._on_fetch_completed)
+        self._fetch_service.error_occurred.connect(self._on_fetch_error)
+
+    def _on_fetch_status(self, message: str) -> None:
+        """采集状态更新"""
+        self._status_label.setText(message)
+
+    def _on_fetch_completed(self, success: bool) -> None:
+        """采集完成处理"""
+        if success:
+            QMessageBox.information(
+                self, "提示",
+                "武将数据已采集完成\n请通过 数据 > 重新加载数据 刷新"
+            )
+        else:
+            QMessageBox.warning(self, "采集失败", "武将数据采集失败")
+
+    def _on_fetch_error(self, error_msg: str) -> None:
+        """采集错误处理"""
+        QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{error_msg}")
 
     # ---------------------------------------------------------------
     # 菜单栏
@@ -98,19 +124,20 @@ class MainWindow(QMainWindow):
         reload_action.setShortcut("F5")
         reload_action.triggered.connect(self._reload_data)
         data_menu.addAction(reload_action)
+
         # 武将获取子菜单
         fetch_menu = data_menu.addMenu("武将获取")
 
         fetch_all_action = QAction("全量获取", self)
-        fetch_all_action.triggered.connect(self._fetch_all_heroes)
+        fetch_all_action.triggered.connect(self._request_fetch_all)
         fetch_menu.addAction(fetch_all_action)
 
         fetch_inc_action = QAction("增量获取", self)
-        fetch_inc_action.triggered.connect(self._fetch_incremental)
+        fetch_inc_action.triggered.connect(self._request_fetch_incremental)
         fetch_menu.addAction(fetch_inc_action)
 
         fetch_spec_action = QAction("指定获取", self)
-        fetch_spec_action.triggered.connect(self._fetch_specific)
+        fetch_spec_action.triggered.connect(self._request_fetch_specific)
         fetch_menu.addAction(fetch_spec_action)
 
         # 帮助菜单
@@ -180,7 +207,6 @@ class MainWindow(QMainWindow):
         self._update_status()
         # 刷新武将浏览器
         if hasattr(self, "_hero_browser"):
-            # 重新初始化列表面板
             self._hero_browser._list_panel._load_heroes()
         QMessageBox.information(self, "已刷新", "数据已重新加载")
 
@@ -198,153 +224,11 @@ class MainWindow(QMainWindow):
         )
 
     # ---------------------------------------------------------------
-    # 数据采集
+    # 采集入口（委托给 HeroFetchService）
     # ---------------------------------------------------------------
 
-    def _toggle_all_factions(self, btn: QPushButton) -> None:
-        """全选 / 取消全选 势力复选框"""
-        check = btn.text() == "全部选中"
-        for cb in self._faction_checkboxes:
-            cb.blockSignals(True)
-            cb.setChecked(check)
-            cb.blockSignals(False)
-        btn.setText("取消全选" if check else "全部选中")
-
-    def _fetch_specific(self) -> None:
-        """指定获取武将"""
-        all_heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)
-        if not all_heroes:
-            QMessageBox.information(self, "提示", "当前没有武将数据，请先全量获取。")
-            self._fetch_all_heroes()
-            return
-
-        factions = self._hero_mgr.list_factions()
-        if not factions:
-            QMessageBox.information(self, "提示", "当前没有势力数据。")
-            return
-
-        # 构建选择对话框
-        dialog = QDialog(self)
-        dialog.setWindowTitle("选择要获取的武将")
-        dialog.setMinimumSize(500, 500)
-
-        layout = QVBoxLayout(dialog)
-
-        # 搜索框
-        search_input = QLineEdit()
-        search_input.setPlaceholderText("搜索武将名称...")
-        layout.addWidget(search_input)
-
-        # 势力筛选
-        faction_group = QWidget()
-        faction_grid = QGridLayout(faction_group)
-        faction_grid.setContentsMargins(0, 0, 0, 0)
-
-        self._faction_checkboxes = []
-        for i, f in enumerate(factions):
-            cb = QCheckBox(f)
-            cb.setChecked(True)
-            self._faction_checkboxes.append(cb)
-            faction_grid.addWidget(cb, i // 4, i % 4)
-
-        # 全选/取消按钮
-        toggle_btn = QPushButton("取消全选")
-        toggle_btn.clicked.connect(lambda: self._toggle_all_factions(toggle_btn))
-        faction_grid.addWidget(toggle_btn, (len(factions) + 3) // 4, 0, 1, 2)
-
-        layout.addWidget(faction_group)
-
-        # 计数标签
-        count_label = QLabel(f"已筛选: {len(all_heroes)} / {len(all_heroes)} 个武将")
-        layout.addWidget(count_label)
-
-        # 武将列表
-        list_widget = QListWidget()
-        list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        layout.addWidget(list_widget, 1)
-
-        def _apply_filter() -> None:
-            search_text = search_input.text().strip()
-            selected_factions = {
-                cb.text() for cb in self._faction_checkboxes if cb.isChecked()
-            }
-            filtered = []
-            for hero in all_heroes:
-                if hero.faction not in selected_factions:
-                    continue
-                if search_text and search_text not in hero.name:
-                    continue
-                filtered.append(hero)
-
-            list_widget.blockSignals(True)
-            list_widget.clear()
-            for hero in filtered:
-                text = f"{hero.name}  [{hero.faction}]"
-                item = QListWidgetItem(text)
-                item.setData(Qt.ItemDataRole.UserRole, hero.id)
-                list_widget.addItem(item)
-            list_widget.blockSignals(False)
-            count_label.setText(f"已筛选: {len(filtered)} / {len(all_heroes)} 个武将")
-
-        # 连接信号
-        search_input.textChanged.connect(_apply_filter)
-        for cb in self._faction_checkboxes:
-            cb.toggled.connect(_apply_filter)
-
-        _apply_filter()
-
-        # 按钮
-        btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("确定")
-        cancel_btn = QPushButton("取消")
-        btn_layout.addStretch()
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-        cancel_btn.clicked.connect(dialog.reject)
-        ok_btn.clicked.connect(dialog.accept)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        selected_ids = []
-        for item in list_widget.selectedItems():
-            hid = item.data(Qt.ItemDataRole.UserRole)
-            selected_ids.append(str(hid))
-
-        if not selected_ids:
-            return
-
-        self._status_label.setText("正在采集指定武将...")
-
-        ids_str = ",".join(selected_ids)
-        self._fetch_proc = QProcess(self)
-        self._fetch_proc.finished.connect(self._on_fetch_finished)
-        self._fetch_proc.errorOccurred.connect(self._on_fetch_error)
-        self._fetch_proc.start(sys.executable, ["-m", "src.scraper.incremental", "--hero-id", ids_str])
-
-    def _fetch_incremental(self) -> None:
-        """增量获取武将数据"""
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            "是否增量获取武将数据？\n仅爬取本地还未拥有的武将并追加写入。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        self._status_label.setText("正在增量采集武将数据...")
-
-        self._fetch_proc = QProcess(self)
-        self._fetch_proc.finished.connect(self._on_fetch_finished)
-        self._fetch_proc.errorOccurred.connect(self._on_fetch_error)
-        self._fetch_proc.start(sys.executable, ["-m", "src.scraper.incremental", "--incremental"])
-
-    def _fetch_all_heroes(self) -> None:
-        """全量获取武将数据"""
+    def _request_fetch_all(self) -> None:
+        """请求全量采集"""
         reply = QMessageBox.question(
             self,
             "确认操作",
@@ -352,28 +236,29 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
+            self._fetch_service.fetch_all()
+
+    def _request_fetch_incremental(self) -> None:
+        """请求增量采集"""
+        reply = QMessageBox.question(
+            self,
+            "确认操作",
+            "是否增量获取武将数据？\n仅爬取本地还未拥有的武将并追加写入。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._fetch_service.fetch_incremental()
+
+    def _request_fetch_specific(self) -> None:
+        """请求指定采集：弹出选择对话框，选中后委托给 service"""
+        dialog = HeroFetchDialog(self._hero_mgr, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
-        self._status_label.setText("正在采集武将数据...")
-
-        self._fetch_proc = QProcess(self)
-        self._fetch_proc.finished.connect(self._on_fetch_finished)
-        self._fetch_proc.errorOccurred.connect(self._on_fetch_error)
-        self._fetch_proc.start(sys.executable, ["-m", "src.scraper.official"])
-
-    def _on_fetch_finished(self, exit_code: int) -> None:
-        """采集完成回调"""
-        if exit_code == 0:
-            self._status_label.setText("武将数据采集完成")
-            QMessageBox.information(self, "提示", "武将数据已采集完成\n请通过 数据 > 重新加载数据 刷新")
-        else:
-            self._status_label.setText("武将数据采集失败")
-
-    def _on_fetch_error(self, error: QProcess.ProcessError) -> None:
-        """采集出错回调"""
-        self._status_label.setText("采集出错")
-        QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{self._fetch_proc.errorString()}")
+        if dialog.selected_ids:
+            self._fetch_service.fetch_specific(dialog.selected_ids)
 
     # ---------------------------------------------------------------
     # 对话框
