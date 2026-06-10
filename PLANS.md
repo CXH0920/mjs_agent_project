@@ -100,6 +100,8 @@ G:\py_savepoint\test_project\
 │   │   ├── hero_browser.py      # 武将浏览器
 │   │   ├── settings_dialog.py   # API 配置对话框（使用 config 模块）
 │   │   └── fetch_dialog.py     # 指定获取选择对话框（独立组件）
+│   │   ├── guide_fetch_dialog.py  # 攻略指定获取选择对话框
+│   │   └── cost_confirm_dialog.py  # 成本确认对话框
 │   │
 │   ├── capture/                 # 采集层
 │   │   ├── __init__.py
@@ -118,6 +120,7 @@ G:\py_savepoint\test_project\
 │   ├── business/                # 业务层
 │   │   ├── __init__.py
 │   │   ├── fetch_service.py     # 采集业务服务（QProcess 管理 + 信号通知）
+│   │   ├── guide_fetch_service.py  # 攻略生成业务服务（成本估算 + 进程管理）
 │   │   ├── recommendation.py    # 推荐引擎
 │   │   └── guide.py             # 攻略服务
 │   │
@@ -306,7 +309,7 @@ class Card(BaseModel):
 | 3.2 | 武将浏览器 | hero_browser.py（列表 + 详情 + 攻略） | ✅ 已完成 |
 | 3.3 | API 配置对话框 | settings_dialog.py | ✅ 已完成 |
 | 3.4 | 应用入口集成 | main.py | ✅ 已完成 |
-| 3.5 | 菜单栏——武将获取子菜单 | main_window.py（新增 `_fetch_all_heroes` / `_fetch_incremental` / `_fetch_specific`，支持全量/增量/指定获取三种模式） | ✅ 已完成 |
+| 3.5 | 菜单栏——武将/攻略获取子菜单 | main_window.py（采集委托至 HeroFetchService，攻略委托至 GuideFetchService） | ✅ 已完成 |
 
 ### 阶段四：屏幕采集与识别
 
@@ -321,6 +324,7 @@ class Card(BaseModel):
 | # | 任务 | 产出 | 状态 |
 |---|---|---|---|
 | 5.1 | 相性查询引擎 | recommendation.py（选将推荐） | ⏳ 待开发 |
+| 3.6 | 菜单栏——攻略获取子菜单（含进度条/成本确认） | guide_fetch_service.py / guide_progress_dialog.py / cost_confirm_dialog.py | ✅ 已完成 |
 | 5.2 | 推荐结果展示集成 | 推荐面板绑定到 UI | ⏳ 待开发 |
 
 ### 阶段六：文档与收尾

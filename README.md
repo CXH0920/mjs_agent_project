@@ -30,10 +30,13 @@ test_project/
 │   ├── capture/           # 采集层（待开发）
 │   ├── business/          # 业务层
 │   ├── fetch_service.py     # 采集业务服务（QProcess 管理）
+│   ├── guide_fetch_service.py  # 攻略生成业务服务（成本估算 + 进程管理）
 │   ├── ui/                # UI 层（已完成）
 │   ├── fetch_dialog.py          # 指定获取选择对话框
+│   ├── guide_fetch_dialog.py   # 攻略指定获取选择对话框
+│   ├── cost_confirm_dialog.py   # 成本确认对话框
 │   └── scraper/           # 数据采集
-    │       ├── crawler.py         # 爬虫核心模块（公开 API）
+│       ├── crawler.py         # 爬虫核心模块（公开 API）
 │       ├── official.py        # 官网爬虫
 │       ├── incremental.py     # 增量/指定爬虫
 │       ├── ai_batch.py        # AI 批量生成主入口（共享基础设施）
@@ -418,13 +421,19 @@ data/ 目录包含 **149 个武将**数据（含完整技能描述），6 条相
 | 数据 > 武将获取 > 全量获取 | | 确认后执行 `src/scraper/official.py`，从官网重新采集所有武将信息 |
 | 数据 > 武将获取 > 增量获取 | | 确认后执行 `src/scraper/incremental.py --incremental`，仅爬取本地缺失的武将 |
 | 数据 > 武将获取 > 指定获取 | | 弹窗提供势力筛选 + 名称模糊搜索 + 多选列表，确认后执行 `--hero-id` 模式增量爬虫 |
+| 数据 > 攻略获取 > 全量获取 | | 估算所有武将的 AI 攻略生成成本 → 弹窗确认后执行 ai_batch.py --guide，进度条实时显示进度 |
+| 数据 > 攻略获取 > 增量获取 | | 比对 guides.json 找出缺失武将 → 估算缺失成本 → 弹窗确认后执行 ai_batch.py --guide |
+| 数据 > 攻略获取 > 指定获取 | | 弹窗提供搜索 + 势力筛选 + 武将勾选列表（checkbox 模式）→ 估算成本 → 弹窗确认后执行 ai_batch.py --guide --heroes-file |
 | 帮助 > 关于 | | 显示版本信息 |
 
-> 三种获取模式均使用 QProcess 异步执行，不会阻塞 UI。
-> **全量获取**：执行 src/scraper/official.py，重新采集所有武将。
-> **增量获取**：执行 src/scraper/incremental.py --incremental，仅爬取本地缺失的武将。
-> **指定获取**：弹窗提供势力复选框筛选 + 名称模糊搜索 + 多选武将列表，确认后执行 src/scraper/incremental.py --hero-id id1,id2,...。
-> 采集完成后需通过 **数据 > 重新加载数据** 刷新界面。
+> 武将/攻略获取均使用 QProcess 异步执行，不会阻塞 UI。
+> **武将全量获取**：执行 src/scraper/official.py，重新采集所有武将。
+> **武将增量获取**：执行 src/scraper/incremental.py --incremental，仅爬取本地缺失的武将。
+> **武将指定获取**：弹窗提供势力复选框筛选 + 名称模糊搜索 + 多选武将列表，确认后执行 src/scraper/incremental.py --hero-id id1,id2,...。
+> **攻略全量获取**：估算所有武将的 AI 生成成本，弹窗确认后执行 python -m src.scraper.ai_batch --guide，配合进度条显示实时进度。
+> **攻略增量获取**：比对 guides.json 找出缺失武将，仅估算缺失部分的成本，弹窗确认后执行 ai_batch.py --guide。
+> **攻略指定获取**：弹窗提供搜索 + 势力筛选 + 武将勾选列表（checkbox 模式），选择后估算成本，确认后生成临时 JSON 子集传入 --heroes-file 参数执行。
+> 武将采集完成后需通过 **数据 > 重新加载数据** 刷新界面。
 
 ---
 
