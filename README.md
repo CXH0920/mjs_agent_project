@@ -19,16 +19,20 @@ test_project/
 ├── README.md              # 本文件
 │
 ├── src/                   # 源代码
+│   ├── config/              # 配置管理（新增）
+│   │   └── env.py               # .env 文件解析/加载/保存
 │   ├── data/
 │   │   ├── models.py          # 数据模型 (Pydantic)
-│   │   ├── manager.py         # 统一入口 + 增量更新函数
-│   │   ├── hero_manager.py    # 武将数据管理器
-│   │   ├── synergy_manager.py # 相性评分数据管理器
-│   │   └── guide_manager.py   # 攻略数据管理器
+│   │   └── manager.py         # 统一入口 + 增量更新函数
 │   ├── capture/           # 采集层（待开发）
 │   ├── business/          # 业务层（待开发）
 │   ├── ui/                # UI 层（已完成）
-│   └── scraper/           # 数据采集（official.py + ai_batch.py 已完成）
+│   └── scraper/           # 数据采集
+│       ├── official.py        # 官网爬虫
+│       ├── incremental.py     # 增量/指定爬虫
+│       ├── ai_batch.py        # AI 批量生成主入口（共享基础设施）
+│       ├── ai_guide.py        # 攻略生成流程（从 ai_batch 拆分）
+│       └── ai_synergy.py      # 相性评分生成流程（从 ai_batch 拆分）
 │
 ├── data/                  # 本地 JSON 数据
 │   ├── heroes.json        # 武将基础数据（149 个武将）
@@ -37,11 +41,12 @@ test_project/
 │
 ├── tests/
 │   ├── test_models.py           # 数据模型单元测试（25 个用例）
-│   ├── test_ai_batch.py         # AI 批量生成单元测试（27 个用例）
+│   ├── test_ai_batch.py         # AI 批量生成 + 配置加载测试（33 个用例）
 │   ├── test_hero_manager.py     # HeroManager 单元测试（13 个用例）
 │   ├── test_synergy_manager.py  # SynergyManager 单元测试（13 个用例）
 │   ├── test_guide_manager.py    # GuideManager 单元测试（11 个用例）
-│   └── test_incremental_update.py # 增量更新集成测试（8 个用例）
+│   ├── test_incremental_update.py # 增量更新集成测试（8 个用例）
+│   └── test_ui.py               # 配置管理 UI 工具测试（4 个用例）
 │
 └── docs/
     ├── field_mapping.md      # 官网字段映射说明
@@ -49,6 +54,32 @@ test_project/
         ├── hero_guide.md     # 武将攻略 Prompt
         └── synergy_score.md  # 相性评分 Prompt
 `
+
+---
+
+## 配置管理
+
+### config.env 配置文件
+
+项目根目录的 `config.env` 用于集中管理 API 配置和运行时参数：
+
+```env
+DEEPSEEK_API_KEY=sk-xxx
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-v4-pro
+REQUESTS_PER_MINUTE=30
+HTTP_TIMEOUT=300
+MAX_RETRIES=3
+```
+
+### 配置模块（`src/config/`）
+
+`src/config/env.py` 提供统一的配置加载/保存接口，被 `scraper/ai_batch.py` 和 `ui/settings_dialog.py` 共同使用：
+
+- `parse_env_file()` — 解析 .env 文件
+- `get_api_config()` — 获取 API 配置（config.env > 环境变量 > 默认值）
+- `get_runtime_params()` — 获取运行时参数（速率限制、超时、重试次数）
+- `save_env_file()` — 原子写入 .env 文件
 
 ---
 
@@ -83,7 +114,7 @@ pip install pydantic httpx beautifulsoup4 opencv-python easyocr mss PySide6 pyte
 pytest tests/ -v
 ```
 
-预期输出：97 passed（25 数据模型 + 27 AI 批量生成 + 45 Manager 相关）
+预期输出：97 passed（25 数据模型 + 33 AI 批量生成 + 13 HeroManager + 13 SynergyManager + 11 GuideManager + 8 增量更新 + 4 UI 工具）
 
 ### 3. 数据采集（官网爬虫）
 
@@ -137,6 +168,10 @@ python -m src.scraper.incremental --hero 诸葛亮 --verbose
 ### 5. AI 批量生成武将攻略和相性评分
 
 使用 DeepSeek API 批量生成攻略和相性评分数据。
+
+> **重构说明**：`ai_batch.py` 中的配置加载逻辑已抽取到 `src/config/env.py`，
+> 攻略生成循环和相性评分生成循环已分别独立为 `src/scraper/ai_guide.py` 和 `src/scraper/ai_synergy.py`，
+> `ai_batch.py` 作为共享基础设施和 CLI 入口保持不变。
 
 > 前置条件：需要 DeepSeek 开放平台 API Key，并已通过官网爬虫采集了武将基础数据。
 > 在项目根目录的 `config.env` 中配置 API Key（参见下方说明）。
@@ -195,8 +230,15 @@ python -c "import sys; sys.path.insert(0, '.'); from src.data.manager import Dat
 
 ```
 src/data/models.py              # Pydantic 模型定义
+src/config/env.py               # 配置管理：.env 解析/加载/保存
 src/data/manager.py             # JSON 读写 + 查询 + 增量更新
 src/scraper/official.py         # 官网爬虫（数据采集 + HTML 清洗 + Pydantic 校验）
+src/data/manager.py             # JSON 读写 + 查询 + 增量更新
+src/data/hero_manager.py        # 武将数据管理器
+src/data/synergy_manager.py     # 相性评分数据管理器
+src/data/guide_manager.py       # 攻略数据管理器
+src/scraper/ai_guide.py         # 攻略生成流程（从 ai_batch 拆分）
+src/scraper/ai_synergy.py       # 相性评分生成流程（从 ai_batch 拆分）
 src/scraper/ai_batch.py         # AI 批量生成（DeepSeek API + 断点续传 + Pydantic 校验）
 docs/prompts/hero_guide.md      # 攻略生成 Prompt 模板
 docs/prompts/synergy_score.md   # 相性评分 Prompt 模板
@@ -292,7 +334,7 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 - get_hero(id) / list_heroes() — 查询
 - get_hero_by_name(name) / search_heroes(keyword) — 按名称/关键词搜索
 - list_factions() — 获取所有势力列表
-- dd_hero() / update_hero() / delete_hero() — 增删改
+- add_hero() / update_hero() / delete_hero() — 增删改
 
 #### SynergyManager (src/data/synergy_manager.py)
 
@@ -302,7 +344,7 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 - load() / save() — JSON 文件读写
 - get_synergy(a_id, b_id) — 查询（顺序无关）
 - list_synergies_for_hero(id) — 查询某个武将的所有相性
-- dd_synergy() / update_synergy() / delete_synergy() — 增删改
+- add_synergy() / update_synergy() / delete_synergy() — 增删改
 - delete_synergies_for_hero(id) — 批量删除某个武将关联的所有相性
 
 #### GuideManager (src/data/guide_manager.py)
@@ -312,11 +354,11 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 核心方法：
 - load() / save() — JSON 文件读写
 - get_guide(hero_id) / list_guides() — 查询
-- dd_guide() / update_guide() / delete_guide() — 增删改
+- add_guide() / update_guide() / delete_guide() — 增删改
 
 #### 增量更新 (src/data/manager.py)
 
-pply_incremental_update(hero_mgr, synergy_mgr, guide_mgr, update) 为独立函数，接收三个 Manager 实例和 IncrementalUpdate 模型，协调执行批量数据变更。
+apply_incremental_update(hero_mgr, synergy_mgr, guide_mgr, update) 为独立函数，接收三个 Manager 实例和 IncrementalUpdate 模型，协调执行批量数据变更。
 
 删除武将时会自动清理关联的相性和攻略数据。
 
@@ -341,6 +383,8 @@ data/ 目录包含 **149 个武将**数据（含完整技能描述），6 条相
 	tests/test_guide_manager.py 包含 **11 个测试用例**，覆盖 GuideManager CRUD、查询方法和 JSON 持久化。
 	
 	tests/test_incremental_update.py 包含 **8 个集成测试用例**，覆盖 apply_incremental_update 的各种操作组合和边界情况。
+	
+	tests/test_ui.py 包含 **4 个测试用例**，覆盖 .env 文件解析与原子写入。
 
 ---
 

@@ -74,6 +74,11 @@
 
 ## 三、目录结构
 
+> **配置管理**：`src/config/env.py` 将配置加载逻辑从 `ai_batch.py` 和 `settings_dialog.py` 中抽取为公共模块，
+> 消除代码重复，提供统一的 `parse_env_file()`、`get_api_config()`、`save_env_file()` 接口。
+> `ai_batch.py` 中的攻略/相性生成循环也被拆分为独立的 `ai_guide.py` 和 `ai_synergy.py`，
+> 通过函数参数接收依赖，避免循环导入，提升可维护性。
+
 ```
 G:\py_savepoint\test_project\
 │
@@ -85,12 +90,15 @@ G:\py_savepoint\test_project\
 ├── src/
 │   ├── main.py                  # 应用入口
 │   │
+│   ├── config/                  # 配置管理
+│   │   ├── __init__.py
+│   │   └── env.py               # .env 解析/加载/保存
+│   │
 │   ├── ui/                      # UI 层
 │   │   ├── __init__.py
 │   │   ├── main_window.py       # 主窗口
 │   │   ├── hero_browser.py      # 武将浏览器
-│   │   ├── recommendation.py    # 推荐结果展示
-│   │   └── settings_dialog.py   # API 配置对话框
+│   │   └── settings_dialog.py   # API 配置对话框（使用 config 模块）
 │   │
 │   ├── capture/                 # 采集层
 │   │   ├── __init__.py
@@ -114,8 +122,10 @@ G:\py_savepoint\test_project\
 │   └── scraper/                 # 数据采集
 │       ├── __init__.py
 │       ├── official.py          # 官网爬虫
-│       ├── incremental.py       # 增量爬虫
-│       └── ai_batch.py          # AI 批量生成攻略
+│       ├── incremental.py       # 增量/指定爬虫
+│       ├── ai_batch.py          # AI 批量生成（共享基础设施 + CLI 入口）
+│       ├── ai_guide.py          # 攻略生成流程（从 ai_batch 拆分）
+│       └── ai_synergy.py        # 相性评分生成流程（从 ai_batch 拆分）
 │
 ├── data/                        # 本地 JSON 数据文件
 │   ├── heroes.json              # 武将基础数据
@@ -230,7 +240,7 @@ class Card(BaseModel):
 | 2.2 | 爬虫实现 + 数据清洗 | official.py + incremental.py（爬取→解析→HTML清洗→字段映射→Pydantic校验→增量爬虫） | ✅ 已完成 |
 | 2.3 | 攻略生成 Prompt 设计与实现 | docs/prompts/hero_guide.md | ✅ 已完成 |
 | 2.4 | 相性评分 Prompt 设计 | docs/prompts/synergy_score.md | ✅ 已完成 |
-| 2.5 | 批量生成脚本 | ai_batch.py（调用 DeepSeek API + 断点续传 + Pydantic 校验输出，支持 config.env 配置） | ✅ 已完成 |
+| 2.5 | 批量生成脚本 | ai_batch.py / ai_guide.py / ai_synergy.py（调用 DeepSeek API + 断点续传 + Pydantic 校验输出，配置逻辑在 src/config/env.py 中统一管理） | ✅ 已完成 |
 
 ### 数据清洗说明（2.1 → 2.2）
 
@@ -250,7 +260,7 @@ class Card(BaseModel):
 
 ### AI 批量生成配置说明（2.5）
 
-批量生成脚本 `src/scraper/ai_batch.py` 默认使用 **DeepSeek Chat** 模型，通过 DeepSeek 开放平台 API 调用。
+批量生成脚本 `src/scraper/ai_batch.py`（配置管理统一通过 `src/config/env.py`） 默认使用 **DeepSeek Chat** 模型，通过 DeepSeek 开放平台 API 调用。
 
 **配置方式（优先级从高到低）：**
 

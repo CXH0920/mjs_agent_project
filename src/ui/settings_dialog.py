@@ -50,21 +50,18 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtCore import Qt
 
+from src.config.env import parse_env_file, save_env_file, DEFAULT_ENV_FILE
+
 
 
 logger = logging.getLogger(__name__)
 
 
 
-# 项目根目录
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-
-DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
-
 
 
 # 配置字段定义：(标签, 环境变量键, 控件类型, 默认值, 最小值, 最大值)
+
 
 TEXT_FIELDS = [
 
@@ -87,150 +84,6 @@ SPIN_FIELDS = [
     ("最大重试次数", "MAX_RETRIES", 3, 0, 10),
 
 ]
-
-
-
-
-
-def _parse_env_file(env_path: Path) -> dict[str, str]:
-
-    """解析 .env 文件（精简版，避免依赖 ai_batch 模块）"""
-
-    if not env_path.exists():
-
-        return {}
-
-    result = {}
-
-    try:
-
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-
-            stripped = line.strip()
-
-            if not stripped or stripped.startswith("#"):
-
-                continue
-
-            if "=" not in stripped:
-
-                continue
-
-            key, _, value = stripped.partition("=")
-
-            key = key.strip()
-
-            value = value.strip().strip('"\'')
-
-            if key:
-
-                result[key] = value
-
-    except Exception as e:
-
-        logger.warning("解析 .env 文件失败: %s", e)
-
-    return result
-
-
-
-
-
-def _save_env_file(env_path: Path, data: dict[str, str]) -> None:
-
-    """原子写入 .env 文件"""
-
-    # 保留原文件中的注释和格式
-
-    lines: list[str] = []
-
-    if env_path.exists():
-
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-
-            stripped = line.strip()
-
-            if not stripped or stripped.startswith("#"):
-
-                lines.append(line)
-
-            else:
-
-                key = stripped.split("=")[0].strip() if "=" in stripped else ""
-
-                if key not in data:
-
-                    lines.append(line)
-
-
-
-    # 添加/更新配置项
-
-    existing_keys = set()
-
-    if env_path.exists():
-
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-
-            stripped = line.strip()
-
-            if stripped and not stripped.startswith("#") and "=" in stripped:
-
-                key = stripped.split("=")[0].strip()
-
-                existing_keys.add(key)
-
-
-
-    for key in data:
-
-        if key not in existing_keys:
-
-            lines.append(f"{key}={data[key]}")
-
-
-
-    # 更新已有的键值
-
-    result_lines: list[str] = []
-
-    for line in lines:
-
-        stripped = line.strip()
-
-        if not stripped.startswith("#") and "=" in stripped:
-
-            key = stripped.split("=")[0].strip()
-
-            if key in data:
-
-                result_lines.append(f"{key}={data[key]}")
-
-                # 标记已处理
-
-                data.pop(key)
-
-                continue
-
-        result_lines.append(line)
-
-
-
-    # 追加未写入的键
-
-    for key, value in data.items():
-
-        result_lines.append(f"{key}={value}")
-
-
-
-    # 原子写入
-
-    tmp_path = env_path.with_suffix(".env.tmp")
-
-    tmp_path.write_text("\\n".join(result_lines) + "\\n", encoding="utf-8")
-
-    tmp_path.replace(env_path)
 
 
 
@@ -376,7 +229,7 @@ class SettingsDialog(QDialog):
 
         """从 config.env 加载当前配置到表单"""
 
-        data = _parse_env_file(self._env_path)
+        data = parse_env_file(self._env_path)
 
 
 
@@ -430,7 +283,7 @@ class SettingsDialog(QDialog):
 
             self._env_path.parent.mkdir(parents=True, exist_ok=True)
 
-            _save_env_file(self._env_path, data)
+            save_env_file(self._env_path, data)
 
             QMessageBox.information(self, "保存成功", f"配置已保存到:\\n{self._env_path}")
 

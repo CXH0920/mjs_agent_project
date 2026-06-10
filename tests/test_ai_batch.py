@@ -6,10 +6,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from scraper.ai_batch import (
+from src.scraper.ai_batch import (
     AIBatchGenerator,
     _estimate_cost,
     _save_json,
@@ -17,6 +17,8 @@ from scraper.ai_batch import (
     load_heroes,
     load_prompt,
 )
+
+from src.config.env import parse_env_file, get_api_config, get_runtime_params
 
 
 class TestLoadPrompt:
@@ -303,14 +305,14 @@ class TestLoadHeroes:
 class TestConfigLoading:
     def test_parse_env_file_nonexistent(self):
         """不存在的 .env 文件应返回空 dict"""
-        from scraper.ai_batch import parse_env_file
+        from src.config.env import parse_env_file
         result = parse_env_file("/nonexistent/config.env")
         assert result == {}
 
     def test_parse_env_file_valid(self):
         """解析有效的 .env 文件"""
         import tempfile, os, shutil
-        from scraper.ai_batch import parse_env_file
+        from src.config.env import parse_env_file
 
         tmpdir = tempfile.mkdtemp()
         try:
@@ -329,7 +331,7 @@ class TestConfigLoading:
     def test_parse_env_file_with_comments(self):
         """解析包含注释和空行的 .env 文件"""
         import tempfile, os, shutil
-        from scraper.ai_batch import parse_env_file
+        from src.config.env import parse_env_file
 
         tmpdir = tempfile.mkdtemp()
         try:
@@ -351,7 +353,7 @@ class TestConfigLoading:
     def test_parse_env_file_quotes(self):
         """解析包含引号值的 .env 文件"""
         import tempfile, os, shutil
-        from scraper.ai_batch import parse_env_file
+        from src.config.env import parse_env_file
 
         tmpdir = tempfile.mkdtemp()
         try:
@@ -370,7 +372,7 @@ class TestConfigLoading:
     def test_parse_env_file_empty(self):
         """空文件应返回空 dict"""
         import tempfile, os, shutil
-        from scraper.ai_batch import parse_env_file
+        from src.config.env import parse_env_file
 
         tmpdir = tempfile.mkdtemp()
         try:
@@ -384,7 +386,7 @@ class TestConfigLoading:
     def test_get_api_config_from_env_file(self):
         """get_api_config 应从 config.env 读取值"""
         import tempfile, os, shutil
-        from scraper.ai_batch import get_api_config
+        from src.config.env import get_api_config
 
         tmpdir = tempfile.mkdtemp()
         try:
@@ -396,22 +398,22 @@ class TestConfigLoading:
                 encoding="utf-8"
             )
             # Temporarily override DEFAULT_ENV_FILE
-            import scraper.ai_batch
-            original = scraper.ai_batch.DEFAULT_ENV_FILE
-            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            import src.config.env as config_env
+            original = config_env.DEFAULT_ENV_FILE
+            config_env.DEFAULT_ENV_FILE = env_path
             try:
                 result = get_api_config()
                 assert result["api_key"] == "sk-from-env"
                 assert result["api_url"] == "https://custom.api/chat"
                 assert result["model"] == "custom-model"
             finally:
-                scraper.ai_batch.DEFAULT_ENV_FILE = original
+                config_env.DEFAULT_ENV_FILE = original
         finally:
             shutil.rmtree(tmpdir)
 
     def test_get_api_config_env_var_fallback(self):
         """环境变量作为 config.env 的回退"""
-        from scraper.ai_batch import get_api_config
+        from src.config.env import get_api_config
 
         import tempfile, os, shutil
         tmpdir = tempfile.mkdtemp()
@@ -419,9 +421,9 @@ class TestConfigLoading:
             env_path = Path(tmpdir) / "empty.env"
             env_path.write_text("", encoding="utf-8")
 
-            import scraper.ai_batch
-            original = scraper.ai_batch.DEFAULT_ENV_FILE
-            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            import src.config.env as config_env
+            original = config_env.DEFAULT_ENV_FILE
+            config_env.DEFAULT_ENV_FILE = env_path
 
             old_deepseek = os.environ.get("DEEPSEEK_API_KEY", "")
             os.environ["DEEPSEEK_API_KEY"] = "sk-from-envvar"
@@ -429,7 +431,7 @@ class TestConfigLoading:
                 result = get_api_config()
                 assert result["api_key"] == "sk-from-envvar"
             finally:
-                scraper.ai_batch.DEFAULT_ENV_FILE = original
+                config_env.DEFAULT_ENV_FILE = original
                 if old_deepseek:
                     os.environ["DEEPSEEK_API_KEY"] = old_deepseek
                 else:
@@ -439,7 +441,7 @@ class TestConfigLoading:
 
     def test_get_runtime_params_defaults(self):
         """get_runtime_params 应返回默认值"""
-        from scraper.ai_batch import get_runtime_params
+        from src.config.env import get_runtime_params
 
         import tempfile, os, shutil
         tmpdir = tempfile.mkdtemp()
@@ -447,22 +449,22 @@ class TestConfigLoading:
             env_path = Path(tmpdir) / "empty.env"
             env_path.write_text("", encoding="utf-8")
 
-            import scraper.ai_batch
-            original = scraper.ai_batch.DEFAULT_ENV_FILE
-            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            import src.config.env as config_env
+            original = config_env.DEFAULT_ENV_FILE
+            config_env.DEFAULT_ENV_FILE = env_path
             try:
                 params = get_runtime_params()
                 assert params["requests_per_minute"] == 30
                 assert params["max_retries"] == 3
                 assert params["http_timeout"] == 300
             finally:
-                scraper.ai_batch.DEFAULT_ENV_FILE = original
+                config_env.DEFAULT_ENV_FILE = original
         finally:
             shutil.rmtree(tmpdir)
 
     def test_get_runtime_params_custom(self):
         """get_runtime_params 应从 config.env 读取自定义值"""
-        from scraper.ai_batch import get_runtime_params
+        from src.config.env import get_runtime_params
 
         import tempfile, os, shutil
         tmpdir = tempfile.mkdtemp()
@@ -475,15 +477,15 @@ class TestConfigLoading:
                 encoding="utf-8"
             )
 
-            import scraper.ai_batch
-            original = scraper.ai_batch.DEFAULT_ENV_FILE
-            scraper.ai_batch.DEFAULT_ENV_FILE = env_path
+            import src.config.env as config_env
+            original = config_env.DEFAULT_ENV_FILE
+            config_env.DEFAULT_ENV_FILE = env_path
             try:
                 params = get_runtime_params()
                 assert params["requests_per_minute"] == 10
                 assert params["max_retries"] == 5
                 assert params["http_timeout"] == 120
             finally:
-                scraper.ai_batch.DEFAULT_ENV_FILE = original
+                config_env.DEFAULT_ENV_FILE = original
         finally:
             shutil.rmtree(tmpdir)
