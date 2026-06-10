@@ -1,0 +1,10 @@
+# DeepSeek API 配置
+# 按照文档描述填写，并将文件命名为config.env
+DEEPSEEK_API_KEY=sk-你的key
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-v4-flash
+
+# 运行时参数
+REQUESTS_PER_MINUTE=30
+HTTP_TIMEOUT=300
+MAX_RETRIES=3

@@ -5,6 +5,9 @@ __pycache__/
 # IDE
 .idea/
 
+# Project documentation
+project_problem.md
+
 # Environment files
 config.env
 

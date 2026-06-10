@@ -20,11 +20,14 @@ test_project/
 │
 ├── src/                   # 源代码
 │   ├── data/
-│   │   ├── models.py      # 数据模型 (Pydantic)
-│   │   └── manager.py     # JSON 读写 + 增量更新
+│   │   ├── models.py          # 数据模型 (Pydantic)
+│   │   ├── manager.py         # 统一入口 + 增量更新函数
+│   │   ├── hero_manager.py    # 武将数据管理器
+│   │   ├── synergy_manager.py # 相性评分数据管理器
+│   │   └── guide_manager.py   # 攻略数据管理器
 │   ├── capture/           # 采集层（待开发）
 │   ├── business/          # 业务层（待开发）
-│   ├── ui/                # UI 层（待开发）
+│   ├── ui/                # UI 层（已完成）
 │   └── scraper/           # 数据采集（official.py + ai_batch.py 已完成）
 │
 ├── data/                  # 本地 JSON 数据
@@ -33,8 +36,12 @@ test_project/
 │   └── guides.json        # 武将攻略（4 份样本）
 │
 ├── tests/
-│   ├── test_models.py     # 数据模型单元测试（25 个用例）
-│   └── test_ai_batch.py   # AI 批量生成单元测试（27 个用例）
+│   ├── test_models.py           # 数据模型单元测试（25 个用例）
+│   ├── test_ai_batch.py         # AI 批量生成单元测试（27 个用例）
+│   ├── test_hero_manager.py     # HeroManager 单元测试（13 个用例）
+│   ├── test_synergy_manager.py  # SynergyManager 单元测试（13 个用例）
+│   ├── test_guide_manager.py    # GuideManager 单元测试（11 个用例）
+│   └── test_incremental_update.py # 增量更新集成测试（8 个用例）
 │
 └── docs/
     ├── field_mapping.md      # 官网字段映射说明
@@ -76,7 +83,7 @@ pip install pydantic httpx beautifulsoup4 opencv-python easyocr mss PySide6 pyte
 pytest tests/ -v
 ```
 
-预期输出：52 passed（25 数据模型 + 27 AI 批量生成）
+预期输出：97 passed（25 数据模型 + 27 AI 批量生成 + 45 Manager 相关）
 
 ### 3. 数据采集（官网爬虫）
 
@@ -272,14 +279,46 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 
 **官网数据解析说明**：Hero、Card 模型通过 alidation_alias 支持中文字段名映射（如 角色ID、名称、体力上限），方便官网爬虫数据直接解析。
 
-### 数据管理器 (src/data/manager.py)
+### 数据管理器（拆分后）
 
-核心功能：
-- **加载/保存**：从 JSON 文件读写武将、相性、攻略
-- **查询**：按 ID 查询武将、查询武将间相性（双向一致）、获取攻略
-- **增删改**：完整 CRUD 操作
-- **增量更新**：通过 IncrementalUpdate 模型批量应用数据变更
-- **势力筛选**：按势力过滤武将列表
+原 DataManager 已拆分为三个职责单一、可独立使用和测试的 Manager：
+
+#### HeroManager (src/data/hero_manager.py)
+
+负责武将数据的 CRUD 与 JSON 持久化。
+
+核心方法：
+- load() / save() — JSON 文件读写
+- get_hero(id) / list_heroes() — 查询
+- get_hero_by_name(name) / search_heroes(keyword) — 按名称/关键词搜索
+- list_factions() — 获取所有势力列表
+- dd_hero() / update_hero() / delete_hero() — 增删改
+
+#### SynergyManager (src/data/synergy_manager.py)
+
+负责相性评分数据的 CRUD 与 JSON 持久化。相性评分双向一致（(A,B) 和 (B,A) 视为同一对）。
+
+核心方法：
+- load() / save() — JSON 文件读写
+- get_synergy(a_id, b_id) — 查询（顺序无关）
+- list_synergies_for_hero(id) — 查询某个武将的所有相性
+- dd_synergy() / update_synergy() / delete_synergy() — 增删改
+- delete_synergies_for_hero(id) — 批量删除某个武将关联的所有相性
+
+#### GuideManager (src/data/guide_manager.py)
+
+负责攻略数据的 CRUD 与 JSON 持久化。
+
+核心方法：
+- load() / save() — JSON 文件读写
+- get_guide(hero_id) / list_guides() — 查询
+- dd_guide() / update_guide() / delete_guide() — 增删改
+
+#### 增量更新 (src/data/manager.py)
+
+pply_incremental_update(hero_mgr, synergy_mgr, guide_mgr, update) 为独立函数，接收三个 Manager 实例和 IncrementalUpdate 模型，协调执行批量数据变更。
+
+删除武将时会自动清理关联的相性和攻略数据。
 
 ### 样本数据
 
@@ -294,6 +333,14 @@ data/ 目录包含 **149 个武将**数据（含完整技能描述），6 条相
 - HeroGuide int ID 引用
 - Card 别名解析、CardType 枚举
 - IncrementalUpdate 增量结构
+
+	tests/test_hero_manager.py 包含 **13 个测试用例**，覆盖 HeroManager CRUD、查询方法和 JSON 持久化。
+	
+	tests/test_synergy_manager.py 包含 **13 个测试用例**，覆盖 SynergyManager CRUD、查询方法、批量删除和 JSON 持久化。
+	
+	tests/test_guide_manager.py 包含 **11 个测试用例**，覆盖 GuideManager CRUD、查询方法和 JSON 持久化。
+	
+	tests/test_incremental_update.py 包含 **8 个集成测试用例**，覆盖 apply_incremental_update 的各种操作组合和边界情况。
 
 ---
 

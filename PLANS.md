@@ -101,7 +101,10 @@ G:\py_savepoint\test_project\
 │   ├── data/                    # 数据层
 │   │   ├── __init__.py
 │   │   ├── models.py            # Pydantic 数据模型
-│   │   └── manager.py           # JSON 读写 + 增量更新
+│   │   ├── manager.py           # 统一入口 + 增量更新函数
+│   │   ├── hero_manager.py      # HeroManager（武将 CRUD + 持久化）
+│   │   ├── synergy_manager.py   # SynergyManager（相性 CRUD + 持久化）
+│   │   └── guide_manager.py    # GuideManager（攻略 CRUD + 持久化）
 │   │
 │   ├── business/                # 业务层
 │   │   ├── __init__.py
