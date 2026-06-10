@@ -296,7 +296,7 @@ class HeroDetailPanel(QWidget):
             if skill.settlement:
                 toggle = QPushButton("展开结算详情")
                 toggle.setCheckable(True)
-                toggle.setStyleSheet("QPushButton { padding: 4px 12px; border: 1px solid #888; border-radius: 4px; background: #f0f0f0; color: #333; font-size: 12px; } QPushButton:hover { background: #e0e0e0; } QPushButton:checked { background: #d0d0d0; }")
+                toggle.setStyleSheet("QPushButton { text-align: left; border: none; color: #555; }")
                 settle_label = QLabel(skill.settlement)
                 settle_label.setWordWrap(True)
                 settle_label.setStyleSheet("color: #666; padding-left: 8px; border-left: 2px solid #ddd;")
