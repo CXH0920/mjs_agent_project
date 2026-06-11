@@ -294,9 +294,15 @@ class HeroDetailPanel(QWidget):
 
             # 结算详情（可折叠）
             if skill.settlement:
-                toggle = QPushButton("展开结算详情")
+                toggle = QPushButton("▸ 展开结算")
                 toggle.setCheckable(True)
-                toggle.setStyleSheet("QPushButton { text-align: left; border: none; color: #555; }")
+                toggle.setStyleSheet(
+                    "QPushButton { background-color: #e8e8e8; color: #666; border: 1px solid #ccc; "
+                    "border-radius: 3px; padding: 2px 10px; font-size: 12px; font-weight: normal; "
+                    "text-align: center; min-height: 18px; }"
+                    "QPushButton:hover { background-color: #d0d0d0; color: #444; }"
+                    "QPushButton:checked { background-color: #d0d0d0; color: #444; }"
+                )
                 settle_label = QLabel(skill.settlement)
                 settle_label.setWordWrap(True)
                 settle_label.setStyleSheet("color: #666; padding-left: 8px; border-left: 2px solid #ddd;")
@@ -304,7 +310,7 @@ class HeroDetailPanel(QWidget):
                 toggle.toggled.connect(
                     lambda checked, label=settle_label, btn=toggle: (
                         label.setVisible(checked),
-                        btn.setText("收起结算详情" if checked else "展开结算详情")
+                        btn.setText("▾ 收起结算" if checked else "▸ 展开结算")
                     )
                 )
                 skill_layout.addWidget(toggle)
