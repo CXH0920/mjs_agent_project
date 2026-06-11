@@ -33,7 +33,7 @@ def run_guide_generation(
         (prompt_tokens, completion_tokens): 本次生成的 token 统计
     """
     # 延迟导入，避免循环依赖
-    from src.scraper.ai_batch import _save_json, GUIDE_BATCH_SAVE_INTERVAL
+    from src.scraper.ai_utils import _save_json, GUIDE_BATCH_SAVE_INTERVAL
 
     total_prompt_tokens = 0
     total_completion_tokens = 0

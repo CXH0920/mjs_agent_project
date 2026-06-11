@@ -1,4 +1,4 @@
-﻿"""
+"""
 名将杀 Agent - 武将浏览器
 
 提供武将列表浏览、搜索筛选、详情查看和攻略展示功能。
@@ -428,3 +428,7 @@ class HeroBrowser(QWidget):
 
         # 连接信号
         self._list_panel.hero_selected.connect(self._detail_panel.show_hero)
+
+    def reload_data(self) -> None:
+        """公有方法：重新加载武将列表数据"""
+        self._list_panel._load_heroes()

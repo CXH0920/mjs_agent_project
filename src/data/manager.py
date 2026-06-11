@@ -1,11 +1,8 @@
-﻿"""
+"""
 名将杀 Agent - 数据管理器（入口模块）
 
-提供默认路径常量，以及跨实体的增量更新函数。
-拆分后的三个独立 Manager 分别在：
-  - hero_manager.py  → HeroManager
-  - synergy_manager.py → SynergyManager
-  - guide_manager.py  → GuideManager
+提供默认路径常量，跨实体的增量更新函数，
+以及统一管理三个 Manager 的 DataFacade。
 """
 
 from __future__ import annotations
@@ -33,11 +30,49 @@ __all__ = [
     "HeroManager",
     "SynergyManager",
     "GuideManager",
+    "DataFacade",
     "apply_incremental_update",
     "DEFAULT_HEROES_FILE",
     "DEFAULT_SYNERGIES_FILE",
     "DEFAULT_GUIDES_FILE",
 ]
+
+
+class DataFacade:
+    """统一数据访问门面
+
+    持有三个 Manager 的引用，提供统一的加载/保存/统计接口。
+    """
+
+    def __init__(
+        self,
+        heroes_file: str | Path = DEFAULT_HEROES_FILE,
+        synergies_file: str | Path = DEFAULT_SYNERGIES_FILE,
+        guides_file: str | Path = DEFAULT_GUIDES_FILE,
+    ):
+        self.heroes = HeroManager(heroes_file)
+        self.synergies = SynergyManager(synergies_file)
+        self.guides = GuideManager(guides_file)
+
+    def load_all(self) -> None:
+        """加载所有数据"""
+        self.heroes.load()
+        self.synergies.load()
+        self.guides.load()
+
+    def save_all(self) -> None:
+        """保存所有数据"""
+        self.heroes.save()
+        self.synergies.save()
+        self.guides.save()
+
+    def get_stats(self) -> dict[str, int]:
+        """获取各数据计数"""
+        return {
+            "heroes": len(self.heroes.list_heroes()),
+            "synergies": len(self.synergies.list_synergies()),
+            "guides": len(self.guides.list_guides()),
+        }
 
 
 def apply_incremental_update(

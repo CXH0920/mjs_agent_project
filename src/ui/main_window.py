@@ -8,8 +8,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -24,7 +22,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.data.manager import HeroManager, SynergyManager, GuideManager
+from src.data.manager import (
+    DataFacade,
+    DEFAULT_HEROES_FILE,
+    DEFAULT_SYNERGIES_FILE,
+    DEFAULT_GUIDES_FILE,
+)
+
+logger = logging.getLogger(__name__)
+
 from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.fetch_dialog import HeroFetchDialog
@@ -33,14 +39,6 @@ from src.business.guide_fetch_service import GuideFetchService
 from src.ui.guide_fetch_dialog import GuideFetchDialog
 from src.ui.cost_confirm_dialog import CostConfirmDialog
 from src.ui.guide_progress_dialog import GuideProgressDialog
-
-# 默认数据路径
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
-DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
-DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
-
-logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -51,17 +49,28 @@ class MainWindow(QMainWindow):
 
     def __init__(
         self,
-        hero_manager: Optional[HeroManager] = None,
-        synergy_manager: Optional[SynergyManager] = None,
-        guide_manager: Optional[GuideManager] = None,
+        hero_manager=None,
+        synergy_manager=None,
+        guide_manager=None,
     ):
         super().__init__()
-        self._hero_mgr = hero_manager or HeroManager(heroes_file=DEFAULT_HEROES_FILE)
-        self._synergy_mgr = synergy_manager or SynergyManager(synergies_file=DEFAULT_SYNERGIES_FILE)
-        self._guide_mgr = guide_manager or GuideManager(guides_file=DEFAULT_GUIDES_FILE)
+        if hero_manager or synergy_manager or guide_manager:
+            from src.data.hero_manager import HeroManager
+            from src.data.synergy_manager import SynergyManager
+            from src.data.guide_manager import GuideManager
+            self._data = DataFacade.__new__(DataFacade)
+            self._data.heroes = hero_manager or HeroManager(heroes_file=DEFAULT_HEROES_FILE)
+            self._data.synergies = synergy_manager or SynergyManager(synergies_file=DEFAULT_SYNERGIES_FILE)
+            self._data.guides = guide_manager or GuideManager(guides_file=DEFAULT_GUIDES_FILE)
+        else:
+            self._data = DataFacade(
+                heroes_file=DEFAULT_HEROES_FILE,
+                synergies_file=DEFAULT_SYNERGIES_FILE,
+                guides_file=DEFAULT_GUIDES_FILE,
+            )
 
         self._fetch_service = HeroFetchService(self)
-        self._guide_service = GuideFetchService(self._guide_mgr, self)
+        self._guide_service = GuideFetchService(self._data.guides, self)
         self._connect_guide_signals()
         self._connect_fetch_signals()
 
@@ -134,7 +143,7 @@ class MainWindow(QMainWindow):
         if dialog:
             dialog.on_process_finished(success, message)
         if success:
-            self._guide_mgr.load()
+            self._data.guides.load()
             self._update_status()
 
     def _on_guide_fetch_error(self, error_msg: str) -> None:
@@ -232,7 +241,7 @@ class MainWindow(QMainWindow):
         self._tabs.setDocumentMode(True)
 
         # Tab 1: 武将浏览
-        self._hero_browser = HeroBrowser(self._hero_mgr, self._guide_mgr)
+        self._hero_browser = HeroBrowser(self._data.heroes, self._data.guides)
         self._tabs.addTab(self._hero_browser, "武将浏览")
 
         # Tab 2: 选将推荐（占位）
@@ -260,9 +269,7 @@ class MainWindow(QMainWindow):
     def _load_data(self) -> None:
         """加载所有数据"""
         try:
-            self._hero_mgr.load()
-            self._synergy_mgr.load()
-            self._guide_mgr.load()
+            self._data.load_all()
         except Exception as e:
             logger.exception("数据加载失败")
             QMessageBox.warning(
@@ -277,7 +284,7 @@ class MainWindow(QMainWindow):
         self._update_status()
         # 刷新武将浏览器
         if hasattr(self, "_hero_browser"):
-            self._hero_browser._list_panel._load_heroes()
+            self._hero_browser.reload_data()
         QMessageBox.information(self, "已刷新", "数据已重新加载")
 
     # ---------------------------------------------------------------
@@ -286,11 +293,9 @@ class MainWindow(QMainWindow):
 
     def _update_status(self) -> None:
         """更新状态栏显示"""
-        heroes = len(self._hero_mgr.list_heroes())
-        synergies = len(self._synergy_mgr.list_synergies())
-        guides = len(self._guide_mgr.list_guides())
+        stats = self._data.get_stats()
         self._status_label.setText(
-            f"武将: {heroes}  |  相性: {synergies}  |  攻略: {guides}"
+            f"武将: {stats['heroes']}  |  相性: {stats['synergies']}  |  攻略: {stats['guides']}"
         )
 
     # ---------------------------------------------------------------
@@ -323,7 +328,7 @@ class MainWindow(QMainWindow):
 
     def _request_fetch_specific(self) -> None:
         """请求指定采集：弹出选择对话框，选中后委托给 service"""
-        dialog = HeroFetchDialog(self._hero_mgr, parent=self)
+        dialog = HeroFetchDialog(self._data.heroes, parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -349,7 +354,7 @@ class MainWindow(QMainWindow):
         self._guide_service.fetch_incremental(heroes)
 
     def _request_guide_specific(self) -> None:
-        dialog = GuideFetchDialog(self._hero_mgr, parent=self)
+        dialog = GuideFetchDialog(self._data.heroes, parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         if dialog.selected_heroes:
@@ -368,7 +373,7 @@ class MainWindow(QMainWindow):
                     for s in (h.skills or [])
                 ],
             }
-            for h in self._hero_mgr.list_heroes()
+            for h in self._data.heroes.list_heroes()
         ]
 
     # ---------------------------------------------------------------

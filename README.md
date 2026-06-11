@@ -23,7 +23,7 @@ test_project/
 │   │   └── env.py               # .env 文件解析/加载/保存
 │   ├── data/
 │   │   ├── models.py          # 数据模型 (Pydantic)
-│   │   ├── manager.py         # 统一入口 + 增量更新函数
+│   │   ├── manager.py         # DataFacade 门面 + 增量更新函数
 │   │   ├── hero_manager.py    # 武将数据管理器
 │   │   ├── synergy_manager.py # 相性评分数据管理器
 │   │   └── guide_manager.py   # 攻略数据管理器
@@ -39,7 +39,9 @@ test_project/
 │       ├── crawler.py         # 爬虫核心模块（公开 API）
 │       ├── official.py        # 官网爬虫
 │       ├── incremental.py     # 增量/指定爬虫
-│       ├── ai_batch.py        # AI 批量生成主入口（共享基础设施）
+│       ├── ai_utils.py        # AI 生成工具函数（_save_json/estimate_cost/load_heroes）
+│       ├── ai_generator.py    # AIBatchGenerator（API 调用/限速/Prompt 构建/校验）
+│       ├── ai_batch.py        # AI 批量生成 CLI 入口
 │       ├── ai_guide.py        # 攻略生成流程（从 ai_batch 拆分）
 │       └── ai_synergy.py      # 相性评分生成流程（从 ai_batch 拆分）
 │
@@ -178,9 +180,10 @@ python -m src.scraper.incremental --hero 诸葛亮 --verbose
 
 使用 DeepSeek API 批量生成攻略和相性评分数据。
 
-> **重构说明**：`ai_batch.py` 中的配置加载逻辑已抽取到 `src/config/env.py`，
-> 攻略生成循环和相性评分生成循环已分别独立为 `src/scraper/ai_guide.py` 和 `src/scraper/ai_synergy.py`，
-> `ai_batch.py` 作为共享基础设施和 CLI 入口保持不变。
+> **重构说明**：`ai_batch.py` 中的工具函数和常量已抽取到 `src/scraper/ai_utils.py`，
+> 核心类 `AIBatchGenerator` 独立为 `src/scraper/ai_generator.py`，
+> 攻略生成循环和相性评分生成循环分别独立为 `src/scraper/ai_guide.py` 和 `src/scraper/ai_synergy.py`，
+> `ai_batch.py` 作为 CLI 入口保持不变。
 
 > 前置条件：需要 DeepSeek 开放平台 API Key，并已通过官网爬虫采集了武将基础数据。
 > 在项目根目录的 `config.env` 中配置 API Key（参见下方说明）。
@@ -231,8 +234,9 @@ MAX_RETRIES=3
 
 ### 6. 数据验证与查询
 
-```
-python -c "import sys; sys.path.insert(0, '.'); from src.data.manager import DataManager; dm = DataManager(); dm.load_all(); print(f'武将: {len(dm.list_heroes())} 个'); print(f'相性: {len(dm.list_synergies())} 条'); print(f'攻略: {len(dm.list_guides())} 份'); zg = dm.get_hero(114); print(f'ID=114: {zg.name} ({zg.faction}) - {zg.position}'); sg = dm.get_synergy(114, 141); print(f'{zg.name} <-> 关羽: 相性 {sg.score} 分 (评级 {sg.synergy_rating})'); wei = dm.list_heroes_by_faction('曹魏'); print(f'曹魏武将: {len(wei)} 个')"
+```python
+# 使用 DataFacade 加载并查询数据
+python -c "import sys; sys.path.insert(0, '.'); from src.data.manager import DataFacade; dm = DataFacade(); dm.load_all(); print(f'武将: {len(dm.heroes.list_heroes())} 个'); print(f'相性: {len(dm.synergies.list_synergies())} 条'); print(f'攻略: {len(dm.guides.list_guides())} 份'); zg = dm.heroes.get_hero(114); print(f'ID=114: {zg.name} ({zg.faction}) - {zg.position}'); sg = dm.synergies.get_synergy(114, 141); print(f'{zg.name} <-> 关羽: 相性 {sg.score} 分 (评级 {sg.synergy_rating})'); wei = dm.heroes.list_heroes_by_faction('曹魏'); print(f'曹魏武将: {len(wei)} 个')"
 ```
 
 ### 6. 项目文件概览
@@ -265,7 +269,98 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 | `conda`: 未找到命令 | 安装 Miniconda/Anaconda 并确保已加入 PATH |
 | `ModuleNotFoundError: No module named src` | 在项目根目录下执行命令 |
 | 爬虫网络超时 | 检查网络连接，重试（内置 3 次重试） |
-| 爬虫 Pydantic 校验失败 | 官网数据格式可能已变更，查看日志中的异常数据 |
+| Pydantic 校验失败 | 官网数据格式可能已变更，查看日志中的异常数据 |
+
+---
+
+## 操作指南
+
+### 第一次使用
+
+```bash
+# 1. 创建并激活环境
+conda env create -f environment.yml
+conda activate myenv
+
+# 2. 配置 API Key（如果要用 AI 生成功能）
+#    在项目根目录创建 config.env 文件：
+#    DEEPSEEK_API_KEY=sk-你的key
+
+# 3. 运行测试确认环境正常
+pytest tests/ -v
+
+# 4. 启动桌面应用
+python -m src.main
+```
+
+### 基础操作流程
+
+1. **采集武将数据** — 菜单栏 `数据 > 武将获取 > 全量获取`，从官网采集所有武将
+2. **浏览武将** — 在"武将浏览"面板中查看武将详情和技能
+3. **生成攻略** — 菜单栏 `数据 > 攻略获取 > 全量获取`，确认成本后 AI 生成
+4. **刷新数据** — 采集或生成后按 `F5` 刷新界面
+
+### 命令行操作
+
+```bash
+# 武将数据采集
+python -m src.scraper.official                          # 全量采集
+python -m src.scraper.official --dry-run                # 预览（不写入）
+python -m src.scraper.incremental --incremental          # 增量采集
+python -m src.scraper.incremental --hero 诸葛亮          # 指定武将
+
+# AI 攻略/相性生成
+python -m src.scraper.ai_batch --guide                   # 生成攻略
+python -m src.scraper.ai_batch --synergy                 # 生成相性评分
+python -m src.scraper.ai_batch --guide --synergy         # 同时生成
+python -m src.scraper.ai_batch --guide --dry-run         # 预览成本
+
+# 测试
+pytest tests/ -v                                         # 全部 103 个测试
+pytest tests/test_models.py -v                           # 单个测试文件
+```
+
+### 常用代码模式
+
+```python
+# 加载数据
+from src.data.manager import DataFacade
+facade = DataFacade()
+facade.load_all()
+
+# 查询武将
+hero = facade.heroes.get_hero(114)                # 按 ID
+hero = facade.heroes.get_hero_by_name("诸葛亮")    # 按名称
+heroes = facade.heroes.search_heroes("曹")         # 关键词搜索
+factions = facade.heroes.list_factions()            # 势力列表
+
+# 查询相性
+synergy = facade.synergies.get_synergy(114, 141)   # 查询一对武将
+synergies = facade.synergies.list_synergies_for_hero(114)  # 查某个武将的所有相性
+
+# 查询攻略
+guide = facade.guides.get_guide(114)
+
+# 统计
+stats = facade.get_stats()  # {heroes: N, synergies: N, guides: N}
+```
+
+### 项目文件速查
+
+| 用途 | 文件 |
+|------|------|
+| 桌面应用入口 | `src/main.py` |
+| 主窗口 | `src/ui/main_window.py` |
+| 武将浏览 | `src/ui/hero_browser.py` |
+| 官网爬虫 | `src/scraper/official.py` |
+| 增量爬虫 | `src/scraper/incremental.py` |
+| 爬虫核心 | `src/scraper/crawler.py` |
+| AI 生成入口 | `src/scraper/ai_batch.py` |
+| AI 生成器 | `src/scraper/ai_generator.py` |
+| AI 生成工具 | `src/scraper/ai_utils.py` |
+| 数据模型 | `src/data/models.py` |
+| 数据访问 | `src/data/manager.py` (DataFacade) |
+| 配置管理 | `src/config/env.py` |
 
 
 ### 8. 数据处理说明
@@ -332,7 +427,7 @@ tests/test_ai_batch.py          # AI 批量生成单元测试（27 个用例）
 
 ### 数据管理器（拆分后）
 
-原 DataManager 已拆分为三个职责单一、可独立使用和测试的 Manager：
+原 DataManager 已拆分为三个职责单一、可独立使用和测试的 Manager，通过 DataFacade 统一访问：
 
 #### HeroManager (src/data/hero_manager.py)
 
