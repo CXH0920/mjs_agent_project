@@ -345,7 +345,10 @@ class HeroDetailPanel(QWidget):
                 item.widget().deleteLater()
 
         if not guide:
-            self._guide_layout.addWidget(QLabel("暂无攻略数据"))
+            no_data = QLabel("暂无攻略数据")
+            no_data.setStyleSheet("color: #a08060; font-size: 14px; padding: 20px;")
+            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._guide_layout.addWidget(no_data)
             self._guide_layout.addStretch()
             return
 

@@ -61,6 +61,9 @@ DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 # ============================================================
 
 def main():
+    # Windows cmd 默认 GBK，刷新 stdout 编码以支持中文输出
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8")
     print("启动中...", flush=True)
     parser = argparse.ArgumentParser(description="名将杀 Agent - AI 批量生成工具")
     parser.add_argument("--guide", action="store_true", help="生成攻略")
