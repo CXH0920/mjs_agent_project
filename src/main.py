@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import logging
-import sys
+import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from src.ui.main_window import MainWindow
@@ -25,7 +27,12 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("名将杀 Agent")
     app.setOrganizationName("MingJiangSha")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.1.0")
+
+    # 设置应用图标
+    icon_path = Path(__file__).resolve().parent.parent / "mjs.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # 设置应用样式
     app.setStyle("Fusion")
