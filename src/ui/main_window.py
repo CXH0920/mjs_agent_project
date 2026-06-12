@@ -39,6 +39,9 @@ from src.business.guide_fetch_service import GuideFetchService
 from src.ui.guide_fetch_dialog import GuideFetchDialog
 from src.ui.cost_confirm_dialog import CostConfirmDialog
 from src.ui.guide_progress_dialog import GuideProgressDialog
+from src.ui.synergy_pair_dialog import SynergyPairDialog
+from src.ui.synergy_single_dialog import SynergySingleDialog
+from src.business.synergy_fetch_service import SynergyFetchService
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +74,8 @@ class MainWindow(QMainWindow):
 
         self._fetch_service = HeroFetchService(self)
         self._guide_service = GuideFetchService(self._data.guides, self)
+        self._synergy_service = SynergyFetchService(self)
+        self._connect_synergy_signals()
         self._connect_guide_signals()
         self._connect_fetch_signals()
 
@@ -111,6 +116,27 @@ class MainWindow(QMainWindow):
     def _on_fetch_error(self, error_msg: str) -> None:
         """采集错误处理"""
         QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{error_msg}")
+
+    # ---------------------------------------------------------------
+    # 相性获取服务信号连接
+    # ---------------------------------------------------------------
+
+    def _connect_synergy_signals(self) -> None:
+        self._synergy_service.status_changed.connect(self._on_fetch_status)
+        self._synergy_service.fetch_completed.connect(self._on_synergy_fetch_completed)
+        self._synergy_service.error_occurred.connect(self._on_synergy_fetch_error)
+
+    def _on_synergy_fetch_completed(self, success: bool, message: str = "") -> None:
+        if success:
+            self._data.synergies.load()
+            self._update_status()
+            QMessageBox.information(self, "提示", "相性评分已生成完成\n请通过 数据 > 重新加载数据 刷新")
+        else:
+            QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{message}")
+
+    def _on_synergy_fetch_error(self, error_msg: str) -> None:
+        QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{error_msg}")
+
     # ---------------------------------------------------------------
     # 攻略生成服务信号连接
     # ---------------------------------------------------------------
@@ -218,6 +244,17 @@ class MainWindow(QMainWindow):
         guide_spec_action = QAction("指定获取", self)
         guide_spec_action.triggered.connect(self._request_guide_specific)
         guide_menu.addAction(guide_spec_action)
+
+        # 武将相性子菜单
+        synergy_menu = data_menu.addMenu("武将相性")
+
+        synergy_single_action = QAction("选定武将", self)
+        synergy_single_action.triggered.connect(self._request_synergy_single)
+        synergy_menu.addAction(synergy_single_action)
+
+        synergy_pair_action = QAction("指定获取", self)
+        synergy_pair_action.triggered.connect(self._request_synergy_pair)
+        synergy_menu.addAction(synergy_pair_action)
 
         # 帮助菜单
         help_menu = bar.addMenu("帮助")
@@ -359,6 +396,34 @@ class MainWindow(QMainWindow):
             return
         if dialog.selected_heroes:
             self._guide_service.fetch_specific(dialog.selected_heroes)
+
+    # ---------------------------------------------------------------
+    # 相性获取入口
+    # ---------------------------------------------------------------
+
+    def _request_synergy_pair(self) -> None:
+        """相性指定获取：弹出对话框选择 2 个武将"""
+        heroes = self._get_heroes_as_dicts()
+        if not heroes:
+            QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
+            return
+        dialog = SynergyPairDialog(self._data.heroes, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        if dialog.selected_heroes:
+            self._synergy_service.fetch_pair(dialog.selected_heroes)
+
+    def _request_synergy_single(self) -> None:
+        """相性选定武将：弹出对话框选择 1 个武将"""
+        all_heroes = self._get_heroes_as_dicts()
+        if not all_heroes:
+            QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
+            return
+        dialog = SynergySingleDialog(self._data.heroes, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        if dialog.selected_hero:
+            self._synergy_service.fetch_single(dialog.selected_hero, all_heroes)
 
     def _get_heroes_as_dicts(self) -> list[dict]:
         from src.data.models import Hero

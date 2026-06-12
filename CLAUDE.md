@@ -3,6 +3,15 @@
 名将杀桌面辅助工具，面向名将杀手游的轻度玩家，运行于 PC 端 MuMu 模拟器。
 核心功能：**选将推荐** + **武将数据库查询**。
 
+## 工作原则
+- 默认使用中文回复
+- 使用 conda的myenv环境
+
+## Git
+- 不自动 commit
+- 不自动 push
+- 必须得到用户确认
+
 ## 快速开始
 
 ```bash
@@ -47,7 +56,7 @@ test_project/
 │   │   └── env.py                 # .env 解析/加载/保存
 │   ├── data/
 │   │   ├── models.py              # Pydantic 数据模型
-│   │   ├── manager.py             # 统一入口 + 增量更新函数
+│   │   ├── manager.py             # DataFacade + 增量更新函数
 │   │   ├── hero_manager.py        # Hero CRUD + JSON 持久化
 │   │   ├── synergy_manager.py     # SynergyScore CRUD + JSON
 │   │   └── guide_manager.py       # HeroGuide CRUD + JSON
@@ -55,18 +64,26 @@ test_project/
 │   │   ├── crawler.py             # 爬虫核心（公开 API）
 │   │   ├── official.py            # 官网全量爬虫
 │   │   ├── incremental.py         # 增量/指定爬虫
-│   │   ├── ai_batch.py            # DeepSeek API 批量生成（入口）
+│   │   ├── ai_utils.py            # AI 生成共享工具函数
+│   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt 构建/校验）
+│   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
 │   │   ├── ai_guide.py            # 攻略生成循环
-│   │   └── ai_synergy.py          # 相性评分生成循环
+│   │   ├── ai_synergy.py          # 全量相性评分生成循环
+│   │   ├── ai_synergy_pair.py     # 指定两武将相性配对生成
+│   │   └── ai_synergy_single.py   # 选定武将 x 全体相性生成
 │   ├── business/
 │   │   ├── fetch_service.py       # 采集业务（QProcess 管理）
-│   │   └── guide_fetch_service.py # 攻略生成业务（QProcess）
+│   │   ├── guide_fetch_service.py # 攻略生成业务（QProcess）
+│   │   └── synergy_fetch_service.py # 相性获取业务（QProcess）
 │   └── ui/
+│       ├── style.py               # 全局样式表（天蓝色调）
 │       ├── main_window.py         # 主窗口
 │       ├── hero_browser.py        # 武将浏览
 │       ├── settings_dialog.py     # API 配置对话框
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
+│       ├── synergy_pair_dialog.py # 相性指定获取（选 2 武将）
+│       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
 │       ├── cost_confirm_dialog.py # 成本确认
 │       └── guide_progress_dialog.py # 进度条
 ├── data/
@@ -94,8 +111,8 @@ test_project/
 
 ```
 UI 层 (PySide6)     → main_window.py, hero_browser.py, 各对话框
-业务层 (Business)   → fetch_service.py, guide_fetch_service.py (QProcess)
-数据层 (Data)       → models.py (Pydantic) + hero_manager.py / synergy_manager.py / guide_manager.py (JSON)
+业务层 (Business)   → fetch_service.py, guide_fetch_service.py, synergy_fetch_service.py (QProcess)
+数据层 (Data)       → models.py (Pydantic) + DataFacade (hero_manager.py / synergy_manager.py / guide_manager.py)
 采集层 (Capture)    → 待开发 (screen.py, detector.py, ocr.py)
 ```
 
@@ -104,8 +121,8 @@ UI 层 (PySide6)     → main_window.py, hero_browser.py, 各对话框
 ### 数据流
 
 官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
-DeepSeek API → ai_batch.py → ai_guide.py / ai_synergy.py → data/guides.json + data/synergies.json
-JSON 文件 → Manager 加载 → UI 展示
+DeepSeek API → ai_batch.py → ai_generator.py → ai_guide.py / ai_synergy.py / ai_synergy_pair.py / ai_synergy_single.py → data/guides.json + data/synergies.json
+JSON 文件 → DataFacade → UI 展示
 用户操作 → MainWindow → QProcess → 爬虫脚本
 
 ### 配置加载优先级
@@ -144,6 +161,7 @@ config.env > 环境变量 > 默认值（定义在 src/config/env.py）
 ### scraper 约定
 - `crawler.py` 为公共模块，提供 `fetch()` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` 公开 API
 - CLI 入口使用 `python -m` 执行
+- `ai_batch.py` 为纯 CLI 编排入口，不包含业务逻辑，具体生成流程委托给 `ai_guide.py` / `ai_synergy.py` / `ai_synergy_pair.py` / `ai_synergy_single.py`
 - AI 生成支持断点续传（跳过已有项）
 - HTML 清洗：先拆段落后再逐段 clean_html
 - Json 原子写入：先写 `.tmp` 文件，再 `replace` 原文
@@ -173,8 +191,12 @@ python -m src.scraper.incremental --hero-id 52,114
 # AI 攻略生成
 python -m src.scraper.ai_batch --guide [--dry-run] [--heroes-file path]
 
-# AI 相性评分生成
+# AI 全量相性评分生成
 python -m src.scraper.ai_batch --synergy [--dry-run] [--score-threshold 0]
+
+# 启动桌面应用后通过菜单栏操作相性获取：
+#   数据 → 武将相性 → 选定武将（选 1 武将 vs 全体）
+#   数据 → 武将相性 → 指定获取（选 2 武将配对）
 ```
 
 ## 外部依赖
