@@ -163,17 +163,11 @@ QListWidget::item:hover:!selected {
 QCheckBox {
     spacing: 6px;
     color: #2c3e50;
+    font-size: 12px;
 }
 QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
-    border: 1px solid #b0c4de;
-    border-radius: 3px;
-    background-color: white;
-}
-QCheckBox::indicator:checked {
-    background-color: #4a90d9;
-    border-color: #4a90d9;
+    width: 15px;
+    height: 15px;
 }
 
 /* === 滚动条 === */

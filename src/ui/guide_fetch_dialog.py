@@ -75,11 +75,11 @@ class GuideFetchDialog(QDialog):
             cb = QCheckBox(f)
             cb.setChecked(True)
             self._faction_checkboxes.append(cb)
-            faction_grid.addWidget(cb, i // 4, i % 4)
+            faction_grid.addWidget(cb, i // 6, i % 6)
 
         toggle_btn = QPushButton("取消全选")
         toggle_btn.clicked.connect(lambda: self._toggle_all_factions(toggle_btn))
-        faction_grid.addWidget(toggle_btn, (len(factions) + 3) // 4, 0, 1, 2)
+        faction_grid.addWidget(toggle_btn, (len(factions) + 5) // 6, 0, 1, 2)
 
         layout.addWidget(faction_group)
 
@@ -158,9 +158,7 @@ class GuideFetchDialog(QDialog):
         """全选 / 取消全选 势力复选框"""
         check = btn.text() == "全部选中"
         for cb in self._faction_checkboxes:
-            cb.blockSignals(True)
             cb.setChecked(check)
-            cb.blockSignals(False)
         btn.setText("取消全选" if check else "全部选中")
 
     def _on_accept(self, list_widget: QListWidget, all_heroes: list) -> None:

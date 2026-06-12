@@ -74,12 +74,12 @@ class HeroFetchDialog(QDialog):
             cb = QCheckBox(f)
             cb.setChecked(True)
             self._faction_checkboxes.append(cb)
-            faction_grid.addWidget(cb, i // 4, i % 4)
+            faction_grid.addWidget(cb, i // 6, i % 6)
 
         # 全选/取消按钮
         toggle_btn = QPushButton("取消全选")
         toggle_btn.clicked.connect(lambda: self._toggle_all_factions(toggle_btn))
-        faction_grid.addWidget(toggle_btn, (len(factions) + 3) // 4, 0, 1, 2)
+        faction_grid.addWidget(toggle_btn, (len(factions) + 5) // 6, 0, 1, 2)
 
         layout.addWidget(faction_group)
 
@@ -87,9 +87,17 @@ class HeroFetchDialog(QDialog):
         count_label = QLabel(f"已筛选: {len(all_heroes)} / {len(all_heroes)} 个武将")
         layout.addWidget(count_label)
 
-        # 武将列表
+        # 全选/取消武将按钮
+        select_btn_layout = QHBoxLayout()
+        select_all_btn = QPushButton("全选")
+        deselect_all_btn = QPushButton("取消全选")
+        select_btn_layout.addWidget(select_all_btn)
+        select_btn_layout.addWidget(deselect_all_btn)
+        select_btn_layout.addStretch()
+        layout.addLayout(select_btn_layout)
+
+        # 武将列表（checkbox 模式）
         list_widget = QListWidget()
-        list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         layout.addWidget(list_widget, 1)
 
         # 过滤逻辑
@@ -110,9 +118,23 @@ class HeroFetchDialog(QDialog):
                 text = f"{hero.name}  [{hero.faction}]"
                 item = QListWidgetItem(text)
                 item.setData(Qt.ItemDataRole.UserRole, hero.id)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Unchecked)
                 list_widget.addItem(item)
             list_widget.blockSignals(False)
             count_label.setText(f"已筛选: {len(filtered)} / {len(all_heroes)} 个武将")
+
+        # 全选/取消武将
+        def _select_all_items() -> None:
+            for i in range(list_widget.count()):
+                list_widget.item(i).setCheckState(Qt.CheckState.Checked)
+
+        def _deselect_all_items() -> None:
+            for i in range(list_widget.count()):
+                list_widget.item(i).setCheckState(Qt.CheckState.Unchecked)
+
+        select_all_btn.clicked.connect(_select_all_items)
+        deselect_all_btn.clicked.connect(_deselect_all_items)
 
         # 连接信号
         search_input.textChanged.connect(_apply_filter)
@@ -133,25 +155,21 @@ class HeroFetchDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         ok_btn.clicked.connect(lambda: self._on_accept(list_widget))
 
-    # ---------------------------------------------------------------
-    # 内部方法
-    # ---------------------------------------------------------------
-
     def _toggle_all_factions(self, btn: QPushButton) -> None:
         """全选 / 取消全选 势力复选框"""
         check = btn.text() == "全部选中"
         for cb in self._faction_checkboxes:
-            cb.blockSignals(True)
             cb.setChecked(check)
-            cb.blockSignals(False)
         btn.setText("取消全选" if check else "全部选中")
 
     def _on_accept(self, list_widget: QListWidget) -> None:
         """确定按钮处理"""
         selected_ids = []
-        for item in list_widget.selectedItems():
-            hid = item.data(Qt.ItemDataRole.UserRole)
-            selected_ids.append(hid)
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                hid = item.data(Qt.ItemDataRole.UserRole)
+                selected_ids.append(hid)
 
         if not selected_ids:
             return
