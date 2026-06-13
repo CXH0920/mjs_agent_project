@@ -163,6 +163,8 @@ config.env > 环境变量 > 默认值（定义在 src/config/env.py）
 - CLI 入口使用 `python -m` 执行
 - `ai_batch.py` 为纯 CLI 编排入口，不包含业务逻辑，具体生成流程委托给 `ai_guide.py` / `ai_synergy.py` / `ai_synergy_pair.py` / `ai_synergy_single.py`
 - AI 生成支持断点续传（跳过已有项）
+- 相性数据在内存中以 `dict[(a_id, b_id), dict]` 管理，确保 (A,B) 和 (B,A) 为同一 key
+- 武将相性更新采用先删旧数据再追加新数据的策略
 - HTML 清洗：先拆段落后再逐段 clean_html
 - Json 原子写入：先写 `.tmp` 文件，再 `replace` 原文
 

@@ -2,6 +2,7 @@
 名将杀 Agent - 相性单武将配对生成流程
 
 从 ai_batch 中抽取的选定武将（单武将 x 全体）相性评分生成逻辑。
+先删除该武将所有旧相性数据，再将新生成的全部结果写入。
 """
 
 from __future__ import annotations
@@ -19,17 +20,19 @@ def run_synergy_single_generation(
     heroes: list,
     generator,
     synergy_path,
-    existing_synergy_list: list,
+    existing_synergy_dict: dict,
     existing_synergy_keys: set,
 ):
     """执行相性单武将配对生成（选定武将 vs 所有其他武将）
+
+    先删除该武将所有旧相性数据，再逐个生成新数据写入。
 
     Args:
         single_file: JSON 文件路径，包含 1 个武将
         heroes: 全武将列表（用于配对）
         generator: AIBatchGenerator 实例
         synergy_path: 相性输出路径
-        existing_synergy_list: 已有相性列表
+        existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合
 
     Returns:
@@ -47,13 +50,21 @@ def run_synergy_single_generation(
         return 0, 0
 
     target = single_heroes[0]
-    pairs = [(target, h) for h in heroes if h["id"] != target["id"]]
+    target_id = target["id"]
+
+    # 先删除该武将所有已有的相性数据
+    keys_to_remove = [k for k in existing_synergy_dict if target_id in k]
+    for k in keys_to_remove:
+        del existing_synergy_dict[k]
+        existing_synergy_keys.discard(k)
+    if keys_to_remove:
+        print(f"  已移除 {len(keys_to_remove)} 条旧相性数据", flush=True)
+
+    pairs = [(target, h) for h in heroes if h["id"] != target_id]
     print(f"  {target['name']} <-> {len(pairs)} 个武将", flush=True)
 
     for i, (ha, hb) in enumerate(pairs, 1):
         key = tuple(sorted([ha["id"], hb["id"]]))
-        if key in existing_synergy_keys:
-            continue
 
         print(f"  [{i}/{len(pairs)}] {hb['name']}...", flush=True)
         result, usage = generator.generate_synergy(ha, hb)
@@ -61,11 +72,11 @@ def run_synergy_single_generation(
             total_prompt_tokens += usage.get("prompt_tokens", 0)
             total_completion_tokens += usage.get("completion_tokens", 0)
         if result:
-            existing_synergy_list.append(result)
+            existing_synergy_dict[key] = result
             existing_synergy_keys.add(key)
             print(f"    OK - 评分: {result.get('score', '?')}", flush=True)
         else:
             print(f"    FAIL", flush=True)
 
-    _save_json(synergy_path, existing_synergy_list)
+    _save_json(synergy_path, list(existing_synergy_dict.values()))
     return total_prompt_tokens, total_completion_tokens

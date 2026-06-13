@@ -19,17 +19,19 @@ def run_synergy_pair_generation(
     heroes: list,
     generator,
     synergy_path,
-    existing_synergy_list: list,
+    existing_synergy_dict: dict,
     existing_synergy_keys: set,
 ):
     """执行相性配对生成（指定 2 个武将）
+
+    先删除该对的旧相性数据（如有），再将新生成的结果写入。
 
     Args:
         pair_file: JSON 文件路径，包含 2 个武将
         heroes: 全武将列表
         generator: AIBatchGenerator 实例
         synergy_path: 相性输出路径
-        existing_synergy_list: 已有相性列表
+        existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合
 
     Returns:
@@ -47,17 +49,24 @@ def run_synergy_pair_generation(
         return 0, 0
 
     ha, hb = pair_heroes[0], pair_heroes[1]
+
+    # 先删除这对武将已有的相性数据（如有更新需要）
+    pair_key = tuple(sorted([ha["id"], hb["id"]]))
+    if pair_key in existing_synergy_dict:
+        del existing_synergy_dict[pair_key]
+        existing_synergy_keys.discard(pair_key)
+        print(f"  已移除旧相性数据", flush=True)
+
     print(f"  {ha['name']} <-> {hb['name']}...", flush=True)
     result, usage = generator.generate_synergy(ha, hb)
     if usage:
         total_prompt_tokens += usage.get("prompt_tokens", 0)
         total_completion_tokens += usage.get("completion_tokens", 0)
     if result:
-        key = tuple(sorted([result["hero_a_id"], result["hero_b_id"]]))
-        if key not in existing_synergy_keys:
-            existing_synergy_list.append(result)
-            existing_synergy_keys.add(key)
-        _save_json(synergy_path, existing_synergy_list)
+        existing_synergy_dict[pair_key] = result
+        existing_synergy_keys.add(pair_key)
+        # 写回文件
+        _save_json(synergy_path, list(existing_synergy_dict.values()))
         print(f"    OK - 评分: {result.get('score', '?')}", flush=True)
     else:
         print(f"    FAIL", flush=True)

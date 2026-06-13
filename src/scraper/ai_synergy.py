@@ -17,7 +17,7 @@ def run_synergy_generation(
     heroes,
     generator,
     synergy_path,
-    existing_synergy_list,
+    existing_synergy_dict,
     existing_synergy_keys,
     score_threshold,
     api_config,
@@ -28,7 +28,7 @@ def run_synergy_generation(
         heroes: 武将列表
         generator: AIBatchGenerator 实例
         synergy_path: 相性输出路径
-        existing_synergy_list: 已有相性列表
+        existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合 {(a_id, b_id)}
         score_threshold: 评分过滤下限
         api_config: API 配置（用于显示模型名）
@@ -55,7 +55,7 @@ def run_synergy_generation(
     print(f"  生成相性评分 -- {model_name} ({total_pairs:,} 对)")
     print(f"{sep_line}")
 
-    new_synergies = []
+    new_count = 0
     processed = 0
     skipped = 0
     failed = 0
@@ -78,27 +78,25 @@ def run_synergy_generation(
             if result:
                 score = result.get("score", 0)
                 if score >= score_threshold:
-                    new_synergies.append(result)
+                    existing_synergy_dict[key] = result
                     existing_synergy_keys.add(key)
+                    new_count += 1
             else:
                 failed += 1
 
             # 批量保存
-            if new_synergies and len(new_synergies) % SYNERGY_BATCH_SAVE_INTERVAL == 0:
-                all_synergies = existing_synergy_list + new_synergies
-                _save_json(synergy_path, all_synergies)
+            if new_count > 0 and new_count % SYNERGY_BATCH_SAVE_INTERVAL == 0:
+                _save_json(synergy_path, list(existing_synergy_dict.values()))
 
     # 最终保存
-    if new_synergies:
-        all_synergies = existing_synergy_list + new_synergies
-        _save_json(synergy_path, all_synergies)
-        logger.info("相性已保存: %s (%d 条)", synergy_path, len(all_synergies))
+    if new_count > 0:
+        _save_json(synergy_path, list(existing_synergy_dict.values()))
+        logger.info("相性已保存: %s (%d 条)", synergy_path, len(existing_synergy_dict))
 
-    synergy_count = len(existing_synergy_list) + len(new_synergies)
-    print(f"\n  相性完成: 新增 {len(new_synergies)} 对，skip {skipped} 对，共 {synergy_count} 对")
+    print(f"\n  相性完成: 新增 {new_count} 对，skip {skipped} 对，共 {len(existing_synergy_dict)} 对")
     if failed > 0:
         print(f"  失败: {failed} 对")
-    if not new_synergies and synergy_count == 0:
+    if new_count == 0 and len(existing_synergy_dict) == 0:
         print("  未生成任何相性评分，请检查 API Key 和网络连接")
 
     return total_prompt_tokens, total_completion_tokens

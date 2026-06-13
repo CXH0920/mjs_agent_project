@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         # 工具菜单
-        tools_menu = bar.addMenu("工具")
+        tools_menu = bar.addMenu("配置")
         config_action = QAction("API 配置", self)
         config_action.triggered.connect(self._open_settings)
         tools_menu.addAction(config_action)

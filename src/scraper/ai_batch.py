@@ -57,21 +57,29 @@ DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 
 
-def _load_existing_synergies(synergy_path: Path) -> tuple[list, set]:
-    """加载已有相性数据用于断点续传"""
-    existing_list = []
+def _load_existing_synergies(synergy_path: Path) -> tuple[dict, set]:
+    """加载已有相性数据用于断点续传
+
+    Returns:
+        (synergy_dict, existing_keys)
+        synergy_dict: {(a_id, b_id): synergy_dict} 以排序 tuple 为 key
+        existing_keys: set[(a_id, b_id)] 用于快速查找
+    """
+    existing_dict = {}
     existing_keys = set()
     if synergy_path.exists():
         try:
             with open(synergy_path, "r", encoding="utf-8") as f:
-                existing_list = json.load(f)
-            for s in existing_list:
-                existing_keys.add(tuple(sorted([s["hero_a_id"], s["hero_b_id"]])))
-            logger.info("已有 %d 对相性", len(existing_list))
+                data = json.load(f)
+            for s in data:
+                key = tuple(sorted([s["hero_a_id"], s["hero_b_id"]]))
+                existing_dict[key] = s
+                existing_keys.add(key)
+            logger.info("已有 %d 对相性", len(existing_dict))
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("相性文件损坏或为空 (%s)，将重新生成", synergy_path.name)
             synergy_path.unlink(missing_ok=True)
-    return existing_list, existing_keys
+    return existing_dict, existing_keys
 
 
 def _load_existing_guides(guide_path: Path) -> dict:
@@ -201,9 +209,9 @@ def main():
     guide_path = Path(args.guides_file)
     synergy_path = Path(args.synergies_file)
     existing_guides = _load_existing_guides(guide_path) if args.guide else {}
-    existing_synergy_list, existing_synergy_keys = (
+    existing_synergy_dict, existing_synergy_keys = (
         _load_existing_synergies(synergy_path) if (args.synergy or args.synergy_pair or args.synergy_single)
-        else ([], set())
+        else ({}, set())
     )
 
     total_prompt_tokens = 0
@@ -222,7 +230,7 @@ def main():
         from src.scraper.ai_synergy import run_synergy_generation
         pt, ct = run_synergy_generation(
             heroes=heroes, generator=generator, synergy_path=synergy_path,
-            existing_synergy_list=existing_synergy_list,
+            existing_synergy_dict=existing_synergy_dict,
             existing_synergy_keys=existing_synergy_keys,
             score_threshold=args.score_threshold, api_config=api_config,
         )
@@ -234,7 +242,7 @@ def main():
         pt, ct = run_synergy_pair_generation(
             pair_file=args.synergy_pair, heroes=heroes, generator=generator,
             synergy_path=synergy_path,
-            existing_synergy_list=existing_synergy_list,
+            existing_synergy_dict=existing_synergy_dict,
             existing_synergy_keys=existing_synergy_keys,
         )
         total_prompt_tokens += pt
@@ -245,7 +253,7 @@ def main():
         pt, ct = run_synergy_single_generation(
             single_file=args.synergy_single, heroes=heroes, generator=generator,
             synergy_path=synergy_path,
-            existing_synergy_list=existing_synergy_list,
+            existing_synergy_dict=existing_synergy_dict,
             existing_synergy_keys=existing_synergy_keys,
         )
         total_prompt_tokens += pt
