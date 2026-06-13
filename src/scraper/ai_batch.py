@@ -216,6 +216,7 @@ def main():
 
     total_prompt_tokens = 0
     total_completion_tokens = 0
+    had_failure = False
 
     if args.guide:
         from src.scraper.ai_guide import run_guide_generation
@@ -247,6 +248,8 @@ def main():
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct
+        if ct == 0 and pt == 0:
+            had_failure = True
 
     if args.synergy_single:
         from src.scraper.ai_synergy_single import run_synergy_single_generation
@@ -258,9 +261,19 @@ def main():
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct
+        if ct == 0 and pt == 0:
+            had_failure = True
 
     _print_token_summary(total_prompt_tokens, total_completion_tokens)
     generator.close()
+
+    if total_prompt_tokens == 0 and total_completion_tokens == 0:
+        had_failure = True
+
+    if had_failure:
+        print(f"\n  [警告] 部分或全部操作失败，请检查 API Key 和网络连接\n")
+        sys.exit(1)
+
     print(f"\n  全部完成！\n")
 
 

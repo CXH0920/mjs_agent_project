@@ -49,13 +49,7 @@ def run_synergy_pair_generation(
         return 0, 0
 
     ha, hb = pair_heroes[0], pair_heroes[1]
-
-    # 先删除这对武将已有的相性数据（如有更新需要）
     pair_key = tuple(sorted([ha["id"], hb["id"]]))
-    if pair_key in existing_synergy_dict:
-        del existing_synergy_dict[pair_key]
-        existing_synergy_keys.discard(pair_key)
-        print(f"  已移除旧相性数据", flush=True)
 
     print(f"  {ha['name']} <-> {hb['name']}...", flush=True)
     result, usage = generator.generate_synergy(ha, hb)
@@ -63,9 +57,13 @@ def run_synergy_pair_generation(
         total_prompt_tokens += usage.get("prompt_tokens", 0)
         total_completion_tokens += usage.get("completion_tokens", 0)
     if result:
+        # API 成功后，再删除旧数据，避免失败时数据丢失
+        if pair_key in existing_synergy_dict:
+            del existing_synergy_dict[pair_key]
+            existing_synergy_keys.discard(pair_key)
+            print(f"  已移除旧相性数据", flush=True)
         existing_synergy_dict[pair_key] = result
         existing_synergy_keys.add(pair_key)
-        # 写回文件
         _save_json(synergy_path, list(existing_synergy_dict.values()))
         print(f"    OK - 评分: {result.get('score', '?')}", flush=True)
     else:
