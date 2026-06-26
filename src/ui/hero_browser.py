@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+import mistune
+
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QComboBox,
@@ -322,26 +324,10 @@ class HeroDetailPanel(QWidget):
 
     @staticmethod
     def _markdown_to_html(text: str) -> str:
-        """将简单 Markdown 转换为 HTML"""
-        import re
-        html = text
-        html = html.replace("&", "&amp;")
-        html = html.replace("<", "&lt;")
-        html = html.replace(">", "&gt;")
-        html = re.sub(r"`([^`]+)`", r"<code>\1</code>", html)
-        html = re.sub(r"^### (.+)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
-        html = re.sub(r"^## (.+)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
-        html = re.sub(r"^# (.+)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
-        html = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html)
-        html = re.sub(r"^\d+\.\s+(.+)$", r"<li>\1</li>", html, flags=re.MULTILINE)
-        html = re.sub(r"^- (.+)$", r"<li>\1</li>", html, flags=re.MULTILINE)
-        html = re.sub(r"^\s{2,}- (.+)$", r"<li style='margin-left:20px;'>\1</li>", html, flags=re.MULTILINE)
-        html = re.sub(r"(<li>.*?</li>(?:\s*\n<li>.*?</li>)*)", r"<ul>\1</ul>", html, flags=re.DOTALL)
-        html = html.replace("\\n", "<br>")
-        for tag in ("h1", "h2", "h3", "ul", "/ul"):
-            html = re.sub(rf"<br>\s*(<{tag}>)", r"\1", html)
-            html = re.sub(rf"(</{tag}>)\s*<br>", r"\1", html)
-        return html
+        """将 Markdown 转换为 HTML"""
+        if not text:
+            return ""
+        return mistune.html(text)
 
     def _update_guide_tab(self, guide: Optional[HeroGuide]) -> None:
         """更新攻略指南"""

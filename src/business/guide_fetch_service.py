@@ -16,29 +16,9 @@ import tempfile
 
 from PySide6.QtCore import QObject, Signal, QProcess
 
-logger = logging.getLogger(__name__)
+from src.scraper.ai_utils import estimate_cost
 
-try:
-    from src.scraper.ai_batch import estimate_cost
-except ImportError:
-    def estimate_cost(hero_count, mode, model=None):
-        PRICE_INPUT_PER_M = 3.0
-        PRICE_OUTPUT_PER_M = 6.0
-        if hero_count == 0:
-            return {"mode": mode, "items": 0, "estimated_tokens": 0,
-                    "estimated_input_tokens": 0, "estimated_output_tokens": 0,
-                    "estimated_cost_cny": 0.0}
-        if mode == "guide":
-            items = hero_count
-            input_tokens = items * 2000
-            output_tokens = items * 500
-        else:
-            raise ValueError(f"未知 mode: {mode}")
-        total_tokens = input_tokens + output_tokens
-        cost_cny = round(input_tokens * 3.0 / 1_000_000 + output_tokens * 6.0 / 1_000_000, 4)
-        return {"mode": mode, "items": items, "estimated_tokens": total_tokens,
-                "estimated_input_tokens": input_tokens, "estimated_output_tokens": output_tokens,
-                "estimated_cost_cny": cost_cny}
+logger = logging.getLogger(__name__)
 
 
 class GuideFetchService(QObject):

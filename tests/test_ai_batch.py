@@ -262,19 +262,24 @@ class TestAIBatchGenerator:
         assert "体力/手牌" in prompt
 
     def test_combat_synergy_compatibility(self) -> None:
-        """兼容旧 prompt 中的 combat_synergy 字段"""
+        """兼容旧 prompt 中的 combat_synergy 字段 — 验证 generate_synergy 中的转换逻辑"""
         gen = AIBatchGenerator(api_key="test")
         text = json.dumps({
-            "hero_a_id": 1, "hero_b_id": 2, "score": 5,
-            "synergy_rating": "A", "combat_synergy": 7,
-            "combo_stability": 6, "adaptability": 5, "description": "test"
+            "score": 5, "synergy_rating": "A",
+            "combat_synergy": 7, "combo_stability": 6,
+            "adaptability": 5, "description": "test"
         })
         data = gen._extract_json(text)
         # 模拟 generate_synergy 中的兼容逻辑
         if "combat_synergy" in data and "combo_ceiling" not in data:
             data["combo_ceiling"] = data.pop("combat_synergy")
-        assert "combat_synergy" not in data
-        assert data["combo_ceiling"] == 7
+        data["hero_a_id"] = 1
+        data["hero_b_id"] = 2
+        # 通过 _validate_synergy 走 Pydantic 校验完整路径（与生产代码一致）
+        result = gen._validate_synergy(data)
+        assert result is not None
+        assert "combat_synergy" not in result
+        assert result["combo_ceiling"] == 7
 
 
 class TestLoadHeroes:
