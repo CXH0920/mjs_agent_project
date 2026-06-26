@@ -16,6 +16,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +47,18 @@ SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能�
 # ============================================================
 
 
-def fetch(url: str) -> str:
-    """带重试机制的 HTTP GET 请求"""
+def fetch(url: str, binary: bool = False) -> str | bytes:
+    """带重试机制的 HTTP GET 请求
+
+    binary=True 时返回原始 bytes（用于下载图片等二进制资源），
+    否则解码为 utf-8 字符串返回。
+    """
     req = urllib.request.Request(url, headers=HEADERS)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                return resp.read().decode("utf-8")
+                data = resp.read()
+                return data if binary else data.decode("utf-8")
         except Exception as e:
             logger.warning("请求失败 [%d/%d]: %s — %s", attempt, MAX_RETRIES, url, e)
             if attempt < MAX_RETRIES:
@@ -244,6 +250,7 @@ def transform(raw: dict) -> dict | None:
         "max_hand": max_hand,
         "gender": gender,
         "skills": skills,
+        "icon_url": str(raw.get("icon_url", "")),
         "difficulty": 2,
         "mode_viability": {},
         "last_updated": date.today().isoformat(),
@@ -285,3 +292,57 @@ def fetch_all_raw() -> list[dict]:
     raw_list = js_to_json(extract_js_array(js_text))
     print(f"  -> 官网原始数据: {len(raw_list)} 条", flush=True)
     return raw_list
+
+
+# ============================================================
+# 头像下载
+# ============================================================
+
+IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
+
+
+def download_hero_images(
+    raw_list: list[dict],
+    image_dir: str | Path | None = None,
+    skip_existing: bool = True,
+) -> int:
+    """从原始 JS 数据中提取 icon_url 并将头像下载到本地
+
+    Args:
+        raw_list: 原始 JS chunk 数据（含 icon_url 字段）。
+        image_dir: 输出目录，默认 project_root/images/。
+        skip_existing: True 时跳过已存在的文件。
+
+    Returns:
+        成功下载的头像数量。
+    """
+    out_dir = Path(image_dir) if image_dir else IMAGES_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for raw in raw_list:
+        icon_url = raw.get("icon_url", "")
+        if not icon_url:
+            continue
+
+        name = clean_html(raw.get("name", ""))
+        if not name:
+            continue
+
+        # 解析扩展名
+        parsed = urlparse(icon_url)
+        ext = Path(parsed.path).suffix or ".png"
+
+        dest = out_dir / f"{name}{ext}"
+
+        if skip_existing and dest.exists():
+            continue
+
+        try:
+            data = fetch(icon_url, binary=True)
+            dest.write_bytes(data)
+            count += 1
+        except Exception as e:
+            logger.warning("头像下载失败 %s: %s", name, e)
+
+    return count

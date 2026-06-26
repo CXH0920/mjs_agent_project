@@ -91,7 +91,8 @@ def incremental_collect(
 
 
 def run(raw_list: list[dict], output_path: Path, dry_run: bool,
-        append: bool = False, replace_ids: set[int] | None = None) -> None:
+        append: bool = False, replace_ids: set[int] | None = None,
+        skip_images: bool = False) -> None:
     """对原始数据执行清洗→校验→输出
 
     append=True : 追加模式，只添加本地不存在的武将（增量采集用）
@@ -145,6 +146,11 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
         json.dump(merged, f, ensure_ascii=False, indent=2)
     print(f"  -> \u5df2\u4fdd\u5b58: {output_path} ({len(merged)} \u6761)", flush=True)
 
+    if not dry_run and not skip_images and raw_list:
+        from src.scraper.crawler import download_hero_images
+        n = download_hero_images(raw_list)
+        print(f"  \u5934\u50cf\u5df2\u4e0b\u8f7d: {n} \u5f20", flush=True)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="\u540d\u5c06\u6740\u589e\u91cf\u722c\u866b")
@@ -158,6 +164,8 @@ def main() -> None:
                         help="\u8f93\u51fa\u6587\u4ef6\u8def\u5f84\uff08\u9ed8\u8ba4 data/heroes.json\uff09")
     parser.add_argument("--dry-run", action="store_true",
                         help="\u9884\u89c8\u6a21\u5f0f\uff0c\u4e0d\u5199\u5165\u6587\u4ef6")
+    parser.add_argument("--skip-images", action="store_true",
+                        help="\u8df3\u8fc7\u5934\u50cf\u4e0b\u8f7d")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="\u8be6\u7ec6\u65e5\u5fd7")
     args = parser.parse_args()
@@ -226,7 +234,8 @@ def main() -> None:
         replace_ids = {r["id"] for r in target_raw if r.get("id") is not None}
 
     run(target_raw, output_path, dry_run=args.dry_run,
-        append=args.incremental, replace_ids=replace_ids)
+        append=args.incremental, replace_ids=replace_ids,
+        skip_images=args.skip_images)
 
     print(f"\n{'=' * 60}", flush=True)
     print(f"  \u5b8c\u6210!", flush=True)

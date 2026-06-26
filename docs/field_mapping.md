@@ -21,7 +21,7 @@
 | 5 | `p_blood_max` | str | `"6"` | `Hero.max_hp` | int | ⚠️ 类型转换 | 字符串→整数 |
 | 6 | `p_card_max` | str | `"3"` | `Hero.max_hand` | int | ⚠️ 类型转换 | 字符串→整数 |
 | 7 | `gender` | int | `1` 或 `2` | `Hero.gender` | Gender(enum) | ⚠️ 枚举映射 | `1`→`男`, `2`→`女` |
-| 8 | `icon_url` | str | URL | — | — | ❌ 丢弃 | 仅前端使用 |
+| 8 | `icon_url` | str | URL | `Hero.icon_url` | str | ✅ 纯净 | 武将头像 URL，同时下载到 images/ |
 | 9 | `img_url` | str | URL | — | — | ❌ 丢弃 | 仅前端使用 |
 | 10 | `img_url_m` | str | URL | — | — | ❌ 丢弃 | 仅前端使用 |
 | 11 | `display_priority` | int | `98` | — | — | ❌ 丢弃 | 排序优先级 |
@@ -58,6 +58,7 @@
 | `Hero.difficulty` | 官网无此字段 | `Difficulty.MEDIUM(2)` | 难度评级，官网不含，默认中等 |
 | `Hero.mode_viability` | 官网无此字段 | `{}` | 各模式强度梯队，需 AI 生成 |
 | `Hero.last_updated` | 当前日期 | `date.today()` | 自动填入采集日期 |
+| `Hero.icon_url` | 官网 `icon_url` 字段 | `""` | 武将头像 URL，用于下载头像图片到 images/ |
 
 ---
 

@@ -42,6 +42,7 @@ from src.ui.guide_progress_dialog import GuideProgressDialog
 from src.ui.synergy_pair_dialog import SynergyPairDialog
 from src.ui.synergy_single_dialog import SynergySingleDialog
 from src.business.synergy_fetch_service import SynergyFetchService
+from src.ui.recommendation_panel import RecommendationPanel
 
 
 class MainWindow(QMainWindow):
@@ -281,14 +282,9 @@ class MainWindow(QMainWindow):
         self._hero_browser = HeroBrowser(self._data.heroes, self._data.guides)
         self._tabs.addTab(self._hero_browser, "武将浏览")
 
-        # Tab 2: 选将推荐（占位）
-        placeholder = QWidget()
-        placeholder_layout = QVBoxLayout(placeholder)
-        label = QLabel("选将推荐功能将在后续版本中实现")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("color: gray; font-size: 16px;")
-        placeholder_layout.addWidget(label)
-        self._tabs.addTab(placeholder, "选将推荐")
+        # Tab 2: 选将推荐
+        self._recommendation = RecommendationPanel(self._data.heroes, self._data.synergies)
+        self._tabs.addTab(self._recommendation, "选将推荐")
 
         layout.addWidget(self._tabs, 1)
 

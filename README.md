@@ -1,7 +1,7 @@
 # 名将杀 Agent
 
 名将杀桌面辅助工具，面向[名将杀手游](https://mjs.ztgame.com/)的轻度玩家，运行于 PC 端。
-提供**武将数据库查询**、**AI 批量攻略生成**和**武将相性分析**功能。
+提供**选将推荐**、**武将数据库查询**、**AI 批量攻略生成**和**武将相性分析**功能。
 
 ---
 
@@ -14,15 +14,15 @@ test_project/
 │   ├── config/
 │   │   └── env.py                 # .env 解析/加载/保存
 │   ├── data/
-│   │   ├── models.py              # Pydantic 数据模型（Hero/SynergyScore/HeroGuide/…）
+│   │   ├── models.py              # Pydantic 数据模型（Hero/SynergyScore/HeroGuide/...）
 │   │   ├── manager.py             # DataFacade 门面 + 增量更新函数
 │   │   ├── hero_manager.py        # 武将 CRUD + JSON 持久化
 │   │   ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化
 │   │   └── guide_manager.py       # 攻略 CRUD + JSON 持久化
 │   ├── scraper/
-│   │   ├── crawler.py             # 爬虫核心（公开 API）
-│   │   ├── official.py            # 官网全量爬虫
-│   │   ├── incremental.py         # 增量/指定爬虫
+│   │   ├── crawler.py             # 爬虫核心（公开 API，含头像下载）
+│   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
+│   │   ├── incremental.py         # 增量/指定爬虫（支持 --skip-images）
 │   │   ├── ai_utils.py            # AI 生成共享工具函数
 │   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt 构建/校验）
 │   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
@@ -41,6 +41,7 @@ test_project/
 │       ├── main_window.py         # 主窗口（菜单栏/Tab/状态栏）
 │       ├── hero_browser.py        # 武将浏览（列表+详情+攻略）
 │       ├── hero_select_dialog.py  # 武将选择对话框基类
+│       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性）
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
 │       ├── synergy_pair_dialog.py # 相性指定获取（选 2 武将）
@@ -49,9 +50,13 @@ test_project/
 │       ├── cost_confirm_dialog.py # AI 成本确认对话框
 │       └── guide_progress_dialog.py # 攻略生成进度条
 ├── data/
-│   ├── heroes.json                # 149 个武将
+│   ├── heroes.json                # 155 个武将
 │   ├── synergies.json             # 相性评分
-│   └── guides.json                # 武将攻略
+│   ├── guides.json                # 武将攻略
+│   ├── cards.json                 # 基础卡牌数据
+│   └── 2v2胜率排行.csv            # 2v2 胜率数据
+├── images/
+│   └── <武将名>.png               # 155 个武将头像（从官网自动下载）
 ├── tests/
 │   ├── test_models.py             # 25 tests — 数据模型校验
 │   ├── test_ai_batch.py           # 33 tests — AI 批量生成
@@ -100,10 +105,13 @@ python -m src.main
 ### 4. 数据采集
 
 ```bash
-# 官网全量采集
+# 官网全量采集（自动下载头像到 images/）
 python -m src.scraper.official
 
-# 增量采集（仅爬取本地没有的武将）
+# 跳过头像下载
+python -m src.scraper.official --skip-images
+
+# 增量采集（仅爬取本地没有的武将，并下载新武将头像）
 python -m src.scraper.incremental --incremental
 
 # 指定武将
@@ -132,20 +140,21 @@ python -m src.scraper.ai_batch --synergy [--score-threshold 0]
 ### 四层架构
 
 ```
-UI 层 (PySide6)      主窗口 / 武将浏览器 / 各对话框
+UI 层 (PySide6)      主窗口 / 武将浏览器 / 选将推荐 / 各对话框
 业务层 (Business)    采集/攻略/相性 QProcess 管理
 数据层 (Data)        Pydantic 模型 + DataFacade + JSON 持久化
-采集层 (Scraper)     官网爬虫 + AI 批量生成（屏幕采集待开发）
+采集层 (Scraper)     官网爬虫 + AI 批量生成 + 头像下载（屏幕采集待开发）
 ```
 
 **跨层模块：**
 - **配置层** — `src/config/env.py` 统一管理 API 配置和运行时参数
-- **爬虫层** — `src/scraper/` 实现官网数据采集和 AI 批量生成
+- **爬虫层** — `src/scraper/` 实现官网数据采集、AI 批量生成和头像下载
 
 ### 数据流
 
 ```
 官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
+                                                                        ↘ images/<武将名>.png
 DeepSeek API → ai_batch.py → ai_generator.py → ai_guide/ai_synergy/… → data/{guides,synergies}.json
 data/*.json → DataFacade (三个 Manager) → UI 展示
 用户操作 → MainWindow → QProcess → 爬虫脚本
@@ -165,7 +174,7 @@ config.env > 环境变量 > 默认值
 
 | 模型 | 说明 | 关键字段 |
 |------|------|----------|
-| Hero | 武将基础数据 | id, name, title, faction, position, max_hp, max_hand, gender, skills, difficulty, mode_viability |
+| Hero | 武将基础数据 | id, name, title, faction, position, max_hp, max_hand, gender, skills, difficulty, mode_viability, icon_url |
 | Skill | 武将技能 | name, description, settlement |
 | SynergyScore | 武将间相性评分 | hero_a_id, hero_b_id, score(-10~10), synergy_rating(S/A/B/C/D), combo_ceiling/stability/adaptability |
 | HeroGuide | 武将攻略 | hero_id, key_points, counters, synergizes_with, description, tips_for_beginners |
@@ -197,23 +206,30 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 
 ### 爬虫核心 (`src/scraper/crawler.py`)
 
-提供 `fetch()` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` 等公开 API。核心逻辑：
+提供 `fetch(binary=True)` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` 等公开 API。核心逻辑：
+
 1. 请求官网页面，定位 JS chunk URL
 2. 下载 JS chunk，提取 `const e=[...]` 数组
 3. JS 语法 → JSON 解析
-4. 字段映射（性别数字→枚举、HTML→纯文本拆分技能描述/结算）
+4. 字段映射（性别数字→枚举、HTML→纯文本拆分技能描述/结算、icon_url 提取）
 5. Pydantic 校验
+
+此外，`download_hero_images()` 从原始 JS 数据中提取每个武将的 `icon_url`，下载到 `images/{武将名}.png`。
 
 ### 官网全量爬虫 (`src/scraper/official.py`)
 
-5 步清洗流程：定位数据源 → 下载 JS → 解析 → 清洗映射 → Pydantic 校验 + JSON 输出。
+5 步清洗流程 + 头像下载：定位数据源 → 下载 JS → 解析 → 清洗映射 → Pydantic 校验 + JSON 输出 + 头像下载。
+
+新增 `--skip-images` 跳过头像下载。
 
 ### 增量爬虫 (`src/scraper/incremental.py`)
 
-三种模式：
+三种模式 + 头像下载：
 - `--incremental` — 仅追加本地没有的新武将
 - `--hero` — 按名称采集（支持模糊匹配）
 - `--hero-id` — 按 ID 采集
+
+新增 `--skip-images` 跳过头像下载。
 
 ---
 
@@ -248,7 +264,7 @@ src/scraper/
 | 文件 > 退出 | Ctrl+Q | 关闭应用 |
 | 配置 > API 配置 | | 编辑 config.env |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
-| 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将 |
+| 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
 | 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略（成本确认+进度条） |
 | 数据 > 武将相性 > 选定武将 | | 选 1 武将，计算其与全体其他武将的相性 |
 | 数据 > 武将相性 > 指定获取 | | 选 2 武将，计算这对的相性评分 |
@@ -256,12 +272,20 @@ src/scraper/
 
 所有耗时操作均通过 **QProcess** 异步执行，不阻塞 UI。
 
+### 选将推荐
+
+- **4×2 网格布局**，每格一个武将推荐卡片
+- 左侧展示**武将头像**（从 `images/` 读取），名称半透明浮在底部，左上角势力色块
+- 右侧展示**推荐指数**（星级+置信度百分比）、**高相性组合**、**胜率**（占位）
+- 对外提供 `update_recommendations(data: list[dict])` 接口，接收 `{index, name, confidence}` 格式数据
+- 默认加载前 8 个武将作为演示
+
 ### 武将浏览器
 
 - 左侧列表：支持**搜索过滤** + **势力筛选**
 - 右侧详情：Tab 切换「武将信息」和「攻略指南」
 - 技能展示：描述 + 可折叠的结算详情
-- 攻略展示：Markdown 渲染 + 克制/搭配关系
+- 攻略展示：Markdown 渲染（mistune） + 克制/搭配关系
 
 ### Configuration
 
@@ -288,6 +312,7 @@ MAX_RETRIES=3
 | pydantic | 数据模型与校验 |
 | httpx | AI API 请求 |
 | beautifulsoup4 | HTML 解析（备用） |
+| mistune | Markdown → HTML 渲染 |
 | opencv-python / easyocr / mss | 屏幕采集层（待开发） |
 | pytest | 测试框架 |
 
@@ -301,8 +326,10 @@ MAX_RETRIES=3
 | 二 | 数据采集（官网爬虫 + AI 批量生成） | ✅ 已完成 |
 | 三 | PySide6 桌面应用 UI | ✅ 已完成 |
 | 四 | 武将相性交互获取 | ✅ 已完成 |
-| 五 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | ⏳ 待开发 |
-| 六 | 推荐引擎（相性查询、推荐展示） | ⏳ 待开发 |
+| 五 | 武将头像下载 | ✅ 已完成 |
+| 六 | 选将推荐（4×2 网格+头像+数据接口） | ✅ 已完成 |
+| 七 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | ⏳ 待开发 |
+| 八 | 推荐引擎（相性查询、推荐数据源接入） | ⏳ 待开发 |
 
 ---
 
@@ -318,11 +345,11 @@ pytest tests/ -v
 # 运行单个测试文件
 pytest tests/test_models.py -v
 
-# 官网全量采集
-python -m src.scraper.official [--dry-run] [--output path] [--verbose]
+# 官网全量采集（含头像下载）
+python -m src.scraper.official [--skip-images]
 
 # 增量采集
-python -m src.scraper.incremental --incremental [--dry-run] [--output path]
+python -m src.scraper.incremental --incremental [--skip-images]
 
 # 指定武将采集
 python -m src.scraper.incremental --hero 诸葛亮,关羽

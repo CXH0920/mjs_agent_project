@@ -121,6 +121,7 @@ class Hero(BaseModel):
         default_factory=lambda: date.today().isoformat(),
         description="最后更新时间",
     )
+    icon_url: str = Field(default="", description="武将头像 URL")
 
     @field_validator("name")
     @classmethod

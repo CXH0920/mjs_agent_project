@@ -25,8 +25,11 @@ pytest tests/ -v
 # 启动桌面应用
 python -m src.main
 
-# 数据采集（官网爬虫）
+# 数据采集（官网爬虫，含头像下载）
 python -m src.scraper.official
+
+# 跳过头像下载
+python -m src.scraper.official --skip-images
 
 # 增量采集
 python -m src.scraper.incremental --incremental
@@ -44,6 +47,7 @@ python -m src.scraper.ai_batch --guide
 | 数据存储 | JSON 文件 |
 | 爬虫 | urllib + BeautifulSoup4 |
 | AI API | httpx → DeepSeek |
+| Markdown 渲染 | mistune |
 | 测试 | pytest |
 
 ## 项目结构
@@ -55,15 +59,15 @@ test_project/
 │   ├── config/
 │   │   └── env.py                 # .env 解析/加载/保存
 │   ├── data/
-│   │   ├── models.py              # Pydantic 数据模型
+│   │   ├── models.py              # Pydantic 数据模型（含 Hero.icon_url）
 │   │   ├── manager.py             # DataFacade + 增量更新函数
 │   │   ├── hero_manager.py        # Hero CRUD + JSON 持久化
 │   │   ├── synergy_manager.py     # SynergyScore CRUD + JSON
 │   │   └── guide_manager.py       # HeroGuide CRUD + JSON
 │   ├── scraper/
-│   │   ├── crawler.py             # 爬虫核心（公开 API）
-│   │   ├── official.py            # 官网全量爬虫
-│   │   ├── incremental.py         # 增量/指定爬虫
+│   │   ├── crawler.py             # 爬虫核心（公开 API，含头像下载）
+│   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
+│   │   ├── incremental.py         # 增量/指定爬虫（支持 --skip-images）
 │   │   ├── ai_utils.py            # AI 生成共享工具函数
 │   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt 构建/校验）
 │   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
@@ -78,7 +82,9 @@ test_project/
 │   └── ui/
 │       ├── style.py               # 全局样式表（天蓝色调）
 │       ├── main_window.py         # 主窗口
-│       ├── hero_browser.py        # 武将浏览
+│       ├── hero_browser.py        # 武将浏览（mistune 渲染 Markdown）
+│       ├── hero_select_dialog.py  # 武将选择对话框基类
+│       ├── recommendation_panel.py # 选将推荐（4×2 卡片 + 头像 + 相性）
 │       ├── settings_dialog.py     # API 配置对话框
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
@@ -87,9 +93,13 @@ test_project/
 │       ├── cost_confirm_dialog.py # 成本确认
 │       └── guide_progress_dialog.py # 进度条
 ├── data/
-│   ├── heroes.json                # 149 个武将
+│   ├── heroes.json                # 155 个武将
 │   ├── synergies.json             # 相性评分
-│   └── guides.json                # 武将攻略
+│   ├── guides.json                # 武将攻略
+│   ├── cards.json                 # 基础卡牌
+│   └── 2v2胜率排行.csv            # 2v2 胜率
+├── images/
+│   └── <武将名>.png               # 155 个头像文件（官网自动下载）
 ├── tests/
 │   ├── test_models.py             # 25 tests
 │   ├── test_ai_batch.py           # 33 tests
@@ -110,7 +120,7 @@ test_project/
 ### 四层架构
 
 ```
-UI 层 (PySide6)     → main_window.py, hero_browser.py, 各对话框
+UI 层 (PySide6)     → main_window.py, hero_browser.py, recommendation_panel.py, 各对话框
 业务层 (Business)   → fetch_service.py, guide_fetch_service.py, synergy_fetch_service.py (QProcess)
 数据层 (Data)       → models.py (Pydantic) + DataFacade (hero_manager.py / synergy_manager.py / guide_manager.py)
 采集层 (Capture)    → 待开发 (screen.py, detector.py, ocr.py)
@@ -121,6 +131,7 @@ UI 层 (PySide6)     → main_window.py, hero_browser.py, 各对话框
 ### 数据流
 
 官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
+                                                                      ↘ images/<武将名>.png（icon_url 下载）
 DeepSeek API → ai_batch.py → ai_generator.py → ai_guide.py / ai_synergy.py / ai_synergy_pair.py / ai_synergy_single.py → data/guides.json + data/synergies.json
 JSON 文件 → DataFacade → UI 展示
 用户操作 → MainWindow → QProcess → 爬虫脚本
@@ -151,6 +162,7 @@ config.env > 环境变量 > 默认值（定义在 src/config/env.py）
 - Skill 的 `description` 和 `settlement` 从 HTML 拆分
 - Hero 通过 int ID 引用，SynergyScore 和 HeroGuide 通过 int hero_id 关联
 - Synergy 双向一致：(A,B) 和 (B,A) 映射到同一 key（排序后）
+- Hero 模型含 `icon_url` 字段，爬取时存入官网 URL，并同时下载到 `images/` 目录
 
 ### Manager 约定
 - 三个 Manager 各自独立，遵循 SRP
@@ -159,7 +171,8 @@ config.env > 环境变量 > 默认值（定义在 src/config/env.py）
 - 支持 `load()` / `save()` JSON 持久化，默认路径在 `data/` 目录
 
 ### scraper 约定
-- `crawler.py` 为公共模块，提供 `fetch()` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` 公开 API
+- `crawler.py` 为公共模块，提供 `fetch()` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` / `download_hero_images()` 公开 API
+- `fetch(url, binary=False)` 支持二进制下载（`binary=True` 返回 bytes）
 - CLI 入口使用 `python -m` 执行
 - `ai_batch.py` 为纯 CLI 编排入口，不包含业务逻辑，具体生成流程委托给 `ai_guide.py` / `ai_synergy.py` / `ai_synergy_pair.py` / `ai_synergy_single.py`
 - AI 生成支持断点续传（跳过已有项）
@@ -167,6 +180,14 @@ config.env > 环境变量 > 默认值（定义在 src/config/env.py）
 - 武将相性更新采用先删旧数据再追加新数据的策略
 - HTML 清洗：先拆段落后再逐段 clean_html
 - Json 原子写入：先写 `.tmp` 文件，再 `replace` 原文
+- 头像下载：全量/增量/指定采集后自动下载到 `images/` 目录，`--skip-images` 可选跳过
+- 头像文件命名：`{武将名称}.png`，从 URL 提取扩展名
+
+### UI 约定
+- `hero_select_dialog.py` 为基类，4 个对话框（fetch/guide/synergy_pair/synergy_single）继承自它
+- `recommendation_panel.py` 提供 4×2 网格选将推荐，通过 `update_recommendations(data)` 接收外部数据
+- Markdown 渲染使用 `mistune` 库（hero_browser.py 中）
+- 全局样式表在 `style.py`，天蓝色调
 
 ## 可用命令
 
@@ -180,13 +201,13 @@ pytest tests/test_models.py -v
 # 启动应用
 python -m src.main
 
-# 官网全量采集
-python -m src.scraper.official [--dry-run] [--output path] [--verbose]
+# 官网全量采集（含头像下载）
+python -m src.scraper.official [--skip-images] [--dry-run] [--output path] [--verbose]
 
-# 增量采集
-python -m src.scraper.incremental --incremental [--dry-run] [--output path]
+# 增量采集（含头像下载）
+python -m src.scraper.incremental --incremental [--skip-images] [--dry-run] [--output path]
 
-# 指定武将采集
+# 指定武将采集（含头像下载）
 python -m src.scraper.incremental --hero 诸葛亮,关羽
 python -m src.scraper.incremental --hero-id 52,114
 
@@ -207,6 +228,7 @@ python -m src.scraper.ai_batch --synergy [--dry-run] [--score-threshold 0]
 - **Pydantic** — 数据模型校验
 - **httpx** — AI API 请求
 - **beautifulsoup4** — HTML 解析（备用）
+- **mistune** — Markdown → HTML 渲染
 - **opencv-python / easyocr / mss** — 待开发阶段（截图/OCR）
 - **pytest** — 测试框架
 

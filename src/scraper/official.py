@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent.parent / "data" / "heroes.json"
 
 
-def crawl(dry_run: bool = False, output_path: str | None = None) -> None:
+def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bool = False) -> None:
     """执行官网爬虫完整流程"""
     out_path = Path(output_path) if output_path else DEFAULT_OUTPUT
 
@@ -103,6 +103,11 @@ def crawl(dry_run: bool = False, output_path: str | None = None) -> None:
                 json.dump(validated, f, ensure_ascii=False, indent=2)
             print(f"\n  已保存: {out_path}", flush=True)
 
+            if not skip_images:
+                from src.scraper.crawler import download_hero_images
+                n = download_hero_images(raw_list)
+                print(f"  头像已下载: {n} 张", flush=True)
+
         print(f"\n{'=' * 60}", flush=True)
         print(f"  完成! 共 {len(validated)} 个武将", flush=True)
         print(f"{'=' * 60}", flush=True)
@@ -120,13 +125,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="名将杀官网武将采集")
     parser.add_argument("--dry-run", action="store_true", help="仅预览，不写入文件")
     parser.add_argument("--output", "-o", type=str, help="输出文件路径")
+    parser.add_argument("--skip-images", action="store_true", help="跳过头像下载")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     args = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.WARNING
     logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
 
-    crawl(dry_run=args.dry_run, output_path=args.output)
+    crawl(dry_run=args.dry_run, output_path=args.output, skip_images=args.skip_images)
 
 
 if __name__ == "__main__":
