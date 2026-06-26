@@ -99,8 +99,11 @@ def apply_incremental_update(
 
     # 新增武将
     for hero in update.added_heroes:
-        hero_mgr.add_hero(hero)
-        stats["added_heroes"] += 1
+        try:
+            hero_mgr.add_hero(hero)
+            stats["added_heroes"] += 1
+        except ValueError:
+            logger.warning("武将已存在，跳过: %s", hero.id)
 
     # 修改武将
     for hero in update.modified_heroes:

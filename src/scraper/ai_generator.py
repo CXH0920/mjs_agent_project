@@ -170,6 +170,42 @@ class AIBatchGenerator:
         return "\n".join(lines)
 
     # ---------------------------------------------------------------
+    # 工具方法
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def _convert_ids_to_int(data: dict, fields: list[str]) -> dict:
+        """将指定字段中的 ID 元素统一转为 int"""
+        for field in fields:
+            if field in data and isinstance(data[field], list):
+                data[field] = [int(v) for v in data[field]]
+        return data
+
+    # ---------------------------------------------------------------
+    # Pydantic 校验
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def _validate_guide(data: dict) -> dict | None:
+        """通过 Pydantic HeroGuide 模型校验攻略数据"""
+        try:
+            from src.data.models import HeroGuide
+            validated = HeroGuide.model_validate(data)
+            return validated.model_dump(mode="json")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _validate_synergy(data: dict) -> dict | None:
+        """通过 Pydantic SynergyScore 模型校验相性数据"""
+        try:
+            from src.data.models import SynergyScore
+            validated = SynergyScore.model_validate(data)
+            return validated.model_dump(mode="json")
+        except Exception:
+            return None
+
+    # ---------------------------------------------------------------
     # 生成攻略
     # ---------------------------------------------------------------
 
@@ -204,15 +240,14 @@ class AIBatchGenerator:
             return None, usage
 
         raw["hero_id"] = hero.get("id", 0)
+        self._convert_ids_to_int(raw, ["counters", "synergizes_with"])
 
-        try:
-            from src.data.models import HeroGuide
-            validated = HeroGuide.model_validate(raw)
-            return validated.model_dump(mode="json"), usage
-        except Exception as e:
-            logger.warning("Pydantic 校验失败: %s", e)
+        result = self._validate_guide(raw)
+        if result is None:
+            logger.warning("攻略 Pydantic 校验失败")
             logger.debug("异常数据: %s", json.dumps(raw, ensure_ascii=False))
             return None, usage
+        return result, usage
 
     # ---------------------------------------------------------------
     # 生成相性评分
@@ -251,14 +286,16 @@ class AIBatchGenerator:
         raw["hero_a_id"] = hero_a.get("id", 0)
         raw["hero_b_id"] = hero_b.get("id", 0)
 
-        try:
-            from src.data.models import SynergyScore
-            validated = SynergyScore.model_validate(raw)
-            return validated.model_dump(mode="json"), usage
-        except Exception as e:
-            logger.warning("Pydantic 校验失败: %s", e)
+        # 兼容旧 prompt 中的 combat_synergy 字段
+        if "combat_synergy" in raw and "combo_ceiling" not in raw:
+            raw["combo_ceiling"] = raw.pop("combat_synergy")
+
+        result = self._validate_synergy(raw)
+        if result is None:
+            logger.warning("相性 Pydantic 校验失败")
             logger.debug("异常数据: %s", json.dumps(raw, ensure_ascii=False))
             return None, usage
+        return result, usage
 
     def close(self):
         """关闭 HTTP 客户端"""

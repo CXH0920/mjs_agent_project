@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 import tempfile
@@ -107,8 +108,10 @@ class GuideFetchService(QObject):
             json.dump(heroes, tmp, ensure_ascii=False, indent=2)
             tmp_path = tmp.name
             tmp.close()
+            self._context["tmp_path"] = tmp_path
             self._start_process(["-m", "src.scraper.ai_batch", "--guide", "--heroes-file", tmp_path])
         else:
+            self._context["tmp_path"] = None
             self._start_process(["-m", "src.scraper.ai_batch", "--guide"])
 
     def cancel(self) -> None:
@@ -145,6 +148,7 @@ class GuideFetchService(QObject):
                 self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 
     def _on_finished(self, exit_code: int) -> None:
+        self._cleanup_tmp()
         msg = f"进程退出码: {exit_code}"
         if exit_code == 0:
             self.status_changed.emit("攻略生成完成")
@@ -156,7 +160,17 @@ class GuideFetchService(QObject):
         self._context = None
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
+        self._cleanup_tmp()
         error_msg = self._process.errorString() if self._process else "未知错误"
         self.status_changed.emit("攻略生成出错")
         self.error_occurred.emit(error_msg)
         self._context = None
+
+    def _cleanup_tmp(self) -> None:
+        """清理临时文件"""
+        tmp_path = self._context.get("tmp_path", "") if self._context else ""
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

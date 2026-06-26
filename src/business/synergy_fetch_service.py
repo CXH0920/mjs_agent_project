@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import tempfile
 
@@ -73,7 +74,6 @@ class SynergyFetchService(QObject):
         self._process.start(sys.executable, args)
 
     def _on_finished(self, exit_code: int) -> None:
-        import os
         tmp_path = self._context.get("tmp_path", "") if self._context else ""
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -88,7 +88,6 @@ class SynergyFetchService(QObject):
         self._context = None
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
-        import os
         tmp_path = self._context.get("tmp_path", "") if self._context else ""
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

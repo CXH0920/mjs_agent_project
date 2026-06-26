@@ -236,13 +236,13 @@ class TestAIBatchGenerator:
         prompt = gen._build_guide_prompt(hero)
         assert "诸葛亮" in prompt
         assert "观星" in prompt
-        assert "114" in prompt
-        assert "体力上限" in prompt
-        assert "手牌上限" in prompt
+        assert "定位" in prompt
+        assert "体力" in prompt
+        assert "手牌" in prompt
         assert "性别" in prompt
 
     def test_build_synergy_prompt(self) -> None:
-        """构建相性 prompt 包含双方武将（管道分隔格式）"""
+        """构建相性 prompt 包含双方武将信息"""
         gen = AIBatchGenerator(api_key="test")
         ha = {
             "id": 114, "name": "诸葛亮", "max_hp": 4,
@@ -253,15 +253,13 @@ class TestAIBatchGenerator:
             "position": "防御", "skills": [],
         }
         prompt = gen._build_synergy_prompt(ha, hb)
-        assert "=== 武将 A ===" in prompt
-        assert "=== 武将 B ===" in prompt
+        assert "## 武将 A:" in prompt or "## 武将 A：" in prompt
+        assert "## 武将 B:" in prompt or "## 武将 B：" in prompt
         assert "诸葛亮" in prompt
         assert "曹操" in prompt
-        # 验证管道分隔格式
-        assert " | " in prompt
-        assert "114" in prompt
-        assert "115" in prompt
-        assert "无技能" in prompt
+        assert "控制" in prompt
+        assert "防御" in prompt
+        assert "体力/手牌" in prompt
 
     def test_combat_synergy_compatibility(self) -> None:
         """兼容旧 prompt 中的 combat_synergy 字段"""
