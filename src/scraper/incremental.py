@@ -177,8 +177,9 @@ def main() -> None:
                         help="详细日志")
     args = parser.parse_args()
 
-    log_level = logging.DEBUG if args.verbose else logging.WARNING
-    logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
+    log_level = "DEBUG" if args.verbose else "WARNING"
+    from src.config.logging_config import setup_logging
+    setup_logging(log_level=log_level, log_to_file=False)
 
     if not any([args.incremental, args.hero, args.hero_id]):
         parser.error("请指定 --incremental 和/或 --hero / --hero-id")

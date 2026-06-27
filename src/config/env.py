@@ -92,6 +92,8 @@ def load_env_config(env_path=None):
         "REQUESTS_PER_MINUTE": "requests_per_minute",
         "HTTP_TIMEOUT": "http_timeout",
         "MAX_RETRIES": "max_retries",
+        "LOG_LEVEL": "log_level",
+        "LOG_TO_FILE": "log_to_file",
     }
     config = {}
     for env_key, cfg_key in key_mapping.items():
@@ -130,13 +132,17 @@ def get_runtime_params():
     """从 config.env 获取运行时参数（带默认值）
 
     Returns:
-        {"requests_per_minute": int, "max_retries": int, "http_timeout": int}
+        {"requests_per_minute": int, "max_retries": int,
+         "http_timeout": int, "log_level": str, "log_to_file": bool}
     """
     config = load_env_config()
+    log_to_file = config.get("log_to_file", "true")
     return {
         "requests_per_minute": config.get("requests_per_minute", 30),
         "max_retries": config.get("max_retries", 3),
         "http_timeout": config.get("http_timeout", 300),
+        "log_level": config.get("log_level", "INFO"),
+        "log_to_file": log_to_file.lower() in ("true", "1", "yes"),
     }
 
 # ============================================================

@@ -37,6 +37,8 @@ class GuideFetchService(QObject):
         self._guide_mgr = guide_mgr
         self._process: QProcess | None = None
         self._context = None
+        self._log_stdout = logging.getLogger("subprocess.stdout")
+        self._log_stderr = logging.getLogger("subprocess.stderr")
 
     def fetch_all(self, all_heroes: list[dict], backend: str = "api") -> None:
         if self._is_busy():
@@ -120,8 +122,7 @@ class GuideFetchService(QObject):
             return
         data = self._process.readAllStandardOutput()
         text = bytes(data).decode("utf-8", errors="replace")
-        # stdout 也输出到父进程日志
-        logger.debug("[子进程 stdout] %s", text.strip())
+        self._log_stdout.info("%s", text.strip())
         self.progress_output.emit(text)
 
         # 解析进度 [i/N] 用于进度条
@@ -137,8 +138,7 @@ class GuideFetchService(QObject):
         data = self._process.readAllStandardError()
         text = bytes(data).decode("utf-8", errors="replace")
         if text.strip():
-            logger.warning("[子进程 stderr]\n%s", text.strip())
-            # 同时 emit 到 UI
+            self._log_stderr.warning("%s", text.strip())
             self.progress_output.emit(text)
 
     def _on_finished(self, exit_code: int) -> None:

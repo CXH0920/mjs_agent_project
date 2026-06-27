@@ -30,6 +30,8 @@ class SynergyFetchService(QObject):
         super().__init__(parent)
         self._process: QProcess | None = None
         self._context = None
+        self._log_stdout = logging.getLogger("subprocess.stdout")
+        self._log_stderr = logging.getLogger("subprocess.stderr")
 
     def fetch_pair(self, heroes: list[dict], backend: str = "api") -> None:
         """指定获取：传入 2 个武将，写入临时文件后调用 --synergy-pair"""
@@ -90,7 +92,7 @@ class SynergyFetchService(QObject):
         data = self._process.readAllStandardOutput()
         text = bytes(data).decode("utf-8", errors="replace")
         if text.strip():
-            logger.debug("[子进程 stdout] %s", text.strip())
+            self._log_stdout.info("%s", text.strip())
 
     def _on_stderr_ready(self) -> None:
         if not self._process:
@@ -98,7 +100,7 @@ class SynergyFetchService(QObject):
         data = self._process.readAllStandardError()
         text = bytes(data).decode("utf-8", errors="replace")
         if text.strip():
-            logger.warning("[子进程 stderr]\n%s", text.strip())
+            self._log_stderr.warning("%s", text.strip())
 
     def _on_finished(self, exit_code: int) -> None:
         tmp_path = self._context.get("tmp_path", "") if self._context else ""

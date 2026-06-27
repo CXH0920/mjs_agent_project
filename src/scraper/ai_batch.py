@@ -171,8 +171,9 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     args = parser.parse_args()
 
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
+    log_level = "DEBUG" if args.verbose else "INFO"
+    from src.config.logging_config import setup_logging
+    setup_logging(log_level=log_level, log_to_file=False)
 
     has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single
     if not args.guide and not has_synergy_mode:

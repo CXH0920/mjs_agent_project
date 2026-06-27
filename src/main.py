@@ -21,6 +21,10 @@ from src.ui.style import GLOBAL_STYLE
 
 def main() -> None:
     """应用主函数"""
+    # 提前初始化日志（在 QApplication 创建之前）
+    from src.config.logging_config import setup_logging
+    setup_logging(log_level="INFO", log_to_file=True)
+
     # 抑制 Qt 字体回退调试日志（Windows 上大量刷屏但无害）
     os.environ.setdefault("QT_LOGGING_RULES",
                           "qt.qpa.fonts=false;qt.text.font.db=false")
@@ -52,7 +56,8 @@ def main() -> None:
         window.show()
         sys.exit(app.exec())
     except Exception as e:
-        logging.exception("应用启动失败")
+        logger = logging.getLogger(__name__)
+        logger.exception("应用启动失败")
         QMessageBox.critical(
             None, "启动失败",
             f"应用启动时发生未预期的错误:\n\n{e}"
