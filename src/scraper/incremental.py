@@ -153,6 +153,10 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
 
 
 def main() -> None:
+    # Windows cmd \u9ed8\u8ba4 GBK\uff0c\u5237\u65b0 stdout/stderr \u7f16\u7801\u4ee5\u652f\u6301\u4e2d\u6587\u8f93\u51fa
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="\u540d\u5c06\u6740\u589e\u91cf\u722c\u866b")
     parser.add_argument("--incremental", action="store_true",
                         help="\u589e\u91cf\u6a21\u5f0f\uff1a\u53ea\u722c\u53d6\u672c\u5730\u8fd8\u672a\u62e5\u6709\u7684\u6b66\u5c06\uff0c\u8ffd\u52a0\u5199\u5165")

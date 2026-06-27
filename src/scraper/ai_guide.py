@@ -60,15 +60,15 @@ def run_guide_generation(
             continue
 
         hero_name = hero.get("name", "")
-        print(f"  [{i}/{total_heroes}] {hero_name}...", flush=True)
+        print(f"  [{hero_name}] 开始...", flush=True)
         result, usage = generator.generate_guide(hero)
         _accumulate_usage(usage)
 
         if result:
             new_guides.append(result)
-            print("    OK", flush=True)
+            print(f"  [{i}/{total_heroes}] {hero_name} OK", flush=True)
         else:
-            print("    FAIL", flush=True)
+            print(f"  [{i}/{total_heroes}] {hero_name} FAIL", flush=True)
 
         # 批量保存
         if new_guides and len(new_guides) % GUIDE_BATCH_SAVE_INTERVAL == 0:

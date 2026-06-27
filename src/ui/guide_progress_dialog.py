@@ -97,11 +97,11 @@ class GuideProgressDialog(QDialog):
 
     def update_status(self, text: str) -> None:
         """更新当前状态文字"""
-        # 从 stdout 行提取武将名: e.g. "[1/149] 诸葛亮..." -> "诸葛亮"
+        # 成功进度行: "[i/total] 武将名 OK"
         import re
-        m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)(?:\s*\.\.\.|$)", text)
+        m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+(?:OK|FAIL)", text)
         if m:
-            self._status_label.setText(f"正在生成 {m.group(3)} 的攻略...")
+            self._status_label.setText(f"已生成 {m.group(3)} 的攻略...")
             self.update_progress(int(m.group(1)), int(m.group(2)))
         else:
             self._detail_label.setText(text.strip())

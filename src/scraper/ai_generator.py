@@ -100,34 +100,87 @@ class AIBatchGenerator:
 
     @staticmethod
     def _extract_json(text: str) -> dict:
-        """从 API 返回文本中提取 JSON"""
+        """从 API 返回文本中提取 JSON（raw_decode 容忍尾部多余字符 + 修复未转义字符）"""
         text = text.strip()
 
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
+        def _repair_strings(s: str) -> str:
+            """修复 JSON 字符串值内的字面换行"""
+            result = []
+            in_string = False
+            i = 0
+            while i < len(s):
+                c = s[i]
+                if c == '\\' and in_string:
+                    result.append(c)
+                    if i + 1 < len(s):
+                        result.append(s[i + 1])
+                        i += 2
+                    else:
+                        i += 1
+                    continue
+                if c == '"':
+                    in_string = not in_string
+                    result.append(c)
+                    i += 1
+                    continue
+                if in_string and c in '\r\n':
+                    result.append('\\n')
+                    i += 1
+                    continue
+                result.append(c)
+                i += 1
+            return ''.join(result)
 
-        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-        if m:
+        def _raw_parse(s: str) -> dict | None:
             try:
-                return json.loads(m.group(1).strip())
+                decoder = json.JSONDecoder()
+                obj, _ = decoder.raw_decode(s)
+                if isinstance(obj, dict):
+                    return obj
             except json.JSONDecodeError:
                 pass
+            return None
 
-        if "---" in text:
-            parts = text.split("---")
-            for part in reversed(parts):
-                m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", part, re.DOTALL)
-                if m:
-                    try:
-                        return json.loads(m.group(1).strip())
-                    except json.JSONDecodeError:
-                        continue
-                try:
-                    return json.loads(part.strip())
-                except json.JSONDecodeError:
-                    continue
+        def _try_all(candidates: list[str]) -> dict | None:
+            for c in candidates:
+                result = _raw_parse(c)
+                if result:
+                    return result
+                repaired = _repair_strings(c)
+                if repaired != c:
+                    result = _raw_parse(repaired)
+                    if result:
+                        return result
+            return None
+
+        # 1. 直接全文
+        result = _try_all([text])
+        if result:
+            return result
+
+        # 2. 从 ```json 或 ``` 代码块提取
+        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+        if m:
+            result = _try_all([m.group(1).strip()])
+            if result:
+                return result
+
+        # 3. 通过 --- 分隔线提取最后一段
+        last_sep = text.rfind("\n---\n")
+        if last_sep < 0:
+            last_sep = text.rfind("\n---")
+        if last_sep >= 0:
+            result = _try_all([text[last_sep + 5:].strip()])
+            if result:
+                return result
+
+        # 4. 找到第一个 { 到最后一个 }
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            result = _try_all([text[start:end + 1]])
+            if result:
+                return result
 
         raise ValueError(f"无法从响应中提取 JSON:\n{text[:500]}")
 

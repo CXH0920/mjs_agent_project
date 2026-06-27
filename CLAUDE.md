@@ -1,248 +1,43 @@
-# 名将杀 Agent
+# 核心倾向原则
+复杂工作优先求稳妥，而非追求开发速度；简单琐碎任务可灵活酌情处理。
 
-名将杀桌面辅助工具，面向名将杀手游的轻度玩家，运行于 PC 端 MuMu 模拟器。
-核心功能：**选将推荐** + **武将数据库查询**。
+## 编码前思考
+- 清晰列明所有前置假设；存有疑问时主动询问，切勿主观猜测。
+- 需求存在歧义时，列出多种可行解读方案。
+- 若存在更简洁的实现方案，主动提出优化意见。
+- 思路混乱、无法推进时立即暂停，并明确指出模糊不清的问题点。
 
-## 工作原则
+## 简洁优先
+- 编写刚好能解决问题的最少代码，不编写无依据的预判性逻辑。
+- 不为一次性需求创建抽象层、复杂架构。
+- 不盲目增加扩展性、可配置性，应对“未来可能用到”的场景。
+- 若代码可大幅精简，主动重写优化。
+- 校验标准：资深工程师看到这段代码是否会认为过度复杂？若是，则简化重构。
+
+## 精准修改
+- 仅修改与当前任务直接相关的代码内容。
+- 不顺手优化相邻代码、注释、排版格式。
+- 不重构原本可以正常运行的代码模块。
+- 严格匹配项目现有代码风格，保留原有编码习惯。
+- 因本次修改产生的无效导入、废弃变量，可直接删除。
+- 发现项目中原有的死代码、冗余内容，仅做文字提醒，不擅自删除。
+
+## 目标驱动执行
+- 执行任务前，定义清晰、可落地的成功标准。
+- 将“修复Bug”转化为：编写用例复现问题，再调试至用例正常通过。
+- 将“新增校验功能”转化为：针对异常输入编写测试用例，保证全部通过。
+- 将“代码重构”转化为：完成重构后，确保原有所有测试用例正常运行。
+- 多步骤复杂任务，先输出简短执行计划，同时标注每一步的验证方式。
+
+## 代码风格
+- 遵循项目现有命名、目录结构和日志规范
+- 函数保持单一职责，注释解释“为什么”而非“是什么”
+- 禁止忽略异常，必须记录日志或明确处理
+
+## 提交规范
+- 不要自动 commit，先展示修改内容，等待用户确认
+- 使用 Conventional Commits（feat/fix/refactor/docs/test）
+
+## 默认遵守
 - 默认使用中文回复
 - 使用 conda的myenv环境
-
-## Git
-- 不自动 commit
-- 不自动 push
-- 必须得到用户确认
-
-## 快速开始
-
-```bash
-# 创建环境
-conda env create -f environment.yml
-conda activate myenv
-
-# 运行测试
-pytest tests/ -v
-
-# 启动桌面应用
-python -m src.main
-
-# 数据采集（官网爬虫，含头像下载）
-python -m src.scraper.official
-
-# 跳过头像下载
-python -m src.scraper.official --skip-images
-
-# 增量采集
-python -m src.scraper.incremental --incremental
-
-# AI 批量生成攻略
-python -m src.scraper.ai_batch --guide
-```
-
-## 技术栈
-
-| 层 | 技术 |
-|---|---|
-| UI | PySide6 |
-| 数据模型 | Pydantic v2 |
-| 数据存储 | JSON 文件 |
-| 爬虫 | urllib + BeautifulSoup4 |
-| AI API | httpx → DeepSeek |
-| Markdown 渲染 | mistune |
-| 测试 | pytest |
-
-## 项目结构
-
-```
-test_project/
-├── src/
-│   ├── main.py                    # 应用入口
-│   ├── config/
-│   │   └── env.py                 # .env 解析/加载/保存
-│   ├── data/
-│   │   ├── models.py              # Pydantic 数据模型（含 Hero.icon_url）
-│   │   ├── manager.py             # DataFacade + 增量更新函数
-│   │   ├── hero_manager.py        # Hero CRUD + JSON 持久化
-│   │   ├── synergy_manager.py     # SynergyScore CRUD + JSON
-│   │   └── guide_manager.py       # HeroGuide CRUD + JSON
-│   ├── scraper/
-│   │   ├── crawler.py             # 爬虫核心（公开 API，含头像下载）
-│   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
-│   │   ├── incremental.py         # 增量/指定爬虫（支持 --skip-images）
-│   │   ├── ai_utils.py            # AI 生成共享工具函数
-│   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt 构建/校验）
-│   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
-│   │   ├── ai_guide.py            # 攻略生成循环
-│   │   ├── ai_synergy.py          # 全量相性评分生成循环
-│   │   ├── ai_synergy_pair.py     # 指定两武将相性配对生成
-│   │   └── ai_synergy_single.py   # 选定武将 x 全体相性生成
-│   ├── business/
-│   │   ├── fetch_service.py       # 采集业务（QProcess 管理）
-│   │   ├── guide_fetch_service.py # 攻略生成业务（QProcess）
-│   │   └── synergy_fetch_service.py # 相性获取业务（QProcess）
-│   └── ui/
-│       ├── style.py               # 全局样式表（天蓝色调）
-│       ├── main_window.py         # 主窗口
-│       ├── hero_browser.py        # 武将浏览（mistune 渲染 Markdown）
-│       ├── hero_select_dialog.py  # 武将选择对话框基类
-│       ├── recommendation_panel.py # 选将推荐（4×2 卡片 + 头像 + 相性）
-│       ├── settings_dialog.py     # API 配置对话框
-│       ├── fetch_dialog.py        # 武将获取选择
-│       ├── guide_fetch_dialog.py  # 攻略获取选择
-│       ├── synergy_pair_dialog.py # 相性指定获取（选 2 武将）
-│       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
-│       ├── cost_confirm_dialog.py # 成本确认
-│       └── guide_progress_dialog.py # 进度条
-├── data/
-│   ├── heroes.json                # 155 个武将
-│   ├── synergies.json             # 相性评分
-│   ├── guides.json                # 武将攻略
-│   ├── cards.json                 # 基础卡牌
-│   └── 2v2胜率排行.csv            # 2v2 胜率
-├── images/
-│   └── <武将名>.png               # 155 个头像文件（官网自动下载）
-├── tests/
-│   ├── test_models.py             # 25 tests
-│   ├── test_ai_batch.py           # 33 tests
-│   ├── test_hero_manager.py       # 13 tests
-│   ├── test_synergy_manager.py    # 13 tests
-│   ├── test_guide_manager.py      # 11 tests
-│   ├── test_incremental_update.py # 8 tests
-│   └── test_ui.py                 # 4 tests
-└── docs/
-    ├── field_mapping.md
-    └── prompts/
-        ├── hero_guide.md
-        └── synergy_score.md
-```
-
-## 架构
-
-### 四层架构
-
-```
-UI 层 (PySide6)     → main_window.py, hero_browser.py, recommendation_panel.py, 各对话框
-业务层 (Business)   → fetch_service.py, guide_fetch_service.py, synergy_fetch_service.py (QProcess)
-数据层 (Data)       → models.py (Pydantic) + DataFacade (hero_manager.py / synergy_manager.py / guide_manager.py)
-采集层 (Capture)    → 待开发 (screen.py, detector.py, ocr.py)
-```
-
-爬虫层横切数据层和外部数据源：crawler.py 为核心，official.py 全量采集，incremental.py 增量/指定采集，ai_batch.py AI 生成。
-
-### 数据流
-
-官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
-                                                                      ↘ images/<武将名>.png（icon_url 下载）
-DeepSeek API → ai_batch.py → ai_generator.py → ai_guide.py / ai_synergy.py / ai_synergy_pair.py / ai_synergy_single.py → data/guides.json + data/synergies.json
-JSON 文件 → DataFacade → UI 展示
-用户操作 → MainWindow → QProcess → 爬虫脚本
-
-### 配置加载优先级
-
-config.env > 环境变量 > 默认值（定义在 src/config/env.py）
-
-## 关键约定
-
-### 测试约定
-- 使用纯 pytest（不继承 unittest.TestCase）
-- 测试类命名用 `Test` 前缀，方法用 `test_` 前缀
-- 文件 IO 测试使用 `tempfile` 避免影响真实数据
-- Manager 测试使用 `_make_*` 辅助方法构造测试数据
-- `sys.path` 在测试文件内手动添加 `../src`
-
-### 代码约定
-- 所有源文件使用 `from __future__ import annotations` 启用 PEP 604
-- 使用 `pathlib.Path` 而非 `os.path`
-- 使用 `logging` 而非 `print`（CLI 输出除外）
-- 类型注解：函数参数和返回值必须标注类型
-- 注释解释 WHY 而非 WHAT
-
-### 数据模型约定
-- 官网数据通过 `validation_alias`（中文字段名）映射到 Pydantic 模型
-- 大模型生成的数据通过 `model_dump(mode="json")` 序列化
-- Skill 的 `description` 和 `settlement` 从 HTML 拆分
-- Hero 通过 int ID 引用，SynergyScore 和 HeroGuide 通过 int hero_id 关联
-- Synergy 双向一致：(A,B) 和 (B,A) 映射到同一 key（排序后）
-- Hero 模型含 `icon_url` 字段，爬取时存入官网 URL，并同时下载到 `images/` 目录
-
-### Manager 约定
-- 三个 Manager 各自独立，遵循 SRP
-- CRUD 操作：add（唯一约束，已存在抛 ValueError）、update（upsert）、delete
-- Manager 使用 `_` 前缀私有变量 `_heroes`、`_synergies`、`_guides` 缓存数据
-- 支持 `load()` / `save()` JSON 持久化，默认路径在 `data/` 目录
-
-### scraper 约定
-- `crawler.py` 为公共模块，提供 `fetch()` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` / `download_hero_images()` 公开 API
-- `fetch(url, binary=False)` 支持二进制下载（`binary=True` 返回 bytes）
-- CLI 入口使用 `python -m` 执行
-- `ai_batch.py` 为纯 CLI 编排入口，不包含业务逻辑，具体生成流程委托给 `ai_guide.py` / `ai_synergy.py` / `ai_synergy_pair.py` / `ai_synergy_single.py`
-- AI 生成支持断点续传（跳过已有项）
-- 相性数据在内存中以 `dict[(a_id, b_id), dict]` 管理，确保 (A,B) 和 (B,A) 为同一 key
-- 武将相性更新采用先删旧数据再追加新数据的策略
-- HTML 清洗：先拆段落后再逐段 clean_html
-- Json 原子写入：先写 `.tmp` 文件，再 `replace` 原文
-- 头像下载：全量/增量/指定采集后自动下载到 `images/` 目录，`--skip-images` 可选跳过
-- 头像文件命名：`{武将名称}.png`，从 URL 提取扩展名
-
-### UI 约定
-- `hero_select_dialog.py` 为基类，4 个对话框（fetch/guide/synergy_pair/synergy_single）继承自它
-- `recommendation_panel.py` 提供 4×2 网格选将推荐，通过 `update_recommendations(data)` 接收外部数据
-- Markdown 渲染使用 `mistune` 库（hero_browser.py 中）
-- 全局样式表在 `style.py`，天蓝色调
-
-## 可用命令
-
-```bash
-# 运行所有测试
-pytest tests/ -v
-
-# 运行单个测试文件
-pytest tests/test_models.py -v
-
-# 启动应用
-python -m src.main
-
-# 官网全量采集（含头像下载）
-python -m src.scraper.official [--skip-images] [--dry-run] [--output path] [--verbose]
-
-# 增量采集（含头像下载）
-python -m src.scraper.incremental --incremental [--skip-images] [--dry-run] [--output path]
-
-# 指定武将采集（含头像下载）
-python -m src.scraper.incremental --hero 诸葛亮,关羽
-python -m src.scraper.incremental --hero-id 52,114
-
-# AI 攻略生成
-python -m src.scraper.ai_batch --guide [--dry-run] [--heroes-file path]
-
-# AI 全量相性评分生成
-python -m src.scraper.ai_batch --synergy [--dry-run] [--score-threshold 0]
-
-# 启动桌面应用后通过菜单栏操作相性获取：
-#   数据 → 武将相性 → 选定武将（选 1 武将 vs 全体）
-#   数据 → 武将相性 → 指定获取（选 2 武将配对）
-```
-
-## 外部依赖
-
-- **PySide6** — 桌面 UI
-- **Pydantic** — 数据模型校验
-- **httpx** — AI API 请求
-- **beautifulsoup4** — HTML 解析（备用）
-- **mistune** — Markdown → HTML 渲染
-- **opencv-python / easyocr / mss** — 待开发阶段（截图/OCR）
-- **pytest** — 测试框架
-
-## API 配置
-
-在 `config.env` 中配置（已 gitignored）：
-
-```env
-DEEPSEEK_API_KEY=sk-xxx
-DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
-DEEPSEEK_MODEL=deepseek-v4-pro
-REQUESTS_PER_MINUTE=30
-HTTP_TIMEOUT=300
-MAX_RETRIES=3
-```
-
-定价：输入 CNY 3/百万 tokens，输出 CNY 6/百万 tokens（deepseek-v4-pro 缓存未命中）。

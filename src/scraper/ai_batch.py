@@ -149,6 +149,7 @@ def _print_token_summary(total_prompt_tokens: int, total_completion_tokens: int)
 def main():
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     print("启动中...", flush=True)
 
     parser = argparse.ArgumentParser(description="名将杀 Agent - AI 批量生成工具")
@@ -168,6 +169,8 @@ def main():
                          help="生成指定两武将的相性评分，参数为包含两个武将的 JSON 文件路径")
     parser.add_argument("--synergy-single", type=str, default=None,
                          help="生成指定武将与其他所有武将的相性评分，参数为包含一个武将的 JSON 文件路径")
+    parser.add_argument("--browser", action="store_true",
+                         help="使用 Playwright + Edge 浏览器方式（替代 API 直连）")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     args = parser.parse_args()
 
@@ -197,14 +200,19 @@ def main():
     logger.info("速率限制: %d req/min, 最多重试 %d 次",
                 runtime_params["requests_per_minute"], runtime_params["max_retries"])
 
-    generator = AIBatchGenerator(
-        api_key=api_config["api_key"],
-        api_url=api_config["api_url"],
-        model=api_config["model"],
-        requests_per_minute=runtime_params["requests_per_minute"],
-        max_retries=runtime_params["max_retries"],
-        http_timeout=runtime_params["http_timeout"],
-    )
+    if args.browser:
+        from src.scraper.ai_playwright import PlaywrightGenerator
+        generator = PlaywrightGenerator()
+        logger.info("使用浏览器模式")
+    else:
+        generator = AIBatchGenerator(
+            api_key=api_config["api_key"],
+            api_url=api_config["api_url"],
+            model=api_config["model"],
+            requests_per_minute=runtime_params["requests_per_minute"],
+            max_retries=runtime_params["max_retries"],
+            http_timeout=runtime_params["http_timeout"],
+        )
 
     guide_path = Path(args.guides_file)
     synergy_path = Path(args.synergies_file)
@@ -267,7 +275,8 @@ def main():
     _print_token_summary(total_prompt_tokens, total_completion_tokens)
     generator.close()
 
-    if total_prompt_tokens == 0 and total_completion_tokens == 0:
+    # 浏览器模式不产生 usage 统计，不以 token 为成败依据
+    if not args.browser and total_prompt_tokens == 0 and total_completion_tokens == 0:
         had_failure = True
 
     if had_failure:

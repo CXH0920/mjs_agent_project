@@ -24,7 +24,8 @@ test_project/
 │   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
 │   │   ├── incremental.py         # 增量/指定爬虫（支持 --skip-images）
 │   │   ├── ai_utils.py            # AI 生成共享工具函数
-│   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt 构建/校验）
+│   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt/校验）
+│   │   ├── ai_playwright.py       # PlaywrightGenerator（浏览器自动化模式）
 │   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
 │   │   ├── ai_guide.py            # 攻略生成循环
 │   │   ├── ai_synergy.py          # 全量相性评分生成循环
@@ -42,12 +43,13 @@ test_project/
 │       ├── hero_browser.py        # 武将浏览（列表+详情+攻略）
 │       ├── hero_select_dialog.py  # 武将选择对话框基类
 │       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性）
+│       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
 │       ├── synergy_pair_dialog.py # 相性指定获取（选 2 武将）
 │       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
 │       ├── settings_dialog.py     # API 配置对话框
-│       ├── cost_confirm_dialog.py # AI 成本确认对话框
+│       ├── cost_confirm_dialog.py # AI 成本确认对话框（API 模式）
 │       └── guide_progress_dialog.py # 攻略生成进度条
 ├── data/
 │   ├── heroes.json                # 155 个武将
@@ -70,6 +72,8 @@ test_project/
 │   └── prompts/
 │       ├── hero_guide.md          # 攻略生成 Prompt
 │       └── synergy_score.md       # 相性评分 Prompt
+├── project_problem.md             # 项目问题记录文档
+├── project_doc.md                 # 项目细节文档
 ├── AGENTS.md                      # 开发规范
 ├── PLANS.md                       # 实施方案与阶段
 ├── CLAUDE.md                      # Claude Code 上下文文件
@@ -86,6 +90,10 @@ test_project/
 ```bash
 conda env create -f environment.yml
 conda activate myenv
+
+# 浏览器模式需额外安装 Playwright
+pip install playwright
+playwright install msedge
 ```
 
 ### 2. 运行测试
@@ -122,15 +130,17 @@ python -m src.scraper.incremental --hero-id 52,114
 ### 5. AI 批量生成
 
 ```bash
-# 预览成本（不调用 API）
+# API 模式（需配置 DEEPSEEK_API_KEY）
+python -m src.scraper.ai_batch --guide                      # 生成攻略
+python -m src.scraper.ai_batch --synergy                     # 全量相性
+
+# 浏览器模式（免费，需手动登录 DeepSeek 网页版）
+python -m src.scraper.ai_batch --guide --browser             # 攻略
+python -m src.scraper.ai_batch --synergy --browser           # 相性
+
+# 预览成本（仅 API 模式）
 python -m src.scraper.ai_batch --dry-run --guide
 python -m src.scraper.ai_batch --dry-run --synergy
-
-# 生成攻略
-python -m src.scraper.ai_batch --guide
-
-# 全量相性评分（所有武将两两配对）
-python -m src.scraper.ai_batch --synergy [--score-threshold 0]
 ```
 
 ---
@@ -155,10 +165,23 @@ UI 层 (PySide6)      主窗口 / 武将浏览器 / 选将推荐 / 各对话框
 ```
 官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
                                                                         ↘ images/<武将名>.png
-DeepSeek API → ai_batch.py → ai_generator.py → ai_guide/ai_synergy/… → data/{guides,synergies}.json
+DeepSeek API / 网页版 → ai_batch.py → ai_generator.py / ai_playwright.py
+  → ai_guide/ai_synergy/… → data/{guides,synergies}.json
 data/*.json → DataFacade (三个 Manager) → UI 展示
-用户操作 → MainWindow → QProcess → 爬虫脚本
+用户操作 → MainWindow → QProcess → 爬虫/AI 脚本
 ```
+
+### 双模式 AI 生成
+
+```
+AI 生成
+ ├── API 模式 (默认)    → AIBatchGenerator → httpx → DeepSeek API
+ └── 浏览器模式 (--browser) → PlaywrightGenerator → Playwright + Edge → chat.deepseek.com
+```
+
+- **API 模式**：速度快、支持 Token 统计和费用估算、需要付费 API Key
+- **浏览器模式**：免费、无需 API Key、速度较慢（需等待浏览器）、不支持 Token 统计
+- 生成的效果和 JSON 输出格式一致，差异仅在后端传输方式
 
 ### 配置加载优先级
 
@@ -220,7 +243,7 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 
 5 步清洗流程 + 头像下载：定位数据源 → 下载 JS → 解析 → 清洗映射 → Pydantic 校验 + JSON 输出 + 头像下载。
 
-新增 `--skip-images` 跳过头像下载。
+`--skip-images` 跳过头像下载。
 
 ### 增量爬虫 (`src/scraper/incremental.py`)
 
@@ -229,7 +252,7 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 - `--hero` — 按名称采集（支持模糊匹配）
 - `--hero-id` — 按 ID 采集
 
-新增 `--skip-images` 跳过头像下载。
+`--skip-images` 跳过头像下载。
 
 ---
 
@@ -239,6 +262,7 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 src/scraper/
 ├── ai_batch.py          CLI 入口（参数解析 → 配置加载 → 委托子模块）
 ├── ai_generator.py      API 调用核心（限速/重试/JSON 提取/Pydantic 校验）
+├── ai_playwright.py     浏览器自动化生成器（Playwright + Edge）
 ├── ai_guide.py          逐个武将生成攻略
 ├── ai_synergy.py        全量相性生成（所有武将两两配对）
 ├── ai_synergy_pair.py   指定两武将配对生成
@@ -250,8 +274,27 @@ src/scraper/
 - 各模块单向调用，无循环导入
 - 支持断点续传（跳过已有项）
 - 输出经过 Pydantic 模型校验
-- `--dry-run` 预览 Token 消耗和费用
+- `--dry-run` 预览 Token 消耗和费用（仅 API 模式）
 - 批量保存中间结果，中断不丢数据
+- 双模式：API 直连 / 浏览器自动化（`--browser`）
+
+### ETL 数据流
+
+```
+AI 回复（含分析正文 + --- 分隔线 + ```json 代码块）
+  │ 1. Extract
+  ▼
+原始回复文本(str)
+  │ 2. Transform
+  ▼
+_extract_json() → raw_decode 宽容解析 + 状态机修复字面换行 → Python dict
+_convert_ids_to_int() → 武将 ID 转 int → 注入 hero_id / hero_a_id / hero_b_id
+  │ 3. Load
+  ▼
+_validate_guide() / _validate_synergy() → Pydantic 校验 → model_dump
+  ▼
+_save_json() → data/guides.json / data/synergies.json
+```
 
 ---
 
@@ -265,12 +308,26 @@ src/scraper/
 | 配置 > API 配置 | | 编辑 config.env |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
 | 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
-| 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略（成本确认+进度条） |
-| 数据 > 武将相性 > 选定武将 | | 选 1 武将，计算其与全体其他武将的相性 |
-| 数据 > 武将相性 > 指定获取 | | 选 2 武将，计算这对的相性评分 |
+| 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略 → BackendChooseDialog（API/浏览器） |
+| 数据 > 武将相性 > 选定武将 | | 选 1 武将，计算其与全体其他武将的相性 → BackendChooseDialog |
+| 数据 > 武将相性 > 指定获取 | | 选 2 武将，计算这对的相性评分 → BackendChooseDialog |
 | 帮助 > 关于 | | 版本信息 |
 
 所有耗时操作均通过 **QProcess** 异步执行，不阻塞 UI。
+
+### 后端选择对话框 (`BackendChooseDialog`)
+
+所有攻略/相性操作在确认执行前弹出双 Tab 对话框：
+
+```
+┌──────────────────────────────────────────────┐
+│  Tab1: API 方式  │  Tab2: 浏览器方式        │
+├──────────────────────────────────────────────┤
+│  - 成本估算信息    │  浏览器模式说明           │
+│  - Token/费用     │  免费无需 API Key        │
+│  [确定执行] [取消]  │  需登录 DeepSeek 网页版  │
+└──────────────────────────────────────────────┘
+```
 
 ### 选将推荐
 
@@ -310,7 +367,8 @@ MAX_RETRIES=3
 |------|------|
 | PySide6 | 桌面 UI 框架 |
 | pydantic | 数据模型与校验 |
-| httpx | AI API 请求 |
+| httpx | DeepSeek API 请求（API 模式） |
+| playwright | 浏览器自动化（浏览器模式） |
 | beautifulsoup4 | HTML 解析（备用） |
 | mistune | Markdown → HTML 渲染 |
 | opencv-python / easyocr / mss | 屏幕采集层（待开发） |
@@ -326,10 +384,11 @@ MAX_RETRIES=3
 | 二 | 数据采集（官网爬虫 + AI 批量生成） | ✅ 已完成 |
 | 三 | PySide6 桌面应用 UI | ✅ 已完成 |
 | 四 | 武将相性交互获取 | ✅ 已完成 |
-| 五 | 武将头像下载 | ✅ 已完成 |
+| 五 | 武将头像下载（icon_url → images/） | ✅ 已完成 |
 | 六 | 选将推荐（4×2 网格+头像+数据接口） | ✅ 已完成 |
-| 七 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | ⏳ 待开发 |
-| 八 | 推荐引擎（相性查询、推荐数据源接入） | ⏳ 待开发 |
+| 七 | 浏览器自动化（Playwright + Edge）双模式 AI 生成 | ✅ 已完成 |
+| 八 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | ⏳ 待开发 |
+| 九 | 推荐引擎（相性查询、推荐数据源接入） | ⏳ 待开发 |
 
 ---
 
@@ -355,9 +414,15 @@ python -m src.scraper.incremental --incremental [--skip-images]
 python -m src.scraper.incremental --hero 诸葛亮,关羽
 python -m src.scraper.incremental --hero-id 52,114
 
-# AI 攻略生成
+# AI 攻略生成（API 模式）
 python -m src.scraper.ai_batch --guide [--dry-run] [--heroes-file path]
 
-# AI 相性评分生成
+# AI 攻略生成（浏览器模式）
+python -m src.scraper.ai_batch --guide --browser
+
+# AI 相性评分（API 模式）
 python -m src.scraper.ai_batch --synergy [--dry-run] [--score-threshold 0]
+
+# AI 相性评分（浏览器模式）
+python -m src.scraper.ai_batch --synergy --browser
 ```

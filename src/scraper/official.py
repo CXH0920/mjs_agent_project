@@ -119,9 +119,10 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
 
 
 def main() -> None:
-    # Windows cmd 默认 GBK，刷新 stdout 编码以支持中文输出
+    # Windows cmd 默认 GBK，刷新 stdout/stderr 编码以支持中文输出
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="名将杀官网武将采集")
     parser.add_argument("--dry-run", action="store_true", help="仅预览，不写入文件")
     parser.add_argument("--output", "-o", type=str, help="输出文件路径")

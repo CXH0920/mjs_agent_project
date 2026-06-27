@@ -92,7 +92,7 @@
   "combo_ceiling": <配合上限 1-10>,
   "combo_stability": <配合稳定性 1-10>,
   "adaptability": <环境适应力 1-10>,
-  "description": "相性总评的一句话定性判断"
+  "description": "第一部分的具体内容"
 }
 ```
 ## Rules

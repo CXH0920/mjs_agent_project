@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import tempfile
+import traceback
 
 from PySide6.QtCore import QObject, Signal, QProcess
 
@@ -28,7 +29,7 @@ class GuideFetchService(QObject):
     cost_estimated = Signal(dict)
     progress_output = Signal(str)        # 原始 stdout 行
     progress_value = Signal(int, int)    # (current, total) 供进度条使用
-    fetch_completed = Signal(bool, str)  # (success, message)
+    fetch_completed = Signal(bool, str)  # (success, message_or_detail)
     error_occurred = Signal(str)
 
     def __init__(self, guide_mgr, parent=None):
@@ -37,16 +38,13 @@ class GuideFetchService(QObject):
         self._process: QProcess | None = None
         self._context = None
 
-    def fetch_all(self, all_heroes: list[dict]) -> None:
+    def fetch_all(self, all_heroes: list[dict], backend: str = "api") -> None:
         if self._is_busy():
             return
-        est = estimate_cost(len(all_heroes), "guide")
-        est["mode"] = "all"
-        est["heroes"] = all_heroes
-        self._context = {"mode": "all", "heroes": all_heroes}
-        self.cost_estimated.emit(est)
+        self._context = {"mode": "all", "heroes": all_heroes, "backend": backend}
+        self.execute_with_confirmation()
 
-    def fetch_incremental(self, all_heroes: list[dict]) -> None:
+    def fetch_incremental(self, all_heroes: list[dict], backend: str = "api") -> None:
         if self._is_busy():
             return
         existing_ids = {g.hero_id for g in self._guide_mgr.list_guides()}
@@ -57,23 +55,19 @@ class GuideFetchService(QObject):
                                       "estimated_output_tokens": 0, "estimated_cost_cny": 0.0,
                                       "message": "所有武将已有攻略，无需生成"})
             return
-        est = estimate_cost(len(missing), "guide")
-        est["mode"] = "incremental"
-        est["heroes"] = missing
-        self._context = {"mode": "incremental", "heroes": missing}
-        self.cost_estimated.emit(est)
 
-    def fetch_specific(self, heroes: list[dict]) -> None:
+        self._context = {"mode": "incremental", "heroes": missing, "backend": backend}
+        self.execute_with_confirmation()
+
+    def fetch_specific(self, heroes: list[dict], backend: str = "api") -> None:
         if self._is_busy():
             return
         if not heroes:
             self.status_changed.emit("未选择任何武将")
             return
-        est = estimate_cost(len(heroes), "guide")
-        est["mode"] = "specific"
-        est["heroes"] = heroes
-        self._context = {"mode": "specific", "heroes": heroes}
-        self.cost_estimated.emit(est)
+
+        self._context = {"mode": "specific", "heroes": heroes, "backend": backend}
+        self.execute_with_confirmation()
 
     def execute_with_confirmation(self) -> None:
         if not self._context:
@@ -81,7 +75,12 @@ class GuideFetchService(QObject):
             return
         heroes = self._context["heroes"]
         mode = self._context["mode"]
+        backend = self._context.get("backend", "api")
         self.status_changed.emit(f"正在生成攻略 ({mode})...")
+
+        base_args = ["-m", "src.scraper.ai_batch", "--guide"]
+        if backend == "browser":
+            base_args.append("--browser")
 
         if mode == "specific":
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
@@ -89,10 +88,10 @@ class GuideFetchService(QObject):
             tmp_path = tmp.name
             tmp.close()
             self._context["tmp_path"] = tmp_path
-            self._start_process(["-m", "src.scraper.ai_batch", "--guide", "--heroes-file", tmp_path])
+            self._start_process([*base_args, "--heroes-file", tmp_path])
         else:
             self._context["tmp_path"] = None
-            self._start_process(["-m", "src.scraper.ai_batch", "--guide"])
+            self._start_process(base_args)
 
     def cancel(self) -> None:
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
@@ -107,9 +106,11 @@ class GuideFetchService(QObject):
         return False
 
     def _start_process(self, args: list[str]) -> None:
+        logger.info("启动子进程: python %s", " ".join(args))
         self._process = QProcess(self)
-        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
+        self._process.readyReadStandardError.connect(self._on_stderr_ready)
         self._process.finished.connect(self._on_finished)
         self._process.errorOccurred.connect(self._on_error)
         self._process.start(sys.executable, args)
@@ -119,6 +120,8 @@ class GuideFetchService(QObject):
             return
         data = self._process.readAllStandardOutput()
         text = bytes(data).decode("utf-8", errors="replace")
+        # stdout 也输出到父进程日志
+        logger.debug("[子进程 stdout] %s", text.strip())
         self.progress_output.emit(text)
 
         # 解析进度 [i/N] 用于进度条
@@ -127,23 +130,65 @@ class GuideFetchService(QObject):
             if m:
                 self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 
+    def _on_stderr_ready(self) -> None:
+        """读取子进程的 stderr 并输出到日志"""
+        if not self._process:
+            return
+        data = self._process.readAllStandardError()
+        text = bytes(data).decode("utf-8", errors="replace")
+        if text.strip():
+            logger.warning("[子进程 stderr]\n%s", text.strip())
+            # 同时 emit 到 UI
+            self.progress_output.emit(text)
+
     def _on_finished(self, exit_code: int) -> None:
         self._cleanup_tmp()
+
+        # 收集子进程完整输出用于诊断
+        full_stdout = ""
+        full_stderr = ""
+        try:
+            if self._process:
+                full_stdout = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
+                full_stderr = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
+        except Exception:
+            pass
+
         msg = f"进程退出码: {exit_code}"
+        logger.info("攻略生成子进程结束，%s", msg)
+
         if exit_code == 0:
             self.status_changed.emit("攻略生成完成")
             self.fetch_completed.emit(True, msg)
         else:
             logger.warning("攻略生成进程退出码 %d", exit_code)
+            # 输出完整的子进程 stdout 和 stderr
+            if full_stdout.strip():
+                logger.warning("[子进程 stdout 完整输出]\n%s", full_stdout.strip())
+            if full_stderr.strip():
+                logger.warning("[子进程 stderr 完整输出]\n%s", full_stderr.strip())
             self.status_changed.emit("攻略生成失败")
             self.fetch_completed.emit(False, msg)
         self._context = None
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         self._cleanup_tmp()
+        error_map = {
+            QProcess.ProcessError.FailedToStart: "子进程启动失败",
+            QProcess.ProcessError.Crashed: "子进程崩溃",
+            QProcess.ProcessError.Timedout: "子进程超时",
+            QProcess.ProcessError.WriteError: "写入子进程管道失败",
+            QProcess.ProcessError.ReadError: "读取子进程管道失败",
+        }
+        error_name = error_map.get(error, f"未知错误({error})")
         error_msg = self._process.errorString() if self._process else "未知错误"
+        full_msg = f"{error_name}: {error_msg}"
+
+        logger.error("攻略生成子进程错误: %s", full_msg)
+        logger.error("调用栈:\n%s", traceback.format_exc())
+
         self.status_changed.emit("攻略生成出错")
-        self.error_occurred.emit(error_msg)
+        self.error_occurred.emit(full_msg)
         self._context = None
 
     def _cleanup_tmp(self) -> None:
@@ -152,5 +197,6 @@ class GuideFetchService(QObject):
         if tmp_path:
             try:
                 os.unlink(tmp_path)
-            except OSError:
-                pass
+                logger.debug("已清理临时文件: %s", tmp_path)
+            except OSError as e:
+                logger.warning("清理临时文件失败 %s: %s", tmp_path, e)

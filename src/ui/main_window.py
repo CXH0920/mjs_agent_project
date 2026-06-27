@@ -38,6 +38,7 @@ from src.business.fetch_service import HeroFetchService
 from src.business.guide_fetch_service import GuideFetchService
 from src.ui.guide_fetch_dialog import GuideFetchDialog
 from src.ui.cost_confirm_dialog import CostConfirmDialog
+from src.ui.backend_choose_dialog import BackendChooseDialog
 from src.ui.guide_progress_dialog import GuideProgressDialog
 from src.ui.synergy_pair_dialog import SynergyPairDialog
 from src.ui.synergy_single_dialog import SynergySingleDialog
@@ -174,7 +175,12 @@ class MainWindow(QMainWindow):
             self._update_status()
 
     def _on_guide_fetch_error(self, error_msg: str) -> None:
-        QMessageBox.warning(self, "生成失败", f"攻略生成失败\n{error_msg}")
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle("攻略生成失败")
+        msg.setText("攻略生成出错")
+        msg.setDetailedText(error_msg)
+        msg.exec()
 
     def _on_guide_progress(self, text: str) -> None:
         """攻略生成进度更新"""
@@ -377,21 +383,58 @@ class MainWindow(QMainWindow):
         if not heroes:
             QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
             return
-        self._guide_service.fetch_all(heroes)
+        from src.scraper.ai_utils import estimate_cost
+        est = estimate_cost(len(heroes), "guide")
+        est["mode"] = "all"
+        est["heroes"] = heroes
+        dialog = BackendChooseDialog(estimation=est, title="全量攻略生成", parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self)
+        self._guide_service.fetch_all(heroes, backend=dialog.get_selected_backend())
+        self._guide_progress_dialog.exec()
+        self._guide_progress_dialog = None
 
     def _request_guide_incremental(self) -> None:
         heroes = self._get_heroes_as_dicts()
         if not heroes:
             QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
             return
-        self._guide_service.fetch_incremental(heroes)
+        existing_ids = {g.hero_id for g in self._data.guides.list_guides()}
+        missing = [h for h in heroes if h.get("id") not in existing_ids]
+        if not missing:
+            self._status_label.setText("所有武将已有攻略，无需生成")
+            return
+        from src.scraper.ai_utils import estimate_cost
+        est = estimate_cost(len(missing), "guide")
+        est["mode"] = "incremental"
+        est["heroes"] = missing
+        dialog = BackendChooseDialog(estimation=est, title="增量攻略生成", parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self)
+        self._guide_service.fetch_incremental(heroes, backend=dialog.get_selected_backend())
+        self._guide_progress_dialog.exec()
+        self._guide_progress_dialog = None
 
     def _request_guide_specific(self) -> None:
         dialog = GuideFetchDialog(self._data.heroes, parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        if dialog.selected_heroes:
-            self._guide_service.fetch_specific(dialog.selected_heroes)
+        if not dialog.selected_heroes:
+            return
+        hero_count = len(dialog.selected_heroes)
+        from src.scraper.ai_utils import estimate_cost
+        est = estimate_cost(hero_count, "guide")
+        est["mode"] = "specific"
+        est["heroes"] = dialog.selected_heroes
+        bd = BackendChooseDialog(estimation=est, title="指定攻略生成", parent=self)
+        if bd.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._guide_progress_dialog = GuideProgressDialog(hero_count, parent=self)
+        self._guide_service.fetch_specific(dialog.selected_heroes, backend=bd.get_selected_backend())
+        self._guide_progress_dialog.exec()
+        self._guide_progress_dialog = None
 
     # ---------------------------------------------------------------
     # 相性获取入口
@@ -406,8 +449,13 @@ class MainWindow(QMainWindow):
         dialog = SynergyPairDialog(self._data.heroes, parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        if dialog.selected_heroes:
-            self._synergy_service.fetch_pair(dialog.selected_heroes)
+        if not dialog.selected_heroes:
+            return
+        bd = BackendChooseDialog(title="相性配对生成", parent=self)
+        if bd.exec() != QDialog.DialogCode.Accepted:
+            return
+        backend = bd.get_selected_backend()
+        self._synergy_service.fetch_pair(dialog.selected_heroes, backend=backend)
 
     def _request_synergy_single(self) -> None:
         """相性选定武将：弹出对话框选择 1 个武将"""
@@ -418,8 +466,13 @@ class MainWindow(QMainWindow):
         dialog = SynergySingleDialog(self._data.heroes, parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        if dialog.selected_hero:
-            self._synergy_service.fetch_single(dialog.selected_hero, all_heroes)
+        if not dialog.selected_hero:
+            return
+        bd = BackendChooseDialog(title="选定武将相性生成", parent=self)
+        if bd.exec() != QDialog.DialogCode.Accepted:
+            return
+        backend = bd.get_selected_backend()
+        self._synergy_service.fetch_single(dialog.selected_hero, all_heroes, backend=backend)
 
     def _get_heroes_as_dicts(self) -> list[dict]:
         from src.data.models import Hero
