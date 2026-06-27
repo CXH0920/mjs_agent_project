@@ -48,11 +48,13 @@ class HeroManager:
         logger.debug("加载 %d 个武将", len(self._heroes))
 
     def save(self) -> None:
-        """将所有武将数据写入 JSON 文件"""
+        """将所有武将数据原子写入 JSON 文件"""
         self.heroes_file.parent.mkdir(parents=True, exist_ok=True)
         data = [h.model_dump(mode="json") for h in self._heroes.values()]
-        with self.heroes_file.open("w", encoding="utf-8") as f:
+        tmp_path = self.heroes_file.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(self.heroes_file)
         logger.debug("保存 %d 个武将到 %s", len(self._heroes), self.heroes_file)
 
     # ========================================================

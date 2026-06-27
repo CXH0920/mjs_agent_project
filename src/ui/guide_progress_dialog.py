@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -98,7 +99,6 @@ class GuideProgressDialog(QDialog):
     def update_status(self, text: str) -> None:
         """更新当前状态文字"""
         # 成功进度行: "[i/total] 武将名 OK"
-        import re
         m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+(?:OK|FAIL)", text)
         if m:
             self._status_label.setText(f"已生成 {m.group(3)} 的攻略...")

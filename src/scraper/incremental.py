@@ -85,7 +85,7 @@ def incremental_collect(
 ) -> list[dict]:
     """筛除本地已存在的武将"""
     new_raw = [r for r in raw_list if r.get("id") not in existing_ids]
-    logger.info("\u589e\u91cf\u7b5b\u9664: \u5b98\u7f51 %d \u6761 - \u672c\u5730 %d \u6761 = \u65b0 %d \u6761",
+    logger.info("增量筛选: 官网 %d 条 - 本地 %d 条 = 新 %d 条",
                 len(raw_list), len(existing_ids), len(new_raw))
     return new_raw
 
@@ -101,24 +101,24 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     """
     print("\n[清洗与字段映射...]", flush=True)
     transformed = [transform(r) for r in raw_list if transform(r)]
-    print(f"  -> \u6e05\u6d17\u540e: {len(transformed)} \u6761", flush=True)
+    print(f"  -> 清洗后: {len(transformed)} 条", flush=True)
 
     if not transformed:
-        print("  \u65e0\u65b0\u6570\u636e\u9700\u8981\u5904\u7406\u3002", flush=True)
+        print("  无新数据需要处理。", flush=True)
         return
 
-    print("\n[Pydantic \u6a21\u578b\u6821\u9a8c...]", flush=True)
+    print("\n[Pydantic 模型校验...]", flush=True)
     validated = validate_heroes(transformed)
-    print(f"  -> \u6821\u9a8c\u901a\u8fc7: {len(validated)} \u6761", flush=True)
+    print(f"  -> 校验通过: {len(validated)} 条", flush=True)
 
     # 预览模式
     if dry_run:
-        print("\n  [\u9884\u89c8]", flush=True)
+        print("\n  [预览]", flush=True)
         for h in validated[:5]:
             sk = ", ".join(s["name"] for s in h["skills"])
             print(f"    ID={h['id']:>3}  {h['name']}  [{h['faction']}]  {sk}", flush=True)
         if len(validated) > 5:
-            print(f"    ... \u5171 {len(validated)} \u6761", flush=True)
+            print(f"    ... 共 {len(validated)} 条", flush=True)
         return
 
     # 写入模式
@@ -131,80 +131,83 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
         existing = [h for h in existing if h["id"] not in replace_ids]
         removed = before - len(existing)
         merged = existing + validated
-        print(f"  -> \u66ff\u6362\u5199\u5165: \u5220\u9664 {removed} \u6761\u65e7\u6570\u636e + \u5199\u5165 {len(validated)} \u6761\u65b0\u6570\u636e", flush=True)
+        print(f"  -> 替换写入: 删除 {removed} 条旧数据 + 写入 {len(validated)} 条新数据", flush=True)
     elif append:
         with open(output_path, "r", encoding="utf-8") as f:
             existing = json.load(f)
         existing_ids = {h["id"] for h in existing}
         merged = existing + [h for h in validated if h["id"] not in existing_ids]
-        print(f"  -> \u8ffd\u52a0\u5199\u5165: \u539f\u6709 {len(existing)} + \u65b0\u589e {len(validated) - (len(merged) - len(existing))}", flush=True)
+        print(f"  -> 追加写入: 原有 {len(existing)} + 新增 {len(validated) - (len(merged) - len(existing))}", flush=True)
     else:
         merged = validated
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
+    # 原子写入：先写 .tmp 再 rename
+    tmp_path = output_path.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
-    print(f"  -> \u5df2\u4fdd\u5b58: {output_path} ({len(merged)} \u6761)", flush=True)
+    tmp_path.replace(output_path)
+    print(f"  -> 已保存: {output_path} ({len(merged)} 条)", flush=True)
 
     if not dry_run and not skip_images and raw_list:
         from src.scraper.crawler import download_hero_images
         n = download_hero_images(raw_list)
-        print(f"  \u5934\u50cf\u5df2\u4e0b\u8f7d: {n} \u5f20", flush=True)
+        print(f"  头像已下载: {n} 张", flush=True)
 
 
 def main() -> None:
-    # Windows cmd \u9ed8\u8ba4 GBK\uff0c\u5237\u65b0 stdout/stderr \u7f16\u7801\u4ee5\u652f\u6301\u4e2d\u6587\u8f93\u51fa
+    # Windows cmd 默认 GBK，刷新 stdout/stderr 编码以支持中文输出
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="\u540d\u5c06\u6740\u589e\u91cf\u722c\u866b")
+    parser = argparse.ArgumentParser(description="名将杀增量爬虫")
     parser.add_argument("--incremental", action="store_true",
-                        help="\u589e\u91cf\u6a21\u5f0f\uff1a\u53ea\u722c\u53d6\u672c\u5730\u8fd8\u672a\u62e5\u6709\u7684\u6b66\u5c06\uff0c\u8ffd\u52a0\u5199\u5165")
+                        help="增量模式：只爬取本地还未拥有的武将，追加写入")
     parser.add_argument("--hero", "-n", type=str,
-                        help="\u6309\u6b66\u5c06\u540d\u79f0\u91c7\u96c6\uff08\u591a\u4e2a\u7528\u9017\u53f7\u5206\u9694\uff0c\u652f\u6301\u6a21\u7cca\u5339\u914d\uff09")
+                        help="按武将名称采集（多个用逗号分隔，支持模糊匹配）")
     parser.add_argument("--hero-id", type=str,
-                        help="\u6309\u6b66\u5c06 ID \u91c7\u96c6\uff08\u591a\u4e2a\u7528\u9017\u53f7\u5206\u9694\uff0c\u5982 114,115\uff09")
+                        help="按武将 ID 采集（多个用逗号分隔，如 114,115）")
     parser.add_argument("--output", "-o", type=str,
-                        help="\u8f93\u51fa\u6587\u4ef6\u8def\u5f84\uff08\u9ed8\u8ba4 data/heroes.json\uff09")
+                        help="输出文件路径（默认 data/heroes.json）")
     parser.add_argument("--dry-run", action="store_true",
-                        help="\u9884\u89c8\u6a21\u5f0f\uff0c\u4e0d\u5199\u5165\u6587\u4ef6")
+                        help="预览模式，不写入文件")
     parser.add_argument("--skip-images", action="store_true",
-                        help="\u8df3\u8fc7\u5934\u50cf\u4e0b\u8f7d")
+                        help="跳过头像下载")
     parser.add_argument("--verbose", "-v", action="store_true",
-                        help="\u8be6\u7ec6\u65e5\u5fd7")
+                        help="详细日志")
     args = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.WARNING
     logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
 
     if not any([args.incremental, args.hero, args.hero_id]):
-        parser.error("\u8bf7\u6307\u5b9a --incremental \u548c/\u6216 --hero / --hero-id")
+        parser.error("请指定 --incremental 和/或 --hero / --hero-id")
 
     output_path = Path(args.output) if args.output else DEFAULT_HEROES_FILE
 
     print("=" * 60, flush=True)
-    print("  \u540d\u5c06\u6740 Agent - \u589e\u91cf\u722c\u866b", flush=True)
+    print("  名将杀 Agent - 增量爬虫", flush=True)
     print("=" * 60, flush=True)
-    mode = "\u9884\u89c8" if args.dry_run else str(output_path)
-    print(f"  \u8f93\u51fa: {mode}", flush=True)
+    mode = "预览" if args.dry_run else str(output_path)
+    print(f"  输出: {mode}", flush=True)
 
     # 1. 获取官网全量数据
-    print("\n[1/3] \u83b7\u53d6\u5b98\u7f51\u6570\u636e...", flush=True)
+    print("\n[1/3] 获取官网数据...", flush=True)
     all_raw = fetch_all_raw()
 
     # 2. 筛选目标
-    print("\n[2/3] \u7b5b\u9009\u76ee\u6807\u6b66\u5c06...", flush=True)
+    print("\n[2/3] 筛选目标武将...", flush=True)
     target_raw = list(all_raw)
 
     if args.incremental:
         existing_ids = load_existing_ids(output_path)
         target_raw = incremental_collect(all_raw, existing_ids)
-        print(f"  \u589e\u91cf\u76ee\u6807: {len(target_raw)} \u4e2a\u6b66\u5c06\u8981\u5904\u7406", flush=True)
+        print(f"  增量目标: {len(target_raw)} 个武将要处理", flush=True)
 
     if args.hero:
         names = [n.strip() for n in args.hero.split(",") if n.strip()]
         filtered = filter_by_names(all_raw, names)
-        print(f"  \u6309\u540d\u79f0\u7b5b\u9009: {names} -> \u5339\u914d {len(filtered)} \u6761", flush=True)
+        print(f"  按名称筛选: {names} -> 匹配 {len(filtered)} 条", flush=True)
         if args.incremental:
             target_ids = {r.get("id") for r in target_raw}
             filtered = [r for r in filtered if r.get("id") in target_ids]
@@ -217,20 +220,20 @@ def main() -> None:
             try:
                 ids.add(int(hid))
             except ValueError:
-                logger.warning("\u65e0\u6548 ID: %s", hid)
+                logger.warning("无效 ID: %s", hid)
         filtered = filter_by_ids(all_raw, ids)
-        print(f"  \u6309 ID \u7b5b\u9009: {sorted(ids)} -> \u5339\u914d {len(filtered)} \u6761", flush=True)
+        print(f"  按 ID 筛选: {sorted(ids)} -> 匹配 {len(filtered)} 条", flush=True)
         if args.incremental:
             target_ids = {r.get("id") for r in target_raw}
             filtered = [r for r in filtered if r.get("id") in target_ids]
         target_raw = filtered
 
     if not target_raw:
-        print("\n  \u65e0\u76ee\u6807\u6b66\u5c06\uff0c\u9000\u51fa\u3002", flush=True)
+        print("\n  无目标武将，退出。", flush=True)
         return
 
     # 3. 清洗 + 校验 + 输出
-    print("\n[3/3] \u6e05\u6d17\u4e0e\u5199\u5165...", flush=True)
+    print("\n[3/3] 清洗与写入...", flush=True)
 
     # 指定武将模式（不含 --incremental）：先删旧数据再写入新数据
     replace_ids = None
@@ -242,7 +245,7 @@ def main() -> None:
         skip_images=args.skip_images)
 
     print(f"\n{'=' * 60}", flush=True)
-    print(f"  \u5b8c\u6210!", flush=True)
+    print(f"  完成!", flush=True)
     print(f"{'=' * 60}", flush=True)
 
 

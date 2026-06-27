@@ -153,9 +153,11 @@ def save_env_file(env_path, data):
         env_path: .env 文件路径
         data: 要写入的键值对
     """
+    existing_keys = set()
     lines = []
     if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
+        content = env_path.read_text(encoding="utf-8")
+        for line in content.splitlines():
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 lines.append(line)
@@ -163,14 +165,8 @@ def save_env_file(env_path, data):
                 key = stripped.split("=")[0].strip() if "=" in stripped else ""
                 if key not in data:
                     lines.append(line)
-
-    existing_keys = set()
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#") and "=" in stripped:
-                key = stripped.split("=")[0].strip()
-                existing_keys.add(key)
+                if key:
+                    existing_keys.add(key)
 
     for key in data:
         if key not in existing_keys:

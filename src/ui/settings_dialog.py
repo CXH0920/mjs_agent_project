@@ -3,7 +3,6 @@
 名将杀 Agent - API 配置对话框
 
 
-
 提供图形界面编辑 config.env 中的 API 配置项。
 
 支持读取当前配置、原子写入、新建配置文件。
@@ -11,9 +10,7 @@
 """
 
 
-
 from __future__ import annotations
-
 
 
 import logging
@@ -23,7 +20,6 @@ import os
 from pathlib import Path
 
 from typing import Optional
-
 
 
 from PySide6.QtWidgets import (
@@ -53,11 +49,7 @@ from PySide6.QtCore import Qt
 from src.config.env import parse_env_file, save_env_file, DEFAULT_ENV_FILE
 
 
-
 logger = logging.getLogger(__name__)
-
-
-
 
 
 # 配置字段定义：(标签, 环境变量键, 控件类型, 默认值, 最小值, 最大值)
@@ -74,7 +66,6 @@ TEXT_FIELDS = [
 ]
 
 
-
 SPIN_FIELDS = [
 
     ("每分钟请求数", "REQUESTS_PER_MINUTE", 30, 1, 120),
@@ -86,19 +77,14 @@ SPIN_FIELDS = [
 ]
 
 
-
-
-
 class SettingsDialog(QDialog):
 
     """API 配置编辑对话框
 
 
-
     以表单形式编辑 config.env 中的所有配置项，支持新建和原子写入。
 
     """
-
 
 
     def __init__(self, env_path: Optional[Path] = None, parent=None):
@@ -112,7 +98,6 @@ class SettingsDialog(QDialog):
         self._spin_widgets: dict[str, QSpinBox] = {}
 
 
-
         self.setWindowTitle("API 配置")
 
         self.setMinimumWidth(450)
@@ -122,13 +107,11 @@ class SettingsDialog(QDialog):
         self._load_config()
 
 
-
     # ---------------------------------------------------------------
 
     # UI 构建
 
     # ---------------------------------------------------------------
-
 
 
     def _setup_ui(self) -> None:
@@ -138,13 +121,11 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
 
-
         # 表单布局
 
         form = QFormLayout()
 
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
 
 
         # 文本输入字段
@@ -168,7 +149,6 @@ class SettingsDialog(QDialog):
             form.addRow(f"{label}:", widget)
 
 
-
         # 数值输入字段
 
         for label, key, default, min_val, max_val in SPIN_FIELDS:
@@ -184,9 +164,7 @@ class SettingsDialog(QDialog):
             form.addRow(f"{label}:", widget)
 
 
-
         layout.addLayout(form)
-
 
 
         # 文件路径提示
@@ -198,7 +176,6 @@ class SettingsDialog(QDialog):
         hint.setWordWrap(True)
 
         layout.addWidget(hint)
-
 
 
         # 按钮
@@ -216,13 +193,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(buttons)
 
 
-
     # ---------------------------------------------------------------
 
     # 加载 / 保存
 
     # ---------------------------------------------------------------
-
 
 
     def _load_config(self) -> None:
@@ -232,13 +207,11 @@ class SettingsDialog(QDialog):
         data = parse_env_file(self._env_path)
 
 
-
         for key, widget in self._text_widgets.items():
 
             if key in data:
 
                 widget.setText(data[key])
-
 
 
         for key, widget in self._spin_widgets.items():
@@ -252,7 +225,6 @@ class SettingsDialog(QDialog):
                 except (ValueError, TypeError):
 
                     pass
-
 
 
     def _on_save(self) -> None:
@@ -274,7 +246,6 @@ class SettingsDialog(QDialog):
         for key, widget in self._spin_widgets.items():
 
             data[key] = str(widget.value())
-
 
 
         try:

@@ -50,11 +50,13 @@ class GuideManager:
         logger.debug("加载 %d 条攻略", len(self._guides))
 
     def save(self) -> None:
-        """将所有攻略数据写入 JSON 文件"""
+        """将所有攻略数据原子写入 JSON 文件"""
         self.guides_file.parent.mkdir(parents=True, exist_ok=True)
         data = [g.model_dump(mode="json") for g in self._guides.values()]
-        with self.guides_file.open("w", encoding="utf-8") as f:
+        tmp_path = self.guides_file.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(self.guides_file)
         logger.debug("保存 %d 条攻略到 %s", len(self._guides), self.guides_file)
 
     # ========================================================

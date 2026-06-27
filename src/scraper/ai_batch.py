@@ -35,14 +35,11 @@ from src.scraper.ai_utils import (
     _estimate_cost,
     estimate_cost,
     load_heroes,
+    load_prompt,
     _save_json,
 )
 
-# 向后兼容：外部代码 from src.scraper.ai_batch import AIBatchGenerator 依然有效
 from src.scraper.ai_generator import AIBatchGenerator
-
-# 向后兼容：ai_utils 中的名称
-from src.scraper.ai_utils import load_prompt as load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +253,7 @@ def main():
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct
-        if ct == 0 and pt == 0:
+        if ct == 0 and pt == 0 and not args.browser:
             had_failure = True
 
     if args.synergy_single:
@@ -269,7 +266,7 @@ def main():
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct
-        if ct == 0 and pt == 0:
+        if ct == 0 and pt == 0 and not args.browser:
             had_failure = True
 
     _print_token_summary(total_prompt_tokens, total_completion_tokens)

@@ -7,7 +7,10 @@ __pycache__/
 
 # Project documentation
 project_problem.md
-project_doc.md
+review-report.md
+data/synergies.json
+data/guides.json
+PLANS.md
 
 # Environment files
 config.env

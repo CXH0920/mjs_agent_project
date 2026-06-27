@@ -51,11 +51,13 @@ class SynergyManager:
         logger.debug("加载 %d 条相性", len(self._synergies))
 
     def save(self) -> None:
-        """将所有相性数据写入 JSON 文件"""
+        """将所有相性数据原子写入 JSON 文件"""
         self.synergies_file.parent.mkdir(parents=True, exist_ok=True)
         data = [s.model_dump(mode="json") for s in self._synergies.values()]
-        with self.synergies_file.open("w", encoding="utf-8") as f:
+        tmp_path = self.synergies_file.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(self.synergies_file)
         logger.debug("保存 %d 条相性到 %s", len(self._synergies), self.synergies_file)
 
     # ========================================================

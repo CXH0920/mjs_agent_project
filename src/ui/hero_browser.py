@@ -99,6 +99,10 @@ class HeroListPanel(QWidget):
 
         self._apply_filters()
 
+    def reload(self) -> None:
+        """公有接口：重新加载武将数据"""
+        self._load_heroes()
+
     def _apply_filters(self) -> None:
         """应用搜索和筛选条件"""
         search_text = self._search_box.text().strip()
@@ -426,4 +430,4 @@ class HeroBrowser(QWidget):
 
     def reload_data(self) -> None:
         """公有方法：重新加载武将列表数据"""
-        self._list_panel._load_heroes()
+        self._list_panel.reload()
