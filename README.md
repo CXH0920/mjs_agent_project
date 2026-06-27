@@ -12,7 +12,8 @@ test_project/
 ├── src/
 │   ├── main.py                    # 应用入口
 │   ├── config/
-│   │   └── env.py                 # .env 解析/加载/保存
+│   │   ├── env.py                 # .env 解析/加载/保存
+│   │   └── logging_config.py     # 统一日志配置（按模块拆分 + 文件轮转）
 │   ├── data/
 │   │   ├── models.py              # Pydantic 数据模型（Hero/SynergyScore/HeroGuide/...）
 │   │   ├── manager.py             # DataFacade 门面 + 增量更新函数
@@ -373,6 +374,36 @@ MAX_RETRIES=3
 | mistune | Markdown → HTML 渲染 |
 | opencv-python / easyocr / mss | 屏幕采集层（待开发） |
 | pytest | 测试框架 |
+
+---
+
+## 日志系统
+
+统一日志配置在 `src/config/logging_config.py`，桌面应用启动时自动初始化。
+
+### 日志文件结构
+
+```
+logs/
+├── app.log                  # UI 操作、数据加载
+├── scraper/
+│   ├── scraper.log          # 爬虫日志
+│   └── ai_batch.log         # AI 生成日志
+├── business/
+│   └── business.log         # QProcess 启停
+└── subprocess/
+    ├── stdout.log           # 子进程标准输出
+    └── stderr.log           # 子进程错误输出
+```
+
+每个文件最大 10MB，保留 5 个备份。
+
+### 配置控制
+
+```env
+LOG_LEVEL=INFO
+LOG_TO_FILE=true
+```
 
 ---
 
