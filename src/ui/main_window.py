@@ -77,9 +77,21 @@ class MainWindow(QMainWindow):
         self._fetch_service = HeroFetchService(self)
         self._guide_service = GuideFetchService(self._data.guides, self)
         self._synergy_service = SynergyFetchService(self)
+
+        # 屏幕采集服务
+        from src.config.env import get_mumu_config
+        from src.business.capture_service import CaptureService
+        from src.business.ocr_service import OcrService
+        self._capture_service = CaptureService(self)
+        self._ocr_service = OcrService(self)
+        self._capture_service.update_config(get_mumu_config())
+        self._ocr_service.update_config(get_mumu_config())
+        self._ocr_service.set_hero_names([h.name for h in self._data.heroes.list_heroes()])
+
         self._connect_synergy_signals()
         self._connect_guide_signals()
         self._connect_fetch_signals()
+        self._connect_capture_signals()
 
         self.setWindowTitle("名将杀 Agent")
         self.setMinimumSize(960, 640)
@@ -143,13 +155,76 @@ class MainWindow(QMainWindow):
     # 攻略生成服务信号连接
     # ---------------------------------------------------------------
 
+    # ---------------------------------------------------------------
+    # 攻略生成服务信号连接
+    # ---------------------------------------------------------------
+
     def _connect_guide_signals(self) -> None:
+        """连接攻略生成服务信号"""
         self._guide_service.cost_estimated.connect(self._on_guide_cost_estimated)
         self._guide_service.status_changed.connect(self._on_fetch_status)
         self._guide_service.fetch_completed.connect(self._on_guide_fetch_completed)
         self._guide_service.error_occurred.connect(self._on_guide_fetch_error)
         self._guide_service.progress_output.connect(self._on_guide_progress)
         self._guide_service.progress_value.connect(self._on_guide_progress_value)
+
+    def _connect_capture_signals(self) -> None:
+        """连接截图和轮询服务信号"""
+        self._ocr_service.poll_tick.connect(self._on_poll_capture)
+
+    def _on_poll_capture(self) -> None:
+        """轮询触发：先截图 → 模板匹配 → 匹配成功才执行 OCR+保存。
+
+        每 tick 截图一次做模板匹配，不匹配则静默跳过。
+        匹配成功后才执行完整 OCR 流程，然后冷却 3 分钟。
+        """
+        if not self._capture_service.capture:
+            logger.debug("轮询跳过：ADB 未配置")
+            self._ocr_service.stop_poll()
+            return
+
+        if not self._capture_service.is_connected:
+            ok, msg = self._capture_service.connect_emulator()
+            if not ok:
+                logger.debug("轮询跳过：ADB 连接失败 - %s", msg)
+                return
+
+        # 1. 截图
+        cap = self._capture_service.capture
+        ok, result = cap.screencap_full()
+        if not ok:
+            return
+
+        image = result
+
+        # 2. 模板匹配
+        from src.ocr.ocr_loader import get_template_manager
+        tm = get_template_manager()
+        if not tm.is_loaded:
+            logger.debug("轮询跳过：模板未加载")
+            return
+
+        threshold = self._capture_service._config.get("mumu_ocr_match_threshold", 0.8)
+        matched, confidence = tm.match(image, threshold=threshold)
+        if not matched:
+            logger.debug("轮询跳过：模板不匹配 (置信度=%.4f)", confidence)
+            return
+
+        logger.info("轮询检测到武将选择页面 (置信度=%.2f)", confidence)
+
+        # 3. OCR 识别（直接使用已截图画面，不再重新截图）
+        hero_names = [h.name for h in self._data.heroes.list_heroes()]
+        ocr_results, ocr_matched = self._capture_service._run_ocr(image, hero_names=hero_names)
+
+        # 4. 结果填入推荐面板 + 冷却
+        if ocr_results:
+            self._recommendation.load_from_ocr(ocr_results)
+            recognized = len([r for r in ocr_results if r.get("name")])
+            logger.info("轮询: OCR 识别到 %d 个武将", recognized)
+
+        if ocr_matched:
+            self._ocr_service.set_cooldown(180)
+            logger.info("轮询: OCR 匹配成功，冷却 180 秒")
 
     def _on_guide_cost_estimated(self, estimation: dict) -> None:
         items = estimation.get("items", 0)
@@ -214,6 +289,10 @@ class MainWindow(QMainWindow):
         config_action = QAction("API 配置", self)
         config_action.triggered.connect(self._open_settings)
         tools_menu.addAction(config_action)
+
+        mumu_config_action = QAction("模拟器配置", self)
+        mumu_config_action.triggered.connect(self._open_mumu_config)
+        tools_menu.addAction(mumu_config_action)
 
         # 数据菜单
         data_menu = bar.addMenu("数据")
@@ -289,7 +368,11 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._hero_browser, "武将浏览")
 
         # Tab 2: 选将推荐
-        self._recommendation = RecommendationPanel(self._data.heroes, self._data.synergies)
+        self._recommendation = RecommendationPanel(
+            self._data.heroes, self._data.synergies,
+            capture_service=self._capture_service,
+            ocr_service=self._ocr_service,
+        )
         self._tabs.addTab(self._recommendation, "选将推荐")
 
         layout.addWidget(self._tabs, 1)
@@ -498,6 +581,42 @@ class MainWindow(QMainWindow):
         """打开 API 配置对话框"""
         dialog = SettingsDialog(parent=self)
         dialog.exec()
+
+    def _open_mumu_config(self) -> None:
+        """打开模拟器配置对话框"""
+        from src.config.env import get_mumu_config, save_env_file, DEFAULT_ENV_FILE
+        from src.ui.mumu_config_dialog import MumuConfigDialog
+
+        config = get_mumu_config()
+        dialog = MumuConfigDialog(config, capture_service=self._capture_service, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_config = dialog.get_config()
+
+        # 保存到 config.env
+        save_env_file(DEFAULT_ENV_FILE, {
+            "MUMU_ADB_PATH": new_config.get("mumu_adb_path", ""),
+            "MUMU_ADB_PORT": str(new_config.get("mumu_adb_port", 0)),
+            "MUMU_OCR_ENABLED": "true" if new_config.get("mumu_ocr_enabled") else "false",
+            "MUMU_OCR_POLL_MODE": "true" if new_config.get("mumu_ocr_poll_mode") else "false",
+            "MUMU_OCR_POLL_INTERVAL": str(new_config.get("mumu_ocr_poll_interval", 2)),
+            "MUMU_OCR_MATCH_THRESHOLD": str(new_config.get("mumu_ocr_match_threshold", 0.8)),
+        })
+
+        # 更新服务配置
+        self._capture_service.update_config(new_config)
+        self._ocr_service.update_config(new_config)
+
+        # 如果启用了轮询，启动之
+        if new_config.get("mumu_ocr_poll_mode", False):
+            interval = new_config.get("mumu_ocr_poll_interval", 2) * 1000
+            self._ocr_service.start_poll(interval)
+            logger.info("轮询已启动，间隔 %d ms", interval)
+        else:
+            self._ocr_service.stop_poll()
+
+        self._status_label.setText("模拟器配置已更新")
 
     def _show_about(self) -> None:
         """显示关于对话框"""

@@ -94,16 +94,31 @@ def load_env_config(env_path=None):
         "MAX_RETRIES": "max_retries",
         "LOG_LEVEL": "log_level",
         "LOG_TO_FILE": "log_to_file",
+        # 模拟器 (MuMu) 配置
+        "MUMU_ADB_PATH": "mumu_adb_path",
+        "MUMU_ADB_PORT": "mumu_adb_port",
+        "MUMU_OCR_ENABLED": "mumu_ocr_enabled",
+        "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
+        "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
+        "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
     }
     config = {}
     for env_key, cfg_key in key_mapping.items():
         if env_key in raw:
             value = raw[env_key]
-            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout"):
+            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval"):
                 try:
                     value = int(value)
                 except (ValueError, TypeError):
                     logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
+                    continue
+            if cfg_key in ("mumu_ocr_enabled", "mumu_ocr_poll_mode"):
+                value = value.lower() in ("true", "1", "yes")
+            if cfg_key in ("mumu_ocr_match_threshold",):
+                try:
+                    value = float(value)
+                except (ValueError, TypeError):
+                    logger.warning("配置 %s 值不是有效浮点数: %s，使用默认值", env_key, value)
                     continue
             config[cfg_key] = value
     return config
@@ -143,6 +158,24 @@ def get_runtime_params():
         "http_timeout": config.get("http_timeout", 300),
         "log_level": config.get("log_level", "INFO"),
         "log_to_file": log_to_file.lower() in ("true", "1", "yes"),
+    }
+
+
+def get_mumu_config():
+    """从 config.env 获取模拟器配置（带默认值）
+
+    Returns:
+        {"mumu_adb_path": str, "mumu_adb_port": int,
+         "mumu_ocr_enabled": bool, "mumu_ocr_match_threshold": float}
+    """
+    config = load_env_config()
+    return {
+        "mumu_adb_path": config.get("mumu_adb_path", ""),
+        "mumu_adb_port": config.get("mumu_adb_port", 0),
+        "mumu_ocr_enabled": config.get("mumu_ocr_enabled", False),
+        "mumu_ocr_poll_mode": config.get("mumu_ocr_poll_mode", False),
+        "mumu_ocr_poll_interval": config.get("mumu_ocr_poll_interval", 2),
+        "mumu_ocr_match_threshold": config.get("mumu_ocr_match_threshold", 0.8),
     }
 
 # ============================================================

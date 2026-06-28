@@ -3,10 +3,13 @@
 
 提供 4×2 网格布局的武将推荐卡片，每张卡片显示武将头像、
 名称浮层、推荐指数、高相性组合和胜率信息。
+
+支持通过截图识别武将数据并导入。
 """
 
 from __future__ import annotations
 
+import csv
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,10 +18,13 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +36,38 @@ from src.data.models import Hero
 logger = logging.getLogger(__name__)
 
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+WIN_RATE_CSV = DATA_DIR / "2v2胜率排行.csv"
+
+# 缓存胜率数据 {name: rate_percent}
+_win_rate_cache: dict[str, float] | None = None
+
+
+def _load_win_rates() -> dict[str, float]:
+    """从 2v2胜率排行.csv 加载胜率数据。"""
+    global _win_rate_cache
+    if _win_rate_cache is not None:
+        return _win_rate_cache
+    _win_rate_cache = {}
+    if not WIN_RATE_CSV.exists():
+        logger.warning("胜率文件不存在: %s", WIN_RATE_CSV)
+        return _win_rate_cache
+    try:
+        with open(WIN_RATE_CSV, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                name = row.get("武将", "").strip()
+                rate_str = row.get("胜率", "").strip()
+                if name and rate_str:
+                    try:
+                        rate = float(rate_str.replace("%", ""))
+                        _win_rate_cache[name] = rate
+                    except ValueError:
+                        continue
+        logger.debug("已加载 %d 条胜率数据", len(_win_rate_cache))
+    except Exception as e:
+        logger.warning("胜率文件加载失败: %s", e)
+    return _win_rate_cache
 
 FACTION_COLORS: dict[str, str] = {
     "秦": "#8B4513",
@@ -248,7 +286,13 @@ class HeroCardWidget(QFrame):
         return None
 
     def _update_confidence_display(self) -> None:
-        """更新推荐指数（星级 + 百分比）"""
+        """更新推荐指数（无值时默认两星，不显示百分比）"""
+        if self._confidence <= 0.0:
+            self._confidence_label.setText(
+                '★★☆☆☆  <span style="color:#999;font-weight:bold;">--</span>'
+            )
+            return
+
         filled = int(self._confidence * 5)
         stars = "★" * filled + "☆" * (5 - filled)
         pct = f"{self._confidence * 100:.2f}%"
@@ -291,13 +335,20 @@ class HeroCardWidget(QFrame):
 
 
 class RecommendationPanel(QWidget):
-    """选将推荐主面板 — 4×2 网格布局"""
+    """选将推荐主面板 — 4×2 网格布局
 
-    def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager, parent=None):
+    支持外部数据源（OCR 截图识别）导入武将数据。
+    """
+
+    def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
+                 capture_service=None, ocr_service=None, parent=None):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
+        self._capture_service = capture_service
+        self._ocr_service = ocr_service
         self._cards: list[HeroCardWidget] = []
+        self._mumu_config_dialog = None  # lazy import
 
         self._setup_ui()
         self._load_default_heroes()
@@ -310,9 +361,32 @@ class RecommendationPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
+        # 标题行（含从截图导入按钮）
+        header_layout = QHBoxLayout()
+
         title = QLabel("选将推荐")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; padding: 4px 0;")
-        layout.addWidget(title)
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        self._import_btn = QPushButton("截图")
+        self._import_btn.setStyleSheet(
+            "padding: 4px 14px; font-size: 12px;"
+        )
+        self._import_btn.clicked.connect(self._on_import_from_screenshot)
+        header_layout.addWidget(self._import_btn)
+
+        header_layout.addSpacing(6)
+
+        self._import_file_btn = QPushButton("📁 从图片导入")
+        self._import_file_btn.setStyleSheet(
+            "padding: 4px 14px; font-size: 12px;"
+        )
+        self._import_file_btn.clicked.connect(self._on_import_from_file)
+        header_layout.addWidget(self._import_file_btn)
+
+        layout.addLayout(header_layout)
 
         grid = QGridLayout()
         grid.setSpacing(8)
@@ -359,6 +433,20 @@ class RecommendationPanel(QWidget):
             ("等待数据", "--"),
         ])
 
+    def _load_synergies_by_name(self, card_idx: int, hero_name: str) -> None:
+        """根据武将名从 synergy manager 加载相性数据。"""
+        hero = self._hero_mgr.get_hero_by_name(hero_name)
+        if not hero:
+            return
+        self._load_real_synergies(card_idx, hero.id)
+
+    def _load_win_rate_by_name(self, card_idx: int, hero_name: str) -> None:
+        """根据武将名从 2v2胜率排行.csv 加载胜率。"""
+        rates = _load_win_rates()
+        rate = rates.get(hero_name)
+        if rate is not None and card_idx < len(self._cards):
+            self._cards[card_idx].set_win_rate(rate)
+
     # ---------------------------------------------------------------
     # 公共数据接口
     # ---------------------------------------------------------------
@@ -374,6 +462,7 @@ class RecommendationPanel(QWidget):
                 confidence: 置信度 0-1
 
         根据 name 从 HeroManager 查找 Hero，找不到时显示"未知武将"。
+        同时加载相性数据和胜率。
         """
         for item in data:
             idx = item.get("index", 0)
@@ -395,4 +484,145 @@ class RecommendationPanel(QWidget):
                 continue
 
             card.set_hero(hero)
-            card.set_confidence(confidence)
+            # 推荐指数固定为 0.5（表示来自截图识别），不直接使用 OCR 置信度
+            card.set_confidence(0.5)
+
+            # 根据武将名加载相性数据
+            self._load_synergies_by_name(idx - 1, name)
+
+            # 根据武将名加载胜率
+            self._load_win_rate_by_name(idx - 1, name)
+
+            # 根据武将名加载相性数据
+            self._load_synergies_by_name(idx - 1, name)
+
+            # 根据武将名加载胜率
+            self._load_win_rate_by_name(idx - 1, name)
+
+    def load_from_ocr(self, ocr_results: list[dict]) -> None:
+        """从 OCR 识别结果加载武将数据到 8 个槽位。
+
+        Args:
+            ocr_results: [{index: int, name: str, confidence: float}, ...]
+        """
+        if not ocr_results:
+            logger.info("OCR 结果为空，跳过导入")
+            return
+
+        data = []
+        for r in ocr_results:
+            idx = r.get("index", 0)
+            name = r.get("name", "")
+            confidence = r.get("confidence", 0.0)
+            if name:
+                data.append({
+                    "index": idx,
+                    "name": name,
+                    "confidence": confidence,
+                })
+
+        if not data:
+            logger.info("OCR 未识别到任何武将")
+            return
+
+        self.update_recommendations(data)
+        logger.info("已从 OCR 导入 %d 个武将数据", len(data))
+
+    # ── 截图导入 ──────────────────────────────────────────────────
+
+    def _on_import_from_screenshot(self) -> None:
+        """从截图导入武将数据。
+
+        先检查 ADB 是否已配置，未配置则弹出配置对话框。
+        然后执行截图 → OCR → 填入槽位。
+        """
+        if not self._capture_service or not self._capture_service.capture:
+            self._open_mumu_config()
+            return
+
+        self._import_btn.setEnabled(False)
+        self._import_btn.setText("正在截图...")
+
+        # 获取武将名列表用于 OCR 矫正
+        hero_names = [h.name for h in self._hero_mgr.list_heroes()]
+
+        # 连接信号（一次性）
+        try:
+            self._capture_service.capture_completed.connect(self._on_capture_result)
+        except RuntimeError:
+            # 已连接则跳过
+            pass
+
+        self._capture_service.do_capture(hero_names=hero_names)
+
+    def _on_capture_result(self, result: dict) -> None:
+        """截图完成回调。"""
+        self._import_btn.setEnabled(True)
+        self._import_btn.setText("从截图导入")
+
+        ocr_results = result.get("ocr_results")
+        ocr_matched = result.get("ocr_matched", False)
+
+        if ocr_results:
+            self.load_from_ocr(ocr_results)
+        elif not ocr_matched:
+            logger.info("截图未匹配到武将选择页面")
+
+    def _on_import_from_file(self) -> None:
+        """从本地图片文件导入武将数据。
+
+        用户选取一张图片 → 执行 OCR → 填入槽位。
+        不依赖 ADB 连接。
+        """
+        screenshots_dir = Path(__file__).resolve().parent.parent.parent / "screenshots"
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择游戏截图", str(screenshots_dir),
+            "图片文件 (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if not file_path:
+            return
+
+        hero_names = [h.name for h in self._hero_mgr.list_heroes()]
+
+        try:
+            self._capture_service.capture_completed.connect(self._on_capture_result)
+        except RuntimeError:
+            pass
+
+        self._capture_service.do_capture_from_file(file_path, hero_names=hero_names)
+
+    def _open_mumu_config(self) -> None:
+        """打开模拟器配置对话框。"""
+        from src.ui.mumu_config_dialog import MumuConfigDialog
+        from src.config.env import get_mumu_config, save_env_file, DEFAULT_ENV_FILE
+
+        config = get_mumu_config()
+        dialog = MumuConfigDialog(config, parent=self.window())
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_config = dialog.get_config()
+
+        # 选择模板
+        template_path = dialog.get_selected_template()
+        if template_path and self._ocr_service:
+            self._ocr_service.select_template(template_path)
+
+        # 保存到 config.env
+        save_env_file(DEFAULT_ENV_FILE, {
+            "MUMU_ADB_PATH": new_config.get("mumu_adb_path", ""),
+            "MUMU_ADB_PORT": str(new_config.get("mumu_adb_port", 0)),
+            "MUMU_OCR_ENABLED": "true" if new_config.get("mumu_ocr_enabled") else "false",
+            "MUMU_OCR_MATCH_THRESHOLD": str(new_config.get("mumu_ocr_match_threshold", 0.8)),
+        })
+
+        # 更新服务配置
+        if self._capture_service:
+            self._capture_service.update_config(new_config)
+        if self._ocr_service:
+            self._ocr_service.update_config(new_config)
+
+        # 重新触发截图流程
+        self._on_import_from_screenshot()
