@@ -4,6 +4,7 @@ __pycache__/
 
 # IDE
 .idea/
+logs/
 
 # Project documentation
 project_problem.md

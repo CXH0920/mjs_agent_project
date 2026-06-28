@@ -168,6 +168,8 @@ def main():
                          help="生成指定武将与其他所有武将的相性评分，参数为包含一个武将的 JSON 文件路径")
     parser.add_argument("--browser", action="store_true",
                          help="使用 Playwright + Edge 浏览器方式（替代 API 直连）")
+    parser.add_argument("--update", action="store_true",
+                         help="更新模式：重新生成已存在的数据（默认跳过已存在的）")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     args = parser.parse_args()
 
@@ -229,6 +231,7 @@ def main():
         pt, ct = run_guide_generation(
             heroes=heroes, generator=generator, guide_path=guide_path,
             existing_guides=existing_guides, api_config=api_config,
+            update_mode=args.update,
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct

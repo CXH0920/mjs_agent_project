@@ -1,2 +1,0 @@
-2026-06-27 22:22:36 [INFO] src.business.guide_fetch_service: 启动子进程: python -m src.scraper.ai_batch --guide --browser --heroes-file C:\Users\CXH\AppData\Local\Temp\tmpq72wyr0z.json
-2026-06-27 22:26:10 [INFO] src.business.guide_fetch_service: 攻略生成子进程结束，进程退出码: 0

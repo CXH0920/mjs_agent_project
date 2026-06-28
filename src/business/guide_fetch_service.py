@@ -81,10 +81,15 @@ class GuideFetchService(QObject):
         self.status_changed.emit(f"正在生成攻略 ({mode})...")
 
         base_args = ["-m", "src.scraper.ai_batch", "--guide"]
+
+        # 增量/指定获取使用更新模式（重生成，不清除已有数据中的其他武将）
+        if mode in ("incremental", "specific"):
+            base_args.append("--update")
+
         if backend == "browser":
             base_args.append("--browser")
 
-        if mode == "specific":
+        if mode in ("incremental", "specific"):
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
             json.dump(heroes, tmp, ensure_ascii=False, indent=2)
             tmp_path = tmp.name

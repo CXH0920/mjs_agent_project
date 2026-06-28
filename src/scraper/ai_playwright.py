@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
 import time
 import traceback
@@ -95,12 +96,15 @@ class PlaywrightGenerator:
 
         第一次调用发送 system prompt + 武将数据，后续只发送武将数据（带 ID），
         让 AI 在同一会话中根据已设定的规则持续生成。
+        后续调用每次生成完成后随机休息 60-180 秒。
         """
         hero_name = hero.get("name", "?")
         hero_id = hero.get("id", 0)
         logger.info("[攻略] 开始生成: %s (id=%s)", hero_name, hero_id)
 
-        if not self._guide_system_sent:
+        is_first_call = not self._guide_system_sent
+
+        if is_first_call:
             # 第一次：加载 system prompt 并与第一条数据拼接发送
             system_prompt = load_prompt(GUIDE_PROMPT_FILE)
             if not system_prompt:
@@ -153,18 +157,26 @@ class PlaywrightGenerator:
             return None, None
 
         logger.info("[攻略] %s: 校验通过, 结果字段: %s", hero_name, list(result.keys()))
+
+        # 后续调用（非首次）每次执行完成后随机休息 60-180 秒
+        if not is_first_call:
+            self._random_rest()
+
         return result, None
 
     def generate_synergy(self, hero_a: dict, hero_b: dict) -> tuple[dict | None, dict | None]:
         """为武将对生成相性评分（浏览器模式不返回 usage）
 
         第一次调用发送 system prompt + 第一对数据，后续只发送武将数据（带 ID）。
+        后续调用每次生成完成后随机休息 60-180 秒。
         """
         name_a = hero_a.get("name", "?")
         name_b = hero_b.get("name", "?")
         logger.info("[相性] 开始生成: %s <-> %s", name_a, name_b)
 
-        if not self._synergy_system_sent:
+        is_first_call = not self._synergy_system_sent
+
+        if is_first_call:
             # 第一次：system prompt + 第一对数据
             system_prompt = load_prompt(SYNERGY_PROMPT_FILE)
             if not system_prompt:
@@ -227,7 +239,18 @@ class PlaywrightGenerator:
 
         logger.info("[相性] %s <-> %s: 校验通过, 评分 %s",
                     name_a, name_b, result.get("score", "?"))
+
+        # 后续调用（非首次）每次执行完成后随机休息 60-180 秒
+        if not is_first_call:
+            self._random_rest()
+
         return result, None
+
+    def _random_rest(self) -> None:
+        """随机休息 60-180 秒，避免触发风控"""
+        rest = random.randint(60, 180)
+        logger.info("[休息] 随机休息 %d 秒...", rest)
+        time.sleep(rest)
 
     def close(self):
         """关闭浏览器上下文"""

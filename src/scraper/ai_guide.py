@@ -19,6 +19,7 @@ def run_guide_generation(
     guide_path,
     existing_guides,
     api_config,
+    update_mode=False,
 ):
     """执行攻略生成循环
 
@@ -28,6 +29,7 @@ def run_guide_generation(
         guide_path: 攻略输出路径
         existing_guides: 已有攻略 {hero_id: guide_dict}
         api_config: API 配置（用于显示模型名）
+        update_mode: True = 重新生成所有（删除旧数据再追加）；False = 跳过已存在的（断点续传）
 
     Returns:
         (prompt_tokens, completion_tokens): 本次生成的 token 统计
@@ -55,9 +57,13 @@ def run_guide_generation(
 
     for i, hero in enumerate(heroes, 1):
         hero_id = hero.get("id", 0)
-        if hero_id in existing_guides:
+        if not update_mode and hero_id in existing_guides:
             logger.info("[%d/%d] 跳过 %s（已存在）", i, total_heroes, hero.get("name", ""))
             continue
+
+        # 更新模式：先删除旧数据，避免最终合并时重复
+        if update_mode and hero_id in existing_guides:
+            del existing_guides[hero_id]
 
         hero_name = hero.get("name", "")
         print(f"  [{hero_name}] 开始...", flush=True)
@@ -74,7 +80,7 @@ def run_guide_generation(
         if new_guides and len(new_guides) % GUIDE_BATCH_SAVE_INTERVAL == 0:
             all_guides = list(existing_guides.values()) + new_guides
             _save_json(guide_path, all_guides)
-            print(f"    [保存] 已保存 {len(all_guides)} 条", flush=True)
+            print(f"    [保存] 已保存", flush=True)
 
     # 最终保存
     if new_guides:

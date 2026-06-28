@@ -22,14 +22,14 @@ def run_synergy_generation(
     score_threshold,
     api_config,
 ):
-    """执行相性评分生成循环
+    """执行相性评分生成循环（始终重新生成所有对）
 
     Args:
         heroes: 武将列表
         generator: AIBatchGenerator 实例
         synergy_path: 相性输出路径
         existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
-        existing_synergy_keys: 已有相性 key 集合 {(a_id, b_id)}
+        existing_synergy_keys: 已有相性 key 集合
         score_threshold: 评分过滤下限
         api_config: API 配置（用于显示模型名）
 
@@ -55,9 +55,12 @@ def run_synergy_generation(
     print(f"  生成相性评分 -- {model_name} ({total_pairs:,} 对)")
     print(f"{sep_line}")
 
+    # 清空旧数据，重新生成所有（不使用断点续传）
+    existing_synergy_dict.clear()
+    existing_synergy_keys.clear()
+
     new_count = 0
     processed = 0
-    skipped = 0
     failed = 0
 
     for i in range(len(heroes)):
@@ -65,10 +68,6 @@ def run_synergy_generation(
             ha, hb = heroes[i], heroes[j]
             processed += 1
             key = tuple(sorted([ha["id"], hb["id"]]))
-
-            if key in existing_synergy_keys:
-                skipped += 1
-                continue
 
             print(f"  进度: {processed}/{total_pairs}  ", end="\r", flush=True)
 
@@ -93,10 +92,10 @@ def run_synergy_generation(
         _save_json(synergy_path, list(existing_synergy_dict.values()))
         logger.info("相性已保存: %s (%d 条)", synergy_path, len(existing_synergy_dict))
 
-    print(f"\n  相性完成: 新增 {new_count} 对，skip {skipped} 对，共 {len(existing_synergy_dict)} 对")
+    print(f"\n  相性完成: 新增 {new_count} 对，共 {len(existing_synergy_dict)} 对")
     if failed > 0:
         print(f"  失败: {failed} 对")
-    if new_count == 0 and len(existing_synergy_dict) == 0:
+    if new_count == 0:
         print("  未生成任何相性评分，请检查 API Key 和网络连接")
 
     return total_prompt_tokens, total_completion_tokens

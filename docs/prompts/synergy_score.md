@@ -92,7 +92,7 @@
   "combo_ceiling": <配合上限 1-10>,
   "combo_stability": <配合稳定性 1-10>,
   "adaptability": <环境适应力 1-10>,
-  "description": "第一部分的具体内容"
+  "description": "将第一部分分析报告的完整内容放入此字段，保持原文不变"
 }
 ```
 ## Rules

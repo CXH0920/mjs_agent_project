@@ -2,7 +2,7 @@
 名将杀 Agent - 相性单武将配对生成流程
 
 从 ai_batch 中抽取的选定武将（单武将 x 全体）相性评分生成逻辑。
-先删除该武将所有旧相性数据，再将新生成的全部结果写入。
+支持断点续传：已有的相性对跳过不重复生成。
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ def run_synergy_single_generation(
 ):
     """执行相性单武将配对生成（选定武将 vs 所有其他武将）
 
-    先删除该武将所有旧相性数据，再逐个生成新数据写入。
+    支持断点续传：只生成尚不存在的相性对，已有的直接跳过。
+    生成完成后保存全部结果。
 
     Args:
         single_file: JSON 文件路径，包含 1 个武将
@@ -52,19 +53,20 @@ def run_synergy_single_generation(
     target = single_heroes[0]
     target_id = target["id"]
 
-    # 先删除该武将所有已有的相性数据
-    keys_to_remove = [k for k in existing_synergy_dict if target_id in k]
-    for k in keys_to_remove:
-        del existing_synergy_dict[k]
-        existing_synergy_keys.discard(k)
-    if keys_to_remove:
-        print(f"  已移除 {len(keys_to_remove)} 条旧相性数据", flush=True)
-
     pairs = [(target, h) for h in heroes if h["id"] != target_id]
     print(f"  {target['name']} <-> {len(pairs)} 个武将", flush=True)
 
+    new_count = 0
+    skipped = 0
+    failed = 0
+
     for i, (ha, hb) in enumerate(pairs, 1):
         key = tuple(sorted([ha["id"], hb["id"]]))
+
+        # 断点续传：已有则跳过
+        if key in existing_synergy_keys:
+            skipped += 1
+            continue
 
         print(f"  [{i}/{len(pairs)}] {hb['name']}...", flush=True)
         result, usage = generator.generate_synergy(ha, hb)
@@ -74,9 +76,12 @@ def run_synergy_single_generation(
         if result:
             existing_synergy_dict[key] = result
             existing_synergy_keys.add(key)
+            new_count += 1
             print(f"    OK - 评分: {result.get('score', '?')}", flush=True)
         else:
+            failed += 1
             print(f"    FAIL", flush=True)
 
     _save_json(synergy_path, list(existing_synergy_dict.values()))
+    print(f"  相性完成: 新增 {new_count} 对，跳过 {skipped} 对，失败 {failed} 对, 共 {len(existing_synergy_dict)} 对", flush=True)
     return total_prompt_tokens, total_completion_tokens
