@@ -444,18 +444,19 @@ class CaptureService(QObject):
 
 | 方法 | 说明 |
 |------|------|
-| `update_config(config)` | 更新配置并重建 AdbCapture |
-| `do_capture(hero_names)` | 执行截图 → 保存 → 可选 OCR |
+| `update_config(config)` | 更新配置并重建 AdbCapture（路径/端口变化时重建） |
+| `do_capture(hero_names)` | 执行截图 → 可选 OCR（手动调用路径，会保存截图到 screenshots/） |
+| `do_capture_from_file(file_path, hero_names)` | 从本地图片执行 OCR（不依赖 ADB） |
 | `connect_emulator()` | 连接模拟器 |
 | `disconnect_emulator()` | 断开模拟器 |
 
-**截图全流程**：
+**手动截图全流程**：
 
 ```
 do_capture()
   └─ QTimer.singleShot(0, _execute_capture)
        ├─ AdbCapture.screencap_full() → PIL Image
-       ├─ 保存截图到 screenshots/ 目录
+       ├─ 保存截图到 screenshots/ 目录（手动调用路径特有）
        ├─ 已启用 OCR？
        │   ├─ TemplateManager.match(image) → 是武将页？
        │   │   ├─ 否 → 跳过
@@ -464,6 +465,8 @@ do_capture()
        └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
 ```
 
+**注意**：轮询路径不走 `do_capture()`，轮询直接在 `_on_poll_capture()` 中调用 `screencap_full()` + `_run_ocr()`，**不保存截图文件到磁盘**，全程内存中处理。详见第十二章 12.5 节。`_run_ocr()` 只做模板匹配 → OCR → 返回结果，不含截图和保存逻辑。
+
 ### 3.6 OcrService（OCR 控制服务）
 
 ```python
@@ -471,6 +474,7 @@ class OcrService(QObject):
     status_changed = Signal(str)           # 状态消息
     template_changed = Signal(bool)        # 模板加载/已删除
     ocr_completed = Signal(list)           # 识别结果
+    poll_tick = Signal()                   # 轮询触发信号（由 QTimer 驱动，连接至 MainWindow._on_poll_capture）
 ```
 
 **主要方法**：
@@ -483,6 +487,9 @@ class OcrService(QObject):
 | `select_template(file_path)` | 从文件加载模板 |
 | `is_template_loaded()` | 检查模板是否已加载 |
 | `delete_template()` | 删除模板 |
+| `start_poll(interval_ms)` | 启动轮询 QTimer |
+| `stop_poll()` | 停止轮询并清除冷却 |
+| `set_cooldown(seconds)` | 设置冷却时间（OCR 匹配成功后调用） |
 | `run_ocr(image, rois)` | 对单张图片执行 OCR |
 
 **异常处理**：所有 except 块记录 `logger.error` + `logger.debug(traceback.format_exc())`，不允许静默异常。
@@ -577,7 +584,7 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 563 | QMainWindow（顶层） |
+| main_window.py | 636 | QMainWindow（顶层） |
 | hero_browser.py | 432 | QWidget（Tab 内嵌） |
 | recommendation_panel.py | 528 | QWidget（Tab 内嵌） |
 | mumu_config_dialog.py | 574 | QDialog（模拟器配置） |
@@ -614,11 +621,12 @@ MainWindow.__init__
  │   └── error_occurred → _on_synergy_fetch_error (弹窗警告)
  ├── CaptureService ─── 截图
  │   ├── status_changed → _status_label.setText
- │   ├── capture_completed → _on_capture_completed (通知推荐面板)
+ │   ├── capture_completed → _on_capture_completed / _on_capture_result (通知推荐面板)
  │   └── capture_failed → QMessageBox.warning
- └── OcrService ─── OCR
+ └── OcrService ─── OCR + 持续轮询
      ├── status_changed → _status_label.setText
-     └── template_changed → 更新 UI 状态
+     ├── template_changed → 更新 UI 状态
+     └── poll_tick → _on_poll_capture (轮询编排：截图→模板匹配→OCR→结果填入推荐面板)
 ```
 
 ### 5.3 模拟器配置对话框（MumuConfigDialog）
@@ -661,7 +669,7 @@ MainWindow.__init__
 
 **OCR 配置**：
 - **启用武将识别**：截图后自动 OCR
-- **持续轮询**：独立定时检测，发现武将页面自动截图并识别
+- **持续轮询**：独立于手动截图，定时检测模拟器画面（详见第十二章 12.6 节）
 - **匹配阈值**：OpenCV 模板匹配的灵敏度（0~1，默认 0.8）
 - 轮询间隔配置（1-60 秒）
 
@@ -750,7 +758,8 @@ HeroBrowser (QWidget)
 RecommendationPanel (QWidget)
  ├── 标题行
  │   ├── "选将推荐"
- │   └── [从截图导入] 按钮
+ │   ├── [截图] 按钮（ADB 截图 → OCR 导入）
+ │   └── [📁 从图片导入] 按钮（本地图片 → OCR 导入）
  └── QGridLayout (4行 × 2列)
       └── HeroCardWidget × 8
            ├── 头像区 (宽 130px)
@@ -760,12 +769,12 @@ RecommendationPanel (QWidget)
            │   │   └── 势力标签 (左上角, 色块)
            └── 信息区 (弹性)
                ├── 势力色块 + 武将名 (粗体 15px)
-               ├── 推荐指数 (★★★★☆ 98.23%)
+               ├── 推荐指数 (★★★★☆ 98.23% 或 ★★☆☆☆ --)
                ├── 分隔线
                ├── 高相性组合标题
                ├── QGridLayout (2列, 搭配+评分)
                ├── 分隔线
-               └── 胜率 (灰色占位)
+               └── 胜率 (从 2v2胜率排行.csv 加载)
 ```
 
 **势力色表**（`FACTION_COLORS`）：
@@ -791,7 +800,7 @@ def update_recommendations(self, data: list[dict]) → None
 ]
 ```
 
-**截图导入流程（`从截图导入` 按钮）**：
+**截图导入流程（`截图` 按钮）**：
 1. 检查 ADB 是否已配置 → 未配置则弹出 MumuConfigDialog
 2. 点击后按钮变为「正在截图...」
 3. CaptureService.do_capture() → 截图 → OCR → capture_completed 信号
@@ -801,7 +810,10 @@ def update_recommendations(self, data: list[dict]) → None
 - 接收 OCR 识别结果 `[{index, name, confidence}, ...]`
 - 将 name 匹配 HeroManager 中的 Hero 对象
 - 加载 `images/<name>.png` 头像
-- 显示识别置信度作为推荐置信度
+- 推荐指数固定为 0.5（两星，表示来自截图识别，不直接使用 OCR 置信度）
+- 根据武将名从 `synergies.json` 加载高相性组合数据
+- 根据武将名从 `2v2胜率排行.csv` 加载胜率
+- 未匹配到 HeroManager 的武将名仍显示名称文字供人工判断
 
 ### 5.9 对话框基类体系
 
@@ -1123,6 +1135,8 @@ logs/
 | `src.scraper` | `scraper/scraper.log` |
 | `src.scraper.ai_` | `scraper/ai_batch.log` |
 | `src.business` | `business/business.log` |
+| `src.capture` | `scraper/scraper.log` |
+| `src.ocr` | `scraper/scraper.log` |
 | `subprocess.stdout` | `subprocess/stdout.log` |
 | `subprocess.stderr` | `subprocess/stderr.log` |
 | 其他（含 `src.ui.*`） | `app.log` |
@@ -1402,14 +1416,13 @@ ROI 或 `hero_names` 变更时自动重建 `GeneralRecognizer` 实例，避免�
 #### 手动截图识别
 
 ```
-用户点击选将推荐面板「从截图导入」
+用户点击选将推荐面板「截图」或「📁 从图片导入」
   │
   ├── ADB 未配置？→ 弹出 MumuConfigDialog 配置
   │
   ├── CaptureService.do_capture()
   │   ├── AdbCapture 连接（未连接时自动连接）
-  │   ├── screencap_full() → PIL Image
-  │   ├── 保存到 screenshots/
+  │   ├── screencap_full() → PIL Image（内存中，不写磁盘）
   │   └── OCR enabled？
   │       ├── TemplateManager.match() → 武将选择页？
   │       │   ├── 否 → ocr_matched=False
@@ -1422,8 +1435,51 @@ ROI 或 `hero_names` 变更时自动重建 `GeneralRecognizer` 实例，避免�
             └── ocr_matched=True → load_from_ocr() → 填入 8 槽
                  ├── 匹配 Hero 对象（通过 HeroManager）
                  ├── 加载 images/<name>.png 头像
-                 └── 显示识别置信度
+                 ├── 推荐指数固定 0.5（两星，区分于 AI 推荐）
+                 └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
 ```
+
+#### 持续轮询识别
+
+OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
+
+```
+
+用户勾选「持续轮询」→ 保存配置
+  │
+  └─ MainWindow._open_mumu_config() → start_poll(interval_ms)
+       │
+       ▼ 每隔 N 秒触发
+  OcrService.poll_tick signal
+       │
+       ▼
+  MainWindow._on_poll_capture()
+       │
+       ├── 冷却期内？→ return（匹配成功后 180 秒冷却）
+       ├── ADB 未配置/未连接？→ return（不自杀，下次继续）
+       │
+       ├── ① screencap_full() → PIL Image（全在内存，不写磁盘）
+       │
+       ├── ② TemplateManager.match(image, threshold)
+       │     ├── 模板未加载 → return
+       │     └── 不匹配 → return（静默跳过，不是武将页）
+       │
+       ├── ③ CaptureService._run_ocr(image) → PaddleOCR
+       │     ├── GeneralRecognizer.recognize() → 8 个武将名
+       │     └── 保存 latest.json
+       │
+       ├── ④ RecommendationPanel.load_from_ocr()
+       │     └── 填充 8 个推荐槽位（头像/相性/胜率）
+       │
+       └── ⑤ OcrService.set_cooldown(180)
+             └── 3 分钟内不再截图 + 匹配 + OCR
+```
+
+**关键设计**：
+- 轮询路径全程无磁盘 I/O：ADB 截图 → BytesIO → PIL Image → OpenCV ndarray → PaddleOCR，数据一直驻留内存
+- 模板匹配是前置快速过滤器（<50ms），匹配成功后才执行 PaddleOCR（0.5-3 秒）
+- 轮询独立于「启用武将识别」复选框，勾选轮询即可独立运行
+- 轮询定时器永不自杀：条件不满足时 return 等待下一次 tick
 
 #### 模板匹配的作用
 

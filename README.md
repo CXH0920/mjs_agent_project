@@ -35,16 +35,28 @@ test_project/
 │   ├── business/
 │   │   ├── fetch_service.py       # 武将采集业务（QProcess 管理）
 │   │   ├── guide_fetch_service.py # 攻略生成业务（QProcess 管理）
-│   │   └── synergy_fetch_service.py # 相性获取业务（QProcess 管理）
+│   │   ├── synergy_fetch_service.py # 相性获取业务（QProcess 管理）
+│   │   ├── capture_service.py     # 截图业务编排（ADB 截图 + OCR 调度）
+│   │   └── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
 │   ├── capture/
-│   │   └── __init__.py            # 屏幕采集（待开发）
+│   │   ├── __init__.py
+│   │   ├── adb_screen.py          # ADB 连接与截图（subprocess exec-out 无文件中间态）
+│   │   ├── prober.py              # MuMu 设备自动探测（注册表/环境变量/常见路径）
+│   │   └── image_utils.py         # PIL ↔ QPixmap / 剪贴板 / 图像保存
+│   ├── ocr/
+│   │   ├── __init__.py
+│   │   ├── template_manager.py    # OpenCV 模板匹配（TM_CCOEFF_NORMED，<50ms）
+│   │   ├── recognizer.py          # PaddleOCR + 编辑距离矫正（两段式识别，内存中处理）
+│   │   └── ocr_loader.py          # 单例延迟加载
 │   └── ui/
 │       ├── style.py               # 全局样式表（天蓝色调）
-│       ├── main_window.py         # 主窗口（菜单栏/Tab/状态栏）
+│       ├── main_window.py         # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
 │       ├── hero_browser.py        # 武将浏览（列表+详情+攻略）
 │       ├── hero_select_dialog.py  # 武将选择对话框基类
-│       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性）
+│       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性 + 截图导入）
 │       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
+│       ├── mumu_config_dialog.py  # 模拟器配置对话框（ADB 连接 + 模板管理 + OCR 配置）
+│       ├── roi_selector.py        # 模板 ROI 框选对话框（拖拽选区 + 坐标缩放）
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
 │       ├── synergy_pair_dialog.py # 相性指定获取（选 2 武将）
@@ -60,6 +72,13 @@ test_project/
 │   └── 2v2胜率排行.csv            # 2v2 胜率数据
 ├── images/
 │   └── <武将名>.png               # 155 个武将头像（从官网自动下载）
+├── templates/
+│   └── wujiang_select.png         # 武将选择页面模板（用户自行制作）
+├── screenshots/                   # 手动截图导出目录
+├── screenshot_data/
+│   └── latest.json                # OCR 识别结果缓存
+├── logs/
+│   └── app.log / scraper/ / business/ / subprocess/  # 按模块拆分的日志文件
 ├── tests/
 │   ├── test_models.py             # 25 tests — 数据模型校验
 │   ├── test_ai_batch.py           # 33 tests — AI 批量生成
@@ -144,6 +163,20 @@ python -m src.scraper.ai_batch --dry-run --guide
 python -m src.scraper.ai_batch --dry-run --synergy
 ```
 
+### 6. 屏幕采集 + OCR 识别
+
+```bash
+# 启动桌面应用（模拟器配置在 配置 → 模拟器配置）
+python -m src.main
+```
+
+屏幕采集模块（src/capture/ + src/ocr/）在应用内以 UI 集成方式使用，无独立 CLI 入口。具体操作：
+1. 打开应用 → 配置 → 模拟器配置
+2. 自动探测或浏览选择 ADB 路径
+3. 连接模拟器 → 制作模板（框选武将选择页特征区域）
+4. 启用武将识别 / 持续轮询
+5. 在选将推荐面板点击「截图」或「📁 从图片导入」触发识别
+
 ---
 
 ## 架构
@@ -152,14 +185,15 @@ python -m src.scraper.ai_batch --dry-run --synergy
 
 ```
 UI 层 (PySide6)      主窗口 / 武将浏览器 / 选将推荐 / 各对话框
-业务层 (Business)    采集/攻略/相性 QProcess 管理
+业务层 (Business)    采集/攻略/相性 QProcess 管理 + ADB 截图编排 + OCR 轮询
 数据层 (Data)        Pydantic 模型 + DataFacade + JSON 持久化
-采集层 (Scraper)     官网爬虫 + AI 批量生成 + 头像下载（屏幕采集待开发）
+采集层 (Scraper)     官网爬虫 + AI 批量生成 + 头像下载
 ```
 
 **跨层模块：**
-- **配置层** — `src/config/env.py` 统一管理 API 配置和运行时参数
-- **爬虫层** — `src/scraper/` 实现官网数据采集、AI 批量生成和头像下载
+- **配置层** — `src/config/env.py` 统一管理 API/日志/模拟器配置
+- **采集层** — `src/capture/` ADB 连接与截图
+- **OCR 层** — `src/ocr/` 模板匹配 + PaddleOCR 识别
 
 ### 数据流
 
@@ -169,6 +203,11 @@ UI 层 (PySide6)      主窗口 / 武将浏览器 / 选将推荐 / 各对话框
 DeepSeek API / 网页版 → ai_batch.py → ai_generator.py / ai_playwright.py
   → ai_guide/ai_synergy/… → data/{guides,synergies}.json
 data/*.json → DataFacade (三个 Manager) → UI 展示
+
+模拟器屏幕 → ADB screencap → PIL Image（全在内存，无磁盘 I/O）
+  → TemplateManager.match() → 武将选择页？
+      → 否：静默跳过
+      → 是：GeneralRecognizer.recognize() → 填充推荐面板 8 槽
 用户操作 → MainWindow → QProcess → 爬虫/AI 脚本
 ```
 
@@ -306,7 +345,8 @@ _save_json() → data/guides.json / data/synergies.json
 | 菜单 | 功能 | 说明 |
 |---|---|---|
 | 文件 > 退出 | Ctrl+Q | 关闭应用 |
-| 配置 > API 配置 | | 编辑 config.env |
+| 配置 > API 配置 | | 编辑 API Key/URL/Model |
+| 配置 > 模拟器配置 | | ADB 连接管理 + 模板制作 + OCR 配置 + 持续轮询 |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
 | 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
 | 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略 → BackendChooseDialog（API/浏览器） |
@@ -334,9 +374,12 @@ _save_json() → data/guides.json / data/synergies.json
 
 - **4×2 网格布局**，每格一个武将推荐卡片
 - 左侧展示**武将头像**（从 `images/` 读取），名称半透明浮在底部，左上角势力色块
-- 右侧展示**推荐指数**（星级+置信度百分比）、**高相性组合**、**胜率**（占位）
+- 右侧展示**推荐指数**（星级+置信度百分比）、**高相性组合**、**胜率**（从 `2v2胜率排行.csv` 读取）
 - 对外提供 `update_recommendations(data: list[dict])` 接口，接收 `{index, name, confidence}` 格式数据
-- 默认加载前 8 个武将作为演示
+- 支持两种导入方式：
+  - **截图** — 通过 ADB 截取模拟器屏幕 → OpenCV 模板匹配武将选择页 → PaddleOCR 识别 8 个武将名 → 自动填入槽位
+  - **从图片导入** — 选择本地游戏截图文件 → PaddleOCR 识别 → 填入槽位
+- 轮询模式开启后，定时检测模拟器画面是否为武将选择页，自动识别并填充
 
 ### 武将浏览器
 
@@ -347,7 +390,7 @@ _save_json() → data/guides.json / data/synergies.json
 
 ### Configuration
 
-`config.env` 文件管理全部 API 配置（已 gitignored）：
+`config.env` 文件管理全部配置（已 gitignored）：
 
 ```env
 DEEPSEEK_API_KEY=sk-xxx
@@ -356,6 +399,14 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 REQUESTS_PER_MINUTE=30
 HTTP_TIMEOUT=300
 MAX_RETRIES=3
+LOG_LEVEL=INFO
+LOG_TO_FILE=true
+MUMU_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
+MUMU_ADB_PORT=16448
+MUMU_OCR_ENABLED=true
+MUMU_OCR_POLL_MODE=false
+MUMU_OCR_POLL_INTERVAL=2
+MUMU_OCR_MATCH_THRESHOLD=0.8
 ```
 
 定价：输入 **CNY 3/百万 tokens**，输出 **CNY 6/百万 tokens**（deepseek-v4-pro，缓存未命中）
@@ -372,7 +423,9 @@ MAX_RETRIES=3
 | playwright | 浏览器自动化（浏览器模式） |
 | beautifulsoup4 | HTML 解析（备用） |
 | mistune | Markdown → HTML 渲染 |
-| opencv-python / easyocr / mss | 屏幕采集层（待开发） |
+| paddlepaddle / paddleocr | OCR 识别引擎 |
+| opencv-python | 模板匹配 + 图像预处理 |
+| pillow (PIL) | 图像处理 |
 | pytest | 测试框架 |
 
 ---
@@ -418,8 +471,8 @@ LOG_TO_FILE=true
 | 五 | 武将头像下载（icon_url → images/） | ✅ 已完成 |
 | 六 | 选将推荐（4×2 网格+头像+数据接口） | ✅ 已完成 |
 | 七 | 浏览器自动化（Playwright + Edge）双模式 AI 生成 | ✅ 已完成 |
-| 八 | 屏幕采集（MuMu 截图、轮廓检测、OCR） | ⏳ 待开发 |
-| 九 | 推荐引擎（相性查询、推荐数据源接入） | ⏳ 待开发 |
+| 八 | 屏幕采集（MuMu ADB 截图 + 模板匹配 + PaddleOCR 识别 + 持续轮询） | ✅ 已完成 |
+| 九 | 推荐引擎（相性查询、胜率 CSV、OCR 数据导入） | ✅ 已完成 |
 
 ---
 

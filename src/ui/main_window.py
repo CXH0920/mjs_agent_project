@@ -178,9 +178,14 @@ class MainWindow(QMainWindow):
         每 tick 截图一次做模板匹配，不匹配则静默跳过。
         匹配成功后才执行完整 OCR 流程，然后冷却 3 分钟。
         """
+        # 冷却期内跳过整轮检测
+        if self._ocr_service._poll_cooldown_until:
+            from datetime import datetime
+            if datetime.now() < self._ocr_service._poll_cooldown_until:
+                return
+
         if not self._capture_service.capture:
             logger.debug("轮询跳过：ADB 未配置")
-            self._ocr_service.stop_poll()
             return
 
         if not self._capture_service.is_connected:

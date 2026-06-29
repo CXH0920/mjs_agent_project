@@ -1,47 +1,47 @@
 {
   "image": "",
-  "timestamp": "2026-06-28 22:16:14",
+  "timestamp": "2026-06-29 11:26:59",
   "page_type": "wujiang_select",
   "generals": [
     {
       "index": 1,
-      "name": "刘彻",
-      "confidence": 0.9985
+      "name": "钟无艳",
+      "confidence": 0.9995
     },
     {
       "index": 2,
-      "name": "凌统",
-      "confidence": 0.9976
+      "name": "高渐离",
+      "confidence": 0.9
     },
     {
       "index": 3,
-      "name": "",
-      "confidence": 0.0
+      "name": "刘禅",
+      "confidence": 0.9984
     },
     {
       "index": 4,
-      "name": "庞煖",
-      "confidence": 0.906
+      "name": "张春华",
+      "confidence": 0.9997
     },
     {
       "index": 5,
-      "name": "侯嬴",
-      "confidence": 0.8808
+      "name": "信陵君",
+      "confidence": 0.9997
     },
     {
       "index": 6,
-      "name": "貂蝉",
-      "confidence": 0.9955
+      "name": "刘彻",
+      "confidence": 0.9988
     },
     {
       "index": 7,
-      "name": "",
-      "confidence": 0.0
+      "name": "张骞",
+      "confidence": 0.9709
     },
     {
       "index": 8,
-      "name": "桑弘羊",
-      "confidence": 0.9989
+      "name": "司马炎",
+      "confidence": 0.9974
     }
   ]
 }

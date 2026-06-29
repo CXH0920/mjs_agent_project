@@ -62,7 +62,7 @@ class CaptureService(QObject):
 
         self._config = config
 
-        if (path_changed or port_changed) and config.get("mumu_adb_path"):
+        if (path_changed or port_changed or self._capture is None) and config.get("mumu_adb_path"):
             old_connected = self._capture.connected if self._capture else False
             old_serial = self._capture.device_serial if self._capture else ""
 
