@@ -4,8 +4,8 @@
 使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别。
 识别策略：
   1. 全量字典（ch）PaddleOCR 识别
-  2. 若置信度低于阈值，用 155 名武将名称库做编辑距离矫正
-     解决形近字误识别问题。
+  2. 用 155 名武将名称库做编辑距离矫正，解决形近字误识别问题
+     （不过滤置信度，始终执行矫正——OCR 有时高置信度也出错）
 
 所有预处理操作都在图像层面：放大、自适应对比度增强、锐化。
 PaddleOCR 延迟加载，首次调用时初始化。
@@ -38,8 +38,8 @@ _DEFAULT_GENERALS_ROI = [
 ]
 
 # 两段式识别阈值
-_CONFIDENCE_THRESHOLD = 0.985
 _EDIT_DISTANCE_THRESHOLD = 1
+_HIGH_CONFIDENCE = 0.995       # 极高置信度门槛——高于此值跳过矫正（保护新武将）
 _CJK_START = 0x4E00
 _CJK_END = 0x9FFF
 _CJK_VISUAL_MAX_DIST = 500
@@ -194,14 +194,22 @@ class GeneralRecognizer:
             result = self._engine.ocr(prepared, cls=False)
             text, conf = self._extract_text(result)
 
-            if text and conf < _CONFIDENCE_THRESHOLD and self._hero_names:
+            if not text:
+                return "", 0.0
+
+            # 极高置信度 + OCR 文本不在武将库 → 信任 OCR（保护新武将）
+            if self._hero_names and conf >= _HIGH_CONFIDENCE and text not in self._hero_names:
+                logger.debug("武将 %d: 高置信度新名 '%s'，跳过矫正", slot, text)
+                return text, conf
+
+            # 第二段矫正：用武将名库验证 OCR 结果
+            if self._hero_names:
                 corrected, _ = _correct_with_hero_list(text, self._hero_names)
                 if corrected != text:
                     logger.debug("武将 %d: 矫正 %s → %s", slot, text, corrected)
-                return corrected, conf
+                    return corrected, conf
 
-            if text:
-                return text, conf
+            return text, conf
 
         except Exception as e:
             logger.warning("武将 %d 识别异常: %s", slot, e)

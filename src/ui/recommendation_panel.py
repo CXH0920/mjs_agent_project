@@ -209,7 +209,18 @@ class HeroCardWidget(QFrame):
         # 胜率
         self._win_rate_label = QLabel("胜率: --%")
         self._win_rate_label.setStyleSheet("font-size: 12px; color: #999;")
-        info_layout.addWidget(self._win_rate_label)
+
+        # 奖牌图标
+        self._medal_label = QLabel()
+        self._medal_label.setFixedSize(22, 22)
+        self._medal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        win_rate_layout = QHBoxLayout()
+        win_rate_layout.setSpacing(4)
+        win_rate_layout.addWidget(self._win_rate_label)
+        win_rate_layout.addWidget(self._medal_label)
+        win_rate_layout.addStretch()
+        info_layout.addLayout(win_rate_layout)
 
         info_layout.addStretch()
         layout.addWidget(info_panel, 1)
@@ -318,6 +329,21 @@ class HeroCardWidget(QFrame):
         """更新胜率显示"""
         self._win_rate_label.setText(f"胜率: {rate:.1f}%")
 
+    def set_medal(self, rank: int) -> None:
+        """设置金银铜奖牌标记。
+
+        Args:
+            rank: 1=金牌 🥇, 2=银牌 🥈, 3=铜牌 🥉, 0/其他=清空
+        """
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        icon = medals.get(rank, "")
+        if icon:
+            self._medal_label.setText(icon)
+            self._medal_label.setStyleSheet("font-size: 16px;")
+        else:
+            self._medal_label.clear()
+            self._medal_label.setStyleSheet("")
+
     def set_synergies(self, synergies: list[tuple[str, str]]) -> None:
         """更新高相性组合列表。每项格式：(搭配武将名, 评分)"""
         for label in self._synergy_labels:
@@ -408,6 +434,9 @@ class RecommendationPanel(QWidget):
             if i < len(self._cards):
                 self._cards[i].set_hero(hero)
                 self._load_real_synergies(i, hero.id)
+                self._load_win_rate_by_name(i, hero.name)
+
+        self._apply_medal_rankings()
 
     def _load_real_synergies(self, card_idx: int, hero_id: int) -> None:
         """从 synergy manager 加载已有相性数据（按评分排序取前 4 条）"""
@@ -493,6 +522,31 @@ class RecommendationPanel(QWidget):
             # 根据武将名加载胜率
             self._load_win_rate_by_name(idx - 1, name)
 
+        # 对当前 8 个槽位按胜率排名，前三分别赋予金/银/铜牌
+        self._apply_medal_rankings()
+
+    def _apply_medal_rankings(self) -> None:
+        """根据各卡片的胜率，取前三标记金/银/铜牌。"""
+        ranked = []
+        for i, card in enumerate(self._cards):
+            # 从胜率标签中提取数值
+            text = card._win_rate_label.text()
+            if text.startswith("胜率: ") and text.endswith("%"):
+                try:
+                    rate = float(text[4:-1])
+                    ranked.append((rate, i))
+                except ValueError:
+                    continue
+
+        # 先清除所有奖牌
+        for card in self._cards:
+            card.set_medal(0)
+
+        # 按胜率降序取前三
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        for rank, (_, idx) in enumerate(ranked[:3], start=1):
+            self._cards[idx].set_medal(rank)
+
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """从 OCR 识别结果加载武将数据到 8 个槽位。
 
@@ -552,7 +606,7 @@ class RecommendationPanel(QWidget):
     def _on_capture_result(self, result: dict) -> None:
         """截图完成回调。"""
         self._import_btn.setEnabled(True)
-        self._import_btn.setText("从截图导入")
+        self._import_btn.setText("截图")
 
         ocr_results = result.get("ocr_results")
         ocr_matched = result.get("ocr_matched", False)

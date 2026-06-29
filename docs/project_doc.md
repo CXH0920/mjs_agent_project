@@ -774,7 +774,7 @@ RecommendationPanel (QWidget)
                ├── 高相性组合标题
                ├── QGridLayout (2列, 搭配+评分)
                ├── 分隔线
-               └── 胜率 (从 2v2胜率排行.csv 加载)
+               └── 胜率（从 2v2胜率排行.csv 加载，前三自动标记 🥇🥈🥉 奖牌）
 ```
 
 **势力色表**（`FACTION_COLORS`）：
@@ -812,7 +812,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 加载 `images/<name>.png` 头像
 - 推荐指数固定为 0.5（两星，表示来自截图识别，不直接使用 OCR 置信度）
 - 根据武将名从 `synergies.json` 加载高相性组合数据
-- 根据武将名从 `2v2胜率排行.csv` 加载胜率
+- 根据武将名从 `2v2胜率排行.csv` 加载胜率，随即对 8 个槽位按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
 - 未匹配到 HeroManager 的武将名仍显示名称文字供人工判断
 
 ### 5.9 对话框基类体系
@@ -1321,9 +1321,10 @@ match(image, threshold=0.8)
   → PaddleOCR → 文字 + 置信度
 
 第二段：武将名库编辑距离矫正
-  若置信度 < 98.5% → 用 155 武将名称列表做编辑距离匹配
-  阈值内找到最接近的武将名 → 采纳
-  平局时用 Unicode 码位视觉相似度决胜
+  ⓐ 极高置信度（≥99.5%）且 OCR 结果不在武将库 → 信任 OCR，保护新增武将
+  ⓑ 否则 → 用 155 武将名称列表做编辑距离匹配
+     阈值内找到最接近的武将名 → 采纳
+     平局时用 Unicode 码位视觉相似度决胜
 ```
 
 #### 类结构
@@ -1341,7 +1342,7 @@ class GeneralRecognizer:
 #### 关键常量
 
 ```python
-_CONFIDENCE_THRESHOLD = 0.985     # 编辑距离矫正触发阈值
+_HIGH_CONFIDENCE = 0.995         # 极高置信度——跳过矫正，保护新武将
 _EDIT_DISTANCE_THRESHOLD = 1      # 编辑距离最大允许差异
 _CJK_START = 0x4E00               # CJK 统一表意文字起始
 _CJK_END = 0x9FFF                 # CJK 统一表意文字结束
@@ -1437,6 +1438,7 @@ ROI 或 `hero_names` 变更时自动重建 `GeneralRecognizer` 实例，避免�
                  ├── 加载 images/<name>.png 头像
                  ├── 推荐指数固定 0.5（两星，区分于 AI 推荐）
                  └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
+                       └── 按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
 ```
 
 #### 持续轮询识别
