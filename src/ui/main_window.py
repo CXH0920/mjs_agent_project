@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import logging
+import threading
+from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,
@@ -51,6 +53,9 @@ class MainWindow(QMainWindow):
 
     初始化时自动加载数据，显示武将浏览和选将推荐 Tab。
     """
+
+    _poll_result_ready = Signal(object, object, bool)  # (ocr_results, image, ocr_matched)
+    _poll_thread_lock = threading.Lock()
 
     def __init__(
         self,
@@ -171,16 +176,16 @@ class MainWindow(QMainWindow):
     def _connect_capture_signals(self) -> None:
         """连接截图和轮询服务信号"""
         self._ocr_service.poll_tick.connect(self._on_poll_capture)
+        self._poll_result_ready.connect(self._on_poll_result)
 
     def _on_poll_capture(self) -> None:
-        """轮询触发：先截图 → 模板匹配 → 匹配成功才执行 OCR+保存。
+        """轮询触发：在后台线程执行截图 → 模板匹配 → OCR。
 
-        每 tick 截图一次做模板匹配，不匹配则静默跳过。
-        匹配成功后才执行完整 OCR 流程，然后冷却 3 分钟。
+        主线程只做冷却期快检和锁检查，所有耗时操作移入子线程。
+        子线程完成后通过 _poll_result_ready 信号回传结果。
         """
         # 冷却期内跳过整轮检测
         if self._ocr_service._poll_cooldown_until:
-            from datetime import datetime
             if datetime.now() < self._ocr_service._poll_cooldown_until:
                 return
 
@@ -188,40 +193,62 @@ class MainWindow(QMainWindow):
             logger.debug("轮询跳过：ADB 未配置")
             return
 
-        if not self._capture_service.is_connected:
-            ok, msg = self._capture_service.connect_emulator()
-            if not ok:
-                logger.debug("轮询跳过：ADB 连接失败 - %s", msg)
-                return
-
-        # 1. 截图
-        cap = self._capture_service.capture
-        ok, result = cap.screencap_full()
-        if not ok:
+        # 检查是否有上次线程仍在运行
+        if not self._poll_thread_lock.acquire(blocking=False):
+            logger.debug("轮询跳过：上一轮仍在执行")
             return
 
-        image = result
-
-        # 2. 模板匹配
-        from src.ocr.ocr_loader import get_template_manager
-        tm = get_template_manager()
-        if not tm.is_loaded:
-            logger.debug("轮询跳过：模板未加载")
-            return
-
-        threshold = self._capture_service._config.get("mumu_ocr_match_threshold", 0.8)
-        matched, confidence = tm.match(image, threshold=threshold)
-        if not matched:
-            logger.debug("轮询跳过：模板不匹配 (置信度=%.4f)", confidence)
-            return
-
-        logger.info("轮询检测到武将选择页面 (置信度=%.2f)", confidence)
-
-        # 3. OCR 识别（直接使用已截图画面，不再重新截图）
         hero_names = [h.name for h in self._data.heroes.list_heroes()]
-        ocr_results, ocr_matched = self._capture_service._run_ocr(image, hero_names=hero_names)
 
-        # 4. 结果填入推荐面板 + 冷却
+        def _do_poll_work(capture_service, ocr_service, hero_names):
+            """在后台线程中执行耗时操作。"""
+            try:
+                # 1. 确保 ADB 已连接
+                if not capture_service.is_connected:
+                    ok, msg = capture_service.connect_emulator()
+                    if not ok:
+                        logger.debug("轮询跳过：ADB 连接失败 - %s", msg)
+                        self._poll_result_ready.emit(None, None, False)
+                        return
+
+                # 2. 截图
+                cap = capture_service.capture
+                ok, result = cap.screencap_full()
+                if not ok:
+                    self._poll_result_ready.emit(None, None, False)
+                    return
+                image = result
+
+                # 3. 模板匹配
+                from src.ocr.ocr_loader import get_template_manager
+                tm = get_template_manager()
+                if not tm.is_loaded:
+                    logger.debug("轮询跳过：模板未加载")
+                    self._poll_result_ready.emit(None, None, False)
+                    return
+
+                threshold = capture_service._config.get("mumu_ocr_match_threshold", 0.8)
+                matched, confidence = tm.match(image, threshold=threshold)
+                if not matched:
+                    logger.debug("轮询跳过：模板不匹配 (置信度=%.4f)", confidence)
+                    self._poll_result_ready.emit(None, None, False)
+                    return
+
+                logger.info("轮询检测到武将选择页面 (置信度=%.2f)", confidence)
+
+                # 4. OCR 识别
+                ocr_results, ocr_matched = capture_service._run_ocr(image, hero_names=hero_names)
+                self._poll_result_ready.emit(ocr_results, image, ocr_matched)
+
+            finally:
+                self._poll_thread_lock.release()
+
+        threading.Thread(target=_do_poll_work,
+                         args=(self._capture_service, self._ocr_service, hero_names),
+                         daemon=True).start()
+
+    def _on_poll_result(self, ocr_results, image, ocr_matched):
+        """轮询结果处理（在主线程中执行，可安全操作 UI）。"""
         if ocr_results:
             self._recommendation.load_from_ocr(ocr_results)
             recognized = len([r for r in ocr_results if r.get("name")])

@@ -15,7 +15,13 @@ from src.scraper.ai_batch import (
     _save_json,
     estimate_cost,
     load_heroes,
+)
+from src.scraper.ai_utils import (
     load_prompt,
+    extract_json,
+    convert_ids_to_int,
+    validate_guide,
+    validate_synergy,
 )
 
 from src.config.env import parse_env_file, get_api_config, get_runtime_params
@@ -112,61 +118,60 @@ class TestSaveJson:
 class TestAIBatchGenerator:
     def test_extract_json_direct(self) -> None:
         """直接解析 JSON"""
-        result = AIBatchGenerator._extract_json('{"hero_id": 114, "name": "\u8bf8\u845b\u4eae"}')
+        result = extract_json('{"hero_id": 114, "name": "\u8bf8\u845b\u4eae"}')
         assert result["hero_id"] == 114
 
     def test_extract_json_from_code_block(self) -> None:
         """从 ```json 代码块提取 JSON"""
         text = "```json\n{\"hero_id\": 115}\n```"
-        result = AIBatchGenerator._extract_json(text)
+        result = extract_json(text)
         assert result["hero_id"] == 115
 
     def test_extract_json_from_plain_block(self) -> None:
         """从 ``` 代码块提取 JSON"""
         text = "```\n{\"hero_id\": 116}\n```"
-        result = AIBatchGenerator._extract_json(text)
+        result = extract_json(text)
         assert result["hero_id"] == 116
 
     def test_extract_json_invalid_raises(self) -> None:
         """无效 JSON 应抛出异常"""
         with pytest.raises(Exception):
-            AIBatchGenerator._extract_json("not json at all")
+            extract_json("not json at all")
 
     def test_extract_json_from_separator(self) -> None:
         """从 --- 分隔线后提取 JSON（代码块内）"""
         text = "## 攻略正文\n内容...\n\n---\n\n```json\n{\"hero_id\": 117}\n```"
-        result = AIBatchGenerator._extract_json(text)
+        result = extract_json(text)
         assert result["hero_id"] == 117
 
     def test_extract_json_from_separator_no_codeblock(self) -> None:
         """从 --- 分隔线后提取 JSON（无代码块）"""
         text = "## 正文\n分析内容\n\n---\n\n{\"hero_id\": 118, \"score\": 5}"
-        result = AIBatchGenerator._extract_json(text)
+        result = extract_json(text)
         assert result["hero_id"] == 118
         assert result["score"] == 5
 
     def test_convert_ids_to_int(self) -> None:
         """字符串 ID 转 int"""
         data = {"counters": ["129", "130"], "synergizes_with": ["141"]}
-        result = AIBatchGenerator._convert_ids_to_int(data, ["counters", "synergizes_with"])
+        result = convert_ids_to_int(data, ["counters", "synergizes_with"])
         assert result["counters"] == [129, 130]
         assert result["synergizes_with"] == [141]
 
     def test_convert_ids_int_already_int(self) -> None:
         """已经是 int 的 ID 不应改变"""
         data = {"counters": [129, 130]}
-        result = AIBatchGenerator._convert_ids_to_int(data, ["counters"])
+        result = convert_ids_to_int(data, ["counters"])
         assert result["counters"] == [129, 130]
 
     def test_convert_ids_empty_list(self) -> None:
         """空列表不应报错"""
         data = {"counters": []}
-        result = AIBatchGenerator._convert_ids_to_int(data, ["counters"])
+        result = convert_ids_to_int(data, ["counters"])
         assert result["counters"] == []
 
     def test_validate_guide_success(self) -> None:
         """Pydantic 攻略校验成功"""
-        gen = AIBatchGenerator(api_key="test")
         data = {
             "hero_id": 114,
             "key_points": ["要点1", "要点2"],
@@ -176,7 +181,7 @@ class TestAIBatchGenerator:
             "tips_for_beginners": "新手提示",
             "last_updated": "2026-06-07",
         }
-        result = gen._validate_guide(data)
+        result = validate_guide(data)
         assert result is not None
         assert result["hero_id"] == 114
         assert result["counters"] == [129]
@@ -184,14 +189,12 @@ class TestAIBatchGenerator:
 
     def test_validate_guide_failure(self) -> None:
         """Pydantic 攻略校验失败应返回 None"""
-        gen = AIBatchGenerator(api_key="test")
         data = {"key_points": ["要点"]}
-        result = gen._validate_guide(data)
+        result = validate_guide(data)
         assert result is None
 
     def test_validate_synergy_success(self) -> None:
         """Pydantic 相性校验成功"""
-        gen = AIBatchGenerator(api_key="test")
         data = {
             "hero_a_id": 114,
             "hero_b_id": 115,
@@ -202,7 +205,7 @@ class TestAIBatchGenerator:
             "adaptability": 7,
             "description": "测试相性",
         }
-        result = gen._validate_synergy(data)
+        result = validate_synergy(data)
         assert result is not None
         assert result["hero_a_id"] == 114
         assert result["hero_b_id"] == 115
@@ -210,7 +213,6 @@ class TestAIBatchGenerator:
 
     def test_validate_synergy_failure(self) -> None:
         """Pydantic 相性校验失败应返回 None"""
-        gen = AIBatchGenerator(api_key="test")
         data = {
             "hero_a_id": 114,
             "hero_b_id": 115,
@@ -220,7 +222,7 @@ class TestAIBatchGenerator:
             "combo_stability": 6,
             "adaptability": 7,
         }
-        result = gen._validate_synergy(data)
+        result = validate_synergy(data)
         assert result is None
 
     def test_build_guide_prompt(self) -> None:
@@ -263,20 +265,19 @@ class TestAIBatchGenerator:
 
     def test_combat_synergy_compatibility(self) -> None:
         """兼容旧 prompt 中的 combat_synergy 字段 — 验证 generate_synergy 中的转换逻辑"""
-        gen = AIBatchGenerator(api_key="test")
         text = json.dumps({
             "score": 5, "synergy_rating": "A",
             "combat_synergy": 7, "combo_stability": 6,
             "adaptability": 5, "description": "test"
         })
-        data = gen._extract_json(text)
+        data = extract_json(text)
         # 模拟 generate_synergy 中的兼容逻辑
         if "combat_synergy" in data and "combo_ceiling" not in data:
             data["combo_ceiling"] = data.pop("combat_synergy")
         data["hero_a_id"] = 1
         data["hero_b_id"] = 2
-        # 通过 _validate_synergy 走 Pydantic 校验完整路径（与生产代码一致）
-        result = gen._validate_synergy(data)
+        # 通过 validate_synergy 走 Pydantic 校验完整路径（与生产代码一致）
+        result = validate_synergy(data)
         assert result is not None
         assert "combat_synergy" not in result
         assert result["combo_ceiling"] == 7

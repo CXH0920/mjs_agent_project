@@ -493,12 +493,6 @@ class RecommendationPanel(QWidget):
             # 根据武将名加载胜率
             self._load_win_rate_by_name(idx - 1, name)
 
-            # 根据武将名加载相性数据
-            self._load_synergies_by_name(idx - 1, name)
-
-            # 根据武将名加载胜率
-            self._load_win_rate_by_name(idx - 1, name)
-
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """从 OCR 识别结果加载武将数据到 8 个槽位。
 

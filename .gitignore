@@ -9,6 +9,7 @@ logs/
 # Project documentation
 project_problem.md
 review-report.md
+refactor-plan.md
 data/synergies.json
 data/guides.json
 PLANS.md
@@ -19,3 +20,5 @@ config.env
 # OS
 .DS_Store
 Thumbs.db
+screenshots/
+screenshot_data/

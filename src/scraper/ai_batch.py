@@ -35,7 +35,6 @@ from src.scraper.ai_utils import (
     _estimate_cost,
     estimate_cost,
     load_heroes,
-    load_prompt,
     _save_json,
 )
 
@@ -257,8 +256,6 @@ def main():
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct
-        if ct == 0 and pt == 0 and not args.browser:
-            had_failure = True
 
     if args.synergy_single:
         from src.scraper.ai_synergy_single import run_synergy_single_generation
@@ -270,8 +267,6 @@ def main():
         )
         total_prompt_tokens += pt
         total_completion_tokens += ct
-        if ct == 0 and pt == 0 and not args.browser:
-            had_failure = True
 
     _print_token_summary(total_prompt_tokens, total_completion_tokens)
     generator.close()

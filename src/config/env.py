@@ -55,22 +55,27 @@ def parse_env_file(env_path=None):
 
     result = {}
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            if "=" not in stripped:
-                continue
-            key, _, value = stripped.partition("=")
-            key = key.strip()
-            value = value.strip().strip("\"'")
-            if key:
-                result[key] = value
-        logger.debug("已加载 .env 配置: %s (%d 项)", path, len(result))
-        return result
-    except Exception as e:
-        logger.warning(".env 文件解析失败 %s: %s", path, e)
+        content = path.read_text(encoding="utf-8")
+    except OSError as e:
+        logger.warning(".env 文件读取失败 %s: %s", path, e)
         return {}
+    except UnicodeDecodeError as e:
+        logger.warning(".env 文件编码无效 %s: %s", path, e)
+        return {}
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key:
+            result[key] = value
+    logger.debug("已加载 .env 配置: %s (%d 项)", path, len(result))
+    return result
 
 def load_env_config(env_path=None):
     """从 .env 文件加载配置（统一小写键名，便于使用）
@@ -112,9 +117,9 @@ def load_env_config(env_path=None):
                 except (ValueError, TypeError):
                     logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
                     continue
-            if cfg_key in ("mumu_ocr_enabled", "mumu_ocr_poll_mode"):
+            elif cfg_key in ("mumu_ocr_enabled", "mumu_ocr_poll_mode"):
                 value = value.lower() in ("true", "1", "yes")
-            if cfg_key in ("mumu_ocr_match_threshold",):
+            elif cfg_key in ("mumu_ocr_match_threshold",):
                 try:
                     value = float(value)
                 except (ValueError, TypeError):

@@ -36,7 +36,13 @@ from typing import Any
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout, sync_playwright
 
-from src.scraper.ai_utils import load_prompt
+from src.scraper.ai_utils import (
+    load_prompt,
+    extract_json,
+    convert_ids_to_int,
+    validate_guide,
+    validate_synergy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +142,7 @@ class PlaywrightGenerator:
         logger.debug("[攻略] %s: 原始回复前200字:\n%s", hero_name, reply[:200])
 
         try:
-            raw = self._extract_json(reply)
+            raw = extract_json(reply)
             logger.info("[攻略] %s: JSON 提取成功, 字段: %s", hero_name, list(raw.keys()))
         except ValueError:
             logger.error("[攻略] %s: JSON 提取失败", hero_name)
@@ -145,11 +151,11 @@ class PlaywrightGenerator:
             return None, None
 
         raw["hero_id"] = hero_id
-        self._convert_ids_to_int(raw, ["counters", "synergizes_with"])
+        convert_ids_to_int(raw, ["counters", "synergizes_with"])
         logger.debug("[攻略] %s: 提取后的原始数据:\n%s", hero_name,
                      json.dumps(raw, ensure_ascii=False, indent=2))
 
-        result = self._validate_guide(raw)
+        result = validate_guide(raw)
         if result is None:
             logger.error("[攻略] %s: Pydantic 校验失败", hero_name)
             logger.error("[攻略] %s: 完整原始数据:\n%s", hero_name,
@@ -210,7 +216,7 @@ class PlaywrightGenerator:
                      name_a, name_b, reply[:200])
 
         try:
-            raw = self._extract_json(reply)
+            raw = extract_json(reply)
             logger.info("[相性] %s <-> %s: JSON 提取成功, 字段: %s",
                         name_a, name_b, list(raw.keys()))
         except ValueError:
@@ -230,7 +236,7 @@ class PlaywrightGenerator:
         logger.debug("[相性] %s <-> %s: 提取后的原始数据:\n%s",
                      name_a, name_b, json.dumps(raw, ensure_ascii=False, indent=2))
 
-        result = self._validate_synergy(raw)
+        result = validate_synergy(raw)
         if result is None:
             logger.error("[相性] %s <-> %s: Pydantic 校验失败", name_a, name_b)
             logger.error("[相性] %s <-> %s: 完整原始数据:\n%s",
@@ -504,113 +510,6 @@ class PlaywrightGenerator:
             logger.debug(traceback.format_exc())
             return None
 
-    # ---------------------------------------------------------------
-    # ETL Step 2: Transform — JSON 提取与数据类型转换
-    # ---------------------------------------------------------------
-
-    @staticmethod
-    def _extract_json(text: str) -> dict:
-        """从 AI 回复文本中提取 JSON
-
-        同 ai_generator.py 版本的逻辑，用 raw_decode 替代 json.loads
-        以容忍尾部多余字符。增加预修复步骤处理 description 内未转义字符。
-        """
-        text = text.strip()
-
-        def _repair_strings(s: str) -> str:
-            """修复 JSON 字符串值内的字面换行和未转义引号"""
-            result = []
-            in_string = False
-            i = 0
-            while i < len(s):
-                c = s[i]
-                if c == '\\' and in_string:
-                    result.append(c)
-                    if i + 1 < len(s):
-                        result.append(s[i + 1])
-                        i += 2
-                    else:
-                        i += 1
-                    continue
-                if c == '"':
-                    in_string = not in_string
-                    result.append(c)
-                    i += 1
-                    continue
-                if in_string and c in '\r\n':
-                    result.append('\\n')
-                    i += 1
-                    continue
-                result.append(c)
-                i += 1
-            return ''.join(result)
-
-        def _raw_parse(s: str) -> dict | None:
-            try:
-                decoder = json.JSONDecoder()
-                obj, _ = decoder.raw_decode(s)
-                if isinstance(obj, dict):
-                    return obj
-            except json.JSONDecodeError:
-                pass
-            return None
-
-        def _try_all(candidates: list[str]) -> dict | None:
-            for c in candidates:
-                result = _raw_parse(c)
-                if result:
-                    return result
-                repaired = _repair_strings(c)
-                if repaired != c:
-                    result = _raw_parse(repaired)
-                    if result:
-                        return result
-            return None
-
-        # 1. 直接全文
-        result = _try_all([text])
-        if result:
-            return result
-
-        # 2. 从 ```json 或 ``` 代码块提取
-        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-        if m:
-            result = _try_all([m.group(1).strip()])
-            if result:
-                return result
-
-        # 3. 通过 --- 分隔线提取最后一段（用 rfind 只取最后一个 --- 之后的内容）
-        last_sep = text.rfind("\n---\n")
-        if last_sep < 0:
-            last_sep = text.rfind("\n---")
-        if last_sep >= 0:
-            after_sep = text[last_sep + 5:].strip()
-            result = _try_all([after_sep])
-            if result:
-                return result
-
-        # 4. 找到第一个 { 到最后一个 }
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            result = _try_all([text[start:end + 1]])
-            if result:
-                return result
-
-        raise ValueError(f"无法从响应中提取 JSON:\n{text[:500]}")
-
-    @staticmethod
-    def _convert_ids_to_int(data: dict, fields: list[str]) -> dict:
-        """将指定字段中的 ID 元素统一转为 int"""
-        for field in fields:
-            if field in data and isinstance(data[field], list):
-                original = data[field]
-                try:
-                    data[field] = [int(v) for v in data[field]]
-                except (ValueError, TypeError) as e:
-                    logger.warning("字段 %s 转 int 失败: %s, 原始值: %s", field, e, original)
-        return data
-
     @staticmethod
     def _build_guide_prompt(hero: dict) -> str:
         """构建单个武将的攻略 prompt（始终包含武将 ID）"""
@@ -648,37 +547,3 @@ class PlaywrightGenerator:
         lines.extend(hero_block("武将 B", hero_b))
         return "\n".join(lines)
 
-    # ---------------------------------------------------------------
-    # ETL Step 3: Load — Pydantic 模型校验与写入
-    # ---------------------------------------------------------------
-
-    @staticmethod
-    def _validate_guide(data: dict) -> dict | None:
-        """通过 Pydantic HeroGuide 模型校验攻略数据
-
-        === ETL Step 3: Load ===
-        输入: _extract_json 解析后的 dict
-        输出: Pydantic 校验通过的 dict，或 None
-        """
-        try:
-            from src.data.models import HeroGuide
-            validated = HeroGuide.model_validate(data)
-            logger.debug("HeroGuide 校验通过")
-            return validated.model_dump(mode="json")
-        except Exception as e:
-            logger.error("HeroGuide Pydantic 校验失败: %s", e)
-            logger.debug("异常 traceback:\n%s", traceback.format_exc())
-            return None
-
-    @staticmethod
-    def _validate_synergy(data: dict) -> dict | None:
-        """通过 Pydantic SynergyScore 模型校验相性数据"""
-        try:
-            from src.data.models import SynergyScore
-            validated = SynergyScore.model_validate(data)
-            logger.debug("SynergyScore 校验通过")
-            return validated.model_dump(mode="json")
-        except Exception as e:
-            logger.error("SynergyScore Pydantic 校验失败: %s", e)
-            logger.debug("异常 traceback:\n%s", traceback.format_exc())
-            return None
