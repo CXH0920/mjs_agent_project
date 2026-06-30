@@ -1363,7 +1363,7 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 | 仓颉码 | unihan-etl（UNIHAN `kCangjie`） | 同上 | 同上 |
 | 部首 | cnradical | 同上 | JSON 缓存 / 运行时补齐 |
 | 拼音 | pypinyin | 同上 | JSON 缓存 / warmup 预加载 |
-| 笔画数 | 内联字典 `_STROKE_TABLE` | `recognizer.py` 内联 | 代码内，零依赖 |
+| 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `recognizer.py` 内联路径 | 运行时解析文本文件，首次约 355ms |
 
 数据文件 `src/data/char_info_cache.json` 包含 223 个高频汉字（武将名 + 常见 OCR 误识字）。
 缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存。
@@ -1385,9 +1385,6 @@ class GeneralRecognizer:
 ```python
 _HIGH_CONFIDENCE = 0.995         # 极高置信度——跳过矫正，保护新武将
 _EDIT_DISTANCE_THRESHOLD = 1      # 编辑距离最大允许差异
-_CJK_START = 0x4E00               # CJK 统一表意文字起始
-_CJK_END = 0x9FFF                 # CJK 统一表意文字结束
-_CJK_VISUAL_MAX_DIST = 500        # 视觉相似度有效范围
 ```
 
 #### 图像预处理流程
@@ -1434,15 +1431,17 @@ def _engine(self):
 3. 距离 ≤ `_EDIT_DISTANCE_THRESHOLD(1)` 时采纳
 4. 多个候选 → `_pick_visually_similar()` 视觉相似度决胜
 
-**视觉相似度算法**：
-```
-相似度 = max(0, 1 - |cp1 - cp2| / 500)
-示例：
-  "不"(U+4E0D) vs "丕"(U+4E15) → 差8 → 相似度 = 0.984
-  "不"(U+4E0D) vs "植"(U+690D) → 差6896 → 0.0
-```
+**评分算法**（以 `"王剪" → ["王异", "王翦"]` 为例）：
 
-**长度惩罚**：对不等长字符串，每差一个字符扣 0.3 分。
+多维汉字特征评分通过逐字符比较，对相同字符加满分，不同字符用四角号码、仓颉码、部首加权评分替代：
+
+```
+四角(×0.4) + 仓颉(×0.4) + 部首(×0.2)
+
+示例：
+  剪 vs 翦: 四角0.80×0.4 + 仓颉0.75×0.4 + 部首0×0.2 = 0.620
+  剪 vs 异: 四角0.20×0.4 + 仓颉0.29×0.4 + 部首0×0.2 = 0.194
+```
 
 ### 12.4 单例加载器（ocr_loader.py）
 

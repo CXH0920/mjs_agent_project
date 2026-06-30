@@ -43,7 +43,6 @@ _DEFAULT_GENERALS_ROI = [
 # 两段式识别阈值
 _EDIT_DISTANCE_THRESHOLD = 1
 _HIGH_CONFIDENCE = 0.995       # 极高置信度——跳过矫正，保护新武将
-_LOW_CONFIDENCE = 0.97         # 低置信度门槛——存在邻近替代时用编辑距离候选（而非信任精确匹配）
 
 # ── 汉字特征库 ──────────────────────────────────────────────────────
 # 用于多维度视觉相似度决胜（四角号码、仓颉码、部首、拼音、笔画数）
@@ -478,15 +477,6 @@ class GeneralRecognizer:
                 if corrected != text:
                     logger.debug("武将 %d: 矫正 %s → %s", slot, text, corrected)
                     return corrected, conf
-
-                # 矫正返回原文，但 OCR 置信度偏低且存在邻近替代 → 采纳邻近替代
-                if conf < _LOW_CONFIDENCE:
-                    neighbors = [h for h in self._hero_names
-                                 if _levenshtein_distance(text, h) <= _EDIT_DISTANCE_THRESHOLD
-                                 and h != text]
-                    if neighbors:
-                        logger.debug("武将 %d: 置信度(%.4f)偏低，采纳邻近替代 %s", slot, conf, neighbors[0])
-                        return neighbors[0], conf
 
             return text, conf
 
