@@ -43,6 +43,22 @@ def main() -> None:
     app.setOrganizationName("MingJiangSha")
     app.setApplicationVersion("0.1.0")
 
+    # Windows 任务栏图标修正：设置 AppUserModelID 确保自定义图标生效
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "MingJiangSha.MJSAgent"
+            )
+        except Exception:
+            pass
+
+    # 尽早设置应用图标（在 PaddleOCR 等耗时操作之前）
+    icon_path = Path(__file__).resolve().parent.parent / "mjs.ico"
+    if icon_path.exists():
+        app_icon = QIcon(str(icon_path))
+        app.setWindowIcon(app_icon)
+
     # 设置全局样式
     app.setStyleSheet(GLOBAL_STYLE)
 
@@ -66,11 +82,6 @@ def main() -> None:
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.warning("PaddleOCR 提前初始化失败: %s（不影响启动，识别时再尝试）", e)
-
-    # 设置应用图标
-    icon_path = Path(__file__).resolve().parent.parent / "mjs.ico"
-    if icon_path.exists():
-        app.setWindowIcon(QIcon(str(icon_path)))
 
     try:
         window = MainWindow()

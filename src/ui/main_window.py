@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
@@ -101,6 +102,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("名将杀 Agent")
         self.setMinimumSize(960, 640)
         self.resize(1100, 720)
+
+        # 设置窗口图标（继承 app.setWindowIcon，但显式设置更可靠）
+        icon_path = Path(__file__).resolve().parent.parent.parent / "mjs.ico"
+        if icon_path.exists():
+            from PySide6.QtGui import QIcon
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self._setup_menu()
         self._load_data()
