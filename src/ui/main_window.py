@@ -407,6 +407,7 @@ class MainWindow(QMainWindow):
         # Tab 2: 选将推荐
         self._recommendation = RecommendationPanel(
             self._data.heroes, self._data.synergies,
+            guide_manager=self._data.guides,
             capture_service=self._capture_service,
             ocr_service=self._ocr_service,
         )

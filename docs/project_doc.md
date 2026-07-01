@@ -507,6 +507,7 @@ class OcrService(QObject):
 | `data/synergies.json` | SynergyManager | 若干相性对 |
 | `data/guides.json` | GuideManager | ~42 份攻略 |
 | `data/cards.json` | — | 基础卡牌 |
+| `data/faction_colors.json` | —（直接读取） | 14 个势力配色 |
 
 ### 4.2 HeroManager 方法清单
 
@@ -587,7 +588,7 @@ def apply_incremental_update(data_dir, update)
 |------|------|----------|
 | main_window.py | 636 | QMainWindow（顶层） |
 | hero_browser.py | 432 | QWidget（Tab 内嵌） |
-| recommendation_panel.py | 528 | QWidget（Tab 内嵌） |
+| recommendation_panel.py | ~740 | QWidget（Tab 内嵌） |
 | mumu_config_dialog.py | 574 | QDialog（模拟器配置） |
 | hero_select_dialog.py | 293 | QDialog（基类） |
 | settings_dialog.py | 268 | QDialog（API 配置） |
@@ -769,7 +770,7 @@ RecommendationPanel (QWidget)
            │   │   ├── 名称浮层 (底部, rgba(0,0,0,140))
            │   │   └── 势力标签 (左上角, 色块)
            └── 信息区 (弹性)
-               ├── 势力色块 + 武将名 (粗体 15px)
+               ├── 势力色块 + 武将名 (粗体 15px) + [攻略] 按钮
                ├── 推荐指数 (★★★★☆ 98.23% 或 ★★☆☆☆ --)
                ├── 分隔线
                ├── 高相性组合标题
@@ -778,16 +779,20 @@ RecommendationPanel (QWidget)
                └── 胜率（从 2v2胜率排行.csv 加载，前三自动标记 🥇🥈🥉 奖牌）
 ```
 
-**势力色表**（`FACTION_COLORS`）：
-```python
-FACTION_COLORS = {
-    "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F",
-    "赵": "#556B2F", "魏": "#800020", "燕": "#6A0DAD",
-    "齐": "#1B7A3D", "韩": "#CD853F",
-    "孙吴": "#4169E1", "蜀": "#228B22", "曹魏": "#800020",
-    "群雄": "#8B0000", "晋": "#4A6741", "新朝": "#B8860B",
+**势力配色**：
+从 `data/faction_colors.json` 配置文件加载，启动后缓存到全局变量。文件不存在时使用内建兜底配色：
+
+```json
+{
+  "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F",
+  "赵": "#556B2F", "魏": "#800020", "燕": "#6A0DAD",
+  "齐": "#1B7A3D", "韩": "#CD853F",
+  "孙吴": "#4169E1", "蜀": "#228B22", "曹魏": "#800020",
+  "群雄": "#8B0000", "晋": "#4A6741", "新朝": "#B8860B"
 }
 ```
+
+配色通过 `_load_faction_colors()` 函数加载（`src/ui/recommendation_panel.py` 模块级函数），返回 `dict[str, str]`，调用方通过 `_load_faction_colors().get(faction, "#888")` 获取，未知势力使用灰色 `#888` 兜底。
 
 **数据接口**：
 ```python
@@ -813,8 +818,17 @@ def update_recommendations(self, data: list[dict]) → None
 - 加载 `images/<name>.png` 头像
 - 推荐指数固定为 0.5（两星，表示来自截图识别，不直接使用 OCR 置信度）
 - 根据武将名从 `synergies.json` 加载高相性组合数据
+- 高相性组合在 OCR 模式下**仅显示当前 8 个武将之间的相性**，不显示数据库中其他武将的相性（通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志控制过滤）
 - 根据武将名从 `2v2胜率排行.csv` 加载胜率，随即对 8 个槽位按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
 - 未匹配到 HeroManager 的武将名仍显示名称文字供人工判断
+
+**攻略按钮（`HeroCardWidget`）**：
+每个 `HeroCardWidget` 信息区头部（势力色块 + 武将名同一行的最右侧）新增一个蓝色 [攻略] 按钮：
+- 按钮尺寸 66×28，蓝色背景 `#4a90d9`，白色文字
+- 点击时通过 `guide_clicked = Signal(int)` 信号发射武将 ID
+- `RecommendationPanel._show_guide_popup(hero_id)` 接收信号，通过 `GuideManager.get_guide()` 获取攻略
+- 弹出 `GuideDetailDialog`（QDialog，500×550），展示核心要点、新手提示、被克制（ID→名称解析）、搭配推荐、Markdown 渲染的攻略正文
+- 无攻略数据时弹窗显示"暂无攻略数据"
 
 ### 5.9 对话框基类体系
 
@@ -836,6 +850,12 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
  └── SynergySingleDialog (synergy_single_dialog.py, ~30行)
      SelectionMode=SINGLE
 ```
+
+此外，`recommendation_panel.py` 内置一个非继承基类的独立弹窗：
+
+| 类 | 文件 | 用途 |
+|----|------|------|
+| GuideDetailDialog | `recommendation_panel.py` | 选将推荐卡片按钮触发的攻略详情弹窗（500×550），展示核心要点、新手提示、被克制/搭配推荐、Markdown 渲染的攻略正文 |
 
 ### 5.10 全局样式（style.py, 247 行）
 

@@ -10,12 +10,15 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+import mistune
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
@@ -25,22 +28,73 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
-from src.data.models import Hero
+from src.data.guide_manager import GuideManager
+from src.data.models import Hero, HeroGuide
 
 logger = logging.getLogger(__name__)
 
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+FACTION_COLORS_FILE = DATA_DIR / "faction_colors.json"
 WIN_RATE_CSV = DATA_DIR / "2v2胜率排行.csv"
 
 # 缓存胜率数据 {name: rate_percent}
 _win_rate_cache: dict[str, float] | None = None
+_faction_colors_cache: dict[str, str] | None = None
+
+
+def _load_faction_colors() -> dict[str, str]:
+    """从 data/faction_colors.json 加载势力配色
+
+    文件不存在或格式错误时返回内建兜底配色。
+    结果缓存全局变量，避免重复读盘。
+    """
+    global _faction_colors_cache
+    if _faction_colors_cache is not None:
+        return _faction_colors_cache
+
+    # 内建兜底
+    fallback: dict[str, str] = {
+        "秦": "#8B4513",
+        "汉": "#B22222",
+        "楚": "#2F4F4F",
+        "赵": "#556B2F",
+        "魏": "#800020",
+        "燕": "#6A0DAD",
+        "齐": "#1B7A3D",
+        "韩": "#CD853F",
+        "孙吴": "#4169E1",
+        "蜀": "#228B22",
+        "曹魏": "#800020",
+        "群雄": "#8B0000",
+        "晋": "#4A6741",
+        "新朝": "#B8860B",
+    }
+
+    if not FACTION_COLORS_FILE.exists():
+        logger.warning("势力配色文件不存在: %s，使用内建配色", FACTION_COLORS_FILE)
+        _faction_colors_cache = fallback
+        return _faction_colors_cache
+
+    try:
+        with open(FACTION_COLORS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
+            raise ValueError("配色文件格式错误，应为 {faction: color} 格式")
+        _faction_colors_cache = data
+        logger.debug("已加载 %d 个势力配色", len(data))
+    except Exception as e:
+        logger.warning("势力配色文件加载失败 (%s)，使用内建配色", e)
+        _faction_colors_cache = fallback
+
+    return _faction_colors_cache
 
 
 def _load_win_rates() -> dict[str, float]:
@@ -69,24 +123,6 @@ def _load_win_rates() -> dict[str, float]:
         logger.warning("胜率文件加载失败: %s", e)
     return _win_rate_cache
 
-FACTION_COLORS: dict[str, str] = {
-    "秦": "#8B4513",
-    "汉": "#B22222",
-    "楚": "#2F4F4F",
-    "赵": "#556B2F",
-    "魏": "#800020",
-    "燕": "#6A0DAD",
-    "齐": "#1B7A3D",
-    "韩": "#CD853F",
-    "孙吴": "#4169E1",
-    "蜀": "#228B22",
-    "曹魏": "#800020",
-    "群雄": "#8B0000",
-    "晋": "#4A6741",
-    "新朝": "#B8860B",
-}
-
-
 @dataclass
 class HeroRecommendation:
     """外部传入的推荐武将数据"""
@@ -99,9 +135,12 @@ class HeroRecommendation:
 class HeroCardWidget(QFrame):
     """单个武将推荐卡片"""
 
+    guide_clicked = Signal(int)  # 发出武将 ID
+
     def __init__(self, hero: Hero | None, parent=None):
         super().__init__(parent)
         self._hero: Hero | None = hero
+        self._hero_id: int = 0
         self._confidence: float = 0.0
         self._synergy_labels: list[QLabel] = []
 
@@ -176,7 +215,19 @@ class HeroCardWidget(QFrame):
         self._name_label = QLabel()
         self._name_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #2c3e50;")
         header_layout.addWidget(self._name_label)
+
         header_layout.addStretch()
+
+        # 攻略按钮（位于卡片框最右侧，与名称平齐）
+        self._guide_btn = QPushButton("攻略")
+        self._guide_btn.setFixedSize(66, 28)
+        self._guide_btn.setStyleSheet(
+            "QPushButton { background-color: #4a90d9; color: white; border: none; "
+            "border-radius: 4px; padding: 0; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #357abd; }"
+        )
+        self._guide_btn.clicked.connect(self._on_guide_clicked)
+        header_layout.addWidget(self._guide_btn)
         info_layout.addLayout(header_layout)
 
         # 推荐指数
@@ -234,6 +285,7 @@ class HeroCardWidget(QFrame):
     def _update_display(self) -> None:
         """根据当前 _hero 和 _confidence 刷新所有 UI"""
         if not self._hero:
+            self._hero_id = 0
             self._img_label.clear()
             self._name_overlay.setText("空")
             self._name_label.setText("空")
@@ -247,10 +299,13 @@ class HeroCardWidget(QFrame):
             )
             self._confidence_label.setText("")
             self._win_rate_label.setText("胜率: --%")
+            self._guide_btn.setVisible(False)
             return
 
         hero = self._hero
-        color = FACTION_COLORS.get(hero.faction, "#888")
+        self._hero_id = hero.id
+        self._guide_btn.setVisible(True)
+        color = _load_faction_colors().get(hero.faction, "#888")
 
         # 头像
         pixmap = self._load_portrait(hero.name)
@@ -312,6 +367,15 @@ class HeroCardWidget(QFrame):
         )
 
     # ---------------------------------------------------------------
+    # 槽函数
+    # ---------------------------------------------------------------
+
+    def _on_guide_clicked(self) -> None:
+        """攻略按钮点击时发出 guide_clicked 信号"""
+        if self._hero_id > 0:
+            self.guide_clicked.emit(self._hero_id)
+
+    # ---------------------------------------------------------------
     # 公共接口
     # ---------------------------------------------------------------
 
@@ -360,6 +424,104 @@ class HeroCardWidget(QFrame):
             self._synergy_labels.append(label)
 
 
+class GuideDetailDialog(QDialog):
+    """攻略详情弹窗"""
+
+    def __init__(self, hero_name: str, guide: HeroGuide | None,
+                 hero_manager: HeroManager, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"{hero_name} - 攻略详情")
+        self.setMinimumSize(500, 550)
+        self.resize(520, 580)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        if not guide:
+            no_data = QLabel("暂无攻略数据")
+            no_data.setStyleSheet("color: #a08060; font-size: 14px; padding: 20px;")
+            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(no_data)
+            return
+
+        scroll = QWidget()
+        scroll_layout = QVBoxLayout(scroll)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(6)
+
+        # 核心要点
+        if guide.key_points:
+            points_label = QLabel("<b>核心要点:</b>")
+            scroll_layout.addWidget(points_label)
+            for point in guide.key_points:
+                pl = QLabel(f"  {point}")
+                pl.setWordWrap(True)
+                scroll_layout.addWidget(pl)
+
+        # 新手提示
+        if guide.tips_for_beginners:
+            scroll_layout.addWidget(QLabel(""))
+            tips = QLabel(f"<b>新手提示:</b>\n{guide.tips_for_beginners}")
+            tips.setWordWrap(True)
+            scroll_layout.addWidget(tips)
+
+        # 克制 / 搭配
+        if guide.counters:
+            names = []
+            for hid in guide.counters[:10]:
+                h = hero_manager.get_hero(hid)
+                names.append(h.name if h else f"#{hid}")
+            cl = QLabel(f"<b>被克制:</b>  {'、'.join(names)}")
+            cl.setWordWrap(True)
+            scroll_layout.addWidget(cl)
+
+        if guide.synergizes_with:
+            names = []
+            for hid in guide.synergizes_with[:10]:
+                h = hero_manager.get_hero(hid)
+                names.append(h.name if h else f"#{hid}")
+            sl = QLabel(f"<b>搭配推荐:</b>  {'、'.join(names)}")
+            sl.setWordWrap(True)
+            scroll_layout.addWidget(sl)
+
+        # 攻略正文（Markdown 渲染）
+        if guide.description:
+            scroll_layout.addWidget(QLabel(""))
+            desc_title = QLabel("<b>攻略详情:</b>")
+            scroll_layout.addWidget(desc_title)
+            desc_browser = QTextBrowser()
+            desc_browser.setHtml(_markdown_to_html(guide.description))
+            desc_browser.setOpenExternalLinks(False)
+            desc_browser.setMinimumHeight(200)
+            scroll_layout.addWidget(desc_browser)
+
+        scroll_layout.addStretch()
+
+        # 放入 ScrollArea
+        from PySide6.QtWidgets import QScrollArea
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setWidget(scroll)
+        layout.addWidget(area, 1)
+
+        # 关闭按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.setFixedWidth(80)
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+
+def _markdown_to_html(text: str) -> str:
+    """将 Markdown 转换为 HTML"""
+    if not text:
+        return ""
+    return mistune.html(text)
+
+
 class RecommendationPanel(QWidget):
     """选将推荐主面板 — 4×2 网格布局
 
@@ -367,14 +529,18 @@ class RecommendationPanel(QWidget):
     """
 
     def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
+                 guide_manager: GuideManager | None = None,
                  capture_service=None, ocr_service=None, parent=None):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
+        self._guide_mgr = guide_manager or GuideManager()
         self._capture_service = capture_service
         self._ocr_service = ocr_service
         self._cards: list[HeroCardWidget] = []
         self._mumu_config_dialog = None  # lazy import
+        self._current_hero_ids: set[int] = set()
+        self._ocr_mode: bool = False
 
         self._setup_ui()
         self._load_default_heroes()
@@ -422,6 +588,7 @@ class RecommendationPanel(QWidget):
             row = i // 2
             col = i % 2
             card = HeroCardWidget(None)
+            card.guide_clicked.connect(self._show_guide_popup)
             grid.addWidget(card, row, col)
             self._cards.append(card)
 
@@ -429,21 +596,35 @@ class RecommendationPanel(QWidget):
 
     def _load_default_heroes(self) -> None:
         """默认按 id 排序取前 8 个武将展示"""
+        self._ocr_mode = False
+        self._current_hero_ids = set()
         heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)[:8]
         for i, hero in enumerate(heroes):
             if i < len(self._cards):
                 self._cards[i].set_hero(hero)
+                self._current_hero_ids.add(hero.id)
                 self._load_real_synergies(i, hero.id)
                 self._load_win_rate_by_name(i, hero.name)
 
         self._apply_medal_rankings()
 
     def _load_real_synergies(self, card_idx: int, hero_id: int) -> None:
-        """从 synergy manager 加载已有相性数据（按评分排序取前 4 条）"""
+        """从 synergy manager 加载已有相性数据（按评分排序取前 4 条）
+
+        OCR 模式下仅展示当前 8 个武将之间的相性组合。
+        """
         try:
             synergies = self._synergy_mgr.list_synergies_for_hero(hero_id)
             if synergies:
-                sorted_syns = sorted(synergies, key=lambda s: s.score, reverse=True)[:4]
+                # OCR 模式下过滤：partner 必须在当前 8 人之中
+                filtered = []
+                for s in synergies:
+                    partner_id = s.hero_b_id if s.hero_a_id == hero_id else s.hero_a_id
+                    if self._ocr_mode and partner_id not in self._current_hero_ids:
+                        continue
+                    filtered.append(s)
+
+                sorted_syns = sorted(filtered, key=lambda x: x.score, reverse=True)[:4]
                 pairs = []
                 for s in sorted_syns:
                     partner_id = s.hero_b_id if s.hero_a_id == hero_id else s.hero_a_id
@@ -492,7 +673,25 @@ class RecommendationPanel(QWidget):
 
         根据 name 从 HeroManager 查找 Hero，找不到时显示"未知武将"。
         同时加载相性数据和胜率。
+
+        OCR 模式下记录当前 8 个武将 ID，用于过滤相性组合。
         """
+        self._ocr_mode = True
+        self._current_hero_ids = set()
+
+        # 第一遍：收集所有武将 ID（确保相性过滤时 8 个 ID 齐全）
+        hero_by_slot: dict[int, str] = {}
+        for item in data:
+            idx = item.get("index", 0)
+            if idx < 1 or idx > 8:
+                continue
+            name = item.get("name", "")
+            hero = self._hero_mgr.get_hero_by_name(name)
+            if hero:
+                self._current_hero_ids.add(hero.id)
+                hero_by_slot[idx] = name
+
+        # 第二遍：填充卡片
         for item in data:
             idx = item.get("index", 0)
             if idx < 1 or idx > 8:
@@ -516,11 +715,14 @@ class RecommendationPanel(QWidget):
             # 推荐指数固定为 0.5（表示来自截图识别），不直接使用 OCR 置信度
             card.set_confidence(0.5)
 
-            # 根据武将名加载相性数据
-            self._load_synergies_by_name(idx - 1, name)
-
             # 根据武将名加载胜率
             self._load_win_rate_by_name(idx - 1, name)
+
+        # 第三遍：所有 ID 齐全后统一加载相性
+        for idx, name in hero_by_slot.items():
+            hero = self._hero_mgr.get_hero_by_name(name)
+            if hero:
+                self._load_real_synergies(idx - 1, hero.id)
 
         # 对当前 8 个槽位按胜率排名，前三分别赋予金/银/铜牌
         self._apply_medal_rankings()
@@ -546,6 +748,20 @@ class RecommendationPanel(QWidget):
         ranked.sort(key=lambda x: x[0], reverse=True)
         for rank, (_, idx) in enumerate(ranked[:3], start=1):
             self._cards[idx].set_medal(rank)
+
+    # ---------------------------------------------------------------
+    # 攻略弹窗
+    # ---------------------------------------------------------------
+
+    def _show_guide_popup(self, hero_id: int) -> None:
+        """显示武将攻略详情弹窗"""
+        hero = self._hero_mgr.get_hero(hero_id)
+        if not hero:
+            logger.warning("攻略弹窗：未找到武将 %s", hero_id)
+            return
+        guide = self._guide_mgr.get_guide(hero_id)
+        dialog = GuideDetailDialog(hero.name, guide, self._hero_mgr, parent=self.window())
+        dialog.exec()
 
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """从 OCR 识别结果加载武将数据到 8 个槽位。
