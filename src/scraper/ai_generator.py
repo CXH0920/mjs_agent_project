@@ -73,7 +73,7 @@ class AIBatchGenerator:
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
         }
 
         for attempt in range(1, self.max_retries + 1):
@@ -128,6 +128,11 @@ class AIBatchGenerator:
 
         usage = response.get("usage", {})
         content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        finish_reason = response.get("choices", [{}])[0].get("finish_reason", "")
+
+        if finish_reason == "length":
+            logger.warning("API 输出被 max_tokens 截断（finish_reason=length），"
+                           "可增加 max_tokens 或优化 prompt 减少输出量")
 
         if not content:
             logger.warning("API 返回内容为空")
@@ -136,7 +141,11 @@ class AIBatchGenerator:
         try:
             raw = extract_json(content)
         except ValueError as e:
-            logger.warning("JSON 提取失败: %s", e)
+            if finish_reason == "length":
+                logger.warning("JSON 提取失败，且 API 输出已被 max_tokens 截断，"
+                               "很可能因输出不完整导致")
+            else:
+                logger.warning("JSON 提取失败: %s", e)
             return None, usage
 
         raw["hero_id"] = hero.get("id", 0)
@@ -172,6 +181,11 @@ class AIBatchGenerator:
 
         usage = response.get("usage", {})
         content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        finish_reason = response.get("choices", [{}])[0].get("finish_reason", "")
+
+        if finish_reason == "length":
+            logger.warning("API 输出被 max_tokens 截断（finish_reason=length），"
+                           "可增加 max_tokens 或优化 prompt 减少输出量")
 
         if not content:
             logger.warning("API 返回内容为空")
@@ -180,7 +194,11 @@ class AIBatchGenerator:
         try:
             raw = extract_json(content)
         except ValueError as e:
-            logger.warning("JSON 提取失败: %s", e)
+            if finish_reason == "length":
+                logger.warning("JSON 提取失败，且 API 输出已被 max_tokens 截断，"
+                               "很可能因输出不完整导致")
+            else:
+                logger.warning("JSON 提取失败: %s", e)
             return None, usage
 
         raw["hero_a_id"] = hero_a.get("id", 0)

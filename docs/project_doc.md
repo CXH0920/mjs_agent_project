@@ -22,6 +22,7 @@
 - [十一、屏幕采集模块细节](#十一屏幕采集模块细节)
 - [十二、OCR 识别模块细节](#十二ocr-识别模块细节)
 - [十三、测试体系细节](#十三测试体系细节)
+- [十四、数据全流程详解](#十四数据全流程详解)
 
 ---
 
@@ -1558,9 +1559,364 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
 | `test_validate_synergy_failure` | score 超出范围返回 None |
 | `test_combat_synergy_compatibility` | 旧字段兼容转换后通过 Pydantic |
 
+
 ### 13.3 测试约定
 
 - 纯 pytest（不继承 `unittest.TestCase`）
 - 文件 IO 使用 `tempfile` 避免影响真实数据
 - Manager 测试使用 `_make_*` 辅助方法构造测试数据
 - `sys.path.insert(0, "..")` 在测试文件内手动添加
+
+---
+
+## 十四、数据全流程详解
+
+### 14.1 核心概念与分层
+
+攻略/相性数据从生成到持久化的全流程横跨四层：
+
+| 层级 | 文件 | 职责 |
+|------|------|------|
+| UI 层 | `src/ui/` | 用户操作触发、进度展示、后端选择 |
+| 业务服务层 | `src/business/` | QProcess 子进程管理、参数构建、stdout/stderr 转发 |
+| 子进程（采集层） | `src/scraper/` | 数据获取（API 或浏览器）、JSON 提取、校验、写入 |
+| 数据管理层 | `src/data/` | JSON 文件加载、对象缓存、CRUD 接口 |
+
+---
+
+### 14.2 攻略数据全流程总图
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  UI 层（MainWindow）                                                     │
+│  1. 用户选择生成模式（全量/增量/指定）                                      │
+│  2. BackendChooseDialog 选择后端（API / 浏览器）                          │
+│  3. GuideFetchService 构建子进程参数 → QProcess.start()                   │
+└──────────────────────┬───────────────────────────────────────────────────┘
+                       │ 子进程 stdout → UI 进度条
+                       ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  GuideFetchService（主进程，QProcess 管理）                                │
+│  参数: python -m src.scraper.ai_batch --guide [--update] [--browser]     │
+│  增量/指定模式 → 写入临时 JSON → --heroes-file 传入子进程                  │
+│  实时读取 stdout → 正则解析 [i/N] → 更新进度条                            │
+│  finished 信号 → 检查 exit_code → 弹出完成/失败提示                        │
+└──────────────────────┬───────────────────────────────────────────────────┘
+                       │ 启动子进程
+                       ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  ai_batch.py（子进程入口 CLI）                                             │
+│  ① 加载武将数据 load_heroes()                                            │
+│  ② 断点续传 _load_existing_guides() → 已有攻略 {hero_id: guide}          │
+│  ③ 选择生成器：AIBatchGenerator / PlaywrightGenerator                     │
+│  ④ 委托 run_guide_generation()                                          │
+└──────────────────────┬───────────────────────────────────────────────────┘
+                       │ 逐个武将
+                       ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  run_guide_generation()（循环编排）                                       │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │ 循环体（每武将 1 次）：                                             │    │
+│  │  ① 跳过/删除已有攻略                                              │    │
+│  │  ② generator.generate_guide(hero)  ─────────→  二选一            │    │
+│  │     ├── AIBatchGenerator （API 方式）                              │    │
+│  │     └── PlaywrightGenerator（浏览器方式）                          │    │
+│  │  ③ 成功: new_guides.append(result)                                │    │
+│  │     stdout → "[i/N] 诸葛亮 OK"                                    │    │
+│  │  ④ 每 10 条(GUIDE_BATCH_SAVE_INTERVAL) → _save_json()             │    │
+│  │  ⑤ 循环结束 → 最终 _save_json()                                   │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────┬───────────────────────────────────────────────────┘
+                       │
+          ┌────────────┴────────────┐
+          ▼                         ▼
+┌──────────────────┐   ┌────────────────────────┐
+│ API 方式          │   │ 浏览器方式               │
+│ AIBatchGenerator │   │ PlaywrightGenerator    │
+└────────┬─────────┘   └────────────┬───────────┘
+         │                          │
+         ▼                          ▼
+   HTTP POST ───────────→    Edge 浏览器 ──────────→  DeepSeek 网页版
+   api.deepseek.com         chat.deepseek.com
+         │                          │
+         ▼                          ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        共同下游（同一份代码）                                │
+│                                                                          │
+│  Step 1: extract_json(content) ← AI 回复原始文本                          │
+│     ├── 提取策略（4 种依次尝试）：全文 → ```json 代码块 → --- 分隔线后 → {} │
+│     └── _repair_strings() 状态机修复字面换行符                              │
+│                                                                          │
+│  Step 2: 数据补充 & 类型转换                                              │
+│     ├── raw["hero_id"] = hero.id          ← 注入武将 ID                   │
+│     └── convert_ids_to_int(counters, synergizes_with)  ← 元素转 int      │
+│                                                                          │
+│  Step 3: Pydantic 校验                                                    │
+│     └── validate_guide(raw) → HeroGuide.model_validate() → model_dump()  │
+│                                                                          │
+│  Step 4: _save_json(guide_path, all_guides) → data/guides.json           │
+│     └── 原子写入：先写 .tmp → rename 覆盖                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 14.3 API 方式详细流程（AIBatchGenerator）
+
+#### 14.3.1 调用链
+
+```
+AIBatchGenerator.__init__(api_key, api_url, model, rpm, ...)
+  │
+  ├── 内部创建 httpx.Client(timeout=300)
+  ├── 限速器: _min_interval = 60.0 / rpm, _last_request_time = 0.0
+  │
+  ├── generate_guide(hero)
+  │    ├── load_prompt("docs/prompts/hero_guide.md")        → system_prompt
+  │    ├── build_guide_prompt(hero)                          → user_prompt
+  │    │     字段: ID / 名称 / 势力 / 定位 / 体力 / 手牌 / 性别 / 技能
+  │    ├── _call_api(messages=[system, user], temperature=0.7)
+  │    │    ├── 检查距上次请求间隔（不够则 sleep 补齐）
+  │    │    ├── POST {model, messages, temperature, max_tokens=8192}
+  │    │    ├── 成功: 更新 _last_request_time, 返回 resp.json()
+  │    │    └── 失败: 指数退避重试（2s/4s/8s, 最多 3 次）
+  │    └── 返回 (result_dict, usage_dict)
+  │
+  └── close() → httpx.Client.close()
+```
+
+#### 14.3.2 API 原始报文
+
+**请求报文**（由 `_call_api` 发出的 HTTP POST）：
+
+```json
+POST https://api.deepseek.com/v1/chat/completions
+Authorization: Bearer sk-xxx
+Content-Type: application/json
+
+{
+  "model": "deepseek-v4-pro",
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是名将杀的攻略专家，请按指定 JSON 格式输出武将攻略..."
+    },
+    {
+      "role": "user",
+      "content": "武将ID: 52\n武将: 诸葛亮\n势力: 蜀\n定位: 辅助/控制\n体力: 4  手牌: 4\n性别: 男\n难度: 2\n\n技能:\n  - 观星: 摸牌阶段...\n  - 空城: 锁定技，你没有手牌时..."
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 8192
+}
+```
+
+**响应报文**（DeepSeek API 原样返回）：
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "以下是对诸葛亮的攻略分析：\n\n---\n\n```json\n{\n  \"hero_id\": 52,\n  \"key_points\": [\n    \"观星是诸葛亮的核心技能，可以在摸牌阶段前控制牌堆顶牌序，判定阶段前控制判定牌\",\n    \"空城状态下免疫杀和决斗，但惧怕AOE伤害\"\n  ],\n  \"counters\": [114, 36],\n  \"synergizes_with\": [15, 42],\n  \"description\": \"诸葛亮是典型的控场型武将，利用观星调节牌序...\",\n  \"tips_for_beginners\": \"新手使用诸葛亮时，优先保证空城状态...\"\n}\n```\n\n### 总结\n诸葛亮在不同模式下皆有不错的出场率..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1850,
+    "completion_tokens": 420,
+    "total_tokens": 2270
+  }
+}
+```
+
+#### 14.3.3 JSON 提取细节（`extract_json`）
+
+从 `response.choices[0].message.content` 这段**自然语言文本**中提取 JSON 的 4 种策略：
+
+| 优先级 | 策略 | 说明 | 适用场景 |
+|--------|------|------|----------|
+| 1 | 全文 `raw_decode` | 直接 `json.JSONDecoder().raw_decode()` 解析全文 | AI 纯 JSON 输出 |
+| 2 | ```json 代码块 | 正则 ````(?:json)?\s*\n?(.*?)``` ```` | AI 用 Markdown 包裹 JSON |
+| 3 | --- 分隔线后 | `rfind("\n---")` 取最后一段 | AI 先分析再输出 JSON |
+| 4 | { 到 } 区间 | `find("{")` ~ `rfind("}")` 截取 | 兜底 |
+
+每步先尝试直接解析，失败则走 `_repair_strings()` 修复（字符串值内的字面 `\r\n` → `\\n`），再重试。全部失败抛 `ValueError`。
+
+---
+
+### 14.4 浏览器方式详细流程（PlaywrightGenerator）
+
+#### 14.4.1 调用链
+
+```
+PlaywrightGenerator.__init__()
+  │
+  ├── _ensure_browser()    ← 惰性启动，首次发送前初始化
+  │    ├── sync_playwright.start()
+  │    ├── chromium.launch_persistent_context(
+  │    │     channel="msedge",
+  │    │     user_data_dir="...Edge/User Data",
+  │    │     headless=False, slow_mo=50
+  │    │   )
+  │    ├── page.goto("https://chat.deepseek.com/")
+  │    └── _wait_for_login() → 等待 textarea 出现（15s 超时）
+  │
+  ├── generate_guide(hero)
+  │    ├── 首次调用: system_prompt + user_prompt 拼接 → 一次性发送
+  │    │            _guide_system_sent = True
+  │    ├── 后续调用: 只发 user_prompt（携带武将 ID，会话复用）
+  │    ├── _send_and_wait(prompt)
+  │    │    ├── page.fill(textarea, prompt)
+  │    │    ├── page.keyboard.press("Enter")
+  │    │    ├── Phase 1: 轮询 assistant 消息数增加（每 500ms）
+  │    │    ├── Phase 2: inner_text 长度连续 3 轮不变（每 2s）
+  │    │    └── 返回最后一条 assistant 的 inner_text
+  │    ├── extract_json(reply) → 与 API 方式同一函数
+  │    ├── convert_ids_to_int + inject hero_id
+  │    ├── validate_guide(raw) → 与 API 方式同一函数
+  │    └── 后续调用: _random_rest() → 随机休息 60-180 秒
+  │
+  └── close() → context.close() → playwright.stop()
+```
+
+#### 14.4.2 浏览器原始报文
+
+来自 DeepSeek 网页版 `div.ds-assistant-message-main-content` 的 `inner_text()`，纯文本格式：
+
+```
+以下是对诸葛亮的攻略分析：
+
+诸葛亮在游戏中属于高操作上限的控场型武将，
+观星让他在摸牌阶段前就能预判牌序...
+
+---
+
+{
+  "hero_id": 52,
+  "key_points": [
+    "观星是诸葛亮的核心技能..."
+  ],
+  "counters": [114, 36],
+  "synergizes_with": [15, 42],
+  "description": "...",
+  "tips_for_beginners": "..."
+}
+
+### 总结
+诸葛亮在不同模式下皆有不错的出场率...
+```
+
+> 浏览器拿到的就是用户能在 DeepSeek 网页上看到的文本 — JSON 可能被自然语言分析文字包围，也可能直接以纯 JSON 输出。格式不稳定，这正是 `extract_json()` 设计 4 种回退策略的原因。
+
+#### 14.4.3 会话复用机制
+
+| 调用 | 发送内容 | 说明 |
+|------|----------|------|
+| 第 1 次 | `system_prompt + \n\n---\n\n + user_prompt` | 注入完整规则 |
+| 第 2 次起 | `user_prompt`（带武将 ID） | AI 在上下文中记住规则 |
+
+**意义**：避免每次重发数千字符的 system prompt，节省浏览器对话上下文长度，也减少风控触发频率。
+
+#### 14.4.4 风控应对
+
+- 后续每次生成后 `time.sleep(random.randint(60, 180))` — 随机休息 1~3 分钟
+- 浏览器 headless=False — 可见窗口运行，降低被识别为自动化脚本的概率
+- `--disable-blink-features=AutomationControlled` — 隐藏自动化特征
+
+---
+
+### 14.5 两条链路对比
+
+| 环节 | API 方式 | 浏览器方式 |
+|------|----------|------------|
+| **生成器类** | `AIBatchGenerator` | `PlaywrightGenerator` |
+| **数据源** | DeepSeek API（HTTPS） | DeepSeek 网页版（浏览器自动化） |
+| **请求载体** | httpx.Client POST JSON | Playwright page.fill + Enter |
+| **原始数据形式** | API 响应的 `choices[0].message.content`（JSON 字符串） | `div.inner_text()`（纯文本） |
+| **system prompt 传递** | 每次独立请求都带完整 messages | 首次拼接发送，后续仅发数据（会话复用） |
+| **获取回复机制** | 同步 HTTP 响应 body | Phase 1 + Phase 2 两阶段轮询等待 |
+| **JSON 提取** | `extract_json()` | `extract_json()`（完全同一份代码） |
+| **Pydantic 校验** | `validate_guide()` | `validate_guide()`（完全同一份代码） |
+| **写入 JSON** | `_save_json()` 原子写入 | `_save_json()` 原子写入 |
+| **Token 统计返回** | `usage` 字段（prompt/completion tokens） | `None`（不支持） |
+| **断点续传** | ✅ 通过 `_load_existing_guides()` | ✅ 通过 `_load_existing_guides()` |
+| **成本估算** | ✅ 支持 dry-run 显示 | ❌ 无 |
+| **必备条件** | 有效的 API Key + 网络 | Edge 浏览器 + DeepSeek 已登录 |
+| **风控对策** | 限速 + 指数退避重试 | 随机休息 60-180s |
+| **速度** | 快（30 req/min 限速） | 慢（含休息时间） |
+
+---
+
+### 14.6 数据唯一出口：JSON 文件存储
+
+无论哪种方式，最终写入 `data/guides.json` 的文件结构完全一致：
+
+```json
+[
+  {
+    "hero_id": 52,
+    "key_points": [
+      "观星是诸葛亮的核心技能...",
+      "空城状态下免疫杀和决斗..."
+    ],
+    "counters": [114, 36],
+    "synergizes_with": [15, 42],
+    "description": "诸葛亮是典型的控场型武将...",
+    "tips_for_beginners": "新手使用诸葛亮时，优先保证空城状态..."
+  },
+  {
+    "hero_id": 1,
+    "key_points": [...],
+    "counters": [...],
+    "synergizes_with": [...],
+    "description": "...",
+    "tips_for_beginners": "..."
+  }
+]
+```
+
+**写入策略**：
+- 全量/增量生成：循环中每 10 条批量 `_save_json()`，循环结束最终保存
+- 原子写入：`文件.tmp` → `json.dump()` → `tmp_path.replace(正式路径)`
+- 断点续传：启动时加载已有文件建立 `{hero_id: guide}` 索引，新数据追加合并后覆盖写入
+
+---
+
+### 14.7 相性评分链路的差异
+
+攻略和相性的数据链路几乎完全一致，仅以下环节不同：
+
+| 环节 | 攻略 | 相性 |
+|------|------|------|
+| CLI 参数 | `--guide` | `--synergy` / `--synergy-pair` / `--synergy-single` |
+| Prompt 模板 | `docs/prompts/hero_guide.md` | `docs/prompts/synergy_score.md` |
+| 循环函数 | `run_guide_generation()` | `run_synergy_generation()` / `run_synergy_pair_generation()` / `run_synergy_single_generation()` |
+| 生成器方法 | `generate_guide(hero)` | `generate_synergy(hero_a, hero_b)` |
+| user_prompt 构建 | `build_guide_prompt(hero)` | `build_synergy_prompt(hero_a, hero_b)` |
+| 注入字段 | `hero_id` | `hero_a_id` + `hero_b_id` |
+| 旧字段兼容 | 无 | `combat_synergy` → `combo_ceiling` |
+| 校验函数 | `validate_guide()` → `HeroGuide` | `validate_synergy()` → `SynergyScore` |
+| 批量保存间隔 | 10 条 | 20 条 |
+| 输出文件 | `data/guides.json` | `data/synergies.json` |
+
+**相性原始数据格式**（AI 回复中的 JSON）：
+
+```json
+{
+  "hero_a_id": 52,
+  "hero_b_id": 114,
+  "score": 8,
+  "synergy_rating": "A",
+  "combo_ceiling": 7,
+  "combo_stability": 6,
+  "adaptability": 8,
+  "description": "诸葛亮与司马懿有很好的配合..."
+}
+```

@@ -174,7 +174,7 @@ def main():
 
     log_level = "DEBUG" if args.verbose else "INFO"
     from src.config.logging_config import setup_logging
-    setup_logging(log_level=log_level, log_to_file=False)
+    setup_logging(log_level=log_level, log_to_file=True)
 
     has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single
     if not args.guide and not has_synergy_mode:
