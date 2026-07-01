@@ -53,8 +53,37 @@ _CHAR_INFO_PATH = Path(__file__).resolve().parent.parent / "data" / "char_info_c
 
 # 延迟导入的原始库 handler（仅在运行时缺失时按需初始化）
 _RADICAL_CLIENT = None
-_UNIHAN_CACHE: dict[str, dict] | None = None
-_STROKES_CACHE: dict[str, int] | None = None  # 从 UNIHAN IRGSources 懒加载
+_UNIHAN_CACHE: dict[str, dict] | None = None  # 从 unihan_etl 导出 CSV 懒加载
+_STROKES_CACHE: dict[str, int] | None = None  # 从 Unihan_IRGSources.txt 懒加载（基于 unihan_etl 缓存路径）
+_STROKES_PATH: str | None = None  # 延迟解析的 IRGSources 路径
+
+
+def _get_radical_client():
+    """按需初始化 cnradical。"""
+    global _RADICAL_CLIENT
+    if _RADICAL_CLIENT is None:
+        try:
+            from cnradical import Radical, RunOption
+            _RADICAL_CLIENT = Radical(RunOption.Radical)
+        except Exception as e:
+            logger.warning("cnradical 初始化失败: %s", e)
+            _RADICAL_CLIENT = False
+    return _RADICAL_CLIENT if _RADICAL_CLIENT is not False else None
+
+
+def _get_strokes_path() -> str:
+    """通过 unihan_etl API 获取 Unihan_IRGSources.txt 路径，避免硬编码。"""
+    global _STROKES_PATH
+    if _STROKES_PATH is not None:
+        return _STROKES_PATH
+    try:
+        from unihan_etl.core import Options as _Opt
+        _path_obj = _Opt().work_dir / "Unihan_IRGSources.txt"
+        _STROKES_PATH = str(_path_obj)
+    except Exception as e:
+        logger.warning("UNIHAN IRGSources 路径获取失败: %s", e)
+        _STROKES_PATH = ""
+    return _STROKES_PATH
 
 
 def _load_strokes() -> dict[str, int]:
@@ -62,12 +91,13 @@ def _load_strokes() -> dict[str, int]:
     global _STROKES_CACHE
     if _STROKES_CACHE is not None:
         return _STROKES_CACHE
-    try:
-        import os as _os
-        base = _os.path.expanduser("~/AppData/Local/Tony Narlock/unihan_etl/Cache/downloads")
-        path = _os.path.join(base, "Unihan_IRGSources.txt")
+    irg_path = _get_strokes_path()
+    if not irg_path:
         _STROKES_CACHE = {}
-        with open(path, "r", encoding="utf-8") as f:
+        return _STROKES_CACHE
+    try:
+        _STROKES_CACHE = {}
+        with open(irg_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.startswith("#") or not line.strip():
                     continue
@@ -89,19 +119,6 @@ def _load_strokes() -> dict[str, int]:
 def _get_stroke(char: str) -> int:
     """查询单个汉字的笔画数（缓存优先，懒加载）。"""
     return _load_strokes().get(char, 0)
-
-
-def _get_radical_client():
-    """按需初始化 cnradical。"""
-    global _RADICAL_CLIENT
-    if _RADICAL_CLIENT is None:
-        try:
-            from cnradical import Radical, RunOption
-            _RADICAL_CLIENT = Radical(RunOption.Radical)
-        except Exception as e:
-            logger.warning("cnradical 初始化失败: %s", e)
-            _RADICAL_CLIENT = False
-    return _RADICAL_CLIENT if _RADICAL_CLIENT is not False else None
 
 
 def _get_pinyin_of(char: str) -> str:
@@ -172,8 +189,9 @@ def _ensure_char_in_cache(char: str) -> dict | None:
     # 拼音
     entry["pinyin"] = _get_pinyin_of(char)
 
-    # 笔画数（从 UNIHAN IRGSources 懒加载）
+    # 笔画数（从 UNIHAN IRGSources 懒加载，路径基于 unihan_etl API）
     entry["total_strokes"] = str(_get_stroke(char))
+    entry["pinyin"] = _get_pinyin_of(char)
 
     logger.debug("汉字特征动态补齐: %s (U+%04X)", char, ord(char))
     _CHAR_INFO_CACHE[char] = entry
@@ -264,7 +282,6 @@ def _pinyin_similarity(c1: str, c2: str, char_db: dict) -> float:
 
 def _stroke_diff(c1: str, c2: str, char_db: dict) -> int:
     """笔画数差绝对值。"""
-    # 优先缓存，其次从 UNIHAN 懒加载
     s1_str = _hc(char_db, c1, "total_strokes")
     s2_str = _hc(char_db, c2, "total_strokes")
     s1 = int(s1_str) if s1_str else _get_stroke(c1)

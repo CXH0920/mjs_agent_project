@@ -39,6 +39,8 @@ class GuideFetchService(QObject):
         self._context = None
         self._log_stdout = logging.getLogger("subprocess.stdout")
         self._log_stderr = logging.getLogger("subprocess.stderr")
+        self._stdout_buffer = bytearray()
+        self._stderr_buffer = bytearray()
 
     def fetch_all(self, all_heroes: list[dict], backend: str = "api") -> None:
         if self._is_busy():
@@ -127,6 +129,7 @@ class GuideFetchService(QObject):
             return
         data = self._process.readAllStandardOutput()
         text = bytes(data).decode("utf-8", errors="replace")
+        self._stdout_buffer.extend(data)
         self._log_stdout.info("%s", text.strip())
         self.progress_output.emit(text)
 
@@ -142,6 +145,7 @@ class GuideFetchService(QObject):
             return
         data = self._process.readAllStandardError()
         text = bytes(data).decode("utf-8", errors="replace")
+        self._stderr_buffer.extend(data)
         if text.strip():
             self._log_stderr.warning("%s", text.strip())
             self.progress_output.emit(text)
@@ -149,15 +153,11 @@ class GuideFetchService(QObject):
     def _on_finished(self, exit_code: int) -> None:
         self._cleanup_tmp()
 
-        # 收集子进程完整输出用于诊断
-        full_stdout = ""
-        full_stderr = ""
-        try:
-            if self._process:
-                full_stdout = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
-                full_stderr = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
-        except Exception:
-            pass
+        # 从缓冲中读取子进程完整输出
+        full_stdout = bytes(self._stdout_buffer).decode("utf-8", errors="replace")
+        full_stderr = bytes(self._stderr_buffer).decode("utf-8", errors="replace")
+        self._stdout_buffer.clear()
+        self._stderr_buffer.clear()
 
         msg = f"进程退出码: {exit_code}"
         logger.info("攻略生成子进程结束，%s", msg)
@@ -178,6 +178,8 @@ class GuideFetchService(QObject):
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         self._cleanup_tmp()
+        self._stdout_buffer.clear()
+        self._stderr_buffer.clear()
         error_map = {
             QProcess.ProcessError.FailedToStart: "子进程启动失败",
             QProcess.ProcessError.Crashed: "子进程崩溃",

@@ -32,6 +32,8 @@ class SynergyFetchService(QObject):
         self._context = None
         self._log_stdout = logging.getLogger("subprocess.stdout")
         self._log_stderr = logging.getLogger("subprocess.stderr")
+        self._stdout_buffer = bytearray()
+        self._stderr_buffer = bytearray()
 
     def fetch_pair(self, heroes: list[dict], backend: str = "api") -> None:
         """指定获取：传入 2 个武将，写入临时文件后调用 --synergy-pair"""
@@ -90,6 +92,7 @@ class SynergyFetchService(QObject):
         if not self._process:
             return
         data = self._process.readAllStandardOutput()
+        self._stdout_buffer.extend(data)
         text = bytes(data).decode("utf-8", errors="replace")
         if text.strip():
             self._log_stdout.info("%s", text.strip())
@@ -98,6 +101,7 @@ class SynergyFetchService(QObject):
         if not self._process:
             return
         data = self._process.readAllStandardError()
+        self._stderr_buffer.extend(data)
         text = bytes(data).decode("utf-8", errors="replace")
         if text.strip():
             self._log_stderr.warning("%s", text.strip())
@@ -111,6 +115,12 @@ class SynergyFetchService(QObject):
             except OSError as e:
                 logger.warning("清理临时文件失败 %s: %s", tmp_path, e)
 
+        # 从缓冲中读取子进程完整输出
+        full_stdout = bytes(self._stdout_buffer).decode("utf-8", errors="replace")
+        full_stderr = bytes(self._stderr_buffer).decode("utf-8", errors="replace")
+        self._stdout_buffer.clear()
+        self._stderr_buffer.clear()
+
         msg = f"进程退出码: {exit_code}"
 
         if exit_code == 0:
@@ -119,15 +129,6 @@ class SynergyFetchService(QObject):
             self.fetch_completed.emit(True, msg)
         else:
             logger.warning("相性计算进程退出码 %d", exit_code)
-            # 收集子进程完整输出
-            full_stdout = ""
-            full_stderr = ""
-            try:
-                if self._process:
-                    full_stdout = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
-                    full_stderr = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
-            except Exception:
-                pass
             if full_stdout.strip():
                 logger.warning("[子进程 stdout 完整输出]\n%s", full_stdout.strip())
             if full_stderr.strip():
@@ -143,6 +144,8 @@ class SynergyFetchService(QObject):
                 os.unlink(tmp_path)
             except OSError:
                 pass
+        self._stdout_buffer.clear()
+        self._stderr_buffer.clear()
 
         error_map = {
             QProcess.ProcessError.FailedToStart: "子进程启动失败",

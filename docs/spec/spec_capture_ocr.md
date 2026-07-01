@@ -85,7 +85,7 @@ PaddleOCR → 文字 + 置信度
 
 **平局处理**：主评分打平时（差值 < 1e-9），追加两个维度依次排序：
 1. 拼音相似度（pypinyin，同音为 1 否则为 0）→ 降序
-2. 笔画数差（UNIHAN `kTotalStrokes`，从 `Unihan_IRGSources.txt` 懒加载）→ 升序
+2. 笔画数差（UNIHAN `kTotalStrokes`，从 `Unihan_IRGSources.txt` 懒加载，路径通过 `unihan_etl.Options().work_dir` 获取）→ 升序
 
 **为什么用四角号码 + 仓颉码 + 部首代替 Unicode 码位差：**
 旧算法用 `1 - |cp1 - cp2| / 500` 评估字形相似度，假设"Unicode 码位相近的汉字字形相似"。但这个假设不成立——"剪"(U+526A)和"翦"(U+7FE6)码位差 7353，被判定为完全不相似；而"翦"(U+7FE6)和"翡"(U+7FE1)仅差 5，被判定为高度相似（0.99）。实际上"翦"和"剪"字形几乎相同，"翦"和"翡"仅共用一个"羽"部件。三个结构化维度（四角号码反映汉字四角结构、仓颉码反映字形编码层次、部首直接定位字的大类）各自反映了汉字的不同视觉特征，加权后对形近字的区分度远优于单维度的码位差。
@@ -108,7 +108,7 @@ flowchart LR
     D --> E[cnradical → 部首<br>~22ms]
     D --> F[unihan-etl CSV → 仓颉+四角<br>~490ms]
     D --> G[pypinyin → 拼音<br>~194ms]
-    D --> H[UNIHAN IRGSources → 笔画数<br>~355ms]
+    D --> H[unihan-etl API → IRGSources 路径<br>→ 笔画数 ~355ms]
     E --> I[动态补齐并写入内存缓存]
     F --> I
     G --> I
@@ -119,13 +119,75 @@ flowchart LR
 | 层 | 速度 | 覆盖范围 |
 |----|------|---------|
 | `char_info_cache.json`（`src/data/`） | ~10ms | 223 个高频汉字（武将名 + 常见 OCR 误识字） |
-| 运行时原始库（按需） | 部首 22ms + 拼音 194ms + unihan 490ms + 笔画 355ms | 任意汉字（理论兜底） |
+| 运行时原始库（按需） | 合集 ~1060ms，均单次 | 任意汉字（理论兜底） |
 
 **为什么不做成纯 JSON 或纯动态：**
 纯 JSON 需要手动维护（新武将加入时如果用了缓存未收录的汉字，评分退化为 0），纯动态则每次启动都要加载 unihan CSV（~500ms）。混合策略：JSON 覆盖 99% 的日常场景（启动仅 ~10ms），遇到缓存缺失的汉字时按需补齐一次并写入进程内存，后续不再重复查询。
 
 **为什么 warmup 时预加载 pypinyin：**
 pypinyin 首次加载约 194ms，虽然正常情况下缓存全覆盖不会触发它，但预加载到 warmup 中可以把这 194ms 从"动态补齐的首次体验"转移到应用启动阶段，与 PaddleOCR 的 3.5 秒加载并行，用户感知不到。
+
+#### 3.6.1：四种数据源的分工与选择依据
+
+五个维度的数据来自四个不同的底层源，各有不同的覆盖率和获取方式。
+
+| 维度 | 底层源 | 获取方式 | 覆盖率 |
+|------|--------|---------|--------|
+| 四角号码 | UNIHAN `kFourCornerCode` | `unihan_etl.Packager` 导出 CSV | 16,916/29,381 (57.57%) |
+| 仓颉码 | UNIHAN `kCangjie` | `unihan_etl.Packager` 导出 CSV | 29,189/29,381 (99.35%) |
+| 部首 | cnradical（CC-CEDICT 部首数据） | Python 运行时 API | ~12,000 字 |
+| 拼音 | pypinyin（基于《新华字典》拼音表） | Python 运行时 API | ~18,000 字 |
+| 笔画数 | UNIHAN `kTotalStrokes` | 直接解析 `Unihan_IRGSources.txt`（通过 `unihan_etl` API 获取路径） | **102,998 条** |
+
+**为什么笔画数不通过 `unihan_etl` CSV 管道统一获取，而是单开一条路：**
+
+`unihan_etl` 的 `Packager(src.fields=["kTotalStrokes"])` 会在 CSV 中正确地创建该列，但 `unihan_etl` 0.43.0（以及当前所有已知版本）**不会向该列填充数据**——导出后的 CSV 中 `kTotalStrokes` 列 100% 为空，尽管原始 `Unihan_IRGSources.txt` 中有 102,998 条完整的笔画数记录。
+
+这是 `unihan_etl` 自身的限制：它只从 `Unihan_DictionaryLikeData.txt`、`Unihan_Readings.txt` 等子文件中提取数据，但 `kTotalStrokes` 位于 `Unihan_IRGSources.txt` 中，后者不在 `Packager` 的 CSV 输入文件列表里。
+
+**既然 CSV 不支持，为什么不退回到旧实现的硬编码路径：**
+
+旧代码直接写死 `~/AppData/Local/Tony Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`，存在三个问题：
+
+1. **硬编码 Windows 风格路径**，在 Linux/macOS 上直接无效。
+2. **依赖 `unihan_etl` 的内部缓存目录结构**（`Cache/downloads/`），该目录是 `unihan_etl` 的实现细节，不是其公开 API，在版本升级中可能变化。旧提交 `a65a24b`（用 UNIHAN `kTotalStrokes` 懒加载替换内联字典）引入该路径后，实际上引入了一个隐式的跨平台兼容性债务。
+3. **无法降级**：路径不存在时静默失败返回空字典，但排查者无法区分"文件不存在"和"文件确实没有该字段"。
+
+**修复方案：通过 `unihan_etl` 公开 API 获取路径。**
+
+```python
+from unihan_etl.core import Options
+irg_path = Options().work_dir / "Unihan_IRGSources.txt"
+```
+
+`Options().work_dir` 是 `unihan_etl` 公开的属性，返回 `Unihan.zip` 解压后的缓存目录（`<cache_root>/downloads/`），无需假设 `unihan_etl` 的内部目录结构。这一行的行为在所有平台上一致：
+
+- **Linux：** `~/.cache/Tony_Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`
+- **macOS：** `~/Library/Caches/Tony_Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`
+- **Windows：** `~/AppData/Local/Tony Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`
+
+**为什么不把 `kTotalStrokes` 写入 `char_info_cache.json` 来完全绕过文件解析：**
+
+`char_info_cache.json` 目前只收录了 223 个高频汉字（覆盖了所有武将名用字），如果在这里固化笔画数，确实可以消除对 `Unihan_IRGSources.txt` 的运行时依赖。但这样做的风险是：当武将名出现缓存未收录的汉字时，`_query_char_from_unihan()` 和 `_get_radical_client()` 都会动态补齐，唯独笔画数无法补齐，平局判定会退化。保留 `_load_strokes()` 懒加载机制，使得任何汉字在运行时都能实时补齐笔画数，与四角号码/仓颉码/部首/拼音的补齐能力对等。
+
+**为什么不在运行时用 `Options(download=True)` 自动下载 IRGSources 文件：**
+
+我们使用 `download=False`（也是旧代码的行为）。理由有两层：
+
+1. **笔画数是平局决胜的最后一环**，不是主评分维度。主评分（四角 40% + 仓颉 40% + 部首 20%）通常就能区分候选。笔画数只有在前三者打出精确平局时才参与——这在理论上是极端罕见的情况。为一个近乎不会触发的场景触发网络请求不合理。
+
+2. **`unihan_etl` 在 pip install 阶段已经自动下载并缓存了 `Unihan.zip`**，解压后的 `Unihan_IRGSources.txt` 存在于缓存目录中。如果用户无故删除了缓存，笔画数降级为 0，平局退化为仅靠拼音区分——这仍然产生确定性输出，只是区分度略有降低。**不做网络请求，不静默降级，保持确定性。**
+
+#### 3.6.2：四角号码的覆盖率缺口与兜底
+
+四角号码覆盖率约 57.57%，低于仓颉码的 99.35%。这意味着约 42% 的汉字（主要是扩展区生僻字）在四角号码维度上得 0 分，加权后拉低总分。
+
+但这在武将名场景中不构成问题：
+
+- **武将名用字的四角号码覆盖率是 99.6%（234/235）**，因为武将名全属常用汉字，均在 UNIHAN 基础区（U+4E00–U+9FFF），该区域的四角号码覆盖率已超过 99%。
+- 缺口主要在 U+3400–U+4DBF（CJK 扩展 A 区）及更后的区域，这些区域的汉字在游戏武将名中几乎不会出现。
+
+如果未来有武将名用到了扩展区汉字且恰好四角号码缺失，动态补齐时 `_query_char_from_unihan()` 返回 `{}`，该字符的四角积分退化为 0。此时剩余的仓颉 40% + 部首 20% = 60% 权重仍然能做出有效区分——不是全量退化。
 
 ### 规则 3.3：图像预处理四步流程固定
 
@@ -143,9 +205,13 @@ def _engine(self):
     return self._ocr
 ```
 
-`main.py` 中在应用启动时调用一次 `warmup()`。
+`main.py` 中在 `QApplication` 初始化后立即调用 `warmup()`，早于 `MainWindow()` 构建。
 
-**为什么：** PaddleOCR 首次加载模型需要 2-3 秒。如果等到用户点击"截图"才加载，用户会看到 2-3 秒的界面冻结。预热将加载提前到应用启动阶段，只是把"卡顿"转移到了启动时——但启动时用户预期需要等待，而操作时不需要。
+**为什么：** PaddleOCR 首次加载模型需要 2-3 秒。如果等到用户点击"截图"才加载，用户会看到 2-3 秒的界面冻结。将预热放在 `MainWindow()` 之前有两个好处：
+1. 启动时的 2-3 秒加载发生在用户看到窗口之前，用户在等待窗口出现的过程中不会尝试交互。
+2. 如果等到窗口出现后再用 `QTimer.singleShot(0)` 预热，用户看到窗口后以为程序已就绪，点击任何按钮都会触发 2-3 秒的无响应，体验更糟——**窗口可见 = 用户认为可操作**是本能预期。
+
+`DataFacade` 双次加载 ~10-20ms 的成本可以忽略，在 2026 年的硬件上用户完全无感知。为了让 PaddleOCR 的 2-3 秒加载提前到"窗口出现前"，这个微小的冗余是可接受的。
 
 ## 四、持续轮询
 
