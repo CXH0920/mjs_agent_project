@@ -250,3 +250,13 @@ class CaptureService(QObject):
     @property
     def is_connected(self) -> bool:
         return self._capture.connected if self._capture else False
+
+    # ── 公开接口（供外部调用，替代直接访问私有成员） ─────────────────
+
+    def get_matching_threshold(self) -> float:
+        """获取模板匹配阈值。"""
+        return self._config.get("mumu_ocr_match_threshold", 0.8)
+
+    def run_ocr_if_matched(self, image, hero_names: list[str] | None = None):
+        """公开方法：模板匹配 → 若匹配则 OCR，供轮询调用。"""
+        return self._run_ocr(image, hero_names)

@@ -1,15 +1,11 @@
 ﻿"""名将杀 Agent - apply_incremental_update 集成测试"""
 
-import os
-import sys
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
 
-from data.manager import apply_incremental_update, HeroManager, SynergyManager, GuideManager
-from data.models import Hero, SynergyScore, HeroGuide, IncrementalUpdate
+from src.data.manager import apply_incremental_update, HeroManager, SynergyManager, GuideManager
+from src.data.models import Hero, SynergyScore, HeroGuide, IncrementalUpdate
 
 
 class TestApplyIncrementalUpdate:

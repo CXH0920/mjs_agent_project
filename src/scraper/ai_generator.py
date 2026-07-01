@@ -20,6 +20,8 @@ from src.scraper.ai_utils import (
     convert_ids_to_int,
     validate_guide,
     validate_synergy,
+    build_guide_prompt,
+    build_synergy_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,48 +106,6 @@ class AIBatchGenerator:
         return None
 
     # ---------------------------------------------------------------
-    # Prompt 构建
-    # ---------------------------------------------------------------
-
-    def _build_guide_prompt(self, hero: dict) -> str:
-        """构建单个武将的攻略 prompt"""
-        lines = [f"武将: {hero.get('name', '')}"]
-        lines.append(f"势力: {hero.get('faction', '')}")
-        lines.append(f"定位: {hero.get('position', '')}")
-        lines.append(f"体力: {hero.get('max_hp', 4)}  手牌: {hero.get('max_hand', 4)}")
-        lines.append(f"性别: {hero.get('gender', '男')}")
-        lines.append(f"难度: {hero.get('difficulty', 2)}")
-        if hero.get("skills"):
-            lines.append("")
-            lines.append("技能:")
-            for sk in hero["skills"]:
-                lines.append(f"  - {sk.get('name', '')}: {sk.get('description', '')}")
-        return "\n".join(lines)
-
-    def _build_synergy_prompt(self, hero_a: dict, hero_b: dict) -> str:
-        """构建武将对的相性评分 prompt"""
-        def hero_block(label: str, h: dict) -> list[str]:
-            lines = [f"## {label}: {h.get('name', '')}"]
-            lines.append(f"  势力: {h.get('faction', '')}")
-            lines.append(f"  定位: {h.get('position', '')}")
-            lines.append(f"  体力/手牌: {h.get('max_hp', 4)}/{h.get('max_hand', 4)}")
-            if h.get("skills"):
-                lines.append("  技能:")
-                for sk in h["skills"]:
-                    lines.append(f"    - {sk.get('name', '')}: {sk.get('description', '')}")
-            return lines
-
-        lines = []
-        lines.extend(hero_block("武将 A", hero_a))
-        lines.append("")
-        lines.extend(hero_block("武将 B", hero_b))
-        return "\n".join(lines)
-
-    # ---------------------------------------------------------------
-    # 工具方法
-    # ---------------------------------------------------------------
-
-    # ---------------------------------------------------------------
     # 生成攻略
     # ---------------------------------------------------------------
 
@@ -156,7 +116,7 @@ class AIBatchGenerator:
             logger.error("攻略 prompt 模板未找到: %s", GUIDE_PROMPT_FILE)
             return None, None
 
-        user_prompt = self._build_guide_prompt(hero)
+        user_prompt = build_guide_prompt(hero)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -200,7 +160,7 @@ class AIBatchGenerator:
             logger.error("相性 prompt 模板未找到: %s", SYNERGY_PROMPT_FILE)
             return None, None
 
-        user_prompt = self._build_synergy_prompt(hero_a, hero_b)
+        user_prompt = build_synergy_prompt(hero_a, hero_b)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

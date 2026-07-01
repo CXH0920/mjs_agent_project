@@ -1,17 +1,13 @@
 ﻿"""名将杀 Agent - GuideManager 单元测试"""
 
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 import pytest
 
-from data.guide_manager import GuideManager
-from data.models import HeroGuide
+from src.data.guide_manager import GuideManager
+from src.data.models import HeroGuide
 
 
 class TestGuideManager:

@@ -1,17 +1,13 @@
 ﻿"""名将杀 Agent - SynergyManager 单元测试"""
 
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 import pytest
 
-from data.synergy_manager import SynergyManager
-from data.models import SynergyScore
+from src.data.synergy_manager import SynergyManager
+from src.data.models import SynergyScore
 
 
 class TestSynergyManager:

@@ -1,17 +1,11 @@
 """名将杀 Agent - 数据模型单元测试"""
 
-import os
-import sys
-
-# 将 src 目录加入模块搜索路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from datetime import date
 
 import pytest
 from pydantic import ValidationError
 
-from data.models import (
+from src.data.models import (
     Card,
     CardType,
     Difficulty,

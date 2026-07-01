@@ -129,6 +129,11 @@ class OcrService(QObject):
     def clear_cooldown(self) -> None:
         self._poll_cooldown_until = None
 
+    @property
+    def is_on_cooldown(self) -> bool:
+        """检查是否在轮询冷却期内。"""
+        return self._poll_cooldown_until is not None and datetime.now() < self._poll_cooldown_until
+
     # ── OCR ───────────────────────────────────────────────────────────
 
     def run_ocr(self, image, rois=None) -> list[dict] | None:

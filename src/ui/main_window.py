@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -192,8 +191,7 @@ class MainWindow(QMainWindow):
         子线程完成后通过 _poll_result_ready 信号回传结果。
         """
         # 冷却期内跳过整轮检测
-        if self._ocr_service._poll_cooldown_until:
-            if datetime.now() < self._ocr_service._poll_cooldown_until:
+        if self._ocr_service.is_on_cooldown:
                 return
 
         if not self._capture_service.capture:
@@ -234,7 +232,7 @@ class MainWindow(QMainWindow):
                     self._poll_result_ready.emit(None, None, False)
                     return
 
-                threshold = capture_service._config.get("mumu_ocr_match_threshold", 0.8)
+                threshold = capture_service.get_matching_threshold()
                 matched, confidence = tm.match(image, threshold=threshold)
                 if not matched:
                     logger.debug("轮询跳过：模板不匹配 (置信度=%.4f)", confidence)
@@ -244,7 +242,7 @@ class MainWindow(QMainWindow):
                 logger.info("轮询检测到武将选择页面 (置信度=%.2f)", confidence)
 
                 # 4. OCR 识别
-                ocr_results, ocr_matched = capture_service._run_ocr(image, hero_names=hero_names)
+                ocr_results, ocr_matched = capture_service.run_ocr_if_matched(image, hero_names=hero_names)
                 self._poll_result_ready.emit(ocr_results, image, ocr_matched)
 
             finally:

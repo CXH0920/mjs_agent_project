@@ -2,15 +2,11 @@
 
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 import pytest
 from src.scraper.ai_batch import (
-    AIBatchGenerator,
     _estimate_cost,
     _save_json,
     estimate_cost,
@@ -22,6 +18,8 @@ from src.scraper.ai_utils import (
     convert_ids_to_int,
     validate_guide,
     validate_synergy,
+    build_guide_prompt,
+    build_synergy_prompt,
 )
 
 from src.config.env import parse_env_file, get_api_config, get_runtime_params
@@ -227,7 +225,6 @@ class TestAIBatchGenerator:
 
     def test_build_guide_prompt(self) -> None:
         """构建攻略 prompt 包含武将信息"""
-        gen = AIBatchGenerator(api_key="test")
         hero = {
             "id": 114, "name": "诸葛亮", "title": "卧龙",
             "faction": "蜀", "position": "控制",
@@ -235,7 +232,7 @@ class TestAIBatchGenerator:
             "difficulty": 3,
             "skills": [{"name": "观星", "description": "控制牌堆"}],
         }
-        prompt = gen._build_guide_prompt(hero)
+        prompt = build_guide_prompt(hero)
         assert "诸葛亮" in prompt
         assert "观星" in prompt
         assert "定位" in prompt
@@ -245,7 +242,6 @@ class TestAIBatchGenerator:
 
     def test_build_synergy_prompt(self) -> None:
         """构建相性 prompt 包含双方武将信息"""
-        gen = AIBatchGenerator(api_key="test")
         ha = {
             "id": 114, "name": "诸葛亮", "max_hp": 4,
             "position": "控制", "skills": [],
@@ -254,7 +250,7 @@ class TestAIBatchGenerator:
             "id": 115, "name": "曹操", "max_hp": 5,
             "position": "防御", "skills": [],
         }
-        prompt = gen._build_synergy_prompt(ha, hb)
+        prompt = build_synergy_prompt(ha, hb)
         assert "## 武将 A:" in prompt or "## 武将 A：" in prompt
         assert "## 武将 B:" in prompt or "## 武将 B：" in prompt
         assert "诸葛亮" in prompt

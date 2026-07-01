@@ -1,7 +1,5 @@
-import os, sys, tempfile
+import tempfile
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from src.config.env import parse_env_file, save_env_file

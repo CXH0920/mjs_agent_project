@@ -110,8 +110,45 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
 
 
 # ============================================================
-# JSON 文件读写
+# Prompt 构建（共享函数，消除 AIBatchGenerator 和 PlaywrightGenerator 的重复）
 # ============================================================
+
+
+def build_guide_prompt(hero: dict) -> str:
+    """构建单个武将的攻略 prompt（含武将 ID，兼容 API 和 Browser 双模式）"""
+    lines = [f"武将ID: {hero.get('id', 0)}"]
+    lines.append(f"武将: {hero.get('name', '')}")
+    lines.append(f"势力: {hero.get('faction', '')}")
+    lines.append(f"定位: {hero.get('position', '')}")
+    lines.append(f"体力: {hero.get('max_hp', 4)}  手牌: {hero.get('max_hand', 4)}")
+    lines.append(f"性别: {hero.get('gender', '男')}")
+    lines.append(f"难度: {hero.get('difficulty', 2)}")
+    if hero.get("skills"):
+        lines.append("")
+        lines.append("技能:")
+        for sk in hero["skills"]:
+            lines.append(f"  - {sk.get('name', '')}: {sk.get('description', '')}")
+    return "\n".join(lines)
+
+
+def build_synergy_prompt(hero_a: dict, hero_b: dict) -> str:
+    """构建武将对的相性评分 prompt（含武将 ID，兼容 API 和 Browser 双模式）"""
+    def hero_block(label: str, h: dict) -> list[str]:
+        lines = [f"## {label}: {h.get('name', '')} (ID={h.get('id', 0)})"]
+        lines.append(f"  势力: {h.get('faction', '')}")
+        lines.append(f"  定位: {h.get('position', '')}")
+        lines.append(f"  体力/手牌: {h.get('max_hp', 4)}/{h.get('max_hand', 4)}")
+        if h.get("skills"):
+            lines.append("  技能:")
+            for sk in h["skills"]:
+                lines.append(f"    - {sk.get('name', '')}: {sk.get('description', '')}")
+        return lines
+
+    lines = []
+    lines.extend(hero_block("武将 A", hero_a))
+    lines.append("")
+    lines.extend(hero_block("武将 B", hero_b))
+    return "\n".join(lines)
 
 def load_heroes(filepath: str | Path = "") -> list[dict]:
     """从 JSON 文件加载武将数据"""

@@ -1,17 +1,13 @@
 ﻿"""名将杀 Agent - HeroManager 单元测试"""
 
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 import pytest
 
-from data.hero_manager import HeroManager
-from data.models import Hero, Gender, Difficulty
+from src.data.hero_manager import HeroManager
+from src.data.models import Hero, Gender, Difficulty
 
 
 class TestHeroManager:

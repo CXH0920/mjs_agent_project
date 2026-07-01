@@ -1,5 +1,7 @@
 # 名将杀 Agent - 实施方案
 
+> **状态：** 核心架构已完成，本文件反映最新项目状态。
+
 ## 项目概述
 
 名将杀 Agent 是一个桌面端辅助工具，面向名将杀手游的轻度玩家，运行于 PC 端 MuMu 模拟器上。核心功能为**选将推荐**和**武将数据库查询**。
@@ -19,27 +21,29 @@
 ├──────────────────────────────────────────────┤
 │             业务层 (Business)                  │
 │  采集服务 / 攻略服务 / 相性服务 / 推荐引擎    │
+│  捕获服务 / OCR 服务                          │
 ├──────────────────────────────────────────────┤
 │             数据层 (Data)                      │
 │  DataFacade / Pydantic / JSON 持久化          │
 ├──────────────────────────────────────────────┤
 │           采集层 (Capture / Scraper)           │
-│  官网爬虫 / AI 批量生成 / 屏幕采集 (待开发)   │
+│  官网爬虫 / AI 批量生成 / 屏幕采集 / OCR      │
 └──────────────────────────────────────────────┘
 ```
 
 ### 技术栈
 
-| 层 | 技术选型 | 理由 |
+| 层 | 技术选型 | 说明 |
 |---|---|---|
 | UI | PySide6 | 用户指定，成熟可靠 |
 | 数据存储 | JSON 文件 | 本地化，无需数据库，150武将量级足够 |
-| 图像处理 | OpenCV | 待开发 |
-| OCR | easyocr | 待开发 |
+| 图像处理 | OpenCV ✅ | 模板匹配、图像预处理 |
+| OCR | PaddleOCR ✅ | 文字识别 + 自定义矫正逻辑 |
 | 爬虫 | urllib + BeautifulSoup4 | 轻量同步爬取 |
 | AI API | httpx → DeepSeek | 异步/同步兼容，稳定高效 |
 | 数据模型 | Pydantic v2 | 类型校验 |
 | 日志 | logging | 标准库，无需额外依赖 |
+| 浏览器自动化 | Playwright | Edge 浏览器模式（DeepSeek 网页版） |
 
 ### 关键约束
 - 推荐路径：**优先走预计算相性表查询**（实时）
@@ -53,15 +57,15 @@
 ```
 test_project/
 │
-├── AGENTS.md              # 开发规范
-├── PLANS.md               # 实施计划
 ├── CLAUDE.md              # Claude Code 上下文
+├── PLANS.md               # 实施计划（本文件）
 ├── environment.yml        # Conda 环境定义
 ├── README.md              # 项目文档
 │
 ├── src/
 │   ├── main.py                  # 应用入口
 │   ├── config/
+│   │   ├── __init__.py          # 配置导出
 │   │   └── env.py               # .env 解析/加载/保存
 │   │
 │   ├── data/                    # 数据层
@@ -71,7 +75,7 @@ test_project/
 │   │   ├── synergy_manager.py   # SynergyScore CRUD + JSON
 │   │   └── guide_manager.py     # HeroGuide CRUD + JSON
 │   │
-│   ├── scraper/                 # 数据采集
+│   ├── scraper/                 # 数据采集（爬虫 + AI）
 │   │   ├── crawler.py           # 爬虫核心（公开 API）
 │   │   ├── official.py          # 官网全量爬虫
 │   │   ├── incremental.py       # 增量/指定爬虫
@@ -81,19 +85,29 @@ test_project/
 │   │   ├── ai_guide.py          # 攻略生成循环
 │   │   ├── ai_synergy.py        # 全量相性生成循环
 │   │   ├── ai_synergy_pair.py   # 指定两武将相性配对生成
-│   │   └── ai_synergy_single.py # 选定武将 x 全体相性生成
+│   │   ├── ai_synergy_single.py # 选定武将 x 全体相性生成
+│   │   └── ai_playwright.py     # Playwright 浏览器自动化生成器
+│   │
+│   ├── capture/                 # 屏幕采集
+│   │   └── screen.py            # MuMu 模拟器截图 + 窗口管理
+│   │
+│   ├── ocr/                     # OCR 识别
+│   │   ├── detector.py          # 选将框轮廓检测
+│   │   ├── recognizer.py        # PaddleOCR 识别 + 汉字特征矫正（四角号码/仓颉码/部首/笔画数）
+│   │   └── ocr_loader.py        # OCR 模块加载器
 │   │
 │   ├── business/                # 业务层（QProcess 管理 + 信号通知）
+│   │   ├── __init__.py          # 业务服务导出
+│   │   ├── capture_service.py   # 屏幕捕获 + OCR 轮询业务
+│   │   ├── ocr_service.py       # OCR 轮询调度服务
 │   │   ├── fetch_service.py     # 武将采集业务服务
 │   │   ├── guide_fetch_service.py # 攻略生成业务服务
-│   │   └── synergy_fetch_service.py # 相性获取业务服务
-│   │
-│   ├── capture/                 # 采集层（待开发）
-│   │   └── __init__.py
+│   │   ├── synergy_fetch_service.py # 相性获取业务服务
+│   │   └── fetch_utils.py       # QProcess 公共工具函数
 │   │
 │   └── ui/                      # UI 层
 │       ├── style.py             # 全局样式表（天蓝色调）
-│       ├── main_window.py       # 主窗口
+│       ├── main_window.py       # 主窗口（含选将推荐 Tab + 轮询）
 │       ├── hero_browser.py      # 武将浏览
 │       ├── settings_dialog.py   # API 配置对话框
 │       ├── fetch_dialog.py      # 武将获取选择
@@ -110,6 +124,7 @@ test_project/
 │   └── cards.json               # 基础卡牌数据
 │
 ├── tests/
+│   ├── conftest.py              # pytest 配置（自动加入项目根路径）
 │   ├── test_models.py           # 25 tests
 │   ├── test_ai_batch.py         # 33 tests
 │   ├── test_hero_manager.py     # 13 tests
@@ -189,8 +204,9 @@ class HeroGuide(BaseModel):
 
 ```
 src/scraper/ai_batch.py              CLI 入口（仅编排，不含业务逻辑）
-    ├── src/scraper/ai_utils.py      共享工具函数
-    ├── src/scraper/ai_generator.py  API 调用核心
+    ├── src/scraper/ai_utils.py      共享工具函数（Prompt 构建/JSON 提取/校验）
+    ├── src/scraper/ai_generator.py  API 调用核心（httpx + 限速 + 重试）
+    ├── src/scraper/ai_playwright.py 浏览器模式生成器（Playwright + Edge）
     ├── src/scraper/ai_guide.py      攻略生成
     ├── src/scraper/ai_synergy.py    全量相性生成
     ├── src/scraper/ai_synergy_pair.py   指定配对生成
@@ -199,11 +215,11 @@ src/scraper/ai_batch.py              CLI 入口（仅编排，不含业务逻辑
 
 - 每个生成模块是独立函数，通过参数接收依赖
 - 无循环导入，全单向调用
-- 向后兼容：`from src.scraper.ai_batch import AIBatchGenerator` 依然有效
+- 支持双模式：API 直连（DeepSeek API）和浏览器自动化（Edge + Playwright）
 
 ---
 
-## 五、任务拆分与执行计划
+## 五、任务拆分与完成状态
 
 ### 阶段一：项目脚手架与数据模型
 
@@ -253,28 +269,37 @@ src/scraper/ai_batch.py              CLI 入口（仅编排，不含业务逻辑
 
 | # | 任务 | 产出 | 状态 |
 |---|---|---|---|
-| 5.1 | MuMu 模拟器截图 | screen.py | ⏳ 待开发 |
-| 5.2 | 轮廓检测选将框 | detector.py | ⏳ 待开发 |
-| 5.3 | OCR 识别武将名 | ocr.py | ⏳ 待开发 |
+| 5.1 | MuMu 模拟器截图 | src/capture/screen.py | ✅ 已完成 |
+| 5.2 | 轮廓检测选将框 | src/ocr/detector.py | ✅ 已完成 |
+| 5.3 | OCR 识别武将名 | src/ocr/recognizer.py（PaddleOCR + 四角号码/仓颉码/部首多维矫正） | ✅ 已完成 |
 
 ### 阶段六：推荐引擎
 
 | # | 任务 | 产出 | 状态 |
 |---|---|---|---|
-| 6.1 | 相性查询引擎 | recommendation.py | ⏳ 待开发 |
-| 6.2 | 推荐结果展示集成 | "选将推荐" Tab | ⏳ 待开发 |
+| 6.1 | 相性查询引擎 | 集成在 MainWindow 的选将推荐 Tab | ✅ 已完成 |
+| 6.2 | 推荐结果展示集成 | "选将推荐" Tab + 轮询识别 | ✅ 已完成 |
+
+### 阶段七：浏览器自动化（Playwright）
+
+| # | 任务 | 产出 | 状态 |
+|---|---|---|---|
+| 7.1 | Playwright 浏览器模式生成器 | src/scraper/ai_playwright.py | ✅ 已完成 |
+| 7.2 | 浏览器模式 UI 集成 | guide_fetch_service.py（--browser 模式切换） | ✅ 已完成 |
 
 ---
 
-## 六、风险分析
+## 六、风险与注意事项
 
 | 风险 | 影响 | 缓解措施 |
 |---|---|---|
 | MuMu 截屏延迟 | 体验下降 | 使用 ADB 截图，延迟<100ms |
-| OCR 识别武将名不准 | 推荐失败 | 结合轮廓位置 + 名称列表过滤 |
+| OCR 识别武将名不准 | 推荐失败 | 结合轮廓位置 + 名称列表过滤 + 四角号码/仓颉码多维矫正 |
 | 新武将每周更新，需持续维护 | 维护成本 | 增量更新机制 + 定时提醒 |
 | 游戏UI改版 | 采集失效 | 轮廓检测参数配置化，易适配 |
 | 150 武将全量相性组合多 | 生成成本高 | 设定分数下限过滤 + 支持单武将配对生成 |
+| DeepSeek API 限额/网络波动 | AI 生成失败 | 指数退避重试 + 浏览器模式备选 |
+| Edge 浏览器版本更新 | Playwright 选择器失效 | 自诊断机制（_page_diagnostics）+ 配置化选择器 |
 
 ---
 
@@ -285,4 +310,3 @@ src/scraper/ai_batch.py              CLI 入口（仅编排，不含业务逻辑
 3. **配置化坐标**：所有屏幕坐标在采集层配置化，禁止硬编码
 4. **类型注解**：所有函数使用 Python typing 类型标注
 5. **日志完整**：各层均使用 logging 记录关键操作
-6. **遵守 AGENTS.md**：遵循根目录 AGENTS.md 中的规范

@@ -42,6 +42,8 @@ from src.scraper.ai_utils import (
     convert_ids_to_int,
     validate_guide,
     validate_synergy,
+    build_guide_prompt,
+    build_synergy_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,7 +119,7 @@ class PlaywrightGenerator:
                 logger.error("[攻略] prompt 模板未找到: %s", GUIDE_PROMPT_FILE)
                 return None, None
 
-            user_prompt = self._build_guide_prompt(hero)
+            user_prompt = build_guide_prompt(hero)
             full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
             logger.info("[攻略] 首次发送 system prompt + %s 数据", hero_name)
             logger.debug("[攻略] 首次发送总长度: %d 字符", len(full_prompt))
@@ -131,7 +133,7 @@ class PlaywrightGenerator:
             logger.info("[攻略] system prompt 已发送，后续只发武将数据")
         else:
             # 后续：只发武将数据（带 ID）
-            data_prompt = self._build_guide_prompt(hero)
+            data_prompt = build_guide_prompt(hero)
             logger.info("[攻略] 发送 %s 数据（%d 字符）", hero_name, len(data_prompt))
             reply = self._send_and_wait(data_prompt)
             if not reply:
@@ -189,7 +191,7 @@ class PlaywrightGenerator:
                 logger.error("[相性] prompt 模板未找到: %s", SYNERGY_PROMPT_FILE)
                 return None, None
 
-            user_prompt = self._build_synergy_prompt(hero_a, hero_b)
+            user_prompt = build_synergy_prompt(hero_a, hero_b)
             full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
             logger.info("[相性] 首次发送 system prompt + %s <-> %s 数据", name_a, name_b)
             logger.debug("[相性] 首次发送总长度: %d 字符", len(full_prompt))
@@ -203,7 +205,7 @@ class PlaywrightGenerator:
             logger.info("[相性] system prompt 已发送，后续只发武将数据")
         else:
             # 后续：只发武将数据（带 ID）
-            data_prompt = self._build_synergy_prompt(hero_a, hero_b)
+            data_prompt = build_synergy_prompt(hero_a, hero_b)
             logger.info("[相性] 发送 %s <-> %s 数据（%d 字符）",
                         name_a, name_b, len(data_prompt))
             reply = self._send_and_wait(data_prompt)
@@ -509,41 +511,4 @@ class PlaywrightGenerator:
             logger.error("[提取] 提取回复时出错: %s", e)
             logger.debug(traceback.format_exc())
             return None
-
-    @staticmethod
-    def _build_guide_prompt(hero: dict) -> str:
-        """构建单个武将的攻略 prompt（始终包含武将 ID）"""
-        lines = [f"武将ID: {hero.get('id', 0)}"]
-        lines.append(f"武将: {hero.get('name', '')}")
-        lines.append(f"势力: {hero.get('faction', '')}")
-        lines.append(f"定位: {hero.get('position', '')}")
-        lines.append(f"体力: {hero.get('max_hp', 4)}  手牌: {hero.get('max_hand', 4)}")
-        lines.append(f"性别: {hero.get('gender', '男')}")
-        lines.append(f"难度: {hero.get('difficulty', 2)}")
-        if hero.get("skills"):
-            lines.append("")
-            lines.append("技能:")
-            for sk in hero["skills"]:
-                lines.append(f"  - {sk.get('name', '')}: {sk.get('description', '')}")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _build_synergy_prompt(hero_a: dict, hero_b: dict) -> str:
-        """构建武将对的相性评分 prompt（始终包含武将 ID）"""
-        def hero_block(label: str, h: dict) -> list[str]:
-            lines = [f"## {label}: {h.get('name', '')} (ID={h.get('id', 0)})"]
-            lines.append(f"  势力: {h.get('faction', '')}")
-            lines.append(f"  定位: {h.get('position', '')}")
-            lines.append(f"  体力/手牌: {h.get('max_hp', 4)}/{h.get('max_hand', 4)}")
-            if h.get("skills"):
-                lines.append("  技能:")
-                for sk in h["skills"]:
-                    lines.append(f"    - {sk.get('name', '')}: {sk.get('description', '')}")
-            return lines
-
-        lines = []
-        lines.extend(hero_block("武将 A", hero_a))
-        lines.append("")
-        lines.extend(hero_block("武将 B", hero_b))
-        return "\n".join(lines)
 
