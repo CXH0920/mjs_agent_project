@@ -45,7 +45,12 @@ class GuideManager:
                 self._guides = {}
                 return
         if isinstance(data, dict):
+            logger.warning("攻略文件格式异常（单个对象→列表），自动修复: %s", self.guides_file)
             data = [data]
+        elif not isinstance(data, list):
+            logger.error("攻略文件内容不是列表或对象格式: %s，重置为空", self.guides_file)
+            self._guides = {}
+            return
         self._guides = {g["hero_id"]: HeroGuide.model_validate(g) for g in data}
         logger.debug("加载 %d 条攻略", len(self._guides))
 

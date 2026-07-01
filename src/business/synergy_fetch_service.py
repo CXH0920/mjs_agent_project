@@ -16,6 +16,13 @@ import traceback
 
 from PySide6.QtCore import QObject, Signal, QProcess
 
+from src.business.fetch_utils import (
+    cancel_process,
+    get_qprocess_error_name,
+    is_process_busy,
+    log_process_error,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,16 +75,11 @@ class SynergyFetchService(QObject):
         self._start_process(args)
 
     def cancel(self) -> None:
-        if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
-            self._process.kill()
-            self._process.waitForFinished(3000)
-            self.status_changed.emit("相性计算已取消")
+        cancel_process(self._process)
+        self.status_changed.emit("相性计算已取消")
 
     def _is_busy(self) -> bool:
-        if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
-            logger.warning("相性获取服务正忙，忽略重复请求")
-            return True
-        return False
+        return is_process_busy(self._process, "相性获取")
 
     def _start_process(self, args: list[str]) -> None:
         self._process = QProcess(self)
@@ -147,19 +149,8 @@ class SynergyFetchService(QObject):
         self._stdout_buffer.clear()
         self._stderr_buffer.clear()
 
-        error_map = {
-            QProcess.ProcessError.FailedToStart: "子进程启动失败",
-            QProcess.ProcessError.Crashed: "子进程崩溃",
-            QProcess.ProcessError.Timedout: "子进程超时",
-            QProcess.ProcessError.WriteError: "写入子进程管道失败",
-            QProcess.ProcessError.ReadError: "读取子进程管道失败",
-        }
-        error_name = error_map.get(error, f"未知错误({error})")
-        error_msg = self._process.errorString() if self._process else "未知错误"
-        full_msg = f"{error_name}: {error_msg}"
-
-        logger.error("相性计算子进程错误: %s", full_msg)
-        logger.error("调用栈:\n%s", traceback.format_exc())
+        error_name = get_qprocess_error_name(error)
+        full_msg = log_process_error(error_name, self._process)
 
         self.status_changed.emit("相性计算出错")
         self.error_occurred.emit(full_msg)
