@@ -77,10 +77,10 @@ def run_synergy_single_generation(
             existing_synergy_dict[key] = result
             existing_synergy_keys.add(key)
             new_count += 1
-            print(f"    OK - 评分: {result.get('score', '?')}", flush=True)
+            print(f"  [{i}/{len(pairs)}] {hb['name']} OK - 评分: {result.get('score', '?')}", flush=True)
         else:
             failed += 1
-            print(f"    FAIL", flush=True)
+            print(f"  [{i}/{len(pairs)}] {hb['name']} FAIL", flush=True)
 
     _save_json(synergy_path, list(existing_synergy_dict.values()))
     print(f"  相性完成: 新增 {new_count} 对，跳过 {skipped} 对，失败 {failed} 对, 共 {len(existing_synergy_dict)} 对", flush=True)

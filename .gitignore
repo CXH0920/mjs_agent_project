@@ -4,7 +4,7 @@ __pycache__/
 
 # IDE
 .idea/
-logs/
+
 
 # Project documentation
 project_problem.md
@@ -22,3 +22,4 @@ config.env
 Thumbs.db
 screenshots/
 screenshot_data/
+logs/

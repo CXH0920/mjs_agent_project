@@ -69,7 +69,7 @@ def run_synergy_generation(
             processed += 1
             key = tuple(sorted([ha["id"], hb["id"]]))
 
-            print(f"  进度: {processed}/{total_pairs}  ", end="\r", flush=True)
+            print(f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']}...", flush=True)
 
             result, usage = generator.generate_synergy(ha, hb)
             _accumulate_usage(usage)

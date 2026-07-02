@@ -127,9 +127,9 @@ class GuideProgressDialog(QDialog):
         """进程结束时调用"""
         self._close_btn.setEnabled(True)
         if success:
-            self._status_label.setText("攻略生成完成 ✓")
+            self._status_label.setText("生成完成 ✓")
             self._progress_bar.setValue(self._progress_bar.maximum())
             self._progress_bar.setFormat("完成")
         else:
-            self._status_label.setText("攻略生成失败 ✗")
+            self._status_label.setText("生成失败 ✗")
             self.set_error(message)

@@ -150,17 +150,36 @@ class MainWindow(QMainWindow):
         self._synergy_service.status_changed.connect(self._on_fetch_status)
         self._synergy_service.fetch_completed.connect(self._on_synergy_fetch_completed)
         self._synergy_service.error_occurred.connect(self._on_synergy_fetch_error)
+        self._synergy_service.progress_output.connect(self._on_synergy_progress)
+        self._synergy_service.progress_value.connect(self._on_synergy_progress_value)
 
     def _on_synergy_fetch_completed(self, success: bool, message: str = "") -> None:
+        dialog = getattr(self, "_synergy_progress_dialog", None)
+        if dialog:
+            dialog.on_process_finished(success, message)
         if success:
             self._data.synergies.load()
             self._update_status()
-            QMessageBox.information(self, "提示", "相性评分已生成完成\n请通过 数据 > 重新加载数据 刷新")
         else:
             QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{message}")
 
     def _on_synergy_fetch_error(self, error_msg: str) -> None:
+        dialog = getattr(self, "_synergy_progress_dialog", None)
+        if dialog:
+            dialog.on_process_finished(False, error_msg)
         QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{error_msg}")
+
+    def _on_synergy_progress(self, text: str) -> None:
+        """相性生成进度更新"""
+        dialog = getattr(self, "_synergy_progress_dialog", None)
+        if dialog:
+            dialog.update_status(text)
+
+    def _on_synergy_progress_value(self, current: int, total: int) -> None:
+        """相性生成进度条更新"""
+        dialog = getattr(self, "_synergy_progress_dialog", None)
+        if dialog:
+            dialog.update_progress(current, total)
 
     # ---------------------------------------------------------------
     # 攻略生成服务信号连接
@@ -576,7 +595,10 @@ class MainWindow(QMainWindow):
         if bd.exec() != QDialog.DialogCode.Accepted:
             return
         backend = bd.get_selected_backend()
+        self._synergy_progress_dialog = GuideProgressDialog(1, title="相性配对生成进度", parent=self)
         self._synergy_service.fetch_pair(dialog.selected_heroes, backend=backend)
+        self._synergy_progress_dialog.exec()
+        self._synergy_progress_dialog = None
 
     def _request_synergy_single(self) -> None:
         """相性选定武将：弹出对话框选择 1 个武将"""
@@ -593,7 +615,12 @@ class MainWindow(QMainWindow):
         if bd.exec() != QDialog.DialogCode.Accepted:
             return
         backend = bd.get_selected_backend()
+        # 估算需要配对的武将数（排除自身）
+        hero_count = len(self._get_heroes_as_dicts()) - 1
+        self._synergy_progress_dialog = GuideProgressDialog(hero_count, title="选定武将相性生成进度", parent=self)
         self._synergy_service.fetch_single(dialog.selected_hero, all_heroes, backend=backend)
+        self._synergy_progress_dialog.exec()
+        self._synergy_progress_dialog = None
 
     def _get_heroes_as_dicts(self) -> list[dict]:
         from src.data.models import Hero

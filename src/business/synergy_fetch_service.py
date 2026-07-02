@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import traceback
@@ -30,6 +31,8 @@ class SynergyFetchService(QObject):
     """相性获取业务服务"""
 
     status_changed = Signal(str)
+    progress_output = Signal(str)        # 原始 stdout 行
+    progress_value = Signal(int, int)    # (current, total) 供进度条使用
     fetch_completed = Signal(bool, str)
     error_occurred = Signal(str)
 
@@ -98,6 +101,13 @@ class SynergyFetchService(QObject):
         text = bytes(data).decode("utf-8", errors="replace")
         if text.strip():
             self._log_stdout.info("%s", text.strip())
+            self.progress_output.emit(text)
+
+            # 解析进度 [i/N] 用于进度条
+            for line in text.split("\n"):
+                m = re.search(r"\[(\d+)/(\d+)\]", line)
+                if m:
+                    self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 
     def _on_stderr_ready(self) -> None:
         if not self._process:

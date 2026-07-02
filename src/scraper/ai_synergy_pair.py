@@ -51,7 +51,7 @@ def run_synergy_pair_generation(
     ha, hb = pair_heroes[0], pair_heroes[1]
     pair_key = tuple(sorted([ha["id"], hb["id"]]))
 
-    print(f"  {ha['name']} <-> {hb['name']}...", flush=True)
+    print(f"  [1/1] {ha['name']} <-> {hb['name']}...", flush=True)
     result, usage = generator.generate_synergy(ha, hb)
     if usage:
         total_prompt_tokens += usage.get("prompt_tokens", 0)
@@ -65,8 +65,8 @@ def run_synergy_pair_generation(
         existing_synergy_dict[pair_key] = result
         existing_synergy_keys.add(pair_key)
         _save_json(synergy_path, list(existing_synergy_dict.values()))
-        print(f"    OK - 评分: {result.get('score', '?')}", flush=True)
+        print(f"  [1/1] {ha['name']} <-> {hb['name']} OK - 评分: {result.get('score', '?')}", flush=True)
     else:
-        print(f"    FAIL", flush=True)
+        print(f"  [1/1] {ha['name']} <-> {hb['name']} FAIL", flush=True)
 
     return total_prompt_tokens, total_completion_tokens

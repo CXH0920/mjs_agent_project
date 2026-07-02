@@ -14,12 +14,11 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
 )
@@ -94,19 +93,18 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(form)
 
-        # 文件路径提示
-        hint = QLabel(f"配置文件: {self._env_path}")
-        hint.setStyleSheet("color: gray; font-size: 11px;")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-
         # 按钮
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._on_save)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        save_btn = QPushButton("保存")
+        save_btn.setStyleSheet("padding: 6px 24px;")
+        save_btn.clicked.connect(self._on_save)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet("padding: 6px 24px;")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
 
     # ---------------------------------------------------------------
     # 加载 / 保存
@@ -142,7 +140,7 @@ class SettingsDialog(QDialog):
             # 确保目录存在
             self._env_path.parent.mkdir(parents=True, exist_ok=True)
             save_env_file(self._env_path, data)
-            QMessageBox.information(self, "保存成功", f"配置已保存到:\n{self._env_path}")
+            QMessageBox.information(self, "保存成功", "配置已保存")
             self.accept()
         except Exception as e:
             logger.exception("保存配置失败")
