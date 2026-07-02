@@ -14,26 +14,222 @@ import mistune
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSplitter,
-    QStackedWidget,
+    QSpinBox,
     QTabWidget,
     QTextBrowser,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from src.data.manager import HeroManager, GuideManager
-from src.data.models import Hero, HeroGuide
+from src.data.models import Hero, HeroGuide, Gender, Difficulty
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# 武将信息编辑弹窗
+# ============================================================
+
+
+class HeroEditDialog(QDialog):
+    """武将信息编辑对话框"""
+
+    def __init__(self, hero: Hero, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("编辑武将信息")
+        self.setMinimumWidth(400)
+        self._hero = hero
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._name_edit = QLineEdit(self._hero.name)
+        form.addRow("名称:", self._name_edit)
+
+        self._title_edit = QLineEdit(self._hero.title)
+        form.addRow("称号:", self._title_edit)
+
+        self._faction_edit = QLineEdit(self._hero.faction)
+        form.addRow("势力:", self._faction_edit)
+
+        self._position_edit = QLineEdit(self._hero.position)
+        form.addRow("定位:", self._position_edit)
+
+        self._hp_spin = QSpinBox()
+        self._hp_spin.setRange(1, 20)
+        self._hp_spin.setValue(self._hero.max_hp)
+        form.addRow("体力上限:", self._hp_spin)
+
+        self._hand_spin = QSpinBox()
+        self._hand_spin.setRange(1, 20)
+        self._hand_spin.setValue(self._hero.max_hand)
+        form.addRow("手牌上限:", self._hand_spin)
+
+        self._gender_combo = QComboBox()
+        self._gender_combo.addItems(["男", "女"])
+        self._gender_combo.setCurrentText(self._hero.gender.value)
+        form.addRow("性别:", self._gender_combo)
+
+        self._diff_spin = QSpinBox()
+        self._diff_spin.setRange(1, 5)
+        self._diff_spin.setValue(self._hero.difficulty.value)
+        form.addRow("难度(1-5):", self._diff_spin)
+
+        layout.addLayout(form)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        save_btn = QPushButton("保存")
+        save_btn.setStyleSheet("padding: 6px 24px;")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet("padding: 6px 24px;")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def get_hero(self) -> Hero:
+        """返回编辑后的 Hero 对象"""
+        self._hero.name = self._name_edit.text().strip()
+        self._hero.title = self._title_edit.text().strip()
+        self._hero.faction = self._faction_edit.text().strip()
+        self._hero.position = self._position_edit.text().strip()
+        self._hero.max_hp = self._hp_spin.value()
+        self._hero.max_hand = self._hand_spin.value()
+        self._hero.gender = Gender.MALE if self._gender_combo.currentText() == "男" else Gender.FEMALE
+        self._hero.difficulty = Difficulty(self._diff_spin.value())
+        return self._hero
+
+
+# ============================================================
+# 攻略编辑弹窗
+# ============================================================
+
+
+class GuideEditDialog(QDialog):
+    """攻略编辑对话框"""
+
+    def __init__(self, guide: HeroGuide, hero_mgr: HeroManager, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("编辑攻略")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+        self._guide = guide
+        self._hero_mgr = hero_mgr
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # 核心要点（每行一个）
+        self._key_points_edit = QTextEdit()
+        self._key_points_edit.setPlaceholderText("每行一个核心要点")
+        self._key_points_edit.setMaximumHeight(100)
+        self._key_points_edit.setText("\n".join(self._guide.key_points))
+        form.addRow("核心要点:", self._key_points_edit)
+
+        # 新手提示
+        self._tips_edit = QTextEdit()
+        self._tips_edit.setPlaceholderText("新手提示文字")
+        self._tips_edit.setMaximumHeight(80)
+        self._tips_edit.setText(self._guide.tips_for_beginners)
+        form.addRow("新手提示:", self._tips_edit)
+
+        # 被克制（武将名，顿号分隔）
+        counter_names = []
+        for hid in self._guide.counters:
+            h = self._hero_mgr.get_hero(hid)
+            counter_names.append(h.name if h else f"#{hid}")
+        self._counters_edit = QLineEdit("、".join(counter_names))
+        self._counters_edit.setPlaceholderText("武将名，顿号分隔")
+        form.addRow("被克制:", self._counters_edit)
+
+        # 搭配推荐（武将名，顿号分隔）
+        synergy_names = []
+        for hid in self._guide.synergizes_with:
+            h = self._hero_mgr.get_hero(hid)
+            synergy_names.append(h.name if h else f"#{hid}")
+        self._synergy_edit = QLineEdit("、".join(synergy_names))
+        self._synergy_edit.setPlaceholderText("武将名，顿号分隔")
+        form.addRow("搭配推荐:", self._synergy_edit)
+
+        # 攻略正文（Markdown）
+        self._desc_edit = QTextEdit()
+        self._desc_edit.setPlaceholderText("攻略正文（支持 Markdown）")
+        self._desc_edit.setText(self._guide.description)
+        form.addRow("攻略正文:", self._desc_edit)
+
+        layout.addLayout(form)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        save_btn = QPushButton("保存")
+        save_btn.setStyleSheet("padding: 6px 24px;")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet("padding: 6px 24px;")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def _resolve_hero_ids(self, text: str) -> list[int]:
+        """将顿号/逗号分隔的武将名或 ID 解析为 ID 列表"""
+        ids: list[int] = []
+        if not text.strip():
+            return ids
+        for part in text.replace("，", "、").split("、"):
+            part = part.strip()
+            if not part:
+                continue
+            # 优先按名称查找
+            hero = self._hero_mgr.get_hero_by_name(part)
+            if hero:
+                ids.append(hero.id)
+            else:
+                try:
+                    ids.append(int(part))
+                except ValueError:
+                    logger.warning("无法解析武将: %s", part)
+        return ids
+
+    def get_guide(self) -> HeroGuide:
+        """返回编辑后的 HeroGuide 对象"""
+        self._guide.key_points = [
+            line.strip()
+            for line in self._key_points_edit.toPlainText().split("\n")
+            if line.strip()
+        ]
+        self._guide.tips_for_beginners = self._tips_edit.toPlainText().strip()
+        self._guide.counters = self._resolve_hero_ids(self._counters_edit.text())
+        self._guide.synergizes_with = self._resolve_hero_ids(self._synergy_edit.text())
+        self._guide.description = self._desc_edit.toPlainText()
+        return self._guide
+
+
+# ============================================================
+# 列表面板
+# ============================================================
 
 
 class HeroListPanel(QWidget):
@@ -49,6 +245,7 @@ class HeroListPanel(QWidget):
         self._hero_mgr = hero_manager
         self._all_heroes: list[Hero] = []
         self._filtered_heroes: list[Hero] = []
+        self._last_hero_id: int | None = None
 
         self._setup_ui()
         self._load_heroes()
@@ -121,7 +318,8 @@ class HeroListPanel(QWidget):
         self._refresh_list()
 
     def _refresh_list(self) -> None:
-        """刷新列表显示"""
+        """刷新列表显示，尽可能恢复上一次选中的武将"""
+        current_id = self._last_hero_id
         self._list.blockSignals(True)
         self._list.clear()
         for hero in self._filtered_heroes:
@@ -133,17 +331,27 @@ class HeroListPanel(QWidget):
         self._list.blockSignals(False)
 
         if self._filtered_heroes:
-            self._list.setCurrentRow(0)
+            # 优先恢复之前的选中项
+            target_row = 0
+            if current_id is not None:
+                for i, hero in enumerate(self._filtered_heroes):
+                    if hero.id == current_id:
+                        target_row = i
+                        break
+            self._list.setCurrentRow(target_row)
 
     def _on_selection_changed(self, row: int) -> None:
         """列表选中项变化"""
         if 0 <= row < len(self._filtered_heroes):
             hero_id = self._filtered_heroes[row].id
+            self._last_hero_id = hero_id
             self.hero_selected.emit(hero_id)
 
 
 class HeroDetailPanel(QWidget):
     """武将详情面板"""
+
+    data_changed = Signal()  # 数据变更后通知刷新列表
 
     def __init__(self, hero_manager: HeroManager, guide_manager: GuideManager, parent=None):
         super().__init__(parent)
@@ -175,7 +383,63 @@ class HeroDetailPanel(QWidget):
         self._setup_guide_tab()
         self._detail_tabs.addTab(self._guide_tab, "攻略指南")
 
+        # Tab 栏右角：修改/删除按钮组
+        self._setup_corner_buttons()
+
         layout.addWidget(self._detail_tabs, 1)
+
+    def _setup_corner_buttons(self) -> None:
+        """在 Tab 栏右侧放置修改/删除按钮，与页签同水平高度"""
+        corner = QWidget()
+        hlayout = QHBoxLayout(corner)
+        hlayout.setContentsMargins(0, 0, 4, 0)
+        hlayout.setSpacing(4)
+
+        btn_style = (
+            "QPushButton { padding: 2px 12px; font-size: 12px; border-radius: 3px; }"
+        )
+
+        # 武将信息按钮组
+        self._info_edit_btn = QPushButton("修改")
+        self._info_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
+        self._info_edit_btn.clicked.connect(self._on_info_edit)
+        hlayout.addWidget(self._info_edit_btn)
+
+        self._info_delete_btn = QPushButton("删除")
+        self._info_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
+        self._info_delete_btn.clicked.connect(self._on_info_delete)
+        hlayout.addWidget(self._info_delete_btn)
+
+        # 攻略按钮组
+        self._guide_edit_btn = QPushButton("修改")
+        self._guide_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
+        self._guide_edit_btn.clicked.connect(self._on_guide_edit)
+        hlayout.addWidget(self._guide_edit_btn)
+
+        self._guide_delete_btn = QPushButton("删除")
+        self._guide_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
+        self._guide_delete_btn.clicked.connect(self._on_guide_delete)
+        hlayout.addWidget(self._guide_delete_btn)
+
+        # 初始隐藏攻略按钮组
+        self._guide_edit_btn.hide()
+        self._guide_delete_btn.hide()
+
+        self._detail_tabs.setCornerWidget(corner, Qt.Corner.TopRightCorner)
+        self._detail_tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Tab 切换时切换对应的修改/删除按钮组"""
+        if index == 0:  # 武将信息
+            self._info_edit_btn.show()
+            self._info_delete_btn.show()
+            self._guide_edit_btn.hide()
+            self._guide_delete_btn.hide()
+        else:  # 攻略指南
+            self._info_edit_btn.hide()
+            self._info_delete_btn.hide()
+            self._guide_edit_btn.show()
+            self._guide_delete_btn.show()
 
     def _setup_info_tab(self) -> None:
         """构建武将信息页面"""
@@ -226,7 +490,16 @@ class HeroDetailPanel(QWidget):
 
         if not hero:
             self._basic_info.setText(f"武将 #{hero_id} 未找到")
+            self._info_edit_btn.setEnabled(False)
+            self._info_delete_btn.setEnabled(False)
+            self._guide_edit_btn.setEnabled(False)
+            self._guide_delete_btn.setEnabled(False)
             return
+
+        self._info_edit_btn.setEnabled(True)
+        self._info_delete_btn.setEnabled(True)
+        self._guide_edit_btn.setEnabled(bool(guide))
+        self._guide_delete_btn.setEnabled(bool(guide))
 
         self._update_info_tab(hero)
         self._update_guide_tab(guide)
@@ -239,9 +512,9 @@ class HeroDetailPanel(QWidget):
         gender_cn = "男" if hero.gender.value == "男" else "女"
         title_part = f"「{hero.title}」" if hero.title else ""
 
-        # 难度星级
-        star_filled = "★" * hero.difficulty.value
-        star_empty = "☆" * (5 - hero.difficulty.value)
+        # 难度星级（使用 HTML 实体确保跨字体兼容显示）
+        star_filled = "&#9733;" * hero.difficulty.value
+        star_empty = "&#9734;" * (5 - hero.difficulty.value)
         star_display = f"{star_filled}{star_empty}"
 
         html = f"""
@@ -393,6 +666,107 @@ class HeroDetailPanel(QWidget):
             desc_browser.setOpenExternalLinks(False)
             self._guide_layout.addWidget(desc_browser)
 
+    # ---------------------------------------------------------------
+    # 武将信息 CRUD
+    # ---------------------------------------------------------------
+
+    def _on_info_edit(self) -> None:
+        """打开编辑对话框修改武将信息"""
+        if not self._current_hero:
+            return
+        dialog = HeroEditDialog(self._current_hero, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        updated = dialog.get_hero()
+        try:
+            self._hero_mgr.update_hero(updated)
+            self._hero_mgr.save()
+            self._update_info_tab(updated)
+            self.data_changed.emit()
+        except Exception as e:
+            logger.exception("保存武将信息失败")
+            QMessageBox.critical(self, "保存失败", f"无法保存武将信息:\n{e}")
+
+    def _on_info_delete(self) -> None:
+        """删除当前武将（含确认）"""
+        if not self._current_hero:
+            return
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除武将「{self._current_hero.name}」吗？\n"
+            "该操作不可撤销，关联的攻略也将被删除。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._hero_mgr.delete_hero(self._current_hero.id)
+            self._guide_mgr.delete_guide(self._current_hero.id)
+            self._hero_mgr.save()
+            self._guide_mgr.save()
+            self._current_hero = None
+            self._current_guide = None
+            self._basic_info.setText("武将已删除，请选择其他武将")
+            self._clear_skills()
+            self._update_guide_tab(None)
+            self.data_changed.emit()
+        except Exception as e:
+            logger.exception("删除武将失败")
+            QMessageBox.critical(self, "删除失败", f"无法删除武将:\n{e}")
+
+    # ---------------------------------------------------------------
+    # 攻略 CRUD
+    # ---------------------------------------------------------------
+
+    def _on_guide_edit(self) -> None:
+        """打开编辑对话框修改攻略"""
+        if not self._current_guide:
+            return
+        dialog = GuideEditDialog(self._current_guide, self._hero_mgr, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        updated = dialog.get_guide()
+        try:
+            self._guide_mgr.update_guide(updated)
+            self._guide_mgr.save()
+            self._update_guide_tab(updated)
+            self.data_changed.emit()
+        except Exception as e:
+            logger.exception("保存攻略失败")
+            QMessageBox.critical(self, "保存失败", f"无法保存攻略:\n{e}")
+
+    def _on_guide_delete(self) -> None:
+        """删除当前攻略（含确认）"""
+        if not self._current_guide:
+            return
+        reply = QMessageBox.question(
+            self, "确认删除",
+            "确定要删除当前武将的攻略吗？\n该操作不可撤销。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._guide_mgr.delete_guide(self._current_guide.hero_id)
+            self._guide_mgr.save()
+            self._current_guide = None
+            self._update_guide_tab(None)
+            self._guide_edit_btn.setEnabled(False)
+            self._guide_delete_btn.setEnabled(False)
+            self.data_changed.emit()
+        except Exception as e:
+            logger.exception("删除攻略失败")
+            QMessageBox.critical(self, "删除失败", f"无法删除攻略:\n{e}")
+
+    def _clear_skills(self) -> None:
+        """清空技能展示区域"""
+        while self._skills_layout.count():
+            item = self._skills_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
 
 class HeroBrowser(QWidget):
     """武将浏览器主组件
@@ -427,6 +801,7 @@ class HeroBrowser(QWidget):
 
         # 连接信号
         self._list_panel.hero_selected.connect(self._detail_panel.show_hero)
+        self._detail_panel.data_changed.connect(self.reload_data)
 
     def reload_data(self) -> None:
         """公有方法：重新加载武将列表数据"""
