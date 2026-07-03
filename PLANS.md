@@ -134,6 +134,15 @@ test_project/
 │   └── test_ui.py               # 4 tests
 │
 └── docs/
+    ├── code_desc/
+    │   ├── summary.md              # 代码说明文档总览
+    │   ├── module_config.md        # 应用入口与配置模块说明
+    │   ├── module_data.md          # 数据模型与数据管理模块说明
+    │   ├── module_scraper.md       # 爬虫与数据采集模块说明
+    │   ├── module_ai_batch.md      # AI 批量生成模块说明
+    │   ├── module_business.md      # 业务服务层模块说明
+    │   ├── module_capture_ocr.md   # 屏幕采集与 OCR 模块说明
+    │   └── module_ui.md            # UI 界面层模块说明
     ├── field_mapping.md
     └── prompts/
         ├── hero_guide.md
