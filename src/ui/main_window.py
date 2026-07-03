@@ -581,7 +581,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------
 
     def _request_synergy_pair(self) -> None:
-        """相性指定获取：弹出对话框选择 2 个武将"""
+        """相性指定获取：弹出对话框选择 2~8 个武将，自动两两配对"""
         heroes = self._get_heroes_as_dicts()
         if not heroes:
             QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
@@ -595,8 +595,10 @@ class MainWindow(QMainWindow):
         if bd.exec() != QDialog.DialogCode.Accepted:
             return
         backend = bd.get_selected_backend()
-        self._synergy_progress_dialog = GuideProgressDialog(1, title="相性配对生成进度", parent=self)
-        self._synergy_service.fetch_pair(dialog.selected_heroes, backend=backend)
+        selected = dialog.selected_heroes
+        pair_count = len(selected) * (len(selected) - 1) // 2
+        self._synergy_progress_dialog = GuideProgressDialog(pair_count, title="相性配对生成进度", parent=self)
+        self._synergy_service.fetch_pair(selected, backend=backend)
         self._synergy_progress_dialog.exec()
         self._synergy_progress_dialog = None
 

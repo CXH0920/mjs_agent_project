@@ -1,11 +1,13 @@
 """
 名将杀 Agent - 相性配对生成流程
 
-从 ai_batch 中抽取的指定武将（两武将配对）相性评分生成逻辑。
+从 ai_batch 中抽取的指定武将（多武将两两配对）相性评分生成逻辑。
+支持选择 2~8 个武将，自动排列组合所有配对。
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 
@@ -22,12 +24,13 @@ def run_synergy_pair_generation(
     existing_synergy_dict: dict,
     existing_synergy_keys: set,
 ):
-    """执行相性配对生成（指定 2 个武将）
+    """执行相性配对生成（指定 2~8 个武将，两两配对）
 
-    先删除该对的旧相性数据（如有），再将新生成的结果写入。
+    对所选武将做排列组合（C(N,2)），逐个调用 AI 生成相性评分。
+    先删除已有旧数据再写入新结果。
 
     Args:
-        pair_file: JSON 文件路径，包含 2 个武将
+        pair_file: JSON 文件路径，包含 2~8 个武将
         heroes: 全武将列表
         generator: AIBatchGenerator 实例
         synergy_path: 相性输出路径
@@ -44,29 +47,35 @@ def run_synergy_pair_generation(
     with open(pair_file, "r", encoding="utf-8") as f:
         pair_heroes = json.load(f)
 
-    if len(pair_heroes) != 2:
-        logger.error("synergy-pair 需要恰好 2 个武将，实际 %d 个", len(pair_heroes))
+    count = len(pair_heroes)
+    total_pairs = count * (count - 1) // 2
+
+    if count < 2:
+        logger.error("synergy-pair 至少需要 2 个武将，实际 %d 个", count)
+        return 0, 0
+    if count > 8:
+        logger.error("synergy-pair 最多支持 8 个武将，实际 %d 个", count)
         return 0, 0
 
-    ha, hb = pair_heroes[0], pair_heroes[1]
-    pair_key = tuple(sorted([ha["id"], hb["id"]]))
+    print(f"  所选武将: {count} 个, 共 {total_pairs} 对", flush=True)
 
-    print(f"  [1/1] {ha['name']} <-> {hb['name']}...", flush=True)
-    result, usage = generator.generate_synergy(ha, hb)
-    if usage:
-        total_prompt_tokens += usage.get("prompt_tokens", 0)
-        total_completion_tokens += usage.get("completion_tokens", 0)
-    if result:
-        # API 成功后，再删除旧数据，避免失败时数据丢失
-        if pair_key in existing_synergy_dict:
-            del existing_synergy_dict[pair_key]
-            existing_synergy_keys.discard(pair_key)
-            print(f"  已移除旧相性数据", flush=True)
-        existing_synergy_dict[pair_key] = result
-        existing_synergy_keys.add(pair_key)
-        _save_json(synergy_path, list(existing_synergy_dict.values()))
-        print(f"  [1/1] {ha['name']} <-> {hb['name']} OK - 评分: {result.get('score', '?')}", flush=True)
-    else:
-        print(f"  [1/1] {ha['name']} <-> {hb['name']} FAIL", flush=True)
+    for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
+        pair_key = tuple(sorted([ha["id"], hb["id"]]))
+        print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']}...", flush=True)
+
+        result, usage = generator.generate_synergy(ha, hb)
+        if usage:
+            total_prompt_tokens += usage.get("prompt_tokens", 0)
+            total_completion_tokens += usage.get("completion_tokens", 0)
+        if result:
+            if pair_key in existing_synergy_dict:
+                del existing_synergy_dict[pair_key]
+                existing_synergy_keys.discard(pair_key)
+            existing_synergy_dict[pair_key] = result
+            existing_synergy_keys.add(pair_key)
+            _save_json(synergy_path, list(existing_synergy_dict.values()))
+            print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} OK - 评分: {result.get('score', '?')}", flush=True)
+        else:
+            print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} FAIL", flush=True)
 
     return total_prompt_tokens, total_completion_tokens
