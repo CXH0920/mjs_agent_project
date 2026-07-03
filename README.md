@@ -30,7 +30,7 @@ test_project/
 │   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
 │   │   ├── ai_guide.py            # 攻略生成循环
 │   │   ├── ai_synergy.py          # 全量相性评分生成循环
-│   │   ├── ai_synergy_pair.py     # 指定两武将相性配对生成
+│   │   ├── ai_synergy_pair.py     # 指定武将两两配对生成（支持 2~8 武将）
 │   │   └── ai_synergy_single.py   # 选定武将 x 全体相性生成
 │   ├── business/
 │   │   ├── fetch_service.py       # 武将采集业务（QProcess 管理）
@@ -59,7 +59,7 @@ test_project/
 │       ├── roi_selector.py        # 模板 ROI 框选对话框（拖拽选区 + 坐标缩放）
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
-│       ├── synergy_pair_dialog.py # 相性指定获取（选 2 武将）
+│       ├── synergy_pair_dialog.py # 相性指定获取（选 2~8 武将，自动两两配对）
 │       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
 │       ├── settings_dialog.py     # API 配置对话框
 │       ├── cost_confirm_dialog.py # AI 成本确认对话框（API 模式）
@@ -305,7 +305,7 @@ src/scraper/
 ├── ai_playwright.py     浏览器自动化生成器（Playwright + Edge）
 ├── ai_guide.py          逐个武将生成攻略
 ├── ai_synergy.py        全量相性生成（所有武将两两配对）
-├── ai_synergy_pair.py   指定两武将配对生成
+├── ai_synergy_pair.py   指定武将两两配对生成（支持 2~8 武将 × itertools.combinations）
 ├── ai_synergy_single.py 选定武将 vs 全体生成
 └── ai_utils.py          共享工具（estimate_cost / load_heroes / _save_json）
 ```
@@ -351,7 +351,7 @@ _save_json() → data/guides.json / data/synergies.json
 | 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
 | 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略 → BackendChooseDialog（API/浏览器） |
 | 数据 > 武将相性 > 选定武将 | | 选 1 武将，计算其与全体其他武将的相性 → BackendChooseDialog |
-| 数据 > 武将相性 > 指定获取 | | 选 2 武将，计算这对的相性评分 → BackendChooseDialog |
+| 数据 > 武将相性 > 指定获取 | | 选 2~8 武将，自动两两配对计算 C(N,2) 组相性评分 → BackendChooseDialog |
 | 帮助 > 关于 | | 版本信息 |
 
 所有耗时操作均通过 **QProcess** 异步执行，不阻塞 UI。
@@ -387,6 +387,8 @@ _save_json() → data/guides.json / data/synergies.json
 - 右侧详情：Tab 切换「武将信息」和「攻略指南」
 - 技能展示：描述 + 可折叠的结算详情
 - 攻略展示：Markdown 渲染（mistune） + 克制/搭配关系
+- Tab 栏右上角：武将信息和攻略指南各有独立的"修改"+"删除"按钮（绿色/红色），点击后弹出 `HeroEditDialog` / `GuideEditDialog` 编辑弹窗
+- 编辑保存后自动刷新列表，选中项保持为当前武将
 
 ### Configuration
 
@@ -473,6 +475,8 @@ LOG_TO_FILE=true
 | 七 | 浏览器自动化（Playwright + Edge）双模式 AI 生成 | ✅ 已完成 |
 | 八 | 屏幕采集（MuMu ADB 截图 + 模板匹配 + PaddleOCR 识别 + 持续轮询） | ✅ 已完成 |
 | 九 | 推荐引擎（相性查询、胜率 CSV、OCR 数据导入） | ✅ 已完成 |
+| 十 | 武将编辑与攻略编辑（tab-header 级修改/删除按钮 + 编辑弹窗） | ✅ 已完成 |
+| 十一 | 相性配对多武将组合（最多 8 武将 × 两两配对） | ✅ 已完成 |
 
 ---
 

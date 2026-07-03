@@ -6,9 +6,9 @@
 
 ### 规则 1.1：两个生成器满足统一接口
 
-`AIBatchGenerator`（API 模式）和 `PlaywrightGenerator`（浏览器模式）均实现 `generate_guide(hero) → (dict|None, usage|None)` 和 `generate_synergy(a, b) → (dict|None, usage|None)` 接口。
+`AIBatchGenerator`（API 模式）和 `PlaywrightGenerator`（浏览器模式）均实现 `generate_guide(hero) → (dict|None, usage|None)` 和 `generate_synergy(a, b) → (dict|None, usage|None)` 接口。所有生成模式（全量、增量、指定、配对）共用同一套 generate 接口。
 
-**为什么：** 接口统一性允许 `ai_batch.py` 和 UI 层的 `BackendChooseDialog` 以相同的循环结构驱动两种模式，无需为浏览器模式单独写一套调度逻辑。
+**为什么：** 接口统一性允许 `ai_batch.py` 和 UI 层的 `BackendChooseDialog` 以相同的循环结构驱动四种生成模式（全量攻略、全量相性、指定配对、选定武将），无需为每个模式单独写一套调度逻辑。
 
 ### 规则 1.2：浏览器模式的 usage 返回 None
 
@@ -84,3 +84,32 @@ Phase 1（检测回复开始）：每 500ms 检查 assistant 元素数量是否�
 Phase 2（等待内容稳定）：每 2s 检查回复文本长度，连续 3 次不变视为生成完成。
 
 **为什么：** AI 生成回复不是瞬间完成的——存在延迟后爆发的特点。如果只等固定时间，可能内容尚未生成完全。两阶段设计分别解决了"何时开始生成"和"何时生成完毕"两个问题。
+
+## 五、相性配对（ai_synergy_pair）
+
+### 规则 5.1：支持 2~8 武将的多配对组合
+
+传入的武将数量范围 2~8，使用 `itertools.combinations(pair_heroes, 2)` 遍历所有 C(N,2) 配对。输出进度 `[i/total]` 与实际配对数同步。
+
+**为什么：** 游戏对局中通常 2~8 名玩家，用户需要同时计算某几个武将间的两两相性关系。固定 2 武将的限制过于严格，但超过 8 个会带来过多 API 调用（C(8,2)=28 对，约需 2 分钟）。8 个上限是实际需求与等待时间的平衡点。
+
+### 规则 5.2：逐对失败不阻断
+
+```python
+for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
+    result, usage = generator.generate_synergy(ha, hb)
+    if result:
+        # 保存
+    else:
+        print(f"FAIL")
+```
+
+`FAIL` 对不中断整体流程，仅打印失败信息。其他配对继续执行。
+
+**为什么：** 选定的 8 个武将中有个别配对因 API 限流或网络波动失败时，中断整个流程会让用户等待后一无所获。继续执行剩余配对，只生成成功的那部分，比全部失败好。用户可后续单独补生成缺失的配对。
+
+### 规则 5.3：进度输出格式兼容正则解析
+
+输出格式 `[idx/total] A <-> B OK/FAIL`，可与 UI 层 `GuideProgressDialog` 的正则匹配 `r"\[(\d+)/(\d+)\]"`。
+
+**为什么：** UI 层通过解析子进程 stdout 的正则来更新进度条。"选定武将"模式中也使用相同格式。保持进度输出格式统一让 UI 层复用同一套进度更新逻辑。

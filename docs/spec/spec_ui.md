@@ -79,8 +79,53 @@ card._name_label.setText(name or "未知武将")
 
 ## 五、全局样式
 
-### 规则 5.1：势力色表是硬编码
+### 规则 5.1：势力色表从 JSON 配置加载
 
-`FACTION_COLORS` 字典直接定义势力→颜色映射，不从外部配置加载。
+`_load_faction_colors()` 优先从 `data/faction_colors.json` 加载，文件不存在或格式错误时使用内建兜底色表。
 
-**为什么：** 名将杀的势力体系是固定的（秦、汉、楚、赵...共 14 个），游戏上线后至今未变更过。从配置加载只会增加复杂度而不会获得灵活性。如果未来新增势力，修改源码是预期行为。
+```python
+FACTION_COLORS = {
+  "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F",
+  ...
+}
+```
+
+**为什么：** 游戏势力体系虽然已经稳定，但 JSON 配置文件让用户无需修改代码即可调整配色，也便于分享配色方案。内建兜底保证即使文件丢失程序也能正常运行。有模块级缓存，不重复读盘。
+
+## 六、浏览列表选中恢复机制
+
+### 规则 6.1：重建列表后恢复上次选中的项
+
+`HeroListPanel` 在 `_refresh_list()` 中重建列表后，通过 `_last_hero_id` 优先恢复更改前的选中项，找不到时才回退到第 0 条。
+
+```python
+target_row = 0
+if current_id is not None:
+    for i, hero in enumerate(self._filtered_heroes):
+        if hero.id == current_id:
+            target_row = i
+            break
+self._list.setCurrentRow(target_row)
+```
+
+**为什么：** 编辑武将信息保存后列表会刷新重建。如果不恢复选中项，列表会自动跳到第 0 条，用户每次编辑完都需要重新滚动查找刚刚改过的武将。记录 `_last_hero_id` 并在重建后定位回来，用户感知不到列表的刷新动作——编辑完成后的视觉位置不变。
+
+## 七、Tab 栏修改/删除按钮
+
+### 规则 7.1：按钮放在 QTabWidget 角落而非 Tab 内容区
+
+使用 `QTabWidget.setCornerWidget(widget, Qt.Corner.TopRightCorner)` 在 Tab 栏右上角放置按钮组，与页签文字同水平高度。武将信息 Tab 和攻略指南 Tab 各自对应一组"修改"+"删除"按钮，通过 `currentChanged` 信号切换可见性。
+
+**为什么：** 用户要求"按钮与页签处于同一水平高度"。放在 Tab 内容区内（如 info tab 的头部）会占用内容区域的空间，且切换 Tab 时需要重新定位按钮。Corner widget 固定在 Tab 栏右侧，不随 Tab 内容滚动，且天然与页签同水平线。
+
+### 规则 7.2：按钮颜色区分操作类型
+
+修改按钮绿色（`background: #e8f4e8; color: #2e7d32`），删除按钮红色（`background: #fde8e8; color: #c62828`）。
+
+**为什么：** 颜色是操作后果的第一视觉信号。绿色通行（安全操作）、红色警告（危险操作），用户无需阅读文字即可区分。两个按钮紧邻时，颜色差异降低误触概率。
+
+### 规则 7.3：编辑使用独立 Dialog 而非内联编辑
+
+`HeroEditDialog` 和 `GuideEditDialog` 是 QDialog 子类，以模态对话框形式打开。HeroEditDialog 包含所有 Hero 字段（名称/称号/势力/定位/体力/手牌/性别/难度），GuideEditDialog 包含所有 HeroGuide 字段（核心要点/新手提示/被克制/搭配推荐/攻略正文）。
+
+**为什么：** 内联编辑（直接让 QLabel 变为可编辑）会破坏只读浏览的正常体验——用户可能在查看时误触导致意外进入编辑模式。模态 Dialog 提供隔离的编辑环境，不影响浏览区的稳定性。

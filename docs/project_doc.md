@@ -3,7 +3,7 @@
 > 版本：v0.1.0  
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-06-28
+> 文档日期：2026-07-03
 
 ---
 
@@ -254,7 +254,7 @@ else:
 **相性**：
 - `--synergy`（全量生成）：始终是更新模式，启动时清空所有旧数据重新生成
 - `--synergy-single`（选定武将）：断点续传，已有的相性对跳过不重复生成
-- `--synergy-pair`（指定配对）：更新模式，先删除旧数据再写入新的
+- `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对，每条先删除旧数据再写入新的
 
 #### 2.2.4 浏览器模式的 token 处理
 
@@ -337,11 +337,12 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 始终是更新模式，启动时清空旧数据，遍历所有 `N*(N-1)/2` 对组合重新生成。
 每 20 条（`SYNERGY_BATCH_SAVE_INTERVAL`）批量保存。
 
-### 2.6 ai_synergy_pair.py — 指定配对
+### 2.6 ai_synergy_pair.py — 指定配对（支持 2~8 武将）
 
-- 读入 2 个武将的 JSON 文件
-- 校验恰好 2 个
-- 先生成 → 成功后再删除旧数据（避免失败数据丢失）
+- 读取包含 2~8 个武将的 JSON 文件
+- 用 `itertools.combinations(pair_heroes, 2)` 遍历所有 C(N,2) 组合
+- 输出进度 `[i/total]` 与实际配对数同步
+- 每对采用：先生成 → 成功后再删除旧数据（避免失败数据丢失）
 - 立即保存
 
 ### 2.7 ai_synergy_single.py — 选定武将 x 全体
@@ -586,9 +587,9 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 636 | QMainWindow（顶层） |
-| hero_browser.py | 432 | QWidget（Tab 内嵌） |
-| recommendation_panel.py | ~740 | QWidget（Tab 内嵌） |
+| main_window.py | 697 | QMainWindow（顶层） |
+| hero_browser.py | 807 | QWidget（Tab 内嵌） |
+| recommendation_panel.py | ~892 | QWidget（Tab 内嵌） |
 | mumu_config_dialog.py | 574 | QDialog（模拟器配置） |
 | hero_select_dialog.py | 293 | QDialog（基类） |
 | settings_dialog.py | 268 | QDialog（API 配置） |
@@ -599,7 +600,7 @@ def apply_incremental_update(data_dir, update)
 | style.py | 247 | 样式表常量 |
 | fetch_dialog.py | 31 | QDialog（继承基类） |
 | guide_fetch_dialog.py | 29 | QDialog（继承基类） |
-| synergy_pair_dialog.py | 30 | QDialog（继承基类） |
+| synergy_pair_dialog.py | 49 | QDialog（继承基类，覆盖 _on_accept 允许 2~8 武将） |
 | synergy_single_dialog.py | 30 | QDialog（继承基类） |
 
 ### 5.2 主窗口信号拓扑
@@ -752,6 +753,15 @@ HeroBrowser (QWidget)
      └── Method: show_hero(hero_id)
 ```
 
+**Tab 栏编辑按钮**：
+Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
+- 武将信息 Tab 显示绿色的"修改"按钮和红色的"删除"按钮
+- 攻略指南 Tab 显示绿色的"修改"按钮和红色的"删除"按钮
+- 切换 Tab 时自动隐藏/显示对应的按钮组
+- 选中无攻略的武将时，攻略按钮组自动禁用
+- "修改"打开 `HeroEditDialog` / `GuideEditDialog` 进行编辑，"删除"弹出确认对话框
+- 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
+
 **Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
 
 ### 5.8 选将推荐面板（RecommendationPanel）
@@ -844,8 +854,8 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
  ├── GuideFetchDialog (guide_fetch_dialog.py, ~29行)
  │   SelectionMode=MULTI, ReturnFormat=HEROES_DICT
  │
- ├── SynergyPairDialog (synergy_pair_dialog.py, ~30行)
- │   SelectionMode=MULTI_LIMIT, max_selection=2
+ ├── SynergyPairDialog (synergy_pair_dialog.py, ~49行)
+ │   SelectionMode=MULTI_LIMIT, max_selection=8，覆盖 _on_accept 允许选择 2~8 个武将
  │
  └── SynergySingleDialog (synergy_single_dialog.py, ~30行)
      SelectionMode=SINGLE
