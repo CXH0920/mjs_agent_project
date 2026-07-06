@@ -249,6 +249,8 @@ class HeroCardWidget(QFrame):
 
         self._synergy_grid = QGridLayout()
         self._synergy_grid.setSpacing(2)
+        for c in range(4):
+            self._synergy_grid.setColumnStretch(c, 1)
         info_layout.addLayout(self._synergy_grid)
 
         # 分隔线
@@ -416,8 +418,8 @@ class HeroCardWidget(QFrame):
         self._synergy_labels.clear()
 
         for i, (name, rating) in enumerate(synergies):
-            row = i // 2
-            col = i % 2
+            row = i // 4
+            col = i % 4
             label = QLabel(f"· {name}  ({rating})")
             label.setStyleSheet("color: #555; font-size: 11px; padding: 1px 0;")
             self._synergy_grid.addWidget(label, row, col)
