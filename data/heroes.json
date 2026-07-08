@@ -4343,5 +4343,129 @@
     "mode_viability": {},
     "last_updated": "2026-06-26",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/aPsUY3vJjcjqJK5c98TpxqPI8VHMNVBZlCg122TB.png_200x282.png"
+  },
+  {
+    "id": 175,
+    "name": "陆机",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "华亭鹤唳",
+        "description": "每轮结束时，若你在本轮受到过伤害，你可以选择并添加1张你本局游戏打出过的战法牌到手牌，每种牌限1次，之后每当有其他角色打出与此牌相同名称的战法牌时，你可以随机削弱其1张牌。",
+        "settlement": "1.每种牌限1次指的是每种打出过的同名战法牌因此技能只能被选择1次。 2.选择:从至多3张可选牌中选择1张。"
+      },
+      {
+        "name": "陆才如海",
+        "description": "回合开始时/当一名其他角色打出本轮首次被打出的1种战法牌后，你可以将所有手牌当作本轮未被打出过的任意1张战法牌打出。",
+        "settlement": "1.其他角色连续打出多张首次被打出的战法牌后，此技能可以触发多次。 2.本轮首次被打出的战法牌指的是:本轮在这张牌被打出前，同名战法牌未被打出过的战法牌。 3.若将多张牌当作1张卜卦战法牌打出，则其中的1张牌会进入目标的卜卦区，其他牌会被弃置。"
+      },
+      {
+        "name": "缘情绮靡",
+        "description": "当有角色成为本轮首次被打出的1种战法牌的目标时，若你或打出此牌的角色不是此牌的目标，你可以令你或打出此牌的角色也成为此牌的目标。",
+        "settlement": "一次技能发动仅能指定你或打出此牌的角色之中的1名角色成为目标，但当你与打出此牌的角色均非此牌目标时，此技能可以发动两次哦~"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-07",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MMDd7oLsP0kKtYrBhM5cCgTT8h0cuZyKWoblKmFf.png_200x282.png"
+  },
+  {
+    "id": 174,
+    "name": "傅玄",
+    "title": "",
+    "faction": "西晋",
+    "position": "辅助",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "政在去私",
+        "description": "限定，将所有场上你选择的1种类型的牌放回牌堆顶。",
+        "settlement": "这个技能很简单..."
+      },
+      {
+        "name": "近朱者赤",
+        "description": "当一名其他角色在其回合内每累计打出3张战法牌时，你可以令一名与其距离为1的角色获得1张战法牌，然后若目标角色是你，你获得2点元气。",
+        "settlement": "1.其他角色累计打出战法牌的数量是跨回合记录的2.目标角色为你时，你可以获得1张战法牌以及2点元气。"
+      },
+      {
+        "name": "元气上清",
+        "description": "回合开始时，获得1点元气，并且之后每回合获得的元气+1。出牌阶段，你可以消耗2点元气，令一名角色添加1张你选择的类型的牌至其手牌。",
+        "settlement": "1.元气是一种属性，不会跟随技能转移而转移。 2.只要元气数量足够，此技能一个出牌阶段可以多次发动。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-07",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/mjYQdYn3LMGP5tfZpgz6BErjAedw53GWFIS1moEO.png_200x282.png"
+  },
+  {
+    "id": 173,
+    "name": "主父偃",
+    "title": "",
+    "faction": "西汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "筑城朔方",
+        "description": "当有牌被放入牌堆时，你随机将其中1张牌的复制放入“朔方”。每个回合限1次，当你即将受到伤害时，你可以随机销毁“朔方”中的1张牌，令此伤害-1，或者选择获得朔方中的1张牌。",
+        "settlement": "拥有多个此技能时，即便伤害已经被减免成0点了，也可以正常触发。"
+      },
+      {
+        "name": "徙豪茂陵",
+        "description": "出牌阶段限1次，令任意名有牌的角色依次将至少1张牌放回牌堆顶，本轮结束时，因此放回>1张牌的角色摸等量张牌。",
+        "settlement": "1.选中放牌的角色至少要放回1张。 2.选中的角色至少技能发动时按照座位号将牌放回牌堆顶，轮次结束时同样按照座位号进行重新摸牌。"
+      },
+      {
+        "name": "献策推恩",
+        "description": "每个回合限1次，当有角色回合外获得大于1张牌时，你可以令其将其中至少1张牌，交给你指定的另外一名其他角色。所有角色每累计获得其他角色4张牌时，你摸1张牌。",
+        "settlement": "1.其他角色获得初始手牌时也可触发此技能。 2.所有角色共同累计张数。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-07",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/VJPNtNR2d4aXsqfEHphCAvlvJU1VRtGQgzjj4r4i.png_200x282.png"
+  },
+  {
+    "id": 172,
+    "name": "郭解",
+    "title": "",
+    "faction": "西汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "为侠者众",
+        "description": "阵亡，接下来本局游戏每轮结束时，所有本轮对其他角色造成过伤害的角色失去1点体力。",
+        "settlement": "阵亡后技能不在场但效果依旧存在。"
+      },
+      {
+        "name": "权行州里",
+        "description": "每轮限1次，当有角色失去最后一张手牌时，你可以选择另外任意名有牌的其他角色，令这些角色可以将1张牌当作杀对其打出，若拒绝，则下个摸牌阶段摸牌数-1。在此过程中当有一名角色阵亡时，你与伤害来源各失去1点体力。",
+        "settlement": "“此过程”指的是这些角色出杀未结束的全过程，在这个过程中，无论角色因何原因阵亡，均会与伤害来源各失去1点体力。"
+      },
+      {
+        "name": "江湖道敕",
+        "description": "当有角色即将受到伤害时，你可以交给伤害来源1张牌并令此伤害-1，接下来本局游戏伤害来源再次对同一角色造成伤害时，你令其随机弃置1张牌。",
+        "settlement": "1.若伤害无来源，则不会发动此技能。 2.此技能后段效果可叠加。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-07",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/fdw3O4U775WojTgD2ZYo29LjkZuykvxSVGAKnHjb.png_200x282.png"
   }
 ]
