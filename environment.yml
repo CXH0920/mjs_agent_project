@@ -10,14 +10,16 @@ dependencies:
   - pip:
     - pydantic>=2.0
     - httpx>=0.28
-    - beautifulsoup4>=4.14
     - opencv-python>=4.13
-    - opencv-python-headless>=4.13
-    - easyocr>=1.7
-    - mss>=10.2
     - PySide6>=6.7
     - pytest>=9.0
     - pillow>=12.0
     - numpy>=2.0
     - paddlepaddle>=2.5
     - paddleocr>=2.7
+    - playwright>=1.60
+    - mistune>=3.1
+    # 汉字特征库（OCR 矫正用：四角号码、仓颉码、部首、笔画数、拼音）
+    - unihan_etl>=0.13
+    - cnradical>=0.1
+    - pypinyin>=0.51
