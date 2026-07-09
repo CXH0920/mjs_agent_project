@@ -30,6 +30,8 @@ class HeroFetchService(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._process: QProcess | None = None
+        self._log_stdout = logging.getLogger("subprocess.stdout")
+        self._log_stderr = logging.getLogger("subprocess.stderr")
 
     # ---------------------------------------------------------------
     # 公共接口
@@ -81,9 +83,30 @@ class HeroFetchService(QObject):
     def _start_process(self, args: list[str]) -> None:
         """启动子进程"""
         self._process = QProcess(self)
+        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
+        self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
+        self._process.readyReadStandardError.connect(self._on_stderr_ready)
         self._process.finished.connect(self._on_finished)
         self._process.errorOccurred.connect(self._on_error)
         self._process.start(sys.executable, args)
+
+    def _on_stdout_ready(self) -> None:
+        """读取子进程 stdout 并记录到 subprocess.stdout 日志"""
+        if not self._process:
+            return
+        data = self._process.readAllStandardOutput()
+        text = bytes(data).decode("utf-8", errors="replace")
+        if text.strip():
+            self._log_stdout.info("%s", text.strip())
+
+    def _on_stderr_ready(self) -> None:
+        """读取子进程 stderr 并记录到 subprocess.stderr 日志"""
+        if not self._process:
+            return
+        data = self._process.readAllStandardError()
+        text = bytes(data).decode("utf-8", errors="replace")
+        if text.strip():
+            self._log_stderr.warning("%s", text.strip())
 
     def _on_finished(self, exit_code: int) -> None:
         """子进程完成回调"""

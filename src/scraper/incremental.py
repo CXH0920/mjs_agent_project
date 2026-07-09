@@ -179,7 +179,7 @@ def main() -> None:
 
     log_level = "DEBUG" if args.verbose else "WARNING"
     from src.config.logging_config import setup_logging
-    setup_logging(log_level=log_level, log_to_file=False)
+    setup_logging(log_level=log_level, log_to_file=True)
 
     if not any([args.incremental, args.hero, args.hero_id]):
         parser.error("请指定 --incremental 和/或 --hero / --hero-id")
