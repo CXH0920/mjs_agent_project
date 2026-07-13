@@ -55,7 +55,7 @@ SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
 
 DEFAULT_BROWSER_CONFIG: dict[str, Any] = {
     "channel": "msedge",
-    "user_data_dir": str(Path.home() / "AppData/Local/Microsoft/Edge/User Data"),
+    "user_data_dir": str(PROJECT_ROOT / "data" / "edge_profile"),
     "headless": False,
     "slow_mo": 50,
     "args": ["--disable-blink-features=AutomationControlled"],
@@ -66,7 +66,7 @@ DEFAULT_CHAT_CONFIG: dict[str, Any] = {
     "input_selector": "textarea[placeholder*='DeepSeek']",
     "assistant_selector": "div.ds-assistant-message-main-content",
     "content_class": "",
-    "login_timeout": 15000,
+    "login_timeout": 120000,
     "response_timeout": 180000,
 }
 
@@ -316,6 +316,8 @@ class PlaywrightGenerator:
             logger.debug(traceback.format_exc())
             if "user data" in error_msg or "locked" in error_msg:
                 logger.error("→ Edge 用户数据目录被锁定。请完全关闭所有 Edge 窗口后重试。")
+            elif "non-default" in error_msg or "user-data-dir" in error_msg:
+                logger.error("→ Edge 要求使用非默认用户数据目录。请勿将 user_data_dir 指向 Edge 默认的 User Data 路径。")
             elif "channel" in error_msg or "executable" in error_msg:
                 logger.error("→ 未找到 Edge 浏览器。请确认已安装 Microsoft Edge。")
             self.close()
