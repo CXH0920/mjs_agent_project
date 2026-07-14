@@ -7,16 +7,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Generic, Optional, TypeVar
+
+from pydantic import BaseModel
 
 from src.data.models import IncrementalUpdate
 
-# 重新导出三个 Manager 方便调用方统一引入
-from src.data.hero_manager import HeroManager
-from src.data.synergy_manager import SynergyManager
-from src.data.guide_manager import GuideManager
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
+    from src.data.guide_manager import GuideManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +30,93 @@ DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 
 __all__ = [
-    "HeroManager",
-    "SynergyManager",
-    "GuideManager",
+    "DataManager",
     "DataFacade",
     "apply_incremental_update",
     "DEFAULT_HEROES_FILE",
     "DEFAULT_SYNERGIES_FILE",
     "DEFAULT_GUIDES_FILE",
 ]
+
+V_co = TypeVar("V_co", bound=BaseModel)
+
+
+class DataManager(Generic[V_co]):
+    """泛型数据管理器基类
+
+    提供 JSON 文件的加载/保存与基础 CRUD 操作。
+    子类通过 _parse_items() 控制数据解析逻辑，
+    并通过 typed 方法（add_hero / get_guide / …）暴露业务接口。
+    """
+
+    def __init__(self, file_path: str | Path, model_class: type[V_co]):
+        self.file_path = Path(file_path)
+        self.model_class = model_class
+        self._items: dict = {}
+
+    # ============================================================
+    # 加载 / 保存
+    # ============================================================
+
+    def load(self) -> None:
+        """从 JSON 文件加载数据"""
+        if not self.file_path.exists():
+            logger.warning("文件不存在: %s", self.file_path)
+            self._items = {}
+            return
+        with self.file_path.open("r", encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+            except (json.JSONDecodeError, EOFError):
+                logger.warning("文件解析失败: %s", self.file_path)
+                self._items = {}
+                return
+            except Exception:
+                import traceback
+                logger.warning("文件读取异常 %s:\n%s", self.file_path, traceback.format_exc())
+                self._items = {}
+                return
+        self._items = self._parse_items(data)
+
+    def _parse_items(self, data: list) -> dict:
+        """子类重写：从 JSON 列表构建 _items dict"""
+        return {}
+
+    def save(self) -> None:
+        """将所有数据原子写入 JSON 文件"""
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        data = [v.model_dump(mode="json") for v in self._items.values()]
+        tmp_path = self.file_path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(self.file_path)
+        logger.debug("保存 %d 条到 %s", len(self._items), self.file_path)
+
+    # ============================================================
+    # 基础 CRUD
+    # ============================================================
+
+    def get(self, key) -> V_co | None:
+        """按 key 查询单条"""
+        return self._items.get(key)
+
+    def list_all(self) -> list[V_co]:
+        """获取全部"""
+        return list(self._items.values())
+
+    def add(self, item: V_co, key) -> None:
+        """新增，已存在则抛出 ValueError"""
+        if key in self._items:
+            raise ValueError(f"已存在: {key}")
+        self._items[key] = item
+
+    def update(self, item: V_co, key) -> None:
+        """更新或新增"""
+        self._items[key] = item
+
+    def delete(self, key) -> None:
+        """删除，不存在则静默忽略"""
+        self._items.pop(key, None)
 
 
 class DataFacade:
@@ -50,6 +131,10 @@ class DataFacade:
         synergies_file: str | Path = DEFAULT_SYNERGIES_FILE,
         guides_file: str | Path = DEFAULT_GUIDES_FILE,
     ):
+        # 懒导入避免循环依赖：manager.py 被 hero_manager.py 等文件依赖
+        from src.data.hero_manager import HeroManager
+        from src.data.synergy_manager import SynergyManager
+        from src.data.guide_manager import GuideManager
         self.heroes = HeroManager(heroes_file)
         self.synergies = SynergyManager(synergies_file)
         self.guides = GuideManager(guides_file)
@@ -85,6 +170,7 @@ def apply_incremental_update(
 
     协调三个 Manager 执行批量数据更新操作。
     """
+    import json
     stats = {
         "added_heroes": 0,
         "modified_heroes": 0,

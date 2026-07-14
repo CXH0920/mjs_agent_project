@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.data.manager import HeroManager
+from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.data.manager import apply_incremental_update, HeroManager, SynergyManager, GuideManager
+from src.data import apply_incremental_update, HeroManager, SynergyManager, GuideManager
 from src.data.models import Hero, SynergyScore, HeroGuide, IncrementalUpdate
 
 

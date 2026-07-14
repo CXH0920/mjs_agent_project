@@ -226,7 +226,7 @@ def main():
     had_failure = False
 
     if args.guide:
-        from src.scraper.ai_guide import run_guide_generation
+        from src.scraper.ai_generation import run_guide_generation
         pt, ct = run_guide_generation(
             heroes=heroes, generator=generator, guide_path=guide_path,
             existing_guides=existing_guides, api_config=api_config,
@@ -236,7 +236,7 @@ def main():
         total_completion_tokens += ct
 
     if args.synergy:
-        from src.scraper.ai_synergy import run_synergy_generation
+        from src.scraper.ai_generation import run_synergy_generation
         pt, ct = run_synergy_generation(
             heroes=heroes, generator=generator, synergy_path=synergy_path,
             existing_synergy_dict=existing_synergy_dict,
@@ -247,7 +247,7 @@ def main():
         total_completion_tokens += ct
 
     if args.synergy_pair:
-        from src.scraper.ai_synergy_pair import run_synergy_pair_generation
+        from src.scraper.ai_generation import run_synergy_pair_generation
         pt, ct = run_synergy_pair_generation(
             pair_file=args.synergy_pair, heroes=heroes, generator=generator,
             synergy_path=synergy_path,
@@ -258,7 +258,7 @@ def main():
         total_completion_tokens += ct
 
     if args.synergy_single:
-        from src.scraper.ai_synergy_single import run_synergy_single_generation
+        from src.scraper.ai_generation import run_synergy_single_generation
         pt, ct = run_synergy_single_generation(
             single_file=args.synergy_single, heroes=heroes, generator=generator,
             synergy_path=synergy_path,

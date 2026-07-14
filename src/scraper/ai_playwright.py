@@ -460,7 +460,7 @@ class PlaywrightGenerator:
             try:
                 msgs = page.locator(assistant_selector)
                 current = msgs.nth(msgs.count() - 1)
-                text = current.inner_text()
+                text = current.text_content()
                 text_len = len(text)
 
                 if text_len == last_len and text_len > 0:
@@ -501,10 +501,10 @@ class PlaywrightGenerator:
             last_msg = msgs.nth(count - 1)
             content_class = cfg.get("content_class", "")
             if content_class:
-                reply = last_msg.locator(content_class).inner_text()
+                reply = last_msg.locator(content_class).text_content()
                 logger.debug("[提取] 使用内容选择器: %s", content_class)
             else:
-                reply = last_msg.inner_text()
+                reply = last_msg.text_content()
                 logger.debug("[提取] 直接取元素文本")
 
             logger.info("[提取] 成功（%d 字符）", len(reply))

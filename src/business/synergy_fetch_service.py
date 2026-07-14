@@ -15,35 +15,31 @@ import sys
 import tempfile
 import traceback
 
-from PySide6.QtCore import QObject, Signal, QProcess
+from PySide6.QtCore import QObject, Signal
 
-from src.business.fetch_utils import (
-    cancel_process,
-    get_qprocess_error_name,
-    is_process_busy,
-    log_process_error,
-)
+from src.business.base_fetch_service import BaseFetchService
 
 logger = logging.getLogger(__name__)
 
 
-class SynergyFetchService(QObject):
+class SynergyFetchService(BaseFetchService):
     """相性获取业务服务"""
 
-    status_changed = Signal(str)
     progress_output = Signal(str)        # 原始 stdout 行
     progress_value = Signal(int, int)    # (current, total) 供进度条使用
     fetch_completed = Signal(bool, str)
-    error_occurred = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._process: QProcess | None = None
-        self._context = None
-        self._log_stdout = logging.getLogger("subprocess.stdout")
-        self._log_stderr = logging.getLogger("subprocess.stderr")
-        self._stdout_buffer = bytearray()
-        self._stderr_buffer = bytearray()
+        self._failed_items: list[str] = []
+
+    @property
+    def _service_name(self) -> str:
+        return "相性计算"
+
+    # ---------------------------------------------------------------
+    # 公共接口
+    # ---------------------------------------------------------------
 
     def fetch_pair(self, heroes: list[dict], backend: str = "api") -> None:
         """指定获取：传入 2 个武将，写入临时文件后调用 --synergy-pair"""
@@ -77,48 +73,41 @@ class SynergyFetchService(QObject):
         logger.info("启动子进程: python %s", " ".join(args))
         self._start_process(args)
 
-    def cancel(self) -> None:
-        cancel_process(self._process)
-        self.status_changed.emit("相性计算已取消")
+    # ---------------------------------------------------------------
+    # 钩子
+    # ---------------------------------------------------------------
 
-    def _is_busy(self) -> bool:
-        return is_process_busy(self._process, "相性获取")
-
-    def _start_process(self, args: list[str]) -> None:
-        self._process = QProcess(self)
-        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
-        self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
-        self._process.readyReadStandardError.connect(self._on_stderr_ready)
-        self._process.finished.connect(self._on_finished)
-        self._process.errorOccurred.connect(self._on_error)
-        self._process.start(sys.executable, args)
-
-    def _on_stdout_ready(self) -> None:
-        if not self._process:
+    def _on_stdout_line(self, line: str) -> None:
+        """解析 [i/N] 进度和 RESULT 行"""
+        if not line:
             return
-        data = self._process.readAllStandardOutput()
-        self._stdout_buffer.extend(data)
-        text = bytes(data).decode("utf-8", errors="replace")
-        if text.strip():
-            self._log_stdout.info("%s", text.strip())
-            self.progress_output.emit(text)
 
-            # 解析进度 [i/N] 用于进度条
-            for line in text.split("\n"):
-                m = re.search(r"\[(\d+)/(\d+)\]", line)
-                if m:
-                    self.progress_value.emit(int(m.group(1)), int(m.group(2)))
-
-    def _on_stderr_ready(self) -> None:
-        if not self._process:
+        # 捕获 RESULT: FAIL=<name> 行
+        if line.startswith("RESULT:"):
+            parts = line.split(":", 1)
+            if len(parts) == 2 and parts[1].strip().startswith("FAIL="):
+                failed_name = parts[1].strip()[5:]
+                self._failed_items.append(failed_name)
             return
-        data = self._process.readAllStandardError()
-        self._stderr_buffer.extend(data)
-        text = bytes(data).decode("utf-8", errors="replace")
-        if text.strip():
-            self._log_stderr.warning("%s", text.strip())
 
-    def _on_finished(self, exit_code: int) -> None:
+        self.progress_output.emit(line)
+        m = re.search(r"\[(\d+)/(\d+)\]", line)
+        if m:
+            self.progress_value.emit(int(m.group(1)), int(m.group(2)))
+
+    def _on_process_finished(self, exit_code: int) -> None:
+        """进程结束时，基于失败列表修正 success 判断"""
+        has_failure = len(self._failed_items) > 0
+        if has_failure:
+            detail = "部分生成失败：" + "、".join(self._failed_items)
+            logger.warning("相性计算存在失败项: %s", detail)
+        else:
+            detail = f"进程退出码: {exit_code}"
+        self.fetch_completed.emit(not has_failure, detail)
+        self._failed_items.clear()
+
+    def _cleanup_context(self) -> None:
+        """清理临时文件"""
         tmp_path = self._context.get("tmp_path", "") if self._context else ""
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -126,42 +115,3 @@ class SynergyFetchService(QObject):
                 logger.debug("已清理临时文件: %s", tmp_path)
             except OSError as e:
                 logger.warning("清理临时文件失败 %s: %s", tmp_path, e)
-
-        # 从缓冲中读取子进程完整输出
-        full_stdout = bytes(self._stdout_buffer).decode("utf-8", errors="replace")
-        full_stderr = bytes(self._stderr_buffer).decode("utf-8", errors="replace")
-        self._stdout_buffer.clear()
-        self._stderr_buffer.clear()
-
-        msg = f"进程退出码: {exit_code}"
-
-        if exit_code == 0:
-            logger.info("相性计算子进程成功，%s", msg)
-            self.status_changed.emit("相性计算完成")
-            self.fetch_completed.emit(True, msg)
-        else:
-            logger.warning("相性计算进程退出码 %d", exit_code)
-            if full_stdout.strip():
-                logger.warning("[子进程 stdout 完整输出]\n%s", full_stdout.strip())
-            if full_stderr.strip():
-                logger.warning("[子进程 stderr 完整输出]\n%s", full_stderr.strip())
-            self.status_changed.emit("相性计算失败")
-            self.fetch_completed.emit(False, msg)
-        self._context = None
-
-    def _on_error(self, error: QProcess.ProcessError) -> None:
-        tmp_path = self._context.get("tmp_path", "") if self._context else ""
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-        self._stdout_buffer.clear()
-        self._stderr_buffer.clear()
-
-        error_name = get_qprocess_error_name(error)
-        full_msg = log_process_error(error_name, self._process)
-
-        self.status_changed.emit("相性计算出错")
-        self.error_occurred.emit(full_msg)
-        self._context = None

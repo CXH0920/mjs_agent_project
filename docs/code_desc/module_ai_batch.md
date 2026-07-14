@@ -24,10 +24,7 @@ src/scraper/
 ├── ai_batch.py              # CLI 入口（参数解析 → 配置加载 → 委托子模块）
 ├── ai_generator.py          # API 调用核心（限速/重试/JSON 提取/Pydantic 校验）
 ├── ai_playwright.py         # 浏览器自动化生成器（Playwright + Edge）
-├── ai_guide.py              # 逐个武将生成攻略（循环编排）
-├── ai_synergy.py            # 全量相性生成（所有武将两两配对）
-├── ai_synergy_pair.py       # 指定武将两两配对（支持 2~8 武将 × itertools.combinations）
-├── ai_synergy_single.py     # 选定武将 vs 全体生成
+├── ai_generation.py         # 生成编排函数（run_guide_generation / run_synergy_generation / run_synergy_pair_generation / run_synergy_single_generation）
 └── ai_utils.py              # 共享工具（estimate_cost / load_heroes / _save_json）
 ```
 
@@ -36,10 +33,11 @@ src/scraper/
 ```
 ai_batch.py (CLI 入口)
  ├── 选择生成器: AIBatchGenerator (api) / PlaywrightGenerator (browser)
- ├── ai_guide.py      → run_guide_generation()
- ├── ai_synergy.py    → run_synergy_generation()
- ├── ai_synergy_pair.py → run_synergy_pair_generation()
- └── ai_synergy_single.py → run_synergy_single_generation()
+ └── ai_generation.py → 根据参数分发到:
+      ├── run_guide_generation()
+      ├── run_synergy_generation()
+      ├── run_synergy_pair_generation()
+      └── run_synergy_single_generation()
 ```
 
 ---
@@ -96,7 +94,7 @@ AI 的回复格式高度不可控，`_extract_json()` 按优先级依次尝试 4
 
 ### 3.4 相性配对（多武将组合）
 
-`ai_synergy_pair.py` 支持选择 2~8 个武将，用 `itertools.combinations` 遍历所有 C(N,2) 组合：
+`ai_generation.py` 中的 `run_synergy_pair_generation()` 支持选择 2~8 个武将，用 `itertools.combinations` 遍历所有 C(N,2) 组合：
 
 ```python
 for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):

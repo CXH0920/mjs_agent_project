@@ -29,16 +29,16 @@ ai_batch.py:main()                                            [CLI 入口]
   -> 模式分发:
      [args.guide]
        -> _load_existing_guides(guide_path)                   [读取已有攻略]
-       -> ai_guide.run_guide_generation(heroes, gen, path, existing, api_cfg, update)
+       -> ai_generation.run_guide_generation(heroes, gen, path, existing, api_cfg, update)
      [args.synergy]
        -> _load_existing_synergies(synergy_path)              [读取已有相性]
-       -> ai_synergy.run_synergy_generation(heroes, gen, path, ...)
+       -> ai_generation.run_synergy_generation(heroes, gen, path, ...)
      [args.synergy_pair]
        -> json.load(pair_file)                                [读取指定配对 JSON]
-       -> ai_synergy_pair.run_synergy_pair_generation(pair_file, heroes, gen, ...)
+       -> ai_generation.run_synergy_pair_generation(pair_file, heroes, gen, ...)
      [args.synergy_single]
        -> json.load(single_file)                              [读取选定武将 JSON]
-       -> ai_synergy_single.run_synergy_single_generation(single_file, heroes, gen, ...)
+       -> ai_generation.run_synergy_single_generation(single_file, heroes, gen, ...)
 
   -> _print_token_summary(prompt_tokens, completion_tokens)   [汇总 Token 用量]
   -> generator.close()                                        [释放资源]
@@ -61,7 +61,7 @@ ai_batch.py:main()                                            [CLI 入口]
 ### 2.1 全量/增量攻略生成
 
 ```
-ai_guide.run_guide_generation(heroes, generator, guide_path, existing_guides, api_cfg, update)
+ai_generation.run_guide_generation(heroes, generator, guide_path, existing_guides, api_cfg, update)
   -> [update=True] 删除旧数据后重新生成全部
      [update=False] 跳过已有 guide_id（断点续传）
   -> [遍历每个 hero]
@@ -92,8 +92,8 @@ ai_guide.run_guide_generation(heroes, generator, guide_path, existing_guides, ap
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `run_guide_generation()` | `ai_guide.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
-| `AIBatchGenerator.generate_guide()` | `ai_generator.py` | `ai_guide.py` | `load_prompt()`, `build_guide_prompt()`, `_call_api()` |
+| `run_guide_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
+| `AIBatchGenerator.generate_guide()` | `ai_generator.py` | `ai_generation.py` | `load_prompt()`, `build_guide_prompt()`, `_call_api()` |
 | `AIBatchGenerator._call_api()` | `ai_generator.py` | `generate_guide()`, `generate_synergy()` | `httpx.Client.post()` |
 | `extract_json()` | `ai_utils.py` | `generate_guide()`, `generate_synergy()` | `_try_extract()` ×4 |
 | `_try_extract()` | `ai_utils.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
@@ -134,7 +134,7 @@ PlaywrightGenerator.generate_guide(hero)
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_guide.py` | `load_prompt()`, `build_guide_prompt()`, `_send_and_wait()` |
+| `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `load_prompt()`, `build_guide_prompt()`, `_send_and_wait()` |
 | `PlaywrightGenerator._ensure_browser()` | `ai_playwright.py` | `_send_and_wait()` | `sync_playwright().start()`, `wait_for_login()` |
 | `PlaywrightGenerator._wait_for_login()` | `ai_playwright.py` | `_ensure_browser()` | `page.wait_for_selector()` |
 | `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide()`, `generate_synergy()` | `page.fill()`, `page.keyboard.press()`, 轮询检测 |
@@ -148,7 +148,7 @@ PlaywrightGenerator.generate_guide(hero)
 ### 3.1 全量相性生成
 
 ```
-ai_synergy.run_synergy_generation(heroes, generator, synergy_path, existing, keys, threshold, api_cfg)
+ai_generation.run_synergy_generation(heroes, generator, synergy_path, existing, keys, threshold, api_cfg)
   -> [清空旧数据]
   -> heroes_len = len(heroes)
   -> total_pairs = heroes_len * (heroes_len - 1) // 2
@@ -170,14 +170,14 @@ ai_synergy.run_synergy_generation(heroes, generator, synergy_path, existing, key
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `run_synergy_generation()` | `ai_synergy.py` | `ai_batch.main()` | `generator.generate_synergy()`, `itertools.combinations()`, `_save_json()` |
-| `AIBatchGenerator.generate_synergy()` | `ai_generator.py` | `ai_synergy.py` | `load_prompt()`, `build_synergy_prompt()`, `_call_api()` |
+| `run_synergy_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_synergy()`, `itertools.combinations()`, `_save_json()` |
+| `AIBatchGenerator.generate_synergy()` | `ai_generator.py` | `ai_generation.py` | `load_prompt()`, `build_synergy_prompt()`, `_call_api()` |
 | `validate_synergy()` | `ai_utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
 
 ### 3.2 指定配对相性生成
 
 ```
-ai_synergy_pair.run_synergy_pair_generation(pair_file, heroes, generator, synergy_path, existing, keys)
+ai_generation.run_synergy_pair_generation(pair_file, heroes, generator, synergy_path, existing, keys)
   -> json.load(pair_file)  [读取 2-8 个武将的 JSON]
   -> pair_heroes = [h for h in heroes if h["id"] in pair_ids]
   -> for idx, (ha, hb) in enumerate(combinations(pair_heroes, 2), start=1):
@@ -188,8 +188,8 @@ ai_synergy_pair.run_synergy_pair_generation(pair_file, heroes, generator, synerg
 
 | 函数 | 所在文件 | 调用方 | 说明 |
 |------|----------|--------|------|
-| `run_synergy_pair_generation()` | `ai_synergy_pair.py` | `ai_batch.main()` | `combinations()` 遍历 + 逐对保存 |
-| `run_synergy_single_generation()` | `ai_synergy_single.py` | `ai_batch.main()` | 选定武将 vs 全体，跳过已有配对 |
+| `run_synergy_pair_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()` 遍历 + 逐对保存 |
+| `run_synergy_single_generation()` | `ai_generation.py` | `ai_batch.main()` | 选定武将 vs 全体，跳过已有配对 |
 
 ---
 
@@ -239,17 +239,17 @@ src.ui.main_window
 |------|------|----------------|------------------|
 | `main()` | `ai_batch.py` | QProcess 入口 | `load_heroes()`, `run_*_generation()` |
 | `AIBatchGenerator.__init__()` | `ai_generator.py` | `ai_batch.main()` | `httpx.Client()` |
-| `AIBatchGenerator.generate_guide()` | `ai_generator.py` | `ai_guide.py` | `_call_api()`, `extract_json()`, `validate_guide()` |
-| `AIBatchGenerator.generate_synergy()` | `ai_generator.py` | `ai_synergy.py` | `_call_api()`, `extract_json()`, `validate_synergy()` |
+| `AIBatchGenerator.generate_guide()` | `ai_generator.py` | `ai_generation.py` | `_call_api()`, `extract_json()`, `validate_guide()` |
+| `AIBatchGenerator.generate_synergy()` | `ai_generator.py` | `ai_generation.py` | `_call_api()`, `extract_json()`, `validate_synergy()` |
 | `AIBatchGenerator._call_api()` | `ai_generator.py` | `generate_guide/synergy` | `time.sleep()`, `httpx.Client.post()` |
-| `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_guide.py` | `_send_and_wait()`, `extract_json()` |
-| `PlaywrightGenerator.generate_synergy()` | `ai_playwright.py` | `ai_synergy.py` | `_send_and_wait()`, `extract_json()` |
+| `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
+| `PlaywrightGenerator.generate_synergy()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
 | `PlaywrightGenerator._ensure_browser()` | `ai_playwright.py` | `_send_and_wait()` | `Playwright.start()` |
 | `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide/synergy` | `page.fill()`, 轮询检测 |
-| `run_guide_generation()` | `ai_guide.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
-| `run_synergy_generation()` | `ai_synergy.py` | `ai_batch.main()` | `combinations()`, `generator.generate_synergy()` |
-| `run_synergy_pair_generation()` | `ai_synergy_pair.py` | `ai_batch.main()` | `combinations()`, 逐对保存 |
-| `run_synergy_single_generation()` | `ai_synergy_single.py` | `ai_batch.main()` | 跳过已有项 + generate + 保存 |
+| `run_guide_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
+| `run_synergy_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()`, `generator.generate_synergy()` |
+| `run_synergy_pair_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()`, 逐对保存 |
+| `run_synergy_single_generation()` | `ai_generation.py` | `ai_batch.main()` | 跳过已有项 + generate + 保存 |
 | `extract_json(text)` | `ai_utils.py` | `generate_guide/synergy` | `_try_extract()` ×4 |
 | `_try_extract(text, strategy)` | `ai_utils.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
 | `_repair_strings(s)` | `ai_utils.py` | `_try_extract()` | 状态机跟踪 in_string |
