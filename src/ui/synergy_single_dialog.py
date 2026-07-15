@@ -10,7 +10,7 @@ from src.ui.hero_select_dialog import (
     BaseHeroSelectDialog,
     SelectionMode,
 )
-from src.data.manager import HeroManager
+from src.data.hero_manager import HeroManager
 
 
 class SynergySingleDialog(BaseHeroSelectDialog):

@@ -17,6 +17,9 @@ PLANS.md
 # Environment files
 config.env
 
+# Edge browser profile (Playwright browser mode)
+data/edge_profile/
+
 # OS
 .DS_Store
 Thumbs.db

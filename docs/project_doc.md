@@ -208,11 +208,9 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 ai_batch.py (CLI 入口, 282行)
  ├── 创建 AIBatchGenerator 或 PlaywrightGenerator
  ├── 委托给各 run_* 函数
- │   ├── ai_guide.py           → run_guide_generation()
- │   ├── ai_synergy.py         → run_synergy_generation()
- │   ├── ai_synergy_pair.py    → run_synergy_pair_generation()
- │   └── ai_synergy_single.py  → run_synergy_single_generation()
- └── _save_json() 写入结果
+ └── ai_generation.py → run_guide_generation() / run_synergy_generation()
+                         / run_synergy_pair_generation() / run_synergy_single_generation()
+                         _save_json() 写入结果
 ```
 
 ### 2.2 ai_batch.py 入口流程
@@ -317,7 +315,7 @@ return (validated_dict, usage_dict)
 - 兼容旧字段：`combat_synergy` → `combo_ceiling`
 - 使用 `_validate_synergy` 校验
 
-### 2.4 ai_guide.py — 攻略生成循环
+### 2.4 ai_generation.py — 四种生成循环
 
 ```python
 def run_guide_generation(heroes, generator, guide_path, existing_guides, api_config, update_mode=False)
@@ -332,12 +330,12 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 6. 每 10 条（`GUIDE_BATCH_SAVE_INTERVAL`）批量保存
 7. 结束后最终保存
 
-### 2.5 ai_synergy.py — 全量相性生成
+### 2.5 run_synergy_generation() — 全量相性生成
 
 始终是更新模式，启动时清空旧数据，遍历所有 `N*(N-1)/2` 对组合重新生成。
 每 20 条（`SYNERGY_BATCH_SAVE_INTERVAL`）批量保存。
 
-### 2.6 ai_synergy_pair.py — 指定配对（支持 2~8 武将）
+### 2.6 run_synergy_pair_generation() — 指定配对（支持 2~8 武将）
 
 - 读取包含 2~8 个武将的 JSON 文件
 - 用 `itertools.combinations(pair_heroes, 2)` 遍历所有 C(N,2) 组合
@@ -345,7 +343,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 - 每对采用：先生成 → 成功后再删除旧数据（避免失败数据丢失）
 - 立即保存
 
-### 2.7 ai_synergy_single.py — 选定武将 x 全体
+### 2.7 run_synergy_single_generation() — 选定武将 x 全体
 
 支持断点续传：已有的相性对跳过不重复生成，新增完成后统一保存。
 
@@ -357,11 +355,14 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 
 | 类 | 文件 | 行数 | 父类 | 信号数量 |
 |--------|------|------|------|----------|
-| HeroFetchService | `fetch_service.py` | ~102 | QObject | 3 |
-| GuideFetchService | `guide_fetch_service.py` | ~179 | QObject | 6 |
-| SynergyFetchService | `synergy_fetch_service.py` | ~104 | QObject | 3 |
+| BaseFetchService | `base_fetch_service.py` | ~70 | QObject | 3 |
+| HeroFetchService | `fetch_service.py` | ~102 | BaseFetchService | 3 |
+| GuideFetchService | `guide_fetch_service.py` | ~179 | BaseFetchService | 6 |
+| SynergyFetchService | `synergy_fetch_service.py` | ~104 | BaseFetchService | 3 |
 | CaptureService | `capture_service.py` | ~190 | QObject | 3 |
 | OcrService | `ocr_service.py` | ~127 | QObject | 3 |
+
+> `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
 ### 3.2 HeroFetchService
 
@@ -500,17 +501,33 @@ class OcrService(QObject):
 
 ## 四、数据管理层细节
 
-### 4.1 文件与数据量
+### 4.1 DataManager 泛型基类
+
+`DataManager[V_co]`（位于 `manager.py`）定义了所有 Manager 共用的通用操作：
+
+| 方法 | 参数 | 返回 | 说明 |
+|------|------|------|------|
+| `load()` | — | None | 从 JSON 文件全量读入内存 |
+| `save()` | — | None | 原子写入 JSON（tmp → rename） |
+| `get(key)` | 泛型 | V_co \| None | 抽象方法：键查询 |
+| `list_all()` | — | list[V_co] | 全部数据 |
+| `add(item)` | V_co | None | 新增（重复抛 ValueError） |
+| `update(item)` | V_co | None | 覆盖式 upsert |
+| `delete(key)` | 泛型 | None | 删除（不存在静默） |
+
+三个子类 Manager 继承 `DataManager`，仅需实现 `get()` 抽象方法，以及各自的领域查询方法。
+
+### 4.2 文件与数据量
 
 | 数据文件 | 管理类 | 数据量 |
 |----------|--------|--------|
-| `data/heroes.json` | HeroManager | 155 武将 |
-| `data/synergies.json` | SynergyManager | 若干相性对 |
-| `data/guides.json` | GuideManager | ~42 份攻略 |
+| `data/heroes.json` | HeroManager(DataManager[Hero]) | 155 武将 |
+| `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 若干相性对 |
+| `data/guides.json` | GuideManager(DataManager[HeroGuide]) | ~42 份攻略 |
 | `data/cards.json` | — | 基础卡牌 |
 | `data/faction_colors.json` | —（直接读取） | 14 个势力配色 |
 
-### 4.2 HeroManager 方法清单
+### 4.3 HeroManager 方法清单
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
@@ -524,7 +541,7 @@ class OcrService(QObject):
 | `list_factions()` | — | list[str] | 所有势力名称 |
 | `list_heroes_by_faction(faction)` | str | list[Hero] | 势力筛选 |
 
-### 4.3 SynergyManager 方法清单
+### 4.4 SynergyManager 方法清单
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
@@ -542,7 +559,7 @@ def _make_key(self, a_id: int, b_id: int) -> tuple[int, int]:
 ```
 `(A=114, B=115)` 和 `(A=115, B=114)` 均映射到 `(114, 115)`。
 
-### 4.4 GuideManager 方法清单
+### 4.5 GuideManager 方法清单
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
@@ -552,7 +569,7 @@ def _make_key(self, a_id: int, b_id: int) -> tuple[int, int]:
 | `delete_guide(hero_id)` | int | None | 不存在静默 |
 | `list_guides()` | — | list[HeroGuide] | 全部 |
 
-### 4.5 DataFacade 门面
+### 4.6 DataFacade 门面
 
 ```python
 class DataFacade:
@@ -565,7 +582,7 @@ class DataFacade:
     def get_stats(self) → dict     # 返回 {heroes: N, synergies: N, guides: N}
 ```
 
-### 4.6 增量更新
+### 4.7 增量更新
 
 ```python
 def apply_incremental_update(data_dir, update)
@@ -726,11 +743,16 @@ def _on_accept(self):
 - 错误标签（红色，隐藏）
 - 关闭按钮（执行中禁用，完成时启用）
 
-**进度更新正则**：
+**进度更新正则**（OK/FAIL 分开匹配）：
 ```python
-m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+(?:OK|FAIL)", text)
+# OK 匹配 — 更新进度条
+m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
+# FAIL 匹配 — 更新状态文字但不推进进度条
+m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
 ```
-匹配格式 `"[1/3] 诸葛亮 OK"`，仅在成功/失败后更新进度条，不提前跳进度。
+匹配格式 `"[1/3] 诸葛亮 OK"` 时更新进度条；`"[2/3] 司马懿 FAIL"` 时仅更新状态文字为"生成失败"，不推进进度条位置。
+
+> 失败详情来自子进程输出的 `RESULT: FAIL=<name>` 行，父进程 `_on_stdout_line()` 解析后收集到 `_failed_items` 列表中。详见第六节 6.6 和 6.7。
 
 ### 5.7 武将浏览器（HeroBrowser）
 
@@ -941,6 +963,54 @@ _on_error()
 - 临时文件路径存在 `self._context["tmp_path"]` 中
 - `_on_finished()` 和 `_on_error()` 都会调用 `_cleanup_tmp()` 清理
 - 清理失败（`OSError`）只打 warning 不阻断流程
+
+### 6.6 RESULT 协议（进度展示修复）
+
+子进程失效时 stdout 输出会被截断，导致 `[i/N] name FAIL` 这行可能不被父进程读到。为解决此问题，子进程额外输出可被独立解析的 RESULT 行：
+
+```
+# 子进程 (ai_generation.py) 在生成失败时同时输出:
+print(f"[{i}/{total}] {name} FAIL", flush=True)
+print(f"RESULT: FAIL={name}", flush=True)   # ← 独立解析行
+```
+
+父进程侧的解析逻辑：
+
+**`_on_stdout_line()`**：
+```python
+# 解析 RESULT: FAIL=<name>
+if "RESULT: FAIL=" in line:
+    name = line.split("=", 1)[1].strip()
+    self._failed_items.append(name)
+```
+
+**`_on_process_finished()`**：
+```python
+# 不仅看 exit_code，还要检查 _failed_items
+if exit_code == 0:
+    self._on_guide_completed()  # 进一步基于 _failed_items 判断
+else:
+    self._on_guide_failed()
+```
+
+**`_on_guide_completed()`** 检查 `_failed_items` 列表：如果有失败项则 emit `fetch_completed(False, ...)` 并列出失败武将名；仅当 `_failed_items` 为空时才是真正成功。
+
+### 6.7 进度对话框 OK/FAIL 分开匹配
+
+`GuideProgressDialog.update_status()` 不再使用 `(?:OK|FAIL)` 匹配：
+
+```python
+# 分开匹配，FAIL 不推动进度条
+m_ok = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
+if m_ok:
+    self._status_label.setText(f"已生成 {m_ok.group(3)} 的攻略...")
+    self.update_progress(int(m_ok.group(1)), int(m_ok.group(2)))
+    return
+m_fail = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
+if m_fail:
+    self._status_label.setText(f"生成失败: {m_fail.group(3)}")
+    return  # 不更新进度条
+```
 
 ---
 

@@ -30,7 +30,7 @@ class TestHeroManager:
     def test_add_duplicate_raises(self):
         mgr = HeroManager()
         mgr.add_hero(self._make_hero(1))
-        with pytest.raises(ValueError, match="武将已存在"):
+        with pytest.raises(ValueError, match="已存在"):
             mgr.add_hero(self._make_hero(1))
 
     def test_update_hero(self):

@@ -15,38 +15,34 @@ import sys
 import tempfile
 import traceback
 
-from PySide6.QtCore import QObject, Signal, QProcess
+from PySide6.QtCore import QObject, Signal
 
-from src.business.fetch_utils import (
-    cancel_process,
-    get_qprocess_error_name,
-    is_process_busy,
-    log_process_error,
-)
+from src.business.base_fetch_service import BaseFetchService
 from src.scraper.ai_utils import estimate_cost
 
 logger = logging.getLogger(__name__)
 
 
-class GuideFetchService(QObject):
+class GuideFetchService(BaseFetchService):
     """攻略生成业务服务"""
 
-    status_changed = Signal(str)
     cost_estimated = Signal(dict)
     progress_output = Signal(str)        # 原始 stdout 行
     progress_value = Signal(int, int)    # (current, total) 供进度条使用
     fetch_completed = Signal(bool, str)  # (success, message_or_detail)
-    error_occurred = Signal(str)
 
     def __init__(self, guide_mgr, parent=None):
         super().__init__(parent)
         self._guide_mgr = guide_mgr
-        self._process: QProcess | None = None
-        self._context = None
-        self._log_stdout = logging.getLogger("subprocess.stdout")
-        self._log_stderr = logging.getLogger("subprocess.stderr")
-        self._stdout_buffer = bytearray()
-        self._stderr_buffer = bytearray()
+        self._failed_items: list[str] = []
+
+    @property
+    def _service_name(self) -> str:
+        return "攻略生成"
+
+    # ---------------------------------------------------------------
+    # 公共接口
+    # ---------------------------------------------------------------
 
     def fetch_all(self, all_heroes: list[dict], backend: str = "api") -> None:
         if self._is_busy():
@@ -65,7 +61,6 @@ class GuideFetchService(QObject):
                                       "estimated_output_tokens": 0, "estimated_cost_cny": 0.0,
                                       "message": "所有武将已有攻略，无需生成"})
             return
-
         self._context = {"mode": "incremental", "heroes": missing, "backend": backend}
         self.execute_with_confirmation()
 
@@ -75,7 +70,6 @@ class GuideFetchService(QObject):
         if not heroes:
             self.status_changed.emit("未选择任何武将")
             return
-
         self._context = {"mode": "specific", "heroes": heroes, "backend": backend}
         self.execute_with_confirmation()
 
@@ -86,11 +80,8 @@ class GuideFetchService(QObject):
         heroes = self._context["heroes"]
         mode = self._context["mode"]
         backend = self._context.get("backend", "api")
-        self.status_changed.emit(f"正在生成攻略 ({mode})...")
 
         base_args = ["-m", "src.scraper.ai_batch", "--guide"]
-
-        # 增量/指定获取使用更新模式（重生成，不清除已有数据中的其他武将）
         if mode in ("incremental", "specific"):
             base_args.append("--update")
 
@@ -103,91 +94,47 @@ class GuideFetchService(QObject):
             tmp_path = tmp.name
             tmp.close()
             self._context["tmp_path"] = tmp_path
+            self.status_changed.emit(f"正在生成攻略 ({mode})...")
             self._start_process([*base_args, "--heroes-file", tmp_path])
         else:
             self._context["tmp_path"] = None
+            self.status_changed.emit(f"正在生成攻略 ({mode})...")
             self._start_process(base_args)
 
-    def cancel(self) -> None:
-        cancel_process(self._process)
-        self.status_changed.emit("攻略生成已取消")
+    # ---------------------------------------------------------------
+    # 钩子
+    # ---------------------------------------------------------------
 
-    def _is_busy(self) -> bool:
-        return is_process_busy(self._process, "攻略生成")
-
-    def _start_process(self, args: list[str]) -> None:
-        logger.info("启动子进程: python %s", " ".join(args))
-        self._process = QProcess(self)
-        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
-        self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
-        self._process.readyReadStandardError.connect(self._on_stderr_ready)
-        self._process.finished.connect(self._on_finished)
-        self._process.errorOccurred.connect(self._on_error)
-        self._process.start(sys.executable, args)
-
-    def _on_stdout_ready(self) -> None:
-        if not self._process:
+    def _on_stdout_line(self, line: str) -> None:
+        """解析 [i/N] 进度和 RESULT 行"""
+        if not line:
             return
-        data = self._process.readAllStandardOutput()
-        text = bytes(data).decode("utf-8", errors="replace")
-        self._stdout_buffer.extend(data)
-        self._log_stdout.info("%s", text.strip())
-        self.progress_output.emit(text)
 
-        # 解析进度 [i/N] 用于进度条
-        for line in text.split(chr(10)):
-            m = re.search(r"\[(\d+)/(\d+)\]", line)
-            if m:
-                self.progress_value.emit(int(m.group(1)), int(m.group(2)))
-
-    def _on_stderr_ready(self) -> None:
-        """读取子进程的 stderr 并输出到日志"""
-        if not self._process:
+        # 捕获 RESULT: FAIL=<name> 机器可读行
+        if line.startswith("RESULT:"):
+            parts = line.split(":", 1)
+            if len(parts) == 2 and parts[1].strip().startswith("FAIL="):
+                failed_name = parts[1].strip()[5:]  # 去掉 "FAIL=" 前缀
+                self._failed_items.append(failed_name)
             return
-        data = self._process.readAllStandardError()
-        text = bytes(data).decode("utf-8", errors="replace")
-        self._stderr_buffer.extend(data)
-        if text.strip():
-            self._log_stderr.warning("%s", text.strip())
-            self.progress_output.emit(text)
 
-    def _on_finished(self, exit_code: int) -> None:
-        self._cleanup_tmp()
+        self.progress_output.emit(line)
+        m = re.search(r"\[(\d+)/(\d+)\]", line)
+        if m:
+            self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 
-        # 从缓冲中读取子进程完整输出
-        full_stdout = bytes(self._stdout_buffer).decode("utf-8", errors="replace")
-        full_stderr = bytes(self._stderr_buffer).decode("utf-8", errors="replace")
-        self._stdout_buffer.clear()
-        self._stderr_buffer.clear()
-
-        msg = f"进程退出码: {exit_code}"
-        logger.info("攻略生成子进程结束，%s", msg)
-
-        if exit_code == 0:
-            self.status_changed.emit("攻略生成完成")
-            self.fetch_completed.emit(True, msg)
+    def _on_process_finished(self, exit_code: int) -> None:
+        """进程结束时，基于失败列表修正 success 判断"""
+        has_failure = len(self._failed_items) > 0
+        if has_failure:
+            detail = "部分生成失败：" + "、".join(self._failed_items)
+            logger.warning("攻略生成存在失败项: %s", detail)
         else:
-            logger.warning("攻略生成进程退出码 %d", exit_code)
-            # 输出完整的子进程 stdout 和 stderr
-            if full_stdout.strip():
-                logger.warning("[子进程 stdout 完整输出]\n%s", full_stdout.strip())
-            if full_stderr.strip():
-                logger.warning("[子进程 stderr 完整输出]\n%s", full_stderr.strip())
-            self.status_changed.emit("攻略生成失败")
-            self.fetch_completed.emit(False, msg)
-        self._context = None
+            detail = f"进程退出码: {exit_code}"
+        self.fetch_completed.emit(not has_failure, detail)
+        self._failed_items.clear()
 
-    def _on_error(self, error: QProcess.ProcessError) -> None:
-        self._cleanup_tmp()
-        self._stdout_buffer.clear()
-        self._stderr_buffer.clear()
-        error_name = get_qprocess_error_name(error)
-        full_msg = log_process_error(error_name, self._process)
-        self.status_changed.emit("攻略生成出错")
-        self.error_occurred.emit(full_msg)
-        self._context = None
-
-    def _cleanup_tmp(self) -> None:
+    def _cleanup_context(self) -> None:
         """清理临时文件"""
         tmp_path = self._context.get("tmp_path", "") if self._context else ""
         if tmp_path:

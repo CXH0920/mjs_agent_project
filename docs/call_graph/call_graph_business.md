@@ -8,7 +8,7 @@
 
 ## 一、QProcess 服务通用模式
 
-三个 FetchService（Hero / Guide / Synergy）遵循相同设计模式。以下以 HeroFetchService 为例说明通用结构。
+三个 FetchService（Hero / Guide / Synergy）遵循相同设计模式。通用模式方法由 `BaseFetchService`（`src/business/base_fetch_service.py`）提供，三个子类继承后各自实现 `fetch_*` 和 `cancel` 方法。以下以 HeroFetchService 为例说明通用结构。
 
 ### 1.1 通用启动链路
 
@@ -44,6 +44,8 @@
 | `_on_finished(code)` | 检查退出码 → emit fetch_completed |
 | `_on_error(error)` | QProcess 异常 → emit error_occurred |
 | `cancel()` | `process.kill()` + `waitForFinished(3000)` |
+
+> 以上通用方法定义在 `src/business/base_fetch_service.py` 的 `BaseFetchService` 中，三个子类通过继承复用。
 
 ---
 
@@ -348,7 +350,7 @@ src.ui.mumu_config_dialog
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |
 | `src.scraper.ai_utils.estimate_cost()` | GuideFetchService 成本估算 |
-| `src.data.manager.GuideManager` | GuideFetchService 构造时注入 |
+| `src.data.guide_manager.GuideManager` | GuideFetchService 构造时注入 |
 
 ---
 

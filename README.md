@@ -16,10 +16,10 @@ test_project/
 │   │   └── logging_config.py     # 统一日志配置（按模块拆分 + 文件轮转）
 │   ├── data/
 │   │   ├── models.py              # Pydantic 数据模型（Hero/SynergyScore/HeroGuide/...）
-│   │   ├── manager.py             # DataFacade 门面 + 增量更新函数
-│   │   ├── hero_manager.py        # 武将 CRUD + JSON 持久化
-│   │   ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化
-│   │   └── guide_manager.py       # 攻略 CRUD + JSON 持久化
+│   │   ├── manager.py             # DataManager[V_co] 泛型基类 + DataFacade 门面 + 增量更新
+│   │   ├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
+│   │   ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
+│   │   └── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
 │   ├── scraper/
 │   │   ├── crawler.py             # 爬虫核心（公开 API，含头像下载）
 │   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
@@ -28,16 +28,15 @@ test_project/
 │   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt/校验）
 │   │   ├── ai_playwright.py       # PlaywrightGenerator（浏览器自动化模式）
 │   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
-│   │   ├── ai_guide.py            # 攻略生成循环
-│   │   ├── ai_synergy.py          # 全量相性评分生成循环
-│   │   ├── ai_synergy_pair.py     # 指定武将两两配对生成（支持 2~8 武将）
-│   │   └── ai_synergy_single.py   # 选定武将 x 全体相性生成
+│   │   └── ai_generation.py       # 四种生成编排函数（攻略/全量相性/指定配对/选定武将）
 │   ├── business/
-│   │   ├── fetch_service.py       # 武将采集业务（QProcess 管理）
-│   │   ├── guide_fetch_service.py # 攻略生成业务（QProcess 管理）
-│   │   ├── synergy_fetch_service.py # 相性获取业务（QProcess 管理）
+│   │   ├── base_fetch_service.py  # BaseFetchService 基类（QProcess 通用管理方法）
+│   │   ├── fetch_service.py       # 武将采集业务（继承 BaseFetchService）
+│   │   ├── guide_fetch_service.py # 攻略生成业务（继承 BaseFetchService）
+│   │   ├── synergy_fetch_service.py # 相性获取业务（继承 BaseFetchService）
 │   │   ├── capture_service.py     # 截图业务编排（ADB 截图 + OCR 调度）
-│   │   └── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
+│   │   ├── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
+│   │   └── fetch_utils.py         # QProcess 公共工具函数
 │   ├── capture/
 │   │   ├── __init__.py
 │   │   ├── adb_screen.py          # ADB 连接与截图（subprocess exec-out 无文件中间态）
@@ -89,7 +88,7 @@ test_project/
 │   └── test_ui.py                 # 4 tests — UI 工具
 ├── docs/
 │   ├── code_desc/
-│   │   ├── summary.md              # 代码说明文档总览
+│   │   ├── summary.md              # 项目总览（核心功能、技术栈、模块索引）
 │   │   ├── module_config.md        # 应用入口与配置模块说明
 │   │   ├── module_data.md          # 数据模型与数据管理模块说明
 │   │   ├── module_scraper.md       # 爬虫与数据采集模块说明
@@ -97,12 +96,19 @@ test_project/
 │   │   ├── module_business.md      # 业务服务层模块说明
 │   │   ├── module_capture_ocr.md   # 屏幕采集与 OCR 模块说明
 │   │   └── module_ui.md            # UI 界面层模块说明
-│   ├── field_mapping.md           # 官网字段映射说明
-│   └── prompts/
-│       ├── hero_guide.md          # 攻略生成 Prompt
-│       └── synergy_score.md       # 相性评分 Prompt
+│   ├── call_graph/
+│   │   ├── call_graph_ai_batch.md  # AI 批量生成调用链路
+│   │   ├── call_graph_business.md  # 业务服务层调用链路
+│   │   ├── call_graph_data.md      # 数据层调用链路
+│   │   ├── call_graph_scraper.md   # 爬虫调用链路
+│   │   └── call_graph_ui.md        # UI 界面层调用链路
+│   ├── spec/                       # 设计规格文档
+│   ├── prompts/
+│   │   ├── hero_guide.md           # 攻略生成 Prompt
+│   │   └── synergy_score.md        # 相性评分 Prompt
+│   ├── field_mapping.md            # 官网字段映射说明
+│   └── project_doc.md              # 完整项目细节文档
 ├── project_problem.md             # 项目问题记录文档
-├── project_doc.md                 # 项目细节文档
 ├── AGENTS.md                      # 开发规范
 ├── PLANS.md                       # 实施方案与阶段
 ├── CLAUDE.md                      # Claude Code 上下文文件
@@ -210,7 +216,7 @@ UI 层 (PySide6)      主窗口 / 武将浏览器 / 选将推荐 / 各对话框
 官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
                                                                         ↘ images/<武将名>.png
 DeepSeek API / 网页版 → ai_batch.py → ai_generator.py / ai_playwright.py
-  → ai_guide/ai_synergy/… → data/{guides,synergies}.json
+  → ai_generation.py → data/{guides,synergies}.json
 data/*.json → DataFacade (三个 Manager) → UI 展示
 
 模拟器屏幕 → ADB screencap → PIL Image（全在内存，无磁盘 I/O）
@@ -268,9 +274,10 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 ```
 
 各 Manager 功能特性：
-- **HeroManager** — 武将 CRUD，支持 ID/名称/关键词/势力查询
-- **SynergyManager** — 相性 CRUD，(A,B) 和 (B,A) 自动归一为同一 key
-- **GuideManager** — 攻略 CRUD，以 hero_id 为 key
+- **DataManager[V_co]** — 泛型基类（位于 `manager.py`），定义通用的 `get`/`list_all`/`add`/`update`/`delete`/`load`/`save` 方法
+- **HeroManager(DataManager[Hero])** — 武将 CRUD，支持 ID/名称/关键词/势力查询
+- **SynergyManager(DataManager[SynergyScore])** — 相性 CRUD，(A,B) 和 (B,A) 自动归一为同一 key
+- **GuideManager(DataManager[HeroGuide])** — 攻略 CRUD，以 hero_id 为 key
 
 ---
 
@@ -312,10 +319,7 @@ src/scraper/
 ├── ai_batch.py          CLI 入口（参数解析 → 配置加载 → 委托子模块）
 ├── ai_generator.py      API 调用核心（限速/重试/JSON 提取/Pydantic 校验）
 ├── ai_playwright.py     浏览器自动化生成器（Playwright + Edge）
-├── ai_guide.py          逐个武将生成攻略
-├── ai_synergy.py        全量相性生成（所有武将两两配对）
-├── ai_synergy_pair.py   指定武将两两配对生成（支持 2~8 武将 × itertools.combinations）
-├── ai_synergy_single.py 选定武将 vs 全体生成
+├── ai_generation.py     四种生成编排函数（攻略/全量相性/指定配对/选定武将）
 └── ai_utils.py          共享工具（estimate_cost / load_heroes / _save_json）
 ```
 

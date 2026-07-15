@@ -37,7 +37,7 @@ class TestGuideManager:
     def test_add_duplicate_raises(self):
         mgr = GuideManager()
         mgr.add_guide(self._make_guide(1))
-        with pytest.raises(ValueError, match="攻略已存在"):
+        with pytest.raises(ValueError, match="已存在"):
             mgr.add_guide(self._make_guide(1))
 
     def test_update_guide(self):
