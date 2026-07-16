@@ -36,14 +36,16 @@ from typing import Any
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout, sync_playwright
 
-from src.scraper.ai_utils import (
+from src.scraper.prompt_utils import (
     load_prompt,
-    extract_json,
+    build_guide_prompt,
+    build_synergy_prompt,
+)
+from src.scraper.json_extract import extract_json
+from src.scraper.ai_utils import (
     convert_ids_to_int,
     validate_guide,
     validate_synergy,
-    build_guide_prompt,
-    build_synergy_prompt,
 )
 
 logger = logging.getLogger(__name__)

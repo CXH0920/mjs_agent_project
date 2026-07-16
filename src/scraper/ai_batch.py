@@ -31,9 +31,8 @@ from src.config.env import (
     get_runtime_params,
 )
 
+from src.scraper.prompt_utils import _estimate_cost, estimate_cost
 from src.scraper.ai_utils import (
-    _estimate_cost,
-    estimate_cost,
     load_heroes,
     _save_json,
 )
