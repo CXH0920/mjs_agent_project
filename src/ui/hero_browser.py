@@ -34,7 +34,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.data.manager import HeroManager, GuideManager
+from src.data.hero_manager import HeroManager
+from src.data.guide_manager import GuideManager
 from src.data.models import Hero, HeroGuide, Gender, Difficulty
 
 logger = logging.getLogger(__name__)

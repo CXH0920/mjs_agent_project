@@ -31,7 +31,7 @@ class TestSynergyManager:
     def test_add_duplicate_raises(self):
         mgr = SynergyManager()
         mgr.add_synergy(self._make_synergy(1, 2))
-        with pytest.raises(ValueError, match="相性已存在"):
+        with pytest.raises(ValueError, match="已存在"):
             mgr.add_synergy(self._make_synergy(1, 2))
 
     def test_add_duplicate_reverse_raises(self):

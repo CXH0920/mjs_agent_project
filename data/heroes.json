@@ -57,37 +57,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/qJaEoaMDDknpIM0oN72D7Zhto3Su8V20AFjnimkv.png_200x282.png"
   },
   {
-    "id": 169,
-    "name": "羊祜",
-    "title": "",
-    "faction": "西晋",
-    "position": "控制",
-    "max_hp": 3,
-    "max_hand": 6,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "潜谋远计",
-        "description": "回合结束时，你选择一名其他角色，你本回合每弃置1张牌，就随机削弱其1张牌。",
-        "settlement": "本回合未弃置牌也可以发动此技能。"
-      },
-      {
-        "name": "德冠四海",
-        "description": "出牌阶段限1次，当你选择其他角色为牌的目标时，你可以令你与所有此牌的目标分别展示2张手牌(不足则全展示)，并且你选择其中一名其他角色，交换你与其展示的牌，若交换后你的手牌总点数全场最大，添加1张装备牌至手牌并且装备上限+1。",
-        "settlement": "即便目标未展示牌，也可以与其交换。"
-      },
-      {
-        "name": "轻裘缓带",
-        "description": "你的每个阶段结束时:若你的装备区没有牌，则你的装备上限-1并且下一轮的同名阶段改为出牌阶段;若你的装备区有牌，则你的装备上限+1并且下一轮的同名阶段改为摸牌阶段。",
-        "settlement": "1.同名阶段指的是同样名称的阶段，即摸牌阶段与摸牌阶段为同名阶段。正常情况下，玩家的回合内阶段顺序为:回合开始阶段->摸牌阶段->出牌阶段->弃牌阶段->回合结束阶段。举个例子:第一轮:开始->摸牌->出牌->弃牌->结束，若在五阶段中装备区均无牌，则下一轮的各个阶段均会被改为出牌阶段。第二轮第二个回合:连续进行五个出牌阶段，且无论此阶段出牌阶段被改为出牌阶段(装备区无牌)还是摸牌阶段(装备区有牌)第三轮的回合开始、摸牌、弃牌和回合结束阶段均会被恢复(因为没有修改过摸牌阶段和弃牌阶段)。若在此回合的第一个出牌阶段装备区无牌，第三个出牌阶段装备区有牌，则将下一轮的出牌阶段改为摸牌阶段。第三轮第三个回合:开始->摸牌->摸牌->弃牌->结束。 2.对于下一轮同一个阶段的修改，以最后一次为准。 3.本轮没有的阶段，在下一轮一定会初始化为正常应有的阶段。 4.若下一轮对应阶段被修改过，则无论此阶段是否回合内正常阶段，均会被修改(例如周勃箫奏挽歌的出牌阶段或太子丹的易水促行)，且此阶段结束时也会正常触发此技能(例如传国玉玺将弃牌阶段修改为摸牌阶段，则此阶段结束后会影响到下一轮的摸牌阶段)。 5.当轮对于阶段的修改，实际上会在下一轮对应阶段需要进行时才会执行为对应修改的阶段，举个例子:本轮摸牌阶段结束时，将下一轮的摸牌阶段改为了出牌阶段，则在本轮出牌阶段结束时，修改的下一轮的出牌阶段并不会影响本轮摸牌阶段影响的下轮的出牌阶段，因为其还并没有被实际更改为出牌阶段。 6.回合开始阶段仅包含回合开始和回合开始时，回合结束阶段仅包含回合结束时，一个没有回合开始/结束的回合可以参照萧何举贤为将给出的只有出牌阶段的回合，不会触发回合开始/结束时的相关技能(例如遁甲天书、先发制人、潜谋远计)，但是会触发跨回合而导致的封禁解除等效果。"
-      }
-    ],
-    "difficulty": 4,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/AAPZDXuIwS2h14Jds0OJCB4GIkKFEcUQwX3DuYSt.png_200x282.png"
-  },
-  {
     "id": 168,
     "name": "司马炎",
     "title": "",
@@ -174,89 +143,6 @@
     "mode_viability": {},
     "last_updated": "2026-06-26",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/ckvsli7QKx8O8yIsVzCSar77GYqB4AZvwmtWd6ml.png_200x282.png"
-  },
-  {
-    "id": 165,
-    "name": "吕蒙",
-    "title": "",
-    "faction": "孙吴",
-    "position": "控制",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "白衣渡江",
-        "description": "当你的手牌上限大于体力值时，隐藏你的手牌数和体力值，并且回合开始时，你可以选择获得一名其他角色的所有手牌，并对其打出其中的所有杀，然后你失去此技能。",
-        "settlement": "1.此技能仅会隐藏正常战斗中的手牌数和体力值，但查看或弃置牌的效果仍能看到对应牌的张数或具体信息。 2.即便获得的牌中没有杀或你无法打出杀，也会失去此技能。"
-      },
-      {
-        "name": "笃志奋学",
-        "description": "你每获得3张战法牌，手牌上限+2。",
-        "settlement": "这个技能的效果很简单...不需要详细解释。"
-      },
-      {
-        "name": "束军克己",
-        "description": "每个角色的回合结束时，若你此回合没有打出过牌，你获得1张杀;回合开始时，你每拥有2张杀，随机添加1张战法牌到你的手牌。",
-        "settlement": "拥有多张杀时会一次性添加多张战法牌至手牌。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/kB2wu7UnLhzaVWhj6D4dd7PG1jzBazV5vRLM4Aly.png_200x282.png"
-  },
-  {
-    "id": 164,
-    "name": "徐盛",
-    "title": "",
-    "faction": "孙吴",
-    "position": "攻击",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "百里疑城",
-        "description": "当你成为其他角色打出牌的目标时，你可以将一名角色装备区的1张牌收回其手牌，然后若此牌是其装备区最后1张牌，随机添加1张装备牌至其手牌。",
-        "settlement": "可以收回自己装备区的牌。"
-      },
-      {
-        "name": "濡须破军",
-        "description": "当你的装备区获得或失去装备牌时，你可以将一名其他角色的1张牌移出游戏，直到其下个回合开始。",
-        "settlement": "被此技能移出游戏的牌，在此技能拥有者阵亡后，仍会在目标下个回合开始的时候移回游戏。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/sts5f22onPtLVZ8p6sBGdonAjMlsiujZXqpIhhkZ.png_200x282.png"
-  },
-  {
-    "id": 163,
-    "name": "韩娥",
-    "title": "",
-    "faction": "韩",
-    "position": "辅助",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "余音绕梁",
-        "description": "阵亡，令一名其他角色获得你的余音，并且保留当前的所有余音效果，持续到游戏结束。",
-        "settlement": "1.同时存在多个可以令角色获得余音的此技能时，彼此并不能叠加，但拥有余音绕梁时可以通过“令一名其他角色获得你的余音”的效果来达成余音的叠加。 2.余音本身不受封禁的影响，也不会被废除或删除，但此技能所带来的余音会因此技能的封禁、废除或删除而失效。注意:余音仅与带来余音的技能相关联，例如韩娥发动千古留音令左慈获得了余音“宫”，但左慈获得千古留音后将自身的“宫”切换为“角”，则韩娥千古留音的封禁并不会影响“角”，但左慈的千古留音被封禁时会影响。 3.余音绕梁的效果可以使余音被保留，此时即便此技能被封禁、废除或删除，余音也不会失去。"
-      },
-      {
-        "name": "千古留音",
-        "description": "登场/当你的体力值变化后，令一名未获得余音的角色获得一种余音，或者令一名已经获得余音的角色切换一种余音。 *余音效果： 宫：获得时/每个回合首次打出战法牌时，随机添加1张战法牌至手牌。 商：获得时/每个回合首次造成伤害后，随机弃置1张牌。 角：获得时/每个回合非摸牌阶段首次获得牌后，随机添加1张装备牌至手牌。 徵：获得时/出牌阶段开始时，可以立即打出1张杀，此杀不消耗出杀次数。 羽：获得时/每个回合首次弃置牌后，失去1点体力。",
-        "settlement": ""
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/1houXrPGRawtBLf3KvikdqWbmJOlxHmB2TKjjfMX.png_200x282.png"
   },
   {
     "id": 162,
@@ -423,37 +309,6 @@
     "mode_viability": {},
     "last_updated": "2026-06-26",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/YvQDc9rlr4TqKWxv2O6VSvoKCkbpcvPvLEfbTQba.png_200x282.png"
-  },
-  {
-    "id": 156,
-    "name": "魏咎",
-    "title": "",
-    "faction": "魏",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "焚身救民",
-        "description": "回合结束时，你进入连环状态，摸2张牌，然后受到1点火焰伤害，并失去1点体力上限。",
-        "settlement": "1.若回合结束时已经处于连环状态，此技能效果不会解除连环状态。 2.无法选择是否失去体力上限，一定会失去。"
-      },
-      {
-        "name": "受立魏王",
-        "description": "限定，回合开始时，你每有1张“义兵”，你可以增加1点体力上限，并且回复1点体力，并获得技能“焚身救民”。",
-        "settlement": "仅依据发动此技能时的义兵数量，决定后续效果。"
-      },
-      {
-        "name": "流亡储君",
-        "description": "登场，你可以选择一名其他角色，当其弃置牌时，你获得其中1张牌，并转化为“义兵”。当你打出♦花色的“义兵”时，你令一名其他角色进入连环状态。",
-        "settlement": "1.随机获得的目标弃置的牌转化为的义兵会继承原牌的花色点数。 2.此技能后段效果只能令其他角色进入连环状态，而不能解除连环状态。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/JweWzj3tEJXh1sk4bKVpzFfGmLFveDJ4LP2fG3Ns.png_200x282.png"
   },
   {
     "id": 155,
@@ -1042,32 +897,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-03/2MlaOJkgy15FLRyD1LgaIXcrE5erROf0MCKhmFGp.png_200x282.png"
   },
   {
-    "id": 134,
-    "name": "祝融夫人",
-    "title": "",
-    "faction": "蜀汉",
-    "position": "攻击",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "火神族裔",
-        "description": "你每个回合首次受到的火焰伤害-1，对其他角色首次造成的火焰伤害+1。",
-        "settlement": "技能生效仅“每个回合”的首次；"
-      },
-      {
-        "name": "赤黎飞刃",
-        "description": "当你打出的牌被其他角色响应时，你可以将1张牌转化为杀对其打出，并获得对应花色的效果： ♦ - 贯穿 ♣ - 杀伤，中毒+1 ♥ - 杀伤，随机烧毁目标1张牌 ♠ - 杀伤，随机获得目标1张牌 土 - 造成伤害+1",
-        "settlement": "1.“闪避”也是“抵消杀”的一种方式; 2.转化的牌若为红桃花色，则会转化为火杀，若为点数为4且非红桃花色，则会转化为雷杀。 3.转化的牌若为装备区的装备牌，则会先将装备区的装备牌收回手牌再转化打出。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-03/V5pEnDftpC3j790JCZDXcyJy8jIRUufcT14W8FCC.png_200x282.png"
-  },
-  {
     "id": 133,
     "name": "太子丹",
     "title": "",
@@ -1389,37 +1218,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/WJJP5NKvN1KK86eFt3U4I0He0yMiFe4r5n5tsrge.png_200x282.png"
   },
   {
-    "id": 121,
-    "name": "鲁仲连",
-    "title": "",
-    "faction": "齐",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "珠明烁今",
-        "description": "回合结束时，你可以将本回合你放入牌堆底的其中1张牌交给一名角色。",
-        "settlement": "交给的目标可以是自己。"
-      },
-      {
-        "name": "一箭定聊",
-        "description": "出牌阶段限1次，你可以消耗1个出杀次数，弃置至多3张花色各不相同的手牌，并令一名其他角色弃置与你弃置的牌数量、花色均相同的牌，然后将这些牌放入牌堆底。若其弃置的牌数量不足，则其失去等量体力。",
-        "settlement": "1.不能弃置多张“没有花色”的牌； 2.目标角色可以弃不足，但会失去对应的体力； 3.此技能可以与鲁仲连的其他技能进行联动。"
-      },
-      {
-        "name": "义不帝秦",
-        "description": "其他角色无法改变你的势力。当你打出牌时，若此牌的花色是你在当前回合首次打出，你可以将1张手牌放入牌堆底，然后摸1张牌。",
-        "settlement": "摸牌动作是从牌堆顶摸取第一张。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/QeqkEcky1DYgfK2gupNITbfrHEiYIFFxe1a4v7Xw.png_200x282.png"
-  },
-  {
     "id": 120,
     "name": "步练师",
     "title": "",
@@ -1527,37 +1325,6 @@
     "mode_viability": {},
     "last_updated": "2026-06-26",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/KhuljCxDA1Hioo21EZiMUQRl5NutB8QyijLBDWDU.png_200x282.png"
-  },
-  {
-    "id": 116,
-    "name": "姜维",
-    "title": "",
-    "faction": "蜀汉",
-    "position": "攻击",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "一计害三贤",
-        "description": "当你的体力上限首次变为1时，你可以将所有牌交给一名其他角色，令其对另外一名其他角色打出所有杀，然后你与其受到其当前手牌数的伤害。",
-        "settlement": "1.这里的“所有牌”包括装备区和手牌区，但不含卜卦区； 2.仅限“体力上限首次变为1”。"
-      },
-      {
-        "name": "九伐中原",
-        "description": "出牌阶段限1次，摸2张牌，出杀次数+1，并且出牌阶段结束时选择手牌上限-1或体力上限-1。",
-        "settlement": "1.当体力上限为0时，直接阵亡； 2.如果“出牌阶段结束时”不存在，则不会触发“手牌上限-1或体力上限-1”的效果。"
-      },
-      {
-        "name": "天水麒麟儿",
-        "description": "出牌阶段限1次，你可以将任意1张牌当作调兵遣将打出。",
-        "settlement": "装备区、手牌区的牌都可以被当作调兵遣将打出。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/KafjWBzKltXV9Fuli6hvztaRJBAqzsxsd9NihzG2.png_200x282.png"
   },
   {
     "id": 115,
@@ -2351,32 +2118,6 @@
     "mode_viability": {},
     "last_updated": "2026-06-26",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-10/YPlUOjbVBuIForqXL2kLIXgWLqKSLYyz3H12fOww.png_200x282.png"
-  },
-  {
-    "id": 86,
-    "name": "赵威后",
-    "title": "",
-    "faction": "赵",
-    "position": "防御",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "无民何有君",
-        "description": "当一名角色跳过摸牌阶段、失去最后的手牌或者有牌被烧毁/销毁/移出时，你可以令其卜卦，若结果不为♣，则其失去1点体力。",
-        "settlement": "失去体力不会触发“受伤”效果。"
-      },
-      {
-        "name": "质子为兵",
-        "description": "每个回合限1次，当你即将受到伤害时，你可以令一名其他角色获得你任意区域的1张牌，然后其可以交给你另外至少1张牌，并抵消此次伤害。",
-        "settlement": "可以获得你装备区的牌。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-06-26",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-10/u6QzQEBnZnvVzh4YVKBhSvCD6GuLvyQNEjs5PRkk.png_200x282.png"
   },
   {
     "id": 85,
@@ -4345,6 +4086,68 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/aPsUY3vJjcjqJK5c98TpxqPI8VHMNVBZlCg122TB.png_200x282.png"
   },
   {
+    "id": 177,
+    "name": "荀勖",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "省官清心",
+        "description": "当你打出牌时，若此牌的点数〈上1张你打出牌的点数，你可以削弱一名角色的1张牌。",
+        "settlement": "这个技能很简单... 技能典故 省吏不如省官，省官不如省事，省事不如清心。一《晋书》"
+      },
+      {
+        "name": "四部分类",
+        "description": "登场，你将1~8的点数分为甲乙丙丁4组；每轮结束时，若你本轮打出过每组点数的至少1张牌，随机获得每组点数的各1张牌。",
+        "settlement": "每组点数的数量可以任意分配，但需要保证每组至少有1个点数。"
+      },
+      {
+        "name": "十二笛律",
+        "description": "当你打出牌后，若本回合你打出过的牌的总点数等于12，你可以选择1个点数，查看牌堆中前12张与此牌点数相同的牌在牌堆中的位置，你可以交换这些牌的位置，并且可以选择获得其中1张牌。",
+        "settlement": "1.打出牌的点数会在打出牌时记录下来，牌生效过程中点数改变并不影响记录的点数。 2.可以仅调整牌堆中牌的顺序而不获得牌。 3.选定获得牌后，可以将其他牌替换至选定牌的原位置。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/xxKU8qRGuW6K81Td85xyalTUyBXgbitRlKY0jxbt.png_200x282.png"
+  },
+  {
+    "id": 176,
+    "name": "张华",
+    "title": "",
+    "faction": "西晋",
+    "position": "攻击",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "兰艾同焚",
+        "description": "阵亡，销毁游戏中所有龙泉剑和太阿剑，然后可以削弱任意名其他角色的所有牌。",
+        "settlement": "若未成功销毁任意1张龙泉剑/太阿剑，则不会触发后续效果。"
+      },
+      {
+        "name": "博物志",
+        "description": "出牌阶段限1次，你可以弃置1张牌，查看牌堆中前10张与此牌花色相同的牌与这些牌在牌堆中的位置，你可以交换这些牌的位置，并且可以选择获得其中1张牌。",
+        "settlement": "1.可以仅调整牌堆中牌的顺序而不获得牌。 2.选定获得牌后，可以将其他牌替换至选定牌的原位置。"
+      },
+      {
+        "name": "双剑化龙",
+        "description": "登场，添加随机花色和点数的龙泉剑和太阿剑至牌堆底。每个回合限2次，当你打出牌时，若此牌花色或点数与龙泉剑/太阿剑相同，则你从任意位置获得龙泉剑/太阿剑。当你同时装备龙泉剑和太阿剑时，增强你的所有其他牌。 龙泉剑：武器，当你受到伤害后，可以削弱伤害来源的2张牌。 太阿剑：武器，当你造成伤害后，可以削弱目标的2张牌。",
+        "settlement": "1.登场时，添加的龙泉剑和太阿剑的花色和点数不可见。 2.打出对应花色或点数的牌时，会获得所有相同点数或点数的龙泉剑/太阿剑。 3.任意位置包括所有玩家的手牌区、装备区、卜卦区以及处理区、摸牌堆和弃牌堆。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/5SpK3EqSMQqMLefGnWxlhZno2mfm0NuJXwU0Ifyc.png_200x282.png"
+  },
+  {
     "id": 175,
     "name": "陆机",
     "title": "",
@@ -4372,7 +4175,7 @@
     ],
     "difficulty": 2,
     "mode_viability": {},
-    "last_updated": "2026-07-07",
+    "last_updated": "2026-07-13",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MMDd7oLsP0kKtYrBhM5cCgTT8h0cuZyKWoblKmFf.png_200x282.png"
   },
   {
@@ -4403,7 +4206,7 @@
     ],
     "difficulty": 2,
     "mode_viability": {},
-    "last_updated": "2026-07-07",
+    "last_updated": "2026-07-13",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/mjYQdYn3LMGP5tfZpgz6BErjAedw53GWFIS1moEO.png_200x282.png"
   },
   {
@@ -4428,13 +4231,13 @@
       },
       {
         "name": "献策推恩",
-        "description": "每个回合限1次，当有角色回合外获得大于1张牌时，你可以令其将其中至少1张牌，交给你指定的另外一名其他角色。所有角色每累计获得其他角色4张牌时，你摸1张牌。",
+        "description": "每个回合限1次，当有角色回合外获得大于1张牌时，你可以令其将其中1张牌，交给你指定的另外一名其他角色。所有角色每累计获得其他角色4张牌时，你摸1张牌。",
         "settlement": "1.其他角色获得初始手牌时也可触发此技能。 2.所有角色共同累计张数。"
       }
     ],
     "difficulty": 2,
     "mode_viability": {},
-    "last_updated": "2026-07-07",
+    "last_updated": "2026-07-13",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/VJPNtNR2d4aXsqfEHphCAvlvJU1VRtGQgzjj4r4i.png_200x282.png"
   },
   {
@@ -4465,7 +4268,266 @@
     ],
     "difficulty": 2,
     "mode_viability": {},
-    "last_updated": "2026-07-07",
+    "last_updated": "2026-07-13",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/fdw3O4U775WojTgD2ZYo29LjkZuykvxSVGAKnHjb.png_200x282.png"
+  },
+  {
+    "id": 116,
+    "name": "姜维",
+    "title": "",
+    "faction": "蜀汉",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "矢志匡汉",
+        "description": "当你的体力值首次变为1时，你可以将所有牌交给一名其他角色，令其对你选择的另外一名其他角色打出所有杀，然后弃置所有牌。",
+        "settlement": "1.这里的“所有牌”包括装备区和手牌区，但不含卜卦区； 2.仅限“体力上限首次变为1”。 3.然后“弃置所有牌”指的是打出杀的角色进行弃置。"
+      },
+      {
+        "name": "九伐中原",
+        "description": "出牌阶段限1次，摸2张牌，出杀次数+1，并且出牌阶段结束时选择手牌上限-1或体力上限-1。",
+        "settlement": "1.当体力上限为0时，直接阵亡； 2.如果“出牌阶段结束时”不存在，则不会触发“手牌上限-1或体力上限-1”的效果。"
+      },
+      {
+        "name": "天水麒麟儿",
+        "description": "出牌阶段限1次，你可以将任意1张牌当作调兵遣将打出。",
+        "settlement": "装备区、手牌区的牌都可以被当作调兵遣将打出。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/KafjWBzKltXV9Fuli6hvztaRJBAqzsxsd9NihzG2.png_200x282.png"
+  },
+  {
+    "id": 169,
+    "name": "羊祜",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 3,
+    "max_hand": 6,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "潜谋远计",
+        "description": "回合结束时，你选择一名其他角色，你本回合每打出过1张装备牌，就随机削弱其1张牌。",
+        "settlement": "本回合未弃置牌也可以发动此技能。"
+      },
+      {
+        "name": "德冠四海",
+        "description": "出牌阶段限1次，当你选择其他角色为牌的目标时，你可以将你的装备牌收回手牌，并且令你与所有此牌的目标分别展示2张手牌(不足则全展示)，然后你选择其中一名其他角色，交换你与其展示的牌，若交换后你的手牌总点数全场最大，添加1张装备牌至手牌并且装备上限+1。",
+        "settlement": "即便目标未展示牌，也可以与其交换。"
+      },
+      {
+        "name": "轻裘缓带",
+        "description": "你的每个阶段结束时：若你的装备区没有牌，则你的下一轮的同名阶段改为出牌阶段；若你的装备区有牌，则你的下一轮的同名阶段改为摸牌阶段。",
+        "settlement": "1.同名阶段指的是同样名称的阶段，即摸牌阶段与摸牌阶段为同名阶段。正常情况下，玩家的回合内阶段顺序为:回合开始阶段->摸牌阶段->出牌阶段->弃牌阶段->回合结束阶段。举个例子:第一轮:开始->摸牌->出牌->弃牌->结束，若在五阶段中装备区均无牌，则下一轮的各个阶段均会被改为出牌阶段。第二轮第二个回合:连续进行五个出牌阶段，且无论此阶段出牌阶段被改为出牌阶段(装备区无牌)还是摸牌阶段(装备区有牌)第三轮的回合开始、摸牌、弃牌和回合结束阶段均会被恢复(因为没有修改过摸牌阶段和弃牌阶段)。若在此回合的第一个出牌阶段装备区无牌，第三个出牌阶段装备区有牌，则将下一轮的出牌阶段改为摸牌阶段。第三轮第三个回合:开始->摸牌->摸牌->弃牌->结束。 2.对于下一轮同一个阶段的修改，以最后一次为准。 3.本轮没有的阶段，在下一轮一定会初始化为正常应有的阶段。 4.若下一轮对应阶段被修改过，则无论此阶段是否回合内正常阶段，均会被修改(例如周勃箫奏挽歌的出牌阶段或太子丹的易水促行)，且此阶段结束时也会正常触发此技能(例如传国玉玺将弃牌阶段修改为摸牌阶段，则此阶段结束后会影响到下一轮的摸牌阶段)。 5.当轮对于阶段的修改，实际上会在下一轮对应阶段需要进行时才会执行为对应修改的阶段，举个例子:本轮摸牌阶段结束时，将下一轮的摸牌阶段改为了出牌阶段，则在本轮出牌阶段结束时，修改的下一轮的出牌阶段并不会影响本轮摸牌阶段影响的下轮的出牌阶段，因为其还并没有被实际更改为出牌阶段。 6.回合开始阶段仅包含回合开始和回合开始时，回合结束阶段仅包含回合结束时，一个没有回合开始/结束的回合可以参照萧何举贤为将给出的只有出牌阶段的回合，不会触发回合开始/结束时的相关技能(例如遁甲天书、先发制人、潜谋远计)，但是会触发跨回合而导致的封禁解除等效果。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/AAPZDXuIwS2h14Jds0OJCB4GIkKFEcUQwX3DuYSt.png_200x282.png"
+  },
+  {
+    "id": 165,
+    "name": "吕蒙",
+    "title": "",
+    "faction": "孙吴",
+    "position": "控制",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "白衣渡江",
+        "description": "当你的手牌上限大于体力值时，隐藏你的手牌数和体力值，并且回合开始时，你可以选择获得一名其他角色的所有手牌，并对其打出其中的所有杀，然后你失去此技能。",
+        "settlement": "1.此技能仅会隐藏正常战斗中的手牌数和体力值，但查看或弃置牌的效果仍能看到对应牌的张数或具体信息。 2.即便获得的牌中没有杀或你无法打出杀，也会失去此技能。"
+      },
+      {
+        "name": "笃志奋学",
+        "description": "你每获得3张战法牌，手牌上限+1。",
+        "settlement": "这个技能的效果很简单...不需要详细解释。"
+      },
+      {
+        "name": "束军克己",
+        "description": "每个角色的回合结束时，若你此回合没有打出过牌，你获得1张杀；回合开始时，你每拥有3张杀，随机添加1张战法牌到你的手牌。",
+        "settlement": "拥有多张杀时会一次性添加多张战法牌至手牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/kB2wu7UnLhzaVWhj6D4dd7PG1jzBazV5vRLM4Aly.png_200x282.png"
+  },
+  {
+    "id": 164,
+    "name": "徐盛",
+    "title": "",
+    "faction": "孙吴",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "百里疑城",
+        "description": "当你成为其他角色打出牌的目标时，你可以立即打出1张装备牌，或者将一名角色装备区的1张牌收回其手牌，然后每个回合限1次，随机添加1张装备牌到你的手牌。",
+        "settlement": "可以收回自己装备区的牌。"
+      },
+      {
+        "name": "濡须破军",
+        "description": "当你的装备区获得或失去装备牌时，你可以将一名其他角色的1张牌移出游戏，直到你的下个回合结束。",
+        "settlement": "被此技能移出游戏的牌，在此技能拥有者阵亡后，仍会在目标下个回合开始的时候移回游戏。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/sts5f22onPtLVZ8p6sBGdonAjMlsiujZXqpIhhkZ.png_200x282.png"
+  },
+  {
+    "id": 163,
+    "name": "韩娥",
+    "title": "",
+    "faction": "韩",
+    "position": "辅助",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "余音绕梁",
+        "description": "阵亡，令一名其他角色获得你的余音，并且保留当前的所有余音效果，持续到游戏结束。",
+        "settlement": "1.同时存在多个可以令角色获得余音的此技能时，彼此并不能叠加，但拥有余音绕梁时可以通过“令一名其他角色获得你的余音”的效果来达成余音的叠加。 2.余音本身不受封禁的影响，也不会被废除或删除，但此技能所带来的余音会因此技能的封禁、废除或删除而失效。注意:余音仅与带来余音的技能相关联，例如韩娥发动千古留音令左慈获得了余音“宫”，但左慈获得千古留音后将自身的“宫”切换为“角”，则韩娥千古留音的封禁并不会影响“角”，但左慈的千古留音被封禁时会影响。 3.余音绕梁的效果可以使余音被保留，此时即便此技能被封禁、废除或删除，余音也不会失去。"
+      },
+      {
+        "name": "千古留音",
+        "description": "登场/当你的体力值变化后，令一名未获得余音的角色获得一种余音，或者令一名已经获得余音的角色切换一种余音。 *余音效果： 宫：获得时/每个回合首次打出战法牌时，随机添加1张战法牌至手牌。 商：获得时/每个回合首次造成伤害后，随机弃置1张牌。 角：获得时/每个回合非摸牌阶段首次获得牌后，随机添加1张装备牌至手牌。 徵：获得时/出牌阶段开始时，可以立即打出1张杀，此杀不消耗出杀次数。 羽：获得时/每轮首次弃置牌后，失去1点体力。",
+        "settlement": "1.同时存在多个可以令角色获得余音的此技能时，彼此并不能叠加，但拥有余音绕梁时可以通过“令一名其他角色获得你的余音”的效果来达成余音的叠加。 2.余音本身不受封禁的影响，也不会被废除或删除，但此技能所带来的余音会因此技能的封禁、废除或删除而失效。注意:余音仅与带来余音的技能相关联，例如韩娥发动千古留音令左慈获得了余音“宫”，但左慈获得千古留音后将自身的“宫”切换为“角”，则韩娥千古留音的封禁并不会影响“角”，但左慈的千古留音被封禁时会影响。 3.余音绕梁的效果可以使余音被保留，此时即便此技能被封禁、废除或删除，余音也不会失去。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/1houXrPGRawtBLf3KvikdqWbmJOlxHmB2TKjjfMX.png_200x282.png"
+  },
+  {
+    "id": 156,
+    "name": "魏咎",
+    "title": "",
+    "faction": "魏",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "焚身救民",
+        "description": "回合结束时，你进入连环状态，摸2张牌，然后受到1点火焰伤害，并失去1点体力上限。",
+        "settlement": "1.若回合结束时已经处于连环状态，此技能效果不会解除连环状态。 2.无法选择是否失去体力上限，一定会失去。"
+      },
+      {
+        "name": "受立魏王",
+        "description": "限定，回合开始时，你每有1张“义兵”，你可以增加1点体力上限，并且回复1点体力，并获得技能“焚身救民”。",
+        "settlement": "仅依据发动此技能时的义兵数量，决定后续效果。"
+      },
+      {
+        "name": "流亡储君",
+        "description": "登场，你可以选择一名其他角色，当其弃置牌时，你获得其中1张牌，并转化为“义兵”。当你打出“义兵”时，你令一名其他角色进入连环状态。",
+        "settlement": "1.随机获得的目标弃置的牌转化为的义兵会继承原牌的花色点数。 2.此技能后段效果只能令其他角色进入连环状态，而不能解除连环状态。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/JweWzj3tEJXh1sk4bKVpzFfGmLFveDJ4LP2fG3Ns.png_200x282.png"
+  },
+  {
+    "id": 134,
+    "name": "祝融夫人",
+    "title": "",
+    "faction": "蜀汉",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "火神族裔",
+        "description": "你每个回合首次受到的火焰伤害-1，对其他角色首次造成的火焰伤害+1。",
+        "settlement": "技能生效仅“每个回合”的首次；"
+      },
+      {
+        "name": "赤黎飞刃",
+        "description": "当你打出的牌被其他角色响应时，你可以将1张牌转化为杀对其打出，并获得对应花色的效果： ♦ - 贯穿 ♣ - 杀伤，中毒+1 ♥ - 杀伤，随机烧毁目标1张牌 ♠ - 杀伤，随机获得目标1张牌 土 - 造成伤害+1",
+        "settlement": "1.“闪避”也是“抵消杀”的一种方式; 2.转化的牌若为红桃花色，则会转化为火杀，若为点数为4且非红桃花色，则会转化为雷杀。 3.转化的牌若为装备区的装备牌，则会先将装备区的装备牌收回手牌再转化打出。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-03/V5pEnDftpC3j790JCZDXcyJy8jIRUufcT14W8FCC.png_200x282.png"
+  },
+  {
+    "id": 121,
+    "name": "鲁仲连",
+    "title": "",
+    "faction": "齐",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "珠明烁今",
+        "description": "回合结束时，你可以将本回合你放入牌堆底的其中1张牌交给一名角色。",
+        "settlement": "交给的目标可以是自己。"
+      },
+      {
+        "name": "一箭定聊",
+        "description": "出牌阶段限1次，你可以消耗1个出杀次数，弃置至多3张花色各不相同的手牌，并令一名其他角色弃置与你弃置的牌数量、花色均相同的牌，然后将这些牌放入牌堆底。若其弃置的牌数量不足，则其失去等量体力。",
+        "settlement": "1.不能弃置多张“没有花色”的牌； 2.目标角色可以弃不足，但会失去对应的体力； 3.此技能可以与鲁仲连的其他技能进行联动。"
+      },
+      {
+        "name": "义不帝秦",
+        "description": "其他角色无法改变你的势力。当你打出牌后，若此牌的花色是你在本轮首次打出，你可以将此牌放入牌堆底，然后摸1张牌。",
+        "settlement": "摸牌动作是从牌堆顶摸取第一张。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/QeqkEcky1DYgfK2gupNITbfrHEiYIFFxe1a4v7Xw.png_200x282.png"
+  },
+  {
+    "id": 86,
+    "name": "赵威后",
+    "title": "",
+    "faction": "赵",
+    "position": "防御",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "无民何有君",
+        "description": "当一名角色跳过摸牌阶段、失去最后的手牌或者有牌被烧毁/销毁/移出时，你可以令其卜卦，若结果不为♣，则其失去1点体力。",
+        "settlement": "失去体力不会触发“受伤”效果。"
+      },
+      {
+        "name": "质子为兵",
+        "description": "出牌阶段限1次，你可以令一名其他角色获得你任意区域的1张牌，并交给你另外至少1张牌，然后令你受到的下1次伤害-1。当你打出因此获得的牌时，可以弃置另外一名其他角色的1张手牌。",
+        "settlement": "可以获得你装备区的牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-14",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-10/u6QzQEBnZnvVzh4YVKBhSvCD6GuLvyQNEjs5PRkk.png_200x282.png"
   }
 ]

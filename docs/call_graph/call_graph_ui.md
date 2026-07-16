@@ -595,15 +595,20 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 
   → 进度更新:
   update_status(text):
-    -> 正则 r"\[(\d+)/(\d+)\]\s*(.+?)\s+(?:OK|FAIL)"
-    -> [匹配] _status_label.setText + update_progress(current, total)
-    -> [不匹配] _detail_label.setText(text)
+    -> 正则 r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK"
+    -> [匹配 OK] _status_label.setText("已生成 XXX..."), update_progress(current, total)
+    -> 正则 r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL"
+    -> [匹配 FAIL] _status_label.setText("生成失败: XXX..."), 不更新进度条位置
+    -> [均不匹配] _detail_label.setText(text)
 
   → 完成:
   on_process_finished(success, message):
     -> 启用"关闭"按钮
     -> [成功] _status_label = "生成完成 ✓", progress = max
     -> [失败] _status_label = "生成失败 ✗", set_error(message)
+      -> 失败信息由 GuideFetchService._on_process_finished() 通过 _failed_items 收集生成
+
+> **注意**: 子进程通过 `print(f"RESULT: FAIL={name}", flush=True)` 输出失败记录，GuideFetchService 的 `_on_stdout_line()` 解析 `RESULT: FAIL=` 行来收集 `_failed_items`。`_on_process_finished()` 基于 `_failed_items` 判断成败，不再仅依赖 `exit_code`。
 ```
 
 ---

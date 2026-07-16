@@ -10,7 +10,7 @@
 本模块是项目的**数据基础层**，承担两个核心角色：
 
 1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 Hero、SynergyScore、HeroGuide 等核心数据模型，作为项目唯一的 JSON 格式契约，确保所有数据来源（官网爬虫、AI 生成）的输出格式一致
-2. **数据管理**（`*_manager.py`）— 三个 Manager 类分别管理武将、相性、攻略的 CRUD 和 JSON 文件持久化，`DataFacade` 门面统一访问入口
+2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用的 CRUD、加载、保存方法，三个子类 Manager 继承基类并添加各自的查询方法；`DataFacade` 门面统一访问入口
 
 ---
 
@@ -20,10 +20,10 @@
 src/data/
 ├── __init__.py
 ├── models.py              # Pydantic 数据模型（Hero / Skill / SynergyScore / HeroGuide / Card / IncrementalUpdate）
-├── manager.py             # DataFacade 门面 + 增量更新函数 + 重新导出三个 Manager
-├── hero_manager.py        # 武将 CRUD + JSON 持久化
-├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化
-└── guide_manager.py       # 攻略 CRUD + JSON 持久化
+├── manager.py             # DataManager[V_co] 泛型基类 + DataFacade 门面 + 增量更新函数
+├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
+├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
+└── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
 ```
 
 ---
@@ -78,7 +78,27 @@ faction: str = Field(..., validation_alias="势力")
 
 AI 生成的结果使用英文字段名（`hero_id` / `name` / `faction`），同一模型兼容两种数据源。
 
-### 3.2 Manager CRUD 模式
+### 3.2 DataManager 泛型基类
+
+`DataManager[V_co]` 定义了所有 Manager 共用的 CRUD 和能力接口：
+
+```python
+class DataManager(Generic[V_co], ABC):
+    def __init__(self, file_path: Path)      # 绑定 JSON 文件路径
+    def load(self) -> None                    # 从 JSON 全量读入内存
+    def save(self) -> None                    # 原子写入 JSON（tmp → rename）
+    def get(self, key) -> V_co | None         # 抽象：键查询
+    def list_all(self) -> list[V_co]          # 全部数据
+    def add(self, item: V_co) -> None         # 新增（重复抛 ValueError）
+    def update(self, item: V_co) -> None      # 覆盖式 upsert
+    def delete(self, key) -> None             # 删除（不存在静默）
+```
+
+三个子类继承 `DataManager` 后仅需实现 `get()` 抽象方法，以及各自的领域查询方法（如 `get_hero_by_name`、`search_heroes` 等）。
+
+> **设计思路：** 将三个 Manager 中完全重复的 CRUD 骨架抽取为泛型基类，子类只保留与数据类型相关的特有查询。`Generic[V_co]` 的协变设计使得 `DataManager[Hero]` 可以安全地赋值给 `DataManager[BaseModel]` 类型的变量。
+
+### 3.3 Manager CRUD 模式
 
 三个 Manager 遵循相同设计模式：
 
@@ -94,7 +114,7 @@ AI 生成的结果使用英文字段名（`hero_id` / `name` / `faction`），�
 
 > **设计思路：** `add_*` 抛异常而 `update_*` 不抛，让调用方能区分「第一次写入」和「覆盖」。`delete_*` 静默处理不存在的 key，因为删除不存在的对象不是错误。
 
-### 3.3 相性双向归一
+### 3.4 相性双向归一
 
 相性是双向无向关系 — `(A=114, B=115)` 和 `(B=115, A=114)` 应被视为同一条数据：
 
@@ -107,7 +127,7 @@ class SynergyManager:
 
 排序保证了无论调用方以什么顺序传入，都映射到同一个存储 key。
 
-### 3.4 DataFacade 门面
+### 3.5 DataFacade 门面
 
 `DataFacade` 聚合三个 Manager，提供统一的数据访问入口：
 

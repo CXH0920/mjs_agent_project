@@ -148,7 +148,7 @@ def _on_stdout_ready(self) -> None:
                 self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 ```
 
-> **设计思路：** 子进程输出的 `[3/28] 诸葛亮 OK` 格式由 `ai_guide.py` / `ai_synergy_pair.py` 等模块生成。UI 的 `GuideProgressDialog` 也用同一套正则解析。统一输出格式减少了接口耦合。
+> **设计思路：** 子进程输出的 `[3/28] 诸葛亮 OK` 格式由 `ai_generation.py` 中的各生成循环函数生成。UI 的 `GuideProgressDialog` 也用同一套正则解析。统一输出格式减少了接口耦合。
 
 ### 4.3 临时文件自动清理
 

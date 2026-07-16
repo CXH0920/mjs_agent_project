@@ -98,13 +98,19 @@ class GuideProgressDialog(QDialog):
 
     def update_status(self, text: str) -> None:
         """更新当前状态文字"""
-        # 成功进度行: "[i/total] 武将名 OK"
-        m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+(?:OK|FAIL)", text)
-        if m:
-            self._status_label.setText(f"已生成 {m.group(3)} 的攻略...")
-            self.update_progress(int(m.group(1)), int(m.group(2)))
-        else:
-            self._detail_label.setText(text.strip())
+        # OK 行: "[i/total] 武将名 OK"
+        m_ok = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
+        if m_ok:
+            self._status_label.setText(f"✓ 已生成 {m_ok.group(3)} 的攻略...")
+            self.update_progress(int(m_ok.group(1)), int(m_ok.group(2)))
+            return
+        # FAIL 行: "[i/total] 武将名 FAIL"
+        m_fail = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
+        if m_fail:
+            self._status_label.setText(f"✗ {m_fail.group(3)} 生成失败")
+            self.update_progress(int(m_fail.group(1)), int(m_fail.group(2)))
+            return
+        self._detail_label.setText(text.strip())
 
     def set_error(self, message: str) -> None:
         """显示错误信息"""
