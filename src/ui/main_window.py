@@ -523,7 +523,7 @@ class MainWindow(QMainWindow):
         if not heroes:
             QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
             return
-        from src.scraper.ai_utils import estimate_cost
+        from src.scraper.prompt_utils import estimate_cost
         est = estimate_cost(len(heroes), "guide")
         est["mode"] = "all"
         est["heroes"] = heroes
@@ -545,7 +545,7 @@ class MainWindow(QMainWindow):
         if not missing:
             self._status_label.setText("所有武将已有攻略，无需生成")
             return
-        from src.scraper.ai_utils import estimate_cost
+        from src.scraper.prompt_utils import estimate_cost
         est = estimate_cost(len(missing), "guide")
         est["mode"] = "incremental"
         est["heroes"] = missing
@@ -564,7 +564,7 @@ class MainWindow(QMainWindow):
         if not dialog.selected_heroes:
             return
         hero_count = len(dialog.selected_heroes)
-        from src.scraper.ai_utils import estimate_cost
+        from src.scraper.prompt_utils import estimate_cost
         est = estimate_cost(hero_count, "guide")
         est["mode"] = "specific"
         est["heroes"] = dialog.selected_heroes
