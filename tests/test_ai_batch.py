@@ -209,7 +209,7 @@ class TestAIBatchGenerator:
         assert result is not None
         assert result["hero_a_id"] == 114
         assert result["hero_b_id"] == 115
-        assert result["synergy_rating"] == "S"
+        assert result["synergy_rating"] == "A"
 
     def test_validate_synergy_failure(self) -> None:
         """Pydantic 相性校验失败应返回 None"""

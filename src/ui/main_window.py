@@ -159,6 +159,8 @@ class MainWindow(QMainWindow):
             dialog.on_process_finished(success, message)
         if success:
             self._data.synergies.load()
+            self._hero_browser.refresh_synergies()
+            self._recommendation.refresh_synergies()
             self._update_status()
         else:
             QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{message}")
@@ -420,7 +422,12 @@ class MainWindow(QMainWindow):
         self._tabs.setDocumentMode(True)
 
         # Tab 1: 武将浏览
-        self._hero_browser = HeroBrowser(self._data.heroes, self._data.guides)
+        self._hero_browser = HeroBrowser(
+            self._data.heroes,
+            self._data.guides,
+            self._data.synergies,
+        )
+        self._hero_browser.synergies_changed.connect(self._on_synergies_changed)
         self._tabs.addTab(self._hero_browser, "武将浏览")
 
         # Tab 2: 选将推荐
@@ -441,6 +448,11 @@ class MainWindow(QMainWindow):
         bar.addWidget(self._status_label)
         self.setStatusBar(bar)
 
+    def _on_synergies_changed(self) -> None:
+        """同步人工编辑后的相性摘要和状态栏。"""
+        self._recommendation.refresh_synergies()
+        self._update_status()
+
     # ---------------------------------------------------------------
     # 数据加载
     # ---------------------------------------------------------------
@@ -460,10 +472,11 @@ class MainWindow(QMainWindow):
     def _reload_data(self) -> None:
         """重新加载数据"""
         self._load_data()
-        self._update_status()
-        # 刷新武将浏览器
         if hasattr(self, "_hero_browser"):
             self._hero_browser.reload_data()
+        if hasattr(self, "_recommendation"):
+            self._recommendation.refresh_synergies()
+        self._update_status()
         QMessageBox.information(self, "已刷新", "数据已重新加载")
 
     # ---------------------------------------------------------------

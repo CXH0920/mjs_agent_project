@@ -610,6 +610,12 @@ class RecommendationPanel(QWidget):
 
         self._apply_medal_rankings()
 
+    def refresh_synergies(self) -> None:
+        """按当前卡片槽位重新加载相性摘要，不改变 OCR 模式。"""
+        for index, card in enumerate(self._cards):
+            if card._hero_id > 0:
+                self._load_real_synergies(index, card._hero_id)
+
     def _load_real_synergies(self, card_idx: int, hero_id: int) -> None:
         """从 synergy manager 加载已有相性数据（按评分排序取前 4 条）
 
