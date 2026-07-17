@@ -13,6 +13,7 @@ import mistune
 
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -27,6 +28,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSplitter,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QTextBrowser,
     QTextEdit,
@@ -36,7 +39,8 @@ from PySide6.QtWidgets import (
 
 from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
-from src.data.models import Hero, HeroGuide, Gender, Difficulty
+from src.data.synergy_manager import SynergyManager
+from src.data.models import Hero, HeroGuide, SynergyScore, Gender, Difficulty, synergy_rating_for_score
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +233,98 @@ class GuideEditDialog(QDialog):
 
 
 # ============================================================
-# 列表面板
+# 相性编辑弹窗
 # ============================================================
+
+
+class SynergyEditDialog(QDialog):
+    """相性评分编辑对话框。"""
+
+    def __init__(self, hero_manager: HeroManager, synergy: SynergyScore, parent=None):
+        super().__init__(parent)
+        self._hero_mgr = hero_manager
+        self._synergy = synergy
+        self.setWindowTitle("编辑相性")
+        self.setMinimumWidth(480)
+        self.setMinimumHeight(460)
+        self._setup_ui()
+
+    def _hero_text(self, hero_id: int) -> str:
+        hero = self._hero_mgr.get_hero(hero_id)
+        return f"{hero.name}（#{hero_id}）" if hero else f"#{hero_id}"
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        first_id = self._synergy.hero_a_id
+        second_id = self._synergy.hero_b_id
+
+        self._hero_a_label = QLabel(self._hero_text(first_id))
+        form.addRow("武将 A:", self._hero_a_label)
+
+        self._hero_b_label = QLabel(self._hero_text(second_id))
+        form.addRow("武将 B:", self._hero_b_label)
+
+        self._score_spin = QSpinBox()
+        self._score_spin.setRange(-10, 10)
+        self._score_spin.setValue(self._synergy.score)
+        self._score_spin.valueChanged.connect(self._update_rating_label)
+        form.addRow("综合评分:", self._score_spin)
+
+        self._rating_label = QLabel()
+        form.addRow("自动评级:", self._rating_label)
+
+        self._ceiling_spin = QSpinBox()
+        self._ceiling_spin.setRange(1, 10)
+        self._ceiling_spin.setValue(self._synergy.combo_ceiling)
+        form.addRow("配合上限:", self._ceiling_spin)
+
+        self._stability_spin = QSpinBox()
+        self._stability_spin.setRange(1, 10)
+        self._stability_spin.setValue(self._synergy.combo_stability)
+        form.addRow("配合稳定性:", self._stability_spin)
+
+        self._adaptability_spin = QSpinBox()
+        self._adaptability_spin.setRange(1, 10)
+        self._adaptability_spin.setValue(self._synergy.adaptability)
+        form.addRow("环境适应力:", self._adaptability_spin)
+
+        self._description_edit = QTextEdit()
+        self._description_edit.setPlaceholderText("相性说明（支持 Markdown）")
+        self._description_edit.setText(self._synergy.description)
+        form.addRow("相性说明:", self._description_edit)
+
+        layout.addLayout(form)
+        self._update_rating_label(self._score_spin.value())
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        save_btn = QPushButton("保存")
+        save_btn.setStyleSheet("padding: 6px 24px;")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet("padding: 6px 24px;")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+    def _update_rating_label(self, score: int) -> None:
+        self._rating_label.setText(synergy_rating_for_score(score))
+
+    def get_synergy(self) -> SynergyScore:
+        """根据表单内容构造校验后的相性对象。"""
+        return SynergyScore(
+            hero_a_id=self._synergy.hero_a_id,
+            hero_b_id=self._synergy.hero_b_id,
+            score=self._score_spin.value(),
+            combo_ceiling=self._ceiling_spin.value(),
+            combo_stability=self._stability_spin.value(),
+            adaptability=self._adaptability_spin.value(),
+            description=self._description_edit.toPlainText(),
+        )
 
 
 class HeroListPanel(QWidget):
@@ -353,11 +447,19 @@ class HeroDetailPanel(QWidget):
     """武将详情面板"""
 
     data_changed = Signal()  # 数据变更后通知刷新列表
+    synergies_changed = Signal()  # 相性变更后通知刷新关联视图
 
-    def __init__(self, hero_manager: HeroManager, guide_manager: GuideManager, parent=None):
+    def __init__(
+        self,
+        hero_manager: HeroManager,
+        guide_manager: GuideManager,
+        synergy_manager: SynergyManager,
+        parent=None,
+    ):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
+        self._synergy_mgr = synergy_manager
         self._current_hero: Optional[Hero] = None
         self._current_guide: Optional[HeroGuide] = None
 
@@ -384,7 +486,12 @@ class HeroDetailPanel(QWidget):
         self._setup_guide_tab()
         self._detail_tabs.addTab(self._guide_tab, "攻略指南")
 
-        # Tab 栏右角：修改/删除按钮组
+        # Tab 3: 武将相性
+        self._synergy_tab = QWidget()
+        self._setup_synergy_tab()
+        self._detail_tabs.addTab(self._synergy_tab, "武将相性")
+
+        # Tab 栏右角：操作按钮组
         self._setup_corner_buttons()
 
         layout.addWidget(self._detail_tabs, 1)
@@ -422,25 +529,35 @@ class HeroDetailPanel(QWidget):
         self._guide_delete_btn.clicked.connect(self._on_guide_delete)
         hlayout.addWidget(self._guide_delete_btn)
 
-        # 初始隐藏攻略按钮组
+        # 相性按钮组
+        self._synergy_edit_btn = QPushButton("修改")
+        self._synergy_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
+        self._synergy_edit_btn.clicked.connect(self._on_synergy_edit)
+        hlayout.addWidget(self._synergy_edit_btn)
+
+        self._synergy_delete_btn = QPushButton("删除")
+        self._synergy_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
+        self._synergy_delete_btn.clicked.connect(self._on_synergy_delete)
+        hlayout.addWidget(self._synergy_delete_btn)
+
+        # 初始隐藏攻略和相性按钮组
         self._guide_edit_btn.hide()
         self._guide_delete_btn.hide()
+        self._synergy_edit_btn.hide()
+        self._synergy_delete_btn.hide()
 
         self._detail_tabs.setCornerWidget(corner, Qt.Corner.TopRightCorner)
         self._detail_tabs.currentChanged.connect(self._on_tab_changed)
 
     def _on_tab_changed(self, index: int) -> None:
-        """Tab 切换时切换对应的修改/删除按钮组"""
-        if index == 0:  # 武将信息
-            self._info_edit_btn.show()
-            self._info_delete_btn.show()
-            self._guide_edit_btn.hide()
-            self._guide_delete_btn.hide()
-        else:  # 攻略指南
-            self._info_edit_btn.hide()
-            self._info_delete_btn.hide()
-            self._guide_edit_btn.show()
-            self._guide_delete_btn.show()
+        """Tab 切换时切换对应的操作按钮组。"""
+        self._info_edit_btn.setVisible(index == 0)
+        self._info_delete_btn.setVisible(index == 0)
+        self._guide_edit_btn.setVisible(index == 1)
+        self._guide_delete_btn.setVisible(index == 1)
+        self._synergy_edit_btn.setVisible(index == 2)
+        self._synergy_delete_btn.setVisible(index == 2)
+        self._update_synergy_buttons()
 
     def _setup_info_tab(self) -> None:
         """构建武将信息页面"""
@@ -477,12 +594,174 @@ class HeroDetailPanel(QWidget):
         self._guide_layout.addWidget(QLabel("请选择一个武将"))
         self._guide_layout.addStretch()
 
-    # ---------------------------------------------------------------
-    # 武将展示
-    # ---------------------------------------------------------------
+    def _setup_synergy_tab(self) -> None:
+        """构建当前武将的相性管理页面。"""
+        layout = QVBoxLayout(self._synergy_tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        self._synergy_context_label = QLabel("请选择一个武将")
+        self._synergy_context_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self._synergy_context_label)
+
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("关联武将:"))
+        self._synergy_search_edit = QLineEdit()
+        self._synergy_search_edit.setPlaceholderText("搜索名称或 ID")
+        self._synergy_search_edit.textChanged.connect(self._refresh_synergy_table)
+        filter_layout.addWidget(self._synergy_search_edit, 1)
+        filter_layout.addWidget(QLabel("总评:"))
+        self._synergy_rating_combo = QComboBox()
+        self._synergy_rating_combo.addItems(["全部", "S", "A", "B", "C", "D"])
+        self._synergy_rating_combo.currentTextChanged.connect(self._refresh_synergy_table)
+        filter_layout.addWidget(self._synergy_rating_combo)
+        reset_btn = QPushButton("重置")
+        reset_btn.clicked.connect(self._reset_synergy_filters)
+        filter_layout.addWidget(reset_btn)
+        layout.addLayout(filter_layout)
+
+        self._synergy_table = QTableWidget(0, 7)
+        self._synergy_table.setHorizontalHeaderLabels([
+            "搭配武将", "综合评分", "总评", "配合上限", "配合稳定性", "环境适应力", "相性说明",
+        ])
+        self._synergy_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._synergy_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._synergy_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._synergy_table.setAlternatingRowColors(True)
+        self._synergy_table.itemSelectionChanged.connect(self._update_synergy_buttons)
+        self._synergy_table.itemDoubleClicked.connect(self._on_synergy_table_double_clicked)
+        header = self._synergy_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        self._synergy_table.setColumnWidth(0, 150)
+        self._synergy_table.setColumnWidth(1, 76)
+        self._synergy_table.setColumnWidth(2, 52)
+        self._synergy_table.setColumnWidth(3, 82)
+        self._synergy_table.setColumnWidth(4, 92)
+        self._synergy_table.setColumnWidth(5, 92)
+        layout.addWidget(self._synergy_table, 1)
+
+    def _reset_synergy_filters(self) -> None:
+        """清空相性筛选条件。"""
+        self._synergy_search_edit.clear()
+        self._synergy_rating_combo.setCurrentText("全部")
+
+    def _refresh_synergy_table(self) -> None:
+        """按当前武将和筛选条件刷新相性表格。"""
+        hero = self._current_hero
+        self._synergy_table.setRowCount(0)
+        if not hero:
+            self._synergy_context_label.setText("请选择一个武将")
+            self._update_synergy_buttons()
+            return
+
+        synergies = self._synergy_mgr.list_synergies_for_hero(hero.id)
+        self._synergy_context_label.setText(
+            f"当前武将：{hero.name}（#{hero.id}）｜共 {len(synergies)} 条相性记录"
+        )
+        search_text = self._synergy_search_edit.text().strip().lower()
+        rating = self._synergy_rating_combo.currentText()
+        rows: list[tuple[SynergyScore, Hero | None]] = []
+        for synergy in synergies:
+            partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id
+            partner = self._hero_mgr.get_hero(partner_id)
+            partner_text = f"{partner.name} #{partner_id}" if partner else f"#{partner_id}"
+            if search_text and search_text not in partner_text.lower():
+                continue
+            if rating != "全部" and synergy.synergy_rating != rating:
+                continue
+            rows.append((synergy, partner))
+
+        rows.sort(key=lambda item: (-item[0].score, item[1].name if item[1] else str(
+            item[0].hero_b_id if item[0].hero_a_id == hero.id else item[0].hero_a_id
+        )))
+        self._synergy_table.setRowCount(len(rows))
+        for row, (synergy, partner) in enumerate(rows):
+            partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id
+            partner_name = partner.name if partner else f"#{partner_id}"
+            cells = [
+                partner_name,
+                str(synergy.score),
+                synergy.synergy_rating,
+                str(synergy.combo_ceiling),
+                str(synergy.combo_stability),
+                str(synergy.adaptability),
+                synergy.description.replace("\n", " "),
+            ]
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if column == 0:
+                    item.setData(
+                        Qt.ItemDataRole.UserRole,
+                        (synergy.hero_a_id, synergy.hero_b_id),
+                    )
+                if column == 6:
+                    item.setToolTip(synergy.description)
+                self._synergy_table.setItem(row, column, item)
+        self._update_synergy_buttons()
+
+    def _on_synergy_table_double_clicked(self, item: QTableWidgetItem) -> None:
+        """双击说明时预览 Markdown，双击其它列时编辑相性。"""
+        if item.column() == 6:
+            self._show_synergy_description(item.row())
+            return
+        self._on_synergy_edit()
+
+    def _show_synergy_description(self, row: int) -> None:
+        """以攻略详情相同格式展示相性说明。"""
+        item = self._synergy_table.item(row, 0)
+        if not item:
+            return
+        ids = item.data(Qt.ItemDataRole.UserRole)
+        if not ids:
+            return
+        synergy = self._synergy_mgr.get_synergy(*ids)
+        if not synergy or not synergy.description.strip():
+            return
+
+        first_hero = self._hero_mgr.get_hero(synergy.hero_a_id)
+        second_hero = self._hero_mgr.get_hero(synergy.hero_b_id)
+        first_name = first_hero.name if first_hero else f"#{synergy.hero_a_id}"
+        second_name = second_hero.name if second_hero else f"#{synergy.hero_b_id}"
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"{first_name} 与 {second_name} 的相性说明")
+        dialog.setMinimumSize(500, 350)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        browser.setHtml(self._markdown_to_html(synergy.description))
+        browser.setOpenExternalLinks(False)
+        layout.addWidget(browser, 1)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+        dialog.exec()
+
+    def _selected_synergy(self) -> SynergyScore | None:
+        """返回表格当前选中行关联的相性记录。"""
+        row = self._synergy_table.currentRow()
+        if row < 0:
+            return None
+        item = self._synergy_table.item(row, 0)
+        if not item:
+            return None
+        ids = item.data(Qt.ItemDataRole.UserRole)
+        if not ids:
+            return None
+        return self._synergy_mgr.get_synergy(*ids)
+
+    def _update_synergy_buttons(self) -> None:
+        """同步相性操作按钮可用状态。"""
+        if not hasattr(self, "_synergy_edit_btn"):
+            return
+        has_selection = self._selected_synergy() is not None
+        self._synergy_edit_btn.setEnabled(has_selection)
+        self._synergy_delete_btn.setEnabled(has_selection)
 
     def show_hero(self, hero_id: int) -> None:
-        """展示指定武将的详细信息和攻略"""
+        """展示指定武将的详细信息和攻略。"""
         hero = self._hero_mgr.get_hero(hero_id)
         guide = self._guide_mgr.get_guide(hero_id)
 
@@ -495,6 +774,7 @@ class HeroDetailPanel(QWidget):
             self._info_delete_btn.setEnabled(False)
             self._guide_edit_btn.setEnabled(False)
             self._guide_delete_btn.setEnabled(False)
+            self._refresh_synergy_table()
             return
 
         self._info_edit_btn.setEnabled(True)
@@ -504,6 +784,7 @@ class HeroDetailPanel(QWidget):
 
         self._update_info_tab(hero)
         self._update_guide_tab(guide)
+        self._refresh_synergy_table()
 
     def _update_info_tab(self, hero: Hero) -> None:
         """更新武将信息页面"""
@@ -668,11 +949,59 @@ class HeroDetailPanel(QWidget):
             self._guide_layout.addWidget(desc_browser)
 
     # ---------------------------------------------------------------
-    # 武将信息 CRUD
+    # 相性 CRUD
     # ---------------------------------------------------------------
 
+    def _on_synergy_edit(self) -> None:
+        """编辑表格中选中的相性。"""
+        synergy = self._selected_synergy()
+        if not self._current_hero or not synergy:
+            return
+        dialog = SynergyEditDialog(
+            self._hero_mgr,
+            synergy,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._synergy_mgr.update_synergy(dialog.get_synergy())
+            self._synergy_mgr.save()
+            self._refresh_synergy_table()
+            self.synergies_changed.emit()
+        except Exception as e:
+            logger.exception("保存相性失败")
+            QMessageBox.critical(self, "保存失败", f"无法保存相性:\n{e}")
+
+    def _on_synergy_delete(self) -> None:
+        """删除表格中选中的相性。"""
+        synergy = self._selected_synergy()
+        if not synergy:
+            return
+        first_name = self._hero_mgr.get_hero(synergy.hero_a_id)
+        second_name = self._hero_mgr.get_hero(synergy.hero_b_id)
+        first_text = first_name.name if first_name else f"#{synergy.hero_a_id}"
+        second_text = second_name.name if second_name else f"#{synergy.hero_b_id}"
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除「{first_text}」与「{second_text}」的相性吗？\n该操作不可撤销。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._synergy_mgr.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
+            self._synergy_mgr.save()
+            self._refresh_synergy_table()
+            self.synergies_changed.emit()
+        except Exception as e:
+            logger.exception("删除相性失败")
+            QMessageBox.critical(self, "删除失败", f"无法删除相性:\n{e}")
+
     def _on_info_edit(self) -> None:
-        """打开编辑对话框修改武将信息"""
+        """打开编辑对话框修改武将信息。"""
         if not self._current_hero:
             return
         dialog = HeroEditDialog(self._current_hero, parent=self)
@@ -692,10 +1021,11 @@ class HeroDetailPanel(QWidget):
         """删除当前武将（含确认）"""
         if not self._current_hero:
             return
+        synergy_count = len(self._synergy_mgr.list_synergies_for_hero(self._current_hero.id))
         reply = QMessageBox.question(
             self, "确认删除",
             f"确定要删除武将「{self._current_hero.name}」吗？\n"
-            "该操作不可撤销，关联的攻略也将被删除。",
+            f"该操作不可撤销，关联的攻略和 {synergy_count} 条相性评分也将被删除。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -704,14 +1034,18 @@ class HeroDetailPanel(QWidget):
         try:
             self._hero_mgr.delete_hero(self._current_hero.id)
             self._guide_mgr.delete_guide(self._current_hero.id)
+            self._synergy_mgr.delete_synergies_for_hero(self._current_hero.id)
             self._hero_mgr.save()
             self._guide_mgr.save()
+            self._synergy_mgr.save()
             self._current_hero = None
             self._current_guide = None
             self._basic_info.setText("武将已删除，请选择其他武将")
             self._clear_skills()
             self._update_guide_tab(None)
+            self._refresh_synergy_table()
             self.data_changed.emit()
+            self.synergies_changed.emit()
         except Exception as e:
             logger.exception("删除武将失败")
             QMessageBox.critical(self, "删除失败", f"无法删除武将:\n{e}")
@@ -775,10 +1109,19 @@ class HeroBrowser(QWidget):
     左侧列表 + 右侧详情面板，支持搜索和势力筛选。
     """
 
-    def __init__(self, hero_manager: HeroManager, guide_manager: GuideManager, parent=None):
+    synergies_changed = Signal()
+
+    def __init__(
+        self,
+        hero_manager: HeroManager,
+        guide_manager: GuideManager,
+        synergy_manager: SynergyManager,
+        parent=None,
+    ):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
+        self._synergy_mgr = synergy_manager
 
         self._setup_ui()
 
@@ -794,7 +1137,11 @@ class HeroBrowser(QWidget):
         splitter.addWidget(self._list_panel)
 
         # 右侧：详情面板
-        self._detail_panel = HeroDetailPanel(self._hero_mgr, self._guide_mgr)
+        self._detail_panel = HeroDetailPanel(
+            self._hero_mgr,
+            self._guide_mgr,
+            self._synergy_mgr,
+        )
         splitter.addWidget(self._detail_panel)
 
         splitter.setSizes([280, 520])
@@ -803,7 +1150,15 @@ class HeroBrowser(QWidget):
         # 连接信号
         self._list_panel.hero_selected.connect(self._detail_panel.show_hero)
         self._detail_panel.data_changed.connect(self.reload_data)
+        self._detail_panel.synergies_changed.connect(self.synergies_changed)
 
     def reload_data(self) -> None:
-        """公有方法：重新加载武将列表数据"""
+        """重新加载列表并刷新当前详情。"""
+        current_hero = self._detail_panel._current_hero
         self._list_panel.reload()
+        if current_hero:
+            self._detail_panel.show_hero(current_hero.id)
+
+    def refresh_synergies(self) -> None:
+        """刷新当前武将的相性表格。"""
+        self._detail_panel._refresh_synergy_table()

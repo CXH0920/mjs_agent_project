@@ -11,7 +11,7 @@ from datetime import date
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ============================================================
@@ -147,12 +147,25 @@ class Hero(BaseModel):
         return v
 
 
+def synergy_rating_for_score(score: int) -> str:
+    """根据综合评分返回相性评级。"""
+    if score >= 9:
+        return "S"
+    if score >= 6:
+        return "A"
+    if score >= 3:
+        return "B"
+    if score >= 0:
+        return "C"
+    return "D"
+
+
 class SynergyScore(BaseModel):
     """武将间相性评分"""
     hero_a_id: int = Field(..., description="武将A ID")
     hero_b_id: int = Field(..., description="武将B ID")
     score: int = Field(..., ge=-10, le=10, description="综合相性评分 (-10 ~ 10)")
-    synergy_rating: str = Field(default="C", description="S/A/B/C/D 总评")
+    synergy_rating: str = Field(default="C", description="由综合评分自动推导的 S/A/B/C/D 总评")
     combo_ceiling: int = Field(default=5, ge=1, le=10, description="配合上限 1-10")
     combo_stability: int = Field(default=5, ge=1, le=10, description="配合稳定性 1-10")
     adaptability: int = Field(default=5, ge=1, le=10, description="环境适应力 1-10")
@@ -171,6 +184,13 @@ class SynergyScore(BaseModel):
         if v.upper() not in {"S", "A", "B", "C", "D"}:
             raise ValueError("synergy_rating 必须为 S/A/B/C/D")
         return v.upper()
+
+    @model_validator(mode="after")
+    def validate_pair_and_rating(self) -> "SynergyScore":
+        if self.hero_a_id == self.hero_b_id:
+            raise ValueError("相性双方不能是同一武将")
+        self.synergy_rating = synergy_rating_for_score(self.score)
+        return self
 
 
 class HeroGuide(BaseModel):
