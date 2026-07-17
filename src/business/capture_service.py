@@ -33,12 +33,28 @@ class CaptureService(QObject):
     status_changed = Signal(str)
     capture_completed = Signal(dict)
     capture_failed = Signal(str)
+    connection_changed = Signal(str, str)  # (状态, 详情)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._capture: AdbCapture | None = None
         self._config = {}  # 当前配置缓存
+        self._connection_state = "unconfigured"
+        self._connection_detail = ""
         self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
+
+    def _set_connection_state(self, state: str, detail: str = "") -> None:
+        """更新并广播当前 ADB 会话状态。"""
+        if (state, detail) == (self._connection_state, self._connection_detail):
+            return
+        self._connection_state = state
+        self._connection_detail = detail
+        self.connection_changed.emit(state, detail)
+
+    @property
+    def connection_state(self) -> tuple[str, str]:
+        """返回当前 ADB 会话状态及详情。"""
+        return self._connection_state, self._connection_detail
 
     # ── 配置 ──────────────────────────────────────────────────────────
 
@@ -62,24 +78,35 @@ class CaptureService(QObject):
 
         self._config = config
 
-        if (path_changed or port_changed or self._capture is None) and config.get("mumu_adb_path"):
-            old_connected = self._capture.connected if self._capture else False
-            old_serial = self._capture.device_serial if self._capture else ""
+        if not config.get("mumu_adb_path"):
+            self._capture = None
+            self._set_connection_state("unconfigured")
+            return
 
+        if path_changed or port_changed or self._capture is None:
             self._capture = AdbCapture(
                 adb_path=config["mumu_adb_path"],
                 adb_port=config.get("mumu_adb_port", 0),
             )
-
-            # 如果旧连接已建立且设备信息相同，尝试恢复连接状态
-            if old_connected and old_serial:
-                self._capture.device_serial = old_serial
-                self._capture._connected = True
-
+            self._set_connection_state("disconnected")
             logger.info("CaptureService 配置已更新，ADB: %s:%s",
                         config["mumu_adb_path"], config.get("mumu_adb_port", "auto"))
         else:
             logger.debug("CaptureService 配置已更新（仅 OCR 参数）")
+
+    def set_target_port(self, port: int) -> None:
+        """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
+        if not self._config.get("mumu_adb_path"):
+            self._set_connection_state("unconfigured")
+            return
+        config = dict(self._config)
+        config["mumu_adb_port"] = port
+        self.update_config(config)
+
+    @property
+    def config(self) -> dict:
+        """返回当前截图配置的副本。"""
+        return dict(self._config)
 
     @property
     def capture(self) -> AdbCapture | None:
@@ -137,11 +164,12 @@ class CaptureService(QObject):
     def _execute_capture(self, hero_names: list[str] | None = None) -> None:
         """实际截图执行（在 QTimer 回调中运行）。"""
         if not self._capture:
+            self._set_connection_state("unconfigured")
             self.capture_failed.emit("ADB 未配置，请在 配置 → 模拟器配置 中设置")
             return
 
         if not self._capture.connected:
-            ok, msg = self._capture.connect()
+            ok, msg = self.connect_emulator()
             if not ok:
                 self.capture_failed.emit(f"ADB 连接失败: {msg}")
                 return
@@ -150,6 +178,7 @@ class CaptureService(QObject):
         self.status_changed.emit("正在截图...")
         ok, result = self._capture.screencap_full()
         if not ok:
+            self.sync_connection_state(str(result))
             self.capture_failed.emit(str(result))
             return
 
@@ -231,6 +260,22 @@ class CaptureService(QObject):
 
     # ── 连接管理 ──────────────────────────────────────────────────────
 
+    def sync_connection_state(self, error_detail: str = "") -> None:
+        """根据底层会话状态同步 ADB 状态，供截图和轮询失败路径调用。"""
+        if not self._capture:
+            self._set_connection_state("unconfigured")
+        elif not self._capture.connected:
+            self._set_connection_state("offline", error_detail)
+
+    def sync_poll_connection_state(self, capture: AdbCapture, error_detail: str = "") -> None:
+        """仅同步当前轮询会话的连接状态，忽略过期 capture。"""
+        if capture is not self._capture:
+            return
+        if capture.connected:
+            self._set_connection_state("connected", capture.device_serial)
+        else:
+            self._set_connection_state("offline", error_detail)
+
     def connect_emulator(self) -> tuple[bool, str]:
         """连接模拟器。
 
@@ -238,14 +283,27 @@ class CaptureService(QObject):
             (是否成功, 消息)
         """
         if not self._capture:
+            self._set_connection_state("unconfigured")
             return False, "ADB 未配置"
-        return self._capture.connect()
+        self._set_connection_state("connecting")
+        self.status_changed.emit("正在连接模拟器...")
+        ok, message = self._capture.connect()
+        if ok:
+            self._set_connection_state("connected", self._capture.device_serial)
+            self.status_changed.emit(f"ADB 已连接：{self._capture.device_serial}")
+        else:
+            self._set_connection_state("disconnected", message)
+        return ok, message
 
     def disconnect_emulator(self) -> tuple[bool, str]:
         """断开模拟器。"""
         if not self._capture:
+            self._set_connection_state("unconfigured")
             return False, "ADB 未配置"
-        return self._capture.disconnect()
+        ok, message = self._capture.disconnect()
+        self._set_connection_state("disconnected")
+        self.status_changed.emit("ADB 已断开")
+        return ok, message
 
     @property
     def is_connected(self) -> bool:
