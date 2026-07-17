@@ -94,11 +94,20 @@ class TestSynergyScore:
     def test_basic_synergy(self) -> None:
         s = SynergyScore(hero_a_id=1, hero_b_id=2, score=8)
         assert s.score == 8
-        assert s.synergy_rating == "C"
+        assert s.synergy_rating == "A"
 
-    def test_synergy_with_rating(self) -> None:
+    @pytest.mark.parametrize(
+        ("score", "rating"),
+        [(-10, "D"), (-1, "D"), (0, "C"), (2, "C"), (3, "B"),
+         (5, "B"), (6, "A"), (8, "A"), (9, "S"), (10, "S")],
+    )
+    def test_synergy_rating_follows_score(self, score: int, rating: str) -> None:
+        s = SynergyScore(hero_a_id=1, hero_b_id=2, score=score)
+        assert s.synergy_rating == rating
+
+    def test_synergy_rating_is_overridden_by_score(self) -> None:
         s = SynergyScore(hero_a_id=1, hero_b_id=2, score=8, synergy_rating="S")
-        assert s.synergy_rating == "S"
+        assert s.synergy_rating == "A"
 
     def test_invalid_synergy_rating_should_raise(self) -> None:
         with pytest.raises(ValidationError):
@@ -106,11 +115,15 @@ class TestSynergyScore:
 
     def test_synergy_rating_case_insensitive(self) -> None:
         s = SynergyScore(hero_a_id=1, hero_b_id=2, score=5, synergy_rating="s")
-        assert s.synergy_rating == "S"
+        assert s.synergy_rating == "B"
 
     def test_invalid_hero_id_should_raise(self) -> None:
         with pytest.raises(ValidationError):
             SynergyScore(hero_a_id=0, hero_b_id=1, score=5)
+
+    def test_same_hero_pair_should_raise(self) -> None:
+        with pytest.raises(ValidationError):
+            SynergyScore(hero_a_id=1, hero_b_id=1, score=5)
 
     def test_score_range(self) -> None:
         with pytest.raises(ValidationError):
