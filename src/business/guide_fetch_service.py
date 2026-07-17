@@ -18,7 +18,7 @@ import traceback
 from PySide6.QtCore import QObject, Signal
 
 from src.business.base_fetch_service import BaseFetchService
-from src.scraper.ai_utils import estimate_cost
+from src.scraper.prompt_utils import estimate_cost
 
 logger = logging.getLogger(__name__)
 

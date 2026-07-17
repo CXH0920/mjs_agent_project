@@ -12,12 +12,14 @@ from src.scraper.ai_batch import (
     estimate_cost,
     load_heroes,
 )
+from src.scraper.prompt_utils import load_prompt
+from src.scraper.json_extract import extract_json
 from src.scraper.ai_utils import (
-    load_prompt,
-    extract_json,
     convert_ids_to_int,
     validate_guide,
     validate_synergy,
+)
+from src.scraper.prompt_utils import (
     build_guide_prompt,
     build_synergy_prompt,
 )
