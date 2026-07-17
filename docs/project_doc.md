@@ -1590,7 +1590,9 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
 
 用户勾选「持续轮询」→ 保存配置
   │
-  └─ MainWindow._open_mumu_config() → start_poll(interval_ms)
+  └─ MainWindow._open_mumu_config() → 仅记录配置
+       │
+       └─ ADB 连接状态变为 connected → start_poll(interval_ms)
        │
        ▼ 每隔 N 秒触发
   OcrService.poll_tick signal

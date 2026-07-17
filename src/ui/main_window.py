@@ -54,8 +54,7 @@ class MainWindow(QMainWindow):
     初始化时自动加载数据，显示武将浏览和选将推荐 Tab。
     """
 
-    _poll_result_ready = Signal(object, object, bool)  # (ocr_results, image, ocr_matched)
-    _poll_thread_lock = threading.Lock()
+    _poll_result_ready = Signal(object)  # 结构化轮询结果
 
     def __init__(
         self,
@@ -64,6 +63,7 @@ class MainWindow(QMainWindow):
         guide_manager=None,
     ):
         super().__init__()
+        self._poll_thread_lock = threading.Lock()
         if hero_manager or synergy_manager or guide_manager:
             from src.data.hero_manager import HeroManager
             from src.data.synergy_manager import SynergyManager
@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_status_bar()
         self._update_status()
+        self._sync_poll_with_connection()
 
     # ---------------------------------------------------------------
     # 采集服务信号连接
@@ -201,88 +202,147 @@ class MainWindow(QMainWindow):
         self._guide_service.progress_value.connect(self._on_guide_progress_value)
 
     def _connect_capture_signals(self) -> None:
-        """连接截图和轮询服务信号"""
+        """连接截图、连接状态和轮询服务信号。"""
+        self._capture_service.status_changed.connect(self._on_fetch_status)
+        self._capture_service.capture_failed.connect(self._on_capture_failed)
+        self._capture_service.connection_changed.connect(self._on_capture_connection_changed)
         self._ocr_service.poll_tick.connect(self._on_poll_capture)
+        self._ocr_service.poll_state_changed.connect(self._update_poll_status)
         self._poll_result_ready.connect(self._on_poll_result)
 
-    def _on_poll_capture(self) -> None:
-        """轮询触发：在后台线程执行截图 → 模板匹配 → OCR。
+    def _on_capture_failed(self, message: str) -> None:
+        """将截图失败原因显示在普通状态栏。"""
+        self._status_label.setText(f"截图失败：{message}")
 
-        主线程只做冷却期快检和锁检查，所有耗时操作移入子线程。
-        子线程完成后通过 _poll_result_ready 信号回传结果。
-        """
-        # 冷却期内跳过整轮检测
-        if self._ocr_service.is_on_cooldown:
-                return
+    def _on_capture_connection_changed(self, state: str, detail: str = "") -> None:
+        """同步 ADB 状态，并确保轮询只在设备已连接时运行。"""
+        self._update_emulator_status(state, detail)
+        self._sync_poll_with_connection()
 
-        if not self._capture_service.capture:
-            logger.debug("轮询跳过：ADB 未配置")
+    def _sync_poll_with_connection(self) -> None:
+        """根据轮询配置和 ADB 连接状态同步轮询定时器。"""
+        capture = self._capture_service.capture
+        poll_enabled = self._ocr_service.config.get("mumu_ocr_poll_mode", False)
+        if not poll_enabled or not capture or not capture.connected:
+            self._ocr_service.stop_poll()
             return
 
-        # 检查是否有上次线程仍在运行
+        interval = self._ocr_service.config.get("mumu_ocr_poll_interval", 2) * 1000
+        self._ocr_service.start_poll(interval)
+        logger.info("轮询已启动，间隔 %d ms", interval)
+
+    def _on_poll_capture(self) -> None:
+        """轮询触发：在后台线程执行一次采集并回传结构化结果。"""
+        generation = self._ocr_service.begin_poll()
+        capture = self._capture_service.capture
+        if generation is None:
+            return
+        if not capture:
+            self._poll_result_ready.emit({
+                "generation": generation,
+                "outcome": "prerequisite_unconfigured",
+                "detail": "ADB 未配置",
+            })
+            return
         if not self._poll_thread_lock.acquire(blocking=False):
-            logger.debug("轮询跳过：上一轮仍在执行")
+            self._ocr_service.complete_poll(generation, "retryable_capture", "上一轮轮询仍在执行")
             return
 
         hero_names = [h.name for h in self._data.heroes.list_heroes()]
+        threshold = self._capture_service.get_matching_threshold()
 
-        def _do_poll_work(capture_service, ocr_service, hero_names):
-            """在后台线程中执行耗时操作。"""
+        def _do_poll_work() -> None:
+            """仅在后台线程执行阻塞 ADB、模板和 OCR 操作。"""
             try:
-                # 1. 确保 ADB 已连接
-                if not capture_service.is_connected:
-                    ok, msg = capture_service.connect_emulator()
+                if not capture.connected:
+                    ok, detail = capture.connect()
                     if not ok:
-                        logger.debug("轮询跳过：ADB 连接失败 - %s", msg)
-                        self._poll_result_ready.emit(None, None, False)
+                        self._poll_result_ready.emit({
+                            "generation": generation,
+                            "outcome": "retryable_connection",
+                            "detail": detail,
+                            "capture": capture,
+                        })
                         return
 
-                # 2. 截图
-                cap = capture_service.capture
-                ok, result = cap.screencap_full()
+                ok, result = capture.screencap_full()
                 if not ok:
-                    self._poll_result_ready.emit(None, None, False)
+                    self._poll_result_ready.emit({
+                        "generation": generation,
+                        "outcome": "retryable_capture",
+                        "detail": str(result),
+                        "capture": capture,
+                    })
                     return
-                image = result
 
-                # 3. 模板匹配
+                image = result
                 from src.ocr.ocr_loader import get_template_manager
                 tm = get_template_manager()
                 if not tm.is_loaded:
-                    logger.debug("轮询跳过：模板未加载")
-                    self._poll_result_ready.emit(None, None, False)
+                    self._poll_result_ready.emit({
+                        "generation": generation,
+                        "outcome": "prerequisite_template_missing",
+                        "detail": "未加载识别模板",
+                        "capture": capture,
+                    })
                     return
 
-                threshold = capture_service.get_matching_threshold()
                 matched, confidence = tm.match(image, threshold=threshold)
                 if not matched:
-                    logger.debug("轮询跳过：模板不匹配 (置信度=%.4f)", confidence)
-                    self._poll_result_ready.emit(None, None, False)
+                    self._poll_result_ready.emit({
+                        "generation": generation,
+                        "outcome": "healthy_no_match",
+                        "detail": f"模板未匹配（置信度={confidence:.2f}）",
+                    })
                     return
 
-                logger.info("轮询检测到武将选择页面 (置信度=%.2f)", confidence)
+                try:
+                    from src.ocr.ocr_loader import get_recognizer
+                    rois = self._capture_service.config.get("ocr_generals_roi", None)
+                    results = get_recognizer(rois, hero_names=hero_names).recognize(image)
+                except Exception as exc:
+                    logger.exception("轮询 OCR 识别异常")
+                    self._poll_result_ready.emit({
+                        "generation": generation,
+                        "outcome": "retryable_ocr",
+                        "detail": str(exc),
+                    })
+                    return
 
-                # 4. OCR 识别
-                ocr_results, ocr_matched = capture_service.run_ocr_if_matched(image, hero_names=hero_names)
-                self._poll_result_ready.emit(ocr_results, image, ocr_matched)
-
+                self._poll_result_ready.emit({
+                    "generation": generation,
+                    "outcome": "matched",
+                    "capture": capture,
+                    "ocr_results": results,
+                })
             finally:
                 self._poll_thread_lock.release()
 
-        threading.Thread(target=_do_poll_work,
-                         args=(self._capture_service, self._ocr_service, hero_names),
-                         daemon=True).start()
+        threading.Thread(target=_do_poll_work, daemon=True).start()
 
-    def _on_poll_result(self, ocr_results, image, ocr_matched):
-        """轮询结果处理（在主线程中执行，可安全操作 UI）。"""
+    def _on_poll_result(self, result: dict) -> None:
+        """在主线程消费轮询结果，更新状态并安排下一轮。"""
+        generation = result["generation"]
+        outcome = result["outcome"]
+        detail = result.get("detail", "")
+        if generation != self._ocr_service.poll_generation:
+            return
+
+        capture = result.get("capture")
+        if capture is not None and capture is not self._capture_service.capture:
+            return
+        if outcome in {"retryable_connection", "retryable_capture"} and capture is not None:
+            self._capture_service.sync_poll_connection_state(capture, detail)
+
+        self._ocr_service.complete_poll(generation, outcome, detail)
+        if outcome != "matched":
+            return
+
+        ocr_results = result.get("ocr_results") or []
         if ocr_results:
             self._recommendation.load_from_ocr(ocr_results)
-            recognized = len([r for r in ocr_results if r.get("name")])
+            recognized = len([item for item in ocr_results if item.get("name")])
             logger.info("轮询: OCR 识别到 %d 个武将", recognized)
-
-        if ocr_matched:
-            self._ocr_service.set_cooldown(180)
-            logger.info("轮询: OCR 匹配成功，冷却 180 秒")
 
     def _on_guide_cost_estimated(self, estimation: dict) -> None:
         items = estimation.get("items", 0)
@@ -437,6 +497,7 @@ class MainWindow(QMainWindow):
             capture_service=self._capture_service,
             ocr_service=self._ocr_service,
         )
+        self._recommendation.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
 
         layout.addWidget(self._tabs, 1)
@@ -446,7 +507,52 @@ class MainWindow(QMainWindow):
         bar = QStatusBar()
         self._status_label = QLabel()
         bar.addWidget(self._status_label)
+        self._emulator_status_label = QLabel()
+        self._emulator_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._emulator_status_label.mousePressEvent = lambda _: self._open_mumu_config()
+        bar.addPermanentWidget(self._emulator_status_label)
+        self._poll_status_label = QLabel()
+        self._poll_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._poll_status_label.mousePressEvent = lambda _: self._open_mumu_config()
+        bar.addPermanentWidget(self._poll_status_label)
         self.setStatusBar(bar)
+        state, detail = self._capture_service.connection_state
+        self._update_emulator_status(state, detail)
+        self._update_poll_status(self._ocr_service.poll_state, "轮询未启用")
+
+    def _update_emulator_status(self, state: str, detail: str = "") -> None:
+        """渲染不受业务进度覆盖的常驻 ADB 状态。"""
+        styles = {
+            "unconfigured": ("模拟器：未配置", "#777", "#ececec"),
+            "disconnected": ("模拟器：ADB 未连接", "#777", "#ececec"),
+            "connecting": ("模拟器：正在连接…", "#8a5a00", "#fff3cd"),
+            "connected": ("模拟器：ADB 已连接", "#176b36", "#e4f5e8"),
+            "offline": ("模拟器：设备离线", "#a12622", "#fde8e8"),
+        }
+        text, color, background = styles.get(state, styles["disconnected"])
+        self._emulator_status_label.setText(text)
+        self._emulator_status_label.setToolTip(detail or "点击打开模拟器配置")
+        self._emulator_status_label.setStyleSheet(
+            f"color: {color}; background: {background}; padding: 3px 8px; "
+            "border-radius: 8px; font-weight: bold;"
+        )
+
+    def _update_poll_status(self, state: str, detail: str = "") -> None:
+        """渲染不受业务进度覆盖的常驻 OCR 轮询状态。"""
+        styles = {
+            "stopped": ("OCR轮询：未启用", "#777", "#ececec"),
+            "running": ("OCR轮询：运行中", "#176b36", "#e4f5e8"),
+            "backing_off": ("OCR轮询：恢复中", "#8a5a00", "#fff3cd"),
+            "cooldown": ("OCR轮询：冷却中", "#165a9e", "#e7f1fd"),
+            "paused": ("OCR轮询：已暂停", "#a12622", "#fde8e8"),
+        }
+        text, color, background = styles.get(state, styles["stopped"])
+        self._poll_status_label.setText(text)
+        self._poll_status_label.setToolTip(detail or "点击打开模拟器配置")
+        self._poll_status_label.setStyleSheet(
+            f"color: {color}; background: {background}; padding: 3px 8px; "
+            "border-radius: 8px; font-weight: bold;"
+        )
 
     def _on_synergies_changed(self) -> None:
         """同步人工编辑后的相性摘要和状态栏。"""
@@ -668,7 +774,12 @@ class MainWindow(QMainWindow):
         from src.ui.mumu_config_dialog import MumuConfigDialog
 
         config = get_mumu_config()
-        dialog = MumuConfigDialog(config, capture_service=self._capture_service, parent=self)
+        dialog = MumuConfigDialog(
+            config,
+            capture_service=self._capture_service,
+            ocr_service=self._ocr_service,
+            parent=self,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -688,13 +799,8 @@ class MainWindow(QMainWindow):
         self._capture_service.update_config(new_config)
         self._ocr_service.update_config(new_config)
 
-        # 如果启用了轮询，启动之
-        if new_config.get("mumu_ocr_poll_mode", False):
-            interval = new_config.get("mumu_ocr_poll_interval", 2) * 1000
-            self._ocr_service.start_poll(interval)
-            logger.info("轮询已启动，间隔 %d ms", interval)
-        else:
-            self._ocr_service.stop_poll()
+        # 只有 ADB 已连接且配置启用轮询时才启动
+        self._sync_poll_with_connection()
 
         self._status_label.setText("模拟器配置已更新")
 
