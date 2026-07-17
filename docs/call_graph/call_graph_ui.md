@@ -571,7 +571,8 @@ MumuConfigDialog.__init__(config, capture_service, parent)
     -> save_env_file(DEFAULT_ENV_FILE, config)
     -> CaptureService.update_config(config)
     -> OcrService.update_config(config)
-    -> OcrService.start_poll(interval * 1000) / stop_poll()
+    -> MainWindow._sync_poll_with_connection()
+    -> OcrService.start_poll(interval * 1000)（仅 connected）/ stop_poll()
 ```
 
 | 函数 | 所在类 | 调用方 | 被调用方 |

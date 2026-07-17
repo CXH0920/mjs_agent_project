@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTextBrowser,
     QVBoxLayout,
@@ -530,6 +531,8 @@ class RecommendationPanel(QWidget):
     支持外部数据源（OCR 截图识别）导入武将数据。
     """
 
+    request_mumu_config = Signal()
+
     def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
                  guide_manager: GuideManager | None = None,
                  capture_service=None, ocr_service=None, parent=None):
@@ -543,9 +546,18 @@ class RecommendationPanel(QWidget):
         self._mumu_config_dialog = None  # lazy import
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
+        self._pending_capture_source: str | None = None
 
         self._setup_ui()
+        self._connect_capture_signals()
         self._load_default_heroes()
+
+    def _connect_capture_signals(self) -> None:
+        """一次性连接截图服务信号，避免重复回调。"""
+        if not self._capture_service:
+            return
+        self._capture_service.capture_completed.connect(self._on_capture_result)
+        self._capture_service.capture_failed.connect(self._on_capture_failed)
 
     # ---------------------------------------------------------------
     # UI 构建
@@ -809,28 +821,25 @@ class RecommendationPanel(QWidget):
         然后执行截图 → OCR → 填入槽位。
         """
         if not self._capture_service or not self._capture_service.capture:
-            self._open_mumu_config()
+            self.request_mumu_config.emit()
             return
 
+        self._pending_capture_source = "adb"
         self._import_btn.setEnabled(False)
         self._import_btn.setText("正在截图...")
 
         # 获取武将名列表用于 OCR 矫正
         hero_names = [h.name for h in self._hero_mgr.list_heroes()]
 
-        # 连接信号（一次性）
-        try:
-            self._capture_service.capture_completed.connect(self._on_capture_result)
-        except RuntimeError:
-            # 已连接则跳过
-            pass
-
         self._capture_service.do_capture(hero_names=hero_names)
 
     def _on_capture_result(self, result: dict) -> None:
         """截图完成回调。"""
-        self._import_btn.setEnabled(True)
-        self._import_btn.setText("截图")
+        source = self._pending_capture_source
+        self._pending_capture_source = None
+        if source == "adb":
+            self._import_btn.setEnabled(True)
+            self._import_btn.setText("截图")
 
         ocr_results = result.get("ocr_results")
         ocr_matched = result.get("ocr_matched", False)
@@ -839,6 +848,30 @@ class RecommendationPanel(QWidget):
             self.load_from_ocr(ocr_results)
         elif not ocr_matched:
             logger.info("截图未匹配到武将选择页面")
+
+    def _on_capture_failed(self, message: str) -> None:
+        """恢复截图按钮，并为用户发起的 ADB 截图提供可操作错误反馈。"""
+        source = self._pending_capture_source
+        self._pending_capture_source = None
+        if source != "adb":
+            if source == "file":
+                QMessageBox.warning(self, "图片导入失败", message)
+            return
+
+        self._import_btn.setEnabled(True)
+        self._import_btn.setText("截图")
+        message_box = QMessageBox(self)
+        message_box.setIcon(QMessageBox.Icon.Warning)
+        message_box.setWindowTitle("截图失败")
+        message_box.setText(f"无法从模拟器截图：\n{message}")
+        config_btn = message_box.addButton("打开模拟器配置", QMessageBox.ButtonRole.ActionRole)
+        retry_btn = message_box.addButton("重试", QMessageBox.ButtonRole.ActionRole)
+        message_box.addButton(QMessageBox.StandardButton.Close)
+        message_box.exec()
+        if message_box.clickedButton() is config_btn:
+            self.request_mumu_config.emit()
+        elif message_box.clickedButton() is retry_btn:
+            self._on_import_from_screenshot()
 
     def _on_import_from_file(self) -> None:
         """从本地图片文件导入武将数据。
@@ -857,44 +890,5 @@ class RecommendationPanel(QWidget):
             return
 
         hero_names = [h.name for h in self._hero_mgr.list_heroes()]
-
-        try:
-            self._capture_service.capture_completed.connect(self._on_capture_result)
-        except RuntimeError:
-            pass
-
+        self._pending_capture_source = "file"
         self._capture_service.do_capture_from_file(file_path, hero_names=hero_names)
-
-    def _open_mumu_config(self) -> None:
-        """打开模拟器配置对话框。"""
-        from src.ui.mumu_config_dialog import MumuConfigDialog
-        from src.config.env import get_mumu_config, save_env_file, DEFAULT_ENV_FILE
-
-        config = get_mumu_config()
-        dialog = MumuConfigDialog(config, parent=self.window())
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        new_config = dialog.get_config()
-
-        # 选择模板
-        template_path = dialog.get_selected_template()
-        if template_path and self._ocr_service:
-            self._ocr_service.select_template(template_path)
-
-        # 保存到 config.env
-        save_env_file(DEFAULT_ENV_FILE, {
-            "MUMU_ADB_PATH": new_config.get("mumu_adb_path", ""),
-            "MUMU_ADB_PORT": str(new_config.get("mumu_adb_port", 0)),
-            "MUMU_OCR_ENABLED": "true" if new_config.get("mumu_ocr_enabled") else "false",
-            "MUMU_OCR_MATCH_THRESHOLD": str(new_config.get("mumu_ocr_match_threshold", 0.8)),
-        })
-
-        # 更新服务配置
-        if self._capture_service:
-            self._capture_service.update_config(new_config)
-        if self._ocr_service:
-            self._ocr_service.update_config(new_config)
-
-        # 重新触发截图流程
-        self._on_import_from_screenshot()

@@ -42,7 +42,7 @@ src/ocr/
 AdbCapture(adb_path, adb_port)
   ├── connect() → adb connect 127.0.0.1:port
   ├── disconnect() → adb disconnect
-  ├── screencap_full() → adb exec-out screencap -p → PIL Image
+  ├── screencap_full() → adb exec-out screencap -p → PIL Image（无效输出最多重试 3 次）
   └── device_serial → 可读写，切换目标设备
 ```
 
@@ -56,6 +56,8 @@ AdbCapture(adb_path, adb_port)
 adb -s 127.0.0.1:16448 exec-out screencap -p
 ```
 `exec-out` 直接输出二进制到 stdout，不经过设备 shell 解析，更快且不会损坏二进制 PNG 数据。
+
+ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回不完整的 PNG。`screencap_full()` 会先调用 `Image.load()` 验证完整性，并对这两类瞬态结果最多重试 3 次；明确的设备离线错误仍立即失效当前连接。
 
 ### 3.2 模板匹配
 

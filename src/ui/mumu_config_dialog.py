@@ -16,7 +16,7 @@ import logging
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QSignalBlocker, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -47,12 +47,14 @@ DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
 class MumuConfigDialog(QDialog):
     """模拟器配置对话框"""
 
-    def __init__(self, config: dict, capture_service=None, parent=None):
+    def __init__(self, config: dict, capture_service=None, ocr_service=None, parent=None):
         super().__init__(parent)
         self._config = dict(config)
         self._capture_service = capture_service
+        self._ocr_service = ocr_service
         self._capture: AdbCapture | None = capture_service.capture if capture_service else None
         self._devices: list[MuMuDeviceInfo] = []
+        self._device_selected_explicitly = False
         self._template_path: str | None = None
         self._roi: tuple[int, int, int, int] | None = None
         self._screenshot_pixmap: QPixmap | None = None
@@ -61,6 +63,8 @@ class MumuConfigDialog(QDialog):
         self.setMinimumWidth(520)
         self.setMinimumHeight(480)
         self._setup_ui()
+        if self._capture_service:
+            self._capture_service.connection_changed.connect(self._on_connection_changed)
         self._load_config()
 
     def _setup_ui(self) -> None:
@@ -97,6 +101,7 @@ class MumuConfigDialog(QDialog):
         self._device_combo = QComboBox()
         self._device_combo.setMinimumWidth(200)
         self._device_combo.currentIndexChanged.connect(self._on_device_changed)
+        self._device_combo.activated.connect(self._on_device_activated)
         device_row.addWidget(QLabel("设备:"))
         device_row.addWidget(self._device_combo, 1)
 
@@ -107,14 +112,21 @@ class MumuConfigDialog(QDialog):
         self._connect_btn.clicked.connect(self._on_connect_toggle)
         device_row.addWidget(self._connect_btn)
 
+        self._test_device_btn = QPushButton("测试所选设备")
+        self._test_device_btn.clicked.connect(self._on_test_selected_device)
+        device_row.addWidget(self._test_device_btn)
+
         refresh_btn = QPushButton("刷新")
         refresh_btn.clicked.connect(self._on_refresh_devices)
         device_row.addWidget(refresh_btn)
 
         layout.addLayout(device_row)
 
-        # 连接状态
-        self._status_label = QLabel("状态: 未连接")
+        # 会话状态
+        self._instance_status_label = QLabel("实例状态: 未探测")
+        self._instance_status_label.setStyleSheet("color: #888; font-size: 12px; padding: 2px 0;")
+        layout.addWidget(self._instance_status_label)
+        self._status_label = QLabel("ADB 状态: 未配置")
         self._status_label.setStyleSheet("color: #888; font-size: 12px; padding: 2px 0;")
         layout.addWidget(self._status_label)
 
@@ -157,6 +169,10 @@ class MumuConfigDialog(QDialog):
         self._make_template_btn = QPushButton("🎯 制作模板")
         self._make_template_btn.clicked.connect(self._on_make_template)
         template_btn_row.addWidget(self._make_template_btn)
+
+        self._resume_poll_btn = QPushButton("恢复轮询")
+        self._resume_poll_btn.clicked.connect(self._on_resume_poll)
+        template_btn_row.addWidget(self._resume_poll_btn)
 
         self._select_template_btn = QPushButton("📁 选择模板")
         self._select_template_btn.clicked.connect(self._on_select_template)
@@ -249,6 +265,7 @@ class MumuConfigDialog(QDialog):
 
         # 检查模板状态
         self._refresh_template_status()
+        self._update_ui()
 
     def _refresh_template_status(self) -> None:
         """更新模板状态显示"""
@@ -284,8 +301,8 @@ class MumuConfigDialog(QDialog):
                     "border: 1px solid #27ae60; padding: 4px 8px; background: #f0faf0; border-radius: 3px;"
                 )
 
-                # 重建 AdbCapture
-                self._capture = AdbCapture(adb_path=adb_path, adb_port=self._config.get("mumu_adb_port", 0))
+                # 让共享服务使用当前草稿配置，连接状态由它统一发布
+                self._sync_capture_service_config()
                 self._on_refresh_devices()
 
                 QMessageBox.information(self, "自动探测", f"找到 ADB:\n{adb_path}\n{msg}")
@@ -312,39 +329,78 @@ class MumuConfigDialog(QDialog):
             self._adb_path_edit.setStyleSheet(
                 "border: 1px solid #ccc; padding: 4px 8px; background: #f9f9f9; border-radius: 3px;"
             )
-            self._capture = AdbCapture(adb_path=path, adb_port=self._config.get("mumu_adb_port", 0))
+            self._sync_capture_service_config()
             self._on_refresh_devices()
 
-    def _on_refresh_devices(self) -> None:
-        """刷新设备列表"""
-        self._device_combo.clear()
-        self._devices = probe_all_devices()
-
-        if not self._devices:
-            self._device_combo.addItem("(未探测到设备)")
-            self._device_combo.setEnabled(False)
+    def _sync_capture_service_config(self) -> None:
+        """将当前编辑中的 ADB 配置同步到共享截图服务。"""
+        if not self._capture_service:
             return
+        if self._capture_service:
+            config = dict(self._config)
+            config["mumu_adb_path"] = self._adb_path_edit.property("raw_path") or ""
+            self._capture_service.update_config(config)
+            self._capture = self._capture_service.capture
+        else:
+            self._capture = AdbCapture(
+                adb_path=self._adb_path_edit.property("raw_path") or "",
+                adb_port=self._config.get("mumu_adb_port", 0),
+            )
 
-        self._device_combo.setEnabled(True)
-        running_count = 0
-        for d in self._devices:
-            icon = "●" if d.is_running else "○"
-            label = f"{icon} [{d.index}] {d.name}"
-            if d.adb_port:
-                label += f"  (端口:{d.adb_port})"
-            self._device_combo.addItem(label, userData=d)
-            if d.is_running:
-                running_count += 1
+    def _on_refresh_devices(self) -> None:
+        """刷新设备列表，并避免在多实例时擅自选择目标。"""
+        configured_port = self._config.get("mumu_adb_port", 0)
+        self._devices = probe_all_devices()
+        running_devices = [device for device in self._devices if device.is_running and device.adb_port]
+        self._device_selected_explicitly = False
 
-        logger.info("设备列表刷新: %d 个实例 (%d 运行中)", len(self._devices), running_count)
+        with QSignalBlocker(self._device_combo):
+            self._device_combo.clear()
+            if not self._devices:
+                self._device_combo.addItem("(未探测到设备)")
+                self._device_combo.setEnabled(False)
+                self._instance_status_label.setText("实例状态: 未探测到")
+                self._port_label.setText("(自动探测)")
+                self._update_ui()
+                return
 
-        # 自动选择运行中的实例
-        if running_count > 0:
-            for i in range(self._device_combo.count()):
-                d = self._device_combo.itemData(i)
-                if d and d.is_running:
-                    self._device_combo.setCurrentIndex(i)
-                    break
+            self._device_combo.setEnabled(True)
+            for device in self._devices:
+                running_text = "运行中" if device.is_running else "未运行"
+                label = f"[{device.index}] {device.name}（{running_text}）"
+                if device.adb_port:
+                    label += f"  (端口:{device.adb_port})"
+                self._device_combo.addItem(label, userData=device)
+
+            target_index = next(
+                (
+                    index for index in range(self._device_combo.count())
+                    if (device := self._device_combo.itemData(index)) and device.adb_port == configured_port
+                ),
+                -1,
+            ) if configured_port else -1
+
+            if target_index >= 0:
+                self._device_combo.setCurrentIndex(target_index)
+            elif configured_port == 0 and len(running_devices) == 1:
+                target_index = next(
+                    index for index in range(self._device_combo.count())
+                    if self._device_combo.itemData(index) is running_devices[0]
+                )
+                self._device_combo.setCurrentIndex(target_index)
+            elif configured_port == 0 and len(running_devices) > 1:
+                self._device_combo.insertItem(0, "请选择运行中的实例", userData=None)
+                self._device_combo.setCurrentIndex(0)
+            else:
+                self._device_combo.setCurrentIndex(0)
+
+        self._on_device_changed(self._device_combo.currentIndex())
+        self._update_ui()
+
+    def _on_device_activated(self, index: int) -> None:
+        """记录用户对实例的显式选择。"""
+        if self._device_combo.itemData(index):
+            self._device_selected_explicitly = True
 
     def _on_device_changed(self, index: int) -> None:
         """设备下拉选择变化"""
@@ -354,8 +410,17 @@ class MumuConfigDialog(QDialog):
         device = self._device_combo.itemData(index)
         if device and device.adb_port:
             self._port_label.setText(str(device.adb_port))
+            state = "运行中" if device.is_running else "未运行"
+            self._instance_status_label.setText(f"实例状态: {state}")
         else:
             self._port_label.setText("(自动探测)")
+            self._instance_status_label.setText("实例状态: 未探测到")
+        self._update_ui()
+
+    def _on_connection_changed(self, _state: str, _detail: str) -> None:
+        """共享 CaptureService 会话变化时刷新配置页。"""
+        self._capture = self._capture_service.capture if self._capture_service else None
+        self._update_ui()
 
     def _on_connect_toggle(self) -> None:
         """连接/断开切换"""
@@ -365,71 +430,82 @@ class MumuConfigDialog(QDialog):
             self._connect_emulator()
 
     def _connect_emulator(self) -> None:
-        """连接模拟器"""
-        if not self._capture:
-            QMessageBox.warning(self, "连接失败", "请先配置 ADB 路径")
+        """连接选中的模拟器。"""
+        if not self._capture_service:
+            QMessageBox.warning(self, "连接失败", "截图服务不可用")
             return
-
-        index = self._device_combo.currentIndex()
-        if index >= 0 and self._devices:
-            device = self._device_combo.itemData(index)
-            if device and device.adb_port:
-                # 通过服务连接（确保信号连接者的 AdbCapture 也被更新）
-                if self._capture_service:
-                    new_cap = AdbCapture(
-                        adb_path=self._capture._adb_path,
-                        adb_port=device.adb_port,
-                    )
-                    self._capture_service.capture = new_cap
-                    self._capture = new_cap
+        device = self._device_combo.currentData()
+        running_devices = [item for item in self._devices if item.is_running and item.adb_port]
+        if self._config.get("mumu_adb_port", 0) == 0 and len(running_devices) > 1 and not self._device_selected_explicitly:
+            QMessageBox.warning(self, "请选择设备", "检测到多个运行中的 MuMu 实例，请先选择要连接的实例。")
+            return
+        if self._device_selected_explicitly and device and device.adb_port:
+            self._capture_service.set_target_port(device.adb_port)
+            self._capture = self._capture_service.capture
 
         self._connect_btn.setEnabled(False)
-        self._connect_btn.setText("连接中...")
-        self._status_label.setText("状态: 连接中...")
-        self._status_label.setStyleSheet("color: #f39c12; font-size: 12px; padding: 2px 0;")
-        self._update_ui()
-
-        # 使用 QTimer 让 UI 先刷新再执行连接
         QTimer.singleShot(50, self._do_connect)
 
     def _do_connect(self) -> None:
-        """实际执行连接（在 QTimer 回调中）"""
-        if not self._capture:
+        """实际执行连接。"""
+        if not self._capture_service:
             self._connect_btn.setEnabled(True)
-            self._connect_btn.setText("连接")
             return
-
-        ok, msg = self._capture.connect()
-        if ok:
-            self._status_label.setText(f"状态: 已连接 ({self._capture.device_serial})")
-            self._status_label.setStyleSheet("color: #27ae60; font-size: 12px; padding: 2px 0;")
-            self._connect_btn.setText("断开")
-            # 同步到 capture_service（让截图流程复用此连接）
-            if self._capture_service:
-                self._capture_service.capture = self._capture
-                self._capture_service.update_config(self._capture_service._config)  # 刷新引用
-        else:
-            self._status_label.setText(f"状态: 连接失败 - {msg}")
-            self._status_label.setStyleSheet("color: #e74c3c; font-size: 12px; padding: 2px 0;")
-            self._connect_btn.setText("连接")
-
+        ok, message = self._capture_service.connect_emulator()
+        if not ok:
+            QMessageBox.warning(self, "连接失败", message)
         self._connect_btn.setEnabled(True)
         self._update_ui()
 
     def _disconnect_emulator(self) -> None:
-        """断开模拟器"""
-        if not self._capture:
-            return
-
-        self._capture_service.disconnect_emulator()
-        self._status_label.setText("状态: 未连接")
-        self._status_label.setStyleSheet("color: #888; font-size: 12px; padding: 2px 0;")
-        self._connect_btn.setText("连接")
+        """断开模拟器。"""
+        if self._capture_service:
+            self._capture_service.disconnect_emulator()
         self._update_ui()
 
-    # ────────────────────────────────────────────────
-    # 模板管理
-    # ────────────────────────────────────────────────
+    def _on_test_selected_device(self) -> None:
+        """测试当前选择的设备连通性，不改变共享会话或配置。"""
+        adb_path = self._adb_path_edit.property("raw_path") or ""
+        device = self._device_combo.currentData()
+        if not adb_path:
+            QMessageBox.warning(self, "设备测试", "请先配置 ADB 路径。")
+            return
+        if not device or not device.adb_port:
+            QMessageBox.warning(self, "设备测试", "请选择一个带有效 ADB 端口的实例后再测试。")
+            return
+
+        target = f"127.0.0.1:{device.adb_port}"
+        self._test_device_btn.setEnabled(False)
+        self._test_device_btn.setText("测试中...")
+        QTimer.singleShot(0, lambda: self._do_test_selected_device(adb_path, device.adb_port, target))
+
+    def _do_test_selected_device(self, adb_path: str, port: int, target: str) -> None:
+        """执行精确目标的 connect + get-state 测试。"""
+        try:
+            shared = self._capture_service.capture if self._capture_service else None
+            if shared and shared.connected and shared.device_serial == target:
+                capture = shared
+            else:
+                capture = AdbCapture(adb_path=adb_path, adb_port=port)
+            ok, message = capture.connect()
+            if ok:
+                ok, state = capture.check_device()
+                message = state if ok else state
+            if ok:
+                QMessageBox.information(self, "设备测试成功", f"已连接到所选设备：\n{target}\n设备状态：device")
+            else:
+                QMessageBox.warning(self, "设备测试失败", f"无法连接所选设备 {target}：\n{message}")
+        finally:
+            self._test_device_btn.setEnabled(True)
+            self._test_device_btn.setText("测试所选设备")
+            self._update_ui()
+
+    def _on_resume_poll(self) -> None:
+        """恢复已暂停的 OCR 轮询。"""
+        if self._ocr_service and self._ocr_service.poll_state == "paused":
+            self._ocr_service.resume_poll()
+            self._update_ui()
+
 
     def _on_make_template(self) -> None:
         """制作模板：截图 → 框选 → 保存"""
@@ -547,9 +623,33 @@ class MumuConfigDialog(QDialog):
     # ────────────────────────────────────────────────
 
     def _update_ui(self) -> None:
-        """根据状态更新 UI 元素"""
-        connected = self._capture.connected if self._capture else False
-        self._make_template_btn.setEnabled(connected)
+        """根据实例运行状态与真实 ADB 会话状态更新控件。"""
+        if self._capture_service:
+            state, detail = self._capture_service.connection_state
+        elif self._capture:
+            state, detail = ("connected", self._capture.device_serial) if self._capture.connected else ("disconnected", "")
+        else:
+            state, detail = "unconfigured", ""
+
+        states = {
+            "unconfigured": ("ADB 状态: 未配置", "#888"),
+            "disconnected": ("ADB 状态: 未连接", "#888"),
+            "connecting": ("ADB 状态: 连接中...", "#f39c12"),
+            "connected": (f"ADB 状态: 已连接 ({detail})", "#27ae60"),
+            "offline": ("ADB 状态: 设备离线", "#e74c3c"),
+        }
+        text, color = states.get(state, states["disconnected"])
+        self._status_label.setText(text)
+        self._status_label.setToolTip(detail)
+        self._status_label.setStyleSheet(f"color: {color}; font-size: 12px; padding: 2px 0;")
+        self._connect_btn.setText("断开" if state == "connected" else "连接")
+        self._connect_btn.setEnabled(state != "connecting")
+        self._make_template_btn.setEnabled(state == "connected")
+        self._resume_poll_btn.setVisible(self._ocr_service is not None)
+        self._resume_poll_btn.setEnabled(
+            self._ocr_service is not None and self._ocr_service.poll_state == "paused"
+        )
+        self._test_device_btn.setEnabled(self._device_combo.currentData() is not None)
 
     # ────────────────────────────────────────────────
     # 保存
@@ -561,13 +661,18 @@ class MumuConfigDialog(QDialog):
             raw_path = self._adb_path_edit.property("raw_path") or ""
             self._config["mumu_adb_path"] = raw_path
 
-            index = self._device_combo.currentIndex()
-            if index >= 0 and self._devices:
-                device = self._device_combo.itemData(index)
-                if device and device.adb_port:
-                    self._config["mumu_adb_port"] = device.adb_port
-            else:
+            configured_port = self._config.get("mumu_adb_port", 0)
+            device = self._device_combo.currentData()
+            running_devices = [item for item in self._devices if item.is_running and item.adb_port]
+            if configured_port == 0 and len(running_devices) > 1 and not self._device_selected_explicitly:
+                QMessageBox.warning(self, "请选择设备", "检测到多个运行中的 MuMu 实例，请选择要使用的实例后再保存。")
+                return
+            if self._device_selected_explicitly and device and device.adb_port:
+                self._config["mumu_adb_port"] = device.adb_port
+            elif configured_port == 0:
                 self._config["mumu_adb_port"] = 0
+            elif device and device.adb_port:
+                self._config["mumu_adb_port"] = device.adb_port
 
             self._config["mumu_ocr_enabled"] = self._ocr_enabled_check.isChecked()
             self._config["mumu_ocr_poll_mode"] = self._poll_mode_check.isChecked()

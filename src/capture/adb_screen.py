@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import logging
 import subprocess
+import time
 from pathlib import Path
 
 from PIL import Image
@@ -16,6 +17,8 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 _ADB_TIMEOUT = 15
+_SCREENSHOT_RETRIES = 3
+_SCREENSHOT_RETRY_DELAY = 0.15
 
 
 class AdbCapture:
@@ -60,36 +63,61 @@ class AdbCapture:
         Returns:
             (是否成功, 消息)
         """
+        target, target_error = self._resolve_target()
+        if target_error:
+            return False, target_error
+
         if self._connected:
-            return True, "已处于连接状态"
+            ok, msg = self.check_device()
+            if ok:
+                return True, "已处于连接状态"
+            logger.info("缓存的 ADB 会话已失效: %s", msg)
 
         ok, msg = self._check_adb_valid()
         if not ok:
             return False, msg
-
-        target = self._device_serial or f"127.0.0.1:{self._adb_port}"
 
         ok, msg = self._run_adb("connect", target)
         if not ok:
             logger.error("ADB 连接失败: %s", msg)
             return False, f"ADB 连接失败: {msg}"
 
-        # 验证设备列表
-        dev_ok, dev_msg = self._get_devices()
+        # 验证请求的目标设备，不能误选其它在线设备
+        dev_ok, dev_msg = self._get_device_state(target)
         if not dev_ok:
             self._disconnect_safe()
-            logger.error("未检测到 ADB 设备: %s", dev_msg)
-            return False, f"未检测到设备: {dev_msg}"
+            logger.error("目标 ADB 设备不可用: %s", dev_msg)
+            return False, f"目标设备不可用: {dev_msg}"
+        if dev_msg != "device":
+            self._disconnect_safe()
+            logger.error("目标 ADB 设备状态异常: %s", dev_msg)
+            return False, f"目标设备状态异常: {dev_msg}"
 
         self._connected = True
-        self._device_serial = dev_msg
+        self._device_serial = target
         logger.info("ADB 连接成功 (设备 %s)", self._device_serial)
-        return True, f"连接成功 (设备: {dev_msg})"
+        return True, f"连接成功 (设备: {target})"
 
     def disconnect(self) -> tuple[bool, str]:
         """断开 ADB 连接。"""
         self._disconnect_safe()
         return True, "已断开连接"
+
+    def _resolve_target(self) -> tuple[str, str]:
+        """解析本次连接的精确 ADB 目标。"""
+        if self._device_serial:
+            return self._device_serial, ""
+        if self._adb_port > 0:
+            return f"127.0.0.1:{self._adb_port}", ""
+
+        from src.capture.prober import probe_running_devices
+
+        devices = probe_running_devices()
+        if len(devices) == 1:
+            return f"127.0.0.1:{devices[0].adb_port}", ""
+        if not devices:
+            return "", "未检测到运行中的 MuMu 实例，请先启动模拟器"
+        return "", "检测到多个运行中的 MuMu 实例，请在模拟器配置中选择设备"
 
     def _disconnect_safe(self) -> None:
         """静默断开连接。"""
@@ -108,9 +136,25 @@ class AdbCapture:
 
     # ── 设备检测 ──────────────────────────────────────────────────────
 
+    def get_device_state(self, serial: str | None = None) -> tuple[bool, str]:
+        """查询指定或当前目标设备的精确 ADB 状态。"""
+        target = serial or self._device_serial
+        if not target:
+            target, error = self._resolve_target()
+            if error:
+                return False, error
+        return self._get_device_state(target)
+
     def check_device(self) -> tuple[bool, str]:
-        """检查设备是否在线。"""
-        return self._get_devices()
+        """检查当前连接的设备是否在线。"""
+        if not self._connected or not self._device_serial:
+            return False, "尚未连接"
+        ok, state = self._get_device_state(self._device_serial)
+        if not ok or state != "device":
+            detail = state if ok else state
+            self._invalidate_connection()
+            return False, f"设备不可用: {detail}"
+        return True, "设备在线"
 
     # ── 截图 ──────────────────────────────────────────────────────────
 
@@ -123,38 +167,54 @@ class AdbCapture:
         if not self._connected or not self._device_serial:
             return False, "尚未连接，请先连接模拟器"
 
-        try:
-            result = subprocess.run(
-                [self._adb_path, "-s", self._device_serial, "exec-out", "screencap", "-p"],
-                capture_output=True,
-                timeout=_ADB_TIMEOUT,
-            )
-        except FileNotFoundError:
-            return False, f"找不到 adb: {self._adb_path}"
-        except subprocess.TimeoutExpired:
-            logger.error("截图命令执行超时")
-            return False, "截图命令执行超时"
-        except OSError as e:
-            logger.error("截图命令执行异常: %s", e)
-            return False, f"截图命令执行异常: {e}"
+        for attempt in range(1, _SCREENSHOT_RETRIES + 1):
+            try:
+                result = subprocess.run(
+                    [self._adb_path, "-s", self._device_serial, "exec-out", "screencap", "-p"],
+                    capture_output=True,
+                    timeout=_ADB_TIMEOUT,
+                )
+            except FileNotFoundError:
+                return False, f"找不到 adb: {self._adb_path}"
+            except subprocess.TimeoutExpired:
+                logger.error("截图命令执行超时")
+                return False, "截图命令执行超时"
+            except OSError as e:
+                logger.error("截图命令执行异常: %s", e)
+                return False, f"截图命令执行异常: {e}"
 
-        if result.returncode != 0:
-            err = result.stderr.decode("utf-8", errors="replace").strip()
-            logger.error("screencap 失败 (returncode=%d): %s", result.returncode, err)
-            return False, f"screencap 失败: {err}"
+            if result.returncode != 0:
+                err = result.stderr.decode("utf-8", errors="replace").strip()
+                logger.error("screencap 失败 (returncode=%d): %s", result.returncode, err)
+                if self._is_device_unavailable(err):
+                    self._invalidate_connection()
+                return False, f"screencap 失败: {err}"
 
-        if not result.stdout:
-            logger.error("截图返回空数据")
-            return False, "截图返回空数据"
+            if not result.stdout:
+                error = "截图返回空数据"
+            else:
+                try:
+                    image = Image.open(io.BytesIO(result.stdout))
+                    image.load()
+                    logger.info("截图成功: %s x %s", image.width, image.height)
+                    return True, image
+                except Exception as e:
+                    error = f"解析截图图像失败: {e}"
 
-        try:
-            image = Image.open(io.BytesIO(result.stdout))
-            image.load()
-            logger.info("截图成功: %s x %s", image.width, image.height)
-            return True, image
-        except Exception as e:
-            logger.error("解析截图图像失败: %s", e)
-            return False, f"解析截图图像失败: {e}"
+            if attempt < _SCREENSHOT_RETRIES:
+                logger.warning(
+                    "截图数据无效，将重试 (%d/%d): %s，字节数=%d",
+                    attempt,
+                    _SCREENSHOT_RETRIES,
+                    error,
+                    len(result.stdout),
+                )
+                time.sleep(_SCREENSHOT_RETRY_DELAY)
+            else:
+                logger.error("%s，字节数=%d", error, len(result.stdout))
+                return False, error
+
+        return False, "截图失败"
 
     @staticmethod
     def list_connected_devices(adb_path: str) -> list[str]:
@@ -237,6 +297,31 @@ class AdbCapture:
             return False, "命令执行超时"
         except OSError as e:
             return False, f"命令执行异常: {e}"
+
+    def _invalidate_connection(self) -> None:
+        """清除已失效的 ADB 会话缓存，保留重连所需配置。"""
+        self._connected = False
+        self._device_serial = ""
+
+    @staticmethod
+    def _is_device_unavailable(message: str) -> bool:
+        """判断 ADB 错误是否明确表示目标设备已不可达。"""
+        normalized = message.lower()
+        markers = (
+            "device offline",
+            "device not found",
+            "no devices/emulators found",
+            "transport",
+            "closed",
+        )
+        return any(marker in normalized for marker in markers)
+
+    def _get_device_state(self, serial: str) -> tuple[bool, str]:
+        """查询指定设备的精确 ADB 状态。"""
+        ok, msg = self._run_adb("-s", serial, "get-state")
+        if not ok:
+            return False, msg
+        return True, msg.strip() or "未检测到目标设备"
 
     def _get_devices(self) -> tuple[bool, str]:
         """获取连接的设备列表。"""
