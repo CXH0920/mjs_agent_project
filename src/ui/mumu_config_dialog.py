@@ -595,6 +595,13 @@ class MumuConfigDialog(QDialog):
             dst = tm.template_path
             if src.resolve() != dst.resolve():
                 shutil.copy2(str(src), str(dst))
+                # 外部模板通常没有本项目的参考尺寸元数据，不能沿用旧模板的尺寸。
+                metadata_path = dst.with_suffix(".json")
+                if metadata_path.exists():
+                    try:
+                        metadata_path.unlink()
+                    except OSError as exc:
+                        logger.warning("旧模板元数据清理失败: %s", exc)
 
             tm.reload()
             self._template_path = str(dst)

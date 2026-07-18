@@ -241,7 +241,11 @@ class CaptureService(QObject):
                 return None, False
 
             rois = self._config.get("ocr_generals_roi", None)
-            recognizer = get_recognizer(rois, hero_names=hero_names)
+            recognizer = get_recognizer(
+                rois,
+                hero_names=hero_names,
+                reference_size=tm.reference_size,
+            )
             results = recognizer.recognize(image)
 
             # 保存 OCR 结果

@@ -297,7 +297,11 @@ class MainWindow(QMainWindow):
                 try:
                     from src.ocr.ocr_loader import get_recognizer
                     rois = self._capture_service.config.get("ocr_generals_roi", None)
-                    results = get_recognizer(rois, hero_names=hero_names).recognize(image)
+                    results = get_recognizer(
+                        rois,
+                        hero_names=hero_names,
+                        reference_size=tm.reference_size,
+                    ).recognize(image)
                 except Exception as exc:
                     logger.exception("轮询 OCR 识别异常")
                     self._poll_result_ready.emit({

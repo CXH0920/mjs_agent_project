@@ -72,7 +72,8 @@ test_project/
 ├── images/
 │   └── <武将名>.png               # 155 个武将头像（从官网自动下载）
 ├── templates/
-│   └── wujiang_select.png         # 武将选择页面模板（用户自行制作）
+│   ├── wujiang_select.png         # 武将选择页面模板（用户自行制作）
+│   └── wujiang_select.json        # 模板制作时的参考截图尺寸
 ├── screenshots/                   # 手动截图导出目录
 ├── screenshot_data/
 │   └── latest.json                # OCR 识别结果缓存
@@ -85,6 +86,7 @@ test_project/
 │   ├── test_synergy_manager.py    # 13 tests — 相性管理器
 │   ├── test_guide_manager.py      # 11 tests — 攻略管理器
 │   ├── test_incremental_update.py # 8 tests — 增量更新
+│   ├── test_ocr_scaling.py        # 模板多尺度匹配与 ROI 缩放
 │   └── test_ui.py                 # 4 tests — UI 工具
 ├── docs/
 │   ├── code_desc/
@@ -99,6 +101,8 @@ test_project/
 │   ├── call_graph/
 │   │   ├── call_graph_ai_batch.md  # AI 批量生成调用链路
 │   │   ├── call_graph_business.md  # 业务服务层调用链路
+│   │   ├── call_graph_capture_ocr.md # ADB 截图与 OCR 调用链路
+│   │   ├── call_graph_config.md    # 应用入口与配置调用链路
 │   │   ├── call_graph_data.md      # 数据层调用链路
 │   │   ├── call_graph_scraper.md   # 爬虫调用链路
 │   │   └── call_graph_ui.md        # UI 界面层调用链路
@@ -192,6 +196,26 @@ python -m src.main
 4. 启用武将识别 / 持续轮询
 5. 在选将推荐面板点击「截图」或「📁 从图片导入」触发识别
 
+#### OCR 分辨率适配
+
+模板制作时会记录当时截图的宽高。识别时，系统会将以参考分辨率配置的 8 个武将名称 ROI
+按当前截图宽高分别换算，因此页面比例基本不变时不要求严格固定分辨率。
+
+页面模板匹配也会在参考缩放比例附近尝试多个比例（0.85、0.925、1.0、1.075、1.15），
+自动选择置信度最高的结果，再决定是否执行 PaddleOCR。
+
+```text
+ADB 截图
+  → 多尺度模板匹配
+  → 读取模板参考尺寸
+  → 换算 8 个武将 ROI
+  → PaddleOCR + 武将名库纠正
+  → 推荐面板
+```
+
+旧模板没有 `wujiang_select.json` 时，会兼容使用 2560×1440 作为参考尺寸。若旧模板并非在
+该分辨率下制作，建议重新制作一次模板。
+
 ---
 
 ## 架构
@@ -220,9 +244,10 @@ DeepSeek API / 网页版 → ai_batch.py → ai_generator.py / ai_playwright.py
 data/*.json → DataFacade (三个 Manager) → UI 展示
 
 模拟器屏幕 → ADB screencap → PIL Image（全在内存，无磁盘 I/O）
-  → TemplateManager.match() → 武将选择页？
+  → TemplateManager.match()（多尺度）→ 武将选择页？
       → 否：静默跳过
-      → 是：GeneralRecognizer.recognize() → 填充推荐面板 8 槽
+      → 是：按参考尺寸换算 ROI
+        → GeneralRecognizer.recognize() → 填充推荐面板 8 槽
 用户操作 → MainWindow → QProcess → 爬虫/AI 脚本
 ```
 
