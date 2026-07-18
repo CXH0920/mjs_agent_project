@@ -9,10 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from pathlib import Path
-
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from src.ui.main_window import MainWindow
@@ -22,8 +19,13 @@ from src.ui.style import GLOBAL_STYLE
 def main() -> None:
     """应用主函数"""
     # 提前初始化日志（在 QApplication 创建之前）
+    from src.config.env import get_runtime_params
     from src.config.logging_config import setup_logging
-    setup_logging(log_level="INFO", log_to_file=True)
+    runtime_params = get_runtime_params()
+    setup_logging(
+        log_level=runtime_params["log_level"],
+        log_to_file=runtime_params["log_to_file"],
+    )
 
     # 抑制 Qt 字体回退调试日志（Windows 上大量刷屏但无害）
     os.environ.setdefault("QT_LOGGING_RULES",
@@ -53,11 +55,9 @@ def main() -> None:
         except Exception:
             pass
 
-    # 尽早设置应用图标（在 PaddleOCR 等耗时操作之前）
-    icon_path = Path(__file__).resolve().parent.parent / "mjs.ico"
-    if icon_path.exists():
-        app_icon = QIcon(str(icon_path))
-        app.setWindowIcon(app_icon)
+    # 尽早设置并持续维护应用图标（在 PaddleOCR 等耗时操作之前）
+    from src.ui.app_icon import install_app_icon
+    install_app_icon(app)
 
     # 设置全局样式
     app.setStyleSheet(GLOBAL_STYLE)

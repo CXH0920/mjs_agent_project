@@ -414,9 +414,12 @@ def _correct_with_hero_list(text: str, hero_names: list[str]) -> str:
 class GeneralRecognizer:
     """武将名称识别器，支持全量字典 + 武将名库矫正。"""
 
-    def __init__(self, rois: list[list[int]] | None = None, hero_names: list[str] | None = None) -> None:
+    def __init__(self, rois: list[list[int]] | None = None,
+                 hero_names: list[str] | None = None,
+                 reference_size: tuple[int, int] = (2560, 1440)) -> None:
         self._rois = rois or _DEFAULT_GENERALS_ROI
         self._hero_names = hero_names or []
+        self._reference_size = reference_size
         self._ocr = None  # PaddleOCR 引擎（延迟加载）
 
     # ── OCR 引擎 ──────────────────────────────────────────────────────
@@ -464,8 +467,20 @@ class GeneralRecognizer:
         if isinstance(image, Image.Image):
             image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
+        image_height, image_width = image.shape[:2]
+        reference_width, reference_height = self._reference_size
+        scale_x = image_width / reference_width
+        scale_y = image_height / reference_height
+        logger.debug("武将 ROI 缩放: %.4f×%.4f，当前截图=%sx%s，参考=%sx%s",
+                     scale_x, scale_y, image_width, image_height,
+                     reference_width, reference_height)
+
         results: list[dict] = []
         for i, (x, y, w, h) in enumerate(self._rois):
+            x = round(x * scale_x)
+            y = round(y * scale_y)
+            w = max(1, round(w * scale_x))
+            h = max(1, round(h * scale_y))
             roi_img = image[y:y + h, x:x + w]
             name, confidence = self._recognize_single(roi_img, i + 1)
             results.append({"index": i + 1, "name": name, "confidence": round(confidence, 4)})

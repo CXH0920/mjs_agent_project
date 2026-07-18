@@ -3,7 +3,7 @@
 > 版本：v0.1.0  
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-07-03
+> 文档日期：2026-07-18
 
 ---
 
@@ -461,9 +461,10 @@ do_capture()
        ├─ AdbCapture.screencap_full() → PIL Image
        ├─ 保存截图到 screenshots/ 目录（手动调用路径特有）
        ├─ 已启用 OCR？
-       │   ├─ TemplateManager.match(image) → 是武将页？
+       │   ├─ TemplateManager.match(image) → 多尺度判断是否为武将页
        │   │   ├─ 否 → 跳过
-       │   │   └─ 是 → GeneralRecognizer.recognize() → 保存 JSON
+       │   │   └─ 是 → get_recognizer(..., tm.reference_size)
+       │   │             → ROI 缩放 → GeneralRecognizer.recognize() → 保存 JSON
        │   └─ 返回结果
        └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
 ```
@@ -1382,11 +1383,12 @@ class TemplateManager:
     # 属性
     template_path → Path
     is_loaded → bool
+    reference_size → (width, height)  # 制作模板时的截图尺寸
 
     # 加载
     reload()                                # 从磁盘重新加载
     set_template(image, roi)                # 从全图截取 ROI 保存为模板
-    match(image, threshold=0.8) → (bool, float)  # 模板匹配
+    match(image, threshold=0.8) → (bool, float)  # 多尺度模板匹配
     delete_template()                       # 删除模板文件
 ```
 
@@ -1395,10 +1397,15 @@ class TemplateManager:
 match(image, threshold=0.8)
   ├── 模板未加载 → (False, 0.0)
   ├── 输入转灰度（PIL → BGR → Gray）
-  ├── 截图分辨率 < 模板分辨率 → (False, 0.0)
-  └── cv2.matchTemplate(gray, template, TM_CCOEFF_NORMED)
-       └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
+  ├── 根据参考截图尺寸计算基础缩放比例
+  ├── 尝试基础比例 × 0.85、0.925、1.0、1.075、1.15
+  ├── 每个比例执行 cv2.matchTemplate(gray, resized_template, TM_CCOEFF_NORMED)
+  ├── 选择最高置信度
+  └── max_val ≥ threshold → (True, confidence)
 ```
+
+模板保存时会额外写入 `templates/wujiang_select.json`，记录制作模板时的截图宽高。
+旧模板没有元数据时兼容使用 2560×1440；外部替换模板会清理旧元数据，避免沿用上一份模板的参考尺寸。
 
 **匹配算法**：`cv2.TM_CCOEFF_NORMED`（归一化相关系数匹配），输出 0~1 的置信度。
 
@@ -1407,7 +1414,8 @@ match(image, threshold=0.8)
 用户框选 ROI (x, y, w, h)
   ├── 验证 ROI 尺寸（w≥10 且 h≥10）
   ├── 验证 ROI 不超出画面边界
-  └── cv2.imwrite(template_path, roi_crop) → templates/wujiang_select.png
+  ├── cv2.imwrite(template_path, roi_crop) → templates/wujiang_select.png
+  └── 写入参考截图宽高 → templates/wujiang_select.json
 ```
 
 ### 12.3 武将名称识别器（recognizer.py）
@@ -1473,12 +1481,36 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 
 ```python
 class GeneralRecognizer:
-    def __init__(self, rois=None, hero_names=None)
+    def __init__(self, rois=None, hero_names=None, reference_size=(2560, 1440))
     recognize(image) → list[dict]           # 对 8 个 ROI 逐一识别
     _recognize_single(roi, slot) → (str, float)
     _preprocess_roi(roi) → np.ndarray       # 图像预处理
     _extract_text(ocr_result) → (str, float) # 解析 PaddleOCR 返回
     save_results(results, json_path, image_path)  # 静态方法
+```
+
+ROI 坐标以参考分辨率保存。`recognize()` 读取当前截图尺寸后分别计算宽高比例，
+再将每个 ROI 的 `x/y/w/h` 换算到当前截图坐标，因此页面比例基本不变时可以适应不同分辨率：
+
+```
+scale_x = current_width / reference_width
+scale_y = current_height / reference_height
+当前 ROI = (x*scale_x, y*scale_y, w*scale_x, h*scale_y)
+```
+
+该换算发生在 PaddleOCR 之前，不改变现有的放大、CLAHE、锐化、灰度化和武将名纠正流程。
+
+#### 识别调用链
+
+```
+GeneralRecognizer.recognize(image)
+  ├── 根据 reference_size 计算 scale_x / scale_y
+  ├── 逐个换算并裁剪 8 个 ROI
+  └── _recognize_single(roi, slot)
+       ├── _preprocess_roi(roi)
+       ├── _engine.ocr(prepared)
+       ├── _extract_text(result)
+       └── _correct_with_hero_list(text, hero_names)
 ```
 
 #### 关键常量
@@ -1549,9 +1581,9 @@ def _engine(self):
 集中管理两个全局单例的延迟加载：
 
 - `get_template_manager()` → `TemplateManager` 单例
-- `get_recognizer(rois, hero_names)` → `GeneralRecognizer` 单例
+- `get_recognizer(rois, hero_names, reference_size)` → `GeneralRecognizer` 单例
 
-ROI 或 `hero_names` 变更时自动重建 `GeneralRecognizer` 实例，避免静默忽略新配置。
+ROI、`hero_names` 或 `reference_size` 变更时自动重建 `GeneralRecognizer` 实例，避免静默忽略新配置。
 
 ### 12.5 业务集成流程
 
@@ -1566,9 +1598,10 @@ ROI 或 `hero_names` 变更时自动重建 `GeneralRecognizer` 实例，避免�
   │   ├── AdbCapture 连接（未连接时自动连接）
   │   ├── screencap_full() → PIL Image（内存中，不写磁盘）
   │   └── OCR enabled？
-  │       ├── TemplateManager.match() → 武将选择页？
+  │       ├── TemplateManager.match() → 多尺度判断武将选择页？
   │       │   ├── 否 → ocr_matched=False
-  │       │   └── 是 → GeneralRecognizer.recognize() → 保存 JSON
+  │       │   └── 是 → get_recognizer(..., tm.reference_size)
+  │       │             → ROI 缩放 → GeneralRecognizer.recognize() → 保存 JSON
   │       └── 返回结果
   │
   └── capture_completed 信号
@@ -1607,10 +1640,12 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
        │
        ├── ② TemplateManager.match(image, threshold)
        │     ├── 模板未加载 → return
+       │     ├── 尝试多个缩放比例并选择最高置信度
        │     └── 不匹配 → return（静默跳过，不是武将页）
        │
        ├── ③ CaptureService._run_ocr(image) → PaddleOCR
-       │     ├── GeneralRecognizer.recognize() → 8 个武将名
+       │     ├── get_recognizer(..., tm.reference_size)
+       │     ├── GeneralRecognizer.recognize() → 换算 ROI → 8 个武将名
        │     └── 保存 latest.json
        │
        ├── ④ RecommendationPanel.load_from_ocr()

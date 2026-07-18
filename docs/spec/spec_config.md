@@ -69,13 +69,9 @@ tmp_path.replace(env_path)
 
 ### 规则 4.2：setup_logging 幂等性
 
-```python
-root = logging.getLogger()
-if root.handlers:
-    return  # 已配置过，跳过
-```
+`setup_logging()` 只移除并重建带有项目内部标记的 Handler，保留 pytest、宿主程序等外部 Handler；重复调用时会按新的级别和文件开关重新生效。
 
-**为什么：** `setup_logging()` 会被 Application（`src/main.py`）和 CLI 脚本同时调用。Application 启动时 `main.py` 调用一次带文件日志的配置，之后 `main.py` 内部的 `import` 链中的 CLI 脚本不会重新注册 handler，避免日志重复打印。
+**为什么：** 仅判断 `root.handlers` 会误把外部 Handler 当成项目已初始化，导致文件日志无法创建；只管理自身 Handler 可以避免重复，同时不破坏宿主环境的日志采集。
 
 ### 规则 4.3：子进程日志分开存放
 
@@ -91,3 +87,9 @@ if root.handlers:
 所有 `except:` 块必须包含 `logger.error()` 调用，不允许 `except: pass`。非关键异常使用 `logger.warning()`，关键异常使用 `logger.exception()` 或 `logger.error("...")` + `logger.debug(traceback.format_exc())`。
 
 **为什么：** 静默吞异常是调试灾难——问题只在特定条件下复现，而日志中没有留下任何线索。
+
+### 规则 4.5：QProcess 子进程不直接轮转共享日志
+
+主进程启动的 QProcess 子进程设置 `MJS_QPROCESS_CHILD=1`。子进程只输出控制台日志，由父进程写入 `subprocess/stdout.log` 和 `subprocess/stderr.log`，不直接打开主进程的 `RotatingFileHandler`。
+
+**为什么：** `RotatingFileHandler` 不提供跨进程轮转协调；多个 Windows 进程同时写入和重命名同一文件可能产生文件占用冲突或备份错乱。

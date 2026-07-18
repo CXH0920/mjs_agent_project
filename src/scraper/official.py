@@ -130,9 +130,11 @@ def main() -> None:
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     args = parser.parse_args()
 
-    log_level = "DEBUG" if args.verbose else "WARNING"
+    from src.config.env import get_runtime_params
     from src.config.logging_config import setup_logging
-    setup_logging(log_level=log_level, log_to_file=True)
+    runtime_params = get_runtime_params()
+    log_level = "DEBUG" if args.verbose else runtime_params["log_level"]
+    setup_logging(log_level=log_level, log_to_file=runtime_params["log_to_file"])
 
     crawl(dry_run=args.dry_run, output_path=args.output, skip_images=args.skip_images)
 

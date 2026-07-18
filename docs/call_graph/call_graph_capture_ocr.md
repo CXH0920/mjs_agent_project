@@ -112,29 +112,35 @@ probe_mumu_port()
 ```
 TemplateManager.set_template(image, roi)
   -> 校验: roi 在图像范围内
-  -> cropped = image.crop(roi)                                [PIL 裁剪]
+  -> cropped = image[y:y+h, x:x+w]                            [OpenCV 裁剪]
   -> cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)                [转灰度]
   -> cv2.imwrite(template_path, gray)                         [保存模板图片]
+  -> 写入 template_path.with_suffix(".json")                 [保存参考截图宽高]
 ```
+
+模板元数据包含 `reference_width` 和 `reference_height`。旧模板没有元数据时，
+`TemplateManager` 使用兼容默认值 2560×1440。
 
 ### 3.2 模板匹配
 
 ```
 TemplateManager.match(image_screenshot, threshold=0.8)
   -> [模板未加载] return (False, 0.0)
-  -> [截图 < 模板] return (False, 0.0)                        [分辨率保护]
   -> screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-  -> result = cv2.matchTemplate(screenshot_gray, template, TM_CCOEFF_NORMED)
-                                                    [OpenCV 模板匹配]
-  -> _, max_val, _, max_loc = cv2.minMaxLoc(result)           [获取最佳匹配]
+  -> base_scale = min(current_width/reference_width,
+                      current_height/reference_height)
+  -> 生成 base_scale × [0.85, 0.925, 1.0, 1.075, 1.15]
+  -> 每个比例 resize(template) -> cv2.matchTemplate(...)
+  -> cv2.minMaxLoc(result)                                   [获取该比例最佳匹配]
+  -> 选择所有比例中最高的 max_val
   -> [max_val >= threshold] return (True, max_val)
   -> [default] return (False, max_val)
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.cvtColor()`, `cv2.imwrite()` |
-| `match(image, threshold)` | `template_manager.py` | `CaptureService._run_ocr()`, OcrService 轮询 | `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
+| `set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.cvtColor()`, `cv2.imwrite()`, 元数据 JSON 写入 |
+| `match(image, threshold)` | `template_manager.py` | `CaptureService._run_ocr()`, `MainWindow` 轮询 | 多尺度 `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
 | `reload()` | `template_manager.py` | `OcrService.select_template()` | `_load_internal()` |
 | `is_loaded` (property) | `template_manager.py` | 外部 UI | `self._template is not None` |
 
@@ -149,7 +155,12 @@ TemplateManager.match(image_screenshot, threshold=0.8)
 ```
 GeneralRecognizer.recognize(image)                            [PIL Image]
   -> cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)        [PIL → OpenCV 格式]
+  -> 读取 image.shape 与 reference_size
+  -> scale_x = image_width / reference_width
+  -> scale_y = image_height / reference_height
   -> [对 8 个 ROI 逐一处理]
+     -> 将参考 ROI 的 x/y/w/h 分别乘以 scale_x/scale_y
+     -> image[y:y+h, x:x+w]                                  [当前截图坐标裁剪]
      -> self._recognize_single(roi, slot_index)                [单 ROI 识别]
        -> self._preprocess_roi(roi)                           [图像预处理]
        -> self._engine.ocr(preprocessed_roi)                  [PaddleOCR 推理]
@@ -295,17 +306,17 @@ get_template_manager()
 ### 5.2 OCR 识别器单例
 
 ```
-get_recognizer(rois, hero_names)
+get_recognizer(rois, hero_names, reference_size)
   -> [单例] module-level 变量 _recognizer
-  -> [首次或 rois/hero_names 变更] 重新创建
-     -> GeneralRecognizer(rois, hero_names)
+  -> [首次或 rois/hero_names/reference_size 变更] 重新创建
+     -> GeneralRecognizer(rois, hero_names, reference_size)
   -> return _recognizer
 ```
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
 | `get_template_manager()` | `ocr_loader.py` | 惰性初始化，首次调用时构造 |
-| `get_recognizer(rois, names)` | `ocr_loader.py` | 参数变更时自动重建 |
+| `get_recognizer(rois, names, reference_size)` | `ocr_loader.py` | ROI、武将列表或参考尺寸变更时自动重建 |
 
 ---
 
@@ -317,7 +328,8 @@ get_recognizer(rois, hero_names)
 src.business.capture_service
   -> AdbCapture.connect() / screencap_full()                   [截图]
   -> get_template_manager().match()                            [模板匹配]
-  -> get_recognizer().recognize()                              [OCR 识别]
+  -> get_recognizer(rois, hero_names, tm.reference_size)
+  -> recognize()                                               [按当前截图缩放 ROI 后 OCR]
 
 src.business.ocr_service
   -> get_template_manager().set_template() / reload() / delete_template()
@@ -381,8 +393,8 @@ src.ui.mumu_config_dialog
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `TemplateManager.set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.imwrite()` |
-| `TemplateManager.match(image, threshold)` | `template_manager.py` | `_run_ocr()`, 轮询 | `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
+| `TemplateManager.set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.imwrite()` + 参考尺寸 JSON |
+| `TemplateManager.match(image, threshold)` | `template_manager.py` | `_run_ocr()`, `MainWindow` 轮询 | 多尺度 `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
 | `TemplateManager.reload()` | `template_manager.py` | `select_template()` | `_load_internal()` |
 | `TemplateManager.delete_template()` | `template_manager.py` | `OcrService.delete_template()` | `Path.unlink()` |
 
@@ -390,7 +402,7 @@ src.ui.mumu_config_dialog
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `GeneralRecognizer.recognize(image)` | `recognizer.py` | `CaptureService._run_ocr()`, `OcrService.run_ocr()` | `_recognize_single()` ×8 |
+| `GeneralRecognizer.recognize(image)` | `recognizer.py` | `CaptureService._run_ocr()`, `OcrService.run_ocr()` | 参考 ROI 缩放 + `_recognize_single()` ×8 |
 | `GeneralRecognizer._recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `_preprocess_roi()`, `_engine.ocr()`, `_correct_with_hero_list()` |
 | `GeneralRecognizer._preprocess_roi(roi)` | `recognizer.py` | `_recognize_single()` | `cv2.resize()`, CLAHE, 锐化, 灰度 |
 | `GeneralRecognizer._extract_text(result)` | `recognizer.py` | `_recognize_single()` | PaddleOCR 解析 |

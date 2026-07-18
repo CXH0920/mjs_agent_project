@@ -220,7 +220,8 @@ RecommendationPanel._on_import_from_screenshot()
           -> get_template_manager()                            [获取模板单例]
           -> tm.match(image, threshold)                        [模板匹配]
           -> [匹配成功]
-             -> get_recognizer(rois, hero_names)               [获取识别器单例]
+             -> get_recognizer(rois, hero_names, tm.reference_size)
+                                                               [获取识别器单例]
              -> recognizer.recognize(image)                    [PaddleOCR 识别]
              -> GeneralRecognizer.save_results(results, path)   [保存结果]
        -> emit capture_completed({ocr_results, image, ...})    [发送结果]
@@ -275,8 +276,9 @@ MainWindow._on_poll_capture()                               [poll_tick 信号触
     -> AdbCapture.screencap_full()
     -> get_template_manager().is_loaded
     -> [loaded] TemplateManager.match(image, threshold)
-    -> [matched] CaptureService.run_ocr_if_matched(image, hero_names)
-      -> _run_ocr(image, hero_names)                        [同截图链路]
+       -> 多尺度模板匹配，选择最高置信度
+    -> [matched] MainWindow 后台任务调用 get_recognizer(..., tm.reference_size)
+      -> GeneralRecognizer.recognize(image)                  [按截图尺寸换算 ROI]
     -> self._poll_result_ready.emit(results, image, matched) [信号]
 
 MainWindow._on_poll_result(ocr_results, image, matched)     [主线程接收]
@@ -288,7 +290,7 @@ MainWindow._on_poll_result(ocr_results, image, matched)     [主线程接收]
 |------|------|--------|----------|
 | `start_poll(interval_ms)` | `ocr_service.py` | `MumuConfigDialog` 保存 | `QTimer.start()` |
 | `stop_poll()` | `ocr_service.py` | `MumuConfigDialog` 保存 | `QTimer.stop()` |
-| `run_ocr(image, rois)` | `ocr_service.py` | 外部 | `get_recognizer()`, `recognizer.recognize()` |
+| `run_ocr(image, rois)` | `ocr_service.py` | 外部 | 获取模板参考尺寸、`get_recognizer()`、`recognizer.recognize()` |
 | `create_template(image, roi)` | `ocr_service.py` | `MumuConfigDialog` | `get_template_manager().set_template()` |
 | `select_template(file_path)` | `ocr_service.py` | `MumuConfigDialog` | `shutil.copy2()`, `tm.reload()` |
 | `delete_template()` | `ocr_service.py` | `MumuConfigDialog` | `get_template_manager().delete_template()` |

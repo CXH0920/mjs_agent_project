@@ -15,7 +15,7 @@ import re
 import sys
 from typing import Optional
 
-from PySide6.QtCore import QObject, Signal, QProcess
+from PySide6.QtCore import QObject, Signal, QProcess, QProcessEnvironment
 
 from src.business.fetch_utils import (
     cancel_process,
@@ -96,6 +96,9 @@ class BaseFetchService(QObject):
         self._process.readyReadStandardError.connect(self._on_stderr_ready)
         self._process.finished.connect(self._on_finished)
         self._process.errorOccurred.connect(self._on_error)
+        process_env = QProcessEnvironment.systemEnvironment()
+        process_env.insert("MJS_QPROCESS_CHILD", "1")
+        self._process.setProcessEnvironment(process_env)
         logger.info("启动子进程: python %s", " ".join(args))
         self._process.start(sys.executable, args)
 

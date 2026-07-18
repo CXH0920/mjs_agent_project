@@ -193,9 +193,9 @@ CaptureService._execute_capture(hero_names)                    [异步回调]
   -> save_image(image, save_path)                              [保存截图]
   -> [OCR 启用] self._run_ocr(image, hero_names)
      -> get_template_manager()
-     -> tm.match(image, threshold)                             [模板匹配]
-     -> [匹配] get_recognizer(rois, names)
-     -> recognizer.recognize(image)                            [PaddleOCR]
+     -> tm.match(image, threshold)                             [多尺度模板匹配]
+     -> [匹配] get_recognizer(rois, names, tm.reference_size)
+     -> recognizer.recognize(image)                            [按当前截图缩放 ROI 后 PaddleOCR]
      -> GeneralRecognizer.save_results()
   -> emit capture_completed({ocr_results, image, ...})
 
@@ -233,9 +233,9 @@ OcrService.poll_tick  [signal, QTimer 驱动]
                   -> [未连接] CaptureService.connect_emulator()
                   -> AdbCapture.screencap_full()                 [截图]
                   -> TemplateManager.is_loaded
-                  -> TemplateManager.match(image, threshold)     [模板匹配]
+                  -> TemplateManager.match(image, threshold)     [多尺度模板匹配]
                   -> [匹配成功]
-                     -> get_recognizer(rois, hero_names)
+                     -> get_recognizer(rois, hero_names, tm.reference_size)
                      -> recognizer.recognize(image)
                   -> self._poll_result_ready.emit(results, image, matched)  [跨线程信号]
                   -> Lock.release()

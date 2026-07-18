@@ -6,15 +6,15 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTabWidget, QTextBrowser
 
 from src.business.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero
+from src.data.models import Hero, Skill
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow
-from src.ui.recommendation_panel import RecommendationPanel
+from src.ui.recommendation_panel import HeroSkillDialog, RecommendationPanel
 
 
 def _app() -> QApplication:
@@ -91,3 +91,26 @@ def test_main_window_keeps_poll_status_after_stats_update() -> None:
 
     assert expected == "OCR轮询：已暂停"
     assert window._poll_status_label.text() == expected
+
+
+def test_hero_skill_dialog_shows_description_and_settlement() -> None:
+    _app()
+    hero = Hero(
+        id=1,
+        name="测试武将",
+        skills=[
+            Skill(name="技能A", description="描述A", settlement="结算A"),
+            Skill(name="技能B", description="描述B", settlement="结算B"),
+        ],
+    )
+
+    dialog = HeroSkillDialog(hero)
+    tabs = dialog.findChild(QTabWidget)
+    text = "\n".join(browser.toPlainText() for browser in dialog.findChildren(QTextBrowser))
+
+    assert dialog.windowTitle() == "测试武将 - 技能详情"
+    assert tabs is not None
+    assert tabs.count() == 2
+    assert [tabs.tabText(i) for i in range(tabs.count())] == ["技能A", "技能B"]
+    assert "描述A" in text
+    assert "结算B" in text
