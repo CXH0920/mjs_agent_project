@@ -761,19 +761,19 @@ m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
 
 ```
 HeroBrowser (QWidget)
- ├── HeroListPanel (左, 280px)
+ ├── HeroListPanel（左, 280px）
  │   ├── QLineEdit（搜索框）
  │   ├── QComboBox（势力筛选）
  │   ├── QListWidget（武将列表）
- │   └── Signal: hero_selected(int)
- └── HeroDetailPanel (右, 520px)
-     ├── QTabWidget
-     │   ├── Tab 1「武将信息」
-     │   │   ├── QLabel (HTML 渲染基本信息)
-     │   │   └── QScrollArea (技能列表)
-     │   └── Tab 2「攻略指南」
-     │       └── QTextBrowser (mistune 渲染 Markdown)
-     └── Method: show_hero(hero_id)
+ │   ├── Signal: hero_selected(int)
+ └── HeroDetailPanel（右, 720px）
+     ├── Tab 1「武将信息」
+     │   ├── QLabel (HTML 渲染基本信息)
+     │   └── QScrollArea (技能列表)
+     └── Tab 2「攻略指南」
+         ├── QScrollArea（统一滚动容器）
+         ├── 单列堆叠摘要（要点/提示/关系标签）
+         └── 全宽 QTextBrowser（Markdown 预览，双击打开弹窗）
 ```
 
 **Tab 栏编辑按钮**：
@@ -786,6 +786,14 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
 
 **Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
+
+**攻略视觉与交互：**
+- 主浏览页保留列表与详情摘要，方便快速切换武将。
+- Markdown 正文预览支持双击，打开 `GuideMarkdownDialog`（默认约 900×680）阅读完整攻略。
+- 攻略摘要、关系标签和正文预览采用单列堆叠布局，避免 Markdown 阅读框独占侧栏。
+- Markdown 预览占满内容宽度，双击后由 `GuideMarkdownDialog` 展示完整正文。
+- 核心要点、新手提示、克制关系、搭配关系按区块分组，长内容由外层滚动区域承载。
+- 克制/搭配关系使用可点击标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
 
 ### 5.8 选将推荐面板（RecommendationPanel）
 
@@ -860,7 +868,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 按钮尺寸 66×28，蓝色背景 `#4a90d9`，白色文字
 - 点击时通过 `guide_clicked = Signal(int)` 信号发射武将 ID
 - `RecommendationPanel._show_guide_popup(hero_id)` 接收信号，通过 `GuideManager.get_guide()` 获取攻略
-- 弹出 `GuideDetailDialog`（QDialog，500×550），展示核心要点、新手提示、被克制（ID→名称解析）、搭配推荐、Markdown 渲染的攻略正文
+- 弹出 `GuideDetailDialog`（QDialog，默认 780×680），顶部显示武将和更新时间，左侧展示核心要点、新手提示及可点击关系标签，右侧独立滚动显示 Markdown 攻略正文
 - 无攻略数据时弹窗显示"暂无攻略数据"
 
 ### 5.9 对话框基类体系
@@ -888,7 +896,7 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 
 | 类 | 文件 | 用途 |
 |----|------|------|
-| GuideDetailDialog | `recommendation_panel.py` | 选将推荐卡片按钮触发的攻略详情弹窗（500×550），展示核心要点、新手提示、被克制/搭配推荐、Markdown 渲染的攻略正文 |
+| GuideDetailDialog | `recommendation_panel.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 780×680），左侧摘要/关系标签，右侧 Markdown 正文 |
 
 ### 5.10 全局样式（style.py, 247 行）
 

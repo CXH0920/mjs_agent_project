@@ -183,7 +183,14 @@ def _preprocess_roi(self, roi: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 ```
 
-> **设计思路：** 原始 ROI 只有 ~40×140px，直接送 PaddleOCR 对小字符识别率低。放大使字符像素更密集；CLAHE 解决游戏 UI 渐变背景的干扰；锐化强化边缘清晰度；最后灰度化是 OCR 引擎的期望输入。顺序不可调换。
+> **设计思路：** 2560×1440 基准下，默认武将名称 ROI 为 50×145px。额外的 5px 高度用于给竖排名称留出上下缓冲，降低字符被截断的概率。放大使字符像素更密集；CLAHE 解决游戏 UI 渐变背景的干扰；锐化强化边缘清晰度；最后灰度化是 OCR 引擎的期望输入。顺序不可调换。
+
+识别日志会按槽位记录缩放后的 ROI 坐标，以及 PaddleOCR 返回的原始文本和置信度，格式类似：
+
+```text
+武将 6 OCR ROI: x=1615, y=370, w=50, h=145 (参考 ROI=[1615, 370, 50, 145])
+武将 6 OCR 原始结果: text='祝融夫', confidence=0.9980
+```
 
 ---
 

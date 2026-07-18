@@ -92,20 +92,24 @@ HeroBrowser (QWidget)
  │   ├── 搜索框 + 势力 ComboBox 筛选
  │   ├── QListWidget（武将列表）
  │   ├── _last_hero_id 跟踪选中项（编辑后恢复定位）
- │   └── signal: hero_selected(int)
- └── HeroDetailPanel (右, 520px)
-     ├── QTabWidget
-     │   ├── Tab「武将信息」→ QLabel(HTML) + 技能滚动区
-     │   └── Tab「攻略指南」→ Markdown 渲染 + 克制/搭配
-     └── CornerWidget（Tab 栏右上角）
-         ├── 信息 Tab：绿色"修改" + 红色"删除"
-         └── 攻略 Tab：绿色"修改" + 红色"删除"
+ │   ├── signal: hero_selected(int)
+ └── HeroDetailPanel (右, 720px)
+     ├── Tab「武将信息」→ QLabel(HTML) + 技能滚动区
+     └── Tab「攻略指南」→ 可滚动单列摘要 + Markdown 预览 + 关系标签
 ```
 
 **编辑功能：**
 - `HeroEditDialog` — 编辑武将信息（名称/称号/势力/定位/体力/手牌/性别/难度）
 - `GuideEditDialog` — 编辑攻略内容（核心要点/新手提示/被克制/搭配推荐/攻略正文）
 - 修改保存后 `data_changed` 信号触发列表刷新，`_last_hero_id` 确保选中项不变
+
+**攻略展示布局：**
+- 主浏览页保留列表与详情摘要，方便快速切换武将。
+- Markdown 正文区域支持双击，打开 `GuideMarkdownDialog`（默认约 900×680）阅读完整攻略。
+- 攻略 Tab 外层使用 `QScrollArea`，避免长内容超出窗口边界。
+- 核心要点、新手提示、被克制、搭配推荐和 Markdown 预览按单列顺序堆叠。
+- `QTextBrowser` 占满内容宽度作为正文预览，双击后打开 `GuideMarkdownDialog` 查看完整内容。
+- 克制/搭配关系使用可点击标签，点击后通过 `hero_requested` 信号切换到对应武将。
 
 ### 3.4 推荐面板
 
