@@ -17,8 +17,11 @@ from src.ui.hero_browser import (
     GuideEditDialog,
     GuideMarkdownDialog,
     HeroDetailPanel,
+    HeroListPanel,
     HeroRelationSelectDialog,
 )
+from src.ui.checkable_combo import CheckableComboBox as SharedCheckableComboBox
+from src.ui.fetch_dialog import HeroFetchDialog
 
 
 def _app() -> QApplication:
@@ -106,3 +109,25 @@ def test_relation_picker_uses_checkable_faction_combo(tmp_path: Path) -> None:
 
     picker._faction_combo._remove_tag("魏")
     assert picker._faction_combo.checked_values() == {"蜀"}
+
+
+def test_specific_fetch_dialog_uses_shared_faction_combo(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+
+    dialog = HeroFetchDialog(hero_manager)
+    faction_combo = dialog.findChild(SharedCheckableComboBox)
+
+    assert faction_combo is not None
+    assert faction_combo.checked_values() == {"魏"}
+
+
+def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="蔡文姬", faction="魏"))
+
+    panel = HeroListPanel(hero_manager)
+
+    assert panel.selected_hero_id() == 1
