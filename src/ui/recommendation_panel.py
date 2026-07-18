@@ -18,7 +18,7 @@ from typing import Optional
 
 import mistune
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
@@ -452,12 +452,14 @@ class HeroCardWidget(QFrame):
 class GuideDetailDialog(QDialog):
     """攻略详情弹窗"""
 
+    hero_requested = Signal(int)
+
     def __init__(self, hero_name: str, guide: HeroGuide | None,
                  hero_manager: HeroManager, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"{hero_name} - 攻略详情")
-        self.setMinimumSize(500, 550)
-        self.resize(520, 580)
+        self.setMinimumSize(720, 600)
+        self.resize(780, 680)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -469,66 +471,53 @@ class GuideDetailDialog(QDialog):
             layout.addWidget(no_data)
             return
 
-        scroll = QWidget()
-        scroll_layout = QVBoxLayout(scroll)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(6)
+        header = QLabel(
+            f"<div style='font-size:20px; font-weight:bold; color:#2c3e50;'>{hero_name}</div>"
+            f"<div style='color:#6b7c93; margin-top:4px;'>攻略指南 · 更新于 {guide.last_updated}</div>"
+        )
+        header.setStyleSheet("background: #f8fbff; border: 1px solid #dce6f0; padding: 10px; border-radius: 6px;")
+        layout.addWidget(header)
 
-        # 核心要点
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+
+        summary = QFrame()
+        summary.setStyleSheet("QFrame { background: #f8fbff; border: 1px solid #dce6f0; border-radius: 6px; }")
+        summary_layout = QVBoxLayout(summary)
+        summary_layout.setContentsMargins(12, 12, 12, 12)
+        summary_layout.setSpacing(8)
+        summary.setMinimumWidth(245)
+        summary.setMaximumWidth(310)
+
+        self._add_section_title(summary_layout, "核心要点")
         if guide.key_points:
-            points_label = QLabel("<b>核心要点:</b>")
-            scroll_layout.addWidget(points_label)
             for point in guide.key_points:
-                pl = QLabel(f"  {point}")
-                pl.setWordWrap(True)
-                scroll_layout.addWidget(pl)
+                point_label = QLabel(f"• {point}")
+                point_label.setWordWrap(True)
+                summary_layout.addWidget(point_label)
+        else:
+            summary_layout.addWidget(QLabel("暂无核心要点"))
 
-        # 新手提示
         if guide.tips_for_beginners:
-            scroll_layout.addWidget(QLabel(""))
-            tips = QLabel(f"<b>新手提示:</b>\n{guide.tips_for_beginners}")
+            self._add_section_title(summary_layout, "新手提示")
+            tips = QLabel(guide.tips_for_beginners)
             tips.setWordWrap(True)
-            scroll_layout.addWidget(tips)
+            tips.setStyleSheet("background: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
+            summary_layout.addWidget(tips)
 
-        # 克制 / 搭配
         if guide.counters:
-            names = []
-            for hid in guide.counters[:10]:
-                h = hero_manager.get_hero(hid)
-                names.append(h.name if h else f"#{hid}")
-            cl = QLabel(f"<b>被克制:</b>  {'、'.join(names)}")
-            cl.setWordWrap(True)
-            scroll_layout.addWidget(cl)
-
+            self._add_relation_tags(summary_layout, "被克制", guide.counters, hero_manager, "#fde8e8", "#c62828")
         if guide.synergizes_with:
-            names = []
-            for hid in guide.synergizes_with[:10]:
-                h = hero_manager.get_hero(hid)
-                names.append(h.name if h else f"#{hid}")
-            sl = QLabel(f"<b>搭配推荐:</b>  {'、'.join(names)}")
-            sl.setWordWrap(True)
-            scroll_layout.addWidget(sl)
+            self._add_relation_tags(summary_layout, "搭配推荐", guide.synergizes_with, hero_manager, "#e8f4e8", "#2e7d32")
+        summary_layout.addStretch()
 
-        # 攻略正文（Markdown 渲染）
-        if guide.description:
-            scroll_layout.addWidget(QLabel(""))
-            desc_title = QLabel("<b>攻略详情:</b>")
-            scroll_layout.addWidget(desc_title)
-            desc_browser = QTextBrowser()
-            desc_browser.setHtml(_markdown_to_html(guide.description))
-            desc_browser.setOpenExternalLinks(False)
-            desc_browser.setMinimumHeight(200)
-            scroll_layout.addWidget(desc_browser)
+        desc_browser = QTextBrowser()
+        desc_browser.setOpenExternalLinks(False)
+        desc_browser.setHtml(_markdown_to_html(guide.description) if guide.description else "<p style='color:#8a98a8;'>暂无攻略正文</p>")
 
-        scroll_layout.addStretch()
-
-        # 放入 ScrollArea
-        from PySide6.QtWidgets import QScrollArea
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        area.setFrameShape(QFrame.Shape.NoFrame)
-        area.setWidget(scroll)
-        layout.addWidget(area, 1)
+        columns.addWidget(summary, 0)
+        columns.addWidget(desc_browser, 1)
+        layout.addLayout(columns, 1)
 
         # 关闭按钮
         btn_layout = QHBoxLayout()
@@ -538,6 +527,32 @@ class GuideDetailDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
+
+    @staticmethod
+    def _add_section_title(layout: QVBoxLayout, title: str) -> None:
+        label = QLabel(title)
+        label.setStyleSheet("font-size: 13px; font-weight: bold; color: #357abd; padding-top: 6px;")
+        layout.addWidget(label)
+
+    def _add_relation_tags(self, layout: QVBoxLayout, title: str, hero_ids: list[int],
+                           hero_manager: HeroManager, background: str, foreground: str) -> None:
+        self._add_section_title(layout, title)
+        tags = QWidget()
+        grid = QGridLayout(tags)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(4)
+        for index, hero_id in enumerate(hero_ids[:10]):
+            hero = hero_manager.get_hero(hero_id)
+            button = QPushButton(hero.name if hero else f"#{hero_id}")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setStyleSheet(
+                f"QPushButton {{ background: {background}; color: {foreground}; border: 1px solid {foreground}; "
+                "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }}"
+                f"QPushButton:hover {{ background: {foreground}; color: white; }}"
+            )
+            button.clicked.connect(lambda checked=False, target=hero_id: self.hero_requested.emit(target))
+            grid.addWidget(button, index // 2, index % 2)
+        layout.addWidget(tags)
 
 
 class HeroSkillDialog(QDialog):
@@ -882,6 +897,11 @@ class RecommendationPanel(QWidget):
             return
         guide = self._guide_mgr.get_guide(hero_id)
         dialog = GuideDetailDialog(hero.name, guide, self._hero_mgr, parent=self.window())
+        def open_related(target_id: int) -> None:
+            dialog.accept()
+            QTimer.singleShot(0, lambda: self._show_guide_popup(target_id))
+
+        dialog.hero_requested.connect(open_related)
         dialog.exec()
 
     def _show_skill_popup(self, hero_id: int) -> None:
