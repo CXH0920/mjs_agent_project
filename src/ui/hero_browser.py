@@ -865,40 +865,48 @@ class HeroDetailPanel(QWidget):
         hlayout.setContentsMargins(0, 0, 4, 0)
         hlayout.setSpacing(4)
 
-        btn_style = (
-            "QPushButton { padding: 2px 12px; font-size: 12px; border-radius: 3px; "
+        edit_btn_style = (
+            "QPushButton { background-color: transparent; color: #1890FF; "
+            "border: 1px solid #1890FF; border-radius: 4px; padding: 2px 12px; "
+            "font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #E6F7FF; }"
+        )
+        delete_btn_style = (
+            "QPushButton { background-color: #F5222D; color: #FFFFFF; border: none; "
+            "border-radius: 4px; padding: 2px 12px; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #DC1F29; }"
         )
 
         # 武将信息按钮组
         self._info_edit_btn = QPushButton("修改")
-        self._info_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32; }")
+        self._info_edit_btn.setStyleSheet(edit_btn_style)
         self._info_edit_btn.clicked.connect(self._on_info_edit)
         hlayout.addWidget(self._info_edit_btn)
 
         self._info_delete_btn = QPushButton("删除")
-        self._info_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828; }")
+        self._info_delete_btn.setStyleSheet(delete_btn_style)
         self._info_delete_btn.clicked.connect(self._on_info_delete)
         hlayout.addWidget(self._info_delete_btn)
 
         # 攻略按钮组
         self._guide_edit_btn = QPushButton("修改")
-        self._guide_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32; }")
+        self._guide_edit_btn.setStyleSheet(edit_btn_style)
         self._guide_edit_btn.clicked.connect(self._on_guide_edit)
         hlayout.addWidget(self._guide_edit_btn)
 
         self._guide_delete_btn = QPushButton("删除")
-        self._guide_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828; }")
+        self._guide_delete_btn.setStyleSheet(delete_btn_style)
         self._guide_delete_btn.clicked.connect(self._on_guide_delete)
         hlayout.addWidget(self._guide_delete_btn)
 
         # 相性按钮组
         self._synergy_edit_btn = QPushButton("修改")
-        self._synergy_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32; }")
+        self._synergy_edit_btn.setStyleSheet(edit_btn_style)
         self._synergy_edit_btn.clicked.connect(self._on_synergy_edit)
         hlayout.addWidget(self._synergy_edit_btn)
 
         self._synergy_delete_btn = QPushButton("删除")
-        self._synergy_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828; }")
+        self._synergy_delete_btn.setStyleSheet(delete_btn_style)
         self._synergy_delete_btn.clicked.connect(self._on_synergy_delete)
         hlayout.addWidget(self._synergy_delete_btn)
 
