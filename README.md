@@ -458,13 +458,19 @@ logs/
 │   ├── scraper.log          # 爬虫日志
 │   └── ai_batch.log         # AI 生成日志
 ├── business/
-│   └── business.log         # QProcess 启停
+│   └── business.log         # 业务服务日志
+├── data/
+│   └── data.log             # 数据管理日志
+├── ocr/
+│   └── ocr.log              # OCR 日志
+├── capture/
+│   └── capture.log          # ADB 截图日志
 └── subprocess/
     ├── stdout.log           # 子进程标准输出
     └── stderr.log           # 子进程错误输出
 ```
 
-每个文件最大 10MB，保留 5 个备份。
+每个文件最大 10MB，保留 5 个备份。桌面应用和直接运行 CLI 会读取 `config.env` 中的 `LOG_LEVEL`、`LOG_TO_FILE`；由桌面应用启动的 QProcess 子进程只通过 stdout/stderr 交给主进程统一记录，避免多进程同时轮转同一文件。
 
 ### 配置控制
 

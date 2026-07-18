@@ -8,7 +8,7 @@
 ## 一、模块职责
 
 本模块负责两件事：
-1. **应用启动** — 创建 `QApplication`，设置窗口图标，初始化日志系统，构建 `MainWindow` 并进入事件循环
+1. **应用启动** — 创建 `QApplication`，设置并维护窗口图标，初始化日志系统，构建 `MainWindow` 并进入事件循环
 2. **配置管理** — 从 `config.env` 文件、环境变量和默认值三级加载配置，提供统一的配置访问接口
 
 ---
@@ -18,6 +18,7 @@
 ```
 src/
 ├── main.py                  # 应用入口（QApplication + MainWindow 构建）
+├── ui/app_icon.py            # 应用图标加载、缓存与顶层窗口图标维护
 ├── config/
 │   ├── __init__.py
 │   ├── env.py               # .env 解析/加载/保存（原子写入）
@@ -107,12 +108,15 @@ def save_env_file(env_path: Path, data: dict[str, str]) -> None:
 ```python
 def setup_logging():
     root = logging.getLogger()
-    if root.handlers:
-        return  # 已配置过，跳过
+    for handler in root.handlers[:]:
+        if getattr(handler, "_mjs_managed_handler", False):
+            root.removeHandler(handler)
+            handler.close()
+    # 保留外部 Handler，按当前配置重建项目 Handler
     # ... 配置 handler、formatter、ModuleFilter ...
 ```
 
-> **设计思路：** 应用入口和 CLI 脚本都可能调用 `setup_logging()`。没有幂等检查会在第二次调用时重复注册 handler，导致日志打印两遍。
+> **设计思路：** 只清理项目自身创建的 Handler，避免重复注册，同时不破坏 pytest 或宿主程序的外部日志 Handler。重复调用时新的级别和文件开关可以生效。
 
 ---
 

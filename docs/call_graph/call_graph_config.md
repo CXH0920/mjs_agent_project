@@ -27,8 +27,10 @@
     -> app.setOrganizationName("MingJiangSha")
     -> [Windows] ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(...)
        [修正 Windows 任务栏图标, 静默失败]
-    -> icon_path = Path(__file__).parent.parent / "mjs.ico"
-    -> [icon 存在] app.setWindowIcon(QIcon(str(icon_path)))    [设置应用图标]
+    -> install_app_icon(app)                                  [加载/缓存图标并安装恢复器]
+       -> load_app_icon()                                     [基于源码绝对路径加载 mjs.ico]
+       -> app.setWindowIcon(icon)                             [设置应用默认图标]
+       -> app.installEventFilter(_AppIconKeeper)              [窗口显示/激活时恢复图标]
 
     -> [提前初始化 PaddleOCR 模型]
        -> from src.ocr.recognizer import GeneralRecognizer

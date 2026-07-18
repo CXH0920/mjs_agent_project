@@ -29,7 +29,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextBrowser,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -37,7 +39,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
-from src.data.models import Hero, HeroGuide
+from src.data.models import Hero, HeroGuide, Skill
 
 logger = logging.getLogger(__name__)
 
@@ -133,10 +135,22 @@ class HeroRecommendation:
     confidence: float
 
 
+class DoubleClickLabel(QLabel):
+    """支持发出左键双击信号的标签。"""
+
+    double_clicked = Signal()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.double_clicked.emit()
+        super().mouseDoubleClickEvent(event)
+
+
 class HeroCardWidget(QFrame):
     """单个武将推荐卡片"""
 
     guide_clicked = Signal(int)  # 发出武将 ID
+    hero_double_clicked = Signal(int)  # 头像左键双击时发出武将 ID
 
     def __init__(self, hero: Hero | None, parent=None):
         super().__init__(parent)
@@ -173,13 +187,15 @@ class HeroCardWidget(QFrame):
         portrait_layout = QGridLayout(self._portrait_frame)
         portrait_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._img_label = QLabel()
+        self._img_label = DoubleClickLabel()
         self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._img_label.double_clicked.connect(self._on_hero_double_clicked)
         portrait_layout.addWidget(self._img_label, 0, 0)
 
         # 名称浮层（半透明，底部）
         self._name_overlay = QLabel()
         self._name_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._name_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._name_overlay.setStyleSheet(
             "background-color: rgba(0,0,0,140); color: white; "
             "padding: 4px 0; font-size: 13px; font-weight: bold;"
@@ -188,6 +204,7 @@ class HeroCardWidget(QFrame):
 
         # 势力标签（左上角）
         self._faction_badge = QLabel()
+        self._faction_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._faction_badge.setStyleSheet(
             "background-color: #888; color: white; "
             "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
@@ -378,6 +395,11 @@ class HeroCardWidget(QFrame):
         if self._hero_id > 0:
             self.guide_clicked.emit(self._hero_id)
 
+    def _on_hero_double_clicked(self) -> None:
+        """头像左键双击时发出武将详情信号。"""
+        if self._hero_id > 0:
+            self.hero_double_clicked.emit(self._hero_id)
+
     # ---------------------------------------------------------------
     # 公共接口
     # ---------------------------------------------------------------
@@ -518,6 +540,84 @@ class GuideDetailDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
+class HeroSkillDialog(QDialog):
+    """武将技能详情弹窗。"""
+
+    def __init__(self, hero: Hero, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"{hero.name} - 技能详情")
+        self.setMinimumSize(480, 420)
+        self.resize(540, 520)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        tabs = QTabWidget()
+        if not hero.skills:
+            empty_tab = QWidget()
+            empty_layout = QVBoxLayout(empty_tab)
+            empty_label = QLabel("暂无技能数据")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_label.setStyleSheet("color: #999; font-size: 14px; padding: 20px;")
+            empty_layout.addWidget(empty_label)
+            tabs.addTab(empty_tab, "技能")
+        else:
+            for skill in hero.skills:
+                tabs.addTab(self._create_skill_tab(skill), skill.name)
+        layout.addWidget(tabs, 1)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        close_button = QPushButton("关闭")
+        close_button.setFixedWidth(80)
+        close_button.clicked.connect(self.accept)
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
+
+    @staticmethod
+    def _create_skill_tab(skill: Skill) -> QWidget:
+        tab = QWidget()
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(8, 8, 8, 8)
+        tab_layout.setSpacing(8)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+
+        description_title = QLabel("技能描述")
+        description_title.setStyleSheet("font-weight: bold; color: #4a90d9;")
+        content_layout.addWidget(description_title)
+        content_layout.addWidget(
+            HeroSkillDialog._create_text_browser(skill.description, "暂无描述")
+        )
+
+        settlement_title = QLabel("技能结算")
+        settlement_title.setStyleSheet("font-weight: bold; color: #4a90d9;")
+        content_layout.addWidget(settlement_title)
+        content_layout.addWidget(
+            HeroSkillDialog._create_text_browser(skill.settlement, "暂无结算说明")
+        )
+        content_layout.addStretch()
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setWidget(content)
+        tab_layout.addWidget(scroll_area, 1)
+        return tab
+
+    @staticmethod
+    def _create_text_browser(text: str, empty_text: str) -> QTextBrowser:
+        browser = QTextBrowser()
+        browser.setPlainText(text.strip() or empty_text)
+        browser.setReadOnly(True)
+        browser.setMinimumHeight(54)
+        browser.setMaximumHeight(140)
+        return browser
+
+
 def _markdown_to_html(text: str) -> str:
     """将 Markdown 转换为 HTML"""
     if not text:
@@ -603,6 +703,7 @@ class RecommendationPanel(QWidget):
             col = i % 2
             card = HeroCardWidget(None)
             card.guide_clicked.connect(self._show_guide_popup)
+            card.hero_double_clicked.connect(self._show_skill_popup)
             grid.addWidget(card, row, col)
             self._cards.append(card)
 
@@ -781,6 +882,15 @@ class RecommendationPanel(QWidget):
             return
         guide = self._guide_mgr.get_guide(hero_id)
         dialog = GuideDetailDialog(hero.name, guide, self._hero_mgr, parent=self.window())
+        dialog.exec()
+
+    def _show_skill_popup(self, hero_id: int) -> None:
+        """显示武将技能详情弹窗。"""
+        hero = self._hero_mgr.get_hero(hero_id)
+        if not hero:
+            logger.warning("技能详情弹窗：未找到武将 %s", hero_id)
+            return
+        dialog = HeroSkillDialog(hero, parent=self.window())
         dialog.exec()
 
     def load_from_ocr(self, ocr_results: list[dict]) -> None:

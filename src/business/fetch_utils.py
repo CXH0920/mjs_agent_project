@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import logging
-import traceback
 
 from PySide6.QtCore import QProcess
 
@@ -47,5 +46,4 @@ def log_process_error(error_name: str, process: QProcess | None) -> str:
     error_msg = process.errorString() if process else "未知错误"
     full_msg = f"{error_name}: {error_msg}"
     logger.error("子进程错误: %s", full_msg)
-    logger.error("调用栈:\n%s", traceback.format_exc())
     return full_msg
