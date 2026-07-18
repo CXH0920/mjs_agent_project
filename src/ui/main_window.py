@@ -62,6 +62,8 @@ class MainWindow(QMainWindow):
     ):
         super().__init__()
         self._poll_thread_lock = threading.Lock()
+        # 轮询冷却期间可能连续收到匹配结果，只在进入选将页的边沿切换一次标签页。
+        self._selection_page_active = False
         if hero_manager or synergy_manager or guide_manager:
             from src.data.hero_manager import HeroManager
             from src.data.synergy_manager import SynergyManager
@@ -337,8 +339,15 @@ class MainWindow(QMainWindow):
             self._capture_service.sync_poll_connection_state(capture, detail)
 
         self._ocr_service.complete_poll(generation, outcome, detail)
+        if outcome == "healthy_no_match":
+            self._selection_page_active = False
+            return
         if outcome != "matched":
             return
+
+        if not self._selection_page_active:
+            self._selection_page_active = True
+            self._tabs.setCurrentWidget(self._recommendation)
 
         ocr_results = result.get("ocr_results") or []
         if ocr_results:

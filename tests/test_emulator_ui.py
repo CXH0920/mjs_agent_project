@@ -80,6 +80,53 @@ def test_poll_stays_stopped_until_emulator_is_connected() -> None:
     assert window._ocr_service.started == 1
 
 
+def test_poll_match_switches_to_recommendation_only_on_page_entry() -> None:
+    class OcrService:
+        poll_generation = 1
+
+        def __init__(self) -> None:
+            self.completed: list[str] = []
+
+        def complete_poll(self, generation: int, outcome: str, detail: str = "") -> None:
+            self.completed.append(outcome)
+
+    class CaptureService:
+        capture = None
+
+    class Tabs:
+        def __init__(self) -> None:
+            self.switched_to = []
+
+        def setCurrentWidget(self, widget) -> None:
+            self.switched_to.append(widget)
+
+    class Recommendation:
+        def __init__(self) -> None:
+            self.loaded: list[list[dict]] = []
+
+        def load_from_ocr(self, results: list[dict]) -> None:
+            self.loaded.append(results)
+
+    window = MainWindow.__new__(MainWindow)
+    window._selection_page_active = False
+    window._ocr_service = OcrService()
+    window._capture_service = CaptureService()
+    window._tabs = Tabs()
+    window._recommendation = Recommendation()
+
+    matched = {"generation": 1, "outcome": "matched", "ocr_results": [{"name": "测试武将"}]}
+    window._on_poll_result(matched)
+    window._on_poll_result(matched)
+
+    assert window._tabs.switched_to == [window._recommendation]
+    assert len(window._recommendation.loaded) == 2
+
+    window._on_poll_result({"generation": 1, "outcome": "healthy_no_match"})
+    window._on_poll_result(matched)
+
+    assert window._tabs.switched_to == [window._recommendation, window._recommendation]
+
+
 
 def test_main_window_keeps_poll_status_after_stats_update() -> None:
     _app()

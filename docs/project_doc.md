@@ -473,6 +473,8 @@ do_capture()
 
 ### 3.6 OcrService（OCR 控制服务）
 
+选将推荐自动跳转由 `MainWindow._on_poll_result()` 负责。模板首次匹配成功时，如果当前尚未处于选将页面，则切换到“选将推荐”Tab；冷却期间再次匹配只更新 OCR 推荐内容，不重复切换。只有 `healthy_no_match` 明确表示模板未匹配时，才清除页面状态。截图失败、连接重试和 OCR 重试不会清除该状态。
+
 ```python
 class OcrService(QObject):
     status_changed = Signal(str)           # 状态消息

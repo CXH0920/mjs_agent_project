@@ -218,6 +218,17 @@ RecommendationPanel._on_import_from_file()                     [「从图片导�
 
 ### 3.3 轮询截图链路（关键：跨线程）
 
+轮询匹配成功后的页面跳转采用边沿触发：
+
+```text
+_on_poll_result()
+  -> outcome == healthy_no_match: _selection_page_active = False
+  -> outcome == matched and inactive: _tabs.setCurrentWidget(_recommendation)
+  -> outcome == matched and active: 仅更新 RecommendationPanel，不重复切换 Tab
+```
+
+轮询冷却期间的重复匹配不会重复抢占用户当前页面；截图为空、图像截断等可重试结果也不会重置选将页面状态。
+
 ```
                                                      [主线程]
 OcrService.poll_tick  [signal, QTimer 驱动]
