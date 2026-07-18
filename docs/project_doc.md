@@ -784,6 +784,8 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 选中无攻略的武将时，攻略按钮组自动禁用
 - "修改"打开 `HeroEditDialog` / `GuideEditDialog` 进行编辑，"删除"弹出确认对话框
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
+- `GuideEditDialog` 中的“被克制”和“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择
+- 关系展示标签采用固定尺寸可跳转按钮；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 
 **Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
 

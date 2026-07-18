@@ -100,7 +100,9 @@ HeroBrowser (QWidget)
 
 **编辑功能：**
 - `HeroEditDialog` — 编辑武将信息（名称/称号/势力/定位/体力/手牌/性别/难度）
-- `GuideEditDialog` — 编辑攻略内容（核心要点/新手提示/被克制/搭配推荐/攻略正文）
+- `GuideEditDialog` — 编辑攻略内容（核心要点/新手提示/关系武将选择/攻略正文）
+- `HeroRelationSelectDialog` — 关系武将多选弹窗，提供搜索、按推荐面板势力配色显示的可删除标签下拉框、全选当前筛选和清空选择
+- 关系标签统一为固定尺寸可点击按钮，名称过长时通过悬浮提示查看完整名称
 - 修改保存后 `data_changed` 信号触发列表刷新，`_last_hero_id` 确保选中项不变
 
 **攻略展示布局：**
@@ -245,6 +247,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
 | `HeroEditDialog` | 武将信息编辑 |
 | `GuideEditDialog` | 攻略内容编辑 |
+| `HeroRelationSelectDialog` | 被克制/搭配推荐武将的搜索多选 |
 | `RoiSelectorDialog` | 模板 ROI 区域框选 |
 | `BaseHeroSelectDialog`（及其子类） | 武将选择 |
 
