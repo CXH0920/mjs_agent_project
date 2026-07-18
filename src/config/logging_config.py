@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,8 @@ LEVEL_MAP: dict[str, int] = {
 DEFAULT_LEVEL = "INFO"
 DEFAULT_MAX_MB = 10
 DEFAULT_BACKUP_COUNT = 5
+_MANAGED_HANDLER_ATTR = "_mjs_managed_handler"
+_QPROCESS_CHILD_ENV = "MJS_QPROCESS_CHILD"
 
 
 class ModuleFilter(logging.Filter):
@@ -57,8 +60,8 @@ def setup_logging(
 ) -> None:
     """配置全局日志系统
 
-    桌面应用入口 (src/main.py) 调用时启用文件日志。
-    CLI 脚本入口调用时 log_to_file=False，日志仅输出到控制台。
+    桌面应用和直接运行的 CLI 入口均根据 config.env 决定是否写文件。
+    由桌面应用启动的 QProcess 子进程只输出控制台日志，由父进程统一收集。
 
     Args:
         log_level: DEBUG/INFO/WARNING/ERROR
@@ -66,12 +69,14 @@ def setup_logging(
         log_max_mb: 单个日志文件最大 MB
         log_backup_count: 保留的备份文件数
     """
-    level = LEVEL_MAP.get(log_level.upper(), logging.INFO)
-
-    # 避免重复配置导致日志重复
+    level = LEVEL_MAP.get(str(log_level).upper(), logging.INFO)
     root = logging.getLogger()
-    if root.handlers:
-        return
+
+    # 只移除本模块之前创建的 Handler，保留 pytest/宿主程序等外部 Handler。
+    for handler in root.handlers[:]:
+        if getattr(handler, _MANAGED_HANDLER_ATTR, False):
+            root.removeHandler(handler)
+            handler.close()
 
     root.setLevel(level)
 
@@ -84,9 +89,13 @@ def setup_logging(
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
     console.setFormatter(formatter)
+    setattr(console, _MANAGED_HANDLER_ATTR, True)
     root.addHandler(console)
 
-    if not log_to_file:
+    # QProcess 子进程的 stdout/stderr 会被父进程统一收集，避免多个进程
+    # 同时轮转同一组文件导致 Windows 文件占用和备份竞争。
+    is_qprocess_child = os.getenv(_QPROCESS_CHILD_ENV) == "1"
+    if not log_to_file or is_qprocess_child:
         return
 
     max_bytes = max(log_max_mb, 1) * 1024 * 1024
@@ -95,7 +104,7 @@ def setup_logging(
     file_handlers: list[tuple[str, list[str] | None, list[str] | None]] = [
         # (文件名, startswith, exclude_startswith)
         ("app.log",               None,
-         ["src.scraper.ai_", "src.business.", "subprocess."]),
+         ["src.scraper", "src.business", "src.data", "src.ocr", "src.capture", "subprocess."]),
         ("scraper/scraper.log",   ["src.scraper"], ["src.scraper.ai_"]),
         ("scraper/ai_batch.log",  ["src.scraper.ai_"], None),
         ("business/business.log", ["src.business"], None),
@@ -119,6 +128,12 @@ def setup_logging(
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(formatter)
         handler.addFilter(ModuleFilter(startswith=starts, exclude_startswith=excludes))
+        setattr(handler, _MANAGED_HANDLER_ATTR, True)
         root.addHandler(handler)
 
-    logging.getLogger(__name__).info("日志系统初始化完成: level=%s, file=%s", log_level, log_to_file)
+    logging.getLogger(__name__).info(
+        "日志系统初始化完成: level=%s, file=%s, qprocess_child=%s",
+        log_level,
+        log_to_file,
+        is_qprocess_child,
+    )

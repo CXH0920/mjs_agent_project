@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from pathlib import Path
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -102,11 +100,11 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(960, 640)
         self.resize(1100, 720)
 
-        # 设置窗口图标（继承 app.setWindowIcon，但显式设置更可靠）
-        icon_path = Path(__file__).resolve().parent.parent.parent / "mjs.ico"
-        if icon_path.exists():
-            from PySide6.QtGui import QIcon
-            self.setWindowIcon(QIcon(str(icon_path)))
+        # 显式设置窗口图标；应用级图标恢复器负责后续窗口激活时的维护
+        from src.ui.app_icon import load_app_icon
+        app_icon = load_app_icon()
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
 
         self._setup_menu()
         self._load_data()
@@ -299,7 +297,11 @@ class MainWindow(QMainWindow):
                 try:
                     from src.ocr.ocr_loader import get_recognizer
                     rois = self._capture_service.config.get("ocr_generals_roi", None)
-                    results = get_recognizer(rois, hero_names=hero_names).recognize(image)
+                    results = get_recognizer(
+                        rois,
+                        hero_names=hero_names,
+                        reference_size=tm.reference_size,
+                    ).recognize(image)
                 except Exception as exc:
                     logger.exception("轮询 OCR 识别异常")
                     self._poll_result_ready.emit({

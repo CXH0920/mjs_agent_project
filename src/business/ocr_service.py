@@ -255,7 +255,11 @@ class OcrService(QObject):
         """
         try:
             rois = rois or self._config.get("ocr_generals_roi", None)
-            recognizer = get_recognizer(rois, hero_names=self._hero_names)
+            recognizer = get_recognizer(
+                rois,
+                hero_names=self._hero_names,
+                reference_size=get_template_manager().reference_size,
+            )
             results = recognizer.recognize(image)
             logger.info("OCR 完成: %s", results)
             return results

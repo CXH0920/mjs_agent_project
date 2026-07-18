@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import traceback
 from pathlib import Path
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
 DEFAULT_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "wujiang_select.png"
+DEFAULT_REFERENCE_SIZE = (2560, 1440)
 
 
 class TemplateManager:
@@ -29,6 +31,8 @@ class TemplateManager:
     def __init__(self, template_path: str | Path | None = None) -> None:
         self._template_path = Path(template_path) if template_path else DEFAULT_TEMPLATE_FILE
         self._template: np.ndarray | None = None  # 灰度模板图像
+        self._reference_size = DEFAULT_REFERENCE_SIZE
+        self._last_match_scale = 1.0
         logger.debug("TemplateManager 初始化, 模板路径: %s", self._template_path)
         self._load()
 
@@ -41,6 +45,11 @@ class TemplateManager:
     @property
     def is_loaded(self) -> bool:
         return self._template is not None
+
+    @property
+    def reference_size(self) -> tuple[int, int]:
+        """返回制作模板时的截图尺寸。旧模板使用默认参考尺寸。"""
+        return self._reference_size
 
     # ── 加载 ──────────────────────────────────────────────────────────
 
@@ -58,6 +67,7 @@ class TemplateManager:
             img = cv2.imread(str(self._template_path), cv2.IMREAD_GRAYSCALE)
             if img is not None and img.size > 0:
                 self._template = img
+                self._load_metadata()
                 logger.info("模板已加载: %s (%sx%s)", self._template_path.name, img.shape[1], img.shape[0])
             else:
                 logger.warning("模板文件读取失败: %s", self._template_path)
@@ -66,6 +76,25 @@ class TemplateManager:
             logger.error("模板加载异常: %s", e)
             logger.debug(traceback.format_exc())
             self._template = None
+
+    @property
+    def _metadata_path(self) -> Path:
+        return self._template_path.with_suffix(".json")
+
+    def _load_metadata(self) -> None:
+        """加载模板参考尺寸；缺少元数据时兼容旧模板。"""
+        self._reference_size = DEFAULT_REFERENCE_SIZE
+        if not self._metadata_path.exists():
+            return
+        try:
+            with self._metadata_path.open("r", encoding="utf-8") as file:
+                metadata = json.load(file)
+            width = int(metadata["reference_width"])
+            height = int(metadata["reference_height"])
+            if width > 0 and height > 0:
+                self._reference_size = (width, height)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            logger.warning("模板元数据读取失败，使用默认参考尺寸: %s", exc)
 
     def reload(self) -> None:
         """从磁盘重新加载模板。"""
@@ -108,6 +137,15 @@ class TemplateManager:
 
         # 加载到内存
         self._template = gray
+        self._reference_size = (img_w, img_h)
+        try:
+            with self._metadata_path.open("w", encoding="utf-8") as file:
+                json.dump({
+                    "reference_width": img_w,
+                    "reference_height": img_h,
+                }, file, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            logger.warning("模板元数据保存失败: %s", exc)
         logger.info("模板已保存: %s (%sx%s)", self._template_path.name, w, h)
 
     # ── 匹配 ──────────────────────────────────────────────────────────
@@ -135,18 +173,36 @@ class TemplateManager:
             logger.error("图像转灰度失败: %s", e)
             return False, 0.0
 
-        # 分辨率保护：截图不能小于模板
-        if gray.shape[0] < self._template.shape[0] or gray.shape[1] < self._template.shape[1]:
-            logger.debug("截图分辨率(%sx%s)小于模板(%sx%s)，跳过匹配",
-                         gray.shape[1], gray.shape[0],
-                         self._template.shape[1], self._template.shape[0])
-            return False, 0.0
-
         try:
-            result = cv2.matchTemplate(gray, self._template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, _ = cv2.minMaxLoc(result)
+            self._last_match_scale = 1.0
+            reference_width, reference_height = self._reference_size
+            base_scale = min(
+                gray.shape[1] / reference_width,
+                gray.shape[0] / reference_height,
+            )
+            scales = [base_scale * factor for factor in (0.85, 0.925, 1.0, 1.075, 1.15)]
+            scales.append(1.0)
+            best_value = -1.0
+            best_scale = 1.0
+            for scale in sorted({round(value, 4) for value in scales if value > 0}):
+                width = max(1, round(self._template.shape[1] * scale))
+                height = max(1, round(self._template.shape[0] * scale))
+                if width > gray.shape[1] or height > gray.shape[0]:
+                    continue
+                template = cv2.resize(self._template, (width, height), interpolation=cv2.INTER_AREA)
+                result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                if max_val > best_value:
+                    best_value = max_val
+                    best_scale = scale
+            if best_value < 0:
+                logger.debug("所有模板缩放比例均大于当前截图，跳过匹配")
+                return False, 0.0
+            self._last_match_scale = best_scale
+            max_val = best_value
             matched = bool(max_val >= threshold)
-            logger.debug("模板匹配: 置信度=%.4f, 阈值=%.2f, %s", max_val, threshold, "匹配" if matched else "不匹配")
+            logger.debug("模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, %s",
+                         max_val, best_scale, threshold, "匹配" if matched else "不匹配")
             return matched, float(max_val)
         except Exception as e:
             logger.error("模板匹配异常: %s", e)
@@ -158,9 +214,16 @@ class TemplateManager:
     def delete_template(self) -> None:
         """删除模板文件。"""
         self._template = None
+        self._reference_size = DEFAULT_REFERENCE_SIZE
+        self._last_match_scale = 1.0
         if self._template_path.exists():
             try:
                 self._template_path.unlink()
                 logger.info("模板已删除: %s", self._template_path)
             except OSError as e:
                 logger.error("模板删除失败: %s", e)
+        if self._metadata_path.exists():
+            try:
+                self._metadata_path.unlink()
+            except OSError as e:
+                logger.error("模板元数据删除失败: %s", e)

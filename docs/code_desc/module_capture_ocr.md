@@ -63,19 +63,32 @@ ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回�
 
 模板匹配是 OCR 流程的**前置过滤器**，执行在 PaddleOCR 之前：
 
+模板制作时会在 `templates/wujiang_select.json` 保存制作截图的参考尺寸。
+旧模板没有元数据时，兼容使用 2560×1440 作为参考尺寸。
+
+匹配时根据当前截图与参考尺寸计算基础缩放比例，并在基础比例附近尝试多个比例，
+选择置信度最高的结果：
+
 ```
 match(image, threshold=0.8)
   ├── 模板未加载 → (False, 0.0)
-  ├── 截图分辨率 < 模板 → (False, 0.0)
-  └── cv2.matchTemplate(gray, template, TM_CCOEFF_NORMED)
-       └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
+  ├── 计算当前截图的基础缩放比例
+  ├── 尝试 0.85、0.925、1.0、1.075、1.15 倍附近的模板尺寸
+  └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
 ```
 
 **为什么先做模板匹配：** 模板匹配耗时 < 50ms，PaddleOCR 每次 0.5-3 秒。先低成本过滤掉非武将选择页的画面，只在确认目标页面后才执行昂贵的 OCR。
 
 ### 3.3 两段式 OCR 识别
 
-`GeneralRecognizer.recognize()` 对 8 个 ROI 逐一识别：
+`GeneralRecognizer.recognize()` 对 8 个 ROI 逐一识别。ROI 坐标以参考分辨率保存，
+识别前会分别按当前截图宽高进行换算，因此支持页面比例基本不变时的分辨率变化：
+
+```
+参考 ROI → 当前截图宽高缩放 → 裁剪 → PaddleOCR
+```
+
+换算后的识别流程为：
 
 **第一段：PaddleOCR 全量字典识别**
 
