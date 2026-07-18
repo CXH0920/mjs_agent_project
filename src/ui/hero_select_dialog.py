@@ -13,9 +13,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -28,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
+from src.ui.checkable_combo import CheckableComboBox
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +72,6 @@ class BaseHeroSelectDialog(QDialog):
         self.selected_heroes: list[dict] = []
         self.selected_hero: Optional[dict] = None
 
-        self._faction_checkboxes: list[QCheckBox] = []
-
         self.setWindowTitle(title)
         self.setMinimumSize(520, 520)
         self._setup_ui(tip_text)
@@ -103,23 +100,10 @@ class BaseHeroSelectDialog(QDialog):
         search_input.setPlaceholderText("搜索武将名称...")
         layout.addWidget(search_input)
 
-        # 势力筛选
-        faction_group = QWidget()
-        faction_grid = QGridLayout(faction_group)
-        faction_grid.setContentsMargins(0, 0, 0, 0)
-
-        self._faction_checkboxes = []
-        for i, f in enumerate(factions):
-            cb = QCheckBox(f)
-            cb.setChecked(True)
-            self._faction_checkboxes.append(cb)
-            faction_grid.addWidget(cb, i // 6, i % 6)
-
-        toggle_btn = QPushButton("取消全选")
-        toggle_btn.clicked.connect(lambda: self._toggle_all_factions(toggle_btn))
-        faction_grid.addWidget(toggle_btn, (len(factions) + 5) // 6, 0, 1, 2)
-
-        layout.addWidget(faction_group)
+        # 势力筛选：与攻略关系编辑使用相同的标签式多选下拉框
+        faction_combo = CheckableComboBox()
+        faction_combo.set_items(factions)
+        layout.addWidget(faction_combo)
 
         # 计数标签
         count_label = QLabel(f"已筛选: {len(all_heroes)} / {len(all_heroes)} 个武将")
@@ -153,9 +137,7 @@ class BaseHeroSelectDialog(QDialog):
 
         def _apply_filter() -> None:
             search_text = search_input.text().strip()
-            selected_factions = {
-                cb.text() for cb in self._faction_checkboxes if cb.isChecked()
-            }
+            selected_factions = faction_combo.checked_values()
             filtered = [
                 h for h in all_heroes
                 if h.faction in selected_factions
@@ -217,8 +199,7 @@ class BaseHeroSelectDialog(QDialog):
 
         # 连接信号
         search_input.textChanged.connect(_apply_filter)
-        for cb in self._faction_checkboxes:
-            cb.toggled.connect(_apply_filter)
+        faction_combo.checked_values_changed.connect(_apply_filter)
         _apply_filter()
 
         # 确定/取消按钮
@@ -236,13 +217,6 @@ class BaseHeroSelectDialog(QDialog):
     # ---------------------------------------------------------------
     # 工具方法
     # ---------------------------------------------------------------
-
-    def _toggle_all_factions(self, btn: QPushButton) -> None:
-        """全选 / 取消全选 势力复选框"""
-        check = btn.text() == "全部选中"
-        for cb in self._faction_checkboxes:
-            cb.setChecked(check)
-        btn.setText("取消全选" if check else "全部选中")
 
     def _on_accept(self, list_widget: QListWidget, all_heroes: list) -> None:
         """确定按钮处理"""
