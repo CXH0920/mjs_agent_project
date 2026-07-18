@@ -30,14 +30,14 @@ logger = logging.getLogger(__name__)
 
 # 8 个武将名称的默认 ROI 坐标（基于 2560×1440 分辨率）
 _DEFAULT_GENERALS_ROI = [
-    [155, 370, 50, 140],
-    [440, 370, 50, 140],
-    [720, 370, 50, 140],
-    [1005, 370, 50, 140],
-    [1330, 370, 50, 140],
-    [1615, 370, 50, 140],
-    [1895, 370, 50, 140],
-    [2175, 370, 50, 140],
+    [155, 370, 50, 145],
+    [440, 370, 50, 145],
+    [720, 370, 50, 145],
+    [1005, 370, 50, 145],
+    [1330, 370, 50, 145],
+    [1615, 370, 50, 145],
+    [1895, 370, 50, 145],
+    [2175, 370, 50, 145],
 ]
 
 # 两段式识别阈值
@@ -477,11 +477,15 @@ class GeneralRecognizer:
 
         results: list[dict] = []
         for i, (x, y, w, h) in enumerate(self._rois):
-            x = round(x * scale_x)
-            y = round(y * scale_y)
-            w = max(1, round(w * scale_x))
-            h = max(1, round(h * scale_y))
-            roi_img = image[y:y + h, x:x + w]
+            roi_x = round(x * scale_x)
+            roi_y = round(y * scale_y)
+            roi_w = max(1, round(w * scale_x))
+            roi_h = max(1, round(h * scale_y))
+            logger.info(
+                "武将 %d OCR ROI: x=%d, y=%d, w=%d, h=%d (参考 ROI=%s)",
+                i + 1, roi_x, roi_y, roi_w, roi_h, [x, y, w, h],
+            )
+            roi_img = image[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
             name, confidence = self._recognize_single(roi_img, i + 1)
             results.append({"index": i + 1, "name": name, "confidence": round(confidence, 4)})
             logger.debug("武将 %d 识别: %s (置信度=%.4f)", i + 1, name or "(空)", confidence)
@@ -494,6 +498,10 @@ class GeneralRecognizer:
             prepared = self._preprocess_roi(roi)
             result = self._engine.ocr(prepared, cls=False)
             text, conf = self._extract_text(result)
+            logger.info(
+                "武将 %d OCR 原始结果: text=%r, confidence=%.4f",
+                slot, text, conf,
+            )
 
             if not text:
                 return "", 0.0
