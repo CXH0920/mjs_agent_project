@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from src.ocr.recognizer import GeneralRecognizer
+from src.ocr.recognizer import GeneralRecognizer, _DEFAULT_GENERALS_ROI
 from src.ocr.template_manager import TemplateManager
 
 
@@ -38,3 +38,9 @@ def test_general_recognizer_scales_rois_to_current_image(monkeypatch) -> None:
 
     assert results == [{"index": 1, "name": "测试", "confidence": 1.0}]
     assert captured_shapes == [(10, 20)]
+
+
+def test_default_general_rois_leave_vertical_name_padding() -> None:
+    """默认 2560×1440 ROI 高度应为 145，避免竖排名称底部被截断。"""
+    assert len(_DEFAULT_GENERALS_ROI) == 8
+    assert all(roi[2:] == [50, 145] for roi in _DEFAULT_GENERALS_ROI)
