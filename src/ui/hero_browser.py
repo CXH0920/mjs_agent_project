@@ -866,39 +866,39 @@ class HeroDetailPanel(QWidget):
         hlayout.setSpacing(4)
 
         btn_style = (
-            "QPushButton { padding: 2px 12px; font-size: 12px; border-radius: 3px; }"
+            "QPushButton { padding: 2px 12px; font-size: 12px; border-radius: 3px; "
         )
 
         # 武将信息按钮组
         self._info_edit_btn = QPushButton("修改")
-        self._info_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32;")
+        self._info_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32; }")
         self._info_edit_btn.clicked.connect(self._on_info_edit)
         hlayout.addWidget(self._info_edit_btn)
 
         self._info_delete_btn = QPushButton("删除")
-        self._info_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828;")
+        self._info_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828; }")
         self._info_delete_btn.clicked.connect(self._on_info_delete)
         hlayout.addWidget(self._info_delete_btn)
 
         # 攻略按钮组
         self._guide_edit_btn = QPushButton("修改")
-        self._guide_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32;")
+        self._guide_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32; }")
         self._guide_edit_btn.clicked.connect(self._on_guide_edit)
         hlayout.addWidget(self._guide_edit_btn)
 
         self._guide_delete_btn = QPushButton("删除")
-        self._guide_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828;")
+        self._guide_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828; }")
         self._guide_delete_btn.clicked.connect(self._on_guide_delete)
         hlayout.addWidget(self._guide_delete_btn)
 
         # 相性按钮组
         self._synergy_edit_btn = QPushButton("修改")
-        self._synergy_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32;")
+        self._synergy_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32; }")
         self._synergy_edit_btn.clicked.connect(self._on_synergy_edit)
         hlayout.addWidget(self._synergy_edit_btn)
 
         self._synergy_delete_btn = QPushButton("删除")
-        self._synergy_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828;")
+        self._synergy_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828; }")
         self._synergy_delete_btn.clicked.connect(self._on_synergy_delete)
         hlayout.addWidget(self._synergy_delete_btn)
 
@@ -1312,7 +1312,7 @@ class HeroDetailPanel(QWidget):
             self._add_guide_section_title(self._guide_layout, "新手提示")
             tips = QLabel(guide.tips_for_beginners)
             tips.setWordWrap(True)
-            tips.setStyleSheet("background: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
+            tips.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
             self._guide_layout.addWidget(tips)
 
         # 克制 / 搭配
@@ -1358,7 +1358,7 @@ class HeroDetailPanel(QWidget):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(
                 f"QPushButton {{ background-color: {background}; color: {foreground}; border: 1px solid {foreground}; "
-                "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }}"
+                "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }"
                 f"QPushButton:hover {{ background-color: {foreground}; color: white; }}"
             )
             button.clicked.connect(lambda checked=False, target=hero_id: self.hero_requested.emit(target))

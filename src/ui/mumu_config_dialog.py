@@ -82,7 +82,7 @@ class MumuConfigDialog(QDialog):
         path_row = QHBoxLayout()
         self._adb_path_edit = QLabel()
         self._adb_path_edit.setStyleSheet(
-            "border: 1px solid #ccc; padding: 4px 8px; background: #f9f9f9; border-radius: 3px;"
+            "border: 1px solid #ccc; padding: 4px 8px; background-color: #f9f9f9; border-radius: 3px;"
         )
         path_row.addWidget(self._adb_path_edit, 1)
 
@@ -298,7 +298,7 @@ class MumuConfigDialog(QDialog):
                 self._adb_path_edit.setText(adb_path)
                 self._adb_path_edit.setProperty("raw_path", adb_path)
                 self._adb_path_edit.setStyleSheet(
-                    "border: 1px solid #27ae60; padding: 4px 8px; background: #f0faf0; border-radius: 3px;"
+                    "border: 1px solid #27ae60; padding: 4px 8px; background-color: #f0faf0; border-radius: 3px;"
                 )
 
                 # 让共享服务使用当前草稿配置，连接状态由它统一发布
@@ -308,12 +308,12 @@ class MumuConfigDialog(QDialog):
                 QMessageBox.information(self, "自动探测", f"找到 ADB:\n{adb_path}\n{msg}")
             else:
                 self._adb_path_edit.setStyleSheet(
-                    "border: 1px solid #e74c3c; padding: 4px 8px; background: #fdf0ef; border-radius: 3px;"
+                    "border: 1px solid #e74c3c; padding: 4px 8px; background-color: #fdf0ef; border-radius: 3px;"
                 )
                 QMessageBox.warning(self, "自动探测", f"ADB 文件存在但验证失败:\n{msg}")
         else:
             self._adb_path_edit.setStyleSheet(
-                "border: 1px solid #e74c3c; padding: 4px 8px; background: #fdf0ef; border-radius: 3px;"
+                "border: 1px solid #e74c3c; padding: 4px 8px; background-color: #fdf0ef; border-radius: 3px;"
             )
             QMessageBox.warning(self, "自动探测", "未找到 ADB，请手动设置路径")
 
@@ -327,7 +327,7 @@ class MumuConfigDialog(QDialog):
             self._adb_path_edit.setText(path)
             self._adb_path_edit.setProperty("raw_path", path)
             self._adb_path_edit.setStyleSheet(
-                "border: 1px solid #ccc; padding: 4px 8px; background: #f9f9f9; border-radius: 3px;"
+                "border: 1px solid #ccc; padding: 4px 8px; background-color: #f9f9f9; border-radius: 3px;"
             )
             self._sync_capture_service_config()
             self._on_refresh_devices()

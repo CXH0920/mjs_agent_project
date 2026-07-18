@@ -100,6 +100,13 @@ def _load_faction_colors() -> dict[str, str]:
     return _faction_colors_cache
 
 
+def reload_faction_colors() -> dict[str, str]:
+    """清除势力颜色缓存并重新加载，供配置页保存后刷新现有卡片。"""
+    global _faction_colors_cache
+    _faction_colors_cache = None
+    return _load_faction_colors()
+
+
 def _load_win_rates() -> dict[str, float]:
     """从 2v2胜率排行.csv 加载胜率数据。"""
     global _win_rate_cache
@@ -475,14 +482,14 @@ class GuideDetailDialog(QDialog):
             f"<div style='font-size:20px; font-weight:bold; color:#2c3e50;'>{hero_name}</div>"
             f"<div style='color:#6b7c93; margin-top:4px;'>攻略指南 · 更新于 {guide.last_updated}</div>"
         )
-        header.setStyleSheet("background: #f8fbff; border: 1px solid #dce6f0; padding: 10px; border-radius: 6px;")
+        header.setStyleSheet("background-color: #f8fbff; border: 1px solid #dce6f0; padding: 10px; border-radius: 6px;")
         layout.addWidget(header)
 
         columns = QHBoxLayout()
         columns.setSpacing(12)
 
         summary = QFrame()
-        summary.setStyleSheet("QFrame { background: #f8fbff; border: 1px solid #dce6f0; border-radius: 6px; }")
+        summary.setStyleSheet("QFrame { background-color: #f8fbff; border: 1px solid #dce6f0; border-radius: 6px; }")
         summary_layout = QVBoxLayout(summary)
         summary_layout.setContentsMargins(12, 12, 12, 12)
         summary_layout.setSpacing(8)
@@ -502,7 +509,7 @@ class GuideDetailDialog(QDialog):
             self._add_section_title(summary_layout, "新手提示")
             tips = QLabel(guide.tips_for_beginners)
             tips.setWordWrap(True)
-            tips.setStyleSheet("background: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
+            tips.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
             summary_layout.addWidget(tips)
 
         if guide.counters:
@@ -549,7 +556,7 @@ class GuideDetailDialog(QDialog):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(
                 f"QPushButton {{ background-color: {background}; color: {foreground}; border: 1px solid {foreground}; "
-                "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }}"
+                "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }"
                 f"QPushButton:hover {{ background-color: {foreground}; color: white; }}"
             )
             button.clicked.connect(lambda checked=False, target=hero_id: self.hero_requested.emit(target))
@@ -745,6 +752,13 @@ class RecommendationPanel(QWidget):
         for index, card in enumerate(self._cards):
             if card._hero_id > 0:
                 self._load_real_synergies(index, card._hero_id)
+
+    def refresh_faction_colors(self) -> None:
+        """重新应用当前势力颜色，不改变 OCR 识别和推荐数据。"""
+        reload_faction_colors()
+        for card in self._cards:
+            if card._hero_id > 0:
+                card._update_display()
 
     def _load_real_synergies(self, card_idx: int, hero_id: int) -> None:
         """从 synergy manager 加载已有相性数据（按评分排序取前 4 条）

@@ -44,7 +44,7 @@ QMenu::item:selected {
 }
 QMenu::separator {
     height: 1px;
-    background: #b0c4de;
+    background-color: #b0c4de;
     margin: 4px 10px;
 }
 
@@ -177,16 +177,16 @@ QScrollArea, QScrollBar:vertical {
 QScrollBar:vertical {
     width: 10px;
     border: none;
-    background: #dce6f0;
+    background-color: #dce6f0;
     border-radius: 5px;
 }
 QScrollBar::handle:vertical {
-    background: #b0c4de;
+    background-color: #b0c4de;
     border-radius: 5px;
     min-height: 24px;
 }
 QScrollBar::handle:vertical:hover {
-    background: #7a9bb5;
+    background-color: #7a9bb5;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0;

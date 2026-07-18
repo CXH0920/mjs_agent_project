@@ -553,6 +553,15 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
 ### 6.3 模拟器配置对话框
 
 ```
+MainWindow._open_faction_colors()
+  -> FactionColorDialog(parent=self).exec()
+  -> ColorPicker._open_picker()
+     -> QColorDialog(DontUseNativeDialog)
+     -> HSB 调整 / 屏幕取色
+  -> save_faction_colors(colors, data/faction_colors.json)
+  -> reload_faction_colors()
+  -> RecommendationPanel.refresh_faction_colors()
+
 MumuConfigDialog.__init__(config, capture_service, parent)
   -> _setup_ui()
   -> _load_config()

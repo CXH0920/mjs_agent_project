@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
+from src.ui.faction_color_dialog import FactionColorDialog
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.business.fetch_service import HeroFetchService
 from src.business.guide_fetch_service import GuideFetchService
@@ -423,6 +424,10 @@ class MainWindow(QMainWindow):
         mumu_config_action.triggered.connect(self._open_mumu_config)
         tools_menu.addAction(mumu_config_action)
 
+        faction_color_action = QAction("势力配色", self)
+        faction_color_action.triggered.connect(self._open_faction_colors)
+        tools_menu.addAction(faction_color_action)
+
         # 数据菜单
         data_menu = bar.addMenu("数据")
         reload_action = QAction("重新加载数据", self)
@@ -544,7 +549,7 @@ class MainWindow(QMainWindow):
         self._emulator_status_label.setText(text)
         self._emulator_status_label.setToolTip(detail or "点击打开模拟器配置")
         self._emulator_status_label.setStyleSheet(
-            f"color: {color}; background: {background}; padding: 3px 8px; "
+            f"color: {color}; background-color: {background}; padding: 3px 8px; "
             "border-radius: 8px; font-weight: bold;"
         )
 
@@ -561,7 +566,7 @@ class MainWindow(QMainWindow):
         self._poll_status_label.setText(text)
         self._poll_status_label.setToolTip(detail or "点击打开模拟器配置")
         self._poll_status_label.setStyleSheet(
-            f"color: {color}; background: {background}; padding: 3px 8px; "
+            f"color: {color}; background-color: {background}; padding: 3px 8px; "
             "border-radius: 8px; font-weight: bold;"
         )
 
@@ -778,6 +783,18 @@ class MainWindow(QMainWindow):
         """打开 API 配置对话框"""
         dialog = SettingsDialog(parent=self)
         dialog.exec()
+
+    def _open_faction_colors(self) -> None:
+        """打开势力配色配置页。"""
+        dialog = FactionColorDialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        from src.ui.recommendation_panel import reload_faction_colors
+
+        reload_faction_colors()
+        self._recommendation.refresh_faction_colors()
+        self._status_label.setText("势力配色已更新")
 
     def _open_mumu_config(self) -> None:
         """打开模拟器配置对话框"""

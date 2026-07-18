@@ -564,3 +564,8 @@ python -m src.scraper.ai_batch --synergy [--dry-run] [--score-threshold 0]
 # AI 相性评分（浏览器模式）
 python -m src.scraper.ai_batch --synergy --browser
 ```
+
+### 势力配色配置
+
+通过“配置 → 势力配色”打开紧凑列表。每行仅显示势力名称、颜色小方块和 Hex 值；点击颜色小方块会打开支持 HSB 调整与屏幕取色的 Color Picker 浮层，保存后立即刷新已显示的势力标签。
+该页面及颜色浮层按钮已汉化；Qt 按钮样式使用兼容性更好的 `background-color` 属性。
