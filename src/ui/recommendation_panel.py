@@ -544,11 +544,13 @@ class GuideDetailDialog(QDialog):
         for index, hero_id in enumerate(hero_ids[:10]):
             hero = hero_manager.get_hero(hero_id)
             button = QPushButton(hero.name if hero else f"#{hero_id}")
+            button.setFixedSize(88, 28)
+            button.setToolTip(hero.name if hero else f"#{hero_id}")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(
-                f"QPushButton {{ background: {background}; color: {foreground}; border: 1px solid {foreground}; "
+                f"QPushButton {{ background-color: {background}; color: {foreground}; border: 1px solid {foreground}; "
                 "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }}"
-                f"QPushButton:hover {{ background: {foreground}; color: white; }}"
+                f"QPushButton:hover {{ background-color: {foreground}; color: white; }}"
             )
             button.clicked.connect(lambda checked=False, target=hero_id: self.hero_requested.emit(target))
             grid.addWidget(button, index // 2, index % 2)

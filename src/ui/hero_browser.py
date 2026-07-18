@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTextBrowser,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +43,7 @@ from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.data.models import Hero, HeroGuide, SynergyScore, Gender, Difficulty, synergy_rating_for_score
+from src.ui.recommendation_panel import _load_faction_colors
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +142,331 @@ class HeroEditDialog(QDialog):
 # ============================================================
 
 
+class TagLineEdit(QLineEdit):
+    """在输入框内显示带删除按钮的筛选标签。"""
+
+    tag_removed = Signal(str)
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setPlaceholderText("请选择势力")
+        self.setTextMargins(6, 0, 6, 0)
+        self._tags: list[str] = []
+        self._tag_buttons: list[QToolButton] = []
+
+    def set_tags(self, tags: list[str], colors: dict[str, str] | None = None) -> None:
+        self._tags = tags
+        for button in self._tag_buttons:
+            button.deleteLater()
+        self._tag_buttons.clear()
+
+        if not tags:
+            self.clear()
+            self._layout_tag_buttons()
+            return
+
+        self.clear()
+        colors = colors or {}
+        for tag in tags[:5]:
+            button = QToolButton(self)
+            button.setText(f"{tag}  ×")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setAutoRaise(True)
+            button.setFixedHeight(22)
+            button.setStyleSheet(
+                f"QToolButton {{ background-color: {colors.get(tag, '#7a9bb5')}; color: white; "
+                "border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; }"
+                f"QToolButton:hover {{ background-color: {colors.get(tag, '#5f809b')}; }}"
+            )
+            button.clicked.connect(lambda checked=False, value=tag: self.tag_removed.emit(value))
+            self._tag_buttons.append(button)
+        if len(tags) > 5:
+            count_button = QToolButton(self)
+            count_button.setText(f"+{len(tags) - 5}")
+            count_button.setEnabled(False)
+            count_button.setFixedHeight(22)
+            count_button.setStyleSheet(
+                "QToolButton { background-color: #dbeaf7; color: #486581; "
+                "border: none; border-radius: 4px; padding: 2px 7px; font-size: 11px; }"
+            )
+            self._tag_buttons.append(count_button)
+        self._layout_tag_buttons()
+
+    def _layout_tag_buttons(self) -> None:
+        x = 6
+        for button in self._tag_buttons:
+            button.adjustSize()
+            button.move(x, max(0, (self.height() - button.height()) // 2))
+            button.show()
+            x += button.width() + 2
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._layout_tag_buttons()
+
+    def mousePressEvent(self, event) -> None:
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class CheckableComboBox(QWidget):
+    """带搜索、标签和批量操作的势力多选下拉框。"""
+
+    checked_values_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._values: list[str] = []
+        self._checked: set[str] = set()
+        self._popup: QFrame | None = None
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._display = TagLineEdit(self)
+        self._display.clicked.connect(self.showPopup)
+        self._display.tag_removed.connect(self._remove_tag)
+        layout.addWidget(self._display, 1)
+        arrow = QPushButton("▼")
+        arrow.setFixedWidth(28)
+        arrow.clicked.connect(self.showPopup)
+        layout.addWidget(arrow)
+
+    def set_items(self, values: list[str]) -> None:
+        self._values = list(values)
+        self._checked = set(values)
+        self._update_display()
+
+    def checked_values(self) -> set[str]:
+        return set(self._checked)
+
+    def _update_display(self) -> None:
+        self._display.set_tags(
+            [value for value in self._values if value in self._checked],
+            _load_faction_colors(),
+        )
+
+    def _remove_tag(self, value: str) -> None:
+        self._checked.discard(value)
+        self._update_display()
+        self.checked_values_changed.emit()
+
+    def showPopup(self) -> None:
+        if self._popup is not None:
+            self._popup.close()
+
+        popup = QFrame(self, Qt.WindowType.Popup)
+        popup.setFrameShape(QFrame.Shape.StyledPanel)
+        popup.setStyleSheet(
+            "QFrame { background-color: #f4f9ff; border: 1px solid #b9d5ee; }"
+            "QLineEdit { background-color: white; border: 1px solid #b9d5ee; "
+            "border-radius: 4px; padding: 4px 6px; }"
+            "QListWidget { background-color: #eef6ff; border: 1px solid #c9def2; "
+            "border-radius: 4px; padding: 3px; }"
+            "QListWidget::item { background-color: #eef6ff; padding: 6px; "
+            "border-radius: 3px; }"
+            "QListWidget::item:hover { background-color: #dceeff; }"
+            "QListWidget::item:selected { background-color: #c7e2ff; color: #1f3f5b; }"
+        )
+        popup.setMinimumWidth(max(self.width(), 280))
+        popup_layout = QVBoxLayout(popup)
+        popup_layout.setContentsMargins(8, 8, 8, 8)
+
+        search = QLineEdit(popup)
+        search.setPlaceholderText("搜索势力...")
+        popup_layout.addWidget(search)
+
+        faction_list = QListWidget(popup)
+        popup_layout.addWidget(faction_list, 1)
+
+        def refresh_items() -> None:
+            keyword = search.text().strip().lower()
+            faction_list.blockSignals(True)
+            faction_list.clear()
+            for value in self._values:
+                if keyword and keyword not in value.lower():
+                    continue
+                item = QListWidgetItem(value)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(
+                    Qt.CheckState.Checked if value in self._checked
+                    else Qt.CheckState.Unchecked
+                )
+                faction_list.addItem(item)
+            faction_list.blockSignals(False)
+
+        def update_checked(item: QListWidgetItem) -> None:
+            if item.checkState() == Qt.CheckState.Checked:
+                self._checked.add(item.text())
+            else:
+                self._checked.discard(item.text())
+            self._update_display()
+            self.checked_values_changed.emit()
+
+        search.textChanged.connect(refresh_items)
+        faction_list.itemChanged.connect(update_checked)
+
+        action_layout = QHBoxLayout()
+        select_all = QPushButton("全选")
+        invert = QPushButton("反选")
+        confirm = QPushButton("确定")
+        action_layout.addWidget(select_all)
+        action_layout.addWidget(invert)
+        action_layout.addStretch()
+        action_layout.addWidget(confirm)
+        popup_layout.addLayout(action_layout)
+
+        def select_all_values() -> None:
+            keyword = search.text().strip().lower()
+            self._checked.update(
+                value for value in self._values
+                if not keyword or keyword in value.lower()
+            )
+            self._update_display()
+            self.checked_values_changed.emit()
+            refresh_items()
+
+        def invert_values() -> None:
+            keyword = search.text().strip().lower()
+            visible = [
+                value for value in self._values
+                if not keyword or keyword in value.lower()
+            ]
+            for value in visible:
+                if value in self._checked:
+                    self._checked.remove(value)
+                else:
+                    self._checked.add(value)
+            self._update_display()
+            self.checked_values_changed.emit()
+            refresh_items()
+
+        select_all.clicked.connect(select_all_values)
+        invert.clicked.connect(invert_values)
+        confirm.clicked.connect(popup.close)
+        refresh_items()
+        self._popup = popup
+        position = self.mapToGlobal(self.rect().bottomLeft())
+        popup.setGeometry(position.x(), position.y(), max(self.width(), 280), 300)
+        popup.show()
+
+
+class HeroRelationSelectDialog(QDialog):
+    """攻略关系武将选择弹窗，支持搜索、势力筛选和多选。"""
+
+    def __init__(self, hero_mgr: HeroManager, selected_ids: list[int], title: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(520, 560)
+        self._hero_mgr = hero_mgr
+        self._selected_ids = set(selected_ids)
+        self.selected_ids: list[int] = []
+        self._all_heroes = sorted(hero_mgr.list_heroes(), key=lambda hero: hero.id)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("搜索武将名称、称号或势力，勾选后点击确定保存。"))
+
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("搜索武将名称...")
+        layout.addWidget(self._search_edit)
+
+        self._faction_combo = CheckableComboBox()
+        self._faction_combo.set_items(self._hero_mgr.list_factions())
+        self._faction_combo.checked_values_changed.connect(self._refresh_list)
+        layout.addWidget(self._faction_combo)
+
+        self._count_label = QLabel()
+        layout.addWidget(self._count_label)
+
+        action_layout = QHBoxLayout()
+        select_all_button = QPushButton("全选当前筛选")
+        clear_button = QPushButton("清空选择")
+        select_all_button.clicked.connect(self._select_filtered)
+        clear_button.clicked.connect(self._clear_selection)
+        action_layout.addWidget(select_all_button)
+        action_layout.addWidget(clear_button)
+        action_layout.addStretch()
+        layout.addLayout(action_layout)
+
+        self._hero_list = QListWidget()
+        self._hero_list.itemChanged.connect(self._on_item_changed)
+        layout.addWidget(self._hero_list, 1)
+
+        self._search_edit.textChanged.connect(self._refresh_list)
+        self._refresh_list()
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        cancel_button = QPushButton("取消")
+        save_button = QPushButton("确定")
+        cancel_button.clicked.connect(self.reject)
+        save_button.clicked.connect(self._accept_selection)
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(save_button)
+        layout.addLayout(button_layout)
+
+    def _filtered_heroes(self) -> list[Hero]:
+        keyword = self._search_edit.text().strip().lower()
+        factions = self._faction_combo.checked_values()
+        return [
+            hero for hero in self._all_heroes
+            if hero.faction in factions
+            and (
+                not keyword
+                or keyword in hero.name.lower()
+                or keyword in hero.title.lower()
+                or keyword in hero.faction.lower()
+            )
+        ]
+
+    def _refresh_list(self) -> None:
+        filtered = self._filtered_heroes()
+        self._hero_list.blockSignals(True)
+        self._hero_list.clear()
+        for hero in filtered:
+            item = QListWidgetItem(f"{hero.name}  [{hero.faction}]")
+            item.setData(Qt.ItemDataRole.UserRole, hero.id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.CheckState.Checked if hero.id in self._selected_ids
+                else Qt.CheckState.Unchecked
+            )
+            self._hero_list.addItem(item)
+        self._hero_list.blockSignals(False)
+        self._count_label.setText(
+            f"已筛选: {len(filtered)} / {len(self._all_heroes)} 个武将，已选择: {len(self._selected_ids)} 个"
+        )
+
+    def _on_item_changed(self, item: QListWidgetItem) -> None:
+        hero_id = item.data(Qt.ItemDataRole.UserRole)
+        if item.checkState() == Qt.CheckState.Checked:
+            self._selected_ids.add(hero_id)
+        else:
+            self._selected_ids.discard(hero_id)
+        self._refresh_list_count()
+
+    def _refresh_list_count(self) -> None:
+        self._count_label.setText(
+            f"已筛选: {self._hero_list.count()} / {len(self._all_heroes)} 个武将，已选择: {len(self._selected_ids)} 个"
+        )
+
+    def _select_filtered(self) -> None:
+        self._selected_ids.update(hero.id for hero in self._filtered_heroes())
+        self._refresh_list()
+
+    def _clear_selection(self) -> None:
+        self._selected_ids.clear()
+        self._refresh_list()
+
+    def _accept_selection(self) -> None:
+        self.selected_ids = [
+            hero.id for hero in self._all_heroes if hero.id in self._selected_ids
+        ]
+        self.accept()
+
+
 class GuideEditDialog(QDialog):
     """攻略编辑对话框"""
 
@@ -171,23 +498,16 @@ class GuideEditDialog(QDialog):
         self._tips_edit.setText(self._guide.tips_for_beginners)
         form.addRow("新手提示:", self._tips_edit)
 
-        # 被克制（武将名，顿号分隔）
-        counter_names = []
-        for hid in self._guide.counters:
-            h = self._hero_mgr.get_hero(hid)
-            counter_names.append(h.name if h else f"#{hid}")
-        self._counters_edit = QLineEdit("、".join(counter_names))
-        self._counters_edit.setPlaceholderText("武将名，顿号分隔")
-        form.addRow("被克制:", self._counters_edit)
-
-        # 搭配推荐（武将名，顿号分隔）
-        synergy_names = []
-        for hid in self._guide.synergizes_with:
-            h = self._hero_mgr.get_hero(hid)
-            synergy_names.append(h.name if h else f"#{hid}")
-        self._synergy_edit = QLineEdit("、".join(synergy_names))
-        self._synergy_edit.setPlaceholderText("武将名，顿号分隔")
-        form.addRow("搭配推荐:", self._synergy_edit)
+        self._counters_ids = list(self._guide.counters)
+        self._synergy_ids = list(self._guide.synergizes_with)
+        self._counters_summary, counters_widget = self._create_relation_selector(
+            "被克制", self._counters_ids,
+        )
+        self._synergy_summary, synergy_widget = self._create_relation_selector(
+            "搭配推荐", self._synergy_ids,
+        )
+        form.addRow("被克制:", counters_widget)
+        form.addRow("搭配推荐:", synergy_widget)
 
         # 攻略正文（Markdown）
         self._desc_edit = QTextEdit()
@@ -209,25 +529,41 @@ class GuideEditDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
-    def _resolve_hero_ids(self, text: str) -> list[int]:
-        """将顿号/逗号分隔的武将名或 ID 解析为 ID 列表"""
-        ids: list[int] = []
-        if not text.strip():
-            return ids
-        for part in text.replace("，", "、").split("、"):
-            part = part.strip()
-            if not part:
-                continue
-            # 优先按名称查找
-            hero = self._hero_mgr.get_hero_by_name(part)
-            if hero:
-                ids.append(hero.id)
-            else:
-                try:
-                    ids.append(int(part))
-                except ValueError:
-                    logger.warning("无法解析武将: %s", part)
-        return ids
+    def _create_relation_selector(
+        self, label: str, selected_ids: list[int],
+    ) -> tuple[QLabel, QWidget]:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        summary = QLabel()
+        summary.setWordWrap(True)
+        summary.setStyleSheet("color: #5f6b7a; padding: 3px 0;")
+        button = QPushButton("选择武将…")
+        button.clicked.connect(
+            lambda: self._open_relation_selector(label, summary, selected_ids)
+        )
+        layout.addWidget(summary)
+        layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self._update_relation_summary(summary, selected_ids)
+        return summary, container
+
+    def _update_relation_summary(self, summary: QLabel, selected_ids: list[int]) -> None:
+        names = [
+            self._hero_mgr.get_hero(hero_id).name
+            if self._hero_mgr.get_hero(hero_id) else f"#{hero_id}"
+            for hero_id in selected_ids
+        ]
+        summary.setText("已选：" + ("、".join(names) if names else "暂无"))
+
+    def _open_relation_selector(
+        self, label: str, summary: QLabel, selected_ids: list[int],
+    ) -> None:
+        dialog = HeroRelationSelectDialog(
+            self._hero_mgr, selected_ids, f"选择{label}武将", self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_ids[:] = dialog.selected_ids
+            self._update_relation_summary(summary, selected_ids)
 
     def get_guide(self) -> HeroGuide:
         """返回编辑后的 HeroGuide 对象"""
@@ -237,8 +573,8 @@ class GuideEditDialog(QDialog):
             if line.strip()
         ]
         self._guide.tips_for_beginners = self._tips_edit.toPlainText().strip()
-        self._guide.counters = self._resolve_hero_ids(self._counters_edit.text())
-        self._guide.synergizes_with = self._resolve_hero_ids(self._synergy_edit.text())
+        self._guide.counters = list(self._counters_ids)
+        self._guide.synergizes_with = list(self._synergy_ids)
         self._guide.description = self._desc_edit.toPlainText()
         return self._guide
 
@@ -528,34 +864,34 @@ class HeroDetailPanel(QWidget):
 
         # 武将信息按钮组
         self._info_edit_btn = QPushButton("修改")
-        self._info_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
+        self._info_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32;")
         self._info_edit_btn.clicked.connect(self._on_info_edit)
         hlayout.addWidget(self._info_edit_btn)
 
         self._info_delete_btn = QPushButton("删除")
-        self._info_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
+        self._info_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828;")
         self._info_delete_btn.clicked.connect(self._on_info_delete)
         hlayout.addWidget(self._info_delete_btn)
 
         # 攻略按钮组
         self._guide_edit_btn = QPushButton("修改")
-        self._guide_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
+        self._guide_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32;")
         self._guide_edit_btn.clicked.connect(self._on_guide_edit)
         hlayout.addWidget(self._guide_edit_btn)
 
         self._guide_delete_btn = QPushButton("删除")
-        self._guide_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
+        self._guide_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828;")
         self._guide_delete_btn.clicked.connect(self._on_guide_delete)
         hlayout.addWidget(self._guide_delete_btn)
 
         # 相性按钮组
         self._synergy_edit_btn = QPushButton("修改")
-        self._synergy_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
+        self._synergy_edit_btn.setStyleSheet(btn_style + "background-color: #e8f4e8; color: #2e7d32;")
         self._synergy_edit_btn.clicked.connect(self._on_synergy_edit)
         hlayout.addWidget(self._synergy_edit_btn)
 
         self._synergy_delete_btn = QPushButton("删除")
-        self._synergy_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
+        self._synergy_delete_btn.setStyleSheet(btn_style + "background-color: #fde8e8; color: #c62828;")
         self._synergy_delete_btn.clicked.connect(self._on_synergy_delete)
         hlayout.addWidget(self._synergy_delete_btn)
 
@@ -1010,11 +1346,13 @@ class HeroDetailPanel(QWidget):
         for index, hero_id in enumerate(hero_ids[:10]):
             hero = self._hero_mgr.get_hero(hero_id)
             button = QPushButton(hero.name if hero else f"#{hero_id}")
+            button.setFixedSize(88, 28)
+            button.setToolTip(hero.name if hero else f"#{hero_id}")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(
-                f"QPushButton {{ background: {background}; color: {foreground}; border: 1px solid {foreground}; "
+                f"QPushButton {{ background-color: {background}; color: {foreground}; border: 1px solid {foreground}; "
                 "border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: normal; }}"
-                f"QPushButton:hover {{ background: {foreground}; color: white; }}"
+                f"QPushButton:hover {{ background-color: {foreground}; color: white; }}"
             )
             button.clicked.connect(lambda checked=False, target=hero_id: self.hero_requested.emit(target))
             grid.addWidget(button, index // 2, index % 2)
