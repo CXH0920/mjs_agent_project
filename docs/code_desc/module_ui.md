@@ -84,6 +84,8 @@ BaseHeroSelectDialog
 
 SynergyPairDialog 覆盖了 `_on_accept()` 方法，允许选择 2~8 个武将（不要求正好选满 8 个）。
 
+四类选择界面统一使用 `CheckableComboBox` 作为势力筛选控件：输入区显示彩色可删除标签，超过 5 个势力显示剩余数量；展开后提供势力搜索、浅蓝色复选列表、全选、反选和确定操作。
+
 ### 3.3 武将浏览器
 
 ```
@@ -221,6 +223,8 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 方法 | 说明 |
 |------|------|
 | `reload_data()` | 重新加载武将列表 |
+
+`HeroBrowser` 在连接 `HeroListPanel.hero_selected` 信号后，会主动读取并展示列表初始选中的首个武将，避免列表构造阶段发出的首项选择信号丢失。
 
 ### HeroDetailPanel 公共方法/信号
 

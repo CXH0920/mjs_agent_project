@@ -786,6 +786,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
 - `GuideEditDialog` 中的“被克制”和“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择
 - 关系展示标签采用固定尺寸可跳转按钮；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
+- 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互
 
 **Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
 
@@ -796,6 +797,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - Markdown 预览占满内容宽度，双击后由 `GuideMarkdownDialog` 展示完整正文。
 - 核心要点、新手提示、克制关系、搭配关系按区块分组，长内容由外层滚动区域承载。
 - 克制/搭配关系使用可点击标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
+- 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
 
 ### 5.8 选将推荐面板（RecommendationPanel）
 

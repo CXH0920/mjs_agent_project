@@ -512,7 +512,8 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
     -> [UI 布局]:
        -> QLabel(tip) [可选]
        -> QLineEdit(搜索) → textChanged → _apply_filter
-       -> QGridLayout(QCheckBox × 势力数) → toggled → _apply_filter
+       -> CheckableComboBox(彩色势力标签 + 多选下拉) → checked_values_changed → _apply_filter
+          -> Popup: QLineEdit(搜索势力) + 浅蓝色 QListWidget + 全选/反选/确定
        -> QLabel(计数: "已选 N / 共 M")
        -> [MULTI_LIMIT] QLabel(上限提示)
        -> QPushButton("全选") / "取消全选"
