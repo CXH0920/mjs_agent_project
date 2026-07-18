@@ -789,6 +789,13 @@ class HeroListPanel(QWidget):
                 self._list.setCurrentRow(row)
                 return
 
+    def selected_hero_id(self) -> int | None:
+        """返回当前列表选中的武将 ID。"""
+        row = self._list.currentRow()
+        if 0 <= row < len(self._filtered_heroes):
+            return self._filtered_heroes[row].id
+        return None
+
     def _on_selection_changed(self, row: int) -> None:
         """列表选中项变化"""
         if 0 <= row < len(self._filtered_heroes):
@@ -1594,6 +1601,11 @@ class HeroBrowser(QWidget):
         self._detail_panel.guide_detail_requested.connect(self._show_guide_markdown_dialog)
         self._detail_panel.data_changed.connect(self.reload_data)
         self._detail_panel.synergies_changed.connect(self.synergies_changed)
+
+        # 列表面板在构造时已经默认选中首项，此时信号尚未连接，需要主动同步详情。
+        initial_hero_id = self._list_panel.selected_hero_id()
+        if initial_hero_id is not None:
+            self._detail_panel.show_hero(initial_hero_id)
 
     def _show_guide_markdown_dialog(self, hero_name: str, markdown_text: str) -> None:
         """双击攻略正文预览后打开完整 Markdown 弹窗。"""
