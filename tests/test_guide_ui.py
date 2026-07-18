@@ -7,12 +7,18 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QPushButton, QTextBrowser
+from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
-from src.ui.hero_browser import GuideMarkdownDialog, HeroDetailPanel
+from src.ui.hero_browser import (
+    CheckableComboBox,
+    GuideEditDialog,
+    GuideMarkdownDialog,
+    HeroDetailPanel,
+    HeroRelationSelectDialog,
+)
 
 
 def _app() -> QApplication:
@@ -68,3 +74,35 @@ def test_double_click_markdown_opens_detail_dialog(tmp_path: Path) -> None:
     assert opened == [("曹操", "# 对局思路\n完整攻略")]
     dialog = GuideMarkdownDialog("曹操", opened[0][1])
     assert dialog.windowTitle() == "曹操 - 攻略正文"
+
+
+def test_guide_edit_uses_multi_select_relation_dialog(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
+    guide = HeroGuide(hero_id=1, counters=[2], synergizes_with=[])
+
+    edit_dialog = GuideEditDialog(guide, hero_manager)
+    assert not edit_dialog.findChildren(QLineEdit)
+    assert edit_dialog._counters_ids == [2]
+
+    picker = HeroRelationSelectDialog(hero_manager, [2], "选择被克制武将")
+    assert picker._selected_ids == {2}
+    picker._clear_selection()
+    picker._accept_selection()
+    assert picker.selected_ids == []
+
+
+def test_relation_picker_uses_checkable_faction_combo(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
+
+    picker = HeroRelationSelectDialog(hero_manager, [], "选择关系武将")
+    assert isinstance(picker._faction_combo, CheckableComboBox)
+    assert picker._faction_combo.checked_values() == {"魏", "蜀"}
+
+    picker._faction_combo._remove_tag("魏")
+    assert picker._faction_combo.checked_values() == {"蜀"}
