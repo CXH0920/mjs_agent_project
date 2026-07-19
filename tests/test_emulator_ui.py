@@ -14,7 +14,7 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Hero, Skill
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow
-from src.ui.recommendation_panel import HeroSkillDialog, RecommendationPanel
+from src.ui.recommendation_panel import HeroCardWidget, HeroSkillDialog, RecommendationPanel
 
 
 def _app() -> QApplication:
@@ -35,6 +35,22 @@ def test_recommendation_connects_capture_signals_once() -> None:
     )
     service.capture_completed.emit({"ocr_results": None, "ocr_matched": False})
     assert panel._import_btn.isEnabled()
+
+
+def test_top_three_win_rate_visual_anchor() -> None:
+    _app()
+    card = HeroCardWidget(None)
+
+    card.set_win_rate(58.6)
+    card.set_medal(1)
+
+    assert card._medal_label.text() == "TOP 1"
+    assert "#e4b43c" in card.styleSheet()
+    assert "font-weight: bold" in card._win_rate_label.styleSheet()
+
+    card.set_medal(0)
+    assert card._medal_label.text() == ""
+    assert "#b0c4de" in card.styleSheet()
 
 
 def test_main_window_keeps_emulator_status_after_stats_update() -> None:

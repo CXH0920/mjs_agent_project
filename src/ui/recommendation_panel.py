@@ -165,18 +165,10 @@ class HeroCardWidget(QFrame):
         self._hero_id: int = 0
         self._confidence: float = 0.0
         self._synergy_labels: list[QLabel] = []
+        self._rank = 0
 
         self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setStyleSheet("""
-            HeroCardWidget {
-                background-color: #ffffff;
-                border: 1px solid #b0c4de;
-                border-radius: 8px;
-            }
-            HeroCardWidget:hover {
-                border-color: #4a90d9;
-            }
-        """)
+        self._apply_rank_style(0)
         self._setup_ui()
 
     # ---------------------------------------------------------------
@@ -290,7 +282,7 @@ class HeroCardWidget(QFrame):
 
         # 奖牌图标
         self._medal_label = QLabel()
-        self._medal_label.setFixedSize(22, 22)
+        self._medal_label.setFixedSize(58, 24)
         self._medal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         win_rate_layout = QHBoxLayout()
@@ -326,11 +318,13 @@ class HeroCardWidget(QFrame):
             )
             self._confidence_label.setText("")
             self._win_rate_label.setText("胜率: --%")
+            self.set_medal(0)
             self._guide_btn.setVisible(False)
             return
 
         hero = self._hero
         self._hero_id = hero.id
+        self.set_medal(0)
         self._guide_btn.setVisible(True)
         color = _load_faction_colors().get(hero.faction, "#888")
 
@@ -426,19 +420,45 @@ class HeroCardWidget(QFrame):
         self._win_rate_label.setText(f"胜率: {rate:.1f}%")
 
     def set_medal(self, rank: int) -> None:
-        """设置金银铜奖牌标记。
-
-        Args:
-            rank: 1=金牌 🥇, 2=银牌 🥈, 3=铜牌 🥉, 0/其他=清空
-        """
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-        icon = medals.get(rank, "")
-        if icon:
-            self._medal_label.setText(icon)
-            self._medal_label.setStyleSheet("font-size: 16px;")
+        """设置胜率前三名徽章、卡片锚点和胜率强调样式。"""
+        self._rank = rank if rank in (1, 2, 3) else 0
+        badges = {1: "TOP 1", 2: "TOP 2", 3: "TOP 3"}
+        badge_styles = {
+            1: "background-color: #fff1b8; color: #8c5a00; border: 1px solid #f0c36d;",
+            2: "background-color: #edf1f5; color: #52606d; border: 1px solid #b8c2cc;",
+            3: "background-color: #fbe9dc; color: #9c5b30; border: 1px solid #d6a27c;",
+        }
+        if self._rank:
+            self._medal_label.setText(badges[self._rank])
+            self._medal_label.setStyleSheet(
+                f"{badge_styles[self._rank]} border-radius: 6px; padding: 1px 6px; "
+                "font-size: 11px; font-weight: bold;"
+            )
+            rank_color = {1: "#8c5a00", 2: "#52606d", 3: "#9c5b30"}[self._rank]
+            self._win_rate_label.setStyleSheet(
+                f"color: {rank_color}; font-size: 14px; font-weight: bold;"
+            )
         else:
             self._medal_label.clear()
             self._medal_label.setStyleSheet("")
+            self._win_rate_label.setStyleSheet("font-size: 12px; color: #999;")
+        self._apply_rank_style(self._rank)
+
+    def _apply_rank_style(self, rank: int) -> None:
+        """通过卡片边框和底色建立前三名的远距离视觉层级。"""
+        styles = {
+            0: ("#ffffff", "1px", "#b0c4de", "#4a90d9"),
+            1: ("#fffdf2", "2px", "#e4b43c", "#c89520"),
+            2: ("#f8fafc", "2px", "#aab6c2", "#7d8b99"),
+            3: ("#fff9f4", "2px", "#c98a5a", "#aa693e"),
+        }
+        background, width, border, hover = styles.get(rank, styles[0])
+        self.setStyleSheet(
+            "HeroCardWidget { "
+            f"background-color: {background}; border: {width} solid {border}; border-radius: 8px; "
+            "} HeroCardWidget:hover { "
+            f"border-color: {hover}; }}"
+        )
 
     def set_synergies(self, synergies: list[tuple[str, str]]) -> None:
         """更新高相性组合列表。每项格式：(搭配武将名, 评分)"""
