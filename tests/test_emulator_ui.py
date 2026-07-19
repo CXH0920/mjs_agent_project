@@ -45,12 +45,15 @@ def test_top_three_win_rate_visual_anchor() -> None:
     card.set_medal(1)
 
     assert card._medal_label.text() == "TOP 1"
-    assert "#e4b43c" in card.styleSheet()
+    assert card._rank == 1
+    assert "#FFD700" in card._win_rate_label.styleSheet()
+    assert "#ffffff" in card.styleSheet()
+    assert "transparent" in card._portrait_frame.styleSheet()
     assert "font-weight: bold" in card._win_rate_label.styleSheet()
 
     card.set_medal(0)
     assert card._medal_label.text() == ""
-    assert "#b0c4de" in card.styleSheet()
+    assert card._rank == 0
 
 
 def test_main_window_keeps_emulator_status_after_stats_update() -> None:
