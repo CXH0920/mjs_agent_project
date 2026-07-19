@@ -19,7 +19,7 @@ from typing import Optional
 import mistune
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -183,6 +183,7 @@ class HeroCardWidget(QFrame):
         # === 左：头像区 ===
         self._portrait_frame = QWidget()
         self._portrait_frame.setFixedWidth(130)
+        self._portrait_frame.setStyleSheet("background-color: transparent;")
         portrait_layout = QGridLayout(self._portrait_frame)
         portrait_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -216,6 +217,7 @@ class HeroCardWidget(QFrame):
 
         # === 右：信息区 ===
         info_panel = QWidget()
+        info_panel.setStyleSheet("background-color: transparent;")
         info_layout = QVBoxLayout(info_panel)
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(3)
@@ -434,7 +436,7 @@ class HeroCardWidget(QFrame):
                 f"{badge_styles[self._rank]} border-radius: 6px; padding: 1px 6px; "
                 "font-size: 11px; font-weight: bold;"
             )
-            rank_color = {1: "#8c5a00", 2: "#52606d", 3: "#9c5b30"}[self._rank]
+            rank_color = {1: "#FFD700", 2: "#C0C0C0", 3: "#CD7F32"}[self._rank]
             self._win_rate_label.setStyleSheet(
                 f"color: {rank_color}; font-size: 14px; font-weight: bold;"
             )
@@ -445,20 +447,39 @@ class HeroCardWidget(QFrame):
         self._apply_rank_style(self._rank)
 
     def _apply_rank_style(self, rank: int) -> None:
-        """通过卡片边框和底色建立前三名的远距离视觉层级。"""
-        styles = {
-            0: ("#ffffff", "1px", "#b0c4de", "#4a90d9"),
-            1: ("#fffdf2", "2px", "#e4b43c", "#c89520"),
-            2: ("#f8fafc", "2px", "#aab6c2", "#7d8b99"),
-            3: ("#fff9f4", "2px", "#c98a5a", "#aa693e"),
-        }
-        background, width, border, hover = styles.get(rank, styles[0])
-        self.setStyleSheet(
-            "HeroCardWidget { "
-            f"background-color: {background}; border: {width} solid {border}; border-radius: 8px; "
-            "} HeroCardWidget:hover { "
-            f"border-color: {hover}; }}"
-        )
+        """设置普通卡片样式；前三名的渐变由 paintEvent 绘制。"""
+        if rank in (1, 2, 3):
+            self.setStyleSheet(
+                "HeroCardWidget { background-color: #ffffff; border: none; "
+                "border-radius: 8px; }"
+            )
+        else:
+            self.setStyleSheet(
+                "HeroCardWidget { background-color: #ffffff; border: 1px solid #b0c4de; "
+                "border-radius: 8px; } HeroCardWidget:hover { border-color: #4a90d9; }"
+            )
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self._rank not in (1, 2, 3):
+            return
+
+        palette = {
+            1: ([(("#FFD700"), 0.0), (("#FFA500"), 1.0)], 2.0),
+            2: ([(("#C0C0C0"), 0.0), (("#A9A9A9"), 1.0)], 1.5),
+            3: ([(("#CD7F32"), 0.0), (("#B87333"), 1.0)], 1.5),
+        }[self._rank]
+        border_stops, border_width = palette
+        rect = self.rect().adjusted(1, 1, -1, -1)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        border = QLinearGradient(rect.topLeft(), rect.topRight())
+        for color, position in border_stops:
+            border.setColorAt(position, QColor(color))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QBrush(border), border_width))
+        painter.drawRoundedRect(rect, 8, 8)
 
     def set_synergies(self, synergies: list[tuple[str, str]]) -> None:
         """更新高相性组合列表。每项格式：(搭配武将名, 评分)"""
