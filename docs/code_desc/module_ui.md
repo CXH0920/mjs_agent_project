@@ -35,6 +35,7 @@ src/ui/
 ├── cost_confirm_dialog.py      # AI 成本确认对话框
 ├── guide_progress_dialog.py    # 攻略生成进度条
 ├── roi_selector.py             # 模板 ROI 框选对话框
+├── faction_color_dialog.py     # 势力配色列表、Color Picker 与保存
 │
 ├── fetch_dialog.py             # 武将获取选择（继承基类）
 ├── guide_fetch_dialog.py       # 攻略获取选择（继承基类）
@@ -141,7 +142,33 @@ def update_recommendations(self, data: list[dict]) -> None
 # data 格式: [{"index": 1, "name": "诸葛亮", "confidence": 0.9823}, ...]
 ```
 
-**势力配色**从 `data/faction_colors.json` 加载，启动后缓存到全局变量。文件不存在时使用内建兜底配色。
+### 3.4.1 胜率前三视觉锚点
+
+`RecommendationPanel._apply_medal_rankings()` 仍按胜率降序计算前三名，业务排序不变；视觉强化由 `HeroCardWidget.set_medal()` 和 `paintEvent()` 完成：
+
+- 第 1 名使用 `#FFD700` 到 `#FFA500` 的 2px 金色渐变边框，卡片保持白色背景，胜率文字使用 `#FFD700` 加粗显示。
+- 第 2 名使用 `#C0C0C0` 到 `#A9A9A9` 的 1.5px 银色渐变边框，卡片保持白色背景，胜率文字使用 `#C0C0C0` 加粗显示。
+- 第 3 名使用 `#CD7F32` 到 `#B87333` 的 1.5px 铜色渐变边框，卡片保持白色背景，胜率文字使用 `#CD7F32` 加粗显示。
+- 三个排名保留 `TOP 1/2/3` 徽章，普通卡片保持原样。
+
+渐变边框在 `HeroCardWidget.paintEvent()` 中绘制；头像区和信息区使用透明背景，避免子控件背景覆盖边框效果。
+
+### 3.4.2 势力配色配置
+
+势力配色由 `FactionColorDialog` 以紧凑列表展示，每行只显示势力名称、颜色小方块和 Hex 代码，不在主界面长期占用调色板区域。点击颜色小方块后打开 `ColorPicker` 浮层，提供 HSB 调整和屏幕取色；取消时恢复打开前的颜色，确认后才写入配置页草稿。
+
+保存流程如下：
+
+```text
+ColorPicker.color()
+  -> FactionColorDialog._save()
+  -> save_faction_colors()
+  -> data/faction_colors.json
+  -> reload_faction_colors()
+  -> RecommendationPanel.refresh_faction_colors()
+```
+
+保存前校验每个值是否为六位 Hex 颜色，保存成功后刷新推荐卡片中的势力标签。文件不存在时使用内建兜底配色。配色页及颜色浮层的常用操作使用中文；Qt 样式统一使用 `background-color`，避免按钮刷新时出现 `Could not parse stylesheet of object QPushButton`。
 
 ### 3.5 后端选择 + 进度条
 
