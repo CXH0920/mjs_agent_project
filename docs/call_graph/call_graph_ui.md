@@ -218,13 +218,19 @@ RecommendationPanel._on_import_from_file()                     [「从图片导�
 
 ### 3.3 轮询截图链路（关键：跨线程）
 
-轮询匹配成功后的页面跳转采用边沿触发：
+轮询匹配成功后的页面跳转采用边沿触发，武将选择与对局攻略任务分别维护冷却：
 
 ```text
 _on_poll_result()
-  -> outcome == healthy_no_match: _selection_page_active = False
-  -> outcome == matched and inactive: _tabs.setCurrentWidget(_recommendation)
-  -> outcome == matched and active: 仅更新 RecommendationPanel，不重复切换 Tab
+  -> task_results.hero_selection == matched
+     -> RecommendationPanel.load_from_ocr()
+     -> _tabs.setCurrentWidget(_recommendation)（仅首次）
+     -> set_task_cooldown("hero_selection", 180)
+     -> activate_task("match_guide")
+  -> task_results.match_guide == matched
+     -> MatchGuidePanel.update_block()
+     -> _tabs.setCurrentWidget(_match_guide)（仅首次）
+     -> set_task_cooldown("match_guide", 5)
 ```
 
 轮询冷却期间的重复匹配不会重复抢占用户当前页面；截图为空、图像截断等可重试结果也不会重置选将页面状态。
@@ -243,18 +249,20 @@ OcrService.poll_tick  [signal, QTimer 驱动]
                   -> CaptureService.is_connected
                   -> [未连接] CaptureService.connect_emulator()
                   -> AdbCapture.screencap_full()                 [截图]
-                  -> TemplateManager.is_loaded
-                  -> TemplateManager.match(image, threshold)     [多尺度模板匹配]
-                  -> [匹配成功]
-                     -> get_recognizer(rois, hero_names, tm.reference_size)
+                  -> due_poll_tasks()                             [任务独立冷却]
+                  -> ADB 截图一次
+                  -> hero_selection / match_guide 模板分别匹配
+                  -> [武将选择命中]
+                     -> get_recognizer(rois, hero_names, reference_size)
                      -> recognizer.recognize(image)
-                  -> self._poll_result_ready.emit(results, image, matched)  [跨线程信号]
+                  -> self._poll_result_ready.emit(task_results, image) [跨线程信号]
                   -> Lock.release()
                          ↓
                   [主线程接收]
-MainWindow._on_poll_result(ocr_results, image, ocr_matched)     [主线程槽函数]
-  -> [结果非空] RecommendationPanel.load_from_ocr(ocr_results)
-  -> [模板匹配成功] OcrService.set_cooldown(180)                 [3 分钟冷却]
+MainWindow._on_poll_result(task_results, image, outcome)       [主线程槽函数]
+  -> [hero_selection 命中] RecommendationPanel.load_from_ocr()
+  -> [match_guide 命中] MatchGuidePanel.update_block()
+  -> [任务级] OcrService.set_task_cooldown(task_name, seconds)
 ```
 
 | 函数 | 所在类 | 说明 |

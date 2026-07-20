@@ -92,11 +92,12 @@ do_capture()
 
 ```
 OcrService.poll_tick → MainWindow._on_poll_capture()
-  ├─ screencap_full()（内存中，不写磁盘）
-  ├─ TemplateManager.match() → 是武将页？
-  │   └─ 是 → GeneralRecognizer.recognize() → 填入推荐面板 8 槽
-  └─ set_cooldown(180) → 180 秒内不再检测
+  ├─ screencap_full()（内存中，不写磁盘，仅执行一次）
+  ├─ hero_selection 模板 → GeneralRecognizer.recognize() → 填入推荐面板 8 槽
+  └─ match_guide 模板 → 预留对局攻略结果
 ```
+
+两个任务共用一个定时器、后台采集锁和截图，但分别维护 `active`、`cooldown_until`、`last_match_time` 与失败状态。武将选择成功后激活对局攻略任务；任一任务冷却时只跳过该任务，不影响另一个任务。
 
 ### 3.3 OcrService（OCR 控制）
 
@@ -108,11 +109,15 @@ OcrService (QObject)
   ├── ocr_completed → 识别结果
   ├── poll_tick → 轮询触发信号（QTimer 驱动）
   │
-  ├── create_template(image, roi) → 制作模板
-  ├── start_poll(interval_ms)     → 启动轮询
-  ├── stop_poll()                 → 停止轮询
-  └── set_cooldown(seconds)       → 设置冷却期
+  ├── create_template(image, roi, template_name) → 制作指定模板
+  ├── start_poll(interval_ms)                    → 启动轮询
+  ├── stop_poll()                                → 停止轮询
+  ├── activate_task(name)                        → 激活指定任务
+  ├── set_task_cooldown(name, seconds)           → 设置指定任务冷却
+  └── due_poll_tasks()                            → 获取当前到期任务
 ```
+
+模板按名称独立管理：旧的武将选择模板继续使用 `templates/wujiang_select.png`，对局攻略模板使用 `templates/match_guide/template.png`。模板缺失只影响对应任务，不会暂停另一个任务。
 
 ---
 
