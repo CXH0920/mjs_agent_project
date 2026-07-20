@@ -79,7 +79,7 @@ AI 生成服务以子进程退出码作为唯一成败来源：CLI 根据 `Gener
 
 ```
 do_capture()
-  └─ QTimer.singleShot(0, _execute_capture)  ← 异步执行，不阻塞 UI
+  └─ QTimer.singleShot(0, _execute_capture)  ← 延后回调，ADB 截图仍在 GUI 线程执行
        ├─ AdbCapture.screencap_full() → PIL Image
        ├─ 保存截图到 screenshots/
        ├─ OCR 启用？

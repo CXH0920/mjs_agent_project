@@ -126,7 +126,7 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 2. `find_chunk_url(html)` → JS chunk URL
 3. `fetch(chunk_url)` → JS 文本
 4. `extract_js_array(js_text)` → JSON 文本
-5. `js_to_json(...)` → 155 条原始数据
+5. `js_to_json(...)` → 165 条原始数据
 
 #### 1.2.8 头像下载（第 297-348 行）
 
@@ -150,7 +150,7 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 |------|------|------|
 | [1/5] 定位数据源 | `fetch(BAIKE_URL)` → `find_chunk_url()` | 打印 chunk URL |
 | [2/5] 下载 JS | `fetch(chunk_url)` | 打印大小 |
-| [3/5] 解析数据 | `js_to_json(extract_js_array())` | 打印原始条数(155) |
+| [3/5] 解析数据 | `js_to_json(extract_js_array())` | 打印原始条数(165) |
 | [4/5] 清洗映射 | `[transform(r) for r in raw_list]` | 打印清洗后条数 + 势力分布 |
 | [5/5] 校验 | `validate_heroes(transformed)` | 打印通过/失败条数 |
 
@@ -526,7 +526,7 @@ class OcrService(QObject):
 
 | 数据文件 | 管理类 | 数据量 |
 |----------|--------|--------|
-| `data/heroes.json` | HeroManager(DataManager[Hero]) | 155 武将 |
+| `data/heroes.json` | HeroManager(DataManager[Hero]) | 165 武将 |
 | `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 若干相性对 |
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | ~42 份攻略 |
 | `data/cards.json` | — | 基础卡牌 |
@@ -690,7 +690,7 @@ MainWindow.__init__
 **连接管理**：
 - **自动探测**：通过注册表、环境变量 `MUMU_HOME`、常见安装路径查找 `adb.exe`
 - **多设备切换**：`QComboBox` 下拉列出所有 MuMu 实例（● 运行中 / ○ 未运行）
-- **一键连接/断开**：单按钮切换，通过 `QTimer.singleShot` 异步执行不阻塞 UI
+- **一键连接/断开**：单按钮切换，直接调用 `CaptureService` 执行连接或断开并同步状态
 - **状态监控**：灰色「未连接」→ 橙色「连接中...」→ 绿色「已连接」→ 红色「连接失败」
 
 **模板管理**：
@@ -1430,7 +1430,7 @@ match(image, threshold=0.8)
 
 第二段：武将名库编辑距离矫正
   ⓐ 极高置信度（≥99.5%）且 OCR 结果不在武将库 → 信任 OCR，保护新增武将
-  ⓑ 否则 → 用 155 武将名称列表做编辑距离匹配（阈值 ≤ 1）
+  ⓑ 否则 → 用 165 武将名称列表做编辑距离匹配（阈值 ≤ 1）
      唯一候选 → 直接采纳
      多候选 → 多维汉字特征评分决胜（详见下文）
 ```

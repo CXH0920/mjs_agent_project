@@ -64,13 +64,13 @@ test_project/
 │       ├── cost_confirm_dialog.py # AI 成本确认对话框（API 模式）
 │       └── guide_progress_dialog.py # 攻略生成进度条
 ├── data/
-│   ├── heroes.json                # 155 个武将
+│   ├── heroes.json                # 165 个武将
 │   ├── synergies.json             # 相性评分
 │   ├── guides.json                # 武将攻略
 │   ├── cards.json                 # 基础卡牌数据
 │   └── 2v2胜率排行.csv            # 2v2 胜率数据
 ├── images/
-│   └── <武将名>.png               # 155 个武将头像（从官网自动下载）
+│   └── <武将名>.png               # 165 个武将头像（从官网自动下载）
 ├── templates/
 │   ├── wujiang_select.png         # 武将选择页面模板（用户自行制作）
 │   └── wujiang_select.json        # 模板制作时的参考截图尺寸
@@ -141,7 +141,7 @@ playwright install msedge
 pytest tests/ -v
 ```
 
-预期输出：**112 passed**（数据模型 + AI 批量生成 + 三个 Manager + 增量更新 + UI 工具）
+预期输出：**185 passed**（数据模型、AI 批量生成、Manager、增量更新与 UI 工具）
 
 ### 3. 启动桌面应用
 
@@ -395,7 +395,7 @@ _save_json() → data/*.json.staging → 全部成功后原子替换 data/guides
 | 数据 > 武将相性 > 指定获取 | | 选 2~8 武将，自动两两配对计算 C(N,2) 组相性评分 → BackendChooseDialog |
 | 帮助 > 关于 | | 版本信息 |
 
-所有耗时操作均通过 **QProcess** 异步执行，不阻塞 UI。
+AI 批量生成通过 **QProcess** 子进程执行；模板匹配与 OCR 识别由 **OcrWorker** 后台队列处理。ADB 连接与手动截图仍在 GUI 线程同步执行。
 
 ### 后端选择对话框 (`BackendChooseDialog`)
 

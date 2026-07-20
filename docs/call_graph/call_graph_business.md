@@ -205,7 +205,7 @@ RecommendationPanel._on_import_from_screenshot()
   -> self._hero_mgr.list_heroes()                             [获取武将名称列表]
   -> CaptureService.capture_completed.connect(...)              [连接信号]
   -> CaptureService.do_capture(hero_names)
-    -> QTimer.singleShot(0, self._execute_capture)              [异步：不阻塞 UI]
+    -> QTimer.singleShot(0, self._execute_capture)              [延后回调；ADB 截图仍在 GUI 线程]
        -> self._capture.connect()                              [ADB 连接]
           -> AdbCapture.connect()
             -> _check_adb_valid()

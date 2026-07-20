@@ -203,8 +203,8 @@ _recognize_single(roi, slot)
 _correct_with_hero_list(text, hero_names)
   -> [文本为空] return text                                    [跳过]
   -> [文本已在武将名列表中] return text                         [完全匹配]
-  -> [对 155 个武将名逐项计算]
-     -> _levenshtein_distance(text, hero_name) ×155           [编辑距离]
+  -> [对 165 个武将名逐项计算]
+     -> _levenshtein_distance(text, hero_name) ×165           [编辑距离]
         -> [len(s1) < len(s2)] s1→s2  确保 m ≥ n
         -> dp[i][j] 矩阵: O(len(s1) * len(s2))
         -> return dp[n][m]
@@ -238,7 +238,7 @@ _correct_with_hero_list(text, hero_names)
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×155, `_pick_visually_similar()` |
+| `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×165, `_pick_visually_similar()` |
 | `_levenshtein_distance(s1, s2)` | `recognizer.py` | `_correct_with_hero_list()` | DP O(n×m) |
 | `_pick_visually_similar(text, candidates)` | `recognizer.py` | `_correct_with_hero_list()` | `_multi_dim_similarity()`, `_pinyin_similarity()`, `_stroke_diff()` |
 | `_multi_dim_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | `_four_corner_score()`, `_cangjie_score()`, `_radical_score()` |
@@ -408,7 +408,7 @@ src.ui.mumu_config_dialog
 | `GeneralRecognizer._extract_text(result)` | `recognizer.py` | `_recognize_single()` | PaddleOCR 解析 |
 | `GeneralRecognizer.warmup()` | `recognizer.py` | `main.py` 启动预热 | `self._engine`, `_load_char_info()`, `pypinyin.pinyin()` |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `CaptureService._run_ocr()` | JSON 序列化 |
-| `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×155, `_pick_visually_similar()` |
+| `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×165, `_pick_visually_similar()` |
 | `_levenshtein_distance(s1, s2)` | `recognizer.py` | `_correct_with_hero_list()` | DP O(n×m) |
 | `_pick_visually_similar(text, candidates)` | `recognizer.py` | `_correct_with_hero_list()` | `_multi_dim_similarity()`, 拼音/笔画 tiebreak |
 | `_multi_dim_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | 四角×0.4 + 仓颉×0.4 + 部首×0.2 |

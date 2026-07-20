@@ -186,7 +186,7 @@ RecommendationPanel._on_import_from_screenshot()               [「截图」按�
   -> self._hero_mgr.list_heroes()                              [获取武将名列表]
   -> CaptureService.capture_completed.connect(self._on_capture_result)
   -> CaptureService.do_capture(hero_names)
-    -> QTimer.singleShot(0, self._execute_capture)              [异步执行]
+    -> QTimer.singleShot(0, self._execute_capture)              [延后回调；ADB 截图仍在 GUI 线程]
 
 CaptureService._execute_capture(hero_names)                    [异步回调]
   -> self._capture.connect()                                   [连接 ADB]
@@ -433,7 +433,7 @@ HeroBrowser.__init__(hero_manager, guide_manager)
              -> self._hero_mgr.list_heroes()
              -> self._hero_mgr.list_factions()                  [填充势力下拉框]
              -> self._apply_filters()
-       -> HeroDetailPanel(self._hero_mgr, self._guide_mgr)      [右侧: 详情面板]
+       -> HeroDetailPanel(self._hero_mgr, self._guide_mgr, self._synergy_mgr) [右侧: 详情面板]
           -> _setup_ui()
              -> QTabWidget
                 -> Tab 0: 武将信息 (_setup_info_tab)

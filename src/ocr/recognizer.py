@@ -4,7 +4,7 @@
 使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别。
 识别策略：
   1. 全量字典（ch）PaddleOCR 识别
-  2. 用 155 名武将名称库做编辑距离矫正，解决形近字误识别问题
+  2. 用 165 名武将名称库做编辑距离矫正，解决形近字误识别问题
      （不过滤置信度，始终执行矫正——OCR 有时高置信度也出错）
 
 预处理操作在图像层面：放大、自适应对比度增强、锐化。
@@ -379,7 +379,7 @@ def _correct_with_hero_list(text: str, hero_names: list[str]) -> str:
 
     Args:
         text: OCR 识别出的文本。
-        hero_names: 155 名武将名称列表。
+        hero_names: 165 名武将名称列表。
 
     Returns: 矫正后的武将名（若无匹配或无需矫正则返回原文本）。
     """

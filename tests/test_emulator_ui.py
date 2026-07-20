@@ -84,8 +84,9 @@ def test_match_guide_screenshot_does_not_request_ocr(monkeypatch) -> None:
     assert loaded == []
 
 
-def test_match_guide_portrait_uses_overlay_and_skill_popup_signal() -> None:
+def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -> None:
     _app()
+    monkeypatch.setattr(HeroSkillDialog, "exec", lambda self: 0)
     panel = MatchGuidePanel(_hero_manager())
     card = panel._cards[0]
     selected: list[int] = []

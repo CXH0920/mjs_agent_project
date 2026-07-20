@@ -74,7 +74,7 @@ RecommendationPanel.update_recommendations()
 | `GuideEditDialog._resolve_hero_ids()` | `hero_browser.py` | 攻略编辑时 ID→名称 解析 |
 | `RecommendationPanel._load_default_heroes()` | `recommendation_panel.py` | 启动时默认武将加载 |
 
-> **性能标注：** `get_hero_by_name()` 内部是 O(N) 线性遍历（N=155）。在 OCR 矫正流程中，每帧会被 `_correct_with_hero_list()` 调用 8 次，每次又通过编辑距离遍历全部 155 个名称。如果修改为 `name -> id` 的 dict 索引可消除 O(N) 查找，但当前 155 规模下线性扫描的延迟可以忽略（< 0.01ms）。
+> **性能标注：** `get_hero_by_name()` 内部是 O(N) 线性遍历（N=165）。在 OCR 矫正流程中，每帧会被 `_correct_with_hero_list()` 调用 8 次，每次又通过编辑距离遍历全部 165 个名称。如果修改为 `name -> id` 的 dict 索引可消除 O(N) 查找，但当前 165 规模下线性扫描的延迟可以忽略（< 0.01ms）。
 
 ### 2.2 按 ID 查询（O(1) 字典访问）
 
@@ -130,7 +130,7 @@ RecommendationPanel._load_real_synergies(card_idx, hero_id)
 | `RecommendationPanel._load_default_heroes()` | 启动时加载前 8 武将相性 |
 | `RecommendationPanel.update_recommendations()` | OCR 导入后刷新相性 |
 
-> **性能标注：** `list_synergies_for_hero()` 全表扫描当前相性数据量。如果相性条目很多（C(155,2)=11,935 条满数据），8 张卡片就是 8 次全表扫描。当前实际数据量较小，不是性能瓶颈。
+> **性能标注：** `list_synergies_for_hero()` 全表扫描当前相性数据量。如果相性条目很多（C(165,2)=13,530 条满数据），8 张卡片就是 8 次全表扫描。当前实际数据量较小，不是性能瓶颈。
 
 ### 3.2 双向归一查询
 
