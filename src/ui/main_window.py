@@ -45,6 +45,7 @@ from src.ui.synergy_pair_dialog import SynergyPairDialog
 from src.ui.synergy_single_dialog import SynergySingleDialog
 from src.business.synergy_fetch_service import SynergyFetchService
 from src.ui.recommendation_panel import RecommendationPanel
+from src.ui.match_guide_panel import MatchGuidePanel
 
 
 class MainWindow(QMainWindow):
@@ -65,6 +66,7 @@ class MainWindow(QMainWindow):
         self._poll_thread_lock = threading.Lock()
         # 轮询冷却期间可能连续收到匹配结果，只在进入选将页的边沿切换一次标签页。
         self._selection_page_active = False
+        self._match_guide_page_active = False
         if hero_manager or synergy_manager or guide_manager:
             from src.data.hero_manager import HeroManager
             from src.data.synergy_manager import SynergyManager
@@ -238,6 +240,10 @@ class MainWindow(QMainWindow):
         capture = self._capture_service.capture
         if generation is None:
             return
+        task_names = self._ocr_service.due_poll_tasks()
+        if not task_names:
+            self._ocr_service.complete_poll(generation, "healthy_no_match", "当前没有到期的轮询任务")
+            return
         if not capture:
             self._poll_result_ready.emit({
                 "generation": generation,
@@ -250,7 +256,14 @@ class MainWindow(QMainWindow):
             return
 
         hero_names = [h.name for h in self._data.heroes.list_heroes()]
-        threshold = self._capture_service.get_matching_threshold()
+        capture_config = self._capture_service.config
+        thresholds = {
+            "hero_selection": capture_config.get(
+                "mumu_hero_selection_threshold",
+                self._capture_service.get_matching_threshold(),
+            ),
+            "match_guide": capture_config.get("mumu_match_guide_threshold", 0.8),
+        }
 
         def _do_poll_work() -> None:
             """仅在后台线程执行阻塞 ADB、模板和 OCR 操作。"""
@@ -278,47 +291,57 @@ class MainWindow(QMainWindow):
 
                 image = result
                 from src.ocr.ocr_loader import get_template_manager
-                tm = get_template_manager()
-                if not tm.is_loaded:
-                    self._poll_result_ready.emit({
-                        "generation": generation,
-                        "outcome": "prerequisite_template_missing",
-                        "detail": "未加载识别模板",
-                        "capture": capture,
-                    })
-                    return
+                task_results = {}
+                has_match = False
+                has_retryable_error = False
 
-                matched, confidence = tm.match(image, threshold=threshold)
-                if not matched:
-                    self._poll_result_ready.emit({
-                        "generation": generation,
-                        "outcome": "healthy_no_match",
-                        "detail": f"模板未匹配（置信度={confidence:.2f}）",
-                    })
-                    return
+                for task_name in task_names:
+                    tm = get_template_manager(task_name)
+                    if not tm.is_loaded:
+                        task_results[task_name] = {
+                            "outcome": "template_missing",
+                            "detail": f"{task_name} 模板未加载",
+                        }
+                        continue
 
-                try:
-                    from src.ocr.ocr_loader import get_recognizer
-                    rois = self._capture_service.config.get("ocr_generals_roi", None)
-                    results = get_recognizer(
-                        rois,
-                        hero_names=hero_names,
-                        reference_size=tm.reference_size,
-                    ).recognize(image)
-                except Exception as exc:
-                    logger.exception("轮询 OCR 识别异常")
-                    self._poll_result_ready.emit({
-                        "generation": generation,
-                        "outcome": "retryable_ocr",
-                        "detail": str(exc),
-                    })
-                    return
+                    matched, confidence = tm.match(
+                        image,
+                        threshold=thresholds[task_name],
+                    )
+                    task_result = {
+                        "outcome": "matched" if matched else "healthy_no_match",
+                        "confidence": confidence,
+                    }
+                    if matched:
+                        has_match = True
+                        if task_name == "hero_selection":
+                            try:
+                                from src.ocr.ocr_loader import get_recognizer
+                                rois = capture_config.get("ocr_generals_roi", None)
+                                task_result["ocr_results"] = get_recognizer(
+                                    rois,
+                                    hero_names=hero_names,
+                                    reference_size=tm.reference_size,
+                                ).recognize(image)
+                            except Exception as exc:
+                                logger.exception("武将选择轮询 OCR 识别异常")
+                                task_result.update({
+                                    "outcome": "retryable_ocr",
+                                    "detail": str(exc),
+                                })
+                                has_retryable_error = True
+                    task_results[task_name] = task_result
 
+                transport_outcome = (
+                    "retryable_ocr" if has_retryable_error
+                    else "matched" if has_match
+                    else "healthy_no_match"
+                )
                 self._poll_result_ready.emit({
                     "generation": generation,
-                    "outcome": "matched",
+                    "outcome": transport_outcome,
                     "capture": capture,
-                    "ocr_results": results,
+                    "task_results": task_results,
                 })
             finally:
                 self._poll_thread_lock.release()
@@ -340,21 +363,57 @@ class MainWindow(QMainWindow):
             self._capture_service.sync_poll_connection_state(capture, detail)
 
         self._ocr_service.complete_poll(generation, outcome, detail)
+        task_results = result.get("task_results")
+        if not task_results:
+            self._handle_legacy_poll_result(outcome, result)
+            return
+
+        hero_result = task_results.get("hero_selection", {})
+        if hero_result.get("outcome") == "template_missing":
+            self._ocr_service.deactivate_task("hero_selection")
+        elif hero_result.get("outcome") == "healthy_no_match":
+            self._selection_page_active = False
+        elif hero_result.get("outcome") == "matched":
+            self._ocr_service.set_task_cooldown(
+                "hero_selection",
+                self._ocr_service.config.get("mumu_hero_selection_cooldown", 180),
+            )
+            self._ocr_service.activate_task("match_guide")
+            if not self._selection_page_active:
+                self._selection_page_active = True
+                self._tabs.setCurrentWidget(self._recommendation)
+            ocr_results = hero_result.get("ocr_results") or []
+            if ocr_results:
+                self._recommendation.load_from_ocr(ocr_results)
+                recognized = len([item for item in ocr_results if item.get("name")])
+                logger.info("轮询: OCR 识别到 %d 个武将", recognized)
+
+        guide_result = task_results.get("match_guide", {})
+        if guide_result.get("outcome") == "template_missing":
+            self._ocr_service.deactivate_task("match_guide")
+        elif guide_result.get("outcome") == "matched":
+            self._ocr_service.set_task_cooldown(
+                "match_guide",
+                self._ocr_service.config.get("mumu_match_guide_cooldown", 5),
+            )
+            if not getattr(self, "_match_guide_page_active", False):
+                self._match_guide_page_active = True
+                self._tabs.setCurrentWidget(self._match_guide)
+            self._match_guide.update_block(0, guide_result)
+
+    def _handle_legacy_poll_result(self, outcome: str, result: dict) -> None:
+        """兼容旧版单任务轮询结果，避免外部调用方行为改变。"""
         if outcome == "healthy_no_match":
             self._selection_page_active = False
             return
         if outcome != "matched":
             return
-
         if not self._selection_page_active:
             self._selection_page_active = True
             self._tabs.setCurrentWidget(self._recommendation)
-
         ocr_results = result.get("ocr_results") or []
         if ocr_results:
             self._recommendation.load_from_ocr(ocr_results)
-            recognized = len([item for item in ocr_results if item.get("name")])
-            logger.info("轮询: OCR 识别到 %d 个武将", recognized)
 
     def _on_guide_cost_estimated(self, estimation: dict) -> None:
         items = estimation.get("items", 0)
@@ -515,6 +574,10 @@ class MainWindow(QMainWindow):
         )
         self._recommendation.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
+
+        # Tab 3: 对局攻略（首期保留四个空白扩展板块）
+        self._match_guide = MatchGuidePanel()
+        self._tabs.addTab(self._match_guide, "对局攻略")
 
         layout.addWidget(self._tabs, 1)
 
@@ -821,6 +884,10 @@ class MainWindow(QMainWindow):
             "MUMU_OCR_POLL_MODE": "true" if new_config.get("mumu_ocr_poll_mode") else "false",
             "MUMU_OCR_POLL_INTERVAL": str(new_config.get("mumu_ocr_poll_interval", 2)),
             "MUMU_OCR_MATCH_THRESHOLD": str(new_config.get("mumu_ocr_match_threshold", 0.8)),
+            "MUMU_HERO_SELECTION_THRESHOLD": str(new_config.get("mumu_hero_selection_threshold", 0.8)),
+            "MUMU_HERO_SELECTION_COOLDOWN": str(new_config.get("mumu_hero_selection_cooldown", 180)),
+            "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config.get("mumu_match_guide_threshold", 0.8)),
+            "MUMU_MATCH_GUIDE_COOLDOWN": str(new_config.get("mumu_match_guide_cooldown", 5)),
         })
 
         # 更新服务配置

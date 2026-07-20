@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -18,6 +19,16 @@ from src.ocr.ocr_loader import get_template_manager, get_recognizer
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = __file__  # placeholder
+
+
+@dataclass
+class PollTaskState:
+    """单个轮询任务的独立运行状态。"""
+
+    active: bool = False
+    cooldown_until: datetime | None = None
+    last_match_time: datetime | None = None
+    consecutive_failures: int = 0
 
 
 class OcrService(QObject):
@@ -32,6 +43,7 @@ class OcrService(QObject):
     POLL_MAX_FAILURES = 5
     POLL_BACKOFF_DELAYS_MS = (2_000, 5_000, 15_000, 30_000)
     POLL_MATCH_COOLDOWN_MS = 180_000
+    MATCH_GUIDE_COOLDOWN_MS = 5_000
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,7 +52,10 @@ class OcrService(QObject):
         self._poll_timer = QTimer(self)
         self._poll_timer.setSingleShot(True)
         self._poll_timer.timeout.connect(self._emit_poll_tick)
-        self._poll_cooldown_until: datetime | None = None
+        self._poll_tasks = {
+            "hero_selection": PollTaskState(),
+            "match_guide": PollTaskState(),
+        }
         self._poll_interval_ms = 0
         self._consecutive_poll_failures = 0
         self._poll_state = "stopped"
@@ -70,7 +85,12 @@ class OcrService(QObject):
 
     # ── 模板管理 ──────────────────────────────────────────────────────
 
-    def create_template(self, image, roi: tuple[int, int, int, int]) -> None:
+    def create_template(
+        self,
+        image,
+        roi: tuple[int, int, int, int],
+        template_name: str = "hero_selection",
+    ) -> None:
         """制作模板。
 
         Args:
@@ -81,7 +101,7 @@ class OcrService(QObject):
             ValueError: ROI 参数无效。
         """
         try:
-            tm = get_template_manager()
+            tm = get_template_manager(template_name)
             tm.set_template(image, roi)
             logger.info("模板已制作: %s", tm.template_path)
             self.template_changed.emit(True)
@@ -93,11 +113,11 @@ class OcrService(QObject):
             logger.debug(traceback.format_exc())
             raise
 
-    def select_template(self, file_path: str) -> None:
-        """从文件选择模板并加载。"""
+    def select_template(self, file_path: str, template_name: str = "hero_selection") -> None:
+        """从文件选择指定类型的模板并加载。"""
         import shutil
         try:
-            tm = get_template_manager()
+            tm = get_template_manager(template_name)
             file_path_obj = type(tm.template_path)(file_path)
 
             tm.template_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,14 +133,14 @@ class OcrService(QObject):
             logger.debug(traceback.format_exc())
             self.template_changed.emit(False)
 
-    def is_template_loaded(self) -> bool:
-        """检查模板是否已加载。"""
-        return get_template_manager().is_loaded
+    def is_template_loaded(self, template_name: str = "hero_selection") -> bool:
+        """检查指定模板是否已加载。"""
+        return get_template_manager(template_name).is_loaded
 
-    def delete_template(self) -> None:
-        """删除模板。"""
+    def delete_template(self, template_name: str = "hero_selection") -> None:
+        """删除指定模板。"""
         try:
-            tm = get_template_manager()
+            tm = get_template_manager(template_name)
             tm.delete_template()
             self.template_changed.emit(False)
             self.status_changed.emit("模板已删除")
@@ -150,13 +170,16 @@ class OcrService(QObject):
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
         self._poll_generation += 1
-        self._poll_cooldown_until = None
+        self._poll_tasks["hero_selection"] = PollTaskState(active=True)
+        self._poll_tasks["match_guide"] = PollTaskState(active=False)
         self._schedule_poll(self._poll_interval_ms, "running", "轮询运行中")
 
     def stop_poll(self) -> None:
         """停止轮询并清除当前会话状态。"""
         self._poll_timer.stop()
-        self._poll_cooldown_until = None
+        for task in self._poll_tasks.values():
+            task.active = False
+            task.cooldown_until = None
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
         self._poll_generation += 1
@@ -175,6 +198,55 @@ class OcrService(QObject):
         self._poll_in_flight = True
         return self._poll_generation
 
+    def due_poll_tasks(self) -> list[str]:
+        """返回本轮可执行的任务名称，任务冷却彼此独立。"""
+        now = datetime.now()
+        return [
+            name for name, task in self._poll_tasks.items()
+            if task.active and (task.cooldown_until is None or now >= task.cooldown_until)
+        ]
+
+    def activate_task(self, task_name: str) -> None:
+        """激活指定轮询任务。"""
+        self._get_task(task_name).active = True
+        logger.info("轮询任务已激活: %s", task_name)
+
+    def deactivate_task(self, task_name: str) -> None:
+        """停用指定轮询任务，不影响其他任务。"""
+        self._get_task(task_name).active = False
+
+    def set_task_cooldown(self, task_name: str, seconds: int | None = None) -> None:
+        """设置指定任务冷却，不修改其他任务。"""
+        task = self._get_task(task_name)
+        if seconds is None:
+            default_ms = (
+                self.POLL_MATCH_COOLDOWN_MS
+                if task_name == "hero_selection"
+                else self.MATCH_GUIDE_COOLDOWN_MS
+            )
+            seconds = default_ms / 1000
+        if seconds > 0:
+            now = datetime.now()
+            task.cooldown_until = now + timedelta(seconds=seconds)
+            task.last_match_time = now
+            logger.info("轮询任务进入冷却: %s, %.1f 秒", task_name, seconds)
+
+    def clear_task_cooldown(self, task_name: str) -> None:
+        self._get_task(task_name).cooldown_until = None
+
+    def get_task_state(self, task_name: str) -> PollTaskState:
+        """返回任务状态对象，供调度和测试读取。"""
+        return self._get_task(task_name)
+
+    @staticmethod
+    def _validate_task_name(task_name: str) -> None:
+        if task_name not in {"hero_selection", "match_guide"}:
+            raise ValueError(f"不支持的轮询任务: {task_name}")
+
+    def _get_task(self, task_name: str) -> PollTaskState:
+        self._validate_task_name(task_name)
+        return self._poll_tasks[task_name]
+
     def complete_poll(self, generation: int, outcome: str, detail: str = "") -> None:
         """由主线程记录一轮轮询结果并安排下一次执行。"""
         if generation != self._poll_generation:
@@ -182,11 +254,7 @@ class OcrService(QObject):
         self._poll_in_flight = False
         if outcome in {"healthy_no_match", "matched"}:
             self._consecutive_poll_failures = 0
-            if outcome == "matched":
-                self._poll_cooldown_until = datetime.now() + timedelta(milliseconds=self.POLL_MATCH_COOLDOWN_MS)
-                self._schedule_poll(self.POLL_MATCH_COOLDOWN_MS, "cooldown", "识别成功，冷却中")
-            else:
-                self._schedule_poll(self._poll_interval_ms, "running", "轮询运行中")
+            self._schedule_poll(self._poll_interval_ms, "running", "轮询运行中")
             return
 
         if outcome in {"prerequisite_unconfigured", "prerequisite_template_missing"}:
@@ -212,17 +280,17 @@ class OcrService(QObject):
         )
 
     def set_cooldown(self, seconds: int) -> None:
-        """设置匹配成功后的轮询冷却。"""
-        if seconds > 0:
-            self._poll_cooldown_until = datetime.now() + timedelta(seconds=seconds)
+        """兼容旧调用：仅设置武将选择任务冷却。"""
+        self.set_task_cooldown("hero_selection", seconds)
 
     def clear_cooldown(self) -> None:
-        self._poll_cooldown_until = None
+        self.clear_task_cooldown("hero_selection")
 
     @property
     def is_on_cooldown(self) -> bool:
-        """检查是否在轮询冷却期内。"""
-        return self._poll_cooldown_until is not None and datetime.now() < self._poll_cooldown_until
+        """兼容旧调用：检查武将选择任务冷却。"""
+        task = self._get_task("hero_selection")
+        return task.cooldown_until is not None and datetime.now() < task.cooldown_until
 
     def _set_poll_state(self, state: str, detail: str) -> None:
         if (state, detail) == (self._poll_state, getattr(self, "_poll_detail", "")):

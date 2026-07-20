@@ -22,16 +22,18 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
-    QFormLayout,
+    QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QLineEdit,
     QSpinBox,
     QVBoxLayout,
+    QGridLayout,
 )
 
 from src.capture.adb_screen import AdbCapture
@@ -60,176 +62,259 @@ class MumuConfigDialog(QDialog):
         self._screenshot_pixmap: QPixmap | None = None
 
         self.setWindowTitle("模拟器配置")
-        self.setMinimumWidth(520)
-        self.setMinimumHeight(480)
+        self.setMinimumWidth(760)
+        self.setMinimumHeight(620)
+        self.resize(820, 680)
         self._setup_ui()
         if self._capture_service:
             self._capture_service.connection_changed.connect(self._on_connection_changed)
         self._load_config()
 
     def _setup_ui(self) -> None:
-        """构建对话框界面"""
+        """按设备、模板、参数三张卡片构建配置界面。"""
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 12)
+        layout.setSpacing(16)
 
-        # ════════════════════════════════════════════════
-        # 1. ADB 连接管理
-        # ════════════════════════════════════════════════
-        adb_title = QLabel("ADB 连接管理")
-        adb_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50;")
-        layout.addWidget(adb_title)
-
-        # ADB 路径
-        path_row = QHBoxLayout()
-        self._adb_path_edit = QLabel()
-        self._adb_path_edit.setStyleSheet(
-            "border: 1px solid #ccc; padding: 4px 8px; background-color: #f9f9f9; border-radius: 3px;"
+        primary_style = (
+            "QPushButton { background-color: #438ed3; color: white; border: none; "
+            "border-radius: 4px; padding: 5px 10px; }"
+            "QPushButton:hover { background-color: #347dc0; }"
+            "QPushButton:disabled { background-color: #c8d4df; color: #f7f9fb; }"
         )
-        path_row.addWidget(self._adb_path_edit, 1)
+        outline_style = (
+            "QPushButton { background-color: transparent; color: #3578b7; "
+            "border: 1px solid #8bb8df; border-radius: 4px; padding: 5px 10px; }"
+            "QPushButton:hover { background-color: #eaf4fd; }"
+        )
 
-        detect_btn = QPushButton("自动探测")
-        detect_btn.clicked.connect(self._on_auto_detect)
-        path_row.addWidget(detect_btn)
+        # 设备连接卡片：连接、探测和刷新属于即时操作。
+        device_card = QGroupBox("🔗 设备连接")
+        device_grid = QGridLayout(device_card)
+        device_grid.setContentsMargins(12, 12, 12, 12)
+        device_grid.setHorizontalSpacing(8)
+        device_grid.setVerticalSpacing(8)
 
-        browse_btn = QPushButton("浏览...")
+        self._adb_path_edit = QLineEdit()
+        self._adb_path_edit.setReadOnly(True)
+        self._adb_path_edit.setMinimumWidth(400)
+        self._adb_path_edit.setPlaceholderText("请选择 adb.exe")
+        self._adb_path_edit.setStyleSheet("QLineEdit { border: 1px solid #c8d0d8; padding: 5px 8px; background-color: #fafbfc; border-radius: 4px; }")
+        browse_btn = QPushButton("浏览")
+        browse_btn.setFixedWidth(80)
+        browse_btn.setStyleSheet(outline_style)
         browse_btn.clicked.connect(self._browse_adb)
-        path_row.addWidget(browse_btn)
-        layout.addLayout(path_row)
-
-        # 设备下拉 + 连接控制
-        device_row = QHBoxLayout()
+        detect_btn = QPushButton("自动探测")
+        detect_btn.setFixedWidth(80)
+        detect_btn.setStyleSheet(outline_style)
+        detect_btn.clicked.connect(self._on_auto_detect)
+        device_grid.addWidget(QLabel("ADB 路径"), 0, 0)
+        device_grid.addWidget(self._adb_path_edit, 0, 1)
+        device_grid.addWidget(browse_btn, 0, 2)
+        device_grid.addWidget(detect_btn, 0, 3)
 
         self._device_combo = QComboBox()
-        self._device_combo.setMinimumWidth(200)
+        self._device_combo.setMinimumWidth(400)
         self._device_combo.currentIndexChanged.connect(self._on_device_changed)
         self._device_combo.activated.connect(self._on_device_activated)
-        device_row.addWidget(QLabel("设备:"))
-        device_row.addWidget(self._device_combo, 1)
-
-        self._connect_btn = QPushButton("连接")
-        self._connect_btn.setStyleSheet(
-            "padding: 4px 16px; font-weight: bold;"
-        )
-        self._connect_btn.clicked.connect(self._on_connect_toggle)
-        device_row.addWidget(self._connect_btn)
-
-        self._test_device_btn = QPushButton("测试所选设备")
-        self._test_device_btn.clicked.connect(self._on_test_selected_device)
-        device_row.addWidget(self._test_device_btn)
-
         refresh_btn = QPushButton("刷新")
+        refresh_btn.setFixedWidth(60)
+        refresh_btn.setStyleSheet(outline_style)
         refresh_btn.clicked.connect(self._on_refresh_devices)
-        device_row.addWidget(refresh_btn)
+        device_grid.addWidget(QLabel("目标设备"), 1, 0)
+        device_grid.addWidget(self._device_combo, 1, 1, 1, 2)
+        device_grid.addWidget(refresh_btn, 1, 3)
 
-        layout.addLayout(device_row)
-
-        # 会话状态
-        self._instance_status_label = QLabel("实例状态: 未探测")
-        self._instance_status_label.setStyleSheet("color: #888; font-size: 12px; padding: 2px 0;")
-        layout.addWidget(self._instance_status_label)
-        self._status_label = QLabel("ADB 状态: 未配置")
-        self._status_label.setStyleSheet("color: #888; font-size: 12px; padding: 2px 0;")
-        layout.addWidget(self._status_label)
-
-        # 端口显示
-        port_row = QHBoxLayout()
-        port_row.addWidget(QLabel("ADB 端口:"))
         self._port_label = QLabel("(自动探测)")
         self._port_label.setStyleSheet("color: #555;")
-        port_row.addWidget(self._port_label)
-        port_row.addStretch()
-        layout.addLayout(port_row)
+        device_grid.addWidget(QLabel("ADB 端口"), 2, 0)
+        device_grid.addWidget(self._port_label, 2, 1)
 
-        # ── 分隔线 ────────────────────────────────────
-        sep1 = QLabel("─" * 50)
-        sep1.setStyleSheet("color: #ccc;")
-        layout.addWidget(sep1)
+        action_row = QHBoxLayout()
+        self._connect_btn = QPushButton("连接")
+        self._connect_btn.setFixedWidth(100)
+        self._connect_btn.setStyleSheet(primary_style)
+        self._connect_btn.clicked.connect(self._on_connect_toggle)
+        self._test_device_btn = QPushButton("测试连接")
+        self._test_device_btn.setFixedWidth(100)
+        self._test_device_btn.setStyleSheet(outline_style)
+        self._test_device_btn.clicked.connect(self._on_test_selected_device)
+        action_row.addStretch()
+        action_row.addWidget(self._connect_btn)
+        action_row.addWidget(self._test_device_btn)
+        device_grid.addLayout(action_row, 2, 2, 1, 2)
 
-        # ════════════════════════════════════════════════
-        # 2. 模板管理
-        # ════════════════════════════════════════════════
-        template_title = QLabel("识别模板")
-        template_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50;")
-        layout.addWidget(template_title)
+        self._instance_status_label = QLabel("● 实例：未探测")
+        self._status_label = QLabel("● ADB：未配置")
+        for status_label in (self._instance_status_label, self._status_label):
+            status_label.setStyleSheet("color: #777; font-size: 12px;")
+        status_row = QHBoxLayout()
+        status_row.addStretch()
+        status_row.addWidget(self._instance_status_label)
+        status_row.addSpacing(16)
+        status_row.addWidget(self._status_label)
+        device_grid.addLayout(status_row, 3, 0, 1, 4)
+        device_grid.setColumnStretch(1, 1)
+        layout.addWidget(device_card)
 
-        # 模板状态行（无打开文件夹按钮）
-        template_status_row = QHBoxLayout()
-        self._template_status_icon = QLabel("○")
-        self._template_status_icon.setStyleSheet("color: #888; font-size: 16px;")
-        template_status_row.addWidget(self._template_status_icon)
+        # 模板管理卡片：选择/制作立即生效，不依赖底部保存。
+        template_card = QGroupBox("🖼️ 识别模板管理")
+        template_grid = QGridLayout(template_card)
+        template_grid.setContentsMargins(12, 12, 12, 12)
+        template_grid.setHorizontalSpacing(12)
+        template_grid.setVerticalSpacing(8)
+        template_grid.addWidget(self._template_box("武将模板", "hero"), 0, 0)
+        template_grid.addWidget(self._template_box("对局攻略模板", "match_guide"), 0, 1)
+        template_grid.setColumnStretch(0, 1)
+        template_grid.setColumnStretch(1, 1)
+        layout.addWidget(template_card)
 
-        self._template_status_label = QLabel("未设定")
-        self._template_status_label.setStyleSheet("color: #888; font-size: 13px;")
-        template_status_row.addWidget(self._template_status_label, 1)
-
-        layout.addLayout(template_status_row)
-
-        # 模板操作按钮行
-        template_btn_row = QHBoxLayout()
-
-        self._make_template_btn = QPushButton("🎯 制作模板")
-        self._make_template_btn.clicked.connect(self._on_make_template)
-        template_btn_row.addWidget(self._make_template_btn)
-
-        self._resume_poll_btn = QPushButton("恢复轮询")
-        self._resume_poll_btn.clicked.connect(self._on_resume_poll)
-        template_btn_row.addWidget(self._resume_poll_btn)
-
-        self._select_template_btn = QPushButton("📁 选择模板")
-        self._select_template_btn.clicked.connect(self._on_select_template)
-        template_btn_row.addWidget(self._select_template_btn)
-
-        template_btn_row.addStretch()
-        layout.addLayout(template_btn_row)
-
-        # ── 分隔线 ────────────────────────────────────
-        sep2 = QLabel("─" * 50)
-        sep2.setStyleSheet("color: #ccc;")
-        layout.addWidget(sep2)
-
-        # ════════════════════════════════════════════════
-        # 3. OCR 配置
-        # ════════════════════════════════════════════════
-        ocr_title = QLabel("武将识别设置")
-        ocr_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50;")
-        layout.addWidget(ocr_title)
-
-        ocr_form = QFormLayout()
-        ocr_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self._ocr_enabled_check = QCheckBox("启用武将识别（截图后自动 OCR）")
-        ocr_form.addRow("", self._ocr_enabled_check)
-
-        self._poll_mode_check = QCheckBox("持续轮询（独立运行，定时检测武将页面）")
-        ocr_form.addRow("", self._poll_mode_check)
-
-        poll_interval_row = QHBoxLayout()
+        # 识别参数卡片：仅此区域需要点击保存。
+        parameter_card = QGroupBox("⚙️ 识别参数")
+        parameter_layout = QVBoxLayout(parameter_card)
+        parameter_layout.setContentsMargins(12, 12, 12, 12)
+        switch_row = QHBoxLayout()
+        self._ocr_enabled_check = QCheckBox("启用武将识别")
+        self._poll_mode_check = QCheckBox("持续轮询")
+        self._poll_mode_check.toggled.connect(self._update_parameter_controls)
+        switch_row.addWidget(self._ocr_enabled_check)
+        switch_row.addSpacing(16)
+        switch_row.addWidget(self._poll_mode_check)
+        switch_row.addWidget(QLabel("检测间隔"))
         self._poll_interval_spin = QSpinBox()
         self._poll_interval_spin.setRange(1, 60)
-        self._poll_interval_spin.setValue(2)
         self._poll_interval_spin.setSuffix(" 秒")
-        poll_interval_row.addWidget(self._poll_interval_spin)
-        poll_interval_row.addWidget(QLabel("检测间隔"))
-        poll_interval_row.addStretch()
-        ocr_form.addRow("轮询:", poll_interval_row)
+        self._poll_interval_spin.setFixedWidth(80)
+        switch_row.addWidget(self._poll_interval_spin)
+        self._resume_poll_btn = QPushButton("恢复轮询")
+        self._resume_poll_btn.setFixedWidth(80)
+        self._resume_poll_btn.setStyleSheet(primary_style)
+        self._resume_poll_btn.clicked.connect(self._on_resume_poll)
+        switch_row.addWidget(self._resume_poll_btn)
+        switch_row.addStretch()
+        parameter_layout.addLayout(switch_row)
 
-        self._threshold_spin = QDoubleSpinBox()
-        self._threshold_spin.setRange(0.1, 1.0)
-        self._threshold_spin.setSingleStep(0.05)
-        self._threshold_spin.setValue(0.8)
-        ocr_form.addRow("匹配阈值:", self._threshold_spin)
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShadow(QFrame.Shadow.Sunken)
+        parameter_layout.addWidget(divider)
 
-        layout.addLayout(ocr_form)
-        layout.addStretch()
+        parameter_grid = QGridLayout()
+        parameter_grid.setHorizontalSpacing(24)
+        parameter_grid.setVerticalSpacing(8)
+        parameter_grid.addWidget(QLabel("武将识别"), 0, 0)
+        parameter_grid.addWidget(QLabel("对局攻略识别"), 0, 2)
+        self._threshold_spin = self._make_threshold_spin()
+        self._match_guide_threshold_spin = self._make_threshold_spin()
+        self._hero_cooldown_spin = self._make_cooldown_spin()
+        self._match_guide_cooldown_spin = self._make_cooldown_spin()
+        parameter_grid.addWidget(QLabel("匹配阈值"), 1, 0)
+        parameter_grid.addWidget(self._threshold_spin, 1, 1)
+        parameter_grid.addWidget(QLabel("匹配阈值"), 1, 2)
+        parameter_grid.addWidget(self._match_guide_threshold_spin, 1, 3)
+        parameter_grid.addWidget(QLabel("选择冷却"), 2, 0)
+        parameter_grid.addWidget(self._hero_cooldown_spin, 2, 1)
+        parameter_grid.addWidget(QLabel("触发冷却"), 2, 2)
+        parameter_grid.addWidget(self._match_guide_cooldown_spin, 2, 3)
+        parameter_grid.setColumnStretch(1, 1)
+        parameter_grid.setColumnStretch(3, 1)
+        parameter_layout.addLayout(parameter_grid)
+        layout.addWidget(parameter_card)
+        layout.addStretch(1)
 
-        # ── 按钮 ──────────────────────────────────────
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        # 底部操作栏：保存写入参数，取消不保存并关闭窗口。
+        footer = QHBoxLayout()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedWidth(80)
+        cancel_btn.setStyleSheet(outline_style)
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton("保存")
+        save_btn.setFixedWidth(80)
+        save_btn.setStyleSheet(primary_style)
+        save_btn.clicked.connect(self._on_save)
+        footer.addStretch()
+        footer.addWidget(save_btn)
+        footer.addWidget(cancel_btn)
+        layout.addLayout(footer)
+
+    def _template_box(self, title: str, template_name: str) -> QGroupBox:
+        """创建单个模板卡片，保留旧控件属性供现有槽函数使用。"""
+        box = QGroupBox(title)
+        box_layout = QVBoxLayout(box)
+        box_layout.setContentsMargins(8, 8, 8, 8)
+        status_row = QHBoxLayout()
+        status_icon = QLabel("○")
+        status_icon.setStyleSheet("color: #888; font-size: 16px;")
+        status_label = QLabel("未设定")
+        status_label.setStyleSheet("color: #888; font-size: 13px;")
+        status_row.addWidget(status_icon)
+        status_row.addWidget(status_label, 1)
+        box_layout.addLayout(status_row)
+
+        button_row = QHBoxLayout()
+        select_btn = QPushButton("📁选择模板")
+        select_btn.setFixedWidth(90)
+        make_btn = QPushButton("制作模板...")
+        make_btn.setFixedWidth(90)
+        for button in (select_btn, make_btn):
+            button.setStyleSheet(
+                "QPushButton { background-color: #438ed3; color: white; border: none; "
+                "border-radius: 4px; padding: 5px 8px; }"
+                "QPushButton:hover { background-color: #347dc0; }"
+                "QPushButton:disabled { background-color: #c8d4df; color: #f7f9fb; }"
+            )
+        if template_name == "hero":
+            self._template_status_icon = status_icon
+            self._template_status_label = status_label
+            self._select_template_btn = select_btn
+            self._make_template_btn = make_btn
+            select_btn.clicked.connect(self._on_select_template)
+            make_btn.clicked.connect(self._on_make_template)
+        else:
+            self._match_guide_status_label = status_label
+            self._select_match_guide_template_btn = select_btn
+            self._make_match_guide_template_btn = make_btn
+            select_btn.clicked.connect(self._on_select_match_guide_template)
+            make_btn.clicked.connect(self._on_make_match_guide_template)
+        button_row.addWidget(select_btn)
+        button_row.addWidget(make_btn)
+        button_row.addStretch()
+        box_layout.addLayout(button_row)
+        return box
+
+    @staticmethod
+    def _make_threshold_spin() -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+        spin.setRange(0.1, 1.0)
+        spin.setSingleStep(0.05)
+        spin.setDecimals(2)
+        spin.setFixedWidth(100)
+        spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        MumuConfigDialog._style_parameter_spin(spin)
+        return spin
+
+    @staticmethod
+    def _make_cooldown_spin() -> QSpinBox:
+        spin = QSpinBox()
+        spin.setRange(1, 3600)
+        spin.setSuffix(" 秒")
+        spin.setFixedWidth(100)
+        spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        MumuConfigDialog._style_parameter_spin(spin)
+        return spin
+
+    @staticmethod
+    def _style_parameter_spin(spin: QSpinBox) -> None:
+        """统一阈值和冷却输入控件的视觉样式。"""
+        spin.setStyleSheet(
+            "QSpinBox, QDoubleSpinBox { "
+            "border: 1px solid #c8d0d8; border-radius: 4px; "
+            "padding: 4px 8px; background-color: #fafbfc; "
+            "color: #2c3e50; }"
+            "QSpinBox:hover, QDoubleSpinBox:hover { border-color: #7fb1dc; }"
+            "QSpinBox:focus, QDoubleSpinBox:focus { "
+            "border: 1px solid #438ed3; background-color: #ffffff; }"
         )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
-        buttons.accepted.connect(self._on_save)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
 
     # ────────────────────────────────────────────────
     # 加载配置
@@ -252,7 +337,10 @@ class MumuConfigDialog(QDialog):
         self._ocr_enabled_check.setChecked(self._config.get("mumu_ocr_enabled", False))
         self._poll_mode_check.setChecked(self._config.get("mumu_ocr_poll_mode", False))
         self._poll_interval_spin.setValue(self._config.get("mumu_ocr_poll_interval", 2))
-        self._threshold_spin.setValue(self._config.get("mumu_ocr_match_threshold", 0.8))
+        self._threshold_spin.setValue(self._config.get("mumu_hero_selection_threshold", self._config.get("mumu_ocr_match_threshold", 0.8)))
+        self._match_guide_threshold_spin.setValue(self._config.get("mumu_match_guide_threshold", 0.8))
+        self._hero_cooldown_spin.setValue(self._config.get("mumu_hero_selection_cooldown", 180))
+        self._match_guide_cooldown_spin.setValue(self._config.get("mumu_match_guide_cooldown", 5))
 
         # 创建 AdbCapture 实例（复用已有的连接）
         if self._capture_service and self._capture_service.capture:
@@ -265,6 +353,7 @@ class MumuConfigDialog(QDialog):
 
         # 检查模板状态
         self._refresh_template_status()
+        self._refresh_match_guide_template_status()
         self._update_ui()
 
     def _refresh_template_status(self) -> None:
@@ -281,6 +370,17 @@ class MumuConfigDialog(QDialog):
             self._template_status_icon.setStyleSheet("color: #888; font-size: 16px;")
             self._template_status_label.setText("未设定")
             self._template_status_label.setStyleSheet("color: #888; font-size: 13px;")
+
+    def _refresh_match_guide_template_status(self) -> None:
+        """更新对局攻略模板状态显示。"""
+        from src.ocr.ocr_loader import get_template_manager
+        tm = get_template_manager("match_guide")
+        if tm.is_loaded:
+            self._match_guide_status_label.setText(f"对局攻略模板：已加载 {tm.template_path.name}")
+            self._match_guide_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
+        else:
+            self._match_guide_status_label.setText("对局攻略模板：未设定")
+            self._match_guide_status_label.setStyleSheet("color: #888; font-size: 13px;")
 
     # ────────────────────────────────────────────────
     # ADB 连接管理
@@ -359,7 +459,7 @@ class MumuConfigDialog(QDialog):
             if not self._devices:
                 self._device_combo.addItem("(未探测到设备)")
                 self._device_combo.setEnabled(False)
-                self._instance_status_label.setText("实例状态: 未探测到")
+                self._instance_status_label.setText("● 实例：未探测到")
                 self._port_label.setText("(自动探测)")
                 self._update_ui()
                 return
@@ -411,10 +511,10 @@ class MumuConfigDialog(QDialog):
         if device and device.adb_port:
             self._port_label.setText(str(device.adb_port))
             state = "运行中" if device.is_running else "未运行"
-            self._instance_status_label.setText(f"实例状态: {state}")
+            self._instance_status_label.setText(f"● 实例：{state}")
         else:
             self._port_label.setText("(自动探测)")
-            self._instance_status_label.setText("实例状态: 未探测到")
+            self._instance_status_label.setText("● 实例：未探测到")
         self._update_ui()
 
     def _on_connection_changed(self, _state: str, _detail: str) -> None:
@@ -607,6 +707,81 @@ class MumuConfigDialog(QDialog):
             self._template_path = str(dst)
             self._refresh_template_status()
 
+    def _on_make_match_guide_template(self) -> None:
+        """截图并制作独立的对局攻略模板。"""
+        if not self._capture or not self._capture.connected:
+            if self._capture:
+                ok, msg = self._capture.connect()
+                if not ok:
+                    QMessageBox.warning(self, "制作对局攻略模板", f"请先连接模拟器\n{msg}")
+                    return
+            else:
+                QMessageBox.warning(self, "制作对局攻略模板", "请先配置 ADB 并连接模拟器")
+                return
+
+        self._make_match_guide_template_btn.setEnabled(False)
+        self._make_match_guide_template_btn.setText("正在截图...")
+        QTimer.singleShot(50, self._do_make_match_guide_template)
+
+    def _do_make_match_guide_template(self) -> None:
+        """实际保存对局攻略模板。"""
+        try:
+            ok, result = self._capture.screencap_full()
+            if not ok:
+                QMessageBox.warning(self, "制作对局攻略模板", f"截图失败:\n{result}")
+                return
+
+            pixmap = pil_to_qpixmap(result)
+            if pixmap.isNull():
+                QMessageBox.warning(self, "制作对局攻略模板", "图像转换失败")
+                return
+
+            from src.ui.roi_selector import RoiSelectorDialog
+            dialog = RoiSelectorDialog(pixmap, title="框选对局攻略页面模板区域", parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            roi = dialog.get_roi()
+            if not roi:
+                return
+
+            from src.ocr.ocr_loader import get_template_manager
+            tm = get_template_manager("match_guide")
+            tm.set_template(result, roi)
+            self._refresh_match_guide_template_status()
+            QMessageBox.information(self, "模板已保存", f"模板已保存到:\n{tm.template_path}")
+        except Exception as exc:
+            logger.exception("制作对局攻略模板异常")
+            QMessageBox.warning(self, "制作对局攻略模板", f"制作模板时出错:\n{exc}")
+        finally:
+            self._make_match_guide_template_btn.setEnabled(True)
+            self._make_match_guide_template_btn.setText("制作对局攻略模板")
+
+    def _on_select_match_guide_template(self) -> None:
+        """选择并保存对局攻略模板文件。"""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择对局攻略模板图片", str(DEFAULT_TEMPLATE_DIR),
+            "图片 (*.png *.jpg *.jpeg)",
+        )
+        if not path:
+            return
+        try:
+            from src.ocr.ocr_loader import get_template_manager
+            import shutil
+            tm = get_template_manager("match_guide")
+            tm.template_path.parent.mkdir(parents=True, exist_ok=True)
+            src = Path(path)
+            dst = tm.template_path
+            if src.resolve() != dst.resolve():
+                shutil.copy2(str(src), str(dst))
+                metadata_path = dst.with_suffix(".json")
+                if metadata_path.exists():
+                    metadata_path.unlink()
+            tm.reload()
+            self._refresh_match_guide_template_status()
+        except Exception as exc:
+            logger.exception("选择对局攻略模板异常")
+            QMessageBox.warning(self, "选择对局攻略模板", f"加载模板时出错:\n{exc}")
+
 
 
     # ────────────────────────────────────────────────
@@ -646,17 +821,55 @@ class MumuConfigDialog(QDialog):
             "offline": ("ADB 状态: 设备离线", "#e74c3c"),
         }
         text, color = states.get(state, states["disconnected"])
-        self._status_label.setText(text)
+        self._status_label.setText(f"● ADB：{text.replace('ADB 状态: ', '')}")
         self._status_label.setToolTip(detail)
         self._status_label.setStyleSheet(f"color: {color}; font-size: 12px; padding: 2px 0;")
         self._connect_btn.setText("断开" if state == "connected" else "连接")
         self._connect_btn.setEnabled(state != "connecting")
-        self._make_template_btn.setEnabled(state == "connected")
-        self._resume_poll_btn.setVisible(self._ocr_service is not None)
+        # 制作模板流程本身会在未连接时尝试建立 ADB 会话，不能只按
+        # connected 状态禁用按钮，否则用户无法从模板按钮触发自动连接。
+        can_make_template = self._capture is not None and state != "connecting"
+        self._make_template_btn.setEnabled(can_make_template)
+        self._make_match_guide_template_btn.setEnabled(can_make_template)
+        self._select_template_btn.setEnabled(state != "connecting")
+        self._select_match_guide_template_btn.setEnabled(state != "connecting")
         self._resume_poll_btn.setEnabled(
-            self._ocr_service is not None and self._ocr_service.poll_state == "paused"
+            self._poll_mode_check.isChecked()
+            and self._ocr_service is not None
+            and self._ocr_service.poll_state == "paused"
         )
         self._test_device_btn.setEnabled(self._device_combo.currentData() is not None)
+        self._update_parameter_controls()
+
+    def _update_parameter_controls(self) -> None:
+        """持续轮询关闭时，禁用只与轮询相关的控件。"""
+        polling_enabled = self._poll_mode_check.isChecked()
+        self._poll_interval_spin.setEnabled(polling_enabled)
+        self._resume_poll_btn.setEnabled(
+            polling_enabled
+            and self._ocr_service is not None
+            and self._ocr_service.poll_state == "paused"
+        )
+
+    def _show_save_toast(self) -> None:
+        """在关闭对话框前给出短暂的保存反馈。"""
+        toast = QLabel("✓ 识别参数已保存", self)
+        toast.setStyleSheet(
+            "QLabel { color: white; background-color: #2f855a; "
+            "border-radius: 4px; padding: 6px 12px; }"
+        )
+        toast.adjustSize()
+        toast.move(
+            max(0, (self.width() - toast.width()) // 2),
+            max(0, self.height() - toast.height() - 48),
+        )
+        toast.show()
+
+        def finish_save() -> None:
+            toast.deleteLater()
+            self.accept()
+
+        QTimer.singleShot(300, finish_save)
 
     # ────────────────────────────────────────────────
     # 保存
@@ -685,7 +898,11 @@ class MumuConfigDialog(QDialog):
             self._config["mumu_ocr_poll_mode"] = self._poll_mode_check.isChecked()
             self._config["mumu_ocr_poll_interval"] = self._poll_interval_spin.value()
             self._config["mumu_ocr_match_threshold"] = round(self._threshold_spin.value(), 2)
-            self.accept()
+            self._config["mumu_hero_selection_threshold"] = round(self._threshold_spin.value(), 2)
+            self._config["mumu_match_guide_threshold"] = round(self._match_guide_threshold_spin.value(), 2)
+            self._config["mumu_hero_selection_cooldown"] = self._hero_cooldown_spin.value()
+            self._config["mumu_match_guide_cooldown"] = self._match_guide_cooldown_spin.value()
+            self._show_save_toast()
         except Exception as e:
             logger.exception("保存模拟器配置失败")
             QMessageBox.critical(self, "保存失败", f"保存配置时出错:\n{e}")

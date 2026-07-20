@@ -7,20 +7,21 @@
 from __future__ import annotations
 
 
-_template_manager = None
+_template_managers = {}
 _recognizer = None
 _recognizer_rois = None
 _recognizer_hero_names = None
 _recognizer_reference_size = None
 
 
-def get_template_manager():
-    """获取或初始化 TemplateManager（单例，延迟加载）。"""
-    global _template_manager
-    if _template_manager is None:
+def get_template_manager(template_name: str = "hero_selection"):
+    """获取指定模板管理器（按模板名称缓存，延迟加载）。"""
+    if template_name not in {"hero_selection", "match_guide"}:
+        raise ValueError(f"不支持的模板名称: {template_name}")
+    if template_name not in _template_managers:
         from src.ocr.template_manager import TemplateManager
-        _template_manager = TemplateManager()
-    return _template_manager
+        _template_managers[template_name] = TemplateManager(template_name=template_name)
+    return _template_managers[template_name]
 
 
 def get_recognizer(rois, hero_names: list[str] | None = None,

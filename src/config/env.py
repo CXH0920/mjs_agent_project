@@ -106,12 +106,16 @@ def load_env_config(env_path=None):
         "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
         "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
         "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
+        "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
+        "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
+        "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
+        "MUMU_MATCH_GUIDE_COOLDOWN": "mumu_match_guide_cooldown",
     }
     config = {}
     for env_key, cfg_key in key_mapping.items():
         if env_key in raw:
             value = raw[env_key]
-            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval"):
+            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown", "mumu_match_guide_cooldown"):
                 try:
                     value = int(value)
                 except (ValueError, TypeError):
@@ -119,7 +123,7 @@ def load_env_config(env_path=None):
                     continue
             elif cfg_key in ("mumu_ocr_enabled", "mumu_ocr_poll_mode"):
                 value = value.lower() in ("true", "1", "yes")
-            elif cfg_key in ("mumu_ocr_match_threshold",):
+            elif cfg_key in ("mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold"):
                 try:
                     value = float(value)
                 except (ValueError, TypeError):
@@ -181,6 +185,10 @@ def get_mumu_config():
         "mumu_ocr_poll_mode": config.get("mumu_ocr_poll_mode", False),
         "mumu_ocr_poll_interval": config.get("mumu_ocr_poll_interval", 2),
         "mumu_ocr_match_threshold": config.get("mumu_ocr_match_threshold", 0.8),
+        "mumu_hero_selection_threshold": config.get("mumu_hero_selection_threshold", config.get("mumu_ocr_match_threshold", 0.8)),
+        "mumu_hero_selection_cooldown": config.get("mumu_hero_selection_cooldown", 180),
+        "mumu_match_guide_threshold": config.get("mumu_match_guide_threshold", 0.8),
+        "mumu_match_guide_cooldown": config.get("mumu_match_guide_cooldown", 5),
     }
 
 # ============================================================

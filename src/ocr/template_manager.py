@@ -22,14 +22,26 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
 DEFAULT_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "wujiang_select.png"
+MATCH_GUIDE_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "match_guide" / "template.png"
 DEFAULT_REFERENCE_SIZE = (2560, 1440)
 
 
 class TemplateManager:
     """模板管理器 — 保存/加载/匹配武将选择页面模板"""
 
-    def __init__(self, template_path: str | Path | None = None) -> None:
-        self._template_path = Path(template_path) if template_path else DEFAULT_TEMPLATE_FILE
+    def __init__(
+        self,
+        template_path: str | Path | None = None,
+        *,
+        template_name: str = "hero_selection",
+    ) -> None:
+        if template_path is not None:
+            self._template_path = Path(template_path)
+        elif template_name == "match_guide":
+            self._template_path = MATCH_GUIDE_TEMPLATE_FILE
+        else:
+            self._template_path = DEFAULT_TEMPLATE_FILE
+        self.template_name = template_name
         self._template: np.ndarray | None = None  # 灰度模板图像
         self._reference_size = DEFAULT_REFERENCE_SIZE
         self._last_match_scale = 1.0
