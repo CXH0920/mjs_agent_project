@@ -119,7 +119,7 @@ HeroBrowser (QWidget)
 - Markdown 正文区域支持双击，打开 `GuideMarkdownDialog`（默认约 900×680）阅读完整攻略。
 - 攻略 Tab 外层使用 `QScrollArea`，避免长内容超出窗口边界。
 - 核心要点、新手提示、被克制、搭配推荐和 Markdown 预览按单列顺序堆叠。
-- `QTextBrowser` 占满内容宽度作为正文预览，双击后打开 `GuideMarkdownDialog` 查看完整内容。
+- 有攻略数据时，`QTextBrowser` 占满内容宽度作为正文预览，双击后打开 `GuideMarkdownDialog` 查看完整内容；无攻略数据时隐藏该正文框。
 - 克制/搭配关系使用可点击标签，点击后通过 `hero_requested` 信号切换到对应武将。
 
 ### 3.4 推荐面板

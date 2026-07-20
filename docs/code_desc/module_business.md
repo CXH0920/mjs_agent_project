@@ -71,6 +71,8 @@ error_occurred → 错误信息
 
 所有服务使用 `SeparateChannels` 模式，分别读取 stdout 和 stderr。
 
+AI 生成服务以子进程退出码作为唯一成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 仅用于展示进度，不再承担失败项协议解析职责。
+
 ### 3.2 CaptureService（截图业务）
 
 截图流程（手动截图路径）：

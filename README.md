@@ -353,11 +353,11 @@ src/scraper/
 
 **特性：**
 - 各模块单向调用，无循环导入
-- 支持断点续传（跳过已有项）
+- 指定增量任务支持跳过已有项
 - 输出经过 Pydantic 模型校验
 - `--dry-run` 预览 Token 消耗和费用（仅 API 模式）
-- 批量保存中间结果，中断不丢数据
-- 双模式：API 直连 / 浏览器自动化（`--browser`）
+- 中间结果写入同目录 `.staging` 文件；任一生成失败时正式数据不变，全部成功后才原子提交
+- 双模式：API 直连 / 浏览器自动化（`--browser`，无需 API Key）
 
 ### ETL 数据流
 
@@ -374,7 +374,7 @@ _convert_ids_to_int() → 武将 ID 转 int → 注入 hero_id / hero_a_id / her
   ▼
 _validate_guide() / _validate_synergy() → Pydantic 校验 → model_dump
   ▼
-_save_json() → data/guides.json / data/synergies.json
+_save_json() → data/*.json.staging → 全部成功后原子替换 data/guides.json / data/synergies.json
 ```
 
 ---

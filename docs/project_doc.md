@@ -246,13 +246,13 @@ else:
 #### 2.2.3 断点续传 / 更新模式
 
 **攻略**：
-- `--update`（增量/指定获取）：更新模式，生成前删除旧数据，**不跳过已有**
+- `--update`（增量/指定获取）：更新模式，重新生成已有项，**不跳过已有**
 - 无 `--update`（全量获取）：断点续传，跳过已存在的 `hero_id`
 
 **相性**：
-- `--synergy`（全量生成）：始终是更新模式，启动时清空所有旧数据重新生成
+- `--synergy`（全量生成）：始终重新生成所有组合，但旧正式数据会保留到任务全部成功后才替换
 - `--synergy-single`（选定武将）：断点续传，已有的相性对跳过不重复生成
-- `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对，每条先删除旧数据再写入新的
+- `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对；全部配对成功后统一提交
 
 #### 2.2.4 浏览器模式的 token 处理
 
@@ -323,29 +323,29 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 
 流程：
 1. 遍历所有武将
-2. `update_mode=False` 时跳过已存在（断点续传）；`update_mode=True` 时先删除旧数据
+2. `update_mode=False` 时跳过已存在；`update_mode=True` 时在工作副本中覆盖旧数据
 3. 输出 `"[i/N] hero_name OK"`（被进度条正则匹配）
 4. `generator.generate_guide(hero)` → `(result, usage)`
 5. 累计 usage
-6. 每 10 条（`GUIDE_BATCH_SAVE_INTERVAL`）批量保存
-7. 结束后最终保存
+6. 每 10 条（`GUIDE_BATCH_SAVE_INTERVAL`）批量保存到 `.staging`
+7. 无失败项时原子替换正式文件；有失败项则保留正式数据和 staging 文件
 
 ### 2.5 run_synergy_generation() — 全量相性生成
 
-始终是更新模式，启动时清空旧数据，遍历所有 `N*(N-1)/2` 对组合重新生成。
-每 20 条（`SYNERGY_BATCH_SAVE_INTERVAL`）批量保存。
+始终重新生成所有 `N*(N-1)/2` 对组合，但旧正式数据不会在任务开始时清空。
+每 20 条（`SYNERGY_BATCH_SAVE_INTERVAL`）批量写入 staging，全部成功后才提交。
 
 ### 2.6 run_synergy_pair_generation() — 指定配对（支持 2~8 武将）
 
 - 读取包含 2~8 个武将的 JSON 文件
 - 用 `itertools.combinations(pair_heroes, 2)` 遍历所有 C(N,2) 组合
 - 输出进度 `[i/total]` 与实际配对数同步
-- 每对采用：先生成 → 成功后再删除旧数据（避免失败数据丢失）
-- 立即保存
+- 每对结果均先写入 staging
+- 任一失败时正式数据不变；全部成功才提交
 
 ### 2.7 run_synergy_single_generation() — 选定武将 x 全体
 
-支持断点续传：已有的相性对跳过不重复生成，新增完成后统一保存。
+支持断点续传：已有的相性对跳过不重复生成；新增项全部成功后统一提交。
 
 ---
 
@@ -763,7 +763,7 @@ m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
 ```
 匹配格式 `"[1/3] 诸葛亮 OK"` 时更新进度条；`"[2/3] 司马懿 FAIL"` 时仅更新状态文字为"生成失败"，不推进进度条位置。
 
-> 失败详情来自子进程输出的 `RESULT: FAIL=<name>` 行，父进程 `_on_stdout_line()` 解析后收集到 `_failed_items` 列表中。详见第六节 6.6 和 6.7。
+> 失败由 CLI 的非零退出码统一表达；父进程只解析 stdout 中的进度行，不再依赖失败文本协议。
 
 ### 5.8 武将浏览器（HeroBrowser）
 
@@ -804,7 +804,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 主浏览页保留列表与详情摘要，方便快速切换武将。
 - Markdown 正文预览支持双击，打开 `GuideMarkdownDialog`（默认约 900×680）阅读完整攻略。
 - 攻略摘要、关系标签和正文预览采用单列堆叠布局，避免 Markdown 阅读框独占侧栏。
-- Markdown 预览占满内容宽度，双击后由 `GuideMarkdownDialog` 展示完整正文。
+- 有攻略数据时，Markdown 预览占满内容宽度，双击后由 `GuideMarkdownDialog` 展示完整正文；无攻略数据时隐藏该正文框。
 - 核心要点、新手提示、克制关系、搭配关系按区块分组，长内容由外层滚动区域承载。
 - 克制/搭配关系使用可点击标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
 - 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
@@ -987,36 +987,11 @@ _on_error()
 - `_on_finished()` 和 `_on_error()` 都会调用 `_cleanup_tmp()` 清理
 - 清理失败（`OSError`）只打 warning 不阻断流程
 
-### 6.6 RESULT 协议（进度展示修复）
+### 6.6 结构化任务结果与 staging 提交
 
-子进程失效时 stdout 输出会被截断，导致 `[i/N] name FAIL` 这行可能不被父进程读到。为解决此问题，子进程额外输出可被独立解析的 RESULT 行：
+`ai_generation.py` 的四种编排函数返回 `GenerationResult`。它统一记录 token、完成/跳过数、失败项、提交状态与 staging 路径；`ai_batch.py` 据此决定退出码，任一失败项都会返回非零。
 
-```
-# 子进程 (ai_generation.py) 在生成失败时同时输出:
-print(f"[{i}/{total}] {name} FAIL", flush=True)
-print(f"RESULT: FAIL={name}", flush=True)   # ← 独立解析行
-```
-
-父进程侧的解析逻辑：
-
-**`_on_stdout_line()`**：
-```python
-# 解析 RESULT: FAIL=<name>
-if "RESULT: FAIL=" in line:
-    name = line.split("=", 1)[1].strip()
-    self._failed_items.append(name)
-```
-
-**`_on_process_finished()`**：
-```python
-# 不仅看 exit_code，还要检查 _failed_items
-if exit_code == 0:
-    self._on_guide_completed()  # 进一步基于 _failed_items 判断
-else:
-    self._on_guide_failed()
-```
-
-**`_on_guide_completed()`** 检查 `_failed_items` 列表：如果有失败项则 emit `fetch_completed(False, ...)` 并列出失败武将名；仅当 `_failed_items` 为空时才是真正成功。
+生成期间仅写入 `<正式文件名>.staging`。失败时正式 JSON 保持不变并保留暂存文件；全部成功后才将 staging 文件原子替换为正式数据。父进程仅解析 `[i/N]` 进度行，依据退出码通知 UI 成败，不再解析 `RESULT` 文本协议。
 
 ### 6.7 进度对话框 OK/FAIL 分开匹配
 
@@ -1057,7 +1032,7 @@ AI 回复文本（浏览器 inner_text 或 API response）
   │ Step 3: 字符修复
   │ _repair_strings(s)
   │ ├── 仅在字符串值内 (in_string=True)
-  │ ├── 字面 \r\n → \\n
+  │ ├── 字面 \n → \\n
   │ └── 已转义序列 \\ → 原样保留
   │
   ▼
@@ -1906,7 +1881,7 @@ Content-Type: application/json
 | 3 | --- 分隔线后 | `rfind("\n---")` 取最后一段 | AI 先分析再输出 JSON |
 | 4 | { 到 } 区间 | `find("{")` ~ `rfind("}")` 截取 | 兜底 |
 
-每步先尝试直接解析，失败则走 `_repair_strings()` 修复（字符串值内的字面 `\r\n` → `\\n`），再重试。全部失败抛 `ValueError`。
+每步先尝试直接解析，失败则走 `_repair_strings()` 修复（字符串值内的字面 `\n` → `\\n`），再重试。全部失败抛 `ValueError`。
 
 ---
 
@@ -2003,7 +1978,7 @@ PlaywrightGenerator.__init__()
 | **获取回复机制** | 同步 HTTP 响应 body | Phase 1 + Phase 2 两阶段轮询等待 |
 | **JSON 提取** | `extract_json()` | `extract_json()`（完全同一份代码） |
 | **Pydantic 校验** | `validate_guide()` | `validate_guide()`（完全同一份代码） |
-| **写入 JSON** | `_save_json()` 原子写入 | `_save_json()` 原子写入 |
+| **写入 JSON** | 先写 `.staging`，全成功后原子提交 | 先写 `.staging`，全成功后原子提交 |
 | **Token 统计返回** | `usage` 字段（prompt/completion tokens） | `None`（不支持） |
 | **断点续传** | ✅ 通过 `_load_existing_guides()` | ✅ 通过 `_load_existing_guides()` |
 | **成本估算** | ✅ 支持 dry-run 显示 | ❌ 无 |
@@ -2042,9 +2017,9 @@ PlaywrightGenerator.__init__()
 ```
 
 **写入策略**：
-- 全量/增量生成：循环中每 10 条批量 `_save_json()`，循环结束最终保存
-- 原子写入：`文件.tmp` → `json.dump()` → `tmp_path.replace(正式路径)`
-- 断点续传：启动时加载已有文件建立 `{hero_id: guide}` 索引，新数据追加合并后覆盖写入
+- 生成过程按间隔写入 `文件.staging`，不修改正式数据
+- 全部请求成功后：`staging.tmp` → `json.dump()` → `tmp_path.replace(staging)` → `staging.replace(正式路径)`
+- 任一请求失败时保留 staging 供排查，正式数据不变
 
 ---
 

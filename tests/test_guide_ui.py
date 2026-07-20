@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton, QTextBrowser
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
+from src.data.synergy_manager import SynergyManager
 from src.ui.hero_browser import (
     CheckableComboBox,
     GuideEditDialog,
@@ -45,7 +46,7 @@ def test_guide_panel_renders_clickable_relation_tags(tmp_path: Path) -> None:
     )
     guide_manager.add_guide(HeroGuide(hero_id=2, description="# 刘备攻略\n辅助思路"))
 
-    panel = HeroDetailPanel(hero_manager, guide_manager)
+    panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
     requested: list[int] = []
     panel.hero_requested.connect(requested.append)
     panel.show_hero(1)
@@ -68,7 +69,7 @@ def test_double_click_markdown_opens_detail_dialog(tmp_path: Path) -> None:
     hero_manager.add_hero(Hero(id=1, name="曹操"))
     guide_manager.add_guide(HeroGuide(hero_id=1, description="# 对局思路\n完整攻略"))
 
-    panel = HeroDetailPanel(hero_manager, guide_manager)
+    panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
     panel.show_hero(1)
     opened: list[tuple[str, str]] = []
     panel.guide_detail_requested.connect(lambda name, text: opened.append((name, text)))
@@ -77,6 +78,22 @@ def test_double_click_markdown_opens_detail_dialog(tmp_path: Path) -> None:
     assert opened == [("曹操", "# 对局思路\n完整攻略")]
     dialog = GuideMarkdownDialog("曹操", opened[0][1])
     assert dialog.windowTitle() == "曹操 - 攻略正文"
+
+
+def test_guide_panel_hides_body_when_guide_is_missing(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    guide_manager.add_guide(HeroGuide(hero_id=1, description="# 曹操攻略"))
+
+    panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
+    panel.show_hero(1)
+    assert not panel._guide_body.isHidden()
+
+    panel.show_hero(2)
+    assert panel._guide_body.isHidden()
 
 
 def test_guide_edit_uses_multi_select_relation_dialog(tmp_path: Path) -> None:

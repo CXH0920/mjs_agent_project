@@ -192,17 +192,16 @@ def main():
         _show_cost_estimate(heroes, api_config, args)
         return
 
-    _check_api_key(api_config)
-    logger.info("API URL: %s", api_config["api_url"])
-    logger.info("模型: %s", api_config["model"])
-    logger.info("速率限制: %d req/min, 最多重试 %d 次",
-                runtime_params["requests_per_minute"], runtime_params["max_retries"])
-
     if args.browser:
         from src.scraper.ai_playwright import PlaywrightGenerator
         generator = PlaywrightGenerator()
         logger.info("使用浏览器模式")
     else:
+        _check_api_key(api_config)
+        logger.info("API URL: %s", api_config["api_url"])
+        logger.info("模型: %s", api_config["model"])
+        logger.info("速率限制: %d req/min, 最多重试 %d 次",
+                    runtime_params["requests_per_minute"], runtime_params["max_retries"])
         generator = AIBatchGenerator(
             api_key=api_config["api_key"],
             api_url=api_config["api_url"],
@@ -220,62 +219,56 @@ def main():
         else ({}, set())
     )
 
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    had_failure = False
+    task_results = []
+    try:
+        if args.guide:
+            from src.scraper.ai_generation import run_guide_generation
+            task_results.append(run_guide_generation(
+                heroes=heroes, generator=generator, guide_path=guide_path,
+                existing_guides=existing_guides, api_config=api_config,
+                update_mode=args.update,
+            ))
 
-    if args.guide:
-        from src.scraper.ai_generation import run_guide_generation
-        pt, ct = run_guide_generation(
-            heroes=heroes, generator=generator, guide_path=guide_path,
-            existing_guides=existing_guides, api_config=api_config,
-            update_mode=args.update,
-        )
-        total_prompt_tokens += pt
-        total_completion_tokens += ct
+        if args.synergy:
+            from src.scraper.ai_generation import run_synergy_generation
+            task_results.append(run_synergy_generation(
+                heroes=heroes, generator=generator, synergy_path=synergy_path,
+                existing_synergy_dict=existing_synergy_dict,
+                existing_synergy_keys=existing_synergy_keys,
+                score_threshold=args.score_threshold, api_config=api_config,
+            ))
 
-    if args.synergy:
-        from src.scraper.ai_generation import run_synergy_generation
-        pt, ct = run_synergy_generation(
-            heroes=heroes, generator=generator, synergy_path=synergy_path,
-            existing_synergy_dict=existing_synergy_dict,
-            existing_synergy_keys=existing_synergy_keys,
-            score_threshold=args.score_threshold, api_config=api_config,
-        )
-        total_prompt_tokens += pt
-        total_completion_tokens += ct
+        if args.synergy_pair:
+            from src.scraper.ai_generation import run_synergy_pair_generation
+            task_results.append(run_synergy_pair_generation(
+                pair_file=args.synergy_pair, heroes=heroes, generator=generator,
+                synergy_path=synergy_path,
+                existing_synergy_dict=existing_synergy_dict,
+                existing_synergy_keys=existing_synergy_keys,
+            ))
 
-    if args.synergy_pair:
-        from src.scraper.ai_generation import run_synergy_pair_generation
-        pt, ct = run_synergy_pair_generation(
-            pair_file=args.synergy_pair, heroes=heroes, generator=generator,
-            synergy_path=synergy_path,
-            existing_synergy_dict=existing_synergy_dict,
-            existing_synergy_keys=existing_synergy_keys,
-        )
-        total_prompt_tokens += pt
-        total_completion_tokens += ct
+        if args.synergy_single:
+            from src.scraper.ai_generation import run_synergy_single_generation
+            task_results.append(run_synergy_single_generation(
+                single_file=args.synergy_single, heroes=heroes, generator=generator,
+                synergy_path=synergy_path,
+                existing_synergy_dict=existing_synergy_dict,
+                existing_synergy_keys=existing_synergy_keys,
+            ))
+    finally:
+        generator.close()
 
-    if args.synergy_single:
-        from src.scraper.ai_generation import run_synergy_single_generation
-        pt, ct = run_synergy_single_generation(
-            single_file=args.synergy_single, heroes=heroes, generator=generator,
-            synergy_path=synergy_path,
-            existing_synergy_dict=existing_synergy_dict,
-            existing_synergy_keys=existing_synergy_keys,
-        )
-        total_prompt_tokens += pt
-        total_completion_tokens += ct
-
+    total_prompt_tokens = sum(result.prompt_tokens for result in task_results)
+    total_completion_tokens = sum(result.completion_tokens for result in task_results)
     _print_token_summary(total_prompt_tokens, total_completion_tokens)
-    generator.close()
 
-    # 浏览器模式不产生 usage 统计，不以 token 为成败依据
-    if not args.browser and total_prompt_tokens == 0 and total_completion_tokens == 0:
-        had_failure = True
-
-    if had_failure:
-        print(f"\n  [警告] 部分或全部操作失败，请检查 API Key 和网络连接\n")
+    failed_results = [result for result in task_results if not result.succeeded]
+    if failed_results:
+        failed_items = [item for result in failed_results for item in result.failed_items]
+        staging_paths = [str(result.staging_path) for result in failed_results if result.staging_path]
+        print(f"\n  [错误] 生成失败：{len(failed_items)} 项；失败任务的正式数据未变更", flush=True)
+        if staging_paths:
+            print(f"  暂存结果：{', '.join(staging_paths)}", flush=True)
         sys.exit(1)
 
     print(f"\n  全部完成！\n")

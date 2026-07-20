@@ -11,9 +11,7 @@ import json
 import logging
 import os
 import re
-import sys
 import tempfile
-import traceback
 
 from PySide6.QtCore import QObject, Signal
 
@@ -34,7 +32,6 @@ class GuideFetchService(BaseFetchService):
     def __init__(self, guide_mgr, parent=None):
         super().__init__(parent)
         self._guide_mgr = guide_mgr
-        self._failed_items: list[str] = []
 
     @property
     def _service_name(self) -> str:
@@ -106,16 +103,8 @@ class GuideFetchService(BaseFetchService):
     # ---------------------------------------------------------------
 
     def _on_stdout_line(self, line: str) -> None:
-        """解析 [i/N] 进度和 RESULT 行"""
+        """解析子进程进度行。"""
         if not line:
-            return
-
-        # 捕获 RESULT: FAIL=<name> 机器可读行
-        if line.startswith("RESULT:"):
-            parts = line.split(":", 1)
-            if len(parts) == 2 and parts[1].strip().startswith("FAIL="):
-                failed_name = parts[1].strip()[5:]  # 去掉 "FAIL=" 前缀
-                self._failed_items.append(failed_name)
             return
 
         self.progress_output.emit(line)
@@ -124,15 +113,9 @@ class GuideFetchService(BaseFetchService):
             self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 
     def _on_process_finished(self, exit_code: int) -> None:
-        """进程结束时，基于失败列表修正 success 判断"""
-        has_failure = len(self._failed_items) > 0
-        if has_failure:
-            detail = "部分生成失败：" + "、".join(self._failed_items)
-            logger.warning("攻略生成存在失败项: %s", detail)
-        else:
-            detail = f"进程退出码: {exit_code}"
-        self.fetch_completed.emit(not has_failure, detail)
-        self._failed_items.clear()
+        """仅以 CLI 的结构化退出码判断生成成败。"""
+        if exit_code == 0:
+            self.fetch_completed.emit(True, "攻略生成完成")
 
     def _cleanup_context(self) -> None:
         """清理临时文件"""

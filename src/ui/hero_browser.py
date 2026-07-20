@@ -1287,6 +1287,7 @@ class HeroDetailPanel(QWidget):
                 item.widget().deleteLater()
 
         if not guide:
+            self._guide_body.hide()
             no_data = QLabel("暂无攻略数据")
             no_data.setStyleSheet("color: #a08060; font-size: 14px; padding: 20px;")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1332,6 +1333,7 @@ class HeroDetailPanel(QWidget):
 
         # 攻略正文（Markdown 渲染）
         self._add_guide_section_title(self._guide_layout, "攻略正文（双击查看完整内容）")
+        self._guide_body.show()
         self._guide_layout.addWidget(self._guide_body)
         if guide.description:
             self._guide_body.setHtml(self._markdown_to_html(guide.description))
