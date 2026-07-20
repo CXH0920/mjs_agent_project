@@ -33,18 +33,19 @@ src/
 
 ```python
 # src/main.py
-app = QApplication(sys.argv)
-warmup()                 # 预加载 PaddleOCR 模型（界面出现前完成）
 setup_logging()          # 初始化日志系统
+app = QApplication(sys.argv)
+splash.show()            # 在主窗口构建期间显示启动页
 window = MainWindow()    # 构建主窗口
 window.show()
+splash.finish(window)    # 主窗口显示后关闭启动页
 sys.exit(app.exec())     # 进入事件循环
 ```
 
 启动顺序有严格讲究：
-1. **PaddleOCR 预热** — 在窗口出现前加载 OCR 模型（约 2-3 秒），避免用户看到窗口后操作时卡顿
-2. **QApplication 先于 MainWindow** — Qt 要求事件循环先启动，才能安全创建 UI 组件
-3. **DataFacade 双次加载** — `MainWindow.__init__()` 和 `_load_data()` 中各调用一次 `setup_logging`，通过幂等性检测防重复
+1. **启动页先显示** — `QSplashScreen` 在主窗口构建前显示，避免用户看到 Windows/Qt 初始化期间的空白窗口
+2. **QApplication 先于 MainWindow** — Qt 要求先创建应用对象，才能安全创建 UI 组件
+3. **主窗口就绪后关闭** — `splash.finish(window)` 在主窗口显示后关闭启动页，异常时显式关闭，避免残留
 
 ### 3.2 配置加载优先级
 

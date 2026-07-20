@@ -10,10 +10,36 @@ import logging
 import os
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from src.ui.main_window import MainWindow
 from src.ui.style import GLOBAL_STYLE
+
+
+def _create_startup_splash() -> QSplashScreen:
+    """创建主窗口初始化期间显示的启动页。"""
+    pixmap = QPixmap(420, 220)
+    pixmap.fill(QColor("#f4f8fc"))
+
+    painter = QPainter(pixmap)
+    painter.setPen(QColor("#2c5f91"))
+    title_font = QFont()
+    title_font.setPointSize(22)
+    title_font.setBold(True)
+    painter.setFont(title_font)
+    painter.drawText(pixmap.rect().adjusted(24, 52, -24, -96), Qt.AlignmentFlag.AlignCenter, "名将杀 Agent")
+
+    painter.setPen(QColor("#6b7c93"))
+    subtitle_font = QFont()
+    subtitle_font.setPointSize(11)
+    painter.setFont(subtitle_font)
+    painter.drawText(pixmap.rect().adjusted(24, 126, -24, -42), Qt.AlignmentFlag.AlignCenter, "正在加载数据和界面…")
+    painter.end()
+
+    splash = QSplashScreen(pixmap)
+    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+    return splash
 
 
 def main() -> None:
@@ -61,12 +87,17 @@ def main() -> None:
 
     # 设置全局样式
     app.setStyleSheet(GLOBAL_STYLE)
+    splash = _create_startup_splash()
+    splash.show()
+    app.processEvents()
 
     try:
         window = MainWindow()
         window.show()
+        splash.finish(window)
         sys.exit(app.exec())
     except Exception as e:
+        splash.close()
         logger = logging.getLogger(__name__)
         logger.exception("应用启动失败")
         QMessageBox.critical(
