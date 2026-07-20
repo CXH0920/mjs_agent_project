@@ -35,6 +35,7 @@ MainWindow.__init__()
         -> HeroBrowser(self._data.heroes, self._data.guides)         [Tab 0: 武将浏览]
         -> RecommendationPanel(self._data.heroes, self._data.synergies,
                                guide_mgr, capture_svc, ocr_svc)      [Tab 1: 选将推荐]
+        -> MatchGuidePanel(self._data.heroes, capture_svc)           [Tab 2: 对局攻略]
   -> _setup_status_bar()
   -> _update_status()
 ```
@@ -216,7 +217,39 @@ RecommendationPanel._on_import_from_file()                     [「从图片导�
   -> [信号] → load_from_ocr()
 ```
 
-### 3.3 轮询截图链路（关键：跨线程）
+### 3.3 对局攻略卡片与导入链路
+
+```
+MatchGuidePanel.__init__(hero_mgr, capture_service)
+  -> _load_default_heroes()
+     -> HeroManager.list_heroes()                                [按 ID 升序取前四名]
+     -> MatchHeroCard.set_hero(hero)
+        -> _load_faction_colors()                                [头像左上势力标签]
+        -> _load_portrait()                                      [头像 120×160，区域 135×162]
+     -> _load_win_rates()                                        [加载胜率]
+
+MatchHeroCard._portrait [左键双击]
+  -> MatchHeroCard._on_hero_double_clicked()
+  -> MatchGuidePanel._show_skill_popup(hero_id)
+  -> HeroSkillDialog(hero).exec()
+
+MatchGuidePanel._on_import_from_screenshot()
+  -> [未配置 ADB] request_mumu_config → MainWindow._open_mumu_config()
+  -> CaptureService.do_capture(template_name="match_guide", force_ocr=True)
+     -> _execute_capture() → _run_ocr(template_name="match_guide")
+  -> MatchGuidePanel._on_capture_result(result)
+     -> load_from_ocr(ocr_results)
+
+MatchGuidePanel._on_import_from_file()
+  -> QFileDialog.getOpenFileName()
+  -> CaptureService.do_capture_from_file(
+       file_path, template_name="match_guide", force_ocr=True)
+  -> _execute_file_ocr() → _run_ocr() → _on_capture_result()
+```
+
+对局攻略导入复用 `CaptureService` 的异步采集接口，但通过 `template_name` 使用独立模板；未识别到武将时保留默认四张卡片。
+
+### 3.4 轮询截图链路（关键：跨线程）
 
 轮询匹配成功后的页面跳转采用边沿触发，武将选择与对局攻略任务分别维护冷却：
 

@@ -575,8 +575,12 @@ class MainWindow(QMainWindow):
         self._recommendation.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
 
-        # Tab 3: 对局攻略（首期保留四个空白扩展板块）
-        self._match_guide = MatchGuidePanel()
+        # Tab 3: 对局攻略（2×2 武将卡片）
+        self._match_guide = MatchGuidePanel(
+            self._data.heroes,
+            capture_service=self._capture_service,
+        )
+        self._match_guide.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")
 
         layout.addWidget(self._tabs, 1)
@@ -857,6 +861,7 @@ class MainWindow(QMainWindow):
 
         reload_faction_colors()
         self._recommendation.refresh_faction_colors()
+        self._match_guide.refresh_faction_colors()
         self._status_label.setText("势力配色已更新")
 
     def _open_mumu_config(self) -> None:

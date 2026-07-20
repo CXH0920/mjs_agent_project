@@ -24,7 +24,7 @@ def _app() -> QApplication:
 
 def _hero_manager() -> HeroManager:
     manager = HeroManager()
-    manager._items = {1: Hero(id=1, name="测试武将")}
+    manager._items = {1: Hero(id=1, name="测试武将", faction="魏")}
     return manager
 
 
@@ -38,16 +38,35 @@ def test_recommendation_connects_capture_signals_once() -> None:
     assert panel._import_btn.isEnabled()
 
 
-def test_match_guide_panel_has_four_empty_blocks() -> None:
+def test_match_guide_panel_has_four_default_cards() -> None:
     _app()
-    panel = MatchGuidePanel()
+    panel = MatchGuidePanel(_hero_manager())
 
-    assert len(panel._blocks) == 4
-    assert panel._block_data == [None, None, None, None]
-    panel.update_block(0, {"confidence": 0.9})
-    assert panel._block_data[0] == {"confidence": 0.9}
+    assert len(panel._cards) == 4
+    assert [card._hero_id for card in panel._cards] == [1, 0, 0, 0]
+    panel.load_from_ocr([{"index": 1, "name": "测试武将"}])
+    assert panel._cards[0]._hero_id == 1
+
+
+def test_match_guide_portrait_uses_overlay_and_skill_popup_signal() -> None:
+    _app()
+    panel = MatchGuidePanel(_hero_manager())
+    card = panel._cards[0]
+    selected: list[int] = []
+    card.hero_double_clicked.connect(selected.append)
+
+    assert card._portrait.size().width() == 120
+    assert card._portrait.size().height() == 160
+    assert card._portrait_frame.size().width() == 135
+    assert card._portrait_frame.size().height() == 162
+    assert card._name_overlay.width() == 130
+    assert card._name_overlay.text() == "测试武将"
+    assert card._faction_badge.text().strip() == "魏"
+
+    card._on_hero_double_clicked()
+    assert selected == [1]
     panel.clear_blocks()
-    assert panel._block_data == [None, None, None, None]
+    assert panel._cards[0]._hero_id == 1
 
 
 def test_top_three_win_rate_visual_anchor() -> None:

@@ -81,12 +81,14 @@ do_capture()
        ├─ AdbCapture.screencap_full() → PIL Image
        ├─ 保存截图到 screenshots/
        ├─ OCR 启用？
-       │   ├─ TemplateManager.match(image) → 是武将页？
+       │   ├─ TemplateManager.match(image, template_name) → 页面模板匹配
        │   │   ├─ 否 → 跳过
        │   │   └─ 是 → GeneralRecognizer.recognize() → 保存 JSON
        │   └─ 返回结果
-       └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
+      └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
 ```
+
+`CaptureService.do_capture()` 和 `do_capture_from_file()` 支持传入 `template_name` 与 `force_ocr`。对局攻略导入使用 `match_guide` 模板并强制执行 OCR，不受“启用武将识别”开关影响；选将推荐保持默认的 `hero_selection` 模板流程。
 
 轮询路径（OcrService 控制，不经过 do_capture）：
 

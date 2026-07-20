@@ -1,49 +1,354 @@
-"""对局攻略页面骨架。
-
-首期只提供四个可扩展容器，具体业务内容由后续识别结果驱动。
-"""
+"""对局攻略页面及四名武将阵容卡片。"""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QGridLayout, QVBoxLayout, QWidget
+import logging
+from pathlib import Path
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.data.hero_manager import HeroManager
+from src.ui.recommendation_panel import (
+    DoubleClickLabel,
+    HeroSkillDialog,
+    _load_faction_colors,
+    _load_win_rates,
+)
+
+logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+IMAGES_DIR = PROJECT_ROOT / "images"
 
 
-class MatchGuidePanel(QWidget):
-    """对局攻略主面板，保留四个后续可视化扩展区域。"""
+class MatchHeroCard(QFrame):
+    """对局阵容中的单个武将卡片。"""
+
+    hero_double_clicked = Signal(int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._blocks: list[QFrame] = []
-        self._block_data: list[object | None] = [None] * 4
+        self._hero = None
+        self._hero_id = 0
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        layout = QGridLayout(self)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet(
+            "QFrame { background-color: #ffffff; border: 1px solid #d7e1ea; "
+            "border-radius: 8px; }"
+        )
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        self._portrait_frame = QWidget()
+        self._portrait_frame.setFixedSize(135, 162)
+        self._portrait_frame.setStyleSheet("background-color: transparent;")
+        portrait_layout = QGridLayout(self._portrait_frame)
+        portrait_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._portrait = DoubleClickLabel()
+        self._portrait.setFixedSize(120, 160)
+        self._portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._portrait.setStyleSheet("background-color: transparent;")
+        self._portrait.double_clicked.connect(self._on_hero_double_clicked)
+        portrait_layout.addWidget(
+            self._portrait, 0, 0,
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+        )
+
+        self._name_overlay = QLabel()
+        self._name_overlay.setFixedSize(130, 28)
+        self._name_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._name_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._name_overlay.setStyleSheet(
+            "background-color: rgba(0,0,0,140); color: white; "
+            "border-radius: 0; padding: 0; font-size: 16px; font-weight: bold;"
+        )
+        portrait_layout.addWidget(self._name_overlay, 0, 0, Qt.AlignmentFlag.AlignBottom)
+
+        self._faction_badge = QLabel()
+        self._faction_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._faction_badge.setStyleSheet(
+            "background-color: #888; color: white; "
+            "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
+        )
+        portrait_layout.addWidget(
+            self._faction_badge, 0, 0,
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+        )
+        left_panel = QVBoxLayout()
+        left_panel.setContentsMargins(0, 0, 0, 0)
+        left_panel.setSpacing(4)
+        left_panel.addWidget(self._portrait_frame, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self._win_rate_label = QLabel("胜率：--")
+        self._win_rate_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._win_rate_label.setFixedWidth(130)
+        self._win_rate_label.setStyleSheet(
+            "font-size: 15px; color: #4a90d9; font-weight: bold;"
+        )
+        left_panel.addWidget(self._win_rate_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addLayout(left_panel, 0)
+
+        info = QVBoxLayout()
+        info.setContentsMargins(0, 0, 0, 0)
+        info.setSpacing(6)
+        self._side_label = QLabel("阵营待定")
+        self._side_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._side_label.setFixedWidth(72)
+        self._side_label.setStyleSheet(
+            "color: #65758b; background-color: #eef2f6; border-radius: 4px; "
+            "padding: 3px 6px; font-size: 11px;"
+        )
+        info.addWidget(self._side_label, 0, Qt.AlignmentFlag.AlignLeft)
+        info.addStretch()
+        layout.addLayout(info, 1)
+
+    def set_hero(self, hero) -> None:
+        """设置卡片中的武将信息。"""
+        if hero is None:
+            self._hero = None
+            self._hero_id = 0
+            self._portrait.clear()
+            self._portrait.setText("未导入")
+            self._name_overlay.setText("未导入")
+            self._faction_badge.clear()
+            self._win_rate_label.setText("胜率：--")
+            return
+
+        self._hero = hero
+        self._hero_id = hero.id
+        self._name_overlay.setText(hero.name)
+        color = _load_faction_colors().get(hero.faction, "#888")
+        self._faction_badge.setText(f" {hero.faction} ")
+        self._faction_badge.setStyleSheet(
+            f"background-color: {color}; color: white; "
+            "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
+        )
+
+        pixmap = self._load_portrait(hero.name)
+        if pixmap and not pixmap.isNull():
+            self._portrait.setPixmap(pixmap)
+            self._portrait.setText("")
+            self._portrait.setStyleSheet("")
+        else:
+            self._portrait.setPixmap(QPixmap())
+            self._portrait.setText(hero.name)
+            self._portrait.setStyleSheet("color: #999; font-size: 11px;")
+
+    def set_win_rate(self, rate: float | None) -> None:
+        if rate is None:
+            self._win_rate_label.setText("胜率：--")
+        else:
+            self._win_rate_label.setText(f"胜率：{rate:.1f}%")
+
+    def set_side(self, text: str) -> None:
+        self._side_label.setText(text or "阵营待定")
+
+    def _on_hero_double_clicked(self) -> None:
+        if self._hero_id:
+            self.hero_double_clicked.emit(self._hero_id)
+
+    def refresh_faction_color(self) -> None:
+        if self._hero is not None:
+            self.set_hero(self._hero)
+
+    @staticmethod
+    def _load_portrait(hero_name: str) -> QPixmap | None:
+        for ext in (".png", ".jpg", ".webp"):
+            path = IMAGES_DIR / f"{hero_name}{ext}"
+            if path.exists():
+                pixmap = QPixmap(str(path))
+                if not pixmap.isNull():
+                    return pixmap.scaled(
+                        120, 160,
+                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+        return None
+
+
+class MatchGuidePanel(QWidget):
+    """对局攻略页面，展示四名武将及其胜率。"""
+
+    request_mumu_config = Signal()
+
+    def __init__(self, hero_manager: HeroManager, capture_service=None, parent=None) -> None:
+        super().__init__(parent)
+        self._hero_mgr = hero_manager
+        self._capture_service = capture_service
+        self._pending_capture_source: str | None = None
+        self._cards: list[MatchHeroCard] = []
+        self._setup_ui()
+        self._connect_capture_signals()
+        self._load_default_heroes()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        for index in range(4):
-            block = QFrame(self)
-            block.setObjectName(f"matchGuideBlock{index + 1}")
-            block.setFrameShape(QFrame.Shape.StyledPanel)
-            block.setFrameShadow(QFrame.Shadow.Plain)
-            block_layout = QVBoxLayout(block)
-            block_layout.setContentsMargins(8, 8, 8, 8)
-            block_layout.setSpacing(0)
-            layout.addWidget(block, index // 2, index % 2)
-            self._blocks.append(block)
+        header = QHBoxLayout()
+        title = QLabel("对局攻略")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
+        header.addWidget(title)
+        header.addStretch()
 
-        layout.setRowStretch(0, 1)
-        layout.setRowStretch(1, 1)
-        layout.setColumnStretch(0, 1)
-        layout.setColumnStretch(1, 1)
+        self._import_btn = QPushButton("截图")
+        self._import_btn.clicked.connect(self._on_import_from_screenshot)
+        header.addWidget(self._import_btn)
+        self._import_file_btn = QPushButton("📁 从图片导入")
+        self._import_file_btn.clicked.connect(self._on_import_from_file)
+        header.addWidget(self._import_file_btn)
+        layout.addLayout(header)
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        for index in range(4):
+            card = MatchHeroCard(self)
+            card.hero_double_clicked.connect(self._show_skill_popup)
+            grid.addWidget(card, index // 2, index % 2)
+            self._cards.append(card)
+        layout.addLayout(grid, 1)
+
+    def _connect_capture_signals(self) -> None:
+        if not self._capture_service:
+            return
+        self._capture_service.capture_completed.connect(self._on_capture_result)
+        self._capture_service.capture_failed.connect(self._on_capture_failed)
+
+    def _load_default_heroes(self) -> None:
+        """未导入截图时默认展示 ID 最小的四名武将。"""
+        heroes = sorted(self._hero_mgr.list_heroes(), key=lambda hero: hero.id)[:4]
+        for index, card in enumerate(self._cards):
+            hero = heroes[index] if index < len(heroes) else None
+            card.set_hero(hero)
+            card.set_win_rate(_load_win_rates().get(hero.name) if hero else None)
+
+    def load_from_ocr(self, ocr_results: list[dict]) -> None:
+        """从 OCR 结果加载最多四名武将，按识别槽位顺序展示。"""
+        heroes = []
+        seen_ids: set[int] = set()
+        for item in sorted(ocr_results, key=lambda value: value.get("index", 0)):
+            name = item.get("name", "").strip()
+            hero = self._hero_mgr.get_hero_by_name(name) if name else None
+            if hero and hero.id not in seen_ids:
+                heroes.append(hero)
+                seen_ids.add(hero.id)
+            if len(heroes) == 4:
+                break
+
+        if not heroes:
+            logger.info("对局攻略 OCR 未识别到武将，保留默认卡片")
+            return
+
+        for index, card in enumerate(self._cards):
+            hero = heroes[index] if index < len(heroes) else None
+            card.set_hero(hero)
+            card.set_win_rate(_load_win_rates().get(hero.name) if hero else None)
+        logger.info("对局攻略已导入 %d 名武将", len(heroes))
+
+    def _on_import_from_screenshot(self) -> None:
+        if not self._capture_service or not self._capture_service.capture:
+            self.request_mumu_config.emit()
+            return
+        self._pending_capture_source = "adb"
+        self._set_importing(True, "正在截图...")
+        hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
+        self._capture_service.do_capture(
+            hero_names=hero_names,
+            template_name="match_guide",
+            force_ocr=True,
+        )
+
+    def _on_import_from_file(self) -> None:
+        screenshots_dir = PROJECT_ROOT / "screenshots"
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择游戏截图", str(screenshots_dir),
+            "图片文件 (*.png *.jpg *.jpeg *.bmp)",
+        )
+        if not file_path or not self._capture_service:
+            return
+        self._pending_capture_source = "file"
+        self._set_importing(True, "正在识别...")
+        hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
+        self._capture_service.do_capture_from_file(
+            file_path,
+            hero_names=hero_names,
+            template_name="match_guide",
+            force_ocr=True,
+        )
+
+    def _on_capture_result(self, result: dict) -> None:
+        if not self._pending_capture_source:
+            return
+        self._pending_capture_source = None
+        self._set_importing(False)
+        ocr_results = result.get("ocr_results") or []
+        if ocr_results:
+            self.load_from_ocr(ocr_results)
+        else:
+            logger.info("对局攻略导入未识别到武将")
+
+    def _on_capture_failed(self, message: str) -> None:
+        if not self._pending_capture_source:
+            return
+        source = self._pending_capture_source
+        self._pending_capture_source = None
+        self._set_importing(False)
+        if source == "file":
+            QMessageBox.warning(self, "图片导入失败", message)
+            return
+
+        message_box = QMessageBox(self)
+        message_box.setIcon(QMessageBox.Icon.Warning)
+        message_box.setWindowTitle("截图失败")
+        message_box.setText(f"无法从模拟器截图：\n{message}")
+        config_btn = message_box.addButton("打开模拟器配置", QMessageBox.ButtonRole.ActionRole)
+        retry_btn = message_box.addButton("重试", QMessageBox.ButtonRole.ActionRole)
+        message_box.addButton(QMessageBox.StandardButton.Close)
+        message_box.exec()
+        if message_box.clickedButton() is config_btn:
+            self.request_mumu_config.emit()
+        elif message_box.clickedButton() is retry_btn:
+            self._on_import_from_screenshot()
+
+    def _set_importing(self, importing: bool, text: str = "") -> None:
+        self._import_btn.setEnabled(not importing)
+        self._import_file_btn.setEnabled(not importing)
+        self._import_btn.setText(text if importing else "截图")
+
+    def _show_skill_popup(self, hero_id: int) -> None:
+        """显示头像对应武将的技能详情。"""
+        hero = self._hero_mgr.get_hero(hero_id)
+        if not hero:
+            logger.warning("对局攻略技能弹窗：未找到武将 %s", hero_id)
+            return
+        HeroSkillDialog(hero, parent=self.window()).exec()
 
     def update_block(self, index: int, data: object) -> None:
-        """保存指定板块的数据入口，具体可视化由后续版本实现。"""
-        if not 0 <= index < len(self._blocks):
+        """兼容旧的四板块数据入口；阵容板块由导入结果直接更新。"""
+        if not 0 <= index < 4:
             raise IndexError(f"板块索引超出范围: {index}")
-        self._block_data[index] = data
 
     def clear_blocks(self) -> None:
-        """清空四个板块的预留数据。"""
-        self._block_data = [None] * len(self._blocks)
+        self._load_default_heroes()
+
+    def refresh_faction_colors(self) -> None:
+        """刷新四张卡片的势力颜色。"""
+        for card in self._cards:
+            card.refresh_faction_color()

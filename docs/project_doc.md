@@ -652,7 +652,13 @@ MainWindow.__init__
      └── poll_tick → _on_poll_capture (轮询编排：截图→模板匹配→OCR→结果填入推荐面板)
 ```
 
-### 5.3 模拟器配置对话框（MumuConfigDialog）
+### 5.3 对局攻略页面（MatchGuidePanel）
+
+对局攻略与武将浏览、选将推荐处于同级 Tab。页面首期使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `data/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。未导入图片时，按武将 ID 升序加载最小的四名武将。
+
+页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口都复用 `CaptureService`，并传入 `template_name="match_guide"` 使用独立模板；未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。导入后 OCR 结果通过 `load_from_ocr()` 更新卡片，识别不到有效武将时保留默认卡片。
+
+### 5.4 模拟器配置对话框（MumuConfigDialog）
 
 位于 配置 → 模拟器配置，与 SettingsDialog 同级菜单入口。
 
@@ -698,7 +704,7 @@ MainWindow.__init__
 - **恢复轮询**：仅持续轮询已勾选且服务处于暂停状态时可用
 - **保存反馈**：保存识别参数后显示 300ms 的“✓ 识别参数已保存”提示
 
-### 5.4 区域框选对话框（RoiSelectorDialog）
+### 5.5 区域框选对话框（RoiSelectorDialog）
 
 在预览图上拖拽鼠标选择矩形区域，返回 `(x, y, w, h)` 坐标给调用方。
 
@@ -713,7 +719,7 @@ MainWindow.__init__
 
 **坐标缩放**：QLabel 显示缩放后的预览图，ROI 坐标按 `scale_x = pm_size.width() / label_size.width()` 映射回原图尺寸。
 
-### 5.5 后端选择对话框（BackendChooseDialog）
+### 5.6 后端选择对话框（BackendChooseDialog）
 
 **布局**：
 ```
@@ -739,7 +745,7 @@ def _on_accept(self):
     self.accept()
 ```
 
-### 5.6 攻略生成进度条（GuideProgressDialog）
+### 5.7 攻略生成进度条（GuideProgressDialog）
 
 **UI 组成**：
 - 状态文字（"已生成 XXX 的攻略..."）
@@ -759,7 +765,7 @@ m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
 
 > 失败详情来自子进程输出的 `RESULT: FAIL=<name>` 行，父进程 `_on_stdout_line()` 解析后收集到 `_failed_items` 列表中。详见第六节 6.6 和 6.7。
 
-### 5.7 武将浏览器（HeroBrowser）
+### 5.8 武将浏览器（HeroBrowser）
 
 由两个子组件构成：
 
@@ -803,7 +809,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 克制/搭配关系使用可点击标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
 - 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
 
-### 5.8 选将推荐面板（RecommendationPanel）
+### 5.9 选将推荐面板（RecommendationPanel）
 
 ```
 RecommendationPanel (QWidget)
@@ -879,7 +885,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 弹出 `GuideDetailDialog`（QDialog，默认 780×680），顶部显示武将和更新时间，左侧展示核心要点、新手提示及可点击关系标签，右侧独立滚动显示 Markdown 攻略正文
 - 无攻略数据时弹窗显示"暂无攻略数据"
 
-### 5.9 对话框基类体系
+### 5.10 对话框基类体系
 
 ```
 BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
@@ -906,7 +912,7 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 |----|------|------|
 | GuideDetailDialog | `recommendation_panel.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 780×680），左侧摘要/关系标签，右侧 Markdown 正文 |
 
-### 5.10 全局样式（style.py, 247 行）
+### 5.11 全局样式（style.py, 247 行）
 
 **颜色方案**：
 
