@@ -1,6 +1,9 @@
 """OCR 模块加载器。
 
-集中管理 OCR 相关单例的延迟加载。
+集中管理配置页所需模板管理器，以及兼容旧调用的识别器缓存。
+
+活动截图、文件导入和轮询路径统一通过 ``OcrWorker`` 执行识别，
+不应直接调用本模块的 ``get_recognizer``。
 消除其他模块对主窗口的导入依赖。
 """
 
@@ -26,9 +29,10 @@ def get_template_manager(template_name: str = "hero_selection"):
 
 def get_recognizer(rois, hero_names: list[str] | None = None,
                    reference_size: tuple[int, int] = (2560, 1440)):
-    """获取或初始化 GeneralRecognizer（单例，延迟加载）。
+    """兼容旧调用：获取或初始化 GeneralRecognizer（单例，延迟加载）。
 
-    若 rois 或 hero_names 与上次不同，则重建实例。
+    活动识别路径应改用 ``src.business.ocr_worker.OcrWorker``；
+    此函数仅保留给尚未迁移的外部调用。
     """
     global _recognizer, _recognizer_rois, _recognizer_hero_names, _recognizer_reference_size
 

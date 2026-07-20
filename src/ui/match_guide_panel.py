@@ -267,12 +267,7 @@ class MatchGuidePanel(QWidget):
             return
         self._pending_capture_source = "adb"
         self._set_importing(True, "正在截图...")
-        hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
-        self._capture_service.do_capture(
-            hero_names=hero_names,
-            template_name="match_guide",
-            force_ocr=True,
-        )
+        self._capture_service.do_capture(perform_ocr=False)
 
     def _on_import_from_file(self) -> None:
         screenshots_dir = PROJECT_ROOT / "screenshots"
@@ -296,8 +291,12 @@ class MatchGuidePanel(QWidget):
     def _on_capture_result(self, result: dict) -> None:
         if not self._pending_capture_source:
             return
+        source = self._pending_capture_source
         self._pending_capture_source = None
         self._set_importing(False)
+        if source == "adb":
+            return
+
         ocr_results = result.get("ocr_results") or []
         if ocr_results:
             self.load_from_ocr(ocr_results)

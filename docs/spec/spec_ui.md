@@ -15,11 +15,11 @@ OcrService    —Signal→ MainWindow —slot→ 启动/停止轮询
 
 **为什么：** 如果业务服务持有 UI 引用，单元测试时需要构造完整的 Qt 组件树。信号槽解耦后，测试只需 assert 信号发射的参数是否正确，无需实例化 `QMainWindow`。这也是 Qt 框架推荐的设计模式。
 
-### 规则 1.2：QTimer.singleShot(0, ...) 用于异步执行
+### 规则 1.2：OCR 任务必须进入唯一后台 worker
 
-截图、OCR 等可能阻塞的操作通过 `QTimer.singleShot(0, fn)` 延迟到事件循环下一轮执行，不直接调用。
+模板匹配和 PaddleOCR 识别必须提交到 `OcrWorker` 的单线程队列；worker 只能通过信号把结果交回 GUI 线程更新界面。`QTimer.singleShot(0, ...)` 只用于延后回调，不视为异步执行方案。
 
-**为什么：** `screencap_full()` 是同步阻塞的（subprocess.run + timeout），如果在 UI 事件循环中直接调用，界面会冻结直到截图完成。`singleShot(0)` 将操作排到事件队列末尾，让 Qt 有机会先处理完当前批次的 UI 刷新。
+**为什么：** PaddleOCR 单次识别可能耗时数秒。单 worker 保持现有 A → B → C 的串行顺序，同时避免手动识别和轮询路径在不同线程直接使用同一识别器。ADB 截图仍是独立的同步步骤，不属于本规则的迁移范围。
 
 ### 规则 1.3：轮询定时器不自杀
 

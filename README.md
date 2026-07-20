@@ -418,7 +418,7 @@ _save_json() → data/*.json.staging → 全部成功后原子替换 data/guides
 - 右侧展示**推荐指数**（星级+置信度百分比）、**高相性组合**、**胜率**（从 `2v2胜率排行.csv` 读取），胜率前三自动标记 🥇🥈🥉 奖牌
 - 对外提供 `update_recommendations(data: list[dict])` 接口，接收 `{index, name, confidence}` 格式数据
 - 支持两种导入方式：
-  - **截图** — 通过 ADB 截取模拟器屏幕 → OpenCV 模板匹配武将选择页 → PaddleOCR 识别 8 个武将名 → 自动填入槽位
+  - **截图** — 通过 ADB 截取并保存模拟器屏幕画面，不自动触发 OCR
   - **从图片导入** — 选择本地游戏截图文件 → PaddleOCR 识别 → 填入槽位
 - 轮询模式开启后，定时检测模拟器画面是否为武将选择页，自动识别并填充
 

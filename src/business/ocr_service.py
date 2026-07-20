@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from src.ocr.ocr_loader import get_template_manager, get_recognizer
+from src.ocr.ocr_loader import get_template_manager
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ class OcrService(QObject):
         self._poll_state = "stopped"
         self._poll_generation = 0
         self._poll_in_flight = False
+        self._ocr_task_submitter = None
 
     # ── 配置 ──────────────────────────────────────────────────────────
 
@@ -82,6 +83,10 @@ class OcrService(QObject):
     def set_hero_names(self, names: list[str]) -> None:
         """设置用于编辑距离矫正的武将名列表。"""
         self._hero_names = names
+
+    def set_ocr_task_submitter(self, submitter) -> None:
+        """注入 CaptureService 的串行 OCR 任务入口。"""
+        self._ocr_task_submitter = submitter
 
     # ── 模板管理 ──────────────────────────────────────────────────────
 
@@ -322,13 +327,18 @@ class OcrService(QObject):
             识别结果列表，失败则返回 None。
         """
         try:
-            rois = rois or self._config.get("ocr_generals_roi", None)
-            recognizer = get_recognizer(
-                rois,
+            if self._ocr_task_submitter is None:
+                raise RuntimeError("OCR worker 未初始化")
+            task = self._ocr_task_submitter(
+                image,
                 hero_names=self._hero_names,
-                reference_size=get_template_manager().reference_size,
+                template_name="hero_selection",
+                rois=rois,
+                match_template=False,
             )
-            results = recognizer.recognize(image)
+            task.completed.wait()
+            result = task.result or {}
+            results = result.get("ocr_results")
             logger.info("OCR 完成: %s", results)
             return results
         except Exception as e:

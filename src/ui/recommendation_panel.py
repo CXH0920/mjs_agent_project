@@ -1005,7 +1005,7 @@ class RecommendationPanel(QWidget):
         """从截图导入武将数据。
 
         先检查 ADB 是否已配置，未配置则弹出配置对话框。
-        然后执行截图 → OCR → 填入槽位。
+        截图仅保存画面，不自动触发 OCR。
         """
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
@@ -1015,10 +1015,7 @@ class RecommendationPanel(QWidget):
         self._import_btn.setEnabled(False)
         self._import_btn.setText("正在截图...")
 
-        # 获取武将名列表用于 OCR 矫正
-        hero_names = [h.name for h in self._hero_mgr.list_heroes()]
-
-        self._capture_service.do_capture(hero_names=hero_names)
+        self._capture_service.do_capture(perform_ocr=False)
 
     def _on_capture_result(self, result: dict) -> None:
         """截图完成回调。"""
@@ -1027,6 +1024,7 @@ class RecommendationPanel(QWidget):
         if source == "adb":
             self._import_btn.setEnabled(True)
             self._import_btn.setText("截图")
+            return
 
         ocr_results = result.get("ocr_results")
         ocr_matched = result.get("ocr_matched", False)

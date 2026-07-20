@@ -441,14 +441,14 @@ class CaptureService(QObject):
 ```
 
 截图操作直接在 Python 中执行（不通过 QProcess），因为需要即时获取图像数据更新 UI。
-通过 `QTimer.singleShot(0, ...)` 确保不阻塞 Qt 事件循环。
+模板匹配与 PaddleOCR 识别提交到唯一的 `OcrWorker` 后台队列；结果通过信号回到 GUI 线程。`QTimer.singleShot(0, ...)` 仅延后回调，并不提供异步执行。
 
 **主要方法**：
 
 | 方法 | 说明 |
 |------|------|
 | `update_config(config)` | 更新配置并重建 AdbCapture（路径/端口变化时重建） |
-| `do_capture(hero_names)` | 执行截图 → 可选 OCR（手动调用路径，会保存截图到 screenshots/） |
+| `do_capture(hero_names, perform_ocr)` | 执行截图；选将推荐和对局攻略的截图按钮均传入 `perform_ocr=False`，仅保存到 `screenshots/` |
 | `do_capture_from_file(file_path, hero_names)` | 从本地图片执行 OCR（不依赖 ADB） |
 | `connect_emulator()` | 连接模拟器 |
 | `disconnect_emulator()` | 断开模拟器 |
@@ -469,7 +469,7 @@ do_capture()
        └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
 ```
 
-**注意**：轮询路径不走 `do_capture()`，轮询直接在 `_on_poll_capture()` 中调用 `screencap_full()` + `_run_ocr()`，**不保存截图文件到磁盘**，全程内存中处理。详见第十二章 12.5 节。`_run_ocr()` 只做模板匹配 → OCR → 返回结果，不含截图和保存逻辑。
+**注意**：轮询路径不走 `do_capture()`，轮询在后台执行 `screencap_full()`，随后将模板匹配与 OCR 提交给同一个 `OcrWorker`，**不保存截图文件到磁盘**，全程内存中处理。这样轮询与手动导入仍按任务顺序共用一个识别器。
 
 ### 3.6 OcrService（OCR 控制服务）
 
@@ -656,7 +656,7 @@ MainWindow.__init__
 
 对局攻略与武将浏览、选将推荐处于同级 Tab。页面首期使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `data/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。未导入图片时，按武将 ID 升序加载最小的四名武将。
 
-页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口都复用 `CaptureService`，并传入 `template_name="match_guide"` 使用独立模板；未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。导入后 OCR 结果通过 `load_from_ocr()` 更新卡片，识别不到有效武将时保留默认卡片。
+页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。ADB 截图仅保存画面；本地图片导入通过 `template_name="match_guide"` 使用独立模板并将 OCR 结果交给 `load_from_ocr()` 更新卡片。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。
 
 ### 5.4 模拟器配置对话框（MumuConfigDialog）
 
@@ -697,7 +697,7 @@ MainWindow.__init__
 - **对局攻略模板**：独立保存到 `templates/match_guide/template.png`，不会覆盖武将模板
 
 **OCR 配置**：
-- **启用武将识别**：截图后自动 OCR
+- **启用武将识别**：供显式 OCR 调用路径使用；选将推荐的截图按钮不会自动 OCR
 - **持续轮询**：独立于手动截图，定时检测模拟器画面（详见第十二章 12.6 节）
 - **匹配阈值/冷却**：武将选择和对局攻略分别配置，互不共享冷却
 - **轮询间隔**：1-60 秒；未勾选持续轮询时禁用
@@ -815,7 +815,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 RecommendationPanel (QWidget)
  ├── 标题行
  │   ├── "选将推荐"
- │   ├── [截图] 按钮（ADB 截图 → OCR 导入）
+ │   ├── [截图] 按钮（仅 ADB 截图并保存）
  │   └── [📁 从图片导入] 按钮（本地图片 → OCR 导入）
  └── QGridLayout (4行 × 2列)
       └── HeroCardWidget × 8
@@ -1575,12 +1575,12 @@ def _engine(self):
 
 ### 12.4 单例加载器（ocr_loader.py）
 
-集中管理两个全局单例的延迟加载：
+`ocr_loader.py` 仍延迟管理配置页所需的模板管理器；活动识别路径不再使用全局 `GeneralRecognizer`。
 
 - `get_template_manager()` → `TemplateManager` 单例
-- `get_recognizer(rois, hero_names, reference_size)` → `GeneralRecognizer` 单例
+- `OcrWorker` 在专用线程中按 ROI、武将列表和参考尺寸缓存 `GeneralRecognizer`
 
-ROI、`hero_names` 或 `reference_size` 变更时自动重建 `GeneralRecognizer` 实例，避免静默忽略新配置。
+任务配置变化时 worker 会在下一项任务开始前重建识别器；所有识别任务串行执行，避免 UI 路径与轮询路径直接共享全局实例。
 
 ### 12.5 业务集成流程
 

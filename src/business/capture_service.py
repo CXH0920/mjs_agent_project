@@ -10,21 +10,19 @@
 from __future__ import annotations
 
 import logging
-import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from src.capture.adb_screen import AdbCapture
 from src.capture.image_utils import save_image
-from src.ocr.ocr_loader import get_template_manager, get_recognizer
+from src.business.ocr_worker import OcrTask, OcrWorker
 
 logger = logging.getLogger(__name__)
 
 # 截图默认保存目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
-DEFAULT_SCREENSHOT_DATA_DIR = PROJECT_ROOT / "screenshot_data"
 
 
 class CaptureService(QObject):
@@ -42,6 +40,8 @@ class CaptureService(QObject):
         self._connection_state = "unconfigured"
         self._connection_detail = ""
         self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
+        self._ocr_worker: OcrWorker | None = None
+        self._pending_ocr_captures: dict[str, dict] = {}
 
     def _set_connection_state(self, state: str, detail: str = "") -> None:
         """更新并广播当前 ADB 会话状态。"""
@@ -123,23 +123,27 @@ class CaptureService(QObject):
         hero_names: list[str] | None = None,
         template_name: str = "hero_selection",
         force_ocr: bool = False,
+        perform_ocr: bool = True,
     ) -> None:
         """执行一次截图 → 保存 → 可选 OCR 的完整流程。
 
-        通过 QTimer.singleShot(0, ...) 确保不阻塞 Qt 事件循环。
+        `QTimer.singleShot` 仅用于让 UI 先处理本轮事件；截图完成后，模板匹配和 OCR 会提交到唯一的后台 worker 串行执行。
 
         Args:
             hero_names: 用于编辑距离矫正的武将名列表（可选，从 HeroManager 获取）。
         """
         QTimer.singleShot(
             0,
-            lambda: self._execute_capture(hero_names, template_name, force_ocr),
+            lambda: self._execute_capture(
+                hero_names, template_name, force_ocr, perform_ocr,
+            ),
         )
 
     def do_capture_from_file(self, file_path: str | Path,
                               hero_names: list[str] | None = None,
                               template_name: str = "hero_selection",
-                              force_ocr: bool = False) -> None:
+                              force_ocr: bool = False,
+                              perform_ocr: bool = True) -> None:
         """从本地图片文件执行 OCR 识别。
 
         Args:
@@ -149,15 +153,16 @@ class CaptureService(QObject):
         QTimer.singleShot(
             0,
             lambda: self._execute_file_ocr(
-                file_path, hero_names, template_name, force_ocr,
+                file_path, hero_names, template_name, force_ocr, perform_ocr,
             ),
         )
 
     def _execute_file_ocr(self, file_path: str | Path,
                           hero_names: list[str] | None = None,
                           template_name: str = "hero_selection",
-                          force_ocr: bool = False) -> None:
-        """从本地图片执行 OCR（在 QTimer 回调中运行）。"""
+                          force_ocr: bool = False,
+                          perform_ocr: bool = True) -> None:
+        """从本地图片执行 OCR。"""
         try:
             from PIL import Image
             image = Image.open(str(file_path))
@@ -168,16 +173,20 @@ class CaptureService(QObject):
             self.capture_failed.emit(f"图片加载失败: {e}")
             return
 
-        # 直接运行 OCR
-        ocr_results, ocr_matched = self._run_ocr(
-            image, hero_names, template_name, force_ocr,
-        )
+        if perform_ocr:
+            self._queue_capture_ocr(
+                image=image,
+                save_path=str(file_path),
+                hero_names=hero_names,
+                template_name=template_name,
+            )
+            return
 
         self.capture_completed.emit({
             "image": image,
             "save_path": str(file_path),
-            "ocr_results": ocr_results,
-            "ocr_matched": ocr_matched,
+            "ocr_results": None,
+            "ocr_matched": False,
         })
 
     def _execute_capture(
@@ -185,8 +194,9 @@ class CaptureService(QObject):
         hero_names: list[str] | None = None,
         template_name: str = "hero_selection",
         force_ocr: bool = False,
+        perform_ocr: bool = True,
     ) -> None:
-        """实际截图执行（在 QTimer 回调中运行）。"""
+        """实际截图执行。"""
         if not self._capture:
             self._set_connection_state("unconfigured")
             self.capture_failed.emit("ADB 未配置，请在 配置 → 模拟器配置 中设置")
@@ -225,23 +235,23 @@ class CaptureService(QObject):
         ocr_results = None
         ocr_matched = False
         is_poll = self._config.get("mumu_ocr_poll_mode", False)
-        should_ocr = force_ocr or self._config.get("mumu_ocr_enabled", False) or is_poll
+        should_ocr = perform_ocr and (
+            force_ocr or self._config.get("mumu_ocr_enabled", False) or is_poll
+        )
 
         if should_ocr:
             # 轮询模式：检查冷却期
             if is_poll and self._poll_cooldown_until > __import__("time").time():
                 logger.debug("轮询冷却中，跳过 OCR")
             else:
-                ocr_results, ocr_matched = self._run_ocr(
-                    image, hero_names, template_name, force_ocr,
+                self._queue_capture_ocr(
+                    image=image,
+                    save_path=save_path if save_ok else None,
+                    hero_names=hero_names,
+                    template_name=template_name,
+                    is_poll=is_poll,
                 )
-                if ocr_matched:
-                    page_name = "对局攻略页面" if template_name == "match_guide" else "武将选择页面"
-                    self.status_changed.emit(f"已识别{page_name}")
-                    if is_poll:
-                        # 轮询匹配成功后设置 3 分钟冷却
-                        self._poll_cooldown_until = __import__("time").time() + 180
-                        logger.info("轮询 OCR 匹配成功，冷却 180 秒")
+                return
 
         # 4. 返回结果
         self.capture_completed.emit({
@@ -253,55 +263,86 @@ class CaptureService(QObject):
 
     # ── OCR ───────────────────────────────────────────────────────────
 
-    def _run_ocr(
+    def _ensure_ocr_worker(self) -> OcrWorker:
+        if self._ocr_worker is None:
+            self._ocr_worker = OcrWorker()
+            self._ocr_worker.task_completed.connect(self._on_ocr_task_completed)
+            self._ocr_worker.start()
+        return self._ocr_worker
+
+    def start_ocr_worker(self) -> None:
+        """在 GUI 线程中初始化 OCR worker，供应用启动阶段调用。"""
+        self._ensure_ocr_worker()
+
+    def submit_ocr_task(
         self,
         image,
         hero_names: list[str] | None = None,
         template_name: str = "hero_selection",
-        force_ocr: bool = False,
-    ):
-        """执行 OCR 识别。"""
-        try:
-            tm = get_template_manager(template_name)
-            if not tm.is_loaded:
-                logger.info("模板未加载，跳过 OCR")
-                return None, False
-
-            threshold_key = (
-                "mumu_match_guide_threshold"
-                if template_name == "match_guide"
-                else "mumu_hero_selection_threshold"
-            )
-            threshold = self._config.get(
+        recognize: bool = True,
+        rois: list[list[int]] | None = None,
+        match_template: bool = True,
+    ) -> OcrTask:
+        """将模板匹配和 OCR 加入唯一 worker 队列。"""
+        threshold_key = (
+            "mumu_match_guide_threshold"
+            if template_name == "match_guide"
+            else "mumu_hero_selection_threshold"
+        )
+        effective_rois = rois if rois is not None else self._config.get("ocr_generals_roi")
+        task = OcrTask(
+            image=image,
+            hero_names=tuple(hero_names or ()),
+            rois=tuple(tuple(roi) for roi in effective_rois) if effective_rois else None,
+            template_name=template_name,
+            threshold=self._config.get(
                 threshold_key,
                 self._config.get("mumu_ocr_match_threshold", 0.8),
-            )
-            matched, confidence = tm.match(image, threshold=threshold)
-            if not matched:
-                logger.debug("模板不匹配 (置信度=%.4f < 阈值=%.2f)", confidence, threshold)
-                return None, False
+            ),
+            recognize=recognize,
+            match_template=match_template,
+        )
+        self._ensure_ocr_worker().submit(task)
+        return task
 
-            rois = self._config.get("ocr_generals_roi", None)
-            recognizer = get_recognizer(
-                rois,
-                hero_names=hero_names,
-                reference_size=tm.reference_size,
-            )
-            results = recognizer.recognize(image)
+    def _queue_capture_ocr(
+        self,
+        *,
+        image,
+        save_path: str | Path | None,
+        hero_names: list[str] | None,
+        template_name: str,
+        is_poll: bool = False,
+    ) -> None:
+        task = self.submit_ocr_task(image, hero_names, template_name)
+        self._pending_ocr_captures[task.task_id] = {
+            "image": image,
+            "save_path": save_path,
+            "is_poll": is_poll,
+            "template_name": template_name,
+        }
 
-            # 保存 OCR 结果
-            data_dir = DEFAULT_SCREENSHOT_DATA_DIR
-            data_dir.mkdir(parents=True, exist_ok=True)
-            from src.ocr.recognizer import GeneralRecognizer
-            GeneralRecognizer.save_results(results, data_dir / "latest.json")
+    def _on_ocr_task_completed(self, task: OcrTask) -> None:
+        pending = self._pending_ocr_captures.pop(task.task_id, None)
+        if pending is None:
+            return
 
-            logger.info("OCR 完成: %d 个武将识别", len([r for r in results if r.get("name")]))
-            return results, True
+        result = task.result or {"outcome": "retryable_ocr"}
+        ocr_matched = result.get("outcome") == "matched"
+        if ocr_matched:
+            page_name = "对局攻略页面" if pending["template_name"] == "match_guide" else "武将选择页面"
+            self.status_changed.emit(f"已识别到{page_name}")
+            if pending["is_poll"]:
+                self._poll_cooldown_until = __import__("time").time() + 180
+                logger.info("轮询 OCR 匹配成功，冷却 180 秒")
 
-        except Exception as e:
-            logger.error("OCR 执行异常: %s", e)
-            logger.debug(traceback.format_exc())
-            return None, False
+        self.capture_completed.emit({
+            "image": pending["image"],
+            "save_path": pending["save_path"],
+            "ocr_results": result.get("ocr_results"),
+            "ocr_matched": ocr_matched,
+        })
+
 
     # ── 连接管理 ──────────────────────────────────────────────────────
 
@@ -361,5 +402,14 @@ class CaptureService(QObject):
         return self._config.get("mumu_ocr_match_threshold", 0.8)
 
     def run_ocr_if_matched(self, image, hero_names: list[str] | None = None):
-        """公开方法：模板匹配 → 若匹配则 OCR，供轮询调用。"""
-        return self._run_ocr(image, hero_names)
+        """同步等待 OCR worker 的结果；仅供非 GUI 调度路径使用。"""
+        task = self.submit_ocr_task(image, hero_names)
+        task.completed.wait()
+        result = task.result or {}
+        return result.get("ocr_results"), result.get("outcome") == "matched"
+
+    def shutdown(self) -> None:
+        """停止 OCR worker，供应用退出时调用。"""
+        if self._ocr_worker is not None:
+            if self._ocr_worker.shutdown():
+                self._ocr_worker = None

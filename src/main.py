@@ -62,27 +62,6 @@ def main() -> None:
     # 设置全局样式
     app.setStyleSheet(GLOBAL_STYLE)
 
-    # 提前初始化 PaddleOCR（在应用启动时加载模型，避免首次识别卡顿）
-    try:
-        from src.ocr.recognizer import GeneralRecognizer
-        from src.data.manager import DataFacade, DEFAULT_HEROES_FILE, DEFAULT_SYNERGIES_FILE, DEFAULT_GUIDES_FILE
-        logger = logging.getLogger(__name__)
-        logger.info("正在提前初始化 PaddleOCR ...")
-
-        # 创建一个带武将名列表的 recognizer 以便后续复用
-        facade = DataFacade(heroes_file=DEFAULT_HEROES_FILE,
-                            synergies_file=DEFAULT_SYNERGIES_FILE,
-                            guides_file=DEFAULT_GUIDES_FILE)
-        facade.load_all()
-        hero_names = [h.name for h in facade.heroes.list_heroes()]
-
-        recognizer = GeneralRecognizer(hero_names=hero_names)
-        recognizer.warmup()
-        logger.info("PaddleOCR 初始化完成")
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.warning("PaddleOCR 提前初始化失败: %s（不影响启动，识别时再尝试）", e)
-
     try:
         window = MainWindow()
         window.show()

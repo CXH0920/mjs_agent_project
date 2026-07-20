@@ -38,6 +38,25 @@ def test_recommendation_connects_capture_signals_once() -> None:
     assert panel._import_btn.isEnabled()
 
 
+def test_recommendation_screenshot_does_not_request_ocr(monkeypatch) -> None:
+    _app()
+    service = CaptureService()
+    service.capture = object()
+    requests: list[dict] = []
+    monkeypatch.setattr(service, "do_capture", lambda **kwargs: requests.append(kwargs))
+    panel = RecommendationPanel(
+        _hero_manager(), SynergyManager(), GuideManager(), capture_service=service
+    )
+
+    panel._on_import_from_screenshot()
+
+    assert requests == [{"perform_ocr": False}]
+    loaded: list[list[dict]] = []
+    monkeypatch.setattr(panel, "load_from_ocr", loaded.append)
+    panel._on_capture_result({"ocr_results": [{"name": "曹操"}], "ocr_matched": True})
+    assert loaded == []
+
+
 def test_match_guide_panel_has_four_default_cards() -> None:
     _app()
     panel = MatchGuidePanel(_hero_manager())
@@ -46,6 +65,23 @@ def test_match_guide_panel_has_four_default_cards() -> None:
     assert [card._hero_id for card in panel._cards] == [1, 0, 0, 0]
     panel.load_from_ocr([{"index": 1, "name": "测试武将"}])
     assert panel._cards[0]._hero_id == 1
+
+
+def test_match_guide_screenshot_does_not_request_ocr(monkeypatch) -> None:
+    _app()
+    service = CaptureService()
+    service.capture = object()
+    requests: list[dict] = []
+    monkeypatch.setattr(service, "do_capture", lambda **kwargs: requests.append(kwargs))
+    panel = MatchGuidePanel(_hero_manager(), capture_service=service)
+    loaded: list[list[dict]] = []
+    monkeypatch.setattr(panel, "load_from_ocr", loaded.append)
+
+    panel._on_import_from_screenshot()
+    panel._on_capture_result({"ocr_results": [{"name": "曹操"}]})
+
+    assert requests == [{"perform_ocr": False}]
+    assert loaded == []
 
 
 def test_match_guide_portrait_uses_overlay_and_skill_popup_signal() -> None:

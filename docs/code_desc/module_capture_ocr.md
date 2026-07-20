@@ -215,7 +215,9 @@ def _preprocess_roi(self, roi: np.ndarray) -> np.ndarray:
 | `TemplateManager.set_template(image, roi)` | 制作模板 |
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别 8 个武将名 |
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |
-| `get_recognizer(rois, hero_names)` → `GeneralRecognizer` | 获取识别器单例 |
+| `OcrWorker.submit(task)` | 串行执行模板匹配与 OCR，并通过任务完成信号返回结果 |
+
+活动识别路径由 `src.business.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer`，配置相同的连续任务复用该实例；手动截图、文件导入与轮询不会直接调用全局识别器。
 
 ---
 

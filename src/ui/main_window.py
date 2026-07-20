@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         from src.business.ocr_service import OcrService
         self._capture_service = CaptureService(self)
         self._ocr_service = OcrService(self)
+        self._ocr_service.set_ocr_task_submitter(self._capture_service.submit_ocr_task)
         self._capture_service.update_config(get_mumu_config())
         self._ocr_service.update_config(get_mumu_config())
         self._ocr_service.set_hero_names([h.name for h in self._data.heroes.list_heroes()])
@@ -236,6 +237,7 @@ class MainWindow(QMainWindow):
 
     def _on_poll_capture(self) -> None:
         """轮询触发：在后台线程执行一次采集并回传结构化结果。"""
+        self._capture_service.start_ocr_worker()
         generation = self._ocr_service.begin_poll()
         capture = self._capture_service.capture
         if generation is None:
@@ -256,14 +258,6 @@ class MainWindow(QMainWindow):
             return
 
         hero_names = [h.name for h in self._data.heroes.list_heroes()]
-        capture_config = self._capture_service.config
-        thresholds = {
-            "hero_selection": capture_config.get(
-                "mumu_hero_selection_threshold",
-                self._capture_service.get_matching_threshold(),
-            ),
-            "match_guide": capture_config.get("mumu_match_guide_threshold", 0.8),
-        }
 
         def _do_poll_work() -> None:
             """仅在后台线程执行阻塞 ADB、模板和 OCR 操作。"""
@@ -290,46 +284,26 @@ class MainWindow(QMainWindow):
                     return
 
                 image = result
-                from src.ocr.ocr_loader import get_template_manager
                 task_results = {}
                 has_match = False
                 has_retryable_error = False
 
                 for task_name in task_names:
-                    tm = get_template_manager(task_name)
-                    if not tm.is_loaded:
-                        task_results[task_name] = {
-                            "outcome": "template_missing",
-                            "detail": f"{task_name} 模板未加载",
-                        }
-                        continue
-
-                    matched, confidence = tm.match(
+                    ocr_task = self._capture_service.submit_ocr_task(
                         image,
-                        threshold=thresholds[task_name],
+                        hero_names=hero_names,
+                        template_name=task_name,
+                        recognize=task_name == "hero_selection",
                     )
-                    task_result = {
-                        "outcome": "matched" if matched else "healthy_no_match",
-                        "confidence": confidence,
+                    ocr_task.completed.wait()
+                    task_result = ocr_task.result or {
+                        "outcome": "retryable_ocr",
+                        "detail": "OCR worker 未返回结果",
                     }
-                    if matched:
+                    if task_result["outcome"] == "matched":
                         has_match = True
-                        if task_name == "hero_selection":
-                            try:
-                                from src.ocr.ocr_loader import get_recognizer
-                                rois = capture_config.get("ocr_generals_roi", None)
-                                task_result["ocr_results"] = get_recognizer(
-                                    rois,
-                                    hero_names=hero_names,
-                                    reference_size=tm.reference_size,
-                                ).recognize(image)
-                            except Exception as exc:
-                                logger.exception("武将选择轮询 OCR 识别异常")
-                                task_result.update({
-                                    "outcome": "retryable_ocr",
-                                    "detail": str(exc),
-                                })
-                                has_retryable_error = True
+                    elif task_result["outcome"] == "retryable_ocr":
+                        has_retryable_error = True
                     task_results[task_name] = task_result
 
                 transport_outcome = (
@@ -400,6 +374,12 @@ class MainWindow(QMainWindow):
                 self._match_guide_page_active = True
                 self._tabs.setCurrentWidget(self._match_guide)
             self._match_guide.update_block(0, guide_result)
+
+    def closeEvent(self, event) -> None:
+        """在窗口销毁前结束轮询与 OCR worker。"""
+        self._ocr_service.stop_poll()
+        self._capture_service.shutdown()
+        super().closeEvent(event)
 
     def _handle_legacy_poll_result(self, outcome: str, result: dict) -> None:
         """兼容旧版单任务轮询结果，避免外部调用方行为改变。"""
