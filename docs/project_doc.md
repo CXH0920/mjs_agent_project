@@ -132,8 +132,10 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 
 **`download_hero_images(raw_list, image_dir, skip_existing) → int`**：
 - 遍历 `raw_list`，取 `icon_url` 和 `name`
-- `urlparse` 解析 URL 扩展名（默认 `.png`）
-- 文件路径：`images/clean_name{ext}`
+- 角色名经白名单校验后，文件路径固定为 `images/{武将名}.png`
+- 仅允许 HTTPS 官方图片域名，重定向目标逐跳复验
+- 以 64 KiB 分块写入临时文件，响应最大 5 MiB；Pillow 验证 PNG 格式与最大 4,000,000 像素
+- 验证成功后原子替换正式头像；失败时删除临时文件并保留已有头像
 - `skip_existing=True` 时检查文件存在性
 - 使用 `fetch(icon_url, binary=True)` 下载二进制
 - 单个失败只打 warning 不影响其他武将

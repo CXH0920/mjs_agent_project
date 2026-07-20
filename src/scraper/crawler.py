@@ -11,12 +11,18 @@ import html as html_module
 import json
 import logging
 import re
+import tempfile
 import time
+import unicodedata
+import urllib.error
 import urllib.request
+import warnings
 from datetime import date
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
+
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,18 @@ BASE_URL = "https://mjs.ztgame.com"
 TIMEOUT = 30
 MAX_RETRIES = 3
 RETRY_DELAY = 2
+
+ALLOWED_IMAGE_HOSTS = {"siteres.ztgame.com"}
+MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_PIXELS = 4_000_000
+IMAGE_CHUNK_SIZE = 64 * 1024
+MAX_IMAGE_REDIRECTS = 3
+SAFE_IMAGE_NAME_PATTERN = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fffA-Za-z0-9_-]{1,80}$")
+WINDOWS_RESERVED_FILENAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0 Safari/537.36"
@@ -301,6 +319,109 @@ def fetch_all_raw() -> list[dict]:
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """将重定向交由图片下载逻辑逐跳校验。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _safe_image_name(raw_name: str) -> str:
+    """验证官网角色名可作为固定 PNG 文件名。"""
+    name = unicodedata.normalize("NFC", clean_html(raw_name))
+    if not SAFE_IMAGE_NAME_PATTERN.fullmatch(name):
+        raise ValueError("角色名包含不允许的文件名字符")
+    if name.upper() in WINDOWS_RESERVED_FILENAMES:
+        raise ValueError("角色名是 Windows 保留文件名")
+    return name
+
+
+def _validate_image_url(url: str) -> None:
+    """仅允许从官方 HTTPS 图片域名下载。"""
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.hostname.lower() not in ALLOWED_IMAGE_HOSTS
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("图片 URL 不属于允许的官方 HTTPS 域名")
+
+
+def _open_image_response(url: str):
+    """打开图片响应，并在每次重定向后重新验证目标 URL。"""
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    current_url = url
+    for _ in range(MAX_IMAGE_REDIRECTS + 1):
+        _validate_image_url(current_url)
+        request = urllib.request.Request(current_url, headers=HEADERS)
+        try:
+            response = opener.open(request, timeout=TIMEOUT)
+        except urllib.error.HTTPError as error:
+            if error.code not in {301, 302, 303, 307, 308}:
+                raise
+            location = error.headers.get("Location")
+            error.close()
+            if not location:
+                raise ValueError("图片重定向缺少 Location 响应头")
+            current_url = urljoin(current_url, location)
+            continue
+
+        _validate_image_url(response.geturl())
+        return response
+
+    raise ValueError("图片重定向次数超过上限")
+
+
+def _validate_image_file(path: Path) -> None:
+    """确认临时文件是尺寸受限的 PNG 图片。"""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        with Image.open(path) as image:
+            image.verify()
+
+        with Image.open(path) as image:
+            if image.format != "PNG":
+                raise ValueError("图片格式必须为 PNG")
+            width, height = image.size
+            if width * height > MAX_IMAGE_PIXELS:
+                raise ValueError("图片像素数超过上限")
+            image.load()
+
+
+def _download_hero_image(icon_url: str, dest: Path) -> None:
+    """安全下载、验证并原子替换单张头像。"""
+    temp_path: Path | None = None
+    try:
+        with _open_image_response(icon_url) as response:
+            content_type = response.headers.get_content_type().lower()
+            if content_type != "image/png":
+                raise ValueError(f"图片 MIME 类型不允许: {content_type}")
+
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_IMAGE_SIZE_BYTES:
+                raise ValueError("图片响应大小超过上限")
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=dest.parent, prefix=f".{dest.stem}.", suffix=".tmp", delete=False
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                downloaded = 0
+                while chunk := response.read(IMAGE_CHUNK_SIZE):
+                    downloaded += len(chunk)
+                    if downloaded > MAX_IMAGE_SIZE_BYTES:
+                        raise ValueError("图片响应大小超过上限")
+                    temp_file.write(chunk)
+
+        _validate_image_file(temp_path)
+        temp_path.replace(dest)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
 def download_hero_images(
     raw_list: list[dict],
     image_dir: str | Path | None = None,
@@ -325,22 +446,22 @@ def download_hero_images(
         if not icon_url:
             continue
 
-        name = clean_html(raw.get("name", ""))
-        if not name:
+        try:
+            name = _safe_image_name(raw.get("name", ""))
+        except ValueError as error:
+            logger.warning("跳过不安全的头像文件名 %r: %s", raw.get("name"), error)
             continue
 
-        # 解析扩展名
-        parsed = urlparse(icon_url)
-        ext = Path(parsed.path).suffix or ".png"
-
-        dest = out_dir / f"{name}{ext}"
+        dest = out_dir / f"{name}.png"
+        if not dest.resolve().is_relative_to(out_dir.resolve()):
+            logger.warning("跳过越界的头像输出路径: %s", name)
+            continue
 
         if skip_existing and dest.exists():
             continue
 
         try:
-            data = fetch(icon_url, binary=True)
-            dest.write_bytes(data)
+            _download_hero_image(icon_url, dest)
             count += 1
         except Exception as e:
             logger.warning("头像下载失败 %s: %s", name, e)

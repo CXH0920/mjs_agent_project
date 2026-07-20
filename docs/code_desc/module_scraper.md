@@ -89,8 +89,10 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 ### 3.4 头像下载
 
 `download_hero_images()` 遍历官网原始数据，取 `icon_url` 和 `name`：
-- 文件路径：`images/{武将名}.png`
-- 下载失败只打 warning 不中断流程
+- 文件路径固定为 `images/{武将名}.png`；角色名仅允许中文、字母、数字、`_`、`-`，并拒绝 Windows 保留名
+- 仅允许从 `https://siteres.ztgame.com` 下载，逐跳校验至多 3 次重定向
+- 响应以 64 KiB 分块下载，最大 5 MiB；仅接受并用 Pillow 解码验证 PNG，像素数最大 4,000,000
+- 临时文件通过验证后原子替换正式头像；下载失败只打 warning 并保留已有头像，不中断流程
 - `skip_existing=True` 时跳过已存在的文件
 
 ---

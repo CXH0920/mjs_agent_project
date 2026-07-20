@@ -321,7 +321,7 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 4. 字段映射（性别数字→枚举、HTML→纯文本拆分技能描述/结算、icon_url 提取）
 5. Pydantic 校验
 
-此外，`download_hero_images()` 从原始 JS 数据中提取每个武将的 `icon_url`，下载到 `images/{武将名}.png`。
+此外，`download_hero_images()` 从原始 JS 数据中提取每个武将的 `icon_url`，经官网域名、响应大小和 PNG 内容校验后原子写入 `images/{武将名}.png`。
 
 ### 官网全量爬虫 (`src/scraper/official.py`)
 
