@@ -86,3 +86,19 @@ def test_resume_poll_starts_new_generation(monkeypatch) -> None:
 
     assert service.poll_generation > old_generation
     assert scheduled[-1] == (2_000, "running")
+
+
+def test_poll_tasks_have_independent_activation_and_cooldowns() -> None:
+    _app()
+    service = OcrService()
+    service.start_poll(1_000)
+
+    assert service.due_poll_tasks() == ["hero_selection"]
+
+    service.activate_task("match_guide")
+    service.set_task_cooldown("hero_selection", 60)
+    assert service.due_poll_tasks() == ["match_guide"]
+
+    service.set_task_cooldown("match_guide", 60)
+    service.clear_task_cooldown("hero_selection")
+    assert service.due_poll_tasks() == ["hero_selection"]

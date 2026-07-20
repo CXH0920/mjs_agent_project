@@ -14,6 +14,7 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Hero, Skill
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow
+from src.ui.match_guide_panel import MatchGuidePanel
 from src.ui.recommendation_panel import HeroCardWidget, HeroSkillDialog, RecommendationPanel
 
 
@@ -35,6 +36,18 @@ def test_recommendation_connects_capture_signals_once() -> None:
     )
     service.capture_completed.emit({"ocr_results": None, "ocr_matched": False})
     assert panel._import_btn.isEnabled()
+
+
+def test_match_guide_panel_has_four_empty_blocks() -> None:
+    _app()
+    panel = MatchGuidePanel()
+
+    assert len(panel._blocks) == 4
+    assert panel._block_data == [None, None, None, None]
+    panel.update_block(0, {"confidence": 0.9})
+    assert panel._block_data[0] == {"confidence": 0.9}
+    panel.clear_blocks()
+    assert panel._block_data == [None, None, None, None]
 
 
 def test_top_three_win_rate_visual_anchor() -> None:
