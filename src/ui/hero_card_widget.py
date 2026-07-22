@@ -1,0 +1,320 @@
+"""选将推荐页面的武将卡片。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.data.models import Hero
+from src.ui.shared.faction_colors import get_faction_colors
+from src.ui.shared.widgets import DoubleClickLabel
+
+
+IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
+
+
+class HeroCardWidget(QFrame):
+    """单个武将推荐卡片。"""
+
+    guide_clicked = Signal(int)
+    hero_double_clicked = Signal(int)
+
+    def __init__(self, hero: Hero | None, parent=None):
+        super().__init__(parent)
+        self._hero: Hero | None = hero
+        self._hero_id: int = 0
+        self._confidence: float = 0.0
+        self._synergy_labels: list[QLabel] = []
+        self._rank = 0
+
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self._apply_rank_style(0)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        self._portrait_frame = QWidget()
+        self._portrait_frame.setFixedWidth(130)
+        self._portrait_frame.setStyleSheet("background-color: transparent;")
+        portrait_layout = QGridLayout(self._portrait_frame)
+        portrait_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._img_label = DoubleClickLabel()
+        self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._img_label.double_clicked.connect(self._on_hero_double_clicked)
+        portrait_layout.addWidget(self._img_label, 0, 0)
+
+        self._name_overlay = QLabel()
+        self._name_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._name_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._name_overlay.setStyleSheet(
+            "background-color: rgba(0,0,0,140); color: white; "
+            "padding: 4px 0; font-size: 13px; font-weight: bold;"
+        )
+        portrait_layout.addWidget(self._name_overlay, 0, 0, Qt.AlignmentFlag.AlignBottom)
+
+        self._faction_badge = QLabel()
+        self._faction_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._faction_badge.setStyleSheet(
+            "background-color: #888; color: white; "
+            "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
+        )
+        portrait_layout.addWidget(
+            self._faction_badge, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        layout.addWidget(self._portrait_frame)
+
+        info_panel = QWidget()
+        info_panel.setStyleSheet("background-color: transparent;")
+        info_layout = QVBoxLayout(info_panel)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(3)
+
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(6)
+        self._faction_tag = QLabel()
+        self._faction_tag.setStyleSheet(
+            "color: white; border-radius: 3px; padding: 1px 6px; font-size: 11px;"
+        )
+        header_layout.addWidget(self._faction_tag)
+
+        self._name_label = QLabel()
+        self._name_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #2c3e50;")
+        header_layout.addWidget(self._name_label)
+        header_layout.addStretch()
+
+        self._guide_btn = QPushButton("攻略")
+        self._guide_btn.setFixedSize(66, 28)
+        self._guide_btn.setStyleSheet(
+            "QPushButton { background-color: #4a90d9; color: white; border: none; "
+            "border-radius: 4px; padding: 0; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #357abd; }"
+        )
+        self._guide_btn.clicked.connect(self._on_guide_clicked)
+        header_layout.addWidget(self._guide_btn)
+        info_layout.addLayout(header_layout)
+
+        self._confidence_label = QLabel()
+        self._confidence_label.setTextFormat(Qt.TextFormat.RichText)
+        self._confidence_label.setStyleSheet("font-size: 13px; color: #555;")
+        info_layout.addWidget(self._confidence_label)
+
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setStyleSheet("color: #e0e0e0;")
+        info_layout.addWidget(sep1)
+
+        synergy_title = QLabel("<b>高相性组合</b>")
+        synergy_title.setStyleSheet("font-size: 12px; color: #2c3e50;")
+        info_layout.addWidget(synergy_title)
+
+        self._synergy_grid = QGridLayout()
+        self._synergy_grid.setSpacing(2)
+        for column in range(4):
+            self._synergy_grid.setColumnStretch(column, 1)
+        info_layout.addLayout(self._synergy_grid)
+
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet("color: #e0e0e0;")
+        info_layout.addWidget(sep2)
+
+        self._win_rate_label = QLabel("胜率: --%")
+        self._win_rate_label.setStyleSheet("font-size: 12px; color: #999;")
+        self._medal_label = QLabel()
+        self._medal_label.setFixedSize(58, 24)
+        self._medal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        win_rate_layout = QHBoxLayout()
+        win_rate_layout.setSpacing(4)
+        win_rate_layout.addWidget(self._win_rate_label)
+        win_rate_layout.addWidget(self._medal_label)
+        win_rate_layout.addStretch()
+        info_layout.addLayout(win_rate_layout)
+
+        info_layout.addStretch()
+        layout.addWidget(info_panel, 1)
+        self._update_display()
+
+    def _update_display(self) -> None:
+        if not self._hero:
+            self._hero_id = 0
+            self._img_label.clear()
+            self._name_overlay.setText("空")
+            self._name_label.setText("空")
+            self._faction_tag.setText("")
+            self._faction_tag.setStyleSheet(
+                "background-color: #ccc; color: white; border-radius: 3px; padding: 1px 6px; font-size: 11px;"
+            )
+            self._faction_badge.setText("")
+            self._faction_badge.setStyleSheet(
+                "background-color: #ccc; color: white; border-radius: 3px; padding: 1px 5px; font-size: 11px;"
+            )
+            self._confidence_label.setText("")
+            self._win_rate_label.setText("胜率: --%")
+            self.set_medal(0)
+            self._guide_btn.setVisible(False)
+            return
+
+        hero = self._hero
+        self._hero_id = hero.id
+        self.set_medal(0)
+        self._guide_btn.setVisible(True)
+        color = get_faction_colors().get(hero.faction, "#888")
+
+        pixmap = self._load_portrait(hero.name)
+        if pixmap and not pixmap.isNull():
+            self._img_label.setPixmap(pixmap)
+            self._img_label.setStyleSheet("")
+        else:
+            self._img_label.clear()
+            self._img_label.setText(f"[{hero.name}]")
+            self._img_label.setStyleSheet("color: #999; font-size: 11px;")
+
+        self._name_overlay.setText(hero.name)
+        self._faction_badge.setText(f" {hero.faction} ")
+        self._faction_badge.setStyleSheet(
+            f"background-color: {color}; color: white; "
+            "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
+        )
+        self._faction_tag.setText(f" {hero.faction} ")
+        self._faction_tag.setStyleSheet(
+            f"background-color: {color}; color: white; "
+            "border-radius: 3px; padding: 1px 6px; font-size: 11px;"
+        )
+        self._name_label.setText(hero.name)
+        self._update_confidence_display()
+
+    @staticmethod
+    def _load_portrait(hero_name: str) -> QPixmap | None:
+        for extension in (".png", ".jpg", ".webp"):
+            path = IMAGES_DIR / f"{hero_name}{extension}"
+            if path.exists():
+                pixmap = QPixmap(str(path))
+                if not pixmap.isNull():
+                    return pixmap.scaled(
+                        120,
+                        160,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+        return None
+
+    def _update_confidence_display(self) -> None:
+        if self._confidence <= 0.0:
+            self._confidence_label.setText(
+                '★★☆☆☆  <span style="color:#999;font-weight:bold;">--</span>'
+            )
+            return
+
+        filled = int(self._confidence * 5)
+        stars = "★" * filled + "☆" * (5 - filled)
+        percentage = f"{self._confidence * 100:.2f}%"
+        self._confidence_label.setText(
+            f'{stars}  <span style="color:#4a90d9;font-weight:bold;">{percentage}</span>'
+        )
+
+    def _on_guide_clicked(self) -> None:
+        if self._hero_id > 0:
+            self.guide_clicked.emit(self._hero_id)
+
+    def _on_hero_double_clicked(self) -> None:
+        if self._hero_id > 0:
+            self.hero_double_clicked.emit(self._hero_id)
+
+    def set_hero(self, hero: Hero | None) -> None:
+        self._hero = hero
+        self._update_display()
+
+    def set_confidence(self, confidence: float) -> None:
+        self._confidence = max(0.0, min(1.0, confidence))
+        self._update_confidence_display()
+
+    def set_win_rate(self, rate: float) -> None:
+        self._win_rate_label.setText(f"胜率: {rate:.1f}%")
+
+    def set_medal(self, rank: int) -> None:
+        self._rank = rank if rank in (1, 2, 3) else 0
+        badges = {1: "TOP 1", 2: "TOP 2", 3: "TOP 3"}
+        badge_styles = {
+            1: "background-color: #fff1b8; color: #8c5a00; border: 1px solid #f0c36d;",
+            2: "background-color: #edf1f5; color: #52606d; border: 1px solid #b8c2cc;",
+            3: "background-color: #fbe9dc; color: #9c5b30; border: 1px solid #d6a27c;",
+        }
+        if self._rank:
+            self._medal_label.setText(badges[self._rank])
+            self._medal_label.setStyleSheet(
+                f"{badge_styles[self._rank]} border-radius: 6px; padding: 1px 6px; "
+                "font-size: 11px; font-weight: bold;"
+            )
+            rank_color = {1: "#FFD700", 2: "#C0C0C0", 3: "#CD7F32"}[self._rank]
+            self._win_rate_label.setStyleSheet(
+                f"color: {rank_color}; font-size: 14px; font-weight: bold;"
+            )
+        else:
+            self._medal_label.clear()
+            self._medal_label.setStyleSheet("")
+            self._win_rate_label.setStyleSheet("font-size: 12px; color: #999;")
+        self._apply_rank_style(self._rank)
+
+    def _apply_rank_style(self, rank: int) -> None:
+        if rank in (1, 2, 3):
+            self.setStyleSheet(
+                "HeroCardWidget { background-color: #ffffff; border: none; "
+                "border-radius: 8px; }"
+            )
+        else:
+            self.setStyleSheet(
+                "HeroCardWidget { background-color: #ffffff; border: 1px solid #b0c4de; "
+                "border-radius: 8px; } HeroCardWidget:hover { border-color: #4a90d9; }"
+            )
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self._rank not in (1, 2, 3):
+            return
+
+        palette = {
+            1: ([("#FFD700", 0.0), ("#FFA500", 1.0)], 2.0),
+            2: ([("#C0C0C0", 0.0), ("#A9A9A9", 1.0)], 1.5),
+            3: ([("#CD7F32", 0.0), ("#B87333", 1.0)], 1.5),
+        }[self._rank]
+        border_stops, border_width = palette
+        rect = self.rect().adjusted(1, 1, -1, -1)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        border = QLinearGradient(rect.topLeft(), rect.topRight())
+        for color, position in border_stops:
+            border.setColorAt(position, QColor(color))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QBrush(border), border_width))
+        painter.drawRoundedRect(rect, 8, 8)
+
+    def set_synergies(self, synergies: list[tuple[str, str]]) -> None:
+        for label in self._synergy_labels:
+            self._synergy_grid.removeWidget(label)
+            label.deleteLater()
+        self._synergy_labels.clear()
+
+        for index, (name, rating) in enumerate(synergies):
+            row = index // 4
+            column = index % 4
+            label = QLabel(f"· {name}  ({rating})")
+            label.setStyleSheet("color: #555; font-size: 11px; padding: 1px 0;")
+            self._synergy_grid.addWidget(label, row, column)
+            self._synergy_labels.append(label)

@@ -21,8 +21,11 @@ from src.ui.hero_browser import (
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.ui.guide_edit_dialog import GuideEditDialog
+from src.ui.guide_detail_dialog import GuideDetailDialog
+from src.ui.hero_card_widget import HeroCardWidget
 from src.ui.hero_edit_dialog import HeroEditDialog
 from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
+from src.ui.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
 from src.ui.synergy_edit_dialog import SynergyEditDialog
 
 
@@ -185,3 +188,35 @@ def test_skill_cards_are_hidden_before_deferred_deletion(tmp_path: Path) -> None
 
     assert old_cards
     assert all(card.isHidden() for card in old_cards)
+
+
+def test_extracted_recommendation_card_keeps_panel_import_compatibility() -> None:
+    _app()
+    hero = Hero(id=1, name="曹操", faction="魏")
+    card = HeroCardWidget(hero)
+    guide_requests: list[int] = []
+    skill_requests: list[int] = []
+    card.guide_clicked.connect(guide_requests.append)
+    card.hero_double_clicked.connect(skill_requests.append)
+
+    card._on_guide_clicked()
+    card._on_hero_double_clicked()
+
+    assert PanelHeroCardWidget is HeroCardWidget
+    assert guide_requests == [1]
+    assert skill_requests == [1]
+
+
+def test_extracted_guide_detail_dialog_emits_related_hero_request(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    dialog = GuideDetailDialog("曹操", HeroGuide(hero_id=1, counters=[2]), hero_manager)
+    requested: list[int] = []
+    dialog.hero_requested.connect(requested.append)
+
+    relation_button = next(button for button in dialog.findChildren(QPushButton) if button.text() == "刘备")
+    relation_button.click()
+
+    assert requested == [2]

@@ -942,8 +942,8 @@ def update_recommendations(self, data: list[dict]) → None
 **截图导入流程（`截图` 按钮）**：
 1. 检查 ADB 是否已配置 → 未配置则弹出 MumuConfigDialog
 2. 点击后按钮变为「正在截图...」
-3. CaptureService.do_capture() → 截图 → OCR → capture_completed 信号
-4. `_on_capture_result` 回调 → 调用 `load_from_ocr()` → 填入 8 个槽位
+3. CaptureService.do_capture(perform_ocr=False) → 截图保存 → capture_completed 信号
+4. `_on_capture_result` 复位按钮；选择「从图片导入」时才提交图片到 OcrWorker 并调用 `load_from_ocr()` 填入 8 个槽位
 
 **`load_from_ocr(ocr_results)`**：
 - 接收 OCR 识别结果 `[{index, name, confidence}, ...]`
@@ -962,6 +962,8 @@ def update_recommendations(self, data: list[dict]) → None
 - `RecommendationPanel._show_guide_popup(hero_id)` 接收信号，通过 `GuideManager.get_guide()` 获取攻略
 - 弹出 `GuideDetailDialog`（QDialog，默认 780×680），顶部显示武将和更新时间，左侧展示核心要点、新手提示及可点击关系标签，右侧独立滚动显示 Markdown 攻略正文
 - 无攻略数据时弹窗显示"暂无攻略数据"
+
+推荐页面已按职责拆分：`recommendation_panel.py` 负责 8 个槽位的数据刷新、相性/胜率查询及截图/OCR 信号协调；`hero_card_widget.py` 负责卡片的展示和交互信号；`guide_detail_dialog.py` 负责攻略详情渲染与关系跳转。原面板模块继续导入并暴露两个类名，旧调用方无需改动。
 
 ### 5.10 对话框基类体系
 
@@ -984,11 +986,11 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
      SelectionMode=SINGLE
 ```
 
-此外，`recommendation_panel.py` 内置一个非继承基类的独立弹窗：
+选将推荐使用独立的非继承基类弹窗：
 
 | 类 | 文件 | 用途 |
 |----|------|------|
-| GuideDetailDialog | `recommendation_panel.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 780×680），左侧摘要/关系标签，右侧 Markdown 正文 |
+| GuideDetailDialog | `guide_detail_dialog.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 780×680），左侧摘要/关系标签，右侧 Markdown 正文 |
 
 ### 5.11 全局样式（style.py, 247 行）
 

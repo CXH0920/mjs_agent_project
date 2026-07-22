@@ -63,6 +63,8 @@ test_project/
 │       ├── synergy_edit_dialog.py # 相性评分编辑
 │       ├── hero_select_dialog.py  # 武将选择对话框基类
 │       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性 + 截图导入）
+│       ├── hero_card_widget.py    # 推荐卡片（展示、奖牌和交互信号）
+│       ├── guide_detail_dialog.py # 推荐卡片的攻略详情弹窗
 │       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
 │       ├── mumu_config_dialog.py  # 模拟器配置对话框（ADB 连接 + 模板管理 + OCR 配置）
 │       ├── roi_selector.py        # 模板 ROI 框选对话框（拖拽选区 + 坐标缩放）

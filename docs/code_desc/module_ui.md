@@ -153,6 +153,13 @@ RecommendationPanel (QWidget)
        └── HeroSkillDialog（来自 ui/shared/hero_dialogs.py，按技能名称分 Tab 展示描述和结算）
 ```
 
+`recommendation_panel.py` 只保留推荐数据更新、胜率/相性加载、OCR 导入和截图信号协调。可独立维护的展示组件已拆分为：
+
+- `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌及卡片信号。
+- `guide_detail_dialog.py`：`GuideDetailDialog`，负责攻略摘要、关系标签跳转和 Markdown 正文渲染。
+
+为兼容既有调用，`recommendation_panel.py` 仍导入并暴露两个公开类名；页面创建卡片与打开攻略弹窗的调用方式不变。
+
 **数据接口：**
 ```python
 def update_recommendations(self, data: list[dict]) -> None

@@ -454,6 +454,8 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
   -> GuideDetailDialog.exec()                                   [模态展示]
 ```
 
+`RecommendationPanel` 仅协调数据和信号：它创建 `HeroCardWidget`、连接卡片信号并打开 `GuideDetailDialog`。卡片绘制/奖牌样式位于 `hero_card_widget.py`，攻略摘要和 Markdown 渲染位于 `guide_detail_dialog.py`；原模块继续导入这两个名称，保持既有 `from recommendation_panel import ...` 调用兼容。
+
 ### 4.6 函数清单总表（推荐面板）
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
@@ -465,6 +467,8 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
 | `_load_win_rate_by_name(idx, name)` | `recommendation_panel.py` | 内部 | `load_win_rates()`, `set_win_rate()` |
 | `_apply_medal_rankings()` | `recommendation_panel.py` | 内部 | 排序 + `set_medal()` |
 | `_show_guide_popup(hero_id)` | `recommendation_panel.py` | `card.guide_clicked` | `get_hero()`, `get_guide()`, `GuideDetailDialog` |
+| `HeroCardWidget` | `hero_card_widget.py` | `RecommendationPanel._setup_ui()` | 卡片展示与 `guide_clicked` / `hero_double_clicked` 信号 |
+| `GuideDetailDialog` | `guide_detail_dialog.py` | `_show_guide_popup()` | 攻略摘要、关系跳转与 Markdown 正文 |
 
 ---
 
