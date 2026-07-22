@@ -12,6 +12,12 @@ WIN_RATE_CSV = Path(__file__).resolve().parent.parent.parent / "data" / "2v2胜�
 _win_rate_cache: dict[str, float] | None = None
 
 
+def clear_win_rate_cache() -> None:
+    """清除胜率缓存，使官方榜单导入结果立即可被后续查询读取。"""
+    global _win_rate_cache
+    _win_rate_cache = None
+
+
 def load_win_rates(path: Path = WIN_RATE_CSV) -> dict[str, float]:
     """从胜率 CSV 加载 {武将名: 百分比}，默认结果缓存以避免重复读盘。"""
     global _win_rate_cache

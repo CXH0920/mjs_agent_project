@@ -27,6 +27,8 @@ src/data/
 └── win_rate_repository.py # 2v2 胜率 CSV 读取与缓存
 ```
 
+官方榜单导入还会在 `data/` 下维护三个 CSV：`2v2胜率排行.csv`、`2v2出场排行.csv`、`武将放逐.csv`。它们不是 Pydantic JSON 模型的一部分，由业务服务按表格行原子覆盖；每份正式 CSV 对应一份 `*_待复核.csv`，异常行的原始坐标和截图存入 `screenshot_data/official_import/`，便于人工确认。2v2 胜率文件更新后调用 `clear_win_rate_cache()`，确保后续推荐页读取新数据。
+
 ---
 
 ## 三、核心逻辑

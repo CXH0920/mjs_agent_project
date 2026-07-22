@@ -39,6 +39,7 @@ test_project/
 │   │   ├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
 │   │   ├── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
 │   │   ├── ocr_worker.py          # 单线程 OCR 队列（模板匹配 + PaddleOCR）
+│   │   ├── official_data_import_service.py # 官方榜单 OCR、进度与 CSV 原子覆盖
 │   │   └── fetch_utils.py         # QProcess 公共工具函数
 │   ├── capture/
 │   │   ├── __init__.py
@@ -69,6 +70,7 @@ test_project/
 │       ├── guide_detail_dialog.py # 推荐卡片的攻略详情弹窗
 │       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
 │       ├── mumu_config_dialog.py  # 模拟器配置对话框（表单、状态和 ROI 框选）
+│       ├── official_data_import_dialog.py # 官方榜单图片选择与进度条
 │       ├── roi_selector.py        # 模板 ROI 框选对话框（拖拽选区 + 坐标缩放）
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择
@@ -82,7 +84,9 @@ test_project/
 │   ├── synergies.json             # 相性评分
 │   ├── guides.json                # 武将攻略
 │   ├── cards.json                 # 基础卡牌数据
-│   └── 2v2胜率排行.csv            # 2v2 胜率数据
+│   ├── 2v2胜率排行.csv            # 2v2 胜率数据
+│   ├── 2v2出场排行.csv            # 2v2 出场数据（官方榜单导入生成）
+│   └── 武将放逐.csv                # 武将放逐数据（官方榜单导入生成）
 ├── images/
 │   └── <武将名>.png               # 165 个武将头像（从官网自动下载）
 ├── templates/
@@ -94,26 +98,30 @@ test_project/
 ├── logs/
 │   └── app.log / scraper/ / business/ / subprocess/  # 按模块拆分的日志文件
 ├── tests/
-│   ├── test_models.py             # 27 tests — 数据模型校验
+│   ├── test_adb_capture.py        # 10 tests — ADB 连接与截图
 │   ├── test_ai_batch.py           # 40 tests — AI 批量生成
 │   ├── test_ai_generation.py       # 10 tests — staging 与生成编排
-│   ├── test_adb_capture.py        # 9 tests — ADB 连接与截图
-│   ├── test_capture_service.py    # 3 tests — 截图服务
+│   ├── test_ai_generation_workflow.py # 3 tests — AI UI 工作流
+│   ├── test_capture_service.py    # 4 tests — 截图服务
 │   ├── test_crawler.py             # 9 tests — 官网数据解析
 │   ├── test_data_facade.py         # 1 test — 数据加载容错与跨实体引用校验
+│   ├── test_emulator_operation_service.py # 3 tests — 模拟器后台操作
 │   ├── test_emulator_ui.py        # 11 tests — 模拟器/OCR UI
 │   ├── test_faction_color_dialog.py # 2 tests — 势力配色
-│   ├── test_guide_ui.py           # 8 tests — 攻略 UI
-│   ├── test_hero_manager.py       # 15 tests — 武将管理器
-│   ├── test_synergy_manager.py    # 17 tests — 相性管理器
 │   ├── test_guide_manager.py      # 10 tests — 攻略管理器
+│   ├── test_guide_ui.py           # 11 tests — 攻略 UI
+│   ├── test_hero_manager.py       # 15 tests — 武将管理器
 │   ├── test_incremental_update.py # 8 tests — 增量更新
 │   ├── test_logging_config.py      # 2 tests — 日志配置
 │   ├── test_main.py                # 1 test — 应用入口
-│   ├── test_mumu_config_dialog.py  # 3 tests — 模拟器配置
+│   ├── test_models.py             # 36 tests — 数据模型校验
+│   ├── test_mumu_config_dialog.py  # 8 tests — 模拟器配置
 │   ├── test_ocr_scaling.py        # 3 tests — 模板多尺度匹配与 ROI 缩放
-│   ├── test_ocr_service.py        # 4 tests — OCR 服务
+│   ├── test_ocr_service.py        # 5 tests — OCR 服务
 │   ├── test_ocr_worker.py         # 3 tests — OCR 队列
+│   ├── test_official_data_import.py # 11 tests — 官方榜单切分、名称兜底、CSV 覆盖与进度
+│   ├── test_prober.py             # 1 test — ADB/MuMu 探测
+│   ├── test_synergy_manager.py    # 17 tests — 相性管理器
 │   └── test_ui.py                 # 5 tests — UI 工具
 ├── docs/
 │   ├── code_desc/
@@ -288,6 +296,8 @@ data/*.json → DataFacade (三个 Manager) → UI 展示
       → 否：静默跳过
       → 是：按参考尺寸换算 ROI
         → GeneralRecognizer.recognize() → 填充推荐面板 8 槽
+官方榜单图片 → OfficialDataImportWorker → 表格横线检测 → 名称候选决策 / 胜率模板识别
+  → 原子覆盖 data/{2v2胜率排行,2v2出场排行,武将放逐}.csv → 胜率缓存失效
 用户操作 → MainWindow → QProcess → 爬虫/AI 脚本
 ```
 
@@ -445,6 +455,7 @@ _save_json() → data/*.json.staging → 全部成功后原子替换 data/guides
 | 配置 > API 配置 | | 编辑 API Key/URL/Model |
 | 配置 > 模拟器配置 | | ADB 连接管理 + 模板制作 + OCR 配置 + 持续轮询 |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
+| 数据 > 官方数据导入 | | 选择 2v2 和/或武将放逐榜单图片；显示当前文件 OCR 进度，覆盖胜率、出场、放逐 CSV，并输出待复核 CSV/行截图 |
 | 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
 | 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略 → BackendChooseDialog（API/浏览器） |
 | 数据 > 武将相性 > 选定武将 | | 选 1 武将，计算其与全体其他武将的相性 → BackendChooseDialog |
@@ -452,6 +463,14 @@ _save_json() → data/*.json.staging → 全部成功后原子替换 data/guides
 | 帮助 > 关于 | | 版本信息 |
 
 AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和相性任务委托给 `AiGenerationWorkflow`，统一处理武将选择、后端选择、进度显示和完成后的页面刷新。模板匹配与 OCR 识别由 **OcrWorker** 后台队列处理。ADB 连接与手动截图仍在 GUI 线程同步执行。
+
+### 官方数据导入
+
+从“数据 > 官方数据导入”选择一张或两张官方榜单图片。2v2 图片的左、右表分别写入胜率和出场排行；武将放逐图片的左右栏按视觉行序合并写入放逐排行。导入会覆盖对应正式 CSV，并同时生成 `*_待复核.csv` 与异常行截图，便于检查低置信度、缺字或格式异常记录。
+
+导入过程在后台线程执行：读取图片和检测表格横线时显示不定进度；行数确定后，进度条显示当前文件的 OCR 工作量。2v2 胜率数字模板准备和逐行识别都会计入进度。
+
+名称识别先在原图放大与增强图的全部结果中选择精确命中武将词表的完整候选；只有最高结果为单字才按字形逐字补识别。单字仍无法确认时，只有词表首字候选唯一才自动补全，多候选情况写入待复核而不盲目猜测。该策略只作用于官方榜单导入，不改变截图、文件导入和轮询的常规武将识别。
 
 ### 后端选择对话框 (`BackendChooseDialog`)
 

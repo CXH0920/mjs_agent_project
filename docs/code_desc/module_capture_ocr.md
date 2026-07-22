@@ -109,6 +109,8 @@ PaddleOCR → 文字 + 置信度
        └── 距离 ≤ 1 且多候选 → 多维汉字特征评分决胜
 ```
 
+官方榜单导入不使用页面模板匹配、通用 `OcrWorker` 队列或 `GeneralRecognizer`。它在 `src.business.official_data_import_service` 中单独创建 PaddleOCR 实例，并复用 `_correct_with_hero_list()` 与 `_HIGH_CONFIDENCE` 的基础名称规则；完整词表候选优先和单字逐字兜底均局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一榜单的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
+
 ### 3.4 多维汉字特征评分
 
 当编辑距离筛选出多个候选时（如 OCR 输出"王剪" → 候选 ["王翦", "王异"]），逐字符加权评分：

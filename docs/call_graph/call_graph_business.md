@@ -366,6 +366,64 @@ OcrService.ocr_completed          → UI 获取识别结果
 
 ---
 
+## 官方榜单数据导入
+
+官方榜单导入不经过 QProcess、ADB、模板匹配或通用 `OcrWorker` 队列。一个 `OfficialDataImportWorker` 串行处理已选图片，并用 Qt 信号向弹窗报告当前文件进度。
+
+```
+MainWindow._open_official_data_import()
+  -> OfficialDataImportDialog.exec()
+    -> _start_import()
+      -> OfficialDataImportWorker(paths).start()
+        -> [QThread] OfficialDataImportWorker.run()
+          -> 对每个已选文件 emit progress_changed(status, 0, 0)
+          -> OfficialDataImportService.import_file(key, path, progress_callback)
+            -> _read_image() -> cv2.imdecode()
+            -> _extract_panels() -> 固定版式裁出左右表
+            -> _find_data_boundaries() -> HoughLinesP 横线 -> 行边界
+            -> 计算 total_steps（胜率表：模板准备 + 行识别；其余表：行识别）
+            -> progress_callback(0, total_steps)
+            -> [每个面板] _prepare_rate_templates()（仅胜率表）
+               -> _build_rank_digit_templates()
+               -> _recognize_cell() -> 每行完成后推进进度
+            -> [每行] _recognize_row()
+               -> 排名/普通单元格: _recognize_cell()
+               -> 武将单元格: _recognize_name_cell()
+               -> 胜率单元格: 预计算 OCR + _recognize_rate_with_templates()
+            -> _review_reasons() -> 必要时 _save_review_crop()
+            -> _write_csv() -> 临时文件 replace 正式 CSV
+            -> [胜率 CSV] clear_win_rate_cache()
+          -> emit completed(summaries)
+```
+
+### 名称候选决策
+
+```
+_recognize_name_cell(cell)
+  -> _recognize_cell_candidates()
+     -> 原图放大 OCR + CLAHE/锐化 OCR 的全部文本块
+  -> [任一候选精确命中 hero_names] 返回置信度最高的完整名称
+  -> [最高候选不是单字] 返回该候选 -> _normalize_name()
+  -> [最高候选是单字] _recognize_name_glyphs()
+     -> 亮色列分组 -> 2-4 个字形
+     -> 保留原始背景与留白 -> 每字 _recognize_cell()
+     -> 拼接 -> _correct_with_hero_list()
+     -> [命中词表] 返回补识别名称
+  -> [逐字失败] hero.startswith(单字) 的候选数量
+     -> 唯一 -> 返回唯一候选
+     -> 多个/零个 -> 返回原结果 -> _review_reasons() 记录“武将名称疑似缺字”
+```
+
+| 函数/信号 | 调用方 | 关键下游 | 说明 |
+|---|---|---|---|
+| `OfficialDataImportWorker.run()` | `OfficialDataImportDialog._start_import()` | `import_file()`、`progress_changed`、`completed/failed` | 同线程内顺序处理一张或两张图片 |
+| `import_file()` | Worker | 图像读取、行检测、识别、CSV 原子写入 | 一张图片可产出一个或两个 CSV |
+| `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
+| `_review_reasons()` | `import_file()` | `_save_review_crop()` | 单字、低置信度、胜率失败或排名不一致进入复核 |
+| `progress_changed(status, current, total)` | Worker | `OfficialDataImportDialog._on_progress_changed()` | 先不定进度，行数确定后显示精确进度 |
+
+**输出关系：**2v2 左表写入 `2v2胜率排行.csv`，右表写入 `2v2出场排行.csv`；放逐图左右表按视觉行序合并为 `武将放逐.csv`。每份正式 CSV 均有对应待复核 CSV；异常截图位于 `screenshot_data/official_import/`。
+
 ## 七、fetch_utils（公共工具）
 
 | 函数 | 文件 | 调用方 | 说明 |

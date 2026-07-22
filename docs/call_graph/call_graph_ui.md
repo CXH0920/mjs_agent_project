@@ -24,6 +24,7 @@ MainWindow.__init__()
 | 武将采集 | `_request_fetch_*()` | `HeroFetchService.fetch_*()` | `_reload_data()` |
 | 攻略生成 | `_request_guide_*()` | `AiGenerationWorkflow.request_guide_*()` -> `GuideFetchService.fetch_*()` | `GuideManager.load()` + 状态栏统计刷新 |
 | 相性生成 | `_request_synergy_*()` | `AiGenerationWorkflow.request_synergy_*()` -> `SynergyFetchService.fetch_pair/single()` | `SynergyManager.load()` + 浏览器、推荐页刷新 |
+| 官方数据导入 | `_open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` | 覆盖 2v2/放逐 CSV，完成后显示统计 |
 | 截图、图片导入、轮询 | 推荐页或 `poll_tick` | `CaptureService` -> `OcrWorker` | 推荐卡或对局攻略页 |
 
 数据完整性问题存于 `self._data.last_load_report`；当前 UI 使用已恢复的内存数据，尚未提供报告查看或写回修复界面。服务完成状态以 CLI 退出码为准，不解析 `RESULT: FAIL=`。
@@ -140,6 +141,28 @@ _connect_capture_signals():
 ---
 
 ## 二、菜单操作触发链路
+
+### 官方数据导入
+
+```
+菜单「数据 → 官方数据导入」clicked
+  -> MainWindow._open_official_data_import()
+    -> OfficialDataImportDialog(self).exec()
+      -> 用户选择 2v2 和/或武将放逐图片
+      -> _start_import()
+        -> 禁用导入/取消按钮，显示“正在准备导入”不定进度条
+        -> OfficialDataImportWorker(paths, self).start()
+          -> [signal] progress_changed(status, 0, 0)
+             -> _on_progress_changed() -> QProgressBar.setRange(0, 0)
+          -> [signal] progress_changed(status, current, total)
+             -> _on_progress_changed() -> 显示 current / total
+          -> [signal] completed(summaries)
+             -> _on_completed() -> QMessageBox -> accept()
+          -> [signal] failed(message)
+             -> _on_failed() -> 恢复按钮、隐藏进度条、显示错误
+```
+
+对话框只负责文件选择、按钮状态和进度显示；表格裁剪、名称候选决策、待复核和 CSV 写入均位于业务服务层。任务运行时 `reject()` 不关闭对话框，避免销毁仍在运行的线程。
 
 ### 2.1 武将采集菜单
 

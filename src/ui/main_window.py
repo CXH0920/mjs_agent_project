@@ -41,6 +41,7 @@ from src.business.synergy_fetch_service import SynergyFetchService
 from src.ui.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.recommendation_panel import RecommendationPanel
 from src.ui.match_guide_panel import MatchGuidePanel
+from src.ui.official_data_import_dialog import OfficialDataImportDialog
 
 
 class MainWindow(QMainWindow):
@@ -377,6 +378,10 @@ class MainWindow(QMainWindow):
         reload_action.triggered.connect(self._reload_data)
         data_menu.addAction(reload_action)
 
+        official_import_action = QAction("官方数据导入", self)
+        official_import_action.triggered.connect(self._open_official_data_import)
+        data_menu.addAction(official_import_action)
+
         # 武将获取子菜单
         fetch_menu = data_menu.addMenu("武将获取")
 
@@ -560,6 +565,10 @@ class MainWindow(QMainWindow):
             self._recommendation.refresh_synergies()
         self._update_status()
         QMessageBox.information(self, "已刷新", "数据已重新加载")
+
+    def _open_official_data_import(self) -> None:
+        """打开官方 2v2 胜率与武将放逐榜单导入窗口。"""
+        OfficialDataImportDialog(self).exec()
 
     # ---------------------------------------------------------------
     # 状态栏更新

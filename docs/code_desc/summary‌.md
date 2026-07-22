@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-07-03  
+> 文档日期：2026-07-22
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -17,6 +17,7 @@
 - **AI 相性评分** — 全量/指定武将的相性评分，支持 2~8 武将两两配对
 - **屏幕采集与 OCR** — 通过 ADB 连接模拟器截图，OpenCV 模板匹配 + PaddleOCR 识别武将名
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
+- **官方数据导入** — 可独立或同时导入 2v2/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 
 ## 技术栈
 
@@ -26,10 +27,10 @@
 | 数据模型 | Pydantic v2（数据校验与序列化） |
 | AI 生成 | httpx（DeepSeek API 同步请求）/ Playwright（浏览器自动化） |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
-| 图像处理 | OpenCV（模板匹配）、Pillow（图像格式转换） |
+| 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分 |
-| 数据持久化 | JSON 文件（原子写入，无数据库依赖） |
-| 测试 | pytest（185 个测试用例） |
+| 数据持久化 | JSON + CSV 文件（原子写入，无数据库依赖） |
+| 测试 | pytest（当前收集 229 个测试用例） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -41,11 +42,11 @@ test_project/
 │   ├── config/                  # 配置管理（.env 解析、日志配置）
 │   ├── data/                    # 数据模型与数据管理层
 │   ├── scraper/                 # 爬虫与 AI 批量生成层
-│   ├── business/                # 业务服务层（QProcess 编排）
+│   ├── business/                # 业务服务层（QProcess、OCR 与官方榜单导入编排）
 │   ├── capture/                 # 屏幕采集层（ADB 连接与截图）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR）
 │   └── ui/                      # PySide6 用户界面层
-├── data/                        # 数据文件（JSON + CSV）
+├── data/                        # 数据文件（JSON + 2v2 胜率/出场、放逐 CSV）
 ├── images/                      # 武将头像（165 个 PNG）
 ├── templates/                   # OCR 模板截图
 ├── screenshots/                 # 手动截图导出目录
@@ -87,6 +88,6 @@ test_project/
 | 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化 |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/`（非 AI 部分） | 官网 JS chunk 解析、数据清洗、头像下载 |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai_*.py` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排 |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入 |
 | 6 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
 | 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器 |

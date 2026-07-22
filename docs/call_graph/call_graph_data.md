@@ -41,7 +41,23 @@ RecommendationPanel._load_win_rate_by_name() / MatchGuidePanel._load_default_her
      -> {武将名: 百分比}
 ```
 
-`load_win_rates()` 首次访问默认 CSV 时填充模块缓存；文件缺失、I/O 错误或单行百分比格式非法只记录 warning/跳过该行，不阻断页面加载。传入自定义 `Path` 时不污染默认缓存，便于测试和离线数据校验。
+`load_win_rates()` 首次访问默认 CSV 时填充模块缓存；文件缺失、I/O 错误或单行百分比格式非法只记录 warning/跳过该行，不阻断页面加载。传入自定义 `Path` 时不污染默认缓存，便于测试和离线数据校验。官方数据导入成功覆盖 2v2 CSV 后调用 `clear_win_rate_cache()`，使后续页面查询读取新数据。
+
+```
+OfficialDataImportService.import_file("2v2", image_path)
+  -> _write_csv(data/2v2胜率排行.csv, ["排名", "武将", "胜率"], rows)
+  -> _write_csv(data/2v2出场排行.csv, ["排名", "武将"], rows)
+  -> _write_csv(对应 *_待复核.csv, review_rows)
+  -> clear_win_rate_cache()
+  -> RecommendationPanel / MatchGuidePanel 下次 load_win_rates() 读取新胜率
+
+OfficialDataImportService.import_file("exile", image_path)
+  -> 合并左右表视觉行序
+  -> _write_csv(data/武将放逐.csv, ["排名", "武将"], rows)
+  -> _write_csv(data/武将放逐_待复核.csv, review_rows)
+```
+
+`_write_csv()` 先在目标目录创建 UTF-8、LF 换行的临时文件，再以 `Path.replace()` 原子替换正式文件。待复核 CSV 不参与 `win_rate_repository` 缓存；它与 `screenshot_data/official_import/` 的行截图共同构成导入质量追踪记录。
 
 ## 一、数据加载链路
 

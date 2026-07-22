@@ -37,6 +37,7 @@
 | 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志、加载数据、创建主窗口并进入 Qt 事件循环；OCR 识别器按首次任务延迟初始化 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 工作流成功后重载 Manager 并通知主窗口刷新；所有任务成功才提交正式 JSON |
+| 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> OpenCV 行分割 + 候选汇总/逐字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> 各 Manager CRUD -> `save()` | 原子写入对应 JSON 并刷新局部视图 |
 
@@ -403,6 +404,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | CaptureService | `capture_service.py` | ~426 | QObject | 4 |
 | EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
 | OcrService | `ocr_service.py` | ~355 | QObject | 3 |
+| OfficialDataImportService / Worker | `official_data_import_service.py` | ~500 | 普通类 / QThread | 3（Worker） |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
@@ -547,6 +549,44 @@ class OcrService(QObject):
 
 ---
 
+### 3.7 OfficialDataImportService（官方榜单导入）
+
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和通用 `OcrWorker` 队列。`OfficialDataImportWorker` 在一个 QThread 中按用户选择顺序处理 2v2 和武将放逐图片；同一任务内不并发争用其 PaddleOCR 实例。
+
+```
+OfficialDataImportDialog._start_import()
+  -> OfficialDataImportWorker.run()
+    -> emit progress_changed(status, 0, 0)                 # 读取与行检测阶段
+    -> OfficialDataImportService.import_file(key, path, callback)
+      -> _read_image() -> _extract_panels()
+      -> _find_data_boundaries() -> HoughLinesP 横线 -> 视觉行序
+      -> _prepare_rate_templates()（仅 2v2 胜率表）
+      -> _recognize_row() -> 名称/胜率识别 -> _review_reasons()
+      -> _write_csv() -> Path.replace() 原子覆盖
+      -> [胜率] clear_win_rate_cache()
+    -> emit completed(summaries)
+```
+
+**版式、输出与进度：**
+
+| 图片 | 表格 | 输出 | 工作量 |
+|---|---|---|---|
+| 2v2 | 左“胜率最高” | `2v2胜率排行.csv` | 胜率模板准备 + 每行识别 |
+| 2v2 | 右“出场最多” | `2v2出场排行.csv` | 每行识别 |
+| 武将放逐 | 左 1-80、右 81-160 | `武将放逐.csv` | 两栏视觉行序合并后逐行识别 |
+
+Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检测到横线后以总工作单元切换为 `current / total`。2v2 出场榜和放逐榜的排名/武将分界为面板宽度的 45%，避免排名数字进入名称 ROI；胜率格向左扩展 4px，避免首位数字贴线时被截断。
+
+**名称降级策略：**
+
+1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。任一候选去除非汉字后精确命中 `heroes.json` 时，优先使用完整候选，即使单字候选置信度更高。
+2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `_correct_with_hero_list()` 校正后必须命中词表。
+3. 逐字补识别失败时，只有单字作为词表首字的候选唯一才补全；多个同首字候选不猜测，保留 OCR 原文并写入待复核。
+
+每个正式 CSV 都有对应的 `*_待复核.csv`。异常记录含 OCR 原文、置信度、原因、原图坐标及 `screenshot_data/official_import/` 下的行截图；正式 CSV 仍按视觉行序写入，避免漏识别导致排名整体偏移。
+
+---
+
 ## 四、数据管理层细节
 
 ### 4.1 DataManager 泛型基类
@@ -666,7 +706,8 @@ def apply_incremental_update(data_dir, update)
 | roi_selector.py | 149 | QDialog（框选模板区域） |
 | backend_choose_dialog.py | 141 | QDialog |
 | guide_progress_dialog.py | 135 | QDialog |
-| cost_confirm_dialog.py | 77 | QDialog |
+| cost_confirm_dialog.py | 77 | QDialog | 
+| official_data_import_dialog.py | ~100 | QDialog（榜单图片选择、进度条、完成/失败提示） |
 | style.py | 247 | 样式表常量 |
 | fetch_dialog.py | 31 | QDialog（继承基类） |
 | guide_fetch_dialog.py | 29 | QDialog（继承基类） |
@@ -997,7 +1038,21 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 |----|------|------|
 | GuideDetailDialog | `guide_detail_dialog.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 780×680），左侧摘要/关系标签，右侧 Markdown 正文 |
 
-### 5.11 全局样式（style.py, 247 行）
+### 5.11 官方数据导入对话框（OfficialDataImportDialog）
+
+该对话框提供两个只读图片路径框，可单独或同时选择 2v2 与武将放逐图片。导入期间禁用导入、取消和关闭操作；进度先为不定状态，收到 Worker 的总工作量后显示当前文件的 `current / total`。完成后显示每种图片的导入条数和待复核条数；失败时恢复按钮并隐藏进度条。
+
+```
+_start_import()
+  -> OfficialDataImportWorker(paths, self)
+  -> progress_changed -> _on_progress_changed()
+  -> completed -> _on_completed() -> accept()
+  -> failed -> _on_failed()
+```
+
+该窗口不读取图片、不进行 OCR、不写 CSV；这些操作全部委托给业务服务层，因此常规模板武将识别与官方榜单 OCR 在 UI 和线程生命周期上互不影响。
+
+### 5.12 全局样式（style.py, 247 行）
 
 **颜色方案**：
 
@@ -1751,17 +1806,21 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
 
 ### 13.1 测试文件与用例数
 
-| 文件 | 类 | 用例数 | 测试内容 |
-|------|-----|--------|----------|
-| test_models.py | TestSkill / TestHero / TestSynergyScore / TestHeroGuide / TestCard / TestIncrementalUpdate | 25 | Pydantic 模型校验 |
-| test_ai_batch.py | TestLoadPrompt / TestEstimateCost / TestInternalEstimateCost / TestSaveJson / TestAIBatchGenerator / TestLoadHeroes / TestConfigLoading | 33 | AI 批量生成核心逻辑 |
-| test_hero_manager.py | TestHeroManager | 13 | 武将 CRUD + 查询 |
-| test_synergy_manager.py | TestSynergyManager | 13 | 相性 CRUD + 双向查询 |
-| test_guide_manager.py | TestGuideManager | 11 | 攻略 CRUD |
-| test_incremental_update.py | TestApplyIncrementalUpdate | 8 | 增量更新逻辑 |
-| test_ui.py | TestEnvFileParsing | 4 | UI 工具函数 |
+| 文件 | 用例数 | 测试内容 |
+|------|--------|----------|
+| `test_adb_capture.py` | 10 | ADB 连接、截图与异常处理 |
+| `test_ai_batch.py` / `test_ai_generation.py` | 50 | AI 参数、生成、staging 与提交 |
+| `test_ai_generation_workflow.py` | 3 | AI UI 工作流信号与刷新 |
+| `test_capture_service.py` / `test_ocr_*.py` | 15 | 截图编排、模板缩放、OCR 服务与队列 |
+| `test_crawler.py` / `test_incremental_update.py` | 17 | 官网解析与增量更新 |
+| `test_data_facade.py` / `test_models.py` | 37 | 数据容错、Pydantic 校验与引用完整性 |
+| `test_emulator_operation_service.py` / `test_emulator_ui.py` / `test_mumu_config_dialog.py` / `test_prober.py` | 23 | ADB/MuMu 探测、后台操作与配置 UI |
+| `test_faction_color_dialog.py` / `test_guide_ui.py` / `test_ui.py` | 18 | 通用界面、攻略与势力配色 |
+| `test_hero_manager.py` / `test_guide_manager.py` / `test_synergy_manager.py` | 42 | 三类 Manager CRUD 与查询 |
+| `test_logging_config.py` / `test_main.py` | 3 | 日志配置与应用入口 |
+| `test_official_data_import.py` | 11 | 榜单行切分、胜率 ROI、名称候选/逐字兜底、进度和 CSV 覆盖 |
 
-**总计：112 个测试用例，全部通过。**
+当前以 `pytest --collect-only -q` 收集 **229** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 ### 13.2 AIBatchGenerator 测试要点
 

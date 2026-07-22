@@ -1,7 +1,7 @@
 # 模块：业务服务层
 
 > 对应目录：`src/business/`
-> 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度
+> 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入
 
 ---
 
@@ -13,6 +13,7 @@
 2. **ADB 截图业务编排** — 管理 AdbCapture 生命周期，协调截图 → 模板匹配 → OCR 的流程
 3. **OCR 控制服务** — 模板管理、轮询控制、冷却管理
 4. **模拟器后台操作** — 独立执行设备探测与 ADB 会话操作，避免实例枚举阻塞模板截图
+5. **官方榜单导入** — 解析固定版式的 2v2 胜率/出场榜与武将放逐榜，按表格行安全覆盖 CSV
 
 核心设计原则：**不持有 UI 引用**，全部通过 Qt Signal 与主窗口通信。
 
@@ -30,6 +31,7 @@ src/business/
 ├── capture_service.py           # 截图业务编排（ADB 截图 + OCR 调度）
 ├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
 ├── ocr_service.py               # OCR 控制服务（模板管理 + 轮询）
+├── official_data_import_service.py # 官方榜单行分割、单元格 OCR 与 CSV 输出
 └── fetch_utils.py               # QProcess 公共工具函数
 ```
 
@@ -144,6 +146,59 @@ MumuConfigDialog
 
 ROI 框选保留在 UI 线程，模板保存和文件选择统一委托 `OcrService`；设备刷新失败时对话框保留上一次成功的设备列表和选择。模板截图进行中由 UI 显式记录，其他状态刷新不会重新启用或覆盖其按钮文字；关闭对话框后服务不再向该对话框投递结果。
 
+### 3.5 OfficialDataImportService（官方榜单导入）
+
+该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。目标是用表格横线确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
+
+```
+OfficialDataImportDialog
+  -> OfficialDataImportWorker.run()
+     -> import_file()（按已选图片顺序串行执行）
+           -> OpenCV HoughLinesP 检测横线
+           -> 按列比例裁剪每个单元格
+           -> PaddleOCR + 武将词表两段式校正 / 胜率数字模板识别
+           -> 原子覆盖 CSV + 写入待复核 CSV/行截图
+```
+
+**版式与输出：**
+
+| 图片 | 表格 | CSV | 列 |
+|---|---|---|---|
+| 2v2 | 左侧“胜率最高” | `data/2v2胜率排行.csv` | 排名、武将、胜率 |
+| 2v2 | 右侧“出场最多” | `data/2v2出场排行.csv` | 排名、武将 |
+| 武将放逐 | 左 1-80 + 右 81-160 | `data/武将放逐.csv` | 排名、武将 |
+
+异常行仍写入正式 CSV，并写入对应 `*_待复核.csv`。复核记录包含 OCR 原文、置信度、异常原因、原图坐标和行截图路径。
+
+**公共接口：**
+
+| 接口 | 参数 | 返回/信号 | 说明 |
+|---|---|---|---|
+| `OfficialDataImportService.import_selected()` | `{类型: 图片路径}` | `list[dict]` | 空路径跳过；两个类型依次执行 |
+| `OfficialDataImportService.import_file()` | `key`, `image_path` | `{name, records, reviews, outputs}` | 导入一种图片并覆盖其 CSV |
+| `OfficialDataImportWorker.progress_changed` | `status`, `current`, `total` | 当前文件的 OCR 工作进度 | 胜率模板准备和逐行识别都会更新 |
+| `OfficialDataImportWorker.completed` | - | `list[dict]` | 所有选中导入完成 |
+| `OfficialDataImportWorker.failed` | - | `str` | 任一导入失败原因 |
+
+**关键实现：**
+
+```python
+boundaries = self._find_data_boundaries(panel, image.shape[0], layout, panel_index)
+for top, bottom in zip(boundaries, boundaries[1:]):
+    expected_rank = len(batch["records"]) + 1
+    fields = self._recognize_row(row, columns, column_breaks)
+```
+
+`boundaries` 由横线检测得到，因此 `expected_rank` 来自视觉行序而非 OCR 排名。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；最高结果只有单字时，再保留背景留白按字形补识别。补识别仍失败但该首字在词表中只有唯一候选时可确认该候选；存在多个同首字候选的单字则写入待复核，不会用泛化词表匹配强行猜测。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。工作线程会先显示不定进度，待横线检测得到行数后，将胜率模板准备和逐行识别都计入当前文件进度。每个图片只创建一个 `OfficialDataImportWorker`；同时选择 2v2 和放逐时在同一线程顺序处理，不会互相争用该功能的 OCR 实例。它与常规 `OcrWorker` 是独立实例，轮询或截图识别同时运行时会共享 CPU/GPU 资源。
+
+**名称降级决策顺序：**
+
+1. 收集原图放大与增强锐化两次 OCR 的全部文本块；任一完整文本精确命中 `heroes.json` 词表时优先采用，不与单字的错误高置信度竞争。
+2. 若最高候选为单字，按亮色字形切分 2-4 个字符，保留原背景、左右内容与边缘留白后逐字 OCR；拼接结果通过 `_correct_with_hero_list()` 校正后必须仍命中词表。
+3. 逐字 OCR 未得到可用名称时，只有该首字在词表中唯一对应一个角色才自动补全；多候选的单字保留原结果，并以“武将名称疑似缺字”写入待复核 CSV 和行截图。
+
+该顺序能优先恢复低置信度但完整的词表候选，同时避免将“郭”“范”等多候选单字强行改为错误角色。
+
 ---
 
 ## 四、关键代码片段
@@ -201,4 +256,7 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `src.scraper.*` | 构建 CLI 参数调用爬虫/AI 脚本 |
 | 依赖 | `src.capture.adb_screen` | CaptureService 持有 AdbCapture 实例 |
 | 依赖 | `src.ocr.*` | OCR 控制服务管理模板和识别器 |
+| 依赖 | `src.ocr.recognizer` | 官方榜单复用两段式武将词表校正 |
+| 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存 |
 | 被调用方 | `src.ui.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 fetch_*() |
+| 被调用方 | `src.ui.official_data_import_dialog` | 对话框创建后台导入线程并显示结果 |
