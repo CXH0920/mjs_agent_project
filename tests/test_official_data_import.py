@@ -80,6 +80,52 @@ def test_name_cell_uses_unique_prefix_when_glyph_recognition_fails(monkeypatch) 
     assert (text, confidence) == ("樊哙", 0.999)
 
 
+def test_name_cell_uses_rare_character_engine_for_ambiguous_single_character(monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["荀彧", "荀勖"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    rare_character_engine = object()
+    statuses = []
+
+    def recognize_candidates(_cell, engine=None):
+        return [("菀勖", 0.82)] if engine is rare_character_engine else [("荀", 0.99)]
+
+    monkeypatch.setattr(service, "_recognize_cell_candidates", recognize_candidates)
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda *_: ("", 0.0))
+    monkeypatch.setattr(
+        OfficialDataImportService,
+        "_rare_char_engine",
+        property(lambda _: rare_character_engine),
+    )
+
+    text, confidence = service._recognize_name_cell(cell, statuses.append)
+
+    assert (text, confidence) == ("荀勖", 0.82)
+    assert statuses == ["正在执行罕见字兜底识别"]
+
+
+def test_name_cell_keeps_single_character_for_review_when_rare_engine_fails(monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["荀彧", "荀勖"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    rare_character_engine = object()
+    monkeypatch.setattr(service, "_recognize_cell_candidates", lambda _: [("荀", 0.99)])
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda *_: ("", 0.0))
+    monkeypatch.setattr(OfficialDataImportService, "_rare_char_engine", property(lambda _: rare_character_engine))
+    monkeypatch.setattr(
+        service,
+        "_recognize_name_with_engine",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("model unavailable")),
+    )
+
+    text, confidence = service._recognize_name_cell(cell)
+    reasons = OfficialDataImportService._review_reasons(
+        1, {"排名": ("1", 0.99), "武将": (text, confidence)}, text, {"排名": 1, "武将": text},
+    )
+
+    assert (text, confidence) == ("荀", 0.99)
+    assert reasons == ["武将名称疑似缺字"]
+    assert service._rare_char_engine_failed is True
+
+
 def test_single_character_name_is_marked_for_review() -> None:
     reasons = OfficialDataImportService._review_reasons(
         1,
