@@ -77,6 +77,8 @@ class OfficialDataImportDialog(QDialog):
 
     def _on_progress_changed(self, status: str, current: int, total: int) -> None:
         self._progress_label.setText(status)
+        if current < 0:
+            return
         if total <= 0:
             self._progress_bar.setRange(0, 0)
             return

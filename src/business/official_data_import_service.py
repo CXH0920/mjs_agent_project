@@ -64,6 +64,8 @@ class OfficialDataImportService:
     def __init__(self, hero_names: list[str] | None = None) -> None:
         self._hero_names = hero_names or self._load_hero_names()
         self._ocr = None
+        self._rare_char_ocr = None
+        self._rare_char_engine_failed = False
 
     @staticmethod
     def _load_hero_names() -> list[str]:
@@ -84,6 +86,24 @@ class OfficialDataImportService:
             self._ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
         return self._ocr
 
+    @property
+    def _rare_char_engine(self):
+        """按需加载繁体模型，以覆盖简体模型字典外的罕见字。"""
+        if self._rare_char_engine_failed:
+            return None
+        if self._rare_char_ocr is None:
+            try:
+                from paddleocr import PaddleOCR
+                logger.info("正在加载官方榜单罕见字 OCR 模型")
+                self._rare_char_ocr = PaddleOCR(
+                    use_angle_cls=False, lang="chinese_cht", show_log=False,
+                )
+            except Exception as exc:
+                logger.warning("罕见字 OCR 模型不可用，将保留原结果待复核: %s", exc)
+                self._rare_char_engine_failed = True
+                return None
+        return self._rare_char_ocr
+
     def import_selected(self, paths: dict[str, str]) -> list[dict]:
         """执行所有已选择的导入流程。"""
         return [self.import_file(key, Path(path)) for key, path in paths.items() if path]
@@ -93,6 +113,7 @@ class OfficialDataImportService:
         key: str,
         image_path: Path,
         progress_callback: Callable[[int, int], None] | None = None,
+        status_callback: Callable[[str], None] | None = None,
     ) -> dict:
         """从一张官方榜单图片识别并覆盖对应数据文件。"""
         layout = LAYOUTS[key]
@@ -147,6 +168,7 @@ class OfficialDataImportService:
                 fields = self._recognize_row(
                     row, columns, column_breaks,
                     {"胜率": rate_ocr_results[expected_rank]} if "胜率" in columns else None,
+                    status_callback,
                 )
                 name, confidence = self._normalize_name(fields["武将"])
                 record = {"排名": expected_rank, "武将": name}
@@ -265,10 +287,11 @@ class OfficialDataImportService:
         columns: tuple[str, ...],
         column_breaks: tuple[float, ...],
         precomputed: dict[str, tuple[str, float]] | None = None,
+        status_callback: Callable[[str], None] | None = None,
     ) -> dict[str, tuple[str, float]]:
         return {
             column: precomputed[column] if precomputed and column in precomputed else (
-                self._recognize_name_cell(cell) if column == "武将" else self._recognize_cell(cell)
+                self._recognize_name_cell(cell, status_callback) if column == "武将" else self._recognize_cell(cell)
             )
             for column, cell in self._split_row_cells(row, columns, column_breaks).items()
         }
@@ -399,7 +422,7 @@ class OfficialDataImportService:
                     best_digit, best_score = digit, float(score)
         return best_digit, best_score
 
-    def _recognize_cell_candidates(self, cell: np.ndarray) -> list[tuple[str, float]]:
+    def _recognize_cell_candidates(self, cell: np.ndarray, engine=None) -> list[tuple[str, float]]:
         if cell.size == 0:
             return []
         enlarged = cv2.resize(cell, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
@@ -411,32 +434,72 @@ class OfficialDataImportService:
         candidates.append(cv2.filter2D(enhanced, -1, np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])))
         results: list[tuple[str, float]] = []
         for candidate in candidates:
-            ocr_result = self._engine.ocr(candidate, cls=False)
+            ocr_result = (engine if engine is not None else self._engine).ocr(candidate, cls=False)
             for line in ocr_result[0] if ocr_result and ocr_result[0] else []:
                 text, confidence = line[1]
                 if text:
                     results.append((text.replace(" ", ""), float(confidence)))
         return results
 
-    def _recognize_cell(self, cell: np.ndarray) -> tuple[str, float]:
-        candidates = self._recognize_cell_candidates(cell)
+    def _recognize_cell(self, cell: np.ndarray, engine=None) -> tuple[str, float]:
+        candidates = (
+            self._recognize_cell_candidates(cell, engine)
+            if engine is not None else self._recognize_cell_candidates(cell)
+        )
         return max(candidates, key=lambda item: item[1], default=("", 0.0))
 
-    def _recognize_name_cell(self, cell: np.ndarray) -> tuple[str, float]:
+    @staticmethod
+    def _chinese_text(text: str) -> str:
+        return "".join(re.findall(r"[\u4e00-\u9fff]", text))
+
+    def _find_complete_hero_candidate(
+        self, candidates: list[tuple[str, float]],
+    ) -> tuple[str, float] | None:
+        exact_matches = [
+            (self._chinese_text(text), confidence)
+            for text, confidence in candidates
+            if self._chinese_text(text) in self._hero_names
+        ]
+        return max(exact_matches, key=lambda item: item[1]) if exact_matches else None
+
+    def _recognize_name_with_engine(self, cell: np.ndarray, engine) -> tuple[str, float]:
+        """使用指定引擎识别名称，仅接受词表中可确认的完整结果。"""
+        candidates = self._recognize_cell_candidates(cell, engine)
+        exact_match = self._find_complete_hero_candidate(candidates)
+        if exact_match:
+            return exact_match
+        corrected_matches = []
+        for text, confidence in candidates:
+            candidate_name = self._chinese_text(text)
+            if len(candidate_name) < 2:
+                continue
+            corrected = _correct_with_hero_list(candidate_name, self._hero_names)
+            if corrected in self._hero_names:
+                corrected_matches.append((corrected, confidence))
+        if corrected_matches:
+            return max(corrected_matches, key=lambda item: item[1])
+        glyph_name, glyph_confidence = self._recognize_name_glyphs(cell, engine)
+        if glyph_name:
+            corrected = _correct_with_hero_list(glyph_name, self._hero_names)
+            if corrected in self._hero_names:
+                return corrected, glyph_confidence
+        return "", 0.0
+
+    def _recognize_name_cell(
+        self,
+        cell: np.ndarray,
+        status_callback: Callable[[str], None] | None = None,
+    ) -> tuple[str, float]:
         """优先选用词表中的完整 OCR 候选，单字结果再逐字补识别。"""
         candidates = self._recognize_cell_candidates(cell)
         if not candidates:
             return "", 0.0
-        exact_matches = [
-            ("".join(re.findall(r"[\u4e00-\u9fff]", text)), confidence)
-            for text, confidence in candidates
-            if "".join(re.findall(r"[\u4e00-\u9fff]", text)) in self._hero_names
-        ]
-        if exact_matches:
-            return max(exact_matches, key=lambda item: item[1])
+        exact_match = self._find_complete_hero_candidate(candidates)
+        if exact_match:
+            return exact_match
 
         text, confidence = max(candidates, key=lambda item: item[1])
-        name = "".join(re.findall(r"[\u4e00-\u9fff]", text))
+        name = self._chinese_text(text)
         if len(name) != 1:
             return text, confidence
 
@@ -448,9 +511,20 @@ class OfficialDataImportService:
         prefix_matches = [hero for hero in self._hero_names if hero.startswith(name)]
         if len(prefix_matches) == 1:
             return prefix_matches[0], confidence
+        if status_callback:
+            status_callback("正在执行罕见字兜底识别")
+        rare_char_engine = self._rare_char_engine
+        if rare_char_engine is not None:
+            try:
+                rare_name, rare_confidence = self._recognize_name_with_engine(cell, rare_char_engine)
+                if rare_name:
+                    return rare_name, rare_confidence
+            except Exception as exc:
+                logger.warning("罕见字 OCR 识别失败，将保留原结果待复核: %s", exc)
+                self._rare_char_engine_failed = True
         return text, confidence
 
-    def _recognize_name_glyphs(self, cell: np.ndarray) -> tuple[str, float]:
+    def _recognize_name_glyphs(self, cell: np.ndarray, engine=None) -> tuple[str, float]:
         """按亮色字形切分名称格，并在保留背景留白后逐字识别。"""
         gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
         columns = (gray > 180).any(axis=0)
@@ -473,8 +547,11 @@ class OfficialDataImportService:
         for left, right in groups:
             glyph = cell[:, max(0, left - 5):min(cell.shape[1], right + 6)]
             glyph = cv2.copyMakeBorder(glyph, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=background)
-            text, confidence = self._recognize_cell(glyph)
-            character = "".join(re.findall(r"[\u4e00-\u9fff]", text))
+            text, confidence = (
+                self._recognize_cell(glyph, engine)
+                if engine is not None else self._recognize_cell(glyph)
+            )
+            character = self._chinese_text(text)
             if len(character) != 1:
                 return "", 0.0
             characters.append(character)
@@ -556,6 +633,7 @@ class OfficialDataImportWorker(QThread):
                     key,
                     Path(path),
                     lambda current, total, text=status: self.progress_changed.emit(text, current, total),
+                    lambda text, prefix=status: self.progress_changed.emit(f"{prefix}：{text}", -1, -1),
                 ))
             self.completed.emit(summaries)
         except Exception as exc:
