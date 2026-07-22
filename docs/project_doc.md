@@ -34,7 +34,7 @@
 
 | 功能 | 主入口 | 关键调用顺序 | 结果 |
 |------|--------|--------------|------|
-| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `DataFacade.load_all()` -> OCR `warmup()` -> `MainWindow()` | 加载数据、预热 OCR、进入 Qt 事件循环 |
+| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志、加载数据、创建主窗口并进入 Qt 事件循环；OCR 识别器按首次任务延迟初始化 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | 选择后端 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 生成暂存数据；所有任务成功才提交正式 JSON |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
@@ -58,7 +58,7 @@ DataFacade.load_all()
 
 ### 进程与任务提交边界
 
-`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。成功以 CLI 退出码判定，AI CLI 失败会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成使用 staging 文件：任一 `GenerationResult` 失败时，正式 `guides.json`、`synergies.json` 不提交，CLI 输出暂存路径供人工排查。
+`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 失败会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成使用 staging 文件：任一 `GenerationResult` 失败时，正式 `guides.json`、`synergies.json` 不提交，CLI 输出暂存路径供人工排查。
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期；`CaptureService` 管理 ADB 截图和任务提交。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
 
@@ -888,7 +888,12 @@ RecommendationPanel (QWidget)
 }
 ```
 
-配色通过 `_load_faction_colors()` 函数加载（`src/ui/recommendation_panel.py` 模块级函数），返回 `dict[str, str]`，调用方通过 `_load_faction_colors().get(faction, "#888")` 获取，未知势力使用灰色 `#888` 兜底。
+配色通过公开共享模块 `src/ui/shared/faction_colors.py` 管理：`load_faction_colors()` 负责读取和校验 JSON，`get_faction_colors()` 提供带内建兜底色的缓存，`reload_faction_colors()` 在配置保存后清空缓存并重新加载。推荐面板、对局攻略、武将浏览器和可勾选组合控件只依赖这些公开函数，未知势力使用灰色 `#888` 兜底。
+
+**共享 UI 与胜率数据访问**：
+- `src/ui/shared/widgets.py` 提供 `DoubleClickLabel`，统一头像双击信号，推荐卡片和对局攻略卡片复用同一控件。
+- `src/ui/shared/hero_dialogs.py` 提供 `HeroSkillDialog`，技能描述和结算详情弹窗不再由业务页面私有实现。
+- `src/data/win_rate_repository.py` 的 `load_win_rates()` 读取 `data/2v2胜率排行.csv`，默认路径结果缓存；推荐面板和对局攻略页面通过该仓库查询胜率，避免重复实现 CSV 解析。
 
 **数据接口**：
 ```python
@@ -1506,10 +1511,10 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 
 | 维度 | 来源 | 存储位置 | 加载方式 |
 |------|------|---------|----------|
-| 四角号码 | unihan-etl（UNIHAN `kFourCornerCode`） | `src/data/char_info_cache.json` | 启动时 ~10ms |
-| 仓颉码 | unihan-etl（UNIHAN `kCangjie`） | 同上 | 同上 |
+| 四角号码 | unihan-etl（UNIHAN `kFourCornerCode`） | `src/data/char_info_cache.json` | 首次 OCR/纠错时按需加载 |
+| 仓颉码 | unihan-etl（UNIHAN `kCangjie`） | 同上 | 首次 OCR/纠错时按需加载 |
 | 部首 | cnradical | 同上 | JSON 缓存 / 运行时补齐 |
-| 拼音 | pypinyin | 同上 | JSON 缓存 / warmup 预加载 |
+| 拼音 | pypinyin | 同上 | JSON 缓存 / 纠错时按需加载 |
 | 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `recognizer.py` 内联路径 | 运行时解析文本文件，首次约 355ms |
 
 数据文件 `src/data/char_info_cache.json` 包含 223 个高频汉字（武将名 + 常见 OCR 误识字）。

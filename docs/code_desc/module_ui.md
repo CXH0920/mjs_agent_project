@@ -24,6 +24,10 @@
 src/ui/
 ├── app_icon.py                 # 应用图标加载、缓存与窗口图标维护
 ├── __init__.py
+├── shared/                     # 跨页面控件、技能弹窗和势力配色访问器
+│   ├── widgets.py              # DoubleClickLabel 等共享控件
+│   ├── hero_dialogs.py         # HeroSkillDialog
+│   └── faction_colors.py       # 势力配色读取、兜底和缓存
 ├── style.py                    # 全局样式表（天蓝色调）
 ├── main_window.py              # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
 ├── hero_browser.py             # 武将浏览（列表+详情+Tab 栏编辑按钮）
@@ -44,6 +48,8 @@ src/ui/
 ├── synergy_pair_dialog.py      # 相性指定获取（选 2~8 武将）
 └── synergy_single_dialog.py    # 相性选定武将（选 1 武将）
 ```
+
+胜率 CSV 读取位于 `src/data/win_rate_repository.py`。页面只依赖共享模块的公开名称，不再从 `recommendation_panel.py` 导入私有函数或复用其内部缓存。
 
 ---
 
@@ -137,7 +143,7 @@ RecommendationPanel (QWidget)
                ├── 推荐指数（星级 + 百分比）
                ├── 高相性组合（OCR 模式下仅显示当前 8 人相性）
                └── 胜率 + 前三 🥇🥈🥉 奖牌
-       └── HeroSkillDialog（头像双击弹窗：按技能名称分 Tab 展示描述和结算）
+       └── HeroSkillDialog（来自 ui/shared/hero_dialogs.py，按技能名称分 Tab 展示描述和结算）
 ```
 
 **数据接口：**
@@ -170,7 +176,7 @@ ColorPicker.color()
   -> FactionColorDialog._save()
   -> save_faction_colors()
   -> data/faction_colors.json
-  -> reload_faction_colors()
+  -> ui/shared/faction_colors.reload_faction_colors()
   -> RecommendationPanel.refresh_faction_colors()
 ```
 

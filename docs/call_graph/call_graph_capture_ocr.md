@@ -423,7 +423,7 @@ src.ui.mumu_config_dialog
 | `GeneralRecognizer._recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `_preprocess_roi()`, `_engine.ocr()`, `_correct_with_hero_list()` |
 | `GeneralRecognizer._preprocess_roi(roi)` | `recognizer.py` | `_recognize_single()` | `cv2.resize()`, CLAHE, 锐化, 灰度 |
 | `GeneralRecognizer._extract_text(result)` | `recognizer.py` | `_recognize_single()` | PaddleOCR 解析 |
-| `GeneralRecognizer.warmup()` | `recognizer.py` | `main.py` 启动预热 | `self._engine`, `_load_char_info()`, `pypinyin.pinyin()` |
+| `GeneralRecognizer.warmup()` | `recognizer.py` | 显式预热工具/测试（当前启动不调用） | `self._engine`, `_load_char_info()`, `pypinyin.pinyin()` |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `CaptureService._run_ocr()` | JSON 序列化 |
 | `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×165, `_pick_visually_similar()` |
 | `_levenshtein_distance(s1, s2)` | `recognizer.py` | `_correct_with_hero_list()` | DP O(n×m) |
@@ -439,6 +439,6 @@ src.ui.mumu_config_dialog
 | `_get_pinyin_of(char)` | `recognizer.py` | `_ensure_char_in_cache()` | `pypinyin.pinyin()` |
 | `_get_stroke(char)` | `recognizer.py` | `_ensure_char_in_cache()` | `_load_strokes()` |
 | `_load_strokes()` | `recognizer.py` | `_get_stroke()` | 读取 Unihan_IRGSources.txt |
-| `_load_char_info()` | `recognizer.py` | `_pick_visually_similar()`, `warmup()` | 读取 char_info_cache.json |
+| `_load_char_info()` | `recognizer.py` | `_pick_visually_similar()`, 显式 `warmup()` | 读取 char_info_cache.json |
 | `_pinyin_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | `_hc()` (tiebreak) |
 | `_stroke_diff(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | `_hc()` (tiebreak) |

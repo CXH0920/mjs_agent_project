@@ -23,26 +23,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.ui.shared.faction_colors import load_faction_colors
+
 logger = logging.getLogger(__name__)
 COLORS_FILE = Path(__file__).resolve().parents[2] / "data" / "faction_colors.json"
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-
-
-def load_faction_colors(path: Path = COLORS_FILE) -> dict[str, str]:
-    """读取势力颜色，读取失败时返回空字典，由调用方决定是否提示。"""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        logger.warning("读取势力配色失败: %s", exc)
-        return {}
-    if not isinstance(data, dict):
-        logger.warning("势力配色格式无效：根节点不是对象")
-        return {}
-    return {
-        str(name): value.upper()
-        for name, value in data.items()
-        if isinstance(name, str) and isinstance(value, str) and HEX_COLOR_RE.fullmatch(value)
-    }
 
 
 def save_faction_colors(colors: dict[str, str], path: Path = COLORS_FILE) -> None:

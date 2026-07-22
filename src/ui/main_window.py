@@ -840,7 +840,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
-        from src.ui.recommendation_panel import reload_faction_colors
+        from src.ui.shared.faction_colors import reload_faction_colors
 
         reload_faction_colors()
         self._recommendation.refresh_faction_colors()

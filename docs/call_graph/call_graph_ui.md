@@ -28,6 +28,31 @@ MainWindow.__init__()
 
 数据完整性问题存于 `self._data.last_load_report`；当前 UI 使用已恢复的内存数据，尚未提供报告查看或写回修复界面。服务完成状态以 CLI 退出码为准，不解析 `RESULT: FAIL=`。
 
+## 共享 UI 与数据访问接口
+
+跨页面复用的实现已集中到公开模块，调用方向如下：
+
+```
+RecommendationPanel / MatchGuidePanel
+  -> src.ui.shared.widgets.DoubleClickLabel
+     -> double_clicked [左键双击信号]
+  -> src.ui.shared.hero_dialogs.HeroSkillDialog(hero).exec()
+  -> src.ui.shared.faction_colors.get_faction_colors()
+     -> load_faction_colors() [首次访问时读取并校验 JSON]
+     -> DEFAULT_FACTION_COLORS [文件不可用时兜底]
+  -> src.data.win_rate_repository.load_win_rates()
+     -> csv.DictReader(data/2v2胜率排行.csv)
+     -> {武将名: 百分比} [默认路径结果缓存]
+
+MainWindow._open_faction_colors()
+  -> save_faction_colors()
+  -> reload_faction_colors()
+  -> RecommendationPanel.refresh_faction_colors()
+  -> MatchGuidePanel.refresh_faction_colors()
+```
+
+这些页面只导入公开名称，不再从 `recommendation_panel.py`、`hero_browser.py` 或其他页面模块跨模块导入 `_xxx` 私有实现。
+
 ## 一、MainWindow 信号拓扑
 
 ### 1.1 初始化流程
@@ -246,14 +271,14 @@ MatchGuidePanel.__init__(hero_mgr, capture_service)
   -> _load_default_heroes()
      -> HeroManager.list_heroes()                                [按 ID 升序取前四名]
      -> MatchHeroCard.set_hero(hero)
-        -> _load_faction_colors()                                [头像左上势力标签]
+        -> get_faction_colors()                                  [头像左上势力标签]
         -> _load_portrait()                                      [头像 120×160，区域 135×162]
-     -> _load_win_rates()                                        [加载胜率]
+     -> load_win_rates()                                         [加载胜率仓库]
 
 MatchHeroCard._portrait [左键双击]
   -> MatchHeroCard._on_hero_double_clicked()
   -> MatchGuidePanel._show_skill_popup(hero_id)
-  -> HeroSkillDialog(hero).exec()
+  -> src.ui.shared.hero_dialogs.HeroSkillDialog(hero).exec()
 
 MatchGuidePanel._on_import_from_screenshot()
   -> [未配置 ADB] request_mumu_config → MainWindow._open_mumu_config()
@@ -398,7 +423,7 @@ RecommendationPanel._apply_medal_rankings()
 | `load_from_ocr(results)` | `RecommendationPanel` | `_on_capture_result()`, `_on_poll_result()` | `get_hero_by_name()`, `set_hero()`, `_load_real_synergies()` |
 | `_load_default_heroes()` | `RecommendationPanel` | `__init__()` | `list_heroes()`, `_load_real_synergies()`, `_load_win_rate_by_name()` |
 | `_load_real_synergies(idx, id)` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | `list_synergies_for_hero()`, `get_hero()`, `set_synergies()` |
-| `_load_win_rate_by_name(idx, name)` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | `_load_win_rates()`, `set_win_rate()` |
+| `_load_win_rate_by_name(idx, name)` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | `load_win_rates()`, `set_win_rate()` |
 | `_apply_medal_rankings()` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | 解析胜率文本, `set_medal()` |
 | `set_hero(hero)` | `HeroCardWidget` | 外部 | `_update_display()`, `_load_portrait()`, `_update_confidence_display()` |
 | `set_confidence(conf)` | `HeroCardWidget` | 外部 | `_update_confidence_display()` |
@@ -432,7 +457,7 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
 | `load_from_ocr(results)` | `recommendation_panel.py` | `_on_capture_result()` | `get_hero_by_name()`, `set_hero()`, `_load_real_synergies()` |
 | `_load_default_heroes()` | `recommendation_panel.py` | `__init__()` | `list_heroes()`, `_load_real_synergies()`, `_load_win_rate_by_name()` |
 | `_load_real_synergies(idx, id)` | `recommendation_panel.py` | 内部 | `list_synergies_for_hero()`, `get_hero()`, `set_synergies()` |
-| `_load_win_rate_by_name(idx, name)` | `recommendation_panel.py` | 内部 | `_load_win_rates()`, `set_win_rate()` |
+| `_load_win_rate_by_name(idx, name)` | `recommendation_panel.py` | 内部 | `load_win_rates()`, `set_win_rate()` |
 | `_apply_medal_rankings()` | `recommendation_panel.py` | 内部 | 排序 + `set_medal()` |
 | `_show_guide_popup(hero_id)` | `recommendation_panel.py` | `card.guide_clicked` | `get_hero()`, `get_guide()`, `GuideDetailDialog` |
 

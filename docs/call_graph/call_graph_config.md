@@ -15,7 +15,7 @@ MainWindow.__init__() -> get_mumu_config() -> CaptureService/OcrService.update_c
 ai_batch.main() -> get_api_config()
 ```
 
-`save_env_file()` 先写 `config.env.tmp` 再 `replace()` 原子替换。启动预热链路为 `main()` -> `DataFacade.load_all()` -> 英雄名称 -> `GeneralRecognizer.warmup()`；预热失败仅记录 warning。
+`save_env_file()` 先保留原文件注释和未修改键，再写入 `.env.tmp` 并 `replace()` 原子替换。当前启动不主动执行 OCR warmup：`main()` 创建 QApplication 后直接创建 `MainWindow`，OCR 引擎由首次提交 OCR 任务时延迟加载，避免启动阶段重复构造数据门面。
 
 ## 一、应用启动链路
 
@@ -44,19 +44,6 @@ ai_batch.main() -> get_api_config()
        -> app.setWindowIcon(icon)                             [设置应用默认图标]
        -> app.installEventFilter(_AppIconKeeper)              [窗口显示/激活时恢复图标]
 
-    -> [提前初始化 PaddleOCR 模型]
-       -> from src.ocr.recognizer import GeneralRecognizer
-       -> from src.data.manager import DataFacade, DEFAULT_*
-       -> facade = DataFacade(...)                              [数据门面（空）]
-       -> facade.load_all()                                     [加载数据文件]
-       -> hero_names = [h.name for h in facade.heroes.list_heroes()]
-       -> recognizer = GeneralRecognizer(hero_names=hero_names) [创建识别器]
-       -> recognizer.warmup()                                   [预热 OCR 模型]
-          -> self._engine (property)                            [首次调用→延迟初始化 PaddleOCR]
-          -> _load_char_info()                                  [加载汉字特征缓存]
-          -> pypinyin.pinyin("预热")                            [预热 pypinyin 缓存]
-       -> [失败仅 warning, 不阻止启动]
-
     -> app.setStyleSheet(GLOBAL_STYLE)                          [设置全局样式表]
     -> window = MainWindow()                                    [创建主窗口]
        -> [完整 MainWindow 初始化链见 call_graph_ui.md]
@@ -66,12 +53,12 @@ ai_batch.main() -> get_api_config()
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `main()` | `src/main.py` | Python 入口 | `setup_logging()`, `QApplication()`, `GeneralRecognizer.warmup()`, `MainWindow()` |
+| `main()` | `src/main.py` | Python 入口 | `get_runtime_params()`, `setup_logging()`, `QApplication()`, `MainWindow()` |
 | `setup_logging()` | `config/logging_config.py` | `main()` | `logging.getLogger()`, `ModuleFilter`, `RotatingFileHandler` |
-| `GeneralRecognizer.warmup()` | `ocr/recognizer.py` | `main()` | `self._engine`, `_load_char_info()`, `pypinyin.pinyin()` |
-| `DataFacade.load_all()` | `data/manager.py` | `main()` | `HeroManager.load()`, `SynergyManager.load()`, `GuideManager.load()` |
+| `MainWindow.__init__()` | `ui/main_window.py` | `main()` | 创建服务、`_load_data()`, `_setup_ui()` |
+| `DataFacade.load_all()` | `data/manager.py` | `MainWindow._load_data()` | `HeroManager.load()`, `SynergyManager.load()`, `GuideManager.load()` |
 
-> **启动顺序说明：** PaddleOCR 预热（约 2-3 秒）在窗口显示之前完成，避免用户看到窗口后操作卡顿。OCR 预热失败不影响启动——识别时再尝试。
+> **启动顺序说明：** 主窗口构造时完成数据加载和服务配置；PaddleOCR 由 `OcrWorker`/`ocr_loader` 在首次 OCR 任务中延迟初始化。这样启动链路只负责进入 Qt 事件循环，首次识别才承担模型加载成本。
 
 ---
 
@@ -114,9 +101,11 @@ get_mumu_config()
      -> mumu_ocr_enabled: from env or False (bool)              [OCR 启用]
      -> mumu_ocr_poll_mode: from env or False (bool)            [轮询模式]
      -> mumu_ocr_poll_interval: from env or 2 (int)             [轮询间隔（秒）]
-     -> mumu_ocr_match_threshold: from env or 0.8 (float)       [模板匹配阈值]
-     -> mumu_generals_roi: from env or "" (解析为 tuple)        [8 个 ROI 坐标]
-     -> ocr_template_path: from env or ""                       [模板文件路径]
+     -> mumu_ocr_match_threshold: from env or 0.8 (float)       [兼容旧版通用阈值]
+     -> mumu_hero_selection_threshold: from env or 0.8 (float)  [选将模板阈值]
+     -> mumu_hero_selection_cooldown: from env or 180 (int)     [选将冷却秒数]
+     -> mumu_match_guide_threshold: from env or 0.8 (float)    [对局攻略模板阈值]
+     -> mumu_match_guide_cooldown: from env or 5 (int)          [对局攻略冷却秒数]
   -> return config dict
 ```
 
@@ -124,10 +113,10 @@ get_mumu_config()
 
 ```
 save_env_file(env_path, data: dict)
-  -> env_path.parent.mkdir(parents=True, exist_ok=True)        [确保目录存在]
-  -> lines = [f"{key}={value}\n" for key, value in data.items()]
+  -> 读取原文件并保留注释/未修改键
+  -> 合并 data 中的新值或覆盖已有键
   -> tmp_path = env_path.with_suffix(".env.tmp")               [临时文件]
-  -> tmp_path.write_text("".join(lines), encoding="utf-8")     [写入 tmp]
+  -> tmp_path.write_text("\\n".join(lines) + "\\n", encoding="utf-8") [UTF-8 写入 tmp]
   -> tmp_path.replace(env_path)                                [原子替换]
 ```
 
@@ -138,6 +127,30 @@ save_env_file(env_path, data: dict)
 | `parse_env_file(path)` | `config/env.py` | `get_api_config()`, `get_mumu_config()` | `Path.read_text()`, 逐行解析 |
 | `load_env_config(path)` | `config/env.py` | 外部 | `parse_env_file()`, key_mapping, 类型转换 |
 | `save_env_file(path, data)` | `config/env.py` | `MumuConfigDialog` 保存, `SettingsDialog` 保存 | `Path.write_text()`, 原子替换 |
+
+### 2.5 模型价格配置
+
+成本估算读取独立 JSON，不混入 `config.env`：
+
+```
+prompt_utils.estimate_cost(count, mode, model)
+  -> get_model_pricing(model)
+     -> load_pricing_config(data/model_pricing.json)
+     -> 校验 input_per_million / output_per_million
+  -> 计算输入/输出 token 与费用
+
+SettingsDialog / 管理脚本
+  -> save_pricing_config(path, data)
+     -> json.dumps(ensure_ascii=False)
+     -> *.tmp.write_text(encoding="utf-8", newline="\\n")
+     -> replace(path)
+```
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| `load_pricing_config(path)` | `config/env.py` | 读取并校验价格 JSON，异常时返回空模型表 |
+| `get_model_pricing(model)` | `config/env.py` | 返回指定模型单价，未知或非法配置返回 `None` |
+| `save_pricing_config(path, data)` | `config/env.py` | UTF-8、LF、无 BOM 原子写入 |
 
 ---
 
@@ -209,11 +222,10 @@ src.config.env 的函数被几乎所有模块调用:
 
 | 被调用方 | 说明 |
 |----------|------|
-| `src.ocr.recognizer.GeneralRecognizer.warmup()` | 预热 PaddleOCR 模型 |
 | `src.data.manager.DataFacade` | 加载武将名列表 |
 | `src.ui.main_window.MainWindow` | 创建主窗口 |
 | `src.ui.style.GLOBAL_STYLE` | 全局样式表 |
-| PaddleOCR | main() 中 warmup 创建并预热 |
+| `src.ocr.ocr_loader` / `OcrWorker` | 首次 OCR 任务时延迟创建识别器 |
 
 ---
 
@@ -221,7 +233,7 @@ src.config.env 的函数被几乎所有模块调用:
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `main()` | `src/main.py` | Python 入口 | `setup_logging()`, `QApplication()`, `GeneralRecognizer.warmup()`, `MainWindow()` |
+| `main()` | `src/main.py` | Python 入口 | `get_runtime_params()`, `setup_logging()`, `QApplication()`, `MainWindow()` |
 | `setup_logging(level, file)` | `config/logging_config.py` | `main()`, 各 CLI 入口 | `RotatingFileHandler`, `ModuleFilter` |
 | `get_api_config()` | `config/env.py` | `ai_batch.py`, `settings_dialog` | `parse_env_file()`, `os.environ.get()`, 默认值填充 |
 | `get_mumu_config()` | `config/env.py` | `MainWindow.__init__()`, `mumu_config_dialog` | `parse_env_file()`, 类型转换 |

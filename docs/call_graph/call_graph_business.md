@@ -19,7 +19,7 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
       -> _cleanup_context() -> 子类._on_process_finished(exit_code)
 ```
 
-`cancel_process()` 当前执行 `kill()` 后 `waitForFinished(3000)`，是同步等待。标准输出按单次 ready-read 的文本分行；维护 CLI 进度输出时必须使用完整换行和 `flush=True`。
+`cancel_process()` 当前只调用 `kill()`，不在 GUI 线程执行 `waitForFinished()`；进程结束后的临时文件清理、状态通知和上下文释放由 `finished` 信号统一完成。stdout 先累计到字节缓冲，`_dispatch_stdout_lines()` 只分发完整换行行，`_on_finished()` 再 flush 末尾残行，因此 QProcess 分块读取不会破坏 UTF-8 或 `[i/N]` 进度匹配。CLI 仍应输出换行并及时 flush，保证进度及时到达。
 
 ## 一、QProcess 服务通用模式
 
@@ -58,9 +58,31 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
 | `_on_stderr_ready()` | 读取 stderr → emit progress_output |
 | `_on_finished(code)` | 检查退出码 → emit fetch_completed |
 | `_on_error(error)` | QProcess 异常 → emit error_occurred |
-| `cancel()` | `process.kill()` + `waitForFinished(3000)` |
+| `cancel()` | `cancel_process()`；仅 `process.kill()`，由 `finished` 信号异步收尾 |
 
 > 以上通用方法定义在 `src/business/base_fetch_service.py` 的 `BaseFetchService` 中，三个子类通过继承复用。
+
+### 1.2 stdout / stderr 分块处理
+
+```
+QProcess.readyReadStandardOutput
+  -> BaseFetchService._read_stdout()
+     -> _stdout_buffer.extend(data)                         [完整日志]
+     -> _stdout_line_buffer.extend(data)                    [实时解析]
+     -> _dispatch_stdout_lines()
+        -> partition(b"\\n")                               [只取完整行]
+        -> _dispatch_stdout_line(raw_line)
+           -> raw_line.decode("utf-8", errors="replace")
+           -> _on_stdout_line(line)                          [子类解析进度]
+
+QProcess.finished
+  -> _read_stdout() / _read_stderr()
+  -> _dispatch_stdout_lines(flush=True)                      [分发无换行的最后一行]
+  -> _cleanup_context()
+  -> 子类._on_process_finished(exit_code)
+```
+
+`_stdout_buffer` 仅保存完整 stdout 供失败日志使用；`_stdout_line_buffer` 保存尚未遇到换行的字节尾部。两个缓冲区职责不同，不能用结束日志缓冲替代实时解析缓冲。
 
 ---
 
@@ -325,7 +347,7 @@ OcrService.ocr_completed          → UI 获取识别结果
 | 函数 | 文件 | 调用方 | 说明 |
 |------|------|--------|------|
 | `is_process_busy(process, name)` | `fetch_utils.py` | `GuideFetchService._is_busy()`, `SynergyFetchService._is_busy()` | 检查 QProcess 状态 |
-| `cancel_process(process)` | `fetch_utils.py` | `GuideFetchService.cancel()`, `SynergyFetchService.cancel()` | kill + waitForFinished |
+| `cancel_process(process)` | `fetch_utils.py` | `BaseFetchService.cancel()` | 仅 kill；由 `finished` 信号触发统一收尾 |
 | `get_qprocess_error_name(error)` | `fetch_utils.py` | `_on_error()` | 错误码→中文描述 |
 | `log_process_error(name, process)` | `fetch_utils.py` | `_on_error()` | 日志 + 错误信息拼接 |
 

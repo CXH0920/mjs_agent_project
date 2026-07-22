@@ -20,12 +20,10 @@ from PySide6.QtWidgets import (
 )
 
 from src.data.hero_manager import HeroManager
-from src.ui.recommendation_panel import (
-    DoubleClickLabel,
-    HeroSkillDialog,
-    _load_faction_colors,
-    _load_win_rates,
-)
+from src.data.win_rate_repository import load_win_rates
+from src.ui.shared.faction_colors import get_faction_colors
+from src.ui.shared.hero_dialogs import HeroSkillDialog
+from src.ui.shared.widgets import DoubleClickLabel
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -132,7 +130,7 @@ class MatchHeroCard(QFrame):
         self._hero = hero
         self._hero_id = hero.id
         self._name_overlay.setText(hero.name)
-        color = _load_faction_colors().get(hero.faction, "#888")
+        color = get_faction_colors().get(hero.faction, "#888")
         self._faction_badge.setText(f" {hero.faction} ")
         self._faction_badge.setStyleSheet(
             f"background-color: {color}; color: white; "
@@ -236,7 +234,7 @@ class MatchGuidePanel(QWidget):
         for index, card in enumerate(self._cards):
             hero = heroes[index] if index < len(heroes) else None
             card.set_hero(hero)
-            card.set_win_rate(_load_win_rates().get(hero.name) if hero else None)
+            card.set_win_rate(load_win_rates().get(hero.name) if hero else None)
 
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """从 OCR 结果加载最多四名武将，按识别槽位顺序展示。"""
@@ -258,7 +256,7 @@ class MatchGuidePanel(QWidget):
         for index, card in enumerate(self._cards):
             hero = heroes[index] if index < len(heroes) else None
             card.set_hero(hero)
-            card.set_win_rate(_load_win_rates().get(hero.name) if hero else None)
+            card.set_win_rate(load_win_rates().get(hero.name) if hero else None)
         logger.info("对局攻略已导入 %d 名武将", len(heroes))
 
     def _on_import_from_screenshot(self) -> None:

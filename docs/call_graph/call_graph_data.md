@@ -28,6 +28,21 @@ MainWindow._load_data() -> DataFacade.load_all()
 
 示例：攻略关联英雄 ID 不存在时，正文保留，失效关联从内存列表剔除，并生成 `missing_reference`；原 `guides.json` 保持不变。
 
+## 胜率仓库调用链
+
+胜率 CSV 不属于三个 JSON Manager，由独立仓库按名称读取并缓存：
+
+```
+RecommendationPanel._load_win_rate_by_name() / MatchGuidePanel._load_default_heroes()
+  -> load_win_rates()
+     -> [默认路径] data/2v2胜率排行.csv
+     -> csv.DictReader()
+     -> row["武将"] + float(row["胜率"].replace("%", ""))
+     -> {武将名: 百分比}
+```
+
+`load_win_rates()` 首次访问默认 CSV 时填充模块缓存；文件缺失、I/O 错误或单行百分比格式非法只记录 warning/跳过该行，不阻断页面加载。传入自定义 `Path` 时不污染默认缓存，便于测试和离线数据校验。
+
 ## 一、数据加载链路
 
 ### 1.1 完整数据加载
@@ -251,18 +266,19 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 
 | 函数 | 文件 | 调用方（主要） | 被调用方（主要） |
 |------|------|----------------|------------------|
-| `DataFacade.load_all()` | `manager.py:42` | `MainWindow._load_data()` | `HM.load()`, `SM.load()`, `GM.load()` |
-| `DataFacade.save_all()` | `manager.py:46` | — | `HM.save()`, `SM.save()`, `GM.save()` |
-| `DataFacade.get_stats()` | `manager.py:50` | `MainWindow._update_status()` | `HM.list_heroes()`, `SM.list_synergies()` |
-| `HeroManager.load()` | `hero_manager.py:34` | `DataFacade.load_all()` | `json.load()`, `Hero.model_validate()` |
-| `HeroManager.save()` | `hero_manager.py:50` | `HeroDetailPanel` 编辑 | `json.dump()`, 原子替换 |
-| `HeroManager.get_hero()` | `hero_manager.py:64` | `RecommendationPanel` 等 | dict get O(1) |
-| `HeroManager.get_hero_by_name()` | `hero_manager.py:68` | `RecommendationPanel` | 线性遍历 O(N) |
-| `HeroManager.search_heroes()` | `hero_manager.py:75` | `HeroListPanel` | 模糊匹配 4 字段 |
-| `SynergyManager.load()` | `synergy_manager.py:34` | `DataFacade.load_all()` | `json.load()`, `SynergyScore.validate()` |
-| `SynergyManager.list_synergies_for_hero()` | `synergy_manager.py:81` | `RecommendationPanel` | 全表扫描 O(N) |
-| `SynergyManager.get_synergy()` | `synergy_manager.py:76` | 外部查询 | `_synergy_key()` + dict get |
-| `SynergyManager._synergy_key()` | `synergy_manager.py:67` | 内部方法 | `tuple(sorted())` |
+| `DataFacade.load_all()` | `manager.py` | `MainWindow._load_data()` | 三个 Manager.load() + `_validate_references()` |
+| `DataFacade.save_all()` | `manager.py` | 外部批量保存 | 三个 Manager.save() |
+| `DataFacade.get_stats()` | `manager.py` | `MainWindow._update_status()` | 三个 Manager 的计数接口 |
+| `HeroManager.load()` | `hero_manager.py` | `DataFacade.load_all()` | `json.load()`, `Hero.model_validate()` |
+| `HeroManager.save()` | `hero_manager.py` | `HeroDetailPanel` 编辑 | `json.dump()`, 原子替换 |
+| `HeroManager.get_hero()` | `hero_manager.py` | `RecommendationPanel` 等 | dict get O(1) |
+| `HeroManager.get_hero_by_name()` | `hero_manager.py` | `RecommendationPanel` | 线性遍历 O(N) |
+| `HeroManager.search_heroes()` | `hero_manager.py` | `HeroListPanel` | 模糊匹配 4 字段 |
+| `SynergyManager.load()` | `synergy_manager.py` | `DataFacade.load_all()` | `json.load()`, `SynergyScore.model_validate()` |
+| `SynergyManager.list_synergies_for_hero()` | `synergy_manager.py` | `RecommendationPanel` | 全表扫描 O(N) |
+| `SynergyManager.get_synergy()` | `synergy_manager.py` | 外部查询 | `_synergy_key()` + dict get |
+| `SynergyManager._synergy_key()` | `synergy_manager.py` | `SynergyManager` 内部 | `tuple(sorted())` |
 | `GuideManager.load()` | `guide_manager.py` | `DataFacade.load_all()` | `json.load()`, `HeroGuide.validate()` |
 | `GuideManager.get_guide()` | `guide_manager.py` | `HeroDetailPanel`, `GuideDetailDialog` | dict get |
-| `apply_incremental_update()` | `manager.py:58` | 增量采集 CLI | 三 Manager 的 CRUD |
+| `apply_incremental_update()` | `manager.py` | 测试和外部导入工具 | 按 added/modified/removed 更新三个 Manager，并执行武将删除级联 |
+| `load_win_rates()` | `win_rate_repository.py` | `RecommendationPanel`, `MatchGuidePanel` | CSV 解析、百分比转浮点、默认路径缓存 |

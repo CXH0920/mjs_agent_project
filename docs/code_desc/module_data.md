@@ -23,7 +23,8 @@ src/data/
 ├── manager.py             # DataManager[V_co] 泛型基类 + DataFacade 门面 + 增量更新函数
 ├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
-└── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
+├── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
+└── win_rate_repository.py # 2v2 胜率 CSV 读取与缓存
 ```
 
 ---

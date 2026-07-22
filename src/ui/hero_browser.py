@@ -43,7 +43,7 @@ from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.data.models import Hero, HeroGuide, SynergyScore, Gender, Difficulty, synergy_rating_for_score
-from src.ui.recommendation_panel import _load_faction_colors
+from src.ui.shared.faction_colors import get_faction_colors
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +243,7 @@ class CheckableComboBox(QWidget):
     def _update_display(self) -> None:
         self._display.set_tags(
             [value for value in self._values if value in self._checked],
-            _load_faction_colors(),
+            get_faction_colors(),
         )
 
     def _remove_tag(self, value: str) -> None:

@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import csv
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,9 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QTextBrowser,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -39,99 +35,16 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
-from src.data.models import Hero, HeroGuide, Skill
+from src.data.models import Hero, HeroGuide
+from src.data.win_rate_repository import load_win_rates
+from src.ui.shared.faction_colors import get_faction_colors, reload_faction_colors
+from src.ui.shared.hero_dialogs import HeroSkillDialog
+from src.ui.shared.widgets import DoubleClickLabel
 
 logger = logging.getLogger(__name__)
 
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-FACTION_COLORS_FILE = DATA_DIR / "faction_colors.json"
-WIN_RATE_CSV = DATA_DIR / "2v2胜率排行.csv"
 
-# 缓存胜率数据 {name: rate_percent}
-_win_rate_cache: dict[str, float] | None = None
-_faction_colors_cache: dict[str, str] | None = None
-
-
-def _load_faction_colors() -> dict[str, str]:
-    """从 data/faction_colors.json 加载势力配色
-
-    文件不存在或格式错误时返回内建兜底配色。
-    结果缓存全局变量，避免重复读盘。
-    """
-    global _faction_colors_cache
-    if _faction_colors_cache is not None:
-        return _faction_colors_cache
-
-    # 内建兜底
-    fallback: dict[str, str] = {
-        "秦": "#8B4513",
-        "汉": "#B22222",
-        "楚": "#2F4F4F",
-        "赵": "#556B2F",
-        "魏": "#800020",
-        "燕": "#6A0DAD",
-        "齐": "#1B7A3D",
-        "韩": "#CD853F",
-        "孙吴": "#4169E1",
-        "蜀": "#228B22",
-        "曹魏": "#800020",
-        "群雄": "#8B0000",
-        "晋": "#4A6741",
-        "新朝": "#B8860B",
-    }
-
-    if not FACTION_COLORS_FILE.exists():
-        logger.warning("势力配色文件不存在: %s，使用内建配色", FACTION_COLORS_FILE)
-        _faction_colors_cache = fallback
-        return _faction_colors_cache
-
-    try:
-        with open(FACTION_COLORS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
-            raise ValueError("配色文件格式错误，应为 {faction: color} 格式")
-        _faction_colors_cache = data
-        logger.debug("已加载 %d 个势力配色", len(data))
-    except Exception as e:
-        logger.warning("势力配色文件加载失败 (%s)，使用内建配色", e)
-        _faction_colors_cache = fallback
-
-    return _faction_colors_cache
-
-
-def reload_faction_colors() -> dict[str, str]:
-    """清除势力颜色缓存并重新加载，供配置页保存后刷新现有卡片。"""
-    global _faction_colors_cache
-    _faction_colors_cache = None
-    return _load_faction_colors()
-
-
-def _load_win_rates() -> dict[str, float]:
-    """从 2v2胜率排行.csv 加载胜率数据。"""
-    global _win_rate_cache
-    if _win_rate_cache is not None:
-        return _win_rate_cache
-    _win_rate_cache = {}
-    if not WIN_RATE_CSV.exists():
-        logger.warning("胜率文件不存在: %s", WIN_RATE_CSV)
-        return _win_rate_cache
-    try:
-        with open(WIN_RATE_CSV, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                name = row.get("武将", "").strip()
-                rate_str = row.get("胜率", "").strip()
-                if name and rate_str:
-                    try:
-                        rate = float(rate_str.replace("%", ""))
-                        _win_rate_cache[name] = rate
-                    except ValueError:
-                        continue
-        logger.debug("已加载 %d 条胜率数据", len(_win_rate_cache))
-    except Exception as e:
-        logger.warning("胜率文件加载失败: %s", e)
-    return _win_rate_cache
 
 @dataclass
 class HeroRecommendation:
@@ -140,17 +53,6 @@ class HeroRecommendation:
     index: int
     name: str
     confidence: float
-
-
-class DoubleClickLabel(QLabel):
-    """支持发出左键双击信号的标签。"""
-
-    double_clicked = Signal()
-
-    def mouseDoubleClickEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.double_clicked.emit()
-        super().mouseDoubleClickEvent(event)
 
 
 class HeroCardWidget(QFrame):
@@ -328,7 +230,7 @@ class HeroCardWidget(QFrame):
         self._hero_id = hero.id
         self.set_medal(0)
         self._guide_btn.setVisible(True)
-        color = _load_faction_colors().get(hero.faction, "#888")
+        color = get_faction_colors().get(hero.faction, "#888")
 
         # 头像
         pixmap = self._load_portrait(hero.name)
@@ -605,84 +507,6 @@ class GuideDetailDialog(QDialog):
         layout.addWidget(tags)
 
 
-class HeroSkillDialog(QDialog):
-    """武将技能详情弹窗。"""
-
-    def __init__(self, hero: Hero, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"{hero.name} - 技能详情")
-        self.setMinimumSize(480, 420)
-        self.resize(540, 520)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-
-        tabs = QTabWidget()
-        if not hero.skills:
-            empty_tab = QWidget()
-            empty_layout = QVBoxLayout(empty_tab)
-            empty_label = QLabel("暂无技能数据")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #999; font-size: 14px; padding: 20px;")
-            empty_layout.addWidget(empty_label)
-            tabs.addTab(empty_tab, "技能")
-        else:
-            for skill in hero.skills:
-                tabs.addTab(self._create_skill_tab(skill), skill.name)
-        layout.addWidget(tabs, 1)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_button = QPushButton("关闭")
-        close_button.setFixedWidth(80)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        layout.addLayout(button_layout)
-
-    @staticmethod
-    def _create_skill_tab(skill: Skill) -> QWidget:
-        tab = QWidget()
-        tab_layout = QVBoxLayout(tab)
-        tab_layout.setContentsMargins(8, 8, 8, 8)
-        tab_layout.setSpacing(8)
-
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(8)
-
-        description_title = QLabel("技能描述")
-        description_title.setStyleSheet("font-weight: bold; color: #4a90d9;")
-        content_layout.addWidget(description_title)
-        content_layout.addWidget(
-            HeroSkillDialog._create_text_browser(skill.description, "暂无描述")
-        )
-
-        settlement_title = QLabel("技能结算")
-        settlement_title.setStyleSheet("font-weight: bold; color: #4a90d9;")
-        content_layout.addWidget(settlement_title)
-        content_layout.addWidget(
-            HeroSkillDialog._create_text_browser(skill.settlement, "暂无结算说明")
-        )
-        content_layout.addStretch()
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_area.setWidget(content)
-        tab_layout.addWidget(scroll_area, 1)
-        return tab
-
-    @staticmethod
-    def _create_text_browser(text: str, empty_text: str) -> QTextBrowser:
-        browser = QTextBrowser()
-        browser.setPlainText(text.strip() or empty_text)
-        browser.setReadOnly(True)
-        browser.setMinimumHeight(54)
-        browser.setMaximumHeight(140)
-        return browser
-
-
 def _markdown_to_html(text: str) -> str:
     """将 Markdown 转换为 HTML"""
     if not text:
@@ -845,7 +669,7 @@ class RecommendationPanel(QWidget):
 
     def _load_win_rate_by_name(self, card_idx: int, hero_name: str) -> None:
         """根据武将名从 2v2胜率排行.csv 加载胜率。"""
-        rates = _load_win_rates()
+        rates = load_win_rates()
         rate = rates.get(hero_name)
         if rate is not None and card_idx < len(self._cards):
             self._cards[card_idx].set_win_rate(rate)

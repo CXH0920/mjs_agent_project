@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -18,24 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
-def _load_faction_colors() -> dict[str, str]:
-    """读取选将推荐使用的势力颜色，读取失败时使用兜底色。"""
-    colors_path = Path(__file__).resolve().parent.parent.parent / "data" / "faction_colors.json"
-    fallback = {
-        "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F", "赵": "#556B2F",
-        "魏": "#800020", "燕": "#6A0DAD", "齐": "#1B7A3D", "韩": "#CD853F",
-        "孙吴": "#4169E1", "蜀": "#228B22", "曹魏": "#800020", "群雄": "#8B0000",
-        "晋": "#4A6741", "新朝": "#B8860B",
-    }
-    try:
-        with colors_path.open("r", encoding="utf-8") as file:
-            colors = json.load(file)
-        if isinstance(colors, dict) and all(isinstance(value, str) for value in colors.values()):
-            return colors
-    except (OSError, ValueError):
-        pass
-    return fallback
+from src.ui.shared.faction_colors import get_faction_colors
 
 
 class TagLineEdit(QLineEdit):
@@ -134,7 +114,7 @@ class CheckableComboBox(QWidget):
 
     def _update_display(self) -> None:
         selected = [value for value in self._values if value in self._checked]
-        self._display.set_tags(selected, _load_faction_colors())
+        self._display.set_tags(selected, get_faction_colors())
 
     def _remove_tag(self, value: str) -> None:
         self._checked.discard(value)

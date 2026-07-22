@@ -19,7 +19,8 @@ test_project/
 │   │   ├── manager.py             # DataManager[V_co] 泛型基类 + DataFacade 门面 + 增量更新
 │   │   ├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
 │   │   ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
-│   │   └── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
+│   │   ├── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
+│   │   └── win_rate_repository.py # 2v2 胜率 CSV 读取与默认路径缓存
 │   ├── scraper/
 │   │   ├── crawler.py             # 爬虫核心（公开 API，含头像下载）
 │   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
@@ -50,6 +51,10 @@ test_project/
 │   └── ui/
 │       ├── style.py               # 全局样式表（天蓝色调）
 │       ├── main_window.py         # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
+│       ├── shared/                 # 跨页面公开控件、技能弹窗、势力配色缓存
+│       │   ├── widgets.py          # DoubleClickLabel
+│       │   ├── hero_dialogs.py     # HeroSkillDialog
+│       │   └── faction_colors.py   # 势力配色读取/校验/兜底/重载
 │       ├── hero_browser.py        # 武将浏览（列表+详情+攻略）
 │       ├── hero_select_dialog.py  # 武将选择对话框基类
 │       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性 + 截图导入）
@@ -80,18 +85,30 @@ test_project/
 ├── logs/
 │   └── app.log / scraper/ / business/ / subprocess/  # 按模块拆分的日志文件
 ├── tests/
-│   ├── test_models.py             # 25 tests — 数据模型校验
-│   ├── test_ai_batch.py           # 33 tests — AI 批量生成
-│   ├── test_hero_manager.py       # 13 tests — 武将管理器
-│   ├── test_synergy_manager.py    # 13 tests — 相性管理器
-│   ├── test_guide_manager.py      # 11 tests — 攻略管理器
-│   ├── test_data_facade.py         # 数据加载容错与跨实体引用校验
+│   ├── test_models.py             # 27 tests — 数据模型校验
+│   ├── test_ai_batch.py           # 40 tests — AI 批量生成
+│   ├── test_ai_generation.py       # 10 tests — staging 与生成编排
+│   ├── test_adb_capture.py        # 9 tests — ADB 连接与截图
+│   ├── test_capture_service.py    # 3 tests — 截图服务
+│   ├── test_crawler.py             # 9 tests — 官网数据解析
+│   ├── test_data_facade.py         # 1 test — 数据加载容错与跨实体引用校验
+│   ├── test_emulator_ui.py        # 11 tests — 模拟器/OCR UI
+│   ├── test_faction_color_dialog.py # 2 tests — 势力配色
+│   ├── test_guide_ui.py           # 8 tests — 攻略 UI
+│   ├── test_hero_manager.py       # 15 tests — 武将管理器
+│   ├── test_synergy_manager.py    # 17 tests — 相性管理器
+│   ├── test_guide_manager.py      # 10 tests — 攻略管理器
 │   ├── test_incremental_update.py # 8 tests — 增量更新
-│   ├── test_ocr_scaling.py        # 模板多尺度匹配与 ROI 缩放
-│   └── test_ui.py                 # 4 tests — UI 工具
+│   ├── test_logging_config.py      # 2 tests — 日志配置
+│   ├── test_main.py                # 1 test — 应用入口
+│   ├── test_mumu_config_dialog.py  # 3 tests — 模拟器配置
+│   ├── test_ocr_scaling.py        # 3 tests — 模板多尺度匹配与 ROI 缩放
+│   ├── test_ocr_service.py        # 4 tests — OCR 服务
+│   ├── test_ocr_worker.py         # 3 tests — OCR 队列
+│   └── test_ui.py                 # 5 tests — UI 工具
 ├── docs/
 │   ├── code_desc/
-│   │   ├── summary.md              # 项目总览（核心功能、技术栈、模块索引）
+│   │   ├── summary‌.md             # 项目总览（核心功能、技术栈、模块索引）
 │   │   ├── module_config.md        # 应用入口与配置模块说明
 │   │   ├── module_data.md          # 数据模型与数据管理模块说明
 │   │   ├── module_scraper.md       # 爬虫与数据采集模块说明
@@ -142,7 +159,7 @@ playwright install msedge
 pytest tests/ -v
 ```
 
-当前测试目录包含 **180** 个测试函数；以实际 pytest 输出为准。数据层定向验证可运行：
+当前测试目录包含 **191** 个测试函数（按源码中的 `test_*` 函数统计）；以实际 pytest 输出为准。数据层定向验证可运行：
 
 ```bash
 python -m pytest tests/test_hero_manager.py tests/test_synergy_manager.py tests/test_guide_manager.py tests/test_data_facade.py -q
@@ -226,6 +243,12 @@ ADB 截图
 
 ---
 
+## 文档导航
+
+- [完整项目细节](docs/project_doc.md)：按模块说明数据、业务、UI、OCR、配置和测试约束。
+- [调用图目录](docs/call_graph/)：以 `A() -> B()` 形式记录核心函数调用链和跨进程边界。
+- [模块说明](docs/code_desc/)：面向维护和新人培训的分模块摘要。
+
 ## 架构
 
 ### 四层架构
@@ -258,6 +281,13 @@ data/*.json → DataFacade (三个 Manager) → UI 展示
         → GeneralRecognizer.recognize() → 填充推荐面板 8 槽
 用户操作 → MainWindow → QProcess → 爬虫/AI 脚本
 ```
+
+### 运行时边界
+
+- QProcess stdout 以字节缓冲保留未完成行，只对完整换行内容做 UTF-8 解码和进度解析；进程结束时 flush 末行。
+- 取消任务只调用 `kill()`，由 `finished` 信号异步清理临时文件和更新 UI，不在界面线程同步等待。
+- AI 生成先写 `*.staging`，全部任务成功后才原子替换正式 JSON；失败时正式数据保持不变。
+- 页面共享控件、技能弹窗和势力配色位于 `src/ui/shared/`；胜率 CSV 由 `src/data/win_rate_repository.py` 统一读取并缓存。
 
 ### 双模式 AI 生成
 

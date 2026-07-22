@@ -15,7 +15,8 @@ from src.data.models import Hero, Skill
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow
 from src.ui.match_guide_panel import MatchGuidePanel
-from src.ui.recommendation_panel import HeroCardWidget, HeroSkillDialog, RecommendationPanel
+from src.ui.recommendation_panel import HeroCardWidget, RecommendationPanel
+from src.ui.shared.hero_dialogs import HeroSkillDialog
 
 
 def _app() -> QApplication:
