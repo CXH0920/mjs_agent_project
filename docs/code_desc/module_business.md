@@ -22,6 +22,7 @@
 ```
 src/business/
 ├── __init__.py
+├── base_fetch_service.py        # QProcess 生命周期、行缓冲与统一收尾
 ├── fetch_service.py             # 武将采集业务（QProcess 管理）
 ├── guide_fetch_service.py       # 攻略生成业务（QProcess 管理）
 ├── synergy_fetch_service.py     # 相性获取业务（QProcess 管理）
@@ -42,7 +43,7 @@ src/business/
 QObject 子类
   ├── 多个 Signal 用于 UI 通信
   ├── fetch_*() 方法 → 构建参数 → QProcess.start()
-  ├── _on_stdout_ready() → 解析进度 → 发射信号
+  ├── _on_stdout_ready() → 按完整 UTF-8 行解析进度 → 发射信号
   ├── _on_finished() → 检查 exit_code → 清理临时文件 → 发射完成信号
   └── cancel() → 终止子进程
 ```
@@ -142,22 +143,19 @@ def _start_process(self, args: list[str]) -> None:
 
 > **设计思路：** `SeparateChannels` 确保 stdout 和 stderr 不混在一起。信号连接在 start 之前绑定，避免丢失启动瞬间的事件。`sys.executable` 保证与父进程使用同一 Python 解释器。
 
-### 4.2 进度正则解析
+### 4.2 stdout 行缓冲与进度正则解析
 
 ```python
 def _on_stdout_ready(self) -> None:
     data = self._process.readAllStandardOutput()
-    text = bytes(data).decode("utf-8", errors="replace")
-    if text.strip():
-        self.progress_output.emit(text)
-        # 解析进度 [i/N] 用于进度条
-        for line in text.split("\n"):
-            m = re.search(r"\[(\d+)/(\d+)\]", line)
-            if m:
-                self.progress_value.emit(int(m.group(1)), int(m.group(2)))
+    self._stdout_line_buffer.extend(data)
+    while b"\n" in self._stdout_line_buffer:
+        raw_line, _, remaining = self._stdout_line_buffer.partition(b"\n")
+        self._stdout_line_buffer[:] = remaining
+        self._on_stdout_line(raw_line.decode("utf-8", errors="replace").strip())
 ```
 
-> **设计思路：** 子进程输出的 `[3/28] 诸葛亮 OK` 格式由 `ai_generation.py` 中的各生成循环函数生成。UI 的 `GuideProgressDialog` 也用同一套正则解析。统一输出格式减少了接口耦合。
+> **设计思路：** QProcess 的一次 readyRead 不等于一行输出，且 UTF-8 字符可能跨分块。基类保留未完成字节，只有读到换行后才解码并交给子类；进程结束时还会读取残余管道内容并分发行尾。取消时只调用 `kill()`，不在 GUI 线程使用 `waitForFinished()`；临时文件清理和状态通知继续由 `finished` 信号统一完成。
 
 ### 4.3 临时文件自动清理
 

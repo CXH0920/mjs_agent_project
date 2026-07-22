@@ -7,7 +7,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QProcess
 
+from src.business.base_fetch_service import BaseFetchService
+from src.business.fetch_utils import cancel_process
 from src.scraper.ai_generation import (
     GenerationResult,
     run_guide_generation,
@@ -27,6 +30,70 @@ class FakeGenerator:
 
     def generate_synergy(self, _hero_a: dict, _hero_b: dict):
         return next(self._synergies), {"prompt_tokens": 1, "completion_tokens": 2}
+
+
+class _FakeProcess:
+    def __init__(self, stdout_chunks: list[bytes] | None = None, stderr_chunks: list[bytes] | None = None):
+        self._stdout_chunks = list(stdout_chunks or [])
+        self._stderr_chunks = list(stderr_chunks or [])
+
+    def readAllStandardOutput(self) -> bytes:
+        return self._stdout_chunks.pop(0) if self._stdout_chunks else b""
+
+    def readAllStandardError(self) -> bytes:
+        return self._stderr_chunks.pop(0) if self._stderr_chunks else b""
+
+
+class _LineRecordingService(BaseFetchService):
+    def __init__(self):
+        super().__init__()
+        self.lines: list[str] = []
+
+    def _on_stdout_line(self, line: str) -> None:
+        self.lines.append(line)
+
+
+def test_base_fetch_service_buffers_partial_utf8_stdout_lines() -> None:
+    line = "[1/2] 诸葛亮\n".encode("utf-8")
+    service = _LineRecordingService()
+    service._process = _FakeProcess([line[:8], line[8:]])
+
+    service._on_stdout_ready()
+    assert service.lines == []
+
+    service._on_stdout_ready()
+    assert service.lines == ["[1/2] 诸葛亮"]
+
+
+def test_base_fetch_service_flushes_remaining_stdout_at_finish() -> None:
+    service = _LineRecordingService()
+    service._process = _FakeProcess(["最后一行".encode("utf-8")])
+
+    service._on_finished(0)
+
+    assert service.lines == ["最后一行"]
+
+
+def test_cancel_process_does_not_block_event_loop() -> None:
+    class RunningProcess:
+        def __init__(self):
+            self.killed = False
+            self.wait_called = False
+
+        def state(self):
+            return QProcess.ProcessState.Running
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def waitForFinished(self, _timeout: int) -> None:
+            self.wait_called = True
+
+    process = RunningProcess()
+    cancel_process(process)
+
+    assert process.killed
+    assert not process.wait_called
 
 
 def test_guide_failure_keeps_canonical_file_and_preserves_staging(tmp_path: Path) -> None:

@@ -23,10 +23,9 @@ def is_process_busy(process: QProcess | None, service_name: str) -> bool:
 
 
 def cancel_process(process: QProcess | None) -> None:
-    """终止当前 QProcess 进程（kill + waitForFinished）。"""
+    """请求终止当前 QProcess，完成收尾由 finished 信号处理。"""
     if process and process.state() != QProcess.ProcessState.NotRunning:
         process.kill()
-        process.waitForFinished(3000)
 
 
 def get_qprocess_error_name(error: QProcess.ProcessError) -> str:

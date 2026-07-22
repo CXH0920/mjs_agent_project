@@ -11,9 +11,7 @@ _on_process_error 来表达差异。
 from __future__ import annotations
 
 import logging
-import re
 import sys
-from typing import Optional
 
 from PySide6.QtCore import QObject, Signal, QProcess, QProcessEnvironment
 
@@ -45,6 +43,7 @@ class BaseFetchService(QObject):
         self._log_stdout = logging.getLogger("subprocess.stdout")
         self._log_stderr = logging.getLogger("subprocess.stderr")
         self._stdout_buffer = bytearray()
+        self._stdout_line_buffer = bytearray()
         self._stderr_buffer = bytearray()
 
     # ---------------------------------------------------------------
@@ -90,6 +89,9 @@ class BaseFetchService(QObject):
 
     def _start_process(self, args: list[str]) -> None:
         """启动子进程并连接信号"""
+        self._stdout_buffer.clear()
+        self._stdout_line_buffer.clear()
+        self._stderr_buffer.clear()
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
@@ -107,24 +109,48 @@ class BaseFetchService(QObject):
     # ---------------------------------------------------------------
 
     def _on_stdout_ready(self) -> None:
-        """读取 stdout → 缓冲 → 日志 → 按行分发的默认实现"""
+        """读取 stdout，并只分发完整的 UTF-8 行。"""
+        self._read_stdout()
+
+    def _read_stdout(self) -> None:
         if not self._process:
             return
-        data = self._process.readAllStandardOutput()
+        data = bytes(self._process.readAllStandardOutput())
+        if not data:
+            return
         self._stdout_buffer.extend(data)
-        text = bytes(data).decode("utf-8", errors="replace")
-        if text.strip():
-            self._log_stdout.info("%s", text.strip())
-            for line in text.split("\n"):
-                self._on_stdout_line(line.strip())
+        self._stdout_line_buffer.extend(data)
+        self._dispatch_stdout_lines()
+
+    def _dispatch_stdout_lines(self, flush: bool = False) -> None:
+        """按换行分隔字节，避免 QProcess 分块破坏 UTF-8 或进度行。"""
+        while b"\n" in self._stdout_line_buffer:
+            line, _, remaining = self._stdout_line_buffer.partition(b"\n")
+            self._stdout_line_buffer[:] = remaining
+            self._dispatch_stdout_line(line)
+
+        if flush and self._stdout_line_buffer:
+            self._dispatch_stdout_line(bytes(self._stdout_line_buffer))
+            self._stdout_line_buffer.clear()
+
+    def _dispatch_stdout_line(self, raw_line: bytes) -> None:
+        line = raw_line.decode("utf-8", errors="replace").strip()
+        if line:
+            self._log_stdout.info("%s", line)
+            self._on_stdout_line(line)
 
     def _on_stderr_ready(self) -> None:
         """读取 stderr → 缓冲 → 日志"""
+        self._read_stderr()
+
+    def _read_stderr(self) -> None:
         if not self._process:
             return
-        data = self._process.readAllStandardError()
+        data = bytes(self._process.readAllStandardError())
+        if not data:
+            return
         self._stderr_buffer.extend(data)
-        text = bytes(data).decode("utf-8", errors="replace")
+        text = data.decode("utf-8", errors="replace")
         if text.strip():
             self._log_stderr.warning("%s", text.strip())
 
@@ -134,11 +160,15 @@ class BaseFetchService(QObject):
 
     def _on_finished(self, exit_code: int) -> None:
         """子进程完成回调：清理资源 → 子类钩子 → 日志"""
+        self._read_stdout()
+        self._read_stderr()
+        self._dispatch_stdout_lines(flush=True)
         self._cleanup_context()
 
         full_stdout = bytes(self._stdout_buffer).decode("utf-8", errors="replace")
         full_stderr = bytes(self._stderr_buffer).decode("utf-8", errors="replace")
         self._stdout_buffer.clear()
+        self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
 
         msg = f"进程退出码: {exit_code}"
@@ -160,8 +190,12 @@ class BaseFetchService(QObject):
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         """子进程出错回调"""
+        self._read_stdout()
+        self._read_stderr()
+        self._dispatch_stdout_lines(flush=True)
         self._cleanup_context()
         self._stdout_buffer.clear()
+        self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
         error_name = get_qprocess_error_name(error)
         full_msg = log_process_error(error_name, self._process)
