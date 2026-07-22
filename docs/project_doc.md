@@ -36,7 +36,7 @@
 |------|--------|--------------|------|
 | 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志、加载数据、创建主窗口并进入 Qt 事件循环；OCR 识别器按首次任务延迟初始化 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
-| AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | 选择后端 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 生成暂存数据；所有任务成功才提交正式 JSON |
+| AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 工作流成功后重载 Manager 并通知主窗口刷新；所有任务成功才提交正式 JSON |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> 各 Manager CRUD -> `save()` | 原子写入对应 JSON 并刷新局部视图 |
 
@@ -650,7 +650,8 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 899 | QMainWindow（顶层） |
+| main_window.py | 706 | QMainWindow（顶层） |
+| ai_generation_workflow.py | 246 | QObject（攻略与相性 UI 工作流） |
 | hero_browser.py | 1018 | QWidget（浏览列表、详情和协调） |
 | hero_edit_dialog.py | 87 | QDialog（武将编辑） |
 | guide_edit_dialog.py | 120 | QDialog（攻略编辑） |
@@ -678,17 +679,19 @@ MainWindow.__init__
  │   ├── status_changed → _on_fetch_status (状态栏)
  │   ├── fetch_completed → _on_fetch_completed (弹窗提示)
  │   └── error_occurred → _on_fetch_error (弹窗警告)
- ├── GuideFetchService ─── 攻略生成
- │   ├── status_changed → _on_fetch_status
- │   ├── cost_estimated → _on_guide_cost_estimated (CostConfirmDialog)
- │   ├── fetch_completed → _on_guide_fetch_completed (进度条/重载)
- │   ├── error_occurred → _on_guide_fetch_error (带详情弹窗)
- │   ├── progress_output → _on_guide_progress (进度文字)
- │   └── progress_value → _on_guide_progress_value (进度条数值)
- ├── SynergyFetchService ─── 相性获取
- │   ├── status_changed → _on_fetch_status
- │   ├── fetch_completed → _on_synergy_fetch_completed (弹窗+重载)
- │   └── error_occurred → _on_synergy_fetch_error (弹窗警告)
+ ├── AiGenerationWorkflow ─── 攻略与相性 UI 编排
+ │   ├── GuideFetchService
+ │   │   ├── status_changed → workflow.status_changed → _on_fetch_status
+ │   │   ├── progress_output/value → GuideProgressDialog
+ │   │   ├── fetch_completed → GuideManager.load() → guides_changed
+ │   │   └── error_occurred → 详细错误弹窗
+ │   ├── SynergyFetchService
+ │   │   ├── status_changed → workflow.status_changed → _on_fetch_status
+ │   │   ├── progress_output/value → GuideProgressDialog
+ │   │   ├── fetch_completed → SynergyManager.load() → synergies_changed
+ │   │   └── error_occurred → 警告弹窗
+ │   ├── guides_changed → _on_guides_generated → 更新统计状态栏
+ │   └── synergies_changed → _on_synergies_generated → 刷新浏览器/推荐页和统计
  ├── CaptureService ─── 截图
  │   ├── status_changed → _status_label.setText
  │   ├── capture_completed → _on_capture_completed / _on_capture_result (通知推荐面板)
@@ -1798,9 +1801,9 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  UI 层（MainWindow）                                                     │
-│  1. 用户选择生成模式（全量/增量/指定）                                      │
-│  2. BackendChooseDialog 选择后端（API / 浏览器）                          │
+│  UI 层（MainWindow + AiGenerationWorkflow）                              │
+│  1. MainWindow 菜单入口委托 request_guide_*()                              │
+│  2. 工作流读取武将、选择后端并显示 GuideProgressDialog                     │
 │  3. GuideFetchService 构建子进程参数 → QProcess.start()                   │
 └──────────────────────┬───────────────────────────────────────────────────┘
                        │ 子进程 stdout → UI 进度条

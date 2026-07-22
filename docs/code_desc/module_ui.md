@@ -30,6 +30,7 @@ src/ui/
 │   └── faction_colors.py       # 势力配色读取、兜底和缓存
 ├── style.py                    # 全局样式表（天蓝色调）
 ├── main_window.py              # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
+├── ai_generation_workflow.py   # 攻略/相性生成的选择、进度与完成工作流
 ├── hero_browser.py             # 武将浏览（列表+详情+Tab 栏编辑按钮）
 ├── hero_edit_dialog.py          # 武将基础信息编辑
 ├── hero_relation_select_dialog.py # 攻略关系武将多选
@@ -42,7 +43,7 @@ src/ui/
 ├── settings_dialog.py          # API 配置对话框
 ├── mumu_config_dialog.py       # 模拟器配置对话框
 ├── backend_choose_dialog.py    # 后端选择对话框（API/浏览器）
-├── cost_confirm_dialog.py      # AI 成本确认对话框
+├── cost_confirm_dialog.py      # 遗留的 AI 成本确认对话框（当前流程未调用）
 ├── guide_progress_dialog.py    # 攻略生成进度条
 ├── roi_selector.py             # 模板 ROI 框选对话框
 ├── faction_color_dialog.py     # 势力配色列表、Color Picker 与保存
@@ -65,23 +66,21 @@ src/ui/
 
 ### 3.1 主窗口信号拓扑
 
-`MainWindow` 在初始化时连接所有业务服务的 Signal：
+`MainWindow` 直接连接武将采集、截图和 OCR 服务；攻略/相性服务的任务信号由 `AiGenerationWorkflow` 统一连接和处理，主窗口只接收工作流的状态与数据刷新通知：
 
 ```
 MainWindow
  ├── HeroFetchService ─── 武将采集
- ├── GuideFetchService ─── 攻略生成（含进度条 + 成本确认）
- ├── SynergyFetchService ─ 相性获取
+ ├── AiGenerationWorkflow ─ 攻略/相性任务协调
+ │   ├── GuideFetchService ─── 攻略子进程
+ │   └── SynergyFetchService ─ 相性子进程
  ├── CaptureService ──── 截图
  └── OcrService ──────── OCR + 轮询
 ```
 
-每个服务连接 3-6 个信号，分别映射到不同的槽函数：
-- `status_changed` → 更新状态栏
-- `fetch_completed` → 弹窗提示 + 数据重载
-- `error_occurred` → 弹窗警告
-- `progress_output/value` → 进度条更新
-- `cost_estimated` → 成本确认对话框
+工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
+
+攻略全量、增量、指定与相性配对、选定武将共五个菜单入口仍保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
 ### 3.2 对话框基类体系
 
@@ -290,7 +289,6 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 方法 | 说明 |
 |------|------|
 | `reload_data()` | 重新加载所有数据并刷新 UI |
-| `_get_heroes_as_dicts()` | 获取所有武将的 dict 格式列表 |
 
 ### HeroBrowser 公共方法
 
@@ -321,7 +319,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `SettingsDialog` | API 配置编辑 |
 | `MumuConfigDialog` | ADB 连接管理 + 模板制作 + OCR 配置 |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器） |
-| `CostConfirmDialog` | AI 成本确认 |
+| `CostConfirmDialog` | 遗留 AI 成本确认组件；当前费用估算展示在 `BackendChooseDialog` |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
 | `HeroEditDialog` | 武将信息编辑 |
 | `GuideEditDialog` | 攻略内容编辑 |

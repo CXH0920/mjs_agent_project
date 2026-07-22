@@ -138,13 +138,14 @@ HeroFetchService.error_occurred    → MainWindow._on_fetch_error    → QMessag
 
 ```
 MainWindow._request_guide_all()
-  -> self._get_heroes_as_dicts()                               [Hero → dict]
-  -> estimate_cost(hero_count, "guide")                        [AI 成本估算]
-  -> BackendChooseDialog(estimation, title, parent)            [选择 API/浏览器模式]
+  -> AiGenerationWorkflow.request_guide_all()
+    -> _get_heroes_as_dicts()                                   [Hero → dict]
+    -> estimate_cost(hero_count, "guide")                      [AI 成本估算]
+    -> BackendChooseDialog(estimation, title, parent)          [选择 API/浏览器模式]
      -> [API Tab] 显示 Token/费用估算
      -> [浏览器 Tab] 显示 Edge 配置说明
-  -> [确认] GuideProgressDialog(hero_count, parent)            [创建进度条对话框]
-     -> GuideFetchService.fetch_all(heroes, backend)
+    -> [确认] GuideProgressDialog(hero_count, parent)          [创建进度条对话框]
+      -> GuideFetchService.fetch_all(heroes, backend)
        -> _is_busy()
        -> [设置 context = {"mode": "all"}]
        -> execute_with_confirmation()
@@ -153,22 +154,23 @@ MainWindow._request_guide_all()
          -> [增量/指定模式 追加 "--update"]
          -> [增量/指定模式 写入 temp JSON 文件]
          -> _start_process([*base_args, "--heroes-file", tmp_path])
-    -> GuideProgressDialog.exec()                              [阻塞等待子进程完成]
+      -> GuideProgressDialog.exec()                            [模态事件循环等待子进程完成]
   -> [子进程结束]
     -> GuideFetchService._on_finished(exit_code)
       -> _cleanup_tmp()                                        [删除临时文件]
       -> emit fetch_completed(success, message)
-        -> MainWindow._on_guide_fetch_completed()
+        -> AiGenerationWorkflow._on_guide_completed()
           -> GuideProgressDialog.on_process_finished()
-          -> self._data.guides.load()                          [刷新内存缓存]
-          -> self._update_status()
+          -> self._guide_manager.load()                        [刷新内存缓存]
+          -> emit guides_changed
+            -> MainWindow._on_guides_generated() -> _update_status()
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `fetch_all(heroes, backend)` | `guide_fetch_service.py` | `_request_guide_all()` | `_is_busy()`, `execute_with_confirmation()` |
-| `fetch_incremental(heroes, backend)` | `guide_fetch_service.py` | `_request_guide_incremental()` | `_is_busy()`, `guide_mgr.list_guides()`, `execute_with_confirmation()` |
-| `fetch_specific(heroes, backend)` | `guide_fetch_service.py` | `_request_guide_specific()` | `_is_busy()`, `execute_with_confirmation()` |
+| `fetch_all(heroes, backend)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_all()` | `_is_busy()`, `execute_with_confirmation()` |
+| `fetch_incremental(heroes, backend)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_incremental()` | `_is_busy()`, `guide_mgr.list_guides()`, `execute_with_confirmation()` |
+| `fetch_specific(heroes, backend)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_specific()` | `_is_busy()`, `execute_with_confirmation()` |
 | `execute_with_confirmation()` | `guide_fetch_service.py` | `fetch_*()` | 构建参数 → `_start_process()` |
 | `cancel()` | `guide_fetch_service.py` | 外部 UI | `cancel_process()` [fetch_utils] |
 | `_start_process(args)` | `guide_fetch_service.py` | `execute_with_confirmation()` | `QProcess.start()` |
@@ -181,14 +183,13 @@ MainWindow._request_guide_all()
 ### 3.2 信号拓扑
 
 ```
-GuideFetchService.cost_estimated   → MainWindow._on_guide_cost_estimated
-  → CostConfirmDialog → GuideProgressDialog → ...
+GuideFetchService.status_changed   → AiGenerationWorkflow.status_changed → MainWindow._on_fetch_status
+GuideFetchService.fetch_completed  → AiGenerationWorkflow._on_guide_completed → GuideManager.load + guides_changed
+GuideFetchService.error_occurred   → AiGenerationWorkflow._on_guide_error → QMessageBox
+GuideFetchService.progress_output  → AiGenerationWorkflow._on_guide_progress → GuideProgressDialog.update_status
+GuideFetchService.progress_value   → AiGenerationWorkflow._on_guide_progress_value → GuideProgressDialog.update_progress
 
-GuideFetchService.status_changed   → MainWindow._on_fetch_status → status_label
-GuideFetchService.fetch_completed  → MainWindow._on_guide_fetch_completed → data.load + status
-GuideFetchService.error_occurred   → MainWindow._on_guide_fetch_error → QMessageBox
-GuideFetchService.progress_output  → MainWindow._on_guide_progress → GuideProgressDialog.update_status
-GuideFetchService.progress_value   → MainWindow._on_guide_progress_value → GuideProgressDialog.update_progress
+`cost_estimated` 与 `CostConfirmDialog` 仍保留在代码中，但不属于当前 AI 生成 UI 路径；费用估算由工作流传入 `BackendChooseDialog` 展示。
 ```
 
 ---
@@ -199,8 +200,9 @@ GuideFetchService.progress_value   → MainWindow._on_guide_progress_value → G
 
 ```
 MainWindow._request_synergy_pair()
-  -> self._get_heroes_as_dicts()
-  -> SynergyPairDialog(self._data.heroes)                      [选 2-8 武将]
+  -> AiGenerationWorkflow.request_synergy_pair()
+  -> _require_heroes()
+  -> SynergyPairDialog(hero_manager)                            [选 2-8 武将]
      -> BaseHeroSelectDialog(MULTI_LIMIT, max_selection=8)
      -> 用户勾选 → _on_accept → _set_result_by_ids()
   -> BackendChooseDialog(title)                                [选择后端]
@@ -214,7 +216,8 @@ MainWindow._request_synergy_pair()
 
 
 MainWindow._request_synergy_single()
-  -> SynergySingleDialog(self._data.heroes)                    [选 1 武将]
+  -> AiGenerationWorkflow.request_synergy_single()
+  -> SynergySingleDialog(hero_manager)                          [选 1 武将]
      -> BaseHeroSelectDialog(SINGLE)
   -> GuideProgressDialog(hero_count, title)
      -> SynergyFetchService.fetch_single(hero, all_heroes, backend)
@@ -226,8 +229,8 @@ MainWindow._request_synergy_single()
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `fetch_pair(heroes, backend)` | `synergy_fetch_service.py` | `_request_synergy_pair()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
-| `fetch_single(hero, all, backend)` | `synergy_fetch_service.py` | `_request_synergy_single()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
+| `fetch_pair(heroes, backend)` | `synergy_fetch_service.py` | `AiGenerationWorkflow.request_synergy_pair()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
+| `fetch_single(hero, all, backend)` | `synergy_fetch_service.py` | `AiGenerationWorkflow.request_synergy_single()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
 | `cancel()` | `synergy_fetch_service.py` | 外部 UI | `cancel_process()` [fetch_utils] |
 
 ---

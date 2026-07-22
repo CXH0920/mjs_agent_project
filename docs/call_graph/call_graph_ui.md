@@ -22,8 +22,8 @@ MainWindow.__init__()
 | 用户动作 | UI 入口 | 核心调用 | 刷新 |
 |----------|---------|----------|------|
 | 武将采集 | `_request_fetch_*()` | `HeroFetchService.fetch_*()` | `_reload_data()` |
-| 攻略生成 | `_request_guide_*()` | `GuideFetchService.fetch_*()` | `GuideManager.load()` + 浏览器刷新 |
-| 相性生成 | `_request_synergy_*()` | `SynergyFetchService.fetch_pair/single()` | `SynergyManager.load()` + 推荐页刷新 |
+| 攻略生成 | `_request_guide_*()` | `AiGenerationWorkflow.request_guide_*()` -> `GuideFetchService.fetch_*()` | `GuideManager.load()` + 状态栏统计刷新 |
+| 相性生成 | `_request_synergy_*()` | `AiGenerationWorkflow.request_synergy_*()` -> `SynergyFetchService.fetch_pair/single()` | `SynergyManager.load()` + 浏览器、推荐页刷新 |
 | 截图、图片导入、轮询 | 推荐页或 `poll_tick` | `CaptureService` -> `OcrWorker` | 推荐卡或对局攻略页 |
 
 数据完整性问题存于 `self._data.last_load_report`；当前 UI 使用已恢复的内存数据，尚未提供报告查看或写回修复界面。服务完成状态以 CLI 退出码为准，不解析 `RESULT: FAIL=`。
@@ -74,16 +74,19 @@ MainWindow.__init__()
   -> HeroFetchService(self)                                          [武将采集服务]
   -> GuideFetchService(self._data.guides, self)                      [攻略生成服务 + 注入 guide_mgr]
   -> SynergyFetchService(self)                                       [相性获取服务]
+  -> AiGenerationWorkflow(hero_mgr, guide_mgr, synergy_mgr,
+                          guide_service, synergy_service, self)     [AI 任务工作流]
   -> CaptureService(self)                                            [截图服务]
   -> OcrService(self)                                                [OCR 控制服务]
   -> get_mumu_config()                                              [读取模拟器配置]
   -> CaptureService.update_config(config)
   -> OcrService.update_config(config)
   -> OcrService.set_hero_names(names)                               [设置武将名列表]
-  -> _connect_synergy_signals()
-  -> _connect_guide_signals()
   -> _connect_fetch_signals()
   -> _connect_capture_signals()
+  -> AiGenerationWorkflow.status_changed -> _on_fetch_status()
+  -> AiGenerationWorkflow.guides_changed -> _on_guides_generated()
+  -> AiGenerationWorkflow.synergies_changed -> _on_synergies_generated()
   -> setWindowTitle(), resize()
   -> _setup_menu()
   -> _load_data()
@@ -107,20 +110,21 @@ _connect_fetch_signals():
   HeroFetchService.fetch_completed  → _on_fetch_completed    → QMessageBox
   HeroFetchService.error_occurred   → _on_fetch_error        → QMessageBox.warning()
 
-_connect_synergy_signals():
-  SynergyFetchService.status_changed   → _on_fetch_status    → status_label
-  SynergyFetchService.fetch_completed  → _on_synergy_fetch_completed → data.synergies.load()
-  SynergyFetchService.error_occurred   → _on_synergy_fetch_error     → QMessageBox
-  SynergyFetchService.progress_output  → _on_synergy_progress        → GuideProgressDialog
-  SynergyFetchService.progress_value   → _on_synergy_progress_value  → GuideProgressDialog
+AiGenerationWorkflow._connect_services():
+  GuideFetchService.status_changed    → workflow.status_changed → MainWindow._on_fetch_status()
+  GuideFetchService.fetch_completed   → workflow._on_guide_completed()
+    → GuideProgressDialog.on_process_finished()
+    → [success] GuideManager.load() → workflow.guides_changed → MainWindow._on_guides_generated()
+  GuideFetchService.error_occurred    → workflow._on_guide_error() → 详细错误弹窗
+  GuideFetchService.progress_output/value → workflow._on_guide_progress*() → GuideProgressDialog
 
-_connect_guide_signals():
-  GuideFetchService.cost_estimated    → _on_guide_cost_estimated     → CostConfirmDialog
-  GuideFetchService.status_changed    → _on_fetch_status
-  GuideFetchService.fetch_completed   → _on_guide_fetch_completed    → data.guides.load()
-  GuideFetchService.error_occurred    → _on_guide_fetch_error        → QMessageBox
-  GuideFetchService.progress_output   → _on_guide_progress           → GuideProgressDialog
-  GuideFetchService.progress_value    → _on_guide_progress_value     → GuideProgressDialog
+  SynergyFetchService.status_changed  → workflow.status_changed → MainWindow._on_fetch_status()
+  SynergyFetchService.fetch_completed → workflow._on_synergy_completed()
+    → GuideProgressDialog.on_process_finished()
+    → [success] SynergyManager.load() → workflow.synergies_changed
+      → MainWindow._on_synergies_generated() → 浏览器/推荐页刷新
+  SynergyFetchService.error_occurred  → workflow._on_synergy_error() → 警告弹窗
+  SynergyFetchService.progress_output/value → workflow._on_synergy_progress*() → GuideProgressDialog
 
 _connect_capture_signals():
   OcrService.poll_tick                → _on_poll_capture             [轮询截图触发]
@@ -130,8 +134,7 @@ _connect_capture_signals():
 | 函数 | 所在行 | 说明 |
 |------|--------|------|
 | `_connect_fetch_signals()` | 主窗口 | 连接 HeroFetchService 三个信号 |
-| `_connect_synergy_signals()` | 主窗口 | 连接 SynergyFetchService 五个信号 |
-| `_connect_guide_signals()` | 主窗口 | 连接 GuideFetchService 六个信号 |
+| `AiGenerationWorkflow._connect_services()` | AI 工作流 | 连接 GuideFetchService、SynergyFetchService 的状态、完成、错误和进度信号 |
 | `_connect_capture_signals()` | 主窗口 | 连接 OcrService.poll_tick + 自定义信号 |
 
 ---
@@ -172,66 +175,90 @@ _connect_capture_signals():
 ```
 菜单「数据 → 攻略获取 → 全量获取」
   -> MainWindow._request_guide_all()
-    -> self._get_heroes_as_dicts()                               [Hero.list_heroes → dict]
-    -> estimate_cost(len(heroes), "guide")                       [AI 成本估算]
-    -> BackendChooseDialog(estimation, title, parent)            [选择 API/浏览器]
-       -> [Tab 0: API 方式] 显示 Token 和费用预估
-       -> [Tab 1: 浏览器方式] 显示 Edge 配置说明
-    -> [accepted] backend = dialog.get_selected_backend()
-       -> GuideProgressDialog(hero_count, parent)                [创建进度对话框]
-       -> GuideFetchService.fetch_all(heroes, backend)
-       -> GuideProgressDialog.exec()                             [模态等待]
+    -> AiGenerationWorkflow.request_guide_all()
+      -> _get_heroes_as_dicts()                                  [HeroManager.list_heroes() → dict]
+      -> _start_guide_generation(heroes, "all", ...)
+        -> estimate_cost(len(heroes), "guide")                   [AI 成本估算]
+        -> BackendChooseDialog(estimation, title, parent)        [选择 API/浏览器]
+          -> [accepted] backend = dialog.get_selected_backend()
+            -> GuideProgressDialog(hero_count, parent)           [创建进度对话框]
+            -> GuideFetchService.fetch_all(heroes, backend)
+            -> GuideProgressDialog.exec()                        [模态等待]
 
 菜单「数据 → 攻略获取 → 增量获取」
-  -> _request_guide_incremental()
-    -> self._get_heroes_as_dicts()
-    -> GuideManager.list_guides()                                [对比已有攻略]
-    -> 筛选: 已有攻略 → 跳过; 无攻略 → 需生成
-    -> [无缺失] emit cost_estimated({"items": 0, "message": "...")})
-    -> [有缺失] 同全量流程
+  -> MainWindow._request_guide_incremental()
+    -> AiGenerationWorkflow.request_guide_incremental()
+      -> HeroManager.list_heroes() + GuideManager.list_guides() [对比已有攻略]
+      -> 筛选: 已有攻略 → 跳过; 无攻略 → missing
+      -> [无缺失] status_changed("所有武将已有攻略，无需生成")
+      -> [有缺失] _start_guide_generation(missing, "incremental", ...)
+        -> GuideFetchService.fetch_incremental(missing, backend)
+        -> GuideProgressDialog(len(missing))                     [总数与实际任务一致]
 
 菜单「数据 → 攻略获取 → 指定获取」
-  -> _request_guide_specific()
-    -> GuideFetchDialog(self._data.heroes, parent)               [选择指定武将]
-    -> 同全量流程（仅选中的武将）
+  -> MainWindow._request_guide_specific()
+    -> AiGenerationWorkflow.request_guide_specific()
+      -> GuideFetchDialog(hero_manager, parent)                  [选择指定武将]
+      -> _start_guide_generation(selected, "specific", ...)
+```
+
+GuideFetchService [signal] fetch_completed
+  -> AiGenerationWorkflow._on_guide_completed(success, message)
+    -> GuideProgressDialog.on_process_finished(success, message)
+    -> [success] GuideManager.load() -> guides_changed
+      -> MainWindow._on_guides_generated() -> _update_status()
+    -> [failure] QMessageBox.warning()
 ```
 
 | 函数 | 菜单路径 | 调用链 |
 |------|----------|--------|
-| `_request_guide_all()` | 数据→攻略获取→全量获取 | `_get_heroes_as_dicts()` → `estimate_cost()` → `BackendChooseDialog` → `GuideFetchService.fetch_all()` |
-| `_request_guide_incremental()` | 数据→攻略获取→增量获取 | `_get_heroes_as_dicts()` → `GuideManager.list_guides()` → 过滤 → 同全量 |
-| `_request_guide_specific()` | 数据→攻略获取→指定获取 | `GuideFetchDialog` → 同全量 |
-| `_get_heroes_as_dicts()` | 工具函数 | `HeroManager.list_heroes()` → `Hero.model_dump()` |
+| `MainWindow._request_guide_*()` | 数据→攻略获取 | 仅委托 `AiGenerationWorkflow.request_guide_*()` |
+| `request_guide_all()` | 全量获取 | `_get_heroes_as_dicts()` → `_start_guide_generation()` → `GuideFetchService.fetch_all()` |
+| `request_guide_incremental()` | 增量获取 | `GuideManager.list_guides()` → 缺失筛选 → `fetch_incremental(missing)` |
+| `request_guide_specific()` | 指定获取 | `GuideFetchDialog` → `_start_guide_generation()` → `fetch_specific()` |
 
 ### 2.3 相性评分菜单
 
 ```
 菜单「数据 → 武将相性 → 指定获取」
   -> MainWindow._request_synergy_pair()
-    -> self._get_heroes_as_dicts()
-    -> SynergyPairDialog(self._data.heroes, parent)              [选 2-8 武将]
+    -> AiGenerationWorkflow.request_synergy_pair()
+      -> _require_heroes()                                       [无英雄数据则提示]
+      -> SynergyPairDialog(hero_manager, parent)                 [选 2-8 武将]
        -> BaseHeroSelectDialog(MULTI_LIMIT, max_selection=8)
        -> 覆盖 _on_accept(): 允许 2-8 个（不要求正好 8 个）
-    -> [accepted] 计算组合数 C(n,2)
-    -> BackendChooseDialog(title, parent)
-    -> GuideProgressDialog(pair_count, title, parent)
-    -> SynergyFetchService.fetch_pair(selected, backend)
+      -> [accepted] 计算组合数 C(n,2)
+      -> _choose_backend(title) -> BackendChooseDialog
+      -> _start_synergy_generation(pair_count, title, ...)
+        -> GuideProgressDialog(pair_count, title, parent)
+        -> SynergyFetchService.fetch_pair(selected, backend)
       -> 写入 temp JSON
       -> _start_process(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp])
-    -> GuideProgressDialog.exec()
+        -> GuideProgressDialog.exec()
 
 菜单「数据 → 武将相性 → 选定武将」
   -> MainWindow._request_synergy_single()
-    -> SynergySingleDialog(self._data.heroes, parent)            [选 1 武将]
+    -> AiGenerationWorkflow.request_synergy_single()
+      -> SynergySingleDialog(hero_manager, parent)               [选 1 武将]
        -> BaseHeroSelectDialog(SINGLE mode → 单选)
-    -> 同相性流程
-    -> SynergyFetchService.fetch_single(hero, all_heroes, backend)
+      -> _choose_backend(title) -> BackendChooseDialog
+      -> SynergyFetchService.fetch_single(hero, all_heroes, backend)
+```
+
+SynergyFetchService [signal] fetch_completed
+  -> AiGenerationWorkflow._on_synergy_completed(success, message)
+    -> [success] SynergyManager.load() -> synergies_changed
+      -> MainWindow._on_synergies_generated()
+        -> HeroBrowser.refresh_synergies()
+        -> RecommendationPanel.refresh_synergies()
+        -> _update_status()
 ```
 
 | 函数 | 菜单路径 | 调用链 |
 |------|----------|--------|
-| `_request_synergy_pair()` | 数据→武将相性→指定获取 | `SynergyPairDialog` → `BackendChooseDialog` → `SynergyFetchService.fetch_pair()` |
-| `_request_synergy_single()` | 数据→武将相性→选定武将 | `SynergySingleDialog` → `BackendChooseDialog` → `SynergyFetchService.fetch_single()` |
+| `MainWindow._request_synergy_*()` | 数据→武将相性 | 仅委托 `AiGenerationWorkflow.request_synergy_*()` |
+| `request_synergy_pair()` | 指定获取 | `SynergyPairDialog` → 后端选择 → `SynergyFetchService.fetch_pair()` |
+| `request_synergy_single()` | 选定武将 | `SynergySingleDialog` → 后端选择 → `SynergyFetchService.fetch_single()` |
 
 ---
 
@@ -798,18 +825,26 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `_request_fetch_all()` | 菜单 | `HeroFetchService.fetch_all()` |
 | `_request_fetch_incremental()` | 菜单 | `HeroFetchService.fetch_incremental()` |
 | `_request_fetch_specific()` | 菜单 | `HeroFetchDialog`, `fetch_specific(ids)` |
-| `_request_guide_all()` | 菜单 | `estimate_cost()`, `BackendChooseDialog`, `GuideFetchService.fetch_all()` |
-| `_request_guide_incremental()` | 菜单 | `GuideManager.list_guides()`, 同全量流程 |
-| `_request_guide_specific()` | 菜单 | `GuideFetchDialog`, 同全量流程 |
-| `_request_synergy_pair()` | 菜单 | `SynergyPairDialog`, `SynergyFetchService.fetch_pair()` |
-| `_request_synergy_single()` | 菜单 | `SynergySingleDialog`, `SynergyFetchService.fetch_single()` |
+| `_request_guide_*()` | 菜单 | `AiGenerationWorkflow.request_guide_*()` |
+| `_request_synergy_*()` | 菜单 | `AiGenerationWorkflow.request_synergy_*()` |
 | `_open_settings()` | 菜单"配置→API 配置" | `SettingsDialog` |
 | `_open_mumu_config()` | 菜单"配置→模拟器配置" | `MumuConfigDialog`, `save_env_file()`, `OcrService.start_poll()` |
 | `_on_poll_capture()` | `OcrService.poll_tick` 信号 | 后台线程截图+OCR |
 | `_on_poll_result()` | 自定义信号 | `RecommendationPanel.load_from_ocr()` |
-| `_on_synergy_fetch_completed()` | `SynergyFetchService.fetch_completed` | `SynergyManager.load()`, `_update_status()` |
-| `_on_guide_fetch_completed()` | `GuideFetchService.fetch_completed` | `GuideManager.load()`, `_update_status()` |
-| `_get_heroes_as_dicts()` | `_request_guide/synergy_*()` | `HeroManager.list_heroes()`, `Hero.model_dump()` |
+| `_on_guides_generated()` | `AiGenerationWorkflow.guides_changed` | `_update_status()` |
+| `_on_synergies_generated()` | `AiGenerationWorkflow.synergies_changed` | `HeroBrowser.refresh_synergies()`, `RecommendationPanel.refresh_synergies()`, `_update_status()` |
+
+### AiGenerationWorkflow
+
+| 函数 | 调用方（触发方式） | 被调用方 |
+|------|-------------------|----------|
+| `request_guide_all()` | 主窗口“全量获取”菜单 | `_get_heroes_as_dicts()`、`_start_guide_generation()`、`GuideFetchService.fetch_all()` |
+| `request_guide_incremental()` | 主窗口“增量获取”菜单 | `GuideManager.list_guides()`、缺失筛选、`fetch_incremental(missing)` |
+| `request_guide_specific()` | 主窗口“指定获取”菜单 | `GuideFetchDialog`、`_start_guide_generation()`、`fetch_specific()` |
+| `request_synergy_pair()` | 主窗口“指定获取”菜单 | `SynergyPairDialog`、后端选择、`SynergyFetchService.fetch_pair()` |
+| `request_synergy_single()` | 主窗口“选定武将”菜单 | `SynergySingleDialog`、后端选择、`fetch_single()` |
+| `_on_guide_completed()` | `GuideFetchService.fetch_completed` | 关闭进度、`GuideManager.load()`、`guides_changed` |
+| `_on_synergy_completed()` | `SynergyFetchService.fetch_completed` | 关闭进度、`SynergyManager.load()`、`synergies_changed` |
 
 ### HeroCardWidget
 
@@ -829,7 +864,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `SettingsDialog` | API Key/URL/Model/限速/超时/重试 | 保存到 config.env |
 | `MumuConfigDialog` | ADB 路径/端口/模板/OCR 配置 | config dict + 服务状态更新 |
 | `BackendChooseDialog` | Token/费用估算 | `"api"` 或 `"browser"` |
-| `CostConfirmDialog` | Token/费用估算 | 确认/取消 |
+| `CostConfirmDialog` | 遗留组件，当前 AI 流程未调用 | - |
 | `GuideProgressDialog` | 总数量、子进程进度信号 | 实时进度条 + 完成/失败提示 |
 | `RoiSelectorDialog` | 截图 QPixmap | ROI (x, y, w, h) |
 | `HeroEditDialog` | Hero 对象 | 修改后的 Hero 对象 |

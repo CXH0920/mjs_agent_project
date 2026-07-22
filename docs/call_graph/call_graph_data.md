@@ -89,7 +89,8 @@ MainWindow._load_data()
 | `HeroDetailPanel._on_info_delete()` | `HeroManager.save()`, `GuideManager.save()` | 删除武将后保存 |
 | `HeroDetailPanel._on_guide_edit()` | `GuideManager.save()` | 修改攻略后保存 |
 | `HeroDetailPanel._on_guide_delete()` | `GuideManager.save()` | 删除攻略后保存 |
-| `MainWindow._on_synergy_fetch_completed()` | `SynergyManager.load()` (仅重新加载) | 相性获取完成后刷新 |
+| `AiGenerationWorkflow._on_guide_completed()` | `GuideManager.load()` (仅重新加载) | 攻略生成成功后重载内存缓存 |
+| `AiGenerationWorkflow._on_synergy_completed()` | `SynergyManager.load()` (仅重新加载) | 相性生成成功后重载内存缓存 |
 
 ---
 

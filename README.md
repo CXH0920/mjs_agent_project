@@ -52,6 +52,7 @@ test_project/
 │   └── ui/
 │       ├── style.py               # 全局样式表（天蓝色调）
 │       ├── main_window.py         # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
+│       ├── ai_generation_workflow.py # 攻略和相性生成的对话框/进度工作流
 │       ├── shared/                 # 跨页面公开控件、技能弹窗、势力配色缓存
 │       │   ├── widgets.py          # DoubleClickLabel
 │       │   ├── hero_dialogs.py     # HeroSkillDialog
@@ -73,7 +74,7 @@ test_project/
 │       ├── synergy_pair_dialog.py # 相性指定获取（选 2~8 武将，自动两两配对）
 │       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
 │       ├── settings_dialog.py     # API 配置对话框
-│       ├── cost_confirm_dialog.py # AI 成本确认对话框（API 模式）
+│       ├── cost_confirm_dialog.py # 遗留的 AI 成本确认对话框（当前流程未调用）
 │       └── guide_progress_dialog.py # 攻略生成进度条
 ├── data/
 │   ├── heroes.json                # 165 个武将
@@ -449,7 +450,7 @@ _save_json() → data/*.json.staging → 全部成功后原子替换 data/guides
 | 数据 > 武将相性 > 指定获取 | | 选 2~8 武将，自动两两配对计算 C(N,2) 组相性评分 → BackendChooseDialog |
 | 帮助 > 关于 | | 版本信息 |
 
-AI 批量生成通过 **QProcess** 子进程执行；模板匹配与 OCR 识别由 **OcrWorker** 后台队列处理。ADB 连接与手动截图仍在 GUI 线程同步执行。
+AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和相性任务委托给 `AiGenerationWorkflow`，统一处理武将选择、后端选择、进度显示和完成后的页面刷新。模板匹配与 OCR 识别由 **OcrWorker** 后台队列处理。ADB 连接与手动截图仍在 GUI 线程同步执行。
 
 ### 后端选择对话框 (`BackendChooseDialog`)
 
