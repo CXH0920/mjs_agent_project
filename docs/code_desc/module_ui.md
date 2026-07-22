@@ -57,11 +57,11 @@ src/ui/
 
 胜率 CSV 读取位于 `src/data/win_rate_repository.py`。页面只依赖共享模块的公开名称，不再从 `recommendation_panel.py` 导入私有函数或复用其内部缓存。
 
-`OfficialDataImportDialog` 由“数据 > 官方数据导入”打开，包含“2v2数据导入”和“武将放逐数据导入”两个可独立选择的图片框。确认后通过后台线程调用 `OfficialDataImportService`：服务按两种样图各自的表头和列比例切分榜单，再依据 OpenCV 检测到的横线确定实际数据行数，逐单元格 OCR。2v2 图片左表覆盖 `data/2v2胜率排行.csv`（`排名,武将,胜率`），右表独立覆盖 `data/2v2出场排行.csv`（`排名,武将`）；放逐榜左右表合并覆盖 `data/武将放逐.csv`。名称可靠性由业务层保证：完整词表候选优先，单字才逐字补识别，多候选单字进入待复核。任一异常行仍保留期望排名，并写入对应的 `*_待复核.csv` 与 `screenshot_data/official_import/` 行截图。
+`OfficialDataImportDialog` 由“数据 > 官方数据导入”打开，包含“2v2数据导入”和“武将放逐数据导入”两个可独立选择的图片框。确认后通过后台线程调用 `OfficialDataImportService`：服务按两种样图各自的表头和列比例切分榜单，再依据 OpenCV 检测到的横线确定实际数据行数，逐单元格 OCR。2v2 图片左表覆盖 `data/2v2胜率排行.csv`（`排名,武将,胜率`），右表独立覆盖 `data/2v2出场排行.csv`（`排名,武将`）；放逐榜左右表合并覆盖 `data/武将放逐.csv`。名称可靠性由业务层保证：完整词表候选优先，单字才逐字补识别；同首字无法唯一确认时由业务层按需使用繁体模型，仍不能确认才进入待复核。任一异常行仍保留期望排名，并写入对应的 `*_待复核.csv` 与 `screenshot_data/official_import/` 行截图。
 
 ### 2.1 官方数据导入对话框
 
-`OfficialDataImportDialog` 是“数据 > 官方数据导入”的唯一入口。两个只读文件框均使用图片过滤器；用户可以只选择其中一种，也可以同时选择。点击“导入”后创建一个后台 `OfficialDataImportWorker`，按钮在任务期间禁用，避免同一对话框重复提交或关闭时销毁运行中的线程。弹窗会先显示准备中的不定进度，检测到表格行后切换为当前文件的精确 OCR 进度；进度总量包含胜率数字模板准备和逐行识别，同时选择两张图片时会标明当前文件序号。
+`OfficialDataImportDialog` 是“数据 > 官方数据导入”的唯一入口。两个只读文件框均使用图片过滤器；用户可以只选择其中一种，也可以同时选择。点击“导入”后创建一个后台 `OfficialDataImportWorker`，按钮在任务期间禁用，避免同一对话框重复提交或关闭时销毁运行中的线程。弹窗会先显示准备中的不定进度，检测到表格行后切换为当前文件的精确 OCR 进度；进度总量包含胜率数字模板准备和逐行识别，同时选择两张图片时会标明当前文件序号。罕见字兜底时仅更新为对应状态文字，保留已完成行的进度值。
 
 ```python
 paths = {key: widget.text() for key, widget in self._paths.items() if widget.text()}

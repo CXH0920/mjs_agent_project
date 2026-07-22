@@ -156,7 +156,7 @@ OfficialDataImportDialog
      -> import_file()（按已选图片顺序串行执行）
            -> OpenCV HoughLinesP 检测横线
            -> 按列比例裁剪每个单元格
-           -> PaddleOCR + 武将词表两段式校正 / 胜率数字模板识别
+           -> 简体 PaddleOCR；歧义单字时按需使用繁体模型 + 武将词表校正 / 胜率数字模板识别
            -> 原子覆盖 CSV + 写入待复核 CSV/行截图
 ```
 
@@ -176,7 +176,7 @@ OfficialDataImportDialog
 |---|---|---|---|
 | `OfficialDataImportService.import_selected()` | `{类型: 图片路径}` | `list[dict]` | 空路径跳过；两个类型依次执行 |
 | `OfficialDataImportService.import_file()` | `key`, `image_path` | `{name, records, reviews, outputs}` | 导入一种图片并覆盖其 CSV |
-| `OfficialDataImportWorker.progress_changed` | `status`, `current`, `total` | 当前文件的 OCR 工作进度 | 胜率模板准备和逐行识别都会更新 |
+| `OfficialDataImportWorker.progress_changed` | `status`, `current`, `total` | 当前文件的 OCR 工作进度 | 胜率模板准备、逐行识别和罕见字兜底状态都会更新 |
 | `OfficialDataImportWorker.completed` | - | `list[dict]` | 所有选中导入完成 |
 | `OfficialDataImportWorker.failed` | - | `str` | 任一导入失败原因 |
 
@@ -189,13 +189,14 @@ for top, bottom in zip(boundaries, boundaries[1:]):
     fields = self._recognize_row(row, columns, column_breaks)
 ```
 
-`boundaries` 由横线检测得到，因此 `expected_rank` 来自视觉行序而非 OCR 排名。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；最高结果只有单字时，再保留背景留白按字形补识别。补识别仍失败但该首字在词表中只有唯一候选时可确认该候选；存在多个同首字候选的单字则写入待复核，不会用泛化词表匹配强行猜测。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。工作线程会先显示不定进度，待横线检测得到行数后，将胜率模板准备和逐行识别都计入当前文件进度。每个图片只创建一个 `OfficialDataImportWorker`；同时选择 2v2 和放逐时在同一线程顺序处理，不会互相争用该功能的 OCR 实例。它与常规 `OcrWorker` 是独立实例，轮询或截图识别同时运行时会共享 CPU/GPU 资源。
+`boundaries` 由横线检测得到，因此 `expected_rank` 来自视觉行序而非 OCR 排名。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；最高结果只有单字时，再保留背景留白按字形补识别。补识别仍失败但该首字在词表中只有唯一候选时可确认该候选；存在多个同首字候选的单字才懒加载 `chinese_cht` 繁体模型。繁体模型的完整候选会再次通过词表校正，最终必须精确命中词表；加载或推理不可用时保留原结果待复核。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。工作线程会先显示不定进度，待横线检测得到行数后，将胜率模板准备和逐行识别都计入当前文件进度；进入罕见字兜底时仅更新状态文字，不重置当前进度。每个图片只创建一个 `OfficialDataImportWorker`；同时选择 2v2 和放逐时在同一线程顺序处理，不会互相争用该功能的 OCR 实例。它与常规 `OcrWorker` 是独立实例，轮询或截图识别同时运行时会共享 CPU/GPU 资源。
 
 **名称降级决策顺序：**
 
 1. 收集原图放大与增强锐化两次 OCR 的全部文本块；任一完整文本精确命中 `heroes.json` 词表时优先采用，不与单字的错误高置信度竞争。
 2. 若最高候选为单字，按亮色字形切分 2-4 个字符，保留原背景、左右内容与边缘留白后逐字 OCR；拼接结果通过 `_correct_with_hero_list()` 校正后必须仍命中词表。
-3. 逐字 OCR 未得到可用名称时，只有该首字在词表中唯一对应一个角色才自动补全；多候选的单字保留原结果，并以“武将名称疑似缺字”写入待复核 CSV 和行截图。
+3. 逐字 OCR 未得到可用名称时，只有该首字在词表中唯一对应一个角色才自动补全。
+4. 首字存在多个或零个候选时，按需调用繁体 `chinese_cht` 模型识别整格和字形；完整候选经词表校正后必须精确命中词表才采用。模型不可用或仍不能确认时保留单字，并以“武将名称疑似缺字”写入待复核 CSV 和行截图。
 
 该顺序能优先恢复低置信度但完整的词表候选，同时避免将“郭”“范”等多候选单字强行改为错误角色。
 

@@ -37,7 +37,7 @@
 | 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志、加载数据、创建主窗口并进入 Qt 事件循环；OCR 识别器按首次任务延迟初始化 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 工作流成功后重载 Manager 并通知主窗口刷新；所有任务成功才提交正式 JSON |
-| 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> OpenCV 行分割 + 候选汇总/逐字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
+| 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> OpenCV 行分割 + 候选汇总/逐字/繁体罕见字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> 各 Manager CRUD -> `save()` | 原子写入对应 JSON 并刷新局部视图 |
 
@@ -561,7 +561,7 @@ OfficialDataImportDialog._start_import()
       -> _read_image() -> _extract_panels()
       -> _find_data_boundaries() -> HoughLinesP 横线 -> 视觉行序
       -> _prepare_rate_templates()（仅 2v2 胜率表）
-      -> _recognize_row() -> 名称/胜率识别 -> _review_reasons()
+      -> _recognize_row() -> 名称/胜率识别（歧义单字按需繁体兜底） -> _review_reasons()
       -> _write_csv() -> Path.replace() 原子覆盖
       -> [胜率] clear_win_rate_cache()
     -> emit completed(summaries)
@@ -581,7 +581,8 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 
 1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。任一候选去除非汉字后精确命中 `heroes.json` 时，优先使用完整候选，即使单字候选置信度更高。
 2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `_correct_with_hero_list()` 校正后必须命中词表。
-3. 逐字补识别失败时，只有单字作为词表首字的候选唯一才补全；多个同首字候选不猜测，保留 OCR 原文并写入待复核。
+3. 逐字补识别失败时，只有单字作为词表首字的候选唯一才补全。
+4. 同首字存在多个或零个候选时，服务懒加载 `chinese_cht` 繁体模型，先尝试完整候选，再以词表校正或逐字识别确认；最终精确命中词表才采用。模型下载、加载或识别失败时，保留 OCR 原文并写入待复核。
 
 每个正式 CSV 都有对应的 `*_待复核.csv`。异常记录含 OCR 原文、置信度、原因、原图坐标及 `screenshot_data/official_import/` 下的行截图；正式 CSV 仍按视觉行序写入，避免漏识别导致排名整体偏移。
 

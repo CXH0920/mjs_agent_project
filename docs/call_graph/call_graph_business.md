@@ -377,7 +377,7 @@ MainWindow._open_official_data_import()
       -> OfficialDataImportWorker(paths).start()
         -> [QThread] OfficialDataImportWorker.run()
           -> 对每个已选文件 emit progress_changed(status, 0, 0)
-          -> OfficialDataImportService.import_file(key, path, progress_callback)
+          -> OfficialDataImportService.import_file(key, path, progress_callback, status_callback)
             -> _read_image() -> cv2.imdecode()
             -> _extract_panels() -> 固定版式裁出左右表
             -> _find_data_boundaries() -> HoughLinesP 横线 -> 行边界
@@ -389,6 +389,9 @@ MainWindow._open_official_data_import()
             -> [每行] _recognize_row()
                -> 排名/普通单元格: _recognize_cell()
                -> 武将单元格: _recognize_name_cell()
+                  -> [同首字无法唯一确认] _rare_char_engine（懒加载 chinese_cht）
+                  -> _recognize_name_with_engine() -> 词表校正 -> [精确命中才采用]
+                  -> status_callback("正在执行罕见字兜底识别")
                -> 胜率单元格: 预计算 OCR + _recognize_rate_with_templates()
             -> _review_reasons() -> 必要时 _save_review_crop()
             -> _write_csv() -> 临时文件 replace 正式 CSV
@@ -411,16 +414,20 @@ _recognize_name_cell(cell)
      -> [命中词表] 返回补识别名称
   -> [逐字失败] hero.startswith(单字) 的候选数量
      -> 唯一 -> 返回唯一候选
-     -> 多个/零个 -> 返回原结果 -> _review_reasons() 记录“武将名称疑似缺字”
+     -> 多个/零个 -> _rare_char_engine（懒加载繁体模型）
+        -> [模型可用] _recognize_name_with_engine()
+           -> 整格精确匹配 / 完整候选词表校正 / 逐字校正
+           -> [最终命中词表] 返回完整名称
+        -> [模型不可用或仍不匹配] 返回原结果 -> _review_reasons() 记录“武将名称疑似缺字”
 ```
 
 | 函数/信号 | 调用方 | 关键下游 | 说明 |
 |---|---|---|---|
 | `OfficialDataImportWorker.run()` | `OfficialDataImportDialog._start_import()` | `import_file()`、`progress_changed`、`completed/failed` | 同线程内顺序处理一张或两张图片 |
 | `import_file()` | Worker | 图像读取、行检测、识别、CSV 原子写入 | 一张图片可产出一个或两个 CSV |
-| `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
+| `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、繁体罕见字兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
 | `_review_reasons()` | `import_file()` | `_save_review_crop()` | 单字、低置信度、胜率失败或排名不一致进入复核 |
-| `progress_changed(status, current, total)` | Worker | `OfficialDataImportDialog._on_progress_changed()` | 先不定进度，行数确定后显示精确进度 |
+| `progress_changed(status, current, total)` | Worker | `OfficialDataImportDialog._on_progress_changed()` | 先不定进度，行数确定后显示精确进度；`current < 0` 仅更新罕见字状态 |
 
 **输出关系：**2v2 左表写入 `2v2胜率排行.csv`，右表写入 `2v2出场排行.csv`；放逐图左右表按视觉行序合并为 `武将放逐.csv`。每份正式 CSV 均有对应待复核 CSV；异常截图位于 `screenshot_data/official_import/`。
 
