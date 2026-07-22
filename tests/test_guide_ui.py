@@ -11,18 +11,19 @@ from PySide6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QTex
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, HeroGuide, Skill
+from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.hero_browser import (
-    CheckableComboBox,
-    GuideEditDialog,
     GuideMarkdownDialog,
     HeroDetailPanel,
     HeroListPanel,
-    HeroRelationSelectDialog,
 )
-from src.ui.checkable_combo import CheckableComboBox as SharedCheckableComboBox
+from src.ui.checkable_combo import CheckableComboBox
 from src.ui.fetch_dialog import HeroFetchDialog
+from src.ui.guide_edit_dialog import GuideEditDialog
+from src.ui.hero_edit_dialog import HeroEditDialog
+from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
+from src.ui.synergy_edit_dialog import SynergyEditDialog
 
 
 def _app() -> QApplication:
@@ -134,10 +135,24 @@ def test_specific_fetch_dialog_uses_shared_faction_combo(tmp_path: Path) -> None
     hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
 
     dialog = HeroFetchDialog(hero_manager)
-    faction_combo = dialog.findChild(SharedCheckableComboBox)
+    faction_combo = dialog.findChild(CheckableComboBox)
 
     assert faction_combo is not None
     assert faction_combo.checked_values() == {"魏"}
+
+
+def test_extracted_edit_dialogs_construct_independently(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero = Hero(id=1, name="曹操", faction="魏")
+    hero_manager.add_hero(hero)
+    synergy = SynergyScore(hero_a_id=1, hero_b_id=2, score=3)
+
+    hero_dialog = HeroEditDialog(hero)
+    synergy_dialog = SynergyEditDialog(hero_manager, synergy)
+
+    assert hero_dialog.get_hero().id == 1
+    assert synergy_dialog.get_synergy().score == 3
 
 
 def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:

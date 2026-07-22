@@ -28,6 +28,17 @@ MainWindow.__init__()
 
 数据完整性问题存于 `self._data.last_load_report`；当前 UI 使用已恢复的内存数据，尚未提供报告查看或写回修复界面。服务完成状态以 CLI 退出码为准，不解析 `RESULT: FAIL=`。
 
+武将浏览页已将可独立维护的编辑单元从 `hero_browser.py` 拆出：
+
+| 模块 | 公开组件 | 职责 | 由谁调用 |
+|------|----------|------|----------|
+| `hero_edit_dialog.py` | `HeroEditDialog` | 编辑单个 `Hero` 的基础字段 | `HeroDetailPanel._on_info_edit()` |
+| `guide_edit_dialog.py` | `GuideEditDialog` | 编辑 `HeroGuide` 的正文、要点和关系集合 | `HeroDetailPanel._on_guide_edit()` |
+| `hero_relation_select_dialog.py` | `HeroRelationSelectDialog` | 搜索、势力筛选和多选攻略关系武将 | `GuideEditDialog._open_relation_selector()` |
+| `synergy_edit_dialog.py` | `SynergyEditDialog` | 编辑一对武将的评分、维度和说明 | `HeroDetailPanel._on_synergy_edit()` |
+
+`hero_browser.py` 仍负责列表、详情、信号协调及持久化调用；它导入上述公开对话框以保持原有外部导入兼容，但不再持有它们的表单构建逻辑。
+
 ## 共享 UI 与数据访问接口
 
 跨页面复用的实现已集中到公开模块，调用方向如下：
@@ -79,7 +90,8 @@ MainWindow.__init__()
      -> self._data.load_all()
   -> _setup_ui()
      -> QTabWidget()
-        -> HeroBrowser(self._data.heroes, self._data.guides)         [Tab 0: 武将浏览]
+        -> HeroBrowser(self._data.heroes, self._data.guides,
+                        self._data.synergies)                      [Tab 0: 武将浏览]
         -> RecommendationPanel(self._data.heroes, self._data.synergies,
                                guide_mgr, capture_svc, ocr_svc)      [Tab 1: 选将推荐]
         -> MatchGuidePanel(self._data.heroes, capture_svc)           [Tab 2: 对局攻略]
@@ -230,25 +242,17 @@ _connect_capture_signals():
 ```
 RecommendationPanel._on_import_from_screenshot()               [「截图」按钮]
   -> [无 capture service] _open_mumu_config() -> return        [先配置模拟器]
-  -> self._hero_mgr.list_heroes()                              [获取武将名列表]
-  -> CaptureService.capture_completed.connect(self._on_capture_result)
-  -> CaptureService.do_capture(hero_names)
+  -> CaptureService.do_capture(perform_ocr=False)
     -> QTimer.singleShot(0, self._execute_capture)              [延后回调；ADB 截图仍在 GUI 线程]
 
 CaptureService._execute_capture(hero_names)                    [异步回调]
   -> self._capture.connect()                                   [连接 ADB]
   -> self._capture.screencap_full()                            [ADB 截图]
   -> save_image(image, save_path)                              [保存截图]
-  -> [OCR 启用] self._run_ocr(image, hero_names)
-     -> get_template_manager()
-     -> tm.match(image, threshold)                             [多尺度模板匹配]
-     -> [匹配] get_recognizer(rois, names, tm.reference_size)
-     -> recognizer.recognize(image)                            [按当前截图缩放 ROI 后 PaddleOCR]
-     -> GeneralRecognizer.save_results()
   -> emit capture_completed({ocr_results, image, ...})
 
 RecommendationPanel._on_capture_result(result)                 [信号接收]
-  -> self.load_from_ocr(ocr_results)                            [更新推荐面板]
+  -> [ADB 截图来源] 复位按钮；不导入 OCR 结果
 ```
 
 ### 3.2 从文件导入
@@ -260,7 +264,10 @@ RecommendationPanel._on_import_from_file()                     [「从图片导�
   -> CaptureService.do_capture_from_file(file_path, hero_names)
     -> QTimer.singleShot(0, _execute_file_ocr)
        -> PIL.Image.open(file_path)
-       -> self._run_ocr(image, hero_names)                     [同截图 OCR 流程]
+       -> _queue_capture_ocr()
+          -> submit_ocr_task() -> OcrWorker.submit(OcrTask)
+             -> OcrWorker._execute() -> 模板匹配 -> OCR
+          -> _on_ocr_task_completed() -> capture_completed
   -> [信号] → load_from_ocr()
 ```
 
@@ -282,16 +289,16 @@ MatchHeroCard._portrait [左键双击]
 
 MatchGuidePanel._on_import_from_screenshot()
   -> [未配置 ADB] request_mumu_config → MainWindow._open_mumu_config()
-  -> CaptureService.do_capture(template_name="match_guide", force_ocr=True)
-     -> _execute_capture() → _run_ocr(template_name="match_guide")
+  -> CaptureService.do_capture(perform_ocr=False)
+     -> _execute_capture() → 保存截图
   -> MatchGuidePanel._on_capture_result(result)
-     -> load_from_ocr(ocr_results)
+     -> [ADB 截图来源] 仅复位导入状态
 
 MatchGuidePanel._on_import_from_file()
   -> QFileDialog.getOpenFileName()
   -> CaptureService.do_capture_from_file(
        file_path, template_name="match_guide", force_ocr=True)
-  -> _execute_file_ocr() → _run_ocr() → _on_capture_result()
+  -> _execute_file_ocr() → _queue_capture_ocr() → OcrWorker → _on_capture_result()
 ```
 
 对局攻略导入复用 `CaptureService` 的异步采集接口，但通过 `template_name` 使用独立模板；未识别到武将时保留默认四张卡片。
@@ -330,16 +337,14 @@ OcrService.poll_tick  [signal, QTimer 驱动]
                   -> [未连接] CaptureService.connect_emulator()
                   -> AdbCapture.screencap_full()                 [截图]
                   -> due_poll_tasks()                             [任务独立冷却]
-                  -> ADB 截图一次
-                  -> hero_selection / match_guide 模板分别匹配
-                  -> [武将选择命中]
-                     -> get_recognizer(rois, hero_names, reference_size)
-                     -> recognizer.recognize(image)
-                  -> self._poll_result_ready.emit(task_results, image) [跨线程信号]
+                  -> 每个到期任务：CaptureService.submit_ocr_task()
+                     -> OcrWorker.submit(OcrTask)
+                     -> task.completed.wait()
+                  -> self._poll_result_ready.emit({generation, task_results}) [跨线程信号]
                   -> Lock.release()
                          ↓
                   [主线程接收]
-MainWindow._on_poll_result(task_results, image, outcome)       [主线程槽函数]
+MainWindow._on_poll_result(result)                              [主线程槽函数]
   -> [hero_selection 命中] RecommendationPanel.load_from_ocr()
   -> [match_guide 命中] MatchGuidePanel.update_block()
   -> [任务级] OcrService.set_task_cooldown(task_name, seconds)
@@ -351,7 +356,7 @@ MainWindow._on_poll_result(task_results, image, outcome)       [主线程槽函�
 | `_do_poll_work()` | `MainWindow` (内联) | 后台线程：截图 + 模板匹配 + OCR |
 | `_on_poll_result()` | `MainWindow` | 主线程：接收结果 → 更新推荐面板 |
 
-> **关键架构决策：** 手动截图（`do_capture`）在 QTimer.singleShot(0) 中运行，仍在主线程；轮询截图通过 threading.Thread 运行在后台线程，通过 PySide6 信号跨线程传递结果。两种方式完全不同。
+> **关键架构决策：** 手动 ADB 截图（`do_capture`）在 `QTimer.singleShot(0)` 回调中运行，仍在主线程；文件导入和轮询的模板匹配/OCR 均提交到唯一 `OcrWorker`。轮询的 ADB 截图通过 `threading.Thread` 运行在后台线程，并以 PySide6 信号把结构化结果传回主线程。
 
 ---
 
@@ -468,7 +473,7 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
 ### 5.1 初始化与布局
 
 ```
-HeroBrowser.__init__(hero_manager, guide_manager)
+HeroBrowser.__init__(hero_manager, guide_manager, synergy_manager)
   -> _setup_ui()
     -> QSplitter(Horizontal)
        -> HeroListPanel(self._hero_mgr)                         [左侧: 列表面板]
@@ -555,14 +560,17 @@ HeroDetailPanel._on_guide_edit()                               ["修改"按钮 -
      -> _setup_ui():
         -> 核心要点: QTextEdit (多行, 每行一条)
         -> 新手提示: QTextEdit
-        -> 被克制: QLineEdit (顿号分隔的武将名)
-        -> 搭配推荐: QLineEdit (顿号分隔的武将名)
+        -> _create_relation_selector("被克制", counters)
+           -> "选择武将…" -> _open_relation_selector()
+              -> HeroRelationSelectDialog(...).exec()
+                 -> 搜索 + 势力多选筛选 + 勾选列表
+                 -> _accept_selection() -> selected_ids
+           -> _update_relation_summary()                       [显示已选名称]
+        -> _create_relation_selector("搭配推荐", synergizes_with)
+           -> 同上
         -> 攻略正文: QTextEdit (Markdown)
-     -> _resolve_hero_ids(text):
-        -> 分割 `、` 或 `,`
-        -> get_hero_by_name(part) → id                          [名称→ID 解析]
-        -> [失败] int(part)                                      [兜底: 直接取 ID]
-  -> [accepted] updated = dialog.get_guide()
+     -> [accepted] updated = dialog.get_guide()
+        -> 读取文本字段 + counters/synergizes_with 已选 ID 列表
   -> self._guide_mgr.update_guide(updated)
   -> self._guide_mgr.save()
   -> self._update_guide_tab(updated)
@@ -577,7 +585,28 @@ HeroDetailPanel._on_guide_delete()                             ["删除"按钮 -
      -> self.data_changed.emit()
 ```
 
-### 5.5 函数清单总表（武将浏览器）
+### 5.5 相性浏览与编辑链路
+
+```
+HeroDetailPanel.show_hero(hero_id)
+  -> _refresh_synergy_table()
+     -> SynergyManager.list_synergies_for_hero(hero_id)
+     -> 按搭档名称、评分和评级筛选并按评分降序显示
+
+相性表格双击（非说明列）/「修改」按钮
+  -> _selected_synergy()
+  -> SynergyEditDialog(hero_mgr, synergy).exec()
+     -> 评分变化 -> synergy_rating_for_score()                 [实时更新评级]
+  -> [accepted] SynergyManager.update_synergy(dialog.get_synergy())
+  -> SynergyManager.save() -> _refresh_synergy_table()
+  -> synergies_changed.emit()                                  [通知推荐页刷新]
+
+相性说明列双击
+  -> _show_synergy_description()
+  -> _markdown_to_html() -> QTextBrowser 预览
+```
+
+### 5.6 函数清单总表（武将浏览器）
 
 | 函数 | 所在类 | 调用方 | 被调用方 |
 |------|--------|--------|----------|
@@ -593,9 +622,13 @@ HeroDetailPanel._on_guide_delete()                             ["删除"按钮 -
 | `_on_info_delete()` | `HeroDetailPanel` | "删除"按钮 | `delete_hero()`, `delete_guide()`, `save()` |
 | `_on_guide_edit()` | `HeroDetailPanel` | "修改"按钮 | `GuideEditDialog`, `update_guide()`, `save()` |
 | `_on_guide_delete()` | `HeroDetailPanel` | "删除"按钮 | `delete_guide()`, `save()` |
+| `_refresh_synergy_table()` | `HeroDetailPanel` | `show_hero()`、筛选控件、保存后 | `list_synergies_for_hero()`、表格排序和按钮状态 |
+| `_on_synergy_edit()` | `HeroDetailPanel` | 双击相性行或"修改" | `SynergyEditDialog`、`update_synergy()`、`save()` |
 | `HeroEditDialog.get_hero()` | `HeroEditDialog` | `_on_info_edit()` accepted | 读取控件值 → `Hero` |
-| `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取控件值 + `_resolve_hero_ids()` → `HeroGuide` |
-| `GuideEditDialog._resolve_hero_ids()` | `GuideEditDialog` | `get_guide()` | `str.split()`, `get_hero_by_name()`, `int()` |
+| `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取文本字段 + 已选择的关系 ID → `HeroGuide` |
+| `GuideEditDialog._open_relation_selector()` | `GuideEditDialog` | 关系选择按钮 | `HeroRelationSelectDialog.exec()` → 回填 ID 列表 |
+| `HeroRelationSelectDialog._accept_selection()` | `HeroRelationSelectDialog` | "确定"按钮 | 按稳定的英雄 ID 顺序输出 `selected_ids` |
+| `SynergyEditDialog.get_synergy()` | `SynergyEditDialog` | `_on_synergy_edit()` accepted | 表单值 → 校验后的 `SynergyScore` |
 
 ---
 
@@ -737,6 +770,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `src.business.synergy_fetch_service.SynergyFetchService` | 相性获取 QProcess 管理 |
 | `src.business.capture_service.CaptureService` | 截图业务编排 |
 | `src.business.ocr_service.OcrService` | OCR 控制、模板管理、轮询 |
+| `src.business.ocr_worker.OcrWorker` | 由 CaptureService 持有的唯一后台识别队列 |
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |
 | `src.capture.prober.*` | ADB/模拟器探测 |
@@ -796,3 +830,5 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `RoiSelectorDialog` | 截图 QPixmap | ROI (x, y, w, h) |
 | `HeroEditDialog` | Hero 对象 | 修改后的 Hero 对象 |
 | `GuideEditDialog` | HeroGuide + HeroManager | 修改后的 HeroGuide 对象 |
+| `HeroRelationSelectDialog` | HeroManager + 预选 ID | 按英雄 ID 稳定排序的 `selected_ids` |
+| `SynergyEditDialog` | HeroManager + SynergyScore | 修改后的 SynergyScore 对象 |

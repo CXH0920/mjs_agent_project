@@ -239,9 +239,7 @@ MainWindow._request_synergy_single()
 ```
 RecommendationPanel._on_import_from_screenshot()
   -> [无 capture service] _open_mumu_config()                  [先配置模拟器]
-  -> self._hero_mgr.list_heroes()                             [获取武将名称列表]
-  -> CaptureService.capture_completed.connect(...)              [连接信号]
-  -> CaptureService.do_capture(hero_names)
+  -> CaptureService.do_capture(perform_ocr=False)
     -> QTimer.singleShot(0, self._execute_capture)              [延后回调；ADB 截图仍在 GUI 线程]
        -> self._capture.connect()                              [ADB 连接]
           -> AdbCapture.connect()
@@ -253,14 +251,6 @@ RecommendationPanel._on_import_from_screenshot()
                              "exec-out", "screencap", "-p"])
           -> Image.open(BytesIO(result.stdout))
        -> save_image(image, save_path)                         [保存截图]
-       -> [OCR 启用 || 轮询模式]
-          -> get_template_manager()                            [获取模板单例]
-          -> tm.match(image, threshold)                        [模板匹配]
-          -> [匹配成功]
-             -> get_recognizer(rois, hero_names, tm.reference_size)
-                                                               [获取识别器单例]
-             -> recognizer.recognize(image)                    [PaddleOCR 识别]
-             -> GeneralRecognizer.save_results(results, path)   [保存结果]
        -> emit capture_completed({ocr_results, image, ...})    [发送结果]
 ```
 
@@ -273,17 +263,20 @@ RecommendationPanel._on_import_from_file()
   -> CaptureService.do_capture_from_file(file_path, hero_names)
     -> QTimer.singleShot(0, _execute_file_ocr)
        -> PIL.Image.open(file_path)
-       -> _run_ocr(image, hero_names)                          [同截图链路]
-       -> emit capture_completed(result)
+       -> _queue_capture_ocr()
+          -> submit_ocr_task() -> OcrWorker.submit(OcrTask)
+             -> OcrWorker._execute() -> 模板匹配 -> OCR
+          -> _on_ocr_task_completed() -> emit capture_completed(result)
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `do_capture(hero_names)` | `capture_service.py` | `_on_import_from_screenshot()` | `QTimer.singleShot(0, _execute_capture)` |
 | `do_capture_from_file(path, names)` | `capture_service.py` | `_on_import_from_file()` | `QTimer.singleShot(0, _execute_file_ocr)` |
-| `_execute_capture(names)` | `capture_service.py` | `do_capture()` 延迟调用 | `AdbCapture.connect()`, `screencap_full()`, `_run_ocr()` |
-| `_execute_file_ocr(path, names)` | `capture_service.py` | `do_capture_from_file()` 延迟调用 | `Image.open()`, `_run_ocr()` |
-| `_run_ocr(image, names)` | `capture_service.py` | `_execute_capture/ocr()` | `get_template_manager()`, `get_recognizer()`, `recognizer.recognize()` |
+| `_execute_capture(...)` | `capture_service.py` | `do_capture()` 延迟调用 | `connect_emulator()`, `screencap_full()`, `save_image()`；按参数决定是否入 OCR 队列 |
+| `_execute_file_ocr(...)` | `capture_service.py` | `do_capture_from_file()` 延迟调用 | `Image.open()`, `_queue_capture_ocr()` |
+| `submit_ocr_task(...)` | `capture_service.py` | 手动文件导入、轮询 | 构造 `OcrTask` -> `OcrWorker.submit()` |
+| `_on_ocr_task_completed(task)` | `capture_service.py` | `OcrWorker.task_completed` | 合并待处理截图上下文 -> `capture_completed` |
 | `connect_emulator()` | `capture_service.py` | 外部 UI | `self._capture.connect()` |
 | `disconnect_emulator()` | `capture_service.py` | 外部 UI | `self._capture.disconnect()` |
 
@@ -304,30 +297,27 @@ CaptureService.capture_failed      → UI 错误提示
 
 ```
 MainWindow._on_poll_capture()                               [poll_tick 信号触发]
-  -> [in cooldown] return                                    [冷却期内跳过]
-  -> [not configured] return
+  -> OcrService.begin_poll() -> due_poll_tasks()              [会话与独立任务冷却]
   -> threading.Lock.acquire(blocking=False)                  [防并发]
   -> [后台线程] _do_poll_work()
-    -> CaptureService.is_connected
-    -> [not connected] CaptureService.connect_emulator()
+    -> AdbCapture.connect()                                   [必要时]
     -> AdbCapture.screencap_full()
-    -> get_template_manager().is_loaded
-    -> [loaded] TemplateManager.match(image, threshold)
-       -> 多尺度模板匹配，选择最高置信度
-    -> [matched] MainWindow 后台任务调用 get_recognizer(..., tm.reference_size)
-      -> GeneralRecognizer.recognize(image)                  [按截图尺寸换算 ROI]
-    -> self._poll_result_ready.emit(results, image, matched) [信号]
+    -> 每个到期页面调用 CaptureService.submit_ocr_task()
+       -> OcrWorker._execute() -> 模板匹配 -> 必要时 OCR
+    -> self._poll_result_ready.emit(result)                   [信号]
 
-MainWindow._on_poll_result(ocr_results, image, matched)     [主线程接收]
-  -> RecommendationPanel.load_from_ocr(results)              [更新推荐面板]
-  -> [matched] OcrService.set_cooldown(180)                  [3 分钟冷却]
+MainWindow._on_poll_result(result)                            [主线程接收]
+  -> OcrService.complete_poll(generation, outcome)
+  -> [hero_selection 命中] RecommendationPanel.load_from_ocr()
+  -> [match_guide 命中] MatchGuidePanel.update_block()
+  -> OcrService.set_task_cooldown(task_name, seconds)
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `start_poll(interval_ms)` | `ocr_service.py` | `MumuConfigDialog` 保存 | `QTimer.start()` |
 | `stop_poll()` | `ocr_service.py` | `MumuConfigDialog` 保存 | `QTimer.stop()` |
-| `run_ocr(image, rois)` | `ocr_service.py` | 外部 | 获取模板参考尺寸、`get_recognizer()`、`recognizer.recognize()` |
+| `run_ocr(image, rois)` | `ocr_service.py` | 兼容外部同步调用 | 通过注入的 `CaptureService.submit_ocr_task()` 等待 `OcrTask` |
 | `create_template(image, roi)` | `ocr_service.py` | `MumuConfigDialog` | `get_template_manager().set_template()` |
 | `select_template(file_path)` | `ocr_service.py` | `MumuConfigDialog` | `shutil.copy2()`, `tm.reload()` |
 | `delete_template()` | `ocr_service.py` | `MumuConfigDialog` | `get_template_manager().delete_template()` |
@@ -384,8 +374,8 @@ src.ui.mumu_config_dialog
 | `src.capture.adb_screen.AdbCapture` | CaptureService 直接持有 |
 | `src.capture.image_utils.save_image()` | 截图文件保存 |
 | `src.ocr.ocr_loader.get_template_manager()` | 模板管理器单例 |
-| `src.ocr.ocr_loader.get_recognizer()` | 识别器单例 |
-| `src.ocr.recognizer.GeneralRecognizer` | PaddleOCR 识别 |
+| `src.business.ocr_worker.OcrWorker` | 唯一后台队列，执行模板匹配与 OCR |
+| `src.ocr.recognizer.GeneralRecognizer` | 由 OcrWorker 缓存和调用 |
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |
 | `src.scraper.ai_utils.estimate_cost()` | GuideFetchService 成本估算 |
@@ -435,7 +425,8 @@ src.ui.mumu_config_dialog
 | `do_capture_from_file(path, names)` | `RecommendationPanel` | `QTimer.singleShot(0, _execute_file_ocr)` |
 | `connect_emulator()` | 外部 UI | `self._capture.connect()` |
 | `disconnect_emulator()` | 外部 UI | `self._capture.disconnect()` |
-| `run_ocr_if_matched(image, names)` | 外部 UI | `get_template_manager()`, `_run_ocr()` |
+| `run_ocr_if_matched(image, names)` | 非 GUI 调度路径 | `submit_ocr_task()`，等待 `OcrTask.completed` |
+| `submit_ocr_task(...)` | 文件导入、轮询 | `OcrWorker.submit()` |
 | `update_config(config)` | `MainWindow`, `MumuConfigDialog` | 重建 AdbCapture |
 
 ### OcrService
@@ -448,4 +439,4 @@ src.ui.mumu_config_dialog
 | `select_template(file_path)` | `MumuConfigDialog` | `shutil.copy2()`, `tm.reload()` |
 | `delete_template()` | `MumuConfigDialog` | `get_template_manager().delete_template()` |
 | `set_hero_names(names)` | `MainWindow.__init__()` | 存储 hero_names |
-| `run_ocr(image, rois)` | 外部轮询 | `get_recognizer()`, `recognizer.recognize()` |
+| `run_ocr(image, rois)` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed` |

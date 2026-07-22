@@ -37,6 +37,7 @@ test_project/
 │   │   ├── synergy_fetch_service.py # 相性获取业务（继承 BaseFetchService）
 │   │   ├── capture_service.py     # 截图业务编排（ADB 截图 + OCR 调度）
 │   │   ├── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
+│   │   ├── ocr_worker.py          # 单线程 OCR 队列（模板匹配 + PaddleOCR）
 │   │   └── fetch_utils.py         # QProcess 公共工具函数
 │   ├── capture/
 │   │   ├── __init__.py
@@ -56,6 +57,10 @@ test_project/
 │       │   ├── hero_dialogs.py     # HeroSkillDialog
 │       │   └── faction_colors.py   # 势力配色读取/校验/兜底/重载
 │       ├── hero_browser.py        # 武将浏览（列表+详情+攻略）
+│       ├── hero_edit_dialog.py    # 武将基础字段编辑
+│       ├── guide_edit_dialog.py   # 攻略正文和关系编辑
+│       ├── hero_relation_select_dialog.py # 攻略关系武将搜索/筛选/多选
+│       ├── synergy_edit_dialog.py # 相性评分编辑
 │       ├── hero_select_dialog.py  # 武将选择对话框基类
 │       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性 + 截图导入）
 │       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
@@ -215,8 +220,8 @@ python -m src.main
 1. 打开应用 → 配置 → 模拟器配置
 2. 自动探测或浏览选择 ADB 路径
 3. 连接模拟器 → 制作模板（框选武将选择页特征区域）
-4. 启用武将识别 / 持续轮询
-5. 在选将推荐面板点击「截图」或「📁 从图片导入」触发识别
+4. 按需启用持续轮询；轮询会检测页面并在匹配后识别
+5. 「截图」仅保存当前模拟器画面；选择「📁 从图片导入」才会提交图片到后台 OCR 队列并填充选将推荐
 
 #### OCR 分辨率适配
 
@@ -472,12 +477,13 @@ AI 批量生成通过 **QProcess** 子进程执行；模板匹配与 OCR 识别�
 ### 武将浏览器
 
 - 左侧列表支持**搜索过滤** + **势力筛选**，右侧展示当前武将摘要
-- Tab 切换「武将信息」和「攻略指南」
+- Tab 切换「武将信息」「攻略指南」和「武将相性」；相性表可按搭档/评级筛选，双击说明查看 Markdown，双击其他列编辑评分
 - 技能展示：描述 + 可折叠的结算详情
 - 攻略展示：单列堆叠摘要 + 全宽 Markdown 预览，双击 Markdown 正文打开完整攻略弹窗
 - 克制/搭配关系支持点击标签跳转到对应武将
 - Tab 栏右上角：武将信息和攻略指南各有独立的"修改"+"删除"按钮（绿色/红色），点击后弹出 `HeroEditDialog` / `GuideEditDialog` 编辑弹窗
 - 攻略编辑弹窗中的“被克制”和“搭配推荐”使用可搜索、可按势力筛选的多选武将弹窗，支持预选回填、全选当前筛选和清空选择
+- 相性列表的“修改”打开 `SynergyEditDialog`；评分变更会同步刷新评级，保存后写入对应相性记录
 - 攻略展示中的关系武将标签采用固定尺寸按钮；势力筛选下拉框复用选将推荐的势力配色，支持可删除标签、搜索、全选和反选，超过 5 个势力时显示前 5 个及剩余数量
 - 编辑保存后自动刷新列表，选中项保持为当前武将
 

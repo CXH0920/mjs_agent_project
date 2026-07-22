@@ -109,7 +109,8 @@ RecommendationPanel.update_recommendations()
 |--------|----------|------|
 | `RecommendationPanel.update_recommendations()` | `recommendation_panel.py` | OCR 结果导入、默认加载 |
 | `RecommendationPanel._load_real_synergies()` | `recommendation_panel.py` | 相性伙伴名称→ID 解析 |
-| `GuideEditDialog._resolve_hero_ids()` | `hero_browser.py` | 攻略编辑时 ID→名称 解析 |
+| `GuideEditDialog._open_relation_selector()` | `guide_edit_dialog.py` | 打开攻略关系武将选择器并回填 ID 列表 |
+| `HeroRelationSelectDialog._accept_selection()` | `hero_relation_select_dialog.py` | 按英雄 ID 的稳定顺序提交已选择关系 |
 | `RecommendationPanel._load_default_heroes()` | `recommendation_panel.py` | 启动时默认武将加载 |
 
 > **性能标注：** `get_hero_by_name()` 内部是 O(N) 线性遍历（N=165）。在 OCR 矫正流程中，每帧会被 `_correct_with_hero_list()` 调用 8 次，每次又通过编辑距离遍历全部 165 个名称。如果修改为 `name -> id` 的 dict 索引可消除 O(N) 查找，但当前 165 规模下线性扫描的延迟可以忽略（< 0.01ms）。

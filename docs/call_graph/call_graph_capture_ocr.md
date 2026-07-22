@@ -11,17 +11,18 @@
 模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。
 
 ```
-CaptureService.do_capture() / capture_for_poll()
-  -> AdbCapture.screencap_full()
+CaptureService.do_capture() / do_capture_from_file()
+  -> _execute_capture() / _execute_file_ocr()
   -> CaptureService.submit_ocr_task()
     -> OcrWorker.submit(OcrTask)
-    -> TemplateManager.match()
-    -> GeneralRecognizer.recognize()                            [命中时]
+       -> OcrWorker._execute()
+          -> TemplateManager(template_name).match()
+          -> GeneralRecognizer.recognize()                      [命中且需要识别时]
   -> CaptureService._on_ocr_task_completed()
   -> capture_completed -> RecommendationPanel / MainWindow
 ```
 
-轮询：`OcrService.start_poll()` -> `_schedule_poll()` -> `poll_tick` -> `MainWindow._on_poll_capture()` -> `complete_poll()`。`hero_selection` 与 `match_guide` 分别维护激活和冷却状态；前置条件缺失会暂停，其他失败指数退避。
+轮询：`OcrService.start_poll()` -> `_schedule_poll()` -> `poll_tick` -> `MainWindow._on_poll_capture()`。主窗口在短生命周期后台线程执行 `AdbCapture.screencap_full()`，随后为每个到期页面提交 `CaptureService.submit_ocr_task()`，等待队列结果并通过 `_poll_result_ready` 回主线程的 `_on_poll_result()`，最后调用 `complete_poll()`。`hero_selection` 与 `match_guide` 分别维护激活和冷却状态；前置条件缺失会暂停，其他失败指数退避。
 
 ## 一、ADB 连接与截图链路
 
@@ -157,7 +158,7 @@ TemplateManager.match(image_screenshot, threshold=0.8)
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.cvtColor()`, `cv2.imwrite()`, 元数据 JSON 写入 |
-| `match(image, threshold)` | `template_manager.py` | `CaptureService._run_ocr()`, `MainWindow` 轮询 | 多尺度 `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
+| `match(image, threshold)` | `template_manager.py` | `OcrWorker._execute()` | 多尺度 `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
 | `reload()` | `template_manager.py` | `OcrService.select_template()` | `_load_internal()` |
 | `is_loaded` (property) | `template_manager.py` | 外部 UI | `self._template is not None` |
 
@@ -190,7 +191,7 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `recognize(image)` | `recognizer.py` | `CaptureService._run_ocr()`, `OcrService.run_ocr()` | `_recognize_single()` ×8 |
+| `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | `_recognize_single()` ×8 |
 | `_recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `_preprocess_roi()`, `_engine.ocr()`, `_correct_with_hero_list()` |
 | `_preprocess_roi(roi)` | `recognizer.py` | `_recognize_single()` | `cv2.resize()`, `cv2.cvtColor()`, `cv2.createCLAHE()`, `cv2.filter2D()` |
 | `_extract_text(result)` | `recognizer.py` | `_recognize_single()` | 解析 PaddleOCR 输出格式 |
@@ -309,31 +310,33 @@ radical_score(c1, c2):
 
 ---
 
-## 五、ocrc_loader（单例加载器）
+## 五、OCR 加载与执行边界
 
 ### 5.1 模板管理器单例
 
 ```
-get_template_manager()
-  -> [单例] module-level 变量 _template_manager
-  -> [首次] TemplateManager()                                 [构造 + 自动加载]
-  -> return _template_manager
+get_template_manager(template_name)
+  -> [按 hero_selection / match_guide 分别缓存]
+  -> [首次] TemplateManager(template_name)                    [构造 + 自动加载]
+  -> return 对应模板管理器
 ```
 
 ### 5.2 OCR 识别器单例
 
 ```
-get_recognizer(rois, hero_names, reference_size)
-  -> [单例] module-level 变量 _recognizer
-  -> [首次或 rois/hero_names/reference_size 变更] 重新创建
-     -> GeneralRecognizer(rois, hero_names, reference_size)
-  -> return _recognizer
+OcrWorker._get_recognizer(rois, hero_names, reference_size)
+  -> [worker 私有缓存命中] return
+  -> [签名变更] GeneralRecognizer(...) -> 更新 worker 私有缓存
+
+ocr_loader.get_recognizer(...)
+  -> 仅兼容旧调用，不是活动截图、文件导入或轮询的执行入口
 ```
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `get_template_manager()` | `ocr_loader.py` | 惰性初始化，首次调用时构造 |
-| `get_recognizer(rois, names, reference_size)` | `ocr_loader.py` | ROI、武将列表或参考尺寸变更时自动重建 |
+| `get_template_manager(template_name)` | `ocr_loader.py` | 按页面模板名称惰性缓存，供配置页管理模板 |
+| `OcrWorker._get_recognizer(...)` | `ocr_worker.py` | 以 ROI、武将列表、参考尺寸为签名，在唯一 worker 内重建识别器 |
+| `get_recognizer(...)` | `ocr_loader.py` | 兼容旧调用；活动识别路径不使用 |
 
 ---
 
@@ -344,13 +347,15 @@ get_recognizer(rois, hero_names, reference_size)
 ```
 src.business.capture_service
   -> AdbCapture.connect() / screencap_full()                   [截图]
-  -> get_template_manager().match()                            [模板匹配]
-  -> get_recognizer(rois, hero_names, tm.reference_size)
-  -> recognize()                                               [按当前截图缩放 ROI 后 OCR]
+  -> OcrWorker.submit(OcrTask)                                 [提交，不直接匹配]
 
 src.business.ocr_service
   -> get_template_manager().set_template() / reload() / delete_template()
-  -> get_recognizer().recognize()
+  -> 注入 CaptureService.submit_ocr_task()                     [兼容同步 run_ocr]
+
+src.ui.main_window
+  -> 后台线程：AdbCapture.screencap_full()
+  -> CaptureService.submit_ocr_task() -> OcrWorker             [轮询]
 
 src.ui.mumu_config_dialog
   -> probe_mumu_adb() / probe_all_devices()                    [设备探测]
@@ -411,7 +416,7 @@ src.ui.mumu_config_dialog
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `TemplateManager.set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.imwrite()` + 参考尺寸 JSON |
-| `TemplateManager.match(image, threshold)` | `template_manager.py` | `_run_ocr()`, `MainWindow` 轮询 | 多尺度 `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
+| `TemplateManager.match(image, threshold)` | `template_manager.py` | `OcrWorker._execute()` | 多尺度 `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
 | `TemplateManager.reload()` | `template_manager.py` | `select_template()` | `_load_internal()` |
 | `TemplateManager.delete_template()` | `template_manager.py` | `OcrService.delete_template()` | `Path.unlink()` |
 
@@ -419,12 +424,12 @@ src.ui.mumu_config_dialog
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `GeneralRecognizer.recognize(image)` | `recognizer.py` | `CaptureService._run_ocr()`, `OcrService.run_ocr()` | 参考 ROI 缩放 + `_recognize_single()` ×8 |
+| `GeneralRecognizer.recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | 参考 ROI 缩放 + `_recognize_single()` ×8 |
 | `GeneralRecognizer._recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `_preprocess_roi()`, `_engine.ocr()`, `_correct_with_hero_list()` |
 | `GeneralRecognizer._preprocess_roi(roi)` | `recognizer.py` | `_recognize_single()` | `cv2.resize()`, CLAHE, 锐化, 灰度 |
 | `GeneralRecognizer._extract_text(result)` | `recognizer.py` | `_recognize_single()` | PaddleOCR 解析 |
 | `GeneralRecognizer.warmup()` | `recognizer.py` | 显式预热工具/测试（当前启动不调用） | `self._engine`, `_load_char_info()`, `pypinyin.pinyin()` |
-| `GeneralRecognizer.save_results()` | `recognizer.py` | `CaptureService._run_ocr()` | JSON 序列化 |
+| `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×165, `_pick_visually_similar()` |
 | `_levenshtein_distance(s1, s2)` | `recognizer.py` | `_correct_with_hero_list()` | DP O(n×m) |
 | `_pick_visually_similar(text, candidates)` | `recognizer.py` | `_correct_with_hero_list()` | `_multi_dim_similarity()`, 拼音/笔画 tiebreak |

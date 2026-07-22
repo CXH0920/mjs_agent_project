@@ -31,6 +31,10 @@ src/ui/
 ├── style.py                    # 全局样式表（天蓝色调）
 ├── main_window.py              # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
 ├── hero_browser.py             # 武将浏览（列表+详情+Tab 栏编辑按钮）
+├── hero_edit_dialog.py          # 武将基础信息编辑
+├── hero_relation_select_dialog.py # 攻略关系武将多选
+├── guide_edit_dialog.py         # 攻略内容编辑
+├── synergy_edit_dialog.py       # 相性评分编辑
 ├── hero_select_dialog.py       # 武将选择对话框基类
 ├── recommendation_panel.py     # 选将推荐面板（4×2 网格+头像+相性+OCR 导入）
 ├── match_guide_panel.py        # 对局攻略页面（四名武将卡片+双导入）
@@ -119,8 +123,11 @@ HeroBrowser (QWidget)
 - `HeroEditDialog` — 编辑武将信息（名称/称号/势力/定位/体力/手牌/性别/难度）
 - `GuideEditDialog` — 编辑攻略内容（核心要点/新手提示/关系武将选择/攻略正文）
 - `HeroRelationSelectDialog` — 关系武将多选弹窗，提供搜索、按推荐面板势力配色显示的可删除标签下拉框、全选当前筛选和清空选择
+- `SynergyEditDialog` — 编辑相性评分、配合维度和说明
 - 关系标签统一为固定尺寸可点击按钮，名称过长时通过悬浮提示查看完整名称
 - 修改保存后 `data_changed` 信号触发列表刷新，`_last_hero_id` 确保选中项不变
+
+四个编辑/选择对话框位于独立模块；`HeroDetailPanel` 仅负责打开它们、调用现有 Manager 保存数据并刷新展示。为兼容现有外部导入，`hero_browser.py` 继续导入并暴露这些对话框名称。
 
 **攻略展示布局：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。

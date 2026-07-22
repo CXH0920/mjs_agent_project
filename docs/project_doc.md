@@ -501,13 +501,15 @@ do_capture()
   └─ QTimer.singleShot(0, _execute_capture)
        ├─ AdbCapture.screencap_full() → PIL Image
        ├─ 保存截图到 screenshots/ 目录（手动调用路径特有）
-       ├─ 已启用 OCR？
-       │   ├─ TemplateManager.match(image) → 多尺度判断是否为武将页
-       │   │   ├─ 否 → 跳过
-       │   │   └─ 是 → get_recognizer(..., tm.reference_size)
-       │   │             → ROI 缩放 → GeneralRecognizer.recognize() → 保存 JSON
-       │   └─ 返回结果
        └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
+
+do_capture_from_file()
+  └─ QTimer.singleShot(0, _execute_file_ocr)
+       ├─ PIL.Image.open(file_path)
+       └─ _queue_capture_ocr()
+            └─ submit_ocr_task() → OcrWorker.submit(OcrTask)
+                 └─ OcrWorker._execute() → 模板匹配 → GeneralRecognizer.recognize()
+                      └─ _on_ocr_task_completed() → capture_completed
 ```
 
 **注意**：轮询路径不走 `do_capture()`，轮询在后台执行 `screencap_full()`，随后将模板匹配与 OCR 提交给同一个 `OcrWorker`，**不保存截图文件到磁盘**，全程内存中处理。这样轮询与手动导入仍按任务顺序共用一个识别器。
@@ -621,7 +623,7 @@ class DataFacade:
     synergies: SynergyManager
     guides: GuideManager
 
-    def load_all(self) → None      # 三个 load() 依次调用
+    def load_all(self) → LoadReport # 三个 load()、引用校验和问题汇总
     def save_all(self) → None      # 三个 save() 依次调用
     def get_stats(self) → dict     # 返回 {heroes: N, synergies: N, guides: N}
 ```
@@ -648,12 +650,16 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 697 | QMainWindow（顶层） |
-| hero_browser.py | 807 | QWidget（Tab 内嵌） |
-| recommendation_panel.py | ~892 | QWidget（Tab 内嵌） |
-| mumu_config_dialog.py | 574 | QDialog（模拟器配置） |
-| hero_select_dialog.py | 293 | QDialog（基类） |
-| settings_dialog.py | 268 | QDialog（API 配置） |
+| main_window.py | 899 | QMainWindow（顶层） |
+| hero_browser.py | 1018 | QWidget（浏览列表、详情和协调） |
+| hero_edit_dialog.py | 87 | QDialog（武将编辑） |
+| guide_edit_dialog.py | 120 | QDialog（攻略编辑） |
+| hero_relation_select_dialog.py | 129 | QDialog（攻略关系武将多选） |
+| synergy_edit_dialog.py | 96 | QDialog（相性编辑） |
+| recommendation_panel.py | 903 | QWidget（Tab 内嵌） |
+| mumu_config_dialog.py | 916 | QDialog（模拟器配置） |
+| hero_select_dialog.py | 267 | QDialog（基类） |
+| settings_dialog.py | 305 | QDialog（API 配置） |
 | roi_selector.py | 149 | QDialog（框选模板区域） |
 | backend_choose_dialog.py | 141 | QDialog |
 | guide_progress_dialog.py | 135 | QDialog |
@@ -825,7 +831,33 @@ HeroBrowser (QWidget)
          ├── QScrollArea（统一滚动容器）
          ├── 单列堆叠摘要（要点/提示/关系标签）
          └── 全宽 QTextBrowser（Markdown 预览，双击打开弹窗）
+     └── Tab 3「武将相性」
+         ├── 搭档名称/评级筛选与相性表格
+         ├── 双击说明列打开 Markdown 预览
+         └── 修改/删除写入 SynergyManager 并通知推荐页刷新
 ```
+
+**模块边界与编辑保存链路：**
+
+```
+HeroDetailPanel._on_info_edit()
+  -> HeroEditDialog.get_hero()
+  -> HeroManager.update_hero() -> save()
+
+HeroDetailPanel._on_guide_edit()
+  -> GuideEditDialog._open_relation_selector()
+     -> HeroRelationSelectDialog.exec() -> selected_ids
+  -> GuideEditDialog.get_guide()
+  -> GuideManager.update_guide() -> save()
+
+HeroDetailPanel._on_synergy_edit()
+  -> SynergyEditDialog.get_synergy()
+  -> SynergyManager.update_synergy() -> save()
+```
+
+`hero_browser.py` 只保留上述流程的协调、局部刷新和 `data_changed` 通知；四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。这种拆分不改变编辑按钮、信号或 Manager 的持久化契约，调用方仍通过公开类名创建对话框。
+
+相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `SynergyManager.list_synergies_for_hero()` -> `_refresh_synergy_table()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时 `update_synergy()` -> `save()`，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
 
 **Tab 栏编辑按钮**：
 Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
@@ -835,7 +867,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 选中无攻略的武将时，攻略按钮组自动禁用
 - "修改"打开 `HeroEditDialog` / `GuideEditDialog` 进行编辑，"删除"弹出确认对话框
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
-- `GuideEditDialog` 中的“被克制”和“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择
+- `GuideEditDialog` 中的“被克制”和“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用固定尺寸可跳转按钮；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 - 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互
 
@@ -1637,25 +1669,22 @@ def _engine(self):
   │
   ├── ADB 未配置？→ 弹出 MumuConfigDialog 配置
   │
-  ├── CaptureService.do_capture()
+  ├── CaptureService.do_capture()                              [「截图」：仅截图保存]
   │   ├── AdbCapture 连接（未连接时自动连接）
-  │   ├── screencap_full() → PIL Image（内存中，不写磁盘）
-  │   └── OCR enabled？
-  │       ├── TemplateManager.match() → 多尺度判断武将选择页？
-  │       │   ├── 否 → ocr_matched=False
-  │       │   └── 是 → get_recognizer(..., tm.reference_size)
-  │       │             → ROI 缩放 → GeneralRecognizer.recognize() → 保存 JSON
-  │       └── 返回结果
+  │   ├── screencap_full() → PIL Image
+  │   ├── 保存 screenshots/ 下的 PNG
+  │   └── capture_completed（不导入 OCR）
   │
-  └── capture_completed 信号
-       └── RecommendationPanel._on_capture_result()
-            ├── ocr_matched=False → 跳过
-            └── ocr_matched=True → load_from_ocr() → 填入 8 槽
-                 ├── 匹配 Hero 对象（通过 HeroManager）
-                 ├── 加载 images/<name>.png 头像
-                 ├── 推荐指数固定 0.5（两星，区分于 AI 推荐）
-                 └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
-                       └── 按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
+  └── CaptureService.do_capture_from_file()                    [「从图片导入」]
+       └── _queue_capture_ocr() → OcrWorker（串行）
+            └── capture_completed 信号
+                 └── RecommendationPanel._on_capture_result()
+                      └── load_from_ocr() → 填入 8 槽
+                           ├── 匹配 Hero 对象（通过 HeroManager）
+                           ├── 加载 images/<name>.png 头像
+                           ├── 推荐指数固定 0.5（两星，区分于 AI 推荐）
+                           └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
+                                 └── 按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
 ```
 
 #### 持续轮询识别
@@ -1676,26 +1705,25 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
        ▼
   MainWindow._on_poll_capture()
        │
-       ├── 冷却期内？→ return（匹配成功后 180 秒冷却）
-       ├── ADB 未配置/未连接？→ return（不自杀，下次继续）
+       ├── begin_poll() → due_poll_tasks()（任务状态和冷却彼此独立）
+       ├── ADB 未配置/未连接？→ 返回前置条件结果（服务暂停或退避）
        │
-       ├── ① screencap_full() → PIL Image（全在内存，不写磁盘）
+       ├── ① 后台线程 screencap_full() → PIL Image（全在内存，不写磁盘）
        │
-       ├── ② TemplateManager.match(image, threshold)
-       │     ├── 模板未加载 → return
-       │     ├── 尝试多个缩放比例并选择最高置信度
-       │     └── 不匹配 → return（静默跳过，不是武将页）
+       ├── ② 每个到期页面提交 CaptureService.submit_ocr_task()
+       │     └── OcrWorker._execute() → TemplateManager.match()
+       │          └── 命中且需要识别 → GeneralRecognizer.recognize() → latest.json
        │
-       ├── ③ CaptureService._run_ocr(image) → PaddleOCR
-       │     ├── get_recognizer(..., tm.reference_size)
-       │     ├── GeneralRecognizer.recognize() → 换算 ROI → 8 个武将名
-       │     └── 保存 latest.json
+       ├── ③ _poll_result_ready 回主线程 → _on_poll_result()
+       │     ├── complete_poll(generation, outcome)
+       │     ├── hero_selection 命中 → RecommendationPanel.load_from_ocr()
+       │     └── match_guide 命中 → MatchGuidePanel.update_block()
        │
        ├── ④ RecommendationPanel.load_from_ocr()
        │     └── 填充 8 个推荐槽位（头像/相性/胜率）
        │
-       └── ⑤ OcrService.set_cooldown(180)
-             └── 3 分钟内不再截图 + 匹配 + OCR
+       └── ⑤ OcrService.set_task_cooldown(task_name, seconds)
+             └── 页面级冷却，不阻塞另一页面任务
 ```
 
 **关键设计**：
