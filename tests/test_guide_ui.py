@@ -7,11 +7,11 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton, QTextBrowser
+from PySide6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, HeroGuide
+from src.data.models import Hero, HeroGuide, Skill
 from src.data.synergy_manager import SynergyManager
 from src.ui.hero_browser import (
     CheckableComboBox,
@@ -148,3 +148,25 @@ def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:
     panel = HeroListPanel(hero_manager)
 
     assert panel.selected_hero_id() == 1
+
+
+def test_skill_cards_are_hidden_before_deferred_deletion(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    hero_manager.add_hero(
+        Hero(id=1, name="曹操", skills=[Skill(name="奸雄", description="描述", settlement="结算")])
+    )
+    hero_manager.add_hero(Hero(id=2, name="刘备", skills=[Skill(name="仁德", description="描述")]))
+    panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
+
+    panel.show_hero(1)
+    old_cards = [
+        panel._skills_layout.itemAt(index).widget()
+        for index in range(panel._skills_layout.count())
+        if isinstance(panel._skills_layout.itemAt(index).widget(), QFrame)
+    ]
+    panel.show_hero(2)
+
+    assert old_cards
+    assert all(card.isHidden() for card in old_cards)

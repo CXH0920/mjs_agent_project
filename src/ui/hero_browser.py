@@ -1214,11 +1214,7 @@ class HeroDetailPanel(QWidget):
 
     def _update_skills(self, hero: Hero) -> None:
         """更新技能展示"""
-        # 清空
-        while self._skills_layout.count():
-            item = self._skills_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_skills()
 
         if not hero.skills:
             self._skills_layout.addWidget(QLabel("无技能"))
@@ -1535,7 +1531,10 @@ class HeroDetailPanel(QWidget):
         while self._skills_layout.count():
             item = self._skills_layout.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                widget = item.widget()
+                # 模态提示框会进入嵌套事件循环，延迟删除前先隐藏旧卡片，避免其残留绘制。
+                widget.hide()
+                widget.deleteLater()
 
 
 class GuideMarkdownDialog(QDialog):
