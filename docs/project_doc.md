@@ -96,7 +96,9 @@ src/scraper/incremental.py     ← 增量/指定采集 CLI
 - 3 次重试，间隔 2 秒，最后一次失败抛异常
 - 不可用于异步环境，同步阻塞
 
-#### 1.2.3 JS chunk 解析三件套
+#### 1.2.3 `official_adapter.py`：JS chunk 解析适配器
+
+官网 HTML 与 JS chunk 的格式假设集中在 `src/scraper/official_adapter.py`；`crawler.py` 仅负责请求编排和数据清洗。
 
 **`find_chunk_url(html) → str`**：
 - 从百科首页 HTML 中正则匹配 `/_nuxt/mjbk.[a-f0-9]+.js`
@@ -163,8 +165,7 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 1. `fetch(BAIKE_URL)` → 首页 HTML
 2. `find_chunk_url(html)` → JS chunk URL
 3. `fetch(chunk_url)` → JS 文本
-4. `extract_js_array(js_text)` → JSON 文本
-5. `js_to_json(...)` → 165 条原始数据
+4. `parse_heroes_chunk(js_text)` → 165 条原始数据
 
 #### 1.2.8 头像下载（第 297-348 行）
 

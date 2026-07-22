@@ -22,7 +22,8 @@
 ```
 src/scraper/
 ├── __init__.py
-├── crawler.py          # 爬虫核心：网络请求、JS 解析、数据清洗、Pydantic 校验
+├── official_adapter.py # 官网 HTML/JS chunk 解析适配器
+├── crawler.py          # 爬虫核心：网络请求、数据清洗、Pydantic 校验
 ├── official.py         # 全量采集 CLI 入口
 └── incremental.py      # 增量/指定采集 CLI 入口
 ```
@@ -38,13 +39,12 @@ src/scraper/
 ```
 官网首页 HTML
   ① fetch(BAIKE_URL) → HTML
-  ② find_chunk_url(html) → JS chunk URL
+  ② official_adapter.find_chunk_url(html) → JS chunk URL
   ③ fetch(chunk_url) → JS 文本（约 300KB）
-  ④ extract_js_array(js_text) → JSON-like 字符串
-  ⑤ js_to_json(text) → Python list[dict]
+  ④ official_adapter.parse_heroes_chunk(js_text) → Python list[dict]
 ```
 
-**难点：** JS 数组不是合法 JSON。`js_to_json()` 执行三步预处理：
+**适配器边界：** `official_adapter.py` 集中承载官网页面与 chunk 的格式假设；官网改版时只需修改该文件。JS 数组不是合法 JSON，适配器内部的 `js_to_json()` 执行三步预处理：
 
 1. **key 加引号** — `a:1` → `"a":1`
 2. **`undefined` → `null`** — 这是合法 JS 值但 JSON 不认识
@@ -156,11 +156,13 @@ def transform(raw: dict) -> dict | None:
 | 函数 | 文件 | 说明 |
 |------|------|------|
 | `fetch(url, binary)` | `crawler.py` | HTTP 请求，3 次重试 |
-| `find_chunk_url(html)` | `crawler.py` | 从 HTML 定位 JS chunk |
-| `extract_js_array(js_text)` | `crawler.py` | 括号深度计数器提取数组 |
-| `js_to_json(text)` | `crawler.py` | JS → JSON 三步转换 |
+| `find_chunk_url(html)` | `official_adapter.py` | 从 HTML 定位 JS chunk |
+| `parse_heroes_chunk(js_text)` | `official_adapter.py` | 提取官网数组并转为 Python 数据 |
+| `extract_js_array(js_text)` | `official_adapter.py` | 忽略字符串中方括号的深度扫描 |
+| `js_to_json(text)` | `official_adapter.py` | JS → JSON 三步转换 |
 | `transform(raw)` | `crawler.py` | 字段清洗与映射 |
 | `validate_heroes(heroes)` | `crawler.py` | Pydantic 校验 |
+| `save_json_atomic(path, data)` | `crawler.py` | 临时文件写入后原子替换，供全量和增量采集共用 |
 | `download_hero_images(raw_list, image_dir)` | `crawler.py` | 头像下载 |
 
 ---

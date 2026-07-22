@@ -19,13 +19,10 @@ from pathlib import Path
 
 # 复用爬虫核心模块的公开 API
 from src.scraper.crawler import (
-    fetch,
-    find_chunk_url,
-    extract_js_array,
-    js_to_json,
     transform,
     validate_heroes,
     fetch_all_raw,
+    save_json_atomic,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,7 +97,11 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     两者皆否    : 全量覆盖写入
     """
     print("\n[清洗与字段映射...]", flush=True)
-    transformed = [transform(r) for r in raw_list if transform(r)]
+    transformed = []
+    for raw in raw_list:
+        hero = transform(raw)
+        if hero is not None:
+            transformed.append(hero)
     print(f"  -> 清洗后: {len(transformed)} 条", flush=True)
 
     if not transformed:
@@ -141,12 +142,7 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     else:
         merged = validated
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    # 原子写入：先写 .tmp 再 rename
-    tmp_path = output_path.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
-    tmp_path.replace(output_path)
+    save_json_atomic(output_path, merged)
     print(f"  -> 已保存: {output_path} ({len(merged)} 条)", flush=True)
 
     if not dry_run and not skip_images and raw_list:

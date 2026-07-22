@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from email.message import Message
 from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
 
-from src.scraper import crawler
+from src.scraper import crawler, incremental, official, official_adapter
 
 
 class _FakeResponse:
@@ -108,3 +109,67 @@ def test_validate_image_url_only_allows_official_https_host() -> None:
         except ValueError:
             continue
         raise AssertionError(f"未拒绝不安全 URL: {url}")
+
+
+def test_save_json_atomic_replaces_target_without_tmp_file(tmp_path: Path) -> None:
+    target = tmp_path / "heroes.json"
+    target.write_text('[{"id": 1}]', encoding="utf-8")
+
+    crawler.save_json_atomic(target, [{"id": 2}])
+
+    assert json.loads(target.read_text(encoding="utf-8")) == [{"id": 2}]
+    assert not target.with_suffix(".tmp").exists()
+
+
+def test_official_crawl_transforms_each_item_once(monkeypatch, tmp_path: Path) -> None:
+    raw_list = [{"id": 1}, {"id": 2}]
+    transform_calls: list[dict] = []
+    output_path = tmp_path / "heroes.json"
+
+    monkeypatch.setattr(official, "fetch", lambda _url: "source")
+    monkeypatch.setattr(official, "find_chunk_url", lambda _html: "chunk")
+    monkeypatch.setattr(official, "parse_heroes_chunk", lambda _js: raw_list)
+    monkeypatch.setattr(
+        official,
+        "transform",
+        lambda raw: transform_calls.append(raw) or {"id": raw["id"], "faction": ""},
+    )
+    monkeypatch.setattr(official, "validate_heroes", lambda heroes: heroes)
+
+    official.crawl(output_path=str(output_path), skip_images=True)
+
+    assert transform_calls == raw_list
+    assert json.loads(output_path.read_text(encoding="utf-8")) == [
+        {"id": 1, "faction": ""},
+        {"id": 2, "faction": ""},
+    ]
+
+
+def test_incremental_run_transforms_each_item_once(monkeypatch, tmp_path: Path) -> None:
+    raw_list = [{"id": 1}, {"id": 2}]
+    transform_calls: list[dict] = []
+
+    monkeypatch.setattr(incremental, "transform", lambda raw: transform_calls.append(raw))
+
+    incremental.run(raw_list, tmp_path / "heroes.json", dry_run=True)
+
+    assert transform_calls == raw_list
+
+
+def test_official_adapter_parses_saved_contract_samples() -> None:
+    sample_dir = Path(__file__).parent / "test_data" / "official_adapter"
+    html = (sample_dir / "baike_page.html").read_text(encoding="utf-8")
+    js_text = (sample_dir / "heroes_chunk.js").read_text(encoding="utf-8")
+
+    assert official_adapter.find_chunk_url(html) == (
+        "https://mjs.ztgame.com/_nuxt/mjbk.a1b2c3.js"
+    )
+    assert official_adapter.parse_heroes_chunk(js_text) == [
+        {
+            "id": 101,
+            "name": "[测试武将]",
+            "note": "字符串中的 ] 不应结束数组",
+            "missing": None,
+            "skills": [{"name": "测试技能"}],
+        }
+    ]

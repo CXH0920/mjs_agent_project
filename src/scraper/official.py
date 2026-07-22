@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 from pathlib import Path
@@ -26,12 +25,11 @@ from pathlib import Path
 from src.scraper.crawler import (
     BAIKE_URL,
     fetch,
-    find_chunk_url,
-    extract_js_array,
-    js_to_json,
+    save_json_atomic,
     transform,
     validate_heroes,
 )
+from src.scraper.official_adapter import find_chunk_url, parse_heroes_chunk
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +62,16 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
 
         # [3/5] 解析原始数据
         print("\n[3/5] 解析原始数据...", flush=True)
-        raw_list = js_to_json(extract_js_array(js_text))
+        raw_list = parse_heroes_chunk(js_text)
         print(f"  原始条数: {len(raw_list)}", flush=True)
 
         # [4/5] 清洗与映射
         print("\n[4/5] 数据清洗与字段映射...", flush=True)
-        transformed = [transform(r) for r in raw_list if transform(r)]
+        transformed = []
+        for raw in raw_list:
+            hero = transform(raw)
+            if hero is not None:
+                transformed.append(hero)
         print(f"  清洗后: {len(transformed)} 条", flush=True)
 
         # 统计势力分布
@@ -98,9 +100,7 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
                 print(f"    ID={h['id']:>3}  {h['name']}  [{h['faction']}]  {sk}", flush=True)
             print(f"\n  (使用 --output 或去除 --dry-run 写入文件)", flush=True)
         else:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(validated, f, ensure_ascii=False, indent=2)
+            save_json_atomic(out_path, validated)
             print(f"\n  已保存: {out_path}", flush=True)
 
             if not skip_images:

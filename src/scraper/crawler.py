@@ -1,7 +1,7 @@
 """
 名将杀 Agent - 爬虫核心模块
 
-提供官网数据采集、JS chunk 解析、数据清洗和校验的公共 API。
+提供官网数据采集、数据清洗和校验的公共 API。
 被 official.py 和 incremental.py 共同使用。
 """
 
@@ -23,6 +23,8 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from PIL import Image
+
+from src.scraper.official_adapter import find_chunk_url, parse_heroes_chunk
 
 logger = logging.getLogger(__name__)
 
@@ -85,46 +87,13 @@ def fetch(url: str, binary: bool = False) -> str | bytes:
                 raise
 
 
-# ============================================================
-# JS chunk 解析
-# ============================================================
-
-
-def find_chunk_url(html: str) -> str:
-    """从官网首页找到 JS chunk URL"""
-    m = re.search(r"/_nuxt/mjbk\.[a-f0-9]+\.js", html)
-    if not m:
-        raise RuntimeError("JS chunk 未找到")
-    return BASE_URL + m.group()
-
-
-def extract_js_array(js_text: str) -> str:
-    """提取 const e=[...] 数组的 JSON 文本"""
-    s = js_text.find("const e=[")
-    if s < 0:
-        raise RuntimeError("const e=[ 未找到")
-    start = js_text.index("[", s)
-    depth = 0
-    for i in range(start, len(js_text)):
-        c = js_text[i]
-        if c == "[":
-            depth += 1
-        elif c == "]":
-            depth -= 1
-            if depth == 0:
-                return js_text[start : i + 1]
-    raise RuntimeError("JS 数组未闭合")
-
-
-def js_to_json(text: str) -> list[dict]:
-    """将 JS 对象数组转为 Python 列表"""
-    # 对象 key 加引号
-    text = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'"\1":', text)
-    # undefined → null
-    text = re.sub(r":\s*undefined(?=[,}\]])", ":null", text)
-    # 移除尾部多余逗号
-    text = re.sub(r",\s*([}\]])", r"\1", text)
-    return json.loads(text)
+def save_json_atomic(path: Path, data: list[dict]) -> None:
+    """将 JSON 数据写入临时文件后原子替换目标文件。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp_path.replace(path)
 
 
 # ============================================================
@@ -302,12 +271,12 @@ def validate_heroes(heroes: list[dict]) -> list[dict]:
 
 
 def fetch_all_raw() -> list[dict]:
-    """从官网获取全部武将的原始数据（fetch page → find chunk → download → extract → parse）"""
+    """从官网获取全部武将的原始数据。"""
     html = fetch(BAIKE_URL)
     chunk_url = find_chunk_url(html)
     print(f"  -> {chunk_url}", flush=True)
     js_text = fetch(chunk_url)
-    raw_list = js_to_json(extract_js_array(js_text))
+    raw_list = parse_heroes_chunk(js_text)
     print(f"  -> 官网原始数据: {len(raw_list)} 条", flush=True)
     return raw_list
 

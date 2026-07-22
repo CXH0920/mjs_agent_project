@@ -11,13 +11,13 @@
 ```
 official.crawl() / incremental.main()
   -> crawler.fetch_all_raw()
-    -> fetch(BAIKE_URL) -> find_chunk_url() -> fetch(chunk_url)
-    -> extract_js_array() -> js_to_json()
+    -> fetch(BAIKE_URL) -> official_adapter.find_chunk_url() -> fetch(chunk_url)
+    -> official_adapter.parse_heroes_chunk()
   -> transform() -> validate_heroes() -> 写入 heroes.json
   -> download_hero_images()                                    [未使用 --skip-images]
 ```
 
-`extract_js_array()` 使用括号深度扫描。`official.crawl()` 直接写输出文件；`incremental.run()` 写 `.tmp` 后 `replace()`。两个入口当前均对每条原始记录调用两次 `transform()`（推导式条件和结果各一次），修改时应改为单次转换再过滤 `None`。
+官网格式解析集中在 `official_adapter.py`；`extract_js_array()` 使用会忽略字符串中方括号的深度扫描。全量和增量入口均通过 `save_json_atomic()` 原子写入，并对每条原始记录只调用一次 `transform()`。
 
 ## 一、全量采集链路
 
@@ -39,13 +39,12 @@ MainWindow._request_fetch_all()
               -> crawler.fetch(BAIKE_URL)                      [GET 百科首页 HTML]
                  -> urllib.request.urlopen()
                  -> 重试: retry ×3, interval=2s
-              -> crawler.find_chunk_url(html)                  [正则 /_nuxt/mjbk.[a-f0-9]+\.js]
+              -> official_adapter.find_chunk_url(html)         [正则 /_nuxt/mjbk.[a-f0-9]+\.js]
               -> if not found: raise RuntimeError
               -> crawler.fetch(BASE_URL + chunk_url)           [GET JS chunk (~300KB)]
-              -> crawler.extract_js_array(js_text)             [括号深度计数器提取数组]
-                 -> 查找 "const e=[" 定位起点
-                 -> 深度计数器: depth++/depth--, 找到 matching ]
-              -> crawler.js_to_json(array_text)                [JS 语法修复 → JSON]
+              -> official_adapter.parse_heroes_chunk(js_text)  [官网 chunk 解析]
+                 -> extract_js_array()：忽略字符串内方括号的深度扫描
+                 -> js_to_json()：JS 语法修复 → JSON
                  -> re.sub: key 加引号
                  -> re.sub: undefined → null
                  -> re.sub: 尾部多余逗号
@@ -88,11 +87,10 @@ MainWindow._request_fetch_all()
 | `HeroFetchService.fetch_all()` | `fetch_service.py` | `_request_fetch_all()` | `_start_process()` |
 | `HeroFetchService._start_process()` | `fetch_service.py` | `fetch_all()` | `QProcess.start()` |
 | `official.main()` | `official.py` | QProcess 子进程 | `official.crawl()` |
-| `official.crawl()` | `official.py` | `main()` | `crawler.*`, `validate_heroes()` |
+| `official.crawl()` | `official.py` | `main()` | `crawler.*`, `official_adapter.*` |
 | `crawler.fetch()` | `crawler.py` | `crawl()` | `urllib.request.urlopen()` |
-| `crawler.find_chunk_url()` | `crawler.py` | `crawl()` | `re.search()` |
-| `crawler.extract_js_array()` | `crawler.py` | `crawl()` | 括号深度计数器 |
-| `crawler.js_to_json()` | `crawler.py` | `crawl()` | `json.loads()`, `re.sub()` |
+| `official_adapter.find_chunk_url()` | `official_adapter.py` | `crawl()` | `re.search()` |
+| `official_adapter.parse_heroes_chunk()` | `official_adapter.py` | `crawl()` | 数组提取、JSON 兼容转换 |
 | `crawler.transform()` | `crawler.py` | `crawl()` | `clean_html()`, `split_skill_desc()` |
 | `crawler.split_skill_desc()` | `crawler.py` | `transform()` | `clean_html()` |
 | `crawler.clean_html()` | `crawler.py` | `transform()`, `split_skill_desc()` | `re.sub()`, `html.unescape()` |
@@ -229,10 +227,9 @@ src.ui.main_window
 official.py:main() / incremental.py:main()          [CLI 入口]
   └── crawler.fetch_all_raw()                       [全量数据获取]
   │     ├── crawler.fetch()                         [HTTP GET]
-  │     ├── crawler.find_chunk_url()                [正则提取]
+  │     ├── official_adapter.find_chunk_url()       [正则提取]
   │     ├── crawler.fetch()                         [第二次 HTTP GET]
-  │     ├── crawler.extract_js_array()              [括号深度计数]
-  │     └── crawler.js_to_json()                    [JS→JSON 转换]
+  │     └── official_adapter.parse_heroes_chunk()   [数组提取与 JS→JSON 转换]
   └── crawler.transform()                           [逐项清洗]
   │     ├── crawler.clean_html()                    [标签/实体清理]
   │     └── crawler.split_skill_desc()              [技能段落拆分]
@@ -248,9 +245,8 @@ official.py:main() / incremental.py:main()          [CLI 入口]
 |------|------|----------------|------------------|
 | `crawl()` | `official.py:48` | `official.main()` | `fetch()`, `find_chunk_url()`, `transform()`, ... |
 | `fetch(url, binary)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | `urllib.request.urlopen()` |
-| `find_chunk_url(html)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | `re.search()` |
-| `extract_js_array(js)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | 括号深度遍历 |
-| `js_to_json(text)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | `re.sub()`, `json.loads()` |
+| `find_chunk_url(html)` | `official_adapter.py` | `crawl()`, `fetch_all_raw()` | `re.search()` |
+| `parse_heroes_chunk(js)` | `official_adapter.py` | `crawl()`, `fetch_all_raw()` | 数组提取、`re.sub()`、`json.loads()` |
 | `transform(raw)` | `crawler.py` | `crawl()`, `run()` | `clean_html()`, `split_skill_desc()` |
 | `clean_html(html)` | `crawler.py` | `transform()`, `split_skill_desc()` | `re.sub()`, `html.unescape()` |
 | `split_skill_desc(desc)` | `crawler.py` | `transform()` | `clean_html()`, HTML 段落解析 |
