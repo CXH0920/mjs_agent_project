@@ -37,13 +37,8 @@ from src.ui.faction_color_dialog import FactionColorDialog
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.business.fetch_service import HeroFetchService
 from src.business.guide_fetch_service import GuideFetchService
-from src.ui.guide_fetch_dialog import GuideFetchDialog
-from src.ui.cost_confirm_dialog import CostConfirmDialog
-from src.ui.backend_choose_dialog import BackendChooseDialog
-from src.ui.guide_progress_dialog import GuideProgressDialog
-from src.ui.synergy_pair_dialog import SynergyPairDialog
-from src.ui.synergy_single_dialog import SynergySingleDialog
 from src.business.synergy_fetch_service import SynergyFetchService
+from src.ui.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.recommendation_panel import RecommendationPanel
 from src.ui.match_guide_panel import MatchGuidePanel
 
@@ -85,6 +80,14 @@ class MainWindow(QMainWindow):
         self._fetch_service = HeroFetchService(self)
         self._guide_service = GuideFetchService(self._data.guides, self)
         self._synergy_service = SynergyFetchService(self)
+        self._ai_workflow = AiGenerationWorkflow(
+            self._data.heroes,
+            self._data.guides,
+            self._data.synergies,
+            self._guide_service,
+            self._synergy_service,
+            self,
+        )
 
         # 屏幕采集服务
         from src.config.env import get_mumu_config
@@ -97,10 +100,11 @@ class MainWindow(QMainWindow):
         self._ocr_service.update_config(get_mumu_config())
         self._ocr_service.set_hero_names([h.name for h in self._data.heroes.list_heroes()])
 
-        self._connect_synergy_signals()
-        self._connect_guide_signals()
         self._connect_fetch_signals()
         self._connect_capture_signals()
+        self._ai_workflow.status_changed.connect(self._on_fetch_status)
+        self._ai_workflow.guides_changed.connect(self._on_guides_generated)
+        self._ai_workflow.synergies_changed.connect(self._on_synergies_generated)
 
         self.setWindowTitle("名将杀 Agent")
         self.setMinimumSize(960, 640)
@@ -146,64 +150,6 @@ class MainWindow(QMainWindow):
     def _on_fetch_error(self, error_msg: str) -> None:
         """采集错误处理"""
         QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{error_msg}")
-
-    # ---------------------------------------------------------------
-    # 相性获取服务信号连接
-    # ---------------------------------------------------------------
-
-    def _connect_synergy_signals(self) -> None:
-        self._synergy_service.status_changed.connect(self._on_fetch_status)
-        self._synergy_service.fetch_completed.connect(self._on_synergy_fetch_completed)
-        self._synergy_service.error_occurred.connect(self._on_synergy_fetch_error)
-        self._synergy_service.progress_output.connect(self._on_synergy_progress)
-        self._synergy_service.progress_value.connect(self._on_synergy_progress_value)
-
-    def _on_synergy_fetch_completed(self, success: bool, message: str = "") -> None:
-        dialog = getattr(self, "_synergy_progress_dialog", None)
-        if dialog:
-            dialog.on_process_finished(success, message)
-        if success:
-            self._data.synergies.load()
-            self._hero_browser.refresh_synergies()
-            self._recommendation.refresh_synergies()
-            self._update_status()
-        else:
-            QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{message}")
-
-    def _on_synergy_fetch_error(self, error_msg: str) -> None:
-        dialog = getattr(self, "_synergy_progress_dialog", None)
-        if dialog:
-            dialog.on_process_finished(False, error_msg)
-        QMessageBox.warning(self, "生成失败", f"相性评分生成失败\n{error_msg}")
-
-    def _on_synergy_progress(self, text: str) -> None:
-        """相性生成进度更新"""
-        dialog = getattr(self, "_synergy_progress_dialog", None)
-        if dialog:
-            dialog.update_status(text)
-
-    def _on_synergy_progress_value(self, current: int, total: int) -> None:
-        """相性生成进度条更新"""
-        dialog = getattr(self, "_synergy_progress_dialog", None)
-        if dialog:
-            dialog.update_progress(current, total)
-
-    # ---------------------------------------------------------------
-    # 攻略生成服务信号连接
-    # ---------------------------------------------------------------
-
-    # ---------------------------------------------------------------
-    # 攻略生成服务信号连接
-    # ---------------------------------------------------------------
-
-    def _connect_guide_signals(self) -> None:
-        """连接攻略生成服务信号"""
-        self._guide_service.cost_estimated.connect(self._on_guide_cost_estimated)
-        self._guide_service.status_changed.connect(self._on_fetch_status)
-        self._guide_service.fetch_completed.connect(self._on_guide_fetch_completed)
-        self._guide_service.error_occurred.connect(self._on_guide_fetch_error)
-        self._guide_service.progress_output.connect(self._on_guide_progress)
-        self._guide_service.progress_value.connect(self._on_guide_progress_value)
 
     def _connect_capture_signals(self) -> None:
         """连接截图、连接状态和轮询服务信号。"""
@@ -395,49 +341,6 @@ class MainWindow(QMainWindow):
         if ocr_results:
             self._recommendation.load_from_ocr(ocr_results)
 
-    def _on_guide_cost_estimated(self, estimation: dict) -> None:
-        items = estimation.get("items", 0)
-        if items == 0 and estimation.get("message"):
-            self._status_label.setText(estimation["message"])
-            return
-        dialog = CostConfirmDialog(estimation, parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            hero_count = estimation.get("items", 0)
-            self._guide_progress_dialog = GuideProgressDialog(hero_count, parent=self)
-            self._guide_service.execute_with_confirmation()
-            self._guide_progress_dialog.exec()
-            self._guide_progress_dialog = None
-        else:
-            self._status_label.setText("攻略生成已取消")
-
-    def _on_guide_fetch_completed(self, success: bool, message: str = "") -> None:
-        dialog = getattr(self, "_guide_progress_dialog", None)
-        if dialog:
-            dialog.on_process_finished(success, message)
-        if success:
-            self._data.guides.load()
-            self._update_status()
-
-    def _on_guide_fetch_error(self, error_msg: str) -> None:
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Icon.Critical)
-        msg.setWindowTitle("攻略生成失败")
-        msg.setText("攻略生成出错")
-        msg.setDetailedText(error_msg)
-        msg.exec()
-
-    def _on_guide_progress(self, text: str) -> None:
-        """攻略生成进度更新"""
-        dialog = getattr(self, "_guide_progress_dialog", None)
-        if dialog:
-            dialog.update_status(text)
-
-    def _on_guide_progress_value(self, current: int, total: int) -> None:
-        "攻略生成进度条更新"
-        dialog = getattr(self, "_guide_progress_dialog", None)
-        if dialog:
-            dialog.update_progress(current, total)
-
     # ---------------------------------------------------------------
     # 菜单栏
     # ---------------------------------------------------------------
@@ -622,6 +525,16 @@ class MainWindow(QMainWindow):
         self._recommendation.refresh_synergies()
         self._update_status()
 
+    def _on_guides_generated(self) -> None:
+        """生成工作流已重载攻略数据，更新统计信息。"""
+        self._update_status()
+
+    def _on_synergies_generated(self) -> None:
+        """生成工作流已重载相性数据，刷新依赖相性数据的页面。"""
+        self._hero_browser.refresh_synergies()
+        self._recommendation.refresh_synergies()
+        self._update_status()
+
     # ---------------------------------------------------------------
     # 数据加载
     # ---------------------------------------------------------------
@@ -701,129 +614,23 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------
 
     def _request_guide_all(self) -> None:
-        heroes = self._get_heroes_as_dicts()
-        if not heroes:
-            QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
-            return
-        from src.config.env import get_api_config
-        from src.scraper.prompt_utils import estimate_cost
-        est = estimate_cost(len(heroes), "guide", get_api_config()["model"])
-        est["mode"] = "all"
-        est["heroes"] = heroes
-        dialog = BackendChooseDialog(estimation=est, title="全量攻略生成", parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self)
-        self._guide_service.fetch_all(heroes, backend=dialog.get_selected_backend())
-        self._guide_progress_dialog.exec()
-        self._guide_progress_dialog = None
+        self._ai_workflow.request_guide_all()
 
     def _request_guide_incremental(self) -> None:
-        heroes = self._get_heroes_as_dicts()
-        if not heroes:
-            QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
-            return
-        existing_ids = {g.hero_id for g in self._data.guides.list_guides()}
-        missing = [h for h in heroes if h.get("id") not in existing_ids]
-        if not missing:
-            self._status_label.setText("所有武将已有攻略，无需生成")
-            return
-        from src.config.env import get_api_config
-        from src.scraper.prompt_utils import estimate_cost
-        est = estimate_cost(len(missing), "guide", get_api_config()["model"])
-        est["mode"] = "incremental"
-        est["heroes"] = missing
-        dialog = BackendChooseDialog(estimation=est, title="增量攻略生成", parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self)
-        self._guide_service.fetch_incremental(heroes, backend=dialog.get_selected_backend())
-        self._guide_progress_dialog.exec()
-        self._guide_progress_dialog = None
+        self._ai_workflow.request_guide_incremental()
 
     def _request_guide_specific(self) -> None:
-        dialog = GuideFetchDialog(self._data.heroes, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not dialog.selected_heroes:
-            return
-        hero_count = len(dialog.selected_heroes)
-        from src.config.env import get_api_config
-        from src.scraper.prompt_utils import estimate_cost
-        est = estimate_cost(hero_count, "guide", get_api_config()["model"])
-        est["mode"] = "specific"
-        est["heroes"] = dialog.selected_heroes
-        bd = BackendChooseDialog(estimation=est, title="指定攻略生成", parent=self)
-        if bd.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._guide_progress_dialog = GuideProgressDialog(hero_count, parent=self)
-        self._guide_service.fetch_specific(dialog.selected_heroes, backend=bd.get_selected_backend())
-        self._guide_progress_dialog.exec()
-        self._guide_progress_dialog = None
+        self._ai_workflow.request_guide_specific()
 
     # ---------------------------------------------------------------
     # 相性获取入口
     # ---------------------------------------------------------------
 
     def _request_synergy_pair(self) -> None:
-        """相性指定获取：弹出对话框选择 2~8 个武将，自动两两配对"""
-        heroes = self._get_heroes_as_dicts()
-        if not heroes:
-            QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
-            return
-        dialog = SynergyPairDialog(self._data.heroes, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not dialog.selected_heroes:
-            return
-        bd = BackendChooseDialog(title="相性配对生成", parent=self)
-        if bd.exec() != QDialog.DialogCode.Accepted:
-            return
-        backend = bd.get_selected_backend()
-        selected = dialog.selected_heroes
-        pair_count = len(selected) * (len(selected) - 1) // 2
-        self._synergy_progress_dialog = GuideProgressDialog(pair_count, title="相性配对生成进度", parent=self)
-        self._synergy_service.fetch_pair(selected, backend=backend)
-        self._synergy_progress_dialog.exec()
-        self._synergy_progress_dialog = None
+        self._ai_workflow.request_synergy_pair()
 
     def _request_synergy_single(self) -> None:
-        """相性选定武将：弹出对话框选择 1 个武将"""
-        all_heroes = self._get_heroes_as_dicts()
-        if not all_heroes:
-            QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
-            return
-        dialog = SynergySingleDialog(self._data.heroes, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not dialog.selected_hero:
-            return
-        bd = BackendChooseDialog(title="选定武将相性生成", parent=self)
-        if bd.exec() != QDialog.DialogCode.Accepted:
-            return
-        backend = bd.get_selected_backend()
-        # 估算需要配对的武将数（排除自身）
-        hero_count = len(self._get_heroes_as_dicts()) - 1
-        self._synergy_progress_dialog = GuideProgressDialog(hero_count, title="选定武将相性生成进度", parent=self)
-        self._synergy_service.fetch_single(dialog.selected_hero, all_heroes, backend=backend)
-        self._synergy_progress_dialog.exec()
-        self._synergy_progress_dialog = None
-
-    def _get_heroes_as_dicts(self) -> list[dict]:
-        from src.data.models import Hero
-        return [
-            {
-                "id": h.id, "name": h.name, "faction": h.faction,
-                "max_hp": h.max_hp, "max_hand": h.max_hand,
-                "position": h.position, "gender": h.gender,
-                "difficulty": h.difficulty, "title": h.title,
-                "skills": [
-                    {"name": s.name, "description": s.description}
-                    for s in (h.skills or [])
-                ],
-            }
-            for h in self._data.heroes.list_heroes()
-        ]
+        self._ai_workflow.request_synergy_single()
 
     # ---------------------------------------------------------------
     # 对话框
