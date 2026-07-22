@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -102,3 +103,29 @@ def test_poll_tasks_have_independent_activation_and_cooldowns() -> None:
     service.set_task_cooldown("match_guide", 60)
     service.clear_task_cooldown("hero_selection")
     assert service.due_poll_tasks() == ["hero_selection"]
+
+
+def test_select_template_clears_stale_reference_metadata(tmp_path: Path, monkeypatch) -> None:
+    class _TemplateManager:
+        def __init__(self) -> None:
+            self.template_path = tmp_path / "managed.png"
+            self.is_loaded = True
+            self.reloaded = False
+
+        def reload(self) -> None:
+            self.reloaded = True
+
+    manager = _TemplateManager()
+    source = tmp_path / "external.png"
+    source.write_bytes(b"external-template")
+    manager.template_path.write_bytes(b"old-template")
+    metadata_path = manager.template_path.with_suffix(".json")
+    metadata_path.write_text('{"reference_width": 2560}', encoding="utf-8")
+    monkeypatch.setattr("src.business.ocr_service.get_template_manager", lambda _name: manager)
+
+    service = OcrService()
+    service.select_template(str(source), "match_guide")
+
+    assert manager.template_path.read_bytes() == b"external-template"
+    assert not metadata_path.exists()
+    assert manager.reloaded

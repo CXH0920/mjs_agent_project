@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 from types import SimpleNamespace
 
 from PIL import Image
@@ -116,6 +117,24 @@ def test_screencap_retries_empty_output(monkeypatch) -> None:
 
     assert ok
     assert result.size == (1, 1)
+
+
+def test_screencap_can_suppress_success_log(monkeypatch, caplog) -> None:
+    cap = AdbCapture("adb.exe", 16448)
+    cap._connected = True
+    cap._device_serial = "127.0.0.1:16448"
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), "green").save(buffer, format="PNG")
+    monkeypatch.setattr(
+        "src.capture.adb_screen.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=b"", stdout=buffer.getvalue()),
+    )
+
+    with caplog.at_level(logging.INFO, logger="src.capture.adb_screen"):
+        ok, _ = cap.screencap_full(log_success=False)
+
+    assert ok
+    assert "截图成功" not in caplog.text
 
 
 def test_connect_with_auto_port_uses_unique_running_instance(monkeypatch) -> None:

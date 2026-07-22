@@ -54,3 +54,32 @@ def test_capture_can_skip_ocr_and_return_saved_image(monkeypatch, tmp_path) -> N
     assert service._ocr_worker is None
     assert completed[0]["ocr_results"] is None
     assert not completed[0]["ocr_matched"]
+
+
+def test_capture_screenshot_reuses_and_connects_shared_session() -> None:
+    class FakeCapture:
+        connected = False
+        device_serial = "127.0.0.1:16448"
+
+        def __init__(self) -> None:
+            self.connect_calls = 0
+
+        def connect(self):
+            self.connect_calls += 1
+            self.connected = True
+            return True, "连接成功"
+
+        @staticmethod
+        def screencap_full():
+            return True, Image.new("RGB", (10, 20))
+
+    service = CaptureService()
+    capture = FakeCapture()
+    service.capture = capture
+
+    ok, image = service.capture_screenshot()
+
+    assert ok
+    assert image.size == (10, 20)
+    assert capture.connect_calls == 1
+    assert service.connection_state == ("connected", "127.0.0.1:16448")
