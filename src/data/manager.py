@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -30,6 +31,8 @@ DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 
 __all__ = [
+    "DataIssue",
+    "LoadReport",
     "DataManager",
     "DataFacade",
     "apply_incremental_update",
@@ -39,6 +42,34 @@ __all__ = [
 ]
 
 V_co = TypeVar("V_co", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class DataIssue:
+    """数据加载或关联校验中发现的一项问题。"""
+
+    severity: str
+    kind: str
+    file_path: Path
+    message: str
+    record_index: int | None = None
+    entity_key: object | None = None
+    field_name: str | None = None
+
+
+@dataclass
+class LoadReport:
+    """一次完整数据加载的结构化结果。"""
+
+    issues: list[DataIssue] = field(default_factory=list)
+
+    @property
+    def error_count(self) -> int:
+        return sum(issue.severity == "error" for issue in self.issues)
+
+    @property
+    def warning_count(self) -> int:
+        return sum(issue.severity == "warning" for issue in self.issues)
 
 
 class DataManager(Generic[V_co]):
@@ -53,34 +84,85 @@ class DataManager(Generic[V_co]):
         self.file_path = Path(file_path)
         self.model_class = model_class
         self._items: dict = {}
+        self.load_issues: list[DataIssue] = []
 
     # ============================================================
     # 加载 / 保存
     # ============================================================
 
-    def load(self) -> None:
-        """从 JSON 文件加载数据"""
+    def load(self) -> list[DataIssue]:
+        """从 JSON 文件加载数据，并保留单条记录错误。"""
+        self.load_issues = []
         if not self.file_path.exists():
             logger.warning("文件不存在: %s", self.file_path)
             self._items = {}
-            return
-        with self.file_path.open("r", encoding="utf-8") as f:
-            try:
+            self._record_issue("warning", "file_missing", "文件不存在")
+            return self.load_issues
+        try:
+            with self.file_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-            except (json.JSONDecodeError, EOFError):
-                logger.warning("文件解析失败: %s", self.file_path)
-                self._items = {}
-                return
-            except Exception:
-                import traceback
-                logger.warning("文件读取异常 %s:\n%s", self.file_path, traceback.format_exc())
-                self._items = {}
-                return
+        except (json.JSONDecodeError, EOFError) as error:
+            logger.warning("文件解析失败: %s", self.file_path)
+            self._items = {}
+            self._record_issue("error", "invalid_json", str(error))
+            return self.load_issues
+        except OSError as error:
+            logger.warning("文件读取异常 %s: %s", self.file_path, error)
+            self._items = {}
+            self._record_issue("error", "file_read_error", str(error))
+            return self.load_issues
         self._items = self._parse_items(data)
+        return self.load_issues
 
-    def _parse_items(self, data: list) -> dict:
+    def _parse_items(self, data: object) -> dict:
         """子类重写：从 JSON 列表构建 _items dict"""
         return {}
+
+    def _parse_models(self, data: object, key_of: Callable[[V_co], object]) -> dict:
+        """逐条校验 JSON 列表，跳过坏记录和重复键。"""
+        if not isinstance(data, list):
+            self._record_issue("error", "invalid_root", "文件内容必须是 JSON 列表")
+            return {}
+
+        items = {}
+        for index, raw in enumerate(data):
+            if not isinstance(raw, dict):
+                self._record_issue("error", "invalid_record", "记录必须是对象", index)
+                continue
+            try:
+                item = self.model_class.model_validate(raw)
+            except Exception as error:
+                self._record_issue("error", "invalid_record", str(error), index)
+                continue
+
+            key = key_of(item)
+            if key in items:
+                self._record_issue("error", "duplicate_key", f"重复键: {key}", index, key)
+                continue
+            items[key] = item
+        return items
+
+    def _record_issue(
+        self,
+        severity: str,
+        kind: str,
+        message: str,
+        record_index: int | None = None,
+        entity_key: object | None = None,
+        field_name: str | None = None,
+    ) -> None:
+        issue = DataIssue(
+            severity=severity,
+            kind=kind,
+            file_path=self.file_path,
+            message=message,
+            record_index=record_index,
+            entity_key=entity_key,
+            field_name=field_name,
+        )
+        self.load_issues.append(issue)
+        log = logger.warning if severity == "warning" else logger.error
+        log("数据问题 [%s] %s: %s", kind, self.file_path, message)
 
     def save(self) -> None:
         """将所有数据原子写入 JSON 文件"""
@@ -138,12 +220,91 @@ class DataFacade:
         self.heroes = HeroManager(heroes_file)
         self.synergies = SynergyManager(synergies_file)
         self.guides = GuideManager(guides_file)
+        self.last_load_report = LoadReport()
 
-    def load_all(self) -> None:
-        """加载所有数据"""
-        self.heroes.load()
-        self.synergies.load()
-        self.guides.load()
+    def load_all(self) -> LoadReport:
+        """加载所有数据，执行跨实体校验并返回问题报告。"""
+        report = LoadReport()
+        for manager in (self.heroes, self.synergies, self.guides):
+            report.issues.extend(manager.load())
+        self._validate_references(report)
+        self.last_load_report = report
+        return report
+
+    def _validate_references(self, report: LoadReport) -> None:
+        """移除内存中的失效关联，保持源 JSON 不变。"""
+        hero_ids = {hero.id for hero in self.heroes.list_heroes()}
+
+        for synergy in list(self.synergies.list_synergies()):
+            missing_ids = {hero_id for hero_id in (synergy.hero_a_id, synergy.hero_b_id) if hero_id not in hero_ids}
+            if missing_ids:
+                self.synergies.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
+                self._add_reference_issue(
+                    report,
+                    self.synergies.file_path,
+                    "missing_reference",
+                    f"相性引用不存在的武将 ID: {sorted(missing_ids)}",
+                    (synergy.hero_a_id, synergy.hero_b_id),
+                )
+
+        for guide in list(self.guides.list_guides()):
+            if guide.hero_id not in hero_ids:
+                self.guides.delete_guide(guide.hero_id)
+                self._add_reference_issue(
+                    report,
+                    self.guides.file_path,
+                    "missing_reference",
+                    f"攻略归属的武将 ID 不存在: {guide.hero_id}",
+                    guide.hero_id,
+                    "hero_id",
+                )
+                continue
+
+            counters = self._valid_guide_references(report, guide.hero_id, "counters", guide.counters, hero_ids)
+            synergizes_with = self._valid_guide_references(
+                report, guide.hero_id, "synergizes_with", guide.synergizes_with, hero_ids
+            )
+            if counters != guide.counters or synergizes_with != guide.synergizes_with:
+                self.guides.update_guide(
+                    guide.model_copy(update={"counters": counters, "synergizes_with": synergizes_with})
+                )
+
+    def _valid_guide_references(
+        self,
+        report: LoadReport,
+        guide_id: int,
+        field_name: str,
+        hero_ids: list[int],
+        valid_hero_ids: set[int],
+    ) -> list[int]:
+        valid_ids = []
+        for index, hero_id in enumerate(hero_ids):
+            if hero_id in valid_hero_ids:
+                valid_ids.append(hero_id)
+                continue
+            self._add_reference_issue(
+                report,
+                self.guides.file_path,
+                "missing_reference",
+                f"引用不存在的武将 ID: {hero_id}",
+                guide_id,
+                f"{field_name}[{index}]",
+            )
+        return valid_ids
+
+    @staticmethod
+    def _add_reference_issue(
+        report: LoadReport,
+        file_path: Path,
+        kind: str,
+        message: str,
+        entity_key: object,
+        field_name: str | None = None,
+    ) -> None:
+        report.issues.append(
+            DataIssue("error", kind, file_path, message, entity_key=entity_key, field_name=field_name)
+        )
+        logger.error("数据问题 [%s] %s: %s", kind, file_path, message)
 
     def save_all(self) -> None:
         """保存所有数据"""

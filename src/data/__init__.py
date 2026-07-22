@@ -5,7 +5,9 @@
 
 from src.data.manager import (
     DataFacade,
+    DataIssue,
     DataManager,
+    LoadReport,
     apply_incremental_update,
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
@@ -17,6 +19,8 @@ from src.data.guide_manager import GuideManager
 
 __all__ = [
     "DataManager",
+    "DataIssue",
+    "LoadReport",
     "HeroManager",
     "SynergyManager",
     "GuideManager",

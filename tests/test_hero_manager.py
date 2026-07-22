@@ -123,3 +123,30 @@ class TestHeroManager:
             mgr = HeroManager(heroes_file=filepath)
             mgr.load()
             assert mgr.list_heroes() == []
+
+    def test_load_skips_invalid_record_without_rewriting_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "heroes.json"
+            data = [self._make_hero(1).model_dump(mode="json"), {"id": "bad"}]
+            source = json.dumps(data, ensure_ascii=False)
+            filepath.write_text(source, encoding="utf-8")
+
+            mgr = HeroManager(heroes_file=filepath)
+            issues = mgr.load()
+
+            assert [hero.id for hero in mgr.list_heroes()] == [1]
+            assert [issue.kind for issue in issues] == ["invalid_record"]
+            assert filepath.read_text(encoding="utf-8") == source
+
+    def test_load_skips_duplicate_key(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "heroes.json"
+            first = self._make_hero(1, "曹操").model_dump(mode="json")
+            duplicate = self._make_hero(1, "曹孟德").model_dump(mode="json")
+            filepath.write_text(json.dumps([first, duplicate], ensure_ascii=False), encoding="utf-8")
+
+            mgr = HeroManager(heroes_file=filepath)
+            issues = mgr.load()
+
+            assert mgr.get_hero(1).name == "曹操"
+            assert [issue.kind for issue in issues] == ["duplicate_key"]

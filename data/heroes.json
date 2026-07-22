@@ -93,68 +93,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/4ktxauAoYQqETOcodTzOBIIfY18TqXL7gojgtxSb.png_200x282.png"
   },
   {
-    "id": 178,
-    "name": "杜预",
-    "title": "",
-    "faction": "西晋",
-    "position": "爆发",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "陵谷存勋",
-        "description": "击杀，永久标记此时牌堆顶和牌堆底的各1张牌。之后每当有此标记的牌被打出时，你摸3张牌。",
-        "settlement": "1.永久标记的牌不会因任何效果而清除标记。 2.多次标记1张牌也仅能摸3张牌。"
-      },
-      {
-        "name": "势如破竹",
-        "description": "当你打出的战法牌造成伤害后，可以削弱目标角色2张牌，且你本回合选择其为目标的下1张杀对其伤害+1。",
-        "settlement": "1.不选择削弱目标的牌则也不会有后续效果。 2.增伤效果仅本回合生效。"
-      },
-      {
-        "name": "杜武库",
-        "description": "登场，复制初始牌堆中每种牌名的牌各1张放入武库。 应战/出牌阶段限1次，你可以立即打出武库中的1张牌。",
-        "settlement": "1.仅会复制战斗开始时牌堆中的牌。 2.应战时打出的牌需要能够主动打出，打出会正常执行其效果，并不能打出闪对杀进行抵消。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/5PH4LDIaFCnk21tpxkgNqRexj4fq4Pq6zqCgy4tc.png_200x282.png"
-  },
-  {
-    "id": 177,
-    "name": "荀勖",
-    "title": "",
-    "faction": "西晋",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "省官清心",
-        "description": "当你打出牌时，若此牌的点数〈上1张你打出牌的点数，你可以削弱一名角色的1张牌。",
-        "settlement": "这个技能很简单... 技能典故 省吏不如省官，省官不如省事，省事不如清心。一《晋书》"
-      },
-      {
-        "name": "四部分类",
-        "description": "登场，你将1~8的点数分为甲乙丙丁4组；每轮结束时，若你本轮打出过每组点数的至少1张牌，随机获得每组点数的各1张牌。",
-        "settlement": "每组点数的数量可以任意分配，但需要保证每组至少有1个点数。"
-      },
-      {
-        "name": "十二笛律",
-        "description": "当你打出牌后，若本回合你打出过的牌的总点数等于12，你可以选择1个点数，查看牌堆中前12张与此牌点数相同的牌在牌堆中的位置，你可以交换这些牌的位置，并且可以选择获得其中1张牌。",
-        "settlement": "1.打出牌的点数会在打出牌时记录下来，牌生效过程中点数改变并不影响记录的点数。 2.可以仅调整牌堆中牌的顺序而不获得牌。 3.选定获得牌后，可以将其他牌替换至选定牌的原位置。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/xxKU8qRGuW6K81Td85xyalTUyBXgbitRlKY0jxbt.png_200x282.png"
-  },
-  {
     "id": 176,
     "name": "张华",
     "title": "",
@@ -4653,5 +4591,67 @@
     "mode_viability": {},
     "last_updated": "2026-07-16",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-04/EMVXrJbkGe6NMzE5MbnKvU3ox1eRntU3XmMOqHJ8.png_200x282.png"
+  },
+  {
+    "id": 178,
+    "name": "杜预",
+    "title": "",
+    "faction": "西晋",
+    "position": "爆发",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "陵谷存勋",
+        "description": "击杀，永久标记此时牌堆顶和牌堆底的各1张牌。之后每当有此标记的牌被打出时，你摸3张牌。",
+        "settlement": "1.永久标记的牌不会因任何效果而清除标记。 2.多次标记1张牌也仅能摸3张牌。"
+      },
+      {
+        "name": "势如破竹",
+        "description": "当你打出的战法牌造成伤害后，可以削弱目标角色2张牌，且你本回合选择其为目标的下1张杀对其伤害+1。",
+        "settlement": "1.不选择削弱目标的牌则也不会有后续效果。 2.增伤效果仅本回合生效。"
+      },
+      {
+        "name": "杜武库",
+        "description": "登场，复制初始牌堆中每种牌名的牌各1张放入武库。 应战/出牌阶段限1次，你可以立即打出武库中的1张牌。",
+        "settlement": "1.仅会复制战斗开始时牌堆中的牌。 2.应战时打出的牌需要能够主动打出，打出会正常执行其效果，并不能打出闪对杀进行抵消。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/5PH4LDIaFCnk21tpxkgNqRexj4fq4Pq6zqCgy4tc.png_200x282.png"
+  },
+  {
+    "id": 177,
+    "name": "荀勖",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "省官清心",
+        "description": "当你打出牌时，若此牌的点数〈上1张你打出牌的点数，你可以削弱一名角色的1张牌。",
+        "settlement": "这个技能很简单... 技能典故 省吏不如省官，省官不如省事，省事不如清心。一《晋书》"
+      },
+      {
+        "name": "四部分类",
+        "description": "登场，你将1~8的点数分为甲乙丙丁4组；每轮结束时，若你本轮打出过每组点数的至少1张牌，随机获得每组点数的各1张牌。",
+        "settlement": "每组点数的数量可以任意分配，但需要保证每组至少有1个点数。"
+      },
+      {
+        "name": "十二笛律",
+        "description": "当你打出牌后，若本回合你打出过的牌的总点数等于12，你可以选择1个点数，查看牌堆中前12张与此牌点数相同的牌在牌堆中的位置，你可以交换这些牌的位置，并且可以选择获得其中1张牌。",
+        "settlement": "1.打出牌的点数会在打出牌时记录下来，牌生效过程中点数改变并不影响记录的点数。 2.可以仅调整牌堆中牌的顺序而不获得牌。 3.选定获得牌后，可以将其他牌替换至选定牌的原位置。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/xxKU8qRGuW6K81Td85xyalTUyBXgbitRlKY0jxbt.png_200x282.png"
   }
 ]

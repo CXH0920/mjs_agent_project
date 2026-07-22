@@ -6,6 +6,28 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+```
+MainWindow.__init__()
+  -> DataFacade(...) -> _load_data() -> load_all()
+  -> 创建 Fetch / Capture / OCR 服务并连接信号
+  -> get_mumu_config() -> update_config()
+  -> _setup_ui()
+    -> HeroBrowser(hero_mgr, guide_mgr, synergy_mgr)
+    -> RecommendationPanel(hero_mgr, synergy_mgr, guide_mgr, capture_svc, ocr_svc)
+    -> MatchGuidePanel(hero_mgr, capture_svc)
+```
+
+| 用户动作 | UI 入口 | 核心调用 | 刷新 |
+|----------|---------|----------|------|
+| 武将采集 | `_request_fetch_*()` | `HeroFetchService.fetch_*()` | `_reload_data()` |
+| 攻略生成 | `_request_guide_*()` | `GuideFetchService.fetch_*()` | `GuideManager.load()` + 浏览器刷新 |
+| 相性生成 | `_request_synergy_*()` | `SynergyFetchService.fetch_pair/single()` | `SynergyManager.load()` + 推荐页刷新 |
+| 截图、图片导入、轮询 | 推荐页或 `poll_tick` | `CaptureService` -> `OcrWorker` | 推荐卡或对局攻略页 |
+
+数据完整性问题存于 `self._data.last_load_report`；当前 UI 使用已恢复的内存数据，尚未提供报告查看或写回修复界面。服务完成状态以 CLI 退出码为准，不解析 `RESULT: FAIL=`。
+
 ## 一、MainWindow 信号拓扑
 
 ### 1.1 初始化流程
@@ -669,9 +691,9 @@ GuideProgressDialog.__init__(hero_count, title, parent)
     -> 启用"关闭"按钮
     -> [成功] _status_label = "生成完成 ✓", progress = max
     -> [失败] _status_label = "生成失败 ✗", set_error(message)
-      -> 失败信息由 GuideFetchService._on_process_finished() 通过 _failed_items 收集生成
+      -> 失败信息由 BaseFetchService 根据非零退出码生成
 
-> **注意**: 子进程通过 `print(f"RESULT: FAIL={name}", flush=True)` 输出失败记录，GuideFetchService 的 `_on_stdout_line()` 解析 `RESULT: FAIL=` 行来收集 `_failed_items`。`_on_process_finished()` 基于 `_failed_items` 判断成败，不再仅依赖 `exit_code`。
+> **注意**: 进度对话框仍可显示 CLI 输出中的 `OK`/`FAIL` 行，但 FetchService 的完成状态只依赖子进程退出码；`RESULT: FAIL=` 不参与状态判定。
 ```
 
 ---

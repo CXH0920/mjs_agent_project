@@ -173,6 +173,19 @@ class TestSynergyManager:
             mgr.load()
             assert mgr.list_synergies() == []
 
+    def test_load_skips_reversed_duplicate_pair(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "synergies.json"
+            first = self._make_synergy(1, 2, 8).model_dump(mode="json")
+            duplicate = self._make_synergy(2, 1, 5).model_dump(mode="json")
+            filepath.write_text(json.dumps([first, duplicate], ensure_ascii=False), encoding="utf-8")
+
+            mgr = SynergyManager(synergies_file=filepath)
+            issues = mgr.load()
+
+            assert mgr.get_synergy(1, 2).score == 8
+            assert [issue.kind for issue in issues] == ["duplicate_key"]
+
     # ---------------------------------------------------------------
     # _synergy_key 工具方法
     # ---------------------------------------------------------------

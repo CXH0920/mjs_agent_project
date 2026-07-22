@@ -6,6 +6,23 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。
+
+```
+CaptureService.do_capture() / capture_for_poll()
+  -> AdbCapture.screencap_full()
+  -> CaptureService.submit_ocr_task()
+    -> OcrWorker.submit(OcrTask)
+    -> TemplateManager.match()
+    -> GeneralRecognizer.recognize()                            [命中时]
+  -> CaptureService._on_ocr_task_completed()
+  -> capture_completed -> RecommendationPanel / MainWindow
+```
+
+轮询：`OcrService.start_poll()` -> `_schedule_poll()` -> `poll_tick` -> `MainWindow._on_poll_capture()` -> `complete_poll()`。`hero_selection` 与 `match_guide` 分别维护激活和冷却状态；前置条件缺失会暂停，其他失败指数退避。
+
 ## 一、ADB 连接与截图链路
 
 ### 1.1 连接模拟器

@@ -85,6 +85,7 @@ test_project/
 │   ├── test_hero_manager.py       # 13 tests — 武将管理器
 │   ├── test_synergy_manager.py    # 13 tests — 相性管理器
 │   ├── test_guide_manager.py      # 11 tests — 攻略管理器
+│   ├── test_data_facade.py         # 数据加载容错与跨实体引用校验
 │   ├── test_incremental_update.py # 8 tests — 增量更新
 │   ├── test_ocr_scaling.py        # 模板多尺度匹配与 ROI 缩放
 │   └── test_ui.py                 # 4 tests — UI 工具
@@ -141,7 +142,11 @@ playwright install msedge
 pytest tests/ -v
 ```
 
-预期输出：**185 passed**（数据模型、AI 批量生成、Manager、增量更新与 UI 工具）
+当前测试目录包含 **180** 个测试函数；以实际 pytest 输出为准。数据层定向验证可运行：
+
+```bash
+python -m pytest tests/test_hero_manager.py tests/test_synergy_manager.py tests/test_guide_manager.py tests/test_data_facade.py -q
+```
 
 ### 3. 启动桌面应用
 
@@ -295,7 +300,7 @@ config.env > 环境变量 > 默认值
 
 ```python
 facade = DataFacade()
-facade.load_all()            # 一次性加载所有数据
+report = facade.load_all()   # 一次性加载所有数据并校验跨实体引用
 stats = facade.get_stats()   # {heroes: N, synergies: N, guides: N}
 facade.heroes.get_hero(114)  # 直接访问各 Manager
 facade.heroes.search_heroes("诸葛")  # 模糊搜索
@@ -306,6 +311,18 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 - **HeroManager(DataManager[Hero])** — 武将 CRUD，支持 ID/名称/关键词/势力查询
 - **SynergyManager(DataManager[SynergyScore])** — 相性 CRUD，(A,B) 和 (B,A) 自动归一为同一 key
 - **GuideManager(DataManager[HeroGuide])** — 攻略 CRUD，以 hero_id 为 key
+
+### 数据完整性与恢复
+
+数据加载采用只读恢复策略。`DataManager.load()` 逐条执行 Pydantic 校验：坏记录和重复键会被跳过并记录为 `DataIssue`，其他合法数据继续可用。`DataFacade.load_all()` 随后校验相性双方、攻略归属及攻略关联 ID；失效关系只从内存中移除，源 JSON 不会被自动覆盖。
+
+```python
+report = facade.load_all()
+for issue in report.issues:
+    print(issue.kind, issue.file_path, issue.entity_key, issue.field_name)
+```
+
+当前 UI 会使用恢复后的内存数据，但尚未提供“查看报告”或“一键写回修复”界面。若需要永久修正，请先根据 `report.issues` 人工核对 `data/*.json`，或保留原文件副本后再编辑。
 
 ---
 

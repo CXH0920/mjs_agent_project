@@ -6,6 +6,29 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+AI 生成使用 staging 保护正式 JSON：所有任务成功才提交，任一任务失败则正式数据不变并以退出码 `1` 结束。
+
+```
+ai_batch.main()
+  -> load_heroes() + get_api_config()
+  -> AIBatchGenerator(...) 或 PlaywrightGenerator(...)
+  -> run_guide_generation() / run_synergy_generation()
+     / run_synergy_pair_generation() / run_synergy_single_generation()
+    -> generate_*() -> validate_*() -> 写入 *.staging
+  -> 全部 GenerationResult.succeeded ?
+    -> 是：提交正式 JSON，exit 0
+    -> 否：保留正式 JSON，打印 staging 路径，exit 1
+```
+
+| 参数 | 编排函数 | 范围 |
+|------|----------|------|
+| `--guide` | `run_guide_generation()` | 攻略 |
+| `--synergy` | `run_synergy_generation()` | 全量两两相性 |
+| `--synergy-pair` | `run_synergy_pair_generation()` | 2-8 名指定英雄组合 |
+| `--synergy-single` | `run_synergy_single_generation()` | 指定英雄对全体 |
+
 ## 一、CLI 入口总览
 
 ### 1.1 AI 批量生成入口

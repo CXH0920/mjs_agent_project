@@ -29,14 +29,12 @@ class GuideManager(DataManager[HeroGuide]):
     # 数据解析
     # ============================================================
 
-    def _parse_items(self, data: list) -> dict[int, HeroGuide]:
+    def _parse_items(self, data: object) -> dict[int, HeroGuide]:
         if isinstance(data, dict):
-            logger.warning("攻略文件格式异常（单个对象→列表），自动修复: %s", self.file_path)
+            logger.warning("攻略文件格式异常（单个对象→列表）: %s", self.file_path)
+            self._record_issue("warning", "single_object_root", "单个对象按单条攻略加载")
             data = [data]
-        elif not isinstance(data, list):
-            logger.error("攻略文件内容不是列表或对象格式: %s，重置为空", self.file_path)
-            return {}
-        return {g["hero_id"]: HeroGuide.model_validate(g) for g in data}
+        return self._parse_models(data, lambda guide: guide.hero_id)
 
     # ============================================================
     # 查询

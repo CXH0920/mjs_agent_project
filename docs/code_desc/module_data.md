@@ -85,7 +85,7 @@ AI 生成的结果使用英文字段名（`hero_id` / `name` / `faction`），�
 ```python
 class DataManager(Generic[V_co], ABC):
     def __init__(self, file_path: Path)      # 绑定 JSON 文件路径
-    def load(self) -> None                    # 从 JSON 全量读入内存
+    def load(self) -> list[DataIssue]          # 逐条读入内存，返回加载问题
     def save(self) -> None                    # 原子写入 JSON（tmp → rename）
     def get(self, key) -> V_co | None         # 抽象：键查询
     def list_all(self) -> list[V_co]          # 全部数据
@@ -127,16 +127,24 @@ class SynergyManager:
 
 排序保证了无论调用方以什么顺序传入，都映射到同一个存储 key。
 
-### 3.5 DataFacade 门面
+### 3.5 容错加载与数据报告
+
+`DataManager.load()` 会逐条执行 Pydantic 校验。格式错误的记录和重复键会被跳过，其他合法记录继续加载；源 JSON 不会在加载过程中被改写。每项问题以 `DataIssue` 返回，包含文件、记录下标、实体键和字段信息。
+
+`LoadReport` 汇总一次完整加载的问题，并提供 `error_count` 与 `warning_count`。这使 UI 可以提示“部分数据已恢复”，同时保留日志和后续修复入口所需的精确上下文。
+
+### 3.6 DataFacade 门面
 
 `DataFacade` 聚合三个 Manager，提供统一的数据访问入口：
 
 ```python
 facade = DataFacade()
-facade.load_all()           # 三个 load() 依次调用
+report = facade.load_all()  # 三个 load() 后校验跨实体引用
 stats = facade.get_stats()  # {heroes: N, synergies: N, guides: N}
 facade.heroes.get_hero(114) # 直接访问各 Manager
 ```
+
+相性双方、攻略归属和攻略中的克制/搭配 ID 都必须存在于英雄库。失效的相性或攻略归属仅从内存结果移除；攻略正文仍保留，但其中失效的关联 ID 会被剔除。该只读恢复过程会记录到 `facade.last_load_report`，不会自动覆写源文件。
 
 ---
 

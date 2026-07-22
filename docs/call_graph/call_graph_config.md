@@ -5,6 +5,18 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+`get_api_config()` 优先级为 `config.env > 环境变量 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-pro`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。
+
+```
+main() -> get_runtime_params() -> setup_logging()
+MainWindow.__init__() -> get_mumu_config() -> CaptureService/OcrService.update_config()
+ai_batch.main() -> get_api_config()
+```
+
+`save_env_file()` 先写 `config.env.tmp` 再 `replace()` 原子替换。启动预热链路为 `main()` -> `DataFacade.load_all()` -> 英雄名称 -> `GeneralRecognizer.warmup()`；预热失败仅记录 warning。
+
 ## 一、应用启动链路
 
 ### 1.1 主函数完整调用链
@@ -80,14 +92,14 @@ get_api_config()
      -> [读取] lines = Path.read_text().splitlines()
      -> 逐行解析: key=value, 跳过 # 注释和空行
      -> return dict
-  -> 环境变量覆盖: os.environ.get("API_KEY") → 优先于 .env
+  -> config.env 优先；未配置时读取 DEEPSEEK_API_KEY / OPENAI_API_KEY 环境变量
   -> 类型转换 + 默认值填充:
      -> api_key: from env or ""                                 [无默认值]
-     -> api_url: from env or "https://api.deepseek.com/v1"
-     -> model: from env or "deepseek-chat"
+     -> api_url: from config.env or "https://api.deepseek.com/v1/chat/completions"
+     -> model: from config.env or "deepseek-v4-pro"
      -> requests_per_minute: from env or 30 (int)
      -> max_retries: from env or 3 (int)
-     -> http_timeout: from env or 120 (int)
+     -> http_timeout: from env or 300 (int)
   -> return config dict
 ```
 
@@ -98,10 +110,10 @@ get_mumu_config()
   -> parse_env_file(env_path)                                  [同上读取 .env]
   -> dict 构建:
      -> mumu_adb_path: from env or ""                           [ADB 路径]
-     -> mumu_adb_port: from env or 7555 (int)                   [ADB 端口]
+     -> mumu_adb_port: from env or 0 (int)                      [ADB 端口]
      -> mumu_ocr_enabled: from env or False (bool)              [OCR 启用]
-     -> mumu_poll_mode: from env or False (bool)                [轮询模式]
-     -> mumu_poll_interval: from env or 5 (int)                 [轮询间隔（秒）]
+     -> mumu_ocr_poll_mode: from env or False (bool)            [轮询模式]
+     -> mumu_ocr_poll_interval: from env or 2 (int)             [轮询间隔（秒）]
      -> mumu_ocr_match_threshold: from env or 0.8 (float)       [模板匹配阈值]
      -> mumu_generals_roi: from env or "" (解析为 tuple)        [8 个 ROI 坐标]
      -> ocr_template_path: from env or ""                       [模板文件路径]

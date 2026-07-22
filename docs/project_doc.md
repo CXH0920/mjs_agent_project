@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 版本：v0.1.0  
+> 代码基线：2026-07-22
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-07-18
+> 文档日期：2026-07-22
 
 ---
 
@@ -23,6 +23,44 @@
 - [十二、OCR 识别模块细节](#十二ocr-识别模块细节)
 - [十三、测试体系细节](#十三测试体系细节)
 - [十四、数据全流程详解](#十四数据全流程详解)
+
+---
+
+## 当前代码基线与业务不变量（2026-07-22）
+
+本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 负责 QProcess、ADB 和 OCR 工作流，`src/scraper/` 负责官网与 AI 数据生成，`src/data/` 提供 JSON 持久化和内存模型。
+
+### 核心功能调用总览
+
+| 功能 | 主入口 | 关键调用顺序 | 结果 |
+|------|--------|--------------|------|
+| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `DataFacade.load_all()` -> OCR `warmup()` -> `MainWindow()` | 加载数据、预热 OCR、进入 Qt 事件循环 |
+| 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
+| AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | 选择后端 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 生成暂存数据；所有任务成功才提交正式 JSON |
+| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
+| 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> 各 Manager CRUD -> `save()` | 原子写入对应 JSON 并刷新局部视图 |
+
+### 数据完整性与只读恢复
+
+`DataFacade.load_all()` 的职责不仅是读取三个 JSON，还包括返回 `LoadReport` 并保存至 `last_load_report`：
+
+```
+DataFacade.load_all()
+  -> HeroManager.load() / SynergyManager.load() / GuideManager.load()
+  -> 每条记录 model_validate()，坏记录和重复键记录为 DataIssue 后跳过
+  -> _validate_references(report)
+    -> 移除内存中的悬空相性或攻略归属
+    -> 剔除攻略 counters / synergizes_with 中不存在的英雄 ID
+  -> return LoadReport
+```
+
+加载过程不会调用 `save()`，原始 JSON 保持不变。该策略保证局部坏数据不阻断应用启动，也避免程序在用户未确认时删除原始记录。当前 UI 消费已恢复的内存数据；报告查看、导出修复副本和确认写回仍是后续功能，不能假定已经存在。
+
+### 进程与任务提交边界
+
+`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。成功以 CLI 退出码判定，AI CLI 失败会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成使用 staging 文件：任一 `GenerationResult` 失败时，正式 `guides.json`、`synergies.json` 不提交，CLI 输出暂存路径供人工排查。
+
+OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期；`CaptureService` 管理 ADB 截图和任务提交。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
 
 ---
 
@@ -512,23 +550,23 @@ class OcrService(QObject):
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
-| `load()` | — | None | 从 JSON 文件全量读入内存 |
+| `load()` | — | list[DataIssue] | 逐条校验并返回该文件的问题列表 |
 | `save()` | — | None | 原子写入 JSON（tmp → rename） |
-| `get(key)` | 泛型 | V_co \| None | 抽象方法：键查询 |
+| `get(key)` | 泛型 | V_co \| None | 通用字典键查询 |
 | `list_all()` | — | list[V_co] | 全部数据 |
 | `add(item)` | V_co | None | 新增（重复抛 ValueError） |
 | `update(item)` | V_co | None | 覆盖式 upsert |
 | `delete(key)` | 泛型 | None | 删除（不存在静默） |
 
-三个子类 Manager 继承 `DataManager`，仅需实现 `get()` 抽象方法，以及各自的领域查询方法。
+三个子类 Manager 提供领域键并复用 `_parse_models()`：坏记录和重复键仅跳过该项并记录 `DataIssue`，不会阻断同文件中的其他合法记录。`DataFacade.load_all()` 汇总为 `LoadReport`，再执行英雄、相性和攻略之间的引用校验。
 
 ### 4.2 文件与数据量
 
 | 数据文件 | 管理类 | 数据量 |
 |----------|--------|--------|
 | `data/heroes.json` | HeroManager(DataManager[Hero]) | 165 武将 |
-| `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 若干相性对 |
-| `data/guides.json` | GuideManager(DataManager[HeroGuide]) | ~42 份攻略 |
+| `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 55 条相性（当前数据） |
+| `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
 | `data/faction_colors.json` | —（直接读取） | 14 个势力配色 |
 

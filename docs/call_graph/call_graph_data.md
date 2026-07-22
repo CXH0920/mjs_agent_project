@@ -5,6 +5,29 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+`DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。
+
+```
+MainWindow._load_data() -> DataFacade.load_all()
+  -> HeroManager.load() / SynergyManager.load() / GuideManager.load()
+    -> DataManager._parse_models(data, key_of)
+      -> model_class.model_validate(raw)                         [逐条校验]
+      -> 坏记录或重复键 -> DataIssue -> 跳过该记录
+  -> DataFacade._validate_references(report)
+    -> 移除内存中的悬空相性、攻略归属和攻略关联 ID
+  -> return LoadReport                                           [只读恢复]
+```
+
+| 对象 | 职责 |
+|------|------|
+| `DataIssue` | 记录严重级别、类别、文件、记录下标、实体键、字段和消息 |
+| `LoadReport` | 汇总 `issues`，提供 `error_count`、`warning_count` |
+| `last_load_report` | 保存最近一次 `load_all()` 的完整报告 |
+
+示例：攻略关联英雄 ID 不存在时，正文保留，失效关联从内存列表剔除，并生成 `missing_reference`；原 `guides.json` 保持不变。
+
 ## 一、数据加载链路
 
 ### 1.1 完整数据加载
@@ -46,7 +69,7 @@ MainWindow._load_data()
 
 | 调用方 | 被调用方 | 说明 |
 |--------|----------|------|
-| `MainWindow._reload_data()` | `HeroManager.save()`, `SynergyManager.save()`, `GuideManager.save()` | 重新加载前保存 |
+| `MainWindow._reload_data()` | `DataFacade.load_all()` | 重新读取三个文件并执行跨实体校验，不会先保存 |
 | `HeroDetailPanel._on_info_edit()` | `HeroManager.save()` | 修改武将信息后保存 |
 | `HeroDetailPanel._on_info_delete()` | `HeroManager.save()`, `GuideManager.save()` | 删除武将后保存 |
 | `HeroDetailPanel._on_guide_edit()` | `GuideManager.save()` | 修改攻略后保存 |

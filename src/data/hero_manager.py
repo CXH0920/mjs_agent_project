@@ -29,8 +29,8 @@ class HeroManager(DataManager[Hero]):
     # 数据解析
     # ============================================================
 
-    def _parse_items(self, data: list) -> dict[int, Hero]:
-        return {h["id"]: Hero.model_validate(h) for h in data}
+    def _parse_items(self, data: object) -> dict[int, Hero]:
+        return self._parse_models(data, lambda hero: hero.id)
 
     # ============================================================
     # 查询

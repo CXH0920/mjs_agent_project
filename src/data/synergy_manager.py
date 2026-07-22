@@ -38,12 +38,8 @@ class SynergyManager(DataManager[SynergyScore]):
     # 数据解析
     # ============================================================
 
-    def _parse_items(self, data: list) -> dict[tuple[int, int], SynergyScore]:
-        items: dict[tuple[int, int], SynergyScore] = {}
-        for s in data:
-            key = self._synergy_key(s["hero_a_id"], s["hero_b_id"])
-            items[key] = SynergyScore.model_validate(s)
-        return items
+    def _parse_items(self, data: object) -> dict[tuple[int, int], SynergyScore]:
+        return self._parse_models(data, lambda score: self._synergy_key(score.hero_a_id, score.hero_b_id))
 
     # ============================================================
     # 查询

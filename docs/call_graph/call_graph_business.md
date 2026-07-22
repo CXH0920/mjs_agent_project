@@ -6,6 +6,21 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回，`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`。
+
+```
+GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
+  -> BaseFetchService._start_process(args)
+    -> QProcess.readyReadStandardOutput -> _on_stdout_ready()
+      -> 子类._on_stdout_line(line) -> progress_output/progress_value
+    -> QProcess.finished(exit_code) -> _on_finished(exit_code)
+      -> _cleanup_context() -> 子类._on_process_finished(exit_code)
+```
+
+`cancel_process()` 当前执行 `kill()` 后 `waitForFinished(3000)`，是同步等待。标准输出按单次 ready-read 的文本分行；维护 CLI 进度输出时必须使用完整换行和 `flush=True`。
+
 ## 一、QProcess 服务通用模式
 
 三个 FetchService（Hero / Guide / Synergy）遵循相同设计模式。通用模式方法由 `BaseFetchService`（`src/business/base_fetch_service.py`）提供，三个子类继承后各自实现 `fetch_*` 和 `cancel` 方法。以下以 HeroFetchService 为例说明通用结构。

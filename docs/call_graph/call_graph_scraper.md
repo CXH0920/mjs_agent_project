@@ -6,6 +6,19 @@
 
 ---
 
+## 当前实现基线（2026-07-22）
+
+```
+official.crawl() / incremental.main()
+  -> crawler.fetch_all_raw()
+    -> fetch(BAIKE_URL) -> find_chunk_url() -> fetch(chunk_url)
+    -> extract_js_array() -> js_to_json()
+  -> transform() -> validate_heroes() -> 写入 heroes.json
+  -> download_hero_images()                                    [未使用 --skip-images]
+```
+
+`extract_js_array()` 使用括号深度扫描。`official.crawl()` 直接写输出文件；`incremental.run()` 写 `.tmp` 后 `replace()`。两个入口当前均对每条原始记录调用两次 `transform()`（推导式条件和结果各一次），修改时应改为单次转换再过滤 `None`。
+
 ## 一、全量采集链路
 
 ### 1.1 完整调用链
