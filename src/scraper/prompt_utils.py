@@ -12,8 +12,7 @@ from pathlib import Path
 
 from src.config.env import (
     DEFAULT_MODEL,
-    PRICE_INPUT_PER_M,
-    PRICE_OUTPUT_PER_M,
+    get_model_pricing,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,11 +35,15 @@ def load_prompt(filepath: str | Path) -> str:
 # 成本估算
 # ============================================================
 
-def _estimate_cost(tokens_input: int, tokens_output: int) -> float:
-    """根据 DeepSeek v4-pro 定价估算费用（RMB）"""
+def _estimate_cost(tokens_input: int, tokens_output: int, model: str | None = None) -> float | None:
+    """根据指定模型的版本控制价格估算费用。"""
+    model = model or DEFAULT_MODEL
+    pricing = get_model_pricing(model)
+    if pricing is None:
+        return None
     cost = (
-        tokens_input * PRICE_INPUT_PER_M / 1_000_000
-        + tokens_output * PRICE_OUTPUT_PER_M / 1_000_000
+        tokens_input * pricing["input_per_million"] / 1_000_000
+        + tokens_output * pricing["output_per_million"] / 1_000_000
     )
     return round(cost, 4)
 
@@ -51,23 +54,13 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
     Args:
         hero_count: 武将数量
         mode: "guide" 或 "synergy"
-        model: 模型名称（仅用于显示）
+        model: 模型名称（用于查找价格）
 
     Returns:
         dict: 成本估算结果
     """
     if model is None:
         model = DEFAULT_MODEL
-
-    if hero_count == 0:
-        return {
-            "mode": mode,
-            "items": 0,
-            "estimated_tokens": 0,
-            "estimated_input_tokens": 0,
-            "estimated_output_tokens": 0,
-            "estimated_cost_cny": 0.0,
-        }
 
     if mode == "guide":
         items = hero_count
@@ -81,11 +74,11 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
         raise ValueError(f"未知 mode: {mode}")
 
     total_tokens = input_tokens + output_tokens
-    cost_cny = round(
-        input_tokens * PRICE_INPUT_PER_M / 1_000_000
-        + output_tokens * PRICE_OUTPUT_PER_M / 1_000_000,
-        4,
-    )
+    pricing = get_model_pricing(model)
+    cost_cny = _estimate_cost(input_tokens, output_tokens, model)
+    message = ""
+    if pricing is None:
+        message = f"模型 {model} 未配置价格，无法自动估算费用"
 
     return {
         "mode": mode,
@@ -94,6 +87,9 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
         "estimated_input_tokens": input_tokens,
         "estimated_output_tokens": output_tokens,
         "estimated_cost_cny": cost_cny,
+        "model": model,
+        "pricing_available": pricing is not None,
+        "message": message,
     }
 
 

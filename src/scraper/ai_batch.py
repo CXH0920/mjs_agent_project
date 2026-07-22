@@ -101,14 +101,13 @@ def _show_cost_estimate(heroes: list, api_config: dict, args) -> None:
         est = estimate_cost(len(heroes), "guide", api_config["model"])
         print(f"  攻略生成: {est['items']} 个")
         print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
-        print(f"  预估费用: CNY{est['estimated_cost_cny']:.4f}\n")
+        print(_format_cost_estimate(est) + "\n")
     if args.synergy:
         est = estimate_cost(len(heroes), "synergy", api_config["model"])
         print(f"  相性评分: {est['items']:,} 对")
         print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
-        print(f"  预估费用: CNY{est['estimated_cost_cny']:.4f}\n")
+        print(_format_cost_estimate(est) + "\n")
     print(f"  （在 config.env 中配置 DEEPSEEK_API_KEY，然后去除 --dry-run 执行）")
-    print(f"  定价参考（deepseek-v4-pro）：输入 CNY3/百万tokens，输出 CNY6/百万tokens")
     print("=" * 55)
 
 
@@ -122,10 +121,17 @@ def _check_api_key(api_config: dict) -> None:
         sys.exit(1)
 
 
-def _print_token_summary(total_prompt_tokens: int, total_completion_tokens: int) -> None:
+def _format_cost_estimate(estimation: dict) -> str:
+    cost = estimation.get("estimated_cost_cny")
+    if cost is None:
+        return f"  预估费用: 无法自动估算（{estimation.get('message', '未配置模型价格')}）"
+    return f"  预估费用: CNY{cost:.4f}"
+
+
+def _print_token_summary(total_prompt_tokens: int, total_completion_tokens: int, model: str) -> None:
     """打印最终 token 统计"""
     if total_prompt_tokens > 0 or total_completion_tokens > 0:
-        total_cost = _estimate_cost(total_prompt_tokens, total_completion_tokens)
+        total_cost = _estimate_cost(total_prompt_tokens, total_completion_tokens, model)
         sep_line = "=" * 55
         print(f"\n{sep_line}")
         print(f"  Token 使用统计")
@@ -133,7 +139,10 @@ def _print_token_summary(total_prompt_tokens: int, total_completion_tokens: int)
         print(f"  输入 tokens:  {total_prompt_tokens:,}")
         print(f"  输出 tokens:  {total_completion_tokens:,}")
         print(f"  合计 tokens:  {total_prompt_tokens + total_completion_tokens:,}")
-        print(f"  预估费用:     CNY{total_cost:.4f}")
+        if total_cost is None:
+            print(f"  预估费用:     无法自动估算（模型 {model} 未配置价格）")
+        else:
+            print(f"  预估费用:     CNY{total_cost:.4f}")
         print(f"{sep_line}")
 
 
@@ -260,7 +269,7 @@ def main():
 
     total_prompt_tokens = sum(result.prompt_tokens for result in task_results)
     total_completion_tokens = sum(result.completion_tokens for result in task_results)
-    _print_token_summary(total_prompt_tokens, total_completion_tokens)
+    _print_token_summary(total_prompt_tokens, total_completion_tokens, api_config["model"])
 
     failed_results = [result for result in task_results if not result.succeeded]
     if failed_results:

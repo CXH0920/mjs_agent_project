@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
+DEFAULT_PRICING_FILE = PROJECT_ROOT / "data" / "model_pricing.json"
 
 # ============================================================
 # DeepSeek API 默认值
@@ -26,10 +28,6 @@ DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
 
 DEFAULT_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEFAULT_MODEL = "deepseek-v4-pro"
-
-# deepseek-v4-pro 定价（RMB / 百万 tokens）
-PRICE_INPUT_PER_M = 3.0     # CNY3 / 百万输入 tokens（缓存未命中）
-PRICE_OUTPUT_PER_M = 6.0    # CNY6 / 百万输出 tokens
 
 # ============================================================
 # 配置加载
@@ -151,6 +149,29 @@ def get_api_config():
     model = config.get("model", "") or DEFAULT_MODEL
 
     return {"api_key": api_key, "api_url": api_url, "model": model}
+
+
+def get_model_pricing(model: str) -> dict | None:
+    """获取模型价格；未知模型或无效配置返回 None。"""
+    try:
+        pricing_data = json.loads(DEFAULT_PRICING_FILE.read_text(encoding="utf-8"))
+        pricing = pricing_data["models"][model]
+        input_price = pricing["input_per_million"]
+        output_price = pricing["output_per_million"]
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+                   for value in (input_price, output_price)):
+            raise ValueError("价格必须为非负数字")
+        return {
+            "input_per_million": float(input_price),
+            "output_per_million": float(output_price),
+            "currency": pricing_data.get("currency", "CNY"),
+            "updated_at": pricing_data.get("updated_at", ""),
+        }
+    except FileNotFoundError:
+        logger.warning("模型价格文件不存在: %s", DEFAULT_PRICING_FILE)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        logger.warning("模型 %s 的价格配置不可用: %s", model, error)
+    return None
 
 def get_runtime_params():
     """从 config.env 获取运行时参数（带默认值）

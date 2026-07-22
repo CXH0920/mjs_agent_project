@@ -60,13 +60,16 @@ class BackendChooseDialog(QDialog):
             }
             m = mode_text.get(self._estimation.get("mode", ""), "未知")
 
+            cost = self._estimation.get("estimated_cost_cny")
+            cost_text = f"预估费用: CNY {cost:.4f}" if cost is not None else "预估费用: 无法自动估算"
             info_lines = [
                 f"模式: {m}",
+                f"模型: {self._estimation.get('model', '未提供')}",
                 f"需要生成的项数: {self._estimation.get('items', 0)}",
                 f"预估输入 Token: {self._estimation.get('estimated_input_tokens', 0):,}",
                 f"预估输出 Token: {self._estimation.get('estimated_output_tokens', 0):,}",
                 f"合计 Token: {self._estimation.get('estimated_tokens', 0):,}",
-                f"预估费用: CNY {self._estimation.get('estimated_cost_cny', 0):.4f}",
+                cost_text,
             ]
 
             for line in info_lines:

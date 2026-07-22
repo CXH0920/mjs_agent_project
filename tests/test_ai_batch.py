@@ -73,6 +73,12 @@ class TestEstimateCost:
         assert "estimated_cost_cny" in result
         assert isinstance(result["estimated_cost_cny"], float)
 
+    def test_unknown_model_has_no_cost_estimate(self) -> None:
+        result = estimate_cost(1, "guide", "unknown-model")
+        assert result["estimated_cost_cny"] is None
+        assert not result["pricing_available"]
+        assert "无法自动估算" in result["message"]
+
 
 class TestInternalEstimateCost:
     def test_basic_calculation(self) -> None:
@@ -91,6 +97,9 @@ class TestInternalEstimateCost:
         cost = _estimate_cost(1000, 500)
         # 1000 * 3 / 1_000_000 + 500 * 6 / 1_000_000 = 0.003 + 0.003 = 0.006
         assert cost == 0.006
+
+    def test_unknown_model_returns_none(self) -> None:
+        assert _estimate_cost(1000, 500, "unknown-model") is None
 
 class TestSaveJson:
     def test_atomic_write(self) -> None:

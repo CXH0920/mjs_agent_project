@@ -191,7 +191,7 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 | `_extract_json(text)` | `ai_generator.py` | 4 策略宽容提取 JSON |
 | `_validate_guide(raw)` | `ai_generator.py` | Pydantic 校验攻略 |
 | `_validate_synergy(raw)` | `ai_generator.py` | Pydantic 校验相性 |
-| `estimate_cost(count, mode)` | `ai_utils.py` | 预览 Token 和费用 |
+| `estimate_cost(count, mode, model)` | `prompt_utils.py` | 按模型价格表预览 Token 和费用；未知模型不估价 |
 | `load_heroes(path)` | `ai_utils.py` | 从 JSON 加载武将数据 |
 | `_save_json(path, data)` | `ai_utils.py` | 原子写入 JSON |
 

@@ -705,8 +705,9 @@ class MainWindow(QMainWindow):
         if not heroes:
             QMessageBox.warning(self, "提示", "没有武将数据，请先采集武将")
             return
+        from src.config.env import get_api_config
         from src.scraper.prompt_utils import estimate_cost
-        est = estimate_cost(len(heroes), "guide")
+        est = estimate_cost(len(heroes), "guide", get_api_config()["model"])
         est["mode"] = "all"
         est["heroes"] = heroes
         dialog = BackendChooseDialog(estimation=est, title="全量攻略生成", parent=self)
@@ -727,8 +728,9 @@ class MainWindow(QMainWindow):
         if not missing:
             self._status_label.setText("所有武将已有攻略，无需生成")
             return
+        from src.config.env import get_api_config
         from src.scraper.prompt_utils import estimate_cost
-        est = estimate_cost(len(missing), "guide")
+        est = estimate_cost(len(missing), "guide", get_api_config()["model"])
         est["mode"] = "incremental"
         est["heroes"] = missing
         dialog = BackendChooseDialog(estimation=est, title="增量攻略生成", parent=self)
@@ -746,8 +748,9 @@ class MainWindow(QMainWindow):
         if not dialog.selected_heroes:
             return
         hero_count = len(dialog.selected_heroes)
+        from src.config.env import get_api_config
         from src.scraper.prompt_utils import estimate_cost
-        est = estimate_cost(hero_count, "guide")
+        est = estimate_cost(hero_count, "guide", get_api_config()["model"])
         est["mode"] = "specific"
         est["heroes"] = dialog.selected_heroes
         bd = BackendChooseDialog(estimation=est, title="指定攻略生成", parent=self)
