@@ -119,6 +119,21 @@ def test_saved_port_restores_matching_device() -> None:
     assert dialog._device_combo.currentData() == devices[1]
 
 
+def test_instance_status_color_follows_selected_device_state() -> None:
+    _app()
+    running = MuMuDeviceInfo("1", "运行实例", 16448, True)
+    stopped = MuMuDeviceInfo("2", "停止实例", 16416, False)
+    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448}, [running, stopped])
+
+    assert "#27ae60" in dialog._instance_status_label.styleSheet()
+    assert "运行中" in dialog._instance_status_label.text()
+
+    dialog._device_combo.setCurrentIndex(1)
+
+    assert "#777" in dialog._instance_status_label.styleSheet()
+    assert "未运行" in dialog._instance_status_label.text()
+
+
 def test_refresh_failure_preserves_previous_device_selection() -> None:
     _app()
     device = MuMuDeviceInfo("1", "实例", 16448, True)
