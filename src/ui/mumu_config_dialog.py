@@ -462,7 +462,7 @@ class MumuConfigDialog(QDialog):
             if not self._devices:
                 self._device_combo.addItem("(未探测到设备)")
                 self._device_combo.setEnabled(False)
-                self._instance_status_label.setText("● 实例：未探测到")
+                self._set_instance_status("● 实例：未探测到")
                 self._port_label.setText("(自动探测)")
                 self._update_ui()
                 return
@@ -506,9 +506,10 @@ class MumuConfigDialog(QDialog):
         self._refresh_devices_btn.setText("刷新")
         self._refresh_devices_btn.setToolTip(message)
         if self._devices:
-            self._instance_status_label.setText("● 实例：刷新失败（保留上次结果）")
+            running = any(device.is_running for device in self._devices)
+            self._set_instance_status("● 实例：刷新失败（保留上次结果）", running=running)
         else:
-            self._instance_status_label.setText("● 实例：刷新失败")
+            self._set_instance_status("● 实例：刷新失败")
         self._instance_status_label.setToolTip(message)
         self._update_ui()
 
@@ -526,11 +527,17 @@ class MumuConfigDialog(QDialog):
         if device and device.adb_port:
             self._port_label.setText(str(device.adb_port))
             state = "运行中" if device.is_running else "未运行"
-            self._instance_status_label.setText(f"● 实例：{state}")
+            self._set_instance_status(f"● 实例：{state}", running=device.is_running)
         else:
             self._port_label.setText("(自动探测)")
-            self._instance_status_label.setText("● 实例：未探测到")
+            self._set_instance_status("● 实例：未探测到")
         self._update_ui()
+
+    def _set_instance_status(self, text: str, *, running: bool = False) -> None:
+        """更新实例状态文字及颜色，运行中的实例使用绿色强调。"""
+        color = "#27ae60" if running else "#777"
+        self._instance_status_label.setText(text)
+        self._instance_status_label.setStyleSheet(f"color: {color}; font-size: 12px;")
 
     def _on_connection_changed(self, _state: str, _detail: str) -> None:
         """共享 CaptureService 会话变化时刷新配置页。"""
