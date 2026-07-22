@@ -46,6 +46,8 @@ AdbCapture(adb_path, adb_port)
   └── device_serial → 可读写，切换目标设备
 ```
 
+持续轮询调用 `screencap_full(log_success=False)`，并将模板加载、OCR 完成、冷却等正常高频事件记录为 `DEBUG`。运行日志默认仅保留连接状态及截图/OCR 的警告和错误，避免轮询成功记录持续刷屏。
+
 **安全设计：**
 - 命令注入防护：`_run_adb(*args)` 使用列表参数而非字符串拼接
 - 设备序列号格式校验：`IP:port` 格式 + 端口范围 1-65535
@@ -164,6 +166,8 @@ def probe_mumu_adb() -> str:
 ```
 
 > **设计思路：** 三个优先级覆盖了大多数场景：系统 PATH 最快，注册表/环境变量次之，常见安装路径兜底。函数式设计无内部状态，可被多处调用而不互相影响。
+
+`probe_all_devices_with_status()` 是配置页使用的状态化版本：它在 `MuMuManager.exe` 非零退出或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。
 
 ### 4.2 图像预处理流水线
 

@@ -12,6 +12,7 @@
 1. **QProcess 子进程管理** — 构建 CLI 参数、启动/监控/终止子进程、转发 stdout/stderr、清理临时文件
 2. **ADB 截图业务编排** — 管理 AdbCapture 生命周期，协调截图 → 模板匹配 → OCR 的流程
 3. **OCR 控制服务** — 模板管理、轮询控制、冷却管理
+4. **模拟器后台操作** — 独立执行设备探测与 ADB 会话操作，避免实例枚举阻塞模板截图
 
 核心设计原则：**不持有 UI 引用**，全部通过 Qt Signal 与主窗口通信。
 
@@ -27,6 +28,7 @@ src/business/
 ├── guide_fetch_service.py       # 攻略生成业务（QProcess 管理）
 ├── synergy_fetch_service.py     # 相性获取业务（QProcess 管理）
 ├── capture_service.py           # 截图业务编排（ADB 截图 + OCR 调度）
+├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
 ├── ocr_service.py               # OCR 控制服务（模板管理 + 轮询）
 └── fetch_utils.py               # QProcess 公共工具函数
 ```
@@ -93,6 +95,8 @@ do_capture()
 
 `CaptureService.do_capture()` 和 `do_capture_from_file()` 支持传入 `template_name` 与 `force_ocr`。对局攻略导入使用 `match_guide` 模板并强制执行 OCR，不受“启用武将识别”开关影响；选将推荐保持默认的 `hero_selection` 模板流程。
 
+`capture_screenshot()` 是不保存文件、不触发 OCR 的共享会话接口。它用于模板制作，并与连接/断开共享同一把会话锁，避免后台模板截图和前台截图同时操作同一个 `AdbCapture`。
+
 轮询路径（OcrService 控制，不经过 do_capture）：
 
 ```
@@ -123,6 +127,22 @@ OcrService (QObject)
 ```
 
 模板按名称独立管理：旧的武将选择模板继续使用 `templates/wujiang_select.png`，对局攻略模板使用 `templates/match_guide/template.png`。模板缺失只影响对应任务，不会暂停另一个任务。
+
+### 3.4 EmulatorOperationService（模拟器后台操作）
+
+`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与 MuMu 实例枚举，ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会在 MuMuManager 异常退出时重试一次，并把失败原因与“正常但没有实例”区分开。
+
+```
+MumuConfigDialog
+  -> EmulatorOperationService.detect_adb() / refresh_devices()
+  -> devices_refreshed 或 device_refresh_failed
+  -> EmulatorOperationService.connect() / test_device()
+  -> EmulatorOperationService.capture_template_screenshot()
+  -> signal 回到 UI：显示结果或打开 RoiSelectorDialog
+  -> OcrService.create_template(image, roi, template_name)
+```
+
+ROI 框选保留在 UI 线程，模板保存和文件选择统一委托 `OcrService`；设备刷新失败时对话框保留上一次成功的设备列表和选择。模板截图进行中由 UI 显式记录，其他状态刷新不会重新启用或覆盖其按钮文字；关闭对话框后服务不再向该对话框投递结果。
 
 ---
 

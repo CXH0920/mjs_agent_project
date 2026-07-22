@@ -36,6 +36,7 @@ test_project/
 │   │   ├── guide_fetch_service.py # 攻略生成业务（继承 BaseFetchService）
 │   │   ├── synergy_fetch_service.py # 相性获取业务（继承 BaseFetchService）
 │   │   ├── capture_service.py     # 截图业务编排（ADB 截图 + OCR 调度）
+│   │   ├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
 │   │   ├── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
 │   │   ├── ocr_worker.py          # 单线程 OCR 队列（模板匹配 + PaddleOCR）
 │   │   └── fetch_utils.py         # QProcess 公共工具函数
@@ -67,7 +68,7 @@ test_project/
 │       ├── hero_card_widget.py    # 推荐卡片（展示、奖牌和交互信号）
 │       ├── guide_detail_dialog.py # 推荐卡片的攻略详情弹窗
 │       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
-│       ├── mumu_config_dialog.py  # 模拟器配置对话框（ADB 连接 + 模板管理 + OCR 配置）
+│       ├── mumu_config_dialog.py  # 模拟器配置对话框（表单、状态和 ROI 框选）
 │       ├── roi_selector.py        # 模板 ROI 框选对话框（拖拽选区 + 坐标缩放）
 │       ├── fetch_dialog.py        # 武将获取选择
 │       ├── guide_fetch_dialog.py  # 攻略获取选择

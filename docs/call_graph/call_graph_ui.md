@@ -714,26 +714,32 @@ MainWindow._open_faction_colors()
   -> reload_faction_colors()
   -> RecommendationPanel.refresh_faction_colors()
 
-MumuConfigDialog.__init__(config, capture_service, parent)
+MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
   -> _setup_ui()
   -> _load_config()
-    -> probe_mumu_adb()                                         [自动探测 ADB 路径]
-    -> AdbCapture(adb_path, adb_port) [若无 capture_service]
+    -> CaptureService.update_config()                           [唯一 ADB 会话]
     -> _on_refresh_devices()
-       -> probe_all_devices()
-       -> 填充设备下拉列表
+       -> EmulatorOperationService.refresh_devices() [后台]
+       -> [signal] devices_refreshed -> _on_devices_refreshed() -> 填充设备下拉列表
+       -> [signal] device_refresh_failed -> _on_device_refresh_failed() -> 保留当前选择
     -> _refresh_template_status()
-       -> get_template_manager().is_loaded
+       -> OcrService.is_template_loaded()
 
   → 模板制作:
   _on_make_template()
-    -> self._capture.screencap_full()                           [截屏]
-    -> pil_to_qpixmap(image)                                    [PIL→QPixmap]
-    -> RoiSelectorDialog(pixmap, title, parent)                 [框选 ROI]
+    -> EmulatorOperationService.capture_template_screenshot() [后台]
+      -> CaptureService.capture_screenshot()                    [共享 ADB 会话]
+      -> [signal] screenshot_ready -> _on_template_screenshot_ready()
+    -> pil_to_qpixmap(image)                                    [UI 线程 PIL→QPixmap]
+    -> RoiSelectorDialog(pixmap, title, parent)                 [UI 框选 ROI]
        -> 鼠标拖拽: mousePress → mouseMove → mouseRelease       [绘制矩形框]
-       -> 确认: _on_confirm → self._roi = (x, y, w, h)
-    -> [accepted] get_template_manager().set_template(image, roi) [保存模板]
+       -> 确认: _on_confirm → ROI = (x, y, w, h)
+    -> [accepted] OcrService.create_template(image, roi, template_name)
     -> _refresh_template_status()
+
+  [任意连接/刷新状态变化]
+    -> _update_ui()
+    -> 模板截图进行中？保持“正在截图...”与禁用状态
 
   → 保存配置:
   _on_save()
@@ -752,8 +758,8 @@ MumuConfigDialog.__init__(config, capture_service, parent)
 |------|--------|--------|----------|
 | `RoiSelectorDialog` 鼠标事件 | `RoiSelectorDialog` | Qt 事件 | `_on_mouse_press/move/release`, `_update_info()`, `_on_paint()` |
 | `RoiSelectorDialog._on_confirm()` | `RoiSelectorDialog` | "确认"按钮 | 计算 ROI → `self.accept()` |
-| `MumuConfigDialog._on_auto_detect()` | `MumuConfigDialog` | "自动探测"按钮 | `probe_mumu_adb()`, `test_adb_path()`, `_on_refresh_devices()` |
-| `MumuConfigDialog._on_make_template()` | `MumuConfigDialog` | "制作模板"按钮 | `screencap_full()`, `RoiSelectorDialog`, `set_template()` |
+| `MumuConfigDialog._on_auto_detect()` | `MumuConfigDialog` | "自动探测"按钮 | `EmulatorOperationService.detect_adb()` |
+| `MumuConfigDialog._on_make_template()` | `MumuConfigDialog` | "制作模板"按钮 | `capture_template_screenshot()` → `RoiSelectorDialog` → `OcrService.create_template()` |
 | `MumuConfigDialog._on_save()` | `MumuConfigDialog` | "保存"按钮 | 收集配置 → `accept()` |
 
 ### 6.4 进度对话框
@@ -800,13 +806,14 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `src.business.guide_fetch_service.GuideFetchService` | 攻略生成 QProcess 管理 |
 | `src.business.synergy_fetch_service.SynergyFetchService` | 相性获取 QProcess 管理 |
 | `src.business.capture_service.CaptureService` | 截图业务编排 |
+| `src.business.emulator_operation_service.EmulatorOperationService` | 配置页后台 ADB 操作 |
 | `src.business.ocr_service.OcrService` | OCR 控制、模板管理、轮询 |
 | `src.business.ocr_worker.OcrWorker` | 由 CaptureService 持有的唯一后台识别队列 |
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |
 | `src.capture.prober.*` | ADB/模拟器探测 |
-| `src.capture.adb_screen.AdbCapture` | MumuConfigDialog 直接操作 |
-| `src.ocr.ocr_loader.get_template_manager()` | 模板管理 |
+| `src.capture.adb_screen.AdbCapture` | CaptureService 持有的唯一 ADB 会话 |
+| `src.ocr.ocr_loader.get_template_manager()` | 仅由 OcrService 管理模板 |
 | `src.ocr.recognizer.GeneralRecognizer` | OCR 预热 |
 | `src.scraper.ai_utils.estimate_cost()` | AI 成本估算 |
 

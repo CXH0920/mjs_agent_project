@@ -41,7 +41,7 @@ src/ui/
 ├── match_guide_panel.py        # 对局攻略页面（四名武将卡片+双导入）
 │
 ├── settings_dialog.py          # API 配置对话框
-├── mumu_config_dialog.py       # 模拟器配置对话框
+├── mumu_config_dialog.py       # 模拟器配置对话框（表单、状态与 ROI 框选）
 ├── backend_choose_dialog.py    # 后端选择对话框（API/浏览器）
 ├── cost_confirm_dialog.py      # 遗留的 AI 成本确认对话框（当前流程未调用）
 ├── guide_progress_dialog.py    # 攻略生成进度条
@@ -180,7 +180,7 @@ def update_recommendations(self, data: list[dict]) -> None
 
 势力配色由 `FactionColorDialog` 以紧凑列表展示，每行只显示势力名称、颜色小方块和 Hex 代码，不在主界面长期占用调色板区域。点击颜色小方块后打开 `ColorPicker` 浮层，提供 HSB 调整和屏幕取色；取消时恢复打开前的颜色，确认后才写入配置页草稿。
 
-模拟器配置中的两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击，制作流程会自动尝试建立连接；只有未配置 ADB 或正在连接时禁用。
+模拟器配置中的两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击。`EmulatorOperationService` 在后台通过共享 `CaptureService` 自动建立连接并获取截图，UI 线程只负责打开 `RoiSelectorDialog` 和展示结果；只有未配置 ADB 或正在连接时禁用。
 
 保存流程如下：
 
@@ -317,7 +317,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 对话框 | 用途 |
 |--------|------|
 | `SettingsDialog` | API 配置编辑 |
-| `MumuConfigDialog` | ADB 连接管理 + 模板制作 + OCR 配置 |
+| `MumuConfigDialog` | ADB/OCR 表单与状态展示、ROI 框选；后台操作委托 `EmulatorOperationService` |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器） |
 | `CostConfirmDialog` | 遗留 AI 成本确认组件；当前费用估算展示在 `BackendChooseDialog` |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
@@ -336,6 +336,6 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 依赖 | `src.data.manager` | 通过 DataFacade 读取/写入数据 |
 | 依赖 | `src.business.*` | 连接业务服务的 Signal，触发 fetch_*() |
 | 依赖 | `src.config.env` | 配置文件读取 |
-| 依赖 | `src.capture.*` | 模拟器配置对话框使用 AdbCapture |
+| 依赖 | `src.business.emulator_operation_service` | 模拟器配置对话框委托后台 ADB 操作 |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |

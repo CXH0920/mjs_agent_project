@@ -400,8 +400,9 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | HeroFetchService | `fetch_service.py` | ~102 | BaseFetchService | 3 |
 | GuideFetchService | `guide_fetch_service.py` | ~179 | BaseFetchService | 6 |
 | SynergyFetchService | `synergy_fetch_service.py` | ~104 | BaseFetchService | 3 |
-| CaptureService | `capture_service.py` | ~190 | QObject | 3 |
-| OcrService | `ocr_service.py` | ~127 | QObject | 3 |
+| CaptureService | `capture_service.py` | ~426 | QObject | 4 |
+| EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
+| OcrService | `ocr_service.py` | ~355 | QObject | 3 |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
@@ -493,6 +494,7 @@ class CaptureService(QObject):
 | `do_capture_from_file(file_path, hero_names)` | 从本地图片执行 OCR（不依赖 ADB） |
 | `connect_emulator()` | 连接模拟器 |
 | `disconnect_emulator()` | 断开模拟器 |
+| `capture_screenshot()` | 通过共享会话获取截图，不写文件、不执行 OCR；供模板制作后台任务使用 |
 
 **手动截图全流程**：
 
@@ -658,7 +660,7 @@ def apply_incremental_update(data_dir, update)
 | hero_relation_select_dialog.py | 129 | QDialog（攻略关系武将多选） |
 | synergy_edit_dialog.py | 96 | QDialog（相性编辑） |
 | recommendation_panel.py | 903 | QWidget（Tab 内嵌） |
-| mumu_config_dialog.py | 916 | QDialog（模拟器配置） |
+| mumu_config_dialog.py | 801 | QDialog（模拟器配置 UI 协调） |
 | hero_select_dialog.py | 267 | QDialog（基类） |
 | settings_dialog.py | 305 | QDialog（API 配置） |
 | roi_selector.py | 149 | QDialog（框选模板区域） |
@@ -723,8 +725,8 @@ MainWindow.__init__
 │ ● 实例状态                 ● ADB 状态          │
 ├──────────────────────────────────────────────┤
 │ 🖼️ 识别模板管理                              │
-│ ┌─ 武将模板 ────────┐ ┌─ 对局攻略模板 ──────┐ │
-│ │ 状态 [选择模板] [制作模板...]              │ │
+│ ┌─ 武将识别模板 ──────┐ ┌─ 对局攻略模板 ──────┐ │
+│ │ 状态 [选择模板] [🎯制作模板]               │ │
 │ └───────────────────┘ └─────────────────────┘ │
 ├──────────────────────────────────────────────┤
 │ ⚙️ 识别参数                                   │
@@ -738,13 +740,13 @@ MainWindow.__init__
 **连接管理**：
 - **自动探测**：通过注册表、环境变量 `MUMU_HOME`、常见安装路径查找 `adb.exe`
 - **多设备切换**：`QComboBox` 下拉列出所有 MuMu 实例（● 运行中 / ○ 未运行）
-- **一键连接/断开**：单按钮切换，直接调用 `CaptureService` 执行连接或断开并同步状态
+- **一键连接/断开**：单按钮切换，委托 `EmulatorOperationService` 在后台调用 `CaptureService` 的共享 ADB 会话，并通过信号同步状态
 - **状态监控**：灰色「未连接」→ 橙色「连接中...」→ 绿色「已连接」→ 红色「连接失败」
 
 **模板管理**：
 - **即时操作**：选择或制作模板后立即加载，不需要点击底部保存
-- **武将模板**：连接模拟器后截图 → `RoiSelectorDialog` 框选 ROI → 保存到 `templates/wujiang_select.png`
-- **对局攻略模板**：独立保存到 `templates/match_guide/template.png`，不会覆盖武将模板
+- **武将识别模板**：后台获取共享会话截图 → `RoiSelectorDialog` 框选 ROI → `OcrService.create_template()` 保存到 `templates/wujiang_select.png`
+- **对局攻略模板**：独立保存到 `templates/match_guide/template.png`，不会覆盖武将识别模板
 
 **OCR 配置**：
 - **启用武将识别**：供显式 OCR 调用路径使用；选将推荐的截图按钮不会自动 OCR
@@ -1369,6 +1371,7 @@ src/capture/
 | `probe_mumu_adb()` | `str` | 查找 adb.exe（PATH → 注册表 → 安装路径） |
 | `probe_mumu_port()` | `int` | 通过 MuMuManager 获取运行中实例的 ADB 端口 |
 | `probe_all_devices()` | `list[MuMuDeviceInfo]` | 列出所有 MuMu 实例信息 |
+| `probe_all_devices_with_status()` | `(list[MuMuDeviceInfo], str)` | 列出实例；MuMuManager 失败时重试一次并返回错误原因 |
 | `test_adb_path(path)` | `(bool, str)` | 验证 ADB 可执行文件是否有效 |
 
 #### 数据类
@@ -1396,6 +1399,7 @@ class MuMuDeviceInfo:
 1. 定位 MuMu 安装根目录（含 `nx_main` 目录）
 2. 调用 `MuMuManager.exe info --vmindex all`
 3. 解析 JSON 返回（格式：`{index_str: {name, adb_port, is_android_started, is_main}}`）
+4. 配置页通过 `probe_all_devices_with_status()` 调用：异常退出或超时会重试一次；失败时保留当前设备选择而不将其误显示为“未探测到设备”
 
 ### 11.3 ADB 连接与截图（adb_screen.py）
 

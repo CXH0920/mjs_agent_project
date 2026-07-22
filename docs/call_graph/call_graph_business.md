@@ -282,6 +282,7 @@ RecommendationPanel._on_import_from_file()
 | `_on_ocr_task_completed(task)` | `capture_service.py` | `OcrWorker.task_completed` | 合并待处理截图上下文 -> `capture_completed` |
 | `connect_emulator()` | `capture_service.py` | 外部 UI | `self._capture.connect()` |
 | `disconnect_emulator()` | `capture_service.py` | 外部 UI | `self._capture.disconnect()` |
+| `capture_screenshot()` | `capture_service.py` | `EmulatorOperationService` | 共享会话锁 → 必要时连接 → `screencap_full()` |
 
 ### 5.3 信号拓扑
 
@@ -291,6 +292,36 @@ CaptureService.capture_completed   → RecommendationPanel._on_capture_result
   → load_from_ocr()                → update_recommendations()
 CaptureService.capture_failed      → UI 错误提示
 ```
+
+---
+
+### 5.4 EmulatorOperationService（配置页后台操作）
+
+```
+MumuConfigDialog
+  -> EmulatorOperationService.refresh_devices()
+    -> [探测线程] probe_all_devices_with_status() [失败重试一次]
+    -> devices_refreshed -> MumuConfigDialog._on_devices_refreshed()
+    -> device_refresh_failed -> 保留现有设备选择并显示失败状态
+
+  -> EmulatorOperationService.connect() / disconnect()
+    -> [ADB 会话线程] CaptureService.connect_emulator() / disconnect_emulator()
+    -> connection_finished / disconnection_finished -> 配置页状态与提示
+
+  -> EmulatorOperationService.capture_template_screenshot(template_name)
+    -> [ADB 会话线程] CaptureService.capture_screenshot()
+    -> screenshot_ready -> MumuConfigDialog._on_template_screenshot_ready()
+      -> RoiSelectorDialog [UI 鼠标框选]
+      -> OcrService.create_template(image, roi, template_name)
+```
+
+| 函数 | 文件 | 调用方 | 被调用方 |
+|------|------|--------|----------|
+| `detect_adb()` | `emulator_operation_service.py` | 配置页自动探测 | `probe_mumu_adb()`, `test_adb_path()` |
+| `refresh_devices()` | `emulator_operation_service.py` | 配置页刷新/初始化 | `probe_all_devices_with_status()` → 成功/失败信号 |
+| `connect()` / `disconnect()` | `emulator_operation_service.py` | 配置页连接按钮 | `CaptureService` 共享会话 |
+| `test_device(path, port)` | `emulator_operation_service.py` | 配置页测试按钮 | 临时 `AdbCapture.connect()` + `check_device()` |
+| `capture_template_screenshot()` | `emulator_operation_service.py` | 两类模板制作按钮 | `CaptureService.capture_screenshot()` |
 
 ---
 

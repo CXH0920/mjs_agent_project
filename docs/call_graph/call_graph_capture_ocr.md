@@ -114,12 +114,12 @@ probe_mumu_port()
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `probe_mumu_adb()` | `prober.py` | `MumuConfigDialog._on_auto_detect()` | `_get_mumu_candidates()`, `shutil.which()` |
-| `probe_all_devices()` | `prober.py` | `probe_mumu_port()`, `MumuConfigDialog` | `_find_mumu_root()`, `subprocess.run(MuMuManager)` |
-| `probe_mumu_port()` | `prober.py` | `MumuConfigDialog` | `probe_all_devices()` |
+| `probe_mumu_adb()` | `prober.py` | `EmulatorOperationService.detect_adb()` | `_get_mumu_candidates()`, `shutil.which()` |
+| `probe_all_devices()` | `prober.py` | `probe_mumu_port()`, `EmulatorOperationService.refresh_devices()` | `_find_mumu_root()`, `subprocess.run(MuMuManager)` |
+| `probe_mumu_port()` | `prober.py` | 兼容外部调用 | `probe_all_devices()` |
 | `_probe_mumu_registry()` | `prober.py` | `_get_mumu_candidates()` | 注册表读取 |
 | `_find_mumu_root()` | `prober.py` | `probe_all_devices()` | `_get_mumu_candidates()`, `Path.exists()` |
-| `test_adb_path(adb_path)` | `prober.py` | `MumuConfigDialog` | `subprocess.run(adb version)` |
+| `test_adb_path(adb_path)` | `prober.py` | `EmulatorOperationService.detect_adb()` | `subprocess.run(adb version)` |
 
 ---
 
@@ -358,9 +358,9 @@ src.ui.main_window
   -> CaptureService.submit_ocr_task() -> OcrWorker             [轮询]
 
 src.ui.mumu_config_dialog
-  -> probe_mumu_adb() / probe_all_devices()                    [设备探测]
-  -> AdbCapture 连接管理
-  -> RoiSelectorDialog → set_template()                        [模板制作]
+  -> EmulatorOperationService                                [后台探测/连接/测试/截图]
+  -> RoiSelectorDialog                                       [UI 鼠标框选]
+  -> OcrService.create_template() / select_template()        [模板持久化]
 ```
 
 ### 6.2 本模块调用的外部模块
@@ -397,10 +397,10 @@ src.ui.mumu_config_dialog
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `probe_mumu_adb()` | `prober.py` | `MumuConfigDialog` | `_get_mumu_candidates()`, `shutil.which()` |
-| `probe_all_devices()` | `prober.py` | `MumuConfigDialog`, `probe_mumu_port()` | `_find_mumu_root()`, `subprocess.run()` |
-| `probe_mumu_port()` | `prober.py` | `MumuConfigDialog` | `probe_all_devices()` |
-| `test_adb_path(adb_path)` | `prober.py` | `MumuConfigDialog` | `subprocess.run(adb version)` |
+| `probe_mumu_adb()` | `prober.py` | `EmulatorOperationService` | `_get_mumu_candidates()`, `shutil.which()` |
+| `probe_all_devices()` | `prober.py` | `EmulatorOperationService`, `probe_mumu_port()` | `_find_mumu_root()`, `subprocess.run()` |
+| `probe_mumu_port()` | `prober.py` | 兼容外部调用 | `probe_all_devices()` |
+| `test_adb_path(adb_path)` | `prober.py` | `EmulatorOperationService` | `subprocess.run(adb version)` |
 | `_find_mumu_root()` | `prober.py` | `probe_all_devices()` | `_get_mumu_candidates()`, `Path.exists()` |
 
 ### 图像工具层

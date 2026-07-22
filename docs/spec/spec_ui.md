@@ -73,15 +73,17 @@ card._name_label.setText(name or "未知武将")
 
 ### 规则 4.1：共享 CaptureService 的 AdbCapture 实例
 
-`MumuConfigDialog` 通过 `capture_service` 参数获取已有的 `AdbCapture` 实例，并在连接/断开后同步状态回去。
+`MumuConfigDialog` 通过 `capture_service` 使用唯一的 ADB 会话，但不直接调用 `AdbCapture`；连接、断开、设备测试和模板截图均委托 `EmulatorOperationService`，再由 `CaptureService` 发布会话状态。
 
 **为什么：** 如果对话框持有独立的 `AdbCapture`，而 `CaptureService` 也持有另一个，会出现"对话框中断开了，但截图按钮还在用旧连接"的状态不一致。共享引用确保了单点真相。
 
 ### 规则 4.2：制作模板 = 截图 + RoiSelector + 保存
 
-`_do_make_template()` 流程固定：`screencap_full()` → `RoiSelectorDialog` → `TemplateManager.set_template()`。
+模板制作流程固定：`EmulatorOperationService.capture_template_screenshot()` → `RoiSelectorDialog` → `OcrService.create_template()`。
 
 **为什么：** 模板需要精确的 ROI 坐标来匹配游戏画面。如果只允许用户选择一张裁剪好的图片，用户难以精确定位 ROI 区域（不知原始分辨率下的坐标）。截图 + 拖拽框选可以在原始分辨率下精确定位。
+
+截图、连接等共享 ADB 会话操作必须在操作服务的 ADB 后台线程中串行执行；设备探测使用独立后台线程，不能阻塞模板截图。MuMuManager 探测失败时应保留上次成功的设备选择。ROI 框选依赖鼠标事件，必须留在 UI 线程。
 
 ## 五、全局样式
 
