@@ -151,10 +151,49 @@ def get_api_config():
     return {"api_key": api_key, "api_url": api_url, "model": model}
 
 
+def load_pricing_config(pricing_path=None) -> dict:
+    """加载模型价格配置，文件不存在或格式无效时返回空模型表。"""
+    path = Path(pricing_path or DEFAULT_PRICING_FILE)
+    default = {
+        "currency": "CNY",
+        "unit": "百万tokens",
+        "updated_at": "",
+        "models": {},
+    }
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("models", {}), dict):
+            raise ValueError("价格配置必须包含 models 对象")
+    except FileNotFoundError:
+        logger.warning("模型价格文件不存在: %s", path)
+        return default
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as error:
+        logger.warning("模型价格配置不可用 %s: %s", path, error)
+        return default
+
+    return {
+        "currency": str(data.get("currency", default["currency"])),
+        "unit": str(data.get("unit", default["unit"])),
+        "updated_at": str(data.get("updated_at", default["updated_at"])),
+        "models": data.get("models", {}),
+    }
+
+
+def save_pricing_config(pricing_path, data: dict) -> None:
+    """以 UTF-8 无 BOM、LF 换行原子写入模型价格配置。"""
+    path = Path(pricing_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(content)
+    tmp_path.replace(path)
+
+
 def get_model_pricing(model: str) -> dict | None:
     """获取模型价格；未知模型或无效配置返回 None。"""
     try:
-        pricing_data = json.loads(DEFAULT_PRICING_FILE.read_text(encoding="utf-8"))
+        pricing_data = load_pricing_config()
         pricing = pricing_data["models"][model]
         input_price = pricing["input_per_million"]
         output_price = pricing["output_per_million"]
@@ -164,11 +203,10 @@ def get_model_pricing(model: str) -> dict | None:
         return {
             "input_per_million": float(input_price),
             "output_per_million": float(output_price),
+            "cached_input_per_million": pricing.get("cached_input_per_million"),
             "currency": pricing_data.get("currency", "CNY"),
             "updated_at": pricing_data.get("updated_at", ""),
         }
-    except FileNotFoundError:
-        logger.warning("模型价格文件不存在: %s", DEFAULT_PRICING_FILE)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         logger.warning("模型 %s 的价格配置不可用: %s", model, error)
     return None

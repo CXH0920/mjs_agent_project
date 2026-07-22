@@ -1,8 +1,18 @@
 import tempfile
+import json
+import os
 from pathlib import Path
 
 import pytest
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication, QMessageBox, QTabWidget
 from src.config.env import parse_env_file, save_env_file
+from src.ui.settings_dialog import SettingsDialog
+
+
+def _app() -> QApplication:
+    return QApplication.instance() or QApplication([])
 
 
 class TestEnvFileParsing:
@@ -30,3 +40,56 @@ class TestEnvFileParsing:
             save_env_file(env_path, {"K": "v"})
             assert env_path.exists()
             assert not env_path.with_suffix(".env.tmp").exists()
+
+
+def test_settings_dialog_has_parameter_and_pricing_tabs(tmp_path, monkeypatch):
+    _app()
+    env_path = tmp_path / "config.env"
+    pricing_path = tmp_path / "model_pricing.json"
+    env_path.write_text("DEEPSEEK_MODEL=test-model\n", encoding="utf-8")
+    pricing_path.write_text(
+        json.dumps(
+            {
+                "currency": "CNY",
+                "unit": "per_million_tokens",
+                "updated_at": "2026-07-22",
+                "models": {
+                    "test-model": {
+                        "input_per_million": 1.5,
+                        "output_per_million": 2.5,
+                        "cached_input_per_million": 0.5,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    dialog = SettingsDialog(env_path=env_path, pricing_path=pricing_path)
+    tabs = dialog.findChild(QTabWidget)
+    assert tabs is not None
+    assert [tabs.tabText(index) for index in range(tabs.count())] == ["参数配置", "价格配置"]
+    assert dialog.minimumWidth() == 480
+    assert dialog.minimumHeight() == 350
+    assert dialog._unit_widget.text() == "百万tokens"
+    assert dialog._pricing_table.rowCount() == 1
+    assert [
+        dialog._pricing_table.horizontalHeaderItem(index).text()
+        for index in range(dialog._pricing_table.columnCount())
+    ] == ["模型名称", "输入", "输出", "缓存命中"]
+    assert dialog._pricing_table.item(0, 0).text() == "test-model"
+    assert dialog._pricing_table.cellWidget(0, 1).decimals() == 2
+    assert dialog._pricing_table.cellWidget(0, 2).decimals() == 2
+    assert dialog._pricing_table.cellWidget(0, 3).text() == "0.5"
+
+    dialog._pricing_table.item(0, 0).setText("updated-model")
+    dialog._pricing_table.cellWidget(0, 1).setValue(3.0)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    dialog._on_save()
+
+    saved = json.loads(pricing_path.read_text(encoding="utf-8"))
+    assert saved["models"]["updated-model"]["input_per_million"] == 3.0
+    assert "test-model" not in saved["models"]
+    raw = pricing_path.read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf")
+    assert b"\r\n" not in raw

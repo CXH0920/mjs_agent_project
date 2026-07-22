@@ -21,7 +21,7 @@ src/
 ├── ui/app_icon.py            # 应用图标加载、缓存与顶层窗口图标维护
 ├── config/
 │   ├── __init__.py
-│   ├── env.py               # .env 解析/加载/保存（原子写入）
+│   ├── env.py               # .env 与模型价格配置解析/加载/保存（原子写入）
 │   └── logging_config.py    # 统一日志配置（按模块拆分 + 文件轮转）
 ```
 
@@ -91,6 +91,9 @@ def save_env_file(path, data):
 ### 3.4 模型价格
 
 - `data/model_pricing.json` 是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回“无法自动估算”。
+- 价格文件包含 `currency`、`unit`、`updated_at` 和 `models`；计价单位为“百万tokens”，每个模型维护输入、输出、可选缓存命中单价。
+- `load_pricing_config(path)` 负责读取价格表，`save_pricing_config(path, data)` 负责 UTF-8 无 BOM、LF 换行的原子写入。
+- API 配置对话框的“价格配置”页签直接维护该文件，保存前会校验模型名称唯一且单价为非负数。
 
 ---
 
@@ -134,6 +137,9 @@ def setup_logging():
 | `parse_env_file(path)` | `env.py` | `dict[str, str]` | 解析 .env 文件 |
 | `load_env_config(path)` | `env.py` | `dict` | 解析并类型转型 |
 | `get_api_config()` | `env.py` | `dict` | 获取 API 配置 |
+| `load_pricing_config(path)` | `env.py` | `dict` | 加载模型价格配置 |
+| `save_pricing_config(path, data)` | `env.py` | `None` | 原子保存模型价格配置 |
+| `get_model_pricing(model)` | `env.py` | `dict \| None` | 查询模型单价，未知模型返回 `None` |
 | `get_mumu_config()` | `env.py` | `dict` | 获取模拟器配置 |
 | `save_env_file(path, data)` | `env.py` | `None` | 原子写入 .env |
 | `setup_logging()` | `logging_config.py` | `None` | 初始化日志系统（幂等） |
