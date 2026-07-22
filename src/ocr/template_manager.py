@@ -80,7 +80,7 @@ class TemplateManager:
             if img is not None and img.size > 0:
                 self._template = img
                 self._load_metadata()
-                logger.info("模板已加载: %s (%sx%s)", self._template_path.name, img.shape[1], img.shape[0])
+                logger.debug("模板已加载: %s (%sx%s)", self._template_path.name, img.shape[1], img.shape[0])
             else:
                 logger.warning("模板文件读取失败: %s", self._template_path)
                 self._template = None

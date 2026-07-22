@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
 
         interval = self._ocr_service.config.get("mumu_ocr_poll_interval", 2) * 1000
         self._ocr_service.start_poll(interval)
-        logger.info("轮询已启动，间隔 %d ms", interval)
+        logger.debug("轮询已启动，间隔 %d ms", interval)
 
     def _on_poll_capture(self) -> None:
         """轮询触发：在后台线程执行一次采集并回传结构化结果。"""
@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
                         })
                         return
 
-                ok, result = capture.screencap_full()
+                ok, result = capture.screencap_full(log_success=False)
                 if not ok:
                     self._poll_result_ready.emit({
                         "generation": generation,
@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
             if ocr_results:
                 self._recommendation.load_from_ocr(ocr_results)
                 recognized = len([item for item in ocr_results if item.get("name")])
-                logger.info("轮询: OCR 识别到 %d 个武将", recognized)
+                logger.debug("轮询: OCR 识别到 %d 个武将", recognized)
 
         guide_result = task_results.get("match_guide", {})
         if guide_result.get("outcome") == "template_missing":

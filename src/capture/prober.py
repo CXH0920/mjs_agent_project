@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -145,45 +146,59 @@ def probe_mumu_adb() -> str:
     return ""
 
 
-def probe_all_devices() -> list[MuMuDeviceInfo]:
-    """探测所有 MuMu 模拟器实例，返回列表。"""
+def probe_all_devices_with_status(retries: int = 1) -> tuple[list[MuMuDeviceInfo], str]:
+    """探测所有 MuMu 模拟器实例，并区分空结果与探测失败。"""
     mumu_root = _find_mumu_root()
     if not mumu_root:
         logger.warning("未找到 MuMu 模拟器安装目录")
-        return []
+        return [], "未找到 MuMu 模拟器安装目录"
 
     manager_path = mumu_root / "nx_main" / "MuMuManager.exe"
     if not manager_path.exists():
         logger.warning("MuMuManager.exe 不存在")
-        return []
+        return [], "MuMuManager.exe 不存在"
 
-    try:
-        result = subprocess.run(
-            [str(manager_path), "info", "--vmindex", "all"],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            logger.warning("MuMuManager info 失败 (returncode=%d)", result.returncode)
-            return []
-        output = result.stdout.decode("utf-8", errors="replace")
-        data = json.loads(output)
-        devices: list[MuMuDeviceInfo] = []
-        for index_str, vm_info in data.items():
-            is_running = bool(vm_info.get("is_android_started"))
-            port = int(vm_info["adb_port"]) if vm_info.get("adb_port") else 0
-            devices.append(MuMuDeviceInfo(
-                index=index_str,
-                name=vm_info.get("name", f"实例 {index_str}"),
-                adb_port=port,
-                is_running=is_running,
-                is_main=bool(vm_info.get("is_main")),
-            ))
-        logger.info("探测到 %d 个 MuMu 实例", len(devices))
-        return devices
-    except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError) as e:
-        logger.debug("探测 MuMu 实例失败: %s", e)
-        return []
+    error = ""
+    for attempt in range(retries + 1):
+        try:
+            result = subprocess.run(
+                [str(manager_path), "info", "--vmindex", "all"],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                error = f"MuMuManager 查询失败（退出码 {result.returncode}）"
+            else:
+                output = result.stdout.decode("utf-8", errors="replace")
+                data = json.loads(output)
+                devices: list[MuMuDeviceInfo] = []
+                for index_str, vm_info in data.items():
+                    is_running = bool(vm_info.get("is_android_started"))
+                    port = int(vm_info["adb_port"]) if vm_info.get("adb_port") else 0
+                    devices.append(MuMuDeviceInfo(
+                        index=index_str,
+                        name=vm_info.get("name", f"实例 {index_str}"),
+                        adb_port=port,
+                        is_running=is_running,
+                        is_main=bool(vm_info.get("is_main")),
+                    ))
+                logger.info("探测到 %d 个 MuMu 实例", len(devices))
+                return devices, ""
+        except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError) as exc:
+            error = f"MuMuManager 查询异常：{exc}"
+
+        if attempt < retries:
+            logger.warning("%s，正在重试", error)
+            time.sleep(0.2)
+
+    logger.warning("%s", error)
+    return [], error
+
+
+def probe_all_devices() -> list[MuMuDeviceInfo]:
+    """探测所有 MuMu 模拟器实例，返回列表。"""
+    devices, _ = probe_all_devices_with_status()
+    return devices
 
 
 def probe_running_devices() -> list[MuMuDeviceInfo]:

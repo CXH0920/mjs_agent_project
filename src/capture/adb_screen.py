@@ -158,11 +158,12 @@ class AdbCapture:
 
     # ── 截图 ──────────────────────────────────────────────────────────
 
-    def screencap_full(self) -> tuple[bool, Image.Image | str]:
+    def screencap_full(self, *, log_success: bool = True) -> tuple[bool, Image.Image | str]:
         """截取模拟器全屏，返回 PIL Image。
 
         Returns:
-            (是否成功, Image 对象或错误消息)
+            (是否成功, Image 对象或错误消息)。
+            ``log_success`` 为 False 时不记录成功日志，供高频轮询使用。
         """
         if not self._connected or not self._device_serial:
             return False, "尚未连接，请先连接模拟器"
@@ -196,7 +197,8 @@ class AdbCapture:
                 try:
                     image = Image.open(io.BytesIO(result.stdout))
                     image.load()
-                    logger.info("截图成功: %s x %s", image.width, image.height)
+                    if log_success:
+                        logger.info("截图成功: %s x %s", image.width, image.height)
                     return True, image
                 except Exception as e:
                     error = f"解析截图图像失败: {e}"

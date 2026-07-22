@@ -97,7 +97,7 @@ class OcrWorker(QThread):
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
             GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json")
             result["ocr_results"] = results
-            logger.info("OCR 完成: %d 个武将识别", len([item for item in results if item.get("name")]))
+            logger.debug("OCR 完成: %d 个武将识别", len([item for item in results if item.get("name")]))
             return result
         except Exception as exc:
             logger.error("OCR 执行异常: %s", exc)

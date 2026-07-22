@@ -13,11 +13,9 @@
 from __future__ import annotations
 
 import logging
-import traceback
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSignalBlocker, QTimer
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -36,9 +34,11 @@ from PySide6.QtWidgets import (
     QGridLayout,
 )
 
-from src.capture.adb_screen import AdbCapture
+from src.business.capture_service import CaptureService
+from src.business.emulator_operation_service import EmulatorOperationService
+from src.business.ocr_service import OcrService
 from src.capture.image_utils import pil_to_qpixmap
-from src.capture.prober import probe_all_devices, probe_mumu_adb, test_adb_path, MuMuDeviceInfo
+from src.capture.prober import MuMuDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -49,25 +49,42 @@ DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
 class MumuConfigDialog(QDialog):
     """模拟器配置对话框"""
 
-    def __init__(self, config: dict, capture_service=None, ocr_service=None, parent=None):
+    def __init__(
+        self,
+        config: dict,
+        capture_service: CaptureService | None = None,
+        ocr_service: OcrService | None = None,
+        operation_service: EmulatorOperationService | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._config = dict(config)
-        self._capture_service = capture_service
-        self._ocr_service = ocr_service
-        self._capture: AdbCapture | None = capture_service.capture if capture_service else None
+        self._capture_service = capture_service or CaptureService(self)
+        self._ocr_service = ocr_service or OcrService(self)
+        self._operation_service = operation_service or EmulatorOperationService(
+            self._capture_service,
+            self,
+        )
+        self._capture = self._capture_service.capture
         self._devices: list[MuMuDeviceInfo] = []
         self._device_selected_explicitly = False
-        self._template_path: str | None = None
-        self._roi: tuple[int, int, int, int] | None = None
-        self._screenshot_pixmap: QPixmap | None = None
+        self._template_capture_in_progress: set[str] = set()
 
         self.setWindowTitle("模拟器配置")
         self.setMinimumWidth(760)
         self.setMinimumHeight(620)
         self.resize(820, 680)
         self._setup_ui()
-        if self._capture_service:
-            self._capture_service.connection_changed.connect(self._on_connection_changed)
+        self._capture_service.connection_changed.connect(self._on_connection_changed)
+        self._operation_service.adb_detected.connect(self._on_adb_detected)
+        self._operation_service.devices_refreshed.connect(self._on_devices_refreshed)
+        self._operation_service.device_refresh_failed.connect(self._on_device_refresh_failed)
+        self._operation_service.connection_finished.connect(self._on_connection_finished)
+        self._operation_service.disconnection_finished.connect(self._on_disconnection_finished)
+        self._operation_service.device_tested.connect(self._on_device_tested)
+        self._operation_service.screenshot_ready.connect(self._on_template_screenshot_ready)
+        self._operation_service.screenshot_failed.connect(self._on_template_screenshot_failed)
+        self._operation_service.operation_failed.connect(self._on_operation_failed)
         self._load_config()
 
     def _setup_ui(self) -> None:
@@ -104,26 +121,26 @@ class MumuConfigDialog(QDialog):
         browse_btn.setFixedWidth(80)
         browse_btn.setStyleSheet(outline_style)
         browse_btn.clicked.connect(self._browse_adb)
-        detect_btn = QPushButton("自动探测")
-        detect_btn.setFixedWidth(80)
-        detect_btn.setStyleSheet(outline_style)
-        detect_btn.clicked.connect(self._on_auto_detect)
+        self._detect_btn = QPushButton("自动探测")
+        self._detect_btn.setFixedWidth(80)
+        self._detect_btn.setStyleSheet(outline_style)
+        self._detect_btn.clicked.connect(self._on_auto_detect)
         device_grid.addWidget(QLabel("ADB 路径"), 0, 0)
         device_grid.addWidget(self._adb_path_edit, 0, 1)
         device_grid.addWidget(browse_btn, 0, 2)
-        device_grid.addWidget(detect_btn, 0, 3)
+        device_grid.addWidget(self._detect_btn, 0, 3)
 
         self._device_combo = QComboBox()
         self._device_combo.setMinimumWidth(400)
         self._device_combo.currentIndexChanged.connect(self._on_device_changed)
         self._device_combo.activated.connect(self._on_device_activated)
-        refresh_btn = QPushButton("刷新")
-        refresh_btn.setFixedWidth(60)
-        refresh_btn.setStyleSheet(outline_style)
-        refresh_btn.clicked.connect(self._on_refresh_devices)
+        self._refresh_devices_btn = QPushButton("刷新")
+        self._refresh_devices_btn.setFixedWidth(60)
+        self._refresh_devices_btn.setStyleSheet(outline_style)
+        self._refresh_devices_btn.clicked.connect(self._on_refresh_devices)
         device_grid.addWidget(QLabel("目标设备"), 1, 0)
         device_grid.addWidget(self._device_combo, 1, 1, 1, 2)
-        device_grid.addWidget(refresh_btn, 1, 3)
+        device_grid.addWidget(self._refresh_devices_btn, 1, 3)
 
         self._port_label = QLabel("(自动探测)")
         self._port_label.setStyleSheet("color: #555;")
@@ -163,7 +180,7 @@ class MumuConfigDialog(QDialog):
         template_grid.setContentsMargins(12, 12, 12, 12)
         template_grid.setHorizontalSpacing(12)
         template_grid.setVerticalSpacing(8)
-        template_grid.addWidget(self._template_box("武将模板", "hero"), 0, 0)
+        template_grid.addWidget(self._template_box("武将识别模板", "hero"), 0, 0)
         template_grid.addWidget(self._template_box("对局攻略模板", "match_guide"), 0, 1)
         template_grid.setColumnStretch(0, 1)
         template_grid.setColumnStretch(1, 1)
@@ -254,7 +271,7 @@ class MumuConfigDialog(QDialog):
         button_row = QHBoxLayout()
         select_btn = QPushButton("📁选择模板")
         select_btn.setFixedWidth(90)
-        make_btn = QPushButton("制作模板...")
+        make_btn = QPushButton("🎯制作模板")
         make_btn.setFixedWidth(90)
         for button in (select_btn, make_btn):
             button.setStyleSheet(
@@ -323,10 +340,7 @@ class MumuConfigDialog(QDialog):
     def _load_config(self) -> None:
         """从配置加载当前值"""
         adb_path = self._config.get("mumu_adb_path", "")
-        if not adb_path:
-            detected = probe_mumu_adb()
-            if detected:
-                adb_path = detected
+        should_auto_detect = not adb_path
 
         self._adb_path_edit.setText(adb_path or "(未设置，点击「自动探测」)")
         self._adb_path_edit.setProperty("raw_path", adb_path)
@@ -342,28 +356,23 @@ class MumuConfigDialog(QDialog):
         self._hero_cooldown_spin.setValue(self._config.get("mumu_hero_selection_cooldown", 180))
         self._match_guide_cooldown_spin.setValue(self._config.get("mumu_match_guide_cooldown", 5))
 
-        # 创建 AdbCapture 实例（复用已有的连接）
-        if self._capture_service and self._capture_service.capture:
-            self._capture = self._capture_service.capture
-        elif adb_path:
-            self._capture = AdbCapture(adb_path=adb_path, adb_port=adb_port)
-
-        # 刷新设备列表
+        self._sync_capture_service_config()
         self._on_refresh_devices()
 
         # 检查模板状态
         self._refresh_template_status()
         self._refresh_match_guide_template_status()
         self._update_ui()
+        if should_auto_detect:
+            self._on_auto_detect()
 
     def _refresh_template_status(self) -> None:
         """更新模板状态显示"""
-        from src.ocr.ocr_loader import get_template_manager
-        tm = get_template_manager()
-        if tm.is_loaded:
+        if self._ocr_service.is_template_loaded():
+            template_path = self._ocr_service.template_path()
             self._template_status_icon.setText("●")
             self._template_status_icon.setStyleSheet("color: #27ae60; font-size: 16px;")
-            self._template_status_label.setText(f"已加载: {tm.template_path.name}")
+            self._template_status_label.setText(f"已加载: {template_path.name}")
             self._template_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
         else:
             self._template_status_icon.setText("○")
@@ -373,10 +382,9 @@ class MumuConfigDialog(QDialog):
 
     def _refresh_match_guide_template_status(self) -> None:
         """更新对局攻略模板状态显示。"""
-        from src.ocr.ocr_loader import get_template_manager
-        tm = get_template_manager("match_guide")
-        if tm.is_loaded:
-            self._match_guide_status_label.setText(f"对局攻略模板：已加载 {tm.template_path.name}")
+        if self._ocr_service.is_template_loaded("match_guide"):
+            template_path = self._ocr_service.template_path("match_guide")
+            self._match_guide_status_label.setText(f"对局攻略模板：已加载 {template_path.name}")
             self._match_guide_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
         else:
             self._match_guide_status_label.setText("对局攻略模板：未设定")
@@ -389,33 +397,28 @@ class MumuConfigDialog(QDialog):
     def _on_auto_detect(self) -> None:
         """自动探测 ADB 路径和端口"""
         logger.info("开始自动探测 ADB...")
+        self._detect_btn.setEnabled(False)
+        self._detect_btn.setText("探测中...")
+        self._operation_service.detect_adb()
 
-        # 探测 adb 路径
-        adb_path = probe_mumu_adb()
-        if adb_path:
-            ok, msg = test_adb_path(adb_path)
-            if ok:
-                self._adb_path_edit.setText(adb_path)
-                self._adb_path_edit.setProperty("raw_path", adb_path)
-                self._adb_path_edit.setStyleSheet(
-                    "border: 1px solid #27ae60; padding: 4px 8px; background-color: #f0faf0; border-radius: 3px;"
-                )
-
-                # 让共享服务使用当前草稿配置，连接状态由它统一发布
-                self._sync_capture_service_config()
-                self._on_refresh_devices()
-
-                QMessageBox.information(self, "自动探测", f"找到 ADB:\n{adb_path}\n{msg}")
-            else:
-                self._adb_path_edit.setStyleSheet(
-                    "border: 1px solid #e74c3c; padding: 4px 8px; background-color: #fdf0ef; border-radius: 3px;"
-                )
-                QMessageBox.warning(self, "自动探测", f"ADB 文件存在但验证失败:\n{msg}")
-        else:
+    def _on_adb_detected(self, success: bool, adb_path: str, message: str) -> None:
+        self._detect_btn.setEnabled(True)
+        self._detect_btn.setText("自动探测")
+        if not success:
             self._adb_path_edit.setStyleSheet(
                 "border: 1px solid #e74c3c; padding: 4px 8px; background-color: #fdf0ef; border-radius: 3px;"
             )
-            QMessageBox.warning(self, "自动探测", "未找到 ADB，请手动设置路径")
+            QMessageBox.warning(self, "自动探测", message)
+            return
+
+        self._adb_path_edit.setText(adb_path)
+        self._adb_path_edit.setProperty("raw_path", adb_path)
+        self._adb_path_edit.setStyleSheet(
+            "border: 1px solid #27ae60; padding: 4px 8px; background-color: #f0faf0; border-radius: 3px;"
+        )
+        self._sync_capture_service_config()
+        self._on_refresh_devices()
+        QMessageBox.information(self, "自动探测", f"找到 ADB:\n{adb_path}\n{message}")
 
     def _browse_adb(self) -> None:
         """弹出文件选择对话框选择 adb.exe"""
@@ -434,23 +437,23 @@ class MumuConfigDialog(QDialog):
 
     def _sync_capture_service_config(self) -> None:
         """将当前编辑中的 ADB 配置同步到共享截图服务。"""
-        if not self._capture_service:
-            return
-        if self._capture_service:
-            config = dict(self._config)
-            config["mumu_adb_path"] = self._adb_path_edit.property("raw_path") or ""
-            self._capture_service.update_config(config)
-            self._capture = self._capture_service.capture
-        else:
-            self._capture = AdbCapture(
-                adb_path=self._adb_path_edit.property("raw_path") or "",
-                adb_port=self._config.get("mumu_adb_port", 0),
-            )
+        config = dict(self._config)
+        config["mumu_adb_path"] = self._adb_path_edit.property("raw_path") or ""
+        self._capture_service.update_config(config)
+        self._capture = self._capture_service.capture
 
     def _on_refresh_devices(self) -> None:
-        """刷新设备列表，并避免在多实例时擅自选择目标。"""
+        """请求后台刷新设备列表。"""
+        self._refresh_devices_btn.setEnabled(False)
+        self._refresh_devices_btn.setText("刷新中...")
+        self._operation_service.refresh_devices()
+
+    def _on_devices_refreshed(self, devices: list[MuMuDeviceInfo]) -> None:
+        """展示后台探测到的设备，并避免在多实例时擅自选择目标。"""
+        self._refresh_devices_btn.setEnabled(True)
+        self._refresh_devices_btn.setText("刷新")
         configured_port = self._config.get("mumu_adb_port", 0)
-        self._devices = probe_all_devices()
+        self._devices = devices
         running_devices = [device for device in self._devices if device.is_running and device.adb_port]
         self._device_selected_explicitly = False
 
@@ -497,6 +500,18 @@ class MumuConfigDialog(QDialog):
         self._on_device_changed(self._device_combo.currentIndex())
         self._update_ui()
 
+    def _on_device_refresh_failed(self, message: str) -> None:
+        """探测失败时保留现有选择，避免瞬时错误抹掉设备状态。"""
+        self._refresh_devices_btn.setEnabled(True)
+        self._refresh_devices_btn.setText("刷新")
+        self._refresh_devices_btn.setToolTip(message)
+        if self._devices:
+            self._instance_status_label.setText("● 实例：刷新失败（保留上次结果）")
+        else:
+            self._instance_status_label.setText("● 实例：刷新失败")
+        self._instance_status_label.setToolTip(message)
+        self._update_ui()
+
     def _on_device_activated(self, index: int) -> None:
         """记录用户对实例的显式选择。"""
         if self._device_combo.itemData(index):
@@ -531,9 +546,6 @@ class MumuConfigDialog(QDialog):
 
     def _connect_emulator(self) -> None:
         """连接选中的模拟器。"""
-        if not self._capture_service:
-            QMessageBox.warning(self, "连接失败", "截图服务不可用")
-            return
         device = self._device_combo.currentData()
         running_devices = [item for item in self._devices if item.is_running and item.adb_port]
         if self._config.get("mumu_adb_port", 0) == 0 and len(running_devices) > 1 and not self._device_selected_explicitly:
@@ -544,14 +556,10 @@ class MumuConfigDialog(QDialog):
             self._capture = self._capture_service.capture
 
         self._connect_btn.setEnabled(False)
-        QTimer.singleShot(50, self._do_connect)
+        self._connect_btn.setText("连接中...")
+        self._operation_service.connect()
 
-    def _do_connect(self) -> None:
-        """实际执行连接。"""
-        if not self._capture_service:
-            self._connect_btn.setEnabled(True)
-            return
-        ok, message = self._capture_service.connect_emulator()
+    def _on_connection_finished(self, ok: bool, message: str) -> None:
         if not ok:
             QMessageBox.warning(self, "连接失败", message)
         self._connect_btn.setEnabled(True)
@@ -559,8 +567,12 @@ class MumuConfigDialog(QDialog):
 
     def _disconnect_emulator(self) -> None:
         """断开模拟器。"""
-        if self._capture_service:
-            self._capture_service.disconnect_emulator()
+        self._connect_btn.setEnabled(False)
+        self._connect_btn.setText("断开中...")
+        self._operation_service.disconnect()
+
+    def _on_disconnection_finished(self, _ok: bool, _message: str) -> None:
+        self._connect_btn.setEnabled(True)
         self._update_ui()
 
     def _on_test_selected_device(self) -> None:
@@ -574,31 +586,18 @@ class MumuConfigDialog(QDialog):
             QMessageBox.warning(self, "设备测试", "请选择一个带有效 ADB 端口的实例后再测试。")
             return
 
-        target = f"127.0.0.1:{device.adb_port}"
         self._test_device_btn.setEnabled(False)
         self._test_device_btn.setText("测试中...")
-        QTimer.singleShot(0, lambda: self._do_test_selected_device(adb_path, device.adb_port, target))
+        self._operation_service.test_device(adb_path, device.adb_port)
 
-    def _do_test_selected_device(self, adb_path: str, port: int, target: str) -> None:
-        """执行精确目标的 connect + get-state 测试。"""
-        try:
-            shared = self._capture_service.capture if self._capture_service else None
-            if shared and shared.connected and shared.device_serial == target:
-                capture = shared
-            else:
-                capture = AdbCapture(adb_path=adb_path, adb_port=port)
-            ok, message = capture.connect()
-            if ok:
-                ok, state = capture.check_device()
-                message = state if ok else state
-            if ok:
-                QMessageBox.information(self, "设备测试成功", f"已连接到所选设备：\n{target}\n设备状态：device")
-            else:
-                QMessageBox.warning(self, "设备测试失败", f"无法连接所选设备 {target}：\n{message}")
-        finally:
-            self._test_device_btn.setEnabled(True)
-            self._test_device_btn.setText("测试所选设备")
-            self._update_ui()
+    def _on_device_tested(self, ok: bool, target: str, message: str) -> None:
+        self._test_device_btn.setEnabled(True)
+        self._test_device_btn.setText("测试连接")
+        if ok:
+            QMessageBox.information(self, "设备测试成功", f"已连接到所选设备：\n{target}\n设备状态：{message}")
+        else:
+            QMessageBox.warning(self, "设备测试失败", f"无法连接所选设备 {target}：\n{message}")
+        self._update_ui()
 
     def _on_resume_poll(self) -> None:
         """恢复已暂停的 OCR 轮询。"""
@@ -608,75 +607,7 @@ class MumuConfigDialog(QDialog):
 
 
     def _on_make_template(self) -> None:
-        """制作模板：截图 → 框选 → 保存"""
-        if not self._capture or not self._capture.connected:
-            # 尝试先连接
-            if self._capture:
-                ok, msg = self._capture.connect()
-                if not ok:
-                    QMessageBox.warning(self, "制作模板", f"请先连接模拟器\n{msg}")
-                    return
-            else:
-                QMessageBox.warning(self, "制作模板", "请先配置 ADB 并连接模拟器")
-                return
-
-        self._make_template_btn.setEnabled(False)
-        self._make_template_btn.setText("正在截图...")
-        QTimer.singleShot(50, self._do_make_template)
-
-    def _do_make_template(self) -> None:
-        """实际执行模板制作"""
-        try:
-            ok, result = self._capture.screencap_full()
-            if not ok:
-                self._make_template_btn.setEnabled(True)
-                self._make_template_btn.setText("🎯 制作模板")
-                QMessageBox.warning(self, "制作模板", f"截图失败:\n{result}")
-                return
-
-            image = result
-
-            # 转为 QPixmap 显示
-            pixmap = pil_to_qpixmap(image)
-            if pixmap.isNull():
-                self._make_template_btn.setEnabled(True)
-                self._make_template_btn.setText("🎯 制作模板")
-                QMessageBox.warning(self, "制作模板", "图像转换失败")
-                return
-
-            # 打开框选对话框
-            from src.ui.roi_selector import RoiSelectorDialog
-            dialog = RoiSelectorDialog(pixmap, title="框选模板区域（如页面标题或按钮）", parent=self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                self._make_template_btn.setEnabled(True)
-                self._make_template_btn.setText("🎯 制作模板")
-                return
-
-            roi = dialog.get_roi()
-            if not roi:
-                self._make_template_btn.setEnabled(True)
-                self._make_template_btn.setText("🎯 制作模板")
-                return
-
-            # 保存模板
-            from src.ocr.ocr_loader import get_template_manager
-            tm = get_template_manager()
-            tm.set_template(image, roi)
-
-            self._refresh_template_status()
-            QMessageBox.information(
-                self, "模板已保存",
-                f"模板已保存到:\n{tm.template_path}\n\n"
-                f"ROI: ({roi[0]}, {roi[1]})  {roi[2]}×{roi[3]}"
-            )
-
-        except Exception as e:
-            logger.error("制作模板异常: %s", e)
-            logger.debug(traceback.format_exc())
-            QMessageBox.warning(self, "制作模板", f"制作模板时出错:\n{e}")
-
-        self._make_template_btn.setEnabled(True)
-        self._make_template_btn.setText("🎯 制作模板")
+        self._start_template_capture("hero_selection")
 
     def _on_select_template(self) -> None:
         """选择模板文件"""
@@ -684,77 +615,16 @@ class MumuConfigDialog(QDialog):
             self, "选择模板图片", str(DEFAULT_TEMPLATE_DIR),
             "图片 (*.png *.jpg *.jpeg)"
         )
-        if path:
-            from src.ocr.ocr_loader import get_template_manager
-            import shutil
-
-            tm = get_template_manager()
-            tm.template_path.parent.mkdir(parents=True, exist_ok=True)
-
-            src = Path(path)
-            dst = tm.template_path
-            if src.resolve() != dst.resolve():
-                shutil.copy2(str(src), str(dst))
-                # 外部模板通常没有本项目的参考尺寸元数据，不能沿用旧模板的尺寸。
-                metadata_path = dst.with_suffix(".json")
-                if metadata_path.exists():
-                    try:
-                        metadata_path.unlink()
-                    except OSError as exc:
-                        logger.warning("旧模板元数据清理失败: %s", exc)
-
-            tm.reload()
-            self._template_path = str(dst)
+        if not path:
+            return
+        try:
+            self._ocr_service.select_template(path)
             self._refresh_template_status()
+        except Exception as exc:
+            QMessageBox.warning(self, "选择模板", f"加载模板时出错:\n{exc}")
 
     def _on_make_match_guide_template(self) -> None:
-        """截图并制作独立的对局攻略模板。"""
-        if not self._capture or not self._capture.connected:
-            if self._capture:
-                ok, msg = self._capture.connect()
-                if not ok:
-                    QMessageBox.warning(self, "制作对局攻略模板", f"请先连接模拟器\n{msg}")
-                    return
-            else:
-                QMessageBox.warning(self, "制作对局攻略模板", "请先配置 ADB 并连接模拟器")
-                return
-
-        self._make_match_guide_template_btn.setEnabled(False)
-        self._make_match_guide_template_btn.setText("正在截图...")
-        QTimer.singleShot(50, self._do_make_match_guide_template)
-
-    def _do_make_match_guide_template(self) -> None:
-        """实际保存对局攻略模板。"""
-        try:
-            ok, result = self._capture.screencap_full()
-            if not ok:
-                QMessageBox.warning(self, "制作对局攻略模板", f"截图失败:\n{result}")
-                return
-
-            pixmap = pil_to_qpixmap(result)
-            if pixmap.isNull():
-                QMessageBox.warning(self, "制作对局攻略模板", "图像转换失败")
-                return
-
-            from src.ui.roi_selector import RoiSelectorDialog
-            dialog = RoiSelectorDialog(pixmap, title="框选对局攻略页面模板区域", parent=self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            roi = dialog.get_roi()
-            if not roi:
-                return
-
-            from src.ocr.ocr_loader import get_template_manager
-            tm = get_template_manager("match_guide")
-            tm.set_template(result, roi)
-            self._refresh_match_guide_template_status()
-            QMessageBox.information(self, "模板已保存", f"模板已保存到:\n{tm.template_path}")
-        except Exception as exc:
-            logger.exception("制作对局攻略模板异常")
-            QMessageBox.warning(self, "制作对局攻略模板", f"制作模板时出错:\n{exc}")
-        finally:
-            self._make_match_guide_template_btn.setEnabled(True)
-            self._make_match_guide_template_btn.setText("制作对局攻略模板")
+        self._start_template_capture("match_guide")
 
     def _on_select_match_guide_template(self) -> None:
         """选择并保存对局攻略模板文件。"""
@@ -765,40 +635,87 @@ class MumuConfigDialog(QDialog):
         if not path:
             return
         try:
-            from src.ocr.ocr_loader import get_template_manager
-            import shutil
-            tm = get_template_manager("match_guide")
-            tm.template_path.parent.mkdir(parents=True, exist_ok=True)
-            src = Path(path)
-            dst = tm.template_path
-            if src.resolve() != dst.resolve():
-                shutil.copy2(str(src), str(dst))
-                metadata_path = dst.with_suffix(".json")
-                if metadata_path.exists():
-                    metadata_path.unlink()
-            tm.reload()
+            self._ocr_service.select_template(path, "match_guide")
             self._refresh_match_guide_template_status()
         except Exception as exc:
-            logger.exception("选择对局攻略模板异常")
             QMessageBox.warning(self, "选择对局攻略模板", f"加载模板时出错:\n{exc}")
 
+    def _start_template_capture(self, template_name: str) -> None:
+        if template_name in self._template_capture_in_progress:
+            return
+        self._template_capture_in_progress.add(template_name)
+        button = self._template_button(template_name)
+        button.setEnabled(False)
+        button.setText("正在截图...")
+        self._operation_service.capture_template_screenshot(template_name)
 
+    def _on_template_screenshot_ready(self, template_name: str, image) -> None:
+        button = self._template_button(template_name)
+        try:
+            pixmap = pil_to_qpixmap(image)
+            if pixmap.isNull():
+                QMessageBox.warning(self, "制作模板", "图像转换失败")
+                return
 
-    # ────────────────────────────────────────────────
-    # 连接测试
-    # ────────────────────────────────────────────────
+            from src.ui.roi_selector import RoiSelectorDialog
 
-    def _test_connection(self) -> None:
-        """测试 ADB 连接"""
-        adb_path = self._adb_path_edit.property("raw_path") or ""
-        if adb_path:
-            ok, msg = test_adb_path(adb_path)
-            if ok:
-                QMessageBox.information(self, "连接测试", f"ADB 验证成功\n{msg}")
-            else:
-                QMessageBox.warning(self, "连接测试", f"ADB 验证失败\n{msg}")
+            title = "框选对局攻略页面模板区域" if template_name == "match_guide" else "框选模板区域（如页面标题或按钮）"
+            dialog = RoiSelectorDialog(pixmap, title=title, parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            roi = dialog.get_roi()
+            if not roi:
+                return
+
+            self._ocr_service.create_template(image, roi, template_name)
+            self._refresh_template(template_name)
+            template_path = self._ocr_service.template_path(template_name)
+            message = f"模板已保存到:\n{template_path}"
+            if template_name == "hero_selection":
+                message += f"\n\nROI: ({roi[0]}, {roi[1]})  {roi[2]}×{roi[3]}"
+            QMessageBox.information(self, "模板已保存", message)
+        except Exception as exc:
+            logger.exception("制作模板异常")
+            QMessageBox.warning(self, "制作模板", f"制作模板时出错:\n{exc}")
+        finally:
+            self._restore_template_button(template_name)
+
+    def _on_template_screenshot_failed(self, template_name: str, message: str) -> None:
+        self._restore_template_button(template_name)
+        QMessageBox.warning(self, "制作模板", f"截图失败:\n{message}")
+
+    def _on_operation_failed(self, operation: str, message: str) -> None:
+        """恢复异常中断的后台操作对应控件。"""
+        if operation == "detect_adb":
+            self._detect_btn.setEnabled(True)
+            self._detect_btn.setText("自动探测")
+        elif operation == "refresh_devices":
+            self._refresh_devices_btn.setEnabled(True)
+            self._refresh_devices_btn.setText("刷新")
+        elif operation in {"connect", "disconnect"}:
+            self._connect_btn.setEnabled(True)
+            self._update_ui()
+        elif operation == "test_device":
+            self._test_device_btn.setEnabled(True)
+            self._test_device_btn.setText("测试连接")
+        elif operation.startswith("capture_template:"):
+            self._restore_template_button(operation.split(":", 1)[1])
+        QMessageBox.warning(self, "模拟器操作失败", message)
+
+    def _template_button(self, template_name: str) -> QPushButton:
+        return self._make_match_guide_template_btn if template_name == "match_guide" else self._make_template_btn
+
+    def _restore_template_button(self, template_name: str) -> None:
+        self._template_capture_in_progress.discard(template_name)
+        button = self._template_button(template_name)
+        button.setEnabled(True)
+        button.setText("🎯制作模板")
+
+    def _refresh_template(self, template_name: str) -> None:
+        if template_name == "match_guide":
+            self._refresh_match_guide_template_status()
         else:
-            QMessageBox.warning(self, "连接测试", "请先配置 ADB 路径")
+            self._refresh_template_status()
 
     # ────────────────────────────────────────────────
     # UI 更新
@@ -829,8 +746,12 @@ class MumuConfigDialog(QDialog):
         # 制作模板流程本身会在未连接时尝试建立 ADB 会话，不能只按
         # connected 状态禁用按钮，否则用户无法从模板按钮触发自动连接。
         can_make_template = self._capture is not None and state != "connecting"
-        self._make_template_btn.setEnabled(can_make_template)
-        self._make_match_guide_template_btn.setEnabled(can_make_template)
+        self._make_template_btn.setEnabled(
+            can_make_template and "hero_selection" not in self._template_capture_in_progress
+        )
+        self._make_match_guide_template_btn.setEnabled(
+            can_make_template and "match_guide" not in self._template_capture_in_progress
+        )
         self._select_template_btn.setEnabled(state != "connecting")
         self._select_match_guide_template_btn.setEnabled(state != "connecting")
         self._resume_poll_btn.setEnabled(
@@ -914,3 +835,8 @@ class MumuConfigDialog(QDialog):
     def get_connected(self) -> bool:
         """是否已连接"""
         return self._capture.connected if self._capture else False
+
+    def done(self, result: int) -> None:
+        """关闭时停止接收后台操作结果，避免更新已关闭的对话框。"""
+        self._operation_service.shutdown()
+        super().done(result)

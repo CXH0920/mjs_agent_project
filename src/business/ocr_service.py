@@ -128,6 +128,9 @@ class OcrService(QObject):
             tm.template_path.parent.mkdir(parents=True, exist_ok=True)
             if file_path_obj.resolve() != tm.template_path.resolve():
                 shutil.copy2(str(file_path_obj), str(tm.template_path))
+                metadata_path = tm.template_path.with_suffix(".json")
+                if metadata_path.exists():
+                    metadata_path.unlink()
 
             tm.reload()
             logger.info("模板已选择: %s", file_path)
@@ -137,6 +140,11 @@ class OcrService(QObject):
             logger.error("模板选择失败: %s", e)
             logger.debug(traceback.format_exc())
             self.template_changed.emit(False)
+            raise
+
+    def template_path(self, template_name: str = "hero_selection"):
+        """返回指定模板的保存路径，供 UI 仅用于展示。"""
+        return get_template_manager(template_name).template_path
 
     def is_template_loaded(self, template_name: str = "hero_selection") -> bool:
         """检查指定模板是否已加载。"""
@@ -214,7 +222,7 @@ class OcrService(QObject):
     def activate_task(self, task_name: str) -> None:
         """激活指定轮询任务。"""
         self._get_task(task_name).active = True
-        logger.info("轮询任务已激活: %s", task_name)
+        logger.debug("轮询任务已激活: %s", task_name)
 
     def deactivate_task(self, task_name: str) -> None:
         """停用指定轮询任务，不影响其他任务。"""
@@ -234,7 +242,7 @@ class OcrService(QObject):
             now = datetime.now()
             task.cooldown_until = now + timedelta(seconds=seconds)
             task.last_match_time = now
-            logger.info("轮询任务进入冷却: %s, %.1f 秒", task_name, seconds)
+            logger.debug("轮询任务进入冷却: %s, %.1f 秒", task_name, seconds)
 
     def clear_task_cooldown(self, task_name: str) -> None:
         self._get_task(task_name).cooldown_until = None
