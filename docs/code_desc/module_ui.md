@@ -55,7 +55,7 @@ src/ui/
 └── synergy_single_dialog.py    # 相性选定武将（选 1 武将）
 ```
 
-胜率 CSV 读取位于 `src/data/win_rate_repository.py`。页面只依赖共享模块的公开名称，不再从 `recommendation_panel.py` 导入私有函数或复用其内部缓存。
+胜率 CSV 读取位于 `src/data/win_rate_repository.py`；推荐指数快照由 `src/data/recommendation_index_repository.py` 根据三份官方榜单生成。页面只依赖共享模块的公开名称，不再从 `recommendation_panel.py` 导入私有函数或复用其内部缓存。
 
 `OfficialDataImportDialog` 由“数据 > 官方数据导入”打开，包含“2v2数据导入”和“武将放逐数据导入”两个可独立选择的图片框。确认后通过后台线程调用 `OfficialDataImportService`：服务按两种样图各自的表头和列比例切分榜单，再依据 OpenCV 检测到的横线确定实际数据行数，逐单元格 OCR。2v2 图片左表覆盖 `data/2v2胜率排行.csv`（`排名,武将,胜率`），右表独立覆盖 `data/2v2出场排行.csv`（`排名,武将`）；放逐榜左右表合并覆盖 `data/武将放逐.csv`。名称可靠性由业务层保证：完整词表候选优先，单字才逐字补识别；同首字无法唯一确认时由业务层按需使用繁体模型，仍不能确认才进入待复核。任一异常行仍保留期望排名，并写入对应的 `*_待复核.csv` 与 `screenshot_data/official_import/` 行截图。
 
@@ -174,13 +174,13 @@ RecommendationPanel (QWidget)
            ├── 头像区（130px, 浮层显示名称 + 势力色块，左键双击打开技能详情）
            └── 信息区
                ├── 武将名 + [攻略] 按钮
-               ├── 推荐指数（星级 + 百分比）
+               ├── 推荐指数（0~100 分 + S/A/B/C/D 级；点击查看构成）
                ├── 高相性组合（OCR 模式下仅显示当前 8 人相性）
                └── 胜率 + 前三 🥇🥈🥉 奖牌
        └── HeroSkillDialog（来自 ui/shared/hero_dialogs.py，按技能名称分 Tab 展示描述和结算）
 ```
 
-`recommendation_panel.py` 只保留推荐数据更新、胜率/相性加载、OCR 导入和截图信号协调。可独立维护的展示组件已拆分为：
+`recommendation_panel.py` 只保留推荐数据更新、胜率/相性加载、OCR 导入、手动重建推荐指数和截图信号协调。标题行的“重建指数”按钮会在用户确认三份官方榜单后覆盖 `武将推荐指数.csv`；页面启动、OCR 导入和轮询仅读取已有快照。可独立维护的展示组件已拆分为：
 
 - `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌及卡片信号。
 - `guide_detail_dialog.py`：`GuideDetailDialog`，负责攻略摘要、关系标签跳转和 Markdown 正文渲染。
@@ -295,7 +295,8 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
         hero = self._hero_mgr.get_hero_by_name(name)
         if hero:
             card._hero_id = hero.id
-            card.set_hero(hero, confidence=0.5)  # 推荐指数固定 0.5
+            card.set_hero(hero)
+            card.set_recommendation_index(indexes.get(name))
             self._current_hero_ids.add(hero.id)
 
         # 相性 + 胜率加载
@@ -306,7 +307,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
     self._update_medals()
 ```
 
-> **设计思路：** OCR 置信度（反映图像识别准确率）不映射为推荐置信度（反映阵容适配度），固定 0.5 表示"来自截图识别"。高相性组合在 OCR 模式下仅显示当前 8 人之间的相性，通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志过滤。
+> **设计思路：** OCR 置信度不参与推荐指数。页面按当前版本三份官方榜单生成快照，卡片显示推荐分和评级；胜率、出场或禁用数据缺失时显示“数据不足”。高相性组合在 OCR 模式下仅显示当前 8 人之间的相性，通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志过滤。
 
 ---
 

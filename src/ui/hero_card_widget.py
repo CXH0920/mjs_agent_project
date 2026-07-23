@@ -5,18 +5,20 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QCursor, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
 from src.data.models import Hero
+from src.data.recommendation_index_repository import RecommendationIndex
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.widgets import DoubleClickLabel
 
@@ -35,6 +37,8 @@ class HeroCardWidget(QFrame):
         self._hero: Hero | None = hero
         self._hero_id: int = 0
         self._confidence: float = 0.0
+        self._recommendation_index: RecommendationIndex | None = None
+        self._recommendation_loaded = False
         self._synergy_labels: list[QLabel] = []
         self._rank = 0
 
@@ -108,9 +112,13 @@ class HeroCardWidget(QFrame):
         header_layout.addWidget(self._guide_btn)
         info_layout.addLayout(header_layout)
 
-        self._confidence_label = QLabel()
-        self._confidence_label.setTextFormat(Qt.TextFormat.RichText)
-        self._confidence_label.setStyleSheet("font-size: 13px; color: #555;")
+        self._confidence_label = QPushButton()
+        self._confidence_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._confidence_label.setStyleSheet(
+            "QPushButton { font-size: 13px; color: #555; border: none; padding: 0; text-align: left; }"
+            "QPushButton:hover { color: #357abd; }"
+        )
+        self._confidence_label.clicked.connect(self._show_recommendation_detail)
         info_layout.addWidget(self._confidence_label)
 
         sep1 = QFrame()
@@ -165,6 +173,7 @@ class HeroCardWidget(QFrame):
                 "background-color: #ccc; color: white; border-radius: 3px; padding: 1px 5px; font-size: 11px;"
             )
             self._confidence_label.setText("")
+            self._confidence_label.setToolTip("")
             self._win_rate_label.setText("胜率: --%")
             self.set_medal(0)
             self._guide_btn.setVisible(False)
@@ -215,18 +224,60 @@ class HeroCardWidget(QFrame):
         return None
 
     def _update_confidence_display(self) -> None:
+        if self._recommendation_loaded:
+            index = self._recommendation_index
+            if index is None or not index.is_valid:
+                self._confidence_label.setText(
+                    "推荐指数：数据不足"
+                )
+                self._confidence_label.setStyleSheet(
+                    "QPushButton { font-size: 13px; color: #999; border: none; padding: 0; text-align: left; }"
+                    "QPushButton:hover { color: #777; }"
+                )
+                self._confidence_label.setToolTip(
+                    index.reason if index is not None and index.reason else "当前版本数据不完整"
+                )
+                return
+            self._confidence_label.setText(
+                f"推荐指数：{index.score} 分 · {index.rating}级"
+            )
+            self._confidence_label.setStyleSheet(
+                "QPushButton { font-size: 13px; color: #4a90d9; font-weight: bold; border: none; "
+                "padding: 0; text-align: left; } QPushButton:hover { color: #357abd; }"
+            )
+            self._confidence_label.setToolTip(
+                f"胜率表现：{index.win_rate * 100:.2f}%\n"
+                f"出场活跃度：第 {index.pick_rank} 名\n"
+                f"禁用关注度：第 {index.ban_rank} 名\n"
+                f"自动推荐排序：第 {index.order} 名"
+            )
+            return
         if self._confidence <= 0.0:
             self._confidence_label.setText(
-                '★★☆☆☆  <span style="color:#999;font-weight:bold;">--</span>'
+                "★★☆☆☆  --"
             )
+            self._confidence_label.setStyleSheet(
+                "QPushButton { font-size: 13px; color: #999; border: none; padding: 0; text-align: left; }"
+            )
+            self._confidence_label.setToolTip("")
             return
 
         filled = int(self._confidence * 5)
         stars = "★" * filled + "☆" * (5 - filled)
         percentage = f"{self._confidence * 100:.2f}%"
         self._confidence_label.setText(
-            f'{stars}  <span style="color:#4a90d9;font-weight:bold;">{percentage}</span>'
+            f"{stars}  {percentage}"
         )
+        self._confidence_label.setStyleSheet(
+            "QPushButton { font-size: 13px; color: #4a90d9; font-weight: bold; border: none; "
+            "padding: 0; text-align: left; }"
+        )
+        self._confidence_label.setToolTip("")
+
+    def _show_recommendation_detail(self) -> None:
+        detail = self._confidence_label.toolTip()
+        if detail:
+            QToolTip.showText(QCursor.pos(), detail, self._confidence_label)
 
     def _on_guide_clicked(self) -> None:
         if self._hero_id > 0:
@@ -238,10 +289,18 @@ class HeroCardWidget(QFrame):
 
     def set_hero(self, hero: Hero | None) -> None:
         self._hero = hero
+        self._recommendation_index = None
+        self._recommendation_loaded = False
         self._update_display()
 
     def set_confidence(self, confidence: float) -> None:
         self._confidence = max(0.0, min(1.0, confidence))
+        self._update_confidence_display()
+
+    def set_recommendation_index(self, index: RecommendationIndex | None) -> None:
+        """显示当前版本全服数据计算出的推荐指数。"""
+        self._recommendation_index = index
+        self._recommendation_loaded = True
         self._update_confidence_display()
 
     def set_win_rate(self, rate: float) -> None:

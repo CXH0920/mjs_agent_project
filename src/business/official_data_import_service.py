@@ -126,7 +126,8 @@ class OfficialDataImportService:
             panel_x, panel_y, panel = panel_data
             columns = layout.columns[panel_index]
             boundaries = self._find_data_boundaries(panel, image.shape[0], layout, panel_index)
-            panel_tasks.append((panel_index, panel_x, panel_y, panel, columns, boundaries))
+            boundaries, repaired_ranks = self._restore_missing_boundaries(boundaries)
+            panel_tasks.append((panel_index, panel_x, panel_y, panel, columns, boundaries, repaired_ranks))
             row_count = len(boundaries) - 1
             total_steps += row_count * (2 if "胜率" in columns else 1)
 
@@ -141,7 +142,7 @@ class OfficialDataImportService:
         if progress_callback:
             progress_callback(0, total_steps)
 
-        for panel_index, panel_x, panel_y, panel, columns, boundaries in panel_tasks:
+        for panel_index, panel_x, panel_y, panel, columns, boundaries, repaired_ranks in panel_tasks:
             output_name = layout.output_names[panel_index]
             review_name = layout.review_names[panel_index]
             column_breaks = layout.column_breaks[panel_index]
@@ -181,6 +182,8 @@ class OfficialDataImportService:
                 batch["records"].append(record)
 
                 reasons = self._review_reasons(expected_rank, fields, name, record)
+                if expected_rank in repaired_ranks:
+                    reasons.append("检测到缺失表格横线，已按行高补全")
                 ocr_rate = self._normalize_rate(fields.get("胜率", ("", 0.0))[0])
                 if template_rate and ocr_rate and template_rate != ocr_rate and template_score < 0.90:
                     reasons.append("胜率OCR与数字模板不一致")
@@ -280,6 +283,31 @@ class OfficialDataImportService:
         if len(boundaries) < 2:
             raise ValueError(f"未能定位{layout.key}榜单数据行")
         return boundaries
+
+    @staticmethod
+    def _restore_missing_boundaries(boundaries: list[int]) -> tuple[list[int], set[int]]:
+        """按常规行高补回 Hough 漏检的中间横线。"""
+        gaps = np.diff(boundaries)
+        if gaps.size == 0:
+            return boundaries, set()
+        median_gap = float(np.median(gaps))
+        if median_gap <= 0:
+            return boundaries, set()
+
+        restored = [boundaries[0]]
+        for top, bottom in zip(boundaries, boundaries[1:]):
+            gap = bottom - top
+            segments = round(gap / median_gap)
+            if gap > median_gap * 1.5 and segments > 1:
+                restored.extend(round(top + gap * index / segments) for index in range(1, segments))
+            restored.append(bottom)
+
+        original_boundaries = set(boundaries)
+        repaired_ranks = {
+            index + 1 for index, boundary in enumerate(restored)
+            if boundary not in original_boundaries
+        }
+        return restored, repaired_ranks
 
     def _recognize_row(
         self,

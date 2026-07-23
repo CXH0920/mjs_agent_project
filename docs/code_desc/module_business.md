@@ -184,12 +184,13 @@ OfficialDataImportDialog
 
 ```python
 boundaries = self._find_data_boundaries(panel, image.shape[0], layout, panel_index)
+boundaries, repaired_ranks = self._restore_missing_boundaries(boundaries)
 for top, bottom in zip(boundaries, boundaries[1:]):
     expected_rank = len(batch["records"]) + 1
     fields = self._recognize_row(row, columns, column_breaks)
 ```
 
-`boundaries` 由横线检测得到，因此 `expected_rank` 来自视觉行序而非 OCR 排名。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；最高结果只有单字时，再保留背景留白按字形补识别。补识别仍失败但该首字在词表中只有唯一候选时可确认该候选；存在多个同首字候选的单字才懒加载 `chinese_cht` 繁体模型。繁体模型的完整候选会再次通过词表校正，最终必须精确命中词表；加载或推理不可用时保留原结果待复核。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。工作线程会先显示不定进度，待横线检测得到行数后，将胜率模板准备和逐行识别都计入当前文件进度；进入罕见字兜底时仅更新状态文字，不重置当前进度。每个图片只创建一个 `OfficialDataImportWorker`；同时选择 2v2 和放逐时在同一线程顺序处理，不会互相争用该功能的 OCR 实例。它与常规 `OcrWorker` 是独立实例，轮询或截图识别同时运行时会共享 CPU/GPU 资源。
+`boundaries` 由横线检测得到，因此 `expected_rank` 来自视觉行序而非 OCR 排名。若相邻边界间距超过中位行高的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；最高结果只有单字时，再保留背景留白按字形补识别。补识别仍失败但该首字在词表中只有唯一候选时可确认该候选；存在多个同首字候选的单字才懒加载 `chinese_cht` 繁体模型。繁体模型的完整候选会再次通过词表校正，最终必须精确命中词表；加载或推理不可用时保留原结果待复核。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。工作线程会先显示不定进度，待横线检测得到行数后，将胜率模板准备和逐行识别都计入当前文件进度；进入罕见字兜底时仅更新状态文字，不重置当前进度。每个图片只创建一个 `OfficialDataImportWorker`；同时选择 2v2 和放逐时在同一线程顺序处理，不会互相争用该功能的 OCR 实例。它与常规 `OcrWorker` 是独立实例，轮询或截图识别同时运行时会共享 CPU/GPU 资源。
 
 **名称降级决策顺序：**
 
@@ -259,5 +260,6 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `src.ocr.*` | OCR 控制服务管理模板和识别器 |
 | 依赖 | `src.ocr.recognizer` | 官方榜单复用两段式武将词表校正 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存 |
+| 依赖 | `src.data.recommendation_index_repository` | 提供推荐指数 CSV 的手动重建接口 |
 | 被调用方 | `src.ui.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 fetch_*() |
 | 被调用方 | `src.ui.official_data_import_dialog` | 对话框创建后台导入线程并显示结果 |

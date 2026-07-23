@@ -108,6 +108,10 @@ def load_env_config(env_path=None):
         "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
         "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
         "MUMU_MATCH_GUIDE_COOLDOWN": "mumu_match_guide_cooldown",
+        "RECOMMENDATION_P_FLOOR": "recommendation_p_floor",
+        "RECOMMENDATION_BAN_WEIGHT": "recommendation_ban_weight",
+        "RECOMMENDATION_SIGMOID_K": "recommendation_sigmoid_k",
+        "RECOMMENDATION_LOW_WIN_RATE_GAP": "recommendation_low_win_rate_gap",
     }
     config = {}
     for env_key, cfg_key in key_mapping.items():
@@ -121,7 +125,11 @@ def load_env_config(env_path=None):
                     continue
             elif cfg_key in ("mumu_ocr_enabled", "mumu_ocr_poll_mode"):
                 value = value.lower() in ("true", "1", "yes")
-            elif cfg_key in ("mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold"):
+            elif cfg_key in (
+                "mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold",
+                "recommendation_p_floor", "recommendation_ban_weight", "recommendation_sigmoid_k",
+                "recommendation_low_win_rate_gap",
+            ):
                 try:
                     value = float(value)
                 except (ValueError, TypeError):

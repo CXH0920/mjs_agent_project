@@ -29,6 +29,11 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
+from src.data.recommendation_index_repository import (
+    RecommendationIndex,
+    load_recommendation_indexes,
+    refresh_recommendation_indexes,
+)
 from src.data.win_rate_repository import load_win_rates
 from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_card_widget import HeroCardWidget
@@ -113,7 +118,19 @@ class RecommendationPanel(QWidget):
         self._import_file_btn.clicked.connect(self._on_import_from_file)
         header_layout.addWidget(self._import_file_btn)
 
+        header_layout.addSpacing(6)
+
+        self._rebuild_index_btn = QPushButton("重建指数")
+        self._rebuild_index_btn.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
+        self._rebuild_index_btn.setStyleSheet("padding: 4px 14px; font-size: 12px;")
+        self._rebuild_index_btn.clicked.connect(self._rebuild_recommendation_indexes)
+        header_layout.addWidget(self._rebuild_index_btn)
+
         layout.addLayout(header_layout)
+
+        self._recommendation_notice = QLabel("推荐指数基于当前版本全服汇总数据计算，仅供参考")
+        self._recommendation_notice.setStyleSheet("font-size: 12px; color: #777;")
+        layout.addWidget(self._recommendation_notice)
 
         grid = QGridLayout()
         grid.setSpacing(8)
@@ -134,6 +151,7 @@ class RecommendationPanel(QWidget):
         """默认按 id 排序取前 8 个武将展示"""
         self._ocr_mode = False
         self._current_hero_ids = set()
+        indexes = self._load_recommendation_indexes()
         heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)[:8]
         for i, hero in enumerate(heroes):
             if i < len(self._cards):
@@ -141,6 +159,7 @@ class RecommendationPanel(QWidget):
                 self._current_hero_ids.add(hero.id)
                 self._load_real_synergies(i, hero.id)
                 self._load_win_rate_by_name(i, hero.name)
+                self._load_recommendation_index_by_name(i, hero.name, indexes)
 
         self._apply_medal_rankings()
 
@@ -206,6 +225,37 @@ class RecommendationPanel(QWidget):
         if rate is not None and card_idx < len(self._cards):
             self._cards[card_idx].set_win_rate(rate)
 
+    def _load_recommendation_indexes(self) -> dict[str, RecommendationIndex]:
+        """读取人工确认后生成的当前推荐指数快照。"""
+        try:
+            return load_recommendation_indexes()
+        except Exception as exc:
+            logger.warning("读取推荐指数失败: %s", exc)
+            return {}
+
+    def _rebuild_recommendation_indexes(self) -> None:
+        """由用户确认源榜单后，手动重建推荐指数快照。"""
+        try:
+            indexes = refresh_recommendation_indexes()
+        except Exception as exc:
+            logger.exception("重建推荐指数失败")
+            QMessageBox.warning(self, "重建失败", f"无法重建推荐指数：\n{exc}")
+            return
+        for card in self._cards:
+            if card._hero:
+                card.set_recommendation_index(indexes.get(card._hero.name))
+        valid_count = sum(index.is_valid for index in indexes.values())
+        QMessageBox.information(
+            self, "重建完成",
+            f"已重建推荐指数：有效 {valid_count} 条，数据不足 {len(indexes) - valid_count} 条。",
+        )
+
+    def _load_recommendation_index_by_name(
+        self, card_idx: int, hero_name: str, indexes: dict[str, RecommendationIndex],
+    ) -> None:
+        if card_idx < len(self._cards):
+            self._cards[card_idx].set_recommendation_index(indexes.get(hero_name))
+
     # ---------------------------------------------------------------
     # 公共数据接口
     # ---------------------------------------------------------------
@@ -227,6 +277,7 @@ class RecommendationPanel(QWidget):
         """
         self._ocr_mode = True
         self._current_hero_ids = set()
+        indexes = self._load_recommendation_indexes()
 
         # 第一遍：收集所有武将 ID（确保相性过滤时 8 个 ID 齐全）
         hero_by_slot: dict[int, str] = {}
@@ -258,14 +309,16 @@ class RecommendationPanel(QWidget):
                 card._name_label.setText(name or "未知武将")
                 card._name_overlay.setText(name or "未知武将")
                 card.set_confidence(confidence)
+                card.set_recommendation_index(None)
                 continue
 
             card.set_hero(hero)
-            # 推荐指数固定为 0.5（表示来自截图识别），不直接使用 OCR 置信度
+            # OCR 置信度不参与全服静态推荐指数计算。
             card.set_confidence(0.5)
 
             # 根据武将名加载胜率
             self._load_win_rate_by_name(idx - 1, name)
+            self._load_recommendation_index_by_name(idx - 1, name, indexes)
 
         # 第三遍：所有 ID 齐全后统一加载相性
         for idx, name in hero_by_slot.items():

@@ -24,10 +24,11 @@ src/data/
 ├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
 ├── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
-└── win_rate_repository.py # 2v2 胜率 CSV 读取与缓存
+├── win_rate_repository.py # 2v2 胜率 CSV 读取与缓存
+└── recommendation_index_repository.py # 推荐指数计算、快照输出与读取
 ```
 
-官方榜单导入还会在 `data/` 下维护三个 CSV：`2v2胜率排行.csv`、`2v2出场排行.csv`、`武将放逐.csv`。它们不是 Pydantic JSON 模型的一部分，由业务服务按表格行原子覆盖；每份正式 CSV 对应一份 `*_待复核.csv`，异常行的原始坐标和截图存入 `screenshot_data/official_import/`，便于人工确认。2v2 胜率文件更新后调用 `clear_win_rate_cache()`，确保后续推荐页读取新数据。
+官方榜单导入还会在 `data/` 下维护三个 CSV：`2v2胜率排行.csv`、`2v2出场排行.csv`、`武将放逐.csv`。它们不是 Pydantic JSON 模型的一部分，由业务服务按表格行原子覆盖；每份正式 CSV 对应一份 `*_待复核.csv`，异常行的原始坐标和截图存入 `screenshot_data/official_import/`，便于人工确认。`recommendation_index_repository.py` 在用户确认三份榜单后，基于它们及 `heroes.json` 的唯一 ID 手动生成 `武将推荐指数.csv`：有效英雄按胜率、出场排名和禁用排名计算 0~100 推荐分、评级与稳定排序；任一数据缺失、排名越界或重复时标记“数据不足”并写告警日志。推荐页面日常仅读取该快照，不自动重建；若 CSV 正被 Excel、编辑器或预览窗口占用，重建会保留旧快照并提示用户关闭占用程序后重试。2v2 胜率文件更新后调用 `clear_win_rate_cache()`，确保后续推荐页读取新数据。
 
 ---
 

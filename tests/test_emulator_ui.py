@@ -12,6 +12,7 @@ from src.business.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, Skill
+from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow
 from src.ui.match_guide_panel import MatchGuidePanel
@@ -124,6 +125,25 @@ def test_top_three_win_rate_visual_anchor() -> None:
     card.set_medal(0)
     assert card._medal_label.text() == ""
     assert card._rank == 0
+
+
+def test_recommendation_card_displays_index_or_insufficient_data() -> None:
+    _app()
+    card = HeroCardWidget(None)
+    card.set_recommendation_index(RecommendationIndex(
+        1, "测试武将", 0.60, 1, 2, 1.0, 0.8, 1.4, 0.63, 0.53,
+        82, "S", 1, "有效",
+    ))
+
+    assert "82 分 · S级" in card._confidence_label.text()
+    assert "出场活跃度：第 1 名" in card._confidence_label.toolTip()
+
+    card.set_recommendation_index(RecommendationIndex(
+        1, "测试武将", None, None, None, None, None, None, None, None,
+        None, None, None, "数据不足", "缺少禁用排名",
+    ))
+    assert "数据不足" in card._confidence_label.text()
+    assert card._confidence_label.toolTip() == "缺少禁用排名"
 
 
 def test_main_window_keeps_emulator_status_after_stats_update() -> None:

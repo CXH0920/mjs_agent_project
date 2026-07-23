@@ -559,7 +559,7 @@ OfficialDataImportDialog._start_import()
     -> emit progress_changed(status, 0, 0)                 # 读取与行检测阶段
     -> OfficialDataImportService.import_file(key, path, callback)
       -> _read_image() -> _extract_panels()
-      -> _find_data_boundaries() -> HoughLinesP 横线 -> 视觉行序
+      -> _find_data_boundaries() -> HoughLinesP 横线 -> _restore_missing_boundaries() -> 视觉行序
       -> _prepare_rate_templates()（仅 2v2 胜率表）
       -> _recognize_row() -> 名称/胜率识别（歧义单字按需繁体兜底） -> _review_reasons()
       -> _write_csv() -> Path.replace() 原子覆盖
@@ -575,7 +575,7 @@ OfficialDataImportDialog._start_import()
 | 2v2 | 右“出场最多” | `2v2出场排行.csv` | 每行识别 |
 | 武将放逐 | 左 1-80、右 81-160 | `武将放逐.csv` | 两栏视觉行序合并后逐行识别 |
 
-Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检测到横线后以总工作单元切换为 `current / total`。2v2 出场榜和放逐榜的排名/武将分界为面板宽度的 45%，避免排名数字进入名称 ROI；胜率格向左扩展 4px，避免首位数字贴线时被截断。
+Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检测到横线后以总工作单元切换为 `current / total`。相邻横线间距超过中位行高 1.5 倍时，服务按常规行高补插边界，并将补插边界后的行写入待复核，避免横线漏检导致后续排名前移。2v2 出场榜和放逐榜的排名/武将分界为面板宽度的 45%，避免排名数字进入名称 ROI；胜率格向左扩展 4px，避免首位数字贴线时被截断。
 
 **名称降级策略：**
 
@@ -946,7 +946,7 @@ RecommendationPanel (QWidget)
            │   │   └── 势力标签 (左上角, 色块)
            └── 信息区 (弹性)
                ├── 势力色块 + 武将名 (粗体 15px) + [攻略] 按钮
-               ├── 推荐指数 (★★★★☆ 98.23% 或 ★★☆☆☆ --)
+               ├── 推荐指数（0~100 分 + S/A/B/C/D 级；数据缺失时显示“数据不足”）
                ├── 分隔线
                ├── 高相性组合标题
                ├── QGridLayout (2列, 搭配+评分)
@@ -973,6 +973,7 @@ RecommendationPanel (QWidget)
 - `src/ui/shared/widgets.py` 提供 `DoubleClickLabel`，统一头像双击信号，推荐卡片和对局攻略卡片复用同一控件。
 - `src/ui/shared/hero_dialogs.py` 提供 `HeroSkillDialog`，技能描述和结算详情弹窗不再由业务页面私有实现。
 - `src/data/win_rate_repository.py` 的 `load_win_rates()` 读取 `data/2v2胜率排行.csv`，默认路径结果缓存；推荐面板和对局攻略页面通过该仓库查询胜率，避免重复实现 CSV 解析。
+- `src/data/recommendation_index_repository.py` 读取胜率、出场和放逐三份官方榜单，以 `heroes.json` 的 ID 作为稳定次级排序，生成 `data/武将推荐指数.csv`。低胜率英雄仍显示推荐分，但在自动推荐排序中降级；缺失、越界或重复排名的数据不参与计算。该快照仅由选将推荐页的“重建指数”按钮手动覆盖，其他页面行为只读取已有文件。
 
 **数据接口**：
 ```python
@@ -996,7 +997,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 接收 OCR 识别结果 `[{index, name, confidence}, ...]`
 - 将 name 匹配 HeroManager 中的 Hero 对象
 - 加载 `images/<name>.png` 头像
-- 推荐指数固定为 0.5（两星，表示来自截图识别，不直接使用 OCR 置信度）
+- 刷新当前版本推荐指数快照，卡片显示推荐分与评级；点击可查看胜率、出场排名、禁用排名及自动推荐排序
 - 根据武将名从 `synergies.json` 加载高相性组合数据
 - 高相性组合在 OCR 模式下**仅显示当前 8 个武将之间的相性**，不显示数据库中其他武将的相性（通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志控制过滤）
 - 根据武将名从 `2v2胜率排行.csv` 加载胜率，随即对 8 个槽位按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
@@ -1747,7 +1748,7 @@ def _engine(self):
                       └── load_from_ocr() → 填入 8 槽
                            ├── 匹配 Hero 对象（通过 HeroManager）
                            ├── 加载 images/<name>.png 头像
-                           ├── 推荐指数固定 0.5（两星，区分于 AI 推荐）
+                           ├── 刷新推荐指数快照并显示推荐分、评级或“数据不足”
                            └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
                                  └── 按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
 ```

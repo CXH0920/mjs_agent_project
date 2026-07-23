@@ -26,6 +26,15 @@ def test_template_rows_are_split_by_horizontal_lines(monkeypatch) -> None:
     assert len(boundaries) - 1 == 160
 
 
+def test_missing_horizontal_line_is_restored_by_median_row_height() -> None:
+    boundaries, repaired_ranks = OfficialDataImportService._restore_missing_boundaries(
+        [0, 10, 20, 40, 50],
+    )
+
+    assert boundaries == [0, 10, 20, 30, 40, 50]
+    assert repaired_ranks == {4}
+
+
 def test_missing_rank_ocr_uses_table_row_rank_without_review() -> None:
     reasons = OfficialDataImportService._review_reasons(
         1,
