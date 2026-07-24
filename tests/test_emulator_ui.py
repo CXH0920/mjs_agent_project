@@ -40,6 +40,23 @@ def test_recommendation_connects_capture_signals_once() -> None:
     assert panel._import_btn.isEnabled()
 
 
+def test_recommendation_cards_scroll_instead_of_shrinking_below_minimum_height() -> None:
+    app = _app()
+    panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+    panel.resize(500, 220)
+    panel.show()
+    app.processEvents()
+
+    assert panel._cards_scroll.verticalScrollBar().maximum() > 0
+    assert all(card.height() >= card.minimumHeight() for card in panel._cards)
+    panel._cards[0].set_medal(1)
+    app.processEvents()
+    badge = panel._cards[0]._medal_label.geometry()
+    assert badge.top() >= 2
+    assert badge.bottom() <= panel._cards[0]._win_rate_row.height() - 3
+    panel.hide()
+
+
 def test_recommendation_screenshot_does_not_request_ocr(monkeypatch) -> None:
     _app()
     service = CaptureService()
@@ -113,6 +130,7 @@ def test_top_three_win_rate_visual_anchor() -> None:
     card = HeroCardWidget(None)
 
     card.set_win_rate(58.6)
+    assert card._win_rate_label.text() == "胜率: 58.60%"
     card.set_medal(1)
 
     assert card._medal_label.text() == "TOP 1"
@@ -121,6 +139,8 @@ def test_top_three_win_rate_visual_anchor() -> None:
     assert "#ffffff" in card.styleSheet()
     assert "transparent" in card._portrait_frame.styleSheet()
     assert "font-weight: bold" in card._win_rate_label.styleSheet()
+    assert card._win_rate_row.minimumHeight() == 28
+    assert card._medal_label.height() == 24
 
     card.set_medal(0)
     assert card._medal_label.text() == ""
@@ -135,8 +155,12 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
         82, "S", 1, "有效",
     ))
 
-    assert "82 分 · S级" in card._confidence_label.text()
+    assert "推荐指数：★★★★★ S级" in card._confidence_label.text()
     assert "出场活跃度：第 1 名" in card._confidence_label.toolTip()
+    assert "background-color: white" in card._recommendation_info_tooltip.styleSheet()
+    assert "color: #c62828" in card._recommendation_info_tooltip.styleSheet()
+    assert "font-weight: bold" in card._recommendation_info_tooltip.styleSheet()
+    assert not card._recommendation_info_icon.isHidden()
 
     card.set_recommendation_index(RecommendationIndex(
         1, "测试武将", None, None, None, None, None, None, None, None,
@@ -144,6 +168,7 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
     ))
     assert "数据不足" in card._confidence_label.text()
     assert card._confidence_label.toolTip() == "缺少禁用排名"
+    assert card._recommendation_info_icon.isHidden()
 
 
 def test_main_window_keeps_emulator_status_after_stats_update() -> None:

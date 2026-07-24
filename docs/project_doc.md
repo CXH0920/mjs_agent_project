@@ -937,7 +937,7 @@ RecommendationPanel (QWidget)
  │   ├── "选将推荐"
  │   ├── [截图] 按钮（仅 ADB 截图并保存）
  │   └── [📁 从图片导入] 按钮（本地图片 → OCR 导入）
- └── QGridLayout (4行 × 2列)
+ └── QScrollArea → QGridLayout (4行 × 2列，小尺寸时滚动)
       └── HeroCardWidget × 8
            ├── 头像区 (宽 130px)
            │   ├── QPixmap (从 images/name.png 加载)
@@ -946,7 +946,7 @@ RecommendationPanel (QWidget)
            │   │   └── 势力标签 (左上角, 色块)
            └── 信息区 (弹性)
                ├── 势力色块 + 武将名 (粗体 15px) + [攻略] 按钮
-               ├── 推荐指数（0~100 分 + S/A/B/C/D 级；数据缺失时显示“数据不足”）
+               ├── 推荐指数（“推荐指数：”+ 星级 + S/A/B/C/D 级；悬停或点击星级查看明细，右侧圆形感叹号悬停查看口径，数据缺失时显示“数据不足”）
                ├── 分隔线
                ├── 高相性组合标题
                ├── QGridLayout (2列, 搭配+评分)
@@ -997,7 +997,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 接收 OCR 识别结果 `[{index, name, confidence}, ...]`
 - 将 name 匹配 HeroManager 中的 Hero 对象
 - 加载 `images/<name>.png` 头像
-- 刷新当前版本推荐指数快照，卡片显示推荐分与评级；点击可查看胜率、出场排名、禁用排名及自动推荐排序
+- 刷新当前版本推荐指数快照，卡片以“推荐指数：星级 + 评级”显示；悬停或点击星级查看胜率、出场排名、禁用排名及自动推荐排序，右侧圆形感叹号悬停查看计算口径
 - 根据武将名从 `synergies.json` 加载高相性组合数据
 - 高相性组合在 OCR 模式下**仅显示当前 8 个武将之间的相性**，不显示数据库中其他武将的相性（通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志控制过滤）
 - 根据武将名从 `2v2胜率排行.csv` 加载胜率，随即对 8 个槽位按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
@@ -1748,7 +1748,7 @@ def _engine(self):
                       └── load_from_ocr() → 填入 8 槽
                            ├── 匹配 Hero 对象（通过 HeroManager）
                            ├── 加载 images/<name>.png 头像
-                           ├── 刷新推荐指数快照并显示推荐分、评级或“数据不足”
+                           ├── 刷新推荐指数快照并显示星级、评级或“数据不足”
                            └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
                                  └── 按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
 ```

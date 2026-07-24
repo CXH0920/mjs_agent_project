@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -128,11 +129,8 @@ class RecommendationPanel(QWidget):
 
         layout.addLayout(header_layout)
 
-        self._recommendation_notice = QLabel("推荐指数基于当前版本全服汇总数据计算，仅供参考")
-        self._recommendation_notice.setStyleSheet("font-size: 12px; color: #777;")
-        layout.addWidget(self._recommendation_notice)
-
-        grid = QGridLayout()
+        self._cards_container = QWidget()
+        grid = QGridLayout(self._cards_container)
         grid.setSpacing(8)
 
         self._cards = []
@@ -140,12 +138,23 @@ class RecommendationPanel(QWidget):
             row = i // 2
             col = i % 2
             card = HeroCardWidget(None)
+            card.setMinimumSize(card.minimumSizeHint())
             card.guide_clicked.connect(self._show_guide_popup)
             card.hero_double_clicked.connect(self._show_skill_popup)
             grid.addWidget(card, row, col)
             self._cards.append(card)
 
-        layout.addLayout(grid, 1)
+        for row in range(4):
+            grid.setRowStretch(row, 1)
+        for col in range(2):
+            grid.setColumnStretch(col, 1)
+        self._cards_container.setMinimumSize(grid.minimumSize())
+
+        self._cards_scroll = QScrollArea()
+        self._cards_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._cards_scroll.setWidgetResizable(True)
+        self._cards_scroll.setWidget(self._cards_container)
+        layout.addWidget(self._cards_scroll, 1)
 
     def _load_default_heroes(self) -> None:
         """默认按 id 排序取前 8 个武将展示"""

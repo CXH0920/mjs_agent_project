@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QCursor, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -31,6 +31,17 @@ class HeroCardWidget(QFrame):
 
     guide_clicked = Signal(int)
     hero_double_clicked = Signal(int)
+    RATING_STARS = {
+        "S": "★★★★★",
+        "A": "★★★★☆",
+        "B": "★★★☆☆",
+        "C": "★★☆☆☆",
+        "D": "★☆☆☆☆",
+    }
+    RECOMMENDATION_INDEX_DESCRIPTION = (
+        "推荐指数基于当前版本全服汇总数据计算，综合胜率表现、"
+        "出场活跃度与禁用关注度，仅用于武将间的相对参考。"
+    )
 
     def __init__(self, hero: Hero | None, parent=None):
         super().__init__(parent)
@@ -119,7 +130,30 @@ class HeroCardWidget(QFrame):
             "QPushButton:hover { color: #357abd; }"
         )
         self._confidence_label.clicked.connect(self._show_recommendation_detail)
-        info_layout.addWidget(self._confidence_label)
+        self._recommendation_info_icon = QLabel("!")
+        self._recommendation_info_icon.setFixedSize(16, 16)
+        self._recommendation_info_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._recommendation_info_icon.setStyleSheet(
+            "color: #777; border: 1px solid #999; border-radius: 7px; font-size: 11px;"
+        )
+        self._recommendation_info_icon.installEventFilter(self)
+        self._recommendation_info_tooltip = QLabel(self.RECOMMENDATION_INDEX_DESCRIPTION, self)
+        self._recommendation_info_tooltip.setWindowFlags(Qt.WindowType.ToolTip)
+        self._recommendation_info_tooltip.setFixedWidth(260)
+        self._recommendation_info_tooltip.setWordWrap(True)
+        self._recommendation_info_tooltip.setStyleSheet(
+            "QLabel { background-color: white; color: #c62828; border: 1px solid #ef9a9a; "
+            "border-radius: 4px; padding: 6px; font-size: 12px; font-weight: bold; }"
+        )
+        self._recommendation_info_tooltip.hide()
+
+        recommendation_layout = QHBoxLayout()
+        recommendation_layout.setContentsMargins(0, 0, 0, 0)
+        recommendation_layout.setSpacing(5)
+        recommendation_layout.addWidget(self._confidence_label)
+        recommendation_layout.addWidget(self._recommendation_info_icon)
+        recommendation_layout.addStretch()
+        info_layout.addLayout(recommendation_layout)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
@@ -147,12 +181,15 @@ class HeroCardWidget(QFrame):
         self._medal_label.setFixedSize(58, 24)
         self._medal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        win_rate_layout = QHBoxLayout()
+        self._win_rate_row = QWidget()
+        self._win_rate_row.setMinimumHeight(28)
+        win_rate_layout = QHBoxLayout(self._win_rate_row)
+        win_rate_layout.setContentsMargins(0, 2, 0, 2)
         win_rate_layout.setSpacing(4)
         win_rate_layout.addWidget(self._win_rate_label)
         win_rate_layout.addWidget(self._medal_label)
         win_rate_layout.addStretch()
-        info_layout.addLayout(win_rate_layout)
+        info_layout.addWidget(self._win_rate_row)
 
         info_layout.addStretch()
         layout.addWidget(info_panel, 1)
@@ -174,6 +211,8 @@ class HeroCardWidget(QFrame):
             )
             self._confidence_label.setText("")
             self._confidence_label.setToolTip("")
+            self._recommendation_info_icon.setVisible(False)
+            self._recommendation_info_tooltip.hide()
             self._win_rate_label.setText("胜率: --%")
             self.set_medal(0)
             self._guide_btn.setVisible(False)
@@ -237,10 +276,11 @@ class HeroCardWidget(QFrame):
                 self._confidence_label.setToolTip(
                     index.reason if index is not None and index.reason else "当前版本数据不完整"
                 )
+                self._recommendation_info_icon.setVisible(False)
+                self._recommendation_info_tooltip.hide()
                 return
-            self._confidence_label.setText(
-                f"推荐指数：{index.score} 分 · {index.rating}级"
-            )
+            stars = self.RATING_STARS.get(index.rating, "")
+            self._confidence_label.setText(f"推荐指数：{stars} {index.rating}级")
             self._confidence_label.setStyleSheet(
                 "QPushButton { font-size: 13px; color: #4a90d9; font-weight: bold; border: none; "
                 "padding: 0; text-align: left; } QPushButton:hover { color: #357abd; }"
@@ -251,33 +291,50 @@ class HeroCardWidget(QFrame):
                 f"禁用关注度：第 {index.ban_rank} 名\n"
                 f"自动推荐排序：第 {index.order} 名"
             )
+            self._recommendation_info_icon.setVisible(True)
             return
         if self._confidence <= 0.0:
             self._confidence_label.setText(
-                "★★☆☆☆  --"
+                "推荐指数：★★☆☆☆ --"
             )
             self._confidence_label.setStyleSheet(
                 "QPushButton { font-size: 13px; color: #999; border: none; padding: 0; text-align: left; }"
             )
             self._confidence_label.setToolTip("")
+            self._recommendation_info_icon.setVisible(False)
+            self._recommendation_info_tooltip.hide()
             return
 
         filled = int(self._confidence * 5)
         stars = "★" * filled + "☆" * (5 - filled)
         percentage = f"{self._confidence * 100:.2f}%"
         self._confidence_label.setText(
-            f"{stars}  {percentage}"
+            f"推荐指数：{stars} {percentage}"
         )
         self._confidence_label.setStyleSheet(
             "QPushButton { font-size: 13px; color: #4a90d9; font-weight: bold; border: none; "
             "padding: 0; text-align: left; }"
         )
         self._confidence_label.setToolTip("")
+        self._recommendation_info_icon.setVisible(False)
+        self._recommendation_info_tooltip.hide()
 
     def _show_recommendation_detail(self) -> None:
         detail = self._confidence_label.toolTip()
         if detail:
             QToolTip.showText(QCursor.pos(), detail, self._confidence_label)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._recommendation_info_icon:
+            if event.type() == QEvent.Type.Enter and self._recommendation_info_icon.isVisible():
+                position = self._recommendation_info_icon.mapToGlobal(
+                    self._recommendation_info_icon.rect().bottomLeft()
+                )
+                self._recommendation_info_tooltip.move(position + QPoint(0, 6))
+                self._recommendation_info_tooltip.show()
+            elif event.type() == QEvent.Type.Leave:
+                self._recommendation_info_tooltip.hide()
+        return super().eventFilter(watched, event)
 
     def _on_guide_clicked(self) -> None:
         if self._hero_id > 0:
@@ -304,7 +361,7 @@ class HeroCardWidget(QFrame):
         self._update_confidence_display()
 
     def set_win_rate(self, rate: float) -> None:
-        self._win_rate_label.setText(f"胜率: {rate:.1f}%")
+        self._win_rate_label.setText(f"胜率: {rate:.2f}%")
 
     def set_medal(self, rank: int) -> None:
         self._rank = rank if rank in (1, 2, 3) else 0
