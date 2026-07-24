@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -19,6 +20,16 @@ from PySide6.QtWidgets import (
 
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
+
+
+class DoubleClickTextBrowser(QTextBrowser):
+    """支持双击打开完整 Markdown 内容的文本预览控件。"""
+
+    double_clicked = Signal()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.double_clicked.emit()
+        super().mouseDoubleClickEvent(event)
 
 
 class GuideDetailDialog(QDialog):
@@ -35,8 +46,11 @@ class GuideDetailDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle(f"{hero_name} - 攻略详情")
-        self.setMinimumSize(720, 600)
-        self.resize(780, 680)
+        self._hero_name = hero_name
+        self._guide = guide
+        self.setMinimumSize(640, 480)
+        self.setMaximumHeight(760)
+        self.resize(720, 680)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -48,51 +62,46 @@ class GuideDetailDialog(QDialog):
             layout.addWidget(no_data)
             return
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(8, 8, 8, 8)
+        content_layout.setSpacing(8)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
         header = QLabel(
             f"<div style='font-size:20px; font-weight:bold; color:#2c3e50;'>{hero_name}</div>"
             f"<div style='color:#6b7c93; margin-top:4px;'>攻略指南 · 更新于 {guide.last_updated}</div>"
         )
-        header.setStyleSheet(
-            "background-color: #f8fbff; border: 1px solid #dce6f0; "
-            "padding: 10px; border-radius: 6px;"
-        )
-        layout.addWidget(header)
+        header.setWordWrap(True)
+        content_layout.addWidget(header)
 
-        columns = QHBoxLayout()
-        columns.setSpacing(12)
-        summary = QFrame()
-        summary.setStyleSheet(
-            "QFrame { background-color: #f8fbff; border: 1px solid #dce6f0; border-radius: 6px; }"
-        )
-        summary_layout = QVBoxLayout(summary)
-        summary_layout.setContentsMargins(12, 12, 12, 12)
-        summary_layout.setSpacing(8)
-        summary.setMinimumWidth(245)
-        summary.setMaximumWidth(310)
-
-        self._add_section_title(summary_layout, "核心要点")
+        self._add_section_title(content_layout, "核心要点")
         if guide.key_points:
             for point in guide.key_points:
                 point_label = QLabel(f"• {point}")
                 point_label.setWordWrap(True)
-                summary_layout.addWidget(point_label)
+                content_layout.addWidget(point_label)
         else:
-            summary_layout.addWidget(QLabel("暂无核心要点"))
+            content_layout.addWidget(QLabel("暂无核心要点"))
 
         if guide.tips_for_beginners:
-            self._add_section_title(summary_layout, "新手提示")
+            self._add_section_title(content_layout, "新手提示")
             tips = QLabel(guide.tips_for_beginners)
             tips.setWordWrap(True)
             tips.setStyleSheet(
                 "background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;"
             )
-            summary_layout.addWidget(tips)
+            content_layout.addWidget(tips)
 
-        self._add_type_list(summary_layout, "劣势对局", guide.weak_against_type, "#c62828")
-        self._add_type_list(summary_layout, "优势对局", guide.strong_against_type, "#2e7d32")
+        self._add_type_list(content_layout, "劣势对局", guide.weak_against_type, "#c62828")
+        self._add_type_list(content_layout, "优势对局", guide.strong_against_type, "#2e7d32")
         if guide.synergizes_with:
             self._add_relation_tags(
-                summary_layout,
+                content_layout,
                 "搭配推荐",
                 guide.synergizes_with,
                 hero_manager,
@@ -100,23 +109,24 @@ class GuideDetailDialog(QDialog):
                 "#2e7d32",
             )
         if guide.counter_strategy:
-            self._add_section_title(summary_layout, "对抗建议")
+            self._add_section_title(content_layout, "对抗建议")
             strategy = QLabel(guide.counter_strategy)
             strategy.setWordWrap(True)
             strategy.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
-            summary_layout.addWidget(strategy)
-        summary_layout.addStretch()
+            content_layout.addWidget(strategy)
 
-        desc_browser = QTextBrowser()
+        self._add_section_title(content_layout, "攻略正文")
+        desc_browser = DoubleClickTextBrowser()
         desc_browser.setOpenExternalLinks(False)
+        desc_browser.double_clicked.connect(self._show_full_description)
         desc_browser.setHtml(
             _markdown_to_html(guide.description)
             if guide.description
             else "<p style='color:#8a98a8;'>暂无攻略正文</p>"
         )
-        columns.addWidget(summary, 0)
-        columns.addWidget(desc_browser, 1)
-        layout.addLayout(columns, 1)
+        desc_browser.setMinimumHeight(300)
+        content_layout.addWidget(desc_browser)
+        content_layout.addStretch()
 
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -126,10 +136,22 @@ class GuideDetailDialog(QDialog):
         button_layout.addWidget(close_button)
         layout.addLayout(button_layout)
 
+    def _show_full_description(self) -> None:
+        """双击攻略正文预览后打开完整 Markdown 弹窗。"""
+        if not self._guide or not self._guide.description:
+            return
+        from src.ui.hero_browser import GuideMarkdownDialog
+
+        dialog = GuideMarkdownDialog(self._hero_name, self._guide.description, self)
+        dialog.exec()
+
     @staticmethod
     def _add_section_title(layout: QVBoxLayout, title: str) -> None:
         label = QLabel(title)
-        label.setStyleSheet("font-size: 13px; font-weight: bold; color: #357abd; padding-top: 6px;")
+        label.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #357abd; "
+            "padding-top: 6px; border-bottom: 1px solid #dce6f0;"
+        )
         layout.addWidget(label)
 
     def _add_type_list(self, layout: QVBoxLayout, title: str, types: list[str], color: str) -> None:

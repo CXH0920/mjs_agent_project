@@ -179,6 +179,43 @@ def test_generation_result_is_successful_without_token_usage() -> None:
     assert result.succeeded
 
 
+@pytest.mark.parametrize(
+    ("method_name", "system_sent_attr", "rest_required_attr", "args"),
+    [
+        ("generate_guide", "_guide_system_sent", "_guide_rest_required", ({"id": 1, "name": "甲"},)),
+        (
+            "generate_synergy",
+            "_synergy_system_sent",
+            "_synergy_rest_required",
+            ({"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}),
+        ),
+    ],
+)
+def test_browser_generator_rests_before_next_successful_request(
+    monkeypatch, method_name, system_sent_attr, rest_required_attr, args,
+) -> None:
+    import src.scraper.ai_playwright as ai_playwright
+
+    events: list[str] = []
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    setattr(generator, system_sent_attr, False)
+    setattr(generator, rest_required_attr, False)
+    generator._send_and_wait = lambda _prompt: events.append("send") or "reply"
+    generator._random_rest = lambda: events.append("rest")
+    monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero: "guide")
+    monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda _a, _b: "synergy")
+    monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {})
+    monkeypatch.setattr(ai_playwright, "validate_guide", lambda raw: raw)
+    monkeypatch.setattr(ai_playwright, "validate_synergy", lambda raw: raw)
+
+    method = getattr(generator, method_name)
+    method(*args)
+    method(*args)
+
+    assert events == ["send", "rest", "send"]
+
+
 def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> None:
     """浏览器后端应跳过 API Key 校验，并以结构化结果结束任务。"""
     import src.scraper.ai_batch as ai_batch

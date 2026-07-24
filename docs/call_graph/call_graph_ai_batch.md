@@ -150,7 +150,7 @@ PlaywrightGenerator.generate_guide(hero)
      -> [超时] _page_diagnostics()
   -> extract_json(response_text)                              [同 API 模式]
   -> validate_guide(raw)                                      [Pydantic 校验]
-  -> [非首次] self._random_rest()                             [随机休息 60-180s]
+  -> [下一次请求前] self._random_rest()                       [上次成功后随机休息 60-180s]
      -> time.sleep(random.randint(60, 180))
   -> return (guide_dict, None)                                [浏览器模式无语费统计]
 ```
@@ -248,7 +248,7 @@ src.ui.main_window
 
 | 对比项 | AIBatchGenerator | PlaywrightGenerator |
 |--------|-----------------|-------------------|
-| 限速方式 | RPM + time.sleep 前置限流 | 随机休息 60-180s |
+| 限速方式 | RPM + time.sleep 前置限流 | 每次成功生成后，在下一次请求前随机休息 60-180s |
 | 重试 | 指数退避 2s/4s/8s, 3 次 | 无重试 |
 | Token 统计 | API 返回 usage | 无（返回 None） |
 | 成本估算 | 支持 dry-run | 不支持 |
@@ -267,6 +267,7 @@ src.ui.main_window
 | `AIBatchGenerator._call_api()` | `ai_generator.py` | `generate_guide/synergy` | `time.sleep()`, `httpx.Client.post()` |
 | `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
 | `PlaywrightGenerator.generate_synergy()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
+| `PlaywrightGenerator._random_rest()` | `ai_playwright.py` | 下一次浏览器请求前 | 随机等待 60-180 秒 |
 | `PlaywrightGenerator._ensure_browser()` | `ai_playwright.py` | `_send_and_wait()` | `Playwright.start()` |
 | `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide/synergy` | `page.fill()`, 轮询检测 |
 | `run_guide_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |

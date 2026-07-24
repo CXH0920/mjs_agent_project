@@ -1008,7 +1008,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 按钮尺寸 66×28，蓝色背景 `#4a90d9`，白色文字
 - 点击时通过 `guide_clicked = Signal(int)` 信号发射武将 ID
 - `RecommendationPanel._show_guide_popup(hero_id)` 接收信号，通过 `GuideManager.get_guide()` 获取攻略
-- 弹出 `GuideDetailDialog`（QDialog，默认 780×680），顶部显示武将和更新时间，左侧展示核心要点、新手提示及可点击关系标签，右侧独立滚动显示 Markdown 攻略正文
+- 弹出 `GuideDetailDialog`（QDialog，默认 720×680，最大高度 760），以与武将浏览器一致的单列区块展示标题、要点、对局信息和正文；内容超出时通过滚动区查看，正文预览支持双击打开完整攻略正文弹窗
 - 无攻略数据时弹窗显示"暂无攻略数据"
 
 推荐页面已按职责拆分：`recommendation_panel.py` 负责 8 个槽位的数据刷新、相性/胜率查询及截图/OCR 信号协调；`hero_card_widget.py` 负责卡片的展示和交互信号；`guide_detail_dialog.py` 负责攻略详情渲染与关系跳转。原面板模块继续导入并暴露两个类名，旧调用方无需改动。
@@ -1038,7 +1038,7 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 
 | 类 | 文件 | 用途 |
 |----|------|------|
-| GuideDetailDialog | `guide_detail_dialog.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 780×680），左侧摘要/关系标签，右侧 Markdown 正文 |
+| GuideDetailDialog | `guide_detail_dialog.py` | 选将推荐卡片按钮触发的攻略详情弹窗（默认 720×680，最大高度 760），单列分区并支持滚动 |
 
 ### 5.11 官方数据导入对话框（OfficialDataImportDialog）
 
@@ -1312,7 +1312,7 @@ __init__ →（惰性）→ _ensure_browser → 生成 → close
 
 `_guide_system_sent` 和 `_synergy_system_sent` 控制首次发送完整 `system_prompt + 数据`，后续只发送 `数据`（带武将 ID），让 AI 在同一会话中按已设定的规则持续生成。
 
-**随机休息**：后续调用（非首次）每次生成完成后随机休息 60-180 秒，避免触发风控。
+**随机休息**：每次成功生成后，下一次请求发送前随机休息 60-180 秒，避免触发风控；最后一项完成后不额外等待。
 
 #### 9.1.3 流式回复等待（`_send_and_wait`）
 
@@ -2059,7 +2059,7 @@ PlaywrightGenerator.__init__()
   │    ├── extract_json(reply) → 与 API 方式同一函数
   │    ├── convert_ids_to_int + inject hero_id
   │    ├── validate_guide(raw) → 与 API 方式同一函数
-  │    └── 后续调用: _random_rest() → 随机休息 60-180 秒
+  │    └── 下一次调用前: _random_rest() → 上次成功后随机休息 60-180 秒
   │
   └── close() → context.close() → playwright.stop()
 ```
@@ -2129,7 +2129,7 @@ PlaywrightGenerator.__init__()
 | **断点续传** | ✅ 通过 `_load_existing_guides()` | ✅ 通过 `_load_existing_guides()` |
 | **成本估算** | ✅ 支持 dry-run 显示 | ❌ 无 |
 | **必备条件** | 有效的 API Key + 网络 | Edge 浏览器 + DeepSeek 已登录 |
-| **风控对策** | 限速 + 指数退避重试 | 随机休息 60-180s |
+| **风控对策** | 限速 + 指数退避重试 | 每次成功后、下一次请求前随机休息 60-180s |
 | **速度** | 快（30 req/min 限速） | 慢（含休息时间） |
 
 ---

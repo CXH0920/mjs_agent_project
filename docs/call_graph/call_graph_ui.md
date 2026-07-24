@@ -496,13 +496,14 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
   -> GuideDetailDialog(hero_name, guide, hero_mgr, parent)      [创建攻略对话框]
      -> [无 guide] 显示 "暂无攻略数据"
      -> [有 guide] 渲染:
+        -> 高度受限的 QScrollArea 单列布局
         -> 核心要点 (key_points)
         -> 新手提示 (tips_for_beginners)
         -> 劣势对局 (weak_against_type) → 文本列表
         -> 优势对局 (strong_against_type) → 文本列表
         -> 对抗建议 (counter_strategy) → 文本
         -> 搭配推荐 (synergizes_with) → 同上
-        -> 攻略正文 (description) → _markdown_to_html()         [mistune Markdown 渲染]
+        -> 攻略正文 (description) → DoubleClickTextBrowser    [双击打开 GuideMarkdownDialog]
   -> GuideDetailDialog.exec()                                   [模态展示]
 ```
 

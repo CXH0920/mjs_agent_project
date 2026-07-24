@@ -90,6 +90,8 @@ class PlaywrightGenerator:
         # 控制 system prompt 只发一次
         self._guide_system_sent = False
         self._synergy_system_sent = False
+        self._guide_rest_required = False
+        self._synergy_rest_required = False
 
         logger.info("[PlaywrightGenerator] 初始化完成")
         logger.info("  Edge 用户数据目录: %s", self._browser_cfg["user_data_dir"])
@@ -106,11 +108,15 @@ class PlaywrightGenerator:
 
         第一次调用发送 system prompt + 武将数据，后续只发送武将数据（带 ID），
         让 AI 在同一会话中根据已设定的规则持续生成。
-        后续调用每次生成完成后随机休息 60-180 秒。
+        每次成功生成后，在下一次请求前随机休息 60-180 秒。
         """
         hero_name = hero.get("name", "?")
         hero_id = hero.get("id", 0)
         logger.info("[攻略] 开始生成: %s (id=%s)", hero_name, hero_id)
+
+        if self._guide_rest_required:
+            self._random_rest()
+            self._guide_rest_required = False
 
         is_first_call = not self._guide_system_sent
 
@@ -168,9 +174,7 @@ class PlaywrightGenerator:
 
         logger.info("[攻略] %s: 校验通过, 结果字段: %s", hero_name, list(result.keys()))
 
-        # 后续调用（非首次）每次执行完成后随机休息 60-180 秒
-        if not is_first_call:
-            self._random_rest()
+        self._guide_rest_required = True
 
         return result, None
 
@@ -178,11 +182,15 @@ class PlaywrightGenerator:
         """为武将对生成相性评分（浏览器模式不返回 usage）
 
         第一次调用发送 system prompt + 第一对数据，后续只发送武将数据（带 ID）。
-        后续调用每次生成完成后随机休息 60-180 秒。
+        每次成功生成后，在下一次请求前随机休息 60-180 秒。
         """
         name_a = hero_a.get("name", "?")
         name_b = hero_b.get("name", "?")
         logger.info("[相性] 开始生成: %s <-> %s", name_a, name_b)
+
+        if self._synergy_rest_required:
+            self._random_rest()
+            self._synergy_rest_required = False
 
         is_first_call = not self._synergy_system_sent
 
@@ -250,9 +258,7 @@ class PlaywrightGenerator:
         logger.info("[相性] %s <-> %s: 校验通过, 评分 %s",
                     name_a, name_b, result.get("score", "?"))
 
-        # 后续调用（非首次）每次执行完成后随机休息 60-180 秒
-        if not is_first_call:
-            self._random_rest()
+        self._synergy_rest_required = True
 
         return result, None
 
@@ -285,6 +291,8 @@ class PlaywrightGenerator:
         self._started = False
         self._guide_system_sent = False
         self._synergy_system_sent = False
+        self._guide_rest_required = False
+        self._synergy_rest_required = False
         logger.info("[PlaywrightGenerator] 浏览器已关闭")
 
     # ---------------------------------------------------------------
@@ -515,4 +523,3 @@ class PlaywrightGenerator:
             logger.error("[提取] 提取回复时出错: %s", e)
             logger.debug(traceback.format_exc())
             return None
-

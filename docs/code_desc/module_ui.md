@@ -183,7 +183,7 @@ RecommendationPanel (QWidget)
 `recommendation_panel.py` 只保留推荐数据更新、胜率/相性加载、OCR 导入、手动重建推荐指数和截图信号协调。标题行的“重建指数”按钮会在用户确认三份官方榜单后覆盖 `武将推荐指数.csv`；页面启动、OCR 导入和轮询仅读取已有快照。可独立维护的展示组件已拆分为：
 
 - `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌及卡片信号。
-- `guide_detail_dialog.py`：`GuideDetailDialog`，负责攻略摘要、关系标签跳转和 Markdown 正文渲染。
+- `guide_detail_dialog.py`：`GuideDetailDialog`，以与武将浏览器一致的单列区块展示攻略；弹窗高度受限，超出内容由滚动区承载，正文预览支持双击打开完整攻略弹窗。
 
 为兼容既有调用，`recommendation_panel.py` 仍导入并暴露两个公开类名；页面创建卡片与打开攻略弹窗的调用方式不变。
 

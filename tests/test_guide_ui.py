@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QPushButton, QTextBrowser
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -21,7 +21,7 @@ from src.ui.hero_browser import (
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.ui.guide_edit_dialog import GuideEditDialog
-from src.ui.guide_detail_dialog import GuideDetailDialog
+from src.ui.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog
 from src.ui.hero_card_widget import HeroCardWidget
 from src.ui.hero_edit_dialog import HeroEditDialog
 from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
@@ -230,3 +230,17 @@ def test_extracted_guide_detail_dialog_emits_synergy_hero_request(tmp_path: Path
     relation_button.click()
 
     assert requested == [2]
+
+
+def test_guide_detail_dialog_uses_bounded_scrollable_single_column_layout(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    dialog = GuideDetailDialog(
+        "曹操",
+        HeroGuide(hero_id=1, key_points=["要点"], description="# 攻略\n" + "内容\n" * 200),
+        hero_manager,
+    )
+
+    assert dialog.maximumHeight() == 760
+    assert dialog.findChild(QScrollArea) is not None
+    assert isinstance(dialog.findChild(QTextBrowser), DoubleClickTextBrowser)

@@ -57,7 +57,7 @@ generate_synergy(a, b)  → (dict|None, usage|None)
 |------|----------|------------|
 | 类名 | `AIBatchGenerator` | `PlaywrightGenerator` |
 | 数据源 | DeepSeek API | DeepSeek 网页版 |
-| 限速 | RPM 控制 + 指数退避 | 随机休息 60-180 秒 |
+| 限速 | RPM 控制 + 指数退避 | 每次成功生成后，在下一次请求前随机休息 60-180 秒 |
 | Token 统计 | ✅ 支持 | ❌ 返回 None |
 | 成本估算 | ✅ 支持 dry-run | ❌ 不支持 |
 | 必备条件 | API Key | 已登录的 Edge 浏览器 |
