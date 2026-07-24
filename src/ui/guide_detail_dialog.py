@@ -88,10 +88,8 @@ class GuideDetailDialog(QDialog):
             )
             summary_layout.addWidget(tips)
 
-        if guide.counters:
-            self._add_relation_tags(
-                summary_layout, "被克制", guide.counters, hero_manager, "#fde8e8", "#c62828"
-            )
+        self._add_type_list(summary_layout, "劣势对局", guide.weak_against_type, "#c62828")
+        self._add_type_list(summary_layout, "优势对局", guide.strong_against_type, "#2e7d32")
         if guide.synergizes_with:
             self._add_relation_tags(
                 summary_layout,
@@ -101,6 +99,12 @@ class GuideDetailDialog(QDialog):
                 "#e8f4e8",
                 "#2e7d32",
             )
+        if guide.counter_strategy:
+            self._add_section_title(summary_layout, "对抗建议")
+            strategy = QLabel(guide.counter_strategy)
+            strategy.setWordWrap(True)
+            strategy.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
+            summary_layout.addWidget(strategy)
         summary_layout.addStretch()
 
         desc_browser = QTextBrowser()
@@ -127,6 +131,16 @@ class GuideDetailDialog(QDialog):
         label = QLabel(title)
         label.setStyleSheet("font-size: 13px; font-weight: bold; color: #357abd; padding-top: 6px;")
         layout.addWidget(label)
+
+    def _add_type_list(self, layout: QVBoxLayout, title: str, types: list[str], color: str) -> None:
+        if not types:
+            return
+        self._add_section_title(layout, title)
+        for hero_type in types:
+            label = QLabel(f"• {hero_type}")
+            label.setWordWrap(True)
+            label.setStyleSheet(f"color: {color};")
+            layout.addWidget(label)
 
     def _add_relation_tags(
         self,

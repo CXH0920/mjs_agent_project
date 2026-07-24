@@ -155,7 +155,7 @@ class PlaywrightGenerator:
             return None, None
 
         raw["hero_id"] = hero_id
-        convert_ids_to_int(raw, ["counters", "synergizes_with"])
+        convert_ids_to_int(raw, ["synergizes_with"])
         logger.debug("[攻略] %s: 提取后的原始数据:\n%s", hero_name,
                      json.dumps(raw, ensure_ascii=False, indent=2))
 

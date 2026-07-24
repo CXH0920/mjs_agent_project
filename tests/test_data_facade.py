@@ -38,8 +38,8 @@ def test_load_all_reports_and_recovers_missing_references():
         guides_source = _write_json(
             guides_path,
             [
-                HeroGuide(hero_id=1, counters=[2, 99], synergizes_with=[99]).model_dump(mode="json"),
-                HeroGuide(hero_id=88, counters=[1]).model_dump(mode="json"),
+                HeroGuide(hero_id=1, weak_against_type=["高爆发型"], synergizes_with=[99]).model_dump(mode="json"),
+                HeroGuide(hero_id=88, weak_against_type=["慢速防御型"]).model_dump(mode="json"),
             ],
         )
 
@@ -48,11 +48,11 @@ def test_load_all_reports_and_recovers_missing_references():
 
         assert [score.hero_b_id for score in facade.synergies.list_synergies()] == [2]
         guide = facade.guides.get_guide(1)
-        assert guide.counters == [2]
+        assert guide.weak_against_type == ["高爆发型"]
         assert guide.synergizes_with == []
         assert facade.guides.get_guide(88) is None
         assert report is facade.last_load_report
-        assert report.error_count == 4
+        assert report.error_count == 3
         assert all(issue.kind == "missing_reference" for issue in report.issues)
         assert synergies_path.read_text(encoding="utf-8") == synergies_source
         assert guides_path.read_text(encoding="utf-8") == guides_source

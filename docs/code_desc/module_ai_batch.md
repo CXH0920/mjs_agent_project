@@ -75,7 +75,7 @@ generate_guide(hero)
   │   ├── POST /v1/chat/completions
   │   └── 失败 3 次内指数退避重试（2s/4s/8s）
   ├── _extract_json(response.text)              → raw dict
-  ├── inject hero_id / convert_ids_to_int
+  ├── inject hero_id / convert_ids_to_int(synergizes_with)
   └── _validate_guide(raw) → Pydantic 校验
 ```
 

@@ -51,7 +51,7 @@ DataFacade.load_all()
   -> 每条记录 model_validate()，坏记录和重复键记录为 DataIssue 后跳过
   -> _validate_references(report)
     -> 移除内存中的悬空相性或攻略归属
-    -> 剔除攻略 counters / synergizes_with 中不存在的英雄 ID
+    -> 剔除攻略 synergizes_with 中不存在的英雄 ID
   -> return LoadReport
 ```
 
@@ -914,7 +914,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 选中无攻略的武将时，攻略按钮组自动禁用
 - "修改"打开 `HeroEditDialog` / `GuideEditDialog` 进行编辑，"删除"弹出确认对话框
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
-- `GuideEditDialog` 中的“被克制”和“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
+- `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用固定尺寸可跳转按钮；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 - 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互
 
@@ -1928,7 +1928,7 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
 │                                                                          │
 │  Step 2: 数据补充 & 类型转换                                              │
 │     ├── raw["hero_id"] = hero.id          ← 注入武将 ID                   │
-│     └── convert_ids_to_int(counters, synergizes_with)  ← 元素转 int      │
+│     └── convert_ids_to_int(synergizes_with)  ← 搭配武将 ID 元素转 int   │
 │                                                                          │
 │  Step 3: Pydantic 校验                                                    │
 │     └── validate_guide(raw) → HeroGuide.model_validate() → model_dump()  │
@@ -2001,7 +2001,7 @@ Content-Type: application/json
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "以下是对诸葛亮的攻略分析：\n\n---\n\n```json\n{\n  \"hero_id\": 52,\n  \"key_points\": [\n    \"观星是诸葛亮的核心技能，可以在摸牌阶段前控制牌堆顶牌序，判定阶段前控制判定牌\",\n    \"空城状态下免疫杀和决斗，但惧怕AOE伤害\"\n  ],\n  \"counters\": [114, 36],\n  \"synergizes_with\": [15, 42],\n  \"description\": \"诸葛亮是典型的控场型武将，利用观星调节牌序...\",\n  \"tips_for_beginners\": \"新手使用诸葛亮时，优先保证空城状态...\"\n}\n```\n\n### 总结\n诸葛亮在不同模式下皆有不错的出场率..."
+        "content": "以下是对诸葛亮的攻略分析：\n\n---\n\n```json\n{\n  \"hero_id\": 52,\n  \"key_points\": [\n    \"观星是诸葛亮的核心技能，可以在摸牌阶段前控制牌堆顶牌序，判定阶段前控制判定牌\",\n    \"空城状态下免疫杀和决斗，但惧怕AOE伤害\"\n  ],\n  \"weak_against_type\": [\"高爆发型\"],\n  \"strong_against_type\": [\"慢速防御型\"],\n  \"synergizes_with\": [15, 42],\n  \"counter_strategy\": \"优先打断观星后的关键回合\",\n  \"description\": \"诸葛亮是典型的控场型武将，利用观星调节牌序...\",\n  \"tips_for_beginners\": \"新手使用诸葛亮时，优先保证空城状态...\"\n}\n```\n\n### 总结\n诸葛亮在不同模式下皆有不错的出场率..."
       },
       "finish_reason": "stop"
     }
@@ -2081,8 +2081,10 @@ PlaywrightGenerator.__init__()
   "key_points": [
     "观星是诸葛亮的核心技能..."
   ],
-  "counters": [114, 36],
+  "weak_against_type": ["高爆发型", "拆迁型"],
+  "strong_against_type": ["慢速防御型"],
   "synergizes_with": [15, 42],
+  "counter_strategy": "优先打断观星后的关键回合",
   "description": "...",
   "tips_for_beginners": "..."
 }
@@ -2144,16 +2146,20 @@ PlaywrightGenerator.__init__()
       "观星是诸葛亮的核心技能...",
       "空城状态下免疫杀和决斗..."
     ],
-    "counters": [114, 36],
+    "weak_against_type": ["高爆发型", "拆迁型"],
+    "strong_against_type": ["慢速防御型"],
     "synergizes_with": [15, 42],
+    "counter_strategy": "优先打断观星后的关键回合",
     "description": "诸葛亮是典型的控场型武将...",
     "tips_for_beginners": "新手使用诸葛亮时，优先保证空城状态..."
   },
   {
     "hero_id": 1,
     "key_points": [...],
-    "counters": [...],
+    "weak_against_type": [...],
+    "strong_against_type": [...],
     "synergizes_with": [...],
+    "counter_strategy": "...",
     "description": "...",
     "tips_for_beginners": "..."
   }

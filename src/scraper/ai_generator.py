@@ -151,7 +151,7 @@ class AIBatchGenerator:
             return None, usage
 
         raw["hero_id"] = hero.get("id", 0)
-        convert_ids_to_int(raw, ["counters", "synergizes_with"])
+        convert_ids_to_int(raw, ["synergizes_with"])
 
         result = validate_guide(raw)
         if result is None:

@@ -134,6 +134,6 @@ self._list.setCurrentRow(target_row)
 
 ### 规则 7.3：编辑使用独立 Dialog 而非内联编辑
 
-`HeroEditDialog` 和 `GuideEditDialog` 是 QDialog 子类，以模态对话框形式打开。HeroEditDialog 包含所有 Hero 字段（名称/称号/势力/定位/体力/手牌/性别/难度），GuideEditDialog 包含所有 HeroGuide 字段（核心要点/新手提示/被克制/搭配推荐/攻略正文）。
+`HeroEditDialog` 和 `GuideEditDialog` 是 QDialog 子类，以模态对话框形式打开。HeroEditDialog 包含所有 Hero 字段（名称/称号/势力/定位/体力/手牌/性别/难度），GuideEditDialog 包含所有 HeroGuide 字段（核心要点/新手提示/劣势对局类型/优势对局类型/搭配推荐/对抗建议/攻略正文）。
 
 **为什么：** 内联编辑（直接让 QLabel 变为可编辑）会破坏只读浏览的正常体验——用户可能在查看时误触导致意外进入编辑模式。模态 Dialog 提供隔离的编辑环境，不影响浏览区的稳定性。

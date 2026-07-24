@@ -142,19 +142,24 @@ class TestHeroGuide:
         assert g.hero_id == 1
         assert g.key_points == []
 
-    def test_guide_with_int_refs(self) -> None:
+    def test_guide_with_matchup_types(self) -> None:
         g = HeroGuide(
             hero_id=1,
             key_points=["先手优势"],
-            counters=[2, 3],
+            weak_against_type=["高爆发型"],
+            strong_against_type=["慢速防御型"],
             synergizes_with=[4, 5],
+            counter_strategy="保留闪避后再反击",
         )
-        assert g.counters == [2, 3]
+        assert g.weak_against_type == ["高爆发型"]
+        assert g.strong_against_type == ["慢速防御型"]
         assert g.synergizes_with == [4, 5]
+        assert g.counter_strategy == "保留闪避后再反击"
 
-    def test_empty_counter_and_synergy(self) -> None:
-        g = HeroGuide(hero_id=1, counters=[], synergizes_with=[])
-        assert g.counters == []
+    def test_empty_matchup_types_and_synergy(self) -> None:
+        g = HeroGuide(hero_id=1, weak_against_type=[], strong_against_type=[], synergizes_with=[])
+        assert g.weak_against_type == []
+        assert g.strong_against_type == []
         assert g.synergizes_with == []
 
 

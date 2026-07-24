@@ -162,30 +162,32 @@ class TestAIBatchGenerator:
 
     def test_convert_ids_to_int(self) -> None:
         """字符串 ID 转 int"""
-        data = {"counters": ["129", "130"], "synergizes_with": ["141"]}
-        result = convert_ids_to_int(data, ["counters", "synergizes_with"])
-        assert result["counters"] == [129, 130]
+        data = {"weak_against_type": ["高爆发型"], "synergizes_with": ["141"]}
+        result = convert_ids_to_int(data, ["synergizes_with"])
+        assert result["weak_against_type"] == ["高爆发型"]
         assert result["synergizes_with"] == [141]
 
     def test_convert_ids_int_already_int(self) -> None:
         """已经是 int 的 ID 不应改变"""
-        data = {"counters": [129, 130]}
-        result = convert_ids_to_int(data, ["counters"])
-        assert result["counters"] == [129, 130]
+        data = {"synergizes_with": [129, 130]}
+        result = convert_ids_to_int(data, ["synergizes_with"])
+        assert result["synergizes_with"] == [129, 130]
 
     def test_convert_ids_empty_list(self) -> None:
         """空列表不应报错"""
-        data = {"counters": []}
-        result = convert_ids_to_int(data, ["counters"])
-        assert result["counters"] == []
+        data = {"synergizes_with": []}
+        result = convert_ids_to_int(data, ["synergizes_with"])
+        assert result["synergizes_with"] == []
 
     def test_validate_guide_success(self) -> None:
         """Pydantic 攻略校验成功"""
         data = {
             "hero_id": 114,
             "key_points": ["要点1", "要点2"],
-            "counters": [129],
+            "weak_against_type": ["高爆发型"],
+            "strong_against_type": ["慢速防御型"],
             "synergizes_with": [141],
+            "counter_strategy": "保留闪避",
             "description": "攻略正文",
             "tips_for_beginners": "新手提示",
             "last_updated": "2026-06-07",
@@ -193,7 +195,8 @@ class TestAIBatchGenerator:
         result = validate_guide(data)
         assert result is not None
         assert result["hero_id"] == 114
-        assert result["counters"] == [129]
+        assert result["weak_against_type"] == ["高爆发型"]
+        assert result["strong_against_type"] == ["慢速防御型"]
         assert result["synergizes_with"] == [141]
 
     def test_validate_guide_failure(self) -> None:

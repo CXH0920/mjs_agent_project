@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QTextBrowser
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QPushButton, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -33,7 +33,7 @@ def _app() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
-def test_guide_panel_renders_clickable_relation_tags(tmp_path: Path) -> None:
+def test_guide_panel_renders_matchup_types_and_clickable_synergy_tags(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
     guide_manager = GuideManager(tmp_path / "guides.json")
@@ -43,7 +43,10 @@ def test_guide_panel_renders_clickable_relation_tags(tmp_path: Path) -> None:
         HeroGuide(
             hero_id=1,
             key_points=["优先建立手牌优势"],
-            counters=[2],
+            weak_against_type=["高爆发型"],
+            strong_against_type=["慢速防御型"],
+            synergizes_with=[2],
+            counter_strategy="优先保留闪避",
             description="# 对局思路\n正文内容",
             last_updated="2026-07-18",
         )
@@ -59,6 +62,9 @@ def test_guide_panel_renders_clickable_relation_tags(tmp_path: Path) -> None:
     relation_button.click()
 
     assert requested == [2]
+    labels = [label.text() for label in panel.findChildren(QLabel)]
+    assert "• 高爆发型" in labels
+    assert "优先保留闪避" in labels
     assert "对局思路" in panel.findChild(QTextBrowser).toHtml()
 
     panel.show_hero(2)
@@ -100,18 +106,18 @@ def test_guide_panel_hides_body_when_guide_is_missing(tmp_path: Path) -> None:
     assert panel._guide_body.isHidden()
 
 
-def test_guide_edit_uses_multi_select_relation_dialog(tmp_path: Path) -> None:
+def test_guide_edit_uses_type_inputs_and_multi_select_synergy_dialog(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
     hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
     hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
-    guide = HeroGuide(hero_id=1, counters=[2], synergizes_with=[])
+    guide = HeroGuide(hero_id=1, weak_against_type=["高爆发型"], synergizes_with=[])
 
     edit_dialog = GuideEditDialog(guide, hero_manager)
     assert not edit_dialog.findChildren(QLineEdit)
-    assert edit_dialog._counters_ids == [2]
+    assert edit_dialog._weak_against_type_edit.toPlainText() == "高爆发型"
 
-    picker = HeroRelationSelectDialog(hero_manager, [2], "选择被克制武将")
+    picker = HeroRelationSelectDialog(hero_manager, [2], "选择搭配推荐武将")
     assert picker._selected_ids == {2}
     picker._clear_selection()
     picker._accept_selection()
@@ -207,12 +213,16 @@ def test_extracted_recommendation_card_keeps_panel_import_compatibility() -> Non
     assert skill_requests == [1]
 
 
-def test_extracted_guide_detail_dialog_emits_related_hero_request(tmp_path: Path) -> None:
+def test_extracted_guide_detail_dialog_emits_synergy_hero_request(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
     hero_manager.add_hero(Hero(id=1, name="曹操"))
     hero_manager.add_hero(Hero(id=2, name="刘备"))
-    dialog = GuideDetailDialog("曹操", HeroGuide(hero_id=1, counters=[2]), hero_manager)
+    dialog = GuideDetailDialog(
+        "曹操",
+        HeroGuide(hero_id=1, weak_against_type=["高爆发型"], synergizes_with=[2]),
+        hero_manager,
+    )
     requested: list[int] = []
     dialog.hero_requested.connect(requested.append)
 

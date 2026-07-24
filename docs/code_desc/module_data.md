@@ -66,8 +66,10 @@ class SynergyScore(BaseModel):
 class HeroGuide(BaseModel):
     hero_id: int                 # 武将 ID
     key_points: list[str]        # 操作要点
-    counters: list[int]          # 被谁克制（武将 ID 列表）
+    weak_against_type: list[str] # 克制该武将的类型
+    strong_against_type: list[str] # 该武将克制的类型
     synergizes_with: list[int]   # 与谁搭配好（武将 ID 列表）
+    counter_strategy: str        # 面对该武将的对抗建议
     description: str             # 攻略正文（Markdown）
     tips_for_beginners: str      # 新手提示
 ```
@@ -148,7 +150,7 @@ stats = facade.get_stats()  # {heroes: N, synergies: N, guides: N}
 facade.heroes.get_hero(114) # 直接访问各 Manager
 ```
 
-相性双方、攻略归属和攻略中的克制/搭配 ID 都必须存在于英雄库。失效的相性或攻略归属仅从内存结果移除；攻略正文仍保留，但其中失效的关联 ID 会被剔除。该只读恢复过程会记录到 `facade.last_load_report`，不会自动覆写源文件。
+相性双方、攻略归属和攻略中的搭配 ID 都必须存在于英雄库。失效的相性或攻略归属仅从内存结果移除；攻略正文仍保留，但其中失效的搭配 ID 会被剔除。对局类型以文本存储，无需关联英雄库。该只读恢复过程会记录到 `facade.last_load_report`，不会自动覆写源文件。
 
 ---
 

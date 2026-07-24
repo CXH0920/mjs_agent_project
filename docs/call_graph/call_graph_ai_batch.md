@@ -104,7 +104,7 @@ ai_generation.run_guide_generation(heroes, generator, guide_path, existing_guide
               -> text[text.rfind("---"):]
            -> [失败] _try_extract(text, [3])                  [策略 4: 首 { 到尾 }]
               -> text[text.find("{"):text.rfind("}")+1]
-        -> convert_ids_to_int(raw, ["counters", ...])         [ID 字段转为 int]
+        -> convert_ids_to_int(raw, ["synergizes_with"])       [搭配 ID 转为 int]
         -> validate_guide(raw)                                [Pydantic 校验]
            -> HeroGuide.model_validate(raw) -> model_dump()
         -> return (guide_dict, usage_dict)                    [usage 仅 API 模式有]

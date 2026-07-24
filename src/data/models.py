@@ -197,8 +197,10 @@ class HeroGuide(BaseModel):
     """武将攻略"""
     hero_id: int = Field(..., description="武将 ID")
     key_points: list[str] = Field(default_factory=list, description="操作要点")
-    counters: list[int] = Field(default_factory=list, description="被谁克制（武将 ID 列表）")
+    weak_against_type: list[str] = Field(default_factory=list, description="克制该武将的类型")
+    strong_against_type: list[str] = Field(default_factory=list, description="该武将克制的类型")
     synergizes_with: list[int] = Field(default_factory=list, description="与谁搭配好（武将 ID 列表）")
+    counter_strategy: str = Field(default="", description="面对该武将的对抗建议")
     description: str = Field(default="", description="攻略正文")
     tips_for_beginners: str = Field(default="", description="新手提示")
     last_updated: str = Field(

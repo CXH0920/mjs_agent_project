@@ -498,7 +498,9 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
      -> [有 guide] 渲染:
         -> 核心要点 (key_points)
         -> 新手提示 (tips_for_beginners)
-        -> 被克制 (counters) → get_hero(counter_id) → name     [ID→名称]
+        -> 劣势对局 (weak_against_type) → 文本列表
+        -> 优势对局 (strong_against_type) → 文本列表
+        -> 对抗建议 (counter_strategy) → 文本
         -> 搭配推荐 (synergizes_with) → 同上
         -> 攻略正文 (description) → _markdown_to_html()         [mistune Markdown 渲染]
   -> GuideDetailDialog.exec()                                   [模态展示]
@@ -577,7 +579,9 @@ HeroDetailPanel.show_hero(hero_id)                              [接收信号]
      -> [有 guide] 渲染:
         -> 核心要点 (list[str] → 逐项 QLabel)
         -> 新手提示 (tips_for_beginners)
-        -> 被克制 (counters) → get_hero(id) → name             [克制武将链接]
+        -> 劣势对局 (weak_against_type) → 文本列表
+        -> 优势对局 (strong_against_type) → 文本列表
+        -> 对抗建议 (counter_strategy) → 文本
         -> 搭配推荐 (synergizes_with) → 同上
         -> 攻略正文 (description) → _markdown_to_html()
 ```
@@ -614,17 +618,17 @@ HeroDetailPanel._on_guide_edit()                               ["修改"按钮 -
      -> _setup_ui():
         -> 核心要点: QTextEdit (多行, 每行一条)
         -> 新手提示: QTextEdit
-        -> _create_relation_selector("被克制", counters)
+        -> 劣势/优势对局类型: QTextEdit（每行一条）
+        -> 对抗建议: QTextEdit
+        -> _create_relation_selector("搭配推荐", synergizes_with)
            -> "选择武将…" -> _open_relation_selector()
               -> HeroRelationSelectDialog(...).exec()
                  -> 搜索 + 势力多选筛选 + 勾选列表
                  -> _accept_selection() -> selected_ids
            -> _update_relation_summary()                       [显示已选名称]
-        -> _create_relation_selector("搭配推荐", synergizes_with)
-           -> 同上
         -> 攻略正文: QTextEdit (Markdown)
      -> [accepted] updated = dialog.get_guide()
-        -> 读取文本字段 + counters/synergizes_with 已选 ID 列表
+        -> 读取对局类型/对抗建议文本 + synergizes_with 已选 ID 列表
   -> self._guide_mgr.update_guide(updated)
   -> self._guide_mgr.save()
   -> self._update_guide_tab(updated)
@@ -679,8 +683,8 @@ HeroDetailPanel.show_hero(hero_id)
 | `_refresh_synergy_table()` | `HeroDetailPanel` | `show_hero()`、筛选控件、保存后 | `list_synergies_for_hero()`、表格排序和按钮状态 |
 | `_on_synergy_edit()` | `HeroDetailPanel` | 双击相性行或"修改" | `SynergyEditDialog`、`update_synergy()`、`save()` |
 | `HeroEditDialog.get_hero()` | `HeroEditDialog` | `_on_info_edit()` accepted | 读取控件值 → `Hero` |
-| `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取文本字段 + 已选择的关系 ID → `HeroGuide` |
-| `GuideEditDialog._open_relation_selector()` | `GuideEditDialog` | 关系选择按钮 | `HeroRelationSelectDialog.exec()` → 回填 ID 列表 |
+| `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取对局类型/对抗建议文本 + 已选择的搭配 ID → `HeroGuide` |
+| `GuideEditDialog._open_relation_selector()` | `GuideEditDialog` | 搭配推荐选择按钮 | `HeroRelationSelectDialog.exec()` → 回填 ID 列表 |
 | `HeroRelationSelectDialog._accept_selection()` | `HeroRelationSelectDialog` | "确定"按钮 | 按稳定的英雄 ID 顺序输出 `selected_ids` |
 | `SynergyEditDialog.get_synergy()` | `SynergyEditDialog` | `_on_synergy_edit()` accepted | 表单值 → 校验后的 `SynergyScore` |
 

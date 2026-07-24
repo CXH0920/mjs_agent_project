@@ -260,13 +260,12 @@ class DataFacade:
                 )
                 continue
 
-            counters = self._valid_guide_references(report, guide.hero_id, "counters", guide.counters, hero_ids)
             synergizes_with = self._valid_guide_references(
                 report, guide.hero_id, "synergizes_with", guide.synergizes_with, hero_ids
             )
-            if counters != guide.counters or synergizes_with != guide.synergizes_with:
+            if synergizes_with != guide.synergizes_with:
                 self.guides.update_guide(
-                    guide.model_copy(update={"counters": counters, "synergizes_with": synergizes_with})
+                    guide.model_copy(update={"synergizes_with": synergizes_with})
                 )
 
     def _valid_guide_references(

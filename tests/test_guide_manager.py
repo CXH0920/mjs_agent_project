@@ -1,4 +1,4 @@
-﻿"""名将杀 Agent - GuideManager 单元测试"""
+"""名将杀 Agent - GuideManager 单元测试"""
 
 import json
 import tempfile
@@ -17,8 +17,10 @@ class TestGuideManager:
         return HeroGuide(
             hero_id=hero_id,
             key_points=["先手优势"],
-            counters=[2, 3],
+            weak_against_type=["高爆发型"],
+            strong_against_type=["慢速防御型"],
             synergizes_with=[4, 5],
+            counter_strategy="保留闪避",
             description="攻略正文",
             tips_for_beginners="新手建议",
         )

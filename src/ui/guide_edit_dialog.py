@@ -49,12 +49,23 @@ class GuideEditDialog(QDialog):
         self._tips_edit.setText(self._guide.tips_for_beginners)
         form.addRow("新手提示:", self._tips_edit)
 
-        self._counters_ids = list(self._guide.counters)
         self._synergy_ids = list(self._guide.synergizes_with)
-        _, counters_widget = self._create_relation_selector("被克制", self._counters_ids)
+        self._weak_against_type_edit = self._create_type_edit(
+            self._guide.weak_against_type, "每行一个克制该武将的类型"
+        )
+        self._strong_against_type_edit = self._create_type_edit(
+            self._guide.strong_against_type, "每行一个该武将克制的类型"
+        )
         _, synergy_widget = self._create_relation_selector("搭配推荐", self._synergy_ids)
-        form.addRow("被克制:", counters_widget)
+        form.addRow("劣势对局类型:", self._weak_against_type_edit)
+        form.addRow("优势对局类型:", self._strong_against_type_edit)
         form.addRow("搭配推荐:", synergy_widget)
+
+        self._counter_strategy_edit = QTextEdit()
+        self._counter_strategy_edit.setPlaceholderText("面对该武将的核心对抗建议")
+        self._counter_strategy_edit.setMaximumHeight(60)
+        self._counter_strategy_edit.setText(self._guide.counter_strategy)
+        form.addRow("对抗建议:", self._counter_strategy_edit)
 
         self._desc_edit = QTextEdit()
         self._desc_edit.setPlaceholderText("攻略正文（支持 Markdown）")
@@ -74,21 +85,27 @@ class GuideEditDialog(QDialog):
         buttons.addWidget(cancel_button)
         layout.addLayout(buttons)
 
-    def _create_relation_selector(
-        self, label: str, selected_ids: list[int],
-    ) -> tuple[QLabel, QWidget]:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
+    @staticmethod
+    def _create_type_edit(values: list[str], placeholder: str) -> QTextEdit:
+        edit = QTextEdit()
+        edit.setPlaceholderText(placeholder)
+        edit.setMaximumHeight(70)
+        edit.setText("\n".join(values))
+        return edit
+
+    def _create_relation_selector(self, label: str, selected_ids: list[int]) -> tuple[QLabel, QWidget]:
+        widget = QWidget()
+        container = QVBoxLayout(widget)
+        container.setContentsMargins(0, 0, 0, 0)
         summary = QLabel()
         summary.setWordWrap(True)
         summary.setStyleSheet("color: #5f6b7a; padding: 3px 0;")
         button = QPushButton("选择武将…")
         button.clicked.connect(lambda: self._open_relation_selector(label, summary, selected_ids))
-        layout.addWidget(summary)
-        layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignLeft)
+        container.addWidget(summary)
+        container.addWidget(button, alignment=Qt.AlignmentFlag.AlignLeft)
         self._update_relation_summary(summary, selected_ids)
-        return summary, container
+        return summary, widget
 
     def _update_relation_summary(self, summary: QLabel, selected_ids: list[int]) -> None:
         names = [
@@ -114,7 +131,13 @@ class GuideEditDialog(QDialog):
             if line.strip()
         ]
         self._guide.tips_for_beginners = self._tips_edit.toPlainText().strip()
-        self._guide.counters = list(self._counters_ids)
+        self._guide.weak_against_type = self._lines_from_edit(self._weak_against_type_edit)
+        self._guide.strong_against_type = self._lines_from_edit(self._strong_against_type_edit)
         self._guide.synergizes_with = list(self._synergy_ids)
+        self._guide.counter_strategy = self._counter_strategy_edit.toPlainText().strip()
         self._guide.description = self._desc_edit.toPlainText()
         return self._guide
+
+    @staticmethod
+    def _lines_from_edit(edit: QTextEdit) -> list[str]:
+        return [line.strip() for line in edit.toPlainText().split("\n") if line.strip()]

@@ -59,10 +59,10 @@ for attempt in range(1, self.max_retries + 1):
 ### 规则 3.3：_convert_ids_to_int 解决类型漂移
 
 ```python
-data["counters"] = [int(v) for v in data["counters"]]
+data["synergizes_with"] = [int(v) for v in data["synergizes_with"]]
 ```
 
-**为什么：** AI 回复中的 ID 有时是字符串（`"114"`），有时是数字（`114`），但 Pydantic 模型中 `hero_id: int` 要求 int。少数情况下 AI 甚至混用两种类型。显式转换消除了这个隐式类型问题。
+**为什么：** AI 回复中的搭配武将 ID 有时是字符串（`"114"`），有时是数字（`114`），而 Pydantic 模型需要整数列表。少数情况下 AI 甚至混用两种类型。显式转换消除了这个隐式类型问题；对局类型字段以文本保存，无需转换。
 
 ## 四、浏览器自动化（PlaywrightGenerator）
 
