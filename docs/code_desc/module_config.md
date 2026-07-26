@@ -8,7 +8,7 @@
 ## 一、模块职责
 
 本模块负责两件事：
-1. **应用启动** — 创建 `QApplication`，设置并维护窗口图标，初始化日志系统，构建 `MainWindow` 并进入事件循环
+1. **应用启动** — 创建 `QApplication`，安装 Qt 标准控件中文翻译，设置并维护窗口图标，初始化日志系统，构建 `MainWindow` 并进入事件循环
 2. **配置管理** — 从 `config.env` 文件、环境变量和默认值三级加载配置，并维护版本控制的模型价格表
 
 ---
@@ -19,6 +19,7 @@
 src/
 ├── main.py                  # 应用入口（QApplication + MainWindow 构建）
 ├── ui/app_icon.py            # 应用图标加载、缓存与顶层窗口图标维护
+├── ui/chinese_translator.py  # Qt 标准控件中文翻译
 ├── config/
 │   ├── __init__.py
 │   ├── env.py               # .env 与模型价格配置解析/加载/保存（原子写入）
@@ -35,6 +36,7 @@ src/
 # src/main.py
 setup_logging()          # 初始化日志系统
 app = QApplication(sys.argv)
+install_chinese_qt_translator(app)  # 标准按钮和文件对话框使用中文
 splash.show()            # 在主窗口构建期间显示启动页
 window = MainWindow()    # 构建主窗口
 window.show()
@@ -44,7 +46,7 @@ sys.exit(app.exec())     # 进入事件循环
 
 启动顺序有严格讲究：
 1. **启动页先显示** — `QSplashScreen` 在主窗口构建前显示，避免用户看到 Windows/Qt 初始化期间的空白窗口
-2. **QApplication 先于 MainWindow** — Qt 要求先创建应用对象，才能安全创建 UI 组件
+2. **QApplication 先于 MainWindow** — Qt 要求先创建应用对象，才能安全创建 UI 组件；中文翻译器也必须在创建任何窗口前安装，以覆盖 Qt 自动生成的保存、取消、是、否等按钮
 3. **主窗口就绪后关闭** — `splash.finish(window)` 在主窗口显示后关闭启动页，异常时显式关闭，避免残留
 
 ### 3.2 配置加载优先级

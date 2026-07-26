@@ -14,6 +14,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from src.ui.main_window import MainWindow
+from src.ui.chinese_translator import install_chinese_qt_translator
 from src.ui.style import GLOBAL_STYLE
 
 
@@ -70,6 +71,7 @@ def main() -> None:
     app.setApplicationName("名将杀 Agent")
     app.setOrganizationName("MingJiangSha")
     app.setApplicationVersion("0.1.0")
+    _translator = install_chinese_qt_translator(app)
 
     # Windows 任务栏图标修正：设置 AppUserModelID 确保自定义图标生效
     if sys.platform == "win32":

@@ -26,6 +26,32 @@
         ]
       },
       "updated_at": "2026-07-26"
+    },
+    {
+      "card_id": "49",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "version": "1",
+            "effective_from": "2026-07-26",
+            "effective_to": null,
+            "content": "对攻击范围内的一名其他角色打出，对其造成1点雷电伤害，并且造成伤害后，出杀次数+1。",
+            "source": "",
+            "status": "active"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "version": "1",
+            "effective_from": "2026-07-26",
+            "effective_to": null,
+            "content": "对攻击范围内的一名其他角色打出，随机弃置你的1张牌，然后对其造成1点雷电伤害。",
+            "source": "",
+            "status": "active"
+          }
+        ]
+      },
+      "updated_at": "2026-07-26"
     }
   ]
 }

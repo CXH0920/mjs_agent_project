@@ -34,7 +34,7 @@
 
 | 功能 | 主入口 | 关键调用顺序 | 结果 |
 |------|--------|--------------|------|
-| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志、加载数据、创建主窗口并进入 Qt 事件循环；OCR 识别器按首次任务延迟初始化 |
+| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `install_chinese_qt_translator()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志和 Qt 标准控件中文翻译，加载数据、创建主窗口并进入事件循环；OCR 识别器按首次任务延迟初始化 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> Manager 清空并原子保存 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |

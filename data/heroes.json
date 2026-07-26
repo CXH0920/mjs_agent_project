@@ -25,7 +25,7 @@
         "settlement": "1.只要在即将受到伤害的时机点满足条件，无论受到的伤害是否大于手牌上限与体力值的差值或大于手牌上限，均只减少等量手牌上限。 2.后段效果中会随机一名角色的1张牌，从牌堆中获得与其同牌名的牌。"
       }
     ],
-    "difficulty": 2,
+    "difficulty": 3,
     "mode_viability": {},
     "last_updated": "2026-07-16",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/YRMgZnD3GNGqHqh9XPKmKztDRjoBDK1FWk3Kojn6.png_200x282.png"

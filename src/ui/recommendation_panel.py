@@ -559,7 +559,8 @@ class RecommendationPanel(QWidget):
         message_box.setText(f"无法从模拟器截图：\n{message}")
         config_btn = message_box.addButton("打开模拟器配置", QMessageBox.ButtonRole.ActionRole)
         retry_btn = message_box.addButton("重试", QMessageBox.ButtonRole.ActionRole)
-        message_box.addButton(QMessageBox.StandardButton.Close)
+        close_btn = message_box.addButton(QMessageBox.StandardButton.Close)
+        close_btn.setText("关闭")
         message_box.exec()
         if message_box.clickedButton() is config_btn:
             self.request_mumu_config.emit()
