@@ -36,6 +36,7 @@ from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_card_widget import HeroCardWidget
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
+from src.ui.style import MUTED_TEXT, TEXT_PRIMARY
 
 logger = logging.getLogger(__name__)
 
@@ -100,11 +101,11 @@ class RecommendationPanel(QWidget):
         header_layout = QHBoxLayout()
 
         title = QLabel("选将推荐")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; padding: 4px 0;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {TEXT_PRIMARY}; padding: 4px 0;")
         header_layout.addWidget(title)
 
         self._recognition_status_label = QLabel("尚未识别阵容")
-        self._recognition_status_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
         header_layout.addWidget(self._recognition_status_label)
 
         header_layout.addStretch()
@@ -151,7 +152,7 @@ class RecommendationPanel(QWidget):
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_label = QLabel("尚未识别阵容\n连接模拟器后识别当前阵容，或从本地图片导入。")
         empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_label.setStyleSheet("color: #65758b; font-size: 14px; padding: 24px;")
+        empty_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 14px; padding: 24px;")
         empty_layout.addWidget(empty_label)
         content_layout.addWidget(self._empty_state, 1)
 
@@ -276,6 +277,8 @@ class RecommendationPanel(QWidget):
         )
         self._rebuild_index_btn.setText("重建指数（待更新）")
         self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
+        for card in self._cards:
+            card.set_recommendation_stale(True)
 
     def _rebuild_recommendation_indexes(self) -> None:
         """由用户确认源榜单后，手动重建推荐指数快照。"""
@@ -289,6 +292,7 @@ class RecommendationPanel(QWidget):
         self._rebuild_index_btn.setText("重建指数")
         self._rebuild_index_btn.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
         for card in self._cards:
+            card.set_recommendation_stale(False)
             if card._hero:
                 card.set_recommendation_index(recommendation_data.indexes.get(card._hero.name))
         valid_count = sum(index.is_valid for index in recommendation_data.indexes.values())
@@ -335,6 +339,7 @@ class RecommendationPanel(QWidget):
 
         for card in self._cards:
             card.set_hero(None)
+            card.set_recommendation_stale(recommendation_data.indexes_stale)
 
         # 第一遍：收集所有武将 ID（确保相性过滤时 8 个 ID 齐全）
         hero_by_slot: dict[int, str] = {}

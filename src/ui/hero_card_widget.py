@@ -21,6 +21,17 @@ from src.data.models import Hero
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.widgets import DoubleClickLabel
+from src.ui.style import (
+    BORDER,
+    MUTED_TEXT,
+    PRIMARY,
+    PRIMARY_HOVER,
+    SUBTLE_SURFACE,
+    SUCCESS,
+    SURFACE,
+    TEXT_PRIMARY,
+    WARNING,
+)
 
 
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "images"
@@ -51,6 +62,7 @@ class HeroCardWidget(QFrame):
         self._confidence: float = 0.0
         self._recommendation_index: RecommendationIndex | None = None
         self._recommendation_loaded = False
+        self._recommendation_stale = False
         self._synergy_labels: list[QLabel] = []
         self._rank = 0
 
@@ -109,16 +121,26 @@ class HeroCardWidget(QFrame):
         header_layout.addWidget(self._faction_tag)
 
         self._name_label = QLabel()
-        self._name_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #2c3e50;")
+        self._name_label.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {TEXT_PRIMARY};")
         header_layout.addWidget(self._name_label)
         header_layout.addStretch()
+
+        self._skill_btn = QPushButton("技能")
+        self._skill_btn.setFixedSize(48, 28)
+        self._skill_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {SURFACE}; color: {PRIMARY}; border: 1px solid {BORDER}; "
+            "border-radius: 4px; padding: 0; font-size: 12px; font-weight: bold; }"
+            f"QPushButton:hover {{ border-color: {PRIMARY}; background-color: {SUBTLE_SURFACE}; }}"
+        )
+        self._skill_btn.clicked.connect(self._on_hero_double_clicked)
+        header_layout.addWidget(self._skill_btn)
 
         self._guide_btn = QPushButton("攻略")
         self._guide_btn.setFixedSize(66, 28)
         self._guide_btn.setStyleSheet(
-            "QPushButton { background-color: #4a90d9; color: white; border: none; "
+            f"QPushButton {{ background-color: {PRIMARY}; color: white; border: none; "
             "border-radius: 4px; padding: 0; font-size: 12px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #357abd; }"
+            f"QPushButton:hover {{ background-color: {PRIMARY_HOVER}; }}"
         )
         self._guide_btn.clicked.connect(self._on_guide_clicked)
         header_layout.addWidget(self._guide_btn)
@@ -162,8 +184,12 @@ class HeroCardWidget(QFrame):
         info_layout.addWidget(sep1)
 
         synergy_title = QLabel("<b>高相性组合</b>")
-        synergy_title.setStyleSheet("font-size: 12px; color: #2c3e50;")
+        synergy_title.setStyleSheet(f"font-size: 12px; color: {TEXT_PRIMARY};")
         info_layout.addWidget(synergy_title)
+
+        self._best_partner_label = QLabel("最佳搭档：等待数据")
+        self._best_partner_label.setStyleSheet(f"color: {PRIMARY}; font-size: 12px; font-weight: bold;")
+        info_layout.addWidget(self._best_partner_label)
 
         self._synergy_grid = QGridLayout()
         self._synergy_grid.setSpacing(2)
@@ -177,7 +203,9 @@ class HeroCardWidget(QFrame):
         info_layout.addWidget(sep2)
 
         self._win_rate_label = QLabel("胜率: --%")
-        self._win_rate_label.setStyleSheet("font-size: 12px; color: #999;")
+        self._win_rate_label.setStyleSheet(f"font-size: 12px; color: {MUTED_TEXT};")
+        self._data_status_label = QLabel()
+        self._data_status_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT};")
         self._medal_label = QLabel()
         self._medal_label.setFixedSize(58, 24)
         self._medal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -188,6 +216,7 @@ class HeroCardWidget(QFrame):
         win_rate_layout.setContentsMargins(0, 2, 0, 2)
         win_rate_layout.setSpacing(4)
         win_rate_layout.addWidget(self._win_rate_label)
+        win_rate_layout.addWidget(self._data_status_label)
         win_rate_layout.addWidget(self._medal_label)
         win_rate_layout.addStretch()
         info_layout.addWidget(self._win_rate_row)
@@ -215,13 +244,18 @@ class HeroCardWidget(QFrame):
             self._recommendation_info_icon.setVisible(False)
             self._recommendation_info_tooltip.hide()
             self._win_rate_label.setText("胜率: --%")
+            self.set_synergies([])
+            self._best_partner_label.setText("最佳搭档：等待数据")
+            self._data_status_label.setText("")
             self.set_medal(0)
+            self._skill_btn.setVisible(False)
             self._guide_btn.setVisible(False)
             return
 
         hero = self._hero
         self._hero_id = hero.id
         self.set_medal(0)
+        self._skill_btn.setVisible(True)
         self._guide_btn.setVisible(True)
         color = get_faction_colors().get(hero.faction, "#888")
 
@@ -232,7 +266,7 @@ class HeroCardWidget(QFrame):
         else:
             self._img_label.clear()
             self._img_label.setText(f"[{hero.name}]")
-            self._img_label.setStyleSheet("color: #999; font-size: 11px;")
+            self._img_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 11px;")
 
         self._name_overlay.setText(hero.name)
         self._faction_badge.setText(f" {hero.faction} ")
@@ -271,20 +305,21 @@ class HeroCardWidget(QFrame):
                     "推荐指数：数据不足"
                 )
                 self._confidence_label.setStyleSheet(
-                    "QPushButton { font-size: 13px; color: #999; border: none; padding: 0; text-align: left; }"
-                    "QPushButton:hover { color: #777; }"
+                    f"QPushButton {{ font-size: 13px; color: {MUTED_TEXT}; border: none; padding: 0; text-align: left; }}"
+                    f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
                 )
                 self._confidence_label.setToolTip(
                     index.reason if index is not None and index.reason else "当前版本数据不完整"
                 )
                 self._recommendation_info_icon.setVisible(False)
                 self._recommendation_info_tooltip.hide()
+                self._update_data_status()
                 return
             stars = self.RATING_STARS.get(index.rating, "")
             self._confidence_label.setText(f"推荐指数：{stars} {index.rating}级")
             self._confidence_label.setStyleSheet(
-                "QPushButton { font-size: 13px; color: #4a90d9; font-weight: bold; border: none; "
-                "padding: 0; text-align: left; } QPushButton:hover { color: #357abd; }"
+                f"QPushButton {{ font-size: 13px; color: {PRIMARY}; font-weight: bold; border: none; "
+                f"padding: 0; text-align: left; }} QPushButton:hover {{ color: {PRIMARY_HOVER}; }}"
             )
             self._confidence_label.setToolTip(
                 f"胜率表现：{index.win_rate * 100:.2f}%\n"
@@ -293,17 +328,19 @@ class HeroCardWidget(QFrame):
                 f"自动推荐排序：第 {index.order} 名"
             )
             self._recommendation_info_icon.setVisible(True)
+            self._update_data_status()
             return
         if self._confidence <= 0.0:
             self._confidence_label.setText(
                 "推荐指数：★★☆☆☆ --"
             )
             self._confidence_label.setStyleSheet(
-                "QPushButton { font-size: 13px; color: #999; border: none; padding: 0; text-align: left; }"
+                f"QPushButton {{ font-size: 13px; color: {MUTED_TEXT}; border: none; padding: 0; text-align: left; }}"
             )
             self._confidence_label.setToolTip("")
             self._recommendation_info_icon.setVisible(False)
             self._recommendation_info_tooltip.hide()
+            self._update_data_status()
             return
 
         filled = int(self._confidence * 5)
@@ -313,12 +350,34 @@ class HeroCardWidget(QFrame):
             f"推荐指数：{stars} {percentage}"
         )
         self._confidence_label.setStyleSheet(
-            "QPushButton { font-size: 13px; color: #4a90d9; font-weight: bold; border: none; "
+            f"QPushButton {{ font-size: 13px; color: {PRIMARY}; font-weight: bold; border: none; "
             "padding: 0; text-align: left; }"
         )
         self._confidence_label.setToolTip("")
         self._recommendation_info_icon.setVisible(False)
         self._recommendation_info_tooltip.hide()
+        self._update_data_status()
+
+    def _update_data_status(self) -> None:
+        if not self._hero:
+            self._data_status_label.setText("")
+            return
+        if self._recommendation_stale:
+            self._data_status_label.setText("指数待更新")
+            self._data_status_label.setStyleSheet(
+                f"font-size: 11px; color: {WARNING}; font-weight: bold;"
+            )
+        elif self._recommendation_loaded and self._recommendation_index and self._recommendation_index.is_valid:
+            self._data_status_label.setText("数据已更新")
+            self._data_status_label.setStyleSheet(
+                f"font-size: 11px; color: {SUCCESS};"
+            )
+        elif self._recommendation_loaded:
+            self._data_status_label.setText("数据不足")
+            self._data_status_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT};")
+        else:
+            self._data_status_label.setText("OCR 待确认")
+            self._data_status_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT};")
 
     def _show_recommendation_detail(self) -> None:
         detail = self._confidence_label.toolTip()
@@ -362,6 +421,11 @@ class HeroCardWidget(QFrame):
         self._recommendation_loaded = True
         self._update_confidence_display()
 
+    def set_recommendation_stale(self, stale: bool) -> None:
+        """标记推荐指数是否需要依据最新榜单重建。"""
+        self._recommendation_stale = stale
+        self._update_data_status()
+
     @property
     def win_rate(self) -> float | None:
         return self._win_rate
@@ -395,19 +459,19 @@ class HeroCardWidget(QFrame):
         else:
             self._medal_label.clear()
             self._medal_label.setStyleSheet("")
-            self._win_rate_label.setStyleSheet("font-size: 12px; color: #999;")
+            self._win_rate_label.setStyleSheet(f"font-size: 12px; color: {MUTED_TEXT};")
         self._apply_rank_style(self._rank)
 
     def _apply_rank_style(self, rank: int) -> None:
         if rank in (1, 2, 3):
             self.setStyleSheet(
-                "HeroCardWidget { background-color: #ffffff; border: none; "
+                f"HeroCardWidget {{ background-color: {SURFACE}; border: none; "
                 "border-radius: 8px; }"
             )
         else:
             self.setStyleSheet(
-                "HeroCardWidget { background-color: #ffffff; border: 1px solid #b0c4de; "
-                "border-radius: 8px; } HeroCardWidget:hover { border-color: #4a90d9; }"
+                f"HeroCardWidget {{ background-color: {SURFACE}; border: 1px solid {BORDER}; "
+                f"border-radius: 8px; }} HeroCardWidget:hover {{ border-color: {PRIMARY}; }}"
             )
 
     def paintEvent(self, event) -> None:
@@ -438,10 +502,16 @@ class HeroCardWidget(QFrame):
             label.deleteLater()
         self._synergy_labels.clear()
 
-        for index, (name, rating) in enumerate(synergies):
+        if synergies:
+            best_name, best_rating = synergies[0]
+            self._best_partner_label.setText(f"最佳搭档：{best_name}（{best_rating}）")
+        else:
+            self._best_partner_label.setText("最佳搭档：暂无数据")
+
+        for index, (name, rating) in enumerate(synergies[1:4]):
             row = index // 4
             column = index % 4
             label = QLabel(f"· {name}  ({rating})")
-            label.setStyleSheet("color: #555; font-size: 11px; padding: 1px 0;")
+            label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 11px; padding: 1px 0;")
             self._synergy_grid.addWidget(label, row, column)
             self._synergy_labels.append(label)

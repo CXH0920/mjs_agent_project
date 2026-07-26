@@ -4,6 +4,19 @@
 统一定义应用全局样式和颜色方案。
 """
 
+# 语义色 token：页面组件优先复用这些值，动态势力色等例外可局部计算。
+PRIMARY = "#4a90d9"
+PRIMARY_HOVER = "#357abd"
+SUCCESS = "#176b36"
+WARNING = "#8a5a00"
+DANGER = "#a12622"
+TEXT_PRIMARY = "#2c3e50"
+MUTED_TEXT = "#65758b"
+SURFACE = "#ffffff"
+SUBTLE_SURFACE = "#eef2f6"
+BORDER = "#b0c4de"
+
+
 GLOBAL_STYLE = """
 /* === 全局 === */
 QMainWindow, QDialog, QWidget {

@@ -25,6 +25,7 @@ from src.data.win_rate_repository import load_win_rates
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.shared.widgets import DoubleClickLabel
+from src.ui.style import BORDER, MUTED_TEXT, PRIMARY, SUBTLE_SURFACE, SURFACE, TEXT_PRIMARY
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -45,7 +46,7 @@ class MatchHeroCard(QFrame):
     def _setup_ui(self) -> None:
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet(
-            "QFrame { background-color: #ffffff; border: 1px solid #d7e1ea; "
+            f"QFrame {{ background-color: {SURFACE}; border: 1px solid {BORDER}; "
             "border-radius: 8px; }"
         )
         layout = QHBoxLayout(self)
@@ -97,7 +98,7 @@ class MatchHeroCard(QFrame):
         self._win_rate_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._win_rate_label.setFixedWidth(130)
         self._win_rate_label.setStyleSheet(
-            "font-size: 15px; color: #4a90d9; font-weight: bold;"
+            f"font-size: 15px; color: {PRIMARY}; font-weight: bold;"
         )
         left_panel.addWidget(self._win_rate_label, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addLayout(left_panel, 0)
@@ -109,7 +110,7 @@ class MatchHeroCard(QFrame):
         self._side_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._side_label.setFixedWidth(72)
         self._side_label.setStyleSheet(
-            "color: #65758b; background-color: #eef2f6; border-radius: 4px; "
+            f"color: {MUTED_TEXT}; background-color: {SUBTLE_SURFACE}; border-radius: 4px; "
             "padding: 3px 6px; font-size: 11px;"
         )
         info.addWidget(self._side_label, 0, Qt.AlignmentFlag.AlignLeft)
@@ -146,7 +147,7 @@ class MatchHeroCard(QFrame):
         else:
             self._portrait.setPixmap(QPixmap())
             self._portrait.setText(hero.name)
-            self._portrait.setStyleSheet("color: #999; font-size: 11px;")
+            self._portrait.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 11px;")
 
     def set_win_rate(self, rate: float | None) -> None:
         if rate is None:
@@ -202,10 +203,10 @@ class MatchGuidePanel(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("对局攻略")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {TEXT_PRIMARY};")
         header.addWidget(title)
         self._recognition_status_label = QLabel("尚未识别阵容")
-        self._recognition_status_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
         header.addWidget(self._recognition_status_label)
         header.addStretch()
 
@@ -222,7 +223,7 @@ class MatchGuidePanel(QWidget):
 
         self._empty_state = QLabel("尚未识别阵容\n连接模拟器后识别当前阵容，或从本地图片导入。")
         self._empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_state.setStyleSheet("color: #65758b; font-size: 14px; padding: 24px;")
+        self._empty_state.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 14px; padding: 24px;")
         layout.addWidget(self._empty_state, 1)
 
         self._cards_widget = QWidget()

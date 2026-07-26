@@ -176,6 +176,27 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
     assert card._recommendation_info_icon.isHidden()
 
 
+def test_recommendation_card_highlights_partner_data_status_and_skill_action() -> None:
+    _app()
+    card = HeroCardWidget(Hero(id=1, name="测试武将", faction="魏"))
+    selected: list[int] = []
+    card.hero_double_clicked.connect(selected.append)
+
+    card.set_synergies([("最佳搭档", "S"), ("其他搭档", "A")])
+    card.set_recommendation_index(RecommendationIndex(
+        1, "测试武将", 0.60, 1, 2, 1.0, 0.8, 1.4, 0.63, 0.53,
+        82, "S", 1, "有效",
+    ))
+    card._skill_btn.click()
+
+    assert card._best_partner_label.text() == "最佳搭档：最佳搭档（S）"
+    assert card._data_status_label.text() == "数据已更新"
+    assert selected == [1]
+
+    card.set_recommendation_stale(True)
+    assert card._data_status_label.text() == "指数待更新"
+
+
 def test_main_window_keeps_emulator_status_after_stats_update() -> None:
     _app()
     window = MainWindow(_hero_manager(), SynergyManager(), GuideManager())
