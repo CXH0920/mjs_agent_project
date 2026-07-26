@@ -59,7 +59,7 @@ DataFacade.load_all()
 
 ### 进程与任务提交边界
 
-`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 失败会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成使用 staging 文件：任一 `GenerationResult` 失败时，正式 `guides.json`、`synergies.json` 不提交，CLI 输出暂存路径供人工排查。
+`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期；`CaptureService` 管理 ADB 截图和任务提交。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
 
@@ -292,9 +292,9 @@ else:
 - 无 `--update`（全量获取）：断点续传，跳过已存在的 `hero_id`
 
 **相性**：
-- `--synergy`（全量生成）：始终重新生成所有组合，但旧正式数据会保留到任务全部成功后才替换
+- `--synergy`（全量生成）：始终重新生成所有组合；成功配对分批覆盖，失败配对保留旧数据
 - `--synergy-single`（选定武将）：断点续传，已有的相性对跳过不重复生成
-- `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对；全部配对成功后统一提交
+- `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对；成功配对按批提交
 
 #### 2.2.4 浏览器模式的 token 处理
 
@@ -369,25 +369,25 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 3. 输出 `"[i/N] hero_name OK"`（被进度条正则匹配）
 4. `generator.generate_guide(hero)` → `(result, usage)`
 5. 累计 usage
-6. 每 10 条（`GUIDE_BATCH_SAVE_INTERVAL`）批量保存到 `.staging`
-7. 无失败项时原子替换正式文件；有失败项则保留正式数据和 staging 文件
+6. 每 10 条（`GUIDE_BATCH_SAVE_INTERVAL`）校验成功后原子提交正式文件
+7. 任务结束时提交尾批；失败项保留原有数据
 
 ### 2.5 run_synergy_generation() — 全量相性生成
 
-始终重新生成所有 `N*(N-1)/2` 对组合，但旧正式数据不会在任务开始时清空。
-每 20 条（`SYNERGY_BATCH_SAVE_INTERVAL`）批量写入 staging，全部成功后才提交。
+始终重新生成所有 `N*(N-1)/2` 对组合，失败配对保留旧正式数据。
+每 10 条（`SYNERGY_BATCH_SAVE_INTERVAL`）校验成功后原子提交，结束时提交尾批。
 
 ### 2.6 run_synergy_pair_generation() — 指定配对（支持 2~8 武将）
 
 - 读取包含 2~8 个武将的 JSON 文件
 - 用 `itertools.combinations(pair_heroes, 2)` 遍历所有 C(N,2) 组合
 - 输出进度 `[i/total]` 与实际配对数同步
-- 每对结果均先写入 staging
-- 任一失败时正式数据不变；全部成功才提交
+- 每 10 对校验成功结果原子提交一次，结束时提交尾批
+- 任一失败时仅保留该配对旧数据
 
 ### 2.7 run_synergy_single_generation() — 选定武将 x 全体
 
-支持断点续传：已有的相性对跳过不重复生成；新增项全部成功后统一提交。
+支持断点续传：已有的相性对跳过不重复生成；新增成功项按批提交，失败项不改变旧数据。
 
 ---
 
@@ -1129,11 +1129,11 @@ _on_error()
 - `_on_finished()` 和 `_on_error()` 都会调用 `_cleanup_tmp()` 清理
 - 清理失败（`OSError`）只打 warning 不阻断流程
 
-### 6.6 结构化任务结果与 staging 提交
+### 6.6 结构化任务结果与分批提交
 
-`ai_generation.py` 的四种编排函数返回 `GenerationResult`。它统一记录 token、完成/跳过数、失败项、提交状态与 staging 路径；`ai_batch.py` 据此决定退出码，任一失败项都会返回非零。
+`ai_generation.py` 的四种编排函数返回 `GenerationResult`。它统一记录 token、完成/跳过数、失败项与提交状态；`ai_batch.py` 据此决定退出码，任一失败项都会返回非零。
 
-生成期间仅写入 `<正式文件名>.staging`。失败时正式 JSON 保持不变并保留暂存文件；全部成功后才将 staging 文件原子替换为正式数据。父进程仅解析 `[i/N]` 进度行，依据退出码通知 UI 成败，不再解析 `RESULT` 文本协议。
+每累计 10 条攻略或相性校验成功，生成器即通过临时文件原子替换正式 JSON；任务结束时再提交不足一批的结果。失败项不改写其原有记录，已提交批次不会回滚。父进程仅解析 `[i/N]` 进度行，依据退出码通知 UI 成败，不再解析 `RESULT` 文本协议。
 
 ### 6.7 进度对话框 OK/FAIL 分开匹配
 
@@ -1811,7 +1811,7 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
 | 文件 | 用例数 | 测试内容 |
 |------|--------|----------|
 | `test_adb_capture.py` | 10 | ADB 连接、截图与异常处理 |
-| `test_ai_batch.py` / `test_ai_generation.py` | 50 | AI 参数、生成、staging 与提交 |
+| `test_ai_batch.py` / `test_ai_generation.py` | 52 | AI 参数、生成、分批提交 |
 | `test_ai_generation_workflow.py` | 3 | AI UI 工作流信号与刷新 |
 | `test_capture_service.py` / `test_ocr_*.py` | 15 | 截图编排、模板缩放、OCR 服务与队列 |
 | `test_crawler.py` / `test_incremental_update.py` | 17 | 官网解析与增量更新 |
@@ -2124,7 +2124,7 @@ PlaywrightGenerator.__init__()
 | **获取回复机制** | 同步 HTTP 响应 body | Phase 1 + Phase 2 两阶段轮询等待 |
 | **JSON 提取** | `extract_json()` | `extract_json()`（完全同一份代码） |
 | **Pydantic 校验** | `validate_guide()` | `validate_guide()`（完全同一份代码） |
-| **写入 JSON** | 先写 `.staging`，全成功后原子提交 | 先写 `.staging`，全成功后原子提交 |
+| **写入 JSON** | 每批校验成功结果原子提交 | 每批校验成功结果原子提交 |
 | **Token 统计返回** | `usage` 字段（prompt/completion tokens） | `None`（不支持） |
 | **断点续传** | ✅ 通过 `_load_existing_guides()` | ✅ 通过 `_load_existing_guides()` |
 | **成本估算** | ✅ 支持 dry-run 显示 | ❌ 无 |
@@ -2167,9 +2167,9 @@ PlaywrightGenerator.__init__()
 ```
 
 **写入策略**：
-- 生成过程按间隔写入 `文件.staging`，不修改正式数据
-- 全部请求成功后：`staging.tmp` → `json.dump()` → `tmp_path.replace(staging)` → `staging.replace(正式路径)`
-- 任一请求失败时保留 staging 供排查，正式数据不变
+- 每累计 10 条攻略或相性校验成功即写入正式数据
+- `json.dump()` → `tmp_path.replace(正式路径)`，单次提交保持原子性
+- 任一请求失败时保留对应正式记录，已成功批次不回滚
 
 ---
 

@@ -13,7 +13,7 @@
 - **双模式生成** — API 模式（httpx 直连 DeepSeek）和浏览器模式（Playwright + Edge 自动化操作 DeepSeek 网页版）
 - **四种生成模式** — 全量攻略、全量相性、指定配对（2~8 武将 × itertools.combinations）、选定武将 × 全体
 - **JSON 提取** — 从 AI 的不规范回复中宽容提取 JSON，支持 4 种回退策略
-- **安全暂存提交** — 生成过程中按批写入同目录 `.staging` 文件；仅当任务全部成功时才原子替换正式 JSON。失败时正式数据保持不变，暂存结果保留供排查
+- **分批原子提交** — 每累计 10 条攻略或相性通过校验的结果即原子写入正式 JSON；失败项保留对应旧数据
 
 ---
 
@@ -109,9 +109,9 @@ for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
 
 ### 3.5 任务结果与提交边界
 
-每个编排函数返回 `GenerationResult`，其中包含 token 用量、完成数、跳过数、失败项、提交状态和暂存文件路径。CLI 只根据该结构化结果决定退出码：任一失败项都会以非零退出，API 与浏览器模式的规则一致。
+每个编排函数返回 `GenerationResult`，其中包含 token 用量、完成数、跳过数、失败项和提交状态。CLI 只根据该结构化结果决定退出码：任一失败项都会以非零退出，API 与浏览器模式的规则一致；此前已成功的批次不回滚。
 
-单个生成任务期间写入 `<正式文件名>.staging`；失败时保留该文件但不触碰该任务的正式 `guides.json` / `synergies.json`，成功时通过 `replace()` 原子提交。浏览器模式没有 token usage，不会因缺少 usage 被误判为失败，也不要求 API Key。
+单个生成任务每累计 10 条攻略或相性校验成功，即通过临时文件 `replace()` 原子提交到正式 `guides.json` / `synergies.json`；任务结束时会提交不足一批的成功结果。任一失败项只保留原有对应记录，不回滚已成功批次。浏览器模式没有 token usage，不会因缺少 usage 被误判为失败，也不要求 API Key。
 
 ---
 

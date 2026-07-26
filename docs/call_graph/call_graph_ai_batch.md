@@ -8,7 +8,7 @@
 
 ## 当前实现基线（2026-07-22）
 
-AI 生成使用 staging 保护正式 JSON：所有任务成功才提交，任一任务失败则正式数据不变并以退出码 `1` 结束。
+AI 生成按批原子提交正式 JSON：每批校验成功结果立即提交，任一任务失败时仅保留对应旧数据并以退出码 `1` 结束。
 
 ```
 ai_batch.main()
@@ -16,10 +16,10 @@ ai_batch.main()
   -> AIBatchGenerator(...) 或 PlaywrightGenerator(...)
   -> run_guide_generation() / run_synergy_generation()
      / run_synergy_pair_generation() / run_synergy_single_generation()
-    -> generate_*() -> validate_*() -> 写入 *.staging
-  -> 全部 GenerationResult.succeeded ?
-    -> 是：提交正式 JSON，exit 0
-    -> 否：保留正式 JSON，打印 staging 路径，exit 1
+    -> generate_*() -> validate_*() -> 达到批量阈值时原子写入正式 JSON
+  -> GenerationResult.succeeded ?
+    -> 是：exit 0
+    -> 否：已成功批次保留，失败项维持旧数据，exit 1
 ```
 
 | 参数 | 编排函数 | 范围 |
@@ -186,7 +186,7 @@ ai_generation.run_synergy_generation(heroes, generator, synergy_path, existing, 
               -> SynergyScore.model_validate(raw) -> model_dump()
            -> return (synergy_dict, usage_dict)
         -> [score >= threshold] 保留; [score < threshold] 丢弃
-        -> [batch save] _save_json 每 20 对
+        -> [batch commit] _save_json 每 10 对校验成功结果
   -> [最终保存]
   -> return (total_prompt_tokens, total_completion_tokens)
 ```

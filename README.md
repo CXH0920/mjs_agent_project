@@ -102,7 +102,7 @@ test_project/
 ├── tests/
 │   ├── test_adb_capture.py        # 10 tests — ADB 连接与截图
 │   ├── test_ai_batch.py           # 40 tests — AI 批量生成
-│   ├── test_ai_generation.py       # 10 tests — staging 与生成编排
+│   ├── test_ai_generation.py       # 12 tests — 分批提交与生成编排
 │   ├── test_ai_generation_workflow.py # 3 tests — AI UI 工作流
 │   ├── test_capture_service.py    # 4 tests — 截图服务
 │   ├── test_crawler.py             # 9 tests — 官网数据解析
@@ -307,7 +307,7 @@ data/*.json → DataFacade (三个 Manager) → UI 展示
 
 - QProcess stdout 以字节缓冲保留未完成行，只对完整换行内容做 UTF-8 解码和进度解析；进程结束时 flush 末行。
 - 取消任务只调用 `kill()`，由 `finished` 信号异步清理临时文件和更新 UI，不在界面线程同步等待。
-- AI 生成先写 `*.staging`，全部任务成功后才原子替换正式 JSON；失败时正式数据保持不变。
+- AI 生成每累计 10 条已校验成功结果即原子提交正式 JSON；失败项保留对应旧数据。
 - 页面共享控件、技能弹窗和势力配色位于 `src/ui/shared/`；胜率 CSV 由 `src/data/win_rate_repository.py` 统一读取并缓存。
 
 ### 双模式 AI 生成
@@ -424,7 +424,7 @@ src/scraper/
 - 指定增量任务支持跳过已有项
 - 输出经过 Pydantic 模型校验
 - `--dry-run` 预览 Token 消耗和费用（仅 API 模式）
-- 中间结果写入同目录 `.staging` 文件；任一生成失败时正式数据不变，全部成功后才原子提交
+- 每 10 条校验成功结果原子提交一次正式 JSON；任务结束时提交尾批，失败项保留旧数据
 - 双模式：API 直连 / 浏览器自动化（`--browser`，无需 API Key）
 
 ### ETL 数据流
@@ -442,7 +442,7 @@ _convert_ids_to_int() → 武将 ID 转 int → 注入 hero_id / hero_a_id / her
   ▼
 _validate_guide() / _validate_synergy() → Pydantic 校验 → model_dump
   ▼
-_save_json() → data/*.json.staging → 全部成功后原子替换 data/guides.json / data/synergies.json
+_save_json() → data/*.tmp → 每批原子替换 data/guides.json / data/synergies.json
 ```
 
 ---
