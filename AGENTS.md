@@ -40,4 +40,4 @@
 
 ## 默认遵守
 - 默认使用中文回复
-- 使用 conda的myenv环境
+- 使用 `G:\CONDA\Anaconda3\envs\myenv\python.exe` 运行 Python、pytest 及相关脚本；不要依赖单次 PowerShell 命令中的 `conda activate`，以免误用 Base 环境
