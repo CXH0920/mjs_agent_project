@@ -7,7 +7,7 @@ import threading
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QTabWidget, QTextBrowser
+from PySide6.QtWidgets import QApplication, QLabel, QTabWidget, QTextBrowser
 
 from src.business.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
@@ -159,7 +159,18 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
     }
     guides = GuideManager()
     guides._items = {
-        3: HeroGuide(hero_id=3, key_points=["丙的威胁"], counter_strategy="限制丙"),
+        1: HeroGuide(
+            hero_id=1,
+            key_points=["甲的长文本操作要点，需要在较窄的攻略页面中完整自动换行显示。"],
+            tips_for_beginners="甲的新手提示内容较长，需要在卡片中自动换行而不能撑出横向滚动。",
+        ),
+        2: HeroGuide(hero_id=2, key_points=["乙的操作要点"]),
+        3: HeroGuide(
+            hero_id=3,
+            key_points=["丙的威胁"],
+            weak_against_type=["需要较长名称的克制类型，用于验证敌方卡片会自动换行显示。"],
+            counter_strategy="限制丙",
+        ),
         4: HeroGuide(hero_id=4, counter_strategy="限制丁"),
     }
     panel = MatchGuidePanel(heroes, guide_manager=guides)
@@ -167,6 +178,10 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
         {"index": index, "name": name}
         for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
     ])
+    panel._win_rates = {"甲": 40.3}
+    panel._render_unconfirmed()
+    overview_labels = [label.text() for label in panel._overview_page.findChildren(QLabel)]
+    assert any("甲 · 定位暂无数据 · 历史单将胜率：40.3%" == text for text in overview_labels)
 
     panel._set_side(0, "ally")
     panel._set_side(1, "ally")
@@ -190,6 +205,12 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
     assert panel._allies_page.widget().layout().itemAt(0).widget().text() == "我方打法"
     assert panel._enemies_page.widget().layout().itemAt(0).widget().text() == "对抗敌方"
     assert panel._details_page.widget().layout().itemAt(0).widget().text() == "单将详情"
+    ally_card = panel._allies_page.widget().layout().itemAt(1).widget()
+    enemy_card = panel._enemies_page.widget().layout().itemAt(1).widget()
+    ally_tips = next(label for label in ally_card.findChildren(QLabel) if label.text().startswith("新手提示："))
+    weakness = next(label for label in enemy_card.findChildren(QLabel) if label.text().startswith("被谁克制："))
+    assert ally_tips.wordWrap()
+    assert weakness.wordWrap()
 
 
 def test_match_guide_auto_assigns_sides_from_team_labels() -> None:

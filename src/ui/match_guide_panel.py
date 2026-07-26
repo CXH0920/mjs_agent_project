@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
-    QMenu, QPushButton, QScrollArea, QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QMenu, QPushButton, QScrollArea, QSizePolicy, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from src.business.match_analysis_service import MatchAnalysis, MatchAnalysisService
@@ -628,7 +628,11 @@ class MatchGuidePanel(QWidget):
         if valid:
             layout.addWidget(self._section_label("已识别单将速览"))
             for hero in valid:
-                layout.addWidget(QLabel(f"{hero.name} · {hero.position or '定位暂无数据'} · 历史单将胜率：{self._win_rates.get(hero.name, '暂无数据')}"))
+                rate = self._win_rates.get(hero.name)
+                rate_text = "暂无数据" if rate is None else f"{rate:.1f}%"
+                layout.addWidget(QLabel(
+                    f"{hero.name} · {hero.position or '定位暂无数据'} · 历史单将胜率：{rate_text}"
+                ))
         layout.addStretch()
         for page in (self._allies_page, self._enemies_page, self._details_page):
             other = self._page_layout(page)
@@ -743,13 +747,19 @@ class MatchGuidePanel(QWidget):
 
     def _add_guide_card(self, layout, summary, side_name: str) -> None:
         card = QFrame()
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         card.setStyleSheet(f"QFrame {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 6px; }}")
         box = QVBoxLayout(card)
+        box.setContentsMargins(10, 8, 10, 8)
+        box.setSpacing(6)
         title = QLabel(f"{side_name} · {summary.hero.name}")
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        title.setWordWrap(True)
         box.addWidget(title)
         if summary.guide is None:
-            box.addWidget(QLabel("暂无攻略数据"))
+            no_data = QLabel("暂无攻略数据")
+            no_data.setWordWrap(True)
+            box.addWidget(no_data)
         else:
             if summary.guide.key_points:
                 for point in summary.guide.key_points[:3]:
@@ -757,10 +767,14 @@ class MatchGuidePanel(QWidget):
                     label.setWordWrap(True)
                     box.addWidget(label)
             if side_name == "我方" and summary.guide.tips_for_beginners:
-                box.addWidget(QLabel(f"新手提示：{summary.guide.tips_for_beginners}"))
+                tips = QLabel(f"新手提示：{summary.guide.tips_for_beginners}")
+                tips.setWordWrap(True)
+                box.addWidget(tips)
             if side_name == "敌方":
                 if summary.guide.weak_against_type:
-                    box.addWidget(QLabel("被谁克制：" + "、".join(summary.guide.weak_against_type)))
+                    weakness = QLabel("被谁克制：" + "、".join(summary.guide.weak_against_type))
+                    weakness.setWordWrap(True)
+                    box.addWidget(weakness)
                 if summary.guide.counter_strategy:
                     strategy = QLabel("应对建议：" + summary.guide.counter_strategy)
                     strategy.setWordWrap(True)
