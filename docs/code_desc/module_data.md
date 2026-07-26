@@ -139,6 +139,8 @@ class SynergyManager:
 
 `LoadReport` 汇总一次完整加载的问题，并提供 `error_count` 与 `warning_count`。这使 UI 可以提示“部分数据已恢复”，同时保留日志和后续修复入口所需的精确上下文。
 
+`DataManager.clear_all()` 用于批量清空当前 Manager 的内存记录并返回条数；数据管理服务会先备份原 JSON，再调用该方法和 `save()`，沿用临时文件替换保证空列表写入的原子性。
+
 ### 3.6 DataFacade 门面
 
 `DataFacade` 聚合三个 Manager，提供统一的数据访问入口：

@@ -42,6 +42,7 @@ src/ui/
 ├── match_guide_panel.py        # 对局攻略页面（四名武将卡片+双导入）
 │
 ├── settings_dialog.py          # API 配置对话框
+├── data_management_dialog.py   # 攻略与相性批量清空对话框
 ├── mumu_config_dialog.py       # 模拟器配置对话框（表单、状态与 ROI 框选）
 ├── backend_choose_dialog.py    # 后端选择对话框（API/浏览器）
 ├── cost_confirm_dialog.py      # 遗留的 AI 成本确认对话框（当前流程未调用）
@@ -255,6 +256,10 @@ GuideProgressDialog（实时进度条 + 完成/失败提示）
 
 两个 Tab 共用“保存/取消”按钮。保存价格前会校验模型名称非空、名称不重复、单价为合法非负数字；写入过程使用临时文件替换，避免配置文件被部分写入。价格未配置的模型仍不会套用默认价格，成本确认界面会显示无法自动估算。
 
+### 3.8 数据管理对话框
+
+`DataManagementDialog` 由菜单“配置 → 数据管理”打开，可勾选批量清空武将攻略和武将相性。界面显示两类数据当前条数，提交前要求输入“清空”确认；攻略或相性生成任务运行时拒绝执行。`DataManagementService` 会先将所选 JSON 复制到 `data/backups/` 的时间戳备份文件，再清空 Manager 并原子保存正式 JSON。完成后主窗口刷新攻略详情、相性表、推荐摘要和状态栏计数。
+
 ---
 
 ## 四、关键代码片段
@@ -347,6 +352,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 对话框 | 用途 |
 |--------|------|
 | `SettingsDialog` | API 配置编辑 |
+| `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
 | `MumuConfigDialog` | ADB/OCR 表单与状态展示、ROI 框选；后台操作委托 `EmulatorOperationService` |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器） |
 | `CostConfirmDialog` | 遗留 AI 成本确认组件；当前费用估算展示在 `BackendChooseDialog` |

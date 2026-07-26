@@ -78,6 +78,7 @@ test_project/
 │       ├── synergy_pair_dialog.py # 相性指定获取（选 2~8 武将，自动两两配对）
 │       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
 │       ├── settings_dialog.py     # API 配置对话框
+│       ├── data_management_dialog.py # 攻略与相性数据管理对话框
 │       ├── cost_confirm_dialog.py # 遗留的 AI 成本确认对话框（当前流程未调用）
 │       └── guide_progress_dialog.py # 攻略生成进度条
 ├── data/
@@ -107,10 +108,11 @@ test_project/
 │   ├── test_capture_service.py    # 4 tests — 截图服务
 │   ├── test_crawler.py             # 9 tests — 官网数据解析
 │   ├── test_data_facade.py         # 1 test — 数据加载容错与跨实体引用校验
+│   ├── test_data_management_service.py # 3 tests — 数据备份与批量清空
 │   ├── test_emulator_operation_service.py # 3 tests — 模拟器后台操作
 │   ├── test_emulator_ui.py        # 11 tests — 模拟器/OCR UI
 │   ├── test_faction_color_dialog.py # 2 tests — 势力配色
-│   ├── test_guide_manager.py      # 10 tests — 攻略管理器
+│   ├── test_guide_manager.py      # 11 tests — 攻略管理器
 │   ├── test_guide_ui.py           # 11 tests — 攻略 UI
 │   ├── test_hero_manager.py       # 15 tests — 武将管理器
 │   ├── test_incremental_update.py # 8 tests — 增量更新
@@ -456,6 +458,7 @@ _save_json() → data/*.tmp → 每批原子替换 data/guides.json / data/syner
 | 文件 > 退出 | Ctrl+Q | 关闭应用 |
 | 配置 > API 配置 | | 编辑 API Key/URL/Model |
 | 配置 > 模拟器配置 | | ADB 连接管理 + 模板制作 + OCR 配置 + 持续轮询 |
+| 配置 > 数据管理 | | 备份后批量清空武将攻略和相性数据 |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
 | 数据 > 官方数据导入 | | 选择 2v2 和/或武将放逐榜单图片；显示当前文件 OCR 进度，覆盖胜率、出场、放逐 CSV，并输出待复核 CSV/行截图 |
 | 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
