@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from PySide6.QtCore import QThread, Signal
-from src.ocr.recognizer import _HIGH_CONFIDENCE, _correct_with_hero_list
+from src.ocr.recognizer import _correct_with_hero_list
 
 logger = logging.getLogger(__name__)
 
@@ -593,8 +593,6 @@ class OfficialDataImportService:
             return name, confidence
         if len(name) == 1:
             return name, confidence
-        if confidence >= _HIGH_CONFIDENCE and name not in self._hero_names:
-            return name, confidence
         return _correct_with_hero_list(name, self._hero_names), confidence
 
     @staticmethod
@@ -608,6 +606,9 @@ class OfficialDataImportService:
         rank_match = re.search(r"\d+", fields["排名"][0])
         if rank_match and int(rank_match.group()) != expected_rank:
             reasons.append("排名OCR与行序不一致")
+        ocr_name = "".join(re.findall(r"[\u4e00-\u9fff]", fields["武将"][0]))
+        if ocr_name and ocr_name != name:
+            reasons.append("武将名称已由词表校正")
         if len(name) < 2:
             reasons.append("武将名称疑似缺字")
         elif not re.fullmatch(r"[\u4e00-\u9fff]{1,8}", name):

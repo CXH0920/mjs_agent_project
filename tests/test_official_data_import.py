@@ -55,6 +55,20 @@ def test_hero_name_reuses_template_two_stage_correction() -> None:
     assert confidence == 0.80
 
 
+def test_high_confidence_unknown_complete_name_is_corrected_and_reviewed() -> None:
+    service = OfficialDataImportService(hero_names=["曹植", "曹仁", "曹丕", "曹操", "贾诩"])
+
+    name, confidence = service._normalize_name(("贾谢", 0.996))
+    common_surname_name, _ = service._normalize_name(("曹不", 0.996))
+    reasons = OfficialDataImportService._review_reasons(
+        1, {"排名": ("1", 0.99), "武将": ("贾谢", confidence)}, name, {"排名": 1, "武将": name},
+    )
+
+    assert (name, confidence) == ("贾诩", 0.996)
+    assert common_surname_name == "曹丕"
+    assert reasons == ["武将名称已由词表校正"]
+
+
 def test_name_cell_prefers_complete_candidate_in_hero_list(monkeypatch) -> None:
     service = OfficialDataImportService(hero_names=["郭隗"])
     cell = np.zeros((20, 100, 3), dtype=np.uint8)
