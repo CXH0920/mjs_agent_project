@@ -214,7 +214,6 @@ def test_synergy_pair_failure_commits_successes_and_preserves_failed_pair(tmp_pa
     generator = FakeGenerator(synergies=[
         {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
         None,
-        {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
     ])
 
     result = run_synergy_pair_generation(
@@ -223,10 +222,34 @@ def test_synergy_pair_failure_commits_successes_and_preserves_failed_pair(tmp_pa
     )
 
     assert not result.succeeded
+    assert result.skipped == 1
     assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
         {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
         {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
-        {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
+    ]
+
+
+def test_synergy_pair_overwrites_existing_when_requested(tmp_path: Path) -> None:
+    synergy_path = tmp_path / "synergies.json"
+    original = {"hero_a_id": 1, "hero_b_id": 2, "score": 2}
+    pair_file = tmp_path / "pairs.json"
+    pair_file.write_text(json.dumps([
+        {"id": 1, "name": "甲"},
+        {"id": 2, "name": "乙"},
+    ]), encoding="utf-8")
+
+    result = run_synergy_pair_generation(
+        pair_file=str(pair_file), heroes=[], generator=FakeGenerator(synergies=[
+            {"hero_a_id": 1, "hero_b_id": 2, "score": 8},
+        ]), synergy_path=synergy_path,
+        existing_synergy_dict={(1, 2): original}, existing_synergy_keys={(1, 2)},
+        update_mode=True,
+    )
+
+    assert result.completed == 1
+    assert result.skipped == 0
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 8},
     ]
 
 

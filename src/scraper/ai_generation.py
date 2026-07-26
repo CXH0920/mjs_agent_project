@@ -239,6 +239,7 @@ def run_synergy_pair_generation(
     synergy_path,
     existing_synergy_dict: dict,
     existing_synergy_keys: set,
+    update_mode: bool = False,
 ):
     """执行相性配对生成（指定 2~8 个武将，两两配对）
 
@@ -252,6 +253,7 @@ def run_synergy_pair_generation(
         synergy_path: 相性输出路径
         existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合
+        update_mode: True 时重新生成已有相性；False 时跳过已有相性。
 
     Returns:
         GenerationResult: 本次生成的结构化结果。
@@ -280,6 +282,10 @@ def run_synergy_pair_generation(
 
     for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
         pair_key = tuple(sorted([ha["id"], hb["id"]]))
+        if not update_mode and pair_key in existing_synergy_keys:
+            result_summary.skipped += 1
+            print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} SKIP（已有相性）", flush=True)
+            continue
         print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']}...", flush=True)
 
         generated, usage = generator.generate_synergy(ha, hb)
@@ -303,6 +309,11 @@ def run_synergy_pair_generation(
         existing_synergy_dict.update(working_synergies)
         existing_synergy_keys.clear()
         existing_synergy_keys.update(working_synergies)
+    print(
+        f"  相性完成: 新增 {result_summary.completed} 对，跳过 {result_summary.skipped} 对，"
+        f"共 {len(working_synergies)} 对",
+        flush=True,
+    )
     return result_summary
 
 

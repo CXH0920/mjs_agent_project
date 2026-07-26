@@ -27,3 +27,6 @@ class GuideFetchDialog(BaseHeroSelectDialog):
             selection_mode=SelectionMode.MULTI,
             parent=parent,
         )
+
+    def _accept_button_text(self, count: int) -> str:
+        return f"生成 {count} 篇攻略" if count else "请选择武将"

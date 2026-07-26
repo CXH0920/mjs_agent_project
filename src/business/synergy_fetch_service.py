@@ -38,17 +38,29 @@ class SynergyFetchService(BaseFetchService):
     # 公共接口
     # ---------------------------------------------------------------
 
-    def fetch_pair(self, heroes: list[dict], backend: str = "api") -> None:
-        """指定获取：传入 2 个武将，写入临时文件后调用 --synergy-pair"""
+    def fetch_pair(
+        self,
+        heroes: list[dict],
+        backend: str = "api",
+        overwrite: bool = False,
+    ) -> None:
+        """指定获取：按用户选择跳过或覆盖已有相性。"""
         if self._is_busy():
             return
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         json.dump(heroes, tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
         tmp.close()
-        self._context = {"mode": "pair", "tmp_path": tmp_path, "backend": backend}
+        self._context = {
+            "mode": "pair",
+            "tmp_path": tmp_path,
+            "backend": backend,
+            "overwrite": overwrite,
+        }
         self.status_changed.emit("正在生成相性评分...")
         args = ["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_path]
+        if overwrite:
+            args.append("--update")
         if backend == "browser":
             args.append("--browser")
         logger.info("启动子进程: python %s", " ".join(args))

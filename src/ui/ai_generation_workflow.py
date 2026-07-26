@@ -97,7 +97,11 @@ class AiGenerationWorkflow(QObject):
     def request_synergy_pair(self) -> None:
         if not self._require_heroes():
             return
-        dialog = SynergyPairDialog(self._hero_manager, parent=self._window)
+        dialog = SynergyPairDialog(
+            self._hero_manager,
+            self._synergy_manager,
+            parent=self._window,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_heroes:
             return
 
@@ -109,7 +113,11 @@ class AiGenerationWorkflow(QObject):
         self._start_synergy_generation(
             pair_count,
             "相性配对生成进度",
-            lambda: self._synergy_service.fetch_pair(selected, backend=backend),
+            lambda: self._synergy_service.fetch_pair(
+                selected,
+                backend=backend,
+                overwrite=dialog.overwrite_existing,
+            ),
         )
 
     def request_synergy_single(self) -> None:

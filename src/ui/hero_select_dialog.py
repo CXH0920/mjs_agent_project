@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.checkable_combo import CheckableComboBox
+from src.ui.shared.widgets import FlowLayout
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ class BaseHeroSelectDialog(QDialog):
         selection_mode: SelectionMode = SelectionMode.MULTI,
         return_format: ReturnFormat = ReturnFormat.IDS,
         max_selection: int = 0,
+        min_selection: int = 1,
         parent=None,
     ):
         super().__init__(parent)
@@ -66,6 +69,11 @@ class BaseHeroSelectDialog(QDialog):
         self._selection_mode = selection_mode
         self._return_format = return_format
         self._max_selection = max_selection
+        self._min_selection = min_selection
+        self._all_heroes: list[Hero] = []
+        self._filtered_heroes: list[Hero] = []
+        self._selected_id_set: set[int] = set()
+        self._selection_change_in_progress = False
 
         # === 返回值（子类/调用方读取） ===
         self.selected_ids: list[int] = []
@@ -82,8 +90,8 @@ class BaseHeroSelectDialog(QDialog):
 
     def _setup_ui(self, tip_text: str) -> None:
         """构建对话框界面"""
-        all_heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)
-        if not all_heroes:
+        self._all_heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)
+        if not self._all_heroes:
             return
 
         factions = self._hero_mgr.list_factions()
@@ -96,153 +104,220 @@ class BaseHeroSelectDialog(QDialog):
             layout.addWidget(tip_label)
 
         # 搜索框
-        search_input = QLineEdit()
-        search_input.setPlaceholderText("搜索武将名称...")
-        layout.addWidget(search_input)
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("搜索武将名称...")
+        layout.addWidget(self._search_input)
 
         # 势力筛选：与攻略关系编辑使用相同的标签式多选下拉框
-        faction_combo = CheckableComboBox()
-        faction_combo.set_items(factions)
-        layout.addWidget(faction_combo)
+        self._faction_combo = CheckableComboBox()
+        self._faction_combo.set_items(factions)
+        layout.addWidget(self._faction_combo)
 
         # 计数标签
-        count_label = QLabel(f"已筛选: {len(all_heroes)} / {len(all_heroes)} 个武将")
-        layout.addWidget(count_label)
+        self._count_label = QLabel(
+            f"已筛选: {len(self._all_heroes)} / {len(self._all_heroes)} 个武将"
+        )
+        layout.addWidget(self._count_label)
 
-        # 已选计数标签（限选模式）
-        if self._selection_mode == SelectionMode.MULTI_LIMIT and self._max_selection > 1:
-            selection_label = QLabel(f"已选择: 0 / {self._max_selection} 个武将")
-            selection_label.setStyleSheet("color: #4a90d9; font-weight: bold;")
-            layout.addWidget(selection_label)
-        else:
-            selection_label = None
+        # 已选计数和业务专属选项（多选模式）
+        self._selection_label: QLabel | None = None
+        if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
+            self._selection_label = QLabel()
+            self._selection_label.setStyleSheet("color: #4a90d9; font-weight: bold;")
+            layout.addWidget(self._selection_label)
+            self._add_selection_options(layout)
 
-        # 全选/取消按钮（仅多选模式）
+        # 全选/清空按钮（仅多选模式）
         if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
             select_btn_layout = QHBoxLayout()
-            select_all_btn = QPushButton("全选")
-            deselect_all_btn = QPushButton("取消全选")
-            select_btn_layout.addWidget(select_all_btn)
-            select_btn_layout.addWidget(deselect_all_btn)
+            self._select_all_btn = QPushButton(self._select_all_text())
+            self._clear_selection_btn = QPushButton("清空已选")
+            select_btn_layout.addWidget(self._select_all_btn)
+            select_btn_layout.addWidget(self._clear_selection_btn)
             select_btn_layout.addStretch()
             layout.addLayout(select_btn_layout)
 
         # 武将列表
-        list_widget = QListWidget()
-        layout.addWidget(list_widget, 1)
+        self._list_widget = QListWidget()
+        layout.addWidget(self._list_widget, 1)
 
-        # ---------------------------------------------------------------
-        # 过滤逻辑
-        # ---------------------------------------------------------------
-
-        def _apply_filter() -> None:
-            search_text = search_input.text().strip()
-            selected_factions = faction_combo.checked_values()
-            filtered = [
-                h for h in all_heroes
-                if h.faction in selected_factions
-                and (not search_text or search_text in h.name)
-            ]
-
-            list_widget.blockSignals(True)
-            list_widget.clear()
-
-            if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
-                # Checkbox 模式
-                for hero in filtered:
-                    text = f"{hero.name}  [{hero.faction}]"
-                    item = QListWidgetItem(text)
-                    item.setData(Qt.ItemDataRole.UserRole, hero.id)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    list_widget.addItem(item)
-            else:
-                # 单选模式
-                for hero in filtered:
-                    text = f"{hero.name}  [{hero.faction}]"
-                    item = QListWidgetItem(text)
-                    item.setData(Qt.ItemDataRole.UserRole, hero.id)
-                    list_widget.addItem(item)
-
-            list_widget.blockSignals(False)
-            count_label.setText(f"已筛选: {len(filtered)} / {len(all_heroes)} 个武将")
-
-        # 全选/取消武将（多选模式）
         if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
-            def _select_all_items() -> None:
-                for i in range(list_widget.count()):
-                    list_widget.item(i).setCheckState(Qt.CheckState.Checked)
-
-            def _deselect_all_items() -> None:
-                for i in range(list_widget.count()):
-                    list_widget.item(i).setCheckState(Qt.CheckState.Unchecked)
-
-            select_all_btn.clicked.connect(_select_all_items)
-            deselect_all_btn.clicked.connect(_deselect_all_items)
-
-        # 限选模式：itemChanged 中检查上限
-        if self._selection_mode == SelectionMode.MULTI_LIMIT and self._max_selection > 1 and selection_label:
-
-            def _on_item_changed(item: QListWidgetItem) -> None:
-                checked_count = 0
-                for i in range(list_widget.count()):
-                    if list_widget.item(i).checkState() == Qt.CheckState.Checked:
-                        checked_count += 1
-
-                if item.checkState() == Qt.CheckState.Checked and checked_count > self._max_selection:
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    return
-
-                selection_label.setText(f"已选择: {checked_count} / {self._max_selection} 个武将")
-
-            list_widget.itemChanged.connect(_on_item_changed)
-
-        # 连接信号
-        search_input.textChanged.connect(_apply_filter)
-        faction_combo.checked_values_changed.connect(_apply_filter)
-        _apply_filter()
+            self._selected_tags_label = QLabel("已选武将")
+            self._selected_tags_label.setStyleSheet("font-size: 12px; color: #65758b;")
+            layout.addWidget(self._selected_tags_label)
+            self._selected_tags_scroll = QScrollArea()
+            self._selected_tags_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            self._selected_tags_scroll.setWidgetResizable(True)
+            self._selected_tags_scroll.setFixedHeight(62)
+            self._selected_tags_widget = QWidget()
+            self._selected_tags_layout = FlowLayout(self._selected_tags_widget, spacing=4)
+            self._selected_tags_scroll.setWidget(self._selected_tags_widget)
+            layout.addWidget(self._selected_tags_scroll)
+        else:
+            self._selected_tags_label = None
+            self._selected_tags_scroll = None
+            self._selected_tags_layout = None
 
         # 确定/取消按钮
         btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("确定")
-        cancel_btn = QPushButton("取消")
         btn_layout.addStretch()
-        btn_layout.addWidget(ok_btn)
+        self._ok_btn = QPushButton()
+        cancel_btn = QPushButton("取消")
+        btn_layout.addWidget(self._ok_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
         cancel_btn.clicked.connect(self.reject)
-        ok_btn.clicked.connect(lambda: self._on_accept(list_widget, all_heroes))
+        self._ok_btn.clicked.connect(self._on_accept)
+        self._search_input.textChanged.connect(self._apply_filter)
+        self._faction_combo.checked_values_changed.connect(self._apply_filter)
+        self._list_widget.itemChanged.connect(self._on_item_changed)
+        self._list_widget.itemSelectionChanged.connect(self._refresh_selection_ui)
+        if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
+            self._select_all_btn.clicked.connect(self._select_all_current)
+            self._clear_selection_btn.clicked.connect(self._clear_selection)
+        self._apply_filter()
+
+    def _add_selection_options(self, layout: QVBoxLayout) -> None:
+        """供子类在多选计数下方加入业务专属选项。"""
+
+    def _select_all_text(self) -> str:
+        """返回批量选择按钮文本。"""
+        if self._max_selection > 0:
+            return f"全选当前筛选（最多 {self._max_selection}）"
+        return "全选当前筛选"
+
+    def _apply_filter(self) -> None:
+        """应用筛选，同时保留已选武将。"""
+        search_text = self._search_input.text().strip()
+        selected_factions = self._faction_combo.checked_values()
+        self._filtered_heroes = [
+            hero for hero in self._all_heroes
+            if hero.faction in selected_factions
+            and (not search_text or search_text in hero.name)
+        ]
+
+        self._list_widget.blockSignals(True)
+        self._list_widget.clear()
+        for hero in self._filtered_heroes:
+            item = QListWidgetItem(f"{hero.name}  [{hero.faction}]")
+            item.setData(Qt.ItemDataRole.UserRole, hero.id)
+            if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(
+                    Qt.CheckState.Checked if hero.id in self._selected_id_set
+                    else Qt.CheckState.Unchecked
+                )
+            self._list_widget.addItem(item)
+        self._list_widget.blockSignals(False)
+        self._count_label.setText(
+            f"已筛选: {len(self._filtered_heroes)} / {len(self._all_heroes)} 个武将"
+        )
+        self._refresh_selection_ui()
+
+    def _on_item_changed(self, item: QListWidgetItem) -> None:
+        """同步当前筛选列表的复选状态到完整选择集合。"""
+        if self._selection_change_in_progress:
+            return
+        if self._selection_mode not in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
+            return
+        hero_id = item.data(Qt.ItemDataRole.UserRole)
+        if item.checkState() == Qt.CheckState.Checked:
+            if hero_id not in self._selected_id_set and self._max_selection > 0 and (
+                len(self._selected_id_set) >= self._max_selection
+            ):
+                self._selection_change_in_progress = True
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self._selection_change_in_progress = False
+                return
+            self._selected_id_set.add(hero_id)
+        else:
+            self._selected_id_set.discard(hero_id)
+        self._refresh_selection_ui()
+
+    def _select_all_current(self) -> None:
+        """选择当前筛选结果，受最大选择数限制。"""
+        candidates = [hero.id for hero in self._filtered_heroes if hero.id not in self._selected_id_set]
+        if self._max_selection > 0:
+            remaining = max(0, self._max_selection - len(self._selected_id_set))
+            candidates = candidates[:remaining]
+        self._selected_id_set.update(candidates)
+        self._apply_filter()
+
+    def _clear_selection(self) -> None:
+        """清空所有筛选条件下的已选武将。"""
+        self._selected_id_set.clear()
+        self._apply_filter()
+
+    def _remove_selected(self, hero_id: int) -> None:
+        """通过已选标签移除一名武将。"""
+        self._selected_id_set.discard(hero_id)
+        self._apply_filter()
+
+    def _selected_ids_for_current_mode(self) -> list[int]:
+        if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
+            return [hero.id for hero in self._all_heroes if hero.id in self._selected_id_set]
+        selected_items = self._list_widget.selectedItems()
+        return [item.data(Qt.ItemDataRole.UserRole) for item in selected_items]
+
+    def _selection_summary_text(self, count: int) -> str:
+        if self._max_selection > 0:
+            return f"已选择: {count} / {self._max_selection} 个武将"
+        return f"已选择: {count} 个武将"
+
+    def _accept_button_text(self, count: int) -> str:
+        return "确定" if count else "请选择武将"
+
+    def _can_accept_selection(self, count: int) -> bool:
+        return self._min_selection <= count and (
+            self._max_selection <= 0 or count <= self._max_selection
+        )
+
+    def _refresh_selection_ui(self) -> None:
+        """刷新选中计数、标签和确认按钮。"""
+        selected_ids = self._selected_ids_for_current_mode()
+        count = len(selected_ids)
+        if self._selection_label is not None:
+            self._selection_label.setText(self._selection_summary_text(count))
+        if self._selected_tags_layout is not None:
+            self._refresh_selected_tags(selected_ids)
+        if hasattr(self, "_ok_btn"):
+            self._ok_btn.setText(self._accept_button_text(count))
+            self._ok_btn.setEnabled(self._can_accept_selection(count))
+
+    def _refresh_selected_tags(self, selected_ids: list[int]) -> None:
+        """刷新可删除的已选武将标签。"""
+        while self._selected_tags_layout.count():
+            item = self._selected_tags_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        selected_heroes = [hero for hero in self._all_heroes if hero.id in selected_ids]
+        has_selection = bool(selected_heroes)
+        self._selected_tags_label.setVisible(has_selection)
+        self._selected_tags_scroll.setVisible(has_selection)
+        for hero in selected_heroes:
+            tag = QPushButton(f"{hero.name}  ×")
+            tag.setFixedHeight(25)
+            tag.setCursor(Qt.CursorShape.PointingHandCursor)
+            tag.setStyleSheet(
+                "QPushButton { background-color: #e8f1fb; color: #357abd; border: 1px solid #b0c4de; "
+                "border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: normal; }"
+                "QPushButton:hover { background-color: #d7e8fa; }"
+            )
+            tag.clicked.connect(lambda checked=False, hero_id=hero.id: self._remove_selected(hero_id))
+            self._selected_tags_layout.addWidget(tag)
+        self._selected_tags_widget.updateGeometry()
 
     # ---------------------------------------------------------------
     # 工具方法
     # ---------------------------------------------------------------
 
-    def _on_accept(self, list_widget: QListWidget, all_heroes: list) -> None:
+    def _on_accept(self) -> None:
         """确定按钮处理"""
-        if self._selection_mode == SelectionMode.SINGLE:
-            selected_items = list_widget.selectedItems()
-            if not selected_items:
-                return
-            hero_id = selected_items[0].data(Qt.ItemDataRole.UserRole)
-            self._set_result_by_ids([hero_id], all_heroes)
-        else:
-            # Checkbox 模式
-            selected_ids = []
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                if item.checkState() == Qt.CheckState.Checked:
-                    hid = item.data(Qt.ItemDataRole.UserRole)
-                    selected_ids.append(hid)
-
-            if not selected_ids:
-                return
-
-            if self._max_selection > 0 and len(selected_ids) != self._max_selection:
-                return
-
-            self._set_result_by_ids(selected_ids, all_heroes)
-
+        selected_ids = self._selected_ids_for_current_mode()
+        if not self._can_accept_selection(len(selected_ids)):
+            return
+        self._set_result_by_ids(selected_ids, self._all_heroes)
         self.accept()
 
     def _set_result_by_ids(self, ids: list[int], all_heroes: list) -> None:

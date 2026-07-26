@@ -63,13 +63,15 @@ class _SynergyService(QObject):
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[tuple[dict, list[dict], str]] = []
+        self.pair_calls: list[tuple[list[dict], str, bool]] = []
         self.cancel_calls = 0
 
     def cancel(self) -> None:
         self.cancel_calls += 1
 
-    def fetch_pair(self, heroes: list[dict], backend: str) -> None:
-        raise AssertionError("此测试不应执行指定配对")
+    def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False) -> None:
+        self.pair_calls.append((heroes, backend, overwrite))
+        self.fetch_completed.emit(True, "完成")
 
     def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str) -> None:
         self.calls.append((hero, all_heroes, backend))
@@ -129,6 +131,18 @@ class _CallbackSignal:
 class _SingleHeroDialog:
     def __init__(self, _hero_manager, parent=None) -> None:
         self.selected_hero = {"id": 1, "name": "曹操"}
+
+    def exec(self) -> QDialog.DialogCode:
+        return QDialog.DialogCode.Accepted
+
+
+class _PairHeroDialog:
+    def __init__(self, _hero_manager, _synergy_manager, parent=None) -> None:
+        self.selected_heroes = [
+            {"id": 1, "name": "曹操"},
+            {"id": 2, "name": "刘备"},
+        ]
+        self.overwrite_existing = True
 
     def exec(self) -> QDialog.DialogCode:
         return QDialog.DialogCode.Accepted
@@ -198,6 +212,20 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     assert _ProgressDialog.instances[-1].item_label == "相性评分"
     assert reloads == [True]
     assert changed == [True]
+
+
+def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypatch) -> None:
+    workflow, _, synergy_service = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr(workflow_module, "SynergyPairDialog", _PairHeroDialog)
+
+    workflow.request_synergy_pair()
+
+    assert synergy_service.pair_calls == [
+        ([{"id": 1, "name": "曹操"}, {"id": 2, "name": "刘备"}], "browser", True),
+    ]
+    assert _ProgressDialog.instances[-1].item_count == 1
 
 
 def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypatch) -> None:

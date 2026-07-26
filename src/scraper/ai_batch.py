@@ -254,6 +254,7 @@ def main():
                 synergy_path=synergy_path,
                 existing_synergy_dict=existing_synergy_dict,
                 existing_synergy_keys=existing_synergy_keys,
+                update_mode=args.update,
             ))
 
         if args.synergy_single:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser
 
 from src.data.guide_manager import GuideManager
@@ -17,6 +17,7 @@ from src.data.synergy_manager import SynergyManager
 from src.ui.hero_browser import HeroDetailPanel, HeroListPanel
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.fetch_dialog import HeroFetchDialog
+from src.ui.guide_fetch_dialog import GuideFetchDialog
 from src.ui.guide_edit_dialog import GuideEditDialog
 from src.ui.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
 from src.ui.shared.widgets import FlowLayout
@@ -25,6 +26,7 @@ from src.ui.hero_edit_dialog import HeroEditDialog
 from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
 from src.ui.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
 from src.ui.synergy_edit_dialog import SynergyEditDialog
+from src.ui.synergy_pair_dialog import SynergyPairDialog
 
 
 def _app() -> QApplication:
@@ -151,6 +153,46 @@ def test_specific_fetch_dialog_uses_shared_faction_combo(tmp_path: Path) -> None
 
     assert faction_combo is not None
     assert faction_combo.checked_values() == {"魏"}
+
+
+def test_guide_fetch_preserves_selected_heroes_across_filters(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
+    dialog = GuideFetchDialog(hero_manager)
+
+    dialog._list_widget.item(0).setCheckState(Qt.CheckState.Checked)
+    dialog._search_input.setText("刘")
+    assert dialog._selected_id_set == {1}
+
+    dialog._select_all_current()
+    assert dialog._selected_id_set == {1, 2}
+    assert dialog._ok_btn.text() == "生成 2 篇攻略"
+
+    dialog._search_input.clear()
+    assert dialog._list_widget.item(0).checkState() == Qt.CheckState.Checked
+    assert dialog._list_widget.item(1).checkState() == Qt.CheckState.Checked
+    assert any(button.text() == "曹操  ×" for button in dialog._selected_tags_widget.findChildren(QPushButton))
+
+
+def test_synergy_pair_shows_pair_counts_and_existing_policy(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    for hero_id, name in enumerate(("曹操", "刘备", "孙权"), 1):
+        hero_manager.add_hero(Hero(id=hero_id, name=name, faction="魏"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=5))
+    dialog = SynergyPairDialog(hero_manager, synergy_manager)
+
+    dialog._select_all_current()
+
+    assert "共 3 组，已有 1 组，将生成 2 组" in dialog._selection_label.text()
+    assert dialog._ok_btn.text() == "下一步：生成 2 组相性"
+    dialog._overwrite_existing_radio.click()
+    assert dialog.overwrite_existing is True
+    assert "覆盖生成 3 组" in dialog._selection_label.text()
+    assert dialog._ok_btn.text() == "下一步：覆盖生成 3 组相性"
 
 
 def test_extracted_edit_dialogs_construct_independently(tmp_path: Path) -> None:
