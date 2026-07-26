@@ -84,6 +84,7 @@ def test_match_guide_panel_starts_in_empty_state() -> None:
 
     assert len(panel._cards) == 4
     assert [card._hero_id for card in panel._cards] == [0, 0, 0, 0]
+    assert all(card.parentWidget() is panel._cards_widget for card in panel._cards)
     assert not panel._empty_state.isHidden()
     panel.load_from_ocr([{"index": 1, "name": "测试武将"}])
     assert panel._cards[0]._hero_id == 1
@@ -134,11 +135,11 @@ def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -
     selected: list[int] = []
     card.hero_double_clicked.connect(selected.append)
 
-    assert card._portrait.size().width() == 120
-    assert card._portrait.size().height() == 160
-    assert card._portrait_frame.size().width() == 135
-    assert card._portrait_frame.size().height() == 162
-    assert card._name_overlay.width() == 130
+    assert card._portrait.size().width() == 80
+    assert card._portrait.size().height() == 108
+    assert card._portrait_frame.size().width() == 82
+    assert card._portrait_frame.size().height() == 108
+    assert card._name_overlay.width() == 82
     assert card._name_overlay.text() == "测试武将"
     assert card._faction_badge.text().strip() == "魏"
 
@@ -149,7 +150,7 @@ def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -
     assert not panel._empty_state.isHidden()
 
 
-def test_match_guide_generates_summary_only_after_two_sides_confirmed() -> None:
+def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> None:
     _app()
     heroes = HeroManager()
     heroes._items = {
@@ -173,9 +174,22 @@ def test_match_guide_generates_summary_only_after_two_sides_confirmed() -> None:
     assert panel._analysis is None
     panel._set_side(3, "enemy")
 
+    assert panel._analysis is None
+    assert panel._confirm_btn.isEnabled()
+    assert panel._card_group_grids["ally"].itemAt(0).widget() is panel._cards[0]
+    assert panel._card_group_grids["ally"].itemAt(1).widget() is panel._cards[1]
+    assert panel._card_group_grids["enemy"].itemAt(0).widget() is panel._cards[2]
+    assert panel._card_group_grids["enemy"].itemAt(1).widget() is panel._cards[3]
+
+    panel._confirm_lineup()
+
     assert panel._analysis is not None
     assert [item.target.name for item in panel._analysis.priorities] == ["丙", "丁"]
     assert panel._guide_tabs.currentIndex() == 0
+    assert panel._confirm_btn.text() == "阵容已确认"
+    assert panel._allies_page.widget().layout().itemAt(0).widget().text() == "我方打法"
+    assert panel._enemies_page.widget().layout().itemAt(0).widget().text() == "对抗敌方"
+    assert panel._details_page.widget().layout().itemAt(0).widget().text() == "单将详情"
 
 
 def test_match_guide_auto_assigns_sides_from_team_labels() -> None:
@@ -196,6 +210,8 @@ def test_match_guide_auto_assigns_sides_from_team_labels() -> None:
 
     assert panel._sides == ["enemy", "enemy", "ally", "ally"]
     assert panel._is_confirmed()
+    assert panel._analysis is None
+    assert panel._confirm_btn.isEnabled()
 
 
 def test_top_three_win_rate_visual_anchor() -> None:
