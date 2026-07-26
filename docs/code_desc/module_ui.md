@@ -62,7 +62,7 @@ src/ui/
 
 ### 2.1 官方数据导入对话框
 
-`OfficialDataImportDialog` 是“数据 > 官方数据导入”的唯一入口。两个只读文件框均使用图片过滤器；用户可以只选择其中一种，也可以同时选择。点击“导入”后创建一个后台 `OfficialDataImportWorker`，按钮在任务期间禁用，避免同一对话框重复提交或关闭时销毁运行中的线程。弹窗会先显示准备中的不定进度，检测到表格行后切换为当前文件的精确 OCR 进度；进度总量包含胜率数字模板准备和逐行识别，同时选择两张图片时会标明当前文件序号。罕见字兜底时仅更新为对应状态文字，保留已完成行的进度值。
+`OfficialDataImportDialog` 是“数据 > 官方数据导入”的唯一入口。两个只读文件框均使用图片过滤器；用户可以只选择其中一种，也可以同时选择。点击“导入”后创建一个后台 `OfficialDataImportWorker`，按钮在任务期间禁用，避免同一对话框重复提交或关闭时销毁运行中的线程。弹窗会先显示准备中的不定进度，检测到表格行后切换为当前文件的精确 OCR 进度；进度总量包含胜率数字模板准备和逐行识别，同时选择两张图片时会标明当前文件序号。成功导入后，弹窗将推荐指数快照持久化标记为“待重建”，并通知推荐页面更新按钮状态；不会自动重建，避免未复核 OCR 数据直接影响推荐。罕见字兜底时仅更新为对应状态文字，保留已完成行的进度值。
 
 ```python
 paths = {key: widget.text() for key, widget in self._paths.items() if widget.text()}
@@ -91,7 +91,7 @@ self._worker.start()
 
 ### 3.1.1 轮询匹配后的选将推荐刷新
 
-`MainWindow._on_poll_result()` 使用 `_selection_page_active` 记录选将页面是否已匹配。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才切换到对应 Tab。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。每轮后台 OCR 等待最多 10 秒；停止轮询、关闭窗口或切换 ADB 会话会设置取消标记，已取消任务不会回写界面。
+`MainWindow._on_poll_result()` 使用 `PollResult`、`PollTaskResult` 与 `PollOutcome` 接收轮询结果；后台线程边界将 OCR worker 的原始字典转换为强类型对象，旧版字典调用仍由 `from_raw()` 兼容。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才切换到对应 Tab。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。每轮后台 OCR 等待最多 10 秒；停止轮询、关闭窗口或切换 ADB 会话会设置取消标记，已取消任务不会回写界面。
 
 ### 3.1 主窗口信号拓扑
 
@@ -181,7 +181,7 @@ RecommendationPanel (QWidget)
        └── HeroSkillDialog（来自 ui/shared/hero_dialogs.py，按技能名称分 Tab 展示描述和结算）
 ```
 
-`recommendation_panel.py` 只保留推荐数据更新、相性加载、OCR 导入、手动重建推荐指数和截图信号协调；初始显示待识别空状态，用户可从当前模拟器画面或本地图片识别阵容。胜率和推荐指数快照由 `RecommendationService` 一次读取，前三胜率排名基于数值快照计算，不再从卡片文本反解析。标题行的“重建指数”按钮会在用户确认三份官方榜单后覆盖 `武将推荐指数.csv`；OCR 导入和轮询仅读取已有快照。可独立维护的展示组件已拆分为：
+`recommendation_panel.py` 只保留推荐数据更新、相性加载、OCR 导入、手动重建推荐指数和截图信号协调；初始显示待识别空状态，用户可从当前模拟器画面或本地图片识别阵容。胜率和推荐指数快照由 `RecommendationService` 一次读取，前三胜率排名基于数值快照计算，不再从卡片文本反解析。官方榜单导入后，“重建指数”按钮会显示“待更新”；用户确认三份榜单后重建并覆盖 `武将推荐指数.csv`，同时清除待重建状态。OCR 导入和轮询仅读取已有快照。可独立维护的展示组件已拆分为：
 
 - `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌及卡片信号。
 - `guide_detail_dialog.py`：`GuideDetailDialog`，以与武将浏览器一致的单列区块展示攻略；弹窗高度受限，超出内容由滚动区承载，正文预览支持双击打开完整攻略弹窗。

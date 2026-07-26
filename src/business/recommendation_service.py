@@ -7,7 +7,9 @@ from typing import Callable
 
 from src.data.recommendation_index_repository import (
     RecommendationIndex,
+    is_recommendation_index_stale,
     load_recommendation_indexes,
+    mark_recommendation_index_stale,
     refresh_recommendation_indexes,
 )
 from src.data.win_rate_repository import load_win_rates
@@ -19,6 +21,7 @@ class RecommendationData:
 
     win_rates: dict[str, float]
     indexes: dict[str, RecommendationIndex]
+    indexes_stale: bool = False
 
     def rank_win_rates(self, names: list[str]) -> dict[int, int]:
         """按输入槽位返回有效胜率的前三排名。"""
@@ -38,14 +41,22 @@ class RecommendationService:
         load_win_rates_fn: Callable[[], dict[str, float]] = load_win_rates,
         load_indexes_fn: Callable[[], dict[str, RecommendationIndex]] = load_recommendation_indexes,
         refresh_indexes_fn: Callable[[], dict[str, RecommendationIndex]] = refresh_recommendation_indexes,
+        is_stale_fn: Callable[[], bool] = is_recommendation_index_stale,
+        mark_stale_fn: Callable[[bool], None] = mark_recommendation_index_stale,
     ) -> None:
         self._load_win_rates = load_win_rates_fn
         self._load_indexes = load_indexes_fn
         self._refresh_indexes = refresh_indexes_fn
+        self._is_stale = is_stale_fn
+        self._mark_stale = mark_stale_fn
 
     def load(self) -> RecommendationData:
-        return RecommendationData(self._load_win_rates(), self._load_indexes())
+        return RecommendationData(self._load_win_rates(), self._load_indexes(), self._is_stale())
 
     def rebuild_indexes(self) -> RecommendationData:
         indexes = self._refresh_indexes()
-        return RecommendationData(self._load_win_rates(), indexes)
+        self._mark_stale(False)
+        return RecommendationData(self._load_win_rates(), indexes, False)
+
+    def mark_indexes_stale(self) -> None:
+        self._mark_stale(True)

@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QVBoxLayout
 
 from src.business.official_data_import_service import OfficialDataImportWorker
+from src.data.recommendation_index_repository import mark_recommendation_index_stale
 
 
 class OfficialDataImportDialog(QDialog):
     """选择一张或两张官方榜单图片并执行导入。"""
+
+    recommendation_indexes_stale = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -88,7 +92,10 @@ class OfficialDataImportDialog(QDialog):
 
     def _on_completed(self, summaries: list[dict]) -> None:
         self._progress_bar.setValue(self._progress_bar.maximum())
+        mark_recommendation_index_stale(True)
+        self.recommendation_indexes_stale.emit()
         lines = [f"{item['name']}：已导入 {item['records']} 条，待复核 {item['reviews']} 条" for item in summaries]
+        lines.append("推荐指数已标记为待重建，请在选将推荐页面确认后重建。")
         QMessageBox.information(self, "导入完成", "\n".join(lines))
         self.accept()
 

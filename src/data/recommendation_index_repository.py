@@ -21,6 +21,7 @@ PICK_RANK_CSV = DATA_DIR / "2v2出场排行.csv"
 BAN_RANK_CSV = DATA_DIR / "武将放逐.csv"
 HEROES_JSON = DATA_DIR / "heroes.json"
 RECOMMENDATION_INDEX_CSV = DATA_DIR / "武将推荐指数.csv"
+RECOMMENDATION_INDEX_STATE_FILE = DATA_DIR / "武将推荐指数状态.json"
 
 DEFAULT_P_FLOOR = 0.2
 DEFAULT_BAN_WEIGHT = 0.5
@@ -61,6 +62,34 @@ class RecommendationIndex:
     @property
     def is_valid(self) -> bool:
         return self.status == "有效"
+
+
+def is_recommendation_index_stale(
+    path: Path = RECOMMENDATION_INDEX_STATE_FILE,
+) -> bool:
+    """返回推荐指数快照是否已被新的官方榜单数据标记为过期。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
+        logger.warning("无法读取推荐指数状态 %s: %s", path, exc)
+        return True
+    return bool(data.get("stale", False))
+
+
+def mark_recommendation_index_stale(
+    stale: bool,
+    path: Path = RECOMMENDATION_INDEX_STATE_FILE,
+) -> None:
+    """原子保存推荐指数快照是否待重建的状态。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(".tmp")
+    temp_path.write_text(
+        json.dumps({"stale": stale}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8", newline="\n",
+    )
+    temp_path.replace(path)
 
 
 def load_recommendation_indexes(
@@ -160,6 +189,8 @@ def refresh_recommendation_indexes(
     if n > 1 and valid:
         results.update(_score_valid_results(valid, config))
     _write_snapshot(output_path, results.values())
+    if output_path == RECOMMENDATION_INDEX_CSV:
+        mark_recommendation_index_stale(False)
     logger.info(
         "推荐指数快照已生成：有效 %d 条，数据不足 %d 条",
         sum(result.is_valid for result in results.values()),

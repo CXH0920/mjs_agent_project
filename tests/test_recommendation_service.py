@@ -18,3 +18,19 @@ def test_service_loads_one_snapshot_and_ranks_valid_win_rates() -> None:
 
     assert data.indexes == {"曹操": index}
     assert data.rank_win_rates(["刘备", "未知", "曹操", "孙权"]) == {2: 1, 3: 2, 0: 3}
+
+
+def test_service_marks_indexes_stale_and_clears_after_rebuild() -> None:
+    states: list[bool] = []
+    service = RecommendationService(
+        load_win_rates_fn=dict,
+        load_indexes_fn=dict,
+        refresh_indexes_fn=dict,
+        is_stale_fn=lambda: bool(states and states[-1]),
+        mark_stale_fn=states.append,
+    )
+
+    service.mark_indexes_stale()
+    assert service.load().indexes_stale is True
+    assert service.rebuild_indexes().indexes_stale is False
+    assert states == [True, False]

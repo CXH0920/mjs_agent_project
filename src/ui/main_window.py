@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass, field
+from enum import Enum
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -30,6 +32,68 @@ from src.data.manager import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class PollOutcome(str, Enum):
+    """轮询流程允许的结果类型。"""
+
+    MATCHED = "matched"
+    HEALTHY_NO_MATCH = "healthy_no_match"
+    TEMPLATE_MISSING = "template_missing"
+    RETRYABLE_CONNECTION = "retryable_connection"
+    RETRYABLE_CAPTURE = "retryable_capture"
+    RETRYABLE_OCR = "retryable_ocr"
+    PREREQUISITE_UNCONFIGURED = "prerequisite_unconfigured"
+
+
+@dataclass(frozen=True)
+class PollTaskResult:
+    """单个模板检测任务的强类型结果。"""
+
+    outcome: PollOutcome
+    detail: str = ""
+    ocr_results: list[dict] = field(default_factory=list)
+
+    @classmethod
+    def from_raw(cls, value: object) -> "PollTaskResult":
+        if isinstance(value, cls):
+            return value
+        raw = value if isinstance(value, dict) else {}
+        try:
+            outcome = PollOutcome(raw.get("outcome", PollOutcome.RETRYABLE_OCR.value))
+        except ValueError:
+            outcome = PollOutcome.RETRYABLE_OCR
+        return cls(outcome, str(raw.get("detail", "")), list(raw.get("ocr_results") or []))
+
+
+@dataclass(frozen=True)
+class PollResult:
+    """一次轮询采集的强类型结果；`from_raw` 兼容旧调用方。"""
+
+    generation: int
+    outcome: PollOutcome
+    detail: str = ""
+    capture: object | None = None
+    task_results: dict[str, PollTaskResult] = field(default_factory=dict)
+    ocr_results: list[dict] = field(default_factory=list)
+
+    @classmethod
+    def from_raw(cls, value: object) -> "PollResult":
+        if isinstance(value, cls):
+            return value
+        raw = value if isinstance(value, dict) else {}
+        try:
+            outcome = PollOutcome(raw.get("outcome", PollOutcome.RETRYABLE_OCR.value))
+        except ValueError:
+            outcome = PollOutcome.RETRYABLE_OCR
+        task_results = {
+            name: PollTaskResult.from_raw(result)
+            for name, result in (raw.get("task_results") or {}).items()
+        }
+        return cls(
+            int(raw.get("generation", -1)), outcome, str(raw.get("detail", "")),
+            raw.get("capture"), task_results, list(raw.get("ocr_results") or []),
+        )
 
 from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
@@ -195,17 +259,15 @@ class MainWindow(QMainWindow):
         cancel_event = self._ocr_service.poll_cancel_event
         task_names = self._ocr_service.due_poll_tasks()
         if not task_names:
-            self._ocr_service.complete_poll(generation, "healthy_no_match", "当前没有到期的轮询任务")
+            self._ocr_service.complete_poll(generation, PollOutcome.HEALTHY_NO_MATCH.value, "当前没有到期的轮询任务")
             return
         if not capture:
-            self._poll_result_ready.emit({
-                "generation": generation,
-                "outcome": "prerequisite_unconfigured",
-                "detail": "ADB 未配置",
-            })
+            self._poll_result_ready.emit(PollResult(
+                generation, PollOutcome.PREREQUISITE_UNCONFIGURED, "ADB 未配置",
+            ))
             return
         if not self._poll_thread_lock.acquire(blocking=False):
-            self._ocr_service.complete_poll(generation, "retryable_capture", "上一轮轮询仍在执行")
+            self._ocr_service.complete_poll(generation, PollOutcome.RETRYABLE_CAPTURE.value, "上一轮轮询仍在执行")
             return
 
         hero_names = [h.name for h in self._data.heroes.list_heroes()]
@@ -220,28 +282,22 @@ class MainWindow(QMainWindow):
                     if cancel_event.is_set():
                         return
                     if not ok:
-                        self._poll_result_ready.emit({
-                            "generation": generation,
-                            "outcome": "retryable_connection",
-                            "detail": detail,
-                            "capture": capture,
-                        })
+                        self._poll_result_ready.emit(PollResult(
+                            generation, PollOutcome.RETRYABLE_CONNECTION, detail, capture,
+                        ))
                         return
 
                 ok, result = capture.screencap_full(log_success=False)
                 if cancel_event.is_set():
                     return
                 if not ok:
-                    self._poll_result_ready.emit({
-                        "generation": generation,
-                        "outcome": "retryable_capture",
-                        "detail": str(result),
-                        "capture": capture,
-                    })
+                    self._poll_result_ready.emit(PollResult(
+                        generation, PollOutcome.RETRYABLE_CAPTURE, str(result), capture,
+                    ))
                     return
 
                 image = result
-                task_results = {}
+                task_results: dict[str, PollTaskResult] = {}
                 has_match = False
                 has_retryable_error = False
 
@@ -257,71 +313,66 @@ class MainWindow(QMainWindow):
                     task_result = self._wait_for_poll_ocr_task(ocr_task, cancel_event)
                     if task_result is None:
                         return
-                    if task_result["outcome"] == "matched":
+                    if task_result.outcome is PollOutcome.MATCHED:
                         has_match = True
-                    elif task_result["outcome"] == "retryable_ocr":
+                    elif task_result.outcome is PollOutcome.RETRYABLE_OCR:
                         has_retryable_error = True
                     task_results[task_name] = task_result
 
                 transport_outcome = (
-                    "retryable_ocr" if has_retryable_error
-                    else "matched" if has_match
-                    else "healthy_no_match"
+                    PollOutcome.RETRYABLE_OCR if has_retryable_error
+                    else PollOutcome.MATCHED if has_match
+                    else PollOutcome.HEALTHY_NO_MATCH
                 )
-                self._poll_result_ready.emit({
-                    "generation": generation,
-                    "outcome": transport_outcome,
-                    "capture": capture,
-                    "task_results": task_results,
-                })
+                self._poll_result_ready.emit(PollResult(
+                    generation, transport_outcome, capture=capture, task_results=task_results,
+                ))
             finally:
                 self._poll_thread_lock.release()
 
         threading.Thread(target=_do_poll_work, daemon=True).start()
 
     @classmethod
-    def _wait_for_poll_ocr_task(cls, ocr_task, cancel_event: threading.Event) -> dict | None:
+    def _wait_for_poll_ocr_task(cls, ocr_task, cancel_event: threading.Event) -> PollTaskResult | None:
         """有限等待 OCR 任务；会话停止后不再回写轮询结果。"""
         if cancel_event.is_set():
             return None
         if not ocr_task.completed.wait(cls.POLL_OCR_WAIT_TIMEOUT_SECONDS):
-            return {
-                "outcome": "retryable_ocr",
-                "detail": f"OCR 任务超时（{cls.POLL_OCR_WAIT_TIMEOUT_SECONDS} 秒）",
-            }
+            return PollTaskResult(
+                PollOutcome.RETRYABLE_OCR,
+                f"OCR 任务超时（{cls.POLL_OCR_WAIT_TIMEOUT_SECONDS} 秒）",
+            )
         if cancel_event.is_set():
             return None
-        return ocr_task.result or {
-            "outcome": "retryable_ocr",
-            "detail": "OCR worker 未返回结果",
-        }
+        return PollTaskResult.from_raw(ocr_task.result)
 
-    def _on_poll_result(self, result: dict) -> None:
+    def _on_poll_result(self, result: PollResult | dict) -> None:
         """在主线程消费轮询结果，更新状态并安排下一轮。"""
-        generation = result["generation"]
-        outcome = result["outcome"]
-        detail = result.get("detail", "")
+        poll_result = PollResult.from_raw(result)
+        generation = poll_result.generation
+        outcome = poll_result.outcome
+        detail = poll_result.detail
         if generation != self._ocr_service.poll_generation:
             return
 
-        capture = result.get("capture")
+        capture = poll_result.capture
         if capture is not None and capture is not self._capture_service.capture:
             return
-        if outcome in {"retryable_connection", "retryable_capture"} and capture is not None:
+        if outcome in {PollOutcome.RETRYABLE_CONNECTION, PollOutcome.RETRYABLE_CAPTURE} and capture is not None:
             self._capture_service.sync_poll_connection_state(capture, detail)
 
-        self._ocr_service.complete_poll(generation, outcome, detail)
-        task_results = result.get("task_results")
+        self._ocr_service.complete_poll(generation, outcome.value, detail)
+        task_results = poll_result.task_results
         if not task_results:
-            self._handle_legacy_poll_result(outcome, result)
+            self._handle_legacy_poll_result(outcome, poll_result.ocr_results)
             return
 
-        hero_result = task_results.get("hero_selection", {})
-        if hero_result.get("outcome") == "template_missing":
+        hero_result = task_results.get("hero_selection")
+        if hero_result and hero_result.outcome is PollOutcome.TEMPLATE_MISSING:
             self._ocr_service.deactivate_task("hero_selection")
-        elif hero_result.get("outcome") == "healthy_no_match":
+        elif hero_result and hero_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
             self._selection_page_active = False
-        elif hero_result.get("outcome") == "matched":
+        elif hero_result and hero_result.outcome is PollOutcome.MATCHED:
             self._ocr_service.set_task_cooldown(
                 "hero_selection",
                 self._ocr_service.config.get("mumu_hero_selection_cooldown", 180),
@@ -331,16 +382,16 @@ class MainWindow(QMainWindow):
                 self._selection_page_active = True
                 if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
                     self._tabs.setCurrentWidget(self._recommendation)
-            ocr_results = hero_result.get("ocr_results") or []
+            ocr_results = hero_result.ocr_results
             if ocr_results:
                 self._recommendation.load_from_ocr(ocr_results)
                 recognized = len([item for item in ocr_results if item.get("name")])
                 logger.debug("轮询: OCR 识别到 %d 个武将", recognized)
 
-        guide_result = task_results.get("match_guide", {})
-        if guide_result.get("outcome") == "template_missing":
+        guide_result = task_results.get("match_guide")
+        if guide_result and guide_result.outcome is PollOutcome.TEMPLATE_MISSING:
             self._ocr_service.deactivate_task("match_guide")
-        elif guide_result.get("outcome") == "matched":
+        elif guide_result and guide_result.outcome is PollOutcome.MATCHED:
             self._ocr_service.set_task_cooldown(
                 "match_guide",
                 self._ocr_service.config.get("mumu_match_guide_cooldown", 5),
@@ -357,18 +408,17 @@ class MainWindow(QMainWindow):
         self._capture_service.shutdown()
         super().closeEvent(event)
 
-    def _handle_legacy_poll_result(self, outcome: str, result: dict) -> None:
+    def _handle_legacy_poll_result(self, outcome: PollOutcome, ocr_results: list[dict]) -> None:
         """兼容旧版单任务轮询结果，避免外部调用方行为改变。"""
-        if outcome == "healthy_no_match":
+        if outcome is PollOutcome.HEALTHY_NO_MATCH:
             self._selection_page_active = False
             return
-        if outcome != "matched":
+        if outcome is not PollOutcome.MATCHED:
             return
         if not self._selection_page_active:
             self._selection_page_active = True
             if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
                 self._tabs.setCurrentWidget(self._recommendation)
-        ocr_results = result.get("ocr_results") or []
         if ocr_results:
             self._recommendation.load_from_ocr(ocr_results)
 
@@ -602,7 +652,11 @@ class MainWindow(QMainWindow):
 
     def _open_official_data_import(self) -> None:
         """打开官方 2v2 胜率与武将放逐榜单导入窗口。"""
-        OfficialDataImportDialog(self).exec()
+        dialog = OfficialDataImportDialog(self)
+        dialog.recommendation_indexes_stale.connect(
+            self._recommendation.mark_recommendation_indexes_stale
+        )
+        dialog.exec()
 
     # ---------------------------------------------------------------
     # 状态栏更新

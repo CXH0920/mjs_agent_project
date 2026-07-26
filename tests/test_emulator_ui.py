@@ -15,7 +15,7 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Hero, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
-from src.ui.main_window import MainWindow
+from src.ui.main_window import MainWindow, PollOutcome
 from src.ui.match_guide_panel import MatchGuidePanel
 from src.ui.recommendation_panel import HeroCardWidget, RecommendationPanel
 from src.ui.shared.hero_dialogs import HeroSkillDialog
@@ -317,8 +317,8 @@ def test_poll_ocr_wait_times_out_without_blocking() -> None:
     result = MainWindow._wait_for_poll_ocr_task(Task(), threading.Event())
 
     assert Task.completed.timeout == MainWindow.POLL_OCR_WAIT_TIMEOUT_SECONDS
-    assert result["outcome"] == "retryable_ocr"
-    assert "超时" in result["detail"]
+    assert result.outcome is PollOutcome.RETRYABLE_OCR
+    assert "超时" in result.detail
 
 
 def test_poll_ocr_wait_drops_cancelled_result() -> None:

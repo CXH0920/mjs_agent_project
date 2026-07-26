@@ -75,6 +75,10 @@ class RecommendationPanel(QWidget):
 
         self._setup_ui()
         self._connect_capture_signals()
+        self._recommendation_data = self._load_recommendation_data()
+        if self._recommendation_data.indexes_stale:
+            self._rebuild_index_btn.setText("重建指数（待更新）")
+            self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
         self._show_empty_state()
 
     def _connect_capture_signals(self) -> None:
@@ -262,6 +266,17 @@ class RecommendationPanel(QWidget):
             logger.warning("读取推荐数据失败: %s", exc)
             return RecommendationData({}, {})
 
+    def mark_recommendation_indexes_stale(self) -> None:
+        """在官方榜单导入后提示当前推荐指数需要人工确认并重建。"""
+        self._recommendation_service.mark_indexes_stale()
+        self._recommendation_data = RecommendationData(
+            self._recommendation_data.win_rates,
+            self._recommendation_data.indexes,
+            True,
+        )
+        self._rebuild_index_btn.setText("重建指数（待更新）")
+        self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
+
     def _rebuild_recommendation_indexes(self) -> None:
         """由用户确认源榜单后，手动重建推荐指数快照。"""
         try:
@@ -271,6 +286,8 @@ class RecommendationPanel(QWidget):
             QMessageBox.warning(self, "重建失败", f"无法重建推荐指数：\n{exc}")
             return
         self._recommendation_data = recommendation_data
+        self._rebuild_index_btn.setText("重建指数")
+        self._rebuild_index_btn.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
         for card in self._cards:
             if card._hero:
                 card.set_recommendation_index(recommendation_data.indexes.get(card._hero.name))
@@ -312,6 +329,9 @@ class RecommendationPanel(QWidget):
         self._show_cards()
         recommendation_data = self._load_recommendation_data()
         self._recommendation_data = recommendation_data
+        if recommendation_data.indexes_stale:
+            self._rebuild_index_btn.setText("重建指数（待更新）")
+            self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
 
         for card in self._cards:
             card.set_hero(None)

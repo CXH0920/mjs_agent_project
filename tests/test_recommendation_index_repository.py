@@ -14,7 +14,9 @@ from src.data.recommendation_index_repository import (
     RecommendationIndexConfig,
     _rank_to_score,
     _score_valid_results,
+    is_recommendation_index_stale,
     load_recommendation_indexes,
+    mark_recommendation_index_stale,
     refresh_recommendation_indexes,
 )
 
@@ -168,3 +170,14 @@ def test_rebuild_reports_locked_snapshot_file_and_cleans_temporary_file(tmp_path
             [{"排名": 1, "武将": "单将"}],
         )
     assert not list(tmp_path.glob(".recommendation.csv.*.tmp"))
+
+
+def test_recommendation_index_stale_state_is_persistent(tmp_path: Path) -> None:
+    state_path = tmp_path / "recommendation_state.json"
+
+    assert is_recommendation_index_stale(state_path) is False
+    mark_recommendation_index_stale(True, state_path)
+    assert is_recommendation_index_stale(state_path) is True
+    assert b"\r\n" not in state_path.read_bytes()
+    mark_recommendation_index_stale(False, state_path)
+    assert is_recommendation_index_stale(state_path) is False
