@@ -1,0 +1,111 @@
+"""对局卡牌数据层的关键保护与版本记录测试。"""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from src.data.card_catalog import (
+    CardAnnotationRepository,
+    CardCatalogService,
+    CardFieldDefinition,
+    CardFieldSchemaRepository,
+    CardRepository,
+    EffectEntry,
+)
+
+
+def _write(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def _service(tmp_path: Path) -> CardCatalogService:
+    cards = tmp_path / "cards.json"
+    schema = tmp_path / "card_field_schema.json"
+    annotations = tmp_path / "card_annotations.json"
+    _write(cards, [
+        {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
+        {"id": "1", "name": "烽火", "card_type": "战法牌", "card_desc": "全体", "card_detail": "规则", "card_amount": "3"},
+    ])
+    _write(schema, {"schema_version": 1, "fields": [
+        {"key": "strengthen_effect", "label": "加强效果", "value_type": "effect_entries", "display_order": 10},
+        {"key": "mode", "label": "适用模式", "value_type": "select", "options": ["2v2"]},
+    ]})
+    _write(annotations, {"schema_version": 1, "annotations": []})
+    service = CardCatalogService(CardRepository(cards), CardFieldSchemaRepository(schema), CardAnnotationRepository(annotations))
+    service.load_all()
+    return service
+
+
+def test_annotation_never_changes_official_cards_file(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    cards_path = tmp_path / "cards.json"
+    original = cards_path.read_bytes()
+
+    service.save_annotation_fields("8", {"mode": "2v2"})
+
+    assert cards_path.read_bytes() == original
+    assert service.get_view("8").fields[0].value == "2v2"
+
+
+def test_active_effect_ranges_cannot_overlap(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.add_effect_entry("8", "strengthen_effect", EffectEntry(
+        version="2026.08", effective_from=date(2026, 8, 1), content="加强", status="active",
+    ))
+
+    with pytest.raises(ValueError, match="时间重叠"):
+        service.add_effect_entry("8", "strengthen_effect", EffectEntry(
+            version="2026.09", effective_from=date(2026, 8, 15), content="再次加强", status="active",
+        ))
+
+
+def test_archived_field_is_preserved_as_historical_data(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.save_annotation_fields("8", {"mode": "2v2"})
+    service.archive_field("mode")
+
+    view = service.get_view("8")
+    assert view.fields[0].historical is True
+    assert view.fields[0].value == "2v2"
+
+
+def test_invalid_annotation_does_not_hide_other_cards(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    annotations_path = tmp_path / "card_annotations.json"
+    _write(annotations_path, {"schema_version": 1, "annotations": [
+        {"card_id": "8", "fields": {"mode": "不存在"}},
+    ]})
+
+    service.load_all()
+
+    assert [view.card.id for view in service.list_views()] == ["8", "1"]
+    assert service.get_view("8").fields == []
+
+
+def test_writable_json_uses_lf_without_bom(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.add_field(CardFieldDefinition(key="note", label="备注", value_type="markdown"))
+
+    raw = (tmp_path / "card_field_schema.json").read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf")
+    assert b"\r\n" not in raw
+
+
+def test_required_enabled_field_must_have_a_value(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.add_field(CardFieldDefinition(key="note", label="备注", value_type="markdown", required=True))
+
+    with pytest.raises(ValueError, match="必填"):
+        service.save_annotation_fields("8", {"mode": "2v2"})
+
+
+def test_required_enabled_field_must_have_a_value(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.add_field(CardFieldDefinition(key="note", label="备注", value_type="markdown", required=True))
+
+    with pytest.raises(ValueError, match="必填"):
+        service.save_annotation_fields("8", {"mode": "2v2"})

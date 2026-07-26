@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fields": [
+    {
+      "key": "strengthen_effect",
+      "label": "加强效果",
+      "value_type": "effect_entries",
+      "group": "版本调整",
+      "enabled": true,
+      "required": false,
+      "display_order": 10,
+      "help_text": "记录该卡牌在特定版本或玩法中的加强内容。"
+    },
+    {
+      "key": "weaken_effect",
+      "label": "削弱效果",
+      "value_type": "effect_entries",
+      "group": "版本调整",
+      "enabled": true,
+      "required": false,
+      "display_order": 20,
+      "help_text": "记录该卡牌在特定版本或玩法中的削弱内容。"
+    }
+  ]
+}

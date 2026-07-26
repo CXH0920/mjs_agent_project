@@ -16,6 +16,19 @@ from src.data.manager import (
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
+from src.data.card_catalog import (
+    CardAnnotation,
+    CardAnnotationRepository,
+    CardCatalogService,
+    CardFieldDefinition,
+    CardFieldSchemaRepository,
+    CardRepository,
+    CardViewModel,
+    EffectEntry,
+    DEFAULT_CARDS_FILE,
+    DEFAULT_CARD_FIELD_SCHEMA_FILE,
+    DEFAULT_CARD_ANNOTATIONS_FILE,
+)
 
 __all__ = [
     "DataManager",
@@ -29,4 +42,15 @@ __all__ = [
     "DEFAULT_HEROES_FILE",
     "DEFAULT_SYNERGIES_FILE",
     "DEFAULT_GUIDES_FILE",
+    "CardRepository",
+    "CardFieldSchemaRepository",
+    "CardAnnotationRepository",
+    "CardCatalogService",
+    "CardFieldDefinition",
+    "CardAnnotation",
+    "CardViewModel",
+    "EffectEntry",
+    "DEFAULT_CARDS_FILE",
+    "DEFAULT_CARD_FIELD_SCHEMA_FILE",
+    "DEFAULT_CARD_ANNOTATIONS_FILE",
 ]

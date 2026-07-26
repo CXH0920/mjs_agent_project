@@ -30,6 +30,7 @@ from src.data.manager import (
     DEFAULT_SYNERGIES_FILE,
     DEFAULT_GUIDES_FILE,
 )
+from src.data.card_catalog import CardCatalogService
 
 logger = logging.getLogger(__name__)
 
@@ -107,12 +108,13 @@ from src.ui.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.recommendation_panel import RecommendationPanel
 from src.ui.match_guide_panel import MatchGuidePanel
 from src.ui.official_data_import_dialog import OfficialDataImportDialog
+from src.ui.card_management_panel import CardManagementPanel
 
 
 class MainWindow(QMainWindow):
     """主窗口
 
-    初始化时自动加载数据，显示武将浏览和选将推荐 Tab。
+    初始化时自动加载数据，显示资料库、选将推荐和对局攻略 Tab。
     """
 
     _poll_result_ready = Signal(object)  # 结构化轮询结果
@@ -528,14 +530,18 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
-        # Tab 1: 武将浏览
+        # Tab 1: 资料库（武将资料与卡牌图鉴）
+        self._library = QTabWidget()
         self._hero_browser = HeroBrowser(
             self._data.heroes,
             self._data.guides,
             self._data.synergies,
         )
         self._hero_browser.synergies_changed.connect(self._on_synergies_changed)
-        self._tabs.addTab(self._hero_browser, "武将浏览")
+        self._library.addTab(self._hero_browser, "武将资料")
+        self._card_management = CardManagementPanel(CardCatalogService())
+        self._library.addTab(self._card_management, "卡牌图鉴")
+        self._tabs.addTab(self._library, "资料库")
 
         # Tab 2: 选将推荐
         self._recommendation = RecommendationPanel(
@@ -646,6 +652,8 @@ class MainWindow(QMainWindow):
         self._load_data()
         if hasattr(self, "_hero_browser"):
             self._hero_browser.reload_data()
+        if hasattr(self, "_card_management"):
+            self._card_management.reload_data()
         if hasattr(self, "_recommendation"):
             self._recommendation.refresh_synergies()
         self._update_status()

@@ -33,6 +33,7 @@ src/ui/
 ├── official_data_import_dialog.py # 官方 2v2/武将放逐榜单图片导入
 ├── ai_generation_workflow.py   # 攻略/相性生成的选择、进度与完成工作流
 ├── hero_browser.py             # 武将浏览（列表+详情+Tab 栏编辑按钮）
+├── card_management_panel.py     # 卡牌图鉴、追加内容与字段定义管理
 ├── hero_edit_dialog.py          # 武将基础信息编辑
 ├── hero_relation_select_dialog.py # 攻略关系武将多选
 ├── guide_edit_dialog.py         # 攻略内容编辑
@@ -332,6 +333,12 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `reload_data()` | 重新加载武将列表 |
 
 `HeroBrowser` 在连接 `HeroListPanel.hero_selected` 信号后，会主动读取并展示列表初始选中的首个武将，避免列表构造阶段发出的首项选择信号丢失。
+
+### 3.3.1 卡牌图鉴
+
+主级“资料库”包含“武将资料”和“卡牌图鉴”两个二级 Tab。`CardManagementPanel` 使用左侧列表、右侧详情布局，只读展示官方卡牌名称、类型、牌堆数量、简述和规则详解；基础区固定显示锁定说明。搜索覆盖基础字段和追加内容，支持类型及加强/削弱、当前生效、待核实状态筛选。
+
+追加内容仅由 `CardAnnotationEditDialog` 保存：版本效果记录按追加方式写入，并阻止同字段生效中时间区间重叠；保存失败时对话框保持草稿。`CardFieldSchemaDialog` 支持新增、修改显示属性、停用和归档字段，已有值的字段禁止改类型。归档字段及已失去定义的历史字段在详情页只读保留。卡牌切换时，详情区会递归释放控件和嵌套布局，避免旧卡片的操作栏残留。
 
 ### HeroDetailPanel 公共方法/信号
 
