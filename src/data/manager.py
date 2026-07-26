@@ -169,7 +169,7 @@ class DataManager(Generic[V_co]):
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         data = [v.model_dump(mode="json") for v in self._items.values()]
         tmp_path = self.file_path.with_suffix(".tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         tmp_path.replace(self.file_path)
         logger.debug("保存 %d 条到 %s", len(self._items), self.file_path)
@@ -228,6 +228,16 @@ class DataFacade:
         self.synergies = SynergyManager(synergies_file)
         self.guides = GuideManager(guides_file)
         self.last_load_report = LoadReport()
+
+    @classmethod
+    def from_managers(cls, heroes, synergies, guides) -> "DataFacade":
+        """使用已有 Manager 创建完整的数据门面。"""
+        facade = cls.__new__(cls)
+        facade.heroes = heroes
+        facade.synergies = synergies
+        facade.guides = guides
+        facade.last_load_report = LoadReport()
+        return facade
 
     def load_all(self) -> LoadReport:
         """加载所有数据，执行跨实体校验并返回问题报告。"""

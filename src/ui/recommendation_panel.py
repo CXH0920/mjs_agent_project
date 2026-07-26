@@ -30,12 +30,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
-from src.data.recommendation_index_repository import (
-    RecommendationIndex,
-    load_recommendation_indexes,
-    refresh_recommendation_indexes,
-)
-from src.data.win_rate_repository import load_win_rates
+from src.business.recommendation_service import RecommendationData, RecommendationService
 from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_card_widget import HeroCardWidget
 from src.ui.shared.faction_colors import reload_faction_colors
@@ -74,6 +69,8 @@ class RecommendationPanel(QWidget):
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
         self._pending_capture_source: str | None = None
+        self._recommendation_service = RecommendationService()
+        self._recommendation_data = RecommendationData({}, {})
 
         self._setup_ui()
         self._connect_capture_signals()
@@ -160,15 +157,15 @@ class RecommendationPanel(QWidget):
         """默认按 id 排序取前 8 个武将展示"""
         self._ocr_mode = False
         self._current_hero_ids = set()
-        indexes = self._load_recommendation_indexes()
+        recommendation_data = self._load_recommendation_data()
+        self._recommendation_data = recommendation_data
         heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)[:8]
         for i, hero in enumerate(heroes):
             if i < len(self._cards):
                 self._cards[i].set_hero(hero)
                 self._current_hero_ids.add(hero.id)
                 self._load_real_synergies(i, hero.id)
-                self._load_win_rate_by_name(i, hero.name)
-                self._load_recommendation_index_by_name(i, hero.name, indexes)
+                self._load_card_stats(i, hero.name, recommendation_data)
 
         self._apply_medal_rankings()
 
@@ -227,43 +224,39 @@ class RecommendationPanel(QWidget):
             return
         self._load_real_synergies(card_idx, hero.id)
 
-    def _load_win_rate_by_name(self, card_idx: int, hero_name: str) -> None:
-        """根据武将名从 2v2胜率排行.csv 加载胜率。"""
-        rates = load_win_rates()
-        rate = rates.get(hero_name)
-        if rate is not None and card_idx < len(self._cards):
-            self._cards[card_idx].set_win_rate(rate)
-
-    def _load_recommendation_indexes(self) -> dict[str, RecommendationIndex]:
-        """读取人工确认后生成的当前推荐指数快照。"""
+    def _load_recommendation_data(self) -> RecommendationData:
+        """读取一次页面刷新所需的推荐数据快照。"""
         try:
-            return load_recommendation_indexes()
+            return self._recommendation_service.load()
         except Exception as exc:
-            logger.warning("读取推荐指数失败: %s", exc)
-            return {}
+            logger.warning("读取推荐数据失败: %s", exc)
+            return RecommendationData({}, {})
 
     def _rebuild_recommendation_indexes(self) -> None:
         """由用户确认源榜单后，手动重建推荐指数快照。"""
         try:
-            indexes = refresh_recommendation_indexes()
+            recommendation_data = self._recommendation_service.rebuild_indexes()
         except Exception as exc:
             logger.exception("重建推荐指数失败")
             QMessageBox.warning(self, "重建失败", f"无法重建推荐指数：\n{exc}")
             return
+        self._recommendation_data = recommendation_data
         for card in self._cards:
             if card._hero:
-                card.set_recommendation_index(indexes.get(card._hero.name))
-        valid_count = sum(index.is_valid for index in indexes.values())
+                card.set_recommendation_index(recommendation_data.indexes.get(card._hero.name))
+        valid_count = sum(index.is_valid for index in recommendation_data.indexes.values())
         QMessageBox.information(
             self, "重建完成",
-            f"已重建推荐指数：有效 {valid_count} 条，数据不足 {len(indexes) - valid_count} 条。",
+                f"已重建推荐指数：有效 {valid_count} 条，数据不足 {len(recommendation_data.indexes) - valid_count} 条。",
         )
 
-    def _load_recommendation_index_by_name(
-        self, card_idx: int, hero_name: str, indexes: dict[str, RecommendationIndex],
+    def _load_card_stats(
+        self, card_idx: int, hero_name: str, recommendation_data: RecommendationData,
     ) -> None:
         if card_idx < len(self._cards):
-            self._cards[card_idx].set_recommendation_index(indexes.get(hero_name))
+            card = self._cards[card_idx]
+            card.set_win_rate(recommendation_data.win_rates.get(hero_name))
+            card.set_recommendation_index(recommendation_data.indexes.get(hero_name))
 
     # ---------------------------------------------------------------
     # 公共数据接口
@@ -286,7 +279,8 @@ class RecommendationPanel(QWidget):
         """
         self._ocr_mode = True
         self._current_hero_ids = set()
-        indexes = self._load_recommendation_indexes()
+        recommendation_data = self._load_recommendation_data()
+        self._recommendation_data = recommendation_data
 
         # 第一遍：收集所有武将 ID（确保相性过滤时 8 个 ID 齐全）
         hero_by_slot: dict[int, str] = {}
@@ -326,8 +320,7 @@ class RecommendationPanel(QWidget):
             card.set_confidence(0.5)
 
             # 根据武将名加载胜率
-            self._load_win_rate_by_name(idx - 1, name)
-            self._load_recommendation_index_by_name(idx - 1, name, indexes)
+            self._load_card_stats(idx - 1, name, recommendation_data)
 
         # 第三遍：所有 ID 齐全后统一加载相性
         for idx, name in hero_by_slot.items():
@@ -340,24 +333,12 @@ class RecommendationPanel(QWidget):
 
     def _apply_medal_rankings(self) -> None:
         """根据各卡片的胜率，取前三标记金/银/铜牌。"""
-        ranked = []
-        for i, card in enumerate(self._cards):
-            # 从胜率标签中提取数值
-            text = card._win_rate_label.text()
-            if text.startswith("胜率: ") and text.endswith("%"):
-                try:
-                    rate = float(text[4:-1])
-                    ranked.append((rate, i))
-                except ValueError:
-                    continue
-
         # 先清除所有奖牌
         for card in self._cards:
             card.set_medal(0)
 
-        # 按胜率降序取前三
-        ranked.sort(key=lambda x: x[0], reverse=True)
-        for rank, (_, idx) in enumerate(ranked[:3], start=1):
+        rankings = self._recommendation_data.rank_win_rates([card.hero_name for card in self._cards])
+        for idx, rank in rankings.items():
             self._cards[idx].set_medal(rank)
 
     # ---------------------------------------------------------------

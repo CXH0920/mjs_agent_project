@@ -47,6 +47,7 @@ class HeroCardWidget(QFrame):
         super().__init__(parent)
         self._hero: Hero | None = hero
         self._hero_id: int = 0
+        self._win_rate: float | None = None
         self._confidence: float = 0.0
         self._recommendation_index: RecommendationIndex | None = None
         self._recommendation_loaded = False
@@ -346,6 +347,7 @@ class HeroCardWidget(QFrame):
 
     def set_hero(self, hero: Hero | None) -> None:
         self._hero = hero
+        self._win_rate = None
         self._recommendation_index = None
         self._recommendation_loaded = False
         self._update_display()
@@ -360,8 +362,17 @@ class HeroCardWidget(QFrame):
         self._recommendation_loaded = True
         self._update_confidence_display()
 
-    def set_win_rate(self, rate: float) -> None:
-        self._win_rate_label.setText(f"胜率: {rate:.2f}%")
+    @property
+    def win_rate(self) -> float | None:
+        return self._win_rate
+
+    @property
+    def hero_name(self) -> str:
+        return self._hero.name if self._hero else ""
+
+    def set_win_rate(self, rate: float | None) -> None:
+        self._win_rate = rate
+        self._win_rate_label.setText(f"胜率: {rate:.2f}%" if rate is not None else "胜率: --%")
 
     def set_medal(self, rank: int) -> None:
         self._rank = rank if rank in (1, 2, 3) else 0

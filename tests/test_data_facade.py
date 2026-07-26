@@ -5,7 +5,10 @@ import tempfile
 from pathlib import Path
 
 from src.data.manager import DataFacade
+from src.data.hero_manager import HeroManager
+from src.data.guide_manager import GuideManager
 from src.data.models import Hero, HeroGuide, SynergyScore
+from src.data.synergy_manager import SynergyManager
 
 
 def _write_json(path: Path, data: list[dict]) -> str:
@@ -56,3 +59,21 @@ def test_load_all_reports_and_recovers_missing_references():
         assert all(issue.kind == "missing_reference" for issue in report.issues)
         assert synergies_path.read_text(encoding="utf-8") == synergies_source
         assert guides_path.read_text(encoding="utf-8") == guides_source
+
+
+def test_from_managers_initializes_complete_facade() -> None:
+    facade = DataFacade.from_managers(HeroManager(), SynergyManager(), GuideManager())
+
+    assert isinstance(facade.last_load_report.issues, list)
+    assert facade.heroes.__class__ is HeroManager
+
+
+def test_data_manager_save_uses_lf_newlines() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "heroes.json"
+        manager = HeroManager(path)
+        manager.add_hero(Hero(id=1, name="曹操"))
+
+        manager.save()
+
+        assert b"\r\n" not in path.read_bytes()

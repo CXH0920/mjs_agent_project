@@ -68,10 +68,11 @@ class MainWindow(QMainWindow):
             from src.data.hero_manager import HeroManager
             from src.data.synergy_manager import SynergyManager
             from src.data.guide_manager import GuideManager
-            self._data = DataFacade.__new__(DataFacade)
-            self._data.heroes = hero_manager or HeroManager(heroes_file=DEFAULT_HEROES_FILE)
-            self._data.synergies = synergy_manager or SynergyManager(synergies_file=DEFAULT_SYNERGIES_FILE)
-            self._data.guides = guide_manager or GuideManager(guides_file=DEFAULT_GUIDES_FILE)
+            self._data = DataFacade.from_managers(
+                hero_manager or HeroManager(heroes_file=DEFAULT_HEROES_FILE),
+                synergy_manager or SynergyManager(synergies_file=DEFAULT_SYNERGIES_FILE),
+                guide_manager or GuideManager(guides_file=DEFAULT_GUIDES_FILE),
+            )
         else:
             self._data = DataFacade(
                 heroes_file=DEFAULT_HEROES_FILE,
@@ -110,7 +111,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("名将杀 Agent")
         self.setMinimumSize(960, 640)
-        self.resize(1100, 720)
+        self.resize(1100, 760)
 
         # 显式设置窗口图标；应用级图标恢复器负责后续窗口激活时的维护
         from src.ui.app_icon import load_app_icon

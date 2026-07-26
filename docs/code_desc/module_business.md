@@ -14,6 +14,7 @@
 3. **OCR 控制服务** — 模板管理、轮询控制、冷却管理
 4. **模拟器后台操作** — 独立执行设备探测与 ADB 会话操作，避免实例枚举阻塞模板截图
 5. **官方榜单导入** — 解析固定版式的 2v2 胜率/出场榜与武将放逐榜，按表格行安全覆盖 CSV
+6. **推荐数据组装** — 一次读取胜率与推荐指数快照，并提供数值化的卡片排名数据
 
 核心设计原则：**不持有 UI 引用**，全部通过 Qt Signal 与主窗口通信。
 
@@ -32,6 +33,7 @@ src/business/
 ├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
 ├── ocr_service.py               # OCR 控制服务（模板管理 + 轮询）
 ├── official_data_import_service.py # 官方榜单行分割、单元格 OCR 与 CSV 输出
+├── recommendation_service.py       # 推荐页胜率/指数快照与排名组装
 └── fetch_utils.py               # QProcess 公共工具函数
 ```
 

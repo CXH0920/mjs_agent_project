@@ -10,7 +10,7 @@
 本模块是项目的**数据基础层**，承担两个核心角色：
 
 1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 Hero、SynergyScore、HeroGuide 等核心数据模型，作为项目唯一的 JSON 格式契约，确保所有数据来源（官网爬虫、AI 生成）的输出格式一致
-2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用的 CRUD、加载、保存方法，三个子类 Manager 继承基类并添加各自的查询方法；`DataFacade` 门面统一访问入口
+2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用的 CRUD、加载、保存方法，三个子类 Manager 继承基类并添加各自的查询方法；`DataFacade` 门面统一访问入口，并可通过 `from_managers()` 安全复用外部 Manager
 
 ---
 
@@ -92,7 +92,7 @@ AI 生成的结果使用英文字段名（`hero_id` / `name` / `faction`），�
 class DataManager(Generic[V_co], ABC):
     def __init__(self, file_path: Path)      # 绑定 JSON 文件路径
     def load(self) -> list[DataIssue]          # 逐条读入内存，返回加载问题
-    def save(self) -> None                    # 原子写入 JSON（tmp → rename）
+    def save(self) -> None                    # 原子写入 UTF-8/LF JSON（tmp → rename）
     def get(self, key) -> V_co | None         # 抽象：键查询
     def list_all(self) -> list[V_co]          # 全部数据
     def add(self, item: V_co) -> None         # 新增（重复抛 ValueError）
