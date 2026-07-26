@@ -104,8 +104,8 @@ class CardManagementPanel(QWidget):
         filters.addWidget(self._type_filter)
         self._adjustment_filter = QComboBox()
         self._adjustment_filter.addItem("全部调整状态", "")
-        self._adjustment_filter.addItem("仅有加强效果", "strengthen")
-        self._adjustment_filter.addItem("仅有削弱效果", "weaken")
+        self._adjustment_filter.addItem("有加强效果", "strengthen")
+        self._adjustment_filter.addItem("有削弱效果", "weaken")
         self._adjustment_filter.addItem("存在生效中调整", "active")
         self._adjustment_filter.addItem("存在待核实记录", "pending")
         self._adjustment_filter.currentIndexChanged.connect(self._refresh_list)
@@ -169,8 +169,7 @@ class CardManagementPanel(QWidget):
                 group.setFont(group_font)
                 group.setSizeHint(QSize(0, 30))
                 self._list.addItem(group)
-            status = " · 加强" if view.has_strengthen else " · 削弱" if view.has_weaken else ""
-            item = QListWidgetItem(f"{view.card.name}{status}")
+            item = QListWidgetItem(view.card.name)
             item.setData(Qt.ItemDataRole.UserRole, view.card.id)
             self._list.addItem(item)
             if first_card_item is None:

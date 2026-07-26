@@ -31,11 +31,24 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
         {"id": "1", "name": "烽火", "card_type": "战法牌", "card_desc": "全体", "card_detail": "规则", "card_amount": "3"},
     ], ensure_ascii=False), encoding="utf-8")
     (tmp_path / "card_field_schema.json").write_text(
-        '{"schema_version":1,"fields":[]}', encoding="utf-8"
+        '{"schema_version":1,"fields":[{"key":"strengthen_effect","label":"加强效果","value_type":"effect_entries"}]}',
+        encoding="utf-8",
     )
-    (tmp_path / "card_annotations.json").write_text(
-        '{"schema_version":1,"annotations":[]}', encoding="utf-8"
-    )
+    (tmp_path / "card_annotations.json").write_text(json.dumps({
+        "schema_version": 1,
+        "annotations": [{
+            "card_id": "8",
+            "fields": {"strengthen_effect": [{
+                "version": "2026.07",
+                "effective_from": "2026-07-26",
+                "effective_to": None,
+                "content": "伤害提高",
+                "source": "",
+                "status": "active",
+            }]},
+            "updated_at": "2026-07-26",
+        }],
+    }, ensure_ascii=False), encoding="utf-8")
     service = CardCatalogService(
         CardRepository(tmp_path / "cards.json"),
         CardFieldSchemaRepository(tmp_path / "card_field_schema.json"),
@@ -48,6 +61,9 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
     assert panel._list.count() == 4  # 两个分组标题与两张卡牌
     assert panel._list.item(1).text() == "冲杀"
     assert "官方基础数据只读" in panel._count_label.text()
+    assert [panel._adjustment_filter.itemText(index) for index in range(panel._adjustment_filter.count())][1:3] == [
+        "有加强效果", "有削弱效果",
+    ]
     group = panel._list.item(0)
     assert group.background().color().name() == "#dce6f0"
     assert group.font().bold()
