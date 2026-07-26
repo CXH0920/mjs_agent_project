@@ -274,10 +274,7 @@ def main():
     failed_results = [result for result in task_results if not result.succeeded]
     if failed_results:
         failed_items = [item for result in failed_results for item in result.failed_items]
-        staging_paths = [str(result.staging_path) for result in failed_results if result.staging_path]
-        print(f"\n  [错误] 生成失败：{len(failed_items)} 项；失败任务的正式数据未变更", flush=True)
-        if staging_paths:
-            print(f"  暂存结果：{', '.join(staging_paths)}", flush=True)
+        print(f"\n  [错误] 生成失败：{len(failed_items)} 项；成功项已提交，失败项保留旧数据", flush=True)
         sys.exit(1)
 
     print(f"\n  全部完成！\n")

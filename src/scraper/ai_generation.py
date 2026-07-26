@@ -8,7 +8,7 @@
   - run_synergy_single_generation()  选定武将 x 全体
 
 所有函数共享统一的 generator 接口（AIBatchGenerator / PlaywrightGenerator）
-以及相同的 staging 安全提交机制。
+以及相同的分批原子提交机制。
 
 合并自原有的 ai_guide.py / ai_synergy.py / ai_synergy_pair.py / ai_synergy_single.py
 """
@@ -36,11 +36,10 @@ class GenerationResult:
     skipped: int = 0
     failed_items: list[str] = field(default_factory=list)
     committed: bool = False
-    staging_path: Path | None = None
 
     @property
     def succeeded(self) -> bool:
-        """只有所有请求成功时，结果才允许提交到正式数据文件。"""
+        """所有请求均成功时为真；失败项不影响已提交的成功结果。"""
         return not self.failed_items
 
     def add_usage(self, usage: dict | None) -> None:
@@ -49,39 +48,15 @@ class GenerationResult:
             self.completion_tokens += usage.get("completion_tokens", 0)
 
 
-def _staging_path(output_path: str | Path) -> Path:
-    path = Path(output_path)
-    return path.with_name(f"{path.name}.staging")
-
-
-def _save_staging(staging_path: Path, data: list[dict]) -> None:
-    """持久化可恢复的暂存结果，绝不修改正式数据。"""
-    _save_json(staging_path, data)
-
-
-def _finalize_generation(
+def _commit_generation_batch(
     result: GenerationResult,
     output_path: str | Path,
     data: list[dict],
-    *,
-    should_commit: bool,
 ) -> None:
-    """失败保留正式文件，成功时将 staging 原子替换为正式文件。"""
-    staging_path = _staging_path(output_path)
-    if not result.succeeded:
-        _save_staging(staging_path, data)
-        result.staging_path = staging_path
-        logger.warning("生成存在失败项，正式数据未变更，暂存结果保留在: %s", staging_path)
-        return
-
-    if not should_commit:
-        staging_path.unlink(missing_ok=True)
-        return
-
-    _save_staging(staging_path, data)
-    staging_path.replace(output_path)
+    """将已校验成功的工作副本原子写入正式文件。"""
+    _save_json(output_path, data)
     result.committed = True
-    logger.info("生成结果已原子提交: %s (%d 条)", output_path, len(data))
+    logger.info("生成结果已分批提交: %s (%d 条)", output_path, len(data))
 
 
 # ============================================================
@@ -119,6 +94,7 @@ def run_guide_generation(
 
     working_guides = dict(existing_guides)
     new_guides = []
+    committed_guides = 0
     total_heroes = len(heroes)
 
     for i, hero in enumerate(heroes, 1):
@@ -142,17 +118,14 @@ def run_guide_generation(
             result_summary.failed_items.append(hero_name or str(hero_id))
             print(f"  [{i}/{total_heroes}] {hero_name} FAIL", flush=True)
 
-        # 批量保存到暂存文件，正式文件只在全部成功后替换。
-        if new_guides and len(new_guides) % GUIDE_BATCH_SAVE_INTERVAL == 0:
-            _save_staging(_staging_path(guide_path), list(working_guides.values()))
-            print("    [暂存] 已保存", flush=True)
+        # 每批仅提交已通过校验的攻略；失败武将继续保留原有记录。
+        if len(new_guides) - committed_guides >= GUIDE_BATCH_SAVE_INTERVAL:
+            _commit_generation_batch(result_summary, guide_path, list(working_guides.values()))
+            committed_guides = len(new_guides)
+            print("    [提交] 已保存", flush=True)
 
-    _finalize_generation(
-        result_summary,
-        guide_path,
-        list(working_guides.values()),
-        should_commit=bool(new_guides),
-    )
+    if len(new_guides) > committed_guides:
+        _commit_generation_batch(result_summary, guide_path, list(working_guides.values()))
     if result_summary.committed:
         existing_guides.clear()
         existing_guides.update(working_guides)
@@ -160,7 +133,7 @@ def run_guide_generation(
     guide_count = len(working_guides)
     print(f"\n  攻略完成: 新增 {len(new_guides)} 个，共 {guide_count} 个")
     if result_summary.failed_items:
-        print(f"  失败: {len(result_summary.failed_items)} 个；正式数据未变更", flush=True)
+        print(f"  失败: {len(result_summary.failed_items)} 个；成功项已提交，失败项保留旧数据", flush=True)
     elif not new_guides and guide_count > 0:
         print("  已有全部攻略，无需生成")
     elif not new_guides:
@@ -205,10 +178,11 @@ def run_synergy_generation(
     print(f"  生成相性评分 -- {model_name} ({total_pairs:,} 对)")
     print(f"{sep_line}")
 
-    # 全量生成在独立工作副本中进行，旧正式数据直到任务完整成功前都不变。
-    working_synergies: dict[tuple[int, int], dict] = {}
+    # 从旧数据开始工作，失败配对始终保留原有记录。
+    working_synergies = dict(existing_synergy_dict)
 
     processed = 0
+    committed_pairs = 0
 
     for i in range(len(heroes)):
         for j in range(i + 1, len(heroes)):
@@ -226,19 +200,19 @@ def run_synergy_generation(
                 score = generated.get("score", 0)
                 if score >= score_threshold:
                     working_synergies[key] = generated
+                else:
+                    # 本次结果校验成功但未达到用户设置的下限，移除旧记录。
+                    working_synergies.pop(key, None)
             else:
                 result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
 
-            # 批量保存到暂存文件，保证中途失败不覆盖旧数据。
-            if result_summary.completed and result_summary.completed % SYNERGY_BATCH_SAVE_INTERVAL == 0:
-                _save_staging(_staging_path(synergy_path), list(working_synergies.values()))
+            # 每批仅提交已校验成功的结果；失败配对保留旧数据。
+            if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
+                _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
+                committed_pairs = result_summary.completed
 
-    _finalize_generation(
-        result_summary,
-        synergy_path,
-        list(working_synergies.values()),
-        should_commit=True,
-    )
+    if result_summary.completed > committed_pairs:
+        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
     if result_summary.committed:
         existing_synergy_dict.clear()
         existing_synergy_dict.update(working_synergies)
@@ -247,7 +221,7 @@ def run_synergy_generation(
 
     print(f"\n  相性完成: 成功 {result_summary.completed} 对，共 {len(working_synergies)} 对")
     if result_summary.failed_items:
-        print(f"  失败: {len(result_summary.failed_items)} 对；正式数据未变更", flush=True)
+        print(f"  失败: {len(result_summary.failed_items)} 对；成功项已提交，失败项保留旧数据", flush=True)
     if result_summary.completed == 0 and not result_summary.failed_items:
         print("  未生成任何相性评分，请检查 API Key 和网络连接")
 
@@ -269,7 +243,7 @@ def run_synergy_pair_generation(
     """执行相性配对生成（指定 2~8 个武将，两两配对）
 
     对所选武将做排列组合（C(N,2)），逐个调用 AI 生成相性评分。
-    全部配对成功后才用新结果替换已有记录。
+    每批仅提交校验成功的结果，失败配对保留已有记录。
 
     Args:
         pair_file: JSON 文件路径，包含 2~8 个武将
@@ -302,6 +276,7 @@ def run_synergy_pair_generation(
 
     print(f"  所选武将: {count} 个, 共 {total_pairs} 对", flush=True)
     working_synergies = dict(existing_synergy_dict)
+    committed_pairs = 0
 
     for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
         pair_key = tuple(sorted([ha["id"], hb["id"]]))
@@ -312,18 +287,17 @@ def run_synergy_pair_generation(
         if generated:
             result_summary.completed += 1
             working_synergies[pair_key] = generated
-            _save_staging(_staging_path(synergy_path), list(working_synergies.values()))
             print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
         else:
             result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
             print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} FAIL", flush=True)
 
-    _finalize_generation(
-        result_summary,
-        synergy_path,
-        list(working_synergies.values()),
-        should_commit=result_summary.completed > 0,
-    )
+        if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
+            _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
+            committed_pairs = result_summary.completed
+
+    if result_summary.completed > committed_pairs:
+        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
     if result_summary.committed:
         existing_synergy_dict.clear()
         existing_synergy_dict.update(working_synergies)
@@ -347,7 +321,7 @@ def run_synergy_single_generation(
     """执行相性单武将配对生成（选定武将 vs 所有其他武将）
 
     支持断点续传：只生成尚不存在的相性对，已有的直接跳过。
-    全部请求成功后才提交全部结果。
+    每批仅提交校验成功的结果，失败配对保留已有记录。
 
     Args:
         single_file: JSON 文件路径，包含 1 个武将
@@ -378,6 +352,7 @@ def run_synergy_single_generation(
     print(f"  {target['name']} <-> {len(pairs)} 个武将", flush=True)
 
     working_synergies = dict(existing_synergy_dict)
+    committed_pairs = 0
 
     for i, (ha, hb) in enumerate(pairs, 1):
         key = tuple(sorted([ha["id"], hb["id"]]))
@@ -393,19 +368,17 @@ def run_synergy_single_generation(
         if generated:
             working_synergies[key] = generated
             result_summary.completed += 1
-            if result_summary.completed % SYNERGY_BATCH_SAVE_INTERVAL == 0:
-                _save_staging(_staging_path(synergy_path), list(working_synergies.values()))
             print(f"  [{i}/{len(pairs)}] {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
         else:
             result_summary.failed_items.append(hb["name"])
             print(f"  [{i}/{len(pairs)}] {hb['name']} FAIL", flush=True)
 
-    _finalize_generation(
-        result_summary,
-        synergy_path,
-        list(working_synergies.values()),
-        should_commit=result_summary.completed > 0,
-    )
+        if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
+            _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
+            committed_pairs = result_summary.completed
+
+    if result_summary.completed > committed_pairs:
+        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
     if result_summary.committed:
         existing_synergy_dict.clear()
         existing_synergy_dict.update(working_synergies)

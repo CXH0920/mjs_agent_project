@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # 批量保存间隔
 GUIDE_BATCH_SAVE_INTERVAL = 10
-SYNERGY_BATCH_SAVE_INTERVAL = 20
+SYNERGY_BATCH_SAVE_INTERVAL = 10
 
 
 # ============================================================
