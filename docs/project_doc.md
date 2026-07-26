@@ -872,13 +872,15 @@ HeroBrowser (QWidget)
  │   ├── QListWidget（武将列表）
  │   ├── Signal: hero_selected(int)
  └── HeroDetailPanel（右, 720px）
+     ├── 固定身份条（名称、势力、定位、体力、手牌）
      ├── Tab 1「武将信息」
      │   ├── QLabel (HTML 渲染基本信息)
      │   └── QScrollArea (技能列表)
      └── Tab 2「攻略指南」
          ├── QScrollArea（统一滚动容器）
-         ├── 单列堆叠摘要（要点/提示/关系标签）
-         └── 全宽 QTextBrowser（Markdown 预览，双击打开弹窗）
+         ├── 核心建议（核心要点与应对）
+         ├── 新手提醒与流式关系标签
+         └── [阅读完整攻略] → GuideDetailDialog
      └── Tab 3「武将相性」
          ├── 搭档名称/评级筛选与相性表格
          ├── 双击说明列打开 Markdown 预览
@@ -916,18 +918,18 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - "修改"打开 `HeroEditDialog` / `GuideEditDialog` 进行编辑，"删除"弹出确认对话框
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
 - `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
-- 关系展示标签采用固定尺寸可跳转按钮；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
+- 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 - 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互
 
 **Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
 
 **攻略视觉与交互：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。
-- Markdown 正文预览支持双击，打开 `GuideMarkdownDialog`（默认约 900×680）阅读完整攻略。
-- 攻略摘要、关系标签和正文预览采用单列堆叠布局，避免 Markdown 阅读框独占侧栏。
-- 有攻略数据时，Markdown 预览占满内容宽度，双击后由 `GuideMarkdownDialog` 展示完整正文；无攻略数据时隐藏该正文框。
-- 核心要点、新手提示、克制关系、搭配关系按区块分组，长内容由外层滚动区域承载。
-- 克制/搭配关系使用可点击标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
+- 右侧固定身份条展示当前武将，内容 Tab 使用弱化的下划线样式，避免与外层资料库导航竞争。
+- 首屏“核心建议”优先展示核心要点和面对该武将的应对；新手提醒、关系标签和完整攻略入口按需呈现。
+- 点击“阅读完整攻略”打开 `GuideDetailDialog`，其中保留 Markdown 正文预览。
+- 正文标题明确标注“攻略正文（双击查看完整内容）”；双击预览后打开 `GuideMarkdownDialog` 阅读完整正文。
+- 克制/搭配关系使用自适应流式标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
 - 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
 
 ### 5.9 选将推荐面板（RecommendationPanel）
@@ -1009,7 +1011,7 @@ def update_recommendations(self, data: list[dict]) → None
 - 按钮尺寸 66×28，蓝色背景 `#4a90d9`，白色文字
 - 点击时通过 `guide_clicked = Signal(int)` 信号发射武将 ID
 - `RecommendationPanel._show_guide_popup(hero_id)` 接收信号，通过 `GuideManager.get_guide()` 获取攻略
-- 弹出 `GuideDetailDialog`（QDialog，默认 720×680，最大高度 760），以与武将浏览器一致的单列区块展示标题、要点、对局信息和正文；内容超出时通过滚动区查看，正文预览支持双击打开完整攻略正文弹窗
+- 弹出 `GuideDetailDialog`（QDialog，默认 720×680，最大高度 760），以外层滚动区展示摘要与正文预览；正文标题标注双击打开方式，双击后由 `GuideMarkdownDialog` 展示完整 Markdown 正文
 - 无攻略数据时弹窗显示"暂无攻略数据"
 
 推荐页面已按职责拆分：`recommendation_panel.py` 负责 8 个槽位的数据刷新、相性/胜率查询及截图/OCR 信号协调；`hero_card_widget.py` 负责卡片的展示和交互信号；`guide_detail_dialog.py` 负责攻略详情渲染与关系跳转。原面板模块继续导入并暴露两个类名，旧调用方无需改动。

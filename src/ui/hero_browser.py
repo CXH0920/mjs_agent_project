@@ -11,13 +11,12 @@ from typing import Optional
 
 import mistune
 
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -41,22 +40,14 @@ from src.data.synergy_manager import SynergyManager
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.guide_edit_dialog import GuideEditDialog
+from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_edit_dialog import HeroEditDialog
 from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
 from src.ui.shared.faction_colors import get_faction_colors
+from src.ui.shared.widgets import FlowLayout
 from src.ui.synergy_edit_dialog import SynergyEditDialog
 
 logger = logging.getLogger(__name__)
-
-
-class DoubleClickTextBrowser(QTextBrowser):
-    """支持双击打开完整 Markdown 内容的文本预览控件。"""
-
-    double_clicked = Signal()
-
-    def mouseDoubleClickEvent(self, event) -> None:
-        self.double_clicked.emit()
-        super().mouseDoubleClickEvent(event)
 
 
 class HeroListPanel(QWidget):
@@ -194,7 +185,6 @@ class HeroDetailPanel(QWidget):
     data_changed = Signal()  # 数据变更后通知刷新列表
     synergies_changed = Signal()  # 相性变更后通知刷新关联视图
     hero_requested = Signal(int)  # 请求切换到关联武将
-    guide_detail_requested = Signal(str, str)  # 请求弹窗查看完整 Markdown
 
     def __init__(
         self,
@@ -219,9 +209,37 @@ class HeroDetailPanel(QWidget):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
-        # 使用 Tab 切换: 武将信息 / 攻略指南
+        self._identity_bar = QFrame()
+        self._identity_bar.setObjectName("heroIdentityBar")
+        self._identity_bar.setStyleSheet(
+            "QFrame#heroIdentityBar { background: #ffffff; border: 1px solid #dce6f0; "
+            "border-radius: 6px; }"
+        )
+        identity_layout = QVBoxLayout(self._identity_bar)
+        identity_layout.setContentsMargins(12, 8, 12, 8)
+        identity_layout.setSpacing(2)
+        self._identity_name = QLabel("请选择一个武将")
+        self._identity_name.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
+        identity_layout.addWidget(self._identity_name)
+        self._identity_meta = QLabel("从左侧列表选择后查看资料、攻略和相性")
+        self._identity_meta.setStyleSheet("color: #65758b; font-size: 12px;")
+        identity_layout.addWidget(self._identity_meta)
+        layout.addWidget(self._identity_bar)
+
+        # 右侧只承担当前武将的内容切换，样式弱于外层资料库导航。
         self._detail_tabs = QTabWidget()
+        self._detail_tabs.setObjectName("heroDetailTabs")
+        self._detail_tabs.setStyleSheet(
+            "QTabWidget#heroDetailTabs::pane { border: none; background: transparent; }"
+            "QTabWidget#heroDetailTabs QTabBar::tab { background: transparent; color: #65758b; "
+            "border: none; border-bottom: 2px solid transparent; padding: 6px 12px; "
+            "margin-right: 8px; font-weight: normal; }"
+            "QTabWidget#heroDetailTabs QTabBar::tab:hover { color: #357abd; }"
+            "QTabWidget#heroDetailTabs QTabBar::tab:selected { color: #357abd; "
+            "border-bottom-color: #4a90d9; font-weight: bold; }"
+        )
 
         # Tab 1: 武将信息
         self._info_tab = QWidget()
@@ -353,13 +371,6 @@ class HeroDetailPanel(QWidget):
         self._guide_layout = QVBoxLayout(content)
         self._guide_layout.setContentsMargins(4, 4, 4, 4)
         self._guide_layout.setSpacing(10)
-
-        self._guide_body = DoubleClickTextBrowser()
-        self._guide_body.setOpenExternalLinks(False)
-        self._guide_body.setPlaceholderText("暂无攻略正文")
-        self._guide_body.setMinimumHeight(260)
-        self._guide_body.setMaximumHeight(420)
-        self._guide_body.double_clicked.connect(self._request_guide_detail)
 
         area.setWidget(content)
         layout.addWidget(area, 1)
@@ -542,6 +553,7 @@ class HeroDetailPanel(QWidget):
         self._current_guide = guide
 
         if not hero:
+            self._update_identity_bar(None)
             self._basic_info.setText(f"武将 #{hero_id} 未找到")
             self._info_edit_btn.setEnabled(False)
             self._info_delete_btn.setEnabled(False)
@@ -555,9 +567,28 @@ class HeroDetailPanel(QWidget):
         self._guide_edit_btn.setEnabled(bool(guide))
         self._guide_delete_btn.setEnabled(bool(guide))
 
+        self._update_identity_bar(hero)
         self._update_info_tab(hero)
         self._update_guide_tab(guide)
         self._refresh_synergy_table()
+
+    def _update_identity_bar(self, hero: Hero | None) -> None:
+        """更新始终可见的当前武将身份信息。"""
+        if hero is None:
+            self._identity_name.setText("未找到武将")
+            self._identity_meta.setText("请在左侧列表重新选择武将")
+            return
+
+        title = f" · {hero.title}" if hero.title else ""
+        self._identity_name.setText(f"{hero.name}{title}")
+        self._identity_meta.setText(
+            " · ".join((
+                hero.faction or "势力未设置",
+                hero.position or "定位未设置",
+                f"体力 {hero.max_hp}",
+                f"手牌 {hero.max_hand}",
+            ))
+        )
 
     def _update_info_tab(self, hero: Hero) -> None:
         """更新武将信息页面"""
@@ -565,15 +596,13 @@ class HeroDetailPanel(QWidget):
         hand_str = str(hero.max_hand)
 
         gender_cn = "男" if hero.gender.value == "男" else "女"
-        title_part = f"「{hero.title}」" if hero.title else ""
-
         # 难度星级（使用 HTML 实体确保跨字体兼容显示）
         star_filled = "&#9733;" * hero.difficulty.value
         star_empty = "&#9734;" * (5 - hero.difficulty.value)
         star_display = f"{star_filled}{star_empty}"
 
         html = f"""
-        <h2 style="margin-bottom:4px;">{hero.name} {title_part}</h2>
+        <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:4px;">基础属性</div>
         <p style="margin:2px 0 8px 0; color:#555;">
             <b>定位：</b>{hero.position}　　<b>难度：</b>{star_display}
         </p>
@@ -658,17 +687,14 @@ class HeroDetailPanel(QWidget):
         return mistune.html(text)
 
     def _update_guide_tab(self, guide: Optional[HeroGuide]) -> None:
-        """更新攻略指南"""
-        # Markdown 预览控件会在多个武将之间复用，不能随着动态布局一起删除。
-        self._guide_body.clear()
+        """更新攻略摘要；完整正文统一通过详情窗口阅读。"""
         while self._guide_layout.count():
             item = self._guide_layout.takeAt(0)
             widget = item.widget()
-            if widget is not None and widget is not self._guide_body:
-                item.widget().deleteLater()
+            if widget is not None:
+                widget.deleteLater()
 
         if not guide:
-            self._guide_body.hide()
             no_data = QLabel("暂无攻略数据")
             no_data.setStyleSheet("color: #a08060; font-size: 14px; padding: 20px;")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -676,92 +702,131 @@ class HeroDetailPanel(QWidget):
             self._guide_layout.addStretch()
             return
 
-        hero = self._current_hero
-        if hero:
-            title = f"{hero.name} {f'「{hero.title}」' if hero.title else ''}"
-            header = QLabel(
-                f"<div style='font-size:18px; font-weight:bold; color:#2c3e50;'>{title}</div>"
-                f"<div style='color:#6b7c93; margin-top:4px;'>"
-                f"{hero.faction} · {hero.position or '定位未设置'} · 更新于 {guide.last_updated}</div>"
-            )
-            header.setWordWrap(True)
-            self._guide_layout.addWidget(header)
+        self._add_guide_quick_summary(guide)
 
-        self._add_guide_section_title(self._guide_layout, "核心要点")
-        # 操作要点
-        if guide.key_points:
-            for point in guide.key_points:
-                pl = QLabel(f"• {point}")
-                pl.setWordWrap(True)
-                self._guide_layout.addWidget(pl)
-        else:
-            self._guide_layout.addWidget(QLabel("暂无核心要点"))
-
-        # 新手提示
         if guide.tips_for_beginners:
-            self._add_guide_section_title(self._guide_layout, "新手提示")
+            self._add_guide_section_title(self._guide_layout, "新手提醒")
             tips = QLabel(guide.tips_for_beginners)
             tips.setWordWrap(True)
             tips.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
             self._guide_layout.addWidget(tips)
 
-        # 对局类型 / 搭配
-        self._add_type_list(self._guide_layout, "劣势对局", guide.weak_against_type, "#c62828")
-        self._add_type_list(self._guide_layout, "优势对局", guide.strong_against_type, "#2e7d32")
+        if guide.weak_against_type or guide.strong_against_type or guide.synergizes_with:
+            self._add_guide_section_title(self._guide_layout, "对局关系")
+            self._add_type_tags(
+                self._guide_layout,
+                "需谨慎的对手类型",
+                guide.weak_against_type,
+                "#fde8e8",
+                "#a12622",
+            )
+            self._add_type_tags(
+                self._guide_layout,
+                "有利对手类型",
+                guide.strong_against_type,
+                "#e8f4e8",
+                "#176b36",
+            )
 
         if guide.synergizes_with:
             self._add_relation_tags(self._guide_layout, "搭配推荐", guide.synergizes_with, "#e8f4e8", "#2e7d32")
 
-        if guide.counter_strategy:
-            self._add_guide_section_title(self._guide_layout, "对抗建议")
-            strategy = QLabel(guide.counter_strategy)
-            strategy.setWordWrap(True)
-            strategy.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;")
-            self._guide_layout.addWidget(strategy)
-
-        # 攻略正文（Markdown 渲染）
-        self._add_guide_section_title(self._guide_layout, "攻略正文（双击查看完整内容）")
-        self._guide_body.show()
-        self._guide_layout.addWidget(self._guide_body)
-        if guide.description:
-            self._guide_body.setHtml(self._markdown_to_html(guide.description))
-        else:
-            self._guide_body.setHtml("<p style='color:#8a98a8;'>暂无攻略正文</p>")
+        self._add_guide_section_title(self._guide_layout, "完整攻略")
+        description_hint = QLabel(
+            "查看开局、中局、残局等完整说明。"
+            if guide.description else "暂无完整攻略正文。"
+        )
+        description_hint.setStyleSheet("color: #65758b;")
+        self._guide_layout.addWidget(description_hint)
+        detail_button = QPushButton("阅读完整攻略")
+        detail_button.setEnabled(bool(guide.description))
+        detail_button.setStyleSheet(
+            "QPushButton { padding: 4px 12px; font-size: 12px; }"
+        )
+        detail_button.clicked.connect(self._open_guide_detail)
+        self._guide_layout.addWidget(detail_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._guide_layout.addStretch()
+
+    def _add_guide_quick_summary(self, guide: HeroGuide) -> None:
+        """在攻略首屏突出最需要立即判断的要点和应对。"""
+        summary = QFrame()
+        summary.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #dce6f0; border-radius: 6px; }"
+        )
+        summary_layout = QVBoxLayout(summary)
+        summary_layout.setContentsMargins(10, 8, 10, 8)
+        summary_layout.setSpacing(6)
+
+        title = QLabel("核心建议")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #2c3e50;")
+        summary_layout.addWidget(title)
+        if guide.key_points:
+            for point in guide.key_points[:3]:
+                label = QLabel(f"• {point}")
+                label.setWordWrap(True)
+                summary_layout.addWidget(label)
+        else:
+            empty = QLabel("暂无核心要点")
+            empty.setStyleSheet("color: #65758b;")
+            summary_layout.addWidget(empty)
+
+        if guide.counter_strategy:
+            strategy_title = QLabel("面对该武将的应对")
+            strategy_title.setStyleSheet("font-weight: bold; color: #8a5a00; padding-top: 2px;")
+            summary_layout.addWidget(strategy_title)
+            strategy = QLabel(guide.counter_strategy)
+            strategy.setWordWrap(True)
+            strategy.setStyleSheet("background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 7px;")
+            summary_layout.addWidget(strategy)
+
+        self._guide_layout.addWidget(summary)
 
     @staticmethod
     def _add_guide_section_title(layout: QVBoxLayout, title: str) -> None:
         """添加攻略摘要区块标题。"""
         label = QLabel(title)
         label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #357abd; "
-            "padding-top: 6px; border-bottom: 1px solid #dce6f0;"
+            "font-size: 13px; font-weight: bold; color: #357abd; padding-top: 6px;"
         )
         layout.addWidget(label)
 
-    def _add_type_list(self, layout: QVBoxLayout, title: str, types: list[str], color: str) -> None:
+    @staticmethod
+    def _add_type_tags(
+        layout: QVBoxLayout,
+        title: str,
+        types: list[str],
+        background: str,
+        foreground: str,
+    ) -> None:
         if not types:
             return
-        self._add_guide_section_title(layout, title)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        layout.addWidget(title_label)
+        tags = QWidget()
+        flow = FlowLayout(tags, spacing=5)
         for hero_type in types:
-            label = QLabel(f"• {hero_type}")
-            label.setWordWrap(True)
-            label.setStyleSheet(f"color: {color};")
-            layout.addWidget(label)
+            label = QLabel(hero_type)
+            label.setStyleSheet(
+                f"background-color: {background}; color: {foreground}; border: 1px solid {foreground}; "
+                "border-radius: 10px; padding: 3px 8px; font-size: 12px;"
+            )
+            flow.addWidget(label)
+        layout.addWidget(tags)
 
     def _add_relation_tags(self, layout: QVBoxLayout, title: str, hero_ids: list[int],
                            background: str, foreground: str) -> None:
         """将克制/搭配关系渲染为可点击武将标签。"""
-        self._add_guide_section_title(layout, title)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        layout.addWidget(title_label)
         tags = QWidget()
-        grid = QGridLayout(tags)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(4)
-        for index, hero_id in enumerate(hero_ids[:10]):
+        flow = FlowLayout(tags, spacing=5)
+        for hero_id in hero_ids:
             hero = self._hero_mgr.get_hero(hero_id)
             button = QPushButton(hero.name if hero else f"#{hero_id}")
-            button.setFixedSize(88, 28)
+            button.setFixedHeight(28)
             button.setToolTip(hero.name if hero else f"#{hero_id}")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(
@@ -770,16 +835,26 @@ class HeroDetailPanel(QWidget):
                 f"QPushButton:hover {{ background-color: {foreground}; color: white; }}"
             )
             button.clicked.connect(lambda checked=False, target=hero_id: self.hero_requested.emit(target))
-            grid.addWidget(button, index // 2, index % 2)
+            flow.addWidget(button)
         layout.addWidget(tags)
 
-    def _request_guide_detail(self) -> None:
-        """双击攻略正文预览时请求弹窗展示完整 Markdown。"""
-        if self._current_hero and self._current_guide and self._current_guide.description:
-            self.guide_detail_requested.emit(
-                self._current_hero.name,
-                self._current_guide.description,
-            )
+    def _open_guide_detail(self) -> None:
+        """打开攻略详情窗口。"""
+        if not self._current_hero or not self._current_guide:
+            return
+        dialog = GuideDetailDialog(
+            self._current_hero.name,
+            self._current_guide,
+            self._hero_mgr,
+            self,
+        )
+
+        def _open_related_hero(hero_id: int) -> None:
+            dialog.accept()
+            self.hero_requested.emit(hero_id)
+
+        dialog.hero_requested.connect(_open_related_hero)
+        dialog.exec()
 
     # ---------------------------------------------------------------
     # 相性 CRUD
@@ -939,36 +1014,6 @@ class HeroDetailPanel(QWidget):
                 widget.deleteLater()
 
 
-class GuideMarkdownDialog(QDialog):
-    """攻略正文 Markdown 详情弹窗。"""
-
-    def __init__(self, hero_name: str, markdown_text: str, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"{hero_name} - 攻略正文")
-        self.setMinimumSize(760, 560)
-        self.resize(900, 680)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-
-        title = QLabel(f"{hero_name} · 完整攻略")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; padding: 4px;")
-        layout.addWidget(title)
-
-        body = QTextBrowser()
-        body.setOpenExternalLinks(False)
-        body.setHtml(mistune.html(markdown_text))
-        layout.addWidget(body, 1)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_button = QPushButton("关闭")
-        close_button.setFixedWidth(90)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        layout.addLayout(button_layout)
-
-
 class HeroBrowser(QWidget):
     """武将浏览器主组件，列表选择后在右侧展示摘要和攻略预览。"""
 
@@ -1009,7 +1054,6 @@ class HeroBrowser(QWidget):
         # 连接信号
         self._list_panel.hero_selected.connect(self._detail_panel.show_hero)
         self._detail_panel.hero_requested.connect(self._list_panel.select_hero)
-        self._detail_panel.guide_detail_requested.connect(self._show_guide_markdown_dialog)
         self._detail_panel.data_changed.connect(self.reload_data)
         self._detail_panel.synergies_changed.connect(self.synergies_changed)
 
@@ -1017,11 +1061,6 @@ class HeroBrowser(QWidget):
         initial_hero_id = self._list_panel.selected_hero_id()
         if initial_hero_id is not None:
             self._detail_panel.show_hero(initial_hero_id)
-
-    def _show_guide_markdown_dialog(self, hero_name: str, markdown_text: str) -> None:
-        """双击攻略正文预览后打开完整 Markdown 弹窗。"""
-        dialog = GuideMarkdownDialog(hero_name, markdown_text, self)
-        dialog.exec()
 
     def reload_data(self) -> None:
         """重新加载列表并刷新当前详情。"""

@@ -7,21 +7,19 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
-from src.ui.hero_browser import (
-    GuideMarkdownDialog,
-    HeroDetailPanel,
-    HeroListPanel,
-)
+from src.ui.hero_browser import HeroDetailPanel, HeroListPanel
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.ui.guide_edit_dialog import GuideEditDialog
-from src.ui.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog
+from src.ui.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
+from src.ui.shared.widgets import FlowLayout
 from src.ui.hero_card_widget import HeroCardWidget
 from src.ui.hero_edit_dialog import HeroEditDialog
 from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
@@ -63,16 +61,18 @@ def test_guide_panel_renders_matchup_types_and_clickable_synergy_tags(tmp_path: 
 
     assert requested == [2]
     labels = [label.text() for label in panel.findChildren(QLabel)]
-    assert "• 高爆发型" in labels
+    assert panel._identity_name.text() == "曹操"
+    assert "需谨慎的对手类型" in labels
     assert "优先保留闪避" in labels
-    assert "对局思路" in panel.findChild(QTextBrowser).toHtml()
+    assert any(button.text() == "阅读完整攻略" for button in panel.findChildren(QPushButton))
+    assert isinstance(relation_button.parentWidget().layout(), FlowLayout)
 
     panel.show_hero(2)
     panel.show_hero(1)
-    assert "对局思路" in panel.findChild(QTextBrowser).toHtml()
+    assert panel._identity_name.text() == "曹操"
 
 
-def test_double_click_markdown_opens_detail_dialog(tmp_path: Path) -> None:
+def test_guide_panel_opens_explicit_detail_dialog(tmp_path: Path, monkeypatch) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
     guide_manager = GuideManager(tmp_path / "guides.json")
@@ -81,16 +81,15 @@ def test_double_click_markdown_opens_detail_dialog(tmp_path: Path) -> None:
 
     panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
     panel.show_hero(1)
-    opened: list[tuple[str, str]] = []
-    panel.guide_detail_requested.connect(lambda name, text: opened.append((name, text)))
-    panel._guide_body.double_clicked.emit()
+    opened: list[str] = []
+    monkeypatch.setattr(GuideDetailDialog, "exec", lambda dialog: opened.append(dialog.windowTitle()) or 0)
+    detail_button = next(button for button in panel.findChildren(QPushButton) if button.text() == "阅读完整攻略")
+    detail_button.click()
 
-    assert opened == [("曹操", "# 对局思路\n完整攻略")]
-    dialog = GuideMarkdownDialog("曹操", opened[0][1])
-    assert dialog.windowTitle() == "曹操 - 攻略正文"
+    assert opened == ["曹操 - 攻略详情"]
 
 
-def test_guide_panel_hides_body_when_guide_is_missing(tmp_path: Path) -> None:
+def test_guide_panel_shows_empty_state_when_guide_is_missing(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
     guide_manager = GuideManager(tmp_path / "guides.json")
@@ -100,10 +99,11 @@ def test_guide_panel_hides_body_when_guide_is_missing(tmp_path: Path) -> None:
 
     panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
     panel.show_hero(1)
-    assert not panel._guide_body.isHidden()
+    assert any(button.text() == "阅读完整攻略" for button in panel.findChildren(QPushButton))
 
     panel.show_hero(2)
-    assert panel._guide_body.isHidden()
+    labels = [label.text() for label in panel.findChildren(QLabel)]
+    assert "暂无攻略数据" in labels
 
 
 def test_guide_edit_uses_type_inputs_and_multi_select_synergy_dialog(tmp_path: Path) -> None:
@@ -232,7 +232,7 @@ def test_extracted_guide_detail_dialog_emits_synergy_hero_request(tmp_path: Path
     assert requested == [2]
 
 
-def test_guide_detail_dialog_uses_bounded_scrollable_single_column_layout(tmp_path: Path) -> None:
+def test_guide_detail_dialog_uses_single_markdown_reader(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
     dialog = GuideDetailDialog(
@@ -243,4 +243,43 @@ def test_guide_detail_dialog_uses_bounded_scrollable_single_column_layout(tmp_pa
 
     assert dialog.maximumHeight() == 760
     assert dialog.findChild(QScrollArea) is not None
-    assert isinstance(dialog.findChild(QTextBrowser), DoubleClickTextBrowser)
+    readers = dialog.findChildren(QTextBrowser)
+    assert len(readers) == 1
+    assert isinstance(readers[0], DoubleClickTextBrowser)
+    assert "内容" in readers[0].toPlainText()
+    labels = [label.text() for label in dialog.findChildren(QLabel)]
+    assert "攻略正文（双击查看完整内容）" in labels
+
+
+def test_guide_detail_double_click_opens_markdown_dialog(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    dialog = GuideDetailDialog(
+        "曹操",
+        HeroGuide(hero_id=1, description="# 攻略\n完整内容"),
+        hero_manager,
+    )
+    opened: list[str] = []
+    monkeypatch.setattr(GuideMarkdownDialog, "exec", lambda popup: opened.append(popup.windowTitle()) or 0)
+
+    dialog.findChild(DoubleClickTextBrowser).double_clicked.emit()
+
+    assert opened == ["曹操 - 攻略正文"]
+
+
+def test_guide_detail_defers_repaint_while_moving(tmp_path: Path) -> None:
+    app = _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    dialog = GuideDetailDialog("曹操", HeroGuide(hero_id=1), hero_manager)
+    dialog.show()
+    app.processEvents()
+    dialog._restore_updates_after_move()
+
+    dialog.move(dialog.pos() + QPoint(12, 12))
+    app.processEvents()
+
+    assert dialog._move_refresh_timer.isActive()
+    assert not dialog.updatesEnabled()
+    dialog._restore_updates_after_move()
+    assert dialog.updatesEnabled()
+    dialog.close()
