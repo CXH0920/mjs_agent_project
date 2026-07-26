@@ -67,7 +67,7 @@ def get_api_config() -> dict:
     # 返回 api_key / api_url / model / requests_per_minute / max_retries / http_timeout
 
 def get_mumu_config() -> dict:
-    # 获取模拟器 ADB 路径/端口/OCR 开关/轮询配置
+    # 获取模拟器 ADB 路径/端口/OCR 开关/轮询及自动跳转配置
 
 def save_env_file(path, data):
     # 原子写入：先写 .env.tmp → replace 覆盖原文件

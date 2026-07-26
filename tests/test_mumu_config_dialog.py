@@ -96,6 +96,22 @@ def test_unique_running_device_keeps_auto_port() -> None:
     assert dialog._config["mumu_adb_port"] == 0
 
 
+def test_auto_switch_tab_checkbox_loads_and_saves_config(monkeypatch) -> None:
+    _app()
+    dialog = _dialog(
+        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0, "mumu_ocr_poll_mode": True,
+         "mumu_ocr_auto_switch_tab": True},
+        [],
+    )
+
+    assert dialog._auto_switch_tab_check.isChecked()
+    assert dialog._auto_switch_tab_check.isEnabled()
+    dialog._auto_switch_tab_check.setChecked(False)
+    monkeypatch.setattr(dialog, "_show_save_toast", lambda: None)
+    dialog._on_save()
+    assert dialog.get_config()["mumu_ocr_auto_switch_tab"] is False
+
+
 def test_multiple_running_devices_require_explicit_selection() -> None:
     _app()
     devices = [

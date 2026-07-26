@@ -38,12 +38,13 @@ def test_recommendation_connects_capture_signals_once() -> None:
         _hero_manager(), SynergyManager(), GuideManager(), capture_service=service
     )
     service.capture_completed.emit({"ocr_results": None, "ocr_matched": False})
-    assert panel._import_btn.isEnabled()
+    assert panel._recognize_btn.isEnabled()
 
 
 def test_recommendation_cards_scroll_instead_of_shrinking_below_minimum_height() -> None:
     app = _app()
     panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+    panel.load_from_ocr([{"index": 1, "name": "测试武将"}])
     panel.resize(500, 220)
     panel.show()
     app.processEvents()
@@ -58,7 +59,7 @@ def test_recommendation_cards_scroll_instead_of_shrinking_below_minimum_height()
     panel.hide()
 
 
-def test_recommendation_screenshot_does_not_request_ocr(monkeypatch) -> None:
+def test_recommendation_current_recognition_requests_ocr(monkeypatch) -> None:
     _app()
     service = CaptureService()
     service.capture = object()
@@ -68,26 +69,27 @@ def test_recommendation_screenshot_does_not_request_ocr(monkeypatch) -> None:
         _hero_manager(), SynergyManager(), GuideManager(), capture_service=service
     )
 
-    panel._on_import_from_screenshot()
+    panel._on_recognize_current()
 
-    assert requests == [{"perform_ocr": False}]
+    assert requests == [{"hero_names": ["测试武将"], "force_ocr": True}]
     loaded: list[list[dict]] = []
     monkeypatch.setattr(panel, "load_from_ocr", loaded.append)
     panel._on_capture_result({"ocr_results": [{"name": "曹操"}], "ocr_matched": True})
-    assert loaded == []
+    assert loaded == [[{"name": "曹操"}]]
 
 
-def test_match_guide_panel_has_four_default_cards() -> None:
+def test_match_guide_panel_starts_in_empty_state() -> None:
     _app()
     panel = MatchGuidePanel(_hero_manager())
 
     assert len(panel._cards) == 4
-    assert [card._hero_id for card in panel._cards] == [1, 0, 0, 0]
+    assert [card._hero_id for card in panel._cards] == [0, 0, 0, 0]
+    assert not panel._empty_state.isHidden()
     panel.load_from_ocr([{"index": 1, "name": "测试武将"}])
     assert panel._cards[0]._hero_id == 1
 
 
-def test_match_guide_screenshot_does_not_request_ocr(monkeypatch) -> None:
+def test_match_guide_current_recognition_requests_ocr(monkeypatch) -> None:
     _app()
     service = CaptureService()
     service.capture = object()
@@ -97,11 +99,11 @@ def test_match_guide_screenshot_does_not_request_ocr(monkeypatch) -> None:
     loaded: list[list[dict]] = []
     monkeypatch.setattr(panel, "load_from_ocr", loaded.append)
 
-    panel._on_import_from_screenshot()
+    panel._on_recognize_current()
     panel._on_capture_result({"ocr_results": [{"name": "曹操"}]})
 
-    assert requests == [{"perform_ocr": False}]
-    assert loaded == []
+    assert requests == [{"hero_names": ["测试武将"], "template_name": "match_guide", "force_ocr": True}]
+    assert loaded == [[{"name": "曹操"}]]
 
 
 def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -> None:
@@ -109,6 +111,7 @@ def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -
     monkeypatch.setattr(HeroSkillDialog, "exec", lambda self: 0)
     panel = MatchGuidePanel(_hero_manager())
     card = panel._cards[0]
+    card.set_hero(_hero_manager().get_hero(1))
     selected: list[int] = []
     card.hero_double_clicked.connect(selected.append)
 
@@ -123,7 +126,8 @@ def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -
     card._on_hero_double_clicked()
     assert selected == [1]
     panel.clear_blocks()
-    assert panel._cards[0]._hero_id == 1
+    assert panel._cards[0]._hero_id == 0
+    assert not panel._empty_state.isHidden()
 
 
 def test_top_three_win_rate_visual_anchor() -> None:
@@ -215,9 +219,10 @@ def test_poll_stays_stopped_until_emulator_is_connected() -> None:
     assert window._ocr_service.started == 1
 
 
-def test_poll_match_switches_to_recommendation_only_on_page_entry() -> None:
+def test_poll_match_does_not_switch_tab_by_default() -> None:
     class OcrService:
         poll_generation = 1
+        config = {"mumu_ocr_auto_switch_tab": False}
 
         def __init__(self) -> None:
             self.completed: list[str] = []
@@ -253,13 +258,47 @@ def test_poll_match_switches_to_recommendation_only_on_page_entry() -> None:
     window._on_poll_result(matched)
     window._on_poll_result(matched)
 
-    assert window._tabs.switched_to == [window._recommendation]
+    assert window._tabs.switched_to == []
     assert len(window._recommendation.loaded) == 2
 
     window._on_poll_result({"generation": 1, "outcome": "healthy_no_match"})
     window._on_poll_result(matched)
 
-    assert window._tabs.switched_to == [window._recommendation, window._recommendation]
+    assert window._tabs.switched_to == []
+
+
+def test_poll_match_switches_tab_when_enabled() -> None:
+    class OcrService:
+        poll_generation = 1
+        config = {"mumu_ocr_auto_switch_tab": True}
+
+        def complete_poll(self, *_args) -> None:
+            pass
+
+    class CaptureService:
+        capture = None
+
+    class Tabs:
+        def __init__(self) -> None:
+            self.switched_to = []
+
+        def setCurrentWidget(self, widget) -> None:
+            self.switched_to.append(widget)
+
+    class Recommendation:
+        def load_from_ocr(self, _results: list[dict]) -> None:
+            pass
+
+    window = MainWindow.__new__(MainWindow)
+    window._selection_page_active = False
+    window._ocr_service = OcrService()
+    window._capture_service = CaptureService()
+    window._tabs = Tabs()
+    window._recommendation = Recommendation()
+
+    window._on_poll_result({"generation": 1, "outcome": "matched", "ocr_results": []})
+
+    assert window._tabs.switched_to == [window._recommendation]
 
 
 def test_poll_ocr_wait_times_out_without_blocking() -> None:

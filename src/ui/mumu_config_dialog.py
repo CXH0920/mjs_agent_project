@@ -193,10 +193,13 @@ class MumuConfigDialog(QDialog):
         switch_row = QHBoxLayout()
         self._ocr_enabled_check = QCheckBox("启用武将识别")
         self._poll_mode_check = QCheckBox("持续轮询")
+        self._auto_switch_tab_check = QCheckBox("识别后自动跳转到结果页面")
         self._poll_mode_check.toggled.connect(self._update_parameter_controls)
         switch_row.addWidget(self._ocr_enabled_check)
         switch_row.addSpacing(16)
         switch_row.addWidget(self._poll_mode_check)
+        switch_row.addSpacing(16)
+        switch_row.addWidget(self._auto_switch_tab_check)
         switch_row.addWidget(QLabel("检测间隔"))
         self._poll_interval_spin = QSpinBox()
         self._poll_interval_spin.setRange(1, 60)
@@ -350,6 +353,7 @@ class MumuConfigDialog(QDialog):
 
         self._ocr_enabled_check.setChecked(self._config.get("mumu_ocr_enabled", False))
         self._poll_mode_check.setChecked(self._config.get("mumu_ocr_poll_mode", False))
+        self._auto_switch_tab_check.setChecked(self._config.get("mumu_ocr_auto_switch_tab", False))
         self._poll_interval_spin.setValue(self._config.get("mumu_ocr_poll_interval", 2))
         self._threshold_spin.setValue(self._config.get("mumu_hero_selection_threshold", self._config.get("mumu_ocr_match_threshold", 0.8)))
         self._match_guide_threshold_spin.setValue(self._config.get("mumu_match_guide_threshold", 0.8))
@@ -773,6 +777,7 @@ class MumuConfigDialog(QDialog):
         """持续轮询关闭时，禁用只与轮询相关的控件。"""
         polling_enabled = self._poll_mode_check.isChecked()
         self._poll_interval_spin.setEnabled(polling_enabled)
+        self._auto_switch_tab_check.setEnabled(polling_enabled)
         self._resume_poll_btn.setEnabled(
             polling_enabled
             and self._ocr_service is not None
@@ -824,6 +829,7 @@ class MumuConfigDialog(QDialog):
 
             self._config["mumu_ocr_enabled"] = self._ocr_enabled_check.isChecked()
             self._config["mumu_ocr_poll_mode"] = self._poll_mode_check.isChecked()
+            self._config["mumu_ocr_auto_switch_tab"] = self._auto_switch_tab_check.isChecked()
             self._config["mumu_ocr_poll_interval"] = self._poll_interval_spin.value()
             self._config["mumu_ocr_match_threshold"] = round(self._threshold_spin.value(), 2)
             self._config["mumu_hero_selection_threshold"] = round(self._threshold_spin.value(), 2)

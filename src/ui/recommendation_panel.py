@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -74,7 +75,7 @@ class RecommendationPanel(QWidget):
 
         self._setup_ui()
         self._connect_capture_signals()
-        self._load_default_heroes()
+        self._show_empty_state()
 
     def _connect_capture_signals(self) -> None:
         """一次性连接截图服务信号，避免重复回调。"""
@@ -91,21 +92,32 @@ class RecommendationPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # 标题行（含从截图导入按钮）
+        # 标题行（含当前识别状态和操作）
         header_layout = QHBoxLayout()
 
         title = QLabel("选将推荐")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; padding: 4px 0;")
         header_layout.addWidget(title)
 
+        self._recognition_status_label = QLabel("尚未识别阵容")
+        self._recognition_status_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        header_layout.addWidget(self._recognition_status_label)
+
         header_layout.addStretch()
 
-        self._import_btn = QPushButton("截图")
-        self._import_btn.setStyleSheet(
+        self._recognize_btn = QPushButton("识别当前阵容")
+        self._recognize_btn.setStyleSheet(
             "padding: 4px 14px; font-size: 12px;"
         )
-        self._import_btn.clicked.connect(self._on_import_from_screenshot)
-        header_layout.addWidget(self._import_btn)
+        self._recognize_btn.clicked.connect(self._on_recognize_current)
+        header_layout.addWidget(self._recognize_btn)
+
+        header_layout.addSpacing(6)
+
+        self._save_btn = QPushButton("保存截图")
+        self._save_btn.setStyleSheet("padding: 4px 14px; font-size: 12px;")
+        self._save_btn.clicked.connect(self._on_save_screenshot)
+        header_layout.addWidget(self._save_btn)
 
         header_layout.addSpacing(6)
 
@@ -127,7 +139,20 @@ class RecommendationPanel(QWidget):
         layout.addLayout(header_layout)
 
         self._cards_container = QWidget()
-        grid = QGridLayout(self._cards_container)
+        content_layout = QVBoxLayout(self._cards_container)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._empty_state = QWidget()
+        empty_layout = QVBoxLayout(self._empty_state)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_label = QLabel("尚未识别阵容\n连接模拟器后识别当前阵容，或从本地图片导入。")
+        empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_label.setStyleSheet("color: #65758b; font-size: 14px; padding: 24px;")
+        empty_layout.addWidget(empty_label)
+        content_layout.addWidget(self._empty_state, 1)
+
+        self._cards_widget = QWidget()
+        grid = QGridLayout(self._cards_widget)
         grid.setSpacing(8)
 
         self._cards = []
@@ -145,7 +170,8 @@ class RecommendationPanel(QWidget):
             grid.setRowStretch(row, 1)
         for col in range(2):
             grid.setColumnStretch(col, 1)
-        self._cards_container.setMinimumSize(grid.minimumSize())
+        self._cards_widget.setMinimumSize(grid.minimumSize())
+        content_layout.addWidget(self._cards_widget)
 
         self._cards_scroll = QScrollArea()
         self._cards_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -154,20 +180,24 @@ class RecommendationPanel(QWidget):
         layout.addWidget(self._cards_scroll, 1)
 
     def _load_default_heroes(self) -> None:
-        """默认按 id 排序取前 8 个武将展示"""
+        """清空卡片并恢复待识别状态。"""
         self._ocr_mode = False
         self._current_hero_ids = set()
-        recommendation_data = self._load_recommendation_data()
-        self._recommendation_data = recommendation_data
-        heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)[:8]
-        for i, hero in enumerate(heroes):
-            if i < len(self._cards):
-                self._cards[i].set_hero(hero)
-                self._current_hero_ids.add(hero.id)
-                self._load_real_synergies(i, hero.id)
-                self._load_card_stats(i, hero.name, recommendation_data)
+        for card in self._cards:
+            card.set_hero(None)
+        self._show_empty_state()
 
-        self._apply_medal_rankings()
+    def _show_empty_state(self) -> None:
+        self._empty_state.show()
+        self._cards_widget.hide()
+
+    def _show_cards(self) -> None:
+        self._empty_state.hide()
+        self._cards_widget.show()
+
+    def _update_recognition_status(self, count: int) -> None:
+        timestamp = datetime.now().strftime("%H:%M")
+        self._recognition_status_label.setText(f"最近识别：{timestamp} · {count} 名武将")
 
     def refresh_synergies(self) -> None:
         """按当前卡片槽位重新加载相性摘要，不改变 OCR 模式。"""
@@ -279,8 +309,12 @@ class RecommendationPanel(QWidget):
         """
         self._ocr_mode = True
         self._current_hero_ids = set()
+        self._show_cards()
         recommendation_data = self._load_recommendation_data()
         self._recommendation_data = recommendation_data
+
+        for card in self._cards:
+            card.set_hero(None)
 
         # 第一遍：收集所有武将 ID（确保相性过滤时 8 个 ID 齐全）
         hero_by_slot: dict[int, str] = {}
@@ -396,33 +430,44 @@ class RecommendationPanel(QWidget):
             return
 
         self.update_recommendations(data)
+        self._update_recognition_status(len(data))
         logger.info("已从 OCR 导入 %d 个武将数据", len(data))
 
     # ── 截图导入 ──────────────────────────────────────────────────
 
-    def _on_import_from_screenshot(self) -> None:
-        """从截图导入武将数据。
-
-        先检查 ADB 是否已配置，未配置则弹出配置对话框。
-        截图仅保存画面，不自动触发 OCR。
-        """
+    def _on_recognize_current(self) -> None:
+        """识别当前模拟器画面中的选将阵容。"""
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
             return
 
-        self._pending_capture_source = "adb"
-        self._import_btn.setEnabled(False)
-        self._import_btn.setText("正在截图...")
+        self._pending_capture_source = "adb_recognize"
+        self._recognize_btn.setEnabled(False)
+        self._recognize_btn.setText("正在识别...")
+        hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
+        self._capture_service.do_capture(hero_names=hero_names, force_ocr=True)
 
+    def _on_save_screenshot(self) -> None:
+        """保存当前模拟器画面，不触发 OCR。"""
+        if not self._capture_service or not self._capture_service.capture:
+            self.request_mumu_config.emit()
+            return
+
+        self._pending_capture_source = "adb_save"
+        self._save_btn.setEnabled(False)
+        self._save_btn.setText("正在截图...")
         self._capture_service.do_capture(perform_ocr=False)
 
     def _on_capture_result(self, result: dict) -> None:
         """截图完成回调。"""
         source = self._pending_capture_source
         self._pending_capture_source = None
-        if source == "adb":
-            self._import_btn.setEnabled(True)
-            self._import_btn.setText("截图")
+        if source == "adb_recognize":
+            self._recognize_btn.setEnabled(True)
+            self._recognize_btn.setText("识别当前阵容")
+        elif source == "adb_save":
+            self._save_btn.setEnabled(True)
+            self._save_btn.setText("保存截图")
             return
 
         ocr_results = result.get("ocr_results")
@@ -434,16 +479,20 @@ class RecommendationPanel(QWidget):
             logger.info("截图未匹配到武将选择页面")
 
     def _on_capture_failed(self, message: str) -> None:
-        """恢复截图按钮，并为用户发起的 ADB 截图提供可操作错误反馈。"""
+        """恢复识别按钮，并为用户发起的 ADB 识别提供可操作错误反馈。"""
         source = self._pending_capture_source
         self._pending_capture_source = None
-        if source != "adb":
+        if source not in {"adb_recognize", "adb_save"}:
             if source == "file":
                 QMessageBox.warning(self, "图片导入失败", message)
             return
 
-        self._import_btn.setEnabled(True)
-        self._import_btn.setText("截图")
+        if source == "adb_recognize":
+            self._recognize_btn.setEnabled(True)
+            self._recognize_btn.setText("识别当前阵容")
+        else:
+            self._save_btn.setEnabled(True)
+            self._save_btn.setText("保存截图")
         message_box = QMessageBox(self)
         message_box.setIcon(QMessageBox.Icon.Warning)
         message_box.setWindowTitle("截图失败")
@@ -455,7 +504,10 @@ class RecommendationPanel(QWidget):
         if message_box.clickedButton() is config_btn:
             self.request_mumu_config.emit()
         elif message_box.clickedButton() is retry_btn:
-            self._on_import_from_screenshot()
+            if source == "adb_recognize":
+                self._on_recognize_current()
+            else:
+                self._on_save_screenshot()
 
     def _on_import_from_file(self) -> None:
         """从本地图片文件导入武将数据。

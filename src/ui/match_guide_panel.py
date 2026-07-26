@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -192,7 +193,7 @@ class MatchGuidePanel(QWidget):
         self._cards: list[MatchHeroCard] = []
         self._setup_ui()
         self._connect_capture_signals()
-        self._load_default_heroes()
+        self._show_empty_state()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -203,24 +204,36 @@ class MatchGuidePanel(QWidget):
         title = QLabel("对局攻略")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
         header.addWidget(title)
+        self._recognition_status_label = QLabel("尚未识别阵容")
+        self._recognition_status_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        header.addWidget(self._recognition_status_label)
         header.addStretch()
 
-        self._import_btn = QPushButton("截图")
-        self._import_btn.clicked.connect(self._on_import_from_screenshot)
-        header.addWidget(self._import_btn)
+        self._recognize_btn = QPushButton("识别当前阵容")
+        self._recognize_btn.clicked.connect(self._on_recognize_current)
+        header.addWidget(self._recognize_btn)
+        self._save_btn = QPushButton("保存截图")
+        self._save_btn.clicked.connect(self._on_save_screenshot)
+        header.addWidget(self._save_btn)
         self._import_file_btn = QPushButton("📁 从图片导入")
         self._import_file_btn.clicked.connect(self._on_import_from_file)
         header.addWidget(self._import_file_btn)
         layout.addLayout(header)
 
-        grid = QGridLayout()
+        self._empty_state = QLabel("尚未识别阵容\n连接模拟器后识别当前阵容，或从本地图片导入。")
+        self._empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_state.setStyleSheet("color: #65758b; font-size: 14px; padding: 24px;")
+        layout.addWidget(self._empty_state, 1)
+
+        self._cards_widget = QWidget()
+        grid = QGridLayout(self._cards_widget)
         grid.setSpacing(8)
         for index in range(4):
             card = MatchHeroCard(self)
             card.hero_double_clicked.connect(self._show_skill_popup)
             grid.addWidget(card, index // 2, index % 2)
             self._cards.append(card)
-        layout.addLayout(grid, 1)
+        layout.addWidget(self._cards_widget, 1)
 
     def _connect_capture_signals(self) -> None:
         if not self._capture_service:
@@ -229,12 +242,22 @@ class MatchGuidePanel(QWidget):
         self._capture_service.capture_failed.connect(self._on_capture_failed)
 
     def _load_default_heroes(self) -> None:
-        """未导入截图时默认展示 ID 最小的四名武将。"""
-        heroes = sorted(self._hero_mgr.list_heroes(), key=lambda hero: hero.id)[:4]
-        for index, card in enumerate(self._cards):
-            hero = heroes[index] if index < len(heroes) else None
-            card.set_hero(hero)
-            card.set_win_rate(load_win_rates().get(hero.name) if hero else None)
+        """清空卡片并恢复待识别状态。"""
+        for card in self._cards:
+            card.set_hero(None)
+        self._show_empty_state()
+
+    def _show_empty_state(self) -> None:
+        self._empty_state.show()
+        self._cards_widget.hide()
+
+    def _show_cards(self) -> None:
+        self._empty_state.hide()
+        self._cards_widget.show()
+
+    def _update_recognition_status(self, count: int) -> None:
+        timestamp = datetime.now().strftime("%H:%M")
+        self._recognition_status_label.setText(f"最近识别：{timestamp} · {count} 名武将")
 
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """从 OCR 结果加载最多四名武将，按识别槽位顺序展示。"""
@@ -250,21 +273,38 @@ class MatchGuidePanel(QWidget):
                 break
 
         if not heroes:
-            logger.info("对局攻略 OCR 未识别到武将，保留默认卡片")
+            logger.info("对局攻略 OCR 未识别到武将，保留待识别状态")
             return
 
+        self._show_cards()
         for index, card in enumerate(self._cards):
             hero = heroes[index] if index < len(heroes) else None
             card.set_hero(hero)
             card.set_win_rate(load_win_rates().get(hero.name) if hero else None)
         logger.info("对局攻略已导入 %d 名武将", len(heroes))
+        self._update_recognition_status(len(heroes))
 
-    def _on_import_from_screenshot(self) -> None:
+    def _on_recognize_current(self) -> None:
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
             return
-        self._pending_capture_source = "adb"
+        self._pending_capture_source = "adb_recognize"
         self._set_importing(True, "正在截图...")
+        hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
+        self._capture_service.do_capture(
+            hero_names=hero_names,
+            template_name="match_guide",
+            force_ocr=True,
+        )
+
+    def _on_save_screenshot(self) -> None:
+        """保存当前模拟器画面，不触发 OCR。"""
+        if not self._capture_service or not self._capture_service.capture:
+            self.request_mumu_config.emit()
+            return
+        self._pending_capture_source = "adb_save"
+        self._save_btn.setEnabled(False)
+        self._save_btn.setText("正在截图...")
         self._capture_service.do_capture(perform_ocr=False)
 
     def _on_import_from_file(self) -> None:
@@ -292,9 +332,10 @@ class MatchGuidePanel(QWidget):
         source = self._pending_capture_source
         self._pending_capture_source = None
         self._set_importing(False)
-        if source == "adb":
+        if source == "adb_save":
+            self._save_btn.setEnabled(True)
+            self._save_btn.setText("保存截图")
             return
-
         ocr_results = result.get("ocr_results") or []
         if ocr_results:
             self.load_from_ocr(ocr_results)
@@ -311,6 +352,10 @@ class MatchGuidePanel(QWidget):
             QMessageBox.warning(self, "图片导入失败", message)
             return
 
+        if source == "adb_save":
+            self._save_btn.setEnabled(True)
+            self._save_btn.setText("保存截图")
+
         message_box = QMessageBox(self)
         message_box.setIcon(QMessageBox.Icon.Warning)
         message_box.setWindowTitle("截图失败")
@@ -322,12 +367,16 @@ class MatchGuidePanel(QWidget):
         if message_box.clickedButton() is config_btn:
             self.request_mumu_config.emit()
         elif message_box.clickedButton() is retry_btn:
-            self._on_import_from_screenshot()
+            if source == "adb_recognize":
+                self._on_recognize_current()
+            else:
+                self._on_save_screenshot()
 
     def _set_importing(self, importing: bool, text: str = "") -> None:
-        self._import_btn.setEnabled(not importing)
+        self._recognize_btn.setEnabled(not importing)
+        self._save_btn.setEnabled(not importing)
         self._import_file_btn.setEnabled(not importing)
-        self._import_btn.setText(text if importing else "截图")
+        self._recognize_btn.setText(text if importing else "识别当前阵容")
 
     def _show_skill_popup(self, hero_id: int) -> None:
         """显示头像对应武将的技能详情。"""

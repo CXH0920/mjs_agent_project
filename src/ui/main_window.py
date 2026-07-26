@@ -329,7 +329,8 @@ class MainWindow(QMainWindow):
             self._ocr_service.activate_task("match_guide")
             if not self._selection_page_active:
                 self._selection_page_active = True
-                self._tabs.setCurrentWidget(self._recommendation)
+                if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                    self._tabs.setCurrentWidget(self._recommendation)
             ocr_results = hero_result.get("ocr_results") or []
             if ocr_results:
                 self._recommendation.load_from_ocr(ocr_results)
@@ -346,7 +347,8 @@ class MainWindow(QMainWindow):
             )
             if not getattr(self, "_match_guide_page_active", False):
                 self._match_guide_page_active = True
-                self._tabs.setCurrentWidget(self._match_guide)
+                if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                    self._tabs.setCurrentWidget(self._match_guide)
             self._match_guide.update_block(0, guide_result)
 
     def closeEvent(self, event) -> None:
@@ -364,7 +366,8 @@ class MainWindow(QMainWindow):
             return
         if not self._selection_page_active:
             self._selection_page_active = True
-            self._tabs.setCurrentWidget(self._recommendation)
+            if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                self._tabs.setCurrentWidget(self._recommendation)
         ocr_results = result.get("ocr_results") or []
         if ocr_results:
             self._recommendation.load_from_ocr(ocr_results)
@@ -738,6 +741,7 @@ class MainWindow(QMainWindow):
             "MUMU_ADB_PORT": str(new_config.get("mumu_adb_port", 0)),
             "MUMU_OCR_ENABLED": "true" if new_config.get("mumu_ocr_enabled") else "false",
             "MUMU_OCR_POLL_MODE": "true" if new_config.get("mumu_ocr_poll_mode") else "false",
+            "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config.get("mumu_ocr_auto_switch_tab") else "false",
             "MUMU_OCR_POLL_INTERVAL": str(new_config.get("mumu_ocr_poll_interval", 2)),
             "MUMU_OCR_MATCH_THRESHOLD": str(new_config.get("mumu_ocr_match_threshold", 0.8)),
             "MUMU_HERO_SELECTION_THRESHOLD": str(new_config.get("mumu_hero_selection_threshold", 0.8)),
