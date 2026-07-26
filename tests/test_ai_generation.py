@@ -15,6 +15,8 @@ from src.scraper.ai_generation import (
     GenerationResult,
     run_guide_generation,
     run_synergy_generation,
+    run_synergy_pair_generation,
+    run_synergy_single_generation,
 )
 
 
@@ -96,7 +98,7 @@ def test_cancel_process_does_not_block_event_loop() -> None:
     assert not process.wait_called
 
 
-def test_guide_failure_keeps_canonical_file_and_preserves_staging(tmp_path: Path) -> None:
+def test_guide_failure_commits_successes_and_preserves_failed_guide(tmp_path: Path) -> None:
     guide_path = tmp_path / "guides.json"
     original = [{"hero_id": 1, "description": "旧攻略"}]
     guide_path.write_text(json.dumps(original), encoding="utf-8")
@@ -116,17 +118,18 @@ def test_guide_failure_keeps_canonical_file_and_preserves_staging(tmp_path: Path
     )
 
     assert not result.succeeded
-    assert not result.committed
-    assert json.loads(guide_path.read_text(encoding="utf-8")) == original
-    assert result.staging_path == tmp_path / "guides.json.staging"
-    assert json.loads(result.staging_path.read_text(encoding="utf-8")) == [
+    assert result.committed
+    assert json.loads(guide_path.read_text(encoding="utf-8")) == [
         {"hero_id": 1, "description": "新攻略"},
     ]
 
 
-def test_full_synergy_failure_keeps_canonical_file(tmp_path: Path) -> None:
+def test_full_synergy_failure_commits_successes_and_preserves_failed_pair(tmp_path: Path) -> None:
     synergy_path = tmp_path / "synergies.json"
-    original = [{"hero_a_id": 1, "hero_b_id": 2, "score": 1}]
+    original = [
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 1},
+        {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
+    ]
     synergy_path.write_text(json.dumps(original), encoding="utf-8")
     generator = FakeGenerator(synergies=[
         {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
@@ -142,18 +145,22 @@ def test_full_synergy_failure_keeps_canonical_file(tmp_path: Path) -> None:
         ],
         generator=generator,
         synergy_path=synergy_path,
-        existing_synergy_dict={(1, 2): original[0]},
-        existing_synergy_keys={(1, 2)},
+        existing_synergy_dict={(1, 2): original[0], (1, 3): original[1]},
+        existing_synergy_keys={(1, 2), (1, 3)},
         score_threshold=0,
         api_config={"model": "test"},
     )
 
     assert not result.succeeded
-    assert json.loads(synergy_path.read_text(encoding="utf-8")) == original
-    assert result.staging_path is not None and result.staging_path.exists()
+    assert result.committed
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+        {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
+        {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
+    ]
 
 
-def test_successful_generation_atomically_commits_and_removes_staging(tmp_path: Path) -> None:
+def test_successful_generation_atomically_commits(tmp_path: Path) -> None:
     guide_path = tmp_path / "guides.json"
     generator = FakeGenerator(guides=[{"hero_id": 1, "description": "新攻略"}])
 
@@ -170,7 +177,59 @@ def test_successful_generation_atomically_commits_and_removes_staging(tmp_path: 
     assert json.loads(guide_path.read_text(encoding="utf-8")) == [
         {"hero_id": 1, "description": "新攻略"},
     ]
-    assert not (tmp_path / "guides.json.staging").exists()
+
+
+def test_synergy_pair_failure_commits_successes_and_preserves_failed_pair(tmp_path: Path) -> None:
+    synergy_path = tmp_path / "synergies.json"
+    original = [{"hero_a_id": 1, "hero_b_id": 3, "score": 2}]
+    synergy_path.write_text(json.dumps(original), encoding="utf-8")
+    pair_file = tmp_path / "pairs.json"
+    pair_file.write_text(json.dumps([
+        {"id": 1, "name": "甲"},
+        {"id": 2, "name": "乙"},
+        {"id": 3, "name": "丙"},
+    ]), encoding="utf-8")
+    generator = FakeGenerator(synergies=[
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+        None,
+        {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
+    ])
+
+    result = run_synergy_pair_generation(
+        pair_file=str(pair_file), heroes=[], generator=generator, synergy_path=synergy_path,
+        existing_synergy_dict={(1, 3): original[0]}, existing_synergy_keys={(1, 3)},
+    )
+
+    assert not result.succeeded
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+        {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
+    ]
+
+
+def test_synergy_single_failure_commits_successes_and_preserves_failed_pair(tmp_path: Path) -> None:
+    synergy_path = tmp_path / "synergies.json"
+    original = [{"hero_a_id": 1, "hero_b_id": 3, "score": 2}]
+    synergy_path.write_text(json.dumps(original), encoding="utf-8")
+    single_file = tmp_path / "single.json"
+    single_file.write_text(json.dumps([{"id": 1, "name": "甲"}]), encoding="utf-8")
+    generator = FakeGenerator(synergies=[{"hero_a_id": 1, "hero_b_id": 2, "score": 5}, None])
+
+    result = run_synergy_single_generation(
+        single_file=str(single_file),
+        heroes=[{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}, {"id": 3, "name": "丙"}],
+        generator=generator,
+        synergy_path=synergy_path,
+        existing_synergy_dict={(1, 3): original[0]},
+        existing_synergy_keys=set(),
+    )
+
+    assert not result.succeeded
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+    ]
 
 
 def test_generation_result_is_successful_without_token_usage() -> None:
@@ -268,7 +327,7 @@ def test_cli_returns_nonzero_when_generation_result_has_failures(monkeypatch, tm
     monkeypatch.setattr(
         ai_generation,
         "run_guide_generation",
-        lambda **_kwargs: GenerationResult(failed_items=["甲"], staging_path=tmp_path / "guides.json.staging"),
+        lambda **_kwargs: GenerationResult(failed_items=["甲"]),
     )
     monkeypatch.setattr(
         sys,
