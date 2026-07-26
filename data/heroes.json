@@ -2990,32 +2990,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/SGy7hKsizApSHA2vqYBhjopveC0PdkVyRV0xH76P.png_200x282.png"
   },
   {
-    "id": 1,
-    "name": "蔡文姬",
-    "title": "",
-    "faction": "东汉",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "悲愤离愁",
-        "description": "受伤，封禁伤害来源直到当前回合结束。",
-        "settlement": "1.封禁效果会令目标所有武将技能效果无效，也包括一些技能效果需要累计的进度，如“忍”。 2.已经被封禁的角色不会被再次封禁，已经被封禁的角色即使获得新技能也仍然由于封禁效果是无效的。"
-      },
-      {
-        "name": "胡笳十八拍",
-        "description": "每个回合限1次，当有角色受伤或者阵亡后，你可以摸1张牌，并且弃置伤害来源任意区域的1张牌。（受伤：受到伤害后）（阵亡：武将体力值≤0即将出局时）",
-        "settlement": "可以弃置伤害来源的卜卦区的牌。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/ne3RJfEE1kQIdOKoF4XyHnC11zx7casEdOdW94eu.png_200x282.png"
-  },
-  {
     "id": 11,
     "name": "华佗",
     "title": "",
@@ -4653,5 +4627,83 @@
     "mode_viability": {},
     "last_updated": "2026-07-22",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/AAPZDXuIwS2h14Jds0OJCB4GIkKFEcUQwX3DuYSt.png_200x282.png"
+  },
+  {
+    "id": 183,
+    "name": "终军",
+    "title": "",
+    "faction": "西汉",
+    "position": "攻击",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "请缨",
+        "description": "出牌阶段开始时，你可以令一名其他角色交给你至少1张牌，然后直到回合结束，当你造成伤害时，其摸1张牌。",
+        "settlement": "需要交给至少1张牌才会让后面的效果生效。"
+      },
+      {
+        "name": "弃繻",
+        "description": "出牌阶段限1次，你可以令一名其他角色选择展示其1张手牌，然后你可以弃置任意张点数和与展示牌相同的牌，对其造成1点伤害，若此过程中你只弃置了1张牌，重置此技能。",
+        "settlement": "1.你弃置牌的点数之和需要与其展示的牌点数相同才可触发后续效果。 2.若对方展示了不可见的手牌，例如朱亥展示了一张装备牌，则你可以选择任意张牌进行弃置，但若实际点数之和不与展示牌相同，则不会真正弃置。 3.如果对面展示了1张无点数的牌，我方弃置任意张无点数的牌也可以触发后续效果。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-23",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/9ADuAy7UWv3DLFlur8py5XP0fL0XtzOtIFdQ2AZX.png_200x282.png"
+  },
+  {
+    "id": 182,
+    "name": "韩安国",
+    "title": "",
+    "faction": "西汉",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "死灰复燃",
+        "description": "每个回合限1次，当你失去最后的手牌时，你可以摸牌至手牌上限，然后卜卦，若结果为♠，手牌上限-1；若结果为♥，手牌上限+1。",
+        "settlement": "卜卦到其他的花色则无事发生。"
+      },
+      {
+        "name": "强弩之末",
+        "description": "当一名其他角色失去最后的手牌时，你可以令其受到的下1次伤害+1，并且下回合手牌上限-1;或每个回合限1次，交给其至少1张手牌。",
+        "settlement": "1.本技能会在失去最后的手牌时插入结算流程。 2.手牌上限-1的效果只有在进入其的下个回合才会实际生效。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-23",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/i1Mt2S01GFjonaEsWA9vWyiobq6Bu1swfb3R9NgG.png_200x282.png"
+  },
+  {
+    "id": 1,
+    "name": "蔡文姬",
+    "title": "",
+    "faction": "东汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "悲愤离愁",
+        "description": "受伤，封禁伤害来源直到当前回合结束。",
+        "settlement": "1.封禁效果会令目标所有武将技能效果无效，也包括一些技能效果需要累计的进度，如“忍”。 2.已经被封禁的角色不会被再次封禁，已经被封禁的角色即使获得新技能也仍然由于封禁效果是无效的。"
+      },
+      {
+        "name": "胡笳十八拍",
+        "description": "每个回合限1次，当有角色受伤或者阵亡后，你可以摸1张牌，并且弃置伤害来源任意区域的1张牌。（受伤：受到伤害后）（阵亡：武将体力值≤0即将出局时）",
+        "settlement": "可以弃置伤害来源的卜卦区的牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-25",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/ne3RJfEE1kQIdOKoF4XyHnC11zx7casEdOdW94eu.png_200x282.png"
   }
 ]
