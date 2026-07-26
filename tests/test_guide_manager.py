@@ -61,6 +61,13 @@ class TestGuideManager:
         mgr = GuideManager()
         mgr.delete_guide(999)  # 不应抛出异常
 
+    def test_clear_all(self):
+        mgr = GuideManager()
+        mgr.add_guide(self._make_guide(1))
+        mgr.add_guide(self._make_guide(2))
+        assert mgr.clear_all() == 2
+        assert mgr.list_guides() == []
+
     # ---------------------------------------------------------------
     # 查询方法
     # ---------------------------------------------------------------
