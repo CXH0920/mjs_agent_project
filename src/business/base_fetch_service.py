@@ -83,6 +83,11 @@ class BaseFetchService(QObject):
         """检查是否正在运行"""
         return is_process_busy(self._process, self._service_name)
 
+    @property
+    def is_busy(self) -> bool:
+        """当前是否有正在执行的子进程。"""
+        return self._is_busy()
+
     # ---------------------------------------------------------------
     # 子进程管理
     # ---------------------------------------------------------------

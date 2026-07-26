@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
+from src.ui.data_management_dialog import DataManagementDialog
 from src.ui.faction_color_dialog import FactionColorDialog
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.business.fetch_service import HeroFetchService
@@ -371,6 +372,10 @@ class MainWindow(QMainWindow):
         faction_color_action.triggered.connect(self._open_faction_colors)
         tools_menu.addAction(faction_color_action)
 
+        data_management_action = QAction("数据管理", self)
+        data_management_action.triggered.connect(self._open_data_management)
+        tools_menu.addAction(data_management_action)
+
         # 数据菜单
         data_menu = bar.addMenu("数据")
         reload_action = QAction("重新加载数据", self)
@@ -649,6 +654,27 @@ class MainWindow(QMainWindow):
         """打开 API 配置对话框"""
         dialog = SettingsDialog(parent=self)
         dialog.exec()
+
+    def _open_data_management(self) -> None:
+        """打开攻略与相性数据的批量清空入口。"""
+        dialog = DataManagementDialog(
+            self._data.guides,
+            self._data.synergies,
+            lambda: self._guide_service.is_busy or self._synergy_service.is_busy,
+            self,
+        )
+        dialog.data_cleared.connect(self._on_data_cleared)
+        dialog.exec()
+
+    def _on_data_cleared(self, guides_cleared: bool, synergies_cleared: bool) -> None:
+        """刷新清空数据后受影响的页面与统计。"""
+        if guides_cleared:
+            self._hero_browser.reload_data()
+        if synergies_cleared:
+            self._hero_browser.refresh_synergies()
+            self._recommendation.refresh_synergies()
+        self._update_status()
+        self._status_label.setText("数据已清空并完成备份")
 
     def _open_faction_colors(self) -> None:
         """打开势力配色配置页。"""

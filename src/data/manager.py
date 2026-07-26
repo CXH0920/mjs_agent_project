@@ -200,6 +200,13 @@ class DataManager(Generic[V_co]):
         """删除，不存在则静默忽略"""
         self._items.pop(key, None)
 
+    def clear_all(self) -> int:
+        """清空当前实体的全部记录，返回清空条数。"""
+        count = len(self._items)
+        self._items.clear()
+        logger.info("清空 %s 的 %d 条记录", self.file_path, count)
+        return count
+
 
 class DataFacade:
     """统一数据访问门面
