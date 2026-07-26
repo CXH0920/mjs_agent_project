@@ -363,6 +363,7 @@ class CardAnnotationEditDialog(QDialog):
         self._service = service
         self._card_id = card_id
         self._editors: dict[str, QWidget] = {}
+        self._effect_editors: dict[str, tuple[QLineEdit, QDateEdit, QDateEdit, QCheckBox, QTextEdit, QLineEdit, QComboBox]] = {}
         self._dialog_layout = QVBoxLayout(self)
         annotation = service.annotations.get_annotation(card_id)
         self._values = deepcopy(annotation.fields) if annotation else {}
@@ -429,6 +430,7 @@ class CardAnnotationEditDialog(QDialog):
         status = QComboBox()
         for item in sorted(EFFECT_STATUSES):
             status.addItem(EFFECT_STATUS_LABELS[item], item)
+        self._effect_editors[definition.key] = (version, start, end, end_enabled, content, source, status)
         form.addRow("版本", version)
         form.addRow("生效开始日期", start)
         end_row = QHBoxLayout()
@@ -439,19 +441,17 @@ class CardAnnotationEditDialog(QDialog):
         form.addRow("来源", source)
         form.addRow("状态", status)
         layout.addLayout(form)
-        add = QPushButton("追加版本记录")
+        add = QPushButton("新增一条版本记录")
         add.clicked.connect(lambda: self._append_effect(definition.key, version, start, end, end_enabled, content, source, status))
         layout.addWidget(add)
 
     def _append_effect(self, key: str, version: QLineEdit, start: QDateEdit, end: QDateEdit, end_enabled: QCheckBox,
                        content: QTextEdit, source: QLineEdit, status: QComboBox) -> None:
         try:
-            entry = EffectEntry(
-                version=version.text(), effective_from=start.date().toPython(),
-                effective_to=end.date().toPython() if end_enabled.isChecked() else None,
-                content=content.toPlainText(), source=source.text(), status=status.currentData(),
-            )
             definition = self._service.schema.get_field(key)
+            if definition is None:
+                raise ValueError("追加字段不存在或已被删除")
+            entry = self._build_effect_entry(definition, version, start, end, end_enabled, content, source, status)
             self._service._validate_active_ranges(definition, [
                 *(EffectEntry.model_validate(raw) for raw in self._values.get(key, [])), entry,
             ])
@@ -460,6 +460,36 @@ class CardAnnotationEditDialog(QDialog):
             return
         self._values.setdefault(key, []).append(entry.model_dump(mode="json"))
         self._rebuild()
+
+    @staticmethod
+    def _build_effect_entry(
+        definition: CardFieldDefinition,
+        version: QLineEdit,
+        start: QDateEdit,
+        end: QDateEdit,
+        end_enabled: QCheckBox,
+        content: QTextEdit,
+        source: QLineEdit,
+        status: QComboBox,
+    ) -> EffectEntry:
+        """将表单转换为版本记录，并在界面层给出可理解的校验提示。"""
+        if not version.text().strip():
+            raise ValueError(f"请填写“{definition.label}”的版本")
+        if not content.toPlainText().strip():
+            raise ValueError(f"请填写“{definition.label}”的效果说明")
+        if end_enabled.isChecked() and end.date() < start.date():
+            raise ValueError(f"“{definition.label}”的生效结束日期不能早于开始日期")
+        try:
+            return EffectEntry(
+                version=version.text(),
+                effective_from=start.date().toPython(),
+                effective_to=end.date().toPython() if end_enabled.isChecked() else None,
+                content=content.toPlainText(),
+                source=source.text(),
+                status=str(status.currentData()),
+            )
+        except ValueError as error:
+            raise ValueError(f"“{definition.label}”的版本记录格式无效，请检查日期和状态") from error
 
     def _expire_entry(self, key: str, position: int) -> None:
         entry = EffectEntry.model_validate(self._values[key][position])
@@ -503,6 +533,7 @@ class CardAnnotationEditDialog(QDialog):
 
     def _rebuild(self) -> None:
         self._editors.clear()
+        self._effect_editors.clear()
         while self._dialog_layout.count():
             item = self._dialog_layout.takeAt(0)
             if item.widget():
@@ -511,12 +542,36 @@ class CardAnnotationEditDialog(QDialog):
                 widget.deleteLater()
         self._setup_ui()
 
-    def _save(self) -> None:
-        fields = dict(self._values)
-        for key, editor in self._editors.items():
+    def _collect_effect_fields(self) -> dict[str, Any]:
+        """收集尚未点击“追加版本记录”的填写内容，供底部保存一并写入。"""
+        fields = deepcopy(self._values)
+        for key, (version, start, end, end_enabled, content, source, status) in self._effect_editors.items():
+            has_input = any((
+                version.text().strip(),
+                content.toPlainText().strip(),
+                source.text().strip(),
+                end_enabled.isChecked(),
+            ))
+            if not has_input:
+                continue
             definition = self._service.schema.get_field(key)
-            fields[key] = self._value_from_editor(definition, editor)
+            if definition is None:
+                raise ValueError("追加字段不存在或已被删除")
+            entry = self._build_effect_entry(definition, version, start, end, end_enabled, content, source, status)
+            entries = [
+                *(EffectEntry.model_validate(raw) for raw in fields.get(key, [])),
+                entry,
+            ]
+            self._service._validate_active_ranges(definition, entries)
+            fields[key] = [item.model_dump(mode="json") for item in entries]
+        return fields
+
+    def _save(self) -> None:
         try:
+            fields = self._collect_effect_fields()
+            for key, editor in self._editors.items():
+                definition = self._service.schema.get_field(key)
+                fields[key] = self._value_from_editor(definition, editor)
             self._service.save_annotation_fields(self._card_id, fields)
         except (OSError, ValueError) as error:
             QMessageBox.critical(self, "保存失败", f"追加内容未保存，草稿仍保留：\n{error}")

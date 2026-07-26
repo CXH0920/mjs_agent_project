@@ -16,6 +16,15 @@ SURFACE = "#ffffff"
 SUBTLE_SURFACE = "#eef2f6"
 BORDER = "#b0c4de"
 
+# 页面级标题和顶部操作栏：选将推荐、对局攻略等工作台页面共用。
+PAGE_TITLE_STYLE = f"font-size: 18px; font-weight: bold; color: {TEXT_PRIMARY}; padding: 4px 0;"
+HEADER_PRIMARY_BUTTON_STYLE = "padding: 4px 14px; font-size: 12px;"
+HEADER_SECONDARY_BUTTON_STYLE = (
+    f"QPushButton {{ background-color: {SURFACE}; color: {PRIMARY}; border: 1px solid {BORDER}; "
+    "border-radius: 4px; padding: 4px 14px; font-size: 12px; }"
+    f"QPushButton:hover {{ background-color: {SUBTLE_SURFACE}; }}"
+)
+
 
 GLOBAL_STYLE = """
 /* === 全局 === */

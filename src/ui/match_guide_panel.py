@@ -23,7 +23,8 @@ from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.shared.widgets import DoubleClickLabel
 from src.ui.style import (
-    BORDER, DANGER, MUTED_TEXT, PRIMARY, SUBTLE_SURFACE, SURFACE, TEXT_PRIMARY,
+    BORDER, DANGER, HEADER_PRIMARY_BUTTON_STYLE, HEADER_SECONDARY_BUTTON_STYLE,
+    MUTED_TEXT, PAGE_TITLE_STYLE, PRIMARY, SUBTLE_SURFACE, SURFACE, TEXT_PRIMARY,
 )
 
 logger = logging.getLogger(__name__)
@@ -283,20 +284,18 @@ class MatchGuidePanel(QWidget):
         layout.setSpacing(8)
         header = QHBoxLayout()
         title = QLabel("对局攻略")
-        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {TEXT_PRIMARY};")
+        title.setStyleSheet(PAGE_TITLE_STYLE)
         header.addWidget(title)
         self._recognition_status_label = QLabel("尚未识别阵容")
         self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
         header.addWidget(self._recognition_status_label)
         header.addStretch()
         self._recognize_btn = QPushButton("识别当前阵容")
+        self._recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
         self._recognize_btn.clicked.connect(self._on_recognize_current)
         header.addWidget(self._recognize_btn)
         self._import_file_btn = QPushButton("从图片导入")
-        self._import_file_btn.setStyleSheet(
-            f"QPushButton {{ background: {SURFACE}; color: {PRIMARY}; border: 1px solid {PRIMARY}; }}"
-            f"QPushButton:hover {{ background: {SUBTLE_SURFACE}; }}"
-        )
+        self._import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
         self._import_file_btn.clicked.connect(self._on_import_from_file)
         header.addWidget(self._import_file_btn)
         self._more_menu = QMenu(self)
@@ -304,8 +303,9 @@ class MatchGuidePanel(QWidget):
         self._save_action.triggered.connect(self._on_save_screenshot)
         self._clear_action = self._more_menu.addAction("清空阵容")
         self._clear_action.triggered.connect(self.clear_blocks)
-        self._more_btn = QPushButton("更多操作")
+        self._more_btn = QPushButton("更多 ▾")
         self._more_btn.setMenu(self._more_menu)
+        self._more_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
         header.addWidget(self._more_btn)
         layout.addLayout(header)
 
@@ -319,13 +319,11 @@ class MatchGuidePanel(QWidget):
         empty_actions = QHBoxLayout()
         empty_actions.addStretch()
         self._empty_recognize_btn = QPushButton("识别当前阵容")
+        self._empty_recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
         self._empty_recognize_btn.clicked.connect(self._on_recognize_current)
         empty_actions.addWidget(self._empty_recognize_btn)
         self._empty_import_btn = QPushButton("从图片导入")
-        self._empty_import_btn.setStyleSheet(
-            f"QPushButton {{ background: {SURFACE}; color: {PRIMARY}; border: 1px solid {PRIMARY}; }}"
-            f"QPushButton:hover {{ background: {SUBTLE_SURFACE}; }}"
-        )
+        self._empty_import_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
         self._empty_import_btn.clicked.connect(self._on_import_from_file)
         empty_actions.addWidget(self._empty_import_btn)
         empty_actions.addStretch()

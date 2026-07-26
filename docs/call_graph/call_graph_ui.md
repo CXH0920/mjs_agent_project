@@ -427,7 +427,7 @@ RecommendationPanel.load_from_ocr(ocr_results)                  [OCR 结果 list
                card.set_confidence(0.5)                         [固定 0.5: OCR 非游戏内推荐]
                self._current_hero_ids.add(hero.id)
      -> [未找到] card.set_hero(None)                            [清空卡片]
-                 直接设置 card._name_label.setText(name)         [显示原始名称]
+                 直接设置 card._name_overlay.setText(name)       [显示原始名称]
      -> self._load_real_synergies(idx, hero.id)                 [加载相性]
      -> self._load_win_rate_by_name(idx, name)                  [加载胜率]
   -> self._apply_medal_rankings()                               [Top 3 奖牌]

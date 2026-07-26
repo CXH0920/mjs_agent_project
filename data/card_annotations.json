@@ -1,4 +1,31 @@
 {
   "schema_version": 1,
-  "annotations": []
+  "annotations": [
+    {
+      "card_id": "8",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "version": "1",
+            "effective_from": "2026-07-26",
+            "effective_to": null,
+            "content": "对攻击范围内的一名其他角色打出，对其造成2点伤害。",
+            "source": "",
+            "status": "active"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "version": "1",
+            "effective_from": "2021-07-26",
+            "effective_to": null,
+            "content": "对攻击范围内的一名其他角色打出，弃置1张牌，然后对其造成1点伤害。",
+            "source": "",
+            "status": "active"
+          }
+        ]
+      },
+      "updated_at": "2026-07-26"
+    }
+  ]
 }

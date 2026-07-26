@@ -265,7 +265,7 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
         82, "S", 1, "有效",
     ))
 
-    assert "推荐指数：★★★★★ S级" in card._confidence_label.text()
+    assert card._confidence_label.text() == "推荐指数：82 / S"
     assert "出场活跃度：第 1 名" in card._confidence_label.toolTip()
     assert "background-color: white" in card._recommendation_info_tooltip.styleSheet()
     assert "color: #c62828" in card._recommendation_info_tooltip.styleSheet()
@@ -281,9 +281,9 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
     assert card._recommendation_info_icon.isHidden()
 
 
-def test_recommendation_card_highlights_partner_data_status_and_skill_action() -> None:
+def test_recommendation_card_highlights_partner_position_and_skill_action() -> None:
     _app()
-    card = HeroCardWidget(Hero(id=1, name="测试武将", faction="魏"))
+    card = HeroCardWidget(Hero(id=1, name="测试武将", faction="魏", position="输出"))
     selected: list[int] = []
     card.hero_double_clicked.connect(selected.append)
 
@@ -295,7 +295,8 @@ def test_recommendation_card_highlights_partner_data_status_and_skill_action() -
     card._skill_btn.click()
 
     assert card._best_partner_label.text() == "最佳搭档：最佳搭档（S）"
-    assert card._data_status_label.text() == "数据已更新"
+    assert card._position_label.text() == "定位：输出"
+    assert card._data_status_label.text() == ""
     assert selected == [1]
 
     card.set_recommendation_stale(True)

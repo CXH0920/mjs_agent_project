@@ -16,11 +16,14 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -36,7 +39,12 @@ from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_card_widget import HeroCardWidget
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
-from src.ui.style import MUTED_TEXT, TEXT_PRIMARY
+from src.ui.style import (
+    HEADER_PRIMARY_BUTTON_STYLE,
+    HEADER_SECONDARY_BUTTON_STYLE,
+    MUTED_TEXT,
+    PAGE_TITLE_STYLE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +85,7 @@ class RecommendationPanel(QWidget):
         self._setup_ui()
         self._connect_capture_signals()
         self._recommendation_data = self._load_recommendation_data()
-        if self._recommendation_data.indexes_stale:
-            self._rebuild_index_btn.setText("重建指数（待更新）")
-            self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
+        self._set_index_stale_notice(self._recommendation_data.indexes_stale)
         self._show_empty_state()
 
     def _connect_capture_signals(self) -> None:
@@ -101,7 +107,7 @@ class RecommendationPanel(QWidget):
         header_layout = QHBoxLayout()
 
         title = QLabel("选将推荐")
-        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {TEXT_PRIMARY}; padding: 4px 0;")
+        title.setStyleSheet(PAGE_TITLE_STYLE)
         header_layout.addWidget(title)
 
         self._recognition_status_label = QLabel("尚未识别阵容")
@@ -111,37 +117,50 @@ class RecommendationPanel(QWidget):
         header_layout.addStretch()
 
         self._recognize_btn = QPushButton("识别当前阵容")
-        self._recognize_btn.setStyleSheet(
-            "padding: 4px 14px; font-size: 12px;"
-        )
+        self._recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
         self._recognize_btn.clicked.connect(self._on_recognize_current)
         header_layout.addWidget(self._recognize_btn)
 
         header_layout.addSpacing(6)
 
-        self._save_btn = QPushButton("保存截图")
-        self._save_btn.setStyleSheet("padding: 4px 14px; font-size: 12px;")
-        self._save_btn.clicked.connect(self._on_save_screenshot)
-        header_layout.addWidget(self._save_btn)
-
-        header_layout.addSpacing(6)
-
         self._import_file_btn = QPushButton("📁 从图片导入")
-        self._import_file_btn.setStyleSheet(
-            "padding: 4px 14px; font-size: 12px;"
-        )
+        self._import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
         self._import_file_btn.clicked.connect(self._on_import_from_file)
         header_layout.addWidget(self._import_file_btn)
 
         header_layout.addSpacing(6)
 
-        self._rebuild_index_btn = QPushButton("重建指数")
-        self._rebuild_index_btn.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
-        self._rebuild_index_btn.setStyleSheet("padding: 4px 14px; font-size: 12px;")
-        self._rebuild_index_btn.clicked.connect(self._rebuild_recommendation_indexes)
-        header_layout.addWidget(self._rebuild_index_btn)
+        self._more_menu = QMenu(self)
+        self._save_action = QAction("保存截图", self)
+        self._save_action.triggered.connect(self._on_save_screenshot)
+        self._more_menu.addAction(self._save_action)
+        self._rebuild_index_action = QAction("重建推荐指数", self)
+        self._rebuild_index_action.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
+        self._rebuild_index_action.triggered.connect(self._rebuild_recommendation_indexes)
+        self._more_menu.addAction(self._rebuild_index_action)
+        self._more_btn = QPushButton("更多 ▾")
+        self._more_btn.setMenu(self._more_menu)
+        self._more_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
+        header_layout.addWidget(self._more_btn)
 
         layout.addLayout(header_layout)
+
+        self._index_stale_notice = QFrame()
+        self._index_stale_notice.setStyleSheet(
+            "QFrame { background-color: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; }"
+        )
+        notice_layout = QHBoxLayout(self._index_stale_notice)
+        notice_layout.setContentsMargins(10, 6, 8, 6)
+        notice_label = QLabel("推荐指数待重建，当前推荐分可能基于旧榜单。")
+        notice_label.setStyleSheet("color: #8a5a00; font-size: 12px;")
+        notice_layout.addWidget(notice_label)
+        notice_layout.addStretch()
+        self._stale_rebuild_btn = QPushButton("立即重建")
+        self._stale_rebuild_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._stale_rebuild_btn.clicked.connect(self._rebuild_recommendation_indexes)
+        notice_layout.addWidget(self._stale_rebuild_btn)
+        layout.addWidget(self._index_stale_notice)
+        self._index_stale_notice.hide()
 
         self._cards_container = QWidget()
         content_layout = QVBoxLayout(self._cards_container)
@@ -154,6 +173,18 @@ class RecommendationPanel(QWidget):
         empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 14px; padding: 24px;")
         empty_layout.addWidget(empty_label)
+        empty_actions = QHBoxLayout()
+        empty_actions.addStretch()
+        self._empty_recognize_btn = QPushButton("识别当前阵容")
+        self._empty_recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._empty_recognize_btn.clicked.connect(self._on_recognize_current)
+        empty_actions.addWidget(self._empty_recognize_btn)
+        self._empty_import_file_btn = QPushButton("从图片导入")
+        self._empty_import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
+        self._empty_import_file_btn.clicked.connect(self._on_import_from_file)
+        empty_actions.addWidget(self._empty_import_file_btn)
+        empty_actions.addStretch()
+        empty_layout.addLayout(empty_actions)
         content_layout.addWidget(self._empty_state, 1)
 
         self._cards_widget = QWidget()
@@ -199,6 +230,10 @@ class RecommendationPanel(QWidget):
     def _show_cards(self) -> None:
         self._empty_state.hide()
         self._cards_widget.show()
+
+    def _set_index_stale_notice(self, stale: bool) -> None:
+        """同步指数过期提示的可见性，重建入口始终保留在更多菜单中。"""
+        self._index_stale_notice.setVisible(stale)
 
     def _update_recognition_status(self, count: int) -> None:
         timestamp = datetime.now().strftime("%H:%M")
@@ -275,8 +310,7 @@ class RecommendationPanel(QWidget):
             self._recommendation_data.indexes,
             True,
         )
-        self._rebuild_index_btn.setText("重建指数（待更新）")
-        self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
+        self._set_index_stale_notice(True)
         for card in self._cards:
             card.set_recommendation_stale(True)
 
@@ -289,8 +323,7 @@ class RecommendationPanel(QWidget):
             QMessageBox.warning(self, "重建失败", f"无法重建推荐指数：\n{exc}")
             return
         self._recommendation_data = recommendation_data
-        self._rebuild_index_btn.setText("重建指数")
-        self._rebuild_index_btn.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
+        self._set_index_stale_notice(False)
         for card in self._cards:
             card.set_recommendation_stale(False)
             if card._hero:
@@ -333,9 +366,7 @@ class RecommendationPanel(QWidget):
         self._show_cards()
         recommendation_data = self._load_recommendation_data()
         self._recommendation_data = recommendation_data
-        if recommendation_data.indexes_stale:
-            self._rebuild_index_btn.setText("重建指数（待更新）")
-            self._rebuild_index_btn.setToolTip("官方榜单已更新，请确认数据后重建推荐指数快照")
+        self._set_index_stale_notice(recommendation_data.indexes_stale)
 
         for card in self._cards:
             card.set_hero(None)
@@ -368,7 +399,6 @@ class RecommendationPanel(QWidget):
             if not hero:
                 logger.warning("update_recommendations: 未找到武将 %s", name)
                 card.set_hero(None)
-                card._name_label.setText(name or "未知武将")
                 card._name_overlay.setText(name or "未知武将")
                 card.set_confidence(confidence)
                 card.set_recommendation_index(None)
@@ -468,6 +498,7 @@ class RecommendationPanel(QWidget):
 
         self._pending_capture_source = "adb_recognize"
         self._recognize_btn.setEnabled(False)
+        self._empty_recognize_btn.setEnabled(False)
         self._recognize_btn.setText("正在识别...")
         hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
         self._capture_service.do_capture(hero_names=hero_names, force_ocr=True)
@@ -479,8 +510,8 @@ class RecommendationPanel(QWidget):
             return
 
         self._pending_capture_source = "adb_save"
-        self._save_btn.setEnabled(False)
-        self._save_btn.setText("正在截图...")
+        self._save_action.setEnabled(False)
+        self._save_action.setText("正在截图...")
         self._capture_service.do_capture(perform_ocr=False)
 
     def _on_capture_result(self, result: dict) -> None:
@@ -491,10 +522,11 @@ class RecommendationPanel(QWidget):
             return
         if source == "adb_recognize":
             self._recognize_btn.setEnabled(True)
+            self._empty_recognize_btn.setEnabled(True)
             self._recognize_btn.setText("识别当前阵容")
         elif source == "adb_save":
-            self._save_btn.setEnabled(True)
-            self._save_btn.setText("保存截图")
+            self._save_action.setEnabled(True)
+            self._save_action.setText("保存截图")
             return
 
         ocr_results = result.get("ocr_results")
@@ -516,10 +548,11 @@ class RecommendationPanel(QWidget):
 
         if source == "adb_recognize":
             self._recognize_btn.setEnabled(True)
+            self._empty_recognize_btn.setEnabled(True)
             self._recognize_btn.setText("识别当前阵容")
         else:
-            self._save_btn.setEnabled(True)
-            self._save_btn.setText("保存截图")
+            self._save_action.setEnabled(True)
+            self._save_action.setText("保存截图")
         message_box = QMessageBox(self)
         message_box.setIcon(QMessageBox.Icon.Warning)
         message_box.setWindowTitle("截图失败")

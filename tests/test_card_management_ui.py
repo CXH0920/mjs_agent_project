@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import pytest
 from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDateEdit, QLabel, QLineEdit, QPushButton, QTextEdit
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDateEdit, QGroupBox, QLabel, QLineEdit, QPushButton, QTextEdit
 
 from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
 from src.ui.card_management_panel import CardAnnotationEditDialog, CardManagementPanel, EFFECT_STATUS_LABELS
@@ -180,7 +181,65 @@ def test_effect_entries_rebuild_and_save_for_strengthen_and_weaken(tmp_path) -> 
         dialog._append_effect(key, QLineEdit(version), start, end, end_enabled, QTextEdit(content), QLineEdit(), status)
 
     assert dialog.layout().count() == 2
-    assert len([button for button in dialog.findChildren(QPushButton) if button.text() == "追加版本记录"]) == 2
+    assert len([button for button in dialog.findChildren(QPushButton) if button.text() == "新增一条版本记录"]) == 2
+    dialog._save()
+
+    fields = service.annotations.get_annotation("8").fields
+    assert fields["strengthen_effect"][0]["content"] == "伤害提高"
+    assert fields["weaken_effect"][0]["content"] == "伤害降低"
+
+
+def test_empty_effect_entry_shows_chinese_required_message(tmp_path) -> None:
+    (tmp_path / "cards.json").write_text(json.dumps([
+        {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
+    ], ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_field_schema.json").write_text(json.dumps({
+        "schema_version": 1,
+        "fields": [{"key": "strengthen_effect", "label": "加强效果", "value_type": "effect_entries"}],
+    }, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_annotations.json").write_text('{"schema_version":1,"annotations":[]}', encoding="utf-8")
+    service = CardCatalogService(
+        CardRepository(tmp_path / "cards.json"),
+        CardFieldSchemaRepository(tmp_path / "card_field_schema.json"),
+        CardAnnotationRepository(tmp_path / "card_annotations.json"),
+    )
+    service.load_all()
+    _app()
+    dialog = CardAnnotationEditDialog(service, "8")
+    definition = service.schema.get_field("strengthen_effect")
+
+    with pytest.raises(ValueError, match="请填写“加强效果”的版本"):
+        dialog._build_effect_entry(
+            definition, QLineEdit(), QDateEdit(), QDateEdit(), QCheckBox(), QTextEdit(), QLineEdit(), QComboBox(),
+        )
+
+
+def test_save_collects_filled_effect_forms_without_clicking_append(tmp_path) -> None:
+    (tmp_path / "cards.json").write_text(json.dumps([
+        {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
+    ], ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_field_schema.json").write_text(json.dumps({
+        "schema_version": 1,
+        "fields": [
+            {"key": "strengthen_effect", "label": "加强效果", "value_type": "effect_entries"},
+            {"key": "weaken_effect", "label": "削弱效果", "value_type": "effect_entries"},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_annotations.json").write_text('{"schema_version":1,"annotations":[]}', encoding="utf-8")
+    service = CardCatalogService(
+        CardRepository(tmp_path / "cards.json"),
+        CardFieldSchemaRepository(tmp_path / "card_field_schema.json"),
+        CardAnnotationRepository(tmp_path / "card_annotations.json"),
+    )
+    service.load_all()
+    _app()
+    dialog = CardAnnotationEditDialog(service, "8")
+
+    for title, version, content in (("加强效果", "2026.07", "伤害提高"), ("削弱效果", "2026.08", "伤害降低")):
+        group = next(item for item in dialog.findChildren(QGroupBox) if item.title() == title)
+        group.findChildren(QLineEdit)[0].setText(version)
+        group.findChild(QTextEdit).setPlainText(content)
+
     dialog._save()
 
     fields = service.annotations.get_annotation("8").fields
