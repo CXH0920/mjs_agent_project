@@ -308,7 +308,7 @@ class MainWindow(QMainWindow):
                         image,
                         hero_names=hero_names,
                         template_name=task_name,
-                        recognize=task_name == "hero_selection",
+                        recognize=True,
                     )
                     task_result = self._wait_for_poll_ocr_task(ocr_task, cancel_event)
                     if task_result is None:
@@ -550,6 +550,7 @@ class MainWindow(QMainWindow):
         # Tab 3: 对局攻略（2×2 武将卡片）
         self._match_guide = MatchGuidePanel(
             self._data.heroes,
+            guide_manager=self._data.guides,
             capture_service=self._capture_service,
         )
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)

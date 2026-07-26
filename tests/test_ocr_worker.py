@@ -28,8 +28,8 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
             return True, threshold
 
     class FakeRecognizer:
-        def __init__(self, rois, hero_names, reference_size) -> None:
-            recognizer_inits.append((rois, hero_names, reference_size))
+        def __init__(self, rois, hero_names, reference_size, page_type) -> None:
+            recognizer_inits.append((rois, hero_names, reference_size, page_type))
 
         def recognize(self, image):
             calls.append(image)
@@ -77,6 +77,41 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
     }
 
 
+def test_ocr_worker_keeps_default_roi_reference_independent_of_template(monkeypatch) -> None:
+    recognizer_inits: list[tuple[int, int]] = []
+
+    class FakeTemplateManager:
+        is_loaded = True
+        reference_size = (1920, 1080)
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            return True, threshold
+
+    class FakeRecognizer:
+        def __init__(self, rois, hero_names, reference_size, page_type) -> None:
+            recognizer_inits.append((reference_size, page_type))
+
+        def recognize(self, image):
+            return []
+
+        @staticmethod
+        def save_results(results, path) -> None:
+            return None
+
+    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    result = OcrWorker()._execute(OcrTask(
+        image="image", hero_names=(), rois=None, template_name="match_guide", threshold=0.8,
+    ))
+
+    assert result["outcome"] == "matched"
+    assert recognizer_inits == [((2560, 1440), "match_guide")]
+
+
 def test_ocr_service_routes_direct_requests_to_injected_worker() -> None:
     submitted: list[tuple[object, dict]] = []
     task = SimpleNamespace(
@@ -119,7 +154,7 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
             return True, threshold
 
     class FakeRecognizer:
-        def __init__(self, rois, hero_names, reference_size) -> None:
+        def __init__(self, rois, hero_names, reference_size, page_type) -> None:
             pass
 
         def recognize(self, image):

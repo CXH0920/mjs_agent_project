@@ -487,6 +487,8 @@ class RecommendationPanel(QWidget):
         """截图完成回调。"""
         source = self._pending_capture_source
         self._pending_capture_source = None
+        if source is None:
+            return
         if source == "adb_recognize":
             self._recognize_btn.setEnabled(True)
             self._recognize_btn.setText("识别当前阵容")

@@ -277,7 +277,9 @@ class CaptureService(QObject):
             if template_name == "match_guide"
             else "mumu_hero_selection_threshold"
         )
-        effective_rois = rois if rois is not None else self._config.get("ocr_generals_roi")
+        effective_rois = rois if rois is not None else (
+            None if template_name == "match_guide" else self._config.get("ocr_generals_roi")
+        )
         task = OcrTask(
             image=image,
             hero_names=tuple(hero_names or ()),

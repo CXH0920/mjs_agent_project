@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from src.ocr.recognizer import GeneralRecognizer
+from src.ocr.recognizer import DEFAULT_ROI_REFERENCE_SIZE, GeneralRecognizer
 from src.ocr.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,8 @@ class OcrWorker(QThread):
             recognizer = self._get_recognizer(
                 task.rois,
                 task.hero_names,
-                template_manager.reference_size,
+                DEFAULT_ROI_REFERENCE_SIZE,
+                task.template_name,
             )
             results = recognizer.recognize(task.image)
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,13 +110,15 @@ class OcrWorker(QThread):
         rois: tuple[tuple[int, ...], ...] | None,
         hero_names: tuple[str, ...],
         reference_size: tuple[int, int],
+        page_type: str,
     ) -> GeneralRecognizer:
-        signature = (rois, hero_names, reference_size)
+        signature = (rois, hero_names, reference_size, page_type)
         if self._recognizer is None or self._recognizer_signature != signature:
             self._recognizer = GeneralRecognizer(
                 rois=[list(roi) for roi in rois] if rois else None,
                 hero_names=list(hero_names),
                 reference_size=reference_size,
+                page_type=page_type,
             )
             self._recognizer_signature = signature
         return self._recognizer

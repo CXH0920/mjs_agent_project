@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QTabWidget, QTextBrowser
 from src.business.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, Skill
+from src.data.models import Hero, HeroGuide, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow, PollOutcome
@@ -106,6 +106,25 @@ def test_match_guide_current_recognition_requests_ocr(monkeypatch) -> None:
     assert loaded == [[{"name": "曹操"}]]
 
 
+def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch) -> None:
+    _app()
+    service = CaptureService()
+    recommendation = RecommendationPanel(
+        _hero_manager(), SynergyManager(), GuideManager(), capture_service=service
+    )
+    match_guide = MatchGuidePanel(_hero_manager(), capture_service=service)
+    recommendation_loaded: list[list[dict]] = []
+    match_guide_loaded: list[list[dict]] = []
+    monkeypatch.setattr(recommendation, "load_from_ocr", recommendation_loaded.append)
+    monkeypatch.setattr(match_guide, "load_from_ocr", match_guide_loaded.append)
+
+    match_guide._pending_capture_source = "file"
+    service.capture_completed.emit({"ocr_results": [{"name": "曹操"}]})
+
+    assert recommendation_loaded == []
+    assert match_guide_loaded == [[{"name": "曹操"}]]
+
+
 def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -> None:
     _app()
     monkeypatch.setattr(HeroSkillDialog, "exec", lambda self: 0)
@@ -128,6 +147,55 @@ def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -
     panel.clear_blocks()
     assert panel._cards[0]._hero_id == 0
     assert not panel._empty_state.isHidden()
+
+
+def test_match_guide_generates_summary_only_after_two_sides_confirmed() -> None:
+    _app()
+    heroes = HeroManager()
+    heroes._items = {
+        index: Hero(id=index, name=name, faction="魏")
+        for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
+    }
+    guides = GuideManager()
+    guides._items = {
+        3: HeroGuide(hero_id=3, key_points=["丙的威胁"], counter_strategy="限制丙"),
+        4: HeroGuide(hero_id=4, counter_strategy="限制丁"),
+    }
+    panel = MatchGuidePanel(heroes, guide_manager=guides)
+    panel.load_from_ocr([
+        {"index": index, "name": name}
+        for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
+    ])
+
+    panel._set_side(0, "ally")
+    panel._set_side(1, "ally")
+    panel._set_side(2, "enemy")
+    assert panel._analysis is None
+    panel._set_side(3, "enemy")
+
+    assert panel._analysis is not None
+    assert [item.target.name for item in panel._analysis.priorities] == ["丙", "丁"]
+    assert panel._guide_tabs.currentIndex() == 0
+
+
+def test_match_guide_auto_assigns_sides_from_team_labels() -> None:
+    _app()
+    heroes = HeroManager()
+    heroes._items = {
+        index: Hero(id=index, name=name, faction="魏")
+        for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
+    }
+    panel = MatchGuidePanel(heroes, guide_manager=GuideManager())
+
+    panel.load_from_ocr([
+        {"index": 1, "name": "甲", "team": "汉军"},
+        {"index": 2, "name": "乙", "team": "汉军"},
+        {"index": 3, "name": "丙", "team": "楚军"},
+        {"index": 4, "name": "丁", "team": "楚军"},
+    ])
+
+    assert panel._sides == ["enemy", "enemy", "ally", "ally"]
+    assert panel._is_confirmed()
 
 
 def test_top_three_win_rate_visual_anchor() -> None:

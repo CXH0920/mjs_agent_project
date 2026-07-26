@@ -28,7 +28,8 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# 8 个武将名称的默认 ROI 坐标（基于 2560×1440 分辨率）
+# 选将推荐的 8 个武将名称 ROI（基于 2560×1440 分辨率）
+DEFAULT_ROI_REFERENCE_SIZE = (2560, 1440)
 _DEFAULT_GENERALS_ROI = [
     [155, 370, 50, 145],
     [440, 370, 50, 145],
@@ -38,6 +39,16 @@ _DEFAULT_GENERALS_ROI = [
     [1615, 370, 50, 145],
     [1895, 370, 50, 145],
     [2175, 370, 50, 145],
+]
+
+# 对局攻略的四名角色分布在固定席位；左侧与右中位置会随视角二选一，
+# 因此扫描 5 个候选席位，但只返回识别到的最多 4 名角色。
+_MATCH_GUIDE_SEAT_ROIS = [
+    ([780, 190, 55, 140], [990, 120, 80, 120]),    # 上左
+    ([1515, 190, 55, 140], [1725, 130, 65, 90]),   # 上右
+    ([45, 395, 55, 140], [225, 310, 90, 115]),     # 左侧
+    ([2250, 400, 55, 140], [2450, 325, 65, 90]),   # 右中
+    ([2250, 985, 55, 145], [2450, 930, 65, 90]),   # 右下（玩家）
 ]
 
 # 两段式识别阈值
@@ -412,14 +423,16 @@ def _correct_with_hero_list(text: str, hero_names: list[str]) -> str:
 
 
 class GeneralRecognizer:
-    """武将名称识别器，支持全量字典 + 武将名库矫正。"""
+    """武将名称识别器，按页面类型使用独立的 ROI 布局。"""
 
     def __init__(self, rois: list[list[int]] | None = None,
                  hero_names: list[str] | None = None,
-                 reference_size: tuple[int, int] = (2560, 1440)) -> None:
+                 reference_size: tuple[int, int] = DEFAULT_ROI_REFERENCE_SIZE,
+                 page_type: str = "hero_selection") -> None:
         self._rois = rois or _DEFAULT_GENERALS_ROI
         self._hero_names = hero_names or []
         self._reference_size = reference_size
+        self._page_type = page_type
         self._ocr = None  # PaddleOCR 引擎（延迟加载）
 
     # ── OCR 引擎 ──────────────────────────────────────────────────────
@@ -456,7 +469,7 @@ class GeneralRecognizer:
     # ── 识别 ──────────────────────────────────────────────────────────
 
     def recognize(self, image: np.ndarray | Image.Image) -> list[dict]:
-        """对 8 个武将区域逐一识别，返回含置信度的结果。
+        """识别当前页面的武将名称，返回含置信度和阵营标签的结果。
 
         Args:
             image: 截图图像。
@@ -466,6 +479,9 @@ class GeneralRecognizer:
         """
         if isinstance(image, Image.Image):
             image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+        if self._page_type == "match_guide":
+            return self._recognize_match_guide(image)
 
         image_height, image_width = image.shape[:2]
         reference_width, reference_height = self._reference_size
@@ -486,11 +502,57 @@ class GeneralRecognizer:
                 i + 1, roi_x, roi_y, roi_w, roi_h, [x, y, w, h],
             )
             roi_img = image[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+            if roi_img.size == 0:
+                logger.warning(
+                    "武将 %d OCR ROI 超出截图边界，跳过识别: x=%d, y=%d, w=%d, h=%d, 截图=%dx%d",
+                    i + 1, roi_x, roi_y, roi_w, roi_h, image_width, image_height,
+                )
+                results.append({"index": i + 1, "name": "", "confidence": 0.0})
+                continue
             name, confidence = self._recognize_single(roi_img, i + 1)
             results.append({"index": i + 1, "name": name, "confidence": round(confidence, 4)})
             logger.debug("武将 %d 识别: %s (置信度=%.4f)", i + 1, name or "(空)", confidence)
 
         return results
+
+    def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
+        """识别 2v2 对局中的角色名与楚/汉军标签。"""
+        image_height, image_width = image.shape[:2]
+        reference_width, reference_height = self._reference_size
+        scale_x = image_width / reference_width
+        scale_y = image_height / reference_height
+        results: list[dict] = []
+        for seat_index, (name_roi, team_roi) in enumerate(_MATCH_GUIDE_SEAT_ROIS, 1):
+            name_img = self._crop_roi(image, name_roi, scale_x, scale_y)
+            if name_img is None:
+                continue
+            name, confidence = self._recognize_single(name_img, seat_index)
+            if not name:
+                continue
+            team_img = self._crop_roi(image, team_roi, scale_x, scale_y)
+            team = self._recognize_team(team_img, seat_index) if team_img is not None else ""
+            results.append({
+                "index": len(results) + 1,
+                "name": name,
+                "confidence": round(confidence, 4),
+                "team": team,
+            })
+            if len(results) == 4:
+                break
+        return results
+
+    @staticmethod
+    def _crop_roi(
+        image: np.ndarray, roi: list[int], scale_x: float, scale_y: float,
+    ) -> np.ndarray | None:
+        """裁剪并校验按参考尺寸缩放后的 ROI。"""
+        x, y, width, height = roi
+        roi_x = round(x * scale_x)
+        roi_y = round(y * scale_y)
+        roi_w = max(1, round(width * scale_x))
+        roi_h = max(1, round(height * scale_y))
+        cropped = image[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+        return cropped if cropped.size else None
 
     def _recognize_single(self, roi: np.ndarray, slot: int) -> tuple[str, float]:
         """识别单个武将名称区域。"""
@@ -525,6 +587,21 @@ class GeneralRecognizer:
             logger.debug(traceback.format_exc())
 
         return "", 0.0
+
+    def _recognize_team(self, roi: np.ndarray, slot: int) -> str:
+        """识别角色右上角的【楚军】或【汉军】标记。"""
+        try:
+            text, _ = self._extract_text(self._engine.ocr(self._preprocess_roi(roi), cls=False))
+        except Exception as exc:
+            logger.warning("武将 %d 阵营标签识别异常: %s", slot, exc)
+            return ""
+        normalized = text.replace(" ", "").replace("【", "").replace("】", "")
+        if "楚" in normalized:
+            return "楚军"
+        if "汉" in normalized:
+            return "汉军"
+        logger.info("武将 %d 阵营标签未识别: %r", slot, text)
+        return ""
 
     # ── 图像预处理 ────────────────────────────────────────────────────
 
