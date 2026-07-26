@@ -29,10 +29,15 @@ class _GuideService(QObject):
     error_occurred = Signal(str)
     progress_output = Signal(str)
     progress_value = Signal(int, int)
+    cancelled = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[tuple[str, list[dict], str]] = []
+        self.cancel_calls = 0
+
+    def cancel(self) -> None:
+        self.cancel_calls += 1
 
     def fetch_all(self, heroes: list[dict], backend: str) -> None:
         self.calls.append(("all", heroes, backend))
@@ -53,10 +58,15 @@ class _SynergyService(QObject):
     error_occurred = Signal(str)
     progress_output = Signal(str)
     progress_value = Signal(int, int)
+    cancelled = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[tuple[dict, list[dict], str]] = []
+        self.cancel_calls = 0
+
+    def cancel(self) -> None:
+        self.cancel_calls += 1
 
     def fetch_pair(self, heroes: list[dict], backend: str) -> None:
         raise AssertionError("此测试不应执行指定配对")
@@ -80,10 +90,12 @@ class _BackendDialog:
 class _ProgressDialog:
     instances: list["_ProgressDialog"] = []
 
-    def __init__(self, item_count: int, title: str = "攻略生成进度", parent=None) -> None:
+    def __init__(self, item_count: int, title: str = "攻略生成进度", item_label: str = "攻略", parent=None) -> None:
         self.item_count = item_count
         self.title = title
+        self.item_label = item_label
         self.finished: list[tuple[bool, str]] = []
+        self.cancel_requested = _CallbackSignal()
         _ProgressDialog.instances.append(self)
 
     def exec(self) -> QDialog.DialogCode:
@@ -97,6 +109,21 @@ class _ProgressDialog:
 
     def update_progress(self, _current: int, _total: int) -> None:
         pass
+
+    def on_process_cancelled(self) -> None:
+        pass
+
+
+class _CallbackSignal:
+    def __init__(self) -> None:
+        self._callbacks = []
+
+    def connect(self, callback) -> None:
+        self._callbacks.append(callback)
+
+    def emit(self) -> None:
+        for callback in self._callbacks:
+            callback()
 
 
 class _SingleHeroDialog:
@@ -168,8 +195,25 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     assert [hero["id"] for hero in synergy_service.calls[0][1]] == [1, 2]
     assert synergy_service.calls[0][2] == "browser"
     assert _ProgressDialog.instances[-1].item_count == 1
+    assert _ProgressDialog.instances[-1].item_label == "相性评分"
     assert reloads == [True]
     assert changed == [True]
+
+
+def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypatch) -> None:
+    workflow, guide_service, _ = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
+    monkeypatch.setattr(
+        "src.scraper.prompt_utils.estimate_cost",
+        lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
+    )
+
+    workflow.request_guide_all()
+    _ProgressDialog.instances[-1].cancel_requested.emit()
+
+    assert guide_service.cancel_calls == 1
 
 
 def test_main_window_generation_entries_delegate_to_workflow() -> None:

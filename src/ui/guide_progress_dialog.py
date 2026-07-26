@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -29,8 +29,18 @@ class GuideProgressDialog(QDialog):
     进程结束时启用关闭按钮，如有错误则展示错误信息。
     """
 
-    def __init__(self, hero_count: int, title: str = "攻略生成进度", parent=None):
+    cancel_requested = Signal()
+
+    def __init__(
+        self,
+        hero_count: int,
+        title: str = "攻略生成进度",
+        item_label: str = "攻略",
+        parent=None,
+    ):
         super().__init__(parent)
+        self._item_label = item_label
+        self._finished = False
         self.setWindowTitle(title)
         self.setMinimumWidth(480)
         self.setFixedHeight(200)
@@ -88,6 +98,10 @@ class GuideProgressDialog(QDialog):
         self._close_btn.setStyleSheet("padding: 6px 24px;")
         self._close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self._close_btn)
+        self._cancel_btn = QPushButton("中止")
+        self._cancel_btn.setStyleSheet("padding: 6px 24px;")
+        self._cancel_btn.clicked.connect(self._request_cancel)
+        btn_layout.addWidget(self._cancel_btn)
         layout.addLayout(btn_layout)
 
     def update_progress(self, current: int, total: int) -> None:
@@ -101,16 +115,29 @@ class GuideProgressDialog(QDialog):
         # OK 行: "[i/total] 武将名 OK"
         m_ok = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
         if m_ok:
-            self._status_label.setText(f"✓ 已生成 {m_ok.group(3)} 的攻略...")
+            self._status_label.setText(f"✓ 已完成 {m_ok.group(3)} 的{self._item_label}...")
             self.update_progress(int(m_ok.group(1)), int(m_ok.group(2)))
             return
         # FAIL 行: "[i/total] 武将名 FAIL"
         m_fail = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
         if m_fail:
-            self._status_label.setText(f"✗ {m_fail.group(3)} 生成失败")
+            self._status_label.setText(f"✗ {m_fail.group(3)} 的{self._item_label}生成失败")
             self.update_progress(int(m_fail.group(1)), int(m_fail.group(2)))
             return
+        m_skip = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+SKIP", text)
+        if m_skip:
+            self._status_label.setText(f"↷ 已跳过 {m_skip.group(3)}（已有{self._item_label}）")
+            self.update_progress(int(m_skip.group(1)), int(m_skip.group(2)))
+            return
         self._detail_label.setText(text.strip())
+
+    def _request_cancel(self) -> None:
+        """禁用重复操作，并由工作流请求服务中止子进程。"""
+        if self._finished or not self._cancel_btn.isEnabled():
+            return
+        self._cancel_btn.setEnabled(False)
+        self._status_label.setText("正在中止，请等待当前任务退出...")
+        self.cancel_requested.emit()
 
     def set_error(self, message: str) -> None:
         """显示错误信息"""
@@ -131,7 +158,9 @@ class GuideProgressDialog(QDialog):
 
     def on_process_finished(self, success: bool, message: str = "") -> None:
         """进程结束时调用"""
+        self._finished = True
         self._close_btn.setEnabled(True)
+        self._cancel_btn.setEnabled(False)
         if success:
             self._status_label.setText("生成完成 ✓")
             self._progress_bar.setValue(self._progress_bar.maximum())
@@ -139,3 +168,18 @@ class GuideProgressDialog(QDialog):
         else:
             self._status_label.setText("生成失败 ✗")
             self.set_error(message)
+
+    def on_process_cancelled(self) -> None:
+        """任务被用户中止后允许关闭，已提交批次保持有效。"""
+        self._finished = True
+        self._close_btn.setEnabled(True)
+        self._cancel_btn.setEnabled(False)
+        self._status_label.setText("已中止")
+        self._detail_label.setText("已提交的数据已保留，未提交的当前项不会写入。")
+
+    def reject(self) -> None:
+        """运行中关闭窗口等同于请求中止，避免隐藏后台任务。"""
+        if not self._finished:
+            self._request_cancel()
+            return
+        super().reject()

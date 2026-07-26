@@ -98,6 +98,28 @@ def test_cancel_process_does_not_block_event_loop() -> None:
     assert not process.wait_called
 
 
+def test_base_fetch_service_reports_user_cancellation_after_process_exit() -> None:
+    class RunningProcess(_FakeProcess):
+        def state(self):
+            return QProcess.ProcessState.Running
+
+        def kill(self) -> None:
+            pass
+
+    service = _LineRecordingService()
+    service._process = RunningProcess()
+    cancelled: list[bool] = []
+    statuses: list[str] = []
+    service.cancelled.connect(lambda: cancelled.append(True))
+    service.status_changed.connect(statuses.append)
+
+    service.cancel()
+    service._on_finished(1)
+
+    assert cancelled == [True]
+    assert statuses[-1] == "子进程已中止"
+
+
 def test_guide_failure_commits_successes_and_preserves_failed_guide(tmp_path: Path) -> None:
     guide_path = tmp_path / "guides.json"
     original = [{"hero_id": 1, "description": "旧攻略"}]
@@ -208,7 +230,9 @@ def test_synergy_pair_failure_commits_successes_and_preserves_failed_pair(tmp_pa
     ]
 
 
-def test_synergy_single_failure_commits_successes_and_preserves_failed_pair(tmp_path: Path) -> None:
+def test_synergy_single_failure_commits_successes_and_preserves_failed_pair(
+    tmp_path: Path, capsys,
+) -> None:
     synergy_path = tmp_path / "synergies.json"
     original = [{"hero_a_id": 1, "hero_b_id": 3, "score": 2}]
     synergy_path.write_text(json.dumps(original), encoding="utf-8")
@@ -230,6 +254,24 @@ def test_synergy_single_failure_commits_successes_and_preserves_failed_pair(tmp_
         {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
         {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
     ]
+
+
+def test_synergy_single_reports_progress_for_existing_pair(tmp_path: Path, capsys) -> None:
+    synergy_path = tmp_path / "synergies.json"
+    single_file = tmp_path / "single.json"
+    single_file.write_text(json.dumps([{"id": 1, "name": "甲"}]), encoding="utf-8")
+
+    result = run_synergy_single_generation(
+        single_file=str(single_file),
+        heroes=[{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}],
+        generator=FakeGenerator(),
+        synergy_path=synergy_path,
+        existing_synergy_dict={(1, 2): {"hero_a_id": 1, "hero_b_id": 2, "score": 5}},
+        existing_synergy_keys={(1, 2)},
+    )
+
+    assert result.skipped == 1
+    assert "[1/1] 乙 SKIP（已有相性）" in capsys.readouterr().out
 
 
 def test_generation_result_is_successful_without_token_usage() -> None:

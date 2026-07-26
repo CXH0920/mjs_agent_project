@@ -295,7 +295,7 @@ def test_recommendation_card_highlights_partner_position_and_skill_action() -> N
     card._skill_btn.click()
 
     assert card._best_partner_label.text() == "最佳搭档：最佳搭档（S）"
-    assert card._position_label.text() == "定位：输出"
+    assert card._position_label.text() == "输出"
     assert card._data_status_label.text() == ""
     assert selected == [1]
 

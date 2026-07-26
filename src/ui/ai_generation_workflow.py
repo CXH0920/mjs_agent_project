@@ -49,12 +49,14 @@ class AiGenerationWorkflow(QObject):
     def _connect_services(self) -> None:
         self._guide_service.status_changed.connect(self.status_changed)
         self._guide_service.fetch_completed.connect(self._on_guide_completed)
+        self._guide_service.cancelled.connect(self._on_guide_cancelled)
         self._guide_service.error_occurred.connect(self._on_guide_error)
         self._guide_service.progress_output.connect(self._on_guide_progress)
         self._guide_service.progress_value.connect(self._on_guide_progress_value)
 
         self._synergy_service.status_changed.connect(self.status_changed)
         self._synergy_service.fetch_completed.connect(self._on_synergy_completed)
+        self._synergy_service.cancelled.connect(self._on_synergy_cancelled)
         self._synergy_service.error_occurred.connect(self._on_synergy_error)
         self._synergy_service.progress_output.connect(self._on_synergy_progress)
         self._synergy_service.progress_value.connect(self._on_synergy_progress_value)
@@ -155,6 +157,7 @@ class AiGenerationWorkflow(QObject):
             return
 
         self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self._window)
+        self._guide_progress_dialog.cancel_requested.connect(self._guide_service.cancel)
         fetch(heroes, backend)
         self._guide_progress_dialog.exec()
         self._guide_progress_dialog = None
@@ -165,7 +168,13 @@ class AiGenerationWorkflow(QObject):
         title: str,
         start: Callable[[], None],
     ) -> None:
-        self._synergy_progress_dialog = GuideProgressDialog(item_count, title=title, parent=self._window)
+        self._synergy_progress_dialog = GuideProgressDialog(
+            item_count,
+            title=title,
+            item_label="相性评分",
+            parent=self._window,
+        )
+        self._synergy_progress_dialog.cancel_requested.connect(self._synergy_service.cancel)
         start()
         self._synergy_progress_dialog.exec()
         self._synergy_progress_dialog = None
@@ -195,6 +204,12 @@ class AiGenerationWorkflow(QObject):
         message.setDetailedText(error_message)
         message.exec()
 
+    def _on_guide_cancelled(self) -> None:
+        if self._guide_progress_dialog:
+            self._guide_progress_dialog.on_process_cancelled()
+        self._guide_manager.load()
+        self.guides_changed.emit()
+
     def _on_guide_progress(self, text: str) -> None:
         if self._guide_progress_dialog:
             self._guide_progress_dialog.update_status(text)
@@ -216,6 +231,12 @@ class AiGenerationWorkflow(QObject):
         if self._synergy_progress_dialog:
             self._synergy_progress_dialog.on_process_finished(False, error_message)
         QMessageBox.warning(self._window, "生成失败", f"相性评分生成失败\n{error_message}")
+
+    def _on_synergy_cancelled(self) -> None:
+        if self._synergy_progress_dialog:
+            self._synergy_progress_dialog.on_process_cancelled()
+        self._synergy_manager.load()
+        self.synergies_changed.emit()
 
     def _on_synergy_progress(self, text: str) -> None:
         if self._synergy_progress_dialog:

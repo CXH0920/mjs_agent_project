@@ -360,6 +360,7 @@ def run_synergy_single_generation(
         # 断点续传：已有则跳过
         if key in existing_synergy_keys:
             result_summary.skipped += 1
+            print(f"  [{i}/{len(pairs)}] {hb['name']} SKIP（已有相性）", flush=True)
             continue
 
         print(f"  [{i}/{len(pairs)}] {hb['name']}...", flush=True)

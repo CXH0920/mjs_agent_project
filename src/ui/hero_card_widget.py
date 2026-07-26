@@ -109,6 +109,28 @@ class HeroCardWidget(QFrame):
         self._position_label = QLabel()
         self._position_label.setStyleSheet(f"font-size: 12px; color: {MUTED_TEXT};")
         header_layout.addWidget(self._position_label)
+
+        self._recommendation_separator = QLabel("·")
+        self._recommendation_separator.setStyleSheet(f"font-size: 12px; color: {MUTED_TEXT};")
+        header_layout.addWidget(self._recommendation_separator)
+
+        self._confidence_label = QPushButton()
+        self._confidence_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._confidence_label.setStyleSheet(
+            "QPushButton { font-size: 13px; color: #555; border: none; padding: 0; text-align: left; }"
+            "QPushButton:hover { color: #357abd; }"
+        )
+        self._confidence_label.clicked.connect(self._show_recommendation_detail)
+        header_layout.addWidget(self._confidence_label)
+
+        self._recommendation_info_icon = QLabel("!")
+        self._recommendation_info_icon.setFixedSize(16, 16)
+        self._recommendation_info_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._recommendation_info_icon.setStyleSheet(
+            "color: #777; border: 1px solid #999; border-radius: 7px; font-size: 11px;"
+        )
+        self._recommendation_info_icon.installEventFilter(self)
+        header_layout.addWidget(self._recommendation_info_icon)
         header_layout.addStretch()
 
         self._skill_btn = QPushButton("技能")
@@ -132,20 +154,6 @@ class HeroCardWidget(QFrame):
         header_layout.addWidget(self._guide_btn)
         info_layout.addLayout(header_layout)
 
-        self._confidence_label = QPushButton()
-        self._confidence_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._confidence_label.setStyleSheet(
-            "QPushButton { font-size: 13px; color: #555; border: none; padding: 0; text-align: left; }"
-            "QPushButton:hover { color: #357abd; }"
-        )
-        self._confidence_label.clicked.connect(self._show_recommendation_detail)
-        self._recommendation_info_icon = QLabel("!")
-        self._recommendation_info_icon.setFixedSize(16, 16)
-        self._recommendation_info_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._recommendation_info_icon.setStyleSheet(
-            "color: #777; border: 1px solid #999; border-radius: 7px; font-size: 11px;"
-        )
-        self._recommendation_info_icon.installEventFilter(self)
         self._recommendation_info_tooltip = QLabel(self.RECOMMENDATION_INDEX_DESCRIPTION, self)
         self._recommendation_info_tooltip.setWindowFlags(Qt.WindowType.ToolTip)
         self._recommendation_info_tooltip.setFixedWidth(260)
@@ -155,14 +163,6 @@ class HeroCardWidget(QFrame):
             "border-radius: 4px; padding: 6px; font-size: 12px; font-weight: bold; }"
         )
         self._recommendation_info_tooltip.hide()
-
-        recommendation_layout = QHBoxLayout()
-        recommendation_layout.setContentsMargins(0, 0, 0, 0)
-        recommendation_layout.setSpacing(5)
-        recommendation_layout.addWidget(self._confidence_label)
-        recommendation_layout.addWidget(self._recommendation_info_icon)
-        recommendation_layout.addStretch()
-        info_layout.addLayout(recommendation_layout)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
@@ -256,7 +256,7 @@ class HeroCardWidget(QFrame):
             f"background-color: {color}; color: white; "
             "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
         )
-        self._position_label.setText(f"定位：{hero.position or '暂无数据'}")
+        self._position_label.setText(hero.position or "暂无数据")
         self._update_confidence_display()
 
     @staticmethod

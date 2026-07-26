@@ -35,6 +35,7 @@ class BaseFetchService(QObject):
 
     status_changed = Signal(str)
     error_occurred = Signal(str)
+    cancelled = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,6 +46,7 @@ class BaseFetchService(QObject):
         self._stdout_buffer = bytearray()
         self._stdout_line_buffer = bytearray()
         self._stderr_buffer = bytearray()
+        self._cancel_requested = False
 
     # ---------------------------------------------------------------
     # 钩子：子类覆写
@@ -76,7 +78,11 @@ class BaseFetchService(QObject):
     # ---------------------------------------------------------------
 
     def cancel(self) -> None:
-        """终止当前子进程"""
+        """请求中止当前子进程，收尾和状态通知仍由 finished 信号统一处理。"""
+        if not self._process or self._process.state() == QProcess.ProcessState.NotRunning:
+            return
+        self._cancel_requested = True
+        self.status_changed.emit(f"正在中止{self._service_name}...")
         cancel_process(self._process)
 
     def _is_busy(self) -> bool:
@@ -94,6 +100,7 @@ class BaseFetchService(QObject):
 
     def _start_process(self, args: list[str]) -> None:
         """启动子进程并连接信号"""
+        self._cancel_requested = False
         self._stdout_buffer.clear()
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
@@ -179,6 +186,12 @@ class BaseFetchService(QObject):
         msg = f"进程退出码: {exit_code}"
         logger.info("%s 子进程结束，%s", self._service_name, msg)
 
+        if self._cancel_requested:
+            self.status_changed.emit(f"{self._service_name}已中止")
+            self.cancelled.emit()
+            self._context = None
+            return
+
         if exit_code == 0:
             self.status_changed.emit(f"{self._service_name}完成")
         else:
@@ -195,6 +208,8 @@ class BaseFetchService(QObject):
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         """子进程出错回调"""
+        if self._cancel_requested and error == QProcess.ProcessError.Crashed:
+            return
         self._read_stdout()
         self._read_stderr()
         self._dispatch_stdout_lines(flush=True)
