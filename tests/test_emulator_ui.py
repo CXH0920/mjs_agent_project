@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -259,6 +260,41 @@ def test_poll_match_switches_to_recommendation_only_on_page_entry() -> None:
     window._on_poll_result(matched)
 
     assert window._tabs.switched_to == [window._recommendation, window._recommendation]
+
+
+def test_poll_ocr_wait_times_out_without_blocking() -> None:
+    class Completed:
+        def __init__(self) -> None:
+            self.timeout = None
+
+        def wait(self, timeout: float) -> bool:
+            self.timeout = timeout
+            return False
+
+    class Task:
+        completed = Completed()
+        result = None
+
+    result = MainWindow._wait_for_poll_ocr_task(Task(), threading.Event())
+
+    assert Task.completed.timeout == MainWindow.POLL_OCR_WAIT_TIMEOUT_SECONDS
+    assert result["outcome"] == "retryable_ocr"
+    assert "超时" in result["detail"]
+
+
+def test_poll_ocr_wait_drops_cancelled_result() -> None:
+    class Completed:
+        def wait(self, timeout: float) -> bool:
+            return True
+
+    class Task:
+        completed = Completed()
+        result = {"outcome": "matched"}
+
+    cancelled = threading.Event()
+    cancelled.set()
+
+    assert MainWindow._wait_for_poll_ocr_task(Task(), cancelled) is None
 
 
 

@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
     """
 
     _poll_result_ready = Signal(object)  # 结构化轮询结果
+    POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
 
     def __init__(
         self,
@@ -191,6 +192,7 @@ class MainWindow(QMainWindow):
         capture = self._capture_service.capture
         if generation is None:
             return
+        cancel_event = self._ocr_service.poll_cancel_event
         task_names = self._ocr_service.due_poll_tasks()
         if not task_names:
             self._ocr_service.complete_poll(generation, "healthy_no_match", "当前没有到期的轮询任务")
@@ -211,8 +213,12 @@ class MainWindow(QMainWindow):
         def _do_poll_work() -> None:
             """仅在后台线程执行阻塞 ADB、模板和 OCR 操作。"""
             try:
+                if cancel_event.is_set():
+                    return
                 if not capture.connected:
                     ok, detail = capture.connect()
+                    if cancel_event.is_set():
+                        return
                     if not ok:
                         self._poll_result_ready.emit({
                             "generation": generation,
@@ -223,6 +229,8 @@ class MainWindow(QMainWindow):
                         return
 
                 ok, result = capture.screencap_full(log_success=False)
+                if cancel_event.is_set():
+                    return
                 if not ok:
                     self._poll_result_ready.emit({
                         "generation": generation,
@@ -238,17 +246,17 @@ class MainWindow(QMainWindow):
                 has_retryable_error = False
 
                 for task_name in task_names:
+                    if cancel_event.is_set():
+                        return
                     ocr_task = self._capture_service.submit_ocr_task(
                         image,
                         hero_names=hero_names,
                         template_name=task_name,
                         recognize=task_name == "hero_selection",
                     )
-                    ocr_task.completed.wait()
-                    task_result = ocr_task.result or {
-                        "outcome": "retryable_ocr",
-                        "detail": "OCR worker 未返回结果",
-                    }
+                    task_result = self._wait_for_poll_ocr_task(ocr_task, cancel_event)
+                    if task_result is None:
+                        return
                     if task_result["outcome"] == "matched":
                         has_match = True
                     elif task_result["outcome"] == "retryable_ocr":
@@ -270,6 +278,23 @@ class MainWindow(QMainWindow):
                 self._poll_thread_lock.release()
 
         threading.Thread(target=_do_poll_work, daemon=True).start()
+
+    @classmethod
+    def _wait_for_poll_ocr_task(cls, ocr_task, cancel_event: threading.Event) -> dict | None:
+        """有限等待 OCR 任务；会话停止后不再回写轮询结果。"""
+        if cancel_event.is_set():
+            return None
+        if not ocr_task.completed.wait(cls.POLL_OCR_WAIT_TIMEOUT_SECONDS):
+            return {
+                "outcome": "retryable_ocr",
+                "detail": f"OCR 任务超时（{cls.POLL_OCR_WAIT_TIMEOUT_SECONDS} 秒）",
+            }
+        if cancel_event.is_set():
+            return None
+        return ocr_task.result or {
+            "outcome": "retryable_ocr",
+            "detail": "OCR worker 未返回结果",
+        }
 
     def _on_poll_result(self, result: dict) -> None:
         """在主线程消费轮询结果，更新状态并安排下一轮。"""

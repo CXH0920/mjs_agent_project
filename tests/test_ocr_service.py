@@ -89,6 +89,19 @@ def test_resume_poll_starts_new_generation(monkeypatch) -> None:
     assert scheduled[-1] == (2_000, "running")
 
 
+def test_stop_poll_cancels_active_session() -> None:
+    _app()
+    service = OcrService()
+    service.start_poll(1_000)
+    generation = service.poll_generation
+    cancel_event = service.poll_cancel_event
+
+    service.stop_poll()
+
+    assert cancel_event.is_set()
+    assert service.is_poll_cancelled(generation)
+
+
 def test_poll_tasks_have_independent_activation_and_cooldowns() -> None:
     _app()
     service = OcrService()

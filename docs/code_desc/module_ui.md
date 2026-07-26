@@ -91,7 +91,7 @@ self._worker.start()
 
 ### 3.1.1 轮询匹配后的选将推荐跳转
 
-`MainWindow._on_poll_result()` 使用 `_selection_page_active` 记录是否已经进入选将页面。首次收到 `matched` 结果时切换到“选将推荐”Tab；冷却期间的后续匹配只调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。
+`MainWindow._on_poll_result()` 使用 `_selection_page_active` 记录是否已经进入选将页面。首次收到 `matched` 结果时切换到“选将推荐”Tab；冷却期间的后续匹配只调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。每轮后台 OCR 等待最多 10 秒；停止轮询、关闭窗口或切换 ADB 会话会设置取消标记，已取消任务不会回写界面。
 
 ### 3.1 主窗口信号拓扑
 

@@ -8,8 +8,9 @@ OCR 控制服务
 from __future__ import annotations
 
 import logging
+import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -29,6 +30,14 @@ class PollTaskState:
     cooldown_until: datetime | None = None
     last_match_time: datetime | None = None
     consecutive_failures: int = 0
+
+
+@dataclass
+class PollSession:
+    """一次轮询会话的代数与取消标记。"""
+
+    generation: int = 0
+    cancel_event: threading.Event = field(default_factory=threading.Event)
 
 
 class OcrService(QObject):
@@ -59,7 +68,7 @@ class OcrService(QObject):
         self._poll_interval_ms = 0
         self._consecutive_poll_failures = 0
         self._poll_state = "stopped"
-        self._poll_generation = 0
+        self._poll_session = PollSession()
         self._poll_in_flight = False
         self._ocr_task_submitter = None
 
@@ -175,14 +184,27 @@ class OcrService(QObject):
     @property
     def poll_generation(self) -> int:
         """返回当前轮询会话代数。"""
-        return self._poll_generation
+        return self._poll_session.generation
+
+    @property
+    def poll_cancel_event(self) -> threading.Event:
+        """返回当前轮询会话的取消标记。"""
+        return self._poll_session.cancel_event
+
+    def is_poll_cancelled(self, generation: int) -> bool:
+        """检查指定会话是否已停止或被新的会话取代。"""
+        return generation != self._poll_session.generation or self._poll_session.cancel_event.is_set()
+
+    def _replace_poll_session(self) -> None:
+        self._poll_session.cancel_event.set()
+        self._poll_session = PollSession(generation=self._poll_session.generation + 1)
 
     def start_poll(self, interval_ms: int) -> None:
         """启动或重新启动轮询。"""
         self._poll_interval_ms = max(interval_ms, 1_000)
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
-        self._poll_generation += 1
+        self._replace_poll_session()
         self._poll_tasks["hero_selection"] = PollTaskState(active=True)
         self._poll_tasks["match_guide"] = PollTaskState(active=False)
         self._schedule_poll(self._poll_interval_ms, "running", "轮询运行中")
@@ -195,7 +217,7 @@ class OcrService(QObject):
             task.cooldown_until = None
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
-        self._poll_generation += 1
+        self._replace_poll_session()
         self._set_poll_state("stopped", "轮询未启用")
 
     def resume_poll(self) -> None:
@@ -209,7 +231,7 @@ class OcrService(QObject):
         if self._poll_state not in {"running", "backing_off", "cooldown"} or self._poll_in_flight:
             return None
         self._poll_in_flight = True
-        return self._poll_generation
+        return self.poll_generation
 
     def due_poll_tasks(self) -> list[str]:
         """返回本轮可执行的任务名称，任务冷却彼此独立。"""
@@ -262,7 +284,7 @@ class OcrService(QObject):
 
     def complete_poll(self, generation: int, outcome: str, detail: str = "") -> None:
         """由主线程记录一轮轮询结果并安排下一次执行。"""
-        if generation != self._poll_generation:
+        if generation != self.poll_generation:
             return
         self._poll_in_flight = False
         if outcome in {"healthy_no_match", "matched"}:
