@@ -872,9 +872,9 @@ HeroBrowser (QWidget)
  │   ├── QListWidget（武将列表）
  │   ├── Signal: hero_selected(int)
  └── HeroDetailPanel（右, 720px）
-     ├── 固定身份条（名称、势力、定位、体力、手牌）
+     ├── 固定身份条（单行名称、势力、定位、体力、手牌摘要）
      ├── Tab 1「武将信息」
-     │   ├── QLabel (HTML 渲染基本信息)
+     │   ├── QLabel (HTML 渲染基本信息与资料更新时间)
      │   └── QScrollArea (技能列表)
      └── Tab 2「攻略指南」
          ├── QScrollArea（统一滚动容器）

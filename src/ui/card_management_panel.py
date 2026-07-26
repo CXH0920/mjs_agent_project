@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date
+from html import escape
+import re
 from typing import Any
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, QSize, Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,6 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -29,6 +34,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -72,9 +78,19 @@ class CardManagementPanel(QWidget):
         self._count_label.setStyleSheet("color: #6b7c93;")
         header.addWidget(self._count_label)
         header.addStretch()
-        self._schema_button = QPushButton("管理追加字段")
-        self._schema_button.clicked.connect(self._open_schema_dialog)
-        header.addWidget(self._schema_button)
+        self._maintenance_menu = QMenu(self)
+        self._schema_action = self._maintenance_menu.addAction("管理追加字段")
+        self._schema_action.triggered.connect(self._open_schema_dialog)
+        self._more_button = QToolButton()
+        self._more_button.setText("更多")
+        self._more_button.setMenu(self._maintenance_menu)
+        self._more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._more_button.setStyleSheet(
+            "QToolButton { background: #ffffff; color: #357abd; border: 1px solid #b0c4de; "
+            "border-radius: 4px; padding: 5px 12px; font-size: 12px; font-weight: bold; }"
+            "QToolButton:hover { background: #eef2f6; border-color: #4a90d9; }"
+        )
+        header.addWidget(self._more_button)
         layout.addLayout(header)
 
         filters = QHBoxLayout()
@@ -119,7 +135,7 @@ class CardManagementPanel(QWidget):
         for card_type in self._service.list_card_types():
             if card_type not in current_types:
                 self._type_filter.addItem(card_type, card_type)
-        self._schema_button.setEnabled(self._service.schema.available)
+        self._schema_action.setEnabled(self._service.schema.available)
         self._refresh_list()
 
     def _clear_filters(self) -> None:
@@ -140,23 +156,31 @@ class CardManagementPanel(QWidget):
             return
         last_type = None
         selected_item = None
+        first_card_item = None
         for view in views:
             if view.card.card_type.value != last_type:
                 last_type = view.card.card_type.value
                 group = QListWidgetItem(last_type)
                 group.setFlags(Qt.ItemFlag.NoItemFlags)
-                group.setForeground(Qt.GlobalColor.darkGray)
+                group.setForeground(QColor("#357abd"))
+                group.setBackground(QColor("#dce6f0"))
+                group_font = group.font()
+                group_font.setBold(True)
+                group.setFont(group_font)
+                group.setSizeHint(QSize(0, 30))
                 self._list.addItem(group)
             status = " · 加强" if view.has_strengthen else " · 削弱" if view.has_weaken else ""
             item = QListWidgetItem(f"{view.card.name}{status}")
             item.setData(Qt.ItemDataRole.UserRole, view.card.id)
             self._list.addItem(item)
+            if first_card_item is None:
+                first_card_item = item
             if view.card.id == selected:
                 selected_item = item
         if selected_item:
             self._list.setCurrentItem(selected_item)
-        elif self._list.count() and self._list.item(0).data(Qt.ItemDataRole.UserRole):
-            self._list.setCurrentRow(0)
+        elif first_card_item:
+            self._list.setCurrentItem(first_card_item)
         else:
             self._current_card_id = None
             self._show_empty_detail("没有符合条件的卡牌，可清除筛选后重试。")
@@ -205,11 +229,19 @@ class CardManagementPanel(QWidget):
         title = QLabel(f"<h2>{view.card.name}</h2><b>类型：</b>{view.card.card_type.value}　<b>牌堆数量：</b>{view.card.card_amount}")
         title.setTextFormat(Qt.TextFormat.RichText)
         basic_layout.addWidget(title)
-        basic_layout.addWidget(QLabel(f"<b>简述：</b>{view.card.card_desc}"))
+        description = QLabel()
+        description.setObjectName("cardDescription")
+        description.setTextFormat(Qt.TextFormat.RichText)
+        description.setWordWrap(True)
+        description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        description_text = escape(self._normalize_display_text(view.card.card_desc)).replace("\n", "<br>")
+        description.setText(f"<b>简述：</b>{description_text}")
+        basic_layout.addWidget(description)
         detail_title = QLabel("规则详解")
         detail_title.setStyleSheet("font-weight: bold; margin-top: 8px;")
         basic_layout.addWidget(detail_title)
-        detail = QLabel(view.card.card_detail)
+        detail = QLabel(self._normalize_display_text(view.card.card_detail))
+        detail.setObjectName("cardRuleDetail")
         detail.setWordWrap(True)
         detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         basic_layout.addWidget(detail)
@@ -233,6 +265,11 @@ class CardManagementPanel(QWidget):
             for value in view.fields:
                 self._detail_layout.addWidget(self._field_card(value))
 
+    @staticmethod
+    def _normalize_display_text(text: str) -> str:
+        """将连续换行统一为一个换行，保留原有文本段落。"""
+        return re.sub(r"(?:\r\n|\r|\n)+", "\n", text)
+
     def _field_card(self, value: CardFieldValue) -> QFrame:
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
@@ -252,9 +289,13 @@ class CardManagementPanel(QWidget):
             helper.setWordWrap(True)
             layout.addWidget(helper)
         if value.definition and value.definition.value_type == "effect_entries":
-            for raw in value.value:
-                entry = EffectEntry.model_validate(raw)
-                text = f"[{EFFECT_STATUS_LABELS[entry.status]}] {entry.version} · {entry.effective_from.isoformat()}"
+            today = date.today()
+            entries = [EffectEntry.model_validate(raw) for raw in value.value]
+            entries.sort(key=lambda entry: self._effect_sort_key(entry, today))
+            for entry in entries:
+                is_current = self._is_current_effect(entry, today)
+                status = "当前生效" if is_current else EFFECT_STATUS_LABELS[entry.status]
+                text = f"[{status}] {entry.version} · {entry.effective_from.isoformat()}"
                 if entry.effective_to:
                     text += f" 至 {entry.effective_to.isoformat()}"
                 text += f"\n{entry.content}"
@@ -262,7 +303,10 @@ class CardManagementPanel(QWidget):
                     text += f"\n来源：{entry.source}"
                 record = QLabel(text)
                 record.setWordWrap(True)
-                record.setStyleSheet("padding: 5px; background: #f7f9fb;")
+                record.setStyleSheet(
+                    "padding: 6px; background: #e6f4ff; border-left: 3px solid #4a90d9;"
+                    if is_current else "padding: 5px; background: #f7f9fb;"
+                )
                 layout.addWidget(record)
         else:
             text = ", ".join(value.value) if isinstance(value.value, list) else str(value.value)
@@ -270,6 +314,26 @@ class CardManagementPanel(QWidget):
             content.setWordWrap(True)
             layout.addWidget(content)
         return frame
+
+    @staticmethod
+    def _is_current_effect(entry: EffectEntry, today: date) -> bool:
+        return (
+            entry.status == "active"
+            and entry.effective_from <= today
+            and (entry.effective_to is None or entry.effective_to >= today)
+        )
+
+    @classmethod
+    def _effect_sort_key(cls, entry: EffectEntry, today: date) -> tuple[int, int]:
+        if cls._is_current_effect(entry, today):
+            priority = 0
+        elif entry.status == "active":
+            priority = 1
+        elif entry.status == "pending":
+            priority = 2
+        else:
+            priority = 3
+        return priority, -entry.effective_from.toordinal()
 
     def _open_annotation_dialog(self) -> None:
         if not self._current_card_id:
@@ -299,6 +363,7 @@ class CardAnnotationEditDialog(QDialog):
         self._service = service
         self._card_id = card_id
         self._editors: dict[str, QWidget] = {}
+        self._dialog_layout = QVBoxLayout(self)
         annotation = service.annotations.get_annotation(card_id)
         self._values = deepcopy(annotation.fields) if annotation else {}
         card = service.cards.get_card(card_id)
@@ -307,7 +372,7 @@ class CardAnnotationEditDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        layout = self._dialog_layout
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -438,11 +503,12 @@ class CardAnnotationEditDialog(QDialog):
 
     def _rebuild(self) -> None:
         self._editors.clear()
-        old_layout = self.layout()
-        while old_layout.count():
-            item = old_layout.takeAt(0)
+        while self._dialog_layout.count():
+            item = self._dialog_layout.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                widget = item.widget()
+                widget.setParent(None)
+                widget.deleteLater()
         self._setup_ui()
 
     def _save(self) -> None:

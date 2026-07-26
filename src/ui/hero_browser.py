@@ -214,18 +214,21 @@ class HeroDetailPanel(QWidget):
         self._identity_bar = QFrame()
         self._identity_bar.setObjectName("heroIdentityBar")
         self._identity_bar.setStyleSheet(
-            "QFrame#heroIdentityBar { background: #ffffff; border: 1px solid #dce6f0; "
+            "QFrame#heroIdentityBar { background: #f6faff; border: 1px solid #d6e4f0; "
             "border-radius: 6px; }"
         )
-        identity_layout = QVBoxLayout(self._identity_bar)
-        identity_layout.setContentsMargins(12, 8, 12, 8)
-        identity_layout.setSpacing(2)
+        identity_layout = QHBoxLayout(self._identity_bar)
+        identity_layout.setContentsMargins(14, 8, 14, 8)
+        identity_layout.setSpacing(10)
         self._identity_name = QLabel("请选择一个武将")
-        self._identity_name.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
+        self._identity_name.setStyleSheet(
+            "background: transparent; font-size: 16px; font-weight: bold; color: #234b70;"
+        )
         identity_layout.addWidget(self._identity_name)
         self._identity_meta = QLabel("从左侧列表选择后查看资料、攻略和相性")
-        self._identity_meta.setStyleSheet("color: #65758b; font-size: 12px;")
+        self._identity_meta.setStyleSheet("background: transparent; color: #65758b; font-size: 12px;")
         identity_layout.addWidget(self._identity_meta)
+        identity_layout.addStretch()
         layout.addWidget(self._identity_bar)
 
         # 右侧只承担当前武将的内容切换，样式弱于外层资料库导航。
@@ -602,7 +605,9 @@ class HeroDetailPanel(QWidget):
         star_display = f"{star_filled}{star_empty}"
 
         html = f"""
-        <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:4px;">基础属性</div>
+        <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:4px;">
+            基础属性 <span style="font-size:12px; font-weight:normal; color:#78909c;">· 资料更新：{hero.last_updated or '未记录'}</span>
+        </div>
         <p style="margin:2px 0 8px 0; color:#555;">
             <b>定位：</b>{hero.position}　　<b>难度：</b>{star_display}
         </p>
