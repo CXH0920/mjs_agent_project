@@ -180,11 +180,11 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
      -> 将参考 ROI 的 x/y/w/h 分别乘以 scale_x/scale_y
      -> image[y:y+h, x:x+w]                                  [当前截图坐标裁剪]
      -> self._recognize_single(roi, slot_index)                [单 ROI 识别]
-       -> self._preprocess_roi(roi)                           [图像预处理]
+       -> ImagePreprocessor.preprocess_roi(roi)               [图像预处理]
        -> self._engine.ocr(preprocessed_roi)                  [PaddleOCR 推理]
           -> PaddleOCR.__call__(img)                          [首次调用时延迟初始化]
        -> self._extract_text(ocr_result)                      [解析 PaddleOCR 输出]
-       -> _correct_with_hero_list(text, self._hero_names)      [编辑距离矫正]
+       -> CharacterSimilarityService.correct_hero_name(...)   [编辑距离矫正]
      [性能标注：8 个 ROI 依次处理，PaddleOCR 每次约 0.5-3s]
   -> return [{"index": 1-8, "name": ..., "confidence": ...}, ...]
 ```
@@ -192,8 +192,8 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | `_recognize_single()` ×8 |
-| `_recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `_preprocess_roi()`, `_engine.ocr()`, `_correct_with_hero_list()` |
-| `_preprocess_roi(roi)` | `recognizer.py` | `_recognize_single()` | `cv2.resize()`, `cv2.cvtColor()`, `cv2.createCLAHE()`, `cv2.filter2D()` |
+| `_recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `ImagePreprocessor`, `_engine.ocr()`, `CharacterSimilarityService` |
+| `preprocess_roi(roi)` | `image_preprocessor.py` | `GeneralRecognizer` | `cv2.resize()`, `cv2.cvtColor()`, `cv2.createCLAHE()`, `cv2.filter2D()` |
 | `_extract_text(result)` | `recognizer.py` | `_recognize_single()` | 解析 PaddleOCR 输出格式 |
 | `_engine` (property) | `recognizer.py` | `_recognize_single()` | `PaddleOCR()` 延迟初始化 |
 
@@ -201,7 +201,7 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 
 ```
 _recognize_single(roi, slot)
-  -> self._preprocess_roi(roi)
+  -> ImagePreprocessor.preprocess_roi(roi)
      -> cv2.resize(roi, None, fx=3, fy=3, INTER_CUBIC)       [放大 3×]
      -> cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)                  [转 LAB 色彩空间]
      -> lab[..., 0] = clahe.apply(lab[..., 0])                [CLAHE 自适应直方图均衡]
@@ -218,76 +218,37 @@ _recognize_single(roi, slot)
 ### 4.3 OCR 结果矫正链路（核心逻辑）
 
 ```
-_correct_with_hero_list(text, hero_names)
-  -> [文本为空] return text                                    [跳过]
-  -> [文本已在武将名列表中] return text                         [完全匹配]
-  -> [对 165 个武将名逐项计算]
-     -> _levenshtein_distance(text, hero_name) ×165           [编辑距离]
-        -> [len(s1) < len(s2)] s1→s2  确保 m ≥ n
-        -> dp[i][j] 矩阵: O(len(s1) * len(s2))
-        -> return dp[n][m]
-  -> 收集候选: [name for name, dist in candidates if dist <= 1]
-  -> [无候选] return text                                      [无法纠正]
-  -> [唯一候选] return candidate_name                          [直接采纳]
-  -> [多候选] _pick_visually_similar(text, candidates)        [视觉相似度决胜]
-     -> _load_char_info()                                     [加载汉字特征缓存]
-     -> [对每对不同字符]
-        -> _multi_dim_similarity(tc, cc, char_db)             [多维度加权评分]
-           -> _four_corner_score(c1, c2, char_db) × 0.4       [四角号码 40%]
-              -> _hc(char_db, char, "four_corner")
-                 -> _ensure_char_in_cache(char)                [缓存未命中→动态补齐]
-                    -> _query_char_from_unihan(char)           [unihan_etl CSV 查询]
-                    -> _get_radical_client().radical(char)     [cnradical 部首查询]
-                    -> _get_pinyin_of(char)                    [pypinyin 拼音查询]
-                    -> _get_stroke(char)                       [笔画数查询]
-                    -> 写入 char_info_cache + 进程内存
-              -> 比较四角号码逐位匹配率
-           -> _cangjie_score(c1, c2, char_db) × 0.4           [仓颉码 40%]
-              -> _hc() + SequenceMatcher.ratio()
-           -> _radical_score(c1, c2, char_db) × 0.2           [部首 20%]
-              -> _hc() + 相等检查
-        -> score += multi_dim_score / max_len
-     -> score -= 0.5 * abs(len(text) - len(candidate))        [长度差惩罚]
-     -> 取最高分候选
-     -> [平分] _pinyin_similarity(c1, c2, char_db) tiebreak   [拼音相似度]
-     -> [仍平分] _stroke_diff(c1, c2, char_db) tiebreak        [笔画差]
-  -> return best_candidate
+CharacterSimilarityService.correct_hero_name(text, hero_names)
+  -> [文本为空] return text
+  -> 对武将名计算编辑距离（阈值 <= 1）
+  -> [无候选] return text；[唯一候选] 直接采纳
+  -> [多候选] _pick_visually_similar(text, candidates)
+     -> 使用 CharacterFeatureRepository.get_value()
+     -> 四角号码 × 0.4 + 仓颉码 × 0.4 + 部首 × 0.2
+     -> [平分] 拼音相似度降序 -> 笔画数差升序
 ```
 
-| 函数 | 文件 | 调用方 | 被调用方 |
+| 组件/函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×165, `_pick_visually_similar()` |
-| `_levenshtein_distance(s1, s2)` | `recognizer.py` | `_correct_with_hero_list()` | DP O(n×m) |
-| `_pick_visually_similar(text, candidates)` | `recognizer.py` | `_correct_with_hero_list()` | `_multi_dim_similarity()`, `_pinyin_similarity()`, `_stroke_diff()` |
-| `_multi_dim_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | `_four_corner_score()`, `_cangjie_score()`, `_radical_score()` |
-| `_four_corner_score(c1, c2, db)` | `recognizer.py` | `_multi_dim_similarity()` | `_hc()` |
-| `_cangjie_score(c1, c2, db)` | `recognizer.py` | `_multi_dim_similarity()` | `_hc()`, `SequenceMatcher.ratio()` |
-| `_radical_score(c1, c2, db)` | `recognizer.py` | `_multi_dim_similarity()` | `_hc()` |
-| `_pinyin_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` (tiebreak) | `_hc()` |
-| `_stroke_diff(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` (tiebreak) | `_hc()`, `_get_stroke()` |
-| `_hc(db, char, key, default)` | `recognizer.py` | 各评分函数 | `_ensure_char_in_cache()` |
-| `_ensure_char_in_cache(char)` | `recognizer.py` | `_hc()` | `_query_char_from_unihan()`, `_get_radical_client()`, `_get_pinyin_of()`, `_get_stroke()` |
+| `correct_hero_name(text, names)` | `character_similarity.py` | `GeneralRecognizer`、`OfficialDataImportService` | `_levenshtein_distance()`、视觉评分 |
+| `_pick_visually_similar(text, candidates)` | `character_similarity.py` | `correct_hero_name()` | 多维评分、拼音/笔画决胜 |
+| `get_value(char, key)` | `character_feature_repository.py` | `CharacterSimilarityService` | `get_feature()` |
 
 ### 4.4 汉字特征补齐链路（性能关键路径）
 
 ```
-_ensure_char_in_cache(char)
-  -> [char 已在 char_info_cache 中] return                    [缓存命中]
-  -> [char 不在缓存中]
-     -> _query_char_from_unihan(char)                         [首次加载耗时较大]
-        -> unihan_etl.Packager().export()                     [读取 UNIHAN CSV 文件]
-        -> 提取 four_corner 和 cangjie 字段
-     -> _get_radical_client()                                 [cnradical 首次初始化]
-        -> Radical("chinese")                                  [加载部首数据库]
-     -> _get_pinyin_of(char)                                  [pypinyin 查询]
-        -> pypinyin.pinyin(char)                               [拼音库查询]
-     -> _get_stroke(char)                                     [笔画数查询]
-        -> _load_strokes()                                     [读取 Unihan_IRGSources.txt]
-     -> char_info_cache[char] = {four_corner, cangjie, radical, pinyin, total_strokes}
-     -> 写入进程内存字典
+CharacterFeatureRepository.get_feature(char)
+  -> load() -> 读取可配置的 char_info_cache.json
+  -> [缓存命中] return entry
+  -> [缓存未命中] _build_feature(char)
+     -> unihan_etl.Options().destination                      [仓颉、四角 CSV]
+     -> cnradical                                             [部首]
+     -> pypinyin                                              [拼音]
+     -> Options().work_dir / Unihan_IRGSources.txt            [笔画]
+  -> 写入进程内存；save() 时 UTF-8/LF 原子落盘
 ```
 
-> **性能标注：** 首次加载 `char_info_cache.json` 中包含 223 个常见字（覆盖武将名用字的 99.6%）。缓存未命中触发 unihan_etl CSV 读取 + cnradical 部首库加载 + pypinyin 查询 + 笔画数查询，总耗时约 1 秒。在 Qt 主线程上执行时会冻结 UI。
+> **性能标注：** 默认缓存包含 223 个常见字（覆盖武将名用字的 99.6%）。缓存未命中时的原始库查询仍可能约 1 秒，因此由 `GeneralRecognizer.warmup()` 在显式预热时提前加载。
 
 ### 4.5 汉字特征评分详情
 
@@ -425,25 +386,10 @@ src.ui.mumu_config_dialog
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `GeneralRecognizer.recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | 参考 ROI 缩放 + `_recognize_single()` ×8 |
-| `GeneralRecognizer._recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `_preprocess_roi()`, `_engine.ocr()`, `_correct_with_hero_list()` |
-| `GeneralRecognizer._preprocess_roi(roi)` | `recognizer.py` | `_recognize_single()` | `cv2.resize()`, CLAHE, 锐化, 灰度 |
+| `GeneralRecognizer._recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `ImagePreprocessor`、`_engine.ocr()`、`CharacterSimilarityService` |
 | `GeneralRecognizer._extract_text(result)` | `recognizer.py` | `_recognize_single()` | PaddleOCR 解析 |
-| `GeneralRecognizer.warmup()` | `recognizer.py` | 显式预热工具/测试（当前启动不调用） | `self._engine`, `_load_char_info()`, `pypinyin.pinyin()` |
+| `GeneralRecognizer.warmup()` | `recognizer.py` | 显式预热工具/测试（当前启动不调用） | `self._engine`、`CharacterSimilarityService.warmup()` |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
-| `_correct_with_hero_list(text, names)` | `recognizer.py` | `_recognize_single()` | `_levenshtein_distance()` ×165, `_pick_visually_similar()` |
-| `_levenshtein_distance(s1, s2)` | `recognizer.py` | `_correct_with_hero_list()` | DP O(n×m) |
-| `_pick_visually_similar(text, candidates)` | `recognizer.py` | `_correct_with_hero_list()` | `_multi_dim_similarity()`, 拼音/笔画 tiebreak |
-| `_multi_dim_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | 四角×0.4 + 仓颉×0.4 + 部首×0.2 |
-| `_four_corner_score(c1, c2, db)` | `recognizer.py` | `_multi_dim_similarity()` | `_hc()` |
-| `_cangjie_score(c1, c2, db)` | `recognizer.py` | `_multi_dim_similarity()` | `_hc()`, `SequenceMatcher` |
-| `_radical_score(c1, c2, db)` | `recognizer.py` | `_multi_dim_similarity()` | `_hc()` |
-| `_hc(db, char, key, default)` | `recognizer.py` | 各评分函数 | `_ensure_char_in_cache()` |
-| `_ensure_char_in_cache(char)` | `recognizer.py` | `_hc()` | unihan_etl, cnradical, pypinyin |
-| `_query_char_from_unihan(char)` | `recognizer.py` | `_ensure_char_in_cache()` | unihan_etl CSV |
-| `_get_radical_client()` | `recognizer.py` | `_ensure_char_in_cache()` | `cnradical.Radical()` |
-| `_get_pinyin_of(char)` | `recognizer.py` | `_ensure_char_in_cache()` | `pypinyin.pinyin()` |
-| `_get_stroke(char)` | `recognizer.py` | `_ensure_char_in_cache()` | `_load_strokes()` |
-| `_load_strokes()` | `recognizer.py` | `_get_stroke()` | 读取 Unihan_IRGSources.txt |
-| `_load_char_info()` | `recognizer.py` | `_pick_visually_similar()`, 显式 `warmup()` | 读取 char_info_cache.json |
-| `_pinyin_similarity(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | `_hc()` (tiebreak) |
-| `_stroke_diff(c1, c2, db)` | `recognizer.py` | `_pick_visually_similar()` | `_hc()` (tiebreak) |
+| `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
+| `CharacterSimilarityService.correct_hero_name()` | `character_similarity.py` | `GeneralRecognizer`、官方榜单导入 | 编辑距离、视觉评分 |
+| `CharacterFeatureRepository.get_feature()` | `character_feature_repository.py` | `CharacterSimilarityService` | 缓存加载、动态补齐 |

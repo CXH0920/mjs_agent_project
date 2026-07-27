@@ -193,8 +193,8 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 **名称降级决策顺序：**
 
 1. 收集原图放大与增强锐化两次 OCR 的全部文本块；任一完整文本精确命中 `heroes.json` 词表时优先采用，不与单字的错误高置信度竞争。
-2. 写入前，完整候选统一通过 `_correct_with_hero_list()` 的编辑距离与字形特征二次判定，不因高置信度跳过校正；发生校正时以“武将名称已由词表校正”写入待复核 CSV 和行截图。
-3. 若最高候选为单字，按亮色字形切分 2-4 个字符，保留原背景、左右内容与边缘留白后逐字 OCR；拼接结果通过 `_correct_with_hero_list()` 校正后必须仍命中词表。
+2. 写入前，完整候选统一通过 `CharacterSimilarityService.correct_hero_name()` 的编辑距离与字形特征二次判定，不因高置信度跳过校正；发生校正时以“武将名称已由词表校正”写入待复核 CSV 和行截图。
+3. 若最高候选为单字，按亮色字形切分 2-4 个字符，保留原背景、左右内容与边缘留白后逐字 OCR；拼接结果通过 `CharacterSimilarityService.correct_hero_name()` 校正后必须仍命中词表。
 4. 逐字 OCR 未得到可用名称时，只有该首字在词表中唯一对应一个角色才自动补全。
 5. 首字存在多个或零个候选时，按需调用繁体 `chinese_cht` 模型识别整格和字形；完整候选经词表校正后必须精确命中词表才采用。模型不可用或仍不能确认时保留单字，并以“武将名称疑似缺字”写入待复核 CSV 和行截图。
 
@@ -257,7 +257,7 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `src.scraper.*` | 构建 CLI 参数调用爬虫/AI 脚本 |
 | 依赖 | `src.capture.adb_screen` | CaptureService 持有 AdbCapture 实例 |
 | 依赖 | `src.ocr.*` | OCR 控制服务管理模板和识别器 |
-| 依赖 | `src.ocr.recognizer` | 官方榜单复用两段式武将词表校正 |
+| 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存 |
 | 依赖 | `src.data.recommendation_index_repository` | 提供推荐指数 CSV 的手动重建接口 |
 | 被调用方 | `src.ui.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 fetch_*() |

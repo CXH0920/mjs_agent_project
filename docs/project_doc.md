@@ -581,7 +581,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 **名称降级策略：**
 
 1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。任一候选去除非汉字后精确命中 `heroes.json` 时，优先使用完整候选，即使单字候选置信度更高。
-2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `_correct_with_hero_list()` 校正后必须命中词表。
+2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `CharacterSimilarityService.correct_hero_name()` 校正后必须命中词表。
 3. 逐字补识别失败时，只有单字作为词表首字的候选唯一才补全。
 4. 同首字存在多个或零个候选时，服务懒加载 `chinese_cht` 繁体模型，先尝试完整候选，再以词表校正或逐字识别确认；最终精确命中词表才采用。模型下载、加载或识别失败时，保留 OCR 原文并写入待复核。
 
@@ -1516,7 +1516,10 @@ class AdbCapture:
 src/ocr/
  ├── __init__.py              # 包 init
  ├── template_manager.py     # TemplateManager — OpenCV 模板匹配（~180 行）
- ├── recognizer.py           # GeneralRecognizer — PaddleOCR + 编辑距离矫正（~280 行）
+ ├── image_preprocessor.py  # ImagePreprocessor — 纯图像预处理
+ ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
+ ├── character_similarity.py # CharacterSimilarityService — 名称纠错
+ ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排
  └── ocr_loader.py           # 单例延迟加载（~47 行）
 ```
 
@@ -1565,9 +1568,9 @@ match(image, threshold=0.8)
   └── 写入参考截图宽高 → templates/wujiang_select.json
 ```
 
-### 12.3 武将名称识别器（recognizer.py）
+### 12.3 武将名称识别组件
 
-使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别。
+`GeneralRecognizer` 使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别，并只负责 ROI 裁剪、引擎延迟加载和调用编排。图像增强由 `ImagePreprocessor` 承担，名称纠错由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
 
 #### 两段式识别策略
 
@@ -1577,10 +1580,10 @@ match(image, threshold=0.8)
   → PaddleOCR → 文字 + 置信度
 
 第二段：武将名库编辑距离矫正
-  ⓐ 极高置信度（≥99.5%）且 OCR 结果不在武将库 → 信任 OCR，保护新增武将
-  ⓑ 否则 → 用 165 武将名称列表做编辑距离匹配（阈值 ≤ 1）
+  ⓐ 用 165 武将名称列表做编辑距离匹配（阈值 ≤ 1）
      唯一候选 → 直接采纳
      多候选 → 多维汉字特征评分决胜（详见下文）
+  ⓑ 无候选且极高置信度（≥99.5%）→ 信任 OCR，保护新增武将
 ```
 
 #### 多维汉字特征评分算法（2026-06-30 新增）
@@ -1619,21 +1622,30 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 | 仓颉码 | unihan-etl（UNIHAN `kCangjie`） | 同上 | 首次 OCR/纠错时按需加载 |
 | 部首 | cnradical | 同上 | JSON 缓存 / 运行时补齐 |
 | 拼音 | pypinyin | 同上 | JSON 缓存 / 纠错时按需加载 |
-| 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `recognizer.py` 内联路径 | 运行时解析文本文件，首次约 355ms |
+| 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `CharacterFeatureRepository` | 通过 `unihan_etl.Options().work_dir` 解析文本文件 |
 
 数据文件 `src/data/char_info_cache.json` 包含 223 个高频汉字（武将名 + 常见 OCR 误识字）。
-缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存。
+`CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。
 
 #### 类结构
 
 ```python
 class GeneralRecognizer:
-    def __init__(self, rois=None, hero_names=None, reference_size=(2560, 1440))
+    def __init__(self, rois=None, hero_names=None, reference_size=(2560, 1440),
+                 page_type="hero_selection", preprocessor=None, similarity_service=None)
     recognize(image) → list[dict]           # 对 8 个 ROI 逐一识别
     _recognize_single(roi, slot) → (str, float)
-    _preprocess_roi(roi) → np.ndarray       # 图像预处理
     _extract_text(ocr_result) → (str, float) # 解析 PaddleOCR 返回
     save_results(results, json_path, image_path)  # 静态方法
+
+class ImagePreprocessor:
+    preprocess_roi(roi) → np.ndarray
+
+class CharacterSimilarityService:
+    correct_hero_name(text, hero_names) → str
+
+class CharacterFeatureRepository:
+    load() / get_feature(char) / save()
 ```
 
 ROI 坐标以参考分辨率保存。`recognize()` 读取当前截图尺寸后分别计算宽高比例，
@@ -1654,17 +1666,17 @@ GeneralRecognizer.recognize(image)
   ├── 根据 reference_size 计算 scale_x / scale_y
   ├── 逐个换算并裁剪 8 个 ROI
   └── _recognize_single(roi, slot)
-       ├── _preprocess_roi(roi)
+       ├── ImagePreprocessor.preprocess_roi(roi)
        ├── _engine.ocr(prepared)
        ├── _extract_text(result)
-       └── _correct_with_hero_list(text, hero_names)
+       └── CharacterSimilarityService.correct_hero_name(text, hero_names)
 ```
 
 #### 关键常量
 
 ```python
-_HIGH_CONFIDENCE = 0.995         # 极高置信度——跳过矫正，保护新武将
-_EDIT_DISTANCE_THRESHOLD = 1      # 编辑距离最大允许差异
+_HIGH_CONFIDENCE = 0.995         # 极高置信度且无纠错候选时，保护新武将
+CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD = 1  # 编辑距离最大允许差异
 ```
 
 #### 图像预处理流程
@@ -1704,12 +1716,12 @@ def _engine(self):
 
 #### 编辑距离矫正详解
 
-`_correct_with_hero_list("曹不", hero_names)` 流程：
+`CharacterSimilarityService.correct_hero_name("曹不", hero_names)` 流程：
 
 1. 遍历所有武将名，计算编辑距离
 2. 找到最优匹配（距离最小的候选）
-3. 距离 ≤ `_EDIT_DISTANCE_THRESHOLD(1)` 时采纳
-4. 多个候选 → `_pick_visually_similar()` 视觉相似度决胜
+3. 距离 ≤ `EDIT_DISTANCE_THRESHOLD(1)` 时采纳
+4. 多个候选 → 服务内的视觉相似度评分决胜
 
 **评分算法**（以 `"王剪" → ["王异", "王翦"]` 为例）：
 

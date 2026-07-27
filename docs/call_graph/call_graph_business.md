@@ -413,7 +413,7 @@ _recognize_name_cell(cell)
   -> [最高候选是单字] _recognize_name_glyphs()
      -> 亮色列分组 -> 2-4 个字形
      -> 保留原始背景与留白 -> 每字 _recognize_cell()
-     -> 拼接 -> _correct_with_hero_list()
+     -> 拼接 -> CharacterSimilarityService.correct_hero_name()
      -> [命中词表] 返回补识别名称
   -> [逐字失败] hero.startswith(单字) 的候选数量
      -> 唯一 -> 返回唯一候选

@@ -135,7 +135,7 @@ RecommendationPanel.update_recommendations()
 | `HeroRelationSelectDialog._accept_selection()` | `hero_relation_select_dialog.py` | 按英雄 ID 的稳定顺序提交已选择关系 |
 | `RecommendationPanel._load_default_heroes()` | `recommendation_panel.py` | 启动时默认武将加载 |
 
-> **性能标注：** `get_hero_by_name()` 内部是 O(N) 线性遍历（N=165）。在 OCR 矫正流程中，每帧会被 `_correct_with_hero_list()` 调用 8 次，每次又通过编辑距离遍历全部 165 个名称。如果修改为 `name -> id` 的 dict 索引可消除 O(N) 查找，但当前 165 规模下线性扫描的延迟可以忽略（< 0.01ms）。
+> **性能标注：** `get_hero_by_name()` 内部是 O(N) 线性遍历（N=165）。在 OCR 矫正流程中，每帧可由 `CharacterSimilarityService.correct_hero_name()` 触发 8 次编辑距离遍历。如果修改为 `name -> id` 的 dict 索引可消除 O(N) 查找，但当前 165 规模下线性扫描的延迟可以忽略（< 0.01ms）。
 
 ### 2.2 按 ID 查询（O(1) 字典访问）
 

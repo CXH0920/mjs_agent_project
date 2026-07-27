@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 from PySide6.QtCore import QThread, Signal
 from src.data.recommendation_index_repository import mark_recommendation_index_stale
-from src.ocr.recognizer import _correct_with_hero_list
+from src.ocr.character_similarity import CharacterSimilarityService
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ class OfficialDataImportService:
 
     def __init__(self, hero_names: list[str] | None = None) -> None:
         self._hero_names = hero_names or self._load_hero_names()
+        self._name_corrector = CharacterSimilarityService()
         self._ocr = None
         self._rare_char_ocr = None
         self._rare_char_engine_failed = False
@@ -503,14 +504,14 @@ class OfficialDataImportService:
             candidate_name = self._chinese_text(text)
             if len(candidate_name) < 2:
                 continue
-            corrected = _correct_with_hero_list(candidate_name, self._hero_names)
+            corrected = self._name_corrector.correct_hero_name(candidate_name, self._hero_names)
             if corrected in self._hero_names:
                 corrected_matches.append((corrected, confidence))
         if corrected_matches:
             return max(corrected_matches, key=lambda item: item[1])
         glyph_name, glyph_confidence = self._recognize_name_glyphs(cell, engine)
         if glyph_name:
-            corrected = _correct_with_hero_list(glyph_name, self._hero_names)
+            corrected = self._name_corrector.correct_hero_name(glyph_name, self._hero_names)
             if corrected in self._hero_names:
                 return corrected, glyph_confidence
         return "", 0.0
@@ -535,7 +536,7 @@ class OfficialDataImportService:
 
         glyph_name, glyph_confidence = self._recognize_name_glyphs(cell)
         if glyph_name:
-            corrected = _correct_with_hero_list(glyph_name, self._hero_names)
+            corrected = self._name_corrector.correct_hero_name(glyph_name, self._hero_names)
             if corrected in self._hero_names:
                 return corrected, glyph_confidence
         prefix_matches = [hero for hero in self._hero_names if hero.startswith(name)]
@@ -595,7 +596,7 @@ class OfficialDataImportService:
             return name, confidence
         if len(name) == 1:
             return name, confidence
-        return _correct_with_hero_list(name, self._hero_names), confidence
+        return self._name_corrector.correct_hero_name(name, self._hero_names), confidence
 
     @staticmethod
     def _normalize_rate(text: str) -> str:

@@ -28,7 +28,10 @@ src/capture/
 src/ocr/
 ├── __init__.py
 ├── template_manager.py    # TemplateManager — OpenCV 模板匹配
-├── recognizer.py          # GeneralRecognizer — PaddleOCR + 编辑距离矫正
+├── image_preprocessor.py  # ImagePreprocessor — 放大、CLAHE、锐化、灰度
+├── character_feature_repository.py  # 汉字特征缓存与动态补齐
+├── character_similarity.py # CharacterSimilarityService — 名称纠错
+├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
 └── ocr_loader.py          # 单例延迟加载
 ```
 
@@ -101,15 +104,13 @@ ROI 裁剪 → 放大 3× → CLAHE 增强对比度 → 锐化 → 灰度 → Pa
 ```
 PaddleOCR → 文字 + 置信度
   │
-  ├── 极高置信度（≥99.5%）且不在武将库？
-  │   └── ✅ 信任 OCR，保护新武将不被误矫正
-  │
-  └── 否则 → 165 武将库编辑距离匹配
+  └── 165 武将库编辑距离匹配
        ├── 距离 ≤ 1 且唯一候选 → 直接采纳
        └── 距离 ≤ 1 且多候选 → 多维汉字特征评分决胜
+       └── 无候选且极高置信度（≥99.5%）→ 保留原文，保护新武将
 ```
 
-官方榜单导入不使用页面模板匹配、通用 `OcrWorker` 队列或 `GeneralRecognizer`。它在 `src.business.official_data_import_service` 中单独创建 PaddleOCR 实例，并复用 `_correct_with_hero_list()` 与 `_HIGH_CONFIDENCE` 的基础名称规则；完整词表候选优先和单字逐字兜底均局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一榜单的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
+官方榜单导入不使用页面模板匹配、通用 `OcrWorker` 队列或 `GeneralRecognizer`。它在 `src.business.official_data_import_service` 中单独创建 PaddleOCR 实例，并依赖公开的 `CharacterSimilarityService.correct_hero_name()` 完成词表纠错；完整词表候选优先和单字逐字兜底均局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一榜单的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
 
 ### 3.4 多维汉字特征评分
 
@@ -141,7 +142,7 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 | `char_info_cache.json`（223 字） | ~10ms | 武将名 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
-223 个字覆盖了武将名所有用字的 99.6%，缓存未命中的汉字在运行时由 unihan-etl / cnradical / pypinyin 补齐并写入进程内存。
+`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。223 个字覆盖了武将名所有用字的 99.6%，缓存未命中的汉字在运行时由 unihan-etl / cnradical / pypinyin 补齐并写入进程内存；需要落盘时由仓库的 `save()` 以 UTF-8/LF 原子写入。
 
 ---
 
@@ -174,7 +175,7 @@ def probe_mumu_adb() -> str:
 ### 4.2 图像预处理流水线
 
 ```python
-def _preprocess_roi(self, roi: np.ndarray) -> np.ndarray:
+def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
     # 1. 放大 3×
     roi = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     # 2. CLAHE 自适应直方图均衡
@@ -220,6 +221,9 @@ def _preprocess_roi(self, roi: np.ndarray) -> np.ndarray:
 | `TemplateManager.match(image, threshold)` → `(bool, float)` | 模板匹配 |
 | `TemplateManager.set_template(image, roi)` | 制作模板 |
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别 8 个武将名 |
+| `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | OCR 图像预处理 |
+| `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
+| `CharacterFeatureRepository(cache_path=None)` | 汉字特征缓存加载、动态补齐与保存 |
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |
 | `OcrWorker.submit(task)` | 串行执行模板匹配与 OCR，并通过任务完成信号返回结果 |
 

@@ -61,17 +61,15 @@ if gray.shape[0] < self._template.shape[0] ...
 ```
 PaddleOCR → 文字 + 置信度
   │
-  ├── 极高置信度（≥99.5%）且 OCR 结果不在武将库？
-  │   └── ✅ 信任 OCR，保留原文（保护新增武将不被误矫）
-  │
-  └── 否则 → 编辑距离匹配
+  └── 编辑距离匹配
        └── 距离 ≤ 1 的单候选 → 采纳
        └── 距离 ≤ 1 的多候选 → 多维汉字特征评分决胜
+       └── 无候选 → 保留 OCR 原文；极高置信度（≥99.5%）作为新武将保护标记
 ```
 
-**为什么（置信度门槛移除）：** 旧实现只在 `conf < 98.8%` 时触发矫正，未考虑 PaddleOCR 可能**高置信度地误识别**——如将"王翦"识别为"王异"且置信度 > 99%。改用编辑距离本身做安全阀（阈值 1），比置信度数字更可靠。同时增加极高置信度保护（≥99.5% 且不在库），避免新武将（如游戏更新添加的角色）被强行拉回旧名列表。
+**为什么（置信度门槛移除）：** 旧实现只在 `conf < 98.8%` 时触发矫正，未考虑 PaddleOCR 可能**高置信度地误识别**——如将"王翦"识别为"王异"且置信度 > 99%。改用编辑距离本身做安全阀（阈值 1），比置信度数字更可靠。先查找词表候选，再在无候选时保留极高置信度结果，避免新武将（如游戏更新添加的角色）被强行拉回旧名列表。
 
-**为什么（保留极高置信度保护）：** 形近字误读（"曹不"→"曹丕"）置信度通常不会超过 99.5%，而正确识别新武将（如"王明"）置信度极高。这条保护让新武将可以不经矫正直接通过。
+**为什么（保留极高置信度保护）：** 形近字误读也可能达到极高置信度（如"赢政"→"嬴政"）。因此，只要编辑距离筛选到词表候选，仍执行纠错；只有无候选的高置信度结果才作为新武将原文保留。
 
 `_EDIT_DISTANCE_THRESHOLD = 1`。允许 1 个编辑距离的差异（增/删/改一个字），超过则接受 PaddleOCR 的原始结果。
 
@@ -184,22 +182,18 @@ pypinyin 首次加载约 194ms，虽然正常情况下缓存全覆盖不会触�
 2. **依赖 `unihan_etl` 的内部缓存目录结构**（`Cache/downloads/`），该目录是 `unihan_etl` 的实现细节，不是其公开 API，在版本升级中可能变化。旧提交 `a65a24b`（用 UNIHAN `kTotalStrokes` 懒加载替换内联字典）引入该路径后，实际上引入了一个隐式的跨平台兼容性债务。
 3. **无法降级**：路径不存在时静默失败返回空字典，但排查者无法区分"文件不存在"和"文件确实没有该字段"。
 
-**修复方案：通过 `unihan_etl` 公开 API 获取路径。**
+**当前实现：由 `CharacterFeatureRepository` 通过 `unihan_etl` 公开 API 获取路径。**
 
 ```python
 from unihan_etl.core import Options
 irg_path = Options().work_dir / "Unihan_IRGSources.txt"
 ```
 
-`Options().work_dir` 是 `unihan_etl` 公开的属性，返回 `Unihan.zip` 解压后的缓存目录（`<cache_root>/downloads/`），无需假设 `unihan_etl` 的内部目录结构。这一行的行为在所有平台上一致：
-
-- **Linux：** `~/.cache/Tony_Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`
-- **macOS：** `~/Library/Caches/Tony_Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`
-- **Windows：** `~/AppData/Local/Tony Narlock/unihan_etl/Cache/downloads/Unihan_IRGSources.txt`
+`Options().work_dir` 是 `unihan_etl` 公开的属性，返回 `Unihan.zip` 解压后的缓存目录，无需假设 `unihan_etl` 的内部目录结构。仓库通过 `Options().destination` 获取导出的 `unihan.csv`，通过 `work_dir` 获取原始笔画文件；代码中不再出现 Windows/AppData 专属路径，缓存 JSON 路径可在构造 `CharacterFeatureRepository` 时注入。
 
 **为什么不把 `kTotalStrokes` 写入 `char_info_cache.json` 来完全绕过文件解析：**
 
-`char_info_cache.json` 目前只收录了 223 个高频汉字（覆盖了所有武将名用字），如果在这里固化笔画数，确实可以消除对 `Unihan_IRGSources.txt` 的运行时依赖。但这样做的风险是：当武将名出现缓存未收录的汉字时，`_query_char_from_unihan()` 和 `_get_radical_client()` 都会动态补齐，唯独笔画数无法补齐，平局判定会退化。保留 `_load_strokes()` 懒加载机制，使得任何汉字在运行时都能实时补齐笔画数，与四角号码/仓颉码/部首/拼音的补齐能力对等。
+`char_info_cache.json` 目前只收录了 223 个高频汉字（覆盖了所有武将名用字），如果在这里固化笔画数，确实可以消除对 `Unihan_IRGSources.txt` 的运行时依赖。但这样做的风险是：当武将名出现缓存未收录的汉字时，`CharacterFeatureRepository` 需要动态补齐四角号码、仓颉码、部首、拼音和笔画数；若不保留笔画懒加载，平局判定会退化。保留仓库内的笔画懒加载机制，使得任何汉字在运行时都能实时补齐笔画数，与其余特征的补齐能力对等。
 
 **为什么不在运行时用 `Options(download=True)` 自动下载 IRGSources 文件：**
 
