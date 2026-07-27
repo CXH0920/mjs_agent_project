@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser
+from PySide6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -158,9 +158,13 @@ def test_specific_fetch_dialog_uses_shared_faction_combo(tmp_path: Path) -> None
 
 def test_checkable_faction_combo_arrow_reflects_popup_state() -> None:
     app = _app()
+    dialog = QDialog()
+    layout = QVBoxLayout(dialog)
     faction_combo = CheckableComboBox()
     faction_combo.set_items(["魏"])
-    faction_combo.show()
+    layout.addWidget(faction_combo)
+    layout.addStretch()
+    dialog.show()
     app.processEvents()
 
     assert faction_combo._arrow_button.toolTip() == "展开势力筛选"
@@ -170,6 +174,7 @@ def test_checkable_faction_combo_arrow_reflects_popup_state() -> None:
     app.processEvents()
     assert faction_combo._popup is not None
     assert faction_combo._popup.isVisible()
+    assert faction_combo._popup.parentWidget() is faction_combo.window()
     assert faction_combo._arrow_button.toolTip() == "收起势力筛选"
 
     QTest.mouseClick(faction_combo._arrow_button, Qt.MouseButton.LeftButton)
@@ -181,9 +186,10 @@ def test_checkable_faction_combo_arrow_reflects_popup_state() -> None:
 def test_guide_fetch_preserves_selected_heroes_across_filters(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
     hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
     hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
-    dialog = GuideFetchDialog(hero_manager)
+    dialog = GuideFetchDialog(hero_manager, guide_manager)
 
     dialog._list_widget.item(0).setCheckState(Qt.CheckState.Checked)
     dialog._search_input.setText("刘")
@@ -197,6 +203,36 @@ def test_guide_fetch_preserves_selected_heroes_across_filters(tmp_path: Path) ->
     assert dialog._list_widget.item(0).checkState() == Qt.CheckState.Checked
     assert dialog._list_widget.item(1).checkState() == Qt.CheckState.Checked
     assert any(button.text() == "曹操  ×" for button in dialog._selected_tags_widget.findChildren(QPushButton))
+
+
+def test_guide_fetch_filters_statuses_and_describes_regeneration(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏", last_updated="2026-07-26"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀", last_updated="2026-07-26"))
+    hero_manager.add_hero(Hero(id=3, name="孙权", faction="吴", last_updated="2026-07-26"))
+    hero_manager.add_hero(Hero(id=4, name="诸葛亮", faction="蜀", last_updated="日期未知"))
+    guide_manager.add_guide(HeroGuide(hero_id=2, last_updated="2026-07-26"))
+    guide_manager.add_guide(HeroGuide(hero_id=3, last_updated="2026-07-18"))
+    guide_manager.add_guide(HeroGuide(hero_id=4, last_updated="2026-07-26"))
+
+    dialog = GuideFetchDialog(hero_manager, guide_manager)
+
+    assert dialog._list_widget.count() == 1
+    assert dialog._list_widget.item(0).text() == "曹操  [魏]  【未生成】"
+
+    dialog._status_combo.setCurrentIndex(1)
+    assert dialog._list_widget.count() == 2
+    assert dialog._list_widget.item(0).text() == "孙权  [吴]  【待更新】"
+    assert dialog._list_widget.item(1).text() == "诸葛亮  [蜀]  【待更新】"
+    dialog._list_widget.item(0).setCheckState(Qt.CheckState.Checked)
+    assert dialog._ok_btn.text() == "重新生成 1 篇攻略"
+
+    dialog._status_combo.setCurrentIndex(3)
+    assert dialog._selected_id_set == {3}
+    dialog._list_widget.item(0).setCheckState(Qt.CheckState.Checked)
+    assert dialog._ok_btn.text() == "生成 2 篇攻略（含重新生成 1 篇）"
 
 
 def test_synergy_pair_shows_pair_counts_and_existing_policy(tmp_path: Path) -> None:
@@ -223,13 +259,14 @@ def test_extracted_edit_dialogs_construct_independently(tmp_path: Path) -> None:
     hero_manager = HeroManager(tmp_path / "heroes.json")
     hero = Hero(id=1, name="曹操", faction="魏")
     hero_manager.add_hero(hero)
-    synergy = SynergyScore(hero_a_id=1, hero_b_id=2, score=3)
+    synergy = SynergyScore(hero_a_id=1, hero_b_id=2, score=3, last_updated="2026-07-27")
 
     hero_dialog = HeroEditDialog(hero)
     synergy_dialog = SynergyEditDialog(hero_manager, synergy)
 
     assert hero_dialog.get_hero().id == 1
     assert synergy_dialog.get_synergy().score == 3
+    assert synergy_dialog.get_synergy().last_updated == "2026-07-27"
 
 
 def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:

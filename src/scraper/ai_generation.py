@@ -19,6 +19,7 @@ import itertools
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from src.scraper.ai_utils import _save_json, GUIDE_BATCH_SAVE_INTERVAL, SYNERGY_BATCH_SAVE_INTERVAL
@@ -57,6 +58,11 @@ def _commit_generation_batch(
     _save_json(output_path, data)
     result.committed = True
     logger.info("生成结果已分批提交: %s (%d 条)", output_path, len(data))
+
+
+def _with_synergy_updated_date(generated: dict) -> dict:
+    """为校验成功的相性结果写入本次生成日期。"""
+    return {**generated, "last_updated": date.today().isoformat()}
 
 
 # ============================================================
@@ -202,7 +208,7 @@ def run_synergy_generation(
                 result_summary.completed += 1
                 score = generated.get("score", 0)
                 if score >= score_threshold:
-                    working_synergies[key] = generated
+                    working_synergies[key] = _with_synergy_updated_date(generated)
                 else:
                     # 本次结果校验成功但未达到用户设置的下限，移除旧记录。
                     working_synergies.pop(key, None)
@@ -301,7 +307,7 @@ def run_synergy_pair_generation(
         result_summary.add_usage(usage)
         if generated:
             result_summary.completed += 1
-            working_synergies[pair_key] = generated
+            working_synergies[pair_key] = _with_synergy_updated_date(generated)
             print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
         else:
             result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
@@ -387,7 +393,7 @@ def run_synergy_single_generation(
         generated, usage = generator.generate_synergy(ha, hb)
         result_summary.add_usage(usage)
         if generated:
-            working_synergies[key] = generated
+            working_synergies[key] = _with_synergy_updated_date(generated)
             result_summary.completed += 1
             print(f"  [{i}/{len(pairs)}] {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
         else:

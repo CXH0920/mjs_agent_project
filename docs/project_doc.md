@@ -376,6 +376,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 
 始终重新生成所有 `N*(N-1)/2` 对组合，失败配对保留旧正式数据。
 每 10 条（`SYNERGY_BATCH_SAVE_INTERVAL`）校验成功后原子提交，结束时提交尾批。
+每条成功结果写入 `SynergyScore.last_updated` 当日日期；低于评分阈值而移除的结果不写入正式相性文件。
 
 ### 2.6 run_synergy_pair_generation() — 指定配对（支持 2~8 武将）
 
@@ -642,6 +643,8 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `delete_synergy(a_id, b_id)` | (int, int) | None | 自动排序 key |
 | `list_synergies()` | — | list[SynergyScore] | 全部 |
 | `list_synergies_for_hero(hero_id)` | int | list[SynergyScore] | 该武将涉及的所有相性 |
+
+`SynergyScore.last_updated` 记录最后成功生成相性评分的日期，格式为 `YYYY-MM-DD`。手工编辑相性内容时保留该日期，不把编辑操作误记为重新生成。
 
 **双向归一实现**：
 ```python
@@ -1034,8 +1037,9 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
  ├── HeroFetchDialog (fetch_dialog.py, ~31行)
  │   SelectionMode=MULTI, ReturnFormat=IDS
  │
- ├── GuideFetchDialog (guide_fetch_dialog.py, ~29行)
+ ├── GuideFetchDialog (guide_fetch_dialog.py, ~90行)
  │   SelectionMode=MULTI, ReturnFormat=HEROES_DICT
+ │   依赖 HeroManager + GuideManager，按未生成/待更新/已有攻略筛选
  │
  ├── SynergyPairDialog (synergy_pair_dialog.py, ~49行)
  │   SelectionMode=MULTI_LIMIT, max_selection=8，覆盖 _on_accept 允许选择 2~8 个武将

@@ -146,6 +146,7 @@ class TestSynergyManager:
                 combo_stability=7,
                 adaptability=6,
                 description="完整字段持久化",
+                last_updated="2026-07-27",
             ))
             mgr.save()
 
@@ -159,6 +160,7 @@ class TestSynergyManager:
             assert updated.combo_stability == 7
             assert updated.adaptability == 6
             assert updated.description == "完整字段持久化"
+            assert updated.last_updated == "2026-07-27"
 
     def test_load_nonexistent_file(self):
         mgr = SynergyManager(synergies_file=Path("/nonexistent/synergies.json"))

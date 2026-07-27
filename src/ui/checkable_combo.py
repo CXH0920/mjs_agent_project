@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLineEdit,
@@ -132,7 +133,7 @@ class CheckableComboBox(QWidget):
         if self._popup is not None:
             self._popup.deleteLater()
 
-        popup = QFrame(self, Qt.WindowType.Popup)
+        popup = QFrame(self.window())
         popup.setFrameShape(QFrame.Shape.StyledPanel)
         popup.setStyleSheet(
             "QFrame { background-color: #f4f9ff; border: 1px solid #b9d5ee; }"
@@ -223,16 +224,41 @@ class CheckableComboBox(QWidget):
         confirm.clicked.connect(popup.close)
         refresh_items()
         self._popup = popup
-        position = self.mapToGlobal(self.rect().bottomLeft())
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+        position = self.mapTo(self.window(), self.rect().bottomLeft())
         popup.setGeometry(position.x(), position.y(), max(self.width(), 280), 300)
         popup.show()
+        popup.raise_()
 
         self._set_popup_expanded(True)
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self._popup and event.type() == QEvent.Type.Hide:
+            app = QApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self)
             self._set_popup_expanded(False)
+        elif (
+            self._popup is not None
+            and self._popup.isVisible()
+            and event.type() == QEvent.Type.MouseButtonPress
+            and isinstance(watched, QWidget)
+            and not self._is_popup_interaction(watched)
+        ):
+            self._popup.close()
         return super().eventFilter(watched, event)
+
+    def _is_popup_interaction(self, widget: QWidget) -> bool:
+        return (
+            widget is self
+            or widget is self._popup
+            or self._popup.isAncestorOf(widget)
+            or widget is self._arrow_button
+            or widget is self._display
+            or self._display.isAncestorOf(widget)
+        )
 
     def _set_popup_expanded(self, expanded: bool) -> None:
         icon = QStyle.StandardPixmap.SP_ArrowUp if expanded else QStyle.StandardPixmap.SP_ArrowDown

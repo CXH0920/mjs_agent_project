@@ -152,6 +152,17 @@ class _PairHeroDialog:
         return QDialog.DialogCode.Accepted
 
 
+class _GuideHeroDialog:
+    guide_manager: GuideManager | None = None
+
+    def __init__(self, _hero_manager, guide_manager, parent=None) -> None:
+        _GuideHeroDialog.guide_manager = guide_manager
+        self.selected_heroes = [{"id": 1, "name": "曹操"}]
+
+    def exec(self) -> QDialog.DialogCode:
+        return QDialog.DialogCode.Accepted
+
+
 def _workflow(tmp_path: Path) -> tuple[AiGenerationWorkflow, _GuideService, _SynergyService]:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")
@@ -195,6 +206,23 @@ def test_incremental_guide_workflow_uses_only_missing_heroes(tmp_path: Path, mon
     assert _ProgressDialog.instances[-1].finished == [(True, "完成")]
     assert reloads == [True]
     assert changed == [True]
+
+
+def test_specific_guide_workflow_passes_guide_manager(tmp_path: Path, monkeypatch) -> None:
+    workflow, guide_service, _ = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "GuideFetchDialog", _GuideHeroDialog)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
+    monkeypatch.setattr(
+        "src.scraper.prompt_utils.estimate_cost",
+        lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
+    )
+
+    workflow.request_guide_specific()
+
+    assert _GuideHeroDialog.guide_manager is workflow._guide_manager
+    assert guide_service.calls[0] == ("specific", [{"id": 1, "name": "曹操"}], "browser")
 
 
 def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monkeypatch) -> None:

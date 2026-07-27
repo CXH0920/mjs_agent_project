@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -202,9 +203,9 @@ def test_full_synergy_failure_commits_successes_and_preserves_failed_pair(
     assert not result.succeeded
     assert result.committed
     assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
-        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5, "last_updated": date.today().isoformat()},
         {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
-        {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
+        {"hero_a_id": 2, "hero_b_id": 3, "score": 6, "last_updated": date.today().isoformat()},
     ]
     output = capsys.readouterr().out
     assert "[1/3] 甲 <-> 乙 OK" in output
@@ -254,7 +255,7 @@ def test_synergy_pair_failure_commits_successes_and_preserves_failed_pair(tmp_pa
     assert result.skipped == 1
     assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
         {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
-        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5, "last_updated": date.today().isoformat()},
     ]
 
 
@@ -278,7 +279,7 @@ def test_synergy_pair_overwrites_existing_when_requested(tmp_path: Path) -> None
     assert result.completed == 1
     assert result.skipped == 0
     assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
-        {"hero_a_id": 1, "hero_b_id": 2, "score": 8},
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 8, "last_updated": date.today().isoformat()},
     ]
 
 
@@ -304,7 +305,7 @@ def test_synergy_single_failure_commits_successes_and_preserves_failed_pair(
     assert not result.succeeded
     assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
         {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
-        {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 5, "last_updated": date.today().isoformat()},
     ]
 
 

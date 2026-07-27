@@ -94,6 +94,11 @@ class TestSynergyScore:
         s = SynergyScore(hero_a_id=1, hero_b_id=2, score=8)
         assert s.score == 8
         assert s.synergy_rating == "A"
+        assert s.last_updated == date.today().isoformat()
+
+    def test_synergy_preserves_explicit_update_date(self) -> None:
+        s = SynergyScore(hero_a_id=1, hero_b_id=2, score=8, last_updated="2026-07-27")
+        assert s.last_updated == "2026-07-27"
 
     @pytest.mark.parametrize(
         ("score", "rating"),

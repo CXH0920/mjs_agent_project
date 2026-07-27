@@ -168,6 +168,10 @@ class SynergyScore(BaseModel):
     combo_stability: int = Field(default=5, ge=1, le=10, description="配合稳定性 1-10")
     adaptability: int = Field(default=5, ge=1, le=10, description="环境适应力 1-10")
     description: str = Field(default="", description="相性总评的一句话定性判断")
+    last_updated: str = Field(
+        default_factory=lambda: date.today().isoformat(),
+        description="最后成功生成相性评分的日期",
+    )
 
     @field_validator("hero_a_id", "hero_b_id")
     @classmethod

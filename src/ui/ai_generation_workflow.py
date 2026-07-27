@@ -88,7 +88,11 @@ class AiGenerationWorkflow(QObject):
         )
 
     def request_guide_specific(self) -> None:
-        dialog = GuideFetchDialog(self._hero_manager, parent=self._window)
+        dialog = GuideFetchDialog(
+            self._hero_manager,
+            self._guide_manager,
+            parent=self._window,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_heroes:
             return
         self._start_guide_generation(

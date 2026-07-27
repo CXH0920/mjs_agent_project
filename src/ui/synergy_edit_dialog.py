@@ -93,4 +93,5 @@ class SynergyEditDialog(QDialog):
             combo_stability=self._stability_spin.value(),
             adaptability=self._adaptability_spin.value(),
             description=self._description_edit.toPlainText(),
+            last_updated=self._synergy.last_updated,
         )

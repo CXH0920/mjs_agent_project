@@ -225,7 +225,9 @@ _connect_capture_signals():
 菜单「数据 → 攻略获取 → 指定获取」
   -> MainWindow._request_guide_specific()
     -> AiGenerationWorkflow.request_guide_specific()
-      -> GuideFetchDialog(hero_manager, parent)                  [选择指定武将]
+      -> GuideFetchDialog(hero_manager, guide_manager, parent)   [默认筛选未生成]
+        -> HeroManager.list_heroes() + GuideManager.get_guide()
+        -> 状态：未生成 / 待更新 / 已有攻略
       -> _start_guide_generation(selected, "specific", ...)
 ```
 
@@ -242,7 +244,7 @@ GuideFetchService [signal] fetch_completed
 | `MainWindow._request_guide_*()` | 数据→攻略获取 | 仅委托 `AiGenerationWorkflow.request_guide_*()` |
 | `request_guide_all()` | 全量获取 | `_get_heroes_as_dicts()` → `_start_guide_generation()` → `GuideFetchService.fetch_all()` |
 | `request_guide_incremental()` | 增量获取 | `GuideManager.list_guides()` → 缺失筛选 → `fetch_incremental(missing)` |
-| `request_guide_specific()` | 指定获取 | `GuideFetchDialog` → `_start_guide_generation()` → `fetch_specific()` |
+| `request_guide_specific()` | 指定获取 | `GuideFetchDialog(HeroManager, GuideManager)` → 状态筛选 → `_start_guide_generation()` → `fetch_specific()` |
 
 ### 2.3 相性评分菜单
 
@@ -723,8 +725,8 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
        -> QLabel(tip) [可选]
        -> QLineEdit(搜索) → textChanged → _apply_filter
        -> CheckableComboBox(彩色势力标签 + 多选下拉) → checked_values_changed → _apply_filter
-          -> 右侧上下箭头随 Popup 展开/收起切换
-          -> Popup: QLineEdit(搜索势力) + 浅蓝色 QListWidget + 全选/反选/确定
+          -> 右侧上下箭头随浮动筛选层展开/收起切换，同一按钮再次点击显式收起
+          -> 对话框内浮动层: QLineEdit(搜索势力) + 浅蓝色 QListWidget + 全选/反选/确定
        -> QLabel(计数: "已选 N / 共 M")
        -> [MULTI_LIMIT] QLabel(上限提示)
        -> QPushButton("全选") / "取消全选"
@@ -746,7 +748,7 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
 | 对话框 | 继承自 | SelectionMode | max_selection | 返回格式 | 特殊覆盖 |
 |--------|--------|---------------|---------------|----------|----------|
 | `HeroFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 无限制 | `IDS` | 无 |
-| `GuideFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 无限制 | `HEROES_DICT` | 无 |
+| `GuideFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 无限制 | `HEROES_DICT` | 攻略状态筛选、状态标签和重新生成提示 |
 | `SynergyPairDialog` | `BaseHeroSelectDialog` | `MULTI_LIMIT` | 8 | `HEROES_DICT` | `_on_accept`: 允许 2~8 个 |
 | `SynergySingleDialog` | `BaseHeroSelectDialog` | `SINGLE` | 1 | `HEROES_DICT` | 无 |
 

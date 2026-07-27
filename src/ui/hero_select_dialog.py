@@ -112,6 +112,7 @@ class BaseHeroSelectDialog(QDialog):
         self._faction_combo = CheckableComboBox()
         self._faction_combo.set_items(factions)
         layout.addWidget(self._faction_combo)
+        self._add_filter_options(layout)
 
         # 计数标签
         self._count_label = QLabel(
@@ -181,6 +182,17 @@ class BaseHeroSelectDialog(QDialog):
     def _add_selection_options(self, layout: QVBoxLayout) -> None:
         """供子类在多选计数下方加入业务专属选项。"""
 
+    def _add_filter_options(self, layout: QVBoxLayout) -> None:
+        """供子类在势力筛选下方加入业务专属筛选项。"""
+
+    def _matches_extra_filter(self, hero: Hero) -> bool:
+        """返回武将是否满足子类定义的附加筛选条件。"""
+        return True
+
+    def _list_item_text(self, hero: Hero) -> str:
+        """返回列表项显示文本。"""
+        return f"{hero.name}  [{hero.faction}]"
+
     def _select_all_text(self) -> str:
         """返回批量选择按钮文本。"""
         if self._max_selection > 0:
@@ -195,12 +207,13 @@ class BaseHeroSelectDialog(QDialog):
             hero for hero in self._all_heroes
             if hero.faction in selected_factions
             and (not search_text or search_text in hero.name)
+            and self._matches_extra_filter(hero)
         ]
 
         self._list_widget.blockSignals(True)
         self._list_widget.clear()
         for hero in self._filtered_heroes:
-            item = QListWidgetItem(f"{hero.name}  [{hero.faction}]")
+            item = QListWidgetItem(self._list_item_text(hero))
             item.setData(Qt.ItemDataRole.UserRole, hero.id)
             if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)

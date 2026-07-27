@@ -58,6 +58,7 @@
 | `Hero.difficulty` | 官网无此字段 | `Difficulty.MEDIUM(2)` | 难度评级，官网不含，默认中等 |
 | `Hero.mode_viability` | 官网无此字段 | `{}` | 各模式强度梯队，需 AI 生成 |
 | `Hero.last_updated` | 当前日期 | `date.today()` | 自动填入采集日期 |
+| `SynergyScore.last_updated` | 相性生成当前日期 | `date.today()` | 最后成功生成相性评分的日期；手工编辑保留原日期 |
 | `Hero.icon_url` | 官网 `icon_url` 字段 | `""` | 武将头像 URL，用于下载头像图片到 images/ |
 
 ---
