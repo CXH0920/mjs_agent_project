@@ -223,7 +223,7 @@ def update_recommendations(self, data: list[dict]) -> None
 ColorPicker.color()
   -> FactionColorDialog._save()
   -> save_faction_colors()
-  -> data/faction_colors.json
+  -> config/faction_colors.json
   -> ui/shared/faction_colors.reload_faction_colors()
   -> RecommendationPanel.refresh_faction_colors()
 ```
@@ -232,7 +232,7 @@ ColorPicker.color()
 
 ### 3.5 对局攻略页面
 
-`MatchGuidePanel` 与武将浏览、选将推荐处于同一主窗口 Tab 层级。页面标题行显示最近识别状态，并提供“识别当前阵容”与“从图片导入”入口；初始显示待识别空状态。页面使用 2×2 卡片展示四名武将：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上；头像左上叠加势力标签，底部叠加宽 130px、略宽于头像且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”。双击头像打开复用的技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色从 `data/faction_colors.json` 读取，找不到时使用灰色，配置保存后立即刷新。
+`MatchGuidePanel` 与武将浏览、选将推荐处于同一主窗口 Tab 层级。页面标题行显示最近识别状态，并提供“识别当前阵容”与“从图片导入”入口；初始显示待识别空状态。页面使用 2×2 卡片展示四名武将：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上；头像左上叠加势力标签，底部叠加宽 130px、略宽于头像且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”。双击头像打开复用的技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色从 `config/faction_colors.json` 读取，找不到时使用灰色，配置保存后立即刷新。
 
 选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。未配置 ADB 时通过 `request_mumu_config` 信号打开模拟器配置。
 
@@ -263,7 +263,7 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 `SettingsDialog` 由菜单“配置 → API 配置”打开，内容分为两个 Tab：
 
 - **参数配置**：保留原 API Key、API URL、模型名称、请求频率、HTTP 超时和最大重试次数表单，仍写入 `config.env`。
-- **价格配置**：维护 `data/model_pricing.json` 的币种、计价单位（百万tokens）、更新时间，以及每个模型的输入、输出和可选缓存命中单价。支持新增和删除模型。
+- **价格配置**：维护 `config/model_pricing.json` 的币种、计价单位（百万tokens）、更新时间，以及每个模型的输入、输出和可选缓存命中单价。支持新增和删除模型。
 
 两个 Tab 共用“保存/取消”按钮。保存价格前会校验模型名称非空、名称不重复、单价为合法非负数字；写入过程使用临时文件替换，避免配置文件被部分写入。价格未配置的模型仍不会套用默认价格，成本确认界面会显示无法自动估算。
 

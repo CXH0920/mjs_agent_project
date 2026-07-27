@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
-DEFAULT_PRICING_FILE = PROJECT_ROOT / "data" / "model_pricing.json"
+DEFAULT_PRICING_FILE = PROJECT_ROOT / "config" / "model_pricing.json"
 
 # ============================================================
 # DeepSeek API 默认值

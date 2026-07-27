@@ -12,6 +12,7 @@ from src.scraper.ai_batch import (
     load_heroes,
 )
 from src.scraper.ai_utils import _save_json
+from src.scraper.prompt_utils import estimate_item_cost
 from src.scraper.prompt_utils import load_prompt
 from src.scraper.json_extract import extract_json
 from src.scraper.ai_utils import (
@@ -59,6 +60,12 @@ class TestEstimateCost:
         result = estimate_cost(10, "synergy")
         assert result["mode"] == "synergy"
         assert result["items"] == 45  # 10*9/2
+        assert result["estimated_tokens"] > 0
+
+    def test_synergy_item_cost(self) -> None:
+        """按实际相性对数量估算成本"""
+        result = estimate_item_cost(3, "synergy")
+        assert result["items"] == 3
         assert result["estimated_tokens"] > 0
 
     def test_zero_heroes(self) -> None:

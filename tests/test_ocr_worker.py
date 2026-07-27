@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
+import os
 from types import SimpleNamespace
 
-from PySide6.QtCore import QCoreApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication
 
 from src.business.capture_service import CaptureService
 from src.business.ocr_worker import OcrTask, OcrWorker
@@ -28,8 +31,8 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
             return True, threshold
 
     class FakeRecognizer:
-        def __init__(self, rois, hero_names, reference_size, page_type) -> None:
-            recognizer_inits.append((rois, hero_names, reference_size, page_type))
+        def __init__(self, hero_names, page_type, layout) -> None:
+            recognizer_inits.append((hero_names, page_type, layout))
 
         def recognize(self, image):
             calls.append(image)
@@ -91,8 +94,8 @@ def test_ocr_worker_keeps_default_roi_reference_independent_of_template(monkeypa
             return True, threshold
 
     class FakeRecognizer:
-        def __init__(self, rois, hero_names, reference_size, page_type) -> None:
-            recognizer_inits.append((reference_size, page_type))
+        def __init__(self, hero_names, page_type, layout) -> None:
+            recognizer_inits.append((layout.reference_size, page_type))
 
         def recognize(self, image):
             return []
@@ -141,7 +144,7 @@ def test_ocr_service_routes_direct_requests_to_injected_worker() -> None:
 
 
 def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> None:
-    app = QCoreApplication.instance() or QCoreApplication([])
+    app = QApplication.instance() or QApplication([])
 
     class FakeTemplateManager:
         is_loaded = True
@@ -154,7 +157,7 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
             return True, threshold
 
     class FakeRecognizer:
-        def __init__(self, rois, hero_names, reference_size, page_type) -> None:
+        def __init__(self, hero_names, page_type, layout) -> None:
             pass
 
         def recognize(self, image):

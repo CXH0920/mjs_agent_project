@@ -86,6 +86,9 @@ class MumuConfigDialog(QDialog):
         self._coordinator.template_screenshot_ready.connect(self._on_template_screenshot_ready)
         self._coordinator.template_screenshot_failed.connect(self._on_template_screenshot_failed)
         self._coordinator.template_capture_finished.connect(self._restore_template_button)
+        self._coordinator.roi_layout_screenshot_ready.connect(self._on_roi_layout_screenshot_ready)
+        self._coordinator.roi_layout_screenshot_failed.connect(self._on_roi_layout_screenshot_failed)
+        self._coordinator.roi_layout_capture_finished.connect(self._restore_roi_layout_button)
         self._coordinator.operation_failed.connect(self._on_operation_failed)
         self._load_config()
 
@@ -240,6 +243,12 @@ class MumuConfigDialog(QDialog):
         parameter_grid.addWidget(self._match_guide_threshold_spin, 1, 3)
         parameter_grid.addWidget(QLabel("选择冷却"), 2, 0)
         parameter_grid.addWidget(self._hero_cooldown_spin, 2, 1)
+        parameter_grid.addWidget(QLabel("识别区域"), 3, 0)
+        hero_roi_row = self._roi_layout_button_row("hero_selection")
+        match_guide_roi_row = self._roi_layout_button_row("match_guide")
+        parameter_grid.addLayout(hero_roi_row, 3, 1)
+        parameter_grid.addWidget(QLabel("识别区域"), 3, 2)
+        parameter_grid.addLayout(match_guide_roi_row, 3, 3)
         parameter_grid.setColumnStretch(1, 1)
         parameter_grid.setColumnStretch(3, 1)
         parameter_layout.addLayout(parameter_grid)
@@ -260,6 +269,27 @@ class MumuConfigDialog(QDialog):
         footer.addWidget(save_btn)
         footer.addWidget(cancel_btn)
         layout.addLayout(footer)
+
+    def _roi_layout_button_row(self, page_type: str) -> QHBoxLayout:
+        row = QHBoxLayout()
+        capture_button = QPushButton("截图编辑")
+        image_button = QPushButton("图片编辑")
+        reset_button = QPushButton("恢复默认")
+        capture_button.clicked.connect(lambda: self._start_roi_layout_capture(page_type))
+        image_button.clicked.connect(lambda: self._select_roi_layout_image(page_type))
+        reset_button.clicked.connect(lambda: self._reset_roi_layout(page_type))
+        row.addWidget(capture_button)
+        row.addWidget(image_button)
+        row.addWidget(reset_button)
+        if page_type == "match_guide":
+            self._edit_match_guide_roi_capture_btn = capture_button
+            self._edit_match_guide_roi_image_btn = image_button
+            self._reset_match_guide_roi_btn = reset_button
+        else:
+            self._edit_hero_roi_capture_btn = capture_button
+            self._edit_hero_roi_image_btn = image_button
+            self._reset_hero_roi_btn = reset_button
+        return row
 
     def _template_box(self, title: str, template_name: str) -> QGroupBox:
         """创建单个模板卡片，保留旧控件属性供现有槽函数使用。"""
@@ -683,6 +713,77 @@ class MumuConfigDialog(QDialog):
     def _on_template_screenshot_failed(self, template_name: str, message: str) -> None:
         QMessageBox.warning(self, "制作模板", f"截图失败:\n{message}")
 
+    def _start_roi_layout_capture(self, page_type: str) -> None:
+        if not self._coordinator.start_roi_layout_capture(page_type):
+            return
+        button = self._roi_layout_capture_button(page_type)
+        button.setEnabled(False)
+        button.setText("正在截图...")
+
+    def _select_roi_layout_image(self, page_type: str) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择用于调整识别区域的截图",
+            str(PROJECT_ROOT / "screenshots"),
+            "图片 (*.png *.jpg *.jpeg)",
+        )
+        if not path:
+            return
+        try:
+            from PIL import Image
+
+            with Image.open(path) as source:
+                image = source.copy()
+            self._open_roi_layout_editor(page_type, image)
+        except Exception as exc:
+            logger.exception("读取 OCR ROI 截图失败")
+            QMessageBox.warning(self, "编辑识别区域", f"无法读取图片:\n{exc}")
+
+    def _on_roi_layout_screenshot_ready(self, page_type: str, image) -> None:
+        try:
+            self._open_roi_layout_editor(page_type, image)
+        finally:
+            self._coordinator.finish_roi_layout_capture(page_type)
+
+    def _on_roi_layout_screenshot_failed(self, _page_type: str, message: str) -> None:
+        QMessageBox.warning(self, "编辑识别区域", f"截图失败:\n{message}")
+
+    def _open_roi_layout_editor(self, page_type: str, image) -> None:
+        try:
+            pixmap = pil_to_qpixmap(image)
+            if pixmap.isNull():
+                raise ValueError("图像转换失败")
+            from src.ui.roi_selector import RoiLayoutEditorDialog
+
+            dialog = RoiLayoutEditorDialog(
+                pixmap,
+                self._coordinator.roi_layout(page_type),
+                page_type,
+                self,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            self._coordinator.save_roi_layout(page_type, dialog.get_layout())
+            QMessageBox.information(self, "编辑识别区域", "识别区域已保存，将在下一次识别时生效。")
+        except Exception as exc:
+            logger.exception("保存 OCR ROI 配置失败")
+            QMessageBox.warning(self, "编辑识别区域", f"保存识别区域时出错:\n{exc}")
+
+    def _reset_roi_layout(self, page_type: str) -> None:
+        page_name = "对局攻略" if page_type == "match_guide" else "选将推荐"
+        if QMessageBox.question(
+            self,
+            "恢复默认识别区域",
+            f"确定恢复{page_name}的默认识别区域吗？",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._coordinator.reset_roi_layout(page_type)
+            QMessageBox.information(self, "恢复默认识别区域", "默认识别区域已恢复，将在下一次识别时生效。")
+        except Exception as exc:
+            logger.exception("恢复默认 OCR ROI 配置失败")
+            QMessageBox.warning(self, "恢复默认识别区域", f"恢复失败:\n{exc}")
+
     def _on_operation_failed(self, operation: str, message: str) -> None:
         """恢复异常中断的后台操作对应控件。"""
         if operation == "detect_adb":
@@ -702,10 +803,21 @@ class MumuConfigDialog(QDialog):
     def _template_button(self, template_name: str) -> QPushButton:
         return self._make_match_guide_template_btn if template_name == "match_guide" else self._make_template_btn
 
+    def _roi_layout_capture_button(self, page_type: str) -> QPushButton:
+        return (
+            self._edit_match_guide_roi_capture_btn
+            if page_type == "match_guide" else self._edit_hero_roi_capture_btn
+        )
+
     def _restore_template_button(self, template_name: str) -> None:
         button = self._template_button(template_name)
         button.setEnabled(True)
         button.setText("🎯制作模板")
+
+    def _restore_roi_layout_button(self, page_type: str) -> None:
+        button = self._roi_layout_capture_button(page_type)
+        button.setEnabled(True)
+        button.setText("截图编辑")
 
     def _refresh_template(self, template_name: str) -> None:
         if template_name == "match_guide":
@@ -745,6 +857,17 @@ class MumuConfigDialog(QDialog):
         )
         self._select_template_btn.setEnabled(state != "connecting")
         self._select_match_guide_template_btn.setEnabled(state != "connecting")
+        can_capture_roi = self._coordinator.capture is not None and state != "connecting"
+        self._edit_hero_roi_capture_btn.setEnabled(
+            can_capture_roi and not self._coordinator.is_roi_layout_capture_in_progress("hero_selection")
+        )
+        self._edit_match_guide_roi_capture_btn.setEnabled(
+            can_capture_roi and not self._coordinator.is_roi_layout_capture_in_progress("match_guide")
+        )
+        self._edit_hero_roi_image_btn.setEnabled(state != "connecting")
+        self._edit_match_guide_roi_image_btn.setEnabled(state != "connecting")
+        self._reset_hero_roi_btn.setEnabled(state != "connecting")
+        self._reset_match_guide_roi_btn.setEnabled(state != "connecting")
         self._resume_poll_btn.setEnabled(
             self._poll_mode_check.isChecked()
             and self._coordinator.poll_is_paused()

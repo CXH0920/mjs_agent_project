@@ -204,7 +204,8 @@ MainWindow._request_synergy_pair()
   -> SynergyPairDialog(hero_manager)                            [选 2-8 武将]
      -> BaseHeroSelectDialog(MULTI_LIMIT, max_selection=8)
      -> 用户勾选 → _on_accept → _set_result_by_ids()
-  -> BackendChooseDialog(title)                                [选择后端]
+  -> estimate_item_cost(pair_count, "synergy")                 [AI 成本估算]
+  -> BackendChooseDialog(estimation, title)                    [选择后端]
   -> GuideProgressDialog(pair_count, title)
      -> SynergyFetchService.fetch_pair(selected, backend)
        -> _is_busy()

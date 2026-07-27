@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, Signal
 
 from src.business.mumu_config_coordinator import MumuConfigCoordinator
 from src.capture.prober import MuMuDeviceInfo
+from src.ocr.roi_config import DEFAULT_ROI_CONFIG_PATH, OcrRoiConfig
 
 
 class _CaptureService(QObject):
@@ -150,3 +151,30 @@ def test_template_lifecycle_and_service_delegation(tmp_path: Path) -> None:
     assert coordinator.template_status("match_guide").loaded
     assert finished == ["match_guide"]
     assert not coordinator.is_template_capture_in_progress("match_guide")
+
+
+def test_roi_layout_capture_and_save_are_separate_from_template_lifecycle(tmp_path: Path) -> None:
+    capture = _CaptureService()
+    ocr = _OcrService(tmp_path)
+    operation = _OperationService()
+    roi_config = OcrRoiConfig(DEFAULT_ROI_CONFIG_PATH, tmp_path / "ocr_rois.json")
+    coordinator = MumuConfigCoordinator(
+        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0},
+        capture,
+        ocr,
+        operation,
+        roi_config=roi_config,
+    )
+    received: list[tuple[str, object]] = []
+    coordinator.roi_layout_screenshot_ready.connect(lambda page, image: received.append((page, image)))
+
+    assert coordinator.start_roi_layout_capture("hero_selection")
+    assert not coordinator.start_roi_layout_capture("hero_selection")
+    assert operation.template_requests == ["roi_layout:hero_selection"]
+    operation.screenshot_ready.emit("roi_layout:hero_selection", "image")
+    coordinator.finish_roi_layout_capture("hero_selection")
+
+    layout = coordinator.roi_layout("hero_selection")
+    coordinator.save_roi_layout("hero_selection", layout)
+    assert received == [("hero_selection", "image")]
+    assert roi_config.user_path.exists()

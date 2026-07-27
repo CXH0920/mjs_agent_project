@@ -110,10 +110,14 @@ class AiGenerationWorkflow(QObject):
             return
 
         selected = dialog.selected_heroes
-        backend = self._choose_backend("相性配对生成")
+        pair_count = len(selected) * (len(selected) - 1) // 2
+        from src.config.env import get_api_config
+        from src.scraper.prompt_utils import estimate_item_cost
+
+        estimation = estimate_item_cost(pair_count, "synergy", get_api_config()["model"])
+        backend = self._choose_backend("相性配对生成", estimation)
         if backend is None:
             return
-        pair_count = len(selected) * (len(selected) - 1) // 2
         self._start_synergy_generation(
             pair_count,
             "相性配对生成进度",
@@ -132,11 +136,16 @@ class AiGenerationWorkflow(QObject):
         if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_hero:
             return
 
-        backend = self._choose_backend("选定武将相性生成")
+        pair_count = len(all_heroes) - 1
+        from src.config.env import get_api_config
+        from src.scraper.prompt_utils import estimate_item_cost
+
+        estimation = estimate_item_cost(pair_count, "synergy", get_api_config()["model"])
+        backend = self._choose_backend("选定武将相性生成", estimation)
         if backend is None:
             return
         self._start_synergy_generation(
-            len(all_heroes) - 1,
+            pair_count,
             "选定武将相性生成进度",
             lambda: self._synergy_service.fetch_single(
                 dialog.selected_hero,

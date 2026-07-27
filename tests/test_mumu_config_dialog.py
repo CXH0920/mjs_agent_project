@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton
 
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.mumu_config_dialog import MumuConfigDialog
@@ -110,6 +110,17 @@ def test_auto_switch_tab_checkbox_loads_and_saves_config(monkeypatch) -> None:
     monkeypatch.setattr(dialog, "_show_save_toast", lambda: None)
     dialog._on_save()
     assert dialog.get_config()["mumu_ocr_auto_switch_tab"] is False
+
+
+def test_ocr_roi_controls_keep_the_configuration_footer() -> None:
+    _app()
+    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [])
+    buttons = [button.text() for button in dialog.findChildren(QPushButton)]
+
+    assert buttons.count("截图编辑") == 2
+    assert buttons.count("图片编辑") == 2
+    assert buttons.count("恢复默认") == 2
+    assert "保存" in buttons
 
 
 def test_multiple_running_devices_require_explicit_selection() -> None:

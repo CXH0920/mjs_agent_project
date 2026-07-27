@@ -95,7 +95,7 @@ def save_env_file(path, data):
 
 ### 3.4 模型价格
 
-- `data/model_pricing.json` 是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回“无法自动估算”。
+- `config/model_pricing.json` 是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回“无法自动估算”。
 - 价格文件包含 `currency`、`unit`、`updated_at` 和 `models`；计价单位为“百万tokens”，每个模型维护输入、输出、可选缓存命中单价。
 - `load_pricing_config(path)` 负责读取价格表，`save_pricing_config(path, data)` 负责 UTF-8 无 BOM、LF 换行的原子写入。
 - API 配置对话框的“价格配置”页签直接维护该文件，保存前会校验模型名称唯一且单价为非负数。

@@ -80,8 +80,11 @@ class _SynergyService(QObject):
 
 
 class _BackendDialog:
-    def __init__(self, **_kwargs) -> None:
-        pass
+    instances: list["_BackendDialog"] = []
+
+    def __init__(self, **kwargs) -> None:
+        self.estimation = kwargs.get("estimation")
+        _BackendDialog.instances.append(self)
 
     def exec(self) -> QDialog.DialogCode:
         return QDialog.DialogCode.Accepted
@@ -202,6 +205,11 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr(workflow_module, "SynergySingleDialog", _SingleHeroDialog)
+    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
+    monkeypatch.setattr(
+        "src.scraper.prompt_utils.estimate_item_cost",
+        lambda count, mode, model: {"items": count, "mode": mode, "model": model},
+    )
     workflow.synergies_changed.connect(lambda: changed.append(True))
 
     workflow.request_synergy_single()
@@ -211,6 +219,9 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     assert synergy_service.calls[0][2] == "browser"
     assert _ProgressDialog.instances[-1].item_count == 1
     assert _ProgressDialog.instances[-1].item_label == "相性评分"
+    assert _BackendDialog.instances[-1].estimation == {
+        "items": 1, "mode": "synergy", "model": "test-model",
+    }
     assert reloads == [True]
     assert changed == [True]
 
@@ -220,6 +231,11 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr(workflow_module, "SynergyPairDialog", _PairHeroDialog)
+    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
+    monkeypatch.setattr(
+        "src.scraper.prompt_utils.estimate_item_cost",
+        lambda count, mode, model: {"items": count, "mode": mode, "model": model},
+    )
 
     workflow.request_synergy_pair()
 
@@ -227,6 +243,9 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
         ([{"id": 1, "name": "曹操"}, {"id": 2, "name": "刘备"}], "browser", True),
     ]
     assert _ProgressDialog.instances[-1].item_count == 1
+    assert _BackendDialog.instances[-1].estimation == {
+        "items": 1, "mode": "synergy", "model": "test-model",
+    }
 
 
 def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypatch) -> None:

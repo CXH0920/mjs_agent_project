@@ -2,7 +2,7 @@
 名将杀 Agent - 后端选择对话框
 
 提供 API 和浏览器两种生成方式的 Tab 切换选择。
-攻略生成时展示成本估算，相性生成时仅展示模式说明。
+传入成本估算时展示生成模式、Token 和预估费用。
 """
 
 from __future__ import annotations
@@ -56,6 +56,7 @@ class BackendChooseDialog(QDialog):
                 "all": "全量获取",
                 "incremental": "增量获取",
                 "specific": "指定获取",
+                "synergy": "相性生成",
             }
             m = mode_text.get(self._estimation.get("mode", ""), "未知")
 

@@ -135,7 +135,7 @@ save_env_file(env_path, data: dict)
 ```
 prompt_utils.estimate_cost(count, mode, model)
   -> get_model_pricing(model)
-     -> load_pricing_config(data/model_pricing.json)
+     -> load_pricing_config(config/model_pricing.json)
      -> 校验 input_per_million / output_per_million
   -> 计算输入/输出 token 与费用
 

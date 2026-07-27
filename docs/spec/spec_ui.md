@@ -115,7 +115,7 @@ card._name_overlay.setText(name or "未知武将")
 
 ### 规则 5.1：势力色表从 JSON 配置加载
 
-`_load_faction_colors()` 优先从 `data/faction_colors.json` 加载，文件不存在或格式错误时使用内建兜底色表。
+`_load_faction_colors()` 优先从 `config/faction_colors.json` 加载，文件不存在或格式错误时使用内建兜底色表。
 
 ```python
 FACTION_COLORS = {

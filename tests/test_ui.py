@@ -5,8 +5,9 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QTabWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QTabWidget
 from src.config.env import parse_env_file, save_env_file
+from src.ui.backend_choose_dialog import BackendChooseDialog
 from src.ui.settings_dialog import SettingsDialog
 
 
@@ -92,3 +93,23 @@ def test_settings_dialog_has_parameter_and_pricing_tabs(tmp_path, monkeypatch):
     raw = pricing_path.read_bytes()
     assert not raw.startswith(b"\xef\xbb\xbf")
     assert b"\r\n" not in raw
+
+
+def test_backend_dialog_displays_synergy_cost_estimate():
+    _app()
+    dialog = BackendChooseDialog(
+        estimation={
+            "mode": "synergy",
+            "model": "test-model",
+            "items": 3,
+            "estimated_input_tokens": 2400,
+            "estimated_output_tokens": 600,
+            "estimated_tokens": 3000,
+            "estimated_cost_cny": 0.0123,
+        }
+    )
+
+    label_texts = [label.text() for label in dialog.findChildren(QLabel)]
+    assert "模式: 相性生成" in label_texts
+    assert "需要生成的项数: 3" in label_texts
+    assert "预估费用: CNY 0.0123" in label_texts

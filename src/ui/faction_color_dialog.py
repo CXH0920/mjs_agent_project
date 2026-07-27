@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from src.ui.shared.faction_colors import load_faction_colors
 
 logger = logging.getLogger(__name__)
-COLORS_FILE = Path(__file__).resolve().parents[2] / "data" / "faction_colors.json"
+COLORS_FILE = Path(__file__).resolve().parents[2] / "config" / "faction_colors.json"
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 

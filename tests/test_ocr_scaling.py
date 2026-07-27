@@ -5,7 +5,8 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from src.ocr.recognizer import GeneralRecognizer, _DEFAULT_GENERALS_ROI
+from src.ocr.recognizer import GeneralRecognizer
+from src.ocr.roi_config import OcrRoiConfig
 from src.ocr.template_manager import TemplateManager
 
 
@@ -42,8 +43,10 @@ def test_general_recognizer_scales_rois_to_current_image(monkeypatch) -> None:
 
 def test_default_general_rois_leave_vertical_name_padding() -> None:
     """默认 2560×1440 ROI 高度应为 145，避免竖排名称底部被截断。"""
-    assert len(_DEFAULT_GENERALS_ROI) == 8
-    assert all(roi[2:] == [50, 145] for roi in _DEFAULT_GENERALS_ROI)
+    layout = OcrRoiConfig().layout_for("hero_selection")
+
+    assert len(layout.slots) == 8
+    assert all(slot.name_roi[2:] == (50, 145) for slot in layout.slots)
 
 
 def test_general_recognizer_skips_empty_roi_without_calling_opencv(monkeypatch) -> None:

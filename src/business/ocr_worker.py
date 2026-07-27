@@ -12,7 +12,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from src.ocr.recognizer import DEFAULT_ROI_REFERENCE_SIZE, GeneralRecognizer
+from src.ocr.recognizer import GeneralRecognizer
+from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 from src.ocr.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class OcrTask:
     rois: tuple[tuple[int, ...], ...] | None
     template_name: str
     threshold: float
+    roi_layout: OcrRoiLayout | None = None
     recognize: bool = True
     match_template: bool = True
     task_id: str = field(default_factory=lambda: uuid.uuid4().hex)
@@ -88,12 +90,13 @@ class OcrWorker(QThread):
             if not task.recognize:
                 return result
 
-            recognizer = self._get_recognizer(
-                task.rois,
-                task.hero_names,
-                DEFAULT_ROI_REFERENCE_SIZE,
-                task.template_name,
-            )
+            layout = task.roi_layout or OcrRoiConfig().layout_for(task.template_name)
+            if task.rois is not None:
+                layout = OcrRoiLayout(
+                    layout.reference_size,
+                    tuple(OcrRoiSlot(name_roi=tuple(roi)) for roi in task.rois),
+                )
+            recognizer = self._get_recognizer(layout, task.hero_names, task.template_name)
             results = recognizer.recognize(task.image)
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
             GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json")
@@ -107,18 +110,16 @@ class OcrWorker(QThread):
 
     def _get_recognizer(
         self,
-        rois: tuple[tuple[int, ...], ...] | None,
+        layout: OcrRoiLayout,
         hero_names: tuple[str, ...],
-        reference_size: tuple[int, int],
         page_type: str,
     ) -> GeneralRecognizer:
-        signature = (rois, hero_names, reference_size, page_type)
+        signature = (layout, hero_names, page_type)
         if self._recognizer is None or self._recognizer_signature != signature:
             self._recognizer = GeneralRecognizer(
-                rois=[list(roi) for roi in rois] if rois else None,
                 hero_names=list(hero_names),
-                reference_size=reference_size,
                 page_type=page_type,
+                layout=layout,
             )
             self._recognizer_signature = signature
         return self._recognizer

@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from src.capture.adb_screen import AdbCapture
 from src.capture.image_utils import save_image
 from src.business.ocr_worker import OcrTask, OcrWorker
+from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,11 @@ class CaptureService(QObject):
     connection_changed = Signal(str, str)  # (状态, 详情)
     _capture_ready = Signal(object)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, roi_config: OcrRoiConfig | None = None):
         super().__init__(parent)
         self._capture: AdbCapture | None = None
         self._config = {}  # 当前配置缓存
+        self._roi_config = roi_config or OcrRoiConfig()
         self._connection_state = "unconfigured"
         self._connection_detail = ""
         self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
@@ -78,7 +80,6 @@ class CaptureService(QObject):
                 "mumu_adb_port": int,
                 "mumu_ocr_enabled": bool,
                 "mumu_ocr_match_threshold": float,
-                "ocr_generals_roi": list[list[int]],
             }
         """
         with self._session_lock:
@@ -117,6 +118,11 @@ class CaptureService(QObject):
         """返回当前截图配置的副本。"""
         with self._session_lock:
             return dict(self._config)
+
+    @property
+    def roi_config(self) -> OcrRoiConfig:
+        """返回共享的 OCR ROI 配置，供配置页编辑后立即生效。"""
+        return self._roi_config
 
     @property
     def capture(self) -> AdbCapture | None:
@@ -325,18 +331,22 @@ class CaptureService(QObject):
             if template_name == "match_guide"
             else "mumu_hero_selection_threshold"
         )
-        effective_rois = rois if rois is not None else (
-            None if template_name == "match_guide" else config.get("ocr_generals_roi")
-        )
+        layout = self._roi_config.layout_for(template_name)
+        if rois is not None:
+            layout = OcrRoiLayout(
+                layout.reference_size,
+                tuple(OcrRoiSlot(name_roi=tuple(roi)) for roi in rois),
+            )
         task = OcrTask(
             image=image,
             hero_names=tuple(hero_names or ()),
-            rois=tuple(tuple(roi) for roi in effective_rois) if effective_rois else None,
+            rois=None,
             template_name=template_name,
             threshold=config.get(
                 threshold_key,
                 config.get("mumu_ocr_match_threshold", 0.8),
             ),
+            roi_layout=layout,
             recognize=recognize,
             match_template=match_template,
         )

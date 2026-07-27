@@ -251,7 +251,8 @@ GuideFetchService [signal] fetch_completed
        -> BaseHeroSelectDialog(MULTI_LIMIT, max_selection=8)
        -> 覆盖 _on_accept(): 允许 2-8 个（不要求正好 8 个）
       -> [accepted] 计算组合数 C(n,2)
-      -> _choose_backend(title) -> BackendChooseDialog
+      -> estimate_item_cost(pair_count, "synergy")              [AI 成本估算]
+      -> _choose_backend(title, estimation) -> BackendChooseDialog
       -> _start_synergy_generation(pair_count, title, ...)
         -> GuideProgressDialog(pair_count, title, parent)
         -> SynergyFetchService.fetch_pair(selected, backend)
@@ -264,7 +265,8 @@ GuideFetchService [signal] fetch_completed
     -> AiGenerationWorkflow.request_synergy_single()
       -> SynergySingleDialog(hero_manager, parent)               [选 1 武将]
        -> BaseHeroSelectDialog(SINGLE mode → 单选)
-      -> _choose_backend(title) -> BackendChooseDialog
+      -> estimate_item_cost(pair_count, "synergy")              [AI 成本估算]
+      -> _choose_backend(title, estimation) -> BackendChooseDialog
       -> SynergyFetchService.fetch_single(hero, all_heroes, backend)
 ```
 
@@ -751,7 +753,7 @@ MainWindow._open_faction_colors()
   -> ColorPicker._open_picker()
      -> QColorDialog(DontUseNativeDialog)
      -> HSB 调整 / 屏幕取色
-  -> save_faction_colors(colors, data/faction_colors.json)
+  -> save_faction_colors(colors, config/faction_colors.json)
   -> reload_faction_colors()
   -> RecommendationPanel.refresh_faction_colors()
 

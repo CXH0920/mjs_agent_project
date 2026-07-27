@@ -27,31 +27,9 @@ from PIL import Image
 
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
+from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
-
-# 选将推荐的 8 个武将名称 ROI（基于 2560×1440 分辨率）
-DEFAULT_ROI_REFERENCE_SIZE = (2560, 1440)
-_DEFAULT_GENERALS_ROI = [
-    [155, 370, 50, 145],
-    [440, 370, 50, 145],
-    [720, 370, 50, 145],
-    [1005, 370, 50, 145],
-    [1330, 370, 50, 145],
-    [1615, 370, 50, 145],
-    [1895, 370, 50, 145],
-    [2175, 370, 50, 145],
-]
-
-# 对局攻略的四名角色分布在固定席位；左侧与右中位置会随视角二选一，
-# 因此扫描 5 个候选席位，但只返回识别到的最多 4 名角色。
-_MATCH_GUIDE_SEAT_ROIS = [
-    ([780, 190, 55, 140], [990, 120, 80, 120]),    # 上左
-    ([1515, 190, 55, 140], [1725, 130, 65, 90]),   # 上右
-    ([45, 395, 55, 140], [225, 310, 90, 115]),     # 左侧
-    ([2250, 400, 55, 140], [2450, 325, 65, 90]),   # 右中
-    ([2250, 985, 55, 145], [2450, 930, 65, 90]),   # 右下（玩家）
-]
 
 _HIGH_CONFIDENCE = 0.995       # 极高置信度且无纠错候选时，保护新武将
 
@@ -61,13 +39,21 @@ class GeneralRecognizer:
 
     def __init__(self, rois: list[list[int]] | None = None,
                  hero_names: list[str] | None = None,
-                 reference_size: tuple[int, int] = DEFAULT_ROI_REFERENCE_SIZE,
+                 reference_size: tuple[int, int] | None = None,
                  page_type: str = "hero_selection",
                  preprocessor: ImagePreprocessor | None = None,
-                 similarity_service: CharacterSimilarityService | None = None) -> None:
-        self._rois = rois or _DEFAULT_GENERALS_ROI
+                 similarity_service: CharacterSimilarityService | None = None,
+                 layout: OcrRoiLayout | None = None) -> None:
+        base_layout = layout or OcrRoiConfig().layout_for(page_type)
+        if rois is not None:
+            base_layout = OcrRoiLayout(
+                reference_size or base_layout.reference_size,
+                tuple(OcrRoiSlot(name_roi=tuple(roi)) for roi in rois),
+            )
+        elif reference_size is not None and reference_size != base_layout.reference_size:
+            base_layout = OcrRoiLayout(reference_size, base_layout.slots)
+        self._layout = base_layout
         self._hero_names = hero_names or []
-        self._reference_size = reference_size
         self._page_type = page_type
         self._ocr = None  # PaddleOCR 引擎（延迟加载）
         self._preprocessor = preprocessor or ImagePreprocessor()
@@ -115,7 +101,7 @@ class GeneralRecognizer:
             return self._recognize_match_guide(image)
 
         image_height, image_width = image.shape[:2]
-        reference_width, reference_height = self._reference_size
+        reference_width, reference_height = self._layout.reference_size
         scale_x = image_width / reference_width
         scale_y = image_height / reference_height
         logger.debug("武将 ROI 缩放: %.4f×%.4f，当前截图=%sx%s，参考=%sx%s",
@@ -123,7 +109,8 @@ class GeneralRecognizer:
                      reference_width, reference_height)
 
         results: list[dict] = []
-        for i, (x, y, w, h) in enumerate(self._rois):
+        for i, slot in enumerate(self._layout.slots):
+            x, y, w, h = slot.name_roi
             roi_x = round(x * scale_x)
             roi_y = round(y * scale_y)
             roi_w = max(1, round(w * scale_x))
@@ -149,18 +136,21 @@ class GeneralRecognizer:
     def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
         """识别 2v2 对局中的角色名与楚/汉军标签。"""
         image_height, image_width = image.shape[:2]
-        reference_width, reference_height = self._reference_size
+        reference_width, reference_height = self._layout.reference_size
         scale_x = image_width / reference_width
         scale_y = image_height / reference_height
         results: list[dict] = []
-        for seat_index, (name_roi, team_roi) in enumerate(_MATCH_GUIDE_SEAT_ROIS, 1):
-            name_img = self._crop_roi(image, name_roi, scale_x, scale_y)
+        for seat_index, slot in enumerate(self._layout.slots, 1):
+            name_img = self._crop_roi(image, list(slot.name_roi), scale_x, scale_y)
             if name_img is None:
                 continue
             name, confidence = self._recognize_single(name_img, seat_index)
             if not name:
                 continue
-            team_img = self._crop_roi(image, team_roi, scale_x, scale_y)
+            team_img = (
+                self._crop_roi(image, list(slot.team_roi), scale_x, scale_y)
+                if slot.team_roi is not None else None
+            )
             team = self._recognize_team(team_img, seat_index) if team_img is not None else ""
             results.append({
                 "index": len(results) + 1,

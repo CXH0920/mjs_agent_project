@@ -64,12 +64,25 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
 
     if mode == "guide":
         items = hero_count
-        input_tokens = items * 2000
-        output_tokens = items * 500
     elif mode == "synergy":
         items = hero_count * (hero_count - 1) // 2
-        input_tokens = items * 800
-        output_tokens = items * 200
+    else:
+        raise ValueError(f"未知 mode: {mode}")
+
+    return estimate_item_cost(items, mode, model)
+
+
+def estimate_item_cost(item_count: int, mode: str, model: str | None = None) -> dict:
+    """按实际 API 请求项数估算生成成本。"""
+    if model is None:
+        model = DEFAULT_MODEL
+
+    if mode == "guide":
+        input_tokens = item_count * 2000
+        output_tokens = item_count * 500
+    elif mode == "synergy":
+        input_tokens = item_count * 800
+        output_tokens = item_count * 200
     else:
         raise ValueError(f"未知 mode: {mode}")
 
@@ -82,7 +95,7 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
 
     return {
         "mode": mode,
-        "items": items,
+        "items": item_count,
         "estimated_tokens": total_tokens,
         "estimated_input_tokens": input_tokens,
         "estimated_output_tokens": output_tokens,

@@ -18,6 +18,7 @@ PLANS.md
 
 # Environment files
 config.env
+config/ocr_rois.json
 
 # Edge browser profile (Playwright browser mode)
 data/edge_profile/

@@ -614,7 +614,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 55 条相性（当前数据） |
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
-| `data/faction_colors.json` | —（直接读取） | 14 个势力配色 |
+| `config/faction_colors.json` | —（直接读取） | 14 个势力配色 |
 
 ### 4.3 HeroManager 方法清单
 
@@ -748,7 +748,7 @@ MainWindow.__init__
 
 ### 5.3 对局攻略页面（MatchGuidePanel）
 
-对局攻略与武将浏览、选将推荐处于同级 Tab。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `data/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
+对局攻略与武将浏览、选将推荐处于同级 Tab。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `config/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
 
 页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口均通过 `template_name="match_guide"` 使用独立模板并将 OCR 结果交给 `load_from_ocr()` 更新卡片。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。`LineupState` 负责四个槽位、敌我人数限制、主将选择和显式确认；确认后才由 `MatchAnalysisService` 生成摘要，并由 `MatchAnalysisView` 渲染总览、我方打法、对抗敌方和单将详情。
 
@@ -756,7 +756,7 @@ MainWindow.__init__
 
 位于 配置 → 模拟器配置，与 SettingsDialog 同级菜单入口。
 
-`MumuConfigCoordinator` 持有配置草稿、设备列表、共享会话状态和模板截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`MumuConfigDialog` 只负责表单渲染、文件选择、ROI 框选及用户提示；关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
+`MumuConfigCoordinator` 持有配置草稿、设备列表、共享会话状态，以及模板和 ROI 布局截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`MumuConfigDialog` 只负责表单渲染、文件选择、ROI 框选及用户提示；关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
 
 **功能分区**：
 
@@ -776,6 +776,7 @@ MainWindow.__init__
 │ ⚙️ 识别参数                                   │
 │ [☐] 启用武将识别 [☐] 持续轮询 间隔 [2秒] [恢复]│
 │ 武将识别：阈值/选择冷却 | 对局攻略：匹配阈值       │
+│ 选将/对局：截图编辑 | 图片编辑 | 恢复默认          │
 ├──────────────────────────────────────────────┤
 │                                      [保存] [取消]│
 └──────────────────────────────────────────────┘
@@ -798,6 +799,7 @@ MainWindow.__init__
 - **匹配阈值**：武将选择和对局攻略分别配置；对局攻略在每次选将模板命中后只触发一次
 - **轮询间隔**：1-60 秒；未勾选持续轮询时禁用
 - **恢复轮询**：仅持续轮询已勾选且服务处于暂停状态时可用
+- **识别区域编辑**：选将推荐编辑 8 个名称区域；对局攻略编辑 5 组名称和阵营区域。可从共享 ADB 截图或本地图片打开编辑器，保存后下一次识别立即使用新布局；恢复默认只清除当前页面的本地覆盖
 - **保存反馈**：保存识别参数后显示 300ms 的“✓ 识别参数已保存”提示
 
 ### 5.5 区域框选对话框（RoiSelectorDialog）
@@ -813,7 +815,9 @@ MainWindow.__init__
 取消 → 返回 None
 ```
 
-**坐标缩放**：QLabel 显示缩放后的预览图，ROI 坐标按 `scale_x = pm_size.width() / label_size.width()` 映射回原图尺寸。
+**坐标缩放**：QLabel 显示缩放后的预览图时，坐标按图片实际绘制区域映射回原图尺寸，并排除等比缩放产生的黑边。
+
+`RoiLayoutEditorDialog` 在同一预览中覆盖全部 ROI，通过下拉选择席位后拖拽编辑；保存时以当前图片尺寸建立新的 `reference_size`。
 
 ### 5.6 后端选择对话框（BackendChooseDialog）
 
@@ -959,7 +963,7 @@ RecommendationPanel (QWidget)
 ```
 
 **势力配色**：
-从 `data/faction_colors.json` 配置文件加载，启动后缓存到全局变量。文件不存在时使用内建兜底配色：
+从 `config/faction_colors.json` 配置文件加载，启动后缓存到全局变量。文件不存在时使用内建兜底配色：
 
 ```json
 {
@@ -1568,7 +1572,7 @@ match(image, threshold=0.8)
 
 ### 12.3 武将名称识别组件
 
-`GeneralRecognizer` 使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别，并只负责 ROI 裁剪、引擎延迟加载和调用编排。图像增强由 `ImagePreprocessor` 承担，名称纠错由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
+`GeneralRecognizer` 使用 PaddleOCR 对配置布局中的名称区域进行 OCR 识别；对局攻略还读取同一布局中的阵营区域。它只负责 ROI 裁剪、引擎延迟加载和调用编排。图像增强由 `ImagePreprocessor` 承担，名称纠错由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
 
 #### 两段式识别策略
 
@@ -1629,9 +1633,10 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 
 ```python
 class GeneralRecognizer:
-    def __init__(self, rois=None, hero_names=None, reference_size=(2560, 1440),
-                 page_type="hero_selection", preprocessor=None, similarity_service=None)
-    recognize(image) → list[dict]           # 对 8 个 ROI 逐一识别
+    def __init__(self, rois=None, hero_names=None, reference_size=None,
+                 page_type="hero_selection", preprocessor=None, similarity_service=None,
+                 layout=None)
+    recognize(image) → list[dict]           # 对当前布局的全部名称 ROI 逐一识别
     _recognize_single(roi, slot) → (str, float)
     _extract_text(ocr_result) → (str, float) # 解析 PaddleOCR 返回
     save_results(results, json_path, image_path)  # 静态方法
@@ -1646,7 +1651,7 @@ class CharacterFeatureRepository:
     load() / get_feature(char) / save()
 ```
 
-ROI 坐标以参考分辨率保存。`recognize()` 读取当前截图尺寸后分别计算宽高比例，
+ROI 坐标由 `OcrRoiConfig` 从默认文件和本地覆盖文件加载，并以独立参考分辨率保存。`recognize()` 读取当前截图尺寸后分别计算宽高比例，
 再将每个 ROI 的 `x/y/w/h` 换算到当前截图坐标，因此页面比例基本不变时可以适应不同分辨率：
 
 ```
@@ -1662,7 +1667,7 @@ scale_y = current_height / reference_height
 ```
 GeneralRecognizer.recognize(image)
   ├── 根据 reference_size 计算 scale_x / scale_y
-  ├── 逐个换算并裁剪 8 个 ROI
+  ├── 逐个换算并裁剪当前页面的名称 ROI
   └── _recognize_single(roi, slot)
        ├── ImagePreprocessor.preprocess_roi(roi)
        ├── _engine.ocr(prepared)

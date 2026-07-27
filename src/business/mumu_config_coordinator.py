@@ -11,6 +11,7 @@ from src.business.capture_service import CaptureService
 from src.business.emulator_operation_service import EmulatorOperationService
 from src.business.ocr_service import OcrService
 from src.capture.prober import MuMuDeviceInfo
+from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,9 @@ class MumuConfigCoordinator(QObject):
     template_screenshot_ready = Signal(str, object)
     template_screenshot_failed = Signal(str, str)
     template_capture_finished = Signal(str)
+    roi_layout_screenshot_ready = Signal(str, object)
+    roi_layout_screenshot_failed = Signal(str, str)
+    roi_layout_capture_finished = Signal(str)
     operation_failed = Signal(str, str)
 
     def __init__(
@@ -43,6 +47,7 @@ class MumuConfigCoordinator(QObject):
         ocr_service: OcrService,
         operation_service: EmulatorOperationService | None = None,
         parent=None,
+        roi_config: OcrRoiConfig | None = None,
     ) -> None:
         super().__init__(parent)
         self._config = dict(config)
@@ -54,6 +59,13 @@ class MumuConfigCoordinator(QObject):
         )
         self._devices: list[MuMuDeviceInfo] = []
         self._template_captures_in_progress: set[str] = set()
+        self._roi_layout_captures_in_progress: set[str] = set()
+        if roi_config is not None:
+            self._roi_config = roi_config
+        elif hasattr(capture_service, "roi_config"):
+            self._roi_config = capture_service.roi_config
+        else:
+            self._roi_config = OcrRoiConfig()
 
         self._capture_service.connection_changed.connect(self.connection_state_changed.emit)
         self._operation_service.adb_detected.connect(self._on_adb_detected)
@@ -62,8 +74,8 @@ class MumuConfigCoordinator(QObject):
         self._operation_service.connection_finished.connect(self.connection_finished.emit)
         self._operation_service.disconnection_finished.connect(self.disconnection_finished.emit)
         self._operation_service.device_tested.connect(self.device_tested.emit)
-        self._operation_service.screenshot_ready.connect(self.template_screenshot_ready.emit)
-        self._operation_service.screenshot_failed.connect(self._on_template_screenshot_failed)
+        self._operation_service.screenshot_ready.connect(self._on_screenshot_ready)
+        self._operation_service.screenshot_failed.connect(self._on_screenshot_failed)
         self._operation_service.operation_failed.connect(self._on_operation_failed)
 
         self.sync_capture_config()
@@ -153,6 +165,36 @@ class MumuConfigCoordinator(QObject):
     def is_template_capture_in_progress(self, template_name: str) -> bool:
         return template_name in self._template_captures_in_progress
 
+    def start_roi_layout_capture(self, page_type: str) -> bool:
+        """获取当前页面截图，用于编辑该页面的全部 OCR 识别区域。"""
+        self._roi_config.layout_for(page_type)
+        if page_type in self._roi_layout_captures_in_progress:
+            return False
+        self._roi_layout_captures_in_progress.add(page_type)
+        try:
+            self._operation_service.capture_template_screenshot(f"roi_layout:{page_type}")
+        except Exception:
+            self.finish_roi_layout_capture(page_type)
+            raise
+        return True
+
+    def finish_roi_layout_capture(self, page_type: str) -> None:
+        if page_type in self._roi_layout_captures_in_progress:
+            self._roi_layout_captures_in_progress.remove(page_type)
+            self.roi_layout_capture_finished.emit(page_type)
+
+    def is_roi_layout_capture_in_progress(self, page_type: str) -> bool:
+        return page_type in self._roi_layout_captures_in_progress
+
+    def roi_layout(self, page_type: str) -> OcrRoiLayout:
+        return self._roi_config.layout_for(page_type)
+
+    def save_roi_layout(self, page_type: str, layout: OcrRoiLayout) -> None:
+        self._roi_config.save_layout(page_type, layout)
+
+    def reset_roi_layout(self, page_type: str) -> None:
+        self._roi_config.reset_layout(page_type)
+
     def template_status(self, template_name: str = "hero_selection") -> TemplateStatus:
         """读取模板状态，供视图决定文本与颜色。"""
         if not self._ocr_service.is_template_loaded(template_name):
@@ -215,13 +257,29 @@ class MumuConfigCoordinator(QObject):
         self._devices = list(devices)
         self.devices_changed.emit(self.devices)
 
-    def _on_template_screenshot_failed(self, template_name: str, message: str) -> None:
+    def _on_screenshot_ready(self, request_name: str, image) -> None:
+        if request_name.startswith("roi_layout:"):
+            self.roi_layout_screenshot_ready.emit(request_name.split(":", 1)[1], image)
+            return
+        self.template_screenshot_ready.emit(request_name, image)
+
+    def _on_screenshot_failed(self, request_name: str, message: str) -> None:
+        if request_name.startswith("roi_layout:"):
+            page_type = request_name.split(":", 1)[1]
+            self.finish_roi_layout_capture(page_type)
+            self.roi_layout_screenshot_failed.emit(page_type, message)
+            return
+        template_name = request_name
         self.finish_template_capture(template_name)
         self.template_screenshot_failed.emit(template_name, message)
 
     def _on_operation_failed(self, operation: str, message: str) -> None:
         if operation.startswith("capture_template:"):
-            self.finish_template_capture(operation.split(":", 1)[1])
+            request_name = operation.split(":", 1)[1]
+            if request_name.startswith("roi_layout:"):
+                self.finish_roi_layout_capture(request_name.split(":", 1)[1])
+            else:
+                self.finish_template_capture(request_name)
         self.operation_failed.emit(operation, message)
 
     def _device_selection_error(self, selected_explicitly: bool) -> str:
