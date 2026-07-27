@@ -106,7 +106,6 @@ get_mumu_config()
      -> mumu_hero_selection_threshold: from env or 0.8 (float)  [选将模板阈值]
      -> mumu_hero_selection_cooldown: from env or 180 (int)     [选将冷却秒数]
      -> mumu_match_guide_threshold: from env or 0.8 (float)    [对局攻略模板阈值]
-     -> mumu_match_guide_cooldown: from env or 5 (int)          [对局攻略冷却秒数]
   -> return config dict
 ```
 

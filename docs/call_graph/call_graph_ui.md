@@ -914,7 +914,6 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `SettingsDialog` | API Key/URL/Model/限速/超时/重试 | 保存到 config.env |
 | `MumuConfigDialog` | ADB 路径/端口/模板/OCR 配置 | config dict + 服务状态更新 |
 | `BackendChooseDialog` | Token/费用估算 | `"api"` 或 `"browser"` |
-| `CostConfirmDialog` | 遗留组件，当前 AI 流程未调用 | - |
 | `GuideProgressDialog` | 总数量、子进程进度信号 | 实时进度条 + 完成/失败提示 |
 | `RoiSelectorDialog` | 截图 QPixmap | ROI (x, y, w, h) |
 | `HeroEditDialog` | Hero 对象 | 修改后的 Hero 对象 |

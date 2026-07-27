@@ -15,7 +15,6 @@ from src.data.models import (
     IncrementalUpdate,
     Skill,
     SynergyScore,
-    ViabilityTier,
 )
 
 

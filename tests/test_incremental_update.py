@@ -1,4 +1,4 @@
-﻿"""名将杀 Agent - apply_incremental_update 集成测试"""
+"""名将杀 Agent - apply_incremental_update 集成测试"""
 
 from pathlib import Path
 

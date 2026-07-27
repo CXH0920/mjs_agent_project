@@ -51,6 +51,8 @@ AdbCapture(adb_path, adb_port)
 
 持续轮询调用 `screencap_full(log_success=False)`，并将模板加载、OCR 完成、冷却等正常高频事件记录为 `DEBUG`。运行日志默认仅保留连接状态及截图/OCR 的警告和错误，避免轮询成功记录持续刷屏。
 
+轮询中，`match_guide` 仅在 `hero_selection` 模板命中后被激活一次；对局攻略识别成功即停用，直到下一次选将模板再次命中才重新激活。
+
 **安全设计：**
 - 命令注入防护：`_run_adb(*args)` 使用列表参数而非字符串拼接
 - 设备序列号格式校验：`IP:port` 格式 + 端口范围 1-65535

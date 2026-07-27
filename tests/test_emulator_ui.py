@@ -17,7 +17,7 @@ from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow, PollOutcome
 from src.ui.match_guide_panel import MatchGuidePanel
-from src.ui.poll_coordinator import PollCoordinator
+from src.ui.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
 from src.ui.recommendation_panel import HeroCardWidget, RecommendationPanel
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 
@@ -383,6 +383,74 @@ def test_poll_match_does_not_switch_tab_by_default() -> None:
     window._on_poll_result(matched)
 
     assert window._tabs.switched_to == []
+
+
+def test_match_guide_poll_runs_once_until_next_hero_selection_match() -> None:
+    class OcrService:
+        poll_generation = 1
+        config = {
+            "mumu_ocr_auto_switch_tab": False,
+            "mumu_hero_selection_cooldown": 180,
+        }
+
+        def __init__(self) -> None:
+            self.transitions: list[tuple] = []
+
+        def set_task_cooldown(self, task_name: str, seconds: int) -> None:
+            self.transitions.append(("cooldown", task_name, seconds))
+
+        def clear_task_cooldown(self, task_name: str) -> None:
+            self.transitions.append(("clear", task_name))
+
+        def activate_task(self, task_name: str) -> None:
+            self.transitions.append(("activate", task_name))
+
+        def deactivate_task(self, task_name: str) -> None:
+            self.transitions.append(("deactivate", task_name))
+
+    class Recommendation:
+        def load_from_ocr(self, _results: list[dict]) -> None:
+            pass
+
+    class MatchGuide:
+        def update_block(self, _index: int, _result: PollTaskResult) -> None:
+            pass
+
+    window = MainWindow.__new__(MainWindow)
+    window._selection_page_active = False
+    window._match_guide_page_active = False
+    window._ocr_service = OcrService()
+    window._recommendation = Recommendation()
+    window._match_guide = MatchGuide()
+    hero_match = PollResult(
+        1,
+        PollOutcome.MATCHED,
+        task_results={
+            "hero_selection": PollTaskResult(
+                PollOutcome.MATCHED,
+                ocr_results=[{"name": "曹操"}],
+            ),
+        },
+    )
+    guide_match = PollResult(
+        1,
+        PollOutcome.MATCHED,
+        task_results={"match_guide": PollTaskResult(PollOutcome.MATCHED)},
+    )
+
+    window._on_poll_result(hero_match)
+    window._on_poll_result(guide_match)
+    window._on_poll_result(hero_match)
+
+    assert window._ocr_service.transitions == [
+        ("cooldown", "hero_selection", 180),
+        ("clear", "match_guide"),
+        ("activate", "match_guide"),
+        ("deactivate", "match_guide"),
+        ("cooldown", "hero_selection", 180),
+        ("clear", "match_guide"),
+        ("activate", "match_guide"),
+    ]
 
 
 def test_poll_match_switches_tab_when_enabled() -> None:

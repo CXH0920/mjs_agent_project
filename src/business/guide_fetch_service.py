@@ -2,7 +2,6 @@
 名将杀 Agent - 攻略生成业务服务
 
 负责编排 AI 批量生成攻略流程，管理 QProcess 生命周期。
-先估算成本，由 UI 弹窗确认后再执行。
 """
 
 from __future__ import annotations
@@ -13,10 +12,9 @@ import os
 import re
 import tempfile
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import Signal
 
 from src.business.base_fetch_service import BaseFetchService
-from src.scraper.prompt_utils import estimate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +22,6 @@ logger = logging.getLogger(__name__)
 class GuideFetchService(BaseFetchService):
     """攻略生成业务服务"""
 
-    cost_estimated = Signal(dict)
     progress_output = Signal(str)        # 原始 stdout 行
     progress_value = Signal(int, int)    # (current, total) 供进度条使用
     fetch_completed = Signal(bool, str)  # (success, message_or_detail)
@@ -53,10 +50,7 @@ class GuideFetchService(BaseFetchService):
         existing_ids = {g.hero_id for g in self._guide_mgr.list_guides()}
         missing = [h for h in all_heroes if h.get("id") not in existing_ids]
         if not missing:
-            self.cost_estimated.emit({"mode": "incremental", "items": 0, "heroes": [],
-                                      "estimated_tokens": 0, "estimated_input_tokens": 0,
-                                      "estimated_output_tokens": 0, "estimated_cost_cny": 0.0,
-                                      "message": "所有武将已有攻略，无需生成"})
+            self.status_changed.emit("所有武将已有攻略，无需生成")
             return
         self._context = {"mode": "incremental", "heroes": missing, "backend": backend}
         self.execute_with_confirmation()

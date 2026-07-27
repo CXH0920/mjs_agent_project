@@ -79,7 +79,6 @@ test_project/
 │       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
 │       ├── settings_dialog.py     # API 配置对话框
 │       ├── data_management_dialog.py # 攻略与相性数据管理对话框
-│       ├── cost_confirm_dialog.py # 遗留的 AI 成本确认对话框（当前流程未调用）
 │       └── guide_progress_dialog.py # 攻略生成进度条
 ├── data/
 │   ├── heroes.json                # 165 个武将
@@ -101,32 +100,8 @@ test_project/
 ├── logs/
 │   └── app.log / scraper/ / business/ / subprocess/  # 按模块拆分的日志文件
 ├── tests/
-│   ├── test_adb_capture.py        # 10 tests — ADB 连接与截图
-│   ├── test_ai_batch.py           # 40 tests — AI 批量生成
-│   ├── test_ai_generation.py       # 12 tests — 分批提交与生成编排
-│   ├── test_ai_generation_workflow.py # 3 tests — AI UI 工作流
-│   ├── test_capture_service.py    # 4 tests — 截图服务
-│   ├── test_crawler.py             # 9 tests — 官网数据解析
-│   ├── test_data_facade.py         # 1 test — 数据加载容错与跨实体引用校验
-│   ├── test_data_management_service.py # 3 tests — 数据备份与批量清空
-│   ├── test_emulator_operation_service.py # 3 tests — 模拟器后台操作
-│   ├── test_emulator_ui.py        # 11 tests — 模拟器/OCR UI
-│   ├── test_faction_color_dialog.py # 2 tests — 势力配色
-│   ├── test_guide_manager.py      # 11 tests — 攻略管理器
-│   ├── test_guide_ui.py           # 11 tests — 攻略 UI
-│   ├── test_hero_manager.py       # 15 tests — 武将管理器
-│   ├── test_incremental_update.py # 8 tests — 增量更新
-│   ├── test_logging_config.py      # 2 tests — 日志配置
-│   ├── test_main.py                # 1 test — 应用入口
-│   ├── test_models.py             # 36 tests — 数据模型校验
-│   ├── test_mumu_config_dialog.py  # 8 tests — 模拟器配置
-│   ├── test_ocr_scaling.py        # 3 tests — 模板多尺度匹配与 ROI 缩放
-│   ├── test_ocr_service.py        # 5 tests — OCR 服务
-│   ├── test_ocr_worker.py         # 3 tests — OCR 队列
-│   ├── test_official_data_import.py # 11 tests — 官方榜单切分、名称兜底、CSV 覆盖与进度
-│   ├── test_prober.py             # 1 test — ADB/MuMu 探测
-│   ├── test_synergy_manager.py    # 17 tests — 相性管理器
-│   └── test_ui.py                 # 5 tests — UI 工具
+│   ├── test_*.py                  # 业务、数据、OCR、UI 与配置测试
+│   └── test_data/                 # 解析契约样本
 ├── docs/
 │   ├── code_desc/
 │   │   ├── summary‌.md             # 项目总览（核心功能、技术栈、模块索引）
@@ -177,10 +152,11 @@ playwright install msedge
 ### 2. 运行测试
 
 ```bash
-pytest tests/ -v
+python -m pytest --collect-only -q
+python -m pytest tests/ -v
 ```
 
-当前测试目录包含 **191** 个测试函数（按源码中的 `test_*` 函数统计）；以实际 pytest 输出为准。数据层定向验证可运行：
+当前 `pytest --collect-only -q` 收集 **323** 项测试；新增或删除用例后应以该命令输出为准。数据层定向验证可运行：
 
 ```bash
 python -m pytest tests/test_hero_manager.py tests/test_synergy_manager.py tests/test_guide_manager.py tests/test_data_facade.py -q

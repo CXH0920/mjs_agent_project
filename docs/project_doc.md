@@ -61,7 +61,7 @@ DataFacade.load_all()
 
 `BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
-OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
+OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活。
 
 ---
 
@@ -442,7 +442,6 @@ error_occurred → self._on_fetch_error (弹窗警告)
 
 ```python
 status_changed = Signal(str)               # 状态文字
-cost_estimated = Signal(dict)              # 成本估算（API 模式）
 progress_output = Signal(str)              # 子进程 stdout 行
 progress_value = Signal(int, int)          # 进度条 (current, total)
 fetch_completed = Signal(bool, str)        # (成功/失败, 消息)
@@ -709,7 +708,6 @@ def apply_incremental_update(data_dir, update)
 | roi_selector.py | 149 | QDialog（框选模板区域） |
 | backend_choose_dialog.py | 141 | QDialog |
 | guide_progress_dialog.py | 135 | QDialog |
-| cost_confirm_dialog.py | 77 | QDialog | 
 | official_data_import_dialog.py | ~100 | QDialog（榜单图片选择、进度条、完成/失败提示） |
 | style.py | 247 | 样式表常量 |
 | fetch_dialog.py | 31 | QDialog（继承基类） |
@@ -777,7 +775,7 @@ MainWindow.__init__
 ├──────────────────────────────────────────────┤
 │ ⚙️ 识别参数                                   │
 │ [☐] 启用武将识别 [☐] 持续轮询 间隔 [2秒] [恢复]│
-│ 武将识别：阈值/选择冷却 | 对局攻略：阈值/触发冷却│
+│ 武将识别：阈值/选择冷却 | 对局攻略：匹配阈值       │
 ├──────────────────────────────────────────────┤
 │                                      [保存] [取消]│
 └──────────────────────────────────────────────┘
@@ -797,7 +795,7 @@ MainWindow.__init__
 **OCR 配置**：
 - **启用武将识别**：供显式 OCR 调用路径使用；选将推荐的截图按钮不会自动 OCR
 - **持续轮询**：独立于手动截图，定时检测模拟器画面（详见第十二章 12.6 节）
-- **匹配阈值/冷却**：武将选择和对局攻略分别配置，互不共享冷却
+- **匹配阈值**：武将选择和对局攻略分别配置；对局攻略在每次选将模板命中后只触发一次
 - **轮询间隔**：1-60 秒；未勾选持续轮询时禁用
 - **恢复轮询**：仅持续轮询已勾选且服务处于暂停状态时可用
 - **保存反馈**：保存识别参数后显示 300ms 的“✓ 识别参数已保存”提示
@@ -1789,7 +1787,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
        ▼
   PollCoordinator._on_poll_tick()
        │
-       ├── begin_poll() → due_poll_tasks()（任务状态和冷却彼此独立）
+       ├── begin_poll() → due_poll_tasks()（对局攻略仅由选将命中解锁）
        ├── ADB 未配置/未连接？→ 返回前置条件结果（服务暂停或退避）
        │
        ├── ① 后台线程 screencap_full() → PIL Image（全在内存，不写磁盘）
@@ -1801,14 +1799,13 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
        ├── ③ PollCoordinator 接收结果并提交轮询状态
        │     ├── complete_poll(generation, outcome)
        │     ├── poll_result_ready → MainWindow._on_poll_result()
-       │     ├── hero_selection 命中 → RecommendationPanel.load_from_ocr()
-       │     └── match_guide 命中 → MatchGuidePanel.update_block()
+       │     ├── hero_selection 命中 → 解锁一次 match_guide → RecommendationPanel.load_from_ocr()
+       │     └── match_guide 命中 → 停用任务 → MatchGuidePanel.update_block()
        │
        ├── ④ RecommendationPanel.load_from_ocr()
        │     └── 填充 8 个推荐槽位（头像/相性/胜率）
        │
-       └── ⑤ OcrService.set_task_cooldown(task_name, seconds)
-             └── 页面级冷却，不阻塞另一页面任务
+       └── ⑤ hero_selection 进入计时冷却；match_guide 等待下一次选将命中重置
 ```
 
 **关键设计**：
@@ -1825,23 +1822,16 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 
 ## 十三、测试体系细节
 
-### 13.1 测试文件与用例数
+### 13.1 运行与统计
 
-| 文件 | 用例数 | 测试内容 |
-|------|--------|----------|
-| `test_adb_capture.py` | 10 | ADB 连接、截图与异常处理 |
-| `test_ai_batch.py` / `test_ai_generation.py` | 52 | AI 参数、生成、分批提交 |
-| `test_ai_generation_workflow.py` | 3 | AI UI 工作流信号与刷新 |
-| `test_capture_service.py` / `test_ocr_*.py` | 15 | 截图编排、模板缩放、OCR 服务与队列 |
-| `test_crawler.py` / `test_incremental_update.py` | 17 | 官网解析与增量更新 |
-| `test_data_facade.py` / `test_models.py` | 37 | 数据容错、Pydantic 校验与引用完整性 |
-| `test_emulator_operation_service.py` / `test_emulator_ui.py` / `test_mumu_config_dialog.py` / `test_prober.py` | 23 | ADB/MuMu 探测、后台操作与配置 UI |
-| `test_faction_color_dialog.py` / `test_guide_ui.py` / `test_ui.py` | 18 | 通用界面、攻略与势力配色 |
-| `test_hero_manager.py` / `test_guide_manager.py` / `test_synergy_manager.py` | 42 | 三类 Manager CRUD 与查询 |
-| `test_logging_config.py` / `test_main.py` | 3 | 日志配置与应用入口 |
-| `test_official_data_import.py` | 11 | 榜单行切分、胜率 ROI、名称候选/逐字兜底、进度和 CSV 覆盖 |
+测试覆盖 AI 生成、数据管理、OCR、模拟器交互、对局攻略和桌面 UI。用例数量由 pytest 收集结果作为唯一来源，不再维护容易漂移的按文件静态计数。
 
-当前以 `pytest --collect-only -q` 收集 **229** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+```bash
+python -m pytest --collect-only -q
+python -m pytest tests/ -v
+```
+
+当前以 `pytest --collect-only -q` 收集 **323** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 ### 13.2 AIBatchGenerator 测试要点
 

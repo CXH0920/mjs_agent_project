@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
                 "hero_selection",
                 self._ocr_service.config.get("mumu_hero_selection_cooldown", 180),
             )
+            self._ocr_service.clear_task_cooldown("match_guide")
             self._ocr_service.activate_task("match_guide")
             if not self._selection_page_active:
                 self._selection_page_active = True
@@ -210,10 +211,7 @@ class MainWindow(QMainWindow):
         if guide_result and guide_result.outcome is PollOutcome.TEMPLATE_MISSING:
             self._ocr_service.deactivate_task("match_guide")
         elif guide_result and guide_result.outcome is PollOutcome.MATCHED:
-            self._ocr_service.set_task_cooldown(
-                "match_guide",
-                self._ocr_service.config.get("mumu_match_guide_cooldown", 5),
-            )
+            self._ocr_service.deactivate_task("match_guide")
             if not getattr(self, "_match_guide_page_active", False):
                 self._match_guide_page_active = True
                 if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
@@ -660,7 +658,6 @@ class MainWindow(QMainWindow):
             "MUMU_HERO_SELECTION_THRESHOLD": str(new_config.get("mumu_hero_selection_threshold", 0.8)),
             "MUMU_HERO_SELECTION_COOLDOWN": str(new_config.get("mumu_hero_selection_cooldown", 180)),
             "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config.get("mumu_match_guide_threshold", 0.8)),
-            "MUMU_MATCH_GUIDE_COOLDOWN": str(new_config.get("mumu_match_guide_cooldown", 5)),
         })
 
         # 更新服务配置

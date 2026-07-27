@@ -39,12 +39,9 @@ from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.business.data_management_service import DataMutationService
-from src.ui.checkable_combo import CheckableComboBox
 from src.ui.guide_edit_dialog import GuideEditDialog
 from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_edit_dialog import HeroEditDialog
-from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
-from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.widgets import FlowLayout
 from src.ui.synergy_edit_dialog import SynergyEditDialog
 

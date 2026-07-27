@@ -13,7 +13,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction

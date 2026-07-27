@@ -1,0 +1,5 @@
+# 受控文本统一使用 UTF-8（无 BOM）和 LF 换行。
+* text=auto eol=lf
+
+*.png binary
+*.ico binary

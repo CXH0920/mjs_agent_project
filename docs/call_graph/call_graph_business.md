@@ -189,7 +189,6 @@ GuideFetchService.error_occurred   → AiGenerationWorkflow._on_guide_error → 
 GuideFetchService.progress_output  → AiGenerationWorkflow._on_guide_progress → GuideProgressDialog.update_status
 GuideFetchService.progress_value   → AiGenerationWorkflow._on_guide_progress_value → GuideProgressDialog.update_progress
 
-`cost_estimated` 与 `CostConfirmDialog` 仍保留在代码中，但不属于当前 AI 生成 UI 路径；费用估算由工作流传入 `BackendChooseDialog` 展示。
 ```
 
 ---
@@ -335,7 +334,7 @@ MumuConfigDialog
 
 ```
 PollCoordinator._on_poll_tick()                              [poll_tick 信号触发]
-  -> OcrService.begin_poll() -> due_poll_tasks()              [会话与独立任务冷却]
+  -> OcrService.begin_poll() -> due_poll_tasks()              [对局攻略仅由选将命中解锁]
   -> threading.Lock.acquire(blocking=False)                  [防并发]
   -> [后台线程] _do_poll_work()
     -> CaptureService.capture_for_poll()                      [复用 adb-capture 单线程]
@@ -345,9 +344,9 @@ PollCoordinator._on_poll_tick()                              [poll_tick 信号�
     -> poll_result_ready.emit(result)                          [信号]
 
 MainWindow._on_poll_result(result)                            [主线程仅更新界面]
-  -> [hero_selection 命中] RecommendationPanel.load_from_ocr()
-  -> [match_guide 命中] MatchGuidePanel.update_block()
-  -> OcrService.set_task_cooldown(task_name, seconds)
+  -> [hero_selection 命中] clear_task_cooldown(match_guide) -> activate_task(match_guide)
+  -> [match_guide 命中] deactivate_task(match_guide) -> MatchGuidePanel.update_block()
+  -> hero_selection 进入计时冷却
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |

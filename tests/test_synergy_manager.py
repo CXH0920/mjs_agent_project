@@ -1,4 +1,4 @@
-﻿"""名将杀 Agent - SynergyManager 单元测试"""
+"""名将杀 Agent - SynergyManager 单元测试"""
 
 import json
 import tempfile

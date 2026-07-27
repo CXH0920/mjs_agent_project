@@ -1,4 +1,4 @@
-﻿"""名将杀 Agent - HeroManager 单元测试"""
+"""名将杀 Agent - HeroManager 单元测试"""
 
 import json
 import tempfile
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, Gender, Difficulty
+from src.data.models import Hero
 
 
 class TestHeroManager:

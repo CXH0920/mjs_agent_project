@@ -49,7 +49,6 @@ src/ui/
 ├── data_management_dialog.py   # 攻略与相性批量清空对话框
 ├── mumu_config_dialog.py       # 模拟器配置对话框（表单、状态与 ROI 框选）
 ├── backend_choose_dialog.py    # 后端选择对话框（API/浏览器）
-├── cost_confirm_dialog.py      # 遗留的 AI 成本确认对话框（当前流程未调用）
 ├── guide_progress_dialog.py    # 攻略生成进度条
 ├── roi_selector.py             # 模板 ROI 框选对话框
 ├── faction_color_dialog.py     # 势力配色列表、Color Picker 与保存
@@ -373,7 +372,6 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
 | `MumuConfigDialog` | ADB/OCR 表单与状态展示、文件选择、ROI 框选；服务操作委托 `MumuConfigCoordinator` |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器） |
-| `CostConfirmDialog` | 遗留 AI 成本确认组件；当前费用估算展示在 `BackendChooseDialog` |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
 | `HeroEditDialog` | 武将信息编辑 |
 | `GuideEditDialog` | 攻略内容编辑 |

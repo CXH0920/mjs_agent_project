@@ -108,7 +108,6 @@ def load_env_config(env_path=None):
         "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
         "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
         "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
-        "MUMU_MATCH_GUIDE_COOLDOWN": "mumu_match_guide_cooldown",
         "RECOMMENDATION_P_FLOOR": "recommendation_p_floor",
         "RECOMMENDATION_BAN_WEIGHT": "recommendation_ban_weight",
         "RECOMMENDATION_SIGMOID_K": "recommendation_sigmoid_k",
@@ -118,7 +117,7 @@ def load_env_config(env_path=None):
     for env_key, cfg_key in key_mapping.items():
         if env_key in raw:
             value = raw[env_key]
-            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown", "mumu_match_guide_cooldown"):
+            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown"):
                 try:
                     value = int(value)
                 except (ValueError, TypeError):
@@ -257,7 +256,6 @@ def get_mumu_config():
         "mumu_hero_selection_threshold": config.get("mumu_hero_selection_threshold", config.get("mumu_ocr_match_threshold", 0.8)),
         "mumu_hero_selection_cooldown": config.get("mumu_hero_selection_cooldown", 180),
         "mumu_match_guide_threshold": config.get("mumu_match_guide_threshold", 0.8),
-        "mumu_match_guide_cooldown": config.get("mumu_match_guide_cooldown", 5),
     }
 
 # ============================================================

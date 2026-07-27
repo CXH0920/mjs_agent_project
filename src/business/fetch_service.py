@@ -7,9 +7,8 @@
 from __future__ import annotations
 
 import logging
-import sys
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import Signal
 
 from src.business.base_fetch_service import BaseFetchService
 

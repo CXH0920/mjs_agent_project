@@ -1,6 +1,5 @@
 """名将杀 Agent - GuideManager 单元测试"""
 
-import json
 import tempfile
 from pathlib import Path
 

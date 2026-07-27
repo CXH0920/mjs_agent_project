@@ -22,7 +22,7 @@ CaptureService.do_capture() / do_capture_from_file()
   -> capture_completed -> RecommendationPanel / MainWindow
 ```
 
-轮询：`OcrService.start_poll()` -> `_schedule_poll()` -> `poll_tick` -> `PollCoordinator._on_poll_tick()`。协调器在短生命周期后台线程执行 `AdbCapture.screencap_full()`，随后为每个到期页面提交 `CaptureService.submit_ocr_task()`；其在 GUI 线程过滤过期结果、调用 `complete_poll()`，再通过 `poll_result_ready` 通知主窗口更新界面。`hero_selection` 与 `match_guide` 分别维护激活和冷却状态；前置条件缺失会暂停，其他失败指数退避。
+轮询：`OcrService.start_poll()` -> `_schedule_poll()` -> `poll_tick` -> `PollCoordinator._on_poll_tick()`。协调器在短生命周期后台线程执行 `AdbCapture.screencap_full()`，随后为每个到期页面提交 `CaptureService.submit_ocr_task()`；其在 GUI 线程过滤过期结果、调用 `complete_poll()`，再通过 `poll_result_ready` 通知主窗口更新界面。`hero_selection` 命中会重置并激活一次 `match_guide`；后者命中后立即停用，直到下次选将命中才可再次执行。前置条件缺失会暂停，其他失败指数退避。
 
 ## 一、ADB 连接与截图链路
 

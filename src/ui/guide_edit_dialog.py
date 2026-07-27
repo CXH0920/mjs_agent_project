@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
 from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog

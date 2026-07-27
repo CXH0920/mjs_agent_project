@@ -19,9 +19,6 @@ from src.ocr.ocr_loader import get_template_manager
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = __file__  # placeholder
-
-
 @dataclass
 class PollTaskState:
     """单个轮询任务的独立运行状态。"""
@@ -52,7 +49,6 @@ class OcrService(QObject):
     POLL_MAX_FAILURES = 5
     POLL_BACKOFF_DELAYS_MS = (2_000, 5_000, 15_000, 30_000)
     POLL_MATCH_COOLDOWN_MS = 180_000
-    MATCH_GUIDE_COOLDOWN_MS = 5_000
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -254,12 +250,7 @@ class OcrService(QObject):
         """设置指定任务冷却，不修改其他任务。"""
         task = self._get_task(task_name)
         if seconds is None:
-            default_ms = (
-                self.POLL_MATCH_COOLDOWN_MS
-                if task_name == "hero_selection"
-                else self.MATCH_GUIDE_COOLDOWN_MS
-            )
-            seconds = default_ms / 1000
+            seconds = self.POLL_MATCH_COOLDOWN_MS / 1000
         if seconds > 0:
             now = datetime.now()
             task.cooldown_until = now + timedelta(seconds=seconds)

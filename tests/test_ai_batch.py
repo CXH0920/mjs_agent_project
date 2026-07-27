@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from src.scraper.ai_batch import (
     _estimate_cost,
-    _save_json,
     estimate_cost,
     load_heroes,
 )
+from src.scraper.ai_utils import _save_json
 from src.scraper.prompt_utils import load_prompt
 from src.scraper.json_extract import extract_json
 from src.scraper.ai_utils import (

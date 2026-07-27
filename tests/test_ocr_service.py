@@ -118,6 +118,23 @@ def test_poll_tasks_have_independent_activation_and_cooldowns() -> None:
     assert service.due_poll_tasks() == ["hero_selection"]
 
 
+def test_match_guide_task_stays_disabled_until_hero_selection_reactivates() -> None:
+    _app()
+    service = OcrService()
+    service.start_poll(1_000)
+    service.set_task_cooldown("hero_selection", 60)
+    service.activate_task("match_guide")
+
+    assert service.due_poll_tasks() == ["match_guide"]
+
+    service.deactivate_task("match_guide")
+    assert service.due_poll_tasks() == []
+
+    service.clear_task_cooldown("match_guide")
+    service.activate_task("match_guide")
+    assert service.due_poll_tasks() == ["match_guide"]
+
+
 def test_select_template_clears_stale_reference_metadata(tmp_path: Path, monkeypatch) -> None:
     class _TemplateManager:
         def __init__(self) -> None:

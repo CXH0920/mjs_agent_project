@@ -234,15 +234,12 @@ class MumuConfigDialog(QDialog):
         self._threshold_spin = self._make_threshold_spin()
         self._match_guide_threshold_spin = self._make_threshold_spin()
         self._hero_cooldown_spin = self._make_cooldown_spin()
-        self._match_guide_cooldown_spin = self._make_cooldown_spin()
         parameter_grid.addWidget(QLabel("匹配阈值"), 1, 0)
         parameter_grid.addWidget(self._threshold_spin, 1, 1)
         parameter_grid.addWidget(QLabel("匹配阈值"), 1, 2)
         parameter_grid.addWidget(self._match_guide_threshold_spin, 1, 3)
         parameter_grid.addWidget(QLabel("选择冷却"), 2, 0)
         parameter_grid.addWidget(self._hero_cooldown_spin, 2, 1)
-        parameter_grid.addWidget(QLabel("触发冷却"), 2, 2)
-        parameter_grid.addWidget(self._match_guide_cooldown_spin, 2, 3)
         parameter_grid.setColumnStretch(1, 1)
         parameter_grid.setColumnStretch(3, 1)
         parameter_layout.addLayout(parameter_grid)
@@ -365,7 +362,6 @@ class MumuConfigDialog(QDialog):
         self._threshold_spin.setValue(self._config.get("mumu_hero_selection_threshold", self._config.get("mumu_ocr_match_threshold", 0.8)))
         self._match_guide_threshold_spin.setValue(self._config.get("mumu_match_guide_threshold", 0.8))
         self._hero_cooldown_spin.setValue(self._config.get("mumu_hero_selection_cooldown", 180))
-        self._match_guide_cooldown_spin.setValue(self._config.get("mumu_match_guide_cooldown", 5))
 
         self._sync_capture_service_config()
         self._on_refresh_devices()
@@ -805,7 +801,6 @@ class MumuConfigDialog(QDialog):
                 "mumu_hero_selection_threshold": round(self._threshold_spin.value(), 2),
                 "mumu_match_guide_threshold": round(self._match_guide_threshold_spin.value(), 2),
                 "mumu_hero_selection_cooldown": self._hero_cooldown_spin.value(),
-                "mumu_match_guide_cooldown": self._match_guide_cooldown_spin.value(),
             }, device, self._device_selected_explicitly)
             if error:
                 QMessageBox.warning(self, "请选择设备", error)

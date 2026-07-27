@@ -13,7 +13,7 @@ import os
 import re
 import tempfile
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import Signal
 
 from src.business.base_fetch_service import BaseFetchService
 
