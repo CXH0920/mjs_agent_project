@@ -124,7 +124,7 @@ def load_env_config(env_path=None):
                 except (ValueError, TypeError):
                     logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
                     continue
-            elif cfg_key in ("mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_auto_switch_tab"):
+            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_auto_switch_tab"):
                 value = value.lower() in ("true", "1", "yes")
             elif cfg_key in (
                 "mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold",
@@ -228,13 +228,12 @@ def get_runtime_params():
          "http_timeout": int, "log_level": str, "log_to_file": bool}
     """
     config = load_env_config()
-    log_to_file = config.get("log_to_file", "true")
     return {
         "requests_per_minute": config.get("requests_per_minute", 30),
         "max_retries": config.get("max_retries", 3),
         "http_timeout": config.get("http_timeout", 300),
         "log_level": config.get("log_level", "INFO"),
-        "log_to_file": log_to_file.lower() in ("true", "1", "yes"),
+        "log_to_file": config.get("log_to_file", True),
     }
 
 

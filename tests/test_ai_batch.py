@@ -113,6 +113,8 @@ class TestSaveJson:
             assert not filepath.with_suffix(".tmp").exists()
             loaded = json.loads(filepath.read_text(encoding="utf-8"))
             assert loaded == data
+            assert b"\r\n" not in filepath.read_bytes()
+            assert filepath.read_bytes().endswith(b"\n")
 
     def test_overwrite(self) -> None:
         """覆盖已有文件"""
@@ -499,6 +501,28 @@ class TestConfigLoading:
                 assert params["requests_per_minute"] == 10
                 assert params["max_retries"] == 5
                 assert params["http_timeout"] == 120
+            finally:
+                config_env.DEFAULT_ENV_FILE = original
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_get_runtime_params_converts_log_to_file_to_bool(self):
+        """LOG_TO_FILE 应在配置加载阶段转换为布尔值。"""
+        import tempfile, shutil
+        from src.config.env import get_runtime_params
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            env_path = Path(tmpdir) / "config.env"
+            import src.config.env as config_env
+            original = config_env.DEFAULT_ENV_FILE
+            config_env.DEFAULT_ENV_FILE = env_path
+            try:
+                env_path.write_text("LOG_TO_FILE=true\n", encoding="utf-8")
+                assert get_runtime_params()["log_to_file"] is True
+
+                env_path.write_text("LOG_TO_FILE=false\n", encoding="utf-8")
+                assert get_runtime_params()["log_to_file"] is False
             finally:
                 config_env.DEFAULT_ENV_FILE = original
         finally:

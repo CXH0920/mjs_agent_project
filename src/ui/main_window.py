@@ -279,22 +279,17 @@ class MainWindow(QMainWindow):
             try:
                 if cancel_event.is_set():
                     return
-                if not capture.connected:
-                    ok, detail = capture.connect()
-                    if cancel_event.is_set():
-                        return
-                    if not ok:
-                        self._poll_result_ready.emit(PollResult(
-                            generation, PollOutcome.RETRYABLE_CONNECTION, detail, capture,
-                        ))
-                        return
-
-                ok, result = capture.screencap_full(log_success=False)
+                ok, result, failure_kind = self._capture_service.capture_for_poll(capture)
                 if cancel_event.is_set():
                     return
                 if not ok:
+                    outcome = (
+                        PollOutcome.RETRYABLE_CONNECTION
+                        if failure_kind == "connection"
+                        else PollOutcome.RETRYABLE_CAPTURE
+                    )
                     self._poll_result_ready.emit(PollResult(
-                        generation, PollOutcome.RETRYABLE_CAPTURE, str(result), capture,
+                        generation, outcome, str(result), capture,
                     ))
                     return
 
@@ -638,7 +633,41 @@ class MainWindow(QMainWindow):
     def _load_data(self) -> None:
         """加载所有数据"""
         try:
+            report = self._data.load_all()
+            missing_references = [issue for issue in report.issues if issue.kind == "missing_reference"]
+            if not missing_references:
+                return
+            reply = QMessageBox.question(
+                self,
+                "发现数据关联问题",
+                f"检测到 {len(missing_references)} 项失效关联。\n\n"
+                "是否修复并保存？修复前会自动创建备份。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                QMessageBox.warning(
+                    self,
+                    "数据未修改",
+                    "已保留原始数据。请在修复前避免保存相关数据，以便后续人工检查。",
+                )
+                return
+            from src.business.data_management_service import DataMutationService
+
+            result = DataMutationService(
+                self._data.heroes,
+                self._data.guides,
+                self._data.synergies,
+            ).repair_missing_references()
             self._data.load_all()
+            QMessageBox.information(
+                self,
+                "数据修复完成",
+                "已修复失效关联："
+                f"删除相性 {result.removed_synergies} 条，"
+                f"删除攻略 {result.removed_guides} 条，"
+                f"清理攻略关联 {result.cleaned_guide_references} 项。",
+            )
         except Exception as e:
             logger.exception("数据加载失败")
             QMessageBox.warning(

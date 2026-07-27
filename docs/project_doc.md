@@ -37,7 +37,7 @@
 | 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `install_chinese_qt_translator()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志和 Qt 标准控件中文翻译，加载数据、创建主窗口并进入事件循环；OCR 识别器按首次任务延迟初始化 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
-| 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> Manager 清空并原子保存 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
+| 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> OpenCV 行分割 + 候选汇总/逐字/繁体罕见字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> 各 Manager CRUD -> `save()` | 原子写入对应 JSON 并刷新局部视图 |
@@ -51,18 +51,17 @@ DataFacade.load_all()
   -> HeroManager.load() / SynergyManager.load() / GuideManager.load()
   -> 每条记录 model_validate()，坏记录和重复键记录为 DataIssue 后跳过
   -> _validate_references(report)
-    -> 移除内存中的悬空相性或攻略归属
-    -> 剔除攻略 synergizes_with 中不存在的英雄 ID
+    -> 仅记录悬空相性、攻略归属和攻略关联 ID 的问题
   -> return LoadReport
 ```
 
-加载过程不会调用 `save()`，原始 JSON 保持不变。该策略保证局部坏数据不阻断应用启动，也避免程序在用户未确认时删除原始记录。当前 UI 消费已恢复的内存数据；报告查看、导出修复副本和确认写回仍是后续功能，不能假定已经存在。
+加载过程不会调用 `save()`，原始 JSON 和内存数据均保持不变。主窗口会向用户展示 `missing_reference` 问题，并仅在用户确认后通过 `DataMutationService` 创建备份、修复失效关联并保存；拒绝修复时保留原始数据。
 
 ### 进程与任务提交边界
 
 `BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
-OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期；`CaptureService` 管理 ADB 截图和任务提交。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
+OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
 
 ---
 
@@ -1223,7 +1222,7 @@ AI 回复文本（浏览器 inner_text 或 API response）
 | `parse_env_file(path)` | 解析 .env → `dict[str, str]` |
 | `load_env_config(path)` | 解析后映射为小写 key → `dict` |
 | `get_api_config()` | 合并 config.env + 环境变量 + 默认值 |
-| `get_runtime_params()` | 获取运行时参数 |
+| `get_runtime_params()` | 获取运行时参数（含 `log_to_file: bool`） |
 | `get_mumu_config()` | 获取模拟器（MuMu）ADB/OCR 配置 |
 | `save_env_file(path, data)` | 原子写入 .env 文件 |
 

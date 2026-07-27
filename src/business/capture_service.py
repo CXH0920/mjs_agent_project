@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import threading
 from pathlib import Path
@@ -33,6 +34,7 @@ class CaptureService(QObject):
     capture_completed = Signal(dict)
     capture_failed = Signal(str)
     connection_changed = Signal(str, str)  # (状态, 详情)
+    _capture_ready = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,6 +46,9 @@ class CaptureService(QObject):
         self._ocr_worker: OcrWorker | None = None
         self._pending_ocr_captures: dict[str, dict] = {}
         self._session_lock = threading.RLock()
+        self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="adb-capture")
+        self._closed = False
+        self._capture_ready.connect(self._on_background_capture_ready)
 
     def _set_connection_state(self, state: str, detail: str = "") -> None:
         """更新并广播当前 ADB 会话状态。"""
@@ -56,7 +61,8 @@ class CaptureService(QObject):
     @property
     def connection_state(self) -> tuple[str, str]:
         """返回当前 ADB 会话状态及详情。"""
-        return self._connection_state, self._connection_detail
+        with self._session_lock:
+            return self._connection_state, self._connection_detail
 
     # ── 配置 ──────────────────────────────────────────────────────────
 
@@ -75,26 +81,27 @@ class CaptureService(QObject):
                 "ocr_generals_roi": list[list[int]],
             }
         """
-        path_changed = config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
-        port_changed = config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
+        with self._session_lock:
+            path_changed = config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
+            port_changed = config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
 
-        self._config = config
+            self._config = dict(config)
 
-        if not config.get("mumu_adb_path"):
-            self._capture = None
-            self._set_connection_state("unconfigured")
-            return
+            if not config.get("mumu_adb_path"):
+                self._capture = None
+                self._set_connection_state("unconfigured")
+                return
 
-        if path_changed or port_changed or self._capture is None:
-            self._capture = AdbCapture(
-                adb_path=config["mumu_adb_path"],
-                adb_port=config.get("mumu_adb_port", 0),
-            )
-            self._set_connection_state("disconnected")
-            logger.info("CaptureService 配置已更新，ADB: %s:%s",
-                        config["mumu_adb_path"], config.get("mumu_adb_port", "auto"))
-        else:
-            logger.debug("CaptureService 配置已更新（仅 OCR 参数）")
+            if path_changed or port_changed or self._capture is None:
+                self._capture = AdbCapture(
+                    adb_path=config["mumu_adb_path"],
+                    adb_port=config.get("mumu_adb_port", 0),
+                )
+                self._set_connection_state("disconnected")
+                logger.info("CaptureService 配置已更新，ADB: %s:%s",
+                            config["mumu_adb_path"], config.get("mumu_adb_port", "auto"))
+            else:
+                logger.debug("CaptureService 配置已更新（仅 OCR 参数）")
 
     def set_target_port(self, port: int) -> None:
         """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
@@ -108,15 +115,18 @@ class CaptureService(QObject):
     @property
     def config(self) -> dict:
         """返回当前截图配置的副本。"""
-        return dict(self._config)
+        with self._session_lock:
+            return dict(self._config)
 
     @property
     def capture(self) -> AdbCapture | None:
-        return self._capture
+        with self._session_lock:
+            return self._capture
 
     @capture.setter
     def capture(self, cap: AdbCapture | None) -> None:
-        self._capture = cap
+        with self._session_lock:
+            self._capture = cap
 
     # ── 截图 ──────────────────────────────────────────────────────────
 
@@ -129,16 +139,22 @@ class CaptureService(QObject):
     ) -> None:
         """执行一次截图 → 保存 → 可选 OCR 的完整流程。
 
-        `QTimer.singleShot` 仅用于让 UI 先处理本轮事件；截图完成后，模板匹配和 OCR 会提交到唯一的后台 worker 串行执行。
+        ADB 连接和截图在单一后台执行器中串行完成；结果回到 GUI 线程后再保存图片并提交 OCR。
 
         Args:
             hero_names: 用于编辑距离矫正的武将名列表（可选，从 HeroManager 获取）。
         """
-        QTimer.singleShot(
-            0,
-            lambda: self._execute_capture(
-                hero_names, template_name, force_ocr, perform_ocr,
-            ),
+        if self._closed:
+            return
+        request = {
+            "hero_names": hero_names,
+            "template_name": template_name,
+            "force_ocr": force_ocr,
+            "perform_ocr": perform_ocr,
+        }
+        future = self._adb_executor.submit(self.capture_screenshot)
+        future.add_done_callback(
+            lambda task, payload=request: self._capture_ready.emit((payload, task))
         )
 
     def do_capture_from_file(self, file_path: str | Path,
@@ -200,6 +216,37 @@ class CaptureService(QObject):
     ) -> None:
         """实际截图执行。"""
         ok, result = self.capture_screenshot()
+        self._handle_capture_result(ok, result, hero_names, template_name, force_ocr, perform_ocr)
+
+    def _on_background_capture_ready(self, payload: object) -> None:
+        """在 GUI 线程处理后台截图结果。"""
+        if self._closed:
+            return
+        request, future = payload
+        try:
+            ok, result = future.result()
+        except Exception as error:
+            logger.exception("后台截图异常")
+            ok, result = False, str(error)
+        self._handle_capture_result(
+            ok,
+            result,
+            request["hero_names"],
+            request["template_name"],
+            request["force_ocr"],
+            request["perform_ocr"],
+        )
+
+    def _handle_capture_result(
+        self,
+        ok: bool,
+        result: object,
+        hero_names: list[str] | None,
+        template_name: str,
+        force_ocr: bool,
+        perform_ocr: bool,
+    ) -> None:
+        """处理已完成的截图，后续文件和 OCR 操作始终在 GUI 线程执行。"""
         if not ok:
             self.capture_failed.emit(str(result))
             return
@@ -222,9 +269,9 @@ class CaptureService(QObject):
         # 3. OCR（轮询模式独立于 ocr_enabled 开关，强制匹配模板）
         ocr_results = None
         ocr_matched = False
-        is_poll = self._config.get("mumu_ocr_poll_mode", False)
+        is_poll = self.config.get("mumu_ocr_poll_mode", False)
         should_ocr = perform_ocr and (
-            force_ocr or self._config.get("mumu_ocr_enabled", False) or is_poll
+            force_ocr or self.config.get("mumu_ocr_enabled", False) or is_poll
         )
 
         if should_ocr:
@@ -272,22 +319,23 @@ class CaptureService(QObject):
         match_template: bool = True,
     ) -> OcrTask:
         """将模板匹配和 OCR 加入唯一 worker 队列。"""
+        config = self.config
         threshold_key = (
             "mumu_match_guide_threshold"
             if template_name == "match_guide"
             else "mumu_hero_selection_threshold"
         )
         effective_rois = rois if rois is not None else (
-            None if template_name == "match_guide" else self._config.get("ocr_generals_roi")
+            None if template_name == "match_guide" else config.get("ocr_generals_roi")
         )
         task = OcrTask(
             image=image,
             hero_names=tuple(hero_names or ()),
             rois=tuple(tuple(roi) for roi in effective_rois) if effective_rois else None,
             template_name=template_name,
-            threshold=self._config.get(
+            threshold=config.get(
                 threshold_key,
-                self._config.get("mumu_ocr_match_threshold", 0.8),
+                config.get("mumu_ocr_match_threshold", 0.8),
             ),
             recognize=recognize,
             match_template=match_template,
@@ -338,19 +386,21 @@ class CaptureService(QObject):
 
     def sync_connection_state(self, error_detail: str = "") -> None:
         """根据底层会话状态同步 ADB 状态，供截图和轮询失败路径调用。"""
-        if not self._capture:
-            self._set_connection_state("unconfigured")
-        elif not self._capture.connected:
-            self._set_connection_state("offline", error_detail)
+        with self._session_lock:
+            if not self._capture:
+                self._set_connection_state("unconfigured")
+            elif not self._capture.connected:
+                self._set_connection_state("offline", error_detail)
 
     def sync_poll_connection_state(self, capture: AdbCapture, error_detail: str = "") -> None:
         """仅同步当前轮询会话的连接状态，忽略过期 capture。"""
-        if capture is not self._capture:
-            return
-        if capture.connected:
-            self._set_connection_state("connected", capture.device_serial)
-        else:
-            self._set_connection_state("offline", error_detail)
+        with self._session_lock:
+            if capture is not self._capture:
+                return
+            if capture.connected:
+                self._set_connection_state("connected", capture.device_serial)
+            else:
+                self._set_connection_state("offline", error_detail)
 
     def connect_emulator(self) -> tuple[bool, str]:
         """连接模拟器。
@@ -404,9 +454,32 @@ class CaptureService(QObject):
             self.status_changed.emit(f"截图成功 ({image.width}x{image.height})")
             return True, image
 
+    def capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
+        """经同一后台执行器完成轮询截图，避免与手动截图并发访问 ADB。"""
+        if self._closed:
+            return False, "截图服务已关闭", "capture"
+        future = self._adb_executor.submit(self._capture_for_poll, capture)
+        try:
+            return future.result()
+        except Exception as error:
+            logger.exception("轮询截图异常")
+            return False, str(error), "capture"
+
+    def _capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
+        with self._session_lock:
+            if capture is not self._capture:
+                return False, "ADB 配置已变更", "connection"
+            if not capture.connected:
+                ok, message = capture.connect()
+                if not ok:
+                    return False, message, "connection"
+            ok, result = capture.screencap_full(log_success=False)
+            return ok, result, "" if ok else "capture"
+
     @property
     def is_connected(self) -> bool:
-        return self._capture.connected if self._capture else False
+        with self._session_lock:
+            return self._capture.connected if self._capture else False
 
     # ── 公开接口（供外部调用，替代直接访问私有成员） ─────────────────
 
@@ -422,7 +495,9 @@ class CaptureService(QObject):
         return result.get("ocr_results"), result.get("outcome") == "matched"
 
     def shutdown(self) -> None:
-        """停止 OCR worker，供应用退出时调用。"""
+        """停止截图执行器和 OCR worker，供应用退出时调用。"""
+        self._closed = True
+        self._adb_executor.shutdown(wait=False, cancel_futures=True)
         if self._ocr_worker is not None:
             if self._ocr_worker.shutdown():
                 self._ocr_worker = None

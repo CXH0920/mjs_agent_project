@@ -119,6 +119,8 @@ def test_save_json_atomic_replaces_target_without_tmp_file(tmp_path: Path) -> No
 
     assert json.loads(target.read_text(encoding="utf-8")) == [{"id": 2}]
     assert not target.with_suffix(".tmp").exists()
+    assert b"\r\n" not in target.read_bytes()
+    assert target.read_bytes().endswith(b"\n")
 
 
 def test_official_crawl_transforms_each_item_once(monkeypatch, tmp_path: Path) -> None:

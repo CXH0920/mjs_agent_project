@@ -6,9 +6,10 @@ import json
 
 import pytest
 
-from src.business.data_management_service import DataManagementService
+from src.business.data_management_service import DataManagementService, DataMutationService
+from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
-from src.data.models import HeroGuide, SynergyScore
+from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 
 
@@ -57,3 +58,64 @@ def test_clear_data_requires_selection(tmp_path) -> None:
         DataManagementService(guide_manager, synergy_manager).clear_data(
             guides=False, synergies=False,
         )
+
+
+def test_clear_data_restores_all_files_when_one_save_fails(tmp_path, monkeypatch) -> None:
+    guide_manager, synergy_manager = _managers(tmp_path)
+    guide_source = guide_manager.file_path.read_text(encoding="utf-8")
+    synergy_source = synergy_manager.file_path.read_text(encoding="utf-8")
+
+    def fail_save() -> None:
+        raise OSError("磁盘写入失败")
+
+    monkeypatch.setattr(synergy_manager, "save", fail_save)
+
+    with pytest.raises(OSError, match="磁盘写入失败"):
+        DataManagementService(guide_manager, synergy_manager).clear_data(
+            guides=True, synergies=True,
+        )
+
+    assert guide_manager.list_guides()[0].description == "旧攻略"
+    assert len(synergy_manager.list_synergies()) == 1
+    assert guide_manager.file_path.read_text(encoding="utf-8") == guide_source
+    assert synergy_manager.file_path.read_text(encoding="utf-8") == synergy_source
+
+
+def test_repair_missing_references_requires_explicit_service_call(tmp_path) -> None:
+    heroes = HeroManager(tmp_path / "heroes.json")
+    guides = GuideManager(tmp_path / "guides.json")
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    heroes.add_hero(Hero(id=1, name="曹操"))
+    guides.add_guide(HeroGuide(hero_id=1, synergizes_with=[99]))
+    guides.add_guide(HeroGuide(hero_id=88, description="失效攻略"))
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=99, score=6))
+    heroes.save()
+    guides.save()
+    synergies.save()
+
+    result = DataMutationService(heroes, guides, synergies).repair_missing_references()
+
+    assert (result.removed_synergies, result.removed_guides, result.cleaned_guide_references) == (1, 1, 1)
+    assert guides.get_guide(1).synergizes_with == []
+    assert guides.get_guide(88) is None
+    assert synergies.list_synergies() == []
+    assert len(result.backup_paths) == 2
+
+
+def test_delete_hero_with_relations_commits_all_related_files(tmp_path) -> None:
+    heroes = HeroManager(tmp_path / "heroes.json")
+    guides = GuideManager(tmp_path / "guides.json")
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    heroes.add_hero(Hero(id=1, name="曹操"))
+    guides.add_guide(HeroGuide(hero_id=1, description="旧攻略"))
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=6))
+    heroes.save()
+    guides.save()
+    synergies.save()
+
+    backups = DataMutationService(heroes, guides, synergies).delete_hero_with_relations(1)
+
+    assert heroes.get_hero(1) is None
+    assert guides.get_guide(1) is None
+    assert synergies.list_synergies() == []
+    assert len(backups) == 3

@@ -89,15 +89,8 @@ AI 生成服务以子进程退出码作为唯一成败来源：CLI 根据 `Gener
 
 ```
 do_capture()
-  └─ QTimer.singleShot(0, _execute_capture)  ← 延后回调，ADB 截图仍在 GUI 线程执行
-       ├─ AdbCapture.screencap_full() → PIL Image
-       ├─ 保存截图到 screenshots/
-       ├─ OCR 启用？
-       │   ├─ TemplateManager.match(image, template_name) → 页面模板匹配
-       │   │   ├─ 否 → 跳过
-       │   │   └─ 是 → GeneralRecognizer.recognize() → 保存 JSON
-       │   └─ 返回结果
-      └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
+  └─ [adb-capture 单线程] capture_screenshot() → AdbCapture.screencap_full() → PIL Image
+       └─ [GUI 线程] 保存截图到 screenshots/ → OCR 启用？ → emit capture_completed(...)
 ```
 
 `CaptureService.do_capture()` 和 `do_capture_from_file()` 支持传入 `template_name` 与 `force_ocr`。对局攻略导入使用 `match_guide` 模板并强制执行 OCR，不受“启用武将识别”开关影响；选将推荐保持默认的 `hero_selection` 模板流程。

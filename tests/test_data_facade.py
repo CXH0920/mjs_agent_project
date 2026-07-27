@@ -17,7 +17,7 @@ def _write_json(path: Path, data: list[dict]) -> str:
     return source
 
 
-def test_load_all_reports_and_recovers_missing_references():
+def test_load_all_reports_missing_references_without_mutating_loaded_data():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         heroes_path = tmp_path / "heroes.json"
@@ -49,11 +49,11 @@ def test_load_all_reports_and_recovers_missing_references():
         facade = DataFacade(heroes_path, synergies_path, guides_path)
         report = facade.load_all()
 
-        assert [score.hero_b_id for score in facade.synergies.list_synergies()] == [2]
+        assert [score.hero_b_id for score in facade.synergies.list_synergies()] == [2, 99]
         guide = facade.guides.get_guide(1)
         assert guide.weak_against_type == ["高爆发型"]
-        assert guide.synergizes_with == []
-        assert facade.guides.get_guide(88) is None
+        assert guide.synergizes_with == [99]
+        assert facade.guides.get_guide(88) is not None
         assert report is facade.last_load_report
         assert report.error_count == 3
         assert all(issue.kind == "missing_reference" for issue in report.issues)
@@ -77,3 +77,4 @@ def test_data_manager_save_uses_lf_newlines() -> None:
         manager.save()
 
         assert b"\r\n" not in path.read_bytes()
+        assert path.read_bytes().endswith(b"\n")

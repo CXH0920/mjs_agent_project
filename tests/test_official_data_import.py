@@ -232,6 +232,8 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
     template_rates = iter([("70.34%", 0.99), ("70.11%", 0.99)])
     monkeypatch.setattr(service, "_recognize_rate_with_templates", lambda *_: next(template_rates))
     monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+    stale_calls = []
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale_calls.append)
 
     progress = []
     summary = service.import_file("2v2", tmp_path / "official.png", lambda current, total: progress.append((current, total)))
@@ -253,3 +255,4 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
     assert not output_path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r\n" not in output_path.read_bytes()
     assert progress == [(0, 6), (1, 6), (2, 6), (3, 6), (4, 6), (5, 6), (6, 6)]
+    assert stale_calls == [True]

@@ -652,8 +652,9 @@ class GeneralRecognizer:
         json_path = Path(json_path)
         json_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with open(json_path, "w", encoding="utf-8") as f:
+            with open(json_path, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.write("\n")
             logger.info("识别结果已保存: %s", json_path)
         except Exception as e:
             logger.error("识别结果保存失败 %s: %s", json_path, e)

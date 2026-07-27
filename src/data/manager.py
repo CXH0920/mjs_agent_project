@@ -171,8 +171,17 @@ class DataManager(Generic[V_co]):
         tmp_path = self.file_path.with_suffix(".tmp")
         with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
         tmp_path.replace(self.file_path)
         logger.debug("保存 %d 条到 %s", len(self._items), self.file_path)
+
+    def snapshot_items(self) -> dict:
+        """返回当前数据快照，供跨文件变更失败时恢复内存状态。"""
+        return dict(self._items)
+
+    def restore_items(self, snapshot: dict) -> None:
+        """恢复由 ``snapshot_items`` 创建的数据快照。"""
+        self._items = dict(snapshot)
 
     # ============================================================
     # 基础 CRUD
@@ -249,13 +258,12 @@ class DataFacade:
         return report
 
     def _validate_references(self, report: LoadReport) -> None:
-        """移除内存中的失效关联，保持源 JSON 不变。"""
+        """检查跨实体关联，仅报告问题而不修改已加载数据。"""
         hero_ids = {hero.id for hero in self.heroes.list_heroes()}
 
         for synergy in list(self.synergies.list_synergies()):
             missing_ids = {hero_id for hero_id in (synergy.hero_a_id, synergy.hero_b_id) if hero_id not in hero_ids}
             if missing_ids:
-                self.synergies.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
                 self._add_reference_issue(
                     report,
                     self.synergies.file_path,
@@ -266,7 +274,6 @@ class DataFacade:
 
         for guide in list(self.guides.list_guides()):
             if guide.hero_id not in hero_ids:
-                self.guides.delete_guide(guide.hero_id)
                 self._add_reference_issue(
                     report,
                     self.guides.file_path,
@@ -277,13 +284,9 @@ class DataFacade:
                 )
                 continue
 
-            synergizes_with = self._valid_guide_references(
+            self._valid_guide_references(
                 report, guide.hero_id, "synergizes_with", guide.synergizes_with, hero_ids
             )
-            if synergizes_with != guide.synergizes_with:
-                self.guides.update_guide(
-                    guide.model_copy(update={"synergizes_with": synergizes_with})
-                )
 
     def _valid_guide_references(
         self,
@@ -292,11 +295,9 @@ class DataFacade:
         field_name: str,
         hero_ids: list[int],
         valid_hero_ids: set[int],
-    ) -> list[int]:
-        valid_ids = []
+    ) -> None:
         for index, hero_id in enumerate(hero_ids):
             if hero_id in valid_hero_ids:
-                valid_ids.append(hero_id)
                 continue
             self._add_reference_issue(
                 report,
@@ -306,7 +307,6 @@ class DataFacade:
                 guide_id,
                 f"{field_name}[{index}]",
             )
-        return valid_ids
 
     @staticmethod
     def _add_reference_issue(

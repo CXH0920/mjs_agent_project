@@ -243,7 +243,7 @@ MainWindow._request_synergy_single()
 RecommendationPanel._on_import_from_screenshot()
   -> [无 capture service] _open_mumu_config()                  [先配置模拟器]
   -> CaptureService.do_capture(perform_ocr=False)
-    -> QTimer.singleShot(0, self._execute_capture)              [延后回调；ADB 截图仍在 GUI 线程]
+    -> [adb-capture 单线程] capture_screenshot()                [不阻塞 GUI]
        -> self._capture.connect()                              [ADB 连接]
           -> AdbCapture.connect()
             -> _check_adb_valid()
@@ -274,9 +274,9 @@ RecommendationPanel._on_import_from_file()
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `do_capture(hero_names)` | `capture_service.py` | `_on_import_from_screenshot()` | `QTimer.singleShot(0, _execute_capture)` |
+| `do_capture(hero_names)` | `capture_service.py` | `_on_import_from_screenshot()` | `adb-capture` 单线程截图；结果回到 GUI 线程处理 |
 | `do_capture_from_file(path, names)` | `capture_service.py` | `_on_import_from_file()` | `QTimer.singleShot(0, _execute_file_ocr)` |
-| `_execute_capture(...)` | `capture_service.py` | `do_capture()` 延迟调用 | `connect_emulator()`, `screencap_full()`, `save_image()`；按参数决定是否入 OCR 队列 |
+| `_handle_capture_result(...)` | `capture_service.py` | `_on_background_capture_ready()` | 在 GUI 线程保存图片；按参数决定是否入 OCR 队列 |
 | `_execute_file_ocr(...)` | `capture_service.py` | `do_capture_from_file()` 延迟调用 | `Image.open()`, `_queue_capture_ocr()` |
 | `submit_ocr_task(...)` | `capture_service.py` | 手动文件导入、轮询 | 构造 `OcrTask` -> `OcrWorker.submit()` |
 | `_on_ocr_task_completed(task)` | `capture_service.py` | `OcrWorker.task_completed` | 合并待处理截图上下文 -> `capture_completed` |
@@ -334,8 +334,7 @@ MainWindow._on_poll_capture()                               [poll_tick 信号触
   -> OcrService.begin_poll() -> due_poll_tasks()              [会话与独立任务冷却]
   -> threading.Lock.acquire(blocking=False)                  [防并发]
   -> [后台线程] _do_poll_work()
-    -> AdbCapture.connect()                                   [必要时]
-    -> AdbCapture.screencap_full()
+    -> CaptureService.capture_for_poll()                      [复用 adb-capture 单线程]
     -> 每个到期页面调用 CaptureService.submit_ocr_task()
        -> OcrWorker._execute() -> 模板匹配 -> 必要时 OCR
     -> self._poll_result_ready.emit(result)                   [信号]

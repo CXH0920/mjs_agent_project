@@ -91,8 +91,9 @@ def save_json_atomic(path: Path, data: list[dict]) -> None:
     """将 JSON 数据写入临时文件后原子替换目标文件。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
+    with tmp_path.open("w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
     tmp_path.replace(path)
 
 

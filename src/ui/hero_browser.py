@@ -38,6 +38,7 @@ from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.data.models import Hero, HeroGuide, SynergyScore
+from src.business.data_management_service import DataMutationService
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.guide_edit_dialog import GuideEditDialog
 from src.ui.guide_detail_dialog import GuideDetailDialog
@@ -945,12 +946,11 @@ class HeroDetailPanel(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._hero_mgr.delete_hero(self._current_hero.id)
-            self._guide_mgr.delete_guide(self._current_hero.id)
-            self._synergy_mgr.delete_synergies_for_hero(self._current_hero.id)
-            self._hero_mgr.save()
-            self._guide_mgr.save()
-            self._synergy_mgr.save()
+            DataMutationService(
+                self._hero_mgr,
+                self._guide_mgr,
+                self._synergy_mgr,
+            ).delete_hero_with_relations(self._current_hero.id)
             self._current_hero = None
             self._current_guide = None
             self._basic_info.setText("武将已删除，请选择其他武将")

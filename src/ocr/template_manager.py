@@ -151,11 +151,12 @@ class TemplateManager:
         self._template = gray
         self._reference_size = (img_w, img_h)
         try:
-            with self._metadata_path.open("w", encoding="utf-8") as file:
+            with self._metadata_path.open("w", encoding="utf-8", newline="\n") as file:
                 json.dump({
                     "reference_width": img_w,
                     "reference_height": img_h,
                 }, file, ensure_ascii=False, indent=2)
+                file.write("\n")
         except OSError as exc:
             logger.warning("模板元数据保存失败: %s", exc)
         logger.info("模板已保存: %s (%sx%s)", self._template_path.name, w, h)

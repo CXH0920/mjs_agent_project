@@ -140,9 +140,9 @@ class SynergyManager:
 
 `DataManager.load()` 会逐条执行 Pydantic 校验。格式错误的记录和重复键会被跳过，其他合法记录继续加载；源 JSON 不会在加载过程中被改写。每项问题以 `DataIssue` 返回，包含文件、记录下标、实体键和字段信息。
 
-`LoadReport` 汇总一次完整加载的问题，并提供 `error_count` 与 `warning_count`。这使 UI 可以提示“部分数据已恢复”，同时保留日志和后续修复入口所需的精确上下文。
+`LoadReport` 汇总一次完整加载的问题，并提供 `error_count` 与 `warning_count`。跨实体校验只记录 `missing_reference`，不在加载时删除内存数据；UI 由用户确认后调用 `DataMutationService` 创建备份、修复并保存，避免普通编辑意外覆盖异常记录。
 
-`DataManager.clear_all()` 用于批量清空当前 Manager 的内存记录并返回条数；数据管理服务会先备份原 JSON，再调用该方法和 `save()`，沿用临时文件替换保证空列表写入的原子性。
+`DataManager.clear_all()` 用于批量清空当前 Manager 的内存记录并返回条数；数据管理服务会先备份原 JSON，再批量保存。任一文件写入失败时会恢复所有受影响文件及内存快照。
 
 ### 3.6 DataFacade 门面
 
@@ -167,8 +167,9 @@ facade.heroes.get_hero(114) # 直接访问各 Manager
 def save(self) -> None:
     data = [g.model_dump(mode="json") for g in self._guides.values()]
     tmp_path = self.guides_file.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
+    with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
     tmp_path.replace(self.guides_file)  # 原子替换
 ```
 

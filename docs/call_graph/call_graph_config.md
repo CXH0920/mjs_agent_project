@@ -87,6 +87,7 @@ get_api_config()
      -> requests_per_minute: from env or 30 (int)
      -> max_retries: from env or 3 (int)
      -> http_timeout: from env or 300 (int)
+     -> log_to_file: from env or True (bool)
   -> return config dict
 ```
 

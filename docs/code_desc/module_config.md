@@ -62,7 +62,10 @@ def parse_env_file(path) -> dict[str, str]:
     # 读取 .env 文件，返回所有键值对（值均为字符串）
 
 def load_env_config(path) -> dict:
-    # 解析后通过 key_mapping 映射为内部小写 key，完成类型转型
+    # 解析后通过 key_mapping 映射为内部小写 key，完成类型转型（含 LOG_TO_FILE 布尔值）
+
+def get_runtime_params() -> dict:
+    # 返回请求、超时、日志等级及 log_to_file（bool）运行参数
 
 def get_api_config() -> dict:
     # 合并 config.env + 环境变量 + 默认值

@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from PySide6.QtCore import QThread, Signal
+from src.data.recommendation_index_repository import mark_recommendation_index_stale
 from src.ocr.recognizer import _correct_with_hero_list
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,7 @@ class OfficialDataImportService:
                 ["期望排名", "OCR排名", "OCR名称", "OCR胜率", "数字模板胜率", "数字模板置信度", "置信度", "异常原因", "原图坐标", "行截图路径"],
                 batch["reviews"],
             )
+        mark_recommendation_index_stale(True)
         if "2v2胜率排行.csv" in outputs:
             from src.data.win_rate_repository import clear_win_rate_cache
             clear_win_rate_cache()

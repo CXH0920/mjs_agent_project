@@ -16,8 +16,10 @@ MainWindow._load_data() -> DataFacade.load_all()
       -> model_class.model_validate(raw)                         [逐条校验]
       -> 坏记录或重复键 -> DataIssue -> 跳过该记录
   -> DataFacade._validate_references(report)
-    -> 移除内存中的悬空相性、攻略归属和攻略关联 ID
-  -> return LoadReport                                           [只读恢复]
+    -> 仅追加 missing_reference 问题，不修改内存数据
+  -> MainWindow 询问用户是否修复并保存
+    -> DataMutationService.repair_missing_references()           [创建备份后写入]
+  -> return LoadReport                                           [只读校验]
 ```
 
 | 对象 | 职责 |
@@ -26,7 +28,7 @@ MainWindow._load_data() -> DataFacade.load_all()
 | `LoadReport` | 汇总 `issues`，提供 `error_count`、`warning_count` |
 | `last_load_report` | 保存最近一次 `load_all()` 的完整报告 |
 
-示例：攻略关联英雄 ID 不存在时，正文保留，失效关联从内存列表剔除，并生成 `missing_reference`；原 `guides.json` 保持不变。
+示例：攻略关联英雄 ID 不存在时，正文、关联列表和原 `guides.json` 都保持不变，并生成 `missing_reference`；只有用户确认修复后才会清理并保存。
 
 ## 胜率仓库调用链
 
@@ -48,6 +50,7 @@ OfficialDataImportService.import_file("2v2", image_path)
   -> _write_csv(data/2v2胜率排行.csv, ["排名", "武将", "胜率"], rows)
   -> _write_csv(data/2v2出场排行.csv, ["排名", "武将"], rows)
   -> _write_csv(对应 *_待复核.csv, review_rows)
+  -> mark_recommendation_index_stale(True)
   -> clear_win_rate_cache()
   -> RecommendationPanel / MatchGuidePanel 下次 load_win_rates() 读取新胜率
 
@@ -55,6 +58,7 @@ OfficialDataImportService.import_file("exile", image_path)
   -> 合并左右表视觉行序
   -> _write_csv(data/武将放逐.csv, ["排名", "武将"], rows)
   -> _write_csv(data/武将放逐_待复核.csv, review_rows)
+  -> mark_recommendation_index_stale(True)
 ```
 
 `_write_csv()` 先在目标目录创建 UTF-8、LF 换行的临时文件，再以 `Path.replace()` 原子替换正式文件。待复核 CSV 不参与 `win_rate_repository` 缓存；它与 `screenshot_data/official_import/` 的行截图共同构成导入质量追踪记录。
@@ -102,7 +106,7 @@ MainWindow._load_data()
 |--------|----------|------|
 | `MainWindow._reload_data()` | `DataFacade.load_all()` | 重新读取三个文件并执行跨实体校验，不会先保存 |
 | `HeroDetailPanel._on_info_edit()` | `HeroManager.save()` | 修改武将信息后保存 |
-| `HeroDetailPanel._on_info_delete()` | `HeroManager.save()`, `GuideManager.save()` | 删除武将后保存 |
+| `HeroDetailPanel._on_info_delete()` | `DataMutationService.delete_hero_with_relations()` | 删除武将及关联数据，失败时从备份恢复 |
 | `HeroDetailPanel._on_guide_edit()` | `GuideManager.save()` | 修改攻略后保存 |
 | `HeroDetailPanel._on_guide_delete()` | `GuideManager.save()` | 删除攻略后保存 |
 | `AiGenerationWorkflow._on_guide_completed()` | `GuideManager.load()` (仅重新加载) | 攻略生成成功后重载内存缓存 |
