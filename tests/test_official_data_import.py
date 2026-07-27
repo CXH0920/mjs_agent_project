@@ -69,6 +69,38 @@ def test_high_confidence_unknown_complete_name_is_corrected_and_reviewed() -> No
     assert reasons == ["武将名称已由词表校正"]
 
 
+def test_compound_surname_prefix_stays_unresolved_when_candidates_are_ambiguous() -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊", "夏侯婴", "夏侯霸"])
+
+    prefix_name, _ = service._normalize_name(("夏侯", 0.83))
+    complete_typo, _ = service._normalize_name(("夏侯怀", 0.71))
+
+    assert prefix_name == "夏侯"
+    assert complete_typo == "夏侯怀"
+    assert service._unresolved_name_reason(prefix_name) == (
+        "武将名称候选不唯一：夏侯惇/夏侯渊/夏侯婴/夏侯霸"
+    )
+    assert service._unresolved_name_reason(complete_typo) == (
+        "武将名称候选不唯一：夏侯惇/夏侯渊/夏侯婴/夏侯霸"
+    )
+
+
+def test_compound_surname_guard_does_not_change_common_single_surname_correction() -> None:
+    service = OfficialDataImportService(
+        hero_names=["曹植", "曹仁", "曹丕", "曹操", "夏侯惇", "夏侯渊"],
+    )
+
+    name, confidence = service._normalize_name(("曹不", 0.98))
+
+    assert (name, confidence) == ("曹丕", 0.98)
+
+
+def test_unknown_complete_name_is_marked_as_missing_from_dictionary() -> None:
+    service = OfficialDataImportService(hero_names=["曹操"])
+
+    assert service._unresolved_name_reason("新武将") == "武将名称未命中词表"
+
+
 def test_name_cell_prefers_complete_candidate_in_hero_list(monkeypatch) -> None:
     service = OfficialDataImportService(hero_names=["郭隗"])
     cell = np.zeros((20, 100, 3), dtype=np.uint8)
@@ -79,6 +111,44 @@ def test_name_cell_prefers_complete_candidate_in_hero_list(monkeypatch) -> None:
     text, confidence = service._recognize_name_cell(cell)
 
     assert (text, confidence) == ("郭隗", 0.76)
+
+
+def test_name_cell_keeps_conflicting_exact_candidates_unresolved(monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    statuses = []
+    monkeypatch.setattr(
+        service,
+        "_recognize_cell_candidates",
+        lambda _: [("夏侯惇", 0.76), ("夏侯渊", 0.92)],
+    )
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda *_: ("", 0.0))
+    monkeypatch.setattr(OfficialDataImportService, "_rare_char_engine", property(lambda _: None))
+
+    text, confidence = service._recognize_name_cell(cell, statuses.append)
+
+    assert (text, confidence) == ("夏侯", 0.92)
+    assert statuses == ["正在执行罕见字兜底识别"]
+
+
+def test_name_cell_uses_rare_engine_for_ambiguous_compound_prefix(monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    rare_character_engine = object()
+    statuses = []
+    monkeypatch.setattr(service, "_recognize_cell_candidates", lambda _: [("夏侯", 0.99)])
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda *_: ("", 0.0))
+    monkeypatch.setattr(
+        OfficialDataImportService,
+        "_rare_char_engine",
+        property(lambda _: rare_character_engine),
+    )
+    monkeypatch.setattr(service, "_recognize_name_with_engine", lambda *_: ("夏侯惇", 0.80))
+
+    text, confidence = service._recognize_name_cell(cell, statuses.append)
+
+    assert (text, confidence) == ("夏侯惇", 0.80)
+    assert statuses == ["正在执行罕见字兜底识别"]
 
 
 def test_name_cell_corrects_single_character_result_from_glyphs(monkeypatch) -> None:

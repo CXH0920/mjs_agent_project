@@ -184,6 +184,9 @@ class OfficialDataImportService:
                 batch["records"].append(record)
 
                 reasons = self._review_reasons(expected_rank, fields, name, record)
+                unresolved_name_reason = self._unresolved_name_reason(name)
+                if unresolved_name_reason:
+                    reasons.append(unresolved_name_reason)
                 if expected_rank in repaired_ranks:
                     reasons.append("检测到缺失表格横线，已按行高补全")
                 ocr_rate = self._normalize_rate(fields.get("胜率", ("", 0.0))[0])
@@ -483,35 +486,93 @@ class OfficialDataImportService:
     def _chinese_text(text: str) -> str:
         return "".join(re.findall(r"[\u4e00-\u9fff]", text))
 
-    def _find_complete_hero_candidate(
+    def _exact_hero_matches(
         self, candidates: list[tuple[str, float]],
-    ) -> tuple[str, float] | None:
-        exact_matches = [
+    ) -> list[tuple[str, float]]:
+        return [
             (self._chinese_text(text), confidence)
             for text, confidence in candidates
             if self._chinese_text(text) in self._hero_names
         ]
-        return max(exact_matches, key=lambda item: item[1]) if exact_matches else None
+
+    @staticmethod
+    def _select_unique_name_match(
+        matches: list[tuple[str, float]],
+    ) -> tuple[tuple[str, float] | None, tuple[str, ...]]:
+        names = tuple(dict.fromkeys(name for name, _confidence in matches))
+        if len(names) == 1:
+            return max(matches, key=lambda item: item[1]), ()
+        return None, names
+
+    @staticmethod
+    def _common_prefix(names: tuple[str, ...] | list[str]) -> str:
+        if not names:
+            return ""
+        prefix = names[0]
+        for name in names[1:]:
+            while prefix and not name.startswith(prefix):
+                prefix = prefix[:-1]
+        return prefix
+
+    def _strict_prefix_matches(self, name: str) -> list[str]:
+        return [hero for hero in self._hero_names if len(hero) > len(name) and hero.startswith(name)]
+
+    def _nearby_hero_names(self, name: str) -> list[str]:
+        return [
+            hero for hero in self._hero_names
+            if CharacterSimilarityService._levenshtein_distance(name, hero)
+            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
+        ]
+
+    def _ambiguous_name_candidates(self, name: str) -> list[str]:
+        prefix_matches = self._strict_prefix_matches(name)
+        if len(prefix_matches) > 1:
+            return prefix_matches
+        nearby_names = self._nearby_hero_names(name)
+        if len(nearby_names) > 1 and len(self._common_prefix(nearby_names)) >= 2:
+            return nearby_names
+        return []
+
+    def _correct_official_name(self, name: str) -> str:
+        """保留复姓公共前缀歧义，避免词表扩充后静默改绑。"""
+        if not name or name in self._hero_names or self._ambiguous_name_candidates(name):
+            return name
+        return self._name_corrector.correct_hero_name(name, self._hero_names)
+
+    def _unresolved_name_reason(self, name: str) -> str:
+        if not name or name in self._hero_names:
+            return ""
+        ambiguous_candidates = self._ambiguous_name_candidates(name)
+        if ambiguous_candidates:
+            return f"武将名称候选不唯一：{'/'.join(ambiguous_candidates)}"
+        return "武将名称未命中词表"
 
     def _recognize_name_with_engine(self, cell: np.ndarray, engine) -> tuple[str, float]:
         """使用指定引擎识别名称，仅接受词表中可确认的完整结果。"""
         candidates = self._recognize_cell_candidates(cell, engine)
-        exact_match = self._find_complete_hero_candidate(candidates)
+        exact_match, exact_conflicts = self._select_unique_name_match(self._exact_hero_matches(candidates))
         if exact_match:
             return exact_match
+        if exact_conflicts:
+            logger.warning("官方榜单武将精确候选冲突: %s", exact_conflicts)
+            return self._common_prefix(exact_conflicts), max(confidence for _text, confidence in candidates)
         corrected_matches = []
         for text, confidence in candidates:
             candidate_name = self._chinese_text(text)
             if len(candidate_name) < 2:
                 continue
-            corrected = self._name_corrector.correct_hero_name(candidate_name, self._hero_names)
+            corrected = self._correct_official_name(candidate_name)
             if corrected in self._hero_names:
                 corrected_matches.append((corrected, confidence))
-        if corrected_matches:
-            return max(corrected_matches, key=lambda item: item[1])
+        corrected_match, corrected_conflicts = self._select_unique_name_match(corrected_matches)
+        if corrected_match:
+            return corrected_match
+        if corrected_conflicts:
+            logger.warning("官方榜单武将校正候选冲突: %s", corrected_conflicts)
+            return self._common_prefix(corrected_conflicts), max(confidence for _text, confidence in candidates)
         glyph_name, glyph_confidence = self._recognize_name_glyphs(cell, engine)
         if glyph_name:
-            corrected = self._name_corrector.correct_hero_name(glyph_name, self._hero_names)
+            corrected = self._correct_official_name(glyph_name)
             if corrected in self._hero_names:
                 return corrected, glyph_confidence
         return "", 0.0
@@ -525,18 +586,23 @@ class OfficialDataImportService:
         candidates = self._recognize_cell_candidates(cell)
         if not candidates:
             return "", 0.0
-        exact_match = self._find_complete_hero_candidate(candidates)
+        exact_match, exact_conflicts = self._select_unique_name_match(self._exact_hero_matches(candidates))
         if exact_match:
             return exact_match
-
-        text, confidence = max(candidates, key=lambda item: item[1])
+        if exact_conflicts:
+            logger.warning("官方榜单武将精确候选冲突: %s", exact_conflicts)
+            text = self._common_prefix(exact_conflicts)
+            confidence = max(confidence for _text, confidence in candidates)
+        else:
+            text, confidence = max(candidates, key=lambda item: item[1])
         name = self._chinese_text(text)
-        if len(name) != 1:
+        ambiguous_candidates = self._ambiguous_name_candidates(name)
+        if len(name) != 1 and not ambiguous_candidates:
             return text, confidence
 
         glyph_name, glyph_confidence = self._recognize_name_glyphs(cell)
         if glyph_name:
-            corrected = self._name_corrector.correct_hero_name(glyph_name, self._hero_names)
+            corrected = self._correct_official_name(glyph_name)
             if corrected in self._hero_names:
                 return corrected, glyph_confidence
         prefix_matches = [hero for hero in self._hero_names if hero.startswith(name)]
@@ -596,7 +662,7 @@ class OfficialDataImportService:
             return name, confidence
         if len(name) == 1:
             return name, confidence
-        return self._name_corrector.correct_hero_name(name, self._hero_names), confidence
+        return self._correct_official_name(name), confidence
 
     @staticmethod
     def _normalize_rate(text: str) -> str:

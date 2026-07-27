@@ -561,7 +561,7 @@ OfficialDataImportDialog._start_import()
       -> _read_image() -> _extract_panels()
       -> _find_data_boundaries() -> HoughLinesP 横线 -> _restore_missing_boundaries() -> 视觉行序
       -> _prepare_rate_templates()（仅 2v2 胜率表）
-      -> _recognize_row() -> 名称/胜率识别（歧义单字按需繁体兜底） -> _review_reasons()
+      -> _recognize_row() -> 名称/胜率识别（名称歧义按需繁体兜底） -> _review_reasons()
       -> _write_csv() -> Path.replace() 原子覆盖
       -> [胜率] clear_win_rate_cache()
     -> emit completed(summaries)
@@ -579,12 +579,14 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 
 **名称降级策略：**
 
-1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。任一候选去除非汉字后精确命中 `heroes.json` 时，优先使用完整候选，即使单字候选置信度更高。
+1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。候选去除非汉字后精确命中 `heroes.json` 时优先使用完整候选；若两路精确结果指向不同武将，则不按置信度强选。
 2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `CharacterSimilarityService.correct_hero_name()` 校正后必须命中词表。
-3. 逐字补识别失败时，只有单字作为词表首字的候选唯一才补全。
-4. 同首字存在多个或零个候选时，服务懒加载 `chinese_cht` 繁体模型，先尝试完整候选，再以词表校正或逐字识别确认；最终精确命中词表才采用。模型下载、加载或识别失败时，保留 OCR 原文并写入待复核。
+3. 逐字补识别失败时，只有 OCR 原文作为词表前缀的候选唯一才补全；`夏侯`、`司马`等公共前缀对应多个武将时禁止自动补全。
+4. 多个候选共享至少两个汉字前缀时，不使用编辑距离或微小视觉分差强行决胜；服务按需加载 `chinese_cht` 繁体模型继续确认。模型不可用或仍不能唯一确认时保留 OCR 原文，并以“武将名称候选不唯一”写入待复核。
 
-每个正式 CSV 都有对应的 `*_待复核.csv`。异常记录含 OCR 原文、置信度、原因、原图坐标及 `screenshot_data/official_import/` 下的行截图；正式 CSV 仍按视觉行序写入，避免漏识别导致排名整体偏移。
+每个正式 CSV 都有对应的 `*_待复核.csv`。异常记录含 OCR 原文、置信度、原因、原图坐标及 `screenshot_data/official_import/` 下的行截图；名称未命中词表时也必须进入待复核。正式 CSV 仍按视觉行序写入，避免漏识别导致排名整体偏移。
+
+**已知限制：** 当前字体中的“惇”可能被 OCR 识别为“怀”或直接漏掉。词表只有“夏侯惇”时可通过唯一候选校正；以后加入“夏侯渊”“夏侯婴”“夏侯霸”等同前缀人物后，无法确认的“夏侯”或“夏侯怀”会保留原文并进入待复核，不会自动改绑。该安全降级避免错误数据进入推荐指数，但没有解决偏旁分离导致的字形识别率问题；如果原图与增强图一致误识别为另一个合法完整姓名，仍需依赖后续的图像级或榜单唯一性校验。
 
 ---
 
