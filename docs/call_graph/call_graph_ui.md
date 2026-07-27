@@ -325,33 +325,44 @@ RecommendationPanel._on_import_from_file()                     [「从图片导�
 
 ```
 MatchGuidePanel.__init__(hero_mgr, capture_service)
-  -> _load_default_heroes()
-     -> HeroManager.list_heroes()                                [按 ID 升序取前四名]
-     -> MatchHeroCard.set_hero(hero)
-        -> get_faction_colors()                                  [头像左上势力标签]
-        -> _load_portrait()                                      [头像 120×160，区域 135×162]
-     -> load_win_rates()                                         [加载胜率仓库]
+  -> LineupState()                                               [四个空槽位与确认规则]
+  -> MatchAnalysisView(hero_mgr)                                 [总览/我方/敌方/详情页]
+  -> MatchHeroCard × 4
 
 MatchHeroCard._portrait [左键双击]
   -> MatchHeroCard._on_hero_double_clicked()
   -> MatchGuidePanel._show_skill_popup(hero_id)
   -> src.ui.shared.hero_dialogs.HeroSkillDialog(hero).exec()
 
-MatchGuidePanel._on_import_from_screenshot()
+MatchGuidePanel._on_recognize_current()
   -> [未配置 ADB] request_mumu_config → MainWindow._open_mumu_config()
-  -> CaptureService.do_capture(perform_ocr=False)
-     -> _execute_capture() → 保存截图
+  -> CaptureService.do_capture(template_name="match_guide", force_ocr=True)
   -> MatchGuidePanel._on_capture_result(result)
-     -> [ADB 截图来源] 仅复位导入状态
+     -> load_from_ocr(ocr_results)
 
 MatchGuidePanel._on_import_from_file()
   -> QFileDialog.getOpenFileName()
   -> CaptureService.do_capture_from_file(
        file_path, template_name="match_guide", force_ocr=True)
   -> _execute_file_ocr() → _queue_capture_ocr() → OcrWorker → _on_capture_result()
+  -> load_from_ocr(ocr_results)
+
+MatchGuidePanel.load_from_ocr()
+  -> LineupState.load_from_ocr()                                 [槽位、队伍标签和主将初值]
+  -> MatchHeroCard.set_hero()/set_side()                          [卡片重绘]
+  -> MatchAnalysisView.render_unconfirmed()
+
+MatchGuidePanel._set_side() / _set_ally_leader()
+  -> LineupState.set_side() / set_ally_leader()                  [两名我方、两名敌方限制]
+  -> 取消已确认状态 → 卡片与确认提示重绘
+
+MatchGuidePanel._confirm_lineup()
+  -> LineupState.confirm()                                       [四名不同武将且敌我各两名]
+  -> MatchAnalysisService.analyze(allies, enemies)
+  -> MatchAnalysisView.render_analysis()
 ```
 
-对局攻略导入复用 `CaptureService` 的异步采集接口，但通过 `template_name` 使用独立模板；未识别到武将时保留默认四张卡片。
+对局攻略导入复用 `CaptureService` 的异步采集接口，但通过 `template_name` 使用独立模板；未识别到武将时保留待识别空状态。阵容状态不依赖 Qt，分析视图不修改阵容，两者可分别测试和维护。
 
 ### 3.4 轮询截图链路（关键：跨线程）
 
@@ -746,25 +757,27 @@ MainWindow._open_faction_colors()
 
 MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
   -> _setup_ui()
+  -> MumuConfigCoordinator(config, capture_service, ocr_service)
   -> _load_config()
-    -> CaptureService.update_config()                           [唯一 ADB 会话]
+    -> MumuConfigCoordinator.sync_capture_config()              [唯一 ADB 会话]
     -> _on_refresh_devices()
-       -> EmulatorOperationService.refresh_devices() [后台]
-       -> [signal] devices_refreshed -> _on_devices_refreshed() -> 填充设备下拉列表
+       -> MumuConfigCoordinator.refresh_devices()
+       -> [signal] devices_changed -> _on_devices_refreshed() -> 填充设备下拉列表
        -> [signal] device_refresh_failed -> _on_device_refresh_failed() -> 保留当前选择
     -> _refresh_template_status()
        -> OcrService.is_template_loaded()
 
   → 模板制作:
   _on_make_template()
-    -> EmulatorOperationService.capture_template_screenshot() [后台]
+    -> MumuConfigCoordinator.start_template_capture()
+      -> EmulatorOperationService.capture_template_screenshot() [后台]
       -> CaptureService.capture_screenshot()                    [共享 ADB 会话]
-      -> [signal] screenshot_ready -> _on_template_screenshot_ready()
+      -> [signal] template_screenshot_ready -> _on_template_screenshot_ready()
     -> pil_to_qpixmap(image)                                    [UI 线程 PIL→QPixmap]
     -> RoiSelectorDialog(pixmap, title, parent)                 [UI 框选 ROI]
        -> 鼠标拖拽: mousePress → mouseMove → mouseRelease       [绘制矩形框]
        -> 确认: _on_confirm → ROI = (x, y, w, h)
-    -> [accepted] OcrService.create_template(image, roi, template_name)
+    -> [accepted] MumuConfigCoordinator.create_template(image, roi, template_name)
     -> _refresh_template_status()
 
   [任意连接/刷新状态变化]
@@ -788,9 +801,9 @@ MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
 |------|--------|--------|----------|
 | `RoiSelectorDialog` 鼠标事件 | `RoiSelectorDialog` | Qt 事件 | `_on_mouse_press/move/release`, `_update_info()`, `_on_paint()` |
 | `RoiSelectorDialog._on_confirm()` | `RoiSelectorDialog` | "确认"按钮 | 计算 ROI → `self.accept()` |
-| `MumuConfigDialog._on_auto_detect()` | `MumuConfigDialog` | "自动探测"按钮 | `EmulatorOperationService.detect_adb()` |
-| `MumuConfigDialog._on_make_template()` | `MumuConfigDialog` | "制作模板"按钮 | `capture_template_screenshot()` → `RoiSelectorDialog` → `OcrService.create_template()` |
-| `MumuConfigDialog._on_save()` | `MumuConfigDialog` | "保存"按钮 | 收集配置 → `accept()` |
+| `MumuConfigDialog._on_auto_detect()` | `MumuConfigDialog` | "自动探测"按钮 | `MumuConfigCoordinator.detect_adb()` |
+| `MumuConfigDialog._on_make_template()` | `MumuConfigDialog` | "制作模板"按钮 | 协调器截图 → `RoiSelectorDialog` → 协调器保存模板 |
+| `MumuConfigDialog._on_save()` | `MumuConfigDialog` | "保存"按钮 | 收集表单 → 协调器校验草稿 → `accept()` |
 
 ### 6.4 进度对话框
 

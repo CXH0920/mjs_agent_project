@@ -180,8 +180,14 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
         for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
     ])
     panel._win_rates = {"甲": 40.3}
-    panel._render_unconfirmed()
-    overview_labels = [label.text() for label in panel._overview_page.findChildren(QLabel)]
+    panel._analysis_view.render_unconfirmed(
+        panel._lineup.heroes,
+        panel._win_rates,
+        panel._lineup.can_confirm(),
+    )
+    overview_labels = [
+        label.text() for label in panel._analysis_view.overview_page.findChildren(QLabel)
+    ]
     assert any("甲 · 定位暂无数据 · 历史单将胜率：40.3%" == text for text in overview_labels)
 
     panel._set_side(0, "ally")
@@ -201,13 +207,13 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
 
     assert panel._analysis is not None
     assert [item.target.name for item in panel._analysis.priorities] == ["丙", "丁"]
-    assert panel._guide_tabs.currentIndex() == 0
+    assert panel._analysis_view.tabs.currentIndex() == 0
     assert panel._confirm_btn.text() == "阵容已确认"
-    assert panel._allies_page.widget().layout().itemAt(0).widget().text() == "我方打法"
-    assert panel._enemies_page.widget().layout().itemAt(0).widget().text() == "对抗敌方"
-    assert panel._details_page.widget().layout().itemAt(0).widget().text() == "单将详情"
-    ally_card = panel._allies_page.widget().layout().itemAt(1).widget()
-    enemy_card = panel._enemies_page.widget().layout().itemAt(1).widget()
+    assert panel._analysis_view.allies_page.widget().layout().itemAt(0).widget().text() == "我方打法"
+    assert panel._analysis_view.enemies_page.widget().layout().itemAt(0).widget().text() == "对抗敌方"
+    assert panel._analysis_view.details_page.widget().layout().itemAt(0).widget().text() == "单将详情"
+    ally_card = panel._analysis_view.allies_page.widget().layout().itemAt(1).widget()
+    enemy_card = panel._analysis_view.enemies_page.widget().layout().itemAt(1).widget()
     ally_tips = next(label for label in ally_card.findChildren(QLabel) if label.text().startswith("新手提示："))
     weakness = next(label for label in enemy_card.findChildren(QLabel) if label.text().startswith("被谁克制："))
     assert ally_tips.wordWrap()
@@ -230,7 +236,7 @@ def test_match_guide_auto_assigns_sides_from_team_labels() -> None:
         {"index": 4, "name": "丁", "team": "楚军"},
     ])
 
-    assert panel._sides == ["enemy", "enemy", "ally", "ally"]
+    assert panel._lineup.sides == ["enemy", "enemy", "ally", "ally"]
     assert panel._is_confirmed()
     assert panel._analysis is None
     assert panel._confirm_btn.isEnabled()

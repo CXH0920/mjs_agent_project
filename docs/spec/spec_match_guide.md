@@ -202,15 +202,17 @@ MatchAnalysis(
 
 ### 6.1 状态边界
 
-- 当前阵容、槽位、阵营和“我”标识只保存在 `MatchGuidePanel` 的会话内存中；应用重启后清空。
+- 当前阵容、槽位、阵营和“我”标识只保存在 `LineupState` 的会话内存中；应用重启后清空。
 - 不写入 `heroes.json`、`guides.json`、`synergies.json` 或 CSV。
-- OCR 成功时，必须重置上一次阵营确认，防止新阵容沿用旧阵营关系。
+- 每次 OCR 导入都必须替换上一次阵容；空识别结果也要清除旧阵容，防止新画面沿用旧阵营关系或旧摘要。
 
 ### 6.2 模块职责
 
 | 模块 | 职责 |
 |---|---|
-| `MatchGuidePanel` | 页面状态、交互、渲染、发射配置请求 |
+| `MatchGuidePanel` | 连接截图/OCR 信号、卡片交互、发射配置请求；不直接保存阵容状态 |
+| `LineupState` | 四个槽位的原始识别名、置信度、匹配武将、敌我、主将和显式确认；提供可分析性及失败原因 |
+| `MatchAnalysisView` | 只渲染确认前提示或 `MatchAnalysis` 的四个攻略页；不修改阵容状态 |
 | `MatchAnalysisService`（新增） | 读取数据并生成可解释的对局摘要；不得引用 QWidget |
 | `HeroManager` / `GuideManager` | 提供武将和攻略查询 |
 | `win_rate_repository` | 提供只读单将胜率快照 |
@@ -245,7 +247,8 @@ MatchAnalysis(
 ### 7.3 建议测试覆盖
 
 - `MatchAnalysisService`：完整数据、无攻略、无胜率、两名敌方胜率排序、无 `counter_strategy`。
-- `MatchGuidePanel`：未确认状态、确认规则、阵营人数上限、OCR 后状态重置、手动替换。
+- `LineupState`：未确认状态、明确失败原因、阵营人数上限、OCR 后（含空结果）状态重置、手动替换。
+- `MatchAnalysisView` / `MatchGuidePanel`：确认前提示、确认后四个攻略页，以及重复识别和本地缺失状态的卡片渲染。
 - 回归：现有图片导入、ADB 截图、头像双击技能、势力颜色刷新。
 
 ## 八、非目标与后续迭代

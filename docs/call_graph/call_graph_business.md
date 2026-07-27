@@ -299,20 +299,24 @@ CaptureService.capture_failed      → UI 错误提示
 
 ```
 MumuConfigDialog
+  -> MumuConfigCoordinator.refresh_devices()
   -> EmulatorOperationService.refresh_devices()
     -> [探测线程] probe_all_devices_with_status() [失败重试一次]
-    -> devices_refreshed -> MumuConfigDialog._on_devices_refreshed()
+  -> devices_refreshed -> MumuConfigCoordinator.devices_changed -> MumuConfigDialog._on_devices_refreshed()
     -> device_refresh_failed -> 保留现有设备选择并显示失败状态
 
+  -> MumuConfigCoordinator.connect() / disconnect()
   -> EmulatorOperationService.connect() / disconnect()
     -> [ADB 会话线程] CaptureService.connect_emulator() / disconnect_emulator()
-    -> connection_finished / disconnection_finished -> 配置页状态与提示
+  -> connection_finished / disconnection_finished -> 协调器转发 -> 配置页状态与提示
 
+  -> MumuConfigCoordinator.start_template_capture(template_name)
   -> EmulatorOperationService.capture_template_screenshot(template_name)
     -> [ADB 会话线程] CaptureService.capture_screenshot()
-    -> screenshot_ready -> MumuConfigDialog._on_template_screenshot_ready()
+  -> screenshot_ready -> 协调器 template_screenshot_ready -> MumuConfigDialog._on_template_screenshot_ready()
       -> RoiSelectorDialog [UI 鼠标框选]
-      -> OcrService.create_template(image, roi, template_name)
+      -> MumuConfigCoordinator.create_template(image, roi, template_name)
+        -> OcrService.create_template(image, roi, template_name)
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |

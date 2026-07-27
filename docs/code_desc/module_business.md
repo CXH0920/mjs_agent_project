@@ -134,15 +134,15 @@ OcrService (QObject)
 
 ```
 MumuConfigDialog
-  -> EmulatorOperationService.detect_adb() / refresh_devices()
-  -> devices_refreshed 或 device_refresh_failed
-  -> EmulatorOperationService.connect() / test_device()
-  -> EmulatorOperationService.capture_template_screenshot()
-  -> signal 回到 UI：显示结果或打开 RoiSelectorDialog
+  -> MumuConfigCoordinator.detect_adb() / refresh_devices()
+  -> EmulatorOperationService 的后台结果
+  -> MumuConfigCoordinator 转发设备、连接和模板截图状态
+  -> UI 渲染状态或打开 RoiSelectorDialog
+  -> MumuConfigCoordinator.create_template(image, roi, template_name)
   -> OcrService.create_template(image, roi, template_name)
 ```
 
-ROI 框选保留在 UI 线程，模板保存和文件选择统一委托 `OcrService`；设备刷新失败时对话框保留上一次成功的设备列表和选择。模板截图进行中由 UI 显式记录，其他状态刷新不会重新启用或覆盖其按钮文字；关闭对话框后服务不再向该对话框投递结果。
+`MumuConfigCoordinator` 持有配置草稿、已探测设备和模板截图进行状态；设备刷新失败时视图保留上一次成功的列表与选择。ROI 框选和文件选择保留在 UI 线程，模板保存、运行时 ADB 配置和轮询恢复均由协调器委托服务完成；关闭对话框后协调器停止后台操作，避免迟到回调更新已销毁控件。
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 

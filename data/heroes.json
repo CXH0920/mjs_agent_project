@@ -1,36 +1,5 @@
 [
   {
-    "id": 181,
-    "name": "卫玠",
-    "title": "",
-    "faction": "西晋",
-    "position": "防御",
-    "max_hp": 3,
-    "max_hand": 6,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "思梦成疾",
-        "description": "出牌阶段，你可以获得1张与所有其他角色手牌中牌名都不相同的牌，然后失去1点体力，若没有因此获得牌，此技能失效直到当前回合结束。",
-        "settlement": "没有从牌堆中获得牌则不会失去体力。"
-      },
-      {
-        "name": "珠玉在侧",
-        "description": "当你打出牌后，你可以削弱一名与你距离最近的其他角色手牌中所有相同牌名的牌。",
-        "settlement": "1.存在多名与你距离最近的角色则只可选择其中一名。 2.其他角色与你的距离最小为1。"
-      },
-      {
-        "name": "风神秀异",
-        "description": "当你即将受到伤害时，若你的手牌上限＞体力值，则改为减少等量的手牌上限。当你打出行动牌或战法牌时，若所有其他角色手牌中都不存在与此牌相同牌名的牌，则你的手牌上限+1，并获得随机1张与其他角色手牌中相同牌名的牌。",
-        "settlement": "1.只要在即将受到伤害的时机点满足条件，无论受到的伤害是否大于手牌上限与体力值的差值或大于手牌上限，均只减少等量手牌上限。 2.后段效果中会随机一名角色的1张牌，从牌堆中获得与其同牌名的牌。"
-      }
-    ],
-    "difficulty": 3,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/YRMgZnD3GNGqHqh9XPKmKztDRjoBDK1FWk3Kojn6.png_200x282.png"
-  },
-  {
     "id": 180,
     "name": "乐广",
     "title": "",
@@ -4705,5 +4674,36 @@
     "mode_viability": {},
     "last_updated": "2026-07-25",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/ne3RJfEE1kQIdOKoF4XyHnC11zx7casEdOdW94eu.png_200x282.png"
+  },
+  {
+    "id": 181,
+    "name": "卫玠",
+    "title": "",
+    "faction": "西晋",
+    "position": "防御",
+    "max_hp": 3,
+    "max_hand": 6,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "思梦成疾",
+        "description": "出牌阶段，你可以获得1张与所有其他角色手牌中牌名都不相同的牌，然后失去1点体力，若没有因此获得牌，此技能失效直到当前回合结束。",
+        "settlement": "没有从牌堆中获得牌则不会失去体力。"
+      },
+      {
+        "name": "珠玉在侧",
+        "description": "当你打出牌后，你可以削弱一名与你距离最近的其他角色手牌中所有相同牌名的牌。",
+        "settlement": "1.存在多名与你距离最近的角色则只可选择其中一名。 2.其他角色与你的距离最小为1。"
+      },
+      {
+        "name": "风神秀异",
+        "description": "当你即将受到伤害时，若你的手牌上限＞体力值，则改为减少等量的手牌上限。当你打出行动牌或战法牌时，若所有其他角色手牌中都不存在与此牌相同牌名的牌，则你的手牌上限+1，并获得随机1张与其他角色手牌中相同牌名的牌。",
+        "settlement": "1.只要在即将受到伤害的时机点满足条件，无论受到的伤害是否大于手牌上限与体力值的差值或大于手牌上限，均只减少等量手牌上限。 2.后段效果中会随机一名角色的1张牌，从牌堆中获得与其同牌名的牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-07-27",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/YRMgZnD3GNGqHqh9XPKmKztDRjoBDK1FWk3Kojn6.png_200x282.png"
   }
 ]

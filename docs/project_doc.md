@@ -403,6 +403,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | SynergyFetchService | `synergy_fetch_service.py` | ~104 | BaseFetchService | 3 |
 | CaptureService | `capture_service.py` | ~426 | QObject | 4 |
 | EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
+| MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
 | OcrService | `ocr_service.py` | ~355 | QObject | 3 |
 | OfficialDataImportService / Worker | `official_data_import_service.py` | ~500 | 普通类 / QThread | 3（Worker） |
 
@@ -749,13 +750,15 @@ MainWindow.__init__
 
 ### 5.3 对局攻略页面（MatchGuidePanel）
 
-对局攻略与武将浏览、选将推荐处于同级 Tab。页面首期使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `data/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。未导入图片时，按武将 ID 升序加载最小的四名武将。
+对局攻略与武将浏览、选将推荐处于同级 Tab。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `data/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
 
-页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。ADB 截图仅保存画面；本地图片导入通过 `template_name="match_guide"` 使用独立模板并将 OCR 结果交给 `load_from_ocr()` 更新卡片。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。
+页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口均通过 `template_name="match_guide"` 使用独立模板并将 OCR 结果交给 `load_from_ocr()` 更新卡片。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。`LineupState` 负责四个槽位、敌我人数限制、主将选择和显式确认；确认后才由 `MatchAnalysisService` 生成摘要，并由 `MatchAnalysisView` 渲染总览、我方打法、对抗敌方和单将详情。
 
 ### 5.4 模拟器配置对话框（MumuConfigDialog）
 
 位于 配置 → 模拟器配置，与 SettingsDialog 同级菜单入口。
+
+`MumuConfigCoordinator` 持有配置草稿、设备列表、共享会话状态和模板截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`MumuConfigDialog` 只负责表单渲染、文件选择、ROI 框选及用户提示；关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
 
 **功能分区**：
 

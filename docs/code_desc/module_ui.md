@@ -41,7 +41,9 @@ src/ui/
 ├── synergy_edit_dialog.py       # 相性评分编辑
 ├── hero_select_dialog.py       # 武将选择对话框基类
 ├── recommendation_panel.py     # 选将推荐面板（4×2 网格+头像+相性+OCR 导入）
-├── match_guide_panel.py        # 对局攻略页面（四名武将卡片+双导入）
+├── match_guide_panel.py        # 对局攻略页面（截图/导入入口、卡片交互与流程装配）
+├── match_lineup_state.py       # 对局四槽位状态、敌我确认和主将规则（无 Qt 依赖）
+├── match_analysis_view.py      # 对局攻略四个分析页的 Qt 渲染
 │
 ├── settings_dialog.py          # API 配置对话框
 ├── data_management_dialog.py   # 攻略与相性批量清空对话框
@@ -214,7 +216,7 @@ def update_recommendations(self, data: list[dict]) -> None
 
 势力配色由 `FactionColorDialog` 以紧凑列表展示，每行只显示势力名称、颜色小方块和 Hex 代码，不在主界面长期占用调色板区域。点击颜色小方块后打开 `ColorPicker` 浮层，提供 HSB 调整和屏幕取色；取消时恢复打开前的颜色，确认后才写入配置页草稿。
 
-模拟器配置中的两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击。`EmulatorOperationService` 在后台通过共享 `CaptureService` 自动建立连接并获取截图，UI 线程只负责打开 `RoiSelectorDialog` 和展示结果；只有未配置 ADB 或正在连接时禁用。
+模拟器配置中的两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击。`MumuConfigCoordinator` 统一调度 `EmulatorOperationService`、共享 `CaptureService` 与 `OcrService`；后台自动建立连接并获取截图，UI 线程只负责打开 `RoiSelectorDialog` 和展示结果；只有未配置 ADB 或正在连接时禁用。
 
 保存流程如下：
 
@@ -236,6 +238,8 @@ ColorPicker.color()
 选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。未配置 ADB 时通过 `request_mumu_config` 信号打开模拟器配置。
 
 后台轮询命中独立模板后只刷新对应页面数据，不自动切换 Tab，避免抢占用户当前页面。
+
+`MatchGuidePanel` 只保留截图/图片导入、四张武将卡片和信号绑定。`LineupState` 是阵容的唯一状态来源，负责 OCR 槽位导入、两名我方/两名敌方限制、主将选择、重复武将校验和显式确认；它不依赖 Qt，可独立测试。确认前的提示页和确认后的总览、我方、敌方、详情四个攻略页由 `MatchAnalysisView` 渲染；主面板只将确认后的阵容交给 `MatchAnalysisService`。
 
 ### 3.6 后端选择 + 进度条
 
@@ -367,7 +371,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 |--------|------|
 | `SettingsDialog` | API 配置编辑 |
 | `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
-| `MumuConfigDialog` | ADB/OCR 表单与状态展示、ROI 框选；后台操作委托 `EmulatorOperationService` |
+| `MumuConfigDialog` | ADB/OCR 表单与状态展示、文件选择、ROI 框选；服务操作委托 `MumuConfigCoordinator` |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器） |
 | `CostConfirmDialog` | 遗留 AI 成本确认组件；当前费用估算展示在 `BackendChooseDialog` |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
@@ -386,6 +390,6 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 依赖 | `src.data.manager` | 通过 DataFacade 读取/写入数据 |
 | 依赖 | `src.business.*` | 连接业务服务的 Signal，触发 fetch_*() |
 | 依赖 | `src.config.env` | 配置文件读取 |
-| 依赖 | `src.business.emulator_operation_service` | 模拟器配置对话框委托后台 ADB 操作 |
+| 依赖 | `src.business.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
