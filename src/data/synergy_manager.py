@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from src.data.manager import DataManager, DEFAULT_DATA_DIR
+from src.data.manager import DataIssue, DataManager, DEFAULT_DATA_DIR
 from src.data.models import SynergyScore
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,18 @@ class SynergyManager(DataManager[SynergyScore]):
     def list_synergies(self) -> list[SynergyScore]:
         """获取所有相性数据"""
         return self.list_all()
+
+    def replace_loaded_data(
+        self,
+        synergies: list[SynergyScore],
+        load_issues: list[DataIssue],
+    ) -> None:
+        """在主线程原子替换后台完成校验的相性数据。"""
+        self._items = {
+            self._synergy_key(synergy.hero_a_id, synergy.hero_b_id): synergy
+            for synergy in synergies
+        }
+        self.load_issues = list(load_issues)
 
     # ============================================================
     # 增删改

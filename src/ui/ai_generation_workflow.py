@@ -9,8 +9,11 @@ from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 
 from src.business.guide_fetch_service import GuideFetchService
 from src.business.synergy_fetch_service import SynergyFetchService
+from src.business.synergy_reload_worker import SynergyReloadWorker
+from src.data.manager import DataIssue
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
+from src.data.models import SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.backend_choose_dialog import BackendChooseDialog
 from src.ui.guide_fetch_dialog import GuideFetchDialog
@@ -44,6 +47,7 @@ class AiGenerationWorkflow(QObject):
         self._window = parent
         self._guide_progress_dialog: GuideProgressDialog | None = None
         self._synergy_progress_dialog: GuideProgressDialog | None = None
+        self._synergy_reload_worker: SynergyReloadWorker | None = None
         self._connect_services()
 
     def _connect_services(self) -> None:
@@ -243,8 +247,31 @@ class AiGenerationWorkflow(QObject):
     def _on_synergy_cancelled(self) -> None:
         if self._synergy_progress_dialog:
             self._synergy_progress_dialog.on_process_cancelled()
-        self._synergy_manager.load()
+        self._reload_synergies_in_background()
+
+    def _reload_synergies_in_background(self) -> None:
+        """取消后后台重载已分批提交的相性数据，保持主界面可响应。"""
+        if self._synergy_reload_worker and self._synergy_reload_worker.isRunning():
+            return
+        worker = SynergyReloadWorker(self._synergy_manager.file_path, self)
+        worker.loaded.connect(self._on_synergy_reload_completed)
+        worker.failed.connect(self._on_synergy_reload_failed)
+        worker.finished.connect(worker.deleteLater)
+        self._synergy_reload_worker = worker
+        worker.start()
+
+    def _on_synergy_reload_completed(
+        self,
+        synergies: list[SynergyScore],
+        load_issues: list[DataIssue],
+    ) -> None:
+        self._synergy_manager.replace_loaded_data(synergies, load_issues)
+        self._synergy_reload_worker = None
         self.synergies_changed.emit()
+
+    def _on_synergy_reload_failed(self, message: str) -> None:
+        self._synergy_reload_worker = None
+        self.status_changed.emit(f"相性数据重载失败: {message}")
 
     def _on_synergy_progress(self, text: str) -> None:
         if self._synergy_progress_dialog:

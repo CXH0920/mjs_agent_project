@@ -79,7 +79,9 @@ cancelled → 用户中止后通知 UI 刷新已分批提交的数据
 
 所有服务使用 `SeparateChannels` 模式，分别读取 stdout 和 stderr。
 
-AI 生成服务以子进程退出码作为唯一成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 仅用于展示进度，不再承担失败项协议解析职责。用户主动中止会标记取消状态并忽略由 `kill()` 触发的崩溃事件，统一等待 `finished` 收尾、清理临时文件，再发出 `cancelled`。
+AI 生成服务以子进程退出码作为唯一成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 仅用于展示进度，不再承担失败项协议解析职责。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
+
+`SynergyReloadWorker` 在后台解析已分批提交的 `synergies.json`；完成后由主线程一次性替换 `SynergyManager` 的内存数据并通知界面刷新，避免取消后同步解析 JSON 阻塞窗口事件循环。
 
 ### 3.2 CaptureService（截图业务）
 

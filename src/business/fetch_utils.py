@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 
 from PySide6.QtCore import QProcess
 
@@ -22,10 +24,27 @@ def is_process_busy(process: QProcess | None, service_name: str) -> bool:
     return False
 
 
-def cancel_process(process: QProcess | None) -> None:
-    """请求终止当前 QProcess，完成收尾由 finished 信号处理。"""
+def cancel_process(process: QProcess | None) -> subprocess.Popen | None:
+    """请求终止当前 QProcess，并在 Windows 上异步清理整棵进程树。"""
     if process and process.state() != QProcess.ProcessState.NotRunning:
+        process_id = process.processId() if hasattr(process, "processId") else 0
+        if os.name == "nt" and process_id:
+            try:
+                return _terminate_process_tree(process_id)
+            except OSError as exc:
+                logger.warning("无法启动进程树清理，改为终止主进程: %s", exc)
         process.kill()
+    return None
+
+
+def _terminate_process_tree(process_id: int) -> subprocess.Popen:
+    """异步结束指定 PID 及其全部子进程，避免阻塞 Qt 主线程。"""
+    return subprocess.Popen(
+        ["taskkill", "/PID", str(process_id), "/T", "/F"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def get_qprocess_error_name(error: QProcess.ProcessError) -> str:

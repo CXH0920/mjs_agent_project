@@ -10,6 +10,7 @@ import pytest
 from PySide6.QtCore import QProcess
 
 from src.business.base_fetch_service import BaseFetchService
+from src.business import fetch_utils
 from src.business.fetch_utils import cancel_process
 from src.scraper.ai_generation import (
     GenerationResult,
@@ -96,6 +97,29 @@ def test_cancel_process_does_not_block_event_loop() -> None:
 
     assert process.killed
     assert not process.wait_called
+
+
+def test_terminate_process_tree_uses_taskkill_for_all_descendants(monkeypatch) -> None:
+    calls: list[tuple[list[str], dict]] = []
+    launched = object()
+
+    def fake_popen(args, **kwargs):
+        calls.append((args, kwargs))
+        return launched
+
+    monkeypatch.setattr(fetch_utils.subprocess, "Popen", fake_popen)
+
+    assert fetch_utils._terminate_process_tree(2468) is launched
+    assert calls == [
+        (
+            ["taskkill", "/PID", "2468", "/T", "/F"],
+            {
+                "stdout": fetch_utils.subprocess.DEVNULL,
+                "stderr": fetch_utils.subprocess.DEVNULL,
+                "creationflags": getattr(fetch_utils.subprocess, "CREATE_NO_WINDOW", 0),
+            },
+        ),
+    ]
 
 
 def test_base_fetch_service_reports_user_cancellation_after_process_exit() -> None:

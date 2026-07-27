@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, HeroGuide
+from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui import ai_generation_workflow as workflow_module
 from src.ui.ai_generation_workflow import AiGenerationWorkflow
@@ -124,9 +124,9 @@ class _CallbackSignal:
     def connect(self, callback) -> None:
         self._callbacks.append(callback)
 
-    def emit(self) -> None:
+    def emit(self, *args) -> None:
         for callback in self._callbacks:
-            callback()
+            callback(*args)
 
 
 class _SingleHeroDialog:
@@ -243,6 +243,46 @@ def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypat
     _ProgressDialog.instances[-1].cancel_requested.emit()
 
     assert guide_service.cancel_calls == 1
+
+
+def test_synergy_cancel_reloads_data_in_background(tmp_path: Path, monkeypatch) -> None:
+    workflow, _, _ = _workflow(tmp_path)
+    changed: list[bool] = []
+    load_calls: list[bool] = []
+
+    class _ReloadWorker:
+        instance = None
+
+        def __init__(self, _file_path, _parent=None) -> None:
+            self.loaded = _CallbackSignal()
+            self.failed = _CallbackSignal()
+            self.finished = _CallbackSignal()
+            self.started = False
+            _ReloadWorker.instance = self
+
+        def isRunning(self) -> bool:
+            return self.started
+
+        def start(self) -> None:
+            self.started = True
+
+        def deleteLater(self) -> None:
+            pass
+
+    monkeypatch.setattr(workflow._synergy_manager, "load", lambda: load_calls.append(True))
+    monkeypatch.setattr(workflow_module, "SynergyReloadWorker", _ReloadWorker)
+    workflow.synergies_changed.connect(lambda: changed.append(True))
+
+    workflow._on_synergy_cancelled()
+
+    assert load_calls == []
+    assert _ReloadWorker.instance.started
+    assert changed == []
+
+    _ReloadWorker.instance.loaded.emit([SynergyScore(hero_a_id=1, hero_b_id=2, score=6)], [])
+
+    assert workflow._synergy_manager.get_synergy(1, 2).score == 6
+    assert changed == [True]
 
 
 def test_synergy_progress_stays_at_zero_until_first_result() -> None:

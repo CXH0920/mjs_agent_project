@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import logging
 import sys
+from subprocess import Popen
 
-from PySide6.QtCore import QObject, Signal, QProcess, QProcessEnvironment
+from PySide6.QtCore import QObject, Signal, QProcess, QProcessEnvironment, QTimer
 
 from src.business.fetch_utils import (
     cancel_process,
@@ -47,6 +48,7 @@ class BaseFetchService(QObject):
         self._stdout_line_buffer = bytearray()
         self._stderr_buffer = bytearray()
         self._cancel_requested = False
+        self._cancel_cleanup_process: Popen | None = None
 
     # ---------------------------------------------------------------
     # 钩子：子类覆写
@@ -83,10 +85,13 @@ class BaseFetchService(QObject):
             return
         self._cancel_requested = True
         self.status_changed.emit(f"正在中止{self._service_name}...")
-        cancel_process(self._process)
+        self._cancel_cleanup_process = cancel_process(self._process)
 
     def _is_busy(self) -> bool:
         """检查是否正在运行"""
+        if self._cancel_requested:
+            logger.warning("%s 正在清理中止任务，忽略重复请求", self._service_name)
+            return True
         return is_process_busy(self._process, self._service_name)
 
     @property
@@ -101,6 +106,7 @@ class BaseFetchService(QObject):
     def _start_process(self, args: list[str]) -> None:
         """启动子进程并连接信号"""
         self._cancel_requested = False
+        self._cancel_cleanup_process = None
         self._stdout_buffer.clear()
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
@@ -187,9 +193,7 @@ class BaseFetchService(QObject):
         logger.info("%s 子进程结束，%s", self._service_name, msg)
 
         if self._cancel_requested:
-            self.status_changed.emit(f"{self._service_name}已中止")
-            self.cancelled.emit()
-            self._context = None
+            self._finish_cancellation()
             return
 
         if exit_code == 0:
@@ -204,6 +208,21 @@ class BaseFetchService(QObject):
             self.error_occurred.emit(msg)
 
         self._on_process_finished(exit_code)
+        self._context = None
+
+    def _finish_cancellation(self) -> None:
+        """等待 Windows 进程树清理结束后，再通知 UI 可安全继续操作。"""
+        cleanup_process = self._cancel_cleanup_process
+        if cleanup_process and cleanup_process.poll() is None:
+            QTimer.singleShot(50, self._finish_cancellation)
+            return
+
+        if cleanup_process and cleanup_process.returncode not in (0, None):
+            logger.warning("%s 进程树清理退出码: %s", self._service_name, cleanup_process.returncode)
+        self._cancel_cleanup_process = None
+        self._cancel_requested = False
+        self.status_changed.emit(f"{self._service_name}已中止")
+        self.cancelled.emit()
         self._context = None
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
