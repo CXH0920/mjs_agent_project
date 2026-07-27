@@ -119,3 +119,52 @@ def test_delete_hero_with_relations_commits_all_related_files(tmp_path) -> None:
     assert guides.get_guide(1) is None
     assert synergies.list_synergies() == []
     assert len(backups) == 3
+
+
+def test_detail_mutations_use_transactional_service_entrypoints(tmp_path) -> None:
+    heroes = HeroManager(tmp_path / "heroes.json")
+    guides = GuideManager(tmp_path / "guides.json")
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    heroes.add_hero(Hero(id=1, name="曹操"))
+    guides.add_guide(HeroGuide(hero_id=1, description="旧攻略"))
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=6))
+    heroes.save()
+    guides.save()
+    synergies.save()
+    service = DataMutationService(heroes, guides, synergies)
+
+    hero_backups = service.update_hero(Hero(id=1, name="新曹操"))
+    guide_backups = service.update_guide(HeroGuide(hero_id=1, description="新攻略"))
+    synergy_backups = service.update_synergy(
+        SynergyScore(hero_a_id=1, hero_b_id=2, score=8),
+    )
+    deleted_guide_backups = service.delete_guide(1)
+    deleted_synergy_backups = service.delete_synergy(1, 2)
+
+    assert heroes.get_hero(1).name == "新曹操"
+    assert guides.get_guide(1) is None
+    assert synergies.list_synergies() == []
+    assert all(len(backups) == 1 for backups in (
+        hero_backups,
+        guide_backups,
+        synergy_backups,
+        deleted_guide_backups,
+        deleted_synergy_backups,
+    ))
+
+
+def test_detail_mutation_restores_memory_and_file_when_save_fails(tmp_path, monkeypatch) -> None:
+    heroes = HeroManager(tmp_path / "heroes.json")
+    guides = GuideManager(tmp_path / "guides.json")
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    heroes.add_hero(Hero(id=1, name="曹操"))
+    heroes.save()
+    source = heroes.file_path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(heroes, "save", lambda: (_ for _ in ()).throw(OSError("写入失败")))
+
+    with pytest.raises(OSError, match="写入失败"):
+        DataMutationService(heroes, guides, synergies).update_hero(Hero(id=1, name="新曹操"))
+
+    assert heroes.get_hero(1).name == "曹操"
+    assert heroes.file_path.read_text(encoding="utf-8") == source

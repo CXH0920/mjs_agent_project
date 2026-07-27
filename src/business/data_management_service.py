@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
+from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)
@@ -118,19 +120,55 @@ class DataMutationService:
         self._guide_manager = guide_manager
         self._synergy_manager = synergy_manager
 
+    def update_hero(self, hero: Hero) -> tuple[Path, ...]:
+        """更新武将，并在写入失败时恢复原文件内容。"""
+        return self._commit_mutation(
+            (self._hero_manager,),
+            lambda: self._hero_manager.update_hero(hero),
+        )
+
+    def update_guide(self, guide: HeroGuide) -> tuple[Path, ...]:
+        """更新攻略，并在写入失败时恢复原文件内容。"""
+        return self._commit_mutation(
+            (self._guide_manager,),
+            lambda: self._guide_manager.update_guide(guide),
+        )
+
+    def delete_guide(self, hero_id: int) -> tuple[Path, ...]:
+        """删除攻略，并在写入失败时恢复原文件内容。"""
+        return self._commit_mutation(
+            (self._guide_manager,),
+            lambda: self._guide_manager.delete_guide(hero_id),
+        )
+
+    def update_synergy(self, synergy: SynergyScore) -> tuple[Path, ...]:
+        """更新相性评分，并在写入失败时恢复原文件内容。"""
+        return self._commit_mutation(
+            (self._synergy_manager,),
+            lambda: self._synergy_manager.update_synergy(synergy),
+        )
+
+    def delete_synergy(self, hero_a_id: int, hero_b_id: int) -> tuple[Path, ...]:
+        """删除相性评分，并在写入失败时恢复原文件内容。"""
+        return self._commit_mutation(
+            (self._synergy_manager,),
+            lambda: self._synergy_manager.delete_synergy(hero_a_id, hero_b_id),
+        )
+
     def delete_hero_with_relations(self, hero_id: int) -> tuple[Path, ...]:
         """删除武将及其关联数据，并在任一文件写入失败时恢复。"""
         if self._hero_manager.get_hero(hero_id) is None:
             raise ValueError(f"武将不存在: {hero_id}")
-        transaction = _ManagerTransaction(
+
+        def delete_relations() -> None:
+            self._hero_manager.delete_hero(hero_id)
+            self._guide_manager.delete_guide(hero_id)
+            self._synergy_manager.delete_synergies_for_hero(hero_id)
+
+        return self._commit_mutation(
             (self._hero_manager, self._guide_manager, self._synergy_manager),
-            datetime.now().strftime("%Y%m%d-%H%M%S-%f"),
+            delete_relations,
         )
-        self._hero_manager.delete_hero(hero_id)
-        self._guide_manager.delete_guide(hero_id)
-        self._synergy_manager.delete_synergies_for_hero(hero_id)
-        transaction.commit()
-        return transaction.backup_paths
 
     def repair_missing_references(self) -> DataRepairResult:
         """删除失效实体并清理攻略关系；必须由 UI 在用户确认后调用。"""
@@ -163,3 +201,18 @@ class DataMutationService:
             cleaned_guide_references,
             transaction.backup_paths,
         )
+
+    @staticmethod
+    def _commit_mutation(managers: tuple, mutation: Callable[[], None]) -> tuple[Path, ...]:
+        """在修改内存数据后统一保存；修改阶段异常同样恢复快照。"""
+        transaction = _ManagerTransaction(
+            managers,
+            datetime.now().strftime("%Y%m%d-%H%M%S-%f"),
+        )
+        try:
+            mutation()
+        except Exception:
+            transaction.rollback()
+            raise
+        transaction.commit()
+        return transaction.backup_paths

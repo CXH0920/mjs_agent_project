@@ -142,7 +142,7 @@ class SynergyManager:
 
 `LoadReport` 汇总一次完整加载的问题，并提供 `error_count` 与 `warning_count`。跨实体校验只记录 `missing_reference`，不在加载时删除内存数据；UI 由用户确认后调用 `DataMutationService` 创建备份、修复并保存，避免普通编辑意外覆盖异常记录。
 
-`DataManager.clear_all()` 用于批量清空当前 Manager 的内存记录并返回条数；数据管理服务会先备份原 JSON，再批量保存。任一文件写入失败时会恢复所有受影响文件及内存快照。
+`DataManager.clear_all()` 用于批量清空当前 Manager 的内存记录并返回条数；数据管理服务会先备份原 JSON，再批量保存。`DataMutationService` 同样是英雄详情页所有写入操作的唯一入口：英雄、攻略和相性的编辑/删除均先创建快照与备份。任一文件写入失败时会恢复所有受影响文件及内存快照。
 
 ### 3.6 DataFacade 门面
 

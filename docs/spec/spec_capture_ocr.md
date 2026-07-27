@@ -236,11 +236,11 @@ should_ocr = config.get("mumu_ocr_enabled", False) or is_poll
 
 **为什么：** 武将选择页出现后用户通常会花 10-30 秒选将，3 分钟内没必要重复识别。冷却不仅跳过 OCR，也跳过截图和模板匹配，因为已知会匹配成功（画面没变）。这是最轻量的处理方式——什么都不做。
 
-### 规则 4.3：轮询定位在 MainWindow 而非 CaptureService
+### 规则 4.3：轮询定位在 PollCoordinator 而非 CaptureService
 
-轮询逻辑在 `MainWindow._on_poll_capture()` 中实现，而非 `CaptureService` 内部。
+轮询逻辑在 `PollCoordinator._on_poll_tick()` 中实现，而非 `CaptureService` 或 `MainWindow` 内部。
 
-**为什么：** 轮询涉及三个模块的协调：CaptureService（截图）、TemplateManager（匹配）、GeneralRecognizer（OCR）+ 最终更新 RecommendationPanel（UI）。放在 MainWindow 作为编排器是合理的——它与所有模块都有连接关系，且最终结果直接更新 UI。
+**为什么：** 轮询涉及 CaptureService（截图）、TemplateManager（匹配）、GeneralRecognizer（OCR）和 OcrService（会话与退避）的协调。独立协调器负责后台工作、过期结果过滤和状态提交；MainWindow 只接收结果并更新 RecommendationPanel 等界面。
 
 ## 五、官方榜单图片导入需求
 

@@ -330,17 +330,17 @@ MumuConfigDialog
 ### 6.1 轮询链路
 
 ```
-MainWindow._on_poll_capture()                               [poll_tick 信号触发]
+PollCoordinator._on_poll_tick()                              [poll_tick 信号触发]
   -> OcrService.begin_poll() -> due_poll_tasks()              [会话与独立任务冷却]
   -> threading.Lock.acquire(blocking=False)                  [防并发]
   -> [后台线程] _do_poll_work()
     -> CaptureService.capture_for_poll()                      [复用 adb-capture 单线程]
     -> 每个到期页面调用 CaptureService.submit_ocr_task()
        -> OcrWorker._execute() -> 模板匹配 -> 必要时 OCR
-    -> self._poll_result_ready.emit(result)                   [信号]
+    -> _consume_poll_result() -> complete_poll()              [GUI 线程状态迁移]
+    -> poll_result_ready.emit(result)                          [信号]
 
-MainWindow._on_poll_result(result)                            [主线程接收]
-  -> OcrService.complete_poll(generation, outcome)
+MainWindow._on_poll_result(result)                            [主线程仅更新界面]
   -> [hero_selection 命中] RecommendationPanel.load_from_ocr()
   -> [match_guide 命中] MatchGuidePanel.update_block()
   -> OcrService.set_task_cooldown(task_name, seconds)
@@ -358,7 +358,7 @@ MainWindow._on_poll_result(result)                            [主线程接收]
 ### 6.2 信号拓扑
 
 ```
-OcrService.poll_tick              → MainWindow._on_poll_capture → 后台线程截图+OCR
+OcrService.poll_tick              → PollCoordinator._on_poll_tick → 后台线程截图+OCR
 OcrService.template_changed       → UI 模板状态更新
 OcrService.ocr_completed          → UI 获取识别结果
 ```

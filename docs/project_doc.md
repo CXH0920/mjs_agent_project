@@ -39,8 +39,8 @@
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> OpenCV 行分割 + 候选汇总/逐字/繁体罕见字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
-| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
-| 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> 各 Manager CRUD -> `save()` | 原子写入对应 JSON 并刷新局部视图 |
+| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
+| 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 
 ### 数据完整性与只读恢复
 
@@ -61,7 +61,7 @@ DataFacade.load_all()
 
 `BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
-OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
+OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`hero_selection` 与 `match_guide` 是独立轮询任务，避免一种页面的冷却阻塞另一种页面。
 
 ---
 
@@ -527,7 +527,7 @@ class OcrService(QObject):
     status_changed = Signal(str)           # 状态消息
     template_changed = Signal(bool)        # 模板加载/已删除
     ocr_completed = Signal(list)           # 识别结果
-    poll_tick = Signal()                   # 轮询触发信号（由 QTimer 驱动，连接至 MainWindow._on_poll_capture）
+    poll_tick = Signal()                   # 轮询触发信号（由 QTimer 驱动，连接至 PollCoordinator._on_poll_tick）
 ```
 
 **主要方法**：
@@ -693,9 +693,10 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 706 | QMainWindow（顶层） |
+| main_window.py | 684 | QMainWindow（顶层装配、菜单与界面绑定） |
+| poll_coordinator.py | 241 | QObject（轮询编排、后台任务与结果状态迁移） |
 | ai_generation_workflow.py | 246 | QObject（攻略与相性 UI 工作流） |
-| hero_browser.py | 1018 | QWidget（浏览列表、详情和协调） |
+| hero_browser.py | 1075 | QWidget（浏览列表、详情渲染和协调） |
 | hero_edit_dialog.py | 87 | QDialog（武将编辑） |
 | guide_edit_dialog.py | 120 | QDialog（攻略编辑） |
 | hero_relation_select_dialog.py | 129 | QDialog（攻略关系武将多选） |
@@ -891,22 +892,22 @@ HeroBrowser (QWidget)
 ```
 HeroDetailPanel._on_info_edit()
   -> HeroEditDialog.get_hero()
-  -> HeroManager.update_hero() -> save()
+  -> DataMutationService.update_hero() -> 创建备份 -> HeroManager.save()
 
 HeroDetailPanel._on_guide_edit()
   -> GuideEditDialog._open_relation_selector()
      -> HeroRelationSelectDialog.exec() -> selected_ids
   -> GuideEditDialog.get_guide()
-  -> GuideManager.update_guide() -> save()
+  -> DataMutationService.update_guide() -> 创建备份 -> GuideManager.save()
 
 HeroDetailPanel._on_synergy_edit()
   -> SynergyEditDialog.get_synergy()
-  -> SynergyManager.update_synergy() -> save()
+  -> DataMutationService.update_synergy() -> 创建备份 -> SynergyManager.save()
 ```
 
-`hero_browser.py` 只保留上述流程的协调、局部刷新和 `data_changed` 通知；四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。这种拆分不改变编辑按钮、信号或 Manager 的持久化契约，调用方仍通过公开类名创建对话框。
+`hero_browser.py` 只保留对话框、局部刷新和 `data_changed` 通知；所有编辑、删除写入均交给 `DataMutationService` 统一创建快照、备份与保存。四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。这种拆分不改变编辑按钮、信号或 Manager 的持久化契约，调用方仍通过公开类名创建对话框。
 
-相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `SynergyManager.list_synergies_for_hero()` -> `_refresh_synergy_table()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时 `update_synergy()` -> `save()`，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
+相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `SynergyManager.list_synergies_for_hero()` -> `_refresh_synergy_table()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时通过 `DataMutationService.update_synergy()` 写入，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
 
 **Tab 栏编辑按钮**：
 Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
@@ -1757,7 +1758,7 @@ def _engine(self):
 
 #### 持续轮询识别
 
-OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
+OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 
 ```
 
@@ -1771,7 +1772,7 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
   OcrService.poll_tick signal
        │
        ▼
-  MainWindow._on_poll_capture()
+  PollCoordinator._on_poll_tick()
        │
        ├── begin_poll() → due_poll_tasks()（任务状态和冷却彼此独立）
        ├── ADB 未配置/未连接？→ 返回前置条件结果（服务暂停或退避）
@@ -1782,8 +1783,9 @@ OcrService 提供 QTimer 驱动，MainWindow 编排的轮询流程：
        │     └── OcrWorker._execute() → TemplateManager.match()
        │          └── 命中且需要识别 → GeneralRecognizer.recognize() → latest.json
        │
-       ├── ③ _poll_result_ready 回主线程 → _on_poll_result()
+       ├── ③ PollCoordinator 接收结果并提交轮询状态
        │     ├── complete_poll(generation, outcome)
+       │     ├── poll_result_ready → MainWindow._on_poll_result()
        │     ├── hero_selection 命中 → RecommendationPanel.load_from_ocr()
        │     └── match_guide 命中 → MatchGuidePanel.update_block()
        │

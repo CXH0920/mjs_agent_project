@@ -105,10 +105,11 @@ MainWindow._load_data()
 | 调用方 | 被调用方 | 说明 |
 |--------|----------|------|
 | `MainWindow._reload_data()` | `DataFacade.load_all()` | 重新读取三个文件并执行跨实体校验，不会先保存 |
-| `HeroDetailPanel._on_info_edit()` | `HeroManager.save()` | 修改武将信息后保存 |
+| `HeroDetailPanel._on_info_edit()` | `DataMutationService.update_hero()` | 修改武将信息后备份并保存 |
 | `HeroDetailPanel._on_info_delete()` | `DataMutationService.delete_hero_with_relations()` | 删除武将及关联数据，失败时从备份恢复 |
-| `HeroDetailPanel._on_guide_edit()` | `GuideManager.save()` | 修改攻略后保存 |
-| `HeroDetailPanel._on_guide_delete()` | `GuideManager.save()` | 删除攻略后保存 |
+| `HeroDetailPanel._on_guide_edit()` | `DataMutationService.update_guide()` | 修改攻略后备份并保存 |
+| `HeroDetailPanel._on_guide_delete()` | `DataMutationService.delete_guide()` | 删除攻略后备份并保存 |
+| `HeroDetailPanel._on_synergy_edit()` / `_on_synergy_delete()` | `DataMutationService.update_synergy()` / `delete_synergy()` | 修改或删除相性后备份并保存 |
 | `AiGenerationWorkflow._on_guide_completed()` | `GuideManager.load()` (仅重新加载) | 攻略生成成功后重载内存缓存 |
 | `AiGenerationWorkflow._on_synergy_completed()` | `SynergyManager.load()` (仅重新加载) | 相性生成成功后重载内存缓存 |
 
@@ -292,7 +293,7 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `DataFacade.save_all()` | `manager.py` | 外部批量保存 | 三个 Manager.save() |
 | `DataFacade.get_stats()` | `manager.py` | `MainWindow._update_status()` | 三个 Manager 的计数接口 |
 | `HeroManager.load()` | `hero_manager.py` | `DataFacade.load_all()` | `json.load()`, `Hero.model_validate()` |
-| `HeroManager.save()` | `hero_manager.py` | `HeroDetailPanel` 编辑 | `json.dump()`, 原子替换 |
+| `HeroManager.save()` | `hero_manager.py` | `DataMutationService.update_hero()` | `json.dump()`, 原子替换 |
 | `HeroManager.get_hero()` | `hero_manager.py` | `RecommendationPanel` 等 | dict get O(1) |
 | `HeroManager.get_hero_by_name()` | `hero_manager.py` | `RecommendationPanel` | 线性遍历 O(N) |
 | `HeroManager.search_heroes()` | `hero_manager.py` | `HeroListPanel` | 模糊匹配 4 字段 |

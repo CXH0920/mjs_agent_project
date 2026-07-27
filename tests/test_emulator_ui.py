@@ -17,6 +17,7 @@ from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow, PollOutcome
 from src.ui.match_guide_panel import MatchGuidePanel
+from src.ui.poll_coordinator import PollCoordinator
 from src.ui.recommendation_panel import HeroCardWidget, RecommendationPanel
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 
@@ -313,37 +314,21 @@ def test_main_window_keeps_emulator_status_after_stats_update() -> None:
 
 
 def test_poll_stays_stopped_until_emulator_is_connected() -> None:
-    class Capture:
-        connected = False
-
-    class CaptureService:
-        capture = Capture()
-
-    class OcrService:
-        config = {"mumu_ocr_poll_mode": True, "mumu_ocr_poll_interval": 2}
-
+    class Coordinator:
         def __init__(self) -> None:
-            self.started = 0
-            self.stopped = 0
+            self.sync_count = 0
 
-        def start_poll(self, interval: int) -> None:
-            self.started += 1
-
-        def stop_poll(self) -> None:
-            self.stopped += 1
+        def sync_with_connection(self) -> None:
+            self.sync_count += 1
 
     window = MainWindow.__new__(MainWindow)
-    window._capture_service = CaptureService()
-    window._ocr_service = OcrService()
+    window._poll_coordinator = Coordinator()
     window._update_emulator_status = lambda state, detail="": None
 
     window._on_capture_connection_changed("disconnected")
-    assert window._ocr_service.started == 0
-    assert window._ocr_service.stopped == 1
-
-    window._capture_service.capture.connected = True
     window._on_capture_connection_changed("connected", "127.0.0.1:16448")
-    assert window._ocr_service.started == 1
+
+    assert window._poll_coordinator.sync_count == 2
 
 
 def test_poll_match_does_not_switch_tab_by_default() -> None:
@@ -441,9 +426,9 @@ def test_poll_ocr_wait_times_out_without_blocking() -> None:
         completed = Completed()
         result = None
 
-    result = MainWindow._wait_for_poll_ocr_task(Task(), threading.Event())
+    result = PollCoordinator.wait_for_ocr_task(Task(), threading.Event())
 
-    assert Task.completed.timeout == MainWindow.POLL_OCR_WAIT_TIMEOUT_SECONDS
+    assert Task.completed.timeout == PollCoordinator.POLL_OCR_WAIT_TIMEOUT_SECONDS
     assert result.outcome is PollOutcome.RETRYABLE_OCR
     assert "超时" in result.detail
 
@@ -460,7 +445,7 @@ def test_poll_ocr_wait_drops_cancelled_result() -> None:
     cancelled = threading.Event()
     cancelled.set()
 
-    assert MainWindow._wait_for_poll_ocr_task(Task(), cancelled) is None
+    assert PollCoordinator.wait_for_ocr_task(Task(), cancelled) is None
 
 
 

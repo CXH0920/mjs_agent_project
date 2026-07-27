@@ -8,10 +8,7 @@
 from __future__ import annotations
 
 import logging
-import threading
-from dataclasses import dataclass, field
-from enum import Enum
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,
@@ -34,68 +31,6 @@ from src.data.card_catalog import CardCatalogService
 
 logger = logging.getLogger(__name__)
 
-
-class PollOutcome(str, Enum):
-    """轮询流程允许的结果类型。"""
-
-    MATCHED = "matched"
-    HEALTHY_NO_MATCH = "healthy_no_match"
-    TEMPLATE_MISSING = "template_missing"
-    RETRYABLE_CONNECTION = "retryable_connection"
-    RETRYABLE_CAPTURE = "retryable_capture"
-    RETRYABLE_OCR = "retryable_ocr"
-    PREREQUISITE_UNCONFIGURED = "prerequisite_unconfigured"
-
-
-@dataclass(frozen=True)
-class PollTaskResult:
-    """单个模板检测任务的强类型结果。"""
-
-    outcome: PollOutcome
-    detail: str = ""
-    ocr_results: list[dict] = field(default_factory=list)
-
-    @classmethod
-    def from_raw(cls, value: object) -> "PollTaskResult":
-        if isinstance(value, cls):
-            return value
-        raw = value if isinstance(value, dict) else {}
-        try:
-            outcome = PollOutcome(raw.get("outcome", PollOutcome.RETRYABLE_OCR.value))
-        except ValueError:
-            outcome = PollOutcome.RETRYABLE_OCR
-        return cls(outcome, str(raw.get("detail", "")), list(raw.get("ocr_results") or []))
-
-
-@dataclass(frozen=True)
-class PollResult:
-    """一次轮询采集的强类型结果；`from_raw` 兼容旧调用方。"""
-
-    generation: int
-    outcome: PollOutcome
-    detail: str = ""
-    capture: object | None = None
-    task_results: dict[str, PollTaskResult] = field(default_factory=dict)
-    ocr_results: list[dict] = field(default_factory=list)
-
-    @classmethod
-    def from_raw(cls, value: object) -> "PollResult":
-        if isinstance(value, cls):
-            return value
-        raw = value if isinstance(value, dict) else {}
-        try:
-            outcome = PollOutcome(raw.get("outcome", PollOutcome.RETRYABLE_OCR.value))
-        except ValueError:
-            outcome = PollOutcome.RETRYABLE_OCR
-        task_results = {
-            name: PollTaskResult.from_raw(result)
-            for name, result in (raw.get("task_results") or {}).items()
-        }
-        return cls(
-            int(raw.get("generation", -1)), outcome, str(raw.get("detail", "")),
-            raw.get("capture"), task_results, list(raw.get("ocr_results") or []),
-        )
-
 from src.ui.hero_browser import HeroBrowser
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.data_management_dialog import DataManagementDialog
@@ -109,6 +44,7 @@ from src.ui.recommendation_panel import RecommendationPanel
 from src.ui.match_guide_panel import MatchGuidePanel
 from src.ui.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.card_management_panel import CardManagementPanel
+from src.ui.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 
 
 class MainWindow(QMainWindow):
@@ -117,9 +53,6 @@ class MainWindow(QMainWindow):
     初始化时自动加载数据，显示资料库、选将推荐和对局攻略 Tab。
     """
 
-    _poll_result_ready = Signal(object)  # 结构化轮询结果
-    POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
-
     def __init__(
         self,
         hero_manager=None,
@@ -127,7 +60,6 @@ class MainWindow(QMainWindow):
         guide_manager=None,
     ):
         super().__init__()
-        self._poll_thread_lock = threading.Lock()
         # 轮询冷却期间可能连续收到匹配结果，只在进入选将页的边沿切换一次标签页。
         self._selection_page_active = False
         self._match_guide_page_active = False
@@ -169,6 +101,12 @@ class MainWindow(QMainWindow):
         self._capture_service.update_config(get_mumu_config())
         self._ocr_service.update_config(get_mumu_config())
         self._ocr_service.set_hero_names([h.name for h in self._data.heroes.list_heroes()])
+        self._poll_coordinator = PollCoordinator(
+            self._capture_service,
+            self._ocr_service,
+            lambda: [hero.name for hero in self._data.heroes.list_heroes()],
+            self,
+        )
 
         self._connect_fetch_signals()
         self._connect_capture_signals()
@@ -191,7 +129,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_status_bar()
         self._update_status()
-        self._sync_poll_with_connection()
+        self._poll_coordinator.sync_with_connection()
 
     # ---------------------------------------------------------------
     # 采集服务信号连接
@@ -226,9 +164,8 @@ class MainWindow(QMainWindow):
         self._capture_service.status_changed.connect(self._on_fetch_status)
         self._capture_service.capture_failed.connect(self._on_capture_failed)
         self._capture_service.connection_changed.connect(self._on_capture_connection_changed)
-        self._ocr_service.poll_tick.connect(self._on_poll_capture)
-        self._ocr_service.poll_state_changed.connect(self._update_poll_status)
-        self._poll_result_ready.connect(self._on_poll_result)
+        self._poll_coordinator.poll_state_changed.connect(self._update_poll_status)
+        self._poll_coordinator.poll_result_ready.connect(self._on_poll_result)
 
     def _on_capture_failed(self, message: str) -> None:
         """将截图失败原因显示在普通状态栏。"""
@@ -237,128 +174,12 @@ class MainWindow(QMainWindow):
     def _on_capture_connection_changed(self, state: str, detail: str = "") -> None:
         """同步 ADB 状态，并确保轮询只在设备已连接时运行。"""
         self._update_emulator_status(state, detail)
-        self._sync_poll_with_connection()
-
-    def _sync_poll_with_connection(self) -> None:
-        """根据轮询配置和 ADB 连接状态同步轮询定时器。"""
-        capture = self._capture_service.capture
-        poll_enabled = self._ocr_service.config.get("mumu_ocr_poll_mode", False)
-        if not poll_enabled or not capture or not capture.connected:
-            self._ocr_service.stop_poll()
-            return
-
-        interval = self._ocr_service.config.get("mumu_ocr_poll_interval", 2) * 1000
-        self._ocr_service.start_poll(interval)
-        logger.debug("轮询已启动，间隔 %d ms", interval)
-
-    def _on_poll_capture(self) -> None:
-        """轮询触发：在后台线程执行一次采集并回传结构化结果。"""
-        self._capture_service.start_ocr_worker()
-        generation = self._ocr_service.begin_poll()
-        capture = self._capture_service.capture
-        if generation is None:
-            return
-        cancel_event = self._ocr_service.poll_cancel_event
-        task_names = self._ocr_service.due_poll_tasks()
-        if not task_names:
-            self._ocr_service.complete_poll(generation, PollOutcome.HEALTHY_NO_MATCH.value, "当前没有到期的轮询任务")
-            return
-        if not capture:
-            self._poll_result_ready.emit(PollResult(
-                generation, PollOutcome.PREREQUISITE_UNCONFIGURED, "ADB 未配置",
-            ))
-            return
-        if not self._poll_thread_lock.acquire(blocking=False):
-            self._ocr_service.complete_poll(generation, PollOutcome.RETRYABLE_CAPTURE.value, "上一轮轮询仍在执行")
-            return
-
-        hero_names = [h.name for h in self._data.heroes.list_heroes()]
-
-        def _do_poll_work() -> None:
-            """仅在后台线程执行阻塞 ADB、模板和 OCR 操作。"""
-            try:
-                if cancel_event.is_set():
-                    return
-                ok, result, failure_kind = self._capture_service.capture_for_poll(capture)
-                if cancel_event.is_set():
-                    return
-                if not ok:
-                    outcome = (
-                        PollOutcome.RETRYABLE_CONNECTION
-                        if failure_kind == "connection"
-                        else PollOutcome.RETRYABLE_CAPTURE
-                    )
-                    self._poll_result_ready.emit(PollResult(
-                        generation, outcome, str(result), capture,
-                    ))
-                    return
-
-                image = result
-                task_results: dict[str, PollTaskResult] = {}
-                has_match = False
-                has_retryable_error = False
-
-                for task_name in task_names:
-                    if cancel_event.is_set():
-                        return
-                    ocr_task = self._capture_service.submit_ocr_task(
-                        image,
-                        hero_names=hero_names,
-                        template_name=task_name,
-                        recognize=True,
-                    )
-                    task_result = self._wait_for_poll_ocr_task(ocr_task, cancel_event)
-                    if task_result is None:
-                        return
-                    if task_result.outcome is PollOutcome.MATCHED:
-                        has_match = True
-                    elif task_result.outcome is PollOutcome.RETRYABLE_OCR:
-                        has_retryable_error = True
-                    task_results[task_name] = task_result
-
-                transport_outcome = (
-                    PollOutcome.RETRYABLE_OCR if has_retryable_error
-                    else PollOutcome.MATCHED if has_match
-                    else PollOutcome.HEALTHY_NO_MATCH
-                )
-                self._poll_result_ready.emit(PollResult(
-                    generation, transport_outcome, capture=capture, task_results=task_results,
-                ))
-            finally:
-                self._poll_thread_lock.release()
-
-        threading.Thread(target=_do_poll_work, daemon=True).start()
-
-    @classmethod
-    def _wait_for_poll_ocr_task(cls, ocr_task, cancel_event: threading.Event) -> PollTaskResult | None:
-        """有限等待 OCR 任务；会话停止后不再回写轮询结果。"""
-        if cancel_event.is_set():
-            return None
-        if not ocr_task.completed.wait(cls.POLL_OCR_WAIT_TIMEOUT_SECONDS):
-            return PollTaskResult(
-                PollOutcome.RETRYABLE_OCR,
-                f"OCR 任务超时（{cls.POLL_OCR_WAIT_TIMEOUT_SECONDS} 秒）",
-            )
-        if cancel_event.is_set():
-            return None
-        return PollTaskResult.from_raw(ocr_task.result)
+        self._poll_coordinator.sync_with_connection()
 
     def _on_poll_result(self, result: PollResult | dict) -> None:
-        """在主线程消费轮询结果，更新状态并安排下一轮。"""
+        """消费已完成状态迁移的轮询结果，并更新相关界面。"""
         poll_result = PollResult.from_raw(result)
-        generation = poll_result.generation
         outcome = poll_result.outcome
-        detail = poll_result.detail
-        if generation != self._ocr_service.poll_generation:
-            return
-
-        capture = poll_result.capture
-        if capture is not None and capture is not self._capture_service.capture:
-            return
-        if outcome in {PollOutcome.RETRYABLE_CONNECTION, PollOutcome.RETRYABLE_CAPTURE} and capture is not None:
-            self._capture_service.sync_poll_connection_state(capture, detail)
-
-        self._ocr_service.complete_poll(generation, outcome.value, detail)
         task_results = poll_result.task_results
         if not task_results:
             self._handle_legacy_poll_result(outcome, poll_result.ocr_results)
@@ -401,7 +222,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """在窗口销毁前结束轮询与 OCR worker。"""
-        self._ocr_service.stop_poll()
+        self._poll_coordinator.shutdown()
         self._capture_service.shutdown()
         super().closeEvent(event)
 
@@ -847,7 +668,7 @@ class MainWindow(QMainWindow):
         self._ocr_service.update_config(new_config)
 
         # 只有 ADB 已连接且配置启用轮询时才启动
-        self._sync_poll_with_connection()
+        self._poll_coordinator.sync_with_connection()
 
         self._status_label.setText("模拟器配置已更新")
 

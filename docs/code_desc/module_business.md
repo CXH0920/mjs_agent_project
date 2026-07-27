@@ -97,10 +97,10 @@ do_capture()
 
 `capture_screenshot()` 是不保存文件、不触发 OCR 的共享会话接口。它用于模板制作，并与连接/断开共享同一把会话锁，避免后台模板截图和前台截图同时操作同一个 `AdbCapture`。
 
-轮询路径（OcrService 控制，不经过 do_capture）：
+轮询路径由 `PollCoordinator` 编排（OcrService 只控制定时、冷却与会话，不经过 `do_capture()`）：
 
 ```
-OcrService.poll_tick → MainWindow._on_poll_capture()
+OcrService.poll_tick → PollCoordinator._on_poll_tick()
   ├─ screencap_full()（内存中，不写磁盘，仅执行一次）
   ├─ hero_selection 模板 → GeneralRecognizer.recognize() → 填入推荐面板 8 槽
   └─ match_guide 模板 → 预留对局攻略结果

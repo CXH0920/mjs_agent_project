@@ -29,7 +29,8 @@ src/ui/
 │   ├── hero_dialogs.py         # HeroSkillDialog
 │   └── faction_colors.py       # 势力配色读取、兜底和缓存
 ├── style.py                    # 全局样式表（天蓝色调）
-├── main_window.py              # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
+├── main_window.py              # 主窗口（菜单栏/Tab/状态栏 + PollCoordinator 界面绑定）
+├── poll_coordinator.py         # 轮询后台编排、结果过滤与状态提交
 ├── official_data_import_dialog.py # 官方 2v2/武将放逐榜单图片导入
 ├── ai_generation_workflow.py   # 攻略/相性生成的选择、进度与完成工作流
 ├── hero_browser.py             # 武将浏览（列表+详情+Tab 栏编辑按钮）
@@ -159,7 +160,7 @@ HeroBrowser (QWidget)
 - 关系标签采用自适应流式布局，按标签实际宽度换行并支持点击跳转
 - 修改保存后 `data_changed` 信号触发列表刷新，`_last_hero_id` 确保选中项不变
 
-四个编辑/选择对话框位于独立模块；`HeroDetailPanel` 仅负责打开它们、调用现有 Manager 保存数据并刷新展示。为兼容现有外部导入，`hero_browser.py` 继续导入并暴露这些对话框名称。
+四个编辑/选择对话框位于独立模块；`HeroDetailPanel` 仅负责打开它们、调用 `DataMutationService` 执行写入并刷新展示。服务统一创建快照和备份，写入失败时恢复原数据。为兼容现有外部导入，`hero_browser.py` 继续导入并暴露这些对话框名称。
 
 **攻略展示布局：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。

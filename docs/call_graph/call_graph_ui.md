@@ -38,7 +38,7 @@ MainWindow.__init__()
 | `hero_relation_select_dialog.py` | `HeroRelationSelectDialog` | 搜索、势力筛选和多选攻略关系武将 | `GuideEditDialog._open_relation_selector()` |
 | `synergy_edit_dialog.py` | `SynergyEditDialog` | 编辑一对武将的评分、维度和说明 | `HeroDetailPanel._on_synergy_edit()` |
 
-`hero_browser.py` 仍负责列表、详情、信号协调及持久化调用；它导入上述公开对话框以保持原有外部导入兼容，但不再持有它们的表单构建逻辑。
+`hero_browser.py` 仍负责列表、详情和信号协调；持久化调用统一委托给 `DataMutationService`。它导入上述公开对话框以保持原有外部导入兼容，但不再持有它们的表单构建逻辑。
 
 ## 共享 UI 与数据访问接口
 
@@ -128,8 +128,8 @@ AiGenerationWorkflow._connect_services():
   SynergyFetchService.progress_output/value → workflow._on_synergy_progress*() → GuideProgressDialog
 
 _connect_capture_signals():
-  OcrService.poll_tick                → _on_poll_capture             [轮询截图触发]
-  self._poll_result_ready (自定义 signal) → _on_poll_result          [后台线程结果回传]
+  PollCoordinator.poll_state_changed  → _update_poll_status          [轮询状态显示]
+  PollCoordinator.poll_result_ready   → _on_poll_result              [已提交状态的结果]
 ```
 
 | 函数 | 所在行 | 说明 |
@@ -375,7 +375,7 @@ _on_poll_result()
 ```
                                                      [主线程]
 OcrService.poll_tick  [signal, QTimer 驱动]
-  → MainWindow._on_poll_capture()
+  → PollCoordinator._on_poll_tick()
     -> [冷却期内] return
     -> [未配置] return
     -> threading.Lock.acquire(blocking=False)
@@ -390,11 +390,12 @@ OcrService.poll_tick  [signal, QTimer 驱动]
                   -> 每个到期任务：CaptureService.submit_ocr_task()
                      -> OcrWorker.submit(OcrTask)
                      -> task.completed.wait()
-                  -> self._poll_result_ready.emit({generation, task_results}) [跨线程信号]
+                  -> PollCoordinator._poll_result_received.emit(...)          [跨线程信号]
                   -> Lock.release()
                          ↓
                   [主线程接收]
-MainWindow._on_poll_result(result)                              [主线程槽函数]
+PollCoordinator._consume_poll_result() -> complete_poll() -> poll_result_ready
+MainWindow._on_poll_result(result)                              [仅界面更新]
   -> [hero_selection 命中] RecommendationPanel.load_from_ocr()
   -> [match_guide 命中] MatchGuidePanel.update_block()
   -> [任务级] OcrService.set_task_cooldown(task_name, seconds)
@@ -657,8 +658,8 @@ HeroDetailPanel.show_hero(hero_id)
   -> _selected_synergy()
   -> SynergyEditDialog(hero_mgr, synergy).exec()
      -> 评分变化 -> synergy_rating_for_score()                 [实时更新评级]
-  -> [accepted] SynergyManager.update_synergy(dialog.get_synergy())
-  -> SynergyManager.save() -> _refresh_synergy_table()
+  -> [accepted] DataMutationService.update_synergy(dialog.get_synergy())
+  -> 创建备份并保存 -> _refresh_synergy_table()
   -> synergies_changed.emit()                                  [通知推荐页刷新]
 
 相性说明列双击
@@ -779,7 +780,7 @@ MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
     -> save_env_file(DEFAULT_ENV_FILE, config)
     -> CaptureService.update_config(config)
     -> OcrService.update_config(config)
-    -> MainWindow._sync_poll_with_connection()
+    -> PollCoordinator.sync_with_connection()
     -> OcrService.start_poll(interval * 1000)（仅 connected）/ stop_poll()
 ```
 

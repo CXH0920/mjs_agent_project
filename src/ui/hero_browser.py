@@ -198,6 +198,11 @@ class HeroDetailPanel(QWidget):
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
         self._synergy_mgr = synergy_manager
+        self._data_mutation_service = DataMutationService(
+            self._hero_mgr,
+            self._guide_mgr,
+            self._synergy_mgr,
+        )
         self._current_hero: Optional[Hero] = None
         self._current_guide: Optional[HeroGuide] = None
 
@@ -879,8 +884,7 @@ class HeroDetailPanel(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
-            self._synergy_mgr.update_synergy(dialog.get_synergy())
-            self._synergy_mgr.save()
+            self._data_mutation_service.update_synergy(dialog.get_synergy())
             self._refresh_synergy_table()
             self.synergies_changed.emit()
         except Exception as e:
@@ -906,8 +910,7 @@ class HeroDetailPanel(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._synergy_mgr.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
-            self._synergy_mgr.save()
+            self._data_mutation_service.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
             self._refresh_synergy_table()
             self.synergies_changed.emit()
         except Exception as e:
@@ -923,8 +926,7 @@ class HeroDetailPanel(QWidget):
             return
         updated = dialog.get_hero()
         try:
-            self._hero_mgr.update_hero(updated)
-            self._hero_mgr.save()
+            self._data_mutation_service.update_hero(updated)
             self._update_info_tab(updated)
             self.data_changed.emit()
         except Exception as e:
@@ -946,11 +948,7 @@ class HeroDetailPanel(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            DataMutationService(
-                self._hero_mgr,
-                self._guide_mgr,
-                self._synergy_mgr,
-            ).delete_hero_with_relations(self._current_hero.id)
+            self._data_mutation_service.delete_hero_with_relations(self._current_hero.id)
             self._current_hero = None
             self._current_guide = None
             self._basic_info.setText("武将已删除，请选择其他武将")
@@ -976,8 +974,7 @@ class HeroDetailPanel(QWidget):
             return
         updated = dialog.get_guide()
         try:
-            self._guide_mgr.update_guide(updated)
-            self._guide_mgr.save()
+            self._data_mutation_service.update_guide(updated)
             self._update_guide_tab(updated)
             self.data_changed.emit()
         except Exception as e:
@@ -997,8 +994,7 @@ class HeroDetailPanel(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._guide_mgr.delete_guide(self._current_guide.hero_id)
-            self._guide_mgr.save()
+            self._data_mutation_service.delete_guide(self._current_guide.hero_id)
             self._current_guide = None
             self._update_guide_tab(None)
             self._guide_edit_btn.setEnabled(False)
