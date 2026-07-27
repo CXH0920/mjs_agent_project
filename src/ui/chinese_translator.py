@@ -55,8 +55,8 @@ class ChineseQtTranslator(QTranslator):
         source_text: str,
         disambiguation: str | None = None,
         n: int = -1,
-    ) -> str:
-        return _STANDARD_BUTTON_TRANSLATIONS.get(source_text, "")
+    ) -> str | None:
+        return _STANDARD_BUTTON_TRANSLATIONS.get(source_text)
 
 
 def install_chinese_qt_translator(app: QApplication) -> ChineseQtTranslator:

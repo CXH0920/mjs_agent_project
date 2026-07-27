@@ -1,9 +1,12 @@
 """Qt 标准按钮中文化回归测试。"""
 
+from PySide6.QtCore import qInstallMessageHandler
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QDialogButtonBox,
     QFileDialog,
+    QMainWindow,
     QMessageBox,
     QPushButton,
 )
@@ -37,3 +40,28 @@ def test_standard_dialog_buttons_use_chinese() -> None:
     )
     file_dialog.close()
     assert translator.translate("QDialogButtonBox", "Close") == "关闭"
+
+
+def test_data_menu_shortcut_does_not_emit_qstring_arg_warning() -> None:
+    app = QApplication.instance() or QApplication([])
+    translator = install_chinese_qt_translator(app)
+    messages = []
+    previous_handler = qInstallMessageHandler(
+        lambda mode, context, message: messages.append(message)
+    )
+    window = QMainWindow()
+    try:
+        data_menu = window.menuBar().addMenu("数据")
+        reload_action = QAction("重新加载数据", window)
+        reload_action.setShortcut("F5")
+        data_menu.addAction(reload_action)
+        window.show()
+        app.processEvents()
+        data_menu.show()
+        app.processEvents()
+    finally:
+        window.close()
+        qInstallMessageHandler(previous_handler)
+
+    assert translator.translate("QPlatformTheme", "未匹配文本") is None
+    assert not any("QString::arg: Argument missing" in message for message in messages)

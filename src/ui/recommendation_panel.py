@@ -123,7 +123,7 @@ class RecommendationPanel(QWidget):
 
         header_layout.addSpacing(6)
 
-        self._import_file_btn = QPushButton("📁 从图片导入")
+        self._import_file_btn = QPushButton("从图片导入")
         self._import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
         self._import_file_btn.clicked.connect(self._on_import_from_file)
         header_layout.addWidget(self._import_file_btn)
