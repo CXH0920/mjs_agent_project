@@ -319,6 +319,19 @@ def test_main_window_keeps_emulator_status_after_stats_update() -> None:
     window._update_status()
 
 
+def test_main_window_uses_library_content_header_and_section_tabs() -> None:
+    _app()
+    window = MainWindow(_hero_manager(), SynergyManager(), GuideManager())
+
+    assert window._library.objectName() == "libraryPage"
+    assert window._library.findChild(QLabel, "libraryTitle").text() == "资料库"
+    assert window._library_tabs.objectName() == "librarySectionTabs"
+    assert [window._library_tabs.tabText(index) for index in range(window._library_tabs.count())] == [
+        "武将资料", "卡牌图鉴",
+    ]
+    assert "background: #e6f4ff" in window._library_tabs.styleSheet()
+
+
 def test_poll_stays_stopped_until_emulator_is_connected() -> None:
     class Coordinator:
         def __init__(self) -> None:

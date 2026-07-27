@@ -344,17 +344,41 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
-        # Tab 1: 资料库（武将资料与卡牌图鉴）
-        self._library = QTabWidget()
+        # Tab 1: 资料库。二级资料类型放入内容页，避免与主导航连续堆叠。
+        self._library = QWidget()
+        self._library.setObjectName("libraryPage")
+        library_layout = QVBoxLayout(self._library)
+        library_layout.setContentsMargins(12, 14, 12, 8)
+        library_layout.setSpacing(0)
+
+        library_title = QLabel("资料库")
+        library_title.setObjectName("libraryTitle")
+        library_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
+        library_layout.addWidget(library_title)
+
+        library_layout.addSpacing(5)
+
+        self._library_tabs = QTabWidget()
+        self._library_tabs.setObjectName("librarySectionTabs")
+        self._library_tabs.setStyleSheet(
+            "QTabWidget#librarySectionTabs::pane { border: none; background: transparent; }"
+            "QTabWidget#librarySectionTabs QTabBar::tab { background: transparent; color: #65758b; "
+            "border: none; border-bottom: 2px solid transparent; padding: 6px 14px; "
+            "margin-right: 8px; font-weight: normal; }"
+            "QTabWidget#librarySectionTabs QTabBar::tab:hover { color: #357abd; }"
+            "QTabWidget#librarySectionTabs QTabBar::tab:selected { background: #e6f4ff; color: #357abd; "
+            "border-bottom-color: #4a90d9; font-weight: bold; }"
+        )
         self._hero_browser = HeroBrowser(
             self._data.heroes,
             self._data.guides,
             self._data.synergies,
         )
         self._hero_browser.synergies_changed.connect(self._on_synergies_changed)
-        self._library.addTab(self._hero_browser, "武将资料")
+        self._library_tabs.addTab(self._hero_browser, "武将资料")
         self._card_management = CardManagementPanel(CardCatalogService())
-        self._library.addTab(self._card_management, "卡牌图鉴")
+        self._library_tabs.addTab(self._card_management, "卡牌图鉴")
+        library_layout.addWidget(self._library_tabs, 1)
         self._tabs.addTab(self._library, "资料库")
 
         # Tab 2: 选将推荐

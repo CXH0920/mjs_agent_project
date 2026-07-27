@@ -71,9 +71,6 @@ class CardManagementPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
 
         header = QHBoxLayout()
-        title = QLabel("资料库 > 卡牌图鉴")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        header.addWidget(title)
         self._count_label = QLabel()
         self._count_label.setStyleSheet("color: #6b7c93;")
         header.addWidget(self._count_label)

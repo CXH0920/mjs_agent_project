@@ -93,12 +93,16 @@ MainWindow.__init__()
   -> _load_data()
      -> self._data.load_all()
   -> _setup_ui()
-     -> QTabWidget()
-        -> HeroBrowser(self._data.heroes, self._data.guides,
-                        self._data.synergies)                      [Tab 0: 武将浏览]
+     -> QTabWidget()                                                  [主导航]
+        -> QWidget("资料库")                                         [Tab 0]
+           -> QLabel("资料库")
+           -> QTabWidget("librarySectionTabs")                      [浅色二级切换器]
+              -> HeroBrowser(self._data.heroes, self._data.guides,
+                              self._data.synergies)                  [武将资料]
+              -> CardManagementPanel(CardCatalogService())           [卡牌图鉴]
         -> RecommendationPanel(self._data.heroes, self._data.synergies,
-                               guide_mgr, capture_svc, ocr_svc)      [Tab 1: 选将推荐]
-        -> MatchGuidePanel(self._data.heroes, capture_svc)           [Tab 2: 对局攻略]
+                               guide_mgr, capture_svc, ocr_svc)       [Tab 1: 选将推荐]
+        -> MatchGuidePanel(self._data.heroes, capture_svc)            [Tab 2: 对局攻略]
   -> _setup_status_bar()
   -> _update_status()
 ```

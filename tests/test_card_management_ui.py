@@ -70,6 +70,7 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
     assert panel._more_button.text() == "更多"
     assert panel._schema_action.isEnabled()
     assert not any(button.text() == "管理追加字段" for button in panel.findChildren(QPushButton))
+    assert not any(label.text() == "资料库 > 卡牌图鉴" for label in panel.findChildren(QLabel))
 
 
 def test_card_text_collapses_extra_line_breaks_and_wraps(tmp_path) -> None:
