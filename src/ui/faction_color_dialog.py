@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -139,6 +140,8 @@ class FactionColorDialog(QDialog):
         super().__init__(parent)
         self._path = path
         self._pickers: dict[str, ColorPicker] = {}
+        self._rows_layout: QVBoxLayout | None = None
+        self._empty_state_label: QLabel | None = None
         self._colors = load_faction_colors(path)
         self.setWindowTitle("势力配色")
         self.setMinimumSize(460, 520)
@@ -160,16 +163,28 @@ class FactionColorDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
-        rows = QVBoxLayout(content)
-        rows.setContentsMargins(0, 0, 0, 0)
-        rows.setSpacing(6)
+        self._rows_layout = QVBoxLayout(content)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(6)
         if not self._colors:
-            rows.addWidget(QLabel("暂无可编辑的势力颜色配置。"))
+            self._empty_state_label = QLabel("暂无可编辑的势力颜色配置。")
+            self._rows_layout.addWidget(self._empty_state_label)
         for faction, color in self._colors.items():
-            rows.addWidget(self._create_row(faction, color))
-        rows.addStretch(1)
+            self._rows_layout.addWidget(self._create_row(faction, color))
+        self._rows_layout.addStretch(1)
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
+
+        add_faction_layout = QHBoxLayout()
+        self._new_faction_name_input = QLineEdit()
+        self._new_faction_name_input.setPlaceholderText("输入新势力名称")
+        self._new_faction_picker = ColorPicker("#4A90D9")
+        add_faction_button = QPushButton("新增势力")
+        add_faction_button.clicked.connect(self._add_faction)
+        add_faction_layout.addWidget(self._new_faction_name_input, 1)
+        add_faction_layout.addWidget(self._new_faction_picker)
+        add_faction_layout.addWidget(add_faction_button)
+        layout.addLayout(add_faction_layout)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -197,6 +212,27 @@ class FactionColorDialog(QDialog):
         self._pickers[faction] = picker
         row_layout.addWidget(picker)
         return row
+
+    def _add_faction(self) -> None:
+        """将合法的新势力加入当前配置草稿，保存时统一落盘。"""
+        faction = self._new_faction_name_input.text().strip()
+        if not faction:
+            QMessageBox.warning(self, "无法新增", "请输入势力名称。")
+            return
+        if faction in self._pickers:
+            QMessageBox.warning(self, "无法新增", f"势力“{faction}”已存在。")
+            return
+
+        if self._empty_state_label is not None:
+            self._rows_layout.removeWidget(self._empty_state_label)
+            self._empty_state_label.deleteLater()
+            self._empty_state_label = None
+        self._rows_layout.insertWidget(
+            self._rows_layout.count() - 1,
+            self._create_row(faction, self._new_faction_picker.color()),
+        )
+        self._new_faction_name_input.clear()
+        self._new_faction_picker.set_color("#4A90D9")
 
     def _save(self) -> None:
         colors = {name: picker.color() for name, picker in self._pickers.items()}

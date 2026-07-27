@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -99,10 +100,13 @@ class CheckableComboBox(QWidget):
         self._display.tag_removed.connect(self._remove_tag)
         layout.addWidget(self._display, 1)
 
-        arrow = QPushButton("▼")
-        arrow.setFixedWidth(28)
-        arrow.clicked.connect(self.showPopup)
-        layout.addWidget(arrow)
+        self._arrow_button = QPushButton(self)
+        self._arrow_button.setObjectName("factionFilterToggle")
+        self._arrow_button.setFixedWidth(28)
+        self._arrow_button.setIconSize(QSize(14, 14))
+        self._arrow_button.clicked.connect(self.showPopup)
+        self._set_popup_expanded(False)
+        layout.addWidget(self._arrow_button)
 
     def set_items(self, values: list[str]) -> None:
         self._values = list(values)
@@ -122,8 +126,11 @@ class CheckableComboBox(QWidget):
         self.checked_values_changed.emit()
 
     def showPopup(self) -> None:
-        if self._popup is not None:
+        if self._popup is not None and self._popup.isVisible():
             self._popup.close()
+            return
+        if self._popup is not None:
+            self._popup.deleteLater()
 
         popup = QFrame(self, Qt.WindowType.Popup)
         popup.setFrameShape(QFrame.Shape.StyledPanel)
@@ -138,6 +145,7 @@ class CheckableComboBox(QWidget):
             "QListWidget::item:selected { background-color: #c7e2ff; color: #1f3f5b; }"
         )
         popup.setMinimumWidth(max(self.width(), 280))
+        popup.installEventFilter(self)
         popup_layout = QVBoxLayout(popup)
         popup_layout.setContentsMargins(8, 8, 8, 8)
 
@@ -218,3 +226,15 @@ class CheckableComboBox(QWidget):
         position = self.mapToGlobal(self.rect().bottomLeft())
         popup.setGeometry(position.x(), position.y(), max(self.width(), 280), 300)
         popup.show()
+
+        self._set_popup_expanded(True)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._popup and event.type() == QEvent.Type.Hide:
+            self._set_popup_expanded(False)
+        return super().eventFilter(watched, event)
+
+    def _set_popup_expanded(self, expanded: bool) -> None:
+        icon = QStyle.StandardPixmap.SP_ArrowUp if expanded else QStyle.StandardPixmap.SP_ArrowDown
+        self._arrow_button.setIcon(self.style().standardIcon(icon))
+        self._arrow_button.setToolTip("收起势力筛选" if expanded else "展开势力筛选")

@@ -8,6 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser
 
 from src.data.guide_manager import GuideManager
@@ -153,6 +154,28 @@ def test_specific_fetch_dialog_uses_shared_faction_combo(tmp_path: Path) -> None
 
     assert faction_combo is not None
     assert faction_combo.checked_values() == {"魏"}
+
+
+def test_checkable_faction_combo_arrow_reflects_popup_state() -> None:
+    app = _app()
+    faction_combo = CheckableComboBox()
+    faction_combo.set_items(["魏"])
+    faction_combo.show()
+    app.processEvents()
+
+    assert faction_combo._arrow_button.toolTip() == "展开势力筛选"
+    assert not faction_combo._arrow_button.icon().isNull()
+
+    QTest.mouseClick(faction_combo._arrow_button, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert faction_combo._popup is not None
+    assert faction_combo._popup.isVisible()
+    assert faction_combo._arrow_button.toolTip() == "收起势力筛选"
+
+    QTest.mouseClick(faction_combo._arrow_button, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert not faction_combo._popup.isVisible()
+    assert faction_combo._arrow_button.toolTip() == "展开势力筛选"
 
 
 def test_guide_fetch_preserves_selected_heroes_across_filters(tmp_path: Path) -> None:

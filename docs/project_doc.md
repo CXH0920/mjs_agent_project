@@ -614,7 +614,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 55 条相性（当前数据） |
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
-| `config/faction_colors.json` | —（直接读取） | 14 个势力配色 |
+| `config/faction_colors.json` | —（直接读取） | 势力配色，支持在设置中新增势力 |
 
 ### 4.3 HeroManager 方法清单
 
@@ -924,7 +924,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
 - `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
-- 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互
+- 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
 
 **Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
 
@@ -975,7 +975,7 @@ RecommendationPanel (QWidget)
 }
 ```
 
-配色通过公开共享模块 `src/ui/shared/faction_colors.py` 管理：`load_faction_colors()` 负责读取和校验 JSON，`get_faction_colors()` 提供带内建兜底色的缓存，`reload_faction_colors()` 在配置保存后清空缓存并重新加载。推荐面板、对局攻略、武将浏览器和可勾选组合控件只依赖这些公开函数，未知势力使用灰色 `#888` 兜底。
+配色通过公开共享模块 `src/ui/shared/faction_colors.py` 管理：`load_faction_colors()` 负责读取和校验 JSON，`get_faction_colors()` 提供带内建兜底色的缓存，`reload_faction_colors()` 在配置保存后清空缓存并重新加载。势力配色对话框允许新增势力并在点击“保存”后写入该文件，但不允许删除或改名。推荐面板、对局攻略、武将浏览器和可勾选组合控件只依赖这些公开函数，未知势力使用灰色 `#888` 兜底。
 
 **共享 UI 与胜率数据访问**：
 - `src/ui/shared/widgets.py` 提供 `DoubleClickLabel`，统一头像双击信号，推荐卡片和对局攻略卡片复用同一控件。
