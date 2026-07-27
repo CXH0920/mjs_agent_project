@@ -16,6 +16,7 @@ from src.data.models import Hero, HeroGuide
 from src.data.synergy_manager import SynergyManager
 from src.ui import ai_generation_workflow as workflow_module
 from src.ui.ai_generation_workflow import AiGenerationWorkflow
+from src.ui.guide_progress_dialog import GuideProgressDialog
 from src.ui.main_window import MainWindow
 
 
@@ -242,6 +243,23 @@ def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypat
     _ProgressDialog.instances[-1].cancel_requested.emit()
 
     assert guide_service.cancel_calls == 1
+
+
+def test_synergy_progress_stays_at_zero_until_first_result() -> None:
+    _app()
+    dialog = GuideProgressDialog(3, item_label="相性评分")
+
+    dialog.update_status("[1/3] 甲 <-> 乙 START")
+
+    assert dialog._progress_bar.value() == 0
+    assert dialog._progress_bar.format() == "0 / 3"
+    assert dialog._status_label.text() == "正在生成 甲 <-> 乙 的相性评分..."
+    dialog.update_status("[1/3] 甲 <-> 乙 OK - 评分: 8")
+    dialog.update_status("2026-07-27 [INFO] src.scraper.ai_playwright: [休息] 随机休息 126 秒...")
+    assert dialog._progress_bar.value() == 1
+    assert dialog._status_label.text() == "冷却中（约 126 秒），已完成 1 / 3"
+    dialog.on_process_finished(True)
+    dialog.close()
 
 
 def test_main_window_generation_entries_delegate_to_workflow() -> None:

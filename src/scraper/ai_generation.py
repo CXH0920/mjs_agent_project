@@ -190,7 +190,10 @@ def run_synergy_generation(
             processed += 1
             key = tuple(sorted([ha["id"], hb["id"]]))
 
-            print(f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']}...", flush=True)
+            print(
+                f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']} START",
+                flush=True,
+            )
 
             generated, usage = generator.generate_synergy(ha, hb)
             result_summary.add_usage(usage)
@@ -203,8 +206,14 @@ def run_synergy_generation(
                 else:
                     # 本次结果校验成功但未达到用户设置的下限，移除旧记录。
                     working_synergies.pop(key, None)
+                print(
+                    f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']} "
+                    f"OK - 评分: {score}",
+                    flush=True,
+                )
             else:
                 result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
+                print(f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']} FAIL", flush=True)
 
             # 每批仅提交已校验成功的结果；失败配对保留旧数据。
             if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
@@ -286,7 +295,7 @@ def run_synergy_pair_generation(
             result_summary.skipped += 1
             print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} SKIP（已有相性）", flush=True)
             continue
-        print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']}...", flush=True)
+        print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} START", flush=True)
 
         generated, usage = generator.generate_synergy(ha, hb)
         result_summary.add_usage(usage)
@@ -374,7 +383,7 @@ def run_synergy_single_generation(
             print(f"  [{i}/{len(pairs)}] {hb['name']} SKIP（已有相性）", flush=True)
             continue
 
-        print(f"  [{i}/{len(pairs)}] {hb['name']}...", flush=True)
+        print(f"  [{i}/{len(pairs)}] {hb['name']} START", flush=True)
         generated, usage = generator.generate_synergy(ha, hb)
         result_summary.add_usage(usage)
         if generated:

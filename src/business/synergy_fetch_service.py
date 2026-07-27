@@ -92,7 +92,8 @@ class SynergyFetchService(BaseFetchService):
             return
 
         self.progress_output.emit(line)
-        m = re.search(r"\[(\d+)/(\d+)\]", line)
+        # 只有生成结果完成校验（OK / FAIL）或确认跳过后才推进进度。
+        m = re.search(r"\[(\d+)/(\d+)\].*\s(?:OK|FAIL|SKIP)(?:\s|$|（)", line)
         if m:
             self.progress_value.emit(int(m.group(1)), int(m.group(2)))
 

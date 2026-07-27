@@ -146,7 +146,9 @@ def test_guide_failure_commits_successes_and_preserves_failed_guide(tmp_path: Pa
     ]
 
 
-def test_full_synergy_failure_commits_successes_and_preserves_failed_pair(tmp_path: Path) -> None:
+def test_full_synergy_failure_commits_successes_and_preserves_failed_pair(
+    tmp_path: Path, capsys,
+) -> None:
     synergy_path = tmp_path / "synergies.json"
     original = [
         {"hero_a_id": 1, "hero_b_id": 2, "score": 1},
@@ -180,6 +182,9 @@ def test_full_synergy_failure_commits_successes_and_preserves_failed_pair(tmp_pa
         {"hero_a_id": 1, "hero_b_id": 3, "score": 2},
         {"hero_a_id": 2, "hero_b_id": 3, "score": 6},
     ]
+    output = capsys.readouterr().out
+    assert "[1/3] 甲 <-> 乙 OK" in output
+    assert "[2/3] 甲 <-> 丙 FAIL" in output
 
 
 def test_successful_generation_atomically_commits(tmp_path: Path) -> None:
@@ -336,8 +341,9 @@ def test_browser_generator_rests_before_next_successful_request(
     method = getattr(generator, method_name)
     method(*args)
     method(*args)
+    method(*args)
 
-    assert events == ["send", "rest", "send"]
+    assert events == ["send", "rest", "send", "rest", "send"]
 
 
 def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> None:
@@ -427,3 +433,18 @@ def test_fetch_services_use_cli_exit_code_instead_of_stdout_failure_protocol(tmp
 
     assert guide_results == [(True, "攻略生成完成")]
     assert synergy_results == [(True, "相性生成完成")]
+
+
+def test_synergy_progress_advances_only_after_terminal_result() -> None:
+    from src.business.synergy_fetch_service import SynergyFetchService
+
+    service = SynergyFetchService()
+    progress_values: list[tuple[int, int]] = []
+    service.progress_value.connect(lambda current, total: progress_values.append((current, total)))
+
+    service._on_stdout_line("[1/3] 甲 <-> 乙 START")
+    service._on_stdout_line("[1/3] 甲 <-> 乙 OK - 评分: 8")
+    service._on_stdout_line("[2/3] 甲 <-> 丙 FAIL")
+    service._on_stdout_line("[3/3] 甲 <-> 丁 SKIP（已有相性）")
+
+    assert progress_values == [(1, 3), (2, 3), (3, 3)]

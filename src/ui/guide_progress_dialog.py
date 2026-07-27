@@ -61,6 +61,7 @@ class GuideProgressDialog(QDialog):
         self._progress_bar.setMinimum(0)
         self._progress_bar.setMaximum(hero_count if hero_count > 0 else 100)
         self._progress_bar.setValue(0)
+        self._progress_bar.setFormat(f"0 / {self._progress_bar.maximum()}")
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setStyleSheet(
             "QProgressBar {"
@@ -112,6 +113,11 @@ class GuideProgressDialog(QDialog):
 
     def update_status(self, text: str) -> None:
         """更新当前状态文字"""
+        m_start = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+START(?:\s|$)", text)
+        if m_start:
+            self._status_label.setText(f"正在生成 {m_start.group(3)} 的{self._item_label}...")
+            self._detail_label.setText(f"当前请求：{m_start.group(1)} / {m_start.group(2)}")
+            return
         # OK 行: "[i/total] 武将名 OK"
         m_ok = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
         if m_ok:
@@ -128,6 +134,13 @@ class GuideProgressDialog(QDialog):
         if m_skip:
             self._status_label.setText(f"↷ 已跳过 {m_skip.group(3)}（已有{self._item_label}）")
             self.update_progress(int(m_skip.group(1)), int(m_skip.group(2)))
+            return
+        m_rest = re.search(r"\[休息\]\s*随机休息\s*(\d+)\s*秒", text)
+        if m_rest:
+            current = self._progress_bar.value()
+            total = self._progress_bar.maximum()
+            self._status_label.setText(f"冷却中（约 {m_rest.group(1)} 秒），已完成 {current} / {total}")
+            self._detail_label.setText("冷却结束后将继续下一组相性生成")
             return
         self._detail_label.setText(text.strip())
 
