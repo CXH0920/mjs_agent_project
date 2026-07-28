@@ -220,7 +220,7 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
     assert weakness.wordWrap()
 
 
-def test_match_guide_auto_assigns_sides_from_team_labels() -> None:
+def test_match_guide_auto_assigns_sides_from_positions() -> None:
     _app()
     heroes = HeroManager()
     heroes._items = {
@@ -230,13 +230,14 @@ def test_match_guide_auto_assigns_sides_from_team_labels() -> None:
     panel = MatchGuidePanel(heroes, guide_manager=GuideManager())
 
     panel.load_from_ocr([
-        {"index": 1, "name": "甲", "team": "汉军"},
-        {"index": 2, "name": "乙", "team": "汉军"},
-        {"index": 3, "name": "丙", "team": "楚军"},
-        {"index": 4, "name": "丁", "team": "楚军"},
+        {"index": 1, "name": "甲", "team": "楚军"},
+        {"index": 2, "name": "乙", "team": "楚军"},
+        {"index": 4, "name": "丙", "team": "汉军"},
+        {"index": 5, "name": "丁", "team": "汉军"},
     ])
 
     assert panel._lineup.sides == ["enemy", "enemy", "ally", "ally"]
+    assert panel._lineup.ally_leader_slot == 3
     assert panel._is_confirmed()
     assert panel._analysis is None
     assert panel._confirm_btn.isEnabled()
@@ -317,6 +318,7 @@ def test_main_window_keeps_emulator_status_after_stats_update() -> None:
     expected = window._emulator_status_label.text()
 
     window._update_status()
+    assert window._emulator_status_label.text() == expected
 
 
 def test_main_window_uses_library_content_header_and_section_tabs() -> None:
@@ -464,6 +466,74 @@ def test_match_guide_poll_runs_once_until_next_hero_selection_match() -> None:
         ("clear", "match_guide"),
         ("activate", "match_guide"),
     ]
+
+
+def test_match_guide_poll_switches_for_each_hero_selection_match() -> None:
+    class OcrService:
+        config = {
+            "mumu_ocr_auto_switch_tab": True,
+            "mumu_hero_selection_cooldown": 180,
+        }
+
+        def set_task_cooldown(self, _task_name: str, _seconds: int) -> None:
+            pass
+
+        def clear_task_cooldown(self, _task_name: str) -> None:
+            pass
+
+        def activate_task(self, _task_name: str) -> None:
+            pass
+
+        def deactivate_task(self, _task_name: str) -> None:
+            pass
+
+    class Tabs:
+        def __init__(self) -> None:
+            self.switched_to = []
+
+        def setCurrentWidget(self, widget) -> None:
+            self.switched_to.append(widget)
+
+    class Recommendation:
+        def load_from_ocr(self, _results: list[dict]) -> None:
+            pass
+
+    class MatchGuide:
+        def __init__(self) -> None:
+            self.loaded = 0
+
+        def update_block(self, _index: int, _result: PollTaskResult) -> None:
+            self.loaded += 1
+
+    window = MainWindow.__new__(MainWindow)
+    window._selection_page_active = False
+    window._match_guide_page_active = False
+    window._ocr_service = OcrService()
+    window._tabs = Tabs()
+    window._recommendation = Recommendation()
+    window._match_guide = MatchGuide()
+    hero_match = PollResult(
+        1,
+        PollOutcome.MATCHED,
+        task_results={"hero_selection": PollTaskResult(PollOutcome.MATCHED)},
+    )
+    guide_match = PollResult(
+        1,
+        PollOutcome.MATCHED,
+        task_results={"match_guide": PollTaskResult(PollOutcome.MATCHED)},
+    )
+
+    window._on_poll_result(hero_match)
+    window._on_poll_result(guide_match)
+    window._on_poll_result(hero_match)
+    window._on_poll_result(guide_match)
+
+    assert window._tabs.switched_to == [
+        window._recommendation,
+        window._match_guide,
+        window._match_guide,
+    ]
+    assert window._match_guide.loaded == 2
 
 
 def test_poll_match_switches_tab_when_enabled() -> None:

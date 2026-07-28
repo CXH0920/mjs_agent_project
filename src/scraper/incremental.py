@@ -244,7 +244,7 @@ def main() -> None:
         skip_images=args.skip_images)
 
     print(f"\n{'=' * 60}", flush=True)
-    print(f"  完成!", flush=True)
+    print("  完成!", flush=True)
     print(f"{'=' * 60}", flush=True)
 
 

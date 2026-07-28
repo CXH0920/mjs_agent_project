@@ -17,24 +17,56 @@ def _heroes() -> dict[str, Hero]:
     }
 
 
-def test_load_from_ocr_auto_assigns_team_and_requires_explicit_confirmation() -> None:
+def test_load_from_ocr_assigns_sides_from_positions_without_team_labels() -> None:
     heroes = _heroes()
     lineup = LineupState()
 
     loaded = lineup.load_from_ocr([
-        {"index": 1, "name": "甲", "team": "汉军"},
-        {"index": 2, "name": "乙", "team": "汉军"},
-        {"index": 3, "name": "丙", "team": "楚军"},
-        {"index": 4, "name": "丁", "team": "楚军"},
+        {"index": 1, "name": "甲"},
+        {"index": 2, "name": "乙"},
+        {"index": 4, "name": "丙"},
+        {"index": 5, "name": "丁"},
     ], heroes.get, "12:30")
 
     assert loaded
     assert lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
-    assert lineup.ally_leader_slot == 2
+    assert lineup.ally_leader_slot == 3
+    assert lineup.team_labels_match_positions is None
     assert lineup.can_confirm()
     assert not lineup.analysis_confirmed
     assert lineup.confirm()
     assert lineup.analysis_confirmed
+
+
+def test_load_from_ocr_keeps_sides_unconfirmed_without_player_anchor() -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+
+    assert lineup.load_from_ocr([
+        {"index": 1, "name": "甲", "team": "楚军"},
+        {"index": 2, "name": "乙", "team": "楚军"},
+        {"index": 3, "name": "丙", "team": "汉军"},
+        {"index": 4, "name": "丁", "team": "汉军"},
+    ], heroes.get, "12:30")
+
+    assert lineup.sides == ["", "", "", ""]
+    assert lineup.ally_leader_slot is None
+    assert not lineup.can_confirm()
+
+
+def test_load_from_ocr_validates_team_labels_against_positions() -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+
+    assert lineup.load_from_ocr([
+        {"index": 1, "name": "甲", "team": "楚军"},
+        {"index": 2, "name": "乙", "team": "楚军"},
+        {"index": 3, "name": "丙", "team": "汉军"},
+        {"index": 5, "name": "丁", "team": "汉军"},
+    ], heroes.get, "12:30")
+
+    assert lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
+    assert lineup.team_labels_match_positions is True
 
 
 def test_side_limit_and_replacement_reset_confirmation_state() -> None:

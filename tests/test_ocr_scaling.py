@@ -74,6 +74,6 @@ def test_match_guide_recognizer_returns_only_named_2v2_roles(monkeypatch) -> Non
     assert results == [
         {"index": 1, "name": "徐晃", "confidence": 0.9, "team": "汉军"},
         {"index": 2, "name": "许褚", "confidence": 0.9, "team": "汉军"},
-        {"index": 3, "name": "韩娥", "confidence": 0.9, "team": "楚军"},
-        {"index": 4, "name": "孙策", "confidence": 0.9, "team": "楚军"},
+        {"index": 4, "name": "韩娥", "confidence": 0.9, "team": "楚军"},
+        {"index": 5, "name": "孙策", "confidence": 0.9, "team": "楚军"},
     ]

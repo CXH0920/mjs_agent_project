@@ -409,7 +409,12 @@ class MatchGuidePanel(QWidget):
         if self._lineup.analysis_confirmed:
             suffix = "阵容已确认"
         elif validation.is_valid:
-            suffix = "阵营待核对"
+            labels_match = self._lineup.team_labels_match_positions
+            suffix = (
+                "阵营标签已校验" if labels_match is True
+                else "阵营标签与席位不一致，请核对" if labels_match is False
+                else "按席位已分配 · 阵营标签待核对"
+            )
         else:
             suffix = validation.message
         self._recognition_status_label.setText(f"{prefix}有效 {self._lineup.valid_count} 名 · {suffix}")

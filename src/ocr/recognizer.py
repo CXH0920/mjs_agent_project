@@ -153,13 +153,11 @@ class GeneralRecognizer:
             )
             team = self._recognize_team(team_img, seat_index) if team_img is not None else ""
             results.append({
-                "index": len(results) + 1,
+                "index": seat_index,
                 "name": name,
                 "confidence": round(confidence, 4),
                 "team": team,
             })
-            if len(results) == 4:
-                break
         return results
 
     @staticmethod

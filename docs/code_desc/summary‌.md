@@ -30,7 +30,7 @@
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分 |
 | 数据持久化 | JSON + CSV 文件（原子写入，无数据库依赖） |
-| 测试 | pytest（当前 `--collect-only` 收集 323 项，以命令输出为准） |
+| 质量校验 | Ruff 0.12.0 + pytest（当前 `--collect-only` 收集 346 项，以命令输出为准） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构

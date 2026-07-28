@@ -2,10 +2,13 @@
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
+import src.config.env as config_env
+from src.config.env import get_api_config, get_runtime_params, parse_env_file
 from src.scraper.ai_batch import (
     _estimate_cost,
     estimate_cost,
@@ -24,9 +27,6 @@ from src.scraper.prompt_utils import (
     build_guide_prompt,
     build_synergy_prompt,
 )
-
-from src.config.env import parse_env_file, get_api_config, get_runtime_params
-
 
 class TestLoadPrompt:
     def test_load_existing_file(self) -> None:
@@ -328,15 +328,11 @@ class TestLoadHeroes:
 class TestConfigLoading:
     def test_parse_env_file_nonexistent(self):
         """不存在的 .env 文件应返回空 dict"""
-        from src.config.env import parse_env_file
         result = parse_env_file("/nonexistent/config.env")
         assert result == {}
 
     def test_parse_env_file_valid(self):
         """解析有效的 .env 文件"""
-        import tempfile, os, shutil
-        from src.config.env import parse_env_file
-
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
@@ -353,9 +349,6 @@ class TestConfigLoading:
 
     def test_parse_env_file_with_comments(self):
         """解析包含注释和空行的 .env 文件"""
-        import tempfile, os, shutil
-        from src.config.env import parse_env_file
-
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
@@ -375,9 +368,6 @@ class TestConfigLoading:
 
     def test_parse_env_file_quotes(self):
         """解析包含引号值的 .env 文件"""
-        import tempfile, os, shutil
-        from src.config.env import parse_env_file
-
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
@@ -394,9 +384,6 @@ class TestConfigLoading:
 
     def test_parse_env_file_empty(self):
         """空文件应返回空 dict"""
-        import tempfile, os, shutil
-        from src.config.env import parse_env_file
-
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
@@ -408,9 +395,6 @@ class TestConfigLoading:
 
     def test_get_api_config_from_env_file(self):
         """get_api_config 应从 config.env 读取值"""
-        import tempfile, os, shutil
-        from src.config.env import get_api_config
-
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
@@ -421,7 +405,6 @@ class TestConfigLoading:
                 encoding="utf-8"
             )
             # Temporarily override DEFAULT_ENV_FILE
-            import src.config.env as config_env
             original = config_env.DEFAULT_ENV_FILE
             config_env.DEFAULT_ENV_FILE = env_path
             try:
@@ -436,15 +419,11 @@ class TestConfigLoading:
 
     def test_get_api_config_env_var_fallback(self):
         """环境变量作为 config.env 的回退"""
-        from src.config.env import get_api_config
-
-        import tempfile, os, shutil
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "empty.env"
             env_path.write_text("", encoding="utf-8")
 
-            import src.config.env as config_env
             original = config_env.DEFAULT_ENV_FILE
             config_env.DEFAULT_ENV_FILE = env_path
 
@@ -464,15 +443,11 @@ class TestConfigLoading:
 
     def test_get_runtime_params_defaults(self):
         """get_runtime_params 应返回默认值"""
-        from src.config.env import get_runtime_params
-
-        import tempfile, os, shutil
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "empty.env"
             env_path.write_text("", encoding="utf-8")
 
-            import src.config.env as config_env
             original = config_env.DEFAULT_ENV_FILE
             config_env.DEFAULT_ENV_FILE = env_path
             try:
@@ -487,9 +462,6 @@ class TestConfigLoading:
 
     def test_get_runtime_params_custom(self):
         """get_runtime_params 应从 config.env 读取自定义值"""
-        from src.config.env import get_runtime_params
-
-        import tempfile, os, shutil
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
@@ -500,7 +472,6 @@ class TestConfigLoading:
                 encoding="utf-8"
             )
 
-            import src.config.env as config_env
             original = config_env.DEFAULT_ENV_FILE
             config_env.DEFAULT_ENV_FILE = env_path
             try:
@@ -515,13 +486,9 @@ class TestConfigLoading:
 
     def test_get_runtime_params_converts_log_to_file_to_bool(self):
         """LOG_TO_FILE 应在配置加载阶段转换为布尔值。"""
-        import tempfile, shutil
-        from src.config.env import get_runtime_params
-
         tmpdir = tempfile.mkdtemp()
         try:
             env_path = Path(tmpdir) / "config.env"
-            import src.config.env as config_env
             original = config_env.DEFAULT_ENV_FILE
             config_env.DEFAULT_ENV_FILE = env_path
             try:

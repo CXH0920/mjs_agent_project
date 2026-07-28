@@ -347,7 +347,6 @@ def apply_incremental_update(
 
     协调三个 Manager 执行批量数据更新操作。
     """
-    import json
     stats = {
         "added_heroes": 0,
         "modified_heroes": 0,

@@ -70,7 +70,7 @@ def _load_existing_synergies(synergy_path: Path) -> tuple[dict, set]:
                 existing_dict[key] = s
                 existing_keys.add(key)
             logger.info("已有 %d 对相性", len(existing_dict))
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError):
             logger.warning("相性文件损坏或为空 (%s)，将重新生成", synergy_path.name)
             synergy_path.unlink(missing_ok=True)
     return existing_dict, existing_keys
@@ -85,7 +85,7 @@ def _load_existing_guides(guide_path: Path) -> dict:
                 for g in json.load(f):
                     existing[g["hero_id"]] = g
             logger.info("已有 %d 份攻略", len(existing))
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError):
             logger.warning("攻略文件损坏或为空 (%s)，将重新生成", guide_path.name)
             guide_path.unlink(missing_ok=True)
     return existing
@@ -106,7 +106,7 @@ def _show_cost_estimate(heroes: list, api_config: dict, args) -> None:
         print(f"  相性评分: {est['items']:,} 对")
         print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
         print(_format_cost_estimate(est) + "\n")
-    print(f"  （在 config.env 中配置 DEEPSEEK_API_KEY，然后去除 --dry-run 执行）")
+    print("  （在 config.env 中配置 DEEPSEEK_API_KEY，然后去除 --dry-run 执行）")
     print("=" * 55)
 
 
@@ -133,7 +133,7 @@ def _print_token_summary(total_prompt_tokens: int, total_completion_tokens: int,
         total_cost = _estimate_cost(total_prompt_tokens, total_completion_tokens, model)
         sep_line = "=" * 55
         print(f"\n{sep_line}")
-        print(f"  Token 使用统计")
+        print("  Token 使用统计")
         print(f"{sep_line}")
         print(f"  输入 tokens:  {total_prompt_tokens:,}")
         print(f"  输出 tokens:  {total_completion_tokens:,}")
@@ -277,7 +277,7 @@ def main():
         print(f"\n  [错误] 生成失败：{len(failed_items)} 项；成功项已提交，失败项保留旧数据", flush=True)
         sys.exit(1)
 
-    print(f"\n  全部完成！\n")
+    print("\n  全部完成！\n")
 
 
 if __name__ == "__main__":

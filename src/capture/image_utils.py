@@ -24,7 +24,6 @@ def pil_to_qpixmap(image: Image.Image):
         QPixmap 对象。
     """
     from PIL.ImageQt import ImageQt
-    from PySide6.QtCore import Qt
     from PySide6.QtGui import QPixmap
 
     try:

@@ -101,11 +101,3 @@ def test_required_enabled_field_must_have_a_value(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="必填"):
         service.save_annotation_fields("8", {"mode": "2v2"})
-
-
-def test_required_enabled_field_must_have_a_value(tmp_path: Path) -> None:
-    service = _service(tmp_path)
-    service.add_field(CardFieldDefinition(key="note", label="备注", value_type="markdown", required=True))
-
-    with pytest.raises(ValueError, match="必填"):
-        service.save_annotation_fields("8", {"mode": "2v2"})

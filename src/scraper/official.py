@@ -98,7 +98,7 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
             for h in validated[:5]:
                 sk = ", ".join(s["name"] for s in h["skills"])
                 print(f"    ID={h['id']:>3}  {h['name']}  [{h['faction']}]  {sk}", flush=True)
-            print(f"\n  (使用 --output 或去除 --dry-run 写入文件)", flush=True)
+            print("\n  (使用 --output 或去除 --dry-run 写入文件)", flush=True)
         else:
             save_json_atomic(out_path, validated)
             print(f"\n  已保存: {out_path}", flush=True)

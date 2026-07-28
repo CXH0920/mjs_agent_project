@@ -9,7 +9,7 @@ from src.data.models import Hero
 
 SIDE_ALLY = "ally"
 SIDE_ENEMY = "enemy"
-TEAM_TO_SIDE = {"楚军": SIDE_ALLY, "汉军": SIDE_ENEMY}
+_TEAMS = frozenset({"楚军", "汉军"})
 
 
 @dataclass(frozen=True)
@@ -44,12 +44,16 @@ class LineupState:
     """保存四名武将的阵容状态、敌我确认和主将选择。"""
 
     SLOT_COUNT = 4
+    PLAYER_SLOT_INDEX = 5
+    ENEMY_SLOT_INDICES = frozenset({1, 2})
+    TEAMMATE_SLOT_INDICES = frozenset({3, 4})
 
     def __init__(self) -> None:
         self._slots = [LineupSlot() for _ in range(self.SLOT_COUNT)]
         self._ally_leader_slot: int | None = None
         self._analysis_confirmed = False
         self._recognized_at = ""
+        self._team_labels_match_positions: bool | None = None
 
     @property
     def slots(self) -> tuple[LineupSlot, ...]:
@@ -76,6 +80,11 @@ class LineupState:
         return self._recognized_at
 
     @property
+    def team_labels_match_positions(self) -> bool | None:
+        """返回阵营标签与固定席位规则是否一致；标签缺失时返回 None。"""
+        return self._team_labels_match_positions
+
+    @property
     def valid_count(self) -> int:
         return sum(slot.hero is not None for slot in self._slots)
 
@@ -98,27 +107,56 @@ class LineupState:
         recognized_at: str,
     ) -> bool:
         """按 OCR 槽位导入新阵容，并清除旧的确认状态。"""
+        recognized_items = [
+            item for item in sorted(ocr_results, key=self._ocr_sort_key)
+            if str(item.get("name", "")).strip()
+        ]
+        player_item = next(
+            (item for item in recognized_items if self._ocr_sort_key(item) == self.PLAYER_SLOT_INDEX),
+            None,
+        )
+        if player_item is None:
+            selected_items = recognized_items[:self.SLOT_COUNT]
+        else:
+            selected_items = [
+                item for item in recognized_items if item is not player_item
+            ][:self.SLOT_COUNT - 1]
+            selected_items.append(player_item)
+
+        teammate_items = [
+            item for item in selected_items
+            if self._ocr_sort_key(item) in self.TEAMMATE_SLOT_INDICES
+        ]
+        has_unique_teammate = len(teammate_items) == 1
+        has_unique_names = len({str(item.get("name", "")).strip() for item in selected_items}) == len(selected_items)
+
         slots: list[LineupSlot] = []
-        for item in sorted(ocr_results, key=self._ocr_sort_key):
+        for item in selected_items:
             name = str(item.get("name", "")).strip()
-            if not name:
-                continue
             team = str(item.get("team", "")).strip()
+            source_index = self._ocr_sort_key(item)
             slots.append(LineupSlot(
                 hero=hero_by_name(name),
                 recognized_name=name,
                 confidence=self._read_confidence(item.get("confidence", 0.0)),
                 team=team,
-                side=TEAM_TO_SIDE.get(team, ""),
+                side=self._side_from_position(
+                    source_index,
+                    player_item is not None and has_unique_names,
+                    has_unique_teammate,
+                ),
             ))
-            if len(slots) == self.SLOT_COUNT:
-                break
 
         self._slots = slots + [LineupSlot() for _ in range(self.SLOT_COUNT - len(slots))]
         self._ally_leader_slot = next(
-            (index for index, slot in enumerate(self._slots) if slot.side == SIDE_ALLY),
+            (
+                index for index, item in enumerate(selected_items)
+                if self._ocr_sort_key(item) == self.PLAYER_SLOT_INDEX
+                and self._slots[index].side == SIDE_ALLY
+            ),
             None,
         )
+        self._team_labels_match_positions = self._check_team_labels(selected_items)
         self._analysis_confirmed = False
         self._recognized_at = recognized_at if slots else ""
         return bool(slots)
@@ -160,6 +198,7 @@ class LineupState:
         self._slots = [replace(slot, team="", side="") for slot in self._slots]
         self._ally_leader_slot = None
         self._analysis_confirmed = False
+        self._team_labels_match_positions = None
 
     def validate(self) -> LineupValidationResult:
         """返回阵容是否可用于分析，以及当前最直接的失败原因。"""
@@ -211,10 +250,51 @@ class LineupState:
         self._ally_leader_slot = None
         self._analysis_confirmed = False
         self._recognized_at = ""
+        self._team_labels_match_positions = None
 
     def _check_index(self, index: int) -> None:
         if not 0 <= index < self.SLOT_COUNT:
             raise IndexError(f"槽位索引超出范围: {index}")
+
+    @classmethod
+    def _side_from_position(
+        cls,
+        source_index: int,
+        has_player: bool,
+        has_unique_teammate: bool,
+    ) -> str:
+        if not has_player:
+            return ""
+        if source_index in cls.ENEMY_SLOT_INDICES:
+            return SIDE_ENEMY
+        if source_index == cls.PLAYER_SLOT_INDEX:
+            return SIDE_ALLY
+        if has_unique_teammate and source_index in cls.TEAMMATE_SLOT_INDICES:
+            return SIDE_ALLY
+        return ""
+
+    @classmethod
+    def _check_team_labels(cls, items: list[dict]) -> bool | None:
+        teams = {
+            cls._ocr_sort_key(item): str(item.get("team", "")).strip()
+            for item in items
+        }
+        player_team = teams.get(cls.PLAYER_SLOT_INDEX, "")
+        teammate_teams = [
+            teams[index] for index in cls.TEAMMATE_SLOT_INDICES if index in teams
+        ]
+        enemy_teams = [
+            teams[index] for index in cls.ENEMY_SLOT_INDICES if index in teams
+        ]
+        if (
+            player_team not in _TEAMS
+            or len(teammate_teams) != 1
+            or teammate_teams[0] not in _TEAMS
+            or len(enemy_teams) != len(cls.ENEMY_SLOT_INDICES)
+            or any(team not in _TEAMS for team in enemy_teams)
+        ):
+            return None
+        return teammate_teams[0] == player_team and all(team != player_team for team in enemy_teams)
 
     @staticmethod
     def _ocr_sort_key(item: dict) -> int:

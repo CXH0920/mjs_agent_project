@@ -61,7 +61,7 @@ DataFacade.load_all()
 
 `BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
-OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活。
+OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
 
 ---
 
@@ -755,7 +755,7 @@ MainWindow.__init__
 
 对局攻略与武将浏览、选将推荐处于同级 Tab。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `config/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
 
-页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口均通过 `template_name="match_guide"` 使用独立模板并将 OCR 结果交给 `load_from_ocr()` 更新卡片。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。`LineupState` 负责四个槽位、敌我人数限制、主将选择和显式确认；确认后才由 `MatchAnalysisService` 生成摘要，并由 `MatchAnalysisView` 渲染总览、我方打法、对抗敌方和单将详情。
+页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口均通过 `template_name="match_guide"` 使用独立模板并将 OCR 结果交给 `load_from_ocr()` 更新卡片。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。五个候选位置中第 5 个固定为玩家本人，第 1、2 个为敌方，第 3、4 个中唯一识别到名称者为队友；【楚军】/【汉军】标签仅用于校验席位结果，缺失时仍按席位自动分配。`LineupState` 负责四个槽位、敌我人数限制、主将选择和显式确认，仍可手动矫正敌我；确认后才由 `MatchAnalysisService` 生成摘要，并由 `MatchAnalysisView` 渲染总览、我方打法、对抗敌方和单将详情。
 
 ### 5.4 模拟器配置对话框（MumuConfigDialog）
 
@@ -1816,7 +1816,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
        ├── ④ RecommendationPanel.load_from_ocr()
        │     └── 填充 8 个推荐槽位（头像/相性/胜率）
        │
-       └── ⑤ hero_selection 进入计时冷却；match_guide 等待下一次选将命中重置
+       └── ⑤ hero_selection 进入计时冷却；下一次选将命中会重置 match_guide 任务和对局攻略页跳转边沿
 ```
 
 **关键设计**：
@@ -1838,11 +1838,12 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 测试覆盖 AI 生成、数据管理、OCR、模拟器交互、对局攻略和桌面 UI。用例数量由 pytest 收集结果作为唯一来源，不再维护容易漂移的按文件静态计数。
 
 ```bash
+python -m ruff check src tests
 python -m pytest --collect-only -q
 python -m pytest tests/ -v
 ```
 
-当前以 `pytest --collect-only -q` 收集 **323** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+开发环境与 CI 统一使用 Ruff 0.12.0。当前以 `pytest --collect-only -q` 收集 **346** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 ### 13.2 AIBatchGenerator 测试要点
 

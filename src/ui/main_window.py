@@ -197,6 +197,8 @@ class MainWindow(QMainWindow):
             )
             self._ocr_service.clear_task_cooldown("match_guide")
             self._ocr_service.activate_task("match_guide")
+            # 每次新选将命中都开启一轮新的对局攻略自动跳转。
+            self._match_guide_page_active = False
             if not self._selection_page_active:
                 self._selection_page_active = True
                 if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):

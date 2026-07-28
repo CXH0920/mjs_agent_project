@@ -275,7 +275,7 @@ def run_synergy_pair_generation(
     """
     result_summary = GenerationResult()
 
-    print(f"\n  相性配对生成 (指定武将)...", flush=True)
+    print("\n  相性配对生成 (指定武将)...", flush=True)
     with open(pair_file, "r", encoding="utf-8") as f:
         pair_heroes = json.load(f)
 
@@ -362,7 +362,7 @@ def run_synergy_single_generation(
     """
     result_summary = GenerationResult()
 
-    print(f"\n  相性配对生成 (选定武将 x 全体)...", flush=True)
+    print("\n  相性配对生成 (选定武将 x 全体)...", flush=True)
     with open(single_file, "r", encoding="utf-8") as f:
         single_heroes = json.load(f)
 
