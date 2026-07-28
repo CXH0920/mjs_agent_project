@@ -241,15 +241,15 @@ class RecommendationPanel(QWidget):
     def refresh_synergies(self) -> None:
         """按当前卡片槽位重新加载相性摘要，不改变 OCR 模式。"""
         for index, card in enumerate(self._cards):
-            if card._hero_id > 0:
-                self._load_real_synergies(index, card._hero_id)
+            if card.hero_id > 0:
+                self._load_real_synergies(index, card.hero_id)
 
     def refresh_faction_colors(self) -> None:
         """重新应用当前势力颜色，不改变 OCR 识别和推荐数据。"""
         reload_faction_colors()
         for card in self._cards:
-            if card._hero_id > 0:
-                card._update_display()
+            if card.hero_id > 0:
+                card.refresh_faction_color()
 
     def _load_real_synergies(self, card_idx: int, hero_id: int) -> None:
         """从 synergy manager 加载已有相性数据（按评分排序取前 4 条）
@@ -325,8 +325,8 @@ class RecommendationPanel(QWidget):
         self._set_index_stale_notice(False)
         for card in self._cards:
             card.set_recommendation_stale(False)
-            if card._hero:
-                card.set_recommendation_index(recommendation_data.indexes.get(card._hero.name))
+            if card.hero_name:
+                card.set_recommendation_index(recommendation_data.indexes.get(card.hero_name))
         valid_count = sum(index.is_valid for index in recommendation_data.indexes.values())
         QMessageBox.information(
             self, "重建完成",
@@ -397,10 +397,7 @@ class RecommendationPanel(QWidget):
             hero = self._hero_mgr.get_hero_by_name(name)
             if not hero:
                 logger.warning("update_recommendations: 未找到武将 %s", name)
-                card.set_hero(None)
-                card._name_overlay.setText(name or "未知武将")
-                card.set_confidence(confidence)
-                card.set_recommendation_index(None)
+                card.set_unrecognized_name(name, confidence)
                 continue
 
             card.set_hero(hero)

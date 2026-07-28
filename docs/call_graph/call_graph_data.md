@@ -305,3 +305,4 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `GuideManager.get_guide()` | `guide_manager.py` | `HeroDetailPanel`, `GuideDetailDialog` | dict get |
 | `apply_incremental_update()` | `manager.py` | 测试和外部导入工具 | 按 added/modified/removed 更新三个 Manager，并执行武将删除级联 |
 | `load_win_rates()` | `win_rate_repository.py` | `RecommendationPanel`, `MatchGuidePanel` | CSV 解析、百分比转浮点、默认路径缓存 |
+| `CardCatalogService.validate_active_ranges()` | `card_catalog.py` | 服务内部、`CardAnnotationEditDialog` | 校验生效中版本记录的时间区间不重叠 |

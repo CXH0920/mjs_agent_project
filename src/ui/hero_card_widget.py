@@ -381,6 +381,17 @@ class HeroCardWidget(QFrame):
         self._recommendation_loaded = False
         self._update_display()
 
+    def set_unrecognized_name(self, name: str, confidence: float) -> None:
+        """显示未匹配到武将资料的 OCR 名称和置信度。"""
+        self.set_hero(None)
+        self._name_overlay.setText(name or "未知武将")
+        self.set_confidence(confidence)
+        self.set_recommendation_index(None)
+
+    def refresh_faction_color(self) -> None:
+        """使用当前势力配色刷新卡片。"""
+        self._update_display()
+
     def set_confidence(self, confidence: float) -> None:
         self._confidence = max(0.0, min(1.0, confidence))
         self._update_confidence_display()
@@ -399,6 +410,10 @@ class HeroCardWidget(QFrame):
     @property
     def win_rate(self) -> float | None:
         return self._win_rate
+
+    @property
+    def hero_id(self) -> int:
+        return self._hero_id
 
     @property
     def hero_name(self) -> str:

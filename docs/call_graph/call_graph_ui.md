@@ -446,8 +446,7 @@ RecommendationPanel.load_from_ocr(ocr_results)                  [OCR 结果 list
      -> [找到] card.set_hero(hero)
                card.set_confidence(0.5)                         [固定 0.5: OCR 非游戏内推荐]
                self._current_hero_ids.add(hero.id)
-     -> [未找到] card.set_hero(None)                            [清空卡片]
-                 直接设置 card._name_overlay.setText(name)       [显示原始名称]
+     -> [未找到] card.set_unrecognized_name(name, confidence)   [统一维护空 Hero、原始名称和置信度]
      -> self._load_real_synergies(idx, hero.id)                 [加载相性]
      -> self._load_win_rate_by_name(idx, name)                  [加载胜率]
   -> self._apply_medal_rankings()                               [Top 3 奖牌]
@@ -501,6 +500,9 @@ RecommendationPanel._apply_medal_rankings()
 | `_load_win_rate_by_name(idx, name)` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | `load_win_rates()`, `set_win_rate()` |
 | `_apply_medal_rankings()` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | 解析胜率文本, `set_medal()` |
 | `set_hero(hero)` | `HeroCardWidget` | 外部 | `_update_display()`, `_load_portrait()`, `_update_confidence_display()` |
+| `set_unrecognized_name(name, confidence)` | `HeroCardWidget` | `update_recommendations()` | `set_hero(None)`, `set_confidence()`, `set_recommendation_index(None)` |
+| `refresh_faction_color()` | `HeroCardWidget` | `refresh_faction_colors()` | `_update_display()` |
+| `hero_id` / `hero_name` | `HeroCardWidget` | `RecommendationPanel` | 只读卡片身份状态 |
 | `set_confidence(conf)` | `HeroCardWidget` | 外部 | `_update_confidence_display()` |
 | `set_synergies(pairs)` | `HeroCardWidget` | `_load_real_synergies()` | 4 列 QGridLayout 动态添加 QLabel |
 | `set_win_rate(rate)` | `HeroCardWidget` | `_load_win_rate_by_name()` | 设置胜率 QLabel 文本 |
@@ -912,6 +914,9 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | 函数 | 说明 |
 |------|------|
 | `set_hero(hero or None)` | 设置 Hero → `_update_display()` |
+| `set_unrecognized_name(name, confidence)` | 显示未匹配到资料的 OCR 名称和置信度 |
+| `refresh_faction_color()` | 使用当前势力配色刷新卡片 |
+| `hero_id` / `hero_name` | 读取卡片当前武将身份 |
 | `set_confidence(conf)` | 设置推荐指数 0.0~1.0 |
 | `set_synergies(pairs)` | 设置高相性组合展示（4 列 GridLayout） |
 | `set_win_rate(rate)` | 设置胜率百分比 |

@@ -191,7 +191,7 @@ RecommendationPanel (QWidget)
 - `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌及卡片信号。
 - `guide_detail_dialog.py`：`GuideDetailDialog` 以外层滚动区展示摘要和正文预览；双击预览会打开 `GuideMarkdownDialog` 阅读完整 Markdown 正文。
 
-为兼容既有调用，`recommendation_panel.py` 仍导入并暴露两个公开类名；页面创建卡片与打开攻略弹窗的调用方式不变。
+为兼容既有调用，`recommendation_panel.py` 仍导入并暴露两个公开类名；页面创建卡片与打开攻略弹窗的调用方式不变。`RecommendationPanel` 通过 `hero_id`、`hero_name`、`set_unrecognized_name()` 和 `refresh_faction_color()` 使用卡片状态，不访问卡片内部字段或重绘方法。
 
 **数据接口：**
 ```python
@@ -311,10 +311,11 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 
         hero = self._hero_mgr.get_hero_by_name(name)
         if hero:
-            card._hero_id = hero.id
             card.set_hero(hero)
             card.set_recommendation_index(indexes.get(name))
             self._current_hero_ids.add(hero.id)
+        else:
+            card.set_unrecognized_name(name, confidence)
 
         # 相性 + 胜率加载
         self._load_real_synergies(idx, hero.id if hero else 0)

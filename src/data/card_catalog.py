@@ -430,7 +430,7 @@ class CardCatalogService:
             if not isinstance(value, list):
                 raise ValueError(f"{definition.label} 必须是效果记录列表")
             entries = [EffectEntry.model_validate(raw) for raw in value]
-            self._validate_active_ranges(definition, entries)
+            self.validate_active_ranges(definition, entries)
         elif definition.value_type == "markdown" and not isinstance(value, str):
             raise ValueError(f"{definition.label} 必须是文本")
         elif definition.value_type == "tags" and (not isinstance(value, list) or not all(isinstance(item, str) for item in value)):
@@ -443,7 +443,8 @@ class CardCatalogService:
             raise ValueError(f"{definition.label} 必须是预定义选项之一")
 
     @staticmethod
-    def _validate_active_ranges(definition: CardFieldDefinition, entries: list[EffectEntry]) -> None:
+    def validate_active_ranges(definition: CardFieldDefinition, entries: list[EffectEntry]) -> None:
+        """校验生效中版本记录的时间区间不重叠。"""
         active = sorted((entry for entry in entries if entry.status == "active"), key=lambda entry: entry.effective_from)
         for previous, current in zip(active, active[1:]):
             if previous.effective_to is None or current.effective_from <= previous.effective_to:

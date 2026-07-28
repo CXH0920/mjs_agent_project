@@ -84,10 +84,10 @@ OcrService    —Signal→ MainWindow —slot→ 启动/停止轮询
 ### 规则 3.3：未匹配的武将名仍显示名称
 
 ```python
-card._name_overlay.setText(name or "未知武将")
+card.set_unrecognized_name(name, confidence)
 ```
 
-**为什么：** OCR 识别出的名称即使不在 HeroManager 中（新武将或识别错误），也应显示给用户看，方便人工判断。如果直接清空或显示"空"，用户无法区分"没有识别到"和"识别了但不认识"。
+**为什么：** OCR 识别出的名称即使不在 HeroManager 中（新武将或识别错误），也应显示给用户看，方便人工判断。如果直接清空或显示"空"，用户无法区分"没有识别到"和"识别了但不认识"。名称、置信度和空 Hero 状态由卡片公开接口统一维护，页面不直接操作卡片内部控件。
 
 ### 规则 3.4：推荐指数状态按异常提示，重建入口始终可达
 

@@ -289,6 +289,26 @@ def test_top_three_win_rate_visual_anchor() -> None:
     assert card._rank == 0
 
 
+def test_hero_card_exposes_public_identity_and_unrecognized_state(monkeypatch) -> None:
+    _app()
+    card = HeroCardWidget(Hero(id=1, name="测试武将", faction="魏"))
+
+    assert card.hero_id == 1
+    assert card.hero_name == "测试武将"
+
+    monkeypatch.setattr(
+        "src.ui.hero_card_widget.get_faction_colors", lambda: {"魏": "#123456"},
+    )
+    card.refresh_faction_color()
+    assert "#123456" in card._faction_badge.styleSheet()
+
+    card.set_unrecognized_name("新武将", 0.75)
+    assert card.hero_id == 0
+    assert card.hero_name == ""
+    assert card._name_overlay.text() == "新武将"
+    assert card._confidence_label.text() == "推荐指数：-- / 数据不足"
+
+
 def test_recommendation_card_displays_index_or_insufficient_data() -> None:
     _app()
     card = HeroCardWidget(None)

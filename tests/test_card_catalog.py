@@ -63,6 +63,22 @@ def test_active_effect_ranges_cannot_overlap(tmp_path: Path) -> None:
         ))
 
 
+def test_active_effect_range_validation_is_a_public_service_contract(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    definition = service.schema.get_field("strengthen_effect")
+    entries = [
+        EffectEntry(
+            version="2026.08", effective_from=date(2026, 8, 1), content="加强", status="active",
+        ),
+        EffectEntry(
+            version="2026.09", effective_from=date(2026, 8, 15), content="再次加强", status="active",
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="时间重叠"):
+        service.validate_active_ranges(definition, entries)
+
+
 def test_archived_field_is_preserved_as_historical_data(tmp_path: Path) -> None:
     service = _service(tmp_path)
     service.save_annotation_fields("8", {"mode": "2v2"})

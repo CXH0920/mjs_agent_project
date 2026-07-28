@@ -450,7 +450,7 @@ class CardAnnotationEditDialog(QDialog):
             if definition is None:
                 raise ValueError("追加字段不存在或已被删除")
             entry = self._build_effect_entry(definition, version, start, end, end_enabled, content, source, status)
-            self._service._validate_active_ranges(definition, [
+            self._service.validate_active_ranges(definition, [
                 *(EffectEntry.model_validate(raw) for raw in self._values.get(key, [])), entry,
             ])
         except ValueError as error:
@@ -560,7 +560,7 @@ class CardAnnotationEditDialog(QDialog):
                 *(EffectEntry.model_validate(raw) for raw in fields.get(key, [])),
                 entry,
             ]
-            self._service._validate_active_ranges(definition, entries)
+            self._service.validate_active_ranges(definition, entries)
             fields[key] = [item.model_dump(mode="json") for item in entries]
         return fields
 
