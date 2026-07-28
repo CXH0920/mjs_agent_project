@@ -52,6 +52,32 @@
         ]
       },
       "updated_at": "2026-07-26"
+    },
+    {
+      "card_id": "4",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "version": "1",
+            "effective_from": "2026-07-28",
+            "effective_to": null,
+            "content": "可以当作任意行动牌或战法牌打出。",
+            "source": "",
+            "status": "active"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "version": "1",
+            "effective_from": "2026-07-28",
+            "effective_to": null,
+            "content": "可以当作杀或闪打出。",
+            "source": "",
+            "status": "active"
+          }
+        ]
+      },
+      "updated_at": "2026-07-28"
     }
   ]
 }

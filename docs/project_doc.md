@@ -296,6 +296,8 @@ else:
 - `--synergy-single`（选定武将）：断点续传，已有的相性对跳过不重复生成
 - `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对；成功配对按批提交
 
+武将输入先经 `HeroManager` 完整校验，任一错误都会终止生成。攻略或相性断点文件存在错误时，原文件保留为 `.corrupt-时间戳.json`，当前路径只写回对应 Manager 已验证的记录；备份失败时不覆盖原文件。
+
 #### 2.2.4 浏览器模式的 token 处理
 
 浏览器模式返回 `(result, None)`，不以 token 统计判断成败，避免误报失败。
@@ -1633,7 +1635,7 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 | 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `CharacterFeatureRepository` | 通过 `unihan_etl.Options().work_dir` 解析文本文件 |
 
 数据文件 `src/data/char_info_cache.json` 包含 223 个高频汉字（武将名 + 常见 OCR 误识字）。
-`CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。
+`CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。pypinyin 预热或查询失败时记录一次 warning 并将拼音源标记为不可用，后续查询直接降级为空值；cnradical 的单字查询失败会记录字符和异常，但不禁用整个部首源。
 
 #### 类结构
 
@@ -1843,7 +1845,7 @@ python -m pytest --collect-only -q
 python -m pytest tests/ -v
 ```
 
-开发环境与 CI 统一使用 Ruff 0.12.0。当前以 `pytest --collect-only -q` 收集 **346** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+开发环境与 CI 统一使用 Ruff 0.12.0。当前以 `pytest --collect-only -q` 收集 **374** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 ### 13.2 AIBatchGenerator 测试要点
 
@@ -1905,8 +1907,8 @@ python -m pytest tests/ -v
                        ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  ai_batch.py（子进程入口 CLI）                                             │
-│  ① 加载武将数据 load_heroes()                                            │
-│  ② 断点续传 _load_existing_guides() → 已有攻略 {hero_id: guide}          │
+│  ① load_heroes() → HeroManager 完整校验武将数据                          │
+│  ② _load_existing_guides() → 校验断点；错误原件备份为 .corrupt-*         │
 │  ③ 选择生成器：AIBatchGenerator / PlaywrightGenerator                     │
 │  ④ 委托 run_guide_generation()                                          │
 └──────────────────────┬───────────────────────────────────────────────────┘

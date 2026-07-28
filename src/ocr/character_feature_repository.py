@@ -30,6 +30,7 @@ class CharacterFeatureRepository:
         self._unihan_cache: dict[str, dict[str, str]] | None = None
         self._strokes_cache: dict[str, int] | None = None
         self._strokes_path: Path | None = None
+        self._pinyin_available: bool | None = None
 
     @property
     def cache_path(self) -> Path:
@@ -89,12 +90,16 @@ class CharacterFeatureRepository:
     def warmup(self) -> None:
         """加载缓存及拼音库，避免首次纠错时发生额外初始化。"""
         self.load()
+        if self._pinyin_available is False:
+            return
         try:
             from pypinyin import Style, pinyin
 
             pinyin("一", style=Style.NORMAL)
-        except Exception:
-            pass
+            self._pinyin_available = True
+        except Exception as exc:
+            self._pinyin_available = False
+            logger.warning("pypinyin 预热失败，拼音特征将降级: %s", exc)
 
     def _build_feature(self, char: str) -> dict[str, str]:
         entry = dict(_EMPTY_FEATURE)
@@ -102,8 +107,8 @@ class CharacterFeatureRepository:
         if radical_client:
             try:
                 entry["radical"] = radical_client.trans_ch(char) or ""
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("cnradical 查询失败 %s: %s", char, exc)
         unihan_feature = self._query_unihan(char)
         entry["cangjie"] = unihan_feature.get("cangjie", "")
         entry["four_corner"] = unihan_feature.get("four_corner", "")
@@ -188,12 +193,16 @@ class CharacterFeatureRepository:
             logger.warning("UNIHAN IRGSources 路径获取失败: %s", exc)
         return self._strokes_path
 
-    @staticmethod
-    def _get_pinyin(char: str) -> str:
+    def _get_pinyin(self, char: str) -> str:
+        if self._pinyin_available is False:
+            return ""
         try:
             from pypinyin import Style, pinyin
 
             values = pinyin(char, style=Style.NORMAL)
+            self._pinyin_available = True
             return values[0][0] if values else ""
-        except Exception:
+        except Exception as exc:
+            self._pinyin_available = False
+            logger.warning("pypinyin 查询失败 %s，拼音特征将降级: %s", char, exc)
             return ""

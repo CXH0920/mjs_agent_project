@@ -154,7 +154,7 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 | `char_info_cache.json`（223 字） | ~10ms | 武将名 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
-`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。223 个字覆盖了武将名所有用字的 99.6%，缓存未命中的汉字在运行时由 unihan-etl / cnradical / pypinyin 补齐并写入进程内存；需要落盘时由仓库的 `save()` 以 UTF-8/LF 原子写入。
+`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。223 个字覆盖了武将名所有用字的 99.6%，缓存未命中的汉字在运行时由 unihan-etl / cnradical / pypinyin 补齐并写入进程内存；需要落盘时由仓库的 `save()` 以 UTF-8/LF 原子写入。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
 
 ---
 

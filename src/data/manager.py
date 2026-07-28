@@ -101,7 +101,7 @@ class DataManager(Generic[V_co]):
         try:
             with self.file_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, EOFError) as error:
+        except (json.JSONDecodeError, EOFError, UnicodeDecodeError) as error:
             logger.warning("文件解析失败: %s", self.file_path)
             self._items = {}
             self._record_issue("error", "invalid_json", str(error))

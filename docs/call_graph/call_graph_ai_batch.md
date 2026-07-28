@@ -37,7 +37,7 @@ ai_batch.main()
 ai_batch.py:main()                                            [CLI 入口]
   -> argparse.parse_args()                                    [解析命令行参数]
   -> setup_logging()                                          [初始化日志]
-  -> load_heroes(args.heroes_file)                            [读取武将 JSON]
+  -> load_heroes(args.heroes_file)                            [HeroManager 完整校验武将 JSON]
   -> get_api_config()                                         [从 config.env 读取 API 配置]
   -> get_runtime_params()                                     [获取运行时参数]
   -> [args.dry_run] _show_cost_estimate()                     [预览 Token/费用]
@@ -70,10 +70,10 @@ ai_batch.py:main()                                            [CLI 入口]
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
 | `main()` | `ai_batch.py` | QProcess 子进程入口 | `load_heroes()`, `_load_existing_*()`, `run_*_generation()` |
-| `load_heroes()` | `ai_utils.py` | `ai_batch.main()` | `json.load()` |
+| `load_heroes()` | `ai_utils.py` | `ai_batch.main()` | `HeroManager.load()`, `Hero.model_validate()` |
 | `get_api_config()` | `config/env.py` | `ai_batch.main()` | `parse_env_file()` + 类型转换 |
-| `_load_existing_guides()` | `ai_batch.py` | `main()` | `json.load()`, 损坏文件自动删 |
-| `_load_existing_synergies()` | `ai_batch.py` | `main()` | `json.load()`, 损坏文件自动删 |
+| `_load_existing_guides()` | `ai_batch.py` | `main()` | `GuideManager.load()`；错误文件备份后写回有效记录 |
+| `_load_existing_synergies()` | `ai_batch.py` | `main()` | `SynergyManager.load()`；错误文件备份后写回有效记录 |
 | `_show_cost_estimate()` | `ai_batch.py` | `main()` | `estimate_cost()` |
 | `_print_token_summary()` | `ai_batch.py` | `main()` | `_estimate_cost()` |
 

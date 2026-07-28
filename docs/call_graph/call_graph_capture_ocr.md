@@ -245,6 +245,8 @@ CharacterFeatureRepository.get_feature(char)
      -> cnradical                                             [部首]
      -> pypinyin                                              [拼音]
      -> Options().work_dir / Unihan_IRGSources.txt            [笔画]
+     -> [pypinyin 失败] warning + 标记不可用，后续拼音降级为空值
+     -> [cnradical 单字失败] warning + 当前字符部首降级为空值
   -> 写入进程内存；save() 时 UTF-8/LF 原子落盘
 ```
 

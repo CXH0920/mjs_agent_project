@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from types import ModuleType
 
@@ -67,6 +68,62 @@ def test_character_feature_repository_reads_unihan_csv_from_options_destination(
     repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
 
     assert repository._query_unihan("曹") == {"cangjie": "HV", "four_corner": "5500."}
+
+
+def test_character_feature_repository_logs_pinyin_warmup_failure(tmp_path, monkeypatch, caplog) -> None:
+    module = ModuleType("pypinyin")
+    module.Style = type("Style", (), {"NORMAL": "normal"})
+
+    def fail_pinyin(*_args, **_kwargs):
+        raise RuntimeError("pinyin unavailable")
+
+    module.pinyin = fail_pinyin
+    monkeypatch.setitem(sys.modules, "pypinyin", module)
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    caplog.set_level(logging.WARNING)
+
+    repository.warmup()
+
+    assert repository._pinyin_available is False
+    assert "pypinyin 预热失败" in caplog.text
+
+
+def test_character_feature_repository_logs_pinyin_query_failure_once(tmp_path, monkeypatch, caplog) -> None:
+    module = ModuleType("pypinyin")
+    module.Style = type("Style", (), {"NORMAL": "normal"})
+
+    def fail_pinyin(*_args, **_kwargs):
+        raise RuntimeError("pinyin unavailable")
+
+    module.pinyin = fail_pinyin
+    monkeypatch.setitem(sys.modules, "pypinyin", module)
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    caplog.set_level(logging.WARNING)
+
+    assert repository._get_pinyin("曹") == ""
+    assert repository._get_pinyin("操") == ""
+
+    assert repository._pinyin_available is False
+    assert caplog.text.count("pypinyin 查询失败") == 1
+
+
+def test_character_feature_repository_logs_radical_query_failure(tmp_path, monkeypatch, caplog) -> None:
+    class BrokenRadical:
+        def trans_ch(self, _char: str) -> str:
+            raise RuntimeError("radical unavailable")
+
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    repository._radical_client = BrokenRadical()
+    monkeypatch.setattr(repository, "_query_unihan", lambda _char: {})
+    monkeypatch.setattr(repository, "_get_pinyin", lambda _char: "")
+    monkeypatch.setattr(repository, "_get_stroke", lambda _char: 0)
+    caplog.set_level(logging.WARNING)
+
+    feature = repository._build_feature("曹")
+
+    assert feature["radical"] == ""
+    assert "cnradical 查询失败" in caplog.text
+    assert "曹" in caplog.text
 
 
 def test_character_similarity_service_corrects_with_injected_repository(tmp_path) -> None:

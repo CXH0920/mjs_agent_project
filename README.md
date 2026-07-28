@@ -157,7 +157,7 @@ python -m pytest --collect-only -q
 python -m pytest tests/ -v
 ```
 
-开发环境与 CI 统一使用 Ruff 0.12.0。当前 `pytest --collect-only -q` 收集 **346** 项测试；新增或删除用例后应以该命令输出为准。数据层定向验证可运行：
+开发环境与 CI 统一使用 Ruff 0.12.0。当前 `pytest --collect-only -q` 收集 **374** 项测试；新增或删除用例后应以该命令输出为准。数据层定向验证可运行：
 
 ```bash
 python -m pytest tests/test_hero_manager.py tests/test_synergy_manager.py tests/test_guide_manager.py tests/test_data_facade.py -q

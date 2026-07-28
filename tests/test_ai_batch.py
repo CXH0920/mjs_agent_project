@@ -10,6 +10,8 @@ import pytest
 import src.config.env as config_env
 from src.config.env import get_api_config, get_runtime_params, parse_env_file
 from src.scraper.ai_batch import (
+    _load_existing_guides,
+    _load_existing_synergies,
     _estimate_cost,
     estimate_cost,
     load_heroes,
@@ -322,6 +324,115 @@ class TestLoadHeroes:
         """加载不存在的文件应返回空列表"""
         result = load_heroes("/nonexistent/heroes.json")
         assert result == []
+
+    def test_load_rejects_non_list_root(self, tmp_path: Path) -> None:
+        """根节点不是列表时不得进入生成流程。"""
+        path = tmp_path / "heroes.json"
+        path.write_text('{"id": 1, "name": "曹操"}', encoding="utf-8")
+
+        assert load_heroes(path) == []
+
+    def test_load_rejects_file_with_invalid_record(self, tmp_path: Path) -> None:
+        """存在非法记录时不得只加载部分武将。"""
+        path = tmp_path / "heroes.json"
+        path.write_text(
+            json.dumps([{"id": 1, "name": "曹操"}, {"id": "bad", "name": "刘备"}], ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        assert load_heroes(path) == []
+
+    def test_load_rejects_invalid_utf8(self, tmp_path: Path) -> None:
+        """编码损坏的武将文件应明确失败而不是抛出未处理异常。"""
+        path = tmp_path / "heroes.json"
+        path.write_bytes(b"\xff")
+
+        assert load_heroes(path) == []
+
+    def test_load_rejects_duplicate_ids(self, tmp_path: Path) -> None:
+        """重复 ID 会导致断点和配对歧义，因此拒绝整个输入。"""
+        path = tmp_path / "heroes.json"
+        path.write_text(
+            json.dumps([{"id": 1, "name": "曹操"}, {"id": 1, "name": "刘备"}], ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        assert load_heroes(path) == []
+
+
+class TestLoadExistingData:
+    def test_corrupted_guide_file_is_backed_up_and_reset(self, tmp_path: Path) -> None:
+        path = tmp_path / "guides.json"
+        path.write_text("{", encoding="utf-8")
+
+        assert _load_existing_guides(path) == {}
+        backups = list(tmp_path.glob("guides.corrupt-*.json"))
+        assert len(backups) == 1
+        assert backups[0].read_text(encoding="utf-8") == "{"
+        assert json.loads(path.read_text(encoding="utf-8")) == []
+
+    def test_invalid_guide_record_is_backed_up_while_valid_data_is_retained(self, tmp_path: Path) -> None:
+        path = tmp_path / "guides.json"
+        original = [
+            {"hero_id": 1, "description": "有效攻略"},
+            {"hero_id": "bad", "description": "无效攻略"},
+        ]
+        path.write_text(json.dumps(original, ensure_ascii=False), encoding="utf-8")
+
+        existing = _load_existing_guides(path)
+
+        assert existing[1]["description"] == "有效攻略"
+        backups = list(tmp_path.glob("guides.corrupt-*.json"))
+        assert len(backups) == 1
+        assert json.loads(backups[0].read_text(encoding="utf-8")) == original
+        repaired = json.loads(path.read_text(encoding="utf-8"))
+        assert len(repaired) == 1
+        assert repaired[0]["hero_id"] == 1
+
+    def test_corrupted_synergy_file_is_backed_up_and_reset(self, tmp_path: Path) -> None:
+        path = tmp_path / "synergies.json"
+        path.write_text("[", encoding="utf-8")
+
+        existing, keys = _load_existing_synergies(path)
+
+        assert existing == {}
+        assert keys == set()
+        backups = list(tmp_path.glob("synergies.corrupt-*.json"))
+        assert len(backups) == 1
+        assert backups[0].read_text(encoding="utf-8") == "["
+        assert json.loads(path.read_text(encoding="utf-8")) == []
+
+    def test_invalid_synergy_record_is_backed_up_while_valid_data_is_retained(self, tmp_path: Path) -> None:
+        path = tmp_path / "synergies.json"
+        original = [
+            {"hero_a_id": 1, "hero_b_id": 2, "score": 5},
+            {"hero_a_id": 1, "hero_b_id": 3, "score": "bad"},
+        ]
+        path.write_text(json.dumps(original, ensure_ascii=False), encoding="utf-8")
+
+        existing, keys = _load_existing_synergies(path)
+
+        assert keys == {(1, 2)}
+        assert existing[(1, 2)]["score"] == 5
+        backups = list(tmp_path.glob("synergies.corrupt-*.json"))
+        assert len(backups) == 1
+        assert json.loads(backups[0].read_text(encoding="utf-8")) == original
+        repaired = json.loads(path.read_text(encoding="utf-8"))
+        assert len(repaired) == 1
+        assert repaired[0]["hero_b_id"] == 2
+
+    def test_backup_failure_keeps_original_file(self, tmp_path: Path, monkeypatch) -> None:
+        path = tmp_path / "guides.json"
+        path.write_text("{", encoding="utf-8")
+
+        def fail_replace(_self, _target):
+            raise OSError("backup denied")
+
+        monkeypatch.setattr(Path, "replace", fail_replace)
+
+        with pytest.raises(RuntimeError, match="无法备份损坏文件"):
+            _load_existing_guides(path)
+        assert path.read_text(encoding="utf-8") == "{"
 
 
 

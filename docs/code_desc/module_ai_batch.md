@@ -196,8 +196,10 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 | `_validate_synergy(raw)` | `ai_generator.py` | Pydantic 校验相性 |
 | `estimate_cost(count, mode, model)` | `prompt_utils.py` | 按模型价格表预览 Token 和费用；未知模型不估价 |
 | `estimate_item_cost(item_count, mode, model)` | `prompt_utils.py` | 按实际 API 请求项数预览 Token 和费用，用于指定范围的相性生成 |
-| `load_heroes(path)` | `ai_utils.py` | 从 JSON 加载武将数据 |
+| `load_heroes(path)` | `ai_utils.py` | 通过 `HeroManager` 完整校验武将 JSON；任一错误均拒绝部分加载 |
 | `_save_json(path, data)` | `ai_utils.py` | 原子写入 JSON |
+
+`ai_batch.py` 的断点加载通过 `GuideManager` / `SynergyManager` 逐条校验。发现无效 JSON、错误记录或重复键时，原文件先保留为同目录 `.corrupt-时间戳.json`，随后仅将通过校验的记录原子写回；如果备份失败，任务中止且不覆盖原文件。
 
 ---
 

@@ -12,6 +12,8 @@ import logging
 import traceback
 from pathlib import Path
 
+from src.data.hero_manager import HeroManager
+
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -29,19 +31,22 @@ SYNERGY_BATCH_SAVE_INTERVAL = 10
 
 
 def load_heroes(filepath: str | Path = "") -> list[dict]:
-    """从 JSON 文件加载武将数据"""
+    """加载并完整校验武将数据，存在错误时拒绝部分加载。"""
     path = Path(filepath) if filepath else Path()
     if not path.exists():
         logger.error("武将数据文件不存在: %s", path)
         return []
-    with open(path, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            logger.error("武将数据文件损坏: %s", path)
-            return []
-    logger.info("加载 %d 个武将", len(data))
-    return data
+
+    manager = HeroManager(path)
+    issues = manager.load()
+    errors = [issue for issue in issues if issue.severity == "error"]
+    if errors:
+        logger.error("武将数据校验失败: %s (%d 项错误)", path, len(errors))
+        return []
+
+    heroes = [hero.model_dump(mode="json") for hero in manager.list_heroes()]
+    logger.info("加载 %d 个武将", len(heroes))
+    return heroes
 
 
 def _save_json(filepath: str | Path, data: list) -> None:

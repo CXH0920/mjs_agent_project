@@ -21,15 +21,17 @@ API 配置优先级（从高到低）：
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from src.config.env import (
     get_api_config,
     get_runtime_params,
 )
+from src.data.guide_manager import GuideManager
+from src.data.synergy_manager import SynergyManager
 
 from src.scraper.prompt_utils import _estimate_cost, estimate_cost
 from src.scraper.ai_utils import (
@@ -51,6 +53,30 @@ DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 
 
+def _preserve_invalid_data_file(path: Path, manager) -> Path:
+    """备份无效原文件，并将已通过校验的记录写回原路径。"""
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = path.with_name(f"{path.stem}.corrupt-{timestamp}{path.suffix}")
+    counter = 1
+    while backup_path.exists():
+        backup_path = path.with_name(f"{path.stem}.corrupt-{timestamp}-{counter}{path.suffix}")
+        counter += 1
+
+    try:
+        path.replace(backup_path)
+    except OSError as exc:
+        logger.error("无法备份损坏文件 %s: %s", path, exc)
+        raise RuntimeError(f"无法备份损坏文件: {path}") from exc
+
+    manager.save()
+    logger.warning(
+        "数据文件包含无效内容，原文件已备份为 %s，当前文件保留 %d 条有效记录",
+        backup_path,
+        len(manager.list_all()),
+    )
+    return backup_path
+
+
 def _load_existing_synergies(synergy_path: Path) -> tuple[dict, set]:
     """加载已有相性数据用于断点续传
 
@@ -59,35 +85,38 @@ def _load_existing_synergies(synergy_path: Path) -> tuple[dict, set]:
         synergy_dict: {(a_id, b_id): synergy_dict} 以排序 tuple 为 key
         existing_keys: set[(a_id, b_id)] 用于快速查找
     """
-    existing_dict = {}
-    existing_keys = set()
-    if synergy_path.exists():
-        try:
-            with open(synergy_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            for s in data:
-                key = tuple(sorted([s["hero_a_id"], s["hero_b_id"]]))
-                existing_dict[key] = s
-                existing_keys.add(key)
-            logger.info("已有 %d 对相性", len(existing_dict))
-        except (json.JSONDecodeError, ValueError):
-            logger.warning("相性文件损坏或为空 (%s)，将重新生成", synergy_path.name)
-            synergy_path.unlink(missing_ok=True)
+    if not synergy_path.exists():
+        return {}, set()
+
+    manager = SynergyManager(synergy_path)
+    issues = manager.load()
+    if any(issue.severity == "error" for issue in issues):
+        _preserve_invalid_data_file(synergy_path, manager)
+
+    existing_dict = {
+        tuple(sorted((score.hero_a_id, score.hero_b_id))): score.model_dump(mode="json")
+        for score in manager.list_synergies()
+    }
+    existing_keys = set(existing_dict)
+    logger.info("已有 %d 对相性", len(existing_dict))
     return existing_dict, existing_keys
 
 
 def _load_existing_guides(guide_path: Path) -> dict:
     """加载已有攻略数据用于断点续传"""
-    existing = {}
-    if guide_path.exists():
-        try:
-            with open(guide_path, "r", encoding="utf-8") as f:
-                for g in json.load(f):
-                    existing[g["hero_id"]] = g
-            logger.info("已有 %d 份攻略", len(existing))
-        except (json.JSONDecodeError, ValueError):
-            logger.warning("攻略文件损坏或为空 (%s)，将重新生成", guide_path.name)
-            guide_path.unlink(missing_ok=True)
+    if not guide_path.exists():
+        return {}
+
+    manager = GuideManager(guide_path)
+    issues = manager.load()
+    if any(issue.severity == "error" for issue in issues):
+        _preserve_invalid_data_file(guide_path, manager)
+
+    existing = {
+        guide.hero_id: guide.model_dump(mode="json")
+        for guide in manager.list_guides()
+    }
+    logger.info("已有 %d 份攻略", len(existing))
     return existing
 
 
