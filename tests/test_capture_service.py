@@ -56,6 +56,48 @@ def test_capture_can_skip_ocr_and_return_saved_image(monkeypatch, tmp_path) -> N
     assert not completed[0]["ocr_matched"]
 
 
+def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
+    class FakeCapture:
+        connected = True
+
+        @staticmethod
+        def screencap_full():
+            return True, Image.new("RGB", (10, 20))
+
+    service = CaptureService()
+    service.capture = FakeCapture()
+    submitted: list[dict] = []
+    monkeypatch.setattr("src.business.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr("src.business.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr(
+        service,
+        "_queue_capture_ocr",
+        lambda **kwargs: submitted.append(kwargs),
+    )
+
+    service._execute_capture(force_ocr=True)
+
+    assert submitted[0]["match_template"] is False
+    assert submitted[0]["is_poll"] is False
+
+
+def test_file_import_with_forced_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
+    service = CaptureService()
+    image_path = tmp_path / "match-guide.png"
+    Image.new("RGB", (10, 20)).save(image_path)
+    submitted: list[dict] = []
+    monkeypatch.setattr(
+        service,
+        "_queue_capture_ocr",
+        lambda **kwargs: submitted.append(kwargs),
+    )
+
+    service._execute_file_ocr(image_path, template_name="match_guide", force_ocr=True)
+
+    assert submitted[0]["match_template"] is False
+    assert submitted[0]["template_name"] == "match_guide"
+
+
 def test_capture_screenshot_reuses_and_connects_shared_session() -> None:
     class FakeCapture:
         connected = False

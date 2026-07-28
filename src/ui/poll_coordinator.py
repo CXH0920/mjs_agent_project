@@ -80,6 +80,7 @@ class PollCoordinator(QObject):
     _poll_result_received = Signal(object)
 
     POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
+    MATCH_GUIDE_MIN_RECOGNIZED_NAMES = 3
 
     def __init__(
         self,
@@ -176,10 +177,13 @@ class PollCoordinator(QObject):
                         hero_names=hero_names,
                         template_name=task_name,
                         recognize=True,
+                        fallback_on_template_miss=task_name == "match_guide",
                     )
                     task_result = self.wait_for_ocr_task(ocr_task, cancel_event)
                     if task_result is None:
                         return
+                    if task_name == "match_guide":
+                        task_result = self._validate_match_guide_result(task_result)
                     if task_result.outcome is PollOutcome.MATCHED:
                         has_match = True
                     elif task_result.outcome is PollOutcome.RETRYABLE_OCR:
@@ -216,6 +220,23 @@ class PollCoordinator(QObject):
         if cancel_event.is_set():
             return None
         return PollTaskResult.from_raw(ocr_task.result)
+
+    @classmethod
+    def _validate_match_guide_result(cls, result: PollTaskResult) -> PollTaskResult:
+        """仅在识别到足够的候选角色后触发对局攻略自动跳转。"""
+        if result.outcome is not PollOutcome.MATCHED:
+            return result
+        recognized_count = sum(
+            bool(str(item.get("name", "")).strip())
+            for item in result.ocr_results
+        )
+        if recognized_count >= cls.MATCH_GUIDE_MIN_RECOGNIZED_NAMES:
+            return result
+        return PollTaskResult(
+            PollOutcome.HEALTHY_NO_MATCH,
+            f"对局攻略候选角色不足: {recognized_count}/{cls.MATCH_GUIDE_MIN_RECOGNIZED_NAMES}",
+            result.ocr_results,
+        )
 
     def _consume_poll_result(self, result: PollResult | dict) -> None:
         """丢弃过期结果，完成轮询状态迁移后再通知界面。"""

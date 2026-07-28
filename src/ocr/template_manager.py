@@ -24,6 +24,7 @@ DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
 DEFAULT_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "wujiang_select.png"
 MATCH_GUIDE_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "match_guide" / "template.png"
 DEFAULT_REFERENCE_SIZE = (2560, 1440)
+_LOCAL_SEARCH_PADDING_RATIO = 0.2
 
 
 class TemplateManager:
@@ -44,7 +45,10 @@ class TemplateManager:
         self.template_name = template_name
         self._template: np.ndarray | None = None  # 灰度模板图像
         self._reference_size = DEFAULT_REFERENCE_SIZE
+        self._template_roi: tuple[int, int, int, int] | None = None
         self._last_match_scale = 1.0
+        self._last_match_confidence = 0.0
+        self._last_match_strategy = "unmatched"
         logger.debug("TemplateManager 初始化, 模板路径: %s", self._template_path)
         self._load()
 
@@ -62,6 +66,18 @@ class TemplateManager:
     def reference_size(self) -> tuple[int, int]:
         """返回制作模板时的截图尺寸。旧模板使用默认参考尺寸。"""
         return self._reference_size
+
+    @property
+    def last_match_scale(self) -> float:
+        return self._last_match_scale
+
+    @property
+    def last_match_confidence(self) -> float:
+        return self._last_match_confidence
+
+    @property
+    def last_match_strategy(self) -> str:
+        return self._last_match_strategy
 
     # ── 加载 ──────────────────────────────────────────────────────────
 
@@ -96,6 +112,7 @@ class TemplateManager:
     def _load_metadata(self) -> None:
         """加载模板参考尺寸；缺少元数据时兼容旧模板。"""
         self._reference_size = DEFAULT_REFERENCE_SIZE
+        self._template_roi = None
         if not self._metadata_path.exists():
             return
         try:
@@ -105,6 +122,11 @@ class TemplateManager:
             height = int(metadata["reference_height"])
             if width > 0 and height > 0:
                 self._reference_size = (width, height)
+            if all(key in metadata for key in ("x", "y", "w", "h")):
+                roi_values = tuple(int(metadata[key]) for key in ("x", "y", "w", "h"))
+                x, y, roi_width, roi_height = roi_values
+                if x >= 0 and y >= 0 and roi_width > 0 and roi_height > 0 and x + roi_width <= width and y + roi_height <= height:
+                    self._template_roi = roi_values
         except (OSError, ValueError, TypeError, KeyError) as exc:
             logger.warning("模板元数据读取失败，使用默认参考尺寸: %s", exc)
 
@@ -150,11 +172,16 @@ class TemplateManager:
         # 加载到内存
         self._template = gray
         self._reference_size = (img_w, img_h)
+        self._template_roi = (x, y, w, h)
         try:
             with self._metadata_path.open("w", encoding="utf-8", newline="\n") as file:
                 json.dump({
                     "reference_width": img_w,
                     "reference_height": img_h,
+                    "x": x,
+                    "y": y,
+                    "w": w,
+                    "h": h,
                 }, file, ensure_ascii=False, indent=2)
                 file.write("\n")
         except OSError as exc:
@@ -188,39 +215,94 @@ class TemplateManager:
 
         try:
             self._last_match_scale = 1.0
+            self._last_match_confidence = 0.0
+            self._last_match_strategy = "unmatched"
             reference_width, reference_height = self._reference_size
             base_scale = min(
                 gray.shape[1] / reference_width,
                 gray.shape[0] / reference_height,
             )
-            scales = [base_scale * factor for factor in (0.85, 0.925, 1.0, 1.075, 1.15)]
-            scales.append(1.0)
-            best_value = -1.0
-            best_scale = 1.0
-            for scale in sorted({round(value, 4) for value in scales if value > 0}):
-                width = max(1, round(self._template.shape[1] * scale))
-                height = max(1, round(self._template.shape[0] * scale))
-                if width > gray.shape[1] or height > gray.shape[0]:
-                    continue
-                template = cv2.resize(self._template, (width, height), interpolation=cv2.INTER_AREA)
-                result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(result)
-                if max_val > best_value:
-                    best_value = max_val
+            scales = self._candidate_scales(base_scale)
+            local_region = self._local_search_region(gray, base_scale)
+            base_value = self._match_at_scale(gray, base_scale, local_region)
+            base_strategy = "base_local" if local_region is not None else "base_full"
+            if base_value is not None and base_value >= threshold:
+                self._set_match_details(base_value, base_scale, base_strategy)
+                logger.debug(
+                    "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=%s, 匹配",
+                    base_value, base_scale, threshold, base_strategy,
+                )
+                return True, float(base_value)
+
+            best_value = base_value if base_value is not None else -1.0
+            best_scale = base_scale
+            fallback_scales = scales if local_region is not None else [
+                scale for scale in scales if scale != round(base_scale, 4)
+            ]
+            for scale in fallback_scales:
+                value = self._match_at_scale(gray, scale)
+                if value is not None and value > best_value:
+                    best_value = value
                     best_scale = scale
             if best_value < 0:
                 logger.debug("所有模板缩放比例均大于当前截图，跳过匹配")
                 return False, 0.0
-            self._last_match_scale = best_scale
-            max_val = best_value
-            matched = bool(max_val >= threshold)
-            logger.debug("模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, %s",
-                         max_val, best_scale, threshold, "匹配" if matched else "不匹配")
-            return matched, float(max_val)
+            fallback_strategy = "fallback_full_multiscale" if local_region is not None else "fallback_multiscale"
+            self._set_match_details(best_value, best_scale, fallback_strategy)
+            matched = bool(best_value >= threshold)
+            logger.debug(
+                "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=%s, %s",
+                best_value, best_scale, threshold, fallback_strategy, "匹配" if matched else "不匹配",
+            )
+            return matched, float(best_value)
         except Exception as e:
             logger.error("模板匹配异常: %s", e)
             logger.debug(traceback.format_exc())
             return False, 0.0
+
+    @staticmethod
+    def _candidate_scales(base_scale: float) -> list[float]:
+        values = [base_scale * factor for factor in (0.85, 0.925, 1.0, 1.075, 1.15)]
+        values.append(1.0)
+        return sorted({round(value, 4) for value in values if value > 0})
+
+    def _local_search_region(self, gray: np.ndarray, base_scale: float) -> np.ndarray | None:
+        if self._template_roi is None:
+            return None
+        x, y, width, height = self._template_roi
+        expected_x = round(x * base_scale)
+        expected_y = round(y * base_scale)
+        expected_width = max(1, round(width * base_scale))
+        expected_height = max(1, round(height * base_scale))
+        padding_x = max(1, round(expected_width * _LOCAL_SEARCH_PADDING_RATIO))
+        padding_y = max(1, round(expected_height * _LOCAL_SEARCH_PADDING_RATIO))
+        left = max(0, expected_x - padding_x)
+        top = max(0, expected_y - padding_y)
+        right = min(gray.shape[1], expected_x + expected_width + padding_x)
+        bottom = min(gray.shape[0], expected_y + expected_height + padding_y)
+        region = gray[top:bottom, left:right]
+        return region if region.size else None
+
+    def _match_at_scale(
+        self,
+        gray: np.ndarray,
+        scale: float,
+        region: np.ndarray | None = None,
+    ) -> float | None:
+        width = max(1, round(self._template.shape[1] * scale))
+        height = max(1, round(self._template.shape[0] * scale))
+        search_image = region if region is not None else gray
+        if width > search_image.shape[1] or height > search_image.shape[0]:
+            return None
+        template = cv2.resize(self._template, (width, height), interpolation=cv2.INTER_AREA)
+        result = cv2.matchTemplate(search_image, template, cv2.TM_CCOEFF_NORMED)
+        _, max_value, _, _ = cv2.minMaxLoc(result)
+        return float(max_value)
+
+    def _set_match_details(self, confidence: float, scale: float, strategy: str) -> None:
+        self._last_match_confidence = confidence
+        self._last_match_scale = scale
+        self._last_match_strategy = strategy
 
     # ── 删除 ──────────────────────────────────────────────────────────
 
@@ -228,7 +310,10 @@ class TemplateManager:
         """删除模板文件。"""
         self._template = None
         self._reference_size = DEFAULT_REFERENCE_SIZE
+        self._template_roi = None
         self._last_match_scale = 1.0
+        self._last_match_confidence = 0.0
+        self._last_match_strategy = "unmatched"
         if self._template_path.exists():
             try:
                 self._template_path.unlink()

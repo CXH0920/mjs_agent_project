@@ -203,6 +203,7 @@ class CaptureService(QObject):
                 save_path=str(file_path),
                 hero_names=hero_names,
                 template_name=template_name,
+                match_template=not force_ocr,
             )
             return
 
@@ -291,6 +292,7 @@ class CaptureService(QObject):
                     hero_names=hero_names,
                     template_name=template_name,
                     is_poll=is_poll,
+                    match_template=not force_ocr,
                 )
                 return
 
@@ -315,6 +317,10 @@ class CaptureService(QObject):
         """在 GUI 线程中初始化 OCR worker，供应用启动阶段调用。"""
         self._ensure_ocr_worker()
 
+    def warmup_ocr_model(self) -> None:
+        """在 OCR worker 中预加载模型，避免首次识别承担初始化延迟。"""
+        self._ensure_ocr_worker().warmup_model()
+
     def submit_ocr_task(
         self,
         image,
@@ -323,6 +329,7 @@ class CaptureService(QObject):
         recognize: bool = True,
         rois: list[list[int]] | None = None,
         match_template: bool = True,
+        fallback_on_template_miss: bool = False,
     ) -> OcrTask:
         """将模板匹配和 OCR 加入唯一 worker 队列。"""
         config = self.config
@@ -349,6 +356,7 @@ class CaptureService(QObject):
             roi_layout=layout,
             recognize=recognize,
             match_template=match_template,
+            fallback_on_template_miss=fallback_on_template_miss,
         )
         self._ensure_ocr_worker().submit(task)
         return task
@@ -361,8 +369,14 @@ class CaptureService(QObject):
         hero_names: list[str] | None,
         template_name: str,
         is_poll: bool = False,
+        match_template: bool = True,
     ) -> None:
-        task = self.submit_ocr_task(image, hero_names, template_name)
+        task = self.submit_ocr_task(
+            image,
+            hero_names,
+            template_name,
+            match_template=match_template,
+        )
         self._pending_ocr_captures[task.task_id] = {
             "image": image,
             "save_path": save_path,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.ui.poll_coordinator import PollCoordinator, PollOutcome, PollResult
+from src.ui.poll_coordinator import PollCoordinator, PollOutcome, PollResult, PollTaskResult
 
 
 class _Signal:
@@ -84,3 +84,17 @@ def test_consume_result_discards_stale_result_and_notifies_after_completion() ->
     assert ocr_service.completed == [(4, "retryable_connection", "设备离线")]
     assert capture_service.connection_failures == [(capture, "设备离线")]
     assert received == [PollResult(4, PollOutcome.RETRYABLE_CONNECTION, "设备离线", capture)]
+
+
+def test_match_guide_requires_three_recognized_names_before_navigation() -> None:
+    insufficient = PollCoordinator._validate_match_guide_result(PollTaskResult(
+        PollOutcome.MATCHED,
+        ocr_results=[{"name": "曹操"}, {"name": "张辽"}],
+    ))
+    sufficient = PollCoordinator._validate_match_guide_result(PollTaskResult(
+        PollOutcome.MATCHED,
+        ocr_results=[{"name": "曹操"}, {"name": "张辽"}, {"name": "郭嘉"}],
+    ))
+
+    assert insufficient.outcome is PollOutcome.HEALTHY_NO_MATCH
+    assert sufficient.outcome is PollOutcome.MATCHED

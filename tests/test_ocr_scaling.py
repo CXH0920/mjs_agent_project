@@ -22,6 +22,24 @@ def test_template_matches_scaled_screenshot(tmp_path) -> None:
 
     assert matched
     assert confidence >= 0.8
+    assert manager.last_match_strategy == "base_local"
+    assert manager.last_match_scale == 0.5
+
+
+def test_template_falls_back_to_full_search_when_local_region_misses(tmp_path) -> None:
+    source = np.zeros((144, 256, 3), dtype=np.uint8)
+    rng = np.random.default_rng(7)
+    source[40:80, 90:150] = rng.integers(0, 256, (40, 60, 3), dtype=np.uint8)
+    manager = TemplateManager(tmp_path / "template.png")
+    manager.set_template(source, (90, 40, 60, 40))
+
+    moved = np.zeros_like(source)
+    moved[80:120, 180:240] = source[40:80, 90:150]
+    matched, confidence = manager.match(moved, threshold=0.8)
+
+    assert matched
+    assert confidence >= 0.8
+    assert manager.last_match_strategy == "fallback_full_multiscale"
 
 
 def test_general_recognizer_scales_rois_to_current_image(monkeypatch) -> None:

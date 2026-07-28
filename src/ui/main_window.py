@@ -174,6 +174,8 @@ class MainWindow(QMainWindow):
     def _on_capture_connection_changed(self, state: str, detail: str = "") -> None:
         """同步 ADB 状态，并确保轮询只在设备已连接时运行。"""
         self._update_emulator_status(state, detail)
+        if state == "connected":
+            self._capture_service.warmup_ocr_model()
         self._poll_coordinator.sync_with_connection()
 
     def _on_poll_result(self, result: PollResult | dict) -> None:

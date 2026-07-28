@@ -170,11 +170,13 @@ class AdbCapture:
 
         for attempt in range(1, _SCREENSHOT_RETRIES + 1):
             try:
+                command_started = time.perf_counter()
                 result = subprocess.run(
                     [self._adb_path, "-s", self._device_serial, "exec-out", "screencap", "-p"],
                     capture_output=True,
                     timeout=_ADB_TIMEOUT,
                 )
+                command_elapsed_ms = (time.perf_counter() - command_started) * 1000
             except FileNotFoundError:
                 return False, f"找不到 adb: {self._adb_path}"
             except subprocess.TimeoutExpired:
@@ -195,10 +197,17 @@ class AdbCapture:
                 error = "截图返回空数据"
             else:
                 try:
+                    decode_started = time.perf_counter()
                     image = Image.open(io.BytesIO(result.stdout))
                     image.load()
                     if log_success:
-                        logger.info("截图成功: %s x %s", image.width, image.height)
+                        logger.info(
+                            "截图成功: %s x %s，ADB命令=%.1fms，PNG解码=%.1fms",
+                            image.width,
+                            image.height,
+                            command_elapsed_ms,
+                            (time.perf_counter() - decode_started) * 1000,
+                        )
                     return True, image
                 except Exception as e:
                     error = f"解析截图图像失败: {e}"

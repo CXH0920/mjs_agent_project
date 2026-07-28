@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +59,7 @@ class GeneralRecognizer:
         self._ocr = None  # PaddleOCR 引擎（延迟加载）
         self._preprocessor = preprocessor or ImagePreprocessor()
         self._similarity_service = similarity_service or CharacterSimilarityService()
+        self._timing_ms: dict[str, float] = {}
 
     # ── OCR 引擎 ──────────────────────────────────────────────────────
 
@@ -67,9 +69,12 @@ class GeneralRecognizer:
         if self._ocr is None:
             logger.info("首次调用，正在加载 PaddleOCR 模型...")
             try:
+                started = time.perf_counter()
                 from paddleocr import PaddleOCR
                 self._ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
-                logger.info("PaddleOCR 模型加载完成")
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                self._timing_ms["model_load"] = self._timing_ms.get("model_load", 0.0) + elapsed_ms
+                logger.info("PaddleOCR 模型加载完成，耗时 %.1fms", elapsed_ms)
             except Exception as e:
                 logger.error("PaddleOCR 模型加载失败: %s", e)
                 logger.debug(traceback.format_exc())
@@ -83,6 +88,11 @@ class GeneralRecognizer:
         _ = self._engine
         self._similarity_service.warmup()
 
+    @property
+    def timing_ms(self) -> dict[str, float]:
+        """返回最近一次识别各阶段的累计耗时（毫秒）。"""
+        return dict(self._timing_ms)
+
     # ── 识别 ──────────────────────────────────────────────────────────
 
     def recognize(self, image: np.ndarray | Image.Image) -> list[dict]:
@@ -94,6 +104,7 @@ class GeneralRecognizer:
         Returns:
             [{index: int, name: str, confidence: float}, ...]
         """
+        self._timing_ms = {}
         if isinstance(image, Image.Image):
             image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
@@ -176,8 +187,13 @@ class GeneralRecognizer:
     def _recognize_single(self, roi: np.ndarray, slot: int) -> tuple[str, float]:
         """识别单个武将名称区域。"""
         try:
+            preprocess_started = time.perf_counter()
             prepared = self._preprocessor.preprocess_roi(roi)
-            result = self._engine.ocr(prepared, cls=False)
+            self._add_timing("name_preprocess", preprocess_started)
+            engine = self._engine
+            ocr_started = time.perf_counter()
+            result = engine.ocr(prepared, cls=False)
+            self._add_timing("name_ocr", ocr_started)
             text, conf = self._extract_text(result)
             logger.info(
                 "武将 %d OCR 原始结果: text=%r, confidence=%.4f",
@@ -189,7 +205,9 @@ class GeneralRecognizer:
 
             # 第二段矫正：存在词表候选时优先采用，避免高置信度形近字漏纠正。
             if self._hero_names:
+                correction_started = time.perf_counter()
                 corrected = self._similarity_service.correct_hero_name(text, self._hero_names)
+                self._add_timing("name_correction", correction_started)
                 if corrected != text:
                     logger.debug("武将 %d: 矫正 %s → %s", slot, text, corrected)
                     return corrected, conf
@@ -207,7 +225,13 @@ class GeneralRecognizer:
     def _recognize_team(self, roi: np.ndarray, slot: int) -> str:
         """识别角色右上角的【楚军】或【汉军】标记。"""
         try:
-            text, _ = self._extract_text(self._engine.ocr(self._preprocessor.preprocess_roi(roi), cls=False))
+            preprocess_started = time.perf_counter()
+            prepared = self._preprocessor.preprocess_roi(roi)
+            self._add_timing("team_preprocess", preprocess_started)
+            engine = self._engine
+            ocr_started = time.perf_counter()
+            text, _ = self._extract_text(engine.ocr(prepared, cls=False))
+            self._add_timing("team_ocr", ocr_started)
         except Exception as exc:
             logger.warning("武将 %d 阵营标签识别异常: %s", slot, exc)
             return ""
@@ -218,6 +242,9 @@ class GeneralRecognizer:
             return "汉军"
         logger.info("武将 %d 阵营标签未识别: %r", slot, text)
         return ""
+
+    def _add_timing(self, key: str, started: float) -> None:
+        self._timing_ms[key] = self._timing_ms.get(key, 0.0) + (time.perf_counter() - started) * 1000
 
     # ── 图像预处理 ────────────────────────────────────────────────────
 

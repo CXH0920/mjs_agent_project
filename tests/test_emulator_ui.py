@@ -7,6 +7,7 @@ import threading
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel, QTabWidget, QTextBrowser
 
 from src.business.capture_service import CaptureService
@@ -89,6 +90,29 @@ def test_match_guide_panel_starts_in_empty_state() -> None:
     assert not panel._empty_state.isHidden()
     panel.load_from_ocr([{"index": 1, "name": "测试武将"}])
     assert panel._cards[0]._hero_id == 1
+
+
+def test_match_guide_empty_state_matches_recommendation_actions() -> None:
+    app = _app()
+    recommendation = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+    guide = MatchGuidePanel(_hero_manager())
+
+    assert guide._recognize_btn.styleSheet() == recommendation._recognize_btn.styleSheet()
+    assert guide._import_file_btn.styleSheet() == recommendation._import_file_btn.styleSheet()
+    assert guide._empty_recognize_btn.styleSheet() == recommendation._empty_recognize_btn.styleSheet()
+    assert guide._empty_import_btn.styleSheet() == recommendation._empty_import_file_btn.styleSheet()
+    assert guide._empty_state.layout().alignment() == Qt.AlignmentFlag.AlignCenter
+    assert recommendation._empty_state.layout().alignment() == Qt.AlignmentFlag.AlignCenter
+
+    for panel in (recommendation, guide):
+        panel.resize(1200, 800)
+        panel.show()
+    app.processEvents()
+
+    assert guide._empty_recognize_btn.geometry() == recommendation._empty_recognize_btn.geometry()
+    assert guide._empty_import_btn.geometry() == recommendation._empty_import_file_btn.geometry()
+    recommendation.hide()
+    guide.hide()
 
 
 def test_match_guide_current_recognition_requests_ocr(monkeypatch) -> None:
@@ -342,14 +366,23 @@ def test_poll_stays_stopped_until_emulator_is_connected() -> None:
         def sync_with_connection(self) -> None:
             self.sync_count += 1
 
+    class CaptureService:
+        def __init__(self) -> None:
+            self.warmup_count = 0
+
+        def warmup_ocr_model(self) -> None:
+            self.warmup_count += 1
+
     window = MainWindow.__new__(MainWindow)
     window._poll_coordinator = Coordinator()
+    window._capture_service = CaptureService()
     window._update_emulator_status = lambda state, detail="": None
 
     window._on_capture_connection_changed("disconnected")
     window._on_capture_connection_changed("connected", "127.0.0.1:16448")
 
     assert window._poll_coordinator.sync_count == 2
+    assert window._capture_service.warmup_count == 1
 
 
 def test_poll_match_does_not_switch_tab_by_default() -> None:
