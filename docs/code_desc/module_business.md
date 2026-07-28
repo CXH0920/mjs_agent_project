@@ -32,7 +32,7 @@ src/business/
 ├── capture_service.py           # 截图业务编排（ADB 截图 + OCR 调度）
 ├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
 ├── ocr_service.py               # OCR 控制服务（模板管理 + 轮询）
-├── official_data_import_service.py # 官方榜单行分割、单元格 OCR 与 CSV 输出
+├── official_data_import_service.py # 官方榜单 OCR、姓名复核与 CSV 导入编排
 ├── recommendation_service.py       # 推荐页胜率/指数快照与排名组装
 └── fetch_utils.py               # QProcess 公共工具函数
 ```
@@ -146,14 +146,13 @@ MumuConfigDialog
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。目标是用表格横线确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
+该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务保留 PaddleOCR 生命周期、姓名纠错、复核记录、进度编排与 CSV 持久化。目标仍是用表格横线确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
 
 ```
 OfficialDataImportDialog
   -> OfficialDataImportWorker.run()
      -> import_file()（按已选图片顺序串行执行）
-           -> OpenCV HoughLinesP 检测横线
-           -> 按列比例裁剪每个单元格
+           -> official_board_parser 读取图片、检测横线并按列比例裁剪单元格
            -> 简体 PaddleOCR；名称歧义时按需使用繁体模型 + 武将词表校正 / 胜率数字模板识别
            -> 原子覆盖 CSV + 写入待复核 CSV/行截图
 ```
@@ -181,8 +180,10 @@ OfficialDataImportDialog
 **关键实现：**
 
 ```python
-boundaries = self._find_data_boundaries(panel, image.shape[0], layout, panel_index)
-boundaries, repaired_ranks = self._restore_missing_boundaries(boundaries)
+boundaries = official_board_parser.find_data_boundaries(
+    panel, image.shape[0], layout, panel_index,
+)
+boundaries, repaired_ranks = official_board_parser.restore_missing_boundaries(boundaries)
 for top, bottom in zip(boundaries, boundaries[1:]):
     expected_rank = len(batch["records"]) + 1
     fields = self._recognize_row(row, columns, column_breaks)
@@ -257,6 +258,7 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `src.scraper.*` | 构建 CLI 参数调用爬虫/AI 脚本 |
 | 依赖 | `src.capture.adb_screen` | CaptureService 持有 AdbCapture 实例 |
 | 依赖 | `src.ocr.*` | OCR 控制服务管理模板和识别器 |
+| 依赖 | `src.ocr.official_board_parser` | 官方榜单图片读取、固定版式切分、横线恢复和胜率数字模板算法 |
 | 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存 |
 | 依赖 | `src.data.recommendation_index_repository` | 提供推荐指数 CSV 的手动重建接口 |

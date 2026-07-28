@@ -150,7 +150,7 @@ RecommendationPanel.update_recommendations()
 | `RecommendationPanel._load_real_synergies()` | 相性伙伴 ID→Hero 对象 |
 | `RecommendationPanel._show_guide_popup()` | 弹出攻略时获取 Hero |
 | `HeroDetailPanel.show_hero()` | 点击列表项展示详情 |
-| `HeroDetailPanel._update_guide_tab()` | 渲染攻略中的克制/搭配名 |
+| `HeroGuideSummaryView.show_guide()` | 渲染攻略中的搭配武将名 |
 | `GuideDetailDialog.__init__()` | 弹出攻略详情时获取伙伴名 |
 
 ### 2.3 模糊搜索

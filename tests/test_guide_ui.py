@@ -16,6 +16,7 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.hero_browser import HeroDetailPanel, HeroListPanel
+from src.ui.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.checkable_combo import CheckableComboBox
 from src.ui.fetch_dialog import HeroFetchDialog
 from src.ui.guide_fetch_dialog import GuideFetchDialog
@@ -67,7 +68,7 @@ def test_guide_panel_renders_matchup_types_and_clickable_synergy_tags(tmp_path: 
     assert panel._identity_name.text() == "曹操"
     assert isinstance(panel._identity_bar.layout(), QHBoxLayout)
     assert "background: transparent" in panel._identity_name.styleSheet()
-    assert "资料更新：2026-07-26" in panel._basic_info.text()
+    assert "资料更新：2026-07-26" in panel.findChild(QLabel, "heroBasicInfo").text()
     assert "需谨慎的对手类型" in labels
     assert "优先保留闪避" in labels
     assert any(button.text() == "阅读完整攻略" for button in panel.findChildren(QPushButton))
@@ -290,15 +291,24 @@ def test_skill_cards_are_hidden_before_deferred_deletion(tmp_path: Path) -> None
     panel = HeroDetailPanel(hero_manager, guide_manager, SynergyManager(tmp_path / "synergies.json"))
 
     panel.show_hero(1)
-    old_cards = [
-        panel._skills_layout.itemAt(index).widget()
-        for index in range(panel._skills_layout.count())
-        if isinstance(panel._skills_layout.itemAt(index).widget(), QFrame)
-    ]
+    old_cards = panel.findChildren(QFrame, "heroSkillCard")
     panel.show_hero(2)
 
     assert old_cards
     assert all(card.isHidden() for card in old_cards)
+
+
+def test_hero_detail_panel_uses_dedicated_tab_views(tmp_path: Path) -> None:
+    _app()
+    panel = HeroDetailPanel(
+        HeroManager(tmp_path / "heroes.json"),
+        GuideManager(tmp_path / "guides.json"),
+        SynergyManager(tmp_path / "synergies.json"),
+    )
+
+    assert isinstance(panel._detail_tabs.widget(0), HeroInfoView)
+    assert isinstance(panel._detail_tabs.widget(1), HeroGuideSummaryView)
+    assert isinstance(panel._detail_tabs.widget(2), HeroSynergyView)
 
 
 def test_extracted_recommendation_card_keeps_panel_import_compatibility() -> None:

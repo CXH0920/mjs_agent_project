@@ -391,5 +391,7 @@ src.ui.mumu_config_dialog
 | `GeneralRecognizer.warmup()` | `recognizer.py` | 显式预热工具/测试（当前启动不调用） | `self._engine`、`CharacterSimilarityService.warmup()` |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
+| `official_board_parser.find_data_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | OpenCV 横线检测与视觉行边界选择 |
+| `official_board_parser.prepare_rate_templates()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 行切分、数字字形模板与胜率 OCR 预计算 |
 | `CharacterSimilarityService.correct_hero_name()` | `character_similarity.py` | `GeneralRecognizer`、官方榜单导入 | 编辑距离、视觉评分 |
 | `CharacterFeatureRepository.get_feature()` | `character_feature_repository.py` | `CharacterSimilarityService` | 缓存加载、动态补齐 |

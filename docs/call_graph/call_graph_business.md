@@ -381,13 +381,14 @@ MainWindow._open_official_data_import()
         -> [QThread] OfficialDataImportWorker.run()
           -> 对每个已选文件 emit progress_changed(status, 0, 0)
           -> OfficialDataImportService.import_file(key, path, progress_callback, status_callback)
-            -> _read_image() -> cv2.imdecode()
-            -> _extract_panels() -> 固定版式裁出左右表
-            -> _find_data_boundaries() -> HoughLinesP 横线 -> 行边界
+            -> official_board_parser.read_image() -> cv2.imdecode()
+            -> official_board_parser.extract_panels() -> 固定版式裁出左右表
+            -> official_board_parser.find_data_boundaries() -> HoughLinesP 横线 -> 行边界
+            -> official_board_parser.restore_missing_boundaries() -> 补回漏检横线
             -> 计算 total_steps（胜率表：模板准备 + 行识别；其余表：行识别）
             -> progress_callback(0, total_steps)
-            -> [每个面板] _prepare_rate_templates()（仅胜率表）
-               -> _build_rank_digit_templates()
+            -> [每个面板] official_board_parser.prepare_rate_templates()（仅胜率表）
+               -> build_rank_digit_templates()
                -> _recognize_cell() -> 每行完成后推进进度
             -> [每行] _recognize_row()
                -> 排名/普通单元格: _recognize_cell()
@@ -395,7 +396,7 @@ MainWindow._open_official_data_import()
                   -> [同首字无法唯一确认] _rare_char_engine（懒加载 chinese_cht）
                   -> _recognize_name_with_engine() -> 词表校正 -> [精确命中才采用]
                   -> status_callback("正在执行罕见字兜底识别")
-               -> 胜率单元格: 预计算 OCR + _recognize_rate_with_templates()
+               -> 胜率单元格: 预计算 OCR + official_board_parser.recognize_rate_with_templates()
             -> _review_reasons() -> 必要时 _save_review_crop()
             -> _write_csv() -> 临时文件 replace 正式 CSV
             -> [胜率 CSV] clear_win_rate_cache()
@@ -427,7 +428,8 @@ _recognize_name_cell(cell)
 | 函数/信号 | 调用方 | 关键下游 | 说明 |
 |---|---|---|---|
 | `OfficialDataImportWorker.run()` | `OfficialDataImportDialog._start_import()` | `import_file()`、`progress_changed`、`completed/failed` | 同线程内顺序处理一张或两张图片 |
-| `import_file()` | Worker | 图像读取、行检测、识别、CSV 原子写入 | 一张图片可产出一个或两个 CSV |
+| `import_file()` | Worker | `official_board_parser`、OCR、复核、CSV 原子写入 | 一张图片可产出一个或两个 CSV |
+| `official_board_parser.*` | `import_file()` | OpenCV、确定性图像与数字模板算法 | 不持有 OCR 模型、词表或输出状态 |
 | `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、繁体罕见字兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
 | `_review_reasons()` | `import_file()` | `_save_review_crop()` | 单字、低置信度、胜率失败或排名不一致进入复核 |
 | `progress_changed(status, current, total)` | Worker | `OfficialDataImportDialog._on_progress_changed()` | 先不定进度，行数确定后显示精确进度；`current < 0` 仅更新罕见字状态 |

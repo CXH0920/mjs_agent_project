@@ -38,7 +38,7 @@
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
-| 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> OpenCV 行分割 + 候选汇总/逐字/繁体罕见字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
+| 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> `official_board_parser` 行分割/数字模板 + 候选汇总/逐字/繁体罕见字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 
@@ -406,7 +406,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
 | MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
 | OcrService | `ocr_service.py` | ~355 | QObject | 3 |
-| OfficialDataImportService / Worker | `official_data_import_service.py` | ~500 | 普通类 / QThread | 3（Worker） |
+| OfficialDataImportService / Worker | `official_data_import_service.py` | ~500 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py` |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
@@ -552,16 +552,16 @@ class OcrService(QObject):
 
 ### 3.7 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方图片，独立于 ADB、页面模板匹配和通用 `OcrWorker` 队列。`OfficialDataImportWorker` 在一个 QThread 中按用户选择顺序处理 2v2 和武将放逐图片；同一任务内不并发争用其 PaddleOCR 实例。
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和通用 `OcrWorker` 队列。图片读取、固定版式切分、横线恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留 OCR 模型、姓名纠错、复核、进度与 CSV 输出。`OfficialDataImportWorker` 在一个 QThread 中按用户选择顺序处理 2v2 和武将放逐图片；同一任务内不并发争用其 PaddleOCR 实例。
 
 ```
 OfficialDataImportDialog._start_import()
   -> OfficialDataImportWorker.run()
     -> emit progress_changed(status, 0, 0)                 # 读取与行检测阶段
     -> OfficialDataImportService.import_file(key, path, callback)
-      -> _read_image() -> _extract_panels()
-      -> _find_data_boundaries() -> HoughLinesP 横线 -> _restore_missing_boundaries() -> 视觉行序
-      -> _prepare_rate_templates()（仅 2v2 胜率表）
+      -> official_board_parser.read_image() -> extract_panels()
+      -> find_data_boundaries() -> HoughLinesP 横线 -> restore_missing_boundaries() -> 视觉行序
+      -> prepare_rate_templates()（仅 2v2 胜率表）
       -> _recognize_row() -> 名称/胜率识别（名称歧义按需繁体兜底） -> _review_reasons()
       -> _write_csv() -> Path.replace() 原子覆盖
       -> [胜率] clear_win_rate_cache()
@@ -701,13 +701,15 @@ def apply_incremental_update(data_dir, update)
 | main_window.py | 684 | QMainWindow（顶层装配、菜单与界面绑定） |
 | poll_coordinator.py | 241 | QObject（轮询编排、后台任务与结果状态迁移） |
 | ai_generation_workflow.py | 246 | QObject（攻略与相性 UI 工作流） |
-| hero_browser.py | 1075 | QWidget（浏览列表、详情渲染和协调） |
+| hero_browser.py | 605 | QWidget（浏览列表、详情状态和编辑协调） |
+| hero_detail_views.py | 473 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
 | hero_edit_dialog.py | 87 | QDialog（武将编辑） |
 | guide_edit_dialog.py | 120 | QDialog（攻略编辑） |
 | hero_relation_select_dialog.py | 129 | QDialog（攻略关系武将多选） |
 | synergy_edit_dialog.py | 96 | QDialog（相性编辑） |
 | recommendation_panel.py | 903 | QWidget（Tab 内嵌） |
-| mumu_config_dialog.py | 801 | QDialog（模拟器配置 UI 协调） |
+| mumu_config_dialog.py | 750 | QDialog（模拟器配置状态与操作协调） |
+| mumu_config_sections.py | 297 | QGroupBox（设备、模板和 OCR 参数视图） |
 | hero_select_dialog.py | 267 | QDialog（基类） |
 | settings_dialog.py | 305 | QDialog（API 配置） |
 | roi_selector.py | 149 | QDialog（框选模板区域） |
@@ -761,7 +763,7 @@ MainWindow.__init__
 
 位于 配置 → 模拟器配置，与 SettingsDialog 同级菜单入口。
 
-`MumuConfigCoordinator` 持有配置草稿、设备列表、共享会话状态，以及模板和 ROI 布局截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`MumuConfigDialog` 只负责表单渲染、文件选择、ROI 框选及用户提示；关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
+`MumuConfigCoordinator` 持有配置草稿、设备列表、共享会话状态，以及模板和 ROI 布局截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 分别构建设备、模板、识别参数控件并发出操作信号；`MumuConfigDialog` 负责组装、状态协调、文件选择、ROI 框选及用户提示。关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
 
 **功能分区**：
 
@@ -883,15 +885,15 @@ HeroBrowser (QWidget)
  │   ├── Signal: hero_selected(int)
  └── HeroDetailPanel（右, 720px）
      ├── 固定身份条（单行名称、势力、定位、体力、手牌摘要）
-     ├── Tab 1「武将信息」
+     ├── Tab 1「武将信息」→ HeroInfoView
      │   ├── QLabel (HTML 渲染基本信息与资料更新时间)
      │   └── QScrollArea (技能列表)
-     └── Tab 2「攻略指南」
+     └── Tab 2「攻略指南」→ HeroGuideSummaryView
          ├── QScrollArea（统一滚动容器）
          ├── 核心建议（核心要点与应对）
          ├── 新手提醒与流式关系标签
          └── [阅读完整攻略] → GuideDetailDialog
-     └── Tab 3「武将相性」
+     └── Tab 3「武将相性」→ HeroSynergyView
          ├── 搭档名称/评级筛选与相性表格
          ├── 双击说明列打开 Markdown 预览
          └── 修改/删除写入 SynergyManager 并通知推荐页刷新
@@ -915,9 +917,9 @@ HeroDetailPanel._on_synergy_edit()
   -> DataMutationService.update_synergy() -> 创建备份 -> SynergyManager.save()
 ```
 
-`hero_browser.py` 只保留对话框、局部刷新和 `data_changed` 通知；所有编辑、删除写入均交给 `DataMutationService` 统一创建快照、备份与保存。四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。这种拆分不改变编辑按钮、信号或 Manager 的持久化契约，调用方仍通过公开类名创建对话框。
+`hero_browser.py` 保留列表、当前详情状态、编辑对话框、局部刷新和 `data_changed` 通知；三个 Tab 的控件构造与只读渲染位于 `hero_detail_views.py`。所有编辑、删除写入均交给 `DataMutationService` 统一创建快照、备份与保存。四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。这种拆分不改变编辑按钮、信号或 Manager 的持久化契约，调用方仍通过公开类名创建对话框。
 
-相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `SynergyManager.list_synergies_for_hero()` -> `_refresh_synergy_table()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时通过 `DataMutationService.update_synergy()` 写入，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
+相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `HeroSynergyView.show_hero()` -> `refresh()` -> `SynergyManager.list_synergies_for_hero()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时通过 `DataMutationService.update_synergy()` 写入，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
 
 **Tab 栏编辑按钮**：
 Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
@@ -1303,23 +1305,20 @@ tmp_path.replace(env_path)
 
 ## 九、浏览器自动化细节
 
-### 9.1 PlaywrightGenerator 类（662 行）
+### 9.1 PlaywrightGenerator 与 DeepSeekBrowserSession
 
 #### 9.1.1 生命周期
 
 ```
-__init__ →（惰性）→ _ensure_browser → 生成 → close
+PlaywrightGenerator.__init__ → DeepSeekBrowserSession
+  ├── generate_guide()/generate_synergy() → 提示词、JSON 提取和模型校验
+  └── _send_and_wait() → DeepSeekBrowserSession.send_and_wait()
                             │
-                     sync_playwright.start()
-                     chromium.launch_persistent_context(
-                         channel="msedge",
-                         user_data_dir="...",
-                         headless=False,
-                         slow_mo=50,
-                         args=["--disable-blink-features=AutomationControlled"]
-                     )
-                     page.goto("https://chat.deepseek.com/")
-                     _wait_for_login()  → 等待 textarea 出现
+                            └──（惰性）_ensure_browser → close
+                                 ├── sync_playwright.start()
+                                 ├── chromium.launch_persistent_context(...)
+                                 ├── page.goto("https://chat.deepseek.com/")
+                                 └── _wait_for_login() → 等待 textarea 出现
 ```
 
 #### 9.1.2 会话复用
@@ -1525,6 +1524,7 @@ src/ocr/
  ├── __init__.py              # 包 init
  ├── template_manager.py     # TemplateManager — OpenCV 模板匹配（~180 行）
  ├── image_preprocessor.py  # ImagePreprocessor — 纯图像预处理
+ ├── official_board_parser.py # 官方榜单版式、横线、单元格与数字模板算法
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
  ├── character_similarity.py # CharacterSimilarityService — 名称纠错
  ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排
@@ -2057,7 +2057,9 @@ Content-Type: application/json
 ```
 PlaywrightGenerator.__init__()
   │
-  ├── _ensure_browser()    ← 惰性启动，首次发送前初始化
+  ├── DeepSeekBrowserSession(browser_config)                  [页面会话]
+  │
+  ├── DeepSeekBrowserSession._ensure_browser() ← 首次发送前惰性初始化
   │    ├── sync_playwright.start()
   │    ├── chromium.launch_persistent_context(
   │    │     channel="msedge",
@@ -2072,11 +2074,12 @@ PlaywrightGenerator.__init__()
   │    │            _guide_system_sent = True
   │    ├── 后续调用: 只发 user_prompt（携带武将 ID，会话复用）
   │    ├── _send_and_wait(prompt)
-  │    │    ├── page.fill(textarea, prompt)
-  │    │    ├── page.keyboard.press("Enter")
-  │    │    ├── Phase 1: 轮询 assistant 消息数增加（每 500ms）
-  │    │    ├── Phase 2: inner_text 长度连续 3 轮不变（每 2s）
-  │    │    └── 返回最后一条 assistant 的 inner_text
+  │    │    └── DeepSeekBrowserSession.send_and_wait(prompt)
+  │    │         ├── page.fill(textarea, prompt)
+  │    │         ├── page.keyboard.press("Enter")
+  │    │         ├── Phase 1: 轮询 assistant 消息数增加（每 500ms）
+  │    │         ├── Phase 2: inner_text 长度连续 3 轮不变（每 2s）
+  │    │         └── 返回最后一条 assistant 的 inner_text
   │    ├── extract_json(reply) → 与 API 方式同一函数
   │    ├── convert_ids_to_int + inject hero_id
   │    ├── validate_guide(raw) → 与 API 方式同一函数

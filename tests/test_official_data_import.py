@@ -8,7 +8,9 @@ import cv2
 import numpy as np
 
 from src.business import official_data_import_service as import_module
-from src.business.official_data_import_service import LAYOUTS, OfficialDataImportService
+from src.business.official_data_import_service import OfficialDataImportService
+from src.ocr import official_board_parser
+from src.ocr.official_board_parser import LAYOUTS
 
 
 def test_template_rows_are_split_by_horizontal_lines(monkeypatch) -> None:
@@ -19,7 +21,7 @@ def test_template_rows_are_split_by_horizontal_lines(monkeypatch) -> None:
     ])
     monkeypatch.setattr(cv2, "HoughLinesP", lambda *_args, **_kwargs: lines)
 
-    boundaries = OfficialDataImportService._find_data_boundaries(
+    boundaries = official_board_parser.find_data_boundaries(
         panel, 1_000, LAYOUTS["exile"], 0,
     )
 
@@ -27,7 +29,7 @@ def test_template_rows_are_split_by_horizontal_lines(monkeypatch) -> None:
 
 
 def test_missing_horizontal_line_is_restored_by_median_row_height() -> None:
-    boundaries, repaired_ranks = OfficialDataImportService._restore_missing_boundaries(
+    boundaries, repaired_ranks = official_board_parser.restore_missing_boundaries(
         [0, 10, 20, 40, 50],
     )
 
@@ -234,10 +236,10 @@ def test_rate_cell_keeps_the_digit_next_to_the_column_separator() -> None:
     row = np.zeros((20, 486, 3), dtype=np.uint8)
     row[4:16, 331:349] = 255
 
-    rate_cell = OfficialDataImportService._split_row_cells(
+    rate_cell = official_board_parser.split_row_cells(
         row, ("排名", "武将", "胜率"), (0.0, 0.29, 0.69, 1.0),
     )["胜率"]
-    glyphs = OfficialDataImportService._segment_glyphs(rate_cell)
+    glyphs = official_board_parser.segment_glyphs(rate_cell)
 
     assert glyphs[0].shape[1] == 18
 
@@ -248,9 +250,9 @@ def test_rate_template_preparation_reports_each_processed_row(monkeypatch) -> No
     progress = []
     monkeypatch.setattr(service, "_recognize_cell", lambda *_: ("70.34%", 0.99))
 
-    service._prepare_rate_templates(
+    official_board_parser.prepare_rate_templates(
         panel, [0, 20, 40], ("排名", "武将", "胜率"), (0.0, 0.29, 0.69, 1.0),
-        lambda: progress.append(1),
+        service._recognize_cell, lambda: progress.append(1),
     )
 
     assert len(progress) == 2
@@ -269,7 +271,7 @@ def test_two_column_layouts_keep_rank_and_hero_in_separate_cells() -> None:
         columns = LAYOUTS[key].columns[panel_index]
         breaks = LAYOUTS[key].column_breaks[panel_index]
 
-        cells = OfficialDataImportService._split_row_cells(row, columns, breaks)
+        cells = official_board_parser.split_row_cells(row, columns, breaks)
 
         assert set(np.unique(cells["排名"])) == {0, 100}
         assert set(np.unique(cells["武将"])) == {0, 200}
@@ -288,9 +290,11 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
 
     monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
     monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(service, "_read_image", lambda _: image)
-    monkeypatch.setattr(service, "_extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)])
-    monkeypatch.setattr(service, "_find_data_boundaries", lambda *_: [0, 20, 40])
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: image)
+    monkeypatch.setattr(
+        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    )
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40])
     monkeypatch.setattr(service, "_recognize_row", lambda *_: next(rows))
     def prepare_templates(*args):
         progress_callback = args[-1]
@@ -298,9 +302,11 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
         progress_callback()
         return {1: ("70.34%", 0.99), 2: ("70.11%", 0.99)}, {}
 
-    monkeypatch.setattr(service, "_prepare_rate_templates", prepare_templates)
+    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
     template_rates = iter([("70.34%", 0.99), ("70.11%", 0.99)])
-    monkeypatch.setattr(service, "_recognize_rate_with_templates", lambda *_: next(template_rates))
+    monkeypatch.setattr(
+        official_board_parser, "recognize_rate_with_templates", lambda *_: next(template_rates),
+    )
     monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
     stale_calls = []
     monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale_calls.append)

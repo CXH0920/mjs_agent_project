@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton
 
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.mumu_config_dialog import MumuConfigDialog
+from src.ui.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
 
 
 def _app() -> QApplication:
@@ -121,6 +122,15 @@ def test_ocr_roi_controls_keep_the_configuration_footer() -> None:
     assert buttons.count("图片编辑") == 2
     assert buttons.count("恢复默认") == 2
     assert "保存" in buttons
+
+
+def test_dialog_composes_dedicated_configuration_sections() -> None:
+    _app()
+    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [])
+
+    assert isinstance(dialog._device_section, MumuDeviceSection)
+    assert isinstance(dialog._template_section, MumuTemplateSection)
+    assert isinstance(dialog._ocr_polling_section, MumuOcrPollingSection)
 
 
 def test_multiple_running_devices_require_explicit_selection() -> None:

@@ -29,6 +29,7 @@ src/ocr/
 ├── __init__.py
 ├── template_manager.py    # TemplateManager — OpenCV 模板匹配
 ├── image_preprocessor.py  # ImagePreprocessor — 放大、CLAHE、锐化、灰度
+├── official_board_parser.py # 官方榜单版式、横线、单元格与数字模板算法
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
@@ -121,7 +122,7 @@ PaddleOCR → 文字 + 置信度
        └── 无候选且极高置信度（≥99.5%）→ 保留原文，保护新武将
 ```
 
-官方榜单导入不使用页面模板匹配、通用 `OcrWorker` 队列或 `GeneralRecognizer`。它在 `src.business.official_data_import_service` 中单独创建 PaddleOCR 实例，并依赖公开的 `CharacterSimilarityService.correct_hero_name()` 完成词表纠错；完整词表候选优先和单字逐字兜底均局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一榜单的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
+官方榜单导入不使用页面模板匹配、通用 `OcrWorker` 队列或 `GeneralRecognizer`。`src.ocr.official_board_parser` 提供固定版式切分、横线恢复、单元格切分和胜率数字模板算法；`src.business.official_data_import_service` 单独管理 PaddleOCR 实例，并依赖公开的 `CharacterSimilarityService.correct_hero_name()` 完成词表纠错、复核和输出。完整词表候选优先和单字逐字兜底仍局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一榜单的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
 
 ### 3.4 多维汉字特征评分
 
@@ -233,6 +234,9 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `TemplateManager.set_template(image, roi)` | 制作模板 |
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别 8 个武将名 |
 | `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | OCR 图像预处理 |
+| `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界 |
+| `official_board_parser.split_row_cells(...)` → `dict[str, np.ndarray]` | 按官方版式切分行单元格 |
+| `official_board_parser.prepare_rate_templates(...)` | 构建榜单数字模板并预计算胜率 OCR |
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
 | `CharacterFeatureRepository(cache_path=None)` | 汉字特征缓存加载、动态补齐与保存 |
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |

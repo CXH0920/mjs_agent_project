@@ -33,7 +33,8 @@ src/ui/
 ├── poll_coordinator.py         # 轮询后台编排、结果过滤与状态提交
 ├── official_data_import_dialog.py # 官方 2v2/武将放逐榜单图片导入
 ├── ai_generation_workflow.py   # 攻略/相性生成的选择、进度与完成工作流
-├── hero_browser.py             # 武将浏览（列表+详情+Tab 栏编辑按钮）
+├── hero_browser.py             # 武将浏览（列表、详情状态与编辑协调）
+├── hero_detail_views.py        # 武将信息、攻略摘要和相性三个详情视图
 ├── card_management_panel.py     # 卡牌图鉴、追加内容与字段定义管理
 ├── hero_edit_dialog.py          # 武将基础信息编辑
 ├── hero_relation_select_dialog.py # 攻略关系武将多选
@@ -47,7 +48,8 @@ src/ui/
 │
 ├── settings_dialog.py          # API 配置对话框
 ├── data_management_dialog.py   # 攻略与相性批量清空对话框
-├── mumu_config_dialog.py       # 模拟器配置对话框（表单、状态与 ROI 框选）
+├── mumu_config_dialog.py       # 模拟器配置对话框（状态协调、文件选择与 ROI 框选）
+├── mumu_config_sections.py     # 设备、模板和 OCR 参数三个配置视图区块
 ├── backend_choose_dialog.py    # 后端选择对话框（API/浏览器）
 ├── guide_progress_dialog.py    # 攻略生成进度条
 ├── roi_selector.py             # 模板 ROI 框选对话框
@@ -147,8 +149,9 @@ HeroBrowser (QWidget)
  │   ├── signal: hero_selected(int)
  └── HeroDetailPanel (右, 720px)
      ├── 固定身份条（单行名称与势力/定位/体力/手牌摘要）
-     ├── Tab「武将信息」→ QLabel(HTML，含资料更新时间) + 技能滚动区
-     └── Tab「攻略指南」→ 首屏攻略摘要 + 流式关系标签 + 完整攻略入口
+     ├── Tab「武将信息」→ HeroInfoView
+     ├── Tab「攻略指南」→ HeroGuideSummaryView
+     └── Tab「武将相性」→ HeroSynergyView
 ```
 
 武将详情刷新时会先隐藏并延迟删除旧技能卡片；这避免“重新加载数据”后立即弹出模态提示框时，延迟删除的旧控件与新控件重叠绘制。
@@ -161,7 +164,7 @@ HeroBrowser (QWidget)
 - 关系标签采用自适应流式布局，按标签实际宽度换行并支持点击跳转
 - 修改保存后 `data_changed` 信号触发列表刷新，`_last_hero_id` 确保选中项不变
 
-四个编辑/选择对话框位于独立模块；`HeroDetailPanel` 仅负责打开它们、调用 `DataMutationService` 执行写入并刷新展示。服务统一创建快照和备份，写入失败时恢复原数据。为兼容现有外部导入，`hero_browser.py` 继续导入并暴露这些对话框名称。
+三个 Tab 的控件构造和只读渲染位于 `hero_detail_views.py`；`HeroDetailPanel` 保留当前武将/攻略状态、编辑对话框、`DataMutationService` 写入和视图刷新协调，并通过 `current_hero_id`、`refresh_synergies()` 提供公开边界。四个编辑/选择对话框仍位于独立模块；服务统一创建快照和备份，写入失败时恢复原数据。为兼容现有外部导入，`hero_browser.py` 继续导入并暴露这些对话框名称。
 
 **攻略展示布局：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。
@@ -215,7 +218,7 @@ def update_recommendations(self, data: list[dict]) -> None
 
 势力配色由 `FactionColorDialog` 以紧凑列表展示，每行只显示势力名称、颜色小方块和 Hex 代码，不在主界面长期占用调色板区域。对话框可输入势力名称并选定初始颜色新增势力；名称不能为空且不能重复，现有势力仅能调整颜色，不能删除或改名。点击颜色小方块后打开 `ColorPicker` 浮层，提供 HSB 调整和屏幕取色；取消时恢复打开前的颜色，点击“保存”后才写入配置文件。
 
-模拟器配置中的两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击。`MumuConfigCoordinator` 统一调度 `EmulatorOperationService`、共享 `CaptureService` 与 `OcrService`；后台自动建立连接并获取截图，UI 线程只负责打开 `RoiSelectorDialog` 和展示结果；只有未配置 ADB 或正在连接时禁用。
+模拟器配置中的两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 只构造控件并发出用户操作信号；`MumuConfigDialog` 连接信号、处理文件选择与 ROI 框选，`MumuConfigCoordinator` 仍是唯一业务协调器。后台自动建立连接并获取截图，只有未配置 ADB 或正在连接时禁用模板制作。
 
 保存流程如下：
 
@@ -371,7 +374,8 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 |--------|------|
 | `SettingsDialog` | API 配置编辑 |
 | `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
-| `MumuConfigDialog` | ADB/OCR 表单与状态展示、文件选择、ROI 框选；服务操作委托 `MumuConfigCoordinator` |
+| `MumuConfigDialog` | 组装配置区块、状态协调、文件选择和 ROI 框选；服务操作委托 `MumuConfigCoordinator` |
+| `MumuDeviceSection` / `MumuTemplateSection` / `MumuOcrPollingSection` | 设备、模板和 OCR 参数控件及用户操作信号，不调用业务服务 |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器） |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
 | `HeroEditDialog` | 武将信息编辑 |

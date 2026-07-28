@@ -136,7 +136,8 @@ PlaywrightGenerator.generate_guide(hero)
   -> [首次] 发送 system_prompt + user_prompt 拼接全文
      [后续] 仅发送 user_prompt（保留对话上下文）
   -> self._send_and_wait(full_prompt)                         [发送并等待回复]
-     -> self._ensure_browser()                                [懒加载浏览器]
+     -> DeepSeekBrowserSession.send_and_wait()                [页面会话边界]
+     -> _ensure_browser()                                     [懒加载浏览器]
         -> sync_playwright().start()                          [启动 Playwright]
         -> chromium.launch_persistent_context()               [复用 Edge 用户数据]
         -> page.goto("https://chat.deepseek.com")             [导航到 DeepSeek]
@@ -158,10 +159,11 @@ PlaywrightGenerator.generate_guide(hero)
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
 | `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `load_prompt()`, `build_guide_prompt()`, `_send_and_wait()` |
-| `PlaywrightGenerator._ensure_browser()` | `ai_playwright.py` | `_send_and_wait()` | `sync_playwright().start()`, `wait_for_login()` |
-| `PlaywrightGenerator._wait_for_login()` | `ai_playwright.py` | `_ensure_browser()` | `page.wait_for_selector()` |
-| `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide()`, `generate_synergy()` | `page.fill()`, `page.keyboard.press()`, 轮询检测 |
-| `PlaywrightGenerator._page_diagnostics()` | `ai_playwright.py` | `_wait_for_login()`, `_send_and_wait()` | `page.evaluate(JS dump)` |
+| `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide()`, `generate_synergy()` | `DeepSeekBrowserSession.send_and_wait()` |
+| `DeepSeekBrowserSession.send_and_wait()` | `deepseek_browser_session.py` | `PlaywrightGenerator._send_and_wait()` | `_ensure_browser()`, `page.fill()`, 流式回复轮询 |
+| `DeepSeekBrowserSession._ensure_browser()` | `deepseek_browser_session.py` | `send_and_wait()` | `sync_playwright().start()`, `_wait_for_login()` |
+| `DeepSeekBrowserSession._wait_for_login()` | `deepseek_browser_session.py` | `_ensure_browser()` | `page.wait_for_selector()` |
+| `DeepSeekBrowserSession._page_diagnostics()` | `deepseek_browser_session.py` | 登录或收发异常 | `page.evaluate(JS dump)` |
 | `PlaywrightGenerator._random_rest()` | `ai_playwright.py` | `generate_guide()`, `generate_synergy()` | `time.sleep(random)` |
 
 ---
@@ -268,8 +270,8 @@ src.ui.main_window
 | `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
 | `PlaywrightGenerator.generate_synergy()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
 | `PlaywrightGenerator._random_rest()` | `ai_playwright.py` | 下一次浏览器请求前 | 随机等待 60-180 秒 |
-| `PlaywrightGenerator._ensure_browser()` | `ai_playwright.py` | `_send_and_wait()` | `Playwright.start()` |
-| `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide/synergy` | `page.fill()`, 轮询检测 |
+| `DeepSeekBrowserSession._ensure_browser()` | `deepseek_browser_session.py` | `send_and_wait()` | `Playwright.start()` |
+| `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide/synergy` | `DeepSeekBrowserSession.send_and_wait()` |
 | `run_guide_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
 | `run_synergy_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()`, `generator.generate_synergy()` |
 | `run_synergy_pair_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()`, 逐对保存 |

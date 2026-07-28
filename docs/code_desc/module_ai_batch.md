@@ -23,7 +23,8 @@
 src/scraper/
 ├── ai_batch.py              # CLI 入口（参数解析 → 配置加载 → 委托子模块）
 ├── ai_generator.py          # API 调用核心（限速/重试/JSON 提取/Pydantic 校验）
-├── ai_playwright.py         # 浏览器自动化生成器（Playwright + Edge）
+├── ai_playwright.py         # 浏览器模式生成器（提示词、校验与生成流程）
+├── deepseek_browser_session.py # DeepSeek 页面会话（Playwright + Edge 生命周期与收发）
 ├── ai_generation.py         # 生成编排函数（run_guide_generation / run_synergy_generation / run_synergy_pair_generation / run_synergy_single_generation）
 └── ai_utils.py              # 共享工具（estimate_cost / load_heroes / _save_json）
 ```
@@ -61,6 +62,8 @@ generate_synergy(a, b)  → (dict|None, usage|None)
 | Token 统计 | ✅ 支持 | ❌ 返回 None |
 | 成本估算 | ✅ 支持 dry-run | ❌ 不支持 |
 | 必备条件 | API Key | 已登录的 Edge 浏览器 |
+
+浏览器模式按职责拆为两层：`PlaywrightGenerator` 负责提示词、JSON 提取、ID 转换和 Pydantic 校验；`DeepSeekBrowserSession` 负责 Edge/Playwright 生命周期、登录等待、页面诊断、消息发送和流式回复稳定检测。`PlaywrightGenerator._send_and_wait()` 保留为兼容委托入口，不再直接操作页面。
 
 ### 3.2 AIBatchGenerator（API 模式）
 

@@ -38,7 +38,7 @@ MainWindow.__init__()
 | `hero_relation_select_dialog.py` | `HeroRelationSelectDialog` | 搜索、势力筛选和多选攻略关系武将 | `GuideEditDialog._open_relation_selector()` |
 | `synergy_edit_dialog.py` | `SynergyEditDialog` | 编辑一对武将的评分、维度和说明 | `HeroDetailPanel._on_synergy_edit()` |
 
-`hero_browser.py` 仍负责列表、详情和信号协调；持久化调用统一委托给 `DataMutationService`。它导入上述公开对话框以保持原有外部导入兼容，但不再持有它们的表单构建逻辑。
+`hero_browser.py` 仍负责列表、详情状态和信号协调；持久化调用统一委托给 `DataMutationService`。三个详情 Tab 的构造与渲染委托 `hero_detail_views.py` 中的 `HeroInfoView`、`HeroGuideSummaryView` 和 `HeroSynergyView`。它导入上述公开对话框以保持原有外部导入兼容，但不再持有它们的表单构建逻辑。
 
 ## 共享 UI 与数据访问接口
 
@@ -590,15 +590,15 @@ HeroListPanel._on_selection_changed(row)                       [列表选择变�
 HeroDetailPanel.show_hero(hero_id)                              [接收信号]
   -> self._current_hero = self._hero_mgr.get_hero(hero_id)      [查询 Hero]
   -> self._current_guide = self._guide_mgr.get_guide(hero_id)   [查询 HeroGuide]
-  -> self._update_info_tab(self._current_hero)
-     -> 设置 QLabel HTML: name, title, position, difficulty, faction, gender, HP, hand
-     -> self._update_skills(hero)
+  -> self._info_tab.show_hero(self._current_hero)
+     -> 设置 QLabel HTML: 基础信息与资料更新时间
+     -> HeroInfoView._update_skills(hero)
         -> 清理旧技能布局
         -> [无技能] 显示 "无技能"
         -> [有技能] for each Skill:
            -> 展开面板: name + description
            -> [有 settlement] 可折叠"结算详情"面板
-  -> self._update_guide_tab(self._current_guide)
+  -> self._guide_tab.show_guide(self._current_guide)
      -> [无 guide] 显示 "暂无攻略数据"
      -> [有 guide] 渲染:
         -> 核心要点 (list[str] → 逐项 QLabel)
@@ -606,8 +606,9 @@ HeroDetailPanel.show_hero(hero_id)                              [接收信号]
         -> 劣势对局 (weak_against_type) → 文本列表
         -> 优势对局 (strong_against_type) → 文本列表
         -> 对抗建议 (counter_strategy) → 文本
-        -> 搭配推荐 (synergizes_with) → 同上
-        -> 攻略正文 (description) → _markdown_to_html()
+        -> 搭配推荐 (synergizes_with) → 流式关系标签
+  -> self._synergy_tab.show_hero(self._current_hero)
+     -> HeroSynergyView.refresh() → 相性筛选与表格
 ```
 
 ### 5.3 武将编辑链路
@@ -617,20 +618,17 @@ HeroDetailPanel._on_info_edit()                                ["修改"按钮 -
   -> HeroEditDialog(self._current_hero, parent)                 [编辑对话框]
      -> QFormLayout: name/title/faction/position/max_hp/max_hand/gender/difficulty
   -> [accepted] updated = dialog.get_hero()
-  -> self._hero_mgr.update_hero(updated)
-  -> self._hero_mgr.save()
-  -> self._update_info_tab(updated)
+  -> DataMutationService.update_hero(updated)
+  -> self._info_tab.show_hero(updated)
   -> self.data_changed.emit()                                   [通知列表刷新]
 
 HeroDetailPanel._on_info_delete()                              ["删除"按钮 - 武将信息]
   -> QMessageBox.question("确认删除 ...？")
   -> [Yes]
-     -> self._hero_mgr.delete_hero(self._current_hero.id)
-     -> self._guide_mgr.delete_guide(self._current_hero.id)     [级联删除攻略]
-     -> self._hero_mgr.save()
-     -> self._guide_mgr.save()
-     -> self._clear_skills()
-     -> self._update_guide_tab(None)
+     -> DataMutationService.delete_hero_with_relations(hero_id) [级联删除攻略与相性]
+     -> self._info_tab.show_deleted()
+     -> self._guide_tab.show_guide(None)
+     -> self._synergy_tab.show_hero(None)
      -> self.data_changed.emit()
 ```
 
@@ -653,17 +651,15 @@ HeroDetailPanel._on_guide_edit()                               ["修改"按钮 -
         -> 攻略正文: QTextEdit (Markdown)
      -> [accepted] updated = dialog.get_guide()
         -> 读取对局类型/对抗建议文本 + synergizes_with 已选 ID 列表
-  -> self._guide_mgr.update_guide(updated)
-  -> self._guide_mgr.save()
-  -> self._update_guide_tab(updated)
+  -> DataMutationService.update_guide(updated)
+  -> self._guide_tab.show_guide(updated)
   -> self.data_changed.emit()
 
 HeroDetailPanel._on_guide_delete()                             ["删除"按钮 - 攻略指南]
   -> QMessageBox.question("确认删除攻略？")
   -> [Yes]
-     -> self._guide_mgr.delete_guide(self._current_guide.hero_id)
-     -> self._guide_mgr.save()
-     -> self._update_guide_tab(None)
+     -> DataMutationService.delete_guide(self._current_guide.hero_id)
+     -> self._guide_tab.show_guide(None)
      -> self.data_changed.emit()
 ```
 
@@ -671,20 +667,21 @@ HeroDetailPanel._on_guide_delete()                             ["删除"按钮 -
 
 ```
 HeroDetailPanel.show_hero(hero_id)
-  -> _refresh_synergy_table()
+  -> HeroSynergyView.show_hero(hero)
+  -> HeroSynergyView.refresh()
      -> SynergyManager.list_synergies_for_hero(hero_id)
      -> 按搭档名称、评分和评级筛选并按评分降序显示
 
 相性表格双击（非说明列）/「修改」按钮
-  -> _selected_synergy()
+  -> HeroSynergyView.selected_synergy()
   -> SynergyEditDialog(hero_mgr, synergy).exec()
      -> 评分变化 -> synergy_rating_for_score()                 [实时更新评级]
   -> [accepted] DataMutationService.update_synergy(dialog.get_synergy())
-  -> 创建备份并保存 -> _refresh_synergy_table()
+  -> 创建备份并保存 -> HeroSynergyView.refresh()
   -> synergies_changed.emit()                                  [通知推荐页刷新]
 
 相性说明列双击
-  -> _show_synergy_description()
+  -> HeroSynergyView._show_description()
   -> _markdown_to_html() -> QTextBrowser 预览
 ```
 
@@ -696,15 +693,15 @@ HeroDetailPanel.show_hero(hero_id)
 | `_load_heroes()` | `HeroListPanel` | `__init__()`, `reload()` | `list_heroes()`, `list_factions()`, `_apply_filters()` |
 | `_apply_filters()` | `HeroListPanel` | 搜索/textChanged | 过滤 + `_refresh_list()` |
 | `_on_selection_changed(row)` | `HeroListPanel` | QListWidget 信号 | `hero_selected.emit(id)` |
-| `show_hero(hero_id)` | `HeroDetailPanel` | `hero_selected` 信号 | `get_hero()`, `get_guide()`, `_update_info_tab()`, `_update_guide_tab()` |
-| `_update_info_tab(hero)` | `HeroDetailPanel` | `show_hero()`, `_on_info_edit()` | 设置 HTML, `_update_skills()` |
-| `_update_skills(hero)` | `HeroDetailPanel` | `_update_info_tab()` | 动态创建 Skill 展开面板 |
-| `_update_guide_tab(guide)` | `HeroDetailPanel` | `show_hero()`, `_on_guide_edit()` | `get_hero()` ×N, `_markdown_to_html()` |
+| `show_hero(hero_id)` | `HeroDetailPanel` | `hero_selected` 信号 | `get_hero()`, `get_guide()`, 三个详情视图的显示/刷新方法 |
+| `show_hero(hero)` | `HeroInfoView` | `HeroDetailPanel.show_hero()`、武将编辑后 | 设置基本信息 HTML、重建技能卡片 |
+| `show_guide(guide)` | `HeroGuideSummaryView` | `HeroDetailPanel.show_hero()`、攻略编辑后 | 渲染摘要、对局类型和关系标签 |
+| `refresh()` | `HeroSynergyView` | `HeroDetailPanel.refresh_synergies()` | `list_synergies_for_hero()`、筛选和表格排序 |
 | `_on_info_edit()` | `HeroDetailPanel` | "修改"按钮 | `HeroEditDialog`, `update_hero()`, `save()` |
 | `_on_info_delete()` | `HeroDetailPanel` | "删除"按钮 | `delete_hero()`, `delete_guide()`, `save()` |
 | `_on_guide_edit()` | `HeroDetailPanel` | "修改"按钮 | `GuideEditDialog`, `update_guide()`, `save()` |
 | `_on_guide_delete()` | `HeroDetailPanel` | "删除"按钮 | `delete_guide()`, `save()` |
-| `_refresh_synergy_table()` | `HeroDetailPanel` | `show_hero()`、筛选控件、保存后 | `list_synergies_for_hero()`、表格排序和按钮状态 |
+| `refresh_synergies()` | `HeroDetailPanel` | `show_hero()`、`HeroBrowser.refresh_synergies()`、保存后 | `HeroSynergyView.refresh()`、按钮状态 |
 | `_on_synergy_edit()` | `HeroDetailPanel` | 双击相性行或"修改" | `SynergyEditDialog`、`update_synergy()`、`save()` |
 | `HeroEditDialog.get_hero()` | `HeroEditDialog` | `_on_info_edit()` accepted | 读取控件值 → `Hero` |
 | `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取对局类型/对抗建议文本 + 已选择的搭配 ID → `HeroGuide` |
@@ -770,6 +767,10 @@ MainWindow._open_faction_colors()
 
 MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
   -> _setup_ui()
+     -> MumuDeviceSection()                                  [设备控件与操作信号]
+     -> MumuTemplateSection()                                [模板状态与操作信号]
+     -> MumuOcrPollingSection()                              [轮询参数与 ROI 操作信号]
+     -> 各 Section 信号连接到 MumuConfigDialog 槽函数
   -> MumuConfigCoordinator(config, capture_service, ocr_service)
   -> _load_config()
     -> MumuConfigCoordinator.sync_capture_config()              [唯一 ADB 会话]
@@ -814,6 +815,9 @@ MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
 |------|--------|--------|----------|
 | `RoiSelectorDialog` 鼠标事件 | `RoiSelectorDialog` | Qt 事件 | `_on_mouse_press/move/release`, `_update_info()`, `_on_paint()` |
 | `RoiSelectorDialog._on_confirm()` | `RoiSelectorDialog` | "确认"按钮 | 计算 ROI → `self.accept()` |
+| `MumuDeviceSection` 用户操作信号 | `mumu_config_sections.py` | 设备区按钮/下拉框 | `MumuConfigDialog` 对应槽函数 |
+| `MumuTemplateSection` 用户操作信号 | `mumu_config_sections.py` | 模板选择/制作按钮 | `MumuConfigDialog` 对应槽函数 |
+| `MumuOcrPollingSection` 用户操作信号 | `mumu_config_sections.py` | 轮询与 ROI 控件 | `MumuConfigDialog` 对应槽函数 |
 | `MumuConfigDialog._on_auto_detect()` | `MumuConfigDialog` | "自动探测"按钮 | `MumuConfigCoordinator.detect_adb()` |
 | `MumuConfigDialog._on_make_template()` | `MumuConfigDialog` | "制作模板"按钮 | 协调器截图 → `RoiSelectorDialog` → 协调器保存模板 |
 | `MumuConfigDialog._on_save()` | `MumuConfigDialog` | "保存"按钮 | 收集表单 → 协调器校验草稿 → `accept()` |
