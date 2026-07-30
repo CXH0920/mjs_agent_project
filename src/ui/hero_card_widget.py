@@ -41,6 +41,7 @@ class HeroCardWidget(QFrame):
 
     guide_clicked = Signal(int)
     hero_double_clicked = Signal(int)
+    candidate_confirm_requested = Signal()
     RECOMMENDATION_INDEX_DESCRIPTION = (
         "推荐指数基于当前版本全服汇总数据计算，综合胜率表现、"
         "出场活跃度与禁用关注度，仅用于武将间的相对参考。"
@@ -152,6 +153,15 @@ class HeroCardWidget(QFrame):
         )
         self._guide_btn.clicked.connect(self._on_guide_clicked)
         header_layout.addWidget(self._guide_btn)
+        self._confirm_name_btn = QPushButton("确认")
+        self._confirm_name_btn.setFixedSize(48, 28)
+        self._confirm_name_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {SURFACE}; color: {PRIMARY}; border: 1px solid {PRIMARY}; "
+            "border-radius: 4px; padding: 0; font-size: 12px; font-weight: bold; }"
+            f"QPushButton:hover {{ background-color: {SUBTLE_SURFACE}; }}"
+        )
+        self._confirm_name_btn.clicked.connect(self.candidate_confirm_requested.emit)
+        header_layout.addWidget(self._confirm_name_btn)
         info_layout.addLayout(header_layout)
 
         self._recommendation_info_tooltip = QLabel(self.RECOMMENDATION_INDEX_DESCRIPTION, self)
@@ -232,6 +242,8 @@ class HeroCardWidget(QFrame):
             self.set_medal(0)
             self._skill_btn.setVisible(False)
             self._guide_btn.setVisible(False)
+            self._confirm_name_btn.setVisible(False)
+            self._confirm_name_btn.setToolTip("")
             return
 
         hero = self._hero
@@ -239,6 +251,7 @@ class HeroCardWidget(QFrame):
         self.set_medal(0)
         self._skill_btn.setVisible(True)
         self._guide_btn.setVisible(True)
+        self._confirm_name_btn.setVisible(False)
         color = get_faction_colors().get(hero.faction, "#888")
 
         pixmap = self._load_portrait(hero.name)
@@ -387,6 +400,22 @@ class HeroCardWidget(QFrame):
         self._name_overlay.setText(name or "未知武将")
         self.set_confidence(confidence)
         self.set_recommendation_index(None)
+
+    def set_pending_name(
+        self, raw_name: str, candidates: list[str], confidence: float,
+    ) -> None:
+        """显示不加载推荐数据的待确认名称。"""
+        self.set_hero(None)
+        self._name_overlay.setText(raw_name or "待确认")
+        self.set_confidence(confidence)
+        self._confidence_label.setText("识别结果：待确认")
+        candidate_text = "、".join(candidates)
+        self._data_status_label.setText(
+            f"候选 {len(candidates)} 名" if candidates else "未识别到可用候选"
+        )
+        self._data_status_label.setToolTip(candidate_text)
+        self._confirm_name_btn.setToolTip(candidate_text)
+        self._confirm_name_btn.setVisible(bool(candidates))
 
     def refresh_faction_color(self) -> None:
         """使用当前势力配色刷新卡片。"""

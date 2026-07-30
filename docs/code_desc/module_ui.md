@@ -95,7 +95,7 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 
 ### 3.1.1 轮询匹配后的选将推荐刷新
 
-`MainWindow._on_poll_result()` 使用 `PollResult`、`PollTaskResult` 与 `PollOutcome` 接收轮询结果；后台线程边界将 OCR worker 的原始字典转换为强类型对象，旧版字典调用仍由 `from_raw()` 兼容。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才切换到对应 Tab。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。每轮后台 OCR 等待最多 10 秒；停止轮询、关闭窗口或切换 ADB 会话会设置取消标记，已取消任务不会回写界面。
+`MainWindow._on_poll_result()` 使用 `PollResult`、`PollTaskResult` 与 `PollOutcome` 接收轮询结果；后台线程边界将 OCR worker 的原始字典转换为强类型对象，旧版字典调用仍由 `from_raw()` 兼容。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才切换到对应 Tab。对局攻略至少需要 3 个 `name` 已确认的槽位，待确认、未知和冲突状态不计数。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。
 
 ### 3.1 主窗口信号拓扑
 
@@ -237,7 +237,7 @@ ColorPicker.color()
 
 `MatchGuidePanel` 与武将浏览、选将推荐处于同一主窗口 Tab 层级。页面标题行显示最近识别状态，并提供“识别当前阵容”与“从图片导入”入口；初始显示待识别空状态，标题行按钮间距、空态按钮位置和提示字体与选将推荐保持一致。页面使用 2×2 卡片展示四名武将：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上；头像左上叠加势力标签，底部叠加宽 130px、略宽于头像且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”。双击头像打开复用的技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色从 `config/faction_colors.json` 读取，找不到时使用灰色，配置保存后立即刷新。
 
-选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。未配置 ADB 时通过 `request_mumu_config` 信号打开模拟器配置。
+选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。OCR 结果携带原文、候选、确认状态和多路证据。选将推荐的待确认卡片不加载推荐指数、胜率或相性，只允许在当前候选集合中人工确认；其他已确认卡片照常更新。对局攻略保留未决槽位，替换窗口优先只显示该槽候选，人工替换后标记为 `manual`；任何名称未决时阵容确认按钮保持禁用。未配置 ADB 时通过 `request_mumu_config` 信号打开模拟器配置。
 
 后台轮询命中独立模板后只刷新对应页面数据，不自动切换 Tab，避免抢占用户当前页面。
 

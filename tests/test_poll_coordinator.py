@@ -86,15 +86,33 @@ def test_consume_result_discards_stale_result_and_notifies_after_completion() ->
     assert received == [PollResult(4, PollOutcome.RETRYABLE_CONNECTION, "设备离线", capture)]
 
 
-def test_match_guide_requires_three_recognized_names_before_navigation() -> None:
+def test_match_guide_requires_three_confirmed_names_before_navigation() -> None:
     insufficient = PollCoordinator._validate_match_guide_result(PollTaskResult(
         PollOutcome.MATCHED,
-        ocr_results=[{"name": "曹操"}, {"name": "张辽"}],
+        ocr_results=[
+            {"name": "曹操", "resolution": "exact"},
+            {"name": "张辽", "resolution": "unique_similarity"},
+            {"name": "", "raw_name": "夏侯", "resolution": "unresolved"},
+        ],
     ))
     sufficient = PollCoordinator._validate_match_guide_result(PollTaskResult(
+        PollOutcome.MATCHED,
+        ocr_results=[
+            {"name": "曹操", "resolution": "exact"},
+            {"name": "张辽", "resolution": "unique_similarity"},
+            {"name": "郭嘉", "resolution": "slot_unique"},
+        ],
+    ))
+
+    assert insufficient.outcome is PollOutcome.HEALTHY_NO_MATCH
+    assert "已确认角色不足: 2/3" in insufficient.detail
+    assert sufficient.outcome is PollOutcome.MATCHED
+
+
+def test_match_guide_confirmed_count_remains_compatible_with_legacy_results() -> None:
+    result = PollCoordinator._validate_match_guide_result(PollTaskResult(
         PollOutcome.MATCHED,
         ocr_results=[{"name": "曹操"}, {"name": "张辽"}, {"name": "郭嘉"}],
     ))
 
-    assert insufficient.outcome is PollOutcome.HEALTHY_NO_MATCH
-    assert sufficient.outcome is PollOutcome.MATCHED
+    assert result.outcome is PollOutcome.MATCHED

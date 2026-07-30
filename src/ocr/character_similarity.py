@@ -14,6 +14,7 @@ class CharacterSimilarityService:
     """按编辑距离筛选，并以汉字视觉特征决胜名称候选。"""
 
     EDIT_DISTANCE_THRESHOLD = 1
+    SAFE_CHARACTER_SIMILARITY = 0.55
 
     def __init__(self, repository: CharacterFeatureRepository | None = None) -> None:
         self._repository = repository or CharacterFeatureRepository()
@@ -46,6 +47,19 @@ class CharacterSimilarityService:
         if best_match != text:
             logger.debug("矫正: %s → %s (候选=%s)", text, best_match, candidates)
         return best_match
+
+    def is_safe_single_substitution(self, text: str, candidate: str) -> bool:
+        """仅在等长名称恰有一个错字且字形足够接近时允许自动纠正。"""
+        if len(text) != len(candidate):
+            return False
+        mismatches = [
+            (source, target)
+            for source, target in zip(text, candidate)
+            if source != target
+        ]
+        return len(mismatches) == 1 and (
+            self._multi_dim_similarity(*mismatches[0]) >= self.SAFE_CHARACTER_SIMILARITY
+        )
 
     @staticmethod
     def _levenshtein_distance(first: str, second: str) -> int:

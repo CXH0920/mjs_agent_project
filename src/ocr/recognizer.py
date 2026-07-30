@@ -35,6 +35,17 @@ logger = logging.getLogger(__name__)
 _HIGH_CONFIDENCE = 0.995       # 极高置信度且无纠错候选时，保护新武将
 _BATCH_SLOT_GAP = 30
 _BATCH_MIN_CONFIDENCE = 0.5
+_NAME_RECHECK_CONFIDENCE = 0.8
+_CONFIRMED_RESOLUTIONS = frozenset({
+    "exact", "unique_prefix", "unique_similarity", "slot_unique", "manual",
+})
+_RESOLUTION_PRIORITY = {
+    "manual": 5,
+    "exact": 4,
+    "unique_prefix": 3,
+    "unique_similarity": 2,
+    "slot_unique": 1,
+}
 
 
 class GeneralRecognizer:
@@ -134,6 +145,7 @@ class GeneralRecognizer:
                      scale_x, scale_y, image_width, image_height,
                      reference_width, reference_height)
 
+        raw_slots: dict[int, np.ndarray] = {}
         prepared_slots: dict[int, np.ndarray] = {}
         for i, slot in enumerate(self._layout.slots):
             x, y, w, h = slot.name_roi
@@ -152,25 +164,34 @@ class GeneralRecognizer:
                     i + 1, roi_x, roi_y, roi_w, roi_h, image_width, image_height,
                 )
                 continue
+            raw_slots[i + 1] = roi_img
             preprocess_started = time.perf_counter()
             prepared_slots[i + 1] = self._preprocessor.preprocess_roi(roi_img)
             self._add_timing("name_preprocess", preprocess_started)
 
-        recognized = self._recognize_prepared_batch(prepared_slots, "name")
+        batch_evidence: dict[int, list[dict]] = {}
+        recognized = self._recognize_prepared_batch(
+            prepared_slots, "name", evidence_by_slot=batch_evidence,
+        )
         results: list[dict] = []
         for i, _slot in enumerate(self._layout.slots, 1):
             prepared = prepared_slots.get(i)
             if prepared is None:
-                results.append({"index": i, "name": "", "confidence": 0.0})
+                results.append(self._empty_name_result(i))
                 continue
-            text, confidence = recognized.get(i, ("", 0.0))
-            if not text:
-                text, confidence = self._recognize_prepared_single(prepared, i, "name")
-            name, confidence = self._correct_name(text, confidence, i)
-            results.append({"index": i, "name": name, "confidence": round(confidence, 4)})
-            logger.debug("武将 %d 识别: %s (置信度=%.4f)", i, name or "(空)", confidence)
+            evidence = list(batch_evidence.get(i, []))
+            batch_text, batch_confidence = recognized.get(i, ("", 0.0))
+            initial = self._resolve_name_evidence(i, evidence)
+            if self._requires_slot_recheck(initial, batch_text, batch_confidence):
+                self._append_single_name_evidence(evidence, prepared, raw_slots[i], i)
+            result = self._resolve_name_evidence(i, evidence)
+            results.append(result)
+            logger.debug(
+                "武将 %d 识别: %s (状态=%s, 原文=%r)",
+                i, result["name"] or "(未确认)", result["resolution"], result["raw_name"],
+            )
 
-        return results
+        return self._resolve_page_names(results)
 
     def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
         """识别 2v2 对局中的角色名与楚/汉军标签。"""
@@ -178,12 +199,14 @@ class GeneralRecognizer:
         reference_width, reference_height = self._layout.reference_size
         scale_x = image_width / reference_width
         scale_y = image_height / reference_height
+        raw_name_slots: dict[int, np.ndarray] = {}
         name_slots: dict[int, np.ndarray] = {}
         team_slots: dict[int, np.ndarray] = {}
         for seat_index, slot in enumerate(self._layout.slots, 1):
             name_img = self._crop_roi(image, list(slot.name_roi), scale_x, scale_y)
             if name_img is None:
                 continue
+            raw_name_slots[seat_index] = name_img
             preprocess_started = time.perf_counter()
             name_slots[seat_index] = self._preprocessor.preprocess_roi(name_img)
             self._add_timing("name_preprocess", preprocess_started)
@@ -194,19 +217,24 @@ class GeneralRecognizer:
                     team_slots[seat_index] = self._preprocessor.preprocess_roi(team_img)
                     self._add_timing("team_preprocess", preprocess_started)
 
-        recognized_names = self._recognize_prepared_batch(name_slots, "name")
+        name_evidence: dict[int, list[dict]] = {}
+        recognized_names = self._recognize_prepared_batch(
+            name_slots, "name", evidence_by_slot=name_evidence,
+        )
         recognized_teams = self._recognize_prepared_batch(team_slots, "team")
         results: list[dict] = []
         for seat_index, _slot in enumerate(self._layout.slots, 1):
             prepared_name = name_slots.get(seat_index)
             if prepared_name is None:
                 continue
-            text, confidence = recognized_names.get(seat_index, ("", 0.0))
-            if not text:
-                text, confidence = self._recognize_prepared_single(prepared_name, seat_index, "name")
-            name, confidence = self._correct_name(text, confidence, seat_index)
-            if not name:
-                continue
+            evidence = list(name_evidence.get(seat_index, []))
+            batch_text, batch_confidence = recognized_names.get(seat_index, ("", 0.0))
+            initial = self._resolve_name_evidence(seat_index, evidence)
+            if self._requires_slot_recheck(initial, batch_text, batch_confidence):
+                self._append_single_name_evidence(
+                    evidence, prepared_name, raw_name_slots[seat_index], seat_index,
+                )
+            name_result = self._resolve_name_evidence(seat_index, evidence)
             team_text, team_confidence = recognized_teams.get(seat_index, ("", 0.0))
             prepared_team = team_slots.get(seat_index)
             if not team_text and prepared_team is not None:
@@ -214,13 +242,188 @@ class GeneralRecognizer:
                     prepared_team, seat_index, "team",
                 )
             team = self._normalize_team(team_text, seat_index)
-            results.append({
-                "index": seat_index,
-                "name": name,
-                "confidence": round(confidence, 4),
-                "team": team,
+            name_result["team"] = team
+            results.append(name_result)
+        return self._resolve_page_names(results)
+
+    @staticmethod
+    def _empty_name_result(index: int) -> dict:
+        return {
+            "index": index,
+            "raw_name": "",
+            "name": "",
+            "candidates": [],
+            "resolution": "unknown",
+            "confidence": 0.0,
+            "evidence": [],
+        }
+
+    def _append_single_name_evidence(
+        self,
+        evidence: list[dict],
+        prepared: np.ndarray,
+        raw_roi: np.ndarray,
+        slot: int,
+    ) -> None:
+        """仅为未确认槽位补充增强图和原始放大图两路证据。"""
+        text, confidence = self._recognize_prepared_single(prepared, slot, "name")
+        self._append_evidence(evidence, "single_enhanced", text, confidence)
+        plain = self._preprocess_plain_roi(raw_roi)
+        text, confidence = self._recognize_prepared_single(plain, slot, "name")
+        self._append_evidence(evidence, "single_plain", text, confidence)
+
+    @staticmethod
+    def _append_evidence(
+        evidence: list[dict], source: str, text: str, confidence: float,
+    ) -> None:
+        normalized = text.strip()
+        if normalized:
+            evidence.append({
+                "source": source,
+                "text": normalized,
+                "confidence": round(float(confidence), 4),
             })
+
+    def _resolve_name_evidence(self, index: int, evidence: list[dict]) -> dict:
+        """合并同一槽位的多路 OCR 证据；冲突时不产生最终名称。"""
+        result = self._empty_name_result(index)
+        result["evidence"] = list(evidence)
+        if not evidence:
+            return result
+
+        strongest = max(evidence, key=lambda item: float(item.get("confidence", 0.0)))
+        result["raw_name"] = str(strongest.get("text", "")).strip()
+        result["confidence"] = round(float(strongest.get("confidence", 0.0)), 4)
+        parsed = [self._parse_name_evidence(item) for item in evidence]
+
+        exact_names = {item["name"] for item in parsed if item["resolution"] == "exact"}
+        if len(exact_names) == 1:
+            result.update(name=exact_names.pop(), resolution="exact")
+            result["candidates"] = [result["name"]]
+            return result
+        if len(exact_names) > 1:
+            result["resolution"] = "conflict"
+            result["candidates"] = sorted(exact_names)
+            return result
+
+        confirmed = {
+            item["name"] for item in parsed
+            if item["resolution"] in _CONFIRMED_RESOLUTIONS and item["name"]
+        }
+        all_candidates = [set(item["candidates"]) for item in parsed if item["candidates"]]
+        if len(confirmed) == 1:
+            name = confirmed.pop()
+            resolutions = [
+                item["resolution"] for item in parsed if item["name"] == name
+            ]
+            result.update(
+                name=name,
+                candidates=[name],
+                resolution=max(resolutions, key=_RESOLUTION_PRIORITY.get),
+            )
+            return result
+        if len(confirmed) > 1:
+            result["resolution"] = "conflict"
+            result["candidates"] = sorted(set().union(*all_candidates, confirmed))
+            return result
+
+        if all_candidates:
+            common = set.intersection(*all_candidates)
+            result["candidates"] = sorted(common or set.union(*all_candidates))
+            result["resolution"] = "unresolved"
+        return result
+
+    def _parse_name_evidence(self, evidence: dict) -> dict:
+        text = str(evidence.get("text", "")).strip()
+        if text in self._hero_names:
+            return {"name": text, "candidates": [text], "resolution": "exact"}
+        prefix_candidates = [hero for hero in self._hero_names if hero.startswith(text)]
+        if len(prefix_candidates) == 1:
+            return {
+                "name": prefix_candidates[0],
+                "candidates": prefix_candidates,
+                "resolution": "unique_prefix",
+            }
+        if prefix_candidates:
+            return {"name": "", "candidates": prefix_candidates, "resolution": "unresolved"}
+        candidates = [
+            hero for hero in self._hero_names
+            if self._similarity_service._levenshtein_distance(text, hero)
+            <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
+        ]
+        if len(candidates) == 1 and self._similarity_service.is_safe_single_substitution(
+            text, candidates[0],
+        ):
+            return {
+                "name": candidates[0],
+                "candidates": candidates,
+                "resolution": "unique_similarity",
+            }
+        return {
+            "name": "",
+            "candidates": candidates,
+            "resolution": "unresolved" if candidates else "unknown",
+        }
+
+    @staticmethod
+    def _requires_slot_recheck(result: dict, text: str, confidence: float) -> bool:
+        return (
+            not text
+            or confidence < _NAME_RECHECK_CONFIDENCE
+            or result["resolution"] in {"unresolved", "unknown", "conflict"}
+        )
+
+    def _resolve_page_names(self, results: list[dict]) -> list[dict]:
+        """按页面唯一性消歧，并将重复确认结果回退为冲突。"""
+        occupied = {item["name"] for item in results if item["name"]}
+        pending = [
+            item for item in results
+            if item["resolution"] == "unresolved" and item["candidates"]
+        ]
+        remaining = {
+            item["index"]: set(item["candidates"]) - occupied
+            for item in pending
+        }
+        for item in pending:
+            candidates = remaining[item["index"]]
+            if not candidates and item["candidates"]:
+                item["resolution"] = "conflict"
+                continue
+            if len(candidates) != 1:
+                item["candidates"] = sorted(candidates)
+                continue
+            candidate = next(iter(candidates))
+            if any(
+                candidate in other_candidates
+                for other_index, other_candidates in remaining.items()
+                if other_index != item["index"]
+            ):
+                item["candidates"] = [candidate]
+                continue
+            item.update(name=candidate, candidates=[candidate], resolution="slot_unique")
+
+        by_name: dict[str, list[dict]] = {}
+        for item in results:
+            if item["name"]:
+                by_name.setdefault(item["name"], []).append(item)
+        for name, duplicates in by_name.items():
+            if len(duplicates) < 2:
+                continue
+            strongest = max(_RESOLUTION_PRIORITY[item["resolution"]] for item in duplicates)
+            winners = [
+                item for item in duplicates
+                if _RESOLUTION_PRIORITY[item["resolution"]] == strongest
+            ]
+            for item in duplicates:
+                if len(winners) == 1 and item is winners[0]:
+                    continue
+                item.update(name="", candidates=[name], resolution="conflict")
         return results
+
+    @staticmethod
+    def _preprocess_plain_roi(roi: np.ndarray) -> np.ndarray:
+        enlarged = cv2.resize(roi, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        return cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
 
     @staticmethod
     def _crop_roi(
@@ -296,7 +499,10 @@ class GeneralRecognizer:
         return text, confidence
 
     def _recognize_prepared_batch(
-        self, prepared_slots: dict[int, np.ndarray], kind: str,
+        self,
+        prepared_slots: dict[int, np.ndarray],
+        kind: str,
+        evidence_by_slot: dict[int, list[dict]] | None = None,
     ) -> dict[int, tuple[str, float]]:
         """将同类 ROI 拼图为一次检测；异常槽位由调用方逐槽回退。"""
         if not prepared_slots:
@@ -322,6 +528,13 @@ class GeneralRecognizer:
                 text = text.strip()
                 if slot is not None and text:
                     mapped[slot].append((text, float(confidence)))
+                    if evidence_by_slot is not None:
+                        self._append_evidence(
+                            evidence_by_slot.setdefault(slot, []),
+                            f"batch_{'enhanced' if kind == 'name' else kind}",
+                            text,
+                            float(confidence),
+                        )
             except (IndexError, TypeError, ValueError):
                 logger.warning("%s ROI 拼图返回了无法映射的检测框", kind)
 

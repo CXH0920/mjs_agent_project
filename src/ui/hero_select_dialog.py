@@ -62,6 +62,7 @@ class BaseHeroSelectDialog(QDialog):
         return_format: ReturnFormat = ReturnFormat.IDS,
         max_selection: int = 0,
         min_selection: int = 1,
+        allowed_names: set[str] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -70,6 +71,7 @@ class BaseHeroSelectDialog(QDialog):
         self._return_format = return_format
         self._max_selection = max_selection
         self._min_selection = min_selection
+        self._allowed_names = allowed_names
         self._all_heroes: list[Hero] = []
         self._filtered_heroes: list[Hero] = []
         self._selected_id_set: set[int] = set()
@@ -206,6 +208,7 @@ class BaseHeroSelectDialog(QDialog):
         self._filtered_heroes = [
             hero for hero in self._all_heroes
             if hero.faction in selected_factions
+            and (self._allowed_names is None or hero.name in self._allowed_names)
             and (not search_text or search_text in hero.name)
             and self._matches_extra_filter(hero)
         ]

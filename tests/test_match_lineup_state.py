@@ -145,3 +145,35 @@ def test_empty_ocr_replaces_old_lineup_and_manual_replace_clears_team_labels() -
     assert not lineup.load_from_ocr([], heroes.get, "12:31")
     assert lineup.valid_count == 0
     assert lineup.recognized_at == ""
+
+
+def test_unresolved_name_is_preserved_but_cannot_confirm_lineup() -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+
+    assert lineup.load_from_ocr([
+        {
+            "index": 1,
+            "raw_name": "甲",
+            "name": "",
+            "candidates": ["甲", "乙"],
+            "resolution": "unresolved",
+            "evidence": [{"source": "batch_enhanced", "text": "甲"}],
+        },
+        {"index": 2, "name": "乙", "resolution": "exact"},
+        {"index": 3, "name": "丙", "resolution": "exact"},
+        {"index": 5, "name": "丁", "resolution": "exact"},
+    ], heroes.get, "12:30")
+
+    pending = lineup.slots[0]
+    assert pending.hero is None
+    assert pending.recognized_name == "甲"
+    assert pending.candidates == ("甲", "乙")
+    assert pending.resolution == "unresolved"
+    assert lineup.validate().reason == "unresolved_name"
+    assert not lineup.can_confirm()
+
+    lineup.replace_hero(0, heroes["甲"])
+
+    assert lineup.slots[0].resolution == "manual"
+    assert lineup.slots[0].hero == heroes["甲"]

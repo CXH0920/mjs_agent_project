@@ -47,3 +47,26 @@ def test_panel_preserves_recognition_issue_and_clears_old_lineup(monkeypatch) ->
     assert panel._lineup.valid_count == 0
     assert [card._hero_id for card in panel._cards] == [0, 0, 0, 0]
     assert not panel._empty_state.isHidden()
+
+
+def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatch) -> None:
+    _app()
+    monkeypatch.setattr("src.ui.match_guide_panel.load_win_rates", lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+
+    panel.load_from_ocr([
+        {
+            "index": 1,
+            "raw_name": "甲",
+            "name": "",
+            "candidates": ["甲", "乙"],
+            "resolution": "unresolved",
+        },
+        {"index": 2, "name": "乙", "resolution": "exact"},
+        {"index": 3, "name": "丙", "resolution": "exact"},
+        {"index": 5, "name": "丁", "resolution": "exact"},
+    ])
+
+    assert panel._cards[0]._status_label.text() == "待确认 · 2 个候选"
+    assert panel._lineup.validate().reason == "unresolved_name"
+    assert not panel._confirm_btn.isEnabled()

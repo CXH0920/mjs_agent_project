@@ -80,7 +80,7 @@ class PollCoordinator(QObject):
     _poll_result_received = Signal(object)
 
     POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
-    MATCH_GUIDE_MIN_RECOGNIZED_NAMES = 3
+    MATCH_GUIDE_MIN_CONFIRMED_NAMES = 3
 
     def __init__(
         self,
@@ -223,18 +223,19 @@ class PollCoordinator(QObject):
 
     @classmethod
     def _validate_match_guide_result(cls, result: PollTaskResult) -> PollTaskResult:
-        """仅在识别到足够的候选角色后触发对局攻略自动跳转。"""
+        """仅在确认足够的角色名称后触发对局攻略自动跳转。"""
         if result.outcome is not PollOutcome.MATCHED:
             return result
-        recognized_count = sum(
+        confirmed_count = sum(
             bool(str(item.get("name", "")).strip())
+            and item.get("resolution") not in {"unresolved", "unknown", "conflict"}
             for item in result.ocr_results
         )
-        if recognized_count >= cls.MATCH_GUIDE_MIN_RECOGNIZED_NAMES:
+        if confirmed_count >= cls.MATCH_GUIDE_MIN_CONFIRMED_NAMES:
             return result
         return PollTaskResult(
             PollOutcome.HEALTHY_NO_MATCH,
-            f"对局攻略候选角色不足: {recognized_count}/{cls.MATCH_GUIDE_MIN_RECOGNIZED_NAMES}",
+            f"对局攻略已确认角色不足: {confirmed_count}/{cls.MATCH_GUIDE_MIN_CONFIRMED_NAMES}",
             result.ocr_results,
         )
 

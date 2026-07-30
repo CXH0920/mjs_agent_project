@@ -359,7 +359,7 @@ MatchGuidePanel._on_import_from_file()
   -> load_from_ocr(ocr_results)
 
 MatchGuidePanel.load_from_ocr()
-  -> LineupState.load_from_ocr()                                 [槽位、队伍标签和主将初值]
+  -> LineupState.load_from_ocr()                                 [确认名称与待定候选、队伍标签和主将初值]
   -> MatchHeroCard.set_hero()/set_side()                          [卡片重绘]
   -> MatchAnalysisView.render_unconfirmed()
 
@@ -368,7 +368,7 @@ MatchGuidePanel._set_side() / _set_ally_leader()
   -> 取消已确认状态 → 卡片与确认提示重绘
 
 MatchGuidePanel._confirm_lineup()
-  -> LineupState.confirm()                                       [四名不同武将且敌我各两名]
+  -> LineupState.confirm()                                       [四个名称均确认、武将不同且敌我各两名]
   -> MatchAnalysisService.analyze(allies, enemies)
   -> MatchAnalysisView.render_analysis()
 ```
@@ -445,6 +445,8 @@ RecommendationPanel.load_from_ocr(ocr_results)                  [OCR 结果 list
      -> idx = item["index"] - 1
      -> name = item["name"]
      -> confidence = item["confidence"]
+     -> resolution / candidates = item["resolution"] / item["candidates"]
+     -> [name 为空] card.set_pending_name(...)                   [不加载任何武将数据]
      -> hero = self._hero_mgr.get_hero_by_name(name)            [名称→Hero 对象]
      -> [找到] card.set_hero(hero)
                card.set_confidence(0.5)                         [固定 0.5: OCR 非游戏内推荐]
@@ -454,6 +456,8 @@ RecommendationPanel.load_from_ocr(ocr_results)                  [OCR 结果 list
      -> self._load_win_rate_by_name(idx, name)                  [加载胜率]
   -> self._apply_medal_rankings()                               [Top 3 奖牌]
 ```
+
+待确认卡片的“确认”按钮打开候选白名单模式的 `BaseHeroSelectDialog`；人工选择只修改当前页面槽位并标记 `manual`。对局攻略的“替换”入口使用相同白名单能力，候选为空时仍允许从完整本地词表选择。
 
 ### 4.2 相性加载与展示
 

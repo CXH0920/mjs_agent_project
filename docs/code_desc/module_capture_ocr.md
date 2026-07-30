@@ -98,11 +98,11 @@ match(image, threshold=0.8)
 
 ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给独立的单线程 `image-save` 执行器压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
-自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；识别到至少 3 个角色名才自动切换页面并停用该任务，不足则继续轮询。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
+自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；至少确认 3 个角色名才自动切换页面并停用该任务，`unresolved`、`unknown` 和 `conflict` 不计入数量。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
 
-### 3.3 两段式 OCR 识别
+### 3.3 多路证据与候选确认
 
-`GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 PaddleOCR 检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。检测框按中心横坐标映射回槽位；缺失、重复、低于 0.5 置信度或无法映射的槽位才回退逐一识别。ROI 坐标以参考分辨率保存，
+`GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 PaddleOCR 检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.8 时，才追加增强图与仅放大原图的逐槽识别。ROI 坐标以参考分辨率保存，
 识别前会分别按当前截图宽高进行换算，因此支持页面比例基本不变时的分辨率变化：
 
 ```
@@ -115,18 +115,22 @@ ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR work
 
 ROI 裁剪 → 放大 3× → CLAHE 增强对比度 → 锐化 → 灰度 → PaddleOCR
 
-**第二段：武将名库编辑距离矫正**
+**第二段：候选确认与页面消歧**
 
 ```
 PaddleOCR → 文字 + 置信度
   │
-  └── 当前武将词表编辑距离匹配
-       ├── 距离 ≤ 1 且唯一候选 → 直接采纳
-       └── 距离 ≤ 1 且多候选 → 多维汉字特征评分决胜
-       └── 无候选且极高置信度（≥99.5%）→ 保留原文，保护新武将
+  └── 当前武将词表候选解析
+       ├── 精确命中或唯一前缀 → 确认
+       ├── 等长名称仅错一字、唯一候选且字形相似度 ≥ 0.55 → 确认
+       ├── 多候选、字形不足或多路冲突 → 保持未确认
+       ├── 页面内排除已占用名称后仅余一个且无槽位竞争 → 确认
+       └── 重复名称 → 保留唯一更强证据，其余回退；同等级全部回退
 ```
 
-官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。旧版继续按表格横线定位；新版从排名列的重复文字行确定稳定行距，并补回被压缩或背景干扰漏掉的行。`src.business.official_data_import_service` 负责词表纠错、受限候选繁体兜底、榜单内部唯一性补全、复核和输出。多页导入先在内存中按列表顺序合并，使用排名 OCR 的一致性证据阻止明显错序；最终存在未确认名称、重复名称或同规模输出集合不一致时只保存复核证据，不覆盖正式 CSV。整批任务执行期间普通 OCR 留在队列等待，主窗口暂停产生新的轮询任务，从而避免多个 Paddle native 线程池并发运行。名称策略仍局限在官方导入，不影响选将模板 OCR、文件导入或轮询；胜率继续通过同一面板的数字字形模板识别。
+结构化结果为 `{index, raw_name, name, candidates, resolution, confidence, evidence}`。`name` 只保存已确认名称；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
+
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.official_data_import_service` 继续独立负责受限候选繁体兜底、整榜唯一性和正式写入门禁；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
 ### 3.4 多维汉字特征评分
 
@@ -236,12 +240,13 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 |---------|------|
 | `TemplateManager.match(image, threshold)` → `(bool, float)` | 模板匹配 |
 | `TemplateManager.set_template(image, roi)` | 制作模板 |
-| `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别 8 个武将名 |
+| `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别页面名称并返回候选、状态和多路证据 |
 | `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | OCR 图像预处理 |
 | `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界 |
 | `official_board_parser.split_row_cells(...)` → `dict[str, np.ndarray]` | 按官方版式切分行单元格 |
 | `official_board_parser.prepare_rate_templates(...)` | 构建榜单数字模板并预计算胜率 OCR |
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
+| `CharacterSimilarityService.is_safe_single_substitution(text, candidate)` → `bool` | 判断唯一错字是否达到自动纠正门槛 |
 | `CharacterFeatureRepository(cache_path=None)` | 汉字特征缓存加载、动态补齐与保存 |
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |
 | `OcrWorker.submit(task)` | 串行执行预热、常规 `OcrTask` 或官方 `OfficialImportTask`，并通过任务完成信号返回结果 |

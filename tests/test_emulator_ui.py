@@ -18,6 +18,7 @@ from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.main_window import MainWindow, PollOutcome
 from src.ui.match_guide_panel import MatchGuidePanel
+from src.ui.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
 from src.ui.recommendation_panel import HeroCardWidget, RecommendationPanel
 from src.ui.shared.hero_dialogs import HeroSkillDialog
@@ -307,6 +308,44 @@ def test_hero_card_exposes_public_identity_and_unrecognized_state(monkeypatch) -
     assert card.hero_name == ""
     assert card._name_overlay.text() == "新武将"
     assert card._confidence_label.text() == "推荐指数：-- / 数据不足"
+
+
+def test_recommendation_keeps_unresolved_slot_without_loading_hero_data() -> None:
+    _app()
+    panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+
+    panel.load_from_ocr([{
+        "index": 1,
+        "raw_name": "测试",
+        "name": "测试武将",
+        "candidates": ["测试武将"],
+        "resolution": "unresolved",
+        "confidence": 0.88,
+    }])
+
+    card = panel._cards[0]
+    assert card.hero_id == 0
+    assert card._name_overlay.text() == "测试"
+    assert card._data_status_label.text() == "候选 1 名"
+    assert not card._confirm_name_btn.isHidden()
+    assert "0 名武将" in panel._recognition_status_label.text()
+
+
+def test_hero_select_dialog_can_limit_list_to_name_candidates() -> None:
+    _app()
+    manager = HeroManager()
+    manager._items = {
+        1: Hero(id=1, name="甲", faction="魏"),
+        2: Hero(id=2, name="乙", faction="魏"),
+    }
+
+    dialog = BaseHeroSelectDialog(
+        manager,
+        selection_mode=SelectionMode.SINGLE,
+        allowed_names={"乙"},
+    )
+
+    assert [hero.name for hero in dialog._filtered_heroes] == ["乙"]
 
 
 def test_recommendation_card_displays_index_or_insufficient_data() -> None:

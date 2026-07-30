@@ -18,6 +18,10 @@ class LineupSlot:
 
     hero: Hero | None = None
     recognized_name: str = ""
+    raw_name: str = ""
+    candidates: tuple[str, ...] = ()
+    resolution: str = "unknown"
+    evidence: tuple[dict, ...] = ()
     confidence: float = 0.0
     team: str = ""
     side: str = ""
@@ -109,7 +113,7 @@ class LineupState:
         """按 OCR 槽位导入新阵容，并清除旧的确认状态。"""
         recognized_items = [
             item for item in sorted(ocr_results, key=self._ocr_sort_key)
-            if str(item.get("name", "")).strip()
+            if self._has_name_identity(item)
         ]
         player_item = next(
             (item for item in recognized_items if self._ocr_sort_key(item) == self.PLAYER_SLOT_INDEX),
@@ -128,16 +132,29 @@ class LineupState:
             if self._ocr_sort_key(item) in self.TEAMMATE_SLOT_INDICES
         ]
         has_unique_teammate = len(teammate_items) == 1
-        has_unique_names = len({str(item.get("name", "")).strip() for item in selected_items}) == len(selected_items)
+        confirmed_names = [
+            str(item.get("name", "")).strip()
+            for item in selected_items if self._is_confirmed_item(item)
+        ]
+        has_unique_names = (
+            len(confirmed_names) == len(selected_items)
+            and len(set(confirmed_names)) == len(confirmed_names)
+        )
 
         slots: list[LineupSlot] = []
         for item in selected_items:
             name = str(item.get("name", "")).strip()
+            raw_name = str(item.get("raw_name", "")).strip()
+            resolution = str(item.get("resolution", "exact" if name else "unknown"))
             team = str(item.get("team", "")).strip()
             source_index = self._ocr_sort_key(item)
             slots.append(LineupSlot(
-                hero=hero_by_name(name),
-                recognized_name=name,
+                hero=hero_by_name(name) if self._is_confirmed_item(item) else None,
+                recognized_name=name or raw_name,
+                raw_name=raw_name,
+                candidates=tuple(item.get("candidates") or ()),
+                resolution=resolution,
+                evidence=tuple(item.get("evidence") or ()),
                 confidence=self._read_confidence(item.get("confidence", 0.0)),
                 team=team,
                 side=self._side_from_position(
@@ -194,7 +211,13 @@ class LineupState:
     def replace_hero(self, index: int, hero: Hero) -> None:
         """替换一个槽位，并要求重新确认全部敌我阵营。"""
         self._check_index(index)
-        self._slots[index] = LineupSlot(hero=hero, recognized_name=hero.name)
+        self._slots[index] = LineupSlot(
+            hero=hero,
+            recognized_name=hero.name,
+            raw_name=hero.name,
+            candidates=(hero.name,),
+            resolution="manual",
+        )
         self._slots = [replace(slot, team="", side="") for slot in self._slots]
         self._ally_leader_slot = None
         self._analysis_confirmed = False
@@ -202,6 +225,18 @@ class LineupState:
 
     def validate(self) -> LineupValidationResult:
         """返回阵容是否可用于分析，以及当前最直接的失败原因。"""
+        pending_names = sum(
+            slot.hero is None
+            and slot.resolution in {"unresolved", "conflict"}
+            and bool(slot.recognized_name or slot.candidates)
+            for slot in self._slots
+        )
+        if pending_names:
+            return LineupValidationResult(
+                False,
+                "unresolved_name",
+                f"还有 {pending_names} 名武将名称待确认。",
+            )
         heroes = [slot.hero for slot in self._slots if slot.hero]
         if len(heroes) != self.SLOT_COUNT:
             return LineupValidationResult(
@@ -309,3 +344,18 @@ class LineupState:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    @staticmethod
+    def _has_name_identity(item: dict) -> bool:
+        return bool(
+            str(item.get("name", "")).strip()
+            or str(item.get("raw_name", "")).strip()
+            or item.get("candidates")
+        )
+
+    @staticmethod
+    def _is_confirmed_item(item: dict) -> bool:
+        name = str(item.get("name", "")).strip()
+        return bool(name) and item.get("resolution") not in {
+            "unresolved", "unknown", "conflict",
+        }

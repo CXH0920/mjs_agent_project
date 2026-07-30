@@ -479,7 +479,7 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 - 右侧突出显示**推荐指数**（当前版本全服数据计算的“推荐指数：分数 / 评级”，缺失时显示“推荐指数：-- / 数据不足”）、**高相性组合**、**胜率**（从 `2v2胜率排行.csv` 读取），胜率前三自动标记 🥇🥈🥉 奖牌
 - “选将推荐”和“对局攻略”共用 18px 页面标题与紧凑型顶部主、次操作按钮样式
 - 指数正常时不重复显示数据状态；官方榜单更新后显示“推荐指数待重建”提示及“立即重建”，日常“保存截图”和“重建推荐指数”入口位于“更多”菜单
-- 对外提供 `update_recommendations(data: list[dict])` 接口，接收 `{index, name, confidence}` 格式数据
+- 对外提供 `update_recommendations(data: list[dict])` 接口，接收包含 `index`、确认后的 `name`、`raw_name`、`candidates`、`resolution`、`confidence` 和 `evidence` 的结构化结果；旧的 `{index, name, confidence}` 仍兼容
 - 支持两种导入方式：
   - **截图** — 通过 ADB 截取并保存模拟器屏幕画面，不自动触发 OCR
   - **从图片导入** — 选择本地游戏截图文件 → PaddleOCR 识别 → 填入槽位
@@ -714,7 +714,7 @@ python -m src.scraper.ai_batch --synergy --browser
 
 **当前状态：已实施。** 应用启动时即在唯一 `OcrWorker` 中预热 PaddleOCR，不依赖模拟器连接；状态按 `idle → warming → ready/failed` 反馈到状态栏，失败后允许重新提交。预热加载词表字符特征，并执行一次名称拼图尺寸的检测与直接识别推理，避免首次实际任务承担模型和运行时算子初始化。ADB 截图会将图像副本提交 OCR worker，并由独立的单线程保存器压缩原图；OCR 完成不等待 PNG，保存完成另发 `image_saved`。本地导入仍返回已有源文件路径。
 
-常规截图的同类 ROI 会横向拼图后只调用一次 PaddleOCR 检测：选将页一次名称拼图；对局攻略分别进行名称和阵营拼图。检测框按中心横坐标映射回槽位；缺失、重复、低于 0.5 置信度或映射异常的槽位自动回退原有逐槽识别，保留准确率保护。`src/data/char_info_cache.json` 已静态覆盖当前英雄名全部字符和常见误识字；更新 `data/heroes.json` 后运行 `python scripts/build_character_feature_cache.py` 同步缓存。
+常规截图的同类 ROI 会横向拼图后只调用一次 PaddleOCR 检测：选将页一次名称拼图；对局攻略分别进行名称和阵营拼图。每个名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.8 时，才追加增强图与仅放大原图的逐槽识别。名称只有在精确命中、唯一前缀、唯一且通过 0.55 字形门槛的单字替换，或页面唯一性排除后无竞争时才确认；多个候选不再按字典顺序或微小评分差强制决胜。重复结果按证据等级回退，弱结果或同等级冲突保持待确认。结果携带 `raw_name`、`candidates`、`resolution` 和 `evidence`，选将推荐允许在候选内人工确认，对局攻略在全部名称确认前禁止确认阵容；自动轮询只统计已确认名称。`src/data/char_info_cache.json` 应覆盖当前英雄名全部字符和常见误识字；更新 `data/heroes.json` 后运行 `python scripts/build_character_feature_cache.py` 同步缓存。
 
 ### 官方榜单 OCR 第二阶段：识别率优化
 

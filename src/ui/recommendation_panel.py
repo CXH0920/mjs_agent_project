@@ -36,6 +36,7 @@ from src.data.guide_manager import GuideManager
 from src.business.recommendation_service import RecommendationData, RecommendationService
 from src.ui.guide_detail_dialog import GuideDetailDialog
 from src.ui.hero_card_widget import HeroCardWidget
+from src.ui.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.style import (
@@ -80,6 +81,7 @@ class RecommendationPanel(QWidget):
         self._pending_capture_source: str | None = None
         self._recommendation_service = RecommendationService()
         self._recommendation_data = RecommendationData({}, {})
+        self._ocr_results_by_slot: dict[int, dict] = {}
 
         self._setup_ui()
         self._connect_capture_signals()
@@ -198,6 +200,9 @@ class RecommendationPanel(QWidget):
             card.setMinimumSize(card.minimumSizeHint())
             card.guide_clicked.connect(self._show_guide_popup)
             card.hero_double_clicked.connect(self._show_skill_popup)
+            card.candidate_confirm_requested.connect(
+                lambda slot=i + 1: self._confirm_candidate(slot)
+            )
             grid.addWidget(card, row, col)
             self._cards.append(card)
 
@@ -377,7 +382,7 @@ class RecommendationPanel(QWidget):
             idx = item.get("index", 0)
             if idx < 1 or idx > 8:
                 continue
-            name = item.get("name", "")
+            name = str(item.get("name", "")).strip() if self._is_confirmed_result(item) else ""
             hero = self._hero_mgr.get_hero_by_name(name)
             if hero:
                 self._current_hero_ids.add(hero.id)
@@ -391,8 +396,16 @@ class RecommendationPanel(QWidget):
                 continue
 
             card = self._cards[idx - 1]
-            name = item.get("name", "")
+            name = str(item.get("name", "")).strip() if self._is_confirmed_result(item) else ""
             confidence = item.get("confidence", 0.0)
+
+            if not name:
+                card.set_pending_name(
+                    str(item.get("raw_name") or item.get("name") or "").strip(),
+                    list(item.get("candidates") or []),
+                    confidence,
+                )
+                continue
 
             hero = self._hero_mgr.get_hero_by_name(name)
             if not hero:
@@ -466,23 +479,53 @@ class RecommendationPanel(QWidget):
 
         data = []
         for r in ocr_results:
-            idx = r.get("index", 0)
-            name = r.get("name", "")
-            confidence = r.get("confidence", 0.0)
-            if name:
-                data.append({
-                    "index": idx,
-                    "name": name,
-                    "confidence": confidence,
-                })
+            try:
+                idx = int(r.get("index", 0))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= idx <= 8:
+                data.append(dict(r, index=idx))
 
         if not data:
             logger.info("OCR 未识别到任何武将")
             return
 
+        self._ocr_results_by_slot = {item["index"]: item for item in data}
         self.update_recommendations(data)
-        self._update_recognition_status(len(data))
-        logger.info("已从 OCR 导入 %d 个武将数据", len(data))
+        confirmed_count = sum(self._is_confirmed_result(item) for item in data)
+        self._update_recognition_status(confirmed_count)
+        logger.info("已从 OCR 导入 %d 个已确认武将", confirmed_count)
+
+    def _confirm_candidate(self, slot: int) -> None:
+        item = self._ocr_results_by_slot.get(slot)
+        candidates = set(item.get("candidates") or []) if item else set()
+        if not candidates:
+            return
+        dialog = BaseHeroSelectDialog(
+            self._hero_mgr,
+            title="确认武将",
+            tip_text="本次选择只修正当前识别结果。",
+            selection_mode=SelectionMode.SINGLE,
+            allowed_names=candidates,
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted or not dialog.selected_ids:
+            return
+        hero = self._hero_mgr.get_hero(dialog.selected_ids[0])
+        if hero is None:
+            return
+        item.update(name=hero.name, candidates=[hero.name], resolution="manual")
+        data = list(self._ocr_results_by_slot.values())
+        self.update_recommendations(data)
+        self._update_recognition_status(
+            sum(self._is_confirmed_result(result) for result in data)
+        )
+
+    @staticmethod
+    def _is_confirmed_result(item: dict) -> bool:
+        return bool(str(item.get("name", "")).strip()) and item.get("resolution") not in {
+            "unresolved", "unknown", "conflict",
+        }
 
     # ── 截图导入 ──────────────────────────────────────────────────
 

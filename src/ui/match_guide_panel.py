@@ -446,7 +446,10 @@ class MatchGuidePanel(QWidget):
             slot = slots[index]
             hero = slot.hero
             name = slot.recognized_name
-            if hero is None and name:
+            if slot.resolution in {"unresolved", "conflict"}:
+                count = len(slot.candidates)
+                status = f"待确认 · {count} 个候选" if count else "待确认 · 名称冲突"
+            elif hero is None and name:
                 status = "本地无数据"
             elif hero and hero_ids.count(hero.id) > 1:
                 status = "待确认 · 重复识别"
@@ -497,9 +500,12 @@ class MatchGuidePanel(QWidget):
             self._render_cards()
 
     def _replace_hero(self, index: int) -> None:
+        candidates = set(self._lineup.slots[index].candidates)
         dialog = BaseHeroSelectDialog(
             self._hero_mgr, title="替换武将", tip_text="替换只影响本次对局攻略，不会写入武将数据。",
-            selection_mode=SelectionMode.SINGLE, parent=self,
+            selection_mode=SelectionMode.SINGLE,
+            allowed_names=candidates or None,
+            parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted or not dialog.selected_ids:
             return

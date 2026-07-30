@@ -171,6 +171,13 @@ def test_character_similarity_service_corrects_with_injected_repository(tmp_path
     assert service.correct_hero_name("曹不", ["曹仁", "曹丕"]) == "曹丕"
 
 
+def test_character_similarity_requires_safe_glyph_for_single_substitution() -> None:
+    service = CharacterSimilarityService()
+
+    assert service.is_safe_single_substitution("赢政", "嬴政")
+    assert not service.is_safe_single_substitution("正瑜", "周瑜")
+
+
 def test_general_recognizer_delegates_preprocessing_and_name_correction() -> None:
     calls: list[object] = []
 
@@ -288,3 +295,76 @@ def test_general_recognizer_rejects_truncated_name_with_multiple_corrections() -
     recognizer._ocr = FakeEngine()
 
     assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}
+
+
+def test_general_recognizer_keeps_ambiguous_prefix_unresolved() -> None:
+    recognizer = GeneralRecognizer(hero_names=["夏侯惇", "夏侯渊", "夏侯婴", "夏侯霸"])
+
+    result = recognizer._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "夏侯", "confidence": 0.98},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["candidates"] == ["夏侯婴", "夏侯惇", "夏侯渊", "夏侯霸"]
+
+
+def test_general_recognizer_confirms_unique_prefix_but_not_unsafe_similarity() -> None:
+    prefix = GeneralRecognizer(hero_names=["夏侯惇"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "夏侯", "confidence": 0.98},
+    ])
+    unsafe = GeneralRecognizer(hero_names=["周瑜"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "正瑜", "confidence": 0.99},
+    ])
+
+    assert (prefix["name"], prefix["resolution"]) == ("夏侯惇", "unique_prefix")
+    assert unsafe["name"] == ""
+    assert unsafe["resolution"] == "unresolved"
+    assert unsafe["candidates"] == ["周瑜"]
+
+
+def test_general_recognizer_resolves_slot_unique_candidate_without_competition() -> None:
+    recognizer = GeneralRecognizer(hero_names=["卫子夫", "卫青", "卫玠"])
+    results = [
+        recognizer._resolve_name_evidence(1, [{"text": "卫子夫", "confidence": 0.9}]),
+        recognizer._resolve_name_evidence(2, [{"text": "卫青", "confidence": 0.9}]),
+        recognizer._resolve_name_evidence(3, [{"text": "卫", "confidence": 0.9}]),
+    ]
+
+    recognizer._resolve_page_names(results)
+
+    assert (results[2]["name"], results[2]["resolution"]) == ("卫玠", "slot_unique")
+
+
+def test_general_recognizer_does_not_resolve_competing_slot_candidates() -> None:
+    recognizer = GeneralRecognizer(hero_names=["卫子夫", "卫青", "卫玠"])
+    results = [
+        recognizer._resolve_name_evidence(1, [{"text": "卫子夫", "confidence": 0.9}]),
+        recognizer._resolve_name_evidence(2, [{"text": "卫青", "confidence": 0.9}]),
+        recognizer._resolve_name_evidence(3, [{"text": "卫", "confidence": 0.9}]),
+        recognizer._resolve_name_evidence(4, [{"text": "卫", "confidence": 0.9}]),
+    ]
+
+    recognizer._resolve_page_names(results)
+
+    assert [item["name"] for item in results[2:]] == ["", ""]
+    assert [item["candidates"] for item in results[2:]] == [["卫玠"], ["卫玠"]]
+
+
+def test_general_recognizer_rolls_weaker_duplicate_back_to_conflict() -> None:
+    recognizer = GeneralRecognizer()
+    results = [
+        {"index": 1, "name": "周瑜", "candidates": ["周瑜"], "resolution": "exact"},
+        {
+            "index": 2,
+            "name": "周瑜",
+            "candidates": ["周瑜"],
+            "resolution": "unique_similarity",
+        },
+    ]
+
+    recognizer._resolve_page_names(results)
+
+    assert results[0]["name"] == "周瑜"
+    assert results[1]["name"] == ""
+    assert results[1]["resolution"] == "conflict"

@@ -1015,7 +1015,8 @@ def update_recommendations(self, data: list[dict]) → None
 4. `_on_capture_result` 复位按钮；选择「从图片导入」时才提交图片到 OcrWorker 并调用 `load_from_ocr()` 填入 8 个槽位
 
 **`load_from_ocr(ocr_results)`**：
-- 接收 OCR 识别结果 `[{index, name, confidence}, ...]`
+- 接收 OCR 结构化结果 `[{index, raw_name, name, candidates, resolution, confidence, evidence}, ...]`，并兼容旧的 `{index, name, confidence}`
+- `name` 为空的待确认槽位只显示 OCR 原文与候选，不加载武将资料、推荐指数、胜率或相性；候选确认只影响当前页面
 - 将 name 匹配 HeroManager 中的 Hero 对象
 - 加载 `images/<name>.png` 头像
 - 刷新当前版本推荐指数快照，卡片以“推荐指数：星级 + 评级”显示；悬停或点击星级查看胜率、出场排名、禁用排名及自动推荐排序，右侧圆形感叹号悬停查看计算口径
@@ -1584,21 +1585,30 @@ match(image, threshold=0.8)
 
 ### 12.3 武将名称识别组件
 
-`GeneralRecognizer` 使用 PaddleOCR 对配置布局中的名称区域进行 OCR 识别；对局攻略还读取同一布局中的阵营区域。它只负责 ROI 裁剪、引擎延迟加载和调用编排。图像增强由 `ImagePreprocessor` 承担，名称纠错由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
+`GeneralRecognizer` 使用 PaddleOCR 对配置布局中的名称区域进行 OCR 识别；对局攻略还读取同一布局中的阵营区域。它负责 ROI 裁剪、引擎调用、多路证据汇总、候选状态和页面唯一性消歧。图像增强由 `ImagePreprocessor` 承担，单字字形安全门槛由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
 
-#### 两段式识别策略
+#### 多路证据识别策略
 
 ```
 第一段：PaddleOCR 全量字典（ch）识别
   ROI 裁剪 → 放大 3× → CLAHE → 锐化 → 灰度
   → PaddleOCR → 文字 + 置信度
 
-第二段：武将名库编辑距离矫正
-  ⓐ 用 165 武将名称列表做编辑距离匹配（阈值 ≤ 1）
-     唯一候选 → 直接采纳
-     多候选 → 多维汉字特征评分决胜（详见下文）
-  ⓑ 无候选且极高置信度（≥99.5%）→ 信任 OCR，保护新增武将
+第二段：仅对缺失、多候选、冲突或低于 0.8 的槽位复识别
+  当前增强图逐槽 OCR + 仅放大原图逐槽 OCR
+
+第三段：候选确认
+  精确命中 / 唯一前缀 → 确认
+  唯一等长编辑距离候选，且唯一错字字形分 ≥ 0.55 → 确认
+  多候选、字形不足或证据冲突 → 保持未确认
+
+第四段：页面约束
+  排除已确认名称后只剩一个且无槽位竞争 → slot_unique
+  重复名称按 exact > unique_prefix > unique_similarity > slot_unique 回退弱证据
+  同等级重复全部标记 conflict
 ```
+
+结果格式为 `{index, raw_name, name, candidates, resolution, confidence, evidence}`；只有 `name` 非空才表示名称已经确认。多个“夏侯”候选不会再按字典顺序决胜，`正瑜` 也不会仅凭编辑距离自动绑定为周瑜。
 
 #### 多维汉字特征评分算法（2026-06-30 新增）
 
