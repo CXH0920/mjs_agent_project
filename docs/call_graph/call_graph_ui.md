@@ -526,11 +526,11 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
         -> 优势对局 (strong_against_type) → 流式标签
         -> 对抗建议 (counter_strategy) → 文本
         -> 搭配推荐 (synergizes_with) → 可点击流式标签
-        -> 攻略正文 (description) → DoubleClickTextBrowser    [双击打开 GuideMarkdownDialog]
+        -> 攻略正文 (description) → render_markdown() → DoubleClickTextBrowser    [双击打开 GuideMarkdownDialog]
   -> GuideDetailDialog.exec()                                   [模态展示]
 ```
 
-`RecommendationPanel` 仅协调数据和信号：它创建 `HeroCardWidget`、连接卡片信号并打开 `GuideDetailDialog`。卡片绘制/奖牌样式位于 `hero_card_widget.py`，攻略摘要和 Markdown 渲染位于 `guide_detail_dialog.py`；原模块继续导入这两个名称，保持既有 `from recommendation_panel import ...` 调用兼容。
+`RecommendationPanel` 仅协调数据和信号：它创建 `HeroCardWidget`、连接卡片信号并打开 `GuideDetailDialog`。卡片绘制/奖牌样式位于 `hero_card_widget.py`，攻略摘要位于 `guide_detail_dialog.py`，安全 Markdown 渲染集中在 `markdown_renderer.py`；原模块继续导入这两个名称，保持既有 `from recommendation_panel import ...` 调用兼容。
 
 ### 4.6 函数清单总表（推荐面板）
 
@@ -682,7 +682,7 @@ HeroDetailPanel.show_hero(hero_id)
 
 相性说明列双击
   -> HeroSynergyView._show_description()
-  -> _markdown_to_html() -> QTextBrowser 预览
+  -> render_markdown() -> QTextBrowser 预览
 ```
 
 ### 5.6 函数清单总表（武将浏览器）

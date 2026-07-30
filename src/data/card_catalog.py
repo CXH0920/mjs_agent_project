@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -80,16 +80,26 @@ class CardFieldDefinition(BaseModel):
 
 
 class EffectEntry(BaseModel):
-    """一条可追溯的版本效果记录。"""
+    """一条可编辑的卡牌效果记录。"""
 
-    version: str = Field(min_length=1, max_length=32)
-    effective_from: date
-    effective_to: date | None = None
     content: str = Field(min_length=1)
-    source: str = ""
     status: str = "active"
+    created_at: datetime
+    updated_at: datetime
 
-    @field_validator("version", "content")
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_fields(cls, value: Any) -> Any:
+        """读取旧版本记录时，用原生效日期补齐内部时间字段。"""
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        legacy_time = migrated.get("effective_from") or datetime.now()
+        migrated.setdefault("created_at", legacy_time)
+        migrated.setdefault("updated_at", migrated["created_at"])
+        return migrated
+
+    @field_validator("content")
     @classmethod
     def not_blank(cls, value: str) -> str:
         if not value.strip():
@@ -102,13 +112,6 @@ class EffectEntry(BaseModel):
         if value not in EFFECT_STATUSES:
             raise ValueError("状态仅支持 active、expired 或 pending")
         return value
-
-    @model_validator(mode="after")
-    def validate_date_range(self) -> "EffectEntry":
-        if self.effective_to and self.effective_to < self.effective_from:
-            raise ValueError("生效结束日期不能早于开始日期")
-        return self
-
 
 class CardAnnotation(BaseModel):
     card_id: str
@@ -139,10 +142,8 @@ class CardViewModel:
 
     @property
     def has_active_adjustment(self) -> bool:
-        today = date.today()
         return any(
-            entry.status == "active" and entry.effective_from <= today
-            and (entry.effective_to is None or entry.effective_to >= today)
+            entry.status == "active"
             for value in self.fields
             for entry in self._entries_for(value)
         )
@@ -429,8 +430,7 @@ class CardCatalogService:
         if definition.value_type == "effect_entries":
             if not isinstance(value, list):
                 raise ValueError(f"{definition.label} 必须是效果记录列表")
-            entries = [EffectEntry.model_validate(raw) for raw in value]
-            self.validate_active_ranges(definition, entries)
+            [EffectEntry.model_validate(raw) for raw in value]
         elif definition.value_type == "markdown" and not isinstance(value, str):
             raise ValueError(f"{definition.label} 必须是文本")
         elif definition.value_type == "tags" and (not isinstance(value, list) or not all(isinstance(item, str) for item in value)):
@@ -441,16 +441,6 @@ class CardCatalogService:
             raise ValueError(f"{definition.label} 必须是数值")
         elif definition.value_type == "select" and value not in definition.options:
             raise ValueError(f"{definition.label} 必须是预定义选项之一")
-
-    @staticmethod
-    def validate_active_ranges(definition: CardFieldDefinition, entries: list[EffectEntry]) -> None:
-        """校验生效中版本记录的时间区间不重叠。"""
-        active = sorted((entry for entry in entries if entry.status == "active"), key=lambda entry: entry.effective_from)
-        for previous, current in zip(active, active[1:]):
-            if previous.effective_to is None or current.effective_from <= previous.effective_to:
-                raise ValueError(
-                    f"{definition.label} 的生效中记录时间重叠：{previous.version} 与 {current.version}"
-                )
 
     def save_annotation_fields(self, card_id: str, fields: dict[str, Any]) -> None:
         if not self.editable:
@@ -464,6 +454,8 @@ class CardCatalogService:
             if definition is None:
                 raise ValueError(f"字段不存在: {key}")
             self._validate_value(definition, value)
+            if definition.value_type == "effect_entries":
+                value = [EffectEntry.model_validate(raw).model_dump(mode="json") for raw in value]
             merged[key] = value
         for definition in self.schema.list_fields(include_archived=False):
             if definition.enabled and definition.required and not self._has_value(merged.get(definition.key)):

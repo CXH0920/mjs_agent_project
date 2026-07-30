@@ -6,22 +6,18 @@
       "fields": {
         "strengthen_effect": [
           {
-            "version": "1",
-            "effective_from": "2026-07-26",
-            "effective_to": null,
             "content": "对攻击范围内的一名其他角色打出，对其造成2点伤害。",
-            "source": "",
-            "status": "active"
+            "status": "active",
+            "created_at": "2026-07-26T00:00:00",
+            "updated_at": "2026-07-26T00:00:00"
           }
         ],
         "weaken_effect": [
           {
-            "version": "1",
-            "effective_from": "2021-07-26",
-            "effective_to": null,
             "content": "对攻击范围内的一名其他角色打出，弃置1张牌，然后对其造成1点伤害。",
-            "source": "",
-            "status": "active"
+            "status": "active",
+            "created_at": "2021-07-26T00:00:00",
+            "updated_at": "2021-07-26T00:00:00"
           }
         ]
       },
@@ -32,22 +28,18 @@
       "fields": {
         "strengthen_effect": [
           {
-            "version": "1",
-            "effective_from": "2026-07-26",
-            "effective_to": null,
             "content": "对攻击范围内的一名其他角色打出，对其造成1点雷电伤害，并且造成伤害后，出杀次数+1。",
-            "source": "",
-            "status": "active"
+            "status": "active",
+            "created_at": "2026-07-26T00:00:00",
+            "updated_at": "2026-07-26T00:00:00"
           }
         ],
         "weaken_effect": [
           {
-            "version": "1",
-            "effective_from": "2026-07-26",
-            "effective_to": null,
             "content": "对攻击范围内的一名其他角色打出，随机弃置你的1张牌，然后对其造成1点雷电伤害。",
-            "source": "",
-            "status": "active"
+            "status": "active",
+            "created_at": "2026-07-26T00:00:00",
+            "updated_at": "2026-07-26T00:00:00"
           }
         ]
       },
@@ -58,22 +50,18 @@
       "fields": {
         "strengthen_effect": [
           {
-            "version": "1",
-            "effective_from": "2026-07-28",
-            "effective_to": null,
             "content": "可以当作任意行动牌或战法牌打出。",
-            "source": "",
-            "status": "active"
+            "status": "active",
+            "created_at": "2026-07-28T00:00:00",
+            "updated_at": "2026-07-28T00:00:00"
           }
         ],
         "weaken_effect": [
           {
-            "version": "1",
-            "effective_from": "2026-07-28",
-            "effective_to": null,
             "content": "可以当作杀或闪打出。",
-            "source": "",
-            "status": "active"
+            "status": "active",
+            "created_at": "2026-07-28T00:00:00",
+            "updated_at": "2026-07-28T00:00:00"
           }
         ]
       },

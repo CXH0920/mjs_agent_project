@@ -6,13 +6,14 @@ ADB 连接与截图模块
 
 from __future__ import annotations
 
-import io
 import logging
 import subprocess
 import time
 from pathlib import Path
 
 from PIL import Image
+
+from src.capture.image_validation import load_png_image_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +199,7 @@ class AdbCapture:
             else:
                 try:
                     decode_started = time.perf_counter()
-                    image = Image.open(io.BytesIO(result.stdout))
-                    image.load()
+                    image = load_png_image_bytes(result.stdout)
                     if log_success:
                         logger.info(
                             "截图成功: %s x %s，ADB命令=%.1fms，PNG解码=%.1fms",

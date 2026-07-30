@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 
 import pytest
-from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDateEdit, QGroupBox, QLabel, QLineEdit, QPushButton, QTextEdit
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QTextEdit
 
 from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
 from src.ui.card_management_panel import CardAnnotationEditDialog, CardManagementPanel, EFFECT_STATUS_LABELS
@@ -39,12 +37,10 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
         "annotations": [{
             "card_id": "8",
             "fields": {"strengthen_effect": [{
-                "version": "2026.07",
-                "effective_from": "2026-07-26",
-                "effective_to": None,
                 "content": "伤害提高",
-                "source": "",
                 "status": "active",
+                "created_at": "2026-07-26T00:00:00",
+                "updated_at": "2026-07-26T00:00:00",
             }]},
             "updated_at": "2026-07-26",
         }],
@@ -67,9 +63,10 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
     group = panel._list.item(0)
     assert group.background().color().name() == "#dce6f0"
     assert group.font().bold()
-    assert panel._more_button.text() == "更多"
+    assert panel._schema_action.text() == "字段配置"
     assert panel._schema_action.isEnabled()
-    assert not any(button.text() == "管理追加字段" for button in panel.findChildren(QPushButton))
+    assert panel._more_button.text() == "更多"
+    assert any(button.text() == "编辑配置" for button in panel.findChildren(QPushButton))
     assert not any(label.text() == "资料库 > 卡牌图鉴" for label in panel.findChildren(QLabel))
 
 
@@ -121,7 +118,7 @@ def test_switching_cards_does_not_leave_nested_action_layouts(tmp_path) -> None:
     assert sum(panel._detail_layout.itemAt(index).layout() is not None for index in range(3)) == 1
 
 
-def test_panel_highlights_current_effect_before_other_versions(tmp_path) -> None:
+def test_panel_lists_active_effect_before_other_statuses_without_timestamps(tmp_path) -> None:
     (tmp_path / "cards.json").write_text(json.dumps([
         {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
     ], ensure_ascii=False), encoding="utf-8")
@@ -138,12 +135,12 @@ def test_panel_highlights_current_effect_before_other_versions(tmp_path) -> None
             "fields": {
                 "strengthen_effect": [
                     {
-                        "version": "旧版", "effective_from": "2025-01-01", "effective_to": "2025-12-31",
                         "content": "历史效果", "status": "expired",
+                        "created_at": "2025-01-01T00:00:00", "updated_at": "2025-12-31T00:00:00",
                     },
                     {
-                        "version": "当前版本", "effective_from": date.today().isoformat(),
                         "content": "当前效果", "status": "active",
+                        "created_at": "2026-07-26T00:00:00", "updated_at": "2026-07-26T00:00:00",
                     },
                 ],
             },
@@ -157,17 +154,18 @@ def test_panel_highlights_current_effect_before_other_versions(tmp_path) -> None
     _app()
 
     panel = CardManagementPanel(service)
-    current = next(label for label in panel.findChildren(QLabel) if "[当前生效]" in label.text())
+    current = next(label for label in panel.findChildren(QLabel) if "[生效中]" in label.text())
     effect_records = [
         label.text() for label in panel.findChildren(QLabel) if label.text().startswith("[")
     ]
 
-    assert "当前版本" in current.text()
+    assert "当前效果" in current.text()
     assert "#e6f4ff" in current.styleSheet()
-    assert effect_records[0].startswith("[当前生效]")
+    assert effect_records[0].startswith("[生效中]")
+    assert "2026-07-26" not in current.text()
 
 
-def test_effect_entries_rebuild_and_save_for_strengthen_and_weaken(tmp_path) -> None:
+def test_effect_entries_can_be_added_for_strengthen_and_weaken(tmp_path) -> None:
     (tmp_path / "cards.json").write_text(json.dumps([
         {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
     ], ensure_ascii=False), encoding="utf-8")
@@ -188,17 +186,13 @@ def test_effect_entries_rebuild_and_save_for_strengthen_and_weaken(tmp_path) -> 
     _app()
     dialog = CardAnnotationEditDialog(service, "8")
 
-    for key, version, content in (("strengthen_effect", "2026.07", "伤害提高"), ("weaken_effect", "2026.08", "伤害降低")):
-        start = QDateEdit()
-        start.setDate(QDate(2026, 7, 26))
-        end = QDateEdit()
-        end_enabled = QCheckBox()
-        status = QComboBox()
-        status.addItem("生效中", "active")
-        dialog._append_effect(key, QLineEdit(version), start, end, end_enabled, QTextEdit(content), QLineEdit(), status)
+    for key, content in (("strengthen_effect", "伤害提高"), ("weaken_effect", "伤害降低")):
+        editor, status = dialog._effect_editors[key]
+        editor.setPlainText(content)
+        dialog._save_effect_form(key, editor, status)
 
     assert dialog.layout().count() == 2
-    assert len([button for button in dialog.findChildren(QPushButton) if button.text() == "新增一条版本记录"]) == 2
+    assert len([button for button in dialog.findChildren(QPushButton) if button.text() == "新增效果记录"]) == 2
     dialog._save()
 
     fields = service.annotations.get_annotation("8").fields
@@ -225,13 +219,13 @@ def test_empty_effect_entry_shows_chinese_required_message(tmp_path) -> None:
     dialog = CardAnnotationEditDialog(service, "8")
     definition = service.schema.get_field("strengthen_effect")
 
-    with pytest.raises(ValueError, match="请填写“加强效果”的版本"):
+    with pytest.raises(ValueError, match="请填写“加强效果”的效果说明"):
         dialog._build_effect_entry(
-            definition, QLineEdit(), QDateEdit(), QDateEdit(), QCheckBox(), QTextEdit(), QLineEdit(), QComboBox(),
+            definition, QTextEdit(), QComboBox(),
         )
 
 
-def test_save_collects_filled_effect_forms_without_clicking_append(tmp_path) -> None:
+def test_save_collects_filled_effect_forms_without_clicking_add(tmp_path) -> None:
     (tmp_path / "cards.json").write_text(json.dumps([
         {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
     ], ensure_ascii=False), encoding="utf-8")
@@ -252,13 +246,46 @@ def test_save_collects_filled_effect_forms_without_clicking_append(tmp_path) -> 
     _app()
     dialog = CardAnnotationEditDialog(service, "8")
 
-    for title, version, content in (("加强效果", "2026.07", "伤害提高"), ("削弱效果", "2026.08", "伤害降低")):
-        group = next(item for item in dialog.findChildren(QGroupBox) if item.title() == title)
-        group.findChildren(QLineEdit)[0].setText(version)
-        group.findChild(QTextEdit).setPlainText(content)
+    for key, content in (("strengthen_effect", "伤害提高"), ("weaken_effect", "伤害降低")):
+        dialog._effect_editors[key][0].setPlainText(content)
 
     dialog._save()
 
     fields = service.annotations.get_annotation("8").fields
     assert fields["strengthen_effect"][0]["content"] == "伤害提高"
     assert fields["weaken_effect"][0]["content"] == "伤害降低"
+
+
+def test_effect_entry_edit_preserves_creation_time_and_updates_modified_time(tmp_path) -> None:
+    (tmp_path / "cards.json").write_text(json.dumps([
+        {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
+    ], ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_field_schema.json").write_text(
+        '{"schema_version":1,"fields":[{"key":"strengthen_effect","label":"加强效果","value_type":"effect_entries"}]}',
+        encoding="utf-8",
+    )
+    (tmp_path / "card_annotations.json").write_text(json.dumps({
+        "schema_version": 1,
+        "annotations": [{"card_id": "8", "fields": {"strengthen_effect": [{
+            "content": "旧效果", "status": "active",
+            "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00",
+        }]}}],
+    }, ensure_ascii=False), encoding="utf-8")
+    service = CardCatalogService(
+        CardRepository(tmp_path / "cards.json"),
+        CardFieldSchemaRepository(tmp_path / "card_field_schema.json"),
+        CardAnnotationRepository(tmp_path / "card_annotations.json"),
+    )
+    service.load_all()
+    _app()
+    dialog = CardAnnotationEditDialog(service, "8")
+
+    dialog._edit_effect("strengthen_effect", 0)
+    content, status = dialog._effect_editors["strengthen_effect"]
+    content.setPlainText("修正后的效果")
+    dialog._save_effect_form("strengthen_effect", content, status)
+
+    entry = dialog._values["strengthen_effect"][0]
+    assert entry["content"] == "修正后的效果"
+    assert entry["created_at"] == "2026-01-01T00:00:00"
+    assert entry["updated_at"] != entry["created_at"]

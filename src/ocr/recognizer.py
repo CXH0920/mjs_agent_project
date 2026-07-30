@@ -33,6 +33,8 @@ from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 logger = logging.getLogger(__name__)
 
 _HIGH_CONFIDENCE = 0.995       # 极高置信度且无纠错候选时，保护新武将
+_BATCH_SLOT_GAP = 30
+_BATCH_MIN_CONFIDENCE = 0.5
 
 
 class GeneralRecognizer:
@@ -87,6 +89,19 @@ class GeneralRecognizer:
         """提前加载 OCR 模型及汉字特征缓存，避免首次识别时的延迟。"""
         _ = self._engine
         self._similarity_service.warmup()
+        self._similarity_service.warmup_hero_names(self._hero_names)
+
+    def warmup_inference(self) -> None:
+        """执行一次与名称拼图一致的检测和识别，完成运行时算子初始化。"""
+        roi = np.zeros((145, 50, 3), dtype=np.uint8)
+        prepared = self._preprocessor.preprocess_roi(roi)
+        canvas, _ = self._build_batch_canvas({slot: prepared for slot in range(1, 9)})
+        self._engine.ocr(canvas, cls=False)
+        horizontal = cv2.cvtColor(
+            cv2.rotate(prepared, cv2.ROTATE_90_COUNTERCLOCKWISE),
+            cv2.COLOR_GRAY2BGR,
+        )
+        self._engine.ocr([horizontal], det=False, rec=True, cls=False)
 
     @property
     def timing_ms(self) -> dict[str, float]:
@@ -119,7 +134,7 @@ class GeneralRecognizer:
                      scale_x, scale_y, image_width, image_height,
                      reference_width, reference_height)
 
-        results: list[dict] = []
+        prepared_slots: dict[int, np.ndarray] = {}
         for i, slot in enumerate(self._layout.slots):
             x, y, w, h = slot.name_roi
             roi_x = round(x * scale_x)
@@ -136,11 +151,24 @@ class GeneralRecognizer:
                     "武将 %d OCR ROI 超出截图边界，跳过识别: x=%d, y=%d, w=%d, h=%d, 截图=%dx%d",
                     i + 1, roi_x, roi_y, roi_w, roi_h, image_width, image_height,
                 )
-                results.append({"index": i + 1, "name": "", "confidence": 0.0})
                 continue
-            name, confidence = self._recognize_single(roi_img, i + 1)
-            results.append({"index": i + 1, "name": name, "confidence": round(confidence, 4)})
-            logger.debug("武将 %d 识别: %s (置信度=%.4f)", i + 1, name or "(空)", confidence)
+            preprocess_started = time.perf_counter()
+            prepared_slots[i + 1] = self._preprocessor.preprocess_roi(roi_img)
+            self._add_timing("name_preprocess", preprocess_started)
+
+        recognized = self._recognize_prepared_batch(prepared_slots, "name")
+        results: list[dict] = []
+        for i, _slot in enumerate(self._layout.slots, 1):
+            prepared = prepared_slots.get(i)
+            if prepared is None:
+                results.append({"index": i, "name": "", "confidence": 0.0})
+                continue
+            text, confidence = recognized.get(i, ("", 0.0))
+            if not text:
+                text, confidence = self._recognize_prepared_single(prepared, i, "name")
+            name, confidence = self._correct_name(text, confidence, i)
+            results.append({"index": i, "name": name, "confidence": round(confidence, 4)})
+            logger.debug("武将 %d 识别: %s (置信度=%.4f)", i, name or "(空)", confidence)
 
         return results
 
@@ -150,19 +178,42 @@ class GeneralRecognizer:
         reference_width, reference_height = self._layout.reference_size
         scale_x = image_width / reference_width
         scale_y = image_height / reference_height
-        results: list[dict] = []
+        name_slots: dict[int, np.ndarray] = {}
+        team_slots: dict[int, np.ndarray] = {}
         for seat_index, slot in enumerate(self._layout.slots, 1):
             name_img = self._crop_roi(image, list(slot.name_roi), scale_x, scale_y)
             if name_img is None:
                 continue
-            name, confidence = self._recognize_single(name_img, seat_index)
+            preprocess_started = time.perf_counter()
+            name_slots[seat_index] = self._preprocessor.preprocess_roi(name_img)
+            self._add_timing("name_preprocess", preprocess_started)
+            if slot.team_roi is not None:
+                team_img = self._crop_roi(image, list(slot.team_roi), scale_x, scale_y)
+                if team_img is not None:
+                    preprocess_started = time.perf_counter()
+                    team_slots[seat_index] = self._preprocessor.preprocess_roi(team_img)
+                    self._add_timing("team_preprocess", preprocess_started)
+
+        recognized_names = self._recognize_prepared_batch(name_slots, "name")
+        recognized_teams = self._recognize_prepared_batch(team_slots, "team")
+        results: list[dict] = []
+        for seat_index, _slot in enumerate(self._layout.slots, 1):
+            prepared_name = name_slots.get(seat_index)
+            if prepared_name is None:
+                continue
+            text, confidence = recognized_names.get(seat_index, ("", 0.0))
+            if not text:
+                text, confidence = self._recognize_prepared_single(prepared_name, seat_index, "name")
+            name, confidence = self._correct_name(text, confidence, seat_index)
             if not name:
                 continue
-            team_img = (
-                self._crop_roi(image, list(slot.team_roi), scale_x, scale_y)
-                if slot.team_roi is not None else None
-            )
-            team = self._recognize_team(team_img, seat_index) if team_img is not None else ""
+            team_text, team_confidence = recognized_teams.get(seat_index, ("", 0.0))
+            prepared_team = team_slots.get(seat_index)
+            if not team_text and prepared_team is not None:
+                team_text, team_confidence = self._recognize_prepared_single(
+                    prepared_team, seat_index, "team",
+                )
+            team = self._normalize_team(team_text, seat_index)
             results.append({
                 "index": seat_index,
                 "name": name,
@@ -190,32 +241,8 @@ class GeneralRecognizer:
             preprocess_started = time.perf_counter()
             prepared = self._preprocessor.preprocess_roi(roi)
             self._add_timing("name_preprocess", preprocess_started)
-            engine = self._engine
-            ocr_started = time.perf_counter()
-            result = engine.ocr(prepared, cls=False)
-            self._add_timing("name_ocr", ocr_started)
-            text, conf = self._extract_text(result)
-            logger.info(
-                "武将 %d OCR 原始结果: text=%r, confidence=%.4f",
-                slot, text, conf,
-            )
-
-            if not text:
-                return "", 0.0
-
-            # 第二段矫正：存在词表候选时优先采用，避免高置信度形近字漏纠正。
-            if self._hero_names:
-                correction_started = time.perf_counter()
-                corrected = self._similarity_service.correct_hero_name(text, self._hero_names)
-                self._add_timing("name_correction", correction_started)
-                if corrected != text:
-                    logger.debug("武将 %d: 矫正 %s → %s", slot, text, corrected)
-                    return corrected, conf
-                if conf >= _HIGH_CONFIDENCE and text not in self._hero_names:
-                    logger.debug("武将 %d: 高置信度未知新名 '%s'，无纠错候选", slot, text)
-
-            return text, conf
-
+            text, conf = self._recognize_prepared_single(prepared, slot, "name")
+            return self._correct_name(text, conf, slot)
         except Exception as e:
             logger.warning("武将 %d 识别异常: %s", slot, e)
             logger.debug(traceback.format_exc())
@@ -228,13 +255,28 @@ class GeneralRecognizer:
             preprocess_started = time.perf_counter()
             prepared = self._preprocessor.preprocess_roi(roi)
             self._add_timing("team_preprocess", preprocess_started)
-            engine = self._engine
-            ocr_started = time.perf_counter()
-            text, _ = self._extract_text(engine.ocr(prepared, cls=False))
-            self._add_timing("team_ocr", ocr_started)
+            text, _ = self._recognize_prepared_single(prepared, slot, "team")
         except Exception as exc:
             logger.warning("武将 %d 阵营标签识别异常: %s", slot, exc)
             return ""
+        return self._normalize_team(text, slot)
+
+    def _correct_name(self, text: str, confidence: float, slot: int) -> tuple[str, float]:
+        if not text:
+            return "", 0.0
+        if self._hero_names:
+            correction_started = time.perf_counter()
+            corrected = self._similarity_service.correct_hero_name(text, self._hero_names)
+            self._add_timing("name_correction", correction_started)
+            if corrected != text:
+                logger.debug("武将 %d: 矫正 %s → %s", slot, text, corrected)
+                return corrected, confidence
+            if confidence >= _HIGH_CONFIDENCE and text not in self._hero_names:
+                logger.debug("武将 %d: 高置信度未知新名 '%s'，无纠错候选", slot, text)
+        return text, confidence
+
+    @staticmethod
+    def _normalize_team(text: str, slot: int) -> str:
         normalized = text.replace(" ", "").replace("【", "").replace("】", "")
         if "楚" in normalized:
             return "楚军"
@@ -242,6 +284,86 @@ class GeneralRecognizer:
             return "汉军"
         logger.info("武将 %d 阵营标签未识别: %r", slot, text)
         return ""
+
+    def _recognize_prepared_single(
+        self, prepared: np.ndarray, slot: int, kind: str,
+    ) -> tuple[str, float]:
+        """识别已预处理的单个 ROI，供批处理异常槽位回退。"""
+        ocr_started = time.perf_counter()
+        text, confidence = self._extract_text(self._engine.ocr(prepared, cls=False))
+        self._add_timing(f"{kind}_ocr", ocr_started)
+        logger.info("武将 %d %s OCR 原始结果: text=%r, confidence=%.4f", slot, kind, text, confidence)
+        return text, confidence
+
+    def _recognize_prepared_batch(
+        self, prepared_slots: dict[int, np.ndarray], kind: str,
+    ) -> dict[int, tuple[str, float]]:
+        """将同类 ROI 拼图为一次检测；异常槽位由调用方逐槽回退。"""
+        if not prepared_slots:
+            return {}
+        canvas, ranges = self._build_batch_canvas(prepared_slots)
+        try:
+            ocr_started = time.perf_counter()
+            result = self._engine.ocr(canvas, cls=False)
+            self._add_timing(f"{kind}_ocr", ocr_started)
+        except Exception as exc:
+            logger.warning("%s ROI 拼图 OCR 失败，将逐槽回退: %s", kind, exc)
+            return {}
+
+        mapped: dict[int, list[tuple[str, float]]] = {slot: [] for slot in prepared_slots}
+        for line in (result[0] if result and result[0] else []):
+            try:
+                box, (text, confidence) = line
+                center_x = sum(point[0] for point in box) / len(box)
+                slot = next(
+                    (index for index, (left, right) in ranges.items() if left <= center_x < right),
+                    None,
+                )
+                text = text.strip()
+                if slot is not None and text:
+                    mapped[slot].append((text, float(confidence)))
+            except (IndexError, TypeError, ValueError):
+                logger.warning("%s ROI 拼图返回了无法映射的检测框", kind)
+
+        recognized: dict[int, tuple[str, float]] = {}
+        for slot, candidates in mapped.items():
+            if (
+                len(candidates) == 1
+                and candidates[0][1] >= _BATCH_MIN_CONFIDENCE
+                and not (kind == "name" and self._requires_name_batch_fallback(candidates[0][0]))
+            ):
+                recognized[slot] = candidates[0]
+            elif candidates:
+                logger.info("武将 %d %s 拼图结果不唯一或置信度过低，逐槽回退", slot, kind)
+        return recognized
+
+    def _requires_name_batch_fallback(self, text: str) -> bool:
+        """避免截断文本被多候选纠错静默绑定到错误武将。"""
+        if not self._hero_names or text in self._hero_names:
+            return False
+        candidates = [
+            hero for hero in self._hero_names
+            if self._similarity_service._levenshtein_distance(text, hero)
+            <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
+        ]
+        return len(candidates) != 1
+
+    @staticmethod
+    def _build_batch_canvas(
+        prepared_slots: dict[int, np.ndarray],
+    ) -> tuple[np.ndarray, dict[int, tuple[int, int]]]:
+        height = max(image.shape[0] for image in prepared_slots.values())
+        width = sum(image.shape[1] for image in prepared_slots.values())
+        width += _BATCH_SLOT_GAP * (len(prepared_slots) - 1)
+        canvas = np.zeros((height, width), dtype=np.uint8)
+        ranges: dict[int, tuple[int, int]] = {}
+        left = 0
+        for slot, image in prepared_slots.items():
+            image_height, image_width = image.shape[:2]
+            canvas[:image_height, left:left + image_width] = image
+            ranges[slot] = (left, left + image_width)
+            left += image_width + _BATCH_SLOT_GAP
+        return canvas, ranges
 
     def _add_timing(self, key: str, started: float) -> None:
         self._timing_ms[key] = self._timing_ms.get(key, 0.0) + (time.perf_counter() - started) * 1000

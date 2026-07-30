@@ -131,6 +131,12 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._poll_coordinator.sync_with_connection()
 
+    def start_ocr_warmup(self) -> None:
+        """在主窗口显示前启动 OCR 预热，不依赖模拟器连接状态。"""
+        self._capture_service.warmup_ocr_model(
+            [hero.name for hero in self._data.heroes.list_heroes()],
+        )
+
     # ---------------------------------------------------------------
     # 采集服务信号连接
     # ---------------------------------------------------------------
@@ -164,12 +170,21 @@ class MainWindow(QMainWindow):
         self._capture_service.status_changed.connect(self._on_fetch_status)
         self._capture_service.capture_failed.connect(self._on_capture_failed)
         self._capture_service.connection_changed.connect(self._on_capture_connection_changed)
+        self._capture_service.ocr_warmup_state_changed.connect(self._on_ocr_warmup_state_changed)
         self._poll_coordinator.poll_state_changed.connect(self._update_poll_status)
         self._poll_coordinator.poll_result_ready.connect(self._on_poll_result)
 
     def _on_capture_failed(self, message: str) -> None:
         """将截图失败原因显示在普通状态栏。"""
         self._status_label.setText(f"截图失败：{message}")
+
+    def _on_ocr_warmup_state_changed(self, state: str, detail: str = "") -> None:
+        if state == "warming":
+            self._status_label.setText("正在预热 OCR 模型...")
+        elif state == "ready":
+            self._status_label.setText("OCR 模型已就绪")
+        elif state == "failed":
+            self._status_label.setText(f"OCR 预热失败：{detail}")
 
     def _on_capture_connection_changed(self, state: str, detail: str = "") -> None:
         """同步 ADB 状态，并确保轮询只在设备已连接时运行。"""

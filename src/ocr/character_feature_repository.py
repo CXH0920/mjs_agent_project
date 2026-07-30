@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,16 @@ class CharacterFeatureRepository:
         except Exception as exc:
             self._pinyin_available = False
             logger.warning("pypinyin 预热失败，拼音特征将降级: %s", exc)
+
+    def warmup_characters(self, characters: Iterable[str]) -> int:
+        """将词表字符补齐到进程内缓存，避免首次纠错按需初始化。"""
+        entries = self.load()
+        missing = sorted({char for char in characters if char and char not in entries})
+        for char in missing:
+            entries[char] = self._build_feature(char)
+        if missing:
+            logger.info("汉字特征预热补齐 %d 个词表字符", len(missing))
+        return len(missing)
 
     def _build_feature(self, char: str) -> dict[str, str]:
         entry = dict(_EMPTY_FEATURE)

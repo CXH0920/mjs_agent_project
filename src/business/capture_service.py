@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 import logging
 import threading
 from pathlib import Path
@@ -17,6 +17,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from src.capture.adb_screen import AdbCapture
+from src.capture.image_validation import load_local_image
 from src.capture.image_utils import save_image
 from src.business.ocr_worker import OcrTask, OcrWorker
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
@@ -35,7 +36,10 @@ class CaptureService(QObject):
     capture_completed = Signal(dict)
     capture_failed = Signal(str)
     connection_changed = Signal(str, str)  # (状态, 详情)
+    image_saved = Signal(dict)
+    ocr_warmup_state_changed = Signal(str, str)
     _capture_ready = Signal(object)
+    _image_save_ready = Signal(object)
 
     def __init__(self, parent=None, roi_config: OcrRoiConfig | None = None):
         super().__init__(parent)
@@ -44,13 +48,16 @@ class CaptureService(QObject):
         self._roi_config = roi_config or OcrRoiConfig()
         self._connection_state = "unconfigured"
         self._connection_detail = ""
+        self._ocr_warmup_state = "idle"
         self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
         self._ocr_worker: OcrWorker | None = None
         self._pending_ocr_captures: dict[str, dict] = {}
         self._session_lock = threading.RLock()
         self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="adb-capture")
+        self._image_save_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-save")
         self._closed = False
         self._capture_ready.connect(self._on_background_capture_ready)
+        self._image_save_ready.connect(self._on_image_save_ready)
 
     def _set_connection_state(self, state: str, detail: str = "") -> None:
         """更新并广播当前 ADB 会话状态。"""
@@ -65,6 +72,17 @@ class CaptureService(QObject):
         """返回当前 ADB 会话状态及详情。"""
         with self._session_lock:
             return self._connection_state, self._connection_detail
+
+    @property
+    def ocr_warmup_state(self) -> str:
+        """返回 OCR 预热状态：idle、warming、ready 或 failed。"""
+        return self._ocr_warmup_state
+
+    def _set_ocr_warmup_state(self, state: str, detail: str = "") -> None:
+        if (state, detail) == (self._ocr_warmup_state, ""):
+            return
+        self._ocr_warmup_state = state
+        self.ocr_warmup_state_changed.emit(state, detail)
 
     # ── 配置 ──────────────────────────────────────────────────────────
 
@@ -188,9 +206,7 @@ class CaptureService(QObject):
                           perform_ocr: bool = True) -> None:
         """从本地图片执行 OCR。"""
         try:
-            from PIL import Image
-            image = Image.open(str(file_path))
-            image.load()
+            image = load_local_image(file_path)
             logger.info("从文件加载图片: %s (%sx%s)", file_path, image.width, image.height)
         except Exception as e:
             logger.error("图片加载失败 %s: %s", file_path, e)
@@ -261,47 +277,44 @@ class CaptureService(QObject):
         image = result
         self.status_changed.emit(f"截图成功 ({image.width}x{image.height})")
 
-        # 2. 保存截图
-        save_dir = DEFAULT_SCREENSHOTS_DIR
-        save_dir.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = save_dir / f"screenshot_{timestamp}.png"
-        save_ok, save_msg = save_image(image, save_path)
-        if save_ok:
-            logger.info("截图已保存: %s", save_path)
-        else:
-            logger.warning("截图保存失败: %s", save_msg)
-
-        # 3. OCR（轮询模式独立于 ocr_enabled 开关，强制匹配模板）
-        ocr_results = None
-        ocr_matched = False
+        # 2. OCR 和 PNG 保存进入不同后台执行器，互不等待。
         is_poll = self.config.get("mumu_ocr_poll_mode", False)
         should_ocr = perform_ocr and (
             force_ocr or self.config.get("mumu_ocr_enabled", False) or is_poll
         )
-
+        ocr_task = None
         if should_ocr:
-            # 轮询模式：检查冷却期
             if is_poll and self._poll_cooldown_until > __import__("time").time():
                 logger.debug("轮询冷却中，跳过 OCR")
             else:
-                self._queue_capture_ocr(
-                    image=image,
-                    save_path=save_path if save_ok else None,
+                ocr_task = self._queue_capture_ocr(
+                    image=image.copy(),
+                    save_path=None,
                     hero_names=hero_names,
                     template_name=template_name,
                     is_poll=is_poll,
                     match_template=not force_ocr,
                 )
-                return
 
-        # 4. 返回结果
+        save_dir = DEFAULT_SCREENSHOTS_DIR
+        save_dir.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = save_dir / f"screenshot_{timestamp}.png"
+        save_future = self._schedule_image_save(image, save_path)
+
+        if ocr_task is not None:
+            pending = self._pending_ocr_captures.get(ocr_task.task_id)
+            if pending is not None:
+                pending["save_future"] = save_future
+            return
+
+        # 3. OCR 未启用或处于轮询冷却时，直接返回保存结果。
         self.capture_completed.emit({
             "image": image,
-            "save_path": save_path if save_ok else None,
-            "ocr_results": ocr_results,
-            "ocr_matched": ocr_matched,
+            "save_path": self._completed_save_path(save_future, save_path),
+            "ocr_results": None,
+            "ocr_matched": False,
         })
 
     # ── OCR ───────────────────────────────────────────────────────────
@@ -317,9 +330,12 @@ class CaptureService(QObject):
         """在 GUI 线程中初始化 OCR worker，供应用启动阶段调用。"""
         self._ensure_ocr_worker()
 
-    def warmup_ocr_model(self) -> None:
-        """在 OCR worker 中预加载模型，避免首次识别承担初始化延迟。"""
-        self._ensure_ocr_worker().warmup_model()
+    def warmup_ocr_model(self, hero_names: list[str] | None = None) -> None:
+        """在 OCR worker 中预热模型、推理算子和词表特征。"""
+        if self._ocr_warmup_state in {"warming", "ready"}:
+            return
+        if self._ensure_ocr_worker().warmup_model(hero_names):
+            self._set_ocr_warmup_state("warming")
 
     def submit_ocr_task(
         self,
@@ -370,7 +386,7 @@ class CaptureService(QObject):
         template_name: str,
         is_poll: bool = False,
         match_template: bool = True,
-    ) -> None:
+    ) -> OcrTask:
         task = self.submit_ocr_task(
             image,
             hero_names,
@@ -383,8 +399,53 @@ class CaptureService(QObject):
             "is_poll": is_poll,
             "template_name": template_name,
         }
+        return task
+
+    def _schedule_image_save(self, image, save_path: Path) -> Future:
+        future = self._image_save_executor.submit(save_image, image, save_path)
+        future.add_done_callback(
+            lambda completed, source=image, path=save_path: self._image_save_ready.emit(
+                (source, path, completed),
+            ),
+        )
+        return future
+
+    @staticmethod
+    def _completed_save_path(future: Future | None, save_path: Path | str | None) -> Path | str | None:
+        if future is None:
+            return save_path
+        if not future.done():
+            return None
+        try:
+            saved, _detail = future.result()
+        except Exception:
+            return None
+        return save_path if saved else None
+
+    def _on_image_save_ready(self, payload: object) -> None:
+        image, save_path, future = payload
+        try:
+            saved, detail = future.result()
+        except Exception as exc:
+            saved, detail = False, str(exc)
+        if saved:
+            logger.info("截图已保存: %s", save_path)
+        else:
+            logger.warning("截图保存失败: %s", detail)
+        self.image_saved.emit({
+            "image": image,
+            "save_path": save_path if saved else None,
+            "detail": detail,
+        })
 
     def _on_ocr_task_completed(self, task: OcrTask) -> None:
+        if task.warmup:
+            result = task.result or {"outcome": "warmup_failed"}
+            if result.get("outcome") == "warmed":
+                self._set_ocr_warmup_state("ready")
+            else:
+                self._set_ocr_warmup_state("failed", result.get("detail", "未知错误"))
+            return
         pending = self._pending_ocr_captures.pop(task.task_id, None)
         if pending is None:
             return
@@ -400,7 +461,9 @@ class CaptureService(QObject):
 
         self.capture_completed.emit({
             "image": pending["image"],
-            "save_path": pending["save_path"],
+            "save_path": self._completed_save_path(
+                pending.get("save_future"), pending["save_path"],
+            ),
             "ocr_results": result.get("ocr_results"),
             "ocr_matched": ocr_matched,
         })
@@ -522,6 +585,7 @@ class CaptureService(QObject):
         """停止截图执行器和 OCR worker，供应用退出时调用。"""
         self._closed = True
         self._adb_executor.shutdown(wait=False, cancel_futures=True)
+        self._image_save_executor.shutdown(wait=False, cancel_futures=True)
         if self._ocr_worker is not None:
             if self._ocr_worker.shutdown():
                 self._ocr_worker = None

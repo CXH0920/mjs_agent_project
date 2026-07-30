@@ -13,6 +13,7 @@ from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr.recognizer import GeneralRecognizer
+from scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
 
 
 def test_image_preprocessor_outputs_tripled_grayscale_image() -> None:
@@ -86,6 +87,37 @@ def test_character_feature_repository_logs_pinyin_warmup_failure(tmp_path, monke
 
     assert repository._pinyin_available is False
     assert "pypinyin 预热失败" in caplog.text
+
+
+def test_character_feature_repository_warms_missing_wordlist_characters(tmp_path, monkeypatch) -> None:
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    repository.load()["曹"] = {"pinyin": "cao"}
+    built: list[str] = []
+    monkeypatch.setattr(
+        repository,
+        "_build_feature",
+        lambda char: built.append(char) or {"pinyin": char},
+    )
+
+    assert repository.warmup_characters(["曹", "操", "操"]) == 1
+    assert built == ["操"]
+    assert repository.get_feature("操") == {"pinyin": "操"}
+
+
+def test_character_feature_cache_character_set_includes_names_and_common_misreads(tmp_path) -> None:
+    heroes_path = tmp_path / "heroes.json"
+    heroes_path.write_text(
+        json.dumps([{"name": "乐毅"}, {"name": "嬴政"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    assert required_characters(heroes_path) == set("乐毅嬴政") | set(COMMON_OCR_CONFUSION_CHARACTERS)
+
+
+def test_static_character_feature_cache_covers_current_hero_names_and_common_misreads() -> None:
+    entries = CharacterFeatureRepository().load()
+
+    assert required_characters() <= entries.keys()
 
 
 def test_character_feature_repository_logs_pinyin_query_failure_once(tmp_path, monkeypatch, caplog) -> None:
@@ -210,3 +242,49 @@ def test_general_recognizer_corrects_high_confidence_candidate_and_keeps_unknown
     assert recognizer._recognize_single(roi, 1) == ("嬴政", 0.995309)
     assert recognizer._recognize_single(roi, 2) == ("新武将", 0.999)
     assert corrected_texts == ["赢政", "新武将"]
+
+
+def test_general_recognizer_maps_batch_boxes_by_slot_center() -> None:
+    class FakeEngine:
+        def ocr(self, _image, cls):
+            assert cls is False
+            return [[
+                [[[43, 0], [53, 0], [53, 8], [43, 8]], ("第二", 0.9)],
+                [[[2, 0], [12, 0], [12, 8], [2, 8]], ("第一", 0.8)],
+            ]]
+
+    recognizer = GeneralRecognizer()
+    recognizer._ocr = FakeEngine()
+
+    assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8), 2: np.zeros((10, 10), dtype=np.uint8)}, "name") == {
+        1: ("第一", 0.8),
+        2: ("第二", 0.9),
+    }
+
+
+def test_general_recognizer_rejects_ambiguous_or_low_confidence_batch_slot() -> None:
+    class FakeEngine:
+        def ocr(self, _image, cls):
+            assert cls is False
+            return [[
+                [[[2, 0], [12, 0], [12, 8], [2, 8]], ("低", 0.4)],
+                [[[43, 0], [53, 0], [53, 8], [43, 8]], ("重", 0.9)],
+                [[[44, 0], [54, 0], [54, 8], [44, 8]], ("复", 0.9)],
+            ]]
+
+    recognizer = GeneralRecognizer()
+    recognizer._ocr = FakeEngine()
+
+    assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8), 2: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}
+
+
+def test_general_recognizer_rejects_truncated_name_with_multiple_corrections() -> None:
+    class FakeEngine:
+        def ocr(self, _image, cls):
+            assert cls is False
+            return [[[[[2, 0], [12, 0], [12, 8], [2, 8]], ("王", 0.99)]]]
+
+    recognizer = GeneralRecognizer(hero_names=["王异", "王翦"])
+    recognizer._ocr = FakeEngine()
+
+    assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}

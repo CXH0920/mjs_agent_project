@@ -31,6 +31,11 @@ class TestSkill:
         s = Skill(name="奸雄", description="出牌阶段限一次", settlement="结算细则1...")
         assert s.settlement == "结算细则1..."
 
+    @pytest.mark.parametrize("field", ["description", "settlement"])
+    def test_skill_text_too_long_should_raise(self, field: str) -> None:
+        with pytest.raises(ValidationError):
+            Skill(name="奸雄", **{field: "x" * 4001})
+
 
 class TestHero:
     def test_basic_hero(self) -> None:
@@ -51,6 +56,10 @@ class TestHero:
         )
         assert len(h.skills) == 1
         assert h.skills[0].name == "观星"
+
+    def test_too_many_skills_should_raise(self) -> None:
+        with pytest.raises(ValidationError):
+            Hero(id=2, name="诸葛亮", skills=[Skill(name=str(index)) for index in range(21)])
 
     def test_invalid_id_should_raise(self) -> None:
         with pytest.raises(ValidationError):
@@ -139,6 +148,10 @@ class TestSynergyScore:
         assert s.combo_stability == 5
         assert s.adaptability == 5
 
+    def test_description_too_long_should_raise(self) -> None:
+        with pytest.raises(ValidationError):
+            SynergyScore(hero_a_id=1, hero_b_id=2, score=0, description="x" * 4001)
+
 
 class TestHeroGuide:
     def test_basic_guide(self) -> None:
@@ -165,6 +178,22 @@ class TestHeroGuide:
         assert g.weak_against_type == []
         assert g.strong_against_type == []
         assert g.synergizes_with == []
+
+    def test_guide_text_too_long_should_raise(self) -> None:
+        with pytest.raises(ValidationError):
+            HeroGuide(hero_id=1, description="x" * 20001)
+
+    @pytest.mark.parametrize("field", ["counter_strategy", "tips_for_beginners"])
+    def test_guide_summary_too_long_should_raise(self, field: str) -> None:
+        with pytest.raises(ValidationError):
+            HeroGuide(hero_id=1, **{field: "x" * 1001})
+
+    @pytest.mark.parametrize("field", ["key_points", "weak_against_type", "strong_against_type"])
+    def test_guide_list_limits_should_raise(self, field: str) -> None:
+        with pytest.raises(ValidationError):
+            HeroGuide(hero_id=1, **{field: ["x"] * 21})
+        with pytest.raises(ValidationError):
+            HeroGuide(hero_id=1, **{field: ["x" * 1001]})
 
 
 class TestCard:

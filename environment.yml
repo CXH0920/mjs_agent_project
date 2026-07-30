@@ -14,12 +14,12 @@ dependencies:
     - PySide6==6.11.1
     - pytest==9.0.3
     - ruff==0.12.0
-    - pillow==12.2.0
+    - pillow==12.3.0
     - numpy==1.26.4
     - paddlepaddle==2.6.2
     - paddleocr==2.8.1
     - playwright==1.60.0
-    - mistune==3.2.1
+    - mistune==3.3.0
     # 汉字特征库（OCR 矫正用：四角号码、仓颉码、部首、笔画数、拼音）
     - unihan_etl==0.43.0
     - cnradical==0.1.0

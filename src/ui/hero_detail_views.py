@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import mistune
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -23,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.data.hero_manager import HeroManager
+from src.ui.markdown_renderer import render_markdown
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.shared.widgets import FlowLayout
@@ -461,7 +460,7 @@ class HeroSynergyView(QWidget):
         dialog.setMinimumSize(500, 350)
         layout = QVBoxLayout(dialog)
         browser = QTextBrowser()
-        browser.setHtml(mistune.html(synergy.description))
+        browser.setHtml(render_markdown(synergy.description))
         browser.setOpenExternalLinks(False)
         layout.addWidget(browser, 1)
         button_layout = QHBoxLayout()

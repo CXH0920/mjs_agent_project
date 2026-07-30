@@ -22,6 +22,7 @@
 src/capture/
 ├── __init__.py
 ├── adb_screen.py          # AdbCapture — ADB 连接与截图
+├── image_validation.py    # 不可信图片输入校验（格式、体积、像素）
 ├── prober.py              # MuMu 设备自动探测
 └── image_utils.py         # 图像工具（PIL ↔ QPixmap / 剪贴板 / 保存）
 
@@ -58,6 +59,7 @@ AdbCapture(adb_path, adb_port)
 - 命令注入防护：`_run_adb(*args)` 使用列表参数而非字符串拼接
 - 设备序列号格式校验：`IP:port` 格式 + 端口范围 1-65535
 - 超时保护：`subprocess.run` 设置 timeout
+- 图片输入防护：本地 OCR/ROI 仅接受实际 PNG/JPEG，ADB 数据仅接受实际 PNG；统一限制 5 MiB、4,000,000 像素，并将 Pillow 解压炸弹警告提升为异常
 
 **`screencap` 使用 `exec-out` 模式**而非 `shell screencap`：
 ```python
@@ -92,13 +94,15 @@ match(image, threshold=0.8)
 
 对局攻略模板应优先框选左侧常驻功能图标等固定 UI，避开回合数字、角色立绘和战场背景；这类内容会随对局状态变化，不能作为可靠的页面特征。
 
-模拟器连接成功后，`CaptureService` 会向同一 `OcrWorker` 队列提交模型预热任务。预热在 worker 线程加载 PaddleOCR，并由后续选将推荐和对局攻略识别复用；因此不阻塞界面，首次实际 OCR 也不再重复初始化模型。
+应用在主窗口显示前即向同一 `OcrWorker` 队列提交预热任务，不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。
+
+ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给独立的单线程 `image-save` 执行器压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
 自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；识别到至少 3 个角色名才自动切换页面并停用该任务，不足则继续轮询。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
 
 ### 3.3 两段式 OCR 识别
 
-`GeneralRecognizer.recognize()` 对 8 个 ROI 逐一识别。ROI 坐标以参考分辨率保存，
+`GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 PaddleOCR 检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。检测框按中心横坐标映射回槽位；缺失、重复、低于 0.5 置信度或无法映射的槽位才回退逐一识别。ROI 坐标以参考分辨率保存，
 识别前会分别按当前截图宽高进行换算，因此支持页面比例基本不变时的分辨率变化：
 
 ```
@@ -151,10 +155,10 @@ score -= 0.5 * length_diff * 2         # 长度惩罚
 
 | 层 | 速度 | 覆盖 |
 |----|------|------|
-| `char_info_cache.json`（223 字） | ~10ms | 武将名 + 常见 OCR 误识字 |
+| `char_info_cache.json`（299 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
-`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。223 个字覆盖了武将名所有用字的 99.6%，缓存未命中的汉字在运行时由 unihan-etl / cnradical / pypinyin 补齐并写入进程内存；需要落盘时由仓库的 `save()` 以 UTF-8/LF 原子写入。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
+`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
 
 ---
 

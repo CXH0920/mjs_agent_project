@@ -175,6 +175,7 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 - 角色名经白名单校验后，文件路径固定为 `images/{武将名}.png`
 - 仅允许 HTTPS 官方图片域名，重定向目标逐跳复验
 - 以 64 KiB 分块写入临时文件，响应最大 5 MiB；Pillow 验证 PNG 格式与最大 4,000,000 像素
+- 本地 OCR/ROI 输入仅接受实际 PNG/JPEG，ADB 内存截图仅接受实际 PNG；所有入口均将解压炸弹警告视为错误
 - 验证成功后原子替换正式头像；失败时删除临时文件并保留已有头像
 - `skip_existing=True` 时检查文件存在性
 - 使用 `fetch(icon_url, binary=True)` 下载二进制
@@ -935,7 +936,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 - 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
 
-**Markdown 渲染**：使用 `mistune.html(text)` 替代手写正则。
+**Markdown 渲染**：统一通过 `src.ui.markdown_renderer.render_markdown()` 调用 Mistune，并转义原始 HTML；攻略正文超过 20,000 字时不进入解析。`Skill`、`SynergyScore` 与 `HeroGuide` 的 AI 文本和列表字段均由 Pydantic 限制长度及项目数。
 
 **攻略视觉与交互：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。

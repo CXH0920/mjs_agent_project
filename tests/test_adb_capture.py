@@ -74,6 +74,24 @@ def test_screencap_decode_error_keeps_session(monkeypatch) -> None:
     assert not ok
 
 
+def test_screencap_rejects_non_png_output(monkeypatch) -> None:
+    cap = AdbCapture("adb.exe", 16448)
+    cap._connected = True
+    cap._device_serial = "127.0.0.1:16448"
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(buffer, format="JPEG")
+    monkeypatch.setattr(
+        "src.capture.adb_screen.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=b"", stdout=buffer.getvalue()),
+    )
+    monkeypatch.setattr("src.capture.adb_screen.time.sleep", lambda _: None)
+
+    ok, message = cap.screencap_full()
+
+    assert not ok
+    assert "PNG" in message
+
+
 def test_screencap_retries_truncated_output(monkeypatch) -> None:
     cap = AdbCapture("adb.exe", 16448)
     cap._connected = True

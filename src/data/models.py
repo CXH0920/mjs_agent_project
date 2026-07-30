@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
+from typing import Annotated
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+MAX_SKILL_TEXT_LENGTH = 4_000
+MAX_GUIDE_TEXT_LENGTH = 20_000
+MAX_GUIDE_SUMMARY_TEXT_LENGTH = 1_000
+MAX_GUIDE_LIST_LENGTH = 20
+GuideListItem = Annotated[str, Field(max_length=MAX_GUIDE_SUMMARY_TEXT_LENGTH)]
 
 
 # ============================================================
@@ -65,8 +73,8 @@ class CardType(str, Enum):
 class Skill(BaseModel):
     """武将技能"""
     name: str = Field(..., description="技能名称")
-    description: str = Field(default="", description="技能描述")
-    settlement: str = Field(default="", description="结算详情")
+    description: str = Field(default="", max_length=MAX_SKILL_TEXT_LENGTH, description="技能描述")
+    settlement: str = Field(default="", max_length=MAX_SKILL_TEXT_LENGTH, description="结算详情")
 
     @field_validator("name")
     @classmethod
@@ -110,7 +118,9 @@ class Hero(BaseModel):
     max_hp: int = Field(default=4, ge=1, le=20, validation_alias="体力上限", description="体力上限")
     max_hand: int = Field(default=4, ge=1, le=20, validation_alias="手牌上限", description="手牌上限")
     gender: Gender = Field(default=Gender.MALE, validation_alias="性别", description="性别")
-    skills: list[Skill] = Field(default_factory=list, validation_alias="技能", description="技能列表")
+    skills: list[Skill] = Field(
+        default_factory=list, max_length=MAX_GUIDE_LIST_LENGTH, validation_alias="技能", description="技能列表"
+    )
     difficulty: Difficulty = Field(default=Difficulty.MEDIUM, description="难度评级 1-5")
     mode_viability: dict[str, ViabilityTier] = Field(
         default_factory=dict, description="各模式强度梯队"
@@ -167,7 +177,7 @@ class SynergyScore(BaseModel):
     combo_ceiling: int = Field(default=5, ge=1, le=10, description="配合上限 1-10")
     combo_stability: int = Field(default=5, ge=1, le=10, description="配合稳定性 1-10")
     adaptability: int = Field(default=5, ge=1, le=10, description="环境适应力 1-10")
-    description: str = Field(default="", description="相性总评的一句话定性判断")
+    description: str = Field(default="", max_length=MAX_SKILL_TEXT_LENGTH, description="相性总评的一句话定性判断")
     last_updated: str = Field(
         default_factory=lambda: date.today().isoformat(),
         description="最后成功生成相性评分的日期",
@@ -198,13 +208,19 @@ class SynergyScore(BaseModel):
 class HeroGuide(BaseModel):
     """武将攻略"""
     hero_id: int = Field(..., description="武将 ID")
-    key_points: list[str] = Field(default_factory=list, description="操作要点")
-    weak_against_type: list[str] = Field(default_factory=list, description="克制该武将的类型")
-    strong_against_type: list[str] = Field(default_factory=list, description="该武将克制的类型")
-    synergizes_with: list[int] = Field(default_factory=list, description="与谁搭配好（武将 ID 列表）")
-    counter_strategy: str = Field(default="", description="面对该武将的对抗建议")
-    description: str = Field(default="", description="攻略正文")
-    tips_for_beginners: str = Field(default="", description="新手提示")
+    key_points: list[GuideListItem] = Field(default_factory=list, max_length=MAX_GUIDE_LIST_LENGTH, description="操作要点")
+    weak_against_type: list[GuideListItem] = Field(
+        default_factory=list, max_length=MAX_GUIDE_LIST_LENGTH, description="克制该武将的类型"
+    )
+    strong_against_type: list[GuideListItem] = Field(
+        default_factory=list, max_length=MAX_GUIDE_LIST_LENGTH, description="该武将克制的类型"
+    )
+    synergizes_with: list[int] = Field(
+        default_factory=list, max_length=MAX_GUIDE_LIST_LENGTH, description="与谁搭配好（武将 ID 列表）"
+    )
+    counter_strategy: str = Field(default="", max_length=MAX_GUIDE_SUMMARY_TEXT_LENGTH, description="面对该武将的对抗建议")
+    description: str = Field(default="", max_length=MAX_GUIDE_TEXT_LENGTH, description="攻略正文")
+    tips_for_beginners: str = Field(default="", max_length=MAX_GUIDE_SUMMARY_TEXT_LENGTH, description="新手提示")
     last_updated: str = Field(
         default_factory=lambda: date.today().isoformat(),
         description="最后更新时间",

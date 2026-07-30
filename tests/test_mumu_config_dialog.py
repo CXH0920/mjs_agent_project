@@ -7,9 +7,10 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
 from PIL import Image
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton
 
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.mumu_config_dialog import MumuConfigDialog
@@ -219,6 +220,21 @@ def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> 
     assert dialog._make_match_guide_template_btn.isEnabled()
     assert dialog._make_template_btn.text() == "🎯制作模板"
     assert dialog._make_match_guide_template_btn.text() == "🎯制作模板"
+
+
+def test_roi_layout_image_rejects_invalid_file(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    invalid_path = tmp_path / "invalid.png"
+    invalid_path.write_bytes(b"not an image")
+    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [])
+    warnings: list[str] = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_args: (str(invalid_path), ""))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: warnings.append(_args[-1]))
+    monkeypatch.setattr(dialog, "_open_roi_layout_editor", lambda *_args: pytest.fail("不应打开编辑器"))
+
+    dialog._select_roi_layout_image("hero_selection")
+
+    assert warnings and "无法读取图片" in warnings[0]
 
 
 def test_two_template_types_are_saved_through_ocr_service(tmp_path: Path, monkeypatch) -> None:

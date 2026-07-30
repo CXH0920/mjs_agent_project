@@ -162,6 +162,7 @@ def test_match_guide_template_miss_can_fall_back_to_ocr(monkeypatch) -> None:
 def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> None:
     engine = object()
     recognized_engines: list[object] = []
+    inference_warmups: list[object] = []
 
     class FakeTemplateManager:
         is_loaded = True
@@ -181,6 +182,9 @@ def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> No
 
         def warmup(self) -> None:
             self._ocr = engine
+
+        def warmup_inference(self) -> None:
+            inference_warmups.append(self._ocr)
 
         def recognize(self, image):
             recognized_engines.append(self._ocr)
@@ -205,6 +209,7 @@ def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> No
 
     assert worker._execute(warmup) == {"outcome": "warmed"}
     assert worker._execute(recognition)["outcome"] == "matched"
+    assert inference_warmups == [engine]
     assert recognized_engines == [engine]
 
 

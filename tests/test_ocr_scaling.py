@@ -46,17 +46,17 @@ def test_general_recognizer_scales_rois_to_current_image(monkeypatch) -> None:
     captured_shapes: list[tuple[int, int]] = []
     recognizer = GeneralRecognizer(rois=[[100, 100, 20, 40]], hero_names=[])
 
-    def fake_recognize_single(roi, slot):
-        captured_shapes.append((roi.shape[1], roi.shape[0]))
-        return "测试", 1.0
+    def fake_batch(prepared_slots, _kind):
+        captured_shapes.extend((image.shape[1], image.shape[0]) for image in prepared_slots.values())
+        return {1: ("测试", 1.0)}
 
-    monkeypatch.setattr(recognizer, "_recognize_single", fake_recognize_single)
+    monkeypatch.setattr(recognizer, "_recognize_prepared_batch", fake_batch)
     image = np.zeros((720, 1280, 3), dtype=np.uint8)
 
     results = recognizer.recognize(image)
 
     assert results == [{"index": 1, "name": "测试", "confidence": 1.0}]
-    assert captured_shapes == [(10, 20)]
+    assert captured_shapes == [(30, 60)]
 
 
 def test_default_general_rois_leave_vertical_name_padding() -> None:
@@ -84,8 +84,12 @@ def test_match_guide_recognizer_returns_only_named_2v2_roles(monkeypatch) -> Non
     recognizer = GeneralRecognizer(hero_names=[], page_type="match_guide")
     names = iter([("徐晃", 0.9), ("许褚", 0.9), ("", 0.0), ("韩娥", 0.9), ("孙策", 0.9)])
     teams = iter(["汉军", "汉军", "楚军", "楚军"])
-    monkeypatch.setattr(recognizer, "_recognize_single", lambda roi, slot: next(names))
-    monkeypatch.setattr(recognizer, "_recognize_team", lambda roi, slot: next(teams))
+    monkeypatch.setattr(recognizer, "_recognize_prepared_batch", lambda _slots, _kind: {})
+    monkeypatch.setattr(
+        recognizer,
+        "_recognize_prepared_single",
+        lambda _roi, _slot, kind: next(names) if kind == "name" else (next(teams), 1.0),
+    )
 
     results = recognizer.recognize(np.zeros((1440, 2560, 3), dtype=np.uint8))
 

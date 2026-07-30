@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -51,32 +50,30 @@ def test_annotation_never_changes_official_cards_file(tmp_path: Path) -> None:
     assert service.get_view("8").fields[0].value == "2v2"
 
 
-def test_active_effect_ranges_cannot_overlap(tmp_path: Path) -> None:
+def test_effect_entry_uses_internal_timestamps_without_legacy_fields(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    service.add_effect_entry("8", "strengthen_effect", EffectEntry(
-        version="2026.08", effective_from=date(2026, 8, 1), content="加强", status="active",
-    ))
+    service.add_effect_entry("8", "strengthen_effect", EffectEntry(content="加强", status="active"))
 
-    with pytest.raises(ValueError, match="时间重叠"):
-        service.add_effect_entry("8", "strengthen_effect", EffectEntry(
-            version="2026.09", effective_from=date(2026, 8, 15), content="再次加强", status="active",
-        ))
+    raw = service.annotations.get_annotation("8").fields["strengthen_effect"][0]
+    assert raw["content"] == "加强"
+    assert raw["created_at"] == raw["updated_at"]
+    assert not {"version", "effective_from", "effective_to", "source"} & raw.keys()
 
 
-def test_active_effect_range_validation_is_a_public_service_contract(tmp_path: Path) -> None:
+def test_legacy_effect_entry_is_migrated_when_saved(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    definition = service.schema.get_field("strengthen_effect")
-    entries = [
-        EffectEntry(
-            version="2026.08", effective_from=date(2026, 8, 1), content="加强", status="active",
-        ),
-        EffectEntry(
-            version="2026.09", effective_from=date(2026, 8, 15), content="再次加强", status="active",
-        ),
-    ]
 
-    with pytest.raises(ValueError, match="时间重叠"):
-        service.validate_active_ranges(definition, entries)
+    service.save_annotation_fields("8", {"strengthen_effect": [{
+        "version": "旧版", "effective_from": "2026-07-26", "content": "旧效果", "source": "公告", "status": "active",
+    }]})
+
+    raw = service.annotations.get_annotation("8").fields["strengthen_effect"][0]
+    assert raw == {
+        "content": "旧效果",
+        "status": "active",
+        "created_at": "2026-07-26T00:00:00",
+        "updated_at": "2026-07-26T00:00:00",
+    }
 
 
 def test_archived_field_is_preserved_as_historical_data(tmp_path: Path) -> None:

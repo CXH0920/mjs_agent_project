@@ -95,6 +95,7 @@ def main() -> None:
 
     try:
         window = MainWindow()
+        window.start_ocr_warmup()
         window.show()
         splash.finish(window)
         sys.exit(app.exec())

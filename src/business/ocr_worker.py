@@ -57,20 +57,21 @@ class OcrWorker(QThread):
         """按提交顺序加入任务；调用方可通过 ``task.completed`` 等待结果。"""
         self._tasks.put(task)
 
-    def warmup_model(self) -> None:
-        """将 PaddleOCR 模型预热任务加入当前串行队列。"""
+    def warmup_model(self, hero_names: list[str] | None = None) -> bool:
+        """将模型、推理算子和词表特征预热任务加入当前串行队列。"""
         if self._warmup_queued:
-            return
+            return False
         self._warmup_queued = True
         self.submit(OcrTask(
             image=None,
-            hero_names=(),
+            hero_names=tuple(hero_names or ()),
             rois=None,
             template_name="hero_selection",
             threshold=0.0,
             match_template=False,
             warmup=True,
         ))
+        return True
 
     def shutdown(self, timeout_ms: int = 5_000) -> bool:
         """在当前识别结束后停止 worker。"""
@@ -88,12 +89,14 @@ class OcrWorker(QThread):
             if task is None:
                 return
             task.result = self._execute(task)
+            if task.warmup and task.result.get("outcome") == "warmup_failed":
+                self._warmup_queued = False
             task.completed.set()
             self.task_completed.emit(task)
 
     def _execute(self, task: OcrTask) -> dict:
         if task.warmup:
-            return self._warmup_model()
+            return self._warmup_model(task)
 
         task_started = time.perf_counter()
         template_load_ms = 0.0
@@ -197,16 +200,19 @@ class OcrWorker(QThread):
             logger.debug(traceback.format_exc())
             return {"outcome": "retryable_ocr", "detail": str(exc)}
 
-    def _warmup_model(self) -> dict:
+    def _warmup_model(self, task: OcrTask) -> dict:
         """在 worker 线程加载一次模型，供后续不同页面的识别器复用。"""
         started = time.perf_counter()
         try:
-            recognizer = GeneralRecognizer(hero_names=[], page_type="hero_selection")
+            recognizer = GeneralRecognizer(
+                hero_names=list(task.hero_names), page_type="hero_selection",
+            )
             if self._ocr_engine is not None:
                 recognizer._ocr = self._ocr_engine
             recognizer.warmup()
             self._ocr_engine = recognizer._ocr
-            logger.info("PaddleOCR 模型预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
+            recognizer.warmup_inference()
+            logger.info("PaddleOCR 模型和推理预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
             return {"outcome": "warmed"}
         except Exception as exc:
             logger.warning("PaddleOCR 模型预热失败，首次识别将按需加载: %s", exc)

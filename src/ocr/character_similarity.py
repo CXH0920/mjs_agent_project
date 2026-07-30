@@ -21,6 +21,12 @@ class CharacterSimilarityService:
     def warmup(self) -> None:
         self._repository.warmup()
 
+    def warmup_hero_names(self, hero_names: list[str]) -> int:
+        """提前补齐词表字符，避免首次候选决胜触发动态特征查询。"""
+        return self._repository.warmup_characters(
+            char for hero_name in hero_names for char in hero_name
+        )
+
     def correct_hero_name(self, text: str, hero_names: list[str]) -> str:
         """将 OCR 文本矫正为最接近的武将名称。"""
         if not text:

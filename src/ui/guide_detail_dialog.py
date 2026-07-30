@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import mistune
-
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
@@ -19,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
+from src.ui.markdown_renderer import render_markdown
 from src.ui.shared.widgets import FlowLayout
 
 
@@ -299,4 +298,4 @@ class GuideMarkdownDialog(QDialog):
 
 def _markdown_to_html(text: str) -> str:
     """将 Markdown 转换为 HTML。"""
-    return mistune.html(text) if text else ""
+    return render_markdown(text)

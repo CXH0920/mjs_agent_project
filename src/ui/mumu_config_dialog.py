@@ -30,6 +30,7 @@ from src.business.capture_service import CaptureService
 from src.business.emulator_operation_service import EmulatorOperationService
 from src.business.mumu_config_coordinator import MumuConfigCoordinator
 from src.business.ocr_service import OcrService
+from src.capture.image_validation import load_local_image
 from src.capture.image_utils import pil_to_qpixmap
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.mumu_config_sections import (
@@ -533,10 +534,7 @@ class MumuConfigDialog(QDialog):
         if not path:
             return
         try:
-            from PIL import Image
-
-            with Image.open(path) as source:
-                image = source.copy()
+            image = load_local_image(path)
             self._open_roi_layout_editor(page_type, image)
         except Exception as exc:
             logger.exception("读取 OCR ROI 截图失败")
