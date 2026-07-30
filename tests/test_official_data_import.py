@@ -6,6 +6,7 @@ import csv
 
 import cv2
 import numpy as np
+import pytest
 
 from src.business import official_data_import_service as import_module
 from src.business.official_data_import_service import OfficialDataImportService
@@ -35,6 +36,20 @@ def test_missing_horizontal_line_is_restored_by_median_row_height() -> None:
 
     assert boundaries == [0, 10, 20, 30, 40, 50]
     assert repaired_ranks == {4}
+
+
+def test_paged_layout_restores_missing_leading_rank_rows() -> None:
+    panel = np.zeros((500, 486, 3), dtype=np.uint8)
+    for center in (190, 238, 286, 334):
+        panel[center - 6:center + 7, 30:48] = 255
+
+    boundaries = official_board_parser.find_data_boundaries(
+        panel, 600, official_board_parser.PAGED_LAYOUTS["2v2"], 0,
+    )
+
+    assert len(boundaries) - 1 == 5
+    assert boundaries[0] == 118
+    assert boundaries[-1] == 358
 
 
 def test_missing_rank_ocr_uses_table_row_rank_without_review() -> None:
@@ -258,6 +273,23 @@ def test_rate_template_preparation_reports_each_processed_row(monkeypatch) -> No
     assert len(progress) == 2
 
 
+def test_rank_digit_templates_use_the_page_global_start(monkeypatch) -> None:
+    glyph = np.ones((10, 6), dtype=np.uint8)
+    monkeypatch.setattr(official_board_parser, "segment_glyphs", lambda _: [glyph, glyph])
+
+    templates = official_board_parser.build_rank_digit_templates(
+        np.zeros((20, 100, 3), dtype=np.uint8),
+        [0, 20],
+        ("排名", "武将", "胜率"),
+        (0.0, 0.29, 0.69, 1.0),
+        rank_start=51,
+    )
+
+    assert len(templates["5"]) == 1
+    assert len(templates["1"]) == 1
+    assert not templates["0"]
+
+
 def test_two_column_layouts_keep_rank_and_hero_in_separate_cells() -> None:
     cases = (
         ("2v2", 1, (147, 199), (306, 393)),
@@ -297,7 +329,7 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
     monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40])
     monkeypatch.setattr(service, "_recognize_row", lambda *_: next(rows))
     def prepare_templates(*args):
-        progress_callback = args[-1]
+        progress_callback = args[-2]
         progress_callback()
         progress_callback()
         return {1: ("70.34%", 0.99), 2: ("70.11%", 0.99)}, {}
@@ -328,7 +360,110 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
         {"排名": "2", "武将": "赵奢"},
     ]
     assert len(list(csv.DictReader(review_path.open(encoding="utf-8")))) == 1
+    review = list(csv.DictReader(review_path.open(encoding="utf-8")))[0]
+    assert review["来源图片"].endswith("official.png")
+    assert review["页序号"] == "1"
     assert not output_path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r\n" not in output_path.read_bytes()
     assert progress == [(0, 6), (1, 6), (2, 6), (3, 6), (4, 6), (5, 6), (6, 6)]
     assert stale_calls == [True]
+
+
+def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatch) -> None:
+    names = {1: "甲一", 2: "甲二", 3: "甲三", 4: "甲四", 5: "甲五", 6: "甲六"}
+    service = OfficialDataImportService(hero_names=list(names.values()))
+    panel = np.zeros((60, 100, 3), dtype=np.uint8)
+    counters = {}
+
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+    monkeypatch.setattr(
+        official_board_parser,
+        "read_image",
+        lambda path: np.full((200, 200, 3), 1 if path.stem == "page1" else 4, dtype=np.uint8),
+    )
+    monkeypatch.setattr(
+        official_board_parser, "detect_layout", lambda *_: LAYOUTS["2v2"],
+    )
+    monkeypatch.setattr(
+        official_board_parser,
+        "extract_panels",
+        lambda image, _layout: [
+            (0, 0, np.full_like(panel, int(image[0, 0, 0]))),
+            (100, 0, np.full_like(panel, int(image[0, 0, 0]))),
+        ],
+    )
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40, 60])
+
+    def recognize_row(row, columns, *_args):
+        page_start = int(row[0, 0, 0])
+        key = (page_start, columns)
+        counters[key] = counters.get(key, 0) + 1
+        rank = page_start + counters[key] - 1
+        fields = {"排名": (str(rank), 0.99), "武将": (names[rank], 0.99)}
+        if "胜率" in columns:
+            fields["胜率"] = ("50.00%", 0.99)
+        return fields
+
+    monkeypatch.setattr(service, "_recognize_row", recognize_row)
+
+    def prepare_templates(*args):
+        for _ in range(3):
+            args[-2]()
+        return {rank: ("50.00%", 0.99) for rank in range(1, 4)}, {}
+
+    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
+    monkeypatch.setattr(
+        official_board_parser, "recognize_rate_with_templates", lambda *_: ("50.00%", 0.99),
+    )
+    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+
+    summary = service.import_pages("2v2", [tmp_path / "page1.png", tmp_path / "page2.png"])
+
+    win_rows = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
+    attendance_rows = list(csv.DictReader((tmp_path / "2v2出场排行.csv").open(encoding="utf-8")))
+    assert summary["pages"] == 2
+    assert [row["排名"] for row in win_rows] == ["1", "2", "3", "4", "5", "6"]
+    assert [row["排名"] for row in attendance_rows] == ["1", "2", "3", "4", "5", "6"]
+
+
+def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["甲一", "甲二", "甲三"])
+    panel = np.full((60, 100, 3), 4, dtype=np.uint8)
+    calls = 0
+
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
+    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["2v2"])
+    monkeypatch.setattr(
+        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    )
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40, 60])
+
+    def recognize_row(_row, columns, *_args):
+        nonlocal calls
+        calls += 1
+        local_rank = (calls - 1) % 3
+        fields = {"排名": (str(4 + local_rank), 0.99), "武将": ("甲一", 0.99)}
+        if "胜率" in columns:
+            fields["胜率"] = ("50.00%", 0.99)
+        return fields
+
+    monkeypatch.setattr(service, "_recognize_row", recognize_row)
+
+    def prepare_templates(*args):
+        for _ in range(3):
+            args[-2]()
+        return {rank: ("50.00%", 0.99) for rank in range(1, 4)}, {}
+
+    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
+    monkeypatch.setattr(
+        official_board_parser, "recognize_rate_with_templates", lambda *_: ("50.00%", 0.99),
+    )
+
+    with pytest.raises(ValueError, match="期望从 1 开始，识别为从 4 开始"):
+        service.import_pages("2v2", [tmp_path / "page2.png"])
+
+    assert not (tmp_path / "2v2胜率排行.csv").exists()
+    assert not (tmp_path / "2v2出场排行.csv").exists()

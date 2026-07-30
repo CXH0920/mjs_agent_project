@@ -146,12 +146,13 @@ MumuConfigDialog
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务保留 PaddleOCR 生命周期、姓名纠错、复核记录、进度编排与 CSV 持久化。目标仍是用表格横线确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
+该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务接收 `OcrWorker` 注入的 PaddleOCR 引擎，并负责姓名纠错、复核记录、进度编排与 CSV 持久化。目标仍是用视觉行边界确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
 
 ```
 OfficialDataImportDialog
-  -> OfficialDataImportWorker.run()
-     -> import_file()（按已选图片顺序串行执行）
+  -> CaptureService.submit_official_import()
+     -> OcrWorker.submit(OfficialImportTask)
+        -> OfficialDataImportService.import_pages()（按已选图片顺序串行执行）
            -> official_board_parser 读取图片、检测横线并按列比例裁剪单元格
            -> 简体 PaddleOCR；名称歧义时按需使用繁体模型 + 武将词表校正 / 胜率数字模板识别
            -> 原子覆盖 CSV + 写入待复核 CSV/行截图
@@ -171,11 +172,11 @@ OfficialDataImportDialog
 
 | 接口 | 参数 | 返回/信号 | 说明 |
 |---|---|---|---|
-| `OfficialDataImportService.import_selected()` | `{类型: 图片路径}` | `list[dict]` | 空路径跳过；两个类型依次执行 |
-| `OfficialDataImportService.import_file()` | `key`, `image_path` | `{name, records, reviews, outputs}` | 导入一种图片并覆盖其 CSV |
-| `OfficialDataImportWorker.progress_changed` | `status`, `current`, `total` | 当前文件的 OCR 工作进度 | 胜率模板准备、逐行识别和罕见字兜底状态都会更新 |
-| `OfficialDataImportWorker.completed` | - | `list[dict]` | 所有选中导入完成 |
-| `OfficialDataImportWorker.failed` | - | `str` | 任一导入失败原因 |
+| `OfficialDataImportService.import_selected()` | `{类型: 图片路径或列表}` | `list[dict]` | 空路径跳过；两个类型依次执行 |
+| `OfficialDataImportService.import_pages()` | `key`, `image_paths` | `{name, pages, records, reviews, outputs}` | 合并同类有序分页，全部校验后覆盖 CSV |
+| `CaptureService.official_import_progress` | `status`, `current`, `total` | 当前榜单的 OCR 工作进度 | 等待队列、胜率模板准备、逐行识别和罕见字兜底状态都会更新 |
+| `CaptureService.official_import_completed` | - | `list[dict]` | 整批任务完成 |
+| `CaptureService.official_import_failed` | - | `str` | 整批任务失败原因 |
 
 **关键实现：**
 
@@ -189,7 +190,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
     fields = self._recognize_row(row, columns, column_breaks)
 ```
 
-`boundaries` 由横线检测得到，因此 `expected_rank` 来自视觉行序而非 OCR 排名。若相邻边界间距超过中位行高的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；两路精确结果冲突时不按置信度强选。最高结果只有单字时，再保留背景留白按字形补识别。写入前，完整名称统一经过词表的编辑距离与字形特征二次判定，不因高置信度跳过校正；名称发生校正时以“武将名称已由词表校正”写入待复核。OCR 原文作为词表前缀只有唯一候选时可自动补全；多个候选共享至少两个汉字前缀时不使用编辑距离或微小视觉分差强行决胜，而是按需调用 `chinese_cht` 繁体模型继续确认。模型不可用或仍不能唯一确认时保留原结果，以“武将名称候选不唯一”写入待复核。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。工作线程会先显示不定进度，待横线检测得到行数后，将胜率模板准备和逐行识别都计入当前文件进度；进入罕见字兜底时仅更新状态文字，不重置当前进度。每个图片只创建一个 `OfficialDataImportWorker`；同时选择 2v2 和放逐时在同一线程顺序处理，不会互相争用该功能的 OCR 实例。它与常规 `OcrWorker` 是独立实例，轮询或截图识别同时运行时会共享 CPU/GPU 资源。
+`boundaries` 由视觉行检测得到，因此 `expected_rank` 来自行序而非 OCR 排名。若相邻边界间距超过中位行高的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；2v2 出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格会汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；两路精确结果冲突时不按置信度强选。最高结果只有单字时，再保留背景留白按字形补识别。写入前，完整名称统一经过词表的编辑距离与字形特征二次判定，不因高置信度跳过校正；名称发生校正时以“武将名称已由词表校正”写入待复核。OCR 原文作为词表前缀只有唯一候选时可自动补全；多个候选共享至少两个汉字前缀时不使用编辑距离或微小视觉分差强行决胜，而是按需调用 `chinese_cht` 繁体模型继续确认。模型不可用或仍不能唯一确认时保留原结果，以“武将名称候选不唯一”写入待复核。该逻辑仅用于官方导入，不影响常规武将识别。再以排名格和同列小数位构建字体模板，识别四位胜率数字。worker 会先显示等待/分析阶段的不定进度，待行数确定后，将胜率模板准备和逐行识别都计入当前榜单进度；进入罕见字兜底时仅更新状态文字，不重置当前进度。2v2 与放逐图片合并为一个 `OfficialImportTask`，在唯一 `OcrWorker` 中完整执行并复用其 PaddleOCR 引擎；预热和常规任务按提交顺序等待，不会并发运行 native OCR。
 
 **名称降级决策顺序：**
 

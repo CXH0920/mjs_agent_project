@@ -6,13 +6,13 @@ import csv
 import logging
 import re
 import tempfile
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import QThread, Signal
 from src.data.recommendation_index_repository import mark_recommendation_index_stale
 from src.ocr import official_board_parser
 from src.ocr.character_similarity import CharacterSimilarityService
@@ -28,11 +28,16 @@ REVIEW_DIR = PROJECT_ROOT / "screenshot_data" / "official_import"
 class OfficialDataImportService:
     """按表格线切分官方榜单，并将识别结果写入 CSV。"""
 
-    def __init__(self, hero_names: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        hero_names: list[str] | None = None,
+        ocr_engine=None,
+        rare_char_ocr_engine=None,
+    ) -> None:
         self._hero_names = hero_names or self._load_hero_names()
         self._name_corrector = CharacterSimilarityService()
-        self._ocr = None
-        self._rare_char_ocr = None
+        self._ocr = ocr_engine
+        self._rare_char_ocr = rare_char_ocr_engine
         self._rare_char_engine_failed = False
 
     @staticmethod
@@ -72,9 +77,14 @@ class OfficialDataImportService:
                 return None
         return self._rare_char_ocr
 
-    def import_selected(self, paths: dict[str, str]) -> list[dict]:
+    def import_selected(self, paths: dict[str, str | list[str]]) -> list[dict]:
         """执行所有已选择的导入流程。"""
-        return [self.import_file(key, Path(path)) for key, path in paths.items() if path]
+        summaries = []
+        for key, selected in paths.items():
+            page_paths = [selected] if isinstance(selected, str) else selected
+            if page_paths:
+                summaries.append(self.import_pages(key, [Path(path) for path in page_paths]))
+        return summaries
 
     def import_file(
         self,
@@ -84,22 +94,64 @@ class OfficialDataImportService:
         status_callback: Callable[[str], None] | None = None,
     ) -> dict:
         """从一张官方榜单图片识别并覆盖对应数据文件。"""
-        layout = LAYOUTS[key]
-        image = official_board_parser.read_image(image_path)
+        return self.import_pages(
+            key, [image_path], progress_callback, status_callback,
+        )
+
+    def import_pages(
+        self,
+        key: str,
+        image_paths: list[Path],
+        progress_callback: Callable[[int, int], None] | None = None,
+        status_callback: Callable[[str], None] | None = None,
+    ) -> dict:
+        """按给定顺序合并同类榜单页面，校验通过后一次写入。"""
+        if key not in LAYOUTS:
+            raise ValueError(f"不支持的官方榜单类型: {key}")
+        if not image_paths:
+            raise ValueError("未选择官方榜单图片")
+        if len({str(path.resolve()) for path in image_paths}) != len(image_paths):
+            raise ValueError("同一张官方榜单图片被重复选择")
+
         outputs: dict[str, dict] = {}
         panel_tasks = []
         total_steps = 0
+        variants = set()
+        page_count = len(image_paths)
 
-        for panel_index, panel_data in enumerate(official_board_parser.extract_panels(image, layout)):
-            panel_x, panel_y, panel = panel_data
-            columns = layout.columns[panel_index]
-            boundaries = official_board_parser.find_data_boundaries(
-                panel, image.shape[0], layout, panel_index,
-            )
-            boundaries, repaired_ranks = official_board_parser.restore_missing_boundaries(boundaries)
-            panel_tasks.append((panel_index, panel_x, panel_y, panel, columns, boundaries, repaired_ranks))
-            row_count = len(boundaries) - 1
-            total_steps += row_count * (2 if "胜率" in columns else 1)
+        for page_index, image_path in enumerate(image_paths, start=1):
+            if status_callback:
+                status_callback(f"正在分析第 {page_index}/{page_count} 张图片")
+            image = official_board_parser.read_image(image_path)
+            layout = official_board_parser.detect_layout(image, key)
+            variants.add(layout.variant)
+            page_tasks = []
+            for panel_index, panel_data in enumerate(official_board_parser.extract_panels(image, layout)):
+                panel_x, panel_y, panel = panel_data
+                columns = layout.columns[panel_index]
+                boundaries = official_board_parser.find_data_boundaries(
+                    panel, image.shape[0], layout, panel_index,
+                )
+                boundaries, repaired_ranks = official_board_parser.restore_missing_boundaries(boundaries)
+                page_tasks.append((
+                    page_index, image_path, layout, panel_index, panel_x, panel_y,
+                    panel, columns, boundaries, repaired_ranks,
+                ))
+                row_count = len(boundaries) - 1
+                total_steps += row_count * (2 if "胜率" in columns else 1)
+            row_counts = [len(task[8]) - 1 for task in page_tasks]
+            if key == "2v2" and row_counts[0] != row_counts[1]:
+                raise ValueError(
+                    f"第 {page_index} 张 2v2 图片左右榜单行数不一致: {row_counts}"
+                )
+            if key == "exile" and abs(row_counts[0] - row_counts[1]) > 1:
+                raise ValueError(
+                    f"第 {page_index} 张武将放逐图片左右榜单行数差异过大: {row_counts}"
+                )
+            panel_tasks.extend(page_tasks)
+
+        if len(variants) > 1:
+            raise ValueError("同一次导入不能混用旧版长图和新版分页图片")
 
         completed_steps = 0
 
@@ -112,7 +164,15 @@ class OfficialDataImportService:
         if progress_callback:
             progress_callback(0, total_steps)
 
-        for panel_index, panel_x, panel_y, panel, columns, boundaries, repaired_ranks in panel_tasks:
+        current_page = 0
+        for (
+            page_index, image_path, layout, panel_index, panel_x, panel_y,
+            panel, columns, boundaries, repaired_ranks,
+        ) in panel_tasks:
+            if page_index != current_page:
+                current_page = page_index
+                if status_callback:
+                    status_callback(f"正在识别第 {page_index}/{page_count} 张图片")
             output_name = layout.output_names[panel_index]
             review_name = layout.review_names[panel_index]
             column_breaks = layout.column_breaks[panel_index]
@@ -123,13 +183,18 @@ class OfficialDataImportService:
                 "reviews": [],
                 "seen_names": set(),
             })
+            panel_expected_start = len(batch["records"]) + 1
+            rank_offsets = []
             rate_ocr_results, digit_templates = (
                 official_board_parser.prepare_rate_templates(
-                    panel, boundaries, columns, column_breaks, self._recognize_cell, advance_progress,
+                    panel, boundaries, columns, column_breaks, self._recognize_cell,
+                    advance_progress, panel_expected_start,
                 )
                 if "胜率" in columns else ({}, None)
             )
-            for top, bottom in zip(boundaries, boundaries[1:]):
+            for local_rank, (top, bottom) in enumerate(
+                zip(boundaries, boundaries[1:]), start=1,
+            ):
                 row = panel[top + 3:bottom - 3]
                 if row.size == 0:
                     advance_progress()
@@ -138,9 +203,16 @@ class OfficialDataImportService:
                 cells = official_board_parser.split_row_cells(row, columns, column_breaks)
                 fields = self._recognize_row(
                     row, columns, column_breaks,
-                    {"胜率": rate_ocr_results[expected_rank]} if "胜率" in columns else None,
-                    status_callback,
+                    {"胜率": rate_ocr_results[local_rank]} if "胜率" in columns else None,
+                    (
+                        lambda text, page=page_index: status_callback(
+                            f"第 {page}/{page_count} 张图片：{text}"
+                        )
+                    ) if status_callback else None,
                 )
+                rank_match = re.search(r"\d+", fields["排名"][0])
+                if rank_match:
+                    rank_offsets.append(int(rank_match.group()) - local_rank)
                 name, confidence = self._normalize_name(fields["武将"])
                 record = {"排名": expected_rank, "武将": name}
                 template_rate, template_score = "", 0.0
@@ -155,7 +227,7 @@ class OfficialDataImportService:
                 unresolved_name_reason = self._unresolved_name_reason(name)
                 if unresolved_name_reason:
                     reasons.append(unresolved_name_reason)
-                if expected_rank in repaired_ranks:
+                if local_rank in repaired_ranks:
                     reasons.append("检测到缺失表格横线，已按行高补全")
                 ocr_rate = self._normalize_rate(fields.get("胜率", ("", 0.0))[0])
                 if template_rate and ocr_rate and template_rate != ocr_rate and template_score < 0.90:
@@ -166,7 +238,6 @@ class OfficialDataImportService:
                     reasons.append("武将名称重复")
                 batch["seen_names"].add(name)
                 if reasons:
-                    crop_path = self._save_review_crop(Path(output_name).stem, expected_rank, row)
                     batch["reviews"].append({
                         "期望排名": expected_rank,
                         "OCR排名": fields["排名"][0],
@@ -176,19 +247,33 @@ class OfficialDataImportService:
                         "数字模板置信度": f"{template_score:.4f}",
                         "置信度": f"{confidence:.4f}",
                         "异常原因": "；".join(reasons),
+                        "来源图片": str(image_path),
+                        "页序号": page_index,
                         "原图坐标": f"{panel_x},{panel_y + top},{panel_x + panel.shape[1]},{panel_y + bottom}",
-                        "行截图路径": str(crop_path),
+                        "行截图路径": "",
+                        "_row": row.copy(),
                     })
                 advance_progress()
+            self._validate_panel_rank_sequence(
+                image_path, panel_expected_start, rank_offsets,
+            )
 
         if not outputs:
             raise ValueError("未检测到任何数据行")
         for output_name, batch in outputs.items():
             records = batch["records"]
+            if not records:
+                raise ValueError(f"{output_name} 未识别到任何数据行")
+            for review in batch["reviews"]:
+                row = review.pop("_row")
+                crop_path = self._save_review_crop(
+                    Path(output_name).stem, int(review["期望排名"]), row,
+                )
+                review["行截图路径"] = str(crop_path)
             self._write_csv(DATA_DIR / output_name, list(records[0]), records)
             self._write_csv(
                 DATA_DIR / batch["review_name"],
-                ["期望排名", "OCR排名", "OCR名称", "OCR胜率", "数字模板胜率", "数字模板置信度", "置信度", "异常原因", "原图坐标", "行截图路径"],
+                ["期望排名", "OCR排名", "OCR名称", "OCR胜率", "数字模板胜率", "数字模板置信度", "置信度", "异常原因", "来源图片", "页序号", "原图坐标", "行截图路径"],
                 batch["reviews"],
             )
         mark_recommendation_index_stale(True)
@@ -198,7 +283,33 @@ class OfficialDataImportService:
         record_count = sum(len(batch["records"]) for batch in outputs.values())
         review_count = sum(len(batch["reviews"]) for batch in outputs.values())
         logger.info("官方%s榜单导入完成: %d 条，待复核 %d 条", layout.key, record_count, review_count)
-        return {"name": layout.key, "records": record_count, "reviews": review_count, "outputs": [DATA_DIR / name for name in outputs]}
+        return {
+            "name": key,
+            "pages": page_count,
+            "variant": next(iter(variants)),
+            "records": record_count,
+            "reviews": review_count,
+            "outputs": [DATA_DIR / name for name in outputs],
+        }
+
+    @staticmethod
+    def _validate_panel_rank_sequence(
+        image_path: Path,
+        expected_start: int,
+        rank_offsets: list[int],
+    ) -> None:
+        """在排名 OCR 提供足够一致证据时阻止错序页面覆盖数据。"""
+        if len(rank_offsets) < 3:
+            return
+        observed_offset, count = Counter(rank_offsets).most_common(1)[0]
+        required = max(3, round(len(rank_offsets) * 0.6))
+        expected_offset = expected_start - 1
+        if count >= required and observed_offset != expected_offset:
+            observed_start = observed_offset + 1
+            raise ValueError(
+                f"图片 {image_path.name} 排名顺序异常："
+                f"期望从 {expected_start} 开始，识别为从 {observed_start} 开始"
+            )
 
     def _recognize_row(
         self,
@@ -466,35 +577,3 @@ class OfficialDataImportService:
             writer.writeheader()
             writer.writerows(rows)
         temp_path.replace(path)
-
-
-class OfficialDataImportWorker(QThread):
-    """在后台线程执行一个或两个官方榜单导入任务。"""
-
-    completed = Signal(object)
-    failed = Signal(str)
-    progress_changed = Signal(str, int, int)
-
-    def __init__(self, paths: dict[str, str], parent=None) -> None:
-        super().__init__(parent)
-        self._paths = paths
-
-    def run(self) -> None:
-        try:
-            service = OfficialDataImportService()
-            selected_paths = [(key, path) for key, path in self._paths.items() if path]
-            summaries = []
-            for index, (key, path) in enumerate(selected_paths, start=1):
-                name = "2v2数据" if key == "2v2" else "武将放逐数据"
-                status = f"正在导入{name}（{index}/{len(selected_paths)}）"
-                self.progress_changed.emit(status, 0, 0)
-                summaries.append(service.import_file(
-                    key,
-                    Path(path),
-                    lambda current, total, text=status: self.progress_changed.emit(text, current, total),
-                    lambda text, prefix=status: self.progress_changed.emit(f"{prefix}：{text}", -1, -1),
-                ))
-            self.completed.emit(summaries)
-        except Exception as exc:
-            logger.exception("官方榜单导入失败")
-            self.failed.emit(str(exc))

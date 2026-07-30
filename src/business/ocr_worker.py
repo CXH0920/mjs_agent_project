@@ -40,20 +40,32 @@ class OcrTask:
     result: dict | None = field(default=None, init=False)
 
 
+@dataclass
+class OfficialImportTask:
+    """在唯一 OCR worker 中执行的整批官方榜单导入任务。"""
+
+    paths: dict[str, tuple[str, ...]]
+    task_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    completed: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    result: dict | None = field(default=None, init=False)
+
+
 class OcrWorker(QThread):
     """单线程队列，确保 PaddleOCR 仅在一个后台线程中使用。"""
 
     task_completed = Signal(object)
+    official_progress = Signal(str, str, int, int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._tasks: queue.Queue[OcrTask | None] = queue.Queue()
+        self._tasks: queue.Queue[OcrTask | OfficialImportTask | None] = queue.Queue()
         self._recognizer: GeneralRecognizer | None = None
         self._recognizer_signature: tuple | None = None
         self._ocr_engine = None
+        self._rare_char_ocr_engine = None
         self._warmup_queued = False
 
-    def submit(self, task: OcrTask) -> None:
+    def submit(self, task: OcrTask | OfficialImportTask) -> None:
         """按提交顺序加入任务；调用方可通过 ``task.completed`` 等待结果。"""
         self._tasks.put(task)
 
@@ -88,11 +100,55 @@ class OcrWorker(QThread):
             task = self._tasks.get()
             if task is None:
                 return
-            task.result = self._execute(task)
-            if task.warmup and task.result.get("outcome") == "warmup_failed":
-                self._warmup_queued = False
+            if isinstance(task, OfficialImportTask):
+                task.result = self._execute_official_import(task)
+            else:
+                task.result = self._execute(task)
+                if task.warmup and task.result.get("outcome") == "warmup_failed":
+                    self._warmup_queued = False
             task.completed.set()
             self.task_completed.emit(task)
+
+    def _execute_official_import(self, task: OfficialImportTask) -> dict:
+        """复用当前线程的 OCR 引擎，串行完成整批官方榜单导入。"""
+        from src.business.official_data_import_service import OfficialDataImportService
+
+        started = time.perf_counter()
+        service = OfficialDataImportService(
+            ocr_engine=self._ocr_engine,
+            rare_char_ocr_engine=self._rare_char_ocr_engine,
+        )
+        selected_paths = [(key, paths) for key, paths in task.paths.items() if paths]
+        summaries = []
+        try:
+            if not selected_paths:
+                raise ValueError("未选择官方榜单图片")
+            for index, (key, paths) in enumerate(selected_paths, start=1):
+                name = "2v2数据" if key == "2v2" else "武将放逐数据"
+                status = f"正在导入{name}（{index}/{len(selected_paths)}）"
+                self.official_progress.emit(task.task_id, status, 0, 0)
+                summaries.append(service.import_pages(
+                    key,
+                    [Path(path) for path in paths],
+                    lambda current, total, text=status: self.official_progress.emit(
+                        task.task_id, text, current, total,
+                    ),
+                    lambda text, prefix=status: self.official_progress.emit(
+                        task.task_id, f"{prefix}：{text}", -1, -1,
+                    ),
+                ))
+            logger.info(
+                "官方榜单整批导入完成: groups=%d，耗时 %.1fms",
+                len(summaries),
+                (time.perf_counter() - started) * 1000,
+            )
+            return {"outcome": "official_imported", "summaries": summaries}
+        except Exception as exc:
+            logger.exception("官方榜单导入失败")
+            return {"outcome": "official_import_failed", "detail": str(exc)}
+        finally:
+            self._ocr_engine = service._ocr
+            self._rare_char_ocr_engine = service._rare_char_ocr
 
     def _execute(self, task: OcrTask) -> dict:
         if task.warmup:

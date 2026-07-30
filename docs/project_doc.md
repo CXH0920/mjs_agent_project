@@ -4,6 +4,7 @@
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
 > 文档日期：2026-07-22
+> 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
 
@@ -38,7 +39,7 @@
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
-| 官方榜单导入 | `MainWindow._open_official_data_import()` | `OfficialDataImportDialog` -> `OfficialDataImportWorker` -> `OfficialDataImportService` -> `official_board_parser` 行分割/数字模板 + 候选汇总/逐字/繁体罕见字名称兜底 | 2v2 左右表分别覆盖胜率、出场排行 CSV；放逐榜覆盖放逐 CSV，弹窗显示进度，并生成待复核 CSV 与异常行截图 |
+| 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 整批任务独占唯一 OCR worker；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 
@@ -409,7 +410,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
 | MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
 | OcrService | `ocr_service.py` | ~355 | QObject | 3 |
-| OfficialDataImportService / Worker | `official_data_import_service.py` | ~500 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py` |
+| OfficialDataImportService / Worker | `official_data_import_service.py` | ~610 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py` |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
@@ -555,20 +556,22 @@ class OcrService(QObject):
 
 ### 3.7 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方图片，独立于 ADB、页面模板匹配和通用 `OcrWorker` 队列。图片读取、固定版式切分、横线恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留 OCR 模型、姓名纠错、复核、进度与 CSV 输出。`OfficialDataImportWorker` 在一个 QThread 中按用户选择顺序处理 2v2 和武将放逐图片；同一任务内不并发争用其 PaddleOCR 实例。
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留多页聚合、排名顺序校验、姓名纠错、复核、进度与 CSV 输出，并使用 worker 注入的 PaddleOCR 引擎。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个 Paddle native 线程池并发初始化或推理。
 
 ```
 OfficialDataImportDialog._start_import()
-  -> OfficialDataImportWorker.run()
-    -> emit progress_changed(status, 0, 0)                 # 读取与行检测阶段
-    -> OfficialDataImportService.import_file(key, path, callback)
-      -> official_board_parser.read_image() -> extract_panels()
-      -> find_data_boundaries() -> HoughLinesP 横线 -> restore_missing_boundaries() -> 视觉行序
+  -> CaptureService.submit_official_import(paths)
+    -> OcrWorker.submit(OfficialImportTask)
+      -> emit official_progress(status, 0, 0)              # 排队、读取、版式识别与行检测阶段
+      -> OfficialDataImportService.import_pages(key, paths, callback)
+      -> read_image() -> detect_layout() -> extract_panels()
+      -> find_data_boundaries() -> 旧版横线/新版排名行锚点 -> restore_missing_boundaries()
       -> prepare_rate_templates()（仅 2v2 胜率表）
       -> _recognize_row() -> 名称/胜率识别（名称歧义按需繁体兜底） -> _review_reasons()
-      -> _write_csv() -> Path.replace() 原子覆盖
+      -> _validate_panel_rank_sequence()                   # 有充分 OCR 证据时阻止页面错序
+      -> 全部页通过 -> _write_csv() -> Path.replace() 原子覆盖
       -> [胜率] clear_win_rate_cache()
-    -> emit completed(summaries)
+      -> CaptureService emit official_import_completed(summaries)
 ```
 
 **版式、输出与进度：**
@@ -1058,17 +1061,17 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 
 ### 5.11 官方数据导入对话框（OfficialDataImportDialog）
 
-该对话框提供两个只读图片路径框，可单独或同时选择 2v2 与武将放逐图片。导入期间禁用导入、取消和关闭操作；进度先为不定状态，收到 Worker 的总工作量后显示当前文件的 `current / total`。完成后显示每种图片的导入条数和待复核条数；失败时恢复按钮并隐藏进度条。
+该对话框为 2v2 与武将放逐各提供一个有序图片列表，可单独或同时导入。添加图片时按文件名自然排序，用户可移除或上移、下移；旧版长图使用单项列表，新版分页按列表显示顺序合并。导入期间禁用列表、导入、取消和关闭操作；进度先显示当前分析/识别页，收到 Worker 的总工作量后显示该类榜单的 `current / total`。完成后显示每类榜单的图片数、导入条数和待复核条数；失败时恢复控件并隐藏进度条。
 
 ```
 _start_import()
-  -> OfficialDataImportWorker(paths, self)
-  -> progress_changed -> _on_progress_changed()
-  -> completed -> _on_completed() -> accept()
-  -> failed -> _on_failed()
+  -> CaptureService.submit_official_import(paths)
+  -> official_import_progress -> _on_progress_changed()
+  -> official_import_completed -> _on_completed() -> accept()
+  -> official_import_failed -> _on_failed()
 ```
 
-该窗口不读取图片、不进行 OCR、不写 CSV；这些操作全部委托给业务服务层，因此常规模板武将识别与官方榜单 OCR 在 UI 和线程生命周期上互不影响。
+该窗口不读取图片、不进行 OCR、不写 CSV；这些操作全部委托给业务服务层。主窗口在弹窗打开期间停止活跃轮询，并在弹窗退出后按连接状态恢复；已入队的常规任务和官方整批任务由唯一 `OcrWorker` 顺序执行。
 
 ### 5.12 全局样式（style.py, 247 行）
 
@@ -1524,7 +1527,7 @@ src/ocr/
  ├── __init__.py              # 包 init
  ├── template_manager.py     # TemplateManager — OpenCV 模板匹配（~180 行）
  ├── image_preprocessor.py  # ImagePreprocessor — 纯图像预处理
- ├── official_board_parser.py # 官方榜单版式、横线、单元格与数字模板算法
+ ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
  ├── character_similarity.py # CharacterSimilarityService — 名称纠错
  ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排

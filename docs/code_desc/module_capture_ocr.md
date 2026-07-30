@@ -30,7 +30,7 @@ src/ocr/
 ├── __init__.py
 ├── template_manager.py    # TemplateManager — OpenCV 模板匹配
 ├── image_preprocessor.py  # ImagePreprocessor — 放大、CLAHE、锐化、灰度
-├── official_board_parser.py # 官方榜单版式、横线、单元格与数字模板算法
+├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
@@ -126,7 +126,7 @@ PaddleOCR → 文字 + 置信度
        └── 无候选且极高置信度（≥99.5%）→ 保留原文，保护新武将
 ```
 
-官方榜单导入不使用页面模板匹配、通用 `OcrWorker` 队列或 `GeneralRecognizer`。`src.ocr.official_board_parser` 提供固定版式切分、横线恢复、单元格切分和胜率数字模板算法；`src.business.official_data_import_service` 单独管理 PaddleOCR 实例，并依赖公开的 `CharacterSimilarityService.correct_hero_name()` 完成词表纠错、复核和输出。完整词表候选优先和单字逐字兜底仍局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一榜单的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。旧版继续按表格横线定位；新版从排名列的重复文字行确定稳定行距，并补回被压缩或背景干扰漏掉的行。`src.business.official_data_import_service` 依赖公开的 `CharacterSimilarityService.correct_hero_name()` 完成词表纠错、复核和输出。多页导入先在内存中按列表顺序合并，使用排名 OCR 的一致性证据阻止明显错序，全部页面校验通过后才覆盖 CSV。整批任务执行期间普通 OCR 留在队列等待，主窗口暂停产生新的轮询任务，从而避免多个 Paddle native 线程池并发运行。完整词表候选优先和单字逐字兜底仍局限在该服务，因而不会改变选将模板 OCR、文件导入或轮询的识别策略。胜率不复用中文 OCR 结果作为最终值，而是通过同一面板的数字字形模板识别，避免将被裁剪或形近的 `4` 误读为 `1`。
 
 ### 3.4 多维汉字特征评分
 
@@ -244,9 +244,9 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
 | `CharacterFeatureRepository(cache_path=None)` | 汉字特征缓存加载、动态补齐与保存 |
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |
-| `OcrWorker.submit(task)` | 串行执行模板匹配与 OCR，并通过任务完成信号返回结果 |
+| `OcrWorker.submit(task)` | 串行执行预热、常规 `OcrTask` 或官方 `OfficialImportTask`，并通过任务完成信号返回结果 |
 
-活动识别路径由 `src.business.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer`，配置相同的连续任务复用该实例；手动截图、文件导入与轮询不会直接调用全局识别器。
+活动识别路径由 `src.business.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 PaddleOCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 PaddleOCR。
 
 ---
 

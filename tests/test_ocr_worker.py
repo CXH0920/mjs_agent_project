@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from src.business.capture_service import CaptureService
-from src.business.ocr_worker import OcrTask, OcrWorker
+from src.business.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
 from src.business.ocr_service import OcrService
 
 
@@ -81,6 +81,99 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
         "confidence": 0.8,
         "ocr_results": [{"index": 1, "name": "first", "confidence": 1.0}],
     }
+
+
+def test_official_import_shares_worker_queue_and_ocr_engine(monkeypatch, tmp_path) -> None:
+    app = QApplication.instance() or QApplication([])
+    engine = object()
+    rare_engine = object()
+    events: list[str] = []
+    injected_engines: list[object] = []
+    progress: list[tuple[str, int, int]] = []
+
+    class FakeTemplateManager:
+        is_loaded = True
+        last_match_scale = 1.0
+        last_match_strategy = "base_local"
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            return True, threshold
+
+    class FakeRecognizer:
+        timing_ms = {}
+
+        def __init__(self, hero_names, page_type, layout=None) -> None:
+            self._ocr = None
+
+        def warmup(self) -> None:
+            events.append("warmup")
+            self._ocr = engine
+
+        def warmup_inference(self) -> None:
+            pass
+
+        def recognize(self, image):
+            assert self._ocr is engine
+            events.append(str(image))
+            return []
+
+        @staticmethod
+        def save_results(results, path) -> None:
+            pass
+
+    class FakeOfficialDataImportService:
+        def __init__(self, hero_names=None, ocr_engine=None, rare_char_ocr_engine=None) -> None:
+            injected_engines.append(ocr_engine)
+            self._ocr = ocr_engine
+            self._rare_char_ocr = rare_char_ocr_engine
+
+        def import_pages(self, key, paths, progress_callback, status_callback):
+            events.append("official")
+            status_callback("正在分析图片")
+            progress_callback(1, 1)
+            self._rare_char_ocr = rare_engine
+            return {"name": key, "records": 1, "reviews": 0, "pages": len(paths)}
+
+    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr(
+        "src.business.official_data_import_service.OfficialDataImportService",
+        FakeOfficialDataImportService,
+    )
+    monkeypatch.setattr("src.business.ocr_worker.DEFAULT_SCREENSHOT_DATA_DIR", tmp_path)
+
+    worker = OcrWorker()
+    official = OfficialImportTask({"exile": ("page1.png", "page2.png")})
+    regular = OcrTask(
+        image="regular", hero_names=("曹操",), rois=None,
+        template_name="hero_selection", threshold=0.8,
+    )
+    worker.official_progress.connect(
+        lambda task_id, status, current, total: progress.append((status, current, total))
+    )
+
+    worker.start()
+    try:
+        assert worker.warmup_model(["曹操"])
+        worker.submit(official)
+        worker.submit(regular)
+        assert official.completed.wait(1)
+        assert regular.completed.wait(1)
+        app.processEvents()
+    finally:
+        worker.shutdown()
+
+    assert events == ["warmup", "official", "regular"]
+    assert injected_engines == [engine]
+    assert worker._rare_char_ocr_engine is rare_engine
+    assert official.result == {
+        "outcome": "official_imported",
+        "summaries": [{"name": "exile", "records": 1, "reviews": 0, "pages": 2}],
+    }
+    assert progress[-1] == ("正在导入武将放逐数据（1/1）", 1, 1)
 
 
 def test_ocr_worker_keeps_default_roi_reference_independent_of_template(monkeypatch) -> None:

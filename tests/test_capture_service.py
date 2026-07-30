@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 from src.business.capture_service import CaptureService
+from src.business.ocr_worker import OfficialImportTask
 
 
 def test_config_change_discards_previous_connection() -> None:
@@ -133,6 +134,49 @@ def test_capture_service_reports_ocr_warmup_states_and_allows_retry(monkeypatch)
 
     assert states == [("warming", ""), ("failed", "失败"), ("warming", ""), ("ready", "")]
     assert service.ocr_warmup_state == "ready"
+
+
+def test_capture_service_routes_official_import_through_shared_worker(monkeypatch) -> None:
+    service = CaptureService()
+    submitted: list[OfficialImportTask] = []
+    worker = SimpleNamespace(submit=submitted.append)
+    progress: list[tuple[str, int, int]] = []
+    completed: list[list[dict]] = []
+    failures: list[str] = []
+    service.official_import_progress.connect(
+        lambda status, current, total: progress.append((status, current, total))
+    )
+    service.official_import_completed.connect(completed.append)
+    service.official_import_failed.connect(failures.append)
+    monkeypatch.setattr(service, "_ensure_ocr_worker", lambda: worker)
+
+    task = service.submit_official_import({"exile": ["page1.png", "page2.png"]})
+    service._on_official_import_progress(task.task_id, "正在识别", 2, 10)
+    task.result = {
+        "outcome": "official_imported",
+        "summaries": [{"name": "武将放逐数据", "records": 100}],
+    }
+    service._on_ocr_task_completed(task)
+
+    assert submitted == [task]
+    assert task.paths == {"exile": ("page1.png", "page2.png")}
+    assert progress == [("正在等待 OCR 队列...", 0, 0), ("正在识别", 2, 10)]
+    assert completed == [[{"name": "武将放逐数据", "records": 100}]]
+    assert failures == []
+
+
+def test_capture_service_rejects_overlapping_official_import(monkeypatch) -> None:
+    service = CaptureService()
+    monkeypatch.setattr(service, "_ensure_ocr_worker", lambda: SimpleNamespace(submit=lambda task: None))
+
+    service.submit_official_import({"2v2": ["page1.png"]})
+
+    try:
+        service.submit_official_import({"exile": ["page1.png"]})
+    except RuntimeError as exc:
+        assert "已有官方榜单导入任务" in str(exc)
+    else:
+        raise AssertionError("应拒绝重叠的官方榜单导入任务")
 
 
 def test_capture_service_returns_none_until_async_image_save_completes() -> None:

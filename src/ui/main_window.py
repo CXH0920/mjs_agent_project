@@ -552,11 +552,18 @@ class MainWindow(QMainWindow):
 
     def _open_official_data_import(self) -> None:
         """打开官方 2v2 胜率与武将放逐榜单导入窗口。"""
-        dialog = OfficialDataImportDialog(self)
+        dialog = OfficialDataImportDialog(self._capture_service, self)
         dialog.recommendation_indexes_stale.connect(
             self._recommendation.mark_recommendation_indexes_stale
         )
-        dialog.exec()
+        poll_was_active = self._ocr_service.poll_state not in {"stopped", "paused"}
+        if poll_was_active:
+            self._ocr_service.stop_poll()
+        try:
+            dialog.exec()
+        finally:
+            if poll_was_active:
+                self._poll_coordinator.sync_with_connection()
 
     # ---------------------------------------------------------------
     # 状态栏更新

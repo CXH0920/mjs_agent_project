@@ -19,7 +19,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from src.capture.adb_screen import AdbCapture
 from src.capture.image_validation import load_local_image
 from src.capture.image_utils import save_image
-from src.business.ocr_worker import OcrTask, OcrWorker
+from src.business.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,9 @@ class CaptureService(QObject):
     connection_changed = Signal(str, str)  # (状态, 详情)
     image_saved = Signal(dict)
     ocr_warmup_state_changed = Signal(str, str)
+    official_import_progress = Signal(str, int, int)
+    official_import_completed = Signal(object)
+    official_import_failed = Signal(str)
     _capture_ready = Signal(object)
     _image_save_ready = Signal(object)
 
@@ -52,6 +55,7 @@ class CaptureService(QObject):
         self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
         self._ocr_worker: OcrWorker | None = None
         self._pending_ocr_captures: dict[str, dict] = {}
+        self._pending_official_imports: set[str] = set()
         self._session_lock = threading.RLock()
         self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="adb-capture")
         self._image_save_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-save")
@@ -323,6 +327,7 @@ class CaptureService(QObject):
         if self._ocr_worker is None:
             self._ocr_worker = OcrWorker()
             self._ocr_worker.task_completed.connect(self._on_ocr_task_completed)
+            self._ocr_worker.official_progress.connect(self._on_official_import_progress)
             self._ocr_worker.start()
         return self._ocr_worker
 
@@ -374,6 +379,21 @@ class CaptureService(QObject):
             match_template=match_template,
             fallback_on_template_miss=fallback_on_template_miss,
         )
+        self._ensure_ocr_worker().submit(task)
+        return task
+
+    def submit_official_import(self, paths: dict[str, list[str]]) -> OfficialImportTask:
+        """将整批官方榜单导入加入唯一 OCR worker 队列。"""
+        selected_paths = {
+            key: tuple(selected) for key, selected in paths.items() if selected
+        }
+        if not selected_paths:
+            raise ValueError("未选择官方榜单图片")
+        if self._pending_official_imports:
+            raise RuntimeError("已有官方榜单导入任务正在执行")
+        task = OfficialImportTask(selected_paths)
+        self._pending_official_imports.add(task.task_id)
+        self.official_import_progress.emit("正在等待 OCR 队列...", 0, 0)
         self._ensure_ocr_worker().submit(task)
         return task
 
@@ -438,7 +458,27 @@ class CaptureService(QObject):
             "detail": detail,
         })
 
-    def _on_ocr_task_completed(self, task: OcrTask) -> None:
+    def _on_official_import_progress(
+        self,
+        task_id: str,
+        status: str,
+        current: int,
+        total: int,
+    ) -> None:
+        if task_id in self._pending_official_imports:
+            self.official_import_progress.emit(status, current, total)
+
+    def _on_ocr_task_completed(self, task: OcrTask | OfficialImportTask) -> None:
+        if isinstance(task, OfficialImportTask):
+            if task.task_id not in self._pending_official_imports:
+                return
+            self._pending_official_imports.remove(task.task_id)
+            result = task.result or {"outcome": "official_import_failed"}
+            if result.get("outcome") == "official_imported":
+                self.official_import_completed.emit(result.get("summaries", []))
+            else:
+                self.official_import_failed.emit(result.get("detail", "未知错误"))
+            return
         if task.warmup:
             result = task.result or {"outcome": "warmup_failed"}
             if result.get("outcome") == "warmed":

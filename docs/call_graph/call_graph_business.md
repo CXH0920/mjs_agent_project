@@ -371,16 +371,18 @@ OcrService.ocr_completed          → UI 获取识别结果
 
 ## 官方榜单数据导入
 
-官方榜单导入不经过 QProcess、ADB、模板匹配或通用 `OcrWorker` 队列。一个 `OfficialDataImportWorker` 串行处理已选图片，并用 Qt 信号向弹窗报告当前文件进度。
+官方榜单导入不经过 QProcess、ADB 或页面模板匹配，但会作为一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列。worker 在自己的线程中向 `OfficialDataImportService` 注入已预热的 PaddleOCR 引擎，串行处理全部已选图片，并经 `CaptureService` 信号向弹窗报告进度。
 
 ```
 MainWindow._open_official_data_import()
+  -> [轮询活跃] OcrService.stop_poll()
   -> OfficialDataImportDialog.exec()
     -> _start_import()
-      -> OfficialDataImportWorker(paths).start()
-        -> [QThread] OfficialDataImportWorker.run()
-          -> 对每个已选文件 emit progress_changed(status, 0, 0)
-          -> OfficialDataImportService.import_file(key, path, progress_callback, status_callback)
+      -> CaptureService.submit_official_import(paths)
+        -> OcrWorker.submit(OfficialImportTask)
+        -> [OcrWorker QThread] _execute_official_import(task)
+          -> 对每个已选类别 emit official_progress(status, 0, 0)
+          -> OfficialDataImportService.import_pages(key, paths, progress_callback, status_callback)
             -> official_board_parser.read_image() -> cv2.imdecode()
             -> official_board_parser.extract_panels() -> 固定版式裁出左右表
             -> official_board_parser.find_data_boundaries() -> HoughLinesP 横线 -> 行边界
@@ -400,7 +402,8 @@ MainWindow._open_official_data_import()
             -> _review_reasons() -> 必要时 _save_review_crop()
             -> _write_csv() -> 临时文件 replace 正式 CSV
             -> [胜率 CSV] clear_win_rate_cache()
-          -> emit completed(summaries)
+          -> CaptureService emit official_import_completed(summaries)
+  -> [finally 且原轮询活跃] PollCoordinator.sync_with_connection()
 ```
 
 ### 名称候选决策
@@ -427,12 +430,13 @@ _recognize_name_cell(cell)
 
 | 函数/信号 | 调用方 | 关键下游 | 说明 |
 |---|---|---|---|
-| `OfficialDataImportWorker.run()` | `OfficialDataImportDialog._start_import()` | `import_file()`、`progress_changed`、`completed/failed` | 同线程内顺序处理一张或两张图片 |
-| `import_file()` | Worker | `official_board_parser`、OCR、复核、CSV 原子写入 | 一张图片可产出一个或两个 CSV |
-| `official_board_parser.*` | `import_file()` | OpenCV、确定性图像与数字模板算法 | 不持有 OCR 模型、词表或输出状态 |
+| `CaptureService.submit_official_import()` | `OfficialDataImportDialog._start_import()` | `OcrWorker.submit(OfficialImportTask)` | 拒绝重叠官方任务并转发进度、完成和失败信号 |
+| `OcrWorker._execute_official_import()` | worker 队列 | `OfficialDataImportService.import_pages()` | 复用同线程 PaddleOCR 引擎并完整执行整批任务 |
+| `import_pages()` | Worker | `official_board_parser`、OCR、复核、CSV 原子写入 | 按列表顺序合并分页，全部校验后覆盖 CSV |
+| `official_board_parser.*` | `import_pages()` | OpenCV、确定性图像与数字模板算法 | 不持有 OCR 模型、词表或输出状态 |
 | `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、繁体罕见字兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
-| `_review_reasons()` | `import_file()` | `_save_review_crop()` | 单字、低置信度、胜率失败或排名不一致进入复核 |
-| `progress_changed(status, current, total)` | Worker | `OfficialDataImportDialog._on_progress_changed()` | 先不定进度，行数确定后显示精确进度；`current < 0` 仅更新罕见字状态 |
+| `_review_reasons()` | `import_pages()` | `_save_review_crop()` | 单字、低置信度、胜率失败或排名不一致进入复核 |
+| `official_import_progress(status, current, total)` | `CaptureService` | `OfficialDataImportDialog._on_progress_changed()` | 先显示等待/分析的不定进度，行数确定后显示精确进度；`current < 0` 仅更新状态 |
 
 **输出关系：**2v2 左表写入 `2v2胜率排行.csv`，右表写入 `2v2出场排行.csv`；放逐图左右表按视觉行序合并为 `武将放逐.csv`。每份正式 CSV 均有对应待复核 CSV；异常截图位于 `screenshot_data/official_import/`。
 
