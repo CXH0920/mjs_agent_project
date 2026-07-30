@@ -132,6 +132,12 @@ def test_dialog_composes_dedicated_configuration_sections() -> None:
     assert isinstance(dialog._device_section, MumuDeviceSection)
     assert isinstance(dialog._template_section, MumuTemplateSection)
     assert isinstance(dialog._ocr_polling_section, MumuOcrPollingSection)
+    assert [dialog._page_nav.item(index).text() for index in range(dialog._page_nav.count())] == [
+        "设备与连接", "识别与自动化",
+    ]
+    assert dialog._page_stack.count() == 2
+    assert dialog._page_stack.currentIndex() == 0
+    assert dialog._ocr_enabled_check.text() == "启用 OCR 识别"
 
 
 def test_multiple_running_devices_require_explicit_selection() -> None:
@@ -218,8 +224,49 @@ def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> 
     assert ocr_service.created == []
     assert dialog._make_template_btn.isEnabled()
     assert dialog._make_match_guide_template_btn.isEnabled()
-    assert dialog._make_template_btn.text() == "🎯制作模板"
-    assert dialog._make_match_guide_template_btn.text() == "🎯制作模板"
+    assert dialog._make_template_btn.text() == "制作模板"
+    assert dialog._make_match_guide_template_btn.text() == "制作模板"
+
+
+def test_recognition_page_reflows_without_horizontal_scroll() -> None:
+    app = _app()
+    device = MuMuDeviceInfo("1", "实例", 16448, True)
+    dialog = _dialog(
+        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448, "mumu_ocr_poll_mode": True},
+        [device],
+    )
+    dialog.resize(760, 620)
+    dialog.show()
+    dialog._page_nav.setCurrentRow(1)
+    app.processEvents()
+
+    recognition_scroll = dialog._page_stack.currentWidget()
+    assert recognition_scroll.horizontalScrollBar().maximum() == 0
+    assert dialog._template_section._compact_layout is True
+    assert dialog._resume_poll_btn.isHidden()
+
+    dialog.resize(900, 680)
+    app.processEvents()
+    assert recognition_scroll.horizontalScrollBar().maximum() == 0
+    assert dialog._template_section._compact_layout is False
+    dialog.hide()
+
+
+def test_resume_poll_action_only_appears_while_paused(tmp_path: Path) -> None:
+    _app()
+    ocr_service = _OcrService(tmp_path)
+    ocr_service.poll_state = "paused"
+    dialog = _dialog(
+        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0, "mumu_ocr_poll_mode": True},
+        [],
+        ocr_service,
+    )
+
+    assert not dialog._resume_poll_btn.isHidden()
+    assert dialog._resume_poll_btn.isEnabled()
+
+    dialog._poll_mode_check.setChecked(False)
+    assert dialog._resume_poll_btn.isHidden()
 
 
 def test_roi_layout_image_rejects_invalid_file(tmp_path: Path, monkeypatch) -> None:

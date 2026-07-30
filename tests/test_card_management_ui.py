@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QTextEdit
 
 from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
@@ -55,19 +56,34 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
     panel = CardManagementPanel(service)
 
     assert panel._list.count() == 4  # 两个分组标题与两张卡牌
-    assert panel._list.item(1).text() == "冲杀"
+    assert panel._list.item(1).text() == ""
+    assert panel._list.item(1).data(Qt.ItemDataRole.AccessibleTextRole) == "冲杀"
     assert "官方基础数据只读" in panel._count_label.text()
+    assert panel._list.item(0).text() == "行动牌 · 1"
     assert [panel._adjustment_filter.itemText(index) for index in range(panel._adjustment_filter.count())][1:3] == [
         "有加强效果", "有削弱效果",
     ]
     group = panel._list.item(0)
-    assert group.background().color().name() == "#dce6f0"
+    assert group.background().color().name() == "#eef2f6"
     assert group.font().bold()
+    card_row_texts = [label.text() for label in panel._list.itemWidget(panel._list.item(1)).findChildren(QLabel)]
+    assert card_row_texts == ["冲杀", "生效中", "ID 8 · 牌堆 14"]
     assert panel._schema_action.text() == "字段配置"
     assert panel._schema_action.isEnabled()
-    assert panel._more_button.text() == "更多"
+    assert panel._more_button.text() == "⋯"
+    assert panel._more_button.toolTip() == "更多操作"
+    assert not panel._clear_filters_button.isEnabled()
+    assert panel._list_pane.minimumWidth() == 240
+    assert panel._list_pane.maximumWidth() == 360
+    assert not panel._splitter.childrenCollapsible()
+    assert panel._detail_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     assert any(button.text() == "编辑配置" for button in panel.findChildren(QPushButton))
     assert not any(label.text() == "资料库 > 卡牌图鉴" for label in panel.findChildren(QLabel))
+
+    panel._search_input.setText("冲杀")
+    assert panel._clear_filters_button.isEnabled()
+    panel._clear_filters_button.click()
+    assert panel._search_input.text() == ""
 
 
 def test_card_text_collapses_extra_line_breaks_and_wraps(tmp_path) -> None:
@@ -154,14 +170,15 @@ def test_panel_lists_active_effect_before_other_statuses_without_timestamps(tmp_
     _app()
 
     panel = CardManagementPanel(service)
-    current = next(label for label in panel.findChildren(QLabel) if "[生效中]" in label.text())
+    current = next(label for label in panel.findChildren(QLabel) if label.text().startswith("生效中\n"))
     effect_records = [
-        label.text() for label in panel.findChildren(QLabel) if label.text().startswith("[")
+        label.text() for label in panel.findChildren(QLabel)
+        if label.text().startswith(("生效中\n", "待核实\n", "已失效\n"))
     ]
 
     assert "当前效果" in current.text()
-    assert "#e6f4ff" in current.styleSheet()
-    assert effect_records[0].startswith("[生效中]")
+    assert "#e4f5e8" in current.styleSheet()
+    assert effect_records[0].startswith("生效中\n")
     assert "2026-07-26" not in current.text()
 
 

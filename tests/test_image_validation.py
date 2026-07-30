@@ -10,6 +10,10 @@ from PIL import Image
 from src.capture import image_validation
 
 
+def test_image_validation_default_size_limit_is_six_mib() -> None:
+    assert image_validation.MAX_IMAGE_SIZE_BYTES == 6 * 1024 * 1024
+
+
 def _image_bytes(image_format: str = "PNG", size: tuple[int, int] = (2, 2)) -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", size, "red").save(buffer, format=image_format)

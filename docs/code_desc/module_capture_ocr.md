@@ -59,7 +59,7 @@ AdbCapture(adb_path, adb_port)
 - 命令注入防护：`_run_adb(*args)` 使用列表参数而非字符串拼接
 - 设备序列号格式校验：`IP:port` 格式 + 端口范围 1-65535
 - 超时保护：`subprocess.run` 设置 timeout
-- 图片输入防护：本地 OCR/ROI 仅接受实际 PNG/JPEG，ADB 数据仅接受实际 PNG；统一限制 5 MiB、4,000,000 像素，并将 Pillow 解压炸弹警告提升为异常
+- 图片输入防护：本地 OCR/ROI 仅接受实际 PNG/JPEG，ADB 数据仅接受实际 PNG；统一限制 6 MiB、4,000,000 像素，并将 Pillow 解压炸弹警告提升为异常
 
 **`screencap` 使用 `exec-out` 模式**而非 `shell screencap`：
 ```python

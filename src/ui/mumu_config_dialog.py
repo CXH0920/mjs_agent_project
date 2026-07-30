@@ -15,15 +15,20 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, QTimer
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from src.business.capture_service import CaptureService
@@ -74,7 +79,7 @@ class MumuConfigDialog(QDialog):
         self.setWindowTitle("模拟器配置")
         self.setMinimumWidth(760)
         self.setMinimumHeight(620)
-        self.resize(820, 680)
+        self.resize(900, 680)
         self._setup_ui()
         self._coordinator.connection_state_changed.connect(self._on_connection_changed)
         self._coordinator.adb_detected.connect(self._on_adb_detected)
@@ -98,10 +103,46 @@ class MumuConfigDialog(QDialog):
         return self._coordinator.config
 
     def _setup_ui(self) -> None:
-        """按设备、模板、参数三张卡片构建配置界面。"""
+        """按设备连接和识别自动化两个任务页构建配置界面。"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 12)
-        layout.setSpacing(16)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QFrame()
+        header.setObjectName("mumuConfigHeader")
+        header.setStyleSheet(
+            "QFrame#mumuConfigHeader { background: #ffffff; border-bottom: 1px solid #d3dde7; }"
+        )
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(18, 12, 18, 12)
+        title = QLabel("模拟器配置")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        self._status_label = QLabel("● ADB：未配置")
+        self._status_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        header_layout.addWidget(self._status_label)
+        layout.addWidget(header)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        self._page_nav = QListWidget()
+        self._page_nav.setObjectName("mumuConfigNavigation")
+        self._page_nav.setFixedWidth(158)
+        self._page_nav.addItems(["设备与连接", "识别与自动化"])
+        self._page_nav.setStyleSheet(
+            "QListWidget#mumuConfigNavigation { background: #eef2f6; border: none; "
+            "border-right: 1px solid #d3dde7; padding: 10px 7px; }"
+            "QListWidget#mumuConfigNavigation::item { color: #4a6a8a; border-radius: 4px; "
+            "padding: 10px 12px; margin-bottom: 3px; }"
+            "QListWidget#mumuConfigNavigation::item:selected { background: #dceeff; color: #357abd; "
+            "border-left: 3px solid #4a90d9; font-weight: bold; }"
+            "QListWidget#mumuConfigNavigation::item:hover:!selected { background: #e5ebf1; }"
+        )
+        body.addWidget(self._page_nav)
+        self._page_stack = QStackedWidget()
+        body.addWidget(self._page_stack, 1)
 
         self._device_section = MumuDeviceSection(self)
         self._device_section.browse_requested.connect(self._browse_adb)
@@ -119,8 +160,8 @@ class MumuConfigDialog(QDialog):
         self._connect_btn = self._device_section.connect_button
         self._test_device_btn = self._device_section.test_button
         self._instance_status_label = self._device_section.instance_status_label
-        self._status_label = self._device_section.status_label
-        layout.addWidget(self._device_section)
+        device_scroll = self._page_scroll(self._device_section)
+        self._page_stack.addWidget(device_scroll)
 
         self._template_section = MumuTemplateSection(self)
         self._template_section.hero_select_requested.connect(self._on_select_template)
@@ -131,12 +172,12 @@ class MumuConfigDialog(QDialog):
         self._template_status_label = self._template_section.hero_status_label
         self._select_template_btn = self._template_section.hero_select_button
         self._make_template_btn = self._template_section.hero_make_button
+        self._match_guide_status_icon = self._template_section.match_guide_status_icon
         self._match_guide_status_label = self._template_section.match_guide_status_label
         self._select_match_guide_template_btn = self._template_section.match_guide_select_button
         self._make_match_guide_template_btn = self._template_section.match_guide_make_button
-        layout.addWidget(self._template_section)
 
-        self._ocr_polling_section = MumuOcrPollingSection(self)
+        self._ocr_polling_section = MumuOcrPollingSection(self._template_section, self)
         self._ocr_polling_section.poll_mode_changed.connect(self._update_parameter_controls)
         self._ocr_polling_section.resume_requested.connect(self._on_resume_poll)
         self._ocr_polling_section.roi_capture_requested.connect(self._start_roi_layout_capture)
@@ -156,11 +197,20 @@ class MumuConfigDialog(QDialog):
         self._edit_match_guide_roi_capture_btn = self._ocr_polling_section.match_guide_roi_capture_button
         self._edit_match_guide_roi_image_btn = self._ocr_polling_section.match_guide_roi_image_button
         self._reset_match_guide_roi_btn = self._ocr_polling_section.match_guide_roi_reset_button
-        layout.addWidget(self._ocr_polling_section)
-        layout.addStretch(1)
+        recognition_scroll = self._page_scroll(self._ocr_polling_section)
+        self._page_stack.addWidget(recognition_scroll)
+        self._page_nav.currentRowChanged.connect(self._page_stack.setCurrentIndex)
+        self._page_nav.setCurrentRow(0)
+        layout.addLayout(body, 1)
 
         # 底部操作栏：保存写入参数，取消不保存并关闭窗口。
-        footer = QHBoxLayout()
+        footer_frame = QFrame()
+        footer_frame.setObjectName("mumuConfigFooter")
+        footer_frame.setStyleSheet(
+            "QFrame#mumuConfigFooter { background: #ffffff; border-top: 1px solid #d3dde7; }"
+        )
+        footer = QHBoxLayout(footer_frame)
+        footer.setContentsMargins(16, 10, 16, 10)
         cancel_btn = QPushButton("取消")
         cancel_btn.setFixedWidth(80)
         cancel_btn.setStyleSheet(OUTLINE_BUTTON_STYLE)
@@ -170,9 +220,18 @@ class MumuConfigDialog(QDialog):
         save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
         save_btn.clicked.connect(self._on_save)
         footer.addStretch()
-        footer.addWidget(save_btn)
         footer.addWidget(cancel_btn)
-        layout.addLayout(footer)
+        footer.addWidget(save_btn)
+        layout.addWidget(footer_frame)
+
+    @staticmethod
+    def _page_scroll(page: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(page)
+        return scroll
 
     # ────────────────────────────────────────────────
     # 加载配置
@@ -185,6 +244,7 @@ class MumuConfigDialog(QDialog):
 
         self._adb_path_edit.setText(adb_path or "(未设置，点击「自动探测」)")
         self._adb_path_edit.setProperty("raw_path", adb_path)
+        self._adb_path_edit.setToolTip(adb_path)
 
         adb_port = self._config.get("mumu_adb_port", 0)
         self._port_label.setText(str(adb_port) if adb_port else "(自动探测)")
@@ -214,12 +274,14 @@ class MumuConfigDialog(QDialog):
             template_path = status.path
             self._template_status_icon.setText("●")
             self._template_status_icon.setStyleSheet("color: #27ae60; font-size: 16px;")
-            self._template_status_label.setText(f"已加载: {template_path.name}")
+            self._template_status_label.setText(f"已加载：{template_path.name}")
+            self._template_status_label.setToolTip(str(template_path))
             self._template_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
         else:
             self._template_status_icon.setText("○")
             self._template_status_icon.setStyleSheet("color: #888; font-size: 16px;")
             self._template_status_label.setText("未设定")
+            self._template_status_label.setToolTip("")
             self._template_status_label.setStyleSheet("color: #888; font-size: 13px;")
 
     def _refresh_match_guide_template_status(self) -> None:
@@ -227,10 +289,16 @@ class MumuConfigDialog(QDialog):
         status = self._coordinator.template_status("match_guide")
         if status.loaded:
             template_path = status.path
-            self._match_guide_status_label.setText(f"对局攻略模板：已加载 {template_path.name}")
+            self._match_guide_status_icon.setText("●")
+            self._match_guide_status_icon.setStyleSheet("color: #27ae60; font-size: 16px;")
+            self._match_guide_status_label.setText(f"已加载：{template_path.name}")
+            self._match_guide_status_label.setToolTip(str(template_path))
             self._match_guide_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
         else:
-            self._match_guide_status_label.setText("对局攻略模板：未设定")
+            self._match_guide_status_icon.setText("○")
+            self._match_guide_status_icon.setStyleSheet("color: #888; font-size: 16px;")
+            self._match_guide_status_label.setText("未设定")
+            self._match_guide_status_label.setToolTip("")
             self._match_guide_status_label.setStyleSheet("color: #888; font-size: 13px;")
 
     # ────────────────────────────────────────────────
@@ -256,6 +324,7 @@ class MumuConfigDialog(QDialog):
 
         self._adb_path_edit.setText(adb_path)
         self._adb_path_edit.setProperty("raw_path", adb_path)
+        self._adb_path_edit.setToolTip(adb_path)
         self._adb_path_edit.setStyleSheet(
             "border: 1px solid #27ae60; padding: 4px 8px; background-color: #f0faf0; border-radius: 3px;"
         )
@@ -270,6 +339,7 @@ class MumuConfigDialog(QDialog):
         if path:
             self._adb_path_edit.setText(path)
             self._adb_path_edit.setProperty("raw_path", path)
+            self._adb_path_edit.setToolTip(path)
             self._adb_path_edit.setStyleSheet(
                 "border: 1px solid #ccc; padding: 4px 8px; background-color: #f9f9f9; border-radius: 3px;"
             )
@@ -613,7 +683,7 @@ class MumuConfigDialog(QDialog):
     def _restore_template_button(self, template_name: str) -> None:
         button = self._template_button(template_name)
         button.setEnabled(True)
-        button.setText("🎯制作模板")
+        button.setText("制作模板")
 
     def _restore_roi_layout_button(self, page_type: str) -> None:
         button = self._roi_layout_capture_button(page_type)
@@ -681,10 +751,9 @@ class MumuConfigDialog(QDialog):
         polling_enabled = self._poll_mode_check.isChecked()
         self._poll_interval_spin.setEnabled(polling_enabled)
         self._auto_switch_tab_check.setEnabled(polling_enabled)
-        self._resume_poll_btn.setEnabled(
-            polling_enabled
-            and self._coordinator.poll_is_paused()
-        )
+        polling_paused = polling_enabled and self._coordinator.poll_is_paused()
+        self._resume_poll_btn.setEnabled(polling_paused)
+        self._resume_poll_btn.setVisible(polling_paused)
 
     def _show_save_toast(self) -> None:
         """在关闭对话框前给出短暂的保存反馈。"""
