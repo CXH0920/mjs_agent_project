@@ -213,6 +213,44 @@ def test_name_cell_uses_rare_character_engine_for_ambiguous_single_character(mon
     assert statuses == ["正在执行罕见字兜底识别"]
 
 
+def test_rare_character_engine_cannot_escape_primary_name_candidates(monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["卫青", "卫玠", "周瑜"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    rare_character_engine = object()
+
+    def recognize_candidates(_cell, engine=None):
+        return [("正瑜", 0.71)] if engine is rare_character_engine else [("卫", 0.99)]
+
+    monkeypatch.setattr(service, "_recognize_cell_candidates", recognize_candidates)
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda *_: ("", 0.0))
+    monkeypatch.setattr(
+        OfficialDataImportService,
+        "_rare_char_engine",
+        property(lambda _: rare_character_engine),
+    )
+
+    text, confidence = service._recognize_name_cell(cell)
+
+    assert (text, confidence) == ("卫", 0.99)
+
+
+def test_batch_uniqueness_resolves_the_only_unused_name_candidate() -> None:
+    service = OfficialDataImportService(hero_names=["卫青", "卫玠", "周瑜"])
+    batch = {
+        "records": [
+            {"排名": 1, "武将": "卫"},
+            {"排名": 2, "武将": "卫青"},
+            {"排名": 3, "武将": "周瑜"},
+        ],
+        "reviews": [{"期望排名": 1, "异常原因": "武将名称候选不唯一：卫青/卫玠"}],
+    }
+
+    service._resolve_batch_names(batch)
+
+    assert batch["records"][0]["武将"] == "卫玠"
+    assert batch["reviews"][0]["异常原因"].endswith("已按榜单唯一性由卫补全为卫玠")
+
+
 def test_name_cell_keeps_single_character_for_review_when_rare_engine_fails(monkeypatch) -> None:
     service = OfficialDataImportService(hero_names=["荀彧", "荀勖"])
     cell = np.zeros((20, 100, 3), dtype=np.uint8)
@@ -309,7 +347,7 @@ def test_two_column_layouts_keep_rank_and_hero_in_separate_cells() -> None:
         assert set(np.unique(cells["武将"])) == {0, 200}
 
 
-def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monkeypatch) -> None:
+def test_import_keeps_formal_csv_when_a_name_cannot_be_confirmed(tmp_path, monkeypatch) -> None:
     service = OfficialDataImportService(hero_names=["白起", "赵奢"])
     image = np.zeros((200, 200, 3), dtype=np.uint8)
     panel = np.zeros((60, 100, 3), dtype=np.uint8)
@@ -344,21 +382,20 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
     monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale_calls.append)
 
     progress = []
-    summary = service.import_file("2v2", tmp_path / "official.png", lambda current, total: progress.append((current, total)))
     output_path = tmp_path / "2v2胜率排行.csv"
     review_path = tmp_path / "2v2胜率排行_待复核.csv"
     attendance_path = tmp_path / "2v2出场排行.csv"
+    original = "排名,武将,胜率\n1,旧数据,50.00%\n"
+    output_path.write_text(original, encoding="utf-8", newline="\n")
 
-    assert summary["records"] == 4
-    assert summary["reviews"] == 1
-    assert list(csv.DictReader(output_path.open(encoding="utf-8"))) == [
-        {"排名": "1", "武将": "白起", "胜率": "70.34%"},
-        {"排名": "2", "武将": "", "胜率": "70.11%"},
-    ]
-    assert list(csv.DictReader(attendance_path.open(encoding="utf-8"))) == [
-        {"排名": "1", "武将": "白起"},
-        {"排名": "2", "武将": "赵奢"},
-    ]
+    with pytest.raises(ValueError, match="存在未确认武将：2:空值"):
+        service.import_file(
+            "2v2", tmp_path / "official.png",
+            lambda current, total: progress.append((current, total)),
+        )
+
+    assert output_path.read_text(encoding="utf-8") == original
+    assert not attendance_path.exists()
     assert len(list(csv.DictReader(review_path.open(encoding="utf-8")))) == 1
     review = list(csv.DictReader(review_path.open(encoding="utf-8")))[0]
     assert review["来源图片"].endswith("official.png")
@@ -366,7 +403,7 @@ def test_import_overwrites_csv_and_keeps_abnormal_rows_for_review(tmp_path, monk
     assert not output_path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r\n" not in output_path.read_bytes()
     assert progress == [(0, 6), (1, 6), (2, 6), (3, 6), (4, 6), (5, 6), (6, 6)]
-    assert stale_calls == [True]
+    assert stale_calls == []
 
 
 def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatch) -> None:

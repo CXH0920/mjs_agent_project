@@ -142,6 +142,22 @@ def test_single_hero_and_invalid_rank_data_are_not_mixed_into_ranking(tmp_path: 
     assert invalid["甲"].order is None
 
 
+def test_rank_range_uses_row_count_instead_of_unique_name_count(tmp_path: Path) -> None:
+    indexes, _ = _refresh(
+        tmp_path,
+        [
+            {"排名": 1, "武将": "周瑜", "胜率": "60%"},
+            {"排名": 2, "武将": "周瑜", "胜率": "55%"},
+        ],
+        [{"排名": 2, "武将": "周瑜"}, {"排名": 1, "武将": "卫玠"}],
+        [{"排名": 2, "武将": "周瑜"}, {"排名": 1, "武将": "卫玠"}],
+    )
+
+    assert "胜率数据重复" in indexes["周瑜"].reason
+    assert "出场排名越界" not in indexes["周瑜"].reason
+    assert "禁用排名越界" not in indexes["周瑜"].reason
+
+
 def test_raw_index_is_monotonic_for_win_rate_when_other_values_match() -> None:
     base = dict(hero_id=1, pick_rank=1, ban_rank=1, pick_score=0.5, ban_score=0.5, preference=0.9)
     low = RecommendationIndex(name="低", win_rate=0.50, sigmoid=None, raw_index=None, score=None, rating=None, order=None, status="有效", **base)

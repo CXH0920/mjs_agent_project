@@ -29,7 +29,7 @@ src/data/
 └── card_catalog.py        # 官方卡牌只读仓储、追加字段/内容仓储及合并服务
 ```
 
-官方榜单导入还会在 `data/` 下维护三个 CSV：`2v2胜率排行.csv`、`2v2出场排行.csv`、`武将放逐.csv`。它们不是 Pydantic JSON 模型的一部分，由业务服务按表格行原子覆盖；每份正式 CSV 对应一份 `*_待复核.csv`，异常行的原始坐标和截图存入 `screenshot_data/official_import/`，便于人工确认。`recommendation_index_repository.py` 在用户确认三份榜单后，基于它们及 `heroes.json` 的唯一 ID 手动生成 `武将推荐指数.csv`：有效英雄按胜率、出场排名和禁用排名计算 0~100 推荐分、评级与稳定排序；任一数据缺失、排名越界或重复时标记“数据不足”并写告警日志。官方榜单成功导入后会在 `武将推荐指数状态.json` 中持久化“待重建”标记；推荐页面日常仅读取该快照，不自动重建，待用户确认后点击重建清除标记。若 CSV 正被 Excel、编辑器或预览窗口占用，重建会保留旧快照并提示用户关闭占用程序后重试。2v2 胜率文件更新后调用 `clear_win_rate_cache()`，确保后续推荐页读取新数据。
+官方榜单导入还会在 `data/` 下维护三个 CSV：`2v2胜率排行.csv`、`2v2出场排行.csv`、`武将放逐.csv`。它们不是 Pydantic JSON 模型的一部分，由业务服务按表格行原子覆盖；每份正式 CSV 对应一份 `*_待复核.csv`，异常行的原始坐标和截图存入 `screenshot_data/official_import/`。名称未确认、重复或同规模榜单集合不一致时，复核文件更新但正式 CSV 保持原值。`recommendation_index_repository.py` 在用户确认三份榜单后，基于它们及 `heroes.json` 的唯一 ID 手动生成 `武将推荐指数.csv`：排名有效范围以胜率 CSV 的实际数据行数计算，名称去重只报告重复，不缩小排名上限；其他缺失、越界或重复数据仍标记“数据不足”。官方榜单成功导入后会持久化“待重建”标记，推荐页面由用户确认后手动重建。2v2 胜率文件更新后调用 `clear_win_rate_cache()`。
 
 卡牌资料由 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 和 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`，均使用 UTF-8、LF、无 BOM 的临时文件原子替换。`CardCatalogService` 合并三者为 `CardViewModel`，并在保存时将旧版本记录迁移为带内部创建/修改时间的效果记录；基础文件从不提供保存入口。字段归档及未知字段的历史值会保留，基础卡牌或单条追加数据异常时其余可用数据继续加载。
 

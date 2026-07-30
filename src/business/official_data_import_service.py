@@ -260,6 +260,9 @@ class OfficialDataImportService:
 
         if not outputs:
             raise ValueError("未检测到任何数据行")
+        for batch in outputs.values():
+            self._resolve_batch_names(batch)
+        validation_errors = self._validate_output_names(outputs)
         for output_name, batch in outputs.items():
             records = batch["records"]
             if not records:
@@ -270,12 +273,16 @@ class OfficialDataImportService:
                     Path(output_name).stem, int(review["期望排名"]), row,
                 )
                 review["行截图路径"] = str(crop_path)
-            self._write_csv(DATA_DIR / output_name, list(records[0]), records)
             self._write_csv(
                 DATA_DIR / batch["review_name"],
                 ["期望排名", "OCR排名", "OCR名称", "OCR胜率", "数字模板胜率", "数字模板置信度", "置信度", "异常原因", "来源图片", "页序号", "原图坐标", "行截图路径"],
                 batch["reviews"],
             )
+        if validation_errors:
+            raise ValueError("官方榜单名称校验失败：" + "；".join(validation_errors))
+        for output_name, batch in outputs.items():
+            records = batch["records"]
+            self._write_csv(DATA_DIR / output_name, list(records[0]), records)
         mark_recommendation_index_stale(True)
         if "2v2胜率排行.csv" in outputs:
             from src.data.win_rate_repository import clear_win_rate_cache
@@ -397,6 +404,8 @@ class OfficialDataImportService:
         ]
 
     def _ambiguous_name_candidates(self, name: str) -> list[str]:
+        if not name:
+            return []
         prefix_matches = self._strict_prefix_matches(name)
         if len(prefix_matches) > 1:
             return prefix_matches
@@ -419,10 +428,91 @@ class OfficialDataImportService:
             return f"武将名称候选不唯一：{'/'.join(ambiguous_candidates)}"
         return "武将名称未命中词表"
 
-    def _recognize_name_with_engine(self, cell: np.ndarray, engine) -> tuple[str, float]:
+    def _resolve_batch_names(self, batch: dict) -> None:
+        """仅在榜单内部唯一性能够证明时补全未决武将名称。"""
+        records = batch["records"]
+        reviews = {
+            int(review["期望排名"]): review for review in batch["reviews"]
+        }
+        confirmed = {
+            record["武将"] for record in records
+            if record["武将"] in self._hero_names
+        }
+        pending = {
+            index: tuple(self._ambiguous_name_candidates(record["武将"]))
+            for index, record in enumerate(records)
+            if record["武将"] not in self._hero_names
+        }
+
+        while pending:
+            proposals: dict[str, list[int]] = {}
+            for index, candidates in pending.items():
+                available = [name for name in candidates if name not in confirmed]
+                if len(available) == 1:
+                    proposals.setdefault(available[0], []).append(index)
+            unique_proposals = {
+                name: indexes[0] for name, indexes in proposals.items()
+                if len(indexes) == 1
+            }
+            if not unique_proposals:
+                break
+            for name, index in unique_proposals.items():
+                record = records[index]
+                original = record["武将"]
+                record["武将"] = name
+                confirmed.add(name)
+                pending.pop(index)
+                review = reviews.get(int(record["排名"]))
+                if review is not None:
+                    review["异常原因"] += (
+                        f"；武将名称已按榜单唯一性由{original or '空值'}补全为{name}"
+                    )
+
+    def _validate_output_names(self, outputs: dict[str, dict]) -> list[str]:
+        """返回阻止正式 CSV 覆盖的名称完整性错误。"""
+        errors = []
+        name_sets: list[tuple[str, int, set[str]]] = []
+        hero_names = set(self._hero_names)
+        if not hero_names:
+            return ["武将词表为空"]
+        for output_name, batch in outputs.items():
+            records = batch["records"]
+            unknown = [
+                f"{record['排名']}:{record['武将'] or '空值'}"
+                for record in records if record["武将"] not in hero_names
+            ]
+            counts = Counter(record["武将"] for record in records if record["武将"])
+            duplicates = [
+                f"{name}({','.join(str(record['排名']) for record in records if record['武将'] == name)})"
+                for name, count in counts.items() if count > 1
+            ]
+            if unknown:
+                errors.append(f"{output_name} 存在未确认武将：{','.join(unknown)}")
+            if duplicates:
+                errors.append(f"{output_name} 存在重复武将：{','.join(duplicates)}")
+            name_sets.append((output_name, len(records), set(counts)))
+
+        for index, (left_name, left_count, left_names) in enumerate(name_sets):
+            for right_name, right_count, right_names in name_sets[index + 1:]:
+                if left_count == right_count and left_names != right_names:
+                    errors.append(f"{left_name} 与 {right_name} 的武将集合不一致")
+        return errors
+
+    def _recognize_name_with_engine(
+        self,
+        cell: np.ndarray,
+        engine,
+        allowed_names: tuple[str, ...] | list[str],
+    ) -> tuple[str, float]:
         """使用指定引擎识别名称，仅接受词表中可确认的完整结果。"""
+        allowed_names = tuple(dict.fromkeys(allowed_names))
+        allowed_set = set(allowed_names)
         candidates = self._recognize_cell_candidates(cell, engine)
-        exact_match, exact_conflicts = self._select_unique_name_match(self._exact_hero_matches(candidates))
+        exact_matches = [
+            match for match in self._exact_hero_matches(candidates)
+            if match[0] in allowed_set
+        ]
+        exact_match, exact_conflicts = self._select_unique_name_match(exact_matches)
         if exact_match:
             return exact_match
         if exact_conflicts:
@@ -433,8 +523,13 @@ class OfficialDataImportService:
             candidate_name = self._chinese_text(text)
             if len(candidate_name) < 2:
                 continue
-            corrected = self._correct_official_name(candidate_name)
-            if corrected in self._hero_names:
+            nearby_names = [
+                hero for hero in allowed_names
+                if CharacterSimilarityService._levenshtein_distance(candidate_name, hero)
+                <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
+            ]
+            corrected = nearby_names[0] if len(nearby_names) == 1 else candidate_name
+            if corrected in allowed_set:
                 corrected_matches.append((corrected, confidence))
         corrected_match, corrected_conflicts = self._select_unique_name_match(corrected_matches)
         if corrected_match:
@@ -444,8 +539,13 @@ class OfficialDataImportService:
             return self._common_prefix(corrected_conflicts), max(confidence for _text, confidence in candidates)
         glyph_name, glyph_confidence = self._recognize_name_glyphs(cell, engine)
         if glyph_name:
-            corrected = self._correct_official_name(glyph_name)
-            if corrected in self._hero_names:
+            nearby_names = [
+                hero for hero in allowed_names
+                if CharacterSimilarityService._levenshtein_distance(glyph_name, hero)
+                <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
+            ]
+            corrected = nearby_names[0] if len(nearby_names) == 1 else glyph_name
+            if corrected in allowed_set:
                 return corrected, glyph_confidence
         return "", 0.0
 
@@ -480,12 +580,17 @@ class OfficialDataImportService:
         prefix_matches = [hero for hero in self._hero_names if hero.startswith(name)]
         if len(prefix_matches) == 1:
             return prefix_matches[0], confidence
+        allowed_names = tuple(ambiguous_candidates or prefix_matches)
+        if not allowed_names:
+            return text, confidence
         if status_callback:
             status_callback("正在执行罕见字兜底识别")
         rare_char_engine = self._rare_char_engine
         if rare_char_engine is not None:
             try:
-                rare_name, rare_confidence = self._recognize_name_with_engine(cell, rare_char_engine)
+                rare_name, rare_confidence = self._recognize_name_with_engine(
+                    cell, rare_char_engine, allowed_names,
+                )
                 if rare_name:
                     return rare_name, rare_confidence
             except Exception as exc:

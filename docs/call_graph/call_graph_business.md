@@ -396,11 +396,14 @@ MainWindow._open_official_data_import()
                -> 排名/普通单元格: _recognize_cell()
                -> 武将单元格: _recognize_name_cell()
                   -> [同首字无法唯一确认] _rare_char_engine（懒加载 chinese_cht）
-                  -> _recognize_name_with_engine() -> 词表校正 -> [精确命中才采用]
+                  -> _recognize_name_with_engine() -> 仅在当前候选白名单内纠正
                   -> status_callback("正在执行罕见字兜底识别")
                -> 胜率单元格: 预计算 OCR + official_board_parser.recognize_rate_with_templates()
             -> _review_reasons() -> 必要时 _save_review_crop()
-            -> _write_csv() -> 临时文件 replace 正式 CSV
+            -> _resolve_batch_names() -> 排除榜单已占用候选并做唯一补全
+            -> _validate_output_names() -> 未知名/重复名/集合不一致时阻断
+            -> [通过] _write_csv() -> 临时文件 replace 正式 CSV
+            -> [未通过] 只写待复核 CSV/截图，保留正式 CSV
             -> [胜率 CSV] clear_win_rate_cache()
           -> CaptureService emit official_import_completed(summaries)
   -> [finally 且原轮询活跃] PollCoordinator.sync_with_connection()
@@ -421,11 +424,14 @@ _recognize_name_cell(cell)
      -> [命中词表] 返回补识别名称
   -> [逐字失败] hero.startswith(单字) 的候选数量
      -> 唯一 -> 返回唯一候选
-     -> 多个/零个 -> _rare_char_engine（懒加载繁体模型）
+     -> 多个 -> _rare_char_engine（懒加载繁体模型）
         -> [模型可用] _recognize_name_with_engine()
-           -> 整格精确匹配 / 完整候选词表校正 / 逐字校正
-           -> [最终命中词表] 返回完整名称
-        -> [模型不可用或仍不匹配] 返回原结果 -> _review_reasons() 记录“武将名称疑似缺字”
+           -> 只在简体 OCR 候选白名单内精确匹配或唯一纠正
+           -> [命中候选] 返回完整名称
+        -> [模型不可用或仍不匹配] 返回原结果
+  -> [整榜完成] _resolve_batch_names()
+     -> 候选减去已确认名称后仅剩一个且无竞争 -> 自动补全并保留复核记录
+     -> 仍不唯一 -> _validate_output_names() 阻止正式覆盖
 ```
 
 | 函数/信号 | 调用方 | 关键下游 | 说明 |
@@ -434,7 +440,8 @@ _recognize_name_cell(cell)
 | `OcrWorker._execute_official_import()` | worker 队列 | `OfficialDataImportService.import_pages()` | 复用同线程 PaddleOCR 引擎并完整执行整批任务 |
 | `import_pages()` | Worker | `official_board_parser`、OCR、复核、CSV 原子写入 | 按列表顺序合并分页，全部校验后覆盖 CSV |
 | `official_board_parser.*` | `import_pages()` | OpenCV、确定性图像与数字模板算法 | 不持有 OCR 模型、词表或输出状态 |
-| `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、繁体罕见字兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
+| `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、受限繁体兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
+| `_resolve_batch_names()` / `_validate_output_names()` | `import_pages()` | 榜单内部唯一性补全、名称完整性门禁 | 无法唯一确认时只输出复核证据，不覆盖正式 CSV |
 | `_review_reasons()` | `import_pages()` | `_save_review_crop()` | 单字、低置信度、胜率失败或排名不一致进入复核 |
 | `official_import_progress(status, current, total)` | `CaptureService` | `OfficialDataImportDialog._on_progress_changed()` | 先显示等待/分析的不定进度，行数确定后显示精确进度；`current < 0` 仅更新状态 |
 

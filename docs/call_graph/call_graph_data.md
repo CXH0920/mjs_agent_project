@@ -47,6 +47,9 @@ RecommendationPanel._load_win_rate_by_name() / MatchGuidePanel._load_default_her
 
 ```
 OfficialDataImportService.import_file("2v2", image_path)
+  -> _resolve_batch_names() / _validate_output_names()
+  -> [名称校验失败] 只写对应 *_待复核.csv，保留正式 CSV
+  -> [名称校验通过]
   -> _write_csv(data/2v2胜率排行.csv, ["排名", "武将", "胜率"], rows)
   -> _write_csv(data/2v2出场排行.csv, ["排名", "武将"], rows)
   -> _write_csv(对应 *_待复核.csv, review_rows)
@@ -56,12 +59,13 @@ OfficialDataImportService.import_file("2v2", image_path)
 
 OfficialDataImportService.import_file("exile", image_path)
   -> 合并左右表视觉行序
+  -> 榜单内部唯一性补全 / 未知名与重复名校验
   -> _write_csv(data/武将放逐.csv, ["排名", "武将"], rows)
   -> _write_csv(data/武将放逐_待复核.csv, review_rows)
   -> mark_recommendation_index_stale(True)
 ```
 
-`_write_csv()` 先在目标目录创建 UTF-8、LF 换行的临时文件，再以 `Path.replace()` 原子替换正式文件。待复核 CSV 不参与 `win_rate_repository` 缓存；它与 `screenshot_data/official_import/` 的行截图共同构成导入质量追踪记录。
+`_write_csv()` 先在目标目录创建 UTF-8、LF 换行的临时文件，再以 `Path.replace()` 原子替换正式文件。名称完整性校验在任何正式文件写入前完成；失败时仅更新待复核 CSV 和截图，不标记推荐指数过期。待复核 CSV 不参与 `win_rate_repository` 缓存。
 
 ## 一、数据加载链路
 

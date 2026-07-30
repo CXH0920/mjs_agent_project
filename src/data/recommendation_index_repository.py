@@ -138,11 +138,11 @@ def refresh_recommendation_indexes(
     """按当前三份榜单重建推荐指数 CSV，并返回名称索引。"""
     config = _validate_config(config or _load_runtime_config())
     hero_ids = _load_hero_ids(heroes_path)
-    win_rates, win_issues, win_names = _read_win_rates(win_rate_path)
-    pick_ranks, pick_issues, pick_names = _read_ranks(pick_rank_path, "出场")
-    ban_ranks, ban_issues, ban_names = _read_ranks(ban_rank_path, "禁用")
+    win_rates, win_issues, win_names, win_row_count = _read_win_rates(win_rate_path)
+    pick_ranks, pick_issues, pick_names, _pick_row_count = _read_ranks(pick_rank_path, "出场")
+    ban_ranks, ban_issues, ban_names, _ban_row_count = _read_ranks(ban_rank_path, "禁用")
     names = sorted(set(hero_ids) | win_names | pick_names | ban_names)
-    n = len(win_names)
+    n = win_row_count
     issues = defaultdict(set)
     for source_issues in (win_issues, pick_issues, ban_issues):
         for name, reasons in source_issues.items():
@@ -298,8 +298,10 @@ def _load_hero_ids(path: Path) -> dict[str, int]:
     return result
 
 
-def _read_win_rates(path: Path) -> tuple[dict[str, float], dict[str, set[str]], set[str]]:
-    values, issues, names = _read_csv(path, "胜率")
+def _read_win_rates(
+    path: Path,
+) -> tuple[dict[str, float], dict[str, set[str]], set[str], int]:
+    values, issues, names, row_count = _read_csv(path, "胜率")
     result = {}
     for name, value in values.items():
         try:
@@ -310,21 +312,25 @@ def _read_win_rates(path: Path) -> tuple[dict[str, float], dict[str, set[str]], 
             result[name] = rate
         except (AttributeError, ValueError):
             issues[name].add("胜率格式或范围无效")
-    return result, issues, names
+    return result, issues, names, row_count
 
 
-def _read_ranks(path: Path, label: str) -> tuple[dict[str, int], dict[str, set[str]], set[str]]:
-    values, issues, names = _read_csv(path, "排名")
+def _read_ranks(
+    path: Path, label: str,
+) -> tuple[dict[str, int], dict[str, set[str]], set[str], int]:
+    values, issues, names, row_count = _read_csv(path, "排名")
     result = {}
     for name, value in values.items():
         try:
             result[name] = int(value)
         except (TypeError, ValueError):
             issues[name].add(f"{label}排名格式无效")
-    return result, issues, names
+    return result, issues, names, row_count
 
 
-def _read_csv(path: Path, value_column: str) -> tuple[dict[str, str], dict[str, set[str]], set[str]]:
+def _read_csv(
+    path: Path, value_column: str,
+) -> tuple[dict[str, str], dict[str, set[str]], set[str], int]:
     values: dict[str, str] = {}
     issues: dict[str, set[str]] = defaultdict(set)
     names: set[str] = set()
@@ -333,7 +339,7 @@ def _read_csv(path: Path, value_column: str) -> tuple[dict[str, str], dict[str, 
             rows = list(csv.DictReader(file))
     except OSError as exc:
         logger.warning("无法读取推荐指数%s数据 %s: %s", value_column, path, exc)
-        return values, issues, names
+        return values, issues, names, 0
     for row in rows:
         name = (row.get("武将") or "").strip()
         if not name:
@@ -344,7 +350,7 @@ def _read_csv(path: Path, value_column: str) -> tuple[dict[str, str], dict[str, 
             issues[name].add(f"{value_column}数据重复")
             continue
         values[name] = (row.get(value_column) or "").strip()
-    return values, issues, names
+    return values, issues, names, len(rows)
 
 
 def _validate_rank_ranges(
