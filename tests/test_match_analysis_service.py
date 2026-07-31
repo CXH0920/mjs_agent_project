@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.business.match_analysis_service import MatchAnalysisService
+from src.business.analysis.match_analysis_service import MatchAnalysisService
 from src.data.models import Hero, HeroGuide
 
 

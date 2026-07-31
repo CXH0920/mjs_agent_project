@@ -31,10 +31,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.business.capture_service import CaptureService
-from src.business.emulator_operation_service import EmulatorOperationService
-from src.business.mumu_config_coordinator import MumuConfigCoordinator
-from src.business.ocr_service import OcrService
+from src.business.emulator.capture_service import CaptureService
+from src.business.emulator.emulator_operation_service import EmulatorOperationService
+from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
+from src.business.recognition.ocr_service import OcrService
 from src.capture.image_validation import load_local_image
 from src.capture.image_utils import pil_to_qpixmap
 from src.capture.prober import MuMuDeviceInfo

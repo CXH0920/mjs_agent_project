@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.business.match_analysis_service import MatchAnalysis
+from src.business.analysis.match_analysis_service import MatchAnalysis
 from src.data.hero_manager import HeroManager
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.style import BORDER, DANGER, MUTED_TEXT, PRIMARY, SUBTLE_SURFACE, SURFACE, TEXT_PRIMARY

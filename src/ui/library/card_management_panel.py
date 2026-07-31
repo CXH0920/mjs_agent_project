@@ -9,7 +9,6 @@ import re
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -48,11 +47,27 @@ from src.data.card_catalog import (
     CardViewModel,
     EffectEntry,
 )
+from src.ui.shared.style import (
+    ROLE_GHOST,
+    ROLE_SECONDARY,
+    TONE_INFO,
+    TONE_NEUTRAL,
+    TONE_SUCCESS,
+    TONE_WARNING,
+    set_tone,
+    set_ui_role,
+)
 
 EFFECT_STATUS_LABELS = {
     "active": "生效中",
     "expired": "已失效",
     "pending": "待核实",
+}
+
+EFFECT_STATUS_TONES = {
+    "active": TONE_SUCCESS,
+    "expired": TONE_NEUTRAL,
+    "pending": TONE_WARNING,
 }
 
 
@@ -61,6 +76,7 @@ class CardListItemWidget(QWidget):
 
     def __init__(self, view: CardViewModel, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("cardListItem")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 5, 8, 5)
         layout.setSpacing(2)
@@ -68,18 +84,20 @@ class CardListItemWidget(QWidget):
         top = QHBoxLayout()
         top.setSpacing(6)
         name = QLabel(view.card.name)
-        name.setStyleSheet("font-weight: bold; color: #2c3e50;")
+        name.setObjectName("cardListItemName")
+        name.setWordWrap(True)
         top.addWidget(name)
         top.addStretch()
         status = self._status_text(view)
         if status:
             badge = QLabel(status)
-            badge.setStyleSheet(self._status_style(status))
+            badge.setObjectName("statusBadge")
+            set_tone(badge, self._status_tone(status))
             top.addWidget(badge)
         layout.addLayout(top)
 
         meta = QLabel(f"ID {view.card.id} · 牌堆 {view.card.card_amount}")
-        meta.setStyleSheet("color: #65758b; font-size: 11px;")
+        meta.setObjectName("cardListItemMeta")
         layout.addWidget(meta)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
@@ -94,17 +112,12 @@ class CardListItemWidget(QWidget):
         return ""
 
     @staticmethod
-    def _status_style(status: str) -> str:
-        colors = {
-            "待核实": ("#8a5a00", "#fff3cd"),
-            "生效中": ("#176b36", "#e4f5e8"),
-            "有调整": ("#357abd", "#e6f4ff"),
-        }
-        foreground, background = colors[status]
-        return (
-            f"color: {foreground}; background: {background}; border-radius: 3px; "
-            "padding: 1px 5px; font-size: 11px;"
-        )
+    def _status_tone(status: str) -> str:
+        return {
+            "待核实": TONE_WARNING,
+            "生效中": TONE_SUCCESS,
+            "有调整": TONE_INFO,
+        }[status]
 
 
 class CardManagementPanel(QWidget):
@@ -118,6 +131,7 @@ class CardManagementPanel(QWidget):
         self.reload_data()
 
     def _setup_ui(self) -> None:
+        self.setObjectName("cardManagementPanel")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
@@ -125,14 +139,17 @@ class CardManagementPanel(QWidget):
         filters = QHBoxLayout()
         filters.setSpacing(8)
         self._search_input = QLineEdit()
+        self._search_input.setObjectName("cardSearchInput")
         self._search_input.setPlaceholderText("搜索 ID、名称、效果或规则详情")
         self._search_input.textChanged.connect(self._refresh_list)
         filters.addWidget(self._search_input, 1)
         self._type_filter = QComboBox()
+        self._type_filter.setObjectName("cardTypeFilter")
         self._type_filter.addItem("全部类型", "")
         self._type_filter.currentIndexChanged.connect(self._refresh_list)
         filters.addWidget(self._type_filter)
         self._adjustment_filter = QComboBox()
+        self._adjustment_filter.setObjectName("cardAdjustmentFilter")
         self._adjustment_filter.addItem("全部调整状态", "")
         self._adjustment_filter.addItem("有加强效果", "strengthen")
         self._adjustment_filter.addItem("有削弱效果", "weaken")
@@ -142,56 +159,55 @@ class CardManagementPanel(QWidget):
         filters.addWidget(self._adjustment_filter)
 
         self._clear_filters_button = QToolButton()
+        self._clear_filters_button.setObjectName("cardFilterResetButton")
         self._clear_filters_button.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton)
         )
         self._clear_filters_button.setToolTip("重置筛选")
         self._clear_filters_button.setAccessibleName("重置筛选")
         self._clear_filters_button.clicked.connect(self._clear_filters)
+        set_ui_role(self._clear_filters_button, ROLE_GHOST)
         filters.addWidget(self._clear_filters_button)
 
         self._maintenance_menu = QMenu(self)
         self._schema_action = self._maintenance_menu.addAction("字段配置")
         self._schema_action.triggered.connect(self._open_schema_dialog)
         self._more_button = QToolButton()
+        self._more_button.setObjectName("cardMoreButton")
         self._more_button.setText("⋯")
         self._more_button.setToolTip("更多操作")
         self._more_button.setAccessibleName("更多操作")
         self._more_button.setMenu(self._maintenance_menu)
         self._more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self._more_button.setStyleSheet(
-            "QToolButton { background: #ffffff; color: #357abd; border: 1px solid #b0c4de; "
-            "border-radius: 4px; min-width: 28px; min-height: 28px; font-size: 18px; font-weight: bold; }"
-            "QToolButton:hover { background: #eef2f6; border-color: #4a90d9; }"
-        )
+        set_ui_role(self._more_button, ROLE_GHOST)
         filters.addWidget(self._more_button)
         layout.addLayout(filters)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setObjectName("cardCatalogSplitter")
         self._splitter.setChildrenCollapsible(False)
         self._list_pane = QWidget()
+        self._list_pane.setObjectName("cardListPane")
         self._list_pane.setMinimumWidth(240)
         self._list_pane.setMaximumWidth(360)
         list_layout = QVBoxLayout(self._list_pane)
         list_layout.setContentsMargins(0, 0, 0, 0)
         list_layout.setSpacing(6)
         self._count_label = QLabel()
-        self._count_label.setStyleSheet("color: #65758b; font-size: 12px; padding: 0 2px;")
+        self._count_label.setObjectName("libraryResultCount")
         list_layout.addWidget(self._count_label)
         self._list = QListWidget()
-        self._list.setStyleSheet(
-            "QListWidget::item { border-radius: 3px; padding: 0; }"
-            "QListWidget::item:selected { background: #dceeff; border-left: 3px solid #4a90d9; }"
-            "QListWidget::item:hover:!selected { background: #eef6fd; }"
-        )
+        self._list.setObjectName("cardList")
         self._list.currentItemChanged.connect(self._on_card_selected)
         list_layout.addWidget(self._list, 1)
         self._splitter.addWidget(self._list_pane)
         self._detail_scroll = QScrollArea()
+        self._detail_scroll.setObjectName("cardDetailScroll")
         self._detail_scroll.setWidgetResizable(True)
         self._detail_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._detail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._detail = QWidget()
+        self._detail.setObjectName("cardDetailContent")
         self._detail_layout = QVBoxLayout(self._detail)
         self._detail_layout.setContentsMargins(12, 0, 4, 8)
         self._detail_layout.setSpacing(12)
@@ -231,7 +247,7 @@ class CardManagementPanel(QWidget):
         ))
         if not self._service.base_available:
             self._current_card_id = None
-            self._show_empty_detail("基础卡牌库不可用，无法浏览或编辑追加信息。")
+            self._show_empty_detail("基础卡牌库不可用，无法浏览或编辑版本调整。")
             return
         type_counts: dict[str, int] = {}
         for view in views:
@@ -245,8 +261,6 @@ class CardManagementPanel(QWidget):
                 last_type = view.card.card_type.value
                 group = QListWidgetItem(f"{last_type} · {type_counts[last_type]}")
                 group.setFlags(Qt.ItemFlag.NoItemFlags)
-                group.setForeground(QColor("#357abd"))
-                group.setBackground(QColor("#eef2f6"))
                 group_font = group.font()
                 group_font.setBold(True)
                 group.setFont(group_font)
@@ -300,53 +314,49 @@ class CardManagementPanel(QWidget):
     def _show_empty_detail(self, text: str) -> None:
         self._clear_detail()
         label = QLabel(text)
+        label.setObjectName("libraryEmptyState")
+        label.setWordWrap(True)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("color: #6b7c93; padding: 48px;")
         self._detail_layout.addWidget(label)
 
     def _show_view(self, view: CardViewModel) -> None:
         self._clear_detail()
         if not self._service.base_available:
-            self._show_empty_detail("基础卡牌库不可用，无法浏览或编辑追加信息。")
+            self._show_empty_detail("基础卡牌库不可用，无法浏览或编辑版本调整。")
             return
         basic = QFrame()
         basic.setObjectName("cardDetailSurface")
-        basic.setStyleSheet(
-            "QFrame#cardDetailSurface { background: #ffffff; border: 1px solid #d3dde7; "
-            "border-radius: 6px; }"
-        )
         basic_layout = QVBoxLayout(basic)
         basic_layout.setContentsMargins(20, 18, 20, 20)
         basic_layout.setSpacing(10)
 
         title_row = QHBoxLayout()
         title = QLabel(view.card.name)
+        title.setObjectName("cardIdentityName")
         title.setTextFormat(Qt.TextFormat.PlainText)
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
+        title.setWordWrap(True)
         title_row.addWidget(title)
         type_badge = QLabel(view.card.card_type.value)
-        type_badge.setStyleSheet(
-            "color: #357abd; background: #e6f4ff; border-radius: 3px; padding: 2px 7px; font-size: 12px;"
-        )
+        type_badge.setObjectName("statusBadge")
+        set_tone(type_badge, TONE_INFO)
         title_row.addWidget(type_badge)
         amount_badge = QLabel(f"牌堆 {view.card.card_amount}")
-        amount_badge.setStyleSheet(
-            "color: #4a6a8a; background: #eef2f6; border-radius: 3px; padding: 2px 7px; font-size: 12px;"
-        )
+        amount_badge.setObjectName("statusBadge")
+        set_tone(amount_badge, TONE_NEUTRAL)
         title_row.addWidget(amount_badge)
         title_row.addStretch()
         readonly = QLabel("官方数据 · 只读")
-        readonly.setStyleSheet("color: #65758b; font-size: 12px;")
+        readonly.setObjectName("cardReadonlyMeta")
         title_row.addWidget(readonly)
         basic_layout.addLayout(title_row)
 
         divider = QFrame()
+        divider.setObjectName("contentDivider")
         divider.setFrameShape(QFrame.Shape.HLine)
-        divider.setStyleSheet("color: #dce3ea;")
         basic_layout.addWidget(divider)
 
         description_title = QLabel("卡牌简述")
-        description_title.setStyleSheet("font-weight: bold; color: #4a6a8a;")
+        description_title.setObjectName("cardDetailSectionTitle")
         basic_layout.addWidget(description_title)
         description = QLabel()
         description.setObjectName("cardDescription")
@@ -355,45 +365,38 @@ class CardManagementPanel(QWidget):
         description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         description_text = escape(self._normalize_display_text(view.card.card_desc)).replace("\n", "<br>")
         description.setText(description_text)
-        description.setStyleSheet(
-            "background: #f6f9fc; border-left: 3px solid #4a90d9; border-radius: 3px; "
-            "padding: 9px 11px;"
-        )
         basic_layout.addWidget(description)
         detail_title = QLabel("规则详解")
-        detail_title.setStyleSheet("font-weight: bold; color: #4a6a8a; margin-top: 4px;")
+        detail_title.setObjectName("cardDetailSectionTitle")
         basic_layout.addWidget(detail_title)
         detail = QLabel(self._normalize_display_text(view.card.card_detail))
         detail.setObjectName("cardRuleDetail")
         detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)
         detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        detail.setStyleSheet("color: #2c3e50; padding: 2px 0;")
         basic_layout.addWidget(detail)
         self._detail_layout.addWidget(basic)
 
         section = QHBoxLayout()
         label = QLabel("版本调整")
-        label.setStyleSheet("font-size: 15px; font-weight: bold; color: #2c3e50; margin-top: 4px;")
+        label.setObjectName("cardAdjustmentSectionTitle")
         section.addWidget(label)
         section.addStretch()
-        edit = QPushButton("编辑配置")
-        edit.setStyleSheet(
-            "QPushButton { background: #ffffff; color: #357abd; border: 1px solid #8bb8df; "
-            "border-radius: 4px; padding: 4px 12px; }"
-            "QPushButton:hover { background: #eaf4fd; }"
-        )
+        edit = QPushButton("编辑版本调整")
+        edit.setObjectName("cardAdjustmentEditButton")
+        set_ui_role(edit, ROLE_SECONDARY)
         edit.setEnabled(self._service.editable)
         edit.clicked.connect(self._open_annotation_dialog)
         section.addWidget(edit)
         self._detail_layout.addLayout(section)
         if not self._service.schema.available:
             message = QLabel("追加字段配置错误，当前仅可浏览基础资料。")
-            message.setStyleSheet("color: #a12622; padding: 12px 2px;")
+            message.setObjectName("cardSchemaError")
+            message.setWordWrap(True)
             self._detail_layout.addWidget(message)
         elif not view.fields:
             message = QLabel("暂无版本调整记录。")
-            message.setStyleSheet("color: #65758b; padding: 16px 2px;")
+            message.setObjectName("cardAdjustmentEmpty")
             self._detail_layout.addWidget(message)
         else:
             for value in view.fields:
@@ -410,42 +413,44 @@ class CardManagementPanel(QWidget):
         layout = QVBoxLayout(frame)
         if value.definition is None:
             title = f"历史字段：{value.key}（字段定义已不存在）"
-            color = "#65758b"
+            adjustment_kind = "historical"
         else:
             title = ("历史字段：" if value.historical else "") + value.definition.label
-            color = "#176b36" if value.key == "strengthen_effect" else "#a84f12" if value.key == "weaken_effect" else "#357abd"
-        frame.setStyleSheet(
-            f"QFrame#cardAdjustmentField {{ background: #ffffff; border: 1px solid #d3dde7; "
-            f"border-left: 3px solid {color}; border-radius: 5px; }}"
-        )
+            adjustment_kind = (
+                "strengthen" if value.key == "strengthen_effect"
+                else "weaken" if value.key == "weaken_effect"
+                else "historical" if value.historical
+                else "default"
+            )
+        frame.setProperty("adjustmentKind", adjustment_kind)
         layout.setContentsMargins(14, 11, 14, 13)
         layout.setSpacing(7)
         heading = QLabel(title)
-        heading.setStyleSheet(f"font-weight: bold; color: {color};")
+        heading.setObjectName("cardAdjustmentTitle")
+        heading.setProperty("adjustmentKind", adjustment_kind)
+        heading.setWordWrap(True)
         layout.addWidget(heading)
         if value.definition and value.definition.help_text:
             helper = QLabel(value.definition.help_text)
-            helper.setStyleSheet("color: #65758b; font-size: 12px;")
+            helper.setObjectName("contentMeta")
             helper.setWordWrap(True)
             layout.addWidget(helper)
         if value.definition and value.definition.value_type == "effect_entries":
             entries = [EffectEntry.model_validate(raw) for raw in value.value]
             entries.sort(key=self._effect_sort_key)
             for entry in entries:
-                is_current = entry.status == "active"
-                status = "生效中" if is_current else EFFECT_STATUS_LABELS[entry.status]
+                status = EFFECT_STATUS_LABELS[entry.status]
                 text = f"{status}\n{entry.content}"
                 record = QLabel(text)
+                record.setObjectName("cardEffectRecord")
+                record.setTextFormat(Qt.TextFormat.PlainText)
                 record.setWordWrap(True)
-                record.setStyleSheet(
-                    "color: #176b36; padding: 7px 9px; background: #e4f5e8; "
-                    "border-left: 3px solid #2e8b57; border-radius: 3px;"
-                    if is_current else "color: #65758b; padding: 7px 9px; background: #f6f8fa; border-radius: 3px;"
-                )
+                set_tone(record, EFFECT_STATUS_TONES[entry.status])
                 layout.addWidget(record)
         else:
             text = ", ".join(value.value) if isinstance(value.value, list) else str(value.value)
             content = QLabel(text)
+            content.setObjectName("contentBody")
             content.setWordWrap(True)
             layout.addWidget(content)
         return frame
@@ -495,7 +500,7 @@ class CardAnnotationEditDialog(QDialog):
         annotation = service.annotations.get_annotation(card_id)
         self._values = deepcopy(annotation.fields) if annotation else {}
         card = service.cards.get_card(card_id)
-        self.setWindowTitle(f"{card.name if card else card_id} - 编辑追加信息")
+        self.setWindowTitle(f"{card.name if card else card_id} - 编辑版本调整")
         self.resize(700, 620)
         self._setup_ui()
 
@@ -512,8 +517,8 @@ class CardAnnotationEditDialog(QDialog):
             group_layout = QVBoxLayout(group)
             if definition.help_text:
                 help_label = QLabel(definition.help_text)
+                help_label.setObjectName("contentMeta")
                 help_label.setWordWrap(True)
-                help_label.setStyleSheet("color: #6b7c93; font-size: 12px;")
                 group_layout.addWidget(help_label)
             if definition.value_type == "effect_entries":
                 self._build_effect_editor(group_layout, definition)

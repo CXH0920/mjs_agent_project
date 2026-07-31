@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from src.business.capture_service import CaptureService
-from src.business.ocr_worker import OfficialImportTask
+from src.business.emulator.capture_service import CaptureService
+from src.business.recognition.ocr_worker import OfficialImportTask
 
 
 def test_config_change_discards_previous_connection() -> None:
@@ -49,8 +49,8 @@ def test_capture_can_skip_ocr_and_return_saved_image(monkeypatch, tmp_path) -> N
     service.capture = FakeCapture()
     completed: list[dict] = []
     service.capture_completed.connect(completed.append)
-    monkeypatch.setattr("src.business.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
-    monkeypatch.setattr("src.business.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
 
     service._execute_capture(perform_ocr=False)
 
@@ -70,8 +70,8 @@ def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
     service = CaptureService()
     service.capture = FakeCapture()
     submitted: list[dict] = []
-    monkeypatch.setattr("src.business.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
-    monkeypatch.setattr("src.business.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
     monkeypatch.setattr(
         service,
         "_queue_capture_ocr",
@@ -105,10 +105,10 @@ def test_capture_queues_ocr_copy_before_saving_image(monkeypatch, tmp_path) -> N
         submitted.update(kwargs)
         return type("Task", (), {"task_id": "test-task"})()
 
-    monkeypatch.setattr("src.business.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
     monkeypatch.setattr(service, "_queue_capture_ocr", queue)
     monkeypatch.setattr(
-        "src.business.capture_service.save_image",
+        "src.business.emulator.capture_service.save_image",
         lambda _image, _path: (events.append("save") is None, ""),
     )
 

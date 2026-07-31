@@ -15,7 +15,8 @@ import tempfile
 
 from PySide6.QtCore import Signal
 
-from src.business.base_fetch_service import BaseFetchService
+from src.business.fetching.base_fetch_service import BaseFetchService
+from src.business.fetching.fetch_utils import is_generation_progress_line
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,10 @@ class SynergyFetchService(BaseFetchService):
     @property
     def _service_name(self) -> str:
         return "相性计算"
+
+    @property
+    def _subprocess_log_namespace(self) -> str:
+        return "subprocess.ai"
 
     # ---------------------------------------------------------------
     # 公共接口
@@ -63,7 +68,6 @@ class SynergyFetchService(BaseFetchService):
             args.append("--update")
         if backend == "browser":
             args.append("--browser")
-        logger.info("启动子进程: python %s", " ".join(args))
         self._start_process(args)
 
     def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str = "api") -> None:
@@ -79,7 +83,6 @@ class SynergyFetchService(BaseFetchService):
         args = ["-m", "src.scraper.ai_batch", "--synergy-single", tmp_path]
         if backend == "browser":
             args.append("--browser")
-        logger.info("启动子进程: python %s", " ".join(args))
         self._start_process(args)
 
     # ---------------------------------------------------------------
@@ -91,7 +94,8 @@ class SynergyFetchService(BaseFetchService):
         if not line:
             return
 
-        self.progress_output.emit(line)
+        if is_generation_progress_line(line):
+            self.progress_output.emit(line)
         # 只有生成结果完成校验（OK / FAIL）或确认跳过后才推进进度。
         m = re.search(r"\[(\d+)/(\d+)\].*\s(?:OK|FAIL|SKIP)(?:\s|$|（)", line)
         if m:

@@ -225,10 +225,10 @@ ai_generation.run_synergy_pair_generation(pair_file, heroes, generator, synergy_
 ### 4.1 本模块被外部调用
 
 ```
-src.business.guide_fetch_service
+src.business.fetching.guide_fetch_service
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--guide", ...])
 
-src.business.synergy_fetch_service
+src.business.fetching.synergy_fetch_service
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_file])
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-single", tmp_file])
 

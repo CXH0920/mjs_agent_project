@@ -25,7 +25,6 @@ _validate_guide() / _validate_synergy() → Pydantic 校验
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 import time
@@ -115,28 +114,21 @@ class PlaywrightGenerator:
                 logger.warning("[攻略] %s: 获取回复为空", hero_name)
                 return None, None
 
-        logger.info("[攻略] %s: 原始回复 %d 字符", hero_name, len(reply))
-        logger.debug("[攻略] %s: 原始回复前200字:\n%s", hero_name, reply[:200])
+        logger.info("[攻略] %s: 收到回复 %d 字符", hero_name, len(reply))
 
         try:
             raw = extract_json(reply)
             logger.info("[攻略] %s: JSON 提取成功, 字段: %s", hero_name, list(raw.keys()))
         except ValueError:
-            logger.error("[攻略] %s: JSON 提取失败", hero_name)
-            logger.error("[攻略] %s: 原始回复全文(%d字符):\n%s",
-                         hero_name, len(reply), reply)
+            logger.error("[攻略] %s: JSON 提取失败（回复长度 %d）", hero_name, len(reply))
             return None, None
 
         raw["hero_id"] = hero_id
         convert_ids_to_int(raw, ["synergizes_with"])
-        logger.debug("[攻略] %s: 提取后的原始数据:\n%s", hero_name,
-                     json.dumps(raw, ensure_ascii=False, indent=2))
-
         result = validate_guide(raw)
         if result is None:
             logger.error("[攻略] %s: Pydantic 校验失败", hero_name)
-            logger.error("[攻略] %s: 完整原始数据:\n%s", hero_name,
-                         json.dumps(raw, ensure_ascii=False, indent=2))
+            logger.debug("[攻略] %s: 校验失败字段: %s", hero_name, sorted(raw))
             return None, None
 
         logger.info("[攻略] %s: 校验通过, 结果字段: %s", hero_name, list(result.keys()))
@@ -190,18 +182,19 @@ class PlaywrightGenerator:
                 logger.warning("[相性] %s <-> %s: 获取回复为空", name_a, name_b)
                 return None, None
 
-        logger.info("[相性] %s <-> %s: 原始回复 %d 字符", name_a, name_b, len(reply))
-        logger.debug("[相性] %s <-> %s: 原始回复前200字:\n%s",
-                     name_a, name_b, reply[:200])
+        logger.info("[相性] %s <-> %s: 收到回复 %d 字符", name_a, name_b, len(reply))
 
         try:
             raw = extract_json(reply)
             logger.info("[相性] %s <-> %s: JSON 提取成功, 字段: %s",
                         name_a, name_b, list(raw.keys()))
         except ValueError:
-            logger.error("[相性] %s <-> %s: JSON 提取失败", name_a, name_b)
-            logger.error("[相性] %s <-> %s: 原始回复全文(%d字符):\n%s",
-                         name_a, name_b, len(reply), reply)
+            logger.error(
+                "[相性] %s <-> %s: JSON 提取失败（回复长度 %d）",
+                name_a,
+                name_b,
+                len(reply),
+            )
             return None, None
 
         raw["hero_a_id"] = hero_a.get("id", 0)
@@ -212,14 +205,10 @@ class PlaywrightGenerator:
                         name_a, name_b)
             raw["combo_ceiling"] = raw.pop("combat_synergy")
 
-        logger.debug("[相性] %s <-> %s: 提取后的原始数据:\n%s",
-                     name_a, name_b, json.dumps(raw, ensure_ascii=False, indent=2))
-
         result = validate_synergy(raw)
         if result is None:
             logger.error("[相性] %s <-> %s: Pydantic 校验失败", name_a, name_b)
-            logger.error("[相性] %s <-> %s: 完整原始数据:\n%s",
-                         name_a, name_b, json.dumps(raw, ensure_ascii=False, indent=2))
+            logger.debug("[相性] %s <-> %s: 校验失败字段: %s", name_a, name_b, sorted(raw))
             return None, None
 
         logger.info("[相性] %s <-> %s: 校验通过, 评分 %s",

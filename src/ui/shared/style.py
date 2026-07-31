@@ -416,6 +416,318 @@ QTabBar::tab:selected {{
     border-color: {PRIMARY};
     font-weight: bold;
 }}
+QTabWidget#workspaceTabs::pane {{
+    background-color: {CANVAS};
+    border: none;
+    border-radius: 0;
+}}
+QTabWidget#librarySectionTabs::pane {{
+    background-color: {CANVAS};
+    border: none;
+    border-top: 1px solid {BORDER};
+    border-radius: 0;
+}}
+QTabWidget#librarySectionTabs QTabBar::tab {{
+    background-color: transparent;
+    color: {MUTED_TEXT};
+    padding: 7px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: {RADIUS_SM}px {RADIUS_SM}px 0 0;
+    margin-right: 4px;
+    font-weight: normal;
+}}
+QTabWidget#librarySectionTabs QTabBar::tab:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+    color: {TEXT_PRIMARY};
+}}
+QTabWidget#librarySectionTabs QTabBar::tab:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-bottom: 2px solid {PRIMARY};
+    font-weight: bold;
+}}
+QWidget#heroListPane {{
+    background-color: transparent;
+}}
+QLabel#libraryResultCount {{
+    background-color: transparent;
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+    padding: 0 2px;
+}}
+QListWidget#heroList {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+}}
+QListWidget#heroList::item {{
+    min-height: 30px;
+    padding: 0 8px;
+    border-left: 3px solid transparent;
+}}
+QListWidget#heroList::item:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+}}
+QListWidget#heroList::item:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-left-color: {PRIMARY};
+}}
+QFrame#heroIdentityBar {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QFrame#heroIdentityBar QLabel {{
+    background-color: transparent;
+}}
+QLabel#heroIdentityName {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_LG}px;
+    font-weight: bold;
+}}
+QLabel#heroIdentityMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QToolButton#heroContextMoreButton {{
+    min-width: {CONTROL_HEIGHT_DEFAULT}px;
+    max-width: {CONTROL_HEIGHT_DEFAULT}px;
+    padding: 0;
+    font-size: 18px;
+}}
+QTabWidget#heroDetailTabs::pane {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 0 0 {RADIUS_SM}px {RADIUS_SM}px;
+}}
+QTabWidget#heroDetailTabs QTabBar::tab {{
+    background-color: transparent;
+    color: {MUTED_TEXT};
+    padding: 7px 12px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: {RADIUS_SM}px {RADIUS_SM}px 0 0;
+    margin-right: 4px;
+    font-weight: normal;
+}}
+QTabWidget#heroDetailTabs QTabBar::tab:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+    color: {TEXT_PRIMARY};
+}}
+QTabWidget#heroDetailTabs QTabBar::tab:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-bottom-color: {PRIMARY};
+    font-weight: bold;
+}}
+QWidget#heroInfoView, QWidget#heroGuideView, QWidget#heroSynergyView {{
+    background-color: {SURFACE};
+}}
+QWidget#heroSkillsContent, QWidget#heroGuideContent {{
+    background-color: {SURFACE};
+}}
+QWidget#heroInfoView QLabel, QWidget#heroGuideView QLabel, QWidget#heroSynergyView QLabel {{
+    background-color: transparent;
+}}
+QLabel#heroBasicInfo {{
+    color: {TEXT_PRIMARY};
+    padding: 4px 2px;
+}}
+QFrame#contentDivider {{
+    border: none;
+    border-top: 1px solid {BORDER};
+}}
+QFrame#heroSkillCard {{
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid {BORDER};
+}}
+QLabel#contentSectionTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_LG}px;
+    font-weight: bold;
+    padding-top: {SPACE_SM}px;
+}}
+QLabel#contentItemTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_MD + 1}px;
+    font-weight: bold;
+}}
+QLabel#contentBody {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_MD}px;
+}}
+QLabel#contentMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QLabel#heroSettlementBody {{
+    color: {MUTED_TEXT};
+    padding: 6px 8px;
+    border-left: 2px solid {BORDER_STRONG};
+}}
+QLabel#libraryEmptyState {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_MD}px;
+    padding: {SPACE_XL}px;
+}}
+QFrame#guideSummarySurface {{
+    background-color: {SUBTLE_SURFACE};
+    border: none;
+    border-radius: {RADIUS_SM}px;
+}}
+QLabel#guideWarningTitle {{
+    color: {WARNING};
+    font-weight: bold;
+    padding-top: {SPACE_XS}px;
+}}
+QLabel#guideNotice {{
+    color: {TEXT_PRIMARY};
+    background-color: {WARNING_SOFT};
+    border-left: 3px solid {WARNING};
+    padding: {SPACE_SM}px;
+}}
+QLabel#synergyResultCount {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+    font-weight: bold;
+}}
+QWidget#cardManagementPanel {{
+    background-color: {CANVAS};
+}}
+QWidget#cardListPane, QWidget#cardDetailContent {{
+    background-color: transparent;
+}}
+QToolButton#cardFilterResetButton, QToolButton#cardMoreButton {{
+    min-width: {CONTROL_HEIGHT_DEFAULT}px;
+    max-width: {CONTROL_HEIGHT_DEFAULT}px;
+    padding: 0;
+}}
+QToolButton#cardMoreButton {{
+    font-size: 18px;
+}}
+QListWidget#cardList {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+}}
+QListWidget#cardList::item {{
+    padding: 0;
+    border-left: 3px solid transparent;
+}}
+QListWidget#cardList::item:hover:!selected:enabled {{
+    background-color: {SUBTLE_SURFACE};
+}}
+QListWidget#cardList::item:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-left-color: {PRIMARY};
+}}
+QListWidget#cardList::item:disabled {{
+    background-color: {SUBTLE_SURFACE};
+    color: {PRIMARY};
+    border-left-color: transparent;
+}}
+QWidget#cardListItem, QWidget#cardListItem QLabel {{
+    background-color: transparent;
+}}
+QLabel#cardListItemName {{
+    color: {TEXT_PRIMARY};
+    font-weight: bold;
+}}
+QLabel#cardListItemMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_XS}px;
+}}
+QFrame#cardDetailSurface {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QFrame#cardDetailSurface QLabel {{
+    background-color: transparent;
+}}
+QLabel#cardIdentityName {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_PAGE_TITLE}px;
+    font-weight: bold;
+}}
+QLabel#cardReadonlyMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QLabel#cardDetailSectionTitle {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_MD}px;
+    font-weight: bold;
+}}
+QLabel#cardDescription {{
+    color: {TEXT_PRIMARY};
+    background-color: {PRIMARY_SOFT};
+    border-left: 3px solid {PRIMARY};
+    border-radius: {RADIUS_SM}px;
+    padding: 9px 11px;
+}}
+QLabel#cardRuleDetail {{
+    color: {TEXT_PRIMARY};
+    padding: 2px 0;
+}}
+QLabel#cardAdjustmentSectionTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_LG}px;
+    font-weight: bold;
+    padding-top: {SPACE_XS}px;
+}}
+QLabel#cardSchemaError {{
+    color: {DANGER};
+    background-color: {DANGER_SOFT};
+    border-left: 3px solid {DANGER};
+    padding: {SPACE_MD}px;
+}}
+QLabel#cardAdjustmentEmpty {{
+    color: {MUTED_TEXT};
+    padding: {SPACE_LG}px 2px;
+}}
+QFrame#cardAdjustmentField {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-left: 3px solid {PRIMARY};
+    border-radius: {RADIUS_SM}px;
+}}
+QFrame#cardAdjustmentField[adjustmentKind="strengthen"] {{ border-left-color: {SUCCESS}; }}
+QFrame#cardAdjustmentField[adjustmentKind="weaken"] {{ border-left-color: {WARNING}; }}
+QFrame#cardAdjustmentField[adjustmentKind="historical"] {{ border-left-color: {BORDER_STRONG}; }}
+QLabel#cardAdjustmentTitle {{
+    color: {PRIMARY};
+    font-weight: bold;
+}}
+QLabel#cardAdjustmentTitle[adjustmentKind="strengthen"] {{ color: {SUCCESS}; }}
+QLabel#cardAdjustmentTitle[adjustmentKind="weaken"] {{ color: {WARNING}; }}
+QLabel#cardAdjustmentTitle[adjustmentKind="historical"] {{ color: {MUTED_TEXT}; }}
+QLabel#cardEffectRecord {{
+    color: {MUTED_TEXT};
+    background-color: {SUBTLE_SURFACE};
+    border-left: 3px solid {BORDER_STRONG};
+    border-radius: {RADIUS_SM}px;
+    padding: 7px 9px;
+}}
+QLabel#cardEffectRecord[tone="success"] {{
+    color: {SUCCESS};
+    background-color: {SUCCESS_SOFT};
+    border-left-color: {SUCCESS};
+}}
+QLabel#cardEffectRecord[tone="warning"] {{
+    color: {WARNING};
+    background-color: {WARNING_SOFT};
+    border-left-color: {WARNING};
+}}
+QLabel#cardEffectRecord[tone="neutral"] {{
+    color: {MUTED_TEXT};
+    background-color: {SUBTLE_SURFACE};
+    border-left-color: {BORDER_STRONG};
+}}
 
 QStatusBar {{
     background-color: {SURFACE};

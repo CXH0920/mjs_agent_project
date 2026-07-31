@@ -10,13 +10,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel, QTabWidget, QTextBrowser
 
-from src.business.capture_service import CaptureService
+from src.business.emulator.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.app.main_window import MainWindow, PollOutcome
+from src.ui.app.shell_widgets import ContextHeader
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.app.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
@@ -404,17 +405,21 @@ def test_main_window_keeps_emulator_status_after_stats_update() -> None:
     assert window._emulator_status_label.text() == expected
 
 
-def test_main_window_uses_library_content_header_and_section_tabs() -> None:
+def test_main_window_uses_context_header_and_library_section_tabs() -> None:
     _app()
     window = MainWindow(_hero_manager(), SynergyManager(), GuideManager())
 
     assert window._library.objectName() == "libraryPage"
-    assert window._library.findChild(QLabel, "libraryTitle").text() == "资料库"
+    assert isinstance(window._context_header, ContextHeader)
+    assert window._context_header.title_label.text() == "资料库"
+    assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[0][1]
     assert window._library_tabs.objectName() == "librarySectionTabs"
     assert [window._library_tabs.tabText(index) for index in range(window._library_tabs.count())] == [
         "武将资料", "卡牌图鉴",
     ]
-    assert "background: #e6f4ff" in window._library_tabs.styleSheet()
+    assert window._library_tabs.currentWidget() is window._hero_browser
+    window._library_tabs.setCurrentIndex(1)
+    assert window._library_tabs.currentWidget() is window._card_management
 
 
 def test_poll_stays_stopped_until_emulator_is_connected() -> None:

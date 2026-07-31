@@ -19,13 +19,13 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from src.capture.adb_screen import AdbCapture
 from src.capture.image_validation import load_local_image
 from src.capture.image_utils import save_image
-from src.business.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
+from src.business.recognition.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
+from src.config.env import PROJECT_ROOT
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
 
 # 截图默认保存目录
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 
 

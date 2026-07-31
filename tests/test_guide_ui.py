@@ -15,7 +15,7 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
-from src.ui.library.hero_browser import HeroDetailPanel, HeroListPanel
+from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.library.fetch_dialog import HeroFetchDialog
@@ -67,7 +67,8 @@ def test_guide_panel_renders_matchup_types_and_clickable_synergy_tags(tmp_path: 
     labels = [label.text() for label in panel.findChildren(QLabel)]
     assert panel._identity_name.text() == "曹操"
     assert isinstance(panel._identity_bar.layout(), QHBoxLayout)
-    assert "background: transparent" in panel._identity_name.styleSheet()
+    assert panel._identity_name.objectName() == "heroIdentityName"
+    assert panel._identity_name.wordWrap()
     assert "资料更新：2026-07-26" in panel.findChild(QLabel, "heroBasicInfo").text()
     assert "需谨慎的对手类型" in labels
     assert "优先保留闪避" in labels
@@ -278,6 +279,163 @@ def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:
     panel = HeroListPanel(hero_manager)
 
     assert panel.selected_hero_id() == 1
+
+
+def test_hero_list_counts_filtered_results_and_keeps_visible_selection(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+    hero_manager.add_hero(Hero(id=2, name="曹丕", faction="魏"))
+    hero_manager.add_hero(Hero(id=3, name="刘备", faction="蜀"))
+    panel = HeroListPanel(hero_manager)
+
+    assert panel._count_label.text() == "显示 3 / 共 3 名武将"
+    panel.select_hero(2)
+    panel._faction_combo.setCurrentText("魏")
+    panel._search_box.setText("曹")
+
+    assert panel._count_label.text() == "显示 2 / 共 3 名武将"
+    assert panel.selected_hero_id() == 2
+
+    panel.reload()
+
+    assert panel._count_label.text() == "显示 2 / 共 3 名武将"
+    assert panel.selected_hero_id() == 2
+
+
+def test_hero_browser_keeps_the_list_pane_within_designed_width(tmp_path: Path) -> None:
+    _app()
+    browser = HeroBrowser(
+        HeroManager(tmp_path / "heroes.json"),
+        GuideManager(tmp_path / "guides.json"),
+        SynergyManager(tmp_path / "synergies.json"),
+    )
+
+    assert browser._list_panel.minimumWidth() == 240
+    assert browser._list_panel.maximumWidth() == 360
+    assert browser._splitter.orientation() == Qt.Orientation.Horizontal
+    assert not browser._splitter.childrenCollapsible()
+
+
+def test_hero_detail_context_actions_follow_the_active_tab(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
+    guide_manager.add_guide(HeroGuide(hero_id=1, key_points=["保持手牌优势"]))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=3))
+    panel = HeroDetailPanel(hero_manager, guide_manager, synergy_manager)
+
+    assert not panel._context_edit_btn.isEnabled()
+    assert not panel._context_more_btn.isEnabled()
+    assert not panel._context_delete_action.isEnabled()
+
+    panel.show_hero(1)
+    assert panel._context_edit_btn.text() == "编辑武将"
+    assert panel._context_delete_action.text() == "删除武将"
+    assert panel._context_edit_btn.isEnabled()
+    assert panel._context_more_btn.isEnabled()
+    assert panel._context_delete_action.isEnabled()
+
+    panel._detail_tabs.setCurrentIndex(1)
+    assert panel._context_edit_btn.text() == "编辑攻略"
+    assert panel._context_delete_action.text() == "删除攻略"
+    assert panel._context_edit_btn.isEnabled()
+    assert panel._context_more_btn.isEnabled()
+    assert panel._context_delete_action.isEnabled()
+
+    panel._detail_tabs.setCurrentIndex(2)
+    assert panel._context_edit_btn.text() == "编辑相性"
+    assert panel._context_delete_action.text() == "删除相性"
+    assert not panel._context_edit_btn.isEnabled()
+    assert not panel._context_more_btn.isEnabled()
+    assert not panel._context_delete_action.isEnabled()
+
+    panel._synergy_tab._table.selectRow(0)
+    panel._update_context_actions()
+    assert panel._context_edit_btn.isEnabled()
+    assert panel._context_more_btn.isEnabled()
+    assert panel._context_delete_action.isEnabled()
+
+    calls: list[str] = []
+    for name in (
+        "_on_info_edit",
+        "_on_info_delete",
+        "_on_guide_edit",
+        "_on_guide_delete",
+        "_on_synergy_edit",
+        "_on_synergy_delete",
+    ):
+        monkeypatch.setattr(panel, name, lambda action=name: calls.append(action))
+
+    for index in range(3):
+        panel._detail_tabs.setCurrentIndex(index)
+        panel._on_context_edit()
+        panel._on_context_delete()
+
+    assert calls == [
+        "_on_info_edit",
+        "_on_info_delete",
+        "_on_guide_edit",
+        "_on_guide_delete",
+        "_on_synergy_edit",
+        "_on_synergy_delete",
+    ]
+
+
+def test_hero_detail_wraps_long_text_and_disables_horizontal_scrolling(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    long_skill_name = "持久战术" * 5
+    long_skill_description = "这是需要在窄窗口中完整换行显示的技能说明。" * 20
+    long_settlement = "结算阶段仍需保留全部文字并自动换行。" * 20
+    long_key_point = "核心操作要点需要在攻略摘要中完整显示。" * 20
+    long_tips = "新手提醒内容较长时不能撑出横向滚动。" * 20
+    long_counter = "面对该武将时的应对策略也必须正常换行。" * 20
+    hero_manager.add_hero(Hero(
+        id=1,
+        name="曹操",
+        skills=[Skill(
+            name=long_skill_name,
+            description=long_skill_description,
+            settlement=long_settlement,
+        )],
+    ))
+    guide_manager.add_guide(HeroGuide(
+        hero_id=1,
+        key_points=[long_key_point],
+        tips_for_beginners=long_tips,
+        counter_strategy=long_counter,
+    ))
+    panel = HeroDetailPanel(
+        hero_manager,
+        guide_manager,
+        SynergyManager(tmp_path / "synergies.json"),
+    )
+    panel.show_hero(1)
+
+    labels_by_text = {label.text(): label for label in panel.findChildren(QLabel)}
+    for text in (
+        long_skill_name,
+        long_skill_description,
+        long_settlement,
+        f"• {long_key_point}",
+        long_tips,
+        long_counter,
+    ):
+        assert labels_by_text[text].wordWrap()
+
+    skill_scroll = panel.findChild(QScrollArea, "heroSkillScroll")
+    guide_scroll = panel.findChild(QScrollArea, "heroGuideScroll")
+    assert skill_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert guide_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert (
+        panel._synergy_tab._table.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
 
 
 def test_skill_cards_are_hidden_before_deferred_deletion(tmp_path: Path) -> None:

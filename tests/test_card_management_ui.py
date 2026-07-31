@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QTex
 
 from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
 from src.ui.library.card_management_panel import CardAnnotationEditDialog, CardManagementPanel, EFFECT_STATUS_LABELS
+from src.ui.shared.style import GLOBAL_STYLE, TONE_NEUTRAL, TONE_SUCCESS, TONE_WARNING
 
 
 def _app() -> QApplication:
@@ -55,6 +56,7 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
 
     panel = CardManagementPanel(service)
 
+    assert panel._list.objectName() == "cardList"
     assert panel._list.count() == 4  # 两个分组标题与两张卡牌
     assert panel._list.item(1).text() == ""
     assert panel._list.item(1).data(Qt.ItemDataRole.AccessibleTextRole) == "冲杀"
@@ -64,12 +66,24 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
         "有加强效果", "有削弱效果",
     ]
     group = panel._list.item(0)
-    assert group.background().color().name() == "#eef2f6"
+    assert group.flags() == Qt.ItemFlag.NoItemFlags
     assert group.font().bold()
-    card_row_texts = [label.text() for label in panel._list.itemWidget(panel._list.item(1)).findChildren(QLabel)]
+    card_row = panel._list.itemWidget(panel._list.item(1))
+    card_row_texts = [label.text() for label in card_row.findChildren(QLabel)]
     assert card_row_texts == ["冲杀", "生效中", "ID 8 · 牌堆 14"]
+    assert next(label for label in card_row.findChildren(QLabel) if label.text() == "生效中").property(
+        "tone"
+    ) == TONE_SUCCESS
+    assert panel._search_input.objectName() == "cardSearchInput"
+    assert panel._type_filter.objectName() == "cardTypeFilter"
+    assert panel._adjustment_filter.objectName() == "cardAdjustmentFilter"
+    assert panel._clear_filters_button.objectName() == "cardFilterResetButton"
+    assert panel._more_button.objectName() == "cardMoreButton"
     assert panel._schema_action.text() == "字段配置"
     assert panel._schema_action.isEnabled()
+    assert panel._more_button.menu() is panel._maintenance_menu
+    assert panel._maintenance_menu.actions() == [panel._schema_action]
+    assert not any(button.text() == "字段配置" for button in panel.findChildren(QPushButton))
     assert panel._more_button.text() == "⋯"
     assert panel._more_button.toolTip() == "更多操作"
     assert not panel._clear_filters_button.isEnabled()
@@ -77,7 +91,10 @@ def test_panel_shows_readonly_card_details(tmp_path) -> None:
     assert panel._list_pane.maximumWidth() == 360
     assert not panel._splitter.childrenCollapsible()
     assert panel._detail_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-    assert any(button.text() == "编辑配置" for button in panel.findChildren(QPushButton))
+    edit_button = panel.findChild(QPushButton, "cardAdjustmentEditButton")
+    assert edit_button.text() == "编辑版本调整"
+    dialog = CardAnnotationEditDialog(service, "8")
+    assert dialog.windowTitle() == "冲杀 - 编辑版本调整"
     assert not any(label.text() == "资料库 > 卡牌图鉴" for label in panel.findChildren(QLabel))
 
     panel._search_input.setText("冲杀")
@@ -134,7 +151,7 @@ def test_switching_cards_does_not_leave_nested_action_layouts(tmp_path) -> None:
     assert sum(panel._detail_layout.itemAt(index).layout() is not None for index in range(3)) == 1
 
 
-def test_panel_lists_active_effect_before_other_statuses_without_timestamps(tmp_path) -> None:
+def test_panel_lists_semantic_effect_statuses_without_timestamps(tmp_path) -> None:
     (tmp_path / "cards.json").write_text(json.dumps([
         {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
     ], ensure_ascii=False), encoding="utf-8")
@@ -155,6 +172,10 @@ def test_panel_lists_active_effect_before_other_statuses_without_timestamps(tmp_
                         "created_at": "2025-01-01T00:00:00", "updated_at": "2025-12-31T00:00:00",
                     },
                     {
+                        "content": "待确认效果", "status": "pending",
+                        "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00",
+                    },
+                    {
                         "content": "当前效果", "status": "active",
                         "created_at": "2026-07-26T00:00:00", "updated_at": "2026-07-26T00:00:00",
                     },
@@ -170,16 +191,34 @@ def test_panel_lists_active_effect_before_other_statuses_without_timestamps(tmp_
     _app()
 
     panel = CardManagementPanel(service)
-    current = next(label for label in panel.findChildren(QLabel) if label.text().startswith("生效中\n"))
-    effect_records = [
-        label.text() for label in panel.findChildren(QLabel)
-        if label.text().startswith(("生效中\n", "待核实\n", "已失效\n"))
-    ]
+    records = panel.findChildren(QLabel, "cardEffectRecord")
+    effect_records = [label.text() for label in records]
+    current = records[0]
 
     assert "当前效果" in current.text()
-    assert "#e4f5e8" in current.styleSheet()
+    assert effect_records == [
+        "生效中\n当前效果",
+        "待核实\n待确认效果",
+        "已失效\n历史效果",
+    ]
+    assert [label.property("tone") for label in records] == [
+        TONE_SUCCESS,
+        TONE_WARNING,
+        TONE_NEUTRAL,
+    ]
+    assert all(label.wordWrap() for label in records)
     assert effect_records[0].startswith("生效中\n")
     assert "2026-07-26" not in current.text()
+
+
+def test_card_effect_style_defines_left_accent_for_each_tone() -> None:
+    base_rule = GLOBAL_STYLE.split("QLabel#cardEffectRecord {", 1)[1].split("}", 1)[0]
+    assert "border-left:" in base_rule
+
+    for tone in (TONE_SUCCESS, TONE_WARNING, TONE_NEUTRAL):
+        selector = f'QLabel#cardEffectRecord[tone="{tone}"] {{'
+        tone_rule = GLOBAL_STYLE.split(selector, 1)[1].split("}", 1)[0]
+        assert "border-left-color:" in tone_rule
 
 
 def test_effect_entries_can_be_added_for_strengthen_and_weaken(tmp_path) -> None:

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 import httpx
@@ -121,7 +120,7 @@ class AIBatchGenerator:
                     time.sleep(2 ** attempt)
             except Exception as e:
                 logger.warning("API 请求异常 [%d/%d]: %s",
-                               attempt, self.max_retries, e)
+                               attempt, self.max_retries, type(e).__name__)
                 if attempt < self.max_retries:
                     time.sleep(2 ** attempt)
 
@@ -165,7 +164,7 @@ class AIBatchGenerator:
         result = validate_guide(raw)
         if result is None:
             logger.warning("攻略 Pydantic 校验失败")
-            logger.debug("异常数据: %s", json.dumps(raw, ensure_ascii=False))
+            logger.debug("攻略校验失败字段: %s", sorted(raw))
             return None, usage
         return result, usage
 
@@ -210,7 +209,7 @@ class AIBatchGenerator:
         result = validate_synergy(raw)
         if result is None:
             logger.warning("相性 Pydantic 校验失败")
-            logger.debug("异常数据: %s", json.dumps(raw, ensure_ascii=False))
+            logger.debug("相性校验失败字段: %s", sorted(raw))
             return None, usage
         return result, usage
 

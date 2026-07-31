@@ -203,7 +203,7 @@ def js_to_json(text):
 ### 4.1 本模块被外部调用
 
 ```
-src.business.fetch_service
+src.business.fetching.hero_fetch_service
   -> QProcess.start(["-m", "src.scraper.official"])            [全量采集]
   -> QProcess.start(["-m", "src.scraper.incremental", ...])     [增量/指定采集]
 

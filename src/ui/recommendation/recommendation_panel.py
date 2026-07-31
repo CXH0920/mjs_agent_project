@@ -32,7 +32,7 @@ from src.config.env import PROJECT_ROOT
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
-from src.business.recommendation_service import RecommendationData, RecommendationService
+from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
@@ -107,9 +107,10 @@ class RecommendationPanel(QWidget):
         # 标题行（含当前识别状态和操作）
         header_layout = QHBoxLayout()
 
-        title = QLabel("选将推荐")
-        title.setStyleSheet(PAGE_TITLE_STYLE)
-        header_layout.addWidget(title)
+        self._page_title_label = QLabel("选将推荐")
+        self._page_title_label.setObjectName("recommendationPageTitle")
+        self._page_title_label.setStyleSheet(PAGE_TITLE_STYLE)
+        header_layout.addWidget(self._page_title_label)
 
         self._recognition_status_label = QLabel("尚未识别阵容")
         self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")

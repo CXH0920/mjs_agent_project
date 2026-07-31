@@ -13,12 +13,13 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from src.config.env import PROJECT_ROOT
 from src.ocr.recognizer import GeneralRecognizer
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 from src.ocr.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
-DEFAULT_SCREENSHOT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "screenshot_data"
+DEFAULT_SCREENSHOT_DATA_DIR = PROJECT_ROOT / "screenshot_data"
 
 
 @dataclass
@@ -111,7 +112,7 @@ class OcrWorker(QThread):
 
     def _execute_official_import(self, task: OfficialImportTask) -> dict:
         """复用当前线程的 OCR 引擎，串行完成整批官方榜单导入。"""
-        from src.business.official_data_import_service import OfficialDataImportService
+        from src.business.recognition.official_data_import_service import OfficialDataImportService
 
         started = time.perf_counter()
         service = OfficialDataImportService(

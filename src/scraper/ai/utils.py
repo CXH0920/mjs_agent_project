@@ -9,12 +9,25 @@ from __future__ import annotations
 
 import json
 import logging
-import traceback
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from src.data.hero_manager import HeroManager
 
 logger = logging.getLogger(__name__)
+
+
+def safe_url_origin(url: str) -> str:
+    """返回不含认证、路径、查询参数和片段的 URL 来源。"""
+    try:
+        parsed = urlsplit(str(url))
+        if not parsed.scheme or not parsed.hostname:
+            return "<invalid-url>"
+        host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        port = f":{parsed.port}" if parsed.port is not None else ""
+        return f"{parsed.scheme}://{host}{port}"
+    except ValueError:
+        return "<invalid-url>"
 
 # ============================================================
 # 常量
@@ -74,7 +87,12 @@ def convert_ids_to_int(data: dict, fields: list[str]) -> dict:
             try:
                 data[field] = [int(v) for v in data[field]]
             except (ValueError, TypeError) as e:
-                logger.warning("字段 %s 转 int 失败: %s, 原始值: %s", field, e, original)
+                logger.warning(
+                    "字段 %s 转 int 失败: %s（元素数 %d）",
+                    field,
+                    type(e).__name__,
+                    len(original),
+                )
     return data
 
 
@@ -91,8 +109,7 @@ def validate_guide(data: dict) -> dict | None:
         logger.debug("HeroGuide 校验通过")
         return validated.model_dump(mode="json")
     except Exception as e:
-        logger.error("HeroGuide Pydantic 校验失败: %s", e)
-        logger.debug("异常 traceback:\n%s", traceback.format_exc())
+        logger.error("HeroGuide Pydantic 校验失败: %s", type(e).__name__)
         return None
 
 
@@ -104,6 +121,5 @@ def validate_synergy(data: dict) -> dict | None:
         logger.debug("SynergyScore 校验通过")
         return validated.model_dump(mode="json")
     except Exception as e:
-        logger.error("SynergyScore Pydantic 校验失败: %s", e)
-        logger.debug("异常 traceback:\n%s", traceback.format_exc())
+        logger.error("SynergyScore Pydantic 校验失败: %s", type(e).__name__)
         return None

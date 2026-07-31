@@ -27,9 +27,9 @@
 
 ---
 
-## 当前代码基线与业务不变量（2026-07-22）
+## 当前代码基线与业务不变量（2026-07-31）
 
-本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 负责 QProcess、ADB 和 OCR 工作流，`src/scraper/` 负责官网与 AI 数据生成，`src/data/` 提供 JSON 持久化和内存模型。
+本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成，`src/data/` 提供 JSON 持久化和内存模型。
 
 ### 核心功能调用总览
 
@@ -710,11 +710,13 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 684 | QMainWindow（顶层装配、菜单与界面绑定） |
-| poll_coordinator.py | 241 | QObject（轮询编排、后台任务与结果状态迁移） |
+| main_window.py | 870 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
+| shell_widgets.py | 247 | QWidget（左侧 NavigationRail 与顶部 ContextHeader） |
+| poll_coordinator.py | 263 | QObject（轮询编排、后台任务与结果状态迁移） |
 | ai_generation_workflow.py | 246 | QObject（攻略与相性 UI 工作流） |
-| hero_browser.py | 605 | QWidget（浏览列表、详情状态和编辑协调） |
-| hero_detail_views.py | 473 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
+| hero_browser.py | 586 | QWidget（资料左栏、身份头部、上下文操作和详情协调） |
+| hero_detail_views.py | 469 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
+| card_management_panel.py | 842 | QWidget（卡牌浏览、版本调整与字段配置） |
 | hero_edit_dialog.py | 87 | QDialog（武将编辑） |
 | guide_edit_dialog.py | 120 | QDialog（攻略编辑） |
 | hero_relation_select_dialog.py | 129 | QDialog（攻略关系武将多选） |
@@ -734,7 +736,13 @@ def apply_incremental_update(data_dir, update)
 | synergy_pair_dialog.py | 49 | QDialog（继承基类，覆盖 _on_accept 允许 2~8 武将） |
 | synergy_single_dialog.py | 30 | QDialog（继承基类） |
 
-### 5.2 主窗口信号拓扑
+### 5.2 主窗口外壳与信号拓扑
+
+阶段三应用外壳由左侧 `NavigationRail`、顶部 `ContextHeader`、工作区内容和底部状态栏组成。左侧导航固定承载资料库、选将推荐、对局攻略三个长期工作区；顶部显示当前工作区标题、说明、资料库操作及全局设置。主内容继续复用原 `QTabWidget` 和三个页面实例，仅隐藏主 `TabBar`；资料库内部仍使用可见的“武将资料 / 卡牌图鉴”二级页签，因此搜索、滚动、识别结果和二级页签状态不会因切换工作区而丢失。
+
+左侧导航请求通过主 Tab 容器切换，Tab 的 `currentChanged` 再同步导航选中态和 `ContextHeader`。OCR 自动跳转保持原调用边界，只执行 `setCurrentWidget()`，无需直接访问外壳控件。窗口宽度小于 1040px 时导航强制折叠；回到宽屏后恢复用户本次会话中的展开/折叠选择。
+
+兼容菜单栏和顶部入口共享 `MainWindow._actions` 创建的 `QAction`，不重复绑定业务回调，`Ctrl+Q` 与 `F5` 保持有效。底部状态栏左侧显示数据统计及采集、生成、截图、OCR 预热等当前任务消息；右侧模拟器状态常驻显示 ADB 连接；OCR 状态常驻显示轮询运行状态。任务消息不会覆盖后两者，点击常驻状态可打开模拟器配置。
 
 ```
 MainWindow.__init__
@@ -767,7 +775,7 @@ MainWindow.__init__
 
 ### 5.3 对局攻略页面（MatchGuidePanel）
 
-对局攻略与武将浏览、选将推荐处于同级 Tab。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `config/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
+对局攻略与资料库、选将推荐同属左侧导航的一级工作区。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `config/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
 
 页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口均通过 `template_name="match_guide"` 并以 `force_ocr=True` 直接执行 OCR，将 OCR 结果交给 `load_from_ocr()` 更新卡片；自动轮询才使用独立模板筛选游戏画面。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。五个候选位置中第 5 个固定为玩家本人，第 1、2 个为敌方，第 3、4 个中唯一识别到名称者为队友；【楚军】/【汉军】标签仅用于校验席位结果，缺失时仍按席位自动分配。`LineupState` 负责四个槽位、敌我人数限制、主将选择和显式确认，仍可手动矫正敌我；确认后才由 `MatchAnalysisService` 生成摘要，并由 `MatchAnalysisView` 渲染总览、我方打法、对抗敌方和单将详情。
 
@@ -881,23 +889,28 @@ m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
 
 > 失败由 CLI 的非零退出码统一表达；父进程只解析 stdout 中的进度行，不再依赖失败文本协议。
 
-### 5.8 武将浏览器（HeroBrowser）
+### 5.8 资料库内容页
+
+#### 5.8.1 武将资料（HeroBrowser）
 
 由两个子组件构成：
 
 ```
 HeroBrowser (QWidget)
- ├── HeroListPanel（左, 280px）
+ ├── HeroListPanel（左, 240–360px，默认 280px）
  │   ├── QLineEdit（搜索框）
  │   ├── QComboBox（势力筛选）
+ │   ├── QLabel（当前筛选结果计数）
  │   ├── QListWidget（武将列表）
  │   ├── Signal: hero_selected(int)
- └── HeroDetailPanel（右, 720px）
-     ├── 固定身份条（单行名称、势力、定位、体力、手牌摘要）
+ └── HeroDetailPanel（右，占据剩余宽度）
+     ├── 身份头部（名称、势力、定位、体力、手牌摘要）
+     │   ├── 当前内容编辑按钮
+     │   └── 更多菜单 → 当前内容删除
      ├── Tab 1「武将信息」→ HeroInfoView
      │   ├── QLabel (HTML 渲染基本信息与资料更新时间)
      │   └── QScrollArea (技能列表)
-     └── Tab 2「攻略指南」→ HeroGuideSummaryView
+     ├── Tab 2「攻略指南」→ HeroGuideSummaryView
          ├── QScrollArea（统一滚动容器）
          ├── 核心建议（核心要点与应对）
          ├── 新手提醒与流式关系标签
@@ -930,13 +943,11 @@ HeroDetailPanel._on_synergy_edit()
 
 相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `HeroSynergyView.show_hero()` -> `refresh()` -> `SynergyManager.list_synergies_for_hero()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时通过 `DataMutationService.update_synergy()` 写入，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
 
-**Tab 栏编辑按钮**：
-Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
-- 武将信息 Tab 显示绿色的"修改"按钮和红色的"删除"按钮
-- 攻略指南 Tab 显示绿色的"修改"按钮和红色的"删除"按钮
-- 切换 Tab 时自动隐藏/显示对应的按钮组
-- 选中无攻略的武将时，攻略按钮组自动禁用
-- "修改"打开 `HeroEditDialog` / `GuideEditDialog` 进行编辑，"删除"弹出确认对话框
+**当前内容上下文操作**：
+- 身份头部始终只显示一个直接编辑按钮；武将信息、攻略指南、武将相性分别映射为“编辑武将”“编辑攻略”“编辑相性”
+- 对应的“删除武将”“删除攻略”“删除相性”收纳在相邻省略号“更多”菜单中，并继续弹出原二次确认
+- 无当前武将、无攻略或未选中相性记录时，编辑和删除入口同步禁用
+- 页签切换只更新操作文字、处理方法和可用状态，不改变原对话框、`DataMutationService` 或持久化契约
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
 - `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
@@ -946,12 +957,20 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 
 **攻略视觉与交互：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。
-- 右侧固定身份条展示当前武将，内容 Tab 使用弱化的下划线样式，避免与资料库内容页内的二级资料切换器竞争。
+- 左侧检索栏限制为 240–360px，搜索和势力筛选下方显示当前结果数量；分隔区两侧均不可完全折叠。
+- 右侧身份头部展示当前武将，名称和元数据可换行；内容 Tab 使用弱化的下划线样式，避免与资料库内容页内的二级资料切换器竞争。
 - 首屏“核心建议”优先展示核心要点和面对该武将的应对；新手提醒、关系标签和完整攻略入口按需呈现。
 - 点击“阅读完整攻略”打开 `GuideDetailDialog`，其中保留 Markdown 正文预览。
 - 正文标题明确标注“攻略正文（双击查看完整内容）”；双击预览后打开 `GuideMarkdownDialog` 阅读完整正文。
 - 克制/搭配关系使用自适应流式标签，点击后通过 `HeroDetailPanel.hero_requested` 切换到对应武将。
+- 武将信息、攻略和相性详情均关闭横向滚动，只允许内容区纵向滚动或文本换行。
 - 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
+
+#### 5.8.2 卡牌图鉴（CardManagementPanel）
+
+卡牌图鉴与武将资料共享资料库二级导航。顶部工具栏提供搜索、卡牌类型、调整状态、重置和省略号“更多”；左栏限制为 240–360px，显示结果计数、类型分组和卡牌摘要。右侧只用一个基础资料表面承载卡牌身份、官方只读标识、卡牌简述和规则详解，版本调整作为后续内容区，不在基础表面内嵌套卡片。详情区关闭横向滚动，切换卡牌后回到顶部。
+
+“编辑版本调整”只打开当前卡牌的 `CardAnnotationEditDialog`，不编辑 `cards.json`；追加字段的“字段配置”仍位于顶部“更多”菜单并打开 `CardFieldSchemaDialog`。效果记录继续只允许 `active`、`pending`、`expired` 三种状态，界面分别显示“生效中”“待核实”“已失效”，并组合使用绿色、警示色、中性灰与左侧强调线。`active` 置顶，其他记录按状态和修改时间排序；创建时间和修改时间不在前端展示。
 
 ### 5.9 选将推荐面板（RecommendationPanel）
 
@@ -1098,7 +1117,7 @@ _start_import()
 | 次要文字 | `#66717e` |
 | 边框 | `#d7dee7` |
 
-按钮通过 `uiRole` 使用 `primary`、`secondary`、`ghost`、`danger`；状态展示通过 `tone` 使用 `neutral`、`info`、`success`、`warning`、`danger`。完整规则见 `docs/spec/spec_ui_design_system.md` 和 `docs/spec/spec_ui_navigation.md`，三档窗口截图位于 `docs/ui_baseline/`。
+按钮通过 `uiRole` 使用 `primary`、`secondary`、`ghost`、`danger`；状态展示通过 `tone` 使用 `neutral`、`info`、`success`、`warning`、`danger`。完整规则见 `docs/spec/spec_ui_design_system.md` 和 `docs/spec/spec_ui_navigation.md`，三档窗口截图位于 `docs/ui_baseline/`；阶段三应用外壳截图使用 `after-shell-` 前缀，阶段四资料库截图使用 `after-library-` 前缀。
 
 ---
 
@@ -1134,22 +1153,24 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8")
 ```
 
-### 6.4 完整错误输出链路
+### 6.4 来源感知的错误输出链路
 
 ```
 子进程 exit_code ≠ 0
      ↓
 _on_finished()
-     ├── logger.warning("进程退出码 %d")
-     ├── [子进程 stdout 完整输出] → logger.warning()
-     └── [子进程 stderr 完整输出] → logger.warning()
+     ├── stdout/stderr 已按行写入 subprocess.official.* 或 subprocess.ai.*
+     ├── 业务日志仅记录服务名、退出码和归一化原因
+     └── error_occurred → UI 显示明确原因
 
 子进程 QProcess::ProcessError
      ↓
 _on_error()
      ├── 错误类型映射 → "子进程启动失败" / "子进程崩溃" 等
-     └── errorString() → logger.error() + traceback
+     └── errorString() → logger.error()
 ```
+
+失败时不再把完整 stdout/stderr 复制进业务日志；缓冲区只用于识别“思考过程耗尽输出额度”等明确原因。AI 进度信号仅放行 START、OK、FAIL、SKIP、开始和冷却状态，其他子进程日志不会显示在进度界面。
 
 ### 6.5 临时文件管理
 
@@ -1386,35 +1407,40 @@ DEFAULT_CHAT_CONFIG = {
 logs/
 ├── app.log                  # 桌面应用运行时日志（UI + 数据加载）
 ├── scraper/
-│   ├── scraper.log          # 爬虫模块日志（official / incremental / capture / ocr）
-│   └── ai_batch.log         # AI 批量生成日志（_extract_json 等 ETL 步骤）
+│   ├── official.log         # 官网采集及父进程接管的采集输出
+│   └── ai_generation.log    # AI 生成及父进程接管的生成输出
 ├── business/
-│   └── business.log         # QProcess 业务服务日志（guide/synergy/capture/ocr 服务）
+│   ├── fetching.log         # QProcess 编排
+│   ├── emulator.log         # 截图、ADB 与 MuMu 协调
+│   ├── recognition.log      # OCR 调度与官方榜单导入
+│   └── business.log         # 分析、维护及其他业务日志
+├── data/
+│   └── data.log
+├── ocr/
+│   └── ocr.log
+├── capture/
+│   └── capture.log
 └── subprocess/
-    ├── stdout.log           # 子进程标准输出
-    └── stderr.log           # 子进程错误输出（排查崩溃的关键）
+    └── unclassified.log     # 未声明工作流的子进程输出
 ```
 
 ### 10.3 模块过滤表
 
 | logger name 前缀 | 目标文件 |
 |-----------------|----------|
-| `src.scraper` | `scraper/scraper.log` |
-| `src.scraper.ai` | `scraper/ai_batch.log` |
-| `src.business` | `business/business.log` |
-| `src.capture` | `scraper/scraper.log` |
-| `src.ocr` | `scraper/scraper.log` |
-| `subprocess.stdout` | `subprocess/stdout.log` |
-| `subprocess.stderr` | `subprocess/stderr.log` |
+| `src.scraper` / `subprocess.official` | `scraper/official.log` |
+| `src.scraper.ai` / `subprocess.ai` | `scraper/ai_generation.log` |
+| `src.business.fetching` | `business/fetching.log` |
+| `src.business.emulator` | `business/emulator.log` |
+| `src.business.recognition` | `business/recognition.log` |
+| `src.business.analysis` / `src.business.maintenance` | `business/business.log` |
+| `src.data` | `data/data.log` |
+| `src.capture` | `capture/capture.log` |
+| `src.ocr` | `ocr/ocr.log` |
+| 其他 `subprocess.*` | `subprocess/unclassified.log` |
 | 其他（含 `src.ui.*`） | `app.log` |
 
-新增模块的日志路由：
-- `src.capture.*` → `scraper/scraper.log`
-- `src.ocr.*` → `scraper/scraper.log`
-- `src.business.capture_service` → `business/business.log`
-- `src.business.ocr_service` → `business/business.log`
-- `src.ui.configuration.mumu_config_dialog` → `app.log`
-- `src.ui.configuration.roi_selector` → `app.log`
+QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler。武将采集由父进程以 `subprocess.official.*` 接管，攻略和相性生成以 `subprocess.ai.*` 接管；两者分别进入官网和 AI 日志。每条记录只进入一个目标文件，历史的 `scraper.log`、`ai_batch.log`、`stdout.log` 和 `stderr.log` 不自动删除或迁移。
 
 ### 10.4 日志轮转
 
@@ -1428,6 +1454,8 @@ logs/
 - 使用 `logger.error("描述: %s", e)` 记录错误
 - 使用 `logger.debug(traceback.format_exc())` 在 DEBUG 级别输出堆栈
 - 不允许 `except: pass` 或空 except 块
+
+AI 链路只记录任务、长度、字段名、用量、耗时和错误摘要；不得记录 Prompt、回复正文、解析后正文、页面正文、认证信息或 `reasoning_content`。进度界面只接收明确的生成进度和冷却状态行。
 
 ---
 

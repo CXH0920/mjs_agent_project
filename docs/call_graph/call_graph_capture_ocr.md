@@ -308,11 +308,11 @@ ocr_loader.get_recognizer(...)
 ### 6.1 本模块被外部调用
 
 ```
-src.business.capture_service
+src.business.emulator.capture_service
   -> AdbCapture.connect() / screencap_full()                   [截图]
   -> OcrWorker.submit(OcrTask)                                 [提交，不直接匹配]
 
-src.business.ocr_service
+src.business.recognition.ocr_service
   -> get_template_manager().set_template() / reload() / delete_template()
   -> 注入 CaptureService.submit_ocr_task()                     [兼容同步 run_ocr]
 

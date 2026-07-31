@@ -1,6 +1,6 @@
 """选将推荐数据服务测试。"""
 
-from src.business.recommendation_service import RecommendationService
+from src.business.analysis.recommendation_service import RecommendationService
 from src.data.recommendation_index_repository import RecommendationIndex
 
 

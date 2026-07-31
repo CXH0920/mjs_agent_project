@@ -65,7 +65,7 @@ tmp_path.replace(env_path)
 
 日志路由基于 logger name，不基于模块文件路径。每个文件使用 `logger = logging.getLogger(__name__)`。`setup_logging()` 中的 `ModuleFilter` 按 `startswith` 前缀分派到不同文件。
 
-**为什么：** `__name__` 是 Python 约定，与包结构天然一致。按前缀分派可以精确控制"哪些日志进哪个文件"，如 `src.business` 前缀全部进 `business/business.log`，`src.scraper.ai` 前缀进 `ai_batch.log`。
+**为什么：** `__name__` 是 Python 约定，与包结构天然一致。按前缀分派可以精确控制"哪些日志进哪个文件"，如 `src.business.recognition` 进入 `business/recognition.log`，`src.scraper.ai` 进入 `scraper/ai_generation.log`。
 
 ### 规则 4.2：setup_logging 幂等性
 
@@ -73,14 +73,15 @@ tmp_path.replace(env_path)
 
 **为什么：** 仅判断 `root.handlers` 会误把外部 Handler 当成项目已初始化，导致文件日志无法创建；只管理自身 Handler 可以避免重复，同时不破坏宿主环境的日志采集。
 
-### 规则 4.3：子进程日志分开存放
+### 规则 4.3：子进程日志按工作流存放
 
 ```python
-("subprocess/stdout.log", ["subprocess.stdout"], None),
-("subprocess/stderr.log", ["subprocess.stderr"], None),
+HeroFetchService    -> subprocess.official.stdout / stderr
+GuideFetchService   -> subprocess.ai.stdout / stderr
+SynergyFetchService -> subprocess.ai.stdout / stderr
 ```
 
-**为什么：** 子进程的输出和主进程日志混在一起会干扰问题排查。stdout/stderr 分开更容易定位子进程崩溃的精确位置。
+**为什么：** 桌面应用中的子进程不能安全地并发轮转同一文件，但父进程知道任务来源。父进程分别将官网采集与 AI 生成输出写入 `scraper/official.log` 和 `scraper/ai_generation.log`；未知来源才进入 `subprocess/unclassified.log`。
 
 ### 规则 4.4：异常必须写日志
 
@@ -90,9 +91,15 @@ tmp_path.replace(env_path)
 
 ### 规则 4.5：QProcess 子进程不直接轮转共享日志
 
-主进程启动的 QProcess 子进程设置 `MJS_QPROCESS_CHILD=1`。子进程只输出控制台日志，由父进程写入 `subprocess/stdout.log` 和 `subprocess/stderr.log`，不直接打开主进程的 `RotatingFileHandler`。
+主进程启动的 QProcess 子进程设置 `MJS_QPROCESS_CHILD=1`。子进程只输出控制台日志，由父进程根据 FetchService 声明的工作流写入对应 scraper 日志，不直接打开主进程的 `RotatingFileHandler`。
 
 **为什么：** `RotatingFileHandler` 不提供跨进程轮转协调；多个 Windows 进程同时写入和重命名同一文件可能产生文件占用冲突或备份错乱。
+
+### 规则 4.6：AI 日志不得包含生成正文或认证信息
+
+日志只能记录任务对象、回复长度、字段名、token 用量、耗时和归一化错误原因。不得记录 Prompt、完整或截断回复、解析后的正文、页面正文、API Key、Cookie、带认证或查询参数的 URL，以及 `reasoning_content`。AI 进度界面也只接收明确的 START、OK、FAIL、SKIP 和冷却状态行。
+
+**为什么：** DEBUG 和失败诊断同样可能被长期保存。只记录结构摘要既能定位解析和校验阶段，也能避免生成内容、推理内容或认证信息通过日志及 UI 泄露。
 
 ## 五、配置需求、容错与验收
 

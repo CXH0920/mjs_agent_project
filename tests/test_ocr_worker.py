@@ -12,9 +12,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from src.business.capture_service import CaptureService
-from src.business.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
-from src.business.ocr_service import OcrService
+from src.business.emulator.capture_service import CaptureService
+from src.business.recognition.ocr_service import OcrService
+from src.business.recognition.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
 
 
 def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch) -> None:
@@ -45,8 +45,8 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
         def save_results(results, path) -> None:
             return None
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
 
     worker = OcrWorker()
     first = OcrTask(
@@ -137,13 +137,13 @@ def test_official_import_shares_worker_queue_and_ocr_engine(monkeypatch, tmp_pat
             self._rare_char_ocr = rare_engine
             return {"name": key, "records": 1, "reviews": 0, "pages": len(paths)}
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
     monkeypatch.setattr(
-        "src.business.official_data_import_service.OfficialDataImportService",
+        "src.business.recognition.official_data_import_service.OfficialDataImportService",
         FakeOfficialDataImportService,
     )
-    monkeypatch.setattr("src.business.ocr_worker.DEFAULT_SCREENSHOT_DATA_DIR", tmp_path)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.DEFAULT_SCREENSHOT_DATA_DIR", tmp_path)
 
     worker = OcrWorker()
     official = OfficialImportTask({"exile": ("page1.png", "page2.png")})
@@ -200,8 +200,8 @@ def test_ocr_worker_keeps_default_roi_reference_independent_of_template(monkeypa
         def save_results(results, path) -> None:
             return None
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
 
     result = OcrWorker()._execute(OcrTask(
         image="image", hero_names=(), rois=None, template_name="match_guide", threshold=0.8,
@@ -239,8 +239,8 @@ def test_match_guide_template_miss_can_fall_back_to_ocr(monkeypatch) -> None:
         def save_results(results, path) -> None:
             return None
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
 
     result = OcrWorker()._execute(OcrTask(
         image="image", hero_names=("曹操",), rois=None,
@@ -287,8 +287,8 @@ def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> No
         def save_results(results, path) -> None:
             return None
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
 
     worker = OcrWorker()
     warmup = OcrTask(
@@ -336,10 +336,10 @@ def test_ocr_worker_logs_stage_timings(monkeypatch, caplog) -> None:
         def save_results(results, path) -> None:
             return None
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
 
-    with caplog.at_level(logging.INFO, logger="src.business.ocr_worker"):
+    with caplog.at_level(logging.INFO, logger="src.business.recognition.ocr_worker"):
         result = OcrWorker()._execute(OcrTask(
             image="image", hero_names=("曹操",), rois=None,
             template_name="hero_selection", threshold=0.8,
@@ -406,8 +406,8 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
         def save_results(results, path) -> None:
             return None
 
-    monkeypatch.setattr("src.business.ocr_worker.TemplateManager", FakeTemplateManager)
-    monkeypatch.setattr("src.business.ocr_worker.GeneralRecognizer", FakeRecognizer)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
 
     service = CaptureService()
     completed: list[dict] = []

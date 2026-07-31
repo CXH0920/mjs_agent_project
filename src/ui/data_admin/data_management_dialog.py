@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from src.business.data_management_service import DataManagementService
+from src.business.maintenance.data_management_service import DataManagementService
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 

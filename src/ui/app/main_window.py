@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import logging
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
     QDialog,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QStatusBar,
+    QStyle,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -36,22 +40,30 @@ from src.ui.configuration.settings_dialog import SettingsDialog
 from src.ui.data_admin.data_management_dialog import DataManagementDialog
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
 from src.ui.library.fetch_dialog import HeroFetchDialog
-from src.business.fetch_service import HeroFetchService
-from src.business.guide_fetch_service import GuideFetchService
-from src.business.synergy_fetch_service import SynergyFetchService
+from src.business.fetching.guide_fetch_service import GuideFetchService
+from src.business.fetching.hero_fetch_service import HeroFetchService
+from src.business.fetching.synergy_fetch_service import SynergyFetchService
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
+from src.ui.app.shell_widgets import ContextHeader, NavigationRail
 
 
 class MainWindow(QMainWindow):
     """主窗口
 
-    初始化时自动加载数据，显示资料库、选将推荐和对局攻略 Tab。
+    初始化时自动加载数据，通过应用外壳展示三个长期工作区。
     """
+
+    NAV_COLLAPSE_THRESHOLD = 1040
+    PAGE_CONTEXTS = (
+        ("资料库", "浏览并维护武将、攻略、相性和卡牌数据。"),
+        ("选将推荐", "根据当前阵容查看武将优先级与搭配依据。"),
+        ("对局攻略", "确认敌我阵容并查看本局策略与胜率信息。"),
+    )
 
     def __init__(
         self,
@@ -63,6 +75,8 @@ class MainWindow(QMainWindow):
         # 轮询冷却期间可能连续收到匹配结果，只在进入选将页的边沿切换一次标签页。
         self._selection_page_active = False
         self._match_guide_page_active = False
+        self._user_nav_collapsed: bool | None = None
+        self._navigation_forced_collapsed = False
         if hero_manager or synergy_manager or guide_manager:
             from src.data.hero_manager import HeroManager
             from src.data.synergy_manager import SynergyManager
@@ -93,8 +107,8 @@ class MainWindow(QMainWindow):
 
         # 屏幕采集服务
         from src.config.env import get_mumu_config
-        from src.business.capture_service import CaptureService
-        from src.business.ocr_service import OcrService
+        from src.business.emulator.capture_service import CaptureService
+        from src.business.recognition.ocr_service import OcrService
         self._capture_service = CaptureService(self)
         self._ocr_service = OcrService(self)
         self._ocr_service.set_ocr_task_submitter(self._capture_service.submit_ocr_task)
@@ -124,6 +138,7 @@ class MainWindow(QMainWindow):
         if not app_icon.isNull():
             self.setWindowIcon(app_icon)
 
+        self._setup_actions()
         self._setup_menu()
         self._load_data()
         self._setup_ui()
@@ -261,133 +276,134 @@ class MainWindow(QMainWindow):
     # 菜单栏
     # ---------------------------------------------------------------
 
+    def _setup_actions(self) -> None:
+        """集中创建菜单和新应用外壳复用的命令。"""
+        self._actions = {
+            "exit": QAction("退出", self),
+            "api_settings": QAction("API 配置", self),
+            "emulator_settings": QAction("模拟器配置", self),
+            "faction_colors": QAction("势力配色", self),
+            "data_management": QAction("数据管理", self),
+            "reload": QAction("重新加载数据", self),
+            "official_import": QAction("官方数据导入", self),
+            "fetch_all": QAction("全量获取", self),
+            "fetch_incremental": QAction("增量获取", self),
+            "fetch_specific": QAction("指定获取", self),
+            "guide_all": QAction("全量获取", self),
+            "guide_incremental": QAction("增量获取", self),
+            "guide_specific": QAction("指定获取", self),
+            "synergy_single": QAction("选定武将", self),
+            "synergy_pair": QAction("指定获取", self),
+            "about": QAction("关于", self),
+        }
+        self._actions["exit"].setShortcut("Ctrl+Q")
+        self._actions["reload"].setShortcut("F5")
+        callbacks = {
+            "exit": self.close,
+            "api_settings": self._open_settings,
+            "emulator_settings": self._open_mumu_config,
+            "faction_colors": self._open_faction_colors,
+            "data_management": self._open_data_management,
+            "reload": self._reload_data,
+            "official_import": self._open_official_data_import,
+            "fetch_all": self._request_fetch_all,
+            "fetch_incremental": self._request_fetch_incremental,
+            "fetch_specific": self._request_fetch_specific,
+            "guide_all": self._request_guide_all,
+            "guide_incremental": self._request_guide_incremental,
+            "guide_specific": self._request_guide_specific,
+            "synergy_single": self._request_synergy_single,
+            "synergy_pair": self._request_synergy_pair,
+            "about": self._show_about,
+        }
+        for name, callback in callbacks.items():
+            self._actions[name].setObjectName(f"action_{name}")
+            self._actions[name].triggered.connect(callback)
+
     def _setup_menu(self) -> None:
-        """构建菜单栏"""
+        """使用共享 QAction 构建兼容菜单栏。"""
         bar = self.menuBar()
 
-        # 文件菜单
         file_menu = bar.addMenu("文件")
-        exit_action = QAction("退出", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+        file_menu.addAction(self._actions["exit"])
 
-        # 工具菜单
         tools_menu = bar.addMenu("配置")
-        config_action = QAction("API 配置", self)
-        config_action.triggered.connect(self._open_settings)
-        tools_menu.addAction(config_action)
+        tools_menu.addAction(self._actions["api_settings"])
+        tools_menu.addAction(self._actions["emulator_settings"])
+        tools_menu.addAction(self._actions["faction_colors"])
+        tools_menu.addAction(self._actions["data_management"])
 
-        mumu_config_action = QAction("模拟器配置", self)
-        mumu_config_action.triggered.connect(self._open_mumu_config)
-        tools_menu.addAction(mumu_config_action)
-
-        faction_color_action = QAction("势力配色", self)
-        faction_color_action.triggered.connect(self._open_faction_colors)
-        tools_menu.addAction(faction_color_action)
-
-        data_management_action = QAction("数据管理", self)
-        data_management_action.triggered.connect(self._open_data_management)
-        tools_menu.addAction(data_management_action)
-
-        # 数据菜单
         data_menu = bar.addMenu("数据")
-        reload_action = QAction("重新加载数据", self)
-        reload_action.setShortcut("F5")
-        reload_action.triggered.connect(self._reload_data)
-        data_menu.addAction(reload_action)
-
-        official_import_action = QAction("官方数据导入", self)
-        official_import_action.triggered.connect(self._open_official_data_import)
-        data_menu.addAction(official_import_action)
-
-        # 武将获取子菜单
+        data_menu.addAction(self._actions["reload"])
+        data_menu.addAction(self._actions["official_import"])
         fetch_menu = data_menu.addMenu("武将获取")
-
-        fetch_all_action = QAction("全量获取", self)
-        fetch_all_action.triggered.connect(self._request_fetch_all)
-        fetch_menu.addAction(fetch_all_action)
-
-        fetch_inc_action = QAction("增量获取", self)
-        fetch_inc_action.triggered.connect(self._request_fetch_incremental)
-        fetch_menu.addAction(fetch_inc_action)
-
-        fetch_spec_action = QAction("指定获取", self)
-        fetch_spec_action.triggered.connect(self._request_fetch_specific)
-        fetch_menu.addAction(fetch_spec_action)
-
-        # 攻略获取子菜单
+        fetch_menu.addActions([
+            self._actions["fetch_all"],
+            self._actions["fetch_incremental"],
+            self._actions["fetch_specific"],
+        ])
         guide_menu = data_menu.addMenu("攻略获取")
-
-        guide_all_action = QAction("全量获取", self)
-        guide_all_action.triggered.connect(self._request_guide_all)
-        guide_menu.addAction(guide_all_action)
-
-        guide_inc_action = QAction("增量获取", self)
-        guide_inc_action.triggered.connect(self._request_guide_incremental)
-        guide_menu.addAction(guide_inc_action)
-
-        guide_spec_action = QAction("指定获取", self)
-        guide_spec_action.triggered.connect(self._request_guide_specific)
-        guide_menu.addAction(guide_spec_action)
-
-        # 武将相性子菜单
+        guide_menu.addActions([
+            self._actions["guide_all"],
+            self._actions["guide_incremental"],
+            self._actions["guide_specific"],
+        ])
         synergy_menu = data_menu.addMenu("武将相性")
+        synergy_menu.addActions([
+            self._actions["synergy_single"],
+            self._actions["synergy_pair"],
+        ])
 
-        synergy_single_action = QAction("选定武将", self)
-        synergy_single_action.triggered.connect(self._request_synergy_single)
-        synergy_menu.addAction(synergy_single_action)
-
-        synergy_pair_action = QAction("指定获取", self)
-        synergy_pair_action.triggered.connect(self._request_synergy_pair)
-        synergy_menu.addAction(synergy_pair_action)
-
-        # 帮助菜单
         help_menu = bar.addMenu("帮助")
-        about_action = QAction("关于", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
+        help_menu.addAction(self._actions["about"])
 
     # ---------------------------------------------------------------
     # UI 构建
     # ---------------------------------------------------------------
 
     def _setup_ui(self) -> None:
-        """构建中央控件"""
+        """构建左侧导航、顶部上下文栏和工作区容器。"""
         central = QWidget()
+        central.setObjectName("applicationShell")
         self.setCentralWidget(central)
 
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout = QHBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self._tabs = QTabWidget()
+        navigation_icons = (
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon),
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
+        )
+        self._navigation = NavigationRail(navigation_icons, central)
+        layout.addWidget(self._navigation)
+
+        workspace = QWidget(central)
+        workspace.setObjectName("workspaceShell")
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(0)
+
+        title, description = self.PAGE_CONTEXTS[0]
+        self._context_header = ContextHeader(title, description, workspace)
+        workspace_layout.addWidget(self._context_header)
+        self._setup_shell_actions()
+
+        self._tabs = QTabWidget(workspace)
+        self._tabs.setObjectName("workspaceTabs")
         self._tabs.setDocumentMode(True)
+        self._tabs.tabBar().hide()
 
         # Tab 1: 资料库。二级资料类型放入内容页，避免与主导航连续堆叠。
         self._library = QWidget()
         self._library.setObjectName("libraryPage")
         library_layout = QVBoxLayout(self._library)
-        library_layout.setContentsMargins(12, 14, 12, 8)
+        library_layout.setContentsMargins(12, 8, 12, 8)
         library_layout.setSpacing(0)
-
-        library_title = QLabel("资料库")
-        library_title.setObjectName("libraryTitle")
-        library_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
-        library_layout.addWidget(library_title)
-
-        library_layout.addSpacing(5)
 
         self._library_tabs = QTabWidget()
         self._library_tabs.setObjectName("librarySectionTabs")
-        self._library_tabs.setStyleSheet(
-            "QTabWidget#librarySectionTabs::pane { border: none; background: transparent; }"
-            "QTabWidget#librarySectionTabs QTabBar::tab { background: transparent; color: #65758b; "
-            "border: none; border-bottom: 2px solid transparent; padding: 6px 14px; "
-            "margin-right: 8px; font-weight: normal; }"
-            "QTabWidget#librarySectionTabs QTabBar::tab:hover { color: #357abd; }"
-            "QTabWidget#librarySectionTabs QTabBar::tab:selected { background: #e6f4ff; color: #357abd; "
-            "border-bottom-color: #4a90d9; font-weight: bold; }"
-        )
         self._hero_browser = HeroBrowser(
             self._data.heroes,
             self._data.guides,
@@ -408,6 +424,7 @@ class MainWindow(QMainWindow):
             ocr_service=self._ocr_service,
         )
         self._recommendation.request_mumu_config.connect(self._open_mumu_config)
+        self._recommendation._page_title_label.hide()
         self._tabs.addTab(self._recommendation, "选将推荐")
 
         # Tab 3: 对局攻略（2×2 武将卡片）
@@ -417,9 +434,131 @@ class MainWindow(QMainWindow):
             capture_service=self._capture_service,
         )
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)
+        self._match_guide._page_title_label.hide()
         self._tabs.addTab(self._match_guide, "对局攻略")
 
-        layout.addWidget(self._tabs, 1)
+        workspace_layout.addWidget(self._tabs, 1)
+        layout.addWidget(workspace, 1)
+
+        self._navigation.page_requested.connect(self._on_navigation_page_requested)
+        self._navigation.collapsed_changed.connect(self._on_navigation_collapsed_changed)
+        self._tabs.currentChanged.connect(self._on_workspace_page_changed)
+        self._on_workspace_page_changed(self._tabs.currentIndex())
+        self._sync_navigation_width(self.width())
+
+    def _setup_shell_actions(self) -> None:
+        """把现有 QAction 放入顶部页面入口和全局设置菜单。"""
+        self._official_import_button = QToolButton(self._context_header)
+        self._official_import_button.setObjectName("officialImportButton")
+        self._official_import_button.setDefaultAction(self._actions["official_import"])
+        self._official_import_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+        )
+        self._official_import_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self._official_import_button.setAccessibleName("官方数据导入")
+        self._context_header.add_right_action(self._official_import_button)
+
+        self._maintenance_menu = QMenu("生成与维护", self)
+        self._maintenance_menu.setObjectName("libraryMaintenanceMenu")
+        self._maintenance_menu.addAction(self._actions["reload"])
+        self._maintenance_menu.addSeparator()
+        fetch_menu = self._maintenance_menu.addMenu("武将获取")
+        fetch_menu.addActions([
+            self._actions["fetch_all"],
+            self._actions["fetch_incremental"],
+            self._actions["fetch_specific"],
+        ])
+        guide_menu = self._maintenance_menu.addMenu("攻略获取")
+        guide_menu.addActions([
+            self._actions["guide_all"],
+            self._actions["guide_incremental"],
+            self._actions["guide_specific"],
+        ])
+        synergy_menu = self._maintenance_menu.addMenu("武将相性")
+        synergy_menu.addActions([
+            self._actions["synergy_single"],
+            self._actions["synergy_pair"],
+        ])
+
+        self._maintenance_button = QToolButton(self._context_header)
+        self._maintenance_button.setObjectName("libraryMaintenanceButton")
+        self._maintenance_button.setText("生成与维护")
+        self._maintenance_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+        )
+        self._maintenance_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self._maintenance_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._maintenance_button.setMenu(self._maintenance_menu)
+        self._maintenance_button.setToolTip("重新加载、获取或生成资料库数据")
+        self._maintenance_button.setAccessibleName("生成与维护")
+        self._context_header.add_right_action(self._maintenance_button)
+
+        self._settings_menu = QMenu("全局设置", self)
+        self._settings_menu.setObjectName("globalSettingsMenu")
+        self._settings_menu.addActions([
+            self._actions["api_settings"],
+            self._actions["emulator_settings"],
+            self._actions["faction_colors"],
+            self._actions["data_management"],
+        ])
+        self._settings_menu.addSeparator()
+        self._settings_menu.addAction(self._actions["about"])
+        self._settings_menu.addAction(self._actions["exit"])
+
+        self._settings_button = QToolButton(self._context_header)
+        self._settings_button.setObjectName("globalSettingsButton")
+        self._settings_button.setText("设置")
+        self._settings_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._settings_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._settings_button.setMenu(self._settings_menu)
+        self._settings_button.setToolTip("打开应用配置与帮助菜单")
+        self._settings_button.setAccessibleName("全局设置")
+        self._context_header.add_right_action(self._settings_button)
+
+    def _on_navigation_page_requested(self, index: int) -> None:
+        """切换到现有工作区实例，不重建页面。"""
+        if 0 <= index < self._tabs.count():
+            self._tabs.setCurrentIndex(index)
+
+    def _on_workspace_page_changed(self, index: int) -> None:
+        """被动同步导航选中态、标题和页面级入口。"""
+        if not 0 <= index < len(self.PAGE_CONTEXTS):
+            return
+        self._navigation.set_current_index(index)
+        self._context_header.set_context(*self.PAGE_CONTEXTS[index])
+        is_library = index == 0
+        self._official_import_button.setVisible(is_library)
+        self._maintenance_button.setVisible(is_library)
+
+    def _on_navigation_collapsed_changed(self, collapsed: bool) -> None:
+        """记录宽屏下的用户选择；窄屏折叠不覆盖该选择。"""
+        if self._navigation_forced_collapsed:
+            if not collapsed:
+                self._navigation.set_collapsed(True)
+            return
+        self._user_nav_collapsed = collapsed
+
+    def _sync_navigation_width(self, width: int) -> None:
+        """在窄窗口强制折叠，回到宽屏后恢复会话选择。"""
+        forced = width < self.NAV_COLLAPSE_THRESHOLD
+        self._navigation_forced_collapsed = forced
+        self._navigation.set_collapsed(forced or self._user_nav_collapsed is True)
+        self._navigation.collapse_button.setEnabled(not forced)
+        if forced:
+            hint = "窗口宽度不足，放大窗口后可展开导航"
+            self._navigation.collapse_button.setToolTip(hint)
+            self._navigation.collapse_button.setAccessibleDescription(hint)
+        else:
+            self._navigation.collapse_button.setAccessibleDescription("")
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_navigation"):
+            self._sync_navigation_width(event.size().width())
 
     def _setup_status_bar(self) -> None:
         """构建状态栏"""
@@ -514,7 +653,7 @@ class MainWindow(QMainWindow):
                     "已保留原始数据。请在修复前避免保存相关数据，以便后续人工检查。",
                 )
                 return
-            from src.business.data_management_service import DataMutationService
+            from src.business.maintenance.data_management_service import DataMutationService
 
             result = DataMutationService(
                 self._data.heroes,

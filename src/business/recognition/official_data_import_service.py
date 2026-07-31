@@ -13,6 +13,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
+
+from src.config.env import PROJECT_ROOT
 from src.data.recommendation_index_repository import mark_recommendation_index_stale
 from src.ocr import official_board_parser
 from src.ocr.character_similarity import CharacterSimilarityService
@@ -20,7 +22,6 @@ from src.ocr.official_board_parser import LAYOUTS
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 REVIEW_DIR = PROJECT_ROOT / "screenshot_data" / "official_import"
 

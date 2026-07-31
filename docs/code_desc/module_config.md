@@ -84,14 +84,17 @@ def save_env_file(path, data):
 
 | logger name 前缀 | 目标文件 |
 |-----------------|----------|
-| `src.scraper.ai` | `logs/scraper/ai_batch.log` |
-| `src.scraper` / `src.capture` / `src.ocr` | `logs/scraper/scraper.log` |
-| `src.business` | `logs/business/business.log` |
-| `subprocess.stdout` | `logs/subprocess/stdout.log` |
-| `subprocess.stderr` | `logs/subprocess/stderr.log` |
+| `src.scraper` / `subprocess.official` | `logs/scraper/official.log` |
+| `src.scraper.ai` / `subprocess.ai` | `logs/scraper/ai_generation.log` |
+| `src.business.fetching` | `logs/business/fetching.log` |
+| `src.business.emulator` | `logs/business/emulator.log` |
+| `src.business.recognition` | `logs/business/recognition.log` |
+| `src.business.analysis` / `src.business.maintenance` | `logs/business/business.log` |
+| `src.data` / `src.ocr` / `src.capture` | 各自同名目录下的日志文件 |
+| 其他 `subprocess.*` | `logs/subprocess/unclassified.log` |
 | 其他（含 `src.ui.*`） | `logs/app.log` |
 
-每个日志文件最大 10MB，保留 5 个备份自动轮转。
+每条记录只进入一个目标文件。每个日志文件最大 10MB，保留 5 个备份自动轮转；已有旧日志不会自动删除或迁移。
 
 ### 3.4 模型价格
 

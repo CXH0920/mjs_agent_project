@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.env import PROJECT_ROOT
-from src.business.match_analysis_service import MatchAnalysis, MatchAnalysisService
+from src.business.analysis.match_analysis_service import MatchAnalysis, MatchAnalysisService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.win_rate_repository import load_win_rates
@@ -277,9 +277,10 @@ class MatchGuidePanel(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
         header = QHBoxLayout()
-        title = QLabel("对局攻略")
-        title.setStyleSheet(PAGE_TITLE_STYLE)
-        header.addWidget(title)
+        self._page_title_label = QLabel("对局攻略")
+        self._page_title_label.setObjectName("matchGuidePageTitle")
+        self._page_title_label.setStyleSheet(PAGE_TITLE_STYLE)
+        header.addWidget(self._page_title_label)
         self._recognition_status_label = QLabel("尚未识别阵容")
         self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
         header.addWidget(self._recognition_status_label)

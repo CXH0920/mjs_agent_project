@@ -31,7 +31,7 @@ def get_recognizer(rois, hero_names: list[str] | None = None,
                    reference_size: tuple[int, int] = (2560, 1440)):
     """兼容旧调用：获取或初始化 GeneralRecognizer（单例，延迟加载）。
 
-    活动识别路径应改用 ``src.business.ocr_worker.OcrWorker``；
+    活动识别路径应改用 ``src.business.recognition.ocr_worker.OcrWorker``；
     此函数仅保留给尚未迁移的外部调用。
     """
     global _recognizer, _recognizer_rois, _recognizer_hero_names, _recognizer_reference_size

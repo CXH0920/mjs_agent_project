@@ -9,10 +9,10 @@
 
 本模块是用户与程序交互的**门户**，提供完整的桌面应用界面：
 
-- **主窗口** — 菜单栏、Tab 切换、状态栏，协调所有业务服务的信号连接；默认尺寸为 1100×760px
+- **主窗口** — 左侧工作区导航、顶部上下文栏、兼容菜单和底部状态栏，协调所有业务服务的信号连接；默认尺寸为 1100×760px
 - **武将浏览器** — 武将列表搜索/筛选、详情查看、攻略展示、武将/攻略编辑
 - **选将推荐** — 4×2 网格推荐卡片、OCR 截图导入、相性/胜率展示
-- **对局攻略** — 同级 Tab 页面，以 2×2 卡片展示四名武将及胜率
+- **对局攻略** — 独立工作区，以 2×2 卡片展示四名武将及胜率
 - **对话框体系** — 武将选择、配置编辑、后端选择、进度显示等
 - **全局样式** — 集中管理视觉 Token、控件语义角色和渐进迁移兼容层
 
@@ -25,6 +25,7 @@ src/ui/
 ├── __init__.py
 ├── app/                        # 应用外壳与全局轮询编排
 │   ├── main_window.py          # 主窗口（菜单栏/Tab/状态栏 + PollCoordinator 界面绑定）
+│   ├── shell_widgets.py        # NavigationRail 与 ContextHeader 应用外壳组件
 │   ├── poll_coordinator.py     # 轮询后台编排、结果过滤与状态提交
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
 │   └── chinese_translator.py   # Qt 标准控件中文翻译
@@ -77,6 +78,10 @@ src/ui/
 
 `src.ui.shared.widgets` 提供 `PageHeader`、`EmptyState`、`StatusBadge`、`NoticeBanner` 和 `DialogFooter`。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。现有页面保留旧样式常量兼容，后续按页面逐步迁移，避免一次性改变业务行为。
 
+阶段三由 `src.ui.app.shell_widgets` 提供 `NavigationRail` 和基于 `PageHeader` 的 `ContextHeader`。左侧导航只暴露资料库、选将推荐、对局攻略三个长期工作区；主 `QTabWidget` 隐藏 `TabBar` 但继续持有原页面实例，资料库内部的“武将资料 / 卡牌图鉴”二级页签保持可见。导航请求调用现有 Tab 容器切换，`currentChanged` 反向同步导航选中态与顶部标题；OCR 自动跳转仍只调用 `setCurrentWidget()`，不侵入外壳组件。小于 1040px 时导航强制折叠，回到宽屏后恢复用户在本次会话中的选择。
+
+传统菜单栏在阶段三继续作为兼容路径。顶部的“官方数据导入”“生成与维护”和全局设置菜单均复用 `MainWindow._actions` 中的同一组 `QAction`，因此原业务回调以及 `Ctrl+Q`、`F5` 快捷键保持不变。
+
 完整规范见 [UI 设计系统规范](../spec/spec_ui_design_system.md) 和 [UI 导航与页面归属规范](../spec/spec_ui_navigation.md)；改造前几何基线位于 `docs/ui_baseline/`。
 
 胜率 CSV 读取位于 `src/data/win_rate_repository.py`；推荐指数快照由 `src/data/recommendation_index_repository.py` 根据三份官方榜单生成。页面只依赖共享模块的公开名称，不再从 `recommendation_panel.py` 导入私有函数或复用其内部缓存。
@@ -105,7 +110,7 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 | `_on_completed(summaries)` | 服务摘要列表 | 显示导入条数与复核条数后关闭 |
 | `_on_failed(message)` | 错误文本 | 恢复按钮并显示失败原因 |
 
-对话框依赖 `src.business.official_data_import_service`，由 `MainWindow._open_official_data_import()` 创建；它不直接读取图片、不直接写 CSV。
+对话框依赖 `src.business.recognition.official_data_import_service`，由 `MainWindow._open_official_data_import()` 创建；它不直接读取图片、不直接写 CSV。
 
 ---
 
@@ -113,7 +118,7 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 
 ### 3.1.1 轮询匹配后的选将推荐刷新
 
-`MainWindow._on_poll_result()` 使用 `PollResult`、`PollTaskResult` 与 `PollOutcome` 接收轮询结果；后台线程边界将 OCR worker 的原始字典转换为强类型对象，旧版字典调用仍由 `from_raw()` 兼容。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才切换到对应 Tab。对局攻略至少需要 3 个 `name` 已确认的槽位，待确认、未知和冲突状态不计数。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。
+`MainWindow._on_poll_result()` 使用 `PollResult`、`PollTaskResult` 与 `PollOutcome` 接收轮询结果；后台线程边界将 OCR worker 的原始字典转换为强类型对象，旧版字典调用仍由 `from_raw()` 兼容。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才通过主 `QTabWidget.setCurrentWidget()` 切换到对应工作区，并由 `currentChanged` 同步外壳。对局攻略至少需要 3 个 `name` 已确认的槽位，待确认、未知和冲突状态不计数。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。
 
 ### 3.1 主窗口信号拓扑
 
@@ -130,6 +135,8 @@ MainWindow
 ```
 
 工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
+
+底部状态栏按职责分为三部分：普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度；模拟器状态常驻显示 ADB 配置和连接状态；OCR 状态常驻显示轮询的未启用、运行、恢复、冷却或暂停状态。任务消息不会覆盖后两类连接状态，点击模拟器或 OCR 状态可打开模拟器配置。
 
 攻略全量、增量、指定与相性配对、选定武将共五个菜单入口仍保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
@@ -159,21 +166,26 @@ BaseHeroSelectDialog
 
 ```
 HeroBrowser (QWidget)
- ├── HeroListPanel (左, 280px)
+ ├── HeroListPanel (左, 240–360px，默认 280px)
  │   ├── 搜索框 + 势力 ComboBox 筛选
+ │   ├── 当前筛选结果计数
  │   ├── QListWidget（武将列表）
  │   ├── _last_hero_id 跟踪选中项（编辑后恢复定位）
  │   ├── signal: hero_selected(int)
- └── HeroDetailPanel (右, 720px)
-     ├── 固定身份条（单行名称与势力/定位/体力/手牌摘要）
+ └── HeroDetailPanel (右，占据剩余宽度)
+     ├── 身份头部（名称与势力/定位/体力/手牌摘要）
+     │   └── 当前内容“编辑” + “更多”中的删除
      ├── Tab「武将信息」→ HeroInfoView
      ├── Tab「攻略指南」→ HeroGuideSummaryView
      └── Tab「武将相性」→ HeroSynergyView
 ```
 
+左栏与详情区均不可完全折叠；身份头部文字允许换行，内容层级固定为“当前武将身份 → 弱化内容页签 → 详情区块”。武将信息和攻略使用仅纵向滚动的 `QScrollArea`，相性表关闭横向滚动条，三档窗口下均不得产生详情区横向滚动。
+
 武将详情刷新时会先隐藏并延迟删除旧技能卡片；这避免“重新加载数据”后立即弹出模态提示框时，延迟删除的旧控件与新控件重叠绘制。
 
 **编辑功能：**
+- 身份头部只保留一个上下文编辑按钮；随当前页签映射为“编辑武将”“编辑攻略”或“编辑相性”，对应删除入口收纳在相邻“更多”菜单中
 - `HeroEditDialog` — 编辑武将信息（名称/称号/势力/定位/体力/手牌/性别/难度）
 - `GuideEditDialog` — 编辑攻略内容（核心要点/新手提示/关系武将选择/攻略正文）
 - `HeroRelationSelectDialog` — 关系武将多选弹窗，提供搜索、按推荐面板势力配色显示的可删除标签下拉框、全选当前筛选和清空选择
@@ -253,7 +265,7 @@ ColorPicker.color()
 
 ### 3.5 对局攻略页面
 
-`MatchGuidePanel` 与武将浏览、选将推荐处于同一主窗口 Tab 层级。页面标题行显示最近识别状态，并提供“识别当前阵容”与“从图片导入”入口；初始显示待识别空状态，标题行按钮间距、空态按钮位置和提示字体与选将推荐保持一致。页面使用 2×2 卡片展示四名武将：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上；头像左上叠加势力标签，底部叠加宽 130px、略宽于头像且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”。双击头像打开复用的技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色从 `config/faction_colors.json` 读取，找不到时使用灰色，配置保存后立即刷新。
+`MatchGuidePanel` 是左侧导航中的独立工作区。页面操作行显示最近识别状态，并提供“识别当前阵容”与“从图片导入”入口；初始显示待识别空状态，操作行按钮间距、空态按钮位置和提示字体与选将推荐保持一致。页面使用 2×2 卡片展示四名武将：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上；头像左上叠加势力标签，底部叠加宽 130px、略宽于头像且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”。双击头像打开复用的技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色从 `config/faction_colors.json` 读取，找不到时使用灰色，配置保存后立即刷新。
 
 选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。OCR 结果携带原文、候选、确认状态和多路证据。选将推荐的待确认卡片不加载推荐指数、胜率或相性，只允许在当前候选集合中人工确认；其他已确认卡片照常更新。对局攻略保留未决槽位，替换窗口优先只显示该槽候选，人工替换后标记为 `manual`；任何名称未决时阵容确认按钮保持禁用。未配置 ADB 时通过 `request_mumu_config` 信号打开模拟器配置。
 
@@ -296,27 +308,21 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 
 ## 四、关键代码片段
 
-### 4.1 Tab 栏 Corner Widget 按钮
+### 4.1 当前内容上下文操作
 
 ```python
-def _setup_corner_buttons(self) -> None:
-    corner = QWidget()
-    hlayout = QHBoxLayout(corner)
-    hlayout.setContentsMargins(0, 0, 4, 0)
-    hlayout.setSpacing(4)
-
-    btn_style = "QPushButton { padding: 2px 12px; font-size: 12px; border-radius: 3px; }"
-
-    self._info_edit_btn = QPushButton("修改")
-    self._info_edit_btn.setStyleSheet(btn_style + "background: #e8f4e8; color: #2e7d32;")
-    self._info_delete_btn = QPushButton("删除")
-    self._info_delete_btn.setStyleSheet(btn_style + "background: #fde8e8; color: #c62828;")
-
-    self._detail_tabs.setCornerWidget(corner, Qt.Corner.TopRightCorner)
-    self._detail_tabs.currentChanged.connect(self._on_tab_changed)
+def _update_context_actions(self, _index=None) -> None:
+    labels = (
+        ("编辑武将", "删除武将"),
+        ("编辑攻略", "删除攻略"),
+        ("编辑相性", "删除相性"),
+    )
+    edit_label, delete_label = labels[self._detail_tabs.currentIndex()]
+    self._context_edit_btn.setText(edit_label)
+    self._context_delete_action.setText(delete_label)
 ```
 
-> **设计思路：** `setCornerWidget` 将按钮固定在 Tab 栏右上角，与页签文字同水平高度，不占用内容区域空间。切换 Tab 时切换按钮组可见性，每个 Tab 对应自己的修改/删除按钮。按钮颜色区分操作类型——绿色安全、红色危险。
+> **设计思路：** 身份头部始终只显示一个当前内容编辑入口，删除作为危险低频命令进入“更多”菜单。切换页签只更新操作文字、处理方法和可用状态，不改变原编辑、删除回调及二次确认。
 
 ### 4.2 推荐面板 OCR 导入
 
@@ -368,9 +374,9 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 
 ### 3.3.1 卡牌图鉴
 
-主级“资料库”内容页以“资料库”标题建立页面归属，再用浅色下划线式二级切换器提供“武将资料”和“卡牌图鉴”。`CardManagementPanel` 保持紧凑的左侧列表/右侧详情布局：顶部单行工具栏提供搜索、类型、调整状态、重置和更多操作；左栏限制为 240–360px，类型分组显示数量，卡牌行显示名称、ID、牌堆数量及生效中/待核实摘要。卡牌项的默认显示角色保持为空，名称只由自定义行绘制，并通过无障碍文本角色保留语义，避免透明行控件与列表默认委托重复绘制造成文字残影。右侧以单一白色资料表面展示名称、类型、牌堆数量、简述和规则详解，版本调整位于其下方；切换卡牌后滚动位置回到顶部，详情不产生横向滚动。搜索覆盖基础字段和追加内容，支持类型及加强/削弱、生效中、待核实状态筛选；维护者可通过右上角省略号菜单中的“字段配置”进入追加字段管理。
+主级“资料库”内容页以“资料库”标题建立页面归属，再用浅色下划线式二级切换器提供“武将资料”和“卡牌图鉴”。`CardManagementPanel` 保持紧凑的左侧列表/右侧详情布局：顶部单行工具栏提供搜索、类型、调整状态、重置和更多操作；左栏限制为 240–360px，类型分组显示数量，卡牌行显示名称、ID、牌堆数量及生效中/待核实摘要。卡牌项的默认显示角色保持为空，名称只由自定义行绘制，并通过无障碍文本角色保留语义，避免透明行控件与列表默认委托重复绘制造成文字残影。右侧以单一白色基础资料表面展示名称、类型、牌堆数量、简述和规则详解，版本调整位于其下方；“编辑版本调整”只打开当前卡牌的追加内容编辑，“字段配置”仍位于右上角省略号菜单。切换卡牌后滚动位置回到顶部，详情不产生横向滚动。搜索覆盖基础字段和追加内容，支持类型及加强/削弱、生效中、待核实状态筛选。
 
-追加内容仅由 `CardAnnotationEditDialog` 保存：效果记录可通过“新增效果记录”加入列表，也可点击“编辑”修正已保存记录；修改时保留创建时间并更新修改时间，两个时间字段仅写入数据文件、不在界面展示。底部“保存”会一并收集尚未点击新增按钮的已填写效果表单；效果说明未填时显示中文提示，保存失败时对话框保持草稿。`active` 记录标记为“生效中”、置顶并使用浅绿强调，其余记录按状态和修改时间排序。`CardFieldSchemaDialog` 支持新增、修改显示属性、停用和归档字段，已有值的字段禁止改类型。归档字段及已失去定义的历史字段在详情页只读保留。卡牌切换时，详情区会递归释放控件和嵌套布局，避免旧卡片的操作栏残留。
+追加内容仅由 `CardAnnotationEditDialog` 保存：效果记录可通过“新增效果记录”加入列表，也可点击“编辑”修正已保存记录；修改时保留创建时间并更新修改时间，两个时间字段仅写入数据文件、不在界面展示。底部“保存”会一并收集尚未点击新增按钮的已填写效果表单；效果说明未填时显示中文提示，保存失败时对话框保持草稿。`active`、`pending`、`expired` 分别显示“生效中”“待核实”“已失效”，同时使用成功色、警示色、中性灰和对应左侧强调线；`active` 置顶，其余记录按状态和修改时间排序。`CardFieldSchemaDialog` 支持新增、修改显示属性、停用和归档字段，已有值的字段禁止改类型。归档字段及已失去定义的历史字段在详情页只读保留。卡牌切换时，详情区会递归释放控件和嵌套布局，避免旧卡片的操作栏残留。
 
 ### HeroDetailPanel 公共方法/信号
 
@@ -411,6 +417,6 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 依赖 | `src.data.manager` | 通过 DataFacade 读取/写入数据 |
 | 依赖 | `src.business.*` | 连接业务服务的 Signal，触发 fetch_*() |
 | 依赖 | `src.config.env` | 配置文件读取 |
-| 依赖 | `src.business.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
+| 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |

@@ -7,9 +7,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from src.business.capture_service import CaptureService
-from src.business.emulator_operation_service import EmulatorOperationService
-from src.business.ocr_service import OcrService
+from src.business.emulator.capture_service import CaptureService
+from src.business.emulator.emulator_operation_service import EmulatorOperationService
+from src.business.recognition.ocr_service import OcrService
 from src.capture.prober import MuMuDeviceInfo
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 

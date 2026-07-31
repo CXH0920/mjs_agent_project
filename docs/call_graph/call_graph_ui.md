@@ -562,11 +562,12 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
 ```
 HeroBrowser.__init__(hero_manager, guide_manager, synergy_manager)
   -> _setup_ui()
-    -> QSplitter(Horizontal)
+    -> QSplitter(Horizontal)                                    [240–360px 左栏，不可折叠]
        -> HeroListPanel(self._hero_mgr)                         [左侧: 列表面板]
           -> _setup_ui()
              -> QLineEdit (搜索框).textChanged → _apply_filters
              -> QComboBox (势力筛选).currentTextChanged → _apply_filters
+             -> QLabel (显示 N / 共 M 名武将)
              -> QListWidget.currentRowChanged → _on_selection_changed
           -> _load_heroes()
              -> self._hero_mgr.list_heroes()
@@ -574,16 +575,15 @@ HeroBrowser.__init__(hero_manager, guide_manager, synergy_manager)
              -> self._apply_filters()
        -> HeroDetailPanel(self._hero_mgr, self._guide_mgr, self._synergy_mgr) [右侧: 详情面板]
           -> _setup_ui()
+             -> QFrame#heroIdentityBar                          [当前武将身份头部]
+                -> QPushButton("编辑…") → _on_context_edit()
+                -> QToolButton("更多")
+                   -> QAction("删除…") → _on_context_delete()
              -> QTabWidget
-                -> Tab 0: 武将信息 (_setup_info_tab)
-                   -> QLabel(HTML rich text) for basic info
-                   -> QScrollArea for skills
-                -> Tab 1: 攻略指南 (_setup_guide_tab)
-                   -> placeholder QLabel("暂无攻略数据")
-             -> _setup_corner_buttons()
-                -> [信息 Tab] "修改" + "删除" 按钮
-                -> [攻略 Tab] "修改" + "删除" 按钮
-                -> currentChanged → _on_tab_changed [切换按钮可见性]
+                -> Tab 0: HeroInfoView                          [基础资料与技能]
+                -> Tab 1: HeroGuideSummaryView                  [攻略摘要]
+                -> Tab 2: HeroSynergyView                       [相性筛选与表格]
+                -> currentChanged → _update_context_actions()   [映射文案与启用状态]
     -> HeroListPanel.hero_selected → HeroDetailPanel.show_hero    [信号连接]
     -> HeroDetailPanel.data_changed → HeroBrowser.reload_data()   [信号连接]
 ```
@@ -869,13 +869,13 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `src.data.hero_manager.HeroManager` | 武将 CRUD 和查询 |
 | `src.data.synergy_manager.SynergyManager` | 相性 CRUD 和查询 |
 | `src.data.guide_manager.GuideManager` | 攻略 CRUD 和查询 |
-| `src.business.fetch_service.HeroFetchService` | 武将采集 QProcess 管理 |
-| `src.business.guide_fetch_service.GuideFetchService` | 攻略生成 QProcess 管理 |
-| `src.business.synergy_fetch_service.SynergyFetchService` | 相性获取 QProcess 管理 |
-| `src.business.capture_service.CaptureService` | 截图业务编排 |
-| `src.business.emulator_operation_service.EmulatorOperationService` | 配置页后台 ADB 操作 |
-| `src.business.ocr_service.OcrService` | OCR 控制、模板管理、轮询 |
-| `src.business.ocr_worker.OcrWorker` | 由 CaptureService 持有的唯一后台识别队列 |
+| `src.business.fetching.hero_fetch_service.HeroFetchService` | 武将采集 QProcess 管理 |
+| `src.business.fetching.guide_fetch_service.GuideFetchService` | 攻略生成 QProcess 管理 |
+| `src.business.fetching.synergy_fetch_service.SynergyFetchService` | 相性获取 QProcess 管理 |
+| `src.business.emulator.capture_service.CaptureService` | 截图业务编排 |
+| `src.business.emulator.emulator_operation_service.EmulatorOperationService` | 配置页后台 ADB 操作 |
+| `src.business.recognition.ocr_service.OcrService` | OCR 控制、模板管理、轮询 |
+| `src.business.recognition.ocr_worker.OcrWorker` | 由 CaptureService 持有的唯一后台识别队列 |
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |
 | `src.capture.prober.*` | ADB/模拟器探测 |

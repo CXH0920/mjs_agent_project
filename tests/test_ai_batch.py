@@ -22,6 +22,7 @@ from src.scraper.ai.prompt_utils import load_prompt
 from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.utils import (
     convert_ids_to_int,
+    safe_url_origin,
     validate_guide,
     validate_synergy,
 )
@@ -155,8 +156,15 @@ class TestAIBatchGenerator:
 
     def test_extract_json_invalid_raises(self) -> None:
         """无效 JSON 应抛出异常"""
-        with pytest.raises(Exception):
-            extract_json("not json at all")
+        secret_response = "SECRET_RESPONSE_BODY"
+        with pytest.raises(ValueError) as exc_info:
+            extract_json(secret_response)
+        assert secret_response not in str(exc_info.value)
+
+    def test_safe_url_origin_removes_credentials_and_request_details(self) -> None:
+        assert safe_url_origin(
+            "https://user:password@example.com:8443/chat?token=secret#message"
+        ) == "https://example.com:8443"
 
     def test_extract_json_from_separator(self) -> None:
         """从 --- 分隔线后提取 JSON（代码块内）"""

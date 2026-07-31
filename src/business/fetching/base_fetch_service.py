@@ -16,7 +16,7 @@ from subprocess import Popen
 
 from PySide6.QtCore import QObject, Signal, QProcess, QProcessEnvironment, QTimer
 
-from src.business.fetch_utils import (
+from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,
     is_process_busy,
@@ -50,8 +50,9 @@ class BaseFetchService(QObject):
         super().__init__(parent)
         self._process: QProcess | None = None
         self._context: dict | None = None
-        self._log_stdout = logging.getLogger("subprocess.stdout")
-        self._log_stderr = logging.getLogger("subprocess.stderr")
+        log_namespace = self._subprocess_log_namespace
+        self._log_stdout = logging.getLogger(f"{log_namespace}.stdout")
+        self._log_stderr = logging.getLogger(f"{log_namespace}.stderr")
         self._stdout_buffer = bytearray()
         self._stdout_line_buffer = bytearray()
         self._stderr_buffer = bytearray()
@@ -66,6 +67,11 @@ class BaseFetchService(QObject):
     def _service_name(self) -> str:
         """返回服务中文名（用于日志消息）"""
         return "子进程"
+
+    @property
+    def _subprocess_log_namespace(self) -> str:
+        """返回父进程用于分流 stdout/stderr 的 logger 前缀。"""
+        return "subprocess.unclassified"
 
     def _on_stdout_line(self, line: str) -> None:
         """覆写以解析每行 stdout（如 [i/N] 进度）"""
@@ -207,11 +213,7 @@ class BaseFetchService(QObject):
         if exit_code == 0:
             self.status_changed.emit(f"{self._service_name}完成")
         else:
-            logger.warning("%s 子进程退出码 %d", self._service_name, exit_code)
-            if full_stdout.strip():
-                logger.warning("[子进程 stdout 完整输出]\n%s", full_stdout.strip())
-            if full_stderr.strip():
-                logger.warning("[子进程 stderr 完整输出]\n%s", full_stderr.strip())
+            logger.warning("%s失败: %s", self._service_name, msg)
             self.status_changed.emit(f"{self._service_name}失败")
             self.error_occurred.emit(msg)
 

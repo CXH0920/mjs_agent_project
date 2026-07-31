@@ -8,14 +8,17 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFrame,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -25,6 +28,7 @@ from src.ui.shared.markdown_renderer import render_markdown
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.shared.widgets import FlowLayout
+from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
 
 
 class HeroInfoView(QWidget):
@@ -32,8 +36,10 @@ class HeroInfoView(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("heroInfoView")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
         self._basic_info = QLabel("请选择一个武将")
         self._basic_info.setObjectName("heroBasicInfo")
@@ -42,14 +48,17 @@ class HeroInfoView(QWidget):
         layout.addWidget(self._basic_info)
 
         line = QFrame()
+        line.setObjectName("contentDivider")
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(line)
 
         scroll = QScrollArea()
+        scroll.setObjectName("heroSkillScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         skills_widget = QWidget()
+        skills_widget.setObjectName("heroSkillsContent")
         self._skills_layout = QVBoxLayout(skills_widget)
         self._skills_layout.setContentsMargins(0, 4, 0, 4)
         scroll.setWidget(skills_widget)
@@ -61,28 +70,12 @@ class HeroInfoView(QWidget):
         star_filled = "&#9733;" * hero.difficulty.value
         star_empty = "&#9734;" * (5 - hero.difficulty.value)
         star_display = f"{star_filled}{star_empty}"
-        self._basic_info.setText(f"""
-        <div style="font-size:14px; font-weight:bold; color:#2c3e50; margin-bottom:4px;">
-            基础属性 <span style="font-size:12px; font-weight:normal; color:#78909c;">· 资料更新：{hero.last_updated or '未记录'}</span>
-        </div>
-        <p style="margin:2px 0 8px 0; color:#555;">
-            <b>定位：</b>{hero.position}　　<b>难度：</b>{star_display}
-        </p>
-        <table style="width:320px;">
-        <tr>
-            <td style="width:50px;"><b>势力</b></td>
-            <td style="width:110px;">{hero.faction}</td>
-            <td style="width:50px;"><b>性别</b></td>
-            <td style="width:110px;">{gender_cn}</td>
-        </tr>
-        <tr>
-            <td><b>体力</b></td>
-            <td>{hero.max_hp}</td>
-            <td><b>手牌</b></td>
-            <td>{hero.max_hand}</td>
-        </tr>
-        </table>
-        """)
+        self._basic_info.setText(
+            f"<div><b>基础属性</b> · 资料更新：{hero.last_updated or '未记录'}</div>"
+            f"<p><b>定位：</b>{hero.position or '未设置'}　<b>难度：</b>{star_display}</p>"
+            f"<p><b>势力：</b>{hero.faction or '未设置'}　<b>性别：</b>{gender_cn}　"
+            f"<b>体力：</b>{hero.max_hp}　<b>手牌：</b>{hero.max_hand}</p>"
+        )
         self._update_skills(hero)
 
     def show_missing(self, hero_id: int) -> None:
@@ -95,40 +88,37 @@ class HeroInfoView(QWidget):
     def _update_skills(self, hero: Hero) -> None:
         self._clear_skills()
         if not hero.skills:
-            self._skills_layout.addWidget(QLabel("无技能"))
+            empty = QLabel("暂无技能资料")
+            empty.setObjectName("libraryEmptyState")
+            self._skills_layout.addWidget(empty)
             self._skills_layout.addStretch()
             return
 
         for skill in hero.skills:
             frame = QFrame()
             frame.setObjectName("heroSkillCard")
-            frame.setFrameShape(QFrame.Shape.StyledPanel)
             skill_layout = QVBoxLayout(frame)
-            skill_layout.setContentsMargins(8, 6, 8, 6)
+            skill_layout.setContentsMargins(0, 8, 0, 10)
+            skill_layout.setSpacing(6)
 
-            name_label = QLabel(f"<b>{skill.name}</b>")
-            name_label.setStyleSheet("font-size: 14px;")
+            name_label = QLabel(skill.name)
+            name_label.setObjectName("contentItemTitle")
+            name_label.setWordWrap(True)
             skill_layout.addWidget(name_label)
 
             desc_label = QLabel(skill.description)
+            desc_label.setObjectName("contentBody")
             desc_label.setWordWrap(True)
             skill_layout.addWidget(desc_label)
 
             if skill.settlement:
                 toggle = QPushButton("▸ 展开结算")
+                toggle.setObjectName("heroSettlementToggle")
                 toggle.setCheckable(True)
-                toggle.setStyleSheet(
-                    "QPushButton { background-color: #e8e8e8; color: #666; border: 1px solid #ccc; "
-                    "border-radius: 3px; padding: 2px 10px; font-size: 12px; font-weight: normal; "
-                    "text-align: center; min-height: 18px; }"
-                    "QPushButton:hover { background-color: #d0d0d0; color: #444; }"
-                    "QPushButton:checked { background-color: #d0d0d0; color: #444; }"
-                )
+                set_ui_role(toggle, ROLE_GHOST)
                 settle_label = QLabel(skill.settlement)
+                settle_label.setObjectName("heroSettlementBody")
                 settle_label.setWordWrap(True)
-                settle_label.setStyleSheet(
-                    "color: #666; padding-left: 8px; border-left: 2px solid #ddd;"
-                )
                 settle_label.setVisible(False)
                 toggle.toggled.connect(
                     lambda checked, label=settle_label, button=toggle: (
@@ -160,14 +150,18 @@ class HeroGuideSummaryView(QWidget):
 
     def __init__(self, hero_manager: HeroManager, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("heroGuideView")
         self._hero_mgr = hero_manager
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
         area = QScrollArea()
+        area.setObjectName("heroGuideScroll")
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setObjectName("heroGuideContent")
         self._guide_layout = QVBoxLayout(content)
         self._guide_layout.setContentsMargins(4, 4, 4, 4)
         self._guide_layout.setSpacing(10)
@@ -185,7 +179,7 @@ class HeroGuideSummaryView(QWidget):
 
         if not guide:
             no_data = QLabel("暂无攻略数据")
-            no_data.setStyleSheet("color: #a08060; font-size: 14px; padding: 20px;")
+            no_data.setObjectName("libraryEmptyState")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._guide_layout.addWidget(no_data)
             self._guide_layout.addStretch()
@@ -195,10 +189,8 @@ class HeroGuideSummaryView(QWidget):
         if guide.tips_for_beginners:
             self._add_section_title("新手提醒")
             tips = QLabel(guide.tips_for_beginners)
+            tips.setObjectName("guideNotice")
             tips.setWordWrap(True)
-            tips.setStyleSheet(
-                "background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 8px;"
-            )
             self._guide_layout.addWidget(tips)
 
         if guide.weak_against_type or guide.strong_against_type or guide.synergizes_with:
@@ -212,54 +204,50 @@ class HeroGuideSummaryView(QWidget):
         description_hint = QLabel(
             "查看开局、中局、残局等完整说明。" if guide.description else "暂无完整攻略正文。"
         )
-        description_hint.setStyleSheet("color: #65758b;")
+        description_hint.setObjectName("contentBody")
+        description_hint.setWordWrap(True)
         self._guide_layout.addWidget(description_hint)
         detail_button = QPushButton("阅读完整攻略")
         detail_button.setEnabled(bool(guide.description))
-        detail_button.setStyleSheet("QPushButton { padding: 4px 12px; font-size: 12px; }")
+        set_ui_role(detail_button, ROLE_SECONDARY)
         detail_button.clicked.connect(self.detail_requested.emit)
         self._guide_layout.addWidget(detail_button, 0, Qt.AlignmentFlag.AlignLeft)
         self._guide_layout.addStretch()
 
     def _add_quick_summary(self, guide: HeroGuide) -> None:
         summary = QFrame()
-        summary.setStyleSheet(
-            "QFrame { background: #ffffff; border: 1px solid #dce6f0; border-radius: 6px; }"
-        )
+        summary.setObjectName("guideSummarySurface")
         summary_layout = QVBoxLayout(summary)
         summary_layout.setContentsMargins(10, 8, 10, 8)
         summary_layout.setSpacing(6)
 
         title = QLabel("核心建议")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #2c3e50;")
+        title.setObjectName("contentItemTitle")
         summary_layout.addWidget(title)
         if guide.key_points:
             for point in guide.key_points[:3]:
                 label = QLabel(f"• {point}")
+                label.setObjectName("contentBody")
                 label.setWordWrap(True)
                 summary_layout.addWidget(label)
         else:
             empty = QLabel("暂无核心要点")
-            empty.setStyleSheet("color: #65758b;")
+            empty.setObjectName("contentBody")
             summary_layout.addWidget(empty)
 
         if guide.counter_strategy:
             strategy_title = QLabel("面对该武将的应对")
-            strategy_title.setStyleSheet("font-weight: bold; color: #8a5a00; padding-top: 2px;")
+            strategy_title.setObjectName("guideWarningTitle")
             summary_layout.addWidget(strategy_title)
             strategy = QLabel(guide.counter_strategy)
+            strategy.setObjectName("guideNotice")
             strategy.setWordWrap(True)
-            strategy.setStyleSheet(
-                "background-color: #fff9e6; border-left: 3px solid #e6b84d; padding: 7px;"
-            )
             summary_layout.addWidget(strategy)
         self._guide_layout.addWidget(summary)
 
     def _add_section_title(self, title: str) -> None:
         label = QLabel(title)
-        label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #357abd; padding-top: 6px;"
-        )
+        label.setObjectName("contentSectionTitle")
         self._guide_layout.addWidget(label)
 
     def _add_type_tags(
@@ -272,7 +260,7 @@ class HeroGuideSummaryView(QWidget):
         if not types:
             return
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        title_label.setObjectName("contentMeta")
         self._guide_layout.addWidget(title_label)
         tags = QWidget()
         flow = FlowLayout(tags, spacing=5)
@@ -293,7 +281,7 @@ class HeroGuideSummaryView(QWidget):
         foreground: str,
     ) -> None:
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: #65758b; font-size: 12px;")
+        title_label.setObjectName("contentMeta")
         self._guide_layout.addWidget(title_label)
         tags = QWidget()
         flow = FlowLayout(tags, spacing=5)
@@ -329,6 +317,7 @@ class HeroSynergyView(QWidget):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("heroSynergyView")
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
         self._current_hero: Hero | None = None
@@ -336,7 +325,8 @@ class HeroSynergyView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         self._context_label = QLabel("请选择一个武将")
-        self._context_label.setStyleSheet("font-weight: bold;")
+        self._context_label.setObjectName("synergyResultCount")
+        self._context_label.setWordWrap(True)
         layout.addWidget(self._context_label)
 
         filter_layout = QHBoxLayout()
@@ -350,9 +340,14 @@ class HeroSynergyView(QWidget):
         self._rating_combo.addItems(["全部", "S", "A", "B", "C", "D"])
         self._rating_combo.currentTextChanged.connect(self.refresh)
         filter_layout.addWidget(self._rating_combo)
-        reset_btn = QPushButton("重置")
-        reset_btn.clicked.connect(self._reset_filters)
-        filter_layout.addWidget(reset_btn)
+        self._reset_button = QToolButton()
+        self._reset_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton)
+        )
+        self._reset_button.setToolTip("重置相性筛选")
+        self._reset_button.setAccessibleName("重置相性筛选")
+        self._reset_button.clicked.connect(self._reset_filters)
+        filter_layout.addWidget(self._reset_button)
         layout.addLayout(filter_layout)
 
         self._table = QTableWidget(0, 7)
@@ -363,12 +358,14 @@ class HeroSynergyView(QWidget):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setAlternatingRowColors(True)
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._table.itemSelectionChanged.connect(self.selection_changed.emit)
         self._table.itemDoubleClicked.connect(self._on_double_clicked)
         header = self._table.horizontalHeader()
-        header.setStretchLastSection(True)
-        for column, width in enumerate((150, 76, 52, 82, 92, 92)):
-            self._table.setColumnWidth(column, width)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in range(1, 6):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._table, 1)
 
     def show_hero(self, hero: Hero | None) -> None:
@@ -384,9 +381,6 @@ class HeroSynergyView(QWidget):
             return
 
         synergies = self._synergy_mgr.list_synergies_for_hero(hero.id)
-        self._context_label.setText(
-            f"当前武将：{hero.name}（#{hero.id}）｜共 {len(synergies)} 条相性记录"
-        )
         search_text = self._search_edit.text().strip().lower()
         rating = self._rating_combo.currentText()
         rows: list[tuple[SynergyScore, Hero | None]] = []
@@ -403,6 +397,9 @@ class HeroSynergyView(QWidget):
         rows.sort(key=lambda item: (-item[0].score, item[1].name if item[1] else str(
             item[0].hero_b_id if item[0].hero_a_id == hero.id else item[0].hero_a_id
         )))
+        self._context_label.setText(
+            f"{hero.name}（#{hero.id}） · 显示 {len(rows)} / 共 {len(synergies)} 条相性"
+        )
         self._table.setRowCount(len(rows))
         for row, (synergy, partner) in enumerate(rows):
             partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id

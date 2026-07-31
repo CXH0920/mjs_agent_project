@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from src.business.ocr_service import OcrService
+from src.business.recognition.ocr_service import OcrService
 
 
 def _app() -> QApplication:
@@ -151,7 +151,7 @@ def test_select_template_clears_stale_reference_metadata(tmp_path: Path, monkeyp
     manager.template_path.write_bytes(b"old-template")
     metadata_path = manager.template_path.with_suffix(".json")
     metadata_path.write_text('{"reference_width": 2560}', encoding="utf-8")
-    monkeypatch.setattr("src.business.ocr_service.get_template_manager", lambda _name: manager)
+    monkeypatch.setattr("src.business.recognition.ocr_service.get_template_manager", lambda _name: manager)
 
     service = OcrService()
     service.select_template(str(source), "match_guide")

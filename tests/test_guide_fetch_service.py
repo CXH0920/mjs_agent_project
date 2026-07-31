@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.business.guide_fetch_service import GuideFetchService
+from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.data.guide_manager import GuideManager
 from src.data.models import HeroGuide
 

@@ -161,32 +161,33 @@ SettingsDialog / 管理脚本
 ```
 setup_logging(log_level="INFO", log_to_file=True)
   -> root = logging.getLogger()
-  -> [root.handlers 非空] return                               [幂等: 已配置则跳过]
-  -> root.setLevel(logging.DEBUG)                               [root 不设限]
+  -> 仅移除带 _mjs_managed_handler 标记的旧 Handler
+  -> root.setLevel(配置级别)
   -> [log_to_file]
      -> log_dir = "logs" / {category}                           [分类子目录]
-        -> "logs/scraper/" (crawler + ocr + capture)
-        -> "logs/scraper/ai_batch.log" (AI 生成日志独立)
-        -> "logs/business/business.log" (QProcess 日志)
-        -> "logs/subprocess/stdout.log" + "stderr.log" (子进程日志)
+        -> "logs/scraper/official.log" / "ai_generation.log"
+        -> "logs/business/fetching.log" / "emulator.log" / "recognition.log"
+        -> "logs/business/business.log" (analysis + maintenance)
+        -> "logs/data/" / "ocr/" / "capture/"
+        -> "logs/subprocess/unclassified.log" (未知子进程)
         -> "logs/app.log" (UI 和其他)
      -> RotatingFileHandler(maxBytes=10MB, backupCount=5)       [每日志分类]
      -> ModuleFilter(logger_prefix)                             [按 logger name 前缀匹配]
   -> [控制台] logging.StreamHandler(sys.stdout)
-  -> [UI 日志] QPlainTextEdit 日志处理器 (仅 app 日志)
 ```
 
 ```
 日志分发规则:
   logger name 前缀 → 目标文件:
-  "src.scraper.ai"     → logs/scraper/ai_batch.log
-  "src.scraper"        → logs/scraper/scraper.log
-  "src.capture"        → logs/scraper/scraper.log (同上)
-  "src.ocr"            → logs/scraper/scraper.log (同上)
-  "src.business"       → logs/business/business.log
-  "subprocess.stdout"  → logs/subprocess/stdout.log
-  "subprocess.stderr"  → logs/subprocess/stderr.log
-  (其他)               → logs/app.log
+  "src.scraper" / "subprocess.official" → logs/scraper/official.log
+  "src.scraper.ai" / "subprocess.ai"    → logs/scraper/ai_generation.log
+  "src.business.fetching"                → logs/business/fetching.log
+  "src.business.emulator"                → logs/business/emulator.log
+  "src.business.recognition"             → logs/business/recognition.log
+  "src.business.analysis/maintenance"    → logs/business/business.log
+  "src.data" / "src.ocr" / "src.capture" → 各自同名日志
+  其他 "subprocess.*"                    → logs/subprocess/unclassified.log
+  (其他)                                  → logs/app.log
 ```
 
 | 函数 | 所在文件 | 说明 |

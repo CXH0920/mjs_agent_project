@@ -9,6 +9,7 @@ from typing import Any
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout, sync_playwright
 from src.config.env import PROJECT_ROOT
+from src.scraper.ai.utils import safe_url_origin
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,8 @@ class DeepSeekBrowserSession:
         self._page: Page | None = None
         self._started = False
 
-        logger.info("  Edge 用户数据目录: %s", self._browser_cfg["user_data_dir"])
-        logger.info("  DeepSeek URL: %s", self._chat_cfg["url"])
+        logger.info("  Edge 用户数据目录已配置")
+        logger.info("  DeepSeek URL: %s", safe_url_origin(self._chat_cfg["url"]))
         logger.info("  输入框选择器: %s", self._chat_cfg.get("input_selector"))
         logger.info("  回复选择器: %s", self._chat_cfg.get("assistant_selector"))
 
@@ -191,7 +192,7 @@ class DeepSeekBrowserSession:
             return
 
         logger.info("[浏览器] 正在启动 Edge...")
-        logger.info("[浏览器] 用户数据目录: %s", self._browser_cfg["user_data_dir"])
+        logger.info("[浏览器] 用户数据目录已配置")
         logger.info("[浏览器] 请确保已完全关闭所有 Edge 窗口")
 
         self._playwright = sync_playwright().start()
@@ -218,7 +219,7 @@ class DeepSeekBrowserSession:
             self.close()
             raise
 
-        logger.info("[浏览器] 正在导航到 %s ...", self._chat_cfg["url"])
+        logger.info("[浏览器] 正在导航到 %s ...", safe_url_origin(self._chat_cfg["url"]))
         self._page.goto(self._chat_cfg["url"])
         logger.info("[浏览器] 页面加载完成: %s", self._page.title())
 
@@ -242,7 +243,7 @@ class DeepSeekBrowserSession:
         except PlaywrightTimeout:
             logger.warning("[登录] 超时（%d ms），可能未登录或遇到验证码", timeout)
             logger.warning("[登录] 当前页面标题: %s", self._page.title())
-            logger.warning("[登录] 当前页面 URL: %s", self._page.url)
+            logger.warning("[登录] 当前页面 URL: %s", safe_url_origin(self._page.url))
             self._page_diagnostics()
             return False
 
@@ -271,8 +272,6 @@ class DeepSeekBrowserSession:
                     if (r.width > 0 && r.height > 0)
                         results.push('button: text=' + (el.textContent||'').trim().substring(0,40));
                 });
-                results.push('--- body text preview ---');
-                results.push((document.body ? document.body.textContent : '').trim().substring(0,300));
                 return results.join('\n');
             }""")
             logger.warning("页面元素:\n%s", info)

@@ -19,10 +19,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -31,12 +33,13 @@ from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.data.models import Hero, HeroGuide
-from src.business.data_management_service import DataMutationService
+from src.business.maintenance.data_management_service import DataMutationService
 from src.ui.library.guide_edit_dialog import GuideEditDialog
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
+from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +67,16 @@ class HeroListPanel(QWidget):
     # ---------------------------------------------------------------
 
     def _setup_ui(self) -> None:
+        self.setObjectName("heroListPane")
+        self.setMinimumWidth(240)
+        self.setMaximumWidth(360)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         # 搜索框
         self._search_box = QLineEdit()
+        self._search_box.setObjectName("heroSearchInput")
         self._search_box.setPlaceholderText("搜索武将名称...")
         self._search_box.textChanged.connect(self._apply_filters)
         layout.addWidget(self._search_box)
@@ -77,12 +85,18 @@ class HeroListPanel(QWidget):
         faction_layout = QHBoxLayout()
         faction_layout.addWidget(QLabel("势力:"))
         self._faction_combo = QComboBox()
+        self._faction_combo.setObjectName("heroFactionFilter")
         self._faction_combo.currentTextChanged.connect(self._apply_filters)
         faction_layout.addWidget(self._faction_combo, 1)
         layout.addLayout(faction_layout)
 
+        self._count_label = QLabel()
+        self._count_label.setObjectName("libraryResultCount")
+        layout.addWidget(self._count_label)
+
         # 武将列表
         self._list = QListWidget()
+        self._list.setObjectName("heroList")
         self._list.setAlternatingRowColors(True)
         self._list.currentRowChanged.connect(self._on_selection_changed)
         layout.addWidget(self._list, 1)
@@ -124,6 +138,9 @@ class HeroListPanel(QWidget):
                 continue
             self._filtered_heroes.append(hero)
 
+        self._count_label.setText(
+            f"显示 {len(self._filtered_heroes)} / 共 {len(self._all_heroes)} 名武将"
+        )
         self._refresh_list()
 
     def _refresh_list(self) -> None:
@@ -209,36 +226,47 @@ class HeroDetailPanel(QWidget):
 
         self._identity_bar = QFrame()
         self._identity_bar.setObjectName("heroIdentityBar")
-        self._identity_bar.setStyleSheet(
-            "QFrame#heroIdentityBar { background: #f6faff; border: 1px solid #d6e4f0; "
-            "border-radius: 6px; }"
-        )
         identity_layout = QHBoxLayout(self._identity_bar)
         identity_layout.setContentsMargins(14, 8, 14, 8)
         identity_layout.setSpacing(10)
+
+        identity_text_layout = QVBoxLayout()
+        identity_text_layout.setContentsMargins(0, 0, 0, 0)
+        identity_text_layout.setSpacing(2)
         self._identity_name = QLabel("请选择一个武将")
-        self._identity_name.setStyleSheet(
-            "background: transparent; font-size: 16px; font-weight: bold; color: #234b70;"
-        )
-        identity_layout.addWidget(self._identity_name)
+        self._identity_name.setObjectName("heroIdentityName")
+        self._identity_name.setWordWrap(True)
+        identity_text_layout.addWidget(self._identity_name)
         self._identity_meta = QLabel("从左侧列表选择后查看资料、攻略和相性")
-        self._identity_meta.setStyleSheet("background: transparent; color: #65758b; font-size: 12px;")
-        identity_layout.addWidget(self._identity_meta)
-        identity_layout.addStretch()
+        self._identity_meta.setObjectName("heroIdentityMeta")
+        self._identity_meta.setWordWrap(True)
+        identity_text_layout.addWidget(self._identity_meta)
+        identity_layout.addLayout(identity_text_layout, 1)
+
+        self._context_edit_btn = QPushButton("编辑武将")
+        self._context_edit_btn.setObjectName("heroContextEditButton")
+        set_ui_role(self._context_edit_btn, ROLE_SECONDARY)
+        self._context_edit_btn.clicked.connect(self._on_context_edit)
+        identity_layout.addWidget(self._context_edit_btn)
+
+        self._context_menu = QMenu(self)
+        self._context_menu.setObjectName("heroContextMenu")
+        self._context_delete_action = self._context_menu.addAction("删除武将")
+        self._context_delete_action.triggered.connect(self._on_context_delete)
+        self._context_more_btn = QToolButton()
+        self._context_more_btn.setObjectName("heroContextMoreButton")
+        self._context_more_btn.setText("⋯")
+        self._context_more_btn.setToolTip("更多操作")
+        self._context_more_btn.setAccessibleName("更多操作")
+        self._context_more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._context_more_btn.setMenu(self._context_menu)
+        set_ui_role(self._context_more_btn, ROLE_GHOST)
+        identity_layout.addWidget(self._context_more_btn)
         layout.addWidget(self._identity_bar)
 
         # 右侧只承担当前武将的内容切换，样式弱于外层资料库导航。
         self._detail_tabs = QTabWidget()
         self._detail_tabs.setObjectName("heroDetailTabs")
-        self._detail_tabs.setStyleSheet(
-            "QTabWidget#heroDetailTabs::pane { border: none; background: transparent; }"
-            "QTabWidget#heroDetailTabs QTabBar::tab { background: transparent; color: #65758b; "
-            "border: none; border-bottom: 2px solid transparent; padding: 6px 12px; "
-            "margin-right: 8px; font-weight: normal; }"
-            "QTabWidget#heroDetailTabs QTabBar::tab:hover { color: #357abd; }"
-            "QTabWidget#heroDetailTabs QTabBar::tab:selected { color: #357abd; "
-            "border-bottom-color: #4a90d9; font-weight: bold; }"
-        )
 
         self._info_tab = HeroInfoView()
         self._detail_tabs.addTab(self._info_tab, "武将信息")
@@ -249,93 +277,43 @@ class HeroDetailPanel(QWidget):
         self._detail_tabs.addTab(self._guide_tab, "攻略指南")
 
         self._synergy_tab = HeroSynergyView(self._hero_mgr, self._synergy_mgr)
-        self._synergy_tab.selection_changed.connect(self._update_synergy_buttons)
+        self._synergy_tab.selection_changed.connect(self._update_context_actions)
         self._synergy_tab.edit_requested.connect(self._on_synergy_edit)
         self._detail_tabs.addTab(self._synergy_tab, "武将相性")
 
-        # Tab 栏右角：操作按钮组
-        self._setup_corner_buttons()
+        self._detail_tabs.currentChanged.connect(self._update_context_actions)
 
         layout.addWidget(self._detail_tabs, 1)
+        self._update_context_actions()
 
-    def _setup_corner_buttons(self) -> None:
-        """在 Tab 栏右侧放置修改/删除按钮，与页签同水平高度"""
-        corner = QWidget()
-        hlayout = QHBoxLayout(corner)
-        hlayout.setContentsMargins(0, 0, 4, 0)
-        hlayout.setSpacing(4)
-
-        edit_btn_style = (
-            "QPushButton { background-color: transparent; color: #1890FF; "
-            "border: 1px solid #1890FF; border-radius: 4px; padding: 2px 12px; "
-            "font-size: 12px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #E6F7FF; }"
+    def _update_context_actions(self, _index: int | None = None) -> None:
+        """根据当前详情页签映射编辑和删除入口。"""
+        index = self._detail_tabs.currentIndex()
+        labels = (
+            ("编辑武将", "删除武将"),
+            ("编辑攻略", "删除攻略"),
+            ("编辑相性", "删除相性"),
         )
-        delete_btn_style = (
-            "QPushButton { background-color: #F5222D; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 2px 12px; font-size: 12px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #DC1F29; }"
-        )
+        edit_label, delete_label = labels[index]
+        self._context_edit_btn.setText(edit_label)
+        self._context_delete_action.setText(delete_label)
+        if index == 0:
+            enabled = self._current_hero is not None
+        elif index == 1:
+            enabled = self._current_guide is not None
+        else:
+            enabled = self._synergy_tab.selected_synergy() is not None
+        self._context_edit_btn.setEnabled(enabled)
+        self._context_delete_action.setEnabled(enabled)
+        self._context_more_btn.setEnabled(enabled)
 
-        # 武将信息按钮组
-        self._info_edit_btn = QPushButton("修改")
-        self._info_edit_btn.setStyleSheet(edit_btn_style)
-        self._info_edit_btn.clicked.connect(self._on_info_edit)
-        hlayout.addWidget(self._info_edit_btn)
+    def _on_context_edit(self) -> None:
+        handlers = (self._on_info_edit, self._on_guide_edit, self._on_synergy_edit)
+        handlers[self._detail_tabs.currentIndex()]()
 
-        self._info_delete_btn = QPushButton("删除")
-        self._info_delete_btn.setStyleSheet(delete_btn_style)
-        self._info_delete_btn.clicked.connect(self._on_info_delete)
-        hlayout.addWidget(self._info_delete_btn)
-
-        # 攻略按钮组
-        self._guide_edit_btn = QPushButton("修改")
-        self._guide_edit_btn.setStyleSheet(edit_btn_style)
-        self._guide_edit_btn.clicked.connect(self._on_guide_edit)
-        hlayout.addWidget(self._guide_edit_btn)
-
-        self._guide_delete_btn = QPushButton("删除")
-        self._guide_delete_btn.setStyleSheet(delete_btn_style)
-        self._guide_delete_btn.clicked.connect(self._on_guide_delete)
-        hlayout.addWidget(self._guide_delete_btn)
-
-        # 相性按钮组
-        self._synergy_edit_btn = QPushButton("修改")
-        self._synergy_edit_btn.setStyleSheet(edit_btn_style)
-        self._synergy_edit_btn.clicked.connect(self._on_synergy_edit)
-        hlayout.addWidget(self._synergy_edit_btn)
-
-        self._synergy_delete_btn = QPushButton("删除")
-        self._synergy_delete_btn.setStyleSheet(delete_btn_style)
-        self._synergy_delete_btn.clicked.connect(self._on_synergy_delete)
-        hlayout.addWidget(self._synergy_delete_btn)
-
-        # 初始隐藏攻略和相性按钮组
-        self._guide_edit_btn.hide()
-        self._guide_delete_btn.hide()
-        self._synergy_edit_btn.hide()
-        self._synergy_delete_btn.hide()
-
-        self._detail_tabs.setCornerWidget(corner, Qt.Corner.TopRightCorner)
-        self._detail_tabs.currentChanged.connect(self._on_tab_changed)
-
-    def _on_tab_changed(self, index: int) -> None:
-        """Tab 切换时切换对应的操作按钮组。"""
-        self._info_edit_btn.setVisible(index == 0)
-        self._info_delete_btn.setVisible(index == 0)
-        self._guide_edit_btn.setVisible(index == 1)
-        self._guide_delete_btn.setVisible(index == 1)
-        self._synergy_edit_btn.setVisible(index == 2)
-        self._synergy_delete_btn.setVisible(index == 2)
-        self._update_synergy_buttons()
-
-    def _update_synergy_buttons(self) -> None:
-        """同步相性操作按钮可用状态。"""
-        if not hasattr(self, "_synergy_edit_btn"):
-            return
-        has_selection = self._synergy_tab.selected_synergy() is not None
-        self._synergy_edit_btn.setEnabled(has_selection)
-        self._synergy_delete_btn.setEnabled(has_selection)
+    def _on_context_delete(self) -> None:
+        handlers = (self._on_info_delete, self._on_guide_delete, self._on_synergy_delete)
+        handlers[self._detail_tabs.currentIndex()]()
 
     def show_hero(self, hero_id: int) -> None:
         """展示指定武将的详细信息和攻略。"""
@@ -348,22 +326,16 @@ class HeroDetailPanel(QWidget):
         if not hero:
             self._update_identity_bar(None)
             self._info_tab.show_missing(hero_id)
-            self._info_edit_btn.setEnabled(False)
-            self._info_delete_btn.setEnabled(False)
-            self._guide_edit_btn.setEnabled(False)
-            self._guide_delete_btn.setEnabled(False)
+            self._guide_tab.show_guide(None)
             self._synergy_tab.show_hero(None)
+            self._update_context_actions()
             return
-
-        self._info_edit_btn.setEnabled(True)
-        self._info_delete_btn.setEnabled(True)
-        self._guide_edit_btn.setEnabled(bool(guide))
-        self._guide_delete_btn.setEnabled(bool(guide))
 
         self._update_identity_bar(hero)
         self._info_tab.show_hero(hero)
         self._guide_tab.show_guide(guide)
         self._synergy_tab.show_hero(hero)
+        self._update_context_actions()
 
     def _update_identity_bar(self, hero: Hero | None) -> None:
         """更新始终可见的当前武将身份信息。"""
@@ -428,6 +400,7 @@ class HeroDetailPanel(QWidget):
         try:
             self._data_mutation_service.update_synergy(dialog.get_synergy())
             self._synergy_tab.refresh()
+            self._update_context_actions()
             self.synergies_changed.emit()
         except Exception as e:
             logger.exception("保存相性失败")
@@ -454,6 +427,7 @@ class HeroDetailPanel(QWidget):
         try:
             self._data_mutation_service.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
             self._synergy_tab.refresh()
+            self._update_context_actions()
             self.synergies_changed.emit()
         except Exception as e:
             logger.exception("删除相性失败")
@@ -469,6 +443,8 @@ class HeroDetailPanel(QWidget):
         updated = dialog.get_hero()
         try:
             self._data_mutation_service.update_hero(updated)
+            self._current_hero = updated
+            self._update_identity_bar(updated)
             self._info_tab.show_hero(updated)
             self.data_changed.emit()
         except Exception as e:
@@ -496,6 +472,7 @@ class HeroDetailPanel(QWidget):
             self._info_tab.show_deleted()
             self._guide_tab.show_guide(None)
             self._synergy_tab.show_hero(None)
+            self._update_context_actions()
             self.data_changed.emit()
             self.synergies_changed.emit()
         except Exception as e:
@@ -516,6 +493,7 @@ class HeroDetailPanel(QWidget):
         updated = dialog.get_guide()
         try:
             self._data_mutation_service.update_guide(updated)
+            self._current_guide = updated
             self._guide_tab.show_guide(updated)
             self.data_changed.emit()
         except Exception as e:
@@ -538,8 +516,7 @@ class HeroDetailPanel(QWidget):
             self._data_mutation_service.delete_guide(self._current_guide.hero_id)
             self._current_guide = None
             self._guide_tab.show_guide(None)
-            self._guide_edit_btn.setEnabled(False)
-            self._guide_delete_btn.setEnabled(False)
+            self._update_context_actions()
             self.data_changed.emit()
         except Exception as e:
             logger.exception("删除攻略失败")
@@ -568,9 +545,11 @@ class HeroBrowser(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setObjectName("heroBrowserSplitter")
+        self._splitter.setChildrenCollapsible(False)
         self._list_panel = HeroListPanel(self._hero_mgr)
-        splitter.addWidget(self._list_panel)
+        self._splitter.addWidget(self._list_panel)
 
         # 右侧：详情面板
         self._detail_panel = HeroDetailPanel(
@@ -578,9 +557,11 @@ class HeroBrowser(QWidget):
             self._guide_mgr,
             self._synergy_mgr,
         )
-        splitter.addWidget(self._detail_panel)
-        splitter.setSizes([280, 720])
-        layout.addWidget(splitter, 1)
+        self._splitter.addWidget(self._detail_panel)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([280, 720])
+        layout.addWidget(self._splitter, 1)
 
         # 连接信号
         self._list_panel.hero_selected.connect(self._detail_panel.show_hero)

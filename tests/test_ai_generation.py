@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QProcess
 
-from src.business.base_fetch_service import BaseFetchService
-from src.business import fetch_utils
-from src.business.fetch_utils import cancel_process
+from src.business.fetching import fetch_utils
+from src.business.fetching.base_fetch_service import BaseFetchService
+from src.business.fetching.fetch_utils import cancel_process
 from src.scraper.ai.api_generator import (
     AIBatchGenerator,
     MAX_OUTPUT_TOKENS,
@@ -105,7 +105,7 @@ def test_base_fetch_service_flushes_remaining_stdout_at_finish() -> None:
     assert service.lines == ["最后一行"]
 
 
-def test_api_request_disables_thinking_and_discards_reasoning() -> None:
+def test_api_request_disables_thinking_and_discards_reasoning(caplog) -> None:
     secret_reasoning = "不应进入后续链路"
     client = _FakeHttpClient({
         "choices": [{
@@ -118,7 +118,8 @@ def test_api_request_disables_thinking_and_discards_reasoning() -> None:
     generator._client.close()
     generator._client = client
 
-    response = generator._call_api([{"role": "user", "content": "test"}])
+    with caplog.at_level("DEBUG", logger="src.scraper.ai"):
+        response = generator._call_api([{"role": "user", "content": "test"}])
 
     assert client.payload["max_tokens"] == MAX_OUTPUT_TOKENS == 16_384
     assert client.payload["thinking"] == {"type": "disabled"}
@@ -128,6 +129,7 @@ def test_api_request_disables_thinking_and_discards_reasoning() -> None:
         "usage": {"completion_tokens": 12},
     }
     assert secret_reasoning not in repr(response)
+    assert secret_reasoning not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -162,6 +164,17 @@ def test_base_fetch_service_surfaces_output_budget_failure() -> None:
     service._on_finished(1)
 
     assert errors == [OUTPUT_BUDGET_EXHAUSTED_MESSAGE]
+
+
+def test_base_fetch_service_does_not_duplicate_failed_process_output(caplog) -> None:
+    output_line = "UNIQUE_CHILD_FAILURE_DETAIL"
+    service = _LineRecordingService()
+    service._process = _FakeProcess([f"{output_line}\n".encode("utf-8")])
+
+    with caplog.at_level("INFO"):
+        service._on_finished(1)
+
+    assert caplog.text.count(output_line) == 1
 
 
 def test_cancel_process_does_not_block_event_loop() -> None:
@@ -524,8 +537,8 @@ def test_cli_returns_nonzero_when_generation_result_has_failures(monkeypatch, tm
 
 
 def test_fetch_services_use_cli_exit_code_instead_of_stdout_failure_protocol(tmp_path: Path) -> None:
-    from src.business.guide_fetch_service import GuideFetchService
-    from src.business.synergy_fetch_service import SynergyFetchService
+    from src.business.fetching.guide_fetch_service import GuideFetchService
+    from src.business.fetching.synergy_fetch_service import SynergyFetchService
     from src.data.guide_manager import GuideManager
 
     guide_service = GuideFetchService(GuideManager(tmp_path / "guides.json"))
@@ -546,8 +559,65 @@ def test_fetch_services_use_cli_exit_code_instead_of_stdout_failure_protocol(tmp
     assert synergy_results == [(True, "相性生成完成")]
 
 
+def test_fetch_services_route_subprocess_logs_by_workflow(tmp_path: Path) -> None:
+    from src.business.fetching.guide_fetch_service import GuideFetchService
+    from src.business.fetching.hero_fetch_service import HeroFetchService
+    from src.business.fetching.synergy_fetch_service import SynergyFetchService
+    from src.data.guide_manager import GuideManager
+
+    hero_service = HeroFetchService()
+    guide_service = GuideFetchService(GuideManager(tmp_path / "guides.json"))
+    synergy_service = SynergyFetchService()
+
+    assert hero_service._log_stdout.name == "subprocess.official.stdout"
+    assert hero_service._log_stderr.name == "subprocess.official.stderr"
+    assert guide_service._log_stdout.name == "subprocess.ai.stdout"
+    assert guide_service._log_stderr.name == "subprocess.ai.stderr"
+    assert synergy_service._log_stdout.name == "subprocess.ai.stdout"
+    assert synergy_service._log_stderr.name == "subprocess.ai.stderr"
+
+
+def test_generation_progress_does_not_forward_arbitrary_child_logs(tmp_path: Path) -> None:
+    from src.business.fetching.guide_fetch_service import GuideFetchService
+    from src.data.guide_manager import GuideManager
+
+    service = GuideFetchService(GuideManager(tmp_path / "guides.json"))
+    forwarded: list[str] = []
+    service.progress_output.connect(forwarded.append)
+
+    service._on_stdout_line("2026-07-31 [ERROR] src.scraper.ai: 原始回复：敏感正文")
+    service._on_stdout_line("[1/2] 甲 OK")
+    service._on_stdout_line("2026-07-31 [INFO] src.scraper.ai: [休息] 随机休息 60 秒...")
+
+    assert forwarded == [
+        "[1/2] 甲 OK",
+        "2026-07-31 [INFO] src.scraper.ai: [休息] 随机休息 60 秒...",
+    ]
+
+
+def test_browser_generator_logs_no_reply_or_parsed_content(monkeypatch, caplog) -> None:
+    import src.scraper.ai.browser_generator as browser_generator
+
+    secret_reply = "SECRET_REPLY_CONTENT"
+    secret_parsed = "SECRET_PARSED_CONTENT"
+    generator = object.__new__(browser_generator.PlaywrightGenerator)
+    generator._guide_system_sent = False
+    generator._guide_rest_required = False
+    generator._send_and_wait = lambda _prompt: secret_reply
+    monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero: "guide")
+    monkeypatch.setattr(browser_generator, "extract_json", lambda _reply: {"description": secret_parsed})
+    monkeypatch.setattr(browser_generator, "validate_guide", lambda _raw: None)
+
+    with caplog.at_level("DEBUG", logger="src.scraper.ai"):
+        generator.generate_guide({"id": 1, "name": "甲"})
+
+    assert secret_reply not in caplog.text
+    assert secret_parsed not in caplog.text
+
+
 def test_synergy_progress_advances_only_after_terminal_result() -> None:
-    from src.business.synergy_fetch_service import SynergyFetchService
+    from src.business.fetching.synergy_fetch_service import SynergyFetchService
 
     service = SynergyFetchService()
     progress_values: list[tuple[int, int]] = []

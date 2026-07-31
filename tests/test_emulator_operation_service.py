@@ -7,7 +7,7 @@ from time import monotonic
 
 from PySide6.QtWidgets import QApplication
 
-from src.business.emulator_operation_service import EmulatorOperationService
+from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.capture.prober import MuMuDeviceInfo
 
 
@@ -39,7 +39,7 @@ def _wait(event: Event) -> bool:
 
 def test_refresh_devices_runs_through_operation_service(monkeypatch) -> None:
     devices = [MuMuDeviceInfo("1", "实例", 16448, True)]
-    monkeypatch.setattr("src.business.emulator_operation_service.probe_all_devices_with_status", lambda: (devices, ""))
+    monkeypatch.setattr("src.business.emulator.emulator_operation_service.probe_all_devices_with_status", lambda: (devices, ""))
     service = EmulatorOperationService(_CaptureService())
     completed = Event()
     received: list[list[MuMuDeviceInfo]] = []
@@ -54,7 +54,7 @@ def test_refresh_devices_runs_through_operation_service(monkeypatch) -> None:
 
 def test_refresh_failure_is_reported_without_device_result(monkeypatch) -> None:
     monkeypatch.setattr(
-        "src.business.emulator_operation_service.probe_all_devices_with_status",
+        "src.business.emulator.emulator_operation_service.probe_all_devices_with_status",
         lambda: ([], "MuMuManager 查询失败（退出码 3221226505）"),
     )
     service = EmulatorOperationService(_CaptureService())

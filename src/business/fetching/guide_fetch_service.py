@@ -14,7 +14,8 @@ import tempfile
 
 from PySide6.QtCore import Signal
 
-from src.business.base_fetch_service import BaseFetchService
+from src.business.fetching.base_fetch_service import BaseFetchService
+from src.business.fetching.fetch_utils import is_generation_progress_line
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,10 @@ class GuideFetchService(BaseFetchService):
     @property
     def _service_name(self) -> str:
         return "攻略生成"
+
+    @property
+    def _subprocess_log_namespace(self) -> str:
+        return "subprocess.ai"
 
     # ---------------------------------------------------------------
     # 公共接口
@@ -101,7 +106,8 @@ class GuideFetchService(BaseFetchService):
         if not line:
             return
 
-        self.progress_output.emit(line)
+        if is_generation_progress_line(line):
+            self.progress_output.emit(line)
         m = re.search(r"\[(\d+)/(\d+)\]", line)
         if m:
             self.progress_value.emit(int(m.group(1)), int(m.group(2)))

@@ -21,8 +21,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from src.business.capture_service import CaptureService
-from src.business.ocr_worker import OfficialImportTask
+from src.business.emulator.capture_service import CaptureService
+from src.business.recognition.ocr_worker import OfficialImportTask
 
 
 class OfficialDataImportDialog(QDialog):

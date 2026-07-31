@@ -25,17 +25,31 @@
 ```
 src/business/
 ├── __init__.py
-├── base_fetch_service.py        # QProcess 生命周期、行缓冲与统一收尾
-├── fetch_service.py             # 武将采集业务（QProcess 管理）
-├── guide_fetch_service.py       # 攻略生成业务（QProcess 管理）
-├── synergy_fetch_service.py     # 相性获取业务（QProcess 管理）
-├── capture_service.py           # 截图业务编排（ADB 截图 + OCR 调度）
-├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
-├── ocr_service.py               # OCR 控制服务（模板管理 + 轮询）
-├── official_data_import_service.py # 官方榜单 OCR、姓名复核与 CSV 导入编排
-├── recommendation_service.py       # 推荐页胜率/指数快照与排名组装
-└── fetch_utils.py               # QProcess 公共工具函数
+├── fetching/
+│   ├── base_fetch_service.py    # QProcess 生命周期、行缓冲与统一收尾
+│   ├── fetch_utils.py           # QProcess 公共工具函数
+│   ├── hero_fetch_service.py    # 武将采集业务
+│   ├── guide_fetch_service.py   # 攻略生成业务
+│   ├── synergy_fetch_service.py # 相性生成业务
+│   └── synergy_reload_worker.py # 相性数据后台重载
+├── emulator/
+│   ├── capture_service.py       # ADB 截图与 OCR 调度
+│   ├── emulator_operation_service.py # 模拟器后台操作
+│   └── mumu_config_coordinator.py # MuMu 配置状态协调
+├── recognition/
+│   ├── ocr_service.py           # OCR 控制、模板和轮询
+│   ├── ocr_worker.py            # 唯一后台识别队列
+│   └── official_data_import_service.py # 官方榜单导入
+├── analysis/
+│   ├── recommendation_service.py # 推荐数据组装
+│   └── match_analysis_service.py # 对局攻略分析
+└── maintenance/
+    └── data_management_service.py # 数据清理、修复与修改事务
 ```
+
+`emulator` 只向 `recognition` 依赖 OCR 服务和任务类型；各二级包的
+`__init__.py` 保持轻量，根包仅继续导出原有四个公共服务。所有资源目录统一
+基于 `src.config.env.PROJECT_ROOT`，不依赖源码目录层级。
 
 ---
 
@@ -58,7 +72,7 @@ QObject 子类
 
 ```
 status_changed → 状态栏文字
-progress_output → 子进程 stdout 行（供进度正则解析）
+progress_output → 白名单内的生成进度行（START / OK / FAIL / SKIP / 冷却）
 progress_value → (current, total) 供进度条
 fetch_completed → (success, message) 通知 UI
 error_occurred → 错误信息
@@ -79,7 +93,7 @@ cancelled → 用户中止后通知 UI 刷新已分批提交的数据
 
 所有服务使用 `SeparateChannels` 模式，分别读取 stdout 和 stderr。
 
-AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 用于展示进度，并将“思考过程耗尽输出额度”这一明确原因透传给界面，其余失败仍显示退出码。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
+AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 逐行写入 `scraper/ai_generation.log`，界面只接收明确的生成进度和冷却状态。“思考过程耗尽输出额度”从完整缓冲中识别后作为明确原因透传，其余失败仍显示退出码；完整 stdout/stderr 不再重复复制到业务日志。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
 
 `SynergyReloadWorker` 在后台解析已分批提交的 `synergies.json`；完成后由主线程一次性替换 `SynergyManager` 的内存数据并通知界面刷新，避免取消后同步解析 JSON 阻塞窗口事件循环。
 

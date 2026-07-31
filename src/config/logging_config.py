@@ -105,14 +105,23 @@ def setup_logging(
         # (文件名, startswith, exclude_startswith)
         ("app.log",               None,
          ["src.scraper", "src.business", "src.data", "src.ocr", "src.capture", "subprocess."]),
-        ("scraper/scraper.log",   ["src.scraper"], ["src.scraper.ai"]),
-        ("scraper/ai_batch.log",  ["src.scraper.ai"], None),
-        ("business/business.log", ["src.business"], None),
+        ("scraper/official.log", ["src.scraper", "subprocess.official"], ["src.scraper.ai"]),
+        ("scraper/ai_generation.log", ["src.scraper.ai", "subprocess.ai"], None),
+        ("business/fetching.log", ["src.business.fetching"], None),
+        ("business/emulator.log", ["src.business.emulator"], None),
+        ("business/recognition.log", ["src.business.recognition"], None),
+        ("business/business.log", ["src.business"], [
+            "src.business.fetching",
+            "src.business.emulator",
+            "src.business.recognition",
+        ]),
         ("data/data.log",         ["src.data"],     None),
         ("ocr/ocr.log",           ["src.ocr"],      None),
         ("capture/capture.log",   ["src.capture"],  None),
-        ("subprocess/stdout.log", ["subprocess.stdout"], None),
-        ("subprocess/stderr.log", ["subprocess.stderr"], None),
+        ("subprocess/unclassified.log", ["subprocess"], [
+            "subprocess.official",
+            "subprocess.ai",
+        ]),
     ]
 
     for rel_path, starts, excludes in file_handlers:

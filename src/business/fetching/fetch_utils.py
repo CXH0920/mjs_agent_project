@@ -9,11 +9,22 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 
 from PySide6.QtCore import QProcess
 
 logger = logging.getLogger(__name__)
+_GENERATION_PROGRESS_PATTERN = re.compile(
+    r"(?:^\s*\[\d+/\d+\].*\b(?:START|OK|FAIL|SKIP)\b"
+    r"|^\s*\[[^\]/]+\]\s+开始\.\.\.$"
+    r"|\[休息\]\s*随机休息\s*\d+\s*秒)"
+)
+
+
+def is_generation_progress_line(line: str) -> bool:
+    """仅放行不包含生成正文的 CLI 进度行。"""
+    return bool(_GENERATION_PROGRESS_PATTERN.search(line))
 
 
 def is_process_busy(process: QProcess | None, service_name: str) -> bool:

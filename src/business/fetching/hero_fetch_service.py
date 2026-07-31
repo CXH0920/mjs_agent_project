@@ -10,7 +10,7 @@ import logging
 
 from PySide6.QtCore import Signal
 
-from src.business.base_fetch_service import BaseFetchService
+from src.business.fetching.base_fetch_service import BaseFetchService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,10 @@ class HeroFetchService(BaseFetchService):
     @property
     def _service_name(self) -> str:
         return "武将采集"
+
+    @property
+    def _subprocess_log_namespace(self) -> str:
+        return "subprocess.official"
 
     # ---------------------------------------------------------------
     # 公共接口

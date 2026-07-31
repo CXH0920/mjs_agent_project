@@ -23,7 +23,7 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
 
 ## 一、QProcess 服务通用模式
 
-三个 FetchService（Hero / Guide / Synergy）遵循相同设计模式。通用模式方法由 `BaseFetchService`（`src/business/base_fetch_service.py`）提供，三个子类继承后各自实现 `fetch_*` 和 `cancel` 方法。以下以 HeroFetchService 为例说明通用结构。
+三个 FetchService（Hero / Guide / Synergy）遵循相同设计模式。通用模式方法由 `BaseFetchService`（`src/business/fetching/base_fetch_service.py`）提供，三个子类继承后各自实现 `fetch_*` 和 `cancel` 方法。以下以 HeroFetchService 为例说明通用结构。
 
 ### 1.1 通用启动链路
 
@@ -54,20 +54,20 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
 |------|------|
 | `_is_busy()` | 检查 QProcess.state()，不等待直接返回 |
 | `_start_process(args)` | 创建 QProcess + 信号连接 + start |
-| `_on_stdout_ready()` | 读取 stdout → emit progress_output + 解析 [i/N] 进度 |
-| `_on_stderr_ready()` | 读取 stderr → emit progress_output |
+| `_on_stdout_ready()` | 读取 stdout → 按工作流写日志；白名单进度行再 emit `progress_output` |
+| `_on_stderr_ready()` | 读取 stderr → 按工作流写 warning 日志 |
 | `_on_finished(code)` | 检查退出码 → emit fetch_completed |
 | `_on_error(error)` | QProcess 异常 → emit error_occurred |
 | `cancel()` | `cancel_process()`；仅 `process.kill()`，由 `finished` 信号异步收尾 |
 
-> 以上通用方法定义在 `src/business/base_fetch_service.py` 的 `BaseFetchService` 中，三个子类通过继承复用。
+> 以上通用方法定义在 `src/business/fetching/base_fetch_service.py` 的 `BaseFetchService` 中，三个子类通过继承复用。
 
 ### 1.2 stdout / stderr 分块处理
 
 ```
 QProcess.readyReadStandardOutput
   -> BaseFetchService._read_stdout()
-     -> _stdout_buffer.extend(data)                         [完整日志]
+     -> _stdout_buffer.extend(data)                         [失败原因识别]
      -> _stdout_line_buffer.extend(data)                    [实时解析]
      -> _dispatch_stdout_lines()
         -> partition(b"\\n")                               [只取完整行]
@@ -82,7 +82,7 @@ QProcess.finished
   -> 子类._on_process_finished(exit_code)
 ```
 
-`_stdout_buffer` 仅保存完整 stdout 供失败日志使用；`_stdout_line_buffer` 保存尚未遇到换行的字节尾部。两个缓冲区职责不同，不能用结束日志缓冲替代实时解析缓冲。
+`_stdout_buffer` 仅保存完整 stdout 供失败原因识别，结束后立即清空，不再整体写入业务日志；`_stdout_line_buffer` 保存尚未遇到换行的字节尾部。两个缓冲区职责不同，不能用结束缓冲替代实时解析缓冲。
 
 ---
 
@@ -489,7 +489,7 @@ src.ui.configuration.mumu_config_dialog
 | `src.capture.adb_screen.AdbCapture` | CaptureService 直接持有 |
 | `src.capture.image_utils.save_image()` | 截图文件保存 |
 | `src.ocr.ocr_loader.get_template_manager()` | 模板管理器单例 |
-| `src.business.ocr_worker.OcrWorker` | 唯一后台队列，执行模板匹配与 OCR |
+| `src.business.recognition.ocr_worker.OcrWorker` | 唯一后台队列，执行模板匹配与 OCR |
 | `src.ocr.recognizer.GeneralRecognizer` | 由 OcrWorker 缓存和调用 |
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |

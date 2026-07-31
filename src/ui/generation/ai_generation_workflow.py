@@ -7,9 +7,9 @@ from collections.abc import Callable
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 
-from src.business.guide_fetch_service import GuideFetchService
-from src.business.synergy_fetch_service import SynergyFetchService
-from src.business.synergy_reload_worker import SynergyReloadWorker
+from src.business.fetching.guide_fetch_service import GuideFetchService
+from src.business.fetching.synergy_fetch_service import SynergyFetchService
+from src.business.fetching.synergy_reload_worker import SynergyReloadWorker
 from src.data.manager import DataIssue
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager

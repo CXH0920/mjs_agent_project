@@ -216,6 +216,6 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 |------|------|------|
 | 依赖 | `src.data.models` | 使用 Hero / HeroGuide / SynergyScore 模型进行 Pydantic 校验 |
 | 依赖 | `src.config.env` | 读取 API Key/URL/Model 等配置 |
-| 被调用方 | `src.business.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成 |
-| 被调用方 | `src.business.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成 |
+| 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成 |
+| 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成 |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 攻略/相性"触发生成 |

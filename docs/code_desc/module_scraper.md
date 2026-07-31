@@ -176,5 +176,5 @@ def transform(raw: dict) -> dict | None:
 |------|------|------|
 | 依赖 | `src.data.models` | 使用 Hero 模型进行 Pydantic 校验 |
 | 依赖 | `src.config.env` | 读取日志级别配置 |
-| 被调用方 | `src.business.fetch_service` | 通过 QProcess 启动爬虫 CLI |
+| 被调用方 | `src.business.fetching.hero_fetch_service` | 通过 QProcess 启动爬虫 CLI |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 武将获取"触发爬虫 |

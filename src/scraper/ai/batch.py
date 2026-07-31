@@ -37,6 +37,7 @@ from src.data.synergy_manager import SynergyManager
 from src.scraper.ai.prompt_utils import _estimate_cost, estimate_cost
 from src.scraper.ai.utils import (
     load_heroes,
+    safe_url_origin,
 )
 
 from src.scraper.ai.api_generator import AIBatchGenerator
@@ -235,7 +236,7 @@ def main():
         logger.info("使用浏览器模式")
     else:
         _check_api_key(api_config)
-        logger.info("API URL: %s", api_config["api_url"])
+        logger.info("API URL: %s", safe_url_origin(api_config["api_url"]))
         logger.info("模型: %s", api_config["model"])
         logger.info("速率限制: %d req/min, 最多重试 %d 次",
                     runtime_params["requests_per_minute"], runtime_params["max_retries"])

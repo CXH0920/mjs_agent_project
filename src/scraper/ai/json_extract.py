@@ -108,4 +108,4 @@ def extract_json(text: str) -> dict:
         if result:
             return result
 
-    raise ValueError(f"无法从响应中提取 JSON:\n{text[:500]}")
+    raise ValueError(f"无法从响应中提取 JSON（响应长度: {len(text)}）")

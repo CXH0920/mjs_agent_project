@@ -41,16 +41,11 @@ test_project/
 │   │       ├── json_extract.py
 │   │       └── utils.py
 │   ├── business/
-│   │   ├── base_fetch_service.py  # BaseFetchService 基类（QProcess 通用管理方法）
-│   │   ├── fetch_service.py       # 武将采集业务（继承 BaseFetchService）
-│   │   ├── guide_fetch_service.py # 攻略生成业务（继承 BaseFetchService）
-│   │   ├── synergy_fetch_service.py # 相性获取业务（继承 BaseFetchService）
-│   │   ├── capture_service.py     # 截图业务编排（ADB 截图 + OCR 调度）
-│   │   ├── emulator_operation_service.py # 模拟器配置页的后台 ADB 操作
-│   │   ├── ocr_service.py         # OCR 控制服务（模板管理 + 轮询）
-│   │   ├── ocr_worker.py          # 单线程 OCR 队列（模板匹配 + PaddleOCR）
-│   │   ├── official_data_import_service.py # 官方榜单多页聚合、OCR、顺序校验与 CSV 覆盖
-│   │   └── fetch_utils.py         # QProcess 公共工具函数
+│   │   ├── fetching/              # 武将采集、AI 生成进程与相性重载
+│   │   ├── emulator/              # 截图、ADB 后台操作与 MuMu 配置协调
+│   │   ├── recognition/           # OCR 控制、唯一 worker 与官方榜单导入
+│   │   ├── analysis/              # 选将推荐与对局攻略分析
+│   │   └── maintenance/           # 数据清理、修复与事务化修改
 │   ├── capture/
 │   │   ├── __init__.py
 │   │   ├── adb_screen.py          # ADB 连接与截图（subprocess exec-out 无文件中间态）
@@ -435,6 +430,10 @@ _save_json() → data/*.tmp → 每批原子替换 data/guides.json / data/syner
 
 ### 主窗口
 
+主窗口采用统一应用外壳：左侧 `NavigationRail` 在“资料库 / 选将推荐 / 对局攻略”三个长期工作区间切换，顶部 `ContextHeader` 显示当前上下文及页面操作。内容区继续复用同一个主 `QTabWidget`，仅隐藏主 `TabBar`，因此页面实例、搜索条件、滚动位置和识别结果不会因导航切换而重建；资料库内部仍以“武将资料 / 卡牌图鉴”二级页签切换。OCR 自动跳转继续调用 `setCurrentWidget()`，再由 `currentChanged` 同步左侧选中态和顶部标题。
+
+窗口宽度小于 1040px 时导航强制折叠，恢复宽屏后还原用户本次会话的折叠选择。原菜单栏作为兼容入口保留，并与顶部操作、设置菜单共享同一组 `QAction` 和快捷键。底部状态栏分别承担任务/数据进度、模拟器 ADB 状态和 OCR 轮询状态；后两项保持常驻且可进入模拟器配置。
+
 | 菜单 | 功能 | 说明 |
 |---|---|---|
 | 文件 > 退出 | Ctrl+Q | 关闭应用 |
@@ -552,10 +551,13 @@ MUMU_OCR_MATCH_THRESHOLD=0.8
 logs/
 ├── app.log                  # UI 操作、数据加载
 ├── scraper/
-│   ├── scraper.log          # 爬虫日志
-│   └── ai_batch.log         # AI 生成日志
+│   ├── official.log         # 官网采集及其 QProcess 输出
+│   └── ai_generation.log    # AI 生成及其 QProcess 输出
 ├── business/
-│   └── business.log         # 业务服务日志
+│   ├── fetching.log         # 采集与生成进程编排
+│   ├── emulator.log         # 截图、ADB 与 MuMu 协调
+│   ├── recognition.log      # OCR 调度与官方榜单导入
+│   └── business.log         # 分析、维护及其他业务日志
 ├── data/
 │   └── data.log             # 数据管理日志
 ├── ocr/
@@ -563,11 +565,10 @@ logs/
 ├── capture/
 │   └── capture.log          # ADB 截图日志
 └── subprocess/
-    ├── stdout.log           # 子进程标准输出
-    └── stderr.log           # 子进程错误输出
+    └── unclassified.log     # 未声明工作流的子进程输出
 ```
 
-每个文件最大 10MB，保留 5 个备份。桌面应用和直接运行 CLI 会读取 `config.env` 中的 `LOG_LEVEL`、`LOG_TO_FILE`；由桌面应用启动的 QProcess 子进程只通过 stdout/stderr 交给主进程统一记录，避免多进程同时轮转同一文件。
+每个文件最大 10MB，保留 5 个备份。桌面应用和直接运行 CLI 会读取 `config.env` 中的 `LOG_LEVEL`、`LOG_TO_FILE`；由桌面应用启动的 QProcess 子进程只通过 stdout/stderr 交给主进程统一记录，并按官网采集或 AI 生成路由到对应 scraper 日志，避免多进程同时轮转同一文件。AI 日志只记录任务、长度、字段、用量和错误摘要，不记录 Prompt、完整回复、解析正文、认证信息或 `reasoning_content`。
 
 ### 配置控制
 

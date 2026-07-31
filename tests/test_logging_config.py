@@ -37,24 +37,38 @@ def test_setup_logging_reconfigures_only_project_handlers(tmp_path, monkeypatch)
 
     logging_config.setup_logging(log_level="DEBUG", log_to_file=True)
     assert external in root.handlers
-    assert len(_managed_handlers()) == 10
+    assert len(_managed_handlers()) == 12
     assert root.level == logging.DEBUG
 
-    logging.getLogger("src.data.test").info("data message")
-    logging.getLogger("src.ui.test").info("ui message")
-    logging.getLogger("src.scraper.ai.generation").info("ai message")
+    routes = {
+        "token_app": ("src.ui.test", "app.log"),
+        "token_official": ("src.scraper.official_source.crawler", "scraper/official.log"),
+        "token_official_child": ("subprocess.official.stdout", "scraper/official.log"),
+        "token_ai": ("src.scraper.ai.generation", "scraper/ai_generation.log"),
+        "token_ai_child": ("subprocess.ai.stderr", "scraper/ai_generation.log"),
+        "token_fetching": ("src.business.fetching.test", "business/fetching.log"),
+        "token_emulator": ("src.business.emulator.test", "business/emulator.log"),
+        "token_recognition": ("src.business.recognition.test", "business/recognition.log"),
+        "token_analysis": ("src.business.analysis.test", "business/business.log"),
+        "token_maintenance": ("src.business.maintenance.test", "business/business.log"),
+        "token_data": ("src.data.test", "data/data.log"),
+        "token_ocr": ("src.ocr.test", "ocr/ocr.log"),
+        "token_capture": ("src.capture.test", "capture/capture.log"),
+        "token_unclassified": ("subprocess.unknown.stdout", "subprocess/unclassified.log"),
+    }
+    for token, (logger_name, _target) in routes.items():
+        logging.getLogger(logger_name).info(token)
     for handler in _managed_handlers():
         handler.flush()
 
-    data_log = (tmp_path / "data" / "data.log").read_text(encoding="utf-8")
-    app_log = (tmp_path / "app.log").read_text(encoding="utf-8")
-    ai_log = (tmp_path / "scraper" / "ai_batch.log").read_text(encoding="utf-8")
-    scraper_log = (tmp_path / "scraper" / "scraper.log").read_text(encoding="utf-8")
-    assert "data message" in data_log
-    assert "data message" not in app_log
-    assert "ui message" in app_log
-    assert "ai message" in ai_log
-    assert "ai message" not in scraper_log
+    relative_paths = sorted({target for _logger_name, target in routes.values()})
+    contents = {
+        relative_path: (tmp_path / relative_path).read_text(encoding="utf-8")
+        for relative_path in relative_paths
+    }
+    for token, (_logger_name, target) in routes.items():
+        assert token in contents[target]
+        assert sum(token in content for content in contents.values()) == 1
 
     logging_config.setup_logging(log_level="WARNING", log_to_file=False)
     managed = _managed_handlers()

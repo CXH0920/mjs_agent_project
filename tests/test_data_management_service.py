@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from src.business.data_management_service import DataManagementService, DataMutationService
+from src.business.maintenance.data_management_service import DataManagementService, DataMutationService
 from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
 from src.data.models import Hero, HeroGuide, SynergyScore
