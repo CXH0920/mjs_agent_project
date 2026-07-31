@@ -7,8 +7,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QTabWidget
 from src.config.env import parse_env_file, save_env_file
-from src.ui.backend_choose_dialog import BackendChooseDialog
-from src.ui.settings_dialog import SettingsDialog
+from src.ui.generation.backend_choose_dialog import BackendChooseDialog
+from src.ui.configuration.settings_dialog import SettingsDialog
 
 
 def _app() -> QApplication:

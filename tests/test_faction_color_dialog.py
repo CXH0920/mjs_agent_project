@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from src.ui.faction_color_dialog import (
+from src.ui.configuration.faction_color_dialog import (
     FactionColorDialog,
     load_faction_colors,
     save_faction_colors,

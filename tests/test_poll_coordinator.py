@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.ui.poll_coordinator import PollCoordinator, PollOutcome, PollResult, PollTaskResult
+from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult, PollTaskResult
 
 
 class _Signal:

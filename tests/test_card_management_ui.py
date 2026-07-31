@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QTextEdit
 
 from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
-from src.ui.card_management_panel import CardAnnotationEditDialog, CardManagementPanel, EFFECT_STATUS_LABELS
+from src.ui.library.card_management_panel import CardAnnotationEditDialog, CardManagementPanel, EFFECT_STATUS_LABELS
 
 
 def _app() -> QApplication:

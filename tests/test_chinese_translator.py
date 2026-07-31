@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
-from src.ui.chinese_translator import install_chinese_qt_translator
+from src.ui.app.chinese_translator import install_chinese_qt_translator
 
 
 def test_standard_dialog_buttons_use_chinese() -> None:

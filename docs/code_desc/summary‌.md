@@ -86,8 +86,8 @@ test_project/
 |---|------|------|---------|
 | 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化 |
 | 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化 |
-| 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/`（非 AI 部分） | 官网 JS chunk 解析、数据清洗、头像下载 |
-| 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai_*.py` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
+| 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 解析、数据清洗、头像下载 |
+| 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
 | 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入 |
 | 6 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
 | 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器 |

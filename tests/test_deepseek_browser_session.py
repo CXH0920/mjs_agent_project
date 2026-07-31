@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.scraper.deepseek_browser_session import DeepSeekBrowserSession
+from src.scraper.ai.browser_session import DeepSeekBrowserSession
 
 
 class _FakeKeyboard:

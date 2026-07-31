@@ -1,0 +1,250 @@
+"""
+名将杀 Agent - Playwright 浏览器自动化生成器
+
+基于 Playwright + Edge 连接 DeepSeek 网页版，实现消息自动发送、
+流式回复等待、内容提取与结构化存储。
+
+实现与 AIBatchGenerator 相同的 generate_guide / generate_synergy 接口。
+
+=== ETL 数据流 ===
+浏览器 AI 回复(原始 HTML/文本)
+  │ 1. Extract
+  ▼
+_send_and_wait() → 原始回复文本(str)
+  │ 2. Transform
+  ▼
+_extract_json() → 解析为 Python dict
+_convert_ids_to_int() → 字段类型转换
+inject hero_id / hero_a_id / hero_b_id
+  │ 3. Load
+  ▼
+_validate_guide() / _validate_synergy() → Pydantic 校验
+  ▼
+返回校验通过的 dict → _save_json() → JSON 文件
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import random
+import time
+from src.config.env import PROJECT_ROOT
+from src.scraper.ai.browser_session import DeepSeekBrowserSession
+from src.scraper.ai.prompt_utils import (
+    load_prompt,
+    build_guide_prompt,
+    build_synergy_prompt,
+)
+from src.scraper.ai.json_extract import extract_json
+from src.scraper.ai.utils import (
+    convert_ids_to_int,
+    validate_guide,
+    validate_synergy,
+)
+
+logger = logging.getLogger(__name__)
+
+PROMPT_DIR = PROJECT_ROOT / "docs" / "prompts"
+GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
+SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
+
+class PlaywrightGenerator:
+    """基于 Playwright + Edge 浏览器自动化的 AI 生成器"""
+
+    def __init__(
+        self,
+        browser_config: dict | None = None,
+        chat_config: dict | None = None,
+    ):
+        self._session = DeepSeekBrowserSession(browser_config, chat_config)
+        # 控制 system prompt 只发一次
+        self._guide_system_sent = False
+        self._synergy_system_sent = False
+        self._guide_rest_required = False
+        self._synergy_rest_required = False
+
+        logger.info("[PlaywrightGenerator] 初始化完成")
+
+    # ---------------------------------------------------------------
+    # 公开接口（与 AIBatchGenerator 保持一致）
+    # ---------------------------------------------------------------
+
+    def generate_guide(self, hero: dict) -> tuple[dict | None, dict | None]:
+        """为单个武将生成攻略（浏览器模式不返回 usage）
+
+        第一次调用发送 system prompt + 武将数据，后续只发送武将数据（带 ID），
+        让 AI 在同一会话中根据已设定的规则持续生成。
+        每次成功生成后，在下一次请求前随机休息 60-180 秒。
+        """
+        hero_name = hero.get("name", "?")
+        hero_id = hero.get("id", 0)
+        logger.info("[攻略] 开始生成: %s (id=%s)", hero_name, hero_id)
+
+        if self._guide_rest_required:
+            self._random_rest()
+            self._guide_rest_required = False
+
+        is_first_call = not self._guide_system_sent
+
+        if is_first_call:
+            # 第一次：加载 system prompt 并与第一条数据拼接发送
+            system_prompt = load_prompt(GUIDE_PROMPT_FILE)
+            if not system_prompt:
+                logger.error("[攻略] prompt 模板未找到: %s", GUIDE_PROMPT_FILE)
+                return None, None
+
+            user_prompt = build_guide_prompt(hero)
+            full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+            logger.info("[攻略] 首次发送 system prompt + %s 数据", hero_name)
+            logger.debug("[攻略] 首次发送总长度: %d 字符", len(full_prompt))
+
+            reply = self._send_and_wait(full_prompt)
+            if not reply:
+                logger.warning("[攻略] %s: 首次发送获取回复为空", hero_name)
+                return None, None
+
+            self._guide_system_sent = True
+            logger.info("[攻略] system prompt 已发送，后续只发武将数据")
+        else:
+            # 后续：只发武将数据（带 ID）
+            data_prompt = build_guide_prompt(hero)
+            logger.info("[攻略] 发送 %s 数据（%d 字符）", hero_name, len(data_prompt))
+            reply = self._send_and_wait(data_prompt)
+            if not reply:
+                logger.warning("[攻略] %s: 获取回复为空", hero_name)
+                return None, None
+
+        logger.info("[攻略] %s: 原始回复 %d 字符", hero_name, len(reply))
+        logger.debug("[攻略] %s: 原始回复前200字:\n%s", hero_name, reply[:200])
+
+        try:
+            raw = extract_json(reply)
+            logger.info("[攻略] %s: JSON 提取成功, 字段: %s", hero_name, list(raw.keys()))
+        except ValueError:
+            logger.error("[攻略] %s: JSON 提取失败", hero_name)
+            logger.error("[攻略] %s: 原始回复全文(%d字符):\n%s",
+                         hero_name, len(reply), reply)
+            return None, None
+
+        raw["hero_id"] = hero_id
+        convert_ids_to_int(raw, ["synergizes_with"])
+        logger.debug("[攻略] %s: 提取后的原始数据:\n%s", hero_name,
+                     json.dumps(raw, ensure_ascii=False, indent=2))
+
+        result = validate_guide(raw)
+        if result is None:
+            logger.error("[攻略] %s: Pydantic 校验失败", hero_name)
+            logger.error("[攻略] %s: 完整原始数据:\n%s", hero_name,
+                         json.dumps(raw, ensure_ascii=False, indent=2))
+            return None, None
+
+        logger.info("[攻略] %s: 校验通过, 结果字段: %s", hero_name, list(result.keys()))
+
+        self._guide_rest_required = True
+
+        return result, None
+
+    def generate_synergy(self, hero_a: dict, hero_b: dict) -> tuple[dict | None, dict | None]:
+        """为武将对生成相性评分（浏览器模式不返回 usage）
+
+        第一次调用发送 system prompt + 第一对数据，后续只发送武将数据（带 ID）。
+        每次成功生成后，在下一次请求前随机休息 60-180 秒。
+        """
+        name_a = hero_a.get("name", "?")
+        name_b = hero_b.get("name", "?")
+        logger.info("[相性] 开始生成: %s <-> %s", name_a, name_b)
+
+        if self._synergy_rest_required:
+            self._random_rest()
+            self._synergy_rest_required = False
+
+        is_first_call = not self._synergy_system_sent
+
+        if is_first_call:
+            # 第一次：system prompt + 第一对数据
+            system_prompt = load_prompt(SYNERGY_PROMPT_FILE)
+            if not system_prompt:
+                logger.error("[相性] prompt 模板未找到: %s", SYNERGY_PROMPT_FILE)
+                return None, None
+
+            user_prompt = build_synergy_prompt(hero_a, hero_b)
+            full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+            logger.info("[相性] 首次发送 system prompt + %s <-> %s 数据", name_a, name_b)
+            logger.debug("[相性] 首次发送总长度: %d 字符", len(full_prompt))
+
+            reply = self._send_and_wait(full_prompt)
+            if not reply:
+                logger.warning("[相性] 首次发送获取回复为空")
+                return None, None
+
+            self._synergy_system_sent = True
+            logger.info("[相性] system prompt 已发送，后续只发武将数据")
+        else:
+            # 后续：只发武将数据（带 ID）
+            data_prompt = build_synergy_prompt(hero_a, hero_b)
+            logger.info("[相性] 发送 %s <-> %s 数据（%d 字符）",
+                        name_a, name_b, len(data_prompt))
+            reply = self._send_and_wait(data_prompt)
+            if not reply:
+                logger.warning("[相性] %s <-> %s: 获取回复为空", name_a, name_b)
+                return None, None
+
+        logger.info("[相性] %s <-> %s: 原始回复 %d 字符", name_a, name_b, len(reply))
+        logger.debug("[相性] %s <-> %s: 原始回复前200字:\n%s",
+                     name_a, name_b, reply[:200])
+
+        try:
+            raw = extract_json(reply)
+            logger.info("[相性] %s <-> %s: JSON 提取成功, 字段: %s",
+                        name_a, name_b, list(raw.keys()))
+        except ValueError:
+            logger.error("[相性] %s <-> %s: JSON 提取失败", name_a, name_b)
+            logger.error("[相性] %s <-> %s: 原始回复全文(%d字符):\n%s",
+                         name_a, name_b, len(reply), reply)
+            return None, None
+
+        raw["hero_a_id"] = hero_a.get("id", 0)
+        raw["hero_b_id"] = hero_b.get("id", 0)
+
+        if "combat_synergy" in raw and "combo_ceiling" not in raw:
+            logger.info("[相性] %s <-> %s: 兼容字段 combat_synergy → combo_ceiling",
+                        name_a, name_b)
+            raw["combo_ceiling"] = raw.pop("combat_synergy")
+
+        logger.debug("[相性] %s <-> %s: 提取后的原始数据:\n%s",
+                     name_a, name_b, json.dumps(raw, ensure_ascii=False, indent=2))
+
+        result = validate_synergy(raw)
+        if result is None:
+            logger.error("[相性] %s <-> %s: Pydantic 校验失败", name_a, name_b)
+            logger.error("[相性] %s <-> %s: 完整原始数据:\n%s",
+                         name_a, name_b, json.dumps(raw, ensure_ascii=False, indent=2))
+            return None, None
+
+        logger.info("[相性] %s <-> %s: 校验通过, 评分 %s",
+                    name_a, name_b, result.get("score", "?"))
+
+        self._synergy_rest_required = True
+
+        return result, None
+
+    def _random_rest(self) -> None:
+        """随机休息 60-180 秒，避免触发风控"""
+        rest = random.randint(60, 180)
+        logger.info("[休息] 随机休息 %d 秒...", rest)
+        time.sleep(rest)
+
+    def close(self):
+        """关闭浏览器上下文"""
+        logger.info("[PlaywrightGenerator] 关闭浏览器...")
+        self._session.close()
+        self._guide_system_sent = False
+        self._synergy_system_sent = False
+        self._guide_rest_required = False
+        self._synergy_rest_required = False
+        logger.info("[PlaywrightGenerator] 浏览器已关闭")
+
+    def _send_and_wait(self, prompt: str) -> str | None:
+        """兼容内部旧调用，委托浏览器会话完成发送和提取。"""
+        return self._session.send_and_wait(prompt)

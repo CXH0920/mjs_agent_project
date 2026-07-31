@@ -9,7 +9,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from src.scraper import crawler, incremental, official, official_adapter
+from src.scraper.official_source import adapter as official_adapter
+from src.scraper.official_source import crawler, full as official, incremental
 
 
 class _FakeResponse:

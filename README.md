@@ -23,14 +23,23 @@ test_project/
 │   │   ├── win_rate_repository.py # 2v2 胜率 CSV 读取与默认路径缓存
 │   │   └── recommendation_index_repository.py # 推荐指数计算与 CSV 快照输出
 │   ├── scraper/
-│   │   ├── crawler.py             # 爬虫核心（公开 API，含头像下载）
-│   │   ├── official.py            # 官网全量爬虫（支持 --skip-images）
-│   │   ├── incremental.py         # 增量/指定爬虫（支持 --skip-images）
-│   │   ├── ai_utils.py            # AI 生成共享工具函数
-│   │   ├── ai_generator.py        # AIBatchGenerator（API 调用/限速/Prompt/校验）
-│   │   ├── ai_playwright.py       # PlaywrightGenerator（浏览器自动化模式）
-│   │   ├── ai_batch.py            # CLI 入口（纯编排，不含业务逻辑）
-│   │   └── ai_generation.py       # 四种生成编排函数（攻略/全量相性/指定配对/选定武将）
+│   │   ├── official.py            # 官网全量采集兼容 CLI
+│   │   ├── incremental.py         # 增量/指定采集兼容 CLI
+│   │   ├── ai_batch.py            # AI 批量生成兼容 CLI
+│   │   ├── official_source/       # 官网适配、清洗、全量与增量实现
+│   │   │   ├── adapter.py
+│   │   │   ├── crawler.py
+│   │   │   ├── full.py
+│   │   │   └── incremental.py
+│   │   └── ai/                    # AI 生成、双后端、Prompt 与 JSON 提取
+│   │       ├── batch.py
+│   │       ├── generation.py
+│   │       ├── api_generator.py
+│   │       ├── browser_generator.py
+│   │       ├── browser_session.py
+│   │       ├── prompt_utils.py
+│   │       ├── json_extract.py
+│   │       └── utils.py
 │   ├── business/
 │   │   ├── base_fetch_service.py  # BaseFetchService 基类（QProcess 通用管理方法）
 │   │   ├── fetch_service.py       # 武将采集业务（继承 BaseFetchService）
@@ -53,33 +62,18 @@ test_project/
 │   │   ├── recognizer.py          # PaddleOCR + 编辑距离矫正（两段式识别，内存中处理）
 │   │   └── ocr_loader.py          # 单例延迟加载
 │   └── ui/
-│       ├── style.py               # 全局样式表（天蓝色调）
-│       ├── main_window.py         # 主窗口（菜单栏/Tab/状态栏 + 轮询编排）
-│       ├── ai_generation_workflow.py # 攻略和相性生成的对话框/进度工作流
-│       ├── shared/                 # 跨页面公开控件、技能弹窗、势力配色缓存
-│       │   ├── widgets.py          # DoubleClickLabel
-│       │   ├── hero_dialogs.py     # HeroSkillDialog
-│       │   └── faction_colors.py   # 势力配色读取/校验/兜底/重载
-│       ├── hero_browser.py        # 武将浏览（列表+详情+攻略）
-│       ├── hero_edit_dialog.py    # 武将基础字段编辑
-│       ├── guide_edit_dialog.py   # 攻略正文和关系编辑
-│       ├── hero_relation_select_dialog.py # 攻略关系武将搜索/筛选/多选
-│       ├── synergy_edit_dialog.py # 相性评分编辑
-│       ├── hero_select_dialog.py  # 武将选择对话框基类
-│       ├── recommendation_panel.py # 选将推荐面板（4×2 网格+头像+相性 + 截图导入）
-│       ├── hero_card_widget.py    # 推荐卡片（展示、奖牌和交互信号）
-│       ├── guide_detail_dialog.py # 推荐卡片的攻略详情弹窗
-│       ├── backend_choose_dialog.py # 后端选择（API/浏览器双 Tab）
-│       ├── mumu_config_dialog.py  # 模拟器配置对话框（表单、状态和 ROI 框选）
-│       ├── official_data_import_dialog.py # 官方榜单图片选择与进度条
-│       ├── roi_selector.py        # 模板 ROI 框选对话框（拖拽选区 + 坐标缩放）
-│       ├── fetch_dialog.py        # 武将获取选择
-│       ├── guide_fetch_dialog.py  # 攻略获取选择
-│       ├── synergy_pair_dialog.py # 相性指定获取（选 2~8 武将，自动两两配对）
-│       ├── synergy_single_dialog.py # 相性选定武将（选 1 武将）
-│       ├── settings_dialog.py     # API 配置对话框
-│       ├── data_management_dialog.py # 攻略与相性数据管理对话框
-│       └── guide_progress_dialog.py # 攻略生成进度条
+│       ├── app/                    # 主窗口、应用图标、翻译与轮询编排
+│       ├── library/                # 武将资料、卡牌图鉴及编辑弹窗
+│       ├── recommendation/         # 选将推荐页面与推荐卡片
+│       ├── match/                  # 对局阵容状态、攻略页面与分析视图
+│       ├── generation/             # AI 生成工作流、选择和进度弹窗
+│       ├── configuration/          # API、模拟器、势力配色与 ROI 配置
+│       ├── data_admin/             # 数据管理与官方榜单导入
+│       └── shared/                 # 跨功能控件、展示与样式
+│           ├── style.py            # 视觉 Token、全局 QSS 与语义角色
+│           ├── widgets.py          # 页面标题、空状态、通知条等公共控件
+│           ├── hero_dialogs.py     # HeroSkillDialog
+│           └── faction_colors.py   # 势力配色读取/校验/兜底/重载
 ├── data/
 │   ├── heroes.json                # 165 个武将
 │   ├── synergies.json             # 相性评分
@@ -248,6 +242,8 @@ ADB 截图
 ## 文档导航
 
 - [完整项目细节](docs/project_doc.md)：按模块说明数据、业务、UI、OCR、配置和测试约束。
+- [UI 设计系统](docs/spec/spec_ui_design_system.md)：视觉 Token、组件语义、交互状态和三档窗口验收规则。
+- [UI 导航规范](docs/spec/spec_ui_navigation.md)：目标信息架构、页面操作归属和状态保持规则。
 - [调用图目录](docs/call_graph/)：以 `A() -> B()` 形式记录核心函数调用链和跨进程边界。
 - [模块说明](docs/code_desc/)：面向维护和新人培训的分模块摘要。
 
@@ -270,10 +266,10 @@ UI 层 (PySide6)      主窗口 / 武将浏览器 / 选将推荐 / 各对话框
 ### 数据流
 
 ```
-官网页面 → crawler.py 解析 JS chunk → official.py/incremental.py 清洗校验 → data/heroes.json
+官网页面 → official_source/crawler.py 解析 JS chunk → full.py/incremental.py 清洗校验 → data/heroes.json
                                                                         ↘ images/<武将名>.png
-DeepSeek API / 网页版 → ai_batch.py → ai_generator.py / ai_playwright.py
-  → ai_generation.py → data/{guides,synergies}.json
+DeepSeek API / 网页版 → ai/batch.py → api_generator.py / browser_generator.py
+  → generation.py → data/{guides,synergies}.json
 data/*.json → DataFacade (三个 Manager) → UI 展示
 
 模拟器屏幕 → ADB screencap → PIL Image（全在内存，无磁盘 I/O）
@@ -362,7 +358,7 @@ for issue in report.issues:
 
 ## 爬虫模块
 
-### 爬虫核心 (`src/scraper/crawler.py`)
+### 爬虫核心 (`src/scraper/official_source/crawler.py`)
 
 提供 `fetch(binary=True)` / `find_chunk_url()` / `extract_js_array()` / `js_to_json()` / `transform()` / `validate_heroes()` 等公开 API。核心逻辑：
 
@@ -395,11 +391,16 @@ for issue in report.issues:
 
 ```
 src/scraper/
-├── ai_batch.py          CLI 入口（参数解析 → 配置加载 → 委托子模块）
-├── ai_generator.py      API 调用核心（限速/重试/JSON 提取/Pydantic 校验）
-├── ai_playwright.py     浏览器自动化生成器（Playwright + Edge）
-├── ai_generation.py     四种生成编排函数（攻略/全量相性/指定配对/选定武将）
-└── ai_utils.py          共享工具（estimate_cost / load_heroes / _save_json）
+├── ai_batch.py          兼容 CLI 入口
+└── ai/
+    ├── batch.py         参数解析、配置加载与任务分发
+    ├── api_generator.py API 调用核心
+    ├── browser_generator.py # 浏览器自动化生成器
+    ├── browser_session.py   # Playwright + Edge 会话
+    ├── generation.py    四种生成编排函数
+    ├── prompt_utils.py  Prompt 构建与成本估算
+    ├── json_extract.py  AI 回复 JSON 提取
+    └── utils.py         数据加载、校验与原子保存
 ```
 
 **特性：**

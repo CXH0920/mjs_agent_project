@@ -16,11 +16,11 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
-from src.ui.main_window import MainWindow, PollOutcome
-from src.ui.match_guide_panel import MatchGuidePanel
-from src.ui.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
-from src.ui.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
-from src.ui.recommendation_panel import HeroCardWidget, RecommendationPanel
+from src.ui.app.main_window import MainWindow, PollOutcome
+from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
+from src.ui.app.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
+from src.ui.recommendation.recommendation_panel import HeroCardWidget, RecommendationPanel
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 
 
@@ -298,7 +298,7 @@ def test_hero_card_exposes_public_identity_and_unrecognized_state(monkeypatch) -
     assert card.hero_name == "测试武将"
 
     monkeypatch.setattr(
-        "src.ui.hero_card_widget.get_faction_colors", lambda: {"魏": "#123456"},
+        "src.ui.recommendation.hero_card_widget.get_faction_colors", lambda: {"魏": "#123456"},
     )
     card.refresh_faction_color()
     assert "#123456" in card._faction_badge.styleSheet()

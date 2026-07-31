@@ -14,10 +14,10 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
-from src.ui import ai_generation_workflow as workflow_module
-from src.ui.ai_generation_workflow import AiGenerationWorkflow
-from src.ui.guide_progress_dialog import GuideProgressDialog
-from src.ui.main_window import MainWindow
+from src.ui.generation import ai_generation_workflow as workflow_module
+from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
+from src.ui.generation.guide_progress_dialog import GuideProgressDialog
+from src.ui.app.main_window import MainWindow
 
 
 def _app() -> QApplication:
@@ -192,7 +192,7 @@ def test_incremental_guide_workflow_uses_only_missing_heroes(tmp_path: Path, mon
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.prompt_utils.estimate_cost",
+        "src.scraper.ai.prompt_utils.estimate_cost",
         lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
     )
     workflow.guides_changed.connect(lambda: changed.append(True))
@@ -215,7 +215,7 @@ def test_specific_guide_workflow_passes_guide_manager(tmp_path: Path, monkeypatc
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.prompt_utils.estimate_cost",
+        "src.scraper.ai.prompt_utils.estimate_cost",
         lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
     )
 
@@ -235,7 +235,7 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     monkeypatch.setattr(workflow_module, "SynergySingleDialog", _SingleHeroDialog)
     monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.prompt_utils.estimate_item_cost",
+        "src.scraper.ai.prompt_utils.estimate_item_cost",
         lambda count, mode, model: {"items": count, "mode": mode, "model": model},
     )
     workflow.synergies_changed.connect(lambda: changed.append(True))
@@ -261,7 +261,7 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     monkeypatch.setattr(workflow_module, "SynergyPairDialog", _PairHeroDialog)
     monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.prompt_utils.estimate_item_cost",
+        "src.scraper.ai.prompt_utils.estimate_item_cost",
         lambda count, mode, model: {"items": count, "mode": mode, "model": model},
     )
 
@@ -282,7 +282,7 @@ def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypat
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.prompt_utils.estimate_cost",
+        "src.scraper.ai.prompt_utils.estimate_cost",
         lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
     )
 
@@ -342,7 +342,7 @@ def test_synergy_progress_stays_at_zero_until_first_result() -> None:
     assert dialog._progress_bar.format() == "0 / 3"
     assert dialog._status_label.text() == "正在生成 甲 <-> 乙 的相性评分..."
     dialog.update_status("[1/3] 甲 <-> 乙 OK - 评分: 8")
-    dialog.update_status("2026-07-27 [INFO] src.scraper.ai_playwright: [休息] 随机休息 126 秒...")
+    dialog.update_status("2026-07-27 [INFO] src.scraper.ai.browser_generator: [休息] 随机休息 126 秒...")
     assert dialog._progress_bar.value() == 1
     assert dialog._status_label.text() == "冷却中（约 126 秒），已完成 1 / 3"
     dialog.on_process_finished(True)

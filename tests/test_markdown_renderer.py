@@ -1,7 +1,7 @@
 """Markdown 安全渲染测试。"""
 
 from src.data.models import MAX_GUIDE_TEXT_LENGTH
-from src.ui.markdown_renderer import render_markdown
+from src.ui.shared.markdown_renderer import render_markdown
 
 
 def test_render_markdown_renders_markdown_and_escapes_raw_html() -> None:

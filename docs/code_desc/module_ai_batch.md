@@ -1,6 +1,6 @@
 # 模块：AI 批量生成
 
-> 对应目录：`src/scraper/ai_*.py`
+> 对应目录：`src/scraper/ai/`
 > 职责：通过 AI（DeepSeek API 或浏览器自动化）批量生成武将攻略和相性评分
 
 ---
@@ -21,20 +21,24 @@
 
 ```
 src/scraper/
-├── ai_batch.py              # CLI 入口（参数解析 → 配置加载 → 委托子模块）
-├── ai_generator.py          # API 调用核心（限速/重试/JSON 提取/Pydantic 校验）
-├── ai_playwright.py         # 浏览器模式生成器（提示词、校验与生成流程）
-├── deepseek_browser_session.py # DeepSeek 页面会话（Playwright + Edge 生命周期与收发）
-├── ai_generation.py         # 生成编排函数（run_guide_generation / run_synergy_generation / run_synergy_pair_generation / run_synergy_single_generation）
-└── ai_utils.py              # 共享工具（estimate_cost / load_heroes / _save_json）
+├── ai_batch.py              # 兼容 CLI 入口
+└── ai/
+    ├── batch.py             # 参数解析、配置加载与任务分发
+    ├── api_generator.py     # API 调用核心
+    ├── browser_generator.py # 浏览器模式生成器
+    ├── browser_session.py   # DeepSeek 页面会话
+    ├── generation.py        # 四种生成编排函数
+    ├── prompt_utils.py      # Prompt 构建与成本估算
+    ├── json_extract.py      # AI 回复 JSON 提取
+    └── utils.py             # 数据加载、校验与原子保存
 ```
 
 ### 模块间调用关系
 
 ```
-ai_batch.py (CLI 入口)
+ai_batch.py (兼容 CLI) -> ai/batch.py
  ├── 选择生成器: AIBatchGenerator (api) / PlaywrightGenerator (browser)
- └── ai_generation.py → 根据参数分发到:
+ └── generation.py → 根据参数分发到:
       ├── run_guide_generation()
       ├── run_synergy_generation()
       ├── run_synergy_pair_generation()
@@ -60,6 +64,7 @@ generate_synergy(a, b)  → (dict|None, usage|None)
 | 数据源 | DeepSeek API | DeepSeek 网页版 |
 | 限速 | RPM 控制 + 指数退避 | 每次成功生成后，在下一次请求前随机休息 60-180 秒 |
 | Token 统计 | ✅ 支持 | ❌ 返回 None |
+| 输出处理 | 关闭思考，上限 16384；仅解析最终 `content` | 读取网页最终回复 |
 | 成本估算 | ✅ 支持 dry-run | ❌ 不支持 |
 | 必备条件 | API Key | 已登录的 Edge 浏览器 |
 
@@ -75,7 +80,9 @@ generate_guide(hero)
   ├── build_guide_prompt(hero)                  → user_prompt
   ├── _call_api(messages=[system, user])
   │   ├── 限速检查（距上次请求不足 60/RPM 秒则 sleep）
-  │   ├── POST /v1/chat/completions
+  │   ├── POST /v1/chat/completions（thinking.type=disabled）
+  │   ├── 丢弃思考内容，仅保留 content / finish_reason / usage
+  │   ├── content 为空或 finish_reason=length → 明确报告输出额度耗尽
   │   └── 失败 3 次内指数退避重试（2s/4s/8s）
   ├── _extract_json(response.text)              → raw dict
   ├── inject hero_id / convert_ids_to_int(synergizes_with)
@@ -97,7 +104,7 @@ AI 的回复格式高度不可控，`_extract_json()` 按优先级依次尝试 4
 
 ### 3.4 相性配对（多武将组合）
 
-`ai_generation.py` 中的 `run_synergy_pair_generation()` 支持选择 2~8 个武将，用 `itertools.combinations` 遍历所有 C(N,2) 组合：
+`generation.py` 中的 `run_synergy_pair_generation()` 支持选择 2~8 个武将，用 `itertools.combinations` 遍历所有 C(N,2) 组合：
 
 ```python
 for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
@@ -191,15 +198,15 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `_extract_json(text)` | `ai_generator.py` | 4 策略宽容提取 JSON |
-| `_validate_guide(raw)` | `ai_generator.py` | Pydantic 校验攻略 |
-| `_validate_synergy(raw)` | `ai_generator.py` | Pydantic 校验相性 |
+| `extract_json(text)` | `json_extract.py` | 4 策略宽容提取 JSON |
+| `validate_guide(raw)` | `utils.py` | Pydantic 校验攻略 |
+| `validate_synergy(raw)` | `utils.py` | Pydantic 校验相性 |
 | `estimate_cost(count, mode, model)` | `prompt_utils.py` | 按模型价格表预览 Token 和费用；未知模型不估价 |
 | `estimate_item_cost(item_count, mode, model)` | `prompt_utils.py` | 按实际 API 请求项数预览 Token 和费用，用于指定范围的相性生成 |
-| `load_heroes(path)` | `ai_utils.py` | 通过 `HeroManager` 完整校验武将 JSON；任一错误均拒绝部分加载 |
-| `_save_json(path, data)` | `ai_utils.py` | 原子写入 JSON |
+| `load_heroes(path)` | `utils.py` | 通过 `HeroManager` 完整校验武将 JSON；任一错误均拒绝部分加载 |
+| `_save_json(path, data)` | `utils.py` | 原子写入 JSON |
 
-`ai_batch.py` 的断点加载通过 `GuideManager` / `SynergyManager` 逐条校验。发现无效 JSON、错误记录或重复键时，原文件先保留为同目录 `.corrupt-时间戳.json`，随后仅将通过校验的记录原子写回；如果备份失败，任务中止且不覆盖原文件。
+`ai/batch.py` 的断点加载通过 `GuideManager` / `SynergyManager` 逐条校验。发现无效 JSON、错误记录或重复键时，原文件先保留为同目录 `.corrupt-时间戳.json`，随后仅将通过校验的记录原子写回；如果备份失败，任务中止且不覆盖原文件。
 
 ---
 
@@ -211,4 +218,4 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 | 依赖 | `src.config.env` | 读取 API Key/URL/Model 等配置 |
 | 被调用方 | `src.business.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成 |
 | 被调用方 | `src.business.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成 |
-| 被调用方 | `src.ui.main_window` | 菜单"数据 → 攻略/相性"触发生成 |
+| 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 攻略/相性"触发生成 |

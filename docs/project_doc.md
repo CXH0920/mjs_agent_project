@@ -71,9 +71,12 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 ### 1.1 文件位置与层级关系
 
 ```
-src/scraper/crawler.py         ← 核心：网络请求、JS 解析、数据清洗、Pydantic 校验
-src/scraper/official.py        ← 全量采集 CLI
-src/scraper/incremental.py     ← 增量/指定采集 CLI
+src/scraper/official.py                    ← 全量采集兼容 CLI
+src/scraper/incremental.py                 ← 增量/指定采集兼容 CLI
+src/scraper/official_source/adapter.py     ← 官网 HTML/JS chunk 格式适配
+src/scraper/official_source/crawler.py     ← 网络请求、数据清洗、校验与头像下载
+src/scraper/official_source/full.py        ← 全量采集实现
+src/scraper/official_source/incremental.py ← 增量/指定采集实现
 ```
 
 ### 1.2 crawler.py 详细说明（349 行）
@@ -98,9 +101,9 @@ src/scraper/incremental.py     ← 增量/指定采集 CLI
 - 3 次重试，间隔 2 秒，最后一次失败抛异常
 - 不可用于异步环境，同步阻塞
 
-#### 1.2.3 `official_adapter.py`：JS chunk 解析适配器
+#### 1.2.3 `adapter.py`：JS chunk 解析适配器
 
-官网 HTML 与 JS chunk 的格式假设集中在 `src/scraper/official_adapter.py`；`crawler.py` 仅负责请求编排和数据清洗。
+官网 HTML 与 JS chunk 的格式假设集中在 `src/scraper/official_source/adapter.py`；`crawler.py` 仅负责请求编排和数据清洗。
 
 **`find_chunk_url(html) → str`**：
 - 从百科首页 HTML 中正则匹配 `/_nuxt/mjbk.[a-f0-9]+.js`
@@ -249,10 +252,10 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 ### 2.1 模块文件关系
 
 ```
-ai_batch.py (CLI 入口, 282行)
+ai_batch.py (兼容 CLI) -> ai/batch.py (实际入口)
  ├── 创建 AIBatchGenerator 或 PlaywrightGenerator
  ├── 委托给各 run_* 函数
- └── ai_generation.py → run_guide_generation() / run_synergy_generation()
+ └── ai/generation.py → run_guide_generation() / run_synergy_generation()
                          / run_synergy_pair_generation() / run_synergy_single_generation()
                          _save_json() 写入结果
 ```
@@ -280,7 +283,7 @@ ai_batch.py (CLI 入口, 282行)
 
 ```python
 if args.browser:
-    from src.scraper.ai_playwright import PlaywrightGenerator
+    from src.scraper.ai.browser_generator import PlaywrightGenerator
     generator = PlaywrightGenerator()
 else:
     _check_api_key(api_config)
@@ -304,7 +307,7 @@ else:
 
 浏览器模式返回 `(result, None)`，不以 token 统计判断成败，避免误报失败。
 
-### 2.3 AIBatchGenerator 详细说明（ai_generator.py）
+### 2.3 AIBatchGenerator 详细说明（api_generator.py）
 
 #### 2.3.1 构造函数
 
@@ -361,7 +364,7 @@ return (validated_dict, usage_dict)
 - 兼容旧字段：`combat_synergy` → `combo_ceiling`
 - 使用 `_validate_synergy` 校验
 
-### 2.4 ai_generation.py — 四种生成循环
+### 2.4 generation.py — 四种生成循环
 
 ```python
 def run_guide_generation(heroes, generator, guide_path, existing_guides, api_config, update_mode=False)
@@ -939,7 +942,7 @@ Tab 栏右上角（`QTabWidget.setCornerWidget`）放置 4 个按钮：
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 - 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
 
-**Markdown 渲染**：统一通过 `src.ui.markdown_renderer.render_markdown()` 调用 Mistune，并转义原始 HTML；攻略正文超过 20,000 字时不进入解析。`Skill`、`SynergyScore` 与 `HeroGuide` 的 AI 文本和列表字段均由 Pydantic 限制长度及项目数。
+**Markdown 渲染**：统一通过 `src.ui.shared.markdown_renderer.render_markdown()` 调用 Mistune，并转义原始 HTML；攻略正文超过 20,000 字时不进入解析。`Skill`、`SynergyScore` 与 `HeroGuide` 的 AI 文本和列表字段均由 Pydantic 限制长度及项目数。
 
 **攻略视觉与交互：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。
@@ -1077,22 +1080,25 @@ _start_import()
 
 该窗口不读取图片、不进行 OCR、不写 CSV；这些操作全部委托给业务服务层。主窗口在弹窗打开期间停止活跃轮询，并在弹窗退出后按连接状态恢复；已入队的常规任务和官方整批任务由唯一 `OcrWorker` 顺序执行。
 
-### 5.12 全局样式（style.py, 247 行）
+### 5.12 UI 设计系统（shared/style.py + shared/widgets.py）
 
-**颜色方案**：
+`src.ui.shared.style` 统一提供视觉 Token、全局 QSS 和动态语义属性；`src.ui.shared.widgets` 提供页面标题、空状态、状态标签、通知条和标准弹窗底栏。旧页面使用的样式常量暂时保留兼容，后续按页面迁移，不改变业务信号和数据流。
+
+**核心颜色 Token**：
 
 | 元素 | 颜色 |
 |------|------|
-| 主色调 | `#4a90d9`（天蓝） |
-| 悬停 | `#357abd` |
-| 按下 | `#2a6cb5` |
-| 背景 | `#f0f4f8` |
-| 面板底色 | `#dce6f0` |
-| 文字 | `#2c3e50` |
-| 次要文字 | `#4a6a8a` |
-| 边框 | `#b0c4de` |
+| 主操作/我方 | `#2f6ea5` |
+| 成功/已连接 | `#26734d` |
+| 警告/待核实 | `#a15c00` |
+| 危险/敌方 | `#b23a3a` |
+| 页面背景 | `#f4f6f8` |
+| 内容表面 | `#ffffff` |
+| 主要文字 | `#1f2933` |
+| 次要文字 | `#66717e` |
+| 边框 | `#d7dee7` |
 
-**字体**：`"Microsoft YaHei UI", "微软雅黑", "SimHei", sans-serif`，13px 基础字号。
+按钮通过 `uiRole` 使用 `primary`、`secondary`、`ghost`、`danger`；状态展示通过 `tone` 使用 `neutral`、`info`、`success`、`warning`、`danger`。完整规则见 `docs/spec/spec_ui_design_system.md` 和 `docs/spec/spec_ui_navigation.md`，三档窗口截图位于 `docs/ui_baseline/`。
 
 ---
 
@@ -1154,7 +1160,7 @@ _on_error()
 
 ### 6.6 结构化任务结果与分批提交
 
-`ai_generation.py` 的四种编排函数返回 `GenerationResult`。它统一记录 token、完成/跳过数、失败项与提交状态；`ai_batch.py` 据此决定退出码，任一失败项都会返回非零。
+`generation.py` 的四种编排函数返回 `GenerationResult`。它统一记录 token、完成/跳过数、失败项与提交状态；`ai_batch.py` 据此决定退出码，任一失败项都会返回非零。
 
 每累计 10 条攻略或相性校验成功，生成器即通过临时文件原子替换正式 JSON；任务结束时再提交不足一批的结果。失败项不改写其原有记录，已提交批次不会回滚。父进程仅解析 `[i/N]` 进度行，依据退出码通知 UI 成败，不再解析 `RESULT` 文本协议。
 
@@ -1394,7 +1400,7 @@ logs/
 | logger name 前缀 | 目标文件 |
 |-----------------|----------|
 | `src.scraper` | `scraper/scraper.log` |
-| `src.scraper.ai_` | `scraper/ai_batch.log` |
+| `src.scraper.ai` | `scraper/ai_batch.log` |
 | `src.business` | `business/business.log` |
 | `src.capture` | `scraper/scraper.log` |
 | `src.ocr` | `scraper/scraper.log` |
@@ -1407,8 +1413,8 @@ logs/
 - `src.ocr.*` → `scraper/scraper.log`
 - `src.business.capture_service` → `business/business.log`
 - `src.business.ocr_service` → `business/business.log`
-- `src.ui.mumu_config_dialog` → `app.log`
-- `src.ui.roi_selector` → `app.log`
+- `src.ui.configuration.mumu_config_dialog` → `app.log`
+- `src.ui.configuration.roi_selector` → `app.log`
 
 ### 10.4 日志轮转
 
@@ -1993,8 +1999,10 @@ AIBatchGenerator.__init__(api_key, api_url, model, rpm, ...)
   │    │     字段: ID / 名称 / 势力 / 定位 / 体力 / 手牌 / 性别 / 技能
   │    ├── _call_api(messages=[system, user], temperature=0.7)
   │    │    ├── 检查距上次请求间隔（不够则 sleep 补齐）
-  │    │    ├── POST {model, messages, temperature, max_tokens=8192}
-  │    │    ├── 成功: 更新 _last_request_time, 返回 resp.json()
+  │    │    ├── POST {model, messages, temperature, max_tokens=16384,
+  │    │    │         thinking={type: disabled}}
+  │    │    ├── 成功: 仅保留 content / finish_reason / usage
+  │    │    ├── content 为空或 finish_reason=length: 提示思考过程耗尽输出额度
   │    │    └── 失败: 指数退避重试（2s/4s/8s, 最多 3 次）
   │    └── 返回 (result_dict, usage_dict)
   │
@@ -2023,7 +2031,8 @@ Content-Type: application/json
     }
   ],
   "temperature": 0.7,
-  "max_tokens": 8192
+  "max_tokens": 16384,
+  "thinking": {"type": "disabled"}
 }
 ```
 
@@ -2054,6 +2063,8 @@ Content-Type: application/json
 #### 14.3.3 JSON 提取细节（`extract_json`）
 
 从 `response.choices[0].message.content` 这段**自然语言文本**中提取 JSON 的 4 种策略：
+
+API 请求显式关闭思考；即使服务端仍返回 `reasoning_content`，程序也不读取、记录、保存或展示，后续解析链路只接收最终 `content`。
 
 | 优先级 | 策略 | 说明 | 适用场景 |
 |--------|------|------|----------|

@@ -1,6 +1,6 @@
 # 模块：爬虫与数据采集
 
-> 对应目录：`src/scraper/`（不含 `ai_*.py` 的 AI 部分）
+> 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载
 
 ---
@@ -22,10 +22,13 @@
 ```
 src/scraper/
 ├── __init__.py
-├── official_adapter.py # 官网 HTML/JS chunk 解析适配器
-├── crawler.py          # 爬虫核心：网络请求、数据清洗、Pydantic 校验
-├── official.py         # 全量采集 CLI 入口
-└── incremental.py      # 增量/指定采集 CLI 入口
+├── official.py         # 全量采集兼容 CLI 入口
+├── incremental.py      # 增量/指定采集兼容 CLI 入口
+└── official_source/
+    ├── adapter.py      # 官网 HTML/JS chunk 解析适配器
+    ├── crawler.py      # 网络请求、数据清洗、校验与头像下载
+    ├── full.py         # 全量采集实现
+    └── incremental.py  # 增量/指定采集实现
 ```
 
 ---
@@ -39,12 +42,12 @@ src/scraper/
 ```
 官网首页 HTML
   ① fetch(BAIKE_URL) → HTML
-  ② official_adapter.find_chunk_url(html) → JS chunk URL
+  ② adapter.find_chunk_url(html) → JS chunk URL
   ③ fetch(chunk_url) → JS 文本（约 300KB）
-  ④ official_adapter.parse_heroes_chunk(js_text) → Python list[dict]
+  ④ adapter.parse_heroes_chunk(js_text) → Python list[dict]
 ```
 
-**适配器边界：** `official_adapter.py` 集中承载官网页面与 chunk 的格式假设；官网改版时只需修改该文件。JS 数组不是合法 JSON，适配器内部的 `js_to_json()` 执行三步预处理：
+**适配器边界：** `official_source/adapter.py` 集中承载官网页面与 chunk 的格式假设；官网改版时只需修改该文件。JS 数组不是合法 JSON，适配器内部的 `js_to_json()` 执行三步预处理：
 
 1. **key 加引号** — `a:1` → `"a":1`
 2. **`undefined` → `null`** — 这是合法 JS 值但 JSON 不认识
@@ -156,10 +159,10 @@ def transform(raw: dict) -> dict | None:
 | 函数 | 文件 | 说明 |
 |------|------|------|
 | `fetch(url, binary)` | `crawler.py` | HTTP 请求，3 次重试 |
-| `find_chunk_url(html)` | `official_adapter.py` | 从 HTML 定位 JS chunk |
-| `parse_heroes_chunk(js_text)` | `official_adapter.py` | 提取官网数组并转为 Python 数据 |
-| `extract_js_array(js_text)` | `official_adapter.py` | 忽略字符串中方括号的深度扫描 |
-| `js_to_json(text)` | `official_adapter.py` | JS → JSON 三步转换 |
+| `find_chunk_url(html)` | `adapter.py` | 从 HTML 定位 JS chunk |
+| `parse_heroes_chunk(js_text)` | `adapter.py` | 提取官网数组并转为 Python 数据 |
+| `extract_js_array(js_text)` | `adapter.py` | 忽略字符串中方括号的深度扫描 |
+| `js_to_json(text)` | `adapter.py` | JS → JSON 三步转换 |
 | `transform(raw)` | `crawler.py` | 字段清洗与映射 |
 | `validate_heroes(heroes)` | `crawler.py` | Pydantic 校验 |
 | `save_json_atomic(path, data)` | `crawler.py` | 临时文件写入后原子替换，供全量和增量采集共用 |
@@ -174,4 +177,4 @@ def transform(raw: dict) -> dict | None:
 | 依赖 | `src.data.models` | 使用 Hero 模型进行 Pydantic 校验 |
 | 依赖 | `src.config.env` | 读取日志级别配置 |
 | 被调用方 | `src.business.fetch_service` | 通过 QProcess 启动爬虫 CLI |
-| 被调用方 | `src.ui.main_window` | 菜单"数据 → 武将获取"触发爬虫 |
+| 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 武将获取"触发爬虫 |

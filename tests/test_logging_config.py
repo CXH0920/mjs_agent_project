@@ -42,14 +42,19 @@ def test_setup_logging_reconfigures_only_project_handlers(tmp_path, monkeypatch)
 
     logging.getLogger("src.data.test").info("data message")
     logging.getLogger("src.ui.test").info("ui message")
+    logging.getLogger("src.scraper.ai.generation").info("ai message")
     for handler in _managed_handlers():
         handler.flush()
 
     data_log = (tmp_path / "data" / "data.log").read_text(encoding="utf-8")
     app_log = (tmp_path / "app.log").read_text(encoding="utf-8")
+    ai_log = (tmp_path / "scraper" / "ai_batch.log").read_text(encoding="utf-8")
+    scraper_log = (tmp_path / "scraper" / "scraper.log").read_text(encoding="utf-8")
     assert "data message" in data_log
     assert "data message" not in app_log
     assert "ui message" in app_log
+    assert "ai message" in ai_log
+    assert "ai message" not in scraper_log
 
     logging_config.setup_logging(log_level="WARNING", log_to_file=False)
     managed = _managed_handlers()

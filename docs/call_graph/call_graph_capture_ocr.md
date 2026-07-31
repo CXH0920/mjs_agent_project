@@ -316,11 +316,11 @@ src.business.ocr_service
   -> get_template_manager().set_template() / reload() / delete_template()
   -> 注入 CaptureService.submit_ocr_task()                     [兼容同步 run_ocr]
 
-src.ui.main_window
+src.ui.app.main_window
   -> 后台线程：AdbCapture.screencap_full()
   -> CaptureService.submit_ocr_task() -> OcrWorker             [轮询]
 
-src.ui.mumu_config_dialog
+src.ui.configuration.mumu_config_dialog
   -> EmulatorOperationService                                [后台探测/连接/测试/截图]
   -> RoiSelectorDialog                                       [UI 鼠标框选]
   -> OcrService.create_template() / select_template()        [模板持久化]

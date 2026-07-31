@@ -10,7 +10,7 @@
 
 **为什么：** 官网百科数据通过 Nuxt.js 打包到 JS chunk 中，不提供 REST API。直接请求 API 端点会返回空或 HTML 结构而非 JSON。JS chunk 中的 `const e=[...]` 数组是结构最稳定的数据源，自项目启动以来格式未变化过。
 
-上述解析规则集中在 `official_adapter.py`，对外由 `parse_heroes_chunk()` 提供单一入口。`tests/test_data/official_adapter/` 保存最小官网 HTML/JS 样本，契约测试用它验证适配器仍能定位 chunk 并解析原始记录。
+上述解析规则集中在 `official_source/adapter.py`，对外由 `parse_heroes_chunk()` 提供单一入口。`tests/test_data/official_adapter/` 保存最小官网 HTML/JS 样本，契约测试用它验证适配器仍能定位 chunk 并解析原始记录。
 
 ### 规则 1.2：括号深度计数器替代正则提取数组
 

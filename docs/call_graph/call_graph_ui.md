@@ -882,7 +882,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `src.capture.adb_screen.AdbCapture` | CaptureService 持有的唯一 ADB 会话 |
 | `src.ocr.ocr_loader.get_template_manager()` | 仅由 OcrService 管理模板 |
 | `src.ocr.recognizer.GeneralRecognizer` | OCR 预热 |
-| `src.scraper.ai_utils.estimate_cost()` | AI 成本估算 |
+| `src.scraper.ai.utils.estimate_cost()` | AI 成本估算 |
 
 ---
 

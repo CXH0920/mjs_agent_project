@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from src.data.models import Hero
-from src.ui.match_lineup_state import LineupState, SIDE_ALLY, SIDE_ENEMY
+from src.ui.match.match_lineup_state import LineupState, SIDE_ALLY, SIDE_ENEMY
 
 
 def _heroes() -> dict[str, Hero]:

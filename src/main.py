@@ -13,9 +13,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
-from src.ui.main_window import MainWindow
-from src.ui.chinese_translator import install_chinese_qt_translator
-from src.ui.style import GLOBAL_STYLE
+from src.ui.app.main_window import MainWindow
+from src.ui.app.chinese_translator import install_chinese_qt_translator
+from src.ui.shared.style import GLOBAL_STYLE
 
 
 def _create_startup_splash() -> QSplashScreen:
@@ -84,7 +84,7 @@ def main() -> None:
             pass
 
     # 尽早设置并持续维护应用图标（在 PaddleOCR 等耗时操作之前）
-    from src.ui.app_icon import install_app_icon
+    from src.ui.app.app_icon import install_app_icon
     install_app_icon(app)
 
     # 设置全局样式

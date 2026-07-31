@@ -11,7 +11,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
 from src.ocr.roi_config import OcrRoiConfig
-from src.ui.roi_selector import (
+from src.ui.configuration.roi_selector import (
     RoiLayoutEditorDialog,
     RoiSelectorDialog,
     _display_point_to_image,

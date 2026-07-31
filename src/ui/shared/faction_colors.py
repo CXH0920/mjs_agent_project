@@ -7,9 +7,11 @@ import logging
 import re
 from pathlib import Path
 
+from src.config.env import PROJECT_ROOT
+
 logger = logging.getLogger(__name__)
 
-FACTION_COLORS_FILE = Path(__file__).resolve().parents[3] / "config" / "faction_colors.json"
+FACTION_COLORS_FILE = PROJECT_ROOT / "config" / "faction_colors.json"
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 DEFAULT_FACTION_COLORS: dict[str, str] = {
     "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F", "赵": "#556B2F",

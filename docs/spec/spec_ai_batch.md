@@ -39,6 +39,12 @@ for attempt in range(1, self.max_retries + 1):
 
 **为什么：** DeepSeek API 对 RPM（每分钟请求数）有硬限制。在 UI 层（攻略生成、相性生成）中多个生成任务串行执行，如果没有限速控制，可能瞬间触发大量请求导致 429 限流。RPM 可配置让用户根据自己购买的 API 套餐调整。
 
+### 规则 2.4：思考内容与输出额度
+
+API 模式通过 `thinking: {"type": "disabled"}` 显式关闭思考，单次请求的输出上限为 16384 tokens。程序只提取最终 `content`、`finish_reason` 和用量信息；不得记录、保存或展示 `reasoning_content`。当 `content` 为空或 `finish_reason == "length"` 时，任务失败并向界面明确提示“思考过程耗尽输出额度”。
+
+**为什么：** 攻略和相性任务只需要结构化最终答案；关闭思考可避免内部推理耗尽输出额度并缩短等待时间。即使服务端返回思考字段，程序也会在 API 边界丢弃，不让它进入日志和界面。
+
 ## 三、JSON 提取（_extract_json）
 
 ### 规则 3.1：四阶段尝试

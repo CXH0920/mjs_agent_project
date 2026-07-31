@@ -13,7 +13,13 @@ from PySide6.QtCore import QProcess
 from src.business.base_fetch_service import BaseFetchService
 from src.business import fetch_utils
 from src.business.fetch_utils import cancel_process
-from src.scraper.ai_generation import (
+from src.scraper.ai.api_generator import (
+    AIBatchGenerator,
+    MAX_OUTPUT_TOKENS,
+    OUTPUT_BUDGET_EXHAUSTED_MESSAGE,
+    _read_completion_content,
+)
+from src.scraper.ai.generation import (
     GenerationResult,
     run_guide_generation,
     run_synergy_generation,
@@ -57,6 +63,27 @@ class _LineRecordingService(BaseFetchService):
         self.lines.append(line)
 
 
+class _FakeHttpResponse:
+    def __init__(self, data: dict):
+        self._data = data
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self) -> dict:
+        return self._data
+
+
+class _FakeHttpClient:
+    def __init__(self, response: dict):
+        self._response = response
+        self.payload: dict | None = None
+
+    def post(self, _url: str, *, headers: dict, json: dict):
+        self.payload = json
+        return _FakeHttpResponse(self._response)
+
+
 def test_base_fetch_service_buffers_partial_utf8_stdout_lines() -> None:
     line = "[1/2] 诸葛亮\n".encode("utf-8")
     service = _LineRecordingService()
@@ -76,6 +103,65 @@ def test_base_fetch_service_flushes_remaining_stdout_at_finish() -> None:
     service._on_finished(0)
 
     assert service.lines == ["最后一行"]
+
+
+def test_api_request_disables_thinking_and_discards_reasoning() -> None:
+    secret_reasoning = "不应进入后续链路"
+    client = _FakeHttpClient({
+        "choices": [{
+            "finish_reason": "stop",
+            "message": {"content": "最终正文", "reasoning_content": secret_reasoning},
+        }],
+        "usage": {"completion_tokens": 12},
+    })
+    generator = AIBatchGenerator(api_key="test", max_retries=1)
+    generator._client.close()
+    generator._client = client
+
+    response = generator._call_api([{"role": "user", "content": "test"}])
+
+    assert client.payload["max_tokens"] == MAX_OUTPUT_TOKENS == 16_384
+    assert client.payload["thinking"] == {"type": "disabled"}
+    assert response == {
+        "content": "最终正文",
+        "finish_reason": "stop",
+        "usage": {"completion_tokens": 12},
+    }
+    assert secret_reasoning not in repr(response)
+
+
+@pytest.mark.parametrize(
+    ("content", "finish_reason"),
+    [("部分正文", "length"), ("", "stop")],
+)
+def test_api_output_budget_failure_has_explicit_message(
+    content: str,
+    finish_reason: str,
+    caplog,
+) -> None:
+    with caplog.at_level("ERROR", logger="src.scraper.ai.api_generator"):
+        result, usage = _read_completion_content({
+            "content": content,
+            "finish_reason": finish_reason,
+            "usage": {"completion_tokens": MAX_OUTPUT_TOKENS},
+        })
+
+    assert result is None
+    assert usage == {"completion_tokens": MAX_OUTPUT_TOKENS}
+    assert OUTPUT_BUDGET_EXHAUSTED_MESSAGE in caplog.text
+
+
+def test_base_fetch_service_surfaces_output_budget_failure() -> None:
+    service = _LineRecordingService()
+    service._process = _FakeProcess([
+        f"[ERROR] {OUTPUT_BUDGET_EXHAUSTED_MESSAGE}\n".encode("utf-8")
+    ])
+    errors: list[str] = []
+    service.error_occurred.connect(errors.append)
+
+    service._on_finished(1)
+
+    assert errors == [OUTPUT_BUDGET_EXHAUSTED_MESSAGE]
 
 
 def test_cancel_process_does_not_block_event_loop() -> None:
@@ -348,7 +434,7 @@ def test_generation_result_is_successful_without_token_usage() -> None:
 def test_browser_generator_rests_before_next_successful_request(
     monkeypatch, method_name, system_sent_attr, rest_required_attr, args,
 ) -> None:
-    import src.scraper.ai_playwright as ai_playwright
+    import src.scraper.ai.browser_generator as ai_playwright
 
     events: list[str] = []
     generator = object.__new__(ai_playwright.PlaywrightGenerator)
@@ -373,9 +459,9 @@ def test_browser_generator_rests_before_next_successful_request(
 
 def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> None:
     """浏览器后端应跳过 API Key 校验，并以结构化结果结束任务。"""
-    import src.scraper.ai_batch as ai_batch
-    import src.scraper.ai_generation as ai_generation
-    import src.scraper.ai_playwright as ai_playwright
+    import src.scraper.ai.batch as ai_batch
+    import src.scraper.ai.generation as ai_generation
+    import src.scraper.ai.browser_generator as ai_playwright
 
     closed = []
 
@@ -408,9 +494,9 @@ def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> N
 
 
 def test_cli_returns_nonzero_when_generation_result_has_failures(monkeypatch, tmp_path: Path) -> None:
-    import src.scraper.ai_batch as ai_batch
-    import src.scraper.ai_generation as ai_generation
-    import src.scraper.ai_playwright as ai_playwright
+    import src.scraper.ai.batch as ai_batch
+    import src.scraper.ai.generation as ai_generation
+    import src.scraper.ai.browser_generator as ai_playwright
 
     monkeypatch.setattr(ai_batch, "load_heroes", lambda _path: [{"id": 1, "name": "甲"}])
     monkeypatch.setattr(ai_batch, "get_api_config", lambda: {"api_key": "", "api_url": "", "model": "test"})

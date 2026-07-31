@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
-from src.ui.match_guide_panel import MatchGuidePanel
+from src.ui.match.match_guide_panel import MatchGuidePanel
 
 
 def _app() -> QApplication:
@@ -29,7 +29,7 @@ def _heroes() -> HeroManager:
 
 def test_panel_preserves_recognition_issue_and_clears_old_lineup(monkeypatch) -> None:
     _app()
-    monkeypatch.setattr("src.ui.match_guide_panel.load_win_rates", lambda: {})
+    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
     panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
 
     panel.load_from_ocr([
@@ -51,7 +51,7 @@ def test_panel_preserves_recognition_issue_and_clears_old_lineup(monkeypatch) ->
 
 def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatch) -> None:
     _app()
-    monkeypatch.setattr("src.ui.match_guide_panel.load_win_rates", lambda: {})
+    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
     panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
 
     panel.load_from_ocr([

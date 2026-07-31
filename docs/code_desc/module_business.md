@@ -79,7 +79,7 @@ cancelled → 用户中止后通知 UI 刷新已分批提交的数据
 
 所有服务使用 `SeparateChannels` 模式，分别读取 stdout 和 stderr。
 
-AI 生成服务以子进程退出码作为唯一成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 仅用于展示进度，不再承担失败项协议解析职责。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
+AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 用于展示进度，并将“思考过程耗尽输出额度”这一明确原因透传给界面，其余失败仍显示退出码。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
 
 `SynergyReloadWorker` 在后台解析已分批提交的 `synergies.json`；完成后由主线程一次性替换 `SynergyManager` 的内存数据并通知界面刷新，避免取消后同步解析 JSON 阻塞窗口事件循环。
 
@@ -265,5 +265,5 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存 |
 | 依赖 | `src.data.recommendation_index_repository` | 提供推荐指数 CSV 的手动重建接口 |
-| 被调用方 | `src.ui.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 fetch_*() |
-| 被调用方 | `src.ui.official_data_import_dialog` | 对话框创建后台导入线程并显示结果 |
+| 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 fetch_*() |
+| 被调用方 | `src.ui.data_admin.official_data_import_dialog` | 对话框创建后台导入线程并显示结果 |

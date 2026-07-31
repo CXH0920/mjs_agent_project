@@ -179,7 +179,7 @@ setup_logging(log_level="INFO", log_to_file=True)
 ```
 日志分发规则:
   logger name 前缀 → 目标文件:
-  "src.scraper.ai_"    → logs/scraper/ai_batch.log
+  "src.scraper.ai"     → logs/scraper/ai_batch.log
   "src.scraper"        → logs/scraper/scraper.log
   "src.capture"        → logs/scraper/scraper.log (同上)
   "src.ocr"            → logs/scraper/scraper.log (同上)
@@ -205,14 +205,14 @@ src.main.py 是应用唯一的直接执行入口。
 
 src.config.env 的函数被几乎所有模块调用:
   get_api_config()  ← src.scraper.ai_batch.py
-                   ← src.ui.main_window.py
-                   ← src.ui.settings_dialog.py
+                   ← src.ui.app.main_window.py
+                   ← src.ui.configuration.settings_dialog.py
 
-  get_mumu_config() ← src.ui.main_window.py
-                    ← src.ui.mumu_config_dialog.py
+  get_mumu_config() ← src.ui.app.main_window.py
+                    ← src.ui.configuration.mumu_config_dialog.py
 
-  save_env_file()   ← src.ui.main_window.py (_open_mumu_config)
-                    ← src.ui.settings_dialog.py (_on_save)
+  save_env_file()   ← src.ui.app.main_window.py (_open_mumu_config)
+                    ← src.ui.configuration.settings_dialog.py (_on_save)
 
   setup_logging()   ← src.main.py
                     ← 各 CLI 子进程入口 (official.py / incremental.py / ai_batch.py)
@@ -223,8 +223,8 @@ src.config.env 的函数被几乎所有模块调用:
 | 被调用方 | 说明 |
 |----------|------|
 | `src.data.manager.DataFacade` | 加载武将名列表 |
-| `src.ui.main_window.MainWindow` | 创建主窗口 |
-| `src.ui.style.GLOBAL_STYLE` | 全局样式表 |
+| `src.ui.app.main_window.MainWindow` | 创建主窗口 |
+| `src.ui.shared.style.GLOBAL_STYLE` | 全局样式表 |
 | `src.ocr.ocr_loader` / `OcrWorker` | 首次 OCR 任务时延迟创建识别器 |
 
 ---

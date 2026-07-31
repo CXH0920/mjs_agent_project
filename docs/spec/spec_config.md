@@ -65,7 +65,7 @@ tmp_path.replace(env_path)
 
 日志路由基于 logger name，不基于模块文件路径。每个文件使用 `logger = logging.getLogger(__name__)`。`setup_logging()` 中的 `ModuleFilter` 按 `startswith` 前缀分派到不同文件。
 
-**为什么：** `__name__` 是 Python 约定，与包结构天然一致。按前缀分派可以精确控制"哪些日志进哪个文件"，如 `src.business` 前缀全部进 `business/business.log`，`src.scraper.ai_` 前缀进 `ai_batch.log`。
+**为什么：** `__name__` 是 Python 约定，与包结构天然一致。按前缀分派可以精确控制"哪些日志进哪个文件"，如 `src.business` 前缀全部进 `business/business.log`，`src.scraper.ai` 前缀进 `ai_batch.log`。
 
 ### 规则 4.2：setup_logging 幂等性
 

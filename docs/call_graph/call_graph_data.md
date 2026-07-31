@@ -266,7 +266,7 @@ RecommendationPanel._load_real_synergies(card_idx, hero_id)
 ┌─────────────────────────────────────────────────────────────────┐
 │                     爬虫 / AI 层                                 │
 │  official.py / incremental.py → models.py (Pydantic 校验)       │
-│  ai_generator.py              → HeroGuide / SynergyScore 校验    │
+│  api_generator.py              → HeroGuide / SynergyScore 校验    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

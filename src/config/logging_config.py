@@ -105,8 +105,8 @@ def setup_logging(
         # (文件名, startswith, exclude_startswith)
         ("app.log",               None,
          ["src.scraper", "src.business", "src.data", "src.ocr", "src.capture", "subprocess."]),
-        ("scraper/scraper.log",   ["src.scraper"], ["src.scraper.ai_"]),
-        ("scraper/ai_batch.log",  ["src.scraper.ai_"], None),
+        ("scraper/scraper.log",   ["src.scraper"], ["src.scraper.ai"]),
+        ("scraper/ai_batch.log",  ["src.scraper.ai"], None),
         ("business/business.log", ["src.business"], None),
         ("data/data.log",         ["src.data"],     None),
         ("ocr/ocr.log",           ["src.ocr"],      None),

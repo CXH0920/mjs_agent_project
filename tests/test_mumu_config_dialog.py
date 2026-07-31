@@ -13,8 +13,8 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton
 
 from src.capture.prober import MuMuDeviceInfo
-from src.ui.mumu_config_dialog import MumuConfigDialog
-from src.ui.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
+from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
+from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
 
 
 def _app() -> QApplication:
@@ -217,7 +217,7 @@ def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> 
         def get_roi(self):
             return None
 
-    monkeypatch.setattr("src.ui.roi_selector.RoiSelectorDialog", _CancelDialog)
+    monkeypatch.setattr("src.ui.configuration.roi_selector.RoiSelectorDialog", _CancelDialog)
     dialog._on_template_screenshot_ready("hero_selection", Image.new("RGB", (80, 60)))
     dialog._on_template_screenshot_ready("match_guide", Image.new("RGB", (80, 60)))
 
@@ -299,7 +299,7 @@ def test_two_template_types_are_saved_through_ocr_service(tmp_path: Path, monkey
         def get_roi(self):
             return 10, 10, 30, 20
 
-    monkeypatch.setattr("src.ui.roi_selector.RoiSelectorDialog", _AcceptDialog)
+    monkeypatch.setattr("src.ui.configuration.roi_selector.RoiSelectorDialog", _AcceptDialog)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: None)
 
     image = Image.new("RGB", (80, 60))

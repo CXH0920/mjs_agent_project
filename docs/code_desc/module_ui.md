@@ -14,7 +14,7 @@
 - **选将推荐** — 4×2 网格推荐卡片、OCR 截图导入、相性/胜率展示
 - **对局攻略** — 同级 Tab 页面，以 2×2 卡片展示四名武将及胜率
 - **对话框体系** — 武将选择、配置编辑、后端选择、进度显示等
-- **全局样式** — 统一的天蓝色调样式表
+- **全局样式** — 集中管理视觉 Token、控件语义角色和渐进迁移兼容层
 
 ---
 
@@ -22,44 +22,62 @@
 
 ```
 src/ui/
-├── app_icon.py                 # 应用图标加载、缓存与窗口图标维护
 ├── __init__.py
-├── shared/                     # 跨页面控件、技能弹窗和势力配色访问器
+├── app/                        # 应用外壳与全局轮询编排
+│   ├── main_window.py          # 主窗口（菜单栏/Tab/状态栏 + PollCoordinator 界面绑定）
+│   ├── poll_coordinator.py     # 轮询后台编排、结果过滤与状态提交
+│   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
+│   └── chinese_translator.py   # Qt 标准控件中文翻译
+├── library/                    # 资料库：武将浏览、编辑、卡牌与武将获取
+│   ├── hero_browser.py
+│   ├── hero_detail_views.py
+│   ├── hero_edit_dialog.py
+│   ├── hero_relation_select_dialog.py
+│   ├── guide_edit_dialog.py
+│   ├── synergy_edit_dialog.py
+│   ├── fetch_dialog.py
+│   └── card_management_panel.py
+├── recommendation/             # 选将推荐页面与推荐卡片
+│   ├── recommendation_panel.py
+│   └── hero_card_widget.py
+├── match/                      # 对局攻略页面、分析视图和阵容状态
+│   ├── match_guide_panel.py
+│   ├── match_analysis_view.py
+│   └── match_lineup_state.py
+├── generation/                 # AI 攻略/相性生成流程及专用对话框
+│   ├── ai_generation_workflow.py
+│   ├── backend_choose_dialog.py
+│   ├── guide_fetch_dialog.py
+│   ├── guide_progress_dialog.py
+│   ├── synergy_pair_dialog.py
+│   └── synergy_single_dialog.py
+├── configuration/              # 应用、势力与模拟器配置
+│   ├── settings_dialog.py
+│   ├── faction_color_dialog.py
+│   ├── mumu_config_dialog.py
+│   ├── mumu_config_sections.py
+│   └── roi_selector.py
+├── data_admin/                 # 数据维护与官方榜单导入
+│   ├── data_management_dialog.py
+│   └── official_data_import_dialog.py
+├── shared/                     # 跨功能控件、展示与样式
 │   ├── widgets.py              # DoubleClickLabel 等共享控件
 │   ├── hero_dialogs.py         # HeroSkillDialog
-│   └── faction_colors.py       # 势力配色读取、兜底和缓存
-├── style.py                    # 全局样式表（天蓝色调）
-├── main_window.py              # 主窗口（菜单栏/Tab/状态栏 + PollCoordinator 界面绑定）
-├── poll_coordinator.py         # 轮询后台编排、结果过滤与状态提交
-├── official_data_import_dialog.py # 官方 2v2/武将放逐榜单图片导入
-├── ai_generation_workflow.py   # 攻略/相性生成的选择、进度与完成工作流
-├── hero_browser.py             # 武将浏览（列表、详情状态与编辑协调）
-├── hero_detail_views.py        # 武将信息、攻略摘要和相性三个详情视图
-├── card_management_panel.py     # 卡牌图鉴、追加内容与字段定义管理
-├── hero_edit_dialog.py          # 武将基础信息编辑
-├── hero_relation_select_dialog.py # 攻略关系武将多选
-├── guide_edit_dialog.py         # 攻略内容编辑
-├── synergy_edit_dialog.py       # 相性评分编辑
-├── hero_select_dialog.py       # 武将选择对话框基类
-├── recommendation_panel.py     # 选将推荐面板（4×2 网格+头像+相性+OCR 导入）
-├── match_guide_panel.py        # 对局攻略页面（截图/导入入口、卡片交互与流程装配）
-├── match_lineup_state.py       # 对局四槽位状态、敌我确认和主将规则（无 Qt 依赖）
-├── match_analysis_view.py      # 对局攻略四个分析页的 Qt 渲染
-│
-├── settings_dialog.py          # API 配置对话框
-├── data_management_dialog.py   # 攻略与相性批量清空对话框
-├── mumu_config_dialog.py       # 模拟器配置对话框（状态协调、文件选择与 ROI 框选）
-├── mumu_config_sections.py     # 设备、模板和 OCR 参数三个配置视图区块
-├── backend_choose_dialog.py    # 后端选择对话框（API/浏览器）
-├── guide_progress_dialog.py    # 攻略生成进度条
-├── roi_selector.py             # 模板 ROI 框选对话框
-├── faction_color_dialog.py     # 势力配色列表、Color Picker 与保存
-│
-├── fetch_dialog.py             # 武将获取选择（继承基类）
-├── guide_fetch_dialog.py       # 攻略获取选择（继承基类）
-├── synergy_pair_dialog.py      # 相性指定获取（选 2~8 武将）
-└── synergy_single_dialog.py    # 相性选定武将（选 1 武将）
+│   ├── faction_colors.py       # 势力配色读取、兜底和缓存
+│   ├── hero_select_dialog.py   # 武将选择对话框基类
+│   ├── checkable_combo.py      # 势力多选筛选控件
+│   ├── guide_detail_dialog.py  # 攻略详情与 Markdown 阅读
+│   ├── markdown_renderer.py    # 安全 Markdown 渲染
+│   └── style.py                # 视觉 Token、全局 QSS 与动态语义属性
 ```
+
+### 2.1 UI 设计系统基础
+
+`src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。
+
+`src.ui.shared.widgets` 提供 `PageHeader`、`EmptyState`、`StatusBadge`、`NoticeBanner` 和 `DialogFooter`。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。现有页面保留旧样式常量兼容，后续按页面逐步迁移，避免一次性改变业务行为。
+
+完整规范见 [UI 设计系统规范](../spec/spec_ui_design_system.md) 和 [UI 导航与页面归属规范](../spec/spec_ui_navigation.md)；改造前几何基线位于 `docs/ui_baseline/`。
 
 胜率 CSV 读取位于 `src/data/win_rate_repository.py`；推荐指数快照由 `src/data/recommendation_index_repository.py` 根据三份官方榜单生成。页面只依赖共享模块的公开名称，不再从 `recommendation_panel.py` 导入私有函数或复用其内部缓存。
 

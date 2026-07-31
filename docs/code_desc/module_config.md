@@ -18,7 +18,7 @@
 ```
 src/
 ├── main.py                  # 应用入口（QApplication + MainWindow 构建）
-├── ui/app_icon.py            # 应用图标加载、缓存与顶层窗口图标维护
+├── ui/app/app_icon.py        # 应用图标加载、缓存与顶层窗口图标维护
 ├── ui/chinese_translator.py  # Qt 标准控件中文翻译
 ├── config/
 │   ├── __init__.py
@@ -84,7 +84,7 @@ def save_env_file(path, data):
 
 | logger name 前缀 | 目标文件 |
 |-----------------|----------|
-| `src.scraper.ai_` | `logs/scraper/ai_batch.log` |
+| `src.scraper.ai` | `logs/scraper/ai_batch.log` |
 | `src.scraper` / `src.capture` / `src.ocr` | `logs/scraper/scraper.log` |
 | `src.business` | `logs/business/business.log` |
 | `subprocess.stdout` | `logs/subprocess/stdout.log` |
@@ -156,5 +156,5 @@ def setup_logging():
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 被依赖 | — | 所有模块都通过 `from src.config.env import ...` 获取配置 |
-| 依赖 | `src.ui.main_window` | 应用入口创建 MainWindow 实例 |
+| 依赖 | `src.ui.app.main_window` | 应用入口创建 MainWindow 实例 |
 | 依赖 | `src.ocr.ocr_loader` | 预热 PaddleOCR 模型 |

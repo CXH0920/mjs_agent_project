@@ -24,6 +24,14 @@ from src.business.fetch_utils import (
 )
 
 logger = logging.getLogger(__name__)
+_OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"
+
+
+def _process_failure_message(exit_code: int, stdout: str, stderr: str) -> str:
+    combined_output = f"{stdout}\n{stderr}"
+    if _OUTPUT_BUDGET_EXHAUSTED_MESSAGE in combined_output:
+        return _OUTPUT_BUDGET_EXHAUSTED_MESSAGE
+    return f"进程退出码: {exit_code}"
 
 
 class BaseFetchService(QObject):
@@ -189,7 +197,7 @@ class BaseFetchService(QObject):
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
 
-        msg = f"进程退出码: {exit_code}"
+        msg = _process_failure_message(exit_code, full_stdout, full_stderr)
         logger.info("%s 子进程结束，%s", self._service_name, msg)
 
         if self._cancel_requested:

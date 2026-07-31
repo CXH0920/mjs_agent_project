@@ -262,5 +262,5 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型 |
 | 被调用方 | `src.business.capture_service` | 持有 AdbCapture 实例，编排截图流程 |
 | 被调用方 | `src.business.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
-| 被调用方 | `src.ui.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
-| 被调用方 | `src.ui.main_window` | 轮询流程使用截图和 OCR |
+| 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
+| 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |

@@ -9,23 +9,23 @@ from pathlib import Path
 import pytest
 import src.config.env as config_env
 from src.config.env import get_api_config, get_runtime_params, parse_env_file
-from src.scraper.ai_batch import (
+from src.scraper.ai.batch import (
     _load_existing_guides,
     _load_existing_synergies,
     _estimate_cost,
     estimate_cost,
     load_heroes,
 )
-from src.scraper.ai_utils import _save_json
-from src.scraper.prompt_utils import estimate_item_cost
-from src.scraper.prompt_utils import load_prompt
-from src.scraper.json_extract import extract_json
-from src.scraper.ai_utils import (
+from src.scraper.ai.utils import _save_json
+from src.scraper.ai.prompt_utils import estimate_item_cost
+from src.scraper.ai.prompt_utils import load_prompt
+from src.scraper.ai.json_extract import extract_json
+from src.scraper.ai.utils import (
     convert_ids_to_int,
     validate_guide,
     validate_synergy,
 )
-from src.scraper.prompt_utils import (
+from src.scraper.ai.prompt_utils import (
     build_guide_prompt,
     build_synergy_prompt,
 )

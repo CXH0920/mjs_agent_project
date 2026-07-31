@@ -1,6 +1,6 @@
 # 调用链路：AI 批量生成
 
-> 对应源码：`src/scraper/ai_*.py`
+> 对应源码：`src/scraper/ai/`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 所有链路均在 QProcess 子进程中执行，不阻塞 UI 主线程。
 
@@ -34,7 +34,7 @@ ai_batch.main()
 ### 1.1 AI 批量生成入口
 
 ```
-ai_batch.py:main()                                            [CLI 入口]
+ai_batch.py -> ai/batch.py:main()                             [兼容 CLI -> 实际入口]
   -> argparse.parse_args()                                    [解析命令行参数]
   -> setup_logging()                                          [初始化日志]
   -> load_heroes(args.heroes_file)                            [HeroManager 完整校验武将 JSON]
@@ -69,13 +69,13 @@ ai_batch.py:main()                                            [CLI 入口]
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `main()` | `ai_batch.py` | QProcess 子进程入口 | `load_heroes()`, `_load_existing_*()`, `run_*_generation()` |
-| `load_heroes()` | `ai_utils.py` | `ai_batch.main()` | `HeroManager.load()`, `Hero.model_validate()` |
+| `main()` | `ai/batch.py` | QProcess 子进程入口 | `load_heroes()`, `_load_existing_*()`, `run_*_generation()` |
+| `load_heroes()` | `utils.py` | `ai_batch.main()` | `HeroManager.load()`, `Hero.model_validate()` |
 | `get_api_config()` | `config/env.py` | `ai_batch.main()` | `parse_env_file()` + 类型转换 |
-| `_load_existing_guides()` | `ai_batch.py` | `main()` | `GuideManager.load()`；错误文件备份后写回有效记录 |
-| `_load_existing_synergies()` | `ai_batch.py` | `main()` | `SynergyManager.load()`；错误文件备份后写回有效记录 |
-| `_show_cost_estimate()` | `ai_batch.py` | `main()` | `estimate_cost()` |
-| `_print_token_summary()` | `ai_batch.py` | `main()` | `_estimate_cost()` |
+| `_load_existing_guides()` | `ai/batch.py` | `main()` | `GuideManager.load()`；错误文件备份后写回有效记录 |
+| `_load_existing_synergies()` | `ai/batch.py` | `main()` | `SynergyManager.load()`；错误文件备份后写回有效记录 |
+| `_show_cost_estimate()` | `ai/batch.py` | `main()` | `estimate_cost()` |
+| `_print_token_summary()` | `ai/batch.py` | `main()` | `_estimate_cost()` |
 
 ---
 
@@ -84,7 +84,7 @@ ai_batch.py:main()                                            [CLI 入口]
 ### 2.1 全量/增量攻略生成
 
 ```
-ai_generation.run_guide_generation(heroes, generator, guide_path, existing_guides, api_cfg, update)
+generation.run_guide_generation(heroes, generator, guide_path, existing_guides, api_cfg, update)
   -> [update=True] 删除旧数据后重新生成全部
      [update=False] 跳过已有 guide_id（断点续传）
   -> [遍历每个 hero]
@@ -93,7 +93,9 @@ ai_generation.run_guide_generation(heroes, generator, guide_path, existing_guide
         -> build_guide_prompt(hero)                           [构建用户提示词]
         -> self._call_api(messages)                           [API 模式]
            -> time.sleep(限速)                                 [RPM 控制]
-           -> POST /v1/chat/completions                       [httpx]
+           -> POST /v1/chat/completions                       [thinking.type=disabled, max_tokens=16384]
+           -> 仅保留 content / finish_reason / usage          [丢弃思考内容]
+           -> [content 为空或 length] 输出额度耗尽错误         [透传 UI]
            -> [失败] 指数退避重试: 2s/4s/8s, 最多 max_retries 次
         -> extract_json(response_text)                        [从 AI 回复提取 JSON]
            -> _try_extract(text, [0])                         [策略 1: 全文解析]
@@ -115,17 +117,17 @@ ai_generation.run_guide_generation(heroes, generator, guide_path, existing_guide
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `run_guide_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
-| `AIBatchGenerator.generate_guide()` | `ai_generator.py` | `ai_generation.py` | `load_prompt()`, `build_guide_prompt()`, `_call_api()` |
-| `AIBatchGenerator._call_api()` | `ai_generator.py` | `generate_guide()`, `generate_synergy()` | `httpx.Client.post()` |
-| `extract_json()` | `ai_utils.py` | `generate_guide()`, `generate_synergy()` | `_try_extract()` ×4 |
-| `_try_extract()` | `ai_utils.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
-| `_raw_parse()` | `ai_utils.py` | `_try_extract()` | `json.JSONDecoder.raw_decode()` |
-| `_repair_strings()` | `ai_utils.py` | `_try_extract()` | 状态机修复字面换行 |
-| `validate_guide()` | `ai_utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
-| `convert_ids_to_int()` | `ai_utils.py` | `generate_guide()` | `int()` 类型转换 |
-| `_save_json()` | `ai_utils.py` | `run_*_generation()` | `json.dump()`, 原子写入 |
-| `load_prompt()` | `ai_utils.py` | `generate_guide()`, `generate_synergy()` | 文件读取 |
+| `run_guide_generation()` | `generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
+| `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_call_api()` |
+| `AIBatchGenerator._call_api()` | `api_generator.py` | `generate_guide()`, `generate_synergy()` | `httpx.Client.post()` |
+| `extract_json()` | `json_extract.py` | `generate_guide()`, `generate_synergy()` | `_try_extract()` ×4 |
+| `_try_extract()` | `json_extract.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
+| `_raw_parse()` | `json_extract.py` | `_try_extract()` | `json.JSONDecoder.raw_decode()` |
+| `_repair_strings()` | `json_extract.py` | `_try_extract()` | 状态机修复字面换行 |
+| `validate_guide()` | `utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
+| `convert_ids_to_int()` | `utils.py` | `generate_guide()` | `int()` 类型转换 |
+| `_save_json()` | `utils.py` | `run_*_generation()` | `json.dump()`, 原子写入 |
+| `load_prompt()` | `prompt_utils.py` | `generate_guide()`, `generate_synergy()` | 文件读取 |
 
 ### 2.2 浏览器模式攻略生成
 
@@ -158,13 +160,13 @@ PlaywrightGenerator.generate_guide(hero)
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `load_prompt()`, `build_guide_prompt()`, `_send_and_wait()` |
-| `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide()`, `generate_synergy()` | `DeepSeekBrowserSession.send_and_wait()` |
-| `DeepSeekBrowserSession.send_and_wait()` | `deepseek_browser_session.py` | `PlaywrightGenerator._send_and_wait()` | `_ensure_browser()`, `page.fill()`, 流式回复轮询 |
-| `DeepSeekBrowserSession._ensure_browser()` | `deepseek_browser_session.py` | `send_and_wait()` | `sync_playwright().start()`, `_wait_for_login()` |
-| `DeepSeekBrowserSession._wait_for_login()` | `deepseek_browser_session.py` | `_ensure_browser()` | `page.wait_for_selector()` |
-| `DeepSeekBrowserSession._page_diagnostics()` | `deepseek_browser_session.py` | 登录或收发异常 | `page.evaluate(JS dump)` |
-| `PlaywrightGenerator._random_rest()` | `ai_playwright.py` | `generate_guide()`, `generate_synergy()` | `time.sleep(random)` |
+| `PlaywrightGenerator.generate_guide()` | `browser_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_send_and_wait()` |
+| `PlaywrightGenerator._send_and_wait()` | `browser_generator.py` | `generate_guide()`, `generate_synergy()` | `DeepSeekBrowserSession.send_and_wait()` |
+| `DeepSeekBrowserSession.send_and_wait()` | `browser_session.py` | `PlaywrightGenerator._send_and_wait()` | `_ensure_browser()`, `page.fill()`, 流式回复轮询 |
+| `DeepSeekBrowserSession._ensure_browser()` | `browser_session.py` | `send_and_wait()` | `sync_playwright().start()`, `_wait_for_login()` |
+| `DeepSeekBrowserSession._wait_for_login()` | `browser_session.py` | `_ensure_browser()` | `page.wait_for_selector()` |
+| `DeepSeekBrowserSession._page_diagnostics()` | `browser_session.py` | 登录或收发异常 | `page.evaluate(JS dump)` |
+| `PlaywrightGenerator._random_rest()` | `browser_generator.py` | `generate_guide()`, `generate_synergy()` | `time.sleep(random)` |
 
 ---
 
@@ -195,9 +197,9 @@ ai_generation.run_synergy_generation(heroes, generator, synergy_path, existing, 
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `run_synergy_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_synergy()`, `itertools.combinations()`, `_save_json()` |
-| `AIBatchGenerator.generate_synergy()` | `ai_generator.py` | `ai_generation.py` | `load_prompt()`, `build_synergy_prompt()`, `_call_api()` |
-| `validate_synergy()` | `ai_utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
+| `run_synergy_generation()` | `generation.py` | `ai_batch.main()` | `generator.generate_synergy()`, `itertools.combinations()`, `_save_json()` |
+| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_synergy_prompt()`, `_call_api()` |
+| `validate_synergy()` | `utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
 
 ### 3.2 指定配对相性生成
 
@@ -213,8 +215,8 @@ ai_generation.run_synergy_pair_generation(pair_file, heroes, generator, synergy_
 
 | 函数 | 所在文件 | 调用方 | 说明 |
 |------|----------|--------|------|
-| `run_synergy_pair_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()` 遍历 + 逐对保存 |
-| `run_synergy_single_generation()` | `ai_generation.py` | `ai_batch.main()` | 选定武将 vs 全体，跳过已有配对 |
+| `run_synergy_pair_generation()` | `generation.py` | `ai_batch.main()` | `combinations()` 遍历 + 逐对保存 |
+| `run_synergy_single_generation()` | `generation.py` | `ai_batch.main()` | 选定武将 vs 全体，跳过已有配对 |
 
 ---
 
@@ -230,7 +232,7 @@ src.business.synergy_fetch_service
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_file])
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-single", tmp_file])
 
-src.ui.main_window
+src.ui.app.main_window
   -> 菜单 → GuideFetchService/SynergyFetchService    [间接调用]
 ```
 
@@ -262,26 +264,26 @@ src.ui.main_window
 
 | 函数 | 文件 | 调用方（主要） | 被调用方（主要） |
 |------|------|----------------|------------------|
-| `main()` | `ai_batch.py` | QProcess 入口 | `load_heroes()`, `run_*_generation()` |
-| `AIBatchGenerator.__init__()` | `ai_generator.py` | `ai_batch.main()` | `httpx.Client()` |
-| `AIBatchGenerator.generate_guide()` | `ai_generator.py` | `ai_generation.py` | `_call_api()`, `extract_json()`, `validate_guide()` |
-| `AIBatchGenerator.generate_synergy()` | `ai_generator.py` | `ai_generation.py` | `_call_api()`, `extract_json()`, `validate_synergy()` |
-| `AIBatchGenerator._call_api()` | `ai_generator.py` | `generate_guide/synergy` | `time.sleep()`, `httpx.Client.post()` |
-| `PlaywrightGenerator.generate_guide()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
-| `PlaywrightGenerator.generate_synergy()` | `ai_playwright.py` | `ai_generation.py` | `_send_and_wait()`, `extract_json()` |
-| `PlaywrightGenerator._random_rest()` | `ai_playwright.py` | 下一次浏览器请求前 | 随机等待 60-180 秒 |
-| `DeepSeekBrowserSession._ensure_browser()` | `deepseek_browser_session.py` | `send_and_wait()` | `Playwright.start()` |
-| `PlaywrightGenerator._send_and_wait()` | `ai_playwright.py` | `generate_guide/synergy` | `DeepSeekBrowserSession.send_and_wait()` |
-| `run_guide_generation()` | `ai_generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
-| `run_synergy_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()`, `generator.generate_synergy()` |
-| `run_synergy_pair_generation()` | `ai_generation.py` | `ai_batch.main()` | `combinations()`, 逐对保存 |
-| `run_synergy_single_generation()` | `ai_generation.py` | `ai_batch.main()` | 跳过已有项 + generate + 保存 |
-| `extract_json(text)` | `ai_utils.py` | `generate_guide/synergy` | `_try_extract()` ×4 |
-| `_try_extract(text, strategy)` | `ai_utils.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
-| `_repair_strings(s)` | `ai_utils.py` | `_try_extract()` | 状态机跟踪 in_string |
-| `validate_guide(raw)` | `ai_utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
-| `validate_synergy(raw)` | `ai_utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
-| `build_guide_prompt(hero)` | `ai_utils.py` | `generate_guide()` | 格式化提示词 |
-| `build_synergy_prompt(a, b)` | `ai_utils.py` | `generate_synergy()` | 格式化提示词 |
-| `estimate_cost(count, mode)` | `ai_utils.py` | `ai_batch.main()`, UI 层 | Token/费用估算 |
-| `_save_json(path, data)` | `ai_utils.py` | `run_*_generation()` | `json.dump()`, 原子写入 |
+| `main()` | `ai/batch.py` | QProcess 入口 | `load_heroes()`, `run_*_generation()` |
+| `AIBatchGenerator.__init__()` | `api_generator.py` | `ai_batch.main()` | `httpx.Client()` |
+| `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `_call_api()`, `extract_json()`, `validate_guide()` |
+| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` | `_call_api()`, `extract_json()`, `validate_synergy()` |
+| `AIBatchGenerator._call_api()` | `api_generator.py` | `generate_guide/synergy` | `time.sleep()`, `httpx.Client.post()` |
+| `PlaywrightGenerator.generate_guide()` | `browser_generator.py` | `generation.py` | `_send_and_wait()`, `extract_json()` |
+| `PlaywrightGenerator.generate_synergy()` | `browser_generator.py` | `generation.py` | `_send_and_wait()`, `extract_json()` |
+| `PlaywrightGenerator._random_rest()` | `browser_generator.py` | 下一次浏览器请求前 | 随机等待 60-180 秒 |
+| `DeepSeekBrowserSession._ensure_browser()` | `browser_session.py` | `send_and_wait()` | `Playwright.start()` |
+| `PlaywrightGenerator._send_and_wait()` | `browser_generator.py` | `generate_guide/synergy` | `DeepSeekBrowserSession.send_and_wait()` |
+| `run_guide_generation()` | `generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
+| `run_synergy_generation()` | `generation.py` | `ai_batch.main()` | `combinations()`, `generator.generate_synergy()` |
+| `run_synergy_pair_generation()` | `generation.py` | `ai_batch.main()` | `combinations()`, 逐对保存 |
+| `run_synergy_single_generation()` | `generation.py` | `ai_batch.main()` | 跳过已有项 + generate + 保存 |
+| `extract_json(text)` | `json_extract.py` | `generate_guide/synergy` | `_try_extract()` ×4 |
+| `_try_extract(text, strategy)` | `json_extract.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
+| `_repair_strings(s)` | `json_extract.py` | `_try_extract()` | 状态机跟踪 in_string |
+| `validate_guide(raw)` | `utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
+| `validate_synergy(raw)` | `utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
+| `build_guide_prompt(hero)` | `prompt_utils.py` | `generate_guide()` | 格式化提示词 |
+| `build_synergy_prompt(a, b)` | `prompt_utils.py` | `generate_synergy()` | 格式化提示词 |
+| `estimate_cost(count, mode)` | `prompt_utils.py` | `batch.main()`, UI 层 | Token/费用估算 |
+| `_save_json(path, data)` | `utils.py` | `run_*_generation()` | `json.dump()`, 原子写入 |

@@ -1,6 +1,6 @@
 # 调用链路：爬虫与数据采集
 
-> 对应源码：`src/scraper/`（不含 `ai_*.py` 的 AI 部分）
+> 对应源码：`src/scraper/official_source/` + 根 CLI 入口
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 所有链路均在 QProcess 子进程中执行，不阻塞 UI 主线程。
 
@@ -11,13 +11,13 @@
 ```
 official.crawl() / incremental.main()
   -> crawler.fetch_all_raw()
-    -> fetch(BAIKE_URL) -> official_adapter.find_chunk_url() -> fetch(chunk_url)
-    -> official_adapter.parse_heroes_chunk()
+    -> fetch(BAIKE_URL) -> adapter.find_chunk_url() -> fetch(chunk_url)
+    -> adapter.parse_heroes_chunk()
   -> transform() -> validate_heroes() -> 写入 heroes.json
   -> download_hero_images()                                    [未使用 --skip-images]
 ```
 
-官网格式解析集中在 `official_adapter.py`；`extract_js_array()` 使用会忽略字符串中方括号的深度扫描。全量和增量入口均通过 `save_json_atomic()` 原子写入，并对每条原始记录只调用一次 `transform()`。
+官网格式解析集中在 `official_source/adapter.py`；`extract_js_array()` 使用会忽略字符串中方括号的深度扫描。全量和增量入口均通过 `save_json_atomic()` 原子写入，并对每条原始记录只调用一次 `transform()`。
 
 ## 一、全量采集链路
 
@@ -89,8 +89,8 @@ MainWindow._request_fetch_all()
 | `official.main()` | `official.py` | QProcess 子进程 | `official.crawl()` |
 | `official.crawl()` | `official.py` | `main()` | `crawler.*`, `official_adapter.*` |
 | `crawler.fetch()` | `crawler.py` | `crawl()` | `urllib.request.urlopen()` |
-| `official_adapter.find_chunk_url()` | `official_adapter.py` | `crawl()` | `re.search()` |
-| `official_adapter.parse_heroes_chunk()` | `official_adapter.py` | `crawl()` | 数组提取、JSON 兼容转换 |
+| `official_adapter.find_chunk_url()` | `adapter.py` | `crawl()` | `re.search()` |
+| `official_adapter.parse_heroes_chunk()` | `adapter.py` | `crawl()` | 数组提取、JSON 兼容转换 |
 | `crawler.transform()` | `crawler.py` | `crawl()` | `clean_html()`, `split_skill_desc()` |
 | `crawler.split_skill_desc()` | `crawler.py` | `transform()` | `clean_html()` |
 | `crawler.clean_html()` | `crawler.py` | `transform()`, `split_skill_desc()` | `re.sub()`, `html.unescape()` |
@@ -207,7 +207,7 @@ src.business.fetch_service
   -> QProcess.start(["-m", "src.scraper.official"])            [全量采集]
   -> QProcess.start(["-m", "src.scraper.incremental", ...])     [增量/指定采集]
 
-src.ui.main_window
+src.ui.app.main_window
   -> 菜单 → HeroFetchService.fetch_all/incremental/specific     [间接调用]
 ```
 
@@ -245,8 +245,8 @@ official.py:main() / incremental.py:main()          [CLI 入口]
 |------|------|----------------|------------------|
 | `crawl()` | `official.py:48` | `official.main()` | `fetch()`, `find_chunk_url()`, `transform()`, ... |
 | `fetch(url, binary)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | `urllib.request.urlopen()` |
-| `find_chunk_url(html)` | `official_adapter.py` | `crawl()`, `fetch_all_raw()` | `re.search()` |
-| `parse_heroes_chunk(js)` | `official_adapter.py` | `crawl()`, `fetch_all_raw()` | 数组提取、`re.sub()`、`json.loads()` |
+| `find_chunk_url(html)` | `adapter.py` | `crawl()`, `fetch_all_raw()` | `re.search()` |
+| `parse_heroes_chunk(js)` | `adapter.py` | `crawl()`, `fetch_all_raw()` | 数组提取、`re.sub()`、`json.loads()` |
 | `transform(raw)` | `crawler.py` | `crawl()`, `run()` | `clean_html()`, `split_skill_desc()` |
 | `clean_html(html)` | `crawler.py` | `transform()`, `split_skill_desc()` | `re.sub()`, `html.unescape()` |
 | `split_skill_desc(desc)` | `crawler.py` | `transform()` | `clean_html()`, HTML 段落解析 |

@@ -463,19 +463,19 @@ _recognize_name_cell(cell)
 ### 8.1 本模块被外部调用
 
 ```
-src.ui.main_window
+src.ui.app.main_window
   -> HeroFetchService.*                                      [武将采集]
   -> GuideFetchService.*                                     [攻略生成]
   -> SynergyFetchService.*                                   [相性获取]
   -> CaptureService.*                                        [截图]
   -> OcrService.*                                            [OCR 控制/轮询]
 
-src.ui.recommendation_panel
+src.ui.recommendation.recommendation_panel
   -> CaptureService.do_capture()                              [手动截图]
   -> CaptureService.do_capture_from_file()                    [文件导入]
   -> CaptureService.connect_emulator()                        [连接模拟器]
 
-src.ui.mumu_config_dialog
+src.ui.configuration.mumu_config_dialog
   -> CaptureService.update_config()                           [配置更新]
   -> OcrService.create_template()                             [制作模板]
   -> OcrService.select_template()                             [选择模板]
@@ -493,7 +493,7 @@ src.ui.mumu_config_dialog
 | `src.ocr.recognizer.GeneralRecognizer` | 由 OcrWorker 缓存和调用 |
 | `src.config.env.get_mumu_config()` | 读取模拟器配置 |
 | `src.config.env.save_env_file()` | 保存模拟器配置 |
-| `src.scraper.ai_utils.estimate_cost()` | GuideFetchService 成本估算 |
+| `src.scraper.ai.utils.estimate_cost()` | GuideFetchService 成本估算 |
 | `src.data.guide_manager.GuideManager` | GuideFetchService 构造时注入 |
 
 ---

@@ -15,20 +15,20 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
-from src.ui.hero_browser import HeroDetailPanel, HeroListPanel
-from src.ui.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
-from src.ui.checkable_combo import CheckableComboBox
-from src.ui.fetch_dialog import HeroFetchDialog
-from src.ui.guide_fetch_dialog import GuideFetchDialog
-from src.ui.guide_edit_dialog import GuideEditDialog
-from src.ui.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
+from src.ui.library.hero_browser import HeroDetailPanel, HeroListPanel
+from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
+from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.library.fetch_dialog import HeroFetchDialog
+from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
+from src.ui.library.guide_edit_dialog import GuideEditDialog
+from src.ui.shared.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
 from src.ui.shared.widgets import FlowLayout
-from src.ui.hero_card_widget import HeroCardWidget
-from src.ui.hero_edit_dialog import HeroEditDialog
-from src.ui.hero_relation_select_dialog import HeroRelationSelectDialog
-from src.ui.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
-from src.ui.synergy_edit_dialog import SynergyEditDialog
-from src.ui.synergy_pair_dialog import SynergyPairDialog
+from src.ui.recommendation.hero_card_widget import HeroCardWidget
+from src.ui.library.hero_edit_dialog import HeroEditDialog
+from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
+from src.ui.recommendation.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
+from src.ui.library.synergy_edit_dialog import SynergyEditDialog
+from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
 
 
 def _app() -> QApplication:

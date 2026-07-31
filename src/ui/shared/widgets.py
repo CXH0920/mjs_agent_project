@@ -3,7 +3,28 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtWidgets import QLabel, QLayout
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLayout,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.ui.shared.style import (
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    TONE_INFO,
+    TONE_NEUTRAL,
+    set_tone,
+    set_ui_role,
+)
 
 
 class DoubleClickLabel(QLabel):
@@ -84,3 +105,179 @@ class FlowLayout(QLayout):
             line_height = max(line_height, size.height())
 
         return y + line_height - rect.y() + margins.bottom()
+
+
+class PageHeader(QWidget):
+    """统一承载页面标题、状态说明和页面级操作。"""
+
+    def __init__(self, title: str, subtitle: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("pageHeader")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE_MD)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("pageHeaderTitle")
+        text_layout.addWidget(self.title_label)
+        self.subtitle_label = QLabel(subtitle)
+        self.subtitle_label.setObjectName("pageHeaderSubtitle")
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setVisible(bool(subtitle))
+        text_layout.addWidget(self.subtitle_label)
+        layout.addLayout(text_layout, 1)
+
+        self.actions_layout = QHBoxLayout()
+        self.actions_layout.setContentsMargins(0, 0, 0, 0)
+        self.actions_layout.setSpacing(SPACE_SM)
+        layout.addLayout(self.actions_layout)
+
+    def set_title(self, title: str) -> None:
+        self.title_label.setText(title)
+
+    def set_subtitle(self, subtitle: str) -> None:
+        self.subtitle_label.setText(subtitle)
+        self.subtitle_label.setVisible(bool(subtitle))
+
+    def add_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
+        set_ui_role(button, role)
+        self.actions_layout.addWidget(button)
+
+
+class EmptyState(QWidget):
+    """统一的无数据、未执行和无搜索结果状态。"""
+
+    def __init__(self, title: str, description: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("emptyState")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_SM)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("emptyStateTitle")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.title_label)
+
+        self.description_label = QLabel(description)
+        self.description_label.setObjectName("emptyStateDescription")
+        self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.description_label.setWordWrap(True)
+        self.description_label.setMaximumWidth(520)
+        self.description_label.setVisible(bool(description))
+        layout.addWidget(self.description_label)
+
+        self.actions_layout = QHBoxLayout()
+        self.actions_layout.setContentsMargins(0, SPACE_SM, 0, 0)
+        self.actions_layout.setSpacing(SPACE_SM)
+        self.actions_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addLayout(self.actions_layout)
+
+    def set_description(self, description: str) -> None:
+        self.description_label.setText(description)
+        self.description_label.setVisible(bool(description))
+
+    def add_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
+        set_ui_role(button, role)
+        self.actions_layout.addWidget(button)
+
+
+class StatusBadge(QLabel):
+    """只用于展示短状态的语义标签。"""
+
+    def __init__(self, text: str = "", tone: str = TONE_NEUTRAL, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("statusBadge")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.set_tone(tone)
+
+    def set_tone(self, tone: str) -> None:
+        set_tone(self, tone)
+
+
+class NoticeBanner(QFrame):
+    """页内通知条；用于可恢复或需要用户注意的状态。"""
+
+    def __init__(
+        self,
+        title: str,
+        message: str = "",
+        tone: str = TONE_INFO,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("noticeBanner")
+        set_tone(self, tone)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
+        layout.setSpacing(SPACE_MD)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("noticeBannerTitle")
+        text_layout.addWidget(self.title_label)
+        self.message_label = QLabel(message)
+        self.message_label.setObjectName("noticeBannerMessage")
+        self.message_label.setWordWrap(True)
+        self.message_label.setVisible(bool(message))
+        text_layout.addWidget(self.message_label)
+        layout.addLayout(text_layout, 1)
+
+        self.actions_layout = QHBoxLayout()
+        self.actions_layout.setContentsMargins(0, 0, 0, 0)
+        self.actions_layout.setSpacing(SPACE_SM)
+        layout.addLayout(self.actions_layout)
+
+    def set_message(self, message: str) -> None:
+        self.message_label.setText(message)
+        self.message_label.setVisible(bool(message))
+
+    def set_tone(self, tone: str) -> None:
+        set_tone(self, tone)
+
+    def add_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
+        set_ui_role(button, role)
+        self.actions_layout.addWidget(button)
+
+
+class DialogFooter(QFrame):
+    """固定顺序的标准弹窗底栏。"""
+
+    accepted = Signal()
+    rejected = Signal()
+
+    def __init__(
+        self,
+        accept_text: str = "保存",
+        cancel_text: str = "取消",
+        accept_role: str = ROLE_PRIMARY,
+        show_cancel: bool = True,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("dialogFooter")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_SM)
+        layout.setSpacing(SPACE_SM)
+        layout.addStretch()
+
+        self.cancel_button = QPushButton(cancel_text)
+        set_ui_role(self.cancel_button, ROLE_SECONDARY)
+        self.cancel_button.setVisible(show_cancel)
+        self.cancel_button.clicked.connect(self.rejected.emit)
+        layout.addWidget(self.cancel_button)
+
+        self.accept_button = QPushButton(accept_text)
+        set_ui_role(self.accept_button, accept_role)
+        self.accept_button.clicked.connect(self.accepted.emit)
+        layout.addWidget(self.accept_button)
