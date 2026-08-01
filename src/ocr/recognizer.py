@@ -36,14 +36,21 @@ _HIGH_CONFIDENCE = 0.995       # 极高置信度且无纠错候选时，保护�
 _BATCH_SLOT_GAP = 30
 _BATCH_MIN_CONFIDENCE = 0.5
 _NAME_RECHECK_CONFIDENCE = 0.8
+_UNIQUE_PREFIX_MIN_LENGTH = 2
+_MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
+_MULTI_CANDIDATE_MIN_SIMILARITY = 0.4
+_MULTI_CANDIDATE_MIN_MARGIN = 0.15
+_MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
 _CONFIRMED_RESOLUTIONS = frozenset({
-    "exact", "unique_prefix", "unique_similarity", "slot_unique", "manual",
+    "exact", "unique_prefix", "unique_similarity", "multi_similarity",
+    "slot_unique", "manual",
 })
 _RESOLUTION_PRIORITY = {
     "manual": 5,
     "exact": 4,
     "unique_prefix": 3,
     "unique_similarity": 2,
+    "multi_similarity": 2,
     "slot_unique": 1,
 }
 
@@ -128,7 +135,7 @@ class GeneralRecognizer:
             image: 截图图像。
 
         Returns:
-            [{index: int, name: str, confidence: float}, ...]
+            含候选、确认状态、长度模式和多路证据的槽位结果。
         """
         self._timing_ms = {}
         if isinstance(image, Image.Image):
@@ -254,6 +261,7 @@ class GeneralRecognizer:
             "name": "",
             "candidates": [],
             "resolution": "unknown",
+            "length_mode": "unknown",
             "confidence": 0.0,
             "evidence": [],
         }
@@ -285,7 +293,7 @@ class GeneralRecognizer:
             })
 
     def _resolve_name_evidence(self, index: int, evidence: list[dict]) -> dict:
-        """合并同一槽位的多路 OCR 证据；冲突时不产生最终名称。"""
+        """在各路证据候选闭包的交集内确认名称。"""
         result = self._empty_name_result(index)
         result["evidence"] = list(evidence)
         if not evidence:
@@ -295,24 +303,45 @@ class GeneralRecognizer:
         result["raw_name"] = str(strongest.get("text", "")).strip()
         result["confidence"] = round(float(strongest.get("confidence", 0.0)), 4)
         parsed = [self._parse_name_evidence(item) for item in evidence]
+        candidate_sets = [set(item["candidates"]) for item in parsed if item["candidates"]]
+        candidate_union = set().union(*candidate_sets) if candidate_sets else set()
+        length_modes = {
+            item["length_mode"] for item in parsed if item["candidates"]
+        }
+        if len(length_modes) == 1:
+            result["length_mode"] = next(iter(length_modes))
+        elif length_modes:
+            result["length_mode"] = "uncertain"
 
         exact_names = {item["name"] for item in parsed if item["resolution"] == "exact"}
         if len(exact_names) == 1:
-            result.update(name=exact_names.pop(), resolution="exact")
+            name = exact_names.pop()
+            if any(name not in candidates for candidates in candidate_sets):
+                result.update(
+                    candidates=sorted(candidate_union | {name}),
+                    resolution="conflict",
+                )
+                return result
+            result.update(name=name, resolution="exact")
             result["candidates"] = [result["name"]]
             return result
         if len(exact_names) > 1:
             result["resolution"] = "conflict"
-            result["candidates"] = sorted(exact_names)
+            result["candidates"] = sorted(candidate_union | exact_names)
             return result
 
         confirmed = {
             item["name"] for item in parsed
             if item["resolution"] in _CONFIRMED_RESOLUTIONS and item["name"]
         }
-        all_candidates = [set(item["candidates"]) for item in parsed if item["candidates"]]
         if len(confirmed) == 1:
             name = confirmed.pop()
+            if any(name not in candidates for candidates in candidate_sets):
+                result.update(
+                    candidates=sorted(candidate_union | {name}),
+                    resolution="conflict",
+                )
+                return result
             resolutions = [
                 item["resolution"] for item in parsed if item["name"] == name
             ]
@@ -324,46 +353,158 @@ class GeneralRecognizer:
             return result
         if len(confirmed) > 1:
             result["resolution"] = "conflict"
-            result["candidates"] = sorted(set().union(*all_candidates, confirmed))
+            result["candidates"] = sorted(candidate_union | confirmed)
             return result
 
-        if all_candidates:
-            common = set.intersection(*all_candidates)
-            result["candidates"] = sorted(common or set.union(*all_candidates))
-            result["resolution"] = "unresolved"
+        if not candidate_sets:
+            return result
+
+        common = set.intersection(*candidate_sets)
+        if not common:
+            result.update(candidates=sorted(candidate_union), resolution="conflict")
+            return result
+
+        winner = self._resolve_multi_candidate_similarity(evidence, parsed, common)
+        if winner:
+            result.update(
+                name=winner,
+                candidates=[winner],
+                resolution="multi_similarity",
+            )
+            return result
+
+        result.update(candidates=sorted(common), resolution="unresolved")
         return result
 
     def _parse_name_evidence(self, evidence: dict) -> dict:
         text = str(evidence.get("text", "")).strip()
+        if not text:
+            return {
+                "name": "",
+                "candidates": [],
+                "resolution": "unknown",
+                "length_mode": "unknown",
+            }
         if text in self._hero_names:
-            return {"name": text, "candidates": [text], "resolution": "exact"}
-        prefix_candidates = [hero for hero in self._hero_names if hero.startswith(text)]
-        if len(prefix_candidates) == 1:
+            return {
+                "name": text,
+                "candidates": [text],
+                "resolution": "exact",
+                "length_mode": "complete",
+            }
+        prefix_candidates = [
+            hero for hero in self._hero_names
+            if len(hero) > len(text) and hero.startswith(text)
+        ]
+        same_length_candidates = [
+            hero for hero in self._hero_names
+            if len(hero) == len(text)
+            if self._similarity_service._levenshtein_distance(text, hero)
+            <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
+        ]
+        if prefix_candidates and same_length_candidates:
+            return {
+                "name": "",
+                "candidates": sorted(set(prefix_candidates) | set(same_length_candidates)),
+                "resolution": "unresolved",
+                "length_mode": "uncertain",
+            }
+        if len(prefix_candidates) == 1 and len(text) >= _UNIQUE_PREFIX_MIN_LENGTH:
             return {
                 "name": prefix_candidates[0],
                 "candidates": prefix_candidates,
                 "resolution": "unique_prefix",
+                "length_mode": "missing",
             }
         if prefix_candidates:
-            return {"name": "", "candidates": prefix_candidates, "resolution": "unresolved"}
-        candidates = [
+            return {
+                "name": "",
+                "candidates": prefix_candidates,
+                "resolution": "unresolved",
+                "length_mode": "missing",
+            }
+        if len(same_length_candidates) == 1 and self._similarity_service.is_safe_single_substitution(
+            text, same_length_candidates[0],
+        ):
+            return {
+                "name": same_length_candidates[0],
+                "candidates": same_length_candidates,
+                "resolution": "unique_similarity",
+                "length_mode": "complete",
+            }
+        if same_length_candidates:
+            return {
+                "name": "",
+                "candidates": same_length_candidates,
+                "resolution": "unresolved",
+                "length_mode": "complete",
+            }
+        length_mismatch_candidates = [
             hero for hero in self._hero_names
             if self._similarity_service._levenshtein_distance(text, hero)
             <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
         ]
-        if len(candidates) == 1 and self._similarity_service.is_safe_single_substitution(
-            text, candidates[0],
-        ):
-            return {
-                "name": candidates[0],
-                "candidates": candidates,
-                "resolution": "unique_similarity",
-            }
         return {
             "name": "",
-            "candidates": candidates,
-            "resolution": "unresolved" if candidates else "unknown",
+            "candidates": length_mismatch_candidates,
+            "resolution": "unresolved" if length_mismatch_candidates else "unknown",
+            "length_mode": "uncertain" if length_mismatch_candidates else "unknown",
         }
+
+    def _resolve_multi_candidate_similarity(
+        self,
+        evidence: list[dict],
+        parsed: list[dict],
+        candidates: set[str],
+    ) -> str:
+        """完整等长名称仅在两个独立证据族均通过双门槛时决胜。"""
+        if len(candidates) < 2:
+            return ""
+
+        by_family: dict[str, tuple[dict, dict]] = {}
+        for raw, item in zip(evidence, parsed):
+            confidence = float(raw.get("confidence", 0.0))
+            if (
+                item.get("length_mode") != "complete"
+                or confidence < _MULTI_CANDIDATE_MIN_CONFIDENCE
+            ):
+                continue
+            family = self._evidence_family(str(raw.get("source", "")))
+            current = by_family.get(family)
+            if current is None or confidence > float(current[0].get("confidence", 0.0)):
+                by_family[family] = (raw, item)
+
+        supported: dict[str, str] = {}
+        for family, (raw, _item) in by_family.items():
+            text = str(raw.get("text", "")).strip()
+            ranked = self._similarity_service.rank_single_substitution_candidates(
+                text, candidates,
+            )
+            if len(ranked) < 2:
+                continue
+            best_name, best_score = ranked[0]
+            margin = best_score - ranked[1][1]
+            if (
+                best_score >= _MULTI_CANDIDATE_MIN_SIMILARITY
+                and margin >= _MULTI_CANDIDATE_MIN_MARGIN
+            ):
+                supported[family] = best_name
+
+        winners = set(supported.values())
+        if (
+            len(supported) >= _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES
+            and len(winners) == 1
+        ):
+            return winners.pop()
+        return ""
+
+    @staticmethod
+    def _evidence_family(source: str) -> str:
+        if "plain" in source:
+            return "plain"
+        if "enhanced" in source:
+            return "enhanced"
+        return source or "unknown"
 
     @staticmethod
     def _requires_slot_recheck(result: dict, text: str, confidence: float) -> bool:
@@ -378,7 +519,11 @@ class GeneralRecognizer:
         occupied = {item["name"] for item in results if item["name"]}
         pending = [
             item for item in results
-            if item["resolution"] == "unresolved" and item["candidates"]
+            if (
+                item["resolution"] == "unresolved"
+                and len(item["candidates"]) > 1
+                and item.get("length_mode") in {"missing", "complete"}
+            )
         ]
         remaining = {
             item["index"]: set(item["candidates"]) - occupied

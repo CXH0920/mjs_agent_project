@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from src.config.env import (
     DEFAULT_ENV_FILE,
@@ -38,6 +38,7 @@ from src.config.env import (
     save_env_file,
     save_pricing_config,
 )
+from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 logger = logging.getLogger(__name__)
 
@@ -92,23 +93,16 @@ class SettingsDialog(QDialog):
     def _setup_ui(self) -> None:
         """构建对话框界面"""
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader("API 配置", "管理接口参数与模型计价信息"))
         tabs = QTabWidget()
         tabs.addTab(self._build_parameter_tab(), "参数配置")
         tabs.addTab(self._build_pricing_tab(), "价格配置")
         layout.addWidget(tabs)
 
-        # 保存和取消对两个页签统一生效。
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        save_btn = QPushButton("保存")
-        save_btn.setStyleSheet("padding: 6px 24px;")
-        save_btn.clicked.connect(self._on_save)
-        cancel_btn = QPushButton("取消")
-        cancel_btn.setStyleSheet("padding: 6px 24px;")
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
+        self._footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        self._footer.accepted.connect(self._on_save)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
 
     def _build_parameter_tab(self) -> QWidget:
         """构建原 API 参数配置表单。"""
@@ -284,6 +278,8 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "价格配置无效", str(error))
             return
 
+        self._footer.set_busy(True, "正在保存...")
+
         # 收集数据
         data: dict[str, str] = {}
         for key, widget in self._text_widgets.items():
@@ -298,8 +294,9 @@ class SettingsDialog(QDialog):
             self._env_path.parent.mkdir(parents=True, exist_ok=True)
             save_env_file(self._env_path, data)
             save_pricing_config(self._pricing_path, pricing_data)
-            QMessageBox.information(self, "保存成功", "配置已保存")
-            self.accept()
+            show_toast(self, "API 配置已保存", duration=500)
+            QTimer.singleShot(500, self.accept)
         except Exception as e:
+            self._footer.set_busy(False)
             logger.exception("保存配置失败")
             QMessageBox.critical(self, "保存失败", f"无法写入配置文件:\n{e}")

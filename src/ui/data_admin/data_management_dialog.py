@@ -8,7 +8,6 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QHBoxLayout,
     QInputDialog,
     QLabel,
     QMessageBox,
@@ -19,6 +18,8 @@ from PySide6.QtWidgets import (
 from src.business.maintenance.data_management_service import DataManagementService
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
+from src.ui.shared.style import ROLE_DANGER
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
 class DataManagementDialog(QDialog):
@@ -50,9 +51,10 @@ class DataManagementDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        hint = QLabel("选择需要清空的数据。操作前会自动备份，清空后无法在界面中撤销。")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.addWidget(PageHeader(
+            "数据管理",
+            "选择需要清空的数据。操作前会自动备份，清空后无法在界面中撤销。",
+        ))
 
         self._guide_checkbox = QCheckBox("清空武将攻略")
         self._synergy_checkbox = QCheckBox("清空武将相性")
@@ -64,20 +66,15 @@ class DataManagementDialog(QDialog):
         self._count_label = QLabel()
         layout.addWidget(self._count_label)
 
-        actions = QHBoxLayout()
-        actions.addStretch()
-        self._clear_button = QPushButton("清空选中数据")
-        self._clear_button.setStyleSheet("background-color: #c62828; color: white; padding: 6px 16px;")
-        self._clear_button.clicked.connect(self._on_clear)
-        actions.addWidget(self._clear_button)
-        layout.addLayout(actions)
-
-        close_layout = QHBoxLayout()
-        close_layout.addStretch()
-        close_button = QPushButton("关闭")
-        close_button.clicked.connect(self.reject)
-        close_layout.addWidget(close_button)
-        layout.addLayout(close_layout)
+        self._footer = DialogFooter(
+            accept_text="清空选中数据",
+            cancel_text="关闭",
+            accept_role=ROLE_DANGER,
+        )
+        self._clear_button = self._footer.accept_button
+        self._footer.accepted.connect(self._on_clear)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
 
     def _refresh_counts(self) -> None:
         guide_count = len(self._guide_manager.list_guides())
@@ -110,9 +107,11 @@ class DataManagementDialog(QDialog):
         if not accepted or text.strip() != "清空":
             return
 
+        self._footer.set_busy(True, "正在清空...")
         try:
             result = self._service.clear_data(guides=clear_guides, synergies=clear_synergies)
         except Exception as error:
+            self._footer.set_busy(False)
             QMessageBox.critical(self, "清空失败", f"无法清空数据：\n{error}")
             return
 
@@ -120,6 +119,8 @@ class DataManagementDialog(QDialog):
         self._synergy_checkbox.setChecked(False)
         self._refresh_counts()
         self.data_cleared.emit(clear_guides, clear_synergies)
+        self._footer.set_busy(False)
+        self._update_clear_button()
         backup_text = "\n".join(str(path) for path in result.backup_paths)
         QMessageBox.information(
             self,

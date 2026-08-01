@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
 class HeroRelationSelectDialog(QDialog):
@@ -34,7 +35,7 @@ class HeroRelationSelectDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("搜索武将名称、称号或势力，勾选后点击确定保存。"))
+        layout.addWidget(PageHeader(self.windowTitle(), "搜索并勾选需要关联的武将"))
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("搜索武将名称...")
         layout.addWidget(self._search_edit)
@@ -62,15 +63,10 @@ class HeroRelationSelectDialog(QDialog):
         self._search_edit.textChanged.connect(self._refresh_list)
         self._refresh_list()
 
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        cancel_button = QPushButton("取消")
-        save_button = QPushButton("确定")
-        cancel_button.clicked.connect(self.reject)
-        save_button.clicked.connect(self._accept_selection)
-        buttons.addWidget(cancel_button)
-        buttons.addWidget(save_button)
-        layout.addLayout(buttons)
+        footer = DialogFooter(accept_text="确定", cancel_text="取消")
+        footer.accepted.connect(self._accept_selection)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     def _filtered_heroes(self) -> list[Hero]:
         keyword = self._search_edit.text().strip().lower()

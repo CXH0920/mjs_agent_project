@@ -20,7 +20,6 @@ def _app() -> QApplication:
 def test_dialog_submits_ordered_pages_to_capture_service(monkeypatch) -> None:
     _app()
     submitted: list[dict[str, list[str]]] = []
-    messages: list[str] = []
     failures: list[str] = []
 
     class FakeCaptureService(QObject):
@@ -42,11 +41,6 @@ def test_dialog_submits_ordered_pages_to_capture_service(monkeypatch) -> None:
         dialog._paths["exile"].addItem(item)
     monkeypatch.setattr(
         QMessageBox,
-        "information",
-        lambda _parent, _title, message: messages.append(message),
-    )
-    monkeypatch.setattr(
-        QMessageBox,
         "warning",
         lambda _parent, _title, message: failures.append(message),
     )
@@ -65,5 +59,5 @@ def test_dialog_submits_ordered_pages_to_capture_service(monkeypatch) -> None:
     assert submitted == [{"exile": ["page1.jpg", "page2.jpg"]}]
     assert dialog._progress_label.text() == "正在识别"
     assert dialog.result() == QDialog.DialogCode.Accepted
-    assert "2 张图片" in messages[0]
+    assert "2 张图片" in dialog._shared_toast_overlay.text()
     assert failures == []

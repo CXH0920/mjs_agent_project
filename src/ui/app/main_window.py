@@ -50,6 +50,7 @@ from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDial
 from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 from src.ui.app.shell_widgets import ContextHeader, NavigationRail
+from src.ui.shared.widgets import show_toast
 
 
 class MainWindow(QMainWindow):
@@ -169,10 +170,7 @@ class MainWindow(QMainWindow):
     def _on_fetch_completed(self, success: bool) -> None:
         """采集完成处理"""
         if success:
-            QMessageBox.information(
-                self, "提示",
-                "武将数据已采集完成\n请通过 数据 > 重新加载数据 刷新"
-            )
+            show_toast(self, "武将数据已采集完成，请重新加载数据。", duration=3000)
         else:
             QMessageBox.warning(self, "采集失败", "武将数据采集失败")
 
@@ -424,17 +422,15 @@ class MainWindow(QMainWindow):
             ocr_service=self._ocr_service,
         )
         self._recommendation.request_mumu_config.connect(self._open_mumu_config)
-        self._recommendation._page_title_label.hide()
         self._tabs.addTab(self._recommendation, "选将推荐")
 
-        # Tab 3: 对局攻略（2×2 武将卡片）
+        # Tab 3: 对局攻略（42/58 阵容与攻略工作台）
         self._match_guide = MatchGuidePanel(
             self._data.heroes,
             guide_manager=self._data.guides,
             capture_service=self._capture_service,
         )
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)
-        self._match_guide._page_title_label.hide()
         self._tabs.addTab(self._match_guide, "对局攻略")
 
         workspace_layout.addWidget(self._tabs, 1)
@@ -687,7 +683,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_recommendation"):
             self._recommendation.refresh_synergies()
         self._update_status()
-        QMessageBox.information(self, "已刷新", "数据已重新加载")
+        show_toast(self, "数据已重新加载")
 
     def _open_official_data_import(self) -> None:
         """打开官方 2v2 胜率与武将放逐榜单导入窗口。"""

@@ -6,9 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
     QScrollArea,
     QTabWidget,
     QTextBrowser,
@@ -17,6 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from src.data.models import Hero, Skill
+from src.ui.shared.style import ROLE_SECONDARY
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
 class HeroSkillDialog(QDialog):
@@ -30,6 +30,7 @@ class HeroSkillDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
+        layout.addWidget(PageHeader(f"{hero.name} · 技能详情", "查看技能描述与结算说明"))
 
         tabs = QTabWidget()
         if not hero.skills:
@@ -45,13 +46,13 @@ class HeroSkillDialog(QDialog):
                 tabs.addTab(self._create_skill_tab(skill), skill.name)
         layout.addWidget(tabs, 1)
 
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_button = QPushButton("关闭")
-        close_button.setFixedWidth(80)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        layout.addLayout(button_layout)
+        footer = DialogFooter(
+            accept_text="关闭",
+            accept_role=ROLE_SECONDARY,
+            show_cancel=False,
+        )
+        footer.accepted.connect(self.accept)
+        layout.addWidget(footer)
 
     @staticmethod
     def _create_skill_tab(skill: Skill) -> QWidget:

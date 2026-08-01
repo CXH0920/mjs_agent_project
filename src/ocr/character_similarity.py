@@ -50,16 +50,32 @@ class CharacterSimilarityService:
 
     def is_safe_single_substitution(self, text: str, candidate: str) -> bool:
         """仅在等长名称恰有一个错字且字形足够接近时允许自动纠正。"""
+        similarity = self.single_substitution_similarity(text, candidate)
+        return similarity is not None and similarity >= self.SAFE_CHARACTER_SIMILARITY
+
+    def single_substitution_similarity(self, text: str, candidate: str) -> float | None:
+        """返回等长名称唯一错字的字形相似度；其他编辑类型不参与评分。"""
         if len(text) != len(candidate):
-            return False
+            return None
         mismatches = [
             (source, target)
             for source, target in zip(text, candidate)
             if source != target
         ]
-        return len(mismatches) == 1 and (
-            self._multi_dim_similarity(*mismatches[0]) >= self.SAFE_CHARACTER_SIMILARITY
-        )
+        if len(mismatches) != 1:
+            return None
+        return self._multi_dim_similarity(*mismatches[0])
+
+    def rank_single_substitution_candidates(
+        self, text: str, candidates: list[str] | set[str],
+    ) -> list[tuple[str, float]]:
+        """仅在给定候选闭包内按唯一错字字形相似度降序排列。"""
+        scored = []
+        for candidate in candidates:
+            similarity = self.single_substitution_similarity(text, candidate)
+            if similarity is not None:
+                scored.append((candidate, similarity))
+        return sorted(scored, key=lambda item: (-item[1], item[0]))
 
     @staticmethod
     def _levenshtein_distance(first: str, second: str) -> int:
@@ -132,6 +148,8 @@ class CharacterSimilarityService:
     def _four_corner_score(self, first: str, second: str) -> float:
         first_code = "".join(char for char in self._value(first, "four_corner") if char.isdigit())
         second_code = "".join(char for char in self._value(second, "four_corner") if char.isdigit())
+        if not first_code or not second_code:
+            return 0.0
         first_code = (first_code + "00000")[:5]
         second_code = (second_code + "00000")[:5]
         return sum(left == right for left, right in zip(first_code, second_code)) / 5.0

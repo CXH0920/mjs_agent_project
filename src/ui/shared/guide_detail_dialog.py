@@ -6,7 +6,6 @@ from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -18,7 +17,8 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
 from src.ui.shared.markdown_renderer import render_markdown
-from src.ui.shared.widgets import FlowLayout
+from src.ui.shared.style import ROLE_SECONDARY
+from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
 
 
 class DoubleClickTextBrowser(QTextBrowser):
@@ -61,13 +61,10 @@ class GuideDetailDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        header = QLabel(
-            f"<div style='font-size:20px; font-weight:bold; color:#2c3e50;'>{hero_name} · 完整攻略</div>"
-            f"<div style='color:#6b7c93; margin-top:4px;'>"
-            f"{'攻略指南 · 更新于 ' + guide.last_updated if guide else '暂无攻略数据'}</div>"
-        )
-        header.setWordWrap(True)
-        layout.addWidget(header)
+        layout.addWidget(PageHeader(
+            f"{hero_name} · 完整攻略",
+            "攻略指南 · 更新于 " + guide.last_updated if guide else "暂无攻略数据",
+        ))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -194,13 +191,13 @@ class GuideDetailDialog(QDialog):
         GuideMarkdownDialog(self._hero_name, self._guide.description, self).exec()
 
     def _add_close_button(self, layout: QVBoxLayout) -> None:
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_button = QPushButton("关闭")
-        close_button.setFixedWidth(80)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        layout.addLayout(button_layout)
+        footer = DialogFooter(
+            accept_text="关闭",
+            accept_role=ROLE_SECONDARY,
+            show_cancel=False,
+        )
+        footer.accepted.connect(self.accept)
+        layout.addWidget(footer)
 
     @staticmethod
     def _add_section_title(layout: QVBoxLayout, title: str) -> None:
@@ -279,22 +276,20 @@ class GuideMarkdownDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        title = QLabel(f"{hero_name} · 完整攻略")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; padding: 4px;")
-        layout.addWidget(title)
+        layout.addWidget(PageHeader(f"{hero_name} · 完整攻略", "完整 Markdown 正文"))
 
         body = QTextBrowser()
         body.setOpenExternalLinks(False)
         body.setHtml(_markdown_to_html(markdown_text))
         layout.addWidget(body, 1)
 
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_button = QPushButton("关闭")
-        close_button.setFixedWidth(90)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        layout.addLayout(button_layout)
+        footer = DialogFooter(
+            accept_text="关闭",
+            accept_role=ROLE_SECONDARY,
+            show_cancel=False,
+        )
+        footer.accepted.connect(self.accept)
+        layout.addWidget(footer)
 
 def _markdown_to_html(text: str) -> str:
     """将 Markdown 转换为 HTML。"""

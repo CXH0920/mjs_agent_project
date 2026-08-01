@@ -7,14 +7,13 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
-    QHBoxLayout,
     QLineEdit,
-    QPushButton,
     QSpinBox,
     QVBoxLayout,
 )
 
 from src.data.models import Difficulty, Gender, Hero
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
 class HeroEditDialog(QDialog):
@@ -29,6 +28,7 @@ class HeroEditDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader("编辑武将信息", f"更新 {self._hero.name} 的基础资料"))
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
@@ -62,26 +62,22 @@ class HeroEditDialog(QDialog):
         form.addRow("难度(1-5):", self._diff_spin)
         layout.addLayout(form)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        save_button = QPushButton("保存")
-        save_button.setStyleSheet("padding: 6px 24px;")
-        save_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("取消")
-        cancel_button.setStyleSheet("padding: 6px 24px;")
-        cancel_button.clicked.connect(self.reject)
-        buttons.addWidget(save_button)
-        buttons.addWidget(cancel_button)
-        layout.addLayout(buttons)
+        footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        footer.accepted.connect(self.accept)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     def get_hero(self) -> Hero:
         """返回编辑后的 Hero 对象。"""
-        self._hero.name = self._name_edit.text().strip()
-        self._hero.title = self._title_edit.text().strip()
-        self._hero.faction = self._faction_edit.text().strip()
-        self._hero.position = self._position_edit.text().strip()
-        self._hero.max_hp = self._hp_spin.value()
-        self._hero.max_hand = self._hand_spin.value()
-        self._hero.gender = Gender.MALE if self._gender_combo.currentText() == "男" else Gender.FEMALE
-        self._hero.difficulty = Difficulty(self._diff_spin.value())
-        return self._hero
+        values = self._hero.model_dump(mode="python")
+        values.update({
+            "name": self._name_edit.text().strip(),
+            "title": self._title_edit.text().strip(),
+            "faction": self._faction_edit.text().strip(),
+            "position": self._position_edit.text().strip(),
+            "max_hp": self._hp_spin.value(),
+            "max_hand": self._hand_spin.value(),
+            "gender": Gender.MALE if self._gender_combo.currentText() == "男" else Gender.FEMALE,
+            "difficulty": Difficulty(self._diff_spin.value()),
+        })
+        return Hero.model_validate(values)

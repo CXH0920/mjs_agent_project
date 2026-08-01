@@ -11,13 +11,13 @@ import logging
 
 from PySide6.QtWidgets import (
     QDialog,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class BackendChooseDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader(self.windowTitle(), "确认生成方式与本次任务估算"))
 
         # Tab 切换
         self._tabs = QTabWidget()
@@ -116,18 +117,10 @@ class BackendChooseDialog(QDialog):
 
         layout.addWidget(self._tabs, 1)
 
-        # 按钮
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        ok_btn = QPushButton("确定执行")
-        ok_btn.setStyleSheet("padding: 6px 24px;")
-        ok_btn.clicked.connect(self._on_accept)
-        cancel_btn = QPushButton("取消")
-        cancel_btn.setStyleSheet("padding: 6px 24px;")
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
+        footer = DialogFooter(accept_text="确定执行", cancel_text="取消")
+        footer.accepted.connect(self._on_accept)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     def _on_accept(self) -> None:
         """确定时记录当前 Tab 对应的后端"""

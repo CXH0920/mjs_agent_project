@@ -6,9 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
     QSpinBox,
     QTextEdit,
     QVBoxLayout,
@@ -16,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from src.data.hero_manager import HeroManager
 from src.data.models import SynergyScore, synergy_rating_for_score
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
 class SynergyEditDialog(QDialog):
@@ -36,6 +35,7 @@ class SynergyEditDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader("编辑相性", "调整评分维度与相性说明"))
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.addRow("武将 A:", QLabel(self._hero_text(self._synergy.hero_a_id)))
@@ -68,17 +68,10 @@ class SynergyEditDialog(QDialog):
         layout.addLayout(form)
         self._update_rating_label(self._score_spin.value())
 
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        save_button = QPushButton("保存")
-        save_button.setStyleSheet("padding: 6px 24px;")
-        save_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("取消")
-        cancel_button.setStyleSheet("padding: 6px 24px;")
-        cancel_button.clicked.connect(self.reject)
-        buttons.addWidget(save_button)
-        buttons.addWidget(cancel_button)
-        layout.addLayout(buttons)
+        footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        footer.accepted.connect(self.accept)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     def _update_rating_label(self, score: int) -> None:
         self._rating_label.setText(synergy_rating_for_score(score))

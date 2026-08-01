@@ -40,6 +40,7 @@ from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView,
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
+from src.ui.shared.widgets import show_toast
 
 logger = logging.getLogger(__name__)
 
@@ -395,16 +396,18 @@ class HeroDetailPanel(QWidget):
             synergy,
             parent=self,
         )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                self._data_mutation_service.update_synergy(dialog.get_synergy())
+                self._synergy_tab.refresh()
+                self._update_context_actions()
+                self.synergies_changed.emit()
+            except Exception as e:
+                logger.exception("保存相性失败")
+                QMessageBox.critical(self, "保存失败", f"无法保存相性:\n{e}\n\n编辑内容已保留。")
+                continue
+            show_toast(self, "相性修改已保存")
             return
-        try:
-            self._data_mutation_service.update_synergy(dialog.get_synergy())
-            self._synergy_tab.refresh()
-            self._update_context_actions()
-            self.synergies_changed.emit()
-        except Exception as e:
-            logger.exception("保存相性失败")
-            QMessageBox.critical(self, "保存失败", f"无法保存相性:\n{e}")
 
     def _on_synergy_delete(self) -> None:
         """删除表格中选中的相性。"""
@@ -429,6 +432,11 @@ class HeroDetailPanel(QWidget):
             self._synergy_tab.refresh()
             self._update_context_actions()
             self.synergies_changed.emit()
+            QMessageBox.information(
+                self,
+                "删除完成",
+                f"已删除「{first_text}」与「{second_text}」的相性。",
+            )
         except Exception as e:
             logger.exception("删除相性失败")
             QMessageBox.critical(self, "删除失败", f"无法删除相性:\n{e}")
@@ -438,18 +446,20 @@ class HeroDetailPanel(QWidget):
         if not self._current_hero:
             return
         dialog = HeroEditDialog(self._current_hero, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                updated = dialog.get_hero()
+                self._data_mutation_service.update_hero(updated)
+                self._current_hero = updated
+                self._update_identity_bar(updated)
+                self._info_tab.show_hero(updated)
+                self.data_changed.emit()
+            except Exception as e:
+                logger.exception("保存武将信息失败")
+                QMessageBox.critical(self, "保存失败", f"无法保存武将信息:\n{e}\n\n编辑内容已保留。")
+                continue
+            show_toast(self, "武将资料已保存")
             return
-        updated = dialog.get_hero()
-        try:
-            self._data_mutation_service.update_hero(updated)
-            self._current_hero = updated
-            self._update_identity_bar(updated)
-            self._info_tab.show_hero(updated)
-            self.data_changed.emit()
-        except Exception as e:
-            logger.exception("保存武将信息失败")
-            QMessageBox.critical(self, "保存失败", f"无法保存武将信息:\n{e}")
 
     def _on_info_delete(self) -> None:
         """删除当前武将（含确认）"""
@@ -465,6 +475,7 @@ class HeroDetailPanel(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+        hero_name = self._current_hero.name
         try:
             self._data_mutation_service.delete_hero_with_relations(self._current_hero.id)
             self._current_hero = None
@@ -475,6 +486,11 @@ class HeroDetailPanel(QWidget):
             self._update_context_actions()
             self.data_changed.emit()
             self.synergies_changed.emit()
+            QMessageBox.information(
+                self,
+                "删除完成",
+                f"武将「{hero_name}」及其关联攻略和相性已删除。",
+            )
         except Exception as e:
             logger.exception("删除武将失败")
             QMessageBox.critical(self, "删除失败", f"无法删除武将:\n{e}")
@@ -488,17 +504,19 @@ class HeroDetailPanel(QWidget):
         if not self._current_guide:
             return
         dialog = GuideEditDialog(self._current_guide, self._hero_mgr, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                updated = dialog.get_guide()
+                self._data_mutation_service.update_guide(updated)
+                self._current_guide = updated
+                self._guide_tab.show_guide(updated)
+                self.data_changed.emit()
+            except Exception as e:
+                logger.exception("保存攻略失败")
+                QMessageBox.critical(self, "保存失败", f"无法保存攻略:\n{e}\n\n编辑内容已保留。")
+                continue
+            show_toast(self, "攻略修改已保存")
             return
-        updated = dialog.get_guide()
-        try:
-            self._data_mutation_service.update_guide(updated)
-            self._current_guide = updated
-            self._guide_tab.show_guide(updated)
-            self.data_changed.emit()
-        except Exception as e:
-            logger.exception("保存攻略失败")
-            QMessageBox.critical(self, "保存失败", f"无法保存攻略:\n{e}")
 
     def _on_guide_delete(self) -> None:
         """删除当前攻略（含确认）"""
@@ -518,6 +536,7 @@ class HeroDetailPanel(QWidget):
             self._guide_tab.show_guide(None)
             self._update_context_actions()
             self.data_changed.emit()
+            QMessageBox.information(self, "删除完成", "当前武将的攻略已删除。")
         except Exception as e:
             logger.exception("删除攻略失败")
             QMessageBox.critical(self, "删除失败", f"无法删除攻略:\n{e}")

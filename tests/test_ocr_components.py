@@ -178,6 +178,17 @@ def test_character_similarity_requires_safe_glyph_for_single_substitution() -> N
     assert not service.is_safe_single_substitution("正瑜", "周瑜")
 
 
+def test_character_similarity_does_not_score_missing_four_corner_codes(tmp_path) -> None:
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    repository.load().update({
+        "甲": {"four_corner": "", "cangjie": "", "radical": "", "pinyin": "", "total_strokes": ""},
+        "乙": {"four_corner": "", "cangjie": "", "radical": "", "pinyin": "", "total_strokes": ""},
+    })
+    service = CharacterSimilarityService(repository)
+
+    assert service.single_substitution_similarity("甲", "乙") == 0.0
+
+
 def test_general_recognizer_delegates_preprocessing_and_name_correction() -> None:
     calls: list[object] = []
 
@@ -321,6 +332,151 @@ def test_general_recognizer_confirms_unique_prefix_but_not_unsafe_similarity() -
     assert unsafe["name"] == ""
     assert unsafe["resolution"] == "unresolved"
     assert unsafe["candidates"] == ["周瑜"]
+
+
+def test_general_recognizer_keeps_single_character_prefix_unresolved() -> None:
+    result = GeneralRecognizer(hero_names=["樊哙"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "樊", "confidence": 0.99},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["candidates"] == ["樊哙"]
+
+
+def test_general_recognizer_keeps_mixed_prefix_and_equal_length_candidates_unresolved() -> None:
+    result = GeneralRecognizer(hero_names=["赵姬", "赵婕妤"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "赵婕", "confidence": 0.99},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["length_mode"] == "uncertain"
+    assert result["candidates"] == ["赵姬", "赵婕妤"]
+
+
+def test_general_recognizer_scores_complete_multi_candidates_with_two_evidence_families() -> None:
+    result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王翡", "confidence": 0.9065},
+        {"source": "single_enhanced", "text": "王翡", "confidence": 0.7623},
+        {"source": "single_plain", "text": "王翡", "confidence": 0.7889},
+    ])
+
+    assert result["name"] == "王翦"
+    assert result["resolution"] == "multi_similarity"
+    assert result["candidates"] == ["王翦"]
+
+
+def test_general_recognizer_does_not_score_multi_candidates_from_one_evidence_family() -> None:
+    result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王翡", "confidence": 0.91},
+        {"source": "single_enhanced", "text": "王翡", "confidence": 0.88},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["candidates"] == ["王异", "王翦"]
+
+
+def test_general_recognizer_enforces_all_multi_candidate_score_thresholds() -> None:
+    class StubSimilarityService(CharacterSimilarityService):
+        def __init__(self, rankings: dict[str, list[tuple[str, float]]]) -> None:
+            self._rankings = rankings
+
+        def rank_single_substitution_candidates(
+            self, text: str, candidates: list[str] | set[str],
+        ) -> list[tuple[str, float]]:
+            assert set(candidates) == {"王丙", "王乙"}
+            return self._rankings[text]
+
+    cases = [
+        (
+            {"王甲": [("王乙", 0.8), ("王丙", 0.5)]},
+            [
+                {"source": "batch_enhanced", "text": "王甲", "confidence": 0.69},
+                {"source": "single_plain", "text": "王甲", "confidence": 0.9},
+            ],
+        ),
+        (
+            {"王甲": [("王乙", 0.39), ("王丙", 0.1)]},
+            [
+                {"source": "batch_enhanced", "text": "王甲", "confidence": 0.9},
+                {"source": "single_plain", "text": "王甲", "confidence": 0.9},
+            ],
+        ),
+        (
+            {"王甲": [("王乙", 0.6), ("王丙", 0.5)]},
+            [
+                {"source": "batch_enhanced", "text": "王甲", "confidence": 0.9},
+                {"source": "single_plain", "text": "王甲", "confidence": 0.9},
+            ],
+        ),
+        (
+            {
+                "王甲": [("王乙", 0.8), ("王丙", 0.5)],
+                "王丁": [("王丙", 0.8), ("王乙", 0.5)],
+            },
+            [
+                {"source": "batch_enhanced", "text": "王甲", "confidence": 0.9},
+                {"source": "single_plain", "text": "王丁", "confidence": 0.9},
+            ],
+        ),
+    ]
+
+    for rankings, evidence in cases:
+        recognizer = GeneralRecognizer(
+            hero_names=["王乙", "王丙"],
+            similarity_service=StubSimilarityService(rankings),
+        )
+
+        result = recognizer._resolve_name_evidence(1, evidence)
+
+        assert result["name"] == ""
+        assert result["resolution"] == "unresolved"
+        assert result["candidates"] == ["王丙", "王乙"]
+
+
+def test_general_recognizer_rejects_evidence_outside_prefix_candidate_closure() -> None:
+    result = GeneralRecognizer(hero_names=["卫青", "卫玠", "周瑜"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "卫", "confidence": 0.99},
+        {"source": "single_plain", "text": "正瑜", "confidence": 0.71},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "conflict"
+    assert result["candidates"] == ["卫玠", "卫青", "周瑜"]
+
+
+def test_general_recognizer_does_not_promote_unsafe_single_candidate_by_page_uniqueness() -> None:
+    recognizer = GeneralRecognizer(hero_names=["周瑜"])
+    results = [recognizer._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "正瑜", "confidence": 0.99},
+    ])]
+
+    recognizer._resolve_page_names(results)
+
+    assert results[0]["name"] == ""
+    assert results[0]["resolution"] == "unresolved"
+    assert results[0]["candidates"] == ["周瑜"]
+
+
+def test_general_recognizer_does_not_promote_uncertain_length_by_page_uniqueness() -> None:
+    recognizer = GeneralRecognizer(hero_names=["甲乙", "丙乙"])
+    results = [
+        recognizer._resolve_name_evidence(1, [
+            {"source": "batch_enhanced", "text": "甲乙", "confidence": 0.99},
+        ]),
+        recognizer._resolve_name_evidence(2, [
+            {"source": "batch_enhanced", "text": "乙", "confidence": 0.99},
+        ]),
+    ]
+
+    recognizer._resolve_page_names(results)
+
+    assert results[1]["name"] == ""
+    assert results[1]["resolution"] == "unresolved"
+    assert results[1]["length_mode"] == "uncertain"
+    assert results[1]["candidates"] == ["丙乙", "甲乙"]
 
 
 def test_general_recognizer_resolves_slot_unique_candidate_without_competition() -> None:

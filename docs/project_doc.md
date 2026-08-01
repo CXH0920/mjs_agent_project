@@ -543,7 +543,7 @@ class OcrService(QObject):
 | 方法 | 说明 |
 |------|------|
 | `update_config(config)` | 更新配置缓存 |
-| `set_hero_names(names)` | 设置武将名列表（编辑距离矫正用） |
+| `set_hero_names(names)` | 设置武将候选词表（名称门禁与候选解析用） |
 | `create_template(image, roi)` | 制作模板 |
 | `select_template(file_path)` | 从文件加载模板 |
 | `is_template_loaded()` | 检查模板是否已加载 |
@@ -775,9 +775,9 @@ MainWindow.__init__
 
 ### 5.3 对局攻略页面（MatchGuidePanel）
 
-对局攻略与资料库、选将推荐同属左侧导航的一级工作区。页面使用 2×2 网格展示四名武将卡片：头像放置区域固定为 135×162px（5:6），实际头像固定为 120×160px（3:4）并在区域内居中靠上，左上叠加势力标签、底部叠加宽 130px（略宽于头像）且无圆角的半透明名称浮层，名称使用较大加粗字体；名称浮层正下方显示放大加粗的“胜率：xx.x%”，样式与选将推荐头像区保持一致；双击头像会打开技能详情弹窗。卡片另有“阵营待定”预留标签。势力颜色来自 `config/faction_colors.json`，找不到配置时回退灰色，并在势力配色保存后刷新全部卡片。初始状态不预填武将，等待截图或图片导入。
+对局攻略与资料库、选将推荐同属左侧导航的一级工作区。页面内部使用 `PageActionBar` 展示识别状态、唯一主要识别操作和“更多”菜单，不重复外壳标题。结果区采用不可折叠的 42/58 水平分割：左栏固定阵容确认区，并在独立纵向滚动区展示四张 176～250px 宽的紧凑卡片；右栏展示总览、我方打法、对抗敌方和单将详情。两侧禁止横向滚动，长文本自动换行。
 
-页面提供两种导入入口：从已连接的 MuMu ADB 截图，或选择本地图片。两种入口均通过 `template_name="match_guide"` 并以 `force_ocr=True` 直接执行 OCR，将 OCR 结果交给 `load_from_ocr()` 更新卡片；自动轮询才使用独立模板筛选游戏画面。未配置 ADB 时通过 `request_mumu_config` 引导打开模拟器配置窗口。五个候选位置中第 5 个固定为玩家本人，第 1、2 个为敌方，第 3、4 个中唯一识别到名称者为队友；【楚军】/【汉军】标签仅用于校验席位结果，缺失时仍按席位自动分配。`LineupState` 负责四个槽位、敌我人数限制、主将选择和显式确认，仍可手动矫正敌我；确认后才由 `MatchAnalysisService` 生成摘要，并由 `MatchAnalysisView` 渲染总览、我方打法、对抗敌方和单将详情。
+页面可识别已连接的 MuMu 画面或从本地图片导入，结果态将图片导入、保存截图和清空阵容收纳到“更多”。两种识别入口均通过 `template_name="match_guide"` 和 `force_ocr=True` 更新卡片；保存截图不触发 OCR。卡片分别展示识别状态与敌我席位状态，并用互斥“我方 / 敌方 / 未定”分段控件调整；【楚军】/【汉军】标签只用于校验席位结果。`LineupState` 继续负责槽位、敌我人数限制、主将和显式确认；新 OCR 或人工调整会清除旧分析并要求重新确认。
 
 ### 5.4 模拟器配置对话框（MumuConfigDialog）
 
@@ -824,7 +824,7 @@ MainWindow.__init__
 - **轮询间隔**：1-60 秒；未勾选持续轮询时禁用
 - **恢复轮询**：仅持续轮询已勾选且服务处于暂停状态时显示并可用
 - **识别区域编辑**：选将推荐编辑 8 个名称区域；对局攻略编辑 5 组名称和阵营区域。可从共享 ADB 截图或本地图片打开编辑器，保存后下一次识别立即使用新布局；恢复默认只清除当前页面的本地覆盖
-- **保存反馈**：保存识别参数后显示 300ms 的“✓ 识别参数已保存”提示
+- **保存反馈**：保存识别参数时固定底栏进入 busy 状态，成功后显示短暂 Toast 并关闭
 
 ### 5.5 区域框选对话框（RoiSelectorDialog）
 
@@ -939,16 +939,16 @@ HeroDetailPanel._on_synergy_edit()
   -> DataMutationService.update_synergy() -> 创建备份 -> SynergyManager.save()
 ```
 
-`hero_browser.py` 保留列表、当前详情状态、编辑对话框、局部刷新和 `data_changed` 通知；三个 Tab 的控件构造与只读渲染位于 `hero_detail_views.py`。所有编辑、删除写入均交给 `DataMutationService` 统一创建快照、备份与保存。四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。这种拆分不改变编辑按钮、信号或 Manager 的持久化契约，调用方仍通过公开类名创建对话框。
+`hero_browser.py` 保留列表、当前详情状态、编辑对话框、局部刷新和 `data_changed` 通知；三个 Tab 的控件构造与只读渲染位于 `hero_detail_views.py`。编辑器从表单构造并重新校验模型副本，所有编辑、删除写入均交给 `DataMutationService` 统一创建快照、备份与保存；写入失败时重新显示同一编辑实例，因此原模型不被提前修改且输入仍可继续调整。四个对话框分别位于 `hero_edit_dialog.py`、`guide_edit_dialog.py`、`hero_relation_select_dialog.py`、`synergy_edit_dialog.py`。
 
-相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `HeroSynergyView.show_hero()` -> `refresh()` -> `SynergyManager.list_synergies_for_hero()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时通过 `DataMutationService.update_synergy()` 写入，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击则只打开 Markdown 预览，不修改数据。
+相性 Tab 的刷新顺序为 `HeroDetailPanel.show_hero()` -> `HeroSynergyView.show_hero()` -> `refresh()` -> `SynergyManager.list_synergies_for_hero()`。双击非说明列或点击修改会打开 `SynergyEditDialog`；保存时通过 `DataMutationService.update_synergy()` 写入，随后触发 `synergies_changed`，由 `MainWindow._on_synergies_changed()` 刷新选将推荐数据。说明列双击使用 `PageHeader + QTextBrowser + DialogFooter` 阅读 Markdown，不修改数据。
 
 **当前内容上下文操作**：
 - 身份头部始终只显示一个直接编辑按钮；武将信息、攻略指南、武将相性分别映射为“编辑武将”“编辑攻略”“编辑相性”
 - 对应的“删除武将”“删除攻略”“删除相性”收纳在相邻省略号“更多”菜单中，并继续弹出原二次确认
 - 无当前武将、无攻略或未选中相性记录时，编辑和删除入口同步禁用
 - 页签切换只更新操作文字、处理方法和可用状态，不改变原对话框、`DataMutationService` 或持久化契约
-- 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将
+- 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将并显示 Toast；写入失败时保留输入，删除完成使用模态结果反馈
 - `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
 - 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
@@ -976,25 +976,23 @@ HeroDetailPanel._on_synergy_edit()
 
 ```
 RecommendationPanel (QWidget)
- ├── 标题行
- │   ├── "选将推荐"
- │   ├── [截图] 按钮（仅 ADB 截图并保存）
- │   └── [📁 从图片导入] 按钮（本地图片 → OCR 导入）
- └── QScrollArea → QGridLayout (4行 × 2列，小尺寸时滚动)
+ ├── PageActionBar：识别状态 + [识别当前阵容] + [更多]
+ ├── NoticeBanner：指数过期或可恢复错误
+ └── QScrollArea → QGridLayout (2列 × 4行，仅纵向滚动)
       └── HeroCardWidget × 8
-           ├── 头像区 (宽 130px)
+           ├── 头像区 (100×129px)
            │   ├── QPixmap (从 images/name.png 加载)
            │   ├── QGridLayout 叠加
            │   │   ├── 名称浮层 (底部, rgba(0,0,0,140))
            │   │   └── 势力标签 (左上角, 色块)
            └── 信息区 (弹性)
-               ├── 定位 · 推荐指数 + [技能] [攻略] 按钮
-               ├── 定位 · 推荐指数（“辅助 · 推荐指数：92 / S”格式；悬停或点击指数查看明细，右侧圆形感叹号悬停查看口径，数据缺失时显示“推荐指数：-- / 数据不足”）
+               ├── 定位 · 推荐指数 + [技能] [查看攻略] 按钮
+               ├── 定位 · 推荐指数（“辅助 · 推荐指数：92 / S”格式；悬停或点击指数查看明细，右侧口径图标始终保留，数据缺失时显示“推荐指数：-- / 数据不足”）
                ├── 分隔线
                ├── 高相性组合标题
                ├── QGridLayout (2列, 搭配+评分)
                ├── 分隔线
-               └── 胜率（从 2v2胜率排行.csv 加载，前三自动标记 🥇🥈🥉 奖牌）
+               └── 历史单将胜率（前三使用固定 TOP 1/2/3 徽章）
 ```
 
 **势力配色**：
@@ -1030,26 +1028,26 @@ def update_recommendations(self, data: list[dict]) → None
 ]
 ```
 
-**截图导入流程（`截图` 按钮）**：
-1. 检查 ADB 是否已配置 → 未配置则弹出 MumuConfigDialog
-2. 点击后按钮变为「正在截图...」
-3. CaptureService.do_capture(perform_ocr=False) → 截图保存 → capture_completed 信号
-4. `_on_capture_result` 复位按钮；选择「从图片导入」时才提交图片到 OcrWorker 并调用 `load_from_ocr()` 填入 8 个槽位
+**识别与截图流程**：
+1. “识别当前阵容”调用 `CaptureService.do_capture(hero_names, force_ocr=True)`，完成后填入 8 个槽位。
+2. “更多 > 从图片导入”提交本地图片到 `OcrWorker`。
+3. “更多 > 保存截图”调用 `do_capture(perform_ocr=False)`，不更新推荐结果。
+4. `_pending_capture_source` 防止重复提交并隔离共享服务回调；空结果和失败通过页内 `NoticeBanner` 提供恢复提示。
 
 **`load_from_ocr(ocr_results)`**：
 - 接收 OCR 结构化结果 `[{index, raw_name, name, candidates, resolution, confidence, evidence}, ...]`，并兼容旧的 `{index, name, confidence}`
 - `name` 为空的待确认槽位只显示 OCR 原文与候选，不加载武将资料、推荐指数、胜率或相性；候选确认只影响当前页面
 - 将 name 匹配 HeroManager 中的 Hero 对象
 - 加载 `images/<name>.png` 头像
-- 刷新当前版本推荐指数快照，卡片以“推荐指数：星级 + 评级”显示；悬停或点击星级查看胜率、出场排名、禁用排名及自动推荐排序，右侧圆形感叹号悬停查看计算口径
+- 刷新当前版本推荐指数快照，卡片以“推荐指数：星级 + 评级”显示；悬停或点击星级查看胜率、出场排名、禁用排名及自动推荐排序，右侧口径图标在数据有效和不足时均保留
 - 根据武将名从 `synergies.json` 加载高相性组合数据
 - 高相性组合在 OCR 模式下**仅显示当前 8 个武将之间的相性**，不显示数据库中其他武将的相性（通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志控制过滤）
-- 根据武将名从 `2v2胜率排行.csv` 加载胜率，随即对 8 个槽位按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
+- 根据武将名从 `2v2胜率排行.csv` 加载历史单将胜率，随即对 8 个槽位按胜率降序排名，前三标记固定尺寸的 TOP 1/2/3 徽章
 - 未匹配到 HeroManager 的武将名仍显示名称文字供人工判断
 
 **攻略按钮（`HeroCardWidget`）**：
-每个 `HeroCardWidget` 信息区头部（势力色块 + 武将名同一行的最右侧）新增一个蓝色 [攻略] 按钮：
-- 按钮尺寸 66×28，蓝色背景 `#4a90d9`，白色文字
+每个 `HeroCardWidget` 信息区头部提供蓝色强调的 [查看攻略] 次要按钮：
+- 按钮尺寸 76×26，使用 `PRIMARY_SOFT` 背景、`PRIMARY` 边框和加粗文字，悬停时反转为蓝底白字
 - 点击时通过 `guide_clicked = Signal(int)` 信号发射武将 ID
 - `RecommendationPanel._show_guide_popup(hero_id)` 接收信号，通过 `GuideManager.get_guide()` 获取攻略
 - 弹出 `GuideDetailDialog`（QDialog，默认 720×680，最大高度 760），以外层滚动区展示摘要与正文预览；正文标题标注双击打开方式，双击后由 `GuideMarkdownDialog` 展示完整 Markdown 正文
@@ -1087,7 +1085,7 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 
 ### 5.11 官方数据导入对话框（OfficialDataImportDialog）
 
-该对话框为 2v2 与武将放逐各提供一个有序图片列表，可单独或同时导入。添加图片时按文件名自然排序，用户可移除或上移、下移；旧版长图使用单项列表，新版分页按列表显示顺序合并。导入期间禁用列表、导入、取消和关闭操作；进度先显示当前分析/识别页，收到 Worker 的总工作量后显示该类榜单的 `current / total`。完成后显示每类榜单的图片数、导入条数和待复核条数；失败时恢复控件并隐藏进度条。
+该对话框为 2v2 与武将放逐各提供一个有序图片列表，可单独或同时导入。添加图片时按文件名自然排序，用户可移除或上移、下移；旧版长图使用单项列表，新版分页按列表显示顺序合并。导入期间 `DialogFooter` 进入 busy 状态并禁用列表、导入、取消和关闭操作；进度先显示当前分析/识别页，收到 Worker 的总工作量后显示该类榜单的 `current / total`。完成后通过 Toast 显示每类榜单的图片数、导入条数和待复核条数；失败时恢复控件并隐藏进度条。
 
 ```
 _start_import()
@@ -1101,7 +1099,7 @@ _start_import()
 
 ### 5.12 UI 设计系统（shared/style.py + shared/widgets.py）
 
-`src.ui.shared.style` 统一提供视觉 Token、全局 QSS 和动态语义属性；`src.ui.shared.widgets` 提供页面标题、空状态、状态标签、通知条和标准弹窗底栏。旧页面使用的样式常量暂时保留兼容，后续按页面迁移，不改变业务信号和数据流。
+`src.ui.shared.style` 统一提供视觉 Token、全局 QSS 和动态语义属性；`src.ui.shared.widgets` 提供页面标题、空状态、状态标签、通知条、标准弹窗底栏和非模态 Toast。`DialogFooter.set_busy()` 统一防重复提交，`show_toast()` 在同一父窗口复用反馈控件并重置隐藏计时器。配置、管理、编辑、选择、导入、进度、ROI 与详情弹窗统一使用标题区、内容区和固定底栏，不改变业务信号和数据流。
 
 **核心颜色 Token**：
 
@@ -1117,7 +1115,7 @@ _start_import()
 | 次要文字 | `#66717e` |
 | 边框 | `#d7dee7` |
 
-按钮通过 `uiRole` 使用 `primary`、`secondary`、`ghost`、`danger`；状态展示通过 `tone` 使用 `neutral`、`info`、`success`、`warning`、`danger`。完整规则见 `docs/spec/spec_ui_design_system.md` 和 `docs/spec/spec_ui_navigation.md`，三档窗口截图位于 `docs/ui_baseline/`；阶段三应用外壳截图使用 `after-shell-` 前缀，阶段四资料库截图使用 `after-library-` 前缀。
+按钮通过 `uiRole` 使用 `primary`、`secondary`、`ghost`、`danger`；状态展示通过 `tone` 使用 `neutral`、`info`、`success`、`warning`、`danger`。完整规则见 `docs/spec/spec_ui_design_system.md` 和 `docs/spec/spec_ui_navigation.md`，三档窗口截图位于 `docs/ui_baseline/`；阶段三应用外壳使用 `after-shell-`，阶段四资料库使用 `after-library-`，阶段五、六识别工作台使用 `after-workspaces-` 前缀。
 
 ---
 
@@ -1632,45 +1630,43 @@ match(image, threshold=0.8)
   当前增强图逐槽 OCR + 仅放大原图逐槽 OCR
 
 第三段：候选确认
-  精确命中 / 唯一前缀 → 确认
-  唯一等长编辑距离候选，且唯一错字字形分 ≥ 0.55 → 确认
-  多候选、字形不足或证据冲突 → 保持未确认
+  精确命中 → exact
+  严格前缀（缺字）只保留前缀候选；唯一前缀至少识别出 2 字才确认
+  等长且仅错一字：唯一候选字形分 ≥ 0.55 → unique_similarity
+  等长多候选：置信度 ≥ 0.7、最高字形分 ≥ 0.4、领先 ≥ 0.15，
+  且 enhanced/plain 两个独立证据族支持同一结果 → multi_similarity
+  同时命中长名严格前缀与等长候选 → 合并候选，length_mode=uncertain
+  其他增删字、字形不足或证据不足 → 保持未确认
 
-第四段：页面约束
-  排除已确认名称后只剩一个且无槽位竞争 → slot_unique
-  重复名称按 exact > unique_prefix > unique_similarity > slot_unique 回退弱证据
+第四段：多路候选闭包
+  所有非空候选集合取交集
+  交集为空 → conflict；精确或纠正结果也不得跨候选白名单覆盖
+
+第五段：页面约束
+  仅对原候选数大于 1 且 length_mode 为 missing/complete 的未确认槽位消歧
+  不提升 uncertain，也不把未过安全门槛的单候选自动提升
+  重复名称按 exact > unique_prefix > unique_similarity/multi_similarity > slot_unique 回退弱证据
   同等级重复全部标记 conflict
 ```
 
-结果格式为 `{index, raw_name, name, candidates, resolution, confidence, evidence}`；只有 `name` 非空才表示名称已经确认。多个“夏侯”候选不会再按字典顺序决胜，`正瑜` 也不会仅凭编辑距离自动绑定为周瑜。
+结果格式为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`；只有 `name` 非空才表示名称已经确认。`length_mode` 为 `complete/missing/uncertain/unknown`。缺字结果不参与字形评分，多个“夏侯”候选不会按字典顺序决胜，`卫` 与白名单外的 `周瑜` 证据会形成 `conflict`，`正瑜` 也不会仅凭编辑距离或页面唯一性自动绑定为周瑜。名称 ROI 的卡框和底部定位字会干扰像素字符分割，因此当前不以视觉字符数作为硬门禁。势力关联仅作为后续可选证据记录：只能过滤已有候选，不能扩展候选，本次未实现。
 
-#### 多维汉字特征评分算法（2026-06-30 新增）
+#### 候选内单字字形评分算法（2026-06-30 新增，2026-08-01 收紧）
 
-当编辑距离筛选出多个候选时，通过逐字符比较 + 加权评分决胜。
+常规截图仅在 OCR 原文与候选等长、且恰有一个字符不同时计算该错字的加权相似度。缺字前缀和其他增删字结果只建立候选白名单，不参与评分。
 
-**公式**（以 `"王剪" → ["王异", "王翦"]` 为例）：
+**公式**：
 
 ```
-score = 0
-for tc, cc in zip(text, candidate):
-    if tc == cc:
-        score += 1.0                    # 相同字符满分
-    else:
-        score += _multi_dim_similarity  # 加权多维评分
-                                      # 四角×0.4 + 仓颉×0.4 + 部首×0.2
-score -= 0.5 * length_diff * 2         # 长度惩罚
+if len(text) == len(candidate) and mismatch_count == 1:
+    score = four_corner * 0.4 + cangjie * 0.4 + radical * 0.2
+else:
+    score = None
 ```
 
-**数值对比**：
+唯一候选要求 `score >= 0.55`。多候选要求参与证据的 OCR 置信度 `>= 0.7`、第一名 `score >= 0.4`、第一名领先第二名 `>= 0.15`，且 `enhanced` 与 `plain` 两个独立证据族都选出同一第一名。`batch_enhanced` 与 `single_enhanced` 属于同一证据族，不能重复计票。这样字形评分只在候选闭包内负责排序，不会将“正瑜”跨白名单改成“周瑜”。
 
-| 对比 | 四角(×0.4) | 仓颉(×0.4) | 部首(×0.2) | 字符分 | 总分 |
-|------|-----------|-----------|-----------|-------|------|
-| 王剪→王翦 | 0.80×0.4=0.32 | 0.75×0.4=0.30 | 0×0.2=0.0 | +1.0(王) | **1.62** |
-| 王剪→王异 | 0.20×0.4=0.08 | 0.29×0.4=0.12 | 0×0.2=0.0 | +1.0(王) | **1.19** |
-
-→ 王翦胜出，差距 36%，不再有平局问题。
-
-**平局兜底**：拼音相似度（同音 1/ 不同 0）→ 笔画数差（升序）。
+某一维度的特征任一侧缺失时，该维度记 0 分；空四角码不能补成相同的 `00000` 后获得 0.4 分。
 
 #### 汉字特征数据来源
 
@@ -1692,8 +1688,10 @@ class GeneralRecognizer:
     def __init__(self, rois=None, hero_names=None, reference_size=None,
                  page_type="hero_selection", preprocessor=None, similarity_service=None,
                  layout=None)
-    recognize(image) → list[dict]           # 对当前布局的全部名称 ROI 逐一识别
-    _recognize_single(roi, slot) → (str, float)
+    recognize(image) → list[dict]           # 同类 ROI 拼图识别并汇总多路证据
+    _resolve_name_evidence(index, evidence) → dict
+    _resolve_multi_candidate_similarity(...) → str
+    _resolve_page_names(results) → list[dict]
     _extract_text(ocr_result) → (str, float) # 解析 PaddleOCR 返回
     save_results(results, json_path, image_path)  # 静态方法
 
@@ -1702,6 +1700,8 @@ class ImagePreprocessor:
 
 class CharacterSimilarityService:
     correct_hero_name(text, hero_names) → str
+    single_substitution_similarity(text, candidate) → float | None
+    rank_single_substitution_candidates(text, candidates) → list[tuple[str, float]]
 
 class CharacterFeatureRepository:
     load() / get_feature(char) / save()
@@ -1716,26 +1716,38 @@ scale_y = current_height / reference_height
 当前 ROI = (x*scale_x, y*scale_y, w*scale_x, h*scale_y)
 ```
 
-该换算发生在 PaddleOCR 之前，不改变现有的放大、CLAHE、锐化、灰度化和武将名纠正流程。
+该换算发生在 PaddleOCR 之前，不改变现有的放大、CLAHE、锐化、灰度化和名称候选解析流程。
 
 #### 识别调用链
 
 ```
 GeneralRecognizer.recognize(image)
   ├── 根据 reference_size 计算 scale_x / scale_y
-  ├── 逐个换算并裁剪当前页面的名称 ROI
-  └── _recognize_single(roi, slot)
-       ├── ImagePreprocessor.preprocess_roi(roi)
-       ├── _engine.ocr(prepared)
-       ├── _extract_text(result)
-       └── CharacterSimilarityService.correct_hero_name(text, hero_names)
+  ├── 换算、裁剪并预处理当前页面的同类 ROI
+  ├── _recognize_prepared_batch(slots, "name")
+  │    ├── _build_batch_canvas(slots)
+  │    ├── _engine.ocr(canvas)
+  │    └── 检测框映射回槽位，记录 batch_enhanced 证据
+  ├── _resolve_name_evidence(index, evidence)
+  ├── [缺失/未决/冲突/置信度 < 0.8]
+  │    └── _append_single_name_evidence(...)
+  │         ├── single_enhanced
+  │         └── single_plain
+  ├── _resolve_name_evidence(index, evidence)
+  └── _resolve_page_names(results)
 ```
 
 #### 关键常量
 
 ```python
-_HIGH_CONFIDENCE = 0.995         # 极高置信度且无纠错候选时，保护新武将
-CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD = 1  # 编辑距离最大允许差异
+_NAME_RECHECK_CONFIDENCE = 0.8
+_UNIQUE_PREFIX_MIN_LENGTH = 2
+_MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
+_MULTI_CANDIDATE_MIN_SIMILARITY = 0.4
+_MULTI_CANDIDATE_MIN_MARGIN = 0.15
+_MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
+CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD = 1
+CharacterSimilarityService.SAFE_CHARACTER_SIMILARITY = 0.55
 ```
 
 #### 图像预处理流程
@@ -1771,18 +1783,18 @@ def _engine(self):
 
 - `use_angle_cls=False`：不启用文字方向分类，节省推理时间
 - `show_log=False`：不输出 PaddleOCR 的调试日志
-- 首次调用加载模型（约 2-3 秒），后续识别约 0.5 秒/图
+- 应用启动时由唯一 `OcrWorker` 预热模型和代表性拼图推理；预热失败或未执行时，首次实际调用才承担加载成本
 
-#### 编辑距离矫正详解
+#### 兼容纠正服务边界
 
-`CharacterSimilarityService.correct_hero_name("曹不", hero_names)` 流程：
+常规截图主链路不调用 `correct_hero_name()` 做全局强选，而是使用前述字数门禁、候选交集和 `single_substitution_similarity()`。`CharacterSimilarityService.correct_hero_name("曹不", hero_names)` 仍供官方榜单受控兜底及兼容单槽接口使用，其流程为：
 
 1. 遍历所有武将名，计算编辑距离
 2. 找到最优匹配（距离最小的候选）
 3. 距离 ≤ `EDIT_DISTANCE_THRESHOLD(1)` 时采纳
-4. 多个候选 → 服务内的视觉相似度评分决胜
+4. 多个候选 → 服务内的视觉相似度评分决胜；调用方仍需负责自己的候选白名单约束
 
-**评分算法**（以 `"王剪" → ["王异", "王翦"]` 为例）：
+**兼容服务评分算法**（以 `"王剪" → ["王异", "王翦"]` 为例）：
 
 多维汉字特征评分通过逐字符比较，对相同字符加满分，不同字符用四角号码、仓颉码、部首加权评分替代：
 
@@ -1808,15 +1820,15 @@ def _engine(self):
 #### 手动截图识别
 
 ```
-用户点击选将推荐面板「截图」或「📁 从图片导入」
+用户点击选将推荐面板「识别当前阵容」或「更多 > 从图片导入」
   │
   ├── ADB 未配置？→ 弹出 MumuConfigDialog 配置
   │
-  ├── CaptureService.do_capture()                              [「截图」：仅截图保存]
+  ├── CaptureService.do_capture(hero_names, force_ocr=True)   [当前模拟器画面识别]
   │   ├── AdbCapture 连接（未连接时自动连接）
   │   ├── screencap_full() → PIL Image
   │   ├── 保存 screenshots/ 下的 PNG
-  │   └── capture_completed（不导入 OCR）
+  │   └── capture_completed → load_from_ocr()
   │
   └── CaptureService.do_capture_from_file()                    [「从图片导入」]
        └── _queue_capture_ocr() → OcrWorker（串行）
@@ -1827,7 +1839,9 @@ def _engine(self):
                            ├── 加载 images/<name>.png 头像
                            ├── 刷新推荐指数快照并显示“推荐指数：分数 / 评级”或数据不足状态
                            └── 加载相性数据（synergies.json）+ 胜率（2v2胜率排行.csv）
-                                 └── 按胜率降序排名，前三自动标记 🥇🥈🥉 奖牌
+                                 └── 按历史单将胜率降序排名，前三标记固定 TOP 徽章
+
+“更多 > 保存截图”单独调用 `do_capture(perform_ocr=False)`，完成后不更新当前推荐结果。
 ```
 
 #### 持续轮询识别
@@ -1893,7 +1907,7 @@ python -m pytest --collect-only -q
 python -m pytest tests/ -v
 ```
 
-开发环境与 CI 统一使用 Ruff 0.12.0。当前以 `pytest --collect-only -q` 收集 **374** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+开发环境与 CI 统一使用 Ruff 0.12.0。当前以 `pytest --collect-only -q` 收集 **498** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 ### 13.2 AIBatchGenerator 测试要点
 

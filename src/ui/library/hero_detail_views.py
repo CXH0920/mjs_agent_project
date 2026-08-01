@@ -27,7 +27,7 @@ from src.data.hero_manager import HeroManager
 from src.ui.shared.markdown_renderer import render_markdown
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
-from src.ui.shared.widgets import FlowLayout
+from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
 
 
@@ -456,14 +456,20 @@ class HeroSynergyView(QWidget):
         dialog.setWindowTitle(f"{first_name} 与 {second_name} 的相性说明")
         dialog.setMinimumSize(500, 350)
         layout = QVBoxLayout(dialog)
+        layout.addWidget(PageHeader(
+            "相性说明",
+            f"{first_name} 与 {second_name}",
+        ))
         browser = QTextBrowser()
+        browser.setObjectName("synergyDescriptionBody")
         browser.setHtml(render_markdown(synergy.description))
         browser.setOpenExternalLinks(False)
         layout.addWidget(browser, 1)
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(dialog.accept)
-        button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout)
+        footer = DialogFooter(
+            accept_text="关闭",
+            accept_role=ROLE_SECONDARY,
+            show_cancel=False,
+        )
+        footer.accepted.connect(dialog.accept)
+        layout.addWidget(footer)
         dialog.exec()

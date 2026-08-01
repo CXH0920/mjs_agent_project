@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QTextEdit,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
 class GuideEditDialog(QDialog):
@@ -33,6 +33,7 @@ class GuideEditDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader("编辑攻略", "维护核心要点、对局关系与攻略正文"))
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
@@ -72,17 +73,10 @@ class GuideEditDialog(QDialog):
         form.addRow("攻略正文:", self._desc_edit)
         layout.addLayout(form)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        save_button = QPushButton("保存")
-        save_button.setStyleSheet("padding: 6px 24px;")
-        save_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("取消")
-        cancel_button.setStyleSheet("padding: 6px 24px;")
-        cancel_button.clicked.connect(self.reject)
-        buttons.addWidget(save_button)
-        buttons.addWidget(cancel_button)
-        layout.addLayout(buttons)
+        footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        footer.accepted.connect(self.accept)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     @staticmethod
     def _create_type_edit(values: list[str], placeholder: str) -> QTextEdit:
@@ -124,18 +118,21 @@ class GuideEditDialog(QDialog):
 
     def get_guide(self) -> HeroGuide:
         """返回编辑后的 HeroGuide 对象。"""
-        self._guide.key_points = [
-            line.strip()
-            for line in self._key_points_edit.toPlainText().split("\n")
-            if line.strip()
-        ]
-        self._guide.tips_for_beginners = self._tips_edit.toPlainText().strip()
-        self._guide.weak_against_type = self._lines_from_edit(self._weak_against_type_edit)
-        self._guide.strong_against_type = self._lines_from_edit(self._strong_against_type_edit)
-        self._guide.synergizes_with = list(self._synergy_ids)
-        self._guide.counter_strategy = self._counter_strategy_edit.toPlainText().strip()
-        self._guide.description = self._desc_edit.toPlainText()
-        return self._guide
+        values = self._guide.model_dump(mode="python")
+        values.update({
+            "key_points": [
+                line.strip()
+                for line in self._key_points_edit.toPlainText().split("\n")
+                if line.strip()
+            ],
+            "tips_for_beginners": self._tips_edit.toPlainText().strip(),
+            "weak_against_type": self._lines_from_edit(self._weak_against_type_edit),
+            "strong_against_type": self._lines_from_edit(self._strong_against_type_edit),
+            "synergizes_with": list(self._synergy_ids),
+            "counter_strategy": self._counter_strategy_edit.toPlainText().strip(),
+            "description": self._desc_edit.toPlainText(),
+        })
+        return HeroGuide.model_validate(values)
 
     @staticmethod
     def _lines_from_edit(edit: QTextEdit) -> list[str]:

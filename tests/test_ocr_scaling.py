@@ -88,6 +88,7 @@ def test_general_recognizer_skips_empty_roi_without_calling_opencv(monkeypatch) 
         "name": "",
         "candidates": [],
         "resolution": "unknown",
+        "length_mode": "unknown",
         "confidence": 0.0,
         "evidence": [],
     }]

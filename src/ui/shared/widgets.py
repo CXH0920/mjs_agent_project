@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractButton,
     QFrame,
@@ -20,8 +20,10 @@ from src.ui.shared.style import (
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
+    SPACE_XL,
     TONE_INFO,
     TONE_NEUTRAL,
+    TONE_SUCCESS,
     set_tone,
     set_ui_role,
 )
@@ -142,6 +144,37 @@ class PageHeader(QWidget):
     def set_subtitle(self, subtitle: str) -> None:
         self.subtitle_label.setText(subtitle)
         self.subtitle_label.setVisible(bool(subtitle))
+
+    def add_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
+        set_ui_role(button, role)
+        self.actions_layout.addWidget(button)
+
+
+class PageActionBar(QWidget):
+    """页面内容区的状态与操作行，不重复展示外壳标题。"""
+
+    def __init__(self, status: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("pageActionBar")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE_MD)
+
+        self.status_label = QLabel(status)
+        self.status_label.setObjectName("pageActionStatus")
+        self.status_label.setWordWrap(True)
+        set_tone(self.status_label, TONE_NEUTRAL)
+        layout.addWidget(self.status_label, 1)
+
+        self.actions_layout = QHBoxLayout()
+        self.actions_layout.setContentsMargins(0, 0, 0, 0)
+        self.actions_layout.setSpacing(SPACE_SM)
+        layout.addLayout(self.actions_layout)
+
+    def set_status(self, status: str, tone: str = TONE_NEUTRAL) -> None:
+        self.status_label.setText(status)
+        set_tone(self.status_label, tone)
 
     def add_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
         set_ui_role(button, role)
@@ -281,3 +314,75 @@ class DialogFooter(QFrame):
         set_ui_role(self.accept_button, accept_role)
         self.accept_button.clicked.connect(self.accepted.emit)
         layout.addWidget(self.accept_button)
+
+        self._accept_text = accept_text
+        self._busy = False
+        self._accept_was_enabled = True
+        self._cancel_was_enabled = True
+
+    def set_busy(self, busy: bool, text: str = "处理中...") -> None:
+        """切换提交状态，并禁用底栏中的重复确认和取消操作。"""
+        if self._busy == busy:
+            return
+        self._busy = busy
+        if busy:
+            self._accept_was_enabled = self.accept_button.isEnabled()
+            self._cancel_was_enabled = self.cancel_button.isEnabled()
+            self.accept_button.setText(text)
+            self.accept_button.setEnabled(False)
+            self.cancel_button.setEnabled(False)
+            return
+        self.accept_button.setText(self._accept_text)
+        self.accept_button.setEnabled(self._accept_was_enabled)
+        self.cancel_button.setEnabled(self._cancel_was_enabled)
+
+
+class ToastOverlay(QLabel):
+    """附着在父窗口上的非阻断短消息。"""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("toastOverlay")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setWordWrap(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
+        self.hide()
+
+    def show_message(
+        self,
+        message: str,
+        tone: str = TONE_SUCCESS,
+        duration: int = 1800,
+    ) -> None:
+        self.setText(message)
+        set_tone(self, tone)
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        self.setMaximumWidth(max(220, parent.width() - SPACE_XL * 2))
+        self.adjustSize()
+        self.move(
+            max(SPACE_LG, (parent.width() - self.width()) // 2),
+            max(SPACE_LG, parent.height() - self.height() - SPACE_XL),
+        )
+        self.raise_()
+        self.show()
+        self._hide_timer.start(duration)
+
+
+def show_toast(
+    parent: QWidget,
+    message: str,
+    tone: str = TONE_SUCCESS,
+    duration: int = 1800,
+) -> ToastOverlay:
+    """复用父窗口上的 Toast，避免重复创建临时反馈控件。"""
+    toast = getattr(parent, "_shared_toast_overlay", None)
+    if toast is None:
+        toast = ToastOverlay(parent)
+        setattr(parent, "_shared_toast_overlay", toast)
+    toast.show_message(message, tone, duration)
+    return toast

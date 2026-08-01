@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QTextEdit
 
 from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
@@ -151,6 +151,29 @@ def test_switching_cards_does_not_leave_nested_action_layouts(tmp_path) -> None:
     assert sum(panel._detail_layout.itemAt(index).layout() is not None for index in range(3)) == 1
 
 
+def test_pending_scroll_reset_is_cancelled_when_panel_is_destroyed(tmp_path) -> None:
+    (tmp_path / "cards.json").write_text(json.dumps([
+        {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则"},
+    ], ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_field_schema.json").write_text('{"schema_version":1,"fields":[]}', encoding="utf-8")
+    (tmp_path / "card_annotations.json").write_text('{"schema_version":1,"annotations":[]}', encoding="utf-8")
+    service = CardCatalogService(
+        CardRepository(tmp_path / "cards.json"),
+        CardFieldSchemaRepository(tmp_path / "card_field_schema.json"),
+        CardAnnotationRepository(tmp_path / "card_annotations.json"),
+    )
+    app = _app()
+
+    panel = CardManagementPanel(service)
+    destroyed: list[bool] = []
+    panel.destroyed.connect(lambda: destroyed.append(True))
+    panel.deleteLater()
+
+    QCoreApplication.sendPostedEvents(panel, QEvent.Type.DeferredDelete)
+    assert destroyed == [True]
+    app.processEvents()
+
+
 def test_panel_lists_semantic_effect_statuses_without_timestamps(tmp_path) -> None:
     (tmp_path / "cards.json").write_text(json.dumps([
         {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
@@ -247,7 +270,7 @@ def test_effect_entries_can_be_added_for_strengthen_and_weaken(tmp_path) -> None
         editor.setPlainText(content)
         dialog._save_effect_form(key, editor, status)
 
-    assert dialog.layout().count() == 2
+    assert dialog.layout().count() == 3  # 标题区、可滚动内容区、固定底栏
     assert len([button for button in dialog.findChildren(QPushButton) if button.text() == "新增效果记录"]) == 2
     dialog._save()
 

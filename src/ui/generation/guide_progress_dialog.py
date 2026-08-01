@@ -12,12 +12,13 @@ import re
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
-    QHBoxLayout,
     QLabel,
     QProgressBar,
-    QPushButton,
     QVBoxLayout,
 )
+
+from src.ui.shared.style import TONE_DANGER, TONE_SUCCESS, set_tone
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +44,19 @@ class GuideProgressDialog(QDialog):
         self._finished = False
         self.setWindowTitle(title)
         self.setMinimumWidth(480)
-        self.setFixedHeight(200)
+        self.setMinimumHeight(260)
+        self.resize(520, 280)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self._setup_ui(hero_count)
 
     def _setup_ui(self, hero_count: int) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+        layout.addWidget(PageHeader(self.windowTitle(), "任务运行期间可中止，完成后可关闭"))
 
         # 状态文字
         self._status_label = QLabel("正在准备...")
-        self._status_label.setStyleSheet("font-size: 14px;")
+        self._status_label.setObjectName("progressStatusLabel")
         layout.addWidget(self._status_label)
 
         # 进度条
@@ -63,47 +66,30 @@ class GuideProgressDialog(QDialog):
         self._progress_bar.setValue(0)
         self._progress_bar.setFormat(f"0 / {self._progress_bar.maximum()}")
         self._progress_bar.setTextVisible(True)
-        self._progress_bar.setStyleSheet(
-            "QProgressBar {"
-            "  border: 1px solid #ccc;"
-            "  border-radius: 4px;"
-            "  text-align: center;"
-            "  height: 24px;"
-            "}"
-            "QProgressBar::chunk {"
-            "  background-color: #4caf50;"
-            "  border-radius: 3px;"
-            "}"
-        )
         layout.addWidget(self._progress_bar)
 
         # 详情标签（显示当前武将名）
         self._detail_label = QLabel("")
-        self._detail_label.setStyleSheet("color: gray; font-size: 12px;")
+        self._detail_label.setObjectName("progressDetailLabel")
+        self._detail_label.setWordWrap(True)
         layout.addWidget(self._detail_label)
 
         # 错误标签（红色，初始隐藏）
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet("color: #d32f2f; font-size: 13px; font-weight: bold;")
+        self._error_label.setObjectName("progressErrorLabel")
         self._error_label.setWordWrap(True)
         self._error_label.hide()
         layout.addWidget(self._error_label)
 
         layout.addStretch()
 
-        # 关闭按钮
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        self._close_btn = QPushButton("关闭")
+        self._footer = DialogFooter(accept_text="关闭", cancel_text="中止")
+        self._close_btn = self._footer.accept_button
+        self._cancel_btn = self._footer.cancel_button
         self._close_btn.setEnabled(False)
-        self._close_btn.setStyleSheet("padding: 6px 24px;")
-        self._close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(self._close_btn)
-        self._cancel_btn = QPushButton("中止")
-        self._cancel_btn.setStyleSheet("padding: 6px 24px;")
-        self._cancel_btn.clicked.connect(self._request_cancel)
-        btn_layout.addWidget(self._cancel_btn)
-        layout.addLayout(btn_layout)
+        self._footer.accepted.connect(self.accept)
+        self._footer.rejected.connect(self._request_cancel)
+        layout.addWidget(self._footer)
 
     def update_progress(self, current: int, total: int) -> None:
         """更新进度条"""
@@ -156,18 +142,7 @@ class GuideProgressDialog(QDialog):
         """显示错误信息"""
         self._error_label.setText(f"⚠ {message}")
         self._error_label.show()
-        self._progress_bar.setStyleSheet(
-            "QProgressBar {"
-            "  border: 1px solid #d32f2f;"
-            "  border-radius: 4px;"
-            "  text-align: center;"
-            "  height: 24px;"
-            "}"
-            "QProgressBar::chunk {"
-            "  background-color: #f44336;"
-            "  border-radius: 3px;"
-            "}"
-        )
+        set_tone(self._progress_bar, TONE_DANGER)
 
     def on_process_finished(self, success: bool, message: str = "") -> None:
         """进程结束时调用"""
@@ -175,6 +150,7 @@ class GuideProgressDialog(QDialog):
         self._close_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
         if success:
+            set_tone(self._progress_bar, TONE_SUCCESS)
             self._status_label.setText("生成完成 ✓")
             self._progress_bar.setValue(self._progress_bar.maximum())
             self._progress_bar.setFormat("完成")

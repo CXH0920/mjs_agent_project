@@ -7,12 +7,11 @@ import logging
 import re
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
     QDialog,
-    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from src.config.env import PROJECT_ROOT
 from src.ui.shared.faction_colors import load_faction_colors
+from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 logger = logging.getLogger(__name__)
 COLORS_FILE = PROJECT_ROOT / "config" / "faction_colors.json"
@@ -153,12 +153,10 @@ class FactionColorDialog(QDialog):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(12)
 
-        title = QLabel("势力配色")
-        title.setStyleSheet("QLabel { color: #243b53; font-size: 18px; font-weight: 600; }")
-        layout.addWidget(title)
-        hint = QLabel("点击颜色小方块调整颜色，列表不会长期占用调色板空间。")
-        hint.setStyleSheet("QLabel { color: #7b8794; font-size: 12px; }")
-        layout.addWidget(hint)
+        layout.addWidget(PageHeader(
+            "势力配色",
+            "点击颜色小方块调整颜色，保存后应用到全部相关页面。",
+        ))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -187,14 +185,10 @@ class FactionColorDialog(QDialog):
         add_faction_layout.addWidget(add_faction_button)
         layout.addLayout(add_faction_layout)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
-        buttons.accepted.connect(self._save)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        self._footer.accepted.connect(self._save)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
 
     def _create_row(self, faction: str, color: str) -> QWidget:
         row = QFrame()
@@ -237,11 +231,14 @@ class FactionColorDialog(QDialog):
 
     def _save(self) -> None:
         colors = {name: picker.color() for name, picker in self._pickers.items()}
+        self._footer.set_busy(True, "正在保存...")
         try:
             save_faction_colors(colors, self._path)
         except (OSError, ValueError) as exc:
+            self._footer.set_busy(False)
             logger.exception("保存势力配色失败")
             QMessageBox.critical(self, "保存失败", f"无法保存势力配色：\n{exc}")
             return
         self.colors_saved.emit(colors)
-        self.accept()
+        show_toast(self, "势力配色已保存", duration=400)
+        QTimer.singleShot(400, self.accept)

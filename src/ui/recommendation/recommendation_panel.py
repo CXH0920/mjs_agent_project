@@ -16,14 +16,12 @@ from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
-    QFrame,
     QGridLayout,
-    QHBoxLayout,
-    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -39,11 +37,15 @@ from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.shared.style import (
-    HEADER_PRIMARY_BUTTON_STYLE,
-    HEADER_SECONDARY_BUTTON_STYLE,
-    MUTED_TEXT,
-    PAGE_TITLE_STYLE,
+    ROLE_GHOST,
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    TONE_DANGER,
+    TONE_INFO,
+    TONE_NEUTRAL,
+    TONE_WARNING,
 )
+from src.ui.shared.widgets import EmptyState, NoticeBanner, PageActionBar, show_toast
 
 logger = logging.getLogger(__name__)
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
@@ -79,6 +81,9 @@ class RecommendationPanel(QWidget):
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
         self._pending_capture_source: str | None = None
+        self._last_failed_source: str | None = None
+        self._last_status_text = "尚未识别阵容"
+        self._last_status_tone = TONE_NEUTRAL
         self._recommendation_service = RecommendationService()
         self._recommendation_data = RecommendationData({}, {})
         self._ocr_results_by_slot: dict[int, dict] = {}
@@ -101,122 +106,124 @@ class RecommendationPanel(QWidget):
     # ---------------------------------------------------------------
 
     def _setup_ui(self) -> None:
+        self.setObjectName("recommendationPanel")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
 
-        # 标题行（含当前识别状态和操作）
-        header_layout = QHBoxLayout()
-
-        self._page_title_label = QLabel("选将推荐")
-        self._page_title_label.setObjectName("recommendationPageTitle")
-        self._page_title_label.setStyleSheet(PAGE_TITLE_STYLE)
-        header_layout.addWidget(self._page_title_label)
-
-        self._recognition_status_label = QLabel("尚未识别阵容")
-        self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
-        header_layout.addWidget(self._recognition_status_label)
-
-        header_layout.addStretch()
-
+        self._action_bar = PageActionBar(self._last_status_text, self)
+        self._recognition_status_label = self._action_bar.status_label
         self._recognize_btn = QPushButton("识别当前阵容")
-        self._recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._recognize_btn.setObjectName("recommendationRecognizeButton")
+        self._recognize_btn.setMinimumWidth(112)
         self._recognize_btn.clicked.connect(self._on_recognize_current)
-        header_layout.addWidget(self._recognize_btn)
-
-        header_layout.addSpacing(6)
-
-        self._import_file_btn = QPushButton("从图片导入")
-        self._import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
-        self._import_file_btn.clicked.connect(self._on_import_from_file)
-        header_layout.addWidget(self._import_file_btn)
-
-        header_layout.addSpacing(6)
+        self._action_bar.add_action(self._recognize_btn, ROLE_PRIMARY)
 
         self._more_menu = QMenu(self)
+        self._import_action = QAction("从图片导入", self)
+        self._import_action.triggered.connect(self._on_import_from_file)
+        self._more_menu.addAction(self._import_action)
         self._save_action = QAction("保存截图", self)
         self._save_action.triggered.connect(self._on_save_screenshot)
         self._more_menu.addAction(self._save_action)
+        self._more_menu.addSeparator()
         self._rebuild_index_action = QAction("重建推荐指数", self)
         self._rebuild_index_action.setToolTip("确认三份官方榜单数据后，手动重建推荐指数快照")
         self._rebuild_index_action.triggered.connect(self._rebuild_recommendation_indexes)
         self._more_menu.addAction(self._rebuild_index_action)
-        self._more_btn = QPushButton("更多 ▾")
+        self._more_btn = QToolButton()
+        self._more_btn.setObjectName("recommendationMoreButton")
+        self._more_btn.setText("⋯")
+        self._more_btn.setToolTip("更多操作")
+        self._more_btn.setAccessibleName("更多操作")
+        self._more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._more_btn.setMenu(self._more_menu)
-        self._more_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
-        header_layout.addWidget(self._more_btn)
+        self._action_bar.add_action(self._more_btn, ROLE_GHOST)
+        layout.addWidget(self._action_bar)
 
-        layout.addLayout(header_layout)
-
-        self._index_stale_notice = QFrame()
-        self._index_stale_notice.setStyleSheet(
-            "QFrame { background-color: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; }"
+        self._index_stale_notice = NoticeBanner(
+            "推荐指数待重建",
+            "当前推荐分可能基于旧榜单，请确认三份官方榜单后手动重建。",
+            TONE_WARNING,
+            self,
         )
-        notice_layout = QHBoxLayout(self._index_stale_notice)
-        notice_layout.setContentsMargins(10, 6, 8, 6)
-        notice_label = QLabel("推荐指数待重建，当前推荐分可能基于旧榜单。")
-        notice_label.setStyleSheet("color: #8a5a00; font-size: 12px;")
-        notice_layout.addWidget(notice_label)
-        notice_layout.addStretch()
         self._stale_rebuild_btn = QPushButton("立即重建")
-        self._stale_rebuild_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._stale_rebuild_btn.setObjectName("recommendationStaleRebuildButton")
         self._stale_rebuild_btn.clicked.connect(self._rebuild_recommendation_indexes)
-        notice_layout.addWidget(self._stale_rebuild_btn)
+        self._index_stale_notice.add_action(self._stale_rebuild_btn, ROLE_SECONDARY)
         layout.addWidget(self._index_stale_notice)
         self._index_stale_notice.hide()
 
+        self._error_notice = NoticeBanner(
+            "操作未完成", "", TONE_DANGER, self,
+        )
+        self._error_retry_btn = QPushButton("重试")
+        self._error_retry_btn.setObjectName("recommendationRetryButton")
+        self._error_retry_btn.clicked.connect(self._retry_last_action)
+        self._error_notice.add_action(self._error_retry_btn, ROLE_SECONDARY)
+        self._error_config_btn = QPushButton("打开模拟器配置")
+        self._error_config_btn.setObjectName("recommendationOpenConfigButton")
+        self._error_config_btn.clicked.connect(self.request_mumu_config.emit)
+        self._error_notice.add_action(self._error_config_btn, ROLE_SECONDARY)
+        layout.addWidget(self._error_notice)
+        self._error_notice.hide()
+
         self._cards_container = QWidget()
+        self._cards_container.setObjectName("recommendationCardsContainer")
         content_layout = QVBoxLayout(self._cards_container)
         content_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._empty_state = QWidget()
-        empty_layout = QVBoxLayout(self._empty_state)
-        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_label = QLabel("尚未识别阵容\n连接模拟器后识别当前阵容，或从本地图片导入。")
-        empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 14px; padding: 24px;")
-        empty_layout.addWidget(empty_label)
-        empty_actions = QHBoxLayout()
-        empty_actions.addStretch()
+        self._empty_state = EmptyState(
+            "尚未识别阵容",
+            "连接模拟器后识别当前阵容，或从本地图片导入。",
+            self._cards_container,
+        )
         self._empty_recognize_btn = QPushButton("识别当前阵容")
-        self._empty_recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._empty_recognize_btn.setObjectName("recommendationEmptyRecognizeButton")
         self._empty_recognize_btn.clicked.connect(self._on_recognize_current)
-        empty_actions.addWidget(self._empty_recognize_btn)
+        self._empty_state.add_action(self._empty_recognize_btn, ROLE_PRIMARY)
         self._empty_import_file_btn = QPushButton("从图片导入")
-        self._empty_import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
+        self._empty_import_file_btn.setObjectName("recommendationEmptyImportButton")
         self._empty_import_file_btn.clicked.connect(self._on_import_from_file)
-        empty_actions.addWidget(self._empty_import_file_btn)
-        empty_actions.addStretch()
-        empty_layout.addLayout(empty_actions)
+        self._empty_state.add_action(self._empty_import_file_btn, ROLE_SECONDARY)
         content_layout.addWidget(self._empty_state, 1)
 
         self._cards_widget = QWidget()
-        grid = QGridLayout(self._cards_widget)
-        grid.setSpacing(8)
+        self._cards_widget.setObjectName("recommendationCardsGrid")
+        self._cards_grid = QGridLayout(self._cards_widget)
+        self._cards_grid.setContentsMargins(0, 0, 0, 0)
+        self._cards_grid.setSpacing(8)
 
         self._cards = []
         for i in range(8):
             row = i // 2
             col = i % 2
             card = HeroCardWidget(None)
-            card.setMinimumSize(card.minimumSizeHint())
             card.guide_clicked.connect(self._show_guide_popup)
             card.hero_double_clicked.connect(self._show_skill_popup)
             card.candidate_confirm_requested.connect(
                 lambda slot=i + 1: self._confirm_candidate(slot)
             )
-            grid.addWidget(card, row, col)
+            self._cards_grid.addWidget(
+                card,
+                row,
+                col,
+                Qt.AlignmentFlag.AlignTop,
+            )
             self._cards.append(card)
 
         for row in range(4):
-            grid.setRowStretch(row, 1)
+            self._cards_grid.setRowStretch(row, 0)
+        self._cards_grid.setRowStretch(4, 1)
         for col in range(2):
-            grid.setColumnStretch(col, 1)
-        self._cards_widget.setMinimumSize(grid.minimumSize())
+            self._cards_grid.setColumnStretch(col, 1)
         content_layout.addWidget(self._cards_widget)
 
         self._cards_scroll = QScrollArea()
+        self._cards_scroll.setObjectName("recommendationCardsScroll")
         self._cards_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self._cards_scroll.setWidgetResizable(True)
+        self._cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._cards_scroll.setWidget(self._cards_container)
         layout.addWidget(self._cards_scroll, 1)
 
@@ -231,10 +238,12 @@ class RecommendationPanel(QWidget):
     def _show_empty_state(self) -> None:
         self._empty_state.show()
         self._cards_widget.hide()
+        self._recognize_btn.hide()
 
     def _show_cards(self) -> None:
         self._empty_state.hide()
         self._cards_widget.show()
+        self._recognize_btn.show()
 
     def _set_index_stale_notice(self, stale: bool) -> None:
         """同步指数过期提示的可见性，重建入口始终保留在更多菜单中。"""
@@ -242,7 +251,85 @@ class RecommendationPanel(QWidget):
 
     def _update_recognition_status(self, count: int) -> None:
         timestamp = datetime.now().strftime("%H:%M")
-        self._recognition_status_label.setText(f"最近识别：{timestamp} · {count} 名武将")
+        self._set_page_status(f"最近识别：{timestamp} · {count} 名武将")
+
+    def _set_page_status(
+        self, text: str, tone: str = TONE_NEUTRAL, *, remember: bool = True,
+    ) -> None:
+        if remember:
+            self._last_status_text = text
+            self._last_status_tone = tone
+        self._action_bar.set_status(text, tone)
+
+    def _set_capture_controls_enabled(self, enabled: bool) -> None:
+        for button in (
+            self._recognize_btn,
+            self._empty_recognize_btn,
+            self._empty_import_file_btn,
+            self._more_btn,
+            self._stale_rebuild_btn,
+        ):
+            button.setEnabled(enabled)
+        for action in (
+            self._import_action,
+            self._save_action,
+            self._rebuild_index_action,
+        ):
+            action.setEnabled(enabled)
+
+    def _begin_capture_request(self, source: str) -> bool:
+        """锁定本页捕获来源，避免共享服务回调覆盖另一项请求。"""
+        if self._pending_capture_source is not None:
+            return False
+        self._pending_capture_source = source
+        self._clear_error_notice()
+        self._set_capture_controls_enabled(False)
+        status = {
+            "adb_recognize": "正在识别当前阵容...",
+            "adb_save": "正在保存截图...",
+            "file": "正在导入图片...",
+        }[source]
+        self._set_page_status(status, TONE_INFO, remember=False)
+        return True
+
+    def _finish_capture_request(self) -> str | None:
+        source = self._pending_capture_source
+        if source is None:
+            return None
+        self._pending_capture_source = None
+        self._set_capture_controls_enabled(True)
+        self._set_page_status(
+            self._last_status_text,
+            self._last_status_tone,
+            remember=False,
+        )
+        return source
+
+    def _show_error_notice(self, title: str, message: str, source: str | None) -> None:
+        self._last_failed_source = source
+        self._error_notice.title_label.setText(title)
+        self._error_notice.set_message(message)
+        self._error_notice.set_tone(TONE_DANGER)
+        self._error_retry_btn.setVisible(source is not None)
+        self._error_retry_btn.setText("重新选择" if source == "file" else "重试")
+        self._error_config_btn.setVisible(source in {"adb_recognize", "adb_save"})
+        self._error_notice.show()
+
+    def _clear_error_notice(self) -> None:
+        self._last_failed_source = None
+        self._error_notice.hide()
+
+    def _retry_last_action(self) -> None:
+        source = self._last_failed_source
+        self._clear_error_notice()
+        if source == "adb_recognize":
+            self._on_recognize_current()
+        elif source == "adb_save":
+            self._on_save_screenshot()
+        elif source == "file":
+            self._on_import_from_file()
+        elif source == "rebuild":
+            self._rebuild_recommendation_indexes()
 
     def refresh_synergies(self) -> None:
         """按当前卡片槽位重新加载相性摘要，不改变 OCR 模式。"""
@@ -321,22 +408,36 @@ class RecommendationPanel(QWidget):
 
     def _rebuild_recommendation_indexes(self) -> None:
         """由用户确认源榜单后，手动重建推荐指数快照。"""
+        reply = QMessageBox.question(
+            self,
+            "确认重建推荐指数",
+            "请确认胜率、出场和放逐三份官方榜单已经复核。\n\n是否继续重建推荐指数？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._clear_error_notice()
         try:
             recommendation_data = self._recommendation_service.rebuild_indexes()
         except Exception as exc:
             logger.exception("重建推荐指数失败")
-            QMessageBox.warning(self, "重建失败", f"无法重建推荐指数：\n{exc}")
+            self._show_error_notice("推荐指数重建失败", str(exc), "rebuild")
             return
         self._recommendation_data = recommendation_data
         self._set_index_stale_notice(False)
         for card in self._cards:
             card.set_recommendation_stale(False)
             if card.hero_name:
+                card.set_win_rate(recommendation_data.win_rates.get(card.hero_name))
                 card.set_recommendation_index(recommendation_data.indexes.get(card.hero_name))
+        self._apply_medal_rankings()
         valid_count = sum(index.is_valid for index in recommendation_data.indexes.values())
-        QMessageBox.information(
-            self, "重建完成",
-                f"已重建推荐指数：有效 {valid_count} 条，数据不足 {len(recommendation_data.indexes) - valid_count} 条。",
+        show_toast(
+            self,
+            f"推荐指数已重建：有效 {valid_count} 条，"
+            f"数据不足 {len(recommendation_data.indexes) - valid_count} 条。",
+            duration=3000,
         )
 
     def _load_card_stats(
@@ -346,6 +447,12 @@ class RecommendationPanel(QWidget):
             card = self._cards[card_idx]
             card.set_win_rate(recommendation_data.win_rates.get(hero_name))
             card.set_recommendation_index(recommendation_data.indexes.get(hero_name))
+
+    def _load_card_guide_state(self, card_idx: int, hero_id: int) -> None:
+        if card_idx < len(self._cards):
+            self._cards[card_idx].set_guide_available(
+                self._guide_mgr.get_guide(hero_id) is not None
+            )
 
     # ---------------------------------------------------------------
     # 公共数据接口
@@ -368,6 +475,7 @@ class RecommendationPanel(QWidget):
         """
         self._ocr_mode = True
         self._current_hero_ids = set()
+        self._clear_error_notice()
         self._show_cards()
         recommendation_data = self._load_recommendation_data()
         self._recommendation_data = recommendation_data
@@ -420,6 +528,7 @@ class RecommendationPanel(QWidget):
 
             # 根据武将名加载胜率
             self._load_card_stats(idx - 1, name, recommendation_data)
+            self._load_card_guide_state(idx - 1, hero.id)
 
         # 第三遍：所有 ID 齐全后统一加载相性
         for idx, name in hero_by_slot.items():
@@ -476,6 +585,11 @@ class RecommendationPanel(QWidget):
         """
         if not ocr_results:
             logger.info("OCR 结果为空，跳过导入")
+            self._show_error_notice(
+                "未识别到选将阵容",
+                "请确认画面停留在选将页面且武将名称清晰，然后重试。",
+                None,
+            )
             return
 
         data = []
@@ -489,6 +603,11 @@ class RecommendationPanel(QWidget):
 
         if not data:
             logger.info("OCR 未识别到任何武将")
+            self._show_error_notice(
+                "未识别到有效武将",
+                "识别结果不包含有效槽位，请调整画面后重试。",
+                None,
+            )
             return
 
         self._ocr_results_by_slot = {item["index"]: item for item in data}
@@ -532,41 +651,44 @@ class RecommendationPanel(QWidget):
 
     def _on_recognize_current(self) -> None:
         """识别当前模拟器画面中的选将阵容。"""
+        if self._pending_capture_source is not None:
+            return
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
             return
 
-        self._pending_capture_source = "adb_recognize"
-        self._recognize_btn.setEnabled(False)
-        self._empty_recognize_btn.setEnabled(False)
-        self._recognize_btn.setText("正在识别...")
+        if not self._begin_capture_request("adb_recognize"):
+            return
         hero_names = [hero.name for hero in self._hero_mgr.list_heroes()]
-        self._capture_service.do_capture(hero_names=hero_names, force_ocr=True)
+        try:
+            self._capture_service.do_capture(hero_names=hero_names, force_ocr=True)
+        except Exception as exc:
+            self._finish_capture_request()
+            self._show_error_notice("阵容识别失败", str(exc), "adb_recognize")
 
     def _on_save_screenshot(self) -> None:
         """保存当前模拟器画面，不触发 OCR。"""
+        if self._pending_capture_source is not None:
+            return
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
             return
 
-        self._pending_capture_source = "adb_save"
-        self._save_action.setEnabled(False)
-        self._save_action.setText("正在截图...")
-        self._capture_service.do_capture(perform_ocr=False)
+        if not self._begin_capture_request("adb_save"):
+            return
+        try:
+            self._capture_service.do_capture(perform_ocr=False)
+        except Exception as exc:
+            self._finish_capture_request()
+            self._show_error_notice("截图保存失败", str(exc), "adb_save")
 
     def _on_capture_result(self, result: dict) -> None:
         """截图完成回调。"""
-        source = self._pending_capture_source
-        self._pending_capture_source = None
+        source = self._finish_capture_request()
         if source is None:
             return
-        if source == "adb_recognize":
-            self._recognize_btn.setEnabled(True)
-            self._empty_recognize_btn.setEnabled(True)
-            self._recognize_btn.setText("识别当前阵容")
-        elif source == "adb_save":
-            self._save_action.setEnabled(True)
-            self._save_action.setText("保存截图")
+        self._clear_error_notice()
+        if source == "adb_save":
             return
 
         ocr_results = result.get("ocr_results")
@@ -576,39 +698,23 @@ class RecommendationPanel(QWidget):
             self.load_from_ocr(ocr_results)
         elif not ocr_matched:
             logger.info("截图未匹配到武将选择页面")
+            self._show_error_notice(
+                "未识别到选将页面",
+                "请确认模拟器当前显示选将页面，然后重试。",
+                source,
+            )
 
     def _on_capture_failed(self, message: str) -> None:
         """恢复识别按钮，并为用户发起的 ADB 识别提供可操作错误反馈。"""
-        source = self._pending_capture_source
-        self._pending_capture_source = None
-        if source not in {"adb_recognize", "adb_save"}:
-            if source == "file":
-                QMessageBox.warning(self, "图片导入失败", message)
+        source = self._finish_capture_request()
+        if source is None:
             return
-
-        if source == "adb_recognize":
-            self._recognize_btn.setEnabled(True)
-            self._empty_recognize_btn.setEnabled(True)
-            self._recognize_btn.setText("识别当前阵容")
-        else:
-            self._save_action.setEnabled(True)
-            self._save_action.setText("保存截图")
-        message_box = QMessageBox(self)
-        message_box.setIcon(QMessageBox.Icon.Warning)
-        message_box.setWindowTitle("截图失败")
-        message_box.setText(f"无法从模拟器截图：\n{message}")
-        config_btn = message_box.addButton("打开模拟器配置", QMessageBox.ButtonRole.ActionRole)
-        retry_btn = message_box.addButton("重试", QMessageBox.ButtonRole.ActionRole)
-        close_btn = message_box.addButton(QMessageBox.StandardButton.Close)
-        close_btn.setText("关闭")
-        message_box.exec()
-        if message_box.clickedButton() is config_btn:
-            self.request_mumu_config.emit()
-        elif message_box.clickedButton() is retry_btn:
-            if source == "adb_recognize":
-                self._on_recognize_current()
-            else:
-                self._on_save_screenshot()
+        titles = {
+            "adb_recognize": "阵容识别失败",
+            "adb_save": "截图保存失败",
+            "file": "图片导入失败",
+        }
+        self._show_error_notice(titles[source], message, source)
 
     def _on_import_from_file(self) -> None:
         """从本地图片文件导入武将数据。
@@ -616,7 +722,19 @@ class RecommendationPanel(QWidget):
         用户选取一张图片 → 执行 OCR → 填入槽位。
         不依赖 ADB 连接。
         """
-        SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        if self._pending_capture_source is not None:
+            return
+        if not self._capture_service:
+            self._show_error_notice(
+                "图片导入不可用", "图片识别服务尚未初始化。", None,
+            )
+            return
+
+        try:
+            SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self._show_error_notice("无法打开截图目录", str(exc), None)
+            return
 
         file_path, _ = QFileDialog.getOpenFileName(
             self, "选择游戏截图", str(SCREENSHOTS_DIR),
@@ -626,5 +744,10 @@ class RecommendationPanel(QWidget):
             return
 
         hero_names = [h.name for h in self._hero_mgr.list_heroes()]
-        self._pending_capture_source = "file"
-        self._capture_service.do_capture_from_file(file_path, hero_names=hero_names)
+        if not self._begin_capture_request("file"):
+            return
+        try:
+            self._capture_service.do_capture_from_file(file_path, hero_names=hero_names)
+        except Exception as exc:
+            self._finish_capture_request()
+            self._show_error_notice("图片导入失败", str(exc), "file")

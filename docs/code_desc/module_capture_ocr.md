@@ -12,7 +12,7 @@
 - **ADB 截图**（`src/capture/`）— 通过 ADB 连接 MuMu 模拟器，执行 `exec-out screencap` 全屏截图，全程内存中处理
 - **设备探测** — 自动查找 ADB 路径和 MuMu 实例的 ADB 端口
 - **模板匹配**（`src/ocr/`）— OpenCV 模板匹配快速过滤非武将选择页画面
-- **OCR 识别**（`src/ocr/`）— PaddleOCR 识别 8 个武将名称区域，编辑距离矫正 + 汉字特征评分提高准确率
+- **OCR 识别**（`src/ocr/`）— PaddleOCR 批量识别名称区域，按字数门禁、候选闭包和候选内汉字特征评分确认名称
 
 ---
 
@@ -120,21 +120,32 @@ ROI 裁剪 → 放大 3× → CLAHE 增强对比度 → 锐化 → 灰度 → Pa
 ```
 PaddleOCR → 文字 + 置信度
   │
-  └── 当前武将词表候选解析
-       ├── 精确命中或唯一前缀 → 确认
-       ├── 等长名称仅错一字、唯一候选且字形相似度 ≥ 0.55 → 确认
-       ├── 多候选、字形不足或多路冲突 → 保持未确认
-       ├── 页面内排除已占用名称后仅余一个且无槽位竞争 → 确认
-       └── 重复名称 → 保留唯一更强证据，其余回退；同等级全部回退
+  └── 字数门禁与当前武将词表候选解析
+       ├── 精确命中 → exact
+       ├── 严格前缀（缺字）→ 只保留前缀白名单；唯一前缀至少已识别 2 字才确认
+       ├── 等长且仅错一字、唯一候选字形分 ≥ 0.55 → unique_similarity
+       ├── 等长多候选 → 候选内评分；双门槛、双证据族一致才确认
+       ├── 同时命中严格前缀与等长候选 → 合并候选，length_mode=uncertain
+       └── 其他增删字 → uncertain，保持未确认
+  └── 多路非空候选集合取交集
+       ├── 交集为空 → conflict，禁止跨白名单覆盖
+       └── 交集非空 → 继续确认或保持 unresolved
+  └── 页面约束
+       ├── 仅对原本有多个候选且 length_mode 为 missing/complete 的槽位消歧
+       └── 重复名称保留唯一更强证据；同等级全部回退
 ```
 
-结构化结果为 `{index, raw_name, name, candidates, resolution, confidence, evidence}`。`name` 只保存已确认名称；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
+等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.4`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_enhanced` 与 `single_enhanced` 同属 `enhanced`，不能重复计票。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
+
+结构化结果为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`。`name` 只保存已确认名称；`length_mode` 为 `complete`、`missing`、`uncertain` 或 `unknown`；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`multi_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
+
+名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
 官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 继续独立负责受限候选繁体兜底、整榜唯一性和正式写入门禁；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
-### 3.4 多维汉字特征评分
+### 3.4 候选内单字字形评分
 
-当编辑距离筛选出多个候选时（如 OCR 输出"王剪" → 候选 ["王翦", "王异"]），逐字符加权评分：
+常规截图只对“与候选等长且恰好一个字符不同”的名称评分。缺字前缀和其他增删字结果只用于建立候选白名单，不参与字形决胜。对每个合法候选，仅计算那个不同字符的加权相似度：
 
 | 维度 | 权重 | 说明 |
 |------|------|------|
@@ -142,16 +153,17 @@ PaddleOCR → 文字 + 置信度
 | 仓颉码 | 40% | 反映字形编码层次 |
 | 部首 | 20% | 直接定位字的大类 |
 
-评分公式（逐字符比较）：
+评分公式：
 ```python
-score = 0
-for tc, cc in zip(text, candidate):
-    if tc == cc:
-        score += 1.0                    # 相同字符满分
-    else:
-        score += multi_dim_similarity   # 四角×0.4 + 仓颉×0.4 + 部首×0.2
-score -= 0.5 * length_diff * 2         # 长度惩罚
+if len(text) == len(candidate) and mismatch_count == 1:
+    score = four_corner * 0.4 + cangjie * 0.4 + radical * 0.2
+else:
+    score = None                        # 不参与常规截图的候选决胜
 ```
+
+唯一候选使用 0.55 安全门槛；多候选使用 0.4 绝对门槛和 0.15 领先门槛，并要求两个独立证据族一致。评分只负责在合法候选中排序，不能改变字数门禁产生的候选集合。
+
+任一字符的某项特征缺失时，该维度贡献 0 分；尤其不能把缺失四角码补成相同的 `00000` 后计为满分。
 
 ### 3.5 汉字特征缓存
 

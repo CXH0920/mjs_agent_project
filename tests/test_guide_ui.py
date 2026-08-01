@@ -9,12 +9,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QTextBrowser
+from PySide6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QTextBrowser
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
+import src.ui.library.hero_browser as hero_browser_module
 from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.shared.checkable_combo import CheckableComboBox
@@ -22,7 +23,7 @@ from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
 from src.ui.library.guide_edit_dialog import GuideEditDialog
 from src.ui.shared.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
-from src.ui.shared.widgets import FlowLayout
+from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
@@ -265,10 +266,109 @@ def test_extracted_edit_dialogs_construct_independently(tmp_path: Path) -> None:
 
     hero_dialog = HeroEditDialog(hero)
     synergy_dialog = SynergyEditDialog(hero_manager, synergy)
+    hero_dialog._name_edit.setText("曹孟德")
+    updated_hero = hero_dialog.get_hero()
 
-    assert hero_dialog.get_hero().id == 1
+    assert updated_hero.id == 1
+    assert updated_hero.name == "曹孟德"
+    assert updated_hero is not hero
+    assert hero.name == "曹操"
     assert synergy_dialog.get_synergy().score == 3
     assert synergy_dialog.get_synergy().last_updated == "2026-07-27"
+
+
+def test_hero_detail_edit_actions_report_success(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    guide_manager.add_guide(HeroGuide(hero_id=1, description="攻略"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=3))
+    panel = HeroDetailPanel(hero_manager, guide_manager, synergy_manager)
+    panel.show_hero(1)
+    messages: list[str] = []
+    monkeypatch.setattr(hero_browser_module, "show_toast", lambda _parent, message: messages.append(message))
+    monkeypatch.setattr(HeroEditDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(GuideEditDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(SynergyEditDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted)
+
+    panel._on_info_edit()
+    panel._on_guide_edit()
+    panel._synergy_tab._table.selectRow(0)
+    panel._on_synergy_edit()
+
+    assert messages == ["武将资料已保存", "攻略修改已保存", "相性修改已保存"]
+
+
+def test_hero_edit_failure_reopens_the_preserved_draft(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    panel = HeroDetailPanel(
+        hero_manager,
+        GuideManager(tmp_path / "guides.json"),
+        SynergyManager(tmp_path / "synergies.json"),
+    )
+    panel.show_hero(1)
+    shown_values: list[str] = []
+
+    def _exec(dialog: HeroEditDialog) -> QDialog.DialogCode:
+        if not shown_values:
+            dialog._name_edit.setText("曹孟德")
+            shown_values.append(dialog._name_edit.text())
+            return QDialog.DialogCode.Accepted
+        shown_values.append(dialog._name_edit.text())
+        return QDialog.DialogCode.Rejected
+
+    def _fail_update(_hero: Hero) -> None:
+        raise OSError("写入失败")
+
+    errors: list[str] = []
+    monkeypatch.setattr(HeroEditDialog, "exec", _exec)
+    monkeypatch.setattr(panel._data_mutation_service, "update_hero", _fail_update)
+    monkeypatch.setattr(QMessageBox, "critical", lambda _parent, _title, text: errors.append(text))
+
+    panel._on_info_edit()
+
+    assert shown_values == ["曹孟德", "曹孟德"]
+    assert panel._current_hero.name == "曹操"
+    assert errors and "编辑内容已保留" in errors[0]
+
+
+def test_hero_detail_delete_actions_report_modal_results(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    guide_manager.add_guide(HeroGuide(hero_id=1, description="攻略"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=3))
+    panel = HeroDetailPanel(hero_manager, guide_manager, synergy_manager)
+    panel.show_hero(1)
+    results: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, title, text: results.append((title, text)),
+    )
+
+    panel._synergy_tab._table.selectRow(0)
+    panel._on_synergy_delete()
+    panel._on_guide_delete()
+    panel._on_info_delete()
+
+    assert [title for title, _text in results] == ["删除完成", "删除完成", "删除完成"]
+    assert "曹操" in results[0][1] and "刘备" in results[0][1]
+    assert "攻略已删除" in results[1][1]
+    assert "关联攻略和相性已删除" in results[2][1]
 
 
 def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:
@@ -436,6 +536,42 @@ def test_hero_detail_wraps_long_text_and_disables_horizontal_scrolling(tmp_path:
         panel._synergy_tab._table.horizontalScrollBarPolicy()
         == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     )
+
+
+def test_synergy_description_uses_the_standard_dialog_shell(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    first = Hero(id=1, name="曹操")
+    hero_manager.add_hero(first)
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    synergy_manager.add_synergy(SynergyScore(
+        hero_a_id=1,
+        hero_b_id=2,
+        score=3,
+        description="**配合说明**",
+    ))
+    view = HeroSynergyView(hero_manager, synergy_manager)
+    view.show_hero(first)
+    captured: list[tuple[PageHeader | None, DialogFooter | None, QTextBrowser | None]] = []
+
+    def _inspect(dialog: QDialog) -> QDialog.DialogCode:
+        captured.append((
+            dialog.findChild(PageHeader),
+            dialog.findChild(DialogFooter),
+            dialog.findChild(QTextBrowser, "synergyDescriptionBody"),
+        ))
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", _inspect)
+
+    view._show_description(0)
+
+    header, footer, body = captured[0]
+    assert header is not None
+    assert footer is not None and footer.accept_button.text() == "关闭"
+    assert footer.cancel_button.isHidden()
+    assert body is not None and "配合说明" in body.toPlainText()
 
 
 def test_skill_cards_are_hidden_before_deferred_deletion(tmp_path: Path) -> None:

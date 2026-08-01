@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
@@ -48,6 +47,7 @@ from src.data.card_catalog import (
     EffectEntry,
 )
 from src.ui.shared.style import (
+    ROLE_DANGER,
     ROLE_GHOST,
     ROLE_SECONDARY,
     TONE_INFO,
@@ -57,6 +57,7 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
+from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 EFFECT_STATUS_LABELS = {
     "active": "生效中",
@@ -292,7 +293,12 @@ class CardManagementPanel(QWidget):
         view = self._service.get_view(card_id)
         if view:
             self._show_view(view)
-            QTimer.singleShot(0, lambda: self._detail_scroll.verticalScrollBar().setValue(0))
+            detail_scroll = self._detail_scroll
+            QTimer.singleShot(
+                0,
+                detail_scroll,
+                lambda: detail_scroll.verticalScrollBar().setValue(0),
+            )
 
     def _clear_detail(self) -> None:
         while self._detail_layout.count():
@@ -506,6 +512,11 @@ class CardAnnotationEditDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = self._dialog_layout
+        card = self._service.cards.get_card(self._card_id)
+        layout.addWidget(PageHeader(
+            "编辑版本调整",
+            f"{card.name if card else self._card_id} · 维护追加字段与版本效果",
+        ))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -530,12 +541,10 @@ class CardAnnotationEditDialog(QDialog):
         form_layout.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
-        buttons.accepted.connect(self._save)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        self._footer.accepted.connect(self._save)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
 
     def _build_effect_editor(self, layout: QVBoxLayout, definition: CardFieldDefinition) -> None:
         entries = self._values.get(definition.key, [])
@@ -688,6 +697,7 @@ class CardAnnotationEditDialog(QDialog):
         return fields
 
     def _save(self) -> None:
+        self._footer.set_busy(True, "正在保存...")
         try:
             fields = self._collect_effect_fields()
             for key, editor in self._editors.items():
@@ -695,8 +705,10 @@ class CardAnnotationEditDialog(QDialog):
                 fields[key] = self._value_from_editor(definition, editor)
             self._service.save_annotation_fields(self._card_id, fields)
         except (OSError, ValueError) as error:
+            self._footer.set_busy(False)
             QMessageBox.critical(self, "保存失败", f"追加内容未保存，草稿仍保留：\n{error}")
             return
+        show_toast(self.parentWidget() or self, "卡牌追加内容已保存")
         self.accept()
 
 
@@ -707,7 +719,10 @@ class CardFieldEditDialog(QDialog):
         super().__init__(parent)
         self._original = definition
         self.setWindowTitle("新增追加字段" if definition is None else "编辑追加字段")
-        form = QFormLayout(self)
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader(self.windowTitle(), "定义字段类型、分组与展示规则"))
+        form = QFormLayout()
         self._key = QLineEdit(definition.key if definition else "")
         self._key.setEnabled(definition is None)
         self._label = QLineEdit(definition.label if definition else "")
@@ -736,12 +751,11 @@ class CardFieldEditDialog(QDialog):
         form.addRow("必填", self._required)
         form.addRow("select 选项", self._options)
         form.addRow("帮助说明", self._help)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
-        buttons.accepted.connect(self._accept_if_valid)
-        buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
+        layout.addLayout(form)
+        footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        footer.accepted.connect(self._accept_if_valid)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     def _accept_if_valid(self) -> None:
         try:
@@ -770,6 +784,7 @@ class CardFieldSchemaDialog(QDialog):
         self.setWindowTitle("管理卡牌追加字段")
         self.resize(720, 460)
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader("管理卡牌追加字段", "维护字段定义、启用状态与展示顺序"))
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["名称", "key", "类型", "状态", "顺序"])
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -782,14 +797,19 @@ class CardFieldSchemaDialog(QDialog):
         edit.clicked.connect(self._edit)
         archive = QPushButton("归档字段")
         archive.clicked.connect(self._archive)
+        set_ui_role(archive, ROLE_DANGER)
         actions.addWidget(add)
         actions.addWidget(edit)
         actions.addWidget(archive)
         actions.addStretch()
-        close = QPushButton("关闭")
-        close.clicked.connect(self.accept)
-        actions.addWidget(close)
         layout.addLayout(actions)
+        footer = DialogFooter(
+            accept_text="关闭",
+            accept_role=ROLE_SECONDARY,
+            show_cancel=False,
+        )
+        footer.accepted.connect(self.accept)
+        layout.addWidget(footer)
         self._refresh()
 
     def _refresh(self) -> None:
@@ -818,6 +838,7 @@ class CardFieldSchemaDialog(QDialog):
             QMessageBox.critical(self, "保存失败", str(error))
             return
         self._refresh()
+        show_toast(self, "字段已新增")
 
     def _edit(self) -> None:
         definition = self._selected_definition()
@@ -832,6 +853,7 @@ class CardFieldSchemaDialog(QDialog):
             QMessageBox.critical(self, "无法修改字段", str(error))
             return
         self._refresh()
+        show_toast(self, "字段修改已保存")
 
     def _archive(self) -> None:
         definition = self._selected_definition()
@@ -845,3 +867,4 @@ class CardFieldSchemaDialog(QDialog):
             QMessageBox.critical(self, "归档失败", str(error))
             return
         self._refresh()
+        show_toast(self, "字段已归档")

@@ -78,6 +78,7 @@ def test_navigation_switches_pages_and_programmatic_change_syncs_context(window)
     assert window._tabs.currentWidget() is window._recommendation
     assert window._navigation.current_index() == 1
     assert window._context_header.title_label.text() == "选将推荐"
+    assert not hasattr(window._recommendation, "_page_title_label")
     assert window._official_import_button.isHidden()
     assert window._maintenance_button.isHidden()
 
@@ -86,6 +87,7 @@ def test_navigation_switches_pages_and_programmatic_change_syncs_context(window)
     assert window._navigation.current_index() == 2
     assert window._context_header.title_label.text() == "对局攻略"
     assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[2][1]
+    assert not hasattr(window._match_guide, "_page_title_label")
 
 
 def test_ocr_auto_switch_syncs_navigation_and_context(window, monkeypatch) -> None:

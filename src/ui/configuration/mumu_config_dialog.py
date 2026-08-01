@@ -43,9 +43,8 @@ from src.ui.configuration.mumu_config_sections import (
     MumuDeviceSection,
     MumuOcrPollingSection,
     MumuTemplateSection,
-    OUTLINE_BUTTON_STYLE,
-    PRIMARY_BUTTON_STYLE,
 )
+from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 logger = logging.getLogger(__name__)
 
@@ -109,20 +108,10 @@ class MumuConfigDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        header = QFrame()
-        header.setObjectName("mumuConfigHeader")
-        header.setStyleSheet(
-            "QFrame#mumuConfigHeader { background: #ffffff; border-bottom: 1px solid #d3dde7; }"
-        )
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(18, 12, 18, 12)
-        title = QLabel("模拟器配置")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
-        header_layout.addWidget(title)
-        header_layout.addStretch()
+        header = PageHeader("模拟器配置", "管理设备连接、识别模板与自动化参数")
+        header.setContentsMargins(18, 12, 18, 12)
         self._status_label = QLabel("● ADB：未配置")
-        self._status_label.setStyleSheet("color: #65758b; font-size: 12px;")
-        header_layout.addWidget(self._status_label)
+        header.actions_layout.addWidget(self._status_label)
         layout.addWidget(header)
 
         body = QHBoxLayout()
@@ -204,26 +193,10 @@ class MumuConfigDialog(QDialog):
         self._page_nav.setCurrentRow(0)
         layout.addLayout(body, 1)
 
-        # 底部操作栏：保存写入参数，取消不保存并关闭窗口。
-        footer_frame = QFrame()
-        footer_frame.setObjectName("mumuConfigFooter")
-        footer_frame.setStyleSheet(
-            "QFrame#mumuConfigFooter { background: #ffffff; border-top: 1px solid #d3dde7; }"
-        )
-        footer = QHBoxLayout(footer_frame)
-        footer.setContentsMargins(16, 10, 16, 10)
-        cancel_btn = QPushButton("取消")
-        cancel_btn.setFixedWidth(80)
-        cancel_btn.setStyleSheet(OUTLINE_BUTTON_STYLE)
-        cancel_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("保存")
-        save_btn.setFixedWidth(80)
-        save_btn.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        save_btn.clicked.connect(self._on_save)
-        footer.addStretch()
-        footer.addWidget(cancel_btn)
-        footer.addWidget(save_btn)
-        layout.addWidget(footer_frame)
+        self._footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        self._footer.accepted.connect(self._on_save)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
 
     @staticmethod
     def _page_scroll(page: QWidget) -> QScrollArea:
@@ -329,7 +302,7 @@ class MumuConfigDialog(QDialog):
         self._adb_path_edit.setStyleSheet(
             "border: 1px solid #27ae60; padding: 4px 8px; background-color: #f0faf0; border-radius: 3px;"
         )
-        QMessageBox.information(self, "自动探测", f"找到 ADB:\n{adb_path}\n{message}")
+        show_toast(self, f"已找到 ADB：{adb_path}\n{message}", duration=3000)
 
     def _browse_adb(self) -> None:
         """弹出文件选择对话框选择 adb.exe"""
@@ -503,7 +476,7 @@ class MumuConfigDialog(QDialog):
         self._test_device_btn.setEnabled(True)
         self._test_device_btn.setText("测试连接")
         if ok:
-            QMessageBox.information(self, "设备测试成功", f"已连接到所选设备：\n{target}\n设备状态：{message}")
+            show_toast(self, f"设备测试成功：{target}\n{message}", duration=2500)
         else:
             QMessageBox.warning(self, "设备测试失败", f"无法连接所选设备 {target}：\n{message}")
         self._update_ui()
@@ -578,7 +551,7 @@ class MumuConfigDialog(QDialog):
             message = f"模板已保存到:\n{template_path}"
             if template_name == "hero_selection":
                 message += f"\n\nROI: ({roi[0]}, {roi[1]})  {roi[2]}×{roi[3]}"
-            QMessageBox.information(self, "模板已保存", message)
+            show_toast(self, message, duration=3000)
         except Exception as exc:
             logger.exception("制作模板异常")
             QMessageBox.warning(self, "制作模板", f"制作模板时出错:\n{exc}")
@@ -636,7 +609,7 @@ class MumuConfigDialog(QDialog):
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             self._coordinator.save_roi_layout(page_type, dialog.get_layout())
-            QMessageBox.information(self, "编辑识别区域", "识别区域已保存，将在下一次识别时生效。")
+            show_toast(self, "识别区域已保存，将在下一次识别时生效。")
         except Exception as exc:
             logger.exception("保存 OCR ROI 配置失败")
             QMessageBox.warning(self, "编辑识别区域", f"保存识别区域时出错:\n{exc}")
@@ -651,7 +624,7 @@ class MumuConfigDialog(QDialog):
             return
         try:
             self._coordinator.reset_roi_layout(page_type)
-            QMessageBox.information(self, "恢复默认识别区域", "默认识别区域已恢复，将在下一次识别时生效。")
+            show_toast(self, "默认识别区域已恢复，将在下一次识别时生效。")
         except Exception as exc:
             logger.exception("恢复默认 OCR ROI 配置失败")
             QMessageBox.warning(self, "恢复默认识别区域", f"恢复失败:\n{exc}")
@@ -758,23 +731,12 @@ class MumuConfigDialog(QDialog):
 
     def _show_save_toast(self) -> None:
         """在关闭对话框前给出短暂的保存反馈。"""
-        toast = QLabel("✓ 识别参数已保存", self)
-        toast.setStyleSheet(
-            "QLabel { color: white; background-color: #2f855a; "
-            "border-radius: 4px; padding: 6px 12px; }"
-        )
-        toast.adjustSize()
-        toast.move(
-            max(0, (self.width() - toast.width()) // 2),
-            max(0, self.height() - toast.height() - 48),
-        )
-        toast.show()
+        show_toast(self, "识别参数已保存", duration=400)
 
         def finish_save() -> None:
-            toast.deleteLater()
             self.accept()
 
-        QTimer.singleShot(300, finish_save)
+        QTimer.singleShot(400, finish_save)
 
     # ────────────────────────────────────────────────
     # 保存
@@ -782,6 +744,7 @@ class MumuConfigDialog(QDialog):
 
     def _on_save(self) -> None:
         """保存配置"""
+        self._footer.set_busy(True, "正在保存...")
         try:
             raw_path = self._adb_path_edit.property("raw_path") or ""
             device = self._device_combo.currentData()
@@ -797,10 +760,12 @@ class MumuConfigDialog(QDialog):
                 "mumu_hero_selection_cooldown": self._hero_cooldown_spin.value(),
             }, device, self._device_selected_explicitly)
             if error:
+                self._footer.set_busy(False)
                 QMessageBox.warning(self, "请选择设备", error)
                 return
             self._show_save_toast()
         except Exception as e:
+            self._footer.set_busy(False)
             logger.exception("保存模拟器配置失败")
             QMessageBox.critical(self, "保存失败", f"保存配置时出错:\n{e}")
 

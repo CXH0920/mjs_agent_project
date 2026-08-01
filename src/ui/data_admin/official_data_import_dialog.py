@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_worker import OfficialImportTask
+from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 
 class OfficialDataImportDialog(QDialog):
@@ -42,6 +43,10 @@ class OfficialDataImportDialog(QDialog):
         self.setMinimumWidth(560)
         self._path_controls = []
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader(
+            "官方数据导入",
+            "按榜单显示顺序添加图片，可分别导入或同时导入两类数据。",
+        ))
         form = QFormLayout()
         self._paths = {
             "2v2": self._create_path_list(form, "2v2数据导入"),
@@ -54,15 +59,12 @@ class OfficialDataImportDialog(QDialog):
         self._progress_bar = QProgressBar()
         self._progress_bar.hide()
         layout.addWidget(self._progress_bar)
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        self._import_button = QPushButton("导入")
-        self._import_button.clicked.connect(self._start_import)
-        buttons.addWidget(self._import_button)
-        self._cancel_button = QPushButton("取消")
-        self._cancel_button.clicked.connect(self.reject)
-        buttons.addWidget(self._cancel_button)
-        layout.addLayout(buttons)
+        self._footer = DialogFooter(accept_text="导入", cancel_text="取消")
+        self._import_button = self._footer.accept_button
+        self._cancel_button = self._footer.cancel_button
+        self._footer.accepted.connect(self._start_import)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
 
     def _create_path_list(self, form: QFormLayout, label: str) -> QListWidget:
         container = QVBoxLayout()
@@ -147,9 +149,7 @@ class OfficialDataImportDialog(QDialog):
             return
         for control in self._path_controls:
             control.setEnabled(False)
-        self._import_button.setEnabled(False)
-        self._import_button.setText("正在识别...")
-        self._cancel_button.setEnabled(False)
+        self._footer.set_busy(True, "正在识别...")
         self._progress_label.setText("正在准备导入...")
         self._progress_label.show()
         self._progress_bar.setRange(0, 0)
@@ -180,16 +180,14 @@ class OfficialDataImportDialog(QDialog):
             for item in summaries
         ]
         lines.append("推荐指数已标记为待重建，请在选将推荐页面确认后重建。")
-        QMessageBox.information(self, "导入完成", "\n".join(lines))
+        show_toast(self.parentWidget() or self, "\n".join(lines), duration=3000)
         self.accept()
 
     def _on_failed(self, message: str) -> None:
         self._task = None
         for control in self._path_controls:
             control.setEnabled(True)
-        self._import_button.setEnabled(True)
-        self._import_button.setText("导入")
-        self._cancel_button.setEnabled(True)
+        self._footer.set_busy(False)
         self._progress_label.hide()
         self._progress_bar.hide()
         QMessageBox.warning(self, "导入失败", message)

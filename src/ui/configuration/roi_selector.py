@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
+from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ class RoiSelectorDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader(self.windowTitle(), "拖拽画面以设置模板匹配区域"))
 
         self._image_label = QLabel()
         self._image_label.setPixmap(self._pixmap)
@@ -100,14 +102,10 @@ class RoiSelectorDialog(QDialog):
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._info_label)
 
-        btn_row = QHBoxLayout()
-        confirm_btn = QPushButton("确认")
-        confirm_btn.clicked.connect(self._on_confirm)
-        btn_row.addWidget(confirm_btn)
-        cancel_btn = QPushButton("取消")
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
-        layout.addLayout(btn_row)
+        footer = DialogFooter(accept_text="确认", cancel_text="取消")
+        footer.accepted.connect(self._on_confirm)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
         self._image_label.mousePressEvent = self._on_mouse_press
         self._image_label.mouseMoveEvent = self._on_mouse_move
@@ -246,6 +244,7 @@ class RoiLayoutEditorDialog(QDialog):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.addWidget(PageHeader(self.windowTitle(), "选择席位字段后拖拽调整识别区域"))
         selector_row = QHBoxLayout()
         selector_row.addWidget(QLabel("当前区域"))
         self._target_combo = QComboBox()
@@ -271,14 +270,10 @@ class RoiLayoutEditorDialog(QDialog):
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._info_label)
 
-        button_row = QHBoxLayout()
-        confirm_button = QPushButton("保存区域")
-        confirm_button.clicked.connect(self._on_confirm)
-        button_row.addWidget(confirm_button)
-        cancel_button = QPushButton("取消")
-        cancel_button.clicked.connect(self.reject)
-        button_row.addWidget(cancel_button)
-        layout.addLayout(button_row)
+        footer = DialogFooter(accept_text="保存区域", cancel_text="取消")
+        footer.accepted.connect(self._on_confirm)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
 
     def _on_target_changed(self, _index: int) -> None:
         self._info_label.setText("拖拽调整当前区域")

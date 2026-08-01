@@ -28,7 +28,8 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
-from src.ui.shared.widgets import FlowLayout
+from src.ui.shared.style import ROLE_SECONDARY
+from src.ui.shared.widgets import DialogFooter, EmptyState, FlowLayout, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -94,16 +95,21 @@ class BaseHeroSelectDialog(QDialog):
         """构建对话框界面"""
         self._all_heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)
         if not self._all_heroes:
+            layout = QVBoxLayout(self)
+            layout.addWidget(PageHeader(self.windowTitle(), tip_text))
+            layout.addWidget(EmptyState("暂无武将数据", "请先导入或重新加载武将资料。"), 1)
+            footer = DialogFooter(
+                accept_text="关闭",
+                accept_role=ROLE_SECONDARY,
+                show_cancel=False,
+            )
+            footer.accepted.connect(self.reject)
+            layout.addWidget(footer)
             return
 
         factions = self._hero_mgr.list_factions()
         layout = QVBoxLayout(self)
-
-        # 提示标签
-        if tip_text:
-            tip_label = QLabel(tip_text)
-            tip_label.setStyleSheet("color: gray; font-size: 12px;")
-            layout.addWidget(tip_label)
+        layout.addWidget(PageHeader(self.windowTitle(), tip_text))
 
         # 搜索框
         self._search_input = QLineEdit()
@@ -161,17 +167,11 @@ class BaseHeroSelectDialog(QDialog):
             self._selected_tags_scroll = None
             self._selected_tags_layout = None
 
-        # 确定/取消按钮
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        self._ok_btn = QPushButton()
-        cancel_btn = QPushButton("取消")
-        btn_layout.addWidget(self._ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-        cancel_btn.clicked.connect(self.reject)
-        self._ok_btn.clicked.connect(self._on_accept)
+        self._footer = DialogFooter(accept_text="确定", cancel_text="取消")
+        self._ok_btn = self._footer.accept_button
+        self._footer.accepted.connect(self._on_accept)
+        self._footer.rejected.connect(self.reject)
+        layout.addWidget(self._footer)
         self._search_input.textChanged.connect(self._apply_filter)
         self._faction_combo.checked_values_changed.connect(self._apply_filter)
         self._list_widget.itemChanged.connect(self._on_item_changed)

@@ -8,8 +8,9 @@ import threading
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel, QTabWidget, QTextBrowser
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QTabWidget, QTextBrowser
 
+from src.business.analysis.recommendation_service import RecommendationData
 from src.business.emulator.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -54,13 +55,79 @@ def test_recommendation_cards_scroll_instead_of_shrinking_below_minimum_height()
     app.processEvents()
 
     assert panel._cards_scroll.verticalScrollBar().maximum() > 0
+    assert panel._cards_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     assert all(card.height() >= card.minimumHeight() for card in panel._cards)
     panel._cards[0].set_medal(1)
     app.processEvents()
     badge = panel._cards[0]._medal_label.geometry()
-    assert badge.top() >= 2
-    assert badge.bottom() <= panel._cards[0]._win_rate_row.height() - 3
+    assert badge.top() >= 1
+    assert badge.bottom() <= panel._cards[0]._win_rate_row.height() - 1
     panel.hide()
+
+
+def test_recommendation_default_workspace_shows_all_eight_cards() -> None:
+    app = _app()
+    heroes = HeroManager()
+    heroes._items = {
+        index: Hero(id=index, name=f"测试武将{index}", faction="魏")
+        for index in range(1, 9)
+    }
+    panel = RecommendationPanel(heroes, SynergyManager(), GuideManager())
+    panel.update_recommendations([
+        {"index": index, "name": f"测试武将{index}"}
+        for index in range(1, 9)
+    ])
+    # 1100×760 默认应用外壳中的推荐页实际尺寸。
+    panel.resize(944, 649)
+    panel.show()
+    app.processEvents()
+
+    assert panel._cards_scroll.verticalScrollBar().maximum() == 0
+    assert all(not card.isHidden() for card in panel._cards)
+    assert panel._cards_widget.height() <= panel._cards_scroll.viewport().height()
+    panel.hide()
+
+
+def test_recommendation_capture_guard_and_empty_result_notice() -> None:
+    _app()
+    panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+
+    assert panel._begin_capture_request("adb_recognize")
+    assert not panel._begin_capture_request("file")
+    assert panel._pending_capture_source == "adb_recognize"
+    assert not panel._empty_recognize_btn.isEnabled()
+
+    panel._finish_capture_request()
+    panel.load_from_ocr([])
+
+    assert panel._empty_recognize_btn.isEnabled()
+    assert not panel._error_notice.isHidden()
+    assert panel._error_notice.title_label.text() == "未识别到选将阵容"
+
+
+def test_rebuild_refreshes_visible_win_rates_and_rankings(monkeypatch) -> None:
+    _app()
+    panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+    panel.update_recommendations([{"index": 1, "name": "测试武将"}])
+    rebuilt = RecommendationData(
+        {"测试武将": 61.25},
+        {
+            "测试武将": RecommendationIndex(
+                1, "测试武将", 0.6125, 1, 1, 1.0, 1.0, 1.0, 0.75, 0.70,
+                90, "S", 1, "有效",
+            )
+        },
+    )
+    monkeypatch.setattr(panel._recommendation_service, "rebuild_indexes", lambda: rebuilt)
+    monkeypatch.setattr(
+        "src.ui.recommendation.recommendation_panel.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+    panel._rebuild_recommendation_indexes()
+
+    assert panel._cards[0]._win_rate_label.text() == "历史单将胜率：61.25%"
+    assert panel._cards[0].property("rank") == 1
+    assert "有效 1 条" in panel._shared_toast_overlay.text()
 
 
 def test_recommendation_current_recognition_requests_ocr(monkeypatch) -> None:
@@ -99,10 +166,13 @@ def test_match_guide_empty_state_matches_recommendation_actions() -> None:
     recommendation = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
     guide = MatchGuidePanel(_hero_manager())
 
-    assert guide._recognize_btn.styleSheet() == recommendation._recognize_btn.styleSheet()
-    assert guide._import_file_btn.styleSheet() == recommendation._import_file_btn.styleSheet()
-    assert guide._empty_recognize_btn.styleSheet() == recommendation._empty_recognize_btn.styleSheet()
-    assert guide._empty_import_btn.styleSheet() == recommendation._empty_import_file_btn.styleSheet()
+    assert guide._recognize_btn.property("uiRole") == recommendation._recognize_btn.property("uiRole")
+    assert guide._empty_recognize_btn.property("uiRole") == recommendation._empty_recognize_btn.property("uiRole")
+    assert guide._empty_import_btn.property("uiRole") == recommendation._empty_import_file_btn.property("uiRole")
+    assert guide._more_btn.objectName() == "matchMoreButton"
+    assert recommendation._more_btn.objectName() == "recommendationMoreButton"
+    assert not guide._action_bar.isHidden()
+    assert guide._recognize_btn.isHidden()
     assert guide._empty_state.layout().alignment() == Qt.AlignmentFlag.AlignCenter
     assert recommendation._empty_state.layout().alignment() == Qt.AlignmentFlag.AlignCenter
 
@@ -111,8 +181,8 @@ def test_match_guide_empty_state_matches_recommendation_actions() -> None:
         panel.show()
     app.processEvents()
 
-    assert guide._empty_recognize_btn.geometry() == recommendation._empty_recognize_btn.geometry()
-    assert guide._empty_import_btn.geometry() == recommendation._empty_import_file_btn.geometry()
+    assert guide._empty_recognize_btn.size() == recommendation._empty_recognize_btn.size()
+    assert guide._empty_import_btn.size() == recommendation._empty_import_file_btn.size()
     recommendation.hide()
     guide.hide()
 
@@ -274,17 +344,16 @@ def test_top_three_win_rate_visual_anchor() -> None:
     card = HeroCardWidget(None)
 
     card.set_win_rate(58.6)
-    assert card._win_rate_label.text() == "胜率: 58.60%"
+    assert card._win_rate_label.text() == "历史单将胜率：58.60%"
     card.set_medal(1)
 
-    assert card._medal_label.text() == "TOP 1"
+    assert card._medal_label.text() == "胜率 TOP 1"
     assert card._rank == 1
-    assert "#FFD700" in card._win_rate_label.styleSheet()
-    assert "#ffffff" in card.styleSheet()
-    assert "transparent" in card._portrait_frame.styleSheet()
-    assert "font-weight: bold" in card._win_rate_label.styleSheet()
-    assert card._win_rate_row.minimumHeight() == 28
-    assert card._medal_label.height() == 24
+    assert card.property("rank") == 1
+    assert card._medal_label.property("rank") == 1
+    assert card._medal_label.accessibleName() == "当前八名武将中历史单将胜率第 1 名"
+    assert card._win_rate_row.minimumHeight() == 22
+    assert card._medal_label.height() == 20
 
     card.set_medal(0)
     assert card._medal_label.text() == ""
@@ -308,7 +377,8 @@ def test_hero_card_exposes_public_identity_and_unrecognized_state(monkeypatch) -
     assert card.hero_id == 0
     assert card.hero_name == ""
     assert card._name_overlay.text() == "新武将"
-    assert card._confidence_label.text() == "推荐指数：-- / 数据不足"
+    assert card._index_row.isHidden()
+    assert card.property("cardState") == "unknown"
 
 
 def test_recommendation_keeps_unresolved_slot_without_loading_hero_data() -> None:
@@ -327,7 +397,7 @@ def test_recommendation_keeps_unresolved_slot_without_loading_hero_data() -> Non
     card = panel._cards[0]
     assert card.hero_id == 0
     assert card._name_overlay.text() == "测试"
-    assert card._data_status_label.text() == "候选 1 名"
+    assert card._data_status_label.text() == "待确认 · 候选 1 名"
     assert not card._confirm_name_btn.isHidden()
     assert "0 名武将" in panel._recognition_status_label.text()
 
@@ -359,9 +429,9 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
 
     assert card._confidence_label.text() == "推荐指数：82 / S"
     assert "出场活跃度：第 1 名" in card._confidence_label.toolTip()
-    assert "background-color: white" in card._recommendation_info_tooltip.styleSheet()
-    assert "color: #c62828" in card._recommendation_info_tooltip.styleSheet()
-    assert "font-weight: bold" in card._recommendation_info_tooltip.styleSheet()
+    assert card._confidence_label.objectName() == "recommendationIndex"
+    assert card._recommendation_info_icon.accessibleName() == "推荐指数计算口径"
+    assert card._recommendation_info_icon.toolTip() == card.RECOMMENDATION_INDEX_DESCRIPTION
     assert not card._recommendation_info_icon.isHidden()
 
     card.set_recommendation_index(RecommendationIndex(
@@ -370,7 +440,7 @@ def test_recommendation_card_displays_index_or_insufficient_data() -> None:
     ))
     assert "数据不足" in card._confidence_label.text()
     assert card._confidence_label.toolTip() == "缺少禁用排名"
-    assert card._recommendation_info_icon.isHidden()
+    assert not card._recommendation_info_icon.isHidden()
 
 
 def test_recommendation_card_highlights_partner_position_and_skill_action() -> None:
@@ -388,8 +458,15 @@ def test_recommendation_card_highlights_partner_position_and_skill_action() -> N
 
     assert card._best_partner_label.text() == "最佳搭档：最佳搭档（S）"
     assert card._position_label.text() == "输出"
-    assert card._data_status_label.text() == ""
+    assert card._guide_btn.text() == "查看攻略"
+    assert card._guide_btn.property("uiRole") == "secondary"
+    assert card._data_status_label.text() == "缺少头像"
+    assert card.property("cardState") == "missingPortrait"
     assert selected == [1]
+
+    card.set_guide_available(False)
+    assert card._data_status_label.text() == "暂无攻略"
+    assert card.property("cardState") == "missingGuide"
 
     card.set_recommendation_stale(True)
     assert card._data_status_label.text() == "指数待更新"

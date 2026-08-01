@@ -56,6 +56,13 @@ RecommendationPanel / MatchGuidePanel
      -> csv.DictReader(data/2v2胜率排行.csv)
      -> {武将名: 百分比} [默认路径结果缓存]
 
+Dialog / configuration / import / progress
+  -> PageHeader(title, subtitle)
+  -> DialogFooter(cancel, accept)
+     -> set_busy(True, text) [禁用底栏重复确认与取消]
+  -> show_toast(parent, message)
+     -> ToastOverlay.show_message() [非模态、复用实例并重置计时器]
+
 MainWindow._open_faction_colors()
   -> save_faction_colors()
   -> reload_faction_colors()
@@ -163,7 +170,7 @@ _connect_capture_signals():
           -> [signal] official_import_progress(status, current, total)
              -> _on_progress_changed() -> 显示 current / total
           -> [signal] official_import_completed(summaries)
-             -> _on_completed() -> QMessageBox -> accept()
+             -> _on_completed() -> show_toast(summary) -> accept()
           -> [signal] official_import_failed(message)
              -> _on_failed() -> 恢复按钮、隐藏进度条、显示错误
     -> [finally 且原轮询活跃] PollCoordinator.sync_with_connection()
@@ -298,22 +305,19 @@ SynergyFetchService [signal] fetch_completed
 
 ## 三、截图与 OCR 轮询链路
 
-### 3.1 手动触发截图
+### 3.1 手动识别与仅保存截图
 
 ```
-RecommendationPanel._on_import_from_screenshot()               [「截图」按钮]
-  -> [无 capture service] _open_mumu_config() -> return        [先配置模拟器]
+RecommendationPanel._on_recognize_current()                    [「识别当前阵容」]
+  -> _begin_capture_request("adb_recognize")                  [来源锁与控件禁用]
+  -> CaptureService.do_capture(hero_names, force_ocr=True)
+  -> capture_completed -> _on_capture_result()
+     -> load_from_ocr(ocr_results)
+
+RecommendationPanel._on_save_screenshot()                     [「更多 > 保存截图」]
+  -> _begin_capture_request("adb_save")
   -> CaptureService.do_capture(perform_ocr=False)
-    -> QTimer.singleShot(0, self._execute_capture)              [延后回调；ADB 截图仍在 GUI 线程]
-
-CaptureService._execute_capture(hero_names)                    [异步回调]
-  -> self._capture.connect()                                   [连接 ADB]
-  -> self._capture.screencap_full()                            [ADB 截图]
-  -> save_image(image, save_path)                              [保存截图]
-  -> emit capture_completed({ocr_results, image, ...})
-
-RecommendationPanel._on_capture_result(result)                 [信号接收]
-  -> [ADB 截图来源] 复位按钮；不导入 OCR 结果
+  -> capture_completed -> 仅复位控件，不更新推荐结果
 ```
 
 ### 3.2 从文件导入
@@ -339,6 +343,7 @@ MatchGuidePanel.__init__(hero_mgr, capture_service)
   -> LineupState()                                               [四个空槽位与确认规则]
   -> MatchAnalysisView(hero_mgr)                                 [总览/我方/敌方/详情页]
   -> MatchHeroCard × 4
+  -> QSplitter(42/58)                                            [两侧不可折叠且禁用横向滚动]
 
 MatchHeroCard._portrait [左键双击]
   -> MatchHeroCard._on_hero_double_clicked()
@@ -373,7 +378,7 @@ MatchGuidePanel._confirm_lineup()
   -> MatchAnalysisView.render_analysis()
 ```
 
-对局攻略导入复用 `CaptureService` 的异步采集接口，但通过 `template_name` 使用独立模板；未识别到武将时保留待识别空状态。阵容状态不依赖 Qt，分析视图不修改阵容，两者可分别测试和维护。
+对局攻略导入复用 `CaptureService` 的异步采集接口，但通过 `template_name` 使用独立模板；新结果先替换 `LineupState`、清除旧分析并回到总览。确认区固定在左栏顶部，卡片重排只影响独立滚动区。阵容状态不依赖 Qt，分析视图不修改阵容，两者可分别测试和维护。
 
 ### 3.4 轮询截图链路（关键：跨线程）
 
@@ -453,7 +458,7 @@ RecommendationPanel.load_from_ocr(ocr_results)                  [OCR 结果 list
                self._current_hero_ids.add(hero.id)
      -> [未找到] card.set_unrecognized_name(name, confidence)   [统一维护空 Hero、原始名称和置信度]
      -> self._load_real_synergies(idx, hero.id)                 [加载相性]
-     -> self._load_win_rate_by_name(idx, name)                  [加载胜率]
+     -> self._load_card_stats(idx, name, snapshot)              [加载胜率与推荐指数]
   -> self._apply_medal_rankings()                               [Top 3 奖牌]
 ```
 
@@ -478,42 +483,34 @@ RecommendationPanel._load_real_synergies(card_idx, hero_id)
 ```
 RecommendationPanel._load_default_heroes()
   -> self._ocr_mode = False
-  -> heroes = self._hero_mgr.list_heroes()                      [全部武将]
-  -> top8 = sorted(heroes, key=lambda h: h.id)[:8]              [按 ID 取前 8]
-  -> [遍历 8 个]
-     -> card.set_hero(hero)
-     -> self._load_real_synergies(i, hero.id)
-     -> self._load_win_rate_by_name(i, hero.name)
-  -> self._apply_medal_rankings()
+  -> self._current_hero_ids.clear()
+  -> [遍历 8 个] card.set_hero(None)
+  -> _show_empty_state()                                        [不预填业务数据]
 ```
 
 ### 4.4 奖牌计算
 
 ```
 RecommendationPanel._apply_medal_rankings()
-  -> [遍历 8 张卡片]
-     -> 解析 _win_rate_label.text() → float                     ["胜率: 52.3%" → 52.3]
-  -> 按胜率降序排序
-  -> rank 1 → card.set_medal(1) → "🥇"
-  -> rank 2 → card.set_medal(2) → "🥈"
-  -> rank 3 → card.set_medal(3) → "🥉"
+  -> RecommendationData.rank_win_rates(card.hero_name × 8)     [直接使用数值快照]
+  -> rank 1/2/3 → card.set_medal(rank)                          [固定“胜率 TOP N”徽章]
 ```
 
 | 函数 | 所在类 | 调用方 | 被调用方 |
 |------|--------|--------|----------|
 | `load_from_ocr(results)` | `RecommendationPanel` | `_on_capture_result()`, `_on_poll_result()` | `get_hero_by_name()`, `set_hero()`, `_load_real_synergies()` |
-| `_load_default_heroes()` | `RecommendationPanel` | `__init__()` | `list_heroes()`, `_load_real_synergies()`, `_load_win_rate_by_name()` |
-| `_load_real_synergies(idx, id)` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | `list_synergies_for_hero()`, `get_hero()`, `set_synergies()` |
-| `_load_win_rate_by_name(idx, name)` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | `load_win_rates()`, `set_win_rate()` |
-| `_apply_medal_rankings()` | `RecommendationPanel` | `load_from_ocr()`, `_load_default_heroes()` | 解析胜率文本, `set_medal()` |
+| `_load_default_heroes()` | `RecommendationPanel` | 页面清空 | `set_hero(None)`, `_show_empty_state()` |
+| `_load_real_synergies(idx, id)` | `RecommendationPanel` | `load_from_ocr()`, `refresh_synergies()` | `list_synergies_for_hero()`, `get_hero()`, `set_synergies()` |
+| `_load_card_stats(idx, name, data)` | `RecommendationPanel` | `update_recommendations()` | `set_win_rate()`, `set_recommendation_index()` |
+| `_apply_medal_rankings()` | `RecommendationPanel` | `update_recommendations()`, `_rebuild_recommendation_indexes()` | `rank_win_rates()`, `set_medal()` |
 | `set_hero(hero)` | `HeroCardWidget` | 外部 | `_update_display()`, `_load_portrait()`, `_update_confidence_display()` |
 | `set_unrecognized_name(name, confidence)` | `HeroCardWidget` | `update_recommendations()` | `set_hero(None)`, `set_confidence()`, `set_recommendation_index(None)` |
 | `refresh_faction_color()` | `HeroCardWidget` | `refresh_faction_colors()` | `_update_display()` |
 | `hero_id` / `hero_name` | `HeroCardWidget` | `RecommendationPanel` | 只读卡片身份状态 |
 | `set_confidence(conf)` | `HeroCardWidget` | 外部 | `_update_confidence_display()` |
-| `set_synergies(pairs)` | `HeroCardWidget` | `_load_real_synergies()` | 4 列 QGridLayout 动态添加 QLabel |
-| `set_win_rate(rate)` | `HeroCardWidget` | `_load_win_rate_by_name()` | 设置胜率 QLabel 文本 |
-| `set_medal(rank)` | `HeroCardWidget` | `_apply_medal_rankings()` | 设置奖牌 QLabel 文本 |
+| `set_synergies(pairs)` | `HeroCardWidget` | `_load_real_synergies()` | 更新预创建的相性标签，不重建布局 |
+| `set_win_rate(rate)` | `HeroCardWidget` | `_load_card_stats()`、指数重建 | 设置历史单将胜率文本 |
+| `set_medal(rank)` | `HeroCardWidget` | `_apply_medal_rankings()` | 设置 `rank` 属性与固定 TOP 徽章 |
 | `_load_portrait(name)` | `HeroCardWidget` (static) | `_update_display()` | `QPixmap(str(IMAGES_DIR/name.ext))` |
 
 ### 4.5 攻略弹出
@@ -543,11 +540,11 @@ HeroCardWidget.guide_clicked [signal] → RecommendationPanel._show_guide_popup(
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `__init__()` | `recommendation_panel.py` | `MainWindow._setup_ui()` | `_setup_ui()`, `_load_default_heroes()` |
+| `__init__()` | `recommendation_panel.py` | `MainWindow._setup_ui()` | `_setup_ui()`, `_show_empty_state()` |
 | `load_from_ocr(results)` | `recommendation_panel.py` | `_on_capture_result()` | `get_hero_by_name()`, `set_hero()`, `_load_real_synergies()` |
-| `_load_default_heroes()` | `recommendation_panel.py` | `__init__()` | `list_heroes()`, `_load_real_synergies()`, `_load_win_rate_by_name()` |
+| `_load_default_heroes()` | `recommendation_panel.py` | 页面清空 | `set_hero(None)`, `_show_empty_state()` |
 | `_load_real_synergies(idx, id)` | `recommendation_panel.py` | 内部 | `list_synergies_for_hero()`, `get_hero()`, `set_synergies()` |
-| `_load_win_rate_by_name(idx, name)` | `recommendation_panel.py` | 内部 | `load_win_rates()`, `set_win_rate()` |
+| `_load_card_stats(idx, name, data)` | `recommendation_panel.py` | 内部 | `set_win_rate()`, `set_recommendation_index()` |
 | `_apply_medal_rankings()` | `recommendation_panel.py` | 内部 | 排序 + `set_medal()` |
 | `_show_guide_popup(hero_id)` | `recommendation_panel.py` | `card.guide_clicked` | `get_hero()`, `get_guide()`, `GuideDetailDialog` |
 | `HeroCardWidget` | `hero_card_widget.py` | `RecommendationPanel._setup_ui()` | 卡片展示与 `guide_clicked` / `hero_double_clicked` 信号 |
@@ -624,10 +621,13 @@ HeroDetailPanel.show_hero(hero_id)                              [接收信号]
 HeroDetailPanel._on_info_edit()                                ["修改"按钮 - 武将信息]
   -> HeroEditDialog(self._current_hero, parent)                 [编辑对话框]
      -> QFormLayout: name/title/faction/position/max_hp/max_hand/gender/difficulty
-  -> [accepted] updated = dialog.get_hero()
-  -> DataMutationService.update_hero(updated)
-  -> self._info_tab.show_hero(updated)
-  -> self.data_changed.emit()                                   [通知列表刷新]
+  -> while [accepted]
+     -> updated = dialog.get_hero()                              [重新校验的模型副本]
+     -> DataMutationService.update_hero(updated)
+        -> [失败] QMessageBox.critical() -> 保留输入并重新显示同一弹窗
+        -> [成功] self._info_tab.show_hero(updated)
+                  -> self.data_changed.emit()                    [通知列表刷新]
+                  -> show_toast("武将资料已保存")
 
 HeroDetailPanel._on_info_delete()                              ["删除"按钮 - 武将信息]
   -> QMessageBox.question("确认删除 ...？")
@@ -637,6 +637,7 @@ HeroDetailPanel._on_info_delete()                              ["删除"按钮 -
      -> self._guide_tab.show_guide(None)
      -> self._synergy_tab.show_hero(None)
      -> self.data_changed.emit()
+     -> QMessageBox.information("删除完成")
 ```
 
 ### 5.4 攻略编辑链路
@@ -656,11 +657,14 @@ HeroDetailPanel._on_guide_edit()                               ["修改"按钮 -
                  -> _accept_selection() -> selected_ids
            -> _update_relation_summary()                       [显示已选名称]
         -> 攻略正文: QTextEdit (Markdown)
-     -> [accepted] updated = dialog.get_guide()
-        -> 读取对局类型/对抗建议文本 + synergizes_with 已选 ID 列表
-  -> DataMutationService.update_guide(updated)
-  -> self._guide_tab.show_guide(updated)
-  -> self.data_changed.emit()
+     -> while [accepted]
+        -> updated = dialog.get_guide()                           [重新校验的模型副本]
+           -> 读取对局类型/对抗建议文本 + synergizes_with 已选 ID 列表
+        -> DataMutationService.update_guide(updated)
+           -> [失败] QMessageBox.critical() -> 保留输入并重新显示同一弹窗
+           -> [成功] self._guide_tab.show_guide(updated)
+                     -> self.data_changed.emit()
+                     -> show_toast("攻略修改已保存")
 
 HeroDetailPanel._on_guide_delete()                             ["删除"按钮 - 攻略指南]
   -> QMessageBox.question("确认删除攻略？")
@@ -668,6 +672,7 @@ HeroDetailPanel._on_guide_delete()                             ["删除"按钮 -
      -> DataMutationService.delete_guide(self._current_guide.hero_id)
      -> self._guide_tab.show_guide(None)
      -> self.data_changed.emit()
+     -> QMessageBox.information("删除完成")
 ```
 
 ### 5.5 相性浏览与编辑链路
@@ -683,13 +688,15 @@ HeroDetailPanel.show_hero(hero_id)
   -> HeroSynergyView.selected_synergy()
   -> SynergyEditDialog(hero_mgr, synergy).exec()
      -> 评分变化 -> synergy_rating_for_score()                 [实时更新评级]
-  -> [accepted] DataMutationService.update_synergy(dialog.get_synergy())
-  -> 创建备份并保存 -> HeroSynergyView.refresh()
-  -> synergies_changed.emit()                                  [通知推荐页刷新]
+  -> while [accepted] DataMutationService.update_synergy(dialog.get_synergy())
+     -> [失败] QMessageBox.critical() -> 保留输入并重新显示同一弹窗
+     -> [成功] 创建备份并保存 -> HeroSynergyView.refresh()
+               -> synergies_changed.emit()                     [通知推荐页刷新]
+               -> show_toast("相性修改已保存")
 
 相性说明列双击
   -> HeroSynergyView._show_description()
-  -> render_markdown() -> QTextBrowser 预览
+  -> PageHeader + render_markdown() -> QTextBrowser + DialogFooter
 ```
 
 ### 5.6 函数清单总表（武将浏览器）
@@ -704,14 +711,14 @@ HeroDetailPanel.show_hero(hero_id)
 | `show_hero(hero)` | `HeroInfoView` | `HeroDetailPanel.show_hero()`、武将编辑后 | 设置基本信息 HTML、重建技能卡片 |
 | `show_guide(guide)` | `HeroGuideSummaryView` | `HeroDetailPanel.show_hero()`、攻略编辑后 | 渲染摘要、对局类型和关系标签 |
 | `refresh()` | `HeroSynergyView` | `HeroDetailPanel.refresh_synergies()` | `list_synergies_for_hero()`、筛选和表格排序 |
-| `_on_info_edit()` | `HeroDetailPanel` | "修改"按钮 | `HeroEditDialog`, `update_hero()`, `save()` |
-| `_on_info_delete()` | `HeroDetailPanel` | "删除"按钮 | `delete_hero()`, `delete_guide()`, `save()` |
-| `_on_guide_edit()` | `HeroDetailPanel` | "修改"按钮 | `GuideEditDialog`, `update_guide()`, `save()` |
-| `_on_guide_delete()` | `HeroDetailPanel` | "删除"按钮 | `delete_guide()`, `save()` |
+| `_on_info_edit()` | `HeroDetailPanel` | "编辑武将"按钮 | `HeroEditDialog`, `update_hero()`, `show_toast()` |
+| `_on_info_delete()` | `HeroDetailPanel` | "删除武将"菜单 | `delete_hero_with_relations()`, 模态结果 |
+| `_on_guide_edit()` | `HeroDetailPanel` | "编辑攻略"按钮 | `GuideEditDialog`, `update_guide()`, `show_toast()` |
+| `_on_guide_delete()` | `HeroDetailPanel` | "删除攻略"菜单 | `delete_guide()`, 模态结果 |
 | `refresh_synergies()` | `HeroDetailPanel` | `show_hero()`、`HeroBrowser.refresh_synergies()`、保存后 | `HeroSynergyView.refresh()`、按钮状态 |
-| `_on_synergy_edit()` | `HeroDetailPanel` | 双击相性行或"修改" | `SynergyEditDialog`、`update_synergy()`、`save()` |
-| `HeroEditDialog.get_hero()` | `HeroEditDialog` | `_on_info_edit()` accepted | 读取控件值 → `Hero` |
-| `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取对局类型/对抗建议文本 + 已选择的搭配 ID → `HeroGuide` |
+| `_on_synergy_edit()` | `HeroDetailPanel` | 双击相性行或"编辑相性" | `SynergyEditDialog`、`update_synergy()`、`show_toast()` |
+| `HeroEditDialog.get_hero()` | `HeroEditDialog` | `_on_info_edit()` accepted | 读取控件值 → 重新校验的 `Hero` 副本 |
+| `GuideEditDialog.get_guide()` | `GuideEditDialog` | `_on_guide_edit()` accepted | 读取表单与搭配 ID → 重新校验的 `HeroGuide` 副本 |
 | `GuideEditDialog._open_relation_selector()` | `GuideEditDialog` | 搭配推荐选择按钮 | `HeroRelationSelectDialog.exec()` → 回填 ID 列表 |
 | `HeroRelationSelectDialog._accept_selection()` | `HeroRelationSelectDialog` | "确定"按钮 | 按稳定的英雄 ID 顺序输出 `selected_ids` |
 | `SynergyEditDialog.get_synergy()` | `SynergyEditDialog` | `_on_synergy_edit()` accepted | 表单值 → 校验后的 `SynergyScore` |
@@ -728,7 +735,7 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
     -> self._hero_mgr.list_heroes()                             [加载全部武将]
     -> self._hero_mgr.list_factions()                           [加载势力列表]
     -> [UI 布局]:
-       -> QLabel(tip) [可选]
+       -> PageHeader(title, tip)
        -> QLineEdit(搜索) → textChanged → _apply_filter
        -> CheckableComboBox(彩色势力标签 + 多选下拉) → checked_values_changed → _apply_filter
           -> 右侧上下箭头随浮动筛选层展开/收起切换，同一按钮再次点击显式收起
@@ -737,7 +744,7 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
        -> [MULTI_LIMIT] QLabel(上限提示)
        -> QPushButton("全选") / "取消全选"
        -> QListWidget (武将列表)
-       -> QPushButton("确定") / "取消"
+       -> DialogFooter("取消" / "确定")
 
   -> _on_accept(list_widget, all_heroes)
     -> [SINGLE] selectedItems()[0] → hero_id
@@ -807,8 +814,9 @@ MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
 
   → 保存配置:
   _on_save()
+    -> DialogFooter.set_busy(True, "正在保存...")
     -> 收集控件值到 self._config
-    -> self.accept()
+    -> show_toast("识别参数已保存") -> self.accept()
   [MainWindow._open_mumu_config() 中]
     -> dialog.get_config()
     -> save_env_file(DEFAULT_ENV_FILE, config)
@@ -838,7 +846,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
     -> QProgressBar(0 -> hero_count)                            [固定总量]
     -> QLabel(detail: 当前处理项)
     -> QLabel(error: 隐藏, 红色)                                 [仅失败时显示]
-    -> QPushButton("关闭", 初始禁用)
+    -> DialogFooter("中止" / "关闭", 关闭初始禁用)
 
   → 进度更新:
   update_status(text):
@@ -931,7 +939,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `set_confidence(conf)` | 设置推荐指数 0.0~1.0 |
 | `set_synergies(pairs)` | 设置高相性组合展示（4 列 GridLayout） |
 | `set_win_rate(rate)` | 设置胜率百分比 |
-| `set_medal(rank 1/2/3)` | 设置 🥇🥈🥉 奖牌 |
+| `set_medal(rank 1/2/3)` | 设置 `rank` 动态属性与固定“胜率 TOP N”徽章 |
 
 ### 对话框
 

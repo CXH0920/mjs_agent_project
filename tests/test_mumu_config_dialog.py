@@ -15,6 +15,8 @@ from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, Q
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
+from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
+from src.ui.shared.widgets import DialogFooter
 
 
 def _app() -> QApplication:
@@ -123,6 +125,9 @@ def test_ocr_roi_controls_keep_the_configuration_footer() -> None:
     assert buttons.count("图片编辑") == 2
     assert buttons.count("恢复默认") == 2
     assert "保存" in buttons
+    assert isinstance(dialog._footer, DialogFooter)
+    assert dialog._footer.cancel_button.property("uiRole") == ROLE_SECONDARY
+    assert dialog._footer.accept_button.property("uiRole") == ROLE_PRIMARY
 
 
 def test_dialog_composes_dedicated_configuration_sections() -> None:
@@ -300,8 +305,6 @@ def test_two_template_types_are_saved_through_ocr_service(tmp_path: Path, monkey
             return 10, 10, 30, 20
 
     monkeypatch.setattr("src.ui.configuration.roi_selector.RoiSelectorDialog", _AcceptDialog)
-    monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: None)
-
     image = Image.new("RGB", (80, 60))
     dialog._on_template_screenshot_ready("hero_selection", image)
     dialog._on_template_screenshot_ready("match_guide", image)
@@ -310,3 +313,4 @@ def test_two_template_types_are_saved_through_ocr_service(tmp_path: Path, monkey
         ("hero_selection", (10, 10, 30, 20)),
         ("match_guide", (10, 10, 30, 20)),
     ]
+    assert "模板已保存到" in dialog._shared_toast_overlay.text()

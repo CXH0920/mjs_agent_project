@@ -7,8 +7,9 @@ from datetime import datetime
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
-    QMenu, QPushButton, QScrollArea, QSplitter, QVBoxLayout, QWidget,
+    QButtonGroup, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QMessageBox, QMenu, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 from src.config.env import PROJECT_ROOT
@@ -21,15 +22,29 @@ from src.ui.match.match_lineup_state import LineupState, SIDE_ALLY, SIDE_ENEMY
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
-from src.ui.shared.widgets import DoubleClickLabel
+from src.ui.shared.widgets import (
+    DoubleClickLabel,
+    EmptyState,
+    PageActionBar,
+    StatusBadge,
+)
 from src.ui.shared.style import (
-    BORDER, DANGER, HEADER_PRIMARY_BUTTON_STYLE, HEADER_SECONDARY_BUTTON_STYLE,
-    MUTED_TEXT, PAGE_TITLE_STYLE, PRIMARY, SUBTLE_SURFACE, SURFACE, TEXT_PRIMARY,
+    ROLE_GHOST,
+    ROLE_PRIMARY,
+    TONE_DANGER,
+    TONE_INFO,
+    TONE_NEUTRAL,
+    TONE_SUCCESS,
+    TONE_WARNING,
+    set_style_property,
+    set_ui_role,
 )
 
 logger = logging.getLogger(__name__)
 IMAGES_DIR = PROJECT_ROOT / "images"
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
+
+
 class MatchHeroCard(QFrame):
     """对局阵容中的单个武将卡片。"""
 
@@ -46,34 +61,36 @@ class MatchHeroCard(QFrame):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
+        self.setObjectName("matchHeroCard")
         self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setMinimumWidth(188)
-        self.setStyleSheet(self._card_style())
+        self.setMinimumWidth(176)
+        self.setMaximumWidth(250)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        set_style_property(self, "side", "pending")
+        set_style_property(self, "cardState", "empty")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(5)
 
         self._portrait_frame = QWidget()
+        self._portrait_frame.setObjectName("matchPortraitFrame")
         self._portrait_frame.setFixedSize(82, 108)
-        self._portrait_frame.setStyleSheet("background-color: transparent;")
         portrait_layout = QGridLayout(self._portrait_frame)
         portrait_layout.setContentsMargins(0, 0, 0, 0)
         self._portrait = DoubleClickLabel()
+        self._portrait.setObjectName("matchPortrait")
         self._portrait.setFixedSize(80, 108)
         self._portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._portrait.setStyleSheet("background-color: transparent;")
         self._portrait.double_clicked.connect(self._on_hero_double_clicked)
         portrait_layout.addWidget(self._portrait, 0, 0, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self._name_overlay = QLabel()
+        self._name_overlay.setObjectName("matchHeroNameOverlay")
         self._name_overlay.setFixedSize(82, 22)
         self._name_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._name_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self._name_overlay.setStyleSheet(
-            "background-color: rgba(0,0,0,140); color: white; border-radius: 0; "
-            "padding: 0; font-size: 13px; font-weight: bold;"
-        )
         portrait_layout.addWidget(self._name_overlay, 0, 0, Qt.AlignmentFlag.AlignBottom)
         self._faction_badge = QLabel()
+        self._faction_badge.setObjectName("matchFactionBadge")
         self._faction_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         portrait_layout.addWidget(self._faction_badge, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
@@ -84,101 +101,89 @@ class MatchHeroCard(QFrame):
         info = QVBoxLayout()
         info.setContentsMargins(0, 0, 0, 0)
         info.setSpacing(3)
-        self._status_label = QLabel("待确认")
+        self._status_label = StatusBadge("待确认", TONE_NEUTRAL)
+        set_style_property(self._status_label, "badgeRole", "recognition")
         self._status_label.setWordWrap(True)
-        self._status_label.setStyleSheet(f"color: {MUTED_TEXT}; background: {SUBTLE_SURFACE}; padding: 3px 5px;")
         info.addWidget(self._status_label)
+        self._side_status_label = StatusBadge("敌我未定", TONE_NEUTRAL)
+        set_style_property(self._side_status_label, "badgeRole", "identity")
+        self._side_status_label.setWordWrap(True)
+        info.addWidget(self._side_status_label)
         self._position_label = QLabel("定位：--")
-        self._position_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
+        self._position_label.setObjectName("matchHeroPosition")
         self._position_label.setWordWrap(True)
         info.addWidget(self._position_label)
         self._win_rate_label = QLabel("历史单将胜率：--")
+        self._win_rate_label.setObjectName("matchHeroWinRate")
         self._win_rate_label.setWordWrap(True)
-        self._win_rate_label.setStyleSheet(f"font-size: 12px; color: {PRIMARY}; font-weight: bold;")
         info.addWidget(self._win_rate_label)
         info.addStretch()
         top.addLayout(info, 1)
         layout.addLayout(top)
 
-        side_row = QHBoxLayout()
+        self._side_segment = QWidget()
+        self._side_segment.setObjectName("sideSegment")
+        side_row = QHBoxLayout(self._side_segment)
         side_row.setContentsMargins(0, 0, 0, 0)
-        side_row.setSpacing(3)
+        side_row.setSpacing(0)
         self._ally_btn = QPushButton("我方")
         self._enemy_btn = QPushButton("敌方")
         self._undecided_btn = QPushButton("未定")
-        for button, style in (
-            (self._ally_btn, self._side_button_style(PRIMARY)),
-            (self._enemy_btn, self._side_button_style(DANGER)),
-            (self._undecided_btn, self._side_button_style(MUTED_TEXT)),
+        self._side_group = QButtonGroup(self)
+        self._side_group.setExclusive(True)
+        for button, side_value in (
+            (self._ally_btn, SIDE_ALLY),
+            (self._enemy_btn, SIDE_ENEMY),
+            (self._undecided_btn, "pending"),
         ):
+            button.setObjectName("matchSideOption")
+            set_style_property(button, "side", side_value)
             button.setCheckable(True)
-            button.setFixedHeight(24)
-            button.setStyleSheet(style)
+            button.setMinimumHeight(28)
+            self._side_group.addButton(button)
             side_row.addWidget(button)
         self._ally_btn.clicked.connect(lambda: self.side_requested.emit(self._slot_index, SIDE_ALLY))
         self._enemy_btn.clicked.connect(lambda: self.side_requested.emit(self._slot_index, SIDE_ENEMY))
         self._undecided_btn.clicked.connect(lambda: self.side_requested.emit(self._slot_index, ""))
-        layout.addLayout(side_row)
+        layout.addWidget(self._side_segment)
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(4)
         self._leader_btn = QPushButton("设为我")
-        self._leader_btn.setFixedHeight(24)
-        self._leader_btn.setStyleSheet("padding: 2px 6px; font-size: 11px;")
+        self._leader_btn.setObjectName("matchLeaderButton")
+        set_ui_role(self._leader_btn, ROLE_GHOST)
         self._leader_btn.clicked.connect(lambda: self.ally_leader_requested.emit(self._slot_index))
         actions.addWidget(self._leader_btn)
         self._replace_btn = QPushButton("替换")
-        self._replace_btn.setFixedHeight(24)
-        self._replace_btn.setStyleSheet("padding: 2px 6px; font-size: 11px;")
+        self._replace_btn.setObjectName("matchReplaceButton")
+        set_ui_role(self._replace_btn, ROLE_GHOST)
         self._replace_btn.clicked.connect(lambda: self.replace_requested.emit(self._slot_index))
         actions.addWidget(self._replace_btn)
         actions.addStretch()
         layout.addLayout(actions)
-
-    @staticmethod
-    def _card_style(side: str = "") -> str:
-        if side == SIDE_ALLY:
-            border, background = PRIMARY, "#f2f8ff"
-        elif side == SIDE_ENEMY:
-            border, background = DANGER, "#fff5f4"
-        else:
-            border, background = BORDER, SURFACE
-        return (
-            f"MatchHeroCard {{ background-color: {background}; border: 1px solid {border}; "
-            "border-radius: 8px; }"
-        )
-
-    @staticmethod
-    def _side_button_style(color: str) -> str:
-        return (
-            f"QPushButton {{ background: {SURFACE}; color: {color}; border: 1px solid {color}; "
-            "border-radius: 4px; padding: 2px 3px; font-size: 11px; font-weight: bold; }"
-            f"QPushButton:checked {{ background: {color}; color: white; }}"
-        )
 
     def set_hero(self, hero, original_name: str = "", status: str = "待确认") -> None:
         self._hero = hero
         self._hero_id = hero.id if hero else 0
         display_name = hero.name if hero else (original_name or "未导入")
         self._name_overlay.setText(display_name)
-        self._status_label.setText(status)
-        self._set_pending_status_style()
+        self._set_recognition_status(status, hero is not None, bool(original_name))
         self._position_label.setText(f"定位：{hero.position or '暂无数据'}" if hero else "定位：暂无数据")
         enabled = hero is not None
         for button in (self._ally_btn, self._enemy_btn, self._undecided_btn, self._leader_btn):
             button.setEnabled(enabled)
         if hero is None:
-            self.setStyleSheet(self._card_style())
-            for button in (self._ally_btn, self._enemy_btn, self._undecided_btn):
-                button.blockSignals(True)
-                button.setChecked(False)
-                button.blockSignals(False)
+            self._sync_side_buttons("")
+            set_style_property(self, "side", "pending")
             self._portrait.clear()
             self._portrait.setText(display_name)
-            self._portrait.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 11px;")
+            set_style_property(self._portrait, "portraitState", "empty" if not original_name else "text")
             self._faction_badge.clear()
+            self._faction_badge.setStyleSheet("")
             self.set_win_rate(None)
+            self._side_status_label.setText("敌我未定")
+            self._side_status_label.set_tone(TONE_NEUTRAL)
             self._leader_btn.setVisible(False)
             return
 
@@ -191,11 +196,11 @@ class MatchHeroCard(QFrame):
         if pixmap and not pixmap.isNull():
             self._portrait.setPixmap(pixmap)
             self._portrait.setText("")
-            self._portrait.setStyleSheet("")
+            set_style_property(self._portrait, "portraitState", "image")
         else:
             self._portrait.setPixmap(QPixmap())
             self._portrait.setText(hero.name)
-            self._portrait.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 11px;")
+            set_style_property(self._portrait, "portraitState", "text")
 
     def set_win_rate(self, rate: float | None) -> None:
         self._win_rate_label.setText(
@@ -203,34 +208,56 @@ class MatchHeroCard(QFrame):
         )
 
     def set_side(self, side: str, is_leader: bool = False, position: int = 0) -> None:
+        normalized_side = side if side in (SIDE_ALLY, SIDE_ENEMY) else "pending"
+        set_style_property(self, "side", normalized_side)
+        self._sync_side_buttons(side)
         if self._hero is None:
+            self._side_status_label.setText("敌我未定")
+            self._side_status_label.set_tone(TONE_NEUTRAL)
             self._leader_btn.setVisible(False)
             return
-        self.setStyleSheet(self._card_style(side))
-        for button, button_side in (
+
+        self._leader_btn.setText("当前为我" if is_leader else "设为我")
+        if side == SIDE_ALLY:
+            self._side_status_label.setText("我方 · 我" if is_leader else "我方 · 队友")
+            self._side_status_label.set_tone(TONE_INFO)
+            self._leader_btn.setVisible(True)
+        elif side == SIDE_ENEMY:
+            self._side_status_label.setText(f"敌方 {position}")
+            self._side_status_label.set_tone(TONE_DANGER)
+            self._leader_btn.setVisible(False)
+        else:
+            self._side_status_label.setText("敌我未定")
+            self._side_status_label.set_tone(TONE_NEUTRAL)
+            self._leader_btn.setVisible(False)
+
+    def _sync_side_buttons(self, side: str) -> None:
+        side_buttons = (
             (self._ally_btn, SIDE_ALLY),
             (self._enemy_btn, SIDE_ENEMY),
             (self._undecided_btn, ""),
-        ):
-            button.blockSignals(True)
-            button.setChecked(side == button_side)
-            button.blockSignals(False)
-        if side == SIDE_ALLY:
-            self._status_label.setText("已确认 · 我" if is_leader else "已确认 · 队友")
-            self._status_label.setStyleSheet("color: white; background: #4a90d9; padding: 3px 5px;")
-            self._leader_btn.setVisible(True)
-        elif side == SIDE_ENEMY:
-            self._status_label.setText(f"已确认 · 敌方 {position}")
-            self._status_label.setStyleSheet("color: white; background: #a12622; padding: 3px 5px;")
-            self._leader_btn.setVisible(False)
-        else:
-            self._set_pending_status_style()
-            self._leader_btn.setVisible(False)
-
-    def _set_pending_status_style(self) -> None:
-        self._status_label.setStyleSheet(
-            f"color: {MUTED_TEXT}; background: {SUBTLE_SURFACE}; padding: 3px 5px;"
         )
+        for button, _button_side in side_buttons:
+            button.blockSignals(True)
+        for button, button_side in side_buttons:
+            button.setChecked(side == button_side)
+        for button, _button_side in side_buttons:
+            button.blockSignals(False)
+
+    def _set_recognition_status(self, status: str, has_hero: bool, has_original_name: bool) -> None:
+        self._status_label.setText(status)
+        if not has_hero and not has_original_name:
+            card_state, tone = "empty", TONE_NEUTRAL
+        elif not has_hero:
+            card_state, tone = "unknown", TONE_WARNING
+        elif status.startswith("识别到"):
+            card_state, tone = "recognized", TONE_INFO
+        elif "待确认" in status or "重复" in status or "冲突" in status:
+            card_state, tone = "pending", TONE_WARNING
+        else:
+            card_state, tone = "recognized", TONE_SUCCESS
+        set_style_property(self, "cardState", card_state)
+        self._status_label.set_tone(tone)
 
     def _on_hero_double_clicked(self) -> None:
         if self._hero_id:
@@ -273,74 +300,93 @@ class MatchGuidePanel(QWidget):
         self._show_empty_state()
 
     def _setup_ui(self) -> None:
+        self.setObjectName("matchGuidePanel")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
-        header = QHBoxLayout()
-        self._page_title_label = QLabel("对局攻略")
-        self._page_title_label.setObjectName("matchGuidePageTitle")
-        self._page_title_label.setStyleSheet(PAGE_TITLE_STYLE)
-        header.addWidget(self._page_title_label)
-        self._recognition_status_label = QLabel("尚未识别阵容")
-        self._recognition_status_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
-        header.addWidget(self._recognition_status_label)
-        header.addStretch()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        self._action_bar = PageActionBar("尚未识别阵容", self)
+        self._recognition_status_label = self._action_bar.status_label
         self._recognize_btn = QPushButton("识别当前阵容")
-        self._recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._recognize_btn.setObjectName("matchRecognizeButton")
         self._recognize_btn.clicked.connect(self._on_recognize_current)
-        header.addWidget(self._recognize_btn)
-        header.addSpacing(6)
-        self._import_file_btn = QPushButton("从图片导入")
-        self._import_file_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
-        self._import_file_btn.clicked.connect(self._on_import_from_file)
-        header.addWidget(self._import_file_btn)
-        header.addSpacing(6)
+        self._action_bar.add_action(self._recognize_btn, ROLE_PRIMARY)
+
         self._more_menu = QMenu(self)
+        self._import_action = self._more_menu.addAction("从图片导入")
+        self._import_action.triggered.connect(self._on_import_from_file)
+        self._more_menu.addSeparator()
         self._save_action = self._more_menu.addAction("保存截图")
         self._save_action.triggered.connect(self._on_save_screenshot)
         self._clear_action = self._more_menu.addAction("清空阵容")
         self._clear_action.triggered.connect(self.clear_blocks)
-        self._more_btn = QPushButton("更多 ▾")
+        self._more_btn = QToolButton(self)
+        self._more_btn.setObjectName("matchMoreButton")
+        self._more_btn.setText("⋯")
+        self._more_btn.setToolTip("更多操作")
+        self._more_btn.setAccessibleName("更多操作")
         self._more_btn.setMenu(self._more_menu)
-        self._more_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
-        header.addWidget(self._more_btn)
-        layout.addLayout(header)
+        self._more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._action_bar.add_action(self._more_btn, ROLE_GHOST)
+        layout.addWidget(self._action_bar)
 
-        self._empty_state = QWidget()
-        empty_layout = QVBoxLayout(self._empty_state)
-        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_label = QLabel("尚未识别阵容\n连接模拟器后识别当前阵容，或从本地图片导入。")
-        empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_label.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 14px; padding: 24px;")
-        empty_layout.addWidget(empty_label)
-        empty_actions = QHBoxLayout()
-        empty_actions.addStretch()
+        self._empty_state = EmptyState(
+            "尚未识别阵容",
+            "连接模拟器后识别当前阵容，或从本地图片导入。",
+            self,
+        )
         self._empty_recognize_btn = QPushButton("识别当前阵容")
-        self._empty_recognize_btn.setStyleSheet(HEADER_PRIMARY_BUTTON_STYLE)
+        self._empty_recognize_btn.setObjectName("matchEmptyRecognizeButton")
         self._empty_recognize_btn.clicked.connect(self._on_recognize_current)
-        empty_actions.addWidget(self._empty_recognize_btn)
+        self._empty_state.add_action(self._empty_recognize_btn, ROLE_PRIMARY)
         self._empty_import_btn = QPushButton("从图片导入")
-        self._empty_import_btn.setStyleSheet(HEADER_SECONDARY_BUTTON_STYLE)
+        self._empty_import_btn.setObjectName("matchEmptyImportButton")
         self._empty_import_btn.clicked.connect(self._on_import_from_file)
-        empty_actions.addWidget(self._empty_import_btn)
-        empty_actions.addStretch()
-        empty_layout.addLayout(empty_actions)
+        self._empty_state.add_action(self._empty_import_btn)
         layout.addWidget(self._empty_state, 1)
 
         self._content_widget = QSplitter(Qt.Orientation.Horizontal)
+        self._content_widget.setObjectName("matchGuideSplitter")
+        self._lineup_pane = QWidget(self._content_widget)
+        self._lineup_pane.setObjectName("matchLineupPane")
+        self._lineup_pane.setMinimumWidth(360)
+        lineup_layout = QVBoxLayout(self._lineup_pane)
+        lineup_layout.setContentsMargins(0, 0, 8, 0)
+        lineup_layout.setSpacing(8)
+
+        self._confirmation_area = QFrame(self._lineup_pane)
+        self._confirmation_area.setObjectName("matchConfirmationArea")
+        confirmation_layout = QVBoxLayout(self._confirmation_area)
+        confirmation_layout.setContentsMargins(10, 8, 10, 8)
+        confirmation_layout.setSpacing(6)
+        confirmation_header = QHBoxLayout()
+        confirmation_header.setContentsMargins(0, 0, 0, 0)
+        confirmation_header.addWidget(self._section_label("阵容核对"), 1)
+        self._lineup_status_badge = StatusBadge("待识别", TONE_NEUTRAL)
+        set_style_property(self._lineup_status_badge, "badgeRole", "lineup")
+        confirmation_header.addWidget(self._lineup_status_badge)
+        confirmation_layout.addLayout(confirmation_header)
+        self._validation_label = QLabel("识别四名武将后确认敌我阵营。")
+        self._validation_label.setObjectName("matchValidationText")
+        self._validation_label.setWordWrap(True)
+        confirmation_layout.addWidget(self._validation_label)
+        self._confirm_btn = QPushButton("确认并生成攻略")
+        self._confirm_btn.setObjectName("matchConfirmButton")
+        set_ui_role(self._confirm_btn, ROLE_PRIMARY)
+        self._confirm_btn.setEnabled(False)
+        self._confirm_btn.clicked.connect(self._confirm_lineup)
+        confirmation_layout.addWidget(self._confirm_btn)
+        lineup_layout.addWidget(self._confirmation_area)
+
         self._cards_widget = QWidget()
+        self._cards_widget.setObjectName("matchLineupCards")
         cards_layout = QVBoxLayout(self._cards_widget)
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(8)
-        cards_layout.addWidget(self._section_label("阵容与阵营"))
         hint = QLabel("请根据对局画面右上角的【楚军】/【汉军】标签核对敌我；势力标签不代表敌我。")
+        hint.setObjectName("matchLineupHint")
         hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {MUTED_TEXT}; font-size: 12px;")
         cards_layout.addWidget(hint)
-        self._confirm_btn = QPushButton("确认阵容并生成攻略")
-        self._confirm_btn.setEnabled(False)
-        self._confirm_btn.clicked.connect(self._confirm_lineup)
-        cards_layout.addWidget(self._confirm_btn)
         for index in range(4):
             # 初始空状态会隐藏整个左侧阵容容器；卡片必须归属该容器，
             # 否则尚未进入分组布局的按钮会残留在页面左上角。
@@ -350,17 +396,20 @@ class MatchGuidePanel(QWidget):
             card.replace_requested.connect(self._replace_hero)
             card.ally_leader_requested.connect(self._set_ally_leader)
             self._cards.append(card)
-        for group, title, color in (
-            (SIDE_ALLY, "我方阵容", PRIMARY),
-            (SIDE_ENEMY, "敌方阵容", DANGER),
-            ("pending", "待确认", MUTED_TEXT),
+        for group, title in (
+            (SIDE_ALLY, "我方阵容"),
+            (SIDE_ENEMY, "敌方阵容"),
+            ("pending", "待确认"),
         ):
             section = QWidget()
+            section.setObjectName("matchLineupGroup")
+            set_style_property(section, "side", group)
             section_layout = QVBoxLayout(section)
             section_layout.setContentsMargins(0, 0, 0, 0)
             section_layout.setSpacing(4)
             label = QLabel(title)
-            label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {color};")
+            label.setObjectName("matchLineupGroupTitle")
+            set_style_property(label, "side", group)
             section_layout.addWidget(label)
             grid = QGridLayout()
             grid.setContentsMargins(0, 0, 0, 0)
@@ -374,21 +423,31 @@ class MatchGuidePanel(QWidget):
             self._card_group_labels[group] = label
             setattr(self, f"_{group}_group_widget", section)
         cards_layout.addStretch()
-        card_scroll = QScrollArea()
-        card_scroll.setWidgetResizable(True)
-        card_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        card_scroll.setWidget(self._cards_widget)
-        self._content_widget.addWidget(card_scroll)
+        self._card_scroll = QScrollArea()
+        self._card_scroll.setObjectName("matchLineupScroll")
+        self._card_scroll.setWidgetResizable(True)
+        self._card_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._card_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._card_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._card_scroll.setWidget(self._cards_widget)
+        lineup_layout.addWidget(self._card_scroll, 1)
+        self._content_widget.addWidget(self._lineup_pane)
 
         self._analysis_view = MatchAnalysisView(self._hero_mgr, self._content_widget)
+        self._analysis_view.setMinimumWidth(400)
         self._content_widget.addWidget(self._analysis_view)
+        self._content_widget.setChildrenCollapsible(False)
+        self._content_widget.setCollapsible(0, False)
+        self._content_widget.setCollapsible(1, False)
+        self._content_widget.setStretchFactor(0, 42)
+        self._content_widget.setStretchFactor(1, 58)
         self._content_widget.setSizes([420, 580])
         layout.addWidget(self._content_widget, 1)
 
     @staticmethod
     def _section_label(text: str) -> QLabel:
         label = QLabel(text)
-        label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};")
+        label.setObjectName("matchSectionTitle")
         return label
 
     def _connect_capture_signals(self) -> None:
@@ -397,10 +456,14 @@ class MatchGuidePanel(QWidget):
             self._capture_service.capture_failed.connect(self._on_capture_failed)
 
     def _show_empty_state(self) -> None:
+        self._action_bar.show()
+        self._recognize_btn.hide()
         self._empty_state.show()
         self._content_widget.hide()
 
     def _show_cards(self) -> None:
+        self._action_bar.show()
+        self._recognize_btn.show()
         self._empty_state.hide()
         self._content_widget.show()
 
@@ -409,6 +472,7 @@ class MatchGuidePanel(QWidget):
         validation = self._lineup.validate()
         if self._lineup.analysis_confirmed:
             suffix = "阵容已确认"
+            tone = TONE_SUCCESS
         elif validation.is_valid:
             labels_match = self._lineup.team_labels_match_positions
             suffix = (
@@ -416,9 +480,14 @@ class MatchGuidePanel(QWidget):
                 else "阵营标签与席位不一致，请核对" if labels_match is False
                 else "按席位已分配 · 阵营标签待核对"
             )
+            tone = TONE_WARNING if labels_match is False else TONE_INFO
         else:
             suffix = validation.message
-        self._recognition_status_label.setText(f"{prefix}有效 {self._lineup.valid_count} 名 · {suffix}")
+            tone = TONE_WARNING
+        self._action_bar.set_status(
+            f"{prefix}有效 {self._lineup.valid_count} 名 · {suffix}",
+            tone,
+        )
 
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """按 OCR 槽位导入；每次导入都清空旧阵营确认。"""
@@ -456,7 +525,7 @@ class MatchGuidePanel(QWidget):
             elif slot.team:
                 status = f"识别到 {slot.team}"
             else:
-                status = "待确认"
+                status = "名称已确认"
             card.set_hero(hero, name, status)
             card.set_win_rate(self._win_rates.get(hero.name) if hero else None)
             side = slot.side
@@ -532,6 +601,7 @@ class MatchGuidePanel(QWidget):
                 self._win_rates,
                 validation.is_valid,
             )
+            self._analysis_view.show_overview()
             return
         self._analysis = MatchAnalysisService(self._guide_mgr, self._win_rates).analyze(
             self._lineup.allies,
@@ -542,14 +612,27 @@ class MatchGuidePanel(QWidget):
 
     def _sync_confirmation_controls(self) -> None:
         validation = self._lineup.validate()
+        self._confirm_btn.setText("确认并生成攻略")
         if self._lineup.analysis_confirmed:
+            self._lineup_status_badge.setText("已确认")
+            self._lineup_status_badge.set_tone(TONE_SUCCESS)
+            self._validation_label.setText("攻略已生成；调整阵营或替换武将后需要重新确认。")
             self._confirm_btn.setText("阵容已确认")
             self._confirm_btn.setEnabled(False)
         elif validation.is_valid:
-            self._confirm_btn.setText("确认阵容并生成攻略")
+            labels_match = self._lineup.team_labels_match_positions
+            self._lineup_status_badge.setText("需核对" if labels_match is False else "可确认")
+            self._lineup_status_badge.set_tone(TONE_WARNING if labels_match is False else TONE_INFO)
+            self._validation_label.setText(
+                "阵营标签与席位不一致，请核对四张卡片后确认。"
+                if labels_match is False
+                else "四名武将与敌我人数已满足要求，请核对后确认。"
+            )
             self._confirm_btn.setEnabled(True)
         else:
-            self._confirm_btn.setText(validation.message)
+            self._lineup_status_badge.setText("待补全" if validation.reason == "missing_hero" else "待处理")
+            self._lineup_status_badge.set_tone(TONE_WARNING)
+            self._validation_label.setText(validation.message or "请先完成阵容核对。")
             self._confirm_btn.setEnabled(False)
 
     def _confirm_lineup(self) -> None:
@@ -563,8 +646,8 @@ class MatchGuidePanel(QWidget):
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
             return
-        self._pending_capture_source = "adb_recognize"
-        self._set_importing(True, "正在截图...")
+        if not self._begin_capture("adb_recognize", "正在截图并识别阵容..."):
+            return
         self._capture_service.do_capture(
             hero_names=[hero.name for hero in self._hero_mgr.list_heroes()],
             template_name="match_guide", force_ocr=True,
@@ -574,57 +657,76 @@ class MatchGuidePanel(QWidget):
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
             return
-        self._pending_capture_source = "adb_save"
-        self._save_action.setEnabled(False)
-        self._save_action.setText("正在截图...")
+        if not self._begin_capture("adb_save", "正在保存截图..."):
+            return
         self._capture_service.do_capture(perform_ocr=False)
 
     def _on_import_from_file(self) -> None:
+        if self._pending_capture_source is not None:
+            return
         SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "选择游戏截图", str(SCREENSHOTS_DIR), "图片文件 (*.png *.jpg *.jpeg *.bmp)")
         if not file_path or not self._capture_service:
             return
-        self._pending_capture_source = "file"
-        self._set_importing(True, "正在识别...")
+        if not self._begin_capture("file", "正在识别导入图片..."):
+            return
         self._capture_service.do_capture_from_file(
             file_path, hero_names=[hero.name for hero in self._hero_mgr.list_heroes()],
             template_name="match_guide", force_ocr=True,
         )
 
     def _on_capture_result(self, result: dict) -> None:
-        if not self._pending_capture_source:
+        source = self._finish_capture()
+        if source is None:
             return
-        source = self._pending_capture_source
-        self._pending_capture_source = None
-        self._set_importing(False)
-        if source == "adb_save":
-            self._save_action.setEnabled(True)
-            self._save_action.setText("保存截图")
-        else:
+        if source != "adb_save":
             self.load_from_ocr(result.get("ocr_results") or [])
 
     def _on_capture_failed(self, message: str) -> None:
-        if not self._pending_capture_source:
+        source = self._finish_capture()
+        if source is None:
             return
-        source = self._pending_capture_source
-        self._pending_capture_source = None
-        self._set_importing(False)
         if source == "file":
             QMessageBox.warning(self, "图片导入失败", message)
             return
         if source == "adb_save":
-            self._save_action.setEnabled(True)
-            self._save_action.setText("保存截图")
+            QMessageBox.warning(self, "截图保存失败", message)
             return
         QMessageBox.warning(self, "截图失败", f"无法从模拟器截图：\n{message}")
 
+    def _begin_capture(self, source: str, status: str) -> bool:
+        if self._pending_capture_source is not None:
+            return False
+        self._pending_capture_source = source
+        self._set_importing(True, status)
+        return True
+
+    def _finish_capture(self) -> str | None:
+        source = self._pending_capture_source
+        if source is None:
+            return None
+        self._pending_capture_source = None
+        self._set_importing(False)
+        return source
+
     def _set_importing(self, importing: bool, text: str = "") -> None:
         self._recognize_btn.setEnabled(not importing)
-        self._import_file_btn.setEnabled(not importing)
         self._more_btn.setEnabled(not importing)
+        self._import_action.setEnabled(not importing)
+        self._save_action.setEnabled(not importing)
+        self._clear_action.setEnabled(not importing)
         self._empty_recognize_btn.setEnabled(not importing)
         self._empty_import_btn.setEnabled(not importing)
-        self._recognize_btn.setText(text if importing else "识别当前阵容")
+        self._save_action.setText("正在截图..." if importing and self._pending_capture_source == "adb_save" else "保存截图")
+        self._empty_state.set_description(
+            text if importing else "连接模拟器后识别当前阵容，或从本地图片导入。"
+        )
+        if importing:
+            self._action_bar.set_status(text, TONE_INFO)
+        elif self._lineup.valid_count:
+            self._update_recognition_status()
+        else:
+            self._action_bar.set_status("尚未识别阵容", TONE_NEUTRAL)
 
     def _show_skill_popup(self, hero_id: int) -> None:
         hero = self._hero_mgr.get_hero(hero_id)
@@ -648,7 +750,8 @@ class MatchGuidePanel(QWidget):
         for card in self._cards:
             card.set_hero(None)
         self._analysis_view.render_unconfirmed([], {}, False)
-        self._recognition_status_label.setText("尚未识别阵容")
+        self._analysis_view.show_overview()
+        self._action_bar.set_status("尚未识别阵容", TONE_NEUTRAL)
         self._sync_confirmation_controls()
         self._show_empty_state()
 

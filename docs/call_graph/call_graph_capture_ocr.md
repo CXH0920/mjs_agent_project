@@ -176,31 +176,41 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
   -> 读取 image.shape 与 reference_size
   -> scale_x = image_width / reference_width
   -> scale_y = image_height / reference_height
-  -> [对 8 个 ROI 逐一处理]
-     -> 将参考 ROI 的 x/y/w/h 分别乘以 scale_x/scale_y
-     -> image[y:y+h, x:x+w]                                  [当前截图坐标裁剪]
-     -> self._recognize_single(roi, slot_index)                [单 ROI 识别]
-       -> ImagePreprocessor.preprocess_roi(roi)               [图像预处理]
-       -> self._engine.ocr(preprocessed_roi)                  [PaddleOCR 推理]
-          -> PaddleOCR.__call__(img)                          [首次调用时延迟初始化]
-       -> self._extract_text(ocr_result)                      [解析 PaddleOCR 输出]
-       -> CharacterSimilarityService.correct_hero_name(...)   [编辑距离矫正]
-     [性能标注：8 个 ROI 依次处理，PaddleOCR 每次约 0.5-3s]
-  -> return [{"index": 1-8, "name": ..., "confidence": ...}, ...]
+  -> [裁剪并预处理同类 ROI]
+     -> ImagePreprocessor.preprocess_roi(roi)
+  -> _recognize_prepared_batch(prepared_slots, "name")       [名称横向拼图检测]
+     -> _build_batch_canvas(..., slot_gap=30)
+     -> self._engine.ocr(canvas, cls=False)
+     -> _extract_batch_detections(...)                        [检测框映射回槽位]
+  -> [逐槽解析 batch_enhanced 证据]
+     -> _resolve_name_evidence(index, evidence)
+     -> [_requires_slot_recheck]
+        -> _append_single_name_evidence(...)
+           -> single_enhanced 逐槽识别
+           -> single_plain 仅放大原图逐槽识别
+     -> _resolve_name_evidence(index, evidence)               [合并全部证据]
+  -> _resolve_page_names(results)                             [页面唯一性与重复名约束]
+  -> return [{index, raw_name, name, candidates,
+              resolution, length_mode, confidence, evidence}, ...]
 ```
+
+对局攻略复用同一名称链路；阵营 ROI 另做一张拼图，缺失时才逐槽回退，不参与名称候选评分。
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | `_recognize_single()` ×8 |
-| `_recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `ImagePreprocessor`, `_engine.ocr()`, `CharacterSimilarityService` |
-| `preprocess_roi(roi)` | `image_preprocessor.py` | `GeneralRecognizer` | `cv2.resize()`, `cv2.cvtColor()`, `cv2.createCLAHE()`, `cv2.filter2D()` |
-| `_extract_text(result)` | `recognizer.py` | `_recognize_single()` | 解析 PaddleOCR 输出格式 |
-| `_engine` (property) | `recognizer.py` | `_recognize_single()` | `PaddleOCR()` 延迟初始化 |
+| `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | `_recognize_prepared_batch()`、`_resolve_name_evidence()`、`_resolve_page_names()` |
+| `_recognize_match_guide(image)` | `recognizer.py` | `recognize()` | 名称/阵营批量识别与逐槽回退 |
+| `_recognize_prepared_batch(slots, kind)` | `recognizer.py` | 两类页面入口 | `_build_batch_canvas()`、`_engine.ocr()`、`_extract_batch_detections()` |
+| `_append_single_name_evidence(...)` | `recognizer.py` | 两类页面入口 | `_recognize_prepared_single()`、`_preprocess_plain_roi()` |
+| `_resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | `_parse_name_evidence()`、`_resolve_multi_candidate_similarity()` |
+| `_resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面候选排除、重复确认结果回退 |
+| `preprocess_roi(roi)` | `image_preprocessor.py` | `GeneralRecognizer` | `cv2.resize()`、`cv2.cvtColor()`、`cv2.createCLAHE()`、`cv2.filter2D()` |
+| `_engine` (property) | `recognizer.py` | 批量/逐槽识别 | `PaddleOCR()` 延迟初始化 |
 
 ### 4.2 图像预处理流水线
 
 ```
-_recognize_single(roi, slot)
+GeneralRecognizer 裁剪名称或阵营 ROI
   -> ImagePreprocessor.preprocess_roi(roi)
      -> cv2.resize(roi, None, fx=3, fy=3, INTER_CUBIC)       [放大 3×]
      -> cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)                  [转 LAB 色彩空间]
@@ -210,29 +220,49 @@ _recognize_single(roi, slot)
      -> cv2.filter2D(roi, -1, kernel)                         [锐化]
      -> cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)                 [转灰度]
      -> return roi_gray                                       [预处理完成]
-  -> self._engine.ocr(preprocessed_roi)                       [PaddleOCR 推理]
+  -> [正常路径] 加入同类 ROI 拼图后批量检测
+  -> [回退路径] _recognize_prepared_single(preprocessed_roi) [逐槽直接识别]
 ```
 
 > **重要：** 预处理顺序不可调换。原始 ROI 约 40×140px，放大让 PaddleOCR 对小字符识别率更高；CLAHE 处理渐变背景；锐化强化边缘；最后灰度化是 OCR 引擎期望输入。
 
-### 4.3 OCR 结果矫正链路（核心逻辑）
+### 4.3 OCR 名称候选确认链路（核心逻辑）
 
 ```
-CharacterSimilarityService.correct_hero_name(text, hero_names)
-  -> [文本为空] return text
-  -> 对武将名计算编辑距离（阈值 <= 1）
-  -> [无候选] return text；[唯一候选] 直接采纳
-  -> [多候选] _pick_visually_similar(text, candidates)
-     -> 使用 CharacterFeatureRepository.get_value()
-     -> 四角号码 × 0.4 + 仓颉码 × 0.4 + 部首 × 0.2
-     -> [平分] 拼音相似度降序 -> 笔画数差升序
+GeneralRecognizer._resolve_name_evidence(index, evidence)
+  -> _parse_name_evidence(evidence)                           [逐路字数门禁]
+     -> [精确命中] exact
+     -> [严格前缀] missing，只保留前缀候选
+        -> [唯一且已识别至少 2 字] unique_prefix
+     -> [等长且编辑距离 <= 1] complete
+        -> [唯一错字候选且字形分 >= 0.55] unique_similarity
+        -> [多候选] unresolved
+     -> [严格前缀与等长候选同时存在] uncertain，合并候选
+     -> [其他增删字且编辑距离 <= 1] uncertain / unresolved
+  -> 取全部非空候选集合的交集
+     -> [交集为空或确认名不兼容任一路候选] conflict
+  -> _resolve_multi_candidate_similarity(..., common)
+     -> 仅评分等长且恰好一个错字的候选
+     -> CharacterSimilarityService.rank_single_substitution_candidates(...)
+     -> [每路] confidence >= 0.7、最高分 >= 0.4、领先 >= 0.15
+     -> [enhanced + plain 两个证据族同选一名] multi_similarity
+     -> [否则] unresolved
+  -> _resolve_page_names(results)
+     -> 仅候选数 > 1 且 length_mode 为 missing/complete 的 unresolved 槽位消歧
+     -> uncertain 和未过安全阈值的单候选不提升
+     -> 重复确认名称按证据等级保留或回退 conflict
 ```
 
 | 组件/函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `correct_hero_name(text, names)` | `character_similarity.py` | `GeneralRecognizer`、`OfficialDataImportService` | `_levenshtein_distance()`、视觉评分 |
-| `_pick_visually_similar(text, candidates)` | `character_similarity.py` | `correct_hero_name()` | 多维评分、拼音/笔画决胜 |
+| `_parse_name_evidence(evidence)` | `recognizer.py` | `_resolve_name_evidence()` | 前缀/等长/其他增删字分流、编辑距离候选 |
+| `_resolve_multi_candidate_similarity(...)` | `recognizer.py` | `_resolve_name_evidence()` | 证据族门槛、`rank_single_substitution_candidates()` |
+| `is_safe_single_substitution(text, candidate)` | `character_similarity.py` | `_parse_name_evidence()` | 唯一错字字形分与 0.55 门槛 |
+| `rank_single_substitution_candidates(text, candidates)` | `character_similarity.py` | `_resolve_multi_candidate_similarity()` | 候选内唯一错字评分排序 |
+| `correct_hero_name(text, names)` | `character_similarity.py` | `OfficialDataImportService`、兼容单槽接口 | `_levenshtein_distance()`、视觉评分 |
 | `get_value(char, key)` | `character_feature_repository.py` | `CharacterSimilarityService` | `get_feature()` |
+
+> **边界：** 当前字数门禁比较 OCR 原文与候选名称长度。名称 ROI 受卡框和底部定位字干扰，视觉字符分割暂不作为硬门禁。势力关联尚未接入；未来只能过滤已有候选，不能扩展候选集合。
 
 ### 4.4 汉字特征补齐链路（性能关键路径）
 
@@ -270,6 +300,9 @@ radical_score(c1, c2):
 
 综合评分 = four_corner × 0.4 + cangjie × 0.4 + radical × 0.2
 ```
+
+常规截图只把该综合分用于候选闭包内“等长且恰好一个错字”的字符比较；缺字和其他增删字不调用此评分决胜。
+任一侧特征缺失时对应维度记 0 分，空四角码不得补成相同的 `00000` 计分。
 
 ---
 
@@ -387,13 +420,16 @@ src.ui.configuration.mumu_config_dialog
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `GeneralRecognizer.recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | 参考 ROI 缩放 + `_recognize_single()` ×8 |
-| `GeneralRecognizer._recognize_single(roi, slot)` | `recognizer.py` | `recognize()` | `ImagePreprocessor`、`_engine.ocr()`、`CharacterSimilarityService` |
-| `GeneralRecognizer._extract_text(result)` | `recognizer.py` | `_recognize_single()` | PaddleOCR 解析 |
-| `GeneralRecognizer.warmup()` | `recognizer.py` | 显式预热工具/测试（当前启动不调用） | `self._engine`、`CharacterSimilarityService.warmup()` |
+| `GeneralRecognizer.recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | ROI 缩放、同类拼图识别、多路证据解析、页面约束 |
+| `GeneralRecognizer._recognize_match_guide(image)` | `recognizer.py` | `recognize()` | 名称/阵营分开拼图、名称证据解析 |
+| `GeneralRecognizer._recognize_prepared_batch(slots, kind)` | `recognizer.py` | 两类页面入口 | `_build_batch_canvas()`、`_engine.ocr()`、检测框映射 |
+| `GeneralRecognizer._append_single_name_evidence(...)` | `recognizer.py` | 两类页面入口 | `single_enhanced`、`single_plain` 逐槽复核 |
+| `GeneralRecognizer._resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | 字数门禁、候选交集、多候选评分 |
+| `GeneralRecognizer._resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面唯一性、重复名称回退 |
+| `GeneralRecognizer.warmup()` / `warmup_inference()` | `recognizer.py` | 应用启动时的 `OcrWorker` 预热任务 | 模型、字符特征、代表性拼图推理 |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
 | `official_board_parser.find_data_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | OpenCV 横线检测与视觉行边界选择 |
 | `official_board_parser.prepare_rate_templates()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 行切分、数字字形模板与胜率 OCR 预计算 |
-| `CharacterSimilarityService.correct_hero_name()` | `character_similarity.py` | `GeneralRecognizer`、官方榜单导入 | 编辑距离、视觉评分 |
+| `CharacterSimilarityService.correct_hero_name()` | `character_similarity.py` | 官方榜单导入、兼容单槽接口 | 编辑距离、视觉评分；调用方约束候选范围 |
 | `CharacterFeatureRepository.get_feature()` | `character_feature_repository.py` | `CharacterSimilarityService` | 缓存加载、动态补齐 |
