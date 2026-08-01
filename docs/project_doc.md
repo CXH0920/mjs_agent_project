@@ -1567,6 +1567,7 @@ src/ocr/
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
  ├── character_similarity.py # CharacterSimilarityService — 名称纠错
  ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排
+ ├── paddle_loader.py        # PaddleOCR 统一构造及 Windows 首次加载闪窗抑制
  └── ocr_loader.py           # 单例延迟加载（~47 行）
 ```
 
@@ -1633,7 +1634,7 @@ match(image, threshold=0.8)
   精确命中 → exact
   严格前缀（缺字）只保留前缀候选；唯一前缀至少识别出 2 字才确认
   等长且仅错一字：唯一候选字形分 ≥ 0.55 → unique_similarity
-  等长多候选：置信度 ≥ 0.7、最高字形分 ≥ 0.4、领先 ≥ 0.15，
+  等长多候选：置信度 ≥ 0.7、最高字形分 ≥ 0.35、领先 ≥ 0.15，
   且 enhanced/plain 两个独立证据族支持同一结果 → multi_similarity
   同时命中长名严格前缀与等长候选 → 合并候选，length_mode=uncertain
   其他增删字、字形不足或证据不足 → 保持未确认
@@ -1664,9 +1665,11 @@ else:
     score = None
 ```
 
-唯一候选要求 `score >= 0.55`。多候选要求参与证据的 OCR 置信度 `>= 0.7`、第一名 `score >= 0.4`、第一名领先第二名 `>= 0.15`，且 `enhanced` 与 `plain` 两个独立证据族都选出同一第一名。`batch_enhanced` 与 `single_enhanced` 属于同一证据族，不能重复计票。这样字形评分只在候选闭包内负责排序，不会将“正瑜”跨白名单改成“周瑜”。
+其中 `four_corner` 为四个有效主码的同位置匹配率；`cangjie` 为 `1 - Levenshtein / 较长仓颉码长度`；`radical` 仅在部首相同且双方笔画有效时取 `较少笔画数 / 较多笔画数`，否则为 0。
 
-某一维度的特征任一侧缺失时，该维度记 0 分；空四角码不能补成相同的 `00000` 后获得 0.4 分。
+唯一候选要求 `score >= 0.55`。多候选要求参与证据的 OCR 置信度 `>= 0.7`、第一名 `score >= 0.35`、第一名领先第二名 `>= 0.15`，且 `enhanced` 与 `plain` 两个独立证据族都选出同一第一名。`batch_enhanced` 与 `single_enhanced` 属于同一证据族，不能重复计票。这样字形评分只在候选闭包内负责排序，不会将“正瑜”跨白名单改成“周瑜”。
+
+某一维度的特征任一侧缺失时，该维度记 0 分；四角码不足四位不补零，同部首但任一侧笔画无效时部首维度也记 0 分。
 
 #### 汉字特征数据来源
 
@@ -1674,12 +1677,12 @@ else:
 |------|------|---------|----------|
 | 四角号码 | unihan-etl（UNIHAN `kFourCornerCode`） | `src/data/char_info_cache.json` | 首次 OCR/纠错时按需加载 |
 | 仓颉码 | unihan-etl（UNIHAN `kCangjie`） | 同上 | 首次 OCR/纠错时按需加载 |
-| 部首 | cnradical | 同上 | JSON 缓存 / 运行时补齐 |
+| 部首 | cnradical；与总笔画数组合评分 | 同上 | JSON 缓存 / 运行时补齐 |
 | 拼音 | pypinyin | 同上 | JSON 缓存 / 纠错时按需加载 |
 | 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `CharacterFeatureRepository` | 通过 `unihan_etl.Options().work_dir` 解析文本文件 |
 
-数据文件 `src/data/char_info_cache.json` 包含 223 个高频汉字（武将名 + 常见 OCR 误识字）。
-`CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。pypinyin 预热或查询失败时记录一次 warning 并将拼音源标记为不可用，后续查询直接降级为空值；cnradical 的单字查询失败会记录字符和异常，但不禁用整个部首源。
+数据文件 `src/data/char_info_cache.json` 包含 314 个高频汉字（武将名 + 已知 OCR 误识字）。
+`CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。UNIHAN 导出 CSV 已存在时直接读取，只有目标文件不存在时才执行 `Packager.export()`，避免因重复覆盖默认 AppData 文件而使动态补齐整体降级。pypinyin 预热或查询失败时记录一次 warning 并将拼音源标记为不可用，后续查询直接降级为空值；cnradical 的单字查询失败会记录字符和异常，但不禁用整个部首源。
 
 #### 类结构
 
@@ -1743,7 +1746,7 @@ GeneralRecognizer.recognize(image)
 _NAME_RECHECK_CONFIDENCE = 0.8
 _UNIQUE_PREFIX_MIN_LENGTH = 2
 _MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
-_MULTI_CANDIDATE_MIN_SIMILARITY = 0.4
+_MULTI_CANDIDATE_MIN_SIMILARITY = 0.35
 _MULTI_CANDIDATE_MIN_MARGIN = 0.15
 _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
 CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD = 1
@@ -1777,13 +1780,14 @@ ROI 裁剪 (40×100 原始区域)
 @property
 def _engine(self):
     if self._ocr is None:
-        self._ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
+        self._ocr = create_paddle_ocr(use_angle_cls=False, lang="ch", show_log=False)
     return self._ocr
 ```
 
 - `use_angle_cls=False`：不启用文字方向分类，节省推理时间
 - `show_log=False`：不输出 PaddleOCR 的调试日志
 - 应用启动时由唯一 `OcrWorker` 预热模型和代表性拼图推理；预热失败或未执行时，首次实际调用才承担加载成本
+- Windows 首次导入期间，统一加载入口为 Paddle 的系统与 CUDA 探测短命令设置 `CREATE_NO_WINDOW`，加载完成后恢复标准 `Popen` 行为
 
 #### 兼容纠正服务边界
 
@@ -1802,8 +1806,8 @@ def _engine(self):
 四角(×0.4) + 仓颉(×0.4) + 部首(×0.2)
 
 示例：
-  剪 vs 翦: 四角0.80×0.4 + 仓颉0.75×0.4 + 部首0×0.2 = 0.620
-  剪 vs 异: 四角0.20×0.4 + 仓颉0.29×0.4 + 部首0×0.2 = 0.194
+  剪 vs 翦: 四角0.75×0.4 + 仓颉0.75×0.4 + 部首0×0.2 = 0.600
+  剪 vs 异: 四角0×0.4 + 仓颉0×0.4 + 部首0×0.2 = 0
 ```
 
 ### 12.4 单例加载器（ocr_loader.py）

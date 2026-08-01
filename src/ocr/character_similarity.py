@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import difflib
 import logging
 
 from src.ocr.character_feature_repository import CharacterFeatureRepository
@@ -146,25 +145,34 @@ class CharacterSimilarityService:
         )
 
     def _four_corner_score(self, first: str, second: str) -> float:
-        first_code = "".join(char for char in self._value(first, "four_corner") if char.isdigit())
-        second_code = "".join(char for char in self._value(second, "four_corner") if char.isdigit())
-        if not first_code or not second_code:
+        first_code = "".join(
+            char for char in self._value(first, "four_corner") if char.isdigit()
+        )[:4]
+        second_code = "".join(
+            char for char in self._value(second, "four_corner") if char.isdigit()
+        )[:4]
+        if len(first_code) != 4 or len(second_code) != 4:
             return 0.0
-        first_code = (first_code + "00000")[:5]
-        second_code = (second_code + "00000")[:5]
-        return sum(left == right for left, right in zip(first_code, second_code)) / 5.0
+        return sum(left == right for left, right in zip(first_code, second_code)) / 4.0
 
     def _cangjie_score(self, first: str, second: str) -> float:
-        first_code = self._value(first, "cangjie")
-        second_code = self._value(second, "cangjie")
+        first_code = self._value(first, "cangjie").strip().upper()
+        second_code = self._value(second, "cangjie").strip().upper()
         if not first_code or not second_code:
             return 0.0
-        return difflib.SequenceMatcher(None, first_code, second_code).ratio()
+        distance = self._levenshtein_distance(first_code, second_code)
+        return max(0.0, 1.0 - distance / max(len(first_code), len(second_code)))
 
     def _radical_score(self, first: str, second: str) -> float:
         first_radical = self._value(first, "radical")
         second_radical = self._value(second, "radical")
-        return 1.0 if first_radical and first_radical == second_radical else 0.0
+        if not first_radical or first_radical != second_radical:
+            return 0.0
+        first_strokes = self._stroke_value(first)
+        second_strokes = self._stroke_value(second)
+        if first_strokes <= 0 or second_strokes <= 0:
+            return 0.0
+        return min(first_strokes, second_strokes) / max(first_strokes, second_strokes)
 
     def _pinyin_similarity(self, first: str, second: str) -> float:
         first_pinyin = self._value(first, "pinyin")

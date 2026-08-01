@@ -205,7 +205,8 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 | `_resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | `_parse_name_evidence()`、`_resolve_multi_candidate_similarity()` |
 | `_resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面候选排除、重复确认结果回退 |
 | `preprocess_roi(roi)` | `image_preprocessor.py` | `GeneralRecognizer` | `cv2.resize()`、`cv2.cvtColor()`、`cv2.createCLAHE()`、`cv2.filter2D()` |
-| `_engine` (property) | `recognizer.py` | 批量/逐槽识别 | `PaddleOCR()` 延迟初始化 |
+| `_engine` (property) | `recognizer.py` | 批量/逐槽识别 | `create_paddle_ocr()` 延迟初始化 |
+| `create_paddle_ocr(**kwargs)` | `paddle_loader.py` | 常规识别、官方榜单识别 | Windows 首次加载子进程隐藏、`PaddleOCR()` |
 
 ### 4.2 图像预处理流水线
 
@@ -244,7 +245,7 @@ GeneralRecognizer._resolve_name_evidence(index, evidence)
   -> _resolve_multi_candidate_similarity(..., common)
      -> 仅评分等长且恰好一个错字的候选
      -> CharacterSimilarityService.rank_single_substitution_candidates(...)
-     -> [每路] confidence >= 0.7、最高分 >= 0.4、领先 >= 0.15
+     -> [每路] confidence >= 0.7、最高分 >= 0.35、领先 >= 0.15
      -> [enhanced + plain 两个证据族同选一名] multi_similarity
      -> [否则] unresolved
   -> _resolve_page_names(results)
@@ -271,7 +272,7 @@ CharacterFeatureRepository.get_feature(char)
   -> load() -> 读取可配置的 char_info_cache.json
   -> [缓存命中] return entry
   -> [缓存未命中] _build_feature(char)
-     -> unihan_etl.Options().destination                      [仓颉、四角 CSV]
+     -> unihan_etl.Options().destination                      [已有 CSV 直接读取；缺失时导出]
      -> cnradical                                             [部首]
      -> pypinyin                                              [拼音]
      -> Options().work_dir / Unihan_IRGSources.txt            [笔画]
@@ -280,7 +281,7 @@ CharacterFeatureRepository.get_feature(char)
   -> 写入进程内存；save() 时 UTF-8/LF 原子落盘
 ```
 
-> **性能标注：** 默认缓存包含 223 个常见字（覆盖武将名用字的 99.6%）。缓存未命中时的原始库查询仍可能约 1 秒，因此由 `GeneralRecognizer.warmup()` 在显式预热时提前加载。
+> **性能标注：** 默认缓存包含 314 个常见字，覆盖当前武将名用字和已知 OCR 误识字。缓存未命中时的原始库查询仍可能约 1 秒，因此由 `GeneralRecognizer.warmup()` 在显式预热时提前加载。
 
 ### 4.5 汉字特征评分详情
 
@@ -288,21 +289,22 @@ CharacterFeatureRepository.get_feature(char)
 各维度评分方法:
 ------------------
 four_corner_score(c1, c2):
-  四角号码为 5 位数字码（如 "4490"）
-  逐位比较，返回匹配位数 / 总位数（max 1.0）
+  提取四角号码前 4 个有效数字
+  同位置匹配数 / 4；不足 4 位时返回 0
 
 cangjie_score(c1, c2):
   仓颉码为字母序列（如 "BCM" → "月金一"）
-  SequenceMatcher.ratio() 比较序列相似度
+  1 - Levenshtein / 较长码长度
 
 radical_score(c1, c2):
-  部首字符串相等 → 1.0；不等 → 0.0
+  同部首且笔画有效 → 较少笔画数 / 较多笔画数
+  部首不同、缺失或笔画无效 → 0
 
 综合评分 = four_corner × 0.4 + cangjie × 0.4 + radical × 0.2
 ```
 
 常规截图只把该综合分用于候选闭包内“等长且恰好一个错字”的字符比较；缺字和其他增删字不调用此评分决胜。
-任一侧特征缺失时对应维度记 0 分，空四角码不得补成相同的 `00000` 计分。
+任一侧特征缺失时对应维度记 0 分，四角码不足四位不补零，缺失维度不触发权重重归一。
 
 ---
 
@@ -427,6 +429,7 @@ src.ui.configuration.mumu_config_dialog
 | `GeneralRecognizer._resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | 字数门禁、候选交集、多候选评分 |
 | `GeneralRecognizer._resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面唯一性、重复名称回退 |
 | `GeneralRecognizer.warmup()` / `warmup_inference()` | `recognizer.py` | 应用启动时的 `OcrWorker` 预热任务 | 模型、字符特征、代表性拼图推理 |
+| `create_paddle_ocr(**kwargs)` | `paddle_loader.py` | `GeneralRecognizer`、`OfficialDataImportService` | Windows 依赖探测短命令隐藏、`PaddleOCR()` |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
 | `official_board_parser.find_data_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | OpenCV 横线检测与视觉行边界选择 |

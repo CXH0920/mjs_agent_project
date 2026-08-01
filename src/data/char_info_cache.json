@@ -160,6 +160,13 @@
     "radical": "亻",
     "total_strokes": "9"
   },
+  "候": {
+    "cangjie": "OLNK",
+    "four_corner": "2723",
+    "pinyin": "hou",
+    "radical": "亻",
+    "total_strokes": "10"
+  },
   "偃": {
     "cangjie": "OSAV",
     "four_corner": "2121.",
@@ -244,6 +251,13 @@
     "radical": "刀",
     "total_strokes": "11"
   },
+  "助": {
+    "cangjie": "BMKS",
+    "four_corner": "7412",
+    "pinyin": "zhu",
+    "radical": "力",
+    "total_strokes": "7"
+  },
   "勃": {
     "cangjie": "JDKS",
     "four_corner": "4442.",
@@ -264,6 +278,13 @@
     "pinyin": "gou",
     "radical": "勹",
     "total_strokes": "4"
+  },
+  "半": {
+    "cangjie": "FQ",
+    "four_corner": "9050",
+    "pinyin": "ban",
+    "radical": "十",
+    "total_strokes": "5"
   },
   "华": {
     "cangjie": "OPJ",
@@ -685,6 +706,13 @@
     "radical": "小",
     "total_strokes": "9"
   },
+  "工": {
+    "cangjie": "MLM",
+    "four_corner": "1010",
+    "pinyin": "gong",
+    "radical": "工",
+    "total_strokes": "3"
+  },
   "左": {
     "cangjie": "KM",
     "four_corner": "4001.",
@@ -832,6 +860,13 @@
     "radical": "心",
     "total_strokes": "8"
   },
+  "怀": {
+    "cangjie": "PMF",
+    "four_corner": "9109",
+    "pinyin": "huai",
+    "radical": "忄",
+    "total_strokes": "7"
+  },
   "恬": {
     "cangjie": "PHJR",
     "four_corner": "9206.",
@@ -962,6 +997,13 @@
     "cangjie": "QKA",
     "four_corner": "5060.",
     "pinyin": "chun",
+    "radical": "日",
+    "total_strokes": "9"
+  },
+  "昧": {
+    "cangjie": "AJD",
+    "four_corner": "6509",
+    "pinyin": "mei",
     "radical": "日",
     "total_strokes": "9"
   },
@@ -1210,6 +1252,13 @@
     "radical": "王",
     "total_strokes": "8"
   },
+  "珍": {
+    "cangjie": "MGOHH",
+    "four_corner": "1812",
+    "pinyin": "zhen",
+    "radical": "王",
+    "total_strokes": "9"
+  },
   "瑜": {
     "cangjie": "MGOMN",
     "four_corner": "1812.",
@@ -1350,6 +1399,13 @@
     "radical": "立",
     "total_strokes": "11"
   },
+  "答": {
+    "cangjie": "HOMR",
+    "four_corner": "8860",
+    "pinyin": "da",
+    "radical": "竹",
+    "total_strokes": "12"
+  },
   "策": {
     "cangjie": "HDB",
     "four_corner": "8890.",
@@ -1433,6 +1489,13 @@
     "pinyin": "yu",
     "radical": "羽",
     "total_strokes": "6"
+  },
+  "翊": {
+    "cangjie": "YTSMM",
+    "four_corner": "0712",
+    "pinyin": "yi",
+    "radical": "羽",
+    "total_strokes": "11"
   },
   "翡": {
     "cangjie": "LYSMM",
@@ -1735,6 +1798,13 @@
     "radical": "讠",
     "total_strokes": "10"
   },
+  "谢": {
+    "cangjie": "IVHHI",
+    "four_corner": "3470",
+    "pinyin": "xie",
+    "radical": "讠",
+    "total_strokes": "12"
+  },
   "豫": {
     "cangjie": "NNNAO",
     "four_corner": "1723.",
@@ -1861,6 +1931,13 @@
     "radical": "阝",
     "total_strokes": "7"
   },
+  "邰": {
+    "cangjie": "IRNL",
+    "four_corner": "2762",
+    "pinyin": "tai",
+    "radical": "阝",
+    "total_strokes": "7"
+  },
   "郃": {
     "cangjie": "ORNL",
     "four_corner": "8762.",
@@ -1874,6 +1951,13 @@
     "pinyin": "zheng",
     "radical": "阝",
     "total_strokes": "8"
+  },
+  "部": {
+    "cangjie": "YRNL",
+    "four_corner": "0762",
+    "pinyin": "bu",
+    "radical": "阝",
+    "total_strokes": "10"
   },
   "郭": {
     "cangjie": "YDNL",
@@ -1890,8 +1974,8 @@
     "total_strokes": "9"
   },
   "钧": {
-    "cangjie": "",
-    "four_corner": "",
+    "cangjie": "XCPIM",
+    "four_corner": "8772",
     "pinyin": "jun",
     "radical": "钅",
     "total_strokes": "9"
@@ -1937,6 +2021,13 @@
     "pinyin": "ling",
     "radical": "阝",
     "total_strokes": "10"
+  },
+  "隐": {
+    "cangjie": "NLNSP",
+    "four_corner": "7723",
+    "pinyin": "yin",
+    "radical": "阝",
+    "total_strokes": "11"
   },
   "隗": {
     "cangjie": "NLHI",
@@ -2007,6 +2098,13 @@
     "pinyin": "han",
     "radical": "韦",
     "total_strokes": "12"
+  },
+  "頂": {
+    "cangjie": "MNMBC",
+    "four_corner": "1128",
+    "pinyin": "ding",
+    "radical": "頁",
+    "total_strokes": "11"
   },
   "项": {
     "cangjie": "MMBO",

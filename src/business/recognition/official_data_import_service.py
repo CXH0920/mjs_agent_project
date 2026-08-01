@@ -19,6 +19,7 @@ from src.data.recommendation_index_repository import mark_recommendation_index_s
 from src.ocr import official_board_parser
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.official_board_parser import LAYOUTS
+from src.ocr.paddle_loader import create_paddle_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +56,12 @@ class OfficialDataImportService:
     @property
     def _engine(self):
         if self._ocr is None:
-            from paddleocr import PaddleOCR
             logger.info("正在加载官方榜单 OCR 模型")
-            self._ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
+            self._ocr = create_paddle_ocr(
+                use_angle_cls=False,
+                lang="ch",
+                show_log=False,
+            )
         return self._ocr
 
     @property
@@ -67,9 +71,8 @@ class OfficialDataImportService:
             return None
         if self._rare_char_ocr is None:
             try:
-                from paddleocr import PaddleOCR
                 logger.info("正在加载官方榜单罕见字 OCR 模型")
-                self._rare_char_ocr = PaddleOCR(
+                self._rare_char_ocr = create_paddle_ocr(
                     use_angle_cls=False, lang="chinese_cht", show_log=False,
                 )
             except Exception as exc:

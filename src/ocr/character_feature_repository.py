@@ -151,16 +151,20 @@ class CharacterFeatureRepository:
                     cache=True,
                     log_level="WARNING",
                 )
-                Packager(options).export()
                 csv_path = Path(options.destination)
+                if not csv_path.exists():
+                    Packager(options).export()
                 if csv_path.exists():
                     with csv_path.open("r", encoding="utf-8") as file:
                         for row in csv.DictReader(file):
                             item = row.get("char", "")
                             if item:
+                                four_corner = row.get("kFourCornerCode", "") or ""
                                 self._unihan_cache[item] = {
                                     "cangjie": (row.get("kCangjie", "") or "").strip(),
-                                    "four_corner": (row.get("kFourCornerCode", "") or "").strip()[:5],
+                                    "four_corner": "".join(
+                                        value for value in four_corner if value.isdigit()
+                                    )[:4],
                                 }
             except Exception as exc:
                 logger.warning("UNIHAN 查询失败: %s", exc)

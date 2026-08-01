@@ -8,12 +8,39 @@ import sys
 from types import ModuleType
 
 import numpy as np
+import pytest
 
 from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
+from src.ocr import paddle_loader
 from src.ocr.recognizer import GeneralRecognizer
 from scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
+
+
+def test_paddle_loader_hides_windows_child_consoles_and_restores_popen(monkeypatch) -> None:
+    calls: list[int] = []
+
+    class FakePopen:
+        def __init__(self, *_args, **kwargs) -> None:
+            calls.append(kwargs.get("creationflags", 0))
+
+    class FakePaddleOCR:
+        def __init__(self, **_kwargs) -> None:
+            paddle_loader.subprocess.Popen(["dependency-probe"])
+
+    module = ModuleType("paddleocr")
+    module.PaddleOCR = FakePaddleOCR
+    original_init = FakePopen.__init__
+    monkeypatch.setattr(paddle_loader.sys, "platform", "win32")
+    monkeypatch.setattr(paddle_loader.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(paddle_loader.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setitem(sys.modules, "paddleocr", module)
+
+    paddle_loader.create_paddle_ocr(lang="ch")
+
+    assert calls == [0x08000000]
+    assert FakePopen.__init__ is original_init
 
 
 def test_image_preprocessor_outputs_tripled_grayscale_image() -> None:
@@ -60,7 +87,7 @@ def test_character_feature_repository_reads_unihan_csv_from_options_destination(
             pass
 
         def export(self) -> None:
-            return None
+            raise AssertionError("已有 UNIHAN CSV 时不应重复导出")
 
     module = ModuleType("unihan_etl.core")
     module.Options = FakeOptions
@@ -68,7 +95,7 @@ def test_character_feature_repository_reads_unihan_csv_from_options_destination(
     monkeypatch.setitem(sys.modules, "unihan_etl.core", module)
     repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
 
-    assert repository._query_unihan("曹") == {"cangjie": "HV", "four_corner": "5500."}
+    assert repository._query_unihan("曹") == {"cangjie": "HV", "four_corner": "5500"}
 
 
 def test_character_feature_repository_logs_pinyin_warmup_failure(tmp_path, monkeypatch, caplog) -> None:
@@ -118,6 +145,11 @@ def test_static_character_feature_cache_covers_current_hero_names_and_common_mis
     entries = CharacterFeatureRepository().load()
 
     assert required_characters() <= entries.keys()
+    for char in COMMON_OCR_CONFUSION_CHARACTERS:
+        assert entries[char].get("four_corner")
+        assert entries[char].get("cangjie")
+        assert entries[char].get("radical")
+        assert entries[char].get("total_strokes")
 
 
 def test_character_feature_repository_logs_pinyin_query_failure_once(tmp_path, monkeypatch, caplog) -> None:
@@ -187,6 +219,69 @@ def test_character_similarity_does_not_score_missing_four_corner_codes(tmp_path)
     service = CharacterSimilarityService(repository)
 
     assert service.single_substitution_similarity("甲", "乙") == 0.0
+
+
+def test_character_similarity_scores_only_four_valid_corner_positions(tmp_path) -> None:
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    repository.load().update({
+        "甲": {"four_corner": "1234.", "cangjie": "", "radical": "", "total_strokes": ""},
+        "乙": {"four_corner": "5678.", "cangjie": "", "radical": "", "total_strokes": ""},
+        "丙": {"four_corner": "1567", "cangjie": "", "radical": "", "total_strokes": ""},
+        "丁": {"four_corner": "1538", "cangjie": "", "radical": "", "total_strokes": ""},
+        "戊": {"four_corner": "1238", "cangjie": "", "radical": "", "total_strokes": ""},
+        "己": {"four_corner": "1234.9", "cangjie": "", "radical": "", "total_strokes": ""},
+        "庚": {"four_corner": "123", "cangjie": "", "radical": "", "total_strokes": ""},
+    })
+    service = CharacterSimilarityService(repository)
+
+    assert service._four_corner_score("甲", "乙") == 0.0
+    assert service._four_corner_score("甲", "丙") == 0.25
+    assert service._four_corner_score("甲", "丁") == 0.5
+    assert service._four_corner_score("甲", "戊") == 0.75
+    assert service._four_corner_score("甲", "己") == 1.0
+    assert service._four_corner_score("甲", "庚") == 0.0
+
+
+def test_character_similarity_scores_cangjie_by_normalized_edit_distance(tmp_path) -> None:
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    repository.load().update({
+        "甲": {"cangjie": " tbnm "},
+        "乙": {"cangjie": "TBMO"},
+        "丙": {"cangjie": "TBNH"},
+        "丁": {"cangjie": "TBNM"},
+        "戊": {"cangjie": ""},
+    })
+    service = CharacterSimilarityService(repository)
+
+    assert service._cangjie_score("甲", "乙") == 0.5
+    assert service._cangjie_score("甲", "丙") == 0.75
+    assert service._cangjie_score("甲", "丁") == 1.0
+    assert service._cangjie_score("甲", "戊") == 0.0
+
+
+def test_character_similarity_scales_same_radical_by_stroke_ratio(tmp_path) -> None:
+    repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
+    repository.load().update({
+        "甲": {"radical": "王", "total_strokes": "4"},
+        "乙": {"radical": "王", "total_strokes": "20"},
+        "丙": {"radical": "木", "total_strokes": "4"},
+        "丁": {"radical": "王", "total_strokes": ""},
+    })
+    service = CharacterSimilarityService(repository)
+
+    assert service._radical_score("甲", "乙") == pytest.approx(0.2)
+    assert service._radical_score("甲", "丙") == 0.0
+    assert service._radical_score("甲", "丁") == 0.0
+
+
+def test_character_similarity_uses_revised_scores_for_wang_jian_candidates() -> None:
+    service = CharacterSimilarityService()
+
+    assert service.single_substitution_similarity("王剪", "王翦") == pytest.approx(0.6)
+    assert service.single_substitution_similarity("王剪", "王异") == 0.0
+    assert service.single_substitution_similarity("王翡", "王翦") == pytest.approx(
+        0.3666666667,
+    )
 
 
 def test_general_recognizer_delegates_preprocessing_and_name_correction() -> None:
@@ -367,6 +462,38 @@ def test_general_recognizer_scores_complete_multi_candidates_with_two_evidence_f
     assert result["candidates"] == ["王翦"]
 
 
+def test_general_recognizer_accepts_revised_multi_candidate_score_threshold() -> None:
+    class StubSimilarityService(CharacterSimilarityService):
+        def rank_single_substitution_candidates(
+            self, _text: str, _candidates: list[str] | set[str],
+        ) -> list[tuple[str, float]]:
+            return [("王乙", 0.35), ("王丙", 0.19)]
+
+    recognizer = GeneralRecognizer(
+        hero_names=["王乙", "王丙"],
+        similarity_service=StubSimilarityService(),
+    )
+
+    result = recognizer._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王甲", "confidence": 0.9},
+        {"source": "single_plain", "text": "王甲", "confidence": 0.9},
+    ])
+
+    assert (result["name"], result["resolution"]) == ("王乙", "multi_similarity")
+
+
+def test_general_recognizer_uses_filled_confusion_features_within_whitelist() -> None:
+    recognizer = GeneralRecognizer(hero_names=["卫青", "卫玠", "周瑜"])
+
+    result = recognizer._resolve_name_evidence(1, [
+        {"source": "single_enhanced", "text": "卫珍", "confidence": 0.9},
+        {"source": "single_plain", "text": "卫珍", "confidence": 0.9},
+    ])
+
+    assert (result["name"], result["resolution"]) == ("卫玠", "multi_similarity")
+    assert result["candidates"] == ["卫玠"]
+
+
 def test_general_recognizer_does_not_score_multi_candidates_from_one_evidence_family() -> None:
     result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolve_name_evidence(1, [
         {"source": "batch_enhanced", "text": "王翡", "confidence": 0.91},
@@ -398,7 +525,7 @@ def test_general_recognizer_enforces_all_multi_candidate_score_thresholds() -> N
             ],
         ),
         (
-            {"王甲": [("王乙", 0.39), ("王丙", 0.1)]},
+            {"王甲": [("王乙", 0.34), ("王丙", 0.1)]},
             [
                 {"source": "batch_enhanced", "text": "王甲", "confidence": 0.9},
                 {"source": "single_plain", "text": "王甲", "confidence": 0.9},

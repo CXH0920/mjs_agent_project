@@ -3,9 +3,9 @@
 
 使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别。
 识别策略：
-  1. 全量字典（ch）PaddleOCR 识别
-  2. 用 165 名武将名称库做编辑距离矫正，解决形近字误识别问题
-     （不过滤置信度，始终执行矫正——OCR 有时高置信度也出错）
+  1. 同类名称 ROI 拼图后批量执行 PaddleOCR，异常槽位逐槽复核
+  2. 按字数门禁建立候选闭包，多路证据必须在候选交集内确认
+  3. 等长且仅错一字时，在合法候选内使用结构化字形评分决胜
 
 预处理操作在图像层面：放大、自适应对比度增强、锐化。
 PaddleOCR 延迟加载，首次调用时初始化。
@@ -38,7 +38,7 @@ _BATCH_MIN_CONFIDENCE = 0.5
 _NAME_RECHECK_CONFIDENCE = 0.8
 _UNIQUE_PREFIX_MIN_LENGTH = 2
 _MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
-_MULTI_CANDIDATE_MIN_SIMILARITY = 0.4
+_MULTI_CANDIDATE_MIN_SIMILARITY = 0.35
 _MULTI_CANDIDATE_MIN_MARGIN = 0.15
 _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
 _CONFIRMED_RESOLUTIONS = frozenset({
@@ -90,8 +90,12 @@ class GeneralRecognizer:
             logger.info("首次调用，正在加载 PaddleOCR 模型...")
             try:
                 started = time.perf_counter()
-                from paddleocr import PaddleOCR
-                self._ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
+                from src.ocr.paddle_loader import create_paddle_ocr
+                self._ocr = create_paddle_ocr(
+                    use_angle_cls=False,
+                    lang="ch",
+                    show_log=False,
+                )
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 self._timing_ms["model_load"] = self._timing_ms.get("model_load", 0.0) + elapsed_ms
                 logger.info("PaddleOCR 模型加载完成，耗时 %.1fms", elapsed_ms)

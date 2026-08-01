@@ -34,6 +34,7 @@ src/ocr/
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
+├── paddle_loader.py       # PaddleOCR 统一构造及 Windows 首次加载闪窗抑制
 └── ocr_loader.py          # 单例延迟加载
 ```
 
@@ -94,7 +95,7 @@ match(image, threshold=0.8)
 
 对局攻略模板应优先框选左侧常驻功能图标等固定 UI，避开回合数字、角色立绘和战场背景；这类内容会随对局状态变化，不能作为可靠的页面特征。
 
-应用在主窗口显示前即向同一 `OcrWorker` 队列提交预热任务，不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。
+应用在主窗口显示前即向同一 `OcrWorker` 队列提交预热任务，不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。`paddle_loader.create_paddle_ocr()` 统一负责模型构造，并在 Windows 首次导入期间隐藏依赖探测命令窗口，完成后恢复标准子进程行为。
 
 ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给独立的单线程 `image-save` 执行器压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
@@ -135,7 +136,7 @@ PaddleOCR → 文字 + 置信度
        └── 重复名称保留唯一更强证据；同等级全部回退
 ```
 
-等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.4`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_enhanced` 与 `single_enhanced` 同属 `enhanced`，不能重复计票。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
+等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.35`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_enhanced` 与 `single_enhanced` 同属 `enhanced`，不能重复计票。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
 
 结构化结果为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`。`name` 只保存已确认名称；`length_mode` 为 `complete`、`missing`、`uncertain` 或 `unknown`；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`multi_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
 
@@ -149,9 +150,9 @@ PaddleOCR → 文字 + 置信度
 
 | 维度 | 权重 | 说明 |
 |------|------|------|
-| 四角号码 | 40% | 反映汉字四角结构 |
-| 仓颉码 | 40% | 反映字形编码层次 |
-| 部首 | 20% | 直接定位字的大类 |
+| 四角号码 | 40% | 前四个有效数字按位置等权比较，匹配数除以 4 |
+| 仓颉码 | 40% | `1 - Levenshtein / 较长码长度` |
+| 部首与笔画 | 20% | 同部首时取较少笔画数除以较多笔画数，否则为 0 |
 
 评分公式：
 ```python
@@ -161,9 +162,9 @@ else:
     score = None                        # 不参与常规截图的候选决胜
 ```
 
-唯一候选使用 0.55 安全门槛；多候选使用 0.4 绝对门槛和 0.15 领先门槛，并要求两个独立证据族一致。评分只负责在合法候选中排序，不能改变字数门禁产生的候选集合。
+唯一候选使用 0.55 安全门槛；多候选使用 0.35 绝对门槛和 0.15 领先门槛，并要求两个独立证据族一致。评分只负责在合法候选中排序，不能改变字数门禁产生的候选集合。
 
-任一字符的某项特征缺失时，该维度贡献 0 分；尤其不能把缺失四角码补成相同的 `00000` 后计为满分。
+任一字符的某项特征缺失时，该维度贡献 0 分；四角码不足四位不补零，同部首但任一侧笔画无效时部首维度也记 0 分。
 
 ### 3.5 汉字特征缓存
 
@@ -171,10 +172,10 @@ else:
 
 | 层 | 速度 | 覆盖 |
 |----|------|------|
-| `char_info_cache.json`（299 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
+| `char_info_cache.json`（314 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
-`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
+`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
 
 ---
 
