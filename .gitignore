@@ -19,6 +19,7 @@ data/*_待复核.csv
 data/backups/
 data/edge_profile/
 PLANS.md
+retrospective.md
 
 # Environment files
 config.env
