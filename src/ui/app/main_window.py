@@ -153,6 +153,14 @@ class MainWindow(QMainWindow):
             [hero.name for hero in self._data.heroes.list_heroes()],
         )
 
+    def wait_ocr_warmup(self, timeout_ms: int = 15_000) -> bool:
+        """阻塞等待启动阶段 OCR 预热完成（启动画面期间调用）。
+
+        Paddle 初始化会长时间持有 Python GIL，若预热与界面同时运行会卡住
+        事件循环；故在窗口显示前完成预热，显示后界面保持流畅。
+        """
+        return self._capture_service.wait_ocr_warmup(timeout_ms)
+
     # ---------------------------------------------------------------
     # 采集服务信号连接
     # ---------------------------------------------------------------

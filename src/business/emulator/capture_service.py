@@ -52,6 +52,7 @@ class CaptureService(QObject):
         self._connection_state = "unconfigured"
         self._connection_detail = ""
         self._ocr_warmup_state = "idle"
+        self._warmup_task = None
         self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
         self._ocr_worker: OcrWorker | None = None
         self._pending_ocr_captures: dict[str, dict] = {}
@@ -339,8 +340,25 @@ class CaptureService(QObject):
         """在 OCR worker 中预热模型、推理算子和词表特征。"""
         if self._ocr_warmup_state in {"warming", "ready"}:
             return
-        if self._ensure_ocr_worker().warmup_model(hero_names):
+        task = self._ensure_ocr_worker().warmup_model(hero_names)
+        if task is not None:
+            self._warmup_task = task
             self._set_ocr_warmup_state("warming")
+
+    def wait_ocr_warmup(self, timeout_ms: int = 15_000) -> bool:
+        """阻塞等待启动阶段预热完成；超时或未启动预热时返回 False。
+
+        供主窗口显示前的启动画面阶段调用：Paddle 初始化期间会长时间持有
+        Python GIL，若在事件循环运行后再预热会卡住界面，因此放在显示前完成。
+        """
+        task = self._warmup_task
+        if task is None:
+            return False
+        if not task.completed.wait(timeout_ms / 1000):
+            logger.warning("OCR 预热等待超时，主窗口将继续显示")
+            return False
+        self._warmup_task = None
+        return bool(task.result and task.result.get("outcome") == "warmed")
 
     def submit_ocr_task(
         self,
@@ -622,10 +640,14 @@ class CaptureService(QObject):
         return result.get("ocr_results"), result.get("outcome") == "matched"
 
     def shutdown(self) -> None:
-        """停止截图执行器和 OCR worker，供应用退出时调用。"""
+        """停止截图执行器和 OCR worker，供应用退出时调用。
+
+        OCR worker 仅通知停止并立即返回（不在 GUI 线程同步等待），
+        线程由 OcrWorker 的退役列表持有并在进程退出前收尾，避免窗口卡死。
+        """
         self._closed = True
         self._adb_executor.shutdown(wait=False, cancel_futures=True)
         self._image_save_executor.shutdown(wait=False, cancel_futures=True)
         if self._ocr_worker is not None:
-            if self._ocr_worker.shutdown():
-                self._ocr_worker = None
+            self._ocr_worker.retire(force_warmup=True)
+            self._ocr_worker = None

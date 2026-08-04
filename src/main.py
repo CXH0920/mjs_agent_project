@@ -96,6 +96,11 @@ def main() -> None:
     try:
         window = MainWindow()
         window.start_ocr_warmup()
+        # 在启动画面阶段完成 OCR 预热：Paddle 初始化会长时间持有 Python GIL，
+        # 若预热与主窗口事件循环同时运行会导致界面卡住，故先预热后显示。
+        splash.showMessage("正在加载 OCR 模型…")
+        app.processEvents()
+        window.wait_ocr_warmup(timeout_ms=15_000)
         window.show()
         splash.finish(window)
         sys.exit(app.exec())

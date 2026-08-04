@@ -95,7 +95,7 @@ match(image, threshold=0.8)
 
 对局攻略模板应优先框选左侧常驻功能图标等固定 UI，避开回合数字、角色立绘和战场背景；这类内容会随对局状态变化，不能作为可靠的页面特征。
 
-应用在主窗口显示前即向同一 `OcrWorker` 队列提交预热任务，不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。`paddle_loader.create_paddle_ocr()` 统一负责模型构造，并在 Windows 首次导入期间隐藏依赖探测命令窗口，完成后恢复标准子进程行为。
+应用在启动画面阶段即向同一 `OcrWorker` 队列提交预热任务，并在窗口显示前同步等待完成（Paddle 初始化会长时间持有 Python GIL，若与界面事件循环同时运行会卡住界面），不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。`paddle_loader.create_paddle_ocr()` 统一负责模型构造，并在 Windows 首次导入期间隐藏依赖探测命令窗口，完成后恢复标准子进程行为。
 
 ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给独立的单线程 `image-save` 执行器压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
@@ -142,7 +142,7 @@ PaddleOCR → 文字 + 置信度
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
-官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 继续独立负责受限候选繁体兜底、整榜唯一性和正式写入门禁；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格跳过检测网络直接识别（`det=False`），并继续独立负责受限候选繁体兜底、整榜唯一性和正式写入门禁；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
 ### 3.4 候选内单字字形评分
 
@@ -264,7 +264,7 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |
 | `OcrWorker.submit(task)` | 串行执行预热、常规 `OcrTask` 或官方 `OfficialImportTask`，并通过任务完成信号返回结果 |
 
-活动识别路径由 `src.business.recognition.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 PaddleOCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 PaddleOCR。
+活动识别路径由 `src.business.recognition.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 PaddleOCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 PaddleOCR。关闭窗口时 worker 仅被通知停止并立即返回（不在 GUI 线程同步等待）；若正卡在模型预热中，会直接终止预热线程让进程快速退出，其余未完成任务由退役列表持有并在进程退出前收尾，避免窗口卡死、进程残留与运行中的 QThread 被提前销毁。
 
 ---
 
@@ -272,7 +272,7 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 
 | 方向 | 模块 | 说明 |
 |------|------|------|
-| 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型 |
+| 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型（GPU 推理需 CUDA 11.8 + cuDNN 8 运行时，见 environment.yml） |
 | 被调用方 | `src.business.emulator.capture_service` | 持有 AdbCapture 实例，编排截图流程 |
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
 | 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |

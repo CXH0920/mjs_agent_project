@@ -351,9 +351,16 @@ class OfficialDataImportService:
         candidates.append(cv2.filter2D(enhanced, -1, np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])))
         results: list[tuple[str, float]] = []
         for candidate in candidates:
-            ocr_result = (engine if engine is not None else self._engine).ocr(candidate, cls=False)
+            # 固定版式下单元格边界已知，跳过检测网络，直接走识别网络（省 det 固定开销）
+            ocr_result = (engine if engine is not None else self._engine).ocr(
+                candidate, det=False, rec=True, cls=False,
+            )
             for line in ocr_result[0] if ocr_result and ocr_result[0] else []:
-                text, confidence = line[1]
+                # det=False 时 line 为 (text, confidence)；兼容完整流程的 [box, (text, confidence)]
+                if isinstance(line[0], (list, tuple)):
+                    text, confidence = line[1]
+                else:
+                    text, confidence = line
                 if text:
                     results.append((text.replace(" ", ""), float(confidence)))
         return results

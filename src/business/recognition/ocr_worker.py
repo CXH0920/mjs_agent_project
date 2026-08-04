@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
 import queue
 import threading
@@ -20,6 +21,19 @@ from src.ocr.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
 DEFAULT_SCREENSHOT_DATA_DIR = PROJECT_ROOT / "screenshot_data"
+
+# 已通知停止但仍在收尾的 worker，防止 QThread 对象在运行中被提前销毁。
+_RETIRED_WORKERS: list["OcrWorker"] = []
+
+
+def _drain_retired_workers() -> None:
+    """进程退出前等待退役 worker 结束，避免运行中的 QThread 被销毁。"""
+    for worker in _RETIRED_WORKERS:
+        if worker.isRunning() and not worker.wait(15_000):
+            logger.warning("退役 OCR worker 未能在 15 秒内退出")
+
+
+atexit.register(_drain_retired_workers)
 
 
 @dataclass
@@ -60,6 +74,8 @@ class OcrWorker(QThread):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._tasks: queue.Queue[OcrTask | OfficialImportTask | None] = queue.Queue()
+        self._cancel_event = threading.Event()
+        self._current_task_kind: str | None = None
         self._recognizer: GeneralRecognizer | None = None
         self._recognizer_signature: tuple | None = None
         self._ocr_engine = None
@@ -70,12 +86,12 @@ class OcrWorker(QThread):
         """按提交顺序加入任务；调用方可通过 ``task.completed`` 等待结果。"""
         self._tasks.put(task)
 
-    def warmup_model(self, hero_names: list[str] | None = None) -> bool:
-        """将模型、推理算子和词表特征预热任务加入当前串行队列。"""
+    def warmup_model(self, hero_names: list[str] | None = None) -> OcrTask | None:
+        """将模型、推理算子和词表特征预热任务加入当前串行队列，返回任务供调用方等待。"""
         if self._warmup_queued:
-            return False
+            return None
         self._warmup_queued = True
-        self.submit(OcrTask(
+        task = OcrTask(
             image=None,
             hero_names=tuple(hero_names or ()),
             rois=None,
@@ -83,32 +99,64 @@ class OcrWorker(QThread):
             threshold=0.0,
             match_template=False,
             warmup=True,
-        ))
-        return True
+        )
+        self.submit(task)
+        return task
+
+    def request_stop(self) -> None:
+        """请求停止：置取消标记并投递哨兵任务，不阻塞调用方。"""
+        self._cancel_event.set()
+        self._tasks.put(None)
+
+    def retire(self, *, force_warmup: bool = False) -> None:
+        """停止并放弃同步等待；线程由进程退出钩子负责收尾。
+
+        force_warmup=True 时，若线程正卡在不可中断的模型预热中，
+        直接终止该线程让进程快速退出，避免关闭后进程长期残留。
+        """
+        self.request_stop()
+        if force_warmup and self.isRunning() and self._current_task_kind == "warmup":
+            logger.warning("OCR worker 正在模型预热，终止预热线程以加速退出")
+            self.terminate()
+            self.wait(3_000)
+            return
+        if self not in _RETIRED_WORKERS:
+            _RETIRED_WORKERS.append(self)
 
     def shutdown(self, timeout_ms: int = 5_000) -> bool:
-        """在当前识别结束后停止 worker。"""
+        """在当前识别结束后停止 worker；超时则转入退役列表，避免线程被提前销毁。"""
         if not self.isRunning():
             return True
-        self._tasks.put(None)
+        self.request_stop()
         if self.wait(timeout_ms):
             return True
-        logger.warning("OCR worker 未能在 %d ms 内退出", timeout_ms)
+        logger.warning("OCR worker 未能在 %d ms 内退出，转入后台退役等待", timeout_ms)
+        self.retire()
         return False
 
     def run(self) -> None:
         while True:
+            if self._cancel_event.is_set():
+                return
             task = self._tasks.get()
             if task is None:
                 return
-            if isinstance(task, OfficialImportTask):
-                task.result = self._execute_official_import(task)
-            else:
-                task.result = self._execute(task)
-                if task.warmup and task.result.get("outcome") == "warmup_failed":
-                    self._warmup_queued = False
-            task.completed.set()
-            self.task_completed.emit(task)
+            self._current_task_kind = (
+                "official" if isinstance(task, OfficialImportTask)
+                else "warmup" if task.warmup
+                else "regular"
+            )
+            try:
+                if isinstance(task, OfficialImportTask):
+                    task.result = self._execute_official_import(task)
+                else:
+                    task.result = self._execute(task)
+                    if task.warmup and task.result.get("outcome") == "warmup_failed":
+                        self._warmup_queued = False
+                task.completed.set()
+                self.task_completed.emit(task)
+            finally:
+                self._current_task_kind = None
 
     def _execute_official_import(self, task: OfficialImportTask) -> dict:
         """复用当前线程的 OCR 引擎，串行完成整批官方榜单导入。"""
@@ -266,8 +314,13 @@ class OcrWorker(QThread):
             )
             if self._ocr_engine is not None:
                 recognizer._ocr = self._ocr_engine
+            # 先触发模型加载（真实识别器由 _engine 属性惰性加载，此过程不可中断）
+            getattr(recognizer, "_engine", None)
+            if self._cancel_event.is_set():
+                logger.info("OCR 预热已取消（应用正在关闭），跳过特征预热与推理")
+                return {"outcome": "cancelled"}
             recognizer.warmup()
-            self._ocr_engine = recognizer._ocr
+            self._ocr_engine = getattr(recognizer, "_ocr", None) or self._ocr_engine
             recognizer.warmup_inference()
             logger.info("PaddleOCR 模型和推理预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
             return {"outcome": "warmed"}
