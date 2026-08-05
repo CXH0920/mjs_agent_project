@@ -14,6 +14,17 @@ class CharacterSimilarityService:
 
     EDIT_DISTANCE_THRESHOLD = 1
     SAFE_CHARACTER_SIMILARITY = 0.55
+    # 字形相似度维度权重：四角 30% + 仓颉 30% + 五笔 40%（选型依据见 docs/design/character_similarity_design.md）
+    FOUR_CORNER_WEIGHT = 0.3
+    CANGJIE_WEIGHT = 0.3
+    WUBI_WEIGHT = 0.4
+    # 确定性纠错映射：OCR 高频且多维相似度不足的「错字 → 正字」，命中即视为安全。
+    SAFE_SUBSTITUTION_WHITELIST: dict[str, str] = {
+        "昧": "眜", "敦": "惇", "邵": "绍", "雨": "羽", "半": "芈", "易": "勖",
+        "赞": "瓒", "桥": "乔", "正": "政", "旦": "且", "菲": "非", "睢": "雎",
+        "表": "袁", "央": "英", "合": "郃", "神": "禅", "菜": "蔡", "种": "钟",
+        "翡": "翦",
+    }
 
     def __init__(self, repository: CharacterFeatureRepository | None = None) -> None:
         self._repository = repository or CharacterFeatureRepository()
@@ -63,7 +74,10 @@ class CharacterSimilarityService:
         ]
         if len(mismatches) != 1:
             return None
-        return self._multi_dim_similarity(*mismatches[0])
+        source, target = mismatches[0]
+        if self.SAFE_SUBSTITUTION_WHITELIST.get(source) == target:
+            return 1.0
+        return self._multi_dim_similarity(source, target)
 
     def rank_single_substitution_candidates(
         self, text: str, candidates: list[str] | set[str],
@@ -139,9 +153,9 @@ class CharacterSimilarityService:
 
     def _multi_dim_similarity(self, first: str, second: str) -> float:
         return (
-            self._four_corner_score(first, second) * 0.4
-            + self._cangjie_score(first, second) * 0.4
-            + self._radical_score(first, second) * 0.2
+            self._four_corner_score(first, second) * self.FOUR_CORNER_WEIGHT
+            + self._cangjie_score(first, second) * self.CANGJIE_WEIGHT
+            + self._wubi_score(first, second) * self.WUBI_WEIGHT
         )
 
     def _four_corner_score(self, first: str, second: str) -> float:
@@ -163,16 +177,13 @@ class CharacterSimilarityService:
         distance = self._levenshtein_distance(first_code, second_code)
         return max(0.0, 1.0 - distance / max(len(first_code), len(second_code)))
 
-    def _radical_score(self, first: str, second: str) -> float:
-        first_radical = self._value(first, "radical")
-        second_radical = self._value(second, "radical")
-        if not first_radical or first_radical != second_radical:
+    def _wubi_score(self, first: str, second: str) -> float:
+        first_code = self._value(first, "wubi").strip().upper()
+        second_code = self._value(second, "wubi").strip().upper()
+        if not first_code or not second_code:
             return 0.0
-        first_strokes = self._stroke_value(first)
-        second_strokes = self._stroke_value(second)
-        if first_strokes <= 0 or second_strokes <= 0:
-            return 0.0
-        return min(first_strokes, second_strokes) / max(first_strokes, second_strokes)
+        distance = self._levenshtein_distance(first_code, second_code)
+        return max(0.0, 1.0 - distance / max(len(first_code), len(second_code)))
 
     def _pinyin_similarity(self, first: str, second: str) -> float:
         first_pinyin = self._value(first, "pinyin")

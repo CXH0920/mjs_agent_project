@@ -12,12 +12,14 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CHARACTER_FEATURE_CACHE = PROJECT_ROOT / "src" / "data" / "char_info_cache.json"
+DEFAULT_WUBI_TABLE = PROJECT_ROOT / "src" / "data" / "wubi86.txt"
 _EMPTY_FEATURE = {
     "radical": "",
     "cangjie": "",
     "four_corner": "",
     "pinyin": "",
     "total_strokes": "",
+    "wubi": "",
 }
 
 
@@ -31,6 +33,8 @@ class CharacterFeatureRepository:
         self._unihan_cache: dict[str, dict[str, str]] | None = None
         self._strokes_cache: dict[str, int] | None = None
         self._strokes_path: Path | None = None
+        self._wubi_cache: dict[str, str] | None = None
+        self._wubi_path: Path | None = None
         self._pinyin_available: bool | None = None
 
     @property
@@ -125,6 +129,7 @@ class CharacterFeatureRepository:
         entry["four_corner"] = unihan_feature.get("four_corner", "")
         entry["pinyin"] = self._get_pinyin(char)
         entry["total_strokes"] = str(self._get_stroke(char))
+        entry["wubi"] = self._get_wubi(char)
         return entry
 
     def _get_radical_client(self):
@@ -169,6 +174,39 @@ class CharacterFeatureRepository:
             except Exception as exc:
                 logger.warning("UNIHAN 查询失败: %s", exc)
         return self._unihan_cache.get(char, {})
+
+    def _get_wubi(self, char: str) -> str:
+        return self._load_wubi().get(char, "")
+
+    def _load_wubi(self) -> dict[str, str]:
+        """懒加载五笔 86 全码表（UTF-8/LF，字<TAB>码），缺失返回空映射。"""
+        if self._wubi_cache is not None:
+            return self._wubi_cache
+        self._wubi_cache = {}
+        path = self._get_wubi_path()
+        if path is None:
+            return self._wubi_cache
+        try:
+            with path.open("r", encoding="utf-8") as file:
+                for line in file:
+                    if not line.strip() or line.startswith("#"):
+                        continue
+                    parts = line.strip().split("\t")
+                    if len(parts) == 2 and len(parts[0]) == 1:
+                        self._wubi_cache[parts[0]] = parts[1]
+            logger.debug("五笔86全码已加载: %d 字", len(self._wubi_cache))
+        except OSError as exc:
+            logger.warning("五笔86全码表加载失败: %s", exc)
+            self._wubi_cache = {}
+        return self._wubi_cache
+
+    def _get_wubi_path(self) -> Path | None:
+        if self._wubi_path is not None:
+            return self._wubi_path
+        self._wubi_path = DEFAULT_WUBI_TABLE if DEFAULT_WUBI_TABLE.exists() else None
+        if self._wubi_path is None:
+            logger.warning("五笔86全码表不存在: %s", DEFAULT_WUBI_TABLE)
+        return self._wubi_path
 
     def _get_stroke(self, char: str) -> int:
         return self._load_strokes().get(char, 0)

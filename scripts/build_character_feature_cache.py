@@ -35,8 +35,10 @@ def main() -> None:
     missing = repository.warmup_characters(characters)
     entries = repository.load()
     incomplete = [
-        char for char in characters
-        if not entries[char].get("cangjie") and not entries[char].get("four_corner")
+        char for char in entries
+        if (
+            not entries[char].get("cangjie") and not entries[char].get("four_corner")
+        ) or not entries[char].get("wubi")
     ]
     for char in incomplete:
         entries[char] = repository._build_feature(char)

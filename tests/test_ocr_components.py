@@ -259,29 +259,29 @@ def test_character_similarity_scores_cangjie_by_normalized_edit_distance(tmp_pat
     assert service._cangjie_score("甲", "戊") == 0.0
 
 
-def test_character_similarity_scales_same_radical_by_stroke_ratio(tmp_path) -> None:
+def test_character_similarity_scores_wubi_by_normalized_edit_distance(tmp_path) -> None:
     repository = CharacterFeatureRepository(tmp_path / "char_info_cache.json")
     repository.load().update({
-        "甲": {"radical": "王", "total_strokes": "4"},
-        "乙": {"radical": "王", "total_strokes": "20"},
-        "丙": {"radical": "木", "total_strokes": "4"},
-        "丁": {"radical": "王", "total_strokes": ""},
+        "甲": {"wubi": "AQJF"},
+        "乙": {"wubi": "AQKF"},
+        "丙": {"wubi": "AQJF"},
+        "丁": {"wubi": ""},
     })
     service = CharacterSimilarityService(repository)
 
-    assert service._radical_score("甲", "乙") == pytest.approx(0.2)
-    assert service._radical_score("甲", "丙") == 0.0
-    assert service._radical_score("甲", "丁") == 0.0
+    assert service._wubi_score("甲", "乙") == pytest.approx(0.75)
+    assert service._wubi_score("甲", "丙") == 1.0
+    assert service._wubi_score("甲", "丁") == 0.0
 
 
 def test_character_similarity_uses_revised_scores_for_wang_jian_candidates() -> None:
     service = CharacterSimilarityService()
 
-    assert service.single_substitution_similarity("王剪", "王翦") == pytest.approx(0.6)
-    assert service.single_substitution_similarity("王剪", "王异") == 0.0
-    assert service.single_substitution_similarity("王翡", "王翦") == pytest.approx(
-        0.3666666667,
-    )
+    # 权重 0.3/0.3/0.4：剪→翦 五笔 UEJV/UEJN 仅末码差 → 0.75
+    assert service.single_substitution_similarity("王剪", "王翦") == pytest.approx(0.75)
+    assert service.single_substitution_similarity("王剪", "王异") == pytest.approx(0.1)
+    # 翡→翦 命中确定性白名单，直接视为安全
+    assert service.single_substitution_similarity("王翡", "王翦") == 1.0
 
 
 def test_general_recognizer_delegates_preprocessing_and_name_correction() -> None:

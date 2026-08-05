@@ -296,11 +296,11 @@ cangjie_score(c1, c2):
   仓颉码为字母序列（如 "BCM" → "月金一"）
   1 - Levenshtein / 较长码长度
 
-radical_score(c1, c2):
-  同部首且笔画有效 → 较少笔画数 / 较多笔画数
-  部首不同、缺失或笔画无效 → 0
+wubi_score(c1, c2):
+  五笔 86 全码为字母序列（如 "AQJF"）
+  1 - Levenshtein / 较长码长度；码缺失 → 0
 
-综合评分 = four_corner × 0.4 + cangjie × 0.4 + radical × 0.2
+综合评分 = four_corner × 0.3 + cangjie × 0.3 + wubi × 0.4
 ```
 
 常规截图只把该综合分用于候选闭包内“等长且恰好一个错字”的字符比较；缺字和其他增删字不调用此评分决胜。
