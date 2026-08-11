@@ -18,6 +18,7 @@ dependencies:
     - numpy==1.26.4
     - paddlepaddle-gpu==2.6.2
     - paddleocr==2.8.1
+    - protobuf==3.20.2
     # CUDA 11.8 / cuDNN 8.x 运行时（paddlepaddle-gpu 所需，Windows 下需将 DLL 复制到 paddle/libs）
     - nvidia-cublas-cu11==11.11.3.6
     - nvidia-cuda-runtime-cu11==11.8.89

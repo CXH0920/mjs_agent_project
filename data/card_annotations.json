@@ -66,6 +66,1018 @@
         ]
       },
       "updated_at": "2026-07-28"
+    },
+    {
+      "card_id": "48",
+      "fields": {
+        "weaken_effect": [
+          {
+            "content": "对攻击范围内的一名其他角色打出，随机烧毁你的1张牌，然后对其造成1点火焰伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:18:05.215069",
+            "updated_at": "2026-08-06T14:18:05.215069"
+          }
+        ],
+        "strengthen_effect": [
+          {
+            "content": "对攻击范围内的1名其他角色打出，对其造成1点火焰伤害，并且造成伤害后，令目标下回合开始时受到1点火焰伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:19:02.630231",
+            "updated_at": "2026-08-06T14:19:02.630231"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "50",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令本回合打出的下2张杀的伤害+1，本回合再次打出时，随机弃置1张牌；重伤时打出，令自己回复2点体力。",
+            "status": "active",
+            "created_at": "2026-08-06T14:20:39.718673",
+            "updated_at": "2026-08-06T14:20:39.718673"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "对自己打出，当前回合对目标角色打出的下1张杀的伤害+1，当前回合再次打出此牌时，随机弃置1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:20:39.718673",
+            "updated_at": "2026-08-06T14:20:39.718673"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "57",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令自己回复1点体力并增加1点体力上限；或当一名角色重伤时打出，令其回复1点体力并增加1点体力上限。",
+            "status": "active",
+            "created_at": "2026-08-06T14:21:29.311084",
+            "updated_at": "2026-08-06T14:21:29.311084"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令自己回复1点体力。",
+            "status": "active",
+            "created_at": "2026-08-06T14:21:29.311084",
+            "updated_at": "2026-08-06T14:21:29.311084"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "58",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "成为杀的目标时打出，抵消此杀，并且弃置目标任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:22:10.598967",
+            "updated_at": "2026-08-06T14:22:10.598967"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "成为杀的目标时打出，抵消此杀对你造成的1点伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:22:10.598967",
+            "updated_at": "2026-08-06T14:22:10.598967"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "1",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "对所有其他角色打出，令其依次打出2张杀，否则对其造成1点伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:23:53.126673",
+            "updated_at": "2026-08-06T14:23:53.126673"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "对所有其他角色打出，令其依次打出1张杀，否则对其造成1点伤害，然后结束此牌效果。",
+            "status": "active",
+            "created_at": "2026-08-06T14:23:53.126673",
+            "updated_at": "2026-08-06T14:23:53.126673"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "3",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "摸3张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:24:25.429786",
+            "updated_at": "2026-08-06T14:24:25.429786"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "摸1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:24:25.430761",
+            "updated_at": "2026-08-06T14:24:25.430761"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "9",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令任意名角色进入或解除连环状态；或者弃置此牌，然后摸1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:25:13.773896",
+            "updated_at": "2026-08-06T14:25:13.773896"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令1~2名其他角色进入或解除连环状态。",
+            "status": "active",
+            "created_at": "2026-08-06T14:25:13.773896",
+            "updated_at": "2026-08-06T14:25:13.773896"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "10",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令任意名角色恢复1点体力。",
+            "status": "active",
+            "created_at": "2026-08-06T14:26:13.022749",
+            "updated_at": "2026-08-06T14:26:13.022749"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "对所有角色打出，令体力最低的角色依次回复1点体力",
+            "status": "active",
+            "created_at": "2026-08-06T14:26:13.022749",
+            "updated_at": "2026-08-06T14:26:13.022749"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "11",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名其他角色和你依次打出2张杀，无法打出的角色受到对方造成的1点伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:27:41.069658",
+            "updated_at": "2026-08-06T14:27:41.069658"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令你和一名其他角色依次打出1张杀，无法打出的角色受到对方造成的1点伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:27:41.069658",
+            "updated_at": "2026-08-06T14:27:41.069658"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "12",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名有牌的其他角色弃置你选择的一种花色的手牌，否则随机烧毁其1张牌，然后对其造成1点火焰伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:28:06.510978",
+            "updated_at": "2026-08-06T14:28:06.510978"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "对一名有牌的其他角色打出，你弃置1张手牌或装备，令其弃置1张相同花色的牌，否则随机烧毁其1张牌，然后对其造成1点火焰伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:28:49.646560",
+            "updated_at": "2026-08-06T14:28:49.646560"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "16",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "对自己打出，翻开存活玩家数量张牌，你选择获得其中1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:30:35.070035",
+            "updated_at": "2026-08-06T14:30:35.070035"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "翻开存活玩家数量的牌，所有角色随机获得1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:30:35.070035",
+            "updated_at": "2026-08-06T14:30:35.070035"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "19",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名其他角色在回合开始时卜卦，若结果为♣/4/5，受到4点雷电伤害；否则下一位玩家继续此效果。",
+            "status": "active",
+            "created_at": "2026-08-06T14:31:45.301996",
+            "updated_at": "2026-08-06T14:31:45.301996"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令一名其他角色在回合开始时卜卦，若点数为4，受到3点雷电伤害；否则下一位玩家继续此效果。",
+            "status": "active",
+            "created_at": "2026-08-06T14:31:45.301996",
+            "updated_at": "2026-08-06T14:31:45.301996"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "20",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名其他角色在回合开始时卜卦，若结果为♥/3，受到3点火焰伤害，然后其两侧的角色各受到2点火焰伤害；否则下一位玩家继续此效果。",
+            "status": "active",
+            "created_at": "2026-08-06T14:32:47.742052",
+            "updated_at": "2026-08-06T14:32:47.742052"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令一名其他角色在回合开始时卜卦，若点数为3，受到2点火焰伤害，然后其两侧的角色各受到1点火焰伤害；否则下一位玩家继续此效果。",
+            "status": "active",
+            "created_at": "2026-08-06T14:32:47.742052",
+            "updated_at": "2026-08-06T14:32:47.742052"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "51",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名其他角色下个回合无法选择其他角色为目标。",
+            "status": "active",
+            "created_at": "2026-08-06T14:34:03.621101",
+            "updated_at": "2026-08-06T14:34:03.621101"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令一名其他角色在回合开始时卜卦，若结果为阴（♠/♦），则本回合其打出的牌无法选择其他角色为目标。",
+            "status": "active",
+            "created_at": "2026-08-06T14:34:03.622077",
+            "updated_at": "2026-08-06T14:34:03.622077"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "52",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名其他角色下个回合跳过摸牌阶段。",
+            "status": "active",
+            "created_at": "2026-08-06T14:35:11.621624",
+            "updated_at": "2026-08-06T14:35:11.621624"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令一名其他角色在回合开始时卜卦，若结果为阳（♥/♣），则摸牌阶段摸牌数-1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:35:11.621624",
+            "updated_at": "2026-08-06T14:35:11.621624"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "53",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "选择获得一名其他角色的任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:36:00.677187",
+            "updated_at": "2026-08-06T14:36:00.677187"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "随机获得距离1以内的一名其他角色的任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:36:00.677187",
+            "updated_at": "2026-08-06T14:36:00.677187"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "54",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "选择弃置一名其他角色的任意区域的2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:36:38.429207",
+            "updated_at": "2026-08-06T14:36:38.429207"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "随机弃置一名其他角色的任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:36:38.429207",
+            "updated_at": "2026-08-06T14:36:38.429207"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "55",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "抵消1张战法牌，并且无法被抵消。",
+            "status": "active",
+            "created_at": "2026-08-06T14:37:19.053174",
+            "updated_at": "2026-08-06T14:37:19.053174"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "抵消1张即将对你生效的战法牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:37:19.053174",
+            "updated_at": "2026-08-06T14:37:19.053174"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "56",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "令一名有牌的其他角色对你选择的其攻击范围内的一名角色打出1张杀，否则你获得其任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:38:08.149722",
+            "updated_at": "2026-08-06T14:38:08.149722"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "令一名有牌的其他角色可以对你选择的其攻击范围内的一名角色打出1张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:38:08.149722",
+            "updated_at": "2026-08-06T14:38:08.149722"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "59",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "对所有其他角色打出，令其依次打出2张闪，否则对其造成1点伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:39:26.093441",
+            "updated_at": "2026-08-06T14:39:26.093441"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "对所有其他角色打出，令其依次打出1张闪，否则对其造成1点伤害，然后结束此牌效果。",
+            "status": "active",
+            "created_at": "2026-08-06T14:39:26.093441",
+            "updated_at": "2026-08-06T14:39:26.093441"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "22",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "你对目标打出的杀获得贯穿和封禁，此杀的封禁效果持续到目标的下个回合开始。",
+            "status": "active",
+            "created_at": "2026-08-06T14:40:16.677127",
+            "updated_at": "2026-08-06T14:40:16.677127"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "你对目标打出的杀获得贯穿。",
+            "status": "active",
+            "created_at": "2026-08-06T14:40:16.677127",
+            "updated_at": "2026-08-06T14:40:16.677127"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "23",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "出杀，你可以令此杀的伤害+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:41:09.853341",
+            "updated_at": "2026-08-06T14:41:09.853341"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "出杀，你可以弃置2张牌，令此杀的伤害+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:41:09.853341",
+            "updated_at": "2026-08-06T14:41:09.853341"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "24",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "你打出的杀需要2张闪才能抵消。",
+            "status": "active",
+            "created_at": "2026-08-06T14:42:00.221086",
+            "updated_at": "2026-08-06T14:42:00.221086"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "你打出的杀需要2张闪才能抵消，当你打出的杀被抵消时，你随机弃置1张牌，然后销毁此牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:42:00.221947",
+            "updated_at": "2026-08-06T14:42:00.221947"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "25",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "出杀，若此杀是你本回合打出的第1张杀，则此杀获得强命。",
+            "status": "active",
+            "created_at": "2026-08-06T14:42:44.349043",
+            "updated_at": "2026-08-06T14:42:44.349043"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "出杀，若此杀是你本回合打出的第1张牌，则此杀获得强命。",
+            "status": "active",
+            "created_at": "2026-08-06T14:42:44.349043",
+            "updated_at": "2026-08-06T14:42:44.349043"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "26",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "出杀，你可以选择弃置目标任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:43:36.029277",
+            "updated_at": "2026-08-06T14:43:36.029277"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "杀伤，随机弃置目标任意区域的1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:43:36.029277",
+            "updated_at": "2026-08-06T14:43:36.029277"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "27",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "其他角色打出杀时，若此杀的目标也在你的攻击范围内，你可以对相同目标打出1张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:44:42.701180",
+            "updated_at": "2026-08-06T14:44:42.701180"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "每个回合限1次，其他角色打出杀后，若此杀的目标也在你的攻击范围内，你可以弃置1张牌，对相同目标打出1张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:44:42.701180",
+            "updated_at": "2026-08-06T14:44:42.701180"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "28",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "当你选择杀的目标时，你可以令此杀的目标+1或+2。",
+            "status": "active",
+            "created_at": "2026-08-06T14:45:35.885768",
+            "updated_at": "2026-08-06T14:45:35.885768"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "当你选择杀的目标时，你可以弃置1张牌，令此杀的目标+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:45:35.885768",
+            "updated_at": "2026-08-06T14:45:35.885768"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "29",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "当你的杀被抵消后，你本回合的出杀次数+2。",
+            "status": "active",
+            "created_at": "2026-08-06T14:46:54.068493",
+            "updated_at": "2026-08-06T14:46:54.068493"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "当你的杀被抵消后，你可以立即对目标打出1张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:46:54.068493",
+            "updated_at": "2026-08-06T14:46:54.068493"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "30",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "装备，添加2张随机花色的杀到手牌，然后增强这2张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:47:41.885163",
+            "updated_at": "2026-08-06T14:47:41.885163"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "装备，添加1张随机花色的杀到你的手牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:47:41.885163",
+            "updated_at": "2026-08-06T14:47:41.885163"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "31",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "你造成的所有火焰伤害+1。你造成火焰伤害后，令目标下回合开始时受到1点火焰伤害。",
+            "status": "active",
+            "created_at": "2026-08-06T14:48:32.796347",
+            "updated_at": "2026-08-06T14:48:32.796347"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "你每回合造成的首次火焰伤害+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:48:32.796347",
+            "updated_at": "2026-08-06T14:48:32.796347"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "32",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "出杀，你可以对目标依次打出手牌中的所有杀，重伤不会断。",
+            "status": "active",
+            "created_at": "2026-08-06T14:49:26.796657",
+            "updated_at": "2026-08-06T14:49:26.796657"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "出杀，你可以对其依次打出手牌中的2张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:49:26.796657",
+            "updated_at": "2026-08-06T14:49:26.796657"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "33",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "应战，你可以立即对目标打出1张杀，且此杀强命。",
+            "status": "active",
+            "created_at": "2026-08-06T14:50:09.548196",
+            "updated_at": "2026-08-06T14:50:09.548196"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "当你受到杀的伤害后，你可以立即对目标打出1张杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:50:09.549172",
+            "updated_at": "2026-08-06T14:50:09.549172"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "34",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "防止你即将受到的所有无属性伤害，当你受到火焰伤害时，烧毁此牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:51:00.668289",
+            "updated_at": "2026-08-06T14:51:00.668289"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "防止你即将受到的所有无属性伤害，受到火焰伤害时，令伤害+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:51:00.668289",
+            "updated_at": "2026-08-06T14:51:00.668289"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "35",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "装备上限+3。",
+            "status": "active",
+            "created_at": "2026-08-06T14:51:23.325083",
+            "updated_at": "2026-08-06T14:51:23.325083"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "装备上限+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:51:23.325083",
+            "updated_at": "2026-08-06T14:51:23.325083"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "36",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "应战，你可以卜卦，若结果花色为♣或♠，回复1点体力，并抵消此杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:55:10.476493",
+            "updated_at": "2026-08-06T14:55:10.476493"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "应战，卜卦，若结果花色为♠，则抵消此杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:55:10.476493",
+            "updated_at": "2026-08-06T14:55:10.476493"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "37",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "应战，你可以打出任意牌抵消此杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:55:57.644713",
+            "updated_at": "2026-08-06T14:55:57.644713"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "应战，你可以打出冲杀抵消此杀。",
+            "status": "active",
+            "created_at": "2026-08-06T14:55:57.644713",
+            "updated_at": "2026-08-06T14:55:57.644713"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "38",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "手牌上限+4。",
+            "status": "active",
+            "created_at": "2026-08-06T14:56:21.827926",
+            "updated_at": "2026-08-06T14:56:21.827926"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "手牌上限+1。",
+            "status": "active",
+            "created_at": "2026-08-06T14:56:21.827926",
+            "updated_at": "2026-08-06T14:56:21.827926"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "39",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "装备，回复2点体力；当你受到大于1点的伤害时，抵消此伤害，然后销毁此牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:57:57.723664",
+            "updated_at": "2026-08-06T14:57:57.723664"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "装备，回复1点体力。",
+            "status": "active",
+            "created_at": "2026-08-06T14:57:57.723664",
+            "updated_at": "2026-08-06T14:57:57.723664"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "40",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "出杀，摸2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:58:38.380067",
+            "updated_at": "2026-08-06T14:58:38.380067"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "每个回合限一次，出杀，摸1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:58:38.380067",
+            "updated_at": "2026-08-06T14:58:38.380067"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "41",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "回合开始时，摸2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:59:11.828099",
+            "updated_at": "2026-08-06T14:59:11.828099"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "回合开始时，摸1张牌，然后选择弃置1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T14:59:11.828099",
+            "updated_at": "2026-08-06T14:59:11.828099"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "42",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "受伤，摸2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:00:06.516608",
+            "updated_at": "2026-08-06T15:00:06.516608"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "受伤，卜卦，若结果点数为1~7，摸1张牌，若结果点数为8，弃置所有手牌和装备。",
+            "status": "active",
+            "created_at": "2026-08-06T15:00:06.516608",
+            "updated_at": "2026-08-06T15:00:06.516608"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "43",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "应战，摸2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:00:44.692283",
+            "updated_at": "2026-08-06T15:00:44.692283"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "每个回合限1次，应战，摸1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:00:44.692283",
+            "updated_at": "2026-08-06T15:00:44.692283"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "44",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "回合结束时，摸2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:01:27.788097",
+            "updated_at": "2026-08-06T15:01:27.788097"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "回合结束时，摸1张牌，然后选择弃置1张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:01:27.788097",
+            "updated_at": "2026-08-06T15:01:27.788097"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "45",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "每回合限1次，重伤，回复全部体力，摸3张牌，然后销毁此牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:02:29.387391",
+            "updated_at": "2026-08-06T15:02:29.387391"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "每回合限1次，重伤，回复1点体力，摸2张牌，然后销毁此牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:02:29.387391",
+            "updated_at": "2026-08-06T15:02:29.387391"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "46",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "击杀，摸5张牌",
+            "status": "active",
+            "created_at": "2026-08-06T15:03:03.299705",
+            "updated_at": "2026-08-06T15:03:03.299705"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "击杀，摸2张牌。",
+            "status": "active",
+            "created_at": "2026-08-06T15:03:03.299705",
+            "updated_at": "2026-08-06T15:03:03.299705"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
+    },
+    {
+      "card_id": "47",
+      "fields": {
+        "strengthen_effect": [
+          {
+            "content": "装备，摸3张牌",
+            "status": "active",
+            "created_at": "2026-08-06T15:03:28.883668",
+            "updated_at": "2026-08-06T15:03:28.883668"
+          }
+        ],
+        "weaken_effect": [
+          {
+            "content": "装备，摸1张牌.",
+            "status": "active",
+            "created_at": "2026-08-06T15:03:28.883668",
+            "updated_at": "2026-08-06T15:03:28.883668"
+          }
+        ]
+      },
+      "updated_at": "2026-08-06"
     }
   ]
 }
