@@ -499,7 +499,7 @@ class CardAnnotationEditDialog(QDialog):
         self._service = service
         self._card_id = card_id
         self._editors: dict[str, QWidget] = {}
-        self._effect_editors: dict[str, tuple[QTextEdit, QComboBox]] = {}
+        self._effect_editors: dict[str, tuple[QTextEdit, QComboBox, QTextEdit]] = {}
         self._effect_edit_buttons: dict[str, QPushButton] = {}
         self._editing_effects: dict[str, int] = {}
         self._dialog_layout = QVBoxLayout(self)
@@ -519,6 +519,7 @@ class CardAnnotationEditDialog(QDialog):
         ))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
         form_layout = QVBoxLayout(content)
         for definition in self._service.schema.list_fields(include_archived=False):
@@ -552,7 +553,9 @@ class CardAnnotationEditDialog(QDialog):
         for index, raw in enumerate(entries):
             entry = EffectEntry.model_validate(raw)
             row = QHBoxLayout()
-            row.addWidget(QLabel(f"[{EFFECT_STATUS_LABELS[entry.status]}] {entry.content}"), 1)
+            record_label = QLabel(f"[{EFFECT_STATUS_LABELS[entry.status]}] {entry.content}")
+            record_label.setWordWrap(True)
+            row.addWidget(record_label, 1)
             edit = QPushButton("编辑")
             edit.clicked.connect(lambda _, key=definition.key, position=index: self._edit_effect(key, position))
             row.addWidget(edit)
@@ -564,11 +567,18 @@ class CardAnnotationEditDialog(QDialog):
         layout.addLayout(records)
         form = QFormLayout()
         content = QTextEdit()
+        content.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        content.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         status = QComboBox()
         for item in sorted(EFFECT_STATUSES):
             status.addItem(EFFECT_STATUS_LABELS[item], item)
-        self._effect_editors[definition.key] = (content, status)
+        rules = QTextEdit()
+        rules.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        rules.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        rules.setPlaceholderText("可选：填写结算规则详解，防止效果结算发生歧义")
+        self._effect_editors[definition.key] = (content, status, rules)
         form.addRow("效果说明", content)
+        form.addRow("规则详解", rules)
         form.addRow("状态", status)
         layout.addLayout(form)
         save = QPushButton("新增效果记录")
@@ -583,7 +593,11 @@ class CardAnnotationEditDialog(QDialog):
                 raise ValueError("追加字段不存在或已被删除")
             position = self._editing_effects.get(key)
             previous = EffectEntry.model_validate(self._values[key][position]) if position is not None else None
-            entry = self._build_effect_entry(definition, content, status, previous.created_at if previous else None)
+            rules = self._effect_editors[key][2]
+            entry = self._build_effect_entry(
+                definition, content, status, rules.toPlainText(),
+                previous.created_at if previous else None,
+            )
         except ValueError as error:
             QMessageBox.warning(self, "无法保存", str(error))
             return
@@ -598,6 +612,7 @@ class CardAnnotationEditDialog(QDialog):
         definition: CardFieldDefinition,
         content: QTextEdit,
         status: QComboBox,
+        settlement_rules: str = "",
         created_at: datetime | None = None,
     ) -> EffectEntry:
         """将表单转换为效果记录，并在界面层给出可理解的校验提示。"""
@@ -608,6 +623,7 @@ class CardAnnotationEditDialog(QDialog):
             return EffectEntry(
                 content=content.toPlainText(),
                 status=str(status.currentData()),
+                settlement_rules=settlement_rules,
                 created_at=created_at or now,
                 updated_at=now,
             )
@@ -616,8 +632,9 @@ class CardAnnotationEditDialog(QDialog):
 
     def _edit_effect(self, key: str, position: int) -> None:
         entry = EffectEntry.model_validate(self._values[key][position])
-        content, status = self._effect_editors[key]
+        content, status, rules = self._effect_editors[key]
         content.setPlainText(entry.content)
+        rules.setPlainText(entry.settlement_rules)
         status.setCurrentIndex(status.findData(entry.status))
         self._editing_effects[key] = position
         self._effect_edit_buttons[key].setText("保存修改")
@@ -632,6 +649,8 @@ class CardAnnotationEditDialog(QDialog):
     def _make_value_editor(self, definition: CardFieldDefinition, value: Any) -> QWidget:
         if definition.value_type == "markdown":
             editor = QTextEdit()
+            editor.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+            editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             editor.setPlainText(value or "")
             return editor
         if definition.value_type == "tags":
@@ -680,7 +699,7 @@ class CardAnnotationEditDialog(QDialog):
     def _collect_effect_fields(self) -> dict[str, Any]:
         """收集尚未点击“新增效果记录”的填写内容，供底部保存一并写入。"""
         fields = deepcopy(self._values)
-        for key, (content, status) in self._effect_editors.items():
+        for key, (content, status, rules) in self._effect_editors.items():
             has_input = bool(content.toPlainText().strip())
             if not has_input:
                 continue
@@ -689,7 +708,10 @@ class CardAnnotationEditDialog(QDialog):
                 raise ValueError("追加字段不存在或已被删除")
             position = self._editing_effects.get(key)
             previous = EffectEntry.model_validate(fields[key][position]) if position is not None else None
-            entry = self._build_effect_entry(definition, content, status, previous.created_at if previous else None)
+            entry = self._build_effect_entry(
+                definition, content, status, rules.toPlainText(),
+                previous.created_at if previous else None,
+            )
             if position is None:
                 fields.setdefault(key, []).append(entry.model_dump(mode="json"))
             else:

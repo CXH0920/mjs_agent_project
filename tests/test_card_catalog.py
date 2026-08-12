@@ -59,6 +59,22 @@ def test_effect_entry_uses_internal_timestamps_without_legacy_fields(tmp_path: P
     assert raw["created_at"] == raw["updated_at"]
     assert not {"version", "effective_from", "effective_to", "source"} & raw.keys()
 
+def test_effect_entry_keeps_optional_settlement_rules(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.add_effect_entry(
+        "8", "strengthen_effect",
+        EffectEntry(content="加强", status="active", settlement_rules="  先结算伤害，再结算摸牌  "),
+    )
+
+    raw = service.annotations.get_annotation("8").fields["strengthen_effect"][0]
+    assert raw["settlement_rules"] == "先结算伤害，再结算摸牌"
+
+    service.save_annotation_fields("8", {"strengthen_effect": [{
+        "content": "无规则", "status": "active",
+        "created_at": "2026-08-01T00:00:00", "updated_at": "2026-08-01T00:00:00",
+    }]})
+    assert service.annotations.get_annotation("8").fields["strengthen_effect"][0]["settlement_rules"] == ""
+
 
 def test_legacy_effect_entry_is_migrated_when_saved(tmp_path: Path) -> None:
     service = _service(tmp_path)
@@ -71,6 +87,7 @@ def test_legacy_effect_entry_is_migrated_when_saved(tmp_path: Path) -> None:
     assert raw == {
         "content": "旧效果",
         "status": "active",
+        "settlement_rules": "",
         "created_at": "2026-07-26T00:00:00",
         "updated_at": "2026-07-26T00:00:00",
     }

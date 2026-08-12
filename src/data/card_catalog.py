@@ -84,6 +84,7 @@ class EffectEntry(BaseModel):
 
     content: str = Field(min_length=1)
     status: str = "active"
+    settlement_rules: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -104,6 +105,12 @@ class EffectEntry(BaseModel):
     def not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("字段不能为空")
+        return value.strip()
+
+    @field_validator("settlement_rules")
+    @classmethod
+    def clean_settlement_rules(cls, value: str) -> str:
+        """规则详解为可选字段，仅去除首尾空白，允许为空。"""
         return value.strip()
 
     @field_validator("status")

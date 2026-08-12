@@ -200,6 +200,7 @@ def test_panel_lists_semantic_effect_statuses_without_timestamps(tmp_path) -> No
                     },
                     {
                         "content": "当前效果", "status": "active",
+                        "settlement_rules": "内部结算规则，不应展示",
                         "created_at": "2026-07-26T00:00:00", "updated_at": "2026-07-26T00:00:00",
                     },
                 ],
@@ -232,6 +233,7 @@ def test_panel_lists_semantic_effect_statuses_without_timestamps(tmp_path) -> No
     assert all(label.wordWrap() for label in records)
     assert effect_records[0].startswith("生效中\n")
     assert "2026-07-26" not in current.text()
+    assert "内部结算规则" not in current.text()
 
 
 def test_card_effect_style_defines_left_accent_for_each_tone() -> None:
@@ -266,8 +268,9 @@ def test_effect_entries_can_be_added_for_strengthen_and_weaken(tmp_path) -> None
     dialog = CardAnnotationEditDialog(service, "8")
 
     for key, content in (("strengthen_effect", "伤害提高"), ("weaken_effect", "伤害降低")):
-        editor, status = dialog._effect_editors[key]
+        editor, status, rules = dialog._effect_editors[key]
         editor.setPlainText(content)
+        rules.setPlainText("结算详情：先造成伤害再结算后续")
         dialog._save_effect_form(key, editor, status)
 
     assert dialog.layout().count() == 3  # 标题区、可滚动内容区、固定底栏
@@ -276,7 +279,9 @@ def test_effect_entries_can_be_added_for_strengthen_and_weaken(tmp_path) -> None
 
     fields = service.annotations.get_annotation("8").fields
     assert fields["strengthen_effect"][0]["content"] == "伤害提高"
+    assert fields["strengthen_effect"][0]["settlement_rules"] == "结算详情：先造成伤害再结算后续"
     assert fields["weaken_effect"][0]["content"] == "伤害降低"
+    assert fields["weaken_effect"][0]["settlement_rules"] == "结算详情：先造成伤害再结算后续"
 
 
 def test_empty_effect_entry_shows_chinese_required_message(tmp_path) -> None:
@@ -360,11 +365,13 @@ def test_effect_entry_edit_preserves_creation_time_and_updates_modified_time(tmp
     dialog = CardAnnotationEditDialog(service, "8")
 
     dialog._edit_effect("strengthen_effect", 0)
-    content, status = dialog._effect_editors["strengthen_effect"]
+    content, status, rules = dialog._effect_editors["strengthen_effect"]
     content.setPlainText("修正后的效果")
+    rules.setPlainText("输出等于输入时，不发生额外效果")
     dialog._save_effect_form("strengthen_effect", content, status)
 
     entry = dialog._values["strengthen_effect"][0]
     assert entry["content"] == "修正后的效果"
+    assert entry["settlement_rules"] == "输出等于输入时，不发生额外效果"
     assert entry["created_at"] == "2026-01-01T00:00:00"
     assert entry["updated_at"] != entry["created_at"]
