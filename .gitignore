@@ -22,6 +22,9 @@ data/武将放逐.csv
 data/武将推荐指数.csv
 # 汉字特征用户层缓存（运行时自动扩展）
 data/char_info_cache.json
+# 公告监控运行时产物（运行时自动生成/更新）
+data/announcements.json
+data/baike_snapshot.json
 data/backups/
 data/edge_profile/
 PLANS.md
