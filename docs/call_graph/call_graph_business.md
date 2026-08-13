@@ -555,3 +555,35 @@ src.ui.configuration.mumu_config_dialog
 | `delete_template()` | `MumuConfigDialog` | `get_template_manager().delete_template()` |
 | `set_hero_names(names)` | `MainWindow.__init__()` | 存储 hero_names |
 | `run_ocr(image, rois)` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed` |
+
+
+## 十、AnnouncementService（公告更新检查）链路
+
+### 10.1 检查链路与信号拓扑
+
+```
+MainWindow._check_announcements()
+  -> 忙碌/冷却判断（is_busy / cooldown_remaining）-> QMessageBox 提示弹窗
+  -> AnnouncementService.check_now()
+    -> is_busy 检查（threading 引用存活判断）
+    -> 冷却检查（60 秒最小间隔）
+    -> check_started / status_changed 信号
+    -> threading.Thread(_run_check) -> _do_check()
+      -> fetch_latest_announcements() + classify_hero_related()
+      -> AnnouncementManager.merge_new()
+      -> fetch_baike_heroes() -> build_hero_snapshot() -> diff_heroes()
+      -> AnnouncementManager.mark_ready_if_updated()
+    -> check_finished(object) 信号（跨线程排队到 GUI 线程）
+  -> MainWindow._on_announcement_check_finished()
+```
+
+失败边界：公告/百科拉取异常只记日志并放入 `result.error` / `baike_ok=False`，不覆盖旧快照、不中断应用。
+“更新武将数据”由主窗口编排（`build_update_candidates` 组装候选 → `HeroUpdateConfirmDialog` 用户确认 → 指定获取/增量链式执行），Service 只负责公告检查与 `mark_applied()` 快照刷新。
+
+### 10.2 函数清单
+
+| 函数 | 职责 |
+|------|------|
+| `check_now()` | 手动触发一次检查（busy 防重） |
+| `_run_check()` / `_do_check()` | 后台执行并返回 `AnnouncementCheckResult` |
+| `mark_applied()` | 采集完成后公告置已处理 + 刷新百科快照 |

@@ -310,3 +310,19 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `apply_incremental_update()` | `manager.py` | 测试和外部导入工具 | 按 added/modified/removed 更新三个 Manager，并执行武将删除级联 |
 | `load_win_rates()` | `win_rate_repository.py` | `RecommendationPanel`, `MatchGuidePanel` | CSV 解析、百分比转浮点、默认路径缓存 |
 | `CardCatalogService.save_annotation_fields()` | `card_catalog.py` | `CardAnnotationEditDialog` | 校验字段值并将旧效果记录迁移为内部时间字段 |
+
+
+## 七、公告记录与百科快照链路
+
+```
+AnnouncementService._do_check()
+  -> AnnouncementManager.merge_new(items, baseline)
+    -> Announcement.model_validate(raw)              [字段含 hero_related/matched_heroes/content_missing/status]
+    -> Announcement.stable_key(url) 判重             [API 与回退模式统一按 url]
+    -> status: baseline/非武将相关 -> applied；武将相关新公告 -> pending
+    -> save()（原子写入 announcements.json）
+  -> AnnouncementManager.mark_ready_if_updated(diff) [匹配名字 -> pending -> ready]
+  -> AnnouncementManager.mark_applied()              [pending/ready -> applied]
+  -> load_baike_snapshot() / save_baike_snapshot()   [覆盖式 baike_snapshot.json]
+
+被外部调用：MainWindow（菜单/横幅/对话框刷新）、AnnouncementService（检查与采集完成联动）。

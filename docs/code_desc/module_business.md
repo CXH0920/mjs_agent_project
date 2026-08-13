@@ -43,8 +43,10 @@ src/business/
 ├── analysis/
 │   ├── recommendation_service.py # 推荐数据组装
 │   └── match_analysis_service.py # 对局攻略分析
-└── maintenance/
-    └── data_management_service.py # 数据清理、修复与修改事务
+├── maintenance/
+│   └── data_management_service.py # 数据清理、修复与修改事务
+└── announcement/
+    └── announcement_service.py    # 公告检查与百科 diff 服务（线程 + Qt 信号）
 ```
 
 `emulator` 只向 `recognition` 依赖 OCR 服务和任务类型；各二级包的
@@ -219,6 +221,14 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 该顺序能优先恢复低置信度但完整的词表候选，同时避免将“郭”“范”等多候选单字或“夏侯”“司马”等复姓公共前缀强行改为错误角色。
 
 ---
+
+### 3.6 AnnouncementService（公告更新检查）
+
+`AnnouncementService(QObject)` 提供手动“检查公告更新”：`check_now()` 在 `threading.Thread` 中执行 `_do_check()`，结果通过 `check_finished(object)` 信号回到 GUI 线程（沿用 PollCoordinator 的线程+信号模式）；`is_busy` 防重复点击，`cooldown_remaining` 提供 60 秒最小检查间隔，主窗口对忙碌/冷却状态弹出提示。
+
+一次检查 = 拉公告（`fetch_latest_announcements`，API 失败回退 HTML）→ 章节标题分类（`classify_hero_related`）→ `AnnouncementManager.merge_new` 去重落盘 → 拉百科（`fetch_baike_heroes`）→ 内容哈希 diff（`build_hero_snapshot`/`diff_heroes`）→ `mark_ready_if_updated`。首次运行以本地 `heroes.json` 初始化百科快照基线、不提醒；百科/公告失败只记日志，不覆盖旧快照。
+
+`mark_applied()` 在“更新武将数据”完成后由主窗口调用：公告置已处理并把最近一次百科哈希写回快照，使差异归零。
 
 ## 四、关键代码片段
 

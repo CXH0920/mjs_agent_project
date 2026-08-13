@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import logging
-from PySide6.QtCore import Qt
+import threading
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -17,6 +19,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QProgressBar,
+    QPushButton,
     QStatusBar,
     QStyle,
     QTabWidget,
@@ -32,6 +36,11 @@ from src.data.manager import (
     DEFAULT_GUIDES_FILE,
 )
 from src.data.card_catalog import CardCatalogService
+from src.data.announcement_manager import AnnouncementManager, AnnouncementStatus
+from src.business.announcement.announcement_service import AnnouncementCheckResult, AnnouncementService
+from src.ui.data_admin.announcement_dialog import AnnouncementDialog
+from src.scraper.official_source.announcement import build_update_candidates, fetch_baike_heroes
+from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +59,8 @@ from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDial
 from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 from src.ui.app.shell_widgets import ContextHeader, NavigationRail
-from src.ui.shared.widgets import show_toast
+from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
+from src.ui.shared.widgets import NoticeBanner, show_toast
 
 
 class MainWindow(QMainWindow):
@@ -58,6 +68,8 @@ class MainWindow(QMainWindow):
 
     初始化时自动加载数据，通过应用外壳展示三个长期工作区。
     """
+
+    _hero_update_prepared = Signal(object)
 
     NAV_COLLAPSE_THRESHOLD = 1040
     PAGE_CONTEXTS = (
@@ -123,6 +135,21 @@ class MainWindow(QMainWindow):
             self,
         )
 
+        self._announcement_manager = AnnouncementManager()
+        self._announcement_service = AnnouncementService(
+            self._announcement_manager, self._data.heroes, self,
+        )
+        self._announcement_dialog: AnnouncementDialog | None = None
+        self._last_announcement_diff: dict = {"added": [], "modified": [], "removed": []}
+        self._pending_update_phases: list[tuple[str, list[int] | None]] | None = None
+        self._announcement_banner: NoticeBanner | None = None
+        self._announcement_update_button: QPushButton | None = None
+        self._announcement_service.check_started.connect(self._on_announcement_check_started)
+        self._announcement_service.check_finished.connect(self._on_announcement_check_finished)
+        self._announcement_service.progress_changed.connect(self._on_announcement_progress)
+        self._hero_update_prepared.connect(self._on_hero_update_prepared)
+        self._announcement_service.status_changed.connect(self._on_fetch_status)
+
         self._connect_fetch_signals()
         self._connect_capture_signals()
         self._ai_workflow.status_changed.connect(self._on_fetch_status)
@@ -169,6 +196,7 @@ class MainWindow(QMainWindow):
         """连接采集服务的信号到状态栏"""
         self._fetch_service.status_changed.connect(self._on_fetch_status)
         self._fetch_service.fetch_completed.connect(self._on_fetch_completed)
+        self._fetch_service.progress_updated.connect(self._on_fetch_progress)
         self._fetch_service.error_occurred.connect(self._on_fetch_error)
 
     def _on_fetch_status(self, message: str) -> None:
@@ -176,7 +204,23 @@ class MainWindow(QMainWindow):
         self._status_label.setText(message)
 
     def _on_fetch_completed(self, success: bool) -> None:
-        """采集完成处理"""
+        """采集完成处理；公告驱动的多阶段更新在此串联。"""
+        self._hide_progress()
+        if self._pending_update_phases is not None:
+            self._pending_update_phases.pop(0)
+            if success and self._pending_update_phases:
+                self._start_next_update_phase()
+                return
+            self._pending_update_phases = None
+            if success:
+                self._announcement_service.mark_applied()
+                self._last_announcement_diff = {"added": [], "modified": [], "removed": []}
+                self._refresh_announcement_banner()
+                self._refresh_announcement_dialog()
+                show_toast(self, "武将数据已更新，请重新加载数据（F5）。", duration=4000)
+            else:
+                QMessageBox.warning(self, "采集失败", "武将数据更新失败")
+            return
         if success:
             show_toast(self, "武将数据已采集完成，请重新加载数据。", duration=3000)
         else:
@@ -185,6 +229,254 @@ class MainWindow(QMainWindow):
     def _on_fetch_error(self, error_msg: str) -> None:
         """采集错误处理"""
         QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{error_msg}")
+
+    # ---------------------------------------------------------------
+    # 进度可视化（状态栏进度条）
+    # ---------------------------------------------------------------
+
+    def _show_indeterminate_progress(self, text: str) -> None:
+        """显示不确定进度（动画），用于无法精确计数的联网阶段。"""
+        self._progress_bar.setRange(0, 0)
+        self._progress_bar.setFormat(text)
+        self._progress_bar.show()
+
+    def _set_progress(self, current: int, total: int, text: str) -> None:
+        """显示确定进度（子进程 [n/N] 阶段）。"""
+        total = max(total, 1)
+        self._progress_bar.setRange(0, total)
+        self._progress_bar.setValue(min(current, total))
+        self._progress_bar.setFormat(text)
+        self._progress_bar.show()
+
+    def _hide_progress(self) -> None:
+        self._progress_bar.hide()
+
+    def _on_announcement_progress(self, text: str) -> None:
+        """公告检查阶段文字更新（进度条已由 check_started 显示）。"""
+        self._progress_bar.setFormat(text)
+
+    def _on_fetch_progress(self, current: int, total: int, text: str) -> None:
+        """武将采集子进程 [n/N] 进度更新。"""
+        self._set_progress(current, total, text)
+
+    # ---------------------------------------------------------------
+    # 公告更新（手动检查 + 百科 diff + 精准更新）
+    # ---------------------------------------------------------------
+
+    def _check_announcements(self) -> None:
+        """手动触发一次公告与百科 diff 检查；忙碌/冷却中给出提示弹窗。"""
+        if self._announcement_service.is_busy:
+            QMessageBox.information(self, "公告检查", "公告检查正在进行中，请稍候。")
+            return
+        remaining = self._announcement_service.cooldown_remaining
+        if remaining > 0:
+            QMessageBox.information(
+                self,
+                "公告检查",
+                f"检查过于频繁，请 {int(remaining) + 1} 秒后再试。",
+            )
+            return
+        self._announcement_service.check_now()
+
+    def _on_announcement_check_started(self) -> None:
+        self._status_label.setText("正在检查公告更新...")
+        self._show_indeterminate_progress("正在检查公告更新...")
+
+    def _on_announcement_check_finished(self, result: AnnouncementCheckResult) -> None:
+        """处理一次公告检查结果，更新横幅/对话框与提示。"""
+        self._hide_progress()
+        self._last_announcement_diff = result.diff
+        self._refresh_announcement_banner()
+        self._refresh_announcement_dialog()
+        if result.error:
+            self._status_label.setText(f"公告检查失败：{result.error}")
+            logger.warning("公告检查失败: %s", result.error)
+            return
+        summary = (
+            f"公告检查完成：新 {len(result.new_announcements)} · "
+            f"待生效 {result.pending_count} · 可更新 {result.ready_count}"
+        )
+        if not result.baike_ok:
+            summary += "（百科数据获取失败）"
+        self._status_label.setText(summary)
+        if result.hero_related:
+            names = "、".join(
+                change.name
+                for announcement in result.hero_related
+                for change in announcement.matched_heroes[:3]
+            ) or "武将"
+            show_toast(
+                self,
+                f"发现 {len(result.hero_related)} 条武将相关新公告：{names}",
+                tone=TONE_WARNING,
+                duration=4000,
+            )
+        elif result.ready_count:
+            show_toast(self, "百科数据已更新，可更新武将数据", duration=3000)
+        elif any(result.diff.values()):
+            show_toast(self, "检测到百科数据变化，建议更新武将数据", tone=TONE_WARNING, duration=3000)
+
+    def _refresh_announcement_banner(self) -> None:
+        """根据公告状态与百科 diff 刷新顶部横幅。"""
+        if self._announcement_banner is None or self._announcement_update_button is None:
+            return
+        announcements = self._announcement_manager.list_announcements()
+        ready = [a for a in announcements if a.status is AnnouncementStatus.READY]
+        pending = [a for a in announcements if a.status is AnnouncementStatus.PENDING]
+        diff = self._last_announcement_diff
+        if ready:
+            self._announcement_banner.set_tone(TONE_SUCCESS)
+            self._announcement_banner.title_label.setText("武将数据可更新")
+            self._announcement_banner.set_message(
+                f"百科已更新，涉及：{'、'.join(self._announcement_names(ready))}。"
+                "点击「更新武将数据」同步本地资料。"
+            )
+            self._announcement_update_button.setEnabled(True)
+            self._announcement_banner.show()
+        elif pending:
+            self._announcement_banner.set_tone(TONE_INFO)
+            self._announcement_banner.title_label.setText("检测到武将相关公告")
+            self._announcement_banner.set_message(
+                "公告已发布，官网百科数据通常滞后半天到一天，请稍后再次检查；"
+                "也可点击「更新武将数据」核对当前差异。"
+            )
+            self._announcement_update_button.setEnabled(True)
+            self._announcement_banner.show()
+        elif any(diff.values()):
+            self._announcement_banner.set_tone(TONE_WARNING)
+            self._announcement_banner.title_label.setText("检测到百科数据变化")
+            self._announcement_banner.set_message(
+                f"官网武将数据有变更（新增 {len(diff['added'])} / "
+                f"修改 {len(diff['modified'])} / 删除 {len(diff['removed'])}），"
+                "建议更新武将数据。"
+            )
+            self._announcement_update_button.setEnabled(True)
+            self._announcement_banner.show()
+        else:
+            self._announcement_banner.hide()
+
+    @staticmethod
+    def _announcement_names(announcements) -> list[str]:
+        """汇总公告涉及的武将展示标签。"""
+        names = []
+        for announcement in announcements:
+            for change in announcement.matched_heroes:
+                label = change.name
+                if change.change:
+                    label += f"（{change.change}）"
+                if not change.known:
+                    label += "·未收录"
+                names.append(label)
+        return names[:6]
+
+    def _refresh_announcement_dialog(self) -> None:
+        if self._announcement_dialog is not None and self._announcement_dialog.isVisible():
+            self._announcement_dialog.reload()
+            self._announcement_dialog.set_diff(self._last_announcement_diff)
+
+    def _open_announcement_dialog(self) -> None:
+        """打开公告更新对话框（非模态，可边看边操作）。"""
+        if self._announcement_dialog is None:
+            self._announcement_dialog = AnnouncementDialog(self._announcement_manager, self)
+            self._announcement_dialog.check_requested.connect(self._announcement_service.check_now)
+            self._announcement_dialog.update_requested.connect(
+                self._update_hero_data_from_announcements
+            )
+        self._announcement_dialog.reload()
+        self._announcement_dialog.set_diff(self._last_announcement_diff)
+        self._announcement_dialog.show()
+        self._announcement_dialog.raise_()
+        self._announcement_dialog.activateWindow()
+
+    def _update_hero_data_from_announcements(self) -> None:
+        """按公告与百科 diff 更新武将数据：先经用户确认，避免覆盖手动修正。"""
+        if self._fetch_service.is_busy:
+            QMessageBox.warning(self, "采集进行中", "武将采集正在进行，请稍后再试。")
+            return
+        candidates = self._collect_update_candidates_base()
+        if not candidates:
+            self._status_label.setText("没有需要更新的武将数据")
+            show_toast(
+                self,
+                "当前没有需要更新的武将数据（公告可能仍在等待百科数据更新）",
+                tone=TONE_INFO,
+                duration=3000,
+            )
+            return
+        self._status_label.setText("正在获取官网数据以核对差异...")
+        self._show_indeterminate_progress("正在获取官网数据以核对差异...")
+        self._hero_update_thread = threading.Thread(
+            target=self._prepare_hero_update_candidates,
+            daemon=True,
+        )
+        self._hero_update_thread.start()
+
+    def _collect_update_candidates_base(self) -> list[dict]:
+        """用公告 matched 与内存 diff 组装基础候选（无差异摘要，供判断与降级）。"""
+        local_heroes = [hero.model_dump(mode="json") for hero in self._data.heroes.list_heroes()]
+        return build_update_candidates(
+            self._announcement_manager.list_announcements(),
+            local_heroes,
+            None,
+            self._last_announcement_diff,
+        )
+
+    def _prepare_hero_update_candidates(self) -> None:
+        """后台拉取官网百科，计算字段级差异摘要后回到主线程。"""
+        official_heroes = fetch_baike_heroes()
+        local_heroes = [hero.model_dump(mode="json") for hero in self._data.heroes.list_heroes()]
+        if official_heroes is None:
+            candidates = self._collect_update_candidates_base()
+        else:
+            candidates = build_update_candidates(
+                self._announcement_manager.list_announcements(),
+                local_heroes,
+                official_heroes,
+                self._last_announcement_diff,
+            )
+        self._hero_update_prepared.emit({
+            "candidates": candidates,
+            "official_ok": official_heroes is not None,
+        })
+
+    def _on_hero_update_prepared(self, payload: dict) -> None:
+        """展示更新确认对话框，按用户勾选执行；全取消视为已查看本版本。"""
+        self._hide_progress()
+        candidates = payload.get("candidates") or []
+        if not candidates:
+            self._status_label.setText("没有需要更新的武将数据")
+            return
+        dialog = HeroUpdateConfirmDialog(candidates, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._status_label.setText("已取消更新武将数据")
+            return
+        selected_ids = dialog.selected_ids
+        update_new = dialog.update_new
+        if not selected_ids and not update_new:
+            # 全取消：保留本地内容，刷新快照视为“本版本已查看”
+            self._announcement_service.mark_applied()
+            self._last_announcement_diff = {"added": [], "modified": [], "removed": []}
+            self._refresh_announcement_banner()
+            self._refresh_announcement_dialog()
+            show_toast(self, "已保留本地武将内容，本次未更新", duration=3000)
+            return
+        phases: list[tuple[str, list[int] | None]] = []
+        if selected_ids:
+            phases.append(("specific", selected_ids))
+        if update_new:
+            phases.append(("incremental", None))
+        self._pending_update_phases = phases
+        self._start_next_update_phase()
+
+    def _start_next_update_phase(self) -> None:
+        """启动公告驱动的下一阶段采集。"""
+        if not self._pending_update_phases:
+            return
+        kind, hero_ids = self._pending_update_phases[0]
+        if kind == "specific":
+            self._fetch_service.fetch_specific(hero_ids or [])
+        else:
+            self._fetch_service.fetch_incremental()
 
     def _connect_capture_signals(self) -> None:
         """连接截图、连接状态和轮询服务信号。"""
@@ -300,6 +592,8 @@ class MainWindow(QMainWindow):
             "guide_specific": QAction("指定获取", self),
             "synergy_single": QAction("选定武将", self),
             "synergy_pair": QAction("指定获取", self),
+            "announcement_check": QAction("检查公告更新", self),
+            "announcement_log": QAction("公告记录", self),
             "about": QAction("关于", self),
         }
         self._actions["exit"].setShortcut("Ctrl+Q")
@@ -320,6 +614,8 @@ class MainWindow(QMainWindow):
             "guide_specific": self._request_guide_specific,
             "synergy_single": self._request_synergy_single,
             "synergy_pair": self._request_synergy_pair,
+            "announcement_check": self._check_announcements,
+            "announcement_log": self._open_announcement_dialog,
             "about": self._show_about,
         }
         for name, callback in callbacks.items():
@@ -342,6 +638,8 @@ class MainWindow(QMainWindow):
         data_menu = bar.addMenu("数据")
         data_menu.addAction(self._actions["reload"])
         data_menu.addAction(self._actions["official_import"])
+        data_menu.addAction(self._actions["announcement_check"])
+        data_menu.addAction(self._actions["announcement_log"])
         fetch_menu = data_menu.addMenu("武将获取")
         fetch_menu.addActions([
             self._actions["fetch_all"],
@@ -395,6 +693,16 @@ class MainWindow(QMainWindow):
         self._context_header = ContextHeader(title, description, workspace)
         workspace_layout.addWidget(self._context_header)
         self._setup_shell_actions()
+
+        self._announcement_banner = NoticeBanner("公告更新", "", tone=TONE_INFO, parent=workspace)
+        view_button = QPushButton("查看")
+        view_button.clicked.connect(self._open_announcement_dialog)
+        self._announcement_banner.add_action(view_button, role=ROLE_SECONDARY)
+        self._announcement_update_button = QPushButton("更新武将数据")
+        self._announcement_update_button.clicked.connect(self._update_hero_data_from_announcements)
+        self._announcement_banner.add_action(self._announcement_update_button, role=ROLE_PRIMARY)
+        self._announcement_banner.hide()
+        workspace_layout.addWidget(self._announcement_banner)
 
         self._tabs = QTabWidget(workspace)
         self._tabs.setObjectName("workspaceTabs")
@@ -467,6 +775,9 @@ class MainWindow(QMainWindow):
         self._maintenance_menu = QMenu("生成与维护", self)
         self._maintenance_menu.setObjectName("libraryMaintenanceMenu")
         self._maintenance_menu.addAction(self._actions["reload"])
+        self._maintenance_menu.addSeparator()
+        self._maintenance_menu.addAction(self._actions["announcement_check"])
+        self._maintenance_menu.addAction(self._actions["announcement_log"])
         self._maintenance_menu.addSeparator()
         fetch_menu = self._maintenance_menu.addMenu("武将获取")
         fetch_menu.addActions([
@@ -569,6 +880,11 @@ class MainWindow(QMainWindow):
         bar = QStatusBar()
         self._status_label = QLabel()
         bar.addWidget(self._status_label)
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setMaximumWidth(220)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.hide()
+        bar.addWidget(self._progress_bar)
         self._emulator_status_label = QLabel()
         self._emulator_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._emulator_status_label.mousePressEvent = lambda _: self._open_mumu_config()

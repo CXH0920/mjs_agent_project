@@ -176,6 +176,8 @@ python -m src.scraper.incremental --hero 诸葛亮,关羽
 python -m src.scraper.incremental --hero-id 52,114
 ```
 
+> **公告更新检查**（应用内手动触发，无 CLI）：菜单“数据 > 检查公告更新”拉取官方公告 API（单次 5 条全文），仅对带 `【新增武将】/【武将调整】` 章节的公告判定为武将相关；同时拉取官网百科逐武将内容哈希与本地快照做 diff，公告提及且 diff 确认后才提示“可更新”——避免公告发布早于百科生效（通常滞后半天到一天）导致的空跑。
+
 ### 5. AI 批量生成
 
 ```bash
@@ -382,6 +384,18 @@ for issue in report.issues:
 
 `--skip-images` 跳过头像下载。
 
+### 公告监控 (`src/scraper/official_source/announcement.py`)
+
+公告列表页是 Nuxt 对公开 JSON API 的 SSR 展示，底层接口：
+
+```
+GET https://ucmsv2api.ztgame.com/api/news/list?site=mjs&type=notice&page=1&per_page=5
+```
+
+- `fetch_latest_announcements()` — 单次获取 5 条公告全文；API 失败时回退解析 `notice-1.html` 的标题/日期/链接
+- `classify_hero_related()` — 仅按 `【新增武将】/【武将调整】` 章节标题判定相关；正文其他位置提及武将名（修复列表、副本内容）不算
+- `hero_content_hash()` / `build_hero_snapshot()` / `diff_heroes()` — 官网字段规范化后 md5，与 `data/baike_snapshot.json` 逐武将比对，输出新增/修改/删除
+
 ---
 
 ## AI 批量生成
@@ -444,6 +458,8 @@ _save_json() → data/*.tmp → 每批原子替换 data/guides.json / data/syner
 | 配置 > 数据管理 | | 备份后批量清空武将攻略和相性数据 |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
 | 数据 > 官方数据导入 | | 选择 2v2 和/或武将放逐榜单图片；显示当前文件 OCR 进度，覆盖胜率、出场、放逐 CSV，并输出待复核 CSV/行截图 |
+| 数据 > 检查公告更新 | | 拉取官方公告 + 百科逐武将 diff，武将相关新公告提醒；状态流转：待生效 → 可更新 → 已处理；60 秒冷却，忙碌/冷却中弹窗提示 |
+| 数据 > 公告记录 | | 查看公告全文与百科 diff 变更清单；一键“更新武将数据”（弹确认对话框展示字段级差异与 Git 风格全文 diff，勾选后指定获取 + 增量精准覆盖；未勾选保留本地）；状态栏进度条显示联网/采集进度 |
 | 数据 > 武将获取 > 全量/增量/指定 | | 从官网采集武将（含头像下载） |
 | 数据 > 攻略获取 > 全量/增量/指定 | | AI 批量生成攻略 → BackendChooseDialog（API/浏览器） |
 | 数据 > 武将相性 > 选定武将 | | 选 1 武将，计算其与全体其他武将的相性 → BackendChooseDialog |
@@ -607,6 +623,7 @@ LOG_TO_FILE=true
 | 九 | 推荐引擎（相性查询、胜率 CSV、OCR 数据导入） | ✅ 已完成 |
 | 十 | 武将编辑与攻略编辑（tab-header 级修改/删除按钮 + 编辑弹窗） | ✅ 已完成 |
 | 十一 | 相性配对多武将组合（最多 8 武将 × 两两配对） | ✅ 已完成 |
+| 十二 | 公告监控（手动检查 + 百科逐武将 diff + 精准更新） | ✅ 已完成 |
 
 ---
 

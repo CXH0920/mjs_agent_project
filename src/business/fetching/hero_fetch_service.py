@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from PySide6.QtCore import Signal
 
@@ -22,6 +23,7 @@ class HeroFetchService(BaseFetchService):
     """
 
     fetch_completed = Signal(bool)  # True=成功, False=失败
+    progress_updated = Signal(int, int, str)  # (当前步, 总步数, 阶段文字)
 
     @property
     def _service_name(self) -> str:
@@ -60,6 +62,19 @@ class HeroFetchService(BaseFetchService):
     # ---------------------------------------------------------------
     # 钩子
     # ---------------------------------------------------------------
+
+    _PROGRESS_LINE_RE = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)$")
+
+    def _on_stdout_line(self, line: str) -> None:
+        """解析子进程 [n/N] 步骤进度（全量 [1/5]、增量/指定 [1/3]）。"""
+        match = self._PROGRESS_LINE_RE.match(line.strip())
+        if not match:
+            return
+        self.progress_updated.emit(
+            int(match.group(1)),
+            int(match.group(2)),
+            match.group(3).strip(),
+        )
 
     def _on_process_finished(self, exit_code: int) -> None:
         self.fetch_completed.emit(exit_code == 0)

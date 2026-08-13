@@ -58,9 +58,10 @@ src/ui/
 │   ├── mumu_config_dialog.py
 │   ├── mumu_config_sections.py
 │   └── roi_selector.py
-├── data_admin/                 # 数据维护与官方榜单导入
+├── data_admin/                 # 数据维护、官方榜单导入与公告更新
 │   ├── data_management_dialog.py
-│   └── official_data_import_dialog.py
+│   ├── official_data_import_dialog.py
+│   └── announcement_dialog.py    # 公告列表/全文 + 百科 diff + 一键更新
 ├── shared/                     # 跨功能控件、展示与样式
 │   ├── widgets.py              # DoubleClickLabel 等共享控件
 │   ├── hero_dialogs.py         # HeroSkillDialog
@@ -302,6 +303,13 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 `DataManagementDialog` 由菜单“配置 → 数据管理”打开，可勾选批量清空武将攻略和武将相性。“清空选中数据”使用危险角色，与普通“关闭”明显区分；提交前要求输入“清空”确认，服务执行期间底栏禁用。`DataManagementService` 会先将所选 JSON 复制到 `data/backups/` 的时间戳备份文件，再清空 Manager 并原子保存正式 JSON。完成结果以模态消息列出清空数量和备份路径，随后主窗口刷新攻略详情、相性表、推荐摘要和状态栏计数。
 
 ---
+
+### 3.9 公告更新对话框与横幅
+
+- 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：待生效公告显示“已发布，等待百科更新”，可更新公告显示“百科已更新，涉及：…”，纯 diff 变化也提示“检测到百科数据变化”。
+- `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单。
+- “更新武将数据”必须先经 `HeroUpdateConfirmDialog` 确认：列出待更新武将（名称/类型/来源/字段级差异摘要），可勾选、全选/清空、双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）；未勾选的保留本地。确认后按勾选执行：调整类 → `fetch_specific(ids)`，新增类 → `fetch_incremental()`，两阶段经 `fetch_completed` 信号链式串行，完成后 `mark_applied()` 并刷新快照；全取消仅刷新快照、不执行采集。
+- 状态栏新增 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
 
 ## 四、关键代码片段
 

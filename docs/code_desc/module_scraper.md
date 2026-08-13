@@ -14,6 +14,7 @@
 - **增量采集** — 只采集本地没有的新武将
 - **指定采集** — 按武将名或 ID 采集特定武将
 - **头像下载** — 从官网下载武将头像到 `images/` 目录
+- **公告监控** — 拉取官方公告 API，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将哈希 diff 确认“什么真的变了”
 
 ---
 
@@ -28,7 +29,8 @@ src/scraper/
     ├── adapter.py      # 官网 HTML/JS chunk 解析适配器
     ├── crawler.py      # 网络请求、数据清洗、校验与头像下载
     ├── full.py         # 全量采集实现
-    └── incremental.py  # 增量/指定采集实现
+    ├── incremental.py  # 增量/指定采集实现
+    └── announcement.py # 公告 API/回退解析、武将相关判定、百科逐武将 diff
 ```
 
 ---
@@ -97,6 +99,19 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 - 响应以 64 KiB 分块下载，最大 5 MiB；仅接受并用 Pillow 解码验证 PNG，像素数最大 4,000,000
 - 临时文件通过验证后原子替换正式头像；下载失败只打 warning 并保留已有头像，不中断流程
 - `skip_existing=True` 时跳过已存在的文件
+
+### 3.5 公告监控
+
+公告列表页是 Nuxt 对公开 JSON API 的 SSR 展示，接口为 `https://ucmsv2api.ztgame.com/api/news/list`（`site=mjs&type=notice&page=1&per_page=5`），单次返回 5 条公告全文。
+
+- `fetch_latest_announcements()` — 请求公告 API；失败回退解析 `notice-1.html` 的 `<li>`（仅 title/date/url，`content_missing=True`）。
+- `classify_hero_related(title, content_html, hero_names)` — 仅按 `【新增武将】/【武将调整】`（含加强/削弱/修改变体）章节标题判定；在章节内解析 `名称（增强|削弱|调整）` 或已知武将名；正文其他位置提及武将名（修复、副本内容）不判相关；不在本地名单的名字标“未收录”。
+- `hero_content_hash(hero)` — 官网字段（name/faction/position/max_hp/max_hand/gender/skills/icon_url）NFKC+去标签规范化后 md5，不含本地扩展字段。
+- `fetch_baike_heroes()` — 复用 `fetch_all_raw() → transform() → validate_heroes()` 获取清洗后百科武将，失败返回 None 不中断。
+- `build_hero_snapshot()` / `diff_heroes()` — 与 `data/baike_snapshot.json` 逐武将比对，输出 `{added, modified, removed}`。
+- `hero_field_diff_summary(local, official)` — 字段级差异摘要（势力/定位/性别/体力/手牌/技能描述与结算，含新增/移除技能），中文、每行限长截断。
+- `format_hero_full_text(hero)` — 武将只读全文（用于确认对话框的本地 vs 官网对比）。
+- `build_update_candidates(announcements, local_heroes, official_heroes, diff)` — 组装“更新武将数据”确认候选：ready 公告解析武将与 diff added/modified 并集、按名称去重（后续来源补充缺失 ID）、附带摘要与本地/官网全文；`official_heroes=None` 时跳过摘要计算（降级）。
 
 ---
 

@@ -31,37 +31,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/zUeGZJApnYEQlFuvUKbkFYd2uHKFN4YhjCC6Xn3R.png_200x282.png"
   },
   {
-    "id": 179,
-    "name": "王元姬",
-    "title": "",
-    "faction": "西晋",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "躬执纺绩",
-        "description": "出牌阶段限1次，获得1张行动牌，然后你可以将此牌交给一名其他角色，或者令一名未拥有此技能的其他角色获得此技能。",
-        "settlement": "目标获得的此技能是一个全新的技能，并不受到技能修改的影响。"
-      },
-      {
-        "name": "谦冲接下",
-        "description": "每个回合限1次，当你获得其他角色的牌时，若你的手牌数不是全场最低，你可以令你与其“出牌阶段限1次”的技能下个出牌阶段的发动次数+1。",
-        "settlement": "对目标的增益效果会在其下个出牌阶段开始时才真正生效，令此时目标的所有出牌阶段限1次的技能发动次数+1。例如对左慈发动此技能时其未拥有“出牌阶段限1次”的技能但其下个出牌阶段开始之前获得了挟天以令，也会令挟天以令的发动次数+1。"
-      },
-      {
-        "name": "烛奸抑势",
-        "description": "出牌阶段结束时，若你的行动牌全场最多，你可以获得一名其他角色的1张牌，并且当其发动“出牌阶段限1次”的技能后，你可以获得其2张牌，直到你的下个回合开始。",
-        "settlement": "1.可以根据技能能否发动判断场上行动牌的数量。 2.只要技能初始限制次数为出牌阶段限1次，就会受到此技能的影响，例如苏秦的合纵也能受到此技能的影响。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/4ktxauAoYQqETOcodTzOBIIfY18TqXL7gojgtxSb.png_200x282.png"
-  },
-  {
     "id": 176,
     "name": "张华",
     "title": "",
@@ -305,37 +274,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/wrcqpclAoZkcCBuqDIUVdL3fBnAAWFptiIZJ3Ac8.png_200x282.png"
   },
   {
-    "id": 167,
-    "name": "刘据",
-    "title": "",
-    "faction": "西汉",
-    "position": "攻击",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "归来望思",
-        "description": "阵亡，你可以令一名其他角色的手牌上限-1，并且之后每个摸牌阶段的摸牌数-1。",
-        "settlement": "这个效果很简单..."
-      },
-      {
-        "name": "惧忿成戾",
-        "description": "限定，回合结束时，若你的体力值全场最低，你可以销毁所有手牌，摸2倍数量张牌，并获得1个额外的出牌阶段，直到此阶段结束时，若没有角色阵亡，你失去全部体力。",
-        "settlement": "此技能没有手牌也可以发动，进行一个额外的出牌阶段。与破釜沉舟的区别在于破釜沉舟为主动发动，因此无手牌无法发动。"
-      },
-      {
-        "name": "博望纳贤",
-        "description": "每个回合限1次，当你失去最后的手牌时，其他角色可以交给你任意张牌;当你获得其他角色的牌时，随机添加其中1张牌的复制至手牌，每名其他角色每个回合限1次。",
-        "settlement": "所有其他角色都可以在“你失去最后的手牌时”的同一个询问中交给你牌，实际交给你牌的顺序为座位顺序。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/2jZLoJ2L0AgS7BlP7PsCoudh0k1DKY9CPPgruqo6.png_200x282.png"
-  },
-  {
     "id": 166,
     "name": "郭舍人",
     "title": "",
@@ -474,37 +412,6 @@
     "mode_viability": {},
     "last_updated": "2026-07-16",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/63ZYWdCaHAqbjxyh2bh9OkggE6gH5SY8yY6WbDqc.png_200x282.png"
-  },
-  {
-    "id": 161,
-    "name": "贾诩",
-    "title": "",
-    "faction": "东汉",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "毒士",
-        "description": "所有角色每累计受到3点杀的伤害时，你获得1张战法牌。",
-        "settlement": "按照杀的伤害数值计算，而不按照次数计算。"
-      },
-      {
-        "name": "文和乱武",
-        "description": "限定，直到你的下个回合开始，所有其他角色无法从牌堆获得牌，并且出杀次数+1。",
-        "settlement": "1.其他角色在此过程中无法从牌堆获得牌，包括摸牌或直接定向获得牌，但技能发动者可以获得。 2.武将重新登场时也无法摸初始手牌。3.从牌堆中翻开牌执行后续效果的技能或卡牌是可以正常生效的，例如先拔头筹，先翻开牌再获得翻开的牌不属于直接从牌堆获得牌。"
-      },
-      {
-        "name": "算无遗策",
-        "description": "你打出的战法牌无法被识破抵消;你可以将任意战法牌当作识破打出。",
-        "settlement": "打出战法牌时不会有识破询问流程。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/dpLxLtlQKRxoOR7KeIcWhaWkX7whK39xDG7ecLgr.png_200x282.png"
   },
   {
     "id": 160,
@@ -4588,68 +4495,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/ne3RJfEE1kQIdOKoF4XyHnC11zx7casEdOdW94eu.png_200x282.png"
   },
   {
-    "id": 181,
-    "name": "卫玠",
-    "title": "",
-    "faction": "西晋",
-    "position": "防御",
-    "max_hp": 3,
-    "max_hand": 6,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "思梦成疾",
-        "description": "出牌阶段，你可以获得1张与所有其他角色手牌中牌名都不相同的牌，然后失去1点体力，若没有因此获得牌，此技能失效直到当前回合结束。",
-        "settlement": "没有从牌堆中获得牌则不会失去体力。"
-      },
-      {
-        "name": "珠玉在侧",
-        "description": "当你打出牌后，你可以削弱一名与你距离最近的其他角色手牌中所有相同牌名的牌。",
-        "settlement": "1.存在多名与你距离最近的角色则只可选择其中一名。 2.其他角色与你的距离最小为1。"
-      },
-      {
-        "name": "风神秀异",
-        "description": "当你即将受到伤害时，若你的手牌上限＞体力值，则改为减少等量的手牌上限。当你打出行动牌或战法牌时，若所有其他角色手牌中都不存在与此牌相同牌名的牌，则你的手牌上限+1，并获得随机1张与其他角色手牌中相同牌名的牌。",
-        "settlement": "1.只要在即将受到伤害的时机点满足条件，无论受到的伤害是否大于手牌上限与体力值的差值或大于手牌上限，均只减少等量手牌上限。 2.后段效果中会随机一名角色的1张牌，从牌堆中获得与其同牌名的牌。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-27",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/YRMgZnD3GNGqHqh9XPKmKztDRjoBDK1FWk3Kojn6.png_200x282.png"
-  },
-  {
-    "id": 147,
-    "name": "霍光",
-    "title": "",
-    "faction": "西汉",
-    "position": "攻击",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "擅专废立",
-        "description": "限定，你可以弃置所有手牌，令两名其他角色交换体力上限与体力值、手牌和装备区的牌，然后你减少两者体力值差值的体力上限。",
-        "settlement": "1.当体力上限=0时，直接阵亡; 2.依次进行体力值交换，手牌交换，装备区的牌交换。"
-      },
-      {
-        "name": "芒刺在背",
-        "description": "回合结束时，与你距离为1并且体力值≥你的其他角色失去1点体力。",
-        "settlement": "1.所有与你距离为1的角色，若其满足条件，都会受到此技能影响; 2.此技能为“被动”触发的技能。"
-      },
-      {
-        "name": "行举有常",
-        "description": "当你打出牌时，若此牌的点数等于当前轮数，你摸1张牌，并增加1点体力上限。",
-        "settlement": "1.对当前轮次，每次打出符合条件的牌时，都会生效; 2.仅“增加”体力上限，并不会回复体力; 3.当体力上限=0时，直接阵亡。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-27",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-04/EMVXrJbkGe6NMzE5MbnKvU3ox1eRntU3XmMOqHJ8.png_200x282.png"
-  },
-  {
     "id": 183,
     "name": "终军",
     "title": "",
@@ -4738,37 +4583,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MSaABuleJMgKIGJY6oGOctL4n0InkJk5Jdlk6A9K.png_200x282.png"
   },
   {
-    "id": 184,
-    "name": "马钧",
-    "title": "",
-    "faction": "曹魏",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "巧思绝世",
-        "description": "出牌阶段限1次，你可以将一名角色的1张牌的花色改为你选择的任意1种花色。",
-        "settlement": "可以选中1张无花色的牌并转化成任何1个花色。"
-      },
-      {
-        "name": "龙骨汲流",
-        "description": "出牌阶段限1次，你可以将1张♣牌选择并转化为1张装备牌。当你打出装备牌后，将弃牌堆中的♠牌洗回牌堆，并且你的装备区每存在1张牌，就获得1张♠牌。",
-        "settlement": "1.选择是指从初始牌堆中存在的装备牌中随机3张并挑选其中1张。 2.转化的装备牌的花色和点数为初始牌堆中其花色点数。"
-      },
-      {
-        "name": "水转百戏",
-        "description": "出牌阶段限1次，将至少1张♠牌洗回牌堆，然后选择一名角色，依次翻开牌堆顶等量张牌并自动对其打出，然后你获得其中无法被打出的牌。",
-        "settlement": "无法打出的牌比如识破，闪，和满血状态下无法对其使用桃。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-31",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MZEJs0hNgVoz3ezzIBE2FGg2h9jA6JXkSFUL8CTB.png_200x282.png"
-  },
-  {
     "id": 186,
     "name": "山涛",
     "title": "",
@@ -4824,5 +4638,222 @@
     "mode_viability": {},
     "last_updated": "2026-08-08",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/sQivFF3ptih5b2mL4XfPjfKG1cN0Y2GYnKjByne6.png_200x282.png"
+  },
+  {
+    "id": 184,
+    "name": "马钧",
+    "title": "",
+    "faction": "曹魏",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "巧思绝世",
+        "description": "出牌阶段限1次，你可以将一名角色的1张牌的花色改为你选择的任意1种花色。",
+        "settlement": "可以选中1张无花色的牌并转化成任何1个花色。"
+      },
+      {
+        "name": "龙骨汲流",
+        "description": "出牌阶段限1次，你可以将1张♣牌选择并转化为1张装备牌。当你打出装备牌后，将弃牌堆中的♠牌洗回牌堆，并且你的装备区每存在1张♣牌，就获得1张♠牌。",
+        "settlement": "1.选择是指从初始牌堆中存在的装备牌中随机3张并挑选其中1张。 2.转化的装备牌的花色和点数为初始牌堆中其花色点数。"
+      },
+      {
+        "name": "水转百戏",
+        "description": "出牌阶段限1次，将至少1张♠牌洗回牌堆，然后选择一名角色，依次翻开牌堆顶等量张牌并自动对其打出，然后你获得其中无法被打出的牌。",
+        "settlement": "无法打出的牌比如识破，闪，和满血状态下无法对其使用桃。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MZEJs0hNgVoz3ezzIBE2FGg2h9jA6JXkSFUL8CTB.png_200x282.png"
+  },
+  {
+    "id": 181,
+    "name": "卫玠",
+    "title": "",
+    "faction": "西晋",
+    "position": "防御",
+    "max_hp": 3,
+    "max_hand": 6,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "思梦成疾",
+        "description": "出牌阶段，你可以获得1张与所有其他角色手牌中牌名都不相同的牌，然后失去1点体力，若没有因此获得牌，此技能失效直到当前回合结束。",
+        "settlement": "没有从牌堆中获得牌则不会失去体力。"
+      },
+      {
+        "name": "珠玉在侧",
+        "description": "当你打出牌后，你可以削弱一名与你距离最近的其他角色手牌中所有相同牌名的牌。",
+        "settlement": "1.存在多名与你距离最近的角色则只可选择其中一名。 2.其他角色与你的距离最小为1。"
+      },
+      {
+        "name": "风神秀异",
+        "description": "每个回合限1次，当你即将受到伤害时，若你的手牌上限＞体力值，则改为减少等量的手牌上限。当你打出牌时，每回合每种类型的牌限1次，若所有其他角色手牌中都不存在与此牌相同牌名的牌，则你的手牌上限+1，并获得随机1张与其他角色手牌中相同牌名的牌。",
+        "settlement": "1.只要在即将受到伤害的时机点满足条件，无论受到的伤害是否大于手牌上限与体力值的差值或大于手牌上限，均只减少等量手牌上限。 2.后段效果中会随机一名角色的1张牌，从牌堆中获得与其同牌名的牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/YRMgZnD3GNGqHqh9XPKmKztDRjoBDK1FWk3Kojn6.png_200x282.png"
+  },
+  {
+    "id": 179,
+    "name": "王元姬",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "躬执纺绩",
+        "description": "出牌阶段限1次，获得1张行动牌，然后你可以将此牌交给一名其他角色，或者令一名未拥有此技能的其他角色获得此技能。",
+        "settlement": "目标获得的此技能是一个全新的技能，并不受到技能修改的影响。"
+      },
+      {
+        "name": "谦冲接下",
+        "description": "每个回合限1次，当你获得其他角色的牌时，你可以令你与其“出牌阶段限1次”的技能下个出牌阶段的发动次数+1。",
+        "settlement": "对目标的增益效果会在其下个出牌阶段开始时才真正生效，令此时目标的所有出牌阶段限1次的技能发动次数+1。例如对左慈发动此技能时其未拥有“出牌阶段限1次”的技能但其下个出牌阶段开始之前获得了挟天以令，也会令挟天以令的发动次数+1。"
+      },
+      {
+        "name": "烛奸抑势",
+        "description": "回合开始时，你可以获得一名其他角色的1张牌，并且当其发动“出牌阶段限1次”的技能后，你可以获得其2张牌，直到你的下个回合开始。",
+        "settlement": "1.可以根据技能能否发动判断场上行动牌的数量。 2.只要技能初始限制次数为出牌阶段限1次，就会受到此技能的影响，例如苏秦的合纵也能受到此技能的影响。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/4ktxauAoYQqETOcodTzOBIIfY18TqXL7gojgtxSb.png_200x282.png"
+  },
+  {
+    "id": 167,
+    "name": "刘据",
+    "title": "",
+    "faction": "西汉",
+    "position": "共计",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "归来望思",
+        "description": "阵亡，你可以令一名其他角色的手牌上限-1，并且之后每个摸牌阶段的摸牌数-1。",
+        "settlement": "这个效果很简单..."
+      },
+      {
+        "name": "惧忿成戾",
+        "description": "限定，出牌阶段结束时，若你已受伤，你可以销毁所有手牌，摸2倍数量张牌，并获得1个额外的出牌阶段，直到此阶段结束时，若没有角色阵亡，你失去全部体力。",
+        "settlement": "此技能没有手牌也可以发动，进行一个额外的出牌阶段。与破釜沉舟的区别在于破釜沉舟为主动发动，因此无手牌无法发动。"
+      },
+      {
+        "name": "博望纳贤",
+        "description": "每个回合限1次，当你失去最后的手牌时，其他角色可以交给你任意张牌；当你获得其他角色的牌时，随机添加其中1张牌的复制至手牌，每回合每种牌限1次。",
+        "settlement": "所有其他角色都可以在“你失去最后的手牌时”的同一个询问中交给你牌，实际交给你牌的顺序为座位顺序。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-06/2jZLoJ2L0AgS7BlP7PsCoudh0k1DKY9CPPgruqo6.png_200x282.png"
+  },
+  {
+    "id": 161,
+    "name": "贾诩",
+    "title": "",
+    "faction": "东汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "毒士",
+        "description": "所有角色每累计受到2点杀的伤害时，你获得1张战法牌。",
+        "settlement": "按照杀的伤害数值计算，而不按照次数计算。"
+      },
+      {
+        "name": "文和乱武",
+        "description": "限定，直到你的下个回合开始，所有其他角色无法从牌堆获得牌，并且出杀次数+1。",
+        "settlement": "1.其他角色在此过程中无法从牌堆获得牌，包括摸牌或直接定向获得牌，但技能发动者可以获得。 2.武将重新登场时也无法摸初始手牌。3.从牌堆中翻开牌执行后续效果的技能或卡牌是可以正常生效的，例如先拔头筹，先翻开牌再获得翻开的牌不属于直接从牌堆获得牌。"
+      },
+      {
+        "name": "算无遗策",
+        "description": "你打出的战法牌无法被识破抵消；当战法牌即将对你生效时，你可以将1张牌当作识破打出。",
+        "settlement": "打出战法牌时不会有识破询问流程。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/dpLxLtlQKRxoOR7KeIcWhaWkX7whK39xDG7ecLgr.png_200x282.png"
+  },
+  {
+    "id": 147,
+    "name": "霍光",
+    "title": "",
+    "faction": "西汉",
+    "position": "攻击",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "擅专废立",
+        "description": "限定，令两名其他角色交换体力上限与体力值、手牌和装备区的牌，然后你减少两者体力值差值的体力上限，并弃置等量张牌。",
+        "settlement": "1.当体力上限=0时，直接阵亡; 2.依次进行体力值交换，手牌交换，装备区的牌交换。"
+      },
+      {
+        "name": "芒刺在背",
+        "description": "你的回合内，当其他角色打出牌时，若此牌点数＞你打出的上1张牌的点数，则你可以令其失去1点体力。",
+        "settlement": "1.所有与你距离为1的角色，若其满足条件，都会受到此技能影响; 2.此技能为“被动”触发的技能。"
+      },
+      {
+        "name": "行举有常",
+        "description": "当你打出牌时，若此牌的点数等于当前轮数，你摸1张牌，并增加1点体力上限。",
+        "settlement": "1.对当前轮次，每次打出符合条件的牌时，都会生效; 2.仅“增加”体力上限，并不会回复体力; 3.当体力上限=0时，直接阵亡。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-04/EMVXrJbkGe6NMzE5MbnKvU3ox1eRntU3XmMOqHJ8.png_200x282.png"
+  },
+  {
+    "id": 188,
+    "name": "东方朔",
+    "title": "",
+    "faction": "西汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "答客难",
+        "description": "限定，当你需要响应打出牌时，你可以将所有手牌当作要打出的牌打出，然后令一名角色随机添加和这些牌等量且类型相同的牌至手牌。",
+        "settlement": "1.随机添加的牌的总数量与因此技能打出的手牌相同，类型一一对应。 2.响应打出牌并不要求一定在回合外。"
+      },
+      {
+        "name": "巧言善辩",
+        "description": "出牌阶段限1次/应战，你可以将一名角色的1种类型的牌随机转化为相同类型的其他牌。",
+        "settlement": "在装备区的装备也会被一起转化，但不会触发装备的打出装备效果。"
+      },
+      {
+        "name": "奏牍三千",
+        "description": "回合开始时，你可以令一名其他角色查看牌堆和你的手牌，然后可以从牌堆中找出并获得1张与你手牌中的1张牌完全相同的牌。",
+        "settlement": "1.发动此技能时查看的牌堆是有序的。 2.完全相同的牌需要花色，点数，牌名均相同。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-13",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/NRvooFPvhD0MiQzv3rW7BkBLl0LMQ1D40lyftUkK.png_200x282.png"
   }
 ]

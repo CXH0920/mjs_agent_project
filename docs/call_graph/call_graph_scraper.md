@@ -254,3 +254,38 @@ official.py:main() / incremental.py:main()          [CLI 入口]
 | `download_hero_images()` | `crawler.py` | `crawl()`, `run()` | `fetch(binary)`, `Path.write_bytes()` |
 | `fetch_all_raw()` | `crawler.py` | `incremental.main()` | `fetch()`, `find_chunk_url()`, ... |
 | `run()` | `incremental.py` | `incremental.main()` | `transform()`, `validate_heroes()` |
+
+
+## 六、公告检查与百科 diff 链路
+
+```
+MainWindow._check_announcements()
+  -> AnnouncementService.check_now()                 [busy 防重]
+    -> threading.Thread(_run_check -> _do_check)     [后台执行，不阻塞 UI]
+      -> fetch_latest_announcements()                [公告 API 单请求]
+         -> 成功: parse_announcement_list(json)      [5 条全文]
+         -> 失败: _parse_notice_page_html(notice-1.html)  [title/date/url, content_missing=True]
+      -> classify_hero_related(title, content, hero_names)  [仅章节标题判定]
+      -> AnnouncementManager.merge_new(..., baseline)       [按 url 去重落盘 announcements.json]
+      -> fetch_baike_heroes()                        [复用 fetch_all_raw -> transform -> validate_heroes]
+         -> 失败返回 None（不中断）
+      -> build_hero_snapshot(current)                [每武将官网字段 md5]
+      -> load_baike_snapshot() / 首次用本地 heroes.json 建基线
+      -> diff_heroes(current, baseline)              [{added, modified, removed}]
+      -> AnnouncementManager.mark_ready_if_updated(diff)
+  [信号] check_finished(result) -> MainWindow._on_announcement_check_finished()
+  用户点“更新武将数据”完成后 -> AnnouncementService.mark_applied()
+    -> mark_applied() + save_baike_snapshot(最近一次快照)   [差异归零]
+
+## 七、更新候选与字段级差异摘要
+
+```
+MainWindow._update_hero_data_from_announcements()
+  -> build_update_candidates(公告, 本地 heroes, 官网 heroes, diff)
+    -> ready 公告 matched + diff added/modified 并集，按名称去重
+    -> 每个候选: {name, hero_id, change, source, known, summary[], local_full, official_full}
+  -> hero_field_diff_summary(local, official)   [字段级差异：定位/体力/技能描述等]
+  -> format_hero_full_text(hero)                [本地 vs 官网全文，供确认对话框对比]
+  -> HeroUpdateConfirmDialog 确认后 -> fetch_specific(ids) / fetch_incremental()
+```
+

@@ -955,3 +955,42 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `GuideEditDialog` | HeroGuide + HeroManager | 修改后的 HeroGuide 对象 |
 | `HeroRelationSelectDialog` | HeroManager + 预选 ID | 按英雄 ID 稳定排序的 `selected_ids` |
 | `SynergyEditDialog` | HeroManager + SynergyScore | 修改后的 SynergyScore 对象 |
+
+
+## 九、公告更新菜单、横幅与对话框链路
+
+```
+菜单: 数据 > 检查公告更新 -> _check_announcements() -> AnnouncementService.check_now()
+菜单: 数据 > 公告记录 -> _open_announcement_dialog() -> AnnouncementDialog（非模态）
+
+AnnouncementService.check_finished -> _on_announcement_check_finished()
+  -> _refresh_announcement_banner()
+     ready>0: 横幅“武将数据可更新” + [查看][更新武将数据]（success 色调）
+     pending>0: 横幅“检测到武将相关公告，等待百科更新”（info 色调，更新按钮禁用）
+     diff 非空: 横幅“检测到百科数据变化”（warning 色调）
+     否则隐藏
+  -> _refresh_announcement_dialog()（对话框打开时刷新列表与 diff）
+
+进度可视化链路:
+  AnnouncementService.check_started -> MainWindow._on_announcement_check_started()
+    -> _show_indeterminate_progress("正在检查公告更新...")
+  AnnouncementService.progress_changed -> _on_announcement_progress()   [阶段文字]
+  AnnouncementService.check_finished -> _on_announcement_check_finished() -> _hide_progress()
+  HeroFetchService.progress_updated -> _on_fetch_progress(current, total, text)
+    -> _set_progress() [QProgressBar setRange/setValue/setFormat]
+  HeroFetchService.fetch_completed -> _on_fetch_completed() -> _hide_progress()
+
+AnnouncementDialog / 顶部横幅:
+  update_requested -> MainWindow._update_hero_data_from_announcements()
+    -> _collect_update_candidates_base()          [公告 matched + 内存 diff，无摘要]
+    -> 无候选 -> 状态栏“没有需要更新的武将数据”
+    -> 有候选 -> 后台线程 _prepare_hero_update_candidates()
+       -> fetch_baike_heroes() -> build_update_candidates()  [字段级差异摘要 + 全文]
+       -> _hero_update_prepared 信号 -> _on_hero_update_prepared()
+    -> HeroUpdateConfirmDialog.exec()              [勾选要覆盖的武将]
+       -> 双击/按钮 -> HeroDiffDetailDialog        [本地 vs 官网全文]
+    -> 确认后: selected_ids -> fetch_specific(ids)；update_new -> fetch_incremental()
+       -> fetch_completed 信号 -> _on_fetch_completed() 链式串行
+       -> 全部完成 -> AnnouncementService.mark_applied() -> toast“请重新加载数据（F5）”
+    -> 全取消: mark_applied() 刷新快照，不执行采集，toast“已保留本地武将内容”
+```

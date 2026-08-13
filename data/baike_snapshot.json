@@ -1,0 +1,693 @@
+{
+  "checked_at": "2026-08-13T14:58:13",
+  "heroes": {
+    "188": {
+      "name": "东方朔",
+      "hash": "873aba089599e242e6506c75ff0a969a"
+    },
+    "187": {
+      "name": "王戎",
+      "hash": "036124e4b9eaeae3e571c131f7573d42"
+    },
+    "186": {
+      "name": "山涛",
+      "hash": "51aae950cca2fce7253139ae8cb3696b"
+    },
+    "185": {
+      "name": "偃师",
+      "hash": "14e6ce3fd87a27d93522f8de7198d7be"
+    },
+    "184": {
+      "name": "马钧",
+      "hash": "3c30deeb6b6ee671d0583289496fa448"
+    },
+    "183": {
+      "name": "终军",
+      "hash": "23f9513e4e640b1db2eda50da4d9bcdf"
+    },
+    "182": {
+      "name": "韩安国",
+      "hash": "f861abd2ab8e3f5d4c2a1bc174fa45c7"
+    },
+    "181": {
+      "name": "卫玠",
+      "hash": "068e397718e92a21c5e67bc54a06a6f6"
+    },
+    "180": {
+      "name": "乐广",
+      "hash": "678c9f5b8d13360630b7cd596b780b03"
+    },
+    "179": {
+      "name": "王元姬",
+      "hash": "0273efd2ddc065715f63f49ce13a777a"
+    },
+    "178": {
+      "name": "杜预",
+      "hash": "53021eb2cc5f98508e381881a3b28b43"
+    },
+    "177": {
+      "name": "荀勖",
+      "hash": "1dc0155cae114db3fe08c112c663ab73"
+    },
+    "176": {
+      "name": "张华",
+      "hash": "4fd271ba8ce6acd536af4b62ef011105"
+    },
+    "175": {
+      "name": "陆机",
+      "hash": "327723499998d11cfb2efe9fc74584b5"
+    },
+    "174": {
+      "name": "傅玄",
+      "hash": "6499f0c8a0b2f544d3849275be55ec80"
+    },
+    "173": {
+      "name": "主父偃",
+      "hash": "50f356751d8ccdf1a5776e2d72971da2"
+    },
+    "172": {
+      "name": "郭解",
+      "hash": "1217fc2e9a9b659574206a6912add19a"
+    },
+    "171": {
+      "name": "刘禅",
+      "hash": "60b580b65d31470855ae2a674dbfbd93"
+    },
+    "170": {
+      "name": "魏延",
+      "hash": "bbd5ea0d085652c8e3ae7288252401df"
+    },
+    "169": {
+      "name": "羊祜",
+      "hash": "fee6f9c03754ce9311d48ebeaaca208a"
+    },
+    "168": {
+      "name": "司马炎",
+      "hash": "cdafd0c22766e79fbf4f919813850b09"
+    },
+    "167": {
+      "name": "刘据",
+      "hash": "08102bc443571515b728a6f348545c58"
+    },
+    "166": {
+      "name": "郭舍人",
+      "hash": "1862ecab8f3be67ec26a7d7229134f0b"
+    },
+    "165": {
+      "name": "吕蒙",
+      "hash": "535a11be1b864494d616e97802a3719a"
+    },
+    "164": {
+      "name": "徐盛",
+      "hash": "5b22b5b7a3ddf000f055606806302bf1"
+    },
+    "163": {
+      "name": "韩娥",
+      "hash": "f90ab87cf8a1df29062493ec066b8a1f"
+    },
+    "162": {
+      "name": "郑国",
+      "hash": "893842e908a82c1a0a481f452cd7d868"
+    },
+    "161": {
+      "name": "贾诩",
+      "hash": "c42a79178b9fdf540719510655bfce18"
+    },
+    "160": {
+      "name": "陈宫",
+      "hash": "368cb77eeb63290ef73b6b83631417b3"
+    },
+    "159": {
+      "name": "赵奢",
+      "hash": "0c0f41fce1318ef9341cb76a3f503b94"
+    },
+    "158": {
+      "name": "李牧",
+      "hash": "9105828dbd7cde5bd3346cd4a3226d8f"
+    },
+    "157": {
+      "name": "庞煖",
+      "hash": "4b550d6bf89ad48bf4335458ad95499d"
+    },
+    "156": {
+      "name": "魏咎",
+      "hash": "8e87e45771d4500303d5225ec0a1030f"
+    },
+    "155": {
+      "name": "卓文君",
+      "hash": "dde0b85c914366fdb8447f1dfc10be8d"
+    },
+    "154": {
+      "name": "司马相如",
+      "hash": "565550995cc16ecf2f05805a21ad2315"
+    },
+    "153": {
+      "name": "李夫人",
+      "hash": "6cd74686bba544a9b60cc2f5ca7229ac"
+    },
+    "152": {
+      "name": "赵婕妤",
+      "hash": "0750af681c6f443df6c99197324450c7"
+    },
+    "151": {
+      "name": "刘弗陵",
+      "hash": "6aa9c682a51c337e360562f6e67865f5"
+    },
+    "150": {
+      "name": "黄月英",
+      "hash": "ba537dea79016007b95a14136d0fdbc5"
+    },
+    "149": {
+      "name": "王异",
+      "hash": "ebd327fc02b851e8ff703d481943d2f0"
+    },
+    "148": {
+      "name": "平阳公主",
+      "hash": "03cae1856f4e9529935be95a57bdd94e"
+    },
+    "147": {
+      "name": "霍光",
+      "hash": "18cc6ac3f36b92bb5e1d793d48067712"
+    },
+    "146": {
+      "name": "朱亥",
+      "hash": "baccb618c051040e9e3fbaa91af42be8"
+    },
+    "145": {
+      "name": "侯嬴",
+      "hash": "96b1d45564637a2dc3ae2345fc782011"
+    },
+    "144": {
+      "name": "公孙瓒",
+      "hash": "cd52c685a12039fa7bf03a64bdb43b77"
+    },
+    "143": {
+      "name": "凌统",
+      "hash": "d7c5e169c15b91ee922f750d37086973"
+    },
+    "142": {
+      "name": "卢莫愁",
+      "hash": "55a3cc45d6988bbca98ef9d7ec6c0fdc"
+    },
+    "141": {
+      "name": "项燕",
+      "hash": "65b3e0f8021d5269a4bbba7d24b6afc9"
+    },
+    "140": {
+      "name": "桑弘羊",
+      "hash": "638220a94cae7407902414e5b9528cff"
+    },
+    "139": {
+      "name": "张宝",
+      "hash": "47e644d18133bcb5f99a77b59408c636"
+    },
+    "138": {
+      "name": "张梁",
+      "hash": "ab953feaeb0e046ab74708b1a678b1ef"
+    },
+    "137": {
+      "name": "李信",
+      "hash": "071315d2253c5ec412c776fc560e2b81"
+    },
+    "136": {
+      "name": "白起",
+      "hash": "db2b91ccf2ea070d2d143155bc6f6f2f"
+    },
+    "135": {
+      "name": "尉缭",
+      "hash": "4bed264c7bb92c6ca1c2b973ec484033"
+    },
+    "134": {
+      "name": "祝融夫人",
+      "hash": "c7f9fed6ae5d0e798cf290a664679845"
+    },
+    "133": {
+      "name": "太子丹",
+      "hash": "1f330dcb4b9bafe416665866634abc6b"
+    },
+    "132": {
+      "name": "孟获",
+      "hash": "76d0fa06866d61537756273e34add3f9"
+    },
+    "130": {
+      "name": "嬴政",
+      "hash": "3d33793872fc829bde8a7c0d5c3f8af5"
+    },
+    "129": {
+      "name": "王翦",
+      "hash": "9bdd8ae876cc32bce4384966c2ab6a63"
+    },
+    "128": {
+      "name": "刘协",
+      "hash": "2ce8afc781500018f64cdf7c6c078651"
+    },
+    "127": {
+      "name": "刘表",
+      "hash": "2ecca362af11dc1427ddb1d4acb7afe6"
+    },
+    "126": {
+      "name": "巴清",
+      "hash": "bf698539a068a16db3d2c00d1ce0dd2d"
+    },
+    "125": {
+      "name": "高渐离",
+      "hash": "f716144b86895451a5eaf7840b6d513b"
+    },
+    "124": {
+      "name": "君王后",
+      "hash": "f4789cac041cdc7a9f03877bb46013a8"
+    },
+    "123": {
+      "name": "庞统",
+      "hash": "969ef318975f2c4ace6b117ba07bcf81"
+    },
+    "122": {
+      "name": "袁术",
+      "hash": "976828feedb835afddbc8ca476f8aef4"
+    },
+    "121": {
+      "name": "鲁仲连",
+      "hash": "d5ce6daaf50f02d0a2d349cd5d246599"
+    },
+    "120": {
+      "name": "步练师",
+      "hash": "62f0bf14e4a36c2e2d1db9c761c6f3d5"
+    },
+    "119": {
+      "name": "太史慈",
+      "hash": "30c17e46e2200de32fe27abea451d6a8"
+    },
+    "118": {
+      "name": "赵姬",
+      "hash": "5abf5f1c969307d284eb5484311d70cb"
+    },
+    "117": {
+      "name": "吕不韦",
+      "hash": "303e6748a29e7f37dc0f09b54895d8d8"
+    },
+    "116": {
+      "name": "姜维",
+      "hash": "d7a18df594e175d2c4741caa2e249966"
+    },
+    "115": {
+      "name": "法正",
+      "hash": "617a67d49c7eb6c9a838245222d563ea"
+    },
+    "114": {
+      "name": "荆轲",
+      "hash": "74630fa63fbad06d5c2cb36ff2efbce2"
+    },
+    "113": {
+      "name": "秦舞阳",
+      "hash": "9ded187d03495eb31fb35dc756b4e2a1"
+    },
+    "112": {
+      "name": "张郃",
+      "hash": "c4d3729ba5753024baeb25faae1f5ab5"
+    },
+    "111": {
+      "name": "徐晃",
+      "hash": "8df220203186f471c3c925d035e3bf75"
+    },
+    "110": {
+      "name": "曹植",
+      "hash": "dac2b7f563a4493a0a3c8172f04b6aef"
+    },
+    "109": {
+      "name": "张春华",
+      "hash": "bab8be201470f2b95df601aca641fbc3"
+    },
+    "108": {
+      "name": "曹仁",
+      "hash": "d8e30b17e6d4e3b25bca83580facca6b"
+    },
+    "107": {
+      "name": "夏侯惇",
+      "hash": "5e4bcfbf51e590577eb66c2eac5cddf8"
+    },
+    "106": {
+      "name": "曹丕",
+      "hash": "945594a8f9d0f31271b262b4f9d2c2e4"
+    },
+    "105": {
+      "name": "黄盖",
+      "hash": "a704b30fa5afd57d0db7efbe7c29dabc"
+    },
+    "104": {
+      "name": "吴国太",
+      "hash": "1ceb76103865979e9026a9e72fb57e37"
+    },
+    "103": {
+      "name": "孙坚",
+      "hash": "85e4ae0c5c98ec49f14a5b79bb3546ec"
+    },
+    "102": {
+      "name": "郭隗",
+      "hash": "435c4173d6a2b856f44f7322f74b70a4"
+    },
+    "101": {
+      "name": "韩非",
+      "hash": "da2ffb863980ad0079113f29cc1af7d2"
+    },
+    "100": {
+      "name": "钟无艳",
+      "hash": "b31740df1e89188344f8edd2485013cc"
+    },
+    "99": {
+      "name": "芈八子",
+      "hash": "25d4f320d98bf499dd7967e3f617c36c"
+    },
+    "98": {
+      "name": "张骞",
+      "hash": "1b1c73e3ff8c701aa560112a6d3bc0d0"
+    },
+    "97": {
+      "name": "李广",
+      "hash": "386af1df7a894f50f291d4a6477f1269"
+    },
+    "96": {
+      "name": "董仲舒",
+      "hash": "c4bea6dd3df5569daaa207e56b3d889f"
+    },
+    "95": {
+      "name": "卫子夫",
+      "hash": "87811e8daed392ca0c036f96406f33aa"
+    },
+    "94": {
+      "name": "卫青",
+      "hash": "3812441b82edabb0c6240145b37c93fc"
+    },
+    "93": {
+      "name": "刘彻",
+      "hash": "5e5e2ad22a3c102808d93c8ed9a4b904"
+    },
+    "92": {
+      "name": "霍去病",
+      "hash": "933eb89d704a5d2c7796e46de189bcc6"
+    },
+    "91": {
+      "name": "陈阿娇",
+      "hash": "a827db84b5f1fb0704738cf89fd0bfde"
+    },
+    "89": {
+      "name": "暴鸢",
+      "hash": "21d7742959e2398d817a3ae72c649951"
+    },
+    "87": {
+      "name": "燕昭王",
+      "hash": "543a619ddec600abd431438dc1aff209"
+    },
+    "90": {
+      "name": "申不害",
+      "hash": "a2703e6fe605e5563e2f20fd5d1c4ec7"
+    },
+    "86": {
+      "name": "赵威后",
+      "hash": "0b4405958667c0eafc0a5ffcb7e340fe"
+    },
+    "85": {
+      "name": "西门豹",
+      "hash": "a5ed4be2ef1a09c77a63452d61a60888"
+    },
+    "88": {
+      "name": "郑袖",
+      "hash": "0e6a7e64783a7b8f1838b0173dfbe3b8"
+    },
+    "84": {
+      "name": "宋玉",
+      "hash": "6e20368199dfa0abaf65c765479ee786"
+    },
+    "83": {
+      "name": "田单",
+      "hash": "ef4e45b3434065e180f22659db9e378e"
+    },
+    "82": {
+      "name": "信陵君",
+      "hash": "9a9dee616d010de108dc2ef858fa75b6"
+    },
+    "81": {
+      "name": "蔺相如",
+      "hash": "9c478c1f1fa38f2eb21efe04dd64aa3d"
+    },
+    "80": {
+      "name": "廉颇",
+      "hash": "8b2be3639cb9744618de7b3a4c37b2a5"
+    },
+    "79": {
+      "name": "孟姚",
+      "hash": "ae6e3e1f888246518ec406a939bdd803"
+    },
+    "78": {
+      "name": "平原君",
+      "hash": "4623597787b921bd4299b0ddc2f2ca96"
+    },
+    "77": {
+      "name": "苏秦",
+      "hash": "a98acbc4e3aed8e7545a69ed19c37153"
+    },
+    "76": {
+      "name": "张仪",
+      "hash": "75400bf1494c6a23292b36a4ce9b47e2"
+    },
+    "75": {
+      "name": "范雎",
+      "hash": "c5568ffde1332fca3feff58ad0a69b6e"
+    },
+    "74": {
+      "name": "春申君",
+      "hash": "f45611dcab3faec7d9d76b89c5d321ab"
+    },
+    "73": {
+      "name": "乐毅",
+      "hash": "90b6ffa73deb254fcd6a7d16b0a429a8"
+    },
+    "2": {
+      "name": "董卓",
+      "hash": "fc28c1b1040bcf051f47b91a8a104192"
+    },
+    "1": {
+      "name": "蔡文姬",
+      "hash": "05366b95b2ad8318ffd3b00c50cda434"
+    },
+    "11": {
+      "name": "华佗",
+      "hash": "097e5dc28e33f57b9e8abab5ea57809c"
+    },
+    "71": {
+      "name": "陈胜",
+      "hash": "6d2f4fceffbfdc2c1ef50af0aa47405f"
+    },
+    "70": {
+      "name": "周勃",
+      "hash": "37e09978c26837a37017490379dde1e8"
+    },
+    "69": {
+      "name": "樊哙",
+      "hash": "ddde92141bfd5ffd4212347787ad9adb"
+    },
+    "68": {
+      "name": "陈平",
+      "hash": "8d350992fa0ea5897eb2ccda3565cd92"
+    },
+    "67": {
+      "name": "项梁",
+      "hash": "50d52df90f82feb4f07dcffea36160bb"
+    },
+    "66": {
+      "name": "季布",
+      "hash": "a7620a8b2de860c566297b2883611726"
+    },
+    "65": {
+      "name": "如姬",
+      "hash": "1b4052166a4a513f668c540070ecb80d"
+    },
+    "64": {
+      "name": "荀彧",
+      "hash": "5e40e274fc091a1faba6a968684bbd0c"
+    },
+    "62": {
+      "name": "扶苏",
+      "hash": "cbdef4ed000030858a952b29f493e56b"
+    },
+    "61": {
+      "name": "李斯",
+      "hash": "a641525cce2e7532dd54fa4e5447c049"
+    },
+    "60": {
+      "name": "孟尝君",
+      "hash": "83a769dd50c2143f1d912f362f40e8b8"
+    },
+    "59": {
+      "name": "左慈",
+      "hash": "e2b8a2affe4336e5f8b3d534aa21d451"
+    },
+    "58": {
+      "name": "黄忠",
+      "hash": "eb3f1dd4af15556cf77d95abd2f9cae3"
+    },
+    "57": {
+      "name": "刘备",
+      "hash": "e1e6951dda8c5beaf6c88be32e7f47cc"
+    },
+    "56": {
+      "name": "马超",
+      "hash": "24402acf6e91bf6283f483adc140dea6"
+    },
+    "55": {
+      "name": "孙尚香",
+      "hash": "90ea7d1b40c25b9833573e81aecd815c"
+    },
+    "54": {
+      "name": "张飞",
+      "hash": "f2616472154aa0e2cf9da4c4f1ba1c16"
+    },
+    "53": {
+      "name": "赵云",
+      "hash": "cf444532d50df07227e9fd7f9b6dfa73"
+    },
+    "52": {
+      "name": "诸葛亮",
+      "hash": "e074c031135e05ff30369061b231fd85"
+    },
+    "51": {
+      "name": "曹操",
+      "hash": "cff96057aafb28fa77e99bd43dad3f9a"
+    },
+    "50": {
+      "name": "典韦",
+      "hash": "d399360fe532aeb3df90091901f33194"
+    },
+    "49": {
+      "name": "郭嘉",
+      "hash": "8f5763782efb550a4968f8585eb6381f"
+    },
+    "48": {
+      "name": "司马懿",
+      "hash": "3401cf46ff2ce2b96e11c6c7120c0287"
+    },
+    "47": {
+      "name": "许褚",
+      "hash": "f07e12ac44acaae9464bae7095fe0ade"
+    },
+    "46": {
+      "name": "张辽",
+      "hash": "4d9510b82101a0cec889ec7ce8eb53af"
+    },
+    "45": {
+      "name": "甄宓",
+      "hash": "4434a93faf1f5bdfffc58d27a4cca6f9"
+    },
+    "44": {
+      "name": "大乔",
+      "hash": "0f2f6ed763ca49c8bfa50c9db57409de"
+    },
+    "43": {
+      "name": "甘宁",
+      "hash": "4597e693628f1a7a056113fa627e541e"
+    },
+    "42": {
+      "name": "鲁肃",
+      "hash": "45e5cc04e8e1c5a79bbc6dcca639101a"
+    },
+    "41": {
+      "name": "陆逊",
+      "hash": "f468f8d2ee5eacf1c6ffa7a6fee588f7"
+    },
+    "40": {
+      "name": "孙策",
+      "hash": "64454767c75db2fc70249dd477c0dbbc"
+    },
+    "39": {
+      "name": "孙权",
+      "hash": "a77bae0529fba53d1344880b5695d9ea"
+    },
+    "38": {
+      "name": "小乔",
+      "hash": "626bb69cbd85826058c65cab8fc9a9f6"
+    },
+    "37": {
+      "name": "周瑜",
+      "hash": "20ec5ba0dcb3a2060e6ff2bd920d8175"
+    },
+    "36": {
+      "name": "范增",
+      "hash": "91ea8394293c15f8cae234191a5d0009"
+    },
+    "35": {
+      "name": "龙且",
+      "hash": "0d31353eee3f7c0eebaccb1e849e1462"
+    },
+    "34": {
+      "name": "项羽",
+      "hash": "898b5879d8ae2e5b9bb507793d0de562"
+    },
+    "33": {
+      "name": "英布",
+      "hash": "9a15ae618fdb5dbc90e6680f1ca5859b"
+    },
+    "32": {
+      "name": "虞姬",
+      "hash": "ff04d50cd28c092ea41a17da701224fe"
+    },
+    "31": {
+      "name": "钟离眜",
+      "hash": "73a6830736183f28888a235d1d5015d2"
+    },
+    "30": {
+      "name": "韩信",
+      "hash": "b3a65fd24e1f369eddf11d1b3c06df58"
+    },
+    "29": {
+      "name": "刘邦",
+      "hash": "6b587a6ef3a4abc52098fd221d33856d"
+    },
+    "28": {
+      "name": "吕雉",
+      "hash": "a508f390acb83a122f9bd6f1f8b40be1"
+    },
+    "27": {
+      "name": "萧何",
+      "hash": "a0afcfee422b33df4bde26f405ec7428"
+    },
+    "26": {
+      "name": "张良",
+      "hash": "fb95b76af24d9c1a01a3553d33475f6b"
+    },
+    "25": {
+      "name": "关羽",
+      "hash": "567c6a4211e7cae370b5f2df8d86619a"
+    },
+    "24": {
+      "name": "子婴",
+      "hash": "be9bfc185fd29ef3f634166bcd3a7e4a"
+    },
+    "23": {
+      "name": "张角",
+      "hash": "2d4bad980297f150f88cf1e1f3806ac4"
+    },
+    "22": {
+      "name": "章邯",
+      "hash": "91dea367e568193c87c39ec675c8dd42"
+    },
+    "21": {
+      "name": "貂蝉",
+      "hash": "451d1da1d55371148eb6709ea96e4449"
+    },
+    "20": {
+      "name": "蒙毅",
+      "hash": "c106718aa4c09f93055a1741e0daf9a2"
+    },
+    "19": {
+      "name": "蒙恬",
+      "hash": "1bb8b5f037f097ffe248b77cf5760b37"
+    },
+    "18": {
+      "name": "袁绍",
+      "hash": "4704626bd688ef80ca56d29cd24e9403"
+    },
+    "12": {
+      "name": "吕布",
+      "hash": "0ef46fdd3558fa829952f18eea9c7c47"
+    }
+  }
+}
