@@ -35,7 +35,7 @@ src/ocr/
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
 ├── paddle_loader.py       # PaddleOCR 统一构造及 Windows 首次加载闪窗抑制
-└── ocr_loader.py          # 单例延迟加载
+└── ocr_loader.py          # 模板管理器单例
 ```
 
 ---
@@ -262,11 +262,13 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `official_board_parser.prepare_rate_templates(...)` | 构建榜单数字模板并预计算胜率 OCR |
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
 | `CharacterSimilarityService.is_safe_single_substitution(text, candidate)` → `bool` | 判断唯一错字是否达到自动纠正门槛 |
-| `CharacterFeatureRepository(cache_path=None)` | 汉字特征缓存加载、动态补齐与保存 |
+| `CharacterFeatureRepository(cache_path=None, user_cache_path=None)` | 汉字特征缓存加载、动态补齐与用户层持久化 |
 | `get_template_manager()` → `TemplateManager` | 获取模板管理器单例 |
 | `OcrWorker.submit(task)` | 串行执行预热、常规 `OcrTask` 或官方 `OfficialImportTask`，并通过任务完成信号返回结果 |
 
 活动识别路径由 `src.business.recognition.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 PaddleOCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 PaddleOCR。关闭窗口时 worker 仅被通知停止并立即返回（不在 GUI 线程同步等待）；若正卡在模型预热中，会直接终止预热线程让进程快速退出，其余未完成任务由退役列表持有并在进程退出前收尾，避免窗口卡死、进程残留与运行中的 QThread 被提前销毁。
+
+风险声明：`terminate` 会跳过 Paddle/CUDA 清理，GPU 上下文与显存由进程退出时 OS 回收；若预热线程 3 秒未退出则转入退役列表二次等待，15 秒仍未退出时以 `os._exit(1)` 强制结束进程，避免进程挂起；开发期热重启若进程残留可能累积显存，属已接受风险。
 
 ---
 

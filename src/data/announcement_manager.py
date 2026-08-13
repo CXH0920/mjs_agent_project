@@ -96,19 +96,20 @@ class AnnouncementManager(DataManager[Announcement]):
         """
         new_announcements = []
         added = False
-        for raw in items:
-            announcement = Announcement.model_validate(raw)
-            if baseline or not announcement.hero_related:
-                announcement.status = AnnouncementStatus.APPLIED
-            key = Announcement.stable_key(announcement)
-            if key in self._items:
-                continue
-            self._items[key] = announcement
-            added = True
-            if not baseline:
-                new_announcements.append(announcement)
-        if added:
-            self.save()
+        with self._lock:
+            for raw in items:
+                announcement = Announcement.model_validate(raw)
+                if baseline or not announcement.hero_related:
+                    announcement.status = AnnouncementStatus.APPLIED
+                key = Announcement.stable_key(announcement)
+                if key in self._items:
+                    continue
+                self._items[key] = announcement
+                added = True
+                if not baseline:
+                    new_announcements.append(announcement)
+            if added:
+                self.save()
         return new_announcements
 
     def mark_ready_if_updated(self, diff: dict) -> bool:
@@ -120,29 +121,31 @@ class AnnouncementManager(DataManager[Announcement]):
                 if name:
                     changed_names.add(name)
         changed = False
-        for announcement in list(self._items.values()):
-            if announcement.status is not AnnouncementStatus.PENDING:
-                continue
-            matched_names = {change.name for change in announcement.matched_heroes}
-            if matched_names & changed_names:
-                announcement.status = AnnouncementStatus.READY
-                changed = True
-        if changed:
-            self.save()
+        with self._lock:
+            for announcement in list(self._items.values()):
+                if announcement.status is not AnnouncementStatus.PENDING:
+                    continue
+                matched_names = {change.name for change in announcement.matched_heroes}
+                if matched_names & changed_names:
+                    announcement.status = AnnouncementStatus.READY
+                    changed = True
+            if changed:
+                self.save()
         return changed
 
     def mark_applied(self) -> None:
         """采集完成后将 pending/ready 公告全部置为已处理。"""
         changed = False
-        for announcement in list(self._items.values()):
-            if announcement.status in (
-                AnnouncementStatus.PENDING,
-                AnnouncementStatus.READY,
-            ):
-                announcement.status = AnnouncementStatus.APPLIED
-                changed = True
-        if changed:
-            self.save()
+        with self._lock:
+            for announcement in list(self._items.values()):
+                if announcement.status in (
+                    AnnouncementStatus.PENDING,
+                    AnnouncementStatus.READY,
+                ):
+                    announcement.status = AnnouncementStatus.APPLIED
+                    changed = True
+            if changed:
+                self.save()
 
 
 # ============================================================

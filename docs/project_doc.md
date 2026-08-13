@@ -1568,7 +1568,7 @@ src/ocr/
  ├── character_similarity.py # CharacterSimilarityService — 名称纠错
  ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排
  ├── paddle_loader.py        # PaddleOCR 统一构造及 Windows 首次加载闪窗抑制
- └── ocr_loader.py           # 单例延迟加载（~47 行）
+ └── ocr_loader.py           # 模板管理器单例
 ```
 
 ### 12.2 模板管理器（template_manager.py）
@@ -1812,7 +1812,7 @@ def _engine(self):
 
 ### 12.4 单例加载器（ocr_loader.py）
 
-`ocr_loader.py` 仍延迟管理配置页所需的模板管理器；活动识别路径不再使用全局 `GeneralRecognizer`。
+`ocr_loader.py` 仅延迟管理配置页所需的模板管理器；识别器（`GeneralRecognizer` / PaddleOCR）由 `OcrWorker` 在 worker 线程内独占创建，不再经过本模块。
 
 - `get_template_manager()` → `TemplateManager` 单例
 - `OcrWorker` 在专用线程中按 ROI、武将列表和参考尺寸缓存 `GeneralRecognizer`

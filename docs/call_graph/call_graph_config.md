@@ -58,7 +58,7 @@ ai_batch.main() -> get_api_config()
 | `MainWindow.__init__()` | `ui/main_window.py` | `main()` | 创建服务、`_load_data()`, `_setup_ui()` |
 | `DataFacade.load_all()` | `data/manager.py` | `MainWindow._load_data()` | `HeroManager.load()`, `SynergyManager.load()`, `GuideManager.load()` |
 
-> **启动顺序说明：** 主窗口构造时完成数据加载和服务配置；PaddleOCR 由 `OcrWorker`/`ocr_loader` 在首次 OCR 任务中延迟初始化。这样启动链路只负责进入 Qt 事件循环，首次识别才承担模型加载成本。
+> **启动顺序说明：** 主窗口构造时完成数据加载和服务配置；PaddleOCR 由 `OcrWorker` 在首次 OCR 任务中延迟初始化。这样启动链路只负责进入 Qt 事件循环，首次识别才承担模型加载成本。
 
 ---
 
@@ -226,7 +226,7 @@ src.config.env 的函数被几乎所有模块调用:
 | `src.data.manager.DataFacade` | 加载武将名列表 |
 | `src.ui.app.main_window.MainWindow` | 创建主窗口 |
 | `src.ui.shared.style.GLOBAL_STYLE` | 全局样式表 |
-| `src.ocr.ocr_loader` / `OcrWorker` | 首次 OCR 任务时延迟创建识别器 |
+| `src.business.recognition.ocr_worker.OcrWorker` | 首次 OCR 任务时延迟创建识别器 |
 
 ---
 

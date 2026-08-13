@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 from types import ModuleType
 
 import numpy as np
@@ -41,6 +42,52 @@ def test_paddle_loader_hides_windows_child_consoles_and_restores_popen(monkeypat
 
     assert calls == [0x08000000]
     assert FakePopen.__init__ is original_init
+
+
+def test_paddle_loader_does_not_inject_flags_for_other_threads(monkeypatch) -> None:
+    """窗口抑制只作用于发起 create_paddle_ocr 的线程，其他线程的 Popen 不被注入标志。"""
+    records: list[tuple[int, int]] = []  # (thread_id, creationflags)
+    entered = threading.Event()
+    release = threading.Event()
+    done = threading.Event()
+    owner_tid = threading.get_ident()
+
+    class FakePopen:
+        def __init__(self, *_args, **kwargs) -> None:
+            records.append((threading.get_ident(), kwargs.get("creationflags", 0)))
+
+    class FakePaddleOCR:
+        def __init__(self, **_kwargs) -> None:
+            entered.set()
+            assert release.wait(5)
+            paddle_loader.subprocess.Popen(["dependency-probe"])
+
+    def other_thread_popen() -> None:
+        assert entered.wait(5)
+        paddle_loader.subprocess.Popen(["other-thread"])
+        release.set()
+        done.set()
+
+    module = ModuleType("paddleocr")
+    module.PaddleOCR = FakePaddleOCR
+    monkeypatch.setattr(paddle_loader.sys, "platform", "win32")
+    monkeypatch.setattr(paddle_loader.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(paddle_loader.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    helper = threading.Thread(target=other_thread_popen)
+    helper.start()
+    try:
+        monkeypatch.setitem(sys.modules, "paddleocr", module)
+        paddle_loader.create_paddle_ocr(lang="ch")
+    finally:
+        release.set()
+        helper.join(timeout=5)
+
+    assert done.is_set()
+    owner_flags = [flags for tid, flags in records if tid == owner_tid]
+    other_flags = [flags for tid, flags in records if tid != owner_tid]
+    assert owner_flags == [0x08000000]
+    assert other_flags == [0]
 
 
 def test_image_preprocessor_outputs_tripled_grayscale_image() -> None:
@@ -129,6 +176,68 @@ def test_character_feature_repository_warms_missing_wordlist_characters(tmp_path
     assert repository.warmup_characters(["曹", "操", "操"]) == 1
     assert built == ["操"]
     assert repository.get_feature("操") == {"pinyin": "操"}
+
+
+def test_character_feature_repository_merges_user_layer_over_baseline(tmp_path) -> None:
+    baseline = tmp_path / "baseline.json"
+    user = tmp_path / "user.json"
+    baseline.write_text(
+        json.dumps({"曹": {"pinyin": "cao"}, "操": {"pinyin": "cao"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    user.write_text(json.dumps({"操": {"pinyin": "cao2"}}, ensure_ascii=False), encoding="utf-8")
+
+    repository = CharacterFeatureRepository(baseline, user_cache_path=user)
+    entries = repository.load()
+
+    assert entries["曹"]["pinyin"] == "cao"
+    assert entries["操"]["pinyin"] == "cao2"
+
+
+def test_warmup_characters_persists_new_chars_to_user_layer(tmp_path, monkeypatch) -> None:
+    baseline = tmp_path / "baseline.json"
+    user = tmp_path / "user.json"
+    baseline.write_text(
+        json.dumps({"曹": {"pinyin": "cao"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    repository = CharacterFeatureRepository(baseline, user_cache_path=user)
+    built: list[str] = []
+    monkeypatch.setattr(
+        repository,
+        "_build_feature",
+        lambda char: built.append(char) or {"pinyin": char},
+    )
+
+    assert repository.warmup_characters(["曹", "操", "操"]) == 1
+    assert built == ["操"]
+    assert user.exists()
+
+    second = CharacterFeatureRepository(baseline, user_cache_path=user)
+    monkeypatch.setattr(
+        second,
+        "_build_feature",
+        lambda _char: (_ for _ in ()).throw(AssertionError("用户层命中后不应重建")),
+    )
+    assert second.get_feature("操") == {"pinyin": "操"}
+
+
+def test_character_feature_repository_tolerates_user_layer_write_failure(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text("{}", encoding="utf-8")
+    (tmp_path / "blocked").write_text("x", encoding="utf-8")
+    user = tmp_path / "blocked" / "user.json"
+
+    repository = CharacterFeatureRepository(baseline, user_cache_path=user)
+    monkeypatch.setattr(repository, "_build_feature", lambda char: {"pinyin": char})
+    caplog.set_level(logging.WARNING)
+
+    assert repository.warmup_characters(["甲"]) == 1
+    assert repository.get_feature("甲") == {"pinyin": "甲"}
+    assert "用户层缓存写入失败" in caplog.text
 
 
 def test_character_feature_cache_character_set_includes_names_and_common_misreads(tmp_path) -> None:

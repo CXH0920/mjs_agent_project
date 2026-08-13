@@ -505,7 +505,7 @@ def test_update_no_candidates_shows_toast(monkeypatch) -> None:
         _data=SimpleNamespace(heroes=_Heroes()),
         _status_label=SimpleNamespace(setText=lambda s: None),
     )
-    fake._collect_update_candidates_base = lambda: []
+    fake._collect_update_candidates_base = lambda local_heroes, announcements: []
     MainWindow._update_hero_data_from_announcements(fake)
     assert toasts
     assert "没有需要更新" in toasts[0]
@@ -531,8 +531,9 @@ def test_service_check_now_cooldown(tmp_path, monkeypatch) -> None:
     service.check_started.connect(lambda: calls.append(1))
 
     class _FakeThread:
-        def __init__(self, target, daemon=True):
+        def __init__(self, target, args=(), daemon=True):
             self.target = target
+            self.args = args
             self.started = False
 
         def is_alive(self) -> bool:
@@ -739,7 +740,10 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         window._fetch_service = _FakeFetchService()
 
         # 基础候选：公告 ready matched + diff added/modified 并集、去重
-        base = window._collect_update_candidates_base()
+        base = window._collect_update_candidates_base(
+            [hero.model_dump(mode="json") for hero in window._data.heroes.list_heroes()],
+            window._announcement_manager.list_announcements(),
+        )
         base_names = [candidate["name"] for candidate in base]
         assert "贾诩" in base_names and "东方朔" in base_names and "马钧" in base_names
         by_name = {candidate["name"]: candidate for candidate in base}
@@ -817,8 +821,9 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
 
         # 有候选：启动后台线程拉官网算差异
         class _FakeThread:
-            def __init__(self, target, daemon=True):
+            def __init__(self, target, args=(), daemon=True):
                 self.target = target
+                self.args = args
                 self.started = False
 
             def is_alive(self):

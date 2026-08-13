@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Generic, TypeVar
@@ -83,6 +84,7 @@ class DataManager(Generic[V_co]):
     def __init__(self, file_path: str | Path, model_class: type[V_co]):
         self.file_path = Path(file_path)
         self.model_class = model_class
+        self._lock = threading.RLock()
         self._items: dict = {}
         self.load_issues: list[DataIssue] = []
 
@@ -92,6 +94,11 @@ class DataManager(Generic[V_co]):
 
     def load(self) -> list[DataIssue]:
         """从 JSON 文件加载数据，并保留单条记录错误。"""
+        with self._lock:
+            return self._load_unlocked()
+
+    def _load_unlocked(self) -> list[DataIssue]:
+        """实际加载实现；调用方须已持有 _lock。"""
         self.load_issues = []
         if not self.file_path.exists():
             logger.warning("文件不存在: %s", self.file_path)
@@ -166,6 +173,11 @@ class DataManager(Generic[V_co]):
 
     def save(self) -> None:
         """将所有数据原子写入 JSON 文件"""
+        with self._lock:
+            self._save_unlocked()
+
+    def _save_unlocked(self) -> None:
+        """实际保存实现；调用方须已持有 _lock。"""
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         data = [v.model_dump(mode="json") for v in self._items.values()]
         tmp_path = self.file_path.with_suffix(".tmp")
@@ -177,11 +189,13 @@ class DataManager(Generic[V_co]):
 
     def snapshot_items(self) -> dict:
         """返回当前数据快照，供跨文件变更失败时恢复内存状态。"""
-        return dict(self._items)
+        with self._lock:
+            return dict(self._items)
 
     def restore_items(self, snapshot: dict) -> None:
         """恢复由 ``snapshot_items`` 创建的数据快照。"""
-        self._items = dict(snapshot)
+        with self._lock:
+            self._items = dict(snapshot)
 
     # ============================================================
     # 基础 CRUD
@@ -189,32 +203,38 @@ class DataManager(Generic[V_co]):
 
     def get(self, key) -> V_co | None:
         """按 key 查询单条"""
-        return self._items.get(key)
+        with self._lock:
+            return self._items.get(key)
 
     def list_all(self) -> list[V_co]:
         """获取全部"""
-        return list(self._items.values())
+        with self._lock:
+            return list(self._items.values())
 
     def add(self, item: V_co, key) -> None:
         """新增，已存在则抛出 ValueError"""
-        if key in self._items:
-            raise ValueError(f"已存在: {key}")
-        self._items[key] = item
+        with self._lock:
+            if key in self._items:
+                raise ValueError(f"已存在: {key}")
+            self._items[key] = item
 
     def update(self, item: V_co, key) -> None:
         """更新或新增"""
-        self._items[key] = item
+        with self._lock:
+            self._items[key] = item
 
     def delete(self, key) -> None:
         """删除，不存在则静默忽略"""
-        self._items.pop(key, None)
+        with self._lock:
+            self._items.pop(key, None)
 
     def clear_all(self) -> int:
         """清空当前实体的全部记录，返回清空条数。"""
-        count = len(self._items)
-        self._items.clear()
-        logger.info("清空 %s 的 %d 条记录", self.file_path, count)
-        return count
+        with self._lock:
+            count = len(self._items)
+            self._items.clear()
+            logger.info("清空 %s 的 %d 条记录", self.file_path, count)
+            return count
 
 
 class DataFacade:

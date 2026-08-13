@@ -160,4 +160,4 @@ def setup_logging():
 |------|------|------|
 | 被依赖 | — | 所有模块都通过 `from src.config.env import ...` 获取配置 |
 | 依赖 | `src.ui.app.main_window` | 应用入口创建 MainWindow 实例 |
-| 依赖 | `src.ocr.ocr_loader` | 预热 PaddleOCR 模型 |
+| 依赖 | `src.business.recognition.ocr_worker` | 预热 PaddleOCR 模型 |

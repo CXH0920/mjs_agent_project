@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import queue
 import threading
 import time
@@ -27,10 +28,14 @@ _RETIRED_WORKERS: list["OcrWorker"] = []
 
 
 def _drain_retired_workers() -> None:
-    """进程退出前等待退役 worker 结束，避免运行中的 QThread 被销毁。"""
+    """进程退出前等待退役 worker 结束，避免运行中的 QThread 被销毁。
+
+    15 秒仍未退出时强制结束进程，避免进程挂起（退出路径无关键写操作）。
+    """
     for worker in _RETIRED_WORKERS:
         if worker.isRunning() and not worker.wait(15_000):
-            logger.warning("退役 OCR worker 未能在 15 秒内退出")
+            logger.error("退役 OCR worker 15 秒未退出，强制结束进程")
+            os._exit(1)
 
 
 atexit.register(_drain_retired_workers)
@@ -118,7 +123,10 @@ class OcrWorker(QThread):
         if force_warmup and self.isRunning() and self._current_task_kind == "warmup":
             logger.warning("OCR worker 正在模型预热，终止预热线程以加速退出")
             self.terminate()
-            self.wait(3_000)
+            if not self.wait(3_000):
+                logger.warning("预热线程 3 秒内未退出，转入退役列表由进程退出钩子兜底")
+                if self not in _RETIRED_WORKERS:
+                    _RETIRED_WORKERS.append(self)
             return
         if self not in _RETIRED_WORKERS:
             _RETIRED_WORKERS.append(self)

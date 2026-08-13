@@ -52,9 +52,10 @@ class SynergyManager(DataManager[SynergyScore]):
     def list_synergies_for_hero(self, hero_id: int) -> list[SynergyScore]:
         """查询某个武将的所有相性关系"""
         results = []
-        for (a_id, b_id), score in self._items.items():
-            if hero_id in (a_id, b_id):
-                results.append(score)
+        with self._lock:
+            for (a_id, b_id), score in self._items.items():
+                if hero_id in (a_id, b_id):
+                    results.append(score)
         return results
 
     def list_synergies(self) -> list[SynergyScore]:
@@ -67,11 +68,12 @@ class SynergyManager(DataManager[SynergyScore]):
         load_issues: list[DataIssue],
     ) -> None:
         """在主线程原子替换后台完成校验的相性数据。"""
-        self._items = {
-            self._synergy_key(synergy.hero_a_id, synergy.hero_b_id): synergy
-            for synergy in synergies
-        }
-        self.load_issues = list(load_issues)
+        with self._lock:
+            self._items = {
+                self._synergy_key(synergy.hero_a_id, synergy.hero_b_id): synergy
+                for synergy in synergies
+            }
+            self.load_issues = list(load_issues)
 
     # ============================================================
     # 增删改
@@ -93,9 +95,10 @@ class SynergyManager(DataManager[SynergyScore]):
 
     def delete_synergies_for_hero(self, hero_id: int) -> int:
         """删除某个武将关联的所有相性，返回删除条数"""
-        keys_to_remove = [k for k in self._items if hero_id in k]
-        for k in keys_to_remove:
-            del self._items[k]
-        if keys_to_remove:
-            logger.info("删除武将 %s 关联的 %d 条相性", hero_id, len(keys_to_remove))
-        return len(keys_to_remove)
+        with self._lock:
+            keys_to_remove = [k for k in self._items if hero_id in k]
+            for k in keys_to_remove:
+                del self._items[k]
+            if keys_to_remove:
+                logger.info("删除武将 %s 关联的 %d 条相性", hero_id, len(keys_to_remove))
+            return len(keys_to_remove)

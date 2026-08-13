@@ -42,23 +42,25 @@ class HeroManager(DataManager[Hero]):
 
     def get_hero_by_name(self, name: str) -> Optional[Hero]:
         """按名称查询武将（返回第一个匹配项）"""
-        for hero in self._items.values():
-            if hero.name == name:
-                return hero
+        with self._lock:
+            for hero in self._items.values():
+                if hero.name == name:
+                    return hero
         return None
 
     def search_heroes(self, keyword: str) -> list[Hero]:
         """按关键词模糊搜索武将（匹配 ID、名称、称号、势力）"""
         keyword_lower = keyword.lower()
         results = []
-        for hero in self._items.values():
-            if (
-                keyword_lower in str(hero.id)
-                or keyword_lower in hero.name
-                or keyword_lower in hero.title
-                or keyword_lower in hero.faction
-            ):
-                results.append(hero)
+        with self._lock:
+            for hero in self._items.values():
+                if (
+                    keyword_lower in str(hero.id)
+                    or keyword_lower in hero.name
+                    or keyword_lower in hero.title
+                    or keyword_lower in hero.faction
+                ):
+                    results.append(hero)
         return results
 
     def list_heroes(self) -> list[Hero]:
@@ -67,12 +69,14 @@ class HeroManager(DataManager[Hero]):
 
     def list_heroes_by_faction(self, faction: str) -> list[Hero]:
         """按势力筛选武将"""
-        return [h for h in self._items.values() if h.faction == faction]
+        with self._lock:
+            return [h for h in self._items.values() if h.faction == faction]
 
     def list_factions(self) -> list[str]:
         """获取所有势力列表"""
-        factions = set(h.faction for h in self._items.values() if h.faction)
-        return sorted(factions)
+        with self._lock:
+            factions = set(h.faction for h in self._items.values() if h.faction)
+            return sorted(factions)
 
     # ============================================================
     # 增删改

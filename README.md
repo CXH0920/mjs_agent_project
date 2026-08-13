@@ -55,7 +55,7 @@ test_project/
 │   │   ├── __init__.py
 │   │   ├── template_manager.py    # OpenCV 模板匹配（TM_CCOEFF_NORMED，<50ms）
 │   │   ├── recognizer.py          # PaddleOCR + 字数门禁 + 候选闭包内评分
-│   │   └── ocr_loader.py          # 单例延迟加载
+│   │   └── ocr_loader.py          # 模板管理器单例
 │   └── ui/
 │       ├── app/                    # 主窗口、应用图标、翻译与轮询编排
 │       ├── library/                # 武将资料、卡牌图鉴及编辑弹窗
@@ -77,7 +77,8 @@ test_project/
 │   ├── 2v2胜率排行.csv            # 2v2 胜率数据
 │   ├── 2v2出场排行.csv            # 2v2 出场数据（官方榜单导入生成）
 │   ├── 武将放逐.csv                # 武将放逐数据（官方榜单导入生成）
-│   └── 武将推荐指数.csv            # 由三份官方榜单计算的推荐指数快照
+│   ├── 武将推荐指数.csv            # 由三份官方榜单计算的推荐指数快照
+│   └── char_info_cache.json       # 汉字特征用户层缓存（运行时自动扩展，不提交）
 ├── images/
 │   └── <武将名>.png               # 165 个武将头像（从官网自动下载）
 ├── templates/
@@ -748,7 +749,7 @@ python -m src.scraper.ai_batch --synergy --browser
 
 常规截图的同类 ROI 会横向拼图后只调用一次 PaddleOCR 检测：选将页一次名称拼图；对局攻略分别进行名称和阵营拼图。每个名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.8 时，才追加增强图与仅放大原图的逐槽识别。名称解析先做长度分流：精确命中直接确认；严格前缀视为缺字，只保留前缀白名单，且唯一前缀至少识别出 2 个字符才可确认；与候选等长且仅错一字时，唯一候选需通过 0.55 字形门槛，多候选则仅在 OCR 置信度至少 0.7、最高字形分至少 0.35、领先第二名至少 0.15，并得到 `enhanced` 与 `plain` 两个独立证据族一致支持时确认，状态为 `multi_similarity`；其他增删字情况保持待确认。若同一原文同时命中长名严格前缀和等长候选，则合并两类候选并标记 `length_mode=uncertain`，不自动补全。
 
-多路证据的非空候选集合取交集，交集为空即 `conflict`，任何精确或纠正结果都不能跨候选白名单覆盖。页面唯一性只消歧原本有多个候选且 `length_mode` 为 `missing/complete` 的槽位，不会提升 `uncertain` 或未过安全门槛的单候选。结果携带 `raw_name`、`candidates`、`resolution`、`length_mode` 和 `evidence`，选将推荐允许在候选内人工确认，对局攻略在全部名称确认前禁止确认阵容；自动轮询只统计已确认名称。名称 ROI 的卡框和底部定位字会干扰像素字符分割，因此当前不以视觉字符数作为硬门禁。势力关联仅保留为后续可选证据：只能过滤已有候选，不能扩展候选，本次未实现。`src/data/char_info_cache.json` 应覆盖当前英雄名全部字符和常见误识字；更新 `data/heroes.json` 后运行 `python scripts/build_character_feature_cache.py` 同步缓存。
+多路证据的非空候选集合取交集，交集为空即 `conflict`，任何精确或纠正结果都不能跨候选白名单覆盖。页面唯一性只消歧原本有多个候选且 `length_mode` 为 `missing/complete` 的槽位，不会提升 `uncertain` 或未过安全门槛的单候选。结果携带 `raw_name`、`candidates`、`resolution`、`length_mode` 和 `evidence`，选将推荐允许在候选内人工确认，对局攻略在全部名称确认前禁止确认阵容；自动轮询只统计已确认名称。名称 ROI 的卡框和底部定位字会干扰像素字符分割，因此当前不以视觉字符数作为硬门禁。势力关联仅保留为后续可选证据：只能过滤已有候选，不能扩展候选，本次未实现。`src/data/char_info_cache.json`（基线）应覆盖当前英雄名全部字符和常见误识字；更新 `data/heroes.json` 后运行 `python scripts/build_character_feature_cache.py` 同步基线缓存。运行时新增武将时，缺失字符会动态构建并写入 `data/char_info_cache.json`（用户层缓存，gitignored，加载时自动合并），无需手动维护。
 
 ### 官方榜单 OCR 第二阶段：识别率优化
 

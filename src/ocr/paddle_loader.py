@@ -21,9 +21,11 @@ def _hide_windows_child_consoles() -> Iterator[None]:
 
     original_init = subprocess.Popen.__init__
     no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    owner_tid = threading.get_ident()  # 仅本线程触发的子进程生效
 
     def hidden_init(self, *args, **kwargs) -> None:
-        kwargs["creationflags"] = (kwargs.get("creationflags") or 0) | no_window
+        if threading.get_ident() == owner_tid:
+            kwargs["creationflags"] = (kwargs.get("creationflags") or 0) | no_window
         original_init(self, *args, **kwargs)
 
     subprocess.Popen.__init__ = hidden_init

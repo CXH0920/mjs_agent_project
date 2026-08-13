@@ -16,6 +16,12 @@ data/synergies.json
 data/guides.json
 data/*.corrupt-*.json
 data/*_待复核.csv
+# 官方榜单导入生成物（由官方导入/推荐指数计算生成）
+data/2v2出场排行.csv
+data/武将放逐.csv
+data/武将推荐指数.csv
+# 汉字特征用户层缓存（运行时自动扩展）
+data/char_info_cache.json
 data/backups/
 data/edge_profile/
 PLANS.md

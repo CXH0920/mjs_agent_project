@@ -6,6 +6,9 @@ import threading
 import time
 import os
 import logging
+import types
+
+import pytest
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -14,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_service import OcrService
+from src.business.recognition import ocr_worker as ocr_worker_module
 from src.business.recognition.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
 
 
@@ -431,3 +435,38 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
         "ocr_results": [{"index": 1, "name": "曹操", "confidence": 1.0}],
         "ocr_matched": True,
     }]
+
+
+def test_retire_force_warmup_appends_retired_on_wait_timeout(monkeypatch) -> None:
+    """terminate 后 3 秒未退出时进入退役列表，由进程退出钩子二次兜底。"""
+    worker = OcrWorker()
+    worker._current_task_kind = "warmup"
+    monkeypatch.setattr(worker, "isRunning", lambda: True)
+    monkeypatch.setattr(worker, "terminate", lambda: None)
+    monkeypatch.setattr(worker, "wait", lambda _timeout_ms: False)
+    monkeypatch.setattr(ocr_worker_module, "_RETIRED_WORKERS", [])
+
+    worker.retire(force_warmup=True)
+
+    assert ocr_worker_module._RETIRED_WORKERS == [worker]
+
+
+def test_drain_retired_workers_force_exits_on_timeout(monkeypatch) -> None:
+    """退役 worker 15 秒仍未退出时调用 os._exit(1)，避免进程挂起。"""
+    class FakeWorker:
+        def isRunning(self) -> bool:
+            return True
+
+        def wait(self, _timeout_ms: int) -> bool:
+            return False
+
+    def fake_exit(code: int) -> None:
+        raise RuntimeError(f"os._exit({code})")
+
+    fake_os = types.SimpleNamespace(_exit=fake_exit)
+    monkeypatch.setattr(ocr_worker_module, "os", fake_os)
+    monkeypatch.setattr(ocr_worker_module, "_RETIRED_WORKERS", [FakeWorker()])
+
+    with pytest.raises(RuntimeError, match=r"os\._exit\(1\)"):
+        ocr_worker_module._drain_retired_workers()
+

@@ -110,9 +110,14 @@ class AnnouncementService(QObject):
             logger.warning("公告检查冷却中，剩余 %.1f 秒", self.cooldown_remaining)
             return False
         self._last_check_started_at = time.monotonic()
+        hero_names = [hero.name for hero in self._heroes.list_heroes()]
         self.check_started.emit()
         self.status_changed.emit("正在检查公告更新...")
-        self._thread = threading.Thread(target=self._run_check, daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_check,
+            args=(hero_names,),
+            daemon=True,
+        )
         self._thread.start()
         return True
 
@@ -127,16 +132,19 @@ class AnnouncementService(QObject):
     # 内部实现
     # ---------------------------------------------------------------
 
-    def _run_check(self) -> None:
+    def _run_check(self, hero_names: list[str]) -> None:
         try:
-            result = self._do_check()
+            result = self._do_check(hero_names)
         except Exception:
             logger.exception("公告检查发生未预期错误")
             result = AnnouncementCheckResult(error="公告检查发生未预期错误，详见日志")
         self.check_finished.emit(result)
 
-    def _do_check(self) -> AnnouncementCheckResult:
+    def _do_check(self, hero_names: list[str] | None = None) -> AnnouncementCheckResult:
         first_run = not self._announcements.file_path.exists()
+        if hero_names is None:
+            hero_names = [hero.name for hero in self._heroes.list_heroes()]
+        hero_names = set(hero_names)
         self.progress_changed.emit("正在拉取公告...")
         try:
             items = fetch_latest_announcements()
@@ -146,7 +154,6 @@ class AnnouncementService(QObject):
 
         self.progress_changed.emit("正在分析公告...")
 
-        hero_names = {hero.name for hero in self._heroes.list_heroes()}
         enriched = []
         for raw in items:
             raw = dict(raw)

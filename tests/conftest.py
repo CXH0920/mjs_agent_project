@@ -3,4 +3,14 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.ocr import character_feature_repository
+
+
+@pytest.fixture(autouse=True)
+def _disable_user_character_cache(monkeypatch) -> None:
+    """测试默认禁用汉字特征用户层缓存，避免动态构建写入仓库 data/ 目录。"""
+    monkeypatch.setattr(character_feature_repository, "USER_CHARACTER_FEATURE_CACHE", None)

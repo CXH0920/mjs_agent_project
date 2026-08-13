@@ -2,6 +2,8 @@
 
 import json
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from src.data.manager import DataFacade
@@ -78,3 +80,49 @@ def test_data_manager_save_uses_lf_newlines() -> None:
 
         assert b"\r\n" not in path.read_bytes()
         assert path.read_bytes().endswith(b"\n")
+
+
+def test_data_manager_thread_safe_concurrent_read_write() -> None:
+    """并发读写同一 DataManager 不崩溃、不读到半更新状态。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        manager = HeroManager(Path(tmpdir) / "heroes.json")
+        for i in range(1, 11):
+            manager.add_hero(Hero(id=i, name=f"武将{i}"))
+
+        stop = threading.Event()
+        errors: list[BaseException] = []
+
+        def writer() -> None:
+            try:
+                next_id = 1000
+                while not stop.is_set():
+                    manager.add_hero(Hero(id=next_id, name=f"写{next_id}"))
+                    manager.update_hero(Hero(id=next_id, name=f"改{next_id}"))
+                    manager.delete_hero(next_id)
+                    next_id += 1
+            except BaseException as exc:  # pragma: no cover
+                errors.append(exc)
+
+        def reader() -> None:
+            try:
+                while not stop.is_set():
+                    names = [hero.name for hero in manager.list_heroes()]
+                    assert len(names) == len(set(names)), "读到重复名称，说明快照不一致"
+                    assert manager.get(1) is not None
+            except BaseException as exc:  # pragma: no cover
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=writer),
+            threading.Thread(target=reader),
+        ]
+        for thread in threads:
+            thread.start()
+        time.sleep(0.2)
+        stop.set()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert errors == []
+        assert manager.get(1) is not None
+        assert len(manager.list_heroes()) == 10

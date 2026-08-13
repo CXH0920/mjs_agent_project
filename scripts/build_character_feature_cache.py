@@ -29,7 +29,7 @@ def required_characters(heroes_path: Path = HEROES_PATH) -> set[str]:
 
 
 def main() -> None:
-    repository = CharacterFeatureRepository()
+    repository = CharacterFeatureRepository(user_cache_path=None)
     repository.warmup()
     characters = required_characters()
     missing = repository.warmup_characters(characters)

@@ -325,16 +325,12 @@ get_template_manager(template_name)
 OcrWorker._get_recognizer(rois, hero_names, reference_size)
   -> [worker 私有缓存命中] return
   -> [签名变更] GeneralRecognizer(...) -> 更新 worker 私有缓存
-
-ocr_loader.get_recognizer(...)
-  -> 仅兼容旧调用，不是活动截图、文件导入或轮询的执行入口
 ```
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
 | `get_template_manager(template_name)` | `ocr_loader.py` | 按页面模板名称惰性缓存，供配置页管理模板 |
 | `OcrWorker._get_recognizer(...)` | `ocr_worker.py` | 以 ROI、武将列表、参考尺寸为签名，在唯一 worker 内重建识别器 |
-| `get_recognizer(...)` | `ocr_loader.py` | 兼容旧调用；活动识别路径不使用 |
 
 ---
 
