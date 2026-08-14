@@ -22,7 +22,9 @@ from PySide6.QtWidgets import (
 )
 
 from src.business.emulator.capture_service import CaptureService
+from src.business.recognition.official_data_import_service import load_pending_session
 from src.business.recognition.ocr_worker import OfficialImportTask
+from src.ui.data_admin.official_import_review_dialog import OfficialImportReviewDialog
 from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 
@@ -191,6 +193,23 @@ class OfficialDataImportDialog(QDialog):
         self._progress_label.hide()
         self._progress_bar.hide()
         QMessageBox.warning(self, "导入失败", message)
+        pending = load_pending_session()
+        if pending is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "存在待复核数据",
+            "已生成待复核截图与修正会话，是否立即打开修正？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._open_review_dialog(pending)
+
+    def _open_review_dialog(self, pending: dict) -> None:
+        dialog = OfficialImportReviewDialog(pending, self)
+        dialog.applied.connect(self.recommendation_indexes_stale)
+        dialog.exec()
 
     def _disconnect_capture_signals(self) -> None:
         self._capture_service.official_import_progress.disconnect(self._on_progress_changed)

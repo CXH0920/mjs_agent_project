@@ -61,3 +61,57 @@ def test_dialog_submits_ordered_pages_to_capture_service(monkeypatch) -> None:
     assert dialog.result() == QDialog.DialogCode.Accepted
     assert "2 张图片" in dialog._shared_toast_overlay.text()
     assert failures == []
+
+class _FakeCaptureService(QObject):
+    official_import_progress = Signal(str, int, int)
+    official_import_completed = Signal(object)
+    official_import_failed = Signal(str)
+
+    def submit_official_import(self, paths):
+        return OfficialImportTask({
+            key: tuple(selected) for key, selected in paths.items()
+        })
+
+
+def test_failed_import_offers_review_when_pending_session_exists(monkeypatch) -> None:
+    _app()
+    from src.ui.data_admin import official_data_import_dialog as dialog_module
+
+    opened: list[dict] = []
+    pending = {"key": "2v2", "outputs": {}}
+    monkeypatch.setattr(dialog_module, "load_pending_session", lambda: pending)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        dialog_module.OfficialDataImportDialog,
+        "_open_review_dialog",
+        lambda self, session: opened.append(session),
+    )
+
+    dialog = OfficialDataImportDialog(_FakeCaptureService())
+    dialog._on_failed("导入失败")
+
+    assert opened == [pending]
+
+
+def test_failed_import_without_pending_does_not_ask_review(monkeypatch) -> None:
+    _app()
+    from src.ui.data_admin import official_data_import_dialog as dialog_module
+
+    questions: list = []
+    monkeypatch.setattr(dialog_module, "load_pending_session", lambda: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: questions.append(1) or QMessageBox.StandardButton.No,
+    )
+
+    dialog = OfficialDataImportDialog(_FakeCaptureService())
+    dialog._on_failed("导入失败")
+
+    assert questions == []

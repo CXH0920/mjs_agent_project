@@ -66,6 +66,8 @@ PAGED_LAYOUTS = {
     for key, layout in LAYOUTS.items()
 }
 
+EXILE_FULL_PANEL_MIN_ROWS = 45
+
 
 def read_image(path: Path) -> np.ndarray:
     """读取包含非 ASCII 路径的本地图片。"""
@@ -226,13 +228,19 @@ def detect_layout(image: np.ndarray, key: str) -> OfficialBoardLayout:
                 raise ValueError("未检测到数据行")
             if key == "2v2" and row_counts[0] != row_counts[1]:
                 raise ValueError(f"左右榜单行数不一致: {row_counts}")
-            if key == "exile" and abs(row_counts[0] - row_counts[1]) > 1:
-                raise ValueError(f"左右榜单行数差异过大: {row_counts}")
+            if key == "exile":
+                validate_exile_row_counts(row_counts)
             return layout
         except ValueError as exc:
             errors.append(f"{layout.variant}: {exc}")
     raise ValueError(f"无法识别{key}榜单版式（{'；'.join(errors)}）")
 
+
+def validate_exile_row_counts(row_counts: list[int]) -> None:
+    """放逐榜允许页末右栏不满：左栏满栏且右栏不超过左栏时放行。"""
+    left, right = row_counts
+    if left < EXILE_FULL_PANEL_MIN_ROWS or right > left:
+        raise ValueError(f"左右榜单行数异常: {row_counts}")
 
 def restore_missing_boundaries(boundaries: list[int]) -> tuple[list[int], set[int]]:
     """按常规行高补回 Hough 漏检的中间横线。"""

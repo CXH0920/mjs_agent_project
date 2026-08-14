@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import re
 import tempfile
 from collections import Counter
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -25,6 +27,12 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = PROJECT_ROOT / "data"
 REVIEW_DIR = PROJECT_ROOT / "screenshot_data" / "official_import"
+OCR_NAME_CONFUSION_PAIRS: tuple[tuple[str, str], ...] = (
+    ("候", "侯"),
+    ("侯", "候"),
+    ("怀", "惇"),
+    ("惇", "怀"),
+)
 
 
 class OfficialDataImportService:
@@ -148,10 +156,13 @@ class OfficialDataImportService:
                 raise ValueError(
                     f"第 {page_index} 张 2v2 图片左右榜单行数不一致: {row_counts}"
                 )
-            if key == "exile" and abs(row_counts[0] - row_counts[1]) > 1:
-                raise ValueError(
-                    f"第 {page_index} 张武将放逐图片左右榜单行数差异过大: {row_counts}"
-                )
+            if key == "exile":
+                try:
+                    official_board_parser.validate_exile_row_counts(row_counts)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"第 {page_index} 张武将放逐图片{exc}"
+                    ) from exc
             panel_tasks.extend(page_tasks)
 
         if len(variants) > 1:
@@ -266,6 +277,7 @@ class OfficialDataImportService:
             raise ValueError("未检测到任何数据行")
         for batch in outputs.values():
             self._resolve_batch_names(batch)
+        self._resolve_names_across_outputs(outputs)
         validation_errors = self._validate_output_names(outputs)
         for output_name, batch in outputs.items():
             records = batch["records"]
@@ -283,6 +295,14 @@ class OfficialDataImportService:
                 batch["reviews"],
             )
         if validation_errors:
+            self._save_pending_session(
+                key,
+                [str(path) for path in image_paths],
+                page_count,
+                sorted(variants),
+                validation_errors,
+                outputs,
+            )
             raise ValueError("官方榜单名称校验失败：" + "；".join(validation_errors))
         for output_name, batch in outputs.items():
             records = batch["records"]
@@ -351,12 +371,12 @@ class OfficialDataImportService:
         candidates.append(cv2.filter2D(enhanced, -1, np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])))
         results: list[tuple[str, float]] = []
         for candidate in candidates:
-            # 固定版式下单元格边界已知，跳过检测网络，直接走识别网络（省 det 固定开销）
+            # 恢复完整检测+识别流程：det 网络先框出文字区域，避免整格输入产生的边缘幻觉
             ocr_result = (engine if engine is not None else self._engine).ocr(
-                candidate, det=False, rec=True, cls=False,
+                candidate, cls=False,
             )
             for line in ocr_result[0] if ocr_result and ocr_result[0] else []:
-                # det=False 时 line 为 (text, confidence)；兼容完整流程的 [box, (text, confidence)]
+                # 完整流程 line 为 [box, (text, confidence)]
                 if isinstance(line[0], (list, tuple)):
                     text, confidence = line[1]
                 else:
@@ -427,9 +447,46 @@ class OfficialDataImportService:
 
     def _correct_official_name(self, name: str) -> str:
         """保留复姓公共前缀歧义，避免词表扩充后静默改绑。"""
+        return self._correct_official_name_with_path(name)[0]
+
+    def _correct_official_name_with_path(self, name: str) -> tuple[str, bool]:
+        """返回 (校正名, 是否经 OCR 混淆字对变体唯一命中)。"""
         if not name or name in self._hero_names or self._ambiguous_name_candidates(name):
-            return name
-        return self._name_corrector.correct_hero_name(name, self._hero_names)
+            return name, False
+        corrected = self._name_corrector.correct_hero_name(name, self._hero_names)
+        if corrected in self._hero_names:
+            return corrected, False
+        reachable: set[str] = set()
+        for variant in self._confusion_variants(name):
+            reachable.update(self._ambiguous_name_candidates(variant))
+            variant_corrected = self._name_corrector.correct_hero_name(variant, self._hero_names)
+            if variant_corrected in self._hero_names:
+                reachable.add(variant_corrected)
+        if len(reachable) != 1:
+            return name, False
+        return next(iter(reachable)), True
+
+    def _confusion_variants(self, name: str) -> list[str]:
+        """生成仅替换一个 OCR 混淆字的变体（单字互换，保序去重）。"""
+        if not name:
+            return []
+        variants: list[str] = []
+        seen: set[str] = set()
+        for index, char in enumerate(name):
+            for source, target in OCR_NAME_CONFUSION_PAIRS:
+                if char == source:
+                    variant = name[:index] + target + name[index + 1:]
+                    if variant not in seen:
+                        seen.add(variant)
+                        variants.append(variant)
+        return variants
+
+    def _corrected_via_confusion_swap(self, original: str, final: str) -> bool:
+        """仅当校正路径经过混淆字对变体时返回 True（用于复核原因标注）。"""
+        if not original or original == final:
+            return False
+        corrected, used_swap = self._correct_official_name_with_path(original)
+        return used_swap and corrected == final
 
     def _unresolved_name_reason(self, name: str) -> str:
         if not name or name in self._hero_names:
@@ -478,6 +535,57 @@ class OfficialDataImportService:
                     review["异常原因"] += (
                         f"；武将名称已按榜单唯一性由{original or '空值'}补全为{name}"
                     )
+
+    def _resolve_names_across_outputs(self, outputs: dict[str, dict]) -> None:
+        """跨榜单未确认名称在候选集交集唯一时统一补全，避免集合不一致误报。"""
+        pending = [
+            (output_name, index, record)
+            for output_name, batch in outputs.items()
+            for index, record in enumerate(batch["records"])
+            if record["武将"] not in self._hero_names
+        ]
+        if not pending:
+            return
+        candidate_sets: list[set[str]] = []
+        for _output_name, _index, record in pending:
+            name = record["武将"]
+            candidates: set[str] = set()
+            for hero in self._hero_names:
+                if CharacterSimilarityService._levenshtein_distance(name, hero) <= 2:
+                    candidates.add(hero)
+            candidates.update(self._ambiguous_name_candidates(name))
+            corrected = self._correct_official_name(name)
+            if corrected in self._hero_names:
+                candidates.add(corrected)
+            for variant in self._confusion_variants(name):
+                candidates.update(self._ambiguous_name_candidates(variant))
+                variant_corrected = self._correct_official_name(variant)
+                if variant_corrected in self._hero_names:
+                    candidates.add(variant_corrected)
+            candidates.discard(name)
+            candidate_sets.append(candidates)
+        if any(not candidates for candidates in candidate_sets):
+            return
+        common = set.intersection(*candidate_sets)
+        if len(common) != 1:
+            return
+        target = next(iter(common))
+        for output_name, index, record in pending:
+            original = record["武将"]
+            record["武将"] = target
+            review = next(
+                (
+                    review for review in outputs[output_name]["reviews"]
+                    if int(review["期望排名"]) == int(record["排名"])
+                ),
+                None,
+            )
+            if review is not None:
+                review["异常原因"] += (
+                    "；武将名称已按跨榜单一致性由"
+                    + (original or "空值")
+                    + "补全为" + target
+                )
 
     def _validate_output_names(self, outputs: dict[str, dict]) -> list[str]:
         """返回阻止正式 CSV 覆盖的名称完整性错误。"""
@@ -579,9 +687,9 @@ class OfficialDataImportService:
         else:
             text, confidence = max(candidates, key=lambda item: item[1])
         name = self._chinese_text(text)
-        ambiguous_candidates = self._ambiguous_name_candidates(name)
-        if len(name) != 1 and not ambiguous_candidates:
+        if name in self._hero_names:
             return text, confidence
+        ambiguous_candidates = self._ambiguous_name_candidates(name)
 
         glyph_name, glyph_confidence = self._recognize_name_glyphs(cell)
         if glyph_name:
@@ -657,15 +765,17 @@ class OfficialDataImportService:
         match = re.search(r"\d{1,3}(?:\.\d+)?", text)
         return f"{match.group(0)}%" if match else ""
 
-    @staticmethod
-    def _review_reasons(expected_rank: int, fields: dict[str, tuple[str, float]], name: str, record: dict) -> list[str]:
+    def _review_reasons(self, expected_rank: int, fields: dict[str, tuple[str, float]], name: str, record: dict) -> list[str]:
         reasons = []
         rank_match = re.search(r"\d+", fields["排名"][0])
         if rank_match and int(rank_match.group()) != expected_rank:
             reasons.append("排名OCR与行序不一致")
         ocr_name = "".join(re.findall(r"[\u4e00-\u9fff]", fields["武将"][0]))
         if ocr_name and ocr_name != name:
-            reasons.append("武将名称已由词表校正")
+            reason = "武将名称已由词表校正"
+            if self._corrected_via_confusion_swap(ocr_name, name):
+                reason += "（混淆字对）"
+            reasons.append(reason)
         if len(name) < 2:
             reasons.append("武将名称疑似缺字")
         elif not re.fullmatch(r"[\u4e00-\u9fff]{1,8}", name):
@@ -693,3 +803,143 @@ class OfficialDataImportService:
             writer.writeheader()
             writer.writerows(rows)
         temp_path.replace(path)
+    def _save_pending_session(
+        self,
+        key: str,
+        image_paths: list[str],
+        page_count: int,
+        variants: list[str],
+        validation_errors: list[str],
+        outputs: dict[str, dict],
+        path: Path | None = None,
+    ) -> Path:
+        """将校验失败批次持久化，供复核界面修正后复用（不重新 OCR）。"""
+        session_path = path or (DATA_DIR / "official_import_pending.json")
+        payload = {
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "key": key,
+            "image_paths": image_paths,
+            "page_count": page_count,
+            "variant": variants,
+            "validation_errors": validation_errors,
+            "outputs": {
+                name: {
+                    "review_name": batch["review_name"],
+                    "columns": list(batch["columns"]),
+                    "records": batch["records"],
+                    "reviews": batch["reviews"],
+                }
+                for name, batch in outputs.items()
+            },
+        }
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", newline="", dir=session_path.parent,
+            prefix=f".{session_path.name}.", suffix=".tmp", delete=False,
+        ) as file:
+            temp_path = Path(file.name)
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+            file.write("\n")
+        temp_path.replace(session_path)
+        return session_path
+
+    def apply_reviewed_records(
+        self,
+        pending: dict,
+        corrections: dict[tuple[str, int], str],
+        session_path: Path | None = None,
+    ) -> dict:
+        """应用人工复核修正后写入正式 CSV；校验失败时抛错且不写文件。"""
+        outputs = pending["outputs"]
+        for (output_name, rank), hero_name in corrections.items():
+            batch = outputs[output_name]
+            record = next(
+                (
+                    record for record in batch["records"]
+                    if int(record["排名"]) == int(rank)
+                ),
+                None,
+            )
+            if record is None:
+                raise ValueError(f"{output_name} 排名 {rank} 不存在待修正记录")
+            record["武将"] = hero_name
+        validation_errors = self._validate_output_names(outputs)
+        if validation_errors:
+            raise ValueError("官方榜单名称校验失败：" + "；".join(validation_errors))
+        for output_name, batch in outputs.items():
+            records = batch["records"]
+            if not records:
+                raise ValueError(f"{output_name} 未识别到任何数据行")
+            self._write_csv(DATA_DIR / output_name, list(records[0]), records)
+        mark_recommendation_index_stale(True)
+        if "2v2胜率排行.csv" in outputs:
+            from src.data.win_rate_repository import clear_win_rate_cache
+            clear_win_rate_cache()
+        clear_pending_session(session_path)
+        record_count = sum(len(batch["records"]) for batch in outputs.values())
+        logger.info("官方榜单复核修正写入完成: %d 条", record_count)
+        return {
+            "records": record_count,
+            "outputs": [DATA_DIR / name for name in outputs],
+        }
+
+    def review_candidates(self, ocr_name: str, current: str | None = None) -> list[str]:
+        """为复核界面提供候选武将名：当前值 ∪ 距离≤2/歧义候选，空则全表按距离排序。"""
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def add(name: str) -> None:
+            if name and name not in seen:
+                seen.add(name)
+                candidates.append(name)
+
+        if current and current in self._hero_names:
+            add(current)
+        if ocr_name in self._hero_names:
+            add(ocr_name)
+        for hero in self._hero_names:
+            if (
+                CharacterSimilarityService._levenshtein_distance(ocr_name, hero) <= 2
+                and (any(char in hero for char in ocr_name) or len(ocr_name) != len(hero))
+            ):
+                add(hero)
+        for hero in self._ambiguous_name_candidates(ocr_name):
+            add(hero)
+        if not candidates:
+            candidates.extend(sorted(
+                self._hero_names,
+                key=lambda hero: (
+                    CharacterSimilarityService._levenshtein_distance(ocr_name, hero),
+                    hero,
+                ),
+            ))
+        return candidates
+
+    def is_known_hero_name(self, name: str) -> bool:
+        """判断名称是否在词表中（复核界面统计用）。"""
+        return name in self._hero_names
+
+def load_pending_session(path: Path | None = None) -> dict | None:
+    """读取最近一次校验失败保存的官方榜单会话；损坏时返回 None。"""
+    session_path = Path(path) if path is not None else DATA_DIR / "official_import_pending.json"
+    try:
+        with session_path.open("r", encoding="utf-8") as file:
+            payload = json.load(file)
+        if not isinstance(payload, dict) or not payload.get("outputs"):
+            logger.warning("官方榜单待复核会话格式无效: %s", session_path)
+            return None
+        return payload
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("无法读取官方榜单待复核会话: %s", exc)
+        return None
+
+
+def clear_pending_session(path: Path | None = None) -> None:
+    """删除待复核会话文件（存在时才删除）。"""
+    session_path = Path(path) if path is not None else DATA_DIR / "official_import_pending.json"
+    try:
+        session_path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("无法删除官方榜单待复核会话: %s", exc)

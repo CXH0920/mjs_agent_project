@@ -53,7 +53,8 @@ def test_paged_layout_restores_missing_leading_rank_rows() -> None:
 
 
 def test_missing_rank_ocr_uses_table_row_rank_without_review() -> None:
-    reasons = OfficialDataImportService._review_reasons(
+    service = OfficialDataImportService(hero_names=["曹仁"])
+    reasons = service._review_reasons(
         1,
         {"排名": ("", 0.0), "武将": ("曹仁", 0.99), "胜率": ("72.73%", 0.99)},
         "曹仁",
@@ -77,7 +78,7 @@ def test_high_confidence_unknown_complete_name_is_corrected_and_reviewed() -> No
 
     name, confidence = service._normalize_name(("贾谢", 0.996))
     common_surname_name, _ = service._normalize_name(("曹不", 0.996))
-    reasons = OfficialDataImportService._review_reasons(
+    reasons = service._review_reasons(
         1, {"排名": ("1", 0.99), "武将": ("贾谢", confidence)}, name, {"排名": 1, "武将": name},
     )
 
@@ -265,7 +266,7 @@ def test_name_cell_keeps_single_character_for_review_when_rare_engine_fails(monk
     )
 
     text, confidence = service._recognize_name_cell(cell)
-    reasons = OfficialDataImportService._review_reasons(
+    reasons = service._review_reasons(
         1, {"排名": ("1", 0.99), "武将": (text, confidence)}, text, {"排名": 1, "武将": text},
     )
 
@@ -275,7 +276,8 @@ def test_name_cell_keeps_single_character_for_review_when_rare_engine_fails(monk
 
 
 def test_single_character_name_is_marked_for_review() -> None:
-    reasons = OfficialDataImportService._review_reasons(
+    service = OfficialDataImportService(hero_names=["郭"])
+    reasons = service._review_reasons(
         1,
         {"排名": ("1", 0.99), "武将": ("郭", 0.99)},
         "郭",
@@ -504,3 +506,365 @@ def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch) -> No
 
     assert not (tmp_path / "2v2胜率排行.csv").exists()
     assert not (tmp_path / "2v2出场排行.csv").exists()
+
+# ---------------------------------------------------------------
+
+# ---------------------------------------------------------------
+# OCR 混淆字对抵底 / 跨榜单一致性 / 失败会话持久化
+# ---------------------------------------------------------------
+
+
+def test_confusion_swap_corrects_swapped_compound_surname() -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+
+    assert service._normalize_name(("夏候", 0.79)) == ("夏侯惇", 0.79)
+    assert service._normalize_name(("夏候怀", 0.70)) == ("夏侯惇", 0.70)
+
+
+def test_confusion_swap_review_reason() -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+
+    name, confidence = service._normalize_name(("夏候怀", 0.70))
+    reasons = service._review_reasons(
+        28, {"排名": ("28", 0.99), "武将": ("夏候怀", 0.70)}, name, {"排名": 28, "武将": name},
+    )
+
+    assert name == "夏侯惇"
+    assert reasons[0] == "武将名称已由词表校正（混淆字对）"
+
+
+def test_confusion_swap_skips_when_reachable_is_ambiguous() -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊"])
+
+    assert service._normalize_name(("夏候怀", 0.70)) == ("夏候怀", 0.70)
+    assert service._normalize_name(("夏侯怀", 0.70)) == ("夏侯怀", 0.70)
+
+
+def test_confusion_swap_does_not_touch_known_name() -> None:
+    service = OfficialDataImportService(hero_names=["侯嬴", "夏侯惇"])
+
+    assert service._normalize_name(("侯嬴", 0.99)) == ("侯嬴", 0.99)
+    assert service._corrected_via_confusion_swap("侯嬴", "侯嬴") is False
+
+
+def test_plain_wordlist_correction_has_no_confusion_marker() -> None:
+    service = OfficialDataImportService(hero_names=["曹丕"])
+
+    name, _confidence = service._normalize_name(("曹不", 0.98))
+    reasons = service._review_reasons(
+        1, {"排名": ("1", 0.99), "武将": ("曹不", 0.98)}, name, {"排名": 1, "武将": name},
+    )
+
+    assert name == "曹丕"
+    assert reasons[0] == "武将名称已由词表校正"
+
+
+def test_name_cell_runs_glyph_fallback_for_unknown_name(monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(service, "_recognize_cell_candidates", lambda _: [("夏候", 0.79)])
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda _: ("夏侯", 0.85))
+
+    text, confidence = service._recognize_name_cell(cell)
+
+    assert (text, confidence) == ("夏侯惇", 0.85)
+
+
+def test_cross_output_resolution_aligns_unknown_names() -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    outputs = {
+        "2v2胜率排行.csv": {
+            "records": [{"排名": 1, "武将": "夏候"}, {"排名": 2, "武将": "白起"}],
+            "reviews": [{"期望排名": 1, "异常原因": "武将名称未命中词表"}],
+        },
+        "2v2出场排行.csv": {
+            "records": [{"排名": 1, "武将": "夏候怀"}, {"排名": 2, "武将": "白起"}],
+            "reviews": [{"期望排名": 1, "异常原因": "武将名称未命中词表"}],
+        },
+    }
+
+    service._resolve_names_across_outputs(outputs)
+
+    assert outputs["2v2胜率排行.csv"]["records"][0]["武将"] == "夏侯惇"
+    assert outputs["2v2出场排行.csv"]["records"][0]["武将"] == "夏侯惇"
+    assert "跨榜单一致性" in outputs["2v2胜率排行.csv"]["reviews"][0]["异常原因"]
+    assert service._validate_output_names(outputs) == []
+
+
+def test_cross_output_resolution_skips_when_no_common_candidate() -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊"])
+    outputs = {
+        "2v2胜率排行.csv": {
+            "records": [{"排名": 1, "武将": "夏侯怀"}, {"排名": 2, "武将": "白起"}],
+            "reviews": [{"期望排名": 1, "异常原因": "武将名称候选不唯一"}],
+        },
+        "2v2出场排行.csv": {
+            "records": [{"排名": 1, "武将": "夏侯惇"}, {"排名": 2, "武将": "白起"}],
+            "reviews": [],
+        },
+    }
+
+    service._resolve_names_across_outputs(outputs)
+
+    assert outputs["2v2胜率排行.csv"]["records"][0]["武将"] == "夏侯怀"
+
+
+def test_save_pending_session_roundtrip(tmp_path) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+    outputs = {
+        "2v2胜率排行.csv": {
+            "review_name": "2v2胜率排行_待复核.csv",
+            "columns": ("排名", "武将", "胜率"),
+            "records": [{"排名": 1, "武将": "夏候", "胜率": "54.40%"}],
+            "reviews": [{"期望排名": 1, "OCR名称": "夏候", "异常原因": "未命中", "行截图路径": "x.png"}],
+        },
+    }
+
+    session_path = service._save_pending_session(
+        "2v2", ["a.png"], 1, ["paged"], ["校验失败"], outputs, tmp_path / "pending.json",
+    )
+    payload = import_module.load_pending_session(session_path)
+
+    assert payload is not None
+    assert payload["outputs"]["2v2胜率排行.csv"]["records"][0]["武将"] == "夏候"
+
+
+def test_load_pending_session_returns_none_when_missing(tmp_path) -> None:
+    assert import_module.load_pending_session(tmp_path / "missing.json") is None
+
+
+def test_apply_reviewed_records_writes_fixed_records(tmp_path, monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    pending = {
+        "outputs": {
+            "2v2胜率排行.csv": {
+                "review_name": "2v2胜率排行_待复核.csv",
+                "records": [{"排名": 1, "武将": "夏候", "胜率": "54.40%"}],
+                "reviews": [],
+            },
+        },
+    }
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+    cleared: list = []
+    monkeypatch.setattr(import_module, "clear_pending_session", cleared.append)
+
+    summary = service.apply_reviewed_records(
+        pending, {("2v2胜率排行.csv", 1): "夏侯惇"},
+    )
+
+    rows = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
+    assert rows[0]["武将"] == "夏侯惇"
+    assert summary["records"] == 1
+    assert cleared == [None]
+
+
+def test_apply_reviewed_records_rejects_unknown_after_fix(tmp_path, monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    pending = {
+        "outputs": {
+            "2v2胜率排行.csv": {
+                "review_name": "2v2胜率排行_待复核.csv",
+                "records": [{"排名": 1, "武将": "夏候", "胜率": "54.40%"}],
+                "reviews": [],
+            },
+        },
+    }
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+
+    with pytest.raises(ValueError, match="存在未确认武将"):
+        service.apply_reviewed_records(pending, {})
+
+    assert not (tmp_path / "2v2胜率排行.csv").exists()
+
+
+def test_apply_reviewed_records_rejects_duplicate_after_fix(tmp_path, monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    pending = {
+        "outputs": {
+            "2v2胜率排行.csv": {
+                "review_name": "2v2胜率排行_待复核.csv",
+                "records": [
+                    {"排名": 1, "武将": "夏候", "胜率": "54.40%"},
+                    {"排名": 2, "武将": "白起", "胜率": "53.00%"},
+                ],
+                "reviews": [],
+            },
+        },
+    }
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+
+    with pytest.raises(ValueError, match="存在重复武将"):
+        service.apply_reviewed_records(pending, {("2v2胜率排行.csv", 1): "白起"})
+
+    assert not (tmp_path / "2v2胜率排行.csv").exists()
+
+def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatch) -> None:
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    panel = np.zeros((60, 100, 3), dtype=np.uint8)
+    rows = iter([
+        {"排名": ("1", 0.99), "武将": ("夏候", 0.79), "胜率": ("54.40%", 0.99)},
+        {"排名": ("2", 0.99), "武将": ("白起", 0.99), "胜率": ("50.00%", 0.99)},
+        {"排名": ("1", 0.99), "武将": ("夏候怀", 0.70)},
+        {"排名": ("2", 0.99), "武将": ("白起", 0.99)},
+    ])
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: image)
+    monkeypatch.setattr(
+        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    )
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40])
+    monkeypatch.setattr(service, "_recognize_row", lambda *_: next(rows))
+
+    def prepare_templates(*args):
+        progress_callback = args[-2]
+        progress_callback()
+        progress_callback()
+        return {1: ("54.40%", 0.99), 2: ("50.00%", 0.99)}, {}
+
+    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
+    template_rates = iter([("54.40%", 0.99), ("50.00%", 0.99)])
+    monkeypatch.setattr(
+        official_board_parser, "recognize_rate_with_templates", lambda *_: next(template_rates),
+    )
+    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+    stale: list = []
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale.append)
+
+    summary = service.import_file("2v2", tmp_path / "official.png")
+
+    win = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
+    appear = list(csv.DictReader((tmp_path / "2v2出场排行.csv").open(encoding="utf-8")))
+    assert win[0]["武将"] == "夏侯惇"
+    assert appear[0]["武将"] == "夏侯惇"
+    assert win[0]["胜率"] == "54.40%"
+    assert summary["records"] == 4
+    assert stale == [True]
+    review = list(csv.DictReader((tmp_path / "2v2胜率排行_待复核.csv").open(encoding="utf-8")))[0]
+    assert "混淆字对" in review["异常原因"]
+
+# ---------------------------------------------------------------
+# 放逐榜页末右栏不满的行数校验放宽
+# ---------------------------------------------------------------
+
+
+def test_validate_exile_row_counts_accepts_full_and_short_right() -> None:
+    official_board_parser.validate_exile_row_counts([50, 50])
+    official_board_parser.validate_exile_row_counts([50, 20])
+
+
+def test_validate_exile_row_counts_rejects_invalid_layouts() -> None:
+    with pytest.raises(ValueError, match="行数异常"):
+        official_board_parser.validate_exile_row_counts([20, 50])
+    with pytest.raises(ValueError, match="行数异常"):
+        official_board_parser.validate_exile_row_counts([30, 30])
+
+
+def test_detect_layout_accepts_exile_short_right_panel(monkeypatch) -> None:
+    image = np.zeros((2657, 1080, 3), dtype=np.uint8)
+    panel = np.zeros((100, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(
+        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    )
+
+    def fake_boundaries(_panel, _image_height, _layout, panel_index):
+        rows = 50 if panel_index == 0 else 20
+        return list(range(0, (rows + 1) * 20, 20))
+
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", fake_boundaries)
+
+    layout = official_board_parser.detect_layout(image, "exile")
+
+    assert layout.variant == "paged"
+
+
+def test_detect_layout_rejects_2v2_uneven_panels(monkeypatch) -> None:
+    image = np.zeros((2657, 1080, 3), dtype=np.uint8)
+    panel = np.zeros((100, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(
+        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    )
+
+    def fake_boundaries(_panel, _image_height, _layout, panel_index):
+        rows = 50 if panel_index == 0 else 49
+        return list(range(0, (rows + 1) * 20, 20))
+
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", fake_boundaries)
+
+    with pytest.raises(ValueError, match="无法识别2v2榜单版式"):
+        official_board_parser.detect_layout(image, "2v2")
+
+
+def test_detect_layout_rejects_exile_right_heavier_panel(monkeypatch) -> None:
+    image = np.zeros((2657, 1080, 3), dtype=np.uint8)
+    panel = np.zeros((100, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(
+        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    )
+
+    def fake_boundaries(_panel, _image_height, _layout, panel_index):
+        rows = 20 if panel_index == 0 else 50
+        return list(range(0, (rows + 1) * 20, 20))
+
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", fake_boundaries)
+
+    with pytest.raises(ValueError, match="无法识别exile榜单版式"):
+        official_board_parser.detect_layout(image, "exile")
+
+
+def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch) -> None:
+    import json as _json
+
+    all_names = [
+        hero["name"]
+        for hero in _json.loads((import_module.DATA_DIR / "heroes.json").read_text(encoding="utf-8"))
+    ][:170]
+    names = {rank: all_names[rank - 1] for rank in range(1, 171)}
+    service = OfficialDataImportService(hero_names=all_names)
+    panel = np.zeros((1100, 100, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+    monkeypatch.setattr(
+        official_board_parser,
+        "read_image",
+        lambda path: np.full((200, 200, 3), 1 if path.stem == "page1" else 4, dtype=np.uint8),
+    )
+
+    def fake_extract_panels(image, _layout):
+        page = int(image[0, 0, 0])
+        return [
+            (0, 0, np.full_like(panel, page * 10)),
+            (100, 0, np.full_like(panel, page * 10 + 1)),
+        ]
+
+    monkeypatch.setattr(official_board_parser, "extract_panels", fake_extract_panels)
+
+    def fake_boundaries(panel, _image_height, _layout, _panel_index):
+        rows = {10: 50, 11: 50, 40: 50, 41: 20}[int(panel[0, 0, 0])]
+        return list(range(0, (rows + 1) * 20, 20))
+
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", fake_boundaries)
+    counters: dict[int, int] = {}
+
+    def recognize_row(row, _columns, *_args):
+        value = int(row[0, 0, 0])
+        counters[value] = counters.get(value, 0) + 1
+        base = {10: 1, 11: 51, 40: 101, 41: 151}[value]
+        rank = base + counters[value] - 1
+        return {"排名": (str(rank), 0.99), "武将": (names[rank], 0.99)}
+
+    monkeypatch.setattr(service, "_recognize_row", recognize_row)
+
+    summary = service.import_pages("exile", [tmp_path / "page1.png", tmp_path / "page2.png"])
+
+    rows = list(csv.DictReader((tmp_path / "武将放逐.csv").open(encoding="utf-8")))
+    assert len(rows) == 170
+    assert [int(row["排名"]) for row in rows] == list(range(1, 171))
+    assert rows[-1]["武将"] == names[170]
+    assert summary["records"] == 170
