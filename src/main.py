@@ -58,9 +58,10 @@ def main() -> None:
     os.environ.setdefault("QT_LOGGING_RULES",
                           "qt.qpa.fonts=false;qt.text.font.db=false")
 
-    # Windows cmd 默认 GBK，设置 stdout 为 UTF-8 避免中文乱码
+    # Windows cmd 默认 GBK，设置 stdout/stderr 为 UTF-8 避免中文乱码
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
 
     # 设置高 DPI 支持
     QApplication.setHighDpiScaleFactorRoundingPolicy(
