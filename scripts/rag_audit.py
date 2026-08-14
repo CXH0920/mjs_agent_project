@@ -9,7 +9,6 @@
 返回问题清单（list[str]）；无问题时返回空列表。不影响语料构建，
 由 maintain_rag.py 选择是否以 --strict-audit 视为失败。
 """
-import os
 import io, sys, os, json, re
 
 
@@ -87,6 +86,6 @@ def audit_hero_coverage(root):
 
 if __name__ == '__main__':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    root = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for it in audit_hero_coverage(root):
         print('- ' + it)

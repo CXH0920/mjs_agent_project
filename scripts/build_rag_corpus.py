@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """生成武将 RAG 语料：总览块 + 技能块，含规则抽取的索引字段"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import json, re, io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-with open(os.path.join(ROOT, 'data', 'heroes.json'), encoding='utf-8') as f:
+with open(r'data\heroes.json', encoding='utf-8') as f:
     heroes = json.load(f)
-with open(os.path.join(ROOT, 'data', 'cards.json'), encoding='utf-8') as f:
+with open(r'data\cards.json', encoding='utf-8') as f:
     cards = json.load(f)
 
 card_names = {c['name'] for c in cards}
@@ -247,7 +245,7 @@ for h in heroes:
             '',
         ]
 
-out_dir = os.path.join(ROOT, 'docs')
+out_dir = r'data\rag_corpus'
 md_path = out_dir + r'\武将RAG语料.md'
 json_path = out_dir + r'\武将RAG语料.json'
 with open(md_path, 'w', encoding='utf-8', newline='\n') as f:
@@ -257,7 +255,6 @@ with open(json_path, 'w', encoding='utf-8', newline='\n') as f:
 
 # 统计摘要
 import collections
-
 skill_blocks = [b for b in blocks if b.get('block_type') != 'overview']
 with_timing = sum(1 for b in skill_blocks if b['timing'])
 with_cond = sum(1 for b in skill_blocks if b['trigger_condition'])

@@ -200,9 +200,9 @@ python -m src.scraper.ai_batch --dry-run --synergy
 攻略生成（API/浏览器双模式）默认检索 RAG 官方规则语料（`data/rag_corpus` + `data/rag_index`）注入 prompt，提升规则准确性；语料与索引由 `mjs_rag_project` 维护，本仓库通过一键管道同步。
 - 禁用增强：`python -m src.scraper.ai_batch --guide --no-rag`
 - 重建索引：`python -m src.scraper.ai_batch --rebuild-rag-index`
-- 一键维护管道：`python scripts/sync_rag_corpus.py --yes`（同步官方数据 → 重建语料/索引 → 导回本仓库）
+- 一键维护管道（本地）：`python scripts/maintain_rag.py --force --build-index`（重建语料与向量索引），或使用应用内「知识库维护」页面可视化执行
 - 配置项：`config.env` 中 `RAG_ENABLED` / `RAG_MODEL_DIR` / `RAG_TOP_K` / `RAG_PROMPT_CHARS` / `RAG_PROJECT_DIR`
-维护脚本（`maintain_rag.py` / `import_from_test.py` / `rag_audit.py` / `build_*.py`）已同步到 `scripts/`，可直接在本仓库运行（数据仍以 `RAG_PROJECT_DIR` 定位 mjs 仓库为单一维护源）：
+维护脚本（`maintain_rag.py` / `rag_audit.py` / `build_*.py`）已收编到 `scripts/`，全部在 test_project 本地运行（数据源 `data/`、文档源 `docs/`）：
 - 查看人工补充清单：`python scripts/rag_audit.py`
 - 预览语料状态：`python scripts/maintain_rag.py --check`
 - 增量重建语料/索引：`python scripts/maintain_rag.py --build-index`

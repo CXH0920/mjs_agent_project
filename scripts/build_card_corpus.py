@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 """生成卡牌 RAG 语料：49 块，含规则抽取索引字段"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import json, re, io, sys
-
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-with open(os.path.join(ROOT, 'data', 'cards.json'), encoding='utf-8') as f:
+with open(r'data\cards.json', encoding='utf-8') as f:
     cards = json.load(f)
 card_names = {c['name'] for c in cards}
 
@@ -89,7 +86,7 @@ for c in cards:
         '',
     ]
 
-out_dir = os.path.join(ROOT, 'docs')
+out_dir = r'data\rag_corpus'
 with open(out_dir + r'\卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
 with open(out_dir + r'\卡牌RAG语料.json', 'w', encoding='utf-8', newline='\n') as f:

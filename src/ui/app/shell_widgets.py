@@ -101,7 +101,7 @@ class NavigationRail(QFrame):
 
     EXPANDED_WIDTH = 156
     COLLAPSED_WIDTH = 56
-    PAGE_LABELS = ("资料库", "选将推荐", "对局攻略")
+    PAGE_LABELS = ("资料库", "选将推荐", "对局攻略", "知识库维护")
 
     def __init__(
         self,

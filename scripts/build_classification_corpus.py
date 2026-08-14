@@ -5,14 +5,13 @@
 输出：docs/武将分类语料.json / .md
 未归类武将不会生成块，并打印待补充清单。
 """
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import io, sys, os, json
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
-DOCS = os.path.join(ROOT, 'docs')
+DOCS = os.path.join(ROOT, 'data', 'rag_corpus')
 
 with open(os.path.join(DATA, 'hero_classification.json'), encoding='utf-8') as f:
     cls = json.load(f)

@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 """生成特殊机制语料：专属牌 / 专属战法牌 / 特殊机制(牌区·状态·概念)"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import json, io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # 一、专属牌（牌名, 类型, 效果, 相关武将）
 def _load_special_items():
     """从 data/special_cards.json 读取特殊机制数据（单一维护源）。"""
-    with open(os.path.join(ROOT, 'data', 'special_cards.json'), encoding='utf-8') as f:
+    with open(r'data\special_cards.json', encoding='utf-8') as f:
         _items = json.load(f)
 
     def _group(cat):
@@ -28,7 +26,7 @@ def _load_special_items():
 
 
 SPECIAL_CARDS, SPECIAL_WAR, SPECIAL_ZONES, STATES, CONCEPTS = _load_special_items()
-out = os.path.join(ROOT, 'docs')
+out = r'data\rag_corpus'
 blocks = []
 md = ['# 特殊机制语料', '',
       '> 来源：人工整理（专属牌/专属战法牌/特殊牌区/状态标记/概念）。',
@@ -82,6 +80,5 @@ with open(out + r'\特殊机制语料.json', 'w', encoding='utf-8', newline='\n'
     json.dump(blocks, f, ensure_ascii=False, indent=1)
 print('块数:', len(blocks))
 import collections
-
 print(dict(collections.Counter(b['category'] for b in blocks)))
 

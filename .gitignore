@@ -49,3 +49,6 @@ logs/
 data/rag_models/
 data/rag_corpus/
 data/rag_index/
+
+# RAG 维护运行时状态
+scripts/.rag_state.json

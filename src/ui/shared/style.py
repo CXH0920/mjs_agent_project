@@ -1201,4 +1201,112 @@ QLabel#toastOverlay[tone="danger"] {{
     background-color: {DANGER};
     border-color: {DANGER};
 }}
-"""
+
+/* === 专属牌维护（对齐卡牌图鉴/武将资料） === */
+QWidget#specialCardsPanel {{
+    background-color: {CANVAS};
+}}
+QWidget#specialCardListPane, QWidget#specialCardDetailContent {{
+    background-color: transparent;
+}}
+QListWidget#specialCardList {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+}}
+QListWidget#specialCardList::item {{
+    padding: 0;
+    border-left: 3px solid transparent;
+}}
+QListWidget#specialCardList::item:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+}}
+QListWidget#specialCardList::item:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-left-color: {PRIMARY};
+}}
+QWidget#specialCardListItem, QWidget#specialCardListItem QLabel {{
+    background-color: transparent;
+}}
+QLabel#specialCardListItemName {{
+    color: {TEXT_PRIMARY};
+    font-weight: bold;
+}}
+QLabel#specialCardListItemMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_XS}px;
+}}
+QFrame#specialCardDetailSurface {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QFrame#specialCardDetailSurface QLabel {{
+    background-color: transparent;
+}}
+QLabel#specialCardEditMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QLabel#specialCardSectionTitle {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_MD}px;
+    font-weight: bold;
+    padding-top: {SPACE_XS}px;
+}}
+QLabel#specialCardFieldBody {{
+    color: {TEXT_PRIMARY};
+    background-color: {PRIMARY_SOFT};
+    border-left: 3px solid {PRIMARY};
+    border-radius: {RADIUS_SM}px;
+    padding: 9px 11px;
+}}
+QLabel#specialCardFieldSingle {{
+    color: {TEXT_PRIMARY};
+    padding: 2px 0;
+}}
+
+/* === 知识库维护（对齐选将推荐/对局攻略工作台） === */
+QWidget#ragMaintenancePanel {{
+    background-color: transparent;
+}}
+QFrame#ragTableSurface, QFrame#ragLogSurface {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QTableWidget#ragTaskTable {{
+    background-color: {SURFACE};
+    border: none;
+    border-radius: {RADIUS_MD}px;
+    gridline-color: {BORDER};
+}}
+QTableWidget#ragTaskTable::item {{
+    padding: 6px 8px;
+    border: none;
+}}
+QTableWidget#ragTaskTable::item:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+}}
+QTableWidget#ragTaskTable::item:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+}}
+QTableWidget#ragTaskTable QHeaderView::section {{
+    background-color: {SUBTLE_SURFACE};
+    color: {TEXT_PRIMARY};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    padding: 6px 8px;
+    font-weight: bold;
+}}
+QPlainTextEdit#ragMaintenanceLog {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+    padding: 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: {FONT_SIZE_SM}px;
+    color: {TEXT_PRIMARY};
+}}"""

@@ -14,15 +14,14 @@ RAG 语料维护调度主脚本（maintain_rag.py）
 
 依赖：仅 Python 标准库；需在项目根目录运行（与 data/ docs/ scripts/ 同级）。
 """
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import sys, os, json, hashlib, subprocess, argparse, time
 
 import rag_audit
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 STATE_FILE = os.path.join(ROOT, 'scripts', '.rag_state.json')
 SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
-DOCS_DIR = os.path.join(ROOT, 'docs')
+DOCS_DIR = os.path.join(ROOT, 'data', 'rag_corpus')
 
 
 # ---------------------------------------------------------------------------
@@ -307,21 +306,21 @@ def main():
             print('\n[索引] 语料已更新，重建向量索引 ...')
             try:
                 proc = subprocess.run(
-                    [sys.executable, 'rag/indexer.py'], cwd=ROOT,
+                    [sys.executable, '-m', 'src.rag.indexer'], cwd=ROOT,
                     capture_output=True, text=True, encoding='utf-8',
                     errors='replace', timeout=600)
                 out = ((proc.stdout or '') + (proc.stderr or '')).strip()
                 if proc.returncode == 0:
                     print('  ✅ 索引重建完成')
                 else:
-                    print('  ❌ 索引重建失败（可稍后手动执行 python -m rag.cli --rebuild-index）')
+                    print('  ❌ 索引重建失败（可稍后手动执行 python -m src.rag.indexer）')
                 if out:
                     for ln in out.splitlines()[:15]:
                         print('  | ' + ln)
             except Exception as e:
                 print(f'  ❌ 索引重建异常：{e}')
         else:
-            print('\n提示：语料已更新，可运行 python -m rag.cli --rebuild-index 重建向量索引')
+            print('\n提示：语料已更新，可运行 python -m src.rag.indexer 重建向量索引')
 
     print('\n' + '=' * 64)
     if failed:

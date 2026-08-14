@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """装备属性落地：生成装备属性语料 + 注入卡牌语料"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import json, io, sys
-
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 EQUIP_ATTRS = {
@@ -17,10 +14,10 @@ EQUIP_ATTRS = {
     '鸣鸿刀': ('武器', 2, None), '开山斧': ('武器', 3, None), '轩辕剑': ('武器', 2, None),
 }
 
-out = os.path.join(ROOT, 'docs')
+out = r'data\rag_corpus'
 
 # ---- 1. 装备属性语料 ----
-with open(os.path.join(ROOT, 'data', 'cards.json'), encoding='utf-8') as f:
+with open(r'data\cards.json', encoding='utf-8') as f:
     cards = json.load(f)
 card_by_name = {c['name']: c for c in cards}
 

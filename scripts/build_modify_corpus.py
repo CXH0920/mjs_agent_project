@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 """生成加强削弱语料 + 统计"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import json, io, sys
-
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-with open(os.path.join(ROOT, 'data', 'cards.json'), encoding='utf-8') as f:
+with open(r'data\cards.json', encoding='utf-8') as f:
     cards = json.load(f)
-with open(os.path.join(ROOT, 'data', 'card_annotations.json'), encoding='utf-8') as f:
+with open(r'data\card_annotations.json', encoding='utf-8') as f:
     ann = json.load(f)
 
 cards_by_id = {c['id']: c for c in cards}
@@ -68,7 +65,7 @@ for a in sorted(anns, key=lambda x: int(x['card_id']) if x['card_id'].isdigit() 
         f'【关联】{" / ".join(b["related"])}',
         '',
     ]
-out = os.path.join(ROOT, 'docs')
+out = r'data\rag_corpus'
 with open(out + r'\加强削弱语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md))
 with open(out + r'\加强削弱语料.json', 'w', encoding='utf-8', newline='\n') as f:

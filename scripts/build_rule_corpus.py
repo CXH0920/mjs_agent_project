@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 """元规则切块 + 术语表 + FAQ 块（修复版）"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import re, io, sys, json
-
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-src = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
+src = r'docs\元规则整理-完整版.md'
 with open(src, encoding='utf-8') as f:
     lines = f.read().splitlines()
 
@@ -61,7 +58,7 @@ for b in blocks:
                 faqs.append({'block_id': 'faq_%02d' % int(m.group(1)), 'faq_no': int(m.group(1)),
                              'ruling': m.group(2).strip(), 'source': m.group(3).strip()})
 
-out_dir = os.path.join(ROOT, 'docs')
+out_dir = r'data\rag_corpus'
 md_sections = ['# 元规则 RAG 语料（章节块）', '', '> 来源：《元规则整理-完整版》按小节切块。', '']
 for b in blocks:
     md_sections.append('### %s %s' % (b['block_id'], b['title']))

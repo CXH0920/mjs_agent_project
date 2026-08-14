@@ -425,3 +425,8 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
+
+## 七、专属牌维护与知识库维护（2026-08 新增）
+
+- 资料库二级标签「专属牌维护」：src/ui/library/special_cards_panel.py，维护 data/special_cards.json（专属牌/专属战法牌/特殊牌区/状态·标记/概念），数据层 src/data/special_cards_repository.py，保存后发 data_changed 信号。
+- 主导航第 4 页「知识库维护」：src/ui/maintenance/rag_maintenance_panel.py，展示 8 个语料任务状态（源文件 mtime vs 语料输出）与人工审计提示，通过 QProcess 本地执行 scripts/maintain_rag.py 重建语料/索引，不再依赖外部 mjs 仓库。

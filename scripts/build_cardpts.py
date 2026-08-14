@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """生成卡牌点数花色语料（从 xlsx 提取，补充 RAG 知识库）"""
-import os
-ROOT = os.environ.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
 import zipfile, re, io, sys, json, xml.etree.ElementTree as ET, collections
-
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-path = os.path.join(ROOT, 'data', 'mjs卡牌点数.xlsx')
+path = r'data\mjs卡牌点数.xlsx'
 z = zipfile.ZipFile(path)
 NS = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
 shared = []
@@ -72,7 +69,7 @@ for name in sorted(card_pts):
         '',
     ]
 
-out = os.path.join(ROOT, 'docs')
+out = r'data\rag_corpus'
 with open(out + r'\卡牌点数花色语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md))
 with open(out + r'\卡牌点数花色语料.json', 'w', encoding='utf-8', newline='\n') as f:
