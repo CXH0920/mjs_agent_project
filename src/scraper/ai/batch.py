@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -207,12 +208,24 @@ def main():
     parser.add_argument("--update", action="store_true",
                          help="更新模式：重新生成已存在的数据（默认跳过已存在的）")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
+    parser.add_argument("--no-rag", action="store_true",
+                         help="禁用 RAG 语料增强（默认启用）")
+    parser.add_argument("--rebuild-rag-index", action="store_true",
+                         help="重建 RAG 向量索引后退出")
     args = parser.parse_args()
 
     runtime_params = get_runtime_params()
     log_level = "DEBUG" if args.verbose else runtime_params["log_level"]
     from src.config.logging_config import setup_logging
     setup_logging(log_level=log_level, log_to_file=runtime_params["log_to_file"])
+    if args.rebuild_rag_index:
+        from src.rag.indexer import build_index
+        n, _ = build_index(rebuild=True)
+        sys.exit(0 if n else 1)
+
+    if args.no_rag:
+        os.environ["RAG_ENABLED"] = "false"
+        logger.info("RAG enhanced context disabled via --no-rag")
 
     has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single
     if not args.guide and not has_synergy_mode:

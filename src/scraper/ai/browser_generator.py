@@ -48,6 +48,38 @@ PROMPT_DIR = PROJECT_ROOT / "docs" / "prompts"
 GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
 SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
 
+
+def _browser_rag_max_chars() -> int:
+    """浏览器模式 RAG 语料预算（config.env RAG_BROWSER_PROMPT_CHARS，默认 3000）。"""
+    try:
+        from src.rag import config as rag_config
+        return int(rag_config.RAG_BROWSER_PROMPT_CHARS)
+    except Exception:
+        return 3000
+
+
+# 网页版长会话中格式指令遵循度会衰减：把简短输出格式要求放在消息末尾，
+# 利用“最近指令权重最高”的特性稳住 JSON 输出结构
+GUIDE_FORMAT_REMINDER = (
+    "【输出格式重申】请严格按最开始的要求输出：先攻略正文，再单独一行 --- 分隔，"
+    "最后输出 JSON（字段与最开始要求一致），不要输出任何额外说明。"
+)
+SYNERGY_FORMAT_REMINDER = (
+    "【输出格式重申】请严格按最开始的要求输出 JSON（字段与最开始要求一致），"
+    "不要输出任何额外说明。"
+)
+
+
+# JSON 提取失败时发送的纠正消息（相当于代码版“重新生成”）
+GUIDE_RETRY_PROMPT = (
+    "你上一条回复没有按要求输出。请重新输出：先攻略正文，再单独一行 --- 分隔，"
+    "最后输出 JSON，字段与最开始要求一致，不要输出任何额外说明。"
+)
+SYNERGY_RETRY_PROMPT = (
+    "你上一条回复没有按要求输出。请重新输出 JSON，字段与最开始要求一致，"
+    "不要输出任何额外说明。"
+)
+
 class PlaywrightGenerator:
     """基于 Playwright + Edge 浏览器自动化的 AI 生成器"""
 
@@ -58,8 +90,6 @@ class PlaywrightGenerator:
     ):
         self._session = DeepSeekBrowserSession(browser_config, chat_config)
         # 控制 system prompt 只发一次
-        self._guide_system_sent = False
-        self._synergy_system_sent = False
         self._guide_rest_required = False
         self._synergy_rest_required = False
 
@@ -72,8 +102,8 @@ class PlaywrightGenerator:
     def generate_guide(self, hero: dict) -> tuple[dict | None, dict | None]:
         """为单个武将生成攻略（浏览器模式不返回 usage）
 
-        第一次调用发送 system prompt + 武将数据，后续只发送武将数据（带 ID），
-        让 AI 在同一会话中根据已设定的规则持续生成。
+        每个武将都发送完整 system prompt + 武将数据（与 API 模式对齐），
+        避免网页版会话中格式指令衰减。
         每次成功生成后，在下一次请求前随机休息 60-180 秒。
         """
         hero_name = hero.get("name", "?")
@@ -84,35 +114,21 @@ class PlaywrightGenerator:
             self._random_rest()
             self._guide_rest_required = False
 
-        is_first_call = not self._guide_system_sent
+        # 每个武将都重发完整 system prompt + 数据（与 API 模式对齐），
+        # 避免网页版会话中首轮格式指令在后续轮次衰减导致输出偏离 JSON
+        system_prompt = load_prompt(GUIDE_PROMPT_FILE)
+        if not system_prompt:
+            logger.error("[攻略] prompt 模板未找到: %s", GUIDE_PROMPT_FILE)
+            return None, None
 
-        if is_first_call:
-            # 第一次：加载 system prompt 并与第一条数据拼接发送
-            system_prompt = load_prompt(GUIDE_PROMPT_FILE)
-            if not system_prompt:
-                logger.error("[攻略] prompt 模板未找到: %s", GUIDE_PROMPT_FILE)
-                return None, None
+        user_prompt = build_guide_prompt(hero, rag_max_chars=_browser_rag_max_chars())
+        full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}\n\n{GUIDE_FORMAT_REMINDER}"
+        logger.info("[攻略] 发送 system prompt + %s 数据（%d 字符）", hero_name, len(full_prompt))
 
-            user_prompt = build_guide_prompt(hero)
-            full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
-            logger.info("[攻略] 首次发送 system prompt + %s 数据", hero_name)
-            logger.debug("[攻略] 首次发送总长度: %d 字符", len(full_prompt))
-
-            reply = self._send_and_wait(full_prompt)
-            if not reply:
-                logger.warning("[攻略] %s: 首次发送获取回复为空", hero_name)
-                return None, None
-
-            self._guide_system_sent = True
-            logger.info("[攻略] system prompt 已发送，后续只发武将数据")
-        else:
-            # 后续：只发武将数据（带 ID）
-            data_prompt = build_guide_prompt(hero)
-            logger.info("[攻略] 发送 %s 数据（%d 字符）", hero_name, len(data_prompt))
-            reply = self._send_and_wait(data_prompt)
-            if not reply:
-                logger.warning("[攻略] %s: 获取回复为空", hero_name)
-                return None, None
+        reply = self._send_and_wait(full_prompt)
+        if not reply:
+            logger.warning("[攻略] %s: 获取回复为空", hero_name)
+            return None, None
 
         logger.info("[攻略] %s: 收到回复 %d 字符", hero_name, len(reply))
 
@@ -120,8 +136,17 @@ class PlaywrightGenerator:
             raw = extract_json(reply)
             logger.info("[攻略] %s: JSON 提取成功, 字段: %s", hero_name, list(raw.keys()))
         except ValueError:
-            logger.error("[攻略] %s: JSON 提取失败（回复长度 %d）", hero_name, len(reply))
-            return None, None
+            logger.warning("[攻略] %s: JSON 提取失败，发送格式纠正消息重试", hero_name)
+            retry_reply = self._send_and_wait(GUIDE_RETRY_PROMPT)
+            if not retry_reply:
+                logger.error("[攻略] %s: 纠正重试无回复", hero_name)
+                return None, None
+            try:
+                raw = extract_json(retry_reply)
+                logger.info("[攻略] %s: 纠正后 JSON 提取成功, 字段: %s", hero_name, list(raw.keys()))
+            except ValueError:
+                logger.error("[攻略] %s: 纠正后仍 JSON 提取失败（回复长度 %d）", hero_name, len(retry_reply))
+                return None, None
 
         raw["hero_id"] = hero_id
         convert_ids_to_int(raw, ["synergizes_with"])
@@ -140,8 +165,8 @@ class PlaywrightGenerator:
     def generate_synergy(self, hero_a: dict, hero_b: dict) -> tuple[dict | None, dict | None]:
         """为武将对生成相性评分（浏览器模式不返回 usage）
 
-        第一次调用发送 system prompt + 第一对数据，后续只发送武将数据（带 ID）。
-        每次成功生成后，在下一次请求前随机休息 60-180 秒。
+        每对武将都发送完整 system prompt + 武将数据（与 API 模式对齐），
+        避免网页版会话中格式指令衰减。
         """
         name_a = hero_a.get("name", "?")
         name_b = hero_b.get("name", "?")
@@ -151,36 +176,20 @@ class PlaywrightGenerator:
             self._random_rest()
             self._synergy_rest_required = False
 
-        is_first_call = not self._synergy_system_sent
+        # 每对武将都重发完整 system prompt + 数据（与 API 模式对齐）
+        system_prompt = load_prompt(SYNERGY_PROMPT_FILE)
+        if not system_prompt:
+            logger.error("[相性] prompt 模板未找到: %s", SYNERGY_PROMPT_FILE)
+            return None, None
 
-        if is_first_call:
-            # 第一次：system prompt + 第一对数据
-            system_prompt = load_prompt(SYNERGY_PROMPT_FILE)
-            if not system_prompt:
-                logger.error("[相性] prompt 模板未找到: %s", SYNERGY_PROMPT_FILE)
-                return None, None
+        user_prompt = build_synergy_prompt(hero_a, hero_b)
+        full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}\n\n{SYNERGY_FORMAT_REMINDER}"
+        logger.info("[相性] 发送 system prompt + %s <-> %s 数据（%d 字符）", name_a, name_b, len(full_prompt))
 
-            user_prompt = build_synergy_prompt(hero_a, hero_b)
-            full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
-            logger.info("[相性] 首次发送 system prompt + %s <-> %s 数据", name_a, name_b)
-            logger.debug("[相性] 首次发送总长度: %d 字符", len(full_prompt))
-
-            reply = self._send_and_wait(full_prompt)
-            if not reply:
-                logger.warning("[相性] 首次发送获取回复为空")
-                return None, None
-
-            self._synergy_system_sent = True
-            logger.info("[相性] system prompt 已发送，后续只发武将数据")
-        else:
-            # 后续：只发武将数据（带 ID）
-            data_prompt = build_synergy_prompt(hero_a, hero_b)
-            logger.info("[相性] 发送 %s <-> %s 数据（%d 字符）",
-                        name_a, name_b, len(data_prompt))
-            reply = self._send_and_wait(data_prompt)
-            if not reply:
-                logger.warning("[相性] %s <-> %s: 获取回复为空", name_a, name_b)
-                return None, None
+        reply = self._send_and_wait(full_prompt)
+        if not reply:
+            logger.warning("[相性] %s <-> %s: 获取回复为空", name_a, name_b)
+            return None, None
 
         logger.info("[相性] %s <-> %s: 收到回复 %d 字符", name_a, name_b, len(reply))
 
@@ -189,13 +198,17 @@ class PlaywrightGenerator:
             logger.info("[相性] %s <-> %s: JSON 提取成功, 字段: %s",
                         name_a, name_b, list(raw.keys()))
         except ValueError:
-            logger.error(
-                "[相性] %s <-> %s: JSON 提取失败（回复长度 %d）",
-                name_a,
-                name_b,
-                len(reply),
-            )
-            return None, None
+            logger.warning("[相性] %s <-> %s: JSON 提取失败，发送格式纠正消息重试", name_a, name_b)
+            retry_reply = self._send_and_wait(SYNERGY_RETRY_PROMPT)
+            if not retry_reply:
+                logger.error("[相性] %s <-> %s: 纠正重试无回复", name_a, name_b)
+                return None, None
+            try:
+                raw = extract_json(retry_reply)
+                logger.info("[相性] %s <-> %s: 纠正后 JSON 提取成功, 字段: %s", name_a, name_b, list(raw.keys()))
+            except ValueError:
+                logger.error("[相性] %s <-> %s: 纠正后仍 JSON 提取失败（回复长度 %d）", name_a, name_b, len(retry_reply))
+                return None, None
 
         raw["hero_a_id"] = hero_a.get("id", 0)
         raw["hero_b_id"] = hero_b.get("id", 0)
@@ -228,8 +241,6 @@ class PlaywrightGenerator:
         """关闭浏览器上下文"""
         logger.info("[PlaywrightGenerator] 关闭浏览器...")
         self._session.close()
-        self._guide_system_sent = False
-        self._synergy_system_sent = False
         self._guide_rest_required = False
         self._synergy_rest_required = False
         logger.info("[PlaywrightGenerator] 浏览器已关闭")

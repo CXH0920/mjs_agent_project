@@ -249,6 +249,13 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 
 ## 二、AI 批量生成模块细节
 
+### 2.0 RAG 攻略语料增强（2026-08 新增）
+
+- 攻略生成（API/浏览器双模式共用 uild_guide_prompt）默认追加 RAG 官方规则语料区块（src/scraper/ai/rag_prompt.py::build_rag_context），检索 src/rag/retriever.py（ChromaDB + bge-small-zh + 关键词 RRF）得到语料块，注入 ## RAG 官方规则语料 区块。
+- 语料与向量索引位于 data/rag_corpus/、data/rag_index/chroma/（随仓库入库）；嵌入模型缓存不入库，默认共享 mjs_rag_project/rag/.cache/modelscope（config.env 的 RAG_MODEL_DIR 可覆盖）。
+- 配置：RAG_ENABLED（默认 true）、RAG_TOP_K（默认 12）、RAG_PROMPT_CHARS（默认 6000）、RAG_PROJECT_DIR（一键管道对端仓库）。
+- CLI：--no-rag 禁用增强；--rebuild-rag-index 重建向量索引后退出。
+- 一键维护管道：python scripts/sync_rag_corpus.py --yes（官方数据同步 → 语料重建 → 索引导回）。RAG 异常一律降级为原逻辑，不影响攻略生成。
 ### 2.1 模块文件关系
 
 ```

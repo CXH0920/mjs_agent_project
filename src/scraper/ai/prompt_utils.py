@@ -15,6 +15,8 @@ from src.config.env import (
     get_model_pricing,
 )
 
+from src.scraper.ai.rag_prompt import build_rag_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,7 +113,7 @@ def estimate_item_cost(item_count: int, mode: str, model: str | None = None) -> 
 # ============================================================
 
 
-def build_guide_prompt(hero: dict) -> str:
+def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
     """构建单个武将的攻略 prompt（含武将 ID，兼容 API 和 Browser 双模式）"""
     lines = [f"武将ID: {hero.get('id', 0)}"]
     lines.append(f"武将: {hero.get('name', '')}")
@@ -125,6 +127,9 @@ def build_guide_prompt(hero: dict) -> str:
         lines.append("技能:")
         for sk in hero["skills"]:
             lines.append(f"  - {sk.get('name', '')}: {sk.get('description', '')}")
+    rag = build_rag_context(hero, max_chars=rag_max_chars)
+    if rag:
+        lines.extend(["", rag])
     return "\n".join(lines)
 
 

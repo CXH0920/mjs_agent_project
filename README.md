@@ -195,6 +195,18 @@ python -m src.scraper.ai_batch --dry-run --guide
 python -m src.scraper.ai_batch --dry-run --synergy
 ```
 
+
+### RAG 攻略语料增强
+攻略生成（API/浏览器双模式）默认检索 RAG 官方规则语料（`data/rag_corpus` + `data/rag_index`）注入 prompt，提升规则准确性；语料与索引由 `mjs_rag_project` 维护，本仓库通过一键管道同步。
+- 禁用增强：`python -m src.scraper.ai_batch --guide --no-rag`
+- 重建索引：`python -m src.scraper.ai_batch --rebuild-rag-index`
+- 一键维护管道：`python scripts/sync_rag_corpus.py --yes`（同步官方数据 → 重建语料/索引 → 导回本仓库）
+- 配置项：`config.env` 中 `RAG_ENABLED` / `RAG_MODEL_DIR` / `RAG_TOP_K` / `RAG_PROMPT_CHARS` / `RAG_PROJECT_DIR`
+维护脚本（`maintain_rag.py` / `import_from_test.py` / `rag_audit.py` / `build_*.py`）已同步到 `scripts/`，可直接在本仓库运行（数据仍以 `RAG_PROJECT_DIR` 定位 mjs 仓库为单一维护源）：
+- 查看人工补充清单：`python scripts/rag_audit.py`
+- 预览语料状态：`python scripts/maintain_rag.py --check`
+- 增量重建语料/索引：`python scripts/maintain_rag.py --build-index`
+- 预览官方数据差异：`python scripts/import_from_test.py --dry-run`
 ### 6. 屏幕采集 + OCR 识别
 
 ```bash

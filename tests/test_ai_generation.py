@@ -456,7 +456,7 @@ def test_browser_generator_rests_before_next_successful_request(
     generator._send_and_wait = lambda _prompt: events.append("send") or "reply"
     generator._random_rest = lambda: events.append("rest")
     monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
-    monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero: "guide")
+    monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
     monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda _a, _b: "synergy")
     monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {})
     monkeypatch.setattr(ai_playwright, "validate_guide", lambda raw: raw)
@@ -605,7 +605,7 @@ def test_browser_generator_logs_no_reply_or_parsed_content(monkeypatch, caplog) 
     generator._guide_rest_required = False
     generator._send_and_wait = lambda _prompt: secret_reply
     monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
-    monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero: "guide")
+    monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
     monkeypatch.setattr(browser_generator, "extract_json", lambda _reply: {"description": secret_parsed})
     monkeypatch.setattr(browser_generator, "validate_guide", lambda _raw: None)
 
@@ -629,3 +629,61 @@ def test_synergy_progress_advances_only_after_terminal_result() -> None:
     service._on_stdout_line("[3/3] 甲 <-> 丁 SKIP（已有相性）")
 
     assert progress_values == [(1, 3), (2, 3), (3, 3)]
+
+def test_browser_generator_retries_on_json_extract_failure(monkeypatch) -> None:
+    """JSON 提取失败时自动发送纠正消息重试一次，第二次成功则通过。"""
+    import src.scraper.ai.browser_generator as browser_generator
+
+    calls: list[str] = []
+
+    def fake_send(prompt: str) -> str:
+        calls.append(prompt)
+        # 第一次返回不规范的纯文本，第二次返回规范 JSON
+        if len(calls) == 1:
+            return "这是一段没有 JSON 的普通文本"
+        return '{"hero_id": 1, "description": "攻略", "key_points": [], "weak_against_type": [], "strong_against_type": [], "synergizes_with": [], "counter_strategy": "", "tips_for_beginners": ""}'
+
+    generator = object.__new__(browser_generator.PlaywrightGenerator)
+    generator._guide_rest_required = False
+    generator._send_and_wait = fake_send
+    monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
+    monkeypatch.setattr(browser_generator, "validate_guide", lambda raw: raw)
+
+    result, usage = generator.generate_guide({"id": 1, "name": "甲"})
+    assert result is not None
+    assert len(calls) == 2
+    assert "重新输出" in calls[1]
+
+
+def test_browser_generator_retry_still_fails(monkeypatch) -> None:
+    """纠正重试后仍无法提取 JSON 时返回失败，且不无限重试。"""
+    import src.scraper.ai.browser_generator as browser_generator
+
+    calls: list[str] = []
+    generator = object.__new__(browser_generator.PlaywrightGenerator)
+    generator._guide_rest_required = False
+    generator._send_and_wait = lambda _prompt: calls.append(_prompt) or "还是普通文本"
+    monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
+
+    result, usage = generator.generate_guide({"id": 1, "name": "甲"})
+    assert result is None
+    assert len(calls) == 2  # 原始 + 一次纠正，不无限重试
+
+
+def test_browser_generator_prompt_ends_with_format_reminder(monkeypatch) -> None:
+    """消息末尾追加输出格式重申。"""
+    import src.scraper.ai.browser_generator as browser_generator
+
+    sent: list[str] = []
+    generator = object.__new__(browser_generator.PlaywrightGenerator)
+    generator._guide_rest_required = False
+    generator._send_and_wait = lambda prompt: sent.append(prompt) or '{"hero_id": 1, "description": "", "key_points": [], "weak_against_type": [], "strong_against_type": [], "synergizes_with": [], "counter_strategy": "", "tips_for_beginners": ""}'
+    monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
+    monkeypatch.setattr(browser_generator, "validate_guide", lambda raw: raw)
+
+    generator.generate_guide({"id": 1, "name": "甲"})
+    assert len(sent) == 1
+    assert sent[0].endswith(browser_generator.GUIDE_FORMAT_REMINDER)
