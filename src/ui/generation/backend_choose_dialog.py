@@ -10,8 +10,11 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
+    QHBoxLayout,
     QLabel,
+    QRadioButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -45,6 +48,22 @@ class BackendChooseDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(PageHeader(self.windowTitle(), "确认生成方式与本次任务估算"))
 
+        # 语料增强选择（对 API / 浏览器两种后端均生效）
+        rag_layout = QHBoxLayout()
+        rag_label = QLabel("语料增强：")
+        self._rag_enhanced_radio = QRadioButton("RAG 语料增强（推荐）")
+        self._rag_classic_radio = QRadioButton("经典模式（无 RAG 注入）")
+        self._rag_enhanced_radio.setChecked(True)
+        rag_group = QButtonGroup(self)
+        rag_group.addButton(self._rag_enhanced_radio)
+        rag_group.addButton(self._rag_classic_radio)
+        self._rag_enhanced_radio.toggled.connect(self._on_rag_changed)
+        rag_layout.addWidget(rag_label)
+        rag_layout.addWidget(self._rag_enhanced_radio)
+        rag_layout.addWidget(self._rag_classic_radio)
+        rag_layout.addStretch()
+        layout.addLayout(rag_layout)
+
         # Tab 切换
         self._tabs = QTabWidget()
 
@@ -52,37 +71,19 @@ class BackendChooseDialog(QDialog):
         api_tab = QWidget()
         api_layout = QVBoxLayout(api_tab)
 
+        self._api_estimation_labels: list[QLabel] = []
+        self._api_message_label: QLabel | None = None
         if self._estimation:
-            mode_text = {
-                "all": "全量获取",
-                "incremental": "增量获取",
-                "specific": "指定获取",
-                "synergy": "相性生成",
-            }
-            m = mode_text.get(self._estimation.get("mode", ""), "未知")
-
-            cost = self._estimation.get("estimated_cost_cny")
-            cost_text = f"预估费用: CNY {cost:.4f}" if cost is not None else "预估费用: 无法自动估算"
-            info_lines = [
-                f"模式: {m}",
-                f"模型: {self._estimation.get('model', '未提供')}",
-                f"需要生成的项数: {self._estimation.get('items', 0)}",
-                f"预估输入 Token: {self._estimation.get('estimated_input_tokens', 0):,}",
-                f"预估输出 Token: {self._estimation.get('estimated_output_tokens', 0):,}",
-                f"合计 Token: {self._estimation.get('estimated_tokens', 0):,}",
-                cost_text,
-            ]
-
-            for line in info_lines:
-                label = QLabel(line)
+            for text in self._estimation_lines():
+                label = QLabel(text)
                 label.setStyleSheet("font-size: 14px; padding: 2px 0;")
                 api_layout.addWidget(label)
+                self._api_estimation_labels.append(label)
 
-            msg = self._estimation.get("message", "")
-            if msg:
-                msg_label = QLabel(msg)
-                msg_label.setStyleSheet("color: gray; font-size: 13px; padding: 4px 0;")
-                api_layout.addWidget(msg_label)
+            self._api_message_label = QLabel(self._estimation.get("message", ""))
+            self._api_message_label.setStyleSheet("color: gray; font-size: 13px; padding: 4px 0;")
+            self._api_message_label.setVisible(bool(self._estimation.get("message", "")))
+            api_layout.addWidget(self._api_message_label)
         else:
             api_layout.addWidget(QLabel("API 模式：通过 DeepSeek API 直连生成"))
             api_layout.addWidget(QLabel("需要配置 DEEPSEEK_API_KEY"))
@@ -121,6 +122,58 @@ class BackendChooseDialog(QDialog):
         footer.accepted.connect(self._on_accept)
         footer.rejected.connect(self.reject)
         layout.addWidget(footer)
+
+    def _estimation_lines(self) -> list[str]:
+        """根据当前 estimation 生成 API 成本展示行。"""
+        est = self._estimation or {}
+        mode_text = {
+            "all": "全量获取",
+            "incremental": "增量获取",
+            "specific": "指定获取",
+            "synergy": "相性生成",
+        }
+        m = mode_text.get(est.get("mode", ""), "未知")
+        cost = est.get("estimated_cost_cny")
+        cost_text = f"预估费用: CNY {cost:.4f}" if cost is not None else "预估费用: 无法自动估算"
+        return [
+            f"模式: {m}",
+            f"模型: {est.get('model', '未提供')}",
+            f"需要生成的项数: {est.get('items', 0)}",
+            f"预估输入 Token: {est.get('estimated_input_tokens', 0):,}",
+            f"预估输出 Token: {est.get('estimated_output_tokens', 0):,}",
+            f"合计 Token: {est.get('estimated_tokens', 0):,}",
+            cost_text,
+        ]
+
+    def _on_rag_changed(self) -> None:
+        """RAG 选择切换时重算 API 成本估算（经典模式输入更少）。"""
+        if not self._estimation or self._estimation.get("estimate_kind") not in ("guide", "synergy"):
+            return
+        if not getattr(self, "_api_estimation_labels", None):
+            return
+        self._recompute_estimation()
+
+    def _recompute_estimation(self) -> None:
+        """按当前 RAG 选择重算 estimation 的成本字段并刷新标签。"""
+        from src.scraper.ai.prompt_utils import estimate_item_cost
+        est = self._estimation
+        new = estimate_item_cost(
+            est.get("items", 0),
+            est["estimate_kind"],
+            est.get("model"),
+            use_rag=self.get_selected_rag(),
+        )
+        for key in ("estimated_input_tokens", "estimated_output_tokens", "estimated_tokens", "estimated_cost_cny", "message"):
+            est[key] = new[key]
+        for label, text in zip(self._api_estimation_labels, self._estimation_lines()):
+            label.setText(text)
+        if self._api_message_label is not None:
+            self._api_message_label.setText(est.get("message", ""))
+            self._api_message_label.setVisible(bool(est.get("message", "")))
+
+    def get_selected_rag(self) -> bool:
+        """获取语料增强选择：True = RAG 语料注入，False = 经典模式（无 RAG）。"""
+        return self._rag_enhanced_radio.isChecked()
 
     def _on_accept(self) -> None:
         """确定时记录当前 Tab 对应的后端"""

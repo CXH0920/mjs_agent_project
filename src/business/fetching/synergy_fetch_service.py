@@ -48,6 +48,7 @@ class SynergyFetchService(BaseFetchService):
         heroes: list[dict],
         backend: str = "api",
         overwrite: bool = False,
+        use_rag: bool = True,
     ) -> None:
         """指定获取：按用户选择跳过或覆盖已有相性。"""
         if self._is_busy():
@@ -61,16 +62,25 @@ class SynergyFetchService(BaseFetchService):
             "tmp_path": tmp_path,
             "backend": backend,
             "overwrite": overwrite,
+            "use_rag": use_rag,
         }
         self.status_changed.emit("正在生成相性评分...")
         args = ["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_path]
+        if not use_rag:
+            args.append("--no-rag")
         if overwrite:
             args.append("--update")
         if backend == "browser":
             args.append("--browser")
         self._start_process(args)
 
-    def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str = "api") -> None:
+    def fetch_single(
+        self,
+        hero: dict,
+        all_heroes: list[dict],
+        backend: str = "api",
+        use_rag: bool = True,
+    ) -> None:
         """选定武将：传入 1 个武将，写入临时文件后调用 --synergy-single"""
         if self._is_busy():
             return
@@ -78,9 +88,11 @@ class SynergyFetchService(BaseFetchService):
         json.dump([hero], tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
         tmp.close()
-        self._context = {"mode": "single", "tmp_path": tmp_path, "backend": backend}
+        self._context = {"mode": "single", "tmp_path": tmp_path, "backend": backend, "use_rag": use_rag}
         self.status_changed.emit("正在生成相性评分...")
         args = ["-m", "src.scraper.ai_batch", "--synergy-single", tmp_path]
+        if not use_rag:
+            args.append("--no-rag")
         if backend == "browser":
             args.append("--browser")
         self._start_process(args)

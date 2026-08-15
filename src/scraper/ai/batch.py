@@ -123,22 +123,26 @@ def _load_existing_guides(guide_path: Path) -> dict:
 
 
 def _show_cost_estimate(heroes: list, api_config: dict, args) -> None:
-    """显示 dry-run 成本估算"""
     print("=" * 55)
     print(f"  AI 批量生成 - 成本估算（{api_config['model']}）")
     print("=" * 55)
     if args.guide:
-        est = estimate_cost(len(heroes), "guide", api_config["model"])
-        print(f"  攻略生成: {est['items']} 个")
-        print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
-        print(_format_cost_estimate(est) + "\n")
+        _print_mode_estimates(len(heroes), "guide", "攻略生成", api_config["model"])
     if args.synergy:
-        est = estimate_cost(len(heroes), "synergy", api_config["model"])
-        print(f"  相性评分: {est['items']:,} 对")
-        print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
-        print(_format_cost_estimate(est) + "\n")
+        _print_mode_estimates(len(heroes), "synergy", "相性评分", api_config["model"])
     print("  （在 config.env 中配置 DEEPSEEK_API_KEY，然后去除 --dry-run 执行）")
     print("=" * 55)
+
+
+def _print_mode_estimates(count: int, mode: str, label: str, model: str) -> None:
+    """分别输出 RAG 增强与经典模式的成本估算（dry-run 预览）。"""
+    unit = "个" if mode == "guide" else "对"
+    for version, use_rag in (("RAG 增强", True), ("经典模式", False)):
+        est = estimate_cost(count, mode, model, use_rag=use_rag)
+        print(f"  {label}（{version}）: {est['items']:,} {unit}")
+        print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
+        print(_format_cost_estimate(est))
+    print()
 
 
 def _check_api_key(api_config: dict) -> None:
@@ -226,6 +230,10 @@ def main():
     if args.no_rag:
         os.environ["RAG_ENABLED"] = "false"
         logger.info("RAG enhanced context disabled via --no-rag")
+    else:
+        from src.scraper.ai.rag_prompt import _rag_enabled
+        if not _rag_enabled():
+            print("  [RAG] 已选择 RAG 语料增强，但当前 RAG_ENABLED=false，本次将以经典模式生成", flush=True)
 
     has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single
     if not args.guide and not has_synergy_mode:

@@ -457,7 +457,7 @@ def test_browser_generator_rests_before_next_successful_request(
     generator._random_rest = lambda: events.append("rest")
     monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
-    monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda _a, _b: "synergy")
+    monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda *a, **k: "synergy")
     monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {})
     monkeypatch.setattr(ai_playwright, "validate_guide", lambda raw: raw)
     monkeypatch.setattr(ai_playwright, "validate_synergy", lambda raw: raw)
@@ -687,3 +687,29 @@ def test_browser_generator_prompt_ends_with_format_reminder(monkeypatch) -> None
     generator.generate_guide({"id": 1, "name": "甲"})
     assert len(sent) == 1
     assert sent[0].endswith(browser_generator.GUIDE_FORMAT_REMINDER)
+
+
+def test_generation_reports_rag_degradation_once(tmp_path, capsys) -> None:
+    """RAG 被选择但运行时不可用时，生成循环只输出一次降级提示且不中断任务。"""
+    import src.scraper.ai.generation as ai_generation
+    from src.scraper.ai import rag_prompt
+
+    class _FakeGenerator:
+        def generate_guide(self, hero: dict):
+            return {"hero_id": hero["id"], "key_points": []}, None
+
+        def close(self) -> None:
+            pass
+
+    rag_prompt.degraded_reason = "RuntimeError"
+    result = ai_generation.run_guide_generation(
+        heroes=[{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}],
+        generator=_FakeGenerator(),
+        guide_path=tmp_path / "guides.json",
+        existing_guides={},
+        api_config={"model": "test"},
+        update_mode=True,
+    )
+    out = capsys.readouterr().out
+    assert result.completed == 2
+    assert out.count("[RAG] 语料不可用") == 1

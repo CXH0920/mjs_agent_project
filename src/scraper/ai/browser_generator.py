@@ -182,7 +182,7 @@ class PlaywrightGenerator:
             logger.error("[相性] prompt 模板未找到: %s", SYNERGY_PROMPT_FILE)
             return None, None
 
-        user_prompt = build_synergy_prompt(hero_a, hero_b)
+        user_prompt = build_synergy_prompt(hero_a, hero_b, rag_max_chars=_browser_rag_max_chars())
         full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}\n\n{SYNERGY_FORMAT_REMINDER}"
         logger.info("[相性] 发送 system prompt + %s <-> %s 数据（%d 字符）", name_a, name_b, len(full_prompt))
 

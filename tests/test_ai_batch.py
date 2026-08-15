@@ -71,6 +71,15 @@ class TestEstimateCost:
         assert result["items"] == 3
         assert result["estimated_tokens"] > 0
 
+    def test_item_cost_use_rag(self) -> None:
+        """RAG 增强版输入 token 应高于经典模式"""
+        rag = estimate_item_cost(3, "synergy", use_rag=True)
+        classic = estimate_item_cost(3, "synergy", use_rag=False)
+        assert rag["estimated_input_tokens"] > classic["estimated_input_tokens"]
+        guide_rag = estimate_item_cost(3, "guide", use_rag=True)
+        guide_classic = estimate_item_cost(3, "guide", use_rag=False)
+        assert guide_rag["estimated_input_tokens"] > guide_classic["estimated_input_tokens"]
+
     def test_zero_heroes(self) -> None:
         """0 武将的成本应为 0"""
         result = estimate_cost(0, "guide")
@@ -273,8 +282,9 @@ class TestAIBatchGenerator:
         assert "手牌" in prompt
         assert "性别" in prompt
 
-    def test_build_synergy_prompt(self) -> None:
-        """构建相性 prompt 包含双方武将信息"""
+    def test_build_synergy_prompt(self, monkeypatch) -> None:
+        """构建相性 prompt 包含双方武将信息（经典模式无 RAG 区块）"""
+        monkeypatch.setenv("RAG_ENABLED", "false")
         ha = {
             "id": 114, "name": "诸葛亮", "max_hp": 4,
             "position": "控制", "skills": [],
@@ -291,6 +301,7 @@ class TestAIBatchGenerator:
         assert "控制" in prompt
         assert "防御" in prompt
         assert "体力/手牌" in prompt
+        assert "RAG 官方规则语料" not in prompt
 
     def test_combat_synergy_compatibility(self) -> None:
         """兼容旧 prompt 中的 combat_synergy 字段 — 验证 generate_synergy 中的转换逻辑"""

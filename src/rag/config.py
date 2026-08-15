@@ -45,6 +45,7 @@ def _to_int(key: str, default: int) -> int:
 TOP_K = _to_int("RAG_TOP_K", 12)
 RAG_PROMPT_CHARS = _to_int("RAG_PROMPT_CHARS", 6000)
 RAG_BROWSER_PROMPT_CHARS = _to_int("RAG_BROWSER_PROMPT_CHARS", 3000)
+RAG_SYNERGY_PROMPT_CHARS = _to_int("RAG_SYNERGY_PROMPT_CHARS", 6000)
 
 # ---------------------------------------------------------------
 # Embedding：本地 bge-small-zh-v1.5

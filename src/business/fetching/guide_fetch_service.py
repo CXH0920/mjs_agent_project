@@ -43,13 +43,13 @@ class GuideFetchService(BaseFetchService):
     # 公共接口
     # ---------------------------------------------------------------
 
-    def fetch_all(self, all_heroes: list[dict], backend: str = "api") -> None:
+    def fetch_all(self, all_heroes: list[dict], backend: str = "api", use_rag: bool = True) -> None:
         if self._is_busy():
             return
-        self._context = {"mode": "all", "heroes": all_heroes, "backend": backend}
+        self._context = {"mode": "all", "heroes": all_heroes, "backend": backend, "use_rag": use_rag}
         self.execute_with_confirmation()
 
-    def fetch_incremental(self, all_heroes: list[dict], backend: str = "api") -> None:
+    def fetch_incremental(self, all_heroes: list[dict], backend: str = "api", use_rag: bool = True) -> None:
         if self._is_busy():
             return
         existing_ids = {g.hero_id for g in self._guide_mgr.list_guides()}
@@ -57,16 +57,16 @@ class GuideFetchService(BaseFetchService):
         if not missing:
             self.status_changed.emit("所有武将已有攻略，无需生成")
             return
-        self._context = {"mode": "incremental", "heroes": missing, "backend": backend}
+        self._context = {"mode": "incremental", "heroes": missing, "backend": backend, "use_rag": use_rag}
         self.execute_with_confirmation()
 
-    def fetch_specific(self, heroes: list[dict], backend: str = "api") -> None:
+    def fetch_specific(self, heroes: list[dict], backend: str = "api", use_rag: bool = True) -> None:
         if self._is_busy():
             return
         if not heroes:
             self.status_changed.emit("未选择任何武将")
             return
-        self._context = {"mode": "specific", "heroes": heroes, "backend": backend}
+        self._context = {"mode": "specific", "heroes": heroes, "backend": backend, "use_rag": use_rag}
         self.execute_with_confirmation()
 
     def execute_with_confirmation(self) -> None:
@@ -76,8 +76,11 @@ class GuideFetchService(BaseFetchService):
         heroes = self._context["heroes"]
         mode = self._context["mode"]
         backend = self._context.get("backend", "api")
+        use_rag = self._context.get("use_rag", True)
 
         base_args = ["-m", "src.scraper.ai_batch", "--guide"]
+        if not use_rag:
+            base_args.append("--no-rag")
         if mode in ("incremental", "specific"):
             base_args.append("--update")
 

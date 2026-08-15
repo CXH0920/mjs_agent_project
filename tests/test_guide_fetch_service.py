@@ -17,3 +17,22 @@ def test_incremental_fetch_without_missing_heroes_reports_status(tmp_path) -> No
     service.fetch_incremental([{"id": 1, "name": "曹操"}])
 
     assert statuses == ["所有武将已有攻略，无需生成"]
+
+def test_fetch_specific_appends_no_rag_when_classic(tmp_path, monkeypatch) -> None:
+    """经典模式（use_rag=False）时子进程参数应包含 --no-rag。"""
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    service = GuideFetchService(guide_manager)
+    captured: dict[str, list[str]] = {}
+    monkeypatch.setattr(service, "_start_process", lambda args: captured.setdefault("args", args))
+    service.fetch_specific([{"id": 1, "name": "曹操"}], backend="api", use_rag=False)
+    assert "--no-rag" in captured["args"]
+
+
+def test_fetch_all_omits_no_rag_when_rag_enabled(tmp_path, monkeypatch) -> None:
+    """RAG 增强（use_rag=True）时子进程参数不应包含 --no-rag。"""
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    service = GuideFetchService(guide_manager)
+    captured: dict[str, list[str]] = {}
+    monkeypatch.setattr(service, "_start_process", lambda args: captured.setdefault("args", args))
+    service.fetch_all([{"id": 1, "name": "曹操"}], backend="api", use_rag=True)
+    assert "--no-rag" not in captured["args"]

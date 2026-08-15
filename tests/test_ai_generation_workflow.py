@@ -40,16 +40,16 @@ class _GuideService(QObject):
     def cancel(self) -> None:
         self.cancel_calls += 1
 
-    def fetch_all(self, heroes: list[dict], backend: str) -> None:
-        self.calls.append(("all", heroes, backend))
+    def fetch_all(self, heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+        self.calls.append(("all", heroes, backend, use_rag))
         self.fetch_completed.emit(True, "完成")
 
-    def fetch_incremental(self, heroes: list[dict], backend: str) -> None:
-        self.calls.append(("incremental", heroes, backend))
+    def fetch_incremental(self, heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+        self.calls.append(("incremental", heroes, backend, use_rag))
         self.fetch_completed.emit(True, "完成")
 
-    def fetch_specific(self, heroes: list[dict], backend: str) -> None:
-        self.calls.append(("specific", heroes, backend))
+    def fetch_specific(self, heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+        self.calls.append(("specific", heroes, backend, use_rag))
         self.fetch_completed.emit(True, "完成")
 
 
@@ -70,12 +70,12 @@ class _SynergyService(QObject):
     def cancel(self) -> None:
         self.cancel_calls += 1
 
-    def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False) -> None:
-        self.pair_calls.append((heroes, backend, overwrite))
+    def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False, use_rag: bool = True) -> None:
+        self.pair_calls.append((heroes, backend, overwrite, use_rag))
         self.fetch_completed.emit(True, "完成")
 
-    def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str) -> None:
-        self.calls.append((hero, all_heroes, backend))
+    def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+        self.calls.append((hero, all_heroes, backend, use_rag))
         self.fetch_completed.emit(True, "完成")
 
 
@@ -91,6 +91,9 @@ class _BackendDialog:
 
     def get_selected_backend(self) -> str:
         return "browser"
+
+    def get_selected_rag(self) -> bool:
+        return True
 
 
 class _ProgressDialog:
@@ -202,6 +205,7 @@ def test_incremental_guide_workflow_uses_only_missing_heroes(tmp_path: Path, mon
     assert guide_service.calls[0][0] == "incremental"
     assert [hero["id"] for hero in guide_service.calls[0][1]] == [2]
     assert guide_service.calls[0][2] == "browser"
+    assert guide_service.calls[0][3] is True
     assert _ProgressDialog.instances[-1].item_count == 1
     assert _ProgressDialog.instances[-1].finished == [(True, "完成")]
     assert reloads == [True]
@@ -222,7 +226,7 @@ def test_specific_guide_workflow_passes_guide_manager(tmp_path: Path, monkeypatc
     workflow.request_guide_specific()
 
     assert _GuideHeroDialog.guide_manager is workflow._guide_manager
-    assert guide_service.calls[0] == ("specific", [{"id": 1, "name": "曹操"}], "browser")
+    assert guide_service.calls[0] == ("specific", [{"id": 1, "name": "曹操"}], "browser", True)
 
 
 def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monkeypatch) -> None:
@@ -245,10 +249,11 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     assert synergy_service.calls[0][0] == {"id": 1, "name": "曹操"}
     assert [hero["id"] for hero in synergy_service.calls[0][1]] == [1, 2]
     assert synergy_service.calls[0][2] == "browser"
+    assert synergy_service.calls[0][3] is True
     assert _ProgressDialog.instances[-1].item_count == 1
     assert _ProgressDialog.instances[-1].item_label == "相性评分"
     assert _BackendDialog.instances[-1].estimation == {
-        "items": 1, "mode": "synergy", "model": "test-model",
+        "items": 1, "mode": "synergy", "model": "test-model", "estimate_kind": "synergy",
     }
     assert reloads == [True]
     assert changed == [True]
@@ -268,11 +273,11 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     workflow.request_synergy_pair()
 
     assert synergy_service.pair_calls == [
-        ([{"id": 1, "name": "曹操"}, {"id": 2, "name": "刘备"}], "browser", True),
+        ([{"id": 1, "name": "曹操"}, {"id": 2, "name": "刘备"}], "browser", True, True),
     ]
     assert _ProgressDialog.instances[-1].item_count == 1
     assert _BackendDialog.instances[-1].estimation == {
-        "items": 1, "mode": "synergy", "model": "test-model",
+        "items": 1, "mode": "synergy", "model": "test-model", "estimate_kind": "synergy",
     }
 
 

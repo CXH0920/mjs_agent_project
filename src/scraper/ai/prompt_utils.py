@@ -15,7 +15,7 @@ from src.config.env import (
     get_model_pricing,
 )
 
-from src.scraper.ai.rag_prompt import build_rag_context
+from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +50,14 @@ def _estimate_cost(tokens_input: int, tokens_output: int, model: str | None = No
     return round(cost, 4)
 
 
-def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
+def estimate_cost(hero_count: int, mode: str, model: str | None = None, use_rag: bool = True) -> dict:
     """估算批量生成成本
 
     Args:
         hero_count: 武将数量
         mode: "guide" 或 "synergy"
         model: 模型名称（用于查找价格）
+        use_rag: True = RAG 语料注入版本，False = 经典模式（无 RAG）
 
     Returns:
         dict: 成本估算结果
@@ -71,23 +72,32 @@ def estimate_cost(hero_count: int, mode: str, model: str | None = None) -> dict:
     else:
         raise ValueError(f"未知 mode: {mode}")
 
-    return estimate_item_cost(items, mode, model)
+    return estimate_item_cost(items, mode, model, use_rag=use_rag)
 
 
-def estimate_item_cost(item_count: int, mode: str, model: str | None = None) -> dict:
-    """按实际 API 请求项数估算生成成本。"""
+def estimate_item_cost(
+    item_count: int,
+    mode: str,
+    model: str | None = None,
+    use_rag: bool = True,
+) -> dict:
+    """按实际 API 请求项数估算生成成本。
+
+    use_rag: True = RAG 语料注入版本（输入 token 更高），False = 经典模式（无 RAG）。
+    """
     if model is None:
         model = DEFAULT_MODEL
 
     if mode == "guide":
-        input_tokens = item_count * 2000
+        input_per_item = 2000 if use_rag else 800
         output_tokens = item_count * 500
     elif mode == "synergy":
-        input_tokens = item_count * 800
+        input_per_item = 3500 if use_rag else 800
         output_tokens = item_count * 200
     else:
         raise ValueError(f"未知 mode: {mode}")
 
+    input_tokens = item_count * input_per_item
     total_tokens = input_tokens + output_tokens
     pricing = get_model_pricing(model)
     cost_cny = _estimate_cost(input_tokens, output_tokens, model)
@@ -133,8 +143,8 @@ def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
     return "\n".join(lines)
 
 
-def build_synergy_prompt(hero_a: dict, hero_b: dict) -> str:
-    """构建武将对的相性评分 prompt（含武将 ID，兼容 API 和 Browser 双模式）"""
+def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None = None) -> str:
+    """构建武将对的相性评分 prompt（含武将 ID + 可选 RAG 语料，兼容 API 和 Browser 双模式）"""
     def hero_block(label: str, h: dict) -> list[str]:
         lines = [f"## {label}: {h.get('name', '')} (ID={h.get('id', 0)})"]
         lines.append(f"  势力: {h.get('faction', '')}")
@@ -150,4 +160,7 @@ def build_synergy_prompt(hero_a: dict, hero_b: dict) -> str:
     lines.extend(hero_block("武将 A", hero_a))
     lines.append("")
     lines.extend(hero_block("武将 B", hero_b))
+    rag = build_synergy_rag_context(hero_a, hero_b, max_chars=rag_max_chars)
+    if rag:
+        lines.extend(["", rag])
     return "\n".join(lines)

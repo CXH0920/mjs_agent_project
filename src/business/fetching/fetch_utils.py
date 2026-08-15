@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 _GENERATION_PROGRESS_PATTERN = re.compile(
     r"(?:^\s*\[\d+/\d+\].*\b(?:START|OK|FAIL|SKIP)\b"
     r"|^\s*\[[^\]/]+\]\s+开始\.\.\.$"
-    r"|\[休息\]\s*随机休息\s*\d+\s*秒)"
+    r"|\[休息\]\s*随机休息\s*\d+\s*秒"
+    r"|^\s*\[RAG\])"
 )
 
 

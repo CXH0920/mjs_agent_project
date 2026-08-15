@@ -113,3 +113,28 @@ def test_backend_dialog_displays_synergy_cost_estimate():
     assert "模式: 相性生成" in label_texts
     assert "需要生成的项数: 3" in label_texts
     assert "预估费用: CNY 0.0123" in label_texts
+
+
+def test_backend_dialog_rag_selection_and_cost_recompute():
+    _app()
+    dialog = BackendChooseDialog(
+        estimation={
+            "mode": "synergy",
+            "estimate_kind": "synergy",
+            "model": "test-model",
+            "items": 3,
+            "estimated_input_tokens": 10500,
+            "estimated_output_tokens": 600,
+            "estimated_tokens": 11100,
+            "estimated_cost_cny": 0.05,
+        }
+    )
+
+    assert dialog.get_selected_rag() is True
+    label_texts = [label.text() for label in dialog.findChildren(QLabel)]
+    assert any("预估输入 Token: 10,500" in text for text in label_texts)
+
+    dialog._rag_classic_radio.setChecked(True)
+    assert dialog.get_selected_rag() is False
+    label_texts = [label.text() for label in dialog.findChildren(QLabel)]
+    assert any("预估输入 Token: 2,400" in text for text in label_texts)

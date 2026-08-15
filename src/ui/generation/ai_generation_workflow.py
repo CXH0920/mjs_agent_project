@@ -119,9 +119,11 @@ class AiGenerationWorkflow(QObject):
         from src.scraper.ai.prompt_utils import estimate_item_cost
 
         estimation = estimate_item_cost(pair_count, "synergy", get_api_config()["model"])
-        backend = self._choose_backend("相性配对生成", estimation)
-        if backend is None:
+        estimation["estimate_kind"] = "synergy"
+        choice = self._choose_backend("相性配对生成", estimation)
+        if choice is None:
             return
+        backend, use_rag = choice
         self._start_synergy_generation(
             pair_count,
             "相性配对生成进度",
@@ -129,6 +131,7 @@ class AiGenerationWorkflow(QObject):
                 selected,
                 backend=backend,
                 overwrite=dialog.overwrite_existing,
+                use_rag=use_rag,
             ),
         )
 
@@ -145,9 +148,11 @@ class AiGenerationWorkflow(QObject):
         from src.scraper.ai.prompt_utils import estimate_item_cost
 
         estimation = estimate_item_cost(pair_count, "synergy", get_api_config()["model"])
-        backend = self._choose_backend("选定武将相性生成", estimation)
-        if backend is None:
+        estimation["estimate_kind"] = "synergy"
+        choice = self._choose_backend("选定武将相性生成", estimation)
+        if choice is None:
             return
+        backend, use_rag = choice
         self._start_synergy_generation(
             pair_count,
             "选定武将相性生成进度",
@@ -155,6 +160,7 @@ class AiGenerationWorkflow(QObject):
                 dialog.selected_hero,
                 all_heroes,
                 backend=backend,
+                use_rag=use_rag,
             ),
         )
 
@@ -169,7 +175,7 @@ class AiGenerationWorkflow(QObject):
         heroes: list[dict],
         mode: str,
         title: str,
-        fetch: Callable[[list[dict], str], None],
+        fetch: Callable[[list[dict], str, bool], None],
     ) -> None:
         from src.config.env import get_api_config
         from src.scraper.ai.prompt_utils import estimate_cost
@@ -177,13 +183,15 @@ class AiGenerationWorkflow(QObject):
         estimation = estimate_cost(len(heroes), "guide", get_api_config()["model"])
         estimation["mode"] = mode
         estimation["heroes"] = heroes
-        backend = self._choose_backend(title, estimation)
-        if backend is None:
+        estimation["estimate_kind"] = "guide"
+        choice = self._choose_backend(title, estimation)
+        if choice is None:
             return
+        backend, use_rag = choice
 
         self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self._window)
         self._guide_progress_dialog.cancel_requested.connect(self._guide_service.cancel)
-        fetch(heroes, backend)
+        fetch(heroes, backend, use_rag)
         self._guide_progress_dialog.exec()
         self._guide_progress_dialog = None
 
@@ -204,11 +212,12 @@ class AiGenerationWorkflow(QObject):
         self._synergy_progress_dialog.exec()
         self._synergy_progress_dialog = None
 
-    def _choose_backend(self, title: str, estimation: dict | None = None) -> str | None:
+    def _choose_backend(self, title: str, estimation: dict | None = None) -> tuple[str, bool] | None:
+        """返回 (backend, use_rag)；用户取消时返回 None。"""
         dialog = BackendChooseDialog(estimation=estimation, title=title, parent=self._window)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
-        return dialog.get_selected_backend()
+        return dialog.get_selected_backend(), dialog.get_selected_rag()
 
     def _on_guide_completed(self, success: bool, message: str = "") -> None:
         if self._guide_progress_dialog:

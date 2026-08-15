@@ -23,6 +23,7 @@ from datetime import date
 from pathlib import Path
 
 from src.scraper.ai.utils import _save_json, GUIDE_BATCH_SAVE_INTERVAL, SYNERGY_BATCH_SAVE_INTERVAL
+from src.scraper.ai import rag_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,13 @@ def _commit_generation_batch(
 def _with_synergy_updated_date(generated: dict) -> dict:
     """为校验成功的相性结果写入本次生成日期。"""
     return {**generated, "last_updated": date.today().isoformat()}
+
+
+def _report_rag_degradation() -> None:
+    """RAG 被选择但运行时不可用时，向 stdout 输出一次降级提示（进度窗口可见）。"""
+    reason = rag_prompt.take_degraded_reason()
+    if reason:
+        print(f"  [RAG] 语料不可用，本次已降级为经典模式（{reason}）", flush=True)
 
 
 # ============================================================
@@ -114,6 +122,7 @@ def run_guide_generation(
         print(f"  [{hero_name}] 开始...", flush=True)
         generated, usage = generator.generate_guide(hero)
         result_summary.add_usage(usage)
+        _report_rag_degradation()
 
         if generated:
             working_guides[hero_id] = generated
@@ -203,6 +212,7 @@ def run_synergy_generation(
 
             generated, usage = generator.generate_synergy(ha, hb)
             result_summary.add_usage(usage)
+            _report_rag_degradation()
 
             if generated:
                 result_summary.completed += 1
@@ -305,6 +315,7 @@ def run_synergy_pair_generation(
 
         generated, usage = generator.generate_synergy(ha, hb)
         result_summary.add_usage(usage)
+        _report_rag_degradation()
         if generated:
             result_summary.completed += 1
             working_synergies[pair_key] = _with_synergy_updated_date(generated)
@@ -392,6 +403,7 @@ def run_synergy_single_generation(
         print(f"  [{i}/{len(pairs)}] {hb['name']} START", flush=True)
         generated, usage = generator.generate_synergy(ha, hb)
         result_summary.add_usage(usage)
+        _report_rag_degradation()
         if generated:
             working_synergies[key] = _with_synergy_updated_date(generated)
             result_summary.completed += 1
