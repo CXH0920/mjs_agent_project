@@ -1,0 +1,621 @@
+# -*- coding: utf-8 -*-
+"""武将分类维护面板（知识库维护 → 武将分类维护）。
+
+维护 data/hero_classification.json：分类管理 / 克制链 / 武将归类。
+数据保存需点击顶部「保存」，保存后发 data_changed 供知识库维护页刷新语料状态。
+"""
+
+from __future__ import annotations
+
+from html import escape
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from src.data.hero_classification_repository import (
+    ClassificationCategory,
+    HeroClassificationRepository,
+)
+from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING, set_tone, set_ui_role
+from src.ui.shared.widgets import DialogFooter, PageActionBar, show_toast
+
+_CLASSIFICATION_FILTERS = ("全部", "未归类", "已归类")
+
+
+class CategoryEditDialog(QDialog):
+    """新增/编辑机制分类；name 作为唯一标识，编辑时不可修改。"""
+
+    def __init__(self, category: ClassificationCategory | None = None, parent=None):
+        super().__init__(parent)
+        self._category = category
+        self.setWindowTitle("编辑分类" if category else "新增分类")
+        self.setMinimumWidth(520)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        if self._category:
+            form.addRow("名称:", QLabel(self._category.name))
+        else:
+            self._name_edit = QLineEdit()
+            self._name_edit.setPlaceholderText("分类名称（如：高爆发型）")
+            form.addRow("名称:", self._name_edit)
+        self._features_edit = QTextEdit()
+        self._features_edit.setFixedHeight(90)
+        if self._category:
+            self._features_edit.setPlainText(self._category.core_features)
+        form.addRow("核心特征:", self._features_edit)
+        self._heroes_edit = QPlainTextEdit()
+        self._heroes_edit.setFixedHeight(120)
+        if self._category:
+            self._heroes_edit.setPlainText("\n".join(self._category.typical_heroes))
+        form.addRow("典型武将:", self._heroes_edit)
+        self._ratio_edit = QLineEdit()
+        if self._category:
+            self._ratio_edit.setText(self._category.ratio)
+        form.addRow("占比:", self._ratio_edit)
+        layout.addLayout(form)
+        footer = DialogFooter(accept_text="保存", cancel_text="取消")
+        footer.accepted.connect(self._accept_if_valid)
+        footer.rejected.connect(self.reject)
+        layout.addWidget(footer)
+
+    def _accept_if_valid(self) -> None:
+        name = self._category.name if self._category else self._name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "校验失败", "分类名称不能为空")
+            return
+        heroes = [line.strip() for line in self._heroes_edit.toPlainText().splitlines() if line.strip()]
+        self._category = ClassificationCategory(
+            name=name,
+            core_features=self._features_edit.toPlainText().strip(),
+            typical_heroes=heroes,
+            ratio=self._ratio_edit.text().strip(),
+        )
+        self.accept()
+
+    def category(self) -> ClassificationCategory:
+        assert self._category is not None
+        return self._category
+
+
+class HeroClassificationPanel(QWidget):
+    """知识库维护 → 武将分类维护：分类 / 克制链 / 武将归类。"""
+
+    data_changed = Signal()
+
+    def __init__(self, repository: HeroClassificationRepository,
+                 hero_positions: dict[str, str] | None = None, parent=None):
+        super().__init__(parent)
+        self._repo = repository
+        self._hero_positions = hero_positions or {}
+        self._hero_names = sorted(repository.hero_names)
+        self._dirty = False
+        self._current_category: str | None = None
+        self._current_hero: str | None = None
+        self._setup_ui()
+        self.reload_data()
+
+    # ---------------------------------------------------------------
+    # UI 构建
+    # ---------------------------------------------------------------
+    def _setup_ui(self) -> None:
+        self.setObjectName("heroClassificationPanel")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        self._action_bar = PageActionBar("正在加载……", self)
+        self._status_label = self._action_bar.status_label
+        self._refresh_button = QPushButton("刷新")
+        self._refresh_button.clicked.connect(self.reload_data)
+        self._action_bar.add_action(self._refresh_button, ROLE_SECONDARY)
+        self._save_button = QPushButton("保存")
+        self._save_button.clicked.connect(self._save)
+        self._action_bar.add_action(self._save_button, ROLE_PRIMARY)
+        layout.addWidget(self._action_bar)
+
+        self._tabs = QTabWidget()
+        self._tabs.setObjectName("heroClassificationSubTabs")
+        self._tabs.addTab(self._build_category_tab(), "分类管理")
+        self._tabs.addTab(self._build_chain_tab(), "克制链")
+        self._tabs.addTab(self._build_hero_tab(), "武将归类")
+        layout.addWidget(self._tabs, 1)
+
+    def _build_category_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(8)
+        self._category_count_label = QLabel()
+        self._category_count_label.setObjectName("libraryResultCount")
+        bar.addWidget(self._category_count_label)
+        bar.addStretch(1)
+        self._category_add_button = QPushButton("新增分类")
+        set_ui_role(self._category_add_button, ROLE_PRIMARY)
+        self._category_add_button.clicked.connect(self._add_category)
+        bar.addWidget(self._category_add_button)
+        layout.addLayout(bar)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        left = QWidget()
+        left.setObjectName("specialCardListPane")
+        left.setMinimumWidth(200)
+        left.setMaximumWidth(320)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        self._category_list = QListWidget()
+        self._category_list.setObjectName("heroList")
+        self._category_list.currentItemChanged.connect(self._on_category_selected)
+        left_layout.addWidget(self._category_list)
+        splitter.addWidget(left)
+
+        self._category_detail_scroll = QScrollArea()
+        self._category_detail_scroll.setWidgetResizable(True)
+        self._category_detail_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._category_detail = QWidget()
+        self._category_detail_layout = QVBoxLayout(self._category_detail)
+        self._category_detail_layout.setContentsMargins(8, 4, 8, 8)
+        self._category_detail_layout.setSpacing(10)
+        self._category_detail_scroll.setWidget(self._category_detail)
+        splitter.addWidget(self._category_detail_scroll)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([260, 600])
+        layout.addWidget(splitter, 1)
+        return tab
+
+    def _build_chain_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._chain_category_combo = QComboBox()
+        self._chain_category_combo.currentTextChanged.connect(self._on_chain_category_changed)
+        form.addRow("分类:", self._chain_category_combo)
+        self._chain_edit = QPlainTextEdit()
+        self._chain_edit.setFixedHeight(120)
+        self._chain_edit.textChanged.connect(self._on_chain_text_changed)
+        form.addRow("克制说明:", self._chain_edit)
+        layout.addLayout(form)
+
+        hint = QLabel("填写该分类克制的对象与理由（如：卖血/被动收益型/战法牌型，依赖技能的都被克）。修改后点击顶部「保存」生效。")
+        hint.setObjectName("specialCardSectionTitle")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        layout.addStretch(1)
+        return tab
+
+    def _build_hero_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(8)
+        self._hero_filter = QComboBox()
+        self._hero_filter.addItems(list(_CLASSIFICATION_FILTERS))
+        self._hero_filter.currentIndexChanged.connect(self._refresh_heroes)
+        bar.addWidget(self._hero_filter)
+        self._hero_search = QLineEdit()
+        self._hero_search.setPlaceholderText("搜索武将名称...")
+        self._hero_search.textChanged.connect(self._refresh_heroes)
+        bar.addWidget(self._hero_search, 1)
+        self._hero_count_label = QLabel()
+        self._hero_count_label.setObjectName("libraryResultCount")
+        bar.addWidget(self._hero_count_label)
+        self._goto_unclassified_button = QPushButton("定位未归类")
+        set_ui_role(self._goto_unclassified_button, ROLE_SECONDARY)
+        self._goto_unclassified_button.clicked.connect(self._goto_next_unclassified)
+        bar.addWidget(self._goto_unclassified_button)
+        layout.addLayout(bar)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        left = QWidget()
+        left.setObjectName("specialCardListPane")
+        left.setMinimumWidth(200)
+        left.setMaximumWidth(320)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        self._hero_list = QListWidget()
+        self._hero_list.setObjectName("heroList")
+        self._hero_list.currentItemChanged.connect(self._on_hero_selected)
+        left_layout.addWidget(self._hero_list)
+        splitter.addWidget(left)
+
+        self._hero_detail_scroll = QScrollArea()
+        self._hero_detail_scroll.setWidgetResizable(True)
+        self._hero_detail_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._hero_detail = QWidget()
+        self._hero_detail_layout = QVBoxLayout(self._hero_detail)
+        self._hero_detail_layout.setContentsMargins(8, 4, 8, 8)
+        self._hero_detail_layout.setSpacing(10)
+
+        self._hero_empty_label = QLabel("选择左侧武将设置其机制分类。")
+        self._hero_empty_label.setObjectName("libraryEmptyState")
+        self._hero_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hero_detail_layout.addWidget(self._hero_empty_label)
+
+        self._hero_detail_surface = QFrame()
+        self._hero_detail_surface.setObjectName("specialCardDetailSurface")
+        surface_layout = QVBoxLayout(self._hero_detail_surface)
+        surface_layout.setContentsMargins(20, 18, 20, 20)
+        surface_layout.setSpacing(10)
+        self._hero_name_label = QLabel()
+        self._hero_name_label.setObjectName("cardIdentityName")
+        surface_layout.addWidget(self._hero_name_label)
+        self._hero_position_label = QLabel()
+        self._hero_position_label.setObjectName("specialCardEditMeta")
+        self._hero_position_label.setVisible(False)
+        surface_layout.addWidget(self._hero_position_label)
+        divider = QFrame()
+        divider.setObjectName("contentDivider")
+        divider.setFrameShape(QFrame.Shape.HLine)
+        surface_layout.addWidget(divider)
+        section = QLabel("机制分类（可多选）")
+        section.setObjectName("specialCardSectionTitle")
+        surface_layout.addWidget(section)
+        # 多选组件固定复用，切换武将仅更新值，避免频繁销毁导致的弹层生命周期竞态
+        self._hero_combo = CheckableComboBox()
+        self._hero_combo.set_items([])
+        self._hero_combo.checked_values_changed.connect(self._on_hero_categories_changed)
+        surface_layout.addWidget(self._hero_combo)
+        hint = QLabel("修改后点击顶部「保存」生效。")
+        hint.setObjectName("specialCardEditMeta")
+        surface_layout.addWidget(hint)
+        surface_layout.addStretch(1)
+        self._hero_detail_layout.addWidget(self._hero_detail_surface)
+
+        self._hero_detail_layout.addStretch(1)
+        self._hero_detail_scroll.setWidget(self._hero_detail)
+        splitter.addWidget(self._hero_detail_scroll)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([260, 600])
+        layout.addWidget(splitter, 1)
+        return tab
+
+    # ---------------------------------------------------------------
+    # 数据加载与保存
+    # ---------------------------------------------------------------
+    def reload_data(self) -> None:
+        self._repo.load()
+        self._hero_names = sorted(self._repo.hero_names)
+        self._refresh_categories()
+        self._refresh_chain_options()
+        self._refresh_heroes()
+        self._update_status("已加载", TONE_INFO)
+
+    def _update_status(self, text: str, tone: str) -> None:
+        if self._dirty:
+            self._action_bar.set_status(f"{text} · 有未保存修改", TONE_WARNING)
+        else:
+            self._action_bar.set_status(text, tone)
+
+    def _mark_dirty(self) -> None:
+        self._dirty = True
+        self._update_status("已修改", TONE_WARNING)
+
+    def _save(self) -> None:
+        try:
+            self._repo.save()
+        except Exception as error:
+            QMessageBox.critical(self, "保存失败", str(error))
+            return
+        self._dirty = False
+        self._update_status("已保存", TONE_SUCCESS)
+        self.data_changed.emit()
+        show_toast(self, "武将分类数据已保存，请在语料状态页重建语料")
+
+    # ---------------------------------------------------------------
+    # 分类管理
+    # ---------------------------------------------------------------
+    def _refresh_categories(self) -> None:
+        selected = self._current_category
+        self._category_list.clear()
+        self._category_count_label.setText(f"{len(self._repo.list_categories())} 个机制分类")
+        for cat in self._repo.list_categories():
+            item = QListWidgetItem(cat.name)
+            item.setData(Qt.ItemDataRole.UserRole, cat.name)
+            self._category_list.addItem(item)
+            if cat.name == selected:
+                self._category_list.setCurrentItem(item)
+        self._refresh_chain_options()
+        if not self._category_list.currentItem():
+            self._show_category_empty()
+
+    def _on_category_selected(self, current: QListWidgetItem | None, _=None) -> None:
+        if current is None:
+            self._show_category_empty()
+            return
+        self._current_category = current.data(Qt.ItemDataRole.UserRole)
+        cat = self._repo.get_category(self._current_category)
+        self._show_category_detail(cat)
+
+    def _show_category_empty(self) -> None:
+        self._current_category = None
+        self._clear_layout(self._category_detail_layout)
+        empty = QLabel("选择左侧分类查看详情，或点击「新增分类」。")
+        empty.setObjectName("libraryEmptyState")
+        empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._category_detail_layout.addWidget(empty)
+        self._category_detail_layout.addStretch(1)
+
+    def _show_category_detail(self, cat: ClassificationCategory | None) -> None:
+        self._clear_layout(self._category_detail_layout)
+        if cat is None:
+            self._show_category_empty()
+            return
+        surface = QFrame()
+        surface.setObjectName("specialCardDetailSurface")
+        surface_layout = QVBoxLayout(surface)
+        surface_layout.setContentsMargins(20, 18, 20, 20)
+        surface_layout.setSpacing(10)
+
+        title_row = QHBoxLayout()
+        title = QLabel(cat.name)
+        title.setObjectName("cardIdentityName")
+        title_row.addWidget(title)
+        badge = QLabel(f"{len(cat.typical_heroes)} 名典型武将")
+        badge.setObjectName("statusBadge")
+        set_tone(badge, TONE_INFO)
+        title_row.addWidget(badge)
+        title_row.addStretch()
+        surface_layout.addLayout(title_row)
+
+        divider = QFrame()
+        divider.setObjectName("contentDivider")
+        divider.setFrameShape(QFrame.Shape.HLine)
+        surface_layout.addWidget(divider)
+
+        for label, value in (("核心特征", cat.core_features), ("占比", cat.ratio)):
+            if not value:
+                continue
+            section = QLabel(label)
+            section.setObjectName("specialCardSectionTitle")
+            surface_layout.addWidget(section)
+            body = QLabel(escape(value))
+            body.setObjectName("specialCardFieldBody")
+            body.setWordWrap(True)
+            body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            surface_layout.addWidget(body)
+        if cat.typical_heroes:
+            section = QLabel("典型武将")
+            section.setObjectName("specialCardSectionTitle")
+            surface_layout.addWidget(section)
+            body = QLabel(escape("、".join(cat.typical_heroes)))
+            body.setObjectName("specialCardFieldBody")
+            body.setWordWrap(True)
+            body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            surface_layout.addWidget(body)
+
+        actions = QHBoxLayout()
+        edit_button = QPushButton("编辑")
+        set_ui_role(edit_button, ROLE_SECONDARY)
+        edit_button.clicked.connect(self._edit_category)
+        actions.addWidget(edit_button)
+        delete_button = QPushButton("删除")
+        set_ui_role(delete_button, ROLE_DANGER)
+        delete_button.clicked.connect(self._delete_category)
+        actions.addWidget(delete_button)
+        actions.addStretch(1)
+        surface_layout.addLayout(actions)
+        self._category_detail_layout.addWidget(surface)
+        self._category_detail_layout.addStretch(1)
+
+    def _add_category(self) -> None:
+        dialog = CategoryEditDialog(None, self)
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                self._repo.add_category(dialog.category())
+            except Exception as error:
+                QMessageBox.critical(self, "保存失败", str(error))
+                continue
+            self._current_category = dialog.category().name
+            self._refresh_categories()
+            self._mark_dirty()
+            return
+
+    def _edit_category(self) -> None:
+        cat = self._repo.get_category(self._current_category or "")
+        if cat is None:
+            return
+        dialog = CategoryEditDialog(cat, self)
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                self._repo.update_category(dialog.category())
+            except Exception as error:
+                QMessageBox.critical(self, "保存失败", str(error))
+                continue
+            self._refresh_categories()
+            self._mark_dirty()
+            return
+
+    def _delete_category(self) -> None:
+        name = self._current_category or ""
+        if name not in {c.name for c in self._repo.list_categories()}:
+            return
+        answer = QMessageBox.question(
+            self, "确认删除",
+            f"确定删除分类「{name}」吗？相关武将归类与克制链引用会一并清理。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._repo.delete_category(name)
+        self._current_category = None
+        self._refresh_categories()
+        self._mark_dirty()
+
+    # ---------------------------------------------------------------
+    # 克制链
+    # ---------------------------------------------------------------
+    def _refresh_chain_options(self) -> None:
+        names = [c.name for c in self._repo.list_categories()]
+        current = self._chain_category_combo.currentText()
+        self._chain_category_combo.blockSignals(True)
+        self._chain_category_combo.clear()
+        self._chain_category_combo.addItems(names)
+        if current in names:
+            self._chain_category_combo.setCurrentText(current)
+        self._chain_category_combo.blockSignals(False)
+        self._sync_chain_combo()
+
+    def _on_chain_category_changed(self, _text: str) -> None:
+        self._sync_chain_combo()
+
+    def _sync_chain_combo(self) -> None:
+        category = self._chain_category_combo.currentText()
+        self._chain_edit.blockSignals(True)
+        self._chain_edit.setPlainText(self._repo.get_chain_description(category))
+        self._chain_edit.blockSignals(False)
+
+    def _on_chain_text_changed(self) -> None:
+        category = self._chain_category_combo.currentText()
+        if not category:
+            return
+        try:
+            self._repo.set_counter_chain(category, self._chain_edit.toPlainText())
+        except ValueError as error:
+            QMessageBox.warning(self, "校验失败", str(error))
+            return
+        self._mark_dirty()
+
+    # ---------------------------------------------------------------
+    # 武将归类
+    # ---------------------------------------------------------------
+    def _filtered_heroes(self) -> list[str]:
+        filter_text = self._hero_filter.currentText()
+        keyword = self._hero_search.text().strip()
+        if filter_text == "未归类":
+            heroes = self._repo.list_unclassified()
+        elif filter_text == "已归类":
+            heroes = self._repo.list_classified()
+        else:
+            heroes = self._hero_names
+        if keyword:
+            heroes = [h for h in heroes if keyword in h]
+        return heroes
+
+    def _refresh_heroes(self) -> None:
+        selected = self._current_hero
+        heroes = self._filtered_heroes()
+        self._hero_list.clear()
+        self._hero_count_label.setText(
+            f"未归类 {len(self._repo.list_unclassified())} 人 · 显示 {len(heroes)} 人"
+        )
+        for hero in heroes:
+            item = QListWidgetItem(hero)
+            item.setData(Qt.ItemDataRole.UserRole, hero)
+            self._hero_list.addItem(item)
+            if hero == selected:
+                self._hero_list.setCurrentItem(item)
+        if not self._hero_list.currentItem():
+            self._show_hero_empty()
+
+    def _on_hero_selected(self, current: QListWidgetItem | None, _=None) -> None:
+        if current is None:
+            self._show_hero_empty()
+            return
+        self._current_hero = current.data(Qt.ItemDataRole.UserRole)
+        self._show_hero_detail(self._current_hero)
+
+    def _show_hero_empty(self) -> None:
+        self._current_hero = None
+        self._hero_detail_surface.setVisible(False)
+        self._hero_empty_label.setVisible(True)
+
+    def _show_hero_detail(self, hero: str) -> None:
+        """更新右侧武将归类详情（复用固定组件，不重建）。"""
+        self._current_hero = hero
+        self._hero_detail_surface.setVisible(True)
+        self._hero_empty_label.setVisible(False)
+        self._hero_name_label.setText(hero)
+        position = self._hero_positions.get(hero, "")
+        self._hero_position_label.setText(f"定位：{escape(position)}")
+        self._hero_position_label.setVisible(bool(position))
+        all_names = [c.name for c in self._repo.list_categories()]
+        self._hero_combo.set_items(all_names)
+        self._hero_combo.set_checked(self._repo.get_hero_categories(hero))
+
+    def _on_hero_categories_changed(self) -> None:
+        hero = self._current_hero
+        if not hero:
+            return
+        try:
+            self._repo.set_hero_categories(hero, sorted(self._hero_combo.checked_values()))
+        except ValueError as error:
+            QMessageBox.warning(self, "校验失败", str(error))
+            return
+        self._refresh_heroes()
+        self._mark_dirty()
+
+    def _goto_next_unclassified(self) -> None:
+        unclassified = self._repo.list_unclassified()
+        if not unclassified:
+            QMessageBox.information(self, "已完成", "所有武将都已归类。")
+            return
+        target = unclassified[0]
+        self._hero_filter.setCurrentText("未归类")
+        self._hero_search.clear()
+        for row in range(self._hero_list.count()):
+            item = self._hero_list.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == target:
+                self._hero_list.setCurrentItem(item)
+                return
+
+    # ---------------------------------------------------------------
+    # 工具
+    # ---------------------------------------------------------------
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                inner = widget.layout()
+                if inner is not None:
+                    HeroClassificationPanel._clear_layout(inner)
+                close_popup = getattr(widget, "closePopup", None)
+                if callable(close_popup):
+                    close_popup()
+                widget.setParent(None)
+                widget.deleteLater()
+                continue
+            sub = item.layout()
+            if sub is not None:
+                HeroClassificationPanel._clear_layout(sub)

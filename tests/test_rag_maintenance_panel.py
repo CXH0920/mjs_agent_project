@@ -95,8 +95,13 @@ def test_panel_renders(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
     panel = RagMaintenancePanel(root=root)
+    assert panel._tabs.count() == 3
+    assert [panel._tabs.tabText(i) for i in range(panel._tabs.count())] == [
+        "语料状态", "专属牌维护", "武将分类维护",
+    ]
     assert panel._table.rowCount() == 8
     assert "所有语料与数据源一致" in panel._status_label.text()
     assert "人工维护提示" in panel._audit_label.text()
-    panel._run.__wrapped__ if hasattr(panel._run, "__wrapped__") else None
+    assert hasattr(panel, "_special_cards")
+    assert hasattr(panel, "_classification")
     panel.close()

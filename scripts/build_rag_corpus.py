@@ -250,6 +250,10 @@ md_path = out_dir + r'\武将RAG语料.md'
 json_path = out_dir + r'\武将RAG语料.json'
 with open(md_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
+import rag_curated
+_merged = rag_curated.merge_curated(blocks, json_path)
+if _merged:
+    print('已保留 curated 精化块:', _merged)
 with open(json_path, 'w', encoding='utf-8', newline='\n') as f:
     json.dump(blocks, f, ensure_ascii=False, indent=1)
 

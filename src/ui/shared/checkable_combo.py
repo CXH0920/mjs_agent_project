@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from shiboken6 import isValid
+
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,7 +37,8 @@ class TagLineEdit(QLineEdit):
 
     def set_tags(self, tags: list[str], colors: dict[str, str] | None = None) -> None:
         for button in self._tag_buttons:
-            button.deleteLater()
+            if isValid(button):
+                button.deleteLater()
         self._tag_buttons.clear()
         self.clear()
         colors = colors or {}
@@ -114,8 +117,19 @@ class CheckableComboBox(QWidget):
         self._checked = set(values)
         self._update_display()
 
+    def set_checked(self, values: list[str]) -> None:
+        """预选指定值（不触发 checked_values_changed）。"""
+        self._checked = set(values) & set(self._values)
+        self._update_display()
+
     def checked_values(self) -> set[str]:
         return set(self._checked)
+
+    def closePopup(self) -> None:
+        """关闭并释放弹出的选择面板（组件销毁前调用，避免回调访问已删除对象）。"""
+        if self._popup is not None:
+            self._popup.close()
+            self._popup = None
 
     def _update_display(self) -> None:
         selected = [value for value in self._values if value in self._checked]
@@ -174,6 +188,8 @@ class CheckableComboBox(QWidget):
             faction_list.blockSignals(False)
 
         def update_checked(item: QListWidgetItem) -> None:
+            if not isValid(self):
+                return
             if item.checkState() == Qt.CheckState.Checked:
                 self._checked.add(item.text())
             else:
@@ -195,6 +211,8 @@ class CheckableComboBox(QWidget):
         popup_layout.addLayout(action_layout)
 
         def select_all_values() -> None:
+            if not isValid(self):
+                return
             keyword = search.text().strip().lower()
             self._checked.update(
                 value for value in self._values
@@ -205,6 +223,8 @@ class CheckableComboBox(QWidget):
             refresh_items()
 
         def invert_values() -> None:
+            if not isValid(self):
+                return
             keyword = search.text().strip().lower()
             visible = [
                 value for value in self._values

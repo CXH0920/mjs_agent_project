@@ -89,6 +89,10 @@ for c in cards:
 out_dir = r'data\rag_corpus'
 with open(out_dir + r'\卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
+import rag_curated
+_merged = rag_curated.merge_curated(blocks, out_dir + r'\卡牌RAG语料.json')
+if _merged:
+    print('已保留 curated 精化块:', _merged)
 with open(out_dir + r'\卡牌RAG语料.json', 'w', encoding='utf-8', newline='\n') as f:
     json.dump(blocks, f, ensure_ascii=False, indent=1)
 print('卡牌块数:', len(blocks))

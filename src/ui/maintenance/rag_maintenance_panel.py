@@ -13,22 +13,29 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHeaderView,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from src.data.hero_classification_repository import HeroClassificationRepository
+from src.data.special_cards_repository import SpecialCardRepository
+from src.ui.library.hero_classification_panel import HeroClassificationPanel
+from src.ui.library.special_cards_panel import SpecialCardsPanel
+
 from src.config.env import PROJECT_ROOT
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import NoticeBanner, PageActionBar
+from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
 
 # 语料任务：名称 -> (源文件, 输出语料文件)
 TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
@@ -118,12 +125,28 @@ def audit_summary(root: Path) -> list[str]:
 class RagMaintenancePanel(QWidget):
     """知识库维护工作台。"""
 
-    def __init__(self, root: Path = PROJECT_ROOT, parent=None):
+    data_changed = Signal()
+
+    def __init__(self, root: Path = PROJECT_ROOT, hero_names: set[str] | None = None, parent=None):
         super().__init__(parent)
         self._root = root
         self._proc: QProcess | None = None
+        self._hero_names, self._hero_positions = self._load_heroes(self._root, hero_names)
         self._setup_ui()
         self.refresh()
+
+    @staticmethod
+    def _load_heroes(root: Path, fallback: set[str] | None) -> tuple[set[str], dict[str, str]]:
+        """从 data/heroes.json 读取武将名与定位；文件缺失时使用传入集合。"""
+        heroes_path = root / "data" / "heroes.json"
+        try:
+            heroes = json.loads(heroes_path.read_text(encoding="utf-8"))
+            names = {str(h.get("name", "")) for h in heroes if h.get("name")}
+            positions = {str(h.get("name", "")): str(h.get("position", "") or "")
+                         for h in heroes if h.get("name")}
+            return names, positions
+        except (OSError, json.JSONDecodeError, ValueError):
+            return set(fallback or ()), {}
 
     def _setup_ui(self) -> None:
         self.setObjectName("ragMaintenancePanel")
@@ -131,11 +154,21 @@ class RagMaintenancePanel(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(8)
 
+        self._tabs = QTabWidget()
+        self._tabs.setObjectName("librarySectionTabs")
+        status_tab = QWidget()
+        status_layout = QVBoxLayout(status_tab)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
+
         self._action_bar = PageActionBar("正在检查……", self)
         self._status_label = self._action_bar.status_label
         self._refresh_button = QPushButton("刷新状态")
         self._refresh_button.clicked.connect(self.refresh)
         self._action_bar.add_action(self._refresh_button, ROLE_SECONDARY)
+        self._refine_button = QPushButton("索引精化")
+        self._refine_button.clicked.connect(self._open_refinement)
+        self._action_bar.add_action(self._refine_button, ROLE_SECONDARY)
         self._hero_button = QPushButton("重建武将语料")
         self._hero_button.clicked.connect(lambda: self._run(["--force", "--only", "武将"]))
         self._action_bar.add_action(self._hero_button, ROLE_SECONDARY)
@@ -145,7 +178,7 @@ class RagMaintenancePanel(QWidget):
         self._index_button = QPushButton("重建语料+索引")
         self._index_button.clicked.connect(lambda: self._run(["--force", "--build-index"]))
         self._action_bar.add_action(self._index_button, ROLE_PRIMARY)
-        layout.addWidget(self._action_bar)
+        status_layout.addWidget(self._action_bar)
 
         self._table_surface = QFrame()
         self._table_surface.setObjectName("ragTableSurface")
@@ -164,11 +197,11 @@ class RagMaintenancePanel(QWidget):
         self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
         table_layout.addWidget(self._table)
-        layout.addWidget(self._table_surface, 1)
+        status_layout.addWidget(self._table_surface, 1)
 
         self._audit_banner = NoticeBanner("人工维护检查通过", "", TONE_SUCCESS, self)
         self._audit_label = self._audit_banner.title_label
-        layout.addWidget(self._audit_banner)
+        status_layout.addWidget(self._audit_banner)
 
         self._log_surface = QFrame()
         self._log_surface.setObjectName("ragLogSurface")
@@ -181,7 +214,33 @@ class RagMaintenancePanel(QWidget):
         self._log.setPlaceholderText("执行日志将显示在这里……")
         self._log.setMaximumBlockCount(2000)
         log_layout.addWidget(self._log)
-        layout.addWidget(self._log_surface, 2)
+        status_layout.addWidget(self._log_surface, 2)
+        self._tabs.addTab(status_tab, "语料状态")
+
+        self._special_cards = SpecialCardsPanel(
+            SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names)
+        self._special_cards.data_changed.connect(self._on_child_changed)
+        self._tabs.addTab(self._special_cards, "专属牌维护")
+
+        self._classification = HeroClassificationPanel(
+            HeroClassificationRepository(
+                self._root / "data" / "hero_classification.json", self._hero_names),
+            self._hero_positions)
+        self._classification.data_changed.connect(self._on_child_changed)
+        self._tabs.addTab(self._classification, "武将分类维护")
+
+        layout.addWidget(self._tabs, 1)
+
+    def _on_child_changed(self) -> None:
+        """专属牌/武将分类保存后：刷新语料状态并转发 data_changed。"""
+        self.refresh()
+        self.data_changed.emit()
+
+    def reload_data(self) -> None:
+        """重新加载语料状态与两个子维护面板。"""
+        self.refresh()
+        self._special_cards.reload_data()
+        self._classification.reload_data()
 
     def refresh(self) -> None:
         rows = task_states(self._root)
@@ -212,6 +271,11 @@ class RagMaintenancePanel(QWidget):
             self._audit_label.setText("人工维护检查通过")
             self._audit_banner.message_label.setText("")
             self._audit_banner.message_label.setVisible(False)
+
+    def _open_refinement(self) -> None:
+        dialog = IndexRefinementDialog(self._root / "data" / "rag_corpus", self)
+        dialog.exec()
+        self.refresh()
 
     # ---------------------------------------------------------------
     # 本地执行（QProcess）

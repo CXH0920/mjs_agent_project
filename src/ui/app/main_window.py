@@ -57,8 +57,6 @@ from src.ui.recommendation.recommendation_panel import RecommendationPanel
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.card_management_panel import CardManagementPanel
-from src.data.special_cards_repository import SpecialCardRepository
-from src.ui.library.special_cards_panel import SpecialCardsPanel
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 from src.ui.app.shell_widgets import ContextHeader, NavigationRail
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
@@ -749,8 +747,6 @@ class MainWindow(QMainWindow):
         self._card_management = CardManagementPanel(CardCatalogService())
         self._library_tabs.addTab(self._card_management, "卡牌图鉴")
         hero_names = {hero.name for hero in self._data.heroes.list_heroes()}
-        self._special_cards = SpecialCardsPanel(SpecialCardRepository(), hero_names)
-        self._library_tabs.addTab(self._special_cards, "专属牌维护")
         library_layout.addWidget(self._library_tabs, 1)
         self._tabs.addTab(self._library, "资料库")
 
@@ -774,8 +770,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._match_guide, "对局攻略")
 
         # Tab 4: 知识库维护（RAG 语料/索引本地维护工作台）
-        self._rag_maintenance = RagMaintenancePanel(PROJECT_ROOT)
-        self._special_cards.data_changed.connect(self._rag_maintenance.refresh)
+        self._rag_maintenance = RagMaintenancePanel(PROJECT_ROOT, hero_names)
         self._tabs.addTab(self._rag_maintenance, "知识库维护")
 
         workspace_layout.addWidget(self._tabs, 1)
@@ -1035,10 +1030,8 @@ class MainWindow(QMainWindow):
             self._hero_browser.reload_data()
         if hasattr(self, "_card_management"):
             self._card_management.reload_data()
-        if hasattr(self, "_special_cards"):
-            self._special_cards.reload_data()
         if hasattr(self, "_rag_maintenance"):
-            self._rag_maintenance.refresh()
+            self._rag_maintenance.reload_data()
         if hasattr(self, "_recommendation"):
             self._recommendation.refresh_synergies()
         self._update_status()
