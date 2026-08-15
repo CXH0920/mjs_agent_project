@@ -263,6 +263,7 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python scripts/maintain_rag.py --force --build-index` 或应用内「知识库维护」页面。
+- **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类五个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
 ### 2.1 模块文件关系
 
@@ -652,6 +653,10 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
 | `config/faction_colors.json` | —（直接读取） | 势力配色，支持在设置中新增势力 |
+| `data/card_points.json` | CardPointsRepository | 162 张牌花色点数（72 组合）+ 12 条判定规则 |
+| `data/equip_attrs.json` | EquipAttrsRepository | 26 件装备属性（细分/攻击范围/距离修正） |
+| `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
+| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类 |
 
 ### 4.3 HeroManager 方法清单
 
@@ -1145,6 +1150,20 @@ _start_import()
 | 边框 | `#d7dee7` |
 
 按钮通过 `uiRole` 使用 `primary`、`secondary`、`ghost`、`danger`；状态展示通过 `tone` 使用 `neutral`、`info`、`success`、`warning`、`danger`。完整规则见 `docs/spec/spec_ui_design_system.md` 和 `docs/spec/spec_ui_navigation.md`，三档窗口截图位于 `docs/ui_baseline/`；阶段三应用外壳使用 `after-shell-`，阶段四资料库使用 `after-library-`，阶段五、六识别工作台使用 `after-workspaces-` 前缀。
+
+### 5.13 知识库维护工作台（RagMaintenancePanel）
+
+主导航第 4 页，本地维护 RAG 语料与源数据，包含 5 个页签：
+
+| 页签 | 数据源 | 能力 |
+|------|--------|------|
+| 语料状态 | `scripts/maintain_rag.py` + `rag_audit.py` | 8 个语料任务状态表（最新/待重建/缺源 + 块数）、6 项人工维护审计横幅、一键重建（QProcess 实时日志） |
+| 专属牌维护 | `data/special_cards.json` | 5 类条目 CRUD，专属牌/战法牌含花色/点数/攻击范围/结算详情字段 |
+| 卡牌点数维护 | `data/card_points.json` | 72 花色点数组合 × 数量与 12 条判定规则增删改；「从 xlsx 导入」应急通道 |
+| 装备属性维护 | `data/equip_attrs.json` | 26 件装备细分/攻击范围/距离修正表格编辑 + 保存校验 |
+| 武将分类维护 | `data/hero_classification.json` | 分类 CRUD / 克制链 / 武将归类 |
+
+联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。审计覆盖：未归类武将、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）。语料层另有「索引精化」对话框（`IndexRefinementDialog`）对卡牌/武将语料做 curated 索引字段精化，重建不覆盖。
 
 ---
 

@@ -39,9 +39,13 @@ from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_
 from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 # 各类别可编辑字段：key -> (标签, 是否多行)
+# suit/point/attack_range/settlement 为牌面事实（原 xlsx【专属牌】sheet 迁移回填）
 _CATEGORY_FIELDS: dict[str, list[tuple[str, str, bool]]] = {
-    "专属牌": [("card_type", "类型", False), ("effect", "效果", True), ("hero", "所属武将", False)],
-    "专属战法牌": [("effect", "效果", True), ("hero", "所属武将", False)],
+    "专属牌": [("card_type", "类型", False), ("suit", "花色", False), ("point", "点数", False),
+               ("attack_range", "攻击范围", False), ("effect", "效果", True),
+               ("settlement", "结算详情", True), ("hero", "所属武将", False)],
+    "专属战法牌": [("effect", "效果", True), ("suit", "花色", False), ("point", "点数", False),
+                  ("settlement", "结算详情", True), ("hero", "所属武将", False)],
     "特殊牌区": [("function", "功能", True), ("hero", "所属武将", False)],
     "状态/标记": [("effect", "效果", True), ("stackable", "可否叠加", False), ("hero", "所属武将", False)],
     "概念": [("description", "说明", True), ("hero", "所属武将", False)],

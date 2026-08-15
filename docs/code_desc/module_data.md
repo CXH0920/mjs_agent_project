@@ -27,7 +27,11 @@ src/data/
 ├── win_rate_repository.py # 2v2 胜率 CSV 读取与缓存
 ├── recommendation_index_repository.py # 推荐指数计算、快照输出与读取
 ├── card_catalog.py        # 官方卡牌只读仓储、追加字段/内容仓储及合并服务
-└── announcement_manager.py # 公告记录（去重/状态机）+ 百科逐武将哈希快照
+├── announcement_manager.py # 公告记录（去重/状态机）+ 百科逐武将哈希快照
+├── special_cards_repository.py # 专属牌/战法牌/特殊牌区/状态/概念维护（RAG 特殊机制语料源）
+├── hero_classification_repository.py # 武将分类/克制链/武将归类维护（RAG 武将分类语料源）
+├── card_points_repository.py # 卡牌点数花色维护（data/card_points.json，原 xlsx sheet1 + 判定规则迁移）
+└── equip_attrs_repository.py # 装备属性维护（data/equip_attrs.json，原 xlsx sheet2 与硬编码迁移）
 ```
 
 官方榜单导入还会在 `data/` 下维护三个 CSV：`2v2胜率排行.csv`、`2v2出场排行.csv`、`武将放逐.csv`。它们不是 Pydantic JSON 模型的一部分，由业务服务按表格行原子覆盖；每份正式 CSV 对应一份 `*_待复核.csv`，异常行的原始坐标和截图存入 `screenshot_data/official_import/`。名称未确认、重复或同规模榜单集合不一致时，复核文件更新但正式 CSV 保持原值。`recommendation_index_repository.py` 在用户确认三份榜单后，基于它们及 `heroes.json` 的唯一 ID 手动生成 `武将推荐指数.csv`：排名有效范围以胜率 CSV 的实际数据行数计算，名称去重只报告重复，不缩小排名上限；其他缺失、越界或重复数据仍标记“数据不足”。官方榜单成功导入后会持久化“待重建”标记，推荐页面由用户确认后手动重建。2v2 胜率文件更新后调用 `clear_win_rate_cache()`。

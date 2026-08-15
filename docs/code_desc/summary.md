@@ -19,6 +19,7 @@
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
 - **官方数据导入** — 可独立或同时导入 2v2/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 - **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示“可更新”，并提供“指定获取+增量”一键精准更新
+- **知识库维护（RAG）** — 本地 RAG 语料维护工作台：语料状态（8 个任务/一键重建/审计）与专属牌、卡牌点数、装备属性、武将分类四个数据源维护页签；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
 
 ## 技术栈
 
@@ -49,7 +50,7 @@ test_project/
 │   ├── capture/                 # 屏幕采集层（ADB 连接与截图）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR）
 │   └── ui/                      # PySide6 用户界面层
-├── data/                        # 数据文件（JSON + 2v2 胜率/出场、放逐 CSV）
+├── data/                        # 数据文件（JSON + 2v2 胜率/出场、放逐 CSV；RAG 源数据 JSON 与归档 archive/）
 ├── images/                      # 武将头像（165 个 PNG）
 ├── templates/                   # OCR 模板截图
 ├── screenshots/                 # 手动截图导出目录
@@ -88,9 +89,9 @@ test_project/
 | # | 模块 | 目录 | 主要职责 |
 |---|------|------|---------|
 | 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化 |
-| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化 |
+| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储） |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 解析、数据清洗、头像下载 |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
 | 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入 |
 | 6 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
-| 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器 |
+| 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器、知识库维护工作台 |

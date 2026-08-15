@@ -4,7 +4,10 @@
 检查：
 1. heroes.json 中未在 hero_classification.json 归类的武将（新武将需人工归类）；
 2. special_cards.json 引用了不存在的武将；
-3. 技能描述中出现的疑似牌名/道具名（启发式提取 + 黑名单/已知名称/排除清单过滤，仅作人工确认提示，不保证准确）。
+3. 技能描述中出现的疑似牌名/道具名（启发式提取 + 黑名单/已知名称/排除清单过滤，仅作人工确认提示，不保证准确）；
+4. card_points.json（原 xlsx sheet1）花色/点数/张数合法性；
+5. equip_attrs.json（原 xlsx sheet2）件数/字段合法性；
+6. 专属牌/战法牌结算详情回填完整性（死士为非实体牌标记，豁免）。
 
 返回问题清单（list[str]）；无问题时返回空列表。不影响语料构建，
 由 maintain_rag.py 选择是否以 --strict-audit 视为失败。
@@ -100,6 +103,55 @@ def audit_hero_coverage(root):
                       % (len(cand), _MAX_SUSPECT_HINTS))
         for w in sorted(cand)[:_MAX_SUSPECT_HINTS]:
             issues.append('  疑似: %s' % w)
+
+    # 4. 卡牌点数源校验（data/card_points.json，原 xlsx sheet1 + 判定规则）
+    try:
+        with open(os.path.join(data_dir, 'card_points.json'), encoding='utf-8') as f:
+            payload = json.load(f)
+        cards = payload.get('cards') if isinstance(payload, dict) else None
+        if not isinstance(cards, list):
+            issues.append('data/card_points.json 结构异常（缺少 cards 数组）')
+        else:
+            valid_suits = ('♥', '♣', '♠', '♦', '太极')
+            valid_points = {str(i) for i in range(1, 9)}
+            bad_suits = sorted({c.get('name', '?') for c in cards if c.get('suit') not in valid_suits})
+            bad_points = sorted({c.get('name', '?') for c in cards if c.get('point') not in valid_points})
+            total = sum(int(c.get('count', 1) or 1) for c in cards)
+            if total != 162:
+                issues.append('卡牌点数张数 %d != 期望 162' % total)
+            if bad_suits:
+                issues.append('卡牌点数异常花色 %d 张：%s' % (len(bad_suits), '、'.join(bad_suits[:6])))
+            if bad_points:
+                issues.append('卡牌点数异常点数 %d 张：%s' % (len(bad_points), '、'.join(bad_points[:6])))
+    except Exception as e:
+        issues.append('data/card_points.json 读取失败: %s' % e)
+
+    # 5. 装备属性源校验（data/equip_attrs.json，原 xlsx sheet2）
+    try:
+        with open(os.path.join(data_dir, 'equip_attrs.json'), encoding='utf-8') as f:
+            equips = json.load(f)
+        if not isinstance(equips, list):
+            issues.append('data/equip_attrs.json 结构异常（应为数组）')
+        else:
+            if len(equips) != 26:
+                issues.append('装备属性件数 %d != 期望 26' % len(equips))
+            for item in equips:
+                if item.get('subtype') not in ('武器', '防具', '坐骑'):
+                    issues.append('装备 %s 细分类型异常: %r' % (item.get('name', '?'), item.get('subtype')))
+                if item.get('distance_mod') not in (None, -1, 1):
+                    issues.append('装备 %s 距离修正异常: %r' % (item.get('name', '?'), item.get('distance_mod')))
+    except Exception as e:
+        issues.append('data/equip_attrs.json 读取失败: %s' % e)
+
+    # 6. 专属牌/战法牌结算详情回填校验（死士为非实体牌标记，xlsx 无对应结算，豁免）
+    missing_settle = sorted(
+        s.get('name', '') for s in specials
+        if s.get('category') in ('专属牌', '专属战法牌')
+        and not s.get('settlement') and s.get('name') not in ('死士',)
+    )
+    if missing_settle:
+        issues.append('专属牌/战法牌缺结算详情 %d 个（人工确认后补充 special_cards.json）：%s'
+                      % (len(missing_settle), '、'.join(missing_settle[:8])))
     return issues
 
 

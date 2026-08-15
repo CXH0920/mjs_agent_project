@@ -75,17 +75,23 @@ test_project/
 │           ├── hero_dialogs.py     # HeroSkillDialog
 │           └── faction_colors.py   # 势力配色读取/校验/兜底/重载
 ├── data/
-│   ├── heroes.json                # 165 个武将
+│   ├── heroes.json                # 172 个武将
 │   ├── synergies.json             # 相性评分
 │   ├── guides.json                # 武将攻略
 │   ├── cards.json                 # 基础卡牌数据
+│   ├── card_annotations.json      # 49 张卡加强/削弱效果（RAG 加强削弱语料源）
+│   ├── special_cards.json         # 专属牌/战法牌/特殊牌区/状态·标记/概念（RAG 特殊机制语料源）
+│   ├── card_points.json           # 162 张牌花色点数 + 12 条判定规则（RAG 点数花色语料源）
+│   ├── equip_attrs.json           # 26 件装备属性（RAG 装备属性语料源）
+│   ├── hero_classification.json   # 武将分类/克制链/归类（RAG 武将分类语料源）
 │   ├── 2v2胜率排行.csv            # 2v2 胜率数据
 │   ├── 2v2出场排行.csv            # 2v2 出场数据（官方榜单导入生成）
 │   ├── 武将放逐.csv                # 武将放逐数据（官方榜单导入生成）
 │   ├── 武将推荐指数.csv            # 由三份官方榜单计算的推荐指数快照
+│   ├── archive/                   # 历史归档（原 mjs卡牌点数.xlsx，供应急重导入）
 │   └── char_info_cache.json       # 汉字特征用户层缓存（运行时自动扩展，不提交）
 ├── images/
-│   └── <武将名>.png               # 165 个武将头像（从官网自动下载）
+│   └── <武将名>.png               # 172 个武将头像（从官网自动下载）
 ├── templates/
 │   ├── wujiang_select.png         # 武将选择页面模板（用户自行制作）
 │   └── wujiang_select.json        # 模板制作时的参考截图尺寸
@@ -212,6 +218,7 @@ python -m src.scraper.ai_batch --dry-run --synergy
 - 预览语料状态：`python scripts/maintain_rag.py --check`
 - 增量重建语料/索引：`python scripts/maintain_rag.py --build-index`
 - 预览官方数据差异：`python scripts/import_from_test.py --dry-run`
+- **RAG 源数据（T0）**：已从 xlsx 迁移为 JSON——`data/special_cards.json`（专属牌/战法牌/特殊牌区/状态/概念，含花色点数与结算详情）、`data/card_points.json`（162 张牌花色点数 + 12 条判定规则）、`data/equip_attrs.json`（26 件装备属性）；xlsx 归档 `data/archive/`，应急重导入：`python scripts/migrate_excel_to_json.py`
 ### 6. 屏幕采集 + OCR 识别
 
 ```bash
@@ -358,6 +365,8 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 - **HeroManager(DataManager[Hero])** — 武将 CRUD，支持 ID/名称/关键词/势力查询
 - **SynergyManager(DataManager[SynergyScore])** — 相性 CRUD，(A,B) 和 (B,A) 自动归一为同一 key
 - **GuideManager(DataManager[HeroGuide])** — 攻略 CRUD，以 hero_id 为 key
+
+RAG 源数据仓储（`src/data/` 下）同样采用 Pydantic 校验 + 原子写：`CardPointsRepository`（`data/card_points.json`）、`EquipAttrsRepository`（`data/equip_attrs.json`）、`SpecialCardRepository`（`data/special_cards.json`）、`HeroClassificationRepository`（`data/hero_classification.json`），由「知识库维护」页可视化维护。
 
 ### 数据完整性与恢复
 
@@ -545,6 +554,14 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 - 相性列表双击非说明列或点击“编辑相性”打开 `SynergyEditDialog`；双击说明列使用统一详情弹窗阅读 Markdown
 - 攻略展示中的关系武将标签使用自适应流式布局，可点击跳转；势力筛选下拉框复用选将推荐的势力配色，支持可删除标签、搜索、全选和反选，超过 5 个势力时显示前 5 个及剩余数量
 - 编辑器返回重新校验的模型副本；保存失败时原数据不变并重新显示保留输入的弹窗，成功后自动刷新并使用 Toast 反馈，删除完成使用模态结果
+
+### 知识库维护（RAG 语料工作台）
+
+主导航第 4 页「知识库维护」提供 RAG 语料本地维护：
+
+- **语料状态**：8 个语料任务状态表（最新/待重建/缺源）+ 6 项人工维护审计（未归类武将、未知武将引用、点数花色/162 张、装备 26 件、结算回填）+ 一键重建语料/索引（实时日志）；
+- **数据源维护页签**：专属牌维护（`data/special_cards.json`）、卡牌点数维护（`data/card_points.json`，含 12 条判定规则与 xlsx 应急导入）、装备属性维护（`data/equip_attrs.json`）、武将分类维护（`data/hero_classification.json`）；
+- 保存任一数据源 → 自动标记「待重建」→ 一键 `maintain_rag.py` 重建语料与向量索引；「索引精化」对话框可对卡牌/武将语料做 curated 字段精化。
 
 ### Configuration
 

@@ -1,0 +1,184 @@
+[
+  {
+    "name": "赤兔",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": -1,
+    "note": "距离-1"
+  },
+  {
+    "name": "盗骊",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": -1,
+    "note": "距离-1"
+  },
+  {
+    "name": "白蹄乌",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": -1,
+    "note": "距离-1"
+  },
+  {
+    "name": "飒露紫",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": 1,
+    "note": "距离+1"
+  },
+  {
+    "name": "爪黄飞电",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": 1,
+    "note": "距离+1"
+  },
+  {
+    "name": "绝影",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": 1,
+    "note": "距离+1"
+  },
+  {
+    "name": "的卢",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": 1,
+    "note": "距离+1"
+  },
+  {
+    "name": "乌骓",
+    "subtype": "坐骑",
+    "attack_range": null,
+    "distance_mod": -1,
+    "note": "距离-1"
+  },
+  {
+    "name": "银狮盔",
+    "subtype": "防具",
+    "attack_range": null,
+    "distance_mod": null,
+    "note": ""
+  },
+  {
+    "name": "凤羽盔",
+    "subtype": "防具",
+    "attack_range": null,
+    "distance_mod": null,
+    "note": ""
+  },
+  {
+    "name": "玄武盾",
+    "subtype": "防具",
+    "attack_range": null,
+    "distance_mod": null,
+    "note": ""
+  },
+  {
+    "name": "八卦盾",
+    "subtype": "防具",
+    "attack_range": null,
+    "distance_mod": null,
+    "note": ""
+  },
+  {
+    "name": "云锦袍",
+    "subtype": "防具",
+    "attack_range": null,
+    "distance_mod": null,
+    "note": ""
+  },
+  {
+    "name": "藤甲",
+    "subtype": "防具",
+    "attack_range": null,
+    "distance_mod": null,
+    "note": ""
+  },
+  {
+    "name": "亮银枪",
+    "subtype": "武器",
+    "attack_range": 3,
+    "distance_mod": null,
+    "note": "范围3"
+  },
+  {
+    "name": "诸葛连弩",
+    "subtype": "武器",
+    "attack_range": 1,
+    "distance_mod": null,
+    "note": "范围1"
+  },
+  {
+    "name": "羽扇",
+    "subtype": "武器",
+    "attack_range": 4,
+    "distance_mod": null,
+    "note": "范围4"
+  },
+  {
+    "name": "丈八蛇矛",
+    "subtype": "武器",
+    "attack_range": 3,
+    "distance_mod": null,
+    "note": "范围3"
+  },
+  {
+    "name": "青龙偃月刀",
+    "subtype": "武器",
+    "attack_range": 3,
+    "distance_mod": null,
+    "note": "范围3"
+  },
+  {
+    "name": "方天画戟",
+    "subtype": "武器",
+    "attack_range": 4,
+    "distance_mod": null,
+    "note": "范围4"
+  },
+  {
+    "name": "干将莫邪",
+    "subtype": "武器",
+    "attack_range": 2,
+    "distance_mod": null,
+    "note": "范围2"
+  },
+  {
+    "name": "龙舌弓",
+    "subtype": "武器",
+    "attack_range": 5,
+    "distance_mod": null,
+    "note": "范围5"
+  },
+  {
+    "name": "惊羽弓",
+    "subtype": "武器",
+    "attack_range": 5,
+    "distance_mod": null,
+    "note": "范围5"
+  },
+  {
+    "name": "鸣鸿刀",
+    "subtype": "武器",
+    "attack_range": 2,
+    "distance_mod": null,
+    "note": "范围2"
+  },
+  {
+    "name": "开山斧",
+    "subtype": "武器",
+    "attack_range": 3,
+    "distance_mod": null,
+    "note": "范围3"
+  },
+  {
+    "name": "轩辕剑",
+    "subtype": "武器",
+    "attack_range": 2,
+    "distance_mod": null,
+    "note": "范围2"
+  }
+]

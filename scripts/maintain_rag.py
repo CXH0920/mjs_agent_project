@@ -43,13 +43,13 @@ TASKS = [
     {
         'name': '点数花色语料',
         'script': 'build_cardpts.py',
-        'sources': ['data/mjs卡牌点数.xlsx'],
+        'sources': ['data/card_points.json'],
         'outputs': [('卡牌点数花色语料.json', 49)],
     },
     {
         'name': '装备属性语料',
         'script': 'build_equip_attr.py',
-        'sources': ['data/cards.json', 'data/rag_corpus/卡牌RAG语料.json'],
+        'sources': ['data/cards.json', 'data/equip_attrs.json', 'data/rag_corpus/卡牌RAG语料.json'],
         'outputs': [('装备属性语料.json', 27)],
     },
     {
@@ -67,8 +67,8 @@ TASKS = [
     {
         'name': '特殊机制语料',
         'script': 'build_special_corpus.py',
-        'sources': ['data/special_cards.json'],   # 单一维护源：人工维护的专属牌/战法牌/状态等
-        'outputs': [('特殊机制语料.json', 82)],
+        'sources': ['data/special_cards.json'],   # 单一维护源：人工维护的专属牌/战法牌/状态等（含 xlsx 迁移的花色点数/结算）
+        'outputs': [('特殊机制语料.json', 83)],
     },
     {
         'name': '武将分类语料',

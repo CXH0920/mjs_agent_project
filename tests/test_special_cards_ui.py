@@ -61,7 +61,7 @@ def test_create_dialog_builds_fields_by_category(tmp_path: Path) -> None:
     dialog = SpecialCardEditDialog({"张华"})
     dialog._category_combo.setCurrentText("专属战法牌")
     keys = set(dialog._editors)
-    assert keys == {"effect", "hero"}
+    assert keys == {"effect", "suit", "point", "settlement", "hero"}
     dialog._category_combo.setCurrentText("状态/标记")
     assert set(dialog._editors) == {"effect", "stackable", "hero"}
 

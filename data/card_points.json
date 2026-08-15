@@ -1,0 +1,447 @@
+{
+  "cards": [
+    {
+      "name": "丈八蛇矛",
+      "suit": "♦",
+      "point": "2"
+    },
+    {
+      "name": "久旱",
+      "suit": "♣",
+      "point": "3",
+      "count": 2
+    },
+    {
+      "name": "乌骓",
+      "suit": "♣",
+      "point": "6"
+    },
+    {
+      "name": "云锦袍",
+      "suit": "♠",
+      "point": "8"
+    },
+    {
+      "name": "亮银枪",
+      "suit": "♦",
+      "point": "2"
+    },
+    {
+      "name": "休养生息",
+      "suit": "♣",
+      "point": "1"
+    },
+    {
+      "name": "先拔头筹",
+      "suit": "♣",
+      "point": "5",
+      "count": 2
+    },
+    {
+      "name": "八卦盾",
+      "suit": "♥",
+      "point": "1"
+    },
+    {
+      "name": "冲杀",
+      "suit": "♦",
+      "point": "1"
+    },
+    {
+      "name": "冲杀",
+      "suit": "♦",
+      "point": "2"
+    },
+    {
+      "name": "冲杀",
+      "suit": "♦",
+      "point": "3",
+      "count": 5
+    },
+    {
+      "name": "冲杀",
+      "suit": "♦",
+      "point": "5"
+    },
+    {
+      "name": "冲杀",
+      "suit": "♦",
+      "point": "6",
+      "count": 3
+    },
+    {
+      "name": "冲杀",
+      "suit": "♦",
+      "point": "8",
+      "count": 3
+    },
+    {
+      "name": "凤羽盔",
+      "suit": "♥",
+      "point": "1"
+    },
+    {
+      "name": "地火",
+      "suit": "♥",
+      "point": "8"
+    },
+    {
+      "name": "多多益善",
+      "suit": "♣",
+      "point": "2",
+      "count": 5
+    },
+    {
+      "name": "天雷",
+      "suit": "♣",
+      "point": "1"
+    },
+    {
+      "name": "夺粮劫营",
+      "suit": "♠",
+      "point": "5",
+      "count": 5
+    },
+    {
+      "name": "干将莫邪",
+      "suit": "♦",
+      "point": "2"
+    },
+    {
+      "name": "开山斧",
+      "suit": "♦",
+      "point": "8"
+    },
+    {
+      "name": "怒气",
+      "suit": "♣",
+      "point": "3",
+      "count": 2
+    },
+    {
+      "name": "怒气",
+      "suit": "♣",
+      "point": "4",
+      "count": 5
+    },
+    {
+      "name": "怒气",
+      "suit": "♣",
+      "point": "6"
+    },
+    {
+      "name": "怒气",
+      "suit": "♣",
+      "point": "7"
+    },
+    {
+      "name": "惊羽弓",
+      "suit": "♦",
+      "point": "5"
+    },
+    {
+      "name": "方天画戟",
+      "suit": "♦",
+      "point": "1"
+    },
+    {
+      "name": "易",
+      "suit": "太极",
+      "point": "1"
+    },
+    {
+      "name": "易",
+      "suit": "太极",
+      "point": "8"
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "1",
+      "count": 2
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "3"
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "4",
+      "count": 5
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "5"
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "6",
+      "count": 4
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "7",
+      "count": 5
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "8",
+      "count": 4
+    },
+    {
+      "name": "烈火焚城",
+      "suit": "♥",
+      "point": "3",
+      "count": 3
+    },
+    {
+      "name": "烽火狼烟",
+      "suit": "♥",
+      "point": "5",
+      "count": 3
+    },
+    {
+      "name": "爪黄飞电",
+      "suit": "♣",
+      "point": "1"
+    },
+    {
+      "name": "玄武盾",
+      "suit": "♥",
+      "point": "6"
+    },
+    {
+      "name": "白蹄乌",
+      "suit": "♣",
+      "point": "5"
+    },
+    {
+      "name": "的卢",
+      "suit": "♣",
+      "point": "6"
+    },
+    {
+      "name": "盗骊",
+      "suit": "♣",
+      "point": "5"
+    },
+    {
+      "name": "破阵卸甲",
+      "suit": "♠",
+      "point": "6",
+      "count": 5
+    },
+    {
+      "name": "箭雨齐射",
+      "suit": "♦",
+      "point": "1"
+    },
+    {
+      "name": "绝影",
+      "suit": "♣",
+      "point": "5"
+    },
+    {
+      "name": "羽扇",
+      "suit": "♥",
+      "point": "3"
+    },
+    {
+      "name": "藤甲",
+      "suit": "♣",
+      "point": "3"
+    },
+    {
+      "name": "蟠桃",
+      "suit": "♣",
+      "point": "1",
+      "count": 2
+    },
+    {
+      "name": "蟠桃",
+      "suit": "♣",
+      "point": "6",
+      "count": 2
+    },
+    {
+      "name": "蟠桃",
+      "suit": "♣",
+      "point": "7",
+      "count": 3
+    },
+    {
+      "name": "蟠桃",
+      "suit": "♣",
+      "point": "8",
+      "count": 5
+    },
+    {
+      "name": "识破",
+      "suit": "♠",
+      "point": "1",
+      "count": 5
+    },
+    {
+      "name": "诸葛连弩",
+      "suit": "♦",
+      "point": "2"
+    },
+    {
+      "name": "调兵遣将",
+      "suit": "♦",
+      "point": "6",
+      "count": 2
+    },
+    {
+      "name": "赤兔",
+      "suit": "♥",
+      "point": "5"
+    },
+    {
+      "name": "轩辕剑",
+      "suit": "♦",
+      "point": "1"
+    },
+    {
+      "name": "连环",
+      "suit": "♦",
+      "point": "7",
+      "count": 5
+    },
+    {
+      "name": "银狮盔",
+      "suit": "♦",
+      "point": "1"
+    },
+    {
+      "name": "闪避",
+      "suit": "♠",
+      "point": "2",
+      "count": 5
+    },
+    {
+      "name": "闪避",
+      "suit": "♠",
+      "point": "3",
+      "count": 5
+    },
+    {
+      "name": "闪避",
+      "suit": "♠",
+      "point": "4",
+      "count": 5
+    },
+    {
+      "name": "闪避",
+      "suit": "♠",
+      "point": "7",
+      "count": 5
+    },
+    {
+      "name": "闪避",
+      "suit": "♠",
+      "point": "8",
+      "count": 2
+    },
+    {
+      "name": "阵前对决",
+      "suit": "♦",
+      "point": "5",
+      "count": 3
+    },
+    {
+      "name": "雷杀",
+      "suit": "♦",
+      "point": "4",
+      "count": 4
+    },
+    {
+      "name": "霜冻",
+      "suit": "♠",
+      "point": "8",
+      "count": 2
+    },
+    {
+      "name": "青龙偃月刀",
+      "suit": "♦",
+      "point": "4"
+    },
+    {
+      "name": "飒露紫",
+      "suit": "♣",
+      "point": "7"
+    },
+    {
+      "name": "鸣鸿刀",
+      "suit": "♦",
+      "point": "8"
+    },
+    {
+      "name": "龙舌弓",
+      "suit": "♥",
+      "point": "1"
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "2",
+      "count": 5
+    }
+  ],
+  "judge_rules": [
+    {
+      "name": "火杀",
+      "rule": "火焰伤害（♥=火属性）"
+    },
+    {
+      "name": "雷杀",
+      "rule": "雷电伤害（点数4且花色♦）"
+    },
+    {
+      "name": "冲杀",
+      "rule": "普通伤害（♦非点数4）"
+    },
+    {
+      "name": "闪避",
+      "rule": "响应杀（抵消杀）"
+    },
+    {
+      "name": "蟠桃",
+      "rule": "回复体力"
+    },
+    {
+      "name": "怒气",
+      "rule": "增益/回复（重伤时）"
+    },
+    {
+      "name": "易",
+      "rule": "太极花色，可当作任意行动牌"
+    },
+    {
+      "name": "八卦盾",
+      "rule": "判定：♣→回复1体力；♠→抵消此杀（强命杀下抵消无效；♣回复先生效）"
+    },
+    {
+      "name": "霜冻",
+      "rule": "判定：♠/♦→本回合无法选择其他角色为目标（自己与无目标牌不受限）"
+    },
+    {
+      "name": "久旱",
+      "rule": "判定：♥/♣→本回合跳过摸牌阶段（跳过则阶段内技能不触发）"
+    },
+    {
+      "name": "天雷",
+      "rule": "判定：点数4→4点雷电伤害（无伤害来源）"
+    },
+    {
+      "name": "地火",
+      "rule": "判定：点数3→3点火焰伤害（无伤害来源）"
+    }
+  ]
+}

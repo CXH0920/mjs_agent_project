@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""专属牌/专属战法牌/特殊牌区/状态标记/概念的维护仓储（data/special_cards.json）。
+"""装备属性维护仓储（data/equip_attrs.json）。
 
-该文件是 RAG「特殊机制语料」的唯一人工维护源：
-- build_special_corpus.py 读取 data/special_cards.json 生成特殊机制语料；
+该文件是 RAG「装备属性语料」的人工维护源（由原 xlsx sheet2 迁移而来，
+原 build_equip_attr.py 中的硬编码 EQUIP_ATTRS 已改为读取本文件）：
+- build_equip_attr.py 读取本文件生成装备属性语料；
 - 本仓储提供增删改与校验，不直接写语料/索引。
 """
 
@@ -22,44 +23,40 @@ from src.data.manager import DataIssue
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-DEFAULT_SPECIAL_CARDS_FILE = DEFAULT_DATA_DIR / "special_cards.json"
+DEFAULT_EQUIP_ATTRS_FILE = DEFAULT_DATA_DIR / "equip_attrs.json"
 
-SPECIAL_CATEGORIES = ("专属牌", "专属战法牌", "特殊牌区", "状态/标记", "概念")
+VALID_SUBTYPES = ("武器", "防具", "坐骑")
 
 
-class SpecialCardItem(BaseModel):
-    """特殊机制条目：5 类共用一份可选字段，按 category 决定有效字段。
+class EquipAttrItem(BaseModel):
+    """单件装备属性：细分类型/攻击范围/距离修正 + 迁移原文备注。"""
 
-    suit/point/attack_range/settlement 为专属牌/专属战法牌的牌面事实
-    （由原 xlsx【专属牌】sheet 迁移回填，可编辑）。
-    """
-
-    category: str
     name: str = Field(..., min_length=1)
-    card_type: str = ""
-    effect: str = ""
-    hero: str = ""
-    function: str = ""
-    stackable: str = ""
-    description: str = ""
-    suit: str = ""
-    point: str = ""
-    attack_range: str = ""
-    settlement: str = ""
+    subtype: str = ""
+    attack_range: int | None = None
+    distance_mod: int | None = None  # -1=攻击距离修正(更近), 1=防御距离修正(更远)
+    note: str = ""
 
-    @field_validator("category")
+    @field_validator("subtype")
     @classmethod
-    def validate_category(cls, value: str) -> str:
-        if value not in SPECIAL_CATEGORIES:
-            raise ValueError(f"类别仅支持: {', '.join(SPECIAL_CATEGORIES)}")
+    def validate_subtype(cls, value: str) -> str:
+        value = value.strip()
+        if value not in VALID_SUBTYPES:
+            raise ValueError(f"细分类型仅支持: {'、'.join(VALID_SUBTYPES)}")
         return value
 
-    @field_validator("name")
+    @field_validator("attack_range")
     @classmethod
-    def strip_name(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("名称不能为空")
+    def validate_range(cls, value: int | None) -> int | None:
+        if value is not None and value < 1:
+            raise ValueError("攻击范围必须为正整数")
+        return value
+
+    @field_validator("distance_mod")
+    @classmethod
+    def validate_distance(cls, value: int | None) -> int | None:
+        if value not in (None, -1, 1):
+            raise ValueError("距离修正仅支持 -1 / 1 / 空")
         return value
 
 
@@ -80,20 +77,20 @@ def _atomic_json_write(path: Path, items: list[dict[str, Any]]) -> None:
         raise
 
 
-class SpecialCardRepository:
-    """data/special_cards.json 的可写仓储（CRUD + 校验）。"""
+class EquipAttrsRepository:
+    """data/equip_attrs.json 的可写仓储（CRUD + 校验）。"""
 
-    def __init__(self, file_path: str | Path = DEFAULT_SPECIAL_CARDS_FILE):
+    def __init__(self, file_path: str | Path = DEFAULT_EQUIP_ATTRS_FILE):
         self.file_path = Path(file_path)
         self.load_issues: list[DataIssue] = []
-        self._items: list[SpecialCardItem] = []
+        self._items: list[EquipAttrItem] = []
         self.available = False
 
     def _issue(self, severity: str, kind: str, message: str, index: int | None = None,
                key: object | None = None) -> None:
         self.load_issues.append(DataIssue(severity, kind, self.file_path, message, index, key))
         (logger.warning if severity == "warning" else logger.error)(
-            "特殊机制数据问题 [%s] %s", kind, message)
+            "装备属性数据问题 [%s] %s", kind, message)
 
     def load(self) -> list[DataIssue]:
         self.load_issues = []
@@ -109,56 +106,53 @@ class SpecialCardRepository:
             self._issue("error", "file_read_error", str(error))
             return self.load_issues
         if not isinstance(root, list):
-            self._issue("error", "invalid_root", "特殊机制文件必须是 JSON 数组")
+            self._issue("error", "invalid_root", "装备属性文件必须是 JSON 数组")
             return self.load_issues
         self.available = True
-        seen: dict[str, set[str]] = {c: set() for c in SPECIAL_CATEGORIES}
+        seen: set[str] = set()
         for index, raw in enumerate(root):
             try:
-                item = SpecialCardItem.model_validate(raw)
+                item = EquipAttrItem.model_validate(raw)
             except ValidationError as error:
                 self._issue("error", "invalid_record", str(error), index)
                 continue
-            if item.name in seen[item.category]:
-                self._issue("error", "duplicate_key", f"同类别重复名称: {item.name}", index, item.name)
+            if item.name in seen:
+                self._issue("error", "duplicate_key", f"重复装备名: {item.name}", index, item.name)
                 continue
-            seen[item.category].add(item.name)
+            seen.add(item.name)
             self._items.append(item)
         return self.load_issues
 
-    def list_items(self, category: str | None = None) -> list[SpecialCardItem]:
-        items = self._items
-        if category:
-            items = [item for item in items if item.category == category]
-        return list(items)
+    def list_equips(self) -> list[EquipAttrItem]:
+        return list(self._items)
 
-    def get_item(self, category: str, name: str) -> SpecialCardItem | None:
+    def get_equip(self, name: str) -> EquipAttrItem | None:
         for item in self._items:
-            if item.category == category and item.name == name:
+            if item.name == name:
                 return item
         return None
 
-    def add_item(self, item: SpecialCardItem) -> None:
-        if self.get_item(item.category, item.name) is not None:
-            raise ValueError(f"同类别已存在同名条目: {item.category} / {item.name}")
+    def add_equip(self, item: EquipAttrItem) -> None:
+        if self.get_equip(item.name) is not None:
+            raise ValueError(f"已存在同名装备: {item.name}")
         self._items.append(item)
         self.save()
 
-    def update_item(self, item: SpecialCardItem) -> None:
+    def update_equip(self, item: EquipAttrItem) -> None:
         for index, existing in enumerate(self._items):
-            if existing.category == item.category and existing.name == item.name:
+            if existing.name == item.name:
                 self._items[index] = item
                 self.save()
                 return
-        raise ValueError(f"条目不存在: {item.category} / {item.name}")
+        raise ValueError(f"条目不存在: {item.name}")
 
-    def delete_item(self, category: str, name: str) -> None:
+    def delete_equip(self, name: str) -> None:
         for index, existing in enumerate(self._items):
-            if existing.category == category and existing.name == name:
+            if existing.name == name:
                 self._items.pop(index)
                 self.save()
                 return
-        raise ValueError(f"条目不存在: {category} / {name}")
+        raise ValueError(f"条目不存在: {name}")
 
     def save(self) -> None:
         _atomic_json_write(

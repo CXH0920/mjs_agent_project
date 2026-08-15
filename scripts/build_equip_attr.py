@@ -1,18 +1,11 @@
 # -*- coding: utf-8 -*-
-"""装备属性落地：生成装备属性语料 + 注入卡牌语料"""
+"""装备属性落地：生成装备属性语料 + 注入卡牌语料（数据源 data/equip_attrs.json，由 xlsx 迁移而来）"""
 import json, io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-EQUIP_ATTRS = {
-    '赤兔': ('坐骑', None, -1), '盗骊': ('坐骑', None, -1), '白蹄乌': ('坐骑', None, -1), '乌骓': ('坐骑', None, -1),
-    '飒露紫': ('坐骑', None, 1), '爪黄飞电': ('坐骑', None, 1), '绝影': ('坐骑', None, 1), '的卢': ('坐骑', None, 1),
-    '银狮盔': ('防具', None, None), '凤羽盔': ('防具', None, None), '玄武盾': ('防具', None, None),
-    '八卦盾': ('防具', None, None), '云锦袍': ('防具', None, None), '藤甲': ('防具', None, None),
-    '亮银枪': ('武器', 3, None), '诸葛连弩': ('武器', 1, None), '羽扇': ('武器', 4, None),
-    '丈八蛇矛': ('武器', 3, None), '青龙偃月刀': ('武器', 3, None), '方天画戟': ('武器', 4, None),
-    '干将莫邪': ('武器', 2, None), '龙舌弓': ('武器', 5, None), '惊羽弓': ('武器', 5, None),
-    '鸣鸿刀': ('武器', 2, None), '开山斧': ('武器', 3, None), '轩辕剑': ('武器', 2, None),
-}
+with open(r'data\equip_attrs.json', encoding='utf-8') as f:
+    _equips = json.load(f)
+EQUIP_ATTRS = {e['name']: (e['subtype'], e['attack_range'], e['distance_mod']) for e in _equips}
 
 out = r'data\rag_corpus'
 
@@ -23,7 +16,7 @@ card_by_name = {c['name']: c for c in cards}
 
 blocks = []
 md = ['# 装备属性语料', '',
-      '> 来源：装备属性表（坐骑距离修正 + 武器攻击范围），效果取自 cards.json。', '']
+      '> 来源：data/equip_attrs.json（坐骑距离修正 + 武器攻击范围），效果取自 cards.json。', '']
 for name, (st, rng, dist) in sorted(EQUIP_ATTRS.items(), key=lambda x: (x[1][0], x[0])):
     card = card_by_name.get(name, {})
     effect = card.get('card_desc', '')

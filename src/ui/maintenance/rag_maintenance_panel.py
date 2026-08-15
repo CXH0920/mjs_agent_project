@@ -30,8 +30,12 @@ from PySide6.QtWidgets import (
 
 from src.data.hero_classification_repository import HeroClassificationRepository
 from src.data.special_cards_repository import SpecialCardRepository
+from src.data.equip_attrs_repository import EquipAttrsRepository
+from src.data.card_points_repository import CardPointsRepository
 from src.ui.library.hero_classification_panel import HeroClassificationPanel
 from src.ui.library.special_cards_panel import SpecialCardsPanel
+from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
+from src.ui.maintenance.card_points_panel import CardPointsPanel
 
 from src.config.env import PROJECT_ROOT
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_SUCCESS, TONE_WARNING
@@ -42,8 +46,8 @@ from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
 TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
     ("武将语料", ["data/heroes.json", "data/cards.json"], ["武将RAG语料.json"]),
     ("卡牌语料", ["data/cards.json"], ["卡牌RAG语料.json"]),
-    ("点数花色语料", ["data/mjs卡牌点数.xlsx"], ["卡牌点数花色语料.json"]),
-    ("装备属性语料", ["data/cards.json"], ["装备属性语料.json"]),
+    ("点数花色语料", ["data/card_points.json"], ["卡牌点数花色语料.json"]),
+    ("装备属性语料", ["data/cards.json", "data/equip_attrs.json"], ["装备属性语料.json"]),
     ("加强削弱语料", ["data/cards.json", "data/card_annotations.json"], ["加强削弱语料.json"]),
     ("元规则/术语/FAQ", ["docs/元规则整理-完整版.md"],
      ["元规则RAG语料-章节块.json", "术语表.json", "FAQ裁定块.json"]),
@@ -126,8 +130,53 @@ def audit_summary(root: Path) -> list[str]:
         unknown = sorted(unknown)
         if unknown:
             issues.append(f"专属牌引用未知武将 {len(unknown)} 人：{'、'.join(unknown[:8])}")
+        # 专属牌/战法牌结算详情回填校验（死士为非实体牌标记，xlsx 无对应结算，豁免）
+        missing_settle = sorted(
+            it.get("name", "") for it in specials
+            if it.get("category") in ("专属牌", "专属战法牌")
+            and not it.get("settlement") and it.get("name") not in ("死士",)
+        )
+        if missing_settle:
+            issues.append(f"专属牌/战法牌缺结算详情 {len(missing_settle)} 个：{'、'.join(missing_settle[:8])}")
     except (OSError, json.JSONDecodeError):
         issues.append("data/special_cards.json 缺失或无法解析")
+    # 卡牌点数源校验（data/card_points.json，原 xlsx sheet1 + 判定规则）
+    points_path = root / "data" / "card_points.json"
+    try:
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        cards = payload.get("cards") if isinstance(payload, dict) else None
+        if not isinstance(cards, list):
+            issues.append("data/card_points.json 结构异常（缺少 cards 数组）")
+        else:
+            valid_suits = ("♥", "♣", "♠", "♦", "太极")
+            valid_points = {str(i) for i in range(1, 9)}
+            bad_suits = sorted({c.get("name", "?") for c in cards if c.get("suit") not in valid_suits})
+            bad_points = sorted({c.get("name", "?") for c in cards if c.get("point") not in valid_points})
+            total = sum(int(c.get("count", 1) or 1) for c in cards)
+            if total != 162:
+                issues.append(f"卡牌点数张数 {total} != 期望 162")
+            if bad_suits:
+                issues.append(f"卡牌点数异常花色 {len(bad_suits)} 张：{'、'.join(bad_suits[:6])}")
+            if bad_points:
+                issues.append(f"卡牌点数异常点数 {len(bad_points)} 张：{'、'.join(bad_points[:6])}")
+    except (OSError, json.JSONDecodeError):
+        issues.append("data/card_points.json 缺失或无法解析")
+    # 装备属性源校验（data/equip_attrs.json，原 xlsx sheet2）
+    equips_path = root / "data" / "equip_attrs.json"
+    try:
+        equips = json.loads(equips_path.read_text(encoding="utf-8"))
+        if not isinstance(equips, list):
+            issues.append("data/equip_attrs.json 结构异常（应为数组）")
+        else:
+            if len(equips) != 26:
+                issues.append(f"装备属性件数 {len(equips)} != 期望 26")
+            for item in equips:
+                if item.get("subtype") not in ("武器", "防具", "坐骑"):
+                    issues.append(f"装备 {item.get('name', '?')} 细分类型异常：{item.get('subtype')!r}")
+                if item.get("distance_mod") not in (None, -1, 1):
+                    issues.append(f"装备 {item.get('name', '?')} 距离修正异常：{item.get('distance_mod')!r}")
+    except (OSError, json.JSONDecodeError):
+        issues.append("data/equip_attrs.json 缺失或无法解析")
     return issues
 
 
@@ -231,6 +280,16 @@ class RagMaintenancePanel(QWidget):
         self._special_cards.data_changed.connect(self._on_child_changed)
         self._tabs.addTab(self._special_cards, "专属牌维护")
 
+        self._card_points = CardPointsPanel(
+            CardPointsRepository(self._root / "data" / "card_points.json"), self._root)
+        self._card_points.data_changed.connect(self._on_child_changed)
+        self._tabs.addTab(self._card_points, "卡牌点数维护")
+
+        self._equip_attrs = EquipAttrsPanel(
+            EquipAttrsRepository(self._root / "data" / "equip_attrs.json"))
+        self._equip_attrs.data_changed.connect(self._on_child_changed)
+        self._tabs.addTab(self._equip_attrs, "装备属性维护")
+
         self._classification = HeroClassificationPanel(
             HeroClassificationRepository(
                 self._root / "data" / "hero_classification.json", self._hero_names),
@@ -246,10 +305,12 @@ class RagMaintenancePanel(QWidget):
         self.data_changed.emit()
 
     def reload_data(self) -> None:
-        """重新加载语料状态与两个子维护面板。"""
+        """重新加载语料状态与四个子维护面板。"""
         self.refresh()
         self._special_cards.reload_data()
         self._classification.reload_data()
+        self._card_points.reload_data()
+        self._equip_attrs.reload_data()
 
     def refresh(self) -> None:
         rows = task_states(self._root)

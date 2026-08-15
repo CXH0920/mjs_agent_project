@@ -326,3 +326,56 @@ AnnouncementService._do_check()
   -> load_baike_snapshot() / save_baike_snapshot()   [覆盖式 baike_snapshot.json]
 
 被外部调用：MainWindow（菜单/横幅/对话框刷新）、AnnouncementService（检查与采集完成联动）。
+
+
+---
+
+## 八、RAG 源数据维护仓储链路
+
+### 8.1 加载与校验
+
+```
+CardPointsRepository.load()
+  -> 读取 data/card_points.json（{cards, judge_rules}）
+  -> CardPointItem / JudgeRuleItem Pydantic 校验
+     -> 花色/点数/数量合法性、judge_rules 重复名 -> DataIssue
+  -> list_cards() / list_rules() 供 UI 展示
+EquipAttrsRepository.load()
+  -> 读取 data/equip_attrs.json（26 件）
+  -> EquipAttrItem 校验（subtype ∈ 武器/防具/坐骑、攻击范围/距离修正数值）
+SpecialCardRepository.load()
+  -> 读取 data/special_cards.json
+  -> SpecialCardItem 校验（category ∈ 5 类、name 非空、同类别重名 -> DataIssue）
+```
+
+### 8.2 保存与联动
+
+```
+CardPointsPanel / EquipAttrsPanel / SpecialCardsPanel 编辑
+  -> Repository.add_item/update_item/delete_item / save()
+     -> _atomic_json_write()       [UTF-8 + LF + 同目录临时文件原子替换]
+  -> data_changed -> RagMaintenancePanel.refresh()
+     -> 任务表标记待重建 -> 用户一键 maintain_rag.py
+        -> build_cardpts.py     读 card_points.json -> 卡牌点数花色语料
+        -> build_equip_attr.py  读 equip_attrs.json + cards.json -> 装备属性语料（并注入卡牌语料）
+        -> build_special_corpus.py 读 special_cards.json -> 特殊机制语料
+```
+
+### 8.3 从 xlsx 应急重导入
+
+```
+scripts/migrate_excel_to_json.py [--only points|equips|special]
+  -> 读取 data/archive/mjs卡牌点数.xlsx（3 个 sheet）
+  -> points: 162 张花色点数聚合（72 组合 × count）+ 12 条判定规则 -> card_points.json
+  -> equips: 26 件装备属性 -> equip_attrs.json
+  -> special: 比对【专属牌】sheet 与 special_cards.json，缺失项自动补入、已有条目不覆盖
+```
+
+### 8.4 函数清单（RAG 源数据仓储）
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| `CardPointsRepository.save()` | `card_points_repository.py` | 原子写 card_points.json |
+| `EquipAttrsRepository.save()` | `equip_attrs_repository.py` | 原子写 equip_attrs.json |
+| `SpecialCardRepository.save()` | `special_cards_repository.py` | 原子写 special_cards.json |
+| `migrate_excel_to_json.main()` | `scripts/migrate_excel_to_json.py` | xlsx 应急重导入 |

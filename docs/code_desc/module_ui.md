@@ -430,5 +430,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 
 ## 七、专属牌维护与知识库维护（2026-08 新增）
 
-- 资料库二级标签「专属牌维护」：src/ui/library/special_cards_panel.py，维护 data/special_cards.json（专属牌/专属战法牌/特殊牌区/状态·标记/概念），数据层 src/data/special_cards_repository.py，保存后发 data_changed 信号。
+- 资料库二级标签「专属牌维护」：src/ui/library/special_cards_panel.py，维护 data/special_cards.json（专属牌/专属战法牌/特殊牌区/状态·标记/概念），数据层 src/data/special_cards_repository.py，保存后发 data_changed 信号。专属牌/专属战法牌条目含牌面事实字段（花色/点数/攻击范围/结算详情，由原 xlsx【专属牌】sheet 迁移回填）。
 - 主导航第 4 页「知识库维护」：src/ui/maintenance/rag_maintenance_panel.py，展示 8 个语料任务状态（源文件 mtime vs 语料输出）与人工审计提示，通过 QProcess 本地执行 scripts/maintain_rag.py 重建语料/索引，不再依赖外部 mjs 仓库。
+- 「卡牌点数维护」页签：src/ui/maintenance/card_points_panel.py + src/data/card_points_repository.py，维护 data/card_points.json（162 张牌花色点数 + 12 条卜卦判定规则，由原 xlsx sheet1 与硬编码 attr_judge 迁移）；支持牌行/规则增删改与「从 xlsx 导入」（scripts/migrate_excel_to_json.py --only points）。
+- 「装备属性维护」页签：src/ui/maintenance/equip_attrs_panel.py + src/data/equip_attrs_repository.py，维护 data/equip_attrs.json（26 件装备细分/攻击范围/距离修正，由原 xlsx sheet2 与 build_equip_attr.py 硬编码 EQUIP_ATTRS 迁移），表格编辑 + 保存校验。

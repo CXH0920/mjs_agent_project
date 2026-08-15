@@ -39,7 +39,8 @@ def _make_root(tmp_path: Path) -> Path:
     _write(root / "data" / "card_annotations.json", {"annotations": []})
     _write(root / "data" / "special_cards.json", [{"category": "专属牌", "name": "龙泉剑", "hero": "赵云"}])
     _write(root / "data" / "hero_classification.json", {"hero_categories": {"乐广": ["爆发型"]}})
-    _write(root / "data" / "mjs卡牌点数.xlsx", [])
+    _write(root / "data" / "card_points.json", {"cards": [], "judge_rules": []})
+    _write(root / "data" / "equip_attrs.json", [])
     _write(root / "docs" / "元规则整理-完整版.md", "# 元规则")
     # 语料输出（全部已生成）
     for name in ("武将RAG语料.json", "卡牌RAG语料.json", "卡牌点数花色语料.json",
@@ -95,15 +96,17 @@ def test_panel_renders(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
     panel = RagMaintenancePanel(root=root)
-    assert panel._tabs.count() == 3
+    assert panel._tabs.count() == 5
     assert [panel._tabs.tabText(i) for i in range(panel._tabs.count())] == [
-        "语料状态", "专属牌维护", "武将分类维护",
+        "语料状态", "专属牌维护", "卡牌点数维护", "装备属性维护", "武将分类维护",
     ]
     assert panel._table.rowCount() == 8
     assert "所有语料与数据源一致" in panel._status_label.text()
     assert "人工维护提示" in panel._audit_label.text()
     assert hasattr(panel, "_special_cards")
     assert hasattr(panel, "_classification")
+    assert hasattr(panel, "_card_points")
+    assert hasattr(panel, "_equip_attrs")
     panel.close()
 
 
@@ -118,3 +121,39 @@ def test_audit_splits_hero_field_and_skips_generic(tmp_path: Path) -> None:
     texts = "\n".join(issues)
     assert "白蹄乌" in texts
     assert "众多武将" not in texts
+
+
+def test_audit_reports_bad_card_points(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    _write(root / "data" / "card_points.json", {
+        "cards": [{"name": "火杀", "suit": "星", "point": "9"}, {"name": "杀", "suit": "♦", "point": "2"}],
+        "judge_rules": [],
+    })
+    texts = "\n".join(audit_summary(root))
+    assert "卡牌点数张数 2 != 期望 162" in texts
+    assert "异常花色" in texts
+    assert "异常点数" in texts
+
+
+def test_audit_reports_missing_settlement_but_skips_exempt(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    special = root / "data" / "special_cards.json"
+    special.write_text(json.dumps([
+        {"category": "专属牌", "name": "死士", "card_type": "标记（非实体牌）"},
+        {"category": "专属战法牌", "name": "新战法", "effect": "x"},
+    ], ensure_ascii=False), encoding="utf-8")
+    texts = "\n".join(audit_summary(root))
+    assert "缺结算详情 1 个" in texts
+    assert "新战法" in texts
+    assert "死士" not in texts
+
+
+def test_audit_reports_bad_equip_attrs(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    _write(root / "data" / "equip_attrs.json", [
+        {"name": "赤兔", "subtype": "飞船", "attack_range": None, "distance_mod": 99},
+    ])
+    texts = "\n".join(audit_summary(root))
+    assert "装备属性件数 1 != 期望 26" in texts
+    assert "细分类型异常" in texts
+    assert "距离修正异常" in texts

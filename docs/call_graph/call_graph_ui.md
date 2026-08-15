@@ -995,3 +995,78 @@ AnnouncementDialog / 顶部横幅:
        -> 全部完成 -> AnnouncementService.mark_applied() -> toast“请重新加载数据（F5）”
     -> 全取消: mark_applied() 刷新快照，不执行采集，toast“已保留本地武将内容”
 ```
+
+
+---
+
+## 十、知识库维护工作台调用链
+
+### 10.1 页面构建与状态刷新
+
+```
+MainWindow._setup_ui() -> RagMaintenancePanel(root, hero_names)
+  -> _load_heroes()                       [读取 data/heroes.json 武将名/定位，缺失时用传入集合]
+  -> _setup_ui()                          [构建 5 个页签 + 动作栏 + 审计横幅 + 日志区]
+  -> refresh()
+     -> task_states(root)                 [遍历 8 个语料任务 TASK_DEFS]
+        -> 源 mtime/输出 mtime 对比        [最新 / 待重建 / 缺源]
+        -> 读取输出 json 块数
+     -> audit_summary(root)               [6 项人工维护审计]
+        -> 未归类武将 / special_cards 引用未知武将
+        -> card_points.json 花色/点数/张数=162
+        -> equip_attrs.json 件数=26/细分/距离修正
+        -> special_cards 结算回填率（死士豁免）
+     -> 更新任务表 + NoticeBanner 审计提示 + PageActionBar 状态文字
+```
+
+### 10.2 子面板保存与联动
+
+```
+CardPointsPanel 新增/编辑/删除（牌行/判定规则）
+  -> CardPointsRepository.add_*/update_*/delete_* -> save()   [原子写 data/card_points.json]
+  -> data_changed 信号 -> RagMaintenancePanel._on_child_changed()
+     -> refresh() -> 标记「点数花色语料」待重建
+EquipAttrsPanel 保存修改
+  -> EquipAttrsRepository._collect() 校验（细分/攻击范围/距离修正）
+  -> save() -> data_changed -> refresh()    [标记「装备属性语料」待重建]
+SpecialCardsPanel 新增/编辑/删除（5 类条目，含花色/点数/攻击范围/结算详情）
+  -> SpecialCardRepository.add_item/update_item/delete_item -> save()
+  -> data_changed -> refresh()              [标记「特殊机制语料」待重建]
+HeroClassificationPanel 分类/克制链/武将归类保存
+  -> HeroClassificationRepository.save() -> data_changed -> refresh()
+```
+
+### 10.3 一键重建（QProcess）
+
+```
+RagMaintenancePanel._run(args)
+  -> QProcess.start(PYTHON, [scripts/maintain_rag.py] + args)
+     -> readyReadStandardOutput/Error -> _append_log()          [实时追加日志区]
+     -> finished -> _on_finished() -> refresh()                 [退出码 0/非 0 提示]
+按钮映射:
+  重建武将语料   -> maintain_rag.py --force --only 武将
+  重建全部语料   -> maintain_rag.py --force
+  重建语料+索引  -> maintain_rag.py --force --build-index
+```
+
+### 10.4 索引精化与 xlsx 应急导入
+
+```
+RagMaintenancePanel._open_refinement()
+  -> IndexRefinementDialog(data/rag_corpus)
+     -> refinement_service.list_pending()    [卡牌RAG语料/武将RAG语料 无 curated 且字段为空]
+     -> LLM 建议 -> 人工确认 -> apply_curated() 写回 curated（重建不覆盖）
+CardPointsPanel 底部「从 xlsx 导入」
+  -> QProcess scripts/migrate_excel_to_json.py --only points    [以归档 xlsx 覆盖点数与规则]
+  -> reload_data() -> data_changed
+```
+
+### 10.5 函数清单（知识库维护）
+
+| 函数 | 文件 | 调用方 | 说明 |
+|------|------|--------|------|
+| `task_states(root)` | `rag_maintenance_panel.py` | `refresh()` | 8 任务状态/块数计算 |
+| `audit_summary(root)` | `rag_maintenance_panel.py` | `refresh()` | 6 项人工维护审计 |
+| `CardPointsPanel._refresh_rules()` | `card_points_panel.py` | `reload_data()` | 判定规则表刷新 |
+| `EquipAttrsPanel._save()` | `equip_attrs_panel.py` | 保存按钮 | 校验并写回 equip_attrs.json |
+| `IndexRefinementDialog` | `index_refinement_dialog.py` | `_open_refinement()` | curated 精化工作台 |
