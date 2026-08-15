@@ -25,7 +25,7 @@
 - 语料产物：`data/rag_corpus/*.json`（build 脚本直接输出到此目录）；向量索引：`data/rag_index/chroma`。
 - 执行命令：`python scripts/maintain_rag.py --force [--only 武将] [--build-index]`（工作目录为项目根）。
 - 任务状态判定：任一源文件 mtime 晚于对应语料输出 → 待重建；输出缺失 → 待重建；源缺失 → 缺源。
-- 审计：未归类武将（heroes 未出现在 hero_classification.hero_categories）、专属牌 hero 不在武将库且非「通用」。
+- 审计：未归类武将（heroes 未出现在 hero_classification.hero_categories）；专属牌 hero 不在武将库且非「通用/—/众多武将/以“等”结尾」（按顿号/逗号拆分后逐项校验）；技能描述中的疑似牌名/道具名（启发式提取 + 黑名单/已知名称/排除清单过滤，非专属牌，仅作人工确认提示）。
 
 ## 四、验收标准
 
@@ -38,5 +38,5 @@
 
 - 入口：知识库维护页 → 「索引精化」按钮，打开 IndexRefinementDialog。
 - 维护对象：卡牌RAG语料.json（20 块）与 武将RAG语料.json（123 技能块）中无 curated 且索引字段为空的块。
-- 字段：	iming / 	rigger_condition / keywords / elated；支持 LLM 建议（DeepSeek）与人工填写。
-- 写回：pply_curated 更新块顶层索引字段并写入 curated（method=llm/manual、updated_at），build 脚本重跑时通过 scripts/rag_curated.py 保留精化值。
+- 字段：timing / trigger_condition / keywords / related / target；支持 LLM 建议（DeepSeek）与人工填写。
+- 写回：Apply_curated 更新块顶层索引字段并写入 curated（method=llm/manual、updated_at），build 脚本重跑时通过 scripts/rag_curated.py 保留精化值。

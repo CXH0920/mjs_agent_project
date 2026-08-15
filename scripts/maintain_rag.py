@@ -49,7 +49,7 @@ TASKS = [
     {
         'name': '装备属性语料',
         'script': 'build_equip_attr.py',
-        'sources': ['data/cards.json'],
+        'sources': ['data/cards.json', 'data/rag_corpus/卡牌RAG语料.json'],
         'outputs': [('装备属性语料.json', 27)],
     },
     {

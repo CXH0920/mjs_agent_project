@@ -105,3 +105,16 @@ def test_panel_renders(tmp_path: Path) -> None:
     assert hasattr(panel, "_special_cards")
     assert hasattr(panel, "_classification")
     panel.close()
+
+
+def test_audit_splits_hero_field_and_skips_generic(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    special = root / "data" / "special_cards.json"
+    special.write_text(json.dumps([
+        {"category": "概念", "name": "击杀", "hero": "白蹄乌、李信、杜预"},
+        {"category": "概念", "name": "限定技", "hero": "众多武将"},
+    ], ensure_ascii=False), encoding="utf-8")
+    issues = audit_summary(root)
+    texts = "\n".join(issues)
+    assert "白蹄乌" in texts
+    assert "众多武将" not in texts

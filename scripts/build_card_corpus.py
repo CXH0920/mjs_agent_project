@@ -53,7 +53,7 @@ def extract_related(text):
         if kw in text and ref not in rel:
             rel.append(ref)
     for cn in card_names:
-        if cn in text and cn != '杀':
+        if len(cn) >= 2 and cn in text and cn != '杀':
             r = f'卡牌:{cn}'
             if r not in rel:
                 rel.append(r)
@@ -89,6 +89,21 @@ for c in cards:
 out_dir = r'data\rag_corpus'
 with open(out_dir + r'\卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
+# 保留旧语料中由 build_equip_attr.py 注入的装备字段（防止单独重建卡牌语料时丢失）
+_EQUIP_FIELDS = ('equip_subtype', 'attack_range', 'distance_mod', 'distance_mod_type')
+_OLD_CARD_JSON = out_dir + r'\卡牌RAG语料.json'
+try:
+    with open(_OLD_CARD_JSON, encoding='utf-8') as _f:
+        _old_card_blocks = {b.get('block_id'): b for b in json.load(_f) if isinstance(b, dict)}
+except (OSError, json.JSONDecodeError):
+    _old_card_blocks = {}
+for _b in blocks:
+    _prev = _old_card_blocks.get(_b.get('block_id'))
+    if _prev:
+        for _k in _EQUIP_FIELDS:
+            if _prev.get(_k) is not None:
+                _b[_k] = _prev[_k]
+
 import rag_curated
 _merged = rag_curated.merge_curated(blocks, out_dir + r'\卡牌RAG语料.json')
 if _merged:

@@ -2,7 +2,7 @@
 """生成武将分类语料：从 data/hero_classification.json 提取机制分类 + 克制链，生成 RAG 语料块。
 
 输入：data/hero_classification.json（人工维护）、data/heroes.json（官方数据）
-输出：docs/武将分类语料.json / .md
+输出：data/rag_corpus/武将分类语料.json / .md
 未归类武将不会生成块，并打印待补充清单。
 """
 import io, sys, os, json
@@ -23,14 +23,15 @@ hero_map = {h['name']: h for h in heroes}
 chain = cls.get('counter_chain', {})
 
 
-def chain_text(cat_name):
+def chain_text(cat_names):
     parts = []
-    for k, v in chain.items():
-        if k == cat_name:
-            parts.append('克制：' + v)
-        elif cat_name in v:
-            parts.append('被克制：' + v)
-    return '；'.join(parts)
+    for cat_name in cat_names:
+        for k, v in chain.items():
+            if k == cat_name:
+                parts.append('克制：' + v)
+            elif cat_name in v:
+                parts.append('被克制：' + v)
+    return '；'.join(dict.fromkeys(parts))
 
 
 blocks = []
@@ -48,7 +49,7 @@ for h in heroes:
         cat = cat_by_name.get(c)
         if cat:
             cat_defs.append(c + '：' + cat['core_features'])
-    ct = chain_text(cats[0])
+    ct = chain_text(cats)
     reason = '；'.join(cat_defs)
     if ct:
         reason = reason + '；' + ct

@@ -4,7 +4,7 @@
 检查：
 1. heroes.json 中未在 hero_classification.json 归类的武将（新武将需人工归类）；
 2. special_cards.json 引用了不存在的武将；
-3. 技能描述中出现的疑似专属牌名（启发式提取，仅作人工确认提示，不保证准确）。
+3. 技能描述中出现的疑似牌名/道具名（启发式提取 + 黑名单/已知名称/排除清单过滤，仅作人工确认提示，不保证准确）。
 
 返回问题清单（list[str]）；无问题时返回空列表。不影响语料构建，
 由 maintain_rag.py 选择是否以 --strict-audit 视为失败。
@@ -17,7 +17,7 @@ _SUFFIX = '剑戟弓鞭锤钩刃枪甲盾玺伞幡符印珠镜扇书车'
 # 通用术语黑名单：候选词包含其中任意项时排除
 _BLACKLIST = [
     '手牌', '摸牌', '弃牌', '出牌', '装备', '技能', '武将', '战法', '武器', '防具', '坐骑', '行动',
-    '获得', '打出', '交给', '置于', '加入', '清除', '弃置', '翻出', '削弱', '增强', '卜卦',
+    '获得', '打出', '交给', '置于', '加入', '清除', '弃置', '翻出', '削弱', '增强', '卜卦', '例如', '比如', '分为',
     '区域', '目标', '角色', '回合', '阶段', '次数', '点数', '花色', '名称', '类型', '效果', '状态',
     '结算', '距离', '体力', '上限', '失去', '减少', '增加', '额外', '任意', '所有', '其他', '一名',
     '自动', '原本', '相同', '对应', '等量', '以下', '进入', '离开', '复制', '展示', '查看', '选择',
@@ -28,6 +28,8 @@ _BLACKLIST = [
     '不', '无', '此', '该', '其', '你', '我', '他', '她', '它', '们',
 ]
 _MAX_SUSPECT_HINTS = 30
+# 已确认非牌名的技能效果/道具名（人工维护；若未来成为正式牌则移出）
+_NON_CARD_TERMS = {'遁甲天书', '遁甲'}  # '遁甲' 为遁甲天书简称（左慈技能效果）
 
 
 def audit_hero_coverage(root):
@@ -59,25 +61,42 @@ def audit_hero_coverage(root):
             continue
         for _name in re.split(r'[\u3001,?]', sh):
             _name = re.split(r'[(\uff08]', _name, 1)[0].strip()
-            if not _name or _name == '通用' or _name == '—' or _name.endswith('等'):
+            if not _name or _name in ('通用', '—', '众多武将') or _name.endswith('等'):
                 continue
             if _name not in hero_names:
                 issues.append('special_cards 引用了未知武将: %s' % _name)
 
-    known = {c.get('name', '') for c in cards} | {s.get('name', '') for s in specials}
+    known = ({c.get('name', '') for c in cards} | {s.get('name', '') for s in specials}
+             | {sk.get('name', '') for h in heroes for sk in h.get('skills', [])}
+             | _NON_CARD_TERMS)
     cand = set()
     for h in heroes:
         for sk in h.get('skills', []):
             text = (sk.get('description', '') or '') + (sk.get('settlement', '') or '')
-            for m in re.finditer(r'[\u4e00-\u9fff]{2,4}[' + _SUFFIX + r']', text):
-                w = m.group(0)
+            # 标记已知名称覆盖区间，避免从已知名称内部切出碎片（如“遁甲天书”→“甲天书”）
+            covered = [False] * len(text)
+            for k in known:
+                if len(k) < 2:
+                    continue
+                _pos = text.find(k)
+                while _pos != -1:
+                    for _i in range(_pos, _pos + len(k)):
+                        covered[_i] = True
+                    _pos = text.find(k, _pos + 1)
+            # 重叠匹配：避免“获得玄铁剑”被黑名单整词过滤后漏掉内部新词
+            for m in re.finditer(r'(?=([\u4e00-\u9fff]{2,4}[' + _SUFFIX + r']))', text):
+                w = m.group(1)
                 if w in known:
                     continue
-                if any(b in w for b in _BLACKLIST if len(b) >= 2):
+                if all(covered[m.start() + _i] for _i in range(len(w))):
+                    continue
+                if any(k in w for k in known):
+                    continue
+                if any(b in w for b in _BLACKLIST):
                     continue
                 cand.add(w)
     if cand:
-        issues.append('疑似专属牌未收录 %d 个（人工确认后补充 special_cards.json，仅列前 %d）'
+        issues.append('疑似牌名/道具名未收录 %d 个（非专属牌，人工确认后补充 special_cards.json 或排除清单，仅列前 %d）'
                       % (len(cand), _MAX_SUSPECT_HINTS))
         for w in sorted(cand)[:_MAX_SUSPECT_HINTS]:
             issues.append('  疑似: %s' % w)

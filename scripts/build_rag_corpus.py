@@ -170,7 +170,7 @@ def extract_related(text):
         if kw in text and ref not in rel:
             rel.append(ref)
     for cn in card_names:
-        if cn in text:
+        if len(cn) >= 2 and cn in text:
             r = f'卡牌:{cn}'
             if r not in rel:
                 rel.append(r)
@@ -198,7 +198,8 @@ def skill_block(h, idx, s):
 # 生成
 blocks = []
 md_lines = ['# 武将 RAG 语料', '',
-            '> 来源：heroes.json（171 武将 / 418 技能 + 171 总览块）。索引字段由规则抽取生成，',
+            '> 来源：heroes.json（%d 武将 / %d 技能 + %d 总览块）。索引字段由规则抽取生成，'
+            % (len(heroes), sum(len(h.get('skills', [])) for h in heroes), len(heroes)),
             '> 时机/触发条件/关联可后续用大模型精化。', '']
 # TRIGGER_OVERRIDES 失效校验（官方改技能名/删除后提醒清理）
 _hero_skill_keys = {(h['name'], s['name']) for h in heroes for s in h.get('skills', [])}

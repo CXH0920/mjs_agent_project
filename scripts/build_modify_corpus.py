@@ -13,6 +13,8 @@ print('annotations 条数:', len(anns))
 
 missing = [a['card_id'] for a in anns if a['card_id'] not in cards_by_id]
 print('card_id 未匹配到 cards.json:', missing if missing else '无')
+if missing:
+    sys.exit(1)
 
 only_strengthen = [a['card_id'] for a in anns if a['fields'].get('strengthen_effect') and not a['fields'].get('weaken_effect')]
 only_weaken = [a['card_id'] for a in anns if a['fields'].get('weaken_effect') and not a['fields'].get('strengthen_effect')]

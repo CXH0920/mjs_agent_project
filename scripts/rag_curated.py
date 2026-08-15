@@ -8,7 +8,7 @@
 import json
 import os
 
-INDEX_FIELDS = ("timing", "trigger_condition", "keywords", "related")
+INDEX_FIELDS = ("timing", "trigger_condition", "keywords", "related", "target")
 
 
 def merge_curated(blocks, old_json_path):

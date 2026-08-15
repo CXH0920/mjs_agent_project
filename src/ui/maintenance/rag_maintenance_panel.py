@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -111,10 +112,18 @@ def audit_summary(root: Path) -> list[str]:
         issues.append("data/hero_classification.json 缺失或无法解析")
     try:
         specials = json.loads(special_path.read_text(encoding="utf-8"))
-        unknown = sorted({
-            item.get("hero", "") for item in specials
-            if item.get("hero") and item["hero"] != "通用" and item["hero"] not in hero_names
-        })
+        unknown = set()
+        for item in specials:
+            hero = item.get("hero", "")
+            if not hero:
+                continue
+            for _name in re.split(r"[\u3001,]", hero):
+                _name = re.split(r"[(\uff08]", _name, 1)[0].strip()
+                if not _name or _name in ("通用", "—", "众多武将") or _name.endswith("等"):
+                    continue
+                if _name not in hero_names:
+                    unknown.add(_name)
+        unknown = sorted(unknown)
         if unknown:
             issues.append(f"专属牌引用未知武将 {len(unknown)} 人：{'、'.join(unknown[:8])}")
     except (OSError, json.JSONDecodeError):
