@@ -1,7 +1,7 @@
 # 名将杀 Agent
 
 名将杀桌面辅助工具，面向[名将杀手游](https://mjs.ztgame.com/)的轻度玩家，运行于 PC 端。
-提供**选将推荐**、**武将数据库查询**、**AI 批量攻略生成**和**武将相性分析**功能。
+提供**选将推荐**、**武将数据库查询**、**AI 批量攻略生成**和**武将相性分析**功能。攻略与相性生成支持 **RAG 官方规则语料增强** 与经典模式双版本（详见下方 RAG 语料增强一节）。
 
 ---
 
@@ -38,6 +38,7 @@ test_project/
 │   │       ├── browser_generator.py
 │   │       ├── browser_session.py
 │   │       ├── prompt_utils.py
+│   │       ├── rag_prompt.py          # RAG 语料检索与注入（攻略/相性）
 │   │       ├── json_extract.py
 │   │       └── utils.py
 │   ├── business/
@@ -56,6 +57,10 @@ test_project/
 │   │   ├── template_manager.py    # OpenCV 模板匹配（TM_CCOEFF_NORMED，<50ms）
 │   │   ├── recognizer.py          # PaddleOCR + 字数门禁 + 候选闭包内评分
 │   │   └── ocr_loader.py          # 模板管理器单例
+│   ├── rag/
+│   │   ├── config.py              # RAG 配置（开关/检索参数/字符预算）
+│   │   ├── indexer.py             # 语料规范化与 ChromaDB 向量索引构建
+│   │   └── retriever.py           # 混合检索（向量 + 关键词 RRF + 类型配额）
 │   └── ui/
 │       ├── app/                    # 主窗口、应用图标、翻译与轮询编排
 │       ├── library/                # 武将资料、卡牌图鉴及编辑弹窗

@@ -152,6 +152,22 @@ SettingsDialog / 管理脚本
 | `get_model_pricing(model)` | `config/env.py` | 返回指定模型单价，未知或非法配置返回 `None` |
 | `save_pricing_config(path, data)` | `config/env.py` | UTF-8、LF、无 BOM 原子写入 |
 
+### 2.6 RAG 语料配置（src/rag/config.py）
+
+RAG 检索配置独立于 `src/config/env.py`，位于 `src/rag/config.py`，遵循「环境变量 > config.env > 默认值」：
+
+```
+RAG_ENABLED                # 默认 true；--no-rag 时由 ai/batch.py 将环境变量置为 false
+RAG_TOP_K                  # 检索结果上限，默认 12
+RAG_PROMPT_CHARS           # 攻略 RAG 注入字符预算，默认 6000
+RAG_BROWSER_PROMPT_CHARS   # 浏览器模式攻略预算，默认 3000
+RAG_SYNERGY_PROMPT_CHARS   # 相性 RAG 注入字符预算，默认 6000
+RAG_MODEL_DIR              # 本地 bge-small-zh-v1.5 嵌入模型缓存目录
+RAG_PROJECT_DIR            # 预留的 RAG 项目目录（兼容旧配置）
+```
+
+调用方：`src/scraper/ai/rag_prompt.py`（开关与注入预算）、`src/rag/retriever.py`（检索参数）、`src/rag/indexer.py`（语料与索引路径）。详见 AI 批量生成模块文档。
+
 ---
 
 ## 三、日志系统链路

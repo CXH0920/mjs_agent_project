@@ -9,6 +9,7 @@
 ## 当前实现基线（2026-07-22）
 
 AI 生成按批原子提交正式 JSON：每批校验成功结果立即提交，任一任务失败时仅保留对应旧数据并以退出码 `1` 结束。
+攻略与相性默认启用 RAG 官方规则语料注入（`src/scraper/ai/rag_prompt.py`），CLI 支持 `--no-rag` 关闭；RAG 运行时异常自动降级为经典模式，并在生成循环输出一次 `[RAG]` 提示。
 
 ```
 ai_batch.main()
@@ -36,6 +37,8 @@ ai_batch.main()
 ```
 ai_batch.py -> ai/batch.py:main()                             [兼容 CLI -> 实际入口]
   -> argparse.parse_args()                                    [解析命令行参数]
+  -> [args.no_rag] os.environ["RAG_ENABLED"]="false"            [禁用 RAG 增强]
+     [否则] 检查 _rag_enabled()，被选择但配置禁用时输出 [RAG] 提示
   -> setup_logging()                                          [初始化日志]
   -> load_heroes(args.heroes_file)                            [HeroManager 完整校验武将 JSON]
   -> get_api_config()                                         [从 config.env 读取 API 配置]
@@ -74,7 +77,7 @@ ai_batch.py -> ai/batch.py:main()                             [兼容 CLI -> 实
 | `get_api_config()` | `config/env.py` | `ai_batch.main()` | `parse_env_file()` + 类型转换 |
 | `_load_existing_guides()` | `ai/batch.py` | `main()` | `GuideManager.load()`；错误文件备份后写回有效记录 |
 | `_load_existing_synergies()` | `ai/batch.py` | `main()` | `SynergyManager.load()`；错误文件备份后写回有效记录 |
-| `_show_cost_estimate()` | `ai/batch.py` | `main()` | `estimate_cost()` |
+| `_show_cost_estimate()` | `ai/batch.py` | `main()` | `estimate_cost(..., use_rag)` 分别输出 RAG 增强 / 经典模式 |
 | `_print_token_summary()` | `ai/batch.py` | `main()` | `_estimate_cost()` |
 
 ---
@@ -91,6 +94,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
      -> generator.generate_guide(hero)                        [调用 AI]
         -> load_prompt(GUIDE_PROMPT_FILE)                     [读取系统提示词]
         -> build_guide_prompt(hero)                           [构建用户提示词]
+           -> build_rag_context(hero)                      [RAG 注入: Retriever.hero_blocks + search(heroes 过滤)]
         -> self._call_api(messages)                           [API 模式]
            -> time.sleep(限速)                                 [RPM 控制]
            -> POST /v1/chat/completions                       [thinking.type=disabled, max_tokens=16384]
@@ -110,6 +114,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
         -> validate_guide(raw)                                [Pydantic 校验]
            -> HeroGuide.model_validate(raw) -> model_dump()
         -> return (guide_dict, usage_dict)                    [usage 仅 API 模式有]
+     -> _report_rag_degradation()                        [RAG 降级时输出一次 [RAG] 提示]
      -> [batch save] _save_json(guide_path, batch_data)       [每 GUIDE_BATCH_SAVE_INTERVAL=10 条]
   -> [最终保存] _save_json(guide_path, all_data)
   -> return (total_prompt_tokens, total_completion_tokens)
@@ -184,12 +189,14 @@ ai_generation.run_synergy_generation(heroes, generator, synergy_path, existing, 
         -> generator.generate_synergy(ha, hb)
            -> load_prompt(SYNERGY_PROMPT_FILE)
            -> build_synergy_prompt(ha, hb)
+              -> build_synergy_rag_context(ha, hb)    [RAG 注入: 双方 hero_blocks + 跨类 search(机制词查询, 过滤非目标武将块)]
            -> self._call_api(messages)
            -> extract_json(response_text)
            -> validate_synergy(raw)
               -> SynergyScore.model_validate(raw) -> model_dump()
            -> return (synergy_dict, usage_dict)
         -> [score >= threshold] 保留; [score < threshold] 丢弃
+        -> _report_rag_degradation()                        [RAG 降级时输出一次 [RAG] 提示]
         -> [batch commit] _save_json 每 10 对校验成功结果
   -> [最终保存]
   -> return (total_prompt_tokens, total_completion_tokens)
@@ -227,10 +234,12 @@ ai_generation.run_synergy_pair_generation(pair_file, heroes, generator, synergy_
 ```
 src.business.fetching.guide_fetch_service
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--guide", ...])
+     [经典模式 use_rag=False] -> 参数追加 --no-rag
 
 src.business.fetching.synergy_fetch_service
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_file])
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-single", tmp_file])
+     [经典模式 use_rag=False] -> 参数追加 --no-rag
 
 src.ui.app.main_window
   -> 菜单 → GuideFetchService/SynergyFetchService    [间接调用]
@@ -247,6 +256,7 @@ src.ui.app.main_window
 | `src.config.logging_config.setup_logging()` | 日志初始化 |
 | `docs/prompts/hero_guide.md` | 攻略生成提示词文件 |
 | `docs/prompts/synergy.md` | 相性生成提示词文件 |
+| `src.rag`（config/indexer/retriever） | RAG 语料加载、ChromaDB 向量检索与关键词 RRF |
 
 ### 4.3 双生成器对比
 

@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-07-22
+> 文档日期：2026-08-15
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -13,8 +13,8 @@
 - **资料库浏览** — 在“武将资料”中查询武将详情、技能和攻略；在“卡牌图鉴”中只读浏览官方卡牌及维护独立的效果配置
 - **选将推荐** — 4×2 网格展示推荐武将，集成相性评分、胜率排名与 OCR 截图导入
 - **对局攻略** — 2×2 展示四名武将，支持 ADB/本地图片导入并加载 2v2 胜率
-- **AI 攻略生成** — 通过 DeepSeek API 或浏览器自动化批量生成武将攻略
-- **AI 相性评分** — 全量/指定武将的相性评分，支持 2~8 武将两两配对
+- **AI 攻略生成** — 通过 DeepSeek API 或浏览器自动化批量生成武将攻略，默认 RAG 官方规则语料增强，可切换经典模式（无 RAG 注入）
+- **AI 相性评分** — 全量/指定武将的相性评分，支持 2~8 武将两两配对；RAG 注入双方武将语料块与规则/FAQ/卡牌跨类块，支持 RAG 增强/经典双版本
 - **屏幕采集与 OCR** — 通过 ADB 连接模拟器截图，OpenCV 模板匹配 + PaddleOCR 识别武将名
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
 - **官方数据导入** — 可独立或同时导入 2v2/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
@@ -27,6 +27,7 @@
 | 桌面 UI | PySide6（Qt for Python） |
 | 数据模型 | Pydantic v2（数据校验与序列化） |
 | AI 生成 | httpx（DeepSeek API 同步请求）/ Playwright（浏览器自动化） |
+| RAG 检索 | ChromaDB + sentence-transformers（bge-small-zh-v1.5 本地嵌入）+ 关键词 RRF 混合检索 |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分 |
@@ -43,6 +44,7 @@ test_project/
 │   ├── config/                  # 配置管理（.env 解析、日志配置）
 │   ├── data/                    # 数据模型与数据管理层
 │   ├── scraper/                 # 爬虫与 AI 批量生成层
+│   ├── rag/                     # RAG 语料/向量索引/混合检索（ChromaDB + bge-small-zh）
 │   ├── business/                # 业务服务层（QProcess、OCR 与官方榜单导入编排）
 │   ├── capture/                 # 屏幕采集层（ADB 连接与截图）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR）

@@ -159,5 +159,6 @@ def setup_logging():
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 被依赖 | — | 所有模块都通过 `from src.config.env import ...` 获取配置 |
+| 被依赖 | `src.rag.config` | RAG 语料/向量索引与预算配置（RAG_ENABLED / RAG_TOP_K / RAG_PROMPT_CHARS / RAG_BROWSER_PROMPT_CHARS / RAG_SYNERGY_PROMPT_CHARS / RAG_MODEL_DIR），由 AI 批量生成模块使用 |
 | 依赖 | `src.ui.app.main_window` | 应用入口创建 MainWindow 实例 |
 | 依赖 | `src.business.recognition.ocr_worker` | 预热 PaddleOCR 模型 |

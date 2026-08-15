@@ -14,6 +14,7 @@
 - **四种生成模式** — 全量攻略、全量相性、指定配对（2~8 武将 × itertools.combinations）、选定武将 × 全体
 - **JSON 提取** — 从 AI 的不规范回复中宽容提取 JSON，支持 4 种回退策略
 - **分批原子提交** — 每累计 10 条攻略或相性通过校验的结果即原子写入正式 JSON；失败项保留对应旧数据
+- **RAG 语料增强** — 攻略与相性生成默认注入官方规则语料（ChromaDB 向量检索 + 关键词 RRF）；支持「RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」双版本，运行时异常自动降级为经典模式
 
 ---
 
@@ -29,6 +30,7 @@ src/scraper/
     ├── browser_session.py   # DeepSeek 页面会话
     ├── generation.py        # 四种生成编排函数
     ├── prompt_utils.py      # Prompt 构建与成本估算
+    ├── rag_prompt.py       # RAG 语料检索与注入（攻略/相性，含降级提示）
     ├── json_extract.py      # AI 回复 JSON 提取
     └── utils.py             # 数据加载、校验与原子保存
 ```
@@ -123,6 +125,19 @@ for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
 
 单个生成任务每累计 10 条攻略或相性校验成功，即通过临时文件 `replace()` 原子提交到正式 `guides.json` / `synergies.json`；任务结束时会提交不足一批的成功结果。任一失败项只保留原有对应记录，不回滚已成功批次。用户在进度对话框选择中止时会终止子进程，已提交批次保留，正在处理且尚未提交的数据不会写入。浏览器模式没有 token usage，不会因缺少 usage 被误判为失败，也不要求 API Key。
 
+### 3.6 RAG 语料注入（攻略 / 相性）
+
+`src/scraper/ai/rag_prompt.py` 负责把官方规则语料检索结果格式化为 prompt 区块；任何异常一律降级为空串，不影响生成链路。
+
+- **攻略 `build_rag_context(hero)`**：先取该武将全部语料块（总览 + 技能/结算），再以 `heroes=[武将名]` 元数据硬过滤补充检索；只注入目标武将自己的块。
+- **相性 `build_synergy_rag_context(hero_a, hero_b)`**：
+  1. 第一段确定性召回双方武将全部语料块（`hero_blocks()`，含其分类块）；
+  2. 第二段跨类检索（不带武将过滤），查询串 = 双方武将名 + 技能名 + 技能描述中命中的 `retriever.KEYWORDS` 机制词（去重、上限 20），让规则/FAQ/卡牌/装备等跨类块进入；
+  3. 过滤：`metadata.hero` 存在且不属于两名目标武将的块一律丢弃，防止其他武将语料混入 prompt。
+- **双版本选择**：UI 层可选「RAG 语料增强 / 经典模式」，经典模式向子进程追加 `--no-rag`（等价于 `RAG_ENABLED=false`）。
+- **降级提示**：检索/注入异常时记录 `rag_prompt.degraded_reason`，生成循环消费一次并在 stdout 输出 `[RAG] 语料不可用，本次已降级为经典模式（原因）`，进度窗口可见。
+- **配置**：`RAG_ENABLED` / `RAG_TOP_K`（12）/ `RAG_PROMPT_CHARS`（6000）/ `RAG_BROWSER_PROMPT_CHARS`（3000）/ `RAG_SYNERGY_PROMPT_CHARS`（6000，相性注入预算）/ `RAG_MODEL_DIR`。
+
 ---
 
 ## 四、关键代码片段
@@ -193,6 +208,8 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 | `--update` | False | 更新模式（重新生成已有数据） |
 | `--heroes-file` | `data/heroes.json` | 武将数据文件 |
 | `--score-threshold` | 0 | 相性评分下限 |
+| `--no-rag` | False | 禁用 RAG 语料增强（默认启用） |
+| `--rebuild-rag-index` | False | 重建 RAG 向量索引后退出 |
 
 ### 公共函数
 
@@ -201,8 +218,10 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 | `extract_json(text)` | `json_extract.py` | 4 策略宽容提取 JSON |
 | `validate_guide(raw)` | `utils.py` | Pydantic 校验攻略 |
 | `validate_synergy(raw)` | `utils.py` | Pydantic 校验相性 |
-| `estimate_cost(count, mode, model)` | `prompt_utils.py` | 按模型价格表预览 Token 和费用；未知模型不估价 |
-| `estimate_item_cost(item_count, mode, model)` | `prompt_utils.py` | 按实际 API 请求项数预览 Token 和费用，用于指定范围的相性生成 |
+| `estimate_cost(count, mode, model, use_rag=True)` | `prompt_utils.py` | 按模型价格表预览 Token 和费用；`use_rag=False` 为经典模式（输入更少）；未知模型不估价 |
+| `estimate_item_cost(item_count, mode, model, use_rag=True)` | `prompt_utils.py` | 按实际 API 请求项数预览 Token 和费用，用于指定范围的相性生成 |
+| `build_rag_context(hero, max_chars)` | `rag_prompt.py` | 检索并格式化攻略 RAG 语料区块；异常返回空串 |
+| `build_synergy_rag_context(hero_a, hero_b, max_chars)` | `rag_prompt.py` | 检索并格式化相性 RAG 语料区块（目标武将块 + 过滤后的跨类块） |
 | `load_heroes(path)` | `utils.py` | 通过 `HeroManager` 完整校验武将 JSON；任一错误均拒绝部分加载 |
 | `_save_json(path, data)` | `utils.py` | 原子写入 JSON |
 
@@ -216,6 +235,7 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 |------|------|------|
 | 依赖 | `src.data.models` | 使用 Hero / HeroGuide / SynergyScore 模型进行 Pydantic 校验 |
 | 依赖 | `src.config.env` | 读取 API Key/URL/Model 等配置 |
+| 依赖 | `src.rag`（config/indexer/retriever） | ChromaDB 向量检索、bge-small-zh 嵌入与关键词 RRF 混合检索 |
 | 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成 |
 | 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成 |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 攻略/相性"触发生成 |

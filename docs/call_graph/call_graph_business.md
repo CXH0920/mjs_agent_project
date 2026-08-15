@@ -141,15 +141,17 @@ MainWindow._request_guide_all()
   -> AiGenerationWorkflow.request_guide_all()
     -> _get_heroes_as_dicts()                                   [Hero → dict]
     -> estimate_cost(hero_count, "guide")                      [AI 成本估算]
-    -> BackendChooseDialog(estimation, title, parent)          [选择 API/浏览器模式]
-     -> [API Tab] 显示 Token/费用估算
+    -> BackendChooseDialog(estimation, title, parent)          [选择 API/浏览器模式 + 语料增强]
+     -> [API Tab] 显示 Token/费用估算（切换语料增强时重算）
      -> [浏览器 Tab] 显示 Edge 配置说明
+     -> get_selected_backend() + get_selected_rag()          [返回 (backend, use_rag)]
     -> [确认] GuideProgressDialog(hero_count, parent)          [创建进度条对话框]
-      -> GuideFetchService.fetch_all(heroes, backend)
+      -> GuideFetchService.fetch_all(heroes, backend, use_rag)
        -> _is_busy()
-       -> [设置 context = {"mode": "all"}]
+       -> [设置 context = {"mode": "all", "use_rag": use_rag}]
        -> execute_with_confirmation()
          -> base_args = ["-m", "src.scraper.ai_batch", "--guide"]
+         -> [use_rag=False] 追加 "--no-rag"                    [经典模式，禁用 RAG 注入]
          -> [backend=="browser" 追加 "--browser"]
          -> [增量/指定模式 追加 "--update"]
          -> [增量/指定模式 写入 temp JSON 文件]
@@ -168,9 +170,9 @@ MainWindow._request_guide_all()
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `fetch_all(heroes, backend)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_all()` | `_is_busy()`, `execute_with_confirmation()` |
-| `fetch_incremental(heroes, backend)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_incremental()` | `_is_busy()`, `guide_mgr.list_guides()`, `execute_with_confirmation()` |
-| `fetch_specific(heroes, backend)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_specific()` | `_is_busy()`, `execute_with_confirmation()` |
+| `fetch_all(heroes, backend, use_rag=True)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_all()` | `_is_busy()`, `execute_with_confirmation()` |
+| `fetch_incremental(heroes, backend, use_rag=True)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_incremental()` | `_is_busy()`, `guide_mgr.list_guides()`, `execute_with_confirmation()` |
+| `fetch_specific(heroes, backend, use_rag=True)` | `guide_fetch_service.py` | `AiGenerationWorkflow.request_guide_specific()` | `_is_busy()`, `execute_with_confirmation()` |
 | `execute_with_confirmation()` | `guide_fetch_service.py` | `fetch_*()` | 构建参数 → `_start_process()` |
 | `cancel()` | `guide_fetch_service.py` | 外部 UI | `cancel_process()` [fetch_utils] |
 | `_start_process(args)` | `guide_fetch_service.py` | `execute_with_confirmation()` | `QProcess.start()` |
@@ -205,13 +207,14 @@ MainWindow._request_synergy_pair()
      -> BaseHeroSelectDialog(MULTI_LIMIT, max_selection=8)
      -> 用户勾选 → _on_accept → _set_result_by_ids()
   -> estimate_item_cost(pair_count, "synergy")                 [AI 成本估算]
-  -> BackendChooseDialog(estimation, title)                    [选择后端]
+  -> BackendChooseDialog(estimation, title)                    [选择后端 + 语料增强]
   -> GuideProgressDialog(pair_count, title)
-     -> SynergyFetchService.fetch_pair(selected, backend)
+     -> SynergyFetchService.fetch_pair(selected, backend, use_rag)
        -> _is_busy()
        -> [写入选中武将到 temp JSON]
        -> _start_process(["-m", "src.scraper.ai_batch",
-                          "--synergy-pair", tmp_path])
+                          "--synergy-pair", tmp_path]
+                          + [use_rag=False ? "--no-rag"])
   -> GuideProgressDialog.exec()
 
 
@@ -220,17 +223,18 @@ MainWindow._request_synergy_single()
   -> SynergySingleDialog(hero_manager)                          [选 1 武将]
      -> BaseHeroSelectDialog(SINGLE)
   -> GuideProgressDialog(hero_count, title)
-     -> SynergyFetchService.fetch_single(hero, all_heroes, backend)
+     -> SynergyFetchService.fetch_single(hero, all_heroes, backend, use_rag)
        -> _is_busy()
        -> [写入 1 个武将到 temp JSON]
        -> _start_process(["-m", "src.scraper.ai_batch",
-                          "--synergy-single", tmp_path])
+                          "--synergy-single", tmp_path]
+                          + [use_rag=False ? "--no-rag"])
 ```
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `fetch_pair(heroes, backend)` | `synergy_fetch_service.py` | `AiGenerationWorkflow.request_synergy_pair()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
-| `fetch_single(hero, all, backend)` | `synergy_fetch_service.py` | `AiGenerationWorkflow.request_synergy_single()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
+| `fetch_pair(heroes, backend, overwrite=False, use_rag=True)` | `synergy_fetch_service.py` | `AiGenerationWorkflow.request_synergy_pair()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
+| `fetch_single(hero, all, backend, use_rag=True)` | `synergy_fetch_service.py` | `AiGenerationWorkflow.request_synergy_single()` | `_is_busy()`, 写入 temp JSON, `_start_process()` |
 | `cancel()` | `synergy_fetch_service.py` | 外部 UI | `cancel_process()` [fetch_utils] |
 
 ---

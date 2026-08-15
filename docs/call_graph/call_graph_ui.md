@@ -216,10 +216,10 @@ _connect_capture_signals():
       -> _get_heroes_as_dicts()                                  [HeroManager.list_heroes() → dict]
       -> _start_guide_generation(heroes, "all", ...)
         -> estimate_cost(len(heroes), "guide")                   [AI 成本估算]
-        -> BackendChooseDialog(estimation, title, parent)        [选择 API/浏览器]
-          -> [accepted] backend = dialog.get_selected_backend()
+        -> BackendChooseDialog(estimation, title, parent)        [选择 API/浏览器 + 语料增强]
+          -> [accepted] (backend, use_rag) = dialog.get_selected_backend(), dialog.get_selected_rag()
             -> GuideProgressDialog(hero_count, parent)           [创建进度对话框]
-            -> GuideFetchService.fetch_all(heroes, backend)
+            -> GuideFetchService.fetch_all(heroes, backend, use_rag)
             -> GuideProgressDialog.exec()                        [模态等待]
 
 菜单「数据 → 攻略获取 → 增量获取」
@@ -229,7 +229,7 @@ _connect_capture_signals():
       -> 筛选: 已有攻略 → 跳过; 无攻略 → missing
       -> [无缺失] status_changed("所有武将已有攻略，无需生成")
       -> [有缺失] _start_guide_generation(missing, "incremental", ...)
-        -> GuideFetchService.fetch_incremental(missing, backend)
+        -> GuideFetchService.fetch_incremental(missing, backend, use_rag)
         -> GuideProgressDialog(len(missing))                     [总数与实际任务一致]
 
 菜单「数据 → 攻略获取 → 指定获取」
@@ -269,9 +269,10 @@ GuideFetchService [signal] fetch_completed
       -> [accepted] 计算组合数 C(n,2)
       -> estimate_item_cost(pair_count, "synergy")              [AI 成本估算]
       -> _choose_backend(title, estimation) -> BackendChooseDialog
+        -> 返回 (backend, use_rag)
       -> _start_synergy_generation(pair_count, title, ...)
         -> GuideProgressDialog(pair_count, title, parent)
-        -> SynergyFetchService.fetch_pair(selected, backend)
+        -> SynergyFetchService.fetch_pair(selected, backend, use_rag=use_rag)
       -> 写入 temp JSON
       -> _start_process(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp])
         -> GuideProgressDialog.exec()
@@ -283,7 +284,7 @@ GuideFetchService [signal] fetch_completed
        -> BaseHeroSelectDialog(SINGLE mode → 单选)
       -> estimate_item_cost(pair_count, "synergy")              [AI 成本估算]
       -> _choose_backend(title, estimation) -> BackendChooseDialog
-      -> SynergyFetchService.fetch_single(hero, all_heroes, backend)
+      -> SynergyFetchService.fetch_single(hero, all_heroes, backend, use_rag=use_rag)
 ```
 
 SynergyFetchService [signal] fetch_completed
@@ -948,7 +949,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `BaseHeroSelectDialog` | 搜索文本、势力筛选、多/单选 | `selected_ids`, `selected_heroes`, `selected_hero` |
 | `SettingsDialog` | API Key/URL/Model/限速/超时/重试 | 保存到 config.env |
 | `MumuConfigDialog` | ADB 路径/端口/模板/OCR 配置 | config dict + 服务状态更新 |
-| `BackendChooseDialog` | Token/费用估算 | `"api"` 或 `"browser"` |
+| `BackendChooseDialog` | Token/费用估算 + 语料增强单选（RAG 增强/经典） | `("api" 或 "browser", use_rag)` |
 | `GuideProgressDialog` | 总数量、子进程进度信号 | 实时进度条 + 完成/失败提示 |
 | `RoiSelectorDialog` | 截图 QPixmap | ROI (x, y, w, h) |
 | `HeroEditDialog` | Hero 对象 | 修改后的 Hero 对象 |

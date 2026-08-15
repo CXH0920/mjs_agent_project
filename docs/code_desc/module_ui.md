@@ -135,7 +135,7 @@ MainWindow
  └── OcrService ──────── OCR + 轮询
 ```
 
-工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
+工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；后端选择对话框同时返回 `(backend, use_rag)`（API/浏览器 + RAG 增强/经典模式），工作流将 `use_rag` 透传给攻略/相性获取服务；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
 
 底部状态栏按职责分为三部分：普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度；模拟器状态常驻显示 ADB 配置和连接状态；OCR 状态常驻显示轮询的未启用、运行、恢复、冷却或暂停状态。任务消息不会覆盖后两类连接状态，点击模拟器或 OCR 状态可打开模拟器配置。
 
@@ -278,8 +278,8 @@ ColorPicker.color()
 ```
 菜单操作
   ↓
-BackendChooseDialog（API 方式 / 浏览器方式 双 Tab）
-  ↓ 确认执行
+BackendChooseDialog（API 方式 / 浏览器方式 双 Tab + 语料增强单选）
+  ↓ 确认执行（返回 backend + use_rag）
 GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
   ↓ 完成/中止
 数据重载 + 状态栏更新
@@ -288,6 +288,8 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 相性浏览器任务中止时，进度窗口会等待 AI 子进程及其浏览器后代清理完成；随后工作流在后台重载相性 JSON，主线程仅接收校验后的数据并刷新当前武将详情和推荐卡片，避免用户紧接着导入截图时主界面被同步解析阻塞。
 
 进度对话框运行中提供“中止”按钮；关闭窗口或按 Esc 也会请求中止，避免任务在后台无提示继续执行。中止后已分批提交的数据会重新加载并保留。相性任务使用“相性评分”文案：`START` 显示当前请求但保持原进度，冷却日志显示“冷却中”和当前已完成数量，只有单组配对得到 `OK`、`FAIL` 或确认 `SKIP` 后才推进进度条。
+
+**语料增强选择**：`BackendChooseDialog` 顶部新增「语料增强：RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」单选组，默认 RAG 增强；`get_selected_rag()` 返回选择，`AiGenerationWorkflow._choose_backend()` 组合为 `(backend, use_rag)` 元组。API Tab 的成本估算在切换选择时按 `estimate_item_cost(..., use_rag=...)` 实时重算（经典模式输入 token 更少）。
 
 ### 3.7 API 配置对话框
 
@@ -405,7 +407,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
 | `MumuConfigDialog` | 组装配置区块、状态协调、文件选择和 ROI 框选；服务操作委托 `MumuConfigCoordinator` |
 | `MumuDeviceSection` / `MumuTemplateSection` / `MumuOcrPollingSection` | 设备、模板和 OCR 参数控件及用户操作信号，不调用业务服务 |
-| `BackendChooseDialog` | AI 后端选择（API/浏览器） |
+| `BackendChooseDialog` | AI 后端选择（API/浏览器）+ 语料增强（RAG/经典），返回 `(backend, use_rag)` |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
 | `HeroEditDialog` | 武将信息编辑 |
 | `GuideEditDialog` | 攻略内容编辑 |

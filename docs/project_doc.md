@@ -249,13 +249,21 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 
 ## 二、AI 批量生成模块细节
 
-### 2.0 RAG 攻略语料增强（2026-08 新增）
+### 2.0 RAG 语料增强（攻略 / 相性，2026-08 更新）
 
-- 攻略生成（API/浏览器双模式共用 uild_guide_prompt）默认追加 RAG 官方规则语料区块（src/scraper/ai/rag_prompt.py::build_rag_context），检索 src/rag/retriever.py（ChromaDB + bge-small-zh + 关键词 RRF）得到语料块，注入 ## RAG 官方规则语料 区块。
-- 语料与向量索引位于 data/rag_corpus/、data/rag_index/chroma/（随仓库入库）；嵌入模型缓存不入库，默认共享 mjs_rag_project/rag/.cache/modelscope（config.env 的 RAG_MODEL_DIR 可覆盖）。
-- 配置：RAG_ENABLED（默认 true）、RAG_TOP_K（默认 12）、RAG_PROMPT_CHARS（默认 6000）、RAG_MODEL_DIR（本地嵌入模型缓存）。
-- CLI：--no-rag 禁用增强；--rebuild-rag-index 重建向量索引后退出。
-- 一键维护管道（本地）：python scripts/maintain_rag.py --force --build-index（重建语料与向量索引），或使用应用内「知识库维护」页面。RAG 异常一律降级为原逻辑，不影响攻略生成。
+攻略与相性生成（API/浏览器双模式）默认启用 RAG 官方规则语料注入；UI 在「生成方式确认」对话框提供 **RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）** 单选，默认 RAG 增强，经典模式向子进程追加 `--no-rag`（等价于 `RAG_ENABLED=false`），输出与旧版一致。
+
+- **攻略注入** `rag_prompt.py::build_rag_context(hero)`：`Retriever.hero_blocks()` 取该武将全部语料块，再以 `heroes=[武将名]` 元数据硬过滤补充检索；只注入目标武将自己的块。
+- **相性注入** `rag_prompt.py::build_synergy_rag_context(hero_a, hero_b)`：
+  1. 第一段确定性召回双方武将全部语料块（总览 + 技能/结算 + 其分类块）；
+  2. 第二段跨类检索（不带武将过滤）：查询串 = 双方武将名 + 技能名 + 技能描述中命中的 `retriever.KEYWORDS` 机制词（去重、上限 20），让规则/FAQ/卡牌/装备等跨类块进入；
+  3. 过滤：`metadata.hero` 存在且不属于两名目标武将的块一律丢弃，防止其他武将语料混入 prompt。
+- **降级**：检索/注入异常时返回空串并记录 `rag_prompt.degraded_reason`；生成循环消费一次，在 stdout 输出 `[RAG] 语料不可用，本次已降级为经典模式（原因）`（进度窗口可见），任务不中断。
+- **语料与索引**：`data/rag_corpus/`、`data/rag_index/chroma/`（随仓库入库）；嵌入模型缓存不入库，默认共享 `mjs_rag_project/rag/.cache/modelscope`（`config.env` 的 `RAG_MODEL_DIR` 可覆盖）。
+- **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
+- **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
+- **维护**：`python scripts/maintain_rag.py --force --build-index` 或应用内「知识库维护」页面。
+
 ### 2.1 模块文件关系
 
 ```
@@ -285,6 +293,8 @@ ai_batch.py (兼容 CLI) -> ai/batch.py (实际入口)
 | `--browser` | bool | False | Playwright 浏览器模式 |
 | `--update` | bool | False | 更新模式（重新生成已有数据） |
 | `--verbose` | bool | False | 详细日志 |
+| `--no-rag` | bool | False | 禁用 RAG 语料增强（默认启用） |
+| `--rebuild-rag-index` | bool | False | 重建 RAG 向量索引后退出 |
 
 #### 2.2.2 生成器选择逻辑
 
@@ -465,16 +475,17 @@ error_occurred = Signal(str)               # 错误信息
 
 #### 三个 fetch 方法统一后端参数
 
-每个方法新增 `backend` 参数（`"api"` 或 `"browser"`），UI 层通过 `BackendChooseDialog` 完成确认后调用 `execute_with_confirmation()`。
+每个方法新增 `backend` 参数（`"api"` 或 `"browser"`）与 `use_rag` 参数（默认 True），UI 层通过 `BackendChooseDialog` 完成确认后调用 `execute_with_confirmation()`。
 
 #### `execute_with_confirmation()` 逻辑
 
-1. 读取 `self._context` 中的 `mode`、`heroes`、`backend`
+1. 读取 `self._context` 中的 `mode`、`heroes`、`backend`、`use_rag`
 2. 构建 `base_args = ["-m", "src.scraper.ai_batch", "--guide"]`
-3. `backend == "browser"` → 追加 `--browser`
-4. `mode` 为 `"incremental"` / `"specific"` → 追加 `--update`（更新模式）
-5. `mode` 为 `"incremental"` / `"specific"` → 写入临时文件，追加 `--heroes-file`
-6. 启动 QProcess
+3. `use_rag=False`（经典模式）→ 追加 `--no-rag`
+4. `backend == "browser"` → 追加 `--browser`
+5. `mode` 为 `"incremental"` / `"specific"` → 追加 `--update`（更新模式）
+6. `mode` 为 `"incremental"` / `"specific"` → 写入临时文件，追加 `--heroes-file`
+7. 启动 QProcess
 
 #### 子进程错误日志增强
 
@@ -486,9 +497,10 @@ error_occurred = Signal(str)               # 错误信息
 ### 3.4 SynergyFetchService
 
 同 GuideFetchService 模式，但 args 不同：
-- `fetch_pair` → `--synergy-pair <tmp_file>`
-- `fetch_single` → `--synergy-single <tmp_file>`
+- `fetch_pair(heroes, backend, overwrite=False, use_rag=True)` → `--synergy-pair <tmp_file>`
+- `fetch_single(hero, all_heroes, backend, use_rag=True)` → `--synergy-single <tmp_file>`
 - 同样支持 `backend` 参数追加 `--browser`
+- `use_rag=False`（经典模式）→ 追加 `--no-rag`
 
 ### 3.5 CaptureService（截图业务服务）
 
@@ -859,6 +871,7 @@ MainWindow.__init__
 ```
 ┌──────────────────────────────────────────────────────┐
 │ 标题: 选择生成方式                                     │
+│ 语料增强: (•) RAG 语料增强（推荐） ( ) 经典模式     │
 │ ┌────────────────┐ ┌────────────────────────────┐    │
 │ │  API 方式       │ │  浏览器方式                │    │
 │ ├────────────────┤ ├────────────────────────────┤    │
@@ -877,6 +890,12 @@ def _on_accept(self):
     idx = self._tabs.currentIndex()
     self._selected_backend = "browser" if idx == 1 else "api"
     self.accept()
+```
+
+**语料增强选择**：
+- 顶部单选组「RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」，默认 RAG 增强，对 API/浏览器两种后端均生效
+- `get_selected_rag() -> bool` 返回选择；`AiGenerationWorkflow._choose_backend()` 返回 `(backend, use_rag)` 元组并透传获取服务
+- API Tab 成本估算随选择实时重算：`estimate_item_cost(items, estimate_kind, model, use_rag=...)`（经典模式输入 token 更少）；`estimate_kind`（"guide"/"synergy"）由工作流写入 estimation
 ```
 
 ### 5.7 攻略生成进度条（GuideProgressDialog）
@@ -1333,6 +1352,11 @@ MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=false
 MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
+RAG_ENABLED=true
+RAG_TOP_K=12
+RAG_PROMPT_CHARS=6000
+RAG_BROWSER_PROMPT_CHARS=3000
+RAG_SYNERGY_PROMPT_CHARS=6000
 ```
 
 ### 8.5 原子保存
@@ -1974,7 +1998,7 @@ python -m pytest tests/ -v
                        ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  GuideFetchService（主进程，QProcess 管理）                                │
-│  参数: python -m src.scraper.ai_batch --guide [--update] [--browser]     │
+│  参数: python -m src.scraper.ai_batch --guide [--update] [--browser] [--no-rag] │
 │  增量/指定模式 → 写入临时 JSON → --heroes-file 传入子进程                  │
 │  实时读取 stdout → 正则解析 [i/N] → 更新进度条                            │
 │  finished 信号 → 检查 exit_code → 弹出完成/失败提示                        │
@@ -2290,7 +2314,8 @@ PlaywrightGenerator.__init__()
 | Prompt 模板 | `docs/prompts/hero_guide.md` | `docs/prompts/synergy_score.md` |
 | 循环函数 | `run_guide_generation()` | `run_synergy_generation()` / `run_synergy_pair_generation()` / `run_synergy_single_generation()` |
 | 生成器方法 | `generate_guide(hero)` | `generate_synergy(hero_a, hero_b)` |
-| user_prompt 构建 | `build_guide_prompt(hero)` | `build_synergy_prompt(hero_a, hero_b)` |
+| user_prompt 构建 | `build_guide_prompt(hero)`（RAG 注入 `build_rag_context`） | `build_synergy_prompt(hero_a, hero_b)`（RAG 注入 `build_synergy_rag_context`） |
+| RAG 注入范围 | 目标武将自身语料块 | 双方武将块 + 过滤后的规则/FAQ/卡牌等跨类块（机制词查询） |
 | 注入字段 | `hero_id` | `hero_a_id` + `hero_b_id` |
 | 旧字段兼容 | 无 | `combat_synergy` → `combo_ceiling` |
 | 校验函数 | `validate_guide()` → `HeroGuide` | `validate_synergy()` → `SynergyScore` |

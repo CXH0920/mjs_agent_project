@@ -74,7 +74,7 @@ QObject 子类
 
 ```
 status_changed → 状态栏文字
-progress_output → 白名单内的生成进度行（START / OK / FAIL / SKIP / 冷却）
+progress_output → 白名单内的生成进度行（START / OK / FAIL / SKIP / 冷却 / RAG 降级提示）
 progress_value → (current, total) 供进度条
 fetch_completed → (success, message) 通知 UI
 error_occurred → 错误信息
@@ -98,6 +98,8 @@ cancelled → 用户中止后通知 UI 刷新已分批提交的数据
 AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 逐行写入 `scraper/ai_generation.log`，界面只接收明确的生成进度和冷却状态。“思考过程耗尽输出额度”从完整缓冲中识别后作为明确原因透传，其余失败仍显示退出码；完整 stdout/stderr 不再重复复制到业务日志。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
 
 `SynergyReloadWorker` 在后台解析已分批提交的 `synergies.json`；完成后由主线程一次性替换 `SynergyManager` 的内存数据并通知界面刷新，避免取消后同步解析 JSON 阻塞窗口事件循环。
+
+**RAG 双版本传参**：`GuideFetchService.fetch_all/incremental/specific` 与 `SynergyFetchService.fetch_pair/single` 均新增 `use_rag: bool = True` 参数（由 `BackendChooseDialog` 的「语料增强」单选传入，默认 RAG 增强）。`use_rag=False`（经典模式）时，子进程参数追加 `--no-rag`，AI CLI 侧将 `RAG_ENABLED=false`，生成链路不再注入 RAG 语料。进度行白名单（`fetch_utils.is_generation_progress_line`）同步放行 `[RAG]` 前缀，使 AI 侧的 RAG 降级提示（`[RAG] 语料不可用，本次已降级为经典模式（原因）`）能显示在进度窗口。
 
 ### 3.2 CaptureService（截图业务）
 
@@ -260,6 +262,8 @@ def _on_stdout_ready(self) -> None:
 ```
 
 > **设计思路：** QProcess 的一次 readyRead 不等于一行输出，且 UTF-8 字符可能跨分块。基类保留未完成字节，只有读到换行后才解码并交给子类；进程结束时还会读取残余管道内容并分发行尾。取消时只调用 `kill()`，不在 GUI 线程使用 `waitForFinished()`；临时文件清理和状态通知继续由 `finished` 信号统一完成。
+
+`fetch_utils._GENERATION_PROGRESS_PATTERN` 除了放行 `[i/N] ... START/OK/FAIL/SKIP`、`[...] 开始...` 与 `[休息] ...` 冷却行外，还放行 `^\s*\[RAG\]` 前缀，用于展示 RAG 降级提示；该行不包含 `[i/N]`，不会影响进度条解析。
 
 ### 4.3 临时文件自动清理
 
