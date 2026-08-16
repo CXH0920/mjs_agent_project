@@ -57,3 +57,5 @@ scripts/.rag_state.json
 scripts/.rule_doc_snapshot.json
 # 元规则数据段同步运行产物（sync_rule_stats.py 生成的差异报告/确认清单）
 scripts/.sync_*.json
+# pytest 临时目录（测试运行产物）
+.tmp_test/
