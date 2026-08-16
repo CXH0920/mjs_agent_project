@@ -27,6 +27,8 @@ DEFAULT_CARD_POINTS_FILE = DEFAULT_DATA_DIR / "card_points.json"
 
 VALID_SUITS = ("♥", "♣", "♠", "♦", "太极")
 VALID_POINTS = {str(i) for i in range(1, 9)}
+# 全量牌张数期望（原 xlsx sheet1 共 162 张；审计/迁移脚本共用）
+EXPECTED_TOTAL_CARDS = 162
 
 
 class CardPointItem(BaseModel):

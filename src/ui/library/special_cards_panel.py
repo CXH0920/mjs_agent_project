@@ -7,8 +7,6 @@
 
 from __future__ import annotations
 
-from html import escape
-
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -70,6 +68,7 @@ class SpecialCardListItemWidget(QWidget):
         top.setSpacing(6)
         name = QLabel(item.name)
         name.setObjectName("specialCardListItemName")
+        name.setTextFormat(Qt.TextFormat.PlainText)
         name.setWordWrap(True)
         top.addWidget(name)
         top.addStretch()
@@ -81,6 +80,7 @@ class SpecialCardListItemWidget(QWidget):
 
         meta = QLabel(self._meta_text(item))
         meta.setObjectName("specialCardListItemMeta")
+        meta.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(meta)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
@@ -372,7 +372,7 @@ class SpecialCardsPanel(QWidget):
             section = QLabel(label)
             section.setObjectName("specialCardSectionTitle")
             surface_layout.addWidget(section)
-            body = QLabel(escape(text))
+            body = QLabel(text)
             body.setObjectName("specialCardFieldBody" if multiline else "specialCardFieldSingle")
             body.setWordWrap(True)
             body.setTextFormat(Qt.TextFormat.PlainText)

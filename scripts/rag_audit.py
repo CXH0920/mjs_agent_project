@@ -14,6 +14,16 @@
 """
 import io, sys, os, json, re
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)  # 复用 src/business/rag/audit_service.py（审计校验单一实现）
+from src.business.rag.audit_service import (  # noqa: E402
+    collect_card_points,
+    collect_equip_attrs,
+    collect_missing_settlements,
+    collect_unclassified,
+    collect_unknown_heroes,
+)
+
 
 # 疑似专属牌名的结尾字（收窄，避免把通用术语误判为牌名）
 _SUFFIX = '剑戟弓鞭锤钩刃枪甲盾玺伞幡符印珠镜扇书车'
@@ -52,22 +62,13 @@ def audit_hero_coverage(root):
         return ['audit 数据读取失败: %s' % e]
 
     hero_names = {h['name'] for h in heroes}
-    cat_map = cls.get('hero_categories', {}) or {}
-    unclassified = [h['name'] for h in heroes if h['name'] not in cat_map]
+    unclassified = collect_unclassified(hero_names, cls)
     issues.append('未归类武将 %d 人（请补充 data/hero_classification.json）' % len(unclassified))
     for name in unclassified[:30]:
         issues.append('  未归类: %s' % name)
 
-    for s in specials:
-        sh = s.get('hero', '')
-        if not sh:
-            continue
-        for _name in re.split(r'[\u3001,?]', sh):
-            _name = re.split(r'[(\uff08]', _name, 1)[0].strip()
-            if not _name or _name in ('通用', '—', '众多武将') or _name.endswith('等'):
-                continue
-            if _name not in hero_names:
-                issues.append('special_cards 引用了未知武将: %s' % _name)
+    for _name in collect_unknown_heroes(specials, hero_names):
+        issues.append('special_cards 引用了未知武将: %s' % _name)
 
     known = ({c.get('name', '') for c in cards} | {s.get('name', '') for s in specials}
              | {sk.get('name', '') for h in heroes for sk in h.get('skills', [])}
@@ -108,21 +109,8 @@ def audit_hero_coverage(root):
     try:
         with open(os.path.join(data_dir, 'card_points.json'), encoding='utf-8') as f:
             payload = json.load(f)
-        cards = payload.get('cards') if isinstance(payload, dict) else None
-        if not isinstance(cards, list):
-            issues.append('data/card_points.json 结构异常（缺少 cards 数组）')
-        else:
-            valid_suits = ('♥', '♣', '♠', '♦', '太极')
-            valid_points = {str(i) for i in range(1, 9)}
-            bad_suits = sorted({c.get('name', '?') for c in cards if c.get('suit') not in valid_suits})
-            bad_points = sorted({c.get('name', '?') for c in cards if c.get('point') not in valid_points})
-            total = sum(int(c.get('count', 1) or 1) for c in cards)
-            if total != 162:
-                issues.append('卡牌点数张数 %d != 期望 162' % total)
-            if bad_suits:
-                issues.append('卡牌点数异常花色 %d 张：%s' % (len(bad_suits), '、'.join(bad_suits[:6])))
-            if bad_points:
-                issues.append('卡牌点数异常点数 %d 张：%s' % (len(bad_points), '、'.join(bad_points[:6])))
+        for it in collect_card_points(payload):
+            issues.append(it['message'])
     except Exception as e:
         issues.append('data/card_points.json 读取失败: %s' % e)
 
@@ -130,24 +118,14 @@ def audit_hero_coverage(root):
     try:
         with open(os.path.join(data_dir, 'equip_attrs.json'), encoding='utf-8') as f:
             equips = json.load(f)
-        if not isinstance(equips, list):
-            issues.append('data/equip_attrs.json 结构异常（应为数组）')
-        else:
-            if len(equips) != 26:
-                issues.append('装备属性件数 %d != 期望 26' % len(equips))
-            for item in equips:
-                if item.get('subtype') not in ('武器', '防具', '坐骑'):
-                    issues.append('装备 %s 细分类型异常: %r' % (item.get('name', '?'), item.get('subtype')))
-                if item.get('distance_mod') not in (None, -1, 1):
-                    issues.append('装备 %s 距离修正异常: %r' % (item.get('name', '?'), item.get('distance_mod')))
+        for it in collect_equip_attrs(equips):
+            issues.append(it['message'])
     except Exception as e:
         issues.append('data/equip_attrs.json 读取失败: %s' % e)
 
     # 6. 专属牌/战法牌结算详情回填校验（死士为非实体牌标记，xlsx 无对应结算，豁免）
     missing_settle = sorted(
-        s.get('name', '') for s in specials
-        if s.get('category') in ('专属牌', '专属战法牌')
-        and not s.get('settlement') and s.get('name') not in ('死士',)
+        s.get('name', '') for s in collect_missing_settlements(specials)
     )
     if missing_settle:
         issues.append('专属牌/战法牌缺结算详情 %d 个（人工确认后补充 special_cards.json）：%s'

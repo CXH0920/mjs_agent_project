@@ -9,7 +9,6 @@ with open(r'data\cards.json', encoding='utf-8') as f:
     cards = json.load(f)
 
 card_names = {c['name'] for c in cards}
-card_types = {c['name']: c['card_type'] for c in cards}
 
 # 术语词典（优先匹配长词）
 TERMS = ['出牌阶段', '摸牌阶段', '弃牌阶段', '回合开始', '回合结束', '每轮结束', '每回合限1次',
@@ -104,12 +103,6 @@ TRIGGER_OVERRIDES = {
     ('吕布', '无双飞将'): ['你获得战法牌时'],
     ('王戎', '卖李钻核'): ['其他角色打出获得过的你的牌，即将进入弃牌堆时'],
 }
-
-def extract_trigger_cond(hero, skill, desc):
-    # 人工精化映射表优先（命中则不再走规则提取）
-    key = (hero, skill)
-    if key in TRIGGER_OVERRIDES:
-        return TRIGGER_OVERRIDES[key][:3]
 
 def extract_trigger_cond(hero, skill, desc):
     # 人工精化映射表优先（命中则不再走规则提取）

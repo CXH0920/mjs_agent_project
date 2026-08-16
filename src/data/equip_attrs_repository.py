@@ -26,6 +26,10 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 DEFAULT_EQUIP_ATTRS_FILE = DEFAULT_DATA_DIR / "equip_attrs.json"
 
 VALID_SUBTYPES = ("武器", "防具", "坐骑")
+# 距离修正合法值：None=无修正, -1=攻击距离更近, 1=防御距离更远
+VALID_DISTANCE_MODS = (None, -1, 1)
+# 装备总件数期望（原 xlsx sheet2 共 26 件；审计/迁移脚本共用）
+EXPECTED_EQUIP_COUNT = 26
 
 
 class EquipAttrItem(BaseModel):
@@ -55,7 +59,7 @@ class EquipAttrItem(BaseModel):
     @field_validator("distance_mod")
     @classmethod
     def validate_distance(cls, value: int | None) -> int | None:
-        if value not in (None, -1, 1):
+        if value not in VALID_DISTANCE_MODS:
             raise ValueError("距离修正仅支持 -1 / 1 / 空")
         return value
 

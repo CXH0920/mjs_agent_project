@@ -7,8 +7,6 @@
 
 from __future__ import annotations
 
-from html import escape
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -278,6 +276,7 @@ class HeroClassificationPanel(QWidget):
         surface_layout.addWidget(self._hero_name_label)
         self._hero_position_label = QLabel()
         self._hero_position_label.setObjectName("specialCardEditMeta")
+        self._hero_position_label.setTextFormat(Qt.TextFormat.PlainText)
         self._hero_position_label.setVisible(False)
         surface_layout.addWidget(self._hero_position_label)
         divider = QFrame()
@@ -406,8 +405,9 @@ class HeroClassificationPanel(QWidget):
             section = QLabel(label)
             section.setObjectName("specialCardSectionTitle")
             surface_layout.addWidget(section)
-            body = QLabel(escape(value))
+            body = QLabel(value)
             body.setObjectName("specialCardFieldBody")
+            body.setTextFormat(Qt.TextFormat.PlainText)
             body.setWordWrap(True)
             body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             surface_layout.addWidget(body)
@@ -415,8 +415,9 @@ class HeroClassificationPanel(QWidget):
             section = QLabel("典型武将")
             section.setObjectName("specialCardSectionTitle")
             surface_layout.addWidget(section)
-            body = QLabel(escape("、".join(cat.typical_heroes)))
+            body = QLabel("、".join(cat.typical_heroes))
             body.setObjectName("specialCardFieldBody")
+            body.setTextFormat(Qt.TextFormat.PlainText)
             body.setWordWrap(True)
             body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             surface_layout.addWidget(body)
@@ -565,7 +566,7 @@ class HeroClassificationPanel(QWidget):
         self._hero_empty_label.setVisible(False)
         self._hero_name_label.setText(hero)
         position = self._hero_positions.get(hero, "")
-        self._hero_position_label.setText(f"定位：{escape(position)}")
+        self._hero_position_label.setText(f"定位：{position}")
         self._hero_position_label.setVisible(bool(position))
         all_names = [c.name for c in self._repo.list_categories()]
         self._hero_combo.set_items(all_names)

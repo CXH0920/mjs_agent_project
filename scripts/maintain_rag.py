@@ -20,65 +20,12 @@ import rag_audit
 import audit_rule_doc
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
+sys.path.insert(0, ROOT)  # 复用 src/business/rag/task_defs.py（任务定义单一事实源）
+from src.business.rag.task_defs import TASKS
+
 STATE_FILE = os.path.join(ROOT, 'scripts', '.rag_state.json')
 SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
 DOCS_DIR = os.path.join(ROOT, 'data', 'rag_corpus')
-
-
-# ---------------------------------------------------------------------------
-# 任务表：name | build脚本 | 依赖的T0源文件 | 生成的json校验文件 | 期望块数
-# ---------------------------------------------------------------------------
-TASKS = [
-    {
-        'name': '武将语料',
-        'script': 'build_rag_corpus.py',
-        'sources': ['data/heroes.json', 'data/cards.json'],
-        'outputs': [('武将RAG语料.json', 593)],
-    },
-    {
-        'name': '卡牌语料',
-        'script': 'build_card_corpus.py',
-        'sources': ['data/cards.json'],
-        'outputs': [('卡牌RAG语料.json', 49)],
-    },
-    {
-        'name': '点数花色语料',
-        'script': 'build_cardpts.py',
-        'sources': ['data/card_points.json'],
-        'outputs': [('卡牌点数花色语料.json', 49)],
-    },
-    {
-        'name': '装备属性语料',
-        'script': 'build_equip_attr.py',
-        'sources': ['data/cards.json', 'data/equip_attrs.json', 'data/rag_corpus/卡牌RAG语料.json'],
-        'outputs': [('装备属性语料.json', 27)],
-    },
-    {
-        'name': '加强削弱语料',
-        'script': 'build_modify_corpus.py',
-        'sources': ['data/cards.json', 'data/card_annotations.json'],
-        'outputs': [('加强削弱语料.json', 49)],
-    },
-    {
-        'name': '元规则/术语/FAQ',
-        'script': 'build_rule_corpus.py',
-        'sources': ['docs/元规则整理-完整版.md'],
-        'dynamic': True,
-        'outputs': [('元规则RAG语料-章节块.json', None), ('术语表.json', None), ('FAQ裁定块.json', None)],
-    },
-    {
-        'name': '特殊机制语料',
-        'script': 'build_special_corpus.py',
-        'sources': ['data/special_cards.json'],   # 单一维护源：人工维护的专属牌/战法牌/状态等（含 xlsx 迁移的花色点数/结算）
-        'outputs': [('特殊机制语料.json', 83)],
-    },
-    {
-        'name': '武将分类语料',
-        'script': 'build_classification_corpus.py',
-        'sources': ['data/hero_classification.json', 'data/heroes.json'],
-        'outputs': [('武将分类语料.json', None)],
-    },
-]
 
 # ---------------------------------------------------------------------------
 # 工具函数
@@ -114,10 +61,6 @@ def task_changed(task, state):
     """判断任务是否需要执行：任一依赖源或脚本自身发生变化。"""
     check_paths = list(task['sources']) + ['scripts/' + task['script']]
     for p in check_paths:
-        if p.startswith('scripts/'):
-            full = os.path.join(ROOT, p)
-        else:
-            full = os.path.join(ROOT, p)
         fp = file_fingerprint(p)
         old = state.get('files', {}).get(p)
         if fp != old:
@@ -150,8 +93,9 @@ def verify_outputs(task):
     """校验生成的 json 块数，返回 (ok, 详情列表)。"""
     results = []
     all_ok = True
-    snap_counts = audit_rule_doc.snapshot_counts() if task.get('dynamic') else None
-    for fname, expected in task['outputs']:
+    expected_mode = task.get('expected')
+    snap_counts = audit_rule_doc.snapshot_counts() if expected_mode == 'snapshot' else None
+    for fname in task['outputs']:
         path = os.path.join(DOCS_DIR, fname)
         if not os.path.exists(path):
             all_ok = False
@@ -161,7 +105,7 @@ def verify_outputs(task):
             with open(path, encoding='utf-8') as f:
                 data = json.load(f)
             n = len(data)
-            if task.get('dynamic'):
+            if expected_mode == 'snapshot':
                 exp = snap_counts.get(fname) if snap_counts else None
                 if exp is None:
                     results.append(f'{fname}: {n} 块（首次，快照未建立）')
@@ -172,6 +116,7 @@ def verify_outputs(task):
                     all_ok = False
                     results.append(f'{fname}: {n} 块 不符（低于快照基线 {exp}，疑似丢块）')
                 continue
+            expected = task.get('expected')
             if expected is None:
                 results.append(f'{fname}: {n} 块（动态数量）')
                 continue
@@ -190,17 +135,18 @@ def summarize_counts():
     print('\n当前语料块数概览：')
     snap_counts = audit_rule_doc.snapshot_counts()
     for task in TASKS:
-        for fname, expected in task['outputs']:
+        for fname in task['outputs']:
             path = os.path.join(DOCS_DIR, fname)
             if os.path.exists(path):
                 try:
                     with open(path, encoding='utf-8') as f:
                         n = len(json.load(f))
-                    if task.get('dynamic'):
+                    if task.get('expected') == 'snapshot':
                         exp = snap_counts.get(fname) if snap_counts else None
                         mark = '✅' if (exp is None or n >= exp) else '⚠️'
                     else:
-                        mark = '✅' if n == expected else '⚠️'
+                        expected = task.get('expected')
+                        mark = '✅' if (expected is None or n == expected) else '⚠️'
                     print(f'  {mark} {fname}: {n} 块')
                 except Exception:
                     print(f'  ❌ {fname}: 解析失败')
@@ -312,7 +258,7 @@ def main():
             if v_ok:
                 succeeded.append(task['name'])
                 print('  ✅ 生成与校验通过')
-                if task.get('dynamic'):
+                if task.get('expected') == 'snapshot':
                     audit_rule_doc.audit(doc_path=audit_rule_doc.DEFAULT_DOC,
                                          snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
                                          root=ROOT, update_snapshot=True, print_report=False)

@@ -10,9 +10,7 @@
 from __future__ import annotations
 
 import json
-import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, Qt, Signal
@@ -36,6 +34,8 @@ from src.data.hero_classification_repository import HeroClassificationRepository
 from src.data.special_cards_repository import SpecialCardRepository
 from src.data.equip_attrs_repository import EquipAttrsRepository
 from src.data.card_points_repository import CardPointsRepository
+from src.business.rag.task_defs import TASKS as _RAG_TASKS
+from src.business.rag.audit_service import AuditIssue, CORPUS_DIR, audit_summary
 from src.business.rag.refinement_service import list_pending
 from src.ui.library.hero_classification_panel import HeroClassificationPanel
 from src.ui.library.special_cards_panel import SpecialCardsPanel
@@ -57,42 +57,13 @@ from src.ui.shared.widgets import PageActionBar
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
 from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 
-# 语料任务：名称 -> (源文件, 输出语料文件)
+# 语料任务：名称 -> (源文件, 输出语料文件)；定义与 scripts/maintain_rag.py 共用
+# （单一事实源见 src/business/rag/task_defs.py，改动请同步维护该处）
 TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
-    ("武将语料", ["data/heroes.json", "data/cards.json"], ["武将RAG语料.json"]),
-    ("卡牌语料", ["data/cards.json"], ["卡牌RAG语料.json"]),
-    ("点数花色语料", ["data/card_points.json"], ["卡牌点数花色语料.json"]),
-    ("装备属性语料", ["data/cards.json", "data/equip_attrs.json"], ["装备属性语料.json"]),
-    ("加强削弱语料", ["data/cards.json", "data/card_annotations.json"], ["加强削弱语料.json"]),
-    ("元规则/术语/FAQ", ["docs/元规则整理-完整版.md"],
-     ["元规则RAG语料-章节块.json", "术语表.json", "FAQ裁定块.json"]),
-    ("特殊机制语料", ["data/special_cards.json"], ["特殊机制语料.json"]),
-    ("武将分类语料", ["data/hero_classification.json", "data/heroes.json"], ["武将分类语料.json"]),
+    (task["name"], task["sources"], task["outputs"]) for task in _RAG_TASKS
 ]
 
-CORPUS_DIR = "data/rag_corpus"
 PYTHON = sys.executable
-
-
-@dataclass(frozen=True)
-class AuditIssue:
-    """人工维护提示条目（结构化，供 UI 渲染跳转按钮）。
-
-    - kind: 问题类型标识（unclassified_hero / unknown_hero / missing_settlement / bad_card_points 等）；
-    - target_tab: 跳转目标一级页签名（空表示无跳转）；
-    - target: 定位数据，按 kind 解释（未归类武将名列表 / 专属牌 (category, name) / 牌名列表）。
-    """
-
-    kind: str
-    message: str
-    severity: str = "warning"
-    target_tab: str = ""
-    target: object = None
-
-
-def format_audit_issues(issues: list[AuditIssue]) -> list[str]:
-    """结构化审计条目 → 纯文本列表（兼容旧消费方/测试）。"""
-    return [issue.message for issue in issues]
 
 
 def task_states(root: Path) -> list[dict]:
@@ -129,169 +100,6 @@ def task_states(root: Path) -> list[dict]:
         rows.append({"name": name, "status": status, "count": count,
                      "sources": sources, "outputs": outputs})
     return rows
-
-
-def audit_summary(root: Path) -> list[AuditIssue]:
-    """返回人工维护提示清单（结构化条目；空列表表示无问题）。"""
-    issues: list[AuditIssue] = []
-    heroes_path = root / "data" / "heroes.json"
-    classification_path = root / "data" / "hero_classification.json"
-    special_path = root / "data" / "special_cards.json"
-    try:
-        heroes = json.loads(heroes_path.read_text(encoding="utf-8"))
-        hero_names = {item.get("name") for item in heroes}
-    except (OSError, json.JSONDecodeError):
-        hero_names = set()
-    try:
-        classification = json.loads(classification_path.read_text(encoding="utf-8"))
-        classified = set(classification.get("hero_categories", {}))
-        unclassified = sorted(hero_names - classified)
-        if unclassified:
-            issues.append(AuditIssue(
-                kind="unclassified_hero",
-                message=f"未归类武将 {len(unclassified)} 人（请补充 data/hero_classification.json）",
-                target_tab="武将分类维护",
-                target=unclassified,
-            ))
-    except (OSError, json.JSONDecodeError):
-        issues.append(AuditIssue(
-            kind="classification_unreadable",
-            message="data/hero_classification.json 缺失或无法解析",
-            target_tab="武将分类维护",
-        ))
-    try:
-        specials = json.loads(special_path.read_text(encoding="utf-8"))
-        unknown = set()
-        for item in specials:
-            hero = item.get("hero", "")
-            if not hero:
-                continue
-            for _name in re.split(r"[\u3001,]", hero):
-                _name = re.split(r"[(\uff08]", _name, 1)[0].strip()
-                if not _name or _name in ("通用", "—", "众多武将") or _name.endswith("等"):
-                    continue
-                if _name not in hero_names:
-                    unknown.add(_name)
-        unknown = sorted(unknown)
-        if unknown:
-            target = next(
-                ((str(it.get("category", "")), str(it.get("name", ""))) for it in specials
-                 if it.get("hero") and any(n in it["hero"] for n in unknown)),
-                None,
-            )
-            issues.append(AuditIssue(
-                kind="unknown_hero",
-                message=f"专属牌引用未知武将 {len(unknown)} 人：{'、'.join(unknown[:8])}",
-                target_tab="专属牌维护",
-                target=target,
-            ))
-        # 专属牌/战法牌结算详情回填校验（死士为非实体牌标记，xlsx 无对应结算，豁免）
-        missing_items = [
-            it for it in specials
-            if it.get("category") in ("专属牌", "专属战法牌")
-            and not it.get("settlement") and it.get("name") not in ("死士",)
-        ]
-        if missing_items:
-            names = [str(it.get("name", "")) for it in missing_items]
-            first = missing_items[0]
-            issues.append(AuditIssue(
-                kind="missing_settlement",
-                message=f"专属牌/战法牌缺结算详情 {len(missing_items)} 个：{'、'.join(names[:8])}",
-                target_tab="专属牌维护",
-                target=(str(first.get("category", "")), str(first.get("name", ""))),
-            ))
-    except (OSError, json.JSONDecodeError):
-        issues.append(AuditIssue(
-            kind="specials_unreadable",
-            message="data/special_cards.json 缺失或无法解析",
-            target_tab="专属牌维护",
-        ))
-    # 卡牌点数源校验（data/card_points.json，原 xlsx sheet1 + 判定规则）
-    points_path = root / "data" / "card_points.json"
-    try:
-        payload = json.loads(points_path.read_text(encoding="utf-8"))
-        cards = payload.get("cards") if isinstance(payload, dict) else None
-        if not isinstance(cards, list):
-            issues.append(AuditIssue(
-                kind="card_points_structure",
-                message="data/card_points.json 结构异常（缺少 cards 数组）",
-                target_tab="卡牌点数维护",
-            ))
-        else:
-            valid_suits = ("♥", "♣", "♠", "♦", "太极")
-            valid_points = {str(i) for i in range(1, 9)}
-            bad_suits = sorted({c.get("name", "?") for c in cards if c.get("suit") not in valid_suits})
-            bad_points = sorted({c.get("name", "?") for c in cards if c.get("point") not in valid_points})
-            total = sum(int(c.get("count", 1) or 1) for c in cards)
-            if total != 162:
-                issues.append(AuditIssue(
-                    kind="card_points_total",
-                    message=f"卡牌点数张数 {total} != 期望 162",
-                    target_tab="卡牌点数维护",
-                ))
-            if bad_suits:
-                issues.append(AuditIssue(
-                    kind="bad_card_points",
-                    message=f"卡牌点数异常花色 {len(bad_suits)} 张：{'、'.join(bad_suits[:6])}",
-                    target_tab="卡牌点数维护",
-                ))
-            if bad_points:
-                issues.append(AuditIssue(
-                    kind="bad_card_points",
-                    message=f"卡牌点数异常点数 {len(bad_points)} 张：{'、'.join(bad_points[:6])}",
-                    target_tab="卡牌点数维护",
-                ))
-    except (OSError, json.JSONDecodeError):
-        issues.append(AuditIssue(
-            kind="card_points_unreadable",
-            message="data/card_points.json 缺失或无法解析",
-            target_tab="卡牌点数维护",
-        ))
-    # 装备属性源校验（data/equip_attrs.json，原 xlsx sheet2）
-    equips_path = root / "data" / "equip_attrs.json"
-    try:
-        equips = json.loads(equips_path.read_text(encoding="utf-8"))
-        if not isinstance(equips, list):
-            issues.append(AuditIssue(
-                kind="equip_attrs_structure",
-                message="data/equip_attrs.json 结构异常（应为数组）",
-                target_tab="装备属性维护",
-            ))
-        else:
-            if len(equips) != 26:
-                issues.append(AuditIssue(
-                    kind="equip_attrs_count",
-                    message=f"装备属性件数 {len(equips)} != 期望 26",
-                    target_tab="装备属性维护",
-                ))
-            for item in equips:
-                if item.get("subtype") not in ("武器", "防具", "坐骑"):
-                    issues.append(AuditIssue(
-                        kind="bad_equip_attrs",
-                        message=f"装备 {item.get('name', '?')} 细分类型异常：{item.get('subtype')!r}",
-                        target_tab="装备属性维护",
-                    ))
-                if item.get("distance_mod") not in (None, -1, 1):
-                    issues.append(AuditIssue(
-                        kind="bad_equip_attrs",
-                        message=f"装备 {item.get('name', '?')} 距离修正异常：{item.get('distance_mod')!r}",
-                        target_tab="装备属性维护",
-                    ))
-    except (OSError, json.JSONDecodeError):
-        issues.append(AuditIssue(
-            kind="equip_attrs_unreadable",
-            message="data/equip_attrs.json 缺失或无法解析",
-            target_tab="装备属性维护",
-        ))
-    # 索引精化待办：无 curated 且索引字段为空的语料块（语料未构建时清单为空，静默跳过）
-    pending_refinement = list_pending(root / CORPUS_DIR)
-    if pending_refinement:
-        issues.insert(0, AuditIssue(
-            kind="pending_refinement",
-            message=f"索引字段待精化 {len(pending_refinement)} 块（卡牌/武将语料）",
-            severity="warning",
-        ))
-    return issues
 
 
 class RagMaintenancePanel(QWidget):

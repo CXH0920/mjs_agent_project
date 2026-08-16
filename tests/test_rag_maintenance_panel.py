@@ -11,10 +11,9 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
+from src.business.rag.audit_service import audit_summary, format_audit_issues
 from src.ui.maintenance.rag_maintenance_panel import (
     RagMaintenancePanel,
-    audit_summary,
-    format_audit_issues,
     task_states,
 )
 
@@ -84,6 +83,22 @@ def test_missing_source(tmp_path: Path) -> None:
     (root / "data" / "special_cards.json").unlink()
     rows = {row["name"]: row["status"] for row in task_states(root)}
     assert rows["特殊机制语料"] == "缺源"
+
+
+def test_task_defs_include_card_corpus_link(tmp_path: Path) -> None:
+    """#1 回归：任务表为单一事实源，装备属性语料必须声明对卡牌语料的依赖。"""
+    from src.business.rag.task_defs import TASKS
+    equip = next(t for t in TASKS if t["name"] == "装备属性语料")
+    assert "data/rag_corpus/卡牌RAG语料.json" in equip["sources"]
+
+
+def test_equip_task_tracks_card_corpus_dependency(tmp_path: Path) -> None:
+    """#1 回归：卡牌RAG语料.json 变更后装备属性语料应标记待重建（跨语料联动）。"""
+    root = _make_root(tmp_path)
+    _utime(root / "data" / "rag_corpus" / "卡牌RAG语料.json", time.time() + 60)
+    rows = {row["name"]: row["status"] for row in task_states(root)}
+    assert rows["装备属性语料"] == "待重建"
+    assert rows["卡牌语料"] == "最新"
 
 
 def test_audit_reports_unclassified_and_unknown_hero(tmp_path: Path) -> None:
@@ -218,7 +233,7 @@ def test_jump_to_bad_card_points(tmp_path: Path) -> None:
         "judge_rules": [],
     })
     panel = RagMaintenancePanel(root=root)
-    issue = next(i for i in audit_summary(root) if i.kind == "bad_card_points")
+    issue = next(i for i in audit_summary(root) if i.kind in ("bad_card_suit", "bad_card_point"))
     panel._jump_to_issue(issue)
     # 非法行已被 repository 过滤（仅记日志），跳转只切页签展示「加载异常」提示
     assert panel._tabs.tabText(panel._tabs.currentIndex()) == "卡牌点数维护"
