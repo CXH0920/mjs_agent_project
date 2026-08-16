@@ -47,7 +47,8 @@ src/business/
 ├── maintenance/
 │   └── data_management_service.py # 数据清理、修复与修改事务
 ├── rag/
-│   ├── refinement_service.py      # 索引精化：LLM 建议生成与 curated 写回
+│   ├── refinement_service.py      # 索引精化：块三分类扫描、LLM 建议、curated 读写/取消
+│   ├── audit_service.py           # 知识库审计：AuditIssue 结构化条目与各数据源校验
 │   └── rule_doc_service.py        # 元规则 T0 文档维护纯函数（audit/差异/提案/疑难）
 └── announcement/
     └── announcement_service.py    # 公告检查与百科 diff 服务（线程 + Qt 信号）
@@ -247,6 +248,28 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 > 关键常量：`DEFAULT_DOC`（`docs/元规则整理-完整版.md`）、`PROPOSAL_DIR`（`docs/archive/proposals/`）、`PENDING_FILE`（`docs/rule_doc_pending.json`）、`RAG_EVALS_DIR`（`data/rag_evals/`）。
 
+### 3.8 AuditService（知识库审计，2026-08 重构）
+
+`src/business/rag/audit_service.py` 生成知识库维护工作台的结构化审计条目：
+
+- **`AuditIssue`**（frozen dataclass）— `kind/message/severity/target_tab/target`，供 UI 渲染跳转按钮。
+- **`audit_summary(root, pending_refinement=None)`** — 新增 `pending_refinement` 可选参数：UI 工作台同一轮刷新已用 `list_pending()` 算过待精化清单，传入可避免重复读语料文件；`None` 时内部读取。
+- **`collect_orphan_category_keys(hero_names, classification)`** — 新增“分类表引用未知武将”反向校验（#10）：对比 `hero_classification.json` 的 `hero_categories` 键与 `heroes.json` 武将名，返回升序脏键列表（如 `'贾诩(限定)'`），对应审计条目 `orphan_category_key`。
+- **`GENERIC_HERO_NAMES`** — 泛指/占位武将名常量 `{"通用", "—", "众多武将"}`，专属牌 `hero` 字段校验与 UI 共用，消除重复字符串。
+- 校验覆盖：未归类武将、分类表孤儿键、专属牌未知武将/缺结算、卡牌点数花色/张数=162、装备件数/字段、索引字段待精化（排第一位）。
+
+### 3.9 RefinementService（索引精化服务，2026-08 扩展）
+
+`src/business/rag/refinement_service.py` 为「索引精化」对话框提供语料块视图与 curated 读写：
+
+- **`PendingBlock`** — 扩展 `method`（`llm|manual`）与 `updated_at`（ISO 日期）字段，待精化/已精化/普通块共用同一视图。
+- **`scan_blocks(corpus_dir)`** — 一次扫描卡牌/武将语料按精化状态三分类返回 `{"pending":[], "curated":[], "normal":[]}`：pending=无 curated 且任一索引字段为空；curated=有 curated（fields 以 curated 内容为权威）；normal=无 curated 且四字段全非空（构建规则已填满）。武将语料只取技能块（跳过 overview）。
+- **`list_pending()` / `list_curated()` / `list_normal()`** — `list_pending` 改为 `scan_blocks()["pending"]` 的薄封装（对外行为不变），新增已精化/普通块清单。
+- **`suggest_one(block, generator)`** — 公开单块 LLM 建议接口（原私有 `_suggest_one` 改名），改用 `AIBatchGenerator.complete()` 公开对话补全接口；API/解析失败返回 None。
+- **`clear_curated(corpus_dir, block_id, fname)`** — 取消精化：删除块顶层 `curated` 字段并原子写回；块不存在抛 `ValueError`，本就没有 curated 返回 False。
+- **`apply_curated()`** — 零改动复用：已支持对任意 block_id 覆盖写（含已有 curated 的块），重建时 `merge_curated` 保留最新成果。
+- 原子写统一委托 `src.data.json_repository.atomic_write_json`（indent=1 与 build 脚本一致）。
+
 ## 四、关键代码片段
 
 ### 4.1 QProcess 参数构建与启动
@@ -314,3 +337,7 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `docs/archive/proposals/` | 提案 JSON 读写与状态更新 |
 | 依赖 | `scripts/.sync_rule_stats_report.json`、`.sync_confirmed_diffs.json` | 数据段差异报告与 B2 确认清单定位 |
 | 被调用方 | `src.ui.maintenance.rule_doc_panel` | 元规则维护页签调用纯函数渲染表格与详情 |
+| 依赖 | `src.data.json_repository` | refinement_service 原子写 curated 语料 |
+| 依赖 | `src.scraper.ai.api_generator` | `AIBatchGenerator.complete()` 提供 LLM 精化建议 |
+| 依赖 | `src.data`（heroes/hero_classification/special_cards/card_points/equip_attrs） | audit_service 校验数据源一致性 |
+| 被调用方 | `src.ui.maintenance.rag_maintenance_panel` | 审计横幅与索引精化入口调用 audit_summary / list_pending |

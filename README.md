@@ -213,7 +213,7 @@ python -m src.scraper.ai_batch --dry-run --synergy
 攻略与相性生成（API/浏览器双模式）默认启用 RAG 官方规则语料（`data/rag_corpus` + `data/rag_index`）注入 prompt，提升规则准确性。每次生成可在「生成方式确认」对话框选择 **RAG 语料增强（推荐）** 或 **经典模式（无 RAG 注入）**，经典模式与旧版输出一致。相性生成额外注入双方武将语料块与相关规则/FAQ/卡牌/装备跨类块，关键结论标注来源块编号（如 `[hero_180_skill_1]`）；若语料不可用会自动降级为经典模式，并在进度窗口提示一次。
 - 禁用增强（CLI）：`python -m src.scraper.ai_batch --guide --no-rag`
 - 重建索引：`python -m src.scraper.ai_batch --rebuild-rag-index`
-- 一键维护管道（本地）：`python scripts/maintain_rag.py --force --build-index`（重建语料与向量索引），或使用应用内「知识库维护」页面可视化执行
+- 一键维护管道（本地）：`python scripts/maintain_rag.py --force --build-index`（重建语料与向量索引），或使用应用内「知识库维护」页面可视化执行；检索层 2026-08 起使用武将/牌名倒排与 KEYWORDS 倒排索引（`Retriever`），降低每次检索的全量遍历成本
 - 配置项：`config.env` 中 `RAG_ENABLED` / `RAG_MODEL_DIR` / `RAG_TOP_K` / `RAG_PROMPT_CHARS` / `RAG_BROWSER_PROMPT_CHARS` / `RAG_SYNERGY_PROMPT_CHARS` / `RAG_PROJECT_DIR`
 维护脚本（`maintain_rag.py` / `rag_audit.py` / `build_*.py`）已收编到 `scripts/`，全部在 test_project 本地运行（数据源 `data/`、文档源 `docs/`）：
 - 查看人工补充清单：`python scripts/rag_audit.py`
@@ -370,7 +370,7 @@ facade.heroes.search_heroes("诸葛")  # 模糊搜索
 - **SynergyManager(DataManager[SynergyScore])** — 相性 CRUD，(A,B) 和 (B,A) 自动归一为同一 key
 - **GuideManager(DataManager[HeroGuide])** — 攻略 CRUD，以 hero_id 为 key
 
-RAG 源数据仓储（`src/data/` 下）同样采用 Pydantic 校验 + 原子写：`CardPointsRepository`（`data/card_points.json`）、`EquipAttrsRepository`（`data/equip_attrs.json`）、`SpecialCardRepository`（`data/special_cards.json`）、`HeroClassificationRepository`（`data/hero_classification.json`），由「知识库维护」页可视化维护。
+RAG 源数据仓储（`src/data/` 下）同样采用 Pydantic 校验 + 原子写：`CardPointsRepository`（`data/card_points.json`）、`EquipAttrsRepository`（`data/equip_attrs.json`）、`SpecialCardRepository`（`data/special_cards.json`）、`HeroClassificationRepository`（`data/hero_classification.json`），由「知识库维护」页可视化维护。2026-08 起四个仓库统一继承 `src/data/json_repository.py` 的 `JsonRepository` 基类（`atomic_write_json`：mkstemp + fsync + replace 原子写；`_read_root` 加锁读盘；CRUD 写盘失败自动回滚内存快照），`DataManager` 与 `card_catalog` 的原子写也收敛到同一入口。
 
 ### 数据完整性与恢复
 
@@ -567,6 +567,7 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 - **元规则维护**（`docs/元规则整理-完整版.md` 规则母本，只增不删、机器校验）：文档状态（`audit_rule_doc.py`）、数据段差异（`sync_rule_stats.py` 预览/确认/应用）、提案工作台（`propose_rule_changes.py` 生成、`apply_rule_proposal.py` 合入并自动审计+重建+写 changelog）、疑难登记（`docs/rule_doc_pending.json`，可一键转 FAQ 提案）；FAQ 回归评估用 `eval_rule_faqs.py`；
 - **数据源维护页签**：专属牌维护（`data/special_cards.json`）、卡牌点数维护（`data/card_points.json`，含 12 条判定规则与 xlsx 应急导入）、装备属性维护（`data/equip_attrs.json`）、武将分类维护（`data/hero_classification.json`）；
 - 保存任一数据源 → 自动标记「待重建」→ 一键 `maintain_rag.py` 重建语料与向量索引；「索引精化」对话框（LLM 建议 + 人工补全 timing/trigger_condition/keywords/related 四字段，批量建议事件循环不冻结窗口）可对卡牌/武将语料做 curated 字段精化，重建不覆盖；对话框内可切换「待精化/已精化/全部」范围，已精化（curated）块支持浏览、再编辑（有改动才写回）与取消精化（退回待精化池），无待办时入口按钮仍可进入浏览。
+- **数据安全与性能（2026-08 优化）**：脚本执行统一走 `ScriptRunner`（QProcess 公共封装，防并发）；语料块数读取带 `(mtime, size)` 缓存；维护仓库写盘失败自动回滚并重新对齐界面；xlsx 导入异步执行不阻塞 UI；`mark_recommendation_index_stale()` 记录调用来源日志；`Retriever` 增加武将/牌名与关键词倒排索引，检索不再全量线性遍历。
 
 ### Configuration
 

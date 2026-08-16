@@ -235,7 +235,7 @@ python -m src.scraper.ai_batch --synergy-single hero.json  # 选定武将
 |------|------|------|
 | 依赖 | `src.data.models` | 使用 Hero / HeroGuide / SynergyScore 模型进行 Pydantic 校验 |
 | 依赖 | `src.config.env` | 读取 API Key/URL/Model 等配置 |
-| 依赖 | `src.rag`（config/indexer/retriever） | ChromaDB 向量检索、bge-small-zh 嵌入与关键词 RRF 混合检索 |
+| 依赖 | `src.rag`（config/indexer/retriever） | ChromaDB 向量检索、bge-small-zh 嵌入与关键词 RRF 混合检索（2026-08：`Retriever` 新增武将/牌名倒排 `_hero_index` 与 KEYWORDS 关键词倒排 `_keyword_index`，`hero_blocks()`/`_keyword_hits()` 不再线性遍历全量块） |
 | 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成 |
 | 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成 |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 攻略/相性"触发生成 |

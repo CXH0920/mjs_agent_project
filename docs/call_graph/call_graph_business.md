@@ -596,7 +596,7 @@ MainWindow._check_announcements()
 
 ### 11.1 调用链总览
 
-`src/business/rag/rule_doc_service.py` 只提供纯函数（本地只读解析、提案/疑难读写），脚本执行由 UI 层 `RuleDocPanel` 用 QProcess 完成；`maintain_rag.py` 与 `audit_rule_doc.py` 负责把文档母本转换为语料并做机器校验。
+`src/business/rag/rule_doc_service.py` 只提供纯函数（本地只读解析、提案/疑难读写），脚本执行由 UI 层 `RuleDocPanel` 经 `ScriptRunner`（QProcess 公共封装）完成；`maintain_rag.py` 与 `audit_rule_doc.py` 负责把文档母本转换为语料并做机器校验。
 
 ```
 RuleDocPanel（知识库维护 → 元规则维护，四个子页签）
@@ -637,6 +637,7 @@ RuleDocPanel（知识库维护 → 元规则维护，四个子页签）
 
 | 脚本 | 命令示例 | 作用 |
 |------|---------|------|
+| `scripts/rag_common.py` | （公共模块） | 8 个 build 脚本公共基建：`setup_stdout()`（stdout UTF-8 包装）、`load_json()`（UTF-8-SIG 容错 + required 语义）、`save_json()`（委托 `atomic_write_json` 原子写）、`project_path()` 与 ROOT/DATA/CORPUS/SCRIPTS 路径常量 |
 | `scripts/audit_rule_doc.py` | `--strict` / `--update-snapshot` | 解析回声、表格结构、块 ID 唯一、ID 稳定性（快照）、FAQ 编号、确认状态、交叉引用、已定稿块指纹、章节结构指纹；快照 `scripts/.rule_doc_snapshot.json` |
 | `scripts/sync_rule_stats.py` | `--json out.json` / `--apply` / `--apply-json` | 从 `data/*.json` 生成数据快照段期望值并与文档对比；`--apply-json` 按确认清单逐行替换；退出码 1 = 有差异/应用失败，2 = 前置失败 |
 | `scripts/diff_source_data.py` | `--old data/backups` / `--data heroes,cards` | 对比 data 与备份，输出变更清单（含“是否新机制”启发式标记） |
@@ -644,4 +645,36 @@ RuleDocPanel（知识库维护 → 元规则维护，四个子页签）
 | `scripts/apply_rule_proposal.py` | `--proposal CP-*.json` | 合入已确认提案项（faq_new/faq_revise/term_new/row_revise/section_new）→ audit 严格校验 → 重建语料 → changelog → 归档 |
 | `scripts/eval_rule_faqs.py` | `--generate` / `--top-k 5` | FAQ 裁定回归评估（向量检索命中率，零 LLM 成本） |
 | `scripts/maintain_rag.py` | `--force --build-index` | 重建语料与索引；元规则任务为 dynamic，按快照块数只增校验，任务成功刷新快照 |
+
+## 十二、AuditService / RefinementService 链路（知识库维护，2026-08 扩展）
+
+### 12.1 审计链路
+
+```
+RagMaintenancePanel.refresh()
+  -> list_pending(root/data/rag_corpus)        [同一轮先算待精化清单]
+  -> audit_summary(root, pending_refinement)   [传入已算清单，避免重复读语料]
+     -> 未归类武将 collect_unclassified() -> AuditIssue(unclassified_hero)
+     -> 分类表孤儿键 collect_orphan_category_keys() -> AuditIssue(orphan_category_key)   [#10 新增]
+     -> 专属牌 collect_unknown_heroes() / 缺结算 -> AuditIssue(unknown_hero / missing_settlement)
+     -> 卡牌点数/装备属性结构校验 -> AuditIssue(card_points_* / equip_attrs_*)
+     -> pending_refinement 非空 -> AuditIssue(pending_refinement)   [插入列表首位]
+  -> 审计横幅渲染 + _jump_to_issue() 跳转定位
+```
+
+### 12.2 索引精化服务链路
+
+```
+IndexRefinementDialog.__init__
+  -> refinement_service.scan_blocks(corpus_dir)      [一次扫描三分类 pending/curated/normal]
+     -> list_pending() = scan_blocks()["pending"]    [薄封装，对外行为不变]
+     -> list_curated() / list_normal()                [新增]
+  -> 模式切换（待精化/已精化/全部）只过滤内存快照，不重复读文件
+  -> LLM 建议：suggest_one(block, generator) -> AIBatchGenerator.complete(messages, temperature=0.2)
+     -> generate_suggestions() 批量（UI 侧 QTimer 队列逐块）
+  -> 保存：apply_curated(corpus_dir, updates, fname) -> atomic_write_json(indent=1)
+     [覆盖写 curated；有改动才写回，method=manual、updated_at=今天]
+  -> 取消精化：clear_curated(corpus_dir, block_id, fname)
+     [删除顶层 curated 字段并原子写回；块退回 pending（字段空缺）或 normal（字段全满）]
+```
 

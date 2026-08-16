@@ -11,6 +11,7 @@
 
 1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 Hero、SynergyScore、HeroGuide 等核心数据模型，作为项目唯一的 JSON 格式契约，确保所有数据来源（官网爬虫、AI 生成）的输出格式一致
 2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用的 CRUD、加载、保存方法，三个子类 Manager 继承基类并添加各自的查询方法；`DataFacade` 门面统一访问入口，并可通过 `from_managers()` 安全复用外部 Manager
+3. **维护仓库基类**（`json_repository.py`）— `JsonRepository` 统一四个维护仓库（专属牌/武将分类/卡牌点数/装备属性）的原子写盘、加锁读盘与写盘失败内存回滚，消除各仓库重复的原子写副本
 
 ---
 
@@ -21,6 +22,7 @@ src/data/
 ├── __init__.py
 ├── models.py              # Pydantic 数据模型（Hero / Skill / SynergyScore / HeroGuide / Card / IncrementalUpdate）
 ├── manager.py             # DataManager[V_co] 泛型基类 + DataFacade 门面 + 增量更新函数
+├── json_repository.py     # JsonRepository 基类 + atomic_write_json（原子写/加锁/写失败回滚）
 ├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
 ├── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
@@ -175,21 +177,38 @@ facade.heroes.get_hero(114) # 直接访问各 Manager
 
 `BaikeSnapshot` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，`{checked_at, heroes:{id:{name, hash}}}`）。快照初始化优先用本地 `heroes.json` 各武将内容哈希建基线，避免手动编辑被误判为官网变化。
 
+### 3.8 JsonRepository 基类（2026-08 知识库维护优化新增）
+
+`src/data/json_repository.py` 提供维护仓库公共基建：
+
+- **`atomic_write_json(path, data, indent=2)`** — UTF-8/LF 原子写：`mkstemp` 生成同目录唯一临时文件 → 写入后 `flush + fsync` → `replace`；任一异常清理临时文件并重新抛出（原文件保持不变）。
+- **`JsonRepository` 基类** — 子类职责：`__init__` 先 `super().__init__(file_path)`；`load()` 用 `_read_root()` 取 `(root, ok)` 后做根结构校验与逐条解析；`save()` 构造 payload 后调 `save_payload(payload)`；CRUD 用 `_snapshot()/_restore()/_save_or_rollback()` 实现“先改内存、写盘失败回滚”。
+  - `_read_root()` 加 `RLock`（防止与写盘并发），文件缺失记 warning、解析失败记 error（`DataIssue`）；
+  - 写盘失败时 `_save_or_rollback()` 恢复内存快照并重新抛出，避免“看似失败、实际已变”的脏状态。
+
+四个维护仓库（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）已重构继承本基类；`card_catalog.py` 的 `_JsonRepository` 与 `manager.py` 的 `DataManager._save_unlocked` 也改为委托 `atomic_write_json`（全库原子写收敛，后续写盘改进只需改本文件）。
+
 ## 四、关键代码片段
 
 ### 4.1 JSON 原子写入
 
 ```python
-def save(self) -> None:
-    data = [g.model_dump(mode="json") for g in self._guides.values()]
-    tmp_path = self.guides_file.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    tmp_path.replace(self.guides_file)  # 原子替换
+# src/data/json_repository.py（全库统一入口）
+def atomic_write_json(path: Path | str, data: Any, indent: int = 2) -> None:
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=indent)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        Path(temporary).replace(path)
+    except Exception:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 ```
 
-> **设计思路：** 模型输出永远走 `model_dump(mode="json")` 确保格式受 Pydantic 约束。临时文件再 rename 避免写入中途崩溃破坏数据文件。
+> **设计思路：** 模型输出永远走 `model_dump(mode="json")` 确保格式受 Pydantic 约束。2026-08 起 `DataManager`、`card_catalog` 与四个维护仓库统一委托 `atomic_write_json`：mkstemp 保证临时文件唯一、`fsync` 保证断电/崩溃不留下空或半截文件、`replace` 原子替换；任何异常清理临时文件，原文件保持不变。
 
 ### 4.2 增量更新级联删除
 
@@ -250,3 +269,6 @@ def apply_incremental_update(hero_mgr, synergy_mgr, guide_mgr, update):
 | 被调用方 | `src/scraper/` | 爬虫和 AI 生成写入数据文件后通知 Manager 重新加载 |
 | 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存 |
 | 被调用方 | `src/ui/` | UI 层通过 DataFacade 读取/写入数据 |
+| 依赖 | `src.data.manager.DataIssue` | json_repository 加载问题统一使用 DataIssue 结构 |
+| 被调用方 | `src.data.card_catalog` / `src.data.manager` | 委托 `atomic_write_json` 原子保存 |
+| 被调用方 | 四个维护仓库（card_points/equip_attrs/hero_classification/special_cards） | 继承 JsonRepository（原子写 + 加锁 + 写失败回滚） |

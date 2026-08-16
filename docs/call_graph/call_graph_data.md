@@ -336,24 +336,28 @@ AnnouncementService._do_check()
 
 ```
 CardPointsRepository.load()
+  -> JsonRepository._read_root()   [RLock 加锁 + 文件缺失 warning / 解析失败 error（DataIssue）]
   -> 读取 data/card_points.json（{cards, judge_rules}）
   -> CardPointItem / JudgeRuleItem Pydantic 校验
-     -> 花色/点数/数量合法性、judge_rules 重复名 -> DataIssue
+     -> 花色/点数/数量合法性（name strip、花色点数非空 model_validator）、judge_rules 重复名 -> DataIssue
   -> list_cards() / list_rules() 供 UI 展示
 EquipAttrsRepository.load()
-  -> 读取 data/equip_attrs.json（26 件）
+  -> _read_root() -> 读取 data/equip_attrs.json（26 件）
   -> EquipAttrItem 校验（subtype ∈ 武器/防具/坐骑、攻击范围/距离修正数值）
 SpecialCardRepository.load()
-  -> 读取 data/special_cards.json
-  -> SpecialCardItem 校验（category ∈ 5 类、name 非空、同类别重名 -> DataIssue）
+  -> _read_root() -> 读取 data/special_cards.json
+  -> SpecialCardItem 校验（category ∈ 5 类、name 非空、stackable ∈ 是/否/—、同类别重名 -> DataIssue）
+HeroClassificationRepository.load()
+  -> _read_root() -> 读取 data/hero_classification.json（分类/克制链/hero_categories）
 ```
 
 ### 8.2 保存与联动
 
 ```
-CardPointsPanel / EquipAttrsPanel / SpecialCardsPanel 编辑
+CardPointsPanel / EquipAttrsPanel / SpecialCardsPanel / HeroClassificationPanel 编辑
   -> Repository.add_item/update_item/delete_item / save()
-     -> _atomic_json_write()       [UTF-8 + LF + 同目录临时文件原子替换]
+     -> _save_or_rollback()       [写前 _snapshot()，写盘失败 _restore() 回滚内存并重新抛出]
+        -> save_payload() -> atomic_write_json()   [mkstemp + fsync + replace，UTF-8/LF]
   -> data_changed -> RagMaintenancePanel.refresh()
      -> 任务表标记待重建 -> 用户一键 maintain_rag.py
         -> build_cardpts.py     读 card_points.json -> 卡牌点数花色语料
@@ -375,7 +379,11 @@ scripts/migrate_excel_to_json.py [--only points|equips|special]
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `CardPointsRepository.save()` | `card_points_repository.py` | 原子写 card_points.json |
-| `EquipAttrsRepository.save()` | `equip_attrs_repository.py` | 原子写 equip_attrs.json |
-| `SpecialCardRepository.save()` | `special_cards_repository.py` | 原子写 special_cards.json |
+| `atomic_write_json(path, data, indent)` | `json_repository.py` | 全库统一原子写（mkstemp + fsync + replace） |
+| `JsonRepository._read_root()` / `save_payload()` | `json_repository.py` | 加锁读盘骨架 / 加锁原子写盘 |
+| `JsonRepository._save_or_rollback()` | `json_repository.py` | 写盘失败恢复内存快照并重新抛出 |
+| `CardPointsRepository.save()` | `card_points_repository.py` | 原子写 card_points.json（继承 JsonRepository） |
+| `EquipAttrsRepository.save()` | `equip_attrs_repository.py` | 原子写 equip_attrs.json（继承 JsonRepository） |
+| `SpecialCardRepository.save()` | `special_cards_repository.py` | 原子写 special_cards.json（继承 JsonRepository） |
+| `HeroClassificationRepository.save()` | `hero_classification_repository.py` | 原子写 hero_classification.json（继承 JsonRepository） |
 | `migrate_excel_to_json.main()` | `scripts/migrate_excel_to_json.py` | xlsx 应急重导入 |

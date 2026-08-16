@@ -263,6 +263,7 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python scripts/maintain_rag.py --force --build-index` 或应用内「知识库维护」页面。
+- **检索性能（2026-08）**：`Retriever` 加载语料时构建武将/牌名倒排 `_hero_index` 与 `_id2text/_id2meta` 字典，`hero_blocks()`、`_text_of()`、`_meta_of()` 不再线性遍历全量块；静态 `KEYWORDS` 关键词倒排 `_keyword_index` 惰性构建，`_keyword_hits()` 中查询相关名称保持线性扫描（数量少），避免每次查询全量遍历。`src/rag/config.py` 不再在 import 时创建目录，改由使用点确保（#49）。
 - **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `scripts/.rule_doc_snapshot.json`）；③ `scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
 - **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
@@ -644,6 +645,17 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `delete(key)` | 泛型 | None | 删除（不存在静默） |
 
 三个子类 Manager 提供领域键并复用 `_parse_models()`：坏记录和重复键仅跳过该项并记录 `DataIssue`，不会阻断同文件中的其他合法记录。`DataFacade.load_all()` 汇总为 `LoadReport`，再执行英雄、相性和攻略之间的引用校验。
+
+#### 4.1.1 JsonRepository 基类（2026-08 知识库维护优化）
+
+`src/data/json_repository.py` 统一维护仓库的数据安全基建（全库原子写收敛）：
+
+- **`atomic_write_json(path, data, indent=2)`** — UTF-8/LF 原子写：`mkstemp` 同目录唯一临时文件 → 写入后 `flush + fsync` → `replace`；异常清理临时文件并重新抛出，原文件保持不变。`DataManager._save_unlocked`、`card_catalog._JsonRepository` 与四个维护仓库均委托此函数。
+- **`JsonRepository`** — 四个维护仓库（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）的公共基类：
+  - `_read_root()`：`RLock` 加锁读盘，重置加载状态，文件缺失记 warning、解析失败记 error（`DataIssue`）；
+  - `save_payload()`：加锁 + `atomic_write_json` 写盘；
+  - `_snapshot()/_restore()/_save_or_rollback()`：CRUD 先改内存，写盘失败恢复内存快照并重新抛出，避免“看似失败、实际已变”的脏状态；UI 在保存失败后 `reload_data()` 与磁盘重新对齐。
+- 校验增强：`CardPointItem`/`JudgeRuleItem` 名称 strip 与非空校验、花色点数 `model_validator` 非空拦截；`SpecialCardItem.stackable` 白名单（是/否/—）。
 
 ### 4.2 文件与数据量
 
@@ -1165,7 +1177,7 @@ _start_import()
 | 装备属性维护 | `data/equip_attrs.json` | 26 件装备细分/攻击范围/距离修正表格编辑 + 保存校验 |
 | 武将分类维护 | `data/hero_classification.json` | 分类 CRUD / 克制链 / 武将归类 |
 
-联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。审计由 `AuditIssue`（kind/message/severity/target_tab/target）结构化驱动，覆盖：未归类武将、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）、索引字段待精化（排第一位）；每条可点「跳转」定位到对应维护页签（`HeroClassificationPanel.focus_unclassified()` / `SpecialCardsPanel.focus_item()` / 直接打开索引精化）。
+联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。脚本执行统一走 `ScriptRunner`（QProcess 公共封装，`output(bytes)` / `finished(int)` 信号 + `is_running()` 防并发）；语料块数读取带 `(mtime, size)` 缓存（`_output_count()`）。审计由 `AuditIssue`（kind/message/severity/target_tab/target）结构化驱动，覆盖：未归类武将、**分类表引用未知武将（`orphan_category_key` 反向校验）**、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）、索引字段待精化（排第一位）；`audit_summary()` 可接收同一轮已算好的 `list_pending()` 清单避免重复读语料。每条可点「跳转」定位到对应维护页签（`HeroClassificationPanel.focus_unclassified()` / `SpecialCardsPanel.focus_item()` / 直接打开索引精化）。数据安全：四个维护仓库继承 `JsonRepository`（原子写 + 加锁 + 写盘失败内存回滚）；装备属性表格一次性分配行并恢复滚动位置；卡牌点数 xlsx 导入改异步执行；`mark_recommendation_index_stale()` 记录调用来源 traceback 日志。
 
 语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 待精化/已精化/全部模式切换）、清单区（搜索与类型筛选同行、4 列表格固定列宽，行状态 ○/◉/✎/✓/○，说明列按范围显示缺失字段/来源·时间，批量行 LLM 建议（全部）/保存全部仅待精化模式可见）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/saved/manual 着色 + 来源/时间徽标 + 底部条目操作行：LLM 建议（当前）/跳过当前/取消精化/保存当前 PRIMARY）、底部仅「关闭」；LLM 建议（DeepSeek）全部模式用 QTimer 队列逐块处理不冻结窗口，保存全部以已生成建议为 baseline，切回条目还原建议内容，重建不覆盖。2026-08 扩展：已精化（curated）块可在「已精化/全部」范围浏览、再编辑（与磁盘基线一致时不写文件，有改动才写回，method 转 manual、updated_at 更新）与取消精化（删除 curated，字段有空缺退回待精化池）；入口按钮无待办时仍可用（`索引精化 ✓`）。
 

@@ -1010,14 +1010,16 @@ MainWindow._setup_ui() -> RagMaintenancePanel(root, hero_names)
   -> refresh()
      -> task_states(root)                 [遍历 8 个语料任务 TASK_DEFS]
         -> 源 mtime/输出 mtime 对比        [最新 / 待重建 / 缺源]
-        -> 读取输出 json 块数
-     -> audit_summary(root)               [返回结构化 AuditIssue 列表]
-        -> 未归类武将 / special_cards 引用未知武将 / 缺结算详情
+        -> _output_count() 读取输出块数    [(mtime, size) 缓存，未变不重复解析]
+     -> pending = list_pending(root/data/rag_corpus)     [同一轮先算待精化清单]
+     -> audit_summary(root, pending)      [传入已算清单避免重复读语料；返回 AuditIssue 列表]
+        -> 未归类武将 / 分类表孤儿键 orphan_category_key（反向校验 #10）
+        -> special_cards 引用未知武将 / 缺结算详情
         -> card_points.json 花色/点数/张数=162 / equip_attrs.json 件数=26/字段
         -> pending_refinement 索引字段待精化（插入列表首位）
      -> 更新任务表 + 审计横幅（每条可带「跳转」按钮）
         -> _jump_to_issue(): 未归类武将 -> 武将分类维护 focus_unclassified()
-                            专属牌未知武将/缺结算 -> 专属牌维护 focus_item(category, name)
+                            孤儿键/专属牌未知武将/缺结算 -> 对应维护页签 focus_item()
                             pending_refinement -> _open_refinement()
 ```
 
@@ -1038,37 +1040,42 @@ HeroClassificationPanel 分类/克制链/武将归类保存
   -> HeroClassificationRepository.save() -> data_changed -> refresh()
 ```
 
-### 10.3 一键重建（QProcess）
+### 10.3 一键重建（ScriptRunner 封装 QProcess）
 
 ```
 RagMaintenancePanel._run(args)
-  -> QProcess.start(PYTHON, [scripts/maintain_rag.py] + args)
-     -> readyReadStandardOutput/Error -> _append_log()          [实时追加日志区]
-     -> finished -> _on_finished() -> refresh()                 [退出码 0/非 0 提示]
+  -> ScriptRunner.run(PYTHON, scripts/maintain_rag.py, args, root)
+     -> output(bytes) 信号 -> _append_log()                     [实时追加日志区]
+     -> finished(code) 信号 -> _on_finished() -> refresh()      [退出码 0/非 0 提示]
+  -> _set_busy(True) 同时禁用刷新/重建/索引精化入口（#55）
 按钮映射:
   重建武将语料   -> maintain_rag.py --force --only 武将
   重建全部语料   -> maintain_rag.py --force
   重建语料+索引  -> maintain_rag.py --force --build-index
 ```
 
-### 10.4 索引精化（2026-08 UI 重设计）与 xlsx 应急导入
+### 10.4 索引精化（2026-08 重设计 + 已处理块扩展）与 xlsx 应急导入
 
 ```
-入口：语料状态页操作栏「索引精化」按钮（角标显示待精化数量，如「索引精化（5）」；无待办显示 ✓ 并禁用）
+入口：语料状态页操作栏「索引精化」按钮（角标显示待精化数量，如「索引精化（5）」；
+     无待办显示「索引精化 ✓」但仍可点击进入浏览/管理已精化块；维护任务执行期间禁用）
      或审计横幅「索引字段待精化 N 块 [去精化]」点击
   -> IndexRefinementDialog(data/rag_corpus)            [1160×720]
-     -> refinement_service.list_pending()    [卡牌RAG语料/武将RAG语料 无 curated 且字段为空]
-     -> 顶部总览条：进度条 + 全部/卡牌/武将筛选
-     -> 清单区：搜索过滤 + 4 列表格（语料/名称/缺失字段/状态，三态 ○/◉/✎）
+     -> refinement_service.scan_blocks()  [一次扫描三分类：pending 待精化 / curated 已精化 / normal 已生成]
+     -> 模式切换（待精化/已精化/全部）只过滤内存快照，不重复读文件
+     -> 顶部总览条：待精化显示进度条；已精化/全部显示统计文案（如「已精化 M 块（人工 X · LLM Y）」）
+     -> 清单区：类型筛选（全部/卡牌/武将）+ 搜索 + 4 列表格
+        列 2 按范围扩展：缺失字段 / method·updated_at / 按块状态；状态列新增 ✓ 已精化
      -> 工作区：左原文卡片占满高度 + 右 4 个字段卡片（timing/trigger_condition/keywords/related，
-                fieldState=empty/llm/manual 着色）
-     -> LLM 建议（当前/全部）：build_generator() -> DeepSeek；全部模式 QTimer 队列逐块处理
+                fieldState=empty/llm/manual/saved 着色）
+     -> LLM 建议（当前/全部）：suggest_one() -> AIBatchGenerator.complete()；全部模式 QTimer 队列逐块处理
      -> 保存当前/保存全部：_collect_update() -> apply_curated() 写回 curated（重建不覆盖）
-        保存全部以已生成 LLM 建议为 baseline，无内容块跳过并保持待精化
+        统一保存模型：磁盘基线 + 有改动才写回（method=manual、updated_at=今天）
+     -> 已精化块：浏览（fields 以 curated 为权威）/ 再编辑保存 / 取消精化（clear_curated，二次确认）
      -> 未保存修改保护：切换条目/关闭/批量建议前确认
 CardPointsPanel 底部「从 xlsx 导入」
-  -> QProcess scripts/migrate_excel_to_json.py --only points    [以归档 xlsx 覆盖点数与规则]
-  -> reload_data() -> data_changed
+  -> ScriptRunner 异步执行 scripts/migrate_excel_to_json.py --only points   [按钮置「导入中…」不阻塞 UI]
+  -> 完成后 reload_data() -> data_changed
 ```
 
 ### 10.5 元规则维护页签（RuleDocPanel）调用链
@@ -1079,15 +1086,15 @@ RagMaintenancePanel._setup_ui()
      -> 引导卡 + 四个子页签 + 可折叠日志区 + 状态驱动的下一步建议
   -> refresh()                      [本地只读：提案列表/疑难/差异表]
   -> refresh_all()                  [串行：先 audit，完成后 sync]
-     -> refresh_audit() -> QProcess(scripts/audit_rule_doc.py)
+     -> refresh_audit() -> ScriptRunner.run(audit_rule_doc.py)
         -> _on_audit_finished() -> parse_audit_output() -> 文档状态页（ERROR/WARN/INFO 摘要 + 明细）
-        -> 完成后自动 refresh_diffs() -> QProcess(scripts/sync_rule_stats.py --json scripts/.sync_rule_stats_report.json)
+        -> 完成后自动 refresh_diffs() -> ScriptRunner.run(sync_rule_stats.py --json scripts/.sync_rule_stats_report.json)
            -> parse_sync_diff() -> 差异表（应用勾选/段/行号/类型/摘要/确认值/操作）
   -> _apply_diffs()                 [勾选行校验：确认值非空、完整表格行、列数一致]
      -> 写 scripts/.sync_confirmed_diffs.json
-     -> QProcess(sync_rule_stats.py --apply-json <清单>) -> _on_apply_json_finished() -> refresh_diffs()
-  -> _generate_proposal()           [QProcess(propose_rule_changes.py --no-llm)]
-  -> _apply_proposal()              [QProcess(apply_rule_proposal.py --proposal CP-*.json)]
+     -> ScriptRunner.run(sync_rule_stats.py --apply-json <清单>) -> _on_apply_json_finished() -> refresh_diffs()
+  -> _generate_proposal()           [ScriptRunner.run(propose_rule_changes.py --no-llm)]
+  -> _apply_proposal()              [ScriptRunner.run(apply_rule_proposal.py --proposal CP-*.json)]
   -> _add_pending() / _to_proposal() [疑难登记 -> add_pending() / pending_to_proposal()]
 ```
 
@@ -1095,13 +1102,16 @@ RagMaintenancePanel._setup_ui()
 
 | 函数 | 文件 | 调用方 | 说明 |
 |------|------|--------|------|
+| `_output_count(path)` | `rag_maintenance_panel.py` | `task_states()` | 语料块数读取（(mtime, size) 缓存，避免重复解析） |
 | `task_states(root)` | `rag_maintenance_panel.py` | `refresh()` | 8 任务状态/块数计算 |
-| `audit_summary(root)` | `rag_maintenance_panel.py` | `refresh()` | 返回 `AuditIssue` 结构化审计（支持跳转） |
+| `audit_summary(root, pending_refinement)` | `business/rag/audit_service.py` | `refresh()` | 返回 `AuditIssue` 结构化审计（支持传入已算待精化清单） |
 | `_jump_to_issue(issue)` | `rag_maintenance_panel.py` | 审计横幅跳转按钮 | 按 kind 切页签并定位（focus_unclassified / focus_item / 打开精化） |
+| `ScriptRunner.run()` | `shared/widgets.py` | 三个维护面板 | QProcess 公共封装（output/finished 信号 + is_running 防并发） |
+| `clear_layout(layout)` | `shared/widgets.py` | 多个面板 | 递归清空布局（含 CheckableComboBox 弹层） |
 | `CardPointsPanel._refresh_rules()` | `card_points_panel.py` | `reload_data()` | 判定规则表刷新 |
-| `EquipAttrsPanel._save()` | `equip_attrs_panel.py` | 保存按钮 | 校验并写回 equip_attrs.json |
-| `IndexRefinementDialog` | `index_refinement_dialog.py` | `_open_refinement()` | curated 精化工作台（LLM 建议 + 人工补全） |
-| `RuleDocPanel.refresh_all()` | `rule_doc_panel.py` | 刷新状态按钮 | 串行 audit → sync（QProcess） |
+| `EquipAttrsPanel._save()` | `equip_attrs_panel.py` | 保存按钮 | 校验并写回 equip_attrs.json（失败回滚 + 界面对齐） |
+| `IndexRefinementDialog` | `index_refinement_dialog.py` | `_open_refinement()` | curated 精化工作台（三态模式：待精化/已精化/全部 + 取消精化） |
+| `RuleDocPanel.refresh_all()` | `rule_doc_panel.py` | 刷新状态按钮 | 串行 audit → sync（ScriptRunner） |
 | `RuleDocPanel._apply_diffs()` | `rule_doc_panel.py` | 应用已确认差异按钮 | 写确认清单并 `sync_rule_stats.py --apply-json` |
 | `RuleDocPanel._generate_proposal()` / `_apply_proposal()` | `rule_doc_panel.py` | 提案工作台 | 生成提案 / 合入已确认提案 |
 | `RuleDocPanel._add_pending()` / `_to_proposal()` | `rule_doc_panel.py` | 疑难登记页 | 疑难增查 / 转 FAQ 提案 |
