@@ -1,0 +1,19 @@
+{
+  "proposal_id": "CP-2026-08-16-02",
+  "created_at": "2026-08-16 11:20:23",
+  "source": "diff_source_data + LLM",
+  "items": [
+    {
+      "id": "P-01",
+      "type": "none",
+      "target": "-",
+      "suggested_text": "",
+      "source": "",
+      "basis": "刘据：定位:共计→攻击",
+      "suggested_status": "待确认",
+      "rationale": "未配置 LLM，占位提案，需人工填写",
+      "status": "pending",
+      "edited_text": null
+    }
+  ]
+}

@@ -17,6 +17,7 @@ RAG 语料维护调度主脚本（maintain_rag.py）
 import sys, os, json, hashlib, subprocess, argparse, time
 
 import rag_audit
+import audit_rule_doc
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 STATE_FILE = os.path.join(ROOT, 'scripts', '.rag_state.json')
@@ -62,7 +63,8 @@ TASKS = [
         'name': '元规则/术语/FAQ',
         'script': 'build_rule_corpus.py',
         'sources': ['docs/元规则整理-完整版.md'],
-        'outputs': [('元规则RAG语料-章节块.json', 37), ('术语表.json', 46), ('FAQ裁定块.json', 79)],
+        'dynamic': True,
+        'outputs': [('元规则RAG语料-章节块.json', None), ('术语表.json', None), ('FAQ裁定块.json', None)],
     },
     {
         'name': '特殊机制语料',
@@ -148,6 +150,7 @@ def verify_outputs(task):
     """校验生成的 json 块数，返回 (ok, 详情列表)。"""
     results = []
     all_ok = True
+    snap_counts = audit_rule_doc.snapshot_counts() if task.get('dynamic') else None
     for fname, expected in task['outputs']:
         path = os.path.join(DOCS_DIR, fname)
         if not os.path.exists(path):
@@ -158,6 +161,17 @@ def verify_outputs(task):
             with open(path, encoding='utf-8') as f:
                 data = json.load(f)
             n = len(data)
+            if task.get('dynamic'):
+                exp = snap_counts.get(fname) if snap_counts else None
+                if exp is None:
+                    results.append(f'{fname}: {n} 块（首次，快照未建立）')
+                    continue
+                if n >= exp:
+                    results.append(f'{fname}: {n} 块 OK（快照基线 {exp}，只增允许）')
+                else:
+                    all_ok = False
+                    results.append(f'{fname}: {n} 块 不符（低于快照基线 {exp}，疑似丢块）')
+                continue
             if expected is None:
                 results.append(f'{fname}: {n} 块（动态数量）')
                 continue
@@ -174,6 +188,7 @@ def verify_outputs(task):
 def summarize_counts():
     """打印当前各语料 json 的块数概览。"""
     print('\n当前语料块数概览：')
+    snap_counts = audit_rule_doc.snapshot_counts()
     for task in TASKS:
         for fname, expected in task['outputs']:
             path = os.path.join(DOCS_DIR, fname)
@@ -181,7 +196,11 @@ def summarize_counts():
                 try:
                     with open(path, encoding='utf-8') as f:
                         n = len(json.load(f))
-                    mark = '✅' if n == expected else '⚠️'
+                    if task.get('dynamic'):
+                        exp = snap_counts.get(fname) if snap_counts else None
+                        mark = '✅' if (exp is None or n >= exp) else '⚠️'
+                    else:
+                        mark = '✅' if n == expected else '⚠️'
                     print(f'  {mark} {fname}: {n} 块')
                 except Exception:
                     print(f'  ❌ {fname}: 解析失败')
@@ -214,6 +233,14 @@ def main():
         print("=" * 60)
         if args.strict_audit:
             sys.exit(1)
+
+    rule_issues = audit_rule_doc.audit(doc_path=audit_rule_doc.DEFAULT_DOC,
+                                       snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
+                                       root=ROOT, strict=args.strict_audit,
+                                       update_snapshot=False, print_report=True)
+    if args.strict_audit and any(i['level'] in ('ERROR', 'WARN') for i in rule_issues):
+        print('[audit] 元规则文档校验未通过（--strict-audit），中止。')
+        sys.exit(1)
 
     state = load_state()
     state.setdefault('files', {})
@@ -285,6 +312,11 @@ def main():
             if v_ok:
                 succeeded.append(task['name'])
                 print('  ✅ 生成与校验通过')
+                if task.get('dynamic'):
+                    audit_rule_doc.audit(doc_path=audit_rule_doc.DEFAULT_DOC,
+                                         snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
+                                         root=ROOT, update_snapshot=True, print_report=False)
+                    print('  [快照] 元规则文档基线快照已刷新')
             else:
                 failed.append(task['name'])
                 print('  ⚠️ 块数校验未通过')

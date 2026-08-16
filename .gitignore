@@ -54,3 +54,4 @@ data/rag_index/
 
 # RAG 维护运行时状态
 scripts/.rag_state.json
+scripts/.rule_doc_snapshot.json

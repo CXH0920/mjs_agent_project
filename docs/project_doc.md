@@ -263,6 +263,7 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python scripts/maintain_rag.py --force --build-index` 或应用内「知识库维护」页面。
+- **T0 元规则文档增量维护（2026-08-15）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义；官方更新先跑 `scripts/diff_source_data.py` 生成变更清单（含"是否新机制"疑似标记），新机制走提案-确认（模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`），合入后由 `scripts/audit_rule_doc.py` 机器校验（解析回声/ID 稳定/块指纹/交叉引用，`--strict` 可进 CI），再 `maintain_rag.py --force --build-index` 重建；变更日志见 `docs/changelog/元规则changelog.md`，完整流程见 `docs/元规则T0文档维护方案.md`。
 - **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类五个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
 ### 2.1 模块文件关系
