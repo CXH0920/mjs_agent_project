@@ -84,3 +84,23 @@ def test_load_reports_invalid_records(tmp_path: Path) -> None:
     assert "duplicate_key" in kinds
     assert repo.available is True
     assert len(repo.list_equips()) == 1
+
+
+def test_save_failure_rolls_back_memory(tmp_path: Path, monkeypatch) -> None:
+    """写盘失败时内存回滚（#11）。"""
+    from src.data.json_repository import JsonRepository
+
+    def _boom(self, payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(JsonRepository, "save_payload", _boom)
+    repo = _repo(tmp_path)
+    with pytest.raises(OSError):
+        repo.add_equip(EquipAttrItem(name="新装备", subtype="武器"))
+    assert repo.get_equip("新装备") is None
+
+
+def test_blank_name_rejected() -> None:
+    """纯空格装备名拒绝（#17）。"""
+    with pytest.raises(ValueError):
+        EquipAttrItem(name="  ", subtype="武器")

@@ -247,7 +247,17 @@ class CardPointsPanel(QWidget):
         self._refresh_cards()
         self._refresh_rules()
         if errors:
-            self._cards_count.setText(f"加载异常 {len(errors)} 条（详情见日志）")
+            self._cards_count.setText(f"加载异常 {len(errors)} 条（详情见日志），已禁止修改")
+            self._import_button.setEnabled(False)
+        else:
+            self._import_button.setEnabled(True)
+
+    def _ensure_writable(self) -> bool:
+        """数据加载失败时禁止写操作；返回是否可写。"""
+        if not self._repository.available:
+            QMessageBox.warning(self, "数据不可用", "数据文件加载失败，已禁止修改（详情见日志）。")
+            return False
+        return True
 
     # ---------------------------------------------------------------
     # 牌面明细
@@ -276,6 +286,8 @@ class CardPointsPanel(QWidget):
         return self._repository.get_card(name, suit, point)
 
     def _add_card(self) -> None:
+        if not self._ensure_writable():
+            return
         dialog = CardPointEditDialog(None, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
             try:
@@ -286,6 +298,7 @@ class CardPointsPanel(QWidget):
                 return
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
+                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
                 continue
 
     def _edit_card(self) -> None:
@@ -293,23 +306,28 @@ class CardPointsPanel(QWidget):
         if current is None:
             QMessageBox.information(self, "提示", "请先选择一行牌面数据")
             return
+        if not self._ensure_writable():
+            return
         dialog = CardPointEditDialog(current, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
             try:
-                self._repository.delete_card(current.name, current.suit, current.point)
-                self._repository.add_card(dialog.item())
+                # 单步替换（旧键可能变化）；失败时原行保留，整批回滚
+                self._repository.replace_card(current.name, current.suit, current.point, dialog.item())
                 self._refresh_cards()
                 self.data_changed.emit()
                 show_toast(self, "已保存牌行，请在知识库维护中重建语料")
                 return
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
+                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
                 continue
 
     def _delete_card(self) -> None:
         current = self._selected_card()
         if current is None:
             QMessageBox.information(self, "提示", "请先选择一行牌面数据")
+            return
+        if not self._ensure_writable():
             return
         answer = QMessageBox.question(
             self, "确认删除",
@@ -323,6 +341,7 @@ class CardPointsPanel(QWidget):
             self._repository.delete_card(current.name, current.suit, current.point)
         except Exception as error:
             QMessageBox.critical(self, "删除失败", str(error))
+            self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
             return
         self._refresh_cards()
         self.data_changed.emit()
@@ -347,6 +366,8 @@ class CardPointsPanel(QWidget):
         return self._repository.get_rule(self._rules_table.item(row, 0).text())
 
     def _add_rule(self) -> None:
+        if not self._ensure_writable():
+            return
         dialog = JudgeRuleEditDialog(None, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
             try:
@@ -357,12 +378,15 @@ class CardPointsPanel(QWidget):
                 return
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
+                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
                 continue
 
     def _edit_rule(self) -> None:
         current = self._selected_rule()
         if current is None:
             QMessageBox.information(self, "提示", "请先选择一条判定规则")
+            return
+        if not self._ensure_writable():
             return
         dialog = JudgeRuleEditDialog(current, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
@@ -374,12 +398,15 @@ class CardPointsPanel(QWidget):
                 return
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
+                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
                 continue
 
     def _delete_rule(self) -> None:
         current = self._selected_rule()
         if current is None:
             QMessageBox.information(self, "提示", "请先选择一条判定规则")
+            return
+        if not self._ensure_writable():
             return
         answer = QMessageBox.question(
             self, "确认删除",
@@ -393,6 +420,7 @@ class CardPointsPanel(QWidget):
             self._repository.delete_rule(current.name)
         except Exception as error:
             QMessageBox.critical(self, "删除失败", str(error))
+            self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
             return
         self._refresh_rules()
         self.data_changed.emit()
@@ -402,6 +430,8 @@ class CardPointsPanel(QWidget):
     # xlsx 导入（应急通道，覆盖点数与规则）
     # ---------------------------------------------------------------
     def _import_from_xlsx(self) -> None:
+        if not self._ensure_writable():
+            return
         answer = QMessageBox.question(
             self, "确认导入",
             "将以 data/archive/mjs卡牌点数.xlsx 重新生成牌面明细（覆盖当前修改），继续吗？",

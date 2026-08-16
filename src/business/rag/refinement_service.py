@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 from src.config.env import PROJECT_ROOT, get_api_config
+from src.data.json_repository import atomic_write_json
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.json_extract import extract_json
 
@@ -199,19 +198,7 @@ def apply_curated(corpus_dir: Path, updates: dict[str, RefinementUpdate], fname:
 
 def _atomic_json_write(path: Path, data: object) -> None:
     """以 UTF-8、LF、indent=1（与 build 脚本一致）原子保存 JSON。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=1)
-            stream.write("\n")
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    atomic_write_json(path, data, indent=1)
 
 
 def build_generator() -> AIBatchGenerator | None:

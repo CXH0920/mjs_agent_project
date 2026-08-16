@@ -10,13 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.data.json_repository import JsonRepository
 from src.data.manager import DataIssue
 
 logger = logging.getLogger(__name__)
@@ -25,6 +23,8 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 DEFAULT_SPECIAL_CARDS_FILE = DEFAULT_DATA_DIR / "special_cards.json"
 
 SPECIAL_CATEGORIES = ("专属牌", "专属战法牌", "特殊牌区", "状态/标记", "概念")
+# 可否叠加合法值（存量数据为 '是'/'—'；'否' 为测试/业务常见值；空表示不适用）
+VALID_STACKABLE = ("", "是", "否", "—")
 
 
 class SpecialCardItem(BaseModel):
@@ -62,56 +62,38 @@ class SpecialCardItem(BaseModel):
             raise ValueError("名称不能为空")
         return value
 
-
-def _atomic_json_write(path: Path, items: list[dict[str, Any]]) -> None:
-    """以 UTF-8、LF 和同目录临时文件原子保存 JSON。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(items, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    @field_validator("stackable")
+    @classmethod
+    def validate_stackable(cls, value: str) -> str:
+        value = value.strip()
+        if value not in VALID_STACKABLE:
+            raise ValueError("可否叠加仅支持: 是 / 否 / —")
+        return value
 
 
-class SpecialCardRepository:
+class SpecialCardRepository(JsonRepository):
     """data/special_cards.json 的可写仓储（CRUD + 校验）。"""
 
     def __init__(self, file_path: str | Path = DEFAULT_SPECIAL_CARDS_FILE):
-        self.file_path = Path(file_path)
-        self.load_issues: list[DataIssue] = []
+        super().__init__(file_path)
         self._items: list[SpecialCardItem] = []
-        self.available = False
 
-    def _issue(self, severity: str, kind: str, message: str, index: int | None = None,
-               key: object | None = None) -> None:
-        self.load_issues.append(DataIssue(severity, kind, self.file_path, message, index, key))
-        (logger.warning if severity == "warning" else logger.error)(
-            "特殊机制数据问题 [%s] %s", kind, message)
+    # 写盘失败回滚：内存 _items 快照
+    def _snapshot(self) -> list[SpecialCardItem]:
+        return list(self._items)
+
+    def _restore(self, snapshot: list[SpecialCardItem]) -> None:
+        self._items = snapshot
 
     def load(self) -> list[DataIssue]:
-        self.load_issues = []
-        self._items = []
-        self.available = False
-        try:
-            with self.file_path.open("r", encoding="utf-8") as stream:
-                root = json.load(stream)
-        except FileNotFoundError:
-            self._issue("warning", "file_missing", "文件不存在")
-            return self.load_issues
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
-            self._issue("error", "file_read_error", str(error))
+        root, ok = self._read_root()
+        if not ok:
             return self.load_issues
         if not isinstance(root, list):
             self._issue("error", "invalid_root", "特殊机制文件必须是 JSON 数组")
             return self.load_issues
         self.available = True
+        self._items = []
         seen: dict[str, set[str]] = {c: set() for c in SPECIAL_CATEGORIES}
         for index, raw in enumerate(root):
             try:
@@ -141,27 +123,29 @@ class SpecialCardRepository:
     def add_item(self, item: SpecialCardItem) -> None:
         if self.get_item(item.category, item.name) is not None:
             raise ValueError(f"同类别已存在同名条目: {item.category} / {item.name}")
+        snapshot = self._snapshot()
         self._items.append(item)
-        self.save()
+        self._save_or_rollback(snapshot)
 
     def update_item(self, item: SpecialCardItem) -> None:
         for index, existing in enumerate(self._items):
             if existing.category == item.category and existing.name == item.name:
+                snapshot = self._snapshot()
                 self._items[index] = item
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"条目不存在: {item.category} / {item.name}")
 
     def delete_item(self, category: str, name: str) -> None:
         for index, existing in enumerate(self._items):
             if existing.category == category and existing.name == name:
+                snapshot = self._snapshot()
                 self._items.pop(index)
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"条目不存在: {category} / {name}")
 
     def save(self) -> None:
-        _atomic_json_write(
-            self.file_path,
+        self.save_payload(
             [item.model_dump(mode="json", exclude_defaults=True) for item in self._items],
         )

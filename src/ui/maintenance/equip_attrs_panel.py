@@ -84,7 +84,15 @@ class EquipAttrsPanel(QWidget):
             self._append_row(item)
         self._title.setText(
             "装备属性（26 件：坐骑距离修正 + 武器攻击范围 + 防具）"
-            + (f"｜加载异常 {len(errors)} 条，详见日志" if errors else ""))
+            + (f"｜加载异常 {len(errors)} 条，详见日志，已禁止保存" if errors else ""))
+        self._save_button.setEnabled(not errors)
+
+    def _ensure_writable(self) -> bool:
+        """数据加载失败时禁止写操作；返回是否可写。"""
+        if not self._repository.available:
+            QMessageBox.warning(self, "数据不可用", "数据文件加载失败，已禁止修改（详情见日志）。")
+            return False
+        return True
 
     def _append_row(self, item: EquipAttrItem) -> None:
         row = self._table.rowCount()
@@ -129,6 +137,8 @@ class EquipAttrsPanel(QWidget):
         return items
 
     def _save(self) -> None:
+        if not self._ensure_writable():
+            return
         try:
             items = self._collect()
         except ValueError as error:
@@ -142,6 +152,7 @@ class EquipAttrsPanel(QWidget):
                     self._repository.update_equip(item)
         except Exception as error:
             QMessageBox.critical(self, "保存失败", str(error))
+            self.reload_data()  # 已保存部分落盘、未保存部分已回滚，界面与磁盘重新对齐
             return
         self.data_changed.emit()
         show_toast(self, "装备属性已保存，请在知识库维护中重建语料")

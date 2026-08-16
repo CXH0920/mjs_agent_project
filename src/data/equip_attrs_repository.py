@@ -11,13 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.data.json_repository import JsonRepository
 from src.data.manager import DataIssue
 
 logger = logging.getLogger(__name__)
@@ -40,6 +38,14 @@ class EquipAttrItem(BaseModel):
     attack_range: int | None = None
     distance_mod: int | None = None  # -1=攻击距离修正(更近), 1=防御距离修正(更远)
     note: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("装备名称不能为空")
+        return value
 
     @field_validator("subtype")
     @classmethod
@@ -64,55 +70,29 @@ class EquipAttrItem(BaseModel):
         return value
 
 
-def _atomic_json_write(path: Path, items: list[dict[str, Any]]) -> None:
-    """以 UTF-8、LF 和同目录临时文件原子保存 JSON。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(items, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-
-
-class EquipAttrsRepository:
+class EquipAttrsRepository(JsonRepository):
     """data/equip_attrs.json 的可写仓储（CRUD + 校验）。"""
 
     def __init__(self, file_path: str | Path = DEFAULT_EQUIP_ATTRS_FILE):
-        self.file_path = Path(file_path)
-        self.load_issues: list[DataIssue] = []
+        super().__init__(file_path)
         self._items: list[EquipAttrItem] = []
-        self.available = False
 
-    def _issue(self, severity: str, kind: str, message: str, index: int | None = None,
-               key: object | None = None) -> None:
-        self.load_issues.append(DataIssue(severity, kind, self.file_path, message, index, key))
-        (logger.warning if severity == "warning" else logger.error)(
-            "装备属性数据问题 [%s] %s", kind, message)
+    # 写盘失败回滚：内存 _items 快照
+    def _snapshot(self) -> list[EquipAttrItem]:
+        return list(self._items)
+
+    def _restore(self, snapshot: list[EquipAttrItem]) -> None:
+        self._items = snapshot
 
     def load(self) -> list[DataIssue]:
-        self.load_issues = []
-        self._items = []
-        self.available = False
-        try:
-            with self.file_path.open("r", encoding="utf-8") as stream:
-                root = json.load(stream)
-        except FileNotFoundError:
-            self._issue("warning", "file_missing", "文件不存在")
-            return self.load_issues
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
-            self._issue("error", "file_read_error", str(error))
+        root, ok = self._read_root()
+        if not ok:
             return self.load_issues
         if not isinstance(root, list):
             self._issue("error", "invalid_root", "装备属性文件必须是 JSON 数组")
             return self.load_issues
         self.available = True
+        self._items = []
         seen: set[str] = set()
         for index, raw in enumerate(root):
             try:
@@ -139,27 +119,29 @@ class EquipAttrsRepository:
     def add_equip(self, item: EquipAttrItem) -> None:
         if self.get_equip(item.name) is not None:
             raise ValueError(f"已存在同名装备: {item.name}")
+        snapshot = self._snapshot()
         self._items.append(item)
-        self.save()
+        self._save_or_rollback(snapshot)
 
     def update_equip(self, item: EquipAttrItem) -> None:
         for index, existing in enumerate(self._items):
             if existing.name == item.name:
+                snapshot = self._snapshot()
                 self._items[index] = item
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"条目不存在: {item.name}")
 
     def delete_equip(self, name: str) -> None:
         for index, existing in enumerate(self._items):
             if existing.name == name:
+                snapshot = self._snapshot()
                 self._items.pop(index)
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"条目不存在: {name}")
 
     def save(self) -> None:
-        _atomic_json_write(
-            self.file_path,
+        self.save_payload(
             [item.model_dump(mode="json", exclude_defaults=True) for item in self._items],
         )

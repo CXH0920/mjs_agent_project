@@ -149,3 +149,14 @@ def test_switching_items_leaves_no_button_ghost(tmp_path: Path) -> None:
             app.processEvents()
     buttons = _collect_buttons(panel._detail_layout)
     assert len(buttons) == 2  # 仅剩当前条目的“编辑/删除”
+
+
+def test_load_error_disables_add_button(tmp_path: Path) -> None:
+    """数据文件损坏时禁止新增并提示（#12）。"""
+    _app()
+    path = tmp_path / "special_cards.json"
+    path.write_text("{broken", encoding="utf-8")
+    repo = SpecialCardRepository(path)
+    panel = SpecialCardsPanel(repo, set())
+    assert not panel._add_button.isEnabled()
+    assert "已禁止修改" in panel._count_label.text()

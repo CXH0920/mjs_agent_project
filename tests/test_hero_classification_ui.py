@@ -152,3 +152,42 @@ def test_popup_callback_after_combo_destroyed() -> None:
     )
     app.processEvents()
     host.close()
+
+
+def test_refresh_confirms_before_discarding_dirty(tmp_path: Path, monkeypatch) -> None:
+    """有未保存修改时刷新需确认；拒绝则保留（#14）。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._mark_dirty()
+
+    def fake_question(parent, title, text, *args, **kwargs):
+        return QMessageBox.StandardButton.No
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(fake_question))
+    panel.reload_data()
+    assert panel._dirty is True  # 拒绝刷新，修改保留
+
+
+def test_refresh_yes_discards_dirty(tmp_path: Path, monkeypatch) -> None:
+    """确认丢弃后重新加载并重置 dirty（#14）。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._mark_dirty()
+
+    def fake_question(parent, title, text, *args, **kwargs):
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(fake_question))
+    panel.reload_data()
+    assert panel._dirty is False
+
+
+def test_load_error_disables_save_button(tmp_path: Path) -> None:
+    """数据文件损坏时禁止保存并提示（#12/#13）。"""
+    _app()
+    path = tmp_path / "hero_classification.json"
+    path.write_text("{broken", encoding="utf-8")
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    panel = HeroClassificationPanel(repo, {})
+    assert not panel._save_button.isEnabled()
+    assert "加载异常" in panel._status_label.text()

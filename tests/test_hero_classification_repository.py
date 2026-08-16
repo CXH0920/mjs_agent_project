@@ -131,3 +131,28 @@ def test_load_repairs_legacy_list_chain(tmp_path: Path) -> None:
     issues = repo.load()
     assert any(issue.kind == "chain_list_legacy" for issue in issues)
     assert repo.get_chain_description("高爆发型") == "防御型"
+
+
+def test_save_failure_rolls_back_memory(tmp_path: Path, monkeypatch) -> None:
+    """显式保存失败时内存回滚（#11）。"""
+    from src.data.json_repository import JsonRepository
+
+    def _boom(self, payload, indent=2):
+        raise OSError("disk full")
+
+    repo = _repo(tmp_path)
+    repo.add_category(ClassificationCategory(name="新分类", core_features="x"))
+    monkeypatch.setattr(JsonRepository, "save_payload", _boom)
+    with pytest.raises(OSError):
+        repo.save()
+    assert repo.get_category("新分类") is None  # 内存回滚
+
+
+def test_load_failure_keeps_available_false(tmp_path: Path) -> None:
+    """文件损坏时 available=False（面板据此禁止写操作，#12）。"""
+    path = tmp_path / "hero_classification.json"
+    path.write_text("{broken", encoding="utf-8")
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    issues = repo.load()
+    assert any(issue.severity == "error" for issue in issues)
+    assert repo.available is False

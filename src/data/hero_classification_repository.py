@@ -10,14 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.data.json_repository import JsonRepository
 from src.data.manager import DataIssue
 
 logger = logging.getLogger(__name__)
@@ -43,24 +41,7 @@ class ClassificationCategory(BaseModel):
         return value
 
 
-def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
-    """以 UTF-8、LF 和同目录临时文件原子保存 JSON。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(payload, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-
-
-class HeroClassificationRepository:
+class HeroClassificationRepository(JsonRepository):
     """data/hero_classification.json 的可写仓储（分类/克制链/武将归类）。
 
     所有 CRUD 仅修改内存，需显式调用 save() 才写盘（便于批量编辑后一次保存）。
@@ -68,42 +49,35 @@ class HeroClassificationRepository:
 
     def __init__(self, file_path: str | Path = DEFAULT_HERO_CLASSIFICATION_FILE,
                  hero_names: set[str] | None = None):
-        self.file_path = Path(file_path)
+        super().__init__(file_path)
         self.hero_names = set(hero_names or ())
-        self.load_issues: list[DataIssue] = []
-        self.available = False
         self._categories: list[ClassificationCategory] = []
         self._counter_chain: dict[str, str] = {}
         self._hero_categories: dict[str, list[str]] = {}
         self._version = "1.0"
         self._source = ""
         self._updated_at = ""
+        # 上次成功持久化/加载的内存快照：保存失败时回滚到该状态（显式保存模式的 #11）
+        self._saved_snapshot: tuple[list[ClassificationCategory], dict[str, str], dict[str, list[str]]] | None = None
 
-    def _issue(self, severity: str, kind: str, message: str, index: int | None = None,
-               key: object | None = None) -> None:
-        self.load_issues.append(DataIssue(severity, kind, self.file_path, message, index, key))
-        (logger.warning if severity == "warning" else logger.error)(
-            "武将分类数据问题 [%s] %s", kind, message)
+    # 写盘失败回滚：三类数据字段快照
+    def _snapshot(self) -> tuple[list[ClassificationCategory], dict[str, str], dict[str, list[str]]]:
+        return list(self._categories), dict(self._counter_chain), {k: list(v) for k, v in self._hero_categories.items()}
+
+    def _restore(self, snapshot: tuple[list[ClassificationCategory], dict[str, str], dict[str, list[str]]]) -> None:
+        self._categories, self._counter_chain, self._hero_categories = snapshot
 
     def load(self) -> list[DataIssue]:
-        self.load_issues = []
-        self._categories = []
-        self._counter_chain = {}
-        self._hero_categories = {}
-        self.available = False
-        try:
-            with self.file_path.open("r", encoding="utf-8") as stream:
-                root = json.load(stream)
-        except FileNotFoundError:
-            self._issue("warning", "file_missing", "文件不存在")
-            return self.load_issues
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
-            self._issue("error", "file_read_error", str(error))
+        root, ok = self._read_root()
+        if not ok:
             return self.load_issues
         if not isinstance(root, dict):
             self._issue("error", "invalid_root", "武将分类文件必须是 JSON 对象")
             return self.load_issues
         self.available = True
+        self._categories = []
+        self._counter_chain = {}
+        self._hero_categories = {}
         self._version = str(root.get("version", "1.0"))
         self._source = str(root.get("source", "") or "")
         self._updated_at = str(root.get("updated_at", "") or "")
@@ -148,6 +122,7 @@ class HeroClassificationRepository:
                     self._counter_chain[cat] = "".join(str(c) for c in desc)
                     self._issue("warning", "chain_list_legacy",
                                 f"克制链 {cat} 的字符列表已自动还原为文本", key=cat)
+        self._saved_snapshot = self._snapshot()
         return self.load_issues
 
     # ---------------------------------------------------------------
@@ -246,5 +221,12 @@ class HeroClassificationRepository:
             "hero_categories": {k: v for k, v in sorted(self._hero_categories.items())},
             "counter_chain": {k: v for k, v in sorted(self._counter_chain.items())},
         }
-        _atomic_json_write(self.file_path, payload)
+        try:
+            self.save_payload(payload)
+        except Exception:
+            # 回滚到上次成功持久化的状态（避免"看似失败、实际已变"的脏状态）
+            if self._saved_snapshot is not None:
+                self._restore(self._saved_snapshot)
+            raise
         self._updated_at = payload["updated_at"]
+        self._saved_snapshot = self._snapshot()

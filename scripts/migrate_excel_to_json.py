@@ -20,11 +20,14 @@ import zipfile
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 DATA = os.path.join(ROOT, "data")
 # 归档后的 xlsx 作为重新导入的来源；仍存在于原位置时优先使用原位置
 XLSX = os.path.join(DATA, "mjs卡牌点数.xlsx")
 if not os.path.exists(XLSX):
     XLSX = os.path.join(DATA, "archive", "mjs卡牌点数.xlsx")
+
+from src.data.json_repository import atomic_write_json  # noqa: E402
 
 # 卜卦判定规则：原硬编码于 build_cardpts.py attr_judge()，现抽为数据（12 条）
 JUDGE_RULES = [
@@ -68,11 +71,8 @@ def _read_sheet(sheetfile):
 
 
 def _atomic_write(path, payload):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    os.replace(tmp, path)
+    """原子写（mkstemp + fsync + replace，失败清理临时文件）。"""
+    atomic_write_json(path, payload, indent=2)
 
 
 def migrate_card_points():

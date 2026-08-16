@@ -309,13 +309,35 @@ class HeroClassificationPanel(QWidget):
     # ---------------------------------------------------------------
     # 数据加载与保存
     # ---------------------------------------------------------------
-    def reload_data(self) -> None:
-        self._repo.load()
+    def reload_data(self, confirm_discard: bool = True) -> None:
+        """重新加载数据。
+
+        - 有未保存修改时先确认（刷新/重载入口），确认后丢弃并重置 dirty；
+        - 加载失败（error）时在状态栏提示并禁用「保存」，防止空数据覆盖原文件。
+        """
+        if self._dirty:
+            if confirm_discard:
+                answer = QMessageBox.question(
+                    self, "丢弃未保存修改",
+                    "有未保存的修改，重新加载将丢弃这些修改。继续？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            self._dirty = False
+        issues = self._repo.load()
         self._hero_names = sorted(self._repo.hero_names)
+        errors = [item.message for item in issues if item.severity == "error"]
         self._refresh_categories()
         self._refresh_chain_options()
         self._refresh_heroes()
-        self._update_status("已加载", TONE_INFO)
+        if errors:
+            self._action_bar.set_status(f"加载异常 {len(errors)} 条（详见日志），已禁止保存", TONE_WARNING)
+            self._save_button.setEnabled(False)
+        else:
+            self._save_button.setEnabled(True)
+            self._update_status("已加载", TONE_INFO)
 
     def _update_status(self, text: str, tone: str) -> None:
         if self._dirty:
@@ -328,15 +350,21 @@ class HeroClassificationPanel(QWidget):
         self._update_status("已修改", TONE_WARNING)
 
     def _save(self) -> None:
+        if not self._repo.available:
+            QMessageBox.warning(self, "数据不可用", "数据文件加载失败，已禁止保存（详情见日志）。")
+            return
         try:
             self._repo.save()
         except Exception as error:
             QMessageBox.critical(self, "保存失败", str(error))
+            # 仓库已回滚内存；丢弃未保存标记并对齐磁盘状态
+            self._dirty = False
+            self.reload_data(confirm_discard=False)
             return
         self._dirty = False
         self._update_status("已保存", TONE_SUCCESS)
         self.data_changed.emit()
-        show_toast(self, "武将分类数据已保存，请在语料状态页重建语料")
+        show_toast(self, "武将分类数据已保存，请在知识库维护中重建语料")
 
     # ---------------------------------------------------------------
     # 分类管理

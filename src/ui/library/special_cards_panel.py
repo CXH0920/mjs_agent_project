@@ -277,7 +277,17 @@ class SpecialCardsPanel(QWidget):
         self._refresh_list()
         errors = [item.message for item in issues if item.severity == "error"]
         if errors:
-            self._count_label.setText(f"加载异常 {len(errors)} 条（详情见日志）")
+            self._count_label.setText(f"加载异常 {len(errors)} 条（详情见日志），已禁止修改")
+            self._add_button.setEnabled(False)
+        else:
+            self._add_button.setEnabled(True)
+
+    def _ensure_writable(self) -> bool:
+        """数据加载失败时禁止写操作；返回是否可写。"""
+        if not self._repository.available:
+            QMessageBox.warning(self, "数据不可用", "数据文件加载失败，已禁止修改（详情见日志）。")
+            return False
+        return True
 
     def _refresh_list(self) -> None:
         category = self._category_filter.currentData() or None
@@ -407,6 +417,8 @@ class SpecialCardsPanel(QWidget):
                 return
 
     def _open_add(self) -> None:
+        if not self._ensure_writable():
+            return
         dialog = SpecialCardEditDialog(self._hero_names, None, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
             try:
@@ -418,10 +430,13 @@ class SpecialCardsPanel(QWidget):
                 return
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
+                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
                 continue
 
     def _open_edit(self) -> None:
         if self._current is None:
+            return
+        if not self._ensure_writable():
             return
         dialog = SpecialCardEditDialog(self._hero_names, self._current, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
@@ -434,10 +449,13 @@ class SpecialCardsPanel(QWidget):
                 return
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
+                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
                 continue
 
     def _delete_current(self) -> None:
         if self._current is None:
+            return
+        if not self._ensure_writable():
             return
         answer = QMessageBox.question(
             self, "确认删除",
@@ -451,6 +469,7 @@ class SpecialCardsPanel(QWidget):
             self._repository.delete_item(self._current.category, self._current.name)
         except Exception as error:
             QMessageBox.critical(self, "删除失败", str(error))
+            self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
             return
         self._current = None
         self._refresh_list()

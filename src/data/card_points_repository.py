@@ -11,13 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
-from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from src.data.json_repository import JsonRepository
 from src.data.manager import DataIssue
 
 logger = logging.getLogger(__name__)
@@ -39,6 +37,14 @@ class CardPointItem(BaseModel):
     point: str = ""
     count: int = 1
 
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("牌名不能为空")
+        return value
+
     @field_validator("suit")
     @classmethod
     def validate_suit(cls, value: str) -> str:
@@ -55,6 +61,13 @@ class CardPointItem(BaseModel):
             raise ValueError("点数仅支持 1~8")
         return value
 
+    @model_validator(mode="after")
+    def check_face_filled(self) -> "CardPointItem":
+        # 缺省/空花色点数会绕过 field_validator（默认值不校验），这里统一拦截
+        if not self.suit.strip() or not self.point.strip():
+            raise ValueError("花色与点数不能为空")
+        return self
+
     @field_validator("count")
     @classmethod
     def validate_count(cls, value: int) -> int:
@@ -69,58 +82,40 @@ class JudgeRuleItem(BaseModel):
     name: str = Field(..., min_length=1)
     rule: str = ""
 
-
-def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
-    """以 UTF-8、LF 和同目录临时文件原子保存 JSON。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(payload, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("规则名不能为空")
+        return value
 
 
-class CardPointsRepository:
+class CardPointsRepository(JsonRepository):
     """data/card_points.json 的可写仓储（牌面明细 + 判定规则）。"""
 
     def __init__(self, file_path: str | Path = DEFAULT_CARD_POINTS_FILE):
-        self.file_path = Path(file_path)
-        self.load_issues: list[DataIssue] = []
+        super().__init__(file_path)
         self._cards: list[CardPointItem] = []
         self._rules: list[JudgeRuleItem] = []
-        self.available = False
 
-    def _issue(self, severity: str, kind: str, message: str, index: int | None = None,
-               key: object | None = None) -> None:
-        self.load_issues.append(DataIssue(severity, kind, self.file_path, message, index, key))
-        (logger.warning if severity == "warning" else logger.error)(
-            "卡牌点数数据问题 [%s] %s", kind, message)
+    # 写盘失败回滚：牌行与规则双快照
+    def _snapshot(self) -> tuple[list[CardPointItem], list[JudgeRuleItem]]:
+        return list(self._cards), list(self._rules)
+
+    def _restore(self, snapshot: tuple[list[CardPointItem], list[JudgeRuleItem]]) -> None:
+        self._cards, self._rules = snapshot
 
     def load(self) -> list[DataIssue]:
-        self.load_issues = []
-        self._cards = []
-        self._rules = []
-        self.available = False
-        try:
-            with self.file_path.open("r", encoding="utf-8") as stream:
-                root = json.load(stream)
-        except FileNotFoundError:
-            self._issue("warning", "file_missing", "文件不存在")
-            return self.load_issues
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
-            self._issue("error", "file_read_error", str(error))
+        root, ok = self._read_root()
+        if not ok:
             return self.load_issues
         if not isinstance(root, dict) or not isinstance(root.get("cards"), list):
             self._issue("error", "invalid_root", "卡牌点数文件必须是含 cards 数组的对象")
             return self.load_issues
         self.available = True
+        self._cards = []
+        self._rules = []
         seen: set[tuple[str, str, str]] = set()
         for index, raw in enumerate(root.get("cards", [])):
             try:
@@ -170,22 +165,37 @@ class CardPointsRepository:
     def add_card(self, item: CardPointItem) -> None:
         if self.get_card(item.name, item.suit, item.point) is not None:
             raise ValueError(f"已存在同牌行: {item.name} {item.suit}{item.point}")
+        snapshot = self._snapshot()
         self._cards.append(item)
-        self.save()
+        self._save_or_rollback(snapshot)
 
     def update_card(self, item: CardPointItem) -> None:
         for index, existing in enumerate(self._cards):
             if existing.name == item.name and existing.suit == item.suit and existing.point == item.point:
+                snapshot = self._snapshot()
                 self._cards[index] = item
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"牌行不存在: {item.name} {item.suit}{item.point}")
+
+    def replace_card(self, old_name: str, old_suit: str, old_point: str, item: CardPointItem) -> None:
+        """编辑牌行：按旧键定位、单步替换为新内容（键可能变化），失败整批回滚。"""
+        for index, existing in enumerate(self._cards):
+            if existing.name == old_name and existing.suit == old_suit and existing.point == old_point:
+                if self.get_card(item.name, item.suit, item.point) is not None:
+                    raise ValueError(f"已存在同牌行: {item.name} {item.suit}{item.point}")
+                snapshot = self._snapshot()
+                self._cards[index] = item
+                self._save_or_rollback(snapshot)
+                return
+        raise ValueError(f"牌行不存在: {old_name} {old_suit}{old_point}")
 
     def delete_card(self, name: str, suit: str, point: str) -> None:
         for index, existing in enumerate(self._cards):
             if existing.name == name and existing.suit == suit and existing.point == point:
+                snapshot = self._snapshot()
                 self._cards.pop(index)
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"牌行不存在: {name} {suit}{point}")
 
@@ -204,27 +214,30 @@ class CardPointsRepository:
     def add_rule(self, rule: JudgeRuleItem) -> None:
         if self.get_rule(rule.name) is not None:
             raise ValueError(f"已存在同名判定规则: {rule.name}")
+        snapshot = self._snapshot()
         self._rules.append(rule)
-        self.save()
+        self._save_or_rollback(snapshot)
 
     def update_rule(self, rule: JudgeRuleItem) -> None:
         for index, existing in enumerate(self._rules):
             if existing.name == rule.name:
+                snapshot = self._snapshot()
                 self._rules[index] = rule
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"规则不存在: {rule.name}")
 
     def delete_rule(self, name: str) -> None:
         for index, existing in enumerate(self._rules):
             if existing.name == name:
+                snapshot = self._snapshot()
                 self._rules.pop(index)
-                self.save()
+                self._save_or_rollback(snapshot)
                 return
         raise ValueError(f"规则不存在: {name}")
 
     def save(self) -> None:
-        _atomic_json_write(self.file_path, {
+        self.save_payload({
             "cards": [item.model_dump(mode="json", exclude_defaults=True) for item in self._cards],
             "judge_rules": [rule.model_dump(mode="json", exclude_defaults=True) for rule in self._rules],
         })

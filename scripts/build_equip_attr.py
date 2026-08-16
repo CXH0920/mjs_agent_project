@@ -5,7 +5,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 with open(r'data\equip_attrs.json', encoding='utf-8') as f:
     _equips = json.load(f)
-EQUIP_ATTRS = {e['name']: (e['subtype'], e['attack_range'], e['distance_mod']) for e in _equips}
+# 用 .get 容忍缺键（面板保存时 None 字段被 exclude_defaults 省略，键可能不存在）
+EQUIP_ATTRS = {e['name']: (e['subtype'], e.get('attack_range'), e.get('distance_mod')) for e in _equips}
 
 out = r'data\rag_corpus'
 

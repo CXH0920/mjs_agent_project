@@ -122,3 +122,52 @@ def test_load_reports_invalid_records(tmp_path: Path) -> None:
     assert repo.available is True
     assert len(repo.list_cards()) == 1
     assert len(repo.list_rules()) == 1
+
+
+def test_replace_card_updates_key(tmp_path: Path) -> None:
+    """编辑牌行：单步替换且键可变化（#20）。"""
+    repo = _repo(tmp_path)
+    repo.replace_card("火杀", "♥", "1", CardPointItem(name="火杀", suit="♥", point="3"))
+    assert repo.get_card("火杀", "♥", "1") is None  # 原行被替换
+    assert repo.get_card("火杀", "♥", "3") is not None
+    data = json.loads((tmp_path / "card_points.json").read_text(encoding="utf-8"))
+    assert any(c["point"] == "3" for c in data["cards"])
+
+
+def test_replace_card_duplicate_keeps_original(tmp_path: Path) -> None:
+    """编辑撞重：原行保留且内存回滚（#20/#11）。"""
+    repo = _repo(tmp_path)
+    with pytest.raises(ValueError):
+        repo.replace_card("火杀", "♥", "1", CardPointItem(name="火杀", suit="♥", point="2"))
+    assert repo.get_card("火杀", "♥", "1") is not None  # 原行未丢
+    assert repo.get_card("火杀", "♥", "2") is not None
+
+
+def test_save_failure_rolls_back_memory(tmp_path: Path, monkeypatch) -> None:
+    """写盘失败时内存回滚（#11）。"""
+    from src.data.json_repository import JsonRepository
+
+    def _boom(self, payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(JsonRepository, "save_payload", _boom)
+    repo = _repo(tmp_path)
+    with pytest.raises(OSError):
+        repo.add_card(CardPointItem(name="杀", suit="♦", point="4"))
+    assert repo.get_card("杀", "♦", "4") is None
+
+
+def test_blank_face_and_name_rejected() -> None:
+    """空花色/点数与纯空格牌名拒绝（#17）。"""
+    with pytest.raises(ValueError):
+        CardPointItem(name="x", suit="", point="1")
+    with pytest.raises(ValueError):
+        CardPointItem(name="x", suit="♥", point="")
+    with pytest.raises(ValueError):
+        CardPointItem(name="  ", suit="♥", point="1")
+
+
+def test_missing_face_rejected() -> None:
+    """缺省花色字段（默认空串）也被拦截（#17）。"""
+    with pytest.raises(ValueError):
+        CardPointItem(name="x", point="1")

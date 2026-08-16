@@ -92,3 +92,24 @@ def test_load_reports_invalid_records(tmp_path: Path) -> None:
     assert "duplicate_key" in kinds
     assert repo.available is True
     assert len(repo.list_items()) == 1
+
+
+def test_save_failure_rolls_back_memory(tmp_path: Path, monkeypatch) -> None:
+    """写盘失败时内存回滚，界面与磁盘保持一致（#11）。"""
+    from src.data.json_repository import JsonRepository
+
+    def _boom(self, payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(JsonRepository, "save_payload", _boom)
+    repo = _repo(tmp_path)
+    with pytest.raises(OSError):
+        repo.add_item(SpecialCardItem(category="专属牌", name="太阿剑", effect="x", hero="张华"))
+    assert repo.get_item("专属牌", "太阿剑") is None  # 内存已回滚
+    assert len(repo.list_items()) == 4  # 原数据完好
+
+
+def test_invalid_stackable_rejected() -> None:
+    """可否叠加仅支持 是/否/—（#17）。"""
+    with pytest.raises(ValueError):
+        SpecialCardItem(category="状态/标记", name="连环", stackable="可叠加")
