@@ -591,3 +591,57 @@ MainWindow._check_announcements()
 | `check_now()` | 手动触发一次检查（busy 防重） |
 | `_run_check()` / `_do_check()` | 后台执行并返回 `AnnouncementCheckResult` |
 | `mark_applied()` | 采集完成后公告置已处理 + 刷新百科快照 |
+
+## 十一、RuleDocService（元规则 T0 文档维护）链路
+
+### 11.1 调用链总览
+
+`src/business/rag/rule_doc_service.py` 只提供纯函数（本地只读解析、提案/疑难读写），脚本执行由 UI 层 `RuleDocPanel` 用 QProcess 完成；`maintain_rag.py` 与 `audit_rule_doc.py` 负责把文档母本转换为语料并做机器校验。
+
+```
+RuleDocPanel（知识库维护 → 元规则维护，四个子页签）
+  ├─ 文档状态页：refresh_audit() -> QProcess(scripts/audit_rule_doc.py)
+  │     -> parse_audit_output() -> audit_issue_counts() -> 摘要表 + 问题明细表
+  ├─ 数据段差异页：refresh_diffs() -> QProcess(scripts/sync_rule_stats.py --json scripts/.sync_rule_stats_report.json)
+  │     -> parse_sync_diff() -> 差异表（全自动/候选/校验点 + 确认值列）
+  │     -> _apply_diffs() -> 写 scripts/.sync_confirmed_diffs.json
+  │         -> QProcess(sync_rule_stats.py --apply-json <清单>)   [逐行原位替换，失败整批不写入]
+  ├─ 提案工作台：_generate_proposal() -> QProcess(scripts/propose_rule_changes.py --no-llm)
+  │     -> docs/archive/proposals/CP-YYYY-MM-DD-NN.json + .md
+  │     -> list_proposals() -> 提案下拉 + 条目表
+  │     -> _open_confirm_dialog() -> ProposalItemConfirmDialog -> update_proposal_item()   [status/edited_text 原子写]
+  │     -> _apply_proposal() -> QProcess(scripts/apply_rule_proposal.py --proposal CP-*.json)
+  │          -> apply_proposal() 合入 doc -> audit --strict（失败回滚）
+  │          -> maintain_rag.py --only 元规则 -> append_changelog() -> archive_proposal()
+  └─ 疑难登记页：_add_pending() -> add_pending() -> docs/rule_doc_pending.json
+        -> _to_proposal() -> pending_to_proposal() -> CP-日期-Pxxx.json（status=pending）
+```
+
+### 11.2 纯函数清单（rule_doc_service.py）
+
+| 函数 | 职责 | 主要调用方 |
+|------|------|-----------|
+| `parse_audit_output(text)` | 解析 audit 输出为 `[{level, message}]`（含 SUMMARY 汇总行） | `RuleDocPanel.refresh_audit` |
+| `audit_issue_counts(issues)` | 统计 ERROR/WARN/INFO 数量 | 文档状态页摘要 |
+| `parse_sync_diff(path)` | 读取 `sync_rule_stats.py --json` 差异项 | `RuleDocPanel.refresh_diffs` |
+| `sync_json_path(root)` / `confirmed_diff_path(root)` | 定位差异报告 / B2 确认清单 | 差异页与 `_apply_diffs()` |
+| `list_proposals(root)` | 列出 `docs/archive/proposals/CP-*.json`（倒序 + 状态统计） | 提案工作台下拉 |
+| `parse_proposal(path)` | 读取提案 JSON | `_load_proposal_detail` |
+| `doc_target_line()` / `doc_section_context()` / `doc_line_at()` / `doc_context_around()` | 按 faq 编号/小节/行号定位文档内容 | 提案与差异详情对话框 |
+| `update_proposal_item(root, path, item_id, status, edited_text)` | 原位更新提案条目（临时文件 + `os.replace`） | `ProposalItemConfirmDialog` 确认动作 |
+| `load_pending(root)` / `add_pending(root, desc, involved, source)` | 疑难登记读/增（`docs/rule_doc_pending.json`） | 疑难登记页 |
+| `pending_to_proposal(root, pending_id)` | open 疑难转 FAQ 新增提案并置 `status=proposed` | `_to_proposal()` |
+| `parse_doc_chapter7(doc_path)` | 只读解析文档第 7 章疑难登记表 | 展示/审计 |
+
+### 11.3 脚本协作（QProcess 侧）
+
+| 脚本 | 命令示例 | 作用 |
+|------|---------|------|
+| `scripts/audit_rule_doc.py` | `--strict` / `--update-snapshot` | 解析回声、表格结构、块 ID 唯一、ID 稳定性（快照）、FAQ 编号、确认状态、交叉引用、已定稿块指纹、章节结构指纹；快照 `scripts/.rule_doc_snapshot.json` |
+| `scripts/sync_rule_stats.py` | `--json out.json` / `--apply` / `--apply-json` | 从 `data/*.json` 生成数据快照段期望值并与文档对比；`--apply-json` 按确认清单逐行替换；退出码 1 = 有差异/应用失败，2 = 前置失败 |
+| `scripts/diff_source_data.py` | `--old data/backups` / `--data heroes,cards` | 对比 data 与备份，输出变更清单（含“是否新机制”启发式标记） |
+| `scripts/propose_rule_changes.py` | `--no-llm` / `--changes-json` | 用 LLM（DeepSeek，复用 `refinement_service.build_generator`）为变更生成结构化提案；无 API Key 降级占位提案 |
+| `scripts/apply_rule_proposal.py` | `--proposal CP-*.json` | 合入已确认提案项（faq_new/faq_revise/term_new/row_revise/section_new）→ audit 严格校验 → 重建语料 → changelog → 归档 |
+| `scripts/eval_rule_faqs.py` | `--generate` / `--top-k 5` | FAQ 裁定回归评估（向量检索命中率，零 LLM 成本） |
+| `scripts/maintain_rag.py` | `--force --build-index` | 重建语料与索引；元规则任务为 dynamic，按快照块数只增校验，任务成功刷新快照 |
+

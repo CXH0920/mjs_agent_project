@@ -45,6 +45,12 @@ src/ui/
 │   ├── match_guide_panel.py
 │   ├── match_analysis_view.py
 │   └── match_lineup_state.py
+├── maintenance/                # 知识库维护工作台（RAG 语料与元规则 T0 文档）
+│   ├── rag_maintenance_panel.py
+│   ├── rule_doc_panel.py       # 元规则维护四页签（audit/差异/提案/疑难）
+│   ├── index_refinement_dialog.py # 索引精化对话框（LLM 建议 + 人工补全）
+│   ├── card_points_panel.py
+│   └── equip_attrs_panel.py
 ├── generation/                 # AI 攻略/相性生成流程及专用对话框
 │   ├── ai_generation_workflow.py
 │   ├── backend_choose_dialog.py
@@ -414,6 +420,10 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `HeroRelationSelectDialog` | 搭配推荐武将的搜索多选 |
 | `RoiSelectorDialog` | 模板 ROI 区域框选 |
 | `BaseHeroSelectDialog`（及其子类） | 武将选择 |
+| `IndexRefinementDialog` | 索引精化：LLM 建议/人工补全卡牌与武将语料索引字段（curated，重建不覆盖） |
+| `ProposalDetailDialog` | 元规则提案项差异对比 + 文档上下文（只读） |
+| `ProposalItemConfirmDialog` | 元规则提案项逐条确认（approved/revised/rejected + 可编辑文本） |
+| `DiffDetailDialog` | 数据段差异详情（行号定位 + Git 风格 diff + 文档过期警示） |
 
 ---
 
@@ -428,9 +438,12 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 
-## 七、专属牌维护与知识库维护（2026-08 新增）
+## 七、专属牌维护与知识库维护（2026-08 新增，2026-08 更新）
 
-- 资料库二级标签「专属牌维护」：src/ui/library/special_cards_panel.py，维护 data/special_cards.json（专属牌/专属战法牌/特殊牌区/状态·标记/概念），数据层 src/data/special_cards_repository.py，保存后发 data_changed 信号。专属牌/专属战法牌条目含牌面事实字段（花色/点数/攻击范围/结算详情，由原 xlsx【专属牌】sheet 迁移回填）。
-- 主导航第 4 页「知识库维护」：src/ui/maintenance/rag_maintenance_panel.py，展示 8 个语料任务状态（源文件 mtime vs 语料输出）与人工审计提示，通过 QProcess 本地执行 scripts/maintain_rag.py 重建语料/索引，不再依赖外部 mjs 仓库。
+- 资料库二级标签「专属牌维护」：src/ui/library/special_cards_panel.py，维护 data/special_cards.json（专属牌/专属战法牌/特殊牌区/状态·标记/概念），数据层 src/data/special_cards_repository.py，保存后发 data_changed 信号。专属牌/专属战法牌条目含牌面事实字段（花色/点数/攻击范围/结算详情，由原 xlsx【专属牌】sheet 迁移回填）；`focus_item(category, name)` 供知识库维护审计跳转定位。
+- 主导航第 4 页「知识库维护」：src/ui/maintenance/rag_maintenance_panel.py，展示 8 个语料任务状态（源文件 mtime vs 语料输出）与**结构化审计条目**，通过 QProcess 本地执行 scripts/maintain_rag.py 重建语料/索引，不再依赖外部 mjs 仓库。审计由 `AuditIssue`（kind/message/severity/target_tab/target）驱动，每条可带「跳转」按钮：未归类武将 → 武将分类维护页签 `focus_unclassified()`；专属牌未知武将/缺结算 → 专属牌维护页签 `focus_item()`；索引字段待精化 → 直接打开索引精化对话框。
 - 「卡牌点数维护」页签：src/ui/maintenance/card_points_panel.py + src/data/card_points_repository.py，维护 data/card_points.json（162 张牌花色点数 + 12 条卜卦判定规则，由原 xlsx sheet1 与硬编码 attr_judge 迁移）；支持牌行/规则增删改与「从 xlsx 导入」（scripts/migrate_excel_to_json.py --only points）。
 - 「装备属性维护」页签：src/ui/maintenance/equip_attrs_panel.py + src/data/equip_attrs_repository.py，维护 data/equip_attrs.json（26 件装备细分/攻击范围/距离修正，由原 xlsx sheet2 与 build_equip_attr.py 硬编码 EQUIP_ATTRS 迁移），表格编辑 + 保存校验。
+- 「武将分类维护」页签：src/ui/library/hero_classification_panel.py + src/data/hero_classification_repository.py，维护 data/hero_classification.json（分类 CRUD / 克制链 / 武将归类）；新增 `focus_unclassified()` 供审计跳转定位首个未归类武将。
+- 「元规则维护」页签：src/ui/maintenance/rule_doc_panel.py + src/business/rag/rule_doc_service.py，维护规则知识库 T0 母本 docs/元规则整理-完整版.md（只增不删、机器校验）。四个子页签：① 文档状态（audit_rule_doc.py 校验摘要与问题明细）② 数据段差异（sync_rule_stats.py --json 预览，勾选 + 确认值后一键应用）③ 提案工作台（propose_rule_changes.py 生成提案、apply_rule_proposal.py 合入已确认提案）④ 疑难登记（docs/rule_doc_pending.json 增查与转 FAQ 提案）。所有脚本经 QProcess 执行，日志统一汇入底部可折叠日志区，顶部按状态给出下一步建议。
+- 「索引精化」对话框（IndexRefinementDialog，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 timing / trigger_condition / keywords / related 四个字段（去掉了原 target 字段）。顶部总览条（进度 + 全部/卡牌/武将筛选）、清单区（搜索 + 4 列表格 + LLM 建议当前/全部）、工作区（左原文卡片占满高度 + 右 4 字段状态卡片，fieldState=empty/llm/manual 着色）、底部操作条（跳过/保存当前/保存全部）。LLM 建议（全部）用 QTimer 队列逐块处理避免冻结窗口；保存全部以已生成建议为 baseline；切回已建议条目还原 LLM 内容。入口按钮带待精化数量角标（如「索引精化（5）」），审计横幅「索引字段待精化 N 块」点击直接打开对话框。

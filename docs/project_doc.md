@@ -263,8 +263,8 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python scripts/maintain_rag.py --force --build-index` 或应用内「知识库维护」页面。
-- **T0 元规则文档增量维护（2026-08-15）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义；官方更新先跑 `scripts/diff_source_data.py` 生成变更清单（含"是否新机制"疑似标记），新机制走提案-确认（模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`），合入后由 `scripts/audit_rule_doc.py` 机器校验（解析回声/ID 稳定/块指纹/交叉引用，`--strict` 可进 CI），再 `maintain_rag.py --force --build-index` 重建；变更日志见 `docs/changelog/元规则changelog.md`，完整流程见 `docs/元规则T0文档维护方案.md`。
-- **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类五个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
+- **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `scripts/.rule_doc_snapshot.json`）；③ `scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
+- **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
 ### 2.1 模块文件关系
 
@@ -1154,17 +1154,24 @@ _start_import()
 
 ### 5.13 知识库维护工作台（RagMaintenancePanel）
 
-主导航第 4 页，本地维护 RAG 语料与源数据，包含 5 个页签：
+主导航第 4 页，本地维护 RAG 语料与源数据，包含 6 个页签：
 
 | 页签 | 数据源 | 能力 |
 |------|--------|------|
-| 语料状态 | `scripts/maintain_rag.py` + `rag_audit.py` | 8 个语料任务状态表（最新/待重建/缺源 + 块数）、6 项人工维护审计横幅、一键重建（QProcess 实时日志） |
+| 语料状态 | `scripts/maintain_rag.py` + `rag_audit.py` | 8 个语料任务状态表（最新/待重建/缺源 + 块数）、结构化人工维护审计横幅（可跳转定位）、一键重建（QProcess 实时日志） |
+| 元规则维护 | `docs/元规则整理-完整版.md` | 文档状态（audit）/ 数据段差异（sync）/ 提案工作台（propose+apply）/ 疑难登记（pending）四个子页签 |
 | 专属牌维护 | `data/special_cards.json` | 5 类条目 CRUD，专属牌/战法牌含花色/点数/攻击范围/结算详情字段 |
 | 卡牌点数维护 | `data/card_points.json` | 72 花色点数组合 × 数量与 12 条判定规则增删改；「从 xlsx 导入」应急通道 |
 | 装备属性维护 | `data/equip_attrs.json` | 26 件装备细分/攻击范围/距离修正表格编辑 + 保存校验 |
 | 武将分类维护 | `data/hero_classification.json` | 分类 CRUD / 克制链 / 武将归类 |
 
-联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。审计覆盖：未归类武将、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）。语料层另有「索引精化」对话框（`IndexRefinementDialog`）对卡牌/武将语料做 curated 索引字段精化，重建不覆盖。
+联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。审计由 `AuditIssue`（kind/message/severity/target_tab/target）结构化驱动，覆盖：未归类武将、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）、索引字段待精化（排第一位）；每条可点「跳转」定位到对应维护页签（`HeroClassificationPanel.focus_unclassified()` / `SpecialCardsPanel.focus_item()` / 直接打开索引精化）。
+
+语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 全部/卡牌/武将筛选）、清单区（搜索 + 4 列表格，行状态 ○/◉/✎）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/manual 着色）、底部操作条（跳过/保存当前/保存全部）；LLM 建议（DeepSeek）全部模式用 QTimer 队列逐块处理不冻结窗口，保存全部以已生成建议为 baseline，切回条目还原建议内容，重建不覆盖。入口按钮带待精化数量角标。
+
+#### 5.13.1 元规则维护页签（RuleDocPanel）
+
+维护对象为规则知识库 T0 母本（只增不删、机器校验），四个子页签与建议流程：① 刷新检查（`audit_rule_doc.py`）→ ② 应用数据段差异（`sync_rule_stats.py --json` 预览、勾选 + 确认值后 `--apply-json`）→ ③ 生成/合入提案（`propose_rule_changes.py --no-llm` / `apply_rule_proposal.py --proposal`）→ ④ 登记疑难（`docs/rule_doc_pending.json`，可转 FAQ 提案）；改动完成后回「语料状态」重建语料+索引。`rule_doc_service.py` 提供 audit 输出解析、差异解析、提案读写（含原子更新）、疑难登记等纯函数；所有脚本经 QProcess 执行，输出统一汇入底部可折叠日志区，顶部状态栏按 ERROR/全自动差异/WARN/候选/校验点/待确认提案/待消化疑难给出下一步建议。
 
 ---
 

@@ -46,7 +46,8 @@ test_project/
 │   │   ├── emulator/              # 截图、ADB 后台操作与 MuMu 配置协调
 │   │   ├── recognition/           # OCR 控制、唯一 worker 与官方榜单导入
 │   │   ├── analysis/              # 选将推荐与对局攻略分析
-│   │   └── maintenance/           # 数据清理、修复与事务化修改
+│   │   ├── maintenance/           # 数据清理、修复与事务化修改
+│   │   └── rag/                   # 索引精化 LLM 建议与元规则 T0 文档维护纯函数
 │   ├── capture/
 │   │   ├── __init__.py
 │   │   ├── adb_screen.py          # ADB 连接与截图（subprocess exec-out 无文件中间态）
@@ -69,6 +70,7 @@ test_project/
 │       ├── generation/             # AI 生成工作流、选择和进度弹窗
 │       ├── configuration/          # API、模拟器、势力配色与 ROI 配置
 │       ├── data_admin/             # 数据管理与官方榜单导入
+│       ├── maintenance/            # 知识库维护工作台（语料状态/元规则维护/索引精化）
 │       └── shared/                 # 跨功能控件、展示与样式
 │           ├── style.py            # 视觉 Token、全局 QSS 与语义角色
 │           ├── widgets.py          # 页面标题、空状态、标准底栏与 Toast
@@ -219,6 +221,7 @@ python -m src.scraper.ai_batch --dry-run --synergy
 - 增量重建语料/索引：`python scripts/maintain_rag.py --build-index`
 - 预览官方数据差异：`python scripts/import_from_test.py --dry-run`
 - **RAG 源数据（T0）**：已从 xlsx 迁移为 JSON——`data/special_cards.json`（专属牌/战法牌/特殊牌区/状态/概念，含花色点数与结算详情）、`data/card_points.json`（162 张牌花色点数 + 12 条判定规则）、`data/equip_attrs.json`（26 件装备属性）；xlsx 归档 `data/archive/`，应急重导入：`python scripts/migrate_excel_to_json.py`
+- **元规则 T0 文档维护**（母本 `docs/元规则整理-完整版.md`，只增不删）：变更清单 `python scripts/diff_source_data.py --out docs/changelog/变更清单.md`；机器校验 `python scripts/audit_rule_doc.py --strict`（`--update-snapshot` 刷新基线快照）；数据快照段同步 `python scripts/sync_rule_stats.py --apply`（候选段加 `--apply-candidates`）；起草提案 `python scripts/propose_rule_changes.py`；合入提案 `python scripts/apply_rule_proposal.py --proposal docs/archive/proposals/CP-xxx.json`；FAQ 回归评估 `python scripts/eval_rule_faqs.py`。以上均可在应用内「知识库维护 → 元规则维护」页签可视化操作，完整流程见 `docs/元规则T0文档维护方案.md`。
 ### 6. 屏幕采集 + OCR 识别
 
 ```bash
@@ -269,6 +272,7 @@ ADB 截图
 - [UI 导航规范](docs/spec/spec_ui_navigation.md)：目标信息架构、页面操作归属和状态保持规则。
 - [调用图目录](docs/call_graph/)：以 `A() -> B()` 形式记录核心函数调用链和跨进程边界。
 - [模块说明](docs/code_desc/)：面向维护和新人培训的分模块摘要。
+- [元规则 T0 文档维护方案](docs/元规则T0文档维护方案.md)：规则母本增量维护流程、机器校验项与工作台操作说明。
 - [历史复盘与避坑指南](docs/retrospective.md)：汇总 Codex/Claude 历史负面事件、根因、预防门禁和未闭环风险。
 
 ## 架构
@@ -557,11 +561,12 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 
 ### 知识库维护（RAG 语料工作台）
 
-主导航第 4 页「知识库维护」提供 RAG 语料本地维护：
+主导航第 4 页「知识库维护」提供 RAG 语料与规则文档本地维护：
 
-- **语料状态**：8 个语料任务状态表（最新/待重建/缺源）+ 6 项人工维护审计（未归类武将、未知武将引用、点数花色/162 张、装备 26 件、结算回填）+ 一键重建语料/索引（实时日志）；
+- **语料状态**：8 个语料任务状态表（最新/待重建/缺源）+ 结构化人工维护审计（未归类武将、未知武将引用、点数花色/162 张、装备 26 件、结算回填、索引字段待精化），审计条目支持一键跳转定位到对应维护页签 + 一键重建语料/索引（实时日志）；
+- **元规则维护**（`docs/元规则整理-完整版.md` 规则母本，只增不删、机器校验）：文档状态（`audit_rule_doc.py`）、数据段差异（`sync_rule_stats.py` 预览/确认/应用）、提案工作台（`propose_rule_changes.py` 生成、`apply_rule_proposal.py` 合入并自动审计+重建+写 changelog）、疑难登记（`docs/rule_doc_pending.json`，可一键转 FAQ 提案）；FAQ 回归评估用 `eval_rule_faqs.py`；
 - **数据源维护页签**：专属牌维护（`data/special_cards.json`）、卡牌点数维护（`data/card_points.json`，含 12 条判定规则与 xlsx 应急导入）、装备属性维护（`data/equip_attrs.json`）、武将分类维护（`data/hero_classification.json`）；
-- 保存任一数据源 → 自动标记「待重建」→ 一键 `maintain_rag.py` 重建语料与向量索引；「索引精化」对话框可对卡牌/武将语料做 curated 字段精化。
+- 保存任一数据源 → 自动标记「待重建」→ 一键 `maintain_rag.py` 重建语料与向量索引；「索引精化」对话框（LLM 建议 + 人工补全 timing/trigger_condition/keywords/related 四字段，批量建议事件循环不冻结窗口）可对卡牌/武将语料做 curated 字段精化，重建不覆盖。
 
 ### Configuration
 
@@ -695,6 +700,14 @@ python -m src.scraper.ai_batch --synergy [--dry-run] [--score-threshold 0]
 
 # AI 相性评分（浏览器模式）
 python -m src.scraper.ai_batch --synergy --browser
+
+# 元规则 T0 文档维护
+python scripts/audit_rule_doc.py --strict          # 机器校验（ERROR/WARN 时退出码 1）
+python scripts/sync_rule_stats.py --json .sync_rule_stats_report.json   # 数据段差异报告
+python scripts/diff_source_data.py                 # 数据源变更清单（含新机制疑似标记）
+python scripts/propose_rule_changes.py --no-llm    # 生成提案（--no-llm 为占位）
+python scripts/apply_rule_proposal.py --proposal docs/archive/proposals/CP-xxx.json   # 合入提案
+python scripts/eval_rule_faqs.py                   # FAQ 裁定回归评估
 ```
 
 ### 势力配色配置

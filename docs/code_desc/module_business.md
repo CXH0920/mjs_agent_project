@@ -15,6 +15,7 @@
 4. **模拟器后台操作** — 独立执行设备探测与 ADB 会话操作，避免实例枚举阻塞模板截图
 5. **官方榜单导入** — 解析固定版式的 2v2 胜率/出场榜与武将放逐榜，按表格行安全覆盖 CSV
 6. **推荐数据组装** — 一次读取胜率与推荐指数快照，并提供数值化的卡片排名数据
+7. **元规则文档维护纯函数** — 为「知识库维护 → 元规则维护」页签提供 audit 输出解析、数据段差异解析、提案读写与疑难登记（命令执行由 UI 层 QProcess 完成）
 
 核心设计原则：**不持有 UI 引用**，全部通过 Qt Signal 与主窗口通信。
 
@@ -45,6 +46,9 @@ src/business/
 │   └── match_analysis_service.py # 对局攻略分析
 ├── maintenance/
 │   └── data_management_service.py # 数据清理、修复与修改事务
+├── rag/
+│   ├── refinement_service.py      # 索引精化：LLM 建议生成与 curated 写回
+│   └── rule_doc_service.py        # 元规则 T0 文档维护纯函数（audit/差异/提案/疑难）
 └── announcement/
     └── announcement_service.py    # 公告检查与百科 diff 服务（线程 + Qt 信号）
 ```
@@ -232,6 +236,17 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 `mark_applied()` 在“更新武将数据”完成后由主窗口调用：公告置已处理并把最近一次百科哈希写回快照，使差异归零。
 
+### 3.7 RuleDocService（元规则 T0 文档维护）
+
+`src/business/rag/rule_doc_service.py` 面向「知识库维护 → 元规则维护」页签提供**纯函数**（不持 UI 引用、不启动进程），命令执行由 UI 层 `rule_doc_panel.py` 用 QProcess 完成：
+
+- **audit 输出解析** — `parse_audit_output(text)` 解析 `scripts/audit_rule_doc.py` 输出的 `[ERROR]/[WARN]/[INFO]` 行与汇总行；`audit_issue_counts(issues)` 统计各级别数量，供「文档状态」页签展示。
+- **数据段差异解析** — `parse_sync_diff(path)` 读取 `scripts/sync_rule_stats.py --json` 输出的差异项（段/行号/类型/旧值/新值/摘要）；`sync_json_path()` 与 `confirmed_diff_path()` 分别定位差异报告（`scripts/.sync_rule_stats_report.json`）与 B2 确认清单（`scripts/.sync_confirmed_diffs.json`）。
+- **提案读写** — `list_proposals()` 扫描 `docs/archive/proposals/CP-*.json`（按编号倒序并统计待确认/已确认/已驳回）；`parse_proposal()` 读取提案；`doc_target_line()` / `doc_section_context()` / `doc_line_at()` / `doc_context_around()` 用于差异详情页现场定位文档行与上下文；`update_proposal_item()` 原位更新条目 `status/edited_text`（临时文件 + `os.replace` 原子写）。
+- **疑难登记** — `load_pending()` / `add_pending()` 维护本地待办 `docs/rule_doc_pending.json`；`pending_to_proposal()` 把一条 open 疑难转成 FAQ 新增提案（`CP-日期-Pxxx.json`，`status=pending`）；`parse_doc_chapter7()` 只读解析文档第 7 章疑难登记表。
+
+> 关键常量：`DEFAULT_DOC`（`docs/元规则整理-完整版.md`）、`PROPOSAL_DIR`（`docs/archive/proposals/`）、`PENDING_FILE`（`docs/rule_doc_pending.json`）、`RAG_EVALS_DIR`（`data/rag_evals/`）。
+
 ## 四、关键代码片段
 
 ### 4.1 QProcess 参数构建与启动
@@ -295,3 +310,7 @@ def _on_finished(self, exit_code: int) -> None:
 | 依赖 | `src.data.recommendation_index_repository` | 提供推荐指数 CSV 的手动重建接口 |
 | 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 fetch_*() |
 | 被调用方 | `src.ui.data_admin.official_data_import_dialog` | 对话框创建后台导入线程并显示结果 |
+| 依赖 | `docs/元规则整理-完整版.md` | rule_doc_service 只读解析文档行/章节/第 7 章疑难表 |
+| 依赖 | `docs/archive/proposals/` | 提案 JSON 读写与状态更新 |
+| 依赖 | `scripts/.sync_rule_stats_report.json`、`.sync_confirmed_diffs.json` | 数据段差异报告与 B2 确认清单定位 |
+| 被调用方 | `src.ui.maintenance.rule_doc_panel` | 元规则维护页签调用纯函数渲染表格与详情 |

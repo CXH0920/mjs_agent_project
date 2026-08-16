@@ -19,7 +19,8 @@
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
 - **官方数据导入** — 可独立或同时导入 2v2/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 - **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示“可更新”，并提供“指定获取+增量”一键精准更新
-- **知识库维护（RAG）** — 本地 RAG 语料维护工作台：语料状态（8 个任务/一键重建/审计）与专属牌、卡牌点数、装备属性、武将分类四个数据源维护页签；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
+- **知识库维护（RAG）** — 本地 RAG 语料维护工作台：语料状态（8 个任务/一键重建/结构化审计并支持跳转定位）与元规则维护、专属牌、卡牌点数、装备属性、武将分类五个数据源维护页签；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
+- **元规则 T0 文档维护** — 以 `docs/元规则整理-完整版.md` 为规则知识库母本（只增不删、机器校验），提供文档校验（audit）、数据段差异同步（sync）、变更提案起草/合入（propose/apply）与疑难登记（pending）完整工作流，并在「知识库维护 → 元规则维护」页签可视化操作
 
 ## 技术栈
 
@@ -94,4 +95,4 @@ test_project/
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
 | 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入 |
 | 6 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
-| 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器、知识库维护工作台 |
+| 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器、知识库维护工作台（含元规则维护与索引精化） |
