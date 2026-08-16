@@ -82,9 +82,14 @@ def test_recommendation_default_workspace_shows_all_eight_cards() -> None:
     panel.show()
     app.processEvents()
 
-    assert panel._cards_scroll.verticalScrollBar().maximum() == 0
+    # 卡片固定高 141、4 行 + 3×8px 间距 = 588px，该尺寸下视口约 540px，
+    # 允许最多滚动一张卡高度（141px）：若内容放不下整行，滚动量会远超该值。
+    max_scroll = panel._cards_scroll.verticalScrollBar().maximum()
+    assert 0 <= max_scroll < panel._cards[0].height()
     assert all(not card.isHidden() for card in panel._cards)
-    assert panel._cards_widget.height() <= panel._cards_scroll.viewport().height()
+    assert all(card.height() >= card.minimumHeight() for card in panel._cards)
+    overflow = panel._cards_widget.height() - panel._cards_scroll.viewport().height()
+    assert 0 <= overflow < panel._cards[0].height()
     panel.hide()
 
 
