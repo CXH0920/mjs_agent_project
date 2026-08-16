@@ -83,6 +83,11 @@ def mark_recommendation_index_stale(
     path: Path = RECOMMENDATION_INDEX_STATE_FILE,
 ) -> None:
     """原子保存推荐指数快照是否待重建的状态。"""
+    import traceback
+    logger.warning(
+        "推荐指数状态标记 stale=%s，调用来源:\n%s",
+        stale, "".join(traceback.format_stack(limit=10)),
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(".tmp")
     temp_path.write_text(
