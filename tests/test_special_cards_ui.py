@@ -53,6 +53,7 @@ def test_panel_filters_by_category(tmp_path: Path) -> None:
     assert panel._list.count() == 1
     assert panel._list.item(0).data(Qt.ItemDataRole.UserRole) == ("专属牌", "龙泉剑")
     panel._search_input.setText("距离")
+    panel._search_timer.timeout.emit()  # 同步驱动搜索防抖（测试环境无事件循环）
     assert panel._list.count() == 0
 
 

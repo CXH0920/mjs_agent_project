@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """生成加强削弱语料 + 统计"""
-import json, io, sys
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-with open(r'data\cards.json', encoding='utf-8') as f:
-    cards = json.load(f)
-with open(r'data\card_annotations.json', encoding='utf-8') as f:
-    ann = json.load(f)
+import json, sys
+
+from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+
+setup_stdout()
+
+cards = load_json(project_path('data', 'cards.json'))
+ann = load_json(project_path('data', 'card_annotations.json'))
 
 cards_by_id = {c['id']: c for c in cards}
 anns = ann['annotations']
@@ -67,10 +69,8 @@ for a in sorted(anns, key=lambda x: int(x['card_id']) if x['card_id'].isdigit() 
         f'【关联】{" / ".join(b["related"])}',
         '',
     ]
-out = r'data\rag_corpus'
-with open(out + r'\加强削弱语料.md', 'w', encoding='utf-8', newline='\n') as f:
+with open(CORPUS / '加强削弱语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md))
-with open(out + r'\加强削弱语料.json', 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(blocks, f, ensure_ascii=False, indent=1)
+save_json(CORPUS / '加强削弱语料.json', blocks)
 print('语料块数:', len(blocks))
 print('覆盖卡牌数(去重):', len(set(a['card_id'] for a in anns)))

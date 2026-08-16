@@ -178,13 +178,10 @@ class DataManager(Generic[V_co]):
 
     def _save_unlocked(self) -> None:
         """实际保存实现；调用方须已持有 _lock。"""
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
         data = [v.model_dump(mode="json") for v in self._items.values()]
-        tmp_path = self.file_path.with_suffix(".tmp")
-        with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.write("\n")
-        tmp_path.replace(self.file_path)
+        # 延迟导入避免循环依赖（json_repository 顶部 import 本模块的 DataIssue）
+        from src.data.json_repository import atomic_write_json  # noqa: PLC0415
+        atomic_write_json(self.file_path, data, indent=2)
         logger.debug("保存 %d 条到 %s", len(self._items), self.file_path)
 
     def snapshot_items(self) -> dict:

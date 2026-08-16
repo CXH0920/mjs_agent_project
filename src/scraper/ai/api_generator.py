@@ -74,6 +74,10 @@ class AIBatchGenerator:
         self._min_interval = 60.0 / max(requests_per_minute, 1)
         self._last_request_time = 0.0
 
+    def complete(self, messages: list[dict], temperature: float = 0.7) -> dict | None:
+        """公开的对话补全接口（供业务层调用，内部复用 _call_api）。"""
+        return self._call_api(messages, temperature=temperature)
+
     def _call_api(self, messages: list[dict], temperature: float = 0.7) -> dict | None:
         """调用 DeepSeek API，带指数退避重试"""
         headers = {

@@ -20,6 +20,7 @@ from src.business.rag.audit_service import (  # noqa: E402
     collect_card_points,
     collect_equip_attrs,
     collect_missing_settlements,
+    collect_orphan_category_keys,
     collect_unclassified,
     collect_unknown_heroes,
 )
@@ -66,6 +67,14 @@ def audit_hero_coverage(root):
     issues.append('未归类武将 %d 人（请补充 data/hero_classification.json）' % len(unclassified))
     for name in unclassified[:30]:
         issues.append('  未归类: %s' % name)
+
+    # 反向校验：分类表引用了 heroes.json 中不存在的武将（#10）
+    orphan = collect_orphan_category_keys(hero_names, cls)
+    if orphan:
+        issues.append('分类表引用未知武将 %d 个（请清理 data/hero_classification.json 多余键）：%s'
+                      % (len(orphan), '、'.join(orphan[:8])))
+        for name in orphan[:30]:
+            issues.append('  多余键: %s' % name)
 
     for _name in collect_unknown_heroes(specials, hero_names):
         issues.append('special_cards 引用了未知武将: %s' % _name)

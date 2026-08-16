@@ -3,7 +3,8 @@
     {
       "name": "丈八蛇矛",
       "suit": "♦",
-      "point": "2"
+      "point": "2",
+      "count": 1
     },
     {
       "name": "久旱",
@@ -14,22 +15,26 @@
     {
       "name": "乌骓",
       "suit": "♣",
-      "point": "6"
+      "point": "6",
+      "count": 1
     },
     {
       "name": "云锦袍",
       "suit": "♠",
-      "point": "8"
+      "point": "8",
+      "count": 1
     },
     {
       "name": "亮银枪",
       "suit": "♦",
-      "point": "2"
+      "point": "2",
+      "count": 1
     },
     {
       "name": "休养生息",
       "suit": "♣",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "先拔头筹",
@@ -40,17 +45,20 @@
     {
       "name": "八卦盾",
       "suit": "♥",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "冲杀",
       "suit": "♦",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "冲杀",
       "suit": "♦",
-      "point": "2"
+      "point": "2",
+      "count": 1
     },
     {
       "name": "冲杀",
@@ -61,7 +69,8 @@
     {
       "name": "冲杀",
       "suit": "♦",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "冲杀",
@@ -78,12 +87,14 @@
     {
       "name": "凤羽盔",
       "suit": "♥",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "地火",
       "suit": "♥",
-      "point": "8"
+      "point": "8",
+      "count": 1
     },
     {
       "name": "多多益善",
@@ -94,7 +105,8 @@
     {
       "name": "天雷",
       "suit": "♣",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "夺粮劫营",
@@ -105,12 +117,14 @@
     {
       "name": "干将莫邪",
       "suit": "♦",
-      "point": "2"
+      "point": "2",
+      "count": 1
     },
     {
       "name": "开山斧",
       "suit": "♦",
-      "point": "8"
+      "point": "8",
+      "count": 1
     },
     {
       "name": "怒气",
@@ -127,32 +141,38 @@
     {
       "name": "怒气",
       "suit": "♣",
-      "point": "6"
+      "point": "6",
+      "count": 1
     },
     {
       "name": "怒气",
       "suit": "♣",
-      "point": "7"
+      "point": "7",
+      "count": 1
     },
     {
       "name": "惊羽弓",
       "suit": "♦",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "方天画戟",
       "suit": "♦",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "易",
       "suit": "太极",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "易",
       "suit": "太极",
-      "point": "8"
+      "point": "8",
+      "count": 1
     },
     {
       "name": "火杀",
@@ -163,7 +183,14 @@
     {
       "name": "火杀",
       "suit": "♥",
-      "point": "3"
+      "point": "2",
+      "count": 5
+    },
+    {
+      "name": "火杀",
+      "suit": "♥",
+      "point": "3",
+      "count": 1
     },
     {
       "name": "火杀",
@@ -174,7 +201,8 @@
     {
       "name": "火杀",
       "suit": "♥",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "火杀",
@@ -209,27 +237,32 @@
     {
       "name": "爪黄飞电",
       "suit": "♣",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "玄武盾",
       "suit": "♥",
-      "point": "6"
+      "point": "6",
+      "count": 1
     },
     {
       "name": "白蹄乌",
       "suit": "♣",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "的卢",
       "suit": "♣",
-      "point": "6"
+      "point": "6",
+      "count": 1
     },
     {
       "name": "盗骊",
       "suit": "♣",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "破阵卸甲",
@@ -240,22 +273,26 @@
     {
       "name": "箭雨齐射",
       "suit": "♦",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "绝影",
       "suit": "♣",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "羽扇",
       "suit": "♥",
-      "point": "3"
+      "point": "3",
+      "count": 1
     },
     {
       "name": "藤甲",
       "suit": "♣",
-      "point": "3"
+      "point": "3",
+      "count": 1
     },
     {
       "name": "蟠桃",
@@ -290,7 +327,8 @@
     {
       "name": "诸葛连弩",
       "suit": "♦",
-      "point": "2"
+      "point": "2",
+      "count": 1
     },
     {
       "name": "调兵遣将",
@@ -301,12 +339,14 @@
     {
       "name": "赤兔",
       "suit": "♥",
-      "point": "5"
+      "point": "5",
+      "count": 1
     },
     {
       "name": "轩辕剑",
       "suit": "♦",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "连环",
@@ -317,7 +357,8 @@
     {
       "name": "银狮盔",
       "suit": "♦",
-      "point": "1"
+      "point": "1",
+      "count": 1
     },
     {
       "name": "闪避",
@@ -370,28 +411,26 @@
     {
       "name": "青龙偃月刀",
       "suit": "♦",
-      "point": "4"
+      "point": "4",
+      "count": 1
     },
     {
       "name": "飒露紫",
       "suit": "♣",
-      "point": "7"
+      "point": "7",
+      "count": 1
     },
     {
       "name": "鸣鸿刀",
       "suit": "♦",
-      "point": "8"
+      "point": "8",
+      "count": 1
     },
     {
       "name": "龙舌弓",
       "suit": "♥",
-      "point": "1"
-    },
-    {
-      "name": "火杀",
-      "suit": "♥",
-      "point": "2",
-      "count": 5
+      "point": "1",
+      "count": 1
     }
   ],
   "judge_rules": [

@@ -79,9 +79,12 @@ class EquipAttrsPanel(QWidget):
     def reload_data(self) -> None:
         issues = self._repository.load()
         errors = [item.message for item in issues if item.severity == "error"]
-        self._table.setRowCount(0)
-        for item in self._repository.list_equips():
-            self._append_row(item)
+        items = self._repository.list_equips()
+        scroll = self._table.verticalScrollBar().value()
+        self._table.setRowCount(len(items))  # 一次性分配，避免逐行 insertRow（#29）
+        for row, item in enumerate(items):
+            self._append_row(row, item)
+        self._table.verticalScrollBar().setValue(scroll)  # 恢复滚动位置（#29）
         self._title.setText(
             "装备属性（26 件：坐骑距离修正 + 武器攻击范围 + 防具）"
             + (f"｜加载异常 {len(errors)} 条，详见日志，已禁止保存" if errors else ""))
@@ -94,9 +97,7 @@ class EquipAttrsPanel(QWidget):
             return False
         return True
 
-    def _append_row(self, item: EquipAttrItem) -> None:
-        row = self._table.rowCount()
-        self._table.insertRow(row)
+    def _append_row(self, row: int, item: EquipAttrItem) -> None:
         name_item = QTableWidgetItem(item.name)
         name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self._table.setItem(row, 0, name_item)

@@ -108,6 +108,18 @@ def test_audit_reports_unclassified_and_unknown_hero(tmp_path: Path) -> None:
     assert "专属牌引用未知武将" in texts
 
 
+def test_audit_reports_orphan_category_keys(tmp_path: Path) -> None:
+    """#10 回归：分类表引用 heroes.json 中不存在的武将应报出。"""
+    root = _make_root(tmp_path)
+    _write(root / "data" / "hero_classification.json", {
+        "hero_categories": {"乐广": ["爆发型"], "张华": ["爆发型"], "贾诩(限定)": ["爆发型"]},
+    })
+    issues = audit_summary(root)
+    orphan = next(i for i in issues if i.kind == "orphan_category_key")
+    assert "贾诩(限定)" in orphan.message
+    assert orphan.target_tab == "武将分类维护"
+
+
 def test_panel_renders(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)

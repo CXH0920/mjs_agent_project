@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """装备属性落地：生成装备属性语料 + 注入卡牌语料（数据源 data/equip_attrs.json，由 xlsx 迁移而来）"""
-import json, io, sys
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import json
 
-with open(r'data\equip_attrs.json', encoding='utf-8') as f:
-    _equips = json.load(f)
+from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+
+setup_stdout()
+
+_equips = load_json(project_path('data', 'equip_attrs.json'))
 # 用 .get 容忍缺键（面板保存时 None 字段被 exclude_defaults 省略，键可能不存在）
 EQUIP_ATTRS = {e['name']: (e['subtype'], e.get('attack_range'), e.get('distance_mod')) for e in _equips}
 
-out = r'data\rag_corpus'
-
 # ---- 1. 装备属性语料 ----
-with open(r'data\cards.json', encoding='utf-8') as f:
-    cards = json.load(f)
+cards = load_json(project_path('data', 'cards.json'))
 card_by_name = {c['name']: c for c in cards}
 
 blocks = []
@@ -60,15 +59,13 @@ md += [
     f'【规则】{rule_block["content"]}',
     '',
 ]
-with open(out + r'\装备属性语料.md', 'w', encoding='utf-8', newline='\n') as f:
+with open(CORPUS / '装备属性语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md))
-with open(out + r'\装备属性语料.json', 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(blocks, f, ensure_ascii=False, indent=1)
+save_json(CORPUS / '装备属性语料.json', blocks)
 print('装备属性语料块:', len(blocks))
 
 # ---- 2. 注入卡牌语料 ----
-with open(out + r'\卡牌RAG语料.json', encoding='utf-8') as f:
-    card_blocks = json.load(f)
+card_blocks = load_json(CORPUS / '卡牌RAG语料.json')
 injected = 0
 for b in card_blocks:
     name = b['block_id'].split('_', 2)[2] if '_' in b['block_id'] else ''
@@ -79,8 +76,7 @@ for b in card_blocks:
         b['distance_mod'] = dist
         b['distance_mod_type'] = '攻击距离' if dist == -1 else ('防御距离' if dist == 1 else None)
         injected += 1
-with open(out + r'\卡牌RAG语料.json', 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(card_blocks, f, ensure_ascii=False, indent=1)
+save_json(CORPUS / '卡牌RAG语料.json', card_blocks)
 # 重新生成卡牌 md（含新字段）
 md2 = ['# 卡牌 RAG 语料', '', '> 来源：cards.json（49 张卡）+ 装备属性表。索引字段由规则抽取生成，可后续精化。', '']
 for b in card_blocks:
@@ -97,6 +93,6 @@ for b in card_blocks:
     md2.append(f'【关键词】{" | ".join(b["keywords"]) if b["keywords"] else "（待精化）"}')
     md2.append(f'【关联】{" / ".join(b["related"]) if b["related"] else "（待精化）"}')
     md2.append('')
-with open(out + r'\卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
+with open(CORPUS / '卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md2))
 print('卡牌语料注入装备属性:', injected, '件')

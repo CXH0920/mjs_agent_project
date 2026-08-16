@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """生成卡牌 RAG 语料：49 块，含规则抽取索引字段"""
-import json, re, io, sys
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import json, re
 
-with open(r'data\cards.json', encoding='utf-8') as f:
-    cards = json.load(f)
-card_names = {c['name'] for c in cards}
+from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+
+setup_stdout()
+
+cards = load_json(project_path('data', 'cards.json'))
+# 保序列表（set 推导迭代顺序不稳定会导致 related 字段顺序每次运行不同）
+card_names = [c['name'] for c in cards]
 
 TERMS = ['出牌阶段', '摸牌阶段', '弃牌阶段', '回合开始', '回合结束', '战法牌', '行动牌', '装备牌',
          '获得牌', '造成伤害', '受到伤害', '失去体力', '回复体力', '重伤', '濒死', '阵亡', '击杀',
@@ -86,29 +89,23 @@ for c in cards:
         '',
     ]
 
-out_dir = r'data\rag_corpus'
-with open(out_dir + r'\卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
-    f.write('\n'.join(md_lines))
 # 保留旧语料中由 build_equip_attr.py 注入的装备字段（防止单独重建卡牌语料时丢失）
 _EQUIP_FIELDS = ('equip_subtype', 'attack_range', 'distance_mod', 'distance_mod_type')
-_OLD_CARD_JSON = out_dir + r'\卡牌RAG语料.json'
-try:
-    with open(_OLD_CARD_JSON, encoding='utf-8') as _f:
-        _old_card_blocks = {b.get('block_id'): b for b in json.load(_f) if isinstance(b, dict)}
-except (OSError, json.JSONDecodeError):
-    _old_card_blocks = {}
+_old_card_blocks = load_json(CORPUS / '卡牌RAG语料.json', required=False) or []
+_old_by_id = {b.get('block_id'): b for b in _old_card_blocks if isinstance(b, dict)}
 for _b in blocks:
-    _prev = _old_card_blocks.get(_b.get('block_id'))
+    _prev = _old_by_id.get(_b.get('block_id'))
     if _prev:
         for _k in _EQUIP_FIELDS:
             if _prev.get(_k) is not None:
                 _b[_k] = _prev[_k]
 
 import rag_curated
-_merged = rag_curated.merge_curated(blocks, out_dir + r'\卡牌RAG语料.json')
+_merged = rag_curated.merge_curated(blocks, CORPUS / '卡牌RAG语料.json')
 if _merged:
     print('已保留 curated 精化块:', _merged)
-with open(out_dir + r'\卡牌RAG语料.json', 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(blocks, f, ensure_ascii=False, indent=1)
+with open(CORPUS / '卡牌RAG语料.md', 'w', encoding='utf-8', newline='\n') as f:
+    f.write('\n'.join(md_lines))
+save_json(CORPUS / '卡牌RAG语料.json', blocks)
 print('卡牌块数:', len(blocks))
 print('有时机:', sum(1 for b in blocks if b['timing']), ' 有关联:', sum(1 for b in blocks if b['related']), ' 有关键词:', sum(1 for b in blocks if b['keywords']))

@@ -13,7 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -53,7 +53,7 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import PageActionBar
+from src.ui.shared.widgets import PageActionBar, ScriptRunner
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
 from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 
@@ -127,7 +127,9 @@ class RagMaintenancePanel(QWidget):
     def __init__(self, root: Path = PROJECT_ROOT, hero_names: set[str] | None = None, parent=None):
         super().__init__(parent)
         self._root = root
-        self._proc: QProcess | None = None
+        self._runner = ScriptRunner(self)
+        self._runner.output.connect(self._append_log)
+        self._runner.finished.connect(self._on_finished)
         self._hero_names, self._hero_positions = self._load_heroes(self._root, hero_names)
         self._setup_ui()
         self.refresh()
@@ -388,10 +390,10 @@ class RagMaintenancePanel(QWidget):
         self.refresh()
 
     # ---------------------------------------------------------------
-    # 本地执行（QProcess）
+    # 本地执行（ScriptRunner 封装 QProcess）
     # ---------------------------------------------------------------
     def _run(self, args: list[str]) -> None:
-        if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
+        if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "已有维护任务运行中，请等待完成。")
             return
         script = self._root / "scripts" / "maintain_rag.py"
@@ -401,27 +403,22 @@ class RagMaintenancePanel(QWidget):
         self._set_busy(True)
         self._log.clear()
         self._log.appendPlainText("$ python scripts/maintain_rag.py " + " ".join(args))
-        proc = QProcess(self)
-        proc.setWorkingDirectory(str(self._root))
-        proc.readyReadStandardOutput.connect(lambda: self._append_log(proc.readAllStandardOutput()))
-        proc.readyReadStandardError.connect(lambda: self._append_log(proc.readAllStandardError()))
-        proc.finished.connect(lambda code, status: self._on_finished(code, status))
-        proc.start(PYTHON, [str(script)] + args)
-        self._proc = proc
+        self._runner.run(PYTHON, script, args, self._root)
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
         self._log.appendPlainText(text.rstrip("\n"))
 
-    def _on_finished(self, code: int, _status) -> None:
+    def _on_finished(self, code: int) -> None:
         self._set_busy(False)
         if code == 0:
             self._log.appendPlainText("\n✔ 执行完成")
         else:
             self._log.appendPlainText(f"\n✘ 执行失败（退出码 {code}）")
-        self._proc = None
         self.refresh()
 
     def _set_busy(self, busy: bool) -> None:
-        for button in (self._refresh_button, self._hero_button, self._corpus_button, self._index_button):
+        # 执行期间一并禁用「索引精化」入口（#55）
+        for button in (self._refresh_button, self._hero_button, self._corpus_button,
+                       self._index_button, self._refine_button):
             button.setEnabled(not busy)

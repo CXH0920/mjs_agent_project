@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """索引精化对话框 UI 测试：清单加载、LLM 建议、保存写回与跳过。"""
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
     dialog = IndexRefinementDialog(root)
     dialog._table.selectRow(0)
     assert dialog._current is not None
-    monkeypatch.setattr(dialog_module, "_suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
         keywords=["测试牌"],
@@ -71,6 +71,15 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
         method="llm",
     ))
     dialog._suggest_current()
+    assert dialog._suggest_worker is not None
+    block = dialog._current
+    # 测试环境无事件循环（跨线程信号不投递）：同步驱动线程体与主线程回调
+    dialog._suggest_worker.run()
+    update = RefinementUpdate(
+        timing=["出牌阶段"], trigger_condition=["打出时"],
+        keywords=["测试牌"], related=[], method="llm",
+    )
+    dialog._on_suggest_result(block, update)
     assert dialog._field_editors["timing"].toPlainText().strip() == "出牌阶段"
     assert dialog._field_editors["keywords"].toPlainText().strip() == "测试牌"
     assert dialog._current.block_id in dialog._llm_baseline
@@ -112,7 +121,7 @@ def test_save_all_writes_every_pending(tmp_path: Path, monkeypatch) -> None:
     _app()
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
-    monkeypatch.setattr(dialog_module, "_suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
         keywords=["测试牌"],
@@ -180,9 +189,13 @@ def test_field_state_tracks_manual_edit(tmp_path: Path, monkeypatch) -> None:
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
     dialog._table.selectRow(0)
-    monkeypatch.setattr(dialog_module, "_suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
     dialog._suggest_current()
+    block = dialog._current
+    dialog._suggest_worker.run()  # 同步驱动线程体（测试环境无事件循环）
+    dialog._on_suggest_result(block, RefinementUpdate(
+        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
     assert dialog._field_cards["timing"].property("fieldState") == "llm"
     assert dialog._field_badges["timing"].text() == "LLM 建议"
     dialog._field_editors["timing"].setPlainText("出牌阶段、弃牌阶段")
@@ -215,7 +228,7 @@ def test_suggest_all_queue_finishes_and_empty_state(tmp_path: Path, monkeypatch)
     _app()
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
-    monkeypatch.setattr(dialog_module, "_suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=["打出时"], keywords=["测试牌"], related=[], method="llm"))
     _suggest_all_sync(dialog)
     assert all(dialog._row_states[block.block_id] == "suggested" for block in dialog._pending)

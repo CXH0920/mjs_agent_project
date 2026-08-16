@@ -21,7 +21,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -58,7 +58,7 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import DialogFooter, NoticeBanner, PageActionBar, show_toast
+from src.ui.shared.widgets import DialogFooter, NoticeBanner, PageActionBar, ScriptRunner, show_toast
 
 PYTHON = sys.executable
 
@@ -333,7 +333,10 @@ class RuleDocPanel(QWidget):
     def __init__(self, root: Path, parent=None):
         super().__init__(parent)
         self._root = root
-        self._proc: QProcess | None = None
+        self._runner = ScriptRunner(self)
+        self._runner.output.connect(self._append_log)
+        self._runner.finished.connect(self._on_runner_finished)
+        self._pending_finished: tuple = ()  # (on_finished, sentinel_codes, sentinel_note, failure_codes)
         self._pending_sync = False
         # 尚未完成 audit+sync 检查（A2 未检查引导）
         self._checked = False
@@ -725,7 +728,7 @@ class RuleDocPanel(QWidget):
         QMessageBox.information(self, "已生成", "提案已生成：%s" % path)
 
     # ---------------------------------------------------------------
-    # 脚本执行（QProcess）
+    # 脚本执行（ScriptRunner 封装 QProcess）
     # ---------------------------------------------------------------
     def _run_script(self, args: list[str], on_finished,
                     sentinel_codes: set[int] | None = None,
@@ -734,7 +737,7 @@ class RuleDocPanel(QWidget):
         """启动脚本；sentinel_codes 为"业务性非零退出码"（如 sync 的 1=有差异），
         failure_codes 为"业务失败但需定制文案"的退出码映射。
         """
-        if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
+        if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "已有任务运行中，请等待完成。")
             return
         script = self._root / "scripts" / args[0]
@@ -743,15 +746,12 @@ class RuleDocPanel(QWidget):
             return
         self._last_command = " ".join(args)
         self._log.appendPlainText("$ python scripts/" + self._last_command)
-        proc = QProcess(self)
-        proc.setWorkingDirectory(str(self._root))
-        proc.readyReadStandardOutput.connect(lambda: self._append_log(proc.readAllStandardOutput()))
-        proc.readyReadStandardError.connect(lambda: self._append_log(proc.readAllStandardError()))
-        proc.finished.connect(
-            lambda code, status: self._on_finished(code, status, on_finished,
-                                                   sentinel_codes, sentinel_note, failure_codes))
-        proc.start(PYTHON, [str(script)] + args[1:])
-        self._proc = proc
+        self._pending_finished = (on_finished, sentinel_codes, sentinel_note, failure_codes)
+        self._runner.run(PYTHON, script, args[1:], self._root)
+
+    def _on_runner_finished(self, code: int) -> None:
+        """ScriptRunner 完成回调：转发到原 _on_finished（保留签名供测试直接调用）。"""
+        self._on_finished(code, None, *self._pending_finished)
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
@@ -772,7 +772,6 @@ class RuleDocPanel(QWidget):
                      sentinel_codes: set[int] | None = None,
                      sentinel_note: str = "",
                      failure_codes: dict[int, str] | None = None) -> None:
-        self._proc = None
         if code == 0:
             conclusion, kind = "✔ 执行完成", "success"
         elif sentinel_codes and code in sentinel_codes:

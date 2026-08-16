@@ -137,7 +137,7 @@ def test_generate_items_placeholder_without_llm():
 
 
 class FakeGenerator:
-    def _call_api(self, messages, temperature=0.7):
+    def complete(self, messages, temperature=0.7):
         return {"content": json.dumps({"items": [
             {"type": "faq_new", "target": "5.2", "suggested_text": "新裁定",
              "source": "人工确认", "basis": "b", "suggested_status": "待确认",

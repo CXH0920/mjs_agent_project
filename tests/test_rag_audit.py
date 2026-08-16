@@ -77,3 +77,19 @@ def test_unknown_hero_reported_and_generic_skipped(root: Path) -> None:
 def test_new_unknown_card_still_reported(root: Path) -> None:
     issues = "\n".join(rag_audit.audit_hero_coverage(root))
     assert "玄铁剑" in issues
+
+
+def test_orphan_category_keys_reported(root: Path) -> None:
+    """分类表引用 heroes.json 中不存在的武将应被反向校验报出（#10）。"""
+    issues = rag_audit.audit_hero_coverage(root)
+    assert not any("分类表引用未知武将" in it for it in issues), "无孤儿键时不应误报"
+    cls_path = root / "data" / "hero_classification.json"
+    data = json.loads(cls_path.read_text(encoding="utf-8"))
+    data["hero_categories"]["贾诩(限定)"] = ["爆发型"]
+    data["hero_categories"]["赵姬妾→刘弗陵"] = ["辅助型"]
+    cls_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    issues = rag_audit.audit_hero_coverage(root)
+    text = "\n".join(issues)
+    assert "分类表引用未知武将 2 个" in text
+    assert "贾诩(限定)" in text
+    assert "赵姬妾→刘弗陵" in text

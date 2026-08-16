@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """生成卡牌点数花色语料（从 data/card_points.json 读取，补充 RAG 知识库）"""
-import json, io, sys, collections
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-path = r'data\card_points.json'
-with open(path, encoding='utf-8') as f:
-    payload = json.load(f)
+import json, collections
+
+from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+
+setup_stdout()
+payload = load_json(project_path('data', 'card_points.json'))
 rows = payload['cards']
 judge_map = {r['name']: r['rule'] for r in payload.get('judge_rules', [])}
 
@@ -46,11 +47,9 @@ for name in sorted(card_pts):
         '',
     ]
 
-out = r'data\rag_corpus'
-with open(out + r'\卡牌点数花色语料.md', 'w', encoding='utf-8', newline='\n') as f:
+with open(CORPUS / '卡牌点数花色语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md))
-with open(out + r'\卡牌点数花色语料.json', 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(blocks, f, ensure_ascii=False, indent=1)
+save_json(CORPUS / '卡牌点数花色语料.json', blocks)
 
 # 关键规则验证输出
 print('=== 规则验证 ===')

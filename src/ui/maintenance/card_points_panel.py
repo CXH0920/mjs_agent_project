@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -42,7 +42,7 @@ from src.data.card_points_repository import (
     JudgeRuleItem,
 )
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, set_ui_role
-from src.ui.shared.widgets import DialogFooter, show_toast
+from src.ui.shared.widgets import DialogFooter, ScriptRunner, show_toast
 
 
 class CardPointEditDialog(QDialog):
@@ -149,7 +149,9 @@ class CardPointsPanel(QWidget):
         super().__init__(parent)
         self._repository = repository
         self._root = root
-        self._proc: QProcess | None = None
+        self._runner = ScriptRunner(self)
+        self._runner.output.connect(self._collect_import_output)
+        self._runner.finished.connect(self._on_import_finished)
         self._import_output: list[str] = []
         self._setup_ui()
         self.reload_data()
@@ -188,6 +190,7 @@ class CardPointsPanel(QWidget):
         self._cards_count.setObjectName("libraryResultCount")
         cards_actions.addWidget(self._cards_count)
         cards_actions.addStretch(1)
+        self._write_buttons: list[QPushButton] = []
         for text, slot, role in (
             ("新增牌行", self._add_card, ROLE_SECONDARY),
             ("编辑牌行", self._edit_card, ROLE_SECONDARY),
@@ -197,6 +200,7 @@ class CardPointsPanel(QWidget):
             set_ui_role(button, role)
             button.clicked.connect(slot)
             cards_actions.addWidget(button)
+            self._write_buttons.append(button)
         cards_layout.addLayout(cards_actions)
         splitter.addWidget(cards_box)
 
@@ -225,6 +229,7 @@ class CardPointsPanel(QWidget):
             set_ui_role(button, ROLE_SECONDARY)
             button.clicked.connect(slot)
             rules_actions.addWidget(button)
+            self._write_buttons.append(button)
         rules_layout.addLayout(rules_actions)
         splitter.addWidget(rules_box)
         splitter.setSizes([380, 220])
@@ -245,13 +250,12 @@ class CardPointsPanel(QWidget):
     def reload_data(self) -> None:
         issues = self._repository.load()
         errors = [item.message for item in issues if item.severity == "error"]
+        self._load_error = bool(errors)
+        for button in self._write_buttons:
+            button.setEnabled(not self._load_error)
+        self._import_button.setEnabled(not self._load_error)
         self._refresh_cards()
         self._refresh_rules()
-        if errors:
-            self._cards_count.setText(f"加载异常 {len(errors)} 条（详情见日志），已禁止修改")
-            self._import_button.setEnabled(False)
-        else:
-            self._import_button.setEnabled(True)
 
     def _ensure_writable(self) -> bool:
         """数据加载失败时禁止写操作；返回是否可写。"""
@@ -264,18 +268,22 @@ class CardPointsPanel(QWidget):
     # 牌面明细
     # ---------------------------------------------------------------
     def _refresh_cards(self) -> None:
-        items = self._repository.list_cards()
-        self._cards_table.setRowCount(0)
-        for item in sorted(items, key=lambda c: (c.name, c.suit, int(c.point))):
-            row = self._cards_table.rowCount()
-            self._cards_table.insertRow(row)
+        items = sorted(self._repository.list_cards(), key=lambda c: (c.name, c.suit, int(c.point)))
+        scroll = self._cards_table.verticalScrollBar().value()
+        self._cards_table.setRowCount(len(items))  # 一次性分配，避免逐行 insertRow（#29）
+        for row, item in enumerate(items):
             self._cards_table.setItem(row, 0, QTableWidgetItem(item.name))
             self._cards_table.setItem(row, 1, QTableWidgetItem(item.suit))
             self._cards_table.setItem(row, 2, QTableWidgetItem(item.point))
             self._cards_table.setItem(row, 3, QTableWidgetItem(str(item.count)))
+        self._cards_table.verticalScrollBar().setValue(scroll)  # 恢复滚动位置（#29）
         names = self._repository.list_card_names()
         total = self._repository.total_count()
-        self._cards_count.setText(f"{total} 张 / {len(names)} 种牌名")
+        # 加载失败提示常驻计数标签，不被刷新覆盖（#38）
+        if self._load_error:
+            self._cards_count.setText("加载异常（详见日志），已禁止修改")
+        else:
+            self._cards_count.setText(f"{total} 张 / {len(names)} 种牌名")
 
     def _selected_card(self) -> CardPointItem | None:
         row = self._cards_table.currentRow()
@@ -290,7 +298,9 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = CardPointEditDialog(None, self)
+        attempts = 0
         while dialog.exec() == QDialog.DialogCode.Accepted:
+            attempts += 1
             try:
                 self._repository.add_card(dialog.item())
                 self._refresh_cards()
@@ -300,6 +310,9 @@ class CardPointsPanel(QWidget):
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
                 self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
+                if attempts >= 3:
+                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
+                    return
                 continue
 
     def _edit_card(self) -> None:
@@ -310,7 +323,9 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = CardPointEditDialog(current, self)
+        attempts = 0
         while dialog.exec() == QDialog.DialogCode.Accepted:
+            attempts += 1
             try:
                 # 单步替换（旧键可能变化）；失败时原行保留，整批回滚
                 self._repository.replace_card(current.name, current.suit, current.point, dialog.item())
@@ -321,6 +336,9 @@ class CardPointsPanel(QWidget):
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
                 self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
+                if attempts >= 3:
+                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
+                    return
                 continue
 
     def _delete_card(self) -> None:
@@ -352,13 +370,13 @@ class CardPointsPanel(QWidget):
     # 判定规则
     # ---------------------------------------------------------------
     def _refresh_rules(self) -> None:
-        rules = self._repository.list_rules()
-        self._rules_table.setRowCount(0)
-        for rule in sorted(rules, key=lambda r: r.name):
-            row = self._rules_table.rowCount()
-            self._rules_table.insertRow(row)
+        rules = sorted(self._repository.list_rules(), key=lambda r: r.name)
+        scroll = self._rules_table.verticalScrollBar().value()
+        self._rules_table.setRowCount(len(rules))  # 一次性分配，避免逐行 insertRow（#29）
+        for row, rule in enumerate(rules):
             self._rules_table.setItem(row, 0, QTableWidgetItem(rule.name))
             self._rules_table.setItem(row, 1, QTableWidgetItem(rule.rule))
+        self._rules_table.verticalScrollBar().setValue(scroll)  # 恢复滚动位置（#29）
 
     def _selected_rule(self) -> JudgeRuleItem | None:
         row = self._rules_table.currentRow()
@@ -370,7 +388,9 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = JudgeRuleEditDialog(None, self)
+        attempts = 0
         while dialog.exec() == QDialog.DialogCode.Accepted:
+            attempts += 1
             try:
                 self._repository.add_rule(dialog.item())
                 self._refresh_rules()
@@ -380,6 +400,9 @@ class CardPointsPanel(QWidget):
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
                 self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
+                if attempts >= 3:
+                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
+                    return
                 continue
 
     def _edit_rule(self) -> None:
@@ -390,7 +413,9 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = JudgeRuleEditDialog(current, self)
+        attempts = 0
         while dialog.exec() == QDialog.DialogCode.Accepted:
+            attempts += 1
             try:
                 self._repository.update_rule(dialog.item())
                 self._refresh_rules()
@@ -400,6 +425,9 @@ class CardPointsPanel(QWidget):
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
                 self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
+                if attempts >= 3:
+                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
+                    return
                 continue
 
     def _delete_rule(self) -> None:
@@ -441,26 +469,22 @@ class CardPointsPanel(QWidget):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
+        if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "导入任务运行中，请等待完成。")
             return
         script = self._root / "scripts" / "migrate_excel_to_json.py"
+        if not script.exists():
+            QMessageBox.critical(self, "脚本缺失", f"未找到 {script}")
+            return
         self._import_button.setEnabled(False)
         self._import_button.setText("导入中…")
         self._import_output = []
-        proc = QProcess(self)
-        proc.setWorkingDirectory(str(self._root))
-        proc.readyReadStandardOutput.connect(lambda: self._collect_import_output(proc.readAllStandardOutput()))
-        proc.readyReadStandardError.connect(lambda: self._collect_import_output(proc.readAllStandardError()))
-        proc.finished.connect(self._on_import_finished)
-        proc.start(sys.executable, [str(script), "--only", "points"])
-        self._proc = proc
+        self._runner.run(sys.executable, script, ["--only", "points"], self._root)
 
     def _collect_import_output(self, data: bytes) -> None:
         self._import_output.append(bytes(data).decode("utf-8", errors="replace"))
 
-    def _on_import_finished(self, code: int, _status) -> None:
-        self._proc = None
+    def _on_import_finished(self, code: int) -> None:
         self._import_button.setEnabled(True)
         self._import_button.setText("从 xlsx 导入")
         if code == 0:

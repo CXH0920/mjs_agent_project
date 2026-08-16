@@ -117,20 +117,21 @@ def generate_suggestions(pending: list[PendingBlock], generator) -> dict[str, Re
     """逐块调用 LLM 生成建议；单块失败跳过，返回 {block_id: RefinementUpdate}。"""
     updates: dict[str, RefinementUpdate] = {}
     for block in pending:
-        suggestion = _suggest_one(block, generator)
+        suggestion = suggest_one(block, generator)
         if suggestion is not None:
             updates[block.block_id] = suggestion
     return updates
 
 
-def _suggest_one(block: PendingBlock, generator) -> RefinementUpdate | None:
+def suggest_one(block: PendingBlock, generator) -> RefinementUpdate | None:
+    """单块 LLM 建议（公开接口）；API 失败/解析失败返回 None。"""
     kind_text = "卡牌" if block.kind == "card" else "武将技能"
     messages = [
         {"role": "system", "content": REFINEMENT_SYSTEM_PROMPT},
         {"role": "user", "content": f"语料类型：{kind_text}\n名称：{block.name}\n原文：\n{block.text}"},
     ]
     try:
-        response = generator._call_api(messages, temperature=0.2)
+        response = generator.complete(messages, temperature=0.2)
     except Exception as error:
         logger.warning("精化建议请求异常 %s: %s", block.block_id, error)
         return None

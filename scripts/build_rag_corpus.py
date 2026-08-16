@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """生成武将 RAG 语料：总览块 + 技能块，含规则抽取的索引字段"""
-import json, re, io, sys
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import json, re
 
-with open(r'data\heroes.json', encoding='utf-8') as f:
-    heroes = json.load(f)
-with open(r'data\cards.json', encoding='utf-8') as f:
-    cards = json.load(f)
+from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
-card_names = {c['name'] for c in cards}
+setup_stdout()
+
+heroes = load_json(project_path('data', 'heroes.json'))
+cards = load_json(project_path('data', 'cards.json'))
+
+# 保序列表（set 推导迭代顺序不稳定会导致 related 字段顺序每次运行不同）
+card_names = [c['name'] for c in cards]
 
 # 术语词典（优先匹配长词）
 TERMS = ['出牌阶段', '摸牌阶段', '弃牌阶段', '回合开始', '回合结束', '每轮结束', '每回合限1次',
@@ -169,7 +171,7 @@ def extract_related(text):
                 rel.append(r)
     return rel[:8]
 
-def skill_block(h, idx, s):
+def skill_block(h, s):
     desc = s['description'].strip()
     settle = s.get('settlement', '').strip()
     text = desc + ' ' + settle
@@ -179,7 +181,8 @@ def skill_block(h, idx, s):
     kws = extract_keywords(text)
     rel = extract_related(text)
     return {
-        'block_id': f'hero_{h["id"]}_skill_{idx}',
+        # 稳定 id：以技能名而非数组序号，技能调序/增删不改变精化块定位（#58）
+        'block_id': f'hero_{h["id"]}_skill_{s["name"]}',
         'hero': h['name'], 'faction': h['faction'], 'position': h['position'],
         'max_hp': h['max_hp'], 'max_hand': h['max_hand'],
         'skill': s['name'],
@@ -190,9 +193,10 @@ def skill_block(h, idx, s):
 
 # 生成
 blocks = []
+overview_total = sum(1 for h in heroes if h.get('skills', []))  # 总览块仅生成于有技能的武将
 md_lines = ['# 武将 RAG 语料', '',
             '> 来源：heroes.json（%d 武将 / %d 技能 + %d 总览块）。索引字段由规则抽取生成，'
-            % (len(heroes), sum(len(h.get('skills', [])) for h in heroes), len(heroes)),
+            % (len(heroes), sum(len(h.get('skills', [])) for h in heroes), overview_total),
             '> 时机/触发条件/关联可后续用大模型精化。', '']
 # TRIGGER_OVERRIDES 失效校验（官方改技能名/删除后提醒清理）
 _hero_skill_keys = {(h['name'], s['name']) for h in heroes for s in h.get('skills', [])}
@@ -200,12 +204,12 @@ for _k in TRIGGER_OVERRIDES:
     if _k not in _hero_skill_keys:
         print(f'⚠️ TRIGGER_OVERRIDES 失效条目: {_k[0]}/{_k[1]} 不在 heroes.json（技能改名或删除？）')
 
-hero_counter = 0
+hero_counter = 0  # 有技能武将数 = 实际生成的总览块数
 for h in heroes:
-    hero_counter += 1
     sk = h.get('skills', [])
     if not sk:
         continue
+    hero_counter += 1
     sk_names = ' / '.join(s['name'] for s in sk)
     blocks.append({
         'block_id': f'hero_{h["id"]}_overview',
@@ -222,8 +226,8 @@ for h in heroes:
     md_lines.append(f'【武将】{h["name"]} | {h["faction"]} | {h["position"]} | {h["max_hp"]}体力 | 手牌上限{h["max_hand"]}')
     md_lines.append(f'【技能】{sk_names}')
     md_lines.append('')
-    for i, s in enumerate(sk, 1):
-        b = skill_block(h, i, s)
+    for s in sk:
+        b = skill_block(h, s)
         blocks.append(b)
         md_lines += [
             f'### {b["block_id"]} {b["skill"]}',
@@ -239,17 +243,15 @@ for h in heroes:
             '',
         ]
 
-out_dir = r'data\rag_corpus'
-md_path = out_dir + r'\武将RAG语料.md'
-json_path = out_dir + r'\武将RAG语料.json'
+md_path = CORPUS / '武将RAG语料.md'
+json_path = CORPUS / '武将RAG语料.json'
 with open(md_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
 import rag_curated
 _merged = rag_curated.merge_curated(blocks, json_path)
 if _merged:
     print('已保留 curated 精化块:', _merged)
-with open(json_path, 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(blocks, f, ensure_ascii=False, indent=1)
+save_json(json_path, blocks)
 
 # 统计摘要
 import collections
@@ -259,7 +261,7 @@ with_cond = sum(1 for b in skill_blocks if b['trigger_condition'])
 with_target = sum(1 for b in skill_blocks if b['target'])
 with_kw = sum(1 for b in skill_blocks if b['keywords'])
 with_rel = sum(1 for b in skill_blocks if b['related'])
-print(f'武将数: {hero_counter}  总览块数: {hero_counter}  技能块数: {len(skill_blocks)}  总块数: {len(blocks)}')
+print(f'武将数: {len(heroes)}  总览块数: {hero_counter}  技能块数: {len(skill_blocks)}  总块数: {len(blocks)}')
 print(f'抽取覆盖率  时机:{with_timing}  触发条件:{with_cond}  目标:{with_target}  关键词:{with_kw}  关联:{with_rel}')
 print('MD:', md_path)
 print('JSON:', json_path)

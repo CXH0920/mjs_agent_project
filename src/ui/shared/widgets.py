@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QProcess, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractButton,
     QFrame,
@@ -27,6 +30,67 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
+
+
+def clear_layout(layout: QLayout) -> None:
+    """递归清空布局：销毁直接控件与子布局中的控件（含 CheckableComboBox 弹层）。
+
+    原多个面板各自维护一份 _clear_layout 副本（#45），统一收敛到此处。
+    """
+    while layout.count():
+        item = layout.takeAt(0)
+        if item is None:
+            continue
+        widget = item.widget()
+        if widget is not None:
+            inner = widget.layout()
+            if inner is not None:
+                clear_layout(inner)
+            close_popup = getattr(widget, "closePopup", None)
+            if callable(close_popup):
+                close_popup()
+            widget.setParent(None)
+            widget.deleteLater()
+            continue
+        sub = item.layout()
+        if sub is not None:
+            clear_layout(sub)
+
+
+class ScriptRunner(QObject):
+    """QProcess 异步执行 Python 脚本的公共封装（#43）。
+
+    - 同一时刻只允许一个任务（is_running 检查，避免并发 QProcess）；
+    - stdout/stderr 通过 output 信号逐段发出（bytes，调用方自行解码）；
+    - 进程结束后发出 finished(code)。
+    """
+
+    output = Signal(bytes)
+    finished = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._proc: QProcess | None = None
+
+    def is_running(self) -> bool:
+        return self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning
+
+    def run(self, python: str, script: Path, args: list[str], working_dir: Path) -> bool:
+        """启动脚本；已有任务运行时返回 False。"""
+        if self.is_running():
+            return False
+        proc = QProcess(self)
+        proc.setWorkingDirectory(str(working_dir))
+        proc.readyReadStandardOutput.connect(lambda: self.output.emit(proc.readAllStandardOutput()))
+        proc.readyReadStandardError.connect(lambda: self.output.emit(proc.readAllStandardError()))
+        proc.finished.connect(lambda code, _status: self._on_finished(code))
+        proc.start(python, [str(script)] + args)
+        self._proc = proc
+        return True
+
+    def _on_finished(self, code: int) -> None:
+        self._proc = None
+        self.finished.emit(code)
 
 
 class DoubleClickLabel(QLabel):

@@ -112,9 +112,13 @@ class CheckableComboBox(QWidget):
         self._set_popup_expanded(False)
         layout.addWidget(self._arrow_button)
 
-    def set_items(self, values: list[str]) -> None:
+    def set_items(self, values: list[str], default_all: bool = True) -> None:
+        """设置选项；default_all=True 保持"势力筛选"全选默认语义（#53）。
+
+        单选/归类场景传 default_all=False，避免误全选后依赖再次 set_checked 纠正。
+        """
         self._values = list(values)
-        self._checked = set(values)
+        self._checked = set(values) if default_all else set()
         self._update_display()
 
     def set_checked(self, values: list[str]) -> None:

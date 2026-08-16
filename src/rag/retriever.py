@@ -31,6 +31,7 @@ class Retriever:
         self._id2meta = None
         self._id2text = None         # block_id -> 文本（避免线性遍历）
         self._hero_index = None      # 武将/牌名 -> 块列表（hero_blocks 倒排）
+        self._keyword_index = None   # KEYWORDS 词 -> 含词块 id 列表（惰性构建）
         self._load_t = 0.0
 
     # ---- 懒加载 ----
@@ -90,8 +91,23 @@ class Retriever:
                             'score': float(1.0 - dist), 'source': 'vector'})
         return out
 
+    def _build_keyword_index(self):
+        """KEYWORDS 静态词 → 含该词的块 id 倒排（惰性构建一次，#24）。"""
+        if self._keyword_index is None:
+            index = {term: [] for term in KEYWORDS}
+            for bid, text, _meta in self.blocks:
+                for term in KEYWORDS:
+                    if term in text:
+                        index[term].append(bid)
+            self._keyword_index = index
+        return self._keyword_index
+
     def _keyword_hits(self, query):
-        """在全部块文本中做子串命中，返回 {block_id: 命中加分}。"""
+        """在全部块文本中做子串命中，返回 {block_id: 命中加分}。
+
+        静态 KEYWORDS 走倒排索引；查询相关的名称（数量少）保持线性扫描，
+        避免每次查询全量遍历所有块（#24）。
+        """
         q_lower = query.lower()
         terms = [t for t in KEYWORDS if t in q_lower]
         names = set()
@@ -100,16 +116,20 @@ class Retriever:
                 v = meta.get(k)
                 if v and len(v) >= 2 and v in q_lower:
                     names.add(v)
-        terms += list(names)
         hits = {}
-        if not terms:
+        if terms:
+            index = self._build_keyword_index()
+            for term in terms:
+                for bid in index.get(term, ()):
+                    hits[bid] = hits.get(bid, 0) + 1
+        if names:
+            for bid, text, _meta in self.blocks:
+                hit = sum(1 for name in names if name in text)
+                if hit:
+                    hits[bid] = hits.get(bid, 0) + hit
+        if not hits:
             return hits
-        for bid, text, meta in self.blocks:
-            t = text
-            hit = sum(1 for term in terms if term in t)
-            if hit:
-                hits[bid] = hit * config.KEYWORD_BONUS
-        return hits
+        return {bid: count * config.KEYWORD_BONUS for bid, count in hits.items()}
 
     def search(self, query, heroes=None, top_k=None):
         """混合检索：向量 + 关键词经 RRF 排名融合，再按类型配额取 top_k。

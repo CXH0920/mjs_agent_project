@@ -25,7 +25,7 @@ from src.ui.shared.style import (
     set_style_property,
     set_ui_role,
 )
-from src.ui.shared.widgets import NoticeBanner
+from src.ui.shared.widgets import NoticeBanner, clear_layout
 
 
 class MatchAnalysisView(QWidget):
@@ -192,16 +192,9 @@ class MatchAnalysisView(QWidget):
         scroll.setWidget(content)
         return scroll
 
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
     def _page_layout(self, page: QScrollArea):
         layout = page.widget().layout()
-        self._clear_layout(layout)
+        clear_layout(layout)
         return layout
 
     @staticmethod

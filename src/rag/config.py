@@ -19,8 +19,9 @@ MODEL_CACHE = ROOT / "data" / "rag_models" / "models"
 MODELSCOPE_DIR = ROOT / "data" / "rag_models" / "modelscope"
 LOG_FILE = ROOT / "logs" / "rag.log"
 
-for _dir in (CORPUS_DIR, RAG_INDEX_DIR, MODEL_CACHE.parent):
-    _dir.mkdir(parents=True, exist_ok=True)
+# 注意：不再在 import 时创建目录（#49）——目录在使用点确保：
+# CHROMA_DIR 由 chromadb.PersistentClient 自建；LOG_FILE 由 setup_logging 创建；
+# CORPUS_DIR 由 scripts/build_*.py 创建；MODEL_CACHE 由模型加载器创建。
 
 # 必须在 import sentence_transformers / transformers 之前设置
 os.environ.setdefault("HF_HOME", str(MODEL_CACHE))
@@ -33,8 +34,9 @@ _ENV = parse_env_file()
 # RAG 开关与路径（优先级：环境变量 > config.env > 默认值）
 # ---------------------------------------------------------------
 RAG_ENABLED = str(os.environ.get("RAG_ENABLED") or _ENV.get("RAG_ENABLED", "true")).lower() in ("true", "1", "yes")
-RAG_MODEL_DIR = os.environ.get("RAG_MODEL_DIR") or _ENV.get("RAG_MODEL_DIR") or r"G:\py_savepoint\mjs_rag_project\rag\.cache\modelscope"
-RAG_PROJECT_DIR = os.environ.get("RAG_PROJECT_DIR") or _ENV.get("RAG_PROJECT_DIR") or r"G:\py_savepoint\mjs_rag_project"
+# 默认留空：不硬编码机器绝对路径（#50）；未配置时 _find_local_model 回退项目内缓存/HF 在线下载
+RAG_MODEL_DIR = os.environ.get("RAG_MODEL_DIR") or _ENV.get("RAG_MODEL_DIR") or ""
+RAG_PROJECT_DIR = os.environ.get("RAG_PROJECT_DIR") or _ENV.get("RAG_PROJECT_DIR") or ""
 
 def _to_int(key: str, default: int) -> int:
     try:

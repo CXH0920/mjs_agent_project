@@ -5,18 +5,14 @@
 输出：data/rag_corpus/武将分类语料.json / .md
 未归类武将不会生成块，并打印待补充清单。
 """
-import io, sys, os, json
+import json
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, 'data')
-DOCS = os.path.join(ROOT, 'data', 'rag_corpus')
+setup_stdout()
 
-with open(os.path.join(DATA, 'hero_classification.json'), encoding='utf-8') as f:
-    cls = json.load(f)
-with open(os.path.join(DATA, 'heroes.json'), encoding='utf-8') as f:
-    heroes = json.load(f)
+cls = load_json(project_path('data', 'hero_classification.json'))
+heroes = load_json(project_path('data', 'heroes.json'))
 
 cat_by_name = {c['name']: c for c in cls['categories']}
 hero_map = {h['name']: h for h in heroes}
@@ -74,8 +70,7 @@ if unclassified:
     for n in unclassified:
         print('  - ' + n)
 
-with open(os.path.join(DOCS, '武将分类语料.json'), 'w', encoding='utf-8', newline='\n') as f:
-    json.dump(blocks, f, ensure_ascii=False, indent=1)
-with open(os.path.join(DOCS, '武将分类语料.md'), 'w', encoding='utf-8', newline='\n') as f:
+save_json(CORPUS / '武将分类语料.json', blocks)
+with open(CORPUS / '武将分类语料.md', 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md))
 print('块数:', len(blocks))

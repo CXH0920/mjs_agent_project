@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -28,13 +27,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.business.rag.audit_service import GENERIC_HERO_NAMES
 from src.data.special_cards_repository import (
     SPECIAL_CATEGORIES,
     SpecialCardItem,
     SpecialCardRepository,
 )
 from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, set_tone, set_ui_role
-from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
+from src.ui.shared.widgets import DialogFooter, PageHeader, clear_layout, show_toast
 
 # 各类别可编辑字段：key -> (标签, 是否多行)
 # suit/point/attack_range/settlement 为牌面事实（原 xlsx【专属牌】sheet 迁移回填）
@@ -48,6 +48,12 @@ _CATEGORY_FIELDS: dict[str, list[tuple[str, str, bool]]] = {
     "状态/标记": [("effect", "效果", True), ("stackable", "可否叠加", False), ("hero", "所属武将", False)],
     "概念": [("description", "说明", True), ("hero", "所属武将", False)],
 }
+
+# 字段清单与模型一致性断言：key 拼错会在 import 时立即暴露（#56）
+_MODEL_FIELDS = set(SpecialCardItem.model_fields)
+for _cat, _fields in _CATEGORY_FIELDS.items():
+    for _key, _label, _multi in _fields:
+        assert _key in _MODEL_FIELDS, f"_CATEGORY_FIELDS 含模型未知字段: {_cat}/{_key}"
 
 
 def _field_text(item: SpecialCardItem, key: str) -> str:
@@ -183,7 +189,7 @@ class SpecialCardEditDialog(QDialog):
             QMessageBox.warning(self, "校验失败", str(error))
             return
         hero = item.hero
-        if hero and hero != "通用" and hero not in self._hero_names:
+        if hero and hero not in GENERIC_HERO_NAMES and hero not in self._hero_names:
             answer = QMessageBox.question(
                 self, "武将未收录",
                 f"所属武将「{hero}」不在当前武将库中（可能是历史数据或新武将未同步），仍要保存吗？",
@@ -210,6 +216,7 @@ class SpecialCardsPanel(QWidget):
         self._repository = repository
         self._hero_names = hero_names
         self._current: SpecialCardItem | None = None
+        self._load_error = False
         self._setup_ui()
         self.reload_data()
 
@@ -230,7 +237,11 @@ class SpecialCardsPanel(QWidget):
         bar.addWidget(self._category_filter)
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("搜索名称或武将")
-        self._search_input.textChanged.connect(self._refresh_list)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(150)
+        self._search_timer.timeout.connect(self._refresh_list)
+        self._search_input.textChanged.connect(self._schedule_search_refresh)
         bar.addWidget(self._search_input, 1)
         self._add_button = QPushButton("新增")
         self._add_button.setObjectName("specialCardAddButton")
@@ -274,13 +285,10 @@ class SpecialCardsPanel(QWidget):
 
     def reload_data(self) -> None:
         issues = self._repository.load()
-        self._refresh_list()
         errors = [item.message for item in issues if item.severity == "error"]
-        if errors:
-            self._count_label.setText(f"加载异常 {len(errors)} 条（详情见日志），已禁止修改")
-            self._add_button.setEnabled(False)
-        else:
-            self._add_button.setEnabled(True)
+        self._load_error = bool(errors)
+        self._add_button.setEnabled(not self._load_error)
+        self._refresh_list()
 
     def _ensure_writable(self) -> bool:
         """数据加载失败时禁止写操作；返回是否可写。"""
@@ -297,18 +305,37 @@ class SpecialCardsPanel(QWidget):
             items = [item for item in items
                      if keyword in item.name or keyword in item.hero]
         selected = self._current
-        self._list.clear()
-        self._count_label.setText(f"{len(items)} 条特殊机制")
-        for item in items:
-            list_item = QListWidgetItem()
-            list_item.setData(Qt.ItemDataRole.UserRole, (item.category, item.name))
-            list_item.setSizeHint(QSize(0, 54))
-            self._list.addItem(list_item)
-            self._list.setItemWidget(list_item, SpecialCardListItemWidget(item))
-            if selected and item.category == selected.category and item.name == selected.name:
-                self._list.setCurrentItem(list_item)
+        scroll = self._list.verticalScrollBar().value()
+        self._list.setUpdatesEnabled(False)
+        try:
+            self._list.clear()
+            # 加载失败提示常驻计数标签，不被列表刷新覆盖（#38）
+            if self._load_error:
+                self._count_label.setText("加载异常（详见日志），已禁止修改")
+            else:
+                self._count_label.setText(f"{len(items)} 条特殊机制")
+            for item in items:
+                list_item = QListWidgetItem()
+                list_item.setData(Qt.ItemDataRole.UserRole, (item.category, item.name))
+                list_item.setSizeHint(QSize(0, 54))
+                self._list.addItem(list_item)
+                self._list.setItemWidget(list_item, SpecialCardListItemWidget(item))
+                if selected and item.category == selected.category and item.name == selected.name:
+                    self._list.setCurrentItem(list_item)
+        finally:
+            self._list.setUpdatesEnabled(True)
+            # 恢复滚动位置（#29），避免刷新后跳回顶部
+            self._list.verticalScrollBar().setValue(scroll)
         if not items:
             self._show_empty()
+
+    def _schedule_search_refresh(self) -> None:
+        """搜索防抖：非空输入 150ms 后刷新；清空立即刷新（审计跳转依赖立即生效）。"""
+        if self._search_input.text():
+            self._search_timer.start()
+        else:
+            self._search_timer.stop()
+            self._refresh_list()
 
     def _on_selected(self, current: QListWidgetItem | None, _=None) -> None:
         if current is None:
@@ -328,23 +355,7 @@ class SpecialCardsPanel(QWidget):
         self._detail_layout.addStretch(1)
 
     def _clear_detail(self) -> None:
-        self._clear_layout(self._detail_layout)
-
-    @staticmethod
-    def _clear_layout(layout: QLayout) -> None:
-        """递归清空布局：移除并销毁直接控件与子布局中的控件（防止切换条目时按钮残影）。"""
-        while layout.count():
-            item = layout.takeAt(0)
-            if item is None:
-                continue
-            widget = item.widget()
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
-                continue
-            sub = item.layout()
-            if sub is not None:
-                SpecialCardsPanel._clear_layout(sub)
+        clear_layout(self._detail_layout)
 
     def _show_detail(self, item: SpecialCardItem) -> None:
         self._clear_detail()
@@ -392,10 +403,12 @@ class SpecialCardsPanel(QWidget):
         actions = QHBoxLayout()
         edit_button = QPushButton("编辑")
         set_ui_role(edit_button, ROLE_SECONDARY)
+        edit_button.setEnabled(not self._load_error)
         edit_button.clicked.connect(self._open_edit)
         actions.addWidget(edit_button)
         delete_button = QPushButton("删除")
         set_ui_role(delete_button, ROLE_DANGER)
+        delete_button.setEnabled(not self._load_error)
         delete_button.clicked.connect(self._delete_current)
         actions.addWidget(delete_button)
         actions.addStretch(1)
@@ -404,11 +417,21 @@ class SpecialCardsPanel(QWidget):
         self._detail_layout.addStretch(1)
 
     def focus_item(self, category: str, name: str) -> None:
-        """切分类筛选并选中指定条目（供知识库维护审计跳转）。"""
+        """切分类筛选并选中指定条目（供知识库维护审计跳转）。
+
+        blockSignals 合并刷新：分类下拉/搜索框的信号各自触发一次全量重建，
+        屏蔽后仅显式 _refresh_list 一次（#37）。
+        """
         index = self._category_filter.findData(category)
-        if index >= 0:
-            self._category_filter.setCurrentIndex(index)
-        self._search_input.clear()
+        self._category_filter.blockSignals(True)
+        self._search_input.blockSignals(True)
+        try:
+            if index >= 0:
+                self._category_filter.setCurrentIndex(index)
+            self._search_input.clear()
+        finally:
+            self._category_filter.blockSignals(False)
+            self._search_input.blockSignals(False)
         self._refresh_list()
         for row in range(self._list.count()):
             item = self._list.item(row)
@@ -420,7 +443,9 @@ class SpecialCardsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = SpecialCardEditDialog(self._hero_names, None, self)
+        attempts = 0
         while dialog.exec() == QDialog.DialogCode.Accepted:
+            attempts += 1
             try:
                 self._repository.add_item(dialog.item())
                 self._current = dialog.item()
@@ -431,6 +456,9 @@ class SpecialCardsPanel(QWidget):
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
                 self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
+                if attempts >= 3:
+                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
+                    return
                 continue
 
     def _open_edit(self) -> None:
@@ -439,7 +467,9 @@ class SpecialCardsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = SpecialCardEditDialog(self._hero_names, self._current, self)
+        attempts = 0
         while dialog.exec() == QDialog.DialogCode.Accepted:
+            attempts += 1
             try:
                 self._repository.update_item(dialog.item())
                 self._current = dialog.item()
@@ -450,6 +480,9 @@ class SpecialCardsPanel(QWidget):
             except Exception as error:
                 QMessageBox.critical(self, "保存失败", str(error))
                 self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
+                if attempts >= 3:
+                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
+                    return
                 continue
 
     def _delete_current(self) -> None:

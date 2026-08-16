@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -35,7 +35,7 @@ from src.data.hero_classification_repository import (
 )
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING, set_tone, set_ui_role
-from src.ui.shared.widgets import DialogFooter, PageActionBar, show_toast
+from src.ui.shared.widgets import DialogFooter, PageActionBar, clear_layout, show_toast
 
 _CLASSIFICATION_FILTERS = ("全部", "未归类", "已归类")
 
@@ -111,6 +111,7 @@ class HeroClassificationPanel(QWidget):
         self._hero_positions = hero_positions or {}
         self._hero_names = sorted(repository.hero_names)
         self._dirty = False
+        self._load_errors = False
         self._current_category: str | None = None
         self._current_hero: str | None = None
         self._setup_ui()
@@ -128,7 +129,8 @@ class HeroClassificationPanel(QWidget):
         self._action_bar = PageActionBar("正在加载……", self)
         self._status_label = self._action_bar.status_label
         self._refresh_button = QPushButton("刷新")
-        self._refresh_button.clicked.connect(self.reload_data)
+        # clicked 信号自带 False 参数，直接 connect 会旁路 confirm_discard，必须经 lambda
+        self._refresh_button.clicked.connect(lambda _=False: self.reload_data(confirm_discard=True))
         self._action_bar.add_action(self._refresh_button, ROLE_SECONDARY)
         self._save_button = QPushButton("保存")
         self._save_button.clicked.connect(self._save)
@@ -228,7 +230,11 @@ class HeroClassificationPanel(QWidget):
         bar.addWidget(self._hero_filter)
         self._hero_search = QLineEdit()
         self._hero_search.setPlaceholderText("搜索武将名称...")
-        self._hero_search.textChanged.connect(self._refresh_heroes)
+        self._hero_search_timer = QTimer(self)
+        self._hero_search_timer.setSingleShot(True)
+        self._hero_search_timer.setInterval(150)
+        self._hero_search_timer.timeout.connect(self._refresh_heroes)
+        self._hero_search.textChanged.connect(self._schedule_hero_refresh)
         bar.addWidget(self._hero_search, 1)
         self._hero_count_label = QLabel()
         self._hero_count_label.setObjectName("libraryResultCount")
@@ -273,6 +279,7 @@ class HeroClassificationPanel(QWidget):
         surface_layout.setSpacing(10)
         self._hero_name_label = QLabel()
         self._hero_name_label.setObjectName("cardIdentityName")
+        self._hero_name_label.setTextFormat(Qt.TextFormat.PlainText)
         surface_layout.addWidget(self._hero_name_label)
         self._hero_position_label = QLabel()
         self._hero_position_label.setObjectName("specialCardEditMeta")
@@ -288,7 +295,7 @@ class HeroClassificationPanel(QWidget):
         surface_layout.addWidget(section)
         # 多选组件固定复用，切换武将仅更新值，避免频繁销毁导致的弹层生命周期竞态
         self._hero_combo = CheckableComboBox()
-        self._hero_combo.set_items([])
+        self._hero_combo.set_items([], default_all=False)
         self._hero_combo.checked_values_changed.connect(self._on_hero_categories_changed)
         surface_layout.addWidget(self._hero_combo)
         hint = QLabel("修改后点击顶部「保存」生效。")
@@ -329,8 +336,8 @@ class HeroClassificationPanel(QWidget):
         issues = self._repo.load()
         self._hero_names = sorted(self._repo.hero_names)
         errors = [item.message for item in issues if item.severity == "error"]
-        self._refresh_categories()
-        self._refresh_chain_options()
+        self._load_errors = bool(errors)
+        self._refresh_categories()  # 内部已刷新克制链下拉，不重复调用 _refresh_chain_options
         self._refresh_heroes()
         if errors:
             self._action_bar.set_status(f"加载异常 {len(errors)} 条（详见日志），已禁止保存", TONE_WARNING)
@@ -340,6 +347,10 @@ class HeroClassificationPanel(QWidget):
             self._update_status("已加载", TONE_INFO)
 
     def _update_status(self, text: str, tone: str) -> None:
+        # 加载失败时保持只读提示，不被编辑状态文案覆盖（#38）
+        if self._load_errors:
+            self._action_bar.set_status("加载异常，已禁止修改（详见日志）", TONE_WARNING)
+            return
         if self._dirty:
             self._action_bar.set_status(f"{text} · 有未保存修改", TONE_WARNING)
         else:
@@ -348,6 +359,13 @@ class HeroClassificationPanel(QWidget):
     def _mark_dirty(self) -> None:
         self._dirty = True
         self._update_status("已修改", TONE_WARNING)
+
+    def _ensure_writable(self) -> bool:
+        """加载失败（文件损坏）时拒绝所有写操作，防止空数据覆盖原文件（#12）。"""
+        if not self._repo.available:
+            QMessageBox.warning(self, "数据不可用", "数据文件加载失败，已禁止修改（详情见日志）。")
+            return False
+        return True
 
     def _save(self) -> None:
         if not self._repo.available:
@@ -371,14 +389,18 @@ class HeroClassificationPanel(QWidget):
     # ---------------------------------------------------------------
     def _refresh_categories(self) -> None:
         selected = self._current_category
-        self._category_list.clear()
-        self._category_count_label.setText(f"{len(self._repo.list_categories())} 个机制分类")
-        for cat in self._repo.list_categories():
-            item = QListWidgetItem(cat.name)
-            item.setData(Qt.ItemDataRole.UserRole, cat.name)
-            self._category_list.addItem(item)
-            if cat.name == selected:
-                self._category_list.setCurrentItem(item)
+        self._category_list.setUpdatesEnabled(False)
+        try:
+            self._category_list.clear()
+            self._category_count_label.setText(f"{len(self._repo.list_categories())} 个机制分类")
+            for cat in self._repo.list_categories():
+                item = QListWidgetItem(cat.name)
+                item.setData(Qt.ItemDataRole.UserRole, cat.name)
+                self._category_list.addItem(item)
+                if cat.name == selected:
+                    self._category_list.setCurrentItem(item)
+        finally:
+            self._category_list.setUpdatesEnabled(True)
         self._refresh_chain_options()
         if not self._category_list.currentItem():
             self._show_category_empty()
@@ -393,7 +415,7 @@ class HeroClassificationPanel(QWidget):
 
     def _show_category_empty(self) -> None:
         self._current_category = None
-        self._clear_layout(self._category_detail_layout)
+        clear_layout(self._category_detail_layout)
         empty = QLabel("选择左侧分类查看详情，或点击「新增分类」。")
         empty.setObjectName("libraryEmptyState")
         empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -401,7 +423,7 @@ class HeroClassificationPanel(QWidget):
         self._category_detail_layout.addStretch(1)
 
     def _show_category_detail(self, cat: ClassificationCategory | None) -> None:
-        self._clear_layout(self._category_detail_layout)
+        clear_layout(self._category_detail_layout)
         if cat is None:
             self._show_category_empty()
             return
@@ -414,6 +436,7 @@ class HeroClassificationPanel(QWidget):
         title_row = QHBoxLayout()
         title = QLabel(cat.name)
         title.setObjectName("cardIdentityName")
+        title.setTextFormat(Qt.TextFormat.PlainText)
         title_row.addWidget(title)
         badge = QLabel(f"{len(cat.typical_heroes)} 名典型武将")
         badge.setObjectName("statusBadge")
@@ -465,6 +488,8 @@ class HeroClassificationPanel(QWidget):
         self._category_detail_layout.addStretch(1)
 
     def _add_category(self) -> None:
+        if not self._ensure_writable():
+            return
         dialog = CategoryEditDialog(None, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:
             try:
@@ -478,6 +503,8 @@ class HeroClassificationPanel(QWidget):
             return
 
     def _edit_category(self) -> None:
+        if not self._ensure_writable():
+            return
         cat = self._repo.get_category(self._current_category or "")
         if cat is None:
             return
@@ -493,6 +520,8 @@ class HeroClassificationPanel(QWidget):
             return
 
     def _delete_category(self) -> None:
+        if not self._ensure_writable():
+            return
         name = self._current_category or ""
         if name not in {c.name for c in self._repo.list_categories()}:
             return
@@ -504,7 +533,11 @@ class HeroClassificationPanel(QWidget):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self._repo.delete_category(name)
+        try:
+            self._repo.delete_category(name)
+        except Exception as error:
+            QMessageBox.critical(self, "删除失败", str(error))
+            return
         self._current_category = None
         self._refresh_categories()
         self._mark_dirty()
@@ -540,6 +573,10 @@ class HeroClassificationPanel(QWidget):
             self._repo.set_counter_chain(category, self._chain_edit.toPlainText())
         except ValueError as error:
             QMessageBox.warning(self, "校验失败", str(error))
+            # 回滚文本框为仓库中的旧值，避免显示与数据不一致（#19）
+            self._chain_edit.blockSignals(True)
+            self._chain_edit.setPlainText(self._repo.get_chain_description(category))
+            self._chain_edit.blockSignals(False)
             return
         self._mark_dirty()
 
@@ -559,19 +596,34 @@ class HeroClassificationPanel(QWidget):
             heroes = [h for h in heroes if keyword in h]
         return heroes
 
+    def _schedule_hero_refresh(self) -> None:
+        """搜索防抖：非空输入 150ms 后刷新；清空立即刷新（审计跳转依赖立即生效）。"""
+        if self._hero_search.text():
+            self._hero_search_timer.start()
+        else:
+            self._hero_search_timer.stop()
+            self._refresh_heroes()
+
     def _refresh_heroes(self) -> None:
         selected = self._current_hero
         heroes = self._filtered_heroes()
-        self._hero_list.clear()
-        self._hero_count_label.setText(
-            f"未归类 {len(self._repo.list_unclassified())} 人 · 显示 {len(heroes)} 人"
-        )
-        for hero in heroes:
-            item = QListWidgetItem(hero)
-            item.setData(Qt.ItemDataRole.UserRole, hero)
-            self._hero_list.addItem(item)
-            if hero == selected:
-                self._hero_list.setCurrentItem(item)
+        scroll = self._hero_list.verticalScrollBar().value()
+        self._hero_list.setUpdatesEnabled(False)
+        try:
+            self._hero_list.clear()
+            self._hero_count_label.setText(
+                f"未归类 {len(self._repo.list_unclassified())} 人 · 显示 {len(heroes)} 人"
+            )
+            for hero in heroes:
+                item = QListWidgetItem(hero)
+                item.setData(Qt.ItemDataRole.UserRole, hero)
+                self._hero_list.addItem(item)
+                if hero == selected:
+                    self._hero_list.setCurrentItem(item)
+        finally:
+            self._hero_list.setUpdatesEnabled(True)
+            # 恢复滚动位置（#29），避免刷新后跳回顶部
+            self._hero_list.verticalScrollBar().setValue(scroll)
         if not self._hero_list.currentItem():
             self._show_hero_empty()
 
@@ -579,13 +631,14 @@ class HeroClassificationPanel(QWidget):
         if current is None:
             self._show_hero_empty()
             return
-        self._current_hero = current.data(Qt.ItemDataRole.UserRole)
-        self._show_hero_detail(self._current_hero)
+        self._show_hero_detail(current.data(Qt.ItemDataRole.UserRole))
 
     def _show_hero_empty(self) -> None:
         self._current_hero = None
         self._hero_detail_surface.setVisible(False)
         self._hero_empty_label.setVisible(True)
+        # 归类弹层挂 window()，列表重建后必须显式关闭，否则浮层残留（#30）
+        self._hero_combo.closePopup()
 
     def _show_hero_detail(self, hero: str) -> None:
         """更新右侧武将归类详情（复用固定组件，不重建）。"""
@@ -597,7 +650,7 @@ class HeroClassificationPanel(QWidget):
         self._hero_position_label.setText(f"定位：{position}")
         self._hero_position_label.setVisible(bool(position))
         all_names = [c.name for c in self._repo.list_categories()]
-        self._hero_combo.set_items(all_names)
+        self._hero_combo.set_items(all_names, default_all=False)
         self._hero_combo.set_checked(self._repo.get_hero_categories(hero))
 
     def _on_hero_categories_changed(self) -> None:
@@ -608,6 +661,8 @@ class HeroClassificationPanel(QWidget):
             self._repo.set_hero_categories(hero, sorted(self._hero_combo.checked_values()))
         except ValueError as error:
             QMessageBox.warning(self, "校验失败", str(error))
+            # 回滚下拉显示为仓库中的归类，避免视觉与数据不一致（#18）
+            self._hero_combo.set_checked(self._repo.get_hero_categories(hero))
             return
         self._refresh_heroes()
         self._mark_dirty()
@@ -632,27 +687,3 @@ class HeroClassificationPanel(QWidget):
             if item.data(Qt.ItemDataRole.UserRole) == target:
                 self._hero_list.setCurrentItem(item)
                 return
-
-    # ---------------------------------------------------------------
-    # 工具
-    # ---------------------------------------------------------------
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            if item is None:
-                continue
-            widget = item.widget()
-            if widget is not None:
-                inner = widget.layout()
-                if inner is not None:
-                    HeroClassificationPanel._clear_layout(inner)
-                close_popup = getattr(widget, "closePopup", None)
-                if callable(close_popup):
-                    close_popup()
-                widget.setParent(None)
-                widget.deleteLater()
-                continue
-            sub = item.layout()
-            if sub is not None:
-                HeroClassificationPanel._clear_layout(sub)

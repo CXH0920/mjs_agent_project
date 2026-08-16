@@ -31,6 +31,9 @@ from src.data.equip_attrs_repository import (
 
 CORPUS_DIR = "data/rag_corpus"
 
+# 泛指/占位武将名（专属牌 hero 字段中不代表具体武将，校验与 UI 共用）
+GENERIC_HERO_NAMES = frozenset({"通用", "—", "众多武将"})
+
 
 @dataclass(frozen=True)
 class AuditIssue:
@@ -134,6 +137,17 @@ def collect_unclassified(hero_names: set, classification: object) -> list[str]:
     return sorted(hero_names - classified)
 
 
+def collect_orphan_category_keys(hero_names: set, classification: object) -> list[str]:
+    """分类表引用了 heroes.json 中不存在的武将（反向校验，#10），升序返回。
+
+    实测脏数据示例：'贾诩(限定)'、'赵姬妾→刘弗陵'（hero_categories 174 键 vs 172 武将）。
+    """
+    if not isinstance(classification, dict):
+        return []
+    classified = set(classification.get("hero_categories", {}))
+    return sorted(classified - hero_names)
+
+
 def collect_unknown_heroes(specials: list, hero_names: set) -> list[str]:
     """专属牌 hero 字段拆分出的未知武将名（泛指/括号注释跳过），升序返回。"""
     unknown = set()
@@ -143,7 +157,7 @@ def collect_unknown_heroes(specials: list, hero_names: set) -> list[str]:
             continue
         for _name in re.split(r"[\u3001,?]", hero):
             _name = re.split(r"[(\uff08]", _name, 1)[0].strip()
-            if not _name or _name in ("通用", "—", "众多武将") or _name.endswith("等"):
+            if not _name or _name in GENERIC_HERO_NAMES or _name.endswith("等"):
                 continue
             if _name not in hero_names:
                 unknown.add(_name)
@@ -179,6 +193,14 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
                 message=f"未归类武将 {len(unclassified)} 人（请补充 data/hero_classification.json）",
                 target_tab="武将分类维护",
                 target=unclassified,
+            ))
+        orphan = collect_orphan_category_keys(hero_names, classification)
+        if orphan:
+            issues.append(AuditIssue(
+                kind="orphan_category_key",
+                message=f"分类表引用未知武将 {len(orphan)} 个（请清理 data/hero_classification.json）：{'、'.join(orphan[:8])}",
+                target_tab="武将分类维护",
+                target=orphan,
             ))
     except (OSError, json.JSONDecodeError):
         issues.append(AuditIssue(

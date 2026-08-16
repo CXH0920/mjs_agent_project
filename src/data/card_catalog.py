@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from src.data.json_repository import atomic_write_json
 from src.data.manager import DataIssue
 from src.data.models import Card
 
@@ -176,20 +177,8 @@ class CardViewModel:
 
 
 def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
-    """以 UTF-8、LF 和同目录临时文件原子保存 JSON。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(payload, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    """以 UTF-8、LF 和同目录临时文件原子保存 JSON（委托公共实现，含 fsync）。"""
+    atomic_write_json(path, payload, indent=2)
 
 
 class _JsonRepository:

@@ -8,9 +8,9 @@
 本模块同时提供 parse_rule_doc()，供 scripts/audit_rule_doc.py 复用解析逻辑做"解析回声"校验。
 """
 import re
-import io
-import sys
 import json
+
+from rag_common import CORPUS, save_json, setup_stdout, project_path
 
 TERM_BLOCK_KEYWORDS = ('术语表', '牌的类型', '动作定义', '状态定义', '区域清单', '资源')
 TERM_BLACKLIST_PREFIX = ('类型', '动作', '状态', '区域', '资源', '花色体系', '——')
@@ -162,37 +162,34 @@ def parse_rule_doc(src):
 
 
 def main():
-    src = r'docs\元规则整理-完整版.md'
+    setup_stdout()
+    src = project_path('docs', '元规则整理-完整版.md')
     blocks, terms, faqs, dropped = parse_rule_doc(src)
 
-    out_dir = r'data\rag_corpus'
     md_sections = ['# 元规则 RAG 语料（章节块）', '', '> 来源：《元规则整理-完整版》按小节切块。', '']
     for b in blocks:
         md_sections.append('### %s %s' % (b['block_id'], b['title']))
         md_sections.append('\n'.join(b['content']))
         md_sections.append('')
-    with open(out_dir + r'\元规则RAG语料-章节块.md', 'w', encoding='utf-8', newline='\n') as f:
+    with open(CORPUS / '元规则RAG语料-章节块.md', 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(md_sections))
-    with open(out_dir + r'\元规则RAG语料-章节块.json', 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(blocks, f, ensure_ascii=False, indent=1)
+    save_json(CORPUS / '元规则RAG语料-章节块.json', blocks)
 
     md_terms = ['# 术语表', '', '> 从《元规则整理-完整版》提取，每条一个术语块。', '']
     for t in terms:
         md_terms += ['### ' + t['block_id'], '【术语】' + t['term'],
                      '【定义】' + t['definition'], '【来源】' + t['source'], '']
-    with open(out_dir + r'\术语表.md', 'w', encoding='utf-8', newline='\n') as f:
+    with open(CORPUS / '术语表.md', 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(md_terms))
-    with open(out_dir + r'\术语表.json', 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(terms, f, ensure_ascii=False, indent=1)
+    save_json(CORPUS / '术语表.json', terms)
 
     md_faqs = ['# FAQ 裁定块', '', '> %d 条裁定，每条一个块。' % len(faqs), '']
     for q in sorted(faqs, key=lambda x: x['faq_no']):
         md_faqs += ['### ' + q['block_id'], '【裁定】' + q['ruling'],
                     '【来源】' + q['source'], '']
-    with open(out_dir + r'\FAQ裁定块.md', 'w', encoding='utf-8', newline='\n') as f:
+    with open(CORPUS / 'FAQ裁定块.md', 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(md_faqs))
-    with open(out_dir + r'\FAQ裁定块.json', 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(faqs, f, ensure_ascii=False, indent=1)
+    save_json(CORPUS / 'FAQ裁定块.json', faqs)
 
     print('章节块:', len(blocks))
     print('术语条数:', len(terms))
@@ -204,5 +201,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     main()

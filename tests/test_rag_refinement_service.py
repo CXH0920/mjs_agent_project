@@ -35,7 +35,7 @@ class FakeGenerator:
         self._payload = payload
         self.calls = []
 
-    def _call_api(self, messages, temperature=0.7):
+    def complete(self, messages, temperature=0.7):
         self.calls.append(messages)
         if self._payload is None:
             return None

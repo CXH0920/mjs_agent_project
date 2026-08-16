@@ -96,7 +96,7 @@ def generate_proposal_items(rows, doc_text, generator):
         {'role': 'user', 'content': '【数据变更清单】\n%s\n\n【文档全文】\n%s' % (payload, doc_text[:12000])},
     ]
     try:
-        response = generator._call_api(messages, temperature=0.2)
+        response = generator.complete(messages, temperature=0.2)
     except Exception as exc:
         print('LLM 调用异常，降级为占位提案：%s' % exc)
         return generate_proposal_items(rows, doc_text, None)

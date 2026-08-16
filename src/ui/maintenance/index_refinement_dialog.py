@@ -9,6 +9,7 @@ UI 结构（重设计后）：顶部总览条（进度+筛选）→ 左清单区
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
@@ -40,7 +41,7 @@ from src.business.rag.refinement_service import (
     apply_curated,
     build_generator,
     list_pending,
-    _suggest_one,
+    suggest_one,
 )
 from src.ui.shared.style import (
     MUTED_TEXT,
@@ -59,6 +60,11 @@ from src.ui.shared.style import (
     set_ui_role,
 )
 from src.ui.shared.widgets import EmptyState, PageHeader, StatusBadge, show_toast
+
+logger = logging.getLogger("index_refinement")
+
+# 保存失败连续重试上限（防磁盘故障时无限弹窗，#40）
+_MAX_SAVE_ATTEMPTS = 3
 
 _FIELD_LABELS = {
     "timing": "时机",
@@ -97,12 +103,13 @@ class _SuggestWorker(QThread):
         self._blocks = list(blocks)
         self._generator = generator
         self._cancelled = False
+        self._single = False  # 单块建议：结果需回填编辑器
 
     def run(self) -> None:
         for block in self._blocks:
             if self._cancelled:
                 break
-            update = _suggest_one(block, self._generator)
+            update = suggest_one(block, self._generator)
             self.result_ready.emit(block, update)
 
 
@@ -129,6 +136,7 @@ class IndexRefinementDialog(QDialog):
         self._suggest_done = 0
         self._suggest_generator = None
         self._suggest_worker: _SuggestWorker | None = None
+        self._skipped_count = 0  # 跳过的条目数（进度文案区分 #34）
         self.setWindowTitle("索引精化")
         self.setObjectName("indexRefineDialog")
         self.resize(1160, 720)
@@ -385,7 +393,6 @@ class IndexRefinementDialog(QDialog):
             corpus_item = QTableWidgetItem("卡牌" if block.kind == "card" else "武将")
             name_item = QTableWidgetItem(block.name)
             name_item.setToolTip(block.block_id)
-            name_item.setData(Qt.ItemDataRole.UserRole, block.block_id)
             missing_item = QTableWidgetItem("、".join(_FIELD_LABELS[f] for f in block.missing))
             state = self._row_states.get(block.block_id, "pending")
             state_item = QTableWidgetItem(_ROW_STATE_TEXT[state])
@@ -496,7 +503,8 @@ class IndexRefinementDialog(QDialog):
         if self._current is None:
             return
         self._refresh_field_states()
-        state = "modified" if self._dirty else "suggested"
+        # 未建议过的块清空后保持 pending，不被误标 suggested（#33）
+        state = "modified" if self._dirty else self._row_states.get(self._current.block_id, "pending")
         if self._row_states.get(self._current.block_id) != state:
             self._row_states[self._current.block_id] = state
             self._refresh_row_state(self._current)
@@ -516,11 +524,24 @@ class IndexRefinementDialog(QDialog):
         self._progress.setValue(done)
         set_tone(self._progress, TONE_SUCCESS if not self._pending else TONE_NEUTRAL)
         if self._pending:
-            self._overview_label.setText(f"待精化 {len(self._pending)} 块 · 已完成 {done} 块")
+            text = f"待精化 {len(self._pending)} 块 · 已处理 {done} 块"
+            if self._skipped_count:
+                text += f"（跳过 {self._skipped_count} 块）"
+            self._overview_label.setText(text)
         else:
             self._overview_label.setText("全部完成，已无待精化条目")
         self._table.setVisible(bool(self._visible))
-        self._empty_state.setVisible(not self._pending)
+        if not self._pending:
+            self._empty_state.title_label.setText("没有待精化条目")
+            self._empty_state.set_description("卡牌/武将语料的索引字段已全部补全，重建语料不会被覆盖。")
+            self._empty_state.setVisible(True)
+        elif not self._visible:
+            # 筛选/搜索无匹配：显示空态而非界面空白（#35）
+            self._empty_state.title_label.setText("无匹配条目")
+            self._empty_state.set_description("调整筛选或搜索条件后重试。")
+            self._empty_state.setVisible(True)
+        else:
+            self._empty_state.setVisible(False)
         self._suggest_one_button.setEnabled(bool(self._pending) and not self._suggest_all_running)
         self._suggest_all_button.setEnabled(bool(self._pending) and not self._suggest_all_running)
         self._save_all_button.setEnabled(bool(self._pending))
@@ -550,23 +571,20 @@ class IndexRefinementDialog(QDialog):
         self._refresh_field_states()
 
     def _suggest_current(self) -> None:
+        """单块 LLM 建议：后台线程执行，窗口不冻结；结果回填编辑器（#21）。"""
         if self._current is None or self._suggest_all_running:
             return
         generator = self._generator()
         if generator is None:
             return
-        try:
-            update = _suggest_one(self._current, generator)
-        finally:
-            close = getattr(generator, "close", None)
-            if callable(close):
-                close()
-        if update is None:
-            QMessageBox.warning(self, "建议失败", f"无法为「{self._current.name}」生成建议（API 失败或解析失败），请重试或人工填写。")
-            return
-        self._fill_suggestion(self._current, update)
-        self._row_states[self._current.block_id] = "suggested"
-        self._refresh_row_state(self._current)
+        logger.info("单块建议启动：%s", self._current.name)
+        self._suggest_one_button.setEnabled(False)
+        worker = _SuggestWorker([self._current], generator, self)
+        worker._single = True
+        worker.result_ready.connect(self._on_suggest_result)
+        worker.finished.connect(self._on_single_finished)
+        self._suggest_worker = worker
+        worker.start()
 
     def _suggest_all(self) -> None:
         """批量生成建议：LLM 调用放后台线程，窗口不冻结；覆盖全部块（含当前选中）。
@@ -581,6 +599,7 @@ class IndexRefinementDialog(QDialog):
         generator = self._generator()
         if generator is None:
             return
+        logger.info("批量建议启动：%d 块", len(self._pending))
         self._suggest_all_running = True
         self._suggest_failed = []
         self._suggest_queue = list(self._pending)
@@ -598,14 +617,36 @@ class IndexRefinementDialog(QDialog):
     def _on_suggest_result(self, block: PendingBlock, update: RefinementUpdate | None) -> None:
         """后台线程逐块结果回主线程：只更新 baseline/行状态，不强切当前编辑。"""
         self._suggest_done += 1
+        is_single = bool(self._suggest_worker is not None and self._suggest_worker._single)
         if update is not None:
             baseline = {field: "\n".join(getattr(update, field)) for field in INDEX_FIELDS}
             self._llm_baseline[block.block_id] = baseline
             self._row_states[block.block_id] = "suggested"
             self._refresh_row_state(block)
+            if is_single and self._current is not None and self._current.block_id == block.block_id:
+                self._fill_suggestion(block, update)
         else:
             self._suggest_failed.append(block)
+            if is_single:
+                QMessageBox.warning(
+                    self, "建议失败",
+                    f"无法为「{block.name}」生成建议（API 失败或解析失败），请重试或人工填写。")
         self._update_overview()
+
+    def _on_single_finished(self) -> None:
+        """单块建议线程结束：释放 generator 并恢复按钮。"""
+        worker = self._suggest_worker
+        self._suggest_worker = None
+        if worker is not None:
+            gen = getattr(worker, "_generator", None)
+            if gen is not None:
+                close = getattr(gen, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:  # noqa: BLE001
+                        pass
+        self._suggest_one_button.setEnabled(bool(self._pending) and not self._suggest_all_running)
 
     def _on_worker_finished(self) -> None:
         if not self._suggest_all_running:
@@ -621,7 +662,7 @@ class IndexRefinementDialog(QDialog):
         self._load_current(block)
         self._overview_label.setText(
             f"正在生成建议：{self._suggest_done + 1}/{self._suggest_total}（{block.name}）")
-        update = _suggest_one(block, self._suggest_generator)
+        update = suggest_one(block, self._suggest_generator)
         self._suggest_done += 1
         if update is not None:
             self._fill_suggestion(block, update)
@@ -645,10 +686,14 @@ class IndexRefinementDialog(QDialog):
         self._update_overview()
         if self._suggest_failed:
             names = "、".join(block.name for block in self._suggest_failed[:8])
+            logger.warning("批量建议完成：成功 %d 块，失败 %d 块", 
+                           self._suggest_total - len(self._suggest_failed), len(self._suggest_failed))
             QMessageBox.warning(
                 self, "建议生成完成（部分失败）",
                 f"成功 {self._suggest_total - len(self._suggest_failed)} 块，"
                 f"失败 {len(self._suggest_failed)} 块：{names}，可重试或人工填写。")
+        else:
+            logger.info("批量建议完成：%d 块全部成功", self._suggest_total)
 
     # ---------------------------------------------------------------
     # 保存 / 跳过
@@ -684,8 +729,10 @@ class IndexRefinementDialog(QDialog):
         try:
             apply_curated(self._corpus_dir, {block.block_id: update}, block.corpus)
         except (OSError, ValueError) as error:
+            logger.error("保存精化失败 %s: %s", block.block_id, error)
             QMessageBox.critical(self, "保存失败", str(error))
             return
+        logger.info("保存精化 %s（%s）", block.name, update.method)
         self._pending = [item for item in self._pending if item.block_id != block.block_id]
         self._llm_baseline.pop(block.block_id, None)
         self._row_states.pop(block.block_id, None)
@@ -745,6 +792,7 @@ class IndexRefinementDialog(QDialog):
         self._dirty = False
         self._current = None
         self._refresh_table()
+        logger.info("保存全部：成功 %d 块，跳过 %d 块，剩余 %d 块", saved, skipped, len(self._pending))
         message = f"已保存 {saved} 块，剩余 {len(self._pending)} 块"
         if skipped:
             message += f"，跳过 {skipped} 块无内容"
@@ -762,6 +810,8 @@ class IndexRefinementDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
         block = self._current
+        logger.info("跳过精化条目 %s（%s）", block.name, block.block_id)
+        self._skipped_count += 1
         self._pending = [item for item in self._pending if item.block_id != block.block_id]
         self._llm_baseline.pop(block.block_id, None)
         self._row_states.pop(block.block_id, None)
@@ -770,13 +820,30 @@ class IndexRefinementDialog(QDialog):
         self._refresh_table()
 
     def reject(self) -> None:
-        # 批量建议进行中：中止 worker 与剩余队列后关闭；否则先确认未保存修改
+        # 建议进行中（单块或批量）：中止 worker 与剩余队列，释放 generator 后关闭（#22）
+        worker = self._suggest_worker
+        if worker is not None:
+            worker._cancelled = True
+            gen = getattr(worker, "_generator", None)
+            if gen is not None:
+                close = getattr(gen, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:  # noqa: BLE001
+                        pass
         if self._suggest_all_running:
-            worker = self._suggest_worker
-            if worker is not None:
-                worker._cancelled = True
             self._suggest_queue = []
             self._suggest_all_running = False
+            generator = self._suggest_generator
+            self._suggest_generator = None
+            if generator is not None:
+                close = getattr(generator, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:  # noqa: BLE001
+                        pass
         elif self._dirty and self._current is not None:
             if not self._confirm_discard():
                 return
