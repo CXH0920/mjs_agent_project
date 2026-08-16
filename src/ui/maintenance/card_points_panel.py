@@ -10,11 +10,10 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QProcess, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -150,6 +149,8 @@ class CardPointsPanel(QWidget):
         super().__init__(parent)
         self._repository = repository
         self._root = root
+        self._proc: QProcess | None = None
+        self._import_output: list[str] = []
         self._setup_ui()
         self.reload_data()
 
@@ -440,19 +441,32 @@ class CardPointsPanel(QWidget):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
+            QMessageBox.information(self, "正在执行", "导入任务运行中，请等待完成。")
+            return
         script = self._root / "scripts" / "migrate_excel_to_json.py"
-        try:
-            proc = subprocess.run(
-                [sys.executable, str(script), "--only", "points"],
-                cwd=str(self._root), capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=60,
-            )
-        except Exception as error:
-            QMessageBox.critical(self, "导入失败", f"无法执行迁移脚本：{error}")
-            return
-        if proc.returncode != 0:
-            QMessageBox.critical(self, "导入失败", (proc.stdout or "") + (proc.stderr or ""))
-            return
-        self.reload_data()
-        self.data_changed.emit()
-        show_toast(self, "已从 xlsx 导入，请在知识库维护中重建语料")
+        self._import_button.setEnabled(False)
+        self._import_button.setText("导入中…")
+        self._import_output = []
+        proc = QProcess(self)
+        proc.setWorkingDirectory(str(self._root))
+        proc.readyReadStandardOutput.connect(lambda: self._collect_import_output(proc.readAllStandardOutput()))
+        proc.readyReadStandardError.connect(lambda: self._collect_import_output(proc.readAllStandardError()))
+        proc.finished.connect(self._on_import_finished)
+        proc.start(sys.executable, [str(script), "--only", "points"])
+        self._proc = proc
+
+    def _collect_import_output(self, data: bytes) -> None:
+        self._import_output.append(bytes(data).decode("utf-8", errors="replace"))
+
+    def _on_import_finished(self, code: int, _status) -> None:
+        self._proc = None
+        self._import_button.setEnabled(True)
+        self._import_button.setText("从 xlsx 导入")
+        if code == 0:
+            self.reload_data()
+            self.data_changed.emit()
+            show_toast(self, "已从 xlsx 导入，请在知识库维护中重建语料")
+        else:
+            detail = "".join(self._import_output)[-2000:]
+            QMessageBox.critical(self, "导入失败", f"迁移脚本退出码 {code}\n{detail}")

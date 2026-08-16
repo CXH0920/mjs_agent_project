@@ -29,6 +29,8 @@ class Retriever:
         self._model = None
         self._blocks = None          # 内存块索引（关键词兜底用）
         self._id2meta = None
+        self._id2text = None         # block_id -> 文本（避免线性遍历）
+        self._hero_index = None      # 武将/牌名 -> 块列表（hero_blocks 倒排）
         self._load_t = 0.0
 
     # ---- 懒加载 ----
@@ -58,6 +60,15 @@ class Retriever:
             t0 = time.time()
             self._blocks = load_all_blocks()
             self._id2meta = {bid: meta for bid, _, meta in self._blocks}
+            self._id2text = {bid: text for bid, text, _ in self._blocks}
+            hero_index = {}
+            for block in self._blocks:
+                meta = block[2]
+                for key in ('hero', 'name'):
+                    name = meta.get(key)
+                    if name:
+                        hero_index.setdefault(name, []).append(block)
+            self._hero_index = hero_index
             self._load_t = time.time() - t0
             logger.info('语料加载 %d 块，耗时 %.1fs', len(self._blocks), self._load_t)
             print(f'      ✅ 语料 {len(self._blocks)} 块，耗时 {self._load_t:.1f}s', flush=True)
@@ -150,21 +161,17 @@ class Retriever:
 
     def hero_blocks(self, hero):
         """返回某武将的全部语料块（攻略/相性用，保证人物召回完整）。"""
+        blocks = self.blocks  # 确保懒加载（调用方可能先于 search 调用本方法）
         return [{'block_id': bid, 'text': text, 'metadata': meta, 'source': 'hero'}
-                for bid, text, meta in self.blocks
-                if meta.get('hero') == hero or meta.get('name') == hero]
+                for bid, text, meta in (self._hero_index.get(hero) or [])]
 
     def _text_of(self, bid):
-        for b in self.blocks:
-            if b[0] == bid:
-                return b[1]
-        return ''
+        blocks = self.blocks
+        return (self._id2text or {}).get(bid, '')
 
     def _meta_of(self, bid):
-        for b in self.blocks:
-            if b[0] == bid:
-                return b[2]
-        return {}
+        blocks = self.blocks
+        return (self._id2meta or {}).get(bid, {})
 
 
 if __name__ == '__main__':

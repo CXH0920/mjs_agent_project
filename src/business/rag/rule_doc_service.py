@@ -107,6 +107,27 @@ def parse_proposal(path: Path | str) -> dict:
         return json.load(f)
 
 
+# 文档行缓存：path -> (mtime, lines)；文档未变化时不重复整文件读取
+_DOC_LINES_CACHE: dict[str, tuple[float, list[str]]] = {}
+
+
+def _doc_lines(doc_path: Path) -> list[str] | None:
+    """读取文档行列表（带 mtime 缓存）；文件缺失/不可读返回 None。"""
+    try:
+        stat = doc_path.stat()
+    except OSError:
+        return None
+    cached = _DOC_LINES_CACHE.get(str(doc_path))
+    if cached is not None and cached[0] == stat.st_mtime:
+        return cached[1]
+    try:
+        lines = doc_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    _DOC_LINES_CACHE[str(doc_path)] = (stat.st_mtime, lines)
+    return lines
+
+
 def doc_target_line(doc_path: Path | str, item: dict) -> str | None:
     """返回提案项在文档中的当前目标行（用于 diff 的 local 侧）。
 
@@ -114,9 +135,9 @@ def doc_target_line(doc_path: Path | str, item: dict) -> str | None:
     找不到返回 None。
     """
     doc_path = Path(doc_path)
-    if not doc_path.exists():
+    lines = _doc_lines(doc_path)
+    if lines is None:
         return None
-    lines = doc_path.read_text(encoding="utf-8").splitlines()
     m = re.match(r"faq_(\d+)", str(item.get("target", "")))
     if m:
         no = m.group(1)
@@ -138,9 +159,9 @@ def doc_section_context(doc_path: Path | str, target: str, radius: int = 3) -> s
     faq_编号 → 该行 ±radius；小节号（如 5.2）→ 标题后若干行；找不到返回 None。
     """
     doc_path = Path(doc_path)
-    if not doc_path.exists():
+    lines = _doc_lines(doc_path)
+    if lines is None:
         return None
-    lines = doc_path.read_text(encoding="utf-8").splitlines()
     m = re.match(r"faq_(\d+)", str(target))
     if m:
         no = m.group(1)
@@ -160,9 +181,9 @@ def doc_section_context(doc_path: Path | str, target: str, radius: int = 3) -> s
 def doc_line_at(doc_path: Path | str, line_no: int) -> str | None:
     """按 0 基行号读文档行；越界/文件缺失返回 None（差异查看用）。"""
     doc_path = Path(doc_path)
-    if not doc_path.exists():
+    lines = _doc_lines(doc_path)
+    if lines is None:
         return None
-    lines = doc_path.read_text(encoding="utf-8").splitlines()
     if not isinstance(line_no, int) or line_no < 0 or line_no >= len(lines):
         return None
     return lines[line_no]
@@ -171,9 +192,9 @@ def doc_line_at(doc_path: Path | str, line_no: int) -> str | None:
 def doc_context_around(doc_path: Path | str, line_no: int, radius: int = 3) -> str | None:
     """目标行 ±radius 的上下文文本（越界自动裁剪）；文件缺失返回 None。"""
     doc_path = Path(doc_path)
-    if not doc_path.exists():
+    lines = _doc_lines(doc_path)
+    if lines is None:
         return None
-    lines = doc_path.read_text(encoding="utf-8").splitlines()
     if not isinstance(line_no, int) or line_no < 0 or line_no >= len(lines):
         return None
     start, end = max(0, line_no - radius), min(len(lines), line_no + radius + 1)

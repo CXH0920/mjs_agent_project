@@ -65,6 +65,27 @@ TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
 
 PYTHON = sys.executable
 
+# 语料块数缓存：path -> (mtime, size, count)，mtime/size 未变时不重复解析
+_COUNT_CACHE: dict[str, tuple[float, int, int | None]] = {}
+
+
+def _output_count(path: Path) -> int | None:
+    """读取语料文件的块数（带 (mtime, size) 缓存，避免每次切页全量解析）。"""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    cached = _COUNT_CACHE.get(str(path))
+    if cached is not None and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+        return cached[2]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        count = len(data) if isinstance(data, list) else None
+    except (OSError, json.JSONDecodeError):
+        count = None
+    _COUNT_CACHE[str(path)] = (stat.st_mtime, stat.st_size, count)
+    return count
+
 
 def task_states(root: Path) -> list[dict]:
     """计算各语料任务状态；供 UI 展示与测试。"""
@@ -92,11 +113,7 @@ def task_states(root: Path) -> list[dict]:
             status = "最新"
         count = None
         if output_mtimes and output_mtimes[0] > 0:
-            try:
-                data = json.loads((root / CORPUS_DIR / outputs[0]).read_text(encoding="utf-8"))
-                count = len(data) if isinstance(data, list) else None
-            except (OSError, json.JSONDecodeError):
-                count = None
+            count = _output_count(root / CORPUS_DIR / outputs[0])
         rows.append({"name": name, "status": status, "count": count,
                      "sources": sources, "outputs": outputs})
     return rows
@@ -281,8 +298,9 @@ class RagMaintenancePanel(QWidget):
 
     def refresh(self) -> None:
         rows = task_states(self._root)
-        # 索引精化入口：按钮带待精化数量角标；无待办时禁用
-        pending_count = len(list_pending(self._root / "data" / "rag_corpus"))
+        # 索引精化入口：按钮带待精化数量角标；无待办时禁用（结果同时供审计复用，避免重复读语料）
+        pending = list_pending(self._root / "data" / "rag_corpus")
+        pending_count = len(pending)
         self._refine_button.setText(f"索引精化（{pending_count}）" if pending_count else "索引精化 ✓")
         self._refine_button.setEnabled(pending_count > 0)
         stale = [row["name"] for row in rows if row["status"] == "待重建"]
@@ -301,7 +319,7 @@ class RagMaintenancePanel(QWidget):
             self._action_bar.set_status(f"有 {len(stale)} 个语料任务待重建：{'、'.join(stale)}", TONE_WARNING)
         else:
             self._action_bar.set_status("所有语料与数据源一致", TONE_SUCCESS)
-        issues = audit_summary(self._root)
+        issues = audit_summary(self._root, pending)
         if issues:
             set_tone(self._audit_banner, TONE_WARNING)
             self._audit_label.setText("人工维护提示")

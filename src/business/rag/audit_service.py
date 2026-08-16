@@ -155,8 +155,12 @@ def collect_unknown_heroes(specials: list, hero_names: set) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def audit_summary(root: Path) -> list[AuditIssue]:
-    """返回人工维护提示清单（结构化条目；空列表表示无问题）。"""
+def audit_summary(root: Path, pending_refinement: list | None = None) -> list[AuditIssue]:
+    """返回人工维护提示清单（结构化条目；空列表表示无问题）。
+
+    pending_refinement: 调用方已计算好的待精化清单；为 None 时内部读取语料
+    （UI 工作台同一轮刷新已算过，传入可避免重复读文件）。
+    """
     issues: list[AuditIssue] = []
     heroes_path = root / "data" / "heroes.json"
     classification_path = root / "data" / "hero_classification.json"
@@ -271,7 +275,8 @@ def audit_summary(root: Path) -> list[AuditIssue]:
             target_tab="装备属性维护",
         ))
     # 索引精化待办：无 curated 且索引字段为空的语料块（语料未构建时清单为空，静默跳过）
-    pending_refinement = list_pending(root / CORPUS_DIR)
+    if pending_refinement is None:
+        pending_refinement = list_pending(root / CORPUS_DIR)
     if pending_refinement:
         issues.insert(0, AuditIssue(
             kind="pending_refinement",
