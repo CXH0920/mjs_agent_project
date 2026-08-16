@@ -1,9 +1,10 @@
-﻿# -*- coding: utf-8 -*-
-"""索引精化对话框 UI 测试：清单加载、LLM 建议、保存写回与跳过。"""
+# -*- coding: utf-8 -*-
+"""索引精化对话框 UI 测试：清单加载、LLM 建议、保存写回与跳过、已精化浏览/再编辑/取消精化。"""
 
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
@@ -33,6 +34,35 @@ def _corpus(tmp_path: Path) -> Path:
          "effect": "效果2", "effect_detail": ""},
     ])
     return root
+
+
+def _curated_corpus(tmp_path: Path) -> Path:
+    """含待精化 / 已精化（curated）/ 普通块三类数据的语料目录。"""
+    root = tmp_path / "rag_corpus"
+    _write(root / "卡牌RAG语料.json", [
+        {"block_id": "card_1_测试牌", "card_type": "行动牌", "card_amount": "1",
+         "timing": [], "trigger_condition": [], "keywords": [], "related": [],
+         "effect": "效果", "effect_detail": "说明"},
+        {"block_id": "card_3_已精化", "card_type": "装备牌", "card_amount": "1",
+         "timing": ["出牌阶段"], "trigger_condition": [], "keywords": [], "related": [],
+         "effect": "效果3", "effect_detail": "",
+         "curated": {"timing": ["出牌阶段"], "trigger_condition": [], "keywords": [], "related": [],
+                     "method": "llm", "updated_at": "2026-08-14"}},
+        {"block_id": "card_4_已生成", "card_type": "装备牌", "card_amount": "1",
+         "timing": ["回合开始"], "trigger_condition": ["使用时"], "keywords": ["装备"],
+         "related": ["元规则:装备规则"],
+         "effect": "效果4", "effect_detail": ""},
+    ])
+    return root
+
+
+def _click_scope(dialog: IndexRefinementDialog, label: str) -> None:
+    """点击范围筛选按钮（待精化 / 已精化 / 全部）。"""
+    for button in dialog._scope_group.buttons():
+        if button.text() == label:
+            button.click()
+            return
+    raise AssertionError(f"范围按钮不存在: {label}")
 
 
 def _answer_yes(monkeypatch) -> None:
@@ -157,10 +187,12 @@ def test_filter_filters_rows(tmp_path: Path) -> None:
     dialog = IndexRefinementDialog(root)
     assert dialog._table.rowCount() == 2
     dialog._search_edit.setText("半空")
+    dialog._apply_filter()  # 搜索带防抖（250ms），测试环境无事件循环需手动触发
     assert dialog._table.rowCount() == 1
     # 语料块无 name 字段时名称回退为 block_id
     assert dialog._table.item(0, 1).text() == "card_2_半空牌"
     dialog._search_edit.setText("")
+    dialog._apply_filter()
     assert dialog._table.rowCount() == 2
     dialog.close()
 
@@ -237,4 +269,105 @@ def test_suggest_all_queue_finishes_and_empty_state(tmp_path: Path, monkeypatch)
     dialog._save_all()
     assert dialog._table.rowCount() == 0
     assert not dialog._empty_state.isHidden()  # 全部完成后显示空状态
+    dialog.close()
+
+
+def test_scope_filter_switches_lists(tmp_path: Path) -> None:
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    assert dialog._table.rowCount() == 1  # 默认待精化范围
+    _click_scope(dialog, "已精化")
+    assert dialog._table.rowCount() == 1
+    assert dialog._table.item(0, 1).text() == "card_3_已精化"
+    assert dialog._table.item(0, 2).text() == "LLM · 2026-08-14"
+    _click_scope(dialog, "全部")
+    assert dialog._table.rowCount() == 3
+    dialog.close()
+
+
+def test_curated_block_loads_saved_state(tmp_path: Path) -> None:
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _click_scope(dialog, "已精化")
+    assert dialog._current is not None and dialog._current.block_id == "card_3_已精化"
+    # 字段以 curated 内容回填，状态徽标为已精化（saved）
+    assert dialog._field_editors["timing"].toPlainText().strip() == "出牌阶段"
+    assert dialog._field_badges["timing"].text() == "已精化"
+    assert dialog._field_cards["timing"].property("fieldState") == "saved"
+    assert dialog._table.item(0, 3).text() == "✓ 已精化"
+    assert dialog._method_badge.text().startswith("LLM精化")
+    dialog.close()
+
+
+def test_save_curated_without_change_noop(tmp_path: Path) -> None:
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _click_scope(dialog, "已精化")
+    dialog._save_current()  # 未修改
+    data = json.loads((root / "卡牌RAG语料.json").read_text(encoding="utf-8"))
+    block = next(b for b in data if b["block_id"] == "card_3_已精化")
+    assert block["curated"]["method"] == "llm"  # 未被改写为 manual
+    assert block["curated"]["updated_at"] == "2026-08-14"
+    assert any(b.block_id == "card_3_已精化" for b in dialog._curated)
+    dialog.close()
+
+
+def test_save_curated_modified_flips_manual(tmp_path: Path) -> None:
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _click_scope(dialog, "已精化")
+    dialog._field_editors["timing"].setPlainText("回合开始时")
+    dialog._save_current()
+    data = json.loads((root / "卡牌RAG语料.json").read_text(encoding="utf-8"))
+    block = next(b for b in data if b["block_id"] == "card_3_已精化")
+    assert block["timing"] == ["回合开始时"]
+    assert block["curated"]["method"] == "manual"
+    assert block["curated"]["updated_at"] == date.today().isoformat()
+    assert any(b.block_id == "card_3_已精化" for b in dialog._curated)
+    dialog.close()
+
+
+def test_clear_curated_moves_back_to_pending(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _click_scope(dialog, "已精化")
+    _answer_yes(monkeypatch)
+    dialog._clear_curated()
+    data = json.loads((root / "卡牌RAG语料.json").read_text(encoding="utf-8"))
+    block = next(b for b in data if b["block_id"] == "card_3_已精化")
+    assert "curated" not in block
+    assert not any(b.block_id == "card_3_已精化" for b in dialog._curated)
+    # 字段有空缺（trigger/keywords/related 空）→ 退回待精化池
+    assert any(b.block_id == "card_3_已精化" for b in dialog._pending)
+    _click_scope(dialog, "待精化")
+    assert dialog._table.rowCount() == 2
+    dialog.close()
+
+
+def test_item_actions_visibility_by_scope(tmp_path: Path) -> None:
+    """按钮按模式显隐：批量行/跳过仅待精化；取消精化仅已精化/全部；保存/LLM 当前全模式可用。"""
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    # 待精化模式（默认）：批量行与跳过可见，取消精化隐藏；默认选中首行，保存可用
+    assert not dialog._batch_bar.isHidden()
+    assert not dialog._skip_button.isHidden()
+    assert dialog._clear_button.isHidden()
+    assert dialog._current is not None
+    assert dialog._save_button.isEnabled()
+    assert dialog._suggest_one_button.isEnabled()
+    # 已精化模式：批量行与跳过隐藏，取消精化可见且可用（curated 块）
+    _click_scope(dialog, "已精化")
+    assert dialog._batch_bar.isHidden()
+    assert dialog._skip_button.isHidden()
+    assert not dialog._clear_button.isHidden()
+    assert dialog._clear_button.isEnabled()
+    # 全部模式：取消精化仍可见
+    _click_scope(dialog, "全部")
+    assert not dialog._clear_button.isHidden()
     dialog.close()

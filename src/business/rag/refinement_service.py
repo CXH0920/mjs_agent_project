@@ -35,7 +35,12 @@ REFINEMENT_SYSTEM_PROMPT = (
 
 @dataclass
 class PendingBlock:
-    """待精化块：语料文件名 + 块信息 + 当前索引字段。"""
+    """语料块视图：待精化 / 已精化（curated）/ 普通块共用。
+
+    - pending：无 curated 且任一索引字段为空；
+    - curated：有 curated（method/updated_at 标记精化来源与时间）；
+    - normal：无 curated 且四字段全非空（构建规则抽取已填满）。
+    """
 
     corpus: str
     block_id: str
@@ -44,6 +49,8 @@ class PendingBlock:
     text: str
     fields: dict[str, list[str]] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
+    method: str = ""  # curated 块来源（"llm" | "manual"），其余为空
+    updated_at: str = ""  # curated 块更新时间（ISO 日期）
 
 
 @dataclass
@@ -58,9 +65,15 @@ class RefinementUpdate:
     updated_at: str = ""
 
 
-def list_pending(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
-    """返回无 curated 且任一索引字段为空的块（武将语料只取技能块）。"""
-    pending: list[PendingBlock] = []
+def scan_blocks(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> dict[str, list[PendingBlock]]:
+    """一次扫描卡牌/武将语料，按精化状态三分类（pending/curated/normal）。
+
+    - pending：无 curated 且任一索引字段为空（待精化）；
+    - curated：有 curated（已处理，fields 以 curated 内容为权威）；
+    - normal：无 curated 且四字段全非空（规则抽取已填满）。
+    武将语料只取技能块（跳过 overview 块）。
+    """
+    result: dict[str, list[PendingBlock]] = {"pending": [], "curated": [], "normal": []}
     for fname in REFINABLE_FILES:
         path = corpus_dir / fname
         if not path.exists():
@@ -77,23 +90,56 @@ def list_pending(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
                 continue
             if fname.startswith("武将") and not block.get("skill"):
                 continue  # 跳过 overview 块
-            if block.get("curated"):
+            curated = block.get("curated")
+            if isinstance(curated, dict):
+                fields = {f: list(curated.get(f) or []) for f in INDEX_FIELDS}
+                result["curated"].append(_to_block(
+                    fname, block, fields,
+                    method=str(curated.get("method") or ""),
+                    updated_at=str(curated.get("updated_at") or ""),
+                ))
                 continue
             values = {f: list(block.get(f) or []) for f in INDEX_FIELDS}
             missing = [f for f in INDEX_FIELDS if not values[f]]
-            if not missing:
-                continue
-            name = str(block.get("skill") or block.get("name") or block.get("card") or block.get("hero") or block["block_id"])
-            pending.append(PendingBlock(
-                corpus=fname,
-                block_id=str(block["block_id"]),
-                name=name,
-                kind="card" if fname.startswith("卡牌") else "skill",
-                text=_block_text(block),
-                fields=values,
-                missing=missing,
-            ))
-    return pending
+            if missing:
+                result["pending"].append(_to_block(fname, block, values))
+            else:
+                result["normal"].append(_to_block(fname, block, values))
+    return result
+
+
+def _to_block(fname: str, block: dict, fields: dict[str, list[str]],
+              method: str = "", updated_at: str = "") -> PendingBlock:
+    """从语料块构建 PendingBlock 视图（名称/类型/原文/缺失字段统一推导）。"""
+    name = str(block.get("skill") or block.get("name") or block.get("card")
+               or block.get("hero") or block["block_id"])
+    missing = [f for f in INDEX_FIELDS if not fields[f]]
+    return PendingBlock(
+        corpus=fname,
+        block_id=str(block["block_id"]),
+        name=name,
+        kind="card" if fname.startswith("卡牌") else "skill",
+        text=_block_text(block),
+        fields=fields,
+        missing=missing,
+        method=method,
+        updated_at=updated_at,
+    )
+
+
+def list_pending(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
+    """返回无 curated 且任一索引字段为空的块（武将语料只取技能块）。"""
+    return scan_blocks(corpus_dir)["pending"]
+
+
+def list_curated(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
+    """返回已有 curated 的块（已精化，fields 以 curated 内容为权威）。"""
+    return scan_blocks(corpus_dir)["curated"]
+
+
+def list_normal(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
+    """返回无 curated 且四字段全非空的块（构建规则抽取已填满）。"""
+    return scan_blocks(corpus_dir)["normal"]
 
 
 def _block_text(block: dict) -> str:
@@ -195,6 +241,28 @@ def apply_curated(corpus_dir: Path, updates: dict[str, RefinementUpdate], fname:
         applied += 1
     _atomic_json_write(path, data)
     return applied
+
+
+def clear_curated(corpus_dir: Path, block_id: str, fname: str) -> bool:
+    """删除块的 curated 字段（取消精化），原子保存。
+
+    返回 False 表示该块本就没有 curated（无需处理）；块不存在抛 ValueError。
+    """
+    path = corpus_dir / fname
+    if not path.exists():
+        raise FileNotFoundError(f"语料文件不存在: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError(f"语料格式异常（非数组）: {fname}")
+    by_id = {str(block.get("block_id")): block for block in data if isinstance(block, dict)}
+    block = by_id.get(block_id)
+    if block is None:
+        raise ValueError(f"block_id 不存在: {block_id}（{fname}）")
+    if "curated" not in block:
+        return False
+    del block["curated"]
+    _atomic_json_write(path, data)
+    return True
 
 
 def _atomic_json_write(path: Path, data: object) -> None:

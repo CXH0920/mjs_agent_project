@@ -14,8 +14,12 @@ from src.business.rag.refinement_service import (
     INDEX_FIELDS,
     RefinementUpdate,
     apply_curated,
+    clear_curated,
     generate_suggestions,
+    list_curated,
+    list_normal,
     list_pending,
+    scan_blocks,
 )
 
 
@@ -65,6 +69,10 @@ def _corpus(tmp_path: Path) -> Path:
          "effect": "效果3", "effect_detail": "",
          "curated": {"timing": ["出牌阶段"], "trigger_condition": [], "keywords": [], "related": [],
                      "method": "manual", "updated_at": "2026-08-14"}},
+        {"block_id": "card_4_已生成", "card_type": "装备牌", "card_amount": "1",
+         "timing": ["回合开始"], "trigger_condition": ["使用时"], "keywords": ["装备"],
+         "related": ["元规则:装备规则"],
+         "effect": "效果4", "effect_detail": ""},
     ])
     _write(root / "武将RAG语料.json", [
         {"block_id": "hero_1_overview", "hero": "张三", "block_type": "overview",
@@ -164,3 +172,55 @@ def test_merge_curated_preserves_refinement(tmp_path: Path) -> None:
     assert blocks[0]["timing"] == ["精化值"]
     assert blocks[0]["curated"]["timing"] == ["精化值"]
     assert "curated" not in blocks[1]
+
+
+def test_scan_blocks_classifies_three_ways(tmp_path: Path) -> None:
+    root = _corpus(tmp_path)
+    blocks = scan_blocks(root)
+    assert {b.block_id for b in blocks["pending"]} == {"card_1_测试牌", "card_2_半空牌", "hero_1_skill_1"}
+    assert {b.block_id for b in blocks["curated"]} == {"card_3_已精化"}
+    assert {b.block_id for b in blocks["normal"]} == {"card_4_已生成"}
+    # overview 块不出现在任何分类
+    assert all(b.block_id != "hero_1_overview" for bucket in blocks.values() for b in bucket)
+
+
+def test_list_curated_returns_curated_blocks(tmp_path: Path) -> None:
+    root = _corpus(tmp_path)
+    curated = list_curated(root)
+    assert len(curated) == 1
+    block = curated[0]
+    assert block.block_id == "card_3_已精化"
+    # fields 以 curated 内容为权威（顶层为空但 curated 有值）
+    assert block.fields["timing"] == ["出牌阶段"]
+    assert block.method == "manual"
+    assert block.updated_at == "2026-08-14"
+    assert block.corpus == "卡牌RAG语料.json"
+    assert block.kind == "card"
+    assert list_normal(root)[0].block_id == "card_4_已生成"
+
+
+def test_clear_curated_removes_field(tmp_path: Path) -> None:
+    root = _corpus(tmp_path)
+    assert clear_curated(root, "card_3_已精化", "卡牌RAG语料.json") is True
+    data = json.loads((root / "卡牌RAG语料.json").read_text(encoding="utf-8"))
+    block = next(b for b in data if b["block_id"] == "card_3_已精化")
+    assert "curated" not in block
+    # 再次调用：无 curated 返回 False
+    assert clear_curated(root, "card_3_已精化", "卡牌RAG语料.json") is False
+    with pytest.raises(ValueError):
+        clear_curated(root, "unknown_id", "卡牌RAG语料.json")
+
+
+def test_apply_curated_overwrites_existing_curated(tmp_path: Path) -> None:
+    root = _corpus(tmp_path)
+    update = RefinementUpdate(
+        timing=["回合开始时"], trigger_condition=["满足条件时"],
+        keywords=["装备"], related=[], method="llm", updated_at="2026-08-16",
+    )
+    assert apply_curated(root, {"card_3_已精化": update}, "卡牌RAG语料.json") == 1
+    data = json.loads((root / "卡牌RAG语料.json").read_text(encoding="utf-8"))
+    block = next(b for b in data if b["block_id"] == "card_3_已精化")
+    assert block["timing"] == ["回合开始时"]
+    assert block["curated"]["method"] == "llm"
+    assert block["curated"]["updated_at"] == "2026-08-16"
+    assert block["curated"]["timing"] == ["回合开始时"]

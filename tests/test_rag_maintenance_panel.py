@@ -278,5 +278,5 @@ def test_refine_button_shows_pending_count(tmp_path: Path) -> None:
     ])
     panel.refresh()
     assert panel._refine_button.text() == "索引精化 ✓"
-    assert not panel._refine_button.isEnabled()
+    assert panel._refine_button.isEnabled()  # 无待办仍可进入浏览/管理已精化块
     panel.close()

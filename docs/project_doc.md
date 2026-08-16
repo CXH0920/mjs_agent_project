@@ -1167,7 +1167,7 @@ _start_import()
 
 联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。审计由 `AuditIssue`（kind/message/severity/target_tab/target）结构化驱动，覆盖：未归类武将、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）、索引字段待精化（排第一位）；每条可点「跳转」定位到对应维护页签（`HeroClassificationPanel.focus_unclassified()` / `SpecialCardsPanel.focus_item()` / 直接打开索引精化）。
 
-语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 全部/卡牌/武将筛选）、清单区（搜索 + 4 列表格，行状态 ○/◉/✎）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/manual 着色）、底部操作条（跳过/保存当前/保存全部）；LLM 建议（DeepSeek）全部模式用 QTimer 队列逐块处理不冻结窗口，保存全部以已生成建议为 baseline，切回条目还原建议内容，重建不覆盖。入口按钮带待精化数量角标。
+语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 待精化/已精化/全部模式切换）、清单区（搜索与类型筛选同行、4 列表格固定列宽，行状态 ○/◉/✎/✓/○，说明列按范围显示缺失字段/来源·时间，批量行 LLM 建议（全部）/保存全部仅待精化模式可见）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/saved/manual 着色 + 来源/时间徽标 + 底部条目操作行：LLM 建议（当前）/跳过当前/取消精化/保存当前 PRIMARY）、底部仅「关闭」；LLM 建议（DeepSeek）全部模式用 QTimer 队列逐块处理不冻结窗口，保存全部以已生成建议为 baseline，切回条目还原建议内容，重建不覆盖。2026-08 扩展：已精化（curated）块可在「已精化/全部」范围浏览、再编辑（与磁盘基线一致时不写文件，有改动才写回，method 转 manual、updated_at 更新）与取消精化（删除 curated，字段有空缺退回待精化池）；入口按钮无待办时仍可用（`索引精化 ✓`）。
 
 #### 5.13.1 元规则维护页签（RuleDocPanel）
 

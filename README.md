@@ -566,7 +566,7 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 - **语料状态**：8 个语料任务状态表（最新/待重建/缺源）+ 结构化人工维护审计（未归类武将、未知武将引用、点数花色/162 张、装备 26 件、结算回填、索引字段待精化），审计条目支持一键跳转定位到对应维护页签 + 一键重建语料/索引（实时日志）；
 - **元规则维护**（`docs/元规则整理-完整版.md` 规则母本，只增不删、机器校验）：文档状态（`audit_rule_doc.py`）、数据段差异（`sync_rule_stats.py` 预览/确认/应用）、提案工作台（`propose_rule_changes.py` 生成、`apply_rule_proposal.py` 合入并自动审计+重建+写 changelog）、疑难登记（`docs/rule_doc_pending.json`，可一键转 FAQ 提案）；FAQ 回归评估用 `eval_rule_faqs.py`；
 - **数据源维护页签**：专属牌维护（`data/special_cards.json`）、卡牌点数维护（`data/card_points.json`，含 12 条判定规则与 xlsx 应急导入）、装备属性维护（`data/equip_attrs.json`）、武将分类维护（`data/hero_classification.json`）；
-- 保存任一数据源 → 自动标记「待重建」→ 一键 `maintain_rag.py` 重建语料与向量索引；「索引精化」对话框（LLM 建议 + 人工补全 timing/trigger_condition/keywords/related 四字段，批量建议事件循环不冻结窗口）可对卡牌/武将语料做 curated 字段精化，重建不覆盖。
+- 保存任一数据源 → 自动标记「待重建」→ 一键 `maintain_rag.py` 重建语料与向量索引；「索引精化」对话框（LLM 建议 + 人工补全 timing/trigger_condition/keywords/related 四字段，批量建议事件循环不冻结窗口）可对卡牌/武将语料做 curated 字段精化，重建不覆盖；对话框内可切换「待精化/已精化/全部」范围，已精化（curated）块支持浏览、再编辑（有改动才写回）与取消精化（退回待精化池），无待办时入口按钮仍可进入浏览。
 
 ### Configuration
 

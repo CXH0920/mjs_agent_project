@@ -10,6 +10,7 @@ UI 结构（重设计后）：顶部总览条（进度+筛选）→ 左清单区
 from __future__ import annotations
 
 import logging
+from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
@@ -40,12 +41,14 @@ from src.business.rag.refinement_service import (
     RefinementUpdate,
     apply_curated,
     build_generator,
-    list_pending,
+    clear_curated,
+    scan_blocks,
     suggest_one,
 )
 from src.ui.shared.style import (
     MUTED_TEXT,
     PRIMARY,
+    ROLE_DANGER,
     ROLE_GHOST,
     ROLE_PRIMARY,
     ROLE_SECONDARY,
@@ -80,13 +83,15 @@ _FIELD_HINTS = {
     "related": "每行一个值，如：卡牌:诸葛连弩、规则:时机-回合开始",
 }
 
-# 字段卡片状态：空 / LLM 建议 / 人工修改
-_FIELD_STATE_LABELS = {"empty": "待填写", "llm": "LLM 建议", "manual": "已修改"}
-_FIELD_STATE_TONES = {"empty": TONE_NEUTRAL, "llm": TONE_INFO, "manual": TONE_SUCCESS}
+# 字段卡片状态：空 / LLM 建议 / 已精化（磁盘已有内容）/ 人工修改
+_FIELD_STATE_LABELS = {"empty": "待填写", "llm": "LLM 建议", "saved": "已精化", "manual": "已修改"}
+_FIELD_STATE_TONES = {"empty": TONE_NEUTRAL, "llm": TONE_INFO, "saved": TONE_SUCCESS, "manual": TONE_SUCCESS}
 
 # 清单行状态
-_ROW_STATE_TEXT = {"pending": "○ 未处理", "suggested": "◉ 已建议", "modified": "✎ 已修改"}
-_ROW_STATE_COLOR = {"pending": MUTED_TEXT, "suggested": PRIMARY, "modified": SUCCESS}
+_ROW_STATE_TEXT = {"pending": "○ 未处理", "suggested": "◉ 已建议", "modified": "✎ 已修改",
+                   "refined": "✓ 已精化", "generated": "○ 已生成"}
+_ROW_STATE_COLOR = {"pending": MUTED_TEXT, "suggested": PRIMARY, "modified": SUCCESS,
+                    "refined": SUCCESS, "generated": MUTED_TEXT}
 
 
 class _SuggestWorker(QThread):
@@ -119,15 +124,28 @@ class IndexRefinementDialog(QDialog):
     def __init__(self, corpus_dir: Path = DEFAULT_CORPUS_DIR, parent=None):
         super().__init__(parent)
         self._corpus_dir = Path(corpus_dir)
-        self._pending: list[PendingBlock] = list_pending(self._corpus_dir)
+        blocks = scan_blocks(self._corpus_dir)
+        self._pending: list[PendingBlock] = blocks["pending"]  # 待精化（现状语义）
+        self._curated: list[PendingBlock] = blocks["curated"]  # 已精化（curated 块）
+        self._normal: list[PendingBlock] = blocks["normal"]    # 普通块（字段已满，未精化）
         self._total = len(self._pending)  # 初始待精化总数（进度条分母，不随保存/跳过变化）
-        self._llm_baseline: dict[str, dict[str, str]] = {}
+        self._scope = "pending"  # 范围筛选：pending / curated / all
+        # 磁盘基线：block_id -> {field: 文本}，保存是否 no-op 与字段状态判定的依据
+        self._saved_baseline: dict[str, dict[str, str]] = {}
         self._current: PendingBlock | None = None
         self._dirty = False  # 当前条目存在未保存的人工修改
-        self._row_states: dict[str, str] = {}  # block_id -> pending/suggested/modified
+        self._row_states: dict[str, str] = {}  # block_id -> pending/suggested/modified/refined/generated
+        for block in self._curated:
+            self._row_states[block.block_id] = "refined"
+        for block in self._normal:
+            self._row_states[block.block_id] = "generated"
+        for block in self._pending + self._curated + self._normal:
+            self._saved_baseline[block.block_id] = {
+                f: "\n".join(block.fields[f]) for f in INDEX_FIELDS}
         self._visible: list[PendingBlock] = []
         self._kind_filter = "全部"
         self._search_text = ""
+        self._llm_baseline: dict[str, dict[str, str]] = {}  # 本次会话 LLM 建议内容
         # 批量建议队列（事件循环化，避免同步循环冻结 UI）
         self._suggest_all_running = False
         self._suggest_queue: list[PendingBlock] = []
@@ -136,6 +154,8 @@ class IndexRefinementDialog(QDialog):
         self._suggest_done = 0
         self._suggest_generator = None
         self._suggest_worker: _SuggestWorker | None = None
+        # 关闭时仍在运行的 worker 转入此列表持有引用，防止 QThread 运行中析构导致进程崩溃
+        self._zombie_workers: list[_SuggestWorker] = []
         self._skipped_count = 0  # 跳过的条目数（进度文案区分 #34）
         self.setWindowTitle("索引精化")
         self.setObjectName("indexRefineDialog")
@@ -152,7 +172,7 @@ class IndexRefinementDialog(QDialog):
         layout.setSpacing(8)
         layout.addWidget(PageHeader(
             "索引精化",
-            f"共 {self._total} 个待精化块：补全时机/触发条件/关键词/关联，写回 curated 后重建不覆盖。",
+            "卡牌/武将语料索引字段精化工作台（curated 写回，重建不覆盖）。",
         ))
         layout.addWidget(self._build_overview_bar())
 
@@ -165,21 +185,10 @@ class IndexRefinementDialog(QDialog):
         splitter.setSizes([460, 700])
         layout.addWidget(splitter, 1)
 
+        # 底部仅保留关闭：单条操作归工作区操作行，批量操作归清单区批量行
         footer = QHBoxLayout()
         footer.setSpacing(8)
-        self._skip_button = QPushButton("跳过当前")
-        set_ui_role(self._skip_button, ROLE_SECONDARY)
-        self._skip_button.clicked.connect(self._skip_current)
-        footer.addWidget(self._skip_button)
         footer.addStretch(1)
-        self._save_button = QPushButton("保存当前")
-        set_ui_role(self._save_button, ROLE_PRIMARY)
-        self._save_button.clicked.connect(self._save_current)
-        footer.addWidget(self._save_button)
-        self._save_all_button = QPushButton("保存全部")
-        set_ui_role(self._save_all_button, ROLE_SECONDARY)
-        self._save_all_button.clicked.connect(self._save_all)
-        footer.addWidget(self._save_all_button)
         self._close_button = QPushButton("关闭")
         set_ui_role(self._close_button, ROLE_GHOST)
         self._close_button.clicked.connect(self.reject)
@@ -187,7 +196,7 @@ class IndexRefinementDialog(QDialog):
         layout.addLayout(footer)
 
     def _build_overview_bar(self) -> QWidget:
-        """A 顶部总览条：进度条 + 统计文字 + 类型筛选。"""
+        """A 顶部总览条：进度条 + 统计文字 + 模式切换（右对齐，类型筛选移入清单区）。"""
         bar = QFrame()
         bar.setObjectName("indexRefineOverview")
         bar_layout = QHBoxLayout(bar)
@@ -206,6 +215,44 @@ class IndexRefinementDialog(QDialog):
         self._overview_label.setObjectName("indexRefineOverviewText")
         bar_layout.addWidget(self._overview_label, 1)
 
+        # 模式切换：待精化 / 已精化 / 全部（overview_label 占 stretch，按钮组靠右）
+        self._scope_group = QButtonGroup(self)
+        self._scope_group.setExclusive(True)
+        for index, (scope, label) in enumerate((("pending", "待精化"), ("curated", "已精化"), ("all", "全部"))):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            set_ui_role(button, ROLE_GHOST)
+            button.clicked.connect(lambda _=False, s=scope: self._set_scope(s))
+            self._scope_group.addButton(button, index)
+            bar_layout.addWidget(button)
+        return bar
+
+    def _build_table_pane(self) -> QWidget:
+        """B 清单区：搜索+类型筛选同行，表格，批量操作行（仅待精化模式可见）。"""
+        pane = QFrame()
+        pane.setObjectName("indexRefineListPane")
+        pane_layout = QVBoxLayout(pane)
+        pane_layout.setContentsMargins(12, 12, 12, 12)
+        pane_layout.setSpacing(8)
+
+        # 搜索框与类型筛选同行：类型筛选贴近数据，与总览条的模式切换物理隔离
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
+        self._search_edit = QLineEdit()
+        self._search_edit.setObjectName("indexRefineSearch")
+        self._search_edit.setPlaceholderText("搜索名称 / block_id…")
+        self._search_edit.setClearButtonEnabled(True)
+        # 防抖：大清单下逐键全表重建会卡 UI，停顿 250ms 后才刷新
+        self._search_debounce = QTimer(self)
+        self._search_debounce.setSingleShot(True)
+        self._search_debounce.setInterval(250)
+        self._search_debounce.timeout.connect(self._apply_filter)
+        self._search_edit.textChanged.connect(lambda *_: self._search_debounce.start())
+        filter_row.addWidget(self._search_edit, 1)
+        kind_label = QLabel("类型:")
+        kind_label.setObjectName("indexRefineFilterLabel")
+        filter_row.addWidget(kind_label)
         self._kind_group = QButtonGroup(self)
         self._kind_group.setExclusive(True)
         for index, kind in enumerate(("全部", "卡牌", "武将")):
@@ -215,36 +262,27 @@ class IndexRefinementDialog(QDialog):
             set_ui_role(button, ROLE_GHOST)
             button.clicked.connect(lambda _=False, text=kind: self._set_kind_filter(text))
             self._kind_group.addButton(button, index)
-            bar_layout.addWidget(button)
-        return bar
-
-    def _build_table_pane(self) -> QWidget:
-        """B 清单区：搜索框 + 状态表格 + LLM 建议按钮 + 空状态。"""
-        pane = QFrame()
-        pane.setObjectName("indexRefineListPane")
-        pane_layout = QVBoxLayout(pane)
-        pane_layout.setContentsMargins(12, 12, 12, 12)
-        pane_layout.setSpacing(8)
-
-        self._search_edit = QLineEdit()
-        self._search_edit.setObjectName("indexRefineSearch")
-        self._search_edit.setPlaceholderText("搜索名称 / block_id…")
-        self._search_edit.setClearButtonEnabled(True)
-        self._search_edit.textChanged.connect(self._apply_filter)
-        pane_layout.addWidget(self._search_edit)
+            filter_row.addWidget(button)
+        pane_layout.addLayout(filter_row)
 
         self._table = QTableWidget(0, 4)
         self._table.setObjectName("indexRefineTable")
-        self._table.setHorizontalHeaderLabels(["语料", "名称", "缺失字段", "状态"])
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.setHorizontalHeaderLabels(["语料", "名称", "说明", "状态"])
+        # 固定列宽而非 ResizeToContents：大清单（全部范围 470+ 行）下逐行 sizeHint 计算会卡 UI
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(0, 60)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(2, 210)
+        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(3, 130)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
+        # 列已固定+名称列 Stretch，内容完整显示，横向滚动条纯属多余（#61）
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._table.currentCellChanged.connect(lambda *_: self._on_table_selected())
         pane_layout.addWidget(self._table, 1)
 
@@ -255,18 +293,21 @@ class IndexRefinementDialog(QDialog):
         self._empty_state.setVisible(False)
         pane_layout.addWidget(self._empty_state, 1)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
-        self._suggest_one_button = QPushButton("LLM 建议（当前）")
-        set_ui_role(self._suggest_one_button, ROLE_SECONDARY)
-        self._suggest_one_button.clicked.connect(self._suggest_current)
-        actions.addWidget(self._suggest_one_button)
+        # 批量操作行：仅待精化模式可见（整行隐藏而非禁用，避免灰按钮堆积）
+        self._batch_bar = QWidget()
+        batch_layout = QHBoxLayout(self._batch_bar)
+        batch_layout.setContentsMargins(0, 0, 0, 0)
+        batch_layout.setSpacing(8)
         self._suggest_all_button = QPushButton("LLM 建议（全部）")
         set_ui_role(self._suggest_all_button, ROLE_SECONDARY)
         self._suggest_all_button.clicked.connect(self._suggest_all)
-        actions.addWidget(self._suggest_all_button)
-        actions.addStretch(1)
-        pane_layout.addLayout(actions)
+        batch_layout.addWidget(self._suggest_all_button)
+        self._save_all_button = QPushButton("保存全部")
+        set_ui_role(self._save_all_button, ROLE_SECONDARY)
+        self._save_all_button.clicked.connect(self._save_all)
+        batch_layout.addWidget(self._save_all_button)
+        batch_layout.addStretch(1)
+        pane_layout.addWidget(self._batch_bar)
         return pane
 
     def _build_editor_pane(self) -> QWidget:
@@ -284,6 +325,9 @@ class IndexRefinementDialog(QDialog):
         head.addWidget(self._editor_title)
         self._kind_badge = StatusBadge("", TONE_INFO)
         head.addWidget(self._kind_badge)
+        self._method_badge = StatusBadge("", TONE_SUCCESS)
+        self._method_badge.setVisible(False)
+        head.addWidget(self._method_badge)
         self._missing_badge = StatusBadge("", TONE_WARNING)
         self._missing_badge.setVisible(False)
         head.addWidget(self._missing_badge)
@@ -302,6 +346,29 @@ class IndexRefinementDialog(QDialog):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([300, 400])
         pane_layout.addWidget(splitter, 1)
+
+        # 条目操作行：对「当前条目」的单条操作，横跨左右分栏底部；
+        # 保存当前为全对话框唯一 PRIMARY（最右，编辑完手指自然落在保存上）
+        item_actions = QHBoxLayout()
+        item_actions.setSpacing(8)
+        self._suggest_one_button = QPushButton("LLM 建议（当前）")
+        set_ui_role(self._suggest_one_button, ROLE_SECONDARY)
+        self._suggest_one_button.clicked.connect(self._suggest_current)
+        item_actions.addWidget(self._suggest_one_button)
+        item_actions.addStretch(1)
+        self._skip_button = QPushButton("跳过当前")
+        set_ui_role(self._skip_button, ROLE_SECONDARY)
+        self._skip_button.clicked.connect(self._skip_current)
+        item_actions.addWidget(self._skip_button)
+        self._clear_button = QPushButton("取消精化")
+        set_ui_role(self._clear_button, ROLE_DANGER)
+        self._clear_button.clicked.connect(self._clear_curated)
+        item_actions.addWidget(self._clear_button)
+        self._save_button = QPushButton("保存当前")
+        set_ui_role(self._save_button, ROLE_PRIMARY)
+        self._save_button.clicked.connect(self._save_current)
+        item_actions.addWidget(self._save_button)
+        pane_layout.addLayout(item_actions)
         return pane
 
     def _build_source_pane(self) -> QWidget:
@@ -368,6 +435,23 @@ class IndexRefinementDialog(QDialog):
     # ---------------------------------------------------------------
     # 清单与选中
     # ---------------------------------------------------------------
+    def _set_scope(self, scope: str) -> None:
+        """切换范围筛选（待精化 / 已精化 / 全部），只过滤内存快照不重读文件。"""
+        if scope == self._scope:
+            return
+        self._scope = scope
+        # 先清空选择：重填后 selectRow(0) 才能触发 currentCellChanged 加载新条目
+        # （行索引未变化时信号不会发出，_current 会停留在旧范围的条目上）
+        self._table.setCurrentCell(-1, -1)
+        self._refresh_table()
+
+    def _scope_blocks(self) -> list[PendingBlock]:
+        if self._scope == "curated":
+            return self._curated
+        if self._scope == "all":
+            return self._pending + self._curated + self._normal
+        return self._pending
+
     def _matches(self, block: PendingBlock) -> bool:
         if self._kind_filter == "卡牌" and block.kind != "card":
             return False
@@ -385,21 +469,30 @@ class IndexRefinementDialog(QDialog):
         self._kind_filter = kind
         self._refresh_table()
 
+    def _detail_text(self, block: PendingBlock) -> str:
+        """清单第 3 列（说明）：已精化块显示来源与时间，待精化块显示缺失字段，其余为 —。"""
+        if block.method:
+            label = "LLM" if block.method == "llm" else "人工"
+            return f"{label} · {block.updated_at}" if block.updated_at else label
+        if block.missing:
+            return "、".join(_FIELD_LABELS[f] for f in block.missing)
+        return "—"
+
     def _refresh_table(self) -> None:
         selected_id = self._current.block_id if self._current is not None else None
-        self._visible = [block for block in self._pending if self._matches(block)]
+        self._visible = [block for block in self._scope_blocks() if self._matches(block)]
         self._table.setRowCount(len(self._visible))
         for row, block in enumerate(self._visible):
             corpus_item = QTableWidgetItem("卡牌" if block.kind == "card" else "武将")
             name_item = QTableWidgetItem(block.name)
             name_item.setToolTip(block.block_id)
-            missing_item = QTableWidgetItem("、".join(_FIELD_LABELS[f] for f in block.missing))
+            detail_item = QTableWidgetItem(self._detail_text(block))
             state = self._row_states.get(block.block_id, "pending")
             state_item = QTableWidgetItem(_ROW_STATE_TEXT[state])
             state_item.setForeground(QColor(_ROW_STATE_COLOR[state]))
             self._table.setItem(row, 0, corpus_item)
             self._table.setItem(row, 1, name_item)
-            self._table.setItem(row, 2, missing_item)
+            self._table.setItem(row, 2, detail_item)
             self._table.setItem(row, 3, state_item)
         if self._visible:
             row = next((i for i, block in enumerate(self._visible)
@@ -441,6 +534,12 @@ class IndexRefinementDialog(QDialog):
         self._editor_title.setText(block.name)
         self._kind_badge.setText("卡牌" if block.kind == "card" else "武将")
         self._kind_badge.set_tone(TONE_INFO)
+        if block.method:
+            label = "LLM" if block.method == "llm" else "人工"
+            self._method_badge.setText(f"{label}精化" + (f" · {block.updated_at}" if block.updated_at else ""))
+            self._method_badge.setVisible(True)
+        else:
+            self._method_badge.setVisible(False)
         missing_text = "、".join(_FIELD_LABELS[f] for f in block.missing)
         self._missing_badge.setText(f"缺：{missing_text}" if missing_text else "")
         self._missing_badge.setVisible(bool(missing_text))
@@ -454,11 +553,13 @@ class IndexRefinementDialog(QDialog):
             editor.setPlainText(baseline.get(field) or "\n".join(block.fields[field]))
             editor.blockSignals(False)
         self._refresh_field_states()
+        self._update_overview()
 
     def _clear_editor(self) -> None:
         self._current = None
         self._editor_title.setText("未选择条目")
         self._kind_badge.setText("")
+        self._method_badge.setVisible(False)
         self._missing_badge.setText("")
         self._missing_badge.setVisible(False)
         self._block_id_label.setText("")
@@ -469,6 +570,7 @@ class IndexRefinementDialog(QDialog):
             editor.clear()
             editor.blockSignals(False)
         self._refresh_field_states()
+        self._update_overview()
 
     # ---------------------------------------------------------------
     # 字段状态 / 脏标记
@@ -479,9 +581,12 @@ class IndexRefinementDialog(QDialog):
             return "empty"
         if self._current is None:
             return "empty"
-        baseline = self._llm_baseline.get(self._current.block_id, {})
-        if field in baseline and text == baseline[field]:
+        llm = self._llm_baseline.get(self._current.block_id, {}).get(field)
+        saved = self._saved_baseline.get(self._current.block_id, {}).get(field)
+        if llm is not None and text == llm and text != saved:
             return "llm"
+        if saved is not None and text == saved:
+            return "saved"
         return "manual"
 
     def _refresh_field_states(self) -> None:
@@ -503,8 +608,13 @@ class IndexRefinementDialog(QDialog):
         if self._current is None:
             return
         self._refresh_field_states()
-        # 未建议过的块清空后保持 pending，不被误标 suggested（#33）
-        state = "modified" if self._dirty else self._row_states.get(self._current.block_id, "pending")
+        # 行状态跟随字段状态：modified（有改动）/ suggested（本次建议）/ refined|generated（还原磁盘内容）
+        if self._dirty:
+            state = "modified"
+        elif self._llm_baseline.get(self._current.block_id):
+            state = "suggested"
+        else:
+            state = "refined" if self._current.method else "generated" if not self._current.missing else "pending"
         if self._row_states.get(self._current.block_id) != state:
             self._row_states[self._current.block_id] = state
             self._refresh_row_state(self._current)
@@ -519,21 +629,35 @@ class IndexRefinementDialog(QDialog):
         return answer == QMessageBox.StandardButton.Yes
 
     def _update_overview(self) -> None:
-        done = self._total - len(self._pending)
-        self._progress.setRange(0, max(self._total, 1))
-        self._progress.setValue(done)
-        set_tone(self._progress, TONE_SUCCESS if not self._pending else TONE_NEUTRAL)
-        if self._pending:
-            text = f"待精化 {len(self._pending)} 块 · 已处理 {done} 块"
-            if self._skipped_count:
-                text += f"（跳过 {self._skipped_count} 块）"
-            self._overview_label.setText(text)
+        if self._scope == "pending":
+            done = self._total - len(self._pending)
+            self._progress.setVisible(True)
+            self._progress.setRange(0, max(self._total, 1))
+            self._progress.setValue(done)
+            set_tone(self._progress, TONE_SUCCESS if not self._pending else TONE_NEUTRAL)
+            if self._pending:
+                text = f"待精化 {len(self._pending)} 块 · 已处理 {done} 块"
+                if self._skipped_count:
+                    text += f"（跳过 {self._skipped_count} 块）"
+            else:
+                text = "全部完成，已无待精化条目"
+        elif self._scope == "curated":
+            self._progress.setVisible(False)
+            manual = sum(1 for b in self._curated if b.method == "manual")
+            text = f"已精化 {len(self._curated)} 块（人工 {manual} · LLM {len(self._curated) - manual}）"
         else:
-            self._overview_label.setText("全部完成，已无待精化条目")
+            self._progress.setVisible(False)
+            text = (f"共 {len(self._pending) + len(self._curated) + len(self._normal)} 块："
+                    f"待精化 {len(self._pending)} · 已精化 {len(self._curated)} · 其他 {len(self._normal)}")
+        self._overview_label.setText(text)
         self._table.setVisible(bool(self._visible))
-        if not self._pending:
-            self._empty_state.title_label.setText("没有待精化条目")
-            self._empty_state.set_description("卡牌/武将语料的索引字段已全部补全，重建语料不会被覆盖。")
+        if not self._scope_blocks():
+            if self._scope == "curated":
+                self._empty_state.title_label.setText("还没有已精化条目")
+                self._empty_state.set_description("去「待精化」处理并保存后，精化成果会出现在这里。")
+            else:
+                self._empty_state.title_label.setText("没有待精化条目")
+                self._empty_state.set_description("卡牌/武将语料的索引字段已全部补全，重建语料不会被覆盖。")
             self._empty_state.setVisible(True)
         elif not self._visible:
             # 筛选/搜索无匹配：显示空态而非界面空白（#35）
@@ -542,9 +666,22 @@ class IndexRefinementDialog(QDialog):
             self._empty_state.setVisible(True)
         else:
             self._empty_state.setVisible(False)
-        self._suggest_one_button.setEnabled(bool(self._pending) and not self._suggest_all_running)
-        self._suggest_all_button.setEnabled(bool(self._pending) and not self._suggest_all_running)
-        self._save_all_button.setEnabled(bool(self._pending))
+        # 按钮按模式显隐（隐藏而非禁用，避免灰按钮堆积）：
+        # - 批量行（LLM 全部/保存全部）仅待精化模式
+        # - 跳过仅待精化模式；取消精化仅已精化/全部模式（且当前块有 curated）
+        # - 保存当前/LLM 建议（当前）所有模式可用，未选中条目时禁用
+        is_pending = self._scope == "pending"
+        self._batch_bar.setVisible(is_pending)
+        self._skip_button.setVisible(is_pending)
+        self._clear_button.setVisible(not is_pending)
+        has_current = self._current is not None
+        self._suggest_one_button.setEnabled(has_current and not self._suggest_all_running)
+        self._skip_button.setEnabled(is_pending and has_current)
+        self._clear_button.setEnabled(has_current and bool(self._current.method))
+        self._save_button.setEnabled(has_current)
+        self._suggest_all_button.setEnabled(
+            is_pending and bool(self._pending) and not self._suggest_all_running)
+        self._save_all_button.setEnabled(is_pending and bool(self._pending))
 
     # ---------------------------------------------------------------
     # LLM 建议
@@ -591,7 +728,7 @@ class IndexRefinementDialog(QDialog):
 
         测试环境无事件循环（跨线程信号不投递），仍由 _suggest_queue_step 同步驱动。
         """
-        if self._suggest_all_running or not self._pending:
+        if self._suggest_all_running or not self._pending or self._scope != "pending":
             return
         if self._dirty and self._current is not None:
             if not self._confirm_discard():
@@ -696,21 +833,33 @@ class IndexRefinementDialog(QDialog):
             logger.info("批量建议完成：%d 块全部成功", self._suggest_total)
 
     # ---------------------------------------------------------------
-    # 保存 / 跳过
+    # 保存 / 跳过 / 取消精化
     # ---------------------------------------------------------------
     def _collect_update(self) -> RefinementUpdate | None:
+        """收集当前编辑器内容为 RefinementUpdate；与磁盘基线一致（无改动）返回 None。
+
+        method 判定沿用现状：与本次 LLM 建议完全一致 → llm，否则 manual。
+        """
         if self._current is None:
             return None
-        baseline = self._llm_baseline.get(self._current.block_id)
-        modified = False
+        saved = self._saved_baseline.get(self._current.block_id, {})
+        llm = self._llm_baseline.get(self._current.block_id)
         values: dict[str, list[str]] = {}
+        texts: dict[str, str] = {}
+        changed = False
         for field in INDEX_FIELDS:
             text = self._field_editors[field].toPlainText().strip()
-            items = [line.strip() for line in text.splitlines() if line.strip()]
-            values[field] = items
-            if baseline is not None and text != baseline.get(field, ""):
-                modified = True
-        method = "manual" if (modified or baseline is None) else "llm"
+            texts[field] = text
+            values[field] = [line.strip() for line in text.splitlines() if line.strip()]
+            if text != saved.get(field, ""):
+                changed = True
+        if not changed:
+            return None
+        if llm is not None:
+            modified = any(texts[f] != llm.get(f, "") for f in INDEX_FIELDS)
+            method = "manual" if modified else "llm"
+        else:
+            method = "manual"
         return RefinementUpdate(
             timing=values["timing"],
             trigger_condition=values["trigger_condition"],
@@ -719,11 +868,29 @@ class IndexRefinementDialog(QDialog):
             method=method,
         )
 
+    def _sync_saved(self, block: PendingBlock, update: RefinementUpdate) -> None:
+        """保存成功后的内存同步：更新磁盘基线、行状态、列表归属（pending/normal → curated）。"""
+        baseline = {f: "\n".join(getattr(update, f)) for f in INDEX_FIELDS}
+        self._saved_baseline[block.block_id] = baseline
+        self._llm_baseline.pop(block.block_id, None)
+        self._row_states[block.block_id] = "refined"
+        block.fields = {f: list(getattr(update, f)) for f in INDEX_FIELDS}
+        block.missing = [f for f in INDEX_FIELDS if not block.fields[f]]
+        block.method = update.method
+        block.updated_at = update.updated_at or date.today().isoformat()
+        if any(b.block_id == block.block_id for b in self._pending):
+            self._pending = [b for b in self._pending if b.block_id != block.block_id]
+            self._curated.append(block)
+        elif any(b.block_id == block.block_id for b in self._normal):
+            self._normal = [b for b in self._normal if b.block_id != block.block_id]
+            self._curated.append(block)
+
     def _save_current(self) -> None:
         if self._current is None:
             return
         update = self._collect_update()
         if update is None:
+            show_toast(self, "无修改，未保存")
             return
         block = self._current
         try:
@@ -733,18 +900,16 @@ class IndexRefinementDialog(QDialog):
             QMessageBox.critical(self, "保存失败", str(error))
             return
         logger.info("保存精化 %s（%s）", block.name, update.method)
-        self._pending = [item for item in self._pending if item.block_id != block.block_id]
-        self._llm_baseline.pop(block.block_id, None)
-        self._row_states.pop(block.block_id, None)
+        self._sync_saved(block, update)
         self._dirty = False
         self._current = None
         self._refresh_table()
         show_toast(self, f"已保存「{block.name}」（{update.method}）")
 
     def _save_all(self) -> None:
-        """保存全部：当前选中块用编辑器内容，其余块用已生成的 LLM 建议（baseline）；
+        """保存全部（仅待精化范围）：当前选中块用编辑器内容，其余块用已生成的 LLM 建议（baseline）；
         无任何内容的块跳过并保持待精化。"""
-        if not self._pending:
+        if not self._pending or self._scope != "pending":
             return
         answer = QMessageBox.question(
             self, "保存全部",
@@ -785,9 +950,8 @@ class IndexRefinementDialog(QDialog):
                 QMessageBox.critical(self, "保存失败", f"{fname}：{error}")
                 continue
             for block_id in updates:
-                self._pending = [item for item in self._pending if item.block_id != block_id]
-                self._llm_baseline.pop(block_id, None)
-                self._row_states.pop(block_id, None)
+                block = next(b for b in self._pending if b.block_id == block_id)
+                self._sync_saved(block, updates[block_id])
                 saved += 1
         self._dirty = False
         self._current = None
@@ -819,6 +983,50 @@ class IndexRefinementDialog(QDialog):
         self._current = None
         self._refresh_table()
 
+    def _clear_curated(self) -> None:
+        """取消精化：删除当前块的 curated 字段，按字段空缺退回待精化池或转为普通块。"""
+        if self._current is None or not self._current.method:
+            return
+        block = self._current
+        answer = QMessageBox.question(
+            self, "取消精化",
+            f"将删除「{block.name}」的 curated 字段，"
+            "该块将退回待精化池（字段有空缺）或转为普通块，是否继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            clear_curated(self._corpus_dir, block.block_id, block.corpus)
+        except (OSError, ValueError) as error:
+            logger.error("取消精化失败 %s: %s", block.block_id, error)
+            QMessageBox.critical(self, "取消精化失败", str(error))
+            return
+        logger.info("取消精化 %s（%s）", block.name, block.block_id)
+        self._curated = [b for b in self._curated if b.block_id != block.block_id]
+        self._llm_baseline.pop(block.block_id, None)
+        self._row_states.pop(block.block_id, None)
+        # 磁盘顶层字段未变：保留 saved_baseline，切回该块时字段状态仍显示「已精化」
+        block.method = ""
+        block.updated_at = ""
+        if block.missing:
+            self._pending.append(block)
+            self._row_states[block.block_id] = "pending"
+        else:
+            self._normal.append(block)
+            self._row_states[block.block_id] = "generated"
+        self._dirty = False
+        self._current = None
+        self._refresh_table()
+        show_toast(self, f"已取消精化「{block.name}」")
+
+    def _on_zombie_finished(self) -> None:
+        """僵尸 worker 线程结束后移出持有列表（释放引用链，允许对象回收）。"""
+        worker = self.sender()
+        if worker in self._zombie_workers:
+            self._zombie_workers.remove(worker)
+
     def reject(self) -> None:
         # 建议进行中（单块或批量）：中止 worker 与剩余队列，释放 generator 后关闭（#22）
         worker = self._suggest_worker
@@ -832,6 +1040,13 @@ class IndexRefinementDialog(QDialog):
                         close()
                     except Exception:  # noqa: BLE001
                         pass
+            # 等待线程短时收尾；仍在运行（如 HTTP 挂起）则转入僵尸列表持有引用，
+            # 防止 QThread 在 run 未结束时析构导致整个应用崩溃（#60）
+            worker.wait(500)
+            if worker.isRunning():
+                self._zombie_workers.append(worker)
+                worker.finished.connect(worker.deleteLater)
+                worker.finished.connect(self._on_zombie_finished)
         if self._suggest_all_running:
             self._suggest_queue = []
             self._suggest_all_running = False

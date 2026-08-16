@@ -300,11 +300,10 @@ class RagMaintenancePanel(QWidget):
 
     def refresh(self) -> None:
         rows = task_states(self._root)
-        # 索引精化入口：按钮带待精化数量角标；无待办时禁用（结果同时供审计复用，避免重复读语料）
+        # 索引精化入口：按钮带待精化数量角标；无待办时文案带 ✓ 但仍可进入浏览/管理已精化块
         pending = list_pending(self._root / "data" / "rag_corpus")
         pending_count = len(pending)
         self._refine_button.setText(f"索引精化（{pending_count}）" if pending_count else "索引精化 ✓")
-        self._refine_button.setEnabled(pending_count > 0)
         stale = [row["name"] for row in rows if row["status"] == "待重建"]
         self._table.setRowCount(len(rows))
         for index, row in enumerate(rows):

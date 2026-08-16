@@ -1329,6 +1329,10 @@ QLabel#indexRefineOverviewText {{
     color: {TEXT_PRIMARY};
     font-size: {FONT_SIZE_SM}px;
 }}
+QLabel#indexRefineFilterLabel {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
 QFrame#indexRefineListPane, QFrame#indexRefineWorkPane {{
     background-color: {SURFACE};
     border: 1px solid {BORDER};
@@ -1376,6 +1380,10 @@ QFrame#indexRefineSourceCard, QFrame#indexRefineFieldCard {{
 QFrame#indexRefineFieldCard[fieldState="llm"] {{
     border-left: 3px solid {PRIMARY};
     background-color: {PRIMARY_SOFT};
+}}
+QFrame#indexRefineFieldCard[fieldState="saved"] {{
+    border-left: 3px solid {BORDER_STRONG};
+    background-color: {SUBTLE_SURFACE};
 }}
 QFrame#indexRefineFieldCard[fieldState="manual"] {{
     border-left: 3px solid {SUCCESS};
