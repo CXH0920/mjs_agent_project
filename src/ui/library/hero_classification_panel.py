@@ -141,7 +141,8 @@ class HeroClassificationPanel(QWidget):
         self._tabs.setObjectName("heroClassificationSubTabs")
         self._tabs.addTab(self._build_category_tab(), "分类管理")
         self._tabs.addTab(self._build_chain_tab(), "克制链")
-        self._tabs.addTab(self._build_hero_tab(), "武将归类")
+        self._hero_tab = self._build_hero_tab()
+        self._tabs.addTab(self._hero_tab, "武将归类")
         layout.addWidget(self._tabs, 1)
 
     def _build_category_tab(self) -> QWidget:
@@ -581,6 +582,13 @@ class HeroClassificationPanel(QWidget):
             return
         self._refresh_heroes()
         self._mark_dirty()
+
+    def focus_unclassified(self) -> None:
+        """切到「武将归类」子页签并定位第一个未归类武将（供知识库维护审计跳转）。"""
+        self._tabs.setCurrentIndex(self._tabs.indexOf(self._hero_tab))
+        if not self._repo.list_unclassified():
+            return
+        self._goto_next_unclassified()
 
     def _goto_next_unclassified(self) -> None:
         unclassified = self._repo.list_unclassified()

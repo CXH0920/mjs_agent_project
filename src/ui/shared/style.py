@@ -1271,6 +1271,11 @@ QLabel#specialCardFieldSingle {{
 QWidget#ragMaintenancePanel {{
     background-color: transparent;
 }}
+QFrame#actionBarDivider {{
+    border: none;
+    border-left: 1px solid {BORDER};
+    margin: 2px 4px;
+}}
 QFrame#ragTableSurface, QFrame#ragLogSurface {{
     background-color: {SURFACE};
     border: 1px solid {BORDER};
@@ -1309,4 +1314,86 @@ QPlainTextEdit#ragMaintenanceLog {{
     font-family: Consolas, "Courier New", monospace;
     font-size: {FONT_SIZE_SM}px;
     color: {TEXT_PRIMARY};
+}}
+
+/* === 索引精化（对话框） === */
+QWidget#indexRefineDialog {{
+    background-color: {CANVAS};
+}}
+QFrame#indexRefineOverview {{
+    background-color: {SUBTLE_SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QLabel#indexRefineOverviewText {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QFrame#indexRefineListPane, QFrame#indexRefineWorkPane {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QTableWidget#indexRefineTable {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+    gridline-color: {BORDER};
+}}
+QTableWidget#indexRefineTable::item {{
+    padding: 6px 8px;
+    border: none;
+}}
+QTableWidget#indexRefineTable::item:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+}}
+QTableWidget#indexRefineTable::item:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+}}
+QTableWidget#indexRefineTable QHeaderView::section {{
+    background-color: {SUBTLE_SURFACE};
+    color: {TEXT_PRIMARY};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    padding: 6px 8px;
+    font-weight: bold;
+}}
+QLabel#indexRefineItemTitle {{
+    font-size: {FONT_SIZE_LG}px;
+    font-weight: bold;
+    color: {TEXT_PRIMARY};
+}}
+QLabel#indexRefineItemMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QFrame#indexRefineSourceCard, QFrame#indexRefineFieldCard {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QFrame#indexRefineFieldCard[fieldState="llm"] {{
+    border-left: 3px solid {PRIMARY};
+    background-color: {PRIMARY_SOFT};
+}}
+QFrame#indexRefineFieldCard[fieldState="manual"] {{
+    border-left: 3px solid {SUCCESS};
+    background-color: {SUCCESS_SOFT};
+}}
+QFrame#indexRefineFieldCard[fieldState="empty"] {{
+    border-left: 3px solid {BORDER};
+}}
+QLabel#indexRefineFieldName {{
+    font-weight: bold;
+    color: {TEXT_PRIMARY};
+}}
+QPlainTextEdit#indexRefineSource, QPlainTextEdit#indexRefineFieldEditor {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM}px;
+    padding: 6px;
+}}
+QPlainTextEdit#indexRefineSource {{
+    font-size: {FONT_SIZE_SM}px;
 }}"""

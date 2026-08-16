@@ -36,9 +36,24 @@
 - 执行期间按钮禁用，日志实时滚动；结束后自动刷新任务状态。
 - 全部过程不访问 `G:\py_savepoint\mjs_rag_project`（嵌入模型缓存 `data/rag_models/` 为本地副本）。
 
-## 五、索引精化（2026-08 新增）
+## 五、索引精化（2026-08 新增，UI 重设计 2026-08 实施）
 
-- 入口：知识库维护页 → 「索引精化」按钮，打开 IndexRefinementDialog。
-- 维护对象：卡牌RAG语料.json（20 块）与 武将RAG语料.json（123 技能块）中无 curated 且索引字段为空的块。
-- 字段：timing / trigger_condition / keywords / related / target；支持 LLM 建议（DeepSeek）与人工填写。
-- 写回：Apply_curated 更新块顶层索引字段并写入 curated（method=llm/manual、updated_at），build 脚本重跑时通过 scripts/rag_curated.py 保留精化值。
+- 入口：知识库维护页 →「语料状态」操作栏「索引精化」按钮（文案带待精化数量角标，如「索引精化（5）」；无待精化时显示「索引精化 ✓」并禁用）；审计横幅同步展示「索引字段待精化 N 块 [去精化]」条目（kind=pending_refinement，排第一位，点击直接打开对话框）。
+- 维护对象：卡牌RAG语料.json 与 武将RAG语料.json 中无 curated 且索引字段为空的块。
+- 字段：timing / trigger_condition / keywords / related；支持 LLM 建议（DeepSeek）与人工填写。
+- 写回：apply_curated 更新块顶层索引字段并写入 curated（method=llm/manual、updated_at），build 脚本重跑时通过 scripts/rag_curated.py 保留精化值。
+
+### 5.1 对话框布局（1160×720，详见 docs/design/index_refinement_ui_redesign.md）
+
+- A 顶部总览条：进度条（已完成 x/总数，全部完成变绿）+ 统计文字 + 全部/卡牌/武将类型筛选。
+- B 清单区：搜索框（名称/block_id 子串过滤）+ 4 列表格（语料/名称/缺失字段/状态，block_id 在名称列 tooltip）+ 空状态（EmptyState）+ LLM 建议（当前/全部）按钮。
+- C 工作区：条目头（名称+类型徽标+缺字段徽标+block_id）→ 横向分栏（左原文卡片**占满高度持续展示**、不可折叠；右 4 个字段状态卡片纵向均分，fieldState=empty/llm/manual 左边框 BORDER/PRIMARY/SUCCESS 着色 + 徽标；字段提示词在编辑器 placeholder，不占常驻行）。
+- D 底部操作条：跳过当前（带确认）/ 保存当前 / 保存全部（带确认）/ 关闭。
+
+### 5.2 交互规则
+
+- 清单行状态三态：○ 未处理 / ◉ 已建议 / ✎ 已修改（人工改动优先展示，改回 LLM 内容恢复已建议）。
+- LLM 建议（全部）事件循环化（QTimer 队列逐块处理），窗口不冻结；结束汇总成功/失败块数。
+- 未保存修改保护：切换条目/关闭/批量建议前弹确认，拒绝则保持原条目。
+- 保存全部：当前选中块用编辑器内容，其余块用已生成的 LLM 建议（baseline）；无任何内容的块跳过并保持待精化。
+- 切回已建议条目时还原 LLM 建议内容（存于 _llm_baseline），不因切换丢失。

@@ -393,6 +393,19 @@ class SpecialCardsPanel(QWidget):
         self._detail_layout.addWidget(surface)
         self._detail_layout.addStretch(1)
 
+    def focus_item(self, category: str, name: str) -> None:
+        """切分类筛选并选中指定条目（供知识库维护审计跳转）。"""
+        index = self._category_filter.findData(category)
+        if index >= 0:
+            self._category_filter.setCurrentIndex(index)
+        self._search_input.clear()
+        self._refresh_list()
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == (category, name):
+                self._list.setCurrentItem(item)
+                return
+
     def _open_add(self) -> None:
         dialog = SpecialCardEditDialog(self._hero_names, None, self)
         while dialog.exec() == QDialog.DialogCode.Accepted:

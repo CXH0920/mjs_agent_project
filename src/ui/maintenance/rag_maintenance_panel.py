@@ -12,15 +12,19 @@ from __future__ import annotations
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Signal
+from PySide6.QtCore import QProcess, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QHeaderView,
+    QLabel,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -32,15 +36,26 @@ from src.data.hero_classification_repository import HeroClassificationRepository
 from src.data.special_cards_repository import SpecialCardRepository
 from src.data.equip_attrs_repository import EquipAttrsRepository
 from src.data.card_points_repository import CardPointsRepository
+from src.business.rag.refinement_service import list_pending
 from src.ui.library.hero_classification_panel import HeroClassificationPanel
 from src.ui.library.special_cards_panel import SpecialCardsPanel
 from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
 from src.ui.maintenance.card_points_panel import CardPointsPanel
 
 from src.config.env import PROJECT_ROOT
-from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_SUCCESS, TONE_WARNING
-from src.ui.shared.widgets import NoticeBanner, PageActionBar
+from src.ui.shared.style import (
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    SPACE_MD,
+    SPACE_SM,
+    TONE_SUCCESS,
+    TONE_WARNING,
+    set_tone,
+    set_ui_role,
+)
+from src.ui.shared.widgets import PageActionBar
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
+from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 
 # 语料任务：名称 -> (源文件, 输出语料文件)
 TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
@@ -57,6 +72,27 @@ TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
 
 CORPUS_DIR = "data/rag_corpus"
 PYTHON = sys.executable
+
+
+@dataclass(frozen=True)
+class AuditIssue:
+    """人工维护提示条目（结构化，供 UI 渲染跳转按钮）。
+
+    - kind: 问题类型标识（unclassified_hero / unknown_hero / missing_settlement / bad_card_points 等）；
+    - target_tab: 跳转目标一级页签名（空表示无跳转）；
+    - target: 定位数据，按 kind 解释（未归类武将名列表 / 专属牌 (category, name) / 牌名列表）。
+    """
+
+    kind: str
+    message: str
+    severity: str = "warning"
+    target_tab: str = ""
+    target: object = None
+
+
+def format_audit_issues(issues: list[AuditIssue]) -> list[str]:
+    """结构化审计条目 → 纯文本列表（兼容旧消费方/测试）。"""
+    return [issue.message for issue in issues]
 
 
 def task_states(root: Path) -> list[dict]:
@@ -95,9 +131,9 @@ def task_states(root: Path) -> list[dict]:
     return rows
 
 
-def audit_summary(root: Path) -> list[str]:
-    """返回人工维护提示清单（空列表表示无问题）。"""
-    issues: list[str] = []
+def audit_summary(root: Path) -> list[AuditIssue]:
+    """返回人工维护提示清单（结构化条目；空列表表示无问题）。"""
+    issues: list[AuditIssue] = []
     heroes_path = root / "data" / "heroes.json"
     classification_path = root / "data" / "hero_classification.json"
     special_path = root / "data" / "special_cards.json"
@@ -111,9 +147,18 @@ def audit_summary(root: Path) -> list[str]:
         classified = set(classification.get("hero_categories", {}))
         unclassified = sorted(hero_names - classified)
         if unclassified:
-            issues.append(f"未归类武将 {len(unclassified)} 人（请补充 data/hero_classification.json）")
+            issues.append(AuditIssue(
+                kind="unclassified_hero",
+                message=f"未归类武将 {len(unclassified)} 人（请补充 data/hero_classification.json）",
+                target_tab="武将分类维护",
+                target=unclassified,
+            ))
     except (OSError, json.JSONDecodeError):
-        issues.append("data/hero_classification.json 缺失或无法解析")
+        issues.append(AuditIssue(
+            kind="classification_unreadable",
+            message="data/hero_classification.json 缺失或无法解析",
+            target_tab="武将分类维护",
+        ))
     try:
         specials = json.loads(special_path.read_text(encoding="utf-8"))
         unknown = set()
@@ -129,24 +174,49 @@ def audit_summary(root: Path) -> list[str]:
                     unknown.add(_name)
         unknown = sorted(unknown)
         if unknown:
-            issues.append(f"专属牌引用未知武将 {len(unknown)} 人：{'、'.join(unknown[:8])}")
+            target = next(
+                ((str(it.get("category", "")), str(it.get("name", ""))) for it in specials
+                 if it.get("hero") and any(n in it["hero"] for n in unknown)),
+                None,
+            )
+            issues.append(AuditIssue(
+                kind="unknown_hero",
+                message=f"专属牌引用未知武将 {len(unknown)} 人：{'、'.join(unknown[:8])}",
+                target_tab="专属牌维护",
+                target=target,
+            ))
         # 专属牌/战法牌结算详情回填校验（死士为非实体牌标记，xlsx 无对应结算，豁免）
-        missing_settle = sorted(
-            it.get("name", "") for it in specials
+        missing_items = [
+            it for it in specials
             if it.get("category") in ("专属牌", "专属战法牌")
             and not it.get("settlement") and it.get("name") not in ("死士",)
-        )
-        if missing_settle:
-            issues.append(f"专属牌/战法牌缺结算详情 {len(missing_settle)} 个：{'、'.join(missing_settle[:8])}")
+        ]
+        if missing_items:
+            names = [str(it.get("name", "")) for it in missing_items]
+            first = missing_items[0]
+            issues.append(AuditIssue(
+                kind="missing_settlement",
+                message=f"专属牌/战法牌缺结算详情 {len(missing_items)} 个：{'、'.join(names[:8])}",
+                target_tab="专属牌维护",
+                target=(str(first.get("category", "")), str(first.get("name", ""))),
+            ))
     except (OSError, json.JSONDecodeError):
-        issues.append("data/special_cards.json 缺失或无法解析")
+        issues.append(AuditIssue(
+            kind="specials_unreadable",
+            message="data/special_cards.json 缺失或无法解析",
+            target_tab="专属牌维护",
+        ))
     # 卡牌点数源校验（data/card_points.json，原 xlsx sheet1 + 判定规则）
     points_path = root / "data" / "card_points.json"
     try:
         payload = json.loads(points_path.read_text(encoding="utf-8"))
         cards = payload.get("cards") if isinstance(payload, dict) else None
         if not isinstance(cards, list):
-            issues.append("data/card_points.json 结构异常（缺少 cards 数组）")
+            issues.append(AuditIssue(
+                kind="card_points_structure",
+                message="data/card_points.json 结构异常（缺少 cards 数组）",
+                target_tab="卡牌点数维护",
+            ))
         else:
             valid_suits = ("♥", "♣", "♠", "♦", "太极")
             valid_points = {str(i) for i in range(1, 9)}
@@ -154,29 +224,73 @@ def audit_summary(root: Path) -> list[str]:
             bad_points = sorted({c.get("name", "?") for c in cards if c.get("point") not in valid_points})
             total = sum(int(c.get("count", 1) or 1) for c in cards)
             if total != 162:
-                issues.append(f"卡牌点数张数 {total} != 期望 162")
+                issues.append(AuditIssue(
+                    kind="card_points_total",
+                    message=f"卡牌点数张数 {total} != 期望 162",
+                    target_tab="卡牌点数维护",
+                ))
             if bad_suits:
-                issues.append(f"卡牌点数异常花色 {len(bad_suits)} 张：{'、'.join(bad_suits[:6])}")
+                issues.append(AuditIssue(
+                    kind="bad_card_points",
+                    message=f"卡牌点数异常花色 {len(bad_suits)} 张：{'、'.join(bad_suits[:6])}",
+                    target_tab="卡牌点数维护",
+                ))
             if bad_points:
-                issues.append(f"卡牌点数异常点数 {len(bad_points)} 张：{'、'.join(bad_points[:6])}")
+                issues.append(AuditIssue(
+                    kind="bad_card_points",
+                    message=f"卡牌点数异常点数 {len(bad_points)} 张：{'、'.join(bad_points[:6])}",
+                    target_tab="卡牌点数维护",
+                ))
     except (OSError, json.JSONDecodeError):
-        issues.append("data/card_points.json 缺失或无法解析")
+        issues.append(AuditIssue(
+            kind="card_points_unreadable",
+            message="data/card_points.json 缺失或无法解析",
+            target_tab="卡牌点数维护",
+        ))
     # 装备属性源校验（data/equip_attrs.json，原 xlsx sheet2）
     equips_path = root / "data" / "equip_attrs.json"
     try:
         equips = json.loads(equips_path.read_text(encoding="utf-8"))
         if not isinstance(equips, list):
-            issues.append("data/equip_attrs.json 结构异常（应为数组）")
+            issues.append(AuditIssue(
+                kind="equip_attrs_structure",
+                message="data/equip_attrs.json 结构异常（应为数组）",
+                target_tab="装备属性维护",
+            ))
         else:
             if len(equips) != 26:
-                issues.append(f"装备属性件数 {len(equips)} != 期望 26")
+                issues.append(AuditIssue(
+                    kind="equip_attrs_count",
+                    message=f"装备属性件数 {len(equips)} != 期望 26",
+                    target_tab="装备属性维护",
+                ))
             for item in equips:
                 if item.get("subtype") not in ("武器", "防具", "坐骑"):
-                    issues.append(f"装备 {item.get('name', '?')} 细分类型异常：{item.get('subtype')!r}")
+                    issues.append(AuditIssue(
+                        kind="bad_equip_attrs",
+                        message=f"装备 {item.get('name', '?')} 细分类型异常：{item.get('subtype')!r}",
+                        target_tab="装备属性维护",
+                    ))
                 if item.get("distance_mod") not in (None, -1, 1):
-                    issues.append(f"装备 {item.get('name', '?')} 距离修正异常：{item.get('distance_mod')!r}")
+                    issues.append(AuditIssue(
+                        kind="bad_equip_attrs",
+                        message=f"装备 {item.get('name', '?')} 距离修正异常：{item.get('distance_mod')!r}",
+                        target_tab="装备属性维护",
+                    ))
     except (OSError, json.JSONDecodeError):
-        issues.append("data/equip_attrs.json 缺失或无法解析")
+        issues.append(AuditIssue(
+            kind="equip_attrs_unreadable",
+            message="data/equip_attrs.json 缺失或无法解析",
+            target_tab="装备属性维护",
+        ))
+    # 索引精化待办：无 curated 且索引字段为空的语料块（语料未构建时清单为空，静默跳过）
+    pending_refinement = list_pending(root / CORPUS_DIR)
+    if pending_refinement:
+        issues.insert(0, AuditIssue(
+            kind="pending_refinement",
+            message=f"索引字段待精化 {len(pending_refinement)} 块（卡牌/武将语料）",
+            severity="warning",
+        ))
     return issues
 
 
@@ -221,12 +335,20 @@ class RagMaintenancePanel(QWidget):
 
         self._action_bar = PageActionBar("正在检查……", self)
         self._status_label = self._action_bar.status_label
+        # 查看类操作
         self._refresh_button = QPushButton("刷新状态")
         self._refresh_button.clicked.connect(self.refresh)
         self._action_bar.add_action(self._refresh_button, ROLE_SECONDARY)
         self._refine_button = QPushButton("索引精化")
         self._refine_button.clicked.connect(self._open_refinement)
         self._action_bar.add_action(self._refine_button, ROLE_SECONDARY)
+        # 分隔线：查看类 | 执行类
+        _divider = QFrame()
+        _divider.setObjectName("actionBarDivider")
+        _divider.setFrameShape(QFrame.Shape.VLine)
+        _divider.setFixedHeight(18)
+        self._action_bar.actions_layout.addWidget(_divider)
+        # 执行类操作
         self._hero_button = QPushButton("重建武将语料")
         self._hero_button.clicked.connect(lambda: self._run(["--force", "--only", "武将"]))
         self._action_bar.add_action(self._hero_button, ROLE_SECONDARY)
@@ -255,11 +377,35 @@ class RagMaintenancePanel(QWidget):
         self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
         table_layout.addWidget(self._table)
-        status_layout.addWidget(self._table_surface, 1)
 
-        self._audit_banner = NoticeBanner("人工维护检查通过", "", TONE_SUCCESS, self)
-        self._audit_label = self._audit_banner.title_label
-        status_layout.addWidget(self._audit_banner)
+        # 审计区：标题 + 逐条提示行（每条可带跳转按钮）
+        self._audit_banner = QFrame()
+        self._audit_banner.setObjectName("noticeBanner")
+        banner_layout = QHBoxLayout(self._audit_banner)
+        banner_layout.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
+        banner_layout.setSpacing(SPACE_MD)
+        banner_text_layout = QVBoxLayout()
+        banner_text_layout.setContentsMargins(0, 0, 0, 0)
+        banner_text_layout.setSpacing(2)
+        self._audit_label = QLabel("人工维护检查通过")
+        self._audit_label.setObjectName("noticeBannerTitle")
+        banner_text_layout.addWidget(self._audit_label)
+        self._audit_list = QWidget()
+        self._audit_list_layout = QVBoxLayout(self._audit_list)
+        self._audit_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._audit_list_layout.setSpacing(4)
+        self._audit_rows: list[QWidget] = []
+        banner_text_layout.addWidget(self._audit_list)
+        banner_layout.addLayout(banner_text_layout, 1)
+        set_tone(self._audit_banner, TONE_SUCCESS)
+
+        # 上半：任务表 + 审计；下半：日志（QSplitter 可拖拽/折叠）
+        top_widget = QWidget()
+        top_layout = QVBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
+        top_layout.addWidget(self._table_surface, 1)
+        top_layout.addWidget(self._audit_banner)
 
         self._log_surface = QFrame()
         self._log_surface.setObjectName("ragLogSurface")
@@ -271,9 +417,21 @@ class RagMaintenancePanel(QWidget):
         self._log.setReadOnly(True)
         self._log.setPlaceholderText("执行日志将显示在这里……")
         self._log.setMaximumBlockCount(2000)
+        self._log.setMinimumHeight(60)
         log_layout.addWidget(self._log)
-        status_layout.addWidget(self._log_surface, 2)
+
+        _splitter = QSplitter(Qt.Orientation.Vertical)
+        _splitter.setChildrenCollapsible(True)
+        _splitter.addWidget(top_widget)
+        _splitter.addWidget(self._log_surface)
+        _splitter.setSizes([520, 180])
+        status_layout.addWidget(_splitter, 1)
         self._tabs.addTab(status_tab, "语料状态")
+
+        # 文档规则域（T0 母本入口，排在数据编辑页签之前）
+        self._rule_doc = RuleDocPanel(self._root)
+        self._rule_doc.data_changed.connect(self._on_child_changed)
+        self._tabs.addTab(self._rule_doc, "元规则维护")
 
         self._special_cards = SpecialCardsPanel(
             SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names)
@@ -311,9 +469,14 @@ class RagMaintenancePanel(QWidget):
         self._classification.reload_data()
         self._card_points.reload_data()
         self._equip_attrs.reload_data()
+        self._rule_doc.reload_data()
 
     def refresh(self) -> None:
         rows = task_states(self._root)
+        # 索引精化入口：按钮带待精化数量角标；无待办时禁用
+        pending_count = len(list_pending(self._root / "data" / "rag_corpus"))
+        self._refine_button.setText(f"索引精化（{pending_count}）" if pending_count else "索引精化 ✓")
+        self._refine_button.setEnabled(pending_count > 0)
         stale = [row["name"] for row in rows if row["status"] == "待重建"]
         self._table.setRowCount(len(rows))
         for index, row in enumerate(rows):
@@ -332,15 +495,66 @@ class RagMaintenancePanel(QWidget):
             self._action_bar.set_status("所有语料与数据源一致", TONE_SUCCESS)
         issues = audit_summary(self._root)
         if issues:
-            self._audit_banner.set_tone(TONE_WARNING)
+            set_tone(self._audit_banner, TONE_WARNING)
             self._audit_label.setText("人工维护提示")
-            self._audit_banner.message_label.setText("\n".join(f"· {item}" for item in issues))
-            self._audit_banner.message_label.setVisible(True)
+            self._refresh_audit_rows(issues)
         else:
-            self._audit_banner.set_tone(TONE_SUCCESS)
+            set_tone(self._audit_banner, TONE_SUCCESS)
             self._audit_label.setText("人工维护检查通过")
-            self._audit_banner.message_label.setText("")
-            self._audit_banner.message_label.setVisible(False)
+            self._refresh_audit_rows([])
+
+    # ---------------------------------------------------------------
+    # 审计提示行（逐条 + 跳转按钮）
+    # ---------------------------------------------------------------
+    # 特殊按钮文案；其余类型统一用「去检查」
+    _ISSUE_BUTTON_TEXT = {
+        "unclassified_hero": "去归类",
+        "missing_settlement": "去补全",
+    }
+
+    def _refresh_audit_rows(self, issues: list[AuditIssue]) -> None:
+        for row in self._audit_rows:
+            row.setParent(None)
+            row.deleteLater()
+        self._audit_rows.clear()
+        for issue in issues:
+            row = self._build_audit_row(issue)
+            self._audit_list_layout.addWidget(row)
+            self._audit_rows.append(row)
+        self._audit_list.setVisible(bool(issues))
+
+    def _build_audit_row(self, issue: AuditIssue) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        label = QLabel("· " + issue.message)
+        label.setObjectName("noticeBannerMessage")
+        label.setWordWrap(True)
+        layout.addWidget(label, 1)
+        if issue.target_tab:
+            button = QPushButton(self._ISSUE_BUTTON_TEXT.get(issue.kind, "去检查"))
+            set_ui_role(button, ROLE_SECONDARY)
+            button.clicked.connect(lambda _=False, iss=issue: self._jump_to_issue(iss))
+            layout.addWidget(button)
+        return row
+
+    def _jump_to_issue(self, issue: AuditIssue) -> None:
+        """按审计条目跳转到对应维护页签并定位目标数据。"""
+        if issue.kind == "pending_refinement":
+            self._open_refinement()
+            return
+        if not issue.target_tab:
+            return
+        for index in range(self._tabs.count()):
+            if self._tabs.tabText(index) == issue.target_tab:
+                self._tabs.setCurrentIndex(index)
+                break
+        kind = issue.kind
+        if kind == "unclassified_hero":
+            self._classification.focus_unclassified()
+        elif kind in ("unknown_hero", "missing_settlement") and issue.target:
+            self._special_cards.focus_item(*issue.target)
 
     def _open_refinement(self) -> None:
         dialog = IndexRefinementDialog(self._root / "data" / "rag_corpus", self)
