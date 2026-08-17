@@ -72,11 +72,13 @@ def get_api_config() -> dict:
     # 返回 api_key / api_url / model / requests_per_minute / max_retries / http_timeout
 
 def get_mumu_config() -> dict:
-    # 获取模拟器 ADB 路径/端口/OCR 开关/轮询及自动跳转配置
+    # 获取模拟器 ADB 路径/端口/OCR 开关/轮询/自动跳转及 GPU/CPU 推理配置
 
 def save_env_file(path, data):
     # 原子写入：先写 .env.tmp → replace 覆盖原文件
 ```
+
+> OCR 推理配置：`MUMU_OCR_USE_GPU`（默认 false，CPU 推理）与 `MUMU_OCR_CPU_THREADS`（默认 6，CPU 线程上限）由 `load_env_config()` 完成类型转型（GPU 按布尔、线程数按整数），经 `get_mumu_config()` 提供给 `paddle_loader.create_paddle_ocr()`。
 
 ### 3.3 日志系统
 

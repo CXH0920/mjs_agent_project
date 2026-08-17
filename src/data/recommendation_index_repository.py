@@ -66,8 +66,17 @@ class RecommendationIndex:
 
 def is_recommendation_index_stale(
     path: Path = RECOMMENDATION_INDEX_STATE_FILE,
+    *,
+    index_path: Path = RECOMMENDATION_INDEX_CSV,
+    source_paths: tuple[Path, ...] | None = None,
 ) -> bool:
-    """返回推荐指数快照是否已被新的官方榜单数据标记为过期。"""
+    """返回推荐指数快照是否已被新的官方榜单数据标记为过期。
+
+    自愈校验：即使状态文件被外部误标记为 stale=true，只要三份官方榜单
+    CSV 的修改时间均不晚于推荐指数快照，说明没有新榜单数据需要反映，
+    忽略 stale 标记并自动写回 false，避免误弹"推荐指数待重建"横幅
+    （状态文件曾被 git 历史/命令行操作意外置为 true 的兜底）。
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -75,7 +84,36 @@ def is_recommendation_index_stale(
     except (OSError, json.JSONDecodeError, TypeError) as exc:
         logger.warning("无法读取推荐指数状态 %s: %s", path, exc)
         return True
-    return bool(data.get("stale", False))
+    if not bool(data.get("stale", False)):
+        return False
+    sources = source_paths if source_paths is not None else (
+        WIN_RATE_CSV, PICK_RANK_CSV, BAN_RANK_CSV,
+    )
+    if _has_newer_source_file(sources, index_path):
+        return True
+    logger.warning(
+        "推荐指数状态被标记 stale=true，但官方榜单数据并未更新（快照不早于榜单），自愈写回 false"
+    )
+    mark_recommendation_index_stale(False, path)
+    return False
+
+
+def _has_newer_source_file(
+    source_paths: tuple[Path, ...],
+    index_path: Path,
+) -> bool:
+    """任一榜单源文件比推荐指数快照新，说明存在尚未反映的新数据。"""
+    try:
+        index_mtime = index_path.stat().st_mtime
+    except OSError:
+        return True  # 快照缺失：需要重建
+    for source in source_paths:
+        try:
+            if source.stat().st_mtime > index_mtime:
+                return True
+        except OSError:
+            continue  # 榜单文件缺失时不参与判断，避免误报
+    return False
 
 
 def mark_recommendation_index_stale(

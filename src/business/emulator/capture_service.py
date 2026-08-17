@@ -633,9 +633,14 @@ class CaptureService(QObject):
         return self._config.get("mumu_ocr_match_threshold", 0.8)
 
     def run_ocr_if_matched(self, image, hero_names: list[str] | None = None):
-        """同步等待 OCR worker 的结果；仅供非 GUI 调度路径使用。"""
+        """同步等待 OCR worker 的结果；仅供非 GUI 调度路径使用。
+
+        有限等待 30 秒：引擎异常时避免调用线程无限阻塞。
+        """
         task = self.submit_ocr_task(image, hero_names)
-        task.completed.wait()
+        if not task.completed.wait(30):
+            logger.warning("OCR 任务等待超时（30 秒），返回空结果")
+            return None, False
         result = task.result or {}
         return result.get("ocr_results"), result.get("outcome") == "matched"
 

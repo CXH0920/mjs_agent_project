@@ -85,7 +85,11 @@ class GeneralRecognizer:
 
     @property
     def _engine(self):
-        """PaddleOCR（ch），延迟加载。"""
+        """PaddleOCR（ch），延迟加载；加载失败后熔断，避免每次识别重复重试。"""
+        if self._ocr is False:
+            raise RuntimeError(
+                "PaddleOCR 引擎此前加载失败，已熔断（重启应用后可重试）"
+            )
         if self._ocr is None:
             logger.info("首次调用，正在加载 PaddleOCR 模型...")
             try:
@@ -102,6 +106,7 @@ class GeneralRecognizer:
             except Exception as e:
                 logger.error("PaddleOCR 模型加载失败: %s", e)
                 logger.debug(traceback.format_exc())
+                self._ocr = False  # 熔断标记：后续识别快速失败，不再重复加载
                 raise
         return self._ocr
 

@@ -34,7 +34,7 @@ src/ocr/
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
-├── paddle_loader.py       # PaddleOCR 统一构造及 Windows 首次加载闪窗抑制
+├── paddle_loader.py       # PaddleOCR 统一构造（GPU/CPU 推理配置、CPU 线程限制）与 Windows 加载闪窗抑制
 └── ocr_loader.py          # 模板管理器单例
 ```
 
@@ -179,6 +179,15 @@ else:
 
 `CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
 
+### 3.6 OCR 引擎推理配置与加载熔断（2026-08 新增）
+
+`src/ocr/paddle_loader.py::create_paddle_ocr()` 推理设备与线程由 `config.env` 控制：
+
+- **`MUMU_OCR_USE_GPU`**（默认 `false`）— 推理走 CPU，避免 GPU 驱动异常导致整机卡顿；调用方显式传入 `use_gpu` 时优先尊重显式值。
+- **`MUMU_OCR_CPU_THREADS`**（默认 `6`）— CPU 模式限制 PaddleOCR 推理线程数，并默认启用 `enable_mkldnn=True`，防止推理打满全部逻辑核心。
+
+`src/ocr/recognizer.py::GeneralRecognizer._engine` 增加**加载熔断**：PaddleOCR 引擎加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示“重启应用后可重试”，不再对每次识别重复尝试加载（避免反复触发昂贵的模型初始化）。同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）改为 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
+
 ---
 
 ## 四、关键代码片段
@@ -257,6 +266,7 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `TemplateManager.set_template(image, roi)` | 制作模板 |
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别页面名称并返回候选、状态和多路证据 |
 | `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | OCR 图像预处理 |
+| `paddle_loader.create_paddle_ocr(**kwargs)` | 构造 PaddleOCR：推理设备/CPU 线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN，并抑制 Windows 首次加载闪窗 |
 | `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界 |
 | `official_board_parser.split_row_cells(...)` → `dict[str, np.ndarray]` | 按官方版式切分行单元格 |
 | `official_board_parser.prepare_rate_templates(...)` | 构建榜单数字模板并预计算胜率 OCR |

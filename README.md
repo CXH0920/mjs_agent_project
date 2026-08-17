@@ -238,6 +238,8 @@ python -m src.main
 
 本地导入和 ROI 图片编辑仅接受实际 PNG/JPEG 内容，ADB 截图仅接受实际 PNG；所有入口均限制为 6 MiB 和 400 万像素，解压炸弹警告会作为错误处理。
 
+OCR 推理默认走 CPU：`MUMU_OCR_USE_GPU=false`（可切 GPU，但需 CUDA 运行时且驱动异常可能卡顿整机）、`MUMU_OCR_CPU_THREADS=6`（CPU 线程上限 + MKLDNN）。PaddleOCR 引擎加载失败后会熔断快速失败（重启应用可重试）；同步识别等待最多 30 秒，超时返回空结果，避免线程无限阻塞。
+
 #### OCR 分辨率适配
 
 页面模板与 OCR 识别区域分别保存参考尺寸。识别时，系统会将 `config/ocr_rois.default.json`
@@ -531,7 +533,7 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 - 页面操作行只保留识别状态、主要识别操作和“更多”；图片导入、保存截图与重建推荐指数收纳到“更多”菜单，空状态直接提供识别和图片导入
 - 图片缺失、攻略缺失、指数过期、指数数据不足、OCR 未知或待确认均使用文字与语义色同时表达；识别失败在页内提供可恢复通知
 - “查看攻略”使用蓝色强调的次要按钮；推荐指数口径入口始终保留，指数数据不足时仍可查看计算口径
-- 官方榜单更新后显示“推荐指数待重建”通知和“立即重建”；用户确认后重建会同时刷新当前卡片的指数、历史单将胜率和 TOP 排名
+- 官方榜单更新后显示“推荐指数待重建”通知和“立即重建”；用户确认后重建会同时刷新当前卡片的指数、历史单将胜率和 TOP 排名。状态判定带自愈校验：若三份榜单 CSV 均不新于推荐指数快照，则忽略误标记的 stale=true 并自动写回 false，不再误弹该通知
 - 对外提供 `update_recommendations(data: list[dict])` 接口，接收包含 `index`、确认后的 `name`、`raw_name`、`candidates`、`resolution`、`confidence` 和 `evidence` 的结构化结果；旧的 `{index, name, confidence}` 仍兼容
 - 支持识别当前模拟器画面、从本地图片识别，以及在“更多”菜单中仅保存当前截图
 - 空状态直接提供“识别当前阵容”和“从图片导入”入口
@@ -588,6 +590,8 @@ MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=false
 MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
+MUMU_OCR_USE_GPU=false
+MUMU_OCR_CPU_THREADS=6
 ```
 
 定价：输入 **CNY 3/百万 tokens**，输出 **CNY 6/百万 tokens**（deepseek-v4-pro，缓存未命中）

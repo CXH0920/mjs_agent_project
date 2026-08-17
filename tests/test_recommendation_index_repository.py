@@ -190,10 +190,76 @@ def test_rebuild_reports_locked_snapshot_file_and_cleans_temporary_file(tmp_path
 
 def test_recommendation_index_stale_state_is_persistent(tmp_path: Path) -> None:
     state_path = tmp_path / "recommendation_state.json"
+    index_path = tmp_path / "recommendation.csv"
+    source_paths = (tmp_path / "win.csv", tmp_path / "pick.csv", tmp_path / "ban.csv")
+    index_path.write_text("武将\n", encoding="utf-8")
+    for source in source_paths:
+        source.write_text("武将\n", encoding="utf-8")
 
-    assert is_recommendation_index_stale(state_path) is False
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is False
     mark_recommendation_index_stale(True, state_path)
-    assert is_recommendation_index_stale(state_path) is True
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is True
     assert b"\r\n" not in state_path.read_bytes()
     mark_recommendation_index_stale(False, state_path)
-    assert is_recommendation_index_stale(state_path) is False
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is False
+
+
+def test_stale_self_heals_when_no_newer_source_file(tmp_path: Path) -> None:
+    """榜单未更新但状态被误标 stale=true 时，忽略标记并写回 false。"""
+    import os
+
+    state_path = tmp_path / "recommendation_state.json"
+    index_path = tmp_path / "recommendation.csv"
+    source_paths = (tmp_path / "win.csv", tmp_path / "pick.csv", tmp_path / "ban.csv")
+    index_path.write_text("武将\n", encoding="utf-8")
+    for source in source_paths:
+        source.write_text("武将\n", encoding="utf-8")
+    # 榜单全部早于快照：无新数据
+    os.utime(index_path, (2_000.0, 2_000.0))
+    for source in source_paths:
+        os.utime(source, (1_000.0, 1_000.0))
+
+    mark_recommendation_index_stale(True, state_path)
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is False
+    assert json.loads(state_path.read_text(encoding="utf-8")) == {"stale": False}
+
+
+def test_stale_keeps_true_when_source_file_newer(tmp_path: Path) -> None:
+    """榜单确实比快照新时，stale=true 保持有效。"""
+    import os
+
+    state_path = tmp_path / "recommendation_state.json"
+    index_path = tmp_path / "recommendation.csv"
+    source_paths = (tmp_path / "win.csv", tmp_path / "pick.csv", tmp_path / "ban.csv")
+    index_path.write_text("武将\n", encoding="utf-8")
+    for source in source_paths:
+        source.write_text("武将\n", encoding="utf-8")
+    os.utime(index_path, (1_000.0, 1_000.0))
+    os.utime(source_paths[0], (2_000.0, 2_000.0))
+    os.utime(source_paths[1], (900.0, 900.0))
+    os.utime(source_paths[2], (900.0, 900.0))
+
+    mark_recommendation_index_stale(True, state_path)
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is True
+    assert json.loads(state_path.read_text(encoding="utf-8")) == {"stale": True}
+
+
+def test_stale_true_with_missing_snapshot_keeps_true(tmp_path: Path) -> None:
+    """快照文件缺失且状态为 stale 时视为需重建，不进行自愈。"""
+    state_path = tmp_path / "recommendation_state.json"
+    index_path = tmp_path / "recommendation.csv"  # 不创建
+    source_paths = (tmp_path / "win.csv",)
+    mark_recommendation_index_stale(True, state_path)
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is True

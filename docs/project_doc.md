@@ -573,7 +573,7 @@ class OcrService(QObject):
 | `start_poll(interval_ms)` | 启动轮询 QTimer |
 | `stop_poll()` | 停止轮询并清除冷却 |
 | `set_cooldown(seconds)` | 设置冷却时间（OCR 匹配成功后调用） |
-| `run_ocr(image, rois)` | 对单张图片执行 OCR |
+| `run_ocr(image, rois)` | 对单张图片执行 OCR（同步等待最多 30 秒，超时返回 None） |
 
 **异常处理**：所有 except 块记录 `logger.error` + `logger.debug(traceback.format_exc())`，不允许静默异常。
 
@@ -1061,7 +1061,7 @@ RecommendationPanel (QWidget)
 - `src/ui/shared/widgets.py` 提供 `DoubleClickLabel`，统一头像双击信号，推荐卡片和对局攻略卡片复用同一控件。
 - `src/ui/shared/hero_dialogs.py` 提供 `HeroSkillDialog`，技能描述和结算详情弹窗不再由业务页面私有实现。
 - `src/data/win_rate_repository.py` 的 `load_win_rates()` 读取 `data/2v2胜率排行.csv`，默认路径结果缓存；推荐面板和对局攻略页面通过该仓库查询胜率，避免重复实现 CSV 解析。
-- `src/data/recommendation_index_repository.py` 读取胜率、出场和放逐三份官方榜单，以 `heroes.json` 的 ID 作为稳定次级排序，生成 `data/武将推荐指数.csv`。低胜率英雄仍显示推荐分，但在自动推荐排序中降级；缺失、越界或重复排名的数据不参与计算。该快照仅由选将推荐页的“重建指数”按钮手动覆盖，其他页面行为只读取已有文件。
+- `src/data/recommendation_index_repository.py` 读取胜率、出场和放逐三份官方榜单，以 `heroes.json` 的 ID 作为稳定次级排序，生成 `data/武将推荐指数.csv`。低胜率英雄仍显示推荐分，但在自动推荐排序中降级；缺失、越界或重复排名的数据不参与计算。该快照仅由选将推荐页的“重建指数”按钮手动覆盖，其他页面行为只读取已有文件。`is_recommendation_index_stale()` 带自愈校验：即使状态文件被外部误标记为 stale=true，只要三份官方榜单 CSV 的修改时间均不晚于推荐指数快照（`_has_newer_source_file()` 判定），就忽略标记并自动写回 false，避免误弹“推荐指数待重建”横幅（兜底状态文件被 git 历史/命令行操作意外置 true 的场景）。
 
 **数据接口**：
 ```python
@@ -1361,6 +1361,8 @@ key_mapping = {
     "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
     "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
     "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
+"MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
+"MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
 }
 ```
 
@@ -1391,6 +1393,8 @@ MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=false
 MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
+MUMU_OCR_USE_GPU=false
+MUMU_OCR_CPU_THREADS=6
 RAG_ENABLED=true
 RAG_TOP_K=12
 RAG_PROMPT_CHARS=6000
@@ -1852,13 +1856,23 @@ ROI 裁剪 (40×100 原始区域)
 ```python
 @property
 def _engine(self):
+    if self._ocr is False:                      # 熔断标记：此前加载失败
+        raise RuntimeError("PaddleOCR 引擎此前加载失败，已熔断（重启应用后可重试）")
     if self._ocr is None:
-        self._ocr = create_paddle_ocr(use_angle_cls=False, lang="ch", show_log=False)
+        try:
+            self._ocr = create_paddle_ocr(use_angle_cls=False, lang="ch", show_log=False)
+        except Exception as e:
+            logger.error("PaddleOCR 模型加载失败: %s", e)
+            self._ocr = False                   # 熔断：后续识别快速失败，不再重复加载
+            raise
     return self._ocr
 ```
 
 - `use_angle_cls=False`：不启用文字方向分类，节省推理时间
 - `show_log=False`：不输出 PaddleOCR 的调试日志
+- **推理设备**：`create_paddle_ocr()` 按 `MUMU_OCR_USE_GPU`（默认 false）决定 GPU/CPU；CPU 模式限制 `cpu_threads`（默认 6）并启用 `enable_mkldnn=True`，防止推理打满全部逻辑核心；调用方显式传 `use_gpu` 时优先尊重显式值
+- **加载熔断**：引擎加载失败后置 `self._ocr = False`，后续识别立即快速失败，避免对每次识别重复尝试昂贵的模型初始化
+- 同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）对 `OcrTask.completed` 做 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞
 - 应用启动时由唯一 `OcrWorker` 预热模型和代表性拼图推理；预热失败或未执行时，首次实际调用才承担加载成本
 - Windows 首次导入期间，统一加载入口为 Paddle 的系统与 CUDA 探测短命令设置 `CREATE_NO_WINDOW`，加载完成后恢复标准 `Popen` 行为
 

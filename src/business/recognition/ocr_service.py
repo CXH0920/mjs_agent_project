@@ -357,7 +357,10 @@ class OcrService(QObject):
                 rois=rois,
                 match_template=False,
             )
-            task.completed.wait()
+            # 有限等待：引擎异常（如 GPU 驱动问题）时避免调用线程无限阻塞
+            if not task.completed.wait(30):
+                logger.warning("OCR 任务等待超时（30 秒），返回空结果")
+                return None
             result = task.result or {}
             results = result.get("ocr_results")
             logger.info("OCR 完成: %s", results)

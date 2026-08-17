@@ -387,3 +387,19 @@ scripts/migrate_excel_to_json.py [--only points|equips|special]
 | `SpecialCardRepository.save()` | `special_cards_repository.py` | 原子写 special_cards.json（继承 JsonRepository） |
 | `HeroClassificationRepository.save()` | `hero_classification_repository.py` | 原子写 hero_classification.json（继承 JsonRepository） |
 | `migrate_excel_to_json.main()` | `scripts/migrate_excel_to_json.py` | xlsx 应急重导入 |
+
+## 九、推荐指数状态自愈链路（2026-08 新增）
+
+```
+选将推荐页 / 启动刷新：is_recommendation_index_stale(index_path=武将推荐指数.csv)
+  -> 状态文件 .recommendation_index_state.json 读取 stale 标记
+     -> stale=false 或文件缺失       -> 返回 False（不弹「推荐指数待重建」）
+     -> stale=true -> _has_newer_source_file(三份榜单 CSV, 推荐指数快照)
+        -> 任一榜单 mtime > 快照 mtime -> True   [存在未反映的新榜单数据]
+        -> 快照缺失                  -> True   [需要重建]
+        -> 三份榜单均不新于快照       -> 误标记：日志告警并 mark_recommendation_index_stale(False)
+                                       自愈写回 false -> 返回 False（不再误弹横幅）
+```
+
+- 目的：状态文件曾被 git 历史/命令行操作意外置为 `true` 的兜底；官方榜单未更新时不再反复提示“推荐指数待重建”。
+- 测试：`tests/test_recommendation_index_repository.py` 覆盖自愈判定与 mtime 比较分支。

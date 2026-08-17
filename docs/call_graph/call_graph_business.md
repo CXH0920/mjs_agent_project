@@ -358,7 +358,7 @@ MainWindow._on_poll_result(result)                            [主线程仅更�
 |------|------|--------|----------|
 | `start_poll(interval_ms)` | `ocr_service.py` | `MumuConfigDialog` 保存 | `QTimer.start()` |
 | `stop_poll()` | `ocr_service.py` | `MumuConfigDialog` 保存 | `QTimer.stop()` |
-| `run_ocr(image, rois)` | `ocr_service.py` | 兼容外部同步调用 | 通过注入的 `CaptureService.submit_ocr_task()` 等待 `OcrTask` |
+| `run_ocr(image, rois)` | `ocr_service.py` | 兼容外部同步调用 | 通过注入的 `CaptureService.submit_ocr_task()` 等待 `OcrTask`（30 秒超时返回 None） |
 | `create_template(image, roi)` | `ocr_service.py` | `MumuConfigDialog` | `get_template_manager().set_template()` |
 | `select_template(file_path)` | `ocr_service.py` | `MumuConfigDialog` | `shutil.copy2()`, `tm.reload()` |
 | `delete_template()` | `ocr_service.py` | `MumuConfigDialog` | `get_template_manager().delete_template()` |
@@ -544,7 +544,7 @@ src.ui.configuration.mumu_config_dialog
 | `do_capture_from_file(path, names)` | `RecommendationPanel` | `QTimer.singleShot(0, _execute_file_ocr)` |
 | `connect_emulator()` | 外部 UI | `self._capture.connect()` |
 | `disconnect_emulator()` | 外部 UI | `self._capture.disconnect()` |
-| `run_ocr_if_matched(image, names)` | 非 GUI 调度路径 | `submit_ocr_task()`，等待 `OcrTask.completed` |
+| `run_ocr_if_matched(image, names)` | 非 GUI 调度路径 | `submit_ocr_task()`，等待 `OcrTask.completed`（30 秒超时返回 `(None, False)`） |
 | `submit_ocr_task(...)` | 文件导入、轮询 | `OcrWorker.submit()` |
 | `update_config(config)` | `MainWindow`, `MumuConfigDialog` | 重建 AdbCapture |
 
@@ -558,7 +558,7 @@ src.ui.configuration.mumu_config_dialog
 | `select_template(file_path)` | `MumuConfigDialog` | `shutil.copy2()`, `tm.reload()` |
 | `delete_template()` | `MumuConfigDialog` | `get_template_manager().delete_template()` |
 | `set_hero_names(names)` | `MainWindow.__init__()` | 存储 hero_names |
-| `run_ocr(image, rois)` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed` |
+| `run_ocr(image, rois)` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed`（30 秒超时返回 None） |
 
 
 ## 十、AnnouncementService（公告更新检查）链路

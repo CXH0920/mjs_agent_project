@@ -36,7 +36,22 @@ def _hide_windows_child_consoles() -> Iterator[None]:
 
 
 def create_paddle_ocr(**kwargs):
-    """构造 PaddleOCR，并抑制其首次导入时的 Windows 控制台闪窗。"""
+    """构造 PaddleOCR，并抑制其首次导入时的 Windows 控制台闪窗。
+
+    推理设备由 config.env 的 ``MUMU_OCR_USE_GPU`` 控制（默认 false 走 CPU，
+    避免 GPU 驱动异常导致整机卡顿）；CPU 模式限制线程数并启用 MKLDNN，
+    防止推理打满全部逻辑核心。调用方显式传入 ``use_gpu`` 时优先尊重显式值。
+    """
+    from src.config.env import get_mumu_config
+
+    cfg = get_mumu_config()
+    use_gpu = kwargs.pop("use_gpu", None)
+    if use_gpu is None:
+        use_gpu = cfg.get("mumu_ocr_use_gpu", False)
+    kwargs["use_gpu"] = bool(use_gpu)
+    if not kwargs["use_gpu"]:
+        kwargs.setdefault("cpu_threads", cfg.get("mumu_ocr_cpu_threads", 6))
+        kwargs.setdefault("enable_mkldnn", True)
     with _LOAD_LOCK, _hide_windows_child_consoles():
         from paddleocr import PaddleOCR
 

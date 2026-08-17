@@ -59,3 +59,5 @@ scripts/.rule_doc_snapshot.json
 scripts/.sync_*.json
 # pytest 临时目录（测试运行产物）
 .tmp_test/
+# 环境备份（pip 清单与 paddle/libs DLL，体积大且含机器相关内容，不入库）
+env_backup/

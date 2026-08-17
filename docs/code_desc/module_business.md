@@ -131,6 +131,8 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 
 两个任务共用一个定时器、后台采集锁和截图，但分别维护 `active`、`cooldown_until`、`last_match_time` 与失败状态。武将选择成功后激活对局攻略任务；任一任务冷却时只跳过该任务，不影响另一个任务。
 
+同步等待路径带超时保护：`CaptureService.run_ocr_if_matched()` 与 `OcrService.run_ocr()` 对 `OcrTask.completed` 做 30 秒有限等待，超时记录告警并返回空结果（`(None, False)` / `None`），配合识别器加载熔断，避免引擎异常时调用线程无限阻塞。
+
 ### 3.3 OcrService（OCR 控制）
 
 控制模板制作、OCR 启用和轮询定时器：

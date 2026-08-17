@@ -332,6 +332,20 @@ OcrWorker._get_recognizer(rois, hero_names, reference_size)
 | `get_template_manager(template_name)` | `ocr_loader.py` | 按页面模板名称惰性缓存，供配置页管理模板 |
 | `OcrWorker._get_recognizer(...)` | `ocr_worker.py` | 以 ROI、武将列表、参考尺寸为签名，在唯一 worker 内重建识别器 |
 
+### 5.3 PaddleOCR 引擎构造与加载熔断（2026-08 新增）
+
+```
+OcrWorker 预热 / GeneralRecognizer._engine（首次识别）
+  -> paddle_loader.create_paddle_ocr(use_angle_cls=False, lang="ch", show_log=False)
+     -> get_mumu_config() 读取 MUMU_OCR_USE_GPU / MUMU_OCR_CPU_THREADS
+        -> GPU=false（默认）: kwargs 设 use_gpu=False + cpu_threads=6 + enable_mkldnn=True
+        -> 调用方显式传 use_gpu 时优先尊重显式值
+  -> 加载失败：recognizer._engine 置熔断标记 self._ocr=False
+     -> 后续识别立即抛 RuntimeError（重启应用后可重试），不再重复加载
+```
+
+同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）对 `OcrTask.completed` 做 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
+
 ---
 
 ## 六、外部调用关系总览
@@ -365,7 +379,7 @@ src.ui.configuration.mumu_config_dialog
 | Python `PIL.Image` | 图片解析/处理 |
 | Python `cv2` (OpenCV) | 图像预处理、模板匹配 |
 | Python `io.BytesIO` | 二进制流处理 |
-| `paddleocr.PaddleOCR` | OCR 推理引擎 |
+| `paddleocr.PaddleOCR` | OCR 推理引擎（推理设备/线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN） |
 | `cnradical.Radical` | 部首查询（汉字特征） |
 | `unihan_etl.Packager` | UNIHAN 数据查询（四角号码、仓颉码） |
 | `pypinyin.pinyin` | 拼音查询 |

@@ -105,6 +105,8 @@ def load_env_config(env_path=None):
         "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
         "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
         "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
+        "MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
+        "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
         "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
         "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
         "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
@@ -117,13 +119,13 @@ def load_env_config(env_path=None):
     for env_key, cfg_key in key_mapping.items():
         if env_key in raw:
             value = raw[env_key]
-            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown"):
+            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown", "mumu_ocr_cpu_threads"):
                 try:
                     value = int(value)
                 except (ValueError, TypeError):
                     logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
                     continue
-            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_auto_switch_tab"):
+            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_auto_switch_tab", "mumu_ocr_use_gpu"):
                 value = value.lower() in ("true", "1", "yes")
             elif cfg_key in (
                 "mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold",
@@ -256,6 +258,8 @@ def get_mumu_config():
         "mumu_hero_selection_threshold": config.get("mumu_hero_selection_threshold", config.get("mumu_ocr_match_threshold", 0.8)),
         "mumu_hero_selection_cooldown": config.get("mumu_hero_selection_cooldown", 180),
         "mumu_match_guide_threshold": config.get("mumu_match_guide_threshold", 0.8),
+        "mumu_ocr_use_gpu": config.get("mumu_ocr_use_gpu", False),
+        "mumu_ocr_cpu_threads": config.get("mumu_ocr_cpu_threads", 6),
     }
 
 # ============================================================
