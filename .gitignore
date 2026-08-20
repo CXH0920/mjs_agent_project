@@ -17,14 +17,16 @@ data/guides.json
 data/*.corrupt-*.json
 data/*_待复核.csv
 # 官方榜单导入生成物（由官方导入/推荐指数计算生成）
-data/2v2出场排行.csv
+data/2v2出场率排行.csv
 data/武将放逐.csv
 data/武将推荐指数.csv
 # 推荐指数运行时状态（程序自动更新，避免反复出现无关 diff）
 data/武将推荐指数状态.json
 data/official_import_pending.json
 # 汉字特征用户层缓存（运行时自动扩展）
-data/char_info_cache.json
+src/data/char_info_cache.json
+# 武将分类带日期快照文档（一次性分析，源数据见 hero_classification.json）
+data/武将分类20*.md
 # 公告监控运行时产物（运行时自动生成/更新）
 data/announcements.json
 data/baike_snapshot.json
