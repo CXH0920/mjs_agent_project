@@ -19,6 +19,8 @@ from src.scraper.ai.prompt_utils import (
 from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.utils import (
     convert_ids_to_int,
+    has_required_guide_fields,
+    has_required_synergy_fields,
     validate_guide,
     validate_synergy,
 )
@@ -164,6 +166,9 @@ class AIBatchGenerator:
 
         raw["hero_id"] = hero.get("id", 0)
         convert_ids_to_int(raw, ["synergizes_with"])
+        if not has_required_guide_fields(raw):
+            logger.warning("攻略必填字段缺失: %s", sorted(raw))
+            return None, usage
 
         result = validate_guide(raw)
         if result is None:
@@ -189,7 +194,7 @@ class AIBatchGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = self._call_api(messages, temperature=0.7)
+        response = self._call_api(messages, temperature=0.3)
         if not response:
             return None, None
 
@@ -209,6 +214,10 @@ class AIBatchGenerator:
         # 兼容旧 prompt 中的 combat_synergy 字段
         if "combat_synergy" in raw and "combo_ceiling" not in raw:
             raw["combo_ceiling"] = raw.pop("combat_synergy")
+
+        if not has_required_synergy_fields(raw):
+            logger.warning("相性必填字段缺失: %s", sorted(raw))
+            return None, usage
 
         result = validate_synergy(raw)
         if result is None:

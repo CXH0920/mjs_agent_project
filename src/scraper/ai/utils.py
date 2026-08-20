@@ -123,3 +123,18 @@ def validate_synergy(data: dict) -> dict | None:
     except Exception as e:
         logger.error("SynergyScore Pydantic 校验失败: %s", type(e).__name__)
         return None
+
+
+# ============================================================
+# 必填字段预检（调用方在 Pydantic 校验前快速失败）
+# ID 由调用方注入，不在此检查；命中缺失可省去一次 Pydantic 异常开销
+# ============================================================
+
+def has_required_guide_fields(raw: dict) -> bool:
+    """攻略结果必填字段预检：key_points / description。"""
+    return all(f in raw for f in ("key_points", "description"))
+
+
+def has_required_synergy_fields(raw: dict) -> bool:
+    """相性结果必填字段预检：score / description。"""
+    return all(f in raw for f in ("score", "description"))

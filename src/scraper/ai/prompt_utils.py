@@ -15,7 +15,8 @@ from src.config.env import (
     get_model_pricing,
 )
 
-from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context
+from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context, _rag_enabled
+from src.scraper.ai.rule_summary import load_core_rules
 
 logger = logging.getLogger(__name__)
 
@@ -136,10 +137,18 @@ def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
         lines.append("")
         lines.append("技能:")
         for sk in hero["skills"]:
-            lines.append(f"  - {sk.get('name', '')}: {sk.get('description', '')}")
+            line = f"  - {sk.get('name', '')}: {sk.get('description', '')}"
+            settlement = sk.get('settlement', '')
+            if settlement:
+                line += f" ｜结算：{settlement}"
+            lines.append(line)
     rag = build_rag_context(hero, max_chars=rag_max_chars)
     if rag:
         lines.extend(["", rag])
+    elif not _rag_enabled():
+        rules = load_core_rules()
+        if rules:
+            lines.extend(["", rules])
     return "\n".join(lines)
 
 
@@ -153,7 +162,11 @@ def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None =
         if h.get("skills"):
             lines.append("  技能:")
             for sk in h["skills"]:
-                lines.append(f"    - {sk.get('name', '')}: {sk.get('description', '')}")
+                line = f"    - {sk.get('name', '')}: {sk.get('description', '')}"
+                settlement = sk.get('settlement', '')
+                if settlement:
+                    line += f" ｜结算：{settlement}"
+                lines.append(line)
         return lines
 
     lines = []
@@ -163,4 +176,8 @@ def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None =
     rag = build_synergy_rag_context(hero_a, hero_b, max_chars=rag_max_chars)
     if rag:
         lines.extend(["", rag])
+    elif not _rag_enabled():
+        rules = load_core_rules()
+        if rules:
+            lines.extend(["", rules])
     return "\n".join(lines)

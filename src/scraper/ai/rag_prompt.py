@@ -48,21 +48,35 @@ def build_rag_context(hero: dict, max_chars: int | None = None) -> str:
         return ""
     try:
         from src.rag import config as rag_config
+        from src.rag.retriever import KEYWORDS
         hero_name = hero.get("name", "")
         if not hero_name:
             return ""
         retriever = _get_retriever()
         blocks = retriever.hero_blocks(hero_name)
         seen = {b["block_id"] for b in blocks}
+        # 构建丰富查询：武将名 + 技能名 + 机制词，提升跨类检索相关性
+        skills = []
+        mech_terms = []
+        for skill in (hero.get("skills") or [])[:4]:
+            skill_name = str(skill.get("name", ""))
+            if skill_name:
+                skills.append(skill_name)
+            description = str(skill.get("description", ""))
+            for keyword in KEYWORDS:
+                if keyword in description and keyword not in mech_terms:
+                    mech_terms.append(keyword)
+        query = " ".join(filter(None, [hero_name, *skills, *mech_terms[:20]]))
+        # 跨类检索：不带 heroes 过滤，召回卡牌/装备/规则/FAQ；post-filter 掉其他武将块
         extra = [
-            b for b in retriever.search(hero_name, heroes=[hero_name], top_k=rag_config.TOP_K)
+            b for b in retriever.search(query, top_k=rag_config.TOP_K)
             if b["block_id"] not in seen
+            and (not b.get("metadata", {}).get("hero") or b["metadata"]["hero"] == hero_name)
         ]
-        chunks = blocks + extra
-        if not chunks:
+        if not blocks and not extra:
             return ""
         budget = max_chars or rag_config.RAG_PROMPT_CHARS
-        return _format_rag_chunks(chunks, budget)
+        return _format_rag_chunks(blocks, extra, budget)
     except Exception as e:
         _mark_degraded(type(e).__name__)
         logger.warning("RAG 语料注入失败（本次降级为无 RAG）: %s", type(e).__name__)
@@ -98,39 +112,59 @@ def build_synergy_rag_context(hero_a: dict, hero_b: dict, max_chars: int | None 
                 for keyword in KEYWORDS:
                     if keyword in description and keyword not in mech_terms:
                         mech_terms.append(keyword)
-        query = " ".join(filter(None, [name_a, name_b, *skills, *mech_terms[:20]]))
+        # 双 query 融合：武将名找基础信息，技能名+机制词找联动效果，各取半数 top_k 去重合并
         target_names = {name_a, name_b}
-        extra = [
-            b for b in retriever.search(query, top_k=rag_config.TOP_K)
-            if b["block_id"] not in seen
-            and (not b.get("metadata", {}).get("hero") or b["metadata"]["hero"] in target_names)
+        half_k = max(1, rag_config.TOP_K // 2)
+        queries = [
+            f"{name_a} {name_b}",
+            " ".join(filter(None, [*skills, *mech_terms[:15]])),
         ]
-        chunks = blocks + extra
-        if not chunks:
+        extra = []
+        seen_ids = set(seen)
+        for q in queries:
+            if not q:
+                continue
+            for b in retriever.search(q, top_k=half_k):
+                bid = b["block_id"]
+                if bid in seen_ids:
+                    continue
+                meta_hero = b.get("metadata", {}).get("hero")
+                if meta_hero and meta_hero not in target_names:
+                    continue
+                seen_ids.add(bid)
+                extra.append(b)
+        if not blocks and not extra:
             return ""
         budget = max_chars or rag_config.RAG_SYNERGY_PROMPT_CHARS
-        return _format_rag_chunks(chunks, budget)
+        return _format_rag_chunks(blocks, extra, budget)
     except Exception as e:
         _mark_degraded(type(e).__name__)
         logger.warning("相性 RAG 语料注入失败（本次降级为无 RAG）: %s", type(e).__name__)
         return ""
 
 
-def _format_rag_chunks(chunks: list[dict], budget: int) -> str:
-    """按 [block_id] 前缀 + 字符预算格式化语料块，标题与攻略/相性共用。"""
+def _format_rag_chunks(core_blocks: list[dict], extra_blocks: list[dict],
+                       budget: int, core_ratio: float = 0.7) -> str:
+    """两段式预算格式化：核心块优先（core_ratio 比例），未用额度滚动给补充块；整块丢弃不截断。"""
     lines = ["## RAG 官方规则语料（请严格依据以下语料块作答）"]
     used = 0
-    for chunk in chunks:
-        block = f"[{chunk['block_id']}] {chunk['text']}"
-        remaining = budget - used
-        if remaining <= 0:
-            break
-        if len(block) > remaining:
-            lines.append(block[:remaining])
-            used += remaining
-            break
-        lines.append(block)
-        used += len(block)
+
+    def fill(blocks: list[dict], limit: int) -> None:
+        nonlocal used
+        for chunk in blocks:
+            remaining = limit - used
+            if remaining <= 0:
+                break
+            block = f"[{chunk['block_id']}] {chunk['text']}"
+            if len(block) > remaining:
+                continue  # 整块丢弃，避免截断在结算句中间造成残缺规则
+            lines.append(block)
+            used += len(block)
+
+    core_budget = int(budget * core_ratio)
+    fill(core_blocks, core_budget)
+    extra_budget = budget - used  # 核心未用额度滚动给补充块
+    fill(extra_blocks, extra_budget)
     return "\n\n".join(lines)
 
 

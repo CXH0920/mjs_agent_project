@@ -38,6 +38,8 @@ from src.scraper.ai.prompt_utils import (
 from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.utils import (
     convert_ids_to_int,
+    has_required_guide_fields,
+    has_required_synergy_fields,
     validate_guide,
     validate_synergy,
 )
@@ -150,6 +152,9 @@ class PlaywrightGenerator:
 
         raw["hero_id"] = hero_id
         convert_ids_to_int(raw, ["synergizes_with"])
+        if not has_required_guide_fields(raw):
+            logger.warning("[攻略] %s: 必填字段缺失", hero_name)
+            return None, None
         result = validate_guide(raw)
         if result is None:
             logger.error("[攻略] %s: Pydantic 校验失败", hero_name)
@@ -217,6 +222,10 @@ class PlaywrightGenerator:
             logger.info("[相性] %s <-> %s: 兼容字段 combat_synergy → combo_ceiling",
                         name_a, name_b)
             raw["combo_ceiling"] = raw.pop("combat_synergy")
+
+        if not has_required_synergy_fields(raw):
+            logger.warning("[相性] %s <-> %s: 必填字段缺失", name_a, name_b)
+            return None, None
 
         result = validate_synergy(raw)
         if result is None:

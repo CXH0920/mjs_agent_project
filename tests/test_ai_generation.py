@@ -458,7 +458,7 @@ def test_browser_generator_rests_before_next_successful_request(
     monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
     monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda *a, **k: "synergy")
-    monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {})
+    monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {"key_points": [], "description": "x", "score": 5})
     monkeypatch.setattr(ai_playwright, "validate_guide", lambda raw: raw)
     monkeypatch.setattr(ai_playwright, "validate_synergy", lambda raw: raw)
 
