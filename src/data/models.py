@@ -116,7 +116,7 @@ class Hero(BaseModel):
     faction: str = Field(default="", validation_alias="势力", description="所属势力")
     position: str = Field(default="", validation_alias="定位", description="定位（如：输出/辅助/控制/防御）")
     max_hp: int = Field(default=4, ge=1, le=20, validation_alias="体力上限", description="体力上限")
-    max_hand: int = Field(default=4, ge=1, le=20, validation_alias="手牌上限", description="手牌上限")
+    max_hand: int = Field(default=4, ge=0, le=20, validation_alias="手牌上限", description="手牌上限")
     gender: Gender = Field(default=Gender.MALE, validation_alias="性别", description="性别")
     skills: list[Skill] = Field(
         default_factory=list, max_length=MAX_GUIDE_LIST_LENGTH, validation_alias="技能", description="技能列表"

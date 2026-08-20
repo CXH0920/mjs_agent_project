@@ -62,37 +62,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/5SpK3EqSMQqMLefGnWxlhZno2mfm0NuJXwU0Ifyc.png_200x282.png"
   },
   {
-    "id": 175,
-    "name": "陆机",
-    "title": "",
-    "faction": "西晋",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "华亭鹤唳",
-        "description": "每轮结束时，若你在本轮受到过伤害，你可以选择并添加1张你本局游戏打出过的战法牌到手牌，每种牌限1次，之后每当有其他角色打出与此牌相同名称的战法牌时，你可以随机削弱其1张牌。",
-        "settlement": "1.每种牌限1次指的是每种打出过的同名战法牌因此技能只能被选择1次。 2.选择:从至多3张可选牌中选择1张。"
-      },
-      {
-        "name": "陆才如海",
-        "description": "回合开始时/当一名其他角色打出本轮首次被打出的1种战法牌后，你可以将所有手牌当作本轮未被打出过的任意1张战法牌打出。",
-        "settlement": "1.其他角色连续打出多张首次被打出的战法牌后，此技能可以触发多次。 2.本轮首次被打出的战法牌指的是:本轮在这张牌被打出前，同名战法牌未被打出过的战法牌。 3.若将多张牌当作1张卜卦战法牌打出，则其中的1张牌会进入目标的卜卦区，其他牌会被弃置。"
-      },
-      {
-        "name": "缘情绮靡",
-        "description": "当有角色成为本轮首次被打出的1种战法牌的目标时，若你或打出此牌的角色不是此牌的目标，你可以令你或打出此牌的角色也成为此牌的目标。",
-        "settlement": "一次技能发动仅能指定你或打出此牌的角色之中的1名角色成为目标，但当你与打出此牌的角色均非此牌目标时，此技能可以发动两次哦~"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MMDd7oLsP0kKtYrBhM5cCgTT8h0cuZyKWoblKmFf.png_200x282.png"
-  },
-  {
     "id": 174,
     "name": "傅玄",
     "title": "",
@@ -1389,37 +1358,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/W0g3lOxS4NvMff2RDK9ym7qVnGxPB1KRA43H73ZL.png_200x282.png"
   },
   {
-    "id": 123,
-    "name": "庞统",
-    "title": "",
-    "faction": "蜀汉",
-    "position": "控制",
-    "max_hp": 3,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "欲展骥足",
-        "description": "出牌阶段限1次，你可以将所有牌转化为等量随机战法牌。",
-        "settlement": "1.只会“转化”基本的战法牌; 2.包括手牌和装备区的牌，不包括卜卦区的牌。"
-      },
-      {
-        "name": "铁索连舟",
-        "description": "你可以将♦牌当作连环打出。当处于连环状态的角色受到属性伤害时，你摸1张牌。",
-        "settlement": "1.装备区的牌和手牌都可以当作连环打出； 2.属性伤害包括雷电属性、火焰属性。"
-      },
-      {
-        "name": "入蜀三策",
-        "description": "每轮限1次，其他角色的回合开始时，你可以随机添加3张战法牌至其手牌，令其可以立即打出其中1张，然后弃置另外2张牌，否则销毁这些牌。",
-        "settlement": "1.只会“添加”基本的战法牌； 2.如果3张战法牌都无法打出，则都销毁； 3.目标角色会先获得“牌”。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/p8Xi4gBfpluhbFWg3Mlzncr4RyOT7JV7HwasulpO.png_200x282.png"
-  },
-  {
     "id": 122,
     "name": "袁术",
     "title": "",
@@ -1874,37 +1812,6 @@
     "mode_viability": {},
     "last_updated": "2026-07-16",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/FhIMPZ18StPAbWnZ5qHrM5KvWPoRST3nqlk7C8UP.png_200x282.png"
-  },
-  {
-    "id": 106,
-    "name": "曹丕",
-    "title": "",
-    "faction": "曹魏",
-    "position": "控制",
-    "max_hp": 5,
-    "max_hand": 4,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "禅让受封",
-        "description": "限定，当一名其他角色阵亡后，你可以选择其1个技能，转移给自己。",
-        "settlement": "1.技能转移：获得的技能会保留当前的状态； 2.可以转移限定技，如果已经被使用，则不可以再被使用。"
-      },
-      {
-        "name": "燕歌行",
-        "description": "每个回合限1次，当你选择杀的目标时，你可以弃置目标2张牌，若此杀对其造成伤害，令其摸2张牌。",
-        "settlement": "此杀必须要对其造成伤害才会触发后续摸牌效果。如果此杀受方天画戟等效果影响，对非本技能选择的其他角色造成了伤害，不会令其摸牌。"
-      },
-      {
-        "name": "嗣承魏武",
-        "description": "受伤，随机获得伤害来源1张牌，并且获得对你造成伤害的牌。",
-        "settlement": "1.如果造成伤害的牌在过程中被其他角色拿走，则不会获得； 2.随机获得手牌和装备区域的牌。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/5lDEAcllt6NPkA0hXywlvxkeiS3xYp0pPhbC1pT0.png_200x282.png"
   },
   {
     "id": 105,
@@ -4855,5 +4762,181 @@
     "mode_viability": {},
     "last_updated": "2026-08-13",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/NRvooFPvhD0MiQzv3rW7BkBLl0LMQ1D40lyftUkK.png_200x282.png"
+  },
+  {
+    "id": 190,
+    "name": "羊献容",
+    "title": "",
+    "faction": "西晋",
+    "position": "爆发",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "两朝凤仪",
+        "description": "登场，你可以选择一名其他角色，令其选择获得1个“出牌阶段限1次”的技能。出牌阶段限2次，你可以选择发动一名其他角色的“出牌阶段限1次”的技能。",
+        "settlement": "1.选择获得是在给定的3个技能里选择1个。 2.此技能后段效果为出牌阶段限2次，但在同一个出牌阶段中，同一个其他角色的出牌阶段限1次的技能仍仅能发动一次。 3.发动其他角色的技能时并不会同步或影响其他角色的技能状态，例如发动张宝的三十六方并不会改变原有技能的计数，又例如发动杜预的杜武库时并不会继承其武库中的牌(所以羊献容发动杜武库时武库会是空的)。 4.并不能发动其他角色无法在其出牌阶段主动使用的出牌阶段限1次技能，例如金屋藏娇。"
+      },
+      {
+        "name": "五废六立",
+        "description": "其他角色出牌阶段限2次，令你的手牌上限+1，然后你可以令其摸1张牌；或令你的手牌上限-1。当你的手牌上限变为0或累计改变6次后，将你的武将技能修改为“两朝凤仪”，然后你重新登场，并立即进行1个出牌阶段。",
+        "settlement": "1.如果处于封禁状态下手牌上限变为0，在封禁状态结束后需重新经过变化为0才会触发。 2.“将你的武将技能修改为两朝凤仪”是指失去其他所有武将技能并获得两朝凤仪，重新登场后也仅存在两朝凤仪。"
+      },
+      {
+        "name": "凤落金牢",
+        "description": "你打出的牌无法选择其他角色为目标。每个角色的回合开始时，你受到1点伤害。当你即将受到伤害时，若你的手牌上限>0，将此伤害改为手牌上限-1。",
+        "settlement": "无论这次伤害的值有多少，都只会减少1手牌上限。 技能典故 义败，颖奏废后为庶人，处金墉城。--《晋书》"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/FvzLX9IluNYp4xa6FLvAAttYxR14WejD3U2wudYS.png_200x282.png"
+  },
+  {
+    "id": 189,
+    "name": "王濬",
+    "title": "",
+    "faction": "西晋",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "熔金断索",
+        "description": "出牌阶段限1次，你可以烧毁一名装备区牌数小于你的其他角色的所有 牌，并增加等量的出杀次数。",
+        "settlement": "烧毁后的牌会移出游戏。"
+      },
+      {
+        "name": "暗筑楼船",
+        "description": "出牌阶段限1次，你可以将1张手牌选择并转化为1张相同花色的装备牌，并获得1张相同花色的牌。回合开始时，若你的装备区牌数不是全场唯一最多，此技能的发动次数永久+1。",
+        "settlement": "如果牌库里没有相同花色的牌则无法获得。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/iI7AZRY2x5sxaYRIuYFNSBd4L43lbqc0aPG3V7g5.png_200x282.png"
+  },
+  {
+    "id": 175,
+    "name": "陆机",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "华亭鹤唳",
+        "description": "每轮结束时，你可以选择并添加1张你本局游戏打出过的战法牌到手牌，每种牌限1次。",
+        "settlement": "1.每种牌限1次指的是每种打出过的同名战法牌因此技能只能被选择1次。 2.选择:从至多3张可选牌中选择1张。"
+      },
+      {
+        "name": "陆才如海",
+        "description": "回合开始时，你可以将1张牌当作本轮未被打出过的任意1张战法牌打出。然后直到你的下个回合开始，当一名其他角色打出本轮未被打出过的战法牌后，你可以弃置1张牌，然后随机添加1张本轮未被打出过的战法牌到你的手牌",
+        "settlement": "1.其他角色连续打出多张首次被打出的战法牌后，此技能可以触发多次。 2.本轮首次被打出的战法牌指的是:本轮在这张牌被打出前，同名战法牌未被打出过的战法牌。 3.若将多张牌当作1张卜卦战法牌打出，则其中的1张牌会进入目标的卜卦区，其他牌会被弃置。"
+      },
+      {
+        "name": "缘情绮靡",
+        "description": "每个回合限1次，当一名角色打出战法牌选择目标时，若此牌名本轮未被打出过，你可以为此牌增加另一名角色为目标。",
+        "settlement": "一次技能发动仅能指定你或打出此牌的角色之中的1名角色成为目标，但当你与打出此牌的角色均非此牌目标时，此技能可以发动两次哦~"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-07/MMDd7oLsP0kKtYrBhM5cCgTT8h0cuZyKWoblKmFf.png_200x282.png"
+  },
+  {
+    "id": 123,
+    "name": "庞统",
+    "title": "",
+    "faction": "蜀汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "欲展骥足",
+        "description": "出牌阶段限1次，你可以将所有牌转化为等量随机战法牌。",
+        "settlement": "1.只会“转化”基本的战法牌; 2.包括手牌和装备区的牌，不包括卜卦区的牌。"
+      },
+      {
+        "name": "铁索连舟",
+        "description": "你可以将♦牌当作连环打出。当处于连环状态的角色受到属性伤害时，你摸1张牌。",
+        "settlement": "1.装备区的牌和手牌都可以当作连环打出； 2.属性伤害包括雷电属性、火焰属性。"
+      },
+      {
+        "name": "入蜀三策",
+        "description": "每轮限1次，其他角色的回合开始时，你可以随机添加3张战法牌至其手牌，令其可以立即打出其中1张，然后弃置另外2张牌，否则销毁这些牌。",
+        "settlement": "1.只会“添加”基本的战法牌； 2.如果3张战法牌都无法打出，则都销毁； 3.目标角色会先获得“牌”。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-01/p8Xi4gBfpluhbFWg3Mlzncr4RyOT7JV7HwasulpO.png_200x282.png"
+  },
+  {
+    "id": 106,
+    "name": "曹丕",
+    "title": "",
+    "faction": "曹魏",
+    "position": "控制",
+    "max_hp": 5,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "禅让受封",
+        "description": "限定，当一名其他角色阵亡后，你可以选择其1个技能，转移给自己。",
+        "settlement": "1.技能转移：获得的技能会保留当前的状态； 2.可以转移限定技，如果已经被使用，则不可以再被使用。"
+      },
+      {
+        "name": "燕歌行",
+        "description": "每个回合限1次，当你选择杀的目标时，你可以弃置目标2张牌，若此杀对其造成伤害，令其摸2张牌。",
+        "settlement": "此杀必须要对其造成伤害才会触发后续摸牌效果。如果此杀受方天画戟等效果影响，对非本技能选择的其他角色造成了伤害，不会令其摸牌。"
+      },
+      {
+        "name": "嗣承魏武",
+        "description": "受伤，随机获得伤害来源1张牌，并且获得对你造成伤害的牌。",
+        "settlement": "1.如果造成伤害的牌在过程中被其他角色拿走，则不会获得； 2.随机获得手牌和装备区域的牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/5lDEAcllt6NPkA0hXywlvxkeiS3xYp0pPhbC1pT0.png_200x282.png"
+  },
+  {
+    "id": 192,
+    "name": "杨艳",
+    "title": "",
+    "faction": "西晋",
+    "position": "辅助",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "枕膝荐从",
+        "description": "重伤/出牌阶段限1次，你可以交给一名其他角色至少1张牌，然后令其交给你选择的另一名其他角色等量+1张牌，并且你失去1点体力。",
+        "settlement": "1.只要发动此技能，就会失去1点体力。 2.如果在重伤状态下发动此技能，会再失去1点体力，此时不会再次触发重伤。"
+      },
+      {
+        "name": "立嫡以长",
+        "description": "登场，你选择一名其他角色，当有角色交给另外一名其他角色牌后，若获得牌的角色手牌数≥你选择的角色：你可以令交出牌的角色交给你选择的角色等量张牌；否则令其随机弃置等量张牌，若弃置的牌不足，则由获得牌的角色继续弃置。",
+        "settlement": "1.另外一名其他角色指的是除了自己和选择的角色以外的角色。 2.若获得牌的角色手牌数≥“嫡长子”，则交出牌的角色需要给“嫡长子”等量牌，如果该角色不给出等量牌，则进入交出牌角色的弃牌流程，若仍弃牌数量不足，则获得牌的角色需继续随机弃置差值张牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/AzrugLlkIMIonlCDcwaUjewLxKaiHuXUzoaK8ZVa.png_200x282.png"
   }
 ]
