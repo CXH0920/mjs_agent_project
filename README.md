@@ -39,6 +39,7 @@ test_project/
 │   │       ├── browser_session.py
 │   │       ├── prompt_utils.py
 │   │       ├── rag_prompt.py          # RAG 语料检索与注入（攻略/相性）
+│   │       ├── rule_summary.py      # 无 RAG 模式核心规则摘要注入
 │   │       ├── json_extract.py
 │   │       └── utils.py
 │   ├── business/
@@ -90,8 +91,7 @@ test_project/
 │   ├── 2v2出场排行.csv            # 2v2 出场数据（官方榜单导入生成）
 │   ├── 武将放逐.csv                # 武将放逐数据（官方榜单导入生成）
 │   ├── 武将推荐指数.csv            # 由三份官方榜单计算的推荐指数快照
-│   ├── archive/                   # 历史归档（原 mjs卡牌点数.xlsx，供应急重导入）
-│   └── char_info_cache.json       # 汉字特征用户层缓存（运行时自动扩展，不提交）
+│   └── archive/                   # 历史归档（原 mjs卡牌点数.xlsx，供应急重导入）
 ├── images/
 │   └── <武将名>.png               # 172 个武将头像（从官网自动下载）
 ├── templates/
@@ -128,11 +128,8 @@ test_project/
 │   │   ├── hero_guide.md           # 攻略生成 Prompt
 │   │   └── synergy_score.md        # 相性评分 Prompt
 │   ├── field_mapping.md            # 官网字段映射说明
-│   ├── retrospective.md            # 历史负面事件复盘与避坑指南
 │   └── project_doc.md              # 完整项目细节文档
-├── project_problem.md             # 项目问题记录文档
 ├── AGENTS.md                      # 开发规范
-├── PLANS.md                       # 实施方案与阶段
 ├── CLAUDE.md                      # Claude Code 上下文文件
 ├── environment.yml                # Conda 环境定义
 └── README.md                      # 本文件
@@ -275,7 +272,6 @@ ADB 截图
 - [调用图目录](docs/call_graph/)：以 `A() -> B()` 形式记录核心函数调用链和跨进程边界。
 - [模块说明](docs/code_desc/)：面向维护和新人培训的分模块摘要。
 - [元规则 T0 文档维护方案](docs/元规则T0文档维护方案.md)：规则母本增量维护流程、机器校验项与工作台操作说明。
-- [历史复盘与避坑指南](docs/retrospective.md)：汇总 Codex/Claude 历史负面事件、根因、预防门禁和未闭环风险。
 
 ## 架构
 
