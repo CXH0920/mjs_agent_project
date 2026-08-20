@@ -72,3 +72,11 @@ data/_skills_dump.txt
 data/_syn_review.md
 # 环境备份（pip 清单与 paddle/libs DLL，体积大且含机器相关内容，不入库）
 env_backup/
+
+# 示例占位符数据（已被 prompt 内嵌 few-shot 示例替代）
+data/example_guides.json
+data/example_synergies.json
+# UI 视觉基线截图（改造阶段对比，改造已完成）
+docs/ui_baseline/*.png
+# 归档提案（历史记录，按需保留本地）
+docs/archive/proposals/CP-*.json
