@@ -11,10 +11,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_CHARACTER_FEATURE_CACHE = PROJECT_ROOT / "src" / "data" / "char_info_cache.json"
+from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+DEFAULT_CHARACTER_FEATURE_CACHE = BUNDLE_ROOT / "src" / "data" / "char_info_cache.json"
 USER_CHARACTER_FEATURE_CACHE = PROJECT_ROOT / "data" / "char_info_cache.json"
-DEFAULT_WUBI_TABLE = PROJECT_ROOT / "src" / "data" / "wubi86.txt"
+DEFAULT_WUBI_TABLE = BUNDLE_ROOT / "src" / "data" / "wubi86.txt"
 _EMPTY_FEATURE = {
     "radical": "",
     "cangjie": "",

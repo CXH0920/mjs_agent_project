@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 from src.scraper.ai.browser_session import DeepSeekBrowserSession
 from src.scraper.ai.prompt_utils import (
     load_prompt,
@@ -46,7 +46,7 @@ from src.scraper.ai.utils import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_DIR = PROJECT_ROOT / "docs" / "prompts"
+PROMPT_DIR = BUNDLE_ROOT / "docs" / "prompts"
 GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
 SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
 

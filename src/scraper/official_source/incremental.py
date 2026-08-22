@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 # 复用爬虫核心模块的公开 API
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 from src.scraper.official_source.crawler import (
     transform,
     validate_heroes,
@@ -29,7 +29,7 @@ from src.scraper.official_source.crawler import (
 logger = logging.getLogger(__name__)
 
 # 默认数据路径
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
+DEFAULT_DATA_DIR = BUNDLE_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 
 

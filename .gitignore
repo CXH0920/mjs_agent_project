@@ -24,8 +24,8 @@ data/武将推荐指数.csv
 # 推荐指数运行时状态（程序自动更新，避免反复出现无关 diff）
 data/武将推荐指数状态.json
 data/official_import_pending.json
-# 汉字特征用户层缓存（运行时自动扩展）
-src/data/char_info_cache.json
+# 汉字特征打包基线（character_feature_repository 读 BUNDLE_ROOT/src/data/，需入库供 spec 收集）
+# 用户层缓存在项目根 data/char_info_cache.json，见下方忽略
 # 武将分类带日期快照文档（一次性分析，源数据见 hero_classification.json）
 data/武将分类20*.md
 # 公告监控运行时产物（运行时自动生成/更新）
@@ -73,6 +73,13 @@ data/_skills_dump.txt
 data/_syn_review.md
 # 环境备份（pip 清单与 paddle/libs DLL，体积大且含机器相关内容，不入库）
 env_backup/
+
+# 打包构建产物与依赖（release.py 生成，每台机器独立，不入库）
+build/
+dist/
+build_deps/
+# 汉字特征用户层缓存（项目根 data/，运行时自动扩展）
+data/char_info_cache.json
 
 # 示例占位符数据（已被 prompt 内嵌 few-shot 示例替代）
 data/example_guides.json

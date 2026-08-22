@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QToolButton, QVBoxLayout, QWidget,
 )
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
 from src.business.analysis.match_analysis_service import MatchAnalysis, MatchAnalysisService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -41,7 +41,7 @@ from src.ui.shared.style import (
 )
 
 logger = logging.getLogger(__name__)
-IMAGES_DIR = PROJECT_ROOT / "images"
+IMAGES_DIR = BUNDLE_ROOT / "images"
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 
 

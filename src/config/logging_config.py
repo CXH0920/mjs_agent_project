@@ -13,7 +13,8 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+from src.config.env import PROJECT_ROOT
+
 LOG_DIR = PROJECT_ROOT / "logs"
 
 LEVEL_MAP: dict[str, int] = {

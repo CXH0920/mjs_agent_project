@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 from src.data.models import Hero
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.ui.shared.faction_colors import get_faction_colors
@@ -34,7 +34,7 @@ from src.ui.shared.style import (
 )
 
 
-IMAGES_DIR = PROJECT_ROOT / "images"
+IMAGES_DIR = BUNDLE_ROOT / "images"
 
 
 class HeroCardWidget(QFrame):

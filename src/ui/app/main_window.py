@@ -61,8 +61,7 @@ from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 from src.ui.app.shell_widgets import ContextHeader, NavigationRail
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import NoticeBanner, show_toast
-from src.ui.maintenance.rag_maintenance_panel import RagMaintenancePanel
-from src.config.env import PROJECT_ROOT
+from src.config.env import PROJECT_ROOT, is_full_build
 
 
 class MainWindow(QMainWindow):
@@ -74,12 +73,14 @@ class MainWindow(QMainWindow):
     _hero_update_prepared = Signal(object)
 
     NAV_COLLAPSE_THRESHOLD = 1040
-    PAGE_CONTEXTS = (
+    _PAGE_CONTEXTS_BASE = (
         ("资料库", "浏览并维护武将、攻略、相性和卡牌数据。"),
         ("选将推荐", "根据当前阵容查看武将优先级与搭配依据。"),
         ("对局攻略", "确认敌我阵容并查看本局策略与胜率信息。"),
-        ("知识库维护", "武将/卡牌/专属牌变更后，本地重建 RAG 语料与向量索引。"),
     )
+    PAGE_CONTEXTS = _PAGE_CONTEXTS_BASE + (
+        ("知识库维护", "武将/卡牌/专属牌变更后，本地重建 RAG 语料与向量索引。"),
+    ) if is_full_build() else _PAGE_CONTEXTS_BASE
 
     def __init__(
         self,
@@ -693,12 +694,16 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        navigation_icons = (
+        _nav_icons = [
             self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon),
             self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
             self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
-            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
-        )
+        ]
+        if is_full_build():
+            _nav_icons.append(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+            )
+        navigation_icons = tuple(_nav_icons)
         self._navigation = NavigationRail(navigation_icons, central)
         layout.addWidget(self._navigation)
 
@@ -769,9 +774,12 @@ class MainWindow(QMainWindow):
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")
 
-        # Tab 4: 知识库维护（RAG 语料/索引本地维护工作台）
-        self._rag_maintenance = RagMaintenancePanel(PROJECT_ROOT, hero_names)
-        self._tabs.addTab(self._rag_maintenance, "知识库维护")
+        # Tab 4: 知识库维护（RAG 语料/索引本地维护工作台，仅完整版）
+        # lazy import：精简版不 import rag 依赖链，配合 spec excludes 排除 rag
+        if is_full_build():
+            from src.ui.maintenance.rag_maintenance_panel import RagMaintenancePanel
+            self._rag_maintenance = RagMaintenancePanel(PROJECT_ROOT, hero_names)
+            self._tabs.addTab(self._rag_maintenance, "知识库维护")
 
         workspace_layout.addWidget(self._tabs, 1)
         layout.addWidget(workspace, 1)

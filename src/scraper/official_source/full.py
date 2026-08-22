@@ -22,7 +22,7 @@ import logging
 import sys
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 from src.scraper.official_source.crawler import (
     BAIKE_URL,
     fetch,
@@ -35,7 +35,7 @@ from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chu
 logger = logging.getLogger(__name__)
 
 # 默认输出路径
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "heroes.json"
+DEFAULT_OUTPUT = BUNDLE_ROOT / "data" / "heroes.json"
 
 
 def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bool = False) -> None:

@@ -6,9 +6,12 @@ import csv
 import logging
 from pathlib import Path
 
+from src.config.env import BUNDLE_ROOT
+
 logger = logging.getLogger(__name__)
 
-WIN_RATE_CSV = Path(__file__).resolve().parent.parent.parent / "data" / "2v2胜率排行.csv"
+# 胜率 csv 为打包基线（BUNDLE_ROOT/data，只读）；用户官方导入更新的 fallback 后续再加
+WIN_RATE_CSV = BUNDLE_ROOT / "data" / "2v2胜率排行.csv"
 _win_rate_cache: dict[str, float] | None = None
 
 

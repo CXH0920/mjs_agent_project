@@ -8,11 +8,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 
 logger = logging.getLogger(__name__)
 
-_CORE_RULES_FILE = PROJECT_ROOT / "data" / "rag_corpus" / "核心规则摘要.md"
+_CORE_RULES_FILE = BUNDLE_ROOT / "data" / "rag_corpus" / "核心规则摘要.md"
 
 
 def load_core_rules() -> str:

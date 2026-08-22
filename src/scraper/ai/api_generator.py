@@ -10,7 +10,7 @@ import logging
 import time
 import httpx
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 from src.scraper.ai.prompt_utils import (
     load_prompt,
     build_guide_prompt,
@@ -27,8 +27,8 @@ from src.scraper.ai.utils import (
 
 logger = logging.getLogger(__name__)
 
-# 路径常量（相对 PROJECT_ROOT 定位 Prompt 文件）
-PROMPT_DIR = PROJECT_ROOT / "docs" / "prompts"
+# 路径常量（相对 BUNDLE_ROOT 定位 Prompt 文件）
+PROMPT_DIR = BUNDLE_ROOT / "docs" / "prompts"
 GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
 SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
 MAX_OUTPUT_TOKENS = 16_384

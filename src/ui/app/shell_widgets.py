@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from src.config.env import is_full_build
 from src.ui.shared.style import (
     BORDER,
     ICON_SIZE,
@@ -101,7 +102,8 @@ class NavigationRail(QFrame):
 
     EXPANDED_WIDTH = 156
     COLLAPSED_WIDTH = 56
-    PAGE_LABELS = ("资料库", "选将推荐", "对局攻略", "知识库维护")
+    _PAGE_LABELS_BASE = ("资料库", "选将推荐", "对局攻略")
+    PAGE_LABELS = _PAGE_LABELS_BASE + ("知识库维护",) if is_full_build() else _PAGE_LABELS_BASE
 
     def __init__(
         self,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import sys
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
@@ -15,7 +16,57 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from src.ui.app.main_window import MainWindow
 from src.ui.app.chinese_translator import install_chinese_qt_translator
+from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
 from src.ui.shared.style import GLOBAL_STYLE
+
+
+def _ensure_clean_runtime() -> None:
+    """frozen 下首启在 exe 同级生成可写运行时骨架，不覆盖已有用户数据。
+
+    开发态（IS_FROZEN=False）直接返回，不影响开发流程。打包产物不含
+    config.env / edge_profile / logs 等用户资料，由本函数首次启动补齐。
+    """
+    if not IS_FROZEN:
+        return
+    # config.env：从打包模板复制（用户首启填写 API Key），不覆盖已有
+    env_file = PROJECT_ROOT / "config.env"
+    if not env_file.exists():
+        template = BUNDLE_ROOT / "config.env.example"
+        if template.exists():
+            shutil.copy2(template, env_file)
+    # 可写运行时目录（用户数据 / 日志 / 截图 / 模板 / 配置）
+    for name in ("data", "logs", "config", "templates", "images"):
+        (PROJECT_ROOT / name).mkdir(parents=True, exist_ok=True)
+    # ROI 用户配置：从默认复制可改副本
+    user_roi = PROJECT_ROOT / "config" / "ocr_rois.json"
+    if not user_roi.exists():
+        default_roi = BUNDLE_ROOT / "config" / "ocr_rois.default.json"
+        if default_roi.exists():
+            shutil.copy2(default_roi, user_roi)
+
+
+def _install_no_window_patch() -> None:
+    """frozen 下永久 patch subprocess.Popen，抑制所有子进程的控制台弹窗。
+
+    windowed 打包（console=False）后父进程无控制台，每次调 adb 等控制台子程序，
+    Windows 会为其新建控制台窗口（轮询黑窗）。patch 给 Popen.__init__ 注入
+    CREATE_NO_WINDOW 规避。开发态不 patch，保留控制台便于调试。
+    subprocess.run 内部走 Popen，一并覆盖。
+    """
+    if not IS_FROZEN:
+        return
+    import subprocess
+
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if not no_window:
+        return  # 非 Windows 无此常量
+    original_init = subprocess.Popen.__init__
+
+    def hidden_init(self, *args, **kwargs):
+        kwargs["creationflags"] = (kwargs.get("creationflags") or 0) | no_window
+        original_init(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = hidden_init
 
 
 def _create_startup_splash() -> QSplashScreen:
@@ -45,6 +96,8 @@ def _create_startup_splash() -> QSplashScreen:
 
 def main() -> None:
     """应用主函数"""
+    _ensure_clean_runtime()
+    _install_no_window_patch()
     # 提前初始化日志（在 QApplication 创建之前）
     from src.config.env import get_runtime_params
     from src.config.logging_config import setup_logging
@@ -59,9 +112,12 @@ def main() -> None:
                           "qt.qpa.fonts=false;qt.text.font.db=false")
 
     # Windows cmd 默认 GBK，设置 stdout/stderr 为 UTF-8 避免中文乱码
+    # windowed 打包模式双击启动时 sys.stdout/stderr 为 None，需守卫避免崩溃
     if sys.platform == "win32":
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        if sys.stdout is not None:
+            sys.stdout.reconfigure(encoding="utf-8")
+        if sys.stderr is not None:
+            sys.stderr.reconfigure(encoding="utf-8")
 
     # 设置高 DPI 支持
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -117,4 +173,15 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # frozen 下 QProcess 用 sys.executable(=mjs_agent.exe) -m <module> 跑子脚本
+    # （AI 攻略/相性/武将生成走 src.scraper.ai_batch 等 -m 模块）。
+    # exe 重入时识别 -m 走 runpy 模块模式，否则会启动 GUI（表现为又开一个 exe 实例）。
+    # 开发态 python 自己处理 -m，不触发此分支。
+    if IS_FROZEN and len(sys.argv) > 2 and sys.argv[1] == "-m":
+        import runpy
+
+        _module = sys.argv[2]
+        sys.argv = [sys.argv[0]] + sys.argv[3:]  # 去掉 -m <module>，剩余参数留给脚本
+        runpy.run_module(_module, run_name="__main__", alter_sys=False)
+        sys.exit(0)
     main()

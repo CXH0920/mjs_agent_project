@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.config.env import (
-    PROJECT_ROOT,
+    BUNDLE_ROOT,
     get_api_config,
     get_runtime_params,
 )
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # 路径常量
 # ============================================================
 
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
+DEFAULT_DATA_DIR = BUNDLE_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -18,9 +19,32 @@ logger = logging.getLogger(__name__)
 # 路径常量
 # ============================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+IS_FROZEN = getattr(sys, "frozen", False)
+
+if IS_FROZEN:
+    # PyInstaller onedir：exe 同级 _internal/ 为只读打包资源根，
+    # exe 同级为可写运行时根（config.env / logs / 用户缓存写入处）。
+    _exe_dir = Path(sys.executable).resolve().parent
+    BUNDLE_ROOT = _exe_dir / "_internal"     # 只读：静态数据/模板/图片/OCR 模型
+    PROJECT_ROOT = _exe_dir                  # 可写：config.env/logs/用户运行时数据
+else:
+    # 开发态：两者均指向项目根（src 的上两级），现有行为不变。
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    BUNDLE_ROOT = PROJECT_ROOT
+
 DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
-DEFAULT_PRICING_FILE = PROJECT_ROOT / "config" / "model_pricing.json"
+DEFAULT_PRICING_FILE = BUNDLE_ROOT / "config" / "model_pricing.json"
+
+
+def is_full_build() -> bool:
+    """是否完整版构建（含 RAG 维护页 + Playwright 抓取）。
+
+    开发态恒 True；frozen 下读 BUNDLE_ROOT/.full_build 标记（由 spec --full 写入）。
+    精简版无该标记 → UI 守卫据此裁剪知识库维护页（4 页 → 3 页）。
+    """
+    if not IS_FROZEN:
+        return True
+    return (BUNDLE_ROOT / ".full_build").exists()
 
 # ============================================================
 # DeepSeek API 默认值

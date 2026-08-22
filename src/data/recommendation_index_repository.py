@@ -11,17 +11,18 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.config.env import load_env_config
+from src.config.env import BUNDLE_ROOT, PROJECT_ROOT, load_env_config
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = BUNDLE_ROOT / "data"  # 读基线 csv/json（打包只读，frozen 下 __file__ 推导不可靠）
 WIN_RATE_CSV = DATA_DIR / "2v2胜率排行.csv"
 PICK_RANK_CSV = DATA_DIR / "2v2出场排行.csv"
 BAN_RANK_CSV = DATA_DIR / "武将放逐.csv"
 HEROES_JSON = DATA_DIR / "heroes.json"
 RECOMMENDATION_INDEX_CSV = DATA_DIR / "武将推荐指数.csv"
-RECOMMENDATION_INDEX_STATE_FILE = DATA_DIR / "武将推荐指数状态.json"
+# stale 状态写可写运行时根（BUNDLE_ROOT 只读，mark_stale 写它会失败）
+RECOMMENDATION_INDEX_STATE_FILE = PROJECT_ROOT / "data" / "武将推荐指数状态.json"
 
 DEFAULT_P_FLOOR = 0.2
 DEFAULT_BAN_WEIGHT = 0.5

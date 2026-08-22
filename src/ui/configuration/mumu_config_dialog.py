@@ -38,7 +38,7 @@ from src.business.recognition.ocr_service import OcrService
 from src.capture.image_validation import load_local_image
 from src.capture.image_utils import pil_to_qpixmap
 from src.capture.prober import MuMuDeviceInfo
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
 from src.ui.configuration.mumu_config_sections import (
     MumuDeviceSection,
     MumuOcrPollingSection,
@@ -48,7 +48,7 @@ from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
+DEFAULT_TEMPLATE_DIR = BUNDLE_ROOT / "templates"
 DEFAULT_SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 
 

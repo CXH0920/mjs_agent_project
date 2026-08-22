@@ -8,11 +8,11 @@ from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QWidget
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import BUNDLE_ROOT
 
 logger = logging.getLogger(__name__)
 
-APP_ICON_PATH = PROJECT_ROOT / "mjs.ico"
+APP_ICON_PATH = BUNDLE_ROOT / "mjs.ico"
 _cached_icon: QIcon | None = None
 _icon_keeper: _AppIconKeeper | None = None
 

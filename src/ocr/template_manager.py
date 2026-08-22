@@ -92,7 +92,8 @@ class TemplateManager:
     def _load_internal(self) -> None:
         """从文件加载模板到内存。"""
         try:
-            img = cv2.imread(str(self._template_path), cv2.IMREAD_GRAYSCALE)
+            with self._template_path.open("rb") as _f:
+                img = cv2.imdecode(np.frombuffer(_f.read(), np.uint8), cv2.IMREAD_GRAYSCALE)
             if img is not None and img.size > 0:
                 self._template = img
                 self._load_metadata()
@@ -165,9 +166,13 @@ class TemplateManager:
 
         # 保存到文件
         self._template_path.parent.mkdir(parents=True, exist_ok=True)
-        success = cv2.imwrite(str(self._template_path), gray)
-        if not success:
+        # cv2.imwrite 用 ANSI fopen 不支持中文路径，改 imencode + open(wb) 规避
+        _ext = self._template_path.suffix or ".png"
+        _ok, buf = cv2.imencode(_ext, gray)
+        if not _ok:
             raise IOError(f"模板保存失败: {self._template_path}")
+        with self._template_path.open("wb") as _f:
+            _f.write(buf.tobytes())
 
         # 加载到内存
         self._template = gray
