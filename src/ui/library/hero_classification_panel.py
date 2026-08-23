@@ -380,6 +380,7 @@ class HeroClassificationPanel(QWidget):
             self.reload_data(confirm_discard=False)
             return
         self._dirty = False
+        self._refresh_heroes()
         self._update_status("已保存", TONE_SUCCESS)
         self.data_changed.emit()
         show_toast(self, "武将分类数据已保存，请在知识库维护中重建语料")
@@ -664,7 +665,6 @@ class HeroClassificationPanel(QWidget):
             # 回滚下拉显示为仓库中的归类，避免视觉与数据不一致（#18）
             self._hero_combo.set_checked(self._repo.get_hero_categories(hero))
             return
-        self._refresh_heroes()
         self._mark_dirty()
 
     def focus_unclassified(self) -> None:

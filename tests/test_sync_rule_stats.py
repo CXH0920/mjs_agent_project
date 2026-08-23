@@ -9,8 +9,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import sync_rule_stats as srs  # noqa: E402
+from src.scripts import sync_rule_stats as srs  # noqa: E402
 
 
 def _write(path: Path, payload: object) -> None:

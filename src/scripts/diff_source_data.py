@@ -8,10 +8,10 @@
 - 新机制判定为启发式：命中完整版术语表/机制关键词时仅标"疑似需人工确认"，不自动判定。
 
 用法：
-    python scripts/diff_source_data.py
-    python scripts/diff_source_data.py --old data/backups/heroes-20260730-233916-573897.json
-    python scripts/diff_source_data.py --data heroes,cards
-    python scripts/diff_source_data.py --out docs/changelog/变更清单-2026-08-15.md
+    python -m src.scripts.diff_source_data
+    python -m src.scripts.diff_source_data --old data/backups/heroes-20260730-233916-573897.json
+    python -m src.scripts.diff_source_data --data heroes,cards
+    python -m src.scripts.diff_source_data --out docs/changelog/变更清单-2026-08-15.md
 """
 import re
 import io
@@ -21,7 +21,7 @@ import json
 import glob
 import argparse
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from src.config.env import PROJECT_ROOT as ROOT
 DATA_DIR = os.path.join(ROOT, 'data')
 BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
 DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
@@ -49,8 +49,7 @@ def load_lexicon():
     """完整版术语名 + 内置机制关键词。"""
     words = set(MECH_KEYWORDS)
     try:
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import build_rule_corpus as brc
+        from src.scripts import build_rule_corpus as brc
         _, terms, _, _ = brc.parse_rule_doc(DOC)
         words.update(t['term'] for t in terms)
     except Exception:

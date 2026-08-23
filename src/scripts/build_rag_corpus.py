@@ -2,7 +2,7 @@
 """生成武将 RAG 语料：总览块 + 技能块，含规则抽取的索引字段"""
 import json, re
 
-from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
 setup_stdout()
 
@@ -247,7 +247,7 @@ md_path = CORPUS / '武将RAG语料.md'
 json_path = CORPUS / '武将RAG语料.json'
 with open(md_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
-import rag_curated
+from src.scripts import rag_curated
 _merged = rag_curated.merge_curated(blocks, json_path)
 if _merged:
     print('已保留 curated 精化块:', _merged)

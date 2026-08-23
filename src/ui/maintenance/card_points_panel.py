@@ -472,14 +472,10 @@ class CardPointsPanel(QWidget):
         if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "导入任务运行中，请等待完成。")
             return
-        script = self._root / "scripts" / "migrate_excel_to_json.py"
-        if not script.exists():
-            QMessageBox.critical(self, "脚本缺失", f"未找到 {script}")
-            return
         self._import_button.setEnabled(False)
         self._import_button.setText("导入中…")
         self._import_output = []
-        self._runner.run(sys.executable, script, ["--only", "points"], self._root)
+        self._runner.run(sys.executable, None, ['-m', 'src.scripts.migrate_excel_to_json', '--only', 'points'], self._root)
 
     def _collect_import_output(self, data: bytes) -> None:
         self._import_output.append(bytes(data).decode("utf-8", errors="replace"))

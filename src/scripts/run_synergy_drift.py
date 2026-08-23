@@ -2,14 +2,14 @@
 
 用法：
   改造后（当前代码，temperature=0.3）：
-    python scripts/run_synergy_drift.py --out-prefix syn_after
+    python -m src.scripts.run_synergy_drift --out-prefix syn_after
   基线（先 git stash 回退到 HEAD，temperature=0.7）：
     git stash
-    python scripts/run_synergy_drift.py --out-prefix syn_base
+    python -m src.scripts.run_synergy_drift --out-prefix syn_base
     git stash pop
   对比漂移：
-    python scripts/eval_guide_quality.py --stats --synergies data/syn_base_run1.json data/syn_base_run2.json data/syn_base_run3.json
-    python scripts/eval_guide_quality.py --stats --synergies data/syn_after_run1.json data/syn_after_run2.json data/syn_after_run3.json
+    python -m src.scripts.eval_guide_quality --stats --synergies data/syn_base_run1.json data/syn_base_run2.json data/syn_base_run3.json
+    python -m src.scripts.eval_guide_quality --stats --synergies data/syn_after_run1.json data/syn_after_run2.json data/syn_after_run3.json
 """
 import argparse
 import json
@@ -17,8 +17,7 @@ import sys
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+from src.config.env import PROJECT_ROOT as ROOT
 
 from src.config.env import get_api_config, get_runtime_params
 from src.scraper.ai.api_generator import AIBatchGenerator
@@ -72,7 +71,7 @@ def main():
     gen.close()
     print("\n完成。对比漂移：")
     runs = " ".join(f"data/{args.out_prefix}_run{r}.json" for r in range(1, args.rounds + 1))
-    print(f"  python scripts/eval_guide_quality.py --stats --synergies {runs}")
+    print(f"  python -m src.scripts.eval_guide_quality --stats --synergies {runs}")
 
 
 if __name__ == "__main__":

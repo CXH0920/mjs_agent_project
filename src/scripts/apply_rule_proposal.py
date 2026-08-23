@@ -12,8 +12,8 @@
 maintain_rag.py --only 元规则 → changelog 追加 → 提案归档。
 
 用法：
-    python scripts/apply_rule_proposal.py --proposal docs/archive/proposals/CP-xxx.json
-    python scripts/apply_rule_proposal.py --proposal xxx.json --doc docs/元规则整理-完整版.md
+    python -m src.scripts.apply_rule_proposal --proposal docs/archive/proposals/CP-xxx.json
+    python -m src.scripts.apply_rule_proposal --proposal xxx.json --doc docs/元规则整理-完整版.md
 """
 import argparse
 import io
@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from src.config.env import PROJECT_ROOT as ROOT
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
 

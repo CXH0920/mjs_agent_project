@@ -1,8 +1,8 @@
 """攻略/相性生成质量评估：样本采样 + 基线/改造后统计对照。
 
 用法：
-  python scripts/eval_guide_quality.py --pick-sample
-  python scripts/eval_guide_quality.py --stats --guides data/guides.json --synergies data/synergies.json [--attempts N]
+  python -m src.scripts.eval_guide_quality --pick-sample
+  python -m src.scripts.eval_guide_quality --stats --guides data/guides.json --synergies data/synergies.json [--attempts N]
 
 --pick-sample：分层采样 20 武将（覆盖势力/定位）+ 10 对相性，输出清单并写
   data/sample_heroes.json（供 --heroes-file）/ data/sample_pairs.json。
@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent.parent
+from src.config.env import PROJECT_ROOT as ROOT
 HEROES_FILE = ROOT / "data" / "heroes.json"
 
 

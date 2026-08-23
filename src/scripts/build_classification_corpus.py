@@ -7,7 +7,7 @@
 """
 import json
 
-from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
 setup_stdout()
 

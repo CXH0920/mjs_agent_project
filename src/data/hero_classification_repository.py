@@ -57,6 +57,7 @@ class HeroClassificationRepository(JsonRepository):
         self._version = "1.0"
         self._source = ""
         self._updated_at = ""
+        self._note = ""
         # 上次成功持久化/加载的内存快照：保存失败时回滚到该状态（显式保存模式的 #11）
         self._saved_snapshot: tuple[list[ClassificationCategory], dict[str, str], dict[str, list[str]]] | None = None
 
@@ -81,6 +82,7 @@ class HeroClassificationRepository(JsonRepository):
         self._version = str(root.get("version", "1.0"))
         self._source = str(root.get("source", "") or "")
         self._updated_at = str(root.get("updated_at", "") or "")
+        self._note = str(root.get("note", "") or "")
 
         cat_names: set[str] = set()
         raw_categories = root.get("categories", [])
@@ -216,10 +218,11 @@ class HeroClassificationRepository(JsonRepository):
             "version": self._version,
             "updated_at": date.today().isoformat(),
             "source": self._source,
+            "note": self._note,
             "categories": [cat.model_dump(mode="json", exclude_defaults=True)
                            for cat in self._categories],
-            "hero_categories": {k: v for k, v in sorted(self._hero_categories.items())},
-            "counter_chain": {k: v for k, v in sorted(self._counter_chain.items())},
+            "hero_categories": dict(self._hero_categories),
+            "counter_chain": dict(self._counter_chain),
         }
         try:
             self.save_payload(payload)

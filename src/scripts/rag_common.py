@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent  # 项目根
+from src.config.env import PROJECT_ROOT as ROOT
 DATA = ROOT / "data"
 CORPUS = ROOT / "data" / "rag_corpus"
 SCRIPTS = ROOT / "scripts"
@@ -56,7 +56,6 @@ def load_json(path, required: bool = True, label: str | None = None):
 def save_json(path, data, indent: int = 1) -> None:
     """原子写 JSON（UTF-8、LF、indent=1 与既有语料一致）。"""
     path = Path(path)
-    sys.path.insert(0, str(ROOT))  # 复用 src.data.json_repository 的原子写（mkstemp+fsync）
     from src.data.json_repository import atomic_write_json  # noqa: PLC0415
 
     atomic_write_json(path, data, indent=indent)

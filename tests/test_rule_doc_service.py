@@ -8,9 +8,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from src.business.rag import rule_doc_service as rds  # noqa: E402
-import eval_rule_faqs as erf  # noqa: E402
+from src.scripts import eval_rule_faqs as erf  # noqa: E402
 
 
 def _write(path: Path, payload: object) -> None:

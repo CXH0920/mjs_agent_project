@@ -5,12 +5,12 @@
 - FAQ 块 ID：faq_%03d，绑定裁定编号，单调递增不回收（废弃条目划线保留编号）；
 - 术语块 ID：term_<名称>，天然稳定。
 
-本模块同时提供 parse_rule_doc()，供 scripts/audit_rule_doc.py 复用解析逻辑做"解析回声"校验。
+本模块同时提供 parse_rule_doc()，供 src/scripts/audit_rule_doc.py 复用解析逻辑做"解析回声"校验。
 """
 import re
 import json
 
-from rag_common import CORPUS, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, save_json, setup_stdout, project_path
 
 TERM_BLOCK_KEYWORDS = ('术语表', '牌的类型', '动作定义', '状态定义', '区域清单', '资源')
 TERM_BLACKLIST_PREFIX = ('类型', '动作', '状态', '区域', '资源', '花色体系', '——')
@@ -195,7 +195,7 @@ def main():
     print('术语条数:', len(terms))
     print('FAQ 条数:', len(faqs))
     if dropped:
-        print('解析丢弃行: %d 条（建议先运行 scripts/audit_rule_doc.py 查看明细）' % len(dropped))
+        print('解析丢弃行: %d 条（建议先运行 src/scripts/audit_rule_doc.py 查看明细）' % len(dropped))
         for d in dropped[:10]:
             print('  L%d [%s] %s' % (d['line_no'], d['kind'], d['reason']))
 

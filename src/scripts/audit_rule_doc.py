@@ -13,10 +13,10 @@
 9. 章节结构指纹：0~7 章标题与顺序不可变
 
 用法：
-    python scripts/audit_rule_doc.py                    # 校验并报告
-    python scripts/audit_rule_doc.py --strict           # 有任一 ERROR/WARN 退出码 1
-    python scripts/audit_rule_doc.py --update-snapshot  # 校验后刷新基线快照
-    python scripts/audit_rule_doc.py --doc <path> --snapshot <path>  # 指定路径（测试用）
+    python -m src.scripts.audit_rule_doc                    # 校验并报告
+    python -m src.scripts.audit_rule_doc --strict           # 有任一 ERROR/WARN 退出码 1
+    python -m src.scripts.audit_rule_doc --update-snapshot  # 校验后刷新基线快照
+    python -m src.scripts.audit_rule_doc --doc <path> --snapshot <path>  # 指定路径（测试用）
 """
 import re
 import io
@@ -27,11 +27,11 @@ import hashlib
 import argparse
 import datetime
 
-import build_rule_corpus as brc
+from src.scripts import build_rule_corpus as brc
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from src.config.env import PROJECT_ROOT as ROOT
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
-DEFAULT_SNAPSHOT = os.path.join(ROOT, 'scripts', '.rule_doc_snapshot.json')
+DEFAULT_SNAPSHOT = os.path.join(ROOT, '.rule_doc_snapshot.json')
 SNAPSHOT_VERSION = 1
 
 CARD_REF_RE = re.compile(r'卡牌\s*(\d+)')
@@ -281,7 +281,7 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
         cand = [d for d in diffs if d['kind'] == 'candidate']
         chk = [d for d in diffs if d['kind'] == 'checkpoint']
         if full:
-            issues.append({'level': 'WARN', 'msg': '数据段一致性：%d 处全自动差异（段：%s）；请运行 scripts/sync_rule_stats.py 确认后 --apply'
+            issues.append({'level': 'WARN', 'msg': '数据段一致性：%d 处全自动差异（段：%s）；请运行 src/scripts/sync_rule_stats.py 确认后 --apply'
                            % (len(full), '、'.join(sorted({d['section'] for d in full})))})
         if cand:
             issues.append({'level': 'INFO', 'msg': '数据段候选：%d 处半自动候选差异（段：%s），需人工确认后 --apply-candidates'

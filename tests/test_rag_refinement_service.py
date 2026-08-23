@@ -23,15 +23,6 @@ from src.business.rag.refinement_service import (
 )
 
 
-def _load_rag_curated():
-    """加载 scripts/rag_curated.py（scripts 目录非包）。"""
-    module_path = Path(__file__).resolve().parent.parent / "scripts" / "rag_curated.py"
-    spec = importlib.util.spec_from_file_location("rag_curated", module_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 class FakeGenerator:
     """模拟 AIBatchGenerator：返回固定 JSON 或 None。"""
 
@@ -156,7 +147,7 @@ def test_apply_curated_rejects_unknown_block(tmp_path: Path) -> None:
 
 
 def test_merge_curated_preserves_refinement(tmp_path: Path) -> None:
-    merge_curated = _load_rag_curated().merge_curated
+    from src.scripts.rag_curated import merge_curated
     old = tmp_path / "old.json"
     _write(old, [
         {"block_id": "card_1_测试牌", "timing": ["旧值"],

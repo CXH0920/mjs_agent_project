@@ -84,7 +84,7 @@ class ScriptRunner(QObject):
         proc.readyReadStandardOutput.connect(lambda: self.output.emit(proc.readAllStandardOutput()))
         proc.readyReadStandardError.connect(lambda: self.output.emit(proc.readAllStandardError()))
         proc.finished.connect(lambda code, _status: self._on_finished(code))
-        proc.start(python, [str(script)] + args)
+        proc.start(python, ([str(script)] if script else []) + args)
         self._proc = proc
         return True
 

@@ -5,8 +5,8 @@
 本脚本把 xlsx 三个 sheet 全部落地为 JSON 源数据，此后 JSON 为唯一维护源，xlsx 归档 data/archive/。
 
 用法（幂等，可作"从 Excel 重新导入"应急通道）：
-    python scripts/migrate_excel_to_json.py                    # 迁移全部
-    python scripts/migrate_excel_to_json.py --only points equips  # 只迁移指定部分（UI 导入按钮用）
+    python -m src.scripts.migrate_excel_to_json                    # 迁移全部
+    python -m src.scripts.migrate_excel_to_json --only points equips  # 只迁移指定部分（UI 导入按钮用）
 """
 import argparse
 import io
@@ -19,8 +19,7 @@ import zipfile
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from src.config.env import PROJECT_ROOT as ROOT
 DATA = os.path.join(ROOT, "data")
 # 归档后的 xlsx 作为重新导入的来源；仍存在于原位置时优先使用原位置
 XLSX = os.path.join(DATA, "mjs卡牌点数.xlsx")

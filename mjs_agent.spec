@@ -14,7 +14,7 @@ import os
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 # 项目根（spec 文件所在目录，与 release.py 同级）
 HERE = Path(SPECPATH).resolve()
@@ -79,6 +79,8 @@ hiddenimports += [
     "src.scraper.incremental",
     "src.scraper.ai.browser_generator",
 ]
+# 维护页 -m 脚本（src.scripts 包，PyInstaller 不跟踪 -m 字符串，需显式收集全部子模块）
+hiddenimports += collect_submodules("src.scripts")
 
 # Cython Utility/*.cpp（踩坑3）、imageio dist-info（踩坑4）、cnradical 数据（踩坑5）
 datas += collect_data_files("Cython")

@@ -2,7 +2,7 @@
 """生成卡牌点数花色语料（从 data/card_points.json 读取，补充 RAG 知识库）"""
 import json, collections
 
-from rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
 setup_stdout()
 payload = load_json(project_path('data', 'card_points.json'))

@@ -4938,5 +4938,36 @@
     "mode_viability": {},
     "last_updated": "2026-08-20",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/AzrugLlkIMIonlCDcwaUjewLxKaiHuXUzoaK8ZVa.png_200x282.png"
+  },
+  {
+    "id": 191,
+    "name": "临海公主",
+    "title": "",
+    "faction": "西晋",
+    "position": "辅助",
+    "max_hp": 6,
+    "max_hand": 0,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "临海清仇",
+        "description": "出牌阶段限2次，你可以令一名角色获得牌堆底的2张牌，这些牌无法选择你为目标且无法被其他角色响应。",
+        "settlement": "若这些牌在排除你后不存在合法目标，则无法打出。"
+      },
+      {
+        "name": "复为公主",
+        "description": "重伤，将你的武将牌上的技能修改为“临海清仇”，初始的手牌上限+4，并立即重新登场。",
+        "settlement": "1.重伤情况下会先触发此技能，技能发动后才会进入重伤求援询问。 2.“将你的武将技能修改为临海清仇”是指失去其他所有武将技能并获得临海清仇，重新登场后也仅存在临海清仇。"
+      },
+      {
+        "name": "明珠蒙尘",
+        "description": "登场，弃置所有牌。你的摸牌阶段改为选择一名其他角色对你打出牌堆顶的2张牌，然后你获得其无法打出的牌 。受伤，将对你造成伤害的牌放入牌堆底。其他角色出牌阶段限1次，令你可以获得其1张牌，然后你令其获得牌堆底的1张牌，此牌无法选择你为目标且无法被其他角色响应。",
+        "settlement": "1.若无法选择合法目标对你打牌，则摸牌阶段不会被修改为此效果，也不算作技能发动。 2.此技能与推恩令同时在场时，因摸牌阶段的动作已不为摸牌，因此推恩令效果无法执行。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-08-20",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/xiX7ElCnfdj5NeXwmTcMdZaFJe2Cwg0TLgIhiDSl.png_200x282.png"
   }
 ]

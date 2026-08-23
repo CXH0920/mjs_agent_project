@@ -88,3 +88,6 @@ data/example_synergies.json
 docs/ui_baseline/*.png
 # 归档提案（历史记录，按需保留本地）
 docs/archive/proposals/CP-*.json
+
+# scripts 运行时状态/快照（整合到 src/scripts/ 后生成于此）
+src/scripts/.*.json

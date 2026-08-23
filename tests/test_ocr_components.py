@@ -16,7 +16,7 @@ from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr import paddle_loader
 from src.ocr.recognizer import GeneralRecognizer
-from scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
+from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
 
 
 def test_paddle_loader_hides_windows_child_consoles_and_restores_popen(monkeypatch) -> None:

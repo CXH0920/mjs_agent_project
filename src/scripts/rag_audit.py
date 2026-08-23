@@ -14,8 +14,7 @@
 """
 import io, sys, os, json, re
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)  # 复用 src/business/rag/audit_service.py（审计校验单一实现）
+from src.config.env import PROJECT_ROOT as ROOT
 from src.business.rag.audit_service import (  # noqa: E402
     collect_card_points,
     collect_equip_attrs,
@@ -144,6 +143,6 @@ def audit_hero_coverage(root):
 
 if __name__ == '__main__':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = ROOT
     for it in audit_hero_coverage(root):
         print('- ' + it)

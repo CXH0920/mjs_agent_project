@@ -11,9 +11,9 @@
 人工校对一次后作为基线；后续 T0 变更追加新题）。
 
 用法：
-    python scripts/eval_rule_faqs.py --generate          # 生成/重建评估集
-    python scripts/eval_rule_faqs.py                     # 运行评估（需已建索引）
-    python scripts/eval_rule_faqs.py --top-k 5
+    python -m src.scripts.eval_rule_faqs --generate          # 生成/重建评估集
+    python -m src.scripts.eval_rule_faqs                     # 运行评估（需已建索引）
+    python -m src.scripts.eval_rule_faqs --top-k 5
 """
 import argparse
 import io
@@ -21,8 +21,7 @@ import json
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from src.config.env import PROJECT_ROOT as ROOT
 DEFAULT_DATASET = os.path.join(ROOT, 'data', 'rag_evals', 'rule_faq_eval.json')
 FAQ_CORPUS = os.path.join(ROOT, 'data', 'rag_corpus', 'FAQ裁定块.json')
 

@@ -7,13 +7,13 @@
 输出：docs/archive/proposals/CP-YYYY-MM-DD-NN.json + 同名单 md（沿用提案单模板格式）
 
 LLM 只产提案、不直接改定稿；人工在提案 JSON 中把 status 改为 approved/revised/rejected 后，
-由 scripts/apply_rule_proposal.py 合入。无 API Key 时降级为占位提案（人工填写）。
+由 src/scripts/apply_rule_proposal.py 合入。无 API Key 时降级为占位提案（人工填写）。
 
 用法：
-    python scripts/propose_rule_changes.py                     # 自动对比 data/backups 并起草
-    python scripts/propose_rule_changes.py --changes-json c.json
-    python scripts/propose_rule_changes.py --no-llm            # 不调用 LLM，生成占位提案
-    python scripts/propose_rule_changes.py --out-dir docs/archive/proposals
+    python -m src.scripts.propose_rule_changes                     # 自动对比 data/backups 并起草
+    python -m src.scripts.propose_rule_changes --changes-json c.json
+    python -m src.scripts.propose_rule_changes --no-llm            # 不调用 LLM，生成占位提案
+    python -m src.scripts.propose_rule_changes --out-dir docs/archive/proposals
 """
 import argparse
 import io
@@ -22,8 +22,7 @@ import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from src.config.env import PROJECT_ROOT as ROOT
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_PROPOSAL_DIR = os.path.join(ROOT, 'docs', 'archive', 'proposals')
 
@@ -154,7 +153,7 @@ def render_md(proposal, rows):
     for item in proposal['items']:
         lines.append('| %s | | |' % item['id'])
     lines += ['', '## 3. 合入（人工确认后运行）', '',
-              '```', 'python scripts/apply_rule_proposal.py --proposal docs/archive/proposals/%s.json' % proposal['proposal_id'],
+              '```', 'python -m src.scripts.apply_rule_proposal --proposal docs/archive/proposals/%s.json' % proposal['proposal_id'],
               '```', '']
     return '\n'.join(lines)
 

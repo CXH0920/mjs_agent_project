@@ -10,11 +10,11 @@
 - candidate 半自动段：3.1/3.2 时机频次、3.5 每种牌限1次/首次类/累计阈值（checkpoint 仅报告）
 
 用法：
-    python scripts/sync_rule_stats.py                 # 输出差异报告，有差异退出码 1
-    python scripts/sync_rule_stats.py --only 0.1      # 只处理指定段
-    python scripts/sync_rule_stats.py --apply         # 应用 full 段差异
-    python scripts/sync_rule_stats.py --apply --apply-candidates   # 同时应用候选段
-    python scripts/sync_rule_stats.py --json out.json # 差异报告写入 json
+    python -m src.scripts.sync_rule_stats                 # 输出差异报告，有差异退出码 1
+    python -m src.scripts.sync_rule_stats --only 0.1      # 只处理指定段
+    python -m src.scripts.sync_rule_stats --apply         # 应用 full 段差异
+    python -m src.scripts.sync_rule_stats --apply --apply-candidates   # 同时应用候选段
+    python -m src.scripts.sync_rule_stats --json out.json # 差异报告写入 json
 """
 import argparse
 import io
@@ -24,7 +24,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from src.config.env import PROJECT_ROOT as ROOT
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
 
@@ -485,7 +485,7 @@ def append_changelog(applied, changelog_path=DEFAULT_CHANGELOG):
 
 def refresh_snapshot(doc_path):
     """应用后刷新 .rule_doc_snapshot.json，使数据段更新成为新基线。"""
-    from audit_rule_doc import build_snapshot, write_snapshot, DEFAULT_SNAPSHOT
+    from src.scripts.audit_rule_doc import build_snapshot, write_snapshot, DEFAULT_SNAPSHOT
     write_snapshot(build_snapshot(doc_path, ROOT), DEFAULT_SNAPSHOT)
     return True
 

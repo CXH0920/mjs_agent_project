@@ -6,25 +6,23 @@ RAG 语料维护调度主脚本（maintain_rag.py）
       一键按依赖顺序重跑相关 build 脚本，维护 docs/ 下全部 RAG 语料。
 
 用法：
-    python scripts/maintain_rag.py            # 增量：只重跑源文件有变更的语料
-    python scripts/maintain_rag.py --force    # 强制重跑全部语料
-    python scripts/maintain_rag.py --check    # 只检测变更，不执行
-    python scripts/maintain_rag.py --only 武将 # 只跑名称包含"武将"的任务
-    python scripts/maintain_rag.py --keep-going # 单个失败后继续执行其余任务
+    python -m src.scripts.maintain_rag            # 增量：只重跑源文件有变更的语料
+    python -m src.scripts.maintain_rag --force    # 强制重跑全部语料
+    python -m src.scripts.maintain_rag --check    # 只检测变更，不执行
+    python -m src.scripts.maintain_rag --only 武将 # 只跑名称包含"武将"的任务
+    python -m src.scripts.maintain_rag --keep-going # 单个失败后继续执行其余任务
 
 依赖：仅 Python 标准库；需在项目根目录运行（与 data/ docs/ scripts/ 同级）。
 """
 import sys, os, json, hashlib, subprocess, argparse, time
 
-import rag_audit
-import audit_rule_doc
+from src.scripts import rag_audit
+from src.scripts import audit_rule_doc
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
-sys.path.insert(0, ROOT)  # 复用 src/business/rag/task_defs.py（任务定义单一事实源）
+from src.config.env import PROJECT_ROOT as ROOT
 from src.business.rag.task_defs import TASKS
 
-STATE_FILE = os.path.join(ROOT, 'scripts', '.rag_state.json')
-SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
+STATE_FILE = os.path.join(ROOT, '.rag_state.json')
 DOCS_DIR = os.path.join(ROOT, 'data', 'rag_corpus')
 
 # ---------------------------------------------------------------------------
@@ -59,7 +57,7 @@ def save_state(state):
 
 def task_changed(task, state):
     """判断任务是否需要执行：任一依赖源或脚本自身发生变化。"""
-    check_paths = list(task['sources']) + ['scripts/' + task['script']]
+    check_paths = list(task['sources']) + ['src/scripts/' + task['script']]
     for p in check_paths:
         fp = file_fingerprint(p)
         old = state.get('files', {}).get(p)
@@ -70,10 +68,10 @@ def task_changed(task, state):
 
 def run_script(script_name, timeout=180):
     """运行 build 脚本，返回 (ok, output)。"""
-    script = os.path.join(SCRIPTS_DIR, script_name)
+    module = script_name.removesuffix('.py')
     try:
         proc = subprocess.run(
-            [sys.executable, script],
+            [sys.executable, '-m', f'src.scripts.{module}'],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -271,7 +269,7 @@ def main():
     for task, _ in plan:
         if task['name'] in failed and not args.force:
             continue
-        for p in task['sources'] + ['scripts/' + task['script']]:
+        for p in task['sources'] + ['src/scripts/' + task['script']]:
             fp = file_fingerprint(p)
             if fp is not None:
                 state['files'][p] = fp

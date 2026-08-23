@@ -10,9 +10,8 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import apply_rule_proposal as arp  # noqa: E402
-import propose_rule_changes as prc  # noqa: E402
+from src.scripts import apply_rule_proposal as arp  # noqa: E402
+from src.scripts import propose_rule_changes as prc  # noqa: E402
 
 
 DOC = """# 元规则整理（完整版）

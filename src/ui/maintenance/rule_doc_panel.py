@@ -740,14 +740,11 @@ class RuleDocPanel(QWidget):
         if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "已有任务运行中，请等待完成。")
             return
-        script = self._root / "scripts" / args[0]
-        if not script.exists():
-            QMessageBox.critical(self, "脚本缺失", "未找到 %s" % script)
-            return
+        module = 'src.scripts.' + args[0].removesuffix('.py')
         self._last_command = " ".join(args)
-        self._log.appendPlainText("$ python scripts/" + self._last_command)
+        self._log.appendPlainText("$ python -m " + module + " " + " ".join(args[1:]))
         self._pending_finished = (on_finished, sentinel_codes, sentinel_note, failure_codes)
-        self._runner.run(PYTHON, script, args[1:], self._root)
+        self._runner.run(PYTHON, None, ['-m', module] + args[1:], self._root)
 
     def _on_runner_finished(self, code: int) -> None:
         """ScriptRunner 完成回调：转发到原 _on_finished（保留签名供测试直接调用）。"""

@@ -395,14 +395,10 @@ class RagMaintenancePanel(QWidget):
         if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "已有维护任务运行中，请等待完成。")
             return
-        script = self._root / "scripts" / "maintain_rag.py"
-        if not script.exists():
-            QMessageBox.critical(self, "脚本缺失", f"未找到 {script}")
-            return
         self._set_busy(True)
         self._log.clear()
-        self._log.appendPlainText("$ python scripts/maintain_rag.py " + " ".join(args))
-        self._runner.run(PYTHON, script, args, self._root)
+        self._log.appendPlainText("$ python -m src.scripts.maintain_rag " + " ".join(args))
+        self._runner.run(PYTHON, None, ['-m', 'src.scripts.maintain_rag'] + args, self._root)
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
