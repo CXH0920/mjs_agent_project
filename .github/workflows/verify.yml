@@ -13,7 +13,7 @@ jobs:
         with:
           activate-environment: myenv
           auto-activate-base: false
-          environment-file: environment.yml
+          environment-file: environment-ci.yml
       - name: Lint
         shell: bash -l {0}
         run: python -m ruff check src tests

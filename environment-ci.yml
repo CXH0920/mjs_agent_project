@@ -1,0 +1,25 @@
+# 名将杀 Agent CI 环境（Linux 无 GPU runner 精简版）
+# 仅供 GitHub Actions verify workflow 使用；本地开发环境见 environment.yml。
+#
+# 精简依据：测试套件已将 paddleocr/paddle 全程 mock（monkeypatch sys.modules），
+# CI 无需安装 GPU/CPU paddle 及 CUDA 运行时；汉字特征库（unihan/cnradical/pypinyin）
+# 均为 lazy import，测试收集不触发。仅保留 lint + 测试收集 + 断言真正需要的包。
+name: myenv
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - pydantic==2.13.4
+    - httpx==0.28.1
+    - opencv-python==4.11.0.86
+    - PySide6==6.11.1
+    - pytest==9.0.3
+    - ruff==0.12.0
+    - pillow==12.3.0
+    - numpy==1.26.4
+    - playwright==1.60.0   # browser_session.py 顶层硬 import（仅需 pip 包，测试全程 mock 不需浏览器）
+    - mistune==3.3.0       # markdown_renderer.py 顶层 import
+    - tqdm                 # rag/indexer.py 顶层 import（原靠 paddleocr 间接拉，删 paddle 后需显式声明）
