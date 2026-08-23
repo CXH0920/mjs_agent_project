@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """生成加强削弱语料 + 统计"""
-import json, sys
+import sys
 
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 

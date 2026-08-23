@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QRect, QSize, Qt, QTimer, Signal

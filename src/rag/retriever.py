@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """检索器：混合检索 = 元数据硬过滤 + 向量相似度 + 关键词兜底"""
 import sys, time, logging
-from pathlib import Path
 
 from src.rag import config
 from src.rag.indexer import load_all_blocks
@@ -181,16 +180,16 @@ class Retriever:
 
     def hero_blocks(self, hero):
         """返回某武将的全部语料块（攻略/相性用，保证人物召回完整）。"""
-        blocks = self.blocks  # 确保懒加载（调用方可能先于 search 调用本方法）
+        self.blocks  # 确保懒加载（调用方可能先于 search 调用本方法）
         return [{'block_id': bid, 'text': text, 'metadata': meta, 'source': 'hero'}
                 for bid, text, meta in (self._hero_index.get(hero) or [])]
 
     def _text_of(self, bid):
-        blocks = self.blocks
+        self.blocks  # 确保懒加载
         return (self._id2text or {}).get(bid, '')
 
     def _meta_of(self, bid):
-        blocks = self.blocks
+        self.blocks  # 确保懒加载
         return (self._id2meta or {}).get(bid, {})
 
 

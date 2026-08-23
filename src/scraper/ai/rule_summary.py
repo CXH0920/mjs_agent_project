@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from src.config.env import BUNDLE_ROOT
 

@@ -5,7 +5,6 @@
 排除清单（遁甲天书/遁甲）、hero 字段拆分与泛指跳过、新牌名仍提示。
 """
 import json
-import sys
 from pathlib import Path
 
 import pytest

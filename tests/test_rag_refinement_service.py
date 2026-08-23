@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-import importlib.util
 
 from src.business.rag.refinement_service import (
     INDEX_FIELDS,

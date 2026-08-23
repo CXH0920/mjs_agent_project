@@ -41,7 +41,7 @@ from src.data.card_points_repository import (
     CardPointsRepository,
     JudgeRuleItem,
 )
-from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, set_ui_role
+from src.ui.shared.style import ROLE_SECONDARY, set_ui_role
 from src.ui.shared.widgets import DialogFooter, ScriptRunner, show_toast
 
 

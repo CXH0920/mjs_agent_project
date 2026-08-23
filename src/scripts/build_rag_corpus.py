@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """生成武将 RAG 语料：总览块 + 技能块，含规则抽取的索引字段"""
-import json, re
+import re
 
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
@@ -254,7 +254,6 @@ if _merged:
 save_json(json_path, blocks)
 
 # 统计摘要
-import collections
 skill_blocks = [b for b in blocks if b.get('block_type') != 'overview']
 with_timing = sum(1 for b in skill_blocks if b['timing'])
 with_cond = sum(1 for b in skill_blocks if b['trigger_condition'])

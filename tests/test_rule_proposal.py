@@ -5,10 +5,7 @@
 LLM 输出解析与占位降级、提案编号递增。
 """
 import json
-import sys
-from pathlib import Path
 
-import pytest
 
 from src.scripts import apply_rule_proposal as arp  # noqa: E402
 from src.scripts import propose_rule_changes as prc  # noqa: E402

@@ -17,7 +17,6 @@ import html
 import json
 import logging
 import logging.handlers
-import os
 import sys
 from pathlib import Path
 
@@ -32,7 +31,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,

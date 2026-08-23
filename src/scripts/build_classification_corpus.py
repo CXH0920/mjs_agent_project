@@ -5,7 +5,6 @@
 输出：data/rag_corpus/武将分类语料.json / .md
 未归类武将不会生成块，并打印待补充清单。
 """
-import json
 
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 

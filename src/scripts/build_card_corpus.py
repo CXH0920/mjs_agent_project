@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """生成卡牌 RAG 语料：49 块，含规则抽取索引字段"""
-import json, re
+import re
 
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 

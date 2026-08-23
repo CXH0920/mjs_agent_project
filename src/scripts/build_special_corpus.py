@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """生成特殊机制语料：专属牌 / 专属战法牌 / 特殊机制(牌区·状态·概念)"""
-import json
 
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 

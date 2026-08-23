@@ -8,7 +8,6 @@
 本模块同时提供 parse_rule_doc()，供 src/scripts/audit_rule_doc.py 复用解析逻辑做"解析回声"校验。
 """
 import re
-import json
 
 from src.scripts.rag_common import CORPUS, save_json, setup_stdout, project_path
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
 )
 
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
-from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 CHANGE_LABELS = {

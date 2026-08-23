@@ -4,7 +4,6 @@
 带分阶段进度与耗时摘要，便于观察执行情况。
 """
 import sys, json, time, logging
-from pathlib import Path
 
 from src.rag import config
 from tqdm import tqdm
@@ -179,7 +178,7 @@ def build_index(rebuild=True):
 
     # 1/4 加载语料
     t1 = time.time()
-    print(f'[1/4] 加载语料 ...')
+    print('[1/4] 加载语料 ...')
     all_blocks = load_all_blocks()
     if not all_blocks:
         print('❌ 无语料可索引'); return 0, ''
@@ -212,7 +211,6 @@ def build_index(rebuild=True):
     print(f'      ✅ 向量化完成，耗时 {time.time()-t3:.1f}s')
 
     # 4/4 写入 Chroma
-    t4 = time.time()
     print(f'[4/4] 写入向量库 → {config.CHROMA_DIR}')
     import chromadb
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))

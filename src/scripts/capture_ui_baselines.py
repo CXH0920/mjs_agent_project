@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from src.config.env import PROJECT_ROOT

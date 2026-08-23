@@ -4,7 +4,6 @@
 覆盖：0.1/0.2 统计生成、5.2 数据类 FAQ 行、diff 检出过期数字、
 apply 原位替换且标题不变、候选段未确认不可应用。
 """
-import sys
 from pathlib import Path
 
 import pytest

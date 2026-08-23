@@ -3,7 +3,6 @@
 模型/向量检索通过 FakeRetriever 隔离，避免测试加载 bge 模型；
 语料加载（load_all_blocks）走真实 data/rag_corpus 数据。
 """
-import os
 
 import pytest
 

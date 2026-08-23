@@ -52,7 +52,7 @@ def pick_sample(n: int = 20, seed: int = 42):
           f"{len(set(h['position'] for h in sample))} 定位）")
     for h in sample:
         print(f"- id={h['id']} {h['name']} ({h.get('faction','')}/{h.get('position','')})")
-    print(f"\n## 10 对相性样本")
+    print("\n## 10 对相性样本")
     for a, b in pairs:
         print(f"- {a} <-> {b}")
 
@@ -61,7 +61,7 @@ def pick_sample(n: int = 20, seed: int = 42):
     (ROOT / "data" / "sample_pairs.json").write_text(
         json.dumps([{"hero_a_id": a, "hero_b_id": b} for a, b in pairs],
                    ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n已写 data/sample_heroes.json / data/sample_pairs.json")
+    print("\n已写 data/sample_heroes.json / data/sample_pairs.json")
 
 
 def stats(guides_path, synergies_paths, attempts=None):

@@ -9,7 +9,6 @@ build_cardpts.py 内硬编码的判定规则迁移而来）：
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 

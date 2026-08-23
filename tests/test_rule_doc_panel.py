@@ -348,7 +348,6 @@ def test_diff_table_view_button(tmp_path):
     _write_sync_report(root)
     panel = RuleDocPanel(root)
     panel._on_sync_finished()
-    from PySide6.QtWidgets import QPushButton
     for row in range(3):
         button = panel._diff_table.cellWidget(row, 6)
         assert button is not None and button.text() == "查看"
