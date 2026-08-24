@@ -145,8 +145,9 @@ def build_synergy_rag_context(hero_a: dict, hero_b: dict, max_chars: int | None 
 
 def _format_rag_chunks(core_blocks: list[dict], extra_blocks: list[dict],
                        budget: int, core_ratio: float = 0.7) -> str:
-    """两段式预算格式化：核心块优先（core_ratio 比例），未用额度滚动给补充块；整块丢弃不截断。"""
-    lines = ["## RAG 官方规则语料（请严格依据以下语料块作答）"]
+    """两段式预算格式化：核心块优先（core_ratio 比例），未用额度滚动给补充块；整块丢弃不截断。
+    按 kind 分两段输出：官方规则语料（硬依据）+ 社区实战参考（combo/guide，启发非硬规则）。"""
+    collected: list[tuple[str, str]] = []  # (block_str, kind)
     used = 0
 
     def fill(blocks: list[dict], limit: int) -> None:
@@ -158,13 +159,20 @@ def _format_rag_chunks(core_blocks: list[dict], extra_blocks: list[dict],
             block = f"[{chunk['block_id']}] {chunk['text']}"
             if len(block) > remaining:
                 continue  # 整块丢弃，避免截断在结算句中间造成残缺规则
-            lines.append(block)
+            collected.append((block, chunk.get('metadata', {}).get('kind', '')))
             used += len(block)
 
     core_budget = int(budget * core_ratio)
     fill(core_blocks, core_budget)
-    extra_budget = budget - used  # 核心未用额度滚动给补充块
-    fill(extra_blocks, extra_budget)
+    fill(extra_blocks, budget - used)  # 核心未用额度滚动给补充块
+
+    official = [b for b, k in collected if k not in ('combo', 'guide')]
+    community = [b for b, k in collected if k in ('combo', 'guide')]
+    lines = ["## RAG 官方规则语料（请严格依据以下语料块作答）"]
+    lines.extend(official)
+    if community:
+        lines.append("## 社区实战参考（玩家实战 combo/攻略思路，可参考但非官方规则，勿当硬依据）")
+        lines.extend(community)
     return "\n\n".join(lines)
 
 

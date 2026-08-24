@@ -76,4 +76,25 @@ TASKS: list[dict] = [
         "outputs": ["武将分类语料.json"],
         "expected": None,
     },
+    {
+        "name": "组合语料",
+        "script": "build_combo_corpus.py",
+        "sources": [
+            "data/raw_guides/jinxia/combos/bilibili_videos_weijiang.csv",
+            "data/raw_guides/jinxia/combos/强力组合.md",
+            "data/raw_guides/jinxia/combos/巴清搭配.md",
+            "data/raw_guides/jinxia/combos/平阳公主强势组合盘点.md",
+            "data/raw_guides/jinxia/combos/孟尝君 + 黄月英.md",
+            "data/heroes.json",
+        ],
+        "outputs": ["组合RAG语料.json"],
+        "expected": None,
+    },
+    {
+        "name": "武将攻略语料",
+        "script": "build_guide_corpus.py",
+        "sources": ["data/raw_guides/jinxia/guides/", "data/heroes.json"],
+        "outputs": ["武将攻略RAG语料.json"],
+        "expected": None,
+    },
 ]

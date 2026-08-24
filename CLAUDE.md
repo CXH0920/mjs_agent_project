@@ -38,6 +38,12 @@
 - 不要自动 commit，先展示修改内容，等待用户确认
 - 使用 Conventional Commits（feat/fix/refactor/docs/test）
 
+## 记忆同步
+- 涉及 RAG 语料分层架构（ODS/DWD/mart）变动、新增/删除语料任务、数仓层资源增减时，同步更新 memory（.claude/projects 下 rag-data-warehouse-layering.md）。
+- 新增 build_*_corpus.py 脚本时，在 task_defs.py 登记任务，并在分层记忆更新资源清单与块数。
+- mart 层（guides.json/synergies.json）是 AI 生成产物，只写不读，勿回拉进 DWD 加工。
+- 架构认知有重要修正时（如某资源分层归属变更），更新对应 memory 文件，勿留旧认知。
+
 ## 默认遵守
 - 默认使用中文回复
 - 使用 conda的myenv环境

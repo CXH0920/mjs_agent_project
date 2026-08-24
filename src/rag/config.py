@@ -81,6 +81,7 @@ MAX_KEYWORD_ONLY = 3    # 纯关键词命中块数量上限
 KIND_MAX = {            # 类型配额：每类语料块最多进入最终结果的条数
     "hero": 6, "card": 2, "rule": 2, "faq": 2, "term": 1,
     "special": 1, "cardpt": 1, "equip": 1, "modify": 1, "classification": 1,
+    "combo": 3, "guide": 2,  # 社区素材（设计点B）
 }
 
 # ---------------------------------------------------------------

@@ -141,6 +141,41 @@ def _norm_classification(blocks):
         out.append((bid, text.strip(),
                     {'block_id': bid, 'kind': 'classification', 'hero': hero}))
     return out
+
+
+def _norm_combo(blocks):
+    """组合语料：不设 hero（设计点A，避免 post-filter 丢一侧武将）；武将名入 text 供向量召回。"""
+    out = []
+    for b in blocks:
+        bid = b.get('block_id', '')
+        parts = [f'【组合】{b.get("hero_a", "")} + {b.get("hero_b", "")}']
+        if b.get('highlight'):
+            parts.append(f'亮点：{b["highlight"]}')
+        if b.get('mechanism'):
+            parts.append(b['mechanism'])
+        if b.get('song'):
+            parts.append(f'（{b["song"]}）')
+        text = '\n'.join(parts)
+        meta = {'block_id': bid, 'kind': 'combo'}
+        if b.get('bv'):
+            meta['bv'] = b['bv']
+        if b.get('source_md'):
+            meta['source_md'] = b['source_md']
+        out.append((bid, text.strip(), meta))
+    return out
+
+
+def _norm_guide(blocks):
+    """武将攻略语料：贴 hero（设计点A，保证生成该武将时必召回）。"""
+    out = []
+    for b in blocks:
+        bid = b.get('block_id', '')
+        hero = b.get('hero', '')
+        text = f'【武将攻略】{hero}｜{b.get("section", "")}\n{b.get("text", "")}'
+        meta = {'block_id': bid, 'kind': 'guide', 'hero': hero}
+        out.append((bid, text.strip(), meta))
+    return out
+
 CORPUS_FILES = [
     ('武将RAG语料.json', _norm_hero),
     ('卡牌RAG语料.json', _norm_card),
@@ -152,6 +187,8 @@ CORPUS_FILES = [
     ('装备属性语料.json', _norm_equip),
         ('加强削弱语料.json', _norm_modify),
     ('武将分类语料.json', _norm_classification),
+    ('组合RAG语料.json', _norm_combo),
+    ('武将攻略RAG语料.json', _norm_guide),
 ]
 
 
