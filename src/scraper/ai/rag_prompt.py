@@ -145,29 +145,46 @@ def build_synergy_rag_context(hero_a: dict, hero_b: dict, max_chars: int | None 
 
 def _format_rag_chunks(core_blocks: list[dict], extra_blocks: list[dict],
                        budget: int, core_ratio: float = 0.7) -> str:
-    """两段式预算格式化：核心块优先（core_ratio 比例），未用额度滚动给补充块；整块丢弃不截断。
-    按 kind 分两段输出：官方规则语料（硬依据）+ 社区实战参考（combo/guide，启发非硬规则）。"""
-    collected: list[tuple[str, str]] = []  # (block_str, kind)
-    used = 0
+    """按 kind 分两段：官方规则语料(硬依据) + 社区实战参考(combo/guide)。
+    官方/社区独立预算池(core_ratio 给官方，剩余给社区，官方未用滚给社区)；
+    社区池内 combo 优先于 guide（组合信息对相性更直接，避免长攻略挤掉组合块）。
+    整块丢弃不截断。"""
+    COMMUNITY = {'combo', 'guide'}
 
-    def fill(blocks: list[dict], limit: int) -> None:
-        nonlocal used
+    def split(blocks: list[dict]) -> tuple[list[dict], list[dict]]:
+        off, comm = [], []
         for chunk in blocks:
-            remaining = limit - used
+            k = chunk.get('metadata', {}).get('kind', '')
+            (comm if k in COMMUNITY else off).append(chunk)
+        return off, comm
+
+    off_core, comm_core = split(core_blocks)
+    off_extra, comm_extra = split(extra_blocks)
+
+    off_budget = int(budget * core_ratio)
+    comm_budget = budget - off_budget
+    official: list[str] = []
+    community: list[str] = []
+
+    def fill(blocks: list[dict], limit: int, target: list[str], used: list[int]) -> None:
+        for chunk in blocks:
+            remaining = limit - used[0]
             if remaining <= 0:
                 break
             block = f"[{chunk['block_id']}] {chunk['text']}"
             if len(block) > remaining:
                 continue  # 整块丢弃，避免截断在结算句中间造成残缺规则
-            collected.append((block, chunk.get('metadata', {}).get('kind', '')))
-            used += len(block)
+            target.append(block)
+            used[0] += len(block)
 
-    core_budget = int(budget * core_ratio)
-    fill(core_blocks, core_budget)
-    fill(extra_blocks, budget - used)  # 核心未用额度滚动给补充块
+    off_used = [0]
+    fill(off_core, off_budget, official, off_used)
+    fill(off_extra, off_budget, official, off_used)  # 官方池内 core 优先、extra 滚动
+    comm_pool = comm_budget + max(0, off_budget - off_used[0])  # 官方未用滚给社区
+    comm_used = [0]
+    fill(comm_extra, comm_pool, community, comm_used)  # combo 优先
+    fill(comm_core, comm_pool, community, comm_used)  # guide 补充
 
-    official = [b for b, k in collected if k not in ('combo', 'guide')]
-    community = [b for b, k in collected if k in ('combo', 'guide')]
     lines = ["## RAG 官方规则语料（请严格依据以下语料块作答）"]
     lines.extend(official)
     if community:
