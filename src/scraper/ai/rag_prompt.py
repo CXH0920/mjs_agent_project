@@ -67,12 +67,21 @@ def build_rag_context(hero: dict, max_chars: int | None = None) -> str:
                 if keyword in description and keyword not in mech_terms:
                     mech_terms.append(keyword)
         query = " ".join(filter(None, [hero_name, *skills, *mech_terms[:20]]))
-        # 跨类检索：不带 heroes 过滤，召回卡牌/装备/规则/FAQ；post-filter 掉其他武将块
-        extra = [
-            b for b in retriever.search(query, top_k=rag_config.TOP_K)
-            if b["block_id"] not in seen
-            and (not b.get("metadata", {}).get("hero") or b["metadata"]["hero"] == hero_name)
-        ]
+        # 跨类检索：不带 heroes 过滤，召回卡牌/装备/规则/FAQ；post-filter 按武将归属过滤
+        # combo 块无 hero 单值但有 heroes 列表，按列表过滤掉不含目标武将的噪声组合
+        extra = []
+        seen_ids = set(seen)
+        for b in retriever.search(query, top_k=rag_config.TOP_K):
+            bid = b["block_id"]
+            if bid in seen_ids:
+                continue
+            meta = b.get("metadata", {})
+            meta_hero = meta.get("hero")
+            heroes = meta.get("heroes", [])
+            if (meta_hero or heroes) and meta_hero != hero_name and hero_name not in heroes:
+                continue
+            seen_ids.add(bid)
+            extra.append(b)
         if not blocks and not extra:
             return ""
         budget = max_chars or rag_config.RAG_PROMPT_CHARS
@@ -128,8 +137,11 @@ def build_synergy_rag_context(hero_a: dict, hero_b: dict, max_chars: int | None 
                 bid = b["block_id"]
                 if bid in seen_ids:
                     continue
-                meta_hero = b.get("metadata", {}).get("hero")
-                if meta_hero and meta_hero not in target_names:
+                meta = b.get("metadata", {})
+                meta_hero = meta.get("hero")
+                heroes = meta.get("heroes", [])
+                # combo 块按 heroes 列表过滤, hero 块按 hero 过滤, 无武将归属块保留
+                if (meta_hero or heroes) and meta_hero not in target_names and not any(h in target_names for h in heroes):
                     continue
                 seen_ids.add(bid)
                 extra.append(b)

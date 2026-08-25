@@ -156,7 +156,8 @@ def _norm_combo(blocks):
         if b.get('song'):
             parts.append(f'（{b["song"]}）')
         text = '\n'.join(parts)
-        meta = {'block_id': bid, 'kind': 'combo'}
+        meta = {'block_id': bid, 'kind': 'combo',
+                'heroes': [b.get('hero_a', ''), b.get('hero_b', '')]}
         if b.get('bv'):
             meta['bv'] = b['bv']
         if b.get('source_md'):
