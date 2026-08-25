@@ -145,7 +145,7 @@ save_json(CORPUS / '武将攻略RAG语料.json', blocks)
 
 # 输出 md（人读版）
 md_out = ['# 武将攻略RAG语料', '',
-          f'> 来源：raw_guides/guides。设计点A贴hero=武将名，C按##章节拆。',
+          '> 来源：raw_guides/guides。设计点A贴hero=武将名，C按##章节拆。',
           f'> 总块 {len(blocks)}。', '']
 for b in blocks:
     md_out.append(f'### {b["block_id"]}')

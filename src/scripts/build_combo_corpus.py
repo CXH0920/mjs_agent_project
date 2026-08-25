@@ -249,7 +249,7 @@ save_json(CORPUS / '组合RAG语料.json', blocks_list)
 
 # 输出 md（人读版）
 md = ['# 组合RAG语料', '',
-      f'> 来源：raw_guides/combos（csv 386 + 4 md）。设计点A不贴hero，D按武将对合并。',
+      '> 来源：raw_guides/combos（csv 386 + 4 md）。设计点A不贴hero，D按武将对合并。',
       f'> 总块 {len(blocks_list)}（合并 {merged} / csv独有 {csv_only} / md独有 {md_only}）。', '']
 for b in sorted(blocks_list, key=lambda x: x['block_id']):
     md.append(f'### {b["block_id"]}')
