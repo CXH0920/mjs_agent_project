@@ -17,6 +17,8 @@ dependencies:
     - opencv-python==4.11.0.86
     - PySide6==6.11.1
     - pytest==9.0.3
+    - pytest-xdist       # verify.yml -n auto 并行跑测试用例
+    - pytest-timeout     # verify.yml --timeout=60 单测试超时兜底
     - ruff==0.12.0
     - pillow==12.3.0
     - numpy==1.26.4
