@@ -78,7 +78,7 @@ test_project/
 │           ├── hero_dialogs.py     # HeroSkillDialog
 │           └── faction_colors.py   # 势力配色读取/校验/兜底/重载
 ├── data/
-│   ├── heroes.json                # 172 个武将
+│   ├── heroes.json                # 171 个武将 / 418 技能
 │   ├── synergies.json             # 相性评分
 │   ├── guides.json                # 武将攻略
 │   ├── cards.json                 # 基础卡牌数据
@@ -86,7 +86,10 @@ test_project/
 │   ├── special_cards.json         # 专属牌/战法牌/特殊牌区/状态·标记/概念（RAG 特殊机制语料源）
 │   ├── card_points.json           # 162 张牌花色点数 + 12 条判定规则（RAG 点数花色语料源）
 │   ├── equip_attrs.json           # 26 件装备属性（RAG 装备属性语料源）
-│   ├── hero_classification.json   # 武将分类/克制链/归类（RAG 武将分类语料源）
+│   ├── hero_classification.json   # 武将分类/克制链/归类（RAG 武将分类语料源，AI从技能总结属DWD）
+│   ├── raw_guides/                # 社区素材（guides 45篇 + combos 4md+1csv，加工成 combo/guide 检索块）
+│   ├── rag_corpus/                # RAG 语料 json（脚本生成，.gitignore；含组合/武将攻略等 12 类语料）
+│   ├── rag_index/                 # ChromaDB 向量索引（.gitignore）
 │   ├── 2v2胜率排行.csv            # 2v2 胜率数据
 │   ├── 2v2出场排行.csv            # 2v2 出场数据（官方榜单导入生成）
 │   ├── 武将放逐.csv                # 武将放逐数据（官方榜单导入生成）
@@ -207,7 +210,7 @@ python -m src.scraper.ai_batch --dry-run --synergy
 
 
 ### RAG 语料增强（攻略 / 相性）
-攻略与相性生成（API/浏览器双模式）默认启用 RAG 官方规则语料（`data/rag_corpus` + `data/rag_index`）注入 prompt，提升规则准确性。每次生成可在「生成方式确认」对话框选择 **RAG 语料增强（推荐）** 或 **经典模式（无 RAG 注入）**，经典模式与旧版输出一致。相性生成额外注入双方武将语料块与相关规则/FAQ/卡牌/装备跨类块，关键结论标注来源块编号（如 `[hero_180_skill_1]`）；若语料不可用会自动降级为经典模式，并在进度窗口提示一次。
+攻略与相性生成（API/浏览器双模式）默认启用 RAG 语料注入 prompt：**官方规则语料**（`data/rag_corpus` 权威侧 10 类，硬依据）+ **社区实战参考**（`data/raw_guides` 加工的 combo/guide 块，启发层）。`rag_prompt._format_rag_chunks` 按 kind 分两段注入，官方/社区独立预算池，社区池内 combo 优先 guide；社区段约束"取思路非文风"，不照搬口语网络用语。每次生成可在「生成方式确认」对话框选择 **RAG 语料增强（推荐）** 或 **经典模式（无 RAG 注入）**，经典模式与旧版输出一致。相性生成额外注入双方武将语料块与相关规则/FAQ/卡牌/装备跨类块，combo 块按 heroes 列表过滤（含任一目标武将才保留，根治跨武将噪声），关键结论标注来源块编号（如 `[hero_180_skill_1]`）；若语料不可用会自动降级为经典模式，并在进度窗口提示一次。
 - 禁用增强（CLI）：`python -m src.scraper.ai_batch --guide --no-rag`
 - 重建索引：`python -m src.scraper.ai_batch --rebuild-rag-index`
 - 一键维护管道（本地）：`python scripts/maintain_rag.py --force --build-index`（重建语料与向量索引），或使用应用内「知识库维护」页面可视化执行；检索层 2026-08 起使用武将/牌名倒排与 KEYWORDS 倒排索引（`Retriever`），降低每次检索的全量遍历成本

@@ -94,7 +94,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
      -> generator.generate_guide(hero)                        [调用 AI]
         -> load_prompt(GUIDE_PROMPT_FILE)                     [读取系统提示词]
         -> build_guide_prompt(hero)                           [构建用户提示词]
-           -> build_rag_context(hero)                      [RAG 注入: Retriever.hero_blocks + search(heroes 过滤)]
+           -> build_rag_context(hero)                      [RAG 注入: hero_blocks(hero+guide+classification) + 跨类 search(combo 按 heroes 列表过滤) → _format_rag_chunks 分两段(官方硬依据+社区参考)]
         -> self._call_api(messages)                           [API 模式]
            -> time.sleep(限速)                                 [RPM 控制]
            -> POST /v1/chat/completions                       [thinking.type=disabled, max_tokens=16384]
@@ -189,7 +189,7 @@ ai_generation.run_synergy_generation(heroes, generator, synergy_path, existing, 
         -> generator.generate_synergy(ha, hb)
            -> load_prompt(SYNERGY_PROMPT_FILE)
            -> build_synergy_prompt(ha, hb)
-              -> build_synergy_rag_context(ha, hb)    [RAG 注入: 双方 hero_blocks + 跨类 search(机制词查询, 过滤非目标武将块)]
+              -> build_synergy_rag_context(ha, hb)    [RAG 注入: 双方 hero_blocks + 跨类 search(combo 按 heroes 列表过滤, 含任一目标武将才保留) → _format_rag_chunks 分两段(官方硬依据+社区参考)]
            -> self._call_api(messages)
            -> extract_json(response_text)
            -> validate_synergy(raw)

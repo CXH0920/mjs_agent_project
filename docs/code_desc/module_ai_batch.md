@@ -129,11 +129,12 @@ for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
 
 `src/scraper/ai/rag_prompt.py` 负责把官方规则语料检索结果格式化为 prompt 区块；任何异常一律降级为空串，不影响生成链路。
 
-- **攻略 `build_rag_context(hero)`**：先取该武将全部语料块（总览 + 技能/结算），再以 `heroes=[武将名]` 元数据硬过滤补充检索；只注入目标武将自己的块。
+- **攻略 `build_rag_context(hero)`**：先 `hero_blocks()` 取该武将全部语料块（hero 技能/结算 + guide 攻略 + classification），再跨类检索召回 combo 块（无 hero，按 `heroes` 列表过滤，含目标武将才保留）与规则/卡牌等；只注入目标武将相关的块。
 - **相性 `build_synergy_rag_context(hero_a, hero_b)`**：
-  1. 第一段确定性召回双方武将全部语料块（`hero_blocks()`，含其分类块）；
-  2. 第二段跨类检索（不带武将过滤），查询串 = 双方武将名 + 技能名 + 技能描述中命中的 `retriever.KEYWORDS` 机制词（去重、上限 20），让规则/FAQ/卡牌/装备等跨类块进入；
-  3. 过滤：`metadata.hero` 存在且不属于两名目标武将的块一律丢弃，防止其他武将语料混入 prompt。
+  1. 第一段确定性召回双方武将全部语料块（`hero_blocks()`，含 guide/classification）；
+  2. 第二段跨类检索（不带武将过滤），查询串 = 双方武将名 + 技能名 + 技能描述中命中的 `retriever.KEYWORDS` 机制词（去重、上限 20），让规则/FAQ/卡牌/装备/combo 等跨类块进入；
+  3. post-filter：`metadata.hero` 存在且不属于两名目标武将的块丢弃；combo 块（无 hero）按 `heroes` 列表过滤，含任一目标武将才保留（根治"text 提'类XX'"的跨武将噪声）。
+- **分两段注入 `_format_rag_chunks`**：按 kind 分两段——「官方规则语料」（hero/rule/card/faq 等硬依据）与「社区实战参考」（combo/guide 启发层）；官方/社区独立预算池（core_ratio 给官方，剩余给社区，官方未用滚给社区），社区池内 combo 优先于 guide（组合信息对相性更直接，避免长攻略挤掉组合块）；社区段约束"取思路非文风"，不照搬口语网络用语。
 - **双版本选择**：UI 层可选「RAG 语料增强 / 经典模式」，经典模式向子进程追加 `--no-rag`（等价于 `RAG_ENABLED=false`）。
 - **降级提示**：检索/注入异常时记录 `rag_prompt.degraded_reason`，生成循环消费一次并在 stdout 输出 `[RAG] 语料不可用，本次已降级为经典模式（原因）`，进度窗口可见。
 - **配置**：`RAG_ENABLED` / `RAG_TOP_K`（12）/ `RAG_PROMPT_CHARS`（6000）/ `RAG_BROWSER_PROMPT_CHARS`（3000）/ `RAG_SYNERGY_PROMPT_CHARS`（6000，相性注入预算）/ `RAG_MODEL_DIR`。

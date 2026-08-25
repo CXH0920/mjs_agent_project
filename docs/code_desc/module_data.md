@@ -188,6 +188,8 @@ facade.heroes.get_hero(114) # 直接访问各 Manager
 
 四个维护仓库（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）已重构继承本基类；`card_catalog.py` 的 `_JsonRepository` 与 `manager.py` 的 `DataManager._save_unlocked` 也改为委托 `atomic_write_json`（全库原子写收敛，后续写盘改进只需改本文件）。
 
+另有社区侧 combo/guide 语料由 `src/scripts/build_combo_corpus.py`（组合RAG语料，437 块，combo 类，不贴单值 hero 但贴 heroes 列表）与 `build_guide_corpus.py`（武将攻略RAG语料，357 块，guide 类，贴 hero）从 `data/raw_guides/` 生成，进向量库供 RAG 检索，非 Pydantic 模型不入维护仓库。
+
 ## 四、关键代码片段
 
 ### 4.1 JSON 原子写入

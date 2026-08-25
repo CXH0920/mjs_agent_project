@@ -144,7 +144,8 @@ def _norm_classification(blocks):
 
 
 def _norm_combo(blocks):
-    """组合语料：不设 hero（设计点A，避免 post-filter 丢一侧武将）；武将名入 text 供向量召回。"""
+    """组合语料：不贴单值 hero（设计点A，避免 post-filter 丢一侧武将），但贴 heroes 列表
+    [hero_a, hero_b] 供 post-filter 按武将过滤（根治 text 提'类XX'的跨武将噪声）。武将名入 text 供向量召回。"""
     out = []
     for b in blocks:
         bid = b.get('block_id', '')

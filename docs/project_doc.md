@@ -267,6 +267,9 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `scripts/.rule_doc_snapshot.json`）；③ `scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
 - **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
+- **社区侧语料接入（2026-08）**：raw_guides/（jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv）加工成检索块进向量库。`src/scripts/build_combo_corpus.py` 把 csv（武将对+亮点）与 combos md（强力组合表格/平阳公主强势组合盘点/巴清搭配/孟尝君+黄月英深解）切块归并为组合RAG语料（combo 类，437 块）；`src/scripts/build_guide_corpus.py` 把 guides 45 篇按 ## 章节拆为武将攻略RAG语料（guide 类，357 块）。设计点：组合块**不贴单值 hero**（避免 post-filter 丢一侧武将）**但贴 heroes 列表** `[hero_a, hero_b]`，post-filter 按武将列表过滤根治"text 提'类XX'"的跨武将噪声；攻略块贴 `hero=武将名` 保证必召回。`_norm_combo`/`_norm_guide` 在 `indexer.py` 规范化，`KIND_MAX` 加 `combo:3/guide:2` 配额。
+- **RAG 注入分两段（2026-08）**：`rag_prompt._format_rag_chunks` 按 kind 分两段注入——「官方规则语料」（hero/rule/card/faq 等硬依据）与「社区实战参考」（combo/guide 启发层）；官方/社区独立预算池（core_ratio 给官方，剩余给社区，官方未用滚给社区），社区池内 combo 优先于 guide（组合信息对相性更直接，避免长攻略挤掉组合块）。社区段定位"取思路非文风"，约束 AI 借鉴联动思路但用规范语言重述，不照搬口语/网络用语。两处 post-filter（`build_rag_context` 单武将 / `build_synergy_rag_context` 双武将）按 `metadata.hero` 或 `heroes` 列表过滤，combo 块含任一目标武将才保留。
+
 ### 2.1 模块文件关系
 
 ```
@@ -661,7 +664,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 
 | 数据文件 | 管理类 | 数据量 |
 |----------|--------|--------|
-| `data/heroes.json` | HeroManager(DataManager[Hero]) | 165 武将 |
+| `data/heroes.json` | HeroManager(DataManager[Hero]) | 171 武将 / 418 技能 |
 | `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 55 条相性（当前数据） |
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
@@ -669,7 +672,10 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `data/card_points.json` | CardPointsRepository | 162 张牌花色点数（72 组合）+ 12 条判定规则 |
 | `data/equip_attrs.json` | EquipAttrsRepository | 26 件装备属性（细分/攻击范围/距离修正） |
 | `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
-| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类 |
+| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
+| `data/raw_guides/` | —（社区素材，未入库 raw） | jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv |
+| `data/rag_corpus/组合RAG语料.json` | —（`build_combo_corpus.py` 生成） | 437 块 combo 检索块（csv 亮点+combos 深解合并） |
+| `data/rag_corpus/武将攻略RAG语料.json` | —（`build_guide_corpus.py` 生成） | 357 块 guide 检索块（guides 按 ## 章节拆） |
 
 ### 4.3 HeroManager 方法清单
 

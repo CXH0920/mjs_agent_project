@@ -363,6 +363,8 @@ CardPointsPanel / EquipAttrsPanel / SpecialCardsPanel / HeroClassificationPanel 
         -> build_cardpts.py     读 card_points.json -> 卡牌点数花色语料
         -> build_equip_attr.py  读 equip_attrs.json + cards.json -> 装备属性语料（并注入卡牌语料）
         -> build_special_corpus.py 读 special_cards.json -> 特殊机制语料
+        -> build_combo_corpus.py 读 raw_guides/combos (csv+4md) -> 组合RAG语料（combo类，437块，不贴单值hero但贴heroes列表）
+        -> build_guide_corpus.py 读 raw_guides/guides (45md) -> 武将攻略RAG语料（guide类，357块，贴hero）
 ```
 
 ### 8.3 从 xlsx 应急重导入
