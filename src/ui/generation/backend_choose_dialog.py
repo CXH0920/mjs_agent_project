@@ -14,12 +14,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QRadioButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from src.config.env import PROVIDER_PRESETS, list_api_profiles
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
@@ -84,11 +86,19 @@ class BackendChooseDialog(QDialog):
             self._api_message_label.setStyleSheet("color: gray; font-size: 13px; padding: 4px 0;")
             self._api_message_label.setVisible(bool(self._estimation.get("message", "")))
             api_layout.addWidget(self._api_message_label)
+            if not self._has_available_api():
+                hint = QLabel("未配置可用 API，请先在「API 配置」中新增并启用档案")
+                hint.setStyleSheet("color: gray; font-size: 13px; padding: 4px 0;")
+                api_layout.addWidget(hint)
         else:
-            api_layout.addWidget(QLabel("API 模式：通过 DeepSeek API 直连生成"))
-            api_layout.addWidget(QLabel("需要配置 DEEPSEEK_API_KEY"))
+            api_layout.addWidget(QLabel("API 模式：通过 API 直连生成"))
+            api_layout.addWidget(QLabel("需要配置并启用至少一个 API 档案"))
             api_layout.addWidget(QLabel("优点：速度快，支持 Token 统计和费用估算"))
             api_layout.addWidget(QLabel("缺点：需要付费 API Key"))
+            if not self._has_available_api():
+                hint = QLabel("未配置可用 API，请先在「API 配置」中新增并启用档案")
+                hint.setStyleSheet("color: gray; font-size: 13px; padding: 4px 0;")
+                api_layout.addWidget(hint)
 
         api_layout.addStretch()
         self._tabs.addTab(api_tab, "API 方式")
@@ -153,6 +163,17 @@ class BackendChooseDialog(QDialog):
             return
         self._recompute_estimation()
 
+    def _has_available_api(self) -> bool:
+        """是否有可用的 API 档案（enabled + URL 非空 + 供应商 Key 语义），与生成链路一致。"""
+        for p in list_api_profiles():
+            if not p.get("enabled", True) or not p.get("api_url"):
+                continue
+            provider = p.get("provider", "deepseek")
+            if PROVIDER_PRESETS.get(provider, {}).get("requires_key", True) and not p.get("has_key"):
+                continue
+            return True
+        return False
+
     def _recompute_estimation(self) -> None:
         """按当前 RAG 选择重算 estimation 的成本字段并刷新标签。"""
         from src.scraper.ai.prompt_utils import estimate_item_cost
@@ -176,9 +197,17 @@ class BackendChooseDialog(QDialog):
         return self._rag_enhanced_radio.isChecked()
 
     def _on_accept(self) -> None:
-        """确定时记录当前 Tab 对应的后端"""
+        """确定时记录当前 Tab 对应的后端；API 方式无可用档案时拦截引导配置。"""
         idx = self._tabs.currentIndex()
-        self._selected_backend = "browser" if idx == 1 else "api"
+        backend = "browser" if idx == 1 else "api"
+        if backend == "api" and not self._has_available_api():
+            QMessageBox.warning(
+                self,
+                "未配置可用 API",
+                "请先在「配置 → API 配置」中新增并启用至少一个 API 档案。",
+            )
+            return
+        self._selected_backend = backend
         self.accept()
 
     def get_selected_backend(self) -> str:

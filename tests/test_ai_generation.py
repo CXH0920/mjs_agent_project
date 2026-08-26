@@ -483,7 +483,7 @@ def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> N
             closed.append(True)
 
     monkeypatch.setattr(ai_batch, "load_heroes", lambda _path: [{"id": 1, "name": "甲"}])
-    monkeypatch.setattr(ai_batch, "get_api_config", lambda: {"api_key": "", "api_url": "", "model": "test"})
+    monkeypatch.setattr(ai_batch, "resolve_api_config", lambda *a, **k: {"api_key": "", "api_url": "", "model": "test"})
     monkeypatch.setattr(
         ai_batch,
         "get_runtime_params",
@@ -512,7 +512,7 @@ def test_cli_returns_nonzero_when_generation_result_has_failures(monkeypatch, tm
     import src.scraper.ai.browser_generator as ai_playwright
 
     monkeypatch.setattr(ai_batch, "load_heroes", lambda _path: [{"id": 1, "name": "甲"}])
-    monkeypatch.setattr(ai_batch, "get_api_config", lambda: {"api_key": "", "api_url": "", "model": "test"})
+    monkeypatch.setattr(ai_batch, "resolve_api_config", lambda *a, **k: {"api_key": "", "api_url": "", "model": "test"})
     monkeypatch.setattr(
         ai_batch,
         "get_runtime_params",

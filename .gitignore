@@ -39,6 +39,8 @@ retrospective.md
 # Environment files
 config.env
 config/ocr_rois.json
+# API 档案含敏感 Key（多供应商/多账号配置，见 api_multi_config_design.md）
+config/api_profiles.json
 
 # Edge browser profile (Playwright browser mode)
 data/edge_profile/

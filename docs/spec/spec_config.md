@@ -4,11 +4,16 @@
 
 ## 一、.env 文件设计
 
-### 规则 1.1：config.env 是唯一持久配置存储
+### 规则 1.1：config.env 存标量键值，结构化列表存 config/*.json
 
-所有用户可修改的配置项（API key、模型名、ADB 路径等）存储在项目根目录的 `config.env` 中。不使用 `settings.json` 或数据库。
+config.env 存储标量运行参数（API Key 的历史兜底、模型名、ADB 路径、阈值等，`KEY=VALUE` 格式）；
+结构化列表配置存放于 `config/` 目录下的 JSON 文件——模型价格 `model_pricing.json`、API 档案 `api_profiles.json`。
+不使用 `settings.json` 或数据库。
 
-**为什么：** 配置文件是纯文本，用户可手动编辑、git diff 可见、生成环境无需额外数据库。`KEY=VALUE` 格式跨平台兼容，不引入 YAML/TOML 解析依赖。
+**为什么：** 扁平 KV 表达不定长列表（多 API 档案：名称/供应商/Key/URL/模型/启用/默认）会带来键爆炸与 `key_mapping` 静态映射失效；
+项目已有 `model_pricing.json` 的 JSON 先例，结构化数据用结构化文件存储是最简实现。两处职责边界清晰：
+`parse_env_file` 保持纯字符串语义（规则 2.1）不被嵌套/列表结构破坏，JSON 文件不混入标量运行参数。
+API 档案含敏感 Key，`api_profiles.json` 已加入 `.gitignore`（与 `config.env` 同）。
 
 ### 规则 1.2：优先级链：config.env > 环境变量 > 默认值
 

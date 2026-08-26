@@ -10,7 +10,7 @@ import logging
 import time
 import httpx
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import BUNDLE_ROOT, PROVIDER_PRESETS
 from src.scraper.ai.prompt_utils import (
     load_prompt,
     build_guide_prompt,
@@ -58,14 +58,17 @@ class AIBatchGenerator:
         api_key: str,
         api_url: str | None = None,
         model: str | None = None,
+        provider: str = "deepseek",
         requests_per_minute: int = 30,
         max_retries: int = 3,
         http_timeout: int = 300,
     ):
-        if not api_key:
-            raise ValueError("api_key 不能为空")
+        # 供应商语义 Key 校验：requires_key=False（如 ollama 本地服务）允许空 Key
+        if PROVIDER_PRESETS.get(provider, {}).get("requires_key", True) and not api_key:
+            raise ValueError(f"{provider} 供应商要求填写 API Key")
 
         self.api_key = api_key
+        self.provider = provider
         self.api_url = api_url or "https://api.deepseek.com/v1/chat/completions"
         self.model = model or "deepseek-v4-pro"
         self.max_retries = max_retries
@@ -91,8 +94,10 @@ class AIBatchGenerator:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": MAX_OUTPUT_TOKENS,
-            "thinking": {"type": "disabled"},
         }
+        # thinking 是 DeepSeek 私有参数，非 DeepSeek 端点会因未知字段返回 400
+        if self.provider == "deepseek":
+            payload["thinking"] = {"type": "disabled"}
 
         for attempt in range(1, self.max_retries + 1):
             elapsed = time.time() - self._last_request_time

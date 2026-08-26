@@ -9,10 +9,12 @@ from pathlib import Path
 import pytest
 
 
+from src.business.rag import refinement_service
 from src.business.rag.refinement_service import (
     INDEX_FIELDS,
     RefinementUpdate,
     apply_curated,
+    build_generator,
     clear_curated,
     generate_suggestions,
     list_curated,
@@ -214,3 +216,25 @@ def test_apply_curated_overwrites_existing_curated(tmp_path: Path) -> None:
     assert block["curated"]["method"] == "llm"
     assert block["curated"]["updated_at"] == "2026-08-16"
     assert block["curated"]["timing"] == ["回合开始时"]
+
+
+def test_build_generator_ollama_empty_key_returns_generator(monkeypatch):
+    """BUG-1：ollama 空 Key 档案 build_generator 不返回 None（requires_key=False）。"""
+    monkeypatch.setattr(refinement_service, "resolve_api_config", lambda *a, **k: {
+        "provider": "ollama",
+        "api_key": "",
+        "api_url": "http://localhost:11434/v1/chat/completions",
+        "model": "llama3",
+    })
+    gen = build_generator()
+    assert gen is not None
+    assert gen.provider == "ollama"
+    assert gen.api_key == ""
+
+
+def test_build_generator_requires_key_provider_empty_key_returns_none(monkeypatch):
+    """BUG-1：deepseek 等 requires_key 供应商空 Key 时 build_generator 返回 None。"""
+    monkeypatch.setattr(refinement_service, "resolve_api_config", lambda *a, **k: {
+        "provider": "deepseek", "api_key": "", "api_url": "", "model": "",
+    })
+    assert build_generator() is None

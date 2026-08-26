@@ -687,9 +687,9 @@ class IndexRefinementDialog(QDialog):
     # LLM 建议
     # ---------------------------------------------------------------
     def _generator(self):
-        generator = build_generator()
+        generator = build_generator(None)
         if generator is None:
-            QMessageBox.warning(self, "未配置 API", "config.env 中未配置 DEEPSEEK_API_KEY，无法生成 LLM 建议，可直接人工填写保存。")
+            QMessageBox.warning(self, "未配置 API", "未配置可用的 API 档案（或档案缺少 API Key），无法生成 LLM 建议，可直接人工填写保存。")
         return generator
 
     def _fill_suggestion(self, block: PendingBlock, update: RefinementUpdate) -> None:

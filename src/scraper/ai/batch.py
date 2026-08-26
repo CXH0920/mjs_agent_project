@@ -29,8 +29,9 @@ from pathlib import Path
 
 from src.config.env import (
     BUNDLE_ROOT,
-    get_api_config,
+    PROVIDER_PRESETS,
     get_runtime_params,
+    resolve_api_config,
 )
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
@@ -146,12 +147,13 @@ def _print_mode_estimates(count: int, mode: str, label: str, model: str) -> None
 
 
 def _check_api_key(api_config: dict) -> None:
-    """检查 API Key 是否配置"""
-    if not api_config["api_key"]:
-        print("\n  错误：未找到 API Key")
-        print("  请通过以下任一方式提供：")
-        print("    1. config.env 中的 DEEPSEEK_API_KEY 字段")
-        print("    2. DEEPSEEK_API_KEY 或 OPENAI_API_KEY 环境变量\n")
+    """检查 API Key 是否配置（供应商语义：requires_key=False 如 ollama 允许空）"""
+    provider = api_config.get("provider", "deepseek")
+    requires_key = PROVIDER_PRESETS.get(provider, {}).get("requires_key", True)
+    if requires_key and not api_config["api_key"]:
+        print(f"\n  错误：{provider} 档案未配置 API Key")
+        print("  请在「配置 → API 配置」中为该档案填写 Key")
+        print("  或设置环境变量 DEEPSEEK_API_KEY / OPENAI_API_KEY（脚本/CI 兜底）\n")
         sys.exit(1)
 
 
@@ -245,7 +247,7 @@ def main():
         logger.error("没有加载到武将数据")
         sys.exit(1)
 
-    api_config = get_api_config()
+    api_config = resolve_api_config(None)
 
     if args.dry_run:
         _show_cost_estimate(heroes, api_config, args)
@@ -265,6 +267,7 @@ def main():
             api_key=api_config["api_key"],
             api_url=api_config["api_url"],
             model=api_config["model"],
+            provider=api_config.get("provider", "deepseek"),
             requests_per_minute=runtime_params["requests_per_minute"],
             max_retries=runtime_params["max_retries"],
             http_timeout=runtime_params["http_timeout"],

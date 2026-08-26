@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import src.config.env as config_env
 from src.config.env import get_api_config, get_runtime_params, parse_env_file
+from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.batch import (
     _load_existing_guides,
     _load_existing_synergies,
@@ -456,6 +457,15 @@ class TestLoadExistingData:
 
 
 class TestConfigLoading:
+    @pytest.fixture(autouse=True)
+    def _isolate_profiles_file(self, monkeypatch, tmp_path):
+        """隔离 DEFAULT_PROFILES_FILE：本机 config/api_profiles.json 若含默认档案，
+        会使 get_api_config 走档案分支而非 tmp env，导致断言读到档案 Key。
+        指向不存在的 tmp 文件即可（A4 测试隔离缺口）。"""
+        monkeypatch.setattr(
+            config_env, "DEFAULT_PROFILES_FILE", tmp_path / "nonexistent_profiles.json"
+        )
+
     def test_parse_env_file_nonexistent(self):
         """不存在的 .env 文件应返回空 dict"""
         result = parse_env_file("/nonexistent/config.env")
@@ -631,3 +641,48 @@ class TestConfigLoading:
                 config_env.DEFAULT_ENV_FILE = original
         finally:
             shutil.rmtree(tmpdir)
+
+
+def test_aibatchgenerator_ollama_allows_empty_key():
+    """BUG-1：ollama 本地服务 requires_key=False，允许空 Key 构造。"""
+    gen = AIBatchGenerator(
+        api_key="",
+        api_url="http://localhost:11434/v1/chat/completions",
+        model="llama3",
+        provider="ollama",
+    )
+    assert gen.api_key == ""
+    assert gen.provider == "ollama"
+
+
+def test_aibatchgenerator_requires_key_provider_rejects_empty_key():
+    """BUG-1：deepseek 等需 Key 供应商空 Key 抛 ValueError。"""
+    with pytest.raises(ValueError):
+        AIBatchGenerator(api_key="", provider="deepseek")
+
+
+def test_call_api_payload_thinking_only_for_deepseek():
+    """BUG-2：thinking 字段仅 deepseek 加，其他供应商不含（避免未知字段 400）。"""
+    captured: dict = {}
+
+    class _FakeResp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": {}}
+
+    class _FakeClient:
+        def post(self, url, headers, json):
+            captured["payload"] = json
+            return _FakeResp()
+
+    gen = AIBatchGenerator(api_key="sk-x", provider="deepseek")
+    gen._client = _FakeClient()
+    gen._call_api([{"role": "user", "content": "x"}])
+    assert captured["payload"].get("thinking") == {"type": "disabled"}
+
+    gen2 = AIBatchGenerator(api_key="sk-x", provider="openai")
+    gen2._client = _FakeClient()
+    gen2._call_api([{"role": "user", "content": "x"}])
+    assert "thinking" not in captured["payload"]

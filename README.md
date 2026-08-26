@@ -333,8 +333,10 @@ AI 生成
 ### 配置加载优先级
 
 ```
-config.env > 环境变量 > 默认值
+启用 API 档案（api_profiles.json） > config.env > 环境变量 > 默认值
 ```
+
+API 档案优先：任务用唯一启用档案三件套。无启用档案时回退 `config.env` → 环境变量（`DEEPSEEK_API_KEY` / `OPENAI_API_KEY`，脚本/CI 注入路径长期保留）→ 默认值，保持旧行为。
 
 ---
 
@@ -485,7 +487,7 @@ _save_json() → data/*.tmp → 每批原子替换 data/guides.json / data/syner
 | 菜单 | 功能 | 说明 |
 |---|---|---|
 | 文件 > 退出 | Ctrl+Q | 关闭应用 |
-| 配置 > API 配置 | | 编辑 API Key/URL/Model |
+| 配置 > API 配置 | | 管理多 API 档案（供应商/Key/URL/模型/默认/启停）+ 运行参数 |
 | 配置 > 模拟器配置 | | ADB 连接管理 + 模板制作 + OCR 配置 + 持续轮询 |
 | 配置 > 数据管理 | | 备份后批量清空武将攻略和相性数据 |
 | 数据 > 重新加载数据 | F5 | 重新读取 JSON 文件 |
@@ -572,12 +574,9 @@ AI 批量生成通过 **QProcess** 子进程执行；主窗口菜单将攻略和
 
 ### Configuration
 
-`config.env` 文件管理全部配置（已 gitignored）：
+`config.env` 文件管理标量运行参数（已 gitignored）：
 
 ```env
-DEEPSEEK_API_KEY=sk-xxx
-DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
-DEEPSEEK_MODEL=deepseek-v4-pro
 REQUESTS_PER_MINUTE=30
 HTTP_TIMEOUT=300
 MAX_RETRIES=3
@@ -592,6 +591,13 @@ MUMU_OCR_MATCH_THRESHOLD=0.8
 MUMU_OCR_USE_GPU=false
 MUMU_OCR_CPU_THREADS=6
 ```
+
+**多 API 档案**（`config/api_profiles.json`，已 gitignored）：支持多供应商/多账号，每个档案含 `name / provider / api_key / api_url / model / enabled / note`。供应商下拉枚举 `deepseek` / `openai` / `ollama` / `openai-compatible`，选择时自动预填默认 URL 与模型（可改）。
+
+- 在「配置 → API 配置」的参数配置 Tab 以档案列表 + 编辑面板管理：新增/删除/启用-停用（**同时只允许一个启用**=当前使用的 API，切换=启用新档+停用旧档）；Key 框始终 Password 模式、不回显明文（留空表示保持原值，点「清除」可置为未配置）；保存时校验名称唯一、URL 为 `http(s)://`、供应商语义 Key 必填（ollama 本地服务可不填）。
+- 任务发起（攻略/相性批量生成、索引精化 LLM 建议）用**唯一启用档案**（由配置栏启用互斥控制），任务发起处不出现 API 选择；成本估算按启用档案模型读取。无启用档案时任务入口拦截并引导去配置。
+- 切换启用档案后，成本估算按新启用档案模型重算（未知模型显示「无法自动估算」）。
+- 首次启动时若 `api_profiles.json` 不存在且 `config.env` 含旧 `DEEPSEEK_API_KEY/API_URL/MODEL` 三件套，自动迁移为 `deepseek-main` 启用档案（幂等，旧键保留不动）。环境变量作为「无启用档案时的最后兜底」长期保留，供脚本/CI 注入 Key。
 
 定价：输入 **CNY 3/百万 tokens**，输出 **CNY 6/百万 tokens**（deepseek-v4-pro，缓存未命中）
 

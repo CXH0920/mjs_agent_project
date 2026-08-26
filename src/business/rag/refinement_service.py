@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT, get_api_config
+from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS, resolve_api_config
 from src.data.json_repository import atomic_write_json
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.json_extract import extract_json
@@ -270,14 +270,16 @@ def _atomic_json_write(path: Path, data: object) -> None:
     atomic_write_json(path, data, indent=1)
 
 
-def build_generator() -> AIBatchGenerator | None:
-    """按 config.env 构造 DeepSeek 生成器；无 API Key 时返回 None。"""
-    config = get_api_config()
-    if not config.get("api_key"):
-        logger.warning("未配置 DEEPSEEK_API_KEY，无法生成 LLM 建议")
+def build_generator(profile_name: str | None = None) -> AIBatchGenerator | None:
+    """按指定 API 档案（无则默认档案 → 旧链兜底）构造生成器；供应商语义缺 Key 时返回 None。"""
+    config = resolve_api_config(profile_name)
+    provider = config.get("provider", "deepseek")
+    if PROVIDER_PRESETS.get(provider, {}).get("requires_key", True) and not config.get("api_key"):
+        logger.warning("未配置 API Key，无法生成 LLM 建议")
         return None
     return AIBatchGenerator(
         api_key=config["api_key"],
         api_url=config.get("api_url"),
         model=config.get("model"),
+        provider=provider,
     )
