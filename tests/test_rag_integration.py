@@ -83,6 +83,8 @@ def test_rag_context_fallback_on_exception(monkeypatch):
 def test_rag_corpus_loaded():
     """真实语料可加载（无需模型）。"""
     from src.rag.indexer import load_all_blocks
+    if not any(rag_config.CORPUS_DIR.glob("*.json")):
+        pytest.skip("rag_corpus 语料未入库（CI），跳过真实语料加载回归")
     blocks = load_all_blocks()
     assert len(blocks) > 1000
     kinds = {meta["kind"] for _, _, meta in blocks}

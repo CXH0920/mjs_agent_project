@@ -43,21 +43,29 @@ def _make_root(tmp_path: Path) -> Path:
     _write(root / "data" / "card_points.json", {"cards": [], "judge_rules": []})
     _write(root / "data" / "equip_attrs.json", [])
     _write(root / "docs" / "元规则整理-完整版.md", "# 元规则")
+    # 组合语料源（build_combo_corpus 依赖的社区 combo 材料）
+    _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "bilibili_videos_weijiang.csv", "url\n")
+    _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "强力组合.md", "# combo")
+    _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "巴清搭配.md", "# combo")
+    _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "平阳公主强势组合盘点.md", "# combo")
+    _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "孟尝君 + 黄月英.md", "# combo")
+    # 武将攻略语料源（目录源，建目录+占位即可）
+    _write(root / "data" / "raw_guides" / "jinxia" / "guides" / "曹操.md", "# guide")
     # 语料输出（全部已生成）
     for name in ("武将RAG语料.json", "卡牌RAG语料.json", "卡牌点数花色语料.json",
                  "装备属性语料.json", "加强削弱语料.json", "元规则RAG语料-章节块.json",
-                 "术语表.json", "FAQ裁定块.json", "特殊机制语料.json", "武将分类语料.json"):
+                 "术语表.json", "FAQ裁定块.json", "特殊机制语料.json", "武将分类语料.json",
+                 "组合RAG语料.json", "武将攻略RAG语料.json"):
         _write(root / "data" / "rag_corpus" / name, [{"block_id": "x"}])
     for path in root.rglob("*"):
-        if path.is_file():
-            _utime(path, now - 100)
+        _utime(path, now - 100)
     return root
 
 
 def test_all_tasks_up_to_date(tmp_path: Path) -> None:
     root = _make_root(tmp_path)
     rows = task_states(root)
-    assert len(rows) == 8
+    assert len(rows) == 10
     assert all(row["status"] == "最新" for row in rows)
     assert all(row["count"] == 1 for row in rows)
 
@@ -129,7 +137,7 @@ def test_panel_renders(tmp_path: Path) -> None:
         "语料状态", "元规则维护", "专属牌维护", "卡牌点数维护", "装备属性维护",
         "武将分类维护",
     ]
-    assert panel._table.rowCount() == 8
+    assert panel._table.rowCount() == 10
     assert "所有语料与数据源一致" in panel._status_label.text()
     assert "人工维护提示" in panel._audit_label.text()
     assert hasattr(panel, "_special_cards")

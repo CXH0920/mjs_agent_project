@@ -118,10 +118,12 @@ def test_unknown_type_reports_error():
 
 
 def test_next_proposal_id_increments(tmp_path):
-    (tmp_path / "CP-2026-08-16-01.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "CP-2026-08-16-02.json").write_text("{}", encoding="utf-8")
+    from datetime import date
+    today = date.today().isoformat()
+    (tmp_path / f"CP-{today}-01.json").write_text("{}", encoding="utf-8")
+    (tmp_path / f"CP-{today}-02.json").write_text("{}", encoding="utf-8")
     pid = prc.next_proposal_id(tmp_path)
-    assert pid == "CP-2026-08-16-03"
+    assert pid == f"CP-{today}-03"
 
 
 def test_generate_items_placeholder_without_llm():
