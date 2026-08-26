@@ -33,4 +33,4 @@ jobs:
         shell: bash -l {0}
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q -n auto --timeout=60
+        run: python -m pytest -n auto --dist=loadfile --timeout=60 -v --tb=short
