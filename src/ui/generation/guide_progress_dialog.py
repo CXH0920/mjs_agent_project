@@ -121,6 +121,14 @@ class GuideProgressDialog(QDialog):
             self._status_label.setText(f"↷ 已跳过 {m_skip.group(3)}（已有{self._item_label}）")
             self.update_progress(int(m_skip.group(1)), int(m_skip.group(2)))
             return
+        m_retry = re.search(r"\[重试\]\s*(.+?)，第\s*(\d+)/(\d+)\s*次，(\d+)\s*秒后重试", text)
+        if m_retry:
+            current = self._progress_bar.value()
+            total = self._progress_bar.maximum()
+            self._status_label.setText(
+                f"⏳ 重试中（{m_retry.group(2)}/{m_retry.group(3)}），{m_retry.group(4)} 秒后重试")
+            self._detail_label.setText(f"当前进度 {current} / {total}，原因：{m_retry.group(1)}")
+            return
         m_rest = re.search(r"\[休息\]\s*随机休息\s*(\d+)\s*秒", text)
         if m_rest:
             current = self._progress_bar.value()

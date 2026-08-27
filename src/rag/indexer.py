@@ -33,6 +33,8 @@ def _norm_hero(blocks):
         else:
             text = (f'【武将技能】{hero}｜{b.get("faction", "")}｜{b.get("position", "")}\n'
                     f'技能：{b.get("skill", "")}\n'
+                    f'时机：{"、".join(b.get("timing", []))}\n'
+                    f'触发条件：{"；".join(b.get("trigger_condition", []))}\n'
                     f'描述：{b.get("description", "")}\n'
                     f'结算：{b.get("settlement", "")}')
             meta['skill'] = b.get('skill', '')

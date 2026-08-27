@@ -20,6 +20,7 @@ _GENERATION_PROGRESS_PATTERN = re.compile(
     r"|^\s*\[[^\]/]+\]\s+开始\.\.\.$"
     r"|\[休息\]\s*随机休息\s*\d+\s*秒"
     r"|^\s*\[RAG\])"
+    r"|^\s*\[重试\]"
 )
 
 

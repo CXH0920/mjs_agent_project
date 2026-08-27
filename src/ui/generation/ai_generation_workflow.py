@@ -15,6 +15,7 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import SynergyScore
 from src.data.synergy_manager import SynergyManager
+from src.ui.app.chinese_translator import install_details_button_translator
 from src.ui.generation.backend_choose_dialog import BackendChooseDialog
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
@@ -231,11 +232,17 @@ class AiGenerationWorkflow(QObject):
     def _on_guide_error(self, error_message: str) -> None:
         if self._guide_progress_dialog:
             self._guide_progress_dialog.on_process_finished(False, error_message)
+        failed = self._guide_service.failed_items
+        detail = (
+            f"失败武将（{len(failed)}）：\n" + "\n".join(failed)
+            if failed else error_message
+        )
         message = QMessageBox(self._window)
         message.setIcon(QMessageBox.Icon.Critical)
         message.setWindowTitle("攻略生成失败")
         message.setText("攻略生成出错")
-        message.setDetailedText(error_message)
+        message.setDetailedText(detail)
+        install_details_button_translator(message)
         message.exec()
 
     def _on_guide_cancelled(self) -> None:
@@ -264,7 +271,18 @@ class AiGenerationWorkflow(QObject):
     def _on_synergy_error(self, error_message: str) -> None:
         if self._synergy_progress_dialog:
             self._synergy_progress_dialog.on_process_finished(False, error_message)
-        QMessageBox.warning(self._window, "生成失败", f"相性评分生成失败\n{error_message}")
+        failed = self._synergy_service.failed_items
+        detail = (
+            f"失败项（{len(failed)}）：\n" + "\n".join(failed)
+            if failed else error_message
+        )
+        message = QMessageBox(self._window)
+        message.setIcon(QMessageBox.Icon.Critical)
+        message.setWindowTitle("相性生成失败")
+        message.setText("相性评分生成出错")
+        message.setDetailedText(detail)
+        install_details_button_translator(message)
+        message.exec()
 
     def _on_synergy_cancelled(self) -> None:
         if self._synergy_progress_dialog:

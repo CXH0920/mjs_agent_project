@@ -16,7 +16,7 @@ from src.config.env import (
 )
 
 from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context, _rag_enabled
-from src.scraper.ai.rule_summary import load_core_rules
+from src.scraper.ai.rule_summary import load_card_system, load_core_rules
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,12 @@ def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
     rag = build_rag_context(hero, max_chars=rag_max_chars)
     if rag:
         lines.extend(["", rag])
-    elif not _rag_enabled():
+    if _rag_enabled():
+        # RAG 开：card 块向量召不回，兜底注入卡牌体系段防战法/装备牌名串味
+        card_sys = load_card_system()
+        if card_sys:
+            lines.extend(["", card_sys])
+    elif not rag:
         rules = load_core_rules()
         if rules:
             lines.extend(["", rules])
@@ -176,7 +181,12 @@ def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None =
     rag = build_synergy_rag_context(hero_a, hero_b, max_chars=rag_max_chars)
     if rag:
         lines.extend(["", rag])
-    elif not _rag_enabled():
+    if _rag_enabled():
+        # RAG 开：card 块向量召不回，兜底注入卡牌体系段防战法/装备牌名串味
+        card_sys = load_card_system()
+        if card_sys:
+            lines.extend(["", card_sys])
+    elif not rag:
         rules = load_core_rules()
         if rules:
             lines.extend(["", rules])

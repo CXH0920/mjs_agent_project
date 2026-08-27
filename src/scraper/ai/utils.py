@@ -130,9 +130,20 @@ def validate_synergy(data: dict) -> dict | None:
 # ID 由调用方注入，不在此检查；命中缺失可省去一次 Pydantic 异常开销
 # ============================================================
 
+# 模板占位符标记：模型偶发原样复制模板指令文本作 description 值，需拦截
+_PLACEHOLDER_MARKERS = ("此处放入", "放入此字段", "保持原文不变")
+# 攻略正文下限：模板要求 600-1000 字，低于此必为占位符或截断
+_MIN_GUIDE_DESCRIPTION_LEN = 200
+
+
 def has_required_guide_fields(raw: dict) -> bool:
-    """攻略结果必填字段预检：key_points / description。"""
-    return all(f in raw for f in ("key_points", "description"))
+    """攻略结果必填字段预检：key_points / description，并拦截模板占位符正文。"""
+    if not all(f in raw for f in ("key_points", "description")):
+        return False
+    desc = raw.get("description", "")
+    if not isinstance(desc, str) or len(desc) < _MIN_GUIDE_DESCRIPTION_LEN:
+        return False
+    return not any(marker in desc for marker in _PLACEHOLDER_MARKERS)
 
 
 def has_required_synergy_fields(raw: dict) -> bool:

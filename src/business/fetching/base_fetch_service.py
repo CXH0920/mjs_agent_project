@@ -11,6 +11,7 @@ _on_process_error 来表达差异。
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from subprocess import Popen
 
@@ -56,6 +57,7 @@ class BaseFetchService(QObject):
         self._stdout_buffer = bytearray()
         self._stdout_line_buffer = bytearray()
         self._stderr_buffer = bytearray()
+        self._failed_items: list[str] = []
         self._cancel_requested = False
         self._cancel_cleanup_process: Popen | None = None
 
@@ -72,6 +74,11 @@ class BaseFetchService(QObject):
     def _subprocess_log_namespace(self) -> str:
         """返回父进程用于分流 stdout/stderr 的 logger 前缀。"""
         return "subprocess.unclassified"
+
+    @property
+    def failed_items(self) -> list[str]:
+        """本次任务中解析到的失败项（武将名/相性对名）。"""
+        return self._failed_items
 
     def _on_stdout_line(self, line: str) -> None:
         """覆写以解析每行 stdout（如 [i/N] 进度）"""
@@ -124,6 +131,7 @@ class BaseFetchService(QObject):
         self._stdout_buffer.clear()
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
+        self._failed_items.clear()
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
@@ -132,6 +140,9 @@ class BaseFetchService(QObject):
         self._process.errorOccurred.connect(self._on_error)
         process_env = QProcessEnvironment.systemEnvironment()
         process_env.insert("MJS_QPROCESS_CHILD", "1")
+        # AI 子进程需要自身落盘失败日志（见 logging_config 的 is_ai_child 分支）
+        if self._subprocess_log_namespace == "subprocess.ai":
+            process_env.insert("MJS_AI_CHILD", "1")
         self._process.setProcessEnvironment(process_env)
         logger.info("启动子进程: python %s", " ".join(args))
         self._process.start(sys.executable, args)
@@ -167,9 +178,14 @@ class BaseFetchService(QObject):
 
     def _dispatch_stdout_line(self, raw_line: bytes) -> None:
         line = raw_line.decode("utf-8", errors="replace").strip()
-        if line:
-            self._log_stdout.info("%s", line)
-            self._on_stdout_line(line)
+        if not line:
+            return
+        self._log_stdout.info("%s", line)
+        # 收集失败项（攻略/相性统一 FAIL 行：[i/total] 名字 FAIL）
+        m = re.search(r"\[(\d+)/(\d+)\]\s+(.+?)\s+FAIL(?:\s|$)", line)
+        if m:
+            self._failed_items.append(m.group(3))
+        self._on_stdout_line(line)
 
     def _on_stderr_ready(self) -> None:
         """读取 stderr → 缓冲 → 日志"""

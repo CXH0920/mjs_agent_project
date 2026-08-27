@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 PROMPT_DIR = BUNDLE_ROOT / "docs" / "prompts"
 GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
 SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
-MAX_OUTPUT_TOKENS = 16_384
+MAX_OUTPUT_TOKENS = 32_768
 OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"
 
 
@@ -128,12 +128,16 @@ class AIBatchGenerator:
                 logger.warning("API 返回错误 [%d/%d]: HTTP %s",
                                attempt, self.max_retries, e.response.status_code)
                 if attempt < self.max_retries:
-                    time.sleep(2 ** attempt)
+                    wait = 2 ** attempt
+                    print(f"  [重试] HTTP {e.response.status_code}，第 {attempt}/{self.max_retries} 次，{wait} 秒后重试", flush=True)
+                    time.sleep(wait)
             except Exception as e:
                 logger.warning("API 请求异常 [%d/%d]: %s",
                                attempt, self.max_retries, type(e).__name__)
                 if attempt < self.max_retries:
-                    time.sleep(2 ** attempt)
+                    wait = 2 ** attempt
+                    print(f"  [重试] {type(e).__name__}，第 {attempt}/{self.max_retries} 次，{wait} 秒后重试", flush=True)
+                    time.sleep(wait)
 
         logger.error("API 请求超过最大重试次数 %d", self.max_retries)
         return None
@@ -141,6 +145,17 @@ class AIBatchGenerator:
     # ---------------------------------------------------------------
     # 生成攻略
     # ---------------------------------------------------------------
+
+    def _log_usage(self, label: str, usage: dict) -> None:
+        """记录单次 API token 用量（拆分 reasoning/content，定位思考挤占正文预算）。"""
+        if not usage:
+            return
+        prompt = usage.get("prompt_tokens", 0)
+        comp = usage.get("completion_tokens", 0)
+        details = usage.get("completion_tokens_details") or {}
+        reason = details.get("reasoning_tokens") or 0
+        logger.info("[%s] token: prompt=%d completion=%d (reasoning=%d, content=%d)",
+                    label, prompt, comp, reason, comp - reason)
 
     def generate_guide(self, hero: dict) -> tuple[dict | None, dict | None]:
         """为单个武将生成攻略"""
@@ -160,6 +175,7 @@ class AIBatchGenerator:
             return None, None
 
         content, usage = _read_completion_content(response)
+        self._log_usage(hero.get("name", ""), usage)
         if content is None:
             return None, usage
 
@@ -204,6 +220,7 @@ class AIBatchGenerator:
             return None, None
 
         content, usage = _read_completion_content(response)
+        self._log_usage(f"{hero_a.get('name','')}/{hero_b.get('name','')}", usage)
         if content is None:
             return None, usage
 

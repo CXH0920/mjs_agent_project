@@ -28,6 +28,7 @@ DEFAULT_MAX_MB = 10
 DEFAULT_BACKUP_COUNT = 5
 _MANAGED_HANDLER_ATTR = "_mjs_managed_handler"
 _QPROCESS_CHILD_ENV = "MJS_QPROCESS_CHILD"
+_AI_CHILD_ENV = "MJS_AI_CHILD"
 
 
 class ModuleFilter(logging.Filter):
@@ -95,7 +96,11 @@ def setup_logging(
     # QProcess 子进程的 stdout/stderr 会被父进程统一收集，避免多个进程
     # 同时轮转同一组文件导致 Windows 文件占用和备份竞争。
     is_qprocess_child = os.getenv(_QPROCESS_CHILD_ENV) == "1"
-    if not log_to_file or is_qprocess_child:
+    # AI 子进程例外：父进程把子进程 stdout 统一以 INFO 级转发，root level≥WARNING
+    # 时 api_generator 的失败原因（429/length/JSON 等）会被过滤丢失，故 AI 子进程
+    # 直写文件。AI 生成是单子进程串行，不触发多进程轮转竞争。
+    is_ai_child = os.getenv(_AI_CHILD_ENV) == "1"
+    if not log_to_file or (is_qprocess_child and not is_ai_child):
         return
 
     max_bytes = max(log_max_mb, 1) * 1024 * 1024
