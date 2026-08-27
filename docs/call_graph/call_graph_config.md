@@ -179,7 +179,11 @@ setup_logging(log_level="INFO", log_to_file=True)
   -> root = logging.getLogger()
   -> 仅移除带 _mjs_managed_handler 标记的旧 Handler
   -> root.setLevel(配置级别)
-  -> [log_to_file]
+  -> [控制台] logging.StreamHandler(sys.stdout)
+  -> is_qprocess_child = (MJS_QPROCESS_CHILD == "1")
+  -> is_ai_child = (MJS_AI_CHILD == "1")
+  -> [not log_to_file 或 (is_qprocess_child 且 not is_ai_child)] return  [跳过文件 Handler]
+  -> [log_to_file 且非普通 QProcess 子进程]
      -> log_dir = "logs" / {category}                           [分类子目录]
         -> "logs/scraper/official.log" / "ai_generation.log"
         -> "logs/business/fetching.log" / "emulator.log" / "recognition.log"
@@ -189,8 +193,9 @@ setup_logging(log_level="INFO", log_to_file=True)
         -> "logs/app.log" (UI 和其他)
      -> RotatingFileHandler(maxBytes=10MB, backupCount=5)       [每日志分类]
      -> ModuleFilter(logger_prefix)                             [按 logger name 前缀匹配]
-  -> [控制台] logging.StreamHandler(sys.stdout)
 ```
+
+> **AI 子进程例外**：普通 QProcess 子进程（`MJS_QPROCESS_CHILD=1`）不直写文件，stdout/stderr 由父进程统一收集。AI 子进程额外设 `MJS_AI_CHILD=1`，跳过该限制直写文件——因父进程以 INFO 级转发子进程 stdout，root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因会被过滤丢失；AI 生成单子进程串行，不触发多进程轮转竞争。
 
 ```
 日志分发规则:
@@ -251,7 +256,9 @@ src.config.env 的函数被几乎所有模块调用:
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
 | `main()` | `src/main.py` | Python 入口 | `get_runtime_params()`, `setup_logging()`, `QApplication()`, `MainWindow()` |
-| `setup_logging(level, file)` | `config/logging_config.py` | `main()`, 各 CLI 入口 | `RotatingFileHandler`, `ModuleFilter` |
+| `setup_logging(level, file)` | `config/logging_config.py` | `main()`, 各 CLI 入口 | `RotatingFileHandler`, `ModuleFilter`；识别 `MJS_AI_CHILD` 例外 |
+| `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `main()` | 安装 Qt 标准控件中文翻译器 |
+| `install_details_button_translator(msgbox)` | `ui/app/chinese_translator.py` | `AiGenerationWorkflow._on_*_error()` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"） |
 | `get_api_config()` | `config/env.py` | `ai_batch.py`, `settings_dialog` | `parse_env_file()`, `os.environ.get()`, 默认值填充 |
 | `get_mumu_config()` | `config/env.py` | `MainWindow.__init__()`, `mumu_config_dialog` | `parse_env_file()`, 类型转换 |
 | `parse_env_file(path)` | `config/env.py` | `get_api_config()`, `get_mumu_config()` | `Path.read_text()`, 逐行解析 |

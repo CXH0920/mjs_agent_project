@@ -134,6 +134,8 @@ def validate_synergy(data: dict) -> dict | None:
 _PLACEHOLDER_MARKERS = ("此处放入", "放入此字段", "保持原文不变")
 # 攻略正文下限：模板要求 600-1000 字，低于此必为占位符或截断
 _MIN_GUIDE_DESCRIPTION_LEN = 200
+# 相性正文下限：模板要求 ≤1500 字，低于此必为占位符或截断
+_MIN_SYNERGY_DESCRIPTION_LEN = 200
 
 
 def has_required_guide_fields(raw: dict) -> bool:
@@ -147,5 +149,10 @@ def has_required_guide_fields(raw: dict) -> bool:
 
 
 def has_required_synergy_fields(raw: dict) -> bool:
-    """相性结果必填字段预检：score / description。"""
-    return all(f in raw for f in ("score", "description"))
+    """相性结果必填字段预检：score / description，并拦截模板占位符正文。"""
+    if not all(f in raw for f in ("score", "description")):
+        return False
+    desc = raw.get("description", "")
+    if not isinstance(desc, str) or len(desc) < _MIN_SYNERGY_DESCRIPTION_LEN:
+        return False
+    return not any(marker in desc for marker in _PLACEHOLDER_MARKERS)

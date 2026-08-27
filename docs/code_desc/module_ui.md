@@ -28,7 +28,7 @@ src/ui/
 │   ├── shell_widgets.py        # NavigationRail 与 ContextHeader 应用外壳组件
 │   ├── poll_coordinator.py     # 轮询后台编排、结果过滤与状态提交
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
-│   └── chinese_translator.py   # Qt 标准控件中文翻译
+│   └── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器
 ├── library/                    # 资料库：武将浏览、编辑、卡牌与武将获取
 │   ├── hero_browser.py
 │   ├── hero_detail_views.py
@@ -297,7 +297,9 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 
 相性浏览器任务中止时，进度窗口会等待 AI 子进程及其浏览器后代清理完成；随后工作流在后台重载相性 JSON，主线程仅接收校验后的数据并刷新当前武将详情和推荐卡片，避免用户紧接着导入截图时主界面被同步解析阻塞。
 
-进度对话框运行中提供“中止”按钮；关闭窗口或按 Esc 也会请求中止，避免任务在后台无提示继续执行。中止后已分批提交的数据会重新加载并保留。相性任务使用“相性评分”文案：`START` 显示当前请求但保持原进度，冷却日志显示“冷却中”和当前已完成数量，只有单组配对得到 `OK`、`FAIL` 或确认 `SKIP` 后才推进进度条。
+进度对话框运行中提供”中止”按钮；关闭窗口或按 Esc 也会请求中止，避免任务在后台无提示继续执行。中止后已分批提交的数据会重新加载并保留。相性任务使用”相性评分”文案：`START` 显示当前请求但保持原进度，冷却日志显示”冷却中”和当前已完成数量，只有单组配对得到 `OK`、`FAIL` 或确认 `SKIP` 后才推进进度条。`[重试]` 行（API 限流退避时由 `api_generator` 输出）被解析后状态栏显示”⏳ 重试中（n/N），w 秒后重试”，详情栏标注”当前进度 current / total，原因：...”，不推进进度条。
+
+**失败弹窗**：攻略/相性生成失败时，工作流 `_on_guide_error`/`_on_synergy_error` 读取对应 FetchService 的 `failed_items`（从子进程 stdout 的 `[i/N] 名字 FAIL` 行收集），在 `QMessageBox` 的”查看详情”中列出失败武将/相性对清单与数量；无失败项时回退显示原始错误消息。该弹窗通过 `install_details_button_translator()` 安装详情按钮翻译过滤器，确保展开/收起时按钮文字保持中文。相性失败弹窗由原来的简单 `QMessageBox.warning` 升级为带详情的 Critical 弹窗，与攻略失败体验一致。
 
 **语料增强选择**：`BackendChooseDialog` 顶部新增「语料增强：RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」单选组，默认 RAG 增强；`get_selected_rag()` 返回选择，`AiGenerationWorkflow._choose_backend()` 组合为 `(backend, use_rag)` 元组。API Tab 的成本估算在切换选择时按 `estimate_item_cost(..., use_rag=...)` 实时重算（经典模式输入 token 更少）。
 

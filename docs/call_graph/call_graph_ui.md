@@ -127,7 +127,7 @@ AiGenerationWorkflow._connect_services():
   GuideFetchService.fetch_completed   → workflow._on_guide_completed()
     → GuideProgressDialog.on_process_finished()
     → [success] GuideManager.load() → workflow.guides_changed → MainWindow._on_guides_generated()
-  GuideFetchService.error_occurred    → workflow._on_guide_error() → 详细错误弹窗
+  GuideFetchService.error_occurred    → workflow._on_guide_error() → QMessageBox（详情列出 failed_items 失败武将清单 + 详情按钮翻译过滤器）
   GuideFetchService.progress_output/value → workflow._on_guide_progress*() → GuideProgressDialog
 
   SynergyFetchService.status_changed  → workflow.status_changed → MainWindow._on_fetch_status()
@@ -135,7 +135,7 @@ AiGenerationWorkflow._connect_services():
     → GuideProgressDialog.on_process_finished()
     → [success] SynergyManager.load() → workflow.synergies_changed
       → MainWindow._on_synergies_generated() → 浏览器/推荐页刷新
-  SynergyFetchService.error_occurred  → workflow._on_synergy_error() → 警告弹窗
+  SynergyFetchService.error_occurred  → workflow._on_synergy_error() → QMessageBox（详情列出 failed_items 失败相性对清单 + 详情按钮翻译过滤器）
   SynergyFetchService.progress_output/value → workflow._on_synergy_progress*() → GuideProgressDialog
 
 _connect_capture_signals():
@@ -246,7 +246,7 @@ GuideFetchService [signal] fetch_completed
     -> GuideProgressDialog.on_process_finished(success, message)
     -> [success] GuideManager.load() -> guides_changed
       -> MainWindow._on_guides_generated() -> _update_status()
-    -> [failure] QMessageBox.warning()
+    -> [failure] QMessageBox(Critical)：详情列出 GuideFetchService.failed_items 失败武将清单
 ```
 
 | 函数 | 菜单路径 | 调用链 |
@@ -855,6 +855,9 @@ GuideProgressDialog.__init__(hero_count, title, parent)
     -> [匹配 OK] _status_label.setText("已生成 XXX..."), update_progress(current, total)
     -> 正则 r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL"
     -> [匹配 FAIL] _status_label.setText("生成失败: XXX..."), 不更新进度条位置
+    -> 正则 r"\[重试\]\s*(.+?)，第\s*(\d+)/(\d+)\s*次，(\d+)\s*秒后重试"
+    -> [匹配重试] _status_label.setText("⏳ 重试中（n/N），w 秒后重试"),
+                       _detail_label.setText("当前进度 cur/total，原因：..."), 不推进进度条
     -> [均不匹配] _detail_label.setText(text)
 
   → 完成:
@@ -864,7 +867,7 @@ GuideProgressDialog.__init__(hero_count, title, parent)
     -> [失败] _status_label = "生成失败 ✗", set_error(message)
       -> 失败信息由 BaseFetchService 根据非零退出码生成
 
-> **注意**: 进度对话框仍可显示 CLI 输出中的 `OK`/`FAIL` 行，但 FetchService 的完成状态只依赖子进程退出码；`RESULT: FAIL=` 不参与状态判定。
+> **注意**: 进度对话框显示 CLI 输出中的 `OK`/`FAIL`/`[重试]` 行，但 FetchService 的完成状态只依赖子进程退出码；`RESULT: FAIL=` 不参与状态判定。`[重试]` 行由 `api_generator` 限流退避时输出，经 `fetch_utils` 进度白名单放行后到达进度窗口。
 ```
 
 ---
@@ -927,7 +930,9 @@ GuideProgressDialog.__init__(hero_count, title, parent)
 | `request_synergy_pair()` | 主窗口“指定获取”菜单 | `SynergyPairDialog`、后端选择、`SynergyFetchService.fetch_pair()` |
 | `request_synergy_single()` | 主窗口“选定武将”菜单 | `SynergySingleDialog`、后端选择、`fetch_single()` |
 | `_on_guide_completed()` | `GuideFetchService.fetch_completed` | 关闭进度、`GuideManager.load()`、`guides_changed` |
+| `_on_guide_error(msg)` | `GuideFetchService.error_occurred` | `GuideProgressDialog.on_process_finished(False)`；读取 `failed_items` 构建"失败武将清单"详情弹窗 + `install_details_button_translator()` |
 | `_on_synergy_completed()` | `SynergyFetchService.fetch_completed` | 关闭进度、`SynergyManager.load()`、`synergies_changed` |
+| `_on_synergy_error(msg)` | `SynergyFetchService.error_occurred` | `GuideProgressDialog.on_process_finished(False)`；读取 `failed_items` 构建"失败相性对清单"详情弹窗 + `install_details_button_translator()` |
 
 ### HeroCardWidget
 

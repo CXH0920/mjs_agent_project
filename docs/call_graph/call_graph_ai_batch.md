@@ -9,7 +9,8 @@
 ## 当前实现基线（2026-07-22）
 
 AI 生成按批原子提交正式 JSON：每批校验成功结果立即提交，任一任务失败时仅保留对应旧数据并以退出码 `1` 结束。
-攻略与相性默认启用 RAG 官方规则语料注入（`src/scraper/ai/rag_prompt.py`），CLI 支持 `--no-rag` 关闭；RAG 运行时异常自动降级为经典模式，并在生成循环输出一次 `[RAG]` 提示。
+攻略与相性默认启用 RAG 官方规则语料注入（`src/scraper/ai/rag_prompt.py`），CLI 支持 `--no-rag` 关闭；RAG 运行时异常自动降级为经典模式，并在生成循环输出一次 `[RAG]` 提示。RAG 开启时 `build_*_prompt` 兜底注入 `load_card_system()` 卡牌体系段防止牌名串味。
+API 模式输出上限 32768 token；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content 拆分，定位思考挤占正文预算导致截断。限流/异常重试时向 stdout 输出 `[重试]` 行（原因/次数/等待秒数），被父进程进度白名单放行并在进度窗口显示"重试中"状态。
 
 ```
 ai_batch.main()
@@ -95,12 +96,16 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
         -> load_prompt(GUIDE_PROMPT_FILE)                     [读取系统提示词]
         -> build_guide_prompt(hero)                           [构建用户提示词]
            -> build_rag_context(hero)                      [RAG 注入: hero_blocks(hero+guide+classification) + 跨类 search(combo 按 heroes 列表过滤) → _format_rag_chunks 分两段(官方硬依据+社区参考)]
+           -> [_rag_enabled()] load_card_system()         [卡牌体系段兜底注入，防战法/装备牌名串味]
+           -> [RAG 关闭且无语料] load_core_rules()         [完整核心规则摘要兜底]
         -> self._call_api(messages)                           [API 模式]
            -> time.sleep(限速)                                 [RPM 控制]
-           -> POST /v1/chat/completions                       [thinking.type=disabled, max_tokens=16384]
+           -> POST /v1/chat/completions                       [thinking.type=disabled, max_tokens=32768]
            -> 仅保留 content / finish_reason / usage          [丢弃思考内容]
            -> [content 为空或 length] 输出额度耗尽错误         [透传 UI]
            -> [失败] 指数退避重试: 2s/4s/8s, 最多 max_retries 次
+              -> print("[重试] 原因，第 n/N 次，w 秒后重试")   [stdout 输出，进度窗口显示"重试中"]
+        -> _log_usage(hero.name, usage)                       [记录 prompt/completion + reasoning/content 拆分]
         -> extract_json(response_text)                        [从 AI 回复提取 JSON]
            -> _try_extract(text, [0])                         [策略 1: 全文解析]
               -> json.JSONDecoder().raw_decode(text)
@@ -111,6 +116,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
            -> [失败] _try_extract(text, [3])                  [策略 4: 首 { 到尾 }]
               -> text[text.find("{"):text.rfind("}")+1]
         -> convert_ids_to_int(raw, ["synergizes_with"])       [搭配 ID 转为 int]
+        -> has_required_guide_fields(raw)                     [必填字段 + 占位符/过短正文预检]
         -> validate_guide(raw)                                [Pydantic 校验]
            -> HeroGuide.model_validate(raw) -> model_dump()
         -> return (guide_dict, usage_dict)                    [usage 仅 API 模式有]
@@ -123,16 +129,19 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
 | `run_guide_generation()` | `generation.py` | `ai_batch.main()` | `generator.generate_guide()`, `_save_json()` |
-| `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_call_api()` |
-| `AIBatchGenerator._call_api()` | `api_generator.py` | `generate_guide()`, `generate_synergy()` | `httpx.Client.post()` |
+| `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_call_api()`, `_log_usage()`, `has_required_guide_fields()` |
+| `AIBatchGenerator._call_api()` | `api_generator.py` | `generate_guide()`, `generate_synergy()` | `httpx.Client.post()`；失败 print `[重试]` 行 |
+| `AIBatchGenerator._log_usage()` | `api_generator.py` | `generate_guide()`, `generate_synergy()` | 记录 prompt/completion + reasoning/content token 拆分 |
 | `extract_json()` | `json_extract.py` | `generate_guide()`, `generate_synergy()` | `_try_extract()` ×4 |
 | `_try_extract()` | `json_extract.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
 | `_raw_parse()` | `json_extract.py` | `_try_extract()` | `json.JSONDecoder.raw_decode()` |
 | `_repair_strings()` | `json_extract.py` | `_try_extract()` | 状态机修复字面换行 |
+| `has_required_guide_fields()` | `utils.py` | `generate_guide()` | 必填字段 + 占位符/过短正文预检 |
 | `validate_guide()` | `utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
 | `convert_ids_to_int()` | `utils.py` | `generate_guide()` | `int()` 类型转换 |
 | `_save_json()` | `utils.py` | `run_*_generation()` | `json.dump()`, 原子写入 |
 | `load_prompt()` | `prompt_utils.py` | `generate_guide()`, `generate_synergy()` | 文件读取 |
+| `load_card_system()` | `rule_summary.py` | `build_guide_prompt()`, `build_synergy_prompt()` | 加载卡牌体系段（RAG 兜底） |
 
 ### 2.2 浏览器模式攻略生成
 
@@ -190,8 +199,11 @@ ai_generation.run_synergy_generation(heroes, generator, synergy_path, existing, 
            -> load_prompt(SYNERGY_PROMPT_FILE)
            -> build_synergy_prompt(ha, hb)
               -> build_synergy_rag_context(ha, hb)    [RAG 注入: 双方 hero_blocks + 跨类 search(combo 按 heroes 列表过滤, 含任一目标武将才保留) → _format_rag_chunks 分两段(官方硬依据+社区参考)]
+              -> [_rag_enabled()] load_card_system()  [卡牌体系段兜底注入]
            -> self._call_api(messages)
+           -> _log_usage("heroA/heroB", usage)        [记录 token 拆分]
            -> extract_json(response_text)
+           -> has_required_synergy_fields(raw)         [必填字段预检]
            -> validate_synergy(raw)
               -> SynergyScore.model_validate(raw) -> model_dump()
            -> return (synergy_dict, usage_dict)
@@ -263,7 +275,7 @@ src.ui.app.main_window
 | 对比项 | AIBatchGenerator | PlaywrightGenerator |
 |--------|-----------------|-------------------|
 | 限速方式 | RPM + time.sleep 前置限流 | 每次成功生成后，在下一次请求前随机休息 60-180s |
-| 重试 | 指数退避 2s/4s/8s, 3 次 | 无重试 |
+| 重试 | 指数退避 2s/4s/8s, 3 次；重试时 stdout 输出 `[重试]` 行 | 无重试 |
 | Token 统计 | API 返回 usage | 无（返回 None） |
 | 成本估算 | 支持 dry-run | 不支持 |
 | 生成成功率 | 高（自动重试） | 依赖页面稳定性 |
@@ -276,9 +288,10 @@ src.ui.app.main_window
 |------|------|----------------|------------------|
 | `main()` | `ai/batch.py` | QProcess 入口 | `load_heroes()`, `run_*_generation()` |
 | `AIBatchGenerator.__init__()` | `api_generator.py` | `ai_batch.main()` | `httpx.Client()` |
-| `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `_call_api()`, `extract_json()`, `validate_guide()` |
-| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` | `_call_api()`, `extract_json()`, `validate_synergy()` |
-| `AIBatchGenerator._call_api()` | `api_generator.py` | `generate_guide/synergy` | `time.sleep()`, `httpx.Client.post()` |
+| `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `_call_api()`, `_log_usage()`, `extract_json()`, `has_required_guide_fields()`, `validate_guide()` |
+| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` | `_call_api()`, `_log_usage()`, `extract_json()`, `validate_synergy()` |
+| `AIBatchGenerator._call_api()` | `api_generator.py` | `generate_guide/synergy` | `time.sleep()`, `httpx.Client.post()`；失败 print `[重试]` |
+| `AIBatchGenerator._log_usage()` | `api_generator.py` | `generate_guide/synergy` | 记录 token reasoning/content 拆分 |
 | `PlaywrightGenerator.generate_guide()` | `browser_generator.py` | `generation.py` | `_send_and_wait()`, `extract_json()` |
 | `PlaywrightGenerator.generate_synergy()` | `browser_generator.py` | `generation.py` | `_send_and_wait()`, `extract_json()` |
 | `PlaywrightGenerator._random_rest()` | `browser_generator.py` | 下一次浏览器请求前 | 随机等待 60-180 秒 |
@@ -293,7 +306,7 @@ src.ui.app.main_window
 | `_repair_strings(s)` | `json_extract.py` | `_try_extract()` | 状态机跟踪 in_string |
 | `validate_guide(raw)` | `utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
 | `validate_synergy(raw)` | `utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
-| `build_guide_prompt(hero)` | `prompt_utils.py` | `generate_guide()` | 格式化提示词 |
-| `build_synergy_prompt(a, b)` | `prompt_utils.py` | `generate_synergy()` | 格式化提示词 |
+| `build_guide_prompt(hero)` | `prompt_utils.py` | `generate_guide()` | 格式化提示词；RAG 开时调 `load_card_system()` 兜底 |
+| `build_synergy_prompt(a, b)` | `prompt_utils.py` | `generate_synergy()` | 格式化提示词；RAG 开时调 `load_card_system()` 兜底 |
 | `estimate_cost(count, mode)` | `prompt_utils.py` | `batch.main()`, UI 层 | Token/费用估算 |
 | `_save_json(path, data)` | `utils.py` | `run_*_generation()` | `json.dump()`, 原子写入 |

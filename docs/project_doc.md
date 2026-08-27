@@ -60,7 +60,7 @@ DataFacade.load_all()
 
 ### 进程与任务提交边界
 
-`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
+`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。`_dispatch_stdout_line` 在转发每行 stdout 时同步用正则收集 `[i/N] 名字 FAIL` 行的失败项名到 `failed_items`，工作流出错弹窗据此在"查看详情"中列出失败武将/相性对清单。`_start_process` 为 `subprocess.ai` 命名空间的 AI 子进程额外注入 `MJS_AI_CHILD=1`，使其直写日志文件（普通 QProcess 子进程不直写），避免父进程以 INFO 级转发 stdout 时在 root level≥WARNING 下丢失 429/length/JSON 等失败原因。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
 
@@ -269,6 +269,8 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 
 - **社区侧语料接入（2026-08）**：raw_guides/（jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv）加工成检索块进向量库。`src/scripts/build_combo_corpus.py` 把 csv（武将对+亮点）与 combos md（强力组合表格/平阳公主强势组合盘点/巴清搭配/孟尝君+黄月英深解）切块归并为组合RAG语料（combo 类，437 块）；`src/scripts/build_guide_corpus.py` 把 guides 45 篇按 ## 章节拆为武将攻略RAG语料（guide 类，357 块）。设计点：组合块**不贴单值 hero**（避免 post-filter 丢一侧武将）**但贴 heroes 列表** `[hero_a, hero_b]`，post-filter 按武将列表过滤根治"text 提'类XX'"的跨武将噪声；攻略块贴 `hero=武将名` 保证必召回。`_norm_combo`/`_norm_guide` 在 `indexer.py` 规范化，`KIND_MAX` 加 `combo:3/guide:2` 配额。
 - **RAG 注入分两段（2026-08）**：`rag_prompt._format_rag_chunks` 按 kind 分两段注入——「官方规则语料」（hero/rule/card/faq 等硬依据）与「社区实战参考」（combo/guide 启发层）；官方/社区独立预算池（core_ratio 给官方，剩余给社区，官方未用滚给社区），社区池内 combo 优先于 guide（组合信息对相性更直接，避免长攻略挤掉组合块）。社区段定位"取思路非文风"，约束 AI 借鉴联动思路但用规范语言重述，不照搬口语/网络用语。两处 post-filter（`build_rag_context` 单武将 / `build_synergy_rag_context` 双武将）按 `metadata.hero` 或 `heroes` 列表过滤，combo 块含任一目标武将才保留。
+- **卡牌体系防串味兜底（2026-08）**：RAG 开启时卡牌类语料块因向量召不回，`build_guide_prompt`/`build_synergy_prompt` 在 RAG 段后兜底注入 `rule_summary.load_card_system()` 提取的「卡牌体系」段（行动/战法/装备/专属牌名清单），防止 AI 用三国杀牌名串味；RAG 关闭且无语料召回时仍注入完整 `load_core_rules()`。Prompt 底层规则补充：本游戏"杀/闪/桃"是通用说法不必回避，严禁混用三国杀特有牌名。
+- **索引字段扩展（2026-08）**：`src/rag/indexer.py` 的 `_norm_hero` 在武将技能块文本中追加 `时机`（`timing` 字段）与 `触发条件`（`trigger_condition` 字段），提升技能触发时机相关查询的召回质量。
 
 ### 2.1 模块文件关系
 
@@ -355,7 +357,8 @@ def _call_api(self, messages, temperature=0.7) → dict | None
   "model": "deepseek-v4-pro",
   "messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}],
   "temperature": 0.7,
-  "max_tokens": 4096
+  "max_tokens": 32768,
+  "thinking": {"type": "disabled"}
 }
 ```
 
@@ -363,8 +366,10 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 1. 发送前检测距上次请求是否超过 `_min_interval`，不足则 sleep 补齐
 2. HTTP 请求 → 检查 `resp.raise_for_status()`
 3. 成功 → 更新 `_last_request_time`，返回 `resp.json()`
-4. HTTP 错误 / 异常 → `time.sleep(2 ** attempt)` 指数退避（2s/4s/8s）
+4. HTTP 错误 / 异常 → `time.sleep(2 ** attempt)` 指数退避（2s/4s/8s），并向 stdout 输出 `[重试] 原因，第 n/N 次，w 秒后重试`（进度窗口显示"重试中"）
 5. 3 次全部失败 → 返回 None
+
+> 输出额度上限 `MAX_OUTPUT_TOKENS` 由 16384 提升至 32768，缓解长攻略正文被截断（`finish_reason=length`）；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content token 拆分，定位思考 token 挤占正文预算。
 
 #### 2.3.3 `generate_guide(hero) → (dict | None, dict | None)`
 
@@ -372,12 +377,16 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 load_prompt(hero_guide.md)    → system_prompt
 _build_guide_prompt(hero)     → user_prompt
 _call_api([system, user])     → response JSON
+_log_usage(hero.name, usage)  → 记录 prompt/completion + reasoning/content 拆分
 _extract_json(response.text)  → raw dict
 raw["hero_id"] = hero.id
 _convert_ids_to_int()         → ID 字段转 int
+has_required_guide_fields(raw) → 必填字段 + 占位符/过短正文预检
 _validate_guide(raw)          → Pydantic 校验
 return (validated_dict, usage_dict)
 ```
+
+`has_required_guide_fields` 在 Pydantic 校验前快速失败：检查 `key_points`/`description` 存在、`description` 为字符串且 ≥200 字（模板要求 600-1000 字，低于此必为占位符或截断）、不含模板占位符标记（`此处放入`/`放入此字段`/`保持原文不变`），拦截模型原样复制模板指令文本的情况。
 
 #### 2.3.4 `generate_synergy(hero_a, hero_b) → (dict | None, dict | None)`
 
@@ -801,12 +810,12 @@ MainWindow.__init__
  │   │   ├── status_changed → workflow.status_changed → _on_fetch_status
  │   │   ├── progress_output/value → GuideProgressDialog
  │   │   ├── fetch_completed → GuideManager.load() → guides_changed
- │   │   └── error_occurred → 详细错误弹窗
+ │   │   └── error_occurred → _on_guide_error (QMessageBox 详情列出 failed_items 失败武将清单)
  │   ├── SynergyFetchService
  │   │   ├── status_changed → workflow.status_changed → _on_fetch_status
  │   │   ├── progress_output/value → GuideProgressDialog
  │   │   ├── fetch_completed → SynergyManager.load() → synergies_changed
- │   │   └── error_occurred → 警告弹窗
+ │   │   └── error_occurred → _on_synergy_error (QMessageBox 详情列出 failed_items 失败相性对清单)
  │   ├── guides_changed → _on_guides_generated → 更新统计状态栏
  │   └── synergies_changed → _on_synergies_generated → 刷新浏览器/推荐页和统计
  ├── CaptureService ─── 截图
@@ -931,16 +940,18 @@ def _on_accept(self):
 - 错误标签（红色，隐藏）
 - 关闭按钮（执行中禁用，完成时启用）
 
-**进度更新正则**（OK/FAIL 分开匹配）：
+**进度更新正则**（OK/FAIL/重试 分开匹配）：
 ```python
 # OK 匹配 — 更新进度条
 m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
 # FAIL 匹配 — 更新状态文字但不推进进度条
 m = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
+# 重试匹配 — 限流退避，状态栏显示"重试中"，不推进进度条
+m_retry = re.search(r"\[重试\]\s*(.+?)，第\s*(\d+)/(\d+)\s*次，(\d+)\s*秒后重试", text)
 ```
-匹配格式 `"[1/3] 诸葛亮 OK"` 时更新进度条；`"[2/3] 司马懿 FAIL"` 时仅更新状态文字为"生成失败"，不推进进度条位置。
+匹配格式 `"[1/3] 诸葛亮 OK"` 时更新进度条；`"[2/3] 司马懿 FAIL"` 时仅更新状态文字为"生成失败"，不推进进度条位置；`"[重试] HTTP 429，第 1/3 次，2 秒后重试"` 时状态栏显示"⏳ 重试中"，详情栏标注当前进度与重试原因。
 
-> 失败由 CLI 的非零退出码统一表达；父进程只解析 stdout 中的进度行，不再依赖失败文本协议。
+> 失败由 CLI 的非零退出码统一表达；父进程只解析 stdout 中的进度行，不再依赖失败文本协议。失败弹窗由 `AiGenerationWorkflow._on_*_error()` 读取 `failed_items` 在"查看详情"中列出失败清单，并通过 `install_details_button_translator()` 汉化详情按钮。
 
 ### 5.8 资料库内容页
 
@@ -1242,7 +1253,7 @@ _on_error()
      └── errorString() → logger.error()
 ```
 
-失败时不再把完整 stdout/stderr 复制进业务日志；缓冲区只用于识别“思考过程耗尽输出额度”等明确原因。AI 进度信号仅放行 START、OK、FAIL、SKIP、开始和冷却状态，其他子进程日志不会显示在进度界面。
+失败时不再把完整 stdout/stderr 复制进业务日志；缓冲区只用于识别”思考过程耗尽输出额度”等明确原因。`_dispatch_stdout_line` 同时按 `[i/N] 名字 FAIL` 行收集失败项到 `failed_items`，工作流出错时据此在弹窗”查看详情”列出失败清单。AI 进度信号放行 START、OK、FAIL、SKIP、开始、冷却、`[RAG]` 降级与 `[重试]` 限流退避状态行，其他子进程日志不会显示在进度界面。
 
 ### 6.5 临时文件管理
 
@@ -1272,6 +1283,12 @@ m_fail = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
 if m_fail:
     self._status_label.setText(f"生成失败: {m_fail.group(3)}")
     return  # 不更新进度条
+# 重试中：API 限流退避，不推动进度条
+m_retry = re.search(r"\[重试\]\s*(.+?)，第\s*(\d+)/(\d+)\s*次，(\d+)\s*秒后重试", text)
+if m_retry:
+    self._status_label.setText(f"⏳ 重试中（{m_retry.group(2)}/{m_retry.group(3)}），{m_retry.group(4)} 秒后重试")
+    self._detail_label.setText(f"当前进度 {current} / {total}，原因：{m_retry.group(1)}")
+    return
 ```
 
 ---
@@ -1521,7 +1538,7 @@ logs/
 | 其他 `subprocess.*` | `subprocess/unclassified.log` |
 | 其他（含 `src.ui.*`） | `app.log` |
 
-QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler。武将采集由父进程以 `subprocess.official.*` 接管，攻略和相性生成以 `subprocess.ai.*` 接管；两者分别进入官网和 AI 日志。每条记录只进入一个目标文件，历史的 `scraper.log`、`ai_batch.log`、`stdout.log` 和 `stderr.log` 不自动删除或迁移。
+QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler。武将采集由父进程以 `subprocess.official.*` 接管，攻略和相性生成以 `subprocess.ai.*` 接管；两者分别进入官网和 AI 日志。**AI 子进程例外**：`BaseFetchService` 为 `subprocess.ai` 命名空间的子进程额外注入 `MJS_AI_CHILD=1`，使其直写日志文件——因父进程以 INFO 级转发子进程 stdout，root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因会被过滤丢失；AI 生成单子进程串行，不触发多进程轮转竞争。每条记录只进入一个目标文件，历史的 `scraper.log`、`ai_batch.log`、`stdout.log` 和 `stderr.log` 不自动删除或迁移。
 
 ### 10.4 日志轮转
 
@@ -1536,7 +1553,7 @@ QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler
 - 使用 `logger.debug(traceback.format_exc())` 在 DEBUG 级别输出堆栈
 - 不允许 `except: pass` 或空 except 块
 
-AI 链路只记录任务、长度、字段名、用量、耗时和错误摘要；不得记录 Prompt、回复正文、解析后正文、页面正文、认证信息或 `reasoning_content`。进度界面只接收明确的生成进度和冷却状态行。
+AI 链路只记录任务、长度、字段名、用量（`_log_usage` 拆分 reasoning/content）、耗时和错误摘要；不得记录 Prompt、回复正文、解析后正文、页面正文、认证信息或 `reasoning_content`。进度界面只接收明确的生成进度、冷却状态与 `[重试]` 限流退避状态行。
 
 ---
 
@@ -2138,11 +2155,14 @@ AIBatchGenerator.__init__(api_key, api_url, model, rpm, ...)
   │    │     字段: ID / 名称 / 势力 / 定位 / 体力 / 手牌 / 性别 / 技能
   │    ├── _call_api(messages=[system, user], temperature=0.7)
   │    │    ├── 检查距上次请求间隔（不够则 sleep 补齐）
-  │    │    ├── POST {model, messages, temperature, max_tokens=16384,
+  │    │    ├── POST {model, messages, temperature, max_tokens=32768,
   │    │    │         thinking={type: disabled}}
   │    │    ├── 成功: 仅保留 content / finish_reason / usage
+  │    │    ├── _log_usage(hero.name, usage)  → 记录 prompt/completion + reasoning/content 拆分
   │    │    ├── content 为空或 finish_reason=length: 提示思考过程耗尽输出额度
-  │    │    └── 失败: 指数退避重试（2s/4s/8s, 最多 3 次）
+  │    │    └── 失败: 指数退避重试（2s/4s/8s, 最多 3 次），stdout 输出 [重试] 行
+  │    ├── _extract_json(content) → raw
+  │    ├── has_required_guide_fields(raw)  → 必填字段 + 占位符/过短正文预检
   │    └── 返回 (result_dict, usage_dict)
   │
   └── close() → httpx.Client.close()
@@ -2170,7 +2190,7 @@ Content-Type: application/json
     }
   ],
   "temperature": 0.7,
-  "max_tokens": 16384,
+  "max_tokens": 32768,
   "thinking": {"type": "disabled"}
 }
 ```

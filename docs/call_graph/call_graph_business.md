@@ -19,7 +19,7 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
       -> _cleanup_context() -> 子类._on_process_finished(exit_code)
 ```
 
-`cancel_process()` 当前只调用 `kill()`，不在 GUI 线程执行 `waitForFinished()`；进程结束后的临时文件清理、状态通知和上下文释放由 `finished` 信号统一完成。stdout 先累计到字节缓冲，`_dispatch_stdout_lines()` 只分发完整换行行，`_on_finished()` 再 flush 末尾残行，因此 QProcess 分块读取不会破坏 UTF-8 或 `[i/N]` 进度匹配。CLI 仍应输出换行并及时 flush，保证进度及时到达。
+`cancel_process()` 当前只调用 `kill()`，不在 GUI 线程执行 `waitForFinished()`；进程结束后的临时文件清理、状态通知和上下文释放由 `finished` 信号统一完成。stdout 先累计到字节缓冲，`_dispatch_stdout_lines()` 只分发完整换行行，`_on_finished()` 再 flush 末尾残行，因此 QProcess 分块读取不会破坏 UTF-8 或 `[i/N]` 进度匹配。`_dispatch_stdout_line` 在转发每行时同步用正则 `\[(\d+)/(\d+)\]\s+(.+?)\s+FAIL` 收集失败项名到 `failed_items`，工作流出错弹窗据此列出失败清单。CLI 仍应输出换行并及时 flush，保证进度及时到达。进度白名单（`fetch_utils.is_generation_progress_line`）放行 `[RAG]` 与 `[重试]` 前缀行，后者由 `api_generator` 限流退避时输出，进度窗口显示"重试中"。
 
 ## 一、QProcess 服务通用模式
 
@@ -39,6 +39,9 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
        -> readyReadStandardError.connect(_on_stderr_ready)
        -> finished.connect(_on_finished)
        -> errorOccurred.connect(_on_error)
+       -> process_env.insert("MJS_QPROCESS_CHILD", "1")        [子进程不直写文件，由父进程统一收集]
+       -> [subprocess.ai 命名空间] process_env.insert("MJS_AI_CHILD", "1") [AI 子进程例外直写文件，保留失败原因]
+       -> _failed_items.clear()                                 [清空上次失败项]
        -> QProcess.start(sys.executable, cli_args)             [启动子进程]
          ─────────────────────────────────────────────────────────
          [子进程] python -m src.scraper.xxx [args]
@@ -53,7 +56,8 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
 | 函数 | 说明 |
 |------|------|
 | `_is_busy()` | 检查 QProcess.state()，不等待直接返回 |
-| `_start_process(args)` | 创建 QProcess + 信号连接 + start |
+| `_start_process(args)` | 创建 QProcess + 信号连接 + 注入 `MJS_QPROCESS_CHILD`/`MJS_AI_CHILD` 环境变量 + start |
+| `failed_items` | 属性：本次任务从 stdout FAIL 行收集的失败项名（武将名/相性对名） |
 | `_on_stdout_ready()` | 读取 stdout → 按工作流写日志；白名单进度行再 emit `progress_output` |
 | `_on_stderr_ready()` | 读取 stderr → 按工作流写 warning 日志 |
 | `_on_finished(code)` | 检查退出码 → emit fetch_completed |
@@ -72,7 +76,9 @@ QProcess.readyReadStandardOutput
      -> _dispatch_stdout_lines()
         -> partition(b"\\n")                               [只取完整行]
         -> _dispatch_stdout_line(raw_line)
-           -> raw_line.decode("utf-8", errors="replace")
+           -> raw_line.decode("utf-8", errors="replace").strip()
+           -> _log_stdout.info(line)                         [按工作流写日志]
+           -> [匹配 [i/N] 名字 FAIL] _failed_items.append(名字) [收集失败项供错误弹窗]
            -> _on_stdout_line(line)                          [子类解析进度]
 
 QProcess.finished
@@ -187,7 +193,7 @@ MainWindow._request_guide_all()
 ```
 GuideFetchService.status_changed   → AiGenerationWorkflow.status_changed → MainWindow._on_fetch_status
 GuideFetchService.fetch_completed  → AiGenerationWorkflow._on_guide_completed → GuideManager.load + guides_changed
-GuideFetchService.error_occurred   → AiGenerationWorkflow._on_guide_error → QMessageBox
+GuideFetchService.error_occurred   → AiGenerationWorkflow._on_guide_error → QMessageBox（详情列出 failed_items 失败武将清单）
 GuideFetchService.progress_output  → AiGenerationWorkflow._on_guide_progress → GuideProgressDialog.update_status
 GuideFetchService.progress_value   → AiGenerationWorkflow._on_guide_progress_value → GuideProgressDialog.update_progress
 

@@ -100,7 +100,7 @@ cancelled → 用户中止后通知 UI 刷新已分批提交的数据
 
 所有服务使用 `SeparateChannels` 模式，分别读取 stdout 和 stderr。
 
-AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 逐行写入 `scraper/ai_generation.log`，界面只接收明确的生成进度和冷却状态。“思考过程耗尽输出额度”从完整缓冲中识别后作为明确原因透传，其余失败仍显示退出码；完整 stdout/stderr 不再重复复制到业务日志。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
+AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationResult` 在出现失败项时返回非零；stdout 逐行写入 `scraper/ai_generation.log`，界面只接收明确的生成进度和冷却状态。“思考过程耗尽输出额度”从完整缓冲中识别后作为明确原因透传，其余失败仍显示退出码；完整 stdout/stderr 不再重复复制到业务日志。`_dispatch_stdout_line` 同时按 `[i/N] 名字 FAIL` 行收集失败项到 `failed_items`，工作流出错时据此在弹窗”查看详情”中列出失败武将/相性对清单，而非仅显示退出码。用户主动中止会标记取消状态；Windows 通过 `taskkill /T /F` 异步结束 AI Python 进程及全部 Playwright/Edge 后代，进程树清理完成后才发出 `cancelled`，避免浏览器残留占用 OCR 所需资源。其他平台仍终止当前子进程；取消引起的崩溃事件会被忽略，临时文件由 `finished` 统一收尾。
 
 `SynergyReloadWorker` 在后台解析已分批提交的 `synergies.json`；完成后由主线程一次性替换 `SynergyManager` 的内存数据并通知界面刷新，避免取消后同步解析 JSON 阻塞窗口事件循环。
 
@@ -303,7 +303,9 @@ def _on_stdout_ready(self) -> None:
 
 > **设计思路：** QProcess 的一次 readyRead 不等于一行输出，且 UTF-8 字符可能跨分块。基类保留未完成字节，只有读到换行后才解码并交给子类；进程结束时还会读取残余管道内容并分发行尾。取消时只调用 `kill()`，不在 GUI 线程使用 `waitForFinished()`；临时文件清理和状态通知继续由 `finished` 信号统一完成。
 
-`fetch_utils._GENERATION_PROGRESS_PATTERN` 除了放行 `[i/N] ... START/OK/FAIL/SKIP`、`[...] 开始...` 与 `[休息] ...` 冷却行外，还放行 `^\s*\[RAG\]` 前缀，用于展示 RAG 降级提示；该行不包含 `[i/N]`，不会影响进度条解析。
+`fetch_utils._GENERATION_PROGRESS_PATTERN` 除了放行 `[i/N] ... START/OK/FAIL/SKIP`、`[...] 开始...` 与 `[休息] ...` 冷却行外，还放行 `^\s*\[RAG\]` 与 `^\s*\[重试\]` 前缀，分别用于展示 RAG 降级提示与 API 限流重试状态；这两类行不包含 `[i/N]`，不会影响进度条解析。`[重试]` 行由 `api_generator._call_api` 在指数退避前 `print(f"  [重试] ...，第 n/N 次，w 秒后重试")` 输出，`GuideProgressDialog` 解析后在状态栏显示"⏳ 重试中"并在详情栏标注当前进度与重试原因。
+
+`BaseFetchService._dispatch_stdout_line` 在转发每行 stdout 的同时，用正则 `\[(\d+)/(\d+)\]\s+(.+?)\s+FAIL` 收集失败项名（武将名/相性对名）到 `_failed_items`，供工作流在出错弹窗的"查看详情"中列出失败清单。`_start_process` 为日志命名空间为 `subprocess.ai` 的 AI 子进程额外注入 `MJS_AI_CHILD=1` 环境变量，使 AI 子进程直写日志文件（见配置模块日志系统），避免父进程以 INFO 级转发 stdout 时在 root level≥WARNING 下丢失 429/length/JSON 等失败原因。
 
 ### 4.3 临时文件自动清理
 

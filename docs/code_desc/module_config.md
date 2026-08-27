@@ -19,7 +19,7 @@
 src/
 ├── main.py                  # 应用入口（QApplication + MainWindow 构建）
 ├── ui/app/app_icon.py        # 应用图标加载、缓存与顶层窗口图标维护
-├── ui/chinese_translator.py  # Qt 标准控件中文翻译
+├── ui/app/chinese_translator.py  # Qt 标准控件中文翻译 + QMessageBox 详情按钮事件过滤器
 ├── config/
 │   ├── __init__.py
 │   ├── env.py               # .env 与模型价格配置解析/加载/保存（原子写入）
@@ -98,6 +98,8 @@ def save_env_file(path, data):
 
 每条记录只进入一个目标文件。每个日志文件最大 10MB，保留 5 个备份自动轮转；已有旧日志不会自动删除或迁移。
 
+**子进程日志例外**：由桌面应用启动的 QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后不直写文件 Handler，stdout/stderr 由父进程统一收集并路由到对应 scraper 日志，避免多进程同时轮转同一组文件导致 Windows 文件占用与备份竞争。AI 生成子进程是唯一例外——`BaseFetchService` 为 `subprocess.ai` 命名空间的子进程额外注入 `MJS_AI_CHILD=1`，使其直写日志文件。原因：父进程把子进程 stdout 统一以 INFO 级转发，当 root level≥WARNING 时 `api_generator` 的失败原因（429/length/JSON 等）会被过滤丢失；AI 生成是单子进程串行执行，不触发多进程轮转竞争，故让其直写以保证失败原因落盘。
+
 ### 3.4 模型价格
 
 - `config/model_pricing.json` 是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回“无法自动估算”。
@@ -153,6 +155,8 @@ def setup_logging():
 | `get_mumu_config()` | `env.py` | `dict` | 获取模拟器配置 |
 | `save_env_file(path, data)` | `env.py` | `None` | 原子写入 .env |
 | `setup_logging()` | `logging_config.py` | `None` | 初始化日志系统（幂等） |
+| `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `ChineseQtTranslator` | 安装应用级 Qt 标准控件中文翻译器 |
+| `install_details_button_translator(msgbox)` | `ui/app/chinese_translator.py` | `_DetailsButtonFilter` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"），随对话框销毁；Qt 内部展开/收起时直接 setText 不走 QTranslator，需在 layout 变化时遍历子按钮翻译 |
 
 ---
 
