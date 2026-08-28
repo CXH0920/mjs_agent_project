@@ -94,11 +94,17 @@ _ROW_STATE_COLOR = {"pending": MUTED_TEXT, "suggested": PRIMARY, "modified": SUC
                     "refined": SUCCESS, "generated": MUTED_TEXT}
 
 
+# 持有运行中的 worker，防止 dialog 销毁后 Python 引用丢失导致 QThread 运行中被 GC 析构（#61）
+_LIVE_WORKERS: set = set()
+
+
 class _SuggestWorker(QThread):
     """后台批量建议线程：逐块调用 LLM，结果经信号回主线程（UI 不冻结）。
 
     测试环境无事件循环（跨线程信号不投递），由 _suggest_queue_step 同步驱动，
     本线程不参与测试路径的 UI 状态。
+    parent=None + _LIVE_WORKERS 持有 + finished→deleteLater：生命周期与 dialog 解耦，
+    dialog 销毁不连带析构运行中的线程。
     """
 
     result_ready = Signal(object, object)  # (PendingBlock, RefinementUpdate | None)
@@ -111,11 +117,15 @@ class _SuggestWorker(QThread):
         self._single = False  # 单块建议：结果需回填编辑器
 
     def run(self) -> None:
-        for block in self._blocks:
-            if self._cancelled:
-                break
-            update = suggest_one(block, self._generator)
-            self.result_ready.emit(block, update)
+        _LIVE_WORKERS.add(self)
+        try:
+            for block in self._blocks:
+                if self._cancelled:
+                    break
+                update = suggest_one(block, self._generator)
+                self.result_ready.emit(block, update)
+        finally:
+            _LIVE_WORKERS.discard(self)
 
 
 class IndexRefinementDialog(QDialog):
@@ -716,10 +726,11 @@ class IndexRefinementDialog(QDialog):
             return
         logger.info("单块建议启动：%s", self._current.name)
         self._suggest_one_button.setEnabled(False)
-        worker = _SuggestWorker([self._current], generator, self)
+        worker = _SuggestWorker([self._current], generator)  # parent=None：dialog 销毁不连带析构运行中线程
         worker._single = True
         worker.result_ready.connect(self._on_suggest_result)
         worker.finished.connect(self._on_single_finished)
+        worker.finished.connect(worker.deleteLater)  # 自回收（dialog 已销毁时也能释放）
         self._suggest_worker = worker
         worker.start()
 
@@ -745,9 +756,10 @@ class IndexRefinementDialog(QDialog):
         self._suggest_generator = generator
         self._suggest_one_button.setEnabled(False)
         self._suggest_all_button.setEnabled(False)
-        worker = _SuggestWorker(self._pending, generator, self)
+        worker = _SuggestWorker(self._pending, generator)  # parent=None：dialog 销毁不连带析构运行中线程
         worker.result_ready.connect(self._on_suggest_result)
         worker.finished.connect(self._on_worker_finished)
+        worker.finished.connect(worker.deleteLater)  # 自回收（dialog 已销毁时也能释放）
         self._suggest_worker = worker
         worker.start()
 
@@ -1034,6 +1046,11 @@ class IndexRefinementDialog(QDialog):
             worker._cancelled = True
             gen = getattr(worker, "_generator", None)
             if gen is not None:
+                # 先 cancel 让 _call_api 重试循环退出，再 close：close 后重试不再 post，
+                # 避免 in-flight 请求触发 RuntimeError 级联（#61）
+                cancel = getattr(gen, "cancel", None)
+                if callable(cancel):
+                    cancel()
                 close = getattr(gen, "close", None)
                 if callable(close):
                     try:
@@ -1042,7 +1059,7 @@ class IndexRefinementDialog(QDialog):
                         pass
             # 等待线程短时收尾；仍在运行（如 HTTP 挂起）则转入僵尸列表持有引用，
             # 防止 QThread 在 run 未结束时析构导致整个应用崩溃（#60）
-            worker.wait(500)
+            worker.wait(1000)
             if worker.isRunning():
                 self._zombie_workers.append(worker)
                 worker.finished.connect(worker.deleteLater)
@@ -1053,6 +1070,9 @@ class IndexRefinementDialog(QDialog):
             generator = self._suggest_generator
             self._suggest_generator = None
             if generator is not None:
+                cancel = getattr(generator, "cancel", None)
+                if callable(cancel):
+                    cancel()
                 close = getattr(generator, "close", None)
                 if callable(close):
                     try:
