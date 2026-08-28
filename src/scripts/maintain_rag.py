@@ -30,10 +30,24 @@ DOCS_DIR = os.path.join(ROOT, 'data', 'rag_corpus')
 # ---------------------------------------------------------------------------
 
 def file_fingerprint(path):
-    """返回 (md5, size, mtime) 作为文件变更指纹。"""
+    """返回 (md5, size, mtime) 作为文件变更指纹；目录源则聚合内部全部文件指纹。"""
     full = os.path.join(ROOT, path)
     if not os.path.exists(full):
         return None
+    if os.path.isdir(full):
+        # 目录源（如 raw_guides/jinxia/guides/）：不能直接 open()，Windows 上会
+        # PermissionError；改为聚合内部全部文件的相对路径+内容 md5，任一文件增删改都会变。
+        h = hashlib.md5()
+        rels = sorted(
+            os.path.relpath(os.path.join(dp, fn), full)
+            for dp, _dirs, fns in os.walk(full)
+            for fn in fns
+        )
+        for rel in rels:
+            with open(os.path.join(full, rel), 'rb') as f:
+                h.update(rel.replace('\\', '/').encode('utf-8'))
+                h.update(hashlib.md5(f.read()).digest())
+        return {'dir_md5': h.hexdigest()}
     with open(full, 'rb') as f:
         digest = hashlib.md5(f.read()).hexdigest()
     st = os.stat(full)
