@@ -273,7 +273,7 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
 
     # ---- 10. 数据段一致性（sync_rule_stats，A 层数据快照） ----
     try:
-        import sync_rule_stats as srs
+        from src.scripts import sync_rule_stats as srs
         with open(doc_path, encoding='utf-8') as f:
             doc_text = f.read()
         diffs = srs.diff_sections(doc_text, srs.load_data(root))
