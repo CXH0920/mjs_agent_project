@@ -58,9 +58,11 @@ data/rag_corpus/*
 !data/rag_corpus/核心规则摘要.md
 data/rag_index/
 
-# RAG 维护运行时状态
+# RAG 维护运行时状态（脚本已迁移到 src/scripts/，ROOT 为项目根；旧 scripts/ 前缀不再生效）
 scripts/.rag_state.json
 scripts/.rule_doc_snapshot.json
+/.rag_state.json
+/.rule_doc_snapshot.json
 # 元规则数据段同步运行产物（sync_rule_stats.py 生成的差异报告/确认清单）
 scripts/.sync_*.json
 # pytest 临时目录（测试运行产物）
