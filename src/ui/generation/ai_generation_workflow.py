@@ -334,7 +334,8 @@ class AiGenerationWorkflow(QObject):
                 "difficulty": hero.difficulty,
                 "title": hero.title,
                 "skills": [
-                    {"name": skill.name, "description": skill.description}
+                    {"name": skill.name, "description": skill.description,
+                     "settlement": skill.settlement}
                     for skill in (hero.skills or [])
                 ],
             }

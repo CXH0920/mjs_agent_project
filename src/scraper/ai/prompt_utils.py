@@ -124,6 +124,28 @@ def estimate_item_cost(
 # ============================================================
 
 
+def _skill_lines(skills: list, hero_id, rag: str, indent: str) -> list[str]:
+    """技能行构建：语料块已注入时指针化省 token，未注入时保留完整描述兜底。
+
+    判定粒度为单个技能：RAG 关闭/运行时降级/预算挤掉整块时该技能自动回退
+    完整描述（含结算）。语料块 id 格式 hero_{id}_skill_{技能名} 与
+    build_rag_corpus.py 生成规则一致；格式漂移时包含判定失败，同样良性回退。
+    """
+    out = []
+    for sk in skills or []:
+        name = sk.get("name", "")
+        block_id = f"hero_{hero_id}_skill_{name}"
+        if rag and block_id in rag:
+            out.append(f"{indent}- {name}:（完整描述见 [{block_id}] 语料块）")
+            continue
+        line = f"{indent}- {name}: {sk.get('description', '')}"
+        settlement = sk.get("settlement", "")
+        if settlement:
+            line += f" ｜结算：{settlement}"
+        out.append(line)
+    return out
+
+
 def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
     """构建单个武将的攻略 prompt（含武将 ID，兼容 API 和 Browser 双模式）"""
     lines = [f"武将ID: {hero.get('id', 0)}"]
@@ -133,16 +155,11 @@ def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
     lines.append(f"体力: {hero.get('max_hp', 4)}  手牌: {hero.get('max_hand', 4)}")
     lines.append(f"性别: {hero.get('gender', '男')}")
     lines.append(f"难度: {hero.get('difficulty', 2)}")
+    rag = build_rag_context(hero, max_chars=rag_max_chars)
     if hero.get("skills"):
         lines.append("")
         lines.append("技能:")
-        for sk in hero["skills"]:
-            line = f"  - {sk.get('name', '')}: {sk.get('description', '')}"
-            settlement = sk.get('settlement', '')
-            if settlement:
-                line += f" ｜结算：{settlement}"
-            lines.append(line)
-    rag = build_rag_context(hero, max_chars=rag_max_chars)
+        lines.extend(_skill_lines(hero["skills"], hero.get("id", 0), rag, "  "))
     if rag:
         lines.extend(["", rag])
     if _rag_enabled():
@@ -159,6 +176,8 @@ def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
 
 def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None = None) -> str:
     """构建武将对的相性评分 prompt（含武将 ID + 可选 RAG 语料，兼容 API 和 Browser 双模式）"""
+    rag = build_synergy_rag_context(hero_a, hero_b, max_chars=rag_max_chars)
+
     def hero_block(label: str, h: dict) -> list[str]:
         lines = [f"## {label}: {h.get('name', '')} (ID={h.get('id', 0)})"]
         lines.append(f"  势力: {h.get('faction', '')}")
@@ -166,19 +185,13 @@ def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None =
         lines.append(f"  体力/手牌: {h.get('max_hp', 4)}/{h.get('max_hand', 4)}")
         if h.get("skills"):
             lines.append("  技能:")
-            for sk in h["skills"]:
-                line = f"    - {sk.get('name', '')}: {sk.get('description', '')}"
-                settlement = sk.get('settlement', '')
-                if settlement:
-                    line += f" ｜结算：{settlement}"
-                lines.append(line)
+            lines.extend(_skill_lines(h["skills"], h.get("id", 0), rag, "    "))
         return lines
 
     lines = []
     lines.extend(hero_block("武将 A", hero_a))
     lines.append("")
     lines.extend(hero_block("武将 B", hero_b))
-    rag = build_synergy_rag_context(hero_a, hero_b, max_chars=rag_max_chars)
     if rag:
         lines.extend(["", rag])
     if _rag_enabled():

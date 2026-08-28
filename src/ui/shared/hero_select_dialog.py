@@ -347,7 +347,7 @@ class BaseHeroSelectDialog(QDialog):
                 "position": h.position, "gender": h.gender,
                 "difficulty": h.difficulty, "title": h.title,
                 "skills": [
-                    {"name": s.name, "description": s.description}
+                    {"name": s.name, "description": s.description, "settlement": s.settlement}
                     for s in (h.skills or [])
                 ],
             }
