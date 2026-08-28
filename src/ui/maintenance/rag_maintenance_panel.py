@@ -130,22 +130,37 @@ class RagMaintenancePanel(QWidget):
         self._runner = ScriptRunner(self)
         self._runner.output.connect(self._append_log)
         self._runner.finished.connect(self._on_finished)
-        self._hero_names, self._hero_positions = self._load_heroes(self._root, hero_names)
+        self._hero_names, self._hero_positions, self._hero_skills = self._load_heroes(self._root, hero_names)
         self._setup_ui()
         self.refresh()
 
     @staticmethod
-    def _load_heroes(root: Path, fallback: set[str] | None) -> tuple[set[str], dict[str, str]]:
-        """从 data/heroes.json 读取武将名与定位；文件缺失时使用传入集合。"""
+    def _load_heroes(root: Path, fallback: set[str] | None) -> tuple[set[str], dict[str, str], dict[str, str]]:
+        """从 data/heroes.json 读取武将名、定位与技能文本；文件缺失时使用传入集合。
+
+        技能文本供武将分类面板的 LLM 建议归类使用（name：description　结算：settlement 拼接）。
+        """
         heroes_path = root / "data" / "heroes.json"
         try:
             heroes = json.loads(heroes_path.read_text(encoding="utf-8"))
             names = {str(h.get("name", "")) for h in heroes if h.get("name")}
             positions = {str(h.get("name", "")): str(h.get("position", "") or "")
                          for h in heroes if h.get("name")}
-            return names, positions
+            skills: dict[str, str] = {}
+            for h in heroes:
+                name = str(h.get("name", ""))
+                if not name:
+                    continue
+                parts = []
+                for s in h.get("skills", []):
+                    line = f"{s.get('name', '')}：{s.get('description', '')}"
+                    if s.get("settlement"):
+                        line += f"　结算：{s['settlement']}"
+                    parts.append(line)
+                skills[name] = "\n".join(parts)
+            return names, positions, skills
         except (OSError, json.JSONDecodeError, ValueError):
-            return set(fallback or ()), {}
+            return set(fallback or ()), {}, {}
 
     def _setup_ui(self) -> None:
         self.setObjectName("ragMaintenancePanel")
@@ -278,7 +293,7 @@ class RagMaintenancePanel(QWidget):
         self._classification = HeroClassificationPanel(
             HeroClassificationRepository(
                 self._root / "data" / "hero_classification.json", self._hero_names),
-            self._hero_positions)
+            self._hero_positions, self._hero_skills)
         self._classification.data_changed.connect(self._on_child_changed)
         self._tabs.addTab(self._classification, "武将分类维护")
 

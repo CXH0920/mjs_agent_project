@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+import logging
+
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -35,9 +37,117 @@ from src.data.hero_classification_repository import (
 )
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING, set_tone, set_ui_role
+from src.business.rag.refinement_service import build_generator
+from src.scraper.ai.json_extract import extract_json
 from src.ui.shared.widgets import DialogFooter, PageActionBar, clear_layout, show_toast
 
+logger = logging.getLogger(__name__)
+
 _CLASSIFICATION_FILTERS = ("全部", "未归类", "已归类")
+
+_CLASSIFICATION_SYSTEM_PROMPT = (
+    "你是名将杀（三国杀类）武将机制分类器。根据武将技能原文，从给定分类清单中"
+    "选出该武将符合的机制分类（可多选）。只从清单中选，不确定的不选。"
+    "输出 JSON：{\"categories\": [\"分类名\", ...]}，只输出 JSON，不要解释。"
+)
+
+
+def suggest_hero_categories(hero: str, skills_text: str, position: str,
+                           categories, generator) -> list[str] | None:
+    """调用 LLM 建议武将归入哪些已有分类。
+
+    categories: list[ClassificationCategory]（用 name + core_features 构造 prompt）。
+    返回 None=API 失败/解析失败；list=已过滤的分类名（只含清单内、去重保序，可能空）。
+    """
+    if not categories or not skills_text:
+        return None
+    cat_lines = "\n".join(f"- {c.name}：{c.core_features}" for c in categories)
+    messages = [
+        {"role": "system", "content": _CLASSIFICATION_SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"武将：{hero}（定位：{position or '未知'}）\n"
+            f"技能：\n{skills_text}\n"
+            f"可选分类清单：\n{cat_lines}"
+        )},
+    ]
+    try:
+        response = generator.complete(messages, temperature=0.2)
+    except Exception as error:
+        logger.warning("武将分类建议请求异常 %s: %s", hero, error)
+        return None
+    if not response:
+        return None
+    content = response.get("content", "")
+    if not isinstance(content, str) or not content.strip():
+        return None
+    try:
+        data = extract_json(content)
+    except (ValueError, TypeError):
+        logger.warning("武将分类建议解析失败 %s", hero)
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("categories", [])
+    if not isinstance(raw, list):
+        return None
+    valid_names = {c.name for c in categories}
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in raw:
+        name = str(item).strip()
+        if name and name in valid_names and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+# 持有运行中的 worker，防止面板销毁后 Python 引用丢失导致 QThread 运行中被 GC 析构（#61）
+_LIVE_WORKERS: set = set()
+
+
+class _HeroCategoryWorker(QThread):
+    """武将分类 LLM 建议后台线程，避免阻塞 UI。
+
+    parent=None + _LIVE_WORKERS 持有 + finished→deleteLater：生命周期与面板解耦，
+    面板销毁不连带析构运行中的线程。run 结束时释放 generator。
+    """
+
+    result_ready = Signal(str, object)  # (hero_name, list[str] | None)
+
+    def __init__(self, hero: str, skills_text: str, position: str,
+                 categories, generator, parent=None):
+        super().__init__(parent)
+        self._hero = hero
+        self._skills_text = skills_text
+        self._position = position
+        self._categories = categories
+        self._generator = generator
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """中断：generator.cancel() 让 _call_api 重试循环退出。"""
+        self._cancelled = True
+        cancel = getattr(self._generator, "cancel", None)
+        if callable(cancel):
+            cancel()
+
+    def run(self) -> None:
+        _LIVE_WORKERS.add(self)
+        try:
+            result = suggest_hero_categories(
+                self._hero, self._skills_text, self._position,
+                self._categories, self._generator)
+        finally:
+            # worker 即将结束，释放 httpx client（close 安全）
+            close = getattr(self._generator, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:  # noqa: BLE001
+                    pass
+            _LIVE_WORKERS.discard(self)
+        if not self._cancelled:
+            self.result_ready.emit(self._hero, result)
 
 
 class CategoryEditDialog(QDialog):
@@ -105,15 +215,18 @@ class HeroClassificationPanel(QWidget):
     data_changed = Signal()
 
     def __init__(self, repository: HeroClassificationRepository,
-                 hero_positions: dict[str, str] | None = None, parent=None):
+                 hero_positions: dict[str, str] | None = None,
+                 hero_skills: dict[str, str] | None = None, parent=None):
         super().__init__(parent)
         self._repo = repository
         self._hero_positions = hero_positions or {}
+        self._hero_skills = hero_skills or {}
         self._hero_names = sorted(repository.hero_names)
         self._dirty = False
         self._load_errors = False
         self._current_category: str | None = None
         self._current_hero: str | None = None
+        self._suggest_worker: _HeroCategoryWorker | None = None
         self._setup_ui()
         self.reload_data()
 
@@ -301,6 +414,11 @@ class HeroClassificationPanel(QWidget):
         hint = QLabel("修改后点击顶部「保存」生效。")
         hint.setObjectName("specialCardEditMeta")
         surface_layout.addWidget(hint)
+        self._suggest_category_button = QPushButton("LLM 建议分类")
+        set_ui_role(self._suggest_category_button, ROLE_SECONDARY)
+        self._suggest_category_button.setEnabled(False)
+        self._suggest_category_button.clicked.connect(self._suggest_categories)
+        surface_layout.addWidget(self._suggest_category_button)
         surface_layout.addStretch(1)
         self._hero_detail_layout.addWidget(self._hero_detail_surface)
 
@@ -640,6 +758,7 @@ class HeroClassificationPanel(QWidget):
         self._hero_empty_label.setVisible(True)
         # 归类弹层挂 window()，列表重建后必须显式关闭，否则浮层残留（#30）
         self._hero_combo.closePopup()
+        self._suggest_category_button.setEnabled(False)
 
     def _show_hero_detail(self, hero: str) -> None:
         """更新右侧武将归类详情（复用固定组件，不重建）。"""
@@ -653,6 +772,8 @@ class HeroClassificationPanel(QWidget):
         all_names = [c.name for c in self._repo.list_categories()]
         self._hero_combo.set_items(all_names, default_all=False)
         self._hero_combo.set_checked(self._repo.get_hero_categories(hero))
+        # 建议线程运行期间保持禁用，避免并发触发
+        self._suggest_category_button.setEnabled(self._suggest_worker is None)
 
     def _on_hero_categories_changed(self) -> None:
         hero = self._current_hero
@@ -666,6 +787,64 @@ class HeroClassificationPanel(QWidget):
             self._hero_combo.set_checked(self._repo.get_hero_categories(hero))
             return
         self._mark_dirty()
+
+    # ---------------------------------------------------------------
+    # LLM 建议归类
+    # ---------------------------------------------------------------
+    def _generator(self):
+        """取 LLM 生成器；未配置 API Key 时提示并返回 None。"""
+        generator = build_generator(None)
+        if generator is None:
+            QMessageBox.warning(self, "未配置 API",
+                "未配置可用的 API 档案（或档案缺少 API Key），无法生成 LLM 建议，可手动归类。")
+        return generator
+
+    def _suggest_categories(self) -> None:
+        """对当前武将调 LLM 建议归类，后台线程执行不冻结 UI。"""
+        hero = self._current_hero
+        if not hero or not self._ensure_writable():
+            return
+        skills_text = self._hero_skills.get(hero, "")
+        if not skills_text:
+            show_toast(self, f"无 {hero} 的技能文本，无法建议")
+            return
+        categories = self._repo.list_categories()
+        if not categories:
+            show_toast(self, "尚无机制分类，请先在「分类管理」新增")
+            return
+        generator = self._generator()
+        if generator is None:
+            return
+        self._suggest_category_button.setEnabled(False)
+        worker = _HeroCategoryWorker(
+            hero, skills_text, self._hero_positions.get(hero, ""),
+            categories, generator)  # parent=None：面板销毁不连带析构运行中线程
+        worker.result_ready.connect(self._on_suggestion_ready)
+        worker.finished.connect(self._on_suggest_finished)
+        worker.finished.connect(worker.deleteLater)  # 自回收（面板已销毁时也能释放）
+        self._suggest_worker = worker
+        worker.start()
+
+    def _on_suggestion_ready(self, hero: str, suggested) -> None:
+        """LLM 建议返回：回填勾选（set_checked 不发信号，手动触发归类变更）。"""
+        if hero != self._current_hero:
+            show_toast(self, f"已切换武将，{hero} 的建议未应用，请重新点击")
+            return
+        if suggested is None:
+            show_toast(self, "LLM 建议失败，可手动选择")
+            return
+        if not suggested:
+            show_toast(self, "LLM 未给出建议，可手动选择")
+            return
+        self._hero_combo.set_checked(suggested)
+        # set_checked 不触发 checked_values_changed，手动走归类变更路径写 repo + mark_dirty
+        self._on_hero_categories_changed()
+        show_toast(self, f"已应用 LLM 建议 {len(suggested)} 项，请确认后保存")
+
+    def _on_suggest_finished(self) -> None:
+        """worker 结束：清理引用并恢复按钮（worker 由 finished→deleteLater 自回收）。"""
+        self._suggest_worker = None
+        self._suggest_category_button.setEnabled(self._current_hero is not None)
 
     def focus_unclassified(self) -> None:
         """切到「武将归类」子页签并定位第一个未归类武将（供知识库维护审计跳转）。"""
