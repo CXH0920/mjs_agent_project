@@ -5,7 +5,7 @@ import sys, time, logging
 from src.rag import config
 from src.rag.indexer import load_all_blocks
 
-logger = logging.getLogger('rag.retriever')
+logger = logging.getLogger(__name__)
 
 sys.stdout.reconfigure(encoding='utf-8')
 

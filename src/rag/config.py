@@ -17,10 +17,9 @@ RAG_INDEX_DIR = ROOT / "data" / "rag_index"
 CHROMA_DIR = RAG_INDEX_DIR / "chroma"
 MODEL_CACHE = ROOT / "data" / "rag_models" / "models"
 MODELSCOPE_DIR = ROOT / "data" / "rag_models" / "modelscope"
-LOG_FILE = ROOT / "logs" / "rag.log"
 
 # 注意：不再在 import 时创建目录（#49）——目录在使用点确保：
-# CHROMA_DIR 由 chromadb.PersistentClient 自建；LOG_FILE 由 setup_logging 创建；
+# CHROMA_DIR 由 chromadb.PersistentClient 自建；rag.log 由全局 setup_logging 创建；
 # CORPUS_DIR 由 scripts/build_*.py 创建；MODEL_CACHE 由模型加载器创建。
 
 # 必须在 import sentence_transformers / transformers 之前设置
@@ -88,27 +87,3 @@ KIND_MAX = {            # 类型配额：每类语料块最多进入最终结果
 # Prompt 预算 / 日志
 # ---------------------------------------------------------------
 MAX_PROMPT_CHARS = 12000  # 注入 Prompt 的语料块总字符预算
-
-
-def setup_logging(level: int = 10):
-    """初始化 rag 日志：info 写入 logs/rag.log，控制台仅 warning 及以上。"""
-    import logging
-    logger = logging.getLogger("rag")
-    if getattr(logger, "_configured", False):
-        return logger
-    logger.setLevel(level)
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-    try:
-        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
-        fh.setLevel(level)
-        fh.setFormatter(fmt)
-        logger.addHandler(fh)
-    except OSError:
-        pass
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.WARNING)
-    sh.setFormatter(fmt)
-    logger.addHandler(sh)
-    logger._configured = True
-    return logger

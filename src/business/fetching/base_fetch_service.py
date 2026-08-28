@@ -140,9 +140,6 @@ class BaseFetchService(QObject):
         self._process.errorOccurred.connect(self._on_error)
         process_env = QProcessEnvironment.systemEnvironment()
         process_env.insert("MJS_QPROCESS_CHILD", "1")
-        # AI 子进程需要自身落盘失败日志（见 logging_config 的 is_ai_child 分支）
-        if self._subprocess_log_namespace == "subprocess.ai":
-            process_env.insert("MJS_AI_CHILD", "1")
         self._process.setProcessEnvironment(process_env)
         logger.info("启动子进程: python %s", " ".join(args))
         self._process.start(sys.executable, args)

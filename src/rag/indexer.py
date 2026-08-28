@@ -8,7 +8,7 @@ import sys, json, time, logging
 from src.rag import config
 from tqdm import tqdm
 
-logger = logging.getLogger('rag.indexer')
+logger = logging.getLogger(__name__)
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -309,7 +309,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description='构建 RAG 向量索引')
     p.add_argument('--no-rebuild', action='store_true', help='增量同步（默认全量重建）')
     args = p.parse_args()
-    config.setup_logging()
+    from src.config.logging_config import setup_logging
+    setup_logging()
     try:
         n, name = build_index(rebuild=not args.no_rebuild)
     except Exception as e:

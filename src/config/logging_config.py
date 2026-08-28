@@ -28,7 +28,6 @@ DEFAULT_MAX_MB = 10
 DEFAULT_BACKUP_COUNT = 5
 _MANAGED_HANDLER_ATTR = "_mjs_managed_handler"
 _QPROCESS_CHILD_ENV = "MJS_QPROCESS_CHILD"
-_AI_CHILD_ENV = "MJS_AI_CHILD"
 
 
 class ModuleFilter(logging.Filter):
@@ -79,7 +78,10 @@ def setup_logging(
             root.removeHandler(handler)
             handler.close()
 
-    root.setLevel(level)
+    # root 下限 WARNING：第三方库（chromadb/transformers 等）是 root 的直接子、
+    # NOTSET，有效级别继承 root，其 INFO/DEBUG 在 logger 层即被挡、不创建 LogRecord
+    # （零库名清单的高效压制）。项目 src/subprocess 前缀在下方单独设 DEBUG 全量创建。
+    root.setLevel(max(level, logging.WARNING))
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -96,40 +98,41 @@ def setup_logging(
     # QProcess 子进程的 stdout/stderr 会被父进程统一收集，避免多个进程
     # 同时轮转同一组文件导致 Windows 文件占用和备份竞争。
     is_qprocess_child = os.getenv(_QPROCESS_CHILD_ENV) == "1"
-    # AI 子进程例外：父进程把子进程 stdout 统一以 INFO 级转发，root level≥WARNING
-    # 时 api_generator 的失败原因（429/length/JSON 等）会被过滤丢失，故 AI 子进程
-    # 直写文件。AI 生成是单子进程串行，不触发多进程轮转竞争。
-    is_ai_child = os.getenv(_AI_CHILD_ENV) == "1"
-    if not log_to_file or (is_qprocess_child and not is_ai_child):
+    if not log_to_file or is_qprocess_child:
         return
 
     max_bytes = max(log_max_mb, 1) * 1024 * 1024
 
     # === 文件 Handler 定义 ===
-    file_handlers: list[tuple[str, list[str] | None, list[str] | None]] = [
-        # (文件名, startswith, exclude_startswith)
+    # 第 4 元素 keep_debug=True 的文件承载子进程 stdout/stderr 转发流，handler
+    # 级别固定 DEBUG（不跟随用户级别），保证子进程原始输出在 WARNING 模式下也不
+    # 丢失；纯 src 路由文件跟随用户级别，由 handler 层裁剪。
+    file_handlers: list[tuple[str, list[str] | None, list[str] | None, bool]] = [
+        # (文件名, startswith, exclude_startswith, keep_debug)
         ("app.log",               None,
-         ["src.scraper", "src.business", "src.data", "src.ocr", "src.capture", "subprocess."]),
-        ("scraper/official.log", ["src.scraper", "subprocess.official"], ["src.scraper.ai"]),
-        ("scraper/ai_generation.log", ["src.scraper.ai", "subprocess.ai"], None),
-        ("business/fetching.log", ["src.business.fetching"], None),
-        ("business/emulator.log", ["src.business.emulator"], None),
-        ("business/recognition.log", ["src.business.recognition"], None),
+         ["src.scraper", "src.business", "src.data", "src.ocr", "src.capture", "src.rag", "subprocess."],
+         False),
+        ("scraper/official.log", ["src.scraper", "subprocess.official"], ["src.scraper.ai"], True),
+        ("scraper/ai_generation.log", ["src.scraper.ai", "subprocess.ai"], None, True),
+        ("business/fetching.log", ["src.business.fetching"], None, False),
+        ("business/emulator.log", ["src.business.emulator"], None, False),
+        ("business/recognition.log", ["src.business.recognition"], None, False),
         ("business/business.log", ["src.business"], [
             "src.business.fetching",
             "src.business.emulator",
             "src.business.recognition",
-        ]),
-        ("data/data.log",         ["src.data"],     None),
-        ("ocr/ocr.log",           ["src.ocr"],      None),
-        ("capture/capture.log",   ["src.capture"],  None),
+        ], False),
+        ("data/data.log",         ["src.data"],     None, False),
+        ("ocr/ocr.log",           ["src.ocr"],      None, False),
+        ("capture/capture.log",   ["src.capture"],  None, False),
+        ("rag/rag.log",           ["src.rag"],      None, False),
         ("subprocess/unclassified.log", ["subprocess"], [
             "subprocess.official",
             "subprocess.ai",
-        ]),
+        ], True),
     ]
 
-    for rel_path, starts, excludes in file_handlers:
+    for rel_path, starts, excludes, keep_debug in file_handlers:
         log_path = LOG_DIR / rel_path
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -139,11 +142,28 @@ def setup_logging(
             backupCount=log_backup_count,
             encoding="utf-8",
         )
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(logging.DEBUG if keep_debug else level)
         handler.setFormatter(formatter)
         handler.addFilter(ModuleFilter(startswith=starts, exclude_startswith=excludes))
         setattr(handler, _MANAGED_HANDLER_ATTR, True)
         root.addHandler(handler)
+
+    # debug.log：跨模块全量留底（DEBUG、无前缀过滤），单独较大轮转上限。
+    debug_handler = logging.handlers.RotatingFileHandler(
+        LOG_DIR / "debug.log",
+        maxBytes=max_bytes * 2,
+        backupCount=max(log_backup_count, 1),
+        encoding="utf-8",
+    )
+    debug_handler.setLevel(logging.DEBUG)
+    debug_handler.setFormatter(formatter)
+    setattr(debug_handler, _MANAGED_HANDLER_ATTR, True)
+    root.addHandler(debug_handler)
+
+    # 反转级别分配：项目 src/subprocess 前缀恒定 DEBUG 全量创建，成全 debug.log 留底
+    # 与子进程输出转发；常规 src 文件由 handler 级别裁剪跟随用户。
+    logging.getLogger("src").setLevel(logging.DEBUG)
+    logging.getLogger("subprocess").setLevel(logging.DEBUG)
 
     logging.getLogger(__name__).info(
         "日志系统初始化完成: level=%s, file=%s, qprocess_child=%s",
