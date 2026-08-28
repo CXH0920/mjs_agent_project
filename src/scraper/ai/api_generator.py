@@ -31,8 +31,16 @@ logger = logging.getLogger(__name__)
 PROMPT_DIR = BUNDLE_ROOT / "docs" / "prompts"
 GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
 SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
-MAX_OUTPUT_TOKENS = 32_768
+MAX_OUTPUT_TOKENS = 16_384
 OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"
+
+# 连接类异常：损坏 httpx.Client/连接池，重试前需重建 client，否则后续请求级联失败
+# （RemoteProtocolError 后复用同 client 会抛 RuntimeError，#61）
+_CONN_ERRORS = (
+    httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError,
+    httpx.ReadTimeout, httpx.ConnectTimeout, httpx.PoolTimeout,
+    httpx.WriteError, httpx.WriteTimeout, RuntimeError,
+)
 
 
 def _read_completion_content(response: dict) -> tuple[str | None, dict]:
@@ -78,6 +86,15 @@ class AIBatchGenerator:
         # 限速控制
         self._min_interval = 60.0 / max(requests_per_minute, 1)
         self._last_request_time = 0.0
+        # 取消标志：reject/面板销毁时置 True，重试循环在下次循环开头退出，避免 in-flight close 后继续 post
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """请求中断：重试循环将在下次循环开头退出。
+
+        正在进行的 HTTP 请求靠超时退出（cancel 不打断 in-flight 请求）。
+        """
+        self._cancelled = True
 
     def complete(self, messages: list[dict], temperature: float = 0.7) -> dict | None:
         """公开的对话补全接口（供业务层调用，内部复用 _call_api）。"""
@@ -100,6 +117,9 @@ class AIBatchGenerator:
             payload["thinking"] = {"type": "disabled"}
 
         for attempt in range(1, self.max_retries + 1):
+            if self._cancelled:
+                logger.info("API 请求已取消")
+                return None
             elapsed = time.time() - self._last_request_time
             if elapsed < self._min_interval:
                 time.sleep(self._min_interval - elapsed)
@@ -125,15 +145,24 @@ class AIBatchGenerator:
                     "usage": usage if isinstance(usage, dict) else {},
                 }
             except httpx.HTTPStatusError as e:
+                status = e.response.status_code
                 logger.warning("API 返回错误 [%d/%d]: HTTP %s",
-                               attempt, self.max_retries, e.response.status_code)
+                               attempt, self.max_retries, status)
                 if attempt < self.max_retries:
-                    wait = 2 ** attempt
-                    print(f"  [重试] HTTP {e.response.status_code}，第 {attempt}/{self.max_retries} 次，{wait} 秒后重试", flush=True)
+                    wait = self._retry_wait(status, attempt, e.response.headers)
+                    print(f"  [重试] HTTP {status}，第 {attempt}/{self.max_retries} 次，{wait} 秒后重试", flush=True)
                     time.sleep(wait)
             except Exception as e:
                 logger.warning("API 请求异常 [%d/%d]: %s",
                                attempt, self.max_retries, type(e).__name__)
+                # 连接类异常损坏 client/连接池，重建以避免后续重试级联失败
+                # （RemoteProtocolError 后复用同 client 会抛 RuntimeError）
+                if isinstance(e, _CONN_ERRORS):
+                    try:
+                        self._client.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._client = httpx.Client(timeout=self.http_timeout)
                 if attempt < self.max_retries:
                     wait = 2 ** attempt
                     print(f"  [重试] {type(e).__name__}，第 {attempt}/{self.max_retries} 次，{wait} 秒后重试", flush=True)
@@ -141,6 +170,16 @@ class AIBatchGenerator:
 
         logger.error("API 请求超过最大重试次数 %d", self.max_retries)
         return None
+
+    @staticmethod
+    def _retry_wait(status: int, attempt: int, headers) -> int:
+        """429 限流优先读 Retry-After，否则指数退避；429 下限 3s。"""
+        if status != 429:
+            return 2 ** attempt
+        retry_after = headers.get("retry-after", "").strip()
+        if retry_after.isdigit():
+            return max(min(int(retry_after), 30), 3)
+        return max(5 * attempt, 3)  # 5/10/15s，比通用退避更长
 
     # ---------------------------------------------------------------
     # 生成攻略
