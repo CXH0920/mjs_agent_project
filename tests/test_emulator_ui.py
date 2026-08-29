@@ -178,8 +178,9 @@ def test_match_guide_empty_state_matches_recommendation_actions() -> None:
     assert recommendation._more_btn.objectName() == "recommendationMoreButton"
     assert not guide._action_bar.isHidden()
     assert guide._recognize_btn.isHidden()
-    assert guide._empty_state.layout().alignment() == Qt.AlignmentFlag.AlignCenter
-    assert recommendation._empty_state.layout().alignment() == Qt.AlignmentFlag.AlignCenter
+    # 空态内容居中由 EmptyState 标签自身对齐承担（布局级对齐会压缩 wordWrap 高度导致裁剪）
+    assert guide._empty_state.title_label.alignment() == Qt.AlignmentFlag.AlignCenter
+    assert recommendation._empty_state.title_label.alignment() == Qt.AlignmentFlag.AlignCenter
 
     for panel in (recommendation, guide):
         panel.resize(1200, 800)

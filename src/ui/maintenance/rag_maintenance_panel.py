@@ -244,6 +244,10 @@ class RagMaintenancePanel(QWidget):
         """创建 5 个现有面板实例并装配左栏两组导航项。"""
         self._rule_doc = RuleDocPanel(self._root)
         self._rule_doc.data_changed.connect(self._on_child_changed)
+        # 元规则脚本输出汇入工作台底部日志（模块单一日志出口）
+        self._rule_doc.script_started.connect(self._on_rule_doc_script_started)
+        self._rule_doc.script_output.connect(self._on_rule_doc_output)
+        self._rule_doc.script_finished.connect(self._on_rule_doc_script_finished)
         self._special_cards = SpecialCardsPanel(
             SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names)
         self._special_cards.data_changed.connect(self._on_child_changed)
@@ -277,6 +281,18 @@ class RagMaintenancePanel(QWidget):
         """维护对象保存后：刷新语料状态（左栏状态点即时变化）并转发 data_changed。"""
         self.refresh()
         self.data_changed.emit()
+
+    def _on_rule_doc_script_started(self) -> None:
+        self._workspace.expand_log()
+        self._workspace.set_log_meta("执行中…")
+
+    def _on_rule_doc_output(self, data: bytes) -> None:
+        text = bytes(data).decode("utf-8", errors="replace")
+        self._workspace.on_log_output(text)
+        self._workspace.log.appendPlainText(text.rstrip("\n"))
+
+    def _on_rule_doc_script_finished(self, code: int) -> None:
+        self._workspace.set_log_meta(f"退出码 {code}")
 
     def reload_data(self) -> None:
         """重新加载语料状态与四个子维护面板。"""

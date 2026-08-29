@@ -53,7 +53,9 @@ def test_list_proposals(tmp_path):
 
 
 def test_confirmed_diff_path(tmp_path):
-    assert rds.confirmed_diff_path(tmp_path) == tmp_path / "scripts" / ".sync_confirmed_diffs.json"
+    # 运行时状态文件落在 src/scripts/（脚本迁移后的既有落点，.gitignore 已覆盖）
+    assert rds.sync_json_path(tmp_path) == tmp_path / "src" / "scripts" / ".sync_rule_stats_report.json"
+    assert rds.confirmed_diff_path(tmp_path) == tmp_path / "src" / "scripts" / ".sync_confirmed_diffs.json"
 
 
 def _write_proposal(tmp_path) -> Path:

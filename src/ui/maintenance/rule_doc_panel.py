@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""元规则维护页签（知识库维护 → 元规则维护）。
+"""元规则维护面板（知识库维护 → 元规则母本）。
 
 维护对象：docs/元规则整理-完整版.md（规则知识库 T0 母本，只增不删、机器校验）。
 四个子页签能力：
@@ -8,12 +8,11 @@
 3. 提案工作台：列出 docs/archive/proposals 提案，"生成提案"（propose_rule_changes.py）、
    "合入已确认提案"（apply_rule_proposal.py）；
 4. 疑难登记：本地待办 docs/rule_doc_pending.json 的增查与"转为 FAQ 提案"。
-顶部引导卡说明建议流程；底部日志区可折叠，所有脚本输出统一汇入。
+脚本输出经 script_output 信号转发到知识库维护工作台底部日志（模块单一日志出口）。
 """
 
 from __future__ import annotations
 
-import html
 import json
 import logging
 import logging.handlers
@@ -34,7 +33,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -48,15 +46,12 @@ from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
 from src.ui.shared.style import (
     ROLE_PRIMARY,
     ROLE_SECONDARY,
-    SPACE_MD,
-    SPACE_SM,
     TONE_INFO,
     TONE_SUCCESS,
     TONE_WARNING,
-    set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import DialogFooter, NoticeBanner, PageActionBar, ScriptRunner, show_toast
+from src.ui.shared.widgets import DialogFooter, EmptyState, NoticeBanner, PageActionBar, ScriptRunner, show_toast
 
 PYTHON = sys.executable
 
@@ -125,7 +120,7 @@ class ProposalItemConfirmDialog(QDialog):
         meta = QLabel("类型：%s · 目标：%s" % (
             _TYPE_LABELS.get(self._item.get("type", ""), self._item.get("type", "")),
             self._item.get("target", "-")))
-        meta.setObjectName("specialCardEditMeta")
+        meta.setObjectName("metaText")
         layout.addWidget(meta)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -199,7 +194,7 @@ class ProposalDetailDialog(QDialog):
             _TYPE_LABELS.get(item.get("type", ""), item.get("type", "")),
             item.get("target", "-"),
             _STATUS_LABELS.get(item.get("status", "pending"), item.get("status", "pending"))))
-        meta.setObjectName("specialCardEditMeta")
+        meta.setObjectName("metaText")
         layout.addWidget(meta)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -280,15 +275,15 @@ class DiffDetailDialog(QDialog):
         meta = QLabel("段：%s · 行号：%d · 类型：%s" % (
             diff.get("section", "?"), line_no,
             _KIND_LABELS.get(diff.get("kind", ""), diff.get("kind", ""))))
-        meta.setObjectName("specialCardEditMeta")
+        meta.setObjectName("metaText")
         layout.addWidget(meta)
         summary = QLabel("差异摘要：%s" % diff.get("message", ""))
-        summary.setObjectName("specialCardEditMeta")
+        summary.setObjectName("metaText")
         summary.setWordWrap(True)
         layout.addWidget(summary)
         # 警示条：文档当前行与检查时快照不一致 → 应用会失败
         self._stale_warning = QLabel()
-        self._stale_warning.setObjectName("specialCardEditMeta")
+        self._stale_warning.setObjectName("metaText")
         self._stale_warning.setWordWrap(True)
         local = rds.doc_line_at(self._doc_path(), diff.get("line_no"))
         stale = (diff.get("kind") != "checkpoint" and local is not None
@@ -327,6 +322,10 @@ class DiffDetailDialog(QDialog):
 
 class RuleDocPanel(QWidget):
     data_changed = Signal()
+    # 脚本执行转发：输出汇入知识库维护工作台底部日志（模块单一日志出口）
+    script_started = Signal()
+    script_output = Signal(bytes)
+    script_finished = Signal(int)
 
     def __init__(self, root: Path, parent=None):
         super().__init__(parent)
@@ -341,6 +340,8 @@ class RuleDocPanel(QWidget):
         self._audit_counts = {"ERROR": 0, "WARN": 0, "INFO": 0}
         self._proposal_pending = 0
         self._pending_open = 0
+        # 脚本输出缓冲：替代原内嵌日志控件，供 _last_output() 解析与测试注入
+        self._output_text = ""
         # B2/B3 状态
         self._diffs: list[dict] = []
         self._current_proposal_path = ""
@@ -354,79 +355,31 @@ class RuleDocPanel(QWidget):
     # ---------------------------------------------------------------
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
         self._action_bar = PageActionBar()
         self._refresh_button = QPushButton("刷新状态")
+        self._refresh_button.setToolTip(
+            "维护规则母本 docs/元规则整理-完整版.md（只增不删、机器校验）；"
+            "依次完成：检查 → 应用差异 → 提案 → 登记疑难")
         self._refresh_button.clicked.connect(self.refresh_all)
         self._action_bar.add_action(self._refresh_button, ROLE_PRIMARY)
-        self._log_toggle_button = QPushButton("收起日志")
-        self._log_toggle_button.clicked.connect(self._toggle_log)
-        self._action_bar.add_action(self._log_toggle_button, ROLE_SECONDARY)
         layout.addWidget(self._action_bar)
-
-        # A1 工作流导语卡（可折叠）：说明维护对象与建议流程
-        self._guide_card = QFrame()
-        self._guide_card.setObjectName("noticeBanner")
-        set_tone(self._guide_card, TONE_INFO)
-        guide_layout = QVBoxLayout(self._guide_card)
-        guide_layout.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
-        guide_layout.setSpacing(4)
-        guide_top = QHBoxLayout()
-        guide_title = QLabel("维护规则母本 docs/元规则整理-完整版.md（只增不删、机器校验）")
-        guide_title.setObjectName("noticeBannerTitle")
-        guide_top.addWidget(guide_title)
-        guide_top.addStretch(1)
-        self._guide_toggle_button = QPushButton("收起引导")
-        self._guide_toggle_button.clicked.connect(self._toggle_guide)
-        guide_top.addWidget(self._guide_toggle_button)
-        guide_layout.addLayout(guide_top)
-        guide_body = QLabel(
-            "建议流程：① 刷新检查 → ② 应用数据段差异 → ③ 生成/合入提案 → ④ 登记疑难；"
-            "完成改动后回到「语料状态」重建语料+索引。")
-        guide_body.setObjectName("noticeBannerMessage")
-        guide_body.setWordWrap(True)
-        guide_layout.addWidget(guide_body)
-        layout.addWidget(self._guide_card)
 
         # 四个能力拆为子页签，避免纵向堆叠过长
         self._tabs = QTabWidget()
-        self._tabs.setObjectName("ruleDocSubTabs")
+        self._tabs.setObjectName("sectionTabs")
         self._tabs.addTab(self._build_audit_tab(), "文档状态")
         self._tabs.addTab(self._build_diff_tab(), "数据段差异")
         self._tabs.addTab(self._build_proposal_tab(), "提案工作台")
         self._tabs.addTab(self._build_pending_tab(), "疑难登记")
-
-        # 日志常驻底部，QSplitter 支持拖拽/折叠
-        self._log = QPlainTextEdit()
-        self._log.setReadOnly(True)
-        self._log.setObjectName("ragLogSurface")
-        self._log.setPlaceholderText("脚本输出将显示在这里……")
-        self._log.setMaximumBlockCount(2000)
-        self._log.setMinimumHeight(60)
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setChildrenCollapsible(True)
-        splitter.addWidget(self._tabs)
-        splitter.addWidget(self._log)
-        splitter.setSizes([620, 180])
-        layout.addWidget(splitter, 1)
-
-    def _toggle_log(self) -> None:
-        """收起/展开底部日志区。"""
-        visible = not self._log.isVisible()
-        self._log.setVisible(visible)
-        self._log_toggle_button.setText("收起日志" if visible else "展开日志")
-
-    def _toggle_guide(self) -> None:
-        """收起/展开工作流导语卡（按 isHidden 判断，不依赖窗口是否已显示）。"""
-        visible = self._guide_card.isHidden()
-        self._guide_card.setVisible(visible)
-        self._guide_toggle_button.setText("收起引导" if visible else "展开引导")
+        layout.addWidget(self._tabs, 1)
 
     def _build_audit_tab(self) -> QWidget:
         # 1. 文档状态：汇总计数 + 问题明细（B1）
         status_card = QFrame()
-        status_card.setObjectName("ragTableSurface")
+        status_card.setObjectName("panelCardSurface")
         s_layout = QVBoxLayout(status_card)
         self._audit_banner = NoticeBanner("文档校验", "", TONE_SUCCESS, self)
         self._audit_table = QTableWidget(0, 3)
@@ -435,8 +388,7 @@ class RuleDocPanel(QWidget):
         self._audit_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         s_layout.addWidget(self._audit_banner)
         s_layout.addWidget(self._audit_table)
-        self._audit_empty_label = QLabel("尚未检查文档，点击顶部「刷新状态」")
-        self._audit_empty_label.setObjectName("specialCardEditMeta")
+        self._audit_empty_label = EmptyState("尚未检查文档", "点击顶部「刷新状态」开始检查。")
         s_layout.addWidget(self._audit_empty_label)
         self._audit_detail_table = QTableWidget(0, 3)
         self._audit_detail_table.setHorizontalHeaderLabels(["级别", "问题", "建议动作"])
@@ -448,15 +400,14 @@ class RuleDocPanel(QWidget):
         self._audit_detail_table.setShowGrid(False)
         self._audit_detail_table.verticalHeader().setVisible(False)
         s_layout.addWidget(self._audit_detail_table)
-        self._audit_detail_empty = QLabel("未发现 ERROR/WARN")
-        self._audit_detail_empty.setObjectName("specialCardEditMeta")
+        self._audit_detail_empty = EmptyState("文档校验通过", "未发现 ERROR / WARN 级别问题。")
         s_layout.addWidget(self._audit_detail_empty)
         return status_card
 
     def _build_diff_tab(self) -> QWidget:
         # 2. 数据段差异（B2：勾选 + 确认值 + 一键应用）
         diff_card = QFrame()
-        diff_card.setObjectName("ragTableSurface")
+        diff_card.setObjectName("panelCardSurface")
         d_layout = QVBoxLayout(diff_card)
         d_top = QHBoxLayout()
         d_top.addWidget(QLabel("数据段差异（sync_rule_stats）"))
@@ -468,10 +419,10 @@ class RuleDocPanel(QWidget):
         d_layout.addLayout(d_top)
         # A4 术语提示：差异类型语义
         self._diff_hint = QLabel("类型：全自动=可直接应用 / 候选=需人工确认 / 校验点=仅提示；勾选后可在「确认值」列修改应用值")
-        self._diff_hint.setObjectName("specialCardEditMeta")
+        self._diff_hint.setObjectName("metaText")
         d_layout.addWidget(self._diff_hint)
         self._diff_summary_label = QLabel("全自动 0 · 候选 0 · 校验点 0 ｜ 已勾选 0 项可应用")
-        self._diff_summary_label.setObjectName("specialCardEditMeta")
+        self._diff_summary_label.setObjectName("metaText")
         d_layout.addWidget(self._diff_summary_label)
         self._diff_table = QTableWidget(0, 7)
         self._diff_table.setHorizontalHeaderLabels(["应用", "段", "行号", "类型", "差异摘要", "确认值", "操作"])
@@ -487,15 +438,14 @@ class RuleDocPanel(QWidget):
         self._diff_table.setShowGrid(False)
         self._diff_table.verticalHeader().setVisible(False)
         d_layout.addWidget(self._diff_table)
-        self._diff_empty_label = QLabel("尚未检查数据段差异（点「刷新状态」）")
-        self._diff_empty_label.setObjectName("specialCardEditMeta")
+        self._diff_empty_label = EmptyState("暂无数据段差异", "点击顶部「刷新状态」开始检查。")
         d_layout.addWidget(self._diff_empty_label)
         return diff_card
 
     def _build_proposal_tab(self) -> QWidget:
         # 3. 提案工作台
         prop_card = QFrame()
-        prop_card.setObjectName("ragTableSurface")
+        prop_card.setObjectName("panelCardSurface")
         p_layout = QVBoxLayout(prop_card)
         p_top = QHBoxLayout()
         p_top.addWidget(QLabel("提案工作台"))
@@ -510,7 +460,7 @@ class RuleDocPanel(QWidget):
         p_top.addWidget(self._apply_proposal_button)
         p_layout.addLayout(p_top)
         self._proposal_summary_label = QLabel("待确认 0 · 已确认 0 · 已驳回 0")
-        self._proposal_summary_label.setObjectName("specialCardEditMeta")
+        self._proposal_summary_label.setObjectName("metaText")
         p_layout.addWidget(self._proposal_summary_label)
         self._proposal_table = QTableWidget(0, 6)
         self._proposal_table.setHorizontalHeaderLabels(["提案号", "类型", "目标", "建议文本", "状态", "操作"])
@@ -520,15 +470,14 @@ class RuleDocPanel(QWidget):
         self._proposal_table.setShowGrid(False)
         self._proposal_table.verticalHeader().setVisible(False)
         p_layout.addWidget(self._proposal_table)
-        self._proposal_empty_label = QLabel("暂无提案，可点击「生成提案」")
-        self._proposal_empty_label.setObjectName("specialCardEditMeta")
+        self._proposal_empty_label = EmptyState("暂无提案", "可点击「生成提案」生成。")
         p_layout.addWidget(self._proposal_empty_label)
         return prop_card
 
     def _build_pending_tab(self) -> QWidget:
         # 4. 疑难登记
         pending_card = QFrame()
-        pending_card.setObjectName("ragTableSurface")
+        pending_card.setObjectName("panelCardSurface")
         n_layout = QVBoxLayout(pending_card)
         n_top = QHBoxLayout()
         n_top.addWidget(QLabel("疑难登记（本地待办）"))
@@ -546,8 +495,7 @@ class RuleDocPanel(QWidget):
         self._pending_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._pending_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         n_layout.addWidget(self._pending_table)
-        self._pending_empty_label = QLabel("无待办疑难")
-        self._pending_empty_label.setObjectName("specialCardEditMeta")
+        self._pending_empty_label = EmptyState("无待办疑难", "完成检查后可在此登记疑难。")
         n_layout.addWidget(self._pending_empty_label)
         return pending_card
 
@@ -740,28 +688,34 @@ class RuleDocPanel(QWidget):
             return
         module = 'src.scripts.' + args[0].removesuffix('.py')
         self._last_command = " ".join(args)
-        self._log.appendPlainText("$ python -m " + module + " " + " ".join(args[1:]))
+        self.script_started.emit()
+        self._emit_output("$ python -m " + module + " " + " ".join(args[1:]))
         self._pending_finished = (on_finished, sentinel_codes, sentinel_note, failure_codes)
         self._runner.run(PYTHON, None, ['-m', module] + args[1:], self._root)
 
     def _on_runner_finished(self, code: int) -> None:
         """ScriptRunner 完成回调：转发到原 _on_finished（保留签名供测试直接调用）。"""
         self._on_finished(code, None, *self._pending_finished)
+        self.script_finished.emit(code)
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
-        self._log.appendPlainText(text.rstrip("\n"))
+        self._emit_output(text.rstrip("\n"))
 
-    # 结论行着色（脚本原始输出保持纯文本，不影响 _last_output 解析）
-    _MARK_COLORS = {"success": "#2e7d32", "warning": "#b26a00", "error": "#c62828"}
+    def _emit_output(self, text: str) -> None:
+        """追加脚本输出：写入缓冲并转发到工作台底部日志。"""
+        if self._output_text:
+            self._output_text += "\n"
+        self._output_text += text
+        self.script_output.emit(text.encode("utf-8"))
+
+    def _clear_script_output(self) -> None:
+        """清空输出缓冲（语义等同原内嵌日志控件 clear）。"""
+        self._output_text = ""
 
     def _append_marked(self, text: str, kind: str = "default") -> None:
-        color = self._MARK_COLORS.get(kind)
-        if color is None:
-            self._log.appendPlainText(text)
-        else:
-            self._log.appendHtml('<span style="color:%s">%s</span>' % (color, html.escape(text)))
-        self._log.ensureCursorVisible()
+        # 结论行经工作台日志展示：纯文本，✔/⚠/✘ 前缀承载语义
+        self._emit_output(text)
 
     def _on_finished(self, code: int, _status, on_finished,
                      sentinel_codes: set[int] | None = None,
@@ -782,7 +736,7 @@ class RuleDocPanel(QWidget):
         try:
             on_finished()
         except Exception as exc:  # noqa: BLE001
-            self._log.appendPlainText("刷新失败：%s" % exc)
+            self._emit_output("刷新失败：%s" % exc)
         self.data_changed.emit()
 
     # ---------------------------------------------------------------
@@ -849,7 +803,7 @@ class RuleDocPanel(QWidget):
             set_ui_role(view_button, ROLE_SECONDARY)
             view_button.clicked.connect(lambda _=False, idx=i: self._open_diff_detail(idx))
             self._diff_table.setCellWidget(i, 6, view_button)
-        self._diff_empty_label.setText("数据段与数据源一致")
+        self._diff_empty_label.set_description("数据段与数据源一致")
         self._diff_empty_label.setVisible(not self._diffs)
         self._refresh_diff_summary()
         # A4 页签角标：数据段差异（条数）
@@ -981,4 +935,4 @@ class RuleDocPanel(QWidget):
         self._run_script(["apply_rule_proposal.py", "--proposal", str(path)], self._refresh_proposals)
 
     def _last_output(self) -> str:
-        return self._log.toPlainText()
+        return self._output_text

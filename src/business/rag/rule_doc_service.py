@@ -67,12 +67,17 @@ def parse_sync_diff(path: Path | str) -> list[dict]:
 
 
 def sync_json_path(root: Path) -> Path:
-    return root / "scripts" / ".sync_rule_stats_report.json"
+    """差异报告路径（sync_rule_stats.py --json 的输出）。
+
+    落在 src/scripts/（运行时隐藏文件的既有落点，.gitignore 已覆盖）；
+    脚本迁移 src/scripts/ 时本路径曾被遗漏，指向从未存在的顶层 scripts/ 导致写报告崩溃。
+    """
+    return root / "src" / "scripts" / ".sync_rule_stats_report.json"
 
 
 def confirmed_diff_path(root: Path) -> Path:
     """B2 确认清单路径（sync_rule_stats.py --apply-json 的输入）。"""
-    return root / "scripts" / ".sync_confirmed_diffs.json"
+    return root / "src" / "scripts" / ".sync_confirmed_diffs.json"
 
 
 # ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@ def test_panel_renders_and_local_refresh(tmp_path):
     panel = RuleDocPanel(root)
     # 四个能力拆为子页签
     assert panel._tabs.count() == 4
+    assert panel._tabs.objectName() == "sectionTabs"  # C4' 分区页签统一下划线样式
     assert [panel._tabs.tabText(i) for i in range(panel._tabs.count())] == [
         "文档状态", "数据段差异", "提案工作台", "疑难登记",
     ]
@@ -84,32 +85,18 @@ def test_sync_sentinel_exit_code(tmp_path):
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    panel._log.clear()
+    panel._clear_script_output()
     called = []
     panel._on_finished(1, None, lambda: called.append(True),
                        sentinel_codes={1}, sentinel_note="检测到差异，见差异表")
-    text = panel._log.toPlainText()
+    text = panel._last_output()
     assert "⚠ 执行完成（退出码 1：检测到差异，见差异表）" in text
     assert "✘" not in text
     assert called == [True]
     # 未声明哨兵时，非零退出码仍按失败显示
-    panel._log.clear()
+    panel._clear_script_output()
     panel._on_finished(1, None, lambda: None)
-    assert "✘ 执行失败（退出码 1）" in panel._log.toPlainText()
-
-
-def test_guide_card_toggle(tmp_path):
-    """A1 引导卡默认可见，可折叠/展开。"""
-    _app()
-    root = _make_root(tmp_path)
-    panel = RuleDocPanel(root)
-    assert not panel._guide_card.isHidden()
-    panel._toggle_guide()
-    assert panel._guide_card.isHidden()
-    assert panel._guide_toggle_button.text() == "展开引导"
-    panel._toggle_guide()
-    assert not panel._guide_card.isHidden()
-    assert panel._guide_toggle_button.text() == "收起引导"
+    assert "✘ 执行失败（退出码 1）" in panel._last_output()
 
 
 def test_initial_status_prompt(tmp_path):
@@ -130,11 +117,11 @@ def test_audit_detail_renders(tmp_path):
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    panel._log.clear()
-    panel._log.appendPlainText(
+    panel._clear_script_output()
+    panel._append_log(
         "  [WARN] 数据段一致性：8 处全自动差异（段：0.2、3.5、5.2）\n"
         "  [INFO] 数据段候选：17 处半自动候选差异（段：3.1、3.2）\n"
-        "汇总：ERROR 0 / WARN 1 / INFO 2")
+        "汇总：ERROR 0 / WARN 1 / INFO 2".encode("utf-8"))
     panel._on_audit_finished()
     assert panel._audit_table.item(1, 1).text() == "1"
     assert panel._audit_detail_table.rowCount() == 1
@@ -143,8 +130,8 @@ def test_audit_detail_renders(tmp_path):
     assert panel._tabs.tabText(0) == "文档状态（1）"
     assert panel._audit_detail_empty.isHidden()
     # 无 ERROR/WARN 时明细表为空提示可见
-    panel._log.clear()
-    panel._log.appendPlainText("汇总：ERROR 0 / WARN 0 / INFO 0")
+    panel._clear_script_output()
+    panel._append_log("汇总：ERROR 0 / WARN 0 / INFO 0".encode("utf-8"))
     panel._on_audit_finished()
     assert panel._audit_detail_table.rowCount() == 0
     assert not panel._audit_detail_empty.isHidden()
@@ -416,14 +403,14 @@ def test_confirm_proposal_updates_json(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_append_marked_preserves_plain_text(tmp_path):
-    """结论行着色不破坏 toPlainText（兼容 _last_output 解析）。"""
+    """结论行写入输出缓冲（兼容 _last_output 解析）。"""
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    panel._log.clear()
+    panel._clear_script_output()
     panel._append_marked("✔ 执行完成", "success")
     panel._append_marked("✘ 失败", "error")
-    assert panel._log.toPlainText() == "✔ 执行完成\n✘ 失败"
+    assert panel._last_output() == "✔ 执行完成\n✘ 失败"
 
 
 def test_on_finished_writes_ops_log(tmp_path):

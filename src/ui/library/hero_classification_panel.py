@@ -236,7 +236,7 @@ class HeroClassificationPanel(QWidget):
     def _setup_ui(self) -> None:
         self.setObjectName("heroClassificationPanel")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
         self._action_bar = PageActionBar("正在加载……", self)
@@ -251,7 +251,7 @@ class HeroClassificationPanel(QWidget):
         layout.addWidget(self._action_bar)
 
         self._tabs = QTabWidget()
-        self._tabs.setObjectName("heroClassificationSubTabs")
+        self._tabs.setObjectName("sectionTabs")
         self._tabs.addTab(self._build_category_tab(), "分类管理")
         self._tabs.addTab(self._build_chain_tab(), "克制链")
         self._hero_tab = self._build_hero_tab()
@@ -271,7 +271,7 @@ class HeroClassificationPanel(QWidget):
         bar.addWidget(self._category_count_label)
         bar.addStretch(1)
         self._category_add_button = QPushButton("新增分类")
-        set_ui_role(self._category_add_button, ROLE_PRIMARY)
+        set_ui_role(self._category_add_button, ROLE_SECONDARY)
         self._category_add_button.clicked.connect(self._add_category)
         bar.addWidget(self._category_add_button)
         layout.addLayout(bar)
@@ -323,7 +323,7 @@ class HeroClassificationPanel(QWidget):
         layout.addLayout(form)
 
         hint = QLabel("填写该分类克制的对象与理由（如：卖血/被动收益型/战法牌型，依赖技能的都被克）。修改后点击顶部「保存」生效。")
-        hint.setObjectName("specialCardSectionTitle")
+        hint.setObjectName("sectionTitle")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         layout.addStretch(1)
@@ -395,7 +395,7 @@ class HeroClassificationPanel(QWidget):
         self._hero_name_label.setTextFormat(Qt.TextFormat.PlainText)
         surface_layout.addWidget(self._hero_name_label)
         self._hero_position_label = QLabel()
-        self._hero_position_label.setObjectName("specialCardEditMeta")
+        self._hero_position_label.setObjectName("metaText")
         self._hero_position_label.setTextFormat(Qt.TextFormat.PlainText)
         self._hero_position_label.setVisible(False)
         surface_layout.addWidget(self._hero_position_label)
@@ -404,7 +404,7 @@ class HeroClassificationPanel(QWidget):
         divider.setFrameShape(QFrame.Shape.HLine)
         surface_layout.addWidget(divider)
         section = QLabel("机制分类（可多选）")
-        section.setObjectName("specialCardSectionTitle")
+        section.setObjectName("sectionTitle")
         surface_layout.addWidget(section)
         # 多选组件固定复用，切换武将仅更新值，避免频繁销毁导致的弹层生命周期竞态
         self._hero_combo = CheckableComboBox()
@@ -412,7 +412,7 @@ class HeroClassificationPanel(QWidget):
         self._hero_combo.checked_values_changed.connect(self._on_hero_categories_changed)
         surface_layout.addWidget(self._hero_combo)
         hint = QLabel("修改后点击顶部「保存」生效。")
-        hint.setObjectName("specialCardEditMeta")
+        hint.setObjectName("metaText")
         surface_layout.addWidget(hint)
         self._suggest_category_button = QPushButton("LLM 建议分类")
         set_ui_role(self._suggest_category_button, ROLE_SECONDARY)
@@ -573,7 +573,7 @@ class HeroClassificationPanel(QWidget):
             if not value:
                 continue
             section = QLabel(label)
-            section.setObjectName("specialCardSectionTitle")
+            section.setObjectName("sectionTitle")
             surface_layout.addWidget(section)
             body = QLabel(value)
             body.setObjectName("specialCardFieldBody")
@@ -583,7 +583,7 @@ class HeroClassificationPanel(QWidget):
             surface_layout.addWidget(body)
         if cat.typical_heroes:
             section = QLabel("典型武将")
-            section.setObjectName("specialCardSectionTitle")
+            section.setObjectName("sectionTitle")
             surface_layout.addWidget(section)
             body = QLabel("、".join(cat.typical_heroes))
             body.setObjectName("specialCardFieldBody")

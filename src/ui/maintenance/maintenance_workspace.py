@@ -220,7 +220,7 @@ class MaintenanceWorkspace(QWidget):
         content_layout.addWidget(self.stack, 1)
 
         self._log_surface = QFrame()
-        self._log_surface.setObjectName("ragLogSurface")
+        self._log_surface.setObjectName("panelCardSurface")
         log_layout = QVBoxLayout(self._log_surface)
         log_layout.setContentsMargins(8, 2, 8, 2)
         log_layout.setSpacing(2)
@@ -245,7 +245,7 @@ class MaintenanceWorkspace(QWidget):
         header_layout.addWidget(self.log_toggle_button)
         log_layout.addWidget(header)
         self.log = QPlainTextEdit()
-        self.log.setObjectName("ragMaintenanceLog")
+        self.log.setObjectName("scriptLog")
         self.log.setReadOnly(True)
         self.log.setPlaceholderText("执行日志将显示在这里……")
         self.log.setMaximumBlockCount(2000)

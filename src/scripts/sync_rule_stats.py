@@ -571,6 +571,8 @@ def main():
     else:
         print(report)
         if args.json:
+            report_dir = os.path.dirname(os.path.abspath(args.json))
+            os.makedirs(report_dir, exist_ok=True)
             with open(args.json, 'w', encoding='utf-8', newline='\n') as f:
                 json.dump(issues, f, ensure_ascii=False, indent=2)
         sys.exit(1 if issues else 0)

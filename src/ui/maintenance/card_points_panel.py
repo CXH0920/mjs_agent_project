@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -41,8 +42,8 @@ from src.data.card_points_repository import (
     CardPointsRepository,
     JudgeRuleItem,
 )
-from src.ui.shared.style import ROLE_SECONDARY, set_ui_role
-from src.ui.shared.widgets import DialogFooter, ScriptRunner, show_toast
+from src.ui.shared.style import ROLE_SECONDARY, TONE_WARNING, set_ui_role
+from src.ui.shared.widgets import DialogFooter, PageActionBar, ScriptRunner, show_toast
 
 
 class CardPointEditDialog(QDialog):
@@ -162,16 +163,26 @@ class CardPointsPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
+        self._action_bar = PageActionBar("", self)
+        self._status_label = self._action_bar.status_label
+        self._import_button = QPushButton("从 xlsx 导入")
+        set_ui_role(self._import_button, ROLE_SECONDARY)
+        self._import_button.setToolTip("全量覆盖导入：以归档的 mjs卡牌点数.xlsx 重新生成点数数据")
+        self._import_button.clicked.connect(self._import_from_xlsx)
+        self._action_bar.add_action(self._import_button, ROLE_SECONDARY)
+        layout.addWidget(self._action_bar)
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setChildrenCollapsible(False)
 
         # ---- 牌面明细区 ----
-        cards_box = QWidget()
+        cards_box = QFrame()
+        cards_box.setObjectName("panelCardSurface")
         cards_layout = QVBoxLayout(cards_box)
-        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setContentsMargins(10, 10, 10, 10)
         cards_layout.setSpacing(4)
         cards_title = QLabel("牌面明细（每行 = 一个花色点数组合，数量 = 张数）")
-        cards_title.setObjectName("specialCardSectionTitle")
+        cards_title.setObjectName("sectionTitle")
         cards_layout.addWidget(cards_title)
         self._cards_table = QTableWidget(0, 4)
         self._cards_table.setObjectName("cardPointsTable")
@@ -205,12 +216,13 @@ class CardPointsPanel(QWidget):
         splitter.addWidget(cards_box)
 
         # ---- 判定规则区 ----
-        rules_box = QWidget()
+        rules_box = QFrame()
+        rules_box.setObjectName("panelCardSurface")
         rules_layout = QVBoxLayout(rules_box)
-        rules_layout.setContentsMargins(0, 0, 0, 0)
+        rules_layout.setContentsMargins(10, 10, 10, 10)
         rules_layout.setSpacing(4)
         rules_title = QLabel("卜卦判定规则（牌名级，如 八卦盾/天雷）")
-        rules_title.setObjectName("specialCardSectionTitle")
+        rules_title.setObjectName("sectionTitle")
         rules_layout.addWidget(rules_title)
         self._rules_table = QTableWidget(0, 2)
         self._rules_table.setObjectName("judgeRulesTable")
@@ -235,18 +247,6 @@ class CardPointsPanel(QWidget):
         splitter.setSizes([380, 220])
         layout.addWidget(splitter, 1)
 
-        # ---- 底部操作栏 ----
-        bar = QHBoxLayout()
-        hint = QLabel("全量覆盖导入：以归档的 mjs卡牌点数.xlsx 重新生成点数数据")
-        hint.setObjectName("specialCardEditMeta")
-        bar.addWidget(hint)
-        bar.addStretch(1)
-        self._import_button = QPushButton("从 xlsx 导入")
-        set_ui_role(self._import_button, ROLE_SECONDARY)
-        self._import_button.clicked.connect(self._import_from_xlsx)
-        bar.addWidget(self._import_button)
-        layout.addLayout(bar)
-
     def reload_data(self) -> None:
         issues = self._repository.load()
         errors = [item.message for item in issues if item.severity == "error"]
@@ -256,6 +256,11 @@ class CardPointsPanel(QWidget):
         self._import_button.setEnabled(not self._load_error)
         self._refresh_cards()
         self._refresh_rules()
+        if self._load_error:
+            self._action_bar.set_status(f"数据加载失败（{len(errors)} 条），已禁止修改，详见日志", TONE_WARNING)
+        else:
+            self._action_bar.set_status(
+                f"牌面 {self._repository.total_count()} 张 · 判定规则 {len(self._repository.list_rules())} 条")
 
     def _ensure_writable(self) -> bool:
         """数据加载失败时禁止写操作；返回是否可写。"""

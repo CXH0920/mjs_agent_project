@@ -979,6 +979,57 @@ QLabel#statusBadge[tone="success"] {{ color: {SUCCESS}; background-color: {SUCCE
 QLabel#statusBadge[tone="warning"] {{ color: {WARNING}; background-color: {WARNING_SOFT}; }}
 QLabel#statusBadge[tone="danger"] {{ color: {DANGER}; background-color: {DANGER_SOFT}; }}
 
+/* 共享语义：区块标题 / 辅助说明 / 内容卡（知识库维护各面板与索引精化共用） */
+QLabel#sectionTitle {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+    font-weight: bold;
+    padding-top: {SPACE_XS}px;
+}}
+QLabel#metaText {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+}}
+QFrame#panelCardSurface {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QFrame#panelCardSurface QTableWidget {{
+    border: none;
+}}
+QFrame#panelCardSurface QLabel, QWidget#emptyState QLabel {{
+    background-color: transparent;
+}}
+
+/* 页面内分区页签（下划线选中态，与资料库二级页签同视觉） */
+QTabWidget#sectionTabs::pane {{
+    background-color: {CANVAS};
+    border: none;
+    border-top: 1px solid {BORDER};
+    border-radius: 0;
+}}
+QTabWidget#sectionTabs QTabBar::tab {{
+    background-color: transparent;
+    color: {MUTED_TEXT};
+    padding: 7px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: {RADIUS_SM}px {RADIUS_SM}px 0 0;
+    margin-right: 4px;
+    font-weight: normal;
+}}
+QTabWidget#sectionTabs QTabBar::tab:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+    color: {TEXT_PRIMARY};
+}}
+QTabWidget#sectionTabs QTabBar::tab:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-bottom: 2px solid {PRIMARY};
+    font-weight: bold;
+}}
+
 QFrame#noticeBanner {{
     background-color: {PRIMARY_SOFT};
     border: 1px solid {BORDER};
@@ -1245,16 +1296,6 @@ QFrame#specialCardDetailSurface {{
 QFrame#specialCardDetailSurface QLabel {{
     background-color: transparent;
 }}
-QLabel#specialCardEditMeta {{
-    color: {MUTED_TEXT};
-    font-size: {FONT_SIZE_SM}px;
-}}
-QLabel#specialCardSectionTitle {{
-    color: {MUTED_TEXT};
-    font-size: {FONT_SIZE_MD}px;
-    font-weight: bold;
-    padding-top: {SPACE_XS}px;
-}}
 QLabel#specialCardFieldBody {{
     color: {TEXT_PRIMARY};
     background-color: {PRIMARY_SOFT};
@@ -1276,37 +1317,7 @@ QFrame#actionBarDivider {{
     border-left: 1px solid {BORDER};
     margin: 2px 4px;
 }}
-QFrame#ragTableSurface, QFrame#ragLogSurface {{
-    background-color: {SURFACE};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_MD}px;
-}}
-QTableWidget#ragTaskTable {{
-    background-color: {SURFACE};
-    border: none;
-    border-radius: {RADIUS_MD}px;
-    gridline-color: {BORDER};
-}}
-QTableWidget#ragTaskTable::item {{
-    padding: 6px 8px;
-    border: none;
-}}
-QTableWidget#ragTaskTable::item:hover:!selected {{
-    background-color: {SUBTLE_SURFACE};
-}}
-QTableWidget#ragTaskTable::item:selected {{
-    background-color: {PRIMARY_SOFT};
-    color: {PRIMARY};
-}}
-QTableWidget#ragTaskTable QHeaderView::section {{
-    background-color: {SUBTLE_SURFACE};
-    color: {TEXT_PRIMARY};
-    border: none;
-    border-bottom: 1px solid {BORDER};
-    padding: 6px 8px;
-    font-weight: bold;
-}}
-QPlainTextEdit#ragMaintenanceLog {{
+QPlainTextEdit#scriptLog {{
     background-color: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_SM}px;
@@ -1340,7 +1351,7 @@ QFrame#indexRefineListPane, QFrame#indexRefineWorkPane {{
 }}
 QTableWidget#indexRefineTable {{
     background-color: {SURFACE};
-    border: 1px solid {BORDER};
+    border: none;
     border-radius: {RADIUS_SM}px;
     gridline-color: {BORDER};
 }}

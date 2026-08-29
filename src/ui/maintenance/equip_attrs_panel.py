@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout,
+    QFrame,
     QHeaderView,
     QLabel,
     QMessageBox,
@@ -25,8 +25,8 @@ from src.data.equip_attrs_repository import (
     EquipAttrItem,
     EquipAttrsRepository,
 )
-from src.ui.shared.style import ROLE_PRIMARY, set_ui_role
-from src.ui.shared.widgets import show_toast
+from src.ui.shared.style import ROLE_PRIMARY, TONE_WARNING, set_ui_role
+from src.ui.shared.widgets import PageActionBar, show_toast
 
 _COLUMNS = ("名称", "细分类型", "攻击范围", "距离修正", "备注")
 
@@ -48,10 +48,19 @@ class EquipAttrsPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        self._title = QLabel("装备属性（26 件：坐骑距离修正 + 武器攻击范围 + 防具）")
-        self._title.setObjectName("specialCardSectionTitle")
-        layout.addWidget(self._title)
+        self._action_bar = PageActionBar("装备属性", self)
+        self._status_label = self._action_bar.status_label
+        self._save_button = QPushButton("保存修改")
+        set_ui_role(self._save_button, ROLE_PRIMARY)
+        self._save_button.clicked.connect(self._save)
+        self._action_bar.add_action(self._save_button, ROLE_PRIMARY)
+        layout.addWidget(self._action_bar)
 
+        card = QFrame()
+        card.setObjectName("panelCardSurface")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(10, 10, 10, 10)
+        card_layout.setSpacing(4)
         self._table = QTableWidget(0, len(_COLUMNS))
         self._table.setObjectName("equipAttrsTable")
         self._table.setHorizontalHeaderLabels(list(_COLUMNS))
@@ -63,18 +72,11 @@ class EquipAttrsPanel(QWidget):
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
-        layout.addWidget(self._table, 1)
-
-        bar = QHBoxLayout()
+        card_layout.addWidget(self._table, 1)
         hint = QLabel("提示：细分类型为 武器/防具/坐骑；距离修正为 -1（攻击距离更近）/ 1（防御距离更远）/ 空")
-        hint.setObjectName("specialCardEditMeta")
-        bar.addWidget(hint)
-        bar.addStretch(1)
-        self._save_button = QPushButton("保存修改")
-        set_ui_role(self._save_button, ROLE_PRIMARY)
-        self._save_button.clicked.connect(self._save)
-        bar.addWidget(self._save_button)
-        layout.addLayout(bar)
+        hint.setObjectName("metaText")
+        card_layout.addWidget(hint)
+        layout.addWidget(card, 1)
 
     def reload_data(self) -> None:
         issues = self._repository.load()
@@ -85,9 +87,11 @@ class EquipAttrsPanel(QWidget):
         for row, item in enumerate(items):
             self._append_row(row, item)
         self._table.verticalScrollBar().setValue(scroll)  # 恢复滚动位置（#29）
-        self._title.setText(
-            "装备属性（26 件：坐骑距离修正 + 武器攻击范围 + 防具）"
-            + (f"｜加载异常 {len(errors)} 条，详见日志，已禁止保存" if errors else ""))
+        if errors:
+            self._action_bar.set_status(
+                f"装备属性 {len(items)} 件｜加载异常 {len(errors)} 条，详见日志，已禁止保存", TONE_WARNING)
+        else:
+            self._action_bar.set_status(f"装备属性 {len(items)} 件：坐骑距离修正 + 武器攻击范围 + 防具")
         self._save_button.setEnabled(not errors)
 
     def _ensure_writable(self) -> bool:

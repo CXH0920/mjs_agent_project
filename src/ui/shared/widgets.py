@@ -254,7 +254,8 @@ class EmptyState(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         layout.setSpacing(SPACE_SM)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 不设布局级对齐：对齐布局按窄 sizeHint 放置子控件，wordWrap 描述的
+        # heightForWidth 不参与分配会导致换行文字被裁剪；居中由标签自身对齐承担
 
         self.title_label = QLabel(title)
         self.title_label.setObjectName("emptyStateTitle")
@@ -265,7 +266,6 @@ class EmptyState(QWidget):
         self.description_label.setObjectName("emptyStateDescription")
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.description_label.setWordWrap(True)
-        self.description_label.setMaximumWidth(520)
         self.description_label.setVisible(bool(description))
         layout.addWidget(self.description_label)
 

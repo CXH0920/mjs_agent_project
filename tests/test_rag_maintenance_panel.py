@@ -402,3 +402,16 @@ def test_panels_reused_across_source_switch(tmp_path: Path) -> None:
     ws.select_source("武将分类")
     assert ws.stack.currentWidget() is classification
     panel.close()
+
+
+def test_rule_doc_output_forwards_to_workspace_log(tmp_path: Path) -> None:
+    """C5' 方案 A：元规则脚本输出转发到工作台底部日志（模块单一日志出口）。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RagMaintenancePanel(root=root)
+    panel._rule_doc._clear_script_output()
+    panel._rule_doc._append_log("$ python -m src.scripts.audit_rule_doc.py\n✔ 完成".encode("utf-8"))
+    log_text = panel._workspace.log.toPlainText()
+    assert "$ python -m src.scripts.audit_rule_doc.py" in log_text
+    assert "✔ 完成" in log_text
+    panel.close()

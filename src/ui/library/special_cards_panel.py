@@ -33,8 +33,8 @@ from src.data.special_cards_repository import (
     SpecialCardItem,
     SpecialCardRepository,
 )
-from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, set_tone, set_ui_role
-from src.ui.shared.widgets import DialogFooter, PageHeader, clear_layout, show_toast
+from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_WARNING, set_tone, set_ui_role
+from src.ui.shared.widgets import DialogFooter, PageActionBar, PageHeader, clear_layout, show_toast
 
 # 各类别可编辑字段：key -> (标签, 是否多行)
 # suit/point/attack_range/settlement 为牌面事实（原 xlsx【专属牌】sheet 迁移回填）
@@ -226,15 +226,14 @@ class SpecialCardsPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        bar = QHBoxLayout()
-        bar.setSpacing(8)
+        self._action_bar = PageActionBar("", self)
+        self._status_label = self._action_bar.status_label
         self._category_filter = QComboBox()
         self._category_filter.addItem("全部分类", "")
         self._category_filter.addItems(list(SPECIAL_CATEGORIES))
         for i in range(1, self._category_filter.count()):
             self._category_filter.setItemData(i, self._category_filter.itemText(i))
         self._category_filter.currentIndexChanged.connect(self._refresh_list)
-        bar.addWidget(self._category_filter)
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("搜索名称或武将")
         self._search_timer = QTimer(self)
@@ -242,13 +241,15 @@ class SpecialCardsPanel(QWidget):
         self._search_timer.setInterval(150)
         self._search_timer.timeout.connect(self._refresh_list)
         self._search_input.textChanged.connect(self._schedule_search_refresh)
-        bar.addWidget(self._search_input, 1)
+        # 筛选/搜索为输入控件，直接放入操作区布局（与按钮同排）
+        self._action_bar.actions_layout.addWidget(self._category_filter)
+        self._action_bar.actions_layout.addWidget(self._search_input, 1)
         self._add_button = QPushButton("新增")
         self._add_button.setObjectName("specialCardAddButton")
         set_ui_role(self._add_button, ROLE_PRIMARY)
         self._add_button.clicked.connect(self._open_add)
-        bar.addWidget(self._add_button)
-        layout.addLayout(bar)
+        self._action_bar.add_action(self._add_button, ROLE_PRIMARY)
+        layout.addWidget(self._action_bar)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setChildrenCollapsible(False)
@@ -288,6 +289,9 @@ class SpecialCardsPanel(QWidget):
         errors = [item.message for item in issues if item.severity == "error"]
         self._load_error = bool(errors)
         self._add_button.setEnabled(not self._load_error)
+        if self._load_error:
+            self._status_label.setText(f"数据加载失败（{len(errors)} 条），已禁止修改，详见日志")
+            set_tone(self._status_label, TONE_WARNING)
         self._refresh_list()
 
     def _ensure_writable(self) -> bool:
@@ -377,7 +381,7 @@ class SpecialCardsPanel(QWidget):
         title_row.addWidget(badge)
         title_row.addStretch()
         meta = QLabel("人工维护 · 可编辑")
-        meta.setObjectName("specialCardEditMeta")
+        meta.setObjectName("metaText")
         title_row.addWidget(meta)
         surface_layout.addLayout(title_row)
 
@@ -391,7 +395,7 @@ class SpecialCardsPanel(QWidget):
             if not text:
                 continue
             section = QLabel(label)
-            section.setObjectName("specialCardSectionTitle")
+            section.setObjectName("sectionTitle")
             surface_layout.addWidget(section)
             body = QLabel(text)
             body.setObjectName("specialCardFieldBody" if multiline else "specialCardFieldSingle")
