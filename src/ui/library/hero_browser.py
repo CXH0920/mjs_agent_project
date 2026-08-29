@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.data.combo_manager import ComboManager
 from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
@@ -201,6 +202,7 @@ class HeroDetailPanel(QWidget):
         guide_manager: GuideManager,
         synergy_manager: SynergyManager,
         parent=None,
+        combo_manager: ComboManager | None = None,
     ):
         super().__init__(parent)
         self._hero_mgr = hero_manager
@@ -214,13 +216,13 @@ class HeroDetailPanel(QWidget):
         self._current_hero: Optional[Hero] = None
         self._current_guide: Optional[HeroGuide] = None
 
-        self._setup_ui()
+        self._setup_ui(combo_manager)
 
     # ---------------------------------------------------------------
     # UI 构建
     # ---------------------------------------------------------------
 
-    def _setup_ui(self) -> None:
+    def _setup_ui(self, combo_manager: ComboManager | None = None) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -277,7 +279,7 @@ class HeroDetailPanel(QWidget):
         self._guide_tab.detail_requested.connect(self._open_guide_detail)
         self._detail_tabs.addTab(self._guide_tab, "攻略指南")
 
-        self._synergy_tab = HeroSynergyView(self._hero_mgr, self._synergy_mgr)
+        self._synergy_tab = HeroSynergyView(self._hero_mgr, self._synergy_mgr, combo_manager)
         self._synergy_tab.selection_changed.connect(self._update_context_actions)
         self._synergy_tab.edit_requested.connect(self._on_synergy_edit)
         self._detail_tabs.addTab(self._synergy_tab, "武将相性")
@@ -552,15 +554,16 @@ class HeroBrowser(QWidget):
         guide_manager: GuideManager,
         synergy_manager: SynergyManager,
         parent=None,
+        combo_manager: ComboManager | None = None,
     ):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
         self._synergy_mgr = synergy_manager
 
-        self._setup_ui()
+        self._setup_ui(combo_manager)
 
-    def _setup_ui(self) -> None:
+    def _setup_ui(self, combo_manager: ComboManager | None = None) -> None:
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -575,6 +578,7 @@ class HeroBrowser(QWidget):
             self._hero_mgr,
             self._guide_mgr,
             self._synergy_mgr,
+            combo_manager=combo_manager,
         )
         self._splitter.addWidget(self._detail_panel)
         self._splitter.setStretchFactor(0, 0)

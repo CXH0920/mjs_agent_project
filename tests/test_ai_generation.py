@@ -23,6 +23,7 @@ from src.scraper.ai.generation import (
     GenerationResult,
     run_guide_generation,
     run_synergy_generation,
+    run_synergy_list_generation,
     run_synergy_pair_generation,
     run_synergy_single_generation,
 )
@@ -713,3 +714,106 @@ def test_generation_reports_rag_degradation_once(tmp_path, capsys) -> None:
     out = capsys.readouterr().out
     assert result.completed == 2
     assert out.count("[RAG] 语料不可用") == 1
+
+
+def test_synergy_list_generation_resolves_pairs_by_id(tmp_path: Path) -> None:
+    """实战配队清单：按 id 解析武将并逐对生成提交。"""
+    synergy_path = tmp_path / "synergies.json"
+    pairs_file = tmp_path / "combo_pairs.json"
+    pairs_file.write_text(json.dumps([
+        {"hero_a_id": 1, "hero_b_id": 2},
+        {"hero_a_id": 4, "hero_b_id": 3},
+    ]), encoding="utf-8")
+    heroes = [
+        {"id": 1, "name": "甲"},
+        {"id": 2, "name": "乙"},
+        {"id": 3, "name": "丙"},
+        {"id": 4, "name": "丁"},
+    ]
+    generator = FakeGenerator(synergies=[
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 9},
+        {"hero_a_id": 3, "hero_b_id": 4, "score": 4},
+    ])
+
+    result = run_synergy_list_generation(
+        pairs_file=str(pairs_file), heroes=heroes, generator=generator, synergy_path=synergy_path,
+        existing_synergy_dict={}, existing_synergy_keys=set(),
+    )
+
+    assert result.succeeded
+    assert result.completed == 2
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 9, "last_updated": date.today().isoformat()},
+        {"hero_a_id": 3, "hero_b_id": 4, "score": 4, "last_updated": date.today().isoformat()},
+    ]
+
+
+def test_synergy_list_generation_skips_existing_pairs(tmp_path: Path) -> None:
+    """实战配队清单：默认跳过已有相性对。"""
+    synergy_path = tmp_path / "synergies.json"
+    pairs_file = tmp_path / "combo_pairs.json"
+    pairs_file.write_text(json.dumps([
+        {"hero_a_id": 1, "hero_b_id": 2},
+        {"hero_a_id": 3, "hero_b_id": 4},
+    ]), encoding="utf-8")
+
+    result = run_synergy_list_generation(
+        pairs_file=str(pairs_file),
+        heroes=[{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}, {"id": 3, "name": "丙"}, {"id": 4, "name": "丁"}],
+        generator=FakeGenerator(synergies=[{"hero_a_id": 3, "hero_b_id": 4, "score": 6}]),
+        synergy_path=synergy_path,
+        existing_synergy_dict={(1, 2): {"hero_a_id": 1, "hero_b_id": 2, "score": 5}},
+        existing_synergy_keys={(1, 2)},
+    )
+
+    assert result.skipped == 1
+    assert result.completed == 1
+    committed = json.loads(synergy_path.read_text(encoding="utf-8"))
+    assert {hero["hero_a_id"] for hero in committed} == {1, 3}
+
+
+def test_synergy_list_generation_overwrites_when_requested(tmp_path: Path) -> None:
+    """实战配队清单：update 模式重新生成已有对。"""
+    synergy_path = tmp_path / "synergies.json"
+    pairs_file = tmp_path / "combo_pairs.json"
+    pairs_file.write_text(json.dumps([{"hero_a_id": 2, "hero_b_id": 1}]), encoding="utf-8")
+
+    result = run_synergy_list_generation(
+        pairs_file=str(pairs_file),
+        heroes=[{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}],
+        generator=FakeGenerator(synergies=[{"hero_a_id": 1, "hero_b_id": 2, "score": 8}]),
+        synergy_path=synergy_path,
+        existing_synergy_dict={(1, 2): {"hero_a_id": 1, "hero_b_id": 2, "score": 2}},
+        existing_synergy_keys={(1, 2)},
+        update_mode=True,
+    )
+
+    assert result.completed == 1
+    assert result.skipped == 0
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 8, "last_updated": date.today().isoformat()},
+    ]
+
+
+def test_synergy_list_generation_reports_invalid_pairs(tmp_path: Path) -> None:
+    """清单中无法解析的配对记为失败项，不静默丢弃。"""
+    synergy_path = tmp_path / "synergies.json"
+    pairs_file = tmp_path / "combo_pairs.json"
+    pairs_file.write_text(json.dumps([
+        {"hero_a_id": 1, "hero_b_id": 999},
+        {"hero_a_id": 1, "hero_b_id": 1},
+    ]), encoding="utf-8")
+
+    result = run_synergy_list_generation(
+        pairs_file=str(pairs_file),
+        heroes=[{"id": 1, "name": "甲"}],
+        generator=FakeGenerator(),
+        synergy_path=synergy_path,
+        existing_synergy_dict={},
+        existing_synergy_keys=set(),
+    )
+
+    assert not result.succeeded
+    assert result.completed == 0
+    assert "配对清单为空或全部无效" in result.failed_items
+    assert sum("配对无效" in item for item in result.failed_items) == 2

@@ -118,6 +118,18 @@ class HeroCardWidget(QFrame):
         portrait_layout.addWidget(
             self._faction_badge, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
         )
+
+        self._combo_badge = QLabel()
+        self._combo_badge.setObjectName("recommendationComboBadge")
+        self._combo_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._combo_badge.setStyleSheet(
+            "background-color: #b7791f; color: white; border-radius: 4px;"
+            "padding: 1px 5px; font-size: 11px; font-weight: bold;"
+        )
+        self._combo_badge.hide()
+        portrait_layout.addWidget(
+            self._combo_badge, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight
+        )
         layout.addWidget(self._portrait_frame)
 
         info_panel = QWidget()
@@ -487,6 +499,11 @@ class HeroCardWidget(QFrame):
         self._win_rate_label.setText(
             f"历史单将胜率：{rate:.2f}%" if rate is not None else "历史单将胜率：--%"
         )
+
+    def set_combo_badge(self, text: str | None) -> None:
+        """显示/清除实战配队角标（如"实战 ★9"）；None 或空串隐藏。"""
+        self._combo_badge.setText(text or "")
+        self._combo_badge.setVisible(bool(text))
 
     def set_medal(self, rank: int) -> None:
         self._rank = rank if rank in (1, 2, 3) else 0

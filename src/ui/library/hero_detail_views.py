@@ -23,9 +23,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.data.combo_manager import ComboManager
+from src.data.combo_seats import format_seats
 from src.data.hero_manager import HeroManager
 from src.ui.shared.markdown_renderer import render_markdown
-from src.data.models import Hero, HeroGuide, SynergyScore
+from src.data.models import Combo, Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
@@ -305,7 +307,11 @@ class HeroGuideSummaryView(QWidget):
 
 
 class HeroSynergyView(QWidget):
-    """展示、筛选并选择当前武将的相性记录。"""
+    """展示、筛选并选择当前武将的相性记录。
+
+    数据源为 AI 相性评分与实战配队（combos）的并集：
+    有实战配队但未生成 AI 评分的配对也显示（综合评分列标"未生成"）。
+    """
 
     selection_changed = Signal()
     edit_requested = Signal()
@@ -314,12 +320,16 @@ class HeroSynergyView(QWidget):
         self,
         hero_manager: HeroManager,
         synergy_manager: SynergyManager,
+        combo_manager: ComboManager | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("heroSynergyView")
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
+        self._combo_mgr = combo_manager
+        if self._combo_mgr is not None:
+            self._combo_mgr.load()
         self._current_hero: Hero | None = None
 
         layout = QVBoxLayout(self)
@@ -340,6 +350,11 @@ class HeroSynergyView(QWidget):
         self._rating_combo.addItems(["全部", "S", "A", "B", "C", "D"])
         self._rating_combo.currentTextChanged.connect(self.refresh)
         filter_layout.addWidget(self._rating_combo)
+        filter_layout.addWidget(QLabel("来源:"))
+        self._source_combo = QComboBox()
+        self._source_combo.addItems(["全部", "有实战配队", "未生成 AI 评分"])
+        self._source_combo.currentTextChanged.connect(self.refresh)
+        filter_layout.addWidget(self._source_combo)
         self._reset_button = QToolButton()
         self._reset_button.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton)
@@ -350,9 +365,9 @@ class HeroSynergyView(QWidget):
         filter_layout.addWidget(self._reset_button)
         layout.addLayout(filter_layout)
 
-        self._table = QTableWidget(0, 7)
+        self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels([
-            "搭配武将", "综合评分", "总评", "配合上限", "配合稳定性", "环境适应力", "相性说明",
+            "搭配武将", "综合评分", "总评", "实战评级", "实战座次", "相性说明",
         ])
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -363,9 +378,9 @@ class HeroSynergyView(QWidget):
         self._table.itemDoubleClicked.connect(self._on_double_clicked)
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for column in range(1, 6):
+        for column in range(1, 5):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._table, 1)
 
     def show_hero(self, hero: Hero | None) -> None:
@@ -381,45 +396,80 @@ class HeroSynergyView(QWidget):
             return
 
         synergies = self._synergy_mgr.list_synergies_for_hero(hero.id)
+        synergy_by_pair = {
+            tuple(sorted((s.hero_a_id, s.hero_b_id))): s for s in synergies
+        }
         search_text = self._search_edit.text().strip().lower()
         rating = self._rating_combo.currentText()
-        rows: list[tuple[SynergyScore, Hero | None]] = []
+        source = self._source_combo.currentText()
+
+        # 行来源：AI 相性全量 + 仅有实战配队（尚未生成 AI 评分）的补集
+        rows: list[tuple[SynergyScore | None, Combo | None, Hero | None, int]] = []
         for synergy in synergies:
             partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id
-            partner = self._hero_mgr.get_hero(partner_id)
+            rows.append((synergy, None, self._hero_mgr.get_hero(partner_id), partner_id))
+        if self._combo_mgr is not None:
+            for combo in self._combo_mgr.list_combos_for_hero(hero.id):
+                if tuple(sorted((combo.hero1_id, combo.hero2_id))) in synergy_by_pair:
+                    continue
+                partner_id = combo.hero2_id if combo.hero1_id == hero.id else combo.hero1_id
+                rows.append((None, combo, self._hero_mgr.get_hero(partner_id), partner_id))
+
+        filtered: list[tuple[SynergyScore | None, Combo | None, Hero | None, int]] = []
+        for synergy, combo, partner, partner_id in rows:
             partner_text = f"{partner.name} #{partner_id}" if partner else f"#{partner_id}"
             if search_text and search_text not in partner_text.lower():
                 continue
-            if rating != "全部" and synergy.synergy_rating != rating:
+            if rating != "全部" and (synergy is None or synergy.synergy_rating != rating):
                 continue
-            rows.append((synergy, partner))
+            if source == "有实战配队" and combo is None:
+                continue
+            if source == "未生成 AI 评分" and synergy is not None:
+                continue
+            filtered.append((synergy, combo, partner, partner_id))
 
-        rows.sort(key=lambda item: (-item[0].score, item[1].name if item[1] else str(
-            item[0].hero_b_id if item[0].hero_a_id == hero.id else item[0].hero_a_id
-        )))
+        def sort_key(item: tuple) -> tuple:
+            synergy, combo, partner, partner_id = item
+            partner_name = partner.name if partner else str(partner_id)
+            if synergy is not None:
+                return (0, -synergy.score, partner_name)
+            return (1, -combo.rating, partner_name)
+
+        filtered.sort(key=sort_key)
         self._context_label.setText(
-            f"{hero.name}（#{hero.id}） · 显示 {len(rows)} / 共 {len(synergies)} 条相性"
+            f"{hero.name}（#{hero.id}） · 显示 {len(filtered)} / 共 {len(rows)} 条（含实战配队）"
         )
-        self._table.setRowCount(len(rows))
-        for row, (synergy, partner) in enumerate(rows):
-            partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id
+        self._table.setRowCount(len(filtered))
+        for row, (synergy, combo, partner, partner_id) in enumerate(filtered):
+            note_text = combo.note if combo else ""
             cells = [
                 partner.name if partner else f"#{partner_id}",
-                str(synergy.score),
-                synergy.synergy_rating,
-                str(synergy.combo_ceiling),
-                str(synergy.combo_stability),
-                str(synergy.adaptability),
-                synergy.description.replace("\n", " "),
+                str(synergy.score) if synergy else "未生成",
+                synergy.synergy_rating if synergy else "--",
+                str(combo.rating) if combo else "--",
+                (
+                    f"{combo.hero1_name}[{format_seats(combo.hero1_seats)}] "
+                    f"+ {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
+                ) if combo else "--",
+                (
+                    synergy.description.replace("\n", " ") if synergy
+                    else note_text.replace("\n", " ")
+                ),
             ]
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 if column == 0:
-                    item.setData(
-                        Qt.ItemDataRole.UserRole, (synergy.hero_a_id, synergy.hero_b_id),
+                    pair_ids = (
+                        (synergy.hero_a_id, synergy.hero_b_id) if synergy
+                        else (combo.hero1_id, combo.hero2_id)
                     )
-                if column == 6:
-                    item.setToolTip(synergy.description)
+                    item.setData(Qt.ItemDataRole.UserRole, pair_ids)
+                if column == 1 and synergy is None:
+                    item.setForeground(Qt.GlobalColor.gray)
+                if column == 4 and note_text:
+                    item.setToolTip(note_text)
+                if column == 5:
+                    item.setToolTip(synergy.description if synergy else note_text)
                 self._table.setItem(row, column, item)
         self.selection_changed.emit()
 
@@ -434,9 +484,10 @@ class HeroSynergyView(QWidget):
     def _reset_filters(self) -> None:
         self._search_edit.clear()
         self._rating_combo.setCurrentText("全部")
+        self._source_combo.setCurrentText("全部")
 
     def _on_double_clicked(self, item: QTableWidgetItem) -> None:
-        if item.column() == 6:
+        if item.column() == 5:
             self._show_description(item.row())
         else:
             self.edit_requested.emit()

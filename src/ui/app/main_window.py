@@ -113,6 +113,8 @@ class MainWindow(QMainWindow):
         self._fetch_service = HeroFetchService(self)
         self._guide_service = GuideFetchService(self._data.guides, self)
         self._synergy_service = SynergyFetchService(self)
+        from src.data.combo_manager import ComboManager
+        self._combo_manager = ComboManager()
         self._ai_workflow = AiGenerationWorkflow(
             self._data.heroes,
             self._data.guides,
@@ -120,6 +122,7 @@ class MainWindow(QMainWindow):
             self._guide_service,
             self._synergy_service,
             self,
+            combo_manager=self._combo_manager,
         )
 
         # 屏幕采集服务
@@ -611,6 +614,8 @@ class MainWindow(QMainWindow):
             "guide_specific": QAction("指定获取", self),
             "synergy_single": QAction("选定武将", self),
             "synergy_pair": QAction("指定获取", self),
+            "synergy_combos": QAction("实战配队生成", self),
+            "combos_import": QAction("实战配队导入", self),
             "announcement_check": QAction("检查公告更新", self),
             "announcement_log": QAction("公告记录", self),
             "about": QAction("关于", self),
@@ -633,6 +638,8 @@ class MainWindow(QMainWindow):
             "guide_specific": self._request_guide_specific,
             "synergy_single": self._request_synergy_single,
             "synergy_pair": self._request_synergy_pair,
+            "synergy_combos": self._request_synergy_combos,
+            "combos_import": self._open_combos_import,
             "announcement_check": self._check_announcements,
             "announcement_log": self._open_announcement_dialog,
             "about": self._show_about,
@@ -645,8 +652,9 @@ class MainWindow(QMainWindow):
         """使用共享 QAction 构建兼容菜单栏。"""
         bar = self.menuBar()
 
-        file_menu = bar.addMenu("文件")
-        file_menu.addAction(self._actions["exit"])
+        import_menu = bar.addMenu("导入")
+        import_menu.addAction(self._actions["combos_import"])
+        import_menu.addAction(self._actions["official_import"])
 
         tools_menu = bar.addMenu("配置")
         tools_menu.addAction(self._actions["api_settings"])
@@ -656,7 +664,6 @@ class MainWindow(QMainWindow):
 
         data_menu = bar.addMenu("数据")
         data_menu.addAction(self._actions["reload"])
-        data_menu.addAction(self._actions["official_import"])
         data_menu.addAction(self._actions["announcement_check"])
         data_menu.addAction(self._actions["announcement_log"])
         fetch_menu = data_menu.addMenu("武将获取")
@@ -675,10 +682,13 @@ class MainWindow(QMainWindow):
         synergy_menu.addActions([
             self._actions["synergy_single"],
             self._actions["synergy_pair"],
+            self._actions["synergy_combos"],
         ])
 
         help_menu = bar.addMenu("帮助")
         help_menu.addAction(self._actions["about"])
+        help_menu.addSeparator()
+        help_menu.addAction(self._actions["exit"])
 
     # ---------------------------------------------------------------
     # UI 构建
@@ -746,6 +756,7 @@ class MainWindow(QMainWindow):
             self._data.heroes,
             self._data.guides,
             self._data.synergies,
+            combo_manager=self._combo_manager,
         )
         self._hero_browser.synergies_changed.connect(self._on_synergies_changed)
         self._library_tabs.addTab(self._hero_browser, "武将资料")
@@ -761,6 +772,7 @@ class MainWindow(QMainWindow):
             guide_manager=self._data.guides,
             capture_service=self._capture_service,
             ocr_service=self._ocr_service,
+            combo_manager=self._combo_manager,
         )
         self._recommendation.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
@@ -827,7 +839,10 @@ class MainWindow(QMainWindow):
         synergy_menu.addActions([
             self._actions["synergy_single"],
             self._actions["synergy_pair"],
+            self._actions["synergy_combos"],
         ])
+        self._maintenance_menu.addSeparator()
+        self._maintenance_menu.addAction(self._actions["combos_import"])
 
         self._maintenance_button = QToolButton(self._context_header)
         self._maintenance_button.setObjectName("libraryMaintenanceButton")
@@ -1045,6 +1060,19 @@ class MainWindow(QMainWindow):
         self._update_status()
         show_toast(self, "数据已重新加载")
 
+    def _open_combos_import(self) -> None:
+        """打开实战配队导入对话框"""
+        from src.ui.data_admin.combos_import_dialog import CombosImportDialog
+        dialog = CombosImportDialog(parent=self)
+        dialog.combos_imported.connect(self._on_combos_imported)
+        dialog.exec()
+
+    def _on_combos_imported(self, count: int) -> None:
+        """导入完成后刷新共享 combos 数据与相性视图。"""
+        self._combo_manager.load()
+        self._hero_browser.refresh_synergies()
+        show_toast(self, f"实战配队已导入 {count} 条，相性板块与选将推荐已更新。", duration=4000)
+
     def _open_official_data_import(self) -> None:
         """打开官方 2v2 胜率与武将放逐榜单导入窗口。"""
         dialog = OfficialDataImportDialog(self._capture_service, self)
@@ -1130,6 +1158,9 @@ class MainWindow(QMainWindow):
 
     def _request_synergy_single(self) -> None:
         self._ai_workflow.request_synergy_single()
+
+    def _request_synergy_combos(self) -> None:
+        self._ai_workflow.request_synergy_combos()
 
     # ---------------------------------------------------------------
     # 对话框

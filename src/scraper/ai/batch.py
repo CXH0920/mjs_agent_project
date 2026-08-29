@@ -16,6 +16,7 @@ API 配置优先级（从高到低）：
     python -m src.scraper.ai_batch --synergy
     python -m src.scraper.ai_batch --synergy-pair heroes.json
     python -m src.scraper.ai_batch --synergy-single heroes.json
+    python -m src.scraper.ai_batch --synergy-list pairs.json
 """
 
 from __future__ import annotations
@@ -209,6 +210,8 @@ def main():
                          help="生成指定两武将的相性评分，参数为包含两个武将的 JSON 文件路径")
     parser.add_argument("--synergy-single", type=str, default=None,
                          help="生成指定武将与其他所有武将的相性评分，参数为包含一个武将的 JSON 文件路径")
+    parser.add_argument("--synergy-list", type=str, default=None,
+                         help="按显式配对清单生成相性评分，参数为 [{hero_a_id, hero_b_id}, ...] 的 JSON 文件路径")
     parser.add_argument("--browser", action="store_true",
                          help="使用 Playwright + Edge 浏览器方式（替代 API 直连）")
     parser.add_argument("--update", action="store_true",
@@ -237,9 +240,9 @@ def main():
         if not _rag_enabled():
             print("  [RAG] 已选择 RAG 语料增强，但当前 RAG_ENABLED=false，本次将以经典模式生成", flush=True)
 
-    has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single
+    has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single or args.synergy_list
     if not args.guide and not has_synergy_mode:
-        parser.error("请指定 --guide 和/或 --synergy / --synergy-pair / --synergy-single")
+        parser.error("请指定 --guide 和/或 --synergy / --synergy-pair / --synergy-single / --synergy-list")
 
     # 加载武将数据和 API 配置
     heroes = load_heroes(args.heroes_file)
@@ -277,7 +280,7 @@ def main():
     synergy_path = Path(args.synergies_file)
     existing_guides = _load_existing_guides(guide_path) if args.guide else {}
     existing_synergy_dict, existing_synergy_keys = (
-        _load_existing_synergies(synergy_path) if (args.synergy or args.synergy_pair or args.synergy_single)
+        _load_existing_synergies(synergy_path) if has_synergy_mode
         else ({}, set())
     )
 
@@ -317,6 +320,16 @@ def main():
                 synergy_path=synergy_path,
                 existing_synergy_dict=existing_synergy_dict,
                 existing_synergy_keys=existing_synergy_keys,
+            ))
+
+        if args.synergy_list:
+            from src.scraper.ai.generation import run_synergy_list_generation
+            task_results.append(run_synergy_list_generation(
+                pairs_file=args.synergy_list, heroes=heroes, generator=generator,
+                synergy_path=synergy_path,
+                existing_synergy_dict=existing_synergy_dict,
+                existing_synergy_keys=existing_synergy_keys,
+                update_mode=args.update,
             ))
     finally:
         generator.close()

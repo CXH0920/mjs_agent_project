@@ -205,6 +205,39 @@ class SynergyScore(BaseModel):
         return self
 
 
+class Combo(BaseModel):
+    """实战配队（外部工具导出的社区实战组合，只读数据集，由导入脚本维护）"""
+    hero1_name: str = Field(..., min_length=1, description="武将1 名称（与导出一致）")
+    hero2_name: str = Field(..., min_length=1, description="武将2 名称")
+    hero1_id: int = Field(..., description="武将1 角色 ID（导入时按名称映射）")
+    hero2_id: int = Field(..., description="武将2 角色 ID")
+    rating: int = Field(..., ge=1, le=10, description="实战评级 1-10")
+    position: str = Field(default="both", description="配对级座位摘要（如 both/14/23，不含顺序）")
+    note: str = Field(default="", description="手录备注（座次顺序的权威来源，界面原文展示）")
+    hero1_seats: list[int] = Field(default_factory=list, description="武将1 可坐号位（空 = 无座次要求）")
+    hero2_seats: list[int] = Field(default_factory=list, description="武将2 可坐号位（空 = 无座次要求）")
+
+    @field_validator("hero1_id", "hero2_id")
+    @classmethod
+    def id_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("ID 必须为正整数")
+        return v
+
+    @field_validator("hero1_seats", "hero2_seats")
+    @classmethod
+    def validate_seats(cls, v: list[int]) -> list[int]:
+        if any(not 1 <= s <= 4 for s in v):
+            raise ValueError("座次号位必须是 1-4")
+        return sorted(v)
+
+    @model_validator(mode="after")
+    def validate_pair(self) -> "Combo":
+        if self.hero1_id == self.hero2_id:
+            raise ValueError("配队双方不能是同一武将")
+        return self
+
+
 class HeroGuide(BaseModel):
     """武将攻略"""
     hero_id: int = Field(..., description="武将 ID")

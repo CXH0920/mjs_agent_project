@@ -15,8 +15,12 @@ from datetime import datetime
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
     QFileDialog,
     QGridLayout,
+    QHBoxLayout,
+    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -27,6 +31,8 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.env import PROJECT_ROOT
+from src.data.combo_manager import ComboManager
+from src.data.combo_seats import format_seats
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
@@ -36,6 +42,15 @@ from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
+from src.ui.shared.widgets import (
+    DialogFooter,
+    FlowLayout,
+    NoticeBanner,
+    PageActionBar,
+    PageHeader,
+    EmptyState,
+    show_toast,
+)
 from src.ui.shared.style import (
     ROLE_GHOST,
     ROLE_PRIMARY,
@@ -45,7 +60,6 @@ from src.ui.shared.style import (
     TONE_NEUTRAL,
     TONE_WARNING,
 )
-from src.ui.shared.widgets import EmptyState, NoticeBanner, PageActionBar, show_toast
 
 logger = logging.getLogger(__name__)
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
@@ -69,7 +83,8 @@ class RecommendationPanel(QWidget):
 
     def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
                  guide_manager: GuideManager | None = None,
-                 capture_service=None, ocr_service=None, parent=None):
+                 capture_service=None, ocr_service=None, parent=None,
+                 combo_manager: ComboManager | None = None):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
@@ -87,6 +102,11 @@ class RecommendationPanel(QWidget):
         self._recommendation_service = RecommendationService()
         self._recommendation_data = RecommendationData({}, {})
         self._ocr_results_by_slot: dict[int, dict] = {}
+        self._combo_mgr = combo_manager
+        if self._combo_mgr is not None:
+            self._combo_mgr.load()
+        self._matched_combos: list = []
+        self._combo_chips_collapsed = False
 
         self._setup_ui()
         self._connect_capture_signals()
@@ -168,6 +188,41 @@ class RecommendationPanel(QWidget):
         layout.addWidget(self._error_notice)
         self._error_notice.hide()
 
+        # 实战配队横条：当前识别的 8 名武将中命中的 combos 配队（含号位筛选）
+        self._combo_strip = QWidget()
+        self._combo_strip.setObjectName("recommendationComboStrip")
+        strip_layout = QVBoxLayout(self._combo_strip)
+        strip_layout.setContentsMargins(8, 6, 8, 6)
+        strip_layout.setSpacing(4)
+
+        strip_header = QHBoxLayout()
+        self._combo_title = QLabel("⚔ 实战配队")
+        self._combo_title.setObjectName("recommendationComboTitle")
+        strip_header.addWidget(self._combo_title)
+        strip_header.addWidget(QLabel("当前号位:"))
+        self._combo_seat_combo = QComboBox()
+        self._combo_seat_combo.addItems(["全部", "1号位", "2号位", "3号位", "4号位"])
+        self._combo_seat_combo.setToolTip(
+            "对照游戏内当前正在选择的座次选择号位，"
+            "命中该号位的配队保持可点，其余置灰"
+        )
+        self._combo_seat_combo.currentIndexChanged.connect(self._render_combo_chips)
+        strip_header.addWidget(self._combo_seat_combo)
+        strip_header.addStretch()
+        self._combo_toggle_btn = QToolButton()
+        self._combo_toggle_btn.setObjectName("recommendationComboToggle")
+        self._combo_toggle_btn.setText("收起")
+        self._combo_toggle_btn.setAccessibleName("收起实战配队列表")
+        self._combo_toggle_btn.clicked.connect(self._toggle_combo_chips)
+        strip_header.addWidget(self._combo_toggle_btn)
+        strip_layout.addLayout(strip_header)
+
+        self._combo_chips_container = QWidget()
+        self._combo_chip_flow = FlowLayout(self._combo_chips_container, spacing=6)
+        strip_layout.addWidget(self._combo_chips_container)
+        layout.addWidget(self._combo_strip)
+        self._combo_strip.setVisible(False)
+
         self._cards_container = QWidget()
         self._cards_container.setObjectName("recommendationCardsContainer")
         content_layout = QVBoxLayout(self._cards_container)
@@ -233,6 +288,7 @@ class RecommendationPanel(QWidget):
         self._current_hero_ids = set()
         for card in self._cards:
             card.set_hero(None)
+        self._refresh_combo_strip()
         self._show_empty_state()
 
     def _show_empty_state(self) -> None:
@@ -336,6 +392,128 @@ class RecommendationPanel(QWidget):
         for index, card in enumerate(self._cards):
             if card.hero_id > 0:
                 self._load_real_synergies(index, card.hero_id)
+
+    # ---------------------------------------------------------------
+    # 实战配队横条
+    # ---------------------------------------------------------------
+
+    def _refresh_combo_strip(self) -> None:
+        """按当前识别的武将集合匹配实战配队，刷新横条与卡片角标。"""
+        self._matched_combos = []
+        if self._combo_mgr is not None and len(self._current_hero_ids) >= 2:
+            for combo in self._combo_mgr.list_combos():
+                if combo.hero1_id in self._current_hero_ids and combo.hero2_id in self._current_hero_ids:
+                    self._matched_combos.append(combo)
+            self._matched_combos.sort(key=lambda c: (-c.rating, c.hero1_name, c.hero2_name))
+        self._update_combo_badges()
+        self._render_combo_chips()
+
+    def _update_combo_badges(self) -> None:
+        """参战配队的卡片头像区显示"实战 ★最高评级"角标。"""
+        best_rating: dict[int, int] = {}
+        for combo in self._matched_combos:
+            for hero_id in (combo.hero1_id, combo.hero2_id):
+                best_rating[hero_id] = max(best_rating.get(hero_id, 0), combo.rating)
+        for card in self._cards:
+            rating = best_rating.get(card.hero_id)
+            card.set_combo_badge(f"实战 ★{rating}" if rating else None)
+
+    def _render_combo_chips(self) -> None:
+        """重建配队 chip：不命中当前号位的置灰保留，命中的标注落座武将。"""
+        while self._combo_chip_flow.count():
+            item = self._combo_chip_flow.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.deleteLater()
+
+        seat = self._combo_seat_combo.currentIndex()  # 0 = 全部
+        for combo in self._matched_combos:
+            suffix = ""
+            if seat > 0:
+                seaters = [
+                    name
+                    for name, seats in (
+                        (combo.hero1_name, combo.hero1_seats),
+                        (combo.hero2_name, combo.hero2_seats),
+                    )
+                    if seat in seats
+                ]
+                suffix = f" · {seat}号:{'/'.join(seaters)}" if seaters else ""
+            chip = QPushButton(
+                f"★{combo.rating} {combo.hero1_name}[{format_seats(combo.hero1_seats)}]"
+                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]{suffix}"
+            )
+            chip.setObjectName("recommendationComboChip")
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.setToolTip(self._combo_tooltip(combo))
+            chip.setEnabled(seat == 0 or seat in combo.hero1_seats or seat in combo.hero2_seats)
+            chip.clicked.connect(lambda checked=False, target=combo: self._show_combo_detail(target))
+            self._combo_chip_flow.addWidget(chip)
+        self._combo_strip.setVisible(bool(self._matched_combos))
+
+    @staticmethod
+    def _combo_tooltip(combo) -> str:
+        seats = (
+            f"{combo.hero1_name}[{format_seats(combo.hero1_seats)}] "
+            f"+ {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
+        )
+        return f"{seats}\n{combo.note}" if combo.note else seats
+
+    def _toggle_combo_chips(self) -> None:
+        self._combo_chips_collapsed = not self._combo_chips_collapsed
+        self._combo_chips_container.setVisible(not self._combo_chips_collapsed)
+        self._combo_toggle_btn.setText("展开" if self._combo_chips_collapsed else "收起")
+
+    def _show_combo_detail(self, combo) -> None:
+        """配队详情：2×2 号位示意 + 座次要求 + note 原文。"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"实战配队 ★{combo.rating} · {combo.hero1_name} + {combo.hero2_name}")
+        dialog.setMinimumWidth(430)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(PageHeader(
+            f"实战 ★{combo.rating}",
+            f"{combo.hero1_name} + {combo.hero2_name}",
+        ))
+
+        seat_names: dict[int, list[str]] = {seat: [] for seat in (1, 2, 3, 4)}
+        for name, seat_list in (
+            (combo.hero1_name, combo.hero1_seats),
+            (combo.hero2_name, combo.hero2_seats),
+        ):
+            for seat in seat_list:
+                seat_names[seat].append(name)
+        seat_grid = QGridLayout()
+        seat_grid.setSpacing(6)
+        for index, seat in enumerate((1, 2, 3, 4)):
+            names = "、".join(seat_names[seat]) if seat_names[seat] else "--"
+            cell = QLabel(f"{seat}号位\n{names}")
+            cell.setObjectName("recommendationComboSeatCell")
+            cell.setStyleSheet(
+                "border: 1px solid #65758b; border-radius: 6px; padding: 8px;"
+                "font-size: 13px;"
+            )
+            cell.setMinimumHeight(52)
+            cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            seat_grid.addWidget(cell, index // 2, index % 2)
+        layout.addLayout(seat_grid)
+
+        requirement = QLabel(
+            f"座次要求: {combo.hero1_name}[{format_seats(combo.hero1_seats)}] "
+            f"· {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
+        )
+        requirement.setWordWrap(True)
+        layout.addWidget(requirement)
+
+        if combo.note:
+            note_label = QLabel(combo.note)
+            note_label.setWordWrap(True)
+            note_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(note_label)
+
+        footer = DialogFooter(accept_text="关闭", show_cancel=False, accept_role=ROLE_SECONDARY)
+        footer.accepted.connect(dialog.accept)
+        layout.addWidget(footer)
+        dialog.exec()
 
     def refresh_faction_colors(self) -> None:
         """重新应用当前势力颜色，不改变 OCR 识别和推荐数据。"""
@@ -535,6 +713,9 @@ class RecommendationPanel(QWidget):
             hero = self._hero_mgr.get_hero_by_name(name)
             if hero:
                 self._load_real_synergies(idx - 1, hero.id)
+
+        # 当前 8 名武将中匹配实战配队并刷新横条与角标
+        self._refresh_combo_strip()
 
         # 对当前 8 个槽位按胜率排名，前三分别赋予金/银/铜牌
         self._apply_medal_rankings()

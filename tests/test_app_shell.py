@@ -181,6 +181,7 @@ def test_shell_exposes_all_compatible_actions_and_shortcuts(window) -> None:
         "data_management",
         "reload",
         "official_import",
+        "combos_import",
         "fetch_all",
         "fetch_incremental",
         "fetch_specific",
@@ -189,13 +190,14 @@ def test_shell_exposes_all_compatible_actions_and_shortcuts(window) -> None:
         "guide_specific",
         "synergy_single",
         "synergy_pair",
+        "synergy_combos",
         "announcement_check",
         "announcement_log",
         "about",
     }
 
     assert set(window._actions) == expected_keys
-    assert len(window._actions) == 18
+    assert len(window._actions) == 20
     assert window._actions["reload"].shortcut().toString() == "F5"
     assert window._actions["exit"].shortcut().toString() == "Ctrl+Q"
 
@@ -215,12 +217,13 @@ def test_legacy_and_shell_menus_reuse_the_same_actions(window) -> None:
     settings_actions = _leaf_actions(window._settings_menu)
 
     assert {id(action) for action in legacy_actions} == all_action_ids
-    assert len(library_actions) == 12
+    assert len(library_actions) == 14
     assert {id(action) for action in library_actions} == {
         id(window._actions[name])
         for name in {
             "reload",
             "official_import",
+            "combos_import",
             "announcement_check",
             "announcement_log",
             "fetch_all",
@@ -231,6 +234,7 @@ def test_legacy_and_shell_menus_reuse_the_same_actions(window) -> None:
             "guide_specific",
             "synergy_single",
             "synergy_pair",
+            "synergy_combos",
         }
     }
     assert len(settings_actions) == 6

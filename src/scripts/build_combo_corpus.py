@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""生成组合RAG语料：csv亮点块 + combos md深解块，按武将对去重合并 + 统计。
+"""生成组合RAG语料：csv亮点块 + combos md深解块 + 手录导入块，按武将对去重合并 + 统计。
 
 块结构（indexer _norm_combo 消费）：
   block_id = combo_{A}_{B}（武将名排序保证唯一；孟尝君+黄月英深解按曲拆 _1..4）
-  hero_a / hero_b / highlight(csv亮点) / mechanism(md深解) / bv / pub_date / source_md / related
+  hero_a / hero_b / highlight(csv亮点/手录) / mechanism(md深解) / bv / pub_date / source_md / related
 设计点 A：组合块不贴 hero（_norm_combo 不设 hero 元数据）
 设计点 C：强力组合多选展开、盘点按搭档拆、孟尝君深解按曲拆、csv一行一块
-设计点 D：同武将对合并（csv亮点+md深解），block_id 唯一
+设计点 D：同武将对合并（csv亮点+md深解+手录），block_id 唯一
 """
 import csv
 import re
@@ -69,6 +69,20 @@ with open(COMBOS / 'bilibili_videos_weijiang.csv', encoding='utf-8') as f:
             'pub_date': (r.get('发布时间') or '').strip(),
         }
 print('csv 组合:', len(csv_data))
+
+# 手录导入（combos_import.csv：实战配队确认纳入、无视频来源，列头与系列 csv 对齐）
+import_data = {}  # key -> {highlight}
+import_csv = COMBOS / 'combos_import.csv'
+if import_csv.exists():
+    with open(import_csv, encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            a = (r.get('武將1') or r.get('武将1') or '').strip()
+            b = (r.get('武將2') or r.get('武将2') or '').strip()
+            desc = (r.get('描述') or '').strip()
+            if a not in NAMES or b not in NAMES or not desc:
+                continue
+            import_data[key(a, b)] = {'highlight': desc}
+    print('手录导入组合:', len(import_data))
 
 # ============================================================
 # 2. combos md 深解
@@ -221,6 +235,24 @@ for k, d in md_data.items():
         }
         md_only += 1
 
+# 手录导入合并（无视频；同 bid 已有块则亮点并句，否则新建）
+import_merged = 0
+for k, d in import_data.items():
+    bid = base_bid(k)
+    if bid in blocks:
+        existing = blocks[bid]['highlight']
+        if d['highlight'] and d['highlight'] not in existing:
+            blocks[bid]['highlight'] = f'{existing}；{d["highlight"]}' if existing else d['highlight']
+        import_merged += 1
+    else:
+        blocks[bid] = {
+            'block_id': bid, 'hero_a': k[0], 'hero_b': k[1],
+            'highlight': d['highlight'], 'bv': '', 'pub_date': '',
+            'mechanism': '', 'source_md': '', 'song': '',
+            'related': [f'武将:{k[0]}', f'武将:{k[1]}'],
+        }
+print('手录导入块:', len(import_data), '（并入既有块:', import_merged, '）')
+
 # 孟尝君+黄月英按曲拆（独立后缀 bid，不与 csv 亮点块合并）
 mk = key('孟尝君', '黄月英')
 for i, (song, txt) in enumerate(songs, 1):
@@ -237,7 +269,8 @@ for i, (song, txt) in enumerate(songs, 1):
 # ============================================================
 merged = sum(1 for b in blocks.values() if b['highlight'] and b['mechanism'])
 csv_only = sum(1 for b in blocks.values() if b['highlight'] and not b['mechanism'])
-print(f'总块数: {len(blocks)}  | 合并(csv+md): {merged}  | csv独有: {csv_only}  | md独有: {md_only}')
+import_only = len(import_data) - import_merged
+print(f'总块数: {len(blocks)}  | 合并(csv+md): {merged}  | csv独有: {csv_only}  | md独有: {md_only}  | 手录并入: {import_merged}  | 手录独有: {import_only}')
 
 # block_id 唯一性校验
 ids = [b['block_id'] for b in blocks.values()]
@@ -249,8 +282,8 @@ save_json(CORPUS / '组合RAG语料.json', blocks_list)
 
 # 输出 md（人读版）
 md = ['# 组合RAG语料', '',
-      '> 来源：raw_guides/combos（csv 386 + 4 md）。设计点A不贴hero，D按武将对合并。',
-      f'> 总块 {len(blocks_list)}（合并 {merged} / csv独有 {csv_only} / md独有 {md_only}）。', '']
+      f'> 来源：raw_guides/combos（系列csv {len(csv_data)} + 4 md + 手录导入 {len(import_data)}）。设计点A不贴hero，D按武将对合并。',
+      f'> 总块 {len(blocks_list)}（合并 {merged} / csv独有 {csv_only} / md独有 {md_only} / 手录独有 {import_only}）。', '']
 for b in sorted(blocks_list, key=lambda x: x['block_id']):
     md.append(f'### {b["block_id"]}')
     md.append(f'【武将】{b["hero_a"]} + {b["hero_b"]}')

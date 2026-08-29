@@ -97,6 +97,40 @@ class SynergyFetchService(BaseFetchService):
             args.append("--browser")
         self._start_process(args)
 
+    def fetch_pairs_list(
+        self,
+        pairs: list[dict],
+        backend: str = "api",
+        overwrite: bool = False,
+        use_rag: bool = True,
+    ) -> None:
+        """实战配队清单：传入显式 id 配对列表，写入临时文件后调用 --synergy-list
+
+        pairs 元素格式：{"hero_a_id": int, "hero_b_id": int}
+        """
+        if self._is_busy():
+            return
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(pairs, tmp, ensure_ascii=False, indent=2)
+        tmp_path = tmp.name
+        tmp.close()
+        self._context = {
+            "mode": "pairs_list",
+            "tmp_path": tmp_path,
+            "backend": backend,
+            "overwrite": overwrite,
+            "use_rag": use_rag,
+        }
+        self.status_changed.emit("正在生成相性评分...")
+        args = ["-m", "src.scraper.ai_batch", "--synergy-list", tmp_path]
+        if not use_rag:
+            args.append("--no-rag")
+        if overwrite:
+            args.append("--update")
+        if backend == "browser":
+            args.append("--browser")
+        self._start_process(args)
+
     # ---------------------------------------------------------------
     # 钩子
     # ---------------------------------------------------------------

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.synergy_fetch_service import SynergyFetchService
 from src.business.fetching.synergy_reload_worker import SynergyReloadWorker
+from src.data.combo_manager import ComboManager
 from src.data.manager import DataIssue
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -19,6 +20,7 @@ from src.ui.app.chinese_translator import install_details_button_translator
 from src.ui.generation.backend_choose_dialog import BackendChooseDialog
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
+from src.ui.generation.synergy_combos_dialog import SynergyCombosDialog
 from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
 from src.ui.generation.synergy_single_dialog import SynergySingleDialog
 
@@ -38,6 +40,7 @@ class AiGenerationWorkflow(QObject):
         guide_service: GuideFetchService,
         synergy_service: SynergyFetchService,
         parent: QWidget | None = None,
+        combo_manager: ComboManager | None = None,
     ) -> None:
         super().__init__(parent)
         self._hero_manager = hero_manager
@@ -45,6 +48,7 @@ class AiGenerationWorkflow(QObject):
         self._synergy_manager = synergy_manager
         self._guide_service = guide_service
         self._synergy_service = synergy_service
+        self._combo_manager = combo_manager or ComboManager()
         self._window = parent
         self._guide_progress_dialog: GuideProgressDialog | None = None
         self._synergy_progress_dialog: GuideProgressDialog | None = None
@@ -161,6 +165,39 @@ class AiGenerationWorkflow(QObject):
                 dialog.selected_hero,
                 all_heroes,
                 backend=backend,
+                use_rag=use_rag,
+            ),
+        )
+
+    def request_synergy_combos(self) -> None:
+        """实战配队批量生成：按评级/座次/生成状态筛选 combos 配对清单。"""
+        if not self._require_heroes():
+            return
+        dialog = SynergyCombosDialog(
+            self._synergy_manager,
+            combo_manager=self._combo_manager,
+            parent=self._window,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_pairs:
+            return
+
+        pairs = dialog.selected_pairs
+        from src.config.env import get_api_config
+        from src.scraper.ai.prompt_utils import estimate_item_cost
+
+        estimation = estimate_item_cost(len(pairs), "synergy", get_api_config()["model"])
+        estimation["estimate_kind"] = "synergy"
+        choice = self._choose_backend("实战配队相性生成", estimation)
+        if choice is None:
+            return
+        backend, use_rag = choice
+        self._start_synergy_generation(
+            len(pairs),
+            "实战配队相性生成进度",
+            lambda: self._synergy_service.fetch_pairs_list(
+                pairs,
+                backend=backend,
+                overwrite=dialog.overwrite_existing,
                 use_rag=use_rag,
             ),
         )

@@ -46,3 +46,33 @@ def test_fetch_single_appends_no_rag_when_classic(monkeypatch) -> None:
         use_rag=False,
     )
     assert "--no-rag" in captured["args"]
+
+
+def test_fetch_pairs_list_builds_synergy_list_args(monkeypatch) -> None:
+    """实战配队清单：经典模式参数包含 --synergy-list 与 --no-rag。"""
+    service, captured = _service_with_captured_args(monkeypatch)
+    service.fetch_pairs_list(
+        [{"hero_a_id": 1, "hero_b_id": 2}],
+        backend="api",
+        overwrite=False,
+        use_rag=False,
+    )
+    args = captured["args"]
+    assert "--synergy-list" in args
+    assert "--no-rag" in args
+    assert "--update" not in args
+
+
+def test_fetch_pairs_list_overwrite_appends_update(monkeypatch) -> None:
+    """实战配队清单：覆盖模式参数包含 --update 且不包含 --no-rag。"""
+    service, captured = _service_with_captured_args(monkeypatch)
+    service.fetch_pairs_list(
+        [{"hero_a_id": 1, "hero_b_id": 2}],
+        backend="api",
+        overwrite=True,
+        use_rag=True,
+    )
+    args = captured["args"]
+    assert "--synergy-list" in args
+    assert "--update" in args
+    assert "--no-rag" not in args
