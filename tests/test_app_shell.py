@@ -82,11 +82,18 @@ def test_navigation_switches_pages_and_programmatic_change_syncs_context(window)
     assert window._official_import_button.isHidden()
     assert window._maintenance_button.isHidden()
 
+    window._navigation.navigation_button(2).click()
+
+    assert window._tabs.currentWidget() is window._peak_select
+    assert window._navigation.current_index() == 2
+    assert window._context_header.title_label.text() == "巅峰赛选将"
+    assert not hasattr(window._peak_select, "_page_title_label")
+
     window._tabs.setCurrentWidget(window._match_guide)
 
-    assert window._navigation.current_index() == 2
+    assert window._navigation.current_index() == 3
     assert window._context_header.title_label.text() == "对局攻略"
-    assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[2][1]
+    assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[3][1]
     assert not hasattr(window._match_guide, "_page_title_label")
 
 

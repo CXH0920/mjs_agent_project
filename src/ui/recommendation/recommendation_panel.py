@@ -16,7 +16,6 @@ from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -37,17 +36,16 @@ from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
+from src.ui.shared.combo_detail import show_combo_detail
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.shared.widgets import (
-    DialogFooter,
     FlowLayout,
     NoticeBanner,
     PageActionBar,
-    PageHeader,
     EmptyState,
     show_toast,
 )
@@ -466,54 +464,7 @@ class RecommendationPanel(QWidget):
 
     def _show_combo_detail(self, combo) -> None:
         """配队详情：2×2 号位示意 + 座次要求 + note 原文。"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"实战配队 ★{combo.rating} · {combo.hero1_name} + {combo.hero2_name}")
-        dialog.setMinimumWidth(430)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(PageHeader(
-            f"实战 ★{combo.rating}",
-            f"{combo.hero1_name} + {combo.hero2_name}",
-        ))
-
-        seat_names: dict[int, list[str]] = {seat: [] for seat in (1, 2, 3, 4)}
-        for name, seat_list in (
-            (combo.hero1_name, combo.hero1_seats),
-            (combo.hero2_name, combo.hero2_seats),
-        ):
-            for seat in seat_list:
-                seat_names[seat].append(name)
-        seat_grid = QGridLayout()
-        seat_grid.setSpacing(6)
-        for index, seat in enumerate((1, 2, 3, 4)):
-            names = "、".join(seat_names[seat]) if seat_names[seat] else "--"
-            cell = QLabel(f"{seat}号位\n{names}")
-            cell.setObjectName("recommendationComboSeatCell")
-            cell.setStyleSheet(
-                "border: 1px solid #65758b; border-radius: 6px; padding: 8px;"
-                "font-size: 13px;"
-            )
-            cell.setMinimumHeight(52)
-            cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            seat_grid.addWidget(cell, index // 2, index % 2)
-        layout.addLayout(seat_grid)
-
-        requirement = QLabel(
-            f"座次要求: {combo.hero1_name}[{format_seats(combo.hero1_seats)}] "
-            f"· {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
-        )
-        requirement.setWordWrap(True)
-        layout.addWidget(requirement)
-
-        if combo.note:
-            note_label = QLabel(combo.note)
-            note_label.setWordWrap(True)
-            note_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            layout.addWidget(note_label)
-
-        footer = DialogFooter(accept_text="关闭", show_cancel=False, accept_role=ROLE_SECONDARY)
-        footer.accepted.connect(dialog.accept)
-        layout.addWidget(footer)
-        dialog.exec()
+        show_combo_detail(self, combo)
 
     def refresh_faction_colors(self) -> None:
         """重新应用当前势力颜色，不改变 OCR 识别和推荐数据。"""

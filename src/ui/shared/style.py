@@ -1134,6 +1134,16 @@ QFrame#matchHeroCard[cardState="unknown"] {{
     background-color: {SUBTLE_SURFACE};
     border-left-color: {BORDER_STRONG};
 }}
+QFrame#peakHeroCard {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-left: 3px solid {PRIMARY};
+    border-radius: {RADIUS_MD}px;
+}}
+QFrame#peakHeroCard[heroState="pending"] {{
+    background-color: {SUBTLE_SURFACE};
+    border-left-color: {BORDER_STRONG};
+}}
 QWidget#matchPortraitFrame {{
     background-color: {SUBTLE_SURFACE};
     border: 1px solid {BORDER};

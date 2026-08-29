@@ -37,6 +37,7 @@ from src.data.manager import (
 )
 from src.data.card_catalog import CardCatalogService
 from src.data.announcement_manager import AnnouncementManager, AnnouncementStatus
+from src.data.peak_win_rate_repository import load_peak_win_rates
 from src.business.announcement.announcement_service import AnnouncementCheckResult, AnnouncementService
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.scraper.official_source.announcement import build_update_candidates, fetch_baike_heroes
@@ -55,6 +56,7 @@ from src.business.fetching.synergy_fetch_service import SynergyFetchService
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
 from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
@@ -76,6 +78,7 @@ class MainWindow(QMainWindow):
     _PAGE_CONTEXTS_BASE = (
         ("资料库", "浏览并维护武将、攻略、相性和卡牌数据。"),
         ("选将推荐", "根据当前阵容查看武将优先级与搭配依据。"),
+        ("巅峰赛选将", "识别巅峰赛禁选结果，实时查看剩余候选武将。"),
         ("对局攻略", "确认敌我阵容并查看本局策略与胜率信息。"),
     )
     PAGE_CONTEXTS = _PAGE_CONTEXTS_BASE + (
@@ -575,6 +578,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         """在窗口销毁前结束轮询与 OCR worker。"""
         self._poll_coordinator.shutdown()
+        self._peak_select.shutdown()
         self._capture_service.shutdown()
         super().closeEvent(event)
 
@@ -707,6 +711,7 @@ class MainWindow(QMainWindow):
         _nav_icons = [
             self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon),
             self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay),
             self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
         ]
         if is_full_build():
@@ -777,7 +782,19 @@ class MainWindow(QMainWindow):
         self._recommendation.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
 
-        # Tab 3: 对局攻略（42/58 阵容与攻略工作台）
+        # Tab 3: 巅峰赛选将（2v2 禁选后剩余候选池实时识别）
+        self._peak_select = PeakSelectPanel(
+            capture_service=self._capture_service,
+            ocr_service=self._ocr_service,
+            hero_names_provider=lambda: [hero.name for hero in self._data.heroes.list_heroes()],
+            hero_manager=self._data.heroes,
+            win_rates_provider=load_peak_win_rates,
+            combo_manager=self._combo_manager,
+        )
+        self._peak_select.request_mumu_config.connect(self._open_mumu_config)
+        self._tabs.addTab(self._peak_select, "巅峰赛选将")
+
+        # Tab 4: 对局攻略（42/58 阵容与攻略工作台）
         self._match_guide = MatchGuidePanel(
             self._data.heroes,
             guide_manager=self._data.guides,
@@ -786,7 +803,7 @@ class MainWindow(QMainWindow):
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")
 
-        # Tab 4: 知识库维护（RAG 语料/索引本地维护工作台，仅完整版）
+        # Tab 5: 知识库维护（RAG 语料/索引本地维护工作台，仅完整版）
         # lazy import：精简版不 import rag 依赖链，配合 spec excludes 排除 rag
         if is_full_build():
             from src.ui.maintenance.rag_maintenance_panel import RagMaintenancePanel

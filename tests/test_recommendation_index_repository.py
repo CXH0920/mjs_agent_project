@@ -189,12 +189,18 @@ def test_rebuild_reports_locked_snapshot_file_and_cleans_temporary_file(tmp_path
 
 
 def test_recommendation_index_stale_state_is_persistent(tmp_path: Path) -> None:
+    import os
+
     state_path = tmp_path / "recommendation_state.json"
     index_path = tmp_path / "recommendation.csv"
     source_paths = (tmp_path / "win.csv", tmp_path / "pick.csv", tmp_path / "ban.csv")
     index_path.write_text("武将\n", encoding="utf-8")
     for source in source_paths:
         source.write_text("武将\n", encoding="utf-8")
+    # 钉死 mtime：连续快速写入可能落在同一时间戳刻度内，源文件不再严格新于快照
+    os.utime(index_path, (1_000.0, 1_000.0))
+    for source in source_paths:
+        os.utime(source, (2_000.0, 2_000.0))
 
     assert is_recommendation_index_stale(
         state_path, index_path=index_path, source_paths=source_paths,

@@ -102,7 +102,7 @@ class NavigationRail(QFrame):
 
     EXPANDED_WIDTH = 156
     COLLAPSED_WIDTH = 56
-    _PAGE_LABELS_BASE = ("资料库", "选将推荐", "对局攻略")
+    _PAGE_LABELS_BASE = ("资料库", "选将推荐", "巅峰赛选将", "对局攻略")
     PAGE_LABELS = _PAGE_LABELS_BASE + ("知识库维护",) if is_full_build() else _PAGE_LABELS_BASE
 
     def __init__(
