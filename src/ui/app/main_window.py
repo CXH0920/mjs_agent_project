@@ -880,7 +880,7 @@ class MainWindow(QMainWindow):
         is_library = index == 0
         self._official_import_button.setVisible(is_library)
         self._maintenance_button.setVisible(is_library)
-        if index == 3 and hasattr(self, "_rag_maintenance"):
+        if self._tabs.tabText(index) == "知识库维护" and hasattr(self, "_rag_maintenance"):
             self._rag_maintenance.refresh()
 
     def _on_navigation_collapsed_changed(self, collapsed: bool) -> None:

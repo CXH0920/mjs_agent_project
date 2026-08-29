@@ -1404,4 +1404,86 @@ QPlainTextEdit#indexRefineSource, QPlainTextEdit#indexRefineFieldEditor {{
 }}
 QPlainTextEdit#indexRefineSource {{
     font-size: {FONT_SIZE_SM}px;
+}}
+
+/* === 知识库维护：布局重排（左栏维护对象导航 + 折叠执行日志） === */
+QFrame#maintenanceSourceNav {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD}px;
+}}
+QScrollArea#maintenanceNavScroll {{
+    background-color: transparent;
+    border: none;
+}}
+QLabel#maintenanceNavGroup, QLabel#maintenanceNavGroupCount {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+    font-weight: bold;
+    background-color: transparent;
+}}
+QFrame#maintenanceNavItem {{
+    background-color: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: {RADIUS_SM}px;
+}}
+QFrame#maintenanceNavItem:hover {{
+    background-color: {SUBTLE_SURFACE};
+}}
+QFrame#maintenanceNavItem[selected="true"] {{
+    background-color: {PRIMARY_SOFT};
+    border-left: 3px solid {PRIMARY};
+}}
+QLabel#maintenanceItemName {{
+    color: {TEXT_PRIMARY};
+    font-size: {FONT_SIZE_MD}px;
+    background-color: transparent;
+}}
+QFrame#maintenanceNavItem[selected="true"] QLabel#maintenanceItemName {{
+    color: {PRIMARY};
+    font-weight: bold;
+}}
+QLabel#maintenanceStatusDot {{
+    min-width: 8px;
+    max-width: 8px;
+    min-height: 8px;
+    max-height: 8px;
+    border-radius: 4px;
+    background-color: {MUTED_TEXT};
+}}
+QLabel#maintenanceStatusDot[tone="warning"] {{ background-color: {WARNING}; }}
+QLabel#maintenanceStatusDot[tone="danger"] {{ background-color: {DANGER}; }}
+QLabel#maintenanceStatusText {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+    background-color: transparent;
+}}
+QLabel#maintenanceStatusText[tone="warning"] {{ color: {WARNING}; }}
+QLabel#maintenanceStatusText[tone="danger"] {{ color: {DANGER}; }}
+QToolButton#maintenanceRebuildButton {{
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0;
+    font-size: {FONT_SIZE_MD}px;
+}}
+QFrame#scriptLogCollapsed {{
+    background-color: transparent;
+    border: none;
+}}
+QLabel#scriptLogTitle {{
+    font-weight: bold;
+    background-color: transparent;
+}}
+QLabel#scriptLogMeta {{
+    color: {MUTED_TEXT};
+    font-size: {FONT_SIZE_SM}px;
+    background-color: transparent;
+}}
+QPushButton#scriptLogToggleButton {{
+    min-height: 22px;
+    padding: 0 10px;
+    font-size: {FONT_SIZE_SM}px;
 }}"""

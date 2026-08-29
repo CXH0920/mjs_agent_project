@@ -1,31 +1,26 @@
 # -*- coding: utf-8 -*-
 """知识库维护工作台（主导航第 4 页）。
 
-功能：
-- 变更预览：对比权威源（data/、docs/）与 data/rag_corpus 语料的修改时间，标记 8 个语料任务状态；
-- 审计提示：未归类武将、专属牌引用未知武将等人工维护清单；
-- 一键执行：本地运行 scripts/maintain_rag.py 重建语料/索引（不再依赖外部 mjs 仓库），实时输出日志。
+布局重排后由 MaintenanceWorkspace 承载结构：左栏 10 项（5 个可编辑维护对象 +
+5 个只读语料，状态点对齐语料任务状态）+ 右侧数据源工作区（复用现有 5 个面板）+
+底部折叠执行日志。本面板只保留业务逻辑：语料状态计算、审计提示、索引精化与
+本地一键执行 scripts/maintain_rag.py（ScriptRunner，实时输出日志）。
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
-    QSplitter,
-    QTabWidget,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -55,6 +50,7 @@ from src.ui.shared.style import (
 )
 from src.ui.shared.widgets import PageActionBar, ScriptRunner
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
+from src.ui.maintenance.maintenance_workspace import MaintenanceWorkspace
 from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 
 # 语料任务：名称 -> (源文件, 输出语料文件)；定义与 scripts/maintain_rag.py 共用
@@ -62,6 +58,26 @@ from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
     (task["name"], task["sources"], task["outputs"]) for task in _RAG_TASKS
 ]
+
+# 左栏上组「维护对象」：(key/显示名, 语料任务名)；key 与 AuditIssue.target_tab
+# 去掉「维护」后缀同名（如「武将分类维护」→「武将分类」），audit_service 无需改动
+EDITABLE_SOURCE_ITEMS: list[tuple[str, str]] = [
+    ("武将分类", "武将分类语料"),
+    ("专属牌", "特殊机制语料"),
+    ("卡牌点数", "点数花色语料"),
+    ("装备属性", "装备属性语料"),
+    ("元规则母本", "元规则/术语/FAQ"),
+]
+
+# 左栏下组「只读语料」：(key/显示名, 语料任务名)；数据源不在本模块内，仅状态与重建
+READONLY_CORPUS_ITEMS: list[tuple[str, str]] = [
+    ("武将语料", "武将语料"),
+    ("卡牌语料", "卡牌语料"),
+    ("加强削弱", "加强削弱语料"),
+    ("组合语料", "组合语料"),
+    ("武将攻略", "武将攻略语料"),
+]
+READONLY_TASK_BY_KEY = dict(READONLY_CORPUS_ITEMS)
 
 PYTHON = sys.executable
 
@@ -168,13 +184,6 @@ class RagMaintenancePanel(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(8)
 
-        self._tabs = QTabWidget()
-        self._tabs.setObjectName("librarySectionTabs")
-        status_tab = QWidget()
-        status_layout = QVBoxLayout(status_tab)
-        status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(8)
-
         self._action_bar = PageActionBar("正在检查……", self)
         self._status_label = self._action_bar.status_label
         # 查看类操作
@@ -190,37 +199,16 @@ class RagMaintenancePanel(QWidget):
         _divider.setFrameShape(QFrame.Shape.VLine)
         _divider.setFixedHeight(18)
         self._action_bar.actions_layout.addWidget(_divider)
-        # 执行类操作
-        self._hero_button = QPushButton("重建武将语料")
-        self._hero_button.clicked.connect(lambda: self._run(["--force", "--only", "武将"]))
-        self._action_bar.add_action(self._hero_button, ROLE_SECONDARY)
+        # 执行类操作（单项重建入口收敛到左栏 ↻，此处保留全部粒度两种）
         self._corpus_button = QPushButton("重建全部语料")
         self._corpus_button.clicked.connect(lambda: self._run(["--force"]))
         self._action_bar.add_action(self._corpus_button, ROLE_SECONDARY)
         self._index_button = QPushButton("重建语料+索引")
         self._index_button.clicked.connect(lambda: self._run(["--force", "--build-index"]))
         self._action_bar.add_action(self._index_button, ROLE_PRIMARY)
-        status_layout.addWidget(self._action_bar)
+        layout.addWidget(self._action_bar)
 
-        self._table_surface = QFrame()
-        self._table_surface.setObjectName("ragTableSurface")
-        table_layout = QVBoxLayout(self._table_surface)
-        table_layout.setContentsMargins(10, 10, 10, 10)
-        table_layout.setSpacing(0)
-        self._table = QTableWidget(0, 4)
-        self._table.setObjectName("ragTaskTable")
-        self._table.setHorizontalHeaderLabels(["语料任务", "状态", "输出块数", "数据源"])
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setShowGrid(False)
-        self._table.verticalHeader().setVisible(False)
-        table_layout.addWidget(self._table)
-
-        # 审计区：标题 + 逐条提示行（每条可带跳转按钮）
+        # 审计提示条：跨数据源人工维护清单，有提示才出现（最多 3 条 + 折叠剩余）
         self._audit_banner = QFrame()
         self._audit_banner.setObjectName("noticeBanner")
         banner_layout = QHBoxLayout(self._audit_banner)
@@ -240,67 +228,53 @@ class RagMaintenancePanel(QWidget):
         banner_text_layout.addWidget(self._audit_list)
         banner_layout.addLayout(banner_text_layout, 1)
         set_tone(self._audit_banner, TONE_SUCCESS)
+        self._audit_banner.hide()
+        layout.addWidget(self._audit_banner)
 
-        # 上半：任务表 + 审计；下半：日志（QSplitter 可拖拽/折叠）
-        top_widget = QWidget()
-        top_layout = QVBoxLayout(top_widget)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(8)
-        top_layout.addWidget(self._table_surface, 1)
-        top_layout.addWidget(self._audit_banner)
+        # 工作台外壳：左栏导航 + 右侧面板（实例复用）+ 底部折叠日志
+        self._workspace = MaintenanceWorkspace(self)
+        self._log = self._workspace.log
+        self._setup_sources()
+        self._workspace.rebuild_requested.connect(
+            lambda task: self._run(["--force", "--only", task]))
+        self._workspace.meta_requested.connect(self._show_corpus_meta)
+        layout.addWidget(self._workspace, 1)
 
-        self._log_surface = QFrame()
-        self._log_surface.setObjectName("ragLogSurface")
-        log_layout = QVBoxLayout(self._log_surface)
-        log_layout.setContentsMargins(10, 10, 10, 10)
-        log_layout.setSpacing(0)
-        self._log = QPlainTextEdit()
-        self._log.setObjectName("ragMaintenanceLog")
-        self._log.setReadOnly(True)
-        self._log.setPlaceholderText("执行日志将显示在这里……")
-        self._log.setMaximumBlockCount(2000)
-        self._log.setMinimumHeight(60)
-        log_layout.addWidget(self._log)
-
-        _splitter = QSplitter(Qt.Orientation.Vertical)
-        _splitter.setChildrenCollapsible(True)
-        _splitter.addWidget(top_widget)
-        _splitter.addWidget(self._log_surface)
-        _splitter.setSizes([520, 180])
-        status_layout.addWidget(_splitter, 1)
-        self._tabs.addTab(status_tab, "语料状态")
-
-        # 文档规则域（T0 母本入口，排在数据编辑页签之前）
+    def _setup_sources(self) -> None:
+        """创建 5 个现有面板实例并装配左栏两组导航项。"""
         self._rule_doc = RuleDocPanel(self._root)
         self._rule_doc.data_changed.connect(self._on_child_changed)
-        self._tabs.addTab(self._rule_doc, "元规则维护")
-
         self._special_cards = SpecialCardsPanel(
             SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names)
         self._special_cards.data_changed.connect(self._on_child_changed)
-        self._tabs.addTab(self._special_cards, "专属牌维护")
-
         self._card_points = CardPointsPanel(
             CardPointsRepository(self._root / "data" / "card_points.json"), self._root)
         self._card_points.data_changed.connect(self._on_child_changed)
-        self._tabs.addTab(self._card_points, "卡牌点数维护")
-
         self._equip_attrs = EquipAttrsPanel(
             EquipAttrsRepository(self._root / "data" / "equip_attrs.json"))
         self._equip_attrs.data_changed.connect(self._on_child_changed)
-        self._tabs.addTab(self._equip_attrs, "装备属性维护")
-
         self._classification = HeroClassificationPanel(
             HeroClassificationRepository(
                 self._root / "data" / "hero_classification.json", self._hero_names),
             self._hero_positions, self._hero_skills)
         self._classification.data_changed.connect(self._on_child_changed)
-        self._tabs.addTab(self._classification, "武将分类维护")
 
-        layout.addWidget(self._tabs, 1)
+        panels = {
+            "武将分类": self._classification,
+            "专属牌": self._special_cards,
+            "卡牌点数": self._card_points,
+            "装备属性": self._equip_attrs,
+            "元规则母本": self._rule_doc,
+        }
+        self._workspace.add_group("维护对象", len(EDITABLE_SOURCE_ITEMS))
+        for key, task_name in EDITABLE_SOURCE_ITEMS:
+            self._workspace.add_source(key, task_name, panels[key])
+        self._workspace.add_group("只读语料", len(READONLY_CORPUS_ITEMS))
+        for key, task_name in READONLY_CORPUS_ITEMS:
+            self._workspace.add_source(key, task_name)
 
     def _on_child_changed(self) -> None:
-        """专属牌/武将分类保存后：刷新语料状态并转发 data_changed。"""
+        """维护对象保存后：刷新语料状态（左栏状态点即时变化）并转发 data_changed。"""
         self.refresh()
         self.data_changed.emit()
 
@@ -319,51 +293,64 @@ class RagMaintenancePanel(QWidget):
         pending = list_pending(self._root / "data" / "rag_corpus")
         pending_count = len(pending)
         self._refine_button.setText(f"索引精化（{pending_count}）" if pending_count else "索引精化 ✓")
-        stale = [row["name"] for row in rows if row["status"] == "待重建"]
-        self._table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            name_item = QTableWidgetItem(row["name"])
-            mark = {"最新": "✓ ", "待重建": "⚠ ", "缺源": "✗ "}.get(row["status"], "")
-            status_item = QTableWidgetItem(mark + row["status"])
-            count_item = QTableWidgetItem(str(row["count"]) if row["count"] is not None else "-")
-            source_item = QTableWidgetItem("、".join(row["sources"]))
-            self._table.setItem(index, 0, name_item)
-            self._table.setItem(index, 1, status_item)
-            self._table.setItem(index, 2, count_item)
-            self._table.setItem(index, 3, source_item)
-        if stale:
-            self._action_bar.set_status(f"有 {len(stale)} 个语料任务待重建：{'、'.join(stale)}", TONE_WARNING)
-        else:
-            self._action_bar.set_status("所有语料与数据源一致", TONE_SUCCESS)
+        self._task_rows = {row["name"]: row for row in rows}
+        self._workspace.set_task_states(self._task_rows)
         issues = audit_summary(self._root, pending)
-        if issues:
-            set_tone(self._audit_banner, TONE_WARNING)
-            self._audit_label.setText("人工维护提示")
-            self._refresh_audit_rows(issues)
+        self._refresh_status_summary(rows, issues)
+        self._refresh_audit_banner(issues)
+
+    def _refresh_status_summary(self, rows: list[dict], issues: list[AuditIssue]) -> None:
+        """全局操作栏状态摘要：语料 N 最新 · N 待重建 · 提示 N。"""
+        fresh = sum(row["status"] == "最新" for row in rows)
+        stale = sum(row["status"] == "待重建" for row in rows)
+        missing = sum(row["status"] == "缺源" for row in rows)
+        if stale or missing:
+            parts = [f"语料 {fresh} 最新"]
+            if stale:
+                parts.append(f"{stale} 待重建")
+            if missing:
+                parts.append(f"{missing} 缺源")
+            if issues:
+                parts.append(f"提示 {len(issues)}")
+            self._action_bar.set_status(" · ".join(parts), TONE_WARNING)
         else:
-            set_tone(self._audit_banner, TONE_SUCCESS)
-            self._audit_label.setText("人工维护检查通过")
-            self._refresh_audit_rows([])
+            summary = "所有语料与数据源一致"
+            if issues:
+                summary += f" · 提示 {len(issues)}"
+            self._action_bar.set_status(summary, TONE_SUCCESS)
 
     # ---------------------------------------------------------------
-    # 审计提示行（逐条 + 跳转按钮）
+    # 审计提示条（逐条 + 跳转按钮；最多 3 条，超出折叠为「还有 N 条」）
     # ---------------------------------------------------------------
+    _MAX_AUDIT_ROWS = 3
     # 特殊按钮文案；其余类型统一用「去检查」
     _ISSUE_BUTTON_TEXT = {
         "unclassified_hero": "去归类",
         "missing_settlement": "去补全",
     }
 
-    def _refresh_audit_rows(self, issues: list[AuditIssue]) -> None:
+    def _refresh_audit_banner(self, issues: list[AuditIssue]) -> None:
+        if not issues:
+            self._audit_banner.hide()
+            return
+        set_tone(self._audit_banner, TONE_WARNING)
+        self._audit_label.setText("人工维护提示")
+        hidden = len(issues) - self._MAX_AUDIT_ROWS
         for row in self._audit_rows:
             row.setParent(None)
             row.deleteLater()
         self._audit_rows.clear()
-        for issue in issues:
+        for issue in issues[:self._MAX_AUDIT_ROWS]:
             row = self._build_audit_row(issue)
             self._audit_list_layout.addWidget(row)
             self._audit_rows.append(row)
-        self._audit_list.setVisible(bool(issues))
+        if hidden > 0:
+            note = QLabel(f"还有 {hidden} 条提示，处理后点击「刷新状态」查看全部")
+            note.setObjectName("noticeBannerMessage")
+            self._audit_list_layout.addWidget(note)
+            self._audit_rows.append(note)
+        self._audit_list.setVisible(True)
+        self._audit_banner.show()
 
     def _build_audit_row(self, issue: AuditIssue) -> QWidget:
         row = QWidget()
@@ -382,21 +369,47 @@ class RagMaintenancePanel(QWidget):
         return row
 
     def _jump_to_issue(self, issue: AuditIssue) -> None:
-        """按审计条目跳转到对应维护页签并定位目标数据。"""
+        """按审计条目跳转到左栏对应维护对象并定位目标数据。
+
+        AuditIssue.target_tab 仍是页签名（如「武将分类维护」），去掉「维护」
+        后缀即左栏项 key；audit_service 侧无需改动。
+        """
         if issue.kind == "pending_refinement":
             self._open_refinement()
             return
         if not issue.target_tab:
             return
-        for index in range(self._tabs.count()):
-            if self._tabs.tabText(index) == issue.target_tab:
-                self._tabs.setCurrentIndex(index)
-                break
+        key = issue.target_tab.removesuffix("维护")
+        if self._workspace.has_source(key):
+            self._workspace.select_source(key)
         kind = issue.kind
         if kind == "unclassified_hero":
             self._classification.focus_unclassified()
         elif kind in ("unknown_hero", "missing_settlement") and issue.target:
             self._special_cards.focus_item(*issue.target)
+
+    def _show_corpus_meta(self, key: str) -> None:
+        """只读语料项点击：弹出该语料的元信息（不切右侧）。"""
+        row = self._task_rows.get(READONLY_TASK_BY_KEY.get(key, ""))
+        if row is None:
+            return
+        expected = next(
+            (task.get("expected") for task in _RAG_TASKS if task["name"] == row["name"]), None)
+        expect_text = "动态" if expected is None else str(expected)
+        built = ""
+        for rel in row["outputs"]:
+            path = self._root / CORPUS_DIR / rel
+            if path.exists():
+                built = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(path.stat().st_mtime))
+                break
+        count = "—" if row["count"] is None else str(row["count"])
+        QMessageBox.information(
+            self, f"语料信息 · {key}",
+            f"任务：{row['name']}\n状态：{row['status']}\n"
+            f"输出块数：{count}（期望 {expect_text}）\n"
+            f"来源文件：{'、'.join(row['sources'])}\n"
+            f"上次构建：{built or '尚未构建'}",
+        )
 
     def _open_refinement(self) -> None:
         dialog = IndexRefinementDialog(self._root / "data" / "rag_corpus", self)
@@ -411,16 +424,22 @@ class RagMaintenancePanel(QWidget):
             QMessageBox.information(self, "正在执行", "已有维护任务运行中，请等待完成。")
             return
         self._set_busy(True)
+        self._workspace.expand_log()
+        self._workspace.set_log_meta("执行中…")
         self._log.clear()
         self._log.appendPlainText("$ python -m src.scripts.maintain_rag " + " ".join(args))
+        self._run_started = time.monotonic()
         self._runner.run(PYTHON, None, ['-m', 'src.scripts.maintain_rag'] + args, self._root)
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
+        self._workspace.on_log_output(text)
         self._log.appendPlainText(text.rstrip("\n"))
 
     def _on_finished(self, code: int) -> None:
         self._set_busy(False)
+        elapsed = time.monotonic() - getattr(self, "_run_started", time.monotonic())
+        self._workspace.set_log_meta(f"退出码 {code} · {elapsed:.1f}s")
         if code == 0:
             self._log.appendPlainText("\n✔ 执行完成")
         else:
@@ -428,7 +447,8 @@ class RagMaintenancePanel(QWidget):
         self.refresh()
 
     def _set_busy(self, busy: bool) -> None:
-        # 执行期间一并禁用「索引精化」入口（#55）
-        for button in (self._refresh_button, self._hero_button, self._corpus_button,
+        # 执行期间一并禁用「索引精化」入口（#55）与左栏切换/单项重建
+        for button in (self._refresh_button, self._corpus_button,
                        self._index_button, self._refine_button):
             button.setEnabled(not busy)
+        self._workspace.set_interactive(not busy)

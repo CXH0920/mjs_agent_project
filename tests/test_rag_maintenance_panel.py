@@ -132,12 +132,12 @@ def test_panel_renders(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
     panel = RagMaintenancePanel(root=root)
-    assert panel._tabs.count() == 6
-    assert [panel._tabs.tabText(i) for i in range(panel._tabs.count())] == [
-        "语料状态", "元规则维护", "专属牌维护", "卡牌点数维护", "装备属性维护",
-        "武将分类维护",
-    ]
-    assert panel._table.rowCount() == 10
+    # 布局重排：左栏 10 项（5 维护对象 + 5 只读语料），右侧复用 5 个现有面板
+    nav = panel._workspace.nav
+    assert nav.item_keys()[:5] == ["武将分类", "专属牌", "卡牌点数", "装备属性", "元规则母本"]
+    assert nav.item_keys()[5:] == ["武将语料", "卡牌语料", "加强削弱", "组合语料", "武将攻略"]
+    assert panel._workspace.stack.count() == 5
+    assert nav.current_key() == "武将分类"  # 默认选中首个维护对象
     assert "所有语料与数据源一致" in panel._status_label.text()
     assert "人工维护提示" in panel._audit_label.text()
     assert hasattr(panel, "_special_cards")
@@ -221,7 +221,7 @@ def test_jump_to_unclassified(tmp_path: Path) -> None:
     panel = RagMaintenancePanel(root=root)
     issue = next(i for i in audit_summary(root) if i.kind == "unclassified_hero")
     panel._jump_to_issue(issue)
-    assert panel._tabs.tabText(panel._tabs.currentIndex()) == "武将分类维护"
+    assert panel._workspace.current_source_key() == "武将分类"
     assert panel._classification._tabs.currentIndex() == 2  # 武将归类子页签
     current = panel._classification._hero_list.currentItem()
     assert current is not None
@@ -239,7 +239,7 @@ def test_jump_to_missing_settlement(tmp_path: Path) -> None:
     panel = RagMaintenancePanel(root=root)
     issue = next(i for i in audit_summary(root) if i.kind == "missing_settlement")
     panel._jump_to_issue(issue)
-    assert panel._tabs.tabText(panel._tabs.currentIndex()) == "专属牌维护"
+    assert panel._workspace.current_source_key() == "专属牌"
     assert panel._special_cards._current is not None
     assert panel._special_cards._current.name == "龙泉剑"
     panel.close()
@@ -255,8 +255,8 @@ def test_jump_to_bad_card_points(tmp_path: Path) -> None:
     panel = RagMaintenancePanel(root=root)
     issue = next(i for i in audit_summary(root) if i.kind in ("bad_card_suit", "bad_card_point"))
     panel._jump_to_issue(issue)
-    # 非法行已被 repository 过滤（仅记日志），跳转只切页签展示「加载异常」提示
-    assert panel._tabs.tabText(panel._tabs.currentIndex()) == "卡牌点数维护"
+    # 非法行已被 repository 过滤（仅记日志），跳转只定位到对应维护对象
+    assert panel._workspace.current_source_key() == "卡牌点数"
     panel.close()
 
 
@@ -287,4 +287,118 @@ def test_refine_button_shows_pending_count(tmp_path: Path) -> None:
     panel.refresh()
     assert panel._refine_button.text() == "索引精化 ✓"
     assert panel._refine_button.isEnabled()  # 无待办仍可进入浏览/管理已精化块
+    panel.close()
+
+
+# ---------------------------------------------------------------
+# 布局重排（maintenance_workspace）新增用例
+# ---------------------------------------------------------------
+
+def test_source_save_marks_nav_item_stale(tmp_path: Path) -> None:
+    """数据源变更后：对应左栏项状态变「待重建」且 ↻ 按钮可见（保存→重建闭环）。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RagMaintenancePanel(root=root)
+    nav = panel._workspace.nav
+    assert nav.status_text("专属牌") == "最新"
+    assert not nav.rebuild_button("专属牌").isVisibleTo(panel)
+    _utime(root / "data" / "special_cards.json", time.time() + 60)
+    panel.refresh()
+    assert nav.status_text("专属牌") == "待重建"
+    assert nav.rebuild_button("专属牌").isVisibleTo(panel)
+    assert nav.status_text("武将分类") == "最新"  # 其他项不受影响
+    panel.close()
+
+
+def test_rebuild_button_runs_only_matching_task(tmp_path: Path) -> None:
+    """点左栏 ↻ 触发 --only <该语料>，参数正确（维护对象与只读语料均可重建）。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RagMaintenancePanel(root=root)
+    calls: list[list[str]] = []
+    panel._run = lambda args: calls.append(args)  # 拦截，不启动真实子进程
+    panel._workspace.nav.rebuild_button("专属牌").click()
+    assert calls == [["--force", "--only", "特殊机制语料"]]
+    panel._workspace.nav.rebuild_button("武将攻略").click()
+    assert calls[-1] == ["--force", "--only", "武将攻略语料"]
+    panel.close()
+
+
+def test_audit_banner_limits_rows_and_folds_rest(tmp_path: Path) -> None:
+    """审计提示最多显示 3 条，超出折叠为「还有 N 条提示」。"""
+    _app()
+    root = _make_root(tmp_path)
+    _write(root / "data" / "special_cards.json", [
+        {"category": "专属牌", "name": "龙泉剑", "hero": "白蹄乌", "settlement": ""},
+        {"category": "专属牌", "name": "青釭剑", "hero": "乐广", "settlement": ""},
+    ])
+    panel = RagMaintenancePanel(root=root)
+    issues = audit_summary(root)
+    assert len(issues) > 3
+    note = next(row for row in panel._audit_rows
+                if "还有" in getattr(row, "text", lambda: "")())
+    assert note.text() == f"还有 {len(issues) - 3} 条提示，处理后点击「刷新状态」查看全部"
+    assert all(row.isVisibleTo(panel) for row in panel._audit_rows)
+    # 无提示时横幅整体隐藏
+    panel._refresh_audit_banner([])
+    assert not panel._audit_banner.isVisibleTo(panel)
+    panel.close()
+
+
+def test_nav_items_fit_without_scrollbar(tmp_path: Path) -> None:
+    """左栏 10 项常驻不滚动：默认态与构建态（日志展开 180px）均无纵向滚动。
+
+    按文档高度预算用 760px 窗口测；审计横幅高度随提示条目与字体浮动，
+    与「左栏内容适配」无关，先隐藏以保证断言稳定。
+    """
+    _app()
+    root = _make_root(tmp_path)
+    panel = RagMaintenancePanel(root=root)
+    panel.resize(900, 760)
+    panel._audit_banner.hide()
+    panel.show()
+    QApplication.processEvents()
+    bar = panel._workspace.nav._scroll.verticalScrollBar()
+    assert bar.maximum() == 0
+    panel._workspace.expand_log()
+    QApplication.processEvents()
+    assert bar.maximum() == 0
+    panel.close()
+
+
+def test_log_collapsed_by_default_and_expands_on_run(tmp_path: Path) -> None:
+    """日志默认折叠 32px；展开到 180px 可手动收起；折叠态累计未读输出条数。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RagMaintenancePanel(root=root)
+    ws = panel._workspace
+    assert not ws.is_log_expanded()
+    assert ws._log_surface.height() == 32
+    ws.expand_log()
+    assert ws.is_log_expanded()
+    assert ws._log_surface.height() == 180
+    ws.collapse_log()
+    assert ws._log_surface.height() == 32
+    # 折叠期间产生输出：角标显示未读行数，展开后清零
+    ws.on_log_output("line1\nline2")
+    assert ws.log_unread_badge.isVisibleTo(panel)
+    assert ws.log_unread_badge.text() == "2 行新输出"
+    ws.expand_log()
+    assert not ws.log_unread_badge.isVisibleTo(panel)
+    panel.close()
+
+
+def test_panels_reused_across_source_switch(tmp_path: Path) -> None:
+    """左侧切换数据源：右侧面板实例复用不重建（保留选中项与滚动位置）。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RagMaintenancePanel(root=root)
+    ws = panel._workspace
+    ws.select_source("武将分类")
+    classification = ws.stack.currentWidget()
+    assert classification is panel._classification
+    ws.select_source("专属牌")
+    assert ws.stack.currentWidget() is panel._special_cards
+    ws.select_source("武将分类")
+    assert ws.stack.currentWidget() is classification
     panel.close()
