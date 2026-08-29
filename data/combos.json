@@ -14,7 +14,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -31,7 +32,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -46,7 +48,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -63,7 +66,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -80,7 +84,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -97,7 +102,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -114,7 +120,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -129,7 +136,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -144,7 +152,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -161,7 +170,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -178,7 +188,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -195,7 +206,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -210,7 +222,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -225,7 +238,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘彻",
@@ -240,7 +254,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -257,7 +272,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙策",
@@ -268,7 +284,8 @@
     "position": "both",
     "note": "孙策+虞姬：强制卖血组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "孟尝君",
@@ -283,7 +300,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张春华",
@@ -300,7 +318,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -315,7 +334,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -332,7 +352,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "扶苏",
@@ -347,7 +368,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -364,7 +386,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -381,7 +404,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甄宓",
@@ -398,7 +422,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -413,7 +438,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -430,7 +456,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -445,7 +472,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -462,7 +490,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "萧何",
@@ -479,7 +508,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -496,7 +526,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵姬",
@@ -513,7 +544,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -530,7 +562,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -545,7 +578,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -560,7 +594,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -577,7 +612,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项羽",
@@ -594,7 +630,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "魏咎",
@@ -611,7 +648,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "黄月英",
@@ -626,7 +664,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -643,7 +682,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐广",
@@ -660,7 +700,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "凌统",
@@ -677,7 +718,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -692,7 +734,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -707,7 +750,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -722,7 +766,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -737,7 +782,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -752,7 +798,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -769,7 +816,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -784,7 +832,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -801,7 +850,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -818,7 +868,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "司马炎",
@@ -835,7 +886,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -850,7 +902,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -865,7 +918,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -880,7 +934,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕布",
@@ -897,7 +952,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕布",
@@ -912,7 +968,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -929,7 +986,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吴国太",
@@ -944,7 +1002,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "周勃",
@@ -961,7 +1020,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "周勃",
@@ -978,7 +1038,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -993,7 +1054,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -1010,7 +1072,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -1027,7 +1090,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太史慈",
@@ -1042,7 +1106,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -1057,7 +1122,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -1074,7 +1140,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -1091,7 +1158,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -1108,7 +1176,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "姜维",
@@ -1125,7 +1194,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -1142,7 +1212,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙坚",
@@ -1157,7 +1228,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -1174,7 +1246,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -1191,7 +1264,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙策",
@@ -1208,7 +1282,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟尝君",
@@ -1225,7 +1300,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -1240,7 +1316,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "巴清",
@@ -1255,7 +1332,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -1272,7 +1350,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -1287,7 +1366,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -1302,7 +1382,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -1319,7 +1400,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张宝",
@@ -1334,7 +1416,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张角",
@@ -1351,7 +1434,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张角",
@@ -1368,7 +1452,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -1385,7 +1470,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -1402,7 +1488,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -1419,7 +1506,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -1436,7 +1524,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹丕",
@@ -1453,7 +1542,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -1470,7 +1560,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -1487,7 +1578,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杜预",
@@ -1502,7 +1594,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -1519,7 +1612,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -1536,7 +1630,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王元姬",
@@ -1553,7 +1648,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -1570,7 +1666,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王翦",
@@ -1587,7 +1684,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王翦",
@@ -1604,7 +1702,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -1621,7 +1720,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -1638,7 +1738,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "田单",
@@ -1655,7 +1756,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "田单",
@@ -1672,7 +1774,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1689,7 +1792,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1706,7 +1810,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1723,7 +1828,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1740,7 +1846,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1757,7 +1864,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1774,7 +1882,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1791,7 +1900,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1808,7 +1918,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1825,7 +1936,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1842,7 +1954,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1859,7 +1972,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1876,7 +1990,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1893,7 +2008,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1908,7 +2024,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -1925,7 +2042,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -1942,7 +2060,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -1957,7 +2076,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -1972,7 +2092,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -1987,7 +2108,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -2002,7 +2124,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "萧何",
@@ -2017,7 +2140,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董卓",
@@ -2034,7 +2158,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蒙恬",
@@ -2051,7 +2176,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -2068,7 +2194,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -2083,7 +2210,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -2098,7 +2226,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -2113,7 +2242,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "虞姬",
@@ -2130,7 +2260,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -2145,7 +2276,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -2162,7 +2294,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -2177,7 +2310,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "西门豹",
@@ -2194,7 +2328,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "西门豹",
@@ -2211,7 +2346,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵云",
@@ -2228,7 +2364,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -2245,7 +2382,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -2262,7 +2400,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -2279,7 +2418,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -2296,7 +2436,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -2313,7 +2454,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -2330,7 +2472,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -2347,7 +2490,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -2364,7 +2508,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -2381,7 +2526,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -2398,7 +2544,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -2413,7 +2560,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陆逊",
@@ -2430,7 +2578,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陆逊",
@@ -2447,7 +2596,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -2462,7 +2612,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -2479,7 +2630,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈平",
@@ -2494,7 +2646,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈平",
@@ -2511,7 +2664,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -2528,7 +2682,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -2545,7 +2700,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -2562,7 +2718,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩信",
@@ -2579,7 +2736,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -2596,7 +2754,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -2613,7 +2772,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -2630,7 +2790,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -2647,7 +2808,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -2664,7 +2826,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -2681,7 +2844,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -2698,7 +2862,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "黄月英",
@@ -2715,7 +2880,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "龙且",
@@ -2730,7 +2896,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -2745,7 +2912,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -2762,7 +2930,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -2779,7 +2948,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "主父偃",
@@ -2796,7 +2966,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "主父偃",
@@ -2813,7 +2984,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "主父偃",
@@ -2830,7 +3002,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "主父偃",
@@ -2847,7 +3020,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐广",
@@ -2864,7 +3038,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐毅",
@@ -2879,7 +3054,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "侯嬴",
@@ -2894,7 +3070,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "侯嬴",
@@ -2911,7 +3088,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "侯嬴",
@@ -2926,7 +3104,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -2943,7 +3122,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "凌统",
@@ -2958,7 +3138,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -2975,7 +3156,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -2992,7 +3174,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -3009,7 +3192,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -3026,7 +3210,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -3041,7 +3226,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -3058,7 +3244,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘彻",
@@ -3075,7 +3262,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘彻",
@@ -3092,7 +3280,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘彻",
@@ -3109,7 +3298,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3126,7 +3316,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3143,7 +3334,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3160,7 +3352,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3177,7 +3370,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3192,7 +3386,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3207,7 +3402,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3224,7 +3420,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3241,7 +3438,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3258,7 +3456,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3273,7 +3472,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3290,7 +3490,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3305,7 +3506,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -3322,7 +3524,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -3339,7 +3542,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -3356,7 +3560,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卓文君",
@@ -3371,7 +3576,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -3386,7 +3592,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -3403,7 +3610,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -3418,7 +3626,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -3433,7 +3642,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -3450,7 +3660,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫玠",
@@ -3467,7 +3678,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫玠",
@@ -3484,7 +3696,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -3501,7 +3714,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -3518,7 +3732,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -3535,7 +3750,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "司马炎",
@@ -3550,7 +3766,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -3565,7 +3782,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -3580,7 +3798,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -3597,7 +3816,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3614,7 +3834,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3631,7 +3852,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3648,7 +3870,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3665,7 +3888,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3680,7 +3904,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3695,7 +3920,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -3712,7 +3938,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕雉",
@@ -3727,7 +3954,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕雉",
@@ -3742,7 +3970,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "周勃",
@@ -3757,7 +3986,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -3774,7 +4004,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -3791,7 +4022,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -3808,7 +4040,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -3823,7 +4056,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -3838,7 +4072,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -3853,7 +4088,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -3868,7 +4104,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -3885,7 +4122,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -3902,7 +4140,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -3919,7 +4158,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -3936,7 +4176,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -3953,7 +4194,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -3968,7 +4210,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -3983,7 +4226,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "如姬",
@@ -4000,7 +4244,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -4017,7 +4262,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -4034,7 +4280,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "子婴",
@@ -4051,7 +4298,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "子婴",
@@ -4066,7 +4314,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙坚",
@@ -4081,7 +4330,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙坚",
@@ -4096,7 +4346,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙尚香",
@@ -4113,7 +4364,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙尚香",
@@ -4128,7 +4380,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙尚香",
@@ -4145,7 +4398,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -4162,7 +4416,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -4179,7 +4434,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙策",
@@ -4194,7 +4450,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟尝君",
@@ -4209,7 +4466,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟尝君",
@@ -4224,7 +4482,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟尝君",
@@ -4241,7 +4500,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "尉缭",
@@ -4258,7 +4518,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "尉缭",
@@ -4275,7 +4536,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -4292,7 +4554,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "巴清",
@@ -4309,7 +4572,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "巴清",
@@ -4326,7 +4590,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -4343,7 +4608,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -4358,7 +4624,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -4375,7 +4642,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -4392,7 +4660,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞煖",
@@ -4409,7 +4678,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -4424,7 +4694,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -4441,7 +4712,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -4456,7 +4728,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -4471,7 +4744,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -4488,7 +4762,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -4505,7 +4780,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -4522,7 +4798,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -4539,7 +4816,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -4554,7 +4832,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -4569,7 +4848,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -4586,7 +4866,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -4601,7 +4882,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张华",
@@ -4618,7 +4900,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张宝",
@@ -4633,7 +4916,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张宝",
@@ -4648,7 +4932,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张宝",
@@ -4665,7 +4950,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张春华",
@@ -4682,7 +4968,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张春华",
@@ -4699,7 +4986,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张良",
@@ -4716,7 +5004,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张良",
@@ -4733,7 +5022,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张角",
@@ -4750,7 +5040,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张角",
@@ -4767,7 +5058,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张辽",
@@ -4782,7 +5074,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -4797,7 +5090,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -4812,7 +5106,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -4827,7 +5122,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "徐盛",
@@ -4842,7 +5138,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -4859,7 +5156,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -4874,7 +5172,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -4889,7 +5188,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -4904,7 +5204,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -4921,7 +5222,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -4936,7 +5238,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹丕",
@@ -4951,7 +5254,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹丕",
@@ -4968,7 +5272,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹操",
@@ -4983,7 +5288,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹操",
@@ -4994,7 +5300,8 @@
     "position": "both",
     "note": "曹操+虞姬：无限aoe组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "曹操",
@@ -5011,7 +5318,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -5026,7 +5334,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -5041,7 +5350,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -5058,7 +5368,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -5073,7 +5384,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -5088,7 +5400,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -5103,7 +5416,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李信",
@@ -5120,7 +5434,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -5137,7 +5452,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -5154,7 +5470,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -5171,7 +5488,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -5188,7 +5506,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杜预",
@@ -5205,7 +5524,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5222,7 +5542,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5239,7 +5560,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5254,7 +5576,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5269,7 +5592,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5286,7 +5610,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5301,7 +5626,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5316,7 +5642,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -5333,7 +5660,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "桑弘羊",
@@ -5350,7 +5678,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "桑弘羊",
@@ -5367,7 +5696,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -5384,7 +5714,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -5401,7 +5732,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -5416,7 +5748,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -5433,7 +5766,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -5450,7 +5784,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -5465,7 +5800,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -5482,7 +5818,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王元姬",
@@ -5499,7 +5836,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王元姬",
@@ -5516,7 +5854,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -5533,7 +5872,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -5550,7 +5890,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -5565,7 +5906,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王翦",
@@ -5580,7 +5922,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甄宓",
@@ -5597,7 +5940,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -5612,7 +5956,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5629,7 +5974,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5646,7 +5992,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5663,7 +6010,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5680,7 +6028,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5697,7 +6046,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5712,7 +6062,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -5727,7 +6078,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -5744,7 +6096,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -5759,7 +6112,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -5774,7 +6128,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -5789,7 +6144,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -5806,7 +6162,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -5823,7 +6180,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -5838,7 +6196,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -5855,7 +6214,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊祜",
@@ -5870,7 +6230,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -5885,7 +6246,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -5900,7 +6262,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -5915,7 +6278,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -5932,7 +6296,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "英布",
@@ -5949,7 +6314,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "英布",
@@ -5966,7 +6332,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "英布",
@@ -5983,7 +6350,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -6000,7 +6368,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -6011,7 +6380,8 @@
     "position": "both",
     "note": "项羽+范增：竖子亚父羁绊",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -6028,7 +6398,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -6043,7 +6414,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -6060,7 +6432,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -6077,7 +6450,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -6092,7 +6466,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -6107,7 +6482,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -6124,7 +6500,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董卓",
@@ -6141,7 +6518,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蒙恬",
@@ -6158,7 +6536,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔡文姬",
@@ -6175,7 +6554,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -6192,7 +6572,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -6207,7 +6588,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -6224,7 +6606,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -6239,7 +6622,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -6256,7 +6640,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -6273,7 +6658,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -6290,7 +6676,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "许褚",
@@ -6305,7 +6692,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "诸葛亮",
@@ -6320,7 +6708,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "诸葛亮",
@@ -6335,7 +6724,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "诸葛亮",
@@ -6352,7 +6742,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "诸葛亮",
@@ -6367,7 +6758,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "貂蝉",
@@ -6382,7 +6774,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "貂蝉",
@@ -6399,7 +6792,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵云",
@@ -6416,7 +6810,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6433,7 +6828,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6450,7 +6846,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6467,7 +6864,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6484,7 +6882,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6501,7 +6900,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6518,7 +6918,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6533,7 +6934,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6548,7 +6950,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6565,7 +6968,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6582,7 +6986,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6599,7 +7004,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6616,7 +7022,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6633,7 +7040,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6650,7 +7058,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6667,7 +7076,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6684,7 +7094,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6701,7 +7112,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -6718,7 +7130,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵姬",
@@ -6735,7 +7148,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵姬",
@@ -6752,7 +7166,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6769,7 +7184,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6786,7 +7202,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6803,7 +7220,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6820,7 +7238,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6837,7 +7256,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6854,7 +7274,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6871,7 +7292,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -6888,7 +7310,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -6905,7 +7328,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -6922,7 +7346,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -6939,7 +7364,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -6956,7 +7382,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -6973,7 +7400,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -6990,7 +7418,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -7007,7 +7436,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -7024,7 +7454,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7039,7 +7470,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7054,7 +7486,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7069,7 +7502,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7084,7 +7518,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7099,7 +7534,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7116,7 +7552,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7131,7 +7568,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -7148,7 +7586,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -7163,7 +7602,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -7180,7 +7620,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -7197,7 +7638,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -7214,7 +7656,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -7231,7 +7674,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -7248,7 +7692,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -7265,7 +7710,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -7282,7 +7728,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭隗",
@@ -7299,7 +7746,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -7316,7 +7764,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -7333,7 +7782,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -7348,7 +7798,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -7363,7 +7814,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -7378,7 +7830,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陆机",
@@ -7393,7 +7846,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -7410,7 +7864,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈胜",
@@ -7425,7 +7880,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7442,7 +7898,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7457,7 +7914,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7472,7 +7930,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7489,7 +7948,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7504,7 +7964,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7519,7 +7980,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7536,7 +7998,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -7553,7 +8016,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -7568,7 +8032,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍去病",
@@ -7583,7 +8048,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍去病",
@@ -7600,7 +8066,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍去病",
@@ -7615,7 +8082,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7630,7 +8098,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7645,7 +8114,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7662,7 +8132,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7679,7 +8150,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7696,7 +8168,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7713,7 +8186,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7730,7 +8204,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7747,7 +8222,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7764,7 +8240,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7781,7 +8258,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7798,7 +8276,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -7815,7 +8294,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7832,7 +8312,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7849,7 +8330,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7866,7 +8348,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7883,7 +8366,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7900,7 +8384,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7917,7 +8402,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7934,7 +8420,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7951,7 +8438,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7968,7 +8456,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -7985,7 +8474,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -8002,7 +8492,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -8017,7 +8508,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项燕",
@@ -8032,7 +8524,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马超",
@@ -8047,7 +8540,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -8062,7 +8556,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -8077,7 +8572,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "高渐离",
@@ -8094,7 +8590,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -8111,7 +8608,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -8128,7 +8626,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -8145,7 +8644,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁肃",
@@ -8160,7 +8660,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "黄月英",
@@ -8177,7 +8678,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "黄月英",
@@ -8192,7 +8694,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "东方朔",
@@ -8209,7 +8712,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8226,7 +8730,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8243,7 +8748,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8260,7 +8766,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8277,7 +8784,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8292,7 +8800,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8309,7 +8818,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8326,7 +8836,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8343,7 +8854,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8360,7 +8872,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8377,7 +8890,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8394,7 +8908,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8411,7 +8926,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8428,7 +8944,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -8445,7 +8962,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "主父偃",
@@ -8462,7 +8980,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐广",
@@ -8479,7 +8998,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐广",
@@ -8496,7 +9016,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐广",
@@ -8513,7 +9034,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐广",
@@ -8530,7 +9052,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐毅",
@@ -8547,7 +9070,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐毅",
@@ -8564,7 +9088,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐毅",
@@ -8581,7 +9106,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "侯嬴",
@@ -8596,7 +9122,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "信陵君",
@@ -8611,7 +9138,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "信陵君",
@@ -8622,7 +9150,8 @@
     "position": "both",
     "note": "信陵君+如姬：窃符救赵组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "信陵君",
@@ -8637,7 +9166,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "信陵君",
@@ -8654,7 +9184,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "偃师",
@@ -8671,7 +9202,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "偃师",
@@ -8688,7 +9220,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -8705,7 +9238,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -8720,7 +9254,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -8737,7 +9272,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -8752,7 +9288,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -8767,7 +9304,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -8782,7 +9320,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "公孙瓒",
@@ -8799,7 +9338,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "公孙瓒",
@@ -8814,7 +9354,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "关羽",
@@ -8829,7 +9370,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "典韦",
@@ -8840,7 +9382,8 @@
     "position": "both",
     "note": "典韦+虞姬：碰瓷组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "刘协",
@@ -8857,7 +9400,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘协",
@@ -8872,7 +9416,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8887,7 +9432,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8902,7 +9448,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8917,7 +9464,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8932,7 +9480,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8949,7 +9498,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8966,7 +9516,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -8983,7 +9534,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -9000,7 +9552,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -9017,7 +9570,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘彻",
@@ -9034,7 +9588,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -9051,7 +9606,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -9068,7 +9624,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -9085,7 +9642,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -9102,7 +9660,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘禅",
@@ -9119,7 +9678,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -9134,7 +9694,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -9151,7 +9712,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -9166,7 +9728,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -9181,7 +9744,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -9196,7 +9760,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -9213,7 +9778,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -9230,7 +9796,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -9247,7 +9814,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -9264,7 +9832,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘邦",
@@ -9281,7 +9850,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "华佗",
@@ -9298,7 +9868,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卓文君",
@@ -9315,7 +9886,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9330,7 +9902,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9345,7 +9918,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9362,7 +9936,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9379,7 +9954,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9394,7 +9970,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9411,7 +9988,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9428,7 +10006,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9445,7 +10024,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9460,7 +10040,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9477,7 +10058,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9494,7 +10076,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9509,7 +10092,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -9526,7 +10110,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -9543,7 +10128,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -9554,7 +10140,8 @@
     "position": "both",
     "note": "卫子夫+张骞/扶苏：存活即刷牌永动机",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -9569,7 +10156,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -9586,7 +10174,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫玠",
@@ -9603,7 +10192,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -9618,7 +10208,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫青",
@@ -9635,7 +10226,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "司马相如",
@@ -9652,7 +10244,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -9669,7 +10262,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -9686,7 +10280,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -9703,7 +10298,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕不韦",
@@ -9720,7 +10316,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕布",
@@ -9737,7 +10334,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9752,7 +10350,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9767,7 +10366,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9784,7 +10384,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9801,7 +10402,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9818,7 +10420,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9835,7 +10438,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9852,7 +10456,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9869,7 +10474,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9884,7 +10490,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9899,7 +10506,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕蒙",
@@ -9916,7 +10524,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕雉",
@@ -9933,7 +10542,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕雉",
@@ -9948,7 +10558,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "君王后",
@@ -9965,7 +10576,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "君王后",
@@ -9982,7 +10594,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吴国太",
@@ -9999,7 +10612,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吴国太",
@@ -10016,7 +10630,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "周勃",
@@ -10033,7 +10648,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -10050,7 +10666,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "夏侯惇",
@@ -10067,7 +10684,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -10084,7 +10702,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "大乔",
@@ -10101,7 +10720,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太史慈",
@@ -10118,7 +10738,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -10133,7 +10754,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -10150,7 +10772,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -10167,7 +10790,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -10184,7 +10808,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -10201,7 +10826,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "太子丹",
@@ -10216,7 +10842,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "如姬",
@@ -10233,7 +10860,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "如姬",
@@ -10250,7 +10878,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "如姬",
@@ -10265,7 +10894,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "如姬",
@@ -10282,7 +10912,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "姜维",
@@ -10299,7 +10930,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -10316,7 +10948,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -10333,7 +10966,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -10350,7 +10984,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -10365,7 +11000,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "子婴",
@@ -10380,7 +11016,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "子婴",
@@ -10395,7 +11032,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "子婴",
@@ -10410,7 +11048,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙坚",
@@ -10425,7 +11064,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙坚",
@@ -10440,7 +11080,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙尚香",
@@ -10457,7 +11098,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙尚香",
@@ -10472,7 +11114,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -10489,7 +11132,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -10504,7 +11148,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -10521,7 +11166,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -10538,7 +11184,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -10555,7 +11202,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟姚",
@@ -10572,7 +11220,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟姚",
@@ -10589,7 +11238,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟姚",
@@ -10604,7 +11254,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟姚",
@@ -10619,7 +11270,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孟尝君",
@@ -10636,7 +11288,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "季布",
@@ -10653,7 +11306,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -10670,7 +11324,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -10685,7 +11340,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -10700,7 +11356,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -10715,7 +11372,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -10730,7 +11388,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "尉缭",
@@ -10745,7 +11404,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "小乔",
@@ -10762,7 +11422,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "小乔",
@@ -10779,7 +11440,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -10796,7 +11458,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -10813,7 +11476,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "巴清",
@@ -10828,7 +11492,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "巴清",
@@ -10843,7 +11508,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平原君",
@@ -10860,7 +11526,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -10877,7 +11544,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -10892,7 +11560,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -10909,7 +11578,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平阳公主",
@@ -10926,7 +11596,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞煖",
@@ -10943,7 +11614,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞煖",
@@ -10960,7 +11632,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -10975,7 +11648,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -10990,7 +11664,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -11007,7 +11682,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -11024,7 +11700,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -11041,7 +11718,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -11058,7 +11736,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -11073,7 +11752,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11088,7 +11768,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11103,7 +11784,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11118,7 +11800,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11133,7 +11816,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11150,7 +11834,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11165,7 +11850,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11182,7 +11868,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11199,7 +11886,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -11216,7 +11904,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张华",
@@ -11231,7 +11920,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张宝",
@@ -11248,7 +11938,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张宝",
@@ -11263,7 +11954,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张梁",
@@ -11278,7 +11970,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张梁",
@@ -11295,7 +11988,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张辽",
@@ -11310,7 +12004,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -11327,7 +12022,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -11344,7 +12040,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -11361,7 +12058,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "徐盛",
@@ -11378,7 +12076,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "徐盛",
@@ -11393,7 +12092,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "徐盛",
@@ -11410,7 +12110,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "扶苏",
@@ -11427,7 +12128,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -11444,7 +12146,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -11461,7 +12164,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "暴鸢",
@@ -11478,7 +12182,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -11493,7 +12198,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -11508,7 +12214,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹植",
@@ -11525,7 +12232,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李信",
@@ -11540,7 +12248,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李信",
@@ -11557,7 +12266,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李夫人",
@@ -11574,7 +12284,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李夫人",
@@ -11591,7 +12302,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李斯",
@@ -11608,7 +12320,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "李牧",
@@ -11625,7 +12338,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杜预",
@@ -11642,7 +12356,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杜预",
@@ -11659,7 +12374,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杜预",
@@ -11676,7 +12392,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11691,7 +12408,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11706,7 +12424,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11723,7 +12442,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11738,7 +12458,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11753,7 +12474,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11768,7 +12490,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11783,7 +12506,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11800,7 +12524,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11815,7 +12540,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11832,7 +12558,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11849,7 +12576,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11864,7 +12592,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11879,7 +12608,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11894,7 +12624,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -11911,7 +12642,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "桑弘羊",
@@ -11928,7 +12660,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "桑弘羊",
@@ -11945,7 +12678,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -11962,7 +12696,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -11979,7 +12714,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -11994,7 +12730,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -12011,7 +12748,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -12028,7 +12766,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -12045,7 +12784,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -12062,7 +12802,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "法正",
@@ -12079,7 +12820,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王元姬",
@@ -12094,7 +12836,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王元姬",
@@ -12111,7 +12854,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -12126,7 +12870,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -12143,7 +12888,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -12160,7 +12906,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王濬",
@@ -12177,7 +12924,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -12192,7 +12940,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -12209,7 +12958,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -12226,7 +12976,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -12243,7 +12994,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "田单",
@@ -12260,7 +13012,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "田单",
@@ -12275,7 +13028,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "申不害",
@@ -12292,7 +13046,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "申不害",
@@ -12307,7 +13062,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "申不害",
@@ -12324,7 +13080,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12341,7 +13098,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12358,7 +13116,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12375,7 +13134,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12392,7 +13152,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12407,7 +13168,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12424,7 +13186,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12439,7 +13202,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12454,7 +13218,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12469,7 +13234,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12484,7 +13250,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12499,7 +13266,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -12514,7 +13282,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "秦舞阳",
@@ -12531,7 +13300,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "秦舞阳",
@@ -12548,7 +13318,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -12565,7 +13336,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -12582,7 +13354,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "终军",
@@ -12593,7 +13366,8 @@
     "position": "both",
     "note": "终军+大乔：出伤拆牌双效组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12610,7 +13384,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12625,7 +13400,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12642,7 +13418,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12659,7 +13436,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12676,7 +13454,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12687,7 +13466,8 @@
     "position": "both",
     "note": "羊献容+荀彧：",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12704,7 +13484,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12719,7 +13500,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12734,7 +13516,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12751,7 +13534,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12766,7 +13550,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12783,7 +13568,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -12800,7 +13586,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊祜",
@@ -12817,7 +13604,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -12832,7 +13620,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -12847,7 +13636,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -12862,7 +13652,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -12877,7 +13668,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -12892,7 +13684,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -12907,7 +13700,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -12922,7 +13716,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -12937,7 +13732,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -12954,7 +13750,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -12969,7 +13766,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -12986,7 +13784,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -13003,7 +13802,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -13020,7 +13820,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -13037,7 +13838,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -13054,7 +13856,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -13071,7 +13874,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -13088,7 +13892,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -13103,7 +13908,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -13120,7 +13926,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -13137,7 +13944,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -13154,7 +13962,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "萧何",
@@ -13171,7 +13980,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "萧何",
@@ -13188,7 +13998,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "萧何",
@@ -13205,7 +14016,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董仲舒",
@@ -13222,7 +14034,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董仲舒",
@@ -13237,7 +14050,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董仲舒",
@@ -13254,7 +14068,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董卓",
@@ -13271,7 +14086,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蒙恬",
@@ -13288,7 +14104,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -13303,7 +14120,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -13318,7 +14136,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -13335,7 +14154,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -13350,7 +14170,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "虞姬",
@@ -13361,7 +14182,8 @@
     "position": "both",
     "note": "刘邦+虞姬：频繁人造大风歌组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "袁术",
@@ -13376,7 +14198,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -13391,7 +14214,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -13406,7 +14230,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -13421,7 +14246,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -13438,7 +14264,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "诸葛亮",
@@ -13455,7 +14282,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵云",
@@ -13472,7 +14300,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵云",
@@ -13489,7 +14318,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13504,7 +14334,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13521,7 +14352,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13538,7 +14370,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13555,7 +14388,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13572,7 +14406,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13589,7 +14424,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13606,7 +14442,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13623,7 +14460,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13640,7 +14478,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13657,7 +14496,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13674,7 +14514,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13689,7 +14530,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13704,7 +14546,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13721,7 +14564,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13736,7 +14580,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13751,7 +14596,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13768,7 +14614,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -13785,7 +14632,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -13802,7 +14650,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -13819,7 +14668,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -13836,7 +14686,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -13853,7 +14704,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -13870,7 +14722,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵婕妤",
@@ -13887,7 +14740,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -13904,7 +14758,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -13921,7 +14776,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -13938,7 +14794,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -13955,7 +14812,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -13972,7 +14830,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -13987,7 +14846,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14002,7 +14862,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14017,7 +14878,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14034,7 +14896,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14049,7 +14912,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14064,7 +14928,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14081,7 +14946,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14096,7 +14962,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -14111,7 +14978,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -14126,7 +14994,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -14141,7 +15010,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -14156,7 +15026,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -14173,7 +15044,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭嘉",
@@ -14190,7 +15062,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -14207,7 +15080,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郭解",
@@ -14224,7 +15098,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -14241,7 +15116,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -14256,7 +15132,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -14273,7 +15150,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -14290,7 +15168,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -14307,7 +15186,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -14322,7 +15202,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -14339,7 +15220,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -14354,7 +15236,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -14371,7 +15254,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -14388,7 +15272,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -14405,7 +15290,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟离眜",
@@ -14420,7 +15306,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟离眜",
@@ -14435,7 +15322,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陆机",
@@ -14446,7 +15334,8 @@
     "position": "both",
     "note": "孟尝君+陆机：印群转伤组合",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "陆机",
@@ -14461,7 +15350,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陆机",
@@ -14476,7 +15366,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陆机",
@@ -14491,7 +15382,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -14508,7 +15400,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -14525,7 +15418,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -14542,7 +15436,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈宫",
@@ -14559,7 +15454,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈平",
@@ -14574,7 +15470,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -14591,7 +15488,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "陈阿娇",
@@ -14608,7 +15506,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14623,7 +15522,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14638,7 +15538,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14653,7 +15554,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14668,7 +15570,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14683,7 +15586,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14698,7 +15602,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14713,7 +15618,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14728,7 +15634,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14743,7 +15650,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14758,7 +15666,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14773,7 +15682,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14788,7 +15698,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14803,7 +15714,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14818,7 +15730,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14835,7 +15748,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14850,7 +15764,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -14865,7 +15780,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍去病",
@@ -14882,7 +15798,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩信",
@@ -14899,7 +15816,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩信",
@@ -14914,7 +15832,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩信",
@@ -14929,7 +15848,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -14946,7 +15866,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -14963,7 +15884,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -14980,7 +15902,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -14997,7 +15920,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15014,7 +15938,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15031,7 +15956,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15048,7 +15974,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15063,7 +15990,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15080,7 +16008,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15097,7 +16026,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15114,7 +16044,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -15131,7 +16062,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15148,7 +16080,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15165,7 +16098,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15182,7 +16116,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15199,7 +16134,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15216,7 +16152,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15233,7 +16170,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15250,7 +16188,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15267,7 +16206,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15284,7 +16224,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15301,7 +16242,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15318,7 +16260,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15335,7 +16278,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15352,7 +16296,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15369,7 +16314,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -15386,7 +16332,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -15403,7 +16350,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -15420,7 +16368,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -15435,7 +16384,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -15450,7 +16400,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -15465,7 +16416,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -15480,7 +16432,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项梁",
@@ -15495,7 +16448,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项燕",
@@ -15512,7 +16466,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15527,7 +16482,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15542,7 +16498,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15557,7 +16514,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15572,7 +16530,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15587,7 +16546,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15602,7 +16562,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15619,7 +16580,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15636,7 +16598,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -15653,7 +16616,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "高渐离",
@@ -15670,7 +16634,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "高渐离",
@@ -15685,7 +16650,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -15702,7 +16668,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -15717,7 +16684,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -15734,7 +16702,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -15751,7 +16720,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁肃",
@@ -15766,7 +16736,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁肃",
@@ -15783,7 +16754,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "黄月英",
@@ -15800,7 +16772,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "黄月英",
@@ -15815,7 +16788,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "龙且",
@@ -15832,7 +16806,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "龙且",
@@ -15847,7 +16822,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "东方朔",
@@ -15864,7 +16840,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -15879,7 +16856,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "关羽",
@@ -15894,7 +16872,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "华佗",
@@ -15909,7 +16888,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -15924,7 +16904,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "孙权",
@@ -15941,7 +16922,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -15958,7 +16940,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -15975,7 +16958,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -15990,7 +16974,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "扶苏",
@@ -16007,7 +16992,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -16022,7 +17008,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -16039,7 +17026,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -16054,7 +17042,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -16069,7 +17058,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -16084,7 +17074,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "步练师",
@@ -16101,7 +17092,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -16118,7 +17110,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -16133,7 +17126,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -16150,7 +17144,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -16167,7 +17162,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王戎",
@@ -16184,7 +17180,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王翦",
@@ -16201,7 +17198,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16218,7 +17216,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16235,7 +17234,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16252,7 +17252,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16269,7 +17270,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16286,7 +17288,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16303,7 +17306,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16320,7 +17324,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -16337,7 +17342,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16352,7 +17358,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16367,7 +17374,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16382,7 +17390,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16397,7 +17406,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16414,7 +17424,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16429,7 +17440,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16444,7 +17456,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -16459,7 +17472,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -16470,7 +17484,8 @@
     "position": "both",
     "note": "荆轲+王元姬：",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -16485,7 +17500,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "金日磾",
@@ -16500,7 +17516,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马超",
@@ -16515,7 +17532,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -16530,7 +17548,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -16545,7 +17564,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -16560,7 +17580,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -16575,7 +17596,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "马钧",
@@ -16590,7 +17612,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "临海公主",
@@ -16607,7 +17630,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐毅",
@@ -16624,7 +17648,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "侯嬴",
@@ -16639,7 +17664,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘备",
@@ -16654,7 +17680,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "华佗",
@@ -16671,7 +17698,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卓文君",
@@ -16686,7 +17714,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卫玠",
@@ -16703,7 +17732,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "司马相如",
@@ -16720,7 +17750,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "司马相如",
@@ -16735,7 +17766,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "吕雉",
@@ -16752,7 +17784,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "周勃",
@@ -16769,7 +17802,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -16784,7 +17818,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -16801,7 +17836,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "山涛",
@@ -16818,7 +17854,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平原君",
@@ -16833,7 +17870,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "庞统",
@@ -16848,7 +17886,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "廉颇",
@@ -16865,7 +17904,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张辽",
@@ -16882,7 +17922,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -16899,7 +17940,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张骞",
@@ -16916,7 +17958,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹仁",
@@ -16933,7 +17976,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "曹操",
@@ -16950,7 +17994,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "朱亥",
@@ -16965,7 +18010,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "朱亥",
@@ -16980,7 +18026,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -16995,7 +18042,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -17012,7 +18060,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -17027,7 +18076,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -17042,7 +18092,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王濬",
@@ -17057,7 +18108,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王翦",
@@ -17074,7 +18126,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王翦",
@@ -17091,7 +18144,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "甘宁",
@@ -17108,7 +18162,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "申不害",
@@ -17125,7 +18180,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "白起",
@@ -17142,7 +18198,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -17157,7 +18214,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊献容",
@@ -17174,7 +18232,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "芈八子",
@@ -17189,7 +18248,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -17204,7 +18264,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "苏武",
@@ -17219,7 +18280,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范雎",
@@ -17236,7 +18298,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -17253,7 +18316,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荀彧",
@@ -17264,7 +18328,8 @@
     "position": "both",
     "note": "荀彧+张飞：荀彧卖血超级张飞",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -17281,7 +18346,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董仲舒",
@@ -17296,7 +18362,8 @@
     ],
     "hero2_seats": [
       1
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "董仲舒",
@@ -17311,7 +18378,8 @@
     ],
     "hero2_seats": [
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -17328,7 +18396,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -17345,7 +18414,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -17362,7 +18432,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -17379,7 +18450,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -17396,7 +18468,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "赵威后",
@@ -17413,7 +18486,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -17430,7 +18504,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -17445,7 +18520,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -17460,7 +18536,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -17477,7 +18554,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -17494,7 +18572,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "高渐离",
@@ -17511,7 +18590,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -17526,7 +18606,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "鲁仲连",
@@ -17543,7 +18624,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "龙且",
@@ -17560,7 +18642,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "乐毅",
@@ -17571,7 +18654,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "侯嬴",
@@ -17586,7 +18670,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "信陵君",
@@ -17597,7 +18682,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "傅玄",
@@ -17612,7 +18698,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "华佗",
@@ -17623,7 +18710,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -17634,7 +18722,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "周勃",
@@ -17645,7 +18734,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "孙尚香",
@@ -17660,7 +18750,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "平原君",
@@ -17671,7 +18762,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "张飞",
@@ -17686,7 +18778,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "春申君",
@@ -17703,7 +18796,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -17720,7 +18814,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -17737,7 +18832,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "羊祜",
@@ -17752,7 +18848,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "范增",
@@ -17769,7 +18866,8 @@
     "hero2_seats": [
       1,
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -17780,7 +18878,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -17795,7 +18894,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "郑袖",
@@ -17810,7 +18910,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩娥",
@@ -17827,7 +18928,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -17844,7 +18946,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -17861,7 +18964,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "项燕",
@@ -17878,7 +18982,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "魏咎",
@@ -17895,7 +19000,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "刘表",
@@ -17912,7 +19018,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -17929,7 +19036,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -17946,7 +19054,8 @@
     "hero2_seats": [
       3,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -17957,7 +19066,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -17968,7 +19078,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卫子夫",
@@ -17983,7 +19094,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "周瑜",
@@ -17998,7 +19110,8 @@
     ],
     "hero2_seats": [
       3
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "嬴政",
@@ -18009,7 +19122,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -18026,7 +19140,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -18043,7 +19158,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张春华",
@@ -18054,7 +19170,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "杨艳",
@@ -18065,7 +19182,8 @@
     "position": "both",
     "note": "杨艳+赵威后：两个角色都需要先手 不推荐",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "田单",
@@ -18076,7 +19194,8 @@
     "position": "both",
     "note": "有短板别玩",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -18087,7 +19206,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -18098,7 +19218,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -18115,7 +19236,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -18132,7 +19254,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "钟无艳",
@@ -18149,7 +19272,8 @@
     "hero2_seats": [
       2,
       4
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -18164,7 +19288,8 @@
     ],
     "hero2_seats": [
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -18181,7 +19306,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -18198,7 +19324,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "魏咎",
@@ -18215,7 +19342,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "龙且",
@@ -18226,7 +19354,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "信陵君",
@@ -18237,7 +19366,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "公孙瓒",
@@ -18248,7 +19378,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18259,7 +19390,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18270,7 +19402,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18281,7 +19414,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18292,7 +19426,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18303,7 +19438,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18314,7 +19450,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18325,7 +19462,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "卢莫愁",
@@ -18336,7 +19474,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "司马相如",
@@ -18347,7 +19486,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "吕布",
@@ -18358,7 +19498,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "孟获",
@@ -18369,7 +19510,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "宋玉",
@@ -18380,7 +19522,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "左慈",
@@ -18391,7 +19534,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "左慈",
@@ -18402,7 +19546,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "左慈",
@@ -18413,7 +19558,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -18430,7 +19576,8 @@
     "hero2_seats": [
       1,
       2
-    ]
+    ],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -18441,7 +19588,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "张仪",
@@ -18452,7 +19600,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "张辽",
@@ -18463,7 +19612,8 @@
     "position": "both",
     "note": "甘宁+张辽",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "朱亥",
@@ -18474,7 +19624,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "王异",
@@ -18485,7 +19636,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "羊祜",
@@ -18496,7 +19648,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "羊祜",
@@ -18507,7 +19660,8 @@
     "position": "both",
     "note": "废",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "荀勖",
@@ -18518,7 +19672,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "荀勖",
@@ -18529,7 +19684,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "荆轲",
@@ -18540,7 +19696,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "董卓",
@@ -18551,7 +19708,8 @@
     "position": "both",
     "note": "",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "蔺相如",
@@ -18562,7 +19720,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -18573,7 +19732,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "袁绍",
@@ -18584,7 +19744,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "赵奢",
@@ -18595,7 +19756,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "郑国",
@@ -18606,7 +19768,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -18617,7 +19780,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "霍光",
@@ -18628,7 +19792,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -18639,7 +19804,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "韩安国",
@@ -18650,7 +19816,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -18661,7 +19828,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -18672,7 +19840,8 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   },
   {
     "hero1_name": "韩非",
@@ -18683,6 +19852,7 @@
     "position": "both",
     "note": "0",
     "hero1_seats": [],
-    "hero2_seats": []
+    "hero2_seats": [],
+    "manual": false
   }
 ]

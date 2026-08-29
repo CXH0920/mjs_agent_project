@@ -5,7 +5,8 @@
 - note 座次解析（src.data.combo_seats，含别名表与数字前置写法），
   解析失败/部分成功的条目照常导入（座次留空）并列入报告供人工复核；
 - 解析结果与 position 字段交叉校验（以 note 为准），不一致清单进报告；
-- 幂等：每次按源数据全量重建，重复执行输出稳定。
+- 合并语义：源导出记录 upsert；manual 手工记录保留（同 key 冲突时手工优先）；
+  非手工记录若源中已不存在则移除并计数；重复执行输出稳定（幂等）。
 """
 from __future__ import annotations
 
@@ -51,10 +52,21 @@ def _check_position_mismatch(combo: Combo, seats1: list[int], seats2: list[int])
 
 
 def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
-    """执行导入，返回报告 dict。每次全量重建输出文件，重复执行结果稳定。"""
+    """执行合并导入，返回报告 dict。重复执行输出稳定（幂等）。"""
     source = json.loads(Path(source_path).read_text(encoding="utf-8"))
     combos_raw = source.get("combos", []) if isinstance(source, dict) else source
     name2id = _load_hero_name_map(heroes_path)
+
+    manager = ComboManager(output_path)
+    manager.load()
+    manual_by_key: dict[tuple[int, int], Combo] = {}
+    imported_keys: set[tuple[int, int]] = set()
+    for combo in manager.list_combos():
+        key = tuple(sorted((combo.hero1_id, combo.hero2_id)))
+        if combo.manual:
+            manual_by_key[key] = combo
+        else:
+            imported_keys.add(key)
 
     report: dict = {
         "total": len(combos_raw),
@@ -65,11 +77,12 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
         "seat_stats": {"parsed": 0, "none": 0, "partial": 0, "unparsed": 0},
         "seat_review": [],
         "position_mismatch": [],
+        "manual_kept": [],
+        "manual_collisions": [],
+        "removed_stale": [],
     }
 
-    manager = ComboManager(output_path)
-    manager.clear_all()
-
+    merged: dict[tuple[int, int], Combo] = {}
     seen_keys: set[tuple[int, int]] = set()
     for index, raw in enumerate(combos_raw):
         name1, name2 = str(raw.get("hero1", "")).strip(), str(raw.get("hero2", "")).strip()
@@ -80,6 +93,12 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
         key = tuple(sorted((id1, id2)))
         if key in seen_keys:
             report["duplicates"].append({"index": index, "hero1": name1, "hero2": name2})
+            continue
+
+        if key in manual_by_key:
+            # 手工记录优先：跳过源导出版本，保留手工内容
+            seen_keys.add(key)
+            report["manual_collisions"].append({"index": index, "hero1": name1, "hero2": name2})
             continue
 
         note = str(raw.get("note", ""))
@@ -110,9 +129,26 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
             )
 
         seen_keys.add(key)
-        manager.update(combo, key)
+        merged[key] = combo
         report["imported"] += 1
 
+    # 不在本次导出中的手工记录原样保留
+    for key, combo in manual_by_key.items():
+        if key not in merged:
+            merged[key] = combo
+            report["manual_kept"].append(
+                {"hero1": combo.hero1_name, "hero2": combo.hero2_name, "note": combo.note}
+            )
+    # 非手工旧记录若源中已不存在 → 移除
+    for key in imported_keys - seen_keys:
+        combo = manager.get_combo(*key)
+        report["removed_stale"].append(
+            {"hero1": combo.hero1_name, "hero2": combo.hero2_name}
+        )
+
+    manager.clear_all()
+    for key, combo in merged.items():
+        manager.update(combo, key)
     manager.save()
     return report
 
@@ -122,6 +158,18 @@ def _print_report(report: dict) -> None:
     print(f"导入完成：源 {report['total']} 条 → 写入 {report['imported']} 条")
     print(f"座次解析：成功 {seats['parsed']} + 无要求 {seats['none']}"
           f" + 部分 {seats['partial']} + 失败 {seats['unparsed']}")
+    if report["manual_kept"]:
+        print(f"手工记录保留 {len(report['manual_kept'])} 条（不在本次导出中）：")
+        for item in report["manual_kept"]:
+            print(f"  {item['hero1']} + {item['hero2']} | {item['note'][:40]}")
+    if report["manual_collisions"]:
+        print(f"⚠ 与手工记录冲突 {len(report['manual_collisions'])} 条（已保留手工版本）：")
+        for item in report["manual_collisions"]:
+            print(f"  源 #{item['index']} {item['hero1']} + {item['hero2']}")
+    if report["removed_stale"]:
+        print(f"⚠ 源中已不存在而移除 {len(report['removed_stale'])} 条：")
+        for item in report["removed_stale"]:
+            print(f"  {item['hero1']} + {item['hero2']}")
     if report["unmatched"]:
         print(f"⚠ 未匹配武将 {len(report['unmatched'])} 条：")
         for item in report["unmatched"]:

@@ -155,6 +155,18 @@ class CombosImportDialog(QDialog):
                 lines.append(f"  ……其余 {len(items) - _NOTE_PREVIEW_LIMIT} 条略")
 
         append_block(
+            "手工记录保留（不在本次导出中）", report["manual_kept"],
+            lambda i: f"{i['hero1']} + {i['hero2']} | {i['note'][:40]}",
+        )
+        append_block(
+            "与手工记录冲突（已保留手工版本）", report["manual_collisions"],
+            lambda i: f"源 #{i['index']} {i['hero1']} + {i['hero2']}",
+        )
+        append_block(
+            "源中已不存在而移除", report["removed_stale"],
+            lambda i: f"{i['hero1']} + {i['hero2']}",
+        )
+        append_block(
             "未匹配武将", report["unmatched"],
             lambda i: f"#{i['index']} {i['hero1']} + {i['hero2']}",
         )

@@ -216,6 +216,10 @@ class Combo(BaseModel):
     note: str = Field(default="", description="手录备注（座次顺序的权威来源，界面原文展示）")
     hero1_seats: list[int] = Field(default_factory=list, description="武将1 可坐号位（空 = 无座次要求）")
     hero2_seats: list[int] = Field(default_factory=list, description="武将2 可坐号位（空 = 无座次要求）")
+    manual: bool = Field(
+        default=False,
+        description="手工录入/编辑标记：导入合并时保留本记录，同 key 冲突时优先于导出源",
+    )
 
     @field_validator("hero1_id", "hero2_id")
     @classmethod

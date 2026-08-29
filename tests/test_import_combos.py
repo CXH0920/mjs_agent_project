@@ -151,3 +151,91 @@ class TestRunImport:
 
             assert report["imported"] == 0
             assert len(report["invalid"]) == 1
+
+
+def _seed_output(output: Path, combos: list[dict]) -> None:
+    from src.data.models import Combo
+
+    mgr = ComboManager(output)
+    for c in combos:
+        combo = Combo(**c)
+        mgr.update(combo, tuple(sorted((combo.hero1_id, combo.hero2_id))))
+    mgr.save()
+
+
+def _source_only(comb: list[dict]) -> Path:
+    return Path(json.dumps({"combos": comb}, ensure_ascii=False))
+
+
+def test_manual_records_survive_import(tmp_path: Path) -> None:
+    """manual 手工记录不在源导出中时，导入后原样保留。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "手工记录", "manual": True},
+        {"hero1_name": "刘备", "hero2_name": "吕布", "hero1_id": 1, "hero2_id": 3,
+         "rating": 5, "position": "both", "note": "旧导出记录", "manual": False},
+    ])
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "吕布", "hero2": "张辽", "rating": 6, "position": "both", "note": "12 34"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    report = run_import(source, heroes, output)
+
+    mgr = ComboManager(output)
+    mgr.load()
+    assert len(mgr.list_combos()) == 2
+    kept = mgr.get_combo(1, 2)
+    assert kept.manual is True and kept.note == "手工记录" and kept.rating == 8
+    assert mgr.get_combo(1, 3) is None  # 非手工且源中不存在 → 移除
+    assert [f"{i['hero1']}+{i['hero2']}" for i in report["removed_stale"]] == ["刘备+吕布"]
+    assert len(report["manual_kept"]) == 1
+    assert report["imported"] == 1
+
+
+def test_manual_wins_on_collision(tmp_path: Path) -> None:
+    """源导出与手工记录同 key 冲突时，保留手工版本并进报告。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 7, "position": "both", "note": "手工修正版", "manual": True},
+    ])
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "刘备", "hero2": "孙权", "rating": 9, "position": "14", "note": "孙权4+刘备1"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    report = run_import(source, heroes, output)
+
+    mgr = ComboManager(output)
+    mgr.load()
+    combo = mgr.get_combo(1, 2)
+    assert combo.manual is True and combo.rating == 7 and combo.note == "手工修正版"
+    assert len(report["manual_collisions"]) == 1
+    assert report["imported"] == 0
+    assert report["removed_stale"] == []
+
+
+def test_idempotent_rerun_with_manual(tmp_path: Path) -> None:
+    """含手工记录时重复导入输出仍稳定。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "手工记录", "manual": True},
+    ])
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "吕布", "hero2": "张辽", "rating": 6, "position": "both", "note": "12 34"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    run_import(source, heroes, output)
+    first = output.read_text(encoding="utf-8")
+    run_import(source, heroes, output)
+    assert output.read_text(encoding="utf-8") == first
