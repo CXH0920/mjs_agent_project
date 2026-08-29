@@ -5,6 +5,7 @@
 """
 import sys, json, time, logging
 
+from src.data.hero_timeline import CORPUS_BASE_DATE
 from src.rag import config
 from tqdm import tqdm
 
@@ -197,7 +198,11 @@ CORPUS_FILES = [
 
 
 def load_all_blocks():
-    """读取全部语料 json，返回 list[(block_id, text, metadata)]。"""
+    """读取全部语料 json，返回 list[(block_id, text, metadata)]。
+
+    统一注入版本元数据 is_current/as_of（检索层默认只召当前版本）：
+    各 _norm_* 与源数据 1:1 保序，zip 后按源块字段回填，缺失回退默认值。
+    """
     all_blocks = []
     for fname, norm in CORPUS_FILES:
         path = DOCS_DIR / fname
@@ -206,7 +211,12 @@ def load_all_blocks():
             continue
         data = json.loads(path.read_text(encoding='utf-8'))
         blocks = norm(data)
-        all_blocks.extend(blocks)
+        if len(blocks) != len(data):
+            raise ValueError(f'{fname} 规范化块数与源数据不一致: {len(blocks)} != {len(data)}')
+        for (bid, text, meta), raw in zip(blocks, data):
+            meta.setdefault('is_current', str(raw.get('is_current', 'true')))
+            meta.setdefault('as_of', str(raw.get('as_of', CORPUS_BASE_DATE)))
+            all_blocks.append((bid, text, meta))
     return all_blocks
 
 

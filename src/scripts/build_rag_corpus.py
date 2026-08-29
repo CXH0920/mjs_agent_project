@@ -2,12 +2,20 @@
 """生成武将 RAG 语料：总览块 + 技能块，含规则抽取的索引字段"""
 import re
 
+from src.data.hero_timeline import (
+    TRIGGER_OVERRIDES,
+    TRIGGER_OVERRIDES_AUTHORED,
+    load_timeline,
+    stamp_hero_block,
+    stale_overrides,
+)
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
 setup_stdout()
 
 heroes = load_json(project_path('data', 'heroes.json'))
 cards = load_json(project_path('data', 'cards.json'))
+timeline = load_timeline()
 
 # 保序列表（set 推导迭代顺序不稳定会导致 related 字段顺序每次运行不同）
 card_names = [c['name'] for c in cards]
@@ -66,45 +74,8 @@ FIXED_TRIGGER_REGEXES = [
     (r'^[^，。；。]{4,20}?时', None),
 ]
 
-# 人工精化触发条件（2026-08-12 审核通过）：key=(武将, 技能)，命中优先返回，不参与规则提取
-# ⚠️ 官方更新 heroes.json 后：技能改名/删除会触发下方失效校验；同名技能描述变更需人工对照本表重新审核
-TRIGGER_OVERRIDES = {
-    ('刘禅', '乐不思蜀'): ['（无，持续效果）'],
-    ('司马炎', '容纳谠正'): ['（无，持续效果）'],
-    ('贾诩', '算无遗策'): ['（无，持续效果）'],
-    ('司马相如', '自着犊鼻'): ['（主动发动，原文未注明时机）'],
-    ('黄月英', '奇智佐谋'): ['（无，持续效果）'],
-    ('朱亥', '市井国士'): ['（无，持续效果）'],
-    ('朱亥', '不拘小礼'): ['（无，持续效果）'],
-    ('侯嬴', '市井隐士'): ['（无，持续效果）', '回合结束时'],
-    ('侯嬴', '修身洁行'): ['（无，持续效果）'],
-    ('李信', '衍水追锋'): ['（主动发动，原文未注明时机）', '击杀'],
-    ('尉缭', '天官兵谈'): ['（无，持续效果）', '其他角色卜卦后'],
-    ('祝融夫人', '火神族裔'): ['（无，持续效果）'],
-    ('袁术', '妄自尊大'): ['（无，持续效果）', '回合结束时'],
-    ('袁术', '四世三公'): ['（无，持续效果）'],
-    ('刘彻', '推恩令'): ['（无，持续效果）'],
-    ('西门豹', '厚民薄库'): ['（主动发动，原文未注明时机）'],
-    ('田单', '火牛阵'): ['（主动发动，原文未注明时机）', '回合结束时'],
-    ('苏秦', '六国相印'): ['（无，持续效果）', '每回合开始时'],
-    ('张仪', '众口铄金'): ['与你势力相同的所有角色每累计打出3张相同名称的牌时'],
-    ('春申君', '无妄之灾'): ['（无，持续效果）'],
-    ('周勃', '削平诸吕'): ['（主动发动，原文未注明时机）', '出牌阶段结束时'],
-    ('扶苏', '山有扶苏'): ['（主动发动，原文未注明时机）', '因此获得牌的其他角色打出下一张♣牌时'],
-    ('左慈', '掷杯戏曹'): ['（无，持续效果）'],
-    ('刘备', '携民渡江'): ['（无，持续效果）'],
-    ('刘备', '惟贤惟德'): ['出牌阶段'],
-    ('张飞', '嗜酒如命'): ['（无，持续效果）'],
-    ('典韦', '逐虎过涧'): ['（主动发动，原文未注明时机）'],
-    ('张良', '运筹帷幄'): ['（无，持续效果）'],
-    ('张良', '博浪椎秦'): ['（主动发动，原文未注明时机）'],
-    ('关羽', '武圣义绝'): ['（无，持续效果）'],
-    ('关羽', '万军取首'): ['（无，持续效果）', '你造成伤害时'],
-    ('章邯', '赦徒授兵'): ['（主动发动，原文未注明时机）'],
-    ('袁绍', '四世三公'): ['（无，持续效果）'],
-    ('吕布', '无双飞将'): ['你获得战法牌时'],
-    ('王戎', '卖李钻核'): ['其他角色打出获得过的你的牌，即将进入弃牌堆时'],
-}
+# TRIGGER_OVERRIDES 人工精化触发条件表已迁至 src/data/hero_timeline.py（供审计共用）
+
 
 def extract_trigger_cond(hero, skill, desc):
     # 人工精化映射表优先（命中则不再走规则提取）
@@ -203,6 +174,11 @@ _hero_skill_keys = {(h['name'], s['name']) for h in heroes for s in h.get('skill
 for _k in TRIGGER_OVERRIDES:
     if _k not in _hero_skill_keys:
         print(f'⚠️ TRIGGER_OVERRIDES 失效条目: {_k[0]}/{_k[1]} 不在 heroes.json（技能改名或删除？）')
+# 语义失效风险：时间轴上晚于人工审核日的调整（技能级=确证，武将级=提示核对）
+for _risk in stale_overrides(timeline):
+    _level = '技能级' if _risk['level'] == 'skill' else '武将级'
+    print(f"⚠️ TRIGGER_OVERRIDES {_level}失效风险: {_risk['hero']}/{_risk['skill']}"
+          f" 于 {_risk['date']} 调整（晚于审核日 {TRIGGER_OVERRIDES_AUTHORED}），请人工复核")
 
 hero_counter = 0  # 有技能武将数 = 实际生成的总览块数
 for h in heroes:
@@ -211,7 +187,7 @@ for h in heroes:
         continue
     hero_counter += 1
     sk_names = ' / '.join(s['name'] for s in sk)
-    blocks.append({
+    blocks.append(stamp_hero_block({
         'block_id': f'hero_{h["id"]}_overview',
         'block_type': 'overview',
         'hero': h['name'], 'faction': h['faction'], 'position': h['position'],
@@ -220,14 +196,14 @@ for h in heroes:
         'skills': [s['name'] for s in sk],
         'description': f'{h["name"]}：{h["faction"]}，定位{h["position"]}，{h["max_hp"]}体力，手牌上限{h["max_hand"]}，技能：{sk_names}。',
         'related': [f'技能:{s["name"]}' for s in sk],
-    })
+    }, h['name'], timeline))
     md_lines.append(f'## 武将 {h["id"]} {h["name"]}')
     md_lines.append(f'### hero_{h["id"]}_overview 武将总览')
     md_lines.append(f'【武将】{h["name"]} | {h["faction"]} | {h["position"]} | {h["max_hp"]}体力 | 手牌上限{h["max_hand"]}')
     md_lines.append(f'【技能】{sk_names}')
     md_lines.append('')
     for s in sk:
-        b = skill_block(h, s)
+        b = stamp_hero_block(skill_block(h, s), h['name'], timeline)
         blocks.append(b)
         md_lines += [
             f'### {b["block_id"]} {b["skill"]}',

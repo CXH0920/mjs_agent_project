@@ -182,7 +182,7 @@ def main():
                         help='审计未覆盖项时视为失败')
     args = parser.parse_args()
 
-    issues = rag_audit.audit_hero_coverage(ROOT)
+    issues = rag_audit.audit_hero_coverage(ROOT) + rag_audit.audit_version_timeline(ROOT)
     if issues:
         print("=" * 60)
         print('[audit] 人工补充清单（--strict-audit 时视为失败）:')

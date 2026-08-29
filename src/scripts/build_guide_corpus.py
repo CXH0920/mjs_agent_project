@@ -10,6 +10,7 @@
 import re
 from pathlib import Path
 
+from src.data.hero_timeline import CORPUS_BASE_DATE, load_timeline, stamp_guide_block
 from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
 
 setup_stdout()
@@ -115,6 +116,10 @@ def split_sections(t):
 
 blocks = []
 skipped = []
+# 旧语料的 (as_of, content_md5)：攻略文本未变则保留原语料时间，变了重置基线
+_old_blocks = load_json(CORPUS / '武将攻略RAG语料.json', required=False) or []
+_prev_meta = {b.get('block_id'): (b.get('as_of'), b.get('content_md5')) for b in _old_blocks}
+timeline = load_timeline()
 for md in sorted(GUIDES.glob('*.md')):
     hero = NAME_FIX.get(md.stem, md.stem)
     if hero not in NAMES:
@@ -126,12 +131,20 @@ for md in sorted(GUIDES.glob('*.md')):
         sections = [('全文', t.strip())]
     for i, (title, txt) in enumerate(sections, 1):
         bid = f'guide_{hero}_{i}'
-        blocks.append({
+        block = {
             'block_id': bid, 'hero': hero, 'section': title,
             'text': txt, 'related': [f'武将:{hero}'],
-        })
+        }
+        prev_as_of, prev_md5 = _prev_meta.get(bid, (None, None))
+        blocks.append(stamp_guide_block(block, prev_as_of=prev_as_of,
+                                        prev_md5=prev_md5, timeline=timeline))
 
 print(f'guides 处理: {len(blocks)} 块  | 跳过(文件名非武将): {skipped}')
+stale = [b for b in blocks if b.get('is_current') == 'false']
+hints = [b for b in blocks if b.get('staleness_hint')]
+print(f"版本戳: as_of 基线 {CORPUS_BASE_DATE} | 过时块 {len(stale)}（检索默认排除）| 漂移提示 {len(hints)}")
+for b in stale:
+    print(f"  ⚠️ 过时: {b['block_id']} — {b['staleness_reason']}")
 
 # block_id 唯一性
 ids = [b['block_id'] for b in blocks]

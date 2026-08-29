@@ -19,9 +19,9 @@ TASKS: list[dict] = [
     {
         "name": "武将语料",
         "script": "build_rag_corpus.py",
-        "sources": ["data/heroes.json", "data/cards.json"],
+        "sources": ["data/heroes.json", "data/cards.json", "data/mjs_adjustments.json"],
         "outputs": ["武将RAG语料.json"],
-        "expected": 593,
+        "expected": 615,
     },
     {
         "name": "卡牌语料",
@@ -93,7 +93,7 @@ TASKS: list[dict] = [
     {
         "name": "武将攻略语料",
         "script": "build_guide_corpus.py",
-        "sources": ["data/raw_guides/jinxia/guides/", "data/heroes.json"],
+        "sources": ["data/raw_guides/jinxia/guides/", "data/heroes.json", "data/mjs_adjustments.json"],
         "outputs": ["武将攻略RAG语料.json"],
         "expected": None,
     },

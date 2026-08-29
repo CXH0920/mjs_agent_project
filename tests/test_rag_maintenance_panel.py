@@ -42,6 +42,8 @@ def _make_root(tmp_path: Path) -> Path:
     _write(root / "data" / "hero_classification.json", {"hero_categories": {"乐广": ["爆发型"]}})
     _write(root / "data" / "card_points.json", {"cards": [], "judge_rules": []})
     _write(root / "data" / "equip_attrs.json", [])
+    # 武将变更时间轴（武将语料/武将攻略语料任务的数据源）
+    _write(root / "data" / "mjs_adjustments.json", {"events": []})
     _write(root / "docs" / "元规则整理-完整版.md", "# 元规则")
     # 组合语料源（build_combo_corpus 依赖的社区 combo 材料）
     _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "bilibili_videos_weijiang.csv", "url\n")

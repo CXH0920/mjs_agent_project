@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlencode, urljoin
 
 from src.data.announcement_manager import AnnouncementStatus
+from src.data.hero_timeline import load_timeline, normalize_change_type
 from src.scraper.official_source.crawler import (
     BASE_URL,
     clean_html,
@@ -219,6 +220,144 @@ def classify_hero_related(
 
     hero_related = bool(new_section) or bool(adjust_section)
     return hero_related, matched
+
+
+# ============================================================
+# 武将变更事件提取（供时间轴 data/mjs_adjustments.json 持久化）
+# ============================================================
+
+# 调整章节内的技能名行：整行短名称（无冒号），其后通常跟 修改前/修改后
+SKILL_NAME_LINE_RE = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fff·]{2,10}$")
+
+
+def extract_hero_changes(title: str, content_html: str | None) -> list[dict]:
+    """从公告正文提取武将变更事件（hero + change_type + skills）。
+
+    - 调整类章节：`武将名（类型）`行开启武将块；整行短名称为技能名，其后
+      `修改前：/修改后：`行捕获前后描述；`技能名：描述`行视为变更摘要（兼容 A 类格式）；
+    - 新增类章节：独立短名称行为新武将，后续`技能名：描述`行收集登场技能名列表；
+    - 解析不出技能明细时保留 hero 级事件（skills 为空），不丢变更。
+    """
+    lines = _html_to_lines(content_html)
+    if not lines:
+        lines = _html_to_lines(title)
+    events: list[dict] = []
+    events.extend(_extract_new_hero_events(_extract_section(lines, NEW_SECTION_NAMES)))
+    for section_name in ADJUST_SECTION_NAMES:
+        events.extend(_extract_adjust_events(_extract_section(lines, (section_name,))))
+    return events
+
+
+def _extract_new_hero_events(section_lines: list[str]) -> list[dict]:
+    events: list[dict] = []
+    current: dict | None = None
+    for line in section_lines:
+        if NEW_HERO_LINE_RE.match(line):
+            current = {"hero": line, "change_type": "新增", "skills": []}
+            events.append(current)
+            continue
+        if current is None:
+            continue
+        if line.startswith("——") or line.startswith("--"):
+            continue  # 属性行（体力/手牌上限/势力/稀有度）
+        name = _skill_line_name(line)
+        if name:
+            current["skills"].append(name)
+    return events
+
+
+def _extract_adjust_events(section_lines: list[str]) -> list[dict]:
+    events: list[dict] = []
+    current: dict | None = None
+    skill: dict | None = None
+
+    def flush_skill() -> None:
+        nonlocal skill
+        if current is not None and skill is not None and any(skill.values()):
+            current["skills"].append(skill)
+        skill = None
+
+    for line in section_lines:
+        match = CHANGE_RE.match(line)
+        if match:
+            flush_skill()
+            current = {
+                "hero": match.group(1).strip(),
+                "change_type": normalize_change_type(match.group(2)),
+                "skills": [],
+            }
+            events.append(current)
+            continue
+        if current is None:
+            continue
+        if line.startswith("修改前") or line.startswith("修改后"):
+            field = "before" if line.startswith("修改前") else "after"
+            value = ""
+            for sep in ("：", ":"):
+                if sep in line:
+                    value = line.split(sep, 1)[1].strip()
+                    break
+            skill = skill or {"skill": ""}
+            skill[field] = value
+            continue
+        if SKILL_NAME_LINE_RE.match(line):
+            flush_skill()
+            skill = {"skill": line}
+            continue
+        name = _skill_line_name(line)
+        if name:
+            flush_skill()
+            skill = {"skill": name, "change": line.split("：", 1)[1].strip()}
+    flush_skill()
+    return events
+
+
+def _skill_line_name(line: str) -> str | None:
+    """`技能名：描述`行返回技能名（2-10 字），其余返回 None。"""
+    for sep in ("：", ":"):
+        if sep in line:
+            name = line.split(sep, 1)[0].strip()
+            return name if 2 <= len(name) <= 10 else None
+    return None
+
+
+def build_timeline_events(announcements: list, cutoff_date: str | None = None) -> list[dict]:
+    """将 hero_related 公告转为时间轴事件（date/hero/change_type/skills/ref）。
+
+    cutoff_date 之前的公告视为已被 A 类快照覆盖，跳过以免初始化重复；
+    缺省取时间轴的 init_source_last_updated，时间轴未初始化时为空串（全量收录，
+    适配无快照的全新安装）。Announcement 模型与原始 dict 均可。
+    """
+    if cutoff_date is None:
+        cutoff_date = str(load_timeline().get("init_source_last_updated") or "")
+    events: list[dict] = []
+    for announcement in announcements or []:
+        if _ann_field(announcement, "hero_related") is not True:
+            continue
+        publish_date = str(_ann_field(announcement, "publishdate") or "")[:10]
+        if not publish_date or publish_date <= cutoff_date:
+            continue
+        announcement_id = _ann_field(announcement, "id")
+        ref = str(_ann_field(announcement, "url") or "") or f"id:{announcement_id}"
+        title = str(_ann_field(announcement, "title") or "")
+        for entry in extract_hero_changes(title, _ann_field(announcement, "content")):
+            events.append({
+                "date": publish_date,
+                "hero": entry["hero"],
+                "change_type": entry["change_type"],
+                "skills": entry.get("skills") or [],
+                "source": "announcement",
+                "ref": ref,
+                "announcement_title": title,
+            })
+    return events
+
+
+def _ann_field(announcement: object, key: str):
+    """兼容 Announcement 模型（属性访问）与导入脚本读到的原始 dict。"""
+    if isinstance(announcement, dict):
+        return announcement.get(key)
+    return getattr(announcement, key, None)
 
 
 # ============================================================

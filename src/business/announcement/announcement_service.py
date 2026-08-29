@@ -22,8 +22,10 @@ from src.data.announcement_manager import (
     load_baike_snapshot,
     save_baike_snapshot,
 )
+from src.data.hero_timeline import append_announcement_events
 from src.scraper.official_source.announcement import (
     build_hero_snapshot,
+    build_timeline_events,
     classify_hero_related,
     diff_heroes,
     fetch_baike_heroes,
@@ -48,6 +50,7 @@ class AnnouncementCheckResult:
     ready_count: int = 0
     diff: dict = field(default_factory=lambda: dict(EMPTY_DIFF))
     baike_ok: bool = False
+    timeline_added: int = 0
     error: str | None = None
 
 
@@ -205,6 +208,7 @@ class AnnouncementService(QObject):
         if baike_ok:
             self.progress_changed.emit("正在对比武将差异...")
         hero_related = [ann for ann in new_announcements if ann.hero_related]
+        timeline_added = self._sync_timeline()
         return AnnouncementCheckResult(
             new_announcements=new_announcements,
             hero_related=hero_related,
@@ -212,4 +216,22 @@ class AnnouncementService(QObject):
             ready_count=self._announcements.ready_count(),
             diff=diff,
             baike_ok=baike_ok,
+            timeline_added=timeline_added,
         )
+
+    def _sync_timeline(self) -> int:
+        """hero_related 公告的武将变更落地到时间轴（幂等；失败仅记录，不中断检查）。
+
+        全量扫描 hero_related 公告而非仅本批新增：追加按 ref/(date, hero) 去重，
+        重复检查与此前同步失败（如写盘异常）的公告都能在下次检查补齐。
+        """
+        try:
+            added = append_announcement_events(
+                build_timeline_events(self._announcements.list_all())
+            )
+            if added:
+                logger.info("武将变更时间轴新增 %d 条事件", added)
+            return added
+        except Exception:
+            logger.exception("武将变更时间轴同步失败")
+            return 0

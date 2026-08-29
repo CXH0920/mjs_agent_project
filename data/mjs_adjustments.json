@@ -1,0 +1,1314 @@
+{
+ "init_imported_at": "2026-08-29",
+ "init_source_last_updated": "2026-08-25",
+ "corpus_base_date": "2026-08-28",
+ "events": [
+  {
+   "date": "2026-01-08",
+   "hero": "吕不韦",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-08",
+   "hero": "张郃",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "应势布阵",
+     "change": "增加手牌上限+1"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-08",
+   "hero": "曹丕",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "燕歌行",
+     "change": "移除中毒+1和回血效果"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-08",
+   "hero": "法正",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "奇画策算",
+     "change": "限制为出牌阶段触发"
+    },
+    {
+     "skill": "睚眦必报",
+     "change": "增加每回合限1次"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-08",
+   "hero": "赵姬",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-15",
+   "hero": "太史慈",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-15",
+   "hero": "步练师",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-15",
+   "hero": "赵姬",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "绝好善舞",
+     "change": "最后手牌摸2→摸1"
+    },
+    {
+     "skill": "迎归甘泉",
+     "change": "增加失去所有其他技能的代价"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-22",
+   "hero": "君王后",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-22",
+   "hero": "鲁仲连",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-29",
+   "hero": "庞统",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-29",
+   "hero": "张郃",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "应势布阵",
+     "change": "增加受伤触发，增加摸1张牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-29",
+   "hero": "法正",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "奇画策算",
+     "change": "摸2张牌→获得2张同点数牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-01-29",
+   "hero": "袁术",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-05",
+   "hero": "巴清",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-05",
+   "hero": "高渐离",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "刘协",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "刘表",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "嬴政",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "张角",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "太平要术",
+     "change": "增加符水循环机制"
+    },
+    {
+     "skill": "太平道",
+     "change": "改为主动获得符水，可选交牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "王翦",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "芈八子",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "权御四贵",
+     "change": "移除失去牌的限制"
+    },
+    {
+     "skill": "楚姝入秦",
+     "change": "增加回合开始时触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-12",
+   "hero": "荆轲",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "图穷匕见",
+     "change": "打出→失去最后手牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-19",
+   "hero": "孟获",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-02-26",
+   "hero": "太子丹",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-05",
+   "hero": "君王后",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "事秦谨慎",
+     "change": "两个效果共享每回合限1次"
+    },
+    {
+     "skill": "巧解玉环",
+     "change": "增加每回合限1次"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-05",
+   "hero": "步练师",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "追册中宫",
+     "change": "增加上限保护"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-05",
+   "hero": "祝融夫人",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-05",
+   "hero": "章邯",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "赦徒授兵",
+     "change": "改为消耗出杀次数，含装备牌"
+    },
+    {
+     "skill": "衔枚",
+     "change": "强化为永久加出杀次数"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-12",
+   "hero": "尉缭",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-12",
+   "hero": "李信",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-12",
+   "hero": "白起",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-12",
+   "hero": "章邯",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "赦徒授兵",
+     "change": "移除装备牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-12",
+   "hero": "赵云",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "七进七出",
+     "change": "累计7张→3张触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-19",
+   "hero": "张宝",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-19",
+   "hero": "张梁",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-19",
+   "hero": "李信",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "衍水追锋",
+     "change": "优化叠层逻辑"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-19",
+   "hero": "王翦",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "横扫三晋",
+     "change": "移除每回合限1次"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-19",
+   "hero": "白起",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "出奇无穷",
+     "change": "打出牌→打出行动牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-26",
+   "hero": "孙策",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "小霸王",
+     "change": "增加结束时触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-26",
+   "hero": "李斯",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "燔书明法",
+     "change": "重做"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-26",
+   "hero": "桑弘羊",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-03-26",
+   "hero": "韩信",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "背水一战",
+     "change": "移除销毁和失去体力，改为下次伤害+1"
+    },
+    {
+     "skill": "登台拜将",
+     "change": "新增技能"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-02",
+   "hero": "卢莫愁",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-02",
+   "hero": "貂蝉",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "闭月之姿",
+     "change": "增加可以打出其中1张牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-02",
+   "hero": "赵威后",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": null,
+     "change": "属性改为4手牌4体力上限"
+    },
+    {
+     "skill": "无民何有君",
+     "change": "增加烧毁/移出触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-02",
+   "hero": "郑袖",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": null,
+     "change": "属性改为4手牌4体力上限"
+    },
+    {
+     "skill": "掩袖工谗",
+     "change": "加每弃置1张触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-02",
+   "hero": "项燕",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-09",
+   "hero": "公孙瓒",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-09",
+   "hero": "凌统",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-14",
+   "hero": "平阳公主",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-14",
+   "hero": "霍光",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-16",
+   "hero": "侯嬴",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-16",
+   "hero": "庞统",
+   "change_type": "重做",
+   "skills": [
+    {
+     "skill": null,
+     "change": "体力上限改为4，删除浴火重生，新增入蜀三策和欲展骥足"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-16",
+   "hero": "曹植",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "才高八斗",
+     "change": "增加给牌选项"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-16",
+   "hero": "朱亥",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-16",
+   "hero": "鲁仲连",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "一箭定聊",
+     "change": "移除消耗出杀次数"
+    },
+    {
+     "skill": "义不帝秦",
+     "change": "优化为打出此牌后放入牌堆底"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-23",
+   "hero": "侯嬴",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "市井隐者",
+     "change": "改为回合结束时触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-23",
+   "hero": "王异",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-23",
+   "hero": "黄月英",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-30",
+   "hero": "巴清",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "丹砂女王",
+     "change": "增加不消耗次数和获得♦牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-30",
+   "hero": "李信",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "果势壮勇",
+     "change": "移除每回合限1次"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-30",
+   "hero": "李夫人",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-30",
+   "hero": "王异",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "忠贞刚烈",
+     "change": "移除体力值变化"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-04-30",
+   "hero": "赵婕妤",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-07",
+   "hero": "卓文君",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-07",
+   "hero": "司马相如",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-14",
+   "hero": "卓文君",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "夜奔相如",
+     "change": "增加弃置选项"
+    },
+    {
+     "skill": "当垆卖酒",
+     "change": "随机获得→选择获得"
+    },
+    {
+     "skill": "白头吟",
+     "change": "移除每回合限1次，可指定任意名"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-14",
+   "hero": "司马相如",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "凤求凰",
+     "change": "增加弃置选项"
+    },
+    {
+     "skill": "自着犊鼻",
+     "change": "移除出牌阶段限1次"
+    },
+    {
+     "skill": "劝百讽一",
+     "change": "限1次→限2次，可指定任意名"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-14",
+   "hero": "庞煖",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-14",
+   "hero": "庞统",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "入蜀三策",
+     "change": "交给你→弃置"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-14",
+   "hero": "赵奢",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-14",
+   "hero": "魏咎",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-21",
+   "hero": "孟获",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "雄驭百兽",
+     "change": "增加回收销毁机制"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-21",
+   "hero": "李夫人",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "姗姗来迟",
+     "change": "改为摸牌+回复同时生效"
+    },
+    {
+     "skill": "倾国倾城",
+     "change": "改为造成伤害触发摸牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-21",
+   "hero": "贾诩",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-21",
+   "hero": "陈宫",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-28",
+   "hero": "祝融夫人",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "赤黎飞刃",
+     "change": "杀被抵消→打出牌被响应"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-28",
+   "hero": "郑国",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-05-28",
+   "hero": "韩娥",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-04",
+   "hero": "吕蒙",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-04",
+   "hero": "徐盛",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-11",
+   "hero": "刘据",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-11",
+   "hero": "姜维",
+   "change_type": "重做",
+   "skills": [
+    {
+     "skill": "矢志匡汉",
+     "change": "重做"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-11",
+   "hero": "郭舍人",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-11",
+   "hero": "韩娥",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "千古留音（羽）",
+     "change": "每回合→每轮"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-11",
+   "hero": "鲁仲连",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "义不帝秦",
+     "change": "当前回合→本轮"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-15",
+   "hero": "司马炎",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-15",
+   "hero": "羊祜",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-18",
+   "hero": "刘禅",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-18",
+   "hero": "魏延",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-25",
+   "hero": "傅玄",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-25",
+   "hero": "徐盛",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "濡须破军",
+     "change": "其下回合→你的下回合结束"
+    },
+    {
+     "skill": "百里疑城",
+     "change": "重做部分效果"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-25",
+   "hero": "陆机",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-06-25",
+   "hero": "魏咎",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "流亡储君",
+     "change": "移除♦花色限制"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-02",
+   "hero": "主父偃",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-02",
+   "hero": "吕蒙",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "束军克己",
+     "change": "2张杀→3张杀"
+    },
+    {
+     "skill": "笃志奋学",
+     "change": "+2→+1手牌上限"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-02",
+   "hero": "羊祜",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "轻裘缓带",
+     "change": "移除装备上限±1"
+    },
+    {
+     "skill": "德冠四海",
+     "change": "增加收回装备牌"
+    },
+    {
+     "skill": "潜谋远计",
+     "change": "弃置牌→打出装备牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-02",
+   "hero": "赵威后",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "质子为兵",
+     "change": "重做"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-02",
+   "hero": "郭解",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-09",
+   "hero": "主父偃",
+   "change_type": "调整",
+   "skills": [
+    {
+     "skill": "献策推恩",
+     "change": "至少1张→1张"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-09",
+   "hero": "张华",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-09",
+   "hero": "荀勖",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-15",
+   "hero": "杜预",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-15",
+   "hero": "王元姬",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-16",
+   "hero": "乐广",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-16",
+   "hero": "卫玠",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-16",
+   "hero": "霍光",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "芒刺在背",
+     "change": "重做"
+    },
+    {
+     "skill": "擅专废立",
+     "change": "优化"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-23",
+   "hero": "刘据",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "博望纳贤",
+     "change": "优化"
+    },
+    {
+     "skill": "惧忿成戾",
+     "change": "改为出牌阶段结束时"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-23",
+   "hero": "王元姬",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "烛奸抑势",
+     "change": "改为回合开始时触发"
+    },
+    {
+     "skill": "谦冲接下",
+     "change": "移除手牌数条件"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-23",
+   "hero": "终军",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-23",
+   "hero": "韩安国",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-30",
+   "hero": "偃师",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-30",
+   "hero": "卫玠",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "风神秀异",
+     "change": "受伤减手牌上限加每回合限1次"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-30",
+   "hero": "羊祜",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "轻裘缓带",
+     "change": "重做"
+    },
+    {
+     "skill": "德冠四海",
+     "change": "简化效果"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-07-30",
+   "hero": "马钧",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-06",
+   "hero": "山涛",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-06",
+   "hero": "王戎",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-13",
+   "hero": "东方朔",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-13",
+   "hero": "贾诩",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "算无遗策",
+     "change": "增加抵挡战法牌"
+    },
+    {
+     "skill": "毒士",
+     "change": "3点→2点杀伤害触发"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-13",
+   "hero": "马钧",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "龙骨汲流",
+     "change": "装备区→♣牌"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-15",
+   "hero": "王濬",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-15",
+   "hero": "羊献容",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-20",
+   "hero": "临海公主",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-20",
+   "hero": "杨艳",
+   "change_type": "新增",
+   "skills": [],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-20",
+   "hero": "陆机",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "缘情绮靡",
+     "change": "重做"
+    },
+    {
+     "skill": "陆才如海",
+     "change": "重做"
+    },
+    {
+     "skill": "华亭鹤唳",
+     "change": "移除受伤条件"
+    }
+   ],
+   "source": "init"
+  },
+  {
+   "date": "2026-08-26",
+   "hero": "如姬",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "窃符救赵",
+     "before": "出牌阶段开始时，你可以查看一名其他角色的随机3张手牌(不足则全看)，并可以用你的手牌交换这些牌或将这些牌补至最多3张，然后根据这些牌的组合触发对应效果。",
+     "after": "出牌阶段限1次，你可以查看一名其他角色的随机3张手牌(不足则全看)，并可以用你的手牌交换这些牌或将这些牌补至最多3张，然后根据这些牌的组合触发对应效果。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1787-000e2-745612.html",
+   "announcement_title": "8月27日05：00停服更新预告"
+  },
+  {
+   "date": "2026-08-26",
+   "hero": "王濬",
+   "change_type": "削弱",
+   "skills": [
+    {
+     "skill": "暗筑楼船",
+     "before": "出牌阶段限1次，你可以将1张手牌选择并转化为1张相同花色的装备牌，并获得1张相同花色的牌。回合开始时，若你的装备区牌数不是全场唯一最多，此技能的发动次数永久+1。",
+     "after": "出牌阶段限1次，你可以将1张手牌选择并转化为1张相同花色的装备牌，并获得1张相同花色的牌。每轮结束时，若你的装备区牌数不是全场最多，此技能的发动次数永久+1。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1787-000e2-745612.html",
+   "announcement_title": "8月27日05：00停服更新预告"
+  },
+  {
+   "date": "2026-08-26",
+   "hero": "苏武",
+   "change_type": "新增",
+   "skills": [
+    "汉使北牧",
+    "啮雪吞毡",
+    "鸿雁传书"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1787-000e2-745612.html",
+   "announcement_title": "8月27日05：00停服更新预告"
+  },
+  {
+   "date": "2026-08-26",
+   "hero": "金日磾",
+   "change_type": "新增",
+   "skills": [
+    "秺侯诛莽",
+    "休屠王子",
+    "目不忤视"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1787-000e2-745612.html",
+   "announcement_title": "8月27日05：00停服更新预告"
+  }
+ ]
+}

@@ -21,6 +21,14 @@ KEYWORDS = [
 ]
 
 
+def build_search_where(heroes=None):
+    """构造 Chroma where：默认只召当前版本块（is_current），可叠加武将硬过滤。"""
+    conds = [{'is_current': 'true'}]
+    if heroes:
+        conds.append({'hero': {'$in': list(heroes)}})
+    return conds[0] if len(conds) == 1 else {'$and': conds}
+
+
 class Retriever:
     def __init__(self):
         self._client = None
@@ -134,9 +142,7 @@ class Retriever:
         """混合检索：向量 + 关键词经 RRF 排名融合，再按类型配额取 top_k。
         heroes: 指定武将名列表（元数据硬过滤，保证召回）。"""
         top_k = top_k or config.TOP_K
-        where = None
-        if heroes:
-            where = {'hero': {'$in': list(heroes)}}
+        where = build_search_where(heroes)
         vec = [v for v in self._vector_search(query, where=where, n=max(top_k * 2, 30))
                if v['score'] >= config.MIN_VECTOR_SCORE]
         kw = self._keyword_hits(query)
@@ -154,6 +160,10 @@ class Retriever:
             item['rrf'] = item.get('rrf', 0.0) + 1.0 / (config.RRF_K + r)
             if item['source'] == 'vector':
                 item['source'] = 'vector+kw'
+
+        # 关键词兜底走内存索引，绕过了向量侧 where 过滤；融合后统一剔除非当前版本块
+        merged = {bid: item for bid, item in merged.items()
+                  if item.get('metadata', {}).get('is_current', 'true') != 'false'}
 
         # 纯关键词块数量上限（RRF 单边分天然靠后，仅防数量失控）
         kw_only = sorted((it for it in merged.values() if it['source'] == 'keyword'),

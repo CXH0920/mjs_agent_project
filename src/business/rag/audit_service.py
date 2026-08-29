@@ -305,4 +305,47 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
             message=f"索引字段待精化 {len(pending_refinement)} 块（卡牌/武将语料）",
             severity="warning",
         ))
+    # 武将变更时间轴一致性（override 语义失效 / heroes.json 疑未同步），无跳转页签
+    timeline_messages = collect_timeline_risk_messages(root)
+    if timeline_messages:
+        issues.append(AuditIssue(
+            kind="timeline_risk",
+            message="；".join(timeline_messages),
+            severity="warning",
+        ))
     return issues
+
+
+def collect_timeline_risk_messages(root: Path) -> list[str]:
+    """时间轴风险摘要（供 UI 横幅；逐条详情见 scripts/rag_audit.audit_version_timeline）。"""
+    from src.data.hero_timeline import (  # noqa: PLC0415
+        hero_last_change,
+        load_timeline,
+        stale_overrides,
+    )
+
+    if not (root / "data" / "mjs_adjustments.json").exists():
+        return ["时间轴未初始化（缺少 data/mjs_adjustments.json）"]
+    timeline = load_timeline()
+    messages = []
+    risks = stale_overrides(timeline)
+    if risks:
+        message = f"TRIGGER_OVERRIDES 失效风险 {len(risks)} 条"
+        skill_risks = [r for r in risks if r["level"] == "skill"]
+        if skill_risks:
+            first = skill_risks[0]
+            message += f"（如 {first['hero']}/{first['skill']} 于 {first['date']} 调整）"
+        messages.append(message + "，请人工复核")
+    try:
+        heroes = json.loads((root / "data" / "heroes.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return messages
+    unsynced = []
+    for hero in heroes:
+        name = str(hero.get("name", ""))
+        last = hero_last_change(name, timeline)
+        if last and str(hero.get("last_updated") or "") < last:
+            unsynced.append(name)
+    if unsynced:
+        messages.append(f"heroes.json 疑未同步 {len(unsynced)} 人：{'、'.join(unsynced[:5])}")
+    return messages

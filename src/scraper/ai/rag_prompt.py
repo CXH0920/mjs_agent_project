@@ -184,6 +184,10 @@ def _format_rag_chunks(core_blocks: list[dict], extra_blocks: list[dict],
             if remaining <= 0:
                 break
             block = f"[{chunk['block_id']}] {chunk['text']}"
+            warn = (chunk.get('metadata') or {}).get('staleness_reason')
+            if warn:
+                # 时间轴判定该块涉及的技能已被官方调整，提示生成侧勿当硬依据
+                block = f"⚠️ 过时风险：{warn}\n{block}"
             if len(block) > remaining:
                 continue  # 整块丢弃，避免截断在结算句中间造成残缺规则
             target.append(block)
