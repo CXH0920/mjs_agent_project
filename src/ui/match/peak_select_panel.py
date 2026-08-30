@@ -9,7 +9,6 @@ from functools import partial
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -31,6 +30,7 @@ from src.business.analysis.peak_ban_advice import (
 from src.business.recognition.peak_select_watcher import PoolSnapshot, PeakSelectWatcher
 from src.config.env import PROJECT_ROOT
 from src.data.combo_seats import format_seats
+from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.shared.combo_detail import show_combo_detail
 from src.ui.shared.style import (
@@ -117,6 +117,13 @@ class PeakSelectPanel(QWidget):
         self._more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._more_btn.setMenu(self._more_menu)
         self._action_bar.add_action(self._more_btn, ROLE_GHOST)
+        # OCR 模型预热期（Paddle 初始化持 GIL）禁用图片导入，避免界面冻结
+        self._update_import_availability(
+            getattr(self._capture_service, "ocr_warmup_state", "ready")
+        )
+        state_changed = getattr(self._capture_service, "ocr_warmup_state_changed", None)
+        if state_changed is not None:
+            state_changed.connect(self._update_import_availability)
         layout.addWidget(self._action_bar)
 
         # 阶段与候选汇总并入动作栏左端（原状态文本位置），状态文本随其右，
@@ -198,11 +205,10 @@ class PeakSelectPanel(QWidget):
         self._combo_title = QLabel("⚔ 实战配队 · 命中 0")
         strip_header.addWidget(self._combo_title)
         strip_header.addStretch()
-        self._combo_seat_combo = QComboBox()
-        self._combo_seat_combo.addItems(["全部", "1号位", "2号位", "3号位", "4号位"])
-        self._combo_seat_combo.setToolTip("按配队可坐号位筛选")
-        self._combo_seat_combo.currentIndexChanged.connect(lambda _index: self._render_combo_chips())
-        strip_header.addWidget(self._combo_seat_combo)
+        self._combo_manage_btn = QPushButton("管理")
+        self._combo_manage_btn.setToolTip("新增、编辑或删除实战配队")
+        self._combo_manage_btn.clicked.connect(self._open_combo_management)
+        strip_header.addWidget(self._combo_manage_btn)
         self._combo_toggle_btn = QToolButton()
         self._combo_toggle_btn.setText("收起")
         self._combo_toggle_btn.clicked.connect(self._toggle_combo_chips)
@@ -247,6 +253,9 @@ class PeakSelectPanel(QWidget):
 
     def _on_import_from_file(self) -> None:
         """选择本地截图做一次完整识别，用于手动验证（无需连接模拟器）。"""
+        if getattr(self._capture_service, "ocr_warmup_state", "ready") == "warming":
+            self._action_bar.set_status("OCR 模型预热中，请稍后再试", TONE_WARNING)
+            return
         SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -261,6 +270,13 @@ class PeakSelectPanel(QWidget):
 
     def _on_status_changed(self, text: str) -> None:
         self._action_bar.set_status(text, TONE_INFO)
+
+    def _update_import_availability(self, state: str) -> None:
+        """OCR 模型预热期间禁用图片导入：预热加载持有 GIL，会冻结界面。"""
+        warming = state == "warming"
+        self._import_action.setEnabled(not warming)
+        if warming:
+            self._action_bar.set_status("OCR 模型预热中，图片导入稍后可用…", TONE_WARNING)
 
     def _on_pool_updated(self, snapshot: PoolSnapshot) -> None:
         self._last_snapshot = snapshot
@@ -361,28 +377,21 @@ class PeakSelectPanel(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
-        seat = self._combo_seat_combo.currentIndex()  # 0 = 全部
         for combo in self._matched_combos:
-            suffix = ""
-            if seat > 0:
-                seaters = [
-                    name
-                    for name, seats in (
-                        (combo.hero1_name, combo.hero1_seats),
-                        (combo.hero2_name, combo.hero2_seats),
-                    )
-                    if seat in seats
-                ]
-                suffix = f" · {seat}号:{'/'.join(seaters)}" if seaters else ""
             chip = QPushButton(
                 f"★{combo.rating} {combo.hero1_name}[{format_seats(combo.hero1_seats)}]"
-                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]{suffix}"
+                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
             )
             chip.setToolTip(_combo_tooltip(combo))
-            chip.setEnabled(seat == 0 or seat in combo.hero1_seats or seat in combo.hero2_seats)
             chip.clicked.connect(lambda checked=False, target=combo: show_combo_detail(self, target))
             self._combo_chip_flow.addWidget(chip)
         self._combo_strip.setVisible(bool(self._matched_combos))
+
+    def _open_combo_management(self) -> None:
+        """打开实战配队全量管理对话框；增删改后即时刷新角标与命中条。"""
+        dialog = ComboManagementDialog(self._hero_manager, self._combo_manager, self)
+        dialog.combos_changed.connect(self._render_cards)
+        dialog.exec()
 
     def _toggle_combo_chips(self) -> None:
         self._combo_chips_collapsed = not self._combo_chips_collapsed

@@ -729,8 +729,10 @@ class MainWindow(QMainWindow):
         workspace_layout.setSpacing(0)
 
         title, description = self.PAGE_CONTEXTS[0]
+        # 顶部大标题块按需求移除：页面标题由各页内部 PageHeader 呈现，
+        # 对象保留以维持菜单动作挂载与 PAGE_CONTEXTS 同步逻辑。
         self._context_header = ContextHeader(title, description, workspace)
-        workspace_layout.addWidget(self._context_header)
+        self._context_header.hide()
         self._setup_shell_actions()
 
         self._announcement_banner = NoticeBanner("公告更新", "", tone=TONE_INFO, parent=workspace)

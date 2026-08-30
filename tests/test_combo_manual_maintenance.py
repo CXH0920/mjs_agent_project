@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from src.data.combo_manager import ComboManager
 from src.data.models import Combo
@@ -222,24 +222,13 @@ def test_management_dialog_lists_counts_and_filters(qapp, tmp_path):
     dialog = ComboManagementDialog(hero_mgr, manager)
 
     assert "共 3 条 · 手工 2 · 导入 1" in dialog._summary_label.text()
-    row_texts = [
-        label.text()
-        for row_index in range(dialog._rows_layout.count())
-        if (row := dialog._rows_layout.itemAt(row_index).widget()) is not None
-        for label in row.findChildren(QLabel)
-    ]
-    assert any("★9" in text for text in row_texts)
+    assert dialog._combo_list.count() == 3
+    assert "★9" in dialog._combo_list.item(0).text()
 
     dialog._hero_filter.setCurrentIndex(1)  # 荆轲(id=1)
-    assert "共 3 条" in dialog._summary_label.text()
+    assert dialog._combo_list.count() == 2
     dialog._manual_only_check.setChecked(True)
-
-    visible_rows = sum(
-        1
-        for row_index in range(dialog._rows_layout.count())
-        if dialog._rows_layout.itemAt(row_index).widget() is not None
-    )
-    assert visible_rows == 2  # 荆轲的两条手工记录
+    assert dialog._combo_list.count() == 2  # 荆轲的两条均为手工
 
 
 def test_management_dialog_delete_emits_and_persists(qapp, tmp_path, monkeypatch):
@@ -255,9 +244,8 @@ def test_management_dialog_delete_emits_and_persists(qapp, tmp_path, monkeypatch
         lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
     )
 
-    row = dialog._rows_layout.itemAt(0).widget()
-    delete_button = next(button for button in row.findChildren(QPushButton) if button.text() == "删除")
-    delete_button.click()
+    dialog._combo_list.setCurrentRow(0)
+    dialog._on_delete_selected()
 
     assert changed == [1]
     assert manager.get_combo(1, 2) is None
@@ -287,3 +275,24 @@ def test_management_dialog_add_opens_edit_dialog_and_refreshes(qapp, tmp_path, m
 
     assert changed == [1]
     assert "共 4 条 · 手工 3 · 导入 1" in dialog._summary_label.text()
+    assert dialog._combo_list.count() == 4
+
+
+def test_management_dialog_edit_requires_selection(qapp, tmp_path, monkeypatch):
+    """未选中行时编辑/删除按钮禁用，直接调用不产生副作用。"""
+    _app()
+    hero_mgr, _heroes = _make_hero_mgr()
+    manager = _make_manager_with_combos(tmp_path)
+    dialog = ComboManagementDialog(hero_mgr, manager)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    assert not dialog._edit_button.isEnabled()
+    assert not dialog._delete_button.isEnabled()
+
+    dialog._on_edit_selected()
+    dialog._on_delete_selected()
+    assert manager.get_combo(1, 2) is not None  # 未误删

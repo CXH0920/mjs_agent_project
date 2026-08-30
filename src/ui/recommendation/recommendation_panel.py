@@ -15,7 +15,6 @@ from datetime import datetime
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -198,15 +197,6 @@ class RecommendationPanel(QWidget):
         self._combo_title = QLabel("⚔ 实战配队")
         self._combo_title.setObjectName("recommendationComboTitle")
         strip_header.addWidget(self._combo_title)
-        strip_header.addWidget(QLabel("当前号位:"))
-        self._combo_seat_combo = QComboBox()
-        self._combo_seat_combo.addItems(["全部", "1号位", "2号位", "3号位", "4号位"])
-        self._combo_seat_combo.setToolTip(
-            "对照游戏内当前正在选择的座次选择号位，"
-            "命中该号位的配队保持可点，其余置灰"
-        )
-        self._combo_seat_combo.currentIndexChanged.connect(self._render_combo_chips)
-        strip_header.addWidget(self._combo_seat_combo)
         strip_header.addStretch()
         self._combo_manage_btn = QPushButton("管理")
         self._combo_manage_btn.setToolTip("新增、编辑或删除实战配队")
@@ -423,34 +413,21 @@ class RecommendationPanel(QWidget):
             card.set_combo_badge(f"实战 ★{rating}" if rating else None)
 
     def _render_combo_chips(self) -> None:
-        """重建配队 chip：不命中当前号位的置灰保留，命中的标注落座武将。"""
+        """重建配队 chip：按评级降序展示全部命中配队。"""
         while self._combo_chip_flow.count():
             item = self._combo_chip_flow.takeAt(0)
             widget = item.widget() if item else None
             if widget is not None:
                 widget.deleteLater()
 
-        seat = self._combo_seat_combo.currentIndex()  # 0 = 全部
         for combo in self._matched_combos:
-            suffix = ""
-            if seat > 0:
-                seaters = [
-                    name
-                    for name, seats in (
-                        (combo.hero1_name, combo.hero1_seats),
-                        (combo.hero2_name, combo.hero2_seats),
-                    )
-                    if seat in seats
-                ]
-                suffix = f" · {seat}号:{'/'.join(seaters)}" if seaters else ""
             chip = QPushButton(
                 f"★{combo.rating} {combo.hero1_name}[{format_seats(combo.hero1_seats)}]"
-                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]{suffix}"
+                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
             )
             chip.setObjectName("recommendationComboChip")
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.setToolTip(self._combo_tooltip(combo))
-            chip.setEnabled(seat == 0 or seat in combo.hero1_seats or seat in combo.hero2_seats)
             chip.clicked.connect(lambda checked=False, target=combo: self._show_combo_detail(target))
             self._combo_chip_flow.addWidget(chip)
         self._combo_strip.setVisible(bool(self._matched_combos))
