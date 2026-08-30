@@ -183,6 +183,37 @@ def test_edit_dialog_warns_before_overwriting_existing_pair(qapp, tmp_path, monk
     assert manager.get_combo(1, 2).rating == 9  # 选是：覆盖并转手工
 
 
+def test_edit_dialog_asks_when_no_seat_selected(qapp, tmp_path, monkeypatch):
+    """两位武将均未勾选座次时先确认再落盘，选否不保存。"""
+    _app()
+    hero_mgr, heroes = _make_hero_mgr()
+    manager = ComboManager(tmp_path / "combos.json")
+    manager.load()
+    dialog = ComboEditDialog(hero_mgr, manager)
+    dialog._hero1 = heroes[1]
+    dialog._hero2 = heroes[2]
+    dialog._rating_spin.setValue(9)
+    asked: list[str] = []
+    monkeypatch.setattr(
+        "src.ui.library.combo_edit_dialog.QMessageBox.question",
+        lambda _parent, title, *_args, **_kwargs: asked.append(title) or QMessageBox.StandardButton.No,
+    )
+
+    dialog._on_save()
+    assert asked == ["未选择座次"]
+    assert manager.get_combo(1, 2) is None
+
+    monkeypatch.setattr(
+        "src.ui.library.combo_edit_dialog.QMessageBox.question",
+        lambda _parent, title, *_args, **_kwargs: asked.append(title) or QMessageBox.StandardButton.Yes,
+    )
+    dialog._on_save()
+    assert asked == ["未选择座次", "未选择座次"]  # 新组合不触发覆盖确认
+    saved = manager.get_combo(1, 2)
+    assert saved is not None
+    assert saved.position == "both"
+
+
 def test_edit_dialog_prefill_and_key_migration(qapp, tmp_path):
     _app()
     hero_mgr, heroes = _make_hero_mgr()
@@ -196,6 +227,7 @@ def test_edit_dialog_prefill_and_key_migration(qapp, tmp_path):
     assert dialog._rating_spin.value() == 6
 
     dialog._hero2 = heroes[3]
+    dialog._hero1_seat_checks[0].setChecked(True)  # 勾座次，避开"未选择座次"确认弹窗
     dialog._on_save()
 
     assert manager.get_combo(1, 2) is None

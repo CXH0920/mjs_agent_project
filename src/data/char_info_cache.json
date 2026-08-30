@@ -1199,6 +1199,14 @@
     "total_strokes": "4",
     "wubi": "FQV"
   },
+  "日": {
+    "cangjie": "A",
+    "four_corner": "6010",
+    "pinyin": "ri",
+    "radical": "日",
+    "total_strokes": "4",
+    "wubi": "JJJJ"
+  },
   "早": {
     "cangjie": "AJ",
     "four_corner": "6040",
@@ -1335,6 +1343,22 @@
     "total_strokes": "7",
     "wubi": "SNRT"
   },
+  "染": {
+    "cangjie": "END",
+    "four_corner": "3490",
+    "pinyin": "ran",
+    "radical": "木",
+    "total_strokes": "9",
+    "wubi": "IVSU"
+  },
+  "柯": {
+    "cangjie": "DMNR",
+    "four_corner": "4192",
+    "pinyin": "ke",
+    "radical": "木",
+    "total_strokes": "9",
+    "wubi": "SSKG"
+  },
   "桑": {
     "cangjie": "EEED",
     "four_corner": "1790",
@@ -1390,6 +1414,14 @@
     "radical": "止",
     "total_strokes": "7",
     "wubi": "HIR"
+  },
+  "武": {
+    "cangjie": "MPYLM",
+    "four_corner": "1314",
+    "pinyin": "wu",
+    "radical": "止",
+    "total_strokes": "8",
+    "wubi": "GAHD"
   },
   "毅": {
     "cangjie": "YOHNE",
@@ -1678,6 +1710,14 @@
     "radical": "目",
     "total_strokes": "10",
     "wubi": "HGSY"
+  },
+  "磾": {
+    "cangjie": "MRRRJ",
+    "four_corner": "1664",
+    "pinyin": "di",
+    "radical": "石",
+    "total_strokes": "17",
+    "wubi": "DKKF"
   },
   "祜": {
     "cangjie": "IFJR",
@@ -2414,6 +2454,22 @@
     "radical": "阝",
     "total_strokes": "10",
     "wubi": "YBBH"
+  },
+  "采": {
+    "cangjie": "BD",
+    "four_corner": "2090",
+    "pinyin": "cai",
+    "radical": "采",
+    "total_strokes": "8",
+    "wubi": "ESU"
+  },
+  "金": {
+    "cangjie": "C",
+    "four_corner": "8010",
+    "pinyin": "jin",
+    "radical": "金",
+    "total_strokes": "8",
+    "wubi": "QQQQ"
   },
   "钟": {
     "cangjie": "OVL",

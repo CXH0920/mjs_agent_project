@@ -87,7 +87,7 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
     for index, raw in enumerate(combos_raw):
         name1, name2 = str(raw.get("hero1", "")).strip(), str(raw.get("hero2", "")).strip()
         id1, id2 = name2id.get(name1), name2id.get(name2)
-        if not id1 or not id2:
+        if id1 is None or id2 is None:
             report["unmatched"].append({"index": index, "hero1": name1, "hero2": name2})
             continue
         key = tuple(sorted((id1, id2)))

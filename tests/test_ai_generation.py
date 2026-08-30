@@ -459,7 +459,7 @@ def test_browser_generator_rests_before_next_successful_request(
     monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
     monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda *a, **k: "synergy")
-    monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {"key_points": [], "description": "x", "score": 5})
+    monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {"key_points": [], "description": "测试描述" * 100, "score": 5})
     monkeypatch.setattr(ai_playwright, "validate_guide", lambda raw: raw)
     monkeypatch.setattr(ai_playwright, "validate_synergy", lambda raw: raw)
 
@@ -642,7 +642,19 @@ def test_browser_generator_retries_on_json_extract_failure(monkeypatch) -> None:
         # 第一次返回不规范的纯文本，第二次返回规范 JSON
         if len(calls) == 1:
             return "这是一段没有 JSON 的普通文本"
-        return '{"hero_id": 1, "description": "攻略", "key_points": [], "weak_against_type": [], "strong_against_type": [], "synergizes_with": [], "counter_strategy": "", "tips_for_beginners": ""}'
+        return json.dumps(
+            {
+                "hero_id": 1,
+                "description": "测试描述" * 100,
+                "key_points": [],
+                "weak_against_type": [],
+                "strong_against_type": [],
+                "synergizes_with": [],
+                "counter_strategy": "",
+                "tips_for_beginners": "",
+            },
+            ensure_ascii=False,
+        )
 
     generator = object.__new__(browser_generator.PlaywrightGenerator)
     generator._guide_rest_required = False

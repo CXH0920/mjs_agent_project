@@ -1,7 +1,5 @@
 """名将杀 Agent - 实战配队座次解析单元测试"""
 
-import pytest
-
 from src.data.combo_seats import (
     STATUS_NONE,
     STATUS_PARSED,

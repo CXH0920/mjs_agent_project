@@ -279,16 +279,18 @@ def test_synergy_prompt_injects_core_rules_when_rag_disabled(monkeypatch):
 
 
 def test_has_required_guide_fields():
-    """攻略必填字段预检：key_points / description 缺一即失败。"""
+    """攻略必填字段预检：key_points / description 缺一即失败，描述须达到最小长度。"""
     from src.scraper.ai.utils import has_required_guide_fields
-    assert has_required_guide_fields({"key_points": [], "description": "x"}) is True
-    assert has_required_guide_fields({"description": "x"}) is False
+    assert has_required_guide_fields({"key_points": [], "description": "测试描述" * 100}) is True
+    assert has_required_guide_fields({"description": "测试描述" * 100}) is False
     assert has_required_guide_fields({"key_points": []}) is False
+    assert has_required_guide_fields({"key_points": [], "description": "太短"}) is False
 
 
 def test_has_required_synergy_fields():
-    """相性必填字段预检：score / description 缺一即失败。"""
+    """相性必填字段预检：score / description 缺一即失败，描述须达到最小长度。"""
     from src.scraper.ai.utils import has_required_synergy_fields
-    assert has_required_synergy_fields({"score": 5, "description": "x"}) is True
-    assert has_required_synergy_fields({"description": "x"}) is False
+    assert has_required_synergy_fields({"score": 5, "description": "测试描述" * 100}) is True
+    assert has_required_synergy_fields({"description": "测试描述" * 100}) is False
     assert has_required_synergy_fields({"score": 5}) is False
+    assert has_required_synergy_fields({"score": 5, "description": "太短"}) is False

@@ -171,6 +171,8 @@ class PeakSelectWatcher(QObject):
             self._suspend_standard_tasks()
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
+                # 识别失败清签名，下一拍强制重试；仅实时循环路径，图片导入不动签名
+                self._signature = None
                 return
             self._signature = signature
             self._publish_pool(ocr_results, len(cards))
@@ -181,7 +183,7 @@ class PeakSelectWatcher(QObject):
             self._thread_lock.release()
 
     def _recognize_board(self, image, cards: list[Roi]) -> list[dict] | None:
-        """经统一 OCR 队列识别名条，超时返回 None 并清除签名以便重试。"""
+        """经统一 OCR 队列识别名条，失败返回 None（签名重置由实时循环调用方处理）。"""
         hero_names = list(self._hero_names_provider())
         rois = [list(roi) for roi in derive_name_rois(cards)]
         task = self._capture_service.submit_ocr_task(
@@ -194,12 +196,10 @@ class PeakSelectWatcher(QObject):
         if not task.completed.wait(OCR_WAIT_TIMEOUT_SECONDS):
             logger.warning("巅峰赛 OCR 超时（%s 秒）", OCR_WAIT_TIMEOUT_SECONDS)
             self.status_changed.emit("识别超时，下一拍重试")
-            self._signature = None
             return None
         outcome = (task.result or {}).get("outcome")
         if outcome != "matched":
             self.status_changed.emit(f"识别未完成（{outcome}），下一拍重试")
-            self._signature = None
             return None
         return (task.result or {}).get("ocr_results") or []
 

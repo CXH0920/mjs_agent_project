@@ -436,3 +436,101 @@ def test_watcher_confirm_pending_republishes_snapshot(qapp):
     assert pools[1].names == ("荆轲", "卓文君")
     assert pools[1].pending == ()
     assert pools[1].banned == ()
+
+
+def test_panel_warmup_hint_restored_after_ready(qapp):
+    """OCR 预热提示在预热结束后撤下并恢复页面默认提示，导入恢复可用。"""
+    capture_service = SimpleNamespace(
+        capture=None,
+        ocr_warmup_state="warming",
+        ocr_warmup_state_changed=None,
+    )
+    panel = PeakSelectPanel(
+        capture_service=capture_service,
+        ocr_service=None,
+        hero_names_provider=lambda: [],
+    )
+
+    assert "OCR 模型预热中" in panel._action_bar.status_label.text()
+    assert not panel._import_action.isEnabled()
+
+    capture_service.ocr_warmup_state = "ready"
+    panel._update_import_availability("ready")
+
+    assert panel._import_action.isEnabled()
+    assert "OCR 模型预热中" not in panel._action_bar.status_label.text()
+    assert "开始后自动识别巅峰赛禁选结果" in panel._action_bar.status_label.text()
+
+
+def test_panel_without_warmup_keeps_default_hint(qapp):
+    """预热已完成或未启用时，页面保持默认提示，不误显预热文案。"""
+    panel = _make_panel()
+
+    assert "OCR 模型预热中" not in panel._action_bar.status_label.text()
+
+
+class _NeverSetEvent(threading.Event):
+    def wait(self, timeout=None):
+        return False
+
+
+def test_watcher_file_recognition_timeout_keeps_live_signature(qapp, monkeypatch, tmp_path):
+    """图片导入 OCR 超时不清实时循环签名，下一拍不因签名丢失重复识别。"""
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.load_local_image",
+        lambda path: Image.new("RGB", (2560, 1440)),
+    )
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: [(100 + i * 276, 247, 238, 326) for i in range(9)],
+    )
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.OCR_WAIT_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    def timeout_submit(image, **kwargs):
+        return SimpleNamespace(completed=_NeverSetEvent(), result=None)
+
+    watcher, pools, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=timeout_submit))
+    watcher._signature = ((10, 20, 30, 40),)
+
+    watcher._do_file_recognition(str(tmp_path / "sample.png"))
+
+    assert watcher._signature == ((10, 20, 30, 40),)
+    assert pools == []
+    assert statuses[-1] == "图片识别未完成，请重试"
+
+
+def test_watcher_live_loop_timeout_resets_signature(qapp, monkeypatch):
+    """实时循环 OCR 超时后清签名，下一拍强制重试新牌面。"""
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: [(100 + i * 276, 247, 238, 326) for i in range(9)],
+    )
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.OCR_WAIT_TIMEOUT_SECONDS",
+        0.01,
+    )
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: SimpleNamespace(
+            completed=_NeverSetEvent(), result=None
+        ),
+    )
+    ocr_service = SimpleNamespace(
+        get_task_state=lambda name: SimpleNamespace(active=False),
+        deactivate_task=lambda name: None,
+    )
+    watcher, pools, statuses = _make_watcher(capture_service)
+    watcher._ocr_service = ocr_service
+    watcher._signature = ((1, 2, 3, 4),)
+    # 生产中 _do_work 由 _on_tick 持锁后调用，此处同样先持锁
+    assert watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+
+    assert watcher._signature is None
+    assert not watcher._thread_lock.locked()
+    assert pools == []
+    assert statuses[-1] == "识别超时，下一拍重试"

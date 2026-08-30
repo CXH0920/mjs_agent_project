@@ -178,6 +178,16 @@ class ComboEditDialog(QDialog):
             return
         seats1 = [seat for seat, check in zip(SEAT_OPTIONS, self._hero1_seat_checks) if check.isChecked()]
         seats2 = [seat for seat, check in zip(SEAT_OPTIONS, self._hero2_seat_checks) if check.isChecked()]
+        if not seats1 and not seats2:
+            answer = QMessageBox.question(
+                self,
+                "未选择座次",
+                "两位武将均未勾选座次，将按不限座次保存（命中任意号位）。是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         existing = self._combo_manager.get_combo(self._hero1.id, self._hero2.id)
         editing_same_pair = (
             self._original is not None

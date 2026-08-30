@@ -7,7 +7,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 分钟会在测试约 89% 处取消（apt + conda 装配 + 2 核 runner 跑 1000+ 用例），
+    # 提至 60 分钟留足余量
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt system dependencies
@@ -23,7 +25,7 @@ jobs:
       - uses: conda-incubator/setup-miniconda@v3
         with:
           activate-environment: myenv
-          auto-activate-base: false
+          auto-activate: false
           environment-file: environment-ci.yml
           pkgs-dirs: ~/conda_pkgs_dir
       - name: Lint

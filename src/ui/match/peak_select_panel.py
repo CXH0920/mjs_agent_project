@@ -92,6 +92,7 @@ class PeakSelectPanel(QWidget):
         self._watcher = PeakSelectWatcher(capture_service, ocr_service, hero_names_provider, self)
         self._watcher.pool_updated.connect(self._on_pool_updated)
         self._watcher.status_changed.connect(self._on_status_changed)
+        self._warmup_hint_active = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -100,6 +101,7 @@ class PeakSelectPanel(QWidget):
         layout.setSpacing(8)
 
         self._action_bar = PageActionBar("开始后自动识别巅峰赛禁选结果与剩余候选武将")
+        self._action_hint = "开始后自动识别巅峰赛禁选结果与剩余候选武将"
         self._toggle_button = QPushButton("开始识别")
         set_ui_role(self._toggle_button, ROLE_PRIMARY)
         self._toggle_button.clicked.connect(self._on_toggle_watcher)
@@ -276,7 +278,12 @@ class PeakSelectPanel(QWidget):
         warming = state == "warming"
         self._import_action.setEnabled(not warming)
         if warming:
+            self._warmup_hint_active = True
             self._action_bar.set_status("OCR 模型预热中，图片导入稍后可用…", TONE_WARNING)
+        elif self._warmup_hint_active:
+            # 预热结束（就绪或失败）后撤下提示，避免误导文案滞留
+            self._warmup_hint_active = False
+            self._action_bar.set_status(self._action_hint, TONE_NEUTRAL)
 
     def _on_pool_updated(self, snapshot: PoolSnapshot) -> None:
         self._last_snapshot = snapshot
