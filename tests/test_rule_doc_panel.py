@@ -175,6 +175,29 @@ def test_compose_clean_status(tmp_path):
     assert "校验通过、数据一致、无待办" in status
 
 
+def test_run_script_clears_output_buffer_between_runs(tmp_path, monkeypatch):
+    """回归：脚本启动前清空输出缓冲，连续执行不会把上一轮输出累积进解析结果
+    （否则 WARN 计数/明细/角标全部翻倍）。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RuleDocPanel(root)
+
+    class _FakeRunner:
+        def is_running(self):
+            return False
+
+        def run(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(panel, "_runner", _FakeRunner())
+
+    panel._emit_output("WARN 旧一轮的输出")
+    panel._run_script(["audit_rule_doc.py"], on_finished=lambda: None)
+
+    assert "旧一轮的输出" not in panel._last_output()
+    assert panel._last_output().startswith("$ python -m src.scripts.")
+
+
 # ---------------------------------------------------------------------------
 # B2：数据段差异确认工作台
 # ---------------------------------------------------------------------------

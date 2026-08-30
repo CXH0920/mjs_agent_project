@@ -686,6 +686,9 @@ class RuleDocPanel(QWidget):
         if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "已有任务运行中，请等待完成。")
             return
+        # 清空上一轮输出缓冲，否则 _on_audit_finished 解析到累积的多轮 WARN 行，
+        # 计数/明细/角标全部翻倍
+        self._clear_script_output()
         module = 'src.scripts.' + args[0].removesuffix('.py')
         self._last_command = " ".join(args)
         self.script_started.emit()

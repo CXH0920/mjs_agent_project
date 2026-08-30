@@ -161,9 +161,13 @@ class Retriever:
             if item['source'] == 'vector':
                 item['source'] = 'vector+kw'
 
-        # 关键词兜底走内存索引，绕过了向量侧 where 过滤；融合后统一剔除非当前版本块
+        # 关键词兜底走内存索引，绕过了向量侧 where 过滤；融合后统一补齐
+        # heroes 硬过滤（与 build_search_where 的 $in 语义一致）与 is_current 剔除
+        hero_filter = set(heroes) if heroes else None
         merged = {bid: item for bid, item in merged.items()
-                  if item.get('metadata', {}).get('is_current', 'true') != 'false'}
+                  if item.get('metadata', {}).get('is_current', 'true') != 'false'
+                  and (hero_filter is None
+                       or item.get('metadata', {}).get('hero') in hero_filter)}
 
         # 纯关键词块数量上限（RRF 单边分天然靠后，仅防数量失控）
         kw_only = sorted((it for it in merged.values() if it['source'] == 'keyword'),

@@ -307,7 +307,14 @@ def _extract_adjust_events(section_lines: list[str]) -> list[dict]:
         name = _skill_line_name(line)
         if name:
             flush_skill()
-            skill = {"skill": name, "change": line.split("：", 1)[1].strip()}
+            # _skill_line_name 兼容全/半角冒号，取变更描述须按同一分隔符切分，
+            # 固定按全角切会把半角冒号行切成单元素导致 IndexError
+            change = ""
+            for sep in ("：", ":"):
+                if sep in line:
+                    change = line.split(sep, 1)[1].strip()
+                    break
+            skill = {"skill": name, "change": change}
     flush_skill()
     return events
 

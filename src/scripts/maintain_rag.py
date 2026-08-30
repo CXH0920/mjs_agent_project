@@ -44,9 +44,17 @@ def file_fingerprint(path):
             for fn in fns
         )
         for rel in rels:
-            with open(os.path.join(full, rel), 'rb') as f:
-                h.update(rel.replace('\\', '/').encode('utf-8'))
-                h.update(hashlib.md5(f.read()).digest())
+            path = os.path.join(full, rel)
+            try:
+                with open(path, 'rb') as f:
+                    data = f.read()
+            except OSError as error:
+                # 竞态消失/断链/文件锁等只跳过该文件，不让整个维护流程终止；
+                # 指纹因此改变，下次增量会重跑该任务，方向安全
+                print(f'  ⚠️ 指纹计算跳过不可读文件 {path}: {error}')
+                continue
+            h.update(rel.replace('\\', '/').encode('utf-8'))
+            h.update(hashlib.md5(data).digest())
         return {'dir_md5': h.hexdigest()}
     with open(full, 'rb') as f:
         digest = hashlib.md5(f.read()).hexdigest()
@@ -78,6 +86,28 @@ def task_changed(task, state):
         if fp != old:
             return True, p
     return False, None
+
+
+def update_state_fingerprints(plan, failed, force, state):
+    """执行后更新 state 指纹：失败任务及其依赖路径一律保持旧指纹。
+
+    成功任务不得覆盖失败任务依赖的共享源指纹，否则失败任务的变更被"洗掉"后
+    会被增量永久跳过，坏语料一直驻留。--force 视为已处理，失败任务也记录。
+    """
+    failed_paths = set()
+    for task, _ in plan:
+        if task['name'] in failed and not force:
+            failed_paths.update(task['sources'])
+            failed_paths.add('src/scripts/' + task['script'])
+    for task, _ in plan:
+        if task['name'] in failed and not force:
+            continue
+        for p in task['sources'] + ['src/scripts/' + task['script']]:
+            if p in failed_paths:
+                continue
+            fp = file_fingerprint(p)
+            if fp is not None:
+                state['files'][p] = fp
 
 
 def run_script(script_name, timeout=180):
@@ -279,14 +309,8 @@ def main():
                 failed.append(task['name'])
                 print('  ⚠️ 块数校验未通过')
 
-    # 更新状态文件：无论成败都记录当前指纹（成功的任务记录；失败的也记录以便下次重试）
-    for task, _ in plan:
-        if task['name'] in failed and not args.force:
-            continue
-        for p in task['sources'] + ['src/scripts/' + task['script']]:
-            fp = file_fingerprint(p)
-            if fp is not None:
-                state['files'][p] = fp
+    # 更新状态文件：失败任务不记录任何指纹（保证下次 task_changed 仍判定为已变更）
+    update_state_fingerprints(plan, failed, args.force, state)
     state['last_run'] = now
     save_state(state)
 

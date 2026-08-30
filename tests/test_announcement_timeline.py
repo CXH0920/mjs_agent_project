@@ -78,6 +78,24 @@ def test_extract_summary_format_and_degraded_hero_level():
     assert by_hero["王翦"]["skills"] == []
 
 
+def test_extract_summary_line_with_halfwidth_colon():
+    """摘要行用半角冒号时不崩溃，变更描述正常提取（此前固定按全角切会 IndexError）。"""
+    html = """
+    <p>【武将调整】</p>
+    <p>法正（调整）</p>
+    <p>奇画策算:限制为出牌阶段触发</p>
+    <p>修改前：出牌阶段摸2张牌</p>
+    <p>修改后：出牌阶段摸1张牌</p>
+    """
+    events = extract_hero_changes("公告", html)
+    assert events[0]["skills"] == [{
+        "skill": "奇画策算",
+        "change": "限制为出牌阶段触发",
+        "before": "出牌阶段摸2张牌",
+        "after": "出牌阶段摸1张牌",
+    }]
+
+
 def test_build_timeline_events_filters_by_cutoff_and_flag():
     announcements = [
         {"id": 226, "title": "8月27日停服更新预告", "content": ADJUST_HTML,

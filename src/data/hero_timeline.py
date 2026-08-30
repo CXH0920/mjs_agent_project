@@ -194,7 +194,10 @@ def stamp_guide_block(block: dict, prev_as_of: str | None = None,
     as_of = prev_as_of if (prev_as_of and prev_md5 == digest) else CORPUS_BASE_DATE
     block["as_of"] = as_of
     hero = str(block.get("hero", ""))
-    changes = changes_after(hero, as_of, timeline)
+    # "新增"事件是登场本身而非技能变更：登场后生成的攻略必然提及登场技能名，
+    # 不能作为过时依据，否则新武将攻略会被永久排除出检索
+    changes = [e for e in changes_after(hero, as_of, timeline)
+               if e.get("change_type") != "新增"]
     if not changes:
         block["is_current"] = "true"
         return block

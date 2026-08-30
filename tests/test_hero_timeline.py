@@ -171,6 +171,16 @@ def test_stamp_guide_block_hard_stale_when_text_mentions_changed_skill():
     assert "窃符救赵" in block["staleness_reason"]
 
 
+def test_stamp_guide_block_new_hero_event_not_stale_evidence():
+    """新增事件是登场本身：攻略提及登场技能名不构成过时依据。"""
+    block = {"block_id": "guide_苏武_1", "hero": "苏武",
+             "text": "苏武的汉使北牧让他获得牌，配合啮雪吞毡回复体力。"}
+    stamp_guide_block(block, timeline=FIXTURE_TIMELINE)
+    assert block["is_current"] == "true"
+    assert "staleness_reason" not in block
+    assert "staleness_hint" not in block
+
+
 def test_stamp_guide_block_soft_hint_when_drift_only():
     block = {"block_id": "guide_如姬_2", "hero": "如姬", "text": "如姬整体运营思路，注意保护队友。"}
     stamp_guide_block(block, timeline=FIXTURE_TIMELINE)
