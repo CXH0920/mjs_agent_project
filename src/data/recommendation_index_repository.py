@@ -6,6 +6,7 @@ import csv
 import json
 import logging
 import math
+import os
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
@@ -128,12 +129,17 @@ def mark_recommendation_index_stale(
         stale, "".join(traceback.format_stack(limit=10)),
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(".tmp")
-    temp_path.write_text(
-        json.dumps({"stale": stale}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8", newline="\n",
+    # mkstemp 唯一中转名：固定 .tmp 在并发保存时会互相覆盖（与 save_baike_snapshot 同理）
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
     )
-    temp_path.replace(path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps({"stale": stale}, ensure_ascii=False, indent=2) + "\n")
+        Path(tmp_name).replace(path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def load_recommendation_indexes(

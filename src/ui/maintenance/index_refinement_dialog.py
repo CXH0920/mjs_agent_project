@@ -680,18 +680,22 @@ class IndexRefinementDialog(QDialog):
         # - 批量行（LLM 全部/保存全部）仅待精化模式
         # - 跳过仅待精化模式；取消精化仅已精化/全部模式（且当前块有 curated）
         # - 保存当前/LLM 建议（当前）所有模式可用，未选中条目时禁用
+        # 批量建议运行期间，会改动清单归属的操作（跳过/保存/保存全部）一律禁用：
+        # 块被移出 _pending 后，在途的流式结果会把它回写"复活"，与磁盘状态错位
         is_pending = self._scope == "pending"
         self._batch_bar.setVisible(is_pending)
         self._skip_button.setVisible(is_pending)
         self._clear_button.setVisible(not is_pending)
         has_current = self._current is not None
-        self._suggest_one_button.setEnabled(has_current and not self._suggest_all_running)
-        self._skip_button.setEnabled(is_pending and has_current)
+        batch_running = self._suggest_all_running
+        self._suggest_one_button.setEnabled(has_current and not batch_running)
+        self._skip_button.setEnabled(is_pending and has_current and not batch_running)
         self._clear_button.setEnabled(has_current and bool(self._current.method))
-        self._save_button.setEnabled(has_current)
+        self._save_button.setEnabled(has_current and not batch_running)
         self._suggest_all_button.setEnabled(
-            is_pending and bool(self._pending) and not self._suggest_all_running)
-        self._save_all_button.setEnabled(is_pending and bool(self._pending))
+            is_pending and bool(self._pending) and not batch_running)
+        self._save_all_button.setEnabled(
+            is_pending and bool(self._pending) and not batch_running)
 
     # ---------------------------------------------------------------
     # LLM 建议
@@ -767,6 +771,15 @@ class IndexRefinementDialog(QDialog):
         """后台线程逐块结果回主线程：只更新 baseline/行状态，不强切当前编辑。"""
         self._suggest_done += 1
         is_single = bool(self._suggest_worker is not None and self._suggest_worker._single)
+        # 已离开待精化清单的块（运行中被跳过/保存）丢弃结果，防止 row_states 回写"复活"；
+        # 单块建议在已精化/全部模式下针对 curated 块，经"仍是当前块"放行
+        still_pending = any(p.block_id == block.block_id for p in self._pending)
+        is_current = (
+            is_single and self._current is not None
+            and self._current.block_id == block.block_id
+        )
+        if not still_pending and not is_current:
+            return
         if update is not None:
             baseline = {field: "\n".join(getattr(update, field)) for field in INDEX_FIELDS}
             self._llm_baseline[block.block_id] = baseline
@@ -795,7 +808,9 @@ class IndexRefinementDialog(QDialog):
                         close()
                     except Exception:  # noqa: BLE001
                         pass
-        self._suggest_one_button.setEnabled(bool(self._pending) and not self._suggest_all_running)
+        # 按钮恢复统一走 _update_overview：手写条件曾与 688 行不一致，
+        # "已精化/全部"范围下 _pending 为空时单块建议按钮被永久禁用
+        self._update_overview()
 
     def _on_worker_finished(self) -> None:
         if not self._suggest_all_running:

@@ -15,7 +15,7 @@ from src.config.env import (
     get_model_pricing,
 )
 
-from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context, _rag_enabled
+from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context, is_rag_enabled
 from src.scraper.ai.rule_summary import load_card_system, load_core_rules
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def load_prompt(filepath: str | Path) -> str:
 # 成本估算
 # ============================================================
 
-def _estimate_cost(tokens_input: int, tokens_output: int, model: str | None = None) -> float | None:
+def estimate_cost_by_tokens(tokens_input: int, tokens_output: int, model: str | None = None) -> float | None:
     """根据指定模型的版本控制价格估算费用。"""
     model = model or DEFAULT_MODEL
     pricing = get_model_pricing(model)
@@ -101,7 +101,7 @@ def estimate_item_cost(
     input_tokens = item_count * input_per_item
     total_tokens = input_tokens + output_tokens
     pricing = get_model_pricing(model)
-    cost_cny = _estimate_cost(input_tokens, output_tokens, model)
+    cost_cny = estimate_cost_by_tokens(input_tokens, output_tokens, model)
     message = ""
     if pricing is None:
         message = f"模型 {model} 未配置价格，无法自动估算费用"
@@ -162,7 +162,7 @@ def build_guide_prompt(hero: dict, rag_max_chars: int | None = None) -> str:
         lines.extend(_skill_lines(hero["skills"], hero.get("id", 0), rag, "  "))
     if rag:
         lines.extend(["", rag])
-    if _rag_enabled():
+    if is_rag_enabled():
         # RAG 开：card 块向量召不回，兜底注入卡牌体系段防战法/装备牌名串味
         card_sys = load_card_system()
         if card_sys:
@@ -194,7 +194,7 @@ def build_synergy_prompt(hero_a: dict, hero_b: dict, rag_max_chars: int | None =
     lines.extend(hero_block("武将 B", hero_b))
     if rag:
         lines.extend(["", rag])
-    if _rag_enabled():
+    if is_rag_enabled():
         # RAG 开：card 块向量召不回，兜底注入卡牌体系段防战法/装备牌名串味
         card_sys = load_card_system()
         if card_sys:

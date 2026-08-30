@@ -41,6 +41,13 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
         def __init__(self, hero_names, page_type, layout) -> None:
             recognizer_inits.append((hero_names, page_type, layout))
 
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
+
         def recognize(self, image):
             calls.append(image)
             return [{"index": 1, "name": image, "confidence": 1.0}]
@@ -112,12 +119,22 @@ def test_official_import_shares_worker_queue_and_ocr_engine(monkeypatch, tmp_pat
         def __init__(self, hero_names, page_type, layout=None) -> None:
             self._ocr = None
 
+        def ensure_engine(self):
+            return getattr(self, '_ocr', None)
+
         def warmup(self) -> None:
             events.append("warmup")
             self._ocr = engine
 
         def warmup_inference(self) -> None:
             pass
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
 
         def recognize(self, image):
             assert self._ocr is engine
@@ -133,6 +150,14 @@ def test_official_import_shares_worker_queue_and_ocr_engine(monkeypatch, tmp_pat
             injected_engines.append(ocr_engine)
             self._ocr = ocr_engine
             self._rare_char_ocr = rare_char_ocr_engine
+
+        @property
+        def ocr_engine(self):
+            return self._ocr
+
+        @property
+        def rare_char_ocr_engine(self):
+            return self._rare_char_ocr
 
         def import_pages(self, key, paths, progress_callback, status_callback):
             events.append("official")
@@ -197,6 +222,13 @@ def test_ocr_worker_keeps_default_roi_reference_independent_of_template(monkeypa
         def __init__(self, hero_names, page_type, layout) -> None:
             recognizer_inits.append((layout.reference_size, page_type))
 
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
+
         def recognize(self, image):
             return []
 
@@ -234,6 +266,13 @@ def test_match_guide_template_miss_can_fall_back_to_ocr(monkeypatch) -> None:
 
         def __init__(self, hero_names, page_type, layout) -> None:
             pass
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
 
         def recognize(self, image):
             recognized.append(image)
@@ -277,11 +316,21 @@ def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> No
             self._ocr = None
             self.timing_ms = {}
 
+        def ensure_engine(self):
+            return getattr(self, '_ocr', None)
+
         def warmup(self) -> None:
             self._ocr = engine
 
         def warmup_inference(self) -> None:
             inference_warmups.append(self._ocr)
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
 
         def recognize(self, image):
             recognized_engines.append(self._ocr)
@@ -332,6 +381,13 @@ def test_ocr_worker_logs_stage_timings(monkeypatch, caplog) -> None:
 
         def __init__(self, hero_names, page_type, layout) -> None:
             pass
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
 
         def recognize(self, image):
             return [{"index": 1, "name": "曹操", "confidence": 1.0}]
@@ -402,6 +458,13 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
     class FakeRecognizer:
         def __init__(self, hero_names, page_type, layout) -> None:
             pass
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
 
         def recognize(self, image):
             return [{"index": 1, "name": "曹操", "confidence": 1.0}]

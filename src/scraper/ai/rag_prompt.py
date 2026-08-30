@@ -15,7 +15,7 @@ _retriever_instance = None
 degraded_reason: str | None = None
 
 
-def _rag_enabled() -> bool:
+def is_rag_enabled() -> bool:
     """RAG 增强开关：环境变量 RAG_ENABLED（--no-rag 覆盖）优先，其次 config.env。"""
     env_flag = os.environ.get("RAG_ENABLED", "").strip().lower()
     if env_flag in ("0", "false", "no", "off"):
@@ -44,7 +44,7 @@ def reset_retriever() -> None:
 
 def build_rag_context(hero: dict, max_chars: int | None = None) -> str:
     """检索并格式化 RAG 官方规则语料区块；失败时返回空串（降级）。"""
-    if not _rag_enabled():
+    if not is_rag_enabled():
         return ""
     try:
         from src.rag import config as rag_config
@@ -98,7 +98,7 @@ def build_synergy_rag_context(hero_a: dict, hero_b: dict, max_chars: int | None 
     跨类检索只保留无 hero 元数据或属于目标武将的块，避免其他武将语料混入 prompt；
     查询以机制词优先（KEYWORDS），避免泛分析词把无关武将块排到前面。
     """
-    if not _rag_enabled():
+    if not is_rag_enabled():
         return ""
     try:
         from src.rag import config as rag_config

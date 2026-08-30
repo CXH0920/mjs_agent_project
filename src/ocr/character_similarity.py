@@ -9,6 +9,26 @@ from src.ocr.character_feature_repository import CharacterFeatureRepository
 logger = logging.getLogger(__name__)
 
 
+def levenshtein_distance(first: str, second: str) -> int:
+    """两串的最小编辑距离；名称纠错与官方导入的候选筛选共用。"""
+    if len(first) < len(second):
+        return levenshtein_distance(second, first)
+    if not second:
+        return len(first)
+    previous_row = range(len(second) + 1)
+    for index, first_char in enumerate(first):
+        current_row = [index + 1]
+        for second_index, second_char in enumerate(second):
+            cost = 0 if first_char == second_char else 1
+            current_row.append(min(
+                current_row[second_index] + 1,
+                previous_row[second_index + 1] + 1,
+                previous_row[second_index] + cost,
+            ))
+        previous_row = current_row
+    return previous_row[-1]
+
+
 class CharacterSimilarityService:
     """按编辑距离筛选，并以汉字视觉特征决胜名称候选。"""
 
@@ -45,7 +65,7 @@ class CharacterSimilarityService:
         text = text.strip()
         candidates = [
             hero for hero in hero_names
-            if self._levenshtein_distance(text, hero) <= self.EDIT_DISTANCE_THRESHOLD
+            if levenshtein_distance(text, hero) <= self.EDIT_DISTANCE_THRESHOLD
         ]
         if not candidates:
             return text
@@ -89,25 +109,6 @@ class CharacterSimilarityService:
             if similarity is not None:
                 scored.append((candidate, similarity))
         return sorted(scored, key=lambda item: (-item[1], item[0]))
-
-    @staticmethod
-    def _levenshtein_distance(first: str, second: str) -> int:
-        if len(first) < len(second):
-            return CharacterSimilarityService._levenshtein_distance(second, first)
-        if not second:
-            return len(first)
-        previous_row = range(len(second) + 1)
-        for index, first_char in enumerate(first):
-            current_row = [index + 1]
-            for second_index, second_char in enumerate(second):
-                cost = 0 if first_char == second_char else 1
-                current_row.append(min(
-                    current_row[second_index] + 1,
-                    previous_row[second_index + 1] + 1,
-                    previous_row[second_index] + cost,
-                ))
-            previous_row = current_row
-        return previous_row[-1]
 
     def _pick_visually_similar(self, text: str, candidates: list[str]) -> str:
         scored = [(self._visual_score(text, candidate), candidate) for candidate in candidates]
@@ -174,7 +175,7 @@ class CharacterSimilarityService:
         second_code = self._value(second, "cangjie").strip().upper()
         if not first_code or not second_code:
             return 0.0
-        distance = self._levenshtein_distance(first_code, second_code)
+        distance = levenshtein_distance(first_code, second_code)
         return max(0.0, 1.0 - distance / max(len(first_code), len(second_code)))
 
     def _wubi_score(self, first: str, second: str) -> float:
@@ -182,7 +183,7 @@ class CharacterSimilarityService:
         second_code = self._value(second, "wubi").strip().upper()
         if not first_code or not second_code:
             return 0.0
-        distance = self._levenshtein_distance(first_code, second_code)
+        distance = levenshtein_distance(first_code, second_code)
         return max(0.0, 1.0 - distance / max(len(first_code), len(second_code)))
 
     def _pinyin_similarity(self, first: str, second: str) -> float:

@@ -39,7 +39,7 @@ def fake_retriever(monkeypatch):
 
 def test_rag_disabled_via_env(monkeypatch):
     monkeypatch.setenv("RAG_ENABLED", "false")
-    assert rag_prompt._rag_enabled() is False
+    assert rag_prompt.is_rag_enabled() is False
     hero = {"id": 1, "name": "测试英雄", "skills": []}
     prompt = build_guide_prompt(hero)
     assert "RAG 官方规则语料" not in prompt

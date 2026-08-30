@@ -64,6 +64,7 @@ class OcrService(QObject):
         self._poll_interval_ms = 0
         self._consecutive_poll_failures = 0
         self._poll_state = "stopped"
+        self._poll_detail = ""
         self._poll_session = PollSession()
         self._poll_in_flight = False
         self._ocr_task_submitter = None
@@ -76,7 +77,8 @@ class OcrService(QObject):
             config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
             or config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
         )
-        self._config = config
+        # 拷贝持有，避免调用方后续原地修改配置造成隐式联动（与 CaptureService 一致）
+        self._config = dict(config)
         if target_changed and self._poll_state != "stopped":
             self.stop_poll()
 
@@ -319,7 +321,7 @@ class OcrService(QObject):
         return task.cooldown_until is not None and datetime.now() < task.cooldown_until
 
     def _set_poll_state(self, state: str, detail: str) -> None:
-        if (state, detail) == (self._poll_state, getattr(self, "_poll_detail", "")):
+        if (state, detail) == (self._poll_state, self._poll_detail):
             return
         self._poll_state = state
         self._poll_detail = detail

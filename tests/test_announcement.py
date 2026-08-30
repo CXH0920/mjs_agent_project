@@ -379,6 +379,13 @@ def test_baike_snapshot_roundtrip(tmp_path) -> None:
 # ============================================================
 
 
+def _run_check(service) -> object:
+    """按真实两阶段契约执行一次检查：worker 计算（_do_check）+ GUI 收尾（_finalize_check）。"""
+    result = service._do_check()
+    service._finalize_check(result)
+    return result
+
+
 def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
     service, manager = _make_service(tmp_path)
     announcements = [
@@ -389,7 +396,7 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: baike)
 
     # 首次检查：全部为基线，不提醒，并用本地 heroes.json 初始化百科基线
-    result = service._do_check()
+    result = _run_check(service)
     assert result.error is None
     assert result.new_announcements == []
     assert result.hero_related == []
@@ -401,7 +408,7 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
     announcements.append(
         _raw_announcement(209, "https://mjs.ztgame.com/news/new.html", content=ANNOUNCEMENT_813)
     )
-    result2 = service._do_check()
+    result2 = _run_check(service)
     assert len(result2.new_announcements) == 1
     assert len(result2.hero_related) == 1
     assert result2.pending_count == 1
@@ -409,7 +416,7 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
 
     # 百科更新（马钧技能变化）→ pending 变 ready
     baike[1] = _hero(id=2, name="马钧", position="输出")
-    result3 = service._do_check()
+    result3 = _run_check(service)
     assert result3.ready_count == 1
     assert [entry["id"] for entry in result3.diff["modified"]] == [2]
 
@@ -417,7 +424,7 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
     service.mark_applied()
     assert manager.pending_count() == 0
     assert manager.ready_count() == 0
-    result4 = service._do_check()
+    result4 = _run_check(service)
     assert result4.ready_count == 0
     assert result4.diff["modified"] == []
 
@@ -429,7 +436,7 @@ def test_service_do_check_announcement_failure(tmp_path, monkeypatch) -> None:
         raise RuntimeError("网络失败")
 
     monkeypatch.setattr(service_module, "fetch_latest_announcements", _raise)
-    result = service._do_check()
+    result = _run_check(service)
     assert result.error is not None
     assert result.new_announcements == []
     assert result.diff == {"added": [], "modified": [], "removed": []}
@@ -444,7 +451,7 @@ def test_service_do_check_baike_failure_keeps_snapshot(tmp_path, monkeypatch) ->
     )
     monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: None)
-    result = service._do_check()
+    result = _run_check(service)
     assert result.error is None
     assert result.baike_ok is False
     assert result.diff == {"added": [], "modified": [], "removed": []}
@@ -461,7 +468,7 @@ def test_service_do_check_skips_baseline_when_local_unavailable(tmp_path, monkey
     )
     monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
-    result = service._do_check()
+    result = _run_check(service)
     assert result.error is None
     assert not (tmp_path / "baike_snapshot.json").exists()
     assert result.diff == {"added": [], "modified": [], "removed": []}
@@ -477,7 +484,7 @@ def test_service_do_check_uses_baike_baseline_when_no_local_file(tmp_path, monke
     )
     monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
-    result = service._do_check()
+    result = _run_check(service)
     assert result.error is None
     snapshot = load_baike_snapshot(tmp_path / "baike_snapshot.json")
     assert "1" in snapshot.heroes

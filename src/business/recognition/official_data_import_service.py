@@ -19,7 +19,7 @@ from PIL import Image
 from src.config.env import PROJECT_ROOT
 from src.data.recommendation_index_repository import mark_recommendation_index_stale
 from src.ocr import official_board_parser
-from src.ocr.character_similarity import CharacterSimilarityService
+from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
 from src.ocr.official_board_parser import LAYOUTS
 from src.ocr.paddle_loader import create_paddle_ocr
 
@@ -49,6 +49,16 @@ class OfficialDataImportService:
         self._ocr = ocr_engine
         self._rare_char_ocr = rare_char_ocr_engine
         self._rare_char_engine_failed = False
+
+    @property
+    def ocr_engine(self):
+        """已加载/注入的简体 OCR 引擎，供 ocr_worker 回收复用。"""
+        return self._ocr
+
+    @property
+    def rare_char_ocr_engine(self):
+        """已加载/注入的罕见字 OCR 引擎，供 ocr_worker 回收复用。"""
+        return self._rare_char_ocr
 
     @staticmethod
     def _load_hero_names() -> list[str]:
@@ -435,7 +445,7 @@ class OfficialDataImportService:
     def _nearby_hero_names(self, name: str) -> list[str]:
         return [
             hero for hero in self._hero_names
-            if CharacterSimilarityService._levenshtein_distance(name, hero)
+            if levenshtein_distance(name, hero)
             <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
         ]
 
@@ -556,7 +566,7 @@ class OfficialDataImportService:
             name = record["武将"]
             candidates: set[str] = set()
             for hero in self._hero_names:
-                if CharacterSimilarityService._levenshtein_distance(name, hero) <= 2:
+                if levenshtein_distance(name, hero) <= 2:
                     candidates.add(hero)
             candidates.update(self._ambiguous_name_candidates(name))
             corrected = self._correct_official_name(name)
@@ -649,7 +659,7 @@ class OfficialDataImportService:
                 continue
             nearby_names = [
                 hero for hero in allowed_names
-                if CharacterSimilarityService._levenshtein_distance(candidate_name, hero)
+                if levenshtein_distance(candidate_name, hero)
                 <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
             ]
             corrected = nearby_names[0] if len(nearby_names) == 1 else candidate_name
@@ -665,7 +675,7 @@ class OfficialDataImportService:
         if glyph_name:
             nearby_names = [
                 hero for hero in allowed_names
-                if CharacterSimilarityService._levenshtein_distance(glyph_name, hero)
+                if levenshtein_distance(glyph_name, hero)
                 <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
             ]
             corrected = nearby_names[0] if len(nearby_names) == 1 else glyph_name
@@ -908,7 +918,7 @@ class OfficialDataImportService:
             add(ocr_name)
         for hero in self._hero_names:
             if (
-                CharacterSimilarityService._levenshtein_distance(ocr_name, hero) <= 2
+                levenshtein_distance(ocr_name, hero) <= 2
                 and (any(char in hero for char in ocr_name) or len(ocr_name) != len(hero))
             ):
                 add(hero)
@@ -918,7 +928,7 @@ class OfficialDataImportService:
             candidates.extend(sorted(
                 self._hero_names,
                 key=lambda hero: (
-                    CharacterSimilarityService._levenshtein_distance(ocr_name, hero),
+                    levenshtein_distance(ocr_name, hero),
                     hero,
                 ),
             ))

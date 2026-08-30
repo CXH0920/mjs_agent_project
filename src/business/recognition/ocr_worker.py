@@ -145,9 +145,11 @@ class OcrWorker(QThread):
     def run(self) -> None:
         while True:
             if self._cancel_event.is_set():
+                self._drain_pending_tasks()
                 return
             task = self._tasks.get()
             if task is None:
+                self._drain_pending_tasks()
                 return
             self._current_task_kind = (
                 "official" if isinstance(task, OfficialImportTask)
@@ -155,16 +157,46 @@ class OcrWorker(QThread):
                 else "regular"
             )
             try:
-                if isinstance(task, OfficialImportTask):
-                    task.result = self._execute_official_import(task)
-                else:
-                    task.result = self._execute(task)
-                    if task.warmup and task.result.get("outcome") == "warmup_failed":
-                        self._warmup_queued = False
-                task.completed.set()
-                self.task_completed.emit(task)
+                try:
+                    if isinstance(task, OfficialImportTask):
+                        task.result = self._execute_official_import(task)
+                    else:
+                        task.result = self._execute(task)
+                        if task.warmup and task.result.get("outcome") == "warmup_failed":
+                            self._warmup_queued = False
+                except BaseException:
+                    # _execute 内部已兜底 Exception，这里兜住漏网的 BaseException：
+                    # completed 必须置位，否则等待方只能吃满 15~30 秒超时，
+                    # capture_service 的 _pending_ocr_captures 还会连带泄漏图像引用
+                    logger.exception("OCR 任务执行异常（%s）", type(task).__name__)
+                    task.result = {"outcome": "failed", "detail": "worker 内部异常"}
+                finally:
+                    task.completed.set()
+                    try:
+                        self.task_completed.emit(task)
+                    except Exception:
+                        logger.exception("OCR 任务完成信号发送失败")
             finally:
                 self._current_task_kind = None
+
+    def _drain_pending_tasks(self) -> None:
+        """停止时把队列中滞留的任务逐个置位并广播完成，等待方立即醒来而非吃满超时。
+
+        停止之后再提交的任务同样不会被处理（submit 不校验取消态），属停止语义的一部分。
+        """
+        while True:
+            try:
+                task = self._tasks.get_nowait()
+            except queue.Empty:
+                return
+            if task is None:
+                continue  # 多次 request_stop 投递的哨兵
+            task.result = {"outcome": "cancelled"}
+            task.completed.set()
+            try:
+                self.task_completed.emit(task)
+            except Exception:
+                logger.exception("取消任务的完成信号发送失败")
 
     def _execute_official_import(self, task: OfficialImportTask) -> dict:
         """复用当前线程的 OCR 引擎，串行完成整批官方榜单导入。"""
@@ -205,8 +237,8 @@ class OcrWorker(QThread):
             logger.exception("官方榜单导入失败")
             return {"outcome": "official_import_failed", "detail": str(exc)}
         finally:
-            self._ocr_engine = service._ocr
-            self._rare_char_ocr_engine = service._rare_char_ocr
+            self._ocr_engine = service.ocr_engine
+            self._rare_char_ocr_engine = service.rare_char_ocr_engine
 
     def _execute(self, task: OcrTask) -> dict:
         if task.warmup:
@@ -286,7 +318,7 @@ class OcrWorker(QThread):
             recognizer = self._get_recognizer(layout, task.hero_names, task.template_name)
             recognition_started = time.perf_counter()
             results = recognizer.recognize(task.image)
-            self._ocr_engine = getattr(recognizer, "_ocr", None)
+            self._ocr_engine = recognizer.shared_engine()
             recognition_ms = (time.perf_counter() - recognition_started) * 1000
             recognizer_timing = getattr(recognizer, "timing_ms", {})
             result_save_started = time.perf_counter()
@@ -322,14 +354,14 @@ class OcrWorker(QThread):
                 hero_names=list(task.hero_names), page_type="hero_selection",
             )
             if self._ocr_engine is not None:
-                recognizer._ocr = self._ocr_engine
-            # 先触发模型加载（真实识别器由 _engine 属性惰性加载，此过程不可中断）
-            getattr(recognizer, "_engine", None)
+                recognizer.adopt_engine(self._ocr_engine)
+            # 先触发模型加载（惰性加载过程不可中断）
+            recognizer.ensure_engine()
             if self._cancel_event.is_set():
                 logger.info("OCR 预热已取消（应用正在关闭），跳过特征预热与推理")
                 return {"outcome": "cancelled"}
             recognizer.warmup()
-            self._ocr_engine = getattr(recognizer, "_ocr", None) or self._ocr_engine
+            self._ocr_engine = recognizer.shared_engine() or self._ocr_engine
             recognizer.warmup_inference()
             logger.info("PaddleOCR 模型和推理预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
             return {"outcome": "warmed"}
@@ -393,6 +425,6 @@ class OcrWorker(QThread):
                 layout=layout,
             )
             if self._ocr_engine is not None:
-                self._recognizer._ocr = self._ocr_engine
+                self._recognizer.adopt_engine(self._ocr_engine)
             self._recognizer_signature = signature
         return self._recognizer

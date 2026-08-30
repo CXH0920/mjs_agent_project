@@ -52,6 +52,10 @@ class AnnouncementCheckResult:
     baike_ok: bool = False
     timeline_added: int = 0
     error: str | None = None
+    # 以下字段由 worker 线程填充、GUI 线程消费（见 _finalize_check）：
+    # 本轮百科快照（供 mark_applied 后续刷新）与需要落盘的快照集合
+    snapshot: BaikeSnapshot | None = None
+    pending_saves: list[BaikeSnapshot] = field(default_factory=list)
 
 
 def _snapshot_to_plain(snapshot: BaikeSnapshot) -> dict[int, dict]:
@@ -69,6 +73,9 @@ class AnnouncementService(QObject):
     check_finished = Signal(object)
     status_changed = Signal(str)
     progress_changed = Signal(str)
+    # worker 线程只发内部信号；收尾（共享状态写入 + 快照落盘）统一回 GUI 线程执行，
+    # 避免 _last_snapshot 与 mark_applied 的跨线程竞争及快照文件并发写碰撞
+    _check_done = Signal(object)
 
     def __init__(
         self,
@@ -84,6 +91,7 @@ class AnnouncementService(QObject):
         self._thread: threading.Thread | None = None
         self._last_snapshot: BaikeSnapshot | None = None
         self._last_check_started_at: float | None = None
+        self._check_done.connect(self._finalize_check)
 
     # ---------------------------------------------------------------
     # 公共接口
@@ -141,6 +149,19 @@ class AnnouncementService(QObject):
         except Exception:
             logger.exception("公告检查发生未预期错误")
             result = AnnouncementCheckResult(error="公告检查发生未预期错误，详见日志")
+        self._check_done.emit(result)
+
+    def _finalize_check(self, result: AnnouncementCheckResult) -> None:
+        """GUI 线程收尾：写共享状态、持久化快照，再对外广播结果。"""
+        if getattr(result, "snapshot", None) is not None:
+            self._last_snapshot = result.snapshot
+        if result.pending_saves:
+            for snapshot in result.pending_saves:
+                try:
+                    save_baike_snapshot(snapshot, self._snapshot_path)
+                except OSError as error:
+                    logger.error("百科快照保存失败: %s", error)
+            logger.info("已刷新百科快照")
         self.check_finished.emit(result)
 
     def _do_check(self, hero_names: list[str] | None = None) -> AnnouncementCheckResult:
@@ -172,15 +193,16 @@ class AnnouncementService(QObject):
 
         diff = dict(EMPTY_DIFF)
         baike_ok = False
+        pending_saves: list[BaikeSnapshot] = []
+        snapshot: BaikeSnapshot | None = None
         self.progress_changed.emit("正在获取百科数据...")
         current_heroes = fetch_baike_heroes()
         if current_heroes is not None:
             baike_ok = True
-            current_snapshot = BaikeSnapshot(
+            snapshot = BaikeSnapshot(
                 checked_at=datetime.now().isoformat(timespec="seconds"),
                 heroes=build_hero_snapshot(current_heroes),
             )
-            self._last_snapshot = current_snapshot
             baseline = load_baike_snapshot(self._snapshot_path)
             if not baseline.heroes:
                 # 首次启用：优先用本地 heroes.json 初始化基线，避免手动编辑被误判。
@@ -189,17 +211,17 @@ class AnnouncementService(QObject):
                     baseline = BaikeSnapshot(heroes=build_hero_snapshot(local_heroes))
                 elif not self._heroes.file_path.exists():
                     # 本地无任何武将数据文件（全新安装）：以当前百科为基线，不提醒。
-                    baseline = current_snapshot
+                    baseline = snapshot
                 else:
                     # 本地数据文件存在但解析/加载为空：不写快照，避免用官网基线
                     # 掩盖本地缺失（否则 diff 恒空、新增/调整永远不会提示）。
                     logger.warning("本地 heroes 数据为空，跳过百科基线初始化")
                     baseline = BaikeSnapshot()
                 if baseline.heroes:
-                    save_baike_snapshot(baseline, self._snapshot_path)
+                    pending_saves.append(baseline)
             if baseline.heroes:
                 diff = diff_heroes(
-                    _snapshot_to_plain(current_snapshot),
+                    _snapshot_to_plain(snapshot),
                     _snapshot_to_plain(baseline),
                 )
                 if any(diff.values()):
@@ -217,6 +239,8 @@ class AnnouncementService(QObject):
             diff=diff,
             baike_ok=baike_ok,
             timeline_added=timeline_added,
+            snapshot=snapshot,
+            pending_saves=pending_saves,
         )
 
     def _sync_timeline(self) -> int:

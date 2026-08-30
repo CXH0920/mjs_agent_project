@@ -13,7 +13,7 @@ from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.batch import (
     _load_existing_guides,
     _load_existing_synergies,
-    _estimate_cost,
+    estimate_cost_by_tokens,
     estimate_cost,
     load_heroes,
 )
@@ -102,24 +102,24 @@ class TestEstimateCost:
 
 class TestInternalEstimateCost:
     def test_basic_calculation(self) -> None:
-        """_estimate_cost 基本计算"""
-        cost = _estimate_cost(1_000_000, 500_000)
+        """estimate_cost_by_tokens 基本计算"""
+        cost = estimate_cost_by_tokens(1_000_000, 500_000)
         # 1M input @ CNY3/M = 3; 500K output @ CNY6/M = 3; total = 6
         assert cost == 6.0
 
     def test_zero_tokens(self) -> None:
         """0 token 费用为 0"""
-        cost = _estimate_cost(0, 0)
+        cost = estimate_cost_by_tokens(0, 0)
         assert cost == 0.0
 
     def test_small_values(self) -> None:
         """小数量 token 费用正确"""
-        cost = _estimate_cost(1000, 500)
+        cost = estimate_cost_by_tokens(1000, 500)
         # 1000 * 3 / 1_000_000 + 500 * 6 / 1_000_000 = 0.003 + 0.003 = 0.006
         assert cost == 0.006
 
     def test_unknown_model_returns_none(self) -> None:
-        assert _estimate_cost(1000, 500, "unknown-model") is None
+        assert estimate_cost_by_tokens(1000, 500, "unknown-model") is None
 
 class TestSaveJson:
     def test_atomic_write(self) -> None:

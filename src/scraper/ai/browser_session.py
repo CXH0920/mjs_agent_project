@@ -219,12 +219,18 @@ class DeepSeekBrowserSession:
             self.close()
             raise
 
+        # 导航/登录等待失败时同样要清理已创建的 Playwright 实例，否则 Edge 进程与
+        # user_data_dir 锁残留，下次启动报 locked（launch 失败分支已有 close，此处分担）
         logger.info("[浏览器] 正在导航到 %s ...", safe_url_origin(self._chat_cfg["url"]))
-        self._page.goto(self._chat_cfg["url"])
-        logger.info("[浏览器] 页面加载完成: %s", self._page.title())
+        try:
+            self._page.goto(self._chat_cfg["url"])
+            logger.info("[浏览器] 页面加载完成: %s", self._page.title())
 
-        if not self._wait_for_login():
-            raise RuntimeError("DeepSeek 登录超时，请先手动登录")
+            if not self._wait_for_login():
+                raise RuntimeError("DeepSeek 登录超时，请先手动登录")
+        except Exception:
+            self.close()
+            raise
 
         self._started = True
         logger.info("[DeepSeekBrowserSession] 浏览器就绪")

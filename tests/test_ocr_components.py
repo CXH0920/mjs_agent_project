@@ -419,7 +419,7 @@ def test_general_recognizer_delegates_preprocessing_and_name_correction() -> Non
         preprocessor=FakePreprocessor(),
         similarity_service=FakeCorrector(),
     )
-    recognizer._ocr = FakeEngine()
+    recognizer.adopt_engine(FakeEngine())
 
     assert recognizer._recognize_single(np.zeros((2, 3, 3), dtype=np.uint8), 1) == ("曹操", 0.8)
     assert calls == [
@@ -458,7 +458,7 @@ def test_general_recognizer_corrects_high_confidence_candidate_and_keeps_unknown
         preprocessor=FakePreprocessor(),
         similarity_service=FakeCorrector(),
     )
-    recognizer._ocr = FakeEngine()
+    recognizer.adopt_engine(FakeEngine())
     roi = np.zeros((2, 3, 3), dtype=np.uint8)
 
     assert recognizer._recognize_single(roi, 1) == ("嬴政", 0.995309)
@@ -476,7 +476,7 @@ def test_general_recognizer_maps_batch_boxes_by_slot_center() -> None:
             ]]
 
     recognizer = GeneralRecognizer()
-    recognizer._ocr = FakeEngine()
+    recognizer.adopt_engine(FakeEngine())
 
     assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8), 2: np.zeros((10, 10), dtype=np.uint8)}, "name") == {
         1: ("第一", 0.8),
@@ -495,7 +495,7 @@ def test_general_recognizer_rejects_ambiguous_or_low_confidence_batch_slot() -> 
             ]]
 
     recognizer = GeneralRecognizer()
-    recognizer._ocr = FakeEngine()
+    recognizer.adopt_engine(FakeEngine())
 
     assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8), 2: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}
 
@@ -507,7 +507,7 @@ def test_general_recognizer_rejects_truncated_name_with_multiple_corrections() -
             return [[[[[2, 0], [12, 0], [12, 8], [2, 8]], ("王", 0.99)]]]
 
     recognizer = GeneralRecognizer(hero_names=["王异", "王翦"])
-    recognizer._ocr = FakeEngine()
+    recognizer.adopt_engine(FakeEngine())
 
     assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}
 

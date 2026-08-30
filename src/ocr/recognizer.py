@@ -26,7 +26,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from src.ocr.character_similarity import CharacterSimilarityService
+from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
@@ -109,6 +109,18 @@ class GeneralRecognizer:
                 self._ocr = False  # 熔断标记：后续识别快速失败，不再重复加载
                 raise
         return self._ocr
+
+    def adopt_engine(self, engine) -> None:
+        """注入外部共享的 PaddleOCR 引擎，避免同进程重复加载多份模型。"""
+        self._ocr = engine
+
+    def shared_engine(self):
+        """返回已加载的引擎供跨识别器共享；未加载或已熔断时返回 None。"""
+        return self._ocr if self._ocr else None
+
+    def ensure_engine(self):
+        """确保 PaddleOCR 引擎已加载并返回它；首次调用触发惰性加载（不可中断）。"""
+        return self._engine
 
     # ── 提前初始化 ────────────────────────────────────────────────────
 
@@ -408,8 +420,8 @@ class GeneralRecognizer:
         same_length_candidates = [
             hero for hero in self._hero_names
             if len(hero) == len(text)
-            if self._similarity_service._levenshtein_distance(text, hero)
-            <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
+            if levenshtein_distance(text, hero)
+            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
         ]
         if prefix_candidates and same_length_candidates:
             return {
@@ -450,8 +462,8 @@ class GeneralRecognizer:
             }
         length_mismatch_candidates = [
             hero for hero in self._hero_names
-            if self._similarity_service._levenshtein_distance(text, hero)
-            <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
+            if levenshtein_distance(text, hero)
+            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
         ]
         return {
             "name": "",
@@ -710,8 +722,8 @@ class GeneralRecognizer:
             return False
         candidates = [
             hero for hero in self._hero_names
-            if self._similarity_service._levenshtein_distance(text, hero)
-            <= self._similarity_service.EDIT_DISTANCE_THRESHOLD
+            if levenshtein_distance(text, hero)
+            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
         ]
         return len(candidates) != 1
 

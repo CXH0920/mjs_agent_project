@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from datetime import date
 from enum import Enum
 from pathlib import Path
@@ -180,10 +182,19 @@ def load_baike_snapshot(path: str | Path | None = None) -> BaikeSnapshot:
 
 
 def save_baike_snapshot(snapshot: BaikeSnapshot, path: str | Path | None = None) -> None:
-    """原子写入百科快照（UTF-8 无 BOM、LF）。"""
+    """原子写入百科快照（UTF-8 无 BOM、LF）。
+
+    中转文件用 mkstemp 生成唯一名：固定 .tmp 名在两个线程并发保存时会互相覆盖。
+    """
     snapshot_path = Path(path or DEFAULT_BAIKE_SNAPSHOT_FILE)
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = snapshot_path.with_suffix(".tmp")
-    with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(snapshot.model_dump_json(indent=2) + "\n")
-    tmp_path.replace(snapshot_path)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=snapshot_path.parent, prefix=f".{snapshot_path.name}.", suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(snapshot.model_dump_json(indent=2) + "\n")
+        Path(tmp_name).replace(snapshot_path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise

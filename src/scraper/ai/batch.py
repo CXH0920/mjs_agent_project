@@ -37,7 +37,7 @@ from src.config.env import (
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 
-from src.scraper.ai.prompt_utils import _estimate_cost, estimate_cost
+from src.scraper.ai.prompt_utils import estimate_cost, estimate_cost_by_tokens
 from src.scraper.ai.utils import (
     load_heroes,
     safe_url_origin,
@@ -168,7 +168,7 @@ def _format_cost_estimate(estimation: dict) -> str:
 def _print_token_summary(total_prompt_tokens: int, total_completion_tokens: int, model: str) -> None:
     """打印最终 token 统计"""
     if total_prompt_tokens > 0 or total_completion_tokens > 0:
-        total_cost = _estimate_cost(total_prompt_tokens, total_completion_tokens, model)
+        total_cost = estimate_cost_by_tokens(total_prompt_tokens, total_completion_tokens, model)
         sep_line = "=" * 55
         print(f"\n{sep_line}")
         print("  Token 使用统计")
@@ -236,8 +236,8 @@ def main():
         os.environ["RAG_ENABLED"] = "false"
         logger.info("RAG enhanced context disabled via --no-rag")
     else:
-        from src.scraper.ai.rag_prompt import _rag_enabled
-        if not _rag_enabled():
+        from src.scraper.ai.rag_prompt import is_rag_enabled
+        if not is_rag_enabled():
             print("  [RAG] 已选择 RAG 语料增强，但当前 RAG_ENABLED=false，本次将以经典模式生成", flush=True)
 
     has_synergy_mode = args.synergy or args.synergy_pair or args.synergy_single or args.synergy_list
