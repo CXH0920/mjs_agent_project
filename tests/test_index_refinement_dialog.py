@@ -71,6 +71,17 @@ def _answer_yes(monkeypatch) -> None:
         lambda *a, **k: dialog_module.QMessageBox.StandardButton.Yes)
 
 
+def _fake_generator(monkeypatch) -> None:
+    """注入假 generator，使 suggest 链路不依赖本机 API 档案。
+
+    CI 无 config.env（已 gitignore），build_generator 返回 None 会触发
+    _generator() 里的 QMessageBox.warning 模态弹窗，在无头测试中永久阻塞
+    （曾致 xdist 4 个 worker 全部僵死）。测试只关心建议回填逻辑，
+    generator 传占位对象即可（suggest_one 已 mock，不使用它）。
+    """
+    monkeypatch.setattr(dialog_module, "build_generator", lambda _name: object())
+
+
 def _suggest_all_sync(dialog: IndexRefinementDialog) -> None:
     """同步驱动批量建议队列（测试环境无事件循环，QTimer 不会自动触发）。"""
     dialog._suggest_all()
@@ -93,6 +104,7 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
     dialog = IndexRefinementDialog(root)
     dialog._table.selectRow(0)
     assert dialog._current is not None
+    _fake_generator(monkeypatch)
     monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
@@ -151,6 +163,7 @@ def test_save_all_writes_every_pending(tmp_path: Path, monkeypatch) -> None:
     _app()
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
+    _fake_generator(monkeypatch)
     monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
@@ -221,6 +234,7 @@ def test_field_state_tracks_manual_edit(tmp_path: Path, monkeypatch) -> None:
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
     dialog._table.selectRow(0)
+    _fake_generator(monkeypatch)
     monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
     dialog._suggest_current()
@@ -260,6 +274,7 @@ def test_suggest_all_queue_finishes_and_empty_state(tmp_path: Path, monkeypatch)
     _app()
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
+    _fake_generator(monkeypatch)
     monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=["打出时"], keywords=["测试牌"], related=[], method="llm"))
     _suggest_all_sync(dialog)
