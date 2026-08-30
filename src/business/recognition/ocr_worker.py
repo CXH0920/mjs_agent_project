@@ -181,7 +181,8 @@ class OcrWorker(QThread):
             if not selected_paths:
                 raise ValueError("未选择官方榜单图片")
             for index, (key, paths) in enumerate(selected_paths, start=1):
-                name = "2v2数据" if key == "2v2" else "武将放逐数据"
+                display_names = {"2v2": "2v2数据", "peak": "巅峰赛数据"}
+                name = display_names.get(key, "武将放逐数据")
                 status = f"正在导入{name}（{index}/{len(selected_paths)}）"
                 self.official_progress.emit(task.task_id, status, 0, 0)
                 summaries.append(service.import_pages(

@@ -7,6 +7,7 @@ from datetime import datetime
 from functools import partial
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -22,6 +24,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.business.analysis.peak_ban_advice import (
+    derive_win_rate_ranks,
+    evaluate_peak_ban_advice,
+)
 from src.business.recognition.peak_select_watcher import PoolSnapshot, PeakSelectWatcher
 from src.config.env import PROJECT_ROOT
 from src.data.combo_seats import format_seats
@@ -69,6 +75,7 @@ class PeakSelectPanel(QWidget):
         hero_names_provider,
         hero_manager=None,
         win_rates_provider=None,
+        pick_ranks_provider=None,
         combo_manager=None,
         parent=None,
     ) -> None:
@@ -76,6 +83,7 @@ class PeakSelectPanel(QWidget):
         self._capture_service = capture_service
         self._hero_manager = hero_manager
         self._win_rates_provider = win_rates_provider
+        self._pick_ranks_provider = pick_ranks_provider
         self._combo_manager = combo_manager
         self._matched_combos: list = []
         self._sort_by_win_rate = False
@@ -96,9 +104,19 @@ class PeakSelectPanel(QWidget):
         set_ui_role(self._toggle_button, ROLE_PRIMARY)
         self._toggle_button.clicked.connect(self._on_toggle_watcher)
         self._action_bar.actions_layout.addWidget(self._toggle_button)
-        self._import_button = QPushButton("从图片导入")
-        self._import_button.clicked.connect(self._on_import_from_file)
-        self._action_bar.actions_layout.addWidget(self._import_button)
+        # 图片导入收进三点下拉菜单（与选将推荐一致）
+        self._more_menu = QMenu(self)
+        self._import_action = QAction("从图片导入", self)
+        self._import_action.triggered.connect(self._on_import_from_file)
+        self._more_menu.addAction(self._import_action)
+        self._more_btn = QToolButton()
+        self._more_btn.setObjectName("recommendationMoreButton")
+        self._more_btn.setText("⋯")
+        self._more_btn.setToolTip("更多操作")
+        self._more_btn.setAccessibleName("更多操作")
+        self._more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._more_btn.setMenu(self._more_menu)
+        self._action_bar.add_action(self._more_btn, ROLE_GHOST)
         layout.addWidget(self._action_bar)
 
         # 阶段与候选汇总并入动作栏左端（原状态文本位置），状态文本随其右，
@@ -138,7 +156,7 @@ class PeakSelectPanel(QWidget):
         self._card_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._card_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._card_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._card_scroll.setFixedHeight(368)  # 两排卡片
+        self._card_scroll.setFixedHeight(420)  # 两排卡片
         self._card_container = QWidget()
         self._card_grid = QGridLayout(self._card_container)
         self._card_grid.setContentsMargins(0, 0, 0, 0)
@@ -272,6 +290,8 @@ class PeakSelectPanel(QWidget):
             return
         names = list(dict.fromkeys(snapshot.names))
         win_rates = self._win_rates_provider() if self._win_rates_provider else {}
+        pick_ranks = self._pick_ranks_provider() if self._pick_ranks_provider else {}
+        win_rate_ranks = derive_win_rate_ranks(win_rates)
         entries: list[tuple[str, object, float | None]] = []
         for name in names:
             hero = self._hero_manager.get_hero_by_name(name) if self._hero_manager else None
@@ -290,6 +310,9 @@ class PeakSelectPanel(QWidget):
             card = PeakHeroCard()
             card.set_hero(hero, display_name=name, confirmed=True)
             card.set_win_rate(rate)
+            card.set_ban_advice(
+                evaluate_peak_ban_advice(rate, pick_ranks.get(name), win_rate_ranks.get(name))
+            )
             rating = best_ratings.get(hero.id) if hero else None
             card.set_combo_badge(f"实战 ★{rating}" if rating else None)
             row, column = divmod(index, half) if half else (0, 0)

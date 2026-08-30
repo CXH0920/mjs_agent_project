@@ -1,8 +1,8 @@
 """
 名将杀 Agent - 实战配队数据管理器
 
-提供 combos 只读数据集的加载与查询；数据由 src/scripts/import_combos.py
-从外部工具导出导入，界面侧不做增删改。
+提供 combos 数据集的加载、查询与手工维护；批量数据由 src/scripts/import_combos.py
+从外部工具导出导入，导入合并时手工记录（manual=True）同 key 冲突优先保留。
 """
 
 from __future__ import annotations
@@ -57,3 +57,29 @@ class ComboManager(DataManager[Combo]):
     def list_combos(self) -> list[Combo]:
         """获取全部实战配队"""
         return self.list_all()
+
+    # ============================================================
+    # 手工维护（界面侧）
+    # ============================================================
+
+    def save_manual_combo(self, combo: Combo, previous: Combo | None = None) -> None:
+        """新增或编辑一条手工配队并原子落盘。
+
+        previous 为编辑前记录：组合（武将对）变化时迁移存储 key。
+        手工记录固定 manual=True，导入合并时同 key 冲突优先保留。
+        """
+        with self._lock:
+            if previous is not None:
+                old_key = self._combo_key(previous.hero1_id, previous.hero2_id)
+                new_key = self._combo_key(combo.hero1_id, combo.hero2_id)
+                if old_key != new_key:
+                    self._items.pop(old_key, None)
+            combo.manual = True  # 界面保存路径一律视为手工记录
+            self._items[self._combo_key(combo.hero1_id, combo.hero2_id)] = combo
+            self._save_unlocked()
+
+    def delete_combo(self, combo: Combo) -> None:
+        """删除一条配队并原子落盘；若该组合存在于导入源，下次导入会恢复。"""
+        with self._lock:
+            self._items.pop(self._combo_key(combo.hero1_id, combo.hero2_id), None)
+            self._save_unlocked()

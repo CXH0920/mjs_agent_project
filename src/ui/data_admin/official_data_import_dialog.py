@@ -29,9 +29,10 @@ from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
 
 class OfficialDataImportDialog(QDialog):
-    """按显示顺序选择一组或两组官方榜单图片并执行导入。"""
+    """按显示顺序选择官方榜单图片（2v2/巅峰赛/武将放逐）并执行导入。"""
 
     recommendation_indexes_stale = Signal()
+    _BOARD_DISPLAY_NAMES = {"2v2": "2v2数据", "peak": "巅峰赛数据", "exile": "武将放逐数据"}
 
     def __init__(self, capture_service: CaptureService, parent=None) -> None:
         super().__init__(parent)
@@ -47,11 +48,12 @@ class OfficialDataImportDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(PageHeader(
             "官方数据导入",
-            "按榜单显示顺序添加图片，可分别导入或同时导入两类数据。",
+            "按榜单显示顺序添加图片，可分别导入或同时导入 2v2、巅峰赛与武将放逐数据。",
         ))
         form = QFormLayout()
         self._paths = {
             "2v2": self._create_path_list(form, "2v2数据导入"),
+            "peak": self._create_path_list(form, "巅峰赛数据导入"),
             "exile": self._create_path_list(form, "武将放逐数据导入"),
         }
         layout.addLayout(form)
@@ -177,11 +179,12 @@ class OfficialDataImportDialog(QDialog):
         self._progress_bar.setValue(self._progress_bar.maximum())
         self.recommendation_indexes_stale.emit()
         lines = [
-            f"{item['name']}：{item['pages']} 张图片，已导入 {item['records']} 条，"
-            f"待复核 {item['reviews']} 条"
+            f"{self._BOARD_DISPLAY_NAMES.get(item['name'], item['name'])}：{item['pages']} 张图片，"
+            f"已导入 {item['records']} 条，待复核 {item['reviews']} 条"
             for item in summaries
         ]
-        lines.append("推荐指数已标记为待重建，请在选将推荐页面确认后重建。")
+        if any(item["name"] != "peak" for item in summaries):
+            lines.append("推荐指数已标记为待重建，请在选将推荐页面确认后重建。")
         show_toast(self.parentWidget() or self, "\n".join(lines), duration=3000)
         self.accept()
 

@@ -115,3 +115,20 @@ def test_failed_import_without_pending_does_not_ask_review(monkeypatch) -> None:
     dialog._on_failed("导入失败")
 
     assert questions == []
+
+
+def test_completed_toast_distinguishes_peak_from_2v2_stale_hint() -> None:
+    """巅峰赛导入完成的提示不带推荐指数待重建文案，2v2 导入保留。"""
+    _app()
+
+    peak_dialog = OfficialDataImportDialog(_FakeCaptureService())
+    peak_dialog._on_completed([{"name": "peak", "pages": 1, "records": 170, "reviews": 0}])
+    peak_text = peak_dialog._shared_toast_overlay.text()
+    assert "巅峰赛数据：1 张图片，已导入 170 条" in peak_text
+    assert "推荐指数" not in peak_text
+
+    v2_dialog = OfficialDataImportDialog(_FakeCaptureService())
+    v2_dialog._on_completed([{"name": "2v2", "pages": 2, "records": 340, "reviews": 4}])
+    v2_text = v2_dialog._shared_toast_overlay.text()
+    assert "2v2数据：2 张图片，已导入 340 条" in v2_text
+    assert "推荐指数已标记为待重建" in v2_text

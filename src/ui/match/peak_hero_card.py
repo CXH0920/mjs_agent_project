@@ -8,10 +8,23 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLay
 
 from src.config.env import BUNDLE_ROOT
 from src.ui.shared.faction_colors import get_faction_colors
-from src.ui.shared.style import TONE_SUCCESS, TONE_WARNING, set_style_property
+from src.ui.shared.style import (
+    FONT_SIZE_MD,
+    TONE_SUCCESS,
+    TONE_WARNING,
+    set_style_property,
+)
 from src.ui.shared.widgets import StatusBadge
 
 IMAGES_DIR = BUNDLE_ROOT / "images"
+
+# 禁选建议徽章配色（按象限 key）：Ban 位首选红底、热门强将蓝底
+_BAN_ADVICE_STYLES = {
+    "ban_first": ("#c0392b", "white"),
+    "hot_pick": ("#2b6cb0", "white"),
+}
+# 徽章宽度：约为卡内宽 105px 的 3/4，文字居中
+_BAN_ADVICE_WIDTH = 79
 
 
 class PeakHeroCard(QFrame):
@@ -21,7 +34,7 @@ class PeakHeroCard(QFrame):
         super().__init__(parent)
         self.setObjectName("peakHeroCard")
         self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setFixedWidth(176)
+        self.setFixedWidth(117)
         set_style_property(self, "heroState", "pending")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -29,17 +42,17 @@ class PeakHeroCard(QFrame):
 
         self._portrait_frame = QWidget()
         self._portrait_frame.setObjectName("matchPortraitFrame")
-        self._portrait_frame.setFixedSize(82, 108)
+        self._portrait_frame.setFixedSize(105, 140)
         portrait_layout = QGridLayout(self._portrait_frame)
         portrait_layout.setContentsMargins(0, 0, 0, 0)
         self._portrait = QLabel()
         self._portrait.setObjectName("matchPortrait")
-        self._portrait.setFixedSize(80, 108)
+        self._portrait.setFixedSize(103, 140)
         self._portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
         portrait_layout.addWidget(self._portrait, 0, 0, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self._name_overlay = QLabel()
         self._name_overlay.setObjectName("matchHeroNameOverlay")
-        self._name_overlay.setFixedSize(82, 22)
+        self._name_overlay.setFixedSize(105, 22)
         self._name_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._name_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         portrait_layout.addWidget(self._name_overlay, 0, 0, Qt.AlignmentFlag.AlignBottom)
@@ -56,7 +69,7 @@ class PeakHeroCard(QFrame):
         )
         self._combo_badge.hide()
         portrait_layout.addWidget(self._combo_badge, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self._portrait_frame, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self._portrait_frame, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
@@ -67,10 +80,19 @@ class PeakHeroCard(QFrame):
         status_row.addStretch()
         layout.addLayout(status_row)
 
-        self._win_rate_label = QLabel("单将胜率：--")
-        self._win_rate_label.setObjectName("matchHeroWinRate")
+        # 胜率标签使用独立 objectName：样式加粗加大一号，且不影响对局攻略的胜率标签
+        self._win_rate_label = QLabel("胜率：--")
+        self._win_rate_label.setObjectName("peakHeroWinRate")
         self._win_rate_label.setWordWrap(True)
         layout.addWidget(self._win_rate_label)
+
+        # 禁选建议徽章：仅强势象限出标签，配色随象限在 set_ban_advice 中内联
+        self._ban_advice_label = QLabel()
+        self._ban_advice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._ban_advice_label.setFixedWidth(_BAN_ADVICE_WIDTH)
+        self._ban_advice_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._ban_advice_label.hide()
+        layout.addWidget(self._ban_advice_label, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
 
     def set_hero(
@@ -86,14 +108,13 @@ class PeakHeroCard(QFrame):
         if not confirmed:
             self._status_label.setText("待确认")
             self._status_label.set_tone(TONE_WARNING)
+            self._status_label.setVisible(True)
             set_style_property(self, "heroState", "pending")
-        elif manual:
-            self._status_label.setText("人工确认")
-            self._status_label.set_tone(TONE_SUCCESS)
-            set_style_property(self, "heroState", "confirmed")
         else:
-            self._status_label.setText("已确认")
+            # 确认态（含人工确认）按需求不展示徽章，文本仅保留供调试读取
+            self._status_label.setText("人工确认" if manual else "已确认")
             self._status_label.set_tone(TONE_SUCCESS)
+            self._status_label.setVisible(False)
             set_style_property(self, "heroState", "confirmed")
 
         if hero is None:
@@ -121,7 +142,23 @@ class PeakHeroCard(QFrame):
 
     def set_win_rate(self, rate: float | None) -> None:
         """巅峰赛单将胜率；None 显示暂无数据（数据源未落地时的常态）。"""
-        self._win_rate_label.setText("单将胜率：暂无数据" if rate is None else f"单将胜率：{rate:.1f}%")
+        self._win_rate_label.setText("胜率：暂无数据" if rate is None else f"胜率：{rate:.1f}%")
+
+    def set_ban_advice(self, advice) -> None:
+        """渲染禁选建议徽章；None（弱势象限或维度数据缺失）隐藏不占位。"""
+        if advice is None:
+            self._ban_advice_label.clear()
+            self._ban_advice_label.setToolTip("")
+            self._ban_advice_label.hide()
+            return
+        background, foreground = _BAN_ADVICE_STYLES[advice.key]
+        self._ban_advice_label.setText(advice.label)
+        self._ban_advice_label.setStyleSheet(
+            f"background-color: {background}; color: {foreground}; border-radius: 4px;"
+            f"padding: 1px 2px; font-size: {FONT_SIZE_MD}px; font-weight: bold;"
+        )
+        self._ban_advice_label.setToolTip(f"{advice.detail} · BPI {advice.bpi}")
+        self._ban_advice_label.show()
 
     def set_combo_badge(self, text: str | None) -> None:
         """显示/清除实战配队角标（如"实战 ★9"）；None 或空串隐藏。"""
@@ -136,8 +173,8 @@ class PeakHeroCard(QFrame):
                 pixmap = QPixmap(str(path))
                 if not pixmap.isNull():
                     return pixmap.scaled(
-                        80,
-                        108,
+                        103,
+                        140,
                         Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                         Qt.TransformationMode.SmoothTransformation,
                     )

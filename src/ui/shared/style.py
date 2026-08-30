@@ -1144,6 +1144,11 @@ QFrame#peakHeroCard[heroState="pending"] {{
     background-color: {SUBTLE_SURFACE};
     border-left-color: {BORDER_STRONG};
 }}
+QLabel#peakHeroWinRate {{
+    color: {PRIMARY};
+    font-size: {FONT_SIZE_MD}px;
+    font-weight: bold;
+}}
 QWidget#matchPortraitFrame {{
     background-color: {SUBTLE_SURFACE};
     border: 1px solid {BORDER};

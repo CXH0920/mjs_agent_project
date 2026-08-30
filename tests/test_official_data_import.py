@@ -756,13 +756,17 @@ def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatc
 def test_validate_exile_row_counts_accepts_full_and_short_right() -> None:
     official_board_parser.validate_exile_row_counts([50, 50])
     official_board_parser.validate_exile_row_counts([50, 20])
+    # 2026-08 下旬官方放逐榜缩水至 38/37 行，满栏阈值不得误伤
+    official_board_parser.validate_exile_row_counts([38, 37])
 
 
 def test_validate_exile_row_counts_rejects_invalid_layouts() -> None:
     with pytest.raises(ValueError, match="行数异常"):
         official_board_parser.validate_exile_row_counts([20, 50])
     with pytest.raises(ValueError, match="行数异常"):
-        official_board_parser.validate_exile_row_counts([30, 30])
+        official_board_parser.validate_exile_row_counts([38, 40])
+    with pytest.raises(ValueError, match="行数异常"):
+        official_board_parser.validate_exile_row_counts([5, 4])
 
 
 def test_detect_layout_accepts_exile_short_right_panel(monkeypatch) -> None:
@@ -868,3 +872,92 @@ def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch
     assert [int(row["排名"]) for row in rows] == list(range(1, 171))
     assert rows[-1]["武将"] == names[170]
     assert summary["records"] == 170
+
+
+def test_import_peak_board_writes_peak_outputs(tmp_path, monkeypatch) -> None:
+    """巅峰赛导入与 2v2 同链路：产出胜率/出场两份 CSV，清理巅峰赛缓存且不动推荐指数。"""
+    names = {1: "甲一", 2: "甲二", 3: "甲三"}
+    service = OfficialDataImportService(hero_names=list(names.values()))
+    panel = np.zeros((60, 100, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
+    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["peak"])
+    monkeypatch.setattr(
+        official_board_parser,
+        "extract_panels",
+        lambda image, _layout: [(0, 0, panel), (100, 0, panel)],
+    )
+    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40, 60])
+
+    counters: dict = {}
+
+    def recognize_row(row, columns, *_args):
+        counters[columns] = counters.get(columns, 0) + 1
+        rank = counters[columns]
+        fields = {"排名": (str(rank), 0.99), "武将": (names[rank], 0.99)}
+        if "胜率" in columns:
+            fields["胜率"] = ("55.55%", 0.99)
+        return fields
+
+    monkeypatch.setattr(service, "_recognize_row", recognize_row)
+
+    def prepare_templates(*args):
+        for _ in range(3):
+            args[-2]()
+        return {rank: ("55.55%", 0.99) for rank in range(1, 4)}, {}
+
+    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
+    monkeypatch.setattr(
+        official_board_parser, "recognize_rate_with_templates", lambda *_: ("55.55%", 0.99),
+    )
+    peak_clears = []
+    monkeypatch.setattr(
+        "src.data.peak_win_rate_repository.clear_peak_win_rate_cache",
+        lambda: peak_clears.append(True),
+    )
+    stale_calls = []
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale_calls.append)
+
+    summary = service.import_pages("peak", [tmp_path / "peak.png"])
+
+    win_rows = list(csv.DictReader((tmp_path / "巅峰赛胜率排行.csv").open(encoding="utf-8")))
+    attendance_rows = list(csv.DictReader((tmp_path / "巅峰赛出场排行.csv").open(encoding="utf-8")))
+    assert summary["name"] == "peak"
+    assert summary["records"] == 6
+    assert [row["排名"] for row in win_rows] == ["1", "2", "3"]
+    assert [row["武将"] for row in win_rows] == ["甲一", "甲二", "甲三"]
+    assert win_rows[0]["胜率"] == "55.55%"
+    assert list(win_rows[0].keys()) == ["排名", "武将", "胜率"]
+    assert [row["排名"] for row in attendance_rows] == ["1", "2", "3"]
+    assert list(attendance_rows[0].keys()) == ["排名", "武将"]
+    assert peak_clears == [True]
+    assert stale_calls == []
+
+
+def test_import_peak_board_rejects_unequal_panel_rows(tmp_path, monkeypatch) -> None:
+    """巅峰赛导入沿用 2v2 的左右面板行数一致性门禁，失败时不写正式 CSV。"""
+    service = OfficialDataImportService(hero_names=["甲一"])
+    panel = np.zeros((60, 100, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
+    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["peak"])
+    monkeypatch.setattr(
+        official_board_parser,
+        "extract_panels",
+        lambda image, _layout: [(0, 0, panel), (100, 0, panel)],
+    )
+    monkeypatch.setattr(
+        official_board_parser,
+        "find_data_boundaries",
+        lambda _panel, _height, _layout, panel_index: [0, 20, 40, 60] if panel_index == 0 else [0, 20, 40],
+    )
+
+    with pytest.raises(ValueError, match="巅峰赛 图片左右榜单行数不一致"):
+        service.import_pages("peak", [tmp_path / "peak.png"])
+
+    assert not (tmp_path / "巅峰赛胜率排行.csv").exists()
+    assert not (tmp_path / "巅峰赛出场排行.csv").exists()

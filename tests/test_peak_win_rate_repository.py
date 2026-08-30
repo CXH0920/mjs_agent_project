@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.data.peak_win_rate_repository import (
     clear_peak_win_rate_cache,
+    load_peak_pick_ranks,
     load_peak_win_rates,
 )
 
@@ -27,3 +28,19 @@ def test_load_peak_win_rates_parses_official_csv_format(tmp_path):
     rates = load_peak_win_rates(path)
 
     assert rates == {"荆轲": 52.3, "蒙恬": 48.0}
+
+
+def test_load_peak_pick_ranks_missing_file_returns_empty(tmp_path):
+    """出场排行缺失时返回空 dict，禁选建议标签不展示。"""
+    clear_peak_win_rate_cache()
+
+    assert load_peak_pick_ranks(tmp_path / "缺失.csv") == {}
+
+
+def test_load_peak_pick_ranks_parses_official_csv_format(tmp_path):
+    """按官方榜单导出格式（排名,武将）解析出场排名。"""
+    path = tmp_path / "巅峰赛出场排行.csv"
+    path.write_text("排名,武将\n1,甘宁\n2,赵云\n", encoding="utf-8")
+    clear_peak_win_rate_cache()
+
+    assert load_peak_pick_ranks(path) == {"甘宁": 1, "赵云": 2}

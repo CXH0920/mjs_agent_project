@@ -37,6 +37,7 @@ from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
 from src.ui.shared.combo_detail import show_combo_detail
+from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
@@ -207,6 +208,11 @@ class RecommendationPanel(QWidget):
         self._combo_seat_combo.currentIndexChanged.connect(self._render_combo_chips)
         strip_header.addWidget(self._combo_seat_combo)
         strip_header.addStretch()
+        self._combo_manage_btn = QPushButton("管理")
+        self._combo_manage_btn.setToolTip("新增、编辑或删除实战配队")
+        self._combo_manage_btn.setAccessibleName("管理实战配队")
+        self._combo_manage_btn.clicked.connect(self._open_combo_management)
+        strip_header.addWidget(self._combo_manage_btn)
         self._combo_toggle_btn = QToolButton()
         self._combo_toggle_btn.setObjectName("recommendationComboToggle")
         self._combo_toggle_btn.setText("收起")
@@ -461,6 +467,12 @@ class RecommendationPanel(QWidget):
         self._combo_chips_collapsed = not self._combo_chips_collapsed
         self._combo_chips_container.setVisible(not self._combo_chips_collapsed)
         self._combo_toggle_btn.setText("展开" if self._combo_chips_collapsed else "收起")
+
+    def _open_combo_management(self) -> None:
+        """打开实战配队全量管理对话框；增删改后即时刷新命中条与卡片角标。"""
+        dialog = ComboManagementDialog(self._hero_mgr, self._combo_mgr, self)
+        dialog.combos_changed.connect(self._refresh_combo_strip)
+        dialog.exec()
 
     def _show_combo_detail(self, combo) -> None:
         """配队详情：2×2 号位示意 + 座次要求 + note 原文。"""

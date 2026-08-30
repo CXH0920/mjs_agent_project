@@ -152,9 +152,10 @@ class OfficialDataImportService:
                 row_count = len(boundaries) - 1
                 total_steps += row_count * (2 if "胜率" in columns else 1)
             row_counts = [len(task[8]) - 1 for task in page_tasks]
-            if key == "2v2" and row_counts[0] != row_counts[1]:
+            if key in ("2v2", "peak") and row_counts[0] != row_counts[1]:
+                label = "巅峰赛" if key == "peak" else "2v2"
                 raise ValueError(
-                    f"第 {page_index} 张 2v2 图片左右榜单行数不一致: {row_counts}"
+                    f"第 {page_index} 张 {label} 图片左右榜单行数不一致: {row_counts}"
                 )
             if key == "exile":
                 try:
@@ -307,10 +308,14 @@ class OfficialDataImportService:
         for output_name, batch in outputs.items():
             records = batch["records"]
             self._write_csv(DATA_DIR / output_name, list(records[0]), records)
-        mark_recommendation_index_stale(True)
+        if "巅峰赛胜率排行.csv" not in outputs:
+            mark_recommendation_index_stale(True)
         if "2v2胜率排行.csv" in outputs:
             from src.data.win_rate_repository import clear_win_rate_cache
             clear_win_rate_cache()
+        if "巅峰赛胜率排行.csv" in outputs:
+            from src.data.peak_win_rate_repository import clear_peak_win_rate_cache
+            clear_peak_win_rate_cache()
         record_count = sum(len(batch["records"]) for batch in outputs.values())
         review_count = sum(len(batch["reviews"]) for batch in outputs.values())
         logger.info("官方%s榜单导入完成: %d 条，待复核 %d 条", layout.key, record_count, review_count)
@@ -871,10 +876,14 @@ class OfficialDataImportService:
             if not records:
                 raise ValueError(f"{output_name} 未识别到任何数据行")
             self._write_csv(DATA_DIR / output_name, list(records[0]), records)
-        mark_recommendation_index_stale(True)
+        if "巅峰赛胜率排行.csv" not in outputs:
+            mark_recommendation_index_stale(True)
         if "2v2胜率排行.csv" in outputs:
             from src.data.win_rate_repository import clear_win_rate_cache
             clear_win_rate_cache()
+        if "巅峰赛胜率排行.csv" in outputs:
+            from src.data.peak_win_rate_repository import clear_peak_win_rate_cache
+            clear_peak_win_rate_cache()
         clear_pending_session(session_path)
         record_count = sum(len(batch["records"]) for batch in outputs.values())
         logger.info("官方榜单复核修正写入完成: %d 条", record_count)

@@ -37,7 +37,7 @@ from src.data.manager import (
 )
 from src.data.card_catalog import CardCatalogService
 from src.data.announcement_manager import AnnouncementManager, AnnouncementStatus
-from src.data.peak_win_rate_repository import load_peak_win_rates
+from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.business.announcement.announcement_service import AnnouncementCheckResult, AnnouncementService
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.scraper.official_source.announcement import build_update_candidates, fetch_baike_heroes
@@ -789,6 +789,7 @@ class MainWindow(QMainWindow):
             hero_names_provider=lambda: [hero.name for hero in self._data.heroes.list_heroes()],
             hero_manager=self._data.heroes,
             win_rates_provider=load_peak_win_rates,
+            pick_ranks_provider=load_peak_pick_ranks,
             combo_manager=self._combo_manager,
         )
         self._peak_select.request_mumu_config.connect(self._open_mumu_config)
@@ -1091,7 +1092,7 @@ class MainWindow(QMainWindow):
         show_toast(self, f"实战配队已导入 {count} 条，相性板块与选将推荐已更新。", duration=4000)
 
     def _open_official_data_import(self) -> None:
-        """打开官方 2v2 胜率与武将放逐榜单导入窗口。"""
+        """打开官方 2v2、巅峰赛与武将放逐榜单导入窗口。"""
         dialog = OfficialDataImportDialog(self._capture_service, self)
         dialog.recommendation_indexes_stale.connect(
             self._recommendation.mark_recommendation_indexes_stale

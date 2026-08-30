@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PIL import Image
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
+from src.business.analysis.peak_ban_advice import PeakBanAdvice
 from src.business.recognition.peak_select_watcher import (
     PeakSelectWatcher,
     board_signature,
@@ -85,6 +86,7 @@ def _make_panel(
     capture=None,
     hero_manager=None,
     win_rates=None,
+    pick_ranks=None,
     combo_manager=None,
 ) -> PeakSelectPanel:
     return PeakSelectPanel(
@@ -93,6 +95,7 @@ def _make_panel(
         hero_names_provider=lambda: [],
         hero_manager=hero_manager,
         win_rates_provider=(lambda: win_rates) if win_rates is not None else None,
+        pick_ranks_provider=(lambda: pick_ranks) if pick_ranks is not None else None,
         combo_manager=combo_manager,
     )
 
@@ -150,15 +153,45 @@ def test_panel_cards_render_win_rate_and_sort(qapp):
     panel._on_pool_updated(parse_pool(results, 9))
 
     assert [card._win_rate_label.text() for card in panel._cards] == [
-        "单将胜率：47.7%",
-        "单将胜率：暂无数据",
-        "单将胜率：52.3%",
+        "胜率：47.7%",
+        "胜率：暂无数据",
+        "胜率：52.3%",
     ]
 
     panel._sort_button.setChecked(True)
 
     assert [card._name_overlay.text() for card in panel._cards] == ["荆轲", "傅玄", "蒙恬"]
-    assert panel._cards[2]._win_rate_label.text() == "单将胜率：暂无数据"
+    assert panel._cards[2]._win_rate_label.text() == "胜率：暂无数据"
+
+
+def test_panel_cards_render_ban_advice(qapp):
+    """强势象限武将卡显示禁选建议徽章，弱势/缺数据武将无标签。"""
+    heroes = {
+        "王濬": SimpleNamespace(id=1, name="王濬", faction="西晋"),
+        "荆轲": SimpleNamespace(id=2, name="荆轲", faction="燕"),
+        "甘宁": SimpleNamespace(id=3, name="甘宁", faction="吴"),
+    }
+    panel = _make_panel(
+        hero_manager=SimpleNamespace(get_hero_by_name=heroes.get),
+        win_rates={"王濬": 71.97, "甘宁": 32.1},
+        pick_ranks={"王濬": 165, "荆轲": 1, "甘宁": 1},
+    )
+    results = [
+        {"name": "王濬", "resolution": "exact"},
+        {"name": "荆轲", "resolution": "exact"},
+        {"name": "甘宁", "resolution": "exact"},
+    ]
+    panel._on_pool_updated(parse_pool(results, 9))
+
+    advice_by_name = {
+        card._name_overlay.text(): card._ban_advice_label for card in panel._cards
+    }
+    assert advice_by_name["王濬"].text() == "Ban 位首选"
+    assert "被 Ban 压制的强势冷门" in advice_by_name["王濬"].toolTip()
+    assert "BPI 1164" in advice_by_name["王濬"].toolTip()
+    assert not advice_by_name["王濬"].isHidden()
+    assert advice_by_name["荆轲"].isHidden()  # 胜率缺失
+    assert advice_by_name["甘宁"].isHidden()  # 虚热陷阱不打标签
 
 
 def test_panel_combo_strip_matches_and_badges(qapp):
@@ -199,21 +232,31 @@ def test_panel_combo_strip_matches_and_badges(qapp):
 
 
 def test_peak_hero_card_states(qapp):
-    """卡片三态：待确认/已确认/无武将数据，胜率与角标展示正确。"""
+    """卡片三态：待确认显示徽章，确认态不显示徽章；胜率与角标展示正确。"""
     card = PeakHeroCard()
     hero = SimpleNamespace(id=1, name="荆轲", faction="燕")
 
     card.set_hero(None, display_name="卓文君", confirmed=False)
     assert card._name_overlay.text() == "卓文君"
     assert card._status_label.text() == "待确认"
-    assert card._win_rate_label.text() == "单将胜率：--"
+    assert not card._status_label.isHidden()
+    assert card._win_rate_label.text() == "胜率：--"
 
     card.set_hero(hero, confirmed=True)
     assert card._name_overlay.text() == "荆轲"
     assert card._status_label.text() == "已确认"
+    assert card._status_label.isHidden()
 
     card.set_win_rate(48.12)
-    assert card._win_rate_label.text() == "单将胜率：48.1%"
+    assert card._win_rate_label.text() == "胜率：48.1%"
+
+    card.set_ban_advice(
+        PeakBanAdvice(key="ban_first", label="Ban 位首选", detail="d", weight=1000, bpi=1164)
+    )
+    assert card._ban_advice_label.text() == "Ban 位首选"
+    assert not card._ban_advice_label.isHidden()
+    card.set_ban_advice(None)
+    assert card._ban_advice_label.isHidden()
 
     card.set_combo_badge("实战 ★9")
     assert card._combo_badge.text() == "实战 ★9"
@@ -340,7 +383,7 @@ def test_panel_import_button_passes_file_to_watcher(qapp, monkeypatch, tmp_path)
     forwarded: list[str] = []
     monkeypatch.setattr(panel._watcher, "recognize_image_file", forwarded.append)
 
-    panel._import_button.click()
+    panel._import_action.trigger()
 
     assert forwarded == [str(target)]
     assert "正在识别导入图片" in panel._action_bar.status_label.text()
@@ -349,7 +392,7 @@ def test_panel_import_button_passes_file_to_watcher(qapp, monkeypatch, tmp_path)
         "src.ui.match.peak_select_panel.QFileDialog.getOpenFileName",
         staticmethod(lambda *args, **kwargs: ("", "")),
     )
-    panel._import_button.click()
+    panel._import_action.trigger()
     assert forwarded == [str(target)]
 
 

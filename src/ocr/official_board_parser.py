@@ -38,6 +38,14 @@ LAYOUTS = {
         output_names=("2v2胜率排行.csv", "2v2出场排行.csv"),
         review_names=("2v2胜率排行_待复核.csv", "2v2出场排行_待复核.csv"),
     ),
+    "peak": OfficialBoardLayout(
+        key="peak", top=0.18, bottom=0.99, panel_ranges=((0.03, 0.48), (0.52, 0.97)),
+        columns=(("排名", "武将", "胜率"), ("排名", "武将")),
+        column_breaks=((0.0, 0.29, 0.69, 1.0), (0.0, 0.45, 1.0)),
+        header_lines=(1, 3),
+        output_names=("巅峰赛胜率排行.csv", "巅峰赛出场排行.csv"),
+        review_names=("巅峰赛胜率排行_待复核.csv", "巅峰赛出场排行_待复核.csv"),
+    ),
     "exile": OfficialBoardLayout(
         key="exile", top=0.28, bottom=0.99, panel_ranges=((0.03, 0.48), (0.52, 0.97)),
         columns=(("排名", "武将"), ("排名", "武将")),
@@ -66,7 +74,10 @@ PAGED_LAYOUTS = {
     for key, layout in LAYOUTS.items()
 }
 
-EXILE_FULL_PANEL_MIN_ROWS = 45
+# 放逐榜每期上榜数量随官方公布变化（2026-08 下旬低至 38 行/栏），旧的 45 行
+# 满栏阈值会误伤缩水榜单；该阈值仅用于拦截明显切分异常，榜单正确性由行号
+# 连续性校验、词表门禁与整榜唯一性兜底
+EXILE_FULL_PANEL_MIN_ROWS = 10
 
 
 def read_image(path: Path) -> np.ndarray:
@@ -226,7 +237,7 @@ def detect_layout(image: np.ndarray, key: str) -> OfficialBoardLayout:
             ]
             if any(count <= 0 for count in row_counts):
                 raise ValueError("未检测到数据行")
-            if key == "2v2" and row_counts[0] != row_counts[1]:
+            if key in ("2v2", "peak") and row_counts[0] != row_counts[1]:
                 raise ValueError(f"左右榜单行数不一致: {row_counts}")
             if key == "exile":
                 validate_exile_row_counts(row_counts)
@@ -237,7 +248,7 @@ def detect_layout(image: np.ndarray, key: str) -> OfficialBoardLayout:
 
 
 def validate_exile_row_counts(row_counts: list[int]) -> None:
-    """放逐榜允许页末右栏不满：左栏满栏且右栏不超过左栏时放行。"""
+    """放逐榜允许每期数量缩水与页末右栏不满：左栏不低于最小行数且右栏不超过左栏时放行。"""
     left, right = row_counts
     if left < EXILE_FULL_PANEL_MIN_ROWS or right > left:
         raise ValueError(f"左右榜单行数异常: {row_counts}")
