@@ -43,6 +43,24 @@ def _ensure_clean_runtime() -> None:
         default_roi = BUNDLE_ROOT / "config" / "ocr_rois.default.json"
         if default_roi.exists():
             shutil.copy2(default_roi, user_roi)
+    # 打包资料部署：BUNDLE_ROOT/data 的静态资料（核心库 json / 官方榜单 csv / RAG 语料 /
+    # 评估集 / raw_guides 等）复制到运行时根——维护脚本、构建脚本等读 PROJECT_ROOT/data，
+    # 不部署会全量报"缺源"（task_states）。只补缺失文件，不覆盖用户已有数据
+    bundle_data = BUNDLE_ROOT / "data"
+    if bundle_data.is_dir():
+        for src in bundle_data.rglob("*"):
+            if not src.is_file():
+                continue
+            dst = PROJECT_ROOT / "data" / src.relative_to(bundle_data)
+            if not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+    # 元规则母本（元规则/术语/FAQ 语料任务的源，build_rule_corpus 读 PROJECT_ROOT/docs/）
+    meta_doc = BUNDLE_ROOT / "docs" / "元规则整理-完整版.md"
+    target_doc = PROJECT_ROOT / "docs" / "元规则整理-完整版.md"
+    if meta_doc.is_file() and not target_doc.exists():
+        target_doc.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(meta_doc, target_doc)
 
 
 def _install_no_window_patch() -> None:

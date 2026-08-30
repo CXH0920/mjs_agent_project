@@ -17,8 +17,8 @@
 - mjs_agent.spec 已处理 PyInstaller 6.x Tree 兼容、Cython/imageio/cnradical 数据、
   char_info_cache/wubi86 路径、torch 等 ppstructure 依赖排除、Qt 裁剪等；本脚本只
   负责编排，不改 spec 逻辑。
-- 构建产物本身不含任何用户资料（config.env/edge_profile/logs/api key），首次启动由
-  main._ensure_clean_runtime 生成。烟雾测试会在运行后清理它产生的运行时文件。
+- 构建产物本身不含任何用户资料（config.env/api_profiles/edge_profile/logs/api key），
+  首次启动由 main._ensure_clean_runtime 生成。烟雾测试会在运行后清理它产生的运行时文件。
 - 烟雾测试用 os.startfile 模拟真实双击（windowed exe 无控制台 → sys.stdout=None），
   暴露 Popen(PIPE) 启动会掩盖的双击场景崩溃。
 - 中文路径支持：paddle 模型复制到 %TEMP%、cv2 用 imdecode/imencode 规避 ANSI fopen
@@ -47,7 +47,8 @@ INTERNAL = DIST / "mjs_agent" / "_internal"
 # OCR 模型加载需 ~15s，烟雾测试至少给 22s 才能覆盖加载阶段
 SMOKE_TIMEOUT_S = 22
 
-# 构建后由 exe 首次启动生成的运行时文件（不应出现在纯净交付物里）
+# 构建后由 exe 首次启动生成的运行时文件（不应出现在纯净交付物里；
+# docs/ 是 _ensure_clean_runtime 部署元规则母本产生的目录）
 RUNTIME_ARTIFACTS = [
     DIST / "mjs_agent" / "config.env",
     DIST / "mjs_agent" / "data",
@@ -56,6 +57,7 @@ RUNTIME_ARTIFACTS = [
     DIST / "mjs_agent" / "templates",
     DIST / "mjs_agent" / "mjs.ico",
     DIST / "mjs_agent" / "logs",
+    DIST / "mjs_agent" / "docs",
 ]
 
 # ANSI 颜色（Git Bash / 现代终端支持）
@@ -195,7 +197,7 @@ def verify_full_artifacts() -> None:
 
 # ── 纯净度校验 ─────────────────────────────────────────────────
 def purity_check() -> None:
-    """确认交付物不含用户资料（config.env / edge_profile / logs / api key）。"""
+    """确认交付物不含用户资料（config.env / api_profiles / edge_profile / logs / api key）。"""
     _info("纯净度校验（构建产物不应含用户资料）…")
     root = DIST / "mjs_agent"
     problems: list[str] = []
@@ -212,9 +214,17 @@ def purity_check() -> None:
         _warn("纯净度问题（将自动清理运行时残留）：" + "；".join(problems))
         clean_runtime_artifacts()
 
-    # api key 残留扫描（sk- 开头 20+ 位）
-    _scan_apikey(INTERNAL)
-    _ok("纯净度通过：无 config.env / edge_profile / logs / api key")
+    # api_profiles.json 是含真实 Key 的本机 API 档案（.gitignore 敏感文件）：
+    # - _internal/ 下出现 = spec 误收集（构建泄漏），直接终止发版（删文件掩盖 spec 配置错误）
+    # - exe 根下出现 = 运行时残留（migrate_legacy_api_config 生成），由 clean 清理
+    if (INTERNAL / "config" / "api_profiles.json").exists():
+        _die("在 _internal/config/ 发现 api_profiles.json（含真实 API Key 的敏感档案），"
+             "spec 的 config excludes 未生效，请检查后重新构建")
+
+    # api key 残留扫描（sk- 开头 20+ 位）；扫整个交付目录，覆盖 exe 根的
+    # config.env / config/ 与 _internal 全部文本文件
+    _scan_apikey(root)
+    _ok("纯净度通过：无 config.env / api_profiles / edge_profile / logs / api key")
 
 
 def _scan_apikey(root: Path) -> None:

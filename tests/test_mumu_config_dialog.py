@@ -233,12 +233,15 @@ def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> 
     assert dialog._make_match_guide_template_btn.text() == "制作模板"
 
 
-def test_recognition_page_reflows_without_horizontal_scroll() -> None:
+def test_recognition_page_reflows_without_horizontal_scroll(tmp_path: Path) -> None:
     app = _app()
     device = MuMuDeviceInfo("1", "实例", 16448, True)
+    # 必须注入假 OcrService：默认 ocr_service=None 会让对话框构造真实服务，
+    # show+切识别页路径在 CI（Linux 无头 + xdist）上曾把 worker 阻塞至超时强杀
     dialog = _dialog(
         {"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448, "mumu_ocr_poll_mode": True},
         [device],
+        ocr_service=_OcrService(tmp_path),
     )
     dialog.resize(760, 620)
     dialog.show()

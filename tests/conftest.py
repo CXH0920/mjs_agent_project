@@ -1,10 +1,13 @@
 """pytest 配置：将项目根目录加入 sys.path，统一使用 `from src.xxx` 导入模式"""
 
 import atexit
+import faulthandler
+import os
 import sys
 from pathlib import Path
 
 import pytest
+import pytest_timeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -16,6 +19,32 @@ from src.business.recognition import ocr_worker as _ocr_worker_module
 # "node down: Not properly terminated" 并把该进程上正在运行的测试记为失败。
 # 测试进程无需该兜底，提前注销即可。
 atexit.unregister(_ocr_worker_module._drain_retired_workers)
+
+# pytest-timeout 的 thread 方法把超时线程栈写到 pytest 终端，而 xdist worker 被
+# 强杀（node down）时该输出随缓冲丢失，CI 上只能看到用例名看不到卡在哪一行。
+# 把栈同时写入每个 worker 独立的日志文件（logs/pytest-timeout-<pid>.log），
+# CI 末尾统一 cat 出来即可定位卡死点。
+_TIMEOUT_DUMP_HANDLE = None
+_orig_dump_stacks = pytest_timeout.dump_stacks
+
+
+def _dump_stacks_to_file(terminal) -> None:
+    global _TIMEOUT_DUMP_HANDLE
+    try:
+        if _TIMEOUT_DUMP_HANDLE is None:
+            log_dir = os.environ.get("MJS_TIMEOUT_DUMP_DIR") or "logs"
+            os.makedirs(log_dir, exist_ok=True)
+            _TIMEOUT_DUMP_HANDLE = open(
+                os.path.join(log_dir, f"pytest-timeout-{os.getpid()}.log"),
+                "a", encoding="utf-8",
+            )
+        faulthandler.dump_traceback(file=_TIMEOUT_DUMP_HANDLE)
+    except OSError:
+        pass
+    _orig_dump_stacks(terminal)
+
+
+pytest_timeout.dump_stacks = _dump_stacks_to_file
 
 
 @pytest.fixture(autouse=True)

@@ -101,11 +101,17 @@ for sub in ("det", "rec", "cls"):
             datas.append((str(p), f"paddleocr_models/{sub}"))
 
 # ── 静态资源 ──
-# data：排除运行时产物（对应 .gitignore + 首启生成物）
+# data：排除运行时产物（对应 .gitignore + 首启生成物）。
+# rag_corpus 语料 / rag_evals 评估集是知识库维护页的运行资料（任务源/输出/状态判断都
+# 依赖，见 task_defs.py），不排除；rag_index / rag_models 仍排除（向量检索依赖的
+# transformers 已被 excludes，索引与模型缓存可由维护管道在开发机重建）
 DATA_GLOBS = ("eval_*.json", "syn_*.json", "sample_*.json", "test_guide.json",
-              "*.corrupt-*.json", "*_待复核.csv")
+              "*.corrupt-*.json", "*_待复核.csv",
+              # 示例占位数据（已被 prompt 内嵌 few-shot 替代，无代码引用）、
+              # 带日期的一次性分析文档（源数据在 hero_classification.json）
+              "example_*.json", "武将分类20*.md")
 DATA_NAMES = ("edge_profile", "char_info_cache.json", "backups", "archive",
-              "rag_corpus", "rag_index", "rag_models", "rag_evals",
+              "rag_index", "rag_models",
               "announcements.json", "baike_snapshot.json", "武将推荐指数状态.json",
               "eval_review.md", "_skills_dump.txt", "_syn_review.md")
 
@@ -124,8 +130,16 @@ for p in (HERE / "data").rglob("*"):
             continue
         datas.append((str(p), f"data/{rel.parent}"))
 
-# config：排除用户层 ocr_rois.json，保留静态 default/faction_colors/model_pricing
-datas += _collect_dir(HERE / "config", "config", excludes=["ocr_rois.json"])
+# 元规则母本：元规则/术语/FAQ 语料任务的源（build_rule_corpus 读 PROJECT_ROOT/docs/，
+# 首启由 _ensure_clean_runtime 部署到 exe 同级），docs 主体不入包，此文件单独收集
+_meta_rule_doc = HERE / "docs" / "元规则整理-完整版.md"
+if _meta_rule_doc.is_file():
+    datas.append((str(_meta_rule_doc), "docs"))
+
+# config：排除用户层敏感/个人配置（ocr_rois.json 用户 ROI、api_profiles.json 含真实
+# API Key 的多供应商档案，运行时从 PROJECT_ROOT/config 读、缺失时返回空档案），
+# 保留静态 default/faction_colors/model_pricing
+datas += _collect_dir(HERE / "config", "config", excludes=["ocr_rois.json", "api_profiles.json"])
 # templates / images
 datas += _collect_dir(HERE / "templates", "templates")
 datas += _collect_dir(HERE / "images", "images")
@@ -139,16 +153,33 @@ datas += [(str(HERE / "src" / "data" / "wubi86.txt"), "src/data")]
 if (HERE / "docs" / "prompts").is_dir():
     datas += _collect_dir(HERE / "docs" / "prompts", "docs/prompts")
 
-# ── 完整版额外：playwright ──
+# ── 完整版额外：playwright + RAG 检索（踩坑15）──
 if FULL:
     b, d, h = collect_all("playwright")
     binaries += b
     datas += d
     hiddenimports += h
+    # chromadb 按文件系统全量收集：检索路径上 telemetry/api.rust 等子模块是运行时
+    # 动态 import，静态分析不可见（实测 eval 检索报 No module named
+    # 'chromadb.api.rust' / 'chromadb.telemetry.product.posthog'），必须 collect_all 兜住
+    b, d, h = collect_all("chromadb")
+    binaries += b
+    datas += d
+    hiddenimports += h
+    # chroma 向量索引：检索数据，与 bge 模型配套（索引即用该模型编码）；
+    # 运行期随资料部署复制到可写根（chroma 打开 sqlite 需写权限，不能留在只读 _internal）
+    datas += _collect_dir(HERE / "data" / "rag_index", "data/rag_index")
+    # bge-small-zh 模型（HF snapshots 结构）：只收 safetensors 权重，
+    # pytorch_model.bin 为冗余副本（sentence_transformers 优先加载 safetensors）
+    datas += _collect_dir(HERE / "data" / "rag_models" / "modelscope",
+                          "data/rag_models/modelscope", excludes=["pytorch_model.bin"])
 
 # ── excludes ──
 excludes = [
-    # paddleocr.ppstructure 依赖，OCR 仅 det+rec 不用（踩坑9，~430MB）
+    # paddleocr.ppstructure 依赖，OCR 仅 det+rec 不用（踩坑9，~430MB）。
+    # 注意 torch/transformers/tokenizers 同时是 sentence_transformers（RAG 检索）的
+    # 推理底座：精简版排除 → RAG 降级为经典模式；完整版在下方移除这三项启用 RAG（踩坑15）。
+    # onnxruntime 仅 chromadb 默认 embedding 用（检索显式传 query_embeddings），恒排除
     "torch", "torchvision", "transformers", "tokenizers", "onnxruntime", "onnx",
     # PySide6 WebEngine/QML（markdown 用 QTextBrowser，零 WebEngine，~150MB）
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
@@ -159,6 +190,9 @@ excludes = [
 ]
 if not FULL:
     excludes += ["playwright"]
+else:
+    for _rag_dep in ("torch", "transformers", "tokenizers"):
+        excludes.remove(_rag_dep)
 
 # ── Analysis ──
 a = Analysis(

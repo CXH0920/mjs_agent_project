@@ -7,7 +7,9 @@ from src.rag.indexer import load_all_blocks
 
 logger = logging.getLogger(__name__)
 
-sys.stdout.reconfigure(encoding='utf-8')
+# windowed 打包双击启动时 sys.stdout 为 None（踩坑6），守卫避免 import 即崩
+if sys.stdout is not None:
+    sys.stdout.reconfigure(encoding='utf-8')
 
 # 规则高频状态/术语词（关键词兜底用）
 KEYWORDS = [
