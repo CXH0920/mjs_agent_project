@@ -31,6 +31,13 @@ jobs:
       - name: Lint
         shell: bash -l {0}
         run: python -m ruff check src tests
+      # pyright（pyproject 已配 basic 模式）当前仍有约 600 处报错（src 约 224 / tests 约 380），
+      # 清零前以 report-only 运行：每次 CI 留档趋势但不阻断；错误清零后移除
+      # continue-on-error 升级为强门禁
+      - name: Type check (pyright, report-only)
+        continue-on-error: true
+        shell: bash -l {0}
+        run: python -m pyright
       - name: Test
         shell: bash -l {0}
         env:

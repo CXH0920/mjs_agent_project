@@ -213,11 +213,14 @@ class AiGenerationWorkflow(QObject):
         heroes: list[dict],
         mode: str,
         title: str,
-        fetch: Callable[[list[dict], str, bool], None],
+        fetch: Callable[[list[dict], str, bool], bool],
     ) -> None:
         from src.config.env import get_api_config
         from src.scraper.ai.prompt_utils import estimate_cost
 
+        if self._guide_service.is_busy:
+            QMessageBox.warning(self._window, "生成进行中", "已有攻略生成任务在运行，请等待完成。")
+            return
         estimation = estimate_cost(len(heroes), "guide", get_api_config()["model"])
         estimation["mode"] = mode
         estimation["heroes"] = heroes
@@ -227,9 +230,12 @@ class AiGenerationWorkflow(QObject):
             return
         backend, use_rag = choice
 
+        # 未启动子进程（忙碌/无需生成）不会有完成信号，必须确认启动成功后再进
+        # 模态 exec，否则进度框将永久卡死只能杀进程
+        if not fetch(heroes, backend, use_rag):
+            return
         self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self._window)
         self._guide_progress_dialog.cancel_requested.connect(self._guide_service.cancel)
-        fetch(heroes, backend, use_rag)
         self._guide_progress_dialog.exec()
         self._guide_progress_dialog = None
 
@@ -237,8 +243,14 @@ class AiGenerationWorkflow(QObject):
         self,
         item_count: int,
         title: str,
-        start: Callable[[], None],
+        start: Callable[[], bool],
     ) -> None:
+        if self._synergy_service.is_busy:
+            QMessageBox.warning(self._window, "生成进行中", "已有相性生成任务在运行，请等待完成。")
+            return
+        if not start():
+            # 同攻略流程：未启动子进程不会有完成信号，不能进入模态 exec
+            return
         self._synergy_progress_dialog = GuideProgressDialog(
             item_count,
             title=title,
@@ -246,7 +258,6 @@ class AiGenerationWorkflow(QObject):
             parent=self._window,
         )
         self._synergy_progress_dialog.cancel_requested.connect(self._synergy_service.cancel)
-        start()
         self._synergy_progress_dialog.exec()
         self._synergy_progress_dialog = None
 

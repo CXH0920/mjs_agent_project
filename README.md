@@ -71,11 +71,11 @@ python -m src.scraper.ai_batch --dry-run --guide
 ```bash
 python -m src.scraper.ai_batch --guide --no-rag             # 禁用 RAG 增强
 python -m src.scraper.ai_batch --rebuild-rag-index          # 重建向量索引
-python scripts/maintain_rag.py --force --build-index        # 一键重建语料+索引
-python scripts/rag_audit.py                                 # 查看人工补充清单
+python -m src.scripts.maintain_rag --force --build-index    # 一键重建语料+索引
+python -m src.scripts.rag_audit                             # 查看人工补充清单
 ```
 
-维护脚本（`maintain_rag.py` / `rag_audit.py` / `build_*.py`）已收编到 `scripts/`，全部本地运行。元规则 T0 文档维护脚本：`audit_rule_doc.py` / `sync_rule_stats.py` / `propose_rule_changes.py` / `apply_rule_proposal.py` / `eval_rule_faqs.py`，均可在应用内「知识库维护 → 元规则维护」可视化操作。
+维护脚本（`maintain_rag.py` / `rag_audit.py` / `build_*.py`）已收编到 `src/scripts/`，以 `python -m src.scripts.<脚本名>` 运行，全部本地执行。元规则 T0 文档维护脚本：`audit_rule_doc.py` / `sync_rule_stats.py` / `propose_rule_changes.py` / `apply_rule_proposal.py` / `eval_rule_faqs.py`，均可在应用内「知识库维护 → 元规则维护」可视化操作。
 
 ---
 

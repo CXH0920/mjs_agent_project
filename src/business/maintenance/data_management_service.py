@@ -181,19 +181,25 @@ class DataMutationService:
         removed_guides = 0
         cleaned_guide_references = 0
 
-        for synergy in list(self._synergy_manager.list_synergies()):
-            if {synergy.hero_a_id, synergy.hero_b_id} - hero_ids:
-                self._synergy_manager.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
-                removed_synergies += 1
-        for guide in list(self._guide_manager.list_guides()):
-            if guide.hero_id not in hero_ids:
-                self._guide_manager.delete_guide(guide.hero_id)
-                removed_guides += 1
-                continue
-            valid_ids = [hero_id for hero_id in guide.synergizes_with if hero_id in hero_ids]
-            if valid_ids != guide.synergizes_with:
-                self._guide_manager.update_guide(guide.model_copy(update={"synergizes_with": valid_ids}))
-                cleaned_guide_references += len(guide.synergizes_with) - len(valid_ids)
+        # 与 _commit_mutation 同一语义：中途异常恢复内存快照与数据文件，
+        # 否则半删状态会被此后任意一次 save() 固化到磁盘
+        try:
+            for synergy in list(self._synergy_manager.list_synergies()):
+                if {synergy.hero_a_id, synergy.hero_b_id} - hero_ids:
+                    self._synergy_manager.delete_synergy(synergy.hero_a_id, synergy.hero_b_id)
+                    removed_synergies += 1
+            for guide in list(self._guide_manager.list_guides()):
+                if guide.hero_id not in hero_ids:
+                    self._guide_manager.delete_guide(guide.hero_id)
+                    removed_guides += 1
+                    continue
+                valid_ids = [hero_id for hero_id in guide.synergizes_with if hero_id in hero_ids]
+                if valid_ids != guide.synergizes_with:
+                    self._guide_manager.update_guide(guide.model_copy(update={"synergizes_with": valid_ids}))
+                    cleaned_guide_references += len(guide.synergizes_with) - len(valid_ids)
+        except Exception:
+            transaction.rollback()
+            raise
         transaction.commit()
         return DataRepairResult(
             removed_synergies,

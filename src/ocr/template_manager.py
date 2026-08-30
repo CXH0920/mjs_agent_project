@@ -17,9 +17,13 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# 随包默认模板在打包资源根（frozen 下只读 _internal/templates，见 mjs_agent.spec）；
+# 用户框选/重制模板写入可写运行时根。开发态两者同为项目根，行为不变。
+BUNDLED_TEMPLATE_DIR = BUNDLE_ROOT / "templates"
 DEFAULT_TEMPLATE_DIR = PROJECT_ROOT / "templates"
 DEFAULT_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "wujiang_select.png"
 MATCH_GUIDE_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "match_guide" / "template.png"
@@ -81,23 +85,34 @@ class TemplateManager:
 
     # ── 加载 ──────────────────────────────────────────────────────────
 
+    def _bundled_template_path(self) -> Path:
+        """返回随包默认模板路径。"""
+        if self.template_name == "match_guide":
+            return BUNDLED_TEMPLATE_DIR / "match_guide" / "template.png"
+        return BUNDLED_TEMPLATE_DIR / "wujiang_select.png"
+
     def _load(self) -> None:
-        """内部加载逻辑。"""
+        """内部加载逻辑：用户模板缺失时回退随包默认模板（打包态只读资源）。"""
         if self._template_path.exists():
-            self._load_internal()
+            self._load_internal(self._template_path)
+            return
+        bundled = self._bundled_template_path()
+        if bundled.exists():
+            logger.info("用户模板不存在，使用随包默认模板: %s", bundled)
+            self._load_internal(bundled)
         else:
             logger.info("模板文件不存在: %s", self._template_path)
             self._template = None
 
-    def _load_internal(self) -> None:
+    def _load_internal(self, path: Path) -> None:
         """从文件加载模板到内存。"""
         try:
-            with self._template_path.open("rb") as _f:
+            with path.open("rb") as _f:
                 img = cv2.imdecode(np.frombuffer(_f.read(), np.uint8), cv2.IMREAD_GRAYSCALE)
             if img is not None and img.size > 0:
                 self._template = img
-                self._load_metadata()
-                logger.debug("模板已加载: %s (%sx%s)", self._template_path.name, img.shape[1], img.shape[0])
+                self._load_metadata(path.with_suffix(".json"))
+                logger.debug("模板已加载: %s (%sx%s)", path.name, img.shape[1], img.shape[0])
             else:
                 logger.warning("模板文件读取失败: %s", self._template_path)
                 self._template = None
@@ -110,14 +125,14 @@ class TemplateManager:
     def _metadata_path(self) -> Path:
         return self._template_path.with_suffix(".json")
 
-    def _load_metadata(self) -> None:
+    def _load_metadata(self, metadata_path: Path) -> None:
         """加载模板参考尺寸；缺少元数据时兼容旧模板。"""
         self._reference_size = DEFAULT_REFERENCE_SIZE
         self._template_roi = None
-        if not self._metadata_path.exists():
+        if not metadata_path.exists():
             return
         try:
-            with self._metadata_path.open("r", encoding="utf-8") as file:
+            with metadata_path.open("r", encoding="utf-8") as file:
                 metadata = json.load(file)
             width = int(metadata["reference_width"])
             height = int(metadata["reference_height"])

@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QDialog
 
 from src.data.guide_manager import GuideManager
@@ -24,6 +24,12 @@ def _app() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
+def _emit_completed_later(signal, success: bool, message: str) -> None:
+    """真实服务经 QProcess 异步发完成信号（子进程结束后才到达）；工作流依赖
+    "fetch 返回时信号尚未到达"的时序，假对象用零延迟定时器对齐该契约。"""
+    QTimer.singleShot(0, lambda: signal.emit(success, message))
+
+
 class _GuideService(QObject):
     status_changed = Signal(str)
     fetch_completed = Signal(bool, str)
@@ -36,21 +42,29 @@ class _GuideService(QObject):
         super().__init__()
         self.calls: list[tuple[str, list[dict], str]] = []
         self.cancel_calls = 0
+        self._busy = False
+
+    @property
+    def is_busy(self) -> bool:
+        return self._busy
 
     def cancel(self) -> None:
         self.cancel_calls += 1
 
-    def fetch_all(self, heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+    def fetch_all(self, heroes: list[dict], backend: str, use_rag: bool = True) -> bool:
         self.calls.append(("all", heroes, backend, use_rag))
-        self.fetch_completed.emit(True, "完成")
+        _emit_completed_later(self.fetch_completed, True, "完成")
+        return True
 
-    def fetch_incremental(self, heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+    def fetch_incremental(self, heroes: list[dict], backend: str, use_rag: bool = True) -> bool:
         self.calls.append(("incremental", heroes, backend, use_rag))
-        self.fetch_completed.emit(True, "完成")
+        _emit_completed_later(self.fetch_completed, True, "完成")
+        return True
 
-    def fetch_specific(self, heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+    def fetch_specific(self, heroes: list[dict], backend: str, use_rag: bool = True) -> bool:
         self.calls.append(("specific", heroes, backend, use_rag))
-        self.fetch_completed.emit(True, "完成")
+        _emit_completed_later(self.fetch_completed, True, "完成")
+        return True
 
 
 class _SynergyService(QObject):
@@ -66,17 +80,24 @@ class _SynergyService(QObject):
         self.calls: list[tuple[dict, list[dict], str]] = []
         self.pair_calls: list[tuple[list[dict], str, bool]] = []
         self.cancel_calls = 0
+        self._busy = False
+
+    @property
+    def is_busy(self) -> bool:
+        return self._busy
 
     def cancel(self) -> None:
         self.cancel_calls += 1
 
-    def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False, use_rag: bool = True) -> None:
+    def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False, use_rag: bool = True) -> bool:
         self.pair_calls.append((heroes, backend, overwrite, use_rag))
-        self.fetch_completed.emit(True, "完成")
+        _emit_completed_later(self.fetch_completed, True, "完成")
+        return True
 
-    def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str, use_rag: bool = True) -> None:
+    def fetch_single(self, hero: dict, all_heroes: list[dict], backend: str, use_rag: bool = True) -> bool:
         self.calls.append((hero, all_heroes, backend, use_rag))
-        self.fetch_completed.emit(True, "完成")
+        _emit_completed_later(self.fetch_completed, True, "完成")
+        return True
 
 
 class _BackendDialog:
@@ -108,6 +129,7 @@ class _ProgressDialog:
         _ProgressDialog.instances.append(self)
 
     def exec(self) -> QDialog.DialogCode:
+        QApplication.processEvents()  # 送达 fetch 期间排队的零延迟完成信号（模拟真实模态事件循环）
         return QDialog.DialogCode.Accepted
 
     def on_process_finished(self, success: bool, message: str = "") -> None:
@@ -279,6 +301,24 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     assert _BackendDialog.instances[-1].estimation == {
         "items": 1, "mode": "synergy", "model": "test-model", "estimate_kind": "synergy",
     }
+
+
+def test_guide_workflow_skips_modal_when_service_busy(tmp_path: Path, monkeypatch) -> None:
+    """回归：服务忙碌时不得进入模态 exec——busy 静默返回没有完成信号，进度框会永久卡死。"""
+    workflow, guide_service, _ = _workflow(tmp_path)
+    guide_service._busy = True
+    warnings: list[str] = []
+    instances_before = len(_ProgressDialog.instances)
+    monkeypatch.setattr(
+        workflow_module.QMessageBox, "warning",
+        lambda _parent, title, _text: warnings.append(title),
+    )
+
+    workflow.request_guide_all()
+
+    assert warnings == ["生成进行中"]
+    assert guide_service.calls == []  # 未发起生成
+    assert len(_ProgressDialog.instances) == instances_before  # 未弹出生成进度框
 
 
 def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypatch) -> None:

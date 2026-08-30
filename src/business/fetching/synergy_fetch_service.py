@@ -49,10 +49,13 @@ class SynergyFetchService(BaseFetchService):
         backend: str = "api",
         overwrite: bool = False,
         use_rag: bool = True,
-    ) -> None:
-        """指定获取：按用户选择跳过或覆盖已有相性。"""
+    ) -> bool:
+        """指定获取：按用户选择跳过或覆盖已有相性。
+
+        返回是否成功启动子进程；忙碌等未启动场景不发完成信号，调用方据此避免无限等待。
+        """
         if self._is_busy():
-            return
+            return False
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         json.dump(heroes, tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
@@ -73,6 +76,7 @@ class SynergyFetchService(BaseFetchService):
         if backend == "browser":
             args.append("--browser")
         self._start_process(args)
+        return True
 
     def fetch_single(
         self,
@@ -80,10 +84,10 @@ class SynergyFetchService(BaseFetchService):
         all_heroes: list[dict],
         backend: str = "api",
         use_rag: bool = True,
-    ) -> None:
+    ) -> bool:
         """选定武将：传入 1 个武将，写入临时文件后调用 --synergy-single"""
         if self._is_busy():
-            return
+            return False
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         json.dump([hero], tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
@@ -96,6 +100,7 @@ class SynergyFetchService(BaseFetchService):
         if backend == "browser":
             args.append("--browser")
         self._start_process(args)
+        return True
 
     def fetch_pairs_list(
         self,
@@ -103,13 +108,13 @@ class SynergyFetchService(BaseFetchService):
         backend: str = "api",
         overwrite: bool = False,
         use_rag: bool = True,
-    ) -> None:
+    ) -> bool:
         """实战配队清单：传入显式 id 配对列表，写入临时文件后调用 --synergy-list
 
         pairs 元素格式：{"hero_a_id": int, "hero_b_id": int}
         """
         if self._is_busy():
-            return
+            return False
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         json.dump(pairs, tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
@@ -130,6 +135,7 @@ class SynergyFetchService(BaseFetchService):
         if backend == "browser":
             args.append("--browser")
         self._start_process(args)
+        return True
 
     # ---------------------------------------------------------------
     # 钩子

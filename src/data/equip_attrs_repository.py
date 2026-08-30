@@ -14,12 +14,14 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.config.env import PROJECT_ROOT
 from src.data.json_repository import JsonRepository
 from src.data.manager import DataIssue
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+# 打包态 __file__ 落在只读 _internal，须写 exe 级可写运行时根（见 src/config/env.py）
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_EQUIP_ATTRS_FILE = DEFAULT_DATA_DIR / "equip_attrs.json"
 
 VALID_SUBTYPES = ("武器", "防具", "坐骑")

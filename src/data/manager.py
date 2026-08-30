@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 
 from pydantic import BaseModel
 
+from src.config.env import PROJECT_ROOT
 from src.data.models import IncrementalUpdate
 
 if TYPE_CHECKING:
@@ -25,8 +26,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# 默认数据文件路径
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+# 默认数据文件路径：打包态 __file__ 落在只读 _internal，须写 exe 级可写运行时根（见 src/config/env.py）
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"

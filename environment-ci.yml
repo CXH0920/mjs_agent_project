@@ -25,3 +25,4 @@ dependencies:
     - playwright==1.60.0   # browser_session.py 顶层硬 import（仅需 pip 包，测试全程 mock 不需浏览器）
     - mistune==3.3.0       # markdown_renderer.py 顶层 import
     - tqdm                 # rag/indexer.py 顶层 import（原靠 paddleocr 间接拉，删 paddle 后需显式声明）
+    - pyright==1.1.411     # verify.yml report-only 类型检查（与本地版本一致；首次运行会拉取 node 运行时）

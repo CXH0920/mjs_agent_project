@@ -102,6 +102,35 @@ def test_repair_missing_references_requires_explicit_service_call(tmp_path) -> N
     assert len(result.backup_paths) == 2
 
 
+def test_repair_missing_references_rolls_back_when_delete_fails(tmp_path, monkeypatch) -> None:
+    """回归：修复中途异常必须回滚内存与文件，否则半删状态会被后续 save() 固化到磁盘。"""
+    heroes = HeroManager(tmp_path / "heroes.json")
+    guides = GuideManager(tmp_path / "guides.json")
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    heroes.add_hero(Hero(id=1, name="曹操"))
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=6))
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=99, score=5))
+    heroes.save()
+    synergies.save()
+    synergy_source = synergies.file_path.read_text(encoding="utf-8")
+    real_delete = synergies.delete_synergy
+    calls = {"n": 0}
+
+    def failing_delete(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise OSError("第二条删除失败")
+        return real_delete(*args, **kwargs)
+
+    monkeypatch.setattr(synergies, "delete_synergy", failing_delete)
+
+    with pytest.raises(OSError, match="第二条删除失败"):
+        DataMutationService(heroes, guides, synergies).repair_missing_references()
+
+    assert len(synergies.list_synergies()) == 2
+    assert synergies.file_path.read_text(encoding="utf-8") == synergy_source
+
+
 def test_delete_hero_with_relations_commits_all_related_files(tmp_path) -> None:
     heroes = HeroManager(tmp_path / "heroes.json")
     guides = GuideManager(tmp_path / "guides.json")

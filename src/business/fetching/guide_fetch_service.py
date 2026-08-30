@@ -43,31 +43,35 @@ class GuideFetchService(BaseFetchService):
     # 公共接口
     # ---------------------------------------------------------------
 
-    def fetch_all(self, all_heroes: list[dict], backend: str = "api", use_rag: bool = True) -> None:
+    def fetch_all(self, all_heroes: list[dict], backend: str = "api", use_rag: bool = True) -> bool:
+        """返回是否成功启动子进程；忙碌等未启动场景不发完成信号，调用方据此避免无限等待。"""
         if self._is_busy():
-            return
+            return False
         self._context = {"mode": "all", "heroes": all_heroes, "backend": backend, "use_rag": use_rag}
         self.execute_with_confirmation()
+        return True
 
-    def fetch_incremental(self, all_heroes: list[dict], backend: str = "api", use_rag: bool = True) -> None:
+    def fetch_incremental(self, all_heroes: list[dict], backend: str = "api", use_rag: bool = True) -> bool:
         if self._is_busy():
-            return
+            return False
         existing_ids = {g.hero_id for g in self._guide_mgr.list_guides()}
         missing = [h for h in all_heroes if h.get("id") not in existing_ids]
         if not missing:
             self.status_changed.emit("所有武将已有攻略，无需生成")
-            return
+            return False
         self._context = {"mode": "incremental", "heroes": missing, "backend": backend, "use_rag": use_rag}
         self.execute_with_confirmation()
+        return True
 
-    def fetch_specific(self, heroes: list[dict], backend: str = "api", use_rag: bool = True) -> None:
+    def fetch_specific(self, heroes: list[dict], backend: str = "api", use_rag: bool = True) -> bool:
         if self._is_busy():
-            return
+            return False
         if not heroes:
             self.status_changed.emit("未选择任何武将")
-            return
+            return False
         self._context = {"mode": "specific", "heroes": heroes, "backend": backend, "use_rag": use_rag}
         self.execute_with_confirmation()
+        return True
 
     def execute_with_confirmation(self) -> None:
         if not self._context:

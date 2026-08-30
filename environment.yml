@@ -25,6 +25,9 @@ dependencies:
     - nvidia-cudnn-cu11==8.9.5.29
     - playwright==1.60.0
     - mistune==3.3.0
+    # RAG 向量检索（src/rag/indexer、retriever 惰性导入；缺失时重建索引/检索直接 ImportError）
+    - chromadb==1.5.9
+    - sentence-transformers==5.7.0
     # 汉字特征库（OCR 矫正用：四角号码、仓颉码、部首、笔画数、拼音）
     - unihan_etl==0.43.0
     - cnradical==0.1.0

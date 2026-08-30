@@ -494,8 +494,20 @@ class MainWindow(QMainWindow):
         self._start_next_update_phase()
 
     def _start_next_update_phase(self) -> None:
-        """启动公告驱动的下一阶段采集。"""
+        """启动公告驱动的下一阶段采集。
+
+        采集服务忙碌时会静默返回且不发完成信号：若照常入队，后续任意一次无关
+        采集完成会被误当成本阶段结果消费，公告涉及的武将将永久跳过更新并被
+        mark_applied。因此忙碌时整条更新流作废并告知用户（不 mark_applied，
+        公告横幅保留，用户可稍后重试）。
+        """
         if not self._pending_update_phases:
+            return
+        if self._fetch_service.is_busy:
+            self._pending_update_phases = None
+            self._hide_progress()
+            self._status_label.setText("公告更新已取消：武将采集正在进行")
+            QMessageBox.warning(self, "采集进行中", "公告更新与当前采集冲突，已取消。请稍后重新检查公告并更新。")
             return
         kind, hero_ids = self._pending_update_phases[0]
         if kind == "specific":

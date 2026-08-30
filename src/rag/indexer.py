@@ -11,7 +11,10 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-sys.stdout.reconfigure(encoding='utf-8')
+# Windows CLI 重定向输出默认 GBK，统一为 UTF-8；windowed 打包下 stdout 为 None，
+# 而 GUI 进程经 retriever → load_all_blocks 也会导入本模块，须守卫避免导入即崩
+if sys.stdout is not None:
+    sys.stdout.reconfigure(encoding='utf-8')
 
 DOCS_DIR = config.CORPUS_DIR
 
