@@ -25,6 +25,7 @@ import sys
 from collections import Counter, defaultdict
 
 from src.config.env import PROJECT_ROOT as ROOT
+from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
 
@@ -40,8 +41,6 @@ CATEGORY_LABELS = {'状态/标记': '状态标记'}
 POSITION_ORDER = ('控制', '攻击', '辅助', '爆发', '防御', '治疗')
 ACTION_ORDER = ('冲杀', '火杀', '雷杀', '闪避', '蟠桃', '怒气', '易')
 
-HEADING_RE = re.compile(r'^(#{2,3})\s+(.*)$')
-SEPARATOR_RE = re.compile(r'^\|\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|$')
 TABLE_HEADER_FIRST_CELLS = {'类型', '数量', '内容', '项', '数据', '时机', '频次', '备注', '#', '限制', '含义 [推断]', '示例', '状态', '定义/要点', '来源', '动作', '定义/要点', '单位', '定义', '状态', '限制'}
 
 

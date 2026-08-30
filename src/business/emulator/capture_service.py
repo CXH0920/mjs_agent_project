@@ -12,6 +12,7 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor
 import logging
 import threading
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 # 截图默认保存目录
 DEFAULT_SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
+
+# 轮询识别命中一次页面后的 OCR 冷却秒数（避免同一页面反复识别；语义同
+# OcrService.POLL_MATCH_COOLDOWN_MS，单位为秒）
+POLL_MATCH_COOLDOWN_SECONDS = 180
 
 
 class CaptureService(QObject):
@@ -295,7 +300,7 @@ class CaptureService(QObject):
         )
         ocr_task = None
         if should_ocr:
-            if is_poll and self._poll_cooldown_until > __import__("time").time():
+            if is_poll and self._poll_cooldown_until > time.time():
                 logger.debug("轮询冷却中，跳过 OCR")
             else:
                 ocr_task = self._queue_capture_ocr(
@@ -520,8 +525,8 @@ class CaptureService(QObject):
             page_name = "对局攻略页面" if pending["template_name"] == "match_guide" else "武将选择页面"
             self.status_changed.emit(f"已识别到{page_name}")
             if pending["is_poll"]:
-                self._poll_cooldown_until = __import__("time").time() + 180
-                logger.debug("轮询 OCR 匹配成功，冷却 180 秒")
+                self._poll_cooldown_until = time.time() + POLL_MATCH_COOLDOWN_SECONDS
+                logger.debug("轮询 OCR 匹配成功，冷却 %d 秒", POLL_MATCH_COOLDOWN_SECONDS)
 
         self.capture_completed.emit({
             "image": pending["image"],

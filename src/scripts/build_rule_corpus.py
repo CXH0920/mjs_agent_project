@@ -9,17 +9,15 @@
 """
 import re
 
-from src.scripts.rag_common import CORPUS, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, HEADING_RE, SEPARATOR_RE, save_json, setup_stdout, project_path
 
 TERM_BLOCK_KEYWORDS = ('术语表', '牌的类型', '动作定义', '状态定义', '区域清单', '资源')
 TERM_BLACKLIST_PREFIX = ('类型', '动作', '状态', '区域', '资源', '花色体系', '——')
 FAQ_BLOCK_KEYWORD = '裁定'
 
-HEADING_RE = re.compile(r'^(#{2,3})\s+(.*)$')
 NUMBER_RE = re.compile(r'^(\d+)(?:\.(\d+))?\s*')
 FAQ_ROW_RE = re.compile(r'^\|\s*(\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$')
 TERM_ROW_RE = re.compile(r'^\|\s*([^|]+?)\s*\|\s*(.+?)\s*\|\s*([^|]*?)\s*\|$')
-SEPARATOR_RE = re.compile(r'^\|\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|$')
 HEADER_CELL_RE = re.compile(r'^\|\s*([^|]+?)\s*\|')
 
 

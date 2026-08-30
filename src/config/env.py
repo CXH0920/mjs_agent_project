@@ -372,7 +372,13 @@ def save_env_file(env_path, data):
     existing_keys = set()
     lines = []
     if env_path.exists():
-        content = env_path.read_text(encoding="utf-8")
+        try:
+            content = env_path.read_text(encoding="utf-8")
+        except OSError as error:
+            # 读不出旧内容就无法保留注释与无关键——直接覆盖会丢用户手写配置，
+            # 因此记日志后失败退出（config.env 被占用/权限异常时保存中止）
+            logger.error("读取 %s 失败，取消保存: %s", env_path, error)
+            raise
         for line in content.splitlines():
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):

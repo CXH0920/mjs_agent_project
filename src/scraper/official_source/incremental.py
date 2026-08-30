@@ -15,6 +15,7 @@ import argparse
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # 复用爬虫核心模块的公开 API
@@ -33,12 +34,33 @@ DEFAULT_DATA_DIR = BUNDLE_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 
 
+def _load_heroes_file(path: Path) -> list | None:
+    """读取本地武将 JSON；内容损坏时备份原文件（corrupt-*）后返回 None。
+
+    与 batch._preserve_invalid_data_file 同一健壮性标准：调用方以空列表继续，
+    旧数据可从备份找回，而不是解析异常裸崩或静默覆盖丢失。
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        backup_path = path.with_name(f"{path.stem}.corrupt-{timestamp}{path.suffix}")
+        try:
+            path.replace(backup_path)
+            logger.error("数据文件读取失败已备份 %s → %s: %s", path, backup_path, exc)
+        except OSError as backup_exc:
+            logger.error("数据文件读取失败 %s: %s（备份也失败: %s）", path, exc, backup_exc)
+        return None
+
+
 def load_existing_ids(path: Path) -> set[int]:
     """加载本地已有武将的 ID 集合"""
     if not path.exists():
         return set()
-    with open(path, "r", encoding="utf-8") as f:
-        heroes = json.load(f)
+    heroes = _load_heroes_file(path)
+    if heroes is None:
+        return set()
     existing = set()
     for h in heroes:
         hid = h.get("id")
@@ -127,16 +149,14 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     if not output_path.exists():
         merged = validated
     elif replace_ids is not None:
-        with open(output_path, "r", encoding="utf-8") as f:
-            existing = json.load(f)
+        existing = _load_heroes_file(output_path) or []
         before = len(existing)
         existing = [h for h in existing if h["id"] not in replace_ids]
         removed = before - len(existing)
         merged = existing + validated
         print(f"  -> 替换写入: 删除 {removed} 条旧数据 + 写入 {len(validated)} 条新数据", flush=True)
     elif append:
-        with open(output_path, "r", encoding="utf-8") as f:
-            existing = json.load(f)
+        existing = _load_heroes_file(output_path) or []
         existing_ids = {h["id"] for h in existing}
         merged = existing + [h for h in validated if h["id"] not in existing_ids]
         print(f"  -> 追加写入: 原有 {len(existing)} + 新增 {len(validated) - (len(merged) - len(existing))}", flush=True)

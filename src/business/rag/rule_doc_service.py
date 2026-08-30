@@ -8,12 +8,13 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from datetime import date
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+from src.config.env import PROJECT_ROOT
+from src.data.json_repository import atomic_write_json
+
 DEFAULT_DOC = PROJECT_ROOT / "docs" / "元规则整理-完整版.md"
 PROPOSAL_DIR = PROJECT_ROOT / "docs" / "archive" / "proposals"
 PENDING_FILE = PROJECT_ROOT / "docs" / "rule_doc_pending.json"
@@ -227,10 +228,7 @@ def update_proposal_item(root: Path, proposal_path: str, item_id: str,
             break
     else:
         raise ValueError("找不到提案项 %s（%s）" % (item_id, path.name))
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                   encoding="utf-8", newline="\n")
-    os.replace(str(tmp), str(path))
+    atomic_write_json(path, data)
     return data
 
 
@@ -267,9 +265,7 @@ def add_pending(root: Path, description: str, involved: str = "",
         "status": "open",
     })
     path = root / "docs" / "rule_doc_pending.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"items": items}, ensure_ascii=False, indent=2),
-                    encoding="utf-8", newline="\n")
+    atomic_write_json(path, {"items": items})
     return items
 
 
@@ -298,16 +294,15 @@ def pending_to_proposal(root: Path, pending_id: int) -> Path:
         }],
     }
     out = (root / "docs" / "archive" / "proposals") / (proposal_id + ".json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(proposal, ensure_ascii=False, indent=2),
-                   encoding="utf-8", newline="\n")
+    atomic_write_json(out, proposal)
     # 标记疑难为已转提案
     for i in items:
         if i.get("id") == pending_id:
             i["status"] = "proposed"
-    (root / "docs" / "rule_doc_pending.json").write_text(
-        json.dumps({"items": items}, ensure_ascii=False, indent=2),
-        encoding="utf-8", newline="\n")
+    atomic_write_json(
+        root / "docs" / "rule_doc_pending.json",
+        {"items": items},
+    )
     return out
 
 
