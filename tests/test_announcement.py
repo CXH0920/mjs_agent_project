@@ -507,12 +507,14 @@ def test_update_no_candidates_shows_toast(monkeypatch) -> None:
 
     fake = SimpleNamespace(
         _fetch_service=SimpleNamespace(is_busy=False),
+        _announcement_service=SimpleNamespace(
+            collect_base_candidates=lambda local, announcements, diff: [],
+        ),
         _announcement_manager=SimpleNamespace(list_announcements=lambda: []),
         _last_announcement_diff={"added": [], "modified": [], "removed": []},
         _data=SimpleNamespace(heroes=_Heroes()),
         _status_label=SimpleNamespace(setText=lambda s: None),
     )
-    fake._collect_update_candidates_base = lambda local_heroes, announcements: []
     MainWindow._update_hero_data_from_announcements(fake)
     assert toasts
     assert "没有需要更新" in toasts[0]
@@ -747,9 +749,10 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         window._fetch_service = _FakeFetchService()
 
         # 基础候选：公告 ready matched + diff added/modified 并集、去重
-        base = window._collect_update_candidates_base(
+        base = window._announcement_service.collect_base_candidates(
             [hero.model_dump(mode="json") for hero in window._data.heroes.list_heroes()],
             window._announcement_manager.list_announcements(),
+            window._last_announcement_diff,
         )
         base_names = [candidate["name"] for candidate in base]
         assert "贾诩" in base_names and "东方朔" in base_names and "马钧" in base_names
@@ -826,20 +829,9 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         assert window._announcement_banner.isVisible()
         assert window._announcement_update_button.isEnabled()
 
-        # 有候选：启动后台线程拉官网算差异
-        class _FakeThread:
-            def __init__(self, target, args=(), daemon=True):
-                self.target = target
-                self.args = args
-                self.started = False
-
-            def is_alive(self):
-                return False
-
-            def start(self):
-                self.started = True
-
-        monkeypatch.setattr(main_window_module.threading, "Thread", _FakeThread)
+        # 有候选：经公告服务后台线程准备候选（mock 百科拉取走降级路径），
+        # queued 信号回 GUI 后弹出确认框（此刻 patch 为 Reject → 走"已取消"终态）
+        monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: None)
         window._announcement_manager._items[announcement.url] = announcement
         window._last_announcement_diff = {
             "added": [],
@@ -847,7 +839,11 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
             "removed": [],
         }
         window._update_hero_data_from_announcements()
-        assert window._hero_update_thread.started is True
+        deadline = time.time() + 5
+        while "正在获取官网数据" in window._status_label.text() and time.time() < deadline:
+            app.processEvents()
+            time.sleep(0.01)
+        assert "已取消更新武将数据" in window._status_label.text()
 
         # 进度条生命周期：检查开始显示/结束隐藏；子进程进度驱动；完成隐藏
         window._on_announcement_check_started()

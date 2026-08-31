@@ -19854,5 +19854,41 @@
     "hero1_seats": [],
     "hero2_seats": [],
     "manual": false
+  },
+  {
+    "hero1_name": "张骞",
+    "hero2_name": "巴清",
+    "hero1_id": 98,
+    "hero2_id": 126,
+    "rating": 7,
+    "position": "both",
+    "note": "张骞12 巴清34 巴清高手牌及每回合获得丹砂辅助张骞拉牌传牌",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
+    ],
+    "manual": true
+  },
+  {
+    "hero1_name": "夏侯惇",
+    "hero2_name": "陈宫",
+    "hero1_id": 107,
+    "hero2_id": 160,
+    "rating": 7,
+    "position": "both",
+    "note": "陈宫12 夏侯惇34",
+    "hero1_seats": [
+      3,
+      4
+    ],
+    "hero2_seats": [
+      1,
+      2
+    ],
+    "manual": true
   }
 ]

@@ -15,12 +15,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from src.business.announcement import clean_html
 from src.data.announcement_manager import (
     Announcement,
     AnnouncementManager,
     AnnouncementStatus,
 )
-from src.scraper.official_source.crawler import clean_html
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import PageHeader, set_ui_role
 

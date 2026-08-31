@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import tempfile
 
@@ -54,29 +53,8 @@ class SynergyFetchService(BaseFetchService):
 
         返回是否成功启动子进程；忙碌等未启动场景不发完成信号，调用方据此避免无限等待。
         """
-        if self._is_busy():
-            return False
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(heroes, tmp, ensure_ascii=False, indent=2)
-        tmp_path = tmp.name
-        tmp.close()
-        self._context = {
-            "mode": "pair",
-            "tmp_path": tmp_path,
-            "backend": backend,
-            "overwrite": overwrite,
-            "use_rag": use_rag,
-        }
-        self.status_changed.emit("正在生成相性评分...")
-        args = ["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_path]
-        if not use_rag:
-            args.append("--no-rag")
-        if overwrite:
-            args.append("--update")
-        if backend == "browser":
-            args.append("--browser")
-        self._start_process(args)
-        return True
+        return self._submit("--synergy-pair", heroes, mode="pair",
+                            backend=backend, overwrite=overwrite, use_rag=use_rag)
 
     def fetch_single(
         self,
@@ -86,21 +64,8 @@ class SynergyFetchService(BaseFetchService):
         use_rag: bool = True,
     ) -> bool:
         """选定武将：传入 1 个武将，写入临时文件后调用 --synergy-single"""
-        if self._is_busy():
-            return False
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump([hero], tmp, ensure_ascii=False, indent=2)
-        tmp_path = tmp.name
-        tmp.close()
-        self._context = {"mode": "single", "tmp_path": tmp_path, "backend": backend, "use_rag": use_rag}
-        self.status_changed.emit("正在生成相性评分...")
-        args = ["-m", "src.scraper.ai_batch", "--synergy-single", tmp_path]
-        if not use_rag:
-            args.append("--no-rag")
-        if backend == "browser":
-            args.append("--browser")
-        self._start_process(args)
-        return True
+        return self._submit("--synergy-single", [hero], mode="single",
+                            backend=backend, use_rag=use_rag)
 
     def fetch_pairs_list(
         self,
@@ -113,21 +78,35 @@ class SynergyFetchService(BaseFetchService):
 
         pairs 元素格式：{"hero_a_id": int, "hero_b_id": int}
         """
+        return self._submit("--synergy-list", pairs, mode="pairs_list",
+                            backend=backend, overwrite=overwrite, use_rag=use_rag)
+
+    def _submit(
+        self,
+        args_flag: str,
+        payload: list[dict],
+        *,
+        mode: str,
+        backend: str,
+        use_rag: bool = True,
+        overwrite: bool = False,
+    ) -> bool:
+        """payload 写临时文件 → 拼 CLI 参数 → 启动子进程（三段公共流程）。"""
         if self._is_busy():
             return False
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(pairs, tmp, ensure_ascii=False, indent=2)
+        json.dump(payload, tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
         tmp.close()
         self._context = {
-            "mode": "pairs_list",
+            "mode": mode,
             "tmp_path": tmp_path,
             "backend": backend,
             "overwrite": overwrite,
             "use_rag": use_rag,
         }
         self.status_changed.emit("正在生成相性评分...")
-        args = ["-m", "src.scraper.ai_batch", "--synergy-list", tmp_path]
+        args = ["-m", "src.scraper.ai_batch", args_flag, tmp_path]
         if not use_rag:
             args.append("--no-rag")
         if overwrite:
@@ -158,12 +137,4 @@ class SynergyFetchService(BaseFetchService):
         if exit_code == 0:
             self.fetch_completed.emit(True, "相性生成完成")
 
-    def _cleanup_context(self) -> None:
-        """清理临时文件"""
-        tmp_path = self._context.get("tmp_path", "") if self._context else ""
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-                logger.debug("已清理临时文件: %s", tmp_path)
-            except OSError as e:
-                logger.warning("清理临时文件失败 %s: %s", tmp_path, e)
+

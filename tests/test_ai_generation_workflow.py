@@ -215,10 +215,9 @@ def test_incremental_guide_workflow_uses_only_missing_heroes(tmp_path: Path, mon
     monkeypatch.setattr(workflow._guide_manager, "load", lambda: reloads.append(True))
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
-    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.ai.prompt_utils.estimate_cost",
-        lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "estimated_cost_cny": 0.0},
     )
     workflow.guides_changed.connect(lambda: changed.append(True))
 
@@ -239,10 +238,9 @@ def test_specific_guide_workflow_passes_guide_manager(tmp_path: Path, monkeypatc
     monkeypatch.setattr(workflow_module, "GuideFetchDialog", _GuideHeroDialog)
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
-    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.ai.prompt_utils.estimate_cost",
-        lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "estimated_cost_cny": 0.0},
     )
 
     workflow.request_guide_specific()
@@ -259,10 +257,9 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr(workflow_module, "SynergySingleDialog", _SingleHeroDialog)
-    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.ai.prompt_utils.estimate_item_cost",
-        lambda count, mode, model: {"items": count, "mode": mode, "model": model},
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "model": "test-model"},
     )
     workflow.synergies_changed.connect(lambda: changed.append(True))
 
@@ -275,7 +272,7 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     assert _ProgressDialog.instances[-1].item_count == 1
     assert _ProgressDialog.instances[-1].item_label == "相性评分"
     assert _BackendDialog.instances[-1].estimation == {
-        "items": 1, "mode": "synergy", "model": "test-model", "estimate_kind": "synergy",
+        "items": 1, "model": "test-model", "estimate_kind": "synergy",
     }
     assert reloads == [True]
     assert changed == [True]
@@ -286,10 +283,9 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
     monkeypatch.setattr(workflow_module, "SynergyPairDialog", _PairHeroDialog)
-    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.ai.prompt_utils.estimate_item_cost",
-        lambda count, mode, model: {"items": count, "mode": mode, "model": model},
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "model": "test-model"},
     )
 
     workflow.request_synergy_pair()
@@ -299,7 +295,7 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     ]
     assert _ProgressDialog.instances[-1].item_count == 1
     assert _BackendDialog.instances[-1].estimation == {
-        "items": 1, "mode": "synergy", "model": "test-model", "estimate_kind": "synergy",
+        "items": 1, "model": "test-model", "estimate_kind": "synergy",
     }
 
 
@@ -325,10 +321,9 @@ def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypat
     workflow, guide_service, _ = _workflow(tmp_path)
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
-    monkeypatch.setattr("src.config.env.get_api_config", lambda: {"model": "test-model"})
     monkeypatch.setattr(
-        "src.scraper.ai.prompt_utils.estimate_cost",
-        lambda count, *_args: {"items": count, "estimated_cost_cny": 0.0},
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "estimated_cost_cny": 0.0},
     )
 
     workflow.request_guide_all()

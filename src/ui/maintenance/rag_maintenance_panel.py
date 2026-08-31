@@ -30,6 +30,7 @@ from src.data.special_cards_repository import SpecialCardRepository
 from src.data.equip_attrs_repository import EquipAttrsRepository
 from src.data.card_points_repository import CardPointsRepository
 from src.business.rag.task_defs import TASKS as _RAG_TASKS
+from src.business.rag.hero_brief import load_hero_briefs
 from src.business.rag.audit_service import AuditIssue, CORPUS_DIR, audit_summary
 from src.business.rag.refinement_service import list_pending
 from src.ui.library.hero_classification_panel import HeroClassificationPanel
@@ -152,31 +153,8 @@ class RagMaintenancePanel(QWidget):
 
     @staticmethod
     def _load_heroes(root: Path, fallback: set[str] | None) -> tuple[set[str], dict[str, str], dict[str, str]]:
-        """从 data/heroes.json 读取武将名、定位与技能文本；文件缺失时使用传入集合。
-
-        技能文本供武将分类面板的 LLM 建议归类使用（name：description　结算：settlement 拼接）。
-        """
-        heroes_path = root / "data" / "heroes.json"
-        try:
-            heroes = json.loads(heroes_path.read_text(encoding="utf-8"))
-            names = {str(h.get("name", "")) for h in heroes if h.get("name")}
-            positions = {str(h.get("name", "")): str(h.get("position", "") or "")
-                         for h in heroes if h.get("name")}
-            skills: dict[str, str] = {}
-            for h in heroes:
-                name = str(h.get("name", ""))
-                if not name:
-                    continue
-                parts = []
-                for s in h.get("skills", []):
-                    line = f"{s.get('name', '')}：{s.get('description', '')}"
-                    if s.get("settlement"):
-                        line += f"　结算：{s['settlement']}"
-                    parts.append(line)
-                skills[name] = "\n".join(parts)
-            return names, positions, skills
-        except (OSError, json.JSONDecodeError, ValueError):
-            return set(fallback or ()), {}, {}
+        """武将概要视图经业务层读取（技能文本格式归位 hero_brief，#A4）。"""
+        return load_hero_briefs(root, fallback)
 
     def _setup_ui(self) -> None:
         self.setObjectName("ragMaintenancePanel")

@@ -40,6 +40,9 @@ TIMEOUT = 30
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
+# 不可重试的 HTTP 状态：404/权限类失败重试只会重复打同一请求
+_NON_RETRYABLE_HTTP_CODES = frozenset({400, 401, 403, 404})
+
 ALLOWED_IMAGE_HOSTS = {"siteres.ztgame.com"}
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 4_000_000
@@ -80,6 +83,16 @@ def fetch(url: str, binary: bool = False) -> str | bytes:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 data = resp.read()
                 return data if binary else data.decode("utf-8")
+        except urllib.error.HTTPError as e:
+            if e.code in _NON_RETRYABLE_HTTP_CODES:
+                # 404/权限类失败重试无意义，立即抛出让调用方记录该条并继续
+                logger.error("请求不可重试: HTTP %s — %s", e.code, url)
+                raise
+            logger.warning("请求失败 [%d/%d]: %s — %s", attempt, MAX_RETRIES, url, e)
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+            else:
+                raise
         except Exception as e:
             logger.warning("请求失败 [%d/%d]: %s — %s", attempt, MAX_RETRIES, url, e)
             if attempt < MAX_RETRIES:
@@ -276,10 +289,12 @@ def fetch_all_raw() -> list[dict]:
     """从官网获取全部武将的原始数据。"""
     html = fetch(BAIKE_URL)
     chunk_url = find_chunk_url(html)
-    print(f"  -> {chunk_url}", flush=True)
+    # 本函数会被 GUI 进程（公告服务/主窗口）直接调用，进度一律走 logger；
+    # CLI 侧进度通道只由 __main__ 入口的 print 承担
+    logger.info("官网数据 chunk: %s", chunk_url)
     js_text = fetch(chunk_url)
     raw_list = parse_heroes_chunk(js_text)
-    print(f"  -> 官网原始数据: {len(raw_list)} 条", flush=True)
+    logger.info("官网原始数据: %d 条", len(raw_list))
     return raw_list
 
 

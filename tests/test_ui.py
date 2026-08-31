@@ -223,7 +223,7 @@ def test_backend_dialog_blocks_accept_when_no_api_available(monkeypatch):
     """A2：无可用档案时 _on_accept 应拦截，不进入 accept。"""
     _app()
     import src.ui.generation.backend_choose_dialog as bcd
-    monkeypatch.setattr(bcd, "list_api_profiles", lambda *a, **k: [])
+    monkeypatch.setattr(bcd, "has_available_api_profile", lambda: False)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
     dialog = BackendChooseDialog(
         estimation={
@@ -236,7 +236,7 @@ def test_backend_dialog_blocks_accept_when_no_api_available(monkeypatch):
             "estimated_cost_cny": 0.01,
         }
     )
-    assert not dialog._has_available_api()
+    assert bcd.has_available_api_profile() is False
     accepted = []
     monkeypatch.setattr(dialog, "accept", lambda: accepted.append(True))
     dialog._on_accept()
@@ -278,25 +278,28 @@ def test_settings_dialog_remove_last_row_refreshes_panel(tmp_path, monkeypatch):
     assert dialog._name_widget.text() == "a"
 
 
-def test_backend_dialog_has_available_api_checks_usable(monkeypatch):
-    """BUG-6：_has_available_api 校验 enabled+URL+Key，仅 enabled 但 Key 空不算可用。"""
-    _app()
-    import src.ui.generation.backend_choose_dialog as bcd
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
-    dialog = BackendChooseDialog(
-        estimation={
-            "mode": "synergy", "model": "m", "items": 1,
-            "estimated_input_tokens": 1, "estimated_output_tokens": 1,
-            "estimated_tokens": 2, "estimated_cost_cny": 0.01,
-        }
-    )
-    # enabled 但 requires_key + key 空 → 不可用
-    monkeypatch.setattr(bcd, "list_api_profiles", lambda *a, **k: [
-        {"name": "bad", "provider": "deepseek", "enabled": True, "api_url": "https://x", "has_key": False},
-    ])
-    assert not dialog._has_available_api()
-    # enabled + URL + key 非空 → 可用
-    monkeypatch.setattr(bcd, "list_api_profiles", lambda *a, **k: [
-        {"name": "good", "provider": "deepseek", "enabled": True, "api_url": "https://x", "has_key": True},
-    ])
-    assert dialog._has_available_api()
+def test_has_available_api_profile_checks_usable(monkeypatch):
+    """BUG-6：可用性判定校验 enabled+URL+Key，仅 enabled 但 Key 空不算可用。
+
+    判定逻辑已归位 src.config.env.has_available_api_profile（dialog 复刻版删除）。
+    """
+    from src.config import env
+
+    # enabled 但 requires_key 供应商的 Key 为空 → 不可用
+    monkeypatch.setattr(env, "load_api_profiles", lambda: {"profiles": [
+        {"name": "bad", "provider": "deepseek", "enabled": True,
+         "api_url": "https://x", "api_key": ""},
+    ]})
+    assert env.has_available_api_profile() is False
+    # enabled + URL + Key 非空 → 可用
+    monkeypatch.setattr(env, "load_api_profiles", lambda: {"profiles": [
+        {"name": "good", "provider": "deepseek", "enabled": True,
+         "api_url": "https://x", "api_key": "sk-x"},
+    ]})
+    assert env.has_available_api_profile() is True
+    # 停用档案不算可用
+    monkeypatch.setattr(env, "load_api_profiles", lambda: {"profiles": [
+        {"name": "off", "provider": "deepseek", "enabled": False,
+         "api_url": "https://x", "api_key": "sk-x"},
+    ]})
+    assert env.has_available_api_profile() is False

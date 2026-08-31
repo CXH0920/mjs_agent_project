@@ -13,11 +13,14 @@ repository 常量为单一事实源，不再在 UI/脚本层重复定义。
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.business.rag.refinement_service import list_pending
+
+logger = logging.getLogger(__name__)
 from src.data.card_points_repository import (
     EXPECTED_TOTAL_CARDS,
     VALID_POINTS,
@@ -179,29 +182,40 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
     heroes_path = root / "data" / "heroes.json"
     classification_path = root / "data" / "hero_classification.json"
     special_path = root / "data" / "special_cards.json"
+    heroes_load_failed = False
     try:
         heroes = json.loads(heroes_path.read_text(encoding="utf-8"))
         hero_names = {item.get("name") for item in heroes}
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as error:
+        # 读失败 ≠ 没有武将：拿空集合继续会把全部已归类武将误报为 orphan
         hero_names = set()
+        heroes_load_failed = True
+        logger.warning("heroes.json 读取失败，跳过武将相关校验: %s", error)
+    if heroes_load_failed:
+        issues.append(AuditIssue(
+            kind="heroes_source_unavailable",
+            message="data/heroes.json 缺失或无法解析，武将归类/引用校验已跳过",
+            target_tab="武将分类维护",
+        ))
     try:
         classification = json.loads(classification_path.read_text(encoding="utf-8"))
-        unclassified = collect_unclassified(hero_names, classification)
-        if unclassified:
-            issues.append(AuditIssue(
-                kind="unclassified_hero",
-                message=f"未归类武将 {len(unclassified)} 人（请补充 data/hero_classification.json）",
-                target_tab="武将分类维护",
-                target=unclassified,
-            ))
-        orphan = collect_orphan_category_keys(hero_names, classification)
-        if orphan:
-            issues.append(AuditIssue(
-                kind="orphan_category_key",
-                message=f"分类表引用未知武将 {len(orphan)} 个（请清理 data/hero_classification.json）：{'、'.join(orphan[:8])}",
-                target_tab="武将分类维护",
-                target=orphan,
-            ))
+        if not heroes_load_failed:
+            unclassified = collect_unclassified(hero_names, classification)
+            if unclassified:
+                issues.append(AuditIssue(
+                    kind="unclassified_hero",
+                    message=f"未归类武将 {len(unclassified)} 人（请补充 data/hero_classification.json）",
+                    target_tab="武将分类维护",
+                    target=unclassified,
+                ))
+            orphan = collect_orphan_category_keys(hero_names, classification)
+            if orphan:
+                issues.append(AuditIssue(
+                    kind="orphan_category_key",
+                    message=f"分类表引用未知武将 {len(orphan)} 个（请清理 data/hero_classification.json）：{'、'.join(orphan[:8])}",
+                    target_tab="武将分类维护",
+                    target=orphan,
+                ))
     except (OSError, json.JSONDecodeError):
         issues.append(AuditIssue(
             kind="classification_unreadable",

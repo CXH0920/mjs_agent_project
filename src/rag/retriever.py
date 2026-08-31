@@ -56,17 +56,17 @@ class Retriever:
     def model(self):
         if self._model is None:
             from sentence_transformers import SentenceTransformer
-            print(f'[模型] 加载 {config.EMBEDDING_MODEL} ...', flush=True)
+            # GUI 进程经 rag_prompt 也会加载模型，进度走 logger 而非 print
+            logger.info('模型加载 %s ...', config.EMBEDDING_MODEL)
             t0 = time.time()
             self._model = SentenceTransformer(config.EMBEDDING_MODEL, device='cpu')
             logger.info('模型就绪，耗时 %.1fs', time.time()-t0)
-            print(f'      ✅ 模型就绪，耗时 {time.time()-t0:.1f}s', flush=True)
         return self._model
 
     @property
     def blocks(self):
         if self._blocks is None:
-            print('[语料] 加载内存块索引（关键词兜底）...', flush=True)
+            logger.info('语料加载内存块索引（关键词兜底）...')
             t0 = time.time()
             self._blocks = load_all_blocks()
             self._id2meta = {bid: meta for bid, _, meta in self._blocks}
@@ -81,7 +81,6 @@ class Retriever:
             self._hero_index = hero_index
             self._load_t = time.time() - t0
             logger.info('语料加载 %d 块，耗时 %.1fs', len(self._blocks), self._load_t)
-            print(f'      ✅ 语料 {len(self._blocks)} 块，耗时 {self._load_t:.1f}s', flush=True)
         return self._blocks
 
     # ---- 查询 ----

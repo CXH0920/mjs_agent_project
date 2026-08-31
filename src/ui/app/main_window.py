@@ -8,9 +8,8 @@
 from __future__ import annotations
 
 import logging
-import threading
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -40,7 +39,6 @@ from src.data.announcement_manager import AnnouncementManager, AnnouncementStatu
 from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.business.announcement.announcement_service import AnnouncementCheckResult, AnnouncementService
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
-from src.scraper.official_source.announcement import build_update_candidates, fetch_baike_heroes
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
 logger = logging.getLogger(__name__)
@@ -71,8 +69,6 @@ class MainWindow(QMainWindow):
 
     初始化时自动加载数据，通过应用外壳展示三个长期工作区。
     """
-
-    _hero_update_prepared = Signal(object)
 
     NAV_COLLAPSE_THRESHOLD = 1040
     _PAGE_CONTEXTS_BASE = (
@@ -157,7 +153,7 @@ class MainWindow(QMainWindow):
         self._announcement_service.check_started.connect(self._on_announcement_check_started)
         self._announcement_service.check_finished.connect(self._on_announcement_check_finished)
         self._announcement_service.progress_changed.connect(self._on_announcement_progress)
-        self._hero_update_prepared.connect(self._on_hero_update_prepared)
+        self._announcement_service.update_candidates_prepared.connect(self._on_hero_update_prepared)
         self._announcement_service.status_changed.connect(self._on_fetch_status)
 
         self._connect_fetch_signals()
@@ -399,13 +395,17 @@ class MainWindow(QMainWindow):
         self._announcement_dialog.activateWindow()
 
     def _update_hero_data_from_announcements(self) -> None:
-        """按公告与百科 diff 更新武将数据：先经用户确认，避免覆盖手动修正。"""
+        """按公告与百科 diff 更新武将数据：先经用户确认，避免覆盖手动修正。
+
+        编排职责在 AnnouncementService：这里只做预判、进度展示与结果消费。
+        """
         if self._fetch_service.is_busy:
             QMessageBox.warning(self, "采集进行中", "武将采集正在进行，请稍后再试。")
             return
-        candidates = self._collect_update_candidates_base(
+        candidates = self._announcement_service.collect_base_candidates(
             [hero.model_dump(mode="json") for hero in self._data.heroes.list_heroes()],
             self._announcement_manager.list_announcements(),
+            self._last_announcement_diff,
         )
         if not candidates:
             self._status_label.setText("没有需要更新的武将数据")
@@ -420,53 +420,21 @@ class MainWindow(QMainWindow):
         self._show_indeterminate_progress("正在获取官网数据以核对差异...")
         local_heroes = [hero.model_dump(mode="json") for hero in self._data.heroes.list_heroes()]
         announcements = self._announcement_manager.list_announcements()
-        self._hero_update_thread = threading.Thread(
-            target=self._prepare_hero_update_candidates,
-            args=(local_heroes, announcements),
-            daemon=True,
-        )
-        self._hero_update_thread.start()
-
-    def _collect_update_candidates_base(
-        self,
-        local_heroes: list[dict],
-        announcements: list,
-    ) -> list[dict]:
-        """用公告 matched 与内存 diff 组装基础候选（无差异摘要，供判断与降级）。
-
-        调用方须在 GUI 线程传入只读快照，避免后台线程并发访问数据管理器。
-        """
-        return build_update_candidates(
-            announcements,
-            local_heroes,
-            None,
-            self._last_announcement_diff,
-        )
-
-    def _prepare_hero_update_candidates(
-        self,
-        local_heroes: list[dict],
-        announcements: list,
-    ) -> None:
-        """后台拉取官网百科，计算字段级差异摘要后回到主线程（只读快照）。"""
-        official_heroes = fetch_baike_heroes()
-        if official_heroes is None:
-            candidates = self._collect_update_candidates_base(local_heroes, announcements)
-        else:
-            candidates = build_update_candidates(
-                announcements,
-                local_heroes,
-                official_heroes,
-                self._last_announcement_diff,
-            )
-        self._hero_update_prepared.emit({
-            "candidates": candidates,
-            "official_ok": official_heroes is not None,
-        })
+        if not self._announcement_service.prepare_update_candidates(
+                local_heroes, announcements, self._last_announcement_diff):
+            self._hide_progress()
+            self._status_label.setText("公告服务忙碌，请稍后再试")
+            QMessageBox.information(self, "公告服务忙碌", "公告数据获取正在进行，请稍后再试。")
+            return
 
     def _on_hero_update_prepared(self, payload: dict) -> None:
         """展示更新确认对话框，按用户勾选执行；全取消视为已查看本版本。"""
         self._hide_progress()
+        error = payload.get("error")
+        if error:
+            self._status_label.setText(f"获取官网数据失败：{error}")
+            show_toast(self, error, duration=4000)
+            return
         candidates = payload.get("candidates") or []
         if not candidates:
             self._status_label.setText("没有需要更新的武将数据")

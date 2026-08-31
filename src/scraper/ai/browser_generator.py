@@ -56,7 +56,8 @@ def _browser_rag_max_chars() -> int:
     try:
         from src.rag import config as rag_config
         return int(rag_config.RAG_BROWSER_PROMPT_CHARS)
-    except Exception:
+    except Exception as error:
+        logger.warning("RAG_BROWSER_PROMPT_CHARS 读取失败，回退默认 3000: %s", error)
         return 3000
 
 

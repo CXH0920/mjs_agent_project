@@ -11,6 +11,7 @@ _on_process_error 来表达差异。
 from __future__ import annotations
 
 import logging
+import os
 import re
 import sys
 from subprocess import Popen
@@ -89,8 +90,18 @@ class BaseFetchService(QObject):
         pass
 
     def _cleanup_context(self) -> None:
-        """覆写以清理 _context 中的资源（如临时文件）"""
-        pass
+        """默认清理 _context 中的临时 heroes 文件；无资源时为 no-op。"""
+        self._cleanup_tmp_file()
+
+    def _cleanup_tmp_file(self) -> None:
+        """清理 _context 中记录的临时 heroes 文件（guide/synergy 共用）。"""
+        tmp_path = self._context.get("tmp_path", "") if self._context else ""
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+                logger.debug("已清理临时文件: %s", tmp_path)
+            except OSError as e:
+                logger.warning("清理临时文件失败 %s: %s", tmp_path, e)
 
     def _on_process_error(self, error_name: str, full_msg: str) -> None:
         """覆写以自定义错误处理行为"""

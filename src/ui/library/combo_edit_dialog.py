@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -16,12 +18,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.data.combo_manager import ComboManager
+from src.business.maintenance.corpus_services import ComboService
 from src.data.models import Combo
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.style import TONE_NEUTRAL, set_tone
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+logger = logging.getLogger(__name__)
 
 SEAT_OPTIONS = (1, 2, 3, 4)
 
@@ -32,13 +36,14 @@ class ComboEditDialog(QDialog):
     def __init__(
         self,
         hero_mgr,
-        combo_manager: ComboManager,
+        combo_service: ComboService,
         combo: Combo | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_mgr
-        self._combo_manager = combo_manager
+        self._service = combo_service
+        self._combo_manager = combo_service.repository
         self._original = combo
         self._hero1 = None
         self._hero2 = None
@@ -223,5 +228,5 @@ class ComboEditDialog(QDialog):
             hero2_seats=seats2,
             manual=True,
         )
-        self._combo_manager.save_manual_combo(combo, previous=self._original)
+        self._service.save_manual_combo(combo, previous=self._original)
         self.accept()

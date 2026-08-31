@@ -210,7 +210,8 @@ def load_all_blocks():
     for fname, norm in CORPUS_FILES:
         path = DOCS_DIR / fname
         if not path.exists():
-            print(f'  ⚠️ 缺少 {fname}，跳过')
+            # GUI 检索路径经 retriever 也会调用本函数，缺语料须进日志系统
+            logger.warning('缺少语料文件 %s，跳过', fname)
             continue
         data = json.loads(path.read_text(encoding='utf-8'))
         blocks = norm(data)
@@ -272,8 +273,15 @@ def build_index(rebuild=True):
     if rebuild:
         try:
             client.delete_collection(coll_name)
-        except Exception:
-            pass
+        except Exception as error:
+            # 集合不存在属首次重建的正常路径；删除失败（文件被占用/锁）会让重建
+            # 建立在残留旧向量上，必须中止而不是静默继续
+            existing = {c.name for c in client.list_collections()}
+            if coll_name in existing:
+                raise RuntimeError(
+                    f"旧索引集合 {coll_name} 删除失败，请关闭占用该目录的程序后重试: {error}"
+                ) from error
+            logger.debug('旧集合 %s 不存在，跳过删除', coll_name)
     coll = client.get_or_create_collection(
         coll_name, metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'})
     ids = [b[0] for b in all_blocks]

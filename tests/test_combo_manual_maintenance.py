@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
+from src.business.maintenance.corpus_services import ComboService
 from src.data.combo_manager import ComboManager
 from src.data.models import Combo
 from src.ui.library.combo_edit_dialog import ComboEditDialog
@@ -114,7 +115,7 @@ def test_edit_dialog_rejects_incomplete_or_same_hero(qapp, tmp_path, monkeypatch
     hero_mgr, heroes = _make_hero_mgr()
     manager = ComboManager(tmp_path / "combos.json")
     manager.load()
-    dialog = ComboEditDialog(hero_mgr, manager)
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
     warnings: list[str] = []
     monkeypatch.setattr(
         "src.ui.library.combo_edit_dialog.QMessageBox.warning",
@@ -136,7 +137,7 @@ def test_edit_dialog_saves_normalized_manual_combo(qapp, tmp_path):
     hero_mgr, heroes = _make_hero_mgr()
     manager = ComboManager(tmp_path / "combos.json")
     manager.load()
-    dialog = ComboEditDialog(hero_mgr, manager)
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
     dialog._hero1 = heroes[3]  # 故意倒序传入，保存时应按 id 归一化
     dialog._hero2 = heroes[1]
     dialog._refresh_hero_slots()
@@ -162,7 +163,7 @@ def test_edit_dialog_warns_before_overwriting_existing_pair(qapp, tmp_path, monk
     manager = ComboManager(tmp_path / "combos.json")
     manager.load()
     manager.save_manual_combo(_combo(1, 2, rating=5))
-    dialog = ComboEditDialog(hero_mgr, manager)
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
     dialog._hero1 = heroes[1]
     dialog._hero2 = heroes[2]
     dialog._rating_spin.setValue(9)
@@ -189,7 +190,7 @@ def test_edit_dialog_asks_when_no_seat_selected(qapp, tmp_path, monkeypatch):
     hero_mgr, heroes = _make_hero_mgr()
     manager = ComboManager(tmp_path / "combos.json")
     manager.load()
-    dialog = ComboEditDialog(hero_mgr, manager)
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
     dialog._hero1 = heroes[1]
     dialog._hero2 = heroes[2]
     dialog._rating_spin.setValue(9)
@@ -222,7 +223,7 @@ def test_edit_dialog_prefill_and_key_migration(qapp, tmp_path):
     original = _combo(1, 2, rating=6, note="原始备注")
     manager.save_manual_combo(original)
 
-    dialog = ComboEditDialog(hero_mgr, manager, combo=original)
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager), combo=original)
     assert dialog._hero1.name == "荆轲"
     assert dialog._rating_spin.value() == 6
 
@@ -251,7 +252,7 @@ def test_management_dialog_lists_counts_and_filters(qapp, tmp_path):
     _app()
     hero_mgr, _heroes = _make_hero_mgr()
     manager = _make_manager_with_combos(tmp_path)
-    dialog = ComboManagementDialog(hero_mgr, manager)
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
 
     assert "共 3 条 · 手工 2 · 导入 1" in dialog._summary_label.text()
     assert dialog._combo_list.count() == 3
@@ -267,7 +268,7 @@ def test_management_dialog_delete_emits_and_persists(qapp, tmp_path, monkeypatch
     _app()
     hero_mgr, _heroes = _make_hero_mgr()
     manager = _make_manager_with_combos(tmp_path)
-    dialog = ComboManagementDialog(hero_mgr, manager)
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
     changed = []
     dialog.combos_changed.connect(lambda: changed.append(1))
     monkeypatch.setattr(
@@ -289,7 +290,7 @@ def test_management_dialog_add_opens_edit_dialog_and_refreshes(qapp, tmp_path, m
 
     hero_mgr, _heroes = _make_hero_mgr()
     manager = _make_manager_with_combos(tmp_path)
-    dialog = ComboManagementDialog(hero_mgr, manager)
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
     changed = []
     dialog.combos_changed.connect(lambda: changed.append(1))
 
@@ -315,7 +316,7 @@ def test_management_dialog_edit_requires_selection(qapp, tmp_path, monkeypatch):
     _app()
     hero_mgr, _heroes = _make_hero_mgr()
     manager = _make_manager_with_combos(tmp_path)
-    dialog = ComboManagementDialog(hero_mgr, manager)
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
     monkeypatch.setattr(
         QMessageBox,
         "question",

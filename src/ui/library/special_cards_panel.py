@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -27,14 +29,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.business.maintenance.corpus_services import SpecialCardsService
 from src.business.rag.audit_service import GENERIC_HERO_NAMES
 from src.data.special_cards_repository import (
     SPECIAL_CATEGORIES,
     SpecialCardItem,
     SpecialCardRepository,
 )
+from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_WARNING, set_tone, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageActionBar, PageHeader, clear_layout, show_toast
+logger = logging.getLogger(__name__)
 
 # 各类别可编辑字段：key -> (标签, 是否多行)
 # suit/point/attack_range/settlement 为牌面事实（原 xlsx【专属牌】sheet 迁移回填）
@@ -213,7 +218,9 @@ class SpecialCardsPanel(QWidget):
 
     def __init__(self, repository: SpecialCardRepository, hero_names: set[str], parent=None):
         super().__init__(parent)
-        self._repository = repository
+        # 写路径经业务服务（#A1）；读查询沿用 repository 透传
+        self._service = SpecialCardsService(repository)
+        self._repository = self._service.repository
         self._hero_names = hero_names
         self._current: SpecialCardItem | None = None
         self._load_error = False
@@ -447,23 +454,17 @@ class SpecialCardsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = SpecialCardEditDialog(self._hero_names, None, self)
-        attempts = 0
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            attempts += 1
-            try:
-                self._repository.add_item(dialog.item())
-                self._current = dialog.item()
-                self._refresh_list()
-                self.data_changed.emit()
-                show_toast(self, "已新增，请在知识库维护中重建语料")
-                return
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
-                if attempts >= 3:
-                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
-                    return
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.add_item(dialog.item()),
+            parent=self,
+            success_message="已新增，请在知识库维护中重建语料",
+            on_retry=self.reload_data,
+        )
+        if saved:
+            self._current = dialog.item()
+            self._refresh_list()
+            self.data_changed.emit()
 
     def _open_edit(self) -> None:
         if self._current is None:
@@ -471,23 +472,17 @@ class SpecialCardsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = SpecialCardEditDialog(self._hero_names, self._current, self)
-        attempts = 0
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            attempts += 1
-            try:
-                self._repository.update_item(dialog.item())
-                self._current = dialog.item()
-                self._refresh_list()
-                self.data_changed.emit()
-                show_toast(self, "已保存，请在知识库维护中重建语料")
-                return
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
-                if attempts >= 3:
-                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
-                    return
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.update_item(dialog.item()),
+            parent=self,
+            success_message="已保存，请在知识库维护中重建语料",
+            on_retry=self.reload_data,
+        )
+        if saved:
+            self._current = dialog.item()
+            self._refresh_list()
+            self.data_changed.emit()
 
     def _delete_current(self) -> None:
         if self._current is None:
@@ -503,8 +498,9 @@ class SpecialCardsPanel(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._repository.delete_item(self._current.category, self._current.name)
+            self._service.delete_item(self._current.category, self._current.name)
         except Exception as error:
+            logger.exception("删除专属牌失败")
             QMessageBox.critical(self, "删除失败", str(error))
             self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
             return

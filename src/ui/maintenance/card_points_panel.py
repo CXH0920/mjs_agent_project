@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import sys
 from pathlib import Path
 
@@ -34,6 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.business.maintenance.corpus_services import CardPointsService
 from src.config.env import PROJECT_ROOT
 from src.data.card_points_repository import (
     VALID_POINTS,
@@ -42,8 +45,10 @@ from src.data.card_points_repository import (
     CardPointsRepository,
     JudgeRuleItem,
 )
+from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_SECONDARY, TONE_WARNING, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageActionBar, ScriptRunner, show_toast
+logger = logging.getLogger(__name__)
 
 
 class CardPointEditDialog(QDialog):
@@ -148,7 +153,9 @@ class CardPointsPanel(QWidget):
 
     def __init__(self, repository: CardPointsRepository, root: Path = PROJECT_ROOT, parent=None):
         super().__init__(parent)
-        self._repository = repository
+        # 写路径经业务服务（#A1）；读查询沿用 repository 透传
+        self._service = CardPointsService(repository)
+        self._repository = self._service.repository
         self._root = root
         self._runner = ScriptRunner(self)
         self._runner.output.connect(self._collect_import_output)
@@ -303,22 +310,16 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = CardPointEditDialog(None, self)
-        attempts = 0
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            attempts += 1
-            try:
-                self._repository.add_card(dialog.item())
-                self._refresh_cards()
-                self.data_changed.emit()
-                show_toast(self, "已新增牌行，请在知识库维护中重建语料")
-                return
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
-                if attempts >= 3:
-                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
-                    return
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.add_card(dialog.item()),
+            parent=self,
+            success_message="已新增牌行，请在知识库维护中重建语料",
+            on_retry=self.reload_data,
+        )
+        if saved:
+            self._refresh_cards()
+            self.data_changed.emit()
 
     def _edit_card(self) -> None:
         current = self._selected_card()
@@ -328,23 +329,17 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = CardPointEditDialog(current, self)
-        attempts = 0
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            attempts += 1
-            try:
-                # 单步替换（旧键可能变化）；失败时原行保留，整批回滚
-                self._repository.replace_card(current.name, current.suit, current.point, dialog.item())
-                self._refresh_cards()
-                self.data_changed.emit()
-                show_toast(self, "已保存牌行，请在知识库维护中重建语料")
-                return
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
-                if attempts >= 3:
-                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
-                    return
-                continue
+        # 单步替换（旧键可能变化）；失败时原行保留，整批回滚
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.replace_card(current.name, current.suit, current.point, dialog.item()),
+            parent=self,
+            success_message="已保存牌行，请在知识库维护中重建语料",
+            on_retry=self.reload_data,
+        )
+        if saved:
+            self._refresh_cards()
+            self.data_changed.emit()
 
     def _delete_card(self) -> None:
         current = self._selected_card()
@@ -362,8 +357,9 @@ class CardPointsPanel(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._repository.delete_card(current.name, current.suit, current.point)
+            self._service.delete_card(current.name, current.suit, current.point)
         except Exception as error:
+            logger.exception("删除牌行失败")
             QMessageBox.critical(self, "删除失败", str(error))
             self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
             return
@@ -393,22 +389,16 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = JudgeRuleEditDialog(None, self)
-        attempts = 0
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            attempts += 1
-            try:
-                self._repository.add_rule(dialog.item())
-                self._refresh_rules()
-                self.data_changed.emit()
-                show_toast(self, "已新增判定规则，请在知识库维护中重建语料")
-                return
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
-                if attempts >= 3:
-                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
-                    return
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.add_rule(dialog.item()),
+            parent=self,
+            success_message="已新增判定规则，请在知识库维护中重建语料",
+            on_retry=self.reload_data,
+        )
+        if saved:
+            self._refresh_rules()
+            self.data_changed.emit()
 
     def _edit_rule(self) -> None:
         current = self._selected_rule()
@@ -418,22 +408,16 @@ class CardPointsPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = JudgeRuleEditDialog(current, self)
-        attempts = 0
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            attempts += 1
-            try:
-                self._repository.update_rule(dialog.item())
-                self._refresh_rules()
-                self.data_changed.emit()
-                show_toast(self, "已保存判定规则，请在知识库维护中重建语料")
-                return
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
-                if attempts >= 3:
-                    QMessageBox.warning(self, "已停止重试", "连续保存失败，已停止重试，请检查文件权限/磁盘后重试。")
-                    return
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.update_rule(dialog.item()),
+            parent=self,
+            success_message="已保存判定规则，请在知识库维护中重建语料",
+            on_retry=self.reload_data,
+        )
+        if saved:
+            self._refresh_rules()
+            self.data_changed.emit()
 
     def _delete_rule(self) -> None:
         current = self._selected_rule()
@@ -451,8 +435,9 @@ class CardPointsPanel(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._repository.delete_rule(current.name)
+            self._service.delete_rule(current.name)
         except Exception as error:
+            logger.exception("删除判定规则失败")
             QMessageBox.critical(self, "删除失败", str(error))
             self.reload_data()  # 仓库已回滚内存，界面与磁盘重新对齐
             return

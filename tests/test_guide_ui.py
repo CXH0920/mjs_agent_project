@@ -15,8 +15,8 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
-import src.ui.library.hero_browser as hero_browser_module
 from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
+from src.ui.shared import persist as persist_module
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.library.fetch_dialog import HeroFetchDialog
@@ -289,7 +289,8 @@ def test_hero_detail_edit_actions_report_success(tmp_path: Path, monkeypatch) ->
     panel = HeroDetailPanel(hero_manager, guide_manager, synergy_manager)
     panel.show_hero(1)
     messages: list[str] = []
-    monkeypatch.setattr(hero_browser_module, "show_toast", lambda _parent, message: messages.append(message))
+    # 成功 toast 由 persist 助手统一发出，patch 其模块命名空间
+    monkeypatch.setattr(persist_module, "show_toast", lambda _parent, message: messages.append(message))
     monkeypatch.setattr(HeroEditDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted)
     monkeypatch.setattr(GuideEditDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted)
     monkeypatch.setattr(SynergyEditDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted)

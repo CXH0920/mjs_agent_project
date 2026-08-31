@@ -9,10 +9,18 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["F"]
+select = ["F", "T201"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/**/__init__.py" = ["F401"]
+# T201（禁 print）：库层（business/data/ocr/ui/capture/config）生效——这些代码会被
+# GUI 进程 import，进度一律走 logger。rag/scraper/scripts/tests 混有 CLI 入口的
+# print 进度通道，待各目录清理后再逐步收窄忽略范围。
+"src/main.py" = ["T201"]
+"src/rag/**" = ["T201"]
+"src/scraper/**" = ["T201"]
+"src/scripts/**" = ["T201"]
+"tests/**" = ["T201"]
 
 [tool.pyright]
 include = ["src", "tests"]

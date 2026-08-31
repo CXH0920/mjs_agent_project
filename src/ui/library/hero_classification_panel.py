@@ -37,68 +37,15 @@ from src.data.hero_classification_repository import (
 )
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING, set_tone, set_ui_role
+from src.business.maintenance.classification_suggest import suggest_hero_categories
+from src.business.maintenance.corpus_services import ClassificationService
 from src.business.rag.refinement_service import build_generator
-from src.scraper.ai.json_extract import extract_json
+from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.widgets import DialogFooter, PageActionBar, clear_layout, show_toast
 
 logger = logging.getLogger(__name__)
 
 _CLASSIFICATION_FILTERS = ("全部", "未归类", "已归类")
-
-_CLASSIFICATION_SYSTEM_PROMPT = (
-    "你是名将杀（三国杀类）武将机制分类器。根据武将技能原文，从给定分类清单中"
-    "选出该武将符合的机制分类（可多选）。只从清单中选，不确定的不选。"
-    "输出 JSON：{\"categories\": [\"分类名\", ...]}，只输出 JSON，不要解释。"
-)
-
-
-def suggest_hero_categories(hero: str, skills_text: str, position: str,
-                           categories, generator) -> list[str] | None:
-    """调用 LLM 建议武将归入哪些已有分类。
-
-    categories: list[ClassificationCategory]（用 name + core_features 构造 prompt）。
-    返回 None=API 失败/解析失败；list=已过滤的分类名（只含清单内、去重保序，可能空）。
-    """
-    if not categories or not skills_text:
-        return None
-    cat_lines = "\n".join(f"- {c.name}：{c.core_features}" for c in categories)
-    messages = [
-        {"role": "system", "content": _CLASSIFICATION_SYSTEM_PROMPT},
-        {"role": "user", "content": (
-            f"武将：{hero}（定位：{position or '未知'}）\n"
-            f"技能：\n{skills_text}\n"
-            f"可选分类清单：\n{cat_lines}"
-        )},
-    ]
-    try:
-        response = generator.complete(messages, temperature=0.2)
-    except Exception as error:
-        logger.warning("武将分类建议请求异常 %s: %s", hero, error)
-        return None
-    if not response:
-        return None
-    content = response.get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        return None
-    try:
-        data = extract_json(content)
-    except (ValueError, TypeError):
-        logger.warning("武将分类建议解析失败 %s", hero)
-        return None
-    if not isinstance(data, dict):
-        return None
-    raw = data.get("categories", [])
-    if not isinstance(raw, list):
-        return None
-    valid_names = {c.name for c in categories}
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in raw:
-        name = str(item).strip()
-        if name and name in valid_names and name not in seen:
-            seen.add(name)
-            result.append(name)
-    return result
 
 
 # 持有运行中的 worker，防止面板销毁后 Python 引用丢失导致 QThread 运行中被 GC 析构（#61）
@@ -143,8 +90,8 @@ class _HeroCategoryWorker(QThread):
             if callable(close):
                 try:
                     close()
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as error:
+                    logger.warning("分类建议 worker 关闭 generator 失败: %s", error)
             _LIVE_WORKERS.discard(self)
         if not self._cancelled:
             self.result_ready.emit(self._hero, result)
@@ -218,7 +165,9 @@ class HeroClassificationPanel(QWidget):
                  hero_positions: dict[str, str] | None = None,
                  hero_skills: dict[str, str] | None = None, parent=None):
         super().__init__(parent)
-        self._repo = repository
+        # 写路径经业务服务（#A1）；读查询沿用 _repo 透传
+        self._service = ClassificationService(repository)
+        self._repo = self._service.repository
         self._hero_positions = hero_positions or {}
         self._hero_skills = hero_skills or {}
         self._hero_names = sorted(repository.hero_names)
@@ -490,7 +439,7 @@ class HeroClassificationPanel(QWidget):
             QMessageBox.warning(self, "数据不可用", "数据文件加载失败，已禁止保存（详情见日志）。")
             return
         try:
-            self._repo.save()
+            self._service.save()
         except Exception as error:
             QMessageBox.critical(self, "保存失败", str(error))
             # 仓库已回滚内存；丢弃未保存标记并对齐磁盘状态
@@ -610,16 +559,15 @@ class HeroClassificationPanel(QWidget):
         if not self._ensure_writable():
             return
         dialog = CategoryEditDialog(None, self)
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self._repo.add_category(dialog.category())
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.add_category(dialog.category()),
+            parent=self, attempts=None,
+        )
+        if saved:
             self._current_category = dialog.category().name
             self._refresh_categories()
             self._mark_dirty()
-            return
 
     def _edit_category(self) -> None:
         if not self._ensure_writable():
@@ -628,15 +576,14 @@ class HeroClassificationPanel(QWidget):
         if cat is None:
             return
         dialog = CategoryEditDialog(cat, self)
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self._repo.update_category(dialog.category())
-            except Exception as error:
-                QMessageBox.critical(self, "保存失败", str(error))
-                continue
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._service.update_category(dialog.category()),
+            parent=self, attempts=None,
+        )
+        if saved:
             self._refresh_categories()
             self._mark_dirty()
-            return
 
     def _delete_category(self) -> None:
         if not self._ensure_writable():
@@ -653,8 +600,9 @@ class HeroClassificationPanel(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self._repo.delete_category(name)
+            self._service.delete_category(name)
         except Exception as error:
+            logger.exception("删除分类失败")
             QMessageBox.critical(self, "删除失败", str(error))
             return
         self._current_category = None
@@ -689,7 +637,7 @@ class HeroClassificationPanel(QWidget):
         if not category:
             return
         try:
-            self._repo.set_counter_chain(category, self._chain_edit.toPlainText())
+            self._service.set_counter_chain(category, self._chain_edit.toPlainText())
         except ValueError as error:
             QMessageBox.warning(self, "校验失败", str(error))
             # 回滚文本框为仓库中的旧值，避免显示与数据不一致（#19）
@@ -780,7 +728,7 @@ class HeroClassificationPanel(QWidget):
         if not hero:
             return
         try:
-            self._repo.set_hero_categories(hero, sorted(self._hero_combo.checked_values()))
+            self._service.set_hero_categories(hero, sorted(self._hero_combo.checked_values()))
         except ValueError as error:
             QMessageBox.warning(self, "校验失败", str(error))
             # 回滚下拉显示为仓库中的归类，避免视觉与数据不一致（#18）

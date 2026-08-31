@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -20,11 +22,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from src.data.combo_manager import ComboManager
+from src.business.maintenance.corpus_services import ComboService
 from src.data.combo_seats import format_seats
 from src.ui.library.combo_edit_dialog import ComboEditDialog
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_NEUTRAL, set_tone, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+logger = logging.getLogger(__name__)
 
 
 class ComboManagementDialog(QDialog):
@@ -32,10 +36,11 @@ class ComboManagementDialog(QDialog):
 
     combos_changed = Signal()
 
-    def __init__(self, hero_mgr, combo_manager: ComboManager, parent=None) -> None:
+    def __init__(self, hero_mgr, combo_service: ComboService, parent=None) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_mgr
-        self._combo_manager = combo_manager
+        self._service = combo_service
+        self._combo_manager = combo_service.repository
         self.setWindowTitle("实战配队管理")
         self.setMinimumSize(600, 640)
         self._setup_ui()
@@ -157,7 +162,7 @@ class ComboManagementDialog(QDialog):
     # ── 增删改 ────────────────────────────────────────────────────────
 
     def _on_add(self) -> None:
-        dialog = ComboEditDialog(self._hero_mgr, self._combo_manager, parent=self)
+        dialog = ComboEditDialog(self._hero_mgr, self._service, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.combos_changed.emit()
             self._refresh_list()
@@ -166,7 +171,7 @@ class ComboManagementDialog(QDialog):
         combo = self._selected_combo()
         if combo is None:
             return
-        dialog = ComboEditDialog(self._hero_mgr, self._combo_manager, combo=combo, parent=self)
+        dialog = ComboEditDialog(self._hero_mgr, self._service, combo=combo, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.combos_changed.emit()
             self._refresh_list()
@@ -185,6 +190,6 @@ class ComboManagementDialog(QDialog):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self._combo_manager.delete_combo(combo)
+        self._service.delete_combo(combo)
         self.combos_changed.emit()
         self._refresh_list()

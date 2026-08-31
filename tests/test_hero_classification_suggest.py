@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from src.data.hero_classification_repository import ClassificationCategory
-from src.ui.library.hero_classification_panel import suggest_hero_categories
+from src.business.maintenance.classification_suggest import suggest_hero_categories
 
 
 class FakeGenerator:

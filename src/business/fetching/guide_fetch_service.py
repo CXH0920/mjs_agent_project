@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import tempfile
 
@@ -123,13 +122,3 @@ class GuideFetchService(BaseFetchService):
         """仅以 CLI 的结构化退出码判断生成成败。"""
         if exit_code == 0:
             self.fetch_completed.emit(True, "攻略生成完成")
-
-    def _cleanup_context(self) -> None:
-        """清理临时文件"""
-        tmp_path = self._context.get("tmp_path", "") if self._context else ""
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-                logger.debug("已清理临时文件: %s", tmp_path)
-            except OSError as e:
-                logger.warning("清理临时文件失败 %s: %s", tmp_path, e)

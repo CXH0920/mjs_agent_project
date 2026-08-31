@@ -202,6 +202,18 @@ def _usable_profile_config(profile: dict) -> dict | None:
     }
 
 
+def has_available_api_profile() -> bool:
+    """是否存在可用 API 档案（enabled + URL 非空 + 供应商 Key 语义）。
+
+    UI 展示层与生成链路共用的唯一判定（此前后端选择对话框曾复制一份，
+    且误用 has_key 展示字段，与生成链路的 api_key 判定存在漂移风险）。
+    """
+    for profile in load_api_profiles()["profiles"]:
+        if _usable_profile_config(profile) is not None:
+            return True
+    return False
+
+
 def get_api_config():
     """获取 API 配置（启用档案优先，其次 config.env → 环境变量 → 默认值）
 

@@ -26,6 +26,7 @@ from src.data.hero_timeline import append_announcement_events
 from src.scraper.official_source.announcement import (
     build_hero_snapshot,
     build_timeline_events,
+    build_update_candidates,
     classify_hero_related,
     diff_heroes,
     fetch_baike_heroes,
@@ -73,6 +74,8 @@ class AnnouncementService(QObject):
     check_finished = Signal(object)
     status_changed = Signal(str)
     progress_changed = Signal(str)
+    # 更新候选准备完成（worker 线程计算 → GUI 线程消费）
+    update_candidates_prepared = Signal(object)
     # worker 线程只发内部信号；收尾（共享状态写入 + 快照落盘）统一回 GUI 线程执行，
     # 避免 _last_snapshot 与 mark_applied 的跨线程竞争及快照文件并发写碰撞
     _check_done = Signal(object)
@@ -89,6 +92,7 @@ class AnnouncementService(QObject):
         self._heroes = hero_manager
         self._snapshot_path = snapshot_path
         self._thread: threading.Thread | None = None
+        self._prepare_thread: threading.Thread | None = None
         self._last_snapshot: BaikeSnapshot | None = None
         self._last_check_started_at: float | None = None
         self._check_done.connect(self._finalize_check)
@@ -99,7 +103,10 @@ class AnnouncementService(QObject):
 
     @property
     def is_busy(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        """公告检查或更新候选准备任一在途即视为忙碌（两者都会访问官网百科）。"""
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        return self._prepare_thread is not None and self._prepare_thread.is_alive()
 
     @property
     def cooldown_remaining(self) -> float:
@@ -138,6 +145,68 @@ class AnnouncementService(QObject):
         if self._last_snapshot is not None:
             save_baike_snapshot(self._last_snapshot, self._snapshot_path)
             logger.info("已刷新百科快照")
+
+    def collect_base_candidates(
+        self,
+        local_heroes_plain: list[dict],
+        announcements: list,
+        diff: dict,
+    ) -> list[dict]:
+        """无官网数据的基础候选（纯内存、无网络），供 UI 预判是否有可更新项。
+
+        diff 由调用方在 GUI 线程传入快照。
+        """
+        return build_update_candidates(announcements, local_heroes_plain, None, diff)
+
+    def prepare_update_candidates(
+        self,
+        local_heroes_plain: list[dict],
+        announcements: list,
+        diff: dict,
+    ) -> bool:
+        """后台拉取官网百科并计算字段级差异候选，完成后发 update_candidates_prepared。
+
+        返回是否成功启动（忙碌时 False，由调用方提示用户）。diff 必须由调用方
+        在 GUI 线程传入只读快照，后台线程不再访问主窗口可变状态。
+        """
+        if self.is_busy:
+            logger.warning("公告服务忙碌，忽略更新候选准备请求")
+            return False
+        self._prepare_thread = threading.Thread(
+            target=self._run_prepare,
+            args=(local_heroes_plain, announcements, diff),
+            daemon=True,
+            name="announcement-prepare-update",
+        )
+        self._prepare_thread.start()
+        return True
+
+    def _run_prepare(
+        self,
+        local_heroes_plain: list[dict],
+        announcements: list,
+        diff: dict,
+    ) -> None:
+        try:
+            official_heroes = fetch_baike_heroes()
+            if official_heroes is None:
+                candidates = build_update_candidates(announcements, local_heroes_plain, None, diff)
+                official_ok = False
+            else:
+                candidates = build_update_candidates(
+                    announcements, local_heroes_plain, official_heroes, diff,
+                )
+                official_ok = True
+            payload = {"candidates": candidates, "official_ok": official_ok}
+        except Exception:
+            # 后台线程异常若不兜底会静默吞掉、UI 进度条永不消失
+            logger.exception("公告更新候选准备失败")
+            payload = {
+                "candidates": [],
+                "official_ok": False,
+                "error": "获取官网数据失败，详见运行日志",
+            }
+        self.update_candidates_prepared.emit(payload)
 
     # ---------------------------------------------------------------
     # 内部实现

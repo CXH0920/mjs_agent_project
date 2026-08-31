@@ -181,7 +181,7 @@ class GeneralRecognizer:
             roi_y = round(y * scale_y)
             roi_w = max(1, round(w * scale_x))
             roi_h = max(1, round(h * scale_y))
-            logger.info(
+            logger.debug(
                 "武将 %d OCR ROI: x=%d, y=%d, w=%d, h=%d (参考 ROI=%s)",
                 i + 1, roi_x, roi_y, roi_w, roi_h, [x, y, w, h],
             )
@@ -651,7 +651,7 @@ class GeneralRecognizer:
             return "楚军"
         if "汉" in normalized:
             return "汉军"
-        logger.info("武将 %d 阵营标签未识别: %r", slot, text)
+        logger.debug("武将 %d 阵营标签未识别: %r", slot, text)
         return ""
 
     def _recognize_prepared_single(
@@ -661,7 +661,7 @@ class GeneralRecognizer:
         ocr_started = time.perf_counter()
         text, confidence = self._extract_text(self._engine.ocr(prepared, cls=False))
         self._add_timing(f"{kind}_ocr", ocr_started)
-        logger.info("武将 %d %s OCR 原始结果: text=%r, confidence=%.4f", slot, kind, text, confidence)
+        logger.debug("武将 %d %s OCR 原始结果: text=%r, confidence=%.4f", slot, kind, text, confidence)
         return text, confidence
 
     def _recognize_prepared_batch(

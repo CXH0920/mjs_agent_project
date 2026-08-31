@@ -30,6 +30,7 @@ from src.business.analysis.peak_ban_advice import (
 from src.business.recognition.peak_select_watcher import PoolSnapshot, PeakSelectWatcher
 from src.config.env import PROJECT_ROOT
 from src.data.combo_seats import format_seats
+from src.business.maintenance.corpus_services import ComboService
 from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.shared.combo_detail import show_combo_detail
@@ -396,7 +397,8 @@ class PeakSelectPanel(QWidget):
 
     def _open_combo_management(self) -> None:
         """打开实战配队全量管理对话框；增删改后即时刷新角标与命中条。"""
-        dialog = ComboManagementDialog(self._hero_manager, self._combo_manager, self)
+        dialog = ComboManagementDialog(
+            self._hero_manager, ComboService(self._combo_manager), self)
         dialog.combos_changed.connect(self._render_cards)
         dialog.exec()
 

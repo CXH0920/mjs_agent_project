@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -27,6 +29,8 @@ from src.data.equip_attrs_repository import (
 )
 from src.ui.shared.style import ROLE_PRIMARY, TONE_WARNING, set_ui_role
 from src.ui.shared.widgets import PageActionBar, show_toast
+
+logger = logging.getLogger(__name__)
 
 _COLUMNS = ("名称", "细分类型", "攻击范围", "距离修正", "备注")
 
@@ -156,6 +160,7 @@ class EquipAttrsPanel(QWidget):
                 else:
                     self._repository.update_equip(item)
         except Exception as error:
+            logger.exception("保存装备属性失败")
             QMessageBox.critical(self, "保存失败", str(error))
             self.reload_data()  # 已保存部分落盘、未保存部分已回滚，界面与磁盘重新对齐
             return

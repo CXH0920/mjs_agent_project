@@ -19,6 +19,8 @@ from src.ui.app.chinese_translator import install_chinese_qt_translator
 from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
 from src.ui.shared.style import GLOBAL_STYLE
 
+logger = logging.getLogger(__name__)
+
 
 def _ensure_clean_runtime() -> None:
     """frozen 下首启在 exe 同级生成可写运行时骨架，不覆盖已有用户数据。
@@ -159,8 +161,8 @@ def main() -> None:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
                 "MingJiangSha.MJSAgent"
             )
-        except Exception:
-            pass
+        except Exception as error:
+            logger.debug("AppUserModelID 设置失败（任务栏图标回退默认）: %s", error)
 
     # 尽早设置并持续维护应用图标（在 PaddleOCR 等耗时操作之前）
     from src.ui.app.app_icon import install_app_icon
@@ -187,7 +189,6 @@ def main() -> None:
         sys.exit(app.exec())
     except Exception as e:
         splash.close()
-        logger = logging.getLogger(__name__)
         logger.exception("应用启动失败")
         QMessageBox.critical(
             None, "启动失败",

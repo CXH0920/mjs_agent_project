@@ -36,6 +36,7 @@ from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
 from src.ui.shared.combo_detail import show_combo_detail
+from src.business.maintenance.corpus_services import ComboService
 from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
@@ -80,13 +81,14 @@ class RecommendationPanel(QWidget):
     request_mumu_config = Signal()
 
     def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
-                 guide_manager: GuideManager | None = None,
+                 guide_manager: GuideManager,
                  capture_service=None, ocr_service=None, parent=None,
                  combo_manager: ComboManager | None = None):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
-        self._guide_mgr = guide_manager or GuideManager()
+        # 必传共享实例：兜底新建会持有独立锁，对同一 JSON 的写互斥失效（last-writer-wins）
+        self._guide_mgr = guide_manager
         self._capture_service = capture_service
         self._ocr_service = ocr_service
         self._cards: list[HeroCardWidget] = []
@@ -447,7 +449,8 @@ class RecommendationPanel(QWidget):
 
     def _open_combo_management(self) -> None:
         """打开实战配队全量管理对话框；增删改后即时刷新命中条与卡片角标。"""
-        dialog = ComboManagementDialog(self._hero_mgr, self._combo_mgr, self)
+        dialog = ComboManagementDialog(
+            self._hero_mgr, ComboService(self._combo_mgr), self)
         dialog.combos_changed.connect(self._refresh_combo_strip)
         dialog.exec()
 
@@ -489,7 +492,14 @@ class RecommendationPanel(QWidget):
                     self._cards[card_idx].set_synergies(pairs)
                     return
         except Exception as e:
-            logger.debug("加载相性数据失败 hero_id=%s: %s", hero_id, e)
+            # 加载失败与"确实无数据"必须区分：失败显示"加载失败"占位并留日志，
+            # 否则用户对着误导性的"等待数据"文案无从排查
+            logger.warning("加载相性数据失败 hero_id=%s: %s", hero_id, e)
+            self._cards[card_idx].set_synergies([
+                ("加载失败", "--"),
+                ("加载失败", "--"),
+            ])
+            return
 
         # 无数据时显示占位
         self._cards[card_idx].set_synergies([

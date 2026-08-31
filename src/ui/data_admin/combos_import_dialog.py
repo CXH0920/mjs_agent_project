@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSettings, QThread, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -24,7 +24,11 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.env import PROJECT_ROOT
-from src.scripts.import_combos import DEFAULT_HEROES, DEFAULT_OUTPUT, run_import
+from src.business.maintenance.combo_import_service import (
+    DEFAULT_HEROES,
+    DEFAULT_OUTPUT,
+    run_import,
+)
 from src.ui.shared.style import ROLE_SECONDARY, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
@@ -32,10 +36,42 @@ logger = logging.getLogger(__name__)
 
 _NOTE_PREVIEW_LIMIT = 50
 
+# 持有运行中的 worker，防止对话框销毁后 QThread 运行中被 GC 析构（同分类面板 #61）
+_LIVE_WORKERS: set = set()
+
+
+class _ImportWorker(QThread):
+    """后台执行组合导入：数据量大时避免主线程冻结。"""
+
+    finished_ok = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, source: Path, heroes_path: Path, output_path: Path, parent=None):
+        super().__init__(parent)
+        self._source = source
+        self._heroes_path = heroes_path
+        self._output_path = output_path
+
+    def run(self) -> None:
+        _LIVE_WORKERS.add(self)
+        try:
+            report = run_import(self._source, self._heroes_path, self._output_path)
+        except Exception as error:
+            logger.exception("实战配队导入失败")
+            self.failed.emit(str(error))
+        else:
+            self.finished_ok.emit(report)
+        finally:
+            _LIVE_WORKERS.discard(self)
+
 
 def _default_source_dir() -> Path:
-    """外部工具导出的默认目录（临时区，仅作为文件选择起点）。"""
-    return PROJECT_ROOT / ".tmp_test"
+    """文件选择起点：记忆上次使用目录，首次使用兜底项目 data/。"""
+    settings = QSettings("MingJiangSha", "MJSAgent")
+    last = str(settings.value("combos_import/last_dir", "") or "")
+    if last and Path(last).is_dir():
+        return Path(last)
+    return PROJECT_ROOT / "data"
 
 
 class CombosImportDialog(QDialog):

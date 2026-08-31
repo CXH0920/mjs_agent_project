@@ -7,6 +7,7 @@ from collections.abc import Callable
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 
+from src.business.ai_cost import estimate_generation_cost
 from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.synergy_fetch_service import SynergyFetchService
 from src.business.fetching.synergy_reload_worker import SynergyReloadWorker
@@ -120,10 +121,7 @@ class AiGenerationWorkflow(QObject):
 
         selected = dialog.selected_heroes
         pair_count = len(selected) * (len(selected) - 1) // 2
-        from src.config.env import get_api_config
-        from src.scraper.ai.prompt_utils import estimate_item_cost
-
-        estimation = estimate_item_cost(pair_count, "synergy", get_api_config()["model"])
+        estimation = estimate_generation_cost(pair_count, "synergy")
         estimation["estimate_kind"] = "synergy"
         choice = self._choose_backend("相性配对生成", estimation)
         if choice is None:
@@ -149,10 +147,7 @@ class AiGenerationWorkflow(QObject):
             return
 
         pair_count = len(all_heroes) - 1
-        from src.config.env import get_api_config
-        from src.scraper.ai.prompt_utils import estimate_item_cost
-
-        estimation = estimate_item_cost(pair_count, "synergy", get_api_config()["model"])
+        estimation = estimate_generation_cost(pair_count, "synergy")
         estimation["estimate_kind"] = "synergy"
         choice = self._choose_backend("选定武将相性生成", estimation)
         if choice is None:
@@ -182,10 +177,7 @@ class AiGenerationWorkflow(QObject):
             return
 
         pairs = dialog.selected_pairs
-        from src.config.env import get_api_config
-        from src.scraper.ai.prompt_utils import estimate_item_cost
-
-        estimation = estimate_item_cost(len(pairs), "synergy", get_api_config()["model"])
+        estimation = estimate_generation_cost(len(pairs), "synergy")
         estimation["estimate_kind"] = "synergy"
         choice = self._choose_backend("实战配队相性生成", estimation)
         if choice is None:
@@ -215,13 +207,10 @@ class AiGenerationWorkflow(QObject):
         title: str,
         fetch: Callable[[list[dict], str, bool], bool],
     ) -> None:
-        from src.config.env import get_api_config
-        from src.scraper.ai.prompt_utils import estimate_cost
-
         if self._guide_service.is_busy:
             QMessageBox.warning(self._window, "生成进行中", "已有攻略生成任务在运行，请等待完成。")
             return
-        estimation = estimate_cost(len(heroes), "guide", get_api_config()["model"])
+        estimation = estimate_generation_cost(len(heroes), "guide")
         estimation["mode"] = mode
         estimation["heroes"] = heroes
         estimation["estimate_kind"] = "guide"

@@ -123,11 +123,9 @@ def mark_recommendation_index_stale(
     path: Path = RECOMMENDATION_INDEX_STATE_FILE,
 ) -> None:
     """原子保存推荐指数快照是否待重建的状态。"""
-    import traceback
-    logger.warning(
-        "推荐指数状态标记 stale=%s，调用来源:\n%s",
-        stale, "".join(traceback.format_stack(limit=10)),
-    )
+    # stale 属于正常业务状态流转（每次官方导入后触发），debug 级即可；
+    # 此前曾遗留 10 层调用栈 WARNING 输出（每次导入刷屏淹没真实告警），已移除
+    logger.debug("推荐指数状态标记 stale=%s", stale)
     path.parent.mkdir(parents=True, exist_ok=True)
     # mkstemp 唯一中转名：固定 .tmp 在并发保存时会互相覆盖（与 save_baike_snapshot 同理）
     fd, tmp_name = tempfile.mkstemp(

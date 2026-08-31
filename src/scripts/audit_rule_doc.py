@@ -88,6 +88,8 @@ def _chapters(doc_path):
 
 
 def _cross_ref_sets(root):
+    """读取交叉引用数据源；加载失败返回 None（调用方跳过校验并出 WARN，
+    而不是拿空集合把文档中全部引用逐条误报为未知）。"""
     cards = set()
     heroes = set()
     skills = set()
@@ -107,8 +109,9 @@ def _cross_ref_sets(root):
                     sk_name = sk.get('name', '')
                     if sk_name:
                         skills.add(sk_name)
-    except Exception:
-        pass
+    except Exception as error:
+        print(f'  ⚠️ 数据源加载失败，跳过交叉引用校验: {error}')
+        return None
     return cards, heroes, skills
 
 
@@ -235,18 +238,22 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
                            % f['faq_no']})
 
     # ---- 8. 交叉引用 ----
-    cards, heroes, skills = _cross_ref_sets(root)
-    for ln_no, ln in enumerate(lines, 1):
-        for m in CARD_REF_RE.finditer(ln):
-            cid = int(m.group(1))
-            if cid not in cards:
-                issues.append({'level': 'ERROR', 'msg': 'L%d 来源引用未知卡牌编号：%d' % (ln_no, cid)})
-        for m in HERO_REF_RE.finditer(ln):
-            chunk = m.group(1).strip()
-            if not chunk or chunk[0].isdigit() or '|' in chunk:
-                continue
-            if _longest_prefix(chunk, heroes) is None and _longest_prefix(chunk, skills) is None:
-                issues.append({'level': 'WARN', 'msg': 'L%d 来源疑似引用未知武将/技能：%s' % (ln_no, chunk)})
+    cross_ref = _cross_ref_sets(root)
+    if cross_ref is None:
+        issues.append({'level': 'WARN', 'msg': '数据源加载失败，交叉引用校验已跳过'})
+    else:
+        cards, heroes, skills = cross_ref
+        for ln_no, ln in enumerate(lines, 1):
+            for m in CARD_REF_RE.finditer(ln):
+                cid = int(m.group(1))
+                if cid not in cards:
+                    issues.append({'level': 'ERROR', 'msg': 'L%d 来源引用未知卡牌编号：%d' % (ln_no, cid)})
+            for m in HERO_REF_RE.finditer(ln):
+                chunk = m.group(1).strip()
+                if not chunk or chunk[0].isdigit() or '|' in chunk:
+                    continue
+                if _longest_prefix(chunk, heroes) is None and _longest_prefix(chunk, skills) is None:
+                    issues.append({'level': 'WARN', 'msg': 'L%d 来源疑似引用未知武将/技能：%s' % (ln_no, chunk)})
 
     # ---- 9. 已定稿块指纹（防回归，允许末尾追加） ----
     if snap:

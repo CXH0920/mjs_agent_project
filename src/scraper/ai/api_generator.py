@@ -42,6 +42,10 @@ _CONN_ERRORS = (
     httpx.WriteError, httpx.WriteTimeout, RuntimeError,
 )
 
+# 不可重试的 HTTP 状态：Key 配错/参数/权限问题重试只会白等退避（429 走限流退避、
+# 408/5xx 属瞬时故障，均不在其列）
+_NON_RETRYABLE_STATUS = frozenset({400, 401, 403, 404, 422})
+
 
 def _read_completion_content(response: dict) -> tuple[str | None, dict]:
     """只读取最终正文；思考过程不进入日志、持久化或界面链路。"""
@@ -146,6 +150,10 @@ class AIBatchGenerator:
                 }
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
+                if status in _NON_RETRYABLE_STATUS:
+                    # Key 配错/参数错误重试无意义：立即失败，避免每武将白等退避
+                    logger.error("API 请求不可重试: HTTP %s（不再重试）", status)
+                    raise
                 logger.warning("API 返回错误 [%d/%d]: HTTP %s",
                                attempt, self.max_retries, status)
                 if attempt < self.max_retries:
@@ -160,8 +168,8 @@ class AIBatchGenerator:
                 if isinstance(e, _CONN_ERRORS):
                     try:
                         self._client.close()
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as error:
+                        logger.debug("旧 client 关闭失败: %s", error)
                     self._client = httpx.Client(timeout=self.http_timeout)
                 if attempt < self.max_retries:
                     wait = 2 ** attempt

@@ -12,7 +12,6 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -40,8 +39,8 @@ from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
+from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
-from src.ui.shared.widgets import show_toast
 
 logger = logging.getLogger(__name__)
 
@@ -398,18 +397,18 @@ class HeroDetailPanel(QWidget):
             synergy,
             parent=self,
         )
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self._data_mutation_service.update_synergy(dialog.get_synergy())
-                self._synergy_tab.refresh()
-                self._update_context_actions()
-                self.synergies_changed.emit()
-            except Exception as e:
-                logger.exception("保存相性失败")
-                QMessageBox.critical(self, "保存失败", f"无法保存相性:\n{e}\n\n编辑内容已保留。")
-                continue
-            show_toast(self, "相性修改已保存")
-            return
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._data_mutation_service.update_synergy(dialog.get_synergy()),
+            parent=self,
+            success_message="相性修改已保存",
+            failure_hint="编辑内容已保留。",
+            attempts=None,
+        )
+        if saved:
+            self._synergy_tab.refresh()
+            self._update_context_actions()
+            self.synergies_changed.emit()
 
     def _on_synergy_delete(self) -> None:
         """删除表格中选中的相性。"""
@@ -448,20 +447,20 @@ class HeroDetailPanel(QWidget):
         if not self._current_hero:
             return
         dialog = HeroEditDialog(self._current_hero, parent=self)
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                updated = dialog.get_hero()
-                self._data_mutation_service.update_hero(updated)
-                self._current_hero = updated
-                self._update_identity_bar(updated)
-                self._info_tab.show_hero(updated)
-                self.data_changed.emit()
-            except Exception as e:
-                logger.exception("保存武将信息失败")
-                QMessageBox.critical(self, "保存失败", f"无法保存武将信息:\n{e}\n\n编辑内容已保留。")
-                continue
-            show_toast(self, "武将资料已保存")
-            return
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._data_mutation_service.update_hero(dialog.get_hero()),
+            parent=self,
+            success_message="武将资料已保存",
+            failure_hint="编辑内容已保留。",
+            attempts=None,
+        )
+        if saved:
+            updated = dialog.get_hero()
+            self._current_hero = updated
+            self._update_identity_bar(updated)
+            self._info_tab.show_hero(updated)
+            self.data_changed.emit()
 
     def _on_info_delete(self) -> None:
         """删除当前武将（含确认）"""
@@ -506,19 +505,19 @@ class HeroDetailPanel(QWidget):
         if not self._current_guide:
             return
         dialog = GuideEditDialog(self._current_guide, self._hero_mgr, parent=self)
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                updated = dialog.get_guide()
-                self._data_mutation_service.update_guide(updated)
-                self._current_guide = updated
-                self._guide_tab.show_guide(updated)
-                self.data_changed.emit()
-            except Exception as e:
-                logger.exception("保存攻略失败")
-                QMessageBox.critical(self, "保存失败", f"无法保存攻略:\n{e}\n\n编辑内容已保留。")
-                continue
-            show_toast(self, "攻略修改已保存")
-            return
+        saved = run_edit_dialog(
+            dialog,
+            lambda: self._data_mutation_service.update_guide(dialog.get_guide()),
+            parent=self,
+            success_message="攻略修改已保存",
+            failure_hint="编辑内容已保留。",
+            attempts=None,
+        )
+        if saved:
+            updated = dialog.get_guide()
+            self._current_guide = updated
+            self._guide_tab.show_guide(updated)
+            self.data_changed.emit()
 
     def _on_guide_delete(self) -> None:
         """删除当前攻略（含确认）"""
