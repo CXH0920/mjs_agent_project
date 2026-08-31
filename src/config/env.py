@@ -36,6 +36,9 @@ DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
 DEFAULT_PRICING_FILE = BUNDLE_ROOT / "config" / "model_pricing.json"
 # API 档案含敏感 Key，放可写运行时根（frozen 下为 exe 目录，非只读 _internal）
 DEFAULT_PROFILES_FILE = PROJECT_ROOT / "config" / "api_profiles.json"
+# 共享资源目录（头像/截图；此前 match/peak/capture 三四处各自推导，收敛于此）
+IMAGES_DIR = BUNDLE_ROOT / "images"
+SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 
 
 def is_full_build() -> bool:

@@ -21,13 +21,13 @@ from src.capture.adb_screen import AdbCapture
 from src.capture.image_validation import load_local_image
 from src.capture.image_utils import save_image
 from src.business.recognition.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
-from src.config.env import PROJECT_ROOT
+from src.config.env import SCREENSHOTS_DIR
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
 
-# 截图默认保存目录
-DEFAULT_SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
+# 截图默认保存目录（与 match 面板共用 env.SCREENSHOTS_DIR，#E8）
+DEFAULT_SCREENSHOTS_DIR = SCREENSHOTS_DIR
 
 # 轮询识别命中一次页面后的 OCR 冷却秒数（避免同一页面反复识别；语义同
 # OcrService.POLL_MATCH_COOLDOWN_MS，单位为秒）

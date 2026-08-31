@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.business.maintenance.rule_doc_ops_service import save_confirmed_diffs, validate_confirmed_row
 from src.business.rag import rule_doc_service as rds
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
 from src.ui.shared.style import (
@@ -77,6 +78,7 @@ def _readonly_item(text: str) -> QTableWidgetItem:
 # ---------------------------------------------------------------------------
 # 执行记录日志（logs/rule_doc_ops.log）：用户操作轨迹，与 app.log（内部异常）分离
 # ---------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
 _OPS_LOGGER = logging.getLogger("rule_doc_ops")
 _OPS_LOGGER.propagate = False
 _OPS_HANDLER_ROOT: Path | None = None
@@ -229,11 +231,8 @@ class ProposalDetailDialog(QDialog):
             if local is None:
                 local = "（未找到目标行：文档可能已变化）"
             elif local.startswith("|"):
-                # 与脚本 _apply_faq_revise 一致：仅替换裁定列，保留行结构
-                cells = local.split("|")
-                if len(cells) >= 3:
-                    cells[2] = " %s " % official
-                    official = "|".join(cells)
+                # 与脚本实合入共用同一替换规则（#A7）
+                official = rds.build_faq_revise_row(local, official)
             return rows_to_html(build_diff_rows(local, official))
         if ptype == "row_revise":
             local = rds.doc_target_line(self._doc_path(), item)
@@ -842,7 +841,7 @@ class RuleDocPanel(QWidget):
         self._apply_diff_button.setEnabled(checked > 0)
 
     def _collect_confirmed_rows(self) -> list[dict] | None:
-        """B2：收集勾选行的确认 payload；UI 校验失败返回 None。"""
+        """B2：收集勾选行的确认 payload；行校验规则在 RuleDocOpsService（#A3）。"""
         rows = []
         for row, d in enumerate(self._diffs):
             widget = self._diff_table.cellWidget(row, 0)
@@ -850,19 +849,9 @@ class RuleDocPanel(QWidget):
                 continue
             value_item = self._diff_table.item(row, 5)
             new = value_item.text().strip() if value_item else ""
-            if not new:
-                QMessageBox.warning(
-                    self, "校验失败", "第 %d 行（段 %s）确认值为空，请填写后重试" % (row + 1, d["section"]))
-                return None
-            if not (new.startswith("|") and new.endswith("|")):
-                QMessageBox.warning(
-                    self, "校验失败",
-                    "第 %d 行（段 %s）确认值不是完整表格行（需以 | 开头和结尾）" % (row + 1, d["section"]))
-                return None
-            if d.get("old") and len(new.split("|")) != len(d["old"].split("|")):
-                QMessageBox.warning(
-                    self, "校验失败",
-                    "第 %d 行（段 %s）确认值列数与原文不一致，会破坏表格结构" % (row + 1, d["section"]))
+            error = validate_confirmed_row(d, new)
+            if error:
+                QMessageBox.warning(self, "校验失败", "第 %d 行：%s" % (row + 1, error))
                 return None
             rows.append({
                 "section": d["section"],
@@ -906,11 +895,9 @@ class RuleDocPanel(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            path = rds.confirmed_diff_path(self._root)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(rows, ensure_ascii=False, indent=2),
-                            encoding="utf-8", newline="\n")
+            path = save_confirmed_diffs(self._root, rows)
         except OSError as exc:
+            logger.exception("写入确认清单失败")
             QMessageBox.critical(self, "写入失败", "无法写入确认清单：%s" % exc)
             return
         self._run_script(

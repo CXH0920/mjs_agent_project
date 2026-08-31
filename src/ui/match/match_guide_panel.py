@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QToolButton, QVBoxLayout, QWidget,
 )
 
-from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+from src.config.env import SCREENSHOTS_DIR
 from src.business.analysis.match_analysis_service import MatchAnalysis, MatchAnalysisService
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -22,6 +22,8 @@ from src.ui.match.match_lineup_state import LineupState, SIDE_ALLY, SIDE_ENEMY
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
+from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
+from src.ui.shared.portrait import load_portrait
 from src.ui.shared.widgets import (
     DoubleClickLabel,
     EmptyState,
@@ -41,8 +43,6 @@ from src.ui.shared.style import (
 )
 
 logger = logging.getLogger(__name__)
-IMAGES_DIR = BUNDLE_ROOT / "images"
-SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 
 
 class MatchHeroCard(QFrame):
@@ -192,7 +192,7 @@ class MatchHeroCard(QFrame):
         self._faction_badge.setStyleSheet(
             f"background-color: {color}; color: white; border-radius: 3px; padding: 1px 5px; font-size: 11px;"
         )
-        pixmap = self._load_portrait(hero.name)
+        pixmap = load_portrait(hero.name, 80, 108)
         if pixmap and not pixmap.isNull():
             self._portrait.setPixmap(pixmap)
             self._portrait.setText("")
@@ -267,17 +267,6 @@ class MatchHeroCard(QFrame):
         if self._hero is not None:
             self.set_hero(self._hero, status=self._status_label.text())
 
-    @staticmethod
-    def _load_portrait(hero_name: str) -> QPixmap | None:
-        for ext in (".png", ".jpg", ".webp"):
-            path = IMAGES_DIR / f"{hero_name}{ext}"
-            if path.exists():
-                pixmap = QPixmap(str(path))
-                if not pixmap.isNull():
-                    return pixmap.scaled(80, 108, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-        return None
-
-
 class MatchGuidePanel(QWidget):
     """对局攻略页面：确认阵营后展示本地规则化摘要。"""
 
@@ -288,7 +277,7 @@ class MatchGuidePanel(QWidget):
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager or GuideManager()
         self._capture_service = capture_service
-        self._pending_capture_source: str | None = None
+        self._capture_lock = CaptureRequestLock()
         self._cards: list[MatchHeroCard] = []
         self._lineup = LineupState()
         self._win_rates: dict[str, float] = {}
@@ -662,7 +651,7 @@ class MatchGuidePanel(QWidget):
         self._capture_service.do_capture(perform_ocr=False)
 
     def _on_import_from_file(self) -> None:
-        if self._pending_capture_source is not None:
+        if self._capture_lock.current is not None:
             return
         SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "选择游戏截图", str(SCREENSHOTS_DIR), "图片文件 (*.png *.jpg *.jpeg *.bmp)")
@@ -695,17 +684,15 @@ class MatchGuidePanel(QWidget):
         QMessageBox.warning(self, "截图失败", f"无法从模拟器截图：\n{message}")
 
     def _begin_capture(self, source: str, status: str) -> bool:
-        if self._pending_capture_source is not None:
+        if not self._capture_lock.begin(CaptureSource(source)):
             return False
-        self._pending_capture_source = source
         self._set_importing(True, status)
         return True
 
     def _finish_capture(self) -> str | None:
-        source = self._pending_capture_source
+        source = self._capture_lock.finish()
         if source is None:
             return None
-        self._pending_capture_source = None
         self._set_importing(False)
         return source
 
@@ -717,7 +704,7 @@ class MatchGuidePanel(QWidget):
         self._clear_action.setEnabled(not importing)
         self._empty_recognize_btn.setEnabled(not importing)
         self._empty_import_btn.setEnabled(not importing)
-        self._save_action.setText("正在截图..." if importing and self._pending_capture_source == "adb_save" else "保存截图")
+        self._save_action.setText("正在截图..." if importing and self._capture_lock.current == CaptureSource.ADB_SAVE else "保存截图")
         self._empty_state.set_description(
             text if importing else "连接模拟器后识别当前阵容，或从本地图片导入。"
         )

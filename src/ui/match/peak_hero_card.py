@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from src.config.env import BUNDLE_ROOT
+from src.ui.shared.portrait import load_portrait
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.style import (
     FONT_SIZE_MD,
@@ -16,7 +16,6 @@ from src.ui.shared.style import (
 )
 from src.ui.shared.widgets import StatusBadge
 
-IMAGES_DIR = BUNDLE_ROOT / "images"
 
 # 禁选建议徽章配色（按象限 key）：Ban 位首选红底、热门强将蓝底
 _BAN_ADVICE_STYLES = {
@@ -130,7 +129,7 @@ class PeakHeroCard(QFrame):
         self._faction_badge.setStyleSheet(
             f"background-color: {color}; color: white; border-radius: 3px; padding: 1px 5px; font-size: 11px;"
         )
-        pixmap = self._load_portrait(hero.name)
+        pixmap = load_portrait(hero.name, 103, 140)
         if pixmap and not pixmap.isNull():
             self._portrait.setPixmap(pixmap)
             self._portrait.setText("")
@@ -165,17 +164,3 @@ class PeakHeroCard(QFrame):
         self._combo_badge.setText(text or "")
         self._combo_badge.setVisible(bool(text))
 
-    @staticmethod
-    def _load_portrait(hero_name: str) -> QPixmap | None:
-        for ext in (".png", ".jpg", ".webp"):
-            path = IMAGES_DIR / f"{hero_name}{ext}"
-            if path.exists():
-                pixmap = QPixmap(str(path))
-                if not pixmap.isNull():
-                    return pixmap.scaled(
-                        103,
-                        140,
-                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-        return None

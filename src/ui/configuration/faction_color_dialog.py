@@ -7,7 +7,7 @@ import logging
 import re
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from src.config.env import BUNDLE_ROOT
 from src.ui.shared.faction_colors import load_faction_colors
-from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
+from src.ui.shared.widgets import close_after_toast, DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 COLORS_FILE = BUNDLE_ROOT / "config" / "faction_colors.json"
@@ -240,5 +240,4 @@ class FactionColorDialog(QDialog):
             QMessageBox.critical(self, "保存失败", f"无法保存势力配色：\n{exc}")
             return
         self.colors_saved.emit(colors)
-        show_toast(self, "势力配色已保存", duration=400)
-        QTimer.singleShot(400, self.accept)
+        close_after_toast(self, "势力配色已保存", 400)

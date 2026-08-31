@@ -957,12 +957,7 @@ class MainWindow(QMainWindow):
             "offline": ("模拟器：设备离线", "#a12622", "#fde8e8"),
         }
         text, color, background = styles.get(state, styles["disconnected"])
-        self._emulator_status_label.setText(text)
-        self._emulator_status_label.setToolTip(detail or "点击打开模拟器配置")
-        self._emulator_status_label.setStyleSheet(
-            f"color: {color}; background-color: {background}; padding: 3px 8px; "
-            "border-radius: 8px; font-weight: bold;"
-        )
+        self._set_status_chip(self._emulator_status_label, text, color, background, detail)
 
     def _update_poll_status(self, state: str, detail: str = "") -> None:
         """渲染不受业务进度覆盖的常驻 OCR 轮询状态。"""
@@ -974,9 +969,15 @@ class MainWindow(QMainWindow):
             "paused": ("OCR轮询：已暂停", "#a12622", "#fde8e8"),
         }
         text, color, background = styles.get(state, styles["stopped"])
-        self._poll_status_label.setText(text)
-        self._poll_status_label.setToolTip(detail or "点击打开模拟器配置")
-        self._poll_status_label.setStyleSheet(
+        self._set_status_chip(self._poll_status_label, text, color, background, detail)
+
+    @staticmethod
+    def _set_status_chip(label: QLabel, text: str, color: str,
+                         background: str, detail: str) -> None:
+        """状态栏彩色胶囊 chip 的统一渲染（模拟器/轮询两组状态共用）。"""
+        label.setText(text)
+        label.setToolTip(detail or "点击打开模拟器配置")
+        label.setStyleSheet(
             f"color: {color}; background-color: {background}; padding: 3px 8px; "
             "border-radius: 8px; font-weight: bold;"
         )

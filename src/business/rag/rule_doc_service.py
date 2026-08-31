@@ -134,6 +134,19 @@ def _doc_lines(doc_path: Path) -> list[str] | None:
     return lines
 
 
+def build_faq_revise_row(line: str, text: str) -> str:
+    """FAQ 行原位修订的替换规则：仅替换裁定列（cells[2]），保留行结构。
+
+    apply_rule_proposal 的实合入与 UI 差异预览共用本函数（#A7）——
+    此前预览端逐字复刻脚本内部规则（含 cells[2] 魔法下标），脚本一改预览即失真。
+    """
+    cells = line.split("|")
+    if len(cells) < 3:
+        return line
+    cells[2] = f" {text} "
+    return "|".join(cells)
+
+
 def doc_target_line(doc_path: Path | str, item: dict) -> str | None:
     """返回提案项在文档中的当前目标行（用于 diff 的 local 侧）。
 

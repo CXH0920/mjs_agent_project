@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -46,7 +46,7 @@ from src.config.env import (
     save_env_file,
     save_pricing_config,
 )
-from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
+from src.ui.shared.widgets import close_after_toast, DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
 
@@ -576,8 +576,7 @@ class SettingsDialog(QDialog):
             save_env_file(self._env_path, data)
             save_pricing_config(self._pricing_path, pricing_data)
             save_api_profiles(profiles_data, self._profiles_path)
-            show_toast(self, "API 配置已保存", duration=500)
-            QTimer.singleShot(500, self.accept)
+            close_after_toast(self, "API 配置已保存", 500)
         except Exception as e:
             self._footer.set_busy(False)
             logger.exception("保存配置失败")

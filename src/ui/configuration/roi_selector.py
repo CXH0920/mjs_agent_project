@@ -70,6 +70,36 @@ def _image_rect_to_display(roi: tuple[int, int, int, int], pixmap: QPixmap, labe
     )
 
 
+class _RoiCanvas(QLabel):
+    """ROI 编辑画布：承载底图绘制，鼠标/绘制事件转调 owner 的 canvas_* 钩子。
+
+    替代此前"把 4 个事件处理函数赋给 QLabel 实例属性"的 monkey-patch 写法，
+    让事件流可被子类化与静态追踪（#E7）。
+    """
+
+    def __init__(self, owner, parent=None) -> None:
+        super().__init__(parent)
+        self._owner = owner
+        self.setMouseTracking(True)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("background-color: #000; border: 1px solid #888;")
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._owner.canvas_press(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._owner.canvas_move(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        self._owner.canvas_release(event)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.drawPixmap(_display_rect(self._owner.canvas_pixmap, self), self._owner.canvas_pixmap)
+        self._owner.paint_canvas(painter)
+        painter.end()
+
+
 class RoiSelectorDialog(QDialog):
     """区域框选对话框：在图上拖拽选择矩形区域。"""
 
@@ -87,15 +117,17 @@ class RoiSelectorDialog(QDialog):
 
         self._setup_ui()
 
+    @property
+    def canvas_pixmap(self) -> QPixmap:
+        """画布底图（_RoiCanvas 绘制用）。"""
+        return self._pixmap
+
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.addWidget(PageHeader(self.windowTitle(), "拖拽画面以设置模板匹配区域"))
 
-        self._image_label = QLabel()
+        self._image_label = _RoiCanvas(self)
         self._image_label.setPixmap(self._pixmap)
-        self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image_label.setStyleSheet("background-color: #000; border: 1px solid #888;")
-        self._image_label.setMouseTracking(True)
         layout.addWidget(self._image_label, stretch=1)
 
         self._info_label = QLabel("在画面上拖拽鼠标框选模板区域")
@@ -107,12 +139,7 @@ class RoiSelectorDialog(QDialog):
         footer.rejected.connect(self.reject)
         layout.addWidget(footer)
 
-        self._image_label.mousePressEvent = self._on_mouse_press
-        self._image_label.mouseMoveEvent = self._on_mouse_move
-        self._image_label.mouseReleaseEvent = self._on_mouse_release
-        self._image_label.paintEvent = self._on_paint
-
-    def _on_mouse_press(self, event: QMouseEvent) -> None:
+    def canvas_press(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             point = _clamp_to_displayed_image(event.position().toPoint(), self._pixmap, self._image_label)
             if point is None:
@@ -122,7 +149,7 @@ class RoiSelectorDialog(QDialog):
             self._is_dragging = True
             self._image_label.update()
 
-    def _on_mouse_move(self, event: QMouseEvent) -> None:
+    def canvas_move(self, event: QMouseEvent) -> None:
         if self._is_dragging:
             point = _clamp_to_displayed_image(
                 event.position().toPoint(), self._pixmap, self._image_label, allow_outside=True,
@@ -133,7 +160,7 @@ class RoiSelectorDialog(QDialog):
             self._image_label.update()
             self._update_info()
 
-    def _on_mouse_release(self, event: QMouseEvent) -> None:
+    def canvas_release(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._is_dragging:
             point = _clamp_to_displayed_image(
                 event.position().toPoint(), self._pixmap, self._image_label, allow_outside=True,
@@ -161,9 +188,7 @@ class RoiSelectorDialog(QDialog):
                 f"已框选: ({rx1}, {ry1})  → ({rx2}, {ry2})  尺寸: {rw} × {rh}"
             )
 
-    def _on_paint(self, event) -> None:
-        painter = QPainter(self._image_label)
-        painter.drawPixmap(_display_rect(self._pixmap, self._image_label), self._pixmap)
+    def paint_canvas(self, painter: QPainter) -> None:
         if self._drag_start and self._drag_end:
             pen = QPen(Qt.GlobalColor.red, 2)
             painter.setPen(pen)
@@ -174,7 +199,6 @@ class RoiSelectorDialog(QDialog):
                 abs(self._drag_end.y() - self._drag_start.y()),
             )
             painter.drawRect(rect)
-        painter.end()
 
     def _on_confirm(self) -> None:
         if not self._drag_start or not self._drag_end:
@@ -214,6 +238,11 @@ class RoiLayoutEditorDialog(QDialog):
         self._drag_end: QPoint | None = None
         self._is_dragging = False
         self._setup_ui()
+
+    @property
+    def canvas_pixmap(self) -> QPixmap:
+        """画布底图（_RoiCanvas 绘制用）。"""
+        return self._pixmap
 
     def _scale_layout_to_image(self, layout: OcrRoiLayout) -> list[list[dict[str, list[int]]]]:
         reference_width, reference_height = layout.reference_size
@@ -256,14 +285,8 @@ class RoiLayoutEditorDialog(QDialog):
         selector_row.addWidget(reset_button)
         layout.addLayout(selector_row)
 
-        self._image_label = QLabel()
-        self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image_label.setStyleSheet("background-color: #000; border: 1px solid #888;")
-        self._image_label.setMouseTracking(True)
-        self._image_label.mousePressEvent = self._on_mouse_press
-        self._image_label.mouseMoveEvent = self._on_mouse_move
-        self._image_label.mouseReleaseEvent = self._on_mouse_release
-        self._image_label.paintEvent = self._on_paint
+        self._image_label = _RoiCanvas(self)
+        self._image_label.setPixmap(self._pixmap)
         layout.addWidget(self._image_label, stretch=1)
 
         self._info_label = QLabel("拖拽调整当前区域")
@@ -295,7 +318,7 @@ class RoiLayoutEditorDialog(QDialog):
         self._slots[slot_index][entry_index]["roi"] = list(self._initial_slots[slot_index][entry_index]["roi"])
         self._image_label.update()
 
-    def _on_mouse_press(self, event: QMouseEvent) -> None:
+    def canvas_press(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
         point = _clamp_to_displayed_image(event.position().toPoint(), self._pixmap, self._image_label)
@@ -306,7 +329,7 @@ class RoiLayoutEditorDialog(QDialog):
         self._is_dragging = True
         self._image_label.update()
 
-    def _on_mouse_move(self, event: QMouseEvent) -> None:
+    def canvas_move(self, event: QMouseEvent) -> None:
         if not self._is_dragging:
             return
         point = _clamp_to_displayed_image(
@@ -318,7 +341,7 @@ class RoiLayoutEditorDialog(QDialog):
         self._update_info()
         self._image_label.update()
 
-    def _on_mouse_release(self, event: QMouseEvent) -> None:
+    def canvas_release(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton or not self._is_dragging:
             return
         point = _clamp_to_displayed_image(
@@ -350,9 +373,7 @@ class RoiLayoutEditorDialog(QDialog):
         if roi is not None:
             self._info_label.setText(f"当前区域: ({roi[0]}, {roi[1]})  尺寸: {roi[2]} × {roi[3]}")
 
-    def _on_paint(self, event) -> None:
-        painter = QPainter(self._image_label)
-        painter.drawPixmap(_display_rect(self._pixmap, self._image_label), self._pixmap)
+    def paint_canvas(self, painter: QPainter) -> None:
         current_index = self._target_combo.currentIndex()
         for target_index, (slot_index, entry_index, _label) in enumerate(self._targets):
             roi = tuple(self._slots[slot_index][entry_index]["roi"])
@@ -364,7 +385,6 @@ class RoiLayoutEditorDialog(QDialog):
         if preview_roi is not None:
             painter.setPen(QPen(QColor("#f4d03f"), 2))
             painter.drawRect(_image_rect_to_display(tuple(preview_roi), self._pixmap, self._image_label))
-        painter.end()
 
     def _on_confirm(self) -> None:
         for slot in self._slots:

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSignalBlocker, Qt, QTimer
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -43,7 +43,7 @@ from src.ui.configuration.mumu_config_sections import (
     MumuOcrPollingSection,
     MumuTemplateSection,
 )
-from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
+from src.ui.shared.widgets import close_after_toast, DialogFooter, PageHeader, show_toast
 
 logger = logging.getLogger(__name__)
 
@@ -242,37 +242,33 @@ class MumuConfigDialog(QDialog):
 
     def _refresh_template_status(self) -> None:
         """更新模板状态显示"""
-        status = self._coordinator.template_status()
-        if status.loaded:
-            template_path = status.path
-            self._template_status_icon.setText("●")
-            self._template_status_icon.setStyleSheet("color: #27ae60; font-size: 16px;")
-            self._template_status_label.setText(f"已加载：{template_path.name}")
-            self._template_status_label.setToolTip(str(template_path))
-            self._template_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
-        else:
-            self._template_status_icon.setText("○")
-            self._template_status_icon.setStyleSheet("color: #888; font-size: 16px;")
-            self._template_status_label.setText("未设定")
-            self._template_status_label.setToolTip("")
-            self._template_status_label.setStyleSheet("color: #888; font-size: 13px;")
+        self._apply_template_status(
+            self._template_status_icon, self._template_status_label,
+            self._coordinator.template_status(),
+        )
 
     def _refresh_match_guide_template_status(self) -> None:
         """更新对局攻略模板状态显示。"""
-        status = self._coordinator.template_status("match_guide")
+        self._apply_template_status(
+            self._match_guide_status_icon, self._match_guide_status_label,
+            self._coordinator.template_status("match_guide"),
+        )
+
+    @staticmethod
+    def _apply_template_status(icon: QLabel, label: QLabel, status) -> None:
+        """把一份模板状态渲染到指定的图标/标签控件对（两组控件共用）。"""
         if status.loaded:
-            template_path = status.path
-            self._match_guide_status_icon.setText("●")
-            self._match_guide_status_icon.setStyleSheet("color: #27ae60; font-size: 16px;")
-            self._match_guide_status_label.setText(f"已加载：{template_path.name}")
-            self._match_guide_status_label.setToolTip(str(template_path))
-            self._match_guide_status_label.setStyleSheet("color: #27ae60; font-size: 13px;")
+            icon.setText("●")
+            icon.setStyleSheet("color: #27ae60; font-size: 16px;")
+            label.setText(f"已加载：{status.path.name}")
+            label.setToolTip(str(status.path))
+            label.setStyleSheet("color: #27ae60; font-size: 13px;")
         else:
-            self._match_guide_status_icon.setText("○")
-            self._match_guide_status_icon.setStyleSheet("color: #888; font-size: 16px;")
-            self._match_guide_status_label.setText("未设定")
-            self._match_guide_status_label.setToolTip("")
-            self._match_guide_status_label.setStyleSheet("color: #888; font-size: 13px;")
+            icon.setText("○")
+            icon.setStyleSheet("color: #888; font-size: 16px;")
+            label.setText("未设定")
+            label.setToolTip("")
+            label.setStyleSheet("color: #888; font-size: 13px;")
 
     # ────────────────────────────────────────────────
     # ADB 连接管理
@@ -730,12 +726,7 @@ class MumuConfigDialog(QDialog):
 
     def _show_save_toast(self) -> None:
         """在关闭对话框前给出短暂的保存反馈。"""
-        show_toast(self, "识别参数已保存", duration=400)
-
-        def finish_save() -> None:
-            self.accept()
-
-        QTimer.singleShot(400, finish_save)
+        close_after_toast(self, "识别参数已保存", 400)
 
     # ────────────────────────────────────────────────
     # 保存

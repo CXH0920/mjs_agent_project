@@ -24,6 +24,7 @@ import subprocess
 import sys
 
 from src.config.env import PROJECT_ROOT as ROOT
+from src.business.rag.rule_doc_service import build_faq_revise_row
 from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
@@ -117,9 +118,7 @@ def _apply_faq_revise(lines, item, errors):
             if source:
                 lines[i] = '| %d | %s | %s |' % (no, text, source)
             else:
-                cells = ln.split('|')
-                cells[2] = ' %s ' % text
-                lines[i] = '|'.join(cells)
+                lines[i] = build_faq_revise_row(ln, text)
             return lines
     errors.append('%s: 找不到 FAQ %d' % (item['id'], no))
     return lines

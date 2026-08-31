@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QRect, QSize, Qt, QTimer, Signal
+from src.business.common.script_runner import ScriptRunner  # noqa: F401  # re-export（#A3）
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractButton,
     QFrame,
@@ -54,42 +54,6 @@ def clear_layout(layout: QLayout) -> None:
         sub = item.layout()
         if sub is not None:
             clear_layout(sub)
-
-
-class ScriptRunner(QObject):
-    """QProcess 异步执行 Python 脚本的公共封装（#43）。
-
-    - 同一时刻只允许一个任务（is_running 检查，避免并发 QProcess）；
-    - stdout/stderr 通过 output 信号逐段发出（bytes，调用方自行解码）；
-    - 进程结束后发出 finished(code)。
-    """
-
-    output = Signal(bytes)
-    finished = Signal(int)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._proc: QProcess | None = None
-
-    def is_running(self) -> bool:
-        return self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning
-
-    def run(self, python: str, script: Path, args: list[str], working_dir: Path) -> bool:
-        """启动脚本；已有任务运行时返回 False。"""
-        if self.is_running():
-            return False
-        proc = QProcess(self)
-        proc.setWorkingDirectory(str(working_dir))
-        proc.readyReadStandardOutput.connect(lambda: self.output.emit(proc.readAllStandardOutput()))
-        proc.readyReadStandardError.connect(lambda: self.output.emit(proc.readAllStandardError()))
-        proc.finished.connect(lambda code, _status: self._on_finished(code))
-        proc.start(python, ([str(script)] if script else []) + args)
-        self._proc = proc
-        return True
-
-    def _on_finished(self, code: int) -> None:
-        self._proc = None
-        self.finished.emit(code)
 
 
 class DoubleClickLabel(QLabel):
@@ -449,3 +413,9 @@ def show_toast(
         setattr(parent, "_shared_toast_overlay", toast)
     toast.show_message(message, tone, duration)
     return toast
+
+
+def close_after_toast(dialog, message: str, delay_ms: int) -> None:
+    """保存成功后先弹短暂 toast 再延迟关闭对话框（三个配置对话框共用，#E7）。"""
+    show_toast(dialog, message, duration=delay_ms)
+    QTimer.singleShot(delay_ms, dialog.accept)

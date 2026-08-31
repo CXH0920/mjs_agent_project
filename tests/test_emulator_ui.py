@@ -20,6 +20,7 @@ from src.data.synergy_manager import SynergyManager
 from src.ui.app.main_window import MainWindow, PollOutcome
 from src.ui.app.shell_widgets import ContextHeader
 from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.shared.capture_lock import CaptureSource
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.app.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
 from src.ui.recommendation.recommendation_panel import HeroCardWidget, RecommendationPanel
@@ -99,7 +100,7 @@ def test_recommendation_capture_guard_and_empty_result_notice() -> None:
 
     assert panel._begin_capture_request("adb_recognize")
     assert not panel._begin_capture_request("file")
-    assert panel._pending_capture_source == "adb_recognize"
+    assert panel._capture_lock.current == CaptureSource.ADB_RECOGNIZE
     assert not panel._empty_recognize_btn.isEnabled()
 
     panel._finish_capture_request()
@@ -222,7 +223,7 @@ def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch)
     monkeypatch.setattr(recommendation, "load_from_ocr", recommendation_loaded.append)
     monkeypatch.setattr(match_guide, "load_from_ocr", match_guide_loaded.append)
 
-    match_guide._pending_capture_source = "file"
+    match_guide._capture_lock.begin(CaptureSource.FILE)
     service.capture_completed.emit({"ocr_results": [{"name": "曹操"}]})
 
     assert recommendation_loaded == []

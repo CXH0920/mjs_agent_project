@@ -35,6 +35,7 @@ from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
 from src.data.guide_manager import GuideManager
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
+from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.combo_detail import show_combo_detail
 from src.business.maintenance.corpus_services import ComboService
 from src.ui.library.combo_management_dialog import ComboManagementDialog
@@ -95,7 +96,7 @@ class RecommendationPanel(QWidget):
         self._mumu_config_dialog = None  # lazy import
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
-        self._pending_capture_source: str | None = None
+        self._capture_lock = CaptureRequestLock()
         self._last_failed_source: str | None = None
         self._last_status_text = "尚未识别阵容"
         self._last_status_tone = TONE_NEUTRAL
@@ -331,9 +332,8 @@ class RecommendationPanel(QWidget):
 
     def _begin_capture_request(self, source: str) -> bool:
         """锁定本页捕获来源，避免共享服务回调覆盖另一项请求。"""
-        if self._pending_capture_source is not None:
+        if not self._capture_lock.begin(CaptureSource(source)):
             return False
-        self._pending_capture_source = source
         self._clear_error_notice()
         self._set_capture_controls_enabled(False)
         status = {
@@ -345,10 +345,9 @@ class RecommendationPanel(QWidget):
         return True
 
     def _finish_capture_request(self) -> str | None:
-        source = self._pending_capture_source
+        source = self._capture_lock.finish()
         if source is None:
             return None
-        self._pending_capture_source = None
         self._set_capture_controls_enabled(True)
         self._set_page_status(
             self._last_status_text,
@@ -782,7 +781,7 @@ class RecommendationPanel(QWidget):
 
     def _on_recognize_current(self) -> None:
         """识别当前模拟器画面中的选将阵容。"""
-        if self._pending_capture_source is not None:
+        if self._capture_lock.current is not None:
             return
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
@@ -799,7 +798,7 @@ class RecommendationPanel(QWidget):
 
     def _on_save_screenshot(self) -> None:
         """保存当前模拟器画面，不触发 OCR。"""
-        if self._pending_capture_source is not None:
+        if self._capture_lock.current is not None:
             return
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
@@ -853,7 +852,7 @@ class RecommendationPanel(QWidget):
         用户选取一张图片 → 执行 OCR → 填入槽位。
         不依赖 ADB 连接。
         """
-        if self._pending_capture_source is not None:
+        if self._capture_lock.current is not None:
             return
         if not self._capture_service:
             self._show_error_notice(

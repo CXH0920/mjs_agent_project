@@ -13,6 +13,7 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.shared.capture_lock import CaptureSource
 from src.ui.shared.widgets import EmptyState, NoticeBanner, PageActionBar
 
 
@@ -98,7 +99,7 @@ def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title(mo
 def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
     _app()
     panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
-    panel._pending_capture_source = "adb_save"
+    panel._capture_lock.begin(CaptureSource.ADB_SAVE)
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
         "src.ui.match.match_guide_panel.QMessageBox.warning",
@@ -108,7 +109,7 @@ def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
     panel._on_capture_failed("设备连接已断开")
 
     assert warnings == [("截图保存失败", "设备连接已断开")]
-    assert panel._pending_capture_source is None
+    assert panel._capture_lock.current is None
     assert not panel._empty_state.isHidden()
 
     panel.load_from_ocr([{"index": 1, "name": "甲", "resolution": "exact"}])
