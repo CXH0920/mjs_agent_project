@@ -113,9 +113,17 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 - `format_hero_full_text(hero)` — 武将只读全文（用于确认对话框的本地 vs 官网对比）。
 - `build_update_candidates(announcements, local_heroes, official_heroes, diff)` — 组装“更新武将数据”确认候选：ready 公告解析武将与 diff added/modified 并集、按名称去重（后续来源补充缺失 ID）、附带摘要与本地/官网全文；`official_heroes=None` 时跳过摘要计算（降级）。
 
----
+### 3.6 实战配队导入（`src/scripts/import_combos.py`，2026-08 新增）
 
-## 四、关键代码片段
+`src/business/maintenance/combo_import_service.run_import()` 是 CLI 与 UI 导入对话框共用的业务层入口：
+
+1. 武将名 → 角色 ID 映射（heroes.json），未匹配项进报告，不静默丢弃
+2. note 座次解析（`combo_seats.parse_seats`），解析失败/部分成功的条目照常导入（座次留空）并列入报告供人工复核
+3. 解析结果与 `position` 字段交叉校验（以 note 为准），不一致清单进报告
+4. **合并语义**：源导出记录 upsert；`manual=True` 手工记录保留（同 key 冲突时手工优先）；非手工记录若源中已不存在则移除并计数
+5. 重复执行输出稳定（幂等）
+
+报告字段：`total` / `imported` / `unmatched` / `duplicates` / `invalid` / `seat_stats` / `seat_review` / `position_mismatch` / `manual_kept` / `manual_collisions` / `removed_stale`
 
 ### 4.1 括号深度计数器提取 JS 数组
 

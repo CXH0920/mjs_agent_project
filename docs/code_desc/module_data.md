@@ -20,12 +20,15 @@
 ```
 src/data/
 ├── __init__.py
-├── models.py              # Pydantic 数据模型（Hero / Skill / SynergyScore / HeroGuide / Card / IncrementalUpdate）
+├── models.py              # Pydantic 数据模型（Hero / Skill / SynergyScore / HeroGuide / Card / IncrementalUpdate / Combo）
 ├── manager.py             # DataManager[V_co] 泛型基类 + DataFacade 门面 + 增量更新函数
 ├── json_repository.py     # JsonRepository 基类 + atomic_write_json（原子写/加锁/写失败回滚）
 ├── hero_manager.py        # 武将 CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py     # 相性评分 CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
 ├── guide_manager.py       # 攻略 CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
+├── combo_manager.py       # 实战配队 CRUD + JSON 持久化（继承 DataManager[Combo]，含手工记录管理）
+├── combo_seats.py         # parse_seats() — 从 note 自由文本解析双方武将座次要求
+├── peak_win_rate_repository.py # 巅峰赛单将胜率 + 出场排行 CSV 读取（独立于 2v2 胜率，数据源未落地时优雅空态）
 ├── win_rate_repository.py # 2v2 胜率 CSV 读取与缓存
 ├── recommendation_index_repository.py # 推荐指数计算、快照输出与读取
 ├── card_catalog.py        # 官方卡牌只读仓储、追加字段/内容仓储及合并服务
@@ -177,7 +180,37 @@ facade.heroes.get_hero(114) # 直接访问各 Manager
 
 `BaikeSnapshot` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，`{checked_at, heroes:{id:{name, hash}}}`）。快照初始化优先用本地 `heroes.json` 各武将内容哈希建基线，避免手动编辑被误判为官网变化。
 
-### 3.8 JsonRepository 基类（2026-08 知识库维护优化新增）
+### 3.8 实战配队数据（combo_manager.py + combo_seats.py，2026-08 新增）
+
+`ComboManager(DataManager[Combo])` 管理 `data/combos.json` 实战配队：
+
+- **双向归一 key**：`_combo_key(a_id, b_id) = tuple(sorted((a_id, b_id)))`，`(A, B)` 和 `(B, A)` 同一条记录
+- **查询**：`get_combo(hero_a_id, hero_b_id)` / `list_combos_for_hero(hero_id)` / `list_combos()`
+- **手工记录管理**：`save_manual_combo(combo, previous=None)` 在编辑时若 key 变化则迁移存储；`manual=True` 固定标记；导入合并时同 key 冲突优先保留手工内容
+- **删除**：`delete_combo()` 原子落盘，删除后下次导入会恢复
+
+`combo_seats.py` 从 note 自由文本解析双方武将座次：
+
+| 规则 | 说明 |
+|------|------|
+| 优先级 1 | 匹配 "武将名+数字" 或 "数字+武将名"（含 ALIAS 别名：牢布→吕布、甄姬→甄宓、夏侯停→夏侯惇） |
+| 优先级 2 | 剥离武将名后取开头纯数字 token，按顺序对应 hero1/hero2 |
+| "0" | 无座次要求，返回空列表 |
+| 两位数字 | 可选区间（如 "34"=3 或 4 号） |
+
+状态：`STATUS_PARSED` / `STATUS_PARTIAL` / `STATUS_NONE` / `STATUS_UNPARSED`。rule 全量 1170 条可 100% 分类（1144 解析出座次 + 26 无座次要求）。`format_seats(seats)` 将列表转为展示文本（如 "1/3/4" 或 "任意"）。
+
+### 3.9 巅峰赛胜率仓库（peak_win_rate_repository.py，2026-08 新增）
+
+巅峰赛使用独立的单将胜率 + 出场排行 CSV（`data/巅峰赛胜率排行.csv` / `data/巅峰赛出场排行.csv`），与 2v2 胜率仓库互相独立。数据源尚未落地时返回空 dict，UI 显示"暂无数据"。
+
+```
+load_peak_win_rates(path)   → {武将名: 百分比}     # 默认缓存
+load_peak_pick_ranks(path)  → {武将名: 出场排名}    # 默认缓存
+clear_peak_win_rate_cache()  # 清空胜率与出场排行
+```
+
+### 3.10 JsonRepository 基类（2026-08 知识库维护优化新增）
 
 `src/data/json_repository.py` 提供维护仓库公共基建：
 

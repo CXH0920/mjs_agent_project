@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -56,10 +57,17 @@ class ComboManagementDialog(QDialog):
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel("按武将筛选"))
         self._hero_filter = QComboBox()
+        # 武将上百，下拉框设为可编辑并配包含匹配补全：直接输入名册即可过滤定位
+        self._hero_filter.setEditable(True)
+        self._hero_filter.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._hero_filter.addItem("全部武将", None)
         for hero in sorted(self._hero_mgr.list_heroes(), key=lambda item: item.id):
             self._hero_filter.addItem(hero.name, hero.id)
         self._hero_filter.currentIndexChanged.connect(self._refresh_list)
+        _hero_completer = QCompleter(self._hero_filter.model(), self._hero_filter)
+        _hero_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        _hero_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._hero_filter.setCompleter(_hero_completer)
         filter_row.addWidget(self._hero_filter, 1)
         self._manual_only_check = QCheckBox("仅看手工")
         self._manual_only_check.stateChanged.connect(self._refresh_list)

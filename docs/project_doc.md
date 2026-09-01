@@ -24,6 +24,7 @@
 - [十二、OCR 识别模块细节](#十二ocr-识别模块细节)
 - [十三、测试体系细节](#十三测试体系细节)
 - [十四、数据全流程详解](#十四数据全流程详解)
+- [十五、巅峰赛选将识别与实战配队](#十五巅峰赛选将识别与实战配队)
 
 ---
 
@@ -42,6 +43,8 @@
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 整批任务独占唯一 OCR worker；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
+| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated` | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队 |
+| 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查 -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
 
 ### 数据完整性与只读恢复
 
@@ -55,6 +58,8 @@ DataFacade.load_all()
     -> 仅记录悬空相性、攻略归属和攻略关联 ID 的问题
   -> return LoadReport
 ```
+
+`ComboManager` 在应用启动时由 `MainWindow.__init__` 独立加载 `data/combos.json`（`Combo` Pydantic 模型，key 为排序后的 `(hero1_id, hero2_id)` 二元组）。巅峰赛胜率仓库在首次页面渲染时按需懒加载 `data/巅峰赛胜率排行.csv` 和 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。
 
 加载过程不会调用 `save()`，原始 JSON 和内存数据均保持不变。主窗口会向用户展示 `missing_reference` 问题，并仅在用户确认后通过 `DataMutationService` 创建备份、修复失效关联并保存；拒绝修复时保留原始数据。
 
@@ -1664,6 +1669,8 @@ src/ocr/
  ├── template_manager.py     # TemplateManager — OpenCV 模板匹配（~180 行）
  ├── image_preprocessor.py  # ImagePreprocessor — 纯图像预处理
  ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
+ ├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI（HSV 掩码 + 连通域过滤）
+ ├── roi_config.py           # Roi / RoiLayoutEditor — 巅峰赛与多布局 ROI 配置
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
  ├── character_similarity.py # CharacterSimilarityService — 名称纠错
  ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排
@@ -2414,4 +2421,161 @@ PlaywrightGenerator.__init__()
   "adaptability": 8,
   "description": "诸葛亮与司马懿有很好的配合..."
 }
+```
+
+---
+
+## 十五、巅峰赛选将识别与实战配队
+
+本章覆盖 2026-08 新增的**巅峰赛（2v2 模式）选将辅助**与**实战配队（combos）** 完整链路：`card_grid_detector`（卡位检测）→ `peak_select_watcher`（识别循环）→ `peak_select_panel`（界面）→ `peak_ban_advice`（禁选建议）→ `ComboManager` + `combo_seats`（实战配队数据）→ `combo_import_service`（导入合并）。
+
+### 15.1 背景：2v2 牌面与传统 ROI 的不兼容
+
+标准选将页（资料库侧导航第 2 页）使用固定 8 个 ROI 布局：`templates/wujiang_select.png` + `wujiang_select.json`（参考尺寸 + 坐标）。但 2v2 巅峰赛牌面：
+- 禁选阶段：14 张卡（7+7 双列）
+- 候选阶段：8~11 张（5+5 / 4+5 / 3+5 等）
+- 每阶段卡牌按行重排，行内数量可变化
+
+固定 ROI 完全失效，必须**内容驱动**：从整页截图定位卡牌 bbox，再派生名条 ROI 交给通用 OcrWorker。
+
+### 15.2 卡位检测链路（card_grid_detector.py）
+
+```
+detect_selection_cards(image)
+  -> cv2.cvtColor(image, BGR2HSV)
+  -> 掩码: S>90 或 V<90（背景低饱和宣纸）
+  -> 闭运算核 = max(3, round(h/1440*5))
+  -> cv2.connectedComponentsWithStats(mask, 8)
+  -> 遍历连通域:
+     面积 > 0.0055 * 全图像素
+     位置 ∈ [0.12w, 0.88w] × [0.16h, 0.67h]
+     尺寸 ∈ [0.086w, 0.115w] × [0.215h, 0.245h]
+     宽高比 ∈ [0.60, 0.95]
+  -> 行聚类（半卡高阈值）+ 行内 x 排序
+  -> 卡数不在 [8, 14] → return None
+```
+
+**派生名条 ROI**（`derive_name_rois(cards)`）：以卡 bbox 左缘锚定，名条相对位置 [x+0.06w, y+0.15h, 0.30w, 0.38h]，避开阵营徽章（0~13%）、等级数字（55~64%）和费用角标（80~95%）。参数均为相对比例（基准 2560×1440 实测），分辨率变化时自适应。
+
+### 15.3 巅峰赛识别循环（PeakSelectWatcher）
+
+与标准轮询并存；首次进入牌面自动挂起 `hero_selection` / `match_guide` 标准轮询任务，连续多拍未见牌面（`BOARD_EXIT_TICKS=2`）后恢复原状态。
+
+```
+Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
+  ├─ CaptureService.capture_for_poll(capture)
+  ├─ detect_selection_cards(frame)
+  │   └─ None → _handle_board_absent() → miss_ticks++
+  │       └─ == BOARD_EXIT_TICKS=2 → _restore_standard_tasks() + 状态重置
+  ├─ board_signature(cards)
+  │   └─ == _signature → 牌面未变化，沿用结果（避免翻页动画误触发）
+  ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide
+  ├─ _recognize_board(image, cards)
+  │   └─ CaptureService.submit_ocr_task(image, hero_names, "hero_selection", rois, match_template=False)
+  │       → task.completed.wait(15)  15s 超时保护
+  ├─ _publish_pool(ocr_results, len(cards))
+  │   └─ parse_pool() → PoolSnapshot → pool_updated 信号
+```
+
+**PoolSnapshot 字段**：`card_count / names / pending / stage / overlap / banned`
+- `stage`: ≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
+- `overlap`: 候选阶段双方撞车数 = `card_count - 8`
+- `banned`: 相对禁选期已确认名单的差集
+
+**图片导入**：`recognize_image_file()` 使用独立 `_import_lock`，不影响循环签名与标准任务挂起状态。
+
+**人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验候选在白名单内才生效；确认后重发快照，待确认槽位计入候选与已禁口径。
+
+### 15.4 巅峰赛选将工作台（PeakSelectPanel）
+
+左侧导航第 4 页，UI 结构：
+
+```
+PeakSelectPanel
+  ├── PageActionBar：阶段徽标 + 候选汇总 + [开始识别/停止] + [⋯]
+  │   └── 更多：[从图片导入]
+  ├── EmptyState：未识别提示
+  ├── 候选武将卡片区（QScrollArea → QGridLayout 两排）
+  │   ├── [按胜率排序] 复选
+  │   └── PeakHeroCard × N
+  │       ├── 头像 103×140px（复用 matchPortrait objectName）
+  │       ├── 阵营徽章 + 实战角标 "实战 ★N"
+  │       ├── 状态徽章（待确认/已确认）
+  │       ├── 胜率标签 peakHeroWinRate
+  │       └── 禁选建议徽章（红/Ban 位首选 / 蓝/热门强将）
+  ├── 待确认交互区：逐槽位候选按钮，点击即确认
+  ├── 已禁区：灰底带删除线
+  ├── 实战配队条：FlowLayout chip + [管理] + [展开/收起]
+  └── 识别日志（QPlainTextEdit 96px 高）
+```
+
+关键逻辑：
+- `pool_updated` 信号驱动整页刷新
+- `_render_cards()` 实时匹配实战配队 + 渲染禁选建议徽章
+- OCR 模型预热（`ocr_warmup_state == "warming"`）时禁用图片导入，避免界面冻结
+- 关闭面板时 `shutdown()` 调用 `watcher.stop()`
+
+### 15.5 禁选建议象限判定（peak_ban_advice.py）
+
+纯函数双维度象限判定：
+
+| 象限 | 条件 | 标签 |
+|------|------|------|
+| Ban 位首选 | 胜率 ≥50% 且出场排名 >50 | 红底 "Ban 位首选" |
+| 热门强将 | 胜率 ≥50% 且出场排名 ≤50 | 蓝底 "热门强将" |
+| 弱势（任意象限） | 胜率 <50% 或任一维度缺失 | 不打标签 |
+
+阈值常量（版本微调只改这里）：
+- `HOT_PICK_RANK_MAX = 50`
+- `STRONG_WIN_RATE_MIN = 50.0`
+
+胜率排名由 `derive_win_rate_ranks(win_rates)` 按胜率降序推导（同分按名称稳定排序）。`BPI = 权重 + 出场排名 − 胜率排名` 用于卡片排序。
+
+### 15.6 巅峰赛胜率数据（peak_win_rate_repository.py）
+
+独立于 2v2 胜率仓库，使用独立 CSV（`data/巅峰赛胜率排行.csv` / `data/巅峰赛出场排行.csv`）。数据源未落地时返回空 dict，UI 显示"暂无数据"。
+
+```python
+load_peak_win_rates(path)   → {武将名: 百分比}     # 默认缓存
+load_peak_pick_ranks(path)  → {武将名: 出场排名}    # 默认缓存
+clear_peak_win_rate_cache()
+```
+
+### 15.7 实战配队数据（ComboManager + combo_seats.py）
+
+`ComboManager(DataManager[Combo])` 管理 `data/combos.json`：
+
+- **双向归一 key**：`_combo_key(a_id, b_id) = tuple(sorted((a_id, b_id)))`
+- **查询**：`get_combo()` / `list_combos_for_hero()` / `list_combos()`
+- **`save_manual_combo(combo, previous)`**：编辑时 key 变化则迁移；`manual=True` 固定标记；导入合并时同 key 冲突手工优先
+- **删除**：`delete_combo()` 原子落盘，删除后下次导入会恢复
+
+**座次解析**（`combo_seats.parse_seats(note, hero1, hero2)`）：
+- 优先级 1：匹配 "武将名+数字" 或 "数字+武将名"（含 ALIAS 别名：牢布→吕布、甄姬→甄宓、夏侯停→夏侯惇）
+- 优先级 2：剥离武将名后取开头纯数字 token，按顺序对应 hero1/hero2
+- "0" 表示无座次要求；两位数字 = 可选区间（如 "34"=3 或 4 号）
+- 状态：`parsed / partial / none / unparsed`
+- 1170 条规则可 100% 分类（1144 解析出座次 + 26 无座次要求）
+
+**实战配队导入**（`combo_import_service.run_import`，幂等）：武将名→ID 映射，未匹配进报告；座次解析 + position 交叉校验；手工记录优先保留；非手工旧记录源中已不存在则移除。报告字段：`total / imported / unmatched / duplicates / invalid / seat_stats / seat_review / position_mismatch / manual_kept / manual_collisions / removed_stale`。
+
+### 15.8 巅峰赛实战配队综合展示链路
+
+```
+PeakSelectPanel._on_pool_updated(snapshot)
+  └─ _render_cards()
+     ├─ entries = [(name, hero, rate), ...]
+     ├─ derive_win_rate_ranks(win_rates)
+     ├─ 遍历 entries:
+     │   └─ PeakHeroCard.set_hero / set_win_rate
+     │      set_ban_advice(evaluate_peak_ban_advice(...))
+     │      set_combo_badge(f"实战 ★{best_ratings.get(hero.id)}")
+     └─ _refresh_combo_strip(entries)
+        └─ ComboManager.list_combos() → 命中 → sorted(key=-rating)
+           → PeakHeroCard 角标 + chip 流
+           └─ chip 点击 → show_combo_detail(self, combo)
+
+PeakSelectPanel._open_combo_management()
+  └─ ComboManagementDialog(hero_manager, ComboService(combo_manager), parent)
+     └─ combos_changed → _render_cards()
 ```

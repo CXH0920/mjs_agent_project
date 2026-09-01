@@ -40,16 +40,24 @@ src/business/
 ├── recognition/
 │   ├── ocr_service.py           # OCR 控制、模板和轮询
 │   ├── ocr_worker.py            # 唯一后台识别队列
-│   └── official_data_import_service.py # 官方榜单导入
+│   ├── official_data_import_service.py # 官方榜单导入
+│   └── peak_select_watcher.py   # 巅峰赛（2v2）选将实时识别循环
 ├── analysis/
 │   ├── recommendation_service.py # 推荐数据组装
-│   └── match_analysis_service.py # 对局攻略分析
+│   ├── match_analysis_service.py # 对局攻略分析
+│   └── peak_ban_advice.py       # 巅峰赛禁选建议双维度象限判定
 ├── maintenance/
-│   └── data_management_service.py # 数据清理、修复与修改事务
+│   ├── data_management_service.py # 数据清理、修复与修改事务
+│   ├── combo_import_service.py    # 实战配队导入合并（幂等）
+│   └── classification_suggest.py  # 武将机制分类 LLM 建议
 ├── rag/
 │   ├── refinement_service.py      # 索引精化：块三分类扫描、LLM 建议、curated 读写/取消
 │   ├── audit_service.py           # 知识库审计：AuditIssue 结构化条目与各数据源校验
-│   └── rule_doc_service.py        # 元规则 T0 文档维护纯函数（audit/差异/提案/疑难）
+│   ├── rule_doc_service.py        # 元规则 T0 文档维护纯函数（audit/差异/提案/疑难）
+│   └── task_defs.py               # RAG 语料任务定义单一事实源（10 个任务）
+├── common/
+│   └── script_runner.py           # QProcess 异步执行 Python 脚本公共封装
+├── ai_cost.py                     # AI 成本估算业务层入口
 └── announcement/
     └── announcement_service.py    # 公告检查与百科 diff 服务（线程 + Qt 信号）
 ```
@@ -271,6 +279,62 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 - **`clear_curated(corpus_dir, block_id, fname)`** — 取消精化：删除块顶层 `curated` 字段并原子写回；块不存在抛 `ValueError`，本就没有 curated 返回 False。
 - **`apply_curated()`** — 零改动复用：已支持对任意 block_id 覆盖写（含已有 curated 的块），重建时 `merge_curated` 保留最新成果。
 - 原子写统一委托 `src.data.json_repository.atomic_write_json`（indent=1 与 build 脚本一致）。
+
+### 3.10 巅峰赛识别循环（peak_select_watcher.py，2026-08 新增）
+
+`PeakSelectWatcher` 独立 QObject，与标准轮询并存。标准轮询挂起/恢复由 watcher 内部自动协调。
+
+```
+Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程
+  ├─ CaptureService.capture_for_poll() 截图
+  ├─ detect_selection_cards() → None → _handle_board_absent()
+  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _restore_standard_tasks()
+  ├─ board_signature(cards) 量化坐标/尺寸
+  │   └─ == 上次 → 牌面未变化，沿用结果
+  ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide
+  ├─ _recognize_board() 提交 OcrTask，15s 超时
+  └─ _publish_pool() → parse_pool() → PoolSnapshot → pool_updated
+```
+
+- **PoolSnapshot**：`card_count / names / pending / stage("ban"/"pick") / overlap / banned`
+- **图片导入** `recognize_image_file()`：独立 `_import_lock`，不影响循环
+- **`stage` 判定**：≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
+
+### 3.11 巅峰赛禁选建议（peak_ban_advice.py，2026-08 新增）
+
+纯函数双维度象限判定，阈值按版本微调只需改常量：
+
+| 常量 | 值 | 含义 |
+|------|-----|------|
+| `HOT_PICK_RANK_MAX` | 50 | 出场排名 ≤50 为热门 |
+| `STRONG_WIN_RATE_MIN` | 50.0 | 胜率 ≥50% 为强势 |
+
+- 强势 + 冷门 → `PeakBanAdvice("ban_first", "Ban 位首选", weight=1000, ...)`
+- 强势 + 热门 → `PeakBanAdvice("hot_pick", "热门强将", weight=500, ...)`
+- 弱势或维度缺失 → `None`（不打标签）
+- `BPI = 权重 + 出场排名 − 胜率排名` 用于卡片排序
+
+### 3.12 AI 成本估算入口（ai_cost.py，2026-08 新增）
+
+`estimate_generation_cost(items, kind, model=None, use_rag=None)`：UI 经本模块估算成本，不直接依赖采集层；估算规则变更时 UI 无感知。攻略用 `estimate_cost`，相性用 `estimate_item_cost`（含 RAG 预算影响）。
+
+### 3.13 实战配队导入（combo_import_service.py，2026-08 新增）
+
+`run_import(source, heroes, output)` 幂等合并。武将名→ID 映射，未匹配项进报告；座次解析 + position 交叉校验；手工记录优先；非手工旧记录源中已不存在则移除；重复执行输出稳定。报告字段见 `module_scraper.md` 3.6 节。
+
+### 3.14 武将分类 LLM 建议（classification_suggest.py，2026-08 新增）
+
+`suggest_hero_categories(hero, skills_text, position, categories, generator)`：调用 LLM 从给定分类清单中选该武将符合的机制分类（可多选）。LLM 响应通过 `json_extract.extract_json()` 提取，结果只保留清单内、去重保序的分类名，失败返回 None。UI 面板仅持线程壳调用本模块。
+
+### 3.15 脚本运行器（script_runner.py，2026-08 新增）
+
+`ScriptRunner(QObject)` QProcess 异步执行 Python 脚本公共封装（自 ui/shared 迁入）：
+
+- `is_running()` 防并发（同一时刻只允许一个任务）
+- `output(bytes)` / `finished(int)` 信号
+- `run(python, script, args, working_dir)` 启动；已有任务返回 False
+
+业务层（RuleDocOpsService）与 UI 均可使用，仅依赖 QtCore，无 UI 控件依赖。
 
 ## 四、关键代码片段
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Callable
 
 from PySide6.QtCore import Signal
@@ -20,6 +22,8 @@ from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.ui.shared.style import ROLE_DANGER
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+logger = logging.getLogger(__name__)
 
 
 class DataManagementDialog(QDialog):

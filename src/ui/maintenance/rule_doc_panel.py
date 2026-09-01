@@ -737,7 +737,8 @@ class RuleDocPanel(QWidget):
         _OPS_LOGGER.info("%s → exit=%d %s", self._last_command, code, conclusion)
         try:
             on_finished()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            logger.exception("脚本完成回调处理失败")
             self._emit_output("刷新失败：%s" % exc)
         self.data_changed.emit()
 

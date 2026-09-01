@@ -3,6 +3,7 @@
 > 对应源码：`src/business/`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 虚线 `───` 表示跨越进程边界（QProcess 子进程）。
+> 与巅峰赛识别循环、禁选建议、实战配队相关的调用链路见 [call_graph_peak_combos.md](./call_graph_peak_combos.md)。
 
 ---
 

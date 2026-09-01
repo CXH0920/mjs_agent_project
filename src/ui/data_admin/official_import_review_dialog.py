@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -20,6 +22,8 @@ from PySide6.QtWidgets import (
 
 from src.business.recognition.official_data_import_service import OfficialDataImportService
 from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
+
+logger = logging.getLogger(__name__)
 
 COLUMN_HEADERS = (
     "输出",
@@ -133,6 +137,10 @@ class OfficialImportReviewDialog(QDialog):
             summary = self._service.apply_reviewed_records(self._pending, corrections)
         except ValueError as exc:
             QMessageBox.warning(self, "校验未通过", str(exc))
+            return
+        except OSError as exc:
+            logger.exception("写入正式榜单数据失败")
+            QMessageBox.critical(self, "写入失败", f"无法写入正式榜单数据：\n{exc}")
             return
         self.applied.emit()
         show_toast(self, f"已写入 {summary['records']} 条正式榜单数据", duration=3000)

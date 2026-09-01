@@ -44,7 +44,9 @@ src/ui/
 ├── match/                      # 对局攻略页面、分析视图和阵容状态
 │   ├── match_guide_panel.py
 │   ├── match_analysis_view.py
-│   └── match_lineup_state.py
+│   ├── match_lineup_state.py
+│   ├── peak_select_panel.py    # 巅峰赛（2v2）选将工作台：实时识别 + 候选卡片 + 实战配队
+│   └── peak_hero_card.py       # 巅峰赛候选武将卡片（复用对局攻略阵容卡 objectName 样式）
 ├── maintenance/                # 知识库维护工作台（RAG 语料与元规则 T0 文档）
 │   ├── maintenance_workspace.py # 布局外壳：左栏维护对象导航 + 折叠执行日志
 │   ├── rag_maintenance_panel.py # 业务逻辑：语料状态、审计提示与本地一键执行
@@ -68,7 +70,10 @@ src/ui/
 ├── data_admin/                 # 数据维护、官方榜单导入与公告更新
 │   ├── data_management_dialog.py
 │   ├── official_data_import_dialog.py
-│   └── announcement_dialog.py    # 公告列表/全文 + 百科 diff + 一键更新
+│   ├── combos_import_dialog.py         # 实战配队导入对话框
+│   ├── official_import_review_dialog.py # 官方榜单导入待复核数据审查
+│   ├── hero_update_confirm_dialog.py   # 公告更新武将确认对话框
+│   └── announcement_dialog.py
 ├── shared/                     # 跨功能控件、展示与样式
 │   ├── widgets.py              # DoubleClickLabel 等共享控件
 │   ├── hero_dialogs.py         # HeroSkillDialog
@@ -304,6 +309,41 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 
 **语料增强选择**：`BackendChooseDialog` 顶部新增「语料增强：RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」单选组，默认 RAG 增强；`get_selected_rag()` 返回选择，`AiGenerationWorkflow._choose_backend()` 组合为 `(backend, use_rag)` 元组。API Tab 的成本估算在切换选择时按 `estimate_item_cost(..., use_rag=...)` 实时重算（经典模式输入 token 更少）。
 
+### 3.6.1 巅峰赛选将页面（PeakSelectPanel，2026-08 新增）
+
+`PeakSelectPanel` 是左侧导航中新增的独立工作区（第 4 页），专用于 2v2 巅峰赛选将辅助：
+
+```
+PeakSelectPanel
+  ├── PageActionBar：阶段徽标 + 候选汇总 + [开始识别/停止识别] + [⋯ 更多]
+  │   └── 更多菜单：[从图片导入]
+  ├── EmptyState：未识别提示
+  ├── 候选武将卡片区
+  │   ├── 标题 + [按胜率排序] 复选
+  │   └── QScrollArea → QGridLayout（两排卡片）
+  │       └── PeakHeroCard × N
+  │           ├── 头像区（103×140px，复用 matchPortrait objectName 样式）
+  │           ├── 阵营徽章 + 实战角标
+  │           ├── 状态徽章（待确认/已确认）
+  │           ├── 单将胜率标签（peakHeroWinRate objectName）
+  │           └── 禁选建议徽章（Ban 位首选红底/热门强将蓝底）
+  ├── 待确认交互区：逐槽位显示原文与候选按钮，点击候选即确认
+  ├── 已禁区：灰底带删除线展示已禁武将名
+  └── 实战配队条：
+      ├── 标题 + [管理] + [展开/收起]
+      └── FlowLayout 芯片：★N 武将1[座次] + 武将2[座次]
+  └── 识别日志
+```
+
+**核心逻辑**：
+- `PeakSelectWatcher` 驱动识别循环，`pool_updated` 信号 → `_on_pool_updated()` 刷新整页
+- `stage` 徽标区分"禁选阶段"（warning）与"候选阶段"（success）
+- 候选池按 `_sort_by_win_rate` 开关可选按巅峰赛胜率降序排列（无胜率沉底）
+- 实时匹配实战配队：`ComboManager.list_combos()` 中 hero1/hero2 均在当前池内 → 按 rating 降序显示 chip，点击 chip 打开 `show_combo_detail`
+- 禁选建议徽章通过 `evaluate_peak_ban_advice(rate, pick_rank, win_rate_rank)` 渲染，`PeakHeroCard.set_ban_advice()`
+- 待确认槽位点击候选即触发 `PeakSelectWatcher.confirm_pending(slot, name)`，确认后计入候选与已禁口径
+- OCR 模型预热（`ocr_warmup_state == "warming"`）时禁用图片导入，避免界面冻结
+
 ### 3.7 API 配置对话框
 
 `SettingsDialog` 由菜单“配置 → API 配置”打开，内容分为两个 Tab：
@@ -439,10 +479,15 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `src.data.manager` | 通过 DataFacade 读取/写入数据 |
+| 依赖 | `src.data.combo_manager` | PeakSelectPanel 匹配实战配队 |
+| 依赖 | `src.data.peak_win_rate_repository` | 巅峰赛胜率/出场排行数据 |
 | 依赖 | `src.business.*` | 连接业务服务的 Signal，触发 fetch_*() |
+| 依赖 | `src.business.analysis.peak_ban_advice` | 巅峰赛禁选建议 |
+| 依赖 | `src.business.recognition.peak_select_watcher` | 巅峰赛识别循环驱动 |
+| 依赖 | `src.business.maintenance.corpus_services` | 实战配队 ComboService |
 | 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
-| 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 |
+| 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 
 ## 七、专属牌维护与知识库维护（2026-08 新增，2026-08 布局重排）

@@ -192,6 +192,25 @@ def _repair_strings(s: str) -> str:
 
 > **设计思路：** AI 回复中的技能描述字段经常包含真实的换行符，导致 `json.loads()` 报错。全局替换 `\n` 会破坏键名中的合法字符。只有逐字符跟踪 `in_string` 状态才能精确定位字符串值内的换行并修复，保持 JSON 结构键名和分隔符不变。
 
+### 3.7 RAG 语料任务定义（task_defs.py，2026-08 新增）
+
+`src/business/rag/task_defs.TASKS` 是 RAG 语料任务的**单一事实源**，工作台（`rag_maintenance_panel.py`）与调度脚本（`maintain_rag.py`）共用。10 个任务：
+
+| # | 任务名 | 脚本 | 主要源 | 输出 |
+|---|--------|------|--------|------|
+| 1 | 武将语料 | build_rag_corpus.py | heroes/cards/mjs_adjustments | 武将RAG语料.json（615 块） |
+| 2 | 卡牌语料 | build_card_corpus.py | cards | 卡牌RAG语料.json（49 块） |
+| 3 | 点数花色语料 | build_cardpts.py | card_points | 卡牌点数花色语料.json（49 块） |
+| 4 | 装备属性语料 | build_equip_attr.py | cards/equip_attrs/卡牌RAG语料 | 装备属性语料.json（27 块） |
+| 5 | 加强削弱语料 | build_modify_corpus.py | cards/card_annotations | 加强削弱语料.json（49 块） |
+| 6 | 元规则/术语/FAQ | build_rule_corpus.py | 元规则整理-完整版.md | 元规则RAG语料-章节块.json + 术语表.json + FAQ裁定块.json（snapshot） |
+| 7 | 特殊机制语料 | build_special_corpus.py | special_cards | 特殊机制语料.json（83 块） |
+| 8 | 武将分类语料 | build_classification_corpus.py | hero_classification/heroes | 武将分类语料.json（动态） |
+| 9 | 组合语料 | build_combo_corpus.py | raw_guides/jinxia/combos/ + heroes | 组合RAG语料.json（动态） |
+| 10 | 武将攻略语料 | build_guide_corpus.py | raw_guides/jinxia/guides/ + heroes/mjs_adjustments | 武将攻略RAG语料.json（动态） |
+
+字段：`name` / `script` / `sources` / `outputs` / `expected`（int 精确匹配 / "snapshot" 只增不删 / None 动态数量只报不校验）。新增/修改语料任务只需改此文件。
+
 ---
 
 ## 五、接口说明

@@ -3,6 +3,7 @@
 > 对应源码：`src/ui/`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 信号连接以 `[signal] → slot` 标注，QProcess 子进程以虚线分隔。
+> 与巅峰赛/实战配队相关的调用链路见 [call_graph_peak_combos.md](./call_graph_peak_combos.md)。
 
 ---
 

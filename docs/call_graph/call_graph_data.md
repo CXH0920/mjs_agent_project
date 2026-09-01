@@ -2,6 +2,7 @@
 
 > 对应源码：`src/data/`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
+> 与巅峰赛/实战配队相关的调用链路见 [call_graph_peak_combos.md](./call_graph_peak_combos.md)。
 
 ---
 

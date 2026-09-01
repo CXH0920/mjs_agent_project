@@ -36,6 +36,7 @@ from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.shared.combo_detail import show_combo_detail
 from src.ui.shared.style import (
     FONT_SIZE_LG,
+    ROLE_DANGER,
     ROLE_GHOST,
     ROLE_PRIMARY,
     TONE_INFO,
@@ -251,7 +252,7 @@ class PeakSelectPanel(QWidget):
             return
         self._watcher.start()
         self._toggle_button.setText("停止识别")
-        set_ui_role(self._toggle_button, ROLE_GHOST)
+        set_ui_role(self._toggle_button, ROLE_DANGER)
         self._action_bar.set_status("已开始，等待进入巅峰赛选将页…", TONE_INFO)
 
     def _on_import_from_file(self) -> None:

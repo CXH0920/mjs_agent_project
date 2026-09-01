@@ -31,6 +31,8 @@ src/ocr/
 ├── template_manager.py    # TemplateManager — OpenCV 模板匹配
 ├── image_preprocessor.py  # ImagePreprocessor — 放大、CLAHE、锐化、灰度
 ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
+├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI
+├── roi_config.py           # Roi / RoiLayoutEditor — 巅峰赛与多布局 ROI 配置
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
@@ -101,7 +103,48 @@ ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR work
 
 自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；至少确认 3 个角色名才自动切换页面并停用该任务，`unresolved`、`unknown` 和 `conflict` 不计入数量。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
 
-### 3.3 多路证据与候选确认
+### 3.3 2v2 巅峰赛卡位检测（card_grid_detector.py，2026-08 新增）
+
+2v2 巅峰赛牌面（14 张禁选阶段 → 8~11 张候选阶段）不能用固定 8-ROI 模板。改为**内容驱动**的卡位检测：
+
+```
+detect_selection_cards(image)
+  -> cv2.cvtColor(image, BGR2HSV)
+  -> 掩码: S>90 或 V<90（背景低饱和宣纸 ≈ S:8, V:230）
+  -> 闭运算核 = max(3, round(h/1440*5))  # 5px 基准，避免上下两行粘连
+  -> cv2.connectedComponentsWithStats(mask, 8)
+  -> 过滤: 面积 > 0.0055 全图 / 尺寸 [0.086w, 0.115w] × [0.215h, 0.245h] / 宽高比 [0.60, 0.95] / 位置 [0.12w, 0.88w] × [0.16h, 0.67h]
+  -> 行聚类 + 行内 x 排序
+  -> 卡数 ∈ [8, 14] 返回 bbox；否则 None（语义对齐轮询 healthy_no_match）
+
+derive_name_rois(cards)
+  -> 每张卡内相对位置 [x+0.06w, y+0.15h, 0.30w, 0.38h] 派生名条 ROI
+```
+
+参数均为相对比例（基准 2560×1440 实测），分辨率变化时自适应。仅当布局变化（`board_signature` 不同）时才触发 OCR，坐标/尺寸按 4/8px 量化过滤像素级抖动。
+
+### 3.4 巅峰赛识别循环（peak_select_watcher.py，2026-08 新增）
+
+`PeakSelectWatcher` 是独立 QObject，与标准轮询并存，负责 2v2 巅峰赛牌面的实时识别循环：
+
+```
+Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
+  ├─ CaptureService.capture_for_poll(capture)
+  ├─ detect_selection_cards(frame) → None → _handle_board_absent()
+  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _restore_standard_tasks()
+  ├─ board_signature(cards) 量化坐标/尺寸
+  │   └─ == 上次 → 牌面未变化，沿用结果
+  ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide 轮询
+  ├─ _recognize_board() 提交 OcrTask 到 OcrWorker，15s 超时
+  └─ _publish_pool() → parse_pool() → PoolSnapshot → pool_updated 信号
+```
+
+- **PoolSnapshot**：`card_count / names / pending / stage("ban"/"pick") / overlap / banned`
+- **图片导入** `recognize_image_file()` 使用独立 `_import_lock`，不影响循环
+- **stage 判定**：≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
+- **人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验候选在白名单内才生效
+
+### 3.5 多路证据与候选确认
 
 `GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 PaddleOCR 检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.8 时，才追加增强图与仅放大原图的逐槽识别。ROI 坐标以参考分辨率保存，
 识别前会分别按当前截图宽高进行换算，因此支持页面比例基本不变时的分辨率变化：
@@ -144,7 +187,7 @@ PaddleOCR → 文字 + 置信度
 
 官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格跳过检测网络直接识别（`det=False`），并继续独立负责受限候选繁体兜底、整榜唯一性和正式写入门禁；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
-### 3.4 候选内单字字形评分
+### 3.7 候选内单字字形评分
 
 常规截图只对“与候选等长且恰好一个字符不同”的名称评分。缺字前缀和其他增删字结果只用于建立候选白名单，不参与字形决胜。对每个合法候选，仅计算那个不同字符的加权相似度：
 
@@ -168,7 +211,7 @@ else:
 
 任一字符的某项特征缺失时，该维度贡献 0 分；四角码不足四位不补零；五笔码缺失（不在离线码表内）时该维度记 0 分。
 
-### 3.5 汉字特征缓存
+### 3.8 汉字特征缓存
 
 汉字特征数据采用三层策略：
 
@@ -179,7 +222,7 @@ else:
 
 `CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
 
-### 3.6 OCR 引擎推理配置与加载熔断（2026-08 新增）
+### 3.9 OCR 引擎推理配置与加载熔断（2026-08 新增）
 
 `src/ocr/paddle_loader.py::create_paddle_ocr()` 推理设备与线程由 `config.env` 控制：
 
@@ -289,5 +332,6 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型（GPU 推理需 CUDA 11.8 + cuDNN 8 运行时，见 environment.yml） |
 | 被调用方 | `src.business.emulator.capture_service` | 持有 AdbCapture 实例，编排截图流程 |
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
+| 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 detect_selection_cards 与 derive_name_rois 做 2v2 牌面识别 |
 | 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
 | 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |
