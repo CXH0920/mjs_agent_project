@@ -11,7 +11,8 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
-from src.data.card_catalog import CardAnnotationRepository, CardCatalogService, CardFieldSchemaRepository, CardRepository
+from src.business.card_catalog import CardCatalogService
+from src.data.card_catalog import CardAnnotationRepository, CardFieldSchemaRepository, CardRepository
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide

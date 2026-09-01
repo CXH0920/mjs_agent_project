@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import tempfile
 
 from PySide6.QtCore import Signal
 
 from src.business.fetching.base_fetch_service import BaseFetchService
-from src.business.fetching.fetch_utils import is_generation_progress_line
+from src.business.fetching.fetch_utils import is_generation_progress_line, parse_generation_event
+from src.business.fetching.synergy_reload_worker import SynergyReloadWorker
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,13 @@ class SynergyFetchService(BaseFetchService):
     progress_output = Signal(str)        # 原始 stdout 行
     progress_value = Signal(int, int)    # (current, total) 供进度条使用
     fetch_completed = Signal(bool, str)
+    reload_finished = Signal()
+    reload_failed = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, synergy_manager, parent=None):
         super().__init__(parent)
+        self._synergy_manager = synergy_manager
+        self._reload_worker = None
 
     @property
     def _service_name(self) -> str:
@@ -81,6 +85,21 @@ class SynergyFetchService(BaseFetchService):
         return self._submit("--synergy-list", pairs, mode="pairs_list",
                             backend=backend, overwrite=overwrite, use_rag=use_rag)
 
+    def reload_from_disk(self) -> bool:
+        """后台重载相性文件并写回数据层（取消生成后保住已分批提交的数据）。
+
+        返回是否成功启动；已有重载进行中时不重复启动，不发完成信号。
+        """
+        if self._reload_worker and self._reload_worker.isRunning():
+            return False
+        worker = SynergyReloadWorker(self._synergy_manager.file_path, self)
+        worker.loaded.connect(self._on_reload_loaded)
+        worker.failed.connect(self.reload_failed)
+        worker.finished.connect(worker.deleteLater)
+        self._reload_worker = worker
+        worker.start()
+        return True
+
     def _submit(
         self,
         args_flag: str,
@@ -120,6 +139,12 @@ class SynergyFetchService(BaseFetchService):
     # 钩子
     # ---------------------------------------------------------------
 
+    def _on_reload_loaded(self, synergies, load_issues) -> None:
+        """重载完成后把结果原子写回共享 manager，再广播完成信号。"""
+        self._synergy_manager.replace_loaded_data(synergies, load_issues)
+        self._reload_worker = None
+        self.reload_finished.emit()
+
     def _on_stdout_line(self, line: str) -> None:
         """解析子进程进度行。"""
         if not line:
@@ -128,9 +153,9 @@ class SynergyFetchService(BaseFetchService):
         if is_generation_progress_line(line):
             self.progress_output.emit(line)
         # 只有生成结果完成校验（OK / FAIL）或确认跳过后才推进进度。
-        m = re.search(r"\[(\d+)/(\d+)\].*\s(?:OK|FAIL|SKIP)(?:\s|$|（)", line)
-        if m:
-            self.progress_value.emit(int(m.group(1)), int(m.group(2)))
+        event = parse_generation_event(line)
+        if event is not None and event.kind in ("ok", "fail", "skip"):
+            self.progress_value.emit(event.current, event.total)
 
     def _on_process_finished(self, exit_code: int) -> None:
         """仅以 CLI 的结构化退出码判断生成成败。"""

@@ -6,6 +6,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QProcess
@@ -657,7 +658,7 @@ def test_fetch_services_use_cli_exit_code_instead_of_stdout_failure_protocol(tmp
     from src.data.guide_manager import GuideManager
 
     guide_service = GuideFetchService(GuideManager(tmp_path / "guides.json"))
-    synergy_service = SynergyFetchService()
+    synergy_service = SynergyFetchService(SimpleNamespace(file_path=""))
     guide_results: list[tuple[bool, str]] = []
     synergy_results: list[tuple[bool, str]] = []
     guide_service.fetch_completed.connect(lambda success, detail: guide_results.append((success, detail)))
@@ -682,7 +683,7 @@ def test_fetch_services_route_subprocess_logs_by_workflow(tmp_path: Path) -> Non
 
     hero_service = HeroFetchService()
     guide_service = GuideFetchService(GuideManager(tmp_path / "guides.json"))
-    synergy_service = SynergyFetchService()
+    synergy_service = SynergyFetchService(SimpleNamespace(file_path=""))
 
     assert hero_service._log_stdout.name == "subprocess.official.stdout"
     assert hero_service._log_stderr.name == "subprocess.official.stderr"
@@ -734,7 +735,7 @@ def test_browser_generator_logs_no_reply_or_parsed_content(monkeypatch, caplog) 
 def test_synergy_progress_advances_only_after_terminal_result() -> None:
     from src.business.fetching.synergy_fetch_service import SynergyFetchService
 
-    service = SynergyFetchService()
+    service = SynergyFetchService(SimpleNamespace(file_path=""))
     progress_values: list[tuple[int, int]] = []
     service.progress_value.connect(lambda current, total: progress_values.append((current, total)))
 

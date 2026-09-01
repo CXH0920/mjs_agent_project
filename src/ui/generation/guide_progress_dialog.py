@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import re
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from src.business.fetching.fetch_utils import parse_generation_event
 from src.ui.shared.style import TONE_DANGER, TONE_SUCCESS, set_tone
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
@@ -109,46 +109,33 @@ class GuideProgressDialog(QDialog):
         self._progress_bar.setFormat(f"{current} / {total}")
 
     def update_status(self, text: str) -> None:
-        """更新当前状态文字"""
+        """更新当前状态文字：协议行解析统一走 fetch_utils，本方法只负责渲染。"""
         self._reset_wait_hint()
-        m_start = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+START(?:\s|$)", text)
-        if m_start:
-            self._status_label.setText(f"正在生成 {m_start.group(3)} 的{self._item_label}...")
-            self._detail_label.setText(f"当前请求：{m_start.group(1)} / {m_start.group(2)}")
+        event = parse_generation_event(text)
+        if event is None:
+            self._detail_label.setText(text.strip())
             return
-        # OK 行: "[i/total] 武将名 OK"
-        m_ok = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+OK", text)
-        if m_ok:
-            self._status_label.setText(f"✓ 已完成 {m_ok.group(3)} 的{self._item_label}...")
-            self.update_progress(int(m_ok.group(1)), int(m_ok.group(2)))
-            return
-        # FAIL 行: "[i/total] 武将名 FAIL"
-        m_fail = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+FAIL", text)
-        if m_fail:
-            self._status_label.setText(f"✗ {m_fail.group(3)} 的{self._item_label}生成失败")
-            self.update_progress(int(m_fail.group(1)), int(m_fail.group(2)))
-            return
-        m_skip = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+SKIP", text)
-        if m_skip:
-            self._status_label.setText(f"↷ 已跳过 {m_skip.group(3)}（已有{self._item_label}）")
-            self.update_progress(int(m_skip.group(1)), int(m_skip.group(2)))
-            return
-        m_retry = re.search(r"\[重试\]\s*(.+?)，第\s*(\d+)/(\d+)\s*次，(\d+)\s*秒后重试", text)
-        if m_retry:
-            current = self._progress_bar.value()
-            total = self._progress_bar.maximum()
+        if event.kind == "start":
+            self._status_label.setText(f"正在生成 {event.label} 的{self._item_label}...")
+            self._detail_label.setText(f"当前请求：{event.current} / {event.total}")
+        elif event.kind == "ok":
+            self._status_label.setText(f"✓ 已完成 {event.label} 的{self._item_label}...")
+            self.update_progress(event.current, event.total)
+        elif event.kind == "fail":
+            self._status_label.setText(f"✗ {event.label} 的{self._item_label}生成失败")
+            self.update_progress(event.current, event.total)
+        elif event.kind == "skip":
+            self._status_label.setText(f"↷ 已跳过 {event.label}（已有{self._item_label}）")
+            self.update_progress(event.current, event.total)
+        elif event.kind == "retry":
             self._status_label.setText(
-                f"⏳ 重试中（{m_retry.group(2)}/{m_retry.group(3)}），{m_retry.group(4)} 秒后重试")
-            self._detail_label.setText(f"当前进度 {current} / {total}，原因：{m_retry.group(1)}")
-            return
-        m_rest = re.search(r"\[休息\]\s*随机休息\s*(\d+)\s*秒", text)
-        if m_rest:
-            current = self._progress_bar.value()
-            total = self._progress_bar.maximum()
-            self._status_label.setText(f"冷却中（约 {m_rest.group(1)} 秒），已完成 {current} / {total}")
+                f"⏳ 重试中（{event.retry_round}/{event.retry_max}），{event.wait_seconds} 秒后重试")
+            self._detail_label.setText(
+                f"当前进度 {self._progress_bar.value()} / {self._progress_bar.maximum()}，原因：{event.label}")
+        elif event.kind == "rest":
+            self._status_label.setText(
+                f"冷却中（约 {event.wait_seconds} 秒），已完成 {self._progress_bar.value()} / {self._progress_bar.maximum()}")
             self._detail_label.setText("冷却结束后将继续下一组相性生成")
-            return
-        self._detail_label.setText(text.strip())
 
     def _on_wait_tick(self) -> None:
         """静默期在进度条上显示已等待秒数；新进度行到来即复位。"""

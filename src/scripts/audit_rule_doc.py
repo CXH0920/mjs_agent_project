@@ -46,7 +46,8 @@ def load_snapshot(path=DEFAULT_SNAPSHOT):
         with open(path, encoding='utf-8') as f:
             data = json.load(f)
         return data if isinstance(data, dict) else None
-    except Exception:
+    except Exception as error:
+        print(f'  ⚠️ 快照加载失败，按无快照处理（全部章节将视为新增）: {error}')
         return None
 
 

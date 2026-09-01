@@ -113,21 +113,14 @@ class OcrWorker(QThread):
         self._cancel_event.set()
         self._tasks.put(None)
 
-    def retire(self, *, force_warmup: bool = False) -> None:
+    def retire(self) -> None:
         """停止并放弃同步等待；线程由进程退出钩子负责收尾。
 
-        force_warmup=True 时，若线程正卡在不可中断的模型预热中，
-        直接终止该线程让进程快速退出，避免关闭后进程长期残留。
+        预热在步骤间可取消（见 _warmup_model 的取消检查点）；若线程正卡在
+        引擎加载这类不可中断的原生调用里，不再强杀线程，由退出钩子在
+        15 秒等待后 os._exit 兜底（退出路径无关键写操作）。
         """
         self.request_stop()
-        if force_warmup and self.isRunning() and self._current_task_kind == "warmup":
-            logger.warning("OCR worker 正在模型预热，终止预热线程以加速退出")
-            self.terminate()
-            if not self.wait(3_000):
-                logger.warning("预热线程 3 秒内未退出，转入退役列表由进程退出钩子兜底")
-                if self not in _RETIRED_WORKERS:
-                    _RETIRED_WORKERS.append(self)
-            return
         if self not in _RETIRED_WORKERS:
             _RETIRED_WORKERS.append(self)
 
@@ -347,8 +340,14 @@ class OcrWorker(QThread):
             return {"outcome": "retryable_ocr", "detail": str(exc)}
 
     def _warmup_model(self, task: OcrTask) -> dict:
-        """在 worker 线程加载一次模型，供后续不同页面的识别器复用。"""
+        """在 worker 线程加载一次模型，供后续不同页面的识别器复用。
+
+        各步骤间检查取消标记：应用关闭时尽快退出预热；只有引擎加载本身
+        （Paddle 原生初始化）不可中断。
+        """
         started = time.perf_counter()
+        if self._cancel_event.is_set():
+            return {"outcome": "cancelled"}
         try:
             recognizer = GeneralRecognizer(
                 hero_names=list(task.hero_names), page_type="hero_selection",
@@ -362,6 +361,9 @@ class OcrWorker(QThread):
                 return {"outcome": "cancelled"}
             recognizer.warmup()
             self._ocr_engine = recognizer.shared_engine() or self._ocr_engine
+            if self._cancel_event.is_set():
+                logger.info("OCR 预热已取消（特征预热完成），跳过推理预热")
+                return {"outcome": "cancelled"}
             recognizer.warmup_inference()
             logger.info("PaddleOCR 模型和推理预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
             return {"outcome": "warmed"}

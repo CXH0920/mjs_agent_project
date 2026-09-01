@@ -75,8 +75,8 @@ def load_existing_names(path: Path) -> dict[str, int]:
     """加载本地已有武将的 {名称: ID} 映射"""
     if not path.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        heroes = json.load(f)
+    # 与 _load_heroes_file 同一健壮性标准：损坏时备份并按空映射继续，不裸崩
+    heroes = _load_heroes_file(path) or []
     return {h["name"]: h["id"] for h in heroes if h.get("name")}
 
 

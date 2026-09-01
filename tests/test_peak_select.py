@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -480,6 +481,66 @@ def test_watcher_confirm_pending_republishes_snapshot(qapp):
     assert pools[1].names == ("荆轲", "卓文君")
     assert pools[1].pending == ()
     assert pools[1].banned == ()
+
+
+def test_confirm_pending_waits_for_ongoing_publish(qapp, monkeypatch):
+    """回归：GUI 确认与识别线程发布并发时互斥，确认不得插入发布中途改写共享状态。"""
+    watcher, pools, _ = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    real_parse = parse_pool
+    parsing = threading.Event()
+    release = threading.Event()
+
+    def slow_parse(ocr_results, card_count, ban_names=(), resolutions=None):
+        parsing.set()
+        release.wait(1)
+        return real_parse(ocr_results, card_count, ban_names, resolutions)
+
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.parse_pool", slow_parse
+    )
+
+    published = threading.Event()
+
+    def publish():
+        watcher._publish_pool([], 9)
+        published.set()
+
+    worker = threading.Thread(target=publish, daemon=True)
+    worker.start()
+    assert parsing.wait(1)
+
+    confirmed = threading.Event()
+
+    def confirm():
+        watcher.confirm_pending(0, "荆轲")
+        confirmed.set()
+
+    confirmer = threading.Thread(target=confirm, daemon=True)
+    confirmer.start()
+    time.sleep(0.05)  # 给确认线程抢锁机会：必须被发布持有的 _state_lock 挡住
+    assert confirmer.is_alive() and not confirmed.is_set()
+
+    release.set()
+    assert published.wait(1)
+    assert confirmed.wait(1)
+    worker.join(1)
+    confirmer.join(1)
+
+    assert watcher._resolutions == {0: "荆轲"}
+    assert watcher._last_board == ([], 9)
+
+
+def test_pool_updated_emitted_outside_state_lock(qapp):
+    """快照信号在 _state_lock 外发射：面板槽内同步回调 confirm_pending 不会死锁。"""
+    watcher, pools, _ = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    lock_states = []
+
+    watcher.pool_updated.connect(
+        lambda _snapshot: lock_states.append(watcher._state_lock.locked())
+    )
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+
+    assert lock_states == [False]
 
 
 def test_panel_warmup_hint_restored_after_ready(qapp):

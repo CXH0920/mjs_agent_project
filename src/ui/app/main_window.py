@@ -34,10 +34,10 @@ from src.data.manager import (
     DEFAULT_SYNERGIES_FILE,
     DEFAULT_GUIDES_FILE,
 )
-from src.data.card_catalog import CardCatalogService
 from src.data.announcement_manager import AnnouncementManager, AnnouncementStatus
 from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.business.announcement.announcement_service import AnnouncementCheckResult, AnnouncementService
+from src.business.card_catalog import CardCatalogService
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
@@ -111,7 +111,7 @@ class MainWindow(QMainWindow):
 
         self._fetch_service = HeroFetchService(self)
         self._guide_service = GuideFetchService(self._data.guides, self)
-        self._synergy_service = SynergyFetchService(self)
+        self._synergy_service = SynergyFetchService(self._data.synergies, self)
         from src.data.combo_manager import ComboManager
         self._combo_manager = ComboManager()
         self._ai_workflow = AiGenerationWorkflow(
@@ -650,29 +650,33 @@ class MainWindow(QMainWindow):
         data_menu.addAction(self._actions["reload"])
         data_menu.addAction(self._actions["announcement_check"])
         data_menu.addAction(self._actions["announcement_log"])
-        fetch_menu = data_menu.addMenu("武将获取")
-        fetch_menu.addActions([
-            self._actions["fetch_all"],
-            self._actions["fetch_incremental"],
-            self._actions["fetch_specific"],
-        ])
-        guide_menu = data_menu.addMenu("攻略获取")
-        guide_menu.addActions([
-            self._actions["guide_all"],
-            self._actions["guide_incremental"],
-            self._actions["guide_specific"],
-        ])
-        synergy_menu = data_menu.addMenu("武将相性")
-        synergy_menu.addActions([
-            self._actions["synergy_single"],
-            self._actions["synergy_pair"],
-            self._actions["synergy_combos"],
-        ])
+        self._add_generation_submenus(data_menu)
 
         help_menu = bar.addMenu("帮助")
         help_menu.addAction(self._actions["about"])
         help_menu.addSeparator()
         help_menu.addAction(self._actions["exit"])
+
+    def _add_generation_submenus(self, parent_menu) -> None:
+        """挂载武将获取/攻略获取/武将相性三个生成子菜单（菜单栏与生成维护菜单共用）。"""
+        fetch_menu = parent_menu.addMenu("武将获取")
+        fetch_menu.addActions([
+            self._actions["fetch_all"],
+            self._actions["fetch_incremental"],
+            self._actions["fetch_specific"],
+        ])
+        guide_menu = parent_menu.addMenu("攻略获取")
+        guide_menu.addActions([
+            self._actions["guide_all"],
+            self._actions["guide_incremental"],
+            self._actions["guide_specific"],
+        ])
+        synergy_menu = parent_menu.addMenu("武将相性")
+        synergy_menu.addActions([
+            self._actions["synergy_single"],
+            self._actions["synergy_pair"],
+            self._actions["synergy_combos"],
+        ])
 
     # ---------------------------------------------------------------
     # UI 构建
@@ -823,24 +827,7 @@ class MainWindow(QMainWindow):
         self._maintenance_menu.addAction(self._actions["announcement_check"])
         self._maintenance_menu.addAction(self._actions["announcement_log"])
         self._maintenance_menu.addSeparator()
-        fetch_menu = self._maintenance_menu.addMenu("武将获取")
-        fetch_menu.addActions([
-            self._actions["fetch_all"],
-            self._actions["fetch_incremental"],
-            self._actions["fetch_specific"],
-        ])
-        guide_menu = self._maintenance_menu.addMenu("攻略获取")
-        guide_menu.addActions([
-            self._actions["guide_all"],
-            self._actions["guide_incremental"],
-            self._actions["guide_specific"],
-        ])
-        synergy_menu = self._maintenance_menu.addMenu("武将相性")
-        synergy_menu.addActions([
-            self._actions["synergy_single"],
-            self._actions["synergy_pair"],
-            self._actions["synergy_combos"],
-        ])
+        self._add_generation_submenus(self._maintenance_menu)
         self._maintenance_menu.addSeparator()
         self._maintenance_menu.addAction(self._actions["combos_import"])
 

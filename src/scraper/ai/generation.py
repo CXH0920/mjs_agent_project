@@ -66,11 +66,101 @@ def _with_synergy_updated_date(generated: dict) -> dict:
     return {**generated, "last_updated": date.today().isoformat()}
 
 
+def _pair_label(ha: dict, hb: dict) -> str:
+    """配对在协议行中的展示名。"""
+    return f"{ha['name']} <-> {hb['name']}"
+
+
+def _pair_fail_label(ha: dict, hb: dict) -> str:
+    """配对失败时 failed_items 中的条目格式（无空格，与展示名不同）。"""
+    return f"{ha['name']}<->{hb['name']}"
+
+
 def _report_rag_degradation() -> None:
     """RAG 被选择但运行时不可用时，向 stdout 输出一次降级提示（进度窗口可见）。"""
     reason = rag_prompt.take_degraded_reason()
     if reason:
         print(f"  [RAG] 语料不可用，本次已降级为经典模式（{reason}）", flush=True)
+
+
+def _run_synergy_pairs(
+    pairs,
+    generator,
+    synergy_path,
+    existing_synergy_dict,
+    existing_synergy_keys,
+    *,
+    skip_existing,
+    score_threshold,
+    label_of,
+    fail_label_of,
+    missing_score_text,
+    result_summary=None,
+):
+    """四个相性生成循环的共享核心：跳过→生成→记录→分批提交→回写 existing。
+
+    协议行、failed_items 格式与提交时机由 tests/test_generation_loops.py
+    特征化测试锁定，改动任何输出前先更新对应测试。
+
+    Args:
+        skip_existing: 已有相性是否跳过（全量模式为 False，永不跳过）
+        score_threshold: 评分下限；None 不设限，设定时低于下限移除旧记录（仅全量模式）
+        label_of: (ha, hb) → 协议行展示名（单武将模式用对方单名，其余 a <-> b）
+        fail_label_of: (ha, hb) → failed_items 条目格式
+        missing_score_text: OK 行评分缺失时的占位（全量 "0"，其余 "?"）
+        result_summary: 预置汇总（实战配队清单把循环前解析出的无效配对先记入失败项）
+    """
+    result_summary = result_summary or GenerationResult()
+    total = len(pairs)
+    # 从旧数据开始工作，失败配对始终保留原有记录。
+    working_synergies = dict(existing_synergy_dict)
+    committed_pairs = 0
+
+    for idx, (ha, hb) in enumerate(pairs, start=1):
+        pair_key = tuple(sorted([ha["id"], hb["id"]]))
+
+        if skip_existing and pair_key in existing_synergy_keys:
+            result_summary.skipped += 1
+            print(f"  [{idx}/{total}] {label_of(ha, hb)} SKIP（已有相性）", flush=True)
+            continue
+
+        print(f"  [{idx}/{total}] {label_of(ha, hb)} START", flush=True)
+        generated, usage = generator.generate_synergy(ha, hb)
+        result_summary.add_usage(usage)
+        _report_rag_degradation()
+
+        if generated:
+            result_summary.completed += 1
+            if score_threshold is None:
+                working_synergies[pair_key] = _with_synergy_updated_date(generated)
+            else:
+                score = generated.get("score", 0)
+                if score >= score_threshold:
+                    working_synergies[pair_key] = _with_synergy_updated_date(generated)
+                else:
+                    # 本次结果校验成功但未达到用户设置的下限，移除旧记录。
+                    working_synergies.pop(pair_key, None)
+            print(
+                f"  [{idx}/{total}] {label_of(ha, hb)} OK - 评分: {generated.get('score', missing_score_text)}",
+                flush=True,
+            )
+        else:
+            result_summary.failed_items.append(fail_label_of(ha, hb))
+            print(f"  [{idx}/{total}] {label_of(ha, hb)} FAIL", flush=True)
+
+        # 每批仅提交已校验成功的结果；失败配对保留旧数据。
+        if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
+            _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
+            committed_pairs = result_summary.completed
+
+    if result_summary.completed > committed_pairs:
+        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
+    if result_summary.committed:
+        existing_synergy_dict.clear()
+        existing_synergy_dict.update(working_synergies)
+        existing_synergy_keys.clear()
+        existing_synergy_keys.update(working_synergies)
+    return result_summary
 
 
 # ============================================================
@@ -184,8 +274,6 @@ def run_synergy_generation(
     Returns:
         GenerationResult: 本次生成的结构化结果。
     """
-    result_summary = GenerationResult()
-
     total_pairs = len(heroes) * (len(heroes) - 1) // 2
     sep_line = "=" * 55
     model_name = api_config["model"]
@@ -193,58 +281,20 @@ def run_synergy_generation(
     print(f"  生成相性评分 -- {model_name} ({total_pairs:,} 对)")
     print(f"{sep_line}")
 
-    # 从旧数据开始工作，失败配对始终保留原有记录。
-    working_synergies = dict(existing_synergy_dict)
+    result_summary = _run_synergy_pairs(
+        list(itertools.combinations(heroes, 2)),
+        generator,
+        synergy_path,
+        existing_synergy_dict,
+        existing_synergy_keys,
+        skip_existing=False,
+        score_threshold=score_threshold,
+        label_of=_pair_label,
+        fail_label_of=_pair_fail_label,
+        missing_score_text="0",
+    )
 
-    processed = 0
-    committed_pairs = 0
-
-    for i in range(len(heroes)):
-        for j in range(i + 1, len(heroes)):
-            ha, hb = heroes[i], heroes[j]
-            processed += 1
-            key = tuple(sorted([ha["id"], hb["id"]]))
-
-            print(
-                f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']} START",
-                flush=True,
-            )
-
-            generated, usage = generator.generate_synergy(ha, hb)
-            result_summary.add_usage(usage)
-            _report_rag_degradation()
-
-            if generated:
-                result_summary.completed += 1
-                score = generated.get("score", 0)
-                if score >= score_threshold:
-                    working_synergies[key] = _with_synergy_updated_date(generated)
-                else:
-                    # 本次结果校验成功但未达到用户设置的下限，移除旧记录。
-                    working_synergies.pop(key, None)
-                print(
-                    f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']} "
-                    f"OK - 评分: {score}",
-                    flush=True,
-                )
-            else:
-                result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
-                print(f"  [{processed}/{total_pairs}] {ha['name']} <-> {hb['name']} FAIL", flush=True)
-
-            # 每批仅提交已校验成功的结果；失败配对保留旧数据。
-            if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
-                _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-                committed_pairs = result_summary.completed
-
-    if result_summary.completed > committed_pairs:
-        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-    if result_summary.committed:
-        existing_synergy_dict.clear()
-        existing_synergy_dict.update(working_synergies)
-        existing_synergy_keys.clear()
-        existing_synergy_keys.update(working_synergies)
-
-    print(f"\n  相性完成: 成功 {result_summary.completed} 对，共 {len(working_synergies)} 对")
+    print(f"\n  相性完成: 成功 {result_summary.completed} 对，共 {len(existing_synergy_dict)} 对")
     if result_summary.failed_items:
         print(f"  失败: {len(result_summary.failed_items)} 对；成功项已提交，失败项保留旧数据", flush=True)
     if result_summary.completed == 0 and not result_summary.failed_items:
@@ -302,42 +352,22 @@ def run_synergy_pair_generation(
         return result_summary
 
     print(f"  所选武将: {count} 个, 共 {total_pairs} 对", flush=True)
-    working_synergies = dict(existing_synergy_dict)
-    committed_pairs = 0
 
-    for idx, (ha, hb) in enumerate(itertools.combinations(pair_heroes, 2), start=1):
-        pair_key = tuple(sorted([ha["id"], hb["id"]]))
-        if not update_mode and pair_key in existing_synergy_keys:
-            result_summary.skipped += 1
-            print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} SKIP（已有相性）", flush=True)
-            continue
-        print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} START", flush=True)
-
-        generated, usage = generator.generate_synergy(ha, hb)
-        result_summary.add_usage(usage)
-        _report_rag_degradation()
-        if generated:
-            result_summary.completed += 1
-            working_synergies[pair_key] = _with_synergy_updated_date(generated)
-            print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
-        else:
-            result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
-            print(f"  [{idx}/{total_pairs}] {ha['name']} <-> {hb['name']} FAIL", flush=True)
-
-        if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
-            _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-            committed_pairs = result_summary.completed
-
-    if result_summary.completed > committed_pairs:
-        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-    if result_summary.committed:
-        existing_synergy_dict.clear()
-        existing_synergy_dict.update(working_synergies)
-        existing_synergy_keys.clear()
-        existing_synergy_keys.update(working_synergies)
+    result_summary = _run_synergy_pairs(
+        list(itertools.combinations(pair_heroes, 2)),
+        generator,
+        synergy_path,
+        existing_synergy_dict,
+        existing_synergy_keys,
+        skip_existing=not update_mode,
+        score_threshold=None,
+        label_of=_pair_label,
+        fail_label_of=_pair_fail_label,
+        missing_score_text="?",
+    )
     print(
         f"  相性完成: 新增 {result_summary.completed} 对，跳过 {result_summary.skipped} 对，"
-        f"共 {len(working_synergies)} 对",
+        f"共 {len(existing_synergy_dict)} 对",
         flush=True,
     )
     return result_summary
@@ -388,44 +418,21 @@ def run_synergy_single_generation(
     pairs = [(target, h) for h in heroes if h["id"] != target_id]
     print(f"  {target['name']} <-> {len(pairs)} 个武将", flush=True)
 
-    working_synergies = dict(existing_synergy_dict)
-    committed_pairs = 0
-
-    for i, (ha, hb) in enumerate(pairs, 1):
-        key = tuple(sorted([ha["id"], hb["id"]]))
-
-        # 断点续传：已有则跳过
-        if key in existing_synergy_keys:
-            result_summary.skipped += 1
-            print(f"  [{i}/{len(pairs)}] {hb['name']} SKIP（已有相性）", flush=True)
-            continue
-
-        print(f"  [{i}/{len(pairs)}] {hb['name']} START", flush=True)
-        generated, usage = generator.generate_synergy(ha, hb)
-        result_summary.add_usage(usage)
-        _report_rag_degradation()
-        if generated:
-            working_synergies[key] = _with_synergy_updated_date(generated)
-            result_summary.completed += 1
-            print(f"  [{i}/{len(pairs)}] {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
-        else:
-            result_summary.failed_items.append(hb["name"])
-            print(f"  [{i}/{len(pairs)}] {hb['name']} FAIL", flush=True)
-
-        if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
-            _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-            committed_pairs = result_summary.completed
-
-    if result_summary.completed > committed_pairs:
-        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-    if result_summary.committed:
-        existing_synergy_dict.clear()
-        existing_synergy_dict.update(working_synergies)
-        existing_synergy_keys.clear()
-        existing_synergy_keys.update(working_synergies)
+    result_summary = _run_synergy_pairs(
+        pairs,
+        generator,
+        synergy_path,
+        existing_synergy_dict,
+        existing_synergy_keys,
+        skip_existing=True,
+        score_threshold=None,
+        label_of=lambda _ha, hb: hb["name"],
+        fail_label_of=lambda _ha, hb: hb["name"],
+        missing_score_text="?",
+    )
     print(
         f"  相性完成: 新增 {result_summary.completed} 对，跳过 {result_summary.skipped} 对，"
-        f"失败 {len(result_summary.failed_items)} 对, 共 {len(working_synergies)} 对",
+        f"失败 {len(result_summary.failed_items)} 对, 共 {len(existing_synergy_dict)} 对",
         flush=True,
     )
     return result_summary
@@ -485,42 +492,23 @@ def run_synergy_list_generation(
 
     total = len(pairs)
     print(f"  配对清单: {total} 对", flush=True)
-    working_synergies = dict(existing_synergy_dict)
-    committed_pairs = 0
 
-    for idx, (ha, hb) in enumerate(pairs, start=1):
-        pair_key = tuple(sorted([ha["id"], hb["id"]]))
-        if not update_mode and pair_key in existing_synergy_keys:
-            result_summary.skipped += 1
-            print(f"  [{idx}/{total}] {ha['name']} <-> {hb['name']} SKIP（已有相性）", flush=True)
-            continue
-        print(f"  [{idx}/{total}] {ha['name']} <-> {hb['name']} START", flush=True)
-
-        generated, usage = generator.generate_synergy(ha, hb)
-        result_summary.add_usage(usage)
-        _report_rag_degradation()
-        if generated:
-            result_summary.completed += 1
-            working_synergies[pair_key] = _with_synergy_updated_date(generated)
-            print(f"  [{idx}/{total}] {ha['name']} <-> {hb['name']} OK - 评分: {generated.get('score', '?')}", flush=True)
-        else:
-            result_summary.failed_items.append(f"{ha['name']}<->{hb['name']}")
-            print(f"  [{idx}/{total}] {ha['name']} <-> {hb['name']} FAIL", flush=True)
-
-        if result_summary.completed - committed_pairs >= SYNERGY_BATCH_SAVE_INTERVAL:
-            _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-            committed_pairs = result_summary.completed
-
-    if result_summary.completed > committed_pairs:
-        _commit_generation_batch(result_summary, synergy_path, list(working_synergies.values()))
-    if result_summary.committed:
-        existing_synergy_dict.clear()
-        existing_synergy_dict.update(working_synergies)
-        existing_synergy_keys.clear()
-        existing_synergy_keys.update(working_synergies)
+    result_summary = _run_synergy_pairs(
+        pairs,
+        generator,
+        synergy_path,
+        existing_synergy_dict,
+        existing_synergy_keys,
+        skip_existing=not update_mode,
+        score_threshold=None,
+        label_of=_pair_label,
+        fail_label_of=_pair_fail_label,
+        missing_score_text="?",
+        result_summary=result_summary,
+    )
     print(
         f"  相性完成: 新增 {result_summary.completed} 对，跳过 {result_summary.skipped} 对，"
-        f"失败 {len(result_summary.failed_items)} 项, 共 {len(working_synergies)} 对",
+        f"失败 {len(result_summary.failed_items)} 项, 共 {len(existing_synergy_dict)} 对",
         flush=True,
     )
     return result_summary

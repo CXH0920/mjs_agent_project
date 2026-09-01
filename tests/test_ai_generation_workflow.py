@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, HeroGuide, SynergyScore
+from src.data.models import Hero, HeroGuide
 from src.data.synergy_manager import SynergyManager
 from src.ui.generation import ai_generation_workflow as workflow_module
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
@@ -74,12 +74,15 @@ class _SynergyService(QObject):
     progress_output = Signal(str)
     progress_value = Signal(int, int)
     cancelled = Signal()
+    reload_finished = Signal()
+    reload_failed = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[tuple[dict, list[dict], str]] = []
         self.pair_calls: list[tuple[list[dict], str, bool]] = []
         self.cancel_calls = 0
+        self.reload_requests = 0
         self._busy = False
 
     @property
@@ -88,6 +91,10 @@ class _SynergyService(QObject):
 
     def cancel(self) -> None:
         self.cancel_calls += 1
+
+    def reload_from_disk(self) -> bool:
+        self.reload_requests += 1
+        return True
 
     def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False, use_rag: bool = True) -> bool:
         self.pair_calls.append((heroes, backend, overwrite, use_rag))
@@ -332,43 +339,20 @@ def test_progress_dialog_cancel_requests_guide_service(tmp_path: Path, monkeypat
     assert guide_service.cancel_calls == 1
 
 
-def test_synergy_cancel_reloads_data_in_background(tmp_path: Path, monkeypatch) -> None:
-    workflow, _, _ = _workflow(tmp_path)
+def test_synergy_cancel_reloads_data_in_background(tmp_path: Path) -> None:
+    """取消生成后工作流只委托服务重载；服务广播完成后才刷新界面数据。"""
+    workflow, _, synergy_service = _workflow(tmp_path)
     changed: list[bool] = []
-    load_calls: list[bool] = []
 
-    class _ReloadWorker:
-        instance = None
-
-        def __init__(self, _file_path, _parent=None) -> None:
-            self.loaded = _CallbackSignal()
-            self.failed = _CallbackSignal()
-            self.finished = _CallbackSignal()
-            self.started = False
-            _ReloadWorker.instance = self
-
-        def isRunning(self) -> bool:
-            return self.started
-
-        def start(self) -> None:
-            self.started = True
-
-        def deleteLater(self) -> None:
-            pass
-
-    monkeypatch.setattr(workflow._synergy_manager, "load", lambda: load_calls.append(True))
-    monkeypatch.setattr(workflow_module, "SynergyReloadWorker", _ReloadWorker)
     workflow.synergies_changed.connect(lambda: changed.append(True))
 
     workflow._on_synergy_cancelled()
 
-    assert load_calls == []
-    assert _ReloadWorker.instance.started
+    assert synergy_service.reload_requests == 1
     assert changed == []
 
-    _ReloadWorker.instance.loaded.emit([SynergyScore(hero_a_id=1, hero_b_id=2, score=6)], [])
+    synergy_service.reload_finished.emit()
 
-    assert workflow._synergy_manager.get_synergy(1, 2).score == 6
     assert changed == [True]
 
 

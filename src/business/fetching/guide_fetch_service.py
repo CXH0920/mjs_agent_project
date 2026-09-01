@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import tempfile
 
 from PySide6.QtCore import Signal
 
 from src.business.fetching.base_fetch_service import BaseFetchService
-from src.business.fetching.fetch_utils import is_generation_progress_line
+from src.business.fetching.fetch_utils import is_generation_progress_line, parse_generation_event
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +107,15 @@ class GuideFetchService(BaseFetchService):
     # ---------------------------------------------------------------
 
     def _on_stdout_line(self, line: str) -> None:
-        """解析子进程进度行。"""
+        """解析子进程进度行：协议解析统一在 fetch_utils，UI 渲染共用同一解析源。"""
         if not line:
             return
 
         if is_generation_progress_line(line):
             self.progress_output.emit(line)
-        m = re.search(r"\[(\d+)/(\d+)\]", line)
-        if m:
-            self.progress_value.emit(int(m.group(1)), int(m.group(2)))
+        event = parse_generation_event(line)
+        if event is not None and event.current is not None and event.total is not None:
+            self.progress_value.emit(event.current, event.total)
 
     def _on_process_finished(self, exit_code: int) -> None:
         """仅以 CLI 的结构化退出码判断生成成败。"""

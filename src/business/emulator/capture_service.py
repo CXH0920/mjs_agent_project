@@ -687,5 +687,5 @@ class CaptureService(QObject):
         self._adb_executor.shutdown(wait=False, cancel_futures=True)
         self._image_save_executor.shutdown(wait=False, cancel_futures=True)
         if self._ocr_worker is not None:
-            self._ocr_worker.retire(force_warmup=True)
+            self._ocr_worker.retire()
             self._ocr_worker = None

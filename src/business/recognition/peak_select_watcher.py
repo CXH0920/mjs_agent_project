@@ -118,6 +118,11 @@ class PeakSelectWatcher(QObject):
         self._timer.timeout.connect(self._on_tick)
         self._thread_lock = threading.Lock()
         self._import_lock = threading.Lock()
+        # 牌面状态（_signature/_ban_names/_resolutions/_last_board）被识别线程、
+        # 图片导入线程与 GUI 线程（start/confirm_pending）三方并发读写；_thread_lock
+        # 只保证识别拍单飞，覆盖不到 GUI 调用，统一用 _state_lock 串行化。
+        # 锁内只做纯内存读写，不发 IO、不 emit 信号。
+        self._state_lock = threading.Lock()
         self._signature: tuple | None = None
         self._ban_names: tuple[str, ...] = ()
         self._resolutions: dict[int, str] = {}
@@ -129,10 +134,12 @@ class PeakSelectWatcher(QObject):
         return self._timer.isActive()
 
     def start(self) -> None:
-        self._signature = None
-        self._ban_names = ()
-        self._resolutions = {}
-        self._last_board = None
+        # 上一轮停止后可能仍有在途识别线程，重置须与其互斥
+        with self._state_lock:
+            self._signature = None
+            self._ban_names = ()
+            self._resolutions = {}
+            self._last_board = None
         self._miss_ticks = 0
         self._timer.start()
 
@@ -165,16 +172,21 @@ class PeakSelectWatcher(QObject):
 
             self._miss_ticks = 0
             signature = board_signature(cards)
-            if signature == self._signature:
+            with self._state_lock:
+                unchanged = signature == self._signature
+                if not unchanged:
+                    self._resolutions = {}  # 新牌面：人工确认不跨牌沿用
+            if unchanged:
                 return  # 牌面未变化，沿用上一次结果
-            self._resolutions = {}  # 新牌面：人工确认不跨牌沿用
             self._suspend_standard_tasks()
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
                 # 识别失败清签名，下一拍强制重试；仅实时循环路径，图片导入不动签名
-                self._signature = None
+                with self._state_lock:
+                    self._signature = None
                 return
-            self._signature = signature
+            with self._state_lock:
+                self._signature = signature
             self._publish_pool(ocr_results, len(cards))
         except Exception:
             logger.exception("巅峰赛识别循环异常")
@@ -204,18 +216,25 @@ class PeakSelectWatcher(QObject):
         return (task.result or {}).get("ocr_results") or []
 
     def _publish_pool(self, ocr_results: list[dict], card_count: int) -> None:
-        """整理候选池快照并推送面板；禁选阶段快照留作已禁差集基准。"""
-        self._last_board = (ocr_results, card_count)
-        snapshot = parse_pool(ocr_results, card_count, self._ban_names, self._resolutions)
-        if snapshot.stage == "ban":
-            self._ban_names = snapshot.names
+        """整理候选池快照并推送面板；禁选阶段快照留作已禁差集基准。
+
+        组装全程持锁：本方法可由识别线程、导入线程与 GUI 确认并发进入，
+        无锁时两个发布可能把 _last_board/_ban_names 交错成跨牌面组合。
+        """
+        with self._state_lock:
+            self._last_board = (ocr_results, card_count)
+            snapshot = parse_pool(ocr_results, card_count, self._ban_names, self._resolutions)
+            if snapshot.stage == "ban":
+                self._ban_names = snapshot.names
         self.pool_updated.emit(snapshot)
 
     def confirm_pending(self, slot: int, name: str) -> None:
         """人工确认一个待确认槽位；有效性由 parse_pool 校验，确认后立即重发快照。"""
-        self._resolutions[slot] = name
-        if self._last_board is not None:
-            self._publish_pool(*self._last_board)
+        with self._state_lock:
+            self._resolutions[slot] = name
+            last_board = self._last_board
+        if last_board is not None:
+            self._publish_pool(*last_board)
 
     # ── 手动图片导入 ──────────────────────────────────────────────────
 
@@ -282,9 +301,12 @@ class PeakSelectWatcher(QObject):
 
     def _handle_board_absent(self) -> None:
         self._miss_ticks += 1
-        self._signature = None
-        if self._miss_ticks == BOARD_EXIT_TICKS:
+        exiting = self._miss_ticks == BOARD_EXIT_TICKS
+        with self._state_lock:
+            self._signature = None
+            if exiting:
+                self._ban_names = ()
+                self._resolutions = {}
+        if exiting:
             self._restore_standard_tasks()
-            self._ban_names = ()
-            self._resolutions = {}
             self.status_changed.emit("未检测到巅峰赛选将页牌面")

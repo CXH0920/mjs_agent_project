@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import IMAGES_DIR
 from src.data.models import Hero
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.ui.shared.faction_colors import get_faction_colors
@@ -32,9 +32,6 @@ from src.ui.shared.style import (
     set_style_property,
     set_ui_role,
 )
-
-
-IMAGES_DIR = BUNDLE_ROOT / "images"
 
 
 class HeroCardWidget(QFrame):
@@ -362,6 +359,8 @@ class HeroCardWidget(QFrame):
 
     @staticmethod
     def _load_portrait(hero_name: str) -> QPixmap | None:
+        # 不用 shared/portrait.load_portrait：卡片是 KeepAspectRatio 留白式缩放，
+        # 共享实现是 ByExpanding 裁剪式，96x129 非正方形下视觉不同（刻意差异）
         for extension in (".png", ".jpg", ".webp"):
             path = IMAGES_DIR / f"{hero_name}{extension}"
             if path.exists():

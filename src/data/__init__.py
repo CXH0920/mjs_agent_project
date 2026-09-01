@@ -19,7 +19,6 @@ from src.data.guide_manager import GuideManager
 from src.data.card_catalog import (
     CardAnnotation,
     CardAnnotationRepository,
-    CardCatalogService,
     CardFieldDefinition,
     CardFieldSchemaRepository,
     CardRepository,
@@ -45,7 +44,6 @@ __all__ = [
     "CardRepository",
     "CardFieldSchemaRepository",
     "CardAnnotationRepository",
-    "CardCatalogService",
     "CardFieldDefinition",
     "CardAnnotation",
     "CardViewModel",

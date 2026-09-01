@@ -37,10 +37,10 @@ from PySide6.QtWidgets import (
     QStyle,
 )
 
+from src.business.card_catalog import CardCatalogService
 from src.data.card_catalog import (
     EFFECT_STATUSES,
     FIELD_TYPES,
-    CardCatalogService,
     CardFieldDefinition,
     CardFieldValue,
     CardViewModel,

@@ -359,6 +359,49 @@ def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> No
     assert recognized_engines == [engine]
 
 
+def test_ocr_worker_warmup_cancellable_between_steps(monkeypatch) -> None:
+    """回归：预热在步骤间可取消——特征预热后收到停止请求则跳过推理预热并保留引擎。"""
+    events: list[str] = []
+    engine = object()
+
+    class FakeRecognizer:
+        def __init__(self, hero_names, page_type, layout=None) -> None:
+            self._ocr = None
+
+        def ensure_engine(self):
+            events.append("ensure_engine")
+            return None
+
+        def warmup(self) -> None:
+            events.append("warmup")
+            self._ocr = engine
+            # 模拟用户在特征预热期间关闭应用
+            worker._cancel_event.set()
+
+        def warmup_inference(self) -> None:
+            events.append("warmup_inference")
+
+        def adopt_engine(self, adopted) -> None:
+            pass
+
+        def shared_engine(self):
+            return self._ocr
+
+    monkeypatch.setattr(
+        "src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer
+    )
+
+    worker = OcrWorker()
+    task = OcrTask(
+        image=None, hero_names=(), rois=None, template_name="hero_selection",
+        threshold=0.0, match_template=False, warmup=True,
+    )
+
+    assert worker._execute(task) == {"outcome": "cancelled"}
+    assert events == ["ensure_engine", "warmup"]  # 推理预热被跳过
+    assert worker._ocr_engine is engine  # 已加载的引擎保留复用
+
+
 def test_ocr_worker_logs_stage_timings(monkeypatch, caplog) -> None:
     class FakeTemplateManager:
         is_loaded = True
@@ -500,18 +543,19 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
     }]
 
 
-def test_retire_force_warmup_appends_retired_on_wait_timeout(monkeypatch) -> None:
-    """terminate 后 3 秒未退出时进入退役列表，由进程退出钩子二次兜底。"""
+def test_retire_requests_stop_and_appends_retired(monkeypatch) -> None:
+    """retire 只置停止标志并把线程交退役列表收尾，不再强杀线程（预热已分步可取消）。"""
     worker = OcrWorker()
     worker._current_task_kind = "warmup"
-    monkeypatch.setattr(worker, "isRunning", lambda: True)
-    monkeypatch.setattr(worker, "terminate", lambda: None)
-    monkeypatch.setattr(worker, "wait", lambda _timeout_ms: False)
+    stop_requested: list[bool] = []
+    monkeypatch.setattr(worker, "request_stop", lambda: stop_requested.append(True))
     monkeypatch.setattr(ocr_worker_module, "_RETIRED_WORKERS", [])
 
-    worker.retire(force_warmup=True)
+    worker.retire()
+    worker.retire()
 
-    assert ocr_worker_module._RETIRED_WORKERS == [worker]
+    assert stop_requested == [True, True]
+    assert ocr_worker_module._RETIRED_WORKERS == [worker]  # 重复退役不重复入列
 
 
 def test_drain_retired_workers_force_exits_on_timeout(monkeypatch) -> None:
