@@ -389,6 +389,26 @@ def test_synergy_progress_stays_at_zero_until_first_result() -> None:
     dialog.close()
 
 
+def test_progress_dialog_shows_wait_seconds_during_silence() -> None:
+    """长请求静默期在进度条显示已等待秒数，新进度行到来即复位。"""
+    _app()
+    dialog = GuideProgressDialog(3, item_label="相性评分")
+
+    dialog.update_status("[1/3] 甲 <-> 乙 START")
+    for _ in range(9):
+        dialog._on_wait_tick()
+    assert dialog._progress_bar.format() == "0 / 3"
+
+    dialog._on_wait_tick()
+    assert dialog._progress_bar.format() == "0 / 3 · 已等待 10 秒"
+
+    dialog.update_status("[1/3] 甲 <-> 乙 OK - 评分: 8")
+    assert dialog._progress_bar.format() == "1 / 3"
+
+    dialog.on_process_finished(True)
+    dialog.close()
+
+
 def test_main_window_generation_entries_delegate_to_workflow() -> None:
     class _WorkflowRecorder:
         def __init__(self) -> None:

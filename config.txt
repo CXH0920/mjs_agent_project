@@ -8,6 +8,8 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 REQUESTS_PER_MINUTE=30
 HTTP_TIMEOUT=300
 MAX_RETRIES=3
+# 单次 AI 请求输出额度 max_tokens（思考+正文共享）；思考型模型可按供应商上限调大，如 32768
+MAX_OUTPUT_TOKENS=16384
 MUMU_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
 MUMU_ADB_PORT=16448
 MUMU_OCR_ENABLED=false

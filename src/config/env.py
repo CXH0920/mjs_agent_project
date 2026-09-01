@@ -141,6 +141,7 @@ def load_env_config(env_path=None):
         "REQUESTS_PER_MINUTE": "requests_per_minute",
         "HTTP_TIMEOUT": "http_timeout",
         "MAX_RETRIES": "max_retries",
+        "MAX_OUTPUT_TOKENS": "max_output_tokens",
         "LOG_LEVEL": "log_level",
         "LOG_TO_FILE": "log_to_file",
         # 模拟器 (MuMu) 配置
@@ -165,7 +166,7 @@ def load_env_config(env_path=None):
     for env_key, cfg_key in key_mapping.items():
         if env_key in raw:
             value = raw[env_key]
-            if cfg_key in ("requests_per_minute", "max_retries", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown", "mumu_ocr_cpu_threads"):
+            if cfg_key in ("requests_per_minute", "max_retries", "max_output_tokens", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown", "mumu_ocr_cpu_threads"):
                 try:
                     value = int(value)
                 except (ValueError, TypeError):
@@ -334,12 +335,15 @@ def get_runtime_params():
 
     Returns:
         {"requests_per_minute": int, "max_retries": int,
-         "http_timeout": int, "log_level": str, "log_to_file": bool}
+         "max_output_tokens": int, "http_timeout": int,
+         "log_level": str, "log_to_file": bool}
     """
     config = load_env_config()
     return {
         "requests_per_minute": config.get("requests_per_minute", 30),
         "max_retries": config.get("max_retries", 3),
+        # 与 AIBatchGenerator.MAX_OUTPUT_TOKENS 默认一致；思考型模型可按供应商上限调大
+        "max_output_tokens": config.get("max_output_tokens", 16_384),
         "http_timeout": config.get("http_timeout", 300),
         "log_level": config.get("log_level", "INFO"),
         "log_to_file": config.get("log_to_file", True),

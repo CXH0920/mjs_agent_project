@@ -27,10 +27,16 @@ from src.business.fetching.fetch_utils import (
 
 logger = logging.getLogger(__name__)
 _OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"
+# CLI 结束前输出的失败摘要行（[错误] 生成失败：N 项；成功项已提交，失败项保留旧数据）
+_FAILURE_SUMMARY_PATTERN = re.compile(r"^\s*\[错误\]\s*生成失败：(.+)$", re.MULTILINE)
 
 
 def _process_failure_message(exit_code: int, stdout: str, stderr: str) -> str:
+    """优先取 CLI 的失败摘要（部分成功时比单个错误标记更准确）。"""
     combined_output = f"{stdout}\n{stderr}"
+    matched = _FAILURE_SUMMARY_PATTERN.search(combined_output)
+    if matched:
+        return f"生成失败：{matched.group(1).strip()}"
     if _OUTPUT_BUDGET_EXHAUSTED_MESSAGE in combined_output:
         return _OUTPUT_BUDGET_EXHAUSTED_MESSAGE
     return f"进程退出码: {exit_code}"

@@ -47,13 +47,13 @@ _CONN_ERRORS = (
 _NON_RETRYABLE_STATUS = frozenset({400, 401, 403, 404, 422})
 
 
-def _read_completion_content(response: dict) -> tuple[str | None, dict]:
+def _read_completion_content(response: dict, max_tokens: int = MAX_OUTPUT_TOKENS) -> tuple[str | None, dict]:
     """只读取最终正文；思考过程不进入日志、持久化或界面链路。"""
     usage = response.get("usage", {})
     content = response.get("content", "")
     finish_reason = response.get("finish_reason", "")
     if finish_reason == "length" or not isinstance(content, str) or not content.strip():
-        logger.error("%s（max_tokens=%d）", OUTPUT_BUDGET_EXHAUSTED_MESSAGE, MAX_OUTPUT_TOKENS)
+        logger.error("%s（max_tokens=%d）", OUTPUT_BUDGET_EXHAUSTED_MESSAGE, max_tokens)
         return None, usage
     return content, usage
 
@@ -74,6 +74,7 @@ class AIBatchGenerator:
         requests_per_minute: int = 30,
         max_retries: int = 3,
         http_timeout: int = 300,
+        max_output_tokens: int = MAX_OUTPUT_TOKENS,
     ):
         # 供应商语义 Key 校验：requires_key=False（如 ollama 本地服务）允许空 Key
         if PROVIDER_PRESETS.get(provider, {}).get("requires_key", True) and not api_key:
@@ -85,6 +86,8 @@ class AIBatchGenerator:
         self.model = model or "deepseek-v4-pro"
         self.max_retries = max_retries
         self.http_timeout = http_timeout
+        # 思考+正文共享的输出额度；思考型模型经 config.env MAX_OUTPUT_TOKENS 按供应商上限调大
+        self.max_output_tokens = max_output_tokens
         self._client = httpx.Client(timeout=http_timeout)
 
         # 限速控制
@@ -104,6 +107,35 @@ class AIBatchGenerator:
         """公开的对话补全接口（供业务层调用，内部复用 _call_api）。"""
         return self._call_api(messages, temperature=temperature)
 
+    def _request_content(
+        self, messages: list[dict], temperature: float, label: str,
+    ) -> tuple[str | None, dict | None]:
+        """请求补全并读取正文；思考过程耗尽输出额度时重试至多 max_retries 次。
+
+        思考长度随采样波动，重试通常能让正文挤进额度；每次重试都输出 [重试]
+        进度行，避免子进程长时间静默让用户以为卡死。
+        """
+        content: str | None = None
+        usage: dict | None = None
+        for attempt in range(1, self.max_retries + 1):
+            response = self._call_api(messages, temperature=temperature)
+            if not response:
+                return None, usage
+            content, attempt_usage = _read_completion_content(response, self.max_output_tokens)
+            usage = attempt_usage or usage
+            self._log_usage(label, usage or {})
+            if content is not None:
+                return content, usage
+            if attempt < self.max_retries:
+                wait = 2 ** attempt
+                print(
+                    f"  [重试] {OUTPUT_BUDGET_EXHAUSTED_MESSAGE}，"
+                    f"第 {attempt}/{self.max_retries} 次，{wait} 秒后重试",
+                    flush=True,
+                )
+                time.sleep(wait)
+        return None, usage
+
     def _call_api(self, messages: list[dict], temperature: float = 0.7) -> dict | None:
         """调用 DeepSeek API，带指数退避重试"""
         headers = {
@@ -114,7 +146,7 @@ class AIBatchGenerator:
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": MAX_OUTPUT_TOKENS,
+            "max_tokens": self.max_output_tokens,
         }
         # thinking 是 DeepSeek 私有参数，非 DeepSeek 端点会因未知字段返回 400
         if self.provider == "deepseek":
@@ -217,12 +249,7 @@ class AIBatchGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = self._call_api(messages, temperature=0.7)
-        if not response:
-            return None, None
-
-        content, usage = _read_completion_content(response)
-        self._log_usage(hero.get("name", ""), usage)
+        content, usage = self._request_content(messages, temperature=0.7, label=hero.get("name", ""))
         if content is None:
             return None, usage
 
@@ -262,12 +289,8 @@ class AIBatchGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = self._call_api(messages, temperature=0.3)
-        if not response:
-            return None, None
-
-        content, usage = _read_completion_content(response)
-        self._log_usage(f"{hero_a.get('name','')}/{hero_b.get('name','')}", usage)
+        label = f"{hero_a.get('name','')}/{hero_b.get('name','')}"
+        content, usage = self._request_content(messages, temperature=0.3, label=label)
         if content is None:
             return None, usage
 

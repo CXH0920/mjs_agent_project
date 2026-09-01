@@ -244,6 +244,9 @@ class PlaywrightGenerator:
     def _random_rest(self) -> None:
         """随机休息 60-180 秒，避免触发风控"""
         rest = random.randint(60, 180)
+        # 进度窗口靠解析 stdout 的 [休息] 行展示冷却倒计时；
+        # 子进程 root 日志级别为 WARNING，logger.info 到不了 stdout，必须 print
+        print(f"  [休息] 随机休息 {rest} 秒...", flush=True)
         logger.info("[休息] 随机休息 %d 秒...", rest)
         time.sleep(rest)
 

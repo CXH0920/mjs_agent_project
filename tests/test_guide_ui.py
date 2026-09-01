@@ -11,9 +11,10 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QTextBrowser
 
+from src.data.combo_manager import ComboManager
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
-from src.data.models import Hero, HeroGuide, Skill, SynergyScore
+from src.data.models import Combo, Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
 from src.ui.shared import persist as persist_module
@@ -573,6 +574,44 @@ def test_synergy_description_uses_the_standard_dialog_shell(tmp_path: Path, monk
     assert footer is not None and footer.accept_button.text() == "关闭"
     assert footer.cancel_button.isHidden()
     assert body is not None and "配合说明" in body.toPlainText()
+
+
+def test_synergy_view_merges_combo_info_into_generated_rows(tmp_path: Path) -> None:
+    """回归：配对生成 AI 评分后，行内仍要展示实战评级与座次（不得变 --）。"""
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    combo_manager = ComboManager(tmp_path / "combos.json")
+    hero_manager.add_hero(Hero(id=1, name="刘彻"))
+    hero_manager.add_hero(Hero(id=2, name="左慈"))
+    hero_manager.add_hero(Hero(id=3, name="陈平"))
+    synergy_manager.add_synergy(SynergyScore(
+        hero_a_id=1,
+        hero_b_id=2,
+        score=4,
+        description="**相性总评**: B",
+    ))
+    combo_manager.save_manual_combo(Combo(
+        hero1_name="刘彻", hero2_name="左慈", hero1_id=1, hero2_id=2,
+        rating=9, hero1_seats=[3], hero2_seats=[2],
+    ))
+    combo_manager.save_manual_combo(Combo(
+        hero1_name="刘彻", hero2_name="陈平", hero1_id=1, hero2_id=3,
+        rating=9, hero1_seats=[3], hero2_seats=[2],
+    ))
+
+    view = HeroSynergyView(hero_manager, synergy_manager, combo_manager)
+    view.show_hero(hero_manager.get_hero(1))
+
+    assert view._context_label.text().startswith("刘彻（#1） · 显示 2 / 共 2 条")
+    scores = [view._table.item(row, 1).text() for row in range(2)]
+    assert scores == ["4", "未生成"]
+    ratings = [view._table.item(row, 3).text() for row in range(2)]
+    assert ratings == ["9", "9"]
+    seats = [view._table.item(row, 4).text() for row in range(2)]
+    assert all("刘彻[3]" in text for text in seats)
+    assert "左慈[2]" in seats[0]
+    assert "陈平[2]" in seats[1]
 
 
 def test_skill_cards_are_hidden_before_deferred_deletion(tmp_path: Path) -> None:

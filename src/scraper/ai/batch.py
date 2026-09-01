@@ -274,6 +274,7 @@ def main():
             requests_per_minute=runtime_params["requests_per_minute"],
             max_retries=runtime_params["max_retries"],
             http_timeout=runtime_params["http_timeout"],
+            max_output_tokens=runtime_params["max_output_tokens"],
         )
 
     guide_path = Path(args.guides_file)

@@ -88,9 +88,10 @@ def _make_panel(
     win_rates=None,
     pick_ranks=None,
     combo_manager=None,
+    **service_attrs,
 ) -> PeakSelectPanel:
     return PeakSelectPanel(
-        capture_service=SimpleNamespace(capture=capture),
+        capture_service=SimpleNamespace(capture=capture, **service_attrs),
         ocr_service=None,
         hero_names_provider=lambda: [],
         hero_manager=hero_manager,
@@ -286,6 +287,49 @@ def test_panel_toggle_starts_and_stops_watcher(qapp):
     panel._toggle_button.click()
     assert not panel._watcher.is_running()
     assert panel._toggle_button.text() == "开始识别"
+
+
+def test_panel_save_screenshot_without_capture_prompts_config(qapp):
+    """未连接模拟器时保存截图引导配置，不发捕获请求。"""
+    panel = _make_panel(capture=None, do_capture=lambda **kwargs: pytest.fail("不应触发截图"))
+    requested = []
+    panel.request_mumu_config.connect(lambda: requested.append(True))
+
+    panel._save_action.trigger()
+
+    assert requested == [True]
+    assert "未连接模拟器" in panel._action_bar.status_label.text()
+
+
+def test_panel_save_screenshot_captures_without_ocr(qapp):
+    """保存截图走 do_capture(perform_ocr=False)，完成后回显保存路径。"""
+    calls = []
+    panel = _make_panel(capture=object(), do_capture=lambda **kwargs: calls.append(kwargs))
+
+    panel._save_action.trigger()
+    assert calls == [{"perform_ocr": False}]
+    assert "正在保存截图" in panel._action_bar.status_label.text()
+
+    # 在途锁未释放前忽略重复触发
+    panel._save_action.trigger()
+    assert len(calls) == 1
+
+    panel._on_capture_result({"save_path": "screenshots/screenshot_1.png"})
+    assert "screenshot_1.png" in panel._action_bar.status_label.text()
+
+    # 空闲状态下其他面板的捕获回调不改动动作栏状态
+    panel._on_capture_result({"save_path": "screenshots/foreign.png"})
+    assert "screenshot_1.png" in panel._action_bar.status_label.text()
+
+
+def test_panel_save_screenshot_failure_shows_warning(qapp):
+    """截图失败在动作栏给出警告状态。"""
+    panel = _make_panel(capture=object(), do_capture=lambda **kwargs: None)
+
+    panel._save_action.trigger()
+    panel._on_capture_failed("ADB 未连接")
+
+    assert "截图保存失败" in panel._action_bar.status_label.text()
 
 
 def _fake_ocr_task(ocr_results: list[dict]) -> SimpleNamespace:

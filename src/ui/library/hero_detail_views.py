@@ -396,22 +396,31 @@ class HeroSynergyView(QWidget):
             return
 
         synergies = self._synergy_mgr.list_synergies_for_hero(hero.id)
-        synergy_by_pair = {
-            tuple(sorted((s.hero_a_id, s.hero_b_id))): s for s in synergies
-        }
         search_text = self._search_edit.text().strip().lower()
         rating = self._rating_combo.currentText()
         source = self._source_combo.currentText()
 
-        # 行来源：AI 相性全量 + 仅有实战配队（尚未生成 AI 评分）的补集
-        rows: list[tuple[SynergyScore | None, Combo | None, Hero | None, int]] = []
-        for synergy in synergies:
-            partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id
-            rows.append((synergy, None, self._hero_mgr.get_hero(partner_id), partner_id))
+        # 行来源：AI 相性 ∪ 实战配队，同配对合并为一行（实战评级/座次随行展示）；
+        # 同一配对可能有多个座次变体，逐条成行
+        combos_by_pair: dict[tuple[int, int], list[Combo]] = {}
         if self._combo_mgr is not None:
             for combo in self._combo_mgr.list_combos_for_hero(hero.id):
-                if tuple(sorted((combo.hero1_id, combo.hero2_id))) in synergy_by_pair:
-                    continue
+                combos_by_pair.setdefault(
+                    tuple(sorted((combo.hero1_id, combo.hero2_id))), []
+                ).append(combo)
+
+        rows: list[tuple[SynergyScore | None, Combo | None, Hero | None, int]] = []
+        for synergy in synergies:
+            pair = tuple(sorted((synergy.hero_a_id, synergy.hero_b_id)))
+            partner_id = synergy.hero_b_id if synergy.hero_a_id == hero.id else synergy.hero_a_id
+            partner = self._hero_mgr.get_hero(partner_id)
+            combos = combos_by_pair.pop(pair, [])
+            if not combos:
+                combos = [None]
+            for combo in combos:
+                rows.append((synergy, combo, partner, partner_id))
+        for combos in combos_by_pair.values():
+            for combo in combos:
                 partner_id = combo.hero2_id if combo.hero1_id == hero.id else combo.hero1_id
                 rows.append((None, combo, self._hero_mgr.get_hero(partner_id), partner_id))
 

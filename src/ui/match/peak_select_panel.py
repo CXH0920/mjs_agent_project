@@ -33,6 +33,7 @@ from src.data.combo_seats import format_seats
 from src.business.maintenance.corpus_services import ComboService
 from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.match.peak_hero_card import PeakHeroCard
+from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.combo_detail import show_combo_detail
 from src.ui.shared.style import (
     FONT_SIZE_LG,
@@ -94,6 +95,13 @@ class PeakSelectPanel(QWidget):
         self._watcher = PeakSelectWatcher(capture_service, ocr_service, hero_names_provider, self)
         self._watcher.pool_updated.connect(self._on_pool_updated)
         self._watcher.status_changed.connect(self._on_status_changed)
+        self._capture_lock = CaptureRequestLock()
+        capture_completed = getattr(capture_service, "capture_completed", None)
+        if capture_completed is not None:
+            capture_completed.connect(self._on_capture_result)
+        capture_failed = getattr(capture_service, "capture_failed", None)
+        if capture_failed is not None:
+            capture_failed.connect(self._on_capture_failed)
         self._warmup_hint_active = False
         self._setup_ui()
 
@@ -113,6 +121,10 @@ class PeakSelectPanel(QWidget):
         self._import_action = QAction("从图片导入", self)
         self._import_action.triggered.connect(self._on_import_from_file)
         self._more_menu.addAction(self._import_action)
+        self._more_menu.addSeparator()
+        self._save_action = QAction("保存截图", self)
+        self._save_action.triggered.connect(self._on_save_screenshot)
+        self._more_menu.addAction(self._save_action)
         self._more_btn = QToolButton()
         self._more_btn.setObjectName("recommendationMoreButton")
         self._more_btn.setText("⋯")
@@ -271,6 +283,28 @@ class PeakSelectPanel(QWidget):
             return
         self._action_bar.set_status("正在识别导入图片…", TONE_INFO)
         self._watcher.recognize_image_file(file_path)
+
+    def _on_save_screenshot(self) -> None:
+        """从模拟器截取一帧保存到 screenshots 目录，不做识别。"""
+        if not self._capture_service.capture:
+            self._action_bar.set_status("未连接模拟器，请先完成 ADB 连接配置", TONE_WARNING)
+            self.request_mumu_config.emit()
+            return
+        if not self._capture_lock.begin(CaptureSource.ADB_SAVE):
+            return
+        self._action_bar.set_status("正在保存截图...", TONE_INFO)
+        self._capture_service.do_capture(perform_ocr=False)
+
+    def _on_capture_result(self, result: dict) -> None:
+        if self._capture_lock.finish() != CaptureSource.ADB_SAVE:
+            return
+        save_path = result.get("save_path") or ""
+        self._action_bar.set_status(f"截图已保存：{save_path}", TONE_SUCCESS)
+
+    def _on_capture_failed(self, message: str) -> None:
+        if self._capture_lock.finish() != CaptureSource.ADB_SAVE:
+            return
+        self._action_bar.set_status(f"截图保存失败：{message}", TONE_WARNING)
 
     def _on_status_changed(self, text: str) -> None:
         self._action_bar.set_status(text, TONE_INFO)

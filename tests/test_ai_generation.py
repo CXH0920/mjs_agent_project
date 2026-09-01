@@ -154,6 +154,103 @@ def test_api_output_budget_failure_has_explicit_message(
     assert OUTPUT_BUDGET_EXHAUSTED_MESSAGE in caplog.text
 
 
+def test_api_custom_max_output_tokens_flows_into_payload_and_message(caplog) -> None:
+    """config.env 调大的输出额度进入请求体；耗尽提示同步展示实际额度。"""
+    client = _FakeHttpClient({
+        "choices": [{"finish_reason": "length", "message": {"content": ""}}],
+        "usage": {"completion_tokens": 32_768},
+    })
+    generator = AIBatchGenerator(api_key="test", max_output_tokens=32_768)
+    generator._client.close()
+    generator._client = client
+
+    with caplog.at_level("ERROR", logger="src.scraper.ai.api_generator"):
+        response = generator._call_api([{"role": "user", "content": "test"}])
+
+    assert client.payload["max_tokens"] == 32_768
+    content, usage = _read_completion_content(response, generator.max_output_tokens)
+    assert content is None
+    assert usage == {"completion_tokens": 32_768}
+    assert "max_tokens=32768" in caplog.text
+
+
+def _synergy_generator_with_client(monkeypatch, responses: list[dict], max_retries: int = 3):
+    """构造相性生成器：HTTP 响应按序排队（末位复用），prompt 与校验链路打桩。"""
+    import src.scraper.ai.api_generator as api_module
+
+    class _QueuedHttpClient:
+        def __init__(self, responses: list[dict]):
+            self._responses = list(responses)
+            self.calls = 0
+
+        def post(self, _url: str, *, headers: dict, json: dict):
+            response = self._responses[min(self.calls, len(self._responses) - 1)]
+            self.calls += 1
+            return _FakeHttpResponse(response)
+
+    client = _QueuedHttpClient(responses)
+    generator = AIBatchGenerator(api_key="test", max_retries=max_retries)
+    generator._client.close()
+    generator._client = client
+    monkeypatch.setattr(api_module, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(api_module, "build_synergy_prompt", lambda _a, _b: "user")
+    monkeypatch.setattr(api_module, "extract_json", lambda _content: {"score": 7})
+    monkeypatch.setattr(api_module, "has_required_synergy_fields", lambda _raw: True)
+    monkeypatch.setattr(api_module, "validate_synergy", lambda raw: raw)
+    monkeypatch.setattr(api_module.time, "sleep", lambda _s: None)
+    return generator, client
+
+
+def test_api_synergy_retries_when_reasoning_exhausts_output_budget(monkeypatch, capsys) -> None:
+    """思考过程耗尽输出额度时自动重试，[重试] 行直发 stdout 供进度窗口解析。"""
+    exhausted = {
+        "choices": [{"finish_reason": "length", "message": {"content": ""}}],
+        "usage": {"completion_tokens": MAX_OUTPUT_TOKENS},
+    }
+    ok = {
+        "choices": [{"finish_reason": "stop", "message": {"content": "正文"}}],
+        "usage": {"completion_tokens": 100},
+    }
+    generator, client = _synergy_generator_with_client(monkeypatch, [exhausted, ok])
+
+    result, usage = generator.generate_synergy({"id": 1, "name": "甲"}, {"id": 2, "name": "乙"})
+
+    assert client.calls == 2
+    assert result == {"score": 7, "hero_a_id": 1, "hero_b_id": 2}
+    assert usage == {"completion_tokens": 100}
+    out = capsys.readouterr().out
+    assert f"[重试] {OUTPUT_BUDGET_EXHAUSTED_MESSAGE}，第 1/3 次" in out
+
+
+def test_api_synergy_fails_after_retry_budget_exhausted(monkeypatch, capsys) -> None:
+    """重试次数用尽仍耗尽额度才判定失败，并返回末次 token 用量。"""
+    exhausted = {
+        "choices": [{"finish_reason": "length", "message": {"content": ""}}],
+        "usage": {"completion_tokens": MAX_OUTPUT_TOKENS},
+    }
+    generator, client = _synergy_generator_with_client(monkeypatch, [exhausted], max_retries=2)
+
+    result, usage = generator.generate_synergy({"id": 1, "name": "甲"}, {"id": 2, "name": "乙"})
+
+    assert result is None
+    assert client.calls == 2
+    assert usage == {"completion_tokens": MAX_OUTPUT_TOKENS}
+    assert "第 1/2 次" in capsys.readouterr().out
+
+
+def test_browser_random_rest_prints_progress_line(monkeypatch, capsys) -> None:
+    """冷却倒计时必须直发 stdout：QProcess 子进程 root 日志级别 WARNING，logger.info 到不了进度窗口。"""
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    monkeypatch.setattr(ai_playwright.random, "randint", lambda _low, _high: 66)
+    monkeypatch.setattr(ai_playwright.time, "sleep", lambda _s: None)
+
+    generator._random_rest()
+
+    assert "[休息] 随机休息 66 秒..." in capsys.readouterr().out
+
+
 def test_base_fetch_service_surfaces_output_budget_failure() -> None:
     service = _LineRecordingService()
     service._process = _FakeProcess([
@@ -165,6 +262,23 @@ def test_base_fetch_service_surfaces_output_budget_failure() -> None:
     service._on_finished(1)
 
     assert errors == [OUTPUT_BUDGET_EXHAUSTED_MESSAGE]
+
+
+def test_base_fetch_service_prefers_cli_failure_summary_over_budget_marker() -> None:
+    """部分成功结束时，失败提示取 CLI 摘要，而非把单个错误标记当整体原因。"""
+    service = _LineRecordingService()
+    service._process = _FakeProcess([
+        (
+            f"[ERROR] {OUTPUT_BUDGET_EXHAUSTED_MESSAGE}\n"
+            "  [错误] 生成失败：4 项；成功项已提交，失败项保留旧数据\n"
+        ).encode("utf-8")
+    ])
+    errors: list[str] = []
+    service.error_occurred.connect(errors.append)
+
+    service._on_finished(1)
+
+    assert errors == ["生成失败：4 项；成功项已提交，失败项保留旧数据"]
 
 
 def test_base_fetch_service_does_not_duplicate_failed_process_output(caplog) -> None:

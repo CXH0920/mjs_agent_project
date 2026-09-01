@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QLabel,
@@ -21,6 +21,9 @@ from src.ui.shared.style import TONE_DANGER, TONE_SUCCESS, set_tone
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
+
+# 静默超过该秒数后在进度条上显示已等待时长，避免长请求/冷却期被误认为卡死
+_WAIT_HINT_THRESHOLD_SECONDS = 10
 
 
 class GuideProgressDialog(QDialog):
@@ -68,6 +71,13 @@ class GuideProgressDialog(QDialog):
         self._progress_bar.setTextVisible(True)
         layout.addWidget(self._progress_bar)
 
+        # 静默计时：单条请求/冷却可达数分钟且无新日志行，显示已等待秒数
+        self._waiting_seconds = 0
+        self._wait_timer = QTimer(self)
+        self._wait_timer.setInterval(1_000)
+        self._wait_timer.timeout.connect(self._on_wait_tick)
+        self._wait_timer.start()
+
         # 详情标签（显示当前武将名）
         self._detail_label = QLabel("")
         self._detail_label.setObjectName("progressDetailLabel")
@@ -93,12 +103,14 @@ class GuideProgressDialog(QDialog):
 
     def update_progress(self, current: int, total: int) -> None:
         """更新进度条"""
+        self._reset_wait_hint()
         self._progress_bar.setMaximum(total)
         self._progress_bar.setValue(current)
         self._progress_bar.setFormat(f"{current} / {total}")
 
     def update_status(self, text: str) -> None:
         """更新当前状态文字"""
+        self._reset_wait_hint()
         m_start = re.search(r"\[(\d+)/(\d+)\]\s*(.+?)\s+START(?:\s|$)", text)
         if m_start:
             self._status_label.setText(f"正在生成 {m_start.group(3)} 的{self._item_label}...")
@@ -138,6 +150,18 @@ class GuideProgressDialog(QDialog):
             return
         self._detail_label.setText(text.strip())
 
+    def _on_wait_tick(self) -> None:
+        """静默期在进度条上显示已等待秒数；新进度行到来即复位。"""
+        self._waiting_seconds += 1
+        if self._waiting_seconds < _WAIT_HINT_THRESHOLD_SECONDS:
+            return
+        bar = self._progress_bar
+        bar.setFormat(f"{bar.value()} / {bar.maximum()} · 已等待 {self._waiting_seconds} 秒")
+
+    def _reset_wait_hint(self) -> None:
+        self._waiting_seconds = 0
+        self._progress_bar.setFormat(f"{self._progress_bar.value()} / {self._progress_bar.maximum()}")
+
     def _request_cancel(self) -> None:
         """禁用重复操作，并由工作流请求服务中止子进程。"""
         if self._finished or not self._cancel_btn.isEnabled():
@@ -154,6 +178,7 @@ class GuideProgressDialog(QDialog):
 
     def on_process_finished(self, success: bool, message: str = "") -> None:
         """进程结束时调用"""
+        self._wait_timer.stop()
         self._finished = True
         self._close_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
@@ -167,7 +192,8 @@ class GuideProgressDialog(QDialog):
             self.set_error(message)
 
     def on_process_cancelled(self) -> None:
-        """任务被用户中止后允许关闭，已提交批次保持有效。"""
+        """任务被用户中止后允许关闭，已提交的数据已保留。"""
+        self._wait_timer.stop()
         self._finished = True
         self._close_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
