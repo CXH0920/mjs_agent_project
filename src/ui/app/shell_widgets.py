@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QAbstractButton,
     QButtonGroup,
     QFrame,
     QSizePolicy,
@@ -25,16 +24,13 @@ from src.ui.shared.style import (
     PRIMARY_SOFT,
     RADIUS_SM,
     ROLE_GHOST,
-    ROLE_SECONDARY,
     SPACE_LG,
-    SPACE_MD,
     SPACE_SM,
     SUBTLE_SURFACE,
     SURFACE,
     TEXT_PRIMARY,
     set_ui_role,
 )
-from src.ui.shared.widgets import PageHeader
 
 
 _NAVIGATION_STYLE = f"""
@@ -78,18 +74,6 @@ QToolButton#navigationCollapseButton {{
 QToolButton#navigationCollapseButton:hover {{
     color: {TEXT_PRIMARY};
     background-color: {SUBTLE_SURFACE};
-}}
-"""
-
-
-_CONTEXT_HEADER_STYLE = f"""
-QWidget#contextHeader {{
-    background-color: {SURFACE};
-    border: none;
-    border-bottom: 1px solid {BORDER};
-}}
-QWidget#contextHeader QLabel {{
-    background-color: transparent;
 }}
 """
 
@@ -225,25 +209,3 @@ class NavigationRail(QFrame):
 
     def toggle_collapsed(self) -> None:
         self.set_collapsed(not self._collapsed)
-
-
-class ContextHeader(PageHeader):
-    """显示当前工作区上下文及其全局或页面级操作。"""
-
-    def __init__(self, title: str, description: str = "", parent=None) -> None:
-        super().__init__(title, description, parent)
-        self.setObjectName("contextHeader")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(_CONTEXT_HEADER_STYLE)
-        self.layout().setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
-        self.description_label = self.subtitle_label
-
-    def set_description(self, description: str) -> None:
-        self.set_subtitle(description)
-
-    def set_context(self, title: str, description: str = "") -> None:
-        self.set_title(title)
-        self.set_description(description)
-
-    def add_right_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
-        self.add_action(button, role)

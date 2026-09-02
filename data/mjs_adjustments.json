@@ -1309,6 +1309,46 @@
    "source": "announcement",
    "ref": "https://mjs.ztgame.com/news/002-1787-000e2-745612.html",
    "announcement_title": "8月27日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-02",
+   "hero": "张春华",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "痛随伤逝",
+     "before": "当一名角色失去体力时，你可以令另一名角色流血+1，然后你摸1张牌。",
+     "after": "当一名角色失去体力时，你摸1张牌，并且可以选择1项："
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1788-000e5-344798.html",
+   "announcement_title": "9月3日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-02",
+   "hero": "潘安",
+   "change_type": "新增",
+   "skills": [
+    "掷果盈车",
+    "潘才如江",
+    "悼亡诗"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1788-000e5-344798.html",
+   "announcement_title": "9月3日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-02",
+   "hero": "荀灌",
+   "change_type": "新增",
+   "skills": [
+    "荀家灌娘",
+    "奋身破围"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1788-000e5-344798.html",
+   "announcement_title": "9月3日05：00停服更新预告"
   }
  ]
 }

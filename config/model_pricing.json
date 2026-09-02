@@ -4,14 +4,14 @@
   "updated_at": "2026-07-22",
   "models": {
     "deepseek-v4-pro": {
-      "input_per_million": 3.0,
-      "output_per_million": 6.0,
-      "cached_input_per_million": 0.025
+      "input_per_million": 9.0,
+      "output_per_million": 27.0,
+      "cached_input_per_million": 0.15
     },
     "deepseek-v4-flash": {
-      "input_per_million": 1.0,
-      "output_per_million": 2.0,
-      "cached_input_per_million": 0.02
+      "input_per_million": 1.5,
+      "output_per_million": 4.5,
+      "cached_input_per_million": 0.05
     }
   }
 }

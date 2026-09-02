@@ -68,8 +68,6 @@ def test_shell_starts_in_library_with_hidden_workspace_tabs(window) -> None:
     assert window._tabs.currentWidget() is window._library
     assert window._tabs.tabBar().isHidden()
     assert window._navigation.current_index() == 0
-    assert window._context_header.title_label.text() == "资料库"
-    assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[0][1]
 
 
 def test_navigation_switches_pages_and_programmatic_change_syncs_context(window) -> None:
@@ -77,23 +75,17 @@ def test_navigation_switches_pages_and_programmatic_change_syncs_context(window)
 
     assert window._tabs.currentWidget() is window._recommendation
     assert window._navigation.current_index() == 1
-    assert window._context_header.title_label.text() == "选将推荐"
     assert not hasattr(window._recommendation, "_page_title_label")
-    assert window._official_import_button.isHidden()
-    assert window._maintenance_button.isHidden()
 
     window._navigation.navigation_button(2).click()
 
     assert window._tabs.currentWidget() is window._peak_select
     assert window._navigation.current_index() == 2
-    assert window._context_header.title_label.text() == "巅峰赛选将"
     assert not hasattr(window._peak_select, "_page_title_label")
 
     window._tabs.setCurrentWidget(window._match_guide)
 
     assert window._navigation.current_index() == 3
-    assert window._context_header.title_label.text() == "对局攻略"
-    assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[3][1]
     assert not hasattr(window._match_guide, "_page_title_label")
 
 
@@ -113,7 +105,6 @@ def test_ocr_auto_switch_syncs_navigation_and_context(window, monkeypatch) -> No
 
     assert window._tabs.currentWidget() is window._recommendation
     assert window._navigation.current_index() == 1
-    assert window._context_header.title_label.text() == "选将推荐"
 
 
 def test_navigation_keeps_page_instances_and_library_section_state(window) -> None:
@@ -209,51 +200,14 @@ def test_shell_exposes_all_compatible_actions_and_shortcuts(window) -> None:
     assert window._actions["exit"].shortcut().toString() == "Ctrl+Q"
 
 
-def test_legacy_and_shell_menus_reuse_the_same_actions(window) -> None:
+def test_menubar_mounts_all_actions(window) -> None:
+    """壳式入口移除后，菜单栏是唯一常驻入口，应挂载全部 20 个 QAction。"""
     all_action_ids = {id(action) for action in window._actions.values()}
-    legacy_actions = []
+    menubar_actions = []
     for menu_action in window.menuBar().actions():
         menu = menu_action.menu()
         if menu is not None:
-            legacy_actions.extend(_leaf_actions(menu))
+            menubar_actions.extend(_leaf_actions(menu))
 
-    library_actions = [
-        window._official_import_button.defaultAction(),
-        *_leaf_actions(window._maintenance_menu),
-    ]
-    settings_actions = _leaf_actions(window._settings_menu)
-
-    assert {id(action) for action in legacy_actions} == all_action_ids
-    assert len(library_actions) == 14
-    assert {id(action) for action in library_actions} == {
-        id(window._actions[name])
-        for name in {
-            "reload",
-            "official_import",
-            "combos_import",
-            "announcement_check",
-            "announcement_log",
-            "fetch_all",
-            "fetch_incremental",
-            "fetch_specific",
-            "guide_all",
-            "guide_incremental",
-            "guide_specific",
-            "synergy_single",
-            "synergy_pair",
-            "synergy_combos",
-        }
-    }
-    assert len(settings_actions) == 6
-    assert {id(action) for action in settings_actions} == {
-        id(window._actions[name])
-        for name in {
-            "api_settings",
-            "emulator_settings",
-            "faction_colors",
-            "data_management",
-            "about",
-            "exit",
-        }
-    }
-    assert {id(action) for action in library_actions + settings_actions} == all_action_ids
+    assert len(menubar_actions) == 20
+    assert {id(action) for action in menubar_actions} == all_action_ids

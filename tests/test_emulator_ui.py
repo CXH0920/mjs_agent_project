@@ -18,7 +18,6 @@ from src.data.models import Hero, HeroGuide, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.app.main_window import MainWindow, PollOutcome
-from src.ui.app.shell_widgets import ContextHeader
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.shared.capture_lock import CaptureSource
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
@@ -489,14 +488,11 @@ def test_main_window_keeps_emulator_status_after_stats_update() -> None:
     assert window._emulator_status_label.text() == expected
 
 
-def test_main_window_uses_context_header_and_library_section_tabs() -> None:
+def test_main_window_builds_library_page() -> None:
     _app()
     window = MainWindow(_hero_manager(), SynergyManager(), GuideManager())
 
     assert window._library.objectName() == "libraryPage"
-    assert isinstance(window._context_header, ContextHeader)
-    assert window._context_header.title_label.text() == "资料库"
-    assert window._context_header.description_label.text() == window.PAGE_CONTEXTS[0][1]
     assert window._library_tabs.objectName() == "librarySectionTabs"
     assert [window._library_tabs.tabText(index) for index in range(window._library_tabs.count())] == [
         "武将资料", "卡牌图鉴",

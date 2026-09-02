@@ -16,14 +16,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QStatusBar,
     QStyle,
     QTabWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -58,7 +56,7 @@ from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
-from src.ui.app.shell_widgets import ContextHeader, NavigationRail
+from src.ui.app.shell_widgets import NavigationRail
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import NoticeBanner, show_toast
 from src.config.env import PROJECT_ROOT, is_full_build
@@ -712,13 +710,6 @@ class MainWindow(QMainWindow):
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.setSpacing(0)
 
-        title, description = self.PAGE_CONTEXTS[0]
-        # 顶部大标题块按需求移除：页面标题由各页内部 PageHeader 呈现，
-        # 对象保留以维持菜单动作挂载与 PAGE_CONTEXTS 同步逻辑。
-        self._context_header = ContextHeader(title, description, workspace)
-        self._context_header.hide()
-        self._setup_shell_actions()
-
         self._announcement_banner = NoticeBanner("公告更新", "", tone=TONE_INFO, parent=workspace)
         view_button = QPushButton("查看")
         view_button.clicked.connect(self._open_announcement_dialog)
@@ -806,82 +797,16 @@ class MainWindow(QMainWindow):
         self._on_workspace_page_changed(self._tabs.currentIndex())
         self._sync_navigation_width(self.width())
 
-    def _setup_shell_actions(self) -> None:
-        """把现有 QAction 放入顶部页面入口和全局设置菜单。"""
-        self._official_import_button = QToolButton(self._context_header)
-        self._official_import_button.setObjectName("officialImportButton")
-        self._official_import_button.setDefaultAction(self._actions["official_import"])
-        self._official_import_button.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
-        )
-        self._official_import_button.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
-        self._official_import_button.setAccessibleName("官方数据导入")
-        self._context_header.add_right_action(self._official_import_button)
-
-        self._maintenance_menu = QMenu("生成与维护", self)
-        self._maintenance_menu.setObjectName("libraryMaintenanceMenu")
-        self._maintenance_menu.addAction(self._actions["reload"])
-        self._maintenance_menu.addSeparator()
-        self._maintenance_menu.addAction(self._actions["announcement_check"])
-        self._maintenance_menu.addAction(self._actions["announcement_log"])
-        self._maintenance_menu.addSeparator()
-        self._add_generation_submenus(self._maintenance_menu)
-        self._maintenance_menu.addSeparator()
-        self._maintenance_menu.addAction(self._actions["combos_import"])
-
-        self._maintenance_button = QToolButton(self._context_header)
-        self._maintenance_button.setObjectName("libraryMaintenanceButton")
-        self._maintenance_button.setText("生成与维护")
-        self._maintenance_button.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
-        )
-        self._maintenance_button.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
-        self._maintenance_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self._maintenance_button.setMenu(self._maintenance_menu)
-        self._maintenance_button.setToolTip("重新加载、获取或生成资料库数据")
-        self._maintenance_button.setAccessibleName("生成与维护")
-        self._context_header.add_right_action(self._maintenance_button)
-
-        self._settings_menu = QMenu("全局设置", self)
-        self._settings_menu.setObjectName("globalSettingsMenu")
-        self._settings_menu.addActions([
-            self._actions["api_settings"],
-            self._actions["emulator_settings"],
-            self._actions["faction_colors"],
-            self._actions["data_management"],
-        ])
-        self._settings_menu.addSeparator()
-        self._settings_menu.addAction(self._actions["about"])
-        self._settings_menu.addAction(self._actions["exit"])
-
-        self._settings_button = QToolButton(self._context_header)
-        self._settings_button.setObjectName("globalSettingsButton")
-        self._settings_button.setText("设置")
-        self._settings_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        self._settings_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self._settings_button.setMenu(self._settings_menu)
-        self._settings_button.setToolTip("打开应用配置与帮助菜单")
-        self._settings_button.setAccessibleName("全局设置")
-        self._context_header.add_right_action(self._settings_button)
-
     def _on_navigation_page_requested(self, index: int) -> None:
         """切换到现有工作区实例，不重建页面。"""
         if 0 <= index < self._tabs.count():
             self._tabs.setCurrentIndex(index)
 
     def _on_workspace_page_changed(self, index: int) -> None:
-        """被动同步导航选中态、标题和页面级入口。"""
+        """被动同步导航选中态与页面级入口。"""
         if not 0 <= index < len(self.PAGE_CONTEXTS):
             return
         self._navigation.set_current_index(index)
-        self._context_header.set_context(*self.PAGE_CONTEXTS[index])
-        is_library = index == 0
-        self._official_import_button.setVisible(is_library)
-        self._maintenance_button.setVisible(is_library)
         if self._tabs.tabText(index) == "知识库维护" and hasattr(self, "_rag_maintenance"):
             self._rag_maintenance.refresh()
 
