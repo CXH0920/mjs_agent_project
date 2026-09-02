@@ -224,7 +224,7 @@ def main():
 
     rule_issues = audit_rule_doc.audit(doc_path=audit_rule_doc.DEFAULT_DOC,
                                        snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
-                                       root=ROOT, strict=args.strict_audit,
+                                       root=ROOT,
                                        update_snapshot=False, print_report=True)
     if args.strict_audit and any(i['level'] in ('ERROR', 'WARN') for i in rule_issues):
         print('[audit] 元规则文档校验未通过（--strict-audit），中止。')

@@ -6,8 +6,6 @@
       "label": "加强效果",
       "value_type": "effect_entries",
       "group": "效果调整",
-      "enabled": true,
-      "required": false,
       "display_order": 10,
       "help_text": "记录该卡牌的加强效果。"
     },
@@ -16,8 +14,6 @@
       "label": "削弱效果",
       "value_type": "effect_entries",
       "group": "效果调整",
-      "enabled": true,
-      "required": false,
       "display_order": 20,
       "help_text": "记录该卡牌的削弱效果。"
     }

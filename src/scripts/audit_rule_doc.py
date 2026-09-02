@@ -163,8 +163,8 @@ def write_snapshot(snap, path):
 
 
 def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
-          strict=False, update_snapshot=False, print_report=True):
-    """执行全部校验，返回 issues 列表。strict 时遇 ERROR/WARN 返回退出码语义由调用方决定。"""
+          update_snapshot=False, print_report=True):
+    """执行全部校验，返回 issues 列表；strict 的退出码语义由调用方在返回值上自行实现。"""
     root = root or ROOT
     issues = []
     blocks, terms, faqs, dropped = brc.parse_rule_doc(doc_path)
@@ -381,7 +381,7 @@ def main():
     args = parser.parse_args()
 
     issues = audit(doc_path=args.doc, snapshot_path=args.snapshot,
-                   strict=args.strict, update_snapshot=args.update_snapshot)
+                   update_snapshot=args.update_snapshot)
     if args.strict and any(i['level'] in ('ERROR', 'WARN') for i in issues):
         sys.exit(1)
 

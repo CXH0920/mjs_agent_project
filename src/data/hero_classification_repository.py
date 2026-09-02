@@ -211,9 +211,6 @@ class HeroClassificationRepository(JsonRepository):
     # ---------------------------------------------------------------
     # 持久化
     # ---------------------------------------------------------------
-    def dirty(self) -> bool:
-        return True
-
     def save(self) -> None:
         payload = {
             "version": self._version,

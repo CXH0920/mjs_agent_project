@@ -25,7 +25,7 @@ import sys
 from collections import Counter, defaultdict
 
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE
+from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE, save_json
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
 
@@ -454,6 +454,17 @@ def apply_confirmed(confirmed, doc_text):
     return '\n'.join(lines), applied, []
 
 
+def _atomic_write_text(path, content: str) -> None:
+    """同目录临时文件中转后 os.replace：写中途崩溃留下的是旧文件而非半截文件。
+
+    元规则母本是唯一权威文档且无备份兜底，必须原子写。
+    """
+    tmp_path = f'{path}.tmp'
+    with open(tmp_path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(content)
+    os.replace(tmp_path, path)
+
+
 def append_changelog(applied, changelog_path=DEFAULT_CHANGELOG):
     """在 changelog 的变更记录表头后插入一行（只追加不删除）。"""
     if not applied:
@@ -477,8 +488,7 @@ def append_changelog(applied, changelog_path=DEFAULT_CHANGELOG):
         lines.append(line)
     else:
         lines.insert(insert_at, line)
-    with open(changelog_path, 'w', encoding='utf-8', newline='\n') as f:
-        f.write('\n'.join(lines) + '\n')
+    _atomic_write_text(changelog_path, '\n'.join(lines) + '\n')
     return True
 
 
@@ -528,8 +538,7 @@ def main():
     if args.apply:
         new_text, applied = apply_diffs(doc_text, data, args.only, args.apply_candidates)
         if applied:
-            with open(args.doc, 'w', encoding='utf-8', newline='\n') as f:
-                f.write(new_text)
+            _atomic_write_text(args.doc, new_text)
             append_changelog(applied)
             if os.path.abspath(args.doc) == os.path.abspath(DEFAULT_DOC):
                 refresh_snapshot(args.doc)
@@ -556,8 +565,7 @@ def main():
             for e in errors:
                 print('  -', e)
             sys.exit(1)
-        with open(args.doc, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(new_text)
+        _atomic_write_text(args.doc, new_text)
         for a in applied:
             a.setdefault('message', '')
         append_changelog(applied)
@@ -572,8 +580,7 @@ def main():
         if args.json:
             report_dir = os.path.dirname(os.path.abspath(args.json))
             os.makedirs(report_dir, exist_ok=True)
-            with open(args.json, 'w', encoding='utf-8', newline='\n') as f:
-                json.dump(issues, f, ensure_ascii=False, indent=2)
+            save_json(args.json, issues, indent=2)
         sys.exit(1 if issues else 0)
 
 

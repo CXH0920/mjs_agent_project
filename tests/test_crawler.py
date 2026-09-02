@@ -176,3 +176,51 @@ def test_official_adapter_parses_saved_contract_samples() -> None:
             "skills": [{"name": "测试技能"}],
         }
     ]
+
+
+def test_download_hero_images_aborts_after_consecutive_failures(monkeypatch, tmp_path: Path) -> None:
+    """连续失败达熔断阈值即中止，不再向源站请求剩余条目；每次尝试后都有间隔。"""
+    sleeps: list[float] = []
+    monkeypatch.setattr(crawler.time, "sleep", lambda seconds: sleeps.append(seconds))
+    requested: list[str] = []
+
+    def failing_download(url: str, dest) -> None:
+        requested.append(url)
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(crawler, "_download_hero_image", failing_download)
+    raw_list = [
+        {"name": f"武将{index}", "icon_url": f"https://siteres.ztgame.com/{index}.png"}
+        for index in range(10)
+    ]
+
+    count = crawler.download_hero_images(raw_list, image_dir=tmp_path, skip_existing=False)
+
+    assert count == 0
+    assert len(requested) == crawler.IMAGE_DOWNLOAD_MAX_CONSECUTIVE_FAILURES  # 熔断后不再请求
+    # 终止那次失败后直接中止，不再为放弃的请求支付间隔等待
+    assert sleeps == [crawler.IMAGE_DOWNLOAD_INTERVAL_SECONDS] * (len(requested) - 1)
+
+
+def test_download_hero_images_resets_failure_streak_on_success(monkeypatch, tmp_path: Path) -> None:
+    """失败后成功的条目会重置连续失败计数：散布的零星失败不触发熔断。"""
+    monkeypatch.setattr(crawler.time, "sleep", lambda seconds: None)
+    outcomes = ["fail", "fail", "ok", "fail", "fail", "ok", "ok", "ok"]
+    expected_attempts = len(outcomes)  # 运行会 pop 消耗 outcomes，先留存总数
+    attempted: list[str] = []
+
+    def flaky_download(url: str, dest) -> None:
+        attempted.append(url)
+        if outcomes.pop(0) == "fail":
+            raise RuntimeError("transient")
+
+    monkeypatch.setattr(crawler, "_download_hero_image", flaky_download)
+    raw_list = [
+        {"name": f"武将{index}", "icon_url": f"https://siteres.ztgame.com/{index}.png"}
+        for index in range(len(outcomes))
+    ]
+
+    count = crawler.download_hero_images(raw_list, image_dir=tmp_path, skip_existing=False)
+
+    assert count == 4
+    assert len(attempted) == expected_attempts  # 全部条目都被尝试，未熔断

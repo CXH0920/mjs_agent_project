@@ -4971,37 +4971,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/zKubyiDKUmObCl4sAK5rApAqUx33sjjdI9vp7Byr.png_200x282.png"
   },
   {
-    "id": 194,
-    "name": "金日磾",
-    "title": "",
-    "faction": "西汉",
-    "position": "控制",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "秺侯诛莽",
-        "description": "登场，你可以选择一名其他角色，当其首次即将受到致命伤害时，你可以代替其承受此次伤害，并且封禁伤害来源，直到你的下个回合开始。",
-        "settlement": "如果技能拥有者处于封禁的状态时，选中的其他角色首次即将受到致命伤害，则该技能不会发动，并且之后该角色即将受到致命伤害时该技能也不会发动。"
-      },
-      {
-        "name": "目不忤视",
-        "description": "当你选择其他角色为牌的目标时，若此牌的目标与你打出的上1张牌的目标相同，你可以令其选择弃置1张牌，或令你摸1张牌。",
-        "settlement": "只要此牌与上1张牌存在相同的目标就会触发这个效果，比如先打出箭雨齐射，再对其中1个打出杀，则可以对出杀的对象触发此技能的效果。"
-      },
-      {
-        "name": "休屠王子",
-        "description": "你的装备上限-1。出牌阶段你的装备牌只能当作杀打出。回合开始时，你获得2张装备牌并打出。",
-        "settlement": "如果装备上限为0的情况下，只会获得2张装备牌，并不会打出。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-08-28",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/KvXQuyO1WhFWQhAMgcYAT2verj80ZMeGzXS8ajM0.png_200x282.png"
-  },
-  {
     "id": 193,
     "name": "苏武",
     "title": "",
@@ -5031,5 +5000,36 @@
     "mode_viability": {},
     "last_updated": "2026-08-28",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/jd9q2ynSKYbCCWNxiyXwZq9HH3uxAkS22kTrLhEg.png_200x282.png"
+  },
+  {
+    "id": 194,
+    "name": "金日磾",
+    "title": "",
+    "faction": "西汉",
+    "position": "控制",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "秺侯诛莽",
+        "description": "登场，你可以选择一名其他角色，当其首次即将受到致命伤害时，你可以代替其承受此次伤害，并且封禁伤害来源，直到你的下个回合开始。",
+        "settlement": "如果技能拥有者处于封禁的状态时，选中的其他角色首次即将受到致命伤害，则该技能不会发动，并且之后该角色即将受到致命伤害时该技能也不会发动。"
+      },
+      {
+        "name": "目不忤视",
+        "description": "当你选择其他角色为牌的目标时，若此牌的目标与你打出的上1张牌的目标相同，你可以令其选择弃置1张牌，或令你摸1张牌。",
+        "settlement": "只要此牌与上1张牌存在相同的目标就会触发这个效果，比如先打出箭雨齐射，再对其中1个打出杀，则可以对出杀的对象触发此技能的效果。"
+      },
+      {
+        "name": "休屠王子",
+        "description": "你的装备上限-1。出牌阶段你的装备牌只能当作杀打出。回合开始时，你获得2张装备牌并打出。",
+        "settlement": "如果装备上限为0的情况下，只会获得2张装备牌，并不会打出。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-02",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/KvXQuyO1WhFWQhAMgcYAT2verj80ZMeGzXS8ajM0.png_200x282.png"
   }
 ]

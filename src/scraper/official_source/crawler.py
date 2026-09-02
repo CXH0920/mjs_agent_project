@@ -47,6 +47,9 @@ ALLOWED_IMAGE_HOSTS = {"siteres.ztgame.com"}
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 4_000_000
 IMAGE_CHUNK_SIZE = 64 * 1024
+# 头像逐张请求的间隔与连续失败熔断阈值：全量下载对源站瞬时连发易触发限流
+IMAGE_DOWNLOAD_INTERVAL_SECONDS = 0.5
+IMAGE_DOWNLOAD_MAX_CONSECUTIVE_FAILURES = 5
 MAX_IMAGE_REDIRECTS = 3
 SAFE_IMAGE_NAME_PATTERN = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fffA-Za-z0-9_-]{1,80}$")
 WINDOWS_RESERVED_FILENAMES = {
@@ -427,6 +430,7 @@ def download_hero_images(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     count = 0
+    consecutive_failures = 0
     for raw in raw_list:
         icon_url = raw.get("icon_url", "")
         if not icon_url:
@@ -448,8 +452,19 @@ def download_hero_images(
 
         try:
             _download_hero_image(icon_url, dest)
-            count += 1
         except Exception as e:
+            consecutive_failures += 1
             logger.warning("头像下载失败 %s: %s", name, e)
+            if consecutive_failures >= IMAGE_DOWNLOAD_MAX_CONSECUTIVE_FAILURES:
+                logger.error(
+                    "连续 %d 次头像下载失败，中止本次下载（已下载 %d 张），请检查网络后重试",
+                    consecutive_failures, count,
+                )
+                break
+        else:
+            consecutive_failures = 0
+            count += 1
+        # 成功与失败都真实请求了源站，间隔放在尝试之后、跳过项不占用
+        time.sleep(IMAGE_DOWNLOAD_INTERVAL_SECONDS)
 
     return count
