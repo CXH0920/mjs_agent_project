@@ -380,7 +380,7 @@ def test_hero_card_exposes_public_identity_and_unrecognized_state(monkeypatch) -
     card.refresh_faction_color()
     assert "#123456" in card._faction_badge.styleSheet()
 
-    card.set_unrecognized_name("新武将", 0.75)
+    card.set_unrecognized_name("新武将")
     assert card.hero_id == 0
     assert card.hero_name == ""
     assert card._name_overlay.text() == "新武将"

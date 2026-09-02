@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
@@ -63,14 +62,6 @@ from src.ui.shared.style import (
 
 logger = logging.getLogger(__name__)
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
-
-@dataclass
-class HeroRecommendation:
-    """外部传入的推荐武将数据"""
-
-    index: int
-    name: str
-    confidence: float
 
 
 class RecommendationPanel(QWidget):
@@ -506,13 +497,6 @@ class RecommendationPanel(QWidget):
             ("等待数据", "--"),
         ])
 
-    def _load_synergies_by_name(self, card_idx: int, hero_name: str) -> None:
-        """根据武将名从 synergy manager 加载相性数据。"""
-        hero = self._hero_mgr.get_hero_by_name(hero_name)
-        if not hero:
-            return
-        self._load_real_synergies(card_idx, hero.id)
-
     def _load_recommendation_data(self) -> RecommendationData:
         """读取一次页面刷新所需的推荐数据快照。"""
         try:
@@ -633,25 +617,21 @@ class RecommendationPanel(QWidget):
 
             card = self._cards[idx - 1]
             name = str(item.get("name", "")).strip() if self._is_confirmed_result(item) else ""
-            confidence = item.get("confidence", 0.0)
 
             if not name:
                 card.set_pending_name(
                     str(item.get("raw_name") or item.get("name") or "").strip(),
                     list(item.get("candidates") or []),
-                    confidence,
                 )
                 continue
 
             hero = self._hero_mgr.get_hero_by_name(name)
             if not hero:
                 logger.warning("update_recommendations: 未找到武将 %s", name)
-                card.set_unrecognized_name(name, confidence)
+                card.set_unrecognized_name(name)
                 continue
 
             card.set_hero(hero)
-            # OCR 置信度不参与全服静态推荐指数计算。
-            card.set_confidence(0.5)
 
             # 根据武将名加载胜率
             self._load_card_stats(idx - 1, name, recommendation_data)

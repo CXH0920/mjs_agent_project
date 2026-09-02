@@ -18,7 +18,6 @@ from pathlib import Path
 from src.config.env import PROJECT_ROOT as ROOT
 DATA = ROOT / "data"
 CORPUS = ROOT / "data" / "rag_corpus"
-SCRIPTS = ROOT / "scripts"
 
 # 元规则文档结构解析正则：build_rule_corpus / sync_rule_stats / apply_rule_proposal
 # 三个脚本共用同一份口径（此前三处逐字复制，一处改动即产生解析口径漂移）

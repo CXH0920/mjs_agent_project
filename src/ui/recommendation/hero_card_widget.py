@@ -56,7 +56,6 @@ class HeroCardWidget(QFrame):
         self._hero: Hero | None = hero
         self._hero_id: int = 0
         self._win_rate: float | None = None
-        self._confidence: float = 0.0
         self._recommendation_index: RecommendationIndex | None = None
         self._recommendation_loaded = False
         self._recommendation_stale = False
@@ -423,7 +422,6 @@ class HeroCardWidget(QFrame):
         self._hero = hero
         self._identity_state = "ready" if hero else "empty"
         self._win_rate = None
-        self._confidence = 0.0
         self._recommendation_index = None
         self._recommendation_loaded = False
         self._guide_available = None
@@ -431,24 +429,22 @@ class HeroCardWidget(QFrame):
         self._data_status_label.setToolTip("")
         self._update_display()
 
-    def set_unrecognized_name(self, name: str, confidence: float) -> None:
-        """显示未匹配到武将资料的 OCR 名称和置信度。"""
+    def set_unrecognized_name(self, name: str) -> None:
+        """显示未匹配到武将资料的 OCR 名称。"""
         self.set_hero(None)
         self._identity_state = "unknown"
         self._name_overlay.setText(name or "未知武将")
-        self.set_confidence(confidence)
         self._set_data_sections_visible(False)
         self._update_card_state()
 
     def set_pending_name(
-        self, raw_name: str, candidates: list[str], confidence: float,
+        self, raw_name: str, candidates: list[str],
     ) -> None:
         """显示不加载推荐数据的待确认名称。"""
         self.set_hero(None)
         self._identity_state = "pending"
         self._candidate_count = len(candidates)
         self._name_overlay.setText(raw_name or "待确认")
-        self.set_confidence(confidence)
         candidate_text = "、".join(candidates)
         self._set_data_sections_visible(False)
         self._update_card_state()
@@ -459,10 +455,6 @@ class HeroCardWidget(QFrame):
     def refresh_faction_color(self) -> None:
         """使用当前势力配色刷新卡片。"""
         self._update_display()
-
-    def set_confidence(self, confidence: float) -> None:
-        self._confidence = max(0.0, min(1.0, confidence))
-        self._update_confidence_display()
 
     def set_recommendation_index(self, index: RecommendationIndex | None) -> None:
         """显示当前版本全服数据计算出的推荐指数。"""

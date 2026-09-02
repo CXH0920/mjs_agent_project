@@ -135,8 +135,6 @@ class ColorPicker(QWidget):
 class FactionColorDialog(QDialog):
     """列表式势力配色配置对话框。"""
 
-    colors_saved = Signal(dict)
-
     def __init__(self, path: Path = COLORS_FILE, parent=None):
         super().__init__(parent)
         self._path = path
@@ -239,5 +237,4 @@ class FactionColorDialog(QDialog):
             logger.exception("保存势力配色失败")
             QMessageBox.critical(self, "保存失败", f"无法保存势力配色：\n{exc}")
             return
-        self.colors_saved.emit(colors)
         close_after_toast(self, "势力配色已保存", 400)
