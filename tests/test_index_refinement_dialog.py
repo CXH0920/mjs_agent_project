@@ -7,6 +7,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 from src.business.rag.refinement_service import RefinementUpdate
@@ -82,11 +83,31 @@ def _fake_generator(monkeypatch) -> None:
     monkeypatch.setattr(dialog_module, "build_generator", lambda _name: object())
 
 
-def _suggest_all_sync(dialog: IndexRefinementDialog) -> None:
-    """同步驱动批量建议队列（测试环境无事件循环，QTimer 不会自动触发）。"""
+def _suggest_all_sync(dialog: IndexRefinementDialog, monkeypatch) -> None:
+    """用同步替身替换批量建议线程后同步执行批量建议。
+
+    测试环境无事件循环，QThread 跨线程信号不投递；替身 start() 内联产出全部
+    结果并直接发信号（同线程直连即时送达），与生产共用 _on_suggest_result /
+    _on_worker_finished 同一条状态链，替代此前与生产路径漂移的影子队列实现。
+    """
+
+    class _SyncSuggestWorker(QObject):
+        result_ready = Signal(object, object)
+        finished = Signal()
+        _single = False
+
+        def __init__(self, blocks, generator) -> None:
+            super().__init__()
+            self._blocks = list(blocks)
+            self._generator = generator
+
+        def start(self) -> None:
+            for block in self._blocks:
+                self.result_ready.emit(block, dialog_module.suggest_one(block, self._generator))
+            self.finished.emit()
+
+    monkeypatch.setattr(dialog_module, "_SuggestWorker", _SyncSuggestWorker)
     dialog._suggest_all()
-    while dialog._suggest_queue:
-        dialog._suggest_queue_step()
 
 
 def test_dialog_lists_pending(tmp_path: Path) -> None:
@@ -171,7 +192,7 @@ def test_save_all_writes_every_pending(tmp_path: Path, monkeypatch) -> None:
         related=[],
         method="llm",
     ))
-    _suggest_all_sync(dialog)
+    _suggest_all_sync(dialog, monkeypatch)
     _answer_yes(monkeypatch)
     dialog._save_all()
     assert dialog._table.rowCount() == 0
@@ -270,14 +291,14 @@ def test_dirty_guard_on_switch(tmp_path: Path, monkeypatch) -> None:
     dialog.close()
 
 
-def test_suggest_all_queue_finishes_and_empty_state(tmp_path: Path, monkeypatch) -> None:
+def test_suggest_all_finishes_and_empty_state(tmp_path: Path, monkeypatch) -> None:
     _app()
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
     _fake_generator(monkeypatch)
     monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=["打出时"], keywords=["测试牌"], related=[], method="llm"))
-    _suggest_all_sync(dialog)
+    _suggest_all_sync(dialog, monkeypatch)
     assert all(dialog._row_states[block.block_id] == "suggested" for block in dialog._pending)
     assert dialog._empty_state.isHidden()  # 仍有待精化时不显示空状态
     _answer_yes(monkeypatch)

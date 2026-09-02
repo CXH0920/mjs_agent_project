@@ -407,6 +407,9 @@ class RagMaintenancePanel(QWidget):
 
     def _open_refinement(self) -> None:
         dialog = IndexRefinementDialog(self._root / "data" / "rag_corpus", self)
+        # 工作台内容的最小尺寸接近整屏，固定 1160x720 会在显示后被最小尺寸约束
+        # 撑大（感知为"小窗一闪再变大"）；按主窗口大小预置尺寸，一次到位不跳变
+        dialog.resize(self.window().size())
         dialog.exec()
         self.refresh()
 

@@ -66,9 +66,6 @@ from src.ui.shared.widgets import EmptyState, PageHeader, StatusBadge, show_toas
 
 logger = logging.getLogger("index_refinement")
 
-# 保存失败连续重试上限（防磁盘故障时无限弹窗，#40）
-_MAX_SAVE_ATTEMPTS = 3
-
 _FIELD_LABELS = {
     "timing": "时机",
     "trigger_condition": "触发条件",
@@ -101,8 +98,8 @@ _LIVE_WORKERS: set = set()
 class _SuggestWorker(QThread):
     """后台批量建议线程：逐块调用 LLM，结果经信号回主线程（UI 不冻结）。
 
-    测试环境无事件循环（跨线程信号不投递），由 _suggest_queue_step 同步驱动，
-    本线程不参与测试路径的 UI 状态。
+    测试通过注入同步替身替换本类：替身 start() 内联产出结果并直接发信号，
+    与生产共用同一条 result_ready/finished 状态链。
     parent=None + _LIVE_WORKERS 持有 + finished→deleteLater：生命周期与 dialog 解耦，
     dialog 销毁不连带析构运行中的线程。
     """
@@ -156,9 +153,8 @@ class IndexRefinementDialog(QDialog):
         self._kind_filter = "全部"
         self._search_text = ""
         self._llm_baseline: dict[str, dict[str, str]] = {}  # 本次会话 LLM 建议内容
-        # 批量建议队列（事件循环化，避免同步循环冻结 UI）
+        # 批量建议由 _SuggestWorker 后台线程驱动，避免同步循环冻结 UI
         self._suggest_all_running = False
-        self._suggest_queue: list[PendingBlock] = []
         self._suggest_failed: list[PendingBlock] = []
         self._suggest_total = 0
         self._suggest_done = 0
@@ -169,6 +165,7 @@ class IndexRefinementDialog(QDialog):
         self._skipped_count = 0  # 跳过的条目数（进度文案区分 #34）
         self.setWindowTitle("索引精化")
         self.setObjectName("indexRefineDialog")
+        # 恢复（取消最大化）时的常规尺寸；默认以最大化打开（见 _open_refinement）
         self.resize(1160, 720)
         self._setup_ui()
         self._refresh_table()
@@ -741,7 +738,8 @@ class IndexRefinementDialog(QDialog):
     def _suggest_all(self) -> None:
         """批量生成建议：LLM 调用放后台线程，窗口不冻结；覆盖全部块（含当前选中）。
 
-        测试环境无事件循环（跨线程信号不投递），仍由 _suggest_queue_step 同步驱动。
+        测试通过注入同步替身替换 _SuggestWorker，start() 内联产出结果并直接发
+        信号，与本方法共用同一条状态链。
         """
         if self._suggest_all_running or not self._pending or self._scope != "pending":
             return
@@ -754,8 +752,7 @@ class IndexRefinementDialog(QDialog):
         logger.info("批量建议启动：%d 块", len(self._pending))
         self._suggest_all_running = True
         self._suggest_failed = []
-        self._suggest_queue = list(self._pending)
-        self._suggest_total = len(self._suggest_queue)
+        self._suggest_total = len(self._pending)
         self._suggest_done = 0
         self._suggest_generator = generator
         self._suggest_one_button.setEnabled(False)
@@ -816,28 +813,6 @@ class IndexRefinementDialog(QDialog):
         if not self._suggest_all_running:
             return  # 已取消/已关闭，跳过收尾弹窗
         self._finish_suggest_all()
-
-    def _suggest_queue_step(self) -> None:
-        """处理队列中的下一块（测试可同步驱动；真实运行由后台线程接管）。"""
-        if not self._suggest_queue:
-            return
-        block = self._suggest_queue.pop(0)
-        self._current = block
-        self._load_current(block)
-        self._overview_label.setText(
-            f"正在生成建议：{self._suggest_done + 1}/{self._suggest_total}（{block.name}）")
-        update = suggest_one(block, self._suggest_generator)
-        self._suggest_done += 1
-        if update is not None:
-            self._fill_suggestion(block, update)
-            self._row_states[block.block_id] = "suggested"
-            self._refresh_row_state(block)
-        else:
-            self._suggest_failed.append(block)
-        if self._suggest_queue:
-            QTimer.singleShot(0, self._suggest_queue_step)
-        else:
-            self._finish_suggest_all()
 
     def _finish_suggest_all(self) -> None:
         self._suggest_all_running = False
@@ -933,6 +908,21 @@ class IndexRefinementDialog(QDialog):
         self._refresh_table()
         show_toast(self, f"已保存「{block.name}」（{update.method}）")
 
+    def _baseline_update(self, block_id: str) -> RefinementUpdate | None:
+        """把本次 LLM 建议基线还原为 RefinementUpdate；该块无建议返回 None。"""
+        baseline = self._llm_baseline.get(block_id)
+        if baseline is None:
+            return None
+        values = {field: [line.strip() for line in baseline[field].splitlines() if line.strip()]
+                  for field in INDEX_FIELDS}
+        return RefinementUpdate(
+            timing=values["timing"],
+            trigger_condition=values["trigger_condition"],
+            keywords=values["keywords"],
+            related=values["related"],
+            method="llm",
+        )
+
     def _save_all(self) -> None:
         """保存全部（仅待精化范围）：当前选中块用编辑器内容，其余块用已生成的 LLM 建议（baseline）；
         无任何内容的块跳过并保持待精化。"""
@@ -952,20 +942,12 @@ class IndexRefinementDialog(QDialog):
         # 按语料文件分组：每文件一次批量写回，避免逐块全量读+写（apply_curated 支持多块 updates）
         updates_by_file: dict[str, dict[str, RefinementUpdate]] = {}
         for block in list(self._pending):
-            update = None
-            if self._current is not None and self._current.block_id == block.block_id:
-                update = self._collect_update()
-            elif block.block_id in self._llm_baseline:
-                baseline = self._llm_baseline[block.block_id]
-                values = {field: [line.strip() for line in baseline[field].splitlines() if line.strip()]
-                          for field in INDEX_FIELDS}
-                update = RefinementUpdate(
-                    timing=values["timing"],
-                    trigger_condition=values["trigger_condition"],
-                    keywords=values["keywords"],
-                    related=values["related"],
-                    method="llm",
-                )
+            is_current = self._current is not None and self._current.block_id == block.block_id
+            update = self._collect_update() if is_current else None
+            if update is None:
+                # 批量建议不回填当前块编辑器：编辑器未动但已有 LLM 建议时，
+                # 当前块与其余块同样采用建议，否则当前块的建议会被静默跳过
+                update = self._baseline_update(block.block_id)
             if update is None or not any(getattr(update, field) for field in INDEX_FIELDS):
                 skipped += 1
                 continue
@@ -1080,7 +1062,6 @@ class IndexRefinementDialog(QDialog):
                 worker.finished.connect(worker.deleteLater)
                 worker.finished.connect(self._on_zombie_finished)
         if self._suggest_all_running:
-            self._suggest_queue = []
             self._suggest_all_running = False
             generator = self._suggest_generator
             self._suggest_generator = None
