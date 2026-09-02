@@ -68,20 +68,24 @@ class Retriever:
         if self._blocks is None:
             logger.info('语料加载内存块索引（关键词兜底）...')
             t0 = time.time()
-            self._blocks = load_all_blocks()
-            self._id2meta = {bid: meta for bid, _, meta in self._blocks}
-            self._id2text = {bid: text for bid, text, _ in self._blocks}
-            hero_index = {}
-            for block in self._blocks:
-                meta = block[2]
-                for key in ('hero', 'name'):
-                    name = meta.get(key)
-                    if name:
-                        hero_index.setdefault(name, []).append(block)
-            self._hero_index = hero_index
+            self._set_blocks(load_all_blocks())
             self._load_t = time.time() - t0
             logger.info('语料加载 %d 块，耗时 %.1fs', len(self._blocks), self._load_t)
         return self._blocks
+
+    def _set_blocks(self, blocks) -> None:
+        """注入语料块并重建内存索引；生产由懒加载调用，测试用它注入内存语料。"""
+        self._blocks = blocks
+        self._id2meta = {bid: meta for bid, _, meta in blocks}
+        self._id2text = {bid: text for bid, text, _ in blocks}
+        hero_index = {}
+        for block in blocks:
+            meta = block[2]
+            for key in ('hero', 'name'):
+                name = meta.get(key)
+                if name:
+                    hero_index.setdefault(name, []).append(block)
+        self._hero_index = hero_index
 
     # ---- 查询 ----
     def _vector_search(self, query, where=None, n=30):

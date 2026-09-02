@@ -11,6 +11,10 @@ import pytest_timeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Qt 离屏渲染统一在 conftest 收口（conftest 先于所有测试模块导入），
+# 各测试文件无需再各自 setdefault
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 from src.ocr import character_feature_repository
 from src.business.recognition import ocr_worker as _ocr_worker_module
 
@@ -57,3 +61,15 @@ def _disable_user_character_cache(monkeypatch) -> None:
 def _clear_ocr_retired_workers() -> None:
     """每个测试后清空退役 worker 列表，防止残留的未退出 QThread 在后续测试中累积。"""
     _ocr_worker_module._RETIRED_WORKERS.clear()
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """session 级 QApplication：整个测试进程仅创建一次，新测试直接以参数注入。
+
+    取代各文件自定义的 _app() 样板（存量测试不强制迁移，两者共享同一实例）。
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    yield app

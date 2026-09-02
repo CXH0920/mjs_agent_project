@@ -18,6 +18,7 @@ from src.scraper.ai.batch import (
     load_heroes,
 )
 from src.scraper.ai.utils import _save_json
+from src.scraper.ai import prompt_utils
 from src.scraper.ai.prompt_utils import estimate_item_cost
 from src.scraper.ai.prompt_utils import load_prompt
 from src.scraper.ai.json_extract import extract_json
@@ -101,6 +102,17 @@ class TestEstimateCost:
 
 
 class TestInternalEstimateCost:
+    @pytest.fixture(autouse=True)
+    def _fixed_pricing(self, monkeypatch):
+        """钉住模型单价：本组用例验证计算公式，不随 model_pricing.json 数据更新漂移。"""
+        def _pricing(model):
+            # 未知模型返回 None（与生产一致），已知模型返回固定单价
+            if model == "unknown-model":
+                return None
+            return {"input_per_million": 3.0, "output_per_million": 6.0}
+
+        monkeypatch.setattr(prompt_utils, "get_model_pricing", _pricing)
+
     def test_basic_calculation(self) -> None:
         """estimate_cost_by_tokens 基本计算"""
         cost = estimate_cost_by_tokens(1_000_000, 500_000)
