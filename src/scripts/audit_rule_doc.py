@@ -28,6 +28,9 @@ import argparse
 import datetime
 
 from src.scripts import build_rule_corpus as brc
+from src.scripts.rag_common import get_script_logger
+
+logger = get_script_logger("audit_rule_doc")
 
 from src.config.env import PROJECT_ROOT as ROOT
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
@@ -48,6 +51,7 @@ def load_snapshot(path=DEFAULT_SNAPSHOT):
         return data if isinstance(data, dict) else None
     except Exception as error:
         print(f'  ⚠️ 快照加载失败，按无快照处理（全部章节将视为新增）: {error}')
+        logger.warning("快照 %s 加载失败，按无快照处理: %s", path, error)
         return None
 
 

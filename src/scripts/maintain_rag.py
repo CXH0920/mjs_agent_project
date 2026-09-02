@@ -21,6 +21,9 @@ from src.scripts import audit_rule_doc
 
 from src.config.env import PROJECT_ROOT as ROOT
 from src.business.rag.task_defs import TASKS
+from src.scripts.rag_common import get_script_logger
+
+logger = get_script_logger("maintain_rag")
 
 STATE_FILE = os.path.join(ROOT, '.rag_state.json')
 DOCS_DIR = os.path.join(ROOT, 'data', 'rag_corpus')
@@ -67,7 +70,10 @@ def load_state():
         try:
             with open(STATE_FILE, encoding='utf-8') as f:
                 return json.load(f)
-        except Exception:
+        except Exception as error:
+            logger.warning("状态文件 %s 读取失败，已按空状态重跑全部任务: %s",
+                           STATE_FILE, error, exc_info=True)
+            print('  ⚠️ 状态文件损坏，已按空状态重跑全部任务（详情见 logs/rag/maintain_rag.log）')
             return {}
     return {}
 

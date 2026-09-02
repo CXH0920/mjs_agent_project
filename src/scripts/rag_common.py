@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -18,6 +19,35 @@ from pathlib import Path
 from src.config.env import PROJECT_ROOT as ROOT
 DATA = ROOT / "data"
 CORPUS = ROOT / "data" / "rag_corpus"
+
+# ---------------------------------------------------------------------------
+# 脚本日志规范与助手
+# ---------------------------------------------------------------------------
+# stdout（print）是 QProcess 进度契约：只允许协议行（[i/N] xxx START/OK/FAIL、
+# ✅/⚠️/❌ 状态行等）与面向用户的最终汇总，格式变更必须同步解析方
+# （fetch 服务 / 进度窗 / tests/test_fetch_utils.py 协议锁）。
+# 诊断信息（堆栈、中间值、静默恢复详情）一律走 get_script_logger 返回的
+# logger：DEBUG+ 写入 logs/rag/<script>.log，WARNING+ 镜像到 stderr
+# （ScriptRunner 会并入维护面板输出）——不占用 stdout 协议通道。
+
+
+def get_script_logger(script_name: str) -> logging.Logger:
+    """返回脚本专用 logger：文件记录 DEBUG+，stderr 镜像 WARNING+。"""
+    logger = logging.getLogger(f"rag_script.{script_name}")
+    if logger.handlers:
+        return logger
+    log_dir = ROOT / "logs" / "rag"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_dir / f"{script_name}.log", encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.WARNING)
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    return logger
 
 # 元规则文档结构解析正则：build_rule_corpus / sync_rule_stats / apply_rule_proposal
 # 三个脚本共用同一份口径（此前三处逐字复制，一处改动即产生解析口径漂移）

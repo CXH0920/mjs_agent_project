@@ -224,3 +224,33 @@ def test_download_hero_images_resets_failure_streak_on_success(monkeypatch, tmp_
 
     assert count == 4
     assert len(attempted) == expected_attempts  # 全部条目都被尝试，未熔断
+
+
+def test_js_to_json_matches_golden_snapshot() -> None:
+    """黄金快照特征化：状态机版 js_to_json 与改造前正则版在全部样本上输出逐字段一致。"""
+    golden = json.loads(
+        (Path(__file__).parent / "test_data" / "official_adapter" / "js_to_json_golden.json")
+        .read_text(encoding="utf-8"))
+    for case in golden["cases"]:
+        if case["name"] == "saved_contract":
+            continue  # 该样本需先经 extract_js_array 提取数组，由下方完整链路断言覆盖
+        assert official_adapter.js_to_json(case["input"]) == case["output"], case["name"]
+
+    saved_contract = next(case for case in golden["cases"] if case["name"] == "saved_contract")
+    assert official_adapter.parse_heroes_chunk(saved_contract["input"]) == saved_contract["output"]
+
+
+def test_js_to_json_parses_key_like_text_inside_strings() -> None:
+    """修复验证：字符串内的 {x:1}、,a:b、尾部 undefined 不再被误改写（旧实现整批解析失败）。"""
+    cases = [
+        ('[{desc:"效果{x:1}",name:"甲"}]',
+         [{"desc": "效果{x:1}", "name": "甲"}]),
+        ('[{desc:"效果{x:1}且,a:b",name:"甲"}]',
+         [{"desc": "效果{x:1}且,a:b", "name": "甲"}]),
+        ('[{desc:"时机:出牌阶段",tag:"值:undefined"}]',
+         [{"desc": "时机:出牌阶段", "tag": "值:undefined"}]),
+        ('[{a: undefined , b:1}]',
+         [{"a": None, "b": 1}]),
+    ]
+    for text, expected in cases:
+        assert official_adapter.js_to_json(text) == expected, text

@@ -1,0 +1,161 @@
+{
+ "cases": [
+  {
+   "name": "saved_contract",
+   "input": "const e=[\n  {\n    id: 101,\n    name: \"[测试武将]\",\n    note: \"字符串中的 ] 不应结束数组\",\n    missing: undefined,\n    skills: [{name: \"测试技能\",},],\n  },\n];\n",
+   "output": [
+    {
+     "id": 101,
+     "name": "[测试武将]",
+     "note": "字符串中的 ] 不应结束数组",
+     "missing": null,
+     "skills": [
+      {
+       "name": "测试技能"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "basic_object",
+   "input": "[{a:1,b:2}]",
+   "output": [
+    {
+     "a": 1,
+     "b": 2
+    }
+   ]
+  },
+  {
+   "name": "nested_structures",
+   "input": "[{a:{b:[1,{c:2}]},d:[{e:\"x\"}]}]",
+   "output": [
+    {
+     "a": {
+      "b": [
+       1,
+       {
+        "c": 2
+       }
+      ]
+     },
+     "d": [
+      {
+       "e": "x"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "undefined_compact",
+   "input": "[{a:undefined,b:1},{c:undefined}]",
+   "output": [
+    {
+     "a": null,
+     "b": 1
+    },
+    {
+     "c": null
+    }
+   ]
+  },
+  {
+   "name": "trailing_commas",
+   "input": "[{a:1,},{b:[2,3,],}]",
+   "output": [
+    {
+     "a": 1
+    },
+    {
+     "b": [
+      2,
+      3
+     ]
+    }
+   ]
+  },
+  {
+   "name": "bools_nulls_numbers",
+   "input": "[{a:true,b:false,c:null,d:1.5,e:-3}]",
+   "output": [
+    {
+     "a": true,
+     "b": false,
+     "c": null,
+     "d": 1.5,
+     "e": -3
+    }
+   ]
+  },
+  {
+   "name": "empty_structures",
+   "input": "[[],{},[]]",
+   "output": [
+    [],
+    {},
+    []
+   ]
+  },
+  {
+   "name": "underscore_digit_keys",
+   "input": "[{_x:1,k2:2}]",
+   "output": [
+    {
+     "_x": 1,
+     "k2": 2
+    }
+   ]
+  },
+  {
+   "name": "colons_commas_in_strings",
+   "input": "[{a:\"b:c\",d:\"e,f\"}]",
+   "output": [
+    {
+     "a": "b:c",
+     "d": "e,f"
+    }
+   ]
+  },
+  {
+   "name": "spaced_keys",
+   "input": "[{ a : 1 , b : 2 }]",
+   "output": [
+    {
+     "a": 1,
+     "b": 2
+    }
+   ]
+  },
+  {
+   "name": "inner_array_objects",
+   "input": "[{list:[{n:1,tag:\"x\"},{n:2,tag:\"y\"}],t:\"z\"}]",
+   "output": [
+    {
+     "list": [
+      {
+       "n": 1,
+       "tag": "x"
+      },
+      {
+       "n": 2,
+       "tag": "y"
+      }
+     ],
+     "t": "z"
+    }
+   ]
+  },
+  {
+   "name": "colon_in_string_value",
+   "input": "[{desc:\"时机:出牌阶段\",name:\"甲\"}]",
+   "output": [
+    {
+     "desc": "时机:出牌阶段",
+     "name": "甲"
+    }
+   ]
+  }
+ ]
+}
