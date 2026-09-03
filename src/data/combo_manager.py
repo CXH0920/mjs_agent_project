@@ -42,6 +42,25 @@ class ComboManager(DataManager[Combo]):
         return self._parse_models(data, lambda combo: self._combo_key(combo.hero1_id, combo.hero2_id))
 
     # ============================================================
+    # 数据保存
+    # ============================================================
+
+    def _save_unlocked(self) -> None:
+        """落盘前按 rating 降序、hero1_id/hero2_id 升序稳定排序。
+
+        物理行序与武将名解绑：新增武将（id 较大）自然落到各 rating 段末尾，
+        避免按名排序时新名字插入中段、其后条目整体平移造成的 diff 噪音。
+        """
+        ordered = sorted(
+            self._items.values(),
+            key=lambda c: (-c.rating, c.hero1_id, c.hero2_id),
+        )
+        data = [v.model_dump(mode="json") for v in ordered]
+        from src.data.json_repository import atomic_write_json  # noqa: PLC0415
+        atomic_write_json(self.file_path, data, indent=2)
+        logger.debug("保存 %d 条到 %s", len(ordered), self.file_path)
+
+    # ============================================================
     # 查询
     # ============================================================
 

@@ -3063,13 +3063,13 @@
     "hero1_id": 145,
     "hero2_id": 109,
     "rating": 7,
-    "position": "23",
-    "note": "张春华3+侯嬴2：体力流失陷害组合",
+    "position": "14",
+    "note": "张春华4+侯嬴1：体力流失陷害组合",
     "hero1_seats": [
-      2
+      1
     ],
     "hero2_seats": [
-      3
+      4
     ],
     "manual": false
   },
@@ -3750,6 +3750,22 @@
     "hero2_seats": [
       2,
       4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "司马炎",
+    "hero2_name": "萧何",
+    "hero1_id": 168,
+    "hero2_id": 27,
+    "rating": 7,
+    "position": "14",
+    "note": "司马炎+萧何：司马炎4+萧何1：",
+    "hero1_seats": [
+      4
+    ],
+    "hero2_seats": [
+      1
     ],
     "manual": false
   },
@@ -4590,6 +4606,22 @@
     "hero2_seats": [
       1,
       2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "平阳公主",
+    "hero2_name": "荀彧",
+    "hero1_id": 148,
+    "hero2_id": 64,
+    "rating": 7,
+    "position": "14",
+    "note": "平阳公主+荀彧：平阳公主1+荀彧4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
     ],
     "manual": false
   },
@@ -5822,6 +5854,88 @@
     "manual": false
   },
   {
+    "hero1_name": "潘安",
+    "hero2_name": "平阳公主",
+    "hero1_id": 196,
+    "hero2_id": 148,
+    "rating": 7,
+    "position": "both",
+    "note": "潘安+平阳公主：潘安12+平阳公主34：公主拿潘才如江",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "白起",
+    "hero1_id": 196,
+    "hero2_id": 136,
+    "rating": 7,
+    "position": "14",
+    "note": "潘安+白起：潘安1+白起4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "巴清",
+    "hero1_id": 196,
+    "hero2_id": 126,
+    "rating": 7,
+    "position": "14",
+    "note": "潘安+巴清：潘安1+巴清4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "龙且",
+    "hero1_id": 196,
+    "hero2_id": 35,
+    "rating": 7,
+    "position": "14",
+    "note": "潘安+龙且：潘安1+龙且4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "张角",
+    "hero1_id": 196,
+    "hero2_id": 23,
+    "rating": 7,
+    "position": "14",
+    "note": "潘安+张角：潘安1+张角4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
     "hero1_name": "王元姬",
     "hero2_name": "主父偃",
     "hero1_id": 179,
@@ -6500,6 +6614,40 @@
     "hero2_seats": [
       3,
       4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "赵婕妤",
+    "hero1_id": 195,
+    "hero2_id": 152,
+    "rating": 7,
+    "position": "both",
+    "note": "荀灌+赵婕妤：荀灌12+赵婕妤34：",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "白起",
+    "hero1_id": 195,
+    "hero2_id": 136,
+    "rating": 7,
+    "position": "14",
+    "note": "荀灌+白起：荀灌4+白起1：",
+    "hero1_seats": [
+      4
+    ],
+    "hero2_seats": [
+      1
     ],
     "manual": false
   },
@@ -11009,7 +11157,7 @@
     "hero1_id": 24,
     "hero2_id": 125,
     "rating": 6,
-    "position": "both",
+    "position": "23",
     "note": "2 3",
     "hero1_seats": [
       2
@@ -11595,6 +11743,24 @@
     ],
     "hero2_seats": [
       3,
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "庞煖",
+    "hero2_name": "张春华",
+    "hero1_id": 157,
+    "hero2_id": 109,
+    "rating": 6,
+    "position": "both",
+    "note": "庞煖+张春华：庞煖13+张春华24：",
+    "hero1_seats": [
+      1,
+      3
+    ],
+    "hero2_seats": [
+      2,
       4
     ],
     "manual": false
@@ -12824,6 +12990,348 @@
     "manual": false
   },
   {
+    "hero1_name": "潘安",
+    "hero2_name": "王濬",
+    "hero1_id": 196,
+    "hero2_id": 189,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+王濬：潘安1+王濬4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "赵婕妤",
+    "hero1_id": 196,
+    "hero2_id": 152,
+    "rating": 6,
+    "position": "both",
+    "note": "潘安+赵婕妤：潘安12+赵婕妤34：",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "卫青",
+    "hero1_id": 196,
+    "hero2_id": 94,
+    "rating": 6,
+    "position": "both",
+    "note": "潘安+卫青：潘安12+卫青34：",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "陈阿娇",
+    "hero1_id": 196,
+    "hero2_id": 91,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+陈阿娇：潘安1+陈阿娇4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "刘彻",
+    "hero1_id": 196,
+    "hero2_id": 93,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+刘彻：潘安1+刘彻4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "韩娥",
+    "hero1_id": 196,
+    "hero2_id": 163,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+韩娥：潘安1+韩娥4： 潘安角标记 宫标记",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "卢莫愁",
+    "hero1_id": 196,
+    "hero2_id": 142,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+卢莫愁：潘安1+卢莫愁4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "宋玉",
+    "hero1_id": 196,
+    "hero2_id": 84,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+宋玉：潘安1+宋玉4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "孟姚",
+    "hero1_id": 196,
+    "hero2_id": 79,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+孟姚：潘安1+孟姚4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "春申君",
+    "hero1_id": 196,
+    "hero2_id": 74,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+春申君：潘安1+春申君4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "范雎",
+    "hero1_id": 196,
+    "hero2_id": 75,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+范雎：潘安1+范雎4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "蒙恬",
+    "hero1_id": 196,
+    "hero2_id": 19,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+蒙恬：潘安1+蒙恬4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "范增",
+    "hero1_id": 196,
+    "hero2_id": 36,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+范增：潘安1+范增4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "徐盛",
+    "hero1_id": 196,
+    "hero2_id": 164,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+徐盛：潘安1+徐盛4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "大乔",
+    "hero1_id": 196,
+    "hero2_id": 44,
+    "rating": 6,
+    "position": "both",
+    "note": "潘安+大乔：潘安1+大乔4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "黄月英",
+    "hero1_id": 196,
+    "hero2_id": 150,
+    "rating": 6,
+    "position": "both",
+    "note": "潘安+黄月英：潘安12+黄月英34：",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "赵云",
+    "hero1_id": 196,
+    "hero2_id": 53,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+赵云：潘安1+赵云4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "荀彧",
+    "hero1_id": 196,
+    "hero2_id": 64,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+荀彧：潘安1+荀彧4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "夏侯惇",
+    "hero1_id": 196,
+    "hero2_id": 107,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+夏侯惇：潘安1+夏侯惇4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "郭嘉",
+    "hero1_id": 196,
+    "hero2_id": 49,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+郭嘉：潘安1+郭嘉4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "潘安",
+    "hero2_name": "曹操",
+    "hero1_id": 196,
+    "hero2_id": 51,
+    "rating": 6,
+    "position": "14",
+    "note": "潘安+曹操：潘安1+曹操4：",
+    "hero1_seats": [
+      1
+    ],
+    "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
     "hero1_name": "王元姬",
     "hero2_name": "左慈",
     "hero1_id": 179,
@@ -13908,6 +14416,314 @@
     ],
     "hero2_seats": [
       1
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "羊献容",
+    "hero1_id": 195,
+    "hero2_id": 190,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+羊献容：荀灌3+羊献容2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "苏武",
+    "hero1_id": 195,
+    "hero2_id": 193,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+苏武：荀灌3+苏武2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "刘彻",
+    "hero1_id": 195,
+    "hero2_id": 93,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+刘彻：荀灌3+刘彻2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "韩娥",
+    "hero1_id": 195,
+    "hero2_id": 163,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+韩娥：荀灌3+韩娥2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "赵奢",
+    "hero1_id": 195,
+    "hero2_id": 159,
+    "rating": 6,
+    "position": "14",
+    "note": "荀灌+赵奢：荀灌4+赵奢1：",
+    "hero1_seats": [
+      4
+    ],
+    "hero2_seats": [
+      1
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "李牧",
+    "hero1_id": 195,
+    "hero2_id": 158,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+李牧：荀灌3+李牧2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "郑袖",
+    "hero1_id": 195,
+    "hero2_id": 88,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+郑袖：荀灌3+郑袖2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "孟尝君",
+    "hero1_id": 195,
+    "hero2_id": 60,
+    "rating": 6,
+    "position": "14",
+    "note": "荀灌+孟尝君：荀灌4+孟尝君1：",
+    "hero1_seats": [
+      4
+    ],
+    "hero2_seats": [
+      1
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "公孙瓒",
+    "hero1_id": 195,
+    "hero2_id": 144,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+公孙瓒：荀灌3+公孙瓒2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "张宝",
+    "hero1_id": 195,
+    "hero2_id": 139,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+张宝：荀灌34+张宝12：把对面弃到2张，杀一下荀灌",
+    "hero1_seats": [
+      3,
+      4
+    ],
+    "hero2_seats": [
+      1,
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "蔡文姬",
+    "hero1_id": 195,
+    "hero2_id": 1,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+蔡文姬：荀灌3+蔡文姬2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "张角",
+    "hero1_id": 195,
+    "hero2_id": 23,
+    "rating": 6,
+    "position": "both",
+    "note": "荀灌+张角：荀灌34+张角12：",
+    "hero1_seats": [
+      3,
+      4
+    ],
+    "hero2_seats": [
+      1,
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "孙策",
+    "hero1_id": 195,
+    "hero2_id": 40,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+孙策：荀灌3+孙策2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "法正",
+    "hero1_id": 195,
+    "hero2_id": 115,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+法正：荀灌3+法正2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "赵云",
+    "hero1_id": 195,
+    "hero2_id": 53,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+赵云：荀灌3+赵云2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "刘备",
+    "hero1_id": 195,
+    "hero2_id": 57,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+刘备：荀灌3+刘备2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "曹丕",
+    "hero1_id": 195,
+    "hero2_id": 106,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+曹丕：荀灌3+曹丕2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "荀彧",
+    "hero1_id": 195,
+    "hero2_id": 64,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+荀彧：荀灌3+荀彧2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "郭嘉",
+    "hero1_id": 195,
+    "hero2_id": 49,
+    "rating": 6,
+    "position": "23",
+    "note": "荀灌+郭嘉：荀灌3+郭嘉2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
     ],
     "manual": false
   },
@@ -16355,6 +17171,22 @@
   },
   {
     "hero1_name": "项梁",
+    "hero2_name": "荀灌",
+    "hero1_id": 67,
+    "hero2_id": 195,
+    "rating": 6,
+    "position": "14",
+    "note": "项梁+荀灌：项梁4+荀灌1：开局杀荀灌",
+    "hero1_seats": [
+      4
+    ],
+    "hero2_seats": [
+      1
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "项梁",
     "hero2_name": "杜预",
     "hero1_id": 67,
     "hero2_id": 178,
@@ -17476,6 +18308,56 @@
     "manual": false
   },
   {
+    "hero1_name": "荀灌",
+    "hero2_name": "尉缭",
+    "hero1_id": 195,
+    "hero2_id": 135,
+    "rating": 5,
+    "position": "23",
+    "note": "荀灌+尉缭：荀灌3+尉缭2：双盾",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "虞姬",
+    "hero1_id": 195,
+    "hero2_id": 32,
+    "rating": 5,
+    "position": "23",
+    "note": "荀灌+虞姬：荀灌3+虞姬2：",
+    "hero1_seats": [
+      3
+    ],
+    "hero2_seats": [
+      2
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "荀灌",
+    "hero2_name": "曹操",
+    "hero1_id": 195,
+    "hero2_id": 51,
+    "rating": 5,
+    "position": "both",
+    "note": "荀灌+曹操：荀灌34+曹操12： 双盾",
+    "hero1_seats": [
+      3,
+      4
+    ],
+    "hero2_seats": [
+      1,
+      2
+    ],
+    "manual": false
+  },
+  {
     "hero1_name": "荆轲",
     "hero2_name": "王元姬",
     "hero1_id": 114,
@@ -17611,6 +18493,24 @@
       1
     ],
     "hero2_seats": [
+      4
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "鲁仲连",
+    "hero2_name": "张春华",
+    "hero1_id": 121,
+    "hero2_id": 109,
+    "rating": 5,
+    "position": "both",
+    "note": "鲁仲连+张春华：鲁仲连12+张春华34：",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
       4
     ],
     "manual": false
@@ -17886,6 +18786,24 @@
     ],
     "hero2_seats": [
       3
+    ],
+    "manual": false
+  },
+  {
+    "hero1_name": "廉颇",
+    "hero2_name": "张春华",
+    "hero1_id": 80,
+    "hero2_id": 109,
+    "rating": 4,
+    "position": "both",
+    "note": "廉颇+张春华：廉颇12+张春华34：",
+    "hero1_seats": [
+      1,
+      2
+    ],
+    "hero2_seats": [
+      3,
+      4
     ],
     "manual": false
   },
