@@ -94,6 +94,7 @@ class CombosImportDialog(QDialog):
         self.setMinimumSize(640, 480)
         self._heroes_path = Path(heroes_path)
         self._output_path = Path(output_path)
+        self._worker: _ImportWorker | None = None
         self._setup_ui()
 
     # ---------------------------------------------------------------
@@ -153,19 +154,24 @@ class CombosImportDialog(QDialog):
         if not source_text:
             QMessageBox.warning(self, "未选择文件", "请先选择外部工具导出的 JSON 文件。")
             return
-        self._footer.set_busy(True, "导入中...")
-        try:
-            report = run_import(Path(source_text), self._heroes_path, self._output_path)
-        except Exception as exc:
-            logger.exception("实战配队导入失败")
-            self._footer.set_busy(False)
-            self._report_browser.setPlainText(f"导入失败：{exc}")
-            QMessageBox.critical(self, "导入失败", f"无法完成导入：\n{exc}")
+        if self._worker is not None and self._worker.isRunning():
             return
+        self._footer.set_busy(True, "导入中...")
+        self._worker = _ImportWorker(Path(source_text), self._heroes_path, self._output_path)
+        self._worker.finished_ok.connect(self._on_import_finished)
+        self._worker.failed.connect(self._on_import_failed)
+        self._worker.start()
+
+    def _on_import_finished(self, report: dict) -> None:
         self._footer.set_busy(False)
         self._report_browser.setPlainText(self._format_report(report))
         if report["imported"]:
             self.combos_imported.emit(report["imported"])
+
+    def _on_import_failed(self, error: str) -> None:
+        self._footer.set_busy(False)
+        self._report_browser.setPlainText(f"导入失败：{error}")
+        QMessageBox.critical(self, "导入失败", f"无法完成导入：\n{error}")
 
     # ---------------------------------------------------------------
     # 报告

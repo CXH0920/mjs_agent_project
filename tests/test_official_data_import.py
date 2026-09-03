@@ -961,3 +961,40 @@ def test_import_peak_board_rejects_unequal_panel_rows(tmp_path, monkeypatch) -> 
 
     assert not (tmp_path / "巅峰赛胜率排行.csv").exists()
     assert not (tmp_path / "巅峰赛出场排行.csv").exists()
+
+
+def test_import_pages_requires_two_panels_for_pair_boards(monkeypatch, tmp_path) -> None:
+    """2v2/巅峰赛只检出 1 个榜单时应抛业务错误而非 IndexError（批次2回归）。"""
+    service = OfficialDataImportService(hero_names=["曹操"])
+    panel = np.zeros((100, 240, 3), dtype=np.uint8)
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
+    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["peak"])
+    monkeypatch.setattr(
+        official_board_parser,
+        "extract_panels",
+        lambda image, _layout: [(0, 0, panel)],
+    )
+    monkeypatch.setattr(
+        official_board_parser,
+        "find_data_boundaries",
+        lambda _panel, _height, _layout, _panel_index: [0, 20, 40],
+    )
+
+    with pytest.raises(ValueError, match="未检出左右两个榜单"):
+        service.import_pages("peak", [tmp_path / "peak.png"])
+
+
+def test_import_pages_requires_at_least_one_panel(monkeypatch, tmp_path) -> None:
+    """任一榜单类型整页 0 面板时抛业务错误而非静默空写（批次2回归）。"""
+    service = OfficialDataImportService(hero_names=["曹操"])
+    panel = np.zeros((100, 240, 3), dtype=np.uint8)
+    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
+    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["exile"])
+    monkeypatch.setattr(
+        official_board_parser,
+        "extract_panels",
+        lambda image, _layout: [],
+    )
+
+    with pytest.raises(ValueError, match="未检出任何榜单面板"):
+        service.import_pages("exile", [tmp_path / "exile.png"])

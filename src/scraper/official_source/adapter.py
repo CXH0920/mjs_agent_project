@@ -41,7 +41,13 @@ def extract_js_array(js_text: str) -> str:
     start_marker = "const e=["
     start = js_text.find(start_marker)
     if start < 0:
-        raise RuntimeError("const e=[ 未找到")
+        # 官网改版会更换变量名/打包形态：与 find_chunk_url 一致，把现场信息
+        # 带进日志与异常，改版当天即可定位
+        prefix = js_text[:300].replace("\n", " ")
+        logger.error("官网 JS 中未找到 %r 起始标记，可能已改版。JS 开头: %s", start_marker, prefix)
+        raise RuntimeError(
+            f"官网 JS 中未找到 {start_marker!r} 起始标记（可能已改版）。JS 开头: {prefix}"
+        )
 
     start += len(start_marker) - 1
     depth = 0

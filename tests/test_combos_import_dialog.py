@@ -50,6 +50,11 @@ def test_import_dialog_runs_and_reports(tmp_path: Path, monkeypatch) -> None:
 
     dialog._on_accept()
 
+    # 导入已异步化：等 worker 线程跑完，再泵事件让完成信号派发到 GUI 线程
+    assert dialog._worker is not None
+    dialog._worker.wait()
+    _app().processEvents()
+
     assert emitted == [1]
     report_text = dialog._report_browser.toPlainText()
     assert "导入完成：源 2 条 → 写入 1 条" in report_text
@@ -74,6 +79,7 @@ def test_import_dialog_blocks_empty_source(monkeypatch) -> None:
     assert emitted == []
     assert warned, "空源文件应弹出警告"
     assert not dialog._report_browser.toPlainText()
+    assert dialog._worker is None
 
 
 def test_import_dialog_reports_failure(tmp_path: Path, monkeypatch) -> None:
@@ -94,6 +100,11 @@ def test_import_dialog_reports_failure(tmp_path: Path, monkeypatch) -> None:
     )
 
     dialog._on_accept()
+
+    # 导入已异步化：失败也经 worker 信号回 GUI 线程
+    assert dialog._worker is not None
+    dialog._worker.wait()
+    _app().processEvents()
 
     assert emitted == []
     assert criticals, "导入失败应弹出错误提示"

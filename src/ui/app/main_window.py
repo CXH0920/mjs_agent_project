@@ -146,6 +146,8 @@ class MainWindow(QMainWindow):
         self._announcement_dialog: AnnouncementDialog | None = None
         self._last_announcement_diff: dict = {"added": [], "modified": [], "removed": []}
         self._pending_update_phases: list[tuple[str, list[int] | None]] | None = None
+        # 阶段令牌：只有成功发起的阶段采集才置位，完成回调据此只消费对应阶段
+        self._update_phase_fetch_in_flight = False
         self._announcement_banner: NoticeBanner | None = None
         self._announcement_update_button: QPushButton | None = None
         self._announcement_service.check_started.connect(self._on_announcement_check_started)
@@ -208,9 +210,14 @@ class MainWindow(QMainWindow):
         self._status_label.setText(message)
 
     def _on_fetch_completed(self, success: bool) -> None:
-        """采集完成处理；公告驱动的多阶段更新在此串联。"""
+        """采集完成处理；公告驱动的多阶段更新在此串联。
+
+        只有阶段令牌在位的完成事件才消费更新队列：无关采集（如手动采集）
+        的完成不得冒领阶段结果，否则公告武将会被静默跳过并 mark_applied。
+        """
         self._hide_progress()
-        if self._pending_update_phases is not None:
+        if self._pending_update_phases is not None and self._update_phase_fetch_in_flight:
+            self._update_phase_fetch_in_flight = False
             self._pending_update_phases.pop(0)
             if success and self._pending_update_phases:
                 self._start_next_update_phase()
@@ -462,24 +469,32 @@ class MainWindow(QMainWindow):
     def _start_next_update_phase(self) -> None:
         """启动公告驱动的下一阶段采集。
 
-        采集服务忙碌时会静默返回且不发完成信号：若照常入队，后续任意一次无关
-        采集完成会被误当成本阶段结果消费，公告涉及的武将将永久跳过更新并被
-        mark_applied。因此忙碌时整条更新流作废并告知用户（不 mark_applied，
-        公告横幅保留，用户可稍后重试）。
+        发起前 is_busy 检查与发起后返回值双重把关（忙碌时服务不发完成信号，
+        只能靠返回值识别）；任一关失败都整条更新流作废并告知用户——不
+        mark_applied，公告横幅保留，用户可稍后重试。只有成功发起的阶段才
+        置令牌，完成回调据此只消费对应阶段。
         """
         if not self._pending_update_phases:
             return
-        if self._fetch_service.is_busy:
-            self._pending_update_phases = None
-            self._hide_progress()
-            self._status_label.setText("公告更新已取消：武将采集正在进行")
-            QMessageBox.warning(self, "采集进行中", "公告更新与当前采集冲突，已取消。请稍后重新检查公告并更新。")
+        if self._fetch_service.is_busy or not self._dispatch_update_phase():
+            self._abort_pending_update_phases()
             return
+        self._update_phase_fetch_in_flight = True
+
+    def _dispatch_update_phase(self) -> bool:
+        """按阶段类型发起采集，返回是否成功启动。"""
         kind, hero_ids = self._pending_update_phases[0]
         if kind == "specific":
-            self._fetch_service.fetch_specific(hero_ids or [])
-        else:
-            self._fetch_service.fetch_incremental()
+            return self._fetch_service.fetch_specific(hero_ids or [])
+        return self._fetch_service.fetch_incremental()
+
+    def _abort_pending_update_phases(self) -> None:
+        """作废整条公告更新流：清队列与令牌，不 mark_applied（横幅保留可重试）。"""
+        self._pending_update_phases = None
+        self._update_phase_fetch_in_flight = False
+        self._hide_progress()
+        self._status_label.setText("公告更新已取消：武将采集正在进行")
+        QMessageBox.warning(self, "采集进行中", "公告更新与当前采集冲突，已取消。请稍后重新检查公告并更新。")
 
     def _connect_capture_signals(self) -> None:
         """连接截图、连接状态和轮询服务信号。"""

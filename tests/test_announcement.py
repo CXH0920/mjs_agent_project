@@ -663,6 +663,110 @@ def test_on_announcement_check_finished_hero_related_toast(monkeypatch) -> None:
     assert "东方朔" in toasts[0]
 
 
+def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> None:
+    """令牌未置位时，无关采集的完成事件不得消费公告更新阶段（H5 回归）。"""
+    from src.ui.app import main_window as main_window_module
+
+    toasts = []
+    monkeypatch.setattr(
+        main_window_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+    )
+    applied = []
+    window = SimpleNamespace(
+        _hide_progress=lambda: None,
+        _pending_update_phases=[("incremental", None)],
+        _update_phase_fetch_in_flight=False,
+        _announcement_service=SimpleNamespace(mark_applied=lambda: applied.append(1)),
+        _last_announcement_diff={"added": [1], "modified": [], "removed": []},
+        _refresh_announcement_banner=lambda: None,
+        _refresh_announcement_dialog=lambda: None,
+    )
+
+    MainWindow._on_fetch_completed(window, True)
+
+    assert window._pending_update_phases == [("incremental", None)]
+    assert applied == []
+    assert toasts == ["武将数据已采集完成，请重新加载数据。"]
+
+    window._update_phase_fetch_in_flight = True
+    MainWindow._on_fetch_completed(window, True)
+
+    assert window._pending_update_phases is None
+    assert applied == [1]
+    assert window._last_announcement_diff == {"added": [], "modified": [], "removed": []}
+
+
+def test_update_phase_aborts_when_fetch_service_busy(monkeypatch) -> None:
+    """发起前 is_busy 检查拦下时整条更新流作废且不 mark_applied（H5 回归）。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda parent, title, text: warnings.append(text)
+    )
+    started = []
+
+    class _BusyFetchService:
+        is_busy = True
+
+        def fetch_specific(self, hero_ids):
+            started.append(("specific", hero_ids))
+            return True
+
+        def fetch_incremental(self):
+            started.append(("incremental", None))
+            return True
+
+    window = SimpleNamespace(
+        _hide_progress=lambda: None,
+        _status_label=SimpleNamespace(setText=lambda s: None),
+        _pending_update_phases=[("specific", [3]), ("incremental", None)],
+        _update_phase_fetch_in_flight=False,
+        _fetch_service=_BusyFetchService(),
+    )
+    # 非绑定调用下把真实中止逻辑接回假对象，断言才覆盖真实现
+    window._abort_pending_update_phases = lambda: MainWindow._abort_pending_update_phases(window)
+
+    MainWindow._start_next_update_phase(window)
+
+    assert window._pending_update_phases is None
+    assert window._update_phase_fetch_in_flight is False
+    assert started == []
+    assert warnings
+
+
+def test_update_phase_aborts_when_dispatch_reports_busy(monkeypatch) -> None:
+    """发起瞬间被占用（返回 False）时同样作废整条更新流（H5 回归）。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda parent, title, text: warnings.append(text)
+    )
+
+    class _RacyFetchService:
+        is_busy = False
+
+        def fetch_specific(self, hero_ids):
+            return False  # 发起瞬间已被占用
+
+    window = SimpleNamespace(
+        _hide_progress=lambda: None,
+        _status_label=SimpleNamespace(setText=lambda s: None),
+        _pending_update_phases=[("specific", [3])],
+        _update_phase_fetch_in_flight=False,
+        _fetch_service=_RacyFetchService(),
+    )
+    window._abort_pending_update_phases = lambda: MainWindow._abort_pending_update_phases(window)
+    window._dispatch_update_phase = lambda: MainWindow._dispatch_update_phase(window)
+
+    MainWindow._start_next_update_phase(window)
+
+    assert window._pending_update_phases is None
+    assert window._update_phase_fetch_in_flight is False
+    assert warnings
+
+
 def test_main_window_announcement_integration(monkeypatch) -> None:
     """全路径：横幅文案、对话框全文、更新联动（覆盖模型/字典混用点）。
 
@@ -740,11 +844,11 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
 
             def fetch_specific(self, hero_ids):
                 calls.append(("specific", hero_ids))
-                window._on_fetch_completed(True)  # 模拟子进程完成，驱动下一阶段
+                return True
 
             def fetch_incremental(self):
                 calls.append(("incremental", None))
-                window._on_fetch_completed(True)
+                return True
 
         window._fetch_service = _FakeFetchService()
 
@@ -772,7 +876,10 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
 
         monkeypatch.setattr(main_window_module, "HeroUpdateConfirmDialog", _AcceptDialog)
         window._on_hero_update_prepared({"candidates": base, "official_ok": True})
+        assert calls == [("specific", [jia_id, ma_id])]
+        window._on_fetch_completed(True)  # 模拟子进程完成，驱动下一阶段
         assert calls == [("specific", [jia_id, ma_id]), ("incremental", None)]
+        window._on_fetch_completed(True)  # 第二阶段完成：队列清空并 mark_applied
 
         # 全取消：不采集，但刷新快照（mark_applied）
         applied = []

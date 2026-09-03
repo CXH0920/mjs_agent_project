@@ -162,6 +162,16 @@ class OfficialDataImportService:
                 row_count = len(boundaries) - 1
                 total_steps += row_count * (2 if "胜率" in columns else 1)
             row_counts = [len(task[8]) - 1 for task in page_tasks]
+            if not row_counts:
+                raise ValueError(
+                    f"第 {page_index} 张图片未检出任何榜单面板，请确认图片清晰完整"
+                )
+            if key in ("2v2", "peak") and len(row_counts) != 2:
+                label = "巅峰赛" if key == "peak" else "2v2"
+                raise ValueError(
+                    f"第 {page_index} 张 {label} 图片未检出左右两个榜单"
+                    f"（实际 {len(row_counts)} 个），请确认图片完整"
+                )
             if key in ("2v2", "peak") and row_counts[0] != row_counts[1]:
                 label = "巅峰赛" if key == "peak" else "2v2"
                 raise ValueError(
