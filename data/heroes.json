@@ -4919,58 +4919,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/xiX7ElCnfdj5NeXwmTcMdZaFJe2Cwg0TLgIhiDSl.png_200x282.png"
   },
   {
-    "id": 189,
-    "name": "王濬",
-    "title": "",
-    "faction": "西晋",
-    "position": "攻击",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "熔金断索",
-        "description": "出牌阶段限1次，你可以烧毁一名装备区牌数小于你的其他角色的所有 牌，并增加等量的出杀次数。",
-        "settlement": "烧毁后的牌会移出游戏。"
-      },
-      {
-        "name": "暗筑楼船",
-        "description": "出牌阶段限1次，你可以将1张手牌选择并转化为1张相同花色的装备牌，并获得1张相同花色的牌。回合开始时，若你的装备区牌数不是全场唯一最多，此技能的发动次数永久+1。",
-        "settlement": "如果牌库里没有相同花色的牌则无法获得。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-08-28",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/iI7AZRY2x5sxaYRIuYFNSBd4L43lbqc0aPG3V7g5.png_200x282.png"
-  },
-  {
-    "id": 65,
-    "name": "如姬",
-    "title": "",
-    "faction": "魏",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "衔环誓报",
-        "description": "当有角色重伤时，若其曾对你造成过伤害，你可以令伤害来源增加1点体力上限，然后回复1点体力。",
-        "settlement": "先增加上限，再回复体力值。"
-      },
-      {
-        "name": "窃符救赵",
-        "description": "出牌阶段开始时，你可以查看一名其他角色的随机3张手牌(不足则全看)，并可以用你的手牌交换这些牌或将这些牌补至最多3张，然后根据这些牌的组合触发对应效果。 （魏虎符：装备牌，装备上限+1；装备，每回合结束时将手牌补至上限） 组合规则： 花色相同、点数连续：添加“魏虎符”，并交给一名角色 3张花色相同：添加1张同花色的牌至手牌 3张点数连续：添加1张“夺粮劫营”至手牌 3张点数相同：摸3张牌2张点数相同：摸2张牌",
-        "settlement": "1.花色相同和点数效果的结算可以叠加。 2.只有3张花色相同才能触发对应奖励。 3.魏虎符可以有多张。 4.点数连续、花色相同：添加“虎符”，并交给一名角色（可以是自己） 3张花色相同：添加1张同花色的牌至手牌 3张点数连续：添加1张“夺粮劫营”至手牌 3张点数相同：摸3张牌 2张点数相同：摸2张牌"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-08-28",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/zKubyiDKUmObCl4sAK5rApAqUx33sjjdI9vp7Byr.png_200x282.png"
-  },
-  {
     "id": 193,
     "name": "苏武",
     "title": "",
@@ -5031,5 +4979,57 @@
     "mode_viability": {},
     "last_updated": "2026-09-02",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/KvXQuyO1WhFWQhAMgcYAT2verj80ZMeGzXS8ajM0.png_200x282.png"
+  },
+  {
+    "id": 189,
+    "name": "王濬",
+    "title": "",
+    "faction": "西晋",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "熔金断索",
+        "description": "出牌阶段限1次，你可以烧毁一名装备区牌数小于你的其他角色的所有 牌，并增加等量的出杀次数。",
+        "settlement": "烧毁后的牌会移出游戏。"
+      },
+      {
+        "name": "暗筑楼船",
+        "description": "出牌阶段限1次，你可以将1张手牌选择并转化为1张相同花色的装备牌，并获得1张相同花色的牌。每轮结束时，若你的装备区牌数不是全场最多，此技能的发动次数永久+1。",
+        "settlement": "如果牌库里没有相同花色的牌则无法获得。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-03",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/iI7AZRY2x5sxaYRIuYFNSBd4L43lbqc0aPG3V7g5.png_200x282.png"
+  },
+  {
+    "id": 65,
+    "name": "如姬",
+    "title": "",
+    "faction": "魏",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "衔环誓报",
+        "description": "当有角色重伤时，若其曾对你造成过伤害，你可以令伤害来源增加1点体力上限，然后回复1点体力。",
+        "settlement": "先增加上限，再回复体力值。"
+      },
+      {
+        "name": "窃符救赵",
+        "description": "出牌阶段限1次，你可以查看一名其他角色的随机3张手牌(不足则全看)，并可以用你的手牌交换这些牌或将这些牌补至最多3张，然后根据这些牌的组合触发对应效果。 组合规则： 花色相同、点数连续：添加“魏虎符”，并交给一名角色 3张花色相同：添加1张同花色的牌至手牌 3张点数连续：添加1张“夺粮劫营”至手牌 3张点数相同：摸3张牌2张点数相同：摸2张牌",
+        "settlement": "1.花色相同和点数效果的结算可以叠加。 2.只有3张花色相同才能触发对应奖励。 3.魏虎符可以有多张。 4.点数连续、花色相同：添加“虎符”，并交给一名角色（可以是自己） 3张花色相同：添加1张同花色的牌至手牌 3张点数连续：添加1张“夺粮劫营”至手牌 3张点数相同：摸3张牌 2张点数相同：摸2张牌"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-03",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/zKubyiDKUmObCl4sAK5rApAqUx33sjjdI9vp7Byr.png_200x282.png"
   }
 ]

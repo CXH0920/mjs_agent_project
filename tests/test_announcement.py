@@ -360,8 +360,63 @@ def test_announcement_manager_status_transitions(tmp_path) -> None:
     pending = [a for a in manager.list_all() if a.status is AnnouncementStatus.PENDING]
     assert len(pending) == 1
 
+    # 采集完成只推进 ready 公告；pending 公告保留，等待百科落地确认
     manager.mark_applied()
-    assert all(a.status is AnnouncementStatus.APPLIED for a in manager.list_all())
+    ready_announcement, pending_announcement = manager.list_all()
+    assert ready_announcement.status is AnnouncementStatus.APPLIED
+    assert pending_announcement.status is AnnouncementStatus.PENDING
+
+
+def test_announcement_manager_mark_applied_keeps_pending(tmp_path) -> None:
+    """pending 公告可能仍处百科滞后窗口（采集成功不代表落地），不得吞成终态。"""
+    manager = AnnouncementManager(tmp_path / "announcements.json")
+    manager.merge_new([_hero_related_raw()])
+    manager.mark_applied()
+    assert manager.list_all()[0].status is AnnouncementStatus.PENDING
+
+
+def test_announcement_manager_mark_ready_when_new_heroes_landed(tmp_path) -> None:
+    """公告的新增武将已全部出现在百科现状中时，即使 diff 为空也提升 ready。
+
+    兜底基线被已采集的本地数据污染（diff 永远检测不到该武将）的卡死场景。
+    """
+    manager = AnnouncementManager(tmp_path / "announcements.json")
+    announcement = Announcement(
+        id=211,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/new.html",
+        hero_related=True,
+        matched_heroes=[
+            HeroChange(name="东方朔", change="新增", known=False),
+            HeroChange(name="贾诩", change="增强", known=True),
+        ],
+    )
+    manager.merge_new([announcement.model_dump()])
+    empty_diff = {"added": [], "modified": [], "removed": []}
+
+    # 新增武将（东方朔）尚未落地百科 → 保持 pending
+    assert manager.mark_ready_if_updated(empty_diff, {"贾诩", "马钧"}) is False
+    assert manager.list_all()[0].status is AnnouncementStatus.PENDING
+
+    # 已落地百科现状 → 提升 ready
+    assert manager.mark_ready_if_updated(empty_diff, {"东方朔", "贾诩"}) is True
+    assert manager.list_all()[0].status is AnnouncementStatus.READY
+
+
+def test_announcement_manager_membership_promotion_ignores_adjust_only(tmp_path) -> None:
+    """仅含调整类武将的公告不适用落地检测（“存在”不代表“已变更”）。"""
+    manager = AnnouncementManager(tmp_path / "announcements.json")
+    announcement = Announcement(
+        id=212,
+        title="武将调整公告",
+        url="https://mjs.ztgame.com/news/adjust.html",
+        hero_related=True,
+        matched_heroes=[HeroChange(name="山涛", change="调整", known=True)],
+    )
+    manager.merge_new([announcement.model_dump()])
+    empty_diff = {"added": [], "modified": [], "removed": []}
+    assert manager.mark_ready_if_updated(empty_diff, {"山涛"}) is False
+    assert manager.list_all()[0].status is AnnouncementStatus.PENDING
 
 
 def test_baike_snapshot_roundtrip(tmp_path) -> None:
@@ -427,6 +482,32 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
     result4 = _run_check(service)
     assert result4.ready_count == 0
     assert result4.diff["modified"] == []
+
+
+def test_service_do_check_promotes_pending_when_heroes_landed(tmp_path, monkeypatch) -> None:
+    """基线被本地已采集数据污染（含公告新增武将）时，落地检测仍能解卡提升。"""
+    service, manager = _make_service(tmp_path)
+    service._heroes._items[3] = Hero.model_validate(_hero(id=3, name="东方朔"))
+    announcement = Announcement(
+        id=209,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/new.html",
+        hero_related=True,
+        matched_heroes=[HeroChange(name="东方朔", change="新增", known=False)],
+    )
+    manager.merge_new([announcement.model_dump()])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
+    monkeypatch.setattr(
+        service_module,
+        "fetch_baike_heroes",
+        lambda: [_hero(id=1, name="贾诩"), _hero(id=2, name="马钧"), _hero(id=3, name="东方朔")],
+    )
+
+    # 首查：基线用含东方朔的本地数据初始化 → diff 恒空；落地检测提升 pending → ready
+    result = _run_check(service)
+    assert result.diff == {"added": [], "modified": [], "removed": []}
+    assert manager.ready_count() == 1
+    assert manager.pending_count() == 0
 
 
 def test_service_do_check_announcement_failure(tmp_path, monkeypatch) -> None:
@@ -1088,3 +1169,73 @@ def test_build_update_candidates_new_with_official_summary() -> None:
     candidates = build_update_candidates([], [], official, diff)
     assert candidates[0]["summary"] == ["官网新增：东方朔（本地未收录，ID 188）"]
     assert candidates[0]["known"] is False
+
+
+def test_build_update_candidates_added_local_identical_skipped() -> None:
+    """diff added 但本地已抢先收录且与官网一致 → 剔除，不再误报“新增·未收录”。"""
+    local = _hero_dict(193, "苏武")
+    official = _hero_dict(193, "苏武")
+    diff = {"added": [{"name": "苏武", "id": 193}], "modified": [], "removed": []}
+    assert build_update_candidates([], [local], [official], diff) == []
+
+
+def test_build_update_candidates_added_local_differs_downgraded() -> None:
+    """diff added 且本地已有但有差异 → 降级“调整”，双侧全文 + 字段级摘要。"""
+    local = _hero_dict(193, "苏武", position="控制")
+    official = _hero_dict(193, "苏武", position="辅助")
+    diff = {"added": [{"name": "苏武", "id": 193}], "modified": [], "removed": []}
+    candidates = build_update_candidates([], [local], [official], diff)
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["change"] == "调整"
+    assert candidate["known"] is True
+    assert candidate["hero_id"] == 193
+    assert "苏武" in candidate["local_full"]
+    assert any("定位" in line for line in candidate["summary"])
+
+
+def test_build_update_candidates_added_name_fallback() -> None:
+    """diff id 与本地不一致时按名字兜底回查，本地原文仍能显示。"""
+    local = _hero_dict(999, "苏武", position="辅助")
+    official = _hero_dict(193, "苏武", position="控制")
+    diff = {"added": [{"name": "苏武", "id": 193}], "modified": [], "removed": []}
+    candidates = build_update_candidates([], [local], [official], diff)
+    candidate = candidates[0]
+    assert candidate["change"] == "调整"
+    assert candidate["hero_id"] == 193  # 保留官网 id 供定向采集
+    assert "辅助" in candidate["local_full"]
+    assert any("定位" in line for line in candidate["summary"])
+
+
+def test_build_update_candidates_official_unavailable_keeps_local_side() -> None:
+    """官网拉取失败（official_heroes=None）时本地已有武将降级“调整”并显示本地原文。"""
+    local = _hero_dict(193, "苏武")
+    diff = {"added": [{"name": "苏武", "id": 193}], "modified": [], "removed": []}
+    candidates = build_update_candidates([], [local], None, diff)
+    candidate = candidates[0]
+    assert candidate["change"] == "调整"
+    assert candidate["known"] is True
+    assert "苏武" in candidate["local_full"]
+    assert candidate["official_full"] == ""
+    assert candidate["summary"] == ["官网数据暂不可用，无法比对差异"]
+
+
+def test_build_update_candidates_identical_shows_consistent_summary() -> None:
+    """公告新增武将本地已收录且与官网一致 → 摘要明确标注一致而非空白。"""
+    announcement = Announcement(
+        id=211,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/new.html",
+        hero_related=True,
+        status=AnnouncementStatus.READY,
+        matched_heroes=[HeroChange(name="东方朔", change="新增", known=True)],
+    )
+    local = _hero_dict(188, "东方朔")
+    official = _hero_dict(188, "东方朔")
+    candidates = build_update_candidates(
+        [announcement], [local], [official], {"added": [], "modified": [], "removed": []}
+    )
+    assert len(candidates) == 1
+    assert candidates[0]["summary"] == ["本地与官网内容一致"]
+    assert "东方朔" in candidates[0]["local_full"]
+    assert "东方朔" in candidates[0]["official_full"]

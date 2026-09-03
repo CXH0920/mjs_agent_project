@@ -293,8 +293,8 @@ class AnnouncementService(QObject):
                     _snapshot_to_plain(snapshot),
                     _snapshot_to_plain(baseline),
                 )
-                if any(diff.values()):
-                    self._announcements.mark_ready_if_updated(diff)
+            current_names = {str(hero.get("name") or "") for hero in current_heroes}
+            self._announcements.mark_ready_if_updated(diff, current_names)
 
         if baike_ok:
             self.progress_changed.emit("正在对比武将差异...")

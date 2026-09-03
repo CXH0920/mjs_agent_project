@@ -114,8 +114,13 @@ class AnnouncementManager(DataManager[Announcement]):
                 self.save()
         return new_announcements
 
-    def mark_ready_if_updated(self, diff: dict) -> bool:
-        """公告提及的武将名与百科 diff 变更集匹配时，pending → ready。"""
+    def mark_ready_if_updated(self, diff: dict, current_names: set[str] | None = None) -> bool:
+        """公告提及的武将名与百科 diff 变更集匹配时，pending → ready。
+
+        current_names 为当前百科武将名全集：公告的新增武将已全部落地百科时
+        也提升，兜底基线快照已包含目标武将导致 diff 检测不到的场景
+        （如基线用已手动采集的本地数据初始化）。
+        """
         changed_names: set[str] = set()
         for group in ("added", "modified", "removed"):
             for entry in diff.get(group) or []:
@@ -127,8 +132,14 @@ class AnnouncementManager(DataManager[Announcement]):
             for announcement in list(self._items.values()):
                 if announcement.status is not AnnouncementStatus.PENDING:
                     continue
-                matched_names = {change.name for change in announcement.matched_heroes}
+                matched = list(announcement.matched_heroes)
+                matched_names = {change.name for change in matched}
                 if matched_names & changed_names:
+                    announcement.status = AnnouncementStatus.READY
+                    changed = True
+                    continue
+                new_names = {change.name for change in matched if change.change == "新增"}
+                if new_names and current_names is not None and new_names <= current_names:
                     announcement.status = AnnouncementStatus.READY
                     changed = True
             if changed:
@@ -136,14 +147,15 @@ class AnnouncementManager(DataManager[Announcement]):
         return changed
 
     def mark_applied(self) -> None:
-        """采集完成后将 pending/ready 公告全部置为已处理。"""
+        """采集完成后将 ready 公告置为已处理；pending 公告保留待百科确认。
+
+        pending 公告可能仍处于百科滞后窗口（采集子进程成功不代表数据已落地），
+        此时推进为终态会永久吞掉公告，故仅在百科已确认（ready）时推进。
+        """
         changed = False
         with self._lock:
             for announcement in list(self._items.values()):
-                if announcement.status in (
-                    AnnouncementStatus.PENDING,
-                    AnnouncementStatus.READY,
-                ):
+                if announcement.status is AnnouncementStatus.READY:
                     announcement.status = AnnouncementStatus.APPLIED
                     changed = True
             if changed:

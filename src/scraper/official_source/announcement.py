@@ -564,6 +564,7 @@ def build_update_candidates(
 
     来源 = ready 公告解析出的武将 + diff 的 added/modified，按武将名去重。
     每个候选：{name, hero_id|None, change, source, known, summary[]}。
+    diff added 武将若本地已收录则降级为“调整”，与官网内容一致时直接剔除。
     official_heroes 为 None 时（官网获取失败）跳过差异摘要计算。
     """
     local_by_name: dict[str, dict] = {}
@@ -624,20 +625,30 @@ def build_update_candidates(
                 continue
             hero_id = int(entry["id"]) if entry.get("id") is not None else None
             if group == "added":
-                add(name, "新增", "百科 diff", hero_id=hero_id, known=False)
+                local = local_by_id.get(hero_id) if hero_id is not None else None
+                if local is None:
+                    local = local_by_name.get(name)
+                if local is None:
+                    add(name, "新增", "百科 diff", hero_id=hero_id, known=False)
+                else:
+                    official = official_by_name.get(name)
+                    if official is not None and not hero_field_diff_summary(local, official):
+                        # 本地已抢先收录且与官网一致，无需再提示更新
+                        continue
+                    add(name, "调整", "百科 diff", hero_id=hero_id, known=True)
             else:
                 local = local_by_id.get(hero_id) if hero_id is not None else None
                 if local is None:
                     continue
                 add(name, "调整", "百科 diff", hero_id=hero_id, known=True)
 
-    if official_heroes is None:
-        return candidates
-
     for candidate in candidates:
         local = local_by_id.get(candidate["hero_id"]) if candidate["hero_id"] is not None else None
+        if local is None:
+            # id 可能缺失或与本地不一致（如重名兜底命中的候选），按名字回查
+            local = local_by_name.get(candidate["name"])
         official = official_by_name.get(candidate["name"])
-        if candidate["change"] == "新增":
+        if candidate["change"] == "新增" and local is None:
             if official is not None:
                 candidate["summary"] = [
                     f"官网新增：{candidate['name']}（本地未收录，ID {int(official['id'])}）"
@@ -650,4 +661,8 @@ def build_update_candidates(
             candidate["official_full"] = format_hero_full_text(official)
         if local is not None and official is not None:
             candidate["summary"] = hero_field_diff_summary(local, official)
+            if not candidate["summary"]:
+                candidate["summary"] = ["本地与官网内容一致"]
+        elif local is not None and official_heroes is None:
+            candidate["summary"] = ["官网数据暂不可用，无法比对差异"]
     return candidates
