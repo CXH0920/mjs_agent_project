@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
@@ -406,4 +407,133 @@ def test_item_actions_visibility_by_scope(tmp_path: Path) -> None:
     # 全部模式：取消精化仍可见
     _click_scope(dialog, "全部")
     assert not dialog._clear_button.isHidden()
+    dialog.close()
+
+
+# ---------------------------------------------------------------
+# 批次5步骤0：拆分行为锚——锁定将在 F2 拆分中搬迁的行为细节
+# ---------------------------------------------------------------
+
+def _dual_file_corpus(tmp_path: Path) -> Path:
+    """卡牌+武将两个语料文件各含一个待精化块（save_all 按文件分组写回的锚点）。"""
+    root = tmp_path / "rag_corpus"
+    _write(root / "卡牌RAG语料.json", [
+        {"block_id": "card_1_测试牌", "card_type": "行动牌", "card_amount": "1",
+         "timing": [], "trigger_condition": [], "keywords": [], "related": [],
+         "effect": "效果", "effect_detail": "说明"},
+    ])
+    _write(root / "武将RAG语料.json", [
+        {"block_id": "hero_1_甲", "hero": "甲", "faction": "魏",
+         "skill": "突袭", "description": "描述", "settlement": "结算",
+         "timing": [], "trigger_condition": [], "keywords": [], "related": []},
+    ])
+    return root
+
+
+def test_save_all_groups_writes_by_corpus_file(tmp_path: Path, monkeypatch) -> None:
+    """save_all 按语料文件分组批量写回：每文件一次 apply_curated，全部块完成池间迁移。"""
+    _app()
+    root = _dual_file_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _fake_generator(monkeypatch)
+    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
+        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
+    _suggest_all_sync(dialog, monkeypatch)
+    assert len(dialog._llm_baseline) == 2
+
+    writes: list[tuple[Path, dict, str]] = []
+    monkeypatch.setattr(
+        dialog_module, "apply_curated",
+        lambda corpus_dir, updates, fname: writes.append((corpus_dir, dict(updates), fname)) or len(updates),
+    )
+    _answer_yes(monkeypatch)
+    dialog._save_all()
+
+    assert [w[2] for w in writes] == ["卡牌RAG语料.json", "武将RAG语料.json"]
+    assert set(writes[0][1]) == {"card_1_测试牌"}
+    assert set(writes[1][1]) == {"hero_1_甲"}
+    assert dialog._pending == []
+    assert len(dialog._curated) == 2
+    assert all(state == "refined" for state in dialog._row_states.values())
+    dialog.close()
+
+
+def test_suggest_result_dropped_for_skipped_block(tmp_path: Path, monkeypatch) -> None:
+    """批量建议运行中跳过的块，其迟到结果必须被丢弃，不得回写行状态"复活"（B5 锚）。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(1)
+    skipped = dialog._current
+    # 模拟批量建议进行中（生产 _suggest_all 已置位的状态字段）
+    dialog._suggest_all_running = True
+    dialog._suggest_worker = SimpleNamespace(_single=False)
+    dialog._suggest_total = 2
+    dialog._suggest_done = 0
+
+    _answer_yes(monkeypatch)
+    dialog._skip_current()
+    assert skipped.block_id not in dialog._row_states
+
+    late_update = RefinementUpdate(
+        timing=["x"], trigger_condition=[], keywords=[], related=[], method="llm")
+    dialog._on_suggest_result(skipped, late_update)
+
+    assert skipped.block_id not in dialog._llm_baseline
+    assert skipped.block_id not in dialog._row_states
+    assert dialog._suggest_done == 1  # 进度计数照常前进，仅结果被丢弃
+    dialog._suggest_all_running = False
+    dialog.close()
+
+
+def test_reject_cancels_running_suggest_and_releases_generator(tmp_path: Path) -> None:
+    """建议进行中关闭对话框：worker 置取消、generator cancel+close 释放、无僵线程残留。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+
+    class _FakeGenerator:
+        def __init__(self) -> None:
+            self.cancelled = False
+            self.closed = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    generator = _FakeGenerator()
+    worker = dialog_module._SuggestWorker(dialog._pending, generator)
+    dialog._suggest_worker = worker
+    dialog._suggest_all_running = True
+    dialog._suggest_generator = generator
+
+    dialog.reject()
+
+    assert worker._cancelled is True
+    assert generator.cancelled and generator.closed
+    assert dialog._suggest_all_running is False
+    assert dialog._suggest_generator is None
+    assert dialog._zombie_workers == []  # 线程未启动，wait 立即返回，无僵线程转入持有列表
+    assert worker not in dialog_module._LIVE_WORKERS
+
+
+def test_collect_update_method_llm_manual_and_no_baseline(tmp_path: Path) -> None:
+    """_collect_update 的 method 判定：与 LLM 建议一致→llm，被修改→manual，无建议→manual。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)
+    block_id = dialog._current.block_id
+
+    dialog._field_editors["timing"].setPlainText("出牌阶段")
+    assert dialog._collect_update().method == "manual"  # 无 LLM 基线
+
+    dialog._llm_baseline[block_id] = {
+        "timing": "出牌阶段", "trigger_condition": "", "keywords": "", "related": ""}
+    assert dialog._collect_update().method == "llm"  # 与建议逐字一致
+
+    dialog._field_editors["keywords"].setPlainText("测试牌")
+    assert dialog._collect_update().method == "manual"  # 偏离建议
     dialog.close()
