@@ -490,6 +490,17 @@ def test_suggest_result_dropped_for_skipped_block(tmp_path: Path, monkeypatch) -
     assert skipped.block_id not in dialog._llm_baseline
     assert skipped.block_id not in dialog._row_states
     assert controller.done == 1  # 进度计数照常前进，仅结果被丢弃
+
+    # 迟到的失败结果同样计数，但汇总按"仍在待精化池"过滤——已跳过块不得
+    # 以"失败"名义出现在汇总弹窗（跳过是用户主动放弃）
+    controller._on_result_ready(skipped, None)
+    assert any(b.block_id == skipped.block_id for b in controller.failed)
+    warnings_shown: list = []
+    monkeypatch.setattr(dialog_module.QMessageBox, "warning",
+                        lambda *a, **k: warnings_shown.append(k))
+    dialog._finish_suggest_all()
+    assert warnings_shown == []
+
     controller._running = False
     dialog.close()
 
@@ -546,3 +557,51 @@ def test_collect_update_method_llm_manual_and_no_baseline(tmp_path: Path) -> Non
     dialog._field_editors["keywords"].setPlainText("测试牌")
     assert dialog._collect_update().method == "manual"  # 偏离建议
     dialog.close()
+
+
+def test_reject_with_dirty_edit_during_single_suggest_prompts_discard(tmp_path: Path, monkeypatch) -> None:
+    """单块建议运行中带未保存编辑关闭：先取消善后，仍须弹脏确认（审阅回归锚）。
+
+    原实现 elif 结构在单块场景跳过确认、静默丢编辑——本用例锁定"取消与
+    脏确认并行"的修复语义。
+    """
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)
+    dialog._field_editors["timing"].setPlainText("人工填写")
+    assert dialog._dirty
+
+    class _FakeGenerator:
+        def __init__(self) -> None:
+            self.cancelled = False
+            self.closed = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    generator = _FakeGenerator()
+    controller = dialog._controller
+    controller._worker = sc_module.SuggestWorker(dialog._pending, generator)
+    controller._generator = generator
+    controller._running = True
+
+    answers = iter([dialog_module.QMessageBox.StandardButton.No])
+    monkeypatch.setattr(dialog_module.QMessageBox, "question", lambda *a, **k: next(answers))
+    closed: list[int] = []
+    monkeypatch.setattr(dialog_module.QDialog, "reject", lambda self: closed.append(1))
+
+    dialog.reject()
+
+    assert generator.cancelled and generator.closed  # 善后照常执行
+    assert closed == []  # 用户拒绝放弃 → 对话框保持打开
+    assert dialog._dirty and dialog._current is not None
+
+    # 改答"放弃"：再次关闭应通过确认并关闭
+    answers = iter([dialog_module.QMessageBox.StandardButton.Yes])
+    monkeypatch.setattr(dialog_module.QMessageBox, "question", lambda *a, **k: next(answers))
+    dialog.reject()
+    assert closed == [1]

@@ -660,6 +660,9 @@ class IndexRefinementDialog(QDialog):
         self._skip_button.setVisible(is_pending)
         self._clear_button.setVisible(not is_pending)
         has_current = self._current is not None
+        # 单块/批量建议运行期间（is_running 含单块）均禁用清单写操作（跳过/保存/
+        # 保存全部）：防止在途结果与清单变更交错。原实现仅批量禁用，单块一并
+        # 禁用属有意语义收紧
         batch_running = self._controller.is_running
         self._suggest_one_button.setEnabled(has_current and not batch_running)
         self._skip_button.setEnabled(is_pending and has_current and not batch_running)
@@ -755,7 +758,10 @@ class IndexRefinementDialog(QDialog):
         self._update_overview()
 
     def _finish_suggest_all(self) -> None:
-        failed = self._controller.failed
+        # 失败汇总按"仍在待精化池"过滤：运行中已被跳过的块即使建议失败，
+        # 也不得再以"失败"名义出现在汇总里（跳过是用户主动放弃）
+        failed = [block for block in self._controller.failed
+                  if self._session.is_pending(block.block_id)]
         total = self._controller.total
         if failed:
             names = "、".join(block.name for block in failed[:8])
@@ -885,10 +891,12 @@ class IndexRefinementDialog(QDialog):
         show_toast(self, f"已取消精化「{block.name}」")
 
     def reject(self) -> None:
-        # 建议进行中（单块或批量）：中止 worker 并释放 generator 后关闭（#22）
+        # 建议进行中（单块或批量）：中止 worker 并释放 generator 后关闭（#22）；
+        # 中止后仍需脏确认——单块建议运行时用户可能有未保存编辑（原实现 elif
+        # 结构在单块场景会漏确认、静默丢编辑，步骤1 迁移时曾回归）
         if self._controller.is_running:
             self._controller.cancel_and_shutdown()
-        elif self._dirty and self._current is not None:
+        if self._dirty and self._current is not None:
             if not self._confirm_discard():
                 return
         super().reject()
