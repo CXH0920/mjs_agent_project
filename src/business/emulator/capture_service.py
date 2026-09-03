@@ -246,17 +246,6 @@ class CaptureService(QObject):
             "ocr_matched": False,
         })
 
-    def _execute_capture(
-        self,
-        hero_names: list[str] | None = None,
-        template_name: str = "hero_selection",
-        force_ocr: bool = False,
-        perform_ocr: bool = True,
-    ) -> None:
-        """实际截图执行。"""
-        ok, result = self.capture_screenshot()
-        self._handle_capture_result(ok, result, hero_names, template_name, force_ocr, perform_ocr)
-
     def _on_background_capture_ready(self, payload: object) -> None:
         """在 GUI 线程处理后台截图结果。"""
         if self._closed:
@@ -664,18 +653,6 @@ class CaptureService(QObject):
     def get_matching_threshold(self) -> float:
         """获取模板匹配阈值。"""
         return self._config.get("mumu_ocr_match_threshold", 0.8)
-
-    def run_ocr_if_matched(self, image, hero_names: list[str] | None = None):
-        """同步等待 OCR worker 的结果；仅供非 GUI 调度路径使用。
-
-        有限等待 30 秒：引擎异常时避免调用线程无限阻塞。
-        """
-        task = self.submit_ocr_task(image, hero_names)
-        if not task.completed.wait(30):
-            logger.warning("OCR 任务等待超时（30 秒），返回空结果")
-            return None, False
-        result = task.result or {}
-        return result.get("ocr_results"), result.get("outcome") == "matched"
 
     def shutdown(self) -> None:
         """停止截图执行器和 OCR worker，供应用退出时调用。

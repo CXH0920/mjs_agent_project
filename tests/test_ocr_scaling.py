@@ -76,8 +76,8 @@ def test_general_recognizer_skips_empty_roi_without_calling_opencv(monkeypatch) 
     recognizer = GeneralRecognizer(rois=[[3000, 100, 50, 145]], hero_names=[])
     monkeypatch.setattr(
         recognizer,
-        "_recognize_single",
-        lambda roi, slot: (_ for _ in ()).throw(AssertionError("不应处理空 ROI")),
+        "_recognize_prepared_single",
+        lambda _prepared, _slot, _kind: (_ for _ in ()).throw(AssertionError("不应处理空 ROI")),
     )
 
     results = recognizer.recognize(np.zeros((1440, 2560, 3), dtype=np.uint8))

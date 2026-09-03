@@ -340,7 +340,7 @@ def test_match_guide_auto_assigns_sides_from_positions() -> None:
 
     assert panel._lineup.sides == ["enemy", "enemy", "ally", "ally"]
     assert panel._lineup.ally_leader_slot == 3
-    assert panel._is_confirmed()
+    assert panel._lineup.can_confirm()
     assert panel._analysis is None
     assert panel._confirm_btn.isEnabled()
 

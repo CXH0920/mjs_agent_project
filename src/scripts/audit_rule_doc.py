@@ -168,7 +168,7 @@ def write_snapshot(snap, path):
 
 def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
           update_snapshot=False, print_report=True):
-    """执行全部校验，返回 issues 列表；strict 的退出码语义由调用方在返回值上自行实现。"""
+    """执行全部校验，返回 issues 列表。"""
     root = root or ROOT
     issues = []
     blocks, terms, faqs, dropped = brc.parse_rule_doc(doc_path)

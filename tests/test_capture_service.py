@@ -38,37 +38,24 @@ def test_sync_connection_state_marks_offline() -> None:
 
 
 def test_capture_can_skip_ocr_and_return_saved_image(monkeypatch, tmp_path) -> None:
-    class FakeCapture:
-        connected = True
-
-        @staticmethod
-        def screencap_full():
-            return True, Image.new("RGB", (10, 20))
-
     service = CaptureService()
-    service.capture = FakeCapture()
     completed: list[dict] = []
     service.capture_completed.connect(completed.append)
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
     monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
 
-    service._execute_capture(perform_ocr=False)
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=False, perform_ocr=False,
+    )
 
     assert service._ocr_worker is None
     assert completed[0]["ocr_results"] is None
     assert not completed[0]["ocr_matched"]
+    service.shutdown()
 
 
 def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
-    class FakeCapture:
-        connected = True
-
-        @staticmethod
-        def screencap_full():
-            return True, Image.new("RGB", (10, 20))
-
     service = CaptureService()
-    service.capture = FakeCapture()
     submitted: list[dict] = []
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
     monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
@@ -78,24 +65,19 @@ def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
         lambda **kwargs: submitted.append(kwargs),
     )
 
-    service._execute_capture(force_ocr=True)
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=True, perform_ocr=True,
+    )
 
     assert submitted[0]["match_template"] is False
     assert submitted[0]["is_poll"] is False
+    service.shutdown()
 
 
 def test_capture_queues_ocr_copy_before_saving_image(monkeypatch, tmp_path) -> None:
     image = Image.new("RGB", (10, 20))
 
-    class FakeCapture:
-        connected = True
-
-        @staticmethod
-        def screencap_full():
-            return True, image
-
     service = CaptureService()
-    service.capture = FakeCapture()
     service._config = {"mumu_ocr_enabled": True}
     events: list[str] = []
     submitted: dict = {}
@@ -112,7 +94,9 @@ def test_capture_queues_ocr_copy_before_saving_image(monkeypatch, tmp_path) -> N
         lambda _image, _path: (events.append("save") is None, ""),
     )
 
-    service._execute_capture()
+    service._handle_capture_result(
+        True, image, None, "hero_selection", force_ocr=False, perform_ocr=True,
+    )
     service.shutdown()
 
     assert events[0] == "ocr"

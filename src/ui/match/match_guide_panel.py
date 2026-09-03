@@ -577,9 +577,6 @@ class MatchGuidePanel(QWidget):
         self._refresh_analysis()
         self._update_recognition_status()
 
-    def _is_confirmed(self) -> bool:
-        return self._lineup.is_confirmed()
-
     def _refresh_analysis(self) -> None:
         self._sync_confirmation_controls()
         validation = self._lineup.validate()

@@ -32,7 +32,6 @@ from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
 
-_HIGH_CONFIDENCE = 0.995       # 极高置信度且无纠错候选时，保护新武将
 _BATCH_SLOT_GAP = 30
 _BATCH_MIN_CONFIDENCE = 0.5
 _NAME_RECHECK_CONFIDENCE = 0.8
@@ -604,46 +603,6 @@ class GeneralRecognizer:
         cropped = image[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
         return cropped if cropped.size else None
 
-    def _recognize_single(self, roi: np.ndarray, slot: int) -> tuple[str, float]:
-        """识别单个武将名称区域。"""
-        try:
-            preprocess_started = time.perf_counter()
-            prepared = self._preprocessor.preprocess_roi(roi)
-            self._add_timing("name_preprocess", preprocess_started)
-            text, conf = self._recognize_prepared_single(prepared, slot, "name")
-            return self._correct_name(text, conf, slot)
-        except Exception as e:
-            logger.warning("武将 %d 识别异常: %s", slot, e)
-            logger.debug(traceback.format_exc())
-
-        return "", 0.0
-
-    def _recognize_team(self, roi: np.ndarray, slot: int) -> str:
-        """识别角色右上角的【楚军】或【汉军】标记。"""
-        try:
-            preprocess_started = time.perf_counter()
-            prepared = self._preprocessor.preprocess_roi(roi)
-            self._add_timing("team_preprocess", preprocess_started)
-            text, _ = self._recognize_prepared_single(prepared, slot, "team")
-        except Exception as exc:
-            logger.warning("武将 %d 阵营标签识别异常: %s", slot, exc)
-            return ""
-        return self._normalize_team(text, slot)
-
-    def _correct_name(self, text: str, confidence: float, slot: int) -> tuple[str, float]:
-        if not text:
-            return "", 0.0
-        if self._hero_names:
-            correction_started = time.perf_counter()
-            corrected = self._similarity_service.correct_hero_name(text, self._hero_names)
-            self._add_timing("name_correction", correction_started)
-            if corrected != text:
-                logger.debug("武将 %d: 矫正 %s → %s", slot, text, corrected)
-                return corrected, confidence
-            if confidence >= _HIGH_CONFIDENCE and text not in self._hero_names:
-                logger.debug("武将 %d: 高置信度未知新名 '%s'，无纠错候选", slot, text)
-        return text, confidence
-
     @staticmethod
     def _normalize_team(text: str, slot: int) -> str:
         normalized = text.replace(" ", "").replace("【", "").replace("】", "")
@@ -746,13 +705,6 @@ class GeneralRecognizer:
 
     def _add_timing(self, key: str, started: float) -> None:
         self._timing_ms[key] = self._timing_ms.get(key, 0.0) + (time.perf_counter() - started) * 1000
-
-    # ── 图像预处理 ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _preprocess_roi(roi: np.ndarray) -> np.ndarray:
-        """兼容旧调用：委托独立的图像预处理组件。"""
-        return ImagePreprocessor.preprocess_roi(roi)
 
     # ── 辅助 ──────────────────────────────────────────────────────────
 

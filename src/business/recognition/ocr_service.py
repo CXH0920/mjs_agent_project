@@ -307,19 +307,6 @@ class OcrService(QObject):
             f"{delay // 1000} 秒后重试（第 {self._consecutive_poll_failures}/{self.POLL_MAX_FAILURES} 次失败）",
         )
 
-    def set_cooldown(self, seconds: int) -> None:
-        """兼容旧调用：仅设置武将选择任务冷却。"""
-        self.set_task_cooldown("hero_selection", seconds)
-
-    def clear_cooldown(self) -> None:
-        self.clear_task_cooldown("hero_selection")
-
-    @property
-    def is_on_cooldown(self) -> bool:
-        """兼容旧调用：检查武将选择任务冷却。"""
-        task = self._get_task("hero_selection")
-        return task.cooldown_until is not None and datetime.now() < task.cooldown_until
-
     def _set_poll_state(self, state: str, detail: str) -> None:
         if (state, detail) == (self._poll_state, self._poll_detail):
             return

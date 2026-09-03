@@ -206,20 +206,6 @@ def probe_running_devices() -> list[MuMuDeviceInfo]:
     return [device for device in probe_all_devices() if device.is_running and device.adb_port > 0]
 
 
-def probe_mumu_port() -> int:
-    """唯一运行实例时返回其 ADB 端口，否则返回 0。"""
-    devices = probe_running_devices()
-    if len(devices) == 1:
-        device = devices[0]
-        logger.info("自动探测到唯一运行中的模拟器实例 '%s' (端口: %s)", device.name, device.adb_port)
-        return device.adb_port
-    if len(devices) > 1:
-        logger.info("检测到 %d 个运行中的 MuMu 实例，无法自动选择", len(devices))
-    else:
-        logger.info("未发现正在运行的 MuMu 模拟器实例")
-    return 0
-
-
 def test_adb_path(adb_path: str) -> tuple[bool, str]:
     """快速测试 ADB 路径是否可执行。"""
     p = Path(adb_path)
