@@ -1731,32 +1731,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/6lVHJoX9bRICBPzJDvFwFOZ6mgHSpY7rTUJejcRK.png_200x282.png"
   },
   {
-    "id": 109,
-    "name": "张春华",
-    "title": "",
-    "faction": "曹魏",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "痛随伤逝",
-        "description": "当一名角色失去体力时，你可以令另一名角色流血+1，然后你摸1张牌。 （流血：回合结束时，失去1点体力值并清除1层效果；该状态效果可叠加。）",
-        "settlement": "流血也会导致体力流失。"
-      },
-      {
-        "name": "花落绝情",
-        "description": "每个回合限1次，当你选择其他角色为打出牌的目标时，你可以失去1点体力，令其封禁。",
-        "settlement": "1.流血：回合结束时，色失去1点体力值，并清除1层效果；该状态效果可叠加； 2.封禁效果持续到当前回合结束。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/6Z5WK6hebr38FWIfqfn4WwVan9fffvixjeQZ1ViM.png_200x282.png"
-  },
-  {
     "id": 108,
     "name": "曹仁",
     "title": "",
@@ -5007,6 +4981,32 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/iI7AZRY2x5sxaYRIuYFNSBd4L43lbqc0aPG3V7g5.png_200x282.png"
   },
   {
+    "id": 109,
+    "name": "张春华",
+    "title": "",
+    "faction": "曹魏",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "痛随伤逝",
+        "description": "当一名角色失去体力时，你可以令另一名角色流血+1，然后你摸1张牌。 （流血：回合结束时，失去1点体力值并清除1层效果；该状态效果可叠加。）",
+        "settlement": "流血也会导致体力流失。"
+      },
+      {
+        "name": "花落绝情",
+        "description": "每个回合限1次，当你选择其他角色为打出牌的目标时，你可以失去1点体力，令其封禁。",
+        "settlement": "1.流血：回合结束时，色失去1点体力值，并清除1层效果；该状态效果可叠加； 2.封禁效果持续到当前回合结束。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-03",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/6Z5WK6hebr38FWIfqfn4WwVan9fffvixjeQZ1ViM.png_200x282.png"
+  },
+  {
     "id": 65,
     "name": "如姬",
     "title": "",
@@ -5031,5 +5031,62 @@
     "mode_viability": {},
     "last_updated": "2026-09-03",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/zKubyiDKUmObCl4sAK5rApAqUx33sjjdI9vp7Byr.png_200x282.png"
+  },
+  {
+    "id": 196,
+    "name": "潘安",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "悼亡诗",
+        "description": "限定，当一名其他角色阵亡后，你可以获得弃牌堆中其打出过的所有牌。",
+        "settlement": "1.若其打出后的牌被其他角色的获得后再次打出进入弃牌堆，则不会获得此牌。 2.若其打出过的牌已不在弃牌堆了，则也不会获得。"
+      },
+      {
+        "name": "潘才如江",
+        "description": "回合结束时，你可以将1张牌当作任意1张战法牌打出，每种牌限1次。然后直到你的下个回合开始，其他角色的回合结束时，可以交给你1张牌，然后你可以令其将1张牌当作此战法牌打出。",
+        "settlement": "若令其将1张牌当作此战法牌打出，然后其有牌，则一定会将1张牌当作此战法牌打出，除非此牌其无法打出。"
+      },
+      {
+        "name": "掷果盈车",
+        "description": "回合开始时，令所有有手牌的其他角色随机展示2张手牌，然后添加展示次数最多的2种牌各1张至你的手牌。当你打出手牌中因此获得的所有牌后，可以令一名角色获得1张战法牌。",
+        "settlement": "1.若展示次数最多的牌同时有2种以上，则会随机获得其中的2种各1张;若只展示了1种牌，则只会获得1张牌。 2.技能后段触发时机为打出手牌中最后1张因此技能获得的牌。3.若同时存在多个掷果盈车技能，则每个技能因此获得的牌会分开统计。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-03",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/Zi9GhmlNP7d1XuSlTisNxYQeJaSmlzdbQC1jQMoh.png_200x282.png"
+  },
+  {
+    "id": 195,
+    "name": "荀灌",
+    "title": "",
+    "faction": "西晋",
+    "position": "爆发",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "奋身破围",
+        "description": "限定，受伤，你可以受到1点伤害，然后重复此过程，直到你的体力值=1；然后弃置场上所有削弱牌，每因此弃置2张削弱牌，你就获得1张非削弱牌。",
+        "settlement": "1.如果并未实际受到1点伤害则不会重复后续的过程。 2.本次技能询问中，若选择发动，则该技能后续重复发动时将自动发动，不再询问。"
+      },
+      {
+        "name": "荀家灌娘",
+        "description": "受伤，你可以削弱一名角色的2张牌，然后若其所有牌都被削弱，令其手牌上限-1。",
+        "settlement": "如果该角色没有牌，则不能被选择成为技能目标。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-03",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/bbZ6MtuVLspRCtTGg5n576nwJcg6Pqy86danTHoM.png_200x282.png"
   }
 ]
