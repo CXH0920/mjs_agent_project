@@ -83,9 +83,26 @@ class _OcrService:
         self.loaded.add(template_name)
 
 
+# 生产路径对话框配置出自 get_mumu_config() 全键字典；测试基线喂同等全键，用例可覆盖个别键
+_FULL_MUMU_CONFIG = {
+    "mumu_adb_path": "",
+    "mumu_adb_port": 0,
+    "mumu_ocr_enabled": False,
+    "mumu_ocr_poll_mode": False,
+    "mumu_ocr_auto_switch_tab": False,
+    "mumu_ocr_poll_interval": 2,
+    "mumu_ocr_match_threshold": 0.8,
+    "mumu_hero_selection_threshold": 0.8,
+    "mumu_hero_selection_cooldown": 180,
+    "mumu_match_guide_threshold": 0.8,
+    "mumu_ocr_use_gpu": False,
+    "mumu_ocr_cpu_threads": 6,
+}
+
+
 def _dialog(config: dict, devices: list[MuMuDeviceInfo], ocr_service=None) -> MumuConfigDialog:
     return MumuConfigDialog(
-        config,
+        {**_FULL_MUMU_CONFIG, **config},
         ocr_service=ocr_service,
         operation_service=_OperationService(devices),
     )

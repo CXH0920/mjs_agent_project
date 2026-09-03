@@ -56,12 +56,12 @@ def is_full_build() -> bool:
 # ============================================================
 
 DEFAULT_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_MODEL = "deepseek-v4-flash"
 
 # 供应商预设表：UI 选择 provider 时自动预填（用户可覆盖），见设计文档 §4.2。
 # model 留空表示使用服务默认模型；requires_key=False 表示本地服务可不填 Key（如 ollama）。
 PROVIDER_PRESETS: dict[str, dict] = {
-    "deepseek": {"api_url": "https://api.deepseek.com/v1/chat/completions", "model": "deepseek-v4-pro", "requires_key": True},
+    "deepseek": {"api_url": "https://api.deepseek.com/v1/chat/completions", "model": "deepseek-v4-flash", "requires_key": True},
     "openai": {"api_url": "https://api.openai.com/v1/chat/completions", "model": "", "requires_key": True},
     "ollama": {"api_url": "http://localhost:11434/v1/chat/completions", "model": "", "requires_key": False},
     "openai-compatible": {"api_url": "", "model": "", "requires_key": True},

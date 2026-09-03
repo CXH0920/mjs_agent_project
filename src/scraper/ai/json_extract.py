@@ -91,12 +91,14 @@ def extract_json(text: str) -> dict:
         if result:
             return result
 
-    # 3. 通过 --- 分隔线提取最后一段
+    # 3. 通过 --- 分隔线提取最后一段（切片长度与实际匹配的分隔符等长，避免吞掉首字符）
     last_sep = text.rfind("\n---\n")
+    sep_len = 5
     if last_sep < 0:
         last_sep = text.rfind("\n---")
+        sep_len = 4
     if last_sep >= 0:
-        result = _try_extract([text[last_sep + 5:].strip()])
+        result = _try_extract([text[last_sep + sep_len:].strip()])
         if result:
             return result
 

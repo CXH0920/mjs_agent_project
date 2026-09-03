@@ -115,6 +115,7 @@ class DataManagementDialog(QDialog):
         try:
             result = self._service.clear_data(guides=clear_guides, synergies=clear_synergies)
         except Exception as error:
+            logger.exception("清空数据失败")
             self._footer.set_busy(False)
             QMessageBox.critical(self, "清空失败", f"无法清空数据：\n{error}")
             return

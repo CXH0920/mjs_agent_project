@@ -12,7 +12,7 @@ RAG 语料维护调度主脚本（maintain_rag.py）
     python -m src.scripts.maintain_rag --only 武将 # 只跑名称包含"武将"的任务
     python -m src.scripts.maintain_rag --keep-going # 单个失败后继续执行其余任务
 
-依赖：仅 Python 标准库；需在项目根目录运行（与 data/ docs/ scripts/ 同级）。
+依赖：仅 Python 标准库；需在项目根目录运行（与 data/ docs/ src/ 同级）。
 """
 import sys, os, json, hashlib, subprocess, argparse, time
 

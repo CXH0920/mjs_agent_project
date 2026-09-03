@@ -225,10 +225,11 @@ class MumuConfigDialog(QDialog):
         self._ocr_enabled_check.setChecked(self._config.get("mumu_ocr_enabled", False))
         self._poll_mode_check.setChecked(self._config.get("mumu_ocr_poll_mode", False))
         self._auto_switch_tab_check.setChecked(self._config.get("mumu_ocr_auto_switch_tab", False))
-        self._poll_interval_spin.setValue(self._config.get("mumu_ocr_poll_interval", 2))
-        self._threshold_spin.setValue(self._config.get("mumu_hero_selection_threshold", self._config.get("mumu_ocr_match_threshold", 0.8)))
-        self._match_guide_threshold_spin.setValue(self._config.get("mumu_match_guide_threshold", 0.8))
-        self._hero_cooldown_spin.setValue(self._config.get("mumu_hero_selection_cooldown", 180))
+        # 配置出自 get_mumu_config() 全键字典（协调器持有），默认值以 env 层为唯一权威，直接取键
+        self._poll_interval_spin.setValue(self._config["mumu_ocr_poll_interval"])
+        self._threshold_spin.setValue(self._config["mumu_hero_selection_threshold"])
+        self._match_guide_threshold_spin.setValue(self._config["mumu_match_guide_threshold"])
+        self._hero_cooldown_spin.setValue(self._config["mumu_hero_selection_cooldown"])
 
         self._sync_capture_service_config()
         self._on_refresh_devices()

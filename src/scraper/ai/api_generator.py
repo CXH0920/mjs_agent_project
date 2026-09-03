@@ -10,7 +10,7 @@ import logging
 import time
 import httpx
 
-from src.config.env import BUNDLE_ROOT, PROVIDER_PRESETS
+from src.config.env import BUNDLE_ROOT, DEFAULT_MODEL, PROVIDER_PRESETS
 from src.scraper.ai.prompt_utils import (
     load_prompt,
     build_guide_prompt,
@@ -83,7 +83,7 @@ class AIBatchGenerator:
         self.api_key = api_key
         self.provider = provider
         self.api_url = api_url or "https://api.deepseek.com/v1/chat/completions"
-        self.model = model or "deepseek-v4-pro"
+        self.model = model or DEFAULT_MODEL
         self.max_retries = max_retries
         self.http_timeout = http_timeout
         # 思考+正文共享的输出额度；思考型模型经 config.env MAX_OUTPUT_TOKENS 按供应商上限调大

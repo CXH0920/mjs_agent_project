@@ -381,7 +381,7 @@ def main():
     parser.add_argument('--strict', action='store_true', help='有任一 ERROR/WARN 时退出码 1')
     parser.add_argument('--update-snapshot', action='store_true', help='校验后刷新基线快照')
     parser.add_argument('--doc', default=DEFAULT_DOC, help='文档路径（默认 docs/元规则整理-完整版.md）')
-    parser.add_argument('--snapshot', default=DEFAULT_SNAPSHOT, help='快照路径（默认 scripts/.rule_doc_snapshot.json）')
+    parser.add_argument('--snapshot', default=DEFAULT_SNAPSHOT, help='快照路径（默认项目根 .rule_doc_snapshot.json）')
     args = parser.parse_args()
 
     issues = audit(doc_path=args.doc, snapshot_path=args.snapshot,

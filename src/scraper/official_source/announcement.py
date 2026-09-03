@@ -139,10 +139,11 @@ def _parse_notice_page_html(html_text: str) -> list[dict]:
         re.DOTALL,
     )
     items = []
-    for href, title, publishdate in pattern.findall(html_text):
+    for index, (href, title, publishdate) in enumerate(pattern.findall(html_text), start=1):
         url = urljoin(f"{BASE_URL}/news/", href) if not href.startswith("http") else href
         items.append({
-            "id": 0,
+            # HTML 回退条目没有真实公告 id；负数合成 id 避免与 API 正数 id 混同（去重主键是 URL）
+            "id": -index,
             "title": clean_html(title),
             "content": "",
             "url": url,

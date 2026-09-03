@@ -2,11 +2,11 @@
 """RAG 语料任务定义（单一事实源）。
 
 「知识库维护 → 语料状态」工作台（src/ui/maintenance/rag_maintenance_panel.py）
-与 scripts/maintain_rag.py 调度脚本共用；新增/修改语料任务只需改这里。
+与 src/scripts/maintain_rag.py 调度脚本共用；新增/修改语料任务只需改这里。
 
 字段：
 - name: 任务名（UI 展示与 --only 过滤共用）；
-- script: 生成语料的 build 脚本（scripts/ 下）；
+- script: 生成语料的 build 脚本（src/scripts/ 下）；
 - sources: 依赖的 T0 源文件（相对项目根，含跨语料联动文件）；
 - outputs: 生成的语料 json 文件名（data/rag_corpus/ 下）；
 - expected: 期望块数——int=精确匹配；"snapshot"=以快照基线只增不删；

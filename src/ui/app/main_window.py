@@ -526,7 +526,7 @@ class MainWindow(QMainWindow):
         elif hero_result and hero_result.outcome is PollOutcome.MATCHED:
             self._ocr_service.set_task_cooldown(
                 "hero_selection",
-                self._ocr_service.config.get("mumu_hero_selection_cooldown", 180),
+                self._ocr_service.config["mumu_hero_selection_cooldown"],
             )
             self._ocr_service.clear_task_cooldown("match_guide")
             self._ocr_service.activate_task("match_guide")
@@ -1136,17 +1136,18 @@ class MainWindow(QMainWindow):
         new_config = dialog.get_config()
 
         # 保存到 config.env
+        # new_config 出自 get_mumu_config() 全键字典（对话框经协调器持有），直接取键
         save_env_file(DEFAULT_ENV_FILE, {
-            "MUMU_ADB_PATH": new_config.get("mumu_adb_path", ""),
-            "MUMU_ADB_PORT": str(new_config.get("mumu_adb_port", 0)),
-            "MUMU_OCR_ENABLED": "true" if new_config.get("mumu_ocr_enabled") else "false",
-            "MUMU_OCR_POLL_MODE": "true" if new_config.get("mumu_ocr_poll_mode") else "false",
-            "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config.get("mumu_ocr_auto_switch_tab") else "false",
-            "MUMU_OCR_POLL_INTERVAL": str(new_config.get("mumu_ocr_poll_interval", 2)),
-            "MUMU_OCR_MATCH_THRESHOLD": str(new_config.get("mumu_ocr_match_threshold", 0.8)),
-            "MUMU_HERO_SELECTION_THRESHOLD": str(new_config.get("mumu_hero_selection_threshold", 0.8)),
-            "MUMU_HERO_SELECTION_COOLDOWN": str(new_config.get("mumu_hero_selection_cooldown", 180)),
-            "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config.get("mumu_match_guide_threshold", 0.8)),
+            "MUMU_ADB_PATH": new_config["mumu_adb_path"],
+            "MUMU_ADB_PORT": str(new_config["mumu_adb_port"]),
+            "MUMU_OCR_ENABLED": "true" if new_config["mumu_ocr_enabled"] else "false",
+            "MUMU_OCR_POLL_MODE": "true" if new_config["mumu_ocr_poll_mode"] else "false",
+            "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config["mumu_ocr_auto_switch_tab"] else "false",
+            "MUMU_OCR_POLL_INTERVAL": str(new_config["mumu_ocr_poll_interval"]),
+            "MUMU_OCR_MATCH_THRESHOLD": str(new_config["mumu_ocr_match_threshold"]),
+            "MUMU_HERO_SELECTION_THRESHOLD": str(new_config["mumu_hero_selection_threshold"]),
+            "MUMU_HERO_SELECTION_COOLDOWN": str(new_config["mumu_hero_selection_cooldown"]),
+            "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config["mumu_match_guide_threshold"]),
         })
 
         # 更新服务配置
