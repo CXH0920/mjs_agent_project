@@ -14,6 +14,85 @@ from src.ocr import official_board_parser
 from src.ocr.official_board_parser import LAYOUTS
 
 
+@pytest.fixture
+def import_env(tmp_path, monkeypatch):
+    """官方导入集成测试公共环境。
+
+    写盘重定向到 tmp_path，胜率缓存清理静音，推荐指数/巅峰赛缓存标记
+    记录到 env.stale_calls / env.peak_clears 供用例断言；real_data_dir
+    保留重定向前的真实数据目录（个别用例需要真实 heroes.json 词表）。
+    """
+    from types import SimpleNamespace
+
+    env = SimpleNamespace(
+        tmp_path=tmp_path,
+        stale_calls=[],
+        peak_clears=[],
+        real_data_dir=import_module.DATA_DIR,
+    )
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+    monkeypatch.setattr(
+        "src.data.peak_win_rate_repository.clear_peak_win_rate_cache",
+        lambda: env.peak_clears.append(True),
+    )
+    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", env.stale_calls.append)
+    return env
+
+
+def _stub_parser(monkeypatch, *, service=None, read_image=None, detect_layout=None,
+                 extract_panels=None, find_data_boundaries=None, recognize_row=None,
+                 prepare_rate_templates=None, recognize_rate_with_templates=None):
+    """解析器打桩工厂：None 的项保留真实行为，集成用例按需取用。
+
+    - 标量参数包装成忽略入参的桩，callable 原样接管；
+    - recognize_row 传 list 时按行迭代出栈（对齐原 iter+next 写法），须同时传 service；
+    - prepare_rate_templates 传 (模板表, 进度回调次数) 时自动包一层；
+    - recognize_rate_with_templates 传 list 时逐次出栈，传标量时固定返回。
+    """
+    if read_image is not None:
+        stub = read_image if callable(read_image) else (lambda _path: read_image)
+        monkeypatch.setattr(official_board_parser, "read_image", stub)
+    if detect_layout is not None:
+        monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: detect_layout)
+    if extract_panels is not None:
+        stub = extract_panels if callable(extract_panels) else (lambda *_: list(extract_panels))
+        monkeypatch.setattr(official_board_parser, "extract_panels", stub)
+    if find_data_boundaries is not None:
+        stub = (find_data_boundaries if callable(find_data_boundaries)
+                else (lambda *_: list(find_data_boundaries)))
+        monkeypatch.setattr(official_board_parser, "find_data_boundaries", stub)
+    if recognize_row is not None:
+        if callable(recognize_row):
+            monkeypatch.setattr(service, "_recognize_row", recognize_row)
+        else:
+            rows = iter(recognize_row)
+            monkeypatch.setattr(service, "_recognize_row", lambda *_args, **_kwargs: next(rows))
+    if prepare_rate_templates is not None:
+        if callable(prepare_rate_templates):
+            stub = prepare_rate_templates
+        else:
+            templates, progress_calls = prepare_rate_templates
+
+            def stub(*args):
+                for _ in range(progress_calls):
+                    args[-2]()
+                return templates, {}
+
+            monkeypatch.setattr(official_board_parser, "prepare_rate_templates", stub)
+    if recognize_rate_with_templates is not None:
+        value = recognize_rate_with_templates
+        if callable(value):
+            stub = value
+        elif isinstance(value, list):
+            rates = iter(value)
+            stub = lambda *_args: next(rates)
+        else:
+            stub = lambda *_args: value
+        monkeypatch.setattr(official_board_parser, "recognize_rate_with_templates", stub)
+
+
 def test_template_rows_are_split_by_horizontal_lines(monkeypatch) -> None:
     panel = np.full((1_800, 240, 3), 255, dtype=np.uint8)
     lines = np.array([
@@ -349,39 +428,26 @@ def test_two_column_layouts_keep_rank_and_hero_in_separate_cells() -> None:
         assert set(np.unique(cells["武将"])) == {0, 200}
 
 
-def test_import_keeps_formal_csv_when_a_name_cannot_be_confirmed(tmp_path, monkeypatch) -> None:
+def test_import_keeps_formal_csv_when_a_name_cannot_be_confirmed(tmp_path, monkeypatch, import_env) -> None:
     service = OfficialDataImportService(hero_names=["白起", "赵奢"])
     image = np.zeros((200, 200, 3), dtype=np.uint8)
     panel = np.zeros((60, 100, 3), dtype=np.uint8)
-    rows = iter([
-        {"排名": ("1", 0.99), "武将": ("白起", 0.99), "胜率": ("70.34%", 0.99)},
-        {"排名": ("2", 0.99), "武将": ("", 0.0), "胜率": ("", 0.0)},
-        {"排名": ("1", 0.99), "武将": ("白起", 0.99)},
-        {"排名": ("2", 0.99), "武将": ("赵奢", 0.99)},
-    ])
 
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(official_board_parser, "read_image", lambda _: image)
-    monkeypatch.setattr(
-        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=image,
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=[0, 20, 40],
+        recognize_row=[
+            {"排名": ("1", 0.99), "武将": ("白起", 0.99), "胜率": ("70.34%", 0.99)},
+            {"排名": ("2", 0.99), "武将": ("", 0.0), "胜率": ("", 0.0)},
+            {"排名": ("1", 0.99), "武将": ("白起", 0.99)},
+            {"排名": ("2", 0.99), "武将": ("赵奢", 0.99)},
+        ],
+        prepare_rate_templates=({1: ("70.34%", 0.99), 2: ("70.11%", 0.99)}, 2),
+        recognize_rate_with_templates=[("70.34%", 0.99), ("70.11%", 0.99)],
     )
-    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40])
-    monkeypatch.setattr(service, "_recognize_row", lambda *_: next(rows))
-    def prepare_templates(*args):
-        progress_callback = args[-2]
-        progress_callback()
-        progress_callback()
-        return {1: ("70.34%", 0.99), 2: ("70.11%", 0.99)}, {}
-
-    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
-    template_rates = iter([("70.34%", 0.99), ("70.11%", 0.99)])
-    monkeypatch.setattr(
-        official_board_parser, "recognize_rate_with_templates", lambda *_: next(template_rates),
-    )
-    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
-    stale_calls = []
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale_calls.append)
 
     progress = []
     output_path = tmp_path / "2v2胜率排行.csv"
@@ -405,34 +471,14 @@ def test_import_keeps_formal_csv_when_a_name_cannot_be_confirmed(tmp_path, monke
     assert not output_path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r\n" not in output_path.read_bytes()
     assert progress == [(0, 6), (1, 6), (2, 6), (3, 6), (4, 6), (5, 6), (6, 6)]
-    assert stale_calls == []
+    assert import_env.stale_calls == []
 
 
-def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatch) -> None:
+def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatch, import_env) -> None:
     names = {1: "甲一", 2: "甲二", 3: "甲三", 4: "甲四", 5: "甲五", 6: "甲六"}
     service = OfficialDataImportService(hero_names=list(names.values()))
     panel = np.zeros((60, 100, 3), dtype=np.uint8)
     counters = {}
-
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(
-        official_board_parser,
-        "read_image",
-        lambda path: np.full((200, 200, 3), 1 if path.stem == "page1" else 4, dtype=np.uint8),
-    )
-    monkeypatch.setattr(
-        official_board_parser, "detect_layout", lambda *_: LAYOUTS["2v2"],
-    )
-    monkeypatch.setattr(
-        official_board_parser,
-        "extract_panels",
-        lambda image, _layout: [
-            (0, 0, np.full_like(panel, int(image[0, 0, 0]))),
-            (100, 0, np.full_like(panel, int(image[0, 0, 0]))),
-        ],
-    )
-    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40, 60])
 
     def recognize_row(row, columns, *_args):
         page_start = int(row[0, 0, 0])
@@ -444,19 +490,20 @@ def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatc
             fields["胜率"] = ("50.00%", 0.99)
         return fields
 
-    monkeypatch.setattr(service, "_recognize_row", recognize_row)
-
-    def prepare_templates(*args):
-        for _ in range(3):
-            args[-2]()
-        return {rank: ("50.00%", 0.99) for rank in range(1, 4)}, {}
-
-    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
-    monkeypatch.setattr(
-        official_board_parser, "recognize_rate_with_templates", lambda *_: ("50.00%", 0.99),
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=lambda path: np.full((200, 200, 3), 1 if path.stem == "page1" else 4, dtype=np.uint8),
+        detect_layout=LAYOUTS["2v2"],
+        extract_panels=lambda image, _layout: [
+            (0, 0, np.full_like(panel, int(image[0, 0, 0]))),
+            (100, 0, np.full_like(panel, int(image[0, 0, 0]))),
+        ],
+        find_data_boundaries=[0, 20, 40, 60],
+        recognize_row=recognize_row,
+        prepare_rate_templates=({rank: ("50.00%", 0.99) for rank in range(1, 4)}, 3),
+        recognize_rate_with_templates=("50.00%", 0.99),
     )
-    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
 
     summary = service.import_pages("2v2", [tmp_path / "page1.png", tmp_path / "page2.png"])
 
@@ -467,18 +514,10 @@ def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatc
     assert [row["排名"] for row in attendance_rows] == ["1", "2", "3", "4", "5", "6"]
 
 
-def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch) -> None:
+def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch, import_env) -> None:
     service = OfficialDataImportService(hero_names=["甲一", "甲二", "甲三"])
     panel = np.full((60, 100, 3), 4, dtype=np.uint8)
     calls = 0
-
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
-    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["2v2"])
-    monkeypatch.setattr(
-        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
-    )
-    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40, 60])
 
     def recognize_row(_row, columns, *_args):
         nonlocal calls
@@ -489,16 +528,16 @@ def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch) -> No
             fields["胜率"] = ("50.00%", 0.99)
         return fields
 
-    monkeypatch.setattr(service, "_recognize_row", recognize_row)
-
-    def prepare_templates(*args):
-        for _ in range(3):
-            args[-2]()
-        return {rank: ("50.00%", 0.99) for rank in range(1, 4)}, {}
-
-    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
-    monkeypatch.setattr(
-        official_board_parser, "recognize_rate_with_templates", lambda *_: ("50.00%", 0.99),
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=panel,
+        detect_layout=LAYOUTS["2v2"],
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=[0, 20, 40, 60],
+        recognize_row=recognize_row,
+        prepare_rate_templates=({rank: ("50.00%", 0.99) for rank in range(1, 4)}, 3),
+        recognize_rate_with_templates=("50.00%", 0.99),
     )
 
     with pytest.raises(ValueError, match="期望从 1 开始，识别为从 4 开始"):
@@ -702,39 +741,26 @@ def test_apply_reviewed_records_rejects_duplicate_after_fix(tmp_path, monkeypatc
 
     assert not (tmp_path / "2v2胜率排行.csv").exists()
 
-def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatch) -> None:
+def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatch, import_env) -> None:
     service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
     image = np.zeros((200, 200, 3), dtype=np.uint8)
     panel = np.zeros((60, 100, 3), dtype=np.uint8)
-    rows = iter([
-        {"排名": ("1", 0.99), "武将": ("夏候", 0.79), "胜率": ("54.40%", 0.99)},
-        {"排名": ("2", 0.99), "武将": ("白起", 0.99), "胜率": ("50.00%", 0.99)},
-        {"排名": ("1", 0.99), "武将": ("夏候怀", 0.70)},
-        {"排名": ("2", 0.99), "武将": ("白起", 0.99)},
-    ])
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(official_board_parser, "read_image", lambda _: image)
-    monkeypatch.setattr(
-        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
-    )
-    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40])
-    monkeypatch.setattr(service, "_recognize_row", lambda *_: next(rows))
 
-    def prepare_templates(*args):
-        progress_callback = args[-2]
-        progress_callback()
-        progress_callback()
-        return {1: ("54.40%", 0.99), 2: ("50.00%", 0.99)}, {}
-
-    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
-    template_rates = iter([("54.40%", 0.99), ("50.00%", 0.99)])
-    monkeypatch.setattr(
-        official_board_parser, "recognize_rate_with_templates", lambda *_: next(template_rates),
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=image,
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=[0, 20, 40],
+        recognize_row=[
+            {"排名": ("1", 0.99), "武将": ("夏候", 0.79), "胜率": ("54.40%", 0.99)},
+            {"排名": ("2", 0.99), "武将": ("白起", 0.99), "胜率": ("50.00%", 0.99)},
+            {"排名": ("1", 0.99), "武将": ("夏候怀", 0.70)},
+            {"排名": ("2", 0.99), "武将": ("白起", 0.99)},
+        ],
+        prepare_rate_templates=({1: ("54.40%", 0.99), 2: ("50.00%", 0.99)}, 2),
+        recognize_rate_with_templates=[("54.40%", 0.99), ("50.00%", 0.99)],
     )
-    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
-    stale: list = []
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale.append)
 
     summary = service.import_file("2v2", tmp_path / "official.png")
 
@@ -744,7 +770,7 @@ def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatc
     assert appear[0]["武将"] == "夏侯惇"
     assert win[0]["胜率"] == "54.40%"
     assert summary["records"] == 4
-    assert stale == [True]
+    assert import_env.stale_calls == [True]
     review = list(csv.DictReader((tmp_path / "2v2胜率排行_待复核.csv").open(encoding="utf-8")))[0]
     assert "混淆字对" in review["异常原因"]
 
@@ -821,40 +847,21 @@ def test_detect_layout_rejects_exile_right_heavier_panel(monkeypatch) -> None:
         official_board_parser.detect_layout(image, "exile")
 
 
-def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch) -> None:
+def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch, import_env) -> None:
     import json as _json
 
     all_names = [
         hero["name"]
-        for hero in _json.loads((import_module.DATA_DIR / "heroes.json").read_text(encoding="utf-8"))
+        for hero in _json.loads((import_env.real_data_dir / "heroes.json").read_text(encoding="utf-8"))
     ][:170]
     names = {rank: all_names[rank - 1] for rank in range(1, 171)}
     service = OfficialDataImportService(hero_names=all_names)
     panel = np.zeros((1100, 100, 3), dtype=np.uint8)
-
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(
-        official_board_parser,
-        "read_image",
-        lambda path: np.full((200, 200, 3), 1 if path.stem == "page1" else 4, dtype=np.uint8),
-    )
-
-    def fake_extract_panels(image, _layout):
-        page = int(image[0, 0, 0])
-        return [
-            (0, 0, np.full_like(panel, page * 10)),
-            (100, 0, np.full_like(panel, page * 10 + 1)),
-        ]
-
-    monkeypatch.setattr(official_board_parser, "extract_panels", fake_extract_panels)
-
-    def fake_boundaries(panel, _image_height, _layout, _panel_index):
-        rows = {10: 50, 11: 50, 40: 50, 41: 20}[int(panel[0, 0, 0])]
-        return list(range(0, (rows + 1) * 20, 20))
-
-    monkeypatch.setattr(official_board_parser, "find_data_boundaries", fake_boundaries)
     counters: dict[int, int] = {}
+
+    def fake_boundaries(panel_arg, _image_height, _layout, _panel_index):
+        rows = {10: 50, 11: 50, 40: 50, 41: 20}[int(panel_arg[0, 0, 0])]
+        return list(range(0, (rows + 1) * 20, 20))
 
     def recognize_row(row, _columns, *_args):
         value = int(row[0, 0, 0])
@@ -863,7 +870,17 @@ def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch
         rank = base + counters[value] - 1
         return {"排名": (str(rank), 0.99), "武将": (names[rank], 0.99)}
 
-    monkeypatch.setattr(service, "_recognize_row", recognize_row)
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=lambda path: np.full((200, 200, 3), 1 if path.stem == "page1" else 4, dtype=np.uint8),
+        extract_panels=lambda image, _layout: [
+            (0, 0, np.full_like(panel, int(image[0, 0, 0]) * 10)),
+            (100, 0, np.full_like(panel, int(image[0, 0, 0]) * 10 + 1)),
+        ],
+        find_data_boundaries=fake_boundaries,
+        recognize_row=recognize_row,
+    )
 
     summary = service.import_pages("exile", [tmp_path / "page1.png", tmp_path / "page2.png"])
 
@@ -874,23 +891,11 @@ def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch
     assert summary["records"] == 170
 
 
-def test_import_peak_board_writes_peak_outputs(tmp_path, monkeypatch) -> None:
+def test_import_peak_board_writes_peak_outputs(tmp_path, monkeypatch, import_env) -> None:
     """巅峰赛导入与 2v2 同链路：产出胜率/出场两份 CSV，清理巅峰赛缓存且不动推荐指数。"""
     names = {1: "甲一", 2: "甲二", 3: "甲三"}
     service = OfficialDataImportService(hero_names=list(names.values()))
     panel = np.zeros((60, 100, 3), dtype=np.uint8)
-
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
-    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["peak"])
-    monkeypatch.setattr(
-        official_board_parser,
-        "extract_panels",
-        lambda image, _layout: [(0, 0, panel), (100, 0, panel)],
-    )
-    monkeypatch.setattr(official_board_parser, "find_data_boundaries", lambda *_: [0, 20, 40, 60])
-
     counters: dict = {}
 
     def recognize_row(row, columns, *_args):
@@ -901,24 +906,17 @@ def test_import_peak_board_writes_peak_outputs(tmp_path, monkeypatch) -> None:
             fields["胜率"] = ("55.55%", 0.99)
         return fields
 
-    monkeypatch.setattr(service, "_recognize_row", recognize_row)
-
-    def prepare_templates(*args):
-        for _ in range(3):
-            args[-2]()
-        return {rank: ("55.55%", 0.99) for rank in range(1, 4)}, {}
-
-    monkeypatch.setattr(official_board_parser, "prepare_rate_templates", prepare_templates)
-    monkeypatch.setattr(
-        official_board_parser, "recognize_rate_with_templates", lambda *_: ("55.55%", 0.99),
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=panel,
+        detect_layout=LAYOUTS["peak"],
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=[0, 20, 40, 60],
+        recognize_row=recognize_row,
+        prepare_rate_templates=({rank: ("55.55%", 0.99) for rank in range(1, 4)}, 3),
+        recognize_rate_with_templates=("55.55%", 0.99),
     )
-    peak_clears = []
-    monkeypatch.setattr(
-        "src.data.peak_win_rate_repository.clear_peak_win_rate_cache",
-        lambda: peak_clears.append(True),
-    )
-    stale_calls = []
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", stale_calls.append)
 
     summary = service.import_pages("peak", [tmp_path / "peak.png"])
 
@@ -932,28 +930,24 @@ def test_import_peak_board_writes_peak_outputs(tmp_path, monkeypatch) -> None:
     assert list(win_rows[0].keys()) == ["排名", "武将", "胜率"]
     assert [row["排名"] for row in attendance_rows] == ["1", "2", "3"]
     assert list(attendance_rows[0].keys()) == ["排名", "武将"]
-    assert peak_clears == [True]
-    assert stale_calls == []
+    assert import_env.peak_clears == [True]
+    assert import_env.stale_calls == []
 
 
-def test_import_peak_board_rejects_unequal_panel_rows(tmp_path, monkeypatch) -> None:
+def test_import_peak_board_rejects_unequal_panel_rows(tmp_path, monkeypatch, import_env) -> None:
     """巅峰赛导入沿用 2v2 的左右面板行数一致性门禁，失败时不写正式 CSV。"""
     service = OfficialDataImportService(hero_names=["甲一"])
     panel = np.zeros((60, 100, 3), dtype=np.uint8)
 
-    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
-    monkeypatch.setattr(official_board_parser, "read_image", lambda _: panel)
-    monkeypatch.setattr(official_board_parser, "detect_layout", lambda *_: LAYOUTS["peak"])
-    monkeypatch.setattr(
-        official_board_parser,
-        "extract_panels",
-        lambda image, _layout: [(0, 0, panel), (100, 0, panel)],
-    )
-    monkeypatch.setattr(
-        official_board_parser,
-        "find_data_boundaries",
-        lambda _panel, _height, _layout, panel_index: [0, 20, 40, 60] if panel_index == 0 else [0, 20, 40],
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=panel,
+        detect_layout=LAYOUTS["peak"],
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=lambda _panel, _height, _layout, panel_index: (
+            [0, 20, 40, 60] if panel_index == 0 else [0, 20, 40]
+        ),
     )
 
     with pytest.raises(ValueError, match="巅峰赛 图片左右榜单行数不一致"):
