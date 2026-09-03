@@ -6,11 +6,11 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
+from src.business.rag import suggest_controller as sc_module
 from src.business.rag.refinement_service import RefinementUpdate
 from src.ui.maintenance import index_refinement_dialog as dialog_module
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
@@ -104,10 +104,10 @@ def _suggest_all_sync(dialog: IndexRefinementDialog, monkeypatch) -> None:
 
         def start(self) -> None:
             for block in self._blocks:
-                self.result_ready.emit(block, dialog_module.suggest_one(block, self._generator))
+                self.result_ready.emit(block, sc_module.suggest_one(block, self._generator))
             self.finished.emit()
 
-    monkeypatch.setattr(dialog_module, "_SuggestWorker", _SyncSuggestWorker)
+    monkeypatch.setattr(sc_module, "SuggestWorker", _SyncSuggestWorker)
     dialog._suggest_all()
 
 
@@ -127,7 +127,7 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
     dialog._table.selectRow(0)
     assert dialog._current is not None
     _fake_generator(monkeypatch)
-    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
         keywords=["测试牌"],
@@ -135,15 +135,15 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
         method="llm",
     ))
     dialog._suggest_current()
-    assert dialog._suggest_worker is not None
+    assert dialog._controller.current_worker is not None
     block = dialog._current
     # 测试环境无事件循环（跨线程信号不投递）：同步驱动线程体与主线程回调
-    dialog._suggest_worker.run()
+    dialog._controller.current_worker.run()
     update = RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=["打出时"],
         keywords=["测试牌"], related=[], method="llm",
     )
-    dialog._on_suggest_result(block, update)
+    dialog._on_suggest_result(block, update, is_single=True)
     assert dialog._field_editors["timing"].toPlainText().strip() == "出牌阶段"
     assert dialog._field_editors["keywords"].toPlainText().strip() == "测试牌"
     assert dialog._current.block_id in dialog._llm_baseline
@@ -186,7 +186,7 @@ def test_save_all_writes_every_pending(tmp_path: Path, monkeypatch) -> None:
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
     _fake_generator(monkeypatch)
-    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
         keywords=["测试牌"],
@@ -257,13 +257,14 @@ def test_field_state_tracks_manual_edit(tmp_path: Path, monkeypatch) -> None:
     dialog = IndexRefinementDialog(root)
     dialog._table.selectRow(0)
     _fake_generator(monkeypatch)
-    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
     dialog._suggest_current()
     block = dialog._current
-    dialog._suggest_worker.run()  # 同步驱动线程体（测试环境无事件循环）
+    dialog._controller.current_worker.run()  # 同步驱动线程体（测试环境无事件循环）
     dialog._on_suggest_result(block, RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
+        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"),
+        is_single=True)
     assert dialog._field_cards["timing"].property("fieldState") == "llm"
     assert dialog._field_badges["timing"].text() == "LLM 建议"
     dialog._field_editors["timing"].setPlainText("出牌阶段、弃牌阶段")
@@ -297,10 +298,15 @@ def test_suggest_all_finishes_and_empty_state(tmp_path: Path, monkeypatch) -> No
     root = _corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
     _fake_generator(monkeypatch)
-    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=["打出时"], keywords=["测试牌"], related=[], method="llm"))
     _suggest_all_sync(dialog, monkeypatch)
     assert all(dialog._row_states[block.block_id] == "suggested" for block in dialog._pending)
+    # 批量结束后按钮必须恢复可用（曾因 controller 提前复位 _running 使收尾槽
+    # 被守卫拦下、按钮永久禁用——真实线程手工测试发现）
+    assert dialog._save_button.isEnabled()
+    assert dialog._suggest_one_button.isEnabled()
+    assert not dialog._controller.is_running
     assert dialog._empty_state.isHidden()  # 仍有待精化时不显示空状态
     _answer_yes(monkeypatch)
     dialog._save_all()
@@ -436,7 +442,7 @@ def test_save_all_groups_writes_by_corpus_file(tmp_path: Path, monkeypatch) -> N
     root = _dual_file_corpus(tmp_path)
     dialog = IndexRefinementDialog(root)
     _fake_generator(monkeypatch)
-    monkeypatch.setattr(dialog_module, "suggest_one", lambda block, gen: RefinementUpdate(
+    monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
     _suggest_all_sync(dialog, monkeypatch)
     assert len(dialog._llm_baseline) == 2
@@ -465,11 +471,12 @@ def test_suggest_result_dropped_for_skipped_block(tmp_path: Path, monkeypatch) -
     dialog = IndexRefinementDialog(root)
     dialog._table.selectRow(1)
     skipped = dialog._current
-    # 模拟批量建议进行中（生产 _suggest_all 已置位的状态字段）
-    dialog._suggest_all_running = True
-    dialog._suggest_worker = SimpleNamespace(_single=False)
-    dialog._suggest_total = 2
-    dialog._suggest_done = 0
+    # 模拟批量建议进行中（生产 _suggest_all 已置位的控制器状态）
+    controller = dialog._controller
+    controller._running = True
+    controller._single = False
+    controller._total = 2
+    controller._done = 0
 
     _answer_yes(monkeypatch)
     dialog._skip_current()
@@ -477,12 +484,12 @@ def test_suggest_result_dropped_for_skipped_block(tmp_path: Path, monkeypatch) -
 
     late_update = RefinementUpdate(
         timing=["x"], trigger_condition=[], keywords=[], related=[], method="llm")
-    dialog._on_suggest_result(skipped, late_update)
+    controller._on_result_ready(skipped, late_update)
 
     assert skipped.block_id not in dialog._llm_baseline
     assert skipped.block_id not in dialog._row_states
-    assert dialog._suggest_done == 1  # 进度计数照常前进，仅结果被丢弃
-    dialog._suggest_all_running = False
+    assert controller.done == 1  # 进度计数照常前进，仅结果被丢弃
+    controller._running = False
     dialog.close()
 
 
@@ -504,19 +511,20 @@ def test_reject_cancels_running_suggest_and_releases_generator(tmp_path: Path) -
             self.closed = True
 
     generator = _FakeGenerator()
-    worker = dialog_module._SuggestWorker(dialog._pending, generator)
-    dialog._suggest_worker = worker
-    dialog._suggest_all_running = True
-    dialog._suggest_generator = generator
+    worker = sc_module.SuggestWorker(dialog._pending, generator)
+    controller = dialog._controller
+    controller._worker = worker
+    controller._generator = generator
+    controller._running = True
 
     dialog.reject()
 
     assert worker._cancelled is True
     assert generator.cancelled and generator.closed
-    assert dialog._suggest_all_running is False
-    assert dialog._suggest_generator is None
-    assert dialog._zombie_workers == []  # 线程未启动，wait 立即返回，无僵线程转入持有列表
-    assert worker not in dialog_module._LIVE_WORKERS
+    assert controller.is_running is False
+    assert controller._generator is None
+    assert controller._zombies == []  # 线程未启动，wait 立即返回，无僵线程转入持有列表
+    assert worker not in sc_module.LIVE_WORKERS
 
 
 def test_collect_update_method_llm_manual_and_no_baseline(tmp_path: Path) -> None:

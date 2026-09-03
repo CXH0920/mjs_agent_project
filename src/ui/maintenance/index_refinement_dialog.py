@@ -13,7 +13,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -43,8 +43,8 @@ from src.business.rag.refinement_service import (
     build_generator,
     clear_curated,
     scan_blocks,
-    suggest_one,
 )
+from src.business.rag.suggest_controller import SuggestController
 from src.ui.shared.style import (
     MUTED_TEXT,
     PRIMARY,
@@ -91,40 +91,6 @@ _ROW_STATE_COLOR = {"pending": MUTED_TEXT, "suggested": PRIMARY, "modified": SUC
                     "refined": SUCCESS, "generated": MUTED_TEXT}
 
 
-# 持有运行中的 worker，防止 dialog 销毁后 Python 引用丢失导致 QThread 运行中被 GC 析构（#61）
-_LIVE_WORKERS: set = set()
-
-
-class _SuggestWorker(QThread):
-    """后台批量建议线程：逐块调用 LLM，结果经信号回主线程（UI 不冻结）。
-
-    测试通过注入同步替身替换本类：替身 start() 内联产出结果并直接发信号，
-    与生产共用同一条 result_ready/finished 状态链。
-    parent=None + _LIVE_WORKERS 持有 + finished→deleteLater：生命周期与 dialog 解耦，
-    dialog 销毁不连带析构运行中的线程。
-    """
-
-    result_ready = Signal(object, object)  # (PendingBlock, RefinementUpdate | None)
-
-    def __init__(self, blocks: list[PendingBlock], generator, parent=None):
-        super().__init__(parent)
-        self._blocks = list(blocks)
-        self._generator = generator
-        self._cancelled = False
-        self._single = False  # 单块建议：结果需回填编辑器
-
-    def run(self) -> None:
-        _LIVE_WORKERS.add(self)
-        try:
-            for block in self._blocks:
-                if self._cancelled:
-                    break
-                update = suggest_one(block, self._generator)
-                self.result_ready.emit(block, update)
-        finally:
-            _LIVE_WORKERS.discard(self)
-
-
 class IndexRefinementDialog(QDialog):
     """索引精化工作台对话框。"""
 
@@ -153,15 +119,11 @@ class IndexRefinementDialog(QDialog):
         self._kind_filter = "全部"
         self._search_text = ""
         self._llm_baseline: dict[str, dict[str, str]] = {}  # 本次会话 LLM 建议内容
-        # 批量建议由 _SuggestWorker 后台线程驱动，避免同步循环冻结 UI
-        self._suggest_all_running = False
-        self._suggest_failed: list[PendingBlock] = []
-        self._suggest_total = 0
-        self._suggest_done = 0
-        self._suggest_generator = None
-        self._suggest_worker: _SuggestWorker | None = None
-        # 关闭时仍在运行的 worker 转入此列表持有引用，防止 QThread 运行中析构导致进程崩溃
-        self._zombie_workers: list[_SuggestWorker] = []
+        # 批量/单块建议由 SuggestController 后台线程驱动，避免同步循环冻结 UI；
+        # worker 生命周期与取消善后归控制器，对话框只接信号渲染
+        self._controller = SuggestController(self)
+        self._controller.result_ready.connect(self._on_suggest_result)
+        self._controller.finished.connect(self._on_suggest_finished)
         self._skipped_count = 0  # 跳过的条目数（进度文案区分 #34）
         self.setWindowTitle("索引精化")
         self.setObjectName("indexRefineDialog")
@@ -684,7 +646,7 @@ class IndexRefinementDialog(QDialog):
         self._skip_button.setVisible(is_pending)
         self._clear_button.setVisible(not is_pending)
         has_current = self._current is not None
-        batch_running = self._suggest_all_running
+        batch_running = self._controller.is_running
         self._suggest_one_button.setEnabled(has_current and not batch_running)
         self._skip_button.setEnabled(is_pending and has_current and not batch_running)
         self._clear_button.setEnabled(has_current and bool(self._current.method))
@@ -720,28 +682,22 @@ class IndexRefinementDialog(QDialog):
 
     def _suggest_current(self) -> None:
         """单块 LLM 建议：后台线程执行，窗口不冻结；结果回填编辑器（#21）。"""
-        if self._current is None or self._suggest_all_running:
+        if self._current is None or self._controller.is_running:
             return
         generator = self._generator()
         if generator is None:
             return
         logger.info("单块建议启动：%s", self._current.name)
         self._suggest_one_button.setEnabled(False)
-        worker = _SuggestWorker([self._current], generator)  # parent=None：dialog 销毁不连带析构运行中线程
-        worker._single = True
-        worker.result_ready.connect(self._on_suggest_result)
-        worker.finished.connect(self._on_single_finished)
-        worker.finished.connect(worker.deleteLater)  # 自回收（dialog 已销毁时也能释放）
-        self._suggest_worker = worker
-        worker.start()
+        self._controller.start([self._current], generator, single=True)
 
     def _suggest_all(self) -> None:
         """批量生成建议：LLM 调用放后台线程，窗口不冻结；覆盖全部块（含当前选中）。
 
-        测试通过注入同步替身替换 _SuggestWorker，start() 内联产出结果并直接发
+        测试通过注入同步替身替换 SuggestWorker，start() 内联产出结果并直接发
         信号，与本方法共用同一条状态链。
         """
-        if self._suggest_all_running or not self._pending or self._scope != "pending":
+        if self._controller.is_running or not self._pending or self._scope != "pending":
             return
         if self._dirty and self._current is not None:
             if not self._confirm_discard():
@@ -750,24 +706,13 @@ class IndexRefinementDialog(QDialog):
         if generator is None:
             return
         logger.info("批量建议启动：%d 块", len(self._pending))
-        self._suggest_all_running = True
-        self._suggest_failed = []
-        self._suggest_total = len(self._pending)
-        self._suggest_done = 0
-        self._suggest_generator = generator
         self._suggest_one_button.setEnabled(False)
         self._suggest_all_button.setEnabled(False)
-        worker = _SuggestWorker(self._pending, generator)  # parent=None：dialog 销毁不连带析构运行中线程
-        worker.result_ready.connect(self._on_suggest_result)
-        worker.finished.connect(self._on_worker_finished)
-        worker.finished.connect(worker.deleteLater)  # 自回收（dialog 已销毁时也能释放）
-        self._suggest_worker = worker
-        worker.start()
+        self._controller.start(self._pending, generator)
 
-    def _on_suggest_result(self, block: PendingBlock, update: RefinementUpdate | None) -> None:
+    def _on_suggest_result(self, block: PendingBlock, update: RefinementUpdate | None,
+                           is_single: bool) -> None:
         """后台线程逐块结果回主线程：只更新 baseline/行状态，不强切当前编辑。"""
-        self._suggest_done += 1
-        is_single = bool(self._suggest_worker is not None and self._suggest_worker._single)
         # 已离开待精化清单的块（运行中被跳过/保存）丢弃结果，防止 row_states 回写"复活"；
         # 单块建议在已精化/全部模式下针对 curated 块，经"仍是当前块"放行
         still_pending = any(p.block_id == block.block_id for p in self._pending)
@@ -782,57 +727,35 @@ class IndexRefinementDialog(QDialog):
             self._llm_baseline[block.block_id] = baseline
             self._row_states[block.block_id] = "suggested"
             self._refresh_row_state(block)
-            if is_single and self._current is not None and self._current.block_id == block.block_id:
+            if is_single and is_current:
                 self._fill_suggestion(block, update)
-        else:
-            self._suggest_failed.append(block)
-            if is_single:
-                QMessageBox.warning(
-                    self, "建议失败",
-                    f"无法为「{block.name}」生成建议（API 失败或解析失败），请重试或人工填写。")
+        elif is_single:
+            QMessageBox.warning(
+                self, "建议失败",
+                f"无法为「{block.name}」生成建议（API 失败或解析失败），请重试或人工填写。")
         self._update_overview()
 
-    def _on_single_finished(self) -> None:
-        """单块建议线程结束：释放 generator 并恢复按钮。"""
-        worker = self._suggest_worker
-        self._suggest_worker = None
-        if worker is not None:
-            gen = getattr(worker, "_generator", None)
-            if gen is not None:
-                close = getattr(gen, "close", None)
-                if callable(close):
-                    try:
-                        close()
-                    except Exception:  # noqa: BLE001
-                        pass
-        # 按钮恢复统一走 _update_overview：手写条件曾与 688 行不一致，
+    def _on_suggest_finished(self, is_single: bool) -> None:
+        # finished 仅在正常结束时发出（取消路径由 cancel_and_shutdown 复位 _running，
+        # 不发 finished）；按钮恢复统一走 _update_overview：手写条件曾与按钮区不一致，
         # "已精化/全部"范围下 _pending 为空时单块建议按钮被永久禁用
+        if not is_single:
+            self._finish_suggest_all()
         self._update_overview()
-
-    def _on_worker_finished(self) -> None:
-        if not self._suggest_all_running:
-            return  # 已取消/已关闭，跳过收尾弹窗
-        self._finish_suggest_all()
 
     def _finish_suggest_all(self) -> None:
-        self._suggest_all_running = False
-        generator = self._suggest_generator
-        self._suggest_generator = None
-        if generator is not None:
-            close = getattr(generator, "close", None)
-            if callable(close):
-                close()
-        self._update_overview()
-        if self._suggest_failed:
-            names = "、".join(block.name for block in self._suggest_failed[:8])
-            logger.warning("批量建议完成：成功 %d 块，失败 %d 块", 
-                           self._suggest_total - len(self._suggest_failed), len(self._suggest_failed))
+        failed = self._controller.failed
+        total = self._controller.total
+        if failed:
+            names = "、".join(block.name for block in failed[:8])
+            logger.warning("批量建议完成：成功 %d 块，失败 %d 块",
+                           total - len(failed), len(failed))
             QMessageBox.warning(
                 self, "建议生成完成（部分失败）",
-                f"成功 {self._suggest_total - len(self._suggest_failed)} 块，"
-                f"失败 {len(self._suggest_failed)} 块：{names}，可重试或人工填写。")
+                f"成功 {total - len(failed)} 块，"
+                f"失败 {len(failed)} 块：{names}，可重试或人工填写。")
         else:
-            logger.info("批量建议完成：%d 块全部成功", self._suggest_total)
+            logger.info("批量建议完成：%d 块全部成功", total)
 
     # ---------------------------------------------------------------
     # 保存 / 跳过 / 取消精化
@@ -1030,51 +953,10 @@ class IndexRefinementDialog(QDialog):
         self._refresh_table()
         show_toast(self, f"已取消精化「{block.name}」")
 
-    def _on_zombie_finished(self) -> None:
-        """僵尸 worker 线程结束后移出持有列表（释放引用链，允许对象回收）。"""
-        worker = self.sender()
-        if worker in self._zombie_workers:
-            self._zombie_workers.remove(worker)
-
     def reject(self) -> None:
-        # 建议进行中（单块或批量）：中止 worker 与剩余队列，释放 generator 后关闭（#22）
-        worker = self._suggest_worker
-        if worker is not None:
-            worker._cancelled = True
-            gen = getattr(worker, "_generator", None)
-            if gen is not None:
-                # 先 cancel 让 _call_api 重试循环退出，再 close：close 后重试不再 post，
-                # 避免 in-flight 请求触发 RuntimeError 级联（#61）
-                cancel = getattr(gen, "cancel", None)
-                if callable(cancel):
-                    cancel()
-                close = getattr(gen, "close", None)
-                if callable(close):
-                    try:
-                        close()
-                    except Exception:  # noqa: BLE001
-                        pass
-            # 等待线程短时收尾；仍在运行（如 HTTP 挂起）则转入僵尸列表持有引用，
-            # 防止 QThread 在 run 未结束时析构导致整个应用崩溃（#60）
-            worker.wait(1000)
-            if worker.isRunning():
-                self._zombie_workers.append(worker)
-                worker.finished.connect(worker.deleteLater)
-                worker.finished.connect(self._on_zombie_finished)
-        if self._suggest_all_running:
-            self._suggest_all_running = False
-            generator = self._suggest_generator
-            self._suggest_generator = None
-            if generator is not None:
-                cancel = getattr(generator, "cancel", None)
-                if callable(cancel):
-                    cancel()
-                close = getattr(generator, "close", None)
-                if callable(close):
-                    try:
-                        close()
-                    except Exception:  # noqa: BLE001
-                        pass
+        # 建议进行中（单块或批量）：中止 worker 并释放 generator 后关闭（#22）
+        if self._controller.is_running:
+            self._controller.cancel_and_shutdown()
         elif self._dirty and self._current is not None:
             if not self._confirm_discard():
                 return
