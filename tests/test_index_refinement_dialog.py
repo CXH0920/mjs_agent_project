@@ -10,6 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
+from src.business.rag import refinement_session as session_module
 from src.business.rag import suggest_controller as sc_module
 from src.business.rag.refinement_service import RefinementUpdate
 from src.ui.maintenance import index_refinement_dialog as dialog_module
@@ -449,7 +450,7 @@ def test_save_all_groups_writes_by_corpus_file(tmp_path: Path, monkeypatch) -> N
 
     writes: list[tuple[Path, dict, str]] = []
     monkeypatch.setattr(
-        dialog_module, "apply_curated",
+        session_module, "apply_curated",
         lambda corpus_dir, updates, fname: writes.append((corpus_dir, dict(updates), fname)) or len(updates),
     )
     _answer_yes(monkeypatch)

@@ -10,7 +10,6 @@ UI 结构（重设计后）：顶部总览条（进度+筛选）→ 左清单区
 from __future__ import annotations
 
 import logging
-from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -39,11 +38,9 @@ from src.business.rag.refinement_service import (
     INDEX_FIELDS,
     PendingBlock,
     RefinementUpdate,
-    apply_curated,
     build_generator,
-    clear_curated,
-    scan_blocks,
 )
+from src.business.rag.refinement_session import RefinementSession
 from src.business.rag.suggest_controller import SuggestController
 from src.ui.shared.style import (
     MUTED_TEXT,
@@ -97,40 +94,61 @@ class IndexRefinementDialog(QDialog):
     def __init__(self, corpus_dir: Path = DEFAULT_CORPUS_DIR, parent=None):
         super().__init__(parent)
         self._corpus_dir = Path(corpus_dir)
-        blocks = scan_blocks(self._corpus_dir)
-        self._pending: list[PendingBlock] = blocks["pending"]  # 待精化（现状语义）
-        self._curated: list[PendingBlock] = blocks["curated"]  # 已精化（curated 块）
-        self._normal: list[PendingBlock] = blocks["normal"]    # 普通块（字段已满，未精化）
-        self._total = len(self._pending)  # 初始待精化总数（进度条分母，不随保存/跳过变化）
+        # 清单三池/双基线/行状态本体归 RefinementSession（纯状态层，见业务层模块）
+        self._session = RefinementSession(self._corpus_dir)
         self._scope = "pending"  # 范围筛选：pending / curated / all
-        # 磁盘基线：block_id -> {field: 文本}，保存是否 no-op 与字段状态判定的依据
-        self._saved_baseline: dict[str, dict[str, str]] = {}
         self._current: PendingBlock | None = None
         self._dirty = False  # 当前条目存在未保存的人工修改
-        self._row_states: dict[str, str] = {}  # block_id -> pending/suggested/modified/refined/generated
-        for block in self._curated:
-            self._row_states[block.block_id] = "refined"
-        for block in self._normal:
-            self._row_states[block.block_id] = "generated"
-        for block in self._pending + self._curated + self._normal:
-            self._saved_baseline[block.block_id] = {
-                f: "\n".join(block.fields[f]) for f in INDEX_FIELDS}
         self._visible: list[PendingBlock] = []
         self._kind_filter = "全部"
         self._search_text = ""
-        self._llm_baseline: dict[str, dict[str, str]] = {}  # 本次会话 LLM 建议内容
         # 批量/单块建议由 SuggestController 后台线程驱动，避免同步循环冻结 UI；
         # worker 生命周期与取消善后归控制器，对话框只接信号渲染
         self._controller = SuggestController(self)
         self._controller.result_ready.connect(self._on_suggest_result)
         self._controller.finished.connect(self._on_suggest_finished)
-        self._skipped_count = 0  # 跳过的条目数（进度文案区分 #34）
         self.setWindowTitle("索引精化")
         self.setObjectName("indexRefineDialog")
         # 恢复（取消最大化）时的常规尺寸；默认以最大化打开（见 _open_refinement）
         self.resize(1160, 720)
         self._setup_ui()
         self._refresh_table()
+
+    # ---------------------------------------------------------------
+    # 状态委托：清单/基线/行状态本体归 RefinementSession，此处只读透出
+    # 供渲染与既有测试使用
+    # ---------------------------------------------------------------
+    @property
+    def _pending(self) -> list[PendingBlock]:
+        return self._session.pending
+
+    @property
+    def _curated(self) -> list[PendingBlock]:
+        return self._session.curated
+
+    @property
+    def _normal(self) -> list[PendingBlock]:
+        return self._session.normal
+
+    @property
+    def _total(self) -> int:
+        return self._session.total
+
+    @property
+    def _skipped_count(self) -> int:
+        return self._session.skipped_count
+
+    @property
+    def _saved_baseline(self) -> dict[str, dict[str, str]]:
+        return self._session.saved_baseline
+
+    @property
+    def _llm_baseline(self) -> dict[str, dict[str, str]]:
+        return self._session.llm_baseline
+
+    @property
+    def _row_states(self) -> dict[str, str]:
+        return self._session.row_states
 
     # ---------------------------------------------------------------
     # UI 构建
@@ -415,11 +433,7 @@ class IndexRefinementDialog(QDialog):
         self._refresh_table()
 
     def _scope_blocks(self) -> list[PendingBlock]:
-        if self._scope == "curated":
-            return self._curated
-        if self._scope == "all":
-            return self._pending + self._curated + self._normal
-        return self._pending
+        return self._session.blocks_for_scope(self._scope)
 
     def _matches(self, block: PendingBlock) -> bool:
         if self._kind_filter == "卡牌" and block.kind != "card":
@@ -677,7 +691,7 @@ class IndexRefinementDialog(QDialog):
             editor.setPlainText(text)
             editor.blockSignals(False)
             baseline[field] = text
-        self._llm_baseline[block.block_id] = baseline
+        self._session.record_llm_baseline(block.block_id, baseline)
         self._refresh_field_states()
 
     def _suggest_current(self) -> None:
@@ -715,17 +729,14 @@ class IndexRefinementDialog(QDialog):
         """后台线程逐块结果回主线程：只更新 baseline/行状态，不强切当前编辑。"""
         # 已离开待精化清单的块（运行中被跳过/保存）丢弃结果，防止 row_states 回写"复活"；
         # 单块建议在已精化/全部模式下针对 curated 块，经"仍是当前块"放行
-        still_pending = any(p.block_id == block.block_id for p in self._pending)
         is_current = (
             is_single and self._current is not None
             and self._current.block_id == block.block_id
         )
-        if not still_pending and not is_current:
+        if not self._session.is_pending(block.block_id) and not is_current:
             return
         if update is not None:
-            baseline = {field: "\n".join(getattr(update, field)) for field in INDEX_FIELDS}
-            self._llm_baseline[block.block_id] = baseline
-            self._row_states[block.block_id] = "suggested"
+            self._session.note_suggested(block, update)
             self._refresh_row_state(block)
             if is_single and is_current:
                 self._fill_suggestion(block, update)
@@ -763,52 +774,13 @@ class IndexRefinementDialog(QDialog):
     def _collect_update(self) -> RefinementUpdate | None:
         """收集当前编辑器内容为 RefinementUpdate；与磁盘基线一致（无改动）返回 None。
 
-        method 判定沿用现状：与本次 LLM 建议完全一致 → llm，否则 manual。
+        判定逻辑归 RefinementSession.collect_update，此处只负责读取编辑器文本。
         """
         if self._current is None:
             return None
-        saved = self._saved_baseline.get(self._current.block_id, {})
-        llm = self._llm_baseline.get(self._current.block_id)
-        values: dict[str, list[str]] = {}
-        texts: dict[str, str] = {}
-        changed = False
-        for field in INDEX_FIELDS:
-            text = self._field_editors[field].toPlainText().strip()
-            texts[field] = text
-            values[field] = [line.strip() for line in text.splitlines() if line.strip()]
-            if text != saved.get(field, ""):
-                changed = True
-        if not changed:
-            return None
-        if llm is not None:
-            modified = any(texts[f] != llm.get(f, "") for f in INDEX_FIELDS)
-            method = "manual" if modified else "llm"
-        else:
-            method = "manual"
-        return RefinementUpdate(
-            timing=values["timing"],
-            trigger_condition=values["trigger_condition"],
-            keywords=values["keywords"],
-            related=values["related"],
-            method=method,
-        )
-
-    def _sync_saved(self, block: PendingBlock, update: RefinementUpdate) -> None:
-        """保存成功后的内存同步：更新磁盘基线、行状态、列表归属（pending/normal → curated）。"""
-        baseline = {f: "\n".join(getattr(update, f)) for f in INDEX_FIELDS}
-        self._saved_baseline[block.block_id] = baseline
-        self._llm_baseline.pop(block.block_id, None)
-        self._row_states[block.block_id] = "refined"
-        block.fields = {f: list(getattr(update, f)) for f in INDEX_FIELDS}
-        block.missing = [f for f in INDEX_FIELDS if not block.fields[f]]
-        block.method = update.method
-        block.updated_at = update.updated_at or date.today().isoformat()
-        if any(b.block_id == block.block_id for b in self._pending):
-            self._pending = [b for b in self._pending if b.block_id != block.block_id]
-            self._curated.append(block)
-        elif any(b.block_id == block.block_id for b in self._normal):
-            self._normal = [b for b in self._normal if b.block_id != block.block_id]
-            self._curated.append(block)
+        texts = {field: self._field_editors[field].toPlainText().strip()
+                 for field in INDEX_FIELDS}
+        return self._session.collect_update(self._current.block_id, texts)
 
     def _save_current(self) -> None:
         if self._current is None:
@@ -818,33 +790,15 @@ class IndexRefinementDialog(QDialog):
             show_toast(self, "无修改，未保存")
             return
         block = self._current
-        try:
-            apply_curated(self._corpus_dir, {block.block_id: update}, block.corpus)
-        except (OSError, ValueError) as error:
-            logger.error("保存精化失败 %s: %s", block.block_id, error)
-            QMessageBox.critical(self, "保存失败", str(error))
+        _, errors = self._session.apply_updates({block.corpus: {block.block_id: update}})
+        if errors:
+            QMessageBox.critical(self, "保存失败", errors[block.corpus])
             return
         logger.info("保存精化 %s（%s）", block.name, update.method)
-        self._sync_saved(block, update)
         self._dirty = False
         self._current = None
         self._refresh_table()
         show_toast(self, f"已保存「{block.name}」（{update.method}）")
-
-    def _baseline_update(self, block_id: str) -> RefinementUpdate | None:
-        """把本次 LLM 建议基线还原为 RefinementUpdate；该块无建议返回 None。"""
-        baseline = self._llm_baseline.get(block_id)
-        if baseline is None:
-            return None
-        values = {field: [line.strip() for line in baseline[field].splitlines() if line.strip()]
-                  for field in INDEX_FIELDS}
-        return RefinementUpdate(
-            timing=values["timing"],
-            trigger_condition=values["trigger_condition"],
-            keywords=values["keywords"],
-            related=values["related"],
-            method="llm",
-        )
 
     def _save_all(self) -> None:
         """保存全部（仅待精化范围）：当前选中块用编辑器内容，其余块用已生成的 LLM 建议（baseline）；
@@ -864,27 +818,20 @@ class IndexRefinementDialog(QDialog):
         skipped = 0
         # 按语料文件分组：每文件一次批量写回，避免逐块全量读+写（apply_curated 支持多块 updates）
         updates_by_file: dict[str, dict[str, RefinementUpdate]] = {}
-        for block in list(self._pending):
+        for block in list(self._session.pending):
             is_current = self._current is not None and self._current.block_id == block.block_id
             update = self._collect_update() if is_current else None
             if update is None:
                 # 批量建议不回填当前块编辑器：编辑器未动但已有 LLM 建议时，
                 # 当前块与其余块同样采用建议，否则当前块的建议会被静默跳过
-                update = self._baseline_update(block.block_id)
+                update = self._session.baseline_update(block.block_id)
             if update is None or not any(getattr(update, field) for field in INDEX_FIELDS):
                 skipped += 1
                 continue
             updates_by_file.setdefault(block.corpus, {})[block.block_id] = update
-        for fname, updates in updates_by_file.items():
-            try:
-                apply_curated(self._corpus_dir, updates, fname)
-            except (OSError, ValueError) as error:
-                QMessageBox.critical(self, "保存失败", f"{fname}：{error}")
-                continue
-            for block_id in updates:
-                block = next(b for b in self._pending if b.block_id == block_id)
-                self._sync_saved(block, updates[block_id])
-                saved += 1
+        saved, errors = self._session.apply_updates(updates_by_file)
+        for fname, error in errors.items():
+            QMessageBox.critical(self, "保存失败", f"{fname}：{error}")
         self._dirty = False
         self._current = None
         self._refresh_table()
@@ -907,10 +854,7 @@ class IndexRefinementDialog(QDialog):
             return
         block = self._current
         logger.info("跳过精化条目 %s（%s）", block.name, block.block_id)
-        self._skipped_count += 1
-        self._pending = [item for item in self._pending if item.block_id != block.block_id]
-        self._llm_baseline.pop(block.block_id, None)
-        self._row_states.pop(block.block_id, None)
+        self._session.skip_block(block)
         self._dirty = False
         self._current = None
         self._refresh_table()
@@ -930,24 +874,11 @@ class IndexRefinementDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            clear_curated(self._corpus_dir, block.block_id, block.corpus)
+            self._session.clear_curated_block(block)
         except (OSError, ValueError) as error:
             logger.error("取消精化失败 %s: %s", block.block_id, error)
             QMessageBox.critical(self, "取消精化失败", str(error))
             return
-        logger.info("取消精化 %s（%s）", block.name, block.block_id)
-        self._curated = [b for b in self._curated if b.block_id != block.block_id]
-        self._llm_baseline.pop(block.block_id, None)
-        self._row_states.pop(block.block_id, None)
-        # 磁盘顶层字段未变：保留 saved_baseline，切回该块时字段状态仍显示「已精化」
-        block.method = ""
-        block.updated_at = ""
-        if block.missing:
-            self._pending.append(block)
-            self._row_states[block.block_id] = "pending"
-        else:
-            self._normal.append(block)
-            self._row_states[block.block_id] = "generated"
         self._dirty = False
         self._current = None
         self._refresh_table()
