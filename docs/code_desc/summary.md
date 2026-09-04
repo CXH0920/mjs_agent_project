@@ -47,8 +47,9 @@ test_project/
 │   ├── config/                  # 配置管理（.env 解析、日志配置）
 │   ├── data/                    # 数据模型与数据管理层
 │   ├── scraper/                 # 爬虫与 AI 批量生成层
-│   ├── rag/                     # RAG 语料/向量索引/混合检索（ChromaDB + bge-small-zh）
-│   ├── business/                # 业务服务层（QProcess、OCR/官方榜单导入编排、RAG 索引精化、元规则）
+│   ├── rag/                     # RAG 向量索引与混合检索基础设施（ChromaDB + bge-small-zh + 关键词 RRF）
+│   ├── scripts/                 # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则维护 CLI）
+│   ├── business/                # 业务服务层（QProcess、OCR/官方榜单导入编排、公告与巅峰赛业务）
 │   ├── capture/                 # 屏幕采集层（ADB 连接与截图）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR）
 │   └── ui/                      # PySide6 用户界面层
@@ -93,6 +94,8 @@ test_project/
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+上图为**目录层视图**，描述的是代码物理位置。知识库（RAG）是一个跨目录的纵向功能：`src/rag/` 与 `src/scripts/` 是独立的 RAG 专用目录，`src/business/rag/` 与 `src/ui/maintenance/` 则物理嵌套在 business 与 ui 之下。因此知识库在文档中按**单一模块**整体叙述（见 `./module_rag.md`），而不是拆散到各层里。阅读上图时，标注 RAG 的两层行只是说明代码位置，职责细节请转到知识库模块文档。
+
 ## 子模块文档索引
 
 | # | 模块 | 目录 | 主要职责 |
@@ -101,7 +104,8 @@ test_project/
 | 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储与 ComboManager 稳定排序落盘） |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、RAG 索引精化（refinement_service/RefinementSession/SuggestController）、元规则维护 |
-| 6 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
-| 7 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器、知识库维护工作台（含元规则维护与索引精化对话框） |
-| 8 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、巅峰赛识别循环与禁选建议 |
+| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层、向量索引与混合检索、RAG 注入 AI 生成、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
+| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板 |
+| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |

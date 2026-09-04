@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-07-22）
+## 当前实现基线（77e9407 / 2026-09-04）
 
 成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回，`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`。
 
@@ -599,92 +599,7 @@ MainWindow._check_announcements()
 | `_run_check()` / `_do_check()` | 后台执行并返回 `AnnouncementCheckResult` |
 | `mark_applied()` | 采集完成后公告置已处理 + 刷新百科快照 |
 
-## 十一、RuleDocService（元规则 T0 文档维护）链路
+## 十一、知识库相关服务（已迁出）
 
-### 11.1 调用链总览
-
-`src/business/rag/rule_doc_service.py` 只提供纯函数（本地只读解析、提案/疑难读写），脚本执行由 UI 层 `RuleDocPanel` 经 `ScriptRunner`（QProcess 公共封装）完成；`maintain_rag.py` 与 `audit_rule_doc.py` 负责把文档母本转换为语料并做机器校验。
-
-```
-RuleDocPanel（知识库维护 → 元规则维护，四个子页签）
-  ├─ 文档状态页：refresh_audit() -> QProcess(scripts/audit_rule_doc.py)
-  │     -> parse_audit_output() -> audit_issue_counts() -> 摘要表 + 问题明细表
-  ├─ 数据段差异页：refresh_diffs() -> QProcess(scripts/sync_rule_stats.py --json scripts/.sync_rule_stats_report.json)
-  │     -> parse_sync_diff() -> 差异表（全自动/候选/校验点 + 确认值列）
-  │     -> _apply_diffs() -> 写 scripts/.sync_confirmed_diffs.json
-  │         -> QProcess(sync_rule_stats.py --apply-json <清单>)   [逐行原位替换，失败整批不写入]
-  ├─ 提案工作台：_generate_proposal() -> QProcess(scripts/propose_rule_changes.py --no-llm)
-  │     -> docs/archive/proposals/CP-YYYY-MM-DD-NN.json + .md
-  │     -> list_proposals() -> 提案下拉 + 条目表
-  │     -> _open_confirm_dialog() -> ProposalItemConfirmDialog -> update_proposal_item()   [status/edited_text 原子写]
-  │     -> _apply_proposal() -> QProcess(scripts/apply_rule_proposal.py --proposal CP-*.json)
-  │          -> apply_proposal() 合入 doc -> audit --strict（失败回滚）
-  │          -> maintain_rag.py --only 元规则 -> append_changelog() -> archive_proposal()
-  └─ 疑难登记页：_add_pending() -> add_pending() -> docs/rule_doc_pending.json
-        -> _to_proposal() -> pending_to_proposal() -> CP-日期-Pxxx.json（status=pending）
-```
-
-### 11.2 纯函数清单（rule_doc_service.py）
-
-| 函数 | 职责 | 主要调用方 |
-|------|------|-----------|
-| `parse_audit_output(text)` | 解析 audit 输出为 `[{level, message}]`（含 SUMMARY 汇总行） | `RuleDocPanel.refresh_audit` |
-| `audit_issue_counts(issues)` | 统计 ERROR/WARN/INFO 数量 | 文档状态页摘要 |
-| `parse_sync_diff(path)` | 读取 `sync_rule_stats.py --json` 差异项 | `RuleDocPanel.refresh_diffs` |
-| `sync_json_path(root)` / `confirmed_diff_path(root)` | 定位差异报告 / B2 确认清单 | 差异页与 `_apply_diffs()` |
-| `list_proposals(root)` | 列出 `docs/archive/proposals/CP-*.json`（倒序 + 状态统计） | 提案工作台下拉 |
-| `parse_proposal(path)` | 读取提案 JSON | `_load_proposal_detail` |
-| `doc_target_line()` / `doc_section_context()` / `doc_line_at()` / `doc_context_around()` | 按 faq 编号/小节/行号定位文档内容 | 提案与差异详情对话框 |
-| `update_proposal_item(root, path, item_id, status, edited_text)` | 原位更新提案条目（临时文件 + `os.replace`） | `ProposalItemConfirmDialog` 确认动作 |
-| `load_pending(root)` / `add_pending(root, desc, involved, source)` | 疑难登记读/增（`docs/rule_doc_pending.json`） | 疑难登记页 |
-| `pending_to_proposal(root, pending_id)` | open 疑难转 FAQ 新增提案并置 `status=proposed` | `_to_proposal()` |
-| `parse_doc_chapter7(doc_path)` | 只读解析文档第 7 章疑难登记表 | 展示/审计 |
-
-### 11.3 脚本协作（QProcess 侧）
-
-| 脚本 | 命令示例 | 作用 |
-|------|---------|------|
-| `scripts/rag_common.py` | （公共模块） | 8 个 build 脚本公共基建：`setup_stdout()`（stdout UTF-8 包装）、`load_json()`（UTF-8-SIG 容错 + required 语义）、`save_json()`（委托 `atomic_write_json` 原子写）、`project_path()` 与 ROOT/DATA/CORPUS/SCRIPTS 路径常量 |
-| `scripts/audit_rule_doc.py` | `--strict` / `--update-snapshot` | 解析回声、表格结构、块 ID 唯一、ID 稳定性（快照）、FAQ 编号、确认状态、交叉引用、已定稿块指纹、章节结构指纹；快照 `scripts/.rule_doc_snapshot.json` |
-| `scripts/sync_rule_stats.py` | `--json out.json` / `--apply` / `--apply-json` | 从 `data/*.json` 生成数据快照段期望值并与文档对比；`--apply-json` 按确认清单逐行替换；退出码 1 = 有差异/应用失败，2 = 前置失败 |
-| `scripts/diff_source_data.py` | `--old data/backups` / `--data heroes,cards` | 对比 data 与备份，输出变更清单（含“是否新机制”启发式标记） |
-| `scripts/propose_rule_changes.py` | `--no-llm` / `--changes-json` | 用 LLM（DeepSeek，复用 `refinement_service.build_generator`）为变更生成结构化提案；无 API Key 降级占位提案 |
-| `scripts/apply_rule_proposal.py` | `--proposal CP-*.json` | 合入已确认提案项（faq_new/faq_revise/term_new/row_revise/section_new）→ audit 严格校验 → 重建语料 → changelog → 归档 |
-| `scripts/eval_rule_faqs.py` | `--generate` / `--top-k 5` | FAQ 裁定回归评估（向量检索命中率，零 LLM 成本） |
-| `scripts/maintain_rag.py` | `--force --build-index` | 重建语料与索引；元规则任务为 dynamic，按快照块数只增校验，任务成功刷新快照 |
-
-## 十二、AuditService / RefinementService 链路（知识库维护，2026-08 扩展）
-
-### 12.1 审计链路
-
-```
-RagMaintenancePanel.refresh()
-  -> list_pending(root/data/rag_corpus)        [同一轮先算待精化清单]
-  -> audit_summary(root, pending_refinement)   [传入已算清单，避免重复读语料]
-     -> 未归类武将 collect_unclassified() -> AuditIssue(unclassified_hero)
-     -> 分类表孤儿键 collect_orphan_category_keys() -> AuditIssue(orphan_category_key)   [#10 新增]
-     -> 专属牌 collect_unknown_heroes() / 缺结算 -> AuditIssue(unknown_hero / missing_settlement)
-     -> 卡牌点数/装备属性结构校验 -> AuditIssue(card_points_* / equip_attrs_*)
-     -> pending_refinement 非空 -> AuditIssue(pending_refinement)   [插入列表首位]
-  -> 审计横幅渲染 + _jump_to_issue() 跳转定位
-```
-
-### 12.2 索引精化服务链路
-
-```
-IndexRefinementDialog.__init__              [只渲染 + 交互确认，清单本体归业务层]
-  -> RefinementSession(corpus_dir)           [纯 Python 状态层：三池清单/双基线/行状态]
-     -> scan_blocks(corpus_dir)              [一次扫描三分类 pending/curated/normal]
-  -> SuggestController.__init__(self)        [LLM 线程编排，接 result_ready/finished 信号]
-  -> 模式切换（待精化/已精化/全部）只过滤内存快照，不重复读文件
-  -> LLM 建议（当前/全部）：SuggestController.start(blocks, generator[, single=True])
-     -> SuggestWorker(QThread).run(): 逐块 suggest_one(block, generator) -> AIBatchGenerator.complete(messages, temperature=0.2) -> result_ready(block, update)
-     -> _on_result_ready: done 计数 + 失败收集 -> result_ready(block, update, is_single)
-     -> _on_worker_finished: _release_generator -> finished(is_single)
-     [取消/关闭：cancel_and_shutdown() -> worker._cancelled + generator.cancel/close + wait(1000) + 僵尸 _zombies 持有]
-  -> 保存当前：RefinementSession.collect_update(block_id, texts)   [与磁盘基线比对判改动；与 LLM 基线一致记 llm 否则 manual]
-     -> sync_saved(block, update)            [更新双基线 + 行状态 + 迁移池 pending/normal->curated]
-  -> 保存全部：按语料文件分组收集 -> RefinementSession.apply_updates(updates_by_file) -> apply_curated(...) [失败文件不迁移其任何块]
-  -> 跳过：skip_block()；取消精化：clear_curated_block() -> clear_curated() -> 退回 pending/normal
-```
+`RuleDocService`（元规则 T0 文档维护）、`AuditService`（知识库审计）、`RefinementService` / `RefinementSession` / `SuggestController`（索引精化三层架构：对话框 / 纯 Python 状态层 / 线程编排）的调用链已整体迁至 [./call_graph_rag.md](./call_graph_rag.md)，此处不再重复。相关 `scripts/` 协作（`audit_rule_doc.py` / `sync_rule_stats.py` / `propose_rule_changes.py` / `apply_rule_proposal.py` / `eval_rule_faqs.py` / `maintain_rag.py`）亦以该文档为准。
 

@@ -91,8 +91,9 @@ test_project/
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 元规则纯函数）
 │   ├── capture/                # ADB 截图与设备探测
 │   ├── ocr/                    # 模板匹配 + PaddleOCR + 名称纠错
-│   ├── rag/                    # RAG 配置/索引/混合检索
-│   └── ui/                     # PySide6 界面（app/library/recommendation/match/...）
+│   ├── rag/                    # 知识库：向量索引与混合检索基础设施
+│   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
+│   └── ui/                     # PySide6 界面（app/library/recommendation/match/maintenance/...）
 ├── data/                       # JSON 数据 + RAG 语料/索引 + 官方榜单 CSV
 ├── images/                     # 武将头像（从官网下载）
 ├── templates/                  # OCR 模板截图
@@ -242,8 +243,8 @@ logs/
 | 文档 | 内容 |
 |------|------|
 | [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑 |
-| [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（8 模块 + 总览） |
-| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（8 个调用图） |
+| [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + 总览，知识库 RAG 为独立模块） |
+| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（9 个调用图） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/prompts/](docs/prompts/) | AI 攻略/相性生成 Prompt 模板 |
 | [docs/待开发功能记录.md](docs/待开发功能记录.md) | 条件触发/暂不排期的功能规划与已实施 OCR 加速方案 |
