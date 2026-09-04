@@ -26,16 +26,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.data.manager import (
-    DataFacade,
-    DEFAULT_HEROES_FILE,
-    DEFAULT_SYNERGIES_FILE,
-    DEFAULT_GUIDES_FILE,
-)
-from src.data.announcement_manager import AnnouncementManager, AnnouncementStatus
+from src.data.announcement_manager import AnnouncementStatus
 from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
-from src.business.announcement.announcement_service import AnnouncementCheckResult, AnnouncementService
+from src.business.announcement.announcement_service import AnnouncementCheckResult
 from src.business.card_catalog import CardCatalogService
+from src.ui.app.app_services import AppServices
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
@@ -46,16 +41,12 @@ from src.ui.configuration.settings_dialog import SettingsDialog
 from src.ui.data_admin.data_management_dialog import DataManagementDialog
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
 from src.ui.library.fetch_dialog import HeroFetchDialog
-from src.business.fetching.guide_fetch_service import GuideFetchService
-from src.business.fetching.hero_fetch_service import HeroFetchService
-from src.business.fetching.synergy_fetch_service import SynergyFetchService
-from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
-from src.ui.recommendation.recommendation_panel import RecommendationPanel
+from src.ui.app.poll_coordinator import PollOutcome, PollResult
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.match.peak_select_panel import PeakSelectPanel
+from src.ui.recommendation.recommendation_panel import RecommendationPanel
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.card_management_panel import CardManagementPanel
-from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 from src.ui.app.shell_widgets import NavigationRail
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import NoticeBanner, show_toast
@@ -91,58 +82,22 @@ class MainWindow(QMainWindow):
         self._match_guide_page_active = False
         self._user_nav_collapsed: bool | None = None
         self._navigation_forced_collapsed = False
-        if hero_manager or synergy_manager or guide_manager:
-            from src.data.hero_manager import HeroManager
-            from src.data.synergy_manager import SynergyManager
-            from src.data.guide_manager import GuideManager
-            self._data = DataFacade.from_managers(
-                hero_manager or HeroManager(heroes_file=DEFAULT_HEROES_FILE),
-                synergy_manager or SynergyManager(synergies_file=DEFAULT_SYNERGIES_FILE),
-                guide_manager or GuideManager(guides_file=DEFAULT_GUIDES_FILE),
-            )
-        else:
-            self._data = DataFacade(
-                heroes_file=DEFAULT_HEROES_FILE,
-                synergies_file=DEFAULT_SYNERGIES_FILE,
-                guides_file=DEFAULT_GUIDES_FILE,
-            )
-
-        self._fetch_service = HeroFetchService(self)
-        self._guide_service = GuideFetchService(self._data.guides, self)
-        self._synergy_service = SynergyFetchService(self._data.synergies, self)
-        from src.data.combo_manager import ComboManager
-        self._combo_manager = ComboManager()
-        self._ai_workflow = AiGenerationWorkflow(
-            self._data.heroes,
-            self._data.guides,
-            self._data.synergies,
-            self._guide_service,
-            self._synergy_service,
-            self,
-            combo_manager=self._combo_manager,
-        )
-
-        # 屏幕采集服务
-        from src.config.env import get_mumu_config
-        from src.business.emulator.capture_service import CaptureService
-        from src.business.recognition.ocr_service import OcrService
-        self._capture_service = CaptureService(self)
-        self._ocr_service = OcrService(self)
-        self._ocr_service.set_ocr_task_submitter(self._capture_service.submit_ocr_task)
-        self._capture_service.update_config(get_mumu_config())
-        self._ocr_service.update_config(get_mumu_config())
-        self._ocr_service.set_hero_names([h.name for h in self._data.heroes.list_heroes()])
-        self._poll_coordinator = PollCoordinator(
-            self._capture_service,
-            self._ocr_service,
-            lambda: [hero.name for hero in self._data.heroes.list_heroes()],
-            self,
-        )
-
-        self._announcement_manager = AnnouncementManager()
-        self._announcement_service = AnnouncementService(
-            self._announcement_manager, self._data.heroes, self,
-        )
+        # 协作对象装配收敛到组合根（F1）：构造顺序与参数依赖集中一处，可无头
+        # 构造供测试注入；挂载后解包到惯用属性，其余接线/建 UI 代码零感知。
+        # 刻意不做 property 委托：__new__ 式测试与属性替换依赖普通实例属性。
+        self._services = AppServices(hero_manager, synergy_manager, guide_manager)
+        self._services.attach(self)
+        self._data = self._services.data
+        self._fetch_service = self._services.hero_fetch
+        self._guide_service = self._services.guide_fetch
+        self._synergy_service = self._services.synergy_fetch
+        self._combo_manager = self._services.combo_manager
+        self._ai_workflow = self._services.ai_workflow
+        self._capture_service = self._services.capture
+        self._ocr_service = self._services.ocr
+        self._poll_coordinator = self._services.poll
+        self._announcement_manager = self._services.announcement_manager
+        self._announcement_service = self._services.announcement_service
         self._announcement_dialog: AnnouncementDialog | None = None
         self._last_announcement_diff: dict = {"added": [], "modified": [], "removed": []}
         self._pending_update_phases: list[tuple[str, list[int] | None]] | None = None

@@ -52,6 +52,10 @@ class AiGenerationWorkflow(QObject):
         self._synergy_progress_dialog: GuideProgressDialog | None = None
         self._connect_services()
 
+    def set_window(self, window) -> None:
+        """更新弹窗/对话框归属的主窗口引用（组合根挂载阶段调用）。"""
+        self._window = window
+
     def _connect_services(self) -> None:
         self._guide_service.status_changed.connect(self.status_changed)
         self._guide_service.fetch_completed.connect(self._on_guide_completed)
