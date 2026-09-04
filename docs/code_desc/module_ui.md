@@ -95,7 +95,7 @@ src/ui/
 - **`ScriptRunner`** — QProcess 异步执行 Python 脚本的公共封装（`output(bytes)` / `finished(int)` 信号 + `is_running()` 防并发），知识库维护、元规则维护、卡牌点数 xlsx 导入三个面板共用，消除各自维护 QProcess 生命周期的重复代码；
 - **`clear_layout(layout)`** — 递归清空布局（销毁直接控件与子布局控件，含 CheckableComboBox 弹层），收敛武将分类/专属牌/对局分析等面板各自的 `_clear_layout` 副本。
 
-阶段三由 `src.ui.app.shell_widgets` 提供 `NavigationRail` 和基于 `PageHeader` 的 `ContextHeader`。左侧导航只暴露资料库、选将推荐、对局攻略三个长期工作区；主 `QTabWidget` 隐藏 `TabBar` 但继续持有原页面实例，资料库内部的“武将资料 / 卡牌图鉴”二级页签保持可见。导航请求调用现有 Tab 容器切换，`currentChanged` 反向同步导航选中态与顶部标题；OCR 自动跳转仍只调用 `setCurrentWidget()`，不侵入外壳组件。小于 1040px 时导航强制折叠，回到宽屏后恢复用户在本次会话中的选择。
+阶段三由 `src.ui.app.shell_widgets` 提供 `NavigationRail` 作为左侧导航外壳；顶部基于 `PageHeader` 的 `ContextHeader` 壳（含按钮菜单）在后续重构中已移除，入口收敛至菜单栏。左侧导航只暴露资料库、选将推荐、对局攻略三个长期工作区；主 `QTabWidget` 隐藏 `TabBar` 但继续持有原页面实例，资料库内部的“武将资料 / 卡牌图鉴”二级页签保持可见。导航请求调用现有 Tab 容器切换，`currentChanged` 反向同步导航选中态与顶部标题；OCR 自动跳转仍只调用 `setCurrentWidget()`，不侵入外壳组件。小于 1040px 时导航强制折叠，回到宽屏后恢复用户在本次会话中的选择。
 
 传统菜单栏在阶段三继续作为兼容路径。顶部的“官方数据导入”“生成与维护”和全局设置菜单均复用 `MainWindow._actions` 中的同一组 `QAction`，因此原业务回调以及 `Ctrl+Q`、`F5` 快捷键保持不变。
 
@@ -424,6 +424,8 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 |------|------|
 | `reload_data()` | 重新加载所有数据并刷新 UI |
 
+`_load_data()` 由启动与「重载数据」触发：调用 `DataFacade.load_all()` 后检查返回报告中的 `missing_reference` 问题，有则弹「发现数据关联问题」Yes/No 确认；选 Yes 即经 `DataMutationService.repair_missing_references()` 修复失效相性/攻略关联并重载、最后弹信息汇总（删除相性/攻略数、清理攻略关联数），选 No 弹警告保留原始数据；加载异常统一兜底为「数据加载失败」警告弹窗并提示核对 `heroes.json`。
+
 ### HeroBrowser 公共方法
 
 | 方法 | 说明 |
@@ -505,4 +507,4 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 - 「武将分类」维护对象：src/ui/library/hero_classification_panel.py + src/data/hero_classification_repository.py，维护 data/hero_classification.json（分类 CRUD / 克制链 / 武将归类）；新增 `focus_unclassified()` 供审计跳转定位首个未归类武将。2026-08 体验优化：重载/刷新前有未保存修改先确认（`reload_data(confirm_discard=True)`）、加载失败（error）禁用「保存」防止空数据覆盖、武将搜索 150ms 防抖（QTimer）、名称标签 PlainText、归类多选 `set_items(..., default_all=False)` 避免误全选。
 - 数据安全与性能（2026-08 知识库维护优化）：四个维护面板（专属牌/卡牌点数/装备属性/武将分类）统一继承 `JsonRepository`——写盘失败自动回滚内存并重新对齐界面；装备属性表格一次性分配行并恢复滚动位置；卡牌点数「从 xlsx 导入」改 `ScriptRunner` 异步执行（按钮置「导入中…」不阻塞 UI）；`recommendation_index_repository.mark_recommendation_index_stale()` 记录 traceback 调用来源日志，便于定位待重建状态意外写入。
 - 「元规则母本」维护对象：src/ui/maintenance/rule_doc_panel.py + src/business/rag/rule_doc_service.py，维护规则知识库 T0 母本 docs/元规则整理-完整版.md（只增不删、机器校验）。四个内嵌子页签保留在右侧工作区内（布局重排未压平）：① 文档状态（audit_rule_doc.py 校验摘要与问题明细）② 数据段差异（sync_rule_stats.py --json 预览，勾选 + 确认值后一键应用）③ 提案工作台（propose_rule_changes.py 生成提案、apply_rule_proposal.py 合入已确认提案）④ 疑难登记（docs/rule_doc_pending.json 增查与转 FAQ 提案）。所有脚本经 QProcess 执行，日志统一汇入工作台底部可折叠日志区，顶部按状态给出下一步建议。
-- 「索引精化」对话框（IndexRefinementDialog，1160×720）2026-08 重设计并扩展已处理块管理：对卡牌/武将语料中无 curated 且索引字段为空的块补 timing / trigger_condition / keywords / related 四个字段（去掉了原 target 字段）。**三态块模型**：`pending` 待精化（无 curated 且字段空缺）/ `curated` 已精化（有 curated）/ `normal` 已生成（无 curated 且四字段全非空，构建规则已填满）；服务层 `scan_blocks()` 一次扫描三分类，`list_curated()` / `clear_curated()` 新增。**模式切换**：顶部总览条右对齐「待精化 / 已精化 / 全部」三档（待精化显示进度条，已精化/全部显示统计文案），类型筛选（全部/卡牌/武将）移入清单区与搜索框同行；范围切换只过滤内存快照不重复读文件。清单列 2 按范围扩展：待精化=缺失字段、已精化=`method · updated_at`、全部=按块状态；状态列新增 `✓ 已精化`。工作区左原文卡片占满高度 + 右 4 字段状态卡片（fieldState=empty/llm/manual/saved 着色）；LLM 建议（当前/全部）用 QTimer 队列逐块处理避免冻结窗口。**统一保存模型**：磁盘基线 + 有改动才写回（改动后 method=manual、updated_at=今天），切回已建议条目还原 LLM 内容；「取消精化」二次确认后删除 curated 使块退回 pending/normal。入口按钮带待精化数量角标（如「索引精化（5）」），无待办显示「索引精化 ✓」仍可进入浏览；审计横幅「索引字段待精化 N 块」点击直接打开对话框。
+- 「索引精化」对话框（IndexRefinementDialog，1160×720）2026-08 重设计并扩展已处理块管理：对卡牌/武将语料中无 curated 且索引字段为空的块补 timing / trigger_condition / keywords / related 四个字段（去掉了原 target 字段）。**三态块模型**：`pending` 待精化（无 curated 且字段空缺）/ `curated` 已精化（有 curated）/ `normal` 已生成（无 curated 且四字段全非空，构建规则已填满）；纯函数服务 `refinement_service.scan_blocks()` 一次扫描三分类，`apply_curated()`/`clear_curated()` 原子读写语料文件；清单归属、磁盘/LLM 双基线与行状态由 `RefinementSession`（纯 Python 状态层，无 Qt 依赖）持有，dialog 只读透出。**模式切换**：顶部总览条右对齐「待精化 / 已精化 / 全部」三档（待精化显示进度条，已精化/全部显示统计文案），类型筛选（全部/卡牌/武将）移入清单区与搜索框同行；范围切换只过滤内存快照不重复读文件。清单列 2 按范围扩展：待精化=缺失字段、已精化=`method · updated_at`、全部=按块状态；状态列新增 `✓ 已精化`。工作区左原文卡片占满高度 + 右 4 字段状态卡片（fieldState=empty/llm/manual/saved 着色）；LLM 建议由 `SuggestController`（QObject）编排 `SuggestWorker`（QThread）后台逐块调用，结果经 `result_ready`/`finished` 信号回主线程，`LIVE_WORKERS` 全局持有与 `_zombies` 列表防止 dialog 销毁后运行中线程被析构。**统一保存模型**：dialog 收集字段文本交 `RefinementSession.collect_update()` 与磁盘基线比对判定改动（与本次 LLM 建议内容一致记 `method=llm`，否则 `manual`），单块保存经 `sync_saved()` 写回并迁移池，「保存全部」按语料文件分组经 `apply_updates()` 批量写回（单文件失败上报错误且不迁移其任何块）；切回已建议条目还原 LLM 基线内容。「取消精化」二次确认后由 `clear_curated_block()` 删除 curated 使块退回 pending/normal；关闭时 `cancel_and_shutdown()` 中止在途建议并善后。入口按钮带待精化数量角标（如「索引精化（5）」），无待办显示「索引精化 ✓」仍可进入浏览；审计横幅「索引字段待精化 N 块」点击直接打开对话框。

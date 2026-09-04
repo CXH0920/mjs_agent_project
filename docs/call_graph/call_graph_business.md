@@ -41,7 +41,7 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
        -> finished.connect(_on_finished)
        -> errorOccurred.connect(_on_error)
        -> process_env.insert("MJS_QPROCESS_CHILD", "1")        [子进程不直写文件，由父进程统一收集]
-       -> [subprocess.ai 命名空间] process_env.insert("MJS_AI_CHILD", "1") [AI 子进程例外直写文件，保留失败原因]
+       -> process_env.insert("MJS_QPROCESS_CHILD", "1") [所有子进程统一注入（含 AI）；不直写文件，stdout/stderr 交父进程]
        -> _failed_items.clear()                                 [清空上次失败项]
        -> QProcess.start(sys.executable, cli_args)             [启动子进程]
          ─────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ GuideFetchService.fetch_*() / SynergyFetchService.fetch_*()
 | 函数 | 说明 |
 |------|------|
 | `_is_busy()` | 检查 QProcess.state()，不等待直接返回 |
-| `_start_process(args)` | 创建 QProcess + 信号连接 + 注入 `MJS_QPROCESS_CHILD`/`MJS_AI_CHILD` 环境变量 + start |
+| `_start_process(args)` | 创建 QProcess + 信号连接 + 注入 `MJS_QPROCESS_CHILD` 环境变量 + start |
 | `failed_items` | 属性：本次任务从 stdout FAIL 行收集的失败项名（武将名/相性对名） |
 | `_on_stdout_ready()` | 读取 stdout → 按工作流写日志；白名单进度行再 emit `progress_output` |
 | `_on_stderr_ready()` | 读取 stderr → 按工作流写 warning 日志 |
@@ -672,16 +672,19 @@ RagMaintenancePanel.refresh()
 ### 12.2 索引精化服务链路
 
 ```
-IndexRefinementDialog.__init__
-  -> refinement_service.scan_blocks(corpus_dir)      [一次扫描三分类 pending/curated/normal]
-     -> list_pending() = scan_blocks()["pending"]    [薄封装，对外行为不变]
-     -> list_curated() / list_normal()                [新增]
+IndexRefinementDialog.__init__              [只渲染 + 交互确认，清单本体归业务层]
+  -> RefinementSession(corpus_dir)           [纯 Python 状态层：三池清单/双基线/行状态]
+     -> scan_blocks(corpus_dir)              [一次扫描三分类 pending/curated/normal]
+  -> SuggestController.__init__(self)        [LLM 线程编排，接 result_ready/finished 信号]
   -> 模式切换（待精化/已精化/全部）只过滤内存快照，不重复读文件
-  -> LLM 建议：suggest_one(block, generator) -> AIBatchGenerator.complete(messages, temperature=0.2)
-     -> generate_suggestions() 批量（UI 侧 QTimer 队列逐块）
-  -> 保存：apply_curated(corpus_dir, updates, fname) -> atomic_write_json(indent=1)
-     [覆盖写 curated；有改动才写回，method=manual、updated_at=今天]
-  -> 取消精化：clear_curated(corpus_dir, block_id, fname)
-     [删除顶层 curated 字段并原子写回；块退回 pending（字段空缺）或 normal（字段全满）]
+  -> LLM 建议（当前/全部）：SuggestController.start(blocks, generator[, single=True])
+     -> SuggestWorker(QThread).run(): 逐块 suggest_one(block, generator) -> AIBatchGenerator.complete(messages, temperature=0.2) -> result_ready(block, update)
+     -> _on_result_ready: done 计数 + 失败收集 -> result_ready(block, update, is_single)
+     -> _on_worker_finished: _release_generator -> finished(is_single)
+     [取消/关闭：cancel_and_shutdown() -> worker._cancelled + generator.cancel/close + wait(1000) + 僵尸 _zombies 持有]
+  -> 保存当前：RefinementSession.collect_update(block_id, texts)   [与磁盘基线比对判改动；与 LLM 基线一致记 llm 否则 manual]
+     -> sync_saved(block, update)            [更新双基线 + 行状态 + 迁移池 pending/normal->curated]
+  -> 保存全部：按语料文件分组收集 -> RefinementSession.apply_updates(updates_by_file) -> apply_curated(...) [失败文件不迁移其任何块]
+  -> 跳过：skip_block()；取消精化：clear_curated_block() -> clear_curated() -> 退回 pending/normal
 ```
 

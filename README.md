@@ -8,7 +8,7 @@
 - **武将资料库** — 武将列表搜索/势力筛选、技能/攻略/相性详情查看与编辑，卡牌图鉴只读浏览
 - **AI 攻略/相性生成** — DeepSeek API 或浏览器自动化批量生成，默认 RAG 语料增强，可切换经典模式
 - **屏幕采集与 OCR** — MuMu ADB 截图 + OpenCV 模板匹配 + PaddleOCR 识别 + 持续轮询
-- **知识库维护** — RAG 语料状态/元规则 T0 文档/专属牌·点数·装备·分类数据源本地可视化维护
+- **知识库维护** — RAG 语料状态/元规则 T0 文档/专属牌·点数·装备·分类数据源本地可视化维护 + 索引精化（LLM 建议 + 人工补全索引字段，已下沉业务层）
 - **公告更新监控** — 拉取官方公告 + 百科逐武将 diff，仅武将相关且 diff 确认后提示可更新
 
 ---
@@ -140,7 +140,7 @@ AI 生成    武将数据 + Prompt(+RAG语料) → DeepSeek → JSON 提取 → 
 ### 运行时边界
 
 - QProcess stdout 以字节缓冲保留未完成行，只对完整换行做 UTF-8 解码与进度解析；`_dispatch_stdout_line` 同步按 `[i/N] 名字 FAIL` 收集失败项到 `failed_items`，出错弹窗据此列出失败清单。
-- AI 子进程（`subprocess.ai`）额外设 `MJS_AI_CHILD=1` 直写日志文件，避免父进程以 INFO 级转发 stdout 时在 WARNING+ 下丢失 429/length/JSON 失败原因；API 限流退避时输出 `[重试]` 行，进度窗口显示"重试中"。
+- AI 子进程（`subprocess.ai`）同样只设 `MJS_QPROCESS_CHILD=1` 走 stdout/stderr 转发，不做子进程直写；失败原因由父进程 `scraper/ai_generation.log` handler 的 `keep_debug=True` 保留（级别固定 DEBUG、不跟随用户级别）——即使 root level≥WARNING 时 429/length/JSON 失败原因也不丢；API 限流退避时输出 `[重试]` 行，进度窗口显示"重试中"。
 - AI 生成每累计 10 条已校验成功结果原子提交正式 JSON，失败项保留对应旧数据。
 
 ### 双模式 AI 生成
@@ -150,7 +150,7 @@ API 模式 (默认)    → AIBatchGenerator → httpx → DeepSeek API
 浏览器模式 (--browser) → PlaywrightGenerator → Playwright + Edge → chat.deepseek.com
 ```
 
-- **API 模式**：速度快、支持 Token 统计与费用估算、需要付费 API Key。输出上限 32768 token；每次调用记录 reasoning/content token 拆分用于定位思考挤占正文预算导致的截断；限流退避重试时进度窗口显示"重试中"。
+- **API 模式**：速度快、支持 Token 统计与费用估算、需要付费 API Key。输出上限默认 16384 token（可按供应商语义经 `MAX_OUTPUT_TOKENS` 上调）；正文被"思考过程耗尽输出额度"截断时自动重试；每次调用记录 reasoning/content token 拆分用于定位思考挤占正文预算导致的截断；限流退避重试时进度窗口显示"重试中"。
 - **浏览器模式**：免费、无需 API Key、速度较慢、不支持 Token 统计。
 - 两种模式 JSON 输出格式一致，差异仅在后端传输方式。
 
@@ -201,7 +201,7 @@ RAG_PROMPT_CHARS=6000
 
 **多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。势力配色经「配置 → 势力配色」可视化编辑。
 
-定价参考：输入 CNY 3/百万 tokens，输出 CNY 6/百万 tokens（deepseek-v4-pro，缓存未命中）。
+定价参考：输入 CNY 3/百万 tokens，输出 CNY 6/百万 tokens（deepseek-v4-flash，缓存未命中）。
 
 ---
 
@@ -224,7 +224,7 @@ RAG_PROMPT_CHARS=6000
 
 ## 日志系统
 
-统一配置在 `src/config/logging_config.py`，按模块分文件 + 10MB 轮转保留 5 份。由桌面应用启动的 QProcess 子进程只通过 stdout/stderr 交给主进程统一记录（避免多进程轮转竞争）；AI 子进程例外直写文件（`MJS_AI_CHILD=1`）以保留失败原因。AI 日志只记录任务、长度、字段、用量与错误摘要，不记录 Prompt、回复正文或认证信息。
+统一配置在 `src/config/logging_config.py`，按模块分文件 + 10MB 轮转保留 5 份。由桌面应用启动的 QProcess 子进程统一设 `MJS_QPROCESS_CHILD=1` 后只通过 stdout/stderr 交给主进程统一记录（避免多进程轮转竞争）；AI 生成日志由 `scraper/ai_generation.log` 承载（`keep_debug=True`，handler 级别固定 DEBUG），另有 `debug.log` 跨模块全量留底。AI 日志只记录任务、长度、字段、用量与错误摘要，不记录 Prompt、回复正文或认证信息。
 
 ```
 logs/
@@ -242,8 +242,8 @@ logs/
 | 文档 | 内容 |
 |------|------|
 | [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑 |
-| [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（7 模块 + 总览） |
-| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（7 个调用图） |
+| [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（8 模块 + 总览） |
+| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（8 个调用图） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/prompts/](docs/prompts/) | AI 攻略/相性生成 Prompt 模板 |
 | [docs/待开发功能记录.md](docs/待开发功能记录.md) | 条件触发/暂不排期的功能规划与已实施 OCR 加速方案 |

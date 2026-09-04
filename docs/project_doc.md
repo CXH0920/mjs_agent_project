@@ -65,7 +65,7 @@ DataFacade.load_all()
 
 ### 进程与任务提交边界
 
-`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。`_dispatch_stdout_line` 在转发每行 stdout 时同步用正则收集 `[i/N] 名字 FAIL` 行的失败项名到 `failed_items`，工作流出错弹窗据此在"查看详情"中列出失败武将/相性对清单。`_start_process` 为 `subprocess.ai` 命名空间的 AI 子进程额外注入 `MJS_AI_CHILD=1`，使其直写日志文件（普通 QProcess 子进程不直写），避免父进程以 INFO 级转发 stdout 时在 root level≥WARNING 下丢失 429/length/JSON 等失败原因。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
+`BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。`_dispatch_stdout_line` 在转发每行 stdout 时同步用正则收集 `[i/N] 名字 FAIL` 行的失败项名到 `failed_items`，工作流出错弹窗据此在"查看详情"中列出失败武将/相性对清单。`_start_process` 为所有 QProcess 子进程统一注入 `MJS_QPROCESS_CHILD=1`（含 AI 子进程），使其不直写文件、stdout/stderr 交由父进程统一记录；429/length/JSON 等失败原因由父进程 `scraper/ai_generation.log` handler 的 `keep_debug=True`（级别固定 DEBUG、不跟随用户级别）保留，即使 root level≥WARNING 也不丢。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
 
@@ -359,10 +359,10 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 请求体：
 ```json
 {
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-v4-flash",
   "messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}],
   "temperature": 0.7,
-  "max_tokens": 32768,
+  "max_tokens": 16384,
   "thinking": {"type": "disabled"}
 }
 ```
@@ -374,7 +374,7 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 4. HTTP 错误 / 异常 → `time.sleep(2 ** attempt)` 指数退避（2s/4s/8s），并向 stdout 输出 `[重试] 原因，第 n/N 次，w 秒后重试`（进度窗口显示"重试中"）
 5. 3 次全部失败 → 返回 None
 
-> 输出额度上限 `MAX_OUTPUT_TOKENS` 由 16384 提升至 32768，缓解长攻略正文被截断（`finish_reason=length`）；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content token 拆分，定位思考 token 挤占正文预算。
+> 输出额度上限 `MAX_OUTPUT_TOKENS` 默认 16384（可按供应商语义上调），缓解长攻略正文被截断（`finish_reason=length`）；正文被"思考过程耗尽输出额度"截断时由 `_request_content()` 自动重试；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content token 拆分，定位思考 token 挤占正文预算。
 
 #### 2.3.3 `generate_guide(hero) → (dict | None, dict | None)`
 
@@ -934,7 +934,6 @@ def _on_accept(self):
 - 顶部单选组「RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」，默认 RAG 增强，对 API/浏览器两种后端均生效
 - `get_selected_rag() -> bool` 返回选择；`AiGenerationWorkflow._choose_backend()` 返回 `(backend, use_rag)` 元组并透传获取服务
 - API Tab 成本估算随选择实时重算：`estimate_item_cost(items, estimate_kind, model, use_rag=...)`（经典模式输入 token 更少）；`estimate_kind`（"guide"/"synergy"）由工作流写入 estimation
-```
 
 ### 5.7 攻略生成进度条（GuideProgressDialog）
 
@@ -1201,7 +1200,7 @@ _start_import()
 
 联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。脚本执行统一走 `ScriptRunner`（QProcess 公共封装，`output(bytes)` / `finished(int)` 信号 + `is_running()` 防并发）；语料块数读取带 `(mtime, size)` 缓存（`_output_count()`）。审计由 `AuditIssue`（kind/message/severity/target_tab/target）结构化驱动，覆盖：未归类武将、**分类表引用未知武将（`orphan_category_key` 反向校验）**、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）、索引字段待精化（排第一位）；`audit_summary()` 可接收同一轮已算好的 `list_pending()` 清单避免重复读语料。每条可点「跳转」定位到对应维护页签（`HeroClassificationPanel.focus_unclassified()` / `SpecialCardsPanel.focus_item()` / 直接打开索引精化）。数据安全：四个维护仓库继承 `JsonRepository`（原子写 + 加锁 + 写盘失败内存回滚）；装备属性表格一次性分配行并恢复滚动位置；卡牌点数 xlsx 导入改异步执行；`mark_recommendation_index_stale()` 记录调用来源 traceback 日志。
 
-语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 待精化/已精化/全部模式切换）、清单区（搜索与类型筛选同行、4 列表格固定列宽，行状态 ○/◉/✎/✓/○，说明列按范围显示缺失字段/来源·时间，批量行 LLM 建议（全部）/保存全部仅待精化模式可见）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/saved/manual 着色 + 来源/时间徽标 + 底部条目操作行：LLM 建议（当前）/跳过当前/取消精化/保存当前 PRIMARY）、底部仅「关闭」；LLM 建议（DeepSeek）全部模式用 QTimer 队列逐块处理不冻结窗口，保存全部以已生成建议为 baseline，切回条目还原建议内容，重建不覆盖。2026-08 扩展：已精化（curated）块可在「已精化/全部」范围浏览、再编辑（与磁盘基线一致时不写文件，有改动才写回，method 转 manual、updated_at 更新）与取消精化（删除 curated，字段有空缺退回待精化池）；入口按钮无待办时仍可用（`索引精化 ✓`）。
+语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 待精化/已精化/全部模式切换）、清单区（搜索与类型筛选同行、4 列表格固定列宽，行状态 ○/◉/✎/✓/○，说明列按范围显示缺失字段/来源·时间，批量行 LLM 建议（全部）/保存全部仅待精化模式可见）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/saved/manual 着色 + 来源/时间徽标 + 底部条目操作行：LLM 建议（当前）/跳过当前/取消精化/保存当前 PRIMARY）、底部仅「关闭」。2026-09 下沉为业务层三层架构（F2）：纯函数服务 `refinement_service.py`（`scan_blocks` 三分类、`apply_curated`/`clear_curated` 原子读写、`suggest_one` 单块 LLM 建议、`build_generator` 构造器）+ 纯 Python 状态层 `RefinementSession`（三池清单 pending/curated/normal、磁盘/LLM 双基线、行状态；`collect_update` 与磁盘基线比对判改动并与 LLM 基线比对判定 method=llm/manual，`apply_updates` 按语料文件分组批量写回且失败文件不迁移其任何块，`sync_saved` 写回并迁移池，`skip_block`/`clear_curated_block` 跳过与取消精化）+ `SuggestController`(QObject) 线程编排（`SuggestWorker`(QThread) 逐块建议，`LIVE_WORKERS` 全局持有与 `_zombies` 列表防 dialog 销毁后线程析构，`cancel_and_shutdown` 善后）；`IndexRefinementDialog` 仅负责渲染与交互确认，不持清单本体。入口按钮无待办时仍可用（`索引精化 ✓`）。
 
 #### 5.13.1 元规则维护页签（RuleDocPanel）
 
@@ -1409,7 +1408,7 @@ config.env → 环境变量 → `""`（后续由 `_check_api_key` 拦截）
 ```env
 DEEPSEEK_API_KEY=sk-xxx
 DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
-DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_MODEL=deepseek-v4-flash
 REQUESTS_PER_MINUTE=30
 HTTP_TIMEOUT=300
 MAX_RETRIES=3
@@ -1543,7 +1542,7 @@ logs/
 | 其他 `subprocess.*` | `subprocess/unclassified.log` |
 | 其他（含 `src.ui.*`） | `app.log` |
 
-QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler。武将采集由父进程以 `subprocess.official.*` 接管，攻略和相性生成以 `subprocess.ai.*` 接管；两者分别进入官网和 AI 日志。**AI 子进程例外**：`BaseFetchService` 为 `subprocess.ai` 命名空间的子进程额外注入 `MJS_AI_CHILD=1`，使其直写日志文件——因父进程以 INFO 级转发子进程 stdout，root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因会被过滤丢失；AI 生成单子进程串行，不触发多进程轮转竞争。每条记录只进入一个目标文件，历史的 `scraper.log`、`ai_batch.log`、`stdout.log` 和 `stderr.log` 不自动删除或迁移。
+QProcess 子进程统一设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler（含 AI 子进程）。武将采集由父进程以 `subprocess.official.*` 接管，攻略和相性生成以 `subprocess.ai.*` 接管；两者分别进入官网和 AI 日志。**AI 日志保留失败原因**：`scraper/ai_generation.log` 承载 `src.scraper.ai` / `subprocess.ai` 流并设 `keep_debug=True`（handler 级别固定 DEBUG、不跟随用户级别），因此 root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因仍被保留；另有 `debug.log` 跨模块全量留底（DEBUG、无前缀过滤、单独较大轮转上限）。每条记录只进入一个目标文件，历史的 `scraper.log`、`ai_batch.log`、`stdout.log` 和 `stderr.log` 不自动删除或迁移。
 
 ### 10.4 日志轮转
 
@@ -2162,7 +2161,7 @@ AIBatchGenerator.__init__(api_key, api_url, model, rpm, ...)
   │    │     字段: ID / 名称 / 势力 / 定位 / 体力 / 手牌 / 性别 / 技能
   │    ├── _call_api(messages=[system, user], temperature=0.7)
   │    │    ├── 检查距上次请求间隔（不够则 sleep 补齐）
-  │    │    ├── POST {model, messages, temperature, max_tokens=32768,
+  │    │    ├── POST {model, messages, temperature, max_tokens=16384,
   │    │    │         thinking={type: disabled}}
   │    │    ├── 成功: 仅保留 content / finish_reason / usage
   │    │    ├── _log_usage(hero.name, usage)  → 记录 prompt/completion + reasoning/content 拆分
@@ -2185,7 +2184,7 @@ Authorization: Bearer sk-xxx
 Content-Type: application/json
 
 {
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-v4-flash",
   "messages": [
     {
       "role": "system",
@@ -2197,7 +2196,7 @@ Content-Type: application/json
     }
   ],
   "temperature": 0.7,
-  "max_tokens": 32768,
+  "max_tokens": 16384,
   "thinking": {"type": "disabled"}
 }
 ```

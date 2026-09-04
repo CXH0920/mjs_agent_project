@@ -7,7 +7,7 @@
 
 ## 当前实现基线（2026-07-22）
 
-`get_api_config()` 优先级为 `config.env > 环境变量 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-pro`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。
+`get_api_config()` 优先级为 `config/api_profiles.json（启用档案）> config.env > 环境变量 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。
 
 ```
 main() -> get_runtime_params() -> setup_logging()
@@ -83,7 +83,7 @@ get_api_config()
   -> 类型转换 + 默认值填充:
      -> api_key: from env or ""                                 [无默认值]
      -> api_url: from config.env or "https://api.deepseek.com/v1/chat/completions"
-     -> model: from config.env or "deepseek-v4-pro"
+     -> model: from config.env or "deepseek-v4-flash"
      -> requests_per_minute: from env or 30 (int)
      -> max_retries: from env or 3 (int)
      -> http_timeout: from env or 300 (int)
@@ -181,9 +181,8 @@ setup_logging(log_level="INFO", log_to_file=True)
   -> root.setLevel(配置级别)
   -> [控制台] logging.StreamHandler(sys.stdout)
   -> is_qprocess_child = (MJS_QPROCESS_CHILD == "1")
-  -> is_ai_child = (MJS_AI_CHILD == "1")
-  -> [not log_to_file 或 (is_qprocess_child 且 not is_ai_child)] return  [跳过文件 Handler]
-  -> [log_to_file 且非普通 QProcess 子进程]
+  -> [not log_to_file 或 is_qprocess_child] return  [跳过文件 Handler，含 AI 子进程]
+  -> [log_to_file 且非 QProcess 子进程]
      -> log_dir = "logs" / {category}                           [分类子目录]
         -> "logs/scraper/official.log" / "ai_generation.log"
         -> "logs/business/fetching.log" / "emulator.log" / "recognition.log"
@@ -195,7 +194,7 @@ setup_logging(log_level="INFO", log_to_file=True)
      -> ModuleFilter(logger_prefix)                             [按 logger name 前缀匹配]
 ```
 
-> **AI 子进程例外**：普通 QProcess 子进程（`MJS_QPROCESS_CHILD=1`）不直写文件，stdout/stderr 由父进程统一收集。AI 子进程额外设 `MJS_AI_CHILD=1`，跳过该限制直写文件——因父进程以 INFO 级转发子进程 stdout，root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因会被过滤丢失；AI 生成单子进程串行，不触发多进程轮转竞争。
+> **子进程日志保留**：所有 QProcess 子进程（`MJS_QPROCESS_CHILD=1`，含 AI 子进程）都不直写文件，stdout/stderr 由父进程统一收集。`src.scraper.ai` / `subprocess.ai` 命名空间对应的 `scraper/ai_generation.log` handler 设 `keep_debug=True`（级别固定 DEBUG、不跟随用户级别），因此 root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因仍被保留；另有 `debug.log` 跨模块全量留底（DEBUG、无前缀过滤、单独较大轮转上限）。
 
 ```
 日志分发规则:
@@ -256,7 +255,7 @@ src.config.env 的函数被几乎所有模块调用:
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
 | `main()` | `src/main.py` | Python 入口 | `get_runtime_params()`, `setup_logging()`, `QApplication()`, `MainWindow()` |
-| `setup_logging(level, file)` | `config/logging_config.py` | `main()`, 各 CLI 入口 | `RotatingFileHandler`, `ModuleFilter`；识别 `MJS_AI_CHILD` 例外 |
+| `setup_logging(level, file)` | `config/logging_config.py` | `main()`, 各 CLI 入口 | `RotatingFileHandler`, `ModuleFilter`；`MJS_QPROCESS_CHILD=1` 跳过文件 Handler，`keep_debug=True` 保留 AI 失败原因 |
 | `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `main()` | 安装 Qt 标准控件中文翻译器 |
 | `install_details_button_translator(msgbox)` | `ui/app/chinese_translator.py` | `AiGenerationWorkflow._on_*_error()` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"） |
 | `get_api_config()` | `config/env.py` | `ai_batch.py`, `settings_dialog` | `parse_env_file()`, `os.environ.get()`, 默认值填充 |

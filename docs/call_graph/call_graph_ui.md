@@ -1066,18 +1066,22 @@ RagMaintenancePanel._run(args)
 入口：语料状态页操作栏「索引精化」按钮（角标显示待精化数量，如「索引精化（5）」；
      无待办显示「索引精化 ✓」但仍可点击进入浏览/管理已精化块；维护任务执行期间禁用）
      或审计横幅「索引字段待精化 N 块 [去精化]」点击
-  -> IndexRefinementDialog(data/rag_corpus)            [1160×720]
-     -> refinement_service.scan_blocks()  [一次扫描三分类：pending 待精化 / curated 已精化 / normal 已生成]
+  -> IndexRefinementDialog(data/rag_corpus)            [1160×720，只渲染 + 交互确认]
+     -> RefinementSession(corpus_dir)                 [纯状态层：三池清单 pending/curated/normal + 磁盘基线 + LLM 基线 + 行状态]
+        -> scan_blocks()  [一次扫描三分类]
+     -> SuggestController(self)                       [LLM 线程编排：接 result_ready/finished 信号]
      -> 模式切换（待精化/已精化/全部）只过滤内存快照，不重复读文件
      -> 顶部总览条：待精化显示进度条；已精化/全部显示统计文案（如「已精化 M 块（人工 X · LLM Y）」）
      -> 清单区：类型筛选（全部/卡牌/武将）+ 搜索 + 4 列表格
         列 2 按范围扩展：缺失字段 / method·updated_at / 按块状态；状态列新增 ✓ 已精化
      -> 工作区：左原文卡片占满高度 + 右 4 个字段卡片（timing/trigger_condition/keywords/related，
                 fieldState=empty/llm/manual/saved 着色）
-     -> LLM 建议（当前/全部）：suggest_one() -> AIBatchGenerator.complete()；全部模式 QTimer 队列逐块处理
-     -> 保存当前/保存全部：_collect_update() -> apply_curated() 写回 curated（重建不覆盖）
-        统一保存模型：磁盘基线 + 有改动才写回（method=manual、updated_at=今天）
-     -> 已精化块：浏览（fields 以 curated 为权威）/ 再编辑保存 / 取消精化（clear_curated，二次确认）
+     -> LLM 建议（当前/全部）：SuggestController.start(blocks, generator[, single=True])
+        -> SuggestWorker(QThread) 逐块 suggest_one -> result_ready -> 主线程回填字段卡片 + 进度
+        -> finished 收尾；取消/关闭走 cancel_and_shutdown()（含僵尸 _zombies 持有，防线程析构崩溃）
+     -> 保存当前：collect_update(block_id, texts)     [与磁盘基线比对判改动；method=llm/manual] -> sync_saved() 写回并迁移池
+     -> 保存全部：按语料文件分组收集 -> apply_updates(updates_by_file)  [失败文件上报错误、不迁移其任何块]
+     -> 已精化块：浏览（fields 以 curated 为权威）/ 再编辑保存 / 取消精化 clear_curated_block()（二次确认）
      -> 未保存修改保护：切换条目/关闭/批量建议前确认
 CardPointsPanel 底部「从 xlsx 导入」
   -> ScriptRunner 异步执行 scripts/migrate_excel_to_json.py --only points   [按钮置「导入中…」不阻塞 UI]
