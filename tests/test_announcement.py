@@ -848,13 +848,39 @@ def test_update_phase_aborts_when_dispatch_reports_busy(monkeypatch) -> None:
     assert warnings
 
 
-def test_main_window_announcement_integration(monkeypatch) -> None:
+def _small_corpus(tmp_path):
+    """tmp 一致小数据三件套（批次6 J3 改造）：heroes 含贾诩/马钧固定 id，
+    相性/攻略只引用这些 id——三管理器绑定后 load_all 走真实校验链且 0 失效
+    关联，构造 MainWindow 不触发缺失引用模态弹窗，与真实 data/ 解耦。"""
+    import json
+
+    def write(path, payload):
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    heroes = tmp_path / "heroes.json"
+    synergies = tmp_path / "synergies.json"
+    guides = tmp_path / "guides.json"
+    write(heroes, [
+        Hero(id=101, name="贾诩").model_dump(mode="json"),
+        Hero(id=102, name="马钧").model_dump(mode="json"),
+    ])
+    write(synergies, [
+        {"hero_a_id": 101, "hero_b_id": 102, "score": 6},
+    ])
+    write(guides, [
+        {"hero_id": 101, "weak_against_type": ["控制型"], "synergizes_with": [102]},
+    ])
+    return heroes, synergies, guides
+
+
+def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> None:
     """全路径：横幅文案、对话框全文、更新联动（覆盖模型/字典混用点）。
 
-    注意：不能给 MainWindow 传只有少量武将的 heroes 文件，否则会触发
-    攻略/相性“缺失引用”的模态修复弹窗导致测试阻塞；这里使用默认数据文件。
+    三管理器绑定 tmp 一致小数据（贾诩/马钧固定 id），构造走真实加载与引用
+    校验链且 0 失效关联——不触发缺失引用模态弹窗，也不再绑定真实 data/ 三件套，
+    数据文件变更不影响本用例（J3 改造）。
     """
-    from PySide6.QtWidgets import QApplication, QDialog
+    from PySide6.QtWidgets import QDialog
     from src.business.announcement.announcement_service import AnnouncementCheckResult
     from src.data.announcement_manager import Announcement, AnnouncementStatus, HeroChange
     from src.data.guide_manager import GuideManager
@@ -868,10 +894,14 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         lambda parent, message, **kwargs: toasts.append(message),
     )
 
-    app = QApplication.instance() or QApplication([])
-    window = MainWindow(HeroManager(), SynergyManager(), GuideManager())
+    heroes_file, synergies_file, guides_file = _small_corpus(tmp_path)
+    window = MainWindow(
+        HeroManager(heroes_file=heroes_file),
+        SynergyManager(synergies_file=synergies_file),
+        GuideManager(guides_file=guides_file),
+    )
     window.show()
-    app.processEvents()
+    qapp.processEvents()
     try:
         announcement = Announcement(
             id=209,
@@ -908,11 +938,11 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         assert toasts
 
         window._open_announcement_dialog()
-        app.processEvents()
+        qapp.processEvents()
         dialog = window._announcement_dialog
         assert dialog._list.count() == 1
         dialog._list.setCurrentRow(0)
-        app.processEvents()
+        qapp.processEvents()
         full_text = dialog._content.toPlainText()
         assert "8月13日停服更新预告" in full_text
         assert "东方朔（新增）·未收录" in full_text
@@ -1029,7 +1059,7 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         window._update_hero_data_from_announcements()
         deadline = time.time() + 5
         while "正在获取官网数据" in window._status_label.text() and time.time() < deadline:
-            app.processEvents()
+            qapp.processEvents()
             time.sleep(0.01)
         assert "已取消更新武将数据" in window._status_label.text()
 
@@ -1049,7 +1079,7 @@ def test_main_window_announcement_integration(monkeypatch) -> None:
         dialog.close()
     finally:
         window.close()
-        app.processEvents()
+        qapp.processEvents()
 
 
 # ============================================================
