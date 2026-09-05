@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -31,6 +30,7 @@ from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_wi
 from src.business.announcement.announcement_service import AnnouncementCheckResult
 from src.business.card_catalog import CardCatalogService
 from src.ui.app.app_services import AppServices
+from src.ui.app.status_chips import StatusChips
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
@@ -816,53 +816,30 @@ class MainWindow(QMainWindow):
         self._progress_bar.setTextVisible(True)
         self._progress_bar.hide()
         bar.addWidget(self._progress_bar)
-        self._emulator_status_label = QLabel()
-        self._emulator_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._emulator_status_label.mousePressEvent = lambda _: self._open_mumu_config()
-        bar.addPermanentWidget(self._emulator_status_label)
-        self._poll_status_label = QLabel()
-        self._poll_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._poll_status_label.mousePressEvent = lambda _: self._open_mumu_config()
-        bar.addPermanentWidget(self._poll_status_label)
+        # 服务状态 chips 自足小部件（批次6步骤3）：点击经信号回到 _open_mumu_config
+        self._status_chips = StatusChips()
+        self._status_chips.mumu_config_requested.connect(self._open_mumu_config)
+        bar.addPermanentWidget(self._status_chips)
         self.setStatusBar(bar)
         state, detail = self._capture_service.connection_state
         self._update_emulator_status(state, detail)
         self._update_poll_status(self._ocr_service.poll_state, "轮询未启用")
 
+    @property
+    def _emulator_status_label(self) -> QLabel:
+        return self._status_chips.emulator_label
+
+    @property
+    def _poll_status_label(self) -> QLabel:
+        return self._status_chips.poll_label
+
     def _update_emulator_status(self, state: str, detail: str = "") -> None:
         """渲染不受业务进度覆盖的常驻 ADB 状态。"""
-        styles = {
-            "unconfigured": ("模拟器：未配置", "#777", "#ececec"),
-            "disconnected": ("模拟器：ADB 未连接", "#777", "#ececec"),
-            "connecting": ("模拟器：正在连接…", "#8a5a00", "#fff3cd"),
-            "connected": ("模拟器：ADB 已连接", "#176b36", "#e4f5e8"),
-            "offline": ("模拟器：设备离线", "#a12622", "#fde8e8"),
-        }
-        text, color, background = styles.get(state, styles["disconnected"])
-        self._set_status_chip(self._emulator_status_label, text, color, background, detail)
+        self._status_chips.set_emulator_state(state, detail)
 
     def _update_poll_status(self, state: str, detail: str = "") -> None:
         """渲染不受业务进度覆盖的常驻 OCR 轮询状态。"""
-        styles = {
-            "stopped": ("OCR轮询：未启用", "#777", "#ececec"),
-            "running": ("OCR轮询：运行中", "#176b36", "#e4f5e8"),
-            "backing_off": ("OCR轮询：恢复中", "#8a5a00", "#fff3cd"),
-            "cooldown": ("OCR轮询：冷却中", "#165a9e", "#e7f1fd"),
-            "paused": ("OCR轮询：已暂停", "#a12622", "#fde8e8"),
-        }
-        text, color, background = styles.get(state, styles["stopped"])
-        self._set_status_chip(self._poll_status_label, text, color, background, detail)
-
-    @staticmethod
-    def _set_status_chip(label: QLabel, text: str, color: str,
-                         background: str, detail: str) -> None:
-        """状态栏彩色胶囊 chip 的统一渲染（模拟器/轮询两组状态共用）。"""
-        label.setText(text)
-        label.setToolTip(detail or "点击打开模拟器配置")
-        label.setStyleSheet(
-            f"color: {color}; background-color: {background}; padding: 3px 8px; "
-            "border-radius: 8px; font-weight: bold;"
-        )
+        self._status_chips.set_poll_state(state, detail)
 
     def _on_synergies_changed(self) -> None:
         """同步人工编辑后的相性摘要和状态栏。"""
