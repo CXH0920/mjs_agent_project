@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from src.config.env import PROJECT_ROOT as ROOT
@@ -33,10 +34,26 @@ CORPUS = ROOT / "data" / "rag_corpus"
 
 
 def get_script_logger(script_name: str) -> logging.Logger:
-    """返回脚本专用 logger：文件记录 DEBUG+，stderr 镜像 WARNING+。"""
+    """返回脚本专用 logger（惰性：仅取命名 logger 并阻断传播，不建文件句柄）。
+
+    模块层调用安全——import 时不 mkdir、不开 FileHandler，避免 Windows 句柄锁
+    栓住测试进程。FileHandler 装载见 _ensure_script_logger_handlers，由
+    install_crash_logger 在脚本入口触发；同一 name 取到的是同一对象，故入口
+    装好 handler 后，模块层 logger.warning 即可落文件。
+    """
     logger = logging.getLogger(f"rag_script.{script_name}")
+    logger.propagate = False
+    return logger
+
+
+def _ensure_script_logger_handlers(logger: logging.Logger, script_name: str) -> None:
+    """幂等装 FileHandler（DEBUG+ 写 logs/rag/<script>.log）+ stderr 镜像（WARNING+）。
+
+    仅在脚本入口（install_crash_logger）调，不在模块层调——故被测试 import
+    时不建文件、不锁句柄。
+    """
     if logger.handlers:
-        return logger
+        return
     log_dir = ROOT / "logs" / "rag"
     log_dir.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_dir / f"{script_name}.log", encoding="utf-8")
@@ -47,17 +64,23 @@ def get_script_logger(script_name: str) -> logging.Logger:
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
     logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-    return logger
 
 
-def install_crash_logger(script_name: str) -> None:
+def install_crash_logger(script_name: str) -> Callable[[], None]:
     """把未处理异常落入脚本日志文件，stdout 仅打一行 ❌（退出码仍为 1）。
+
+    自足：内部先 setup_stdout()（幂等），保证 hook 里 print("❌…") 不在 GBK
+    控制台自崩；同时装好 logger 文件句柄使 logger.error 的 traceback 落文件。
+    返回恢复函数：调用方（尤其测试）在 finally 调它可恢复 sys.excepthook，
+    不再残留 hook 吞掉后续未处理异常的 traceback。
 
     供脚本入口安装（build_* 为模块级直跑形态，装在模块层；有 main() 的脚本
     装在 main 首行——被测试作为库导入时不污染 sys.excepthook）。
     """
+    setup_stdout()
     logger = get_script_logger(script_name)
+    _ensure_script_logger_handlers(logger, script_name)
+    previous_hook = sys.excepthook
 
     def _hook(exc_type, exc_value, exc_tb):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -67,6 +90,12 @@ def install_crash_logger(script_name: str) -> None:
         print(f"❌ 执行失败，详见 logs/rag/{script_name}.log")
 
     sys.excepthook = _hook
+
+    def _restore() -> None:
+        sys.excepthook = previous_hook
+
+    return _restore
+
 
 # 元规则文档结构解析正则：build_rule_corpus / sync_rule_stats / apply_rule_proposal
 # 三个脚本共用同一份口径（此前三处逐字复制，一处改动即产生解析口径漂移）
