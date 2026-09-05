@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.config.env import PROJECT_ROOT
 from src.ocr.character_feature_repository import CharacterFeatureRepository
+from src.scripts.rag_common import install_crash_logger, setup_stdout
 
 HEROES_PATH = PROJECT_ROOT / "data" / "heroes.json"
 COMMON_OCR_CONFUSION_CHARACTERS = "不剪赢缘还翡或媛邰答谢半昧翊隐助珍怀候部会正工頂"
@@ -24,6 +25,8 @@ def required_characters(heroes_path: Path = HEROES_PATH) -> set[str]:
 
 
 def main() -> None:
+    setup_stdout()
+    install_crash_logger("build_character_feature_cache")
     repository = CharacterFeatureRepository(user_cache_path=None)
     repository.warmup()
     characters = required_characters()

@@ -23,6 +23,9 @@ import re
 import sys
 
 from src.config.env import PROJECT_ROOT as ROOT
+from src.scripts.rag_common import get_script_logger, install_crash_logger, setup_stdout
+
+logger = get_script_logger("propose_rule_changes")
 
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_PROPOSAL_DIR = os.path.join(ROOT, 'docs', 'archive', 'proposals')
@@ -98,6 +101,7 @@ def generate_proposal_items(rows, doc_text, generator):
     try:
         response = generator.complete(messages, temperature=0.2)
     except Exception as exc:
+        logger.warning("LLM 调用异常，降级为占位提案", exc_info=True)
         print('LLM 调用异常，降级为占位提案：%s' % exc)
         return generate_proposal_items(rows, doc_text, None)
     if not response:
@@ -160,6 +164,8 @@ def render_md(proposal, rows):
 
 
 def main():
+    setup_stdout()
+    install_crash_logger("propose_rule_changes")
     parser = argparse.ArgumentParser(description='变更提案起草器')
     parser.add_argument('--changes-json', default=None, help='变更清单 JSON（[{type,file,object,name,summary,mechanism}]）')
     parser.add_argument('--no-llm', action='store_true', help='不调用 LLM，生成占位提案')
@@ -186,6 +192,7 @@ def main():
             from src.business.rag.refinement_service import build_generator
             generator = build_generator()
         except Exception as exc:
+            logger.warning("LLM 通道初始化失败，降级为占位提案", exc_info=True)
             print('LLM 通道初始化失败，降级为占位提案：%s' % exc)
 
     items = generate_proposal_items(rows, doc_text, generator)

@@ -2,9 +2,10 @@
 """生成卡牌 RAG 语料：49 块，含规则抽取索引字段"""
 import re
 
-from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
+from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
+install_crash_logger("build_card_corpus")
 
 cards = load_json(project_path('data', 'cards.json'))
 # 保序列表（set 推导迭代顺序不稳定会导致 related 字段顺序每次运行不同）

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """生成特殊机制语料：专属牌 / 专属战法牌 / 特殊机制(牌区·状态·概念)"""
 
-from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
+from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
+install_crash_logger("build_special_corpus")
 
 
 def _load_special_items():

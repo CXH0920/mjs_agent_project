@@ -6,9 +6,10 @@
 未归类武将不会生成块，并打印待补充清单。
 """
 
-from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
+from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
+install_crash_logger("build_classification_corpus")
 
 cls = load_json(project_path('data', 'hero_classification.json'))
 heroes = load_json(project_path('data', 'heroes.json'))

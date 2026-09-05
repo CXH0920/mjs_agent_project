@@ -25,7 +25,7 @@ import sys
 
 from src.business.rag.rule_doc_service import build_faq_revise_row
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE
+from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE, install_crash_logger, setup_stdout
 
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
@@ -277,6 +277,8 @@ def archive_proposal(proposal_path):
 
 
 def main():
+    setup_stdout()
+    install_crash_logger("apply_rule_proposal")
     parser = argparse.ArgumentParser(description='提案合入器')
     parser.add_argument('--proposal', required=True, help='已确认提案 JSON 路径')
     parser.add_argument('--doc', default=DEFAULT_DOC, help='文档路径')

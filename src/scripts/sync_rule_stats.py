@@ -25,7 +25,16 @@ import sys
 from collections import Counter, defaultdict
 
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE, save_json
+from src.scripts.rag_common import (
+    HEADING_RE,
+    SEPARATOR_RE,
+    get_script_logger,
+    install_crash_logger,
+    save_json,
+    setup_stdout,
+)
+
+logger = get_script_logger("sync_rule_stats")
 
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
@@ -62,6 +71,7 @@ def load_data(root=ROOT):
             with open(path, encoding='utf-8') as f:
                 out[rel.split('.')[0]] = json.load(f)
         except Exception:
+            logger.warning("读取数据文件失败，校验基线置空: %s", rel, exc_info=True)
             out[rel.split('.')[0]] = None
     return out
 
@@ -521,6 +531,8 @@ def build_report(issues):
 
 
 def main():
+    setup_stdout()
+    install_crash_logger("sync_rule_stats")
     parser = argparse.ArgumentParser(description='元规则数据快照段同步')
     parser.add_argument('--only', choices=SECTION_NAMES, default=None, help='只处理指定段')
     parser.add_argument('--apply', action='store_true', help='应用差异（默认仅报告）')

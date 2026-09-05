@@ -9,7 +9,15 @@
 """
 import re
 
-from src.scripts.rag_common import CORPUS, HEADING_RE, SEPARATOR_RE, project_path, save_json, setup_stdout
+from src.scripts.rag_common import (
+    CORPUS,
+    HEADING_RE,
+    SEPARATOR_RE,
+    install_crash_logger,
+    project_path,
+    save_json,
+    setup_stdout,
+)
 
 TERM_BLOCK_KEYWORDS = ('术语表', '牌的类型', '动作定义', '状态定义', '区域清单', '资源')
 TERM_BLACKLIST_PREFIX = ('类型', '动作', '状态', '区域', '资源', '花色体系', '——')
@@ -160,6 +168,7 @@ def parse_rule_doc(src):
 
 def main():
     setup_stdout()
+    install_crash_logger("build_rule_corpus")
     src = project_path('docs', '元规则整理-完整版.md')
     blocks, terms, faqs, dropped = parse_rule_doc(src)
 

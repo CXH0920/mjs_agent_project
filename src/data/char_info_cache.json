@@ -359,6 +359,14 @@
     "total_strokes": "4",
     "wubi": "QCI"
   },
+  "十": {
+    "cangjie": "J",
+    "four_corner": "4000",
+    "pinyin": "shi",
+    "radical": "十",
+    "total_strokes": "2",
+    "wubi": "FGH"
+  },
   "半": {
     "cangjie": "FQ",
     "four_corner": "9050",
@@ -462,6 +470,14 @@
     "radical": "又",
     "total_strokes": "8",
     "wubi": "HICY"
+  },
+  "可": {
+    "cangjie": "MNR",
+    "four_corner": "1062",
+    "pinyin": "ke",
+    "radical": "口",
+    "total_strokes": "5",
+    "wubi": "SKD"
   },
   "史": {
     "cangjie": "LK",
@@ -574,6 +590,14 @@
     "radical": "囗",
     "total_strokes": "8",
     "wubi": "LGYI"
+  },
+  "图": {
+    "cangjie": "WHEY",
+    "four_corner": "6030",
+    "pinyin": "tu",
+    "radical": "囗",
+    "total_strokes": "8",
+    "wubi": "LTUI"
   },
   "坚": {
     "cangjie": "LEG",
@@ -1567,6 +1591,14 @@
     "total_strokes": "11",
     "wubi": "ILRH"
   },
+  "港": {
+    "cangjie": "ETCU",
+    "four_corner": "3411",
+    "pinyin": "gang",
+    "radical": "氵",
+    "total_strokes": "12",
+    "wubi": "IAWN"
+  },
   "潘": {
     "cangjie": "EHDW",
     "four_corner": "3216",
@@ -1703,6 +1735,14 @@
     "total_strokes": "20",
     "wubi": "GTFM"
   },
+  "瓦": {
+    "cangjie": "MVNI",
+    "four_corner": "1071",
+    "pinyin": "wa",
+    "radical": "瓦",
+    "total_strokes": "4",
+    "wubi": "GNYN"
+  },
   "甄": {
     "cangjie": "MGMVN",
     "four_corner": "1111",
@@ -1791,6 +1831,14 @@
     "total_strokes": "10",
     "wubi": "HGSY"
   },
+  "碑": {
+    "cangjie": "MRHHJ",
+    "four_corner": "1664",
+    "pinyin": "bei",
+    "radical": "石",
+    "total_strokes": "13",
+    "wubi": "DRTF"
+  },
   "磾": {
     "cangjie": "MRRRJ",
     "four_corner": "1664",
@@ -1822,6 +1870,14 @@
     "radical": "礻",
     "total_strokes": "12",
     "wubi": "PYUF"
+  },
+  "禪": {
+    "cangjie": "IFRRJ",
+    "four_corner": "3625",
+    "pinyin": "chan",
+    "radical": "礻",
+    "total_strokes": "16",
+    "wubi": "PYKF"
   },
   "离": {
     "cangjie": "YUKB",
@@ -2774,6 +2830,14 @@
     "radical": "页",
     "total_strokes": "11",
     "wubi": "HCDM"
+  },
+  "颐": {
+    "cangjie": "SLMBO",
+    "four_corner": "7178",
+    "pinyin": "yi",
+    "radical": "页",
+    "total_strokes": "13",
+    "wubi": "AHKM"
   },
   "飞": {
     "cangjie": "NO",

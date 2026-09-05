@@ -50,6 +50,24 @@ def get_script_logger(script_name: str) -> logging.Logger:
     logger.propagate = False
     return logger
 
+
+def install_crash_logger(script_name: str) -> None:
+    """把未处理异常落入脚本日志文件，stdout 仅打一行 ❌（退出码仍为 1）。
+
+    供脚本入口安装（build_* 为模块级直跑形态，装在模块层；有 main() 的脚本
+    装在 main 首行——被测试作为库导入时不污染 sys.excepthook）。
+    """
+    logger = get_script_logger(script_name)
+
+    def _hook(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        logger.error("未处理异常", exc_info=(exc_type, exc_value, exc_tb))
+        print(f"❌ 执行失败，详见 logs/rag/{script_name}.log")
+
+    sys.excepthook = _hook
+
 # 元规则文档结构解析正则：build_rule_corpus / sync_rule_stats / apply_rule_proposal
 # 三个脚本共用同一份口径（此前三处逐字复制，一处改动即产生解析口径漂移）
 HEADING_RE = re.compile(r'^(#{2,3})\s+(.*)$')
