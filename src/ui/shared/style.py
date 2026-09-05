@@ -1063,7 +1063,8 @@ QLabel#toastOverlay[tone="danger"] {{
 QWidget#specialCardsPanel {{
     background-color: {CANVAS};
 }}
-QWidget#specialCardListPane, QWidget#specialCardDetailContent {{
+QWidget#specialCardListPane, QWidget#specialCardDetailContent,
+QWidget#categoryListPane, QWidget#heroTabListPane {{
     background-color: transparent;
 }}
 QListWidget#specialCardList {{

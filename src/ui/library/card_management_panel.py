@@ -20,14 +20,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QListWidgetItem,
     QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QSplitter,
     QStyle,
     QTableWidget,
     QTableWidgetItem,
@@ -45,6 +43,7 @@ from src.data.card_catalog import (
     CardViewModel,
     EffectEntry,
 )
+from src.ui.shared.master_detail import MasterDetailPane
 from src.ui.shared.style import (
     ROLE_DANGER,
     ROLE_GHOST,
@@ -183,40 +182,27 @@ class CardManagementPanel(QWidget):
         filters.addWidget(self._more_button)
         layout.addLayout(filters)
 
-        self._splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._splitter.setObjectName("cardCatalogSplitter")
-        self._splitter.setChildrenCollapsible(False)
-        self._list_pane = QWidget()
-        self._list_pane.setObjectName("cardListPane")
-        self._list_pane.setMinimumWidth(240)
-        self._list_pane.setMaximumWidth(360)
-        list_layout = QVBoxLayout(self._list_pane)
-        list_layout.setContentsMargins(0, 0, 0, 0)
-        list_layout.setSpacing(6)
-        self._count_label = QLabel()
-        self._count_label.setObjectName("libraryResultCount")
-        list_layout.addWidget(self._count_label)
-        self._list = QListWidget()
-        self._list.setObjectName("cardList")
+        self._splitter = MasterDetailPane(
+            list_object_name="cardList",
+            pane_object_name="cardListPane",
+            splitter_object_name="cardCatalogSplitter",
+            list_min_width=240,
+            list_max_width=360,
+            sizes=(280, 720),
+            detail_scroll_object_name="cardDetailScroll",
+            detail_object_name="cardDetailContent",
+            detail_margins=(12, 0, 4, 8),
+            detail_spacing=12,
+            detail_scrollbar_off=True,
+        )
+        self._list_pane = self._splitter.list_pane
+        self._count_label = self._splitter.count_label
+        self._list = self._splitter.list
+        self._detail_scroll = self._splitter.detail_scroll
+        self._detail = self._splitter.detail
+        self._detail_layout = self._splitter.detail_layout
         self._list.currentItemChanged.connect(self._on_card_selected)
-        list_layout.addWidget(self._list, 1)
-        self._splitter.addWidget(self._list_pane)
-        self._detail_scroll = QScrollArea()
-        self._detail_scroll.setObjectName("cardDetailScroll")
-        self._detail_scroll.setWidgetResizable(True)
-        self._detail_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._detail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._detail = QWidget()
-        self._detail.setObjectName("cardDetailContent")
-        self._detail_layout = QVBoxLayout(self._detail)
-        self._detail_layout.setContentsMargins(12, 0, 4, 8)
-        self._detail_layout.setSpacing(12)
         self._detail_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._detail_scroll.setWidget(self._detail)
-        self._splitter.addWidget(self._detail_scroll)
-        self._splitter.setStretchFactor(0, 0)
-        self._splitter.setStretchFactor(1, 1)
-        self._splitter.setSizes([280, 720])
         layout.addWidget(self._splitter, 1)
 
     def reload_data(self) -> None:

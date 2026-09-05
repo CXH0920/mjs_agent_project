@@ -18,13 +18,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
-    QSplitter,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -38,6 +35,7 @@ from src.data.hero_classification_repository import (
     HeroClassificationRepository,
 )
 from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.shared.master_detail import MasterDetailPane
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import (
     ROLE_DANGER,
@@ -233,29 +231,20 @@ class HeroClassificationPanel(QWidget):
         bar.addWidget(self._category_add_button)
         layout.addLayout(bar)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        left = QWidget()
-        left.setObjectName("specialCardListPane")
-        left.setMinimumWidth(200)
-        left.setMaximumWidth(320)
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        self._category_list = QListWidget()
-        self._category_list.setObjectName("heroList")
+        splitter = MasterDetailPane(
+            list_object_name="heroList",
+            pane_object_name="categoryListPane",
+            list_min_width=200,
+            list_max_width=320,
+            sizes=(260, 600),
+            with_count_label=False,
+            detail_margins=(8, 4, 8, 8),
+        )
+        self._category_detail_scroll = splitter.detail_scroll
+        self._category_detail = splitter.detail
+        self._category_detail_layout = splitter.detail_layout
+        self._category_list = splitter.list
         self._category_list.currentItemChanged.connect(self._on_category_selected)
-        left_layout.addWidget(self._category_list)
-        splitter.addWidget(left)
-
-        self._category_detail_scroll = QScrollArea()
-        self._category_detail_scroll.setWidgetResizable(True)
-        self._category_detail_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self._category_detail = QWidget()
-        self._category_detail_layout = QVBoxLayout(self._category_detail)
-        self._category_detail_layout.setContentsMargins(8, 4, 8, 8)
-        self._category_detail_layout.setSpacing(10)
-        self._category_detail_scroll.setWidget(self._category_detail)
-        splitter.addWidget(self._category_detail_scroll)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([260, 600])
@@ -315,27 +304,20 @@ class HeroClassificationPanel(QWidget):
         bar.addWidget(self._goto_unclassified_button)
         layout.addLayout(bar)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        left = QWidget()
-        left.setObjectName("specialCardListPane")
-        left.setMinimumWidth(200)
-        left.setMaximumWidth(320)
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        self._hero_list = QListWidget()
-        self._hero_list.setObjectName("heroList")
+        splitter = MasterDetailPane(
+            list_object_name="heroList",
+            pane_object_name="heroTabListPane",
+            list_min_width=200,
+            list_max_width=320,
+            sizes=(260, 600),
+            with_count_label=False,
+            detail_margins=(8, 4, 8, 8),
+        )
+        self._hero_detail_scroll = splitter.detail_scroll
+        self._hero_detail = splitter.detail
+        self._hero_detail_layout = splitter.detail_layout
+        self._hero_list = splitter.list
         self._hero_list.currentItemChanged.connect(self._on_hero_selected)
-        left_layout.addWidget(self._hero_list)
-        splitter.addWidget(left)
-
-        self._hero_detail_scroll = QScrollArea()
-        self._hero_detail_scroll.setWidgetResizable(True)
-        self._hero_detail_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self._hero_detail = QWidget()
-        self._hero_detail_layout = QVBoxLayout(self._hero_detail)
-        self._hero_detail_layout.setContentsMargins(8, 4, 8, 8)
-        self._hero_detail_layout.setSpacing(10)
 
         self._hero_empty_label = QLabel("选择左侧武将设置其机制分类。")
         self._hero_empty_label.setObjectName("libraryEmptyState")
