@@ -31,8 +31,10 @@ jobs:
       - name: Lint
         shell: bash -l {0}
         run: python -m ruff check src tests
-      # pyright（pyproject 已配 basic 模式）当前仍有约 600 处报错（src 约 224 / tests 约 380），
-      # 清零前以 report-only 运行：每次 CI 留档趋势但不阻断；错误清零后移除
+      # pyright（pyproject 已配 basic 模式）2026-09 实测 src 237 处报错：
+      # reportArgumentType 79 / reportOptionalMemberAccess 57 / reportAttributeAccessIssue 46，
+      # Optional 系合计约 39%——多为动态模型属性与第三方库缺类型桩，清零属数天级类型治理，
+      # 收益/成本不匹配。维持 report-only 留档趋势不阻断；若后续清零，移除
       # continue-on-error 升级为强门禁
       - name: Type check (pyright, report-only)
         continue-on-error: true
