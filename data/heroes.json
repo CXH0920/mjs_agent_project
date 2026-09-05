@@ -4981,32 +4981,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-08/iI7AZRY2x5sxaYRIuYFNSBd4L43lbqc0aPG3V7g5.png_200x282.png"
   },
   {
-    "id": 109,
-    "name": "张春华",
-    "title": "",
-    "faction": "曹魏",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "痛随伤逝",
-        "description": "当一名角色失去体力时，你可以令另一名角色流血+1，然后你摸1张牌。 （流血：回合结束时，失去1点体力值并清除1层效果；该状态效果可叠加。）",
-        "settlement": "流血也会导致体力流失。"
-      },
-      {
-        "name": "花落绝情",
-        "description": "每个回合限1次，当你选择其他角色为打出牌的目标时，你可以失去1点体力，令其封禁。",
-        "settlement": "1.流血：回合结束时，色失去1点体力值，并清除1层效果；该状态效果可叠加； 2.封禁效果持续到当前回合结束。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-09-03",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/6Z5WK6hebr38FWIfqfn4WwVan9fffvixjeQZ1ViM.png_200x282.png"
-  },
-  {
     "id": 65,
     "name": "如姬",
     "title": "",
@@ -5088,5 +5062,31 @@
     "mode_viability": {},
     "last_updated": "2026-09-03",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/bbZ6MtuVLspRCtTGg5n576nwJcg6Pqy86danTHoM.png_200x282.png"
+  },
+  {
+    "id": 109,
+    "name": "张春华",
+    "title": "",
+    "faction": "曹魏",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "痛随伤逝",
+        "description": "当一名角色失去体力时，你摸1张牌，并且可以选择1项： 1.令另一名角色流血+1；2.令一名角色的所有流血立即生效； 选项2每轮限选1次。 （流血：回合结束时，失去1点体力值并清除1层效果；该状态效果可叠加。）",
+        "settlement": "流血也会导致体力流失。"
+      },
+      {
+        "name": "花落绝情",
+        "description": "每个回合限1次，当你选择其他角色为打出牌的目标时，你可以失去1点体力，令其封禁。",
+        "settlement": "1.流血：回合结束时，色失去1点体力值，并清除1层效果；该状态效果可叠加； 2.封禁效果持续到当前回合结束。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-05",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-12/6Z5WK6hebr38FWIfqfn4WwVan9fffvixjeQZ1ViM.png_200x282.png"
   }
 ]
