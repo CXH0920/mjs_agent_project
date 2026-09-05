@@ -125,7 +125,7 @@ class MumuConfigDialog(QDialog):
             "QListWidget#mumuConfigNavigation::item { color: #4a6a8a; border-radius: 4px; "
             "padding: 10px 12px; margin-bottom: 3px; }"
             "QListWidget#mumuConfigNavigation::item:selected { background: #dceeff; color: #357abd; "
-            "border-left: 3px solid #4a90d9; font-weight: bold; }"
+            "border-left: 3px solid #2f6ea5; font-weight: bold; }"
             "QListWidget#mumuConfigNavigation::item:hover:!selected { background: #e5ebf1; }"
         )
         body.addWidget(self._page_nav)

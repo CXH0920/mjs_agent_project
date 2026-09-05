@@ -16,11 +16,13 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QVBoxLayout,
 )
+from src.ui.shared.style import PRIMARY, PRIMARY_HOVER
 
+# 主按钮色值归一到 style.py 的 PRIMARY token（G1 三色归一）
 PRIMARY_BUTTON_STYLE = (
-    "QPushButton { background-color: #438ed3; color: white; border: none; "
-    "border-radius: 4px; padding: 5px 10px; }"
-    "QPushButton:hover { background-color: #347dc0; }"
+    f"QPushButton {{ background-color: {PRIMARY}; color: white; border: none; "
+    f"border-radius: 4px; padding: 5px 10px; }}"
+    f"QPushButton:hover {{ background-color: {PRIMARY_HOVER}; }}"
     "QPushButton:disabled { background-color: #c8d4df; color: #f7f9fb; }"
 )
 OUTLINE_BUTTON_STYLE = (
@@ -359,5 +361,5 @@ class MumuOcrPollingSection(QFrame):
             "color: #2c3e50; }"
             "QSpinBox:hover, QDoubleSpinBox:hover { border-color: #7fb1dc; }"
             "QSpinBox:focus, QDoubleSpinBox:focus { "
-            "border: 1px solid #438ed3; background-color: #ffffff; }"
+            "border: 1px solid #2f6ea5; background-color: #ffffff; }"
         )

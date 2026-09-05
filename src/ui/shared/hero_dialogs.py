@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.data.models import Hero, Skill
-from src.ui.shared.style import ROLE_SECONDARY
+from src.ui.shared.style import PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
@@ -66,14 +66,14 @@ class HeroSkillDialog(QDialog):
         content_layout.setSpacing(8)
 
         description_title = QLabel("技能描述")
-        description_title.setStyleSheet("font-weight: bold; color: #4a90d9;")
+        description_title.setStyleSheet(f"font-weight: bold; color: {PRIMARY};")
         content_layout.addWidget(description_title)
         content_layout.addWidget(
             HeroSkillDialog._create_text_browser(skill.description, "暂无描述")
         )
 
         settlement_title = QLabel("技能结算")
-        settlement_title.setStyleSheet("font-weight: bold; color: #4a90d9;")
+        settlement_title.setStyleSheet(f"font-weight: bold; color: {PRIMARY};")
         content_layout.addWidget(settlement_title)
         content_layout.addWidget(
             HeroSkillDialog._create_text_browser(skill.settlement, "暂无结算说明")

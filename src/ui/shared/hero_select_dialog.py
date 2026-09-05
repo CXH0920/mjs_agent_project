@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
-from src.ui.shared.style import ROLE_SECONDARY
+from src.ui.shared.style import PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, EmptyState, FlowLayout, PageHeader
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ class BaseHeroSelectDialog(QDialog):
         self._selection_label: QLabel | None = None
         if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
             self._selection_label = QLabel()
-            self._selection_label.setStyleSheet("color: #4a90d9; font-weight: bold;")
+            self._selection_label.setStyleSheet(f"color: {PRIMARY}; font-weight: bold;")
             layout.addWidget(self._selection_label)
             self._add_selection_options(layout)
 
