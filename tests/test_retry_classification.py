@@ -6,7 +6,6 @@ import urllib.error
 
 import httpx
 import pytest
-
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.official_source import crawler
 

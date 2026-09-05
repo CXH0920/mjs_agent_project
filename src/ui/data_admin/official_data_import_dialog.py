@@ -20,10 +20,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-
 from src.business.emulator.capture_service import CaptureService
-from src.business.recognition.official_data_import_service import load_pending_session
 from src.business.recognition.ocr_worker import OfficialImportTask
+from src.business.recognition.official_data_import_service import load_pending_session
 from src.ui.data_admin.official_import_review_dialog import OfficialImportReviewDialog
 from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 

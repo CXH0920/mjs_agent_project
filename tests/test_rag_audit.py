@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.scripts import rag_audit  # noqa: E402
 
 

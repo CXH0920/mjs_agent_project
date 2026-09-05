@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
-
 from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,7 @@
 """生成卡牌 RAG 语料：49 块，含规则抽取索引字段"""
 import re
 
-from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 
@@ -101,6 +101,7 @@ for _b in blocks:
                 _b[_k] = _prev[_k]
 
 from src.scripts import rag_curated
+
 _merged = rag_curated.merge_curated(blocks, CORPUS / '卡牌RAG语料.json')
 if _merged:
     print('已保留 curated 精化块:', _merged)

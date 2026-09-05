@@ -10,6 +10,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+
 DEFAULT_ROI_CONFIG_PATH = BUNDLE_ROOT / "config" / "ocr_rois.default.json"
 USER_ROI_CONFIG_PATH = PROJECT_ROOT / "config" / "ocr_rois.json"
 SCHEMA_VERSION = 1

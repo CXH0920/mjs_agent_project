@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.analysis.match_analysis_service import MatchAnalysis
 from src.data.hero_manager import HeroManager
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog

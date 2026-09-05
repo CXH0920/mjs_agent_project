@@ -22,10 +22,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.config.env import BUNDLE_ROOT
 from src.ui.shared.faction_colors import load_faction_colors
-from src.ui.shared.widgets import close_after_toast, DialogFooter, PageHeader
+from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 
 logger = logging.getLogger(__name__)
 COLORS_FILE = BUNDLE_ROOT / "config" / "faction_colors.json"

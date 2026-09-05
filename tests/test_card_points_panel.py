@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
-
 from src.data.card_points_repository import CardPointsRepository
 from src.ui.maintenance.card_points_panel import (
     CardPointEditDialog,

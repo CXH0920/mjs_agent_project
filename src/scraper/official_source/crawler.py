@@ -23,7 +23,6 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from PIL import Image
-
 from src.config.env import IMAGES_OUTPUT_DIR
 from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 

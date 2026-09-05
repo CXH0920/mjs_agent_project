@@ -6,9 +6,7 @@ import json
 from pathlib import Path
 
 from src.config.env import PROJECT_ROOT
-
 from src.ocr.character_feature_repository import CharacterFeatureRepository
-
 
 HEROES_PATH = PROJECT_ROOT / "data" / "heroes.json"
 COMMON_OCR_CONFUSION_CHARACTERS = "不剪赢缘还翡或媛邰答谢半昧翊隐助珍怀候部会正工頂"

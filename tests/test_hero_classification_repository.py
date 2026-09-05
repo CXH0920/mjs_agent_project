@@ -8,7 +8,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from src.data.hero_classification_repository import (
     ClassificationCategory,
     HeroClassificationRepository,

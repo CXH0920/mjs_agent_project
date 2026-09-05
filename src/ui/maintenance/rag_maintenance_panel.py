@@ -24,21 +24,22 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from src.business.rag.audit_service import CORPUS_DIR, AuditIssue, audit_summary
+from src.business.rag.hero_brief import load_hero_briefs
+from src.business.rag.refinement_service import list_pending
+from src.business.rag.task_defs import TASKS as _RAG_TASKS
+from src.config.env import PROJECT_ROOT
+from src.data.card_points_repository import CardPointsRepository
+from src.data.equip_attrs_repository import EquipAttrsRepository
 from src.data.hero_classification_repository import HeroClassificationRepository
 from src.data.special_cards_repository import SpecialCardRepository
-from src.data.equip_attrs_repository import EquipAttrsRepository
-from src.data.card_points_repository import CardPointsRepository
-from src.business.rag.task_defs import TASKS as _RAG_TASKS
-from src.business.rag.hero_brief import load_hero_briefs
-from src.business.rag.audit_service import AuditIssue, CORPUS_DIR, audit_summary
-from src.business.rag.refinement_service import list_pending
 from src.ui.library.hero_classification_panel import HeroClassificationPanel
 from src.ui.library.special_cards_panel import SpecialCardsPanel
-from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
 from src.ui.maintenance.card_points_panel import CardPointsPanel
-
-from src.config.env import PROJECT_ROOT
+from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
+from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
+from src.ui.maintenance.maintenance_workspace import MaintenanceWorkspace
+from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 from src.ui.shared.style import (
     ROLE_PRIMARY,
     ROLE_SECONDARY,
@@ -50,9 +51,6 @@ from src.ui.shared.style import (
     set_ui_role,
 )
 from src.ui.shared.widgets import PageActionBar, ScriptRunner
-from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
-from src.ui.maintenance.maintenance_workspace import MaintenanceWorkspace
-from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 
 # 语料任务：名称 -> (源文件, 输出语料文件)；定义与 scripts/maintain_rag.py 共用
 # （单一事实源见 src/business/rag/task_defs.py，改动请同步维护该处）

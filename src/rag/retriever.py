@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """检索器：混合检索 = 元数据硬过滤 + 向量相似度 + 关键词兜底"""
-import sys, time, logging
+import logging
+import sys
+import time
 
 from src.rag import config
 from src.rag.indexer import load_all_blocks
@@ -98,7 +100,7 @@ class Retriever:
         out = []
         if res and res['ids'] and res['ids'][0]:
             for bid, doc, dist, meta in zip(res['ids'][0], res['documents'][0],
-                                            res['distances'][0], res['metadatas'][0]):
+                                            res['distances'][0], res['metadatas'][0], strict=False):
                 out.append({'block_id': bid, 'text': doc, 'metadata': meta,
                             'score': float(1.0 - dist), 'source': 'vector'})
         return out

@@ -7,7 +7,6 @@ apply 原位替换且标题不变、候选段未确认不可应用。
 from pathlib import Path
 
 import pytest
-
 from src.scripts import sync_rule_stats as srs  # noqa: E402
 
 

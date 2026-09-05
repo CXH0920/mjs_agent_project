@@ -6,7 +6,6 @@ from threading import Event
 from time import monotonic
 
 from PySide6.QtWidgets import QApplication
-
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.capture.prober import MuMuDeviceInfo
 

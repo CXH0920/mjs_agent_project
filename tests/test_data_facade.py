@@ -6,9 +6,9 @@ import threading
 import time
 from pathlib import Path
 
-from src.data.manager import DataFacade
-from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
+from src.data.hero_manager import HeroManager
+from src.data.manager import DataFacade
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 

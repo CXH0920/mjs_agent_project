@@ -2,6 +2,5 @@
 
 from src.scraper.official_source.incremental import main
 
-
 if __name__ == "__main__":
     main()

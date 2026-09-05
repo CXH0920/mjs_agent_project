@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox

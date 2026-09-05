@@ -9,7 +9,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
-
 from src.business.rag import refinement_session as session_module
 from src.business.rag import suggest_controller as sc_module
 from src.business.rag.refinement_service import RefinementUpdate

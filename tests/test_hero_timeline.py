@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from src.data.hero_timeline import (
     CORPUS_BASE_DATE,
     TRIGGER_OVERRIDES,
@@ -19,9 +18,9 @@ from src.data.hero_timeline import (
     parse_skill_entry,
     save_timeline,
     skill_last_change,
+    stale_overrides,
     stamp_guide_block,
     stamp_hero_block,
-    stale_overrides,
 )
 
 

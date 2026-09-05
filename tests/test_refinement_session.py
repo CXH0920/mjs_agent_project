@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.business.rag import refinement_session as session_module
 from src.business.rag.refinement_service import RefinementUpdate
 from src.business.rag.refinement_session import RefinementSession

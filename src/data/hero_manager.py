@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from src.data.manager import DataManager, DEFAULT_DATA_DIR
+from src.data.manager import DEFAULT_DATA_DIR, DataManager
 from src.data.models import Hero
 
 logger = logging.getLogger(__name__)

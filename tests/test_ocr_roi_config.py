@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from src.business.emulator.capture_service import CaptureService
 from src.ocr.roi_config import (
     DEFAULT_ROI_CONFIG_PATH,

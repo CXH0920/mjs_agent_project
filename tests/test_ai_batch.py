@@ -9,29 +9,30 @@ from pathlib import Path
 import pytest
 import src.config.env as config_env
 from src.config.env import get_api_config, get_runtime_params, parse_env_file
+from src.scraper.ai import prompt_utils
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.batch import (
     _load_existing_guides,
     _load_existing_synergies,
-    estimate_cost_by_tokens,
     estimate_cost,
+    estimate_cost_by_tokens,
     load_heroes,
 )
-from src.scraper.ai.utils import _save_json
-from src.scraper.ai import prompt_utils
-from src.scraper.ai.prompt_utils import estimate_item_cost
-from src.scraper.ai.prompt_utils import load_prompt
 from src.scraper.ai.json_extract import extract_json
+from src.scraper.ai.prompt_utils import (
+    build_guide_prompt,
+    build_synergy_prompt,
+    estimate_item_cost,
+    load_prompt,
+)
 from src.scraper.ai.utils import (
+    _save_json,
     convert_ids_to_int,
     safe_url_origin,
     validate_guide,
     validate_synergy,
 )
-from src.scraper.ai.prompt_utils import (
-    build_guide_prompt,
-    build_synergy_prompt,
-)
+
 
 class TestLoadPrompt:
     def test_load_existing_file(self) -> None:

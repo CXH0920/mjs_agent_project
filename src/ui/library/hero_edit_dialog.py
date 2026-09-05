@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QVBoxLayout,
 )
-
 from src.data.models import Difficulty, Gender, Hero
 from src.ui.shared.widgets import DialogFooter, PageHeader
 

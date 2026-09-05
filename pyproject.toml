@@ -9,7 +9,9 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["F", "T201"]
+# I（import 排序）与 B905（zip 显式 strict）均可 --fix 自动收敛且零行为变化（K1 首批灰度）；
+# E/W 其余规则待统计分布后再决定子集启用。
+select = ["F", "T201", "I", "B905"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/**/__init__.py" = ["F401"]

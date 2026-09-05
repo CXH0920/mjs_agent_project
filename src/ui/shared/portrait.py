@@ -11,7 +11,6 @@ from functools import lru_cache
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-
 from src.config.env import IMAGES_DIR
 
 logger = logging.getLogger(__name__)

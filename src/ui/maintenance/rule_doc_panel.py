@@ -40,7 +40,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.maintenance.rule_doc_ops_service import save_confirmed_diffs, validate_confirmed_row
 from src.business.rag import rule_doc_service as rds
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html

@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
-
 from src.data.models import Hero
-from src.ui.match.match_lineup_state import LineupState, SIDE_ALLY, SIDE_ENEMY
+from src.ui.match.match_lineup_state import SIDE_ALLY, SIDE_ENEMY, LineupState
 
 
 def _heroes() -> dict[str, Hero]:

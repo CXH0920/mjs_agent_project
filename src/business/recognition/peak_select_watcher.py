@@ -14,9 +14,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal
-
 from src.capture.image_validation import load_local_image
-from src.ocr.card_grid_detector import detect_selection_cards, derive_name_rois
+from src.ocr.card_grid_detector import derive_name_rois, detect_selection_cards
 from src.ocr.roi_config import Roi
 
 logger = logging.getLogger(__name__)

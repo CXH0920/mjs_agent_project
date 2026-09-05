@@ -10,14 +10,13 @@ from datetime import date
 from enum import Enum
 
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
-
 from src.data.guide_manager import GuideManager
+from src.data.hero_manager import HeroManager
+from src.data.models import Hero
 from src.ui.shared.hero_select_dialog import (
     BaseHeroSelectDialog,
     SelectionMode,
 )
-from src.data.hero_manager import HeroManager
-from src.data.models import Hero
 
 
 class GuideStatus(Enum):

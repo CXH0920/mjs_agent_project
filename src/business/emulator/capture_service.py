@@ -9,18 +9,17 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
 import logging
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
-
+from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
 from src.capture.adb_screen import AdbCapture
-from src.capture.image_validation import load_local_image
 from src.capture.image_utils import save_image
-from src.business.recognition.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
+from src.capture.image_validation import load_local_image
 from src.config.env import SCREENSHOTS_DIR
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QRect, Qt, QPoint
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-
 from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
 from src.ui.shared.widgets import DialogFooter, PageHeader
 

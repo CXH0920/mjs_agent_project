@@ -182,7 +182,7 @@ def _find_paged_data_boundaries(
 
     min_gap, max_gap = width * 0.075, width * 0.125
     direct_gaps = [
-        bottom - top for top, bottom in zip(centers, centers[1:])
+        bottom - top for top, bottom in zip(centers, centers[1:], strict=False)
         if min_gap <= bottom - top <= max_gap
     ]
     if not direct_gaps:
@@ -206,7 +206,7 @@ def _find_paged_data_boundaries(
         raise ValueError(f"未能定位{layout.key}分页榜单数据行")
 
     restored = [anchors[0]]
-    for top, bottom in zip(anchors, anchors[1:]):
+    for top, bottom in zip(anchors, anchors[1:], strict=False):
         segments = max(1, round((bottom - top) / row_gap))
         restored.extend(
             round(top + (bottom - top) * index / segments)
@@ -216,7 +216,7 @@ def _find_paged_data_boundaries(
         restored.insert(0, round(restored[0] - row_gap))
 
     boundaries = [round(restored[0] - row_gap / 2)]
-    boundaries.extend(round((top + bottom) / 2) for top, bottom in zip(restored, restored[1:]))
+    boundaries.extend(round((top + bottom) / 2) for top, bottom in zip(restored, restored[1:], strict=False))
     boundaries.append(round(restored[-1] + row_gap / 2))
     return boundaries
 
@@ -263,7 +263,7 @@ def restore_missing_boundaries(boundaries: list[int]) -> tuple[list[int], set[in
         return boundaries, set()
 
     restored = [boundaries[0]]
-    for top, bottom in zip(boundaries, boundaries[1:]):
+    for top, bottom in zip(boundaries, boundaries[1:], strict=False):
         gap = bottom - top
         segments = round(gap / median_gap)
         if gap > median_gap * 1.5 and segments > 1:
@@ -304,14 +304,14 @@ def build_rank_digit_templates(
 ) -> dict[str, list[np.ndarray]]:
     """用视觉行序已知的排名格建立当前榜单字体的数字模板。"""
     templates = {str(digit): [] for digit in range(10)}
-    for local_rank, (top, bottom) in enumerate(zip(boundaries, boundaries[1:])):
+    for local_rank, (top, bottom) in enumerate(zip(boundaries, boundaries[1:], strict=False)):
         row = panel[top + 3:bottom - 3]
         rank_cell = split_row_cells(row, columns, column_breaks)["排名"]
         glyphs = segment_glyphs(rank_cell)
         rank_text = str(rank_start + local_rank)
         if len(glyphs) != len(rank_text):
             continue
-        for digit, glyph in zip(rank_text, glyphs):
+        for digit, glyph in zip(rank_text, glyphs, strict=False):
             templates[digit].append(normalize_glyph(glyph))
     return templates
 
@@ -330,7 +330,7 @@ def prepare_rate_templates(
         panel, boundaries, columns, column_breaks, rank_start,
     )
     results: dict[int, tuple[str, float]] = {}
-    for local_rank, (top, bottom) in enumerate(zip(boundaries, boundaries[1:]), start=1):
+    for local_rank, (top, bottom) in enumerate(zip(boundaries, boundaries[1:], strict=False), start=1):
         row = panel[top + 3:bottom - 3]
         rate_cell = split_row_cells(row, columns, column_breaks)["胜率"]
         text, confidence = recognize_cell(rate_cell)
@@ -339,7 +339,7 @@ def prepare_rate_templates(
         glyphs = segment_glyphs(rate_cell)
         if match and len(glyphs) >= 5:
             # 小数位不受当前十位数字误识问题影响，能提供同字体的可靠样本。
-            for digit, glyph in zip(match.group(1), glyphs[3:5]):
+            for digit, glyph in zip(match.group(1), glyphs[3:5], strict=False):
                 templates[digit].append(normalize_glyph(glyph))
         if progress_callback:
             progress_callback()

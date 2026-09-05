@@ -4,7 +4,6 @@ from datetime import date
 
 import pytest
 from pydantic import ValidationError
-
 from src.data.models import (
     Card,
     CardType,

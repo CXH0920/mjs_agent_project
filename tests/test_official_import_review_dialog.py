@@ -8,7 +8,6 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-
 from src.business.recognition import official_data_import_service as import_module
 from src.business.recognition.official_data_import_service import OfficialDataImportService
 from src.ui.data_admin.official_import_review_dialog import OfficialImportReviewDialog

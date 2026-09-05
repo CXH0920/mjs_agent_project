@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 import warnings
+from pathlib import Path
 
 from PIL import Image
 

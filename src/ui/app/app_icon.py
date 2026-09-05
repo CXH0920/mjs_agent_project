@@ -7,7 +7,6 @@ import logging
 from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QWidget
-
 from src.config.env import BUNDLE_ROOT
 
 logger = logging.getLogger(__name__)

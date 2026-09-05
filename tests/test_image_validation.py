@@ -6,7 +6,6 @@ import io
 
 import pytest
 from PIL import Image
-
 from src.capture import image_validation
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import pytest
-
 from src.scraper.official_source.adapter import extract_js_array
 
 

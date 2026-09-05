@@ -8,7 +8,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QApplication, QDialog, QListWidgetItem, QMessageBox
-
 from src.business.recognition.ocr_worker import OfficialImportTask
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 

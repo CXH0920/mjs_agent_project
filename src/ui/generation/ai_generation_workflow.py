@@ -6,7 +6,6 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-
 from src.business.ai_cost import estimate_generation_cost
 from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.synergy_fetch_service import SynergyFetchService

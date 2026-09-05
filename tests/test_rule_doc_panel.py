@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
-
 from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 
 
@@ -204,6 +203,7 @@ def test_run_script_clears_output_buffer_between_runs(tmp_path, monkeypatch):
 
 def _write_sync_report(root: Path) -> None:
     import json as _json
+
     from src.business.rag import rule_doc_service as rds
     report = rds.sync_json_path(root)
     report.parent.mkdir(parents=True, exist_ok=True)

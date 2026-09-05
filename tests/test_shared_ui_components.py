@@ -7,7 +7,6 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget
-
 from src.ui.shared.style import (
     GLOBAL_STYLE,
     ROLE_DANGER,

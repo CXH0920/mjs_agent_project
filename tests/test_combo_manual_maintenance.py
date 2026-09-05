@@ -10,7 +10,6 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
-
 from src.business.maintenance.corpus_services import ComboService
 from src.data.combo_manager import ComboManager
 from src.data.models import Combo

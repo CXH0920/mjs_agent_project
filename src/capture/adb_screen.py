@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 
 from PIL import Image
-
 from src.capture.image_validation import load_png_image_bytes
 
 logger = logging.getLogger(__name__)

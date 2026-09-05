@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
 )
-
 from src.config.env import is_full_build
 from src.ui.shared.style import (
     BORDER,
@@ -31,7 +30,6 @@ from src.ui.shared.style import (
     TEXT_PRIMARY,
     set_ui_role,
 )
-
 
 _NAVIGATION_STYLE = f"""
 QFrame#navigationRail {{

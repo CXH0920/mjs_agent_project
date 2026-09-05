@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from shiboken6 import isValid
-
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,7 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from shiboken6 import isValid
 from src.ui.shared.faction_colors import get_faction_colors
 
 

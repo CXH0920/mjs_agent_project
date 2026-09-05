@@ -8,7 +8,6 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
-
 from src.data.equip_attrs_repository import EquipAttrsRepository
 from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
 

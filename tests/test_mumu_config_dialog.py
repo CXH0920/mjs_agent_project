@@ -11,7 +11,6 @@ import pytest
 from PIL import Image
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton
-
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection

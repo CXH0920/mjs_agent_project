@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from src.config.env import PROJECT_ROOT as ROOT
+
 DATA = ROOT / "data"
 CORPUS = ROOT / "data" / "rag_corpus"
 

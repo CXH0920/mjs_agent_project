@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
 from src.ui.shared.markdown_renderer import render_markdown

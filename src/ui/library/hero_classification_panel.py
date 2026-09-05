@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -30,17 +30,25 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from src.business.maintenance.classification_suggest import suggest_hero_categories
+from src.business.maintenance.corpus_services import ClassificationService
+from src.business.rag.refinement_service import build_generator
 from src.data.hero_classification_repository import (
     ClassificationCategory,
     HeroClassificationRepository,
 )
 from src.ui.shared.checkable_combo import CheckableComboBox
-from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING, set_tone, set_ui_role
-from src.business.maintenance.classification_suggest import suggest_hero_categories
-from src.business.maintenance.corpus_services import ClassificationService
-from src.business.rag.refinement_service import build_generator
 from src.ui.shared.persist import run_edit_dialog
+from src.ui.shared.style import (
+    ROLE_DANGER,
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    TONE_INFO,
+    TONE_SUCCESS,
+    TONE_WARNING,
+    set_tone,
+    set_ui_role,
+)
 from src.ui.shared.widgets import DialogFooter, PageActionBar, clear_layout, show_toast
 
 logger = logging.getLogger(__name__)

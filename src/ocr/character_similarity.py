@@ -89,7 +89,7 @@ class CharacterSimilarityService:
             return None
         mismatches = [
             (source, target)
-            for source, target in zip(text, candidate)
+            for source, target in zip(text, candidate, strict=False)
             if source != target
         ]
         if len(mismatches) != 1:
@@ -136,7 +136,7 @@ class CharacterSimilarityService:
 
     def _visual_score(self, text: str, candidate: str) -> float:
         score = 0.0
-        for text_char, candidate_char in zip(text, candidate):
+        for text_char, candidate_char in zip(text, candidate, strict=False):
             score += 1.0 if text_char == candidate_char else self._multi_dim_similarity(text_char, candidate_char)
         extra = abs(len(candidate) - len(text))
         return score - extra
@@ -144,7 +144,7 @@ class CharacterSimilarityService:
     def _tie_break_key(self, text: str, candidate: str) -> tuple[float, int]:
         pinyin_score = 0.0
         stroke_difference = 0
-        for text_char, candidate_char in zip(text, candidate):
+        for text_char, candidate_char in zip(text, candidate, strict=False):
             if text_char == candidate_char:
                 pinyin_score += 1.0
                 continue
@@ -168,7 +168,7 @@ class CharacterSimilarityService:
         )[:4]
         if len(first_code) != 4 or len(second_code) != 4:
             return 0.0
-        return sum(left == right for left, right in zip(first_code, second_code)) / 4.0
+        return sum(left == right for left, right in zip(first_code, second_code, strict=False)) / 4.0
 
     def _cangjie_score(self, first: str, second: str) -> float:
         first_code = self._value(first, "cangjie").strip().upper()

@@ -9,12 +9,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
-
 from src.data.announcement_manager import (
     Announcement,
     AnnouncementManager,

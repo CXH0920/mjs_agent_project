@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject, QThread, Signal
-
 from src.business.rag.refinement_service import PendingBlock, suggest_one
 
 logger = logging.getLogger("index_refinement")

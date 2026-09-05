@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
 )
-
 from src.data.hero_manager import HeroManager
 from src.data.models import SynergyScore, synergy_rating_for_score
 from src.ui.shared.widgets import DialogFooter, PageHeader

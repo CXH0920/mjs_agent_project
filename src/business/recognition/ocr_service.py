@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
-
 from src.ocr.ocr_loader import get_template_manager
 
 logger = logging.getLogger(__name__)

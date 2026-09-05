@@ -16,8 +16,7 @@ import re
 import sys
 from subprocess import Popen
 
-from PySide6.QtCore import QObject, Signal, QProcess, QProcessEnvironment, QTimer
-
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,

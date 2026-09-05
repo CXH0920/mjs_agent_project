@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from src.rag import indexer
 
 

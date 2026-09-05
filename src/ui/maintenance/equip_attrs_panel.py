@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.data.equip_attrs_repository import (
     VALID_SUBTYPES,
     EquipAttrItem,

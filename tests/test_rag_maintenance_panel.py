@@ -10,7 +10,6 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
-
 from src.business.rag.audit_service import audit_summary, format_audit_issues
 from src.ui.maintenance.rag_maintenance_panel import (
     RagMaintenancePanel,

@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.business.card_catalog import CardCatalogService
 from src.data.card_catalog import (
     CardAnnotationRepository,

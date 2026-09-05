@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 
-from src.data.hero_classification_repository import ClassificationCategory
 from src.business.maintenance.classification_suggest import suggest_hero_categories
+from src.data.hero_classification_repository import ClassificationCategory
 
 
 class FakeGenerator:

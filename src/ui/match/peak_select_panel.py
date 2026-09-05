@@ -22,15 +22,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.analysis.peak_ban_advice import (
     derive_win_rate_ranks,
     evaluate_peak_ban_advice,
 )
-from src.business.recognition.peak_select_watcher import PoolSnapshot, PeakSelectWatcher
+from src.business.maintenance.corpus_services import ComboService
+from src.business.recognition.peak_select_watcher import PeakSelectWatcher, PoolSnapshot
 from src.config.env import SCREENSHOTS_DIR
 from src.data.combo_seats import format_seats
-from src.business.maintenance.corpus_services import ComboService
 from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource

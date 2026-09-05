@@ -21,10 +21,10 @@ from pathlib import Path
 # 复用爬虫核心模块的公开 API
 from src.config.env import BUNDLE_ROOT
 from src.scraper.official_source.crawler import (
-    transform,
-    validate_heroes,
     fetch_all_raw,
     save_json_atomic,
+    transform,
+    validate_heroes,
 )
 
 logger = logging.getLogger(__name__)

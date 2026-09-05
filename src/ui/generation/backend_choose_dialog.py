@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.ai_cost import estimate_generation_cost
 from src.config.env import has_available_api_profile
 from src.ui.shared.widgets import DialogFooter, PageHeader
@@ -175,7 +174,7 @@ class BackendChooseDialog(QDialog):
         )
         for key in ("estimated_input_tokens", "estimated_output_tokens", "estimated_tokens", "estimated_cost_cny", "message"):
             est[key] = new[key]
-        for label, text in zip(self._api_estimation_labels, self._estimation_lines()):
+        for label, text in zip(self._api_estimation_labels, self._estimation_lines(), strict=False):
             label.setText(text)
         if self._api_message_label is not None:
             self._api_message_label.setText(est.get("message", ""))

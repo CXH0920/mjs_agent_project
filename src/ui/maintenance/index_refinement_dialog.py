@@ -32,7 +32,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.rag.refinement_service import (
     DEFAULT_CORPUS_DIR,
     INDEX_FIELDS,

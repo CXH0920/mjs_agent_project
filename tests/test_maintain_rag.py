@@ -8,7 +8,6 @@
 import builtins
 
 import pytest
-
 from src.scripts import maintain_rag
 
 

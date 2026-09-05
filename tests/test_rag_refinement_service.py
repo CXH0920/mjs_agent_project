@@ -7,8 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-
-
 from src.business.rag import refinement_service
 from src.business.rag.refinement_service import (
     INDEX_FIELDS,

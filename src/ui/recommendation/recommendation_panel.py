@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from PySide6.QtCore import QTimer, Qt, Signal
+
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -26,30 +27,22 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
+from src.business.maintenance.corpus_services import ComboService
 from src.config.env import SCREENSHOTS_DIR
 from src.data.combo_manager import ComboManager
 from src.data.combo_seats import format_seats
+from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.synergy_manager import SynergyManager
-from src.data.guide_manager import GuideManager
-from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
+from src.ui.library.combo_management_dialog import ComboManagementDialog
+from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.combo_detail import show_combo_detail
-from src.business.maintenance.corpus_services import ComboService
-from src.ui.library.combo_management_dialog import ComboManagementDialog
-from src.ui.shared.guide_detail_dialog import GuideDetailDialog
-from src.ui.recommendation.hero_card_widget import HeroCardWidget
-from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.faction_colors import reload_faction_colors
+from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.hero_dialogs import HeroSkillDialog
-from src.ui.shared.widgets import (
-    FlowLayout,
-    NoticeBanner,
-    PageActionBar,
-    EmptyState,
-    show_toast,
-)
+from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.style import (
     ROLE_GHOST,
     ROLE_PRIMARY,
@@ -58,6 +51,13 @@ from src.ui.shared.style import (
     TONE_INFO,
     TONE_NEUTRAL,
     TONE_WARNING,
+)
+from src.ui.shared.widgets import (
+    EmptyState,
+    FlowLayout,
+    NoticeBanner,
+    PageActionBar,
+    show_toast,
 )
 
 logger = logging.getLogger(__name__)

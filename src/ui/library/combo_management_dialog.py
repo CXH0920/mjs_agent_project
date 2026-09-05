@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-
 from src.business.maintenance.corpus_services import ComboService
 from src.data.combo_seats import format_seats
 from src.ui.library.combo_edit_dialog import ComboEditDialog

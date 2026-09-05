@@ -18,14 +18,14 @@
     python -m src.scripts.audit_rule_doc --update-snapshot  # 校验后刷新基线快照
     python -m src.scripts.audit_rule_doc --doc <path> --snapshot <path>  # 指定路径（测试用）
 """
-import re
-import io
-import os
-import sys
-import json
-import hashlib
 import argparse
 import datetime
+import hashlib
+import io
+import json
+import os
+import re
+import sys
 
 from src.scripts import build_rule_corpus as brc
 from src.scripts.rag_common import get_script_logger
@@ -33,6 +33,7 @@ from src.scripts.rag_common import get_script_logger
 logger = get_script_logger("audit_rule_doc")
 
 from src.config.env import PROJECT_ROOT as ROOT
+
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_SNAPSHOT = os.path.join(ROOT, '.rule_doc_snapshot.json')
 SNAPSHOT_VERSION = 1

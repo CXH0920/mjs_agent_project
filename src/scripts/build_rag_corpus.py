@@ -6,10 +6,10 @@ from src.data.hero_timeline import (
     TRIGGER_OVERRIDES,
     TRIGGER_OVERRIDES_AUTHORED,
     load_timeline,
-    stamp_hero_block,
     stale_overrides,
+    stamp_hero_block,
 )
-from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 
@@ -224,6 +224,7 @@ json_path = CORPUS / '武将RAG语料.json'
 with open(md_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(md_lines))
 from src.scripts import rag_curated
+
 _merged = rag_curated.merge_curated(blocks, json_path)
 if _merged:
     print('已保留 curated 精化块:', _merged)

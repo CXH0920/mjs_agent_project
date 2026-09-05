@@ -28,14 +28,15 @@ from __future__ import annotations
 import logging
 import random
 import time
+
 from src.config.env import BUNDLE_ROOT
 from src.scraper.ai.browser_session import DeepSeekBrowserSession
+from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.prompt_utils import (
-    load_prompt,
     build_guide_prompt,
     build_synergy_prompt,
+    load_prompt,
 )
-from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.utils import (
     convert_ids_to_int,
     has_required_guide_fields,

@@ -13,15 +13,12 @@
 返回问题清单（list[str]）；无问题时返回空列表。不影响语料构建，
 由 maintain_rag.py 选择是否以 --strict-audit 视为失败。
 """
-import io, sys, os, json, re
+import io
+import json
+import os
+import re
+import sys
 
-from src.config.env import PROJECT_ROOT as ROOT
-from src.data.hero_timeline import (  # noqa: E402
-    TRIGGER_OVERRIDES_AUTHORED,
-    hero_last_change,
-    load_timeline,
-    stale_overrides,
-)
 from src.business.rag.audit_service import (  # noqa: E402
     collect_card_points,
     collect_equip_attrs,
@@ -30,7 +27,13 @@ from src.business.rag.audit_service import (  # noqa: E402
     collect_unclassified,
     collect_unknown_heroes,
 )
-
+from src.config.env import PROJECT_ROOT as ROOT
+from src.data.hero_timeline import (  # noqa: E402
+    TRIGGER_OVERRIDES_AUTHORED,
+    hero_last_change,
+    load_timeline,
+    stale_overrides,
+)
 
 # 疑似专属牌名的结尾字（收窄，避免把通用术语误判为牌名）
 _SUFFIX = '剑戟弓鞭锤钩刃枪甲盾玺伞幡符印珠镜扇书车'

@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import threading
 import time
-import os
-import logging
 import types
+from types import SimpleNamespace
 
 import pytest
-from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-
 from src.business.emulator.capture_service import CaptureService
-from src.business.recognition.ocr_service import OcrService
 from src.business.recognition import ocr_worker as ocr_worker_module
-from src.business.recognition.ocr_worker import OfficialImportTask, OcrTask, OcrWorker
+from src.business.recognition.ocr_service import OcrService
+from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
 
 
 def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch) -> None:

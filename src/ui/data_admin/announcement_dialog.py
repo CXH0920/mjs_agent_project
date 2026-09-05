@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QTextBrowser,
     QVBoxLayout,
 )
-
 from src.business.announcement import clean_html
 from src.data.announcement_manager import (
     Announcement,

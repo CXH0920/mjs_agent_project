@@ -12,7 +12,6 @@ import logging
 import tempfile
 
 from PySide6.QtCore import Signal
-
 from src.business.fetching.base_fetch_service import BaseFetchService
 from src.business.fetching.fetch_utils import is_generation_progress_line, parse_generation_event
 from src.business.fetching.synergy_reload_worker import SynergyReloadWorker

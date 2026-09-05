@@ -25,7 +25,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
-
 from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
@@ -482,7 +481,7 @@ class GeneralRecognizer:
             return ""
 
         by_family: dict[str, tuple[dict, dict]] = {}
-        for raw, item in zip(evidence, parsed):
+        for raw, item in zip(evidence, parsed, strict=False):
             confidence = float(raw.get("confidence", 0.0))
             if (
                 item.get("length_mode") != "complete"

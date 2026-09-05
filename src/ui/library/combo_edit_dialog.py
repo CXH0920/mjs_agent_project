@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.maintenance.corpus_services import ComboService
 from src.data.models import Combo
 from src.ui.shared.faction_colors import get_faction_colors
@@ -167,9 +166,9 @@ class ComboEditDialog(QDialog):
         self._hero1 = self._hero_mgr.get_hero(combo.hero1_id)
         self._hero2 = self._hero_mgr.get_hero(combo.hero2_id)
         self._rating_spin.setValue(combo.rating)
-        for seat, check in zip(SEAT_OPTIONS, self._hero1_seat_checks):
+        for seat, check in zip(SEAT_OPTIONS, self._hero1_seat_checks, strict=False):
             check.setChecked(seat in combo.hero1_seats)
-        for seat, check in zip(SEAT_OPTIONS, self._hero2_seat_checks):
+        for seat, check in zip(SEAT_OPTIONS, self._hero2_seat_checks, strict=False):
             check.setChecked(seat in combo.hero2_seats)
         self._note_edit.setPlainText(combo.note)
         self._refresh_hero_slots()
@@ -181,8 +180,8 @@ class ComboEditDialog(QDialog):
         if self._hero1.id == self._hero2.id:
             QMessageBox.warning(self, "信息不完整", "武将 1 与武将 2 不能相同")
             return
-        seats1 = [seat for seat, check in zip(SEAT_OPTIONS, self._hero1_seat_checks) if check.isChecked()]
-        seats2 = [seat for seat, check in zip(SEAT_OPTIONS, self._hero2_seat_checks) if check.isChecked()]
+        seats1 = [seat for seat, check in zip(SEAT_OPTIONS, self._hero1_seat_checks, strict=False) if check.isChecked()]
+        seats2 = [seat for seat, check in zip(SEAT_OPTIONS, self._hero2_seat_checks, strict=False) if check.isChecked()]
         if not seats1 and not seats2:
             answer = QMessageBox.question(
                 self,

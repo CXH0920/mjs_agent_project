@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 from src.data.hero_timeline import CORPUS_BASE_DATE, load_timeline, stamp_guide_block
-from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 

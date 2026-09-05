@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 from src.config.env import BUNDLE_ROOT
+from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 from src.scraper.official_source.crawler import (
     BAIKE_URL,
     fetch,
@@ -30,7 +31,6 @@ from src.scraper.official_source.crawler import (
     transform,
     validate_heroes,
 )
-from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 
 logger = logging.getLogger(__name__)
 

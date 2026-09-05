@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
+from src.data.hero_manager import HeroManager
 from src.ui.shared.hero_select_dialog import (
     BaseHeroSelectDialog,
-    SelectionMode,
     ReturnFormat,
+    SelectionMode,
 )
-from src.data.hero_manager import HeroManager
 
 
 class HeroFetchDialog(BaseHeroSelectDialog):

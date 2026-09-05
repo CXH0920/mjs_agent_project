@@ -9,28 +9,39 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QTextBrowser
-
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QTextBrowser,
+    QVBoxLayout,
+)
 from src.data.combo_manager import ComboManager
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Combo, Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
-from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
-from src.ui.shared import persist as persist_module
-from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
-from src.ui.shared.checkable_combo import CheckableComboBox
-from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
+from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
+from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.library.guide_edit_dialog import GuideEditDialog
-from src.ui.shared.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
-from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
-from src.ui.recommendation.hero_card_widget import HeroCardWidget
+from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
+from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
-from src.ui.recommendation.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
-from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
+from src.ui.recommendation.hero_card_widget import HeroCardWidget
+from src.ui.recommendation.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
+from src.ui.shared import persist as persist_module
+from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.shared.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
+from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
 
 
 def _app() -> QApplication:

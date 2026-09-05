@@ -36,14 +36,12 @@ from src.config.env import (
 )
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
-
+from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.prompt_utils import estimate_cost, estimate_cost_by_tokens
 from src.scraper.ai.utils import (
     load_heroes,
     safe_url_origin,
 )
-
-from src.scraper.ai.api_generator import AIBatchGenerator
 
 logger = logging.getLogger(__name__)
 

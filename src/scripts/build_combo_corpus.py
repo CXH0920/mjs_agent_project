@@ -12,7 +12,7 @@ import csv
 import re
 from pathlib import Path
 
-from src.scripts.rag_common import CORPUS, load_json, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 

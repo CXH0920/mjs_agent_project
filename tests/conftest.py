@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # 各测试文件无需再各自 setdefault
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from src.ocr import character_feature_repository
 from src.business.recognition import ocr_worker as _ocr_worker_module
+from src.ocr import character_feature_repository
 
 # 注销生产环境的退役 worker 进程退出钩子。该钩子在 xdist worker 子进程退出时会
 # 因 QThread 未及时结束而调用 os._exit(1) 杀掉整个进程，导致 xdist 报

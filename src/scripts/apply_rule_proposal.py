@@ -23,9 +23,10 @@ import re
 import subprocess
 import sys
 
-from src.config.env import PROJECT_ROOT as ROOT
 from src.business.rag.rule_doc_service import build_faq_revise_row
+from src.config.env import PROJECT_ROOT as ROOT
 from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE
+
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
 

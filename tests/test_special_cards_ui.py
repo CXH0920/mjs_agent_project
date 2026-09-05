@@ -8,7 +8,6 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
-
 from src.data.special_cards_repository import SpecialCardRepository
 from src.ui.library.special_cards_panel import SpecialCardEditDialog, SpecialCardsPanel
 

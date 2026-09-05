@@ -5,9 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
-
-from src.ui.shared.portrait import load_portrait
 from src.ui.shared.faction_colors import get_faction_colors
+from src.ui.shared.portrait import load_portrait
 from src.ui.shared.style import (
     FONT_SIZE_MD,
     TONE_SUCCESS,
@@ -15,7 +14,6 @@ from src.ui.shared.style import (
     set_style_property,
 )
 from src.ui.shared.widgets import StatusBadge
-
 
 # 禁选建议徽章配色（按象限 key）：Ban 位首选红底、热门强将蓝底
 _BAN_ADVICE_STYLES = {

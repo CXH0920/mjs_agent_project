@@ -24,7 +24,6 @@ from src.data.announcement_manager import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.scraper.official_source import announcement as announcement_module
-from src.ui.app.main_window import MainWindow
 from src.scraper.official_source.announcement import (
     build_hero_snapshot,
     build_update_candidates,
@@ -35,6 +34,7 @@ from src.scraper.official_source.announcement import (
     hero_field_diff_summary,
     parse_announcement_list,
 )
+from src.ui.app.main_window import MainWindow
 
 HERO_NAMES = {"贾诩", "马钧", "山涛", "王元姬", "羊祜"}
 

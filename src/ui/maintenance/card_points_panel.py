@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import logging
-
 import sys
 from pathlib import Path
 
@@ -35,7 +34,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.maintenance.corpus_services import CardPointsService
 from src.config.env import PROJECT_ROOT
 from src.data.card_points_repository import (
@@ -48,6 +46,7 @@ from src.data.card_points_repository import (
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_SECONDARY, TONE_WARNING, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageActionBar, ScriptRunner, show_toast
+
 logger = logging.getLogger(__name__)
 
 

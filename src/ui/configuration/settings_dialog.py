@@ -32,7 +32,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.config.env import (
     DEFAULT_ENV_FILE,
     DEFAULT_PRICING_FILE,
@@ -46,7 +45,7 @@ from src.config.env import (
     save_env_file,
     save_pricing_config,
 )
-from src.ui.shared.widgets import close_after_toast, DialogFooter, PageHeader
+from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 
 logger = logging.getLogger(__name__)
 

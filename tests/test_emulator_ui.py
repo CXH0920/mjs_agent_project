@@ -9,7 +9,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QTabWidget, QTextBrowser
-
 from src.business.analysis.recommendation_service import RecommendationData
 from src.business.emulator.capture_service import CaptureService
 from src.data.guide_manager import GuideManager
@@ -18,12 +17,12 @@ from src.data.models import Hero, HeroGuide, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.app.main_window import MainWindow, PollOutcome
-from src.ui.match.match_guide_panel import MatchGuidePanel
-from src.ui.shared.capture_lock import CaptureSource
-from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.app.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
+from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.recommendation.recommendation_panel import HeroCardWidget, RecommendationPanel
+from src.ui.shared.capture_lock import CaptureSource
 from src.ui.shared.hero_dialogs import HeroSkillDialog
+from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 
 
 def _app() -> QApplication:

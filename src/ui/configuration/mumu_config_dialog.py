@@ -29,13 +29,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
 from src.business.recognition.ocr_service import OcrService
-from src.capture.image_validation import load_local_image
 from src.capture.image_utils import pil_to_qpixmap
+from src.capture.image_validation import load_local_image
 from src.capture.prober import MuMuDeviceInfo
 from src.config.env import BUNDLE_ROOT, SCREENSHOTS_DIR
 from src.ui.configuration.mumu_config_sections import (
@@ -43,7 +42,7 @@ from src.ui.configuration.mumu_config_sections import (
     MumuOcrPollingSection,
     MumuTemplateSection,
 )
-from src.ui.shared.widgets import close_after_toast, DialogFooter, PageHeader, show_toast
+from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast, show_toast
 
 logger = logging.getLogger(__name__)
 

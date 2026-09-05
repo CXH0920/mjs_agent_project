@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from datetime import datetime
 from html import escape
-import re
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer
@@ -26,17 +26,16 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSplitter,
     QSpinBox,
+    QSplitter,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
-    QStyle,
 )
-
 from src.business.card_catalog import CardCatalogService
 from src.data.card_catalog import (
     EFFECT_STATUSES,

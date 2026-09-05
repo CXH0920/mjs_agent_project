@@ -5,7 +5,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from PIL import Image
-
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_worker import OfficialImportTask
 

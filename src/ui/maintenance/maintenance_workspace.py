@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.ui.shared.style import (
     ROLE_GHOST,
     TONE_DANGER,

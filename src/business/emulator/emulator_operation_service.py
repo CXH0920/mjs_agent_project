@@ -7,7 +7,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, TypeVar
 
 from PySide6.QtCore import QObject, Signal
-
 from src.business.emulator.capture_service import CaptureService
 from src.capture.adb_screen import AdbCapture
 from src.capture.prober import probe_all_devices_with_status, probe_mumu_adb, test_adb_path

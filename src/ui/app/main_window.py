@@ -24,11 +24,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from src.data.announcement_manager import AnnouncementStatus
-from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.business.announcement.announcement_service import AnnouncementCheckResult
 from src.business.card_catalog import CardCatalogService
+from src.data.announcement_manager import AnnouncementStatus
+from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.ui.app.app_services import AppServices
 from src.ui.app.status_chips import StatusChips
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
@@ -36,21 +35,21 @@ from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
 logger = logging.getLogger(__name__)
 
-from src.ui.library.hero_browser import HeroBrowser
+from src.config.env import PROJECT_ROOT, is_full_build
+from src.ui.app.poll_coordinator import PollOutcome, PollResult
+from src.ui.app.shell_widgets import NavigationRail
+from src.ui.configuration.faction_color_dialog import FactionColorDialog
 from src.ui.configuration.settings_dialog import SettingsDialog
 from src.ui.data_admin.data_management_dialog import DataManagementDialog
-from src.ui.configuration.faction_color_dialog import FactionColorDialog
+from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
+from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.library.fetch_dialog import HeroFetchDialog
-from src.ui.app.poll_coordinator import PollOutcome, PollResult
+from src.ui.library.hero_browser import HeroBrowser
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
-from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
-from src.ui.library.card_management_panel import CardManagementPanel
-from src.ui.app.shell_widgets import NavigationRail
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import NoticeBanner, show_toast
-from src.config.env import PROJECT_ROOT, is_full_build
 
 
 class MainWindow(QMainWindow):
@@ -1067,7 +1066,7 @@ class MainWindow(QMainWindow):
 
     def _open_mumu_config(self) -> None:
         """打开模拟器配置对话框"""
-        from src.config.env import get_mumu_config, save_env_file, DEFAULT_ENV_FILE
+        from src.config.env import DEFAULT_ENV_FILE, get_mumu_config, save_env_file
         from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 
         config = get_mumu_config()

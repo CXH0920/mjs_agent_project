@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.data.special_cards_repository import (
     SPECIAL_CATEGORIES,
     SpecialCardItem,

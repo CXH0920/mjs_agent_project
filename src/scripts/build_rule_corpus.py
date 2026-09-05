@@ -9,7 +9,7 @@
 """
 import re
 
-from src.scripts.rag_common import CORPUS, HEADING_RE, SEPARATOR_RE, save_json, setup_stdout, project_path
+from src.scripts.rag_common import CORPUS, HEADING_RE, SEPARATOR_RE, project_path, save_json, setup_stdout
 
 TERM_BLOCK_KEYWORDS = ('术语表', '牌的类型', '动作定义', '状态定义', '区域清单', '资源')
 TERM_BLACKLIST_PREFIX = ('类型', '动作', '状态', '区域', '资源', '花色体系', '——')

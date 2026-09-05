@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.business.maintenance.corpus_services import SpecialCardsService
 from src.business.rag.audit_service import GENERIC_HERO_NAMES
 from src.data.special_cards_repository import (
@@ -37,8 +36,17 @@ from src.data.special_cards_repository import (
     SpecialCardRepository,
 )
 from src.ui.shared.persist import run_edit_dialog
-from src.ui.shared.style import ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_WARNING, set_tone, set_ui_role
+from src.ui.shared.style import (
+    ROLE_DANGER,
+    ROLE_PRIMARY,
+    ROLE_SECONDARY,
+    TONE_INFO,
+    TONE_WARNING,
+    set_tone,
+    set_ui_role,
+)
 from src.ui.shared.widgets import DialogFooter, PageActionBar, PageHeader, clear_layout, show_toast
+
 logger = logging.getLogger(__name__)
 
 # 各类别可编辑字段：key -> (标签, 是否多行)

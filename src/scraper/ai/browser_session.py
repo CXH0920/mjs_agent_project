@@ -7,7 +7,8 @@ import time
 import traceback
 from typing import Any
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout, sync_playwright
+from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from src.config.env import PROJECT_ROOT
 from src.scraper.ai.utils import safe_url_origin
 

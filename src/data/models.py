@@ -10,8 +10,8 @@ from __future__ import annotations
 from datetime import date
 from enum import Enum
 from typing import Annotated
-from pydantic import BaseModel, Field, field_validator, model_validator
 
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_SKILL_TEXT_LENGTH = 4_000
 MAX_GUIDE_TEXT_LENGTH = 20_000

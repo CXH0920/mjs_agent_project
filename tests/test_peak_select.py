@@ -13,7 +13,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
-
 from src.business.analysis.peak_ban_advice import PeakBanAdvice
 from src.business.recognition.peak_select_watcher import (
     PeakSelectWatcher,

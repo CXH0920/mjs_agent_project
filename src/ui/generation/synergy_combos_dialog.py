@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
-
 from src.data.combo_manager import ComboManager
 from src.data.combo_seats import format_seats
 from src.data.models import Combo

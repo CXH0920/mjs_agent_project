@@ -15,7 +15,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
-
 from src.config.env import PROJECT_ROOT
 from src.data.recommendation_index_repository import mark_recommendation_index_stale
 from src.ocr import official_board_parser
@@ -238,7 +237,7 @@ class OfficialDataImportService:
                 if "胜率" in columns else ({}, None)
             )
             for local_rank, (top, bottom) in enumerate(
-                zip(boundaries, boundaries[1:]), start=1,
+                zip(boundaries, boundaries[1:], strict=False), start=1,
             ):
                 row = panel[top + 3:bottom - 3]
                 if row.size == 0:

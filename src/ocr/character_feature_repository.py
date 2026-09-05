@@ -12,6 +12,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+
 DEFAULT_CHARACTER_FEATURE_CACHE = BUNDLE_ROOT / "src" / "data" / "char_info_cache.json"
 USER_CHARACTER_FEATURE_CACHE = PROJECT_ROOT / "data" / "char_info_cache.json"
 DEFAULT_WUBI_TABLE = BUNDLE_ROOT / "src" / "data" / "wubi86.txt"

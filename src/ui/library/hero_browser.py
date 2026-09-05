@@ -27,18 +27,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from src.data.combo_manager import ComboManager
-from src.data.hero_manager import HeroManager
-from src.data.guide_manager import GuideManager
-from src.data.synergy_manager import SynergyManager
-from src.data.models import Hero, HeroGuide
 from src.business.maintenance.data_management_service import DataMutationService
+from src.data.combo_manager import ComboManager
+from src.data.guide_manager import GuideManager
+from src.data.hero_manager import HeroManager
+from src.data.models import Hero, HeroGuide
+from src.data.synergy_manager import SynergyManager
 from src.ui.library.guide_edit_dialog import GuideEditDialog
-from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
+from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
 

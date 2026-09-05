@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from src.scraper.ai.utils import _save_json, GUIDE_BATCH_SAVE_INTERVAL, SYNERGY_BATCH_SAVE_INTERVAL
 from src.scraper.ai import rag_prompt
+from src.scraper.ai.utils import GUIDE_BATCH_SAVE_INTERVAL, SYNERGY_BATCH_SAVE_INTERVAL, _save_json
 
 logger = logging.getLogger(__name__)
 

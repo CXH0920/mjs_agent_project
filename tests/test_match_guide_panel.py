@@ -8,7 +8,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QScrollArea
-
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero

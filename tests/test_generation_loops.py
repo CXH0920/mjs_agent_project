@@ -14,7 +14,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from src.scraper.ai import generation as gen_module
 from src.scraper.ai.generation import (
     run_synergy_generation,

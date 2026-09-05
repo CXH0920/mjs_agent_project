@@ -10,13 +10,13 @@ import logging
 import os
 import shutil
 import sys
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
-
-from src.ui.app.main_window import MainWindow
-from src.ui.app.chinese_translator import install_chinese_qt_translator
 from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
+from src.ui.app.chinese_translator import install_chinese_qt_translator
+from src.ui.app.main_window import MainWindow
 from src.ui.shared.style import GLOBAL_STYLE
 
 logger = logging.getLogger(__name__)

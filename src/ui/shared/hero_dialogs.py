@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.data.models import Hero, Skill
 from src.ui.shared.style import ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, PageHeader

@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
 )
-
 from src.ui.app.chinese_translator import install_chinese_qt_translator
 
 

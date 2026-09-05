@@ -14,13 +14,17 @@ RAG 语料维护调度主脚本（maintain_rag.py）
 
 依赖：仅 Python 标准库；需在项目根目录运行（与 data/ docs/ src/ 同级）。
 """
-import sys, os, json, hashlib, subprocess, argparse, time
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
 
-from src.scripts import rag_audit
-from src.scripts import audit_rule_doc
-
-from src.config.env import PROJECT_ROOT as ROOT
 from src.business.rag.task_defs import TASKS
+from src.config.env import PROJECT_ROOT as ROOT
+from src.scripts import audit_rule_doc, rag_audit
 from src.scripts.rag_common import get_script_logger
 
 logger = get_script_logger("maintain_rag")

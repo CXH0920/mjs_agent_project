@@ -3,9 +3,8 @@
 from pathlib import Path
 
 import pytest
-
-from src.data import apply_incremental_update, HeroManager, SynergyManager, GuideManager
-from src.data.models import Hero, SynergyScore, HeroGuide, IncrementalUpdate
+from src.data import GuideManager, HeroManager, SynergyManager, apply_incremental_update
+from src.data.models import Hero, HeroGuide, IncrementalUpdate, SynergyScore
 
 
 class TestApplyIncrementalUpdate:

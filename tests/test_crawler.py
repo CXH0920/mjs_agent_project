@@ -8,9 +8,9 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
-
 from src.scraper.official_source import adapter as official_adapter
-from src.scraper.official_source import crawler, full as official, incremental
+from src.scraper.official_source import crawler, incremental
+from src.scraper.official_source import full as official
 
 
 class _FakeResponse:

@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QTextBrowser,
     QVBoxLayout,
 )
-
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
 from src.ui.shared.widgets import DialogFooter, PageHeader
 

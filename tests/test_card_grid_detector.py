@@ -12,7 +12,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-
 from src.ocr.card_grid_detector import derive_name_rois, detect_selection_cards
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "2v2"
@@ -155,7 +154,7 @@ def test_derive_name_rois_matches_card_proportions():
     rois = derive_name_rois(cards)
 
     assert rois[0] == (354, 329, 71, 124)
-    for card, roi in zip(cards, rois):
+    for card, roi in zip(cards, rois, strict=False):
         x, y, w, h = card
         assert x <= roi[0] and roi[0] + roi[2] <= x + w
         assert y <= roi[1] and roi[1] + roi[3] <= y + h

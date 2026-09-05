@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, QObject, QTranslator
 from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
-
 _STANDARD_BUTTON_TRANSLATIONS = {
     "OK": "确定",
     "Open": "打开",

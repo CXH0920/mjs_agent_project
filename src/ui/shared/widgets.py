@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-from src.business.common.script_runner import ScriptRunner  # noqa: F401  # re-export（#A3）
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -15,7 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from src.business.common.script_runner import ScriptRunner  # noqa: F401  # re-export（#A3）
 from src.ui.shared.style import (
     ROLE_PRIMARY,
     ROLE_SECONDARY,

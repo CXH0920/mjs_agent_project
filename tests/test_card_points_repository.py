@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.data.card_points_repository import (
     VALID_POINTS,
     VALID_SUITS,

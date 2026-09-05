@@ -14,7 +14,6 @@ from src.config.env import (
     DEFAULT_MODEL,
     get_model_pricing,
 )
-
 from src.scraper.ai.rag_prompt import build_rag_context, build_synergy_rag_context, is_rag_enabled
 from src.scraper.ai.rule_summary import load_card_system, load_core_rules
 

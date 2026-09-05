@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QGridLayout, QLabel, QVBoxLayout
-
 from src.data.combo_seats import format_seats
 from src.ui.shared.style import ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, PageHeader

@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import json
 
-from src.scripts.audit_rule_doc import audit, build_snapshot, load_snapshot
-from src.scripts.audit_rule_doc import write_snapshot
+from src.scripts.audit_rule_doc import audit, build_snapshot, load_snapshot, write_snapshot
 
 BASE_DOC = [
     "## 1. 对战流程",

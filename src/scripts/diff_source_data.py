@@ -13,14 +13,15 @@
     python -m src.scripts.diff_source_data --data heroes,cards
     python -m src.scripts.diff_source_data --out docs/changelog/变更清单-2026-08-15.md
 """
+import argparse
+import glob
 import io
+import json
 import os
 import sys
-import json
-import glob
-import argparse
 
 from src.config.env import PROJECT_ROOT as ROOT
+
 DATA_DIR = os.path.join(ROOT, 'data')
 BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
 DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')

@@ -10,14 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QProcess
-
 from src.business.fetching import fetch_utils
 from src.business.fetching.base_fetch_service import BaseFetchService
 from src.business.fetching.fetch_utils import cancel_process
 from src.scraper.ai.api_generator import (
-    AIBatchGenerator,
     MAX_OUTPUT_TOKENS,
     OUTPUT_BUDGET_EXHAUSTED_MESSAGE,
+    AIBatchGenerator,
     _read_completion_content,
 )
 from src.scraper.ai.generation import (
@@ -589,8 +588,8 @@ def test_browser_generator_rests_before_next_successful_request(
 def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> None:
     """浏览器后端应跳过 API Key 校验，并以结构化结果结束任务。"""
     import src.scraper.ai.batch as ai_batch
-    import src.scraper.ai.generation as ai_generation
     import src.scraper.ai.browser_generator as ai_playwright
+    import src.scraper.ai.generation as ai_generation
 
     closed = []
 
@@ -624,8 +623,8 @@ def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> N
 
 def test_cli_returns_nonzero_when_generation_result_has_failures(monkeypatch, tmp_path: Path) -> None:
     import src.scraper.ai.batch as ai_batch
-    import src.scraper.ai.generation as ai_generation
     import src.scraper.ai.browser_generator as ai_playwright
+    import src.scraper.ai.generation as ai_generation
 
     monkeypatch.setattr(ai_batch, "load_heroes", lambda _path: [{"id": 1, "name": "甲"}])
     monkeypatch.setattr(ai_batch, "resolve_api_config", lambda *a, **k: {"api_key": "", "api_url": "", "model": "test"})

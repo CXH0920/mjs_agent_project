@@ -4,32 +4,38 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QMessageBox, QMenu, QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QToolButton, QVBoxLayout, QWidget,
+    QButtonGroup,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSplitter,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-
-from src.config.env import SCREENSHOTS_DIR
 from src.business.analysis.match_analysis_service import MatchAnalysis, MatchAnalysisService
+from src.config.env import SCREENSHOTS_DIR
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.win_rate_repository import load_win_rates
 from src.ui.match.match_analysis_view import MatchAnalysisView
-from src.ui.match.match_lineup_state import LineupState, SIDE_ALLY, SIDE_ENEMY
-from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
+from src.ui.match.match_lineup_state import SIDE_ALLY, SIDE_ENEMY, LineupState
+from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
-from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
+from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.portrait import load_portrait
-from src.ui.shared.widgets import (
-    DoubleClickLabel,
-    EmptyState,
-    PageActionBar,
-    StatusBadge,
-)
 from src.ui.shared.style import (
     ROLE_GHOST,
     ROLE_PRIMARY,
@@ -40,6 +46,12 @@ from src.ui.shared.style import (
     TONE_WARNING,
     set_style_property,
     set_ui_role,
+)
+from src.ui.shared.widgets import (
+    DoubleClickLabel,
+    EmptyState,
+    PageActionBar,
+    StatusBadge,
 )
 
 logger = logging.getLogger(__name__)

@@ -5,9 +5,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
-from src.data.synergy_manager import SynergyManager
 from src.data.models import SynergyScore
+from src.data.synergy_manager import SynergyManager
 
 
 class TestSynergyManager:

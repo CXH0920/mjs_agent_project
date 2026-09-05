@@ -12,7 +12,6 @@ from collections.abc import Callable
 
 from pydantic import ValidationError
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-
 from src.ui.shared.widgets import show_toast
 
 logger = logging.getLogger(__name__)

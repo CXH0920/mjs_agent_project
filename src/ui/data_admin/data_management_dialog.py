@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-
 from collections.abc import Callable
 
 from PySide6.QtCore import Signal
@@ -16,7 +15,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-
 from src.business.maintenance.data_management_service import DataManagementService
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager

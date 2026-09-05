@@ -22,6 +22,7 @@ import os
 import sys
 
 from src.config.env import PROJECT_ROOT as ROOT
+
 DEFAULT_DATASET = os.path.join(ROOT, 'data', 'rag_evals', 'rule_faq_eval.json')
 FAQ_CORPUS = os.path.join(ROOT, 'data', 'rag_corpus', 'FAQ裁定块.json')
 

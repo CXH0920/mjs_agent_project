@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from src.business.maintenance.data_management_service import DataManagementService, DataMutationService
-from src.data.hero_manager import HeroManager
 from src.data.guide_manager import GuideManager
+from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 

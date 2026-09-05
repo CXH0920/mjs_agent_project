@@ -12,7 +12,6 @@ import logging
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
-
 from src.config.env import PROJECT_ROOT
 from src.data.json_repository import JsonRepository
 from src.data.manager import DataIssue

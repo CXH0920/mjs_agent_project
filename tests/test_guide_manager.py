@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from src.data.guide_manager import GuideManager
 from src.data.models import HeroGuide
 

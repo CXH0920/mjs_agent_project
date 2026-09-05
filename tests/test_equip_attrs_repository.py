@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.data.equip_attrs_repository import (
     VALID_SUBTYPES,
     EquipAttrItem,

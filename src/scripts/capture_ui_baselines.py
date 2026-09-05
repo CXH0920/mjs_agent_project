@@ -7,11 +7,9 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from src.config.env import PROJECT_ROOT
-
 from PySide6.QtWidgets import QApplication
-
 from src.business.analysis.recommendation_service import RecommendationData
+from src.config.env import PROJECT_ROOT
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, SynergyScore
@@ -19,7 +17,6 @@ from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
 from src.ui.app.main_window import MainWindow
 from src.ui.shared.style import GLOBAL_STYLE
-
 
 SIZES = ((960, 640), (1100, 760), (1440, 900))
 HERO_SPECS = (

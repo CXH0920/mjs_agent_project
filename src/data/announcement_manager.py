@@ -14,7 +14,6 @@ from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-
 from src.data.manager import DEFAULT_DATA_DIR, DataManager
 
 logger = logging.getLogger(__name__)

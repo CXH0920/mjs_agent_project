@@ -10,7 +10,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
-
 from src.ui.data_admin.combos_import_dialog import CombosImportDialog
 
 

@@ -15,14 +15,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 
 from pydantic import BaseModel
-
 from src.config.env import PROJECT_ROOT
 from src.data.models import IncrementalUpdate
 
 if TYPE_CHECKING:
+    from src.data.guide_manager import GuideManager
     from src.data.hero_manager import HeroManager
     from src.data.synergy_manager import SynergyManager
-    from src.data.guide_manager import GuideManager
 
 logger = logging.getLogger(__name__)
 
@@ -248,9 +247,9 @@ class DataFacade:
         guides_file: str | Path = DEFAULT_GUIDES_FILE,
     ):
         # 懒导入避免循环依赖：manager.py 被 hero_manager.py 等文件依赖
+        from src.data.guide_manager import GuideManager
         from src.data.hero_manager import HeroManager
         from src.data.synergy_manager import SynergyManager
-        from src.data.guide_manager import GuideManager
         self.heroes = HeroManager(heroes_file)
         self.synergies = SynergyManager(synergies_file)
         self.guides = GuideManager(guides_file)

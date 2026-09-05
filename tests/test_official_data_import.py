@@ -7,7 +7,6 @@ import csv
 import cv2
 import numpy as np
 import pytest
-
 from src.business.recognition import official_data_import_service as import_module
 from src.business.recognition.official_data_import_service import OfficialDataImportService
 from src.ocr import official_board_parser

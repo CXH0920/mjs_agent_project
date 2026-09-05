@@ -5,7 +5,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 

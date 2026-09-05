@@ -5,10 +5,9 @@
 """
 
 import pytest
-
+from src.rag import config as rag_config
 from src.scraper.ai import rag_prompt
 from src.scraper.ai.prompt_utils import build_guide_prompt, build_synergy_prompt
-from src.rag import config as rag_config
 
 
 class FakeRetriever:

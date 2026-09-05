@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-
 from src.ocr.recognizer import GeneralRecognizer
 from src.ocr.roi_config import OcrRoiConfig
 from src.ocr.template_manager import TemplateManager

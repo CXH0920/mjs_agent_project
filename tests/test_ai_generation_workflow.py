@@ -9,15 +9,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QDialog
-
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
 from src.data.synergy_manager import SynergyManager
+from src.ui.app.main_window import MainWindow
 from src.ui.generation import ai_generation_workflow as workflow_module
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
-from src.ui.app.main_window import MainWindow
 
 
 def _app() -> QApplication:

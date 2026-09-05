@@ -18,6 +18,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
 from src.config.env import PROJECT_ROOT as ROOT
+
 HEROES_FILE = ROOT / "data" / "heroes.json"
 
 

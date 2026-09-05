@@ -8,7 +8,6 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-
 from src.main import _create_startup_splash
 from src.ui.app.main_window import MainWindow
 

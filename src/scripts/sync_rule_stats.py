@@ -26,6 +26,7 @@ from collections import Counter, defaultdict
 
 from src.config.env import PROJECT_ROOT as ROOT
 from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE, save_json
+
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')
 
@@ -301,7 +302,7 @@ def table_rows_in(lines, start, end):
 
 
 def _match_rows(table, expected, section, message, kind, issues):
-    for (ln, old), new in zip(table, expected):
+    for (ln, old), new in zip(table, expected, strict=False):
         if old != new:
             issues.append({'section': section, 'line_no': ln, 'old': old, 'new': new,
                            'kind': kind, 'message': message})
@@ -494,7 +495,7 @@ def append_changelog(applied, changelog_path=DEFAULT_CHANGELOG):
 
 def refresh_snapshot(doc_path):
     """应用后刷新 .rule_doc_snapshot.json，使数据段更新成为新基线。"""
-    from src.scripts.audit_rule_doc import build_snapshot, write_snapshot, DEFAULT_SNAPSHOT
+    from src.scripts.audit_rule_doc import DEFAULT_SNAPSHOT, build_snapshot, write_snapshot
     write_snapshot(build_snapshot(doc_path, ROOT), DEFAULT_SNAPSHOT)
     return True
 

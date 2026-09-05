@@ -7,10 +7,9 @@ import json
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QTextEdit
-
 from src.business.card_catalog import CardCatalogService
 from src.data.card_catalog import CardAnnotationRepository, CardFieldSchemaRepository, CardRepository
-from src.ui.library.card_management_panel import CardAnnotationEditDialog, CardManagementPanel, EFFECT_STATUS_LABELS
+from src.ui.library.card_management_panel import EFFECT_STATUS_LABELS, CardAnnotationEditDialog, CardManagementPanel
 from src.ui.shared.style import GLOBAL_STYLE, TONE_NEUTRAL, TONE_SUCCESS, TONE_WARNING
 
 

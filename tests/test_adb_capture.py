@@ -7,7 +7,6 @@ import logging
 from types import SimpleNamespace
 
 from PIL import Image
-
 from src.capture.adb_screen import AdbCapture
 
 

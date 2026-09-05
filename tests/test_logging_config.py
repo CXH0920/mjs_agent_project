@@ -6,7 +6,6 @@ import logging
 import logging.handlers
 
 import pytest
-
 import src.config.logging_config as logging_config
 
 

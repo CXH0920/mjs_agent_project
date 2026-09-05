@@ -17,12 +17,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.config.env import IMAGES_DIR
 from src.data.models import Hero
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.ui.shared.faction_colors import get_faction_colors
-from src.ui.shared.widgets import DoubleClickLabel, StatusBadge
 from src.ui.shared.style import (
     ROLE_GHOST,
     ROLE_SECONDARY,
@@ -32,6 +30,7 @@ from src.ui.shared.style import (
     set_style_property,
     set_ui_role,
 )
+from src.ui.shared.widgets import DoubleClickLabel, StatusBadge
 
 
 class HeroCardWidget(QFrame):
@@ -526,7 +525,7 @@ class HeroCardWidget(QFrame):
             self._best_partner_label.setText("最佳搭档：暂无数据")
             self._best_partner_label.setToolTip("")
 
-        for label, (name, rating) in zip(self._synergy_labels, synergies[1:3]):
+        for label, (name, rating) in zip(self._synergy_labels, synergies[1:3], strict=False):
             label.setText(f"{name} · {rating}")
             label.setToolTip(f"{name}（{rating}）")
             label.show()

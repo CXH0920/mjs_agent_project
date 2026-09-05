@@ -10,7 +10,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
-
 from src.business.card_catalog import CardCatalogService
 from src.data.card_catalog import CardAnnotationRepository, CardFieldSchemaRepository, CardRepository
 from src.data.guide_manager import GuideManager

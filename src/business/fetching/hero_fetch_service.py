@@ -10,7 +10,6 @@ import logging
 import re
 
 from PySide6.QtCore import Signal
-
 from src.business.fetching.base_fetch_service import BaseFetchService
 
 logger = logging.getLogger(__name__)

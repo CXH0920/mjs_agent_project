@@ -22,13 +22,12 @@ from PySide6.QtWidgets import (
     QTextBrowser,
     QVBoxLayout,
 )
-
-from src.config.env import PROJECT_ROOT
 from src.business.maintenance.combo_import_service import (
     DEFAULT_HEROES,
     DEFAULT_OUTPUT,
     run_import,
 )
+from src.config.env import PROJECT_ROOT
 from src.ui.shared.style import ROLE_SECONDARY, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageHeader
 

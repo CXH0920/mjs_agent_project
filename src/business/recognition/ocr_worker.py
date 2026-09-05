@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
-
 from src.config.env import PROJECT_ROOT
 from src.ocr.recognizer import GeneralRecognizer
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot

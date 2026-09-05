@@ -8,7 +8,6 @@ import math
 from pathlib import Path
 
 import pytest
-
 from src.data.recommendation_index_repository import (
     RecommendationIndex,
     RecommendationIndexConfig,

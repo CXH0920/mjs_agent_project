@@ -23,6 +23,7 @@ import re
 import sys
 
 from src.config.env import PROJECT_ROOT as ROOT
+
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_PROPOSAL_DIR = os.path.join(ROOT, 'docs', 'archive', 'proposals')
 

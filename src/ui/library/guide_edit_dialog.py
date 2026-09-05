@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog

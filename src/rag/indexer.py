@@ -3,7 +3,10 @@
 
 带分阶段进度与耗时摘要，便于观察执行情况。
 """
-import sys, json, time, logging
+import json
+import logging
+import sys
+import time
 
 from src.data.hero_timeline import CORPUS_BASE_DATE
 from src.rag import config
@@ -217,7 +220,7 @@ def load_all_blocks():
         blocks = norm(data)
         if len(blocks) != len(data):
             raise ValueError(f'{fname} 规范化块数与源数据不一致: {len(blocks)} != {len(data)}')
-        for (bid, text, meta), raw in zip(blocks, data):
+        for (bid, text, meta), raw in zip(blocks, data, strict=False):
             meta.setdefault('is_current', str(raw.get('is_current', 'true')))
             meta.setdefault('as_of', str(raw.get('as_of', CORPUS_BASE_DATE)))
             all_blocks.append((bid, text, meta))

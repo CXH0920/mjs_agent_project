@@ -12,7 +12,6 @@ import logging
 
 import cv2
 import numpy as np
-
 from src.ocr.roi_config import Roi
 
 logger = logging.getLogger(__name__)

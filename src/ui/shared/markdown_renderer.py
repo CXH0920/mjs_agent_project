@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import mistune
-
 from src.data.models import MAX_GUIDE_TEXT_LENGTH
 
 _markdown = mistune.create_markdown(escape=True)

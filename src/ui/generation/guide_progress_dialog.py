@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QVBoxLayout,
 )
-
 from src.business.fetching.fetch_utils import parse_generation_event
 from src.ui.shared.style import TONE_DANGER, TONE_SUCCESS, set_tone
 from src.ui.shared.widgets import DialogFooter, PageHeader

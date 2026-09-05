@@ -10,11 +10,10 @@ from types import ModuleType
 
 import numpy as np
 import pytest
-
+from src.ocr import paddle_loader
 from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
-from src.ocr import paddle_loader
 from src.ocr.recognizer import GeneralRecognizer
 from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
 
