@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import SCREENSHOTS_DIR
 from src.data.combo_manager import ComboManager
 from src.data.combo_seats import format_seats
 from src.data.hero_manager import HeroManager
@@ -61,7 +61,6 @@ from src.ui.shared.style import (
 )
 
 logger = logging.getLogger(__name__)
-SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 
 
 class RecommendationPanel(QWidget):

@@ -28,7 +28,7 @@ from src.business.analysis.peak_ban_advice import (
     evaluate_peak_ban_advice,
 )
 from src.business.recognition.peak_select_watcher import PoolSnapshot, PeakSelectWatcher
-from src.config.env import PROJECT_ROOT
+from src.config.env import SCREENSHOTS_DIR
 from src.data.combo_seats import format_seats
 from src.business.maintenance.corpus_services import ComboService
 from src.ui.library.combo_management_dialog import ComboManagementDialog
@@ -51,7 +51,6 @@ from src.ui.shared.widgets import EmptyState, FlowLayout, PageActionBar, StatusB
 
 logger = logging.getLogger(__name__)
 
-SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 _IMAGE_FILE_FILTER = "图片文件 (*.png *.jpg *.jpeg *.bmp)"
 _POOL_TEXT_STYLE = f"font-size: {FONT_SIZE_LG}px; font-weight: bold; line-height: 1.6;"
 _BANNED_CHIP_STYLE = (

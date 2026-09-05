@@ -34,6 +34,15 @@ OCR_NAME_CONFUSION_PAIRS: tuple[tuple[str, str], ...] = (
     ("惇", "怀"),
 )
 
+# 胜率复核线：数字模板胜率匹配置信度低于该值且与 OCR 胜率不一致时，标记"胜率OCR与数字模板不一致"。
+# 与 NAME_CONFIDENCE_REVIEW_THRESHOLD 语义不同（模板匹配置信度 vs 名称 OCR 置信度），勿合并。
+TEMPLATE_RATE_REVIEW_THRESHOLD = 0.90
+# 名称复核线：武将名称 OCR 置信度低于该值时标记"武将名称置信度低"。
+NAME_CONFIDENCE_REVIEW_THRESHOLD = 0.75
+# 候选池扩展距离：按全表构建纠错候选时的编辑距离上限（宽松于名称纠错的
+# EDIT_DISTANCE_THRESHOLD=1——此处是"扩大候选集供后续复核"，非直接纠错）。
+CANDIDATE_EXPANSION_EDIT_DISTANCE = 2
+
 
 class OfficialDataImportService:
     """按表格线切分官方榜单，并将识别结果写入 CSV。"""
@@ -266,7 +275,7 @@ class OfficialDataImportService:
                 if local_rank in repaired_ranks:
                     reasons.append("检测到缺失表格横线，已按行高补全")
                 ocr_rate = self._normalize_rate(fields.get("胜率", ("", 0.0))[0])
-                if template_rate and ocr_rate and template_rate != ocr_rate and template_score < 0.90:
+                if template_rate and ocr_rate and template_rate != ocr_rate and template_score < TEMPLATE_RATE_REVIEW_THRESHOLD:
                     reasons.append("胜率OCR与数字模板不一致")
                 elif "胜率" in columns and not template_rate:
                     reasons.append("胜率数字模板识别失败")
@@ -576,7 +585,7 @@ class OfficialDataImportService:
             name = record["武将"]
             candidates: set[str] = set()
             for hero in self._hero_names:
-                if levenshtein_distance(name, hero) <= 2:
+                if levenshtein_distance(name, hero) <= CANDIDATE_EXPANSION_EDIT_DISTANCE:
                     candidates.add(hero)
             candidates.update(self._ambiguous_name_candidates(name))
             corrected = self._correct_official_name(name)
@@ -805,7 +814,7 @@ class OfficialDataImportService:
             reasons.append("武将名称疑似缺字")
         elif not re.fullmatch(r"[\u4e00-\u9fff]{1,8}", name):
             reasons.append("武将名称为空或包含异常字符")
-        elif fields["武将"][1] < 0.75:
+        elif fields["武将"][1] < NAME_CONFIDENCE_REVIEW_THRESHOLD:
             reasons.append("武将名称置信度低")
         if "胜率" in record and not record["胜率"]:
             reasons.append("胜率识别失败")
@@ -928,7 +937,7 @@ class OfficialDataImportService:
             add(ocr_name)
         for hero in self._hero_names:
             if (
-                levenshtein_distance(ocr_name, hero) <= 2
+                levenshtein_distance(ocr_name, hero) <= CANDIDATE_EXPANSION_EDIT_DISTANCE
                 and (any(char in hero for char in ocr_name) or len(ocr_name) != len(hero))
             ):
                 add(hero)

@@ -24,7 +24,7 @@ from urllib.parse import urljoin, urlparse
 
 from PIL import Image
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import IMAGES_OUTPUT_DIR
 from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 
 logger = logging.getLogger(__name__)
@@ -305,7 +305,7 @@ def fetch_all_raw() -> list[dict]:
 # 头像下载
 # ============================================================
 
-IMAGES_DIR = PROJECT_ROOT / "images"
+IMAGES_DIR = IMAGES_OUTPUT_DIR
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):

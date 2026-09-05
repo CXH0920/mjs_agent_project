@@ -39,6 +39,10 @@ DEFAULT_PROFILES_FILE = PROJECT_ROOT / "config" / "api_profiles.json"
 # 共享资源目录（头像/截图；此前 match/peak/capture 三四处各自推导，收敛于此）
 IMAGES_DIR = BUNDLE_ROOT / "images"
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
+# 头像下载输出目录：crawler 写入用，可写运行时根（区别于只读的 IMAGES_DIR）。
+# 注意 frozen 态后果：UI 头像读取固定自只读 IMAGES_DIR，下载到本目录的新头像
+# 不会被 UI 读取；运行时回退读取属独立需求，尚未实现。
+IMAGES_OUTPUT_DIR = PROJECT_ROOT / "images"
 
 
 def is_full_build() -> bool:
