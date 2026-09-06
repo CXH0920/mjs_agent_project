@@ -368,6 +368,7 @@ class CaptureService(QObject):
         rois: list[list[int]] | None = None,
         match_template: bool = True,
         fallback_on_template_miss: bool = False,
+        allow_result_reuse: bool = False,
     ) -> OcrTask:
         """将模板匹配和 OCR 加入唯一 worker 队列。"""
         config = self.config
@@ -395,6 +396,7 @@ class CaptureService(QObject):
             recognize=recognize,
             match_template=match_template,
             fallback_on_template_miss=fallback_on_template_miss,
+            allow_result_reuse=allow_result_reuse,
         )
         self._ensure_ocr_worker().submit(task)
         return task

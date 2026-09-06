@@ -54,7 +54,6 @@ class OcrService(QObject):
         self._config = {}
         self._hero_names: list[str] = []
         self._poll_timer = QTimer(self)
-        self._poll_timer.setSingleShot(True)
         self._poll_timer.timeout.connect(self._emit_poll_tick)
         self._poll_tasks = {
             "hero_selection": PollTaskState(),
@@ -197,14 +196,16 @@ class OcrService(QObject):
         self._poll_session = PollSession(generation=self._poll_session.generation + 1)
 
     def start_poll(self, interval_ms: int) -> None:
-        """启动或重新启动轮询。"""
+        """启动或重新启动轮询（重复定时器，周期 = max(间隔, 单拍处理)）。"""
         self._poll_interval_ms = max(interval_ms, 1_000)
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
         self._replace_poll_session()
         self._poll_tasks["hero_selection"] = PollTaskState(active=True)
         self._poll_tasks["match_guide"] = PollTaskState(active=False)
-        self._schedule_poll(self._poll_interval_ms, "running", "轮询运行中")
+        self._poll_timer.setInterval(self._poll_interval_ms)
+        self._poll_timer.start()
+        self._set_poll_state("running", "轮询运行中")
 
     def stop_poll(self) -> None:
         """停止轮询并清除当前会话状态。"""
@@ -275,13 +276,15 @@ class OcrService(QObject):
         return self._poll_tasks[task_name]
 
     def complete_poll(self, generation: int, outcome: str, detail: str = "") -> None:
-        """由主线程记录一轮轮询结果并安排下一次执行。"""
+        """由主线程记录一轮轮询结果；定时器持续运行，仅动态调整间隔。"""
         if generation != self.poll_generation:
             return
         self._poll_in_flight = False
         if outcome in {"healthy_no_match", "matched"}:
             self._consecutive_poll_failures = 0
-            self._schedule_poll(self._poll_interval_ms, "running", "轮询运行中")
+            if self._poll_timer.interval() != self._poll_interval_ms:
+                self._poll_timer.setInterval(self._poll_interval_ms)  # 从退避恢复基础间隔
+            self._set_poll_state("running", "轮询运行中")
             return
 
         if outcome in {"prerequisite_unconfigured", "prerequisite_template_missing"}:
@@ -300,8 +303,9 @@ class OcrService(QObject):
             self._poll_interval_ms,
             self.POLL_BACKOFF_DELAYS_MS[self._consecutive_poll_failures - 1],
         )
-        self._schedule_poll(
-            delay,
+        # 动态拉长间隔，定时器继续运行（Qt 对激活中的定时器改间隔会重启计数）
+        self._poll_timer.setInterval(delay)
+        self._set_poll_state(
             "backing_off",
             f"{delay // 1000} 秒后重试（第 {self._consecutive_poll_failures}/{self.POLL_MAX_FAILURES} 次失败）",
         )
@@ -312,10 +316,6 @@ class OcrService(QObject):
         self._poll_state = state
         self._poll_detail = detail
         self.poll_state_changed.emit(state, detail)
-
-    def _schedule_poll(self, delay_ms: int, state: str, detail: str) -> None:
-        self._set_poll_state(state, detail)
-        self._poll_timer.start(delay_ms)
 
     def _emit_poll_tick(self) -> None:
         if self._poll_state in {"stopped", "paused"}:

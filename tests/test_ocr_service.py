@@ -15,77 +15,76 @@ def _app() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
-def test_poll_failures_back_off_and_pause(monkeypatch) -> None:
+def test_start_poll_runs_repeating_timer() -> None:
     _app()
     service = OcrService()
-    scheduled: list[tuple[int, str]] = []
+
+    service.start_poll(1_000)
+
+    assert service._poll_timer.isActive()
+    assert not service._poll_timer.isSingleShot()
+    assert service._poll_timer.interval() == 1_000
+    assert service.poll_state == "running"
+
+
+def test_poll_failures_back_off_and_pause() -> None:
+    _app()
+    service = OcrService()
     states: list[str] = []
-    monkeypatch.setattr(
-        service,
-        "_schedule_poll",
-        lambda delay, state, detail: scheduled.append((delay, state)),
-    )
     service.poll_state_changed.connect(lambda state, detail: states.append(state))
 
     service.start_poll(1_000)
     generation = service.poll_generation
+    intervals = []
     for _ in range(4):
         service.complete_poll(generation, "retryable_connection", "offline")
+        intervals.append(service._poll_timer.interval())
 
-    assert scheduled[-4:] == [
-        (2_000, "backing_off"),
-        (5_000, "backing_off"),
-        (15_000, "backing_off"),
-        (30_000, "backing_off"),
-    ]
+    assert intervals == [2_000, 5_000, 15_000, 30_000]
+    assert service._poll_timer.isActive()
+    assert states[-1] == "backing_off"
 
     service.complete_poll(generation, "retryable_connection", "offline")
 
+    assert not service._poll_timer.isActive()
     assert service.poll_state == "paused"
     assert states[-1] == "paused"
 
 
-def test_healthy_poll_resets_failure_backoff(monkeypatch) -> None:
+def test_healthy_poll_resets_failure_backoff() -> None:
     _app()
     service = OcrService()
-    scheduled: list[tuple[int, str]] = []
-    monkeypatch.setattr(
-        service,
-        "_schedule_poll",
-        lambda delay, state, detail: scheduled.append((delay, state)),
-    )
 
-    service.start_poll(3_000)
+    service.start_poll(1_000)
     generation = service.poll_generation
+
     service.complete_poll(generation, "retryable_capture", "timeout")
+    assert service._poll_timer.interval() == 2_000
+    assert service._poll_timer.isActive()
+
     service.complete_poll(generation, "healthy_no_match")
+    assert service._poll_timer.interval() == 1_000  # 恢复基础间隔，定时器不重启停止
+
     service.complete_poll(generation, "retryable_capture", "timeout")
-
-    assert scheduled[-3:] == [
-        (3_000, "backing_off"),
-        (3_000, "running"),
-        (3_000, "backing_off"),
-    ]
+    assert service._poll_timer.interval() == 2_000
 
 
-def test_resume_poll_starts_new_generation(monkeypatch) -> None:
+def test_resume_poll_starts_new_generation() -> None:
     _app()
     service = OcrService()
-    scheduled: list[tuple[int, str]] = []
-    monkeypatch.setattr(
-        service,
-        "_schedule_poll",
-        lambda delay, state, detail: scheduled.append((delay, state)),
-    )
 
     service.start_poll(2_000)
     old_generation = service.poll_generation
     for _ in range(5):
         service.complete_poll(old_generation, "retryable_connection", "offline")
+    assert not service._poll_timer.isActive()  # 连续失败后已暂停
+
     service.resume_poll()
 
     assert service.poll_generation > old_generation
-    assert scheduled[-1] == (2_000, "running")
+    assert service._poll_timer.isActive()
+    assert service._poll_timer.interval() == 2_000
+    assert service.poll_state == "running"
 
 
 def test_stop_poll_cancels_active_session() -> None:

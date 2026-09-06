@@ -88,17 +88,43 @@ def _make_panel(
     win_rates=None,
     pick_ranks=None,
     combo_manager=None,
+    ocr_service=None,
     **service_attrs,
 ) -> PeakSelectPanel:
     return PeakSelectPanel(
         capture_service=SimpleNamespace(capture=capture, **service_attrs),
-        ocr_service=None,
+        ocr_service=ocr_service or _FakeOcrService(),
         hero_names_provider=lambda: [],
         hero_manager=hero_manager,
         win_rates_provider=(lambda: win_rates) if win_rates is not None else None,
         pick_ranks_provider=(lambda: pick_ranks) if pick_ranks is not None else None,
         combo_manager=combo_manager,
     )
+
+
+class _FakeOcrService:
+    """覆盖 watcher 协调标准轮询任务（挂起/恢复/清冷却）所需的最小接口。"""
+
+    def __init__(self, active_states: dict[str, bool] | None = None) -> None:
+        self._tasks = {
+            "hero_selection": SimpleNamespace(active=True, cooldown_until=None),
+            "match_guide": SimpleNamespace(active=False, cooldown_until=None),
+        }
+        for name, active in (active_states or {}).items():
+            self._tasks[name].active = active
+        self.cleared_cooldowns: list[str] = []
+
+    def get_task_state(self, name):
+        return self._tasks[name]
+
+    def activate_task(self, name) -> None:
+        self._tasks[name].active = True
+
+    def deactivate_task(self, name) -> None:
+        self._tasks[name].active = False
+
+    def clear_task_cooldown(self, name) -> None:
+        self.cleared_cooldowns.append(name)
 
 
 def test_panel_renders_pool_snapshot(qapp):
@@ -277,16 +303,20 @@ def test_panel_start_without_capture_prompts_config(qapp):
 
 
 def test_panel_toggle_starts_and_stops_watcher(qapp):
-    """开始/停止按钮切换识别循环状态。"""
-    panel = _make_panel(capture=SimpleNamespace(connected=True))
+    """开始/停止按钮切换识别循环状态；启动即挂起标准轮询任务并清除冷却污染。"""
+    ocr_service = _FakeOcrService()
+    panel = _make_panel(capture=SimpleNamespace(connected=True), ocr_service=ocr_service)
 
     panel._toggle_button.click()
     assert panel._watcher.is_running()
     assert panel._toggle_button.text() == "停止识别"
+    assert ocr_service.get_task_state("hero_selection").active is False  # start 即挂起，不等牌面
+    assert ocr_service.cleared_cooldowns == ["hero_selection", "match_guide"]
 
     panel._toggle_button.click()
     assert not panel._watcher.is_running()
     assert panel._toggle_button.text() == "开始识别"
+    assert ocr_service.get_task_state("hero_selection").active is True  # 恢复原状态
 
 
 def test_panel_save_screenshot_without_capture_prompts_config(qapp):
@@ -638,3 +668,63 @@ def test_watcher_live_loop_timeout_resets_signature(qapp, monkeypatch):
     assert not watcher._thread_lock.locked()
     assert pools == []
     assert statuses[-1] == "识别超时，下一拍重试"
+
+
+def test_watcher_start_suspends_standard_tasks_immediately(qapp):
+    """回归：挂起在 start 即生效（不等牌面检测），并清除两个标准任务的冷却污染。"""
+    ocr_service = _FakeOcrService()
+    watcher, _, _ = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    watcher._ocr_service = ocr_service
+
+    watcher.start()
+
+    assert ocr_service.get_task_state("hero_selection").active is False
+    assert ocr_service.get_task_state("match_guide").active is False
+    assert ocr_service.cleared_cooldowns == ["hero_selection", "match_guide"]
+    watcher.stop()
+
+
+def test_watcher_board_absent_restores_tasks_and_emits_board_exited(qapp):
+    """连续缺席达到阈值后恢复标准任务原状态并发出 board_exited。"""
+    ocr_service = _FakeOcrService()
+    watcher, _, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    watcher._ocr_service = ocr_service
+    exited: list[bool] = []
+    watcher.board_exited.connect(lambda: exited.append(True))
+
+    watcher.start()
+    assert ocr_service.get_task_state("hero_selection").active is False
+
+    watcher._handle_board_absent()  # 第一拍缺席：尚未退出
+    assert exited == []
+
+    watcher._handle_board_absent()
+    assert exited == [True]
+    assert ocr_service.get_task_state("hero_selection").active is True  # 恢复原状态
+    assert statuses[-1] == "未检测到巅峰赛选将页牌面"
+    watcher.stop()
+
+
+def test_watcher_manual_stop_does_not_emit_board_exited(qapp):
+    """手动停止不发 board_exited：用户可能要切标准 2v2，match_guide 不被激活。"""
+    ocr_service = _FakeOcrService()
+    watcher, _, _ = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    watcher._ocr_service = ocr_service
+    exited: list[bool] = []
+    watcher.board_exited.connect(lambda: exited.append(True))
+
+    watcher.start()
+    watcher.stop()
+
+    assert exited == []
+
+
+def test_panel_forwards_board_exited_signal(qapp):
+    """面板把 watcher 的 board_exited 透传给主窗口。"""
+    panel = _make_panel()
+    forwarded: list[bool] = []
+    panel.board_exited.connect(lambda: forwarded.append(True))
+
+    panel._watcher.board_exited.emit()
+
+    assert forwarded == [True]

@@ -18,6 +18,7 @@ from src.business.emulator.capture_service import CaptureService
 from src.business.recognition import ocr_worker as ocr_worker_module
 from src.business.recognition.ocr_service import OcrService
 from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
+from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
 
 
 def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch) -> None:
@@ -575,4 +576,204 @@ def test_drain_retired_workers_force_exits_on_timeout(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match=r"os\._exit\(1\)"):
         ocr_worker_module._drain_retired_workers()
+
+
+def _make_reuse_fakes(recognized: list):
+    class FakeTemplateManager:
+        is_loaded = True
+        last_match_scale = 1.0
+        last_match_strategy = "base_local"
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            return True, 0.9
+
+    class FakeRecognizer:
+        timing_ms = {}
+
+        def __init__(self, hero_names, page_type, layout) -> None:
+            pass
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
+        def recognize(self, image):
+            recognized.append(image)
+            return [{"index": 0, "name": "曹操", "confidence": 1.0}]
+
+        @staticmethod
+        def save_results(results, path) -> None:
+            return None
+
+    return FakeTemplateManager, FakeRecognizer
+
+
+def _reuse_layout() -> OcrRoiLayout:
+    return OcrRoiLayout(
+        reference_size=(2560, 1440),
+        slots=tuple(OcrRoiSlot(name_roi=(100, 200, 300, 60)) for _ in range(8)),
+    )
+
+
+def test_result_reuse_skips_ocr_on_unchanged_page(monkeypatch) -> None:
+    """页面指纹未变化时复用上次 OCR 结果，不再重复识别。"""
+    from PIL import Image
+
+    recognized: list = []
+    FakeTemplateManager, FakeRecognizer = _make_reuse_fakes(recognized)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def make_task(image) -> OcrTask:
+        return OcrTask(
+            image=image, hero_names=(), rois=None, template_name="hero_selection",
+            threshold=0.8, roi_layout=_reuse_layout(), allow_result_reuse=True,
+        )
+
+    worker = OcrWorker()
+    image = Image.new("L", (2560, 1440), 200)
+    first = worker._execute(make_task(image))
+    second = worker._execute(make_task(image))
+
+    assert len(recognized) == 1  # 第二拍未跑 OCR
+    assert first["outcome"] == "matched"
+    assert "skipped_ocr" not in first
+    assert second["outcome"] == "matched"
+    assert second["skipped_ocr"] is True
+    assert second["ocr_results"] == first["ocr_results"]
+
+
+def test_result_reuse_reruns_ocr_when_page_changes(monkeypatch) -> None:
+    """名条内容变化超出容差即判定页面变化，重新执行 OCR。"""
+    from PIL import Image
+
+    recognized: list = []
+    FakeTemplateManager, FakeRecognizer = _make_reuse_fakes(recognized)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def make_task(image) -> OcrTask:
+        return OcrTask(
+            image=image, hero_names=(), rois=None, template_name="hero_selection",
+            threshold=0.8, roi_layout=_reuse_layout(), allow_result_reuse=True,
+        )
+
+    worker = OcrWorker()
+    worker._execute(make_task(Image.new("L", (2560, 1440), 200)))
+    worker._execute(make_task(Image.new("L", (2560, 1440), 200)))
+    third = worker._execute(make_task(Image.new("L", (2560, 1440), 30)))
+
+    assert len(recognized) == 2
+    assert "skipped_ocr" not in third
+
+
+def test_result_reuse_opt_out_always_reruns_ocr(monkeypatch) -> None:
+    """未开启 allow_result_reuse 的路径（巅峰赛/手动识别）不做结果复用。"""
+    from PIL import Image
+
+    recognized: list = []
+    FakeTemplateManager, FakeRecognizer = _make_reuse_fakes(recognized)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def make_task(image) -> OcrTask:
+        return OcrTask(
+            image=image, hero_names=(), rois=None, template_name="hero_selection",
+            threshold=0.8, roi_layout=_reuse_layout(),
+        )
+
+    worker = OcrWorker()
+    image = Image.new("L", (2560, 1440), 200)
+    worker._execute(make_task(image))
+    worker._execute(make_task(image))
+
+    assert len(recognized) == 2
+
+
+def test_page_fingerprint_scales_roi_to_capture_resolution() -> None:
+    """指纹 ROI 按参考尺寸比例缩放：不同分辨率同内容判等，未缩放位置的内容判异。"""
+    import cv2
+    import numpy as np
+
+    layout = _reuse_layout()  # reference 2560×1440，ROI (100, 200, 300, 60)
+    reference = np.zeros((1440, 2560), dtype=np.uint8)
+    reference[200:260, 100:400] = 255
+
+    scaled = cv2.resize(reference, (1920, 1080), interpolation=cv2.INTER_AREA)
+    shifted = np.zeros((1080, 1920), dtype=np.uint8)
+    shifted[200:260, 100:400] = 255  # 按参考坐标原样摆放的内容（未随分辨率缩放）
+
+    fingerprint = OcrWorker._page_fingerprint(reference, layout)
+    assert OcrWorker._fingerprints_equal(fingerprint, OcrWorker._page_fingerprint(scaled, layout))
+    assert not OcrWorker._fingerprints_equal(fingerprint, OcrWorker._page_fingerprint(shifted, layout))
+
+
+def test_result_reuse_at_non_reference_resolution(monkeypatch) -> None:
+    """非参考分辨率截图（1920×1080）下指纹按比例缩放 ROI，正常复用而非越界崩溃。"""
+    import cv2
+    import numpy as np
+    from PIL import Image
+
+    recognized: list = []
+    FakeTemplateManager, FakeRecognizer = _make_reuse_fakes(recognized)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    # 右下名条 x=2175：不缩放直接裁 1080p 截图会越界（空裁剪 → resize 崩溃）
+    layout = OcrRoiLayout(
+        reference_size=(2560, 1440),
+        slots=(
+            OcrRoiSlot(name_roi=(100, 200, 300, 60)),
+            OcrRoiSlot(name_roi=(2175, 1300, 300, 60)),
+        ),
+    )
+    reference = np.zeros((1440, 2560), dtype=np.uint8)
+    reference[200:260, 100:400] = 255
+    reference[1300:1360, 2175:2475] = 255
+    scaled_image = Image.fromarray(cv2.resize(reference, (1920, 1080), interpolation=cv2.INTER_AREA))
+
+    def make_task(image) -> OcrTask:
+        return OcrTask(
+            image=image, hero_names=(), rois=None, template_name="hero_selection",
+            threshold=0.8, roi_layout=layout, allow_result_reuse=True,
+        )
+
+    worker = OcrWorker()
+    first = worker._execute(make_task(Image.fromarray(reference)))
+    second = worker._execute(make_task(scaled_image))
+
+    assert first["outcome"] == "matched"
+    assert second["outcome"] == "matched"
+    assert second["skipped_ocr"] is True
+    assert len(recognized) == 1
+
+
+def test_result_reuse_invalidated_by_hero_names_change(monkeypatch) -> None:
+    """武将名单变更后即使页面未变也重新 OCR：缓存候选基于旧名单，不可复用。"""
+    from PIL import Image
+
+    recognized: list = []
+    FakeTemplateManager, FakeRecognizer = _make_reuse_fakes(recognized)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def make_task(names) -> OcrTask:
+        return OcrTask(
+            image=Image.new("L", (2560, 1440), 200), hero_names=names, rois=None,
+            template_name="hero_selection", threshold=0.8,
+            roi_layout=_reuse_layout(), allow_result_reuse=True,
+        )
+
+    worker = OcrWorker()
+    worker._execute(make_task(("曹操",)))
+    worker._execute(make_task(("曹操",)))
+    third = worker._execute(make_task(("曹操", "典韦")))
+
+    assert len(recognized) == 2
+    assert "skipped_ocr" not in third
 

@@ -13,6 +13,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PySide6.QtCore import QThread, Signal
 from src.config.env import PROJECT_ROOT
 from src.ocr.recognizer import GeneralRecognizer
@@ -21,6 +23,11 @@ from src.ocr.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
 DEFAULT_SCREENSHOT_DATA_DIR = PROJECT_ROOT / "screenshot_data"
+
+# 页面指纹参数：每个名条 ROI 缩成 16×16 灰度块做容差比较，
+# 用于"页面未变化则跳过重复 OCR"；容差吸收截图链路的轻微噪声
+PAGE_FINGERPRINT_SIZE = (16, 16)
+PAGE_FINGERPRINT_TOLERANCE = 12
 
 # 已通知停止但仍在收尾的 worker，防止 QThread 对象在运行中被提前销毁。
 _RETIRED_WORKERS: list["OcrWorker"] = []
@@ -53,6 +60,9 @@ class OcrTask:
     recognize: bool = True
     match_template: bool = True
     fallback_on_template_miss: bool = False
+    # 仅标准轮询开启：页面指纹未变化时复用上次 OCR 结果。巅峰赛动态 ROI、
+    # 手动识别等路径不启用，避免静默返回旧结果
+    allow_result_reuse: bool = False
     warmup: bool = False
     task_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     completed: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
@@ -82,6 +92,9 @@ class OcrWorker(QThread):
         self._current_task_kind: str | None = None
         self._recognizer: GeneralRecognizer | None = None
         self._recognizer_signature: tuple | None = None
+        # template_name → (页面指纹, hero_names, 上次 OCR 结果)；
+        # hero_names 入缓存键：武将数据重载后旧结果里的候选基于旧名单，须重识别
+        self._page_cache: dict[str, tuple[tuple, tuple[str, ...], list[dict]]] = {}
         self._ocr_engine = None
         self._rare_char_ocr_engine = None
         self._warmup_queued = False
@@ -307,6 +320,30 @@ class OcrWorker(QThread):
                     layout.reference_size,
                     tuple(OcrRoiSlot(name_roi=tuple(roi)) for roi in task.rois),
                 )
+            fingerprint = None
+            if task.recognize and task.allow_result_reuse:
+                fingerprint = self._page_fingerprint(task.image, layout)
+                cached = self._page_cache.get(task.template_name)
+                if (cached is not None
+                        and cached[1] == task.hero_names
+                        and self._fingerprints_equal(fingerprint, cached[0])):
+                    self._log_timing(
+                        task,
+                        task_started,
+                        outcome="matched_reused",
+                        template_load_ms=template_load_ms,
+                        template_match_ms=template_match_ms,
+                        template_confidence=template_confidence,
+                        template_scale=template_scale,
+                        template_strategy=template_strategy,
+                    )
+                    logger.debug("页面未变化，复用上次 OCR 结果: %s", task.template_name)
+                    return {
+                        **result,
+                        # dict 级拷贝：下游修改结果条目不得污染缓存
+                        "ocr_results": [dict(item) for item in cached[2]],
+                        "skipped_ocr": True,
+                    }
             recognizer = self._get_recognizer(layout, task.hero_names, task.template_name)
             recognition_started = time.perf_counter()
             results = recognizer.recognize(task.image)
@@ -318,6 +355,8 @@ class OcrWorker(QThread):
             GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json")
             result_save_ms = (time.perf_counter() - result_save_started) * 1000
             result["ocr_results"] = results
+            if fingerprint is not None:
+                self._page_cache[task.template_name] = (fingerprint, task.hero_names, list(results))
             self._log_timing(
                 task,
                 task_started,
@@ -410,6 +449,43 @@ class OcrWorker(QThread):
             result_save_ms,
             recognition_ms,
             (time.perf_counter() - task_started) * 1000,
+        )
+
+    @staticmethod
+    def _page_fingerprint(image, layout: OcrRoiLayout) -> tuple:
+        """页面指纹：名条 ROI 按参考尺寸比例缩放后裁剪，缩成 16×16 灰度块。
+
+        name_roi 是 reference_size 下的坐标，实际截图分辨率不同（如 1920×1080）
+        时须与 recognizer 一致按比例换算，否则裁到错误区域甚至越界崩溃。
+        """
+        if isinstance(image, np.ndarray):
+            gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = np.asarray(image.convert("L"))
+        height, width = gray.shape[:2]
+        reference_width, reference_height = layout.reference_size
+        scale_x = width / reference_width
+        scale_y = height / reference_height
+        patches = []
+        for slot in layout.slots:
+            x, y, w, h = slot.name_roi
+            roi_x = round(x * scale_x)
+            roi_y = round(y * scale_y)
+            roi_w = max(1, round(w * scale_x))
+            roi_h = max(1, round(h * scale_y))
+            patch = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+            patches.append(cv2.resize(patch, PAGE_FINGERPRINT_SIZE, interpolation=cv2.INTER_AREA))
+        return tuple(patches)
+
+    @staticmethod
+    def _fingerprints_equal(left: tuple, right: tuple) -> bool:
+        """逐块容差比较：轻微噪声判等，文字/布局变化超阈值即判异。"""
+        if len(left) != len(right):
+            return False
+        return all(
+            patch.shape == other.shape
+            and int(cv2.absdiff(patch, other).max()) <= PAGE_FINGERPRINT_TOLERANCE
+            for patch, other in zip(left, right)
         )
 
     def _get_recognizer(

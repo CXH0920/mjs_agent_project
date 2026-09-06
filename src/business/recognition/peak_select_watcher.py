@@ -1,8 +1,8 @@
 """巅峰赛（2v2）选将实时识别循环：截图 → 卡位检测 → 牌面变化才 OCR。
 
-与标准轮询并存：巅峰赛页与标准选将页共用"武将选择"标题模板，检测到巅峰赛
-牌面期间挂起 hero_selection / match_guide 轮询任务避免互触，连续多拍未见
-牌面或停止后恢复原任务状态。
+与标准轮询并存：巅峰赛页与标准选将页共用"武将选择"标题模板，启动识别循环
+即挂起 hero_selection / match_guide 轮询任务避免互触，连续多拍未见牌面或
+停止后恢复原任务状态；自动退出另发 board_exited 供主窗口衔接对局攻略。
 """
 
 from __future__ import annotations
@@ -106,6 +106,7 @@ class PeakSelectWatcher(QObject):
 
     pool_updated = Signal(object)
     status_changed = Signal(str)
+    board_exited = Signal()
 
     def __init__(self, capture_service, ocr_service, hero_names_provider, parent=None) -> None:
         super().__init__(parent)
@@ -140,6 +141,11 @@ class PeakSelectWatcher(QObject):
             self._resolutions = {}
             self._last_board = None
         self._miss_ticks = 0
+        # 挂起在启动瞬间生效而非检测到牌面后：首拍之前标准轮询用固定 ROI 在
+        # 巅峰页只会跑出垃圾结果，还可能误触冷却与自动跳页
+        self._suspend_standard_tasks()
+        self._ocr_service.clear_task_cooldown("hero_selection")
+        self._ocr_service.clear_task_cooldown("match_guide")
         self._timer.start()
 
     def stop(self) -> None:
@@ -177,7 +183,6 @@ class PeakSelectWatcher(QObject):
                     self._resolutions = {}  # 新牌面：人工确认不跨牌沿用
             if unchanged:
                 return  # 牌面未变化，沿用上一次结果
-            self._suspend_standard_tasks()
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
                 # 识别失败清签名，下一拍强制重试；仅实时循环路径，图片导入不动签名
@@ -278,7 +283,7 @@ class PeakSelectWatcher(QObject):
     # ── 标准轮询任务协调 ──────────────────────────────────────────────
 
     def _suspend_standard_tasks(self) -> None:
-        """首次进入巅峰赛牌面时挂起标准轮询任务，记住原状态便于恢复。"""
+        """启动识别循环时挂起标准轮询任务，记住原状态便于恢复。"""
         if self._saved_task_states is not None:
             return
         self._saved_task_states = {name: self._ocr_service.get_task_state(name).active for name in _STANDARD_POLL_TASKS}
@@ -308,4 +313,6 @@ class PeakSelectWatcher(QObject):
                 self._resolutions = {}
         if exiting:
             self._restore_standard_tasks()
+            # match_guide 的激活与跳转属界面策略，由主窗口的 board_exited 处理器完成
+            self.board_exited.emit()
             self.status_changed.emit("未检测到巅峰赛选将页牌面")

@@ -178,6 +178,7 @@ class PollCoordinator(QObject):
                         template_name=task_name,
                         recognize=True,
                         fallback_on_template_miss=task_name == "match_guide",
+                        allow_result_reuse=True,
                     )
                     task_result = self.wait_for_ocr_task(ocr_task, cancel_event)
                     if task_result is None:

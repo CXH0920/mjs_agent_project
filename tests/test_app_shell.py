@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
@@ -59,6 +60,7 @@ def window(shared_window):
     shared_window._library_tabs.setCurrentIndex(0)
     shared_window._selection_page_active = False
     shared_window._match_guide_page_active = False
+    shared_window._match_guide_activated_at = None
     _app().processEvents()
     return shared_window
 
@@ -104,6 +106,69 @@ def test_ocr_auto_switch_syncs_navigation_and_context(window, monkeypatch) -> No
 
     assert window._tabs.currentWidget() is window._recommendation
     assert window._navigation.current_index() == 1
+
+
+def test_peak_board_exited_activates_match_guide(window, monkeypatch) -> None:
+    """巅峰赛自动退出：复位跳转标志并衔接激活对局攻略轮询。"""
+    activated: list[str] = []
+    monkeypatch.setattr(window._ocr_service, "activate_task", activated.append)
+    window._ocr_service._poll_state = "running"
+    window._match_guide_page_active = True
+
+    window._peak_select.board_exited.emit()
+
+    assert window._match_guide_page_active is False
+    assert activated == ["match_guide"]
+    assert window._match_guide_activated_at is not None
+
+
+def test_peak_board_exited_skips_activation_when_polling_stopped(window, monkeypatch) -> None:
+    """轮询未启用时巅峰赛退出只复位标志，不写入轮询任务状态。"""
+    activated: list[str] = []
+    monkeypatch.setattr(window._ocr_service, "activate_task", activated.append)
+    window._ocr_service._poll_state = "stopped"
+
+    window._peak_select.board_exited.emit()
+
+    assert activated == []
+    assert window._match_guide_page_active is False
+    assert window._match_guide_activated_at is None
+
+
+def test_match_guide_deactivates_after_idle_timeout(window, monkeypatch) -> None:
+    """match_guide 激活超时仍无命中即自动失活，停止非对局页面的空转轮询。"""
+    deactivated: list[str] = []
+    monkeypatch.setattr(window._ocr_service, "deactivate_task", deactivated.append)
+    window._match_guide_activated_at = time.monotonic() - 91
+
+    window._on_poll_result(PollResult(
+        1,
+        PollOutcome.HEALTHY_NO_MATCH,
+        task_results={
+            "match_guide": PollTaskResult(PollOutcome.HEALTHY_NO_MATCH),
+        },
+    ))
+
+    assert deactivated == ["match_guide"]
+    assert window._match_guide_activated_at is None
+
+
+def test_match_guide_stays_active_within_idle_timeout(window, monkeypatch) -> None:
+    """激活后未超时的无命中（如进局加载动画）不失活。"""
+    deactivated: list[str] = []
+    monkeypatch.setattr(window._ocr_service, "deactivate_task", deactivated.append)
+    window._match_guide_activated_at = time.monotonic() - 10
+
+    window._on_poll_result(PollResult(
+        1,
+        PollOutcome.HEALTHY_NO_MATCH,
+        task_results={
+            "match_guide": PollTaskResult(PollOutcome.HEALTHY_NO_MATCH),
+        },
+    ))
+
+    assert deactivated == []
+    assert window._match_guide_activated_at is not None
 
 
 def test_navigation_keeps_page_instances_and_library_section_state(window) -> None:

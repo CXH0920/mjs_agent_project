@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
@@ -59,6 +60,9 @@ class MainWindow(QMainWindow):
     """
 
     NAV_COLLAPSE_THRESHOLD = 1040
+    # match_guide 激活后的空闲上限：覆盖进局加载动画，超时仍无命中视为没进对局，
+    # 避免在非对局页面（如巅峰赛后回大厅）无限期 fallback 空转 OCR
+    MATCH_GUIDE_IDLE_TIMEOUT_SECONDS = 90
     _PAGE_CONTEXTS_BASE = (
         ("资料库", "浏览并维护武将、攻略、相性和卡牌数据。"),
         ("选将推荐", "根据当前阵容查看武将优先级与搭配依据。"),
@@ -79,6 +83,7 @@ class MainWindow(QMainWindow):
         # 轮询冷却期间可能连续收到匹配结果，只在进入选将页的边沿切换一次标签页。
         self._selection_page_active = False
         self._match_guide_page_active = False
+        self._match_guide_activated_at: float | None = None
         self._user_nav_collapsed: bool | None = None
         self._navigation_forced_collapsed = False
         # 协作对象装配收敛到组合根（F1）：构造顺序与参数依赖集中一处，可无头
@@ -499,6 +504,7 @@ class MainWindow(QMainWindow):
             )
             self._ocr_service.clear_task_cooldown("match_guide")
             self._ocr_service.activate_task("match_guide")
+            self._match_guide_activated_at = time.monotonic()
             # 每次新选将命中都开启一轮新的对局攻略自动跳转。
             self._match_guide_page_active = False
             if not self._selection_page_active:
@@ -514,13 +520,33 @@ class MainWindow(QMainWindow):
         guide_result = task_results.get("match_guide")
         if guide_result and guide_result.outcome is PollOutcome.TEMPLATE_MISSING:
             self._ocr_service.deactivate_task("match_guide")
+            self._match_guide_activated_at = None
         elif guide_result and guide_result.outcome is PollOutcome.MATCHED:
             self._ocr_service.deactivate_task("match_guide")
+            self._match_guide_activated_at = None
             if not getattr(self, "_match_guide_page_active", False):
                 self._match_guide_page_active = True
                 if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
                     self._tabs.setCurrentWidget(self._match_guide)
             self._match_guide.update_block(0, guide_result)
+        elif guide_result and guide_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
+            self._deactivate_match_guide_if_idle()
+
+    def _on_peak_exited_to_match(self) -> None:
+        """巅峰赛牌面自动退出：衔接对局攻略轮询，等待用户进入对局页。"""
+        self._match_guide_page_active = False
+        if self._ocr_service.is_polling:
+            self._ocr_service.activate_task("match_guide")
+            self._match_guide_activated_at = time.monotonic()
+
+    def _deactivate_match_guide_if_idle(self) -> None:
+        """激活后超过空闲阈值仍无命中即失活，停止非对局页面上的空转轮询。"""
+        if self._match_guide_activated_at is None:
+            return
+        if time.monotonic() - self._match_guide_activated_at <= self.MATCH_GUIDE_IDLE_TIMEOUT_SECONDS:
+            return
+        self._ocr_service.deactivate_task("match_guide")
+        self._match_guide_activated_at = None
 
     def closeEvent(self, event) -> None:
         """在窗口销毁前结束轮询与 OCR worker。"""
@@ -739,6 +765,7 @@ class MainWindow(QMainWindow):
             combo_manager=self._combo_manager,
         )
         self._peak_select.request_mumu_config.connect(self._open_mumu_config)
+        self._peak_select.board_exited.connect(self._on_peak_exited_to_match)
         self._tabs.addTab(self._peak_select, "巅峰赛选将")
 
         # Tab 4: 对局攻略（42/58 阵容与攻略工作台）

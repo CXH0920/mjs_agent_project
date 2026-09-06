@@ -68,6 +68,7 @@ class PeakSelectPanel(QWidget):
     """巅峰赛选将工作台：开始后随牌面变化自动刷新候选池。"""
 
     request_mumu_config = Signal()
+    board_exited = Signal()
 
     def __init__(
         self,
@@ -93,6 +94,7 @@ class PeakSelectPanel(QWidget):
         self._watcher = PeakSelectWatcher(capture_service, ocr_service, hero_names_provider, self)
         self._watcher.pool_updated.connect(self._on_pool_updated)
         self._watcher.status_changed.connect(self._on_status_changed)
+        self._watcher.board_exited.connect(self.board_exited.emit)
         self._capture_lock = CaptureRequestLock()
         capture_completed = getattr(capture_service, "capture_completed", None)
         if capture_completed is not None:
