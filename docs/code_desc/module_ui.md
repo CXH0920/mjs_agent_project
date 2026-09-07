@@ -23,10 +23,12 @@
 ```
 src/ui/
 ├── __init__.py
-├── app/                        # 应用外壳与全局轮询编排
+├── app/                        # 应用外壳、组合根与全局轮询编排
 │   ├── main_window.py          # 主窗口（菜单栏/Tab/状态栏 + PollCoordinator 界面绑定）
 │   ├── shell_widgets.py        # NavigationRail 左侧导航外壳组件
 │   ├── poll_coordinator.py     # 轮询后台编排、结果过滤与状态提交
+│   ├── app_services.py         # 协作对象组合根（可无头构造，一次挂载 QObject 父子与窗口引用）
+│   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
 │   └── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器
 ├── library/                    # 资料库：武将浏览、编辑、卡牌与武将获取
@@ -37,7 +39,9 @@ src/ui/
 │   ├── guide_edit_dialog.py
 │   ├── synergy_edit_dialog.py
 │   ├── fetch_dialog.py
-│   └── card_management_panel.py
+│   ├── card_management_panel.py
+│   ├── combo_edit_dialog.py           # 实战配队新增/编辑表单
+│   └── combo_management_dialog.py     # 实战配队全量列表 + 增删改
 ├── recommendation/             # 选将推荐页面与推荐卡片
 │   ├── recommendation_panel.py
 │   └── hero_card_widget.py
@@ -53,7 +57,8 @@ src/ui/
 │   ├── guide_fetch_dialog.py
 │   ├── guide_progress_dialog.py
 │   ├── synergy_pair_dialog.py
-│   └── synergy_single_dialog.py
+│   ├── synergy_single_dialog.py
+│   └── synergy_combos_dialog.py    # 实战配队批量生成配对清单筛选
 ├── configuration/              # 应用、势力与模拟器配置
 │   ├── settings_dialog.py
 │   ├── faction_color_dialog.py
@@ -68,7 +73,11 @@ src/ui/
 │   ├── hero_update_confirm_dialog.py   # 公告更新武将确认对话框
 │   └── announcement_dialog.py
 ├── shared/                     # 跨功能控件、展示与样式
-│   ├── widgets.py              # DoubleClickLabel 等共享控件
+│   ├── master_detail.py        # MasterDetailPane 主从列表骨架（列表窗格 + 滚动详情区）
+│   ├── capture_lock.py         # CaptureRequestLock 截图/文件导入单飞锁 + CaptureSource 枚举
+│   ├── combo_detail.py         # 实战配队详情对话框（选将推荐与巅峰赛共用）
+│   ├── widgets.py              # DoubleClickLabel、PageHeader、PageActionBar、EmptyState 等共享控件
+│   ├── persist.py              # run_edit_dialog 模态编辑对话框标准保存循环
 │   ├── hero_dialogs.py         # HeroSkillDialog
 │   ├── faction_colors.py       # 势力配色读取、兜底和缓存
 │   ├── hero_select_dialog.py   # 武将选择对话框基类
@@ -84,7 +93,20 @@ src/ui/
 
 `src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。
 
-`src.ui.shared.widgets` 提供 `PageHeader`、`PageActionBar`、`EmptyState`、`StatusBadge`、`NoticeBanner`、`DialogFooter`、`ToastOverlay` 和 `show_toast()`。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。`DialogFooter.set_busy()` 统一提交中的按钮禁用与文案恢复；同一父窗口复用一个 Toast 并重置隐藏计时器。`PageActionBar` 已用于选将推荐和对局攻略，避免在应用外壳标题下重复页面标题。
+`src.ui.shared.widgets` 提供 `PageHeader`、`PageActionBar`、`EmptyState`、`StatusBadge`、`NoticeBanner`、`DialogFooter`、`ToastOverlay` 和 `show_toast()`；`ScriptRunner` 经 `src.business.common.script_runner` 重新导出供 UI 层使用。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。`DialogFooter.set_busy()` 统一提交中的按钮禁用与文案恢复；同一父窗口复用一个 Toast 并重置隐藏计时器。`PageActionBar` 已用于选将推荐和对局攻略，避免在应用外壳标题下重复页面标题。`close_after_toast()` 用于三个配置对话框（模拟器 / API / 数据管理）的保存成功路径，先弹 Toast 再延迟关闭，避免立即关闭丢失提示。
+
+跨功能骨架与业务循环也已收敛到 `src.ui.shared`：
+
+- **`MasterDetailPane`** — 主从列表骨架。以 QSplitter 承载可选计数标签的左列表窗格（默认 220–360px、`sizes=(280, 720)`）与右侧 `widgetResizable` 无边框滚动详情区，所有 `objectName`、窗格宽度、分割尺寸、详情边距与滚动条策略均可参数化。子控件经 `list_pane` / `count_label` / `list` / `detail_scroll` / `detail` / `detail_layout` 六个属性解包给调用方自行接线；`with_count_label=False` 关闭计数标签供已有外部计数条的面板复用。`card_management_panel.py`、`special_cards_panel.py` 与 `hero_classification_panel.py` 统一接入。
+- **`CaptureRequestLock` / `CaptureSource`** — 截图/文件导入的单飞锁。`CaptureSource` 枚举合法来源（`ADB_RECOGNIZE` / `ADB_SAVE` / `FILE`），`begin(source)` 锁定新请求，已有在途时返回 False，回调侧 `finish()` 释放锁并回传刚完成的来源；无锁回调（重复触发或另一请求先释放）返回 None 由调用方直接忽略。选将推荐与对局攻略两个面板共享同一 `CaptureService`，各自持一个锁避免上一项回调覆盖下一项。
+- **`run_edit_dialog()`** — 模态编辑 → 确认后保存 → 失败重试的标准循环。业务性失败（`OSError` / `ValueError` / `ValidationError`）可重试，`attempts=None` 表示维持重试；非预期异常留完整堆栈后退出循环不重试。每次失败都写日志，成功后按 `success_message` 弹 Toast。武将/攻略/相性/专属牌/分类等面板统一走此入口。
+
+阶段六新增两个常驻状态与服务装配的收敛点：
+
+- **`StatusChips`** — 底部状态栏的常驻胶囊（模拟器 ADB / OCR 轮询），点击发出 `mumu_config_requested` 由主窗口连到 `_open_mumu_config`。胶囊文案/色/背景由内部 `_EMULATOR_STYLES` / `_POLL_STYLES` 常量表驱动，`set_emulator_state()` 与 `set_poll_state()` 在业务回调中渲染，普通状态文本与业务进度条不在此层——它们的写点遍布业务回调，仍归 `MainWindow`。
+- **`AppServices`** — `MainWindow` 的协作对象组合根。构造 `DataFacade` / 三个 Fetch 服务 / `AiGenerationWorkflow` / `CaptureService` / `OcrService` / `PollCoordinator` / `AnnouncementManager` / `AnnouncementService`，并在 `attach(parent)` 中一次性挂载 QObject 父子与 `AiGenerationWorkflow.set_window(parent)`（组合根无头构造时窗口引用为 None，只 `setParent` 会漏弹窗归属）。`MainWindow.__init__` 从 `_services` 解包到 `_fetch_service` / `_guide_service` / `_capture_service` 等惯用属性，其余接线/建 UI 代码零感知；`__new__` 式测试与属性替换依赖普通实例属性，刻意不做 property 委托。
+
+G1 样式止血（2026-08）删除被 token 层覆盖的旧样式层，并把三色残留归一为 `PRIMARY` / `DANGER` / `WARNING`。全局 QSS 只读 `style.py` 里的 token，控件不再各自维护 `QPushButton { background-color: #... }` 硬编码；状态胶囊与卡片角标使用 `PRIMARY_SOFT` / `DANGER_SOFT` / `WARNING_SOFT` 的浅色底 + 深色文字组合，与 token 对齐。
 
 2026-08 知识库维护优化新增两个公共组件：
 - **`ScriptRunner`** — QProcess 异步执行 Python 脚本的公共封装（`output(bytes)` / `finished(int)` 信号 + `is_running()` 防并发），知识库维护、元规则维护、卡牌点数 xlsx 导入三个面板共用，消除各自维护 QProcess 生命周期的重复代码；
@@ -130,27 +152,35 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 
 ### 3.1.1 轮询匹配后的选将推荐刷新
 
-`MainWindow._on_poll_result()` 使用 `PollResult`、`PollTaskResult` 与 `PollOutcome` 接收轮询结果；后台线程边界将 OCR worker 的原始字典转换为强类型对象，旧版字典调用仍由 `from_raw()` 兼容。首次收到 `matched` 时只更新页面数据；在“配置 → 模拟器配置”勾选“识别后自动跳转到结果页面”后，才通过主 `QTabWidget.setCurrentWidget()` 切换到对应工作区，并由 `currentChanged` 同步外壳。对局攻略至少需要 3 个 `name` 已确认的槽位，待确认、未知和冲突状态不计数。冷却期间的后续匹配同样调用 `RecommendationPanel.load_from_ocr()`。收到 `healthy_no_match` 后才重置状态，避免截图暂时失败或 OCR 重试导致页面状态抖动。
+`PollCoordinator` 在后台线程执行截图 + OCR，把结构化 `PollResult`（`generation` / `outcome` / `task_results: dict[str, PollTaskResult]`）通过跨线程信号送回 GUI 线程；`_consume_poll_result()` 先丢弃过期 `generation`、再完成轮询状态迁移后 `poll_result_ready` 通知界面。`MainWindow._on_poll_result()` 按任务类型消费，兼容旧版字典与 `PollResult`：
+
+- **hero_selection** — 首次命中 `MATCHED` 时：设置该任务的冷却（`mumu_hero_selection_cooldown`），清空并激活对局攻略任务（新一轮自动跳转），仅首次将 `_selection_page_active=True` 并按 `mumu_ocr_auto_switch_tab` 切换主 Tab，`RecommendationPanel.load_from_ocr()` 刷新数据。`HEALTHY_NO_MATCH` 重置 `_selection_page_active`；`TEMPLATE_MISSING` 调 `_ocr_service.deactivate_task()` 停止空转。
+- **match_guide** — 命中 `MATCHED` 时立即 `deactivate_task("match_guide")` 释放对局攻略任务（避免同一轮内重复抢页），首次将 `_match_guide_page_active=True` 并按 `mumu_ocr_auto_switch_tab` 切换主 Tab，`MatchGuidePanel.update_block(0, task_result)` 提交结果。`HEALTHY_NO_MATCH` 调 `_deactivate_match_guide_if_idle()`：激活后超过 `MATCH_GUIDE_IDLE_TIMEOUT_SECONDS=90` 秒仍无命中即失活，防止非对局页面（如巅峰赛后回大厅）无限期 fallback 空转 OCR。
+
+轮询冷却期间的重复匹配不会重复抢占用户当前页面；截图为空、图像截断等可重试结果也不会重置选将页面状态。对局攻略任务在后台线程经 `_validate_match_guide_result()` 校验：只有 `MATCHED` 且已确认角色数 `>= MATCH_GUIDE_MIN_CONFIRMED_NAMES=3` 才视作命中，不足时降级为 `HEALTHY_NO_MATCH` 并写入 detail。
 
 ### 3.1 主窗口信号拓扑
 
-`MainWindow` 直接连接武将采集、截图和 OCR 服务；攻略/相性服务的任务信号由 `AiGenerationWorkflow` 统一连接和处理，主窗口只接收工作流的状态与数据刷新通知：
+协作对象装配收敛到 `AppServices`：`__init__` 构造 `DataFacade` / `HeroFetchService` / `GuideFetchService` / `SynergyFetchService` / `ComboManager` / `AiGenerationWorkflow` / `CaptureService` / `OcrService` / `PollCoordinator` / `AnnouncementManager` / `AnnouncementService`，`attach(self)` 一次性 `setParent` 并回填 `AiGenerationWorkflow._window`。`MainWindow` 直接连接武将采集、截图和 OCR 服务的信号；攻略/相性服务的任务信号由 `AiGenerationWorkflow` 统一连接和处理，主窗口只接收工作流的状态与数据刷新通知：
 
 ```
 MainWindow
+ ├── AppServices.attach(self)   ← 组合根，构造与父子挂载一次完成
  ├── HeroFetchService ─── 武将采集
  ├── AiGenerationWorkflow ─ 攻略/相性任务协调
  │   ├── GuideFetchService ─── 攻略子进程
  │   └── SynergyFetchService ─ 相性子进程
  ├── CaptureService ──── 截图
- └── OcrService ──────── OCR + 轮询
+ ├── OcrService ──────── OCR + 轮询（信号经 PollCoordinator 编排）
+ ├── PollCoordinator ─── 轮询后台线程与结果过滤
+ └── AnnouncementService ── 公告检查与 diff
 ```
 
 工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；后端选择对话框同时返回 `(backend, use_rag)`（API/浏览器 + RAG 增强/经典模式），工作流将 `use_rag` 透传给攻略/相性获取服务；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
 
-底部状态栏按职责分为三部分：普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度；模拟器状态常驻显示 ADB 配置和连接状态；OCR 状态常驻显示轮询的未启用、运行、恢复、冷却或暂停状态。任务消息不会覆盖后两类连接状态，点击模拟器或 OCR 状态可打开模拟器配置。
+底部状态栏按职责分为三部分：普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击任一胶囊经 `mumu_config_requested` 打开模拟器配置；`QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）。任务消息不会覆盖后两类连接状态。
 
-攻略全量、增量、指定与相性配对、选定武将共五个菜单入口仍保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
+攻略全量、增量、指定与相性配对、选定武将、实战配队批量共六个菜单入口保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
 ### 3.2 对话框基类体系
 
@@ -222,30 +252,50 @@ HeroBrowser (QWidget)
 ```
 RecommendationPanel (QWidget)
  ├── PageActionBar：最近识别状态 + [识别当前阵容] [更多]
- ├── NoticeBanner：指数过期或可恢复错误
- └── QScrollArea → QGridLayout (2列 × 4行，仅纵向滚动)
-      └── HeroCardWidget × 8
-           ├── 头像区（100×129px, 浮层显示名称 + 势力色块，左键双击或 [技能] 打开技能详情）
-           └── 信息区
-               ├── 定位 · 推荐指数（例如 `辅助 · 推荐指数：92 / S`；悬停或点击指数查看明细，右侧口径图标始终保留）+ [技能] [查看攻略]
-               ├── 最佳搭档 + 两条相性摘要，完整列表保留在 Tooltip
-               └── 历史单将胜率 + 异常状态 + 固定 TOP 1/2/3 徽章
-       └── HeroSkillDialog（来自 ui/shared/hero_dialogs.py，按技能名称分 Tab 展示描述和结算）
+ │   └── 更多菜单：[从图片导入] [保存截图] ── [重建推荐指数]
+ ├── NoticeBanner「推荐指数待重建」：官方榜单导入后置 stale，附 [立即重建]
+ ├── NoticeBanner「操作未完成」：截图失败/图片导入失败，附 [重试/重新选择] + [打开模拟器配置]
+ ├── 实战配队横条（推荐识别后展示）：
+ │   ├── 标题「⚔ 实战配队」 + [管理] + [收起/展开]
+ │   └── FlowLayout 芯片：★N 武将1[座次] + 武将2[座次]
+ │       └── 点击 chip → show_combo_detail()
+ ├── QScrollArea → QGridLayout (2列 × 4行，仅纵向滚动)
+ │    └── HeroCardWidget × 8
+ │         ├── 头像区（100×129px 框架，96×129px 图像；左键双击或 [查看技能] 打开技能详情）
+ │         │    ├── 顶部左：势力色徽章（faction_colors.get_faction_colors() 查询）
+ │         │    ├── 顶部右：实战角标「实战 ★N」set_combo_badge()（当前 8 人中最高评级配队）
+ │         │    └── 底部浮层：武将名
+ │         └── 信息区
+ │             ├── 定位 · StatusBadge（pending/unknown/indexStale/insufficientData/missingGuide/missingPortrait）
+ │             ├── 推荐指数按钮 + 口径图标（点击弹 ToolTip 展示胜率/出场/禁用/排序四项来源）
+ │             ├── [查看攻略] [确认]（仅 pending 时显示）
+ │             ├── 历史单将胜率 + 78×20 固定「胜率 TOP N」徽章（深金/银灰/铜色实色边框）
+ │             └── 最佳搭档 + 两条相性摘要，完整列表保留在 Tooltip
+ │      └── HeroSkillDialog（来自 ui/shared/hero_dialogs.py，按技能名称分 Tab 展示描述和结算）
+ └── _capture_lock = CaptureRequestLock()
+      └── begin(source) 锁来源 → 服务回调 → finish() 释放并回传来源
 ```
 
-`recommendation_panel.py` 只保留推荐数据更新、相性加载、OCR 导入、手动重建推荐指数和截图信号协调；初始空状态直接提供当前模拟器识别和本地图片导入入口，结果态把图片导入、保存截图和重建收纳到“更多”。胜率和推荐指数快照由 `RecommendationService` 一次读取，前三胜率排名基于数值快照计算。卡片固定高 141px、宽 390～640px，1100×760 默认窗口的 588px 视口正好容纳四行与三段间距；宽屏余量留在网格底部，960×640 才启用纵向滚动。卡片按“定位、推荐指数、最佳搭档、相性摘要、历史单将胜率、技能/攻略操作”呈现；完整相性列表通过 Tooltip 保留。重建成功后同步刷新当前卡片指数、胜率和 TOP 排名；空 OCR、模板未匹配和捕获失败通过页内通知反馈。
+`recommendation_panel.py` 保留推荐数据更新、相性加载、OCR 导入、手动重建推荐指数、截图信号协调与实战配队匹配；`RecommendationService` 一次读取胜率与推荐指数快照，前三胜率排名基于数值快照计算。卡片固定高 141px、宽 390～640px，1100×760 默认窗口的 588px 视口正好容纳四行与三段间距；宽屏余量留在网格底部，960×640 才启用纵向滚动。卡片按“定位、推荐指数、最佳搭档、相性摘要、历史单将胜率、技能/攻略操作”呈现；完整相性列表通过 Tooltip 保留。
 
-- `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌及卡片信号。
+**截图单飞锁与错误反馈**：`_begin_capture_request(source)` 经 `CaptureRequestLock.begin(CaptureSource(source))` 抢占来源，失败（另一请求在途）直接忽略本次触发；成功则禁用所有识别/导入/重建控件并把 `PageActionBar` 状态切到“正在识别…” / “正在保存…” / “正在导入图片…”。`_on_capture_result()` / `_on_capture_failed()` 调 `finish()` 释放锁：返回 None（过期回调）直接返回；返回来源后按来源分发：`adb_save` 仅复位控件，其余进入 OCR 结果导入。`_on_capture_failed` 把错误按来源写入 `NoticeBanner` 附可操作按钮——文件导入失败显示“重新选择”，ADB 失败显示“重试”与“打开模拟器配置”，`_retry_last_action()` 按上次失败来源重放。
+
+**实战配队横条**：`_refresh_combo_strip()` 在当前 8 人已确认时遍历 `ComboManager.list_combos()`，两条 hero_id 都在当前集合内的配队按评级降序进入横条；同一配对多座次变体逐条展示。`_update_combo_badges()` 为每个当前武将取参战配队中最高评级，通过 `HeroCardWidget.set_combo_badge("实战 ★N")` 在头像右上角显示金色徽章。点击 chip 调 `shared.combo_detail.show_combo_detail()` 展示 2×2 号位示意 + 座次要求 + note 原文；[管理] 打开 `ComboManagementDialog` 增删改后发 `combos_changed` 立即刷新横条与角标。
+
+- `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌、实战角标及卡片信号；`cardState` 动态属性驱动 QSS 的卡片状态样式（empty / pending / unknown / ready / indexStale / insufficientData / missingGuide / missingPortrait）。
 - `guide_detail_dialog.py`：`GuideDetailDialog` 以外层滚动区展示摘要和正文预览；双击预览会打开 `GuideMarkdownDialog` 阅读完整 Markdown 正文。
 - `markdown_renderer.py`：统一将攻略与相性 Markdown 转为安全 HTML，负责原始 HTML 转义和解析前长度限制。
 
-为兼容既有调用，`recommendation_panel.py` 仍导入并暴露两个公开类名；页面创建卡片与打开攻略弹窗的调用方式不变。`RecommendationPanel` 通过 `hero_id`、`hero_name`、`set_unrecognized_name()` 和 `refresh_faction_color()` 使用卡片状态，不访问卡片内部字段或重绘方法。
+`RecommendationPanel` 通过 `hero_id`、`hero_name`、`set_unrecognized_name()` / `set_pending_name()`、`set_combo_badge()`、`set_recommendation_stale()` 和 `refresh_faction_color()` 使用卡片状态，不访问卡片内部字段或重绘方法。
 
 **数据接口：**
 ```python
 def update_recommendations(self, data: list[dict]) -> None
-# data 格式: [{"index": 1, "name": "诸葛亮", "confidence": 0.9823}, ...]
+# data 格式: [{"index": 1, "name": "诸葛亮", "confidence": 0.9823,
+#              "candidates": [...], "resolution": "confirmed|manual|unresolved|unknown|conflict"}, ...]
 ```
+
+`update_recommendations` 两遍扫描：第一遍收集所有已确认武将的 id 到 `_current_hero_ids`（保证相性过滤时 8 个 ID 齐全），第二遍按槽位填充卡片；未确认槽位走 `set_pending_name(raw_name, candidates)` 显示候选数量与候选名单 Tooltip，仅允许 `_confirm_candidate()` 从白名单 `allowed_names=candidates` 中人工选择，选择后 `resolution="manual"` 写回 `_ocr_results_by_slot` 并重跑 `update_recommendations`。
 
 ### 3.4.1 胜率前三视觉锚点
 
@@ -343,10 +393,10 @@ PeakSelectPanel
 
 `SettingsDialog` 由菜单“配置 → API 配置”打开，内容分为两个 Tab：
 
-- **参数配置**：保留原 API Key、API URL、模型名称、请求频率、HTTP 超时和最大重试次数表单，仍写入 `config.env`。
+- **参数配置**：左侧档案列表（名称/供应商/URL/启用/含 Key）+ 右侧编辑面板（名称、供应商、API URL、API Key、模型名称、启用状态、备注）+ 底部运行参数（每分钟请求数 / HTTP 超时 / 最大重试次数）。档案数据存 `config/api_profiles.json`（`{"version": 1, "profiles": [...]}`）；档案互斥——启用当前档案时其他自动停用；API Key 字段“留空”表示保持原值，“清空为未配置”按钮才把 Key 置空。运行参数写入 `config.env` 标量。
 - **价格配置**：维护 `config/model_pricing.json` 的币种、计价单位（百万tokens）、更新时间，以及每个模型的输入、输出和可选缓存命中单价。支持新增和删除模型。
 
-两个 Tab 共用固定底栏中的“取消/保存”。保存价格前会校验模型名称非空、名称不重复、单价为合法非负数字；写入期间底栏进入 busy 状态，完成后显示 Toast 并关闭。写入过程使用临时文件替换，避免配置文件被部分写入。价格未配置的模型仍不会套用默认价格，成本确认界面会显示无法自动估算。
+两个 Tab 共用固定底栏中的“取消/保存”。保存前会校验：档案名称唯一非空、URL 以 `http://` 或 `https://` 开头、启用档案的语义供应商必填 API Key（停用可留空）、模型名称非空不重复、单价为合法非负数字；写入期间底栏进入 busy 状态，完成后显示 Toast 并关闭。写入过程使用临时文件替换，避免配置文件被部分写入。价格未配置的模型仍不会套用默认价格，成本确认界面会显示无法自动估算。
 
 ### 3.8 数据管理对话框
 
@@ -356,10 +406,24 @@ PeakSelectPanel
 
 ### 3.9 公告更新对话框与横幅
 
-- 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：待生效公告显示“已发布，等待百科更新”，可更新公告显示“百科已更新，涉及：…”，纯 diff 变化也提示“检测到百科数据变化”。
-- `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单。
-- “更新武将数据”必须先经 `HeroUpdateConfirmDialog` 确认：列出待更新武将（名称/类型/来源/字段级差异摘要），可勾选、全选/清空、双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）；未勾选的保留本地。确认后按勾选执行：调整类 → `fetch_specific(ids)`，新增类 → `fetch_incremental()`，两阶段经 `fetch_completed` 信号链式串行，完成后 `mark_applied()` 并刷新快照；全取消仅刷新快照、不执行采集。
-- 状态栏新增 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
+- 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：可更新公告显示“武将数据可更新 · 百科已更新，涉及：…”（success 色调），待生效公告显示“检测到武将相关公告 · 公告已发布，官网百科数据通常滞后半天到一天”（info 色调），纯 diff 变化显示“检测到百科数据变化”（warning 色调）。
+- `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单，非模态；`check_requested` / `update_requested` 两个信号分别驱动检查与更新入口。
+- “更新武将数据”先由 `AnnouncementService.collect_base_candidates()` 预判候选，无候选时状态栏提示；有候选则调用 `prepare_update_candidates()` 后台拉取官网数据并计算字段级差异，结果经 `update_candidates_prepared` 信号回到 `_on_hero_update_prepared()`。
+- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。确认后按勾选执行：`_pending_update_phases` 构造为 `[("specific", ids)]` 与 `[("incremental", None)]` 两阶段队列，`_start_next_update_phase()` 逐个 `_dispatch_update_phase()` → `fetch_specific(ids)` / `fetch_incremental()`，`_on_fetch_completed` 消费阶段（仅 `_update_phase_fetch_in_flight=True` 时冒领），任一阶段失败或采集忙中断整条流并 `mark_applied` 保持横幅可见。全取消仅 `mark_applied()` 刷新快照、不执行采集。
+- 状态栏 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
+
+### 3.10 实战配队维护、批量生成与分类建议
+
+**实战配队**（`data/combos.json`）由三条 UI 路径维护，均写入同一个 `ComboService`：
+
+- **手工维护** — `ComboManagementDialog`（选将推荐面板“实战配队”横条右上角“管理”打开）。列表用轻量 `QListWidget` 承载上千条配队（不做逐行控件渲染），支持按武将筛选（下拉框可编辑，`QCompleter` 包含匹配）与“仅看手工”；每行显示 `★rating 武将1[座次] + 武将2[座次]  🖊 手工/📥 导入  note`，双击行等同编辑。增删改后发 `combos_changed` 供面板刷新横条与卡片角标。
+- **单条编辑** — `ComboEditDialog` 承载双人选择（`BaseHeroSelectDialog` `SINGLE` 模式，两个位置不能相同）+ 实战评级 1–10 + 每个武将的四号座次复选 + note 备注。保存时若两个武将均未勾选座次会提示是否按“不限座次”保存；已存在同配对时提示覆盖（编辑同配对视为直接改，不提示）。保存前把 `hero1_id < hero2_id` 规范化并把座次取并集写入 `position` 字段；标记 `manual=True` 使下次官方导入时优先保留。
+- **批量生成** — `SynergyCombosDialog`（菜单“数据 → 武将相性 → 实战配队生成”）从 combos 数据集按评级 / 座次 / 生成状态筛选配对清单，确认后 `AiGenerationWorkflow.request_synergy_combos()` 把选中的 pairs 列表交给 `SynergyFetchService.fetch_pairs_list()`，进度对话框以“相性评分”为 item 文案，`overwrite_existing` 决定覆盖已有 AI 评分。
+- **导入** — `CombosImportDialog`（菜单“导入 → 实战配队导入”）导入外部配队，成功后 `MainWindow._on_combos_imported()` 刷新共享 combos 数据、相性视图与选将推荐横条。
+
+**分类建议 worker**（`hero_classification_panel.py`）— 武将分类维护面板的“LLM 建议分类”按钮把当前武将的技能文本、定位、现有分类清单交给 `_HeroCategoryWorker(QThread)` 后台线程执行 `suggest_hero_categories()`。生命周期与面板解耦：worker `parent=None`，`_LIVE_WORKERS` 集合持有运行中的线程防止 Python 引用丢失导致 QThread 被 GC 析构，`run()` 结束时 `_LIVE_WORKERS.discard(self)` + 释放 generator；`finished` 连接 `deleteLater()` 让面板销毁后线程也能自回收。建议返回时若 `hero != self._current_hero` 则只弹 Toast 提示“已切换武将，X 的建议未应用”；否则 `set_checked(suggested)` 写回勾选（`set_checked` 不发信号，手动走 `_on_hero_categories_changed()` 让归类变更写 repo 并 `mark_dirty`）。
+
+---
 
 ## 四、关键代码片段
 
@@ -379,35 +443,51 @@ def _update_context_actions(self, _index=None) -> None:
 
 > **设计思路：** 身份头部始终只显示一个当前内容编辑入口，删除作为危险低频命令进入“更多”菜单。切换页签只更新操作文字、处理方法和可用状态，不改变原编辑、删除回调及二次确认。
 
-### 4.2 推荐面板 OCR 导入
+### 4.2 推荐面板 OCR 导入（两遍扫描）
 
 ```python
-def load_from_ocr(self, ocr_results: list[dict]) -> None:
+def update_recommendations(self, data: list[dict]) -> None:
     self._ocr_mode = True
     self._current_hero_ids.clear()
+    recommendation_data = self._load_recommendation_data()   # 一次性读取快照
 
-    for item in ocr_results:
-        idx = item.get("index", 0) - 1
-        name = item.get("name", "")
-        confidence = item.get("confidence", 0.0)
-
+    # 第一遍：收集所有已确认武将 ID（保证相性过滤时 8 个 ID 齐全）
+    hero_by_slot: dict[int, str] = {}
+    for item in data:
+        idx = item.get("index", 0)
+        name = str(item.get("name", "")).strip() if self._is_confirmed_result(item) else ""
         hero = self._hero_mgr.get_hero_by_name(name)
         if hero:
-            card.set_hero(hero)
-            card.set_recommendation_index(indexes.get(name))
             self._current_hero_ids.add(hero.id)
-        else:
-            card.set_unrecognized_name(name, confidence)
+            hero_by_slot[idx] = name
 
-        # 相性 + 推荐快照加载
-        self._load_real_synergies(idx, hero.id if hero else 0)
-        self._load_card_stats(idx, name, recommendation_data)
+    # 第二遍：按槽位填充卡片（未确认 → pending；未匹配 → unknown；已确认 → 数据）
+    for item in data:
+        idx = item.get("index", 0)
+        name = str(item.get("name", "")).strip() if self._is_confirmed_result(item) else ""
+        card = self._cards[idx - 1]
+        if not name:
+            card.set_pending_name(str(item.get("raw_name") or ""), list(item.get("candidates") or []))
+            continue
+        hero = self._hero_mgr.get_hero_by_name(name)
+        if not hero:
+            card.set_unrecognized_name(name)
+            continue
+        card.set_hero(hero)
+        self._load_card_stats(idx - 1, name, recommendation_data)
+        self._load_card_guide_state(idx - 1, hero.id)
 
-    # 历史单将胜率排序 + TOP 徽章
-    self._apply_medal_rankings()
+    # 第三遍：所有 ID 齐全后统一加载相性
+    for idx, name in hero_by_slot.items():
+        hero = self._hero_mgr.get_hero_by_name(name)
+        if hero:
+            self._load_real_synergies(idx - 1, hero.id)
+
+    self._refresh_combo_strip()         # 实战配队横条 + 卡片角标
+    self._apply_medal_rankings()        # 胜率 TOP 1/2/3
 ```
 
-> **设计思路：** OCR 置信度不参与推荐指数。页面按当前版本三份官方榜单生成快照，卡片以“推荐指数：分数 / 评级”显示，例如“推荐指数：92 / S”；右侧圆形感叹号悬停说明计算口径。胜率、出场或禁用数据缺失时显示“推荐指数：-- / 数据不足”。高相性组合在 OCR 模式下仅显示当前 8 人之间的相性，通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志过滤。
+> **设计思路：** OCR 置信度不参与推荐指数。页面按当前版本三份官方榜单生成快照，卡片以“推荐指数：分数 / 评级”显示，例如“推荐指数：92 / S”；右侧圆形感叹号悬停说明计算口径。胜率、出场或禁用数据缺失时显示“推荐指数：-- / 数据不足”。高相性组合在 OCR 模式下仅显示当前 8 人之间的相性，通过 `_current_hero_ids` 集合和 `_ocr_mode` 标志过滤。未确认槽位走 `set_pending_name()` 显示候选数量与候选名单 Tooltip，仅允许 `_confirm_candidate()` 从白名单 `allowed_names=candidates` 中人工选择，选择后 `resolution="manual"` 写回 `_ocr_results_by_slot` 并重跑 `update_recommendations()`。
 
 ---
 
@@ -453,7 +533,7 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 
 | 对话框 | 用途 |
 |--------|------|
-| `SettingsDialog` | API 配置编辑 |
+| `SettingsDialog` | API 档案列表 + 运行参数 + 价格配置编辑 |
 | `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
 | `MumuConfigDialog` | 组装配置区块、状态协调、文件选择和 ROI 框选；服务操作委托 `MumuConfigCoordinator` |
 | `MumuDeviceSection` / `MumuTemplateSection` / `MumuOcrPollingSection` | 设备、模板和 OCR 参数控件及用户操作信号，不调用业务服务 |
@@ -462,8 +542,16 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | `HeroEditDialog` | 武将信息编辑 |
 | `GuideEditDialog` | 攻略内容编辑 |
 | `HeroRelationSelectDialog` | 搭配推荐武将的搜索多选 |
+| `SynergyEditDialog` | 相性评分/维度/说明编辑 |
 | `RoiSelectorDialog` | 模板 ROI 区域框选 |
-| `BaseHeroSelectDialog`（及其子类） | 武将选择 |
+| `BaseHeroSelectDialog`（及其子类 `HeroFetchDialog` / `GuideFetchDialog` / `SynergyPairDialog` / `SynergySingleDialog`） | 武将选择 |
+| `SynergyCombosDialog` | 实战配队批量生成配对清单筛选，返回 `selected_pairs` |
+| `ComboManagementDialog` | 实战配队全量列表 + 增删改，`combos_changed` 通知面板刷新 |
+| `ComboEditDialog` | 实战配队新增/编辑表单（双人选择 + 评级 + 座次 + note） |
+| `CardAnnotationEditDialog` / `CardFieldSchemaDialog` / `CardFieldEditDialog` | 卡牌追加字段编辑与字段定义管理 |
+| `HeroUpdateConfirmDialog` / `HeroDiffDetailDialog` | 公告更新武将确认与本地 vs 官网 diff 详情 |
+| `AnnouncementDialog` | 公告列表、全文与百科 diff 只读查看（非模态） |
+| `OfficialImportReviewDialog` | 官方榜单导入待复核数据审查 |
 | `IndexRefinementDialog` | 索引精化：LLM 建议/人工补全卡牌与武将语料索引字段（curated，重建不覆盖） |
 | `ProposalDetailDialog` | 元规则提案项差异对比 + 文档上下文（只读） |
 | `ProposalItemConfirmDialog` | 元规则提案项逐条确认（approved/revised/rejected + 可编辑文本） |
@@ -476,14 +564,23 @@ def load_from_ocr(self, ocr_results: list[dict]) -> None:
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `src.data.manager` | 通过 DataFacade 读取/写入数据 |
-| 依赖 | `src.data.combo_manager` | PeakSelectPanel 匹配实战配队 |
+| 依赖 | `src.data.combo_manager` | 实战配队 CRUD，选将推荐与巅峰赛匹配共用 |
+| 依赖 | `src.data.recommendation_index_repository` | 推荐指数快照（胜率/出场/禁用/排序） |
 | 依赖 | `src.data.peak_win_rate_repository` | 巅峰赛胜率/出场排行数据 |
+| 依赖 | `src.data.hero_classification_repository` | 武将分类（知识库维护页签） |
 | 依赖 | `src.business.*` | 连接业务服务的 Signal，触发 fetch_*() |
+| 依赖 | `src.business.analysis.recommendation_service` | 推荐指数加载与手动重建 |
 | 依赖 | `src.business.analysis.peak_ban_advice` | 巅峰赛禁选建议 |
 | 依赖 | `src.business.recognition.peak_select_watcher` | 巅峰赛识别循环驱动 |
-| 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
+| 依赖 | `src.business.maintenance.data_management_service` | 武将/攻略/相性变更的快照与备份写入 |
+| 依赖 | `src.business.maintenance.corpus_services` | 实战配队/专属牌/分类写路径服务 |
+| 依赖 | `src.business.maintenance.classification_suggest` | 武将分类 LLM 建议（后台 worker 调用） |
+| 依赖 | `src.business.card_catalog` | 卡牌目录服务（`CardManagementPanel`） |
+| 依赖 | `src.business.announcement` | 公告与百科 diff 检查 |
+| 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |
+| 依赖 | `src.ui.shared.persist.run_edit_dialog` | 模态编辑对话框的标准保存循环 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 

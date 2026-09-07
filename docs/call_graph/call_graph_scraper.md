@@ -50,65 +50,70 @@ MainWindow._request_fetch_all()
            -> argparse.parse_args()                             [--dry-run / --output / --skip-images / --verbose]
            -> setup_logging(log_level, log_to_file)
            -> full.crawl(dry_run, output_path, skip_images)
-              -> [1/5] crawler.fetch(BAIKE_URL)                 [HTTP GET 首页 HTML, ~50KB]
-                 -> urllib.request.Request(url, HEADERS)
-                 -> urllib.request.urlopen(req, timeout=30)
-                 -> 重试: retry ×3, interval=2s
-                 -> HTTP 400/401/403/404 → 立即 raise（不可重试）
-              -> adapter.find_chunk_url(html)                   [正则提取 chunk 路径]
-                 -> CHUNK_URL_PATTERN.search(html)
-                 -> [未命中] _NUXT_SCRIPT_PATTERN.finditer(html) → hints
-                 -> logger.error + raise RuntimeError（含页面开头 300 字符）
-              -> crawler.fetch(BASE_URL + chunk_url)            [HTTP GET JS chunk, ~300KB, 同重试策略]
-              -> [2/5] adapter.parse_heroes_chunk(js_text)
-                 -> adapter.extract_js_array(js_text)           [字符级状态机]
-                    -> js_text.find("const e=[")
-                    -> [未命中] logger.error + raise RuntimeError（含 JS 开头 300 字符）
-                    -> 遍历字符: quote / escaped / depth 三段状态
-                       引号内 char → 跳过 depth 计数
-                       遇到 " / ' / ` → 进入 quote 态
-                       遇到 [ → depth++，] → depth--
-                       depth == 0 且 quote 空 → 返回子串
-                    -> [未闭合] raise RuntimeError("JS 数组未闭合")
-                 -> adapter.js_to_json(array_text)
-                    -> adapter._to_json_text(text)              [字符级状态机, 三步预处理]
-                       引号内 → 原样输出（识别 \\ 转义）
-                       : + _UNDEFINED_VALUE_RE → 输出 "null"
-                       , + _TRAILING_COMMA_RE → 丢弃
-                       { 或 , 后 _KEY_POSITION_RE → 标识符键补双引号
-                    -> json.loads(out)
-              -> [3/5] [逐项] crawler.transform(raw)
-                 -> clean_html(raw["name"])                     [去标签 / unescape / 归一化空白]
-                 -> clean_html(raw["dynasty"])                  [势力字段]
-                 -> clean_html(raw["p_positioning"])            [定位字段]
-                 -> GENDER_MAP.get(raw["gender"], "男")         [1/2 映射, 默认男]
-                 -> int(raw["p_blood_max"]) / int(raw["p_card_max"])  [失败默认 4]
-                 -> [遍历 raw["skill"]]
-                    -> clean_html(sk["skill_name"])
-                    -> split_skill_desc(sk["skill_desc"])       [按 </p> 拆分 + 段落标题匹配]
-                       -> re.sub: 合并相邻 <strong>
-                       -> section_pattern.search(line + "</p>") [7 类标题]
-                       -> clean_html(rest)
-                    -> {"name", "description", "settlement"}
-                 -> 缺 id/name → return None
-              -> [4/5] [逐项] 收集 → 统计势力分布打印
-              -> [5/5] crawler.validate_heroes(transformed)     [Pydantic 校验]
-                 -> Hero.model_validate(h) ×N
-                 -> h.model_dump(mode="json")
-                 -> [失败] logger.error + logger.info，不阻断
+              -> [1/5] 定位数据源
+                 -> crawler.fetch(BAIKE_URL)                     [HTTP GET 首页 HTML, ~50KB]
+                    -> urllib.request.Request(url, HEADERS)
+                    -> urllib.request.urlopen(req, timeout=30)
+                    -> 重试: retry ×3, interval=2s
+                    -> HTTP 400/401/403/404 → 立即 raise（不可重试）
+                 -> adapter.find_chunk_url(html)                 [返回完整 URL: BASE_URL + /_nuxt/mjbk.<hash>.js]
+                    -> CHUNK_URL_PATTERN.search(html)
+                    -> [未命中] _NUXT_SCRIPT_PATTERN.finditer(html) → hints
+                    -> logger.error + raise RuntimeError（含页面开头 300 字符）
+              -> [2/5] 下载 JS chunk
+                 -> crawler.fetch(chunk_url)                     [HTTP GET JS chunk, ~300KB, 同重试策略]
+              -> [3/5] 解析原始数据
+                 -> adapter.parse_heroes_chunk(js_text)
+                    -> adapter.extract_js_array(js_text)         [字符级状态机]
+                       -> js_text.find("const e=[")
+                       -> [未命中] logger.error + raise RuntimeError（含 JS 开头 300 字符）
+                       -> 遍历字符: quote / escaped / depth 三段状态
+                          引号内 char → 跳过 depth 计数
+                          遇到 " / ' / ` → 进入 quote 态
+                          遇到 [ → depth++，] → depth--
+                          depth == 0 且 quote 空 → 返回子串
+                       -> [未闭合] raise RuntimeError("JS 数组未闭合")
+                    -> adapter.js_to_json(array_text)
+                       -> adapter._to_json_text(text)            [字符级状态机, 三步预处理]
+                          引号内 → 原样输出（识别 \\ 转义）
+                          : + _UNDEFINED_VALUE_RE → 输出 "null"
+                          , + _TRAILING_COMMA_RE → 丢弃
+                          { 或 , 后 _KEY_POSITION_RE → 标识符键补双引号
+                       -> json.loads(out)
+              -> [4/5] 数据清洗与字段映射
+                 -> [逐项] crawler.transform(raw)
+                    -> clean_html(raw["name"])                   [去标签 / unescape / 归一化空白]
+                    -> clean_html(raw["dynasty"])                [势力字段]
+                    -> clean_html(raw["p_positioning"])          [定位字段]
+                    -> GENDER_MAP.get(raw["gender"], "男")       [1/2 映射, 默认男]
+                    -> int(raw["p_blood_max"]) / int(raw["p_card_max"])  [失败默认 4]
+                    -> [遍历 raw["skill"]]
+                       -> clean_html(sk["skill_name"])
+                       -> split_skill_desc(sk["skill_desc"])     [按 </p> 拆分 + 段落标题匹配]
+                          -> re.sub: 合并相邻 <strong>
+                          -> section_pattern.search(line + "</p>") [7 类标题]
+                          -> clean_html(rest)
+                       -> {"name", "description", "settlement"}
+                    -> 缺 id/name → return None
+                 -> [收集势力分布] 按 faction 计数并 print
+              -> [5/5] Pydantic 模型校验
+                 -> crawler.validate_heroes(transformed)         [Pydantic 校验]
+                    -> Hero.model_validate(h) ×N
+                    -> h.model_dump(mode="json")
+                    -> [失败] logger.error + logger.info，不阻断
               -> dry_run 分支：打印前 5 条，不写文件
-              -> crawler.save_json_atomic(out_path, validated) [原子写入]
+              -> crawler.save_json_atomic(out_path, validated)  [原子写入]
                  -> tmp_path = path.with_suffix(".tmp")
                  -> json.dump(data, tmp, ensure_ascii=False, indent=2)
                  -> tmp_path.replace(path)
               -> [不 skip-images] crawler.download_hero_images(raw_list)
                  -> [遍历 raw_list]
-                    -> _safe_image_name(raw["name"])            [NFC + 白名单字符 + Windows 保留名]
-                    -> out_dir / f"{name}.png"
+                    -> _safe_image_name(raw["name"])             [NFC + 白名单字符 + Windows 保留名]
+                    -> out_dir / f"{name}.png"                   [out_dir = PROJECT_ROOT/images/]
                     -> dest.resolve().is_relative_to(out_dir.resolve())  [路径逃逸防护]
                     -> if skip_existing and dest.exists(): continue
                     -> _download_hero_image(icon_url, dest)
-                       -> _open_image_response(icon_url)        [禁用重定向, 逐跳白名单]
+                       -> _open_image_response(icon_url)         [禁用重定向, 逐跳白名单]
                           -> urllib.request.build_opener(_NoRedirectHandler())
                           -> for _ in range(MAX_IMAGE_REDIRECTS + 1):
                              -> _validate_image_url(current_url)  [HTTPS + ALLOWED_IMAGE_HOSTS + 无凭证]
@@ -119,11 +124,11 @@ MainWindow._request_fetch_all()
                        -> [Content-Length > 5MB] raise
                        -> tempfile.NamedTemporaryFile(..., delete=False)
                        -> response.read(64KB) 分块写入
-                       -> _validate_image_file(temp_path)       [Image.verify + format=PNG + 像素上限]
+                       -> _validate_image_file(temp_path)        [Image.verify + format=PNG + 像素上限]
                        -> temp_path.replace(dest)
                        -> [异常] temp_path.unlink(missing_ok=True)
                     -> [连续 5 次失败] break（熔断）
-                    -> time.sleep(0.5s)                        [逐张间隔]
+                    -> time.sleep(0.5s)                          [逐张间隔]
               -> [异常] logger.exception + sys.exit(1)
            -> [子进程结束]
          ─────────────────────────────────────────────────────────
@@ -380,25 +385,37 @@ MainWindow._check_announcements()
              -> [API 失败] _parse_notice_page_html(fetch(ANNOUNCEMENT_PAGE_URL))
                 -> 负数合成 id（避免与 API 正数 id 混同，去重主键是 URL）
                 -> content_missing=True
-          -> classify_hero_related(title, content_html, hero_names)
+             -> [两者均失败] raise AnnouncementFetchError
+          -> [遍历 raw] classify_hero_related(title, content_html, hero_names)
              -> _html_to_lines(content_html)         [去标签 / 保留换行 / unescape]
              -> _extract_section(lines, NEW_SECTION_NAMES)      [新增武将]
              -> _extract_section(lines, ADJUST_SECTION_NAMES)   [武将调整/加强/削弱/修改]
              -> [new_section] 独立短名称行 → "新增"
              -> [adjust_section] CHANGE_RE 或 known_names 命中 → "调整/加强/..."
-          -> AnnouncementManager.merge_new(items, baseline)     [按 url 去重落盘]
+          -> AnnouncementManager.merge_new(enriched, baseline=first_run)   [按 url 去重落盘]
           -> fetch_baike_heroes()                    [复用 fetch_all_raw → transform → validate_heroes；失败返回 None]
-          -> build_hero_snapshot(heroes)             [每武将 {id: {name, hash}}]
-          -> _snapshot_to_plain(snapshot)            [BaikeSnapshot 模型 → {id: {name, hash}} dict]
-          -> load_baike_snapshot()                   [首次用本地 heroes.json 建基线]
-          -> diff_heroes(current_plain, baseline_plain)
-             -> {added: [name, id], modified: [...], removed: [...]}
-          -> AnnouncementManager.mark_ready_if_updated(diff)
-          -> build_timeline_events(announcements, cutoff_date)
-             -> extract_hero_changes(title, content_html)
-                -> _extract_new_hero_events(章节)
-                -> _extract_adjust_events(章节)      [武将名(类型) 行 → 修改前/修改后 / 技能名:描述]
-          -> append_announcement_events(events)
+          -> [current_heroes is not None]
+             -> snapshot = BaikeSnapshot(checked_at, heroes=build_hero_snapshot(current_heroes))
+             -> load_baike_snapshot()                [首次用本地 heroes.json 建基线；本地无数据/为空降级]
+             -> diff = diff_heroes(
+                      _snapshot_to_plain(snapshot),
+                      _snapshot_to_plain(baseline))
+                -> {added: [name, id], modified: [...], removed: [...]}
+             -> AnnouncementManager.mark_ready_if_updated(diff, current_names)
+          -> _sync_timeline()                        [hero_related 公告落地时间轴, 幂等]
+             -> AnnouncementManager.list_all()
+             -> build_timeline_events(all_announcements, cutoff_date=None)
+                -> cutoff_date 缺省 = load_timeline()["init_source_last_updated"]
+                -> [遍历 hero_related 公告, publish_date > cutoff_date]
+                   -> extract_hero_changes(title, content_html)
+                      -> _extract_new_hero_events(NEW_SECTION_NAMES 章节)
+                      -> [遍历 ADJUST_SECTION_NAMES] _extract_adjust_events(章节)
+                         [武将名(类型) 行 → 修改前/修改后 / 技能名:描述 / SKILL_NAME_LINE_RE]
+                   -> 拼装事件: date/hero/change_type/skills/source="announcement"/ref/announcement_title
+             -> append_announcement_events(events)    [按 ref 或 (date, hero) 幂等去重]
+                -> load_timeline() → 追加 → save_timeline() → data/mjs_adjustments.json
+             -> [异常] logger.exception, 返回 0（不中断检查）
+          -> AnnouncementCheckResult(timeline_added=...)
        -> _check_done.emit(result)                  [跨线程信号]
   -> _finalize_check(result)                         [GUI 线程收尾: 共享状态写入 + 快照落盘]
      -> save_baike_snapshot(snapshot, path)
@@ -556,11 +573,13 @@ AnnouncementService (business 层)
 │   ├── load_baike_snapshot()
 │   ├── announcement.diff_heroes()
 │   ├── AnnouncementManager.mark_ready_if_updated()
-│   ├── announcement.build_timeline_events()
-│   │   └── announcement.extract_hero_changes()
-│   │       ├── _extract_new_hero_events()
-│   │       └── _extract_adjust_events()
-│   └── append_announcement_events()
+│   └── _sync_timeline()                            [hero_related 公告 → data/mjs_adjustments.json, 幂等]
+│       ├── AnnouncementManager.list_all()
+│       ├── announcement.build_timeline_events()
+│       │   └── announcement.extract_hero_changes()
+│       │       ├── _extract_new_hero_events()
+│       │       └── _extract_adjust_events()
+│       └── append_announcement_events()
 ├── _finalize_check()
 │   └── save_baike_snapshot()
 ├── prepare_update_candidates() → Thread → _run_prepare()
@@ -615,7 +634,7 @@ AnnouncementService (business 层)
 | `announcement._html_to_lines(html)` | `announcement.py` | `classify_hero_related()`, `extract_hero_changes()` | `re.sub()`, `html.unescape()` |
 | `announcement._extract_section(lines, names)` | `announcement.py` | `classify_hero_related()`, `extract_hero_changes()` | `SECTION_HEADER_RE.match()` |
 | `announcement.extract_hero_changes(title, content)` | `announcement.py` | `build_timeline_events()` | `_extract_new_hero_events()`, `_extract_adjust_events()` |
-| `announcement.build_timeline_events(announcements, cutoff)` | `announcement.py` | `AnnouncementService._do_check()` | `extract_hero_changes()`, `load_timeline()` |
+| `announcement.build_timeline_events(announcements, cutoff_date=None)` | `announcement.py` | `AnnouncementService._sync_timeline()` | `extract_hero_changes()`, `load_timeline()` |
 | `announcement.fetch_baike_heroes()` | `announcement.py` | `AnnouncementService._do_check()`, `_run_prepare()` | `fetch_all_raw()`, `transform()`, `validate_heroes()` |
 | `announcement.hero_content_hash(hero)` | `announcement.py` | `build_hero_snapshot()` | `_normalize_text()`, `hashlib.md5()` |
 | `announcement.build_hero_snapshot(heroes)` | `announcement.py` | `AnnouncementService._do_check()` | `hero_content_hash()` |

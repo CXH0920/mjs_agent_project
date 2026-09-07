@@ -1,7 +1,7 @@
 # 调用链路：RAG 知识库模块
 
 > 对应源码：`src/rag/`、`src/business/rag/`、`src/business/maintenance/` 的 RAG 三文件、`src/ui/maintenance/` 全部、`src/scripts/` 的语料与维护脚本。
-> 代码基线：`77e9407`（2026-09-04）。
+> 代码基线：`6cbe8b6`（2026-09-07）。
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 虚线 `───` 表示跨越进程边界（QProcess / subprocess 子进程）。
 > 与 AI 批量生成、巅峰赛识别、实战配队相关的调用链路见 [call_graph_ai_batch.md](./call_graph_ai_batch.md)、[call_graph_peak_combos.md](./call_graph_peak_combos.md)；业务服务层与界面层总览见 [call_graph_business.md](./call_graph_business.md)、[call_graph_ui.md](./call_graph_ui.md)。
@@ -75,7 +75,8 @@ build_index(rebuild=True)                                        [CLI 入口：p
   -> SentenceTransformer(EMBEDDING_MODEL, device='cpu')          [2/4 加载向量模型]
   -> model.encode(docs, batch_size=32, normalize_embeddings=True) [3/4 向量化]
   -> chromadb.PersistentClient(path=CHROMA_DIR)                  [4/4 写入]
-  -> client.get_or_create_collection('mjs_rag_v1', metadata={'hnsw:space': 'cosine'})
+  -> client.get_or_create_collection('mjs_rag_v1',
+       metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'})
   -> [rebuild=True] client.delete_collection('mjs_rag_v1')
        -> [删除失败且集合仍存在] raise RuntimeError              [防止在残留旧向量上重建]
        -> coll.delete(where={}) -> coll.add(ids, documents, metadatas, embeddings)  [BATCH=200]
@@ -105,7 +106,7 @@ build_index(rebuild=True)                                        [CLI 入口：p
 | `Retriever._vector_search(query, where, n)` | `retriever.py` | bge 编码查询 + `collection.query()` 向量检索，`score = 1 - cosine distance` | `search()`, `scripts/eval_rule_faqs.py` |
 | `Retriever._build_keyword_index()` | `retriever.py` | KEYWORDS 静态词 → 含词块 id 倒排（惰性构建一次） | `_keyword_hits()` |
 | `Retriever._keyword_hits(query)` | `retriever.py` | 静态词走倒排 + 查询相关名称线性扫描，返回 `{block_id: 命中数 × KEYWORD_BONUS}` | `search()` |
-| `Retriever.search(query, heroes, top_k)` | `retriever.py` | 混合检索主入口（见下文第二章链路） | `rag_prompt.build_rag_context()` |
+| `Retriever.search(query, heroes, top_k)` | `retriever.py` | 混合检索主入口（见下文第四章链路） | `rag_prompt.build_rag_context()` |
 | `Retriever._apply_kind_quota(items, top_k)` | `retriever.py` | 按 `KIND_MAX` 分类型配额裁剪，总数不超过 `top_k` | `search()` |
 | `Retriever.hero_blocks(hero)` | `retriever.py` | 按武将名倒排返回其全部语料块（攻略/相性用，保证人物召回完整） | `rag_prompt.build_*_rag_context()` |
 | `Retriever._set_blocks(blocks)` | `retriever.py` | 注入语料块并重建内存索引（测试替身用） | `Retriever.blocks` |
@@ -179,31 +180,39 @@ RagMaintenancePanel._run(args)                                    [维护面板�
 ```
 build_*_corpus.py 模块顶部
   -> setup_stdout()                                              [统一 stdout UTF-8，幂等]
-  -> get_script_logger(script_name)                              [文件 DEBUG+ / stderr WARNING+]
+  -> install_crash_logger(script_name)                           [入口：装日志句柄 + 兜未处理异常]
+     -> setup_stdout()                                           [自足，保证 hook 内 print 不在 GBK 控制台自崩]
+     -> get_script_logger(script_name)                           [仅取命名 logger + 阻断传播，惰性不建文件]
+     -> _ensure_script_logger_handlers(logger, script_name)      [DEBUG+ 写 logs/rag/<name>.log + stderr WARNING+]
+     -> sys.excepthook = _hook                                   [异常落文件，stdout 只留一行 ❌，返回恢复函数]
   -> load_json(path, required, label)                            [UTF-8-SIG 容错；required=True 失败 exit 1]
   -> save_json(path, data, indent=1)
-     -> src.data.json_repository.atomic_write_json()             [原子写，见第三章]
+     -> src.data.json_repository.atomic_write_json()             [原子写，见第八章]
   -> project_path(*parts)                                        [基于 __file__ 的绝对路径]
 ```
 
-stdout 是 QProcess 进度契约：只允许协议行与面向用户的汇总，诊断信息一律走 `get_script_logger` 返回的 logger。
+模块层只允许调 `get_script_logger()`——它是惰性的（仅取命名 logger 并阻断传播，不 mkdir、不开 FileHandler），避免 import 时开文件句柄在 Windows 锁住测试进程；FileHandler 由 `install_crash_logger()` 在脚本入口装载，同一 name 取到同一 logger 对象，故入口装好后模块层的 `logger.warning` 即可落文件。build 脚本是模块级直跑形态所以装在模块层，`build_rule_corpus.py` / `build_special_corpus.py` / `sync_rule_stats.py` / `apply_rule_proposal.py` / `propose_rule_changes.py` 等带 `main()` 的脚本装在 `main` 首行——被测试作为库导入时不污染 `sys.excepthook`。
+
+stdout 是 QProcess 进度契约：只允许协议行与面向用户的汇总，诊断信息（堆栈、中间值、静默恢复详情）一律走 logger，不占用 stdout 协议通道。
 
 | 函数 | 所在文件 | 作用 | 调用方 |
 |------|----------|------|--------|
-| `setup_stdout()` | `scripts/rag_common.py` | stdout UTF-8 包装（幂等） | 全部 build 脚本 |
-| `get_script_logger(name)` | `scripts/rag_common.py` | 脚本专用 logger（`logs/rag/<name>.log`） | `maintain_rag.py`, `audit_rule_doc.py` |
-| `load_json(path, required)` | `scripts/rag_common.py` | UTF-8-SIG 容错读取 JSON | 全部 build 脚本 |
-| `save_json(path, data)` | `scripts/rag_common.py` | 原子写 JSON（UTF-8 / LF / indent=1） | 全部 build 脚本 |
+| `setup_stdout()` | `scripts/rag_common.py` | stdout UTF-8 包装（幂等） | 全部 build 脚本、`install_crash_logger()` |
+| `get_script_logger(name)` | `scripts/rag_common.py` | 惰性取脚本专用 logger（命名 `rag_script.<name>`，阻断传播；文件句柄由 `install_crash_logger` 装） | `install_crash_logger()`, `maintain_rag.py`, `audit_rule_doc.py`, `sync_rule_stats.py`, `propose_rule_changes.py` |
+| `install_crash_logger(name)` | `scripts/rag_common.py` | 脚本入口装 FileHandler + `sys.excepthook` 兜异常，返回恢复函数 | 10 个 build 脚本、`build_rule_corpus.py`、`build_special_corpus.py`、`sync_rule_stats.py`、`apply_rule_proposal.py`、`propose_rule_changes.py` |
+| `load_json(path, required)` | `scripts/rag_common.py` | UTF-8-SIG 容错读取 JSON | 全部 build 脚本、`import_hero_adjustments.py` |
+| `save_json(path, data)` | `scripts/rag_common.py` | 原子写 JSON（UTF-8 / LF / indent=1） | 全部 build 脚本、`sync_rule_stats.py` |
 | `HEADING_RE` / `SEPARATOR_RE` | `scripts/rag_common.py` | 元规则文档结构解析正则（三个脚本共用口径） | `build_rule_corpus.py`, `sync_rule_stats.py`, `apply_rule_proposal.py` |
 
 ### 2.4 各 build 脚本落盘
 
-十个脚本共用同一套骨架：`setup_stdout()` -> `load_json(源)` -> 规则抽取索引字段 -> `merge_curated()`（仅卡牌/武将两个）-> 写 `.md` + `save_json()`。差异如下。
+十个脚本共用同一套骨架：`setup_stdout()` + `install_crash_logger()` -> `load_json(源)` -> 规则抽取索引字段 -> 按时间轴打版本戳（武将/攻略）-> `merge_curated()`（仅卡牌/武将两个）-> 写 `.md` + `save_json()`。差异如下。
 
 ```
 build_rag_corpus.py（武将语料，最复杂）
   -> load_timeline() + [TRIGGER_OVERRIDES 失效校验] + stale_overrides(timeline) 风险提示
   -> [每个有技能的武将] stamp_hero_block(overview 块, name, timeline)
+     -> as_of=CORPUS_BASE_DATE, is_current='true', last_change_date（仅审计用，不入检索元数据）
      -> [每个技能] skill_block(h, s) -> extract_timing() / extract_trigger_cond()
         （TRIGGER_OVERRIDES 人工映射优先）/ extract_target() / extract_keywords() / extract_related()
   -> merge_curated() -> 写 武将RAG语料.md + save_json(武将RAG语料.json)
@@ -222,7 +231,15 @@ build_modify_corpus.py -> card_annotations.json -> 加强削弱语料.json（car
 build_special_corpus.py -> special_cards.json -> 特殊机制语料.json
 build_classification_corpus.py -> hero_classification.json + heroes.json -> 武将分类语料.json
 build_combo_corpus.py -> combos/（csv + md 深解 + 手录导入，同武将对去重合并）-> 组合RAG语料.json
-build_guide_corpus.py -> guides/（45 篇 md 按 ## 章节拆，单块上限 600 字）-> 武将攻略RAG语料.json
+build_guide_corpus.py -> guides/（45 篇 md 按 ## 章节拆，单块上限 600 字）
+  -> load_timeline() + [读旧语料取 (as_of, content_md5) 作版本基线]
+  -> [每块] stamp_guide_block(block, prev_as_of, prev_md5, timeline)
+     -> content_md5 未变保留旧 as_of，变了重置到 CORPUS_BASE_DATE
+     -> changes_after(hero, as_of) 排除 change_type='新增'（登场本身非技能调整，
+        计入会让新武将攻略被永久排除出检索）
+     -> [块文本提及被改技能名] is_current='false' + staleness_reason   [硬证据，检索默认排除]
+     -> [仅武将级时间漂移]       is_current='true'  + staleness_hint   [软提示，仍参与召回]
+  -> save_json(武将攻略RAG语料.json) + 写 .md；打印过时块与漂移提示统计
 ```
 
 ### 2.5 curated 合并 rag_curated.py
@@ -241,6 +258,37 @@ build_rag_corpus.py / build_card_corpus.py 写文件前
 | 函数 | 所在文件 | 作用 | 调用方 |
 |------|----------|------|--------|
 | `merge_curated(blocks, old_json_path)` | `scripts/rag_curated.py` | 重跑 build 时保留人工/LLM 精化成果 | `build_rag_corpus.py`, `build_card_corpus.py` |
+
+### 2.6 时间轴初始化 import_hero_adjustments.py
+
+`data/mjs_adjustments.json` 由本脚本一次性建立磁盘事实源，运行期再由公告捕获增量追加；所有 build 脚本只读时间轴，不写。
+
+```
+[子进程] import_hero_adjustments.main()                    [python -m src.scripts.import_hero_adjustments]
+  -> setup_stdout()                                              [模块层，未装 install_crash_logger]
+  -> load_json(.tmp_test/mjs_adjustments.json)              [A 类全量快照，仅临时读取源]
+  -> collect_snapshot_events(snapshot)
+     -> [adjustments 条目] parse_skill_entry("技能名：变更描述") + normalize_change_type(type)
+        -> [无冒号或冒号前 >12 字] 视为 hero 级描述 (None, 原文)，不丢内容
+     -> [newGenerals 条目] change_type='新增'，skills=[]
+     -> 同 (date, hero) 多条合并 skills（如韩信 03-26 两条）
+  -> save_timeline({init_imported_at, init_source_last_updated, corpus_base_date, events})
+     -> [每事件] _validate_event（date/hero/change_type/source 必填，缺则 ValueError）
+     -> 按 (date, hero) 排序 -> atomic_write_json(data/mjs_adjustments.json)
+  -> append_announcement_events(build_timeline_events(announcements))
+     -> [缺省 cutoff = 刚写入的 init_source_last_updated] 回填快照缺批次公告
+     -> [ref 或 (date, hero) 已存在] 跳过（跨运行幂等，无新增不写盘）
+  -> [读回时间轴] 汇总调整/新增事件数、技能级条目命中 heroes.json 数、疑未同步武将
+```
+
+`--input` 可覆盖快照路径；快照解析不到任何事件则 `exit 1`。公告正文 → 时间轴事件的提取归 `src/scraper/official_source/announcement.build_timeline_events()`（见 [call_graph_scraper.md](./call_graph_scraper.md)）。写入后由 `build_rag_corpus.py` / `build_guide_corpus.py` 消费打版本戳，由 `rag_audit.audit_version_timeline()` 与 `audit_service.collect_timeline_risk_messages()` 做一致性审计（见第九章）。
+
+| 函数 | 所在文件 | 作用 | 调用方 |
+|------|----------|------|--------|
+| `collect_snapshot_events(snapshot)` | `scripts/import_hero_adjustments.py` | A 类快照 → init 事件（同 (date, hero) 合并） | `main()` |
+| `main()` | `scripts/import_hero_adjustments.py` | 快照初始化 + 公告回填 + 汇总打印 | `__main__` |
+| `save_timeline(data)` / `append_announcement_events(events)` | `data/hero_timeline.py` | 校验排序原子写 / 幂等增量追加 | `main()`, 公告捕获服务 |
+| `parse_skill_entry(raw)` / `normalize_change_type(raw)` | 同上 | 快照技能条目解析 / 变更类型词汇归一 | `collect_snapshot_events()` |
 
 ---
 
@@ -262,7 +310,8 @@ RagMaintenancePanel._run(["--force", "--build-index"])
           -> model.encode(docs, batch_size=32, normalize_embeddings=True)  [3/4]
           -> chromadb.PersistentClient(path=CHROMA_DIR)           [4/4]
           -> client.delete_collection('mjs_rag_v1')               [删除失败且集合存在 -> RuntimeError]
-          -> client.get_or_create_collection('mjs_rag_v1', metadata={'hnsw:space': 'cosine'})
+          -> client.get_or_create_collection('mjs_rag_v1',
+               metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'})
           -> coll.add(ids, documents, metadatas, embeddings)      [BATCH=200 分批]
           -> return (coll.count(), 'mjs_rag_v1')
         ────────────────────────
@@ -339,7 +388,7 @@ Retriever.search(query, heroes=None, top_k=None)
            -> retriever.search(query, top_k=RAG_TOP_K)            [混合检索，见第四章]
               -> post-filter: combo 块按 metadata.heroes 列表过滤，hero 块按名称过滤
            -> _format_rag_chunks(blocks, extra, budget)           [官方/社区两池，整块丢弃不截断]
-        -> [_rag_enabled()] rule_summary.load_card_system()       [卡牌体系段兜底防牌名串味]
+        -> [is_rag_enabled()] rule_summary.load_card_system()      [卡牌体系段兜底防牌名串味]
         -> [未启用 RAG 且无语料] rule_summary.load_core_rules()   [完整核心规则摘要兜底]
      -> _request_content(messages, temperature=0.7)               [API 或 Playwright]
         -> _call_api() / DeepSeekBrowserSession.send_and_wait()
@@ -524,7 +573,10 @@ RagMaintenancePanel._open_refinement()
      -> controller.result_ready.connect(self._on_suggest_result)
      -> controller.finished.connect(self._on_suggest_finished)
      -> _setup_ui(): PageHeader + _build_overview_bar() + QSplitter(_build_table_pane(), _build_editor_pane())
+     -> resize(1160, 720)                                         [构造时最小窗口]
      -> _refresh_table()
+  -> dialog.resize(self.window().size())                          [按主窗口预置尺寸，一次到位不跳变]
+  -> dialog.exec() -> refresh()                                   [关闭后刷新语料状态]
 
 模式切换  _set_scope("pending"|"curated"|"all")
   -> _table.setCurrentCell(-1, -1)                                [先清空选择，保证重填后能触发信号]
@@ -1027,9 +1079,12 @@ _set_busy(busy)                                                [执行期间]
 | `maintain_rag.main()` | QProcess 子进程 | `rag_audit.*`, `audit_rule_doc.audit()`, `task_changed()`, `run_script()`, `verify_outputs()` |
 | `run_script(script_name, timeout)` | `maintain_rag.main()` | `subprocess.run(['-m', 'src.scripts.' + module])` |
 | `verify_outputs(task)` | `maintain_rag.main()` | `audit_rule_doc.snapshot_counts()` |
-| `rag_common.load_json()` / `save_json()` | 全部 build 脚本 | `atomic_write_json()` |
+| `rag_common.load_json()` / `save_json()` | 全部 build 脚本、`import_hero_adjustments.py` | `atomic_write_json()` |
+| `rag_common.install_crash_logger(name)` | 10 个 build 脚本、元规则脚本 `main()` 首行 | `setup_stdout()`, `get_script_logger()`, `_ensure_script_logger_handlers()` |
+| `import_hero_adjustments.main()` | `python -m src.scripts.import_hero_adjustments` | `collect_snapshot_events()`, `save_timeline()`, `build_timeline_events()`, `append_announcement_events()` |
 | `rag_curated.merge_curated(blocks, old_json_path)` | `build_rag_corpus.py`, `build_card_corpus.py` | `json.loads` |
 | `build_rule_corpus.parse_rule_doc(doc_path)` | `build_rule_corpus.py`, `audit_rule_doc.audit()` | `HEADING_RE`, `SEPARATOR_RE` |
+| `hero_timeline.stamp_hero_block()` / `stamp_guide_block()` | `build_rag_corpus.py`, `build_guide_corpus.py` | `hero_last_change()`, `changes_after()`, `CORPUS_BASE_DATE` |
 
 ### 索引精化（src/business/rag/）
 
@@ -1093,7 +1148,8 @@ src.scraper.ai.batch (main)
 | `src.data.json_repository.atomic_write_json()` | 全部写路径的原子写实现 |
 | `src.data.card_points_repository` / `equip_attrs_repository` | 审计校验常量（花色/点数/张数/件数/细分类型/距离修正）单一事实源 |
 | `src.data.card_points_repository.CardPointsRepository` 等四个仓储 | 维护面板底层数据源 |
-| `src.data.hero_timeline` | 武将变更时间轴（`stamp_hero_block`、`stale_overrides`、`hero_last_change`、`CORPUS_BASE_DATE`） |
+| `src.data.hero_timeline` | 武将变更时间轴（`CORPUS_BASE_DATE`、`TRIGGER_OVERRIDES` / `TRIGGER_OVERRIDES_AUTHORED`、`load_timeline` / `save_timeline` / `append_announcement_events`、`stamp_hero_block` / `stamp_guide_block`、`hero_last_change` / `skill_last_change` / `changes_after`、`stale_overrides`、`normalize_change_type` / `parse_skill_entry`） |
+| `src.scraper.official_source.announcement.build_timeline_events()` | 公告正文 → 时间轴事件（归 module_scraper；公告捕获服务与 `import_hero_adjustments.py` 共用） |
 | `src.data.hero_classification_repository` / `special_cards_repository` | 分类与专属牌仓储 |
 | `src.data.combo_manager.ComboManager` | 实战配队（归 module_peak_combos） |
 | `src.scraper.ai.api_generator.AIBatchGenerator` | 索引精化与分类建议的 LLM 生成器 |
@@ -1109,6 +1165,8 @@ src.scraper.ai.batch (main)
 | `chromadb.PersistentClient` | 本地向量数据库 |
 | `docs/元规则整理-完整版.md` | T0 母本文档 |
 | `data/rag_corpus/`、`data/rag_index/chroma/` | 语料与向量索引落盘目录 |
+| `data/mjs_adjustments.json`、`data/announcements.json` | 武将变更时间轴与公告素材（`import_hero_adjustments.py` 写入时间轴、读公告回填） |
+| `data/rag_evals/rule_faq_eval.json` | FAQ 裁定回归评估集（`eval_rule_faqs.py` 读写） |
 
 ### 12.3 模块归属边界
 
@@ -1130,5 +1188,7 @@ src.scraper.ai.batch (main)
 | 2 | `call_graph_business.md` 第 10.1 节与 `call_graph_ui.md` 第 10.1 节写"遍历 8 个语料任务 TASK_DEFS" | 两份文档基线为 2026-07-22 / 2026-09-04，早于 2 个新任务（武将分类、组合、攻略）的口径；本文档按当前代码写 10 个 |
 | 3 | `SpecialCardsPanel`、`HeroClassificationPanel` 的完整内部方法清单未逐行复读 | 本文档只覆盖与本模块相关的写路径与 `data_changed` 联动；物理位置已确认为 `src/ui/library/` |
 | 4 | `rag_prompt.py` 后半段（`_format_rag_chunks`、`build_synergy_rag_context` 内部细节）未逐行复读 | 相关描述引自 `call_graph_ai_batch.md`（同基线） |
-| 5 | `indexer.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | `config.py` 中定义但本模块未见消费点，未列入调用链 |
-| 6 | 语料块数期望值（如武将 615 / 卡牌 49 / 特殊机制 83 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实 |
+| 5 | `config.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | 仅 `config.py` 定义并回显（`config.txt` / `config.env.example` 有预留项），全项目无消费点，未列入调用链 |
+| 6 | 语料块数期望值（如武将 615 / 卡牌 49 / 特殊机制 83 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；当前磁盘实测武将语料 622 块（`expected=615` 未同步），`expected=None` 的动态任务实测：武将分类 180 / 组合 509 / 攻略 357 |
+| 7 | `rag_curated.INDEX_FIELDS` 含 5 字段（含 `target`），`refinement_service.INDEX_FIELDS` 只有 4 字段（`target` 已从精化流程退役） | 重建时 `merge_curated()` 仍会把旧 `curated` 中的 `target` 覆盖回块顶层，`rag_curated.py` 字段集是否同步收敛待确认 |
+| 8 | `eval_rule_faqs.py --generate` 生成的评估集 `version` 字段为生成日，磁盘实测 79 题（与 `FAQ裁定块.json` 79 块同源，非巧合） | 评估集由 `--generate` 重建会丢弃人工追加的新题，追加须手工编辑 `data/rag_evals/rule_faq_eval.json` |

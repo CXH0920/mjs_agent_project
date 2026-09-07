@@ -7,11 +7,12 @@
 
 ## 一、模块职责
 
-本模块是项目的**数据基础层**，承担三个核心角色：
+本模块是项目的**数据基础层**，承担四个核心角色：
 
-1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 `Hero`、`SynergyScore`、`HeroGuide`、`Combo`、`Card`、`Announcement`、`IncrementalUpdate` 等核心数据模型，作为项目唯一的 JSON 格式契约，确保官网爬虫与 AI 生成的输出格式一致
-2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用 CRUD、加载、保存与内存快照回滚；五个子类 Manager 继承基类并添加各自的查询与领域方法；`DataFacade` 门面统一访问入口，并可通过 `from_managers()` 复用外部 Manager
+1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 `Skill`、`Card`、`Hero`、`SynergyScore`、`Combo`、`HeroGuide`、`IncrementalUpdate` 等核心数据模型，作为项目唯一的 JSON 格式契约，确保官网爬虫与 AI 生成的输出格式一致
+2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用 CRUD、加载、保存与内存快照回滚；六个子类 Manager 继承基类并添加各自的查询与领域方法；`DataFacade` 门面统一访问入口，并可通过 `from_managers()` 复用外部 Manager
 3. **JSON 仓库基类**（`json_repository.py`）— `JsonRepository` 统一维护仓库的原子写盘、加锁读盘与写盘失败内存回滚；`atomic_write_json` 是全库唯一原子写入口（`DataManager` / `card_catalog` / 所有维护仓库均委托于此）
+4. **武将变更时间轴**（`hero_timeline.py`）— 维护 `data/mjs_adjustments.json` 的武将变更事件流，为 RAG 语料构建提供按版本打戳（`as_of` / `is_current`）与过时判定能力，并承载 TRIGGER_OVERRIDES 人工精化触发条件表的失效审计
 
 ---
 
@@ -20,7 +21,7 @@
 ```
 src/data/
 ├── __init__.py
-├── models.py                     # Pydantic 数据模型（Hero / Skill / Card / SynergyScore / Combo / HeroGuide / Announcement / HeroChange / BaikeSnapshot / IncrementalUpdate）
+├── models.py                     # Pydantic 核心模型：Skill / Card / Hero / SynergyScore / Combo / HeroGuide / IncrementalUpdate
 ├── manager.py                    # DataIssue / LoadReport / DataManager[V_co] 泛型基类 / DataFacade 门面 / apply_incremental_update()
 ├── json_repository.py            # atomic_write_json / JsonRepository 基类（原子写 + 加锁读 + 写失败回滚）
 ├── hero_manager.py               # Hero CRUD + JSON 持久化（继承 DataManager[Hero]）
@@ -28,20 +29,21 @@ src/data/
 ├── guide_manager.py              # HeroGuide CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
 ├── combo_manager.py              # Combo CRUD + JSON 持久化 + 手工配队维护（继承 DataManager[Combo]）
 ├── combo_seats.py                # parse_seats() — 从 note 自由文本解析双方武将座次要求
-├── announcement_manager.py       # Announcement CRUD / 状态机 / BaikeSnapshot 百科快照
-├── card_catalog.py               # 官方卡牌只读仓储 + 字段定义仓储 + 追加内容仓储 + CardViewModel 合并
+├── announcement_manager.py       # AnnouncementStatus / Announcement / HeroChange 模型 + AnnouncementManager 状态机
+├── hero_timeline.py              # 武将变更时间轴：读写 / 增量追加 / 版本戳 / TRIGGER_OVERRIDES 审计（data/mjs_adjustments.json）
+├── card_catalog.py               # CardRepository / CardFieldSchemaRepository / CardAnnotationRepository + CardViewModel
 ├── card_points_repository.py     # 卡牌点数花色维护（data/card_points.json，原 xlsx sheet1 迁移）
 ├── equip_attrs_repository.py     # 装备属性维护（data/equip_attrs.json，原 xlsx sheet2 迁移）
-├── hero_classification_repository.py # 武将分类/克制链/归类维护（data/hero_classification.json）
+├── hero_classification_repository.py # 武将分类/克制链/武将归类维护（data/hero_classification.json）
 ├── special_cards_repository.py   # 专属牌/战法牌/特殊牌区/状态/概念维护（data/special_cards.json）
 ├── peak_win_rate_repository.py   # 巅峰赛单将胜率 + 出场排行 CSV 读取（独立于 2v2 胜率）
 ├── win_rate_repository.py        # 2v2 胜率 CSV 读取（打包基线 BUNDLE_ROOT/data）
 └── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验
 ```
 
-六个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。
+四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
 
-卡牌资料由 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
+武将变更时间轴 `hero_timeline.py` 维护 `data/mjs_adjustments.json`（顶层 `init_imported_at` / `init_source_last_updated` / `corpus_base_date` + `events` 列表），由 `import_hero_adjustments.py` 全量注入与 `AnnouncementService` 公告捕获增量追加；`build_rag_corpus.py` / `build_guide_corpus.py` 据此给语料块打 `as_of` / `is_current` 版本戳，`rag_audit.py` / `audit_service.py` 据此审计 TRIGGER_OVERRIDES 失效风险。
 
 2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `BUNDLE_ROOT/data/2v2胜率排行.csv` 读取（打包只读基线，结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入后写 `stale=true` 标记，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均不晚于快照，自动写回 `false` 避免误弹横幅。
 
@@ -55,56 +57,56 @@ src/data/
 
 ```python
 class Hero(BaseModel):
-    id: int                        # 武将 ID（validation_alias="角色ID"）
-    name: str                      # validation_alias="名称"
-    title: str                     # 称号
-    faction: str                   # validation_alias="势力"
-    position: str                  # validation_alias="定位"
-    max_hp: int                    # validation_alias="体力上限"，范围 1-20
-    max_hand: int                  # validation_alias="手牌上限"，范围 0-20
-    gender: Gender                 # 枚举：MALE/女
-    skills: list[Skill]            # 最多 20 项
-    difficulty: Difficulty         # 1-5 枚举
-    mode_viability: dict[str, ViabilityTier]  # 仅允许键 1v1/2v2/3v3/5v5/乱斗
-    last_updated: str              # 默认 date.today()
-    icon_url: str
+    id: int                        # 武将 ID（validation_alias="角色ID"，正整数校验）
+    name: str                      # validation_alias="名称"，非空校验
+    title: str = ""                # 称号
+    faction: str = ""              # validation_alias="势力"
+    position: str = ""             # validation_alias="定位"
+    max_hp: int = 4                # validation_alias="体力上限"，范围 1-20
+    max_hand: int = 4              # validation_alias="手牌上限"，范围 0-20
+    gender: Gender = Gender.MALE   # 枚举：MALE="男" / FEMALE="女"
+    skills: list[Skill] = []       # 最多 20 项
+    difficulty: Difficulty = Difficulty.MEDIUM  # 1-5 枚举
+    mode_viability: dict[str, ViabilityTier] = {}  # 仅允许键 1v1/2v2/3v3/5v5/乱斗
+    last_updated: str              # 默认 date.today().isoformat()
+    icon_url: str = ""
     # 校验器：name 非空 / id 正整数 / mode_viability 键合法
 
 class SynergyScore(BaseModel):
     hero_a_id: int                 # 正整数校验
     hero_b_id: int                 # 正整数校验
     score: int                     # 范围 -10~10
-    synergy_rating: str            # S/A/B/C/D，由 synergy_rating_for_score() 自动推导
-    combo_ceiling: int             # 1-10
-    combo_stability: int           # 1-10
-    adaptability: int              # 1-10
-    description: str               # 最大 4000 字符
-    last_updated: str
+    synergy_rating: str = "C"      # S/A/B/C/D，由 synergy_rating_for_score() 自动推导
+    combo_ceiling: int = 5         # 1-10
+    combo_stability: int = 5       # 1-10
+    adaptability: int = 5          # 1-10
+    description: str = ""          # 最大 4000 字符
+    last_updated: str              # 默认 date.today().isoformat()
     # model_validator：双方不能是同 ID；rating 由 score 重新推导
 
 class Combo(BaseModel):
-    hero1_name: str                # 导入保留的原始名称
-    hero2_name: str
+    hero1_name: str                # 导入保留的原始名称（min_length=1）
+    hero2_name: str                # min_length=1
     hero1_id: int                  # 正整数校验
     hero2_id: int                  # 正整数校验
     rating: int                    # 1-10
-    position: str                  # 配对级座位摘要（如 both/14/23）
-    note: str                      # 手录备注（座次顺序的权威来源）
-    hero1_seats: list[int]         # 1-4，自动排序
-    hero2_seats: list[int]         # 1-4，自动排序
-    manual: bool                   # 手工录入标记，导入合并时优先保留
+    position: str = "both"         # 配对级座位摘要（如 both/14/23，不含顺序）
+    note: str = ""                 # 手录备注（座次顺序的权威来源）
+    hero1_seats: list[int] = []    # 1-4，自动排序
+    hero2_seats: list[int] = []    # 1-4，自动排序
+    manual: bool = False           # 手工录入标记，导入合并时优先保留
     # model_validator：双方不能是同 ID
 
 class HeroGuide(BaseModel):
     hero_id: int
-    key_points: list[str]          # 每项最大 1000 字符，最多 20 项
-    weak_against_type: list[str]
-    strong_against_type: list[str]
-    synergizes_with: list[int]     # 武将 ID 列表
-    counter_strategy: str          # 最大 1000 字符
-    description: str               # 最大 20000 字符
-    tips_for_beginners: str        # 最大 1000 字符
-    last_updated: str
+    key_points: list[str] = []     # 每项最大 1000 字符，最多 20 项
+    weak_against_type: list[str] = []
+    strong_against_type: list[str] = []
+    synergizes_with: list[int] = []     # 武将 ID 列表，最多 20 项
+    counter_strategy: str = ""          # 最大 1000 字符
+    description: str = ""               # 最大 20000 字符
+    tips_for_beginners: str = ""        # 最大 1000 字符
+    last_updated: str = ""         # 默认 date.today().isoformat()
 ```
 
 **官网字段映射**：Hero 模型使用 `validation_alias` 将官网中文字段名映射到英文属性名，AI 生成结果直接使用英文字段名，`model_config = {"populate_by_name": True}` 使两种数据源均可校验。
@@ -187,14 +189,14 @@ def _save_unlocked(self) -> None:
 
 ### 3.6 公告记录与百科快照
 
-`AnnouncementManager(DataManager[Announcement])` 管理 `data/announcements.json`：
+`AnnouncementManager(DataManager[Announcement])` 管理 `data/announcements.json`；`Announcement` / `AnnouncementStatus` / `HeroChange` / `BaikeSnapshot` 均在本文件定义（不在 `models.py`）：
 
 - `Announcement` 模型字段：`id/title/content/url/publishdate/hero_related/matched_heroes/content_missing/status/first_seen_at`；
-- `AnnouncementStatus` 枚举：`PENDING(待生效) → READY(可更新) → APPLIED(已处理)`；
-- 以 `url` 为主键去重（`stable_key()` 回退到 `f"id:{id}"`）；`merge_new(items, baseline=True)` 用于首次运行基线：只落盘、不返回、不提醒，非武将相关公告直接置 `APPLIED`；
+- `AnnouncementStatus` 枚举：`PENDING("pending"，待生效) → READY("ready"，可更新) → APPLIED("applied"，已处理)`；
+- 以 `url` 为主键去重（`stable_key()` 回退到 `f"id:{id}"`）；`merge_new(items, baseline=False)` 用于首次运行基线：只落盘、不返回、不提醒，非武将相关公告直接置 `APPLIED`；
 - 状态推进：`mark_ready_if_updated(diff, current_names)`（公告提及的武将名与百科 diff 变更集匹配 → READY，或新增武将已全部落地百科 → READY）；`mark_applied()`（仅将 READY 推进到 APPLIED，PENDING 因可能仍在百科滞后窗口内保留不动）。
 
-`BaikeSnapshot` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，结构 `{checked_at, heroes:{id:{name, hash}}}`）。快照解析失败时返回空快照（由调用方重建基线）；`save_baike_snapshot()` 用 `mkstemp` 生成唯一中转名（固定 `.tmp` 名在并发时会互相覆盖）。
+`BaikeSnapshot` / `BaikeHeroEntry` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，结构 `{checked_at, heroes:{id:{name, hash}}}`）。快照解析失败时返回空快照（由调用方重建基线）；`save_baike_snapshot()` 用 `mkstemp` 生成唯一中转名（固定 `.tmp` 名在并发时会互相覆盖）。
 
 ### 3.7 实战配队座次解析
 
@@ -211,7 +213,71 @@ def _save_unlocked(self) -> None:
 
 `Combo.position` 字段是配对级无序摘要（如 `both`/`14`/`23`），不含顺序信息；`note` 才是座次顺序的权威来源。
 
-### 3.8 巅峰赛胜率仓库
+### 3.8 武将变更时间轴
+
+`hero_timeline.py` 维护 `data/mjs_adjustments.json`——武将变更事件流的唯一事实源，用于给 RAG 语料块打版本戳并默认只召当前版本。
+
+**数据文件结构**（`DEFAULT_DATA_DIR / "mjs_adjustments.json"`）：
+
+```json
+{
+  "init_imported_at": "2026-08-29",
+  "init_source_last_updated": "2026-08-25",
+  "corpus_base_date": "2026-08-28",
+  "events": [
+    {
+      "date": "2026-08-26", "hero": "缑绮", "change_type": "增强",
+      "skills": [{"skill": "对法如流", "before": "...", "after": "..."}],
+      "source": "announcement",
+      "ref": "https://mjs.ztgame.com/news/...html",
+      "announcement_title": "8月27日05:00停机..."
+    }
+  ]
+}
+```
+
+`change_type` 合法取值：`{新增, 增强, 削弱, 调整, 重做}`；`normalize_change_type()` 将公告侧"加强"→"增强"、"修改"→"调整"，未识别值回退为"调整"。
+
+**两个写入源**：
+
+- `src/scripts/import_hero_adjustments.py` — A 类全量快照一次性注入（`save_timeline({"events": ..., "init_imported_at": ..., "corpus_base_date": CORPUS_BASE_DATE})`），并回填历史公告（`append_announcement_events`）；
+- `AnnouncementService` — 每次检查时全量扫描 `hero_related` 公告并调用 `append_announcement_events()` 增量追加，按 `ref` 或 `(date, hero)` 幂等去重。
+
+**读取 / 写入**：
+
+- `load_timeline(path=None) -> dict` — 缺失或损坏时返回 `{"events": []}`，构建链路退化为无时间轴，不中断；
+- `save_timeline(data, path=None) -> None` — 校验事件必填字段（`date/hero/change_type/source`）后按 `(date, hero)` 排序原子写（indent=1）；
+- `append_announcement_events(events, path=None) -> int` — 幂等追加；已存在 `ref`（跨公告引用）或 `(date, hero)` 键时跳过；无新增不写盘。
+
+**查询接口**（`timeline=None` 时按需加载，构建脚本应传入以避免重复读盘）：
+
+| 函数 | 返回 | 语义 |
+|------|------|------|
+| `hero_last_change(hero, timeline)` | `str \| None` | 该武将最近一次变更日期（含新增） |
+| `skill_last_change(hero, skill, timeline)` | `str \| None` | 该武将某技能最近一次变更日期 |
+| `hero_first_seen(hero, timeline)` | `str \| None` | 该武将作为新武将登场的日期（仅"新增"事件），非新增武将返回 `None` |
+| `changes_after(hero, as_of, timeline)` | `list[dict]` | 该武将 `as_of`（不含）之后的全部变更事件，按日期升序 |
+
+**语料块版本戳**（`CORPUS_BASE_DATE = "2026-08-28"`）：
+
+- `stamp_hero_block(block, hero, timeline)` — 武将语料块恒为当前版本（`as_of=CORPUS_BASE_DATE`、`is_current="true"`），同时写 `last_change_date` 供审计比对 heroes.json 同步状态，不入检索元数据；
+- `stamp_guide_block(block, prev_as_of, prev_md5, timeline)` — 攻略语料块版本戳：
+  - `content_md5 = md5(text)`；
+  - 文本未变（`prev_md5 == digest`）保留原 `prev_as_of`，否则重置为 `CORPUS_BASE_DATE`；
+  - 取 `changes_after(hero, as_of)` 中 `change_type != "新增"` 的事件（"新增"是登场本身，作为过时依据会把新将攻略永久排除）；
+  - 硬证据 `is_current="false"` + `staleness_reason` — 块文本提及变更技能名，检索默认排除；
+  - 软提示 `is_current="true"` + `staleness_hint` — 仅武将级时间漂移，本块未涉及变更技能；
+  - 无变更 → `is_current="true"` 且不写额外字段。
+
+**TRIGGER_OVERRIDES 人工精化触发条件表**（自 `build_rag_corpus.py` 迁出，构建与审计共用）：
+
+- `TRIGGER_OVERRIDES` 字典以 `(武将, 技能)` 为键，命中优先返回，不参与规则提取；
+- `TRIGGER_OVERRIDES_AUTHORED = "2026-08-12"` — 人工审核基准日；
+- `stale_overrides(timeline) -> list[dict]` — 技能级风险（技能本身在时间轴上有晚于审核日的变更记录）优先，回退为武将级风险（技能无记录但武将有晚于审核日的变更）；返回 `{"hero", "skill", "date", "level"}` 列表，按 `(date, hero, skill)` 排序，供 `rag_audit.py` / `audit_service.py` 审计消费。
+
+> **设计思路：** 时间轴是 RAG 检索"当前版本"契约的物理载体——武将语料块直接由 `heroes.json` 构建，恒为当前版本；攻略语料块是文本生成物，需要通过时间轴 + 技能名提及判重做硬/软分级过时判定。"新增"事件被排除在过时依据之外，避免新将攻略被永久排除出检索。
+
+### 3.9 巅峰赛胜率仓库
 
 巅峰赛使用独立的单将胜率 + 出场排行 CSV（`data/巅峰赛胜率排行.csv` / `data/巅峰赛出场排行.csv`），与 2v2 胜率仓库互相独立。数据源尚未落地时返回空 dict。
 
@@ -221,7 +287,7 @@ load_peak_pick_ranks(path)  → {武将名: 出场排名}    # 默认缓存
 clear_peak_win_rate_cache()  # 清空胜率与出场排行
 ```
 
-### 3.9 武将推荐指数
+### 3.10 武将推荐指数
 
 `recommendation_index_repository` 基于 2v2 三份榜单（`2v2胜率排行.csv` / `2v2出场排行.csv` / `武将放逐.csv`）及 `heroes.json` 计算武将推荐指数，输出 `武将推荐指数.csv` 快照。
 
@@ -234,7 +300,7 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 
 `is_recommendation_index_stale()` 自愈校验：状态文件 `stale=true` 但三份榜单均未更新时，自动写回 `false`，避免状态文件被 git 历史或命令行操作意外置 true 后误弹横幅。
 
-### 3.10 JsonRepository 基类
+### 3.11 JsonRepository 基类
 
 `src/data/json_repository.py` 提供维护仓库公共基建：
 
@@ -243,7 +309,7 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
   - `_read_root()` 加 `RLock`（防止与写盘并发），文件缺失记 warning、解析失败记 error（`DataIssue`）；
   - 写盘失败时 `_save_or_rollback()` 恢复内存快照并重新抛出，避免"看似失败、实际已变"的脏状态。
 
-六个维护仓库已继承本基类（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）；`card_catalog.py` 的 `_JsonRepository` 与 `manager.py` 的 `DataManager._save_unlocked` 也改为委托 `atomic_write_json`（全库原子写收敛）。
+四个维护仓库已继承本基类（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）；`card_catalog.py` 的 `_JsonRepository`（卡牌基础/字段定义/追加内容三个仓储）与 `manager.py` 的 `DataManager._save_unlocked`、`hero_timeline.save_timeline()` 也改为委托 `atomic_write_json`（全库原子写收敛）。
 
 另有社区侧 combo/guide 语料由 `src/scripts/build_combo_corpus.py`（组合 RAG 语料，437 块，combo 类，不贴单值 hero 但贴 heroes 列表）与 `build_guide_corpus.py`（武将攻略 RAG 语料，357 块，guide 类，贴 hero）从 `data/raw_guides/` 生成，进向量库供 RAG 检索，非 Pydantic 模型不入维护仓库。
 
@@ -397,6 +463,24 @@ class SpecialCardRepository(JsonRepository):
 | `HeroClassificationRepository` | `data/hero_classification.json` | `add_category/update_category/delete_category` + `set_counter_chain` + `set_hero_categories` + `list_unclassified` |
 | `SpecialCardRepository` | `data/special_cards.json` | `add_item/update_item/delete_item`（同类别同名不可重复） |
 
+### 武将变更时间轴（`hero_timeline.py` 模块级函数）
+
+| 函数 | 说明 |
+|------|------|
+| `load_timeline(path=None)` | 读取时间轴；缺失/损坏返回 `{"events": []}` |
+| `save_timeline(data, path=None)` | 校验事件并原子写入（按 `(date, hero)` 排序） |
+| `append_announcement_events(events, path=None)` | 幂等追加公告来源事件（按 `ref` 或 `(date, hero)` 去重），返回新增条数 |
+| `normalize_change_type(raw)` | 归一公告/A 类快照的变更类型到标准词汇（未知→"调整"） |
+| `parse_skill_entry(raw)` | 解析"技能名：变更描述"；无冒号或超长→ `(None, 原文)` |
+| `hero_last_change(hero, timeline=None)` | 该武将最近一次变更日期（含新增） |
+| `skill_last_change(hero, skill, timeline=None)` | 该武将某技能最近一次变更日期 |
+| `hero_first_seen(hero, timeline=None)` | 该武将作为新武将登场日期（仅"新增"事件） |
+| `changes_after(hero, as_of, timeline=None)` | 该武将 `as_of` 之后的全部变更事件，按日期升序 |
+| `stamp_hero_block(block, hero, timeline=None)` | 武将语料块版本戳（恒 `is_current="true"`，附 `last_change_date`） |
+| `stamp_guide_block(block, prev_as_of, prev_md5, timeline=None)` | 攻略语料块版本戳：写 `content_md5/as_of`，按硬证据（提及变更技能）/软提示分级 |
+| `stale_overrides(timeline=None)` | TRIGGER_OVERRIDES 语义失效风险清单（skill/hero 两级） |
+| 常量 | `DEFAULT_TIMELINE_FILE` / `CORPUS_BASE_DATE` / `VALID_CHANGE_TYPES` / `TRIGGER_OVERRIDES` / `TRIGGER_OVERRIDES_AUTHORED` |
+
 ### 巅峰赛 / 2v2 胜率 / 推荐指数（模块级函数）
 
 | 函数 | 说明 |
@@ -418,10 +502,12 @@ class SpecialCardRepository(JsonRepository):
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `pydantic` / Python 标准库 | 模型校验、JSON/CSV/tempfile/csv/math 等 |
-| 被调用方 | `src/scraper/` | 爬虫采集写入数据文件后通知 Manager 重新加载 |
-| 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存；索引精化通过 `DataFacade` 读取 heroes/synergies/guides |
+| 被调用方 | `src/scraper/` | 爬虫采集写入数据文件后通知 Manager 重新加载；`src/scraper/official_source/announcement.py` 用 `load_timeline()` / `normalize_change_type()` 归一变更类型 |
+| 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存；索引精化通过 `DataFacade` 读取 heroes/synergies/guides；`announcement_service` 用 `append_announcement_events()` 落地 hero_related 公告变更，`audit_service` 用 `stale_overrides()` / `hero_last_change()` 审计 TRIGGER_OVERRIDES 失效风险 |
+| 被调用方 | `src/rag/` | `src/rag/indexer.py` 引用 `CORPUS_BASE_DATE` 统一检索基线 |
 | 被调用方 | `src/ui/` | UI 层通过 `DataFacade` / 各 Manager / 各 Repository 读取与写入数据 |
-| 被调用方 | `src/scripts/build_*_corpus.py` | RAG 语料构建脚本读取四个维护仓库（card_points/equip_attrs/hero_classification/special_cards）JSON 源生成向量库 |
-| 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 六个维护仓库统一委托此函数原子写盘 |
+| 被调用方 | `src/scripts/build_*_corpus.py` | RAG 语料构建脚本读取四个维护仓库（card_points/equip_attrs/hero_classification/special_cards）JSON 源生成向量库；`build_rag_corpus.py` / `build_guide_corpus.py` 通过 `hero_timeline` 的 `stamp_hero_block` / `stamp_guide_block` 给语料块打版本戳，并消费 `TRIGGER_OVERRIDES` / `stale_overrides()` 做失效审计 |
+| 被调用方 | `src/scripts/import_hero_adjustments.py` | 从 A 类全量快照注入 `mjs_adjustments.json` 初始化 `hero_timeline`，并回填历史公告 |
+| 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` 统一委托此函数原子写盘 |
 | 内部依赖 | `src/data/manager.DataIssue` | `json_repository` 的 `_issue()` 统一使用 `DataIssue` 结构收集加载问题 |
 | 被调用方 | `src/data/combo_manager` | `src/scripts/import_combos.py` 调用 `save_manual_combo()` 持久化手工配队 |

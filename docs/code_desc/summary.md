@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-09-04
+> 文档日期：2026-09-07（基线 `6cbe8b6`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -33,9 +33,9 @@
 | RAG 检索 | ChromaDB + sentence-transformers（bge-small-zh-v1.5 本地嵌入）+ 关键词 RRF 混合检索 |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
-| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分 |
+| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，365 字缓存） |
 | 数据持久化 | JSON + CSV 文件（原子写入，无数据库依赖） |
-| 质量校验 | Ruff 0.12.0（全通过）+ pytest（用例数以 `python -m pytest --collect-only -q` 实际输出为准） |
+| 测试与静态检查 | pytest 9.0.3（100 文件 / 1129 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -45,14 +45,14 @@ test_project/
 ├── src/
 │   ├── main.py                  # 应用入口
 │   ├── config/                  # 配置管理（.env 解析、日志配置）
-│   ├── data/                    # 数据模型与数据管理层
+│   ├── data/                    # 数据模型与数据管理层（含 hero_timeline 武将变更时间轴）
 │   ├── scraper/                 # 爬虫与 AI 批量生成层
 │   ├── rag/                     # RAG 向量索引与混合检索基础设施（ChromaDB + bge-small-zh + 关键词 RRF）
-│   ├── scripts/                 # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则维护 CLI）
+│   ├── scripts/                 # 语料构建与维护脚本（build_*_corpus / maintain_rag / import_hero_adjustments / 元规则维护 CLI）
 │   ├── business/                # 业务服务层（QProcess、OCR/官方榜单导入编排、公告与巅峰赛业务）
-│   ├── capture/                 # 屏幕采集层（ADB 连接与截图）
-│   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR）
-│   └── ui/                      # PySide6 用户界面层
+│   ├── capture/                 # 屏幕采集层（ADB 连接、截图、MuMu 实例探测）
+│   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR + 卡位检测）
+│   └── ui/                      # PySide6 用户界面层（app / configuration / data_admin / generation / library / match / maintenance / recommendation / shared）
 ├── data/                        # 数据文件（JSON + 2v2 胜率/出场、放逐 CSV；RAG 源数据 JSON 与归档 archive/）
 ├── images/                      # 武将头像（PNG）
 ├── templates/                   # OCR 模板截图
@@ -101,11 +101,38 @@ test_project/
 | # | 模块 | 目录 | 主要职责 |
 |---|------|------|---------|
 | 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化 |
-| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储与 ComboManager 稳定排序落盘） |
+| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘、**武将变更时间轴 `hero_timeline`**） |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、巅峰赛识别循环与禁选建议 |
-| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层、向量索引与混合检索、RAG 注入 AI 生成、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
-| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图、模板匹配、PaddleOCR 识别 |
-| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板 |
-| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议 |
+| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2090 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
+| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、PaddleOCR 识别、官方榜单版式解析 |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板、`MasterDetailPane` 主从列表骨架与实战配队三入口 |
+| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
+
+## 本轮文档校准（2026-09-07）
+
+本次对全部 9 个模块文档与 10 份调用图做了与代码逐项核对，除补充新增能力外，修正了以下已失效描述：
+
+**新增能力**
+- 武将变更时间轴（`src/data/hero_timeline.py` + `src/scripts/import_hero_adjustments.py`）：公告 diff 落地 `data/mjs_adjustments.json`，语料块打 `as_of` / `is_current` 版本戳，检索层默认只召当前版本
+- 巅峰赛识别会话治理：会话制互斥（`start` 即时挂起、每拍幂等重挂、`stop` 恢复全部）、会话世代四处校验、`carry_over_resolutions` 按内容沿用人工确认、`board_exited` 衔接对局攻略页
+- 三板块共享一次截图：`OcrService.poll_tick` → `PollCoordinator` 一次截图派生三条判定路径，`hero_selection` 单拍最多消费一次
+- 知识库维护工作台布局重排为左栏 10 项导航 + 右侧工作区 + 底部折叠执行日志；语料与维护脚本统一接入 `install_crash_logger` / `get_script_logger`
+- UI 公共组件：`MasterDetailPane`（资料库三面板统一接入）、`AppServices` 组合根、`StatusChips`、`CaptureRequestLock`、`run_edit_dialog()`
+- 多 API 档案（`config/api_profiles.json`，四供应商、启用互斥、首启自动迁移）与 `config/model_pricing.json`
+
+**修正的失效描述**
+- `PollCoordinator` 类名与官方榜单导入机制（共享 FIFO 队列 + `OcrService._import_busy` 互斥，非独占 worker）
+- 巅峰赛禁选建议阈值与象限（`HOT_PICK_RANK_MAX=50` / `STRONG_WIN_RATE_MIN=50.0`，仅 `ban_first` / `hot_pick` 两种标签）
+- 卡位检测量化步长（位置 8px / 尺寸 16px）、字符缓存规模（365 字）、默认名称 ROI（50×145）
+- MuMu 探测 API（`probe_mumu_port()` 已不存在，改 `probe_running_devices()` 等）
+- OCR 启动预热语义（启动画面阶段阻塞预热，`wait_ocr_warmup(timeout_ms=120_000)`，非"首次任务延迟加载"）
+- 语料任务数（10 个）、语料块总数（2090）、`scripts/*` → `src/scripts/*` 路径与 `.rule_doc_snapshot.json` 位于项目根
+- 日志级别分配反转（root 下限 WARNING + `src`/`subprocess` 恒定 DEBUG）、`rag/rag.log` 与 `debug.log`
+- 配置键补齐（`MAX_OUTPUT_TOKENS`、`MUMU_OCR_AUTO_SWITCH_TAB`、`RECOMMENDATION_*` 四键等）
+- `DataManager` 签名（`add(item, key)` / `update(item, key)`）与 `clear_all` / `snapshot_items` / `restore_items`
+
+**已知但未处理的死代码**（按"发现只提醒、不擅自删除"原则保留）
+- `src/business/maintenance/classification_suggest.py` 与 `classification_suggest_worker.py`：武将 LLM 建议归类功能，当前 `src/` 内零调用
+- `src/config/env.py::list_api_profiles()`：当前仅测试消费

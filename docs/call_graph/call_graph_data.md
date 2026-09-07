@@ -6,9 +6,9 @@
 
 ---
 
-## 当前实现基线（2026-08-01）
+## 当前实现基线（2026-08-29）
 
-`DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。
+`DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。武将变更时间轴 `data/mjs_adjustments.json` 于 2026-08-29 首次落地，与 `heroes.json` 并行供 RAG 构建脚本使用。
 
 ```
 MainWindow._load_data() -> DataFacade.load_all()
@@ -374,12 +374,32 @@ Combo.note 自由文本解析
 │                     业务服务层                                   │
 │  MainWindow._on_synergy_*     → SynergyManager.load()           │
 │  MainWindow._on_guide_*       → GuideManager.load()             │
+│  AnnouncementService          → append_announcement_events()    │
+│  audit_service                → load_timeline / stale_overrides │
+│                                 / hero_last_change              │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                     爬虫 / AI 层                                 │
 │  official.py / incremental.py → models.py (Pydantic 校验)       │
 │  api_generator.py              → HeroGuide / SynergyScore 校验    │
+│  announcement.py               → load_timeline / normalize_     │
+│                                 change_type                     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                     RAG / 语料构建层                             │
+│  src/rag/indexer.py            → CORPUS_BASE_DATE               │
+│  build_rag_corpus.py           → stamp_hero_block /             │
+│                                 TRIGGER_OVERRIDES /             │
+│                                 stale_overrides / load_timeline │
+│  build_guide_corpus.py         → stamp_guide_block /            │
+│                                 load_timeline / CORPUS_BASE_DATE│
+│  import_hero_adjustments.py    → save_timeline /                │
+│                                 append_announcement_events /     │
+│                                 load_timeline / hero_last_change│
+│  rag_audit.py                  → load_timeline / stale_overrides│
+│                                 / hero_last_change              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -431,7 +451,12 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `load_win_rates()` | `win_rate_repository.py` | `RecommendationPanel`, `MatchGuidePanel` | CSV 解析、百分比转浮点、默认路径缓存 |
 | `load_peak_win_rates()` | `peak_win_rate_repository.py` | 巅峰赛面板 | CSV 解析、巅峰赛专属缓存 |
 | `load_peak_pick_ranks()` | `peak_win_rate_repository.py` | 巅峰赛面板 | CSV 解析、出场排名缓存 |
-| `CardCatalogService.save_annotation_fields()` | `card_catalog.py` | `CardAnnotationEditDialog` | 校验字段值并将旧效果记录迁移为内部时间字段 |
+| `load_timeline()` / `save_timeline()` / `append_announcement_events()` | `hero_timeline.py` | `AnnouncementService`, `import_hero_adjustments.py` | 时间轴读写与幂等追加（按 ref 或 (date, hero) 去重） |
+| `hero_last_change()` / `skill_last_change()` / `changes_after()` / `hero_first_seen()` | `hero_timeline.py` | 构建脚本、`audit_service`、`rag_audit.py` | 按武将/技能查询变更日期 |
+| `stamp_hero_block()` / `stamp_guide_block()` | `hero_timeline.py` | `build_rag_corpus.py` / `build_guide_corpus.py` | 语料块版本戳（`as_of` / `is_current` / 硬/软过时判定） |
+| `stale_overrides()` | `hero_timeline.py` | `audit_service` / `rag_audit.py` | TRIGGER_OVERRIDES 失效风险清单 |
+| `normalize_change_type()` | `hero_timeline.py` | `announcement.py`、`import_hero_adjustments.py` | 变更类型词汇归一 |
+| `parse_skill_entry()` | `hero_timeline.py` | `import_hero_adjustments.py` | 技能条目"技能名：变更描述"解析 |
 
 ---
 
@@ -488,7 +513,13 @@ CardPointsPanel / EquipAttrsPanel / SpecialCardsPanel / HeroClassificationPanel 
         -> build_equip_attr.py  读 equip_attrs.json + cards.json -> 装备属性语料（并注入卡牌语料）
         -> build_special_corpus.py 读 special_cards.json -> 特殊机制语料
         -> build_combo_corpus.py 读 raw_guides/combos (csv+4md) -> 组合RAG语料（combo类，437块，不贴单值hero但贴heroes列表）
-        -> build_guide_corpus.py 读 raw_guides/guides (45md) -> 武将攻略RAG语料（guide类，357块，贴hero）
+        -> build_guide_corpus.py 读 raw_guides/guides (45md) + mjs_adjustments.json
+                                    -> stamp_guide_block() 打 as_of/is_current 版本戳
+                                    -> 武将攻略RAG语料（guide类，357块，贴hero）
+        -> build_rag_corpus.py  读 heroes.json + mjs_adjustments.json
+                                    -> stamp_hero_block()  武将/技能块恒 is_current=true
+                                    -> TRIGGER_OVERRIDES 命中优先返回
+                                    -> stale_overrides() 失效风险告警
 ```
 
 ### 10.3 从 xlsx 应急重导入
@@ -520,7 +551,7 @@ scripts/migrate_excel_to_json.py [--only points|equips|special]
 
 ```
 选将推荐页 / 启动刷新：is_recommendation_index_stale(index_path=武将推荐指数.csv)
-  -> 状态文件 .recommendation_index_state.json 读取 stale 标记
+  -> 状态文件 武将推荐指数状态.json（可写运行时根 data/）读取 stale 标记
      -> stale=false 或文件缺失       -> 返回 False（不弹「推荐指数待重建」）
      -> stale=true -> _has_newer_source_file(三份榜单 CSV, 推荐指数快照)
         -> 任一榜单 mtime > 快照 mtime -> True   [存在未反映的新榜单数据]
@@ -535,12 +566,13 @@ scripts/migrate_excel_to_json.py [--only points|equips|special]
 ### 11.1 推荐指数重建流程
 
 ```
-refresh_recommendation_indexes()
-  -> _load_hero_ids(HEROES_JSON)                       [name -> hero_id 映射]
-  -> _read_win_rates(WIN_RATE_CSV)                     [胜率 -> {name: float}, 含格式/范围校验]
-  -> _read_ranks(PICK_RANK_CSV, "出场")                [出场排名 -> {name: int}]
-  -> _read_ranks(BAN_RANK_CSV, "禁用")                 [禁用排名 -> {name: int}]
-  -> _validate_rank_ranges()                           [排名越界/重复 -> DataIssue]
+refresh_recommendation_indexes(config)
+  -> _load_runtime_config()                          [env 覆盖 + 参数边界校验]
+  -> _load_hero_ids(HEROES_JSON)                     [name -> hero_id 映射；重名武将整名剔除]
+  -> _read_win_rates(WIN_RATE_CSV)                   [胜率 -> {name: float}, 含格式/范围校验]
+  -> _read_ranks(PICK_RANK_CSV, "出场")              [出场排名 -> {name: int}]
+  -> _read_ranks(BAN_RANK_CSV, "禁用")               [禁用排名 -> {name: int}]
+  -> _validate_rank_ranges()                         [排名越界/重复 -> DataIssue]
   -> [有效数据] _score_valid_results(valid, config)
      -> pick_score = _rank_to_score(rank, n)
      -> ban_score = _rank_to_score(rank, n)
@@ -549,6 +581,70 @@ refresh_recommendation_indexes()
      -> raw_index = win_rate * preference * sigmoid
      -> 百分位归一化（p5/p95）-> score -> rating（S/A/B/C/D）
      -> 排序：低胜率降级优先，再按 raw_index 降序，再按 hero_id 升序
-  -> _write_snapshot()                                 [原子 CSV 写入，按 hero_id 升序]
+  -> _write_snapshot()                                 [原子 CSV 写入，按 hero_id 升序；Excel 占用报 PermissionError]
   -> mark_recommendation_index_stale(False)            [快照生成后清除 stale 标记]
+```
+
+---
+
+## 十二、武将变更时间轴链路（2026-08 新增）
+
+### 12.1 初始化与增量追加
+
+```
+import_hero_adjustments.py main()
+  -> save_timeline({"events": [...], "init_imported_at": today,
+                    "init_source_last_updated": <A 类快照日期>,
+                    "corpus_base_date": CORPUS_BASE_DATE})
+     -> _validate_event() 校验必填字段 (date/hero/change_type/source)
+     -> 按 (date, hero) 排序 -> atomic_write_json(mjs_adjustments.json, indent=1)
+  -> append_announcement_events(build_timeline_events(announcements))
+     -> 幂等去重：已知 ref 或 (date, hero) 已存在则跳过
+  -> load_timeline() -> hero_last_change() 比对 heroes.json 的 last_updated
+
+AnnouncementService._do_check()
+  -> AnnouncementManager.merge_new(items, baseline)
+  -> append_announcement_events(build_timeline_events(list_all()))
+     -> 全量扫描 hero_related 公告，跨运行按 ref 幂等
+     -> 无新增不写盘；写盘失败仅记录日志，不中断检查
+```
+
+### 12.2 语料块版本戳（构建链路）
+
+```
+build_rag_corpus.py
+  -> timeline = load_timeline()                       [一次性加载，避免逐块读盘]
+  -> 每武将块 stamp_hero_block(block, hero, timeline)
+     -> block.as_of = CORPUS_BASE_DATE
+     -> block.is_current = "true"                     [武将块恒当前版本]
+     -> block.last_change_date = hero_last_change() or CORPUS_BASE_DATE
+  -> 每技能块同样 stamp_hero_block()
+  -> TRIGGER_OVERRIDES 命中 (hero, skill) -> 优先返回人工精化触发条件
+  -> stale_overrides(timeline) 告警 TRIGGER_OVERRIDES 语义失效风险
+
+build_guide_corpus.py
+  -> timeline = load_timeline()
+  -> 每攻略块 stamp_guide_block(block, prev_as_of, prev_md5, timeline)
+     -> content_md5 = md5(text)
+     -> 文本未变 (prev_md5 == digest) -> 保留 prev_as_of；否则重置为 CORPUS_BASE_DATE
+     -> changes = changes_after(hero, as_of) 排除 change_type=="新增"
+     -> 块文本提及变更技能名 -> is_current="false" + staleness_reason（检索默认排除）
+     -> 否则                    -> is_current="true"  + staleness_hint（软提示）
+     -> 无变更                  -> is_current="true" 不写额外字段
+```
+
+### 12.3 TRIGGER_OVERRIDES 审计消费
+
+```
+rag_audit.py / audit_service.check_trigger_overrides()
+  -> timeline = load_timeline()
+  -> stale_overrides(timeline)
+     -> 对每条 (hero, skill) 检查 skill_last_change 是否晚于 TRIGGER_OVERRIDES_AUTHORED
+     -> skill 级命中 -> level="skill"；回退 hero_last_change -> level="hero"
+     -> 返回 [{hero, skill, date, level}]，按 (date, hero, skill) 排序
+  -> 打印/推送失效风险告警
+
+announcement.py（爬虫侧）
+  -> load_timeline() 读取已落地时间轴
+  -> normalize_change_type() 归一公告原文的变更类型
 ```

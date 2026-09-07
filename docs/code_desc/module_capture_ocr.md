@@ -32,11 +32,11 @@ src/ocr/
 ├── image_preprocessor.py  # ImagePreprocessor — 放大、CLAHE、锐化、灰度
 ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
 ├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI
-├── roi_config.py           # OcrRoiConfig / OcrRoiLayout — 巅峰赛与多布局 ROI 配置
+├── roi_config.py           # OcrRoiConfig / OcrRoiLayout — 选将页与对局攻略页 ROI 布局及本地覆盖
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
-├── paddle_loader.py       # PaddleOCR 统一构造（GPU/CPU 推理配置、CPU 线程限制）与 Windows 加载闪窗抑制
+├── paddle_loader.py       # PaddleOCR 统一构造（GPU/CPU 推理配置、CPU 线程限制）与 Windows 加载闪窗抑制、打包态模型路径
 └── ocr_loader.py          # 模板管理器单例
 ```
 
@@ -47,12 +47,17 @@ src/ocr/
 ### 3.1 ADB 截图链路
 
 ```
-AdbCapture(adb_path, adb_port)
-  ├── connect() → adb connect 127.0.0.1:port
+AdbCapture(adb_path, adb_port=7555)
+  ├── _resolve_target() → 精确 ADB 目标
+  │     └── device_serial > 127.0.0.1:port > probe_running_devices() 唯一实例
+  ├── connect() → adb connect <target> → adb -s <target> get-state == "device"
+  ├── check_device() → 复用连接时确认目标设备仍在线，失效即清除会话缓存
   ├── disconnect() → adb disconnect
-  ├── screencap_full() → adb exec-out screencap -p → PIL Image（无效输出最多重试 3 次）
-  └── device_serial → 可读写，切换目标设备
+  ├── screencap_full(log_success=True) → adb exec-out screencap -p → PIL Image（最多 3 次尝试）
+  └── device_serial → 可读写，切换目标设备（IP:port 时同步 adb_port）
 ```
+
+`connect()` 的目标解析有优先级：显式 `device_serial` 优先，其次是构造端口，最后仅在运行中的 MuMu 实例恰好一个时自动选定；无实例或存在多个实例直接返回错误消息，由配置页提示用户选择设备，避免误连其它在线设备。已缓存的会话在重试前先经 `check_device()` 验证，失效才重新走完整连接流程。
 
 持续轮询调用 `screencap_full(log_success=False)`，并将模板加载、OCR 完成、冷却等正常高频事件记录为 `DEBUG`。运行日志默认仅保留连接状态及截图/OCR 的警告和错误，避免轮询成功记录持续刷屏。
 
@@ -60,9 +65,9 @@ AdbCapture(adb_path, adb_port)
 
 **安全设计：**
 - 命令注入防护：`_run_adb(*args)` 使用列表参数而非字符串拼接
-- 设备序列号格式校验：`IP:port` 格式 + 端口范围 1-65535
-- 超时保护：`subprocess.run` 设置 timeout
-- 图片输入防护：本地 OCR/ROI 仅接受实际 PNG/JPEG，ADB 数据仅接受实际 PNG；统一限制 6 MiB、4,000,000 像素，并将 Pillow 解压炸弹警告提升为异常
+- 目标设备精确校验：连接后必须 `adb -s <serial> get-state` 返回 `device`，在线但不属于本次目标设备不算成功；`device_serial` setter 仅接受 `IP:port` 且端口为纯数字的写法（用于同步内部端口），不做数值范围校验
+- 超时保护：`subprocess.run` 设置 timeout（截图 15s，连接类命令默认 10s，断开 5s）
+- 图片输入防护：本地 OCR/ROI 仅接受实际 PNG/JPEG，ADB 数据仅接受实际 PNG；统一限制 6 MiB、4,000,000 像素，并将 Pillow 解压炸弹警告提升为异常（`image_validation.MAX_IMAGE_SIZE_BYTES` / `MAX_IMAGE_PIXELS`）
 
 **`screencap` 使用 `exec-out` 模式**而非 `shell screencap`：
 ```python
@@ -70,13 +75,13 @@ adb -s 127.0.0.1:16448 exec-out screencap -p
 ```
 `exec-out` 直接输出二进制到 stdout，不经过设备 shell 解析，更快且不会损坏二进制 PNG 数据。
 
-ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回不完整的 PNG。`screencap_full()` 会先调用 `Image.load()` 验证完整性，并对这两类瞬态结果最多重试 3 次；明确的设备离线错误仍立即失效当前连接。
+ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回不完整的 PNG。`screencap_full()` 经 `load_png_image_bytes()` 校验实际格式与像素数并强制解码（等价于 `verify()` + `load()`），对空输出与解码失败两类瞬态结果最多执行 3 次尝试（首次 + 2 次重试，间隔 0.15s）。命令返回码非零属于明确故障，立即返回错误而不重试；错误消息命中 `device offline`、`device not found`、`transport closed` 等标记时同步清除已失效的连接会话。
 
 ### 3.2 模板匹配
 
 模板匹配是 OCR 流程的**前置过滤器**，执行在 PaddleOCR 之前：
 
-模板制作时会在 `templates/wujiang_select.json` 保存制作截图的参考尺寸和原始框选坐标。旧模板没有坐标元数据时，兼容使用 2560×1440 参考尺寸并保留全屏搜索。
+模板制作时会在 `templates/wujiang_select.json` 保存制作截图的参考尺寸和原始框选坐标（对局攻略模板存于 `templates/match_guide/template.json`）。用户模板缺失时回退随包只读默认模板（`BUNDLE_ROOT/templates/`），旧模板没有坐标元数据时，兼容使用 2560×1440 参考尺寸并保留全屏搜索。
 
 匹配时根据当前截图与参考尺寸计算基础缩放比例，并在基础比例附近尝试多个比例，
 选择置信度最高的结果：
@@ -91,7 +96,7 @@ match(image, threshold=0.8)
   └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
 ```
 
-**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略，便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 PaddleOCR。
+**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 PaddleOCR。
 
 **人工识别例外：** 用户从页面点击"识别当前阵容"或导入本地图片时会传入 `force_ocr=True`，此类已明确指定识别页类型的请求跳过模板匹配，直接执行 OCR。只有自动轮询仍将模板匹配作为前置门禁，避免对无关游戏画面反复执行 OCR。
 
@@ -146,14 +151,14 @@ Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
 
 ### 3.5 ROI 布局配置（roi_config.py）
 
-`OcrRoiConfig` 从 `config/ocr_rois.default.json` 加载默认布局，并由 `config/ocr_rois.json` 用户覆盖层管理本地调整。两种页面类型对应两种布局：
+`OcrRoiConfig` 从 `config/ocr_rois.default.json`（随包只读基线，`BUNDLE_ROOT`）加载默认布局，并由 `config/ocr_rois.json`（可写运行时根，`PROJECT_ROOT`）用户覆盖层管理本地调整。两份文件共用 `schema_version: 1`，布局内 `reference_size` 为 `[宽, 高]`，每个 slot 为 `name_roi` + 可选 `team_roi`。`save_layout()` 写盘后立即更新运行时布局，无需再调用 `reload()`；`reset_layout()` 删除该页本地覆盖并回到默认；`reload()` 重新读盘，本地文件缺失页面或校验失败时仅警告并整体回退默认布局。
 
 | 页面类型 | 席位数量 | 阵营 ROI | 说明 |
 |---------|---------|---------|------|
 | `hero_selection` | 8 | 无 | 标准选将页 8 名武将 |
 | `match_guide` | 5 | 必须 | 对局攻略页 5 个席位（含楚/汉阵营标签） |
 
-`OcrRoiLayout` 包含 `reference_size`（参考截图尺寸）和 `slots`（`OcrRoiSlot` 元组），每个 slot 有 `name_roi` 和可选 `team_roi`。`GeneralRecognizer` 在构造时接受 `layout` 参数或按 `page_type` 自动选择布局，用户通过 `save_layout` 写入本地覆盖后调用 `reload` 即可生效。
+`OcrRoiLayout` 包含 `reference_size`（参考截图尺寸）和 `slots`（`OcrRoiSlot` 元组），每个 slot 有 `name_roi` 和可选 `team_roi`。`GeneralRecognizer` 在构造时接受 `layout` 参数或按 `page_type` 自动选择布局。加载时会校验页面要求（`hero_selection` 恰好 8 席且无需阵营 ROI，`match_guide` 恰好 5 席且每席必须带阵营 ROI）、ROI 全为整数且不得超出参考尺寸；用户通过 `save_layout` 写入本地覆盖后布局即刻生效，`reset_layout` 恢复默认。
 
 ### 3.6 多路证据与候选确认
 
@@ -192,7 +197,7 @@ PaddleOCR → 文字 + 置信度
 
 等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.35`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_enhanced` 与 `single_enhanced` 同属 `enhanced`，不能重复计票。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
 
-拼图检测时额外设有**批处理回退门槛**：若拼图检测结果不在武将词表内、且按编辑距离筛选出多个候选，则视为截断文本风险，跳过拼图结果直接逐槽复核，避免被多候选纠错静默绑定到错误武将。
+拼图检测时额外设有**批处理回退门槛**：拼图结果只接受单候选且置信度 `>= 0.5`；若结果不在武将词表内且按编辑距离筛选不出唯一候选（0 个或多个），则视为截断文本风险，跳过拼图结果直接逐槽复核，避免被多候选纠错静默绑定到错误武将。
 
 结构化结果为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`。`name` 只保存已确认名称；`length_mode` 为 `complete`、`missing`、`uncertain` 或 `unknown`；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`multi_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
 
@@ -230,10 +235,10 @@ else:
 
 | 层 | 速度 | 覆盖 |
 |----|------|------|
-| `char_info_cache.json`（314 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
+| `char_info_cache.json`（365 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
-`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`，也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。
+`CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`（随包只读基线），也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `src/scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。五笔 86 全码来自离线码表 `src/data/wubi86.txt`，笔画数来自 UNIHAN `Unihan_IRGSources.txt`；码表缺失时对应维度按 0 分处理，不阻断识别。
 
 用户层缓存 `data/char_info_cache.json` 与基线缓存合并：运行时动态补齐的特征写入用户层，基线缓存保持只读（随包分发）。用户层格式异常时仅警告并忽略，不影响基线功能。
 
@@ -244,9 +249,37 @@ else:
 - **`MUMU_OCR_USE_GPU`**（默认 `false`）— 推理走 CPU，避免 GPU 驱动异常导致整机卡顿；调用方显式传入 `use_gpu` 时优先尊重显式值。
 - **`MUMU_OCR_CPU_THREADS`**（默认 `6`）— CPU 模式限制 PaddleOCR 推理线程数，并默认启用 `enable_mkldnn=True`，防止推理打满全部逻辑核心。
 
+**打包态模型路径**：frozen 下 Paddle 的 C++ 层不支持中文路径，若随包带了 `paddleocr_models/`（det/rec/cls）且 `%TEMP%` 为纯 ASCII，则把模型复制到 `%TEMP%\mjs_ocr_models` 并把 `det_model_dir` / `rec_model_dir` / `cls_model_dir` 指向副本（`.synced` 标记避免重复复制）；`%TEMP%` 含中文或打包未含模型时回退默认路径。开发态不做复制，沿用 PaddleOCR 默认缓存目录。`create_paddle_ocr()` 全程持有模块级 `_LOAD_LOCK`，保证并发预热与首次识别只构造一份引擎。
+
 `src/ocr/recognizer.py::GeneralRecognizer._engine` 增加**加载熔断**：PaddleOCR 引擎加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"，不再对每次识别重复尝试加载（避免反复触发昂贵的模型初始化）。同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）改为 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
 
 **OCR 任务模板控制**：`OcrTask` 中 `match_template=True` 时执行模板匹配前置过滤；`match_template=False` 时跳过模板匹配直接 OCR（巅峰赛卡位检测路径通过 `submit_ocr_task(match_template=False)` 使用）。模板未命中时，`fallback_on_template_miss=True` 可强制回退执行 OCR（对局攻略路径使用），否则返回 `healthy_no_match`。
+
+### 3.10 官方榜单固定版式解析（official_board_parser.py）
+
+榜单图片按**固定版式常量**解析，不做通用表格识别。`LAYOUTS` 内置三种榜单：`2v2` 与 `peak` 为双栏（胜率榜 + 出场榜，列 `排名/武将/胜率` 与 `排名/武将`），`exile` 为放逐榜双栏（仅 `排名/武将`）。每个版式记录 `top/bottom` 纵向比例、`panel_ranges` 横向分栏比例、`columns`、`column_breaks` 列分界比例、`header_lines` 表头行数，以及输出与待复核 CSV 文件名。`PAGED_LAYOUTS` 是同一批版式的**新版分页变体**（`variant="paged"`，`top_reference="width"` 即以宽度为基准定位顶部，`separator_mode="between_rows"`）。
+
+```
+detect_layout(image, key)
+  └─ 纵横比 height/width >= 4 → 旧版长图优先，否则新版分页优先
+     └─ 逐候选 extract_panels → find_data_boundaries → 行数校验
+        ├─ 2v2 / peak：左右栏行数必须一致
+        └─ exile：左栏 >= EXILE_FULL_PANEL_MIN_ROWS(10) 且右栏不超左栏
+        两者都失败 → 抛 ValueError（携带各候选失败原因）
+
+find_data_boundaries(panel, image_height, layout, panel_index)
+  ├─ bounded（旧版）：Canny(40,120) → HoughLinesP(threshold=80,
+  │     minLineLength=面板宽/3, maxLineGap=12) → 仅保留近水平线段
+  │     → 按 y 聚类（间距 <= 6 合并）→ 按行高区间 [0.002h, 0.011h] 分 run
+  │     → 取最长 run，截掉表头行数
+  └─ between_rows（分页）：排名列白色像素行投影 → 行带中心
+        → 直连行高区间 [0.075w, 0.125w] 取中位数行高
+        → 按行高倍数插值恢复漏行并向前补齐 → 边界取相邻中心中点
+restore_missing_boundaries(boundaries) → 按中位行高补回 Hough 漏检横线
+      → 返回 (完整边界, 被修复的排名集合)
+```
+
+`split_row_cells(row, columns, column_breaks)` 按列比例切单元格，胜率列左内缩取 `-4` 像素（首位数字紧贴分隔线，通用内缩会截断"4"的左半边）。胜率用**当前榜单自带字体**建立数字模板：`build_rank_digit_templates()` 以视觉行序已知的排名格取样，`prepare_rate_templates()` 再用胜率小数位补样本并预计算整列 OCR，`recognize_rate_with_templates()` 经 `segment_glyphs()`（亮列连通切分）→ `normalize_glyph()`（等比缩放居中到 40×28 画布）→ `match_digit()`（Dice 分数）逐位匹配，单字需 `>= 0.72`，拼成 `xx.xx%`。该模块只负责图像解析与数字模板，候选词表约束与写入门禁由官方导入服务另行负责。
 
 ---
 
@@ -256,25 +289,23 @@ else:
 
 ```python
 def probe_mumu_adb() -> str:
-    # 1. PATH 查找
-    adb = shutil.which("adb")
-    if adb:
-        return adb
-    # 2. 注册表或环境变量
-    mumu_home = os.getenv("MUMU_HOME") or _read_registry()
-    if mumu_home:
-        return os.path.join(mumu_home, "nx_main", "adb.exe")
-    # 3. 常见安装路径
-    for base in ["D:/模拟器/MuMu Player 12", "C:/Program Files/MuMu Player 12"]:
-        path = os.path.join(base, "nx_main", "adb.exe")
-        if os.path.exists(path):
-            return path
+    # 1. 先查系统 PATH
+    if shutil.which("adb"):
+        return shutil.which("adb")
+    # 2. 再查 MuMu 安装根（MUMU_HOME → 注册表 → 8 个常见安装路径）
+    for root in _get_mumu_candidates():
+        for sub in ("nx_main/adb.exe", "emulator/nemu/EmulatorShell/adb.exe"):
+            if (root / sub).exists():
+                return str((root / sub).resolve())
+    # 3. 最后查旧版候选路径
+    for root in _get_legacy_candidates():
+        ...
     return ""
 ```
 
-> **设计思路：** 三个优先级覆盖了大多数场景：系统 PATH 最快，注册表/环境变量次之，常见安装路径兜底。函数式设计无内部状态，可被多处调用而不互相影响。
+> **设计思路：** 三个优先级覆盖了大多数场景：系统 PATH 最快，注册表/环境变量次之，常见安装路径兜底。函数式设计无内部状态，可被多处调用而不互相影响。注册表同时读取 `SOFTWARE\Netease\MuMuPlayer12` 与 `SOFTWARE\WOW6432Node\Netease\MuMuPlayer12`（兼容 64 位进程读 32 位安装）。
 
-`probe_all_devices_with_status()` 是配置页使用的状态化版本：它在 `MuMuManager.exe` 非零退出或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。
+`probe_all_devices_with_status()` 是配置页使用的状态化版本：它执行 `MuMuManager.exe info --vmindex all` 并解析 JSON，在 `MuMuManager.exe` 非零退出、JSON 解析失败或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。`probe_running_devices()` 在此基础上只保留 `is_running` 且 `adb_port > 0` 的实例，供 `AdbCapture.connect()` 在无显式目标时自动选定唯一实例。
 
 ### 4.2 图像预处理流水线
 
@@ -311,29 +342,44 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 
 | 类/函数 | 说明 |
 |---------|------|
-| `AdbCapture(adb_path, adb_port)` | 构造 ADB 截图器 |
-| `AdbCapture.connect()` → `(bool, str)` | 连接模拟器 |
-| `AdbCapture.screencap_full(log_success=True)` → `(bool, Image\|str)` | 全屏截图 |
+| `AdbCapture(adb_path, adb_port=7555)` | 构造 ADB 截图器 |
+| `AdbCapture.connect()` → `(bool, str)` | 连接模拟器，并校验目标设备状态为 `device` |
+| `AdbCapture.check_device()` → `(bool, str)` | 复用连接前确认目标设备仍在线 |
+| `AdbCapture.disconnect()` → `(bool, str)` | 断开模拟器 |
+| `AdbCapture.screencap_full(log_success=True)` → `(bool, Image\|str)` | 全屏截图（关键字参数，轮询传 `False` 抑制成功日志） |
 | `probe_mumu_adb()` → `str` | 探测 ADB 路径 |
-| `probe_all_devices()` → `list[MuMuDeviceInfo]` | 列出 MuMu 实例 |
+| `probe_all_devices()` / `probe_all_devices_with_status()` | 列出 MuMu 实例；状态化版本区分"无实例"与"探测失败" |
+| `probe_running_devices()` → `list[MuMuDeviceInfo]` | 仅返回运行中且端口有效的实例 |
+| `test_adb_path(adb_path)` → `(bool, str)` | 校验 adb.exe 可执行并返回版本行 |
+| `load_local_image(path)` / `load_png_image_bytes(data)` → `Image` | 不可信图片输入的格式、体积、像素校验 |
 | `pil_to_qpixmap(image)` → `QPixmap` | PIL → Qt 转换 |
 
 ### OCR 层公共方法
 
 | 类/方法 | 说明 |
 |---------|------|
-| `TemplateManager.match(image, threshold)` → `(bool, float)` | 模板匹配 |
-| `TemplateManager.set_template(image, roi)` | 制作模板 |
+| `TemplateManager.match(image, threshold=0.8)` → `(bool, float)` | 模板匹配（基础比例局部匹配 + 多尺度回退） |
+| `TemplateManager.set_template(image, roi)` | 制作模板并保存参考尺寸与框选坐标元数据 |
+| `TemplateManager.reload()` / `delete_template()` | 重新加载 / 删除模板与元数据 |
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别页面名称并返回候选、状态和多路证据 |
+| `GeneralRecognizer.warmup()` / `warmup_inference()` | 预热引擎与字符特征 / 执行一次代表性拼图推理 |
+| `GeneralRecognizer.adopt_engine(engine)` / `shared_engine()` | 与同进程其它识别器共享同一 PaddleOCR 实例 |
 | `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | OCR 图像预处理 |
-| `paddle_loader.create_paddle_ocr(**kwargs)` | 构造 PaddleOCR：推理设备/CPU 线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN，并抑制 Windows 首次加载闪窗 |
-| `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界 |
+| `paddle_loader.create_paddle_ocr(**kwargs)` | 构造 PaddleOCR：推理设备/CPU 线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN，抑制 Windows 首次加载闪窗，打包态把模型指向 `%TEMP%` ASCII 路径 |
+| `OcrRoiConfig.layout_for(page_type)` / `save_layout(...)` / `reset_layout(...)` / `reload()` | 布局读取、本地覆盖写盘（立即生效）、恢复默认、重新读盘 |
+| `official_board_parser.detect_layout(image, key)` | 按纵横比与行数校验确认旧版/分页版式 |
+| `official_board_parser.extract_panels(image, layout)` | 按版式比例切出榜单面板 |
+| `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界（横线检测或排名列行投影） |
+| `official_board_parser.restore_missing_boundaries(...)` | 按中位行高补回漏检横线并返回被修复排名 |
 | `official_board_parser.split_row_cells(...)` → `dict[str, np.ndarray]` | 按官方版式切分行单元格 |
 | `official_board_parser.prepare_rate_templates(...)` | 构建榜单数字模板并预计算胜率 OCR |
+| `official_board_parser.recognize_rate_with_templates(...)` | 用数字模板以 Dice 分数还原 `xx.xx%` |
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
 | `CharacterSimilarityService.is_safe_single_substitution(text, candidate)` → `bool` | 判断唯一错字是否达到自动纠正门槛 |
+| `CharacterSimilarityService.rank_single_substitution_candidates(text, candidates)` | 候选闭包内按错字字形分排序 |
 | `CharacterFeatureRepository(cache_path=None, user_cache_path=None)` | 汉字特征缓存加载、动态补齐与用户层持久化 |
-| `get_template_manager(template_name)` → `TemplateManager` | 获取模板管理器单例 |
+| `CharacterFeatureRepository.warmup()` / `warmup_characters(chars)` | 预热缓存与拼音库 / 批量补齐词表字符 |
+| `get_template_manager(template_name)` → `TemplateManager` | 获取模板管理器单例（仅 `hero_selection` / `match_guide`） |
 | `OcrWorker.submit(task)` | 串行执行预热、常规 `OcrTask` 或官方 `OfficialImportTask`，并通过任务完成信号返回结果 |
 
 活动识别路径由 `src.business.recognition.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 PaddleOCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 PaddleOCR。关闭窗口时 worker 仅被通知停止并立即返回（不在 GUI 线程同步等待）；若正卡在模型预热中，会直接终止预热线程让进程快速退出，其余未完成任务由退役列表持有并在进程退出前收尾，避免窗口卡死、进程残留与运行中的 QThread 被提前销毁。

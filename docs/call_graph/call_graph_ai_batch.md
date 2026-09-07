@@ -2,19 +2,19 @@
 
 > 对应源码：`src/scraper/ai/`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
-> 所有链路均在 QProcess 子进程中执行，不阻塞 UI 主线程。
+> 生成链路（`run_*_generation()`）均在 QProcess 子进程中执行，不阻塞 UI 主线程；`complete()` 的通用对话补全调用方（语料精炼、分类建议等）在进程内直接调用，不经 QProcess。
 
 ---
 
-## 当前实现基线（2026-09-04）
+## 当前实现基线（2026-09-07）
 
 AI 生成按批原子提交：每批校验成功结果立即提交，失败项仅保留对应旧数据；任务汇总失败时以退出码 `1` 结束，成功项不受影响。
 
-双生成器：API 模式（`AIBatchGenerator -> httpx -> DeepSeek`）/ 浏览器模式（`PlaywrightGenerator -> Edge -> chat.deepseek.com`）。
+双生成器：API 模式（`AIBatchGenerator -> httpx -> 供应商端点`）/ 浏览器模式（`PlaywrightGenerator -> Edge -> chat.deepseek.com`）。API 模式按 `provider` 适配多供应商档案（deepseek / openai / ollama / openai-compatible，取自 `config/api_profiles.json` 唯一启用档案），仅 `provider=deepseek` 注入私有参数 `thinking.type=disabled`；`requires_key=False` 的 ollama 本地服务允许空 Key。
 
-API 模式输出上限 `max_output_tokens`（默认 16384，按供应商语义可上调）；`_request_content()` 在正文被"思考过程耗尽输出额度"截断时，最多重试 `max_retries` 次；`_call_api()` 对 HTTP 429 限流退避、5xx/连接异常指数退避，连接类异常重建 httpx.Client 避免级联失败；`_log_usage()` 记录 reasoning/content token 拆分。
+API 模式输出上限 `max_output_tokens`（默认 16384，按供应商语义可上调）；`_request_content()` 在正文被"思考过程耗尽输出额度"截断时，最多重试 `max_retries` 次；`_call_api()` 对 HTTP 429 优先读 `Retry-After` 头（钳到 3-30s，无头则 5/10/15s）退避、408/5xx/连接异常按 2^attempt 指数退避，400/401/403/404/422 立即失败，连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client 避免级联失败；`cancel()` 置 `_cancelled` 标志使重试循环在下次循环开头退出；每次重试向 stdout 输出 `[重试]` 行，`_log_usage()` 记录 reasoning/content token 拆分。
 
-攻略与相性默认启用 RAG 官方规则语料注入（`rag_prompt.py`），`--no-rag` 关闭；RAG 运行时异常自动降级为经典模式，循环输出一次 `[RAG]` 提示。RAG 开启时 `build_*_prompt()` 兜底注入 `load_card_system()` 卡牌体系段防止牌名串味；RAG 关闭且无语料时兜底注入 `load_core_rules()` 完整核心规则摘要。
+攻略与相性默认启用 RAG 官方规则语料注入（`rag_prompt.py`），`--no-rag` 关闭；RAG 运行时异常自动降级为经典模式，循环输出一次 `[RAG]` 提示。RAG 开启时 `build_*_prompt()` 兜底注入 `load_card_system()` 卡牌体系段防止牌名串味；RAG 关闭且无语料时兜底注入 `load_core_rules()` 完整核心规则摘要。技能行由 `_skill_lines()` 构建：语料块已注入的技能指针化省 token，未注入的自动回退完整描述并附结算后缀。
 
 ```
 ai_batch.main()
@@ -40,6 +40,7 @@ ai_batch.main()
 | `--no-rag` | 设置 `RAG_ENABLED=false` | 禁用 RAG 注入 |
 | `--update` | 更新模式 | 重新生成已有数据 |
 | `--dry-run` | `_show_cost_estimate()` | 预览 RAG/经典双模式成本 |
+| `--rebuild-rag-index` | `src.rag.indexer.build_index(rebuild=True)` | 重建 RAG 向量索引后退出 |
 
 ## 一、CLI 入口总览
 
@@ -54,7 +55,7 @@ ai_batch.py -> ai/batch.py:main()                             [兼容入口 -> �
   -> get_runtime_params()                                     [获取限流/重试/超时/输出额度参数]
   -> setup_logging()                                          [初始化日志]
   -> load_heroes(args.heroes_file)                            [HeroManager 完整校验武将 JSON]
-  -> resolve_api_config(None)                                 [从 config.env 解析 API 配置]
+  -> resolve_api_config(None)                                 [多 API 档案唯一启用档案 → config.env → 环境变量 → 默认值]
   -> [args.dry_run] _show_cost_estimate()                     [预览 RAG/经典双模式成本]
   -> [非 browser] _check_api_key(api_config)                  [空 key + requires_key 时 exit]
   -> 生成器创建:
@@ -87,8 +88,8 @@ ai_batch.py -> ai/batch.py:main()                             [兼容入口 -> �
 |------|----------|--------|----------|
 | `main()` | `ai/batch.py` | QProcess 子进程入口 | `load_heroes()`, `_load_existing_*()`, `run_*_generation()` |
 | `load_heroes()` | `ai/utils.py` | `ai_batch.main()` | `HeroManager.load()`, `Hero.model_validate()` |
-| `resolve_api_config()` | `config/env.py` | `ai_batch.main()` | 解析 config.env 中 provider/API key/URL/模型 |
-| `get_runtime_params()` | `config/env.py` | `ai_batch.main()` | 获取 RPM、最大重试次数、HTTP 超时、输出 token 上限 |
+| `resolve_api_config()` | `config/env.py` | `ai_batch.main()` | 任务侧唯一 API 解析入口：`api_profiles.json` 唯一启用档案 → config.env 旧键 → 环境变量 → 默认值；返回 provider/api_key/api_url/model |
+| `get_runtime_params()` | `config/env.py` | `ai_batch.main()` | 获取 RPM、最大重试次数、HTTP 超时、输出 token 上限（默认 16384） |
 | `_load_existing_guides()` | `ai/batch.py` | `main()` | `GuideManager.load()`；错误文件备份后写回有效记录 |
 | `_load_existing_synergies()` | `ai/batch.py` | `main()` | `SynergyManager.load()`；错误文件备份后写回有效记录 |
 | `_show_cost_estimate()` | `ai/batch.py` | `main()` | `_print_mode_estimates()` -> `estimate_cost(..., use_rag)` 分别输出 RAG/经典 |
@@ -114,19 +115,21 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
               -> retriever.hero_blocks(hero_name)                 [本武将语料块]
               -> 技能/机制词提取 -> retriever.search(query, top_k) [跨类召回]
               -> post-filter: combo 按 heroes 列表，hero 块按名称过滤
-              -> _format_rag_chunks(blocks, extra, budget)       [官方/社区两段，整块丢弃]
-           -> [_rag_enabled()] load_card_system()                 [RAG 开：卡牌体系段兜底防串味]
+              -> _format_rag_chunks(blocks, extra, budget)       [官方/社区两段，整块丢弃；过时块加 ⚠️ 前缀]
+           -> _skill_lines(skills, hero_id, rag)                 [语料块已注入→指针化，否则完整描述+结算]
+           -> [is_rag_enabled()] load_card_system()              [RAG 开：卡牌体系段兜底防串味]
            -> [not rag_enabled and not rag] load_core_rules()    [RAG 关：完整核心规则摘要兜底]
         -> self._request_content(messages, temperature=0.7, label=hero.name)
            -> [重试循环 attempt=1..max_retries]
               -> self._call_api(messages)                         [API 请求]
+                 -> [循环开头] _cancelled -> 返回 None            [取消标志：面板销毁/中止]
                  -> time.sleep(限速)                               [RPM 前置限流]
-                 -> POST /v1/chat/completions                      [max_tokens=MAX_OUTPUT_TOKENS]
-                 -> [DeepSeek provider] payload["thinking"]={"type":"disabled"}
+                 -> POST api_url                                  [供应商端点；max_tokens=MAX_OUTPUT_TOKENS]
+                 -> [provider=="deepseek"] payload["thinking"]={"type":"disabled"} [私有参数，其他端点会 400]
                  -> resp.json() -> {content, finish_reason, usage}
-                 -> [HTTP 429] _retry_wait(status, attempt, headers) [读 Retry-After, 3-30s]
+                 -> [HTTP 429] _retry_wait(status, attempt, headers) [Retry-After 钳到 3-30s，无头则 max(5*attempt,3)]
                     [HTTP 408/5xx] 2^attempt 秒
-                    [HTTP 400/401/403/404/422] 立即失败，不重试
+                    [HTTP 400/401/403/404/422] 立即抛错失败，不重试
                  -> [连接异常 _CONN_ERRORS] close()+重建 httpx.Client [避免 RemoteProtocolError 级联]
                  -> print("[重试] ...")                            [stdout 进度白名单放行]
               -> _read_completion_content(response, max_output_tokens)
@@ -139,7 +142,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
         -> extract_json(content)                                  [4 策略回退提取]
         -> raw["hero_id"] = hero.id
         -> convert_ids_to_int(raw, ["synergizes_with"])
-        -> has_required_guide_fields(raw)                          [必填 + 占位符/过短正文预检]
+        -> has_required_guide_fields(raw)                          [必填字段 + 占位符标记/正文<200 字预检]
         -> validate_guide(raw)                                     [HeroGuide.model_validate -> model_dump]
         -> return (result, usage)
      -> [生成成功] working_guides[hero_id] = generated; new_guides.append(generated)
@@ -157,15 +160,15 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
 | `_commit_generation_batch()` | `generation.py` | `run_*_generation()` | `_save_json()` |
 | `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_request_content()`, `extract_json()`, `validate_guide()` |
 | `AIBatchGenerator._request_content()` | `api_generator.py` | `generate_guide/synergy` | `_call_api()`, `_read_completion_content()`, `_log_usage()` |
-| `AIBatchGenerator._call_api()` | `api_generator.py` | `_request_content()` | `httpx.Client.post()`; 失败走 `_retry_wait()` 限流退避 |
+| `AIBatchGenerator._call_api()` | `api_generator.py` | `_request_content()` / `complete()` | `httpx.Client.post()`; 失败走 `_retry_wait()` 限流退避或立即失败；连接类异常关闭并重建 client |
 | `AIBatchGenerator._read_completion_content()` | `api_generator.py` | `_request_content()` | 检查 `finish_reason=="length"` 判断额度耗尽 |
 | `AIBatchGenerator._log_usage()` | `api_generator.py` | `_request_content()` | 记录 reasoning/content token 拆分 |
-| `AIBatchGenerator._retry_wait()` | `api_generator.py` | `_call_api()` | 429 读 Retry-After，其余 2^attempt |
+| `AIBatchGenerator._retry_wait()` | `api_generator.py` | `_call_api()` | 429 读 Retry-After 钳到 3-30s、无头 max(5*attempt,3)；其余 2^attempt |
 | `extract_json(text)` | `json_extract.py` | `generate_guide/synergy` | `_try_extract()` ×4 策略 |
 | `_try_extract(candidates)` | `json_extract.py` | `extract_json()` | `_raw_parse()`, `_repair_strings()` |
-| `has_required_guide_fields()` | `ai/utils.py` | `generate_guide()` | 必填字段 + 占位符/过短正文预检 |
+| `has_required_guide_fields()` | `ai/utils.py` | `generate_guide()` | 必填字段 + 占位符标记/正文<200 字预检 |
 | `validate_guide()` | `ai/utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
-| `build_guide_prompt(hero)` | `prompt_utils.py` | `generate_guide()` | `build_rag_context()`, `load_card_system()`, `load_core_rules()` |
+| `build_guide_prompt(hero, rag_max_chars)` | `prompt_utils.py` | `generate_guide()` | `build_rag_context()`, `_skill_lines()`, `load_card_system()`, `load_core_rules()` |
 | `build_rag_context(hero)` | `rag_prompt.py` | `build_guide_prompt()` | `Retriever.hero_blocks()`, `Retriever.search()`, `_format_rag_chunks()` |
 
 ### 2.2 浏览器模式攻略生成
@@ -229,10 +232,10 @@ generation._run_synergy_pairs(pairs, generator, synergy_path, existing_dict, exi
      -> result_summary.add_usage(usage)                            [累计 Token]
      -> _report_rag_degradation()                                  [RAG 降级时输出一次提示]
      -> [generated 非 None]
-        -> generated = _with_synergy_updated_date(generated)        [写入 last_updated=date.today()]
-        -> [score_threshold is None] working_synergies[pair_key] = generated
-        -> [score_threshold 已设定 且 score >= threshold] working_synergies[pair_key] = generated
-        -> [score < threshold] working_synergies.pop(pair_key)       [低于下限移除旧记录]
+        -> [score_threshold is None] working_synergies[pair_key] = _with_synergy_updated_date(generated)
+        -> [score_threshold 已设定 且 score >= threshold] working_synergies[pair_key] = _with_synergy_updated_date(generated)
+        -> [score < threshold] working_synergies.pop(pair_key, None) [低于下限移除旧记录]
+        # _with_synergy_updated_date() 写入 last_updated=date.today()
      -> [generated is None] result_summary.failed_items.append(fail_label_of(ha, hb))
      -> [completed - committed >= SYNERGY_BATCH_SAVE_INTERVAL=10]
         -> _commit_generation_batch() -> _save_json()               [原子写入]
@@ -324,13 +327,13 @@ AIBatchGenerator.generate_synergy(hero_a, hero_b)
         -> retriever.search(q, top_k=half_k) 各取半数去重合并
         -> post-filter: combo 按 heroes 列表, hero 块按名称过滤, 无武将归属块保留
         -> _format_rag_chunks(blocks, extra, RAG_SYNERGY_PROMPT_CHARS)
-     -> [_rag_enabled()] load_card_system()
+     -> [is_rag_enabled()] load_card_system()
      -> [not rag_enabled and not rag] load_core_rules()
   -> self._request_content(messages, temperature=0.3, label="heroA/heroB")
      -> [同攻略链路: _call_api() -> _read_completion_content() -> _log_usage()]
   -> extract_json(content)
-  -> [compat] combat_synergy -> combo_ceiling                       [兼容旧 prompt 字段]
   -> raw["hero_a_id"] = hero_a.id; raw["hero_b_id"] = hero_b.id
+  -> [compat] combat_synergy -> combo_ceiling                       [兼容旧 prompt 字段]
   -> has_required_synergy_fields(raw)
   -> validate_synergy(raw)
   -> return (result, usage)
@@ -343,9 +346,9 @@ AIBatchGenerator.generate_synergy(hero_a, hero_b)
 | `run_synergy_pair_generation()` | `generation.py` | `batch.main()` | `_run_synergy_pairs(skip_existing=not update, score_threshold=None)` |
 | `run_synergy_single_generation()` | `generation.py` | `batch.main()` | `_run_synergy_pairs(skip_existing=True, score_threshold=None)` |
 | `run_synergy_list_generation()` | `generation.py` | `batch.main()` | `_run_synergy_pairs(skip_existing=not update, score_threshold=None)` |
-| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_synergy_prompt()`, `_request_content()`, `extract_json()`, `validate_synergy()` |
+| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` / `scripts/run_synergy_drift.py` | `load_prompt()`, `build_synergy_prompt()`, `_request_content()`, `extract_json()`, `validate_synergy()` |
 | `PlaywrightGenerator.generate_synergy()` | `browser_generator.py` | `generation.py` | `_random_rest()`, `load_prompt()`, `build_synergy_prompt()`, `_send_and_wait()`, `extract_json()`, `validate_synergy()` |
-| `build_synergy_prompt(a, b)` | `prompt_utils.py` | `generate_synergy()` | `build_synergy_rag_context()`, `load_card_system()`, `load_core_rules()`, `_skill_lines()` |
+| `build_synergy_prompt(a, b, rag_max_chars)` | `prompt_utils.py` | `generate_synergy()` | `build_synergy_rag_context()`, `_skill_lines()`, `load_card_system()`, `load_core_rules()` |
 | `build_synergy_rag_context(a, b)` | `rag_prompt.py` | `build_synergy_prompt()` | `Retriever.hero_blocks()` ×2, `Retriever.search()` ×2, `_format_rag_chunks()` |
 | `validate_synergy()` | `ai/utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
 
@@ -358,15 +361,26 @@ AIBatchGenerator.generate_synergy(hero_a, hero_b)
 ```
 src.business.fetching.guide_fetch_service
   -> QProcess.start(["-m", "src.scraper.ai_batch", "--guide", ...])
-     [经典模式 use_rag=False] -> 参数追加 --no-rag
+     [增量/指定模式] -> 追加 --update + --heroes-file <临时武将文件>
+     [后端选择 browser] -> 追加 --browser
+     [经典模式 use_rag=False] -> 追加 --no-rag
 
 src.business.fetching.synergy_fetch_service
-  -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_file])
-  -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-single", tmp_file])
-     [经典模式 use_rag=False] -> 参数追加 --no-rag
+  -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-pair", tmp_file])    [指定配对]
+  -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-single", tmp_file])  [选定武将]
+  -> QProcess.start(["-m", "src.scraper.ai_batch", "--synergy-list", tmp_file])    [实战配队清单]
+     [overwrite=True] -> 追加 --update
+     [后端选择 browser] -> 追加 --browser
+     [经典模式 use_rag=False] -> 追加 --no-rag
 
 src.ui.app.main_window
-  -> 菜单 -> GuideFetchService/SynergyFetchService    [间接调用]
+  -> 菜单「数据 → 攻略获取 / 武将相性」-> AiGenerationWorkflow -> GuideFetchService / SynergyFetchService [间接调用]
+
+复用 complete() / generate_synergy() 做通用对话补全（不经生成循环，直接调 API 生成器；后两者经 refinement_service.build_generator() 取生成器）:
+src.business.rag.refinement_service            -> resolve_api_config(profile_name) -> AIBatchGenerator -> complete(messages, 0.2)
+src.business.maintenance.classification_suggest -> AIBatchGenerator.complete(messages, 0.2)   [武将分类建议]
+src.scripts.propose_rule_changes               -> AIBatchGenerator.complete(messages, 0.2)    [规则变更提案]
+src.scripts.run_synergy_drift                  -> AIBatchGenerator.generate_synergy(hero_a, hero_b) 多次采样
 ```
 
 ### 4.2 本模块调用的外部模块
@@ -375,25 +389,32 @@ src.ui.app.main_window
 |----------|------|
 | `src.data.models.HeroGuide` | Pydantic 校验攻略 |
 | `src.data.models.SynergyScore` | Pydantic 校验相性 |
-| `src.config.env.resolve_api_config()` | 从 config.env 解析 API 配置 |
-| `src.config.env.get_runtime_params()` | 获取限流/重试/超时参数 |
+| `src.data.{hero,guide,synergy}_manager` | 断点加载逐条校验；错误文件备份为 `.corrupt-时间戳.json` 后仅写回有效记录 |
+| `src.config.env.resolve_api_config()` | 任务侧唯一 API 解析入口（多 API 档案唯一启用档案 → config.env 旧键 → 环境变量 → 默认值） |
+| `src.config.env.PROVIDER_PRESETS` | 供应商语义：`requires_key` 判定 Key 是否必填（ollama 本地服务可空） |
+| `src.config.env.get_runtime_params()` | 获取 RPM、最大重试、HTTP 超时、输出 token 上限（默认 16384） |
+| `src.config.env.get_model_pricing()` | 按 `config/model_pricing.json` 取模型单价，用于 dry-run 与结束汇总估价 |
+| `config/api_profiles.json` | 多 API 档案（多供应商/多账号，启用互斥；含 Key，已 gitignore） |
 | `src.config.logging_config.setup_logging()` | 日志初始化 |
 | `docs/prompts/hero_guide.md` | 攻略生成提示词文件 |
 | `docs/prompts/synergy_score.md` | 相性生成提示词文件 |
-| `src.rag`（config/indexer/retriever） | RAG 语料加载、ChromaDB 向量检索与关键词 RRF |
-| `data/rag_corpus/核心规则摘要.md` | 无 RAG 路径的核心规则兜底 |
+| `src.rag`（config/indexer/retriever） | RAG 语料加载、ChromaDB 向量检索与关键词 RRF（默认只召 `is_current` 当前版本块）；`--rebuild-rag-index` 走 `build_index(rebuild=True)` |
+| `data/rag_corpus/核心规则摘要.md` | 无 RAG 路径的核心规则兜底（全文 `load_core_rules()` / 卡牌体系段 `load_card_system()`） |
 
 ### 4.3 双生成器对比
 
 | 对比项 | AIBatchGenerator | PlaywrightGenerator |
 |--------|-----------------|-------------------|
-| 限速方式 | RPM + time.sleep 前置限流 | 每次成功后随机休息 60-180s |
-| 重试 | `_request_content` 重试额度耗尽；`_call_api` 限流退避/指数退避；400/401/403/404/422 立即失败 | JSON 提取失败时发送格式纠正消息重试一次 |
+| 数据源 | `api_url` 供应商端点 | 固定 `https://chat.deepseek.com/` 网页版 |
+| 供应商适配 | `provider` 支持 deepseek / openai / openai-compatible / ollama；仅 `provider=="deepseek"` 注入 `thinking.type=disabled`（其他端点收到未知字段会 400）；`requires_key=False` 的 ollama 允许空 Key | 不适用 |
+| 限速方式 | RPM + time.sleep 前置限流（默认 30 req/min） | 每次成功后随机休息 60-180s |
+| 重试 | `_request_content` 重试额度耗尽（2^attempt）；`_call_api` 429 优先读 Retry-After（钳到 3-30s）、无头则 5/10/15s，其余 2^attempt；400/401/403/404/422 立即抛错失败；每次重试 stdout 输出 `[重试]` 行 | JSON 提取失败时发送格式纠正消息重试一次 |
 | Token 统计 | API 返回 usage（含 reasoning/content 拆分） | 无（返回 None） |
 | 成本估算 | 支持 dry-run（RAG/经典双模式） | 不支持 |
 | 输出额度 | `max_output_tokens` 参数（默认 16384，config.env 可调） | 无限制（浏览器模式） |
-| 取消 | `cancel()` 标志，重试循环下次退出 | 无取消机制 |
-| 连接健壮性 | 连接异常自动重建 httpx.Client | 依赖页面稳定性 |
+| RAG 预算 | `RAG_PROMPT_CHARS`（攻略，默认 6000）/ `RAG_SYNERGY_PROMPT_CHARS`（相性，默认 6000） | `RAG_BROWSER_PROMPT_CHARS`（默认 3000） |
+| 取消 | `cancel()` 置 `_cancelled`，重试循环下次循环开头退出（不打断 in-flight 请求，靠超时退出） | 无取消机制 |
+| 连接健壮性 | 连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client | 依赖页面稳定性（`_page_diagnostics()` 辅助排查选择器失效） |
 
 ---
 
@@ -407,15 +428,16 @@ src.ui.app.main_window
 | `_show_cost_estimate()` | `ai/batch.py` | `main()` | `_print_mode_estimates()` -> `estimate_cost()` |
 | `_print_token_summary()` | `ai/batch.py` | `main()` | `estimate_cost_by_tokens()` |
 | `_check_api_key()` | `ai/batch.py` | `main()` | `PROVIDER_PRESETS.requires_key` |
-| `AIBatchGenerator.__init__()` | `api_generator.py` | `batch.main()` | `httpx.Client()` |
+| `AIBatchGenerator.__init__()` | `api_generator.py` | `batch.main()` / `refinement_service.build_generator()` | `PROVIDER_PRESETS.requires_key` Key 语义校验（不满足抛 ValueError）；`httpx.Client()`；初始化限速器与 `_cancelled` |
 | `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_request_content()`, `extract_json()`, `validate_guide()` |
-| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_synergy_prompt()`, `_request_content()`, `extract_json()`, `validate_synergy()` |
+| `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` / `scripts/run_synergy_drift.py` | `load_prompt()`, `build_synergy_prompt()`, `_request_content()`, `extract_json()`, `validate_synergy()` |
 | `AIBatchGenerator._request_content()` | `api_generator.py` | `generate_guide/synergy` | `_call_api()`, `_read_completion_content()`, `_log_usage()` |
-| `AIBatchGenerator._call_api()` | `api_generator.py` | `_request_content()` | `httpx.Client.post()`；失败走 `_retry_wait()` 退避或立即失败 |
+| `AIBatchGenerator._call_api()` | `api_generator.py` | `_request_content()` / `complete()` | `httpx.Client.post()`；失败走 `_retry_wait()` 退避或立即失败；连接类异常关闭并重建 client |
 | `AIBatchGenerator._read_completion_content()` | `api_generator.py` | `_request_content()` | 检查 `finish_reason=="length"` |
 | `AIBatchGenerator._log_usage()` | `api_generator.py` | `_request_content()` | 记录 reasoning/content 拆分 |
-| `AIBatchGenerator._retry_wait()` | `api_generator.py` | `_call_api()` | 429 读 Retry-After；其余 2^attempt |
-| `AIBatchGenerator.cancel()` | `api_generator.py` | 外部取消 | 设置 `_cancelled` 标志 |
+| `AIBatchGenerator._retry_wait()` | `api_generator.py` | `_call_api()` | 429 读 Retry-After 钳到 3-30s、无头 max(5*attempt,3)；其余 2^attempt |
+| `AIBatchGenerator.complete()` | `api_generator.py` | `refinement_service` / `classification_suggest` / `scripts/propose_rule_changes.py` | `_call_api()`（公开对话补全接口，不经生成循环） |
+| `AIBatchGenerator.cancel()` | `api_generator.py` | 外部取消（面板中止） | 设置 `_cancelled` 标志 |
 | `PlaywrightGenerator.generate_guide()` | `browser_generator.py` | `generation.py` | `_random_rest()`, `load_prompt()`, `build_guide_prompt()`, `_send_and_wait()`, `extract_json()`, `validate_guide()` |
 | `PlaywrightGenerator.generate_synergy()` | `browser_generator.py` | `generation.py` | `_random_rest()`, `load_prompt()`, `build_synergy_prompt()`, `_send_and_wait()`, `extract_json()`, `validate_synergy()` |
 | `PlaywrightGenerator._random_rest()` | `browser_generator.py` | 下一次请求前 | `time.sleep(random.randint(60,180))` |
@@ -438,20 +460,23 @@ src.ui.app.main_window
 | `_raw_parse(s)` | `json_extract.py` | `_try_extract()` | `json.JSONDecoder.raw_decode()` |
 | `validate_guide(raw)` | `ai/utils.py` | `generate_guide()` | `HeroGuide.model_validate()` |
 | `validate_synergy(raw)` | `ai/utils.py` | `generate_synergy()` | `SynergyScore.model_validate()` |
-| `has_required_guide_fields(raw)` | `ai/utils.py` | `generate_guide()` | 必填字段 + 占位符/过短预检 |
-| `has_required_synergy_fields(raw)` | `ai/utils.py` | `generate_synergy()` | 必填字段 + 占位符/过短预检 |
+| `has_required_guide_fields(raw)` | `ai/utils.py` | `generate_guide()` | 必填字段 + 占位符标记（"此处放入"/"放入此字段"/"保持原文不变"）/正文<200 字预检 |
+| `has_required_synergy_fields(raw)` | `ai/utils.py` | `generate_synergy()` | 必填字段 + 同一组占位符标记/正文<200 字预检 |
 | `convert_ids_to_int(data, fields)` | `ai/utils.py` | `generate_guide/synergy` | `int()` 类型转换 |
 | `_save_json(path, data)` | `ai/utils.py` | `_commit_generation_batch()` | `json.dump()` 原子写入 |
 | `build_guide_prompt(hero, rag_max_chars)` | `prompt_utils.py` | `generate_guide()` | `build_rag_context()`, `load_card_system()`, `load_core_rules()`, `_skill_lines()` |
 | `build_synergy_prompt(a, b, rag_max_chars)` | `prompt_utils.py` | `generate_synergy()` | `build_synergy_rag_context()`, `load_card_system()`, `load_core_rules()`, `_skill_lines()` |
-| `build_rag_context(hero, max_chars)` | `rag_prompt.py` | `build_guide_prompt()` | `_get_retriever()`, `Retriever.hero_blocks()`, `Retriever.search()`, `_format_rag_chunks()` |
-| `build_synergy_rag_context(a, b, max_chars)` | `rag_prompt.py` | `build_synergy_prompt()` | `_get_retriever()`, `Retriever.hero_blocks()` ×2, `Retriever.search()` ×2, `_format_rag_chunks()` |
-| `_format_rag_chunks(blocks, extra, budget)` | `rag_prompt.py` | `build_*_rag_context()` | 官方/社区独立预算池，combo 优先 |
-| `is_rag_enabled()` | `rag_prompt.py` | `main()`, `build_*_prompt()`, `build_*_rag_context()` | 环境变量优先，其次 config |
+| `_skill_lines(skills, hero_id, rag, indent)` | `prompt_utils.py` | `build_*_prompt()` | 逐技能判定语料块是否已注入：已注入指针化省 token，未注入回退完整描述 + ` ｜结算：` 后缀 |
+| `build_rag_context(hero, max_chars)` | `rag_prompt.py` | `build_guide_prompt()` | `_get_retriever()`, `Retriever.hero_blocks()`, `Retriever.search()`, `_format_rag_chunks()`；异常 `_mark_degraded()` |
+| `build_synergy_rag_context(a, b, max_chars)` | `rag_prompt.py` | `build_synergy_prompt()` | `_get_retriever()`, `Retriever.hero_blocks()` ×2, `Retriever.search()` ×2, `_format_rag_chunks()`；异常 `_mark_degraded()` |
+| `_format_rag_chunks(blocks, extra, budget, core_ratio)` | `rag_prompt.py` | `build_*_rag_context()` | 官方/社区独立预算池（官方未用滚给社区），combo 优先；`staleness_reason` 块加 `⚠️ 过时风险` 前缀 |
+| `is_rag_enabled()` | `rag_prompt.py` | `main()`, `build_*_prompt()`, `build_*_rag_context()` | 环境变量 `RAG_ENABLED` 优先，其次 config |
 | `take_degraded_reason()` | `rag_prompt.py` | `_report_rag_degradation()` | 取出并清空降级原因 |
+| `_mark_degraded(reason)` | `rag_prompt.py` | `build_*_rag_context()` 异常分支 | 记录本次进程的 RAG 降级原因 |
 | `load_card_system()` | `rule_summary.py` | `build_*_prompt()` | 加载"卡牌体系"段（RAG 兜底防串味） |
 | `load_core_rules()` | `rule_summary.py` | `build_*_prompt()` | 加载完整核心规则摘要（无 RAG 兜底） |
-| `estimate_cost(count, mode, model, use_rag)` | `prompt_utils.py` | `batch.main()`, UI 层 | `estimate_item_cost()` -> `get_model_pricing()` |
+| `estimate_cost(count, mode, model, use_rag)` | `prompt_utils.py` | `batch.main()` / `src.business.ai_cost`（UI 层） | `estimate_item_cost()` -> `get_model_pricing()` |
+| `estimate_item_cost(item_count, mode, model, use_rag)` | `prompt_utils.py` | `estimate_cost()` / `src.business.ai_cost` | `get_model_pricing()`（RAG/经典双模式输入 token 不同） |
 | `estimate_cost_by_tokens(input, output, model)` | `prompt_utils.py` | `_print_token_summary()` | `get_model_pricing()` |
 
 ---

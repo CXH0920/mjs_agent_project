@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-07-22
+> 代码基线：2026-09-07（`6cbe8b6`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-07-22
+> 文档日期：2026-09-07
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -28,7 +28,7 @@
 
 ---
 
-## 当前代码基线与业务不变量（2026-07-31）
+## 当前代码基线与业务不变量（2026-09-07）
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成，`src/data/` 提供 JSON 持久化和内存模型。
 
@@ -36,14 +36,14 @@
 
 | 功能 | 主入口 | 关键调用顺序 | 结果 |
 |------|--------|--------------|------|
-| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` -> `install_chinese_qt_translator()` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `app.exec()` | 初始化日志和 Qt 标准控件中文翻译，加载数据、创建主窗口并进入事件循环；OCR 识别器按首次任务延迟初始化 |
+| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` + `setApplicationVersion()` -> `install_chinese_qt_translator()` -> `install_app_icon()` -> `QSplashScreen` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `start_ocr_warmup()` -> `wait_ocr_warmup(timeout_ms=120_000)` -> `window.show()` -> `app.exec()` | 初始化日志和 Qt 标准控件中文翻译，加载数据并创建主窗口；OCR 模型在启动画面阶段**阻塞预热**（Paddle 初始化长时间持有 GIL，与事件循环并行会卡住界面，冷加载实测可达 90 秒以上，故超时取 120 秒覆盖全程），预热完成才显示窗口 |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
-| 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 整批任务独占唯一 OCR worker；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
+| 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` 队列 -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 与常规 OCR 共享同一 `OcrWorker` 的 FIFO 队列（互斥由 `OcrService._import_busy` 串行化，并非独占 worker）；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
-| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated` | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队 |
+| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> 会话世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查 -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
 
 ### 数据完整性与只读恢复
@@ -68,6 +68,8 @@ DataFacade.load_all()
 `BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。`_dispatch_stdout_line` 在转发每行 stdout 时同步用正则收集 `[i/N] 名字 FAIL` 行的失败项名到 `failed_items`，工作流出错弹窗据此在"查看详情"中列出失败武将/相性对清单。`_start_process` 为所有 QProcess 子进程统一注入 `MJS_QPROCESS_CHILD=1`（含 AI 子进程），使其不直写文件、stdout/stderr 交由父进程统一记录；429/length/JSON 等失败原因由父进程 `scraper/ai_generation.log` handler 的 `keep_debug=True`（级别固定 DEBUG、不跟随用户级别）保留，即使 root level≥WARNING 也不丢。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
+
+**三板块共享一次截图（2026-09）**：选将推荐、巅峰赛选将、对局攻略三个板块的识别由同一次截图驱动——`OcrService.poll_tick` 触发 `PollCoordinator._on_poll_tick()`，后台线程一次截图后并发派生三条判定路径（固定 ROI 的 `hero_selection`、对局攻略页 `match_guide`、内容驱动的巅峰赛卡位检测），**不做三张截图**。`hero_selection` 在单拍内最多被消费一次，避免同一次识别结果既刷新推荐页又重复触发自动跳转。官方榜单导入的互斥不靠独占 worker，而是由 `OcrService._import_busy` 标志串行化，与常规轮询任务共享同一 FIFO 队列。
 
 ---
 
@@ -267,10 +269,12 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **语料与索引**：`data/rag_corpus/`、`data/rag_index/chroma/`（随仓库入库）；嵌入模型缓存不入库，默认共享 `mjs_rag_project/rag/.cache/modelscope`（`config.env` 的 `RAG_MODEL_DIR` 可覆盖）。
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
-- **维护**：`python scripts/maintain_rag.py --force --build-index` 或应用内「知识库维护」页面。
+- **维护**：`python -m src.scripts.maintain_rag --force --build-index` 或应用内「知识库维护」页面。
+- **规模（2026-09）**：`src/business/rag/task_defs.py` 定义 **10 个语料任务**，对应 `data/rag_corpus/` 下 **12 个语料 JSON**，合计 **2090 个检索块**（武将技能 622 / 专属牌 509 / 武将攻略 357 / 卡牌效果 83 / FAQ 79 / 强化技能卡 49 / 武将总览 49 / 技能色卡 49 / 卡牌 48 / 元规则章节 38 / 装备属性 27 / 武将分类 180）。
+- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 133 条事件 = 126 条初始化 + 7 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。`TRIGGER_OVERRIDES` 的作者日期基线为 2026-08-12，供 `rag_audit.py` 做失效审计。
 - **检索性能（2026-08）**：`Retriever` 加载语料时构建武将/牌名倒排 `_hero_index` 与 `_id2text/_id2meta` 字典，`hero_blocks()`、`_text_of()`、`_meta_of()` 不再线性遍历全量块；静态 `KEYWORDS` 关键词倒排 `_keyword_index` 惰性构建，`_keyword_hits()` 中查询相关名称保持线性扫描（数量少），避免每次查询全量遍历。`src/rag/config.py` 不再在 import 时创建目录，改由使用点确保（#49）。
-- **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `scripts/.rule_doc_snapshot.json`）；③ `scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
-- **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
+- **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `src/scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `src/scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `src/.rule_doc_snapshot.json`（项目根））；③ `src/scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`src/scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `src/scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `src/scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
+- **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`src/scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
 - **社区侧语料接入（2026-08）**：raw_guides/（jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv）加工成检索块进向量库。`src/scripts/build_combo_corpus.py` 把 csv（武将对+亮点）与 combos md（强力组合表格/平阳公主强势组合盘点/巴清搭配/孟尝君+黄月英深解）切块归并为组合RAG语料（combo 类，437 块）；`src/scripts/build_guide_corpus.py` 把 guides 45 篇按 ## 章节拆为武将攻略RAG语料（guide 类，357 块）。设计点：组合块**不贴单值 hero**（避免 post-filter 丢一侧武将）**但贴 heroes 列表** `[hero_a, hero_b]`，post-filter 按武将列表过滤根治"text 提'类XX'"的跨武将噪声；攻略块贴 `hero=武将名` 保证必召回。`_norm_combo`/`_norm_guide` 在 `indexer.py` 规范化，`KIND_MAX` 加 `combo:3/guide:2` 配额。
 - **RAG 注入分两段（2026-08）**：`rag_prompt._format_rag_chunks` 按 kind 分两段注入——「官方规则语料」（hero/rule/card/faq 等硬依据）与「社区实战参考」（combo/guide 启发层）；官方/社区独立预算池（core_ratio 给官方，剩余给社区，官方未用滚给社区），社区池内 combo 优先于 guide（组合信息对相性更直接，避免长攻略挤掉组合块）。社区段定位"取思路非文风"，约束 AI 借鉴联动思路但用规范语言重述，不照搬口语/网络用语。两处 post-filter（`build_rag_context` 单武将 / `build_synergy_rag_context` 双武将）按 `metadata.hero` 或 `heroes` 列表过滤，combo 块含任一目标武将才保留。
@@ -649,7 +653,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 
 ### 4.1 DataManager 泛型基类
 
-`DataManager[V_co]`（位于 `manager.py`）定义了所有 Manager 共用的通用操作：
+`DataManager[V_co]`（位于 `manager.py`）定义了所有 Manager 共用的通用操作，领域键由子类通过 `_parse_models(data, key_of)` 注入：
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
@@ -657,11 +661,15 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `save()` | — | None | 原子写入 JSON（tmp → rename） |
 | `get(key)` | 泛型 | V_co \| None | 通用字典键查询 |
 | `list_all()` | — | list[V_co] | 全部数据 |
-| `add(item)` | V_co | None | 新增（重复抛 ValueError） |
-| `update(item)` | V_co | None | 覆盖式 upsert |
+| `add(item, key)` | V_co, 泛型 | None | 新增（重复抛 ValueError） |
+| `update(item, key)` | V_co, 泛型 | None | 覆盖式 upsert |
 | `delete(key)` | 泛型 | None | 删除（不存在静默） |
+| `clear_all()` | — | int | 清空并返回清除条数 |
+| `snapshot_items()` | — | dict | 当前内存数据快照 |
+| `restore_items(snapshot)` | dict | None | 按快照恢复内存（写盘失败回滚用） |
+| `error_count()` / `warning_count()` | — | int | `LoadReport` 问题计数 |
 
-三个子类 Manager 提供领域键并复用 `_parse_models()`：坏记录和重复键仅跳过该项并记录 `DataIssue`，不会阻断同文件中的其他合法记录。`DataFacade.load_all()` 汇总为 `LoadReport`，再执行英雄、相性和攻略之间的引用校验。
+`HeroManager` / `SynergyManager` / `GuideManager` / `ComboManager` / `AnnouncementManager` 五个子类各自实现领域键（`ComboManager` 的键为排序后的 `(hero1_id, hero2_id)`）。坏记录和重复键仅跳过该项并记录 `DataIssue`，不会阻断同文件中的其他合法记录。`DataFacade.load_all()` 汇总为 `LoadReport`，再执行英雄、相性和攻略之间的引用校验。
 
 #### 4.1.1 JsonRepository 基类（2026-08 知识库维护优化）
 
@@ -686,10 +694,13 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `data/card_points.json` | CardPointsRepository | 162 张牌花色点数（72 组合）+ 12 条判定规则 |
 | `data/equip_attrs.json` | EquipAttrsRepository | 26 件装备属性（细分/攻击范围/距离修正） |
 | `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
-| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
+| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（16 类、180 条武将归类；AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
+| `data/mjs_adjustments.json` | hero_timeline（`load_timeline` / `append_announcement_events`） | 武将变更时间轴：133 条事件（126 初始化 + 7 公告追加）；RAG 语料块 `as_of` 版本戳的事实源，不属"裁定权威 6 JSON" |
+| `data/combos.json` | ComboManager | 实战配队 1228 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序） |
+| `data/武将推荐指数状态.json` | —（`recommendation_index_repository` 写） | 推荐指数生成状态（运行时状态文件，非榜单数据） |
+| `data/2v2{胜率,出场}排行.csv` `data/巅峰赛{胜率,出场}排行.csv` `data/武将放逐.csv` | —（榜单导入写） | 官方榜单，各 175 行；表头：胜率榜 `排名,武将,胜率`，出场/放逐榜 `排名,武将`；`_待复核.csv` 为同名副本 |
 | `data/raw_guides/` | —（社区素材，未入库 raw） | jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv |
-| `data/rag_corpus/组合RAG语料.json` | —（`build_combo_corpus.py` 生成） | 437 块 combo 检索块（csv 亮点+combos 深解合并） |
-| `data/rag_corpus/武将攻略RAG语料.json` | —（`build_guide_corpus.py` 生成） | 357 块 guide 检索块（guides 按 ## 章节拆） |
+| `data/rag_corpus/*.json` | —（`build_*_corpus.py` 生成） | 12 个语料文件 / 2090 个检索块（含组合 437、攻略 357、武将分类 180） |
 
 ### 4.3 HeroManager 方法清单
 
@@ -762,6 +773,30 @@ def apply_incremental_update(data_dir, update)
 | `modified_heroes` | `hero_mgr.update_hero()` |
 | `removed_heroes` | 删除 hero + 关联的 synergy 和 guide |
 
+### 4.8 武将变更时间轴（hero_timeline.py）
+
+纯数据层模块，无 UI 与 Qt 依赖，职责边界为「时间轴读写 + RAG 版本戳 + `TRIGGER_OVERRIDES` 审计」。事实源 `data/mjs_adjustments.json`：
+
+```
+{
+  "init_imported_at": "2026-08-29",        # 首次全量注入日期
+  "init_source_last_updated": "2026-08-25", # 初始化快照对应源最后更新日
+  "corpus_base_date": "2026-08-28",         # 语料块默认 as_of 基线
+  "events": [ ...133 条... ]                # 126 条初始化 + 7 条公告追加
+}
+```
+
+**两个写入源**
+
+| 来源 | 入口 | 语义 |
+|------|------|------|
+| 首次全量初始化 | `python -m src.scripts.import_hero_adjustments --input <json>` | 一次性注入 A 类快照，写入 `init_*` 三件套 |
+| 公告追加 | `announcement_service._sync_timeline()` → `build_timeline_events()` → `append_announcement_events()` | 幂等扫描全部 `hero_related` 公告，按 `ref` 与 `(date, hero)` 去重；异常吞掉不中断公告检查 |
+
+**读写与查询接口**：`load_timeline()` / `save_timeline()` / `append_announcement_events()` / `normalize_change_type()`，以及按武将取当前与历史版本的时间轴查询。
+
+**语料块版本戳**：`build_guide_corpus.py` / `build_rag_corpus.py` 读取时间轴后为武将语料块打 `as_of`、`is_current`、`content_md5`，过时块附 `staleness_reason` / `staleness_hint`；`rag_prompt` 检索层**默认只召当前版本**（`is_current=true`），避免旧版本语料进入 Prompt。`TRIGGER_OVERRIDES` 的作者日期基线 `2026-08-12` 供 `rag_audit.py` 做失效审计。
+
 ---
 
 ## 五、UI 层细节
@@ -770,39 +805,83 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| main_window.py | 870 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
-| shell_widgets.py | 247 | QWidget（左侧 NavigationRail 与顶部 ContextHeader） |
-| poll_coordinator.py | 263 | QObject（轮询编排、后台任务与结果状态迁移） |
-| ai_generation_workflow.py | 246 | QObject（攻略与相性 UI 工作流） |
-| hero_browser.py | 586 | QWidget（资料左栏、身份头部、上下文操作和详情协调） |
-| hero_detail_views.py | 469 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
-| card_management_panel.py | 842 | QWidget（卡牌浏览、版本调整与字段配置） |
-| hero_edit_dialog.py | 87 | QDialog（武将编辑） |
-| guide_edit_dialog.py | 120 | QDialog（攻略编辑） |
-| hero_relation_select_dialog.py | 129 | QDialog（攻略关系武将多选） |
-| synergy_edit_dialog.py | 96 | QDialog（相性编辑） |
-| recommendation_panel.py | 903 | QWidget（Tab 内嵌） |
-| mumu_config_dialog.py | 750 | QDialog（模拟器配置状态与操作协调） |
-| mumu_config_sections.py | 297 | QGroupBox（设备、模板和 OCR 参数视图） |
-| hero_select_dialog.py | 267 | QDialog（基类） |
-| settings_dialog.py | 305 | QDialog（API 配置） |
-| roi_selector.py | 149 | QDialog（框选模板区域） |
-| backend_choose_dialog.py | 141 | QDialog |
-| guide_progress_dialog.py | 135 | QDialog |
-| official_data_import_dialog.py | ~100 | QDialog（榜单图片选择、进度条、完成/失败提示） |
-| style.py | 247 | 样式表常量 |
-| fetch_dialog.py | 31 | QDialog（继承基类） |
-| guide_fetch_dialog.py | 29 | QDialog（继承基类） |
-| synergy_pair_dialog.py | 49 | QDialog（继承基类，覆盖 _on_accept 允许 2~8 武将） |
-| synergy_single_dialog.py | 30 | QDialog（继承基类） |
+| app/main_window.py | 1144 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
+| app/app_services.py | 102 | 组合根（聚合业务服务实例并注入主窗口与各面板） |
+| app/shell_widgets.py | 209 | QWidget（左侧 NavigationRail 与顶部 ContextHeader） |
+| app/poll_coordinator.py | 264 | QObject（轮询编排、后台任务与结果状态迁移） |
+| app/status_chips.py | 75 | 状态栏胶囊（常驻状态展示与点击打开配置） |
+| app/chinese_translator.py | 96 | Qt 标准控件中文翻译安装 |
+| app/app_icon.py | 59 | 应用图标（多目录回退定位） |
+| generation/ai_generation_workflow.py | 364 | QObject（攻略与相性 UI 工作流） |
+| generation/backend_choose_dialog.py | 207 | QDialog（后端选择 + RAG 增强/经典模式） |
+| generation/guide_progress_dialog.py | 194 | QDialog（生成进度，OK/FAIL/重试分开匹配） |
+| generation/guide_fetch_dialog.py | 98 | QDialog（攻略范围选择） |
+| generation/synergy_pair_dialog.py | 102 | QDialog（2~8 武将两两配对） |
+| generation/synergy_single_dialog.py | 30 | QDialog（选定武将 × 全体） |
+| library/hero_browser.py | 607 | QWidget（资料左栏、身份头部、上下文操作和详情协调） |
+| library/hero_detail_views.py | 534 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
+| library/hero_classification_panel.py | 805 | QWidget（分类 / 克制链 / 武将归类维护） |
+| library/card_management_panel.py | 877 | QWidget（卡牌浏览、版本调整与字段配置） |
+| library/special_cards_panel.py | 499 | QWidget（专属牌 / 战法牌 / 状态·标记 / 概念维护） |
+| library/combo_management_dialog.py | 202 | QDialog（实战配队管理） |
+| library/combo_edit_dialog.py | 231 | QDialog（实战配队编辑） |
+| library/hero_edit_dialog.py | 82 | QDialog（武将编辑） |
+| library/guide_edit_dialog.py | 138 | QDialog（攻略编辑） |
+| library/hero_relation_select_dialog.py | 124 | QDialog（攻略关系武将多选） |
+| library/synergy_edit_dialog.py | 89 | QDialog（相性编辑） |
+| library/fetch_dialog.py | 31 | QDialog（继承基类） |
+| match/match_guide_panel.py | 755 | QWidget（2v2 阵容核对与临场攻略工作台） |
+| match/match_lineup_state.py | 361 | 阵容状态（我方/敌方/未定分组与边沿重置） |
+| match/match_analysis_view.py | 325 | QWidget（总览/我方打法/对抗敌方/单将详情渲染） |
+| match/peak_select_panel.py | 505 | QWidget（巅峰赛选将工作台） |
+| match/peak_hero_card.py | 164 | QWidget（巅峰赛武将卡片 + 禁选建议/实战配队角标） |
+| recommendation/recommendation_panel.py | 862 | QWidget（2×4 卡片 + 实战配队横条） |
+| recommendation/hero_card_widget.py | — | 推荐卡片 |
+| configuration/mumu_config_dialog.py | 773 | QDialog（模拟器配置状态与操作协调） |
+| configuration/mumu_config_sections.py | 365 | QGroupBox（设备、模板和 OCR 参数视图） |
+| configuration/settings_dialog.py | 582 | QDialog（多 API 档案 + 运行参数 + 价格） |
+| configuration/faction_color_dialog.py | — | QDialog（势力配色） |
+| configuration/roi_selector.py | 403 | QDialog（框选模板区域，不随底图原始分辨率撑高） |
+| data_admin/official_data_import_dialog.py | 224 | QDialog（榜单图片选择、进度条、完成/失败提示） |
+| data_admin/official_import_review_dialog.py | 145 | QDialog（待复核逐条确认） |
+| data_admin/combos_import_dialog.py | 230 | QDialog（实战配队异步导入） |
+| data_admin/announcement_dialog.py | 176 | QDialog（公告检查与逐武将 diff） |
+| data_admin/hero_update_confirm_dialog.py | 213 | QDialog（武将更新确认） |
+| data_admin/data_management_dialog.py | 133 | QDialog（攻略/相性清空与恢复） |
+| maintenance/maintenance_workspace.py | 349 | QWidget（左栏维护对象导航 + 右侧工作区 + 底部折叠日志） |
+| maintenance/rag_maintenance_panel.py | 449 | QWidget（知识库维护工作台外壳） |
+| maintenance/rule_doc_panel.py | 927 | QWidget（元规则母本四子页签） |
+| maintenance/index_refinement_dialog.py | 901 | QDialog（索引精化工作台） |
+| maintenance/card_points_panel.py | 481 | QWidget（卡牌点数维护） |
+| maintenance/equip_attrs_panel.py | 167 | QWidget（装备属性维护） |
+| shared/style.py | 1307 | 样式表常量（设计 token 唯一来源） |
+| shared/widgets.py | 419 | 通用控件（对话框基类、按钮、空态等） |
+| shared/master_detail.py | 103 | QWidget（主从列表骨架，资料库三面板统一接入） |
+| shared/hero_select_dialog.py | 357 | QDialog（武将多选基类） |
+| shared/hero_dialogs.py | 97 | 武将弹窗编排 |
+| shared/guide_detail_dialog.py | 295 | QDialog（攻略详情） |
+| shared/combo_detail.py | 60 | 实战配队详情片段 |
+| shared/checkable_combo.py | 288 | 可勾选下拉 |
+| shared/capture_lock.py | 43 | 截图单飞锁（`CaptureRequestLock`） |
+| shared/rich_diff.py | 123 | 富文本 diff |
+| shared/portrait.py | 34 | 头像加载 |
+| shared/persist.py | 67 | UI 尺寸/几何持久化 |
+| shared/faction_colors.py | 55 | 势力配色读取 |
+| shared/markdown_renderer.py | 17 | Markdown → HTML |
+
+> 合计 76 个 UI 模块文件。行数随迭代变动，以仓库实际为准。
 
 ### 5.2 主窗口外壳与信号拓扑
 
-阶段三应用外壳由左侧 `NavigationRail`、顶部 `ContextHeader`、工作区内容和底部状态栏组成。左侧导航固定承载资料库、选将推荐、对局攻略三个长期工作区；顶部显示当前工作区标题、说明、资料库操作及全局设置。主内容继续复用原 `QTabWidget` 和三个页面实例，仅隐藏主 `TabBar`；资料库内部仍使用可见的“武将资料 / 卡牌图鉴”二级页签，因此搜索、滚动、识别结果和二级页签状态不会因切换工作区而丢失。
+阶段三应用外壳由左侧 `NavigationRail`、顶部 `ContextHeader`、工作区内容和底部状态栏组成。左侧导航固定承载**资料库、选将推荐、巅峰赛选将、对局攻略**四个长期工作区（知识库维护为第 5 个工作区）；顶部显示当前工作区标题、说明、资料库操作及全局设置。主内容继续复用原 `QTabWidget` 和页面实例，仅隐藏主 `TabBar`，由 `NavigationRail` 驱动切换；资料库内部仍使用可见的”武将资料 / 卡牌图鉴”二级页签，因此搜索、滚动、识别结果和二级页签状态不会因切换工作区而丢失。
+
+业务服务的装配与注入收敛到组合根 `AppServices`（`src/ui/app/app_services.py`）：集中实例化采集 / OCR / 生成 / 分析等服务并完成信号接线，主窗口只消费其聚合句柄。轮询编排由 `PollCoordinator` 承接（信号 `OcrService.poll_tick` → `_on_poll_tick()` → 后台线程执行截图与 OCR → `_consume_poll_result()` 提交状态）。
 
 左侧导航请求通过主 Tab 容器切换，Tab 的 `currentChanged` 再同步导航选中态和 `ContextHeader`。OCR 自动跳转保持原调用边界，只执行 `setCurrentWidget()`，无需直接访问外壳控件。窗口宽度小于 1040px 时导航强制折叠；回到宽屏后恢复用户本次会话中的展开/折叠选择。
 
-兼容菜单栏和顶部入口共享 `MainWindow._actions` 创建的 `QAction`，不重复绑定业务回调，`Ctrl+Q` 与 `F5` 保持有效。底部状态栏左侧显示数据统计及采集、生成、截图、OCR 预热等当前任务消息；右侧模拟器状态常驻显示 ADB 连接；OCR 状态常驻显示轮询运行状态。任务消息不会覆盖后两者，点击常驻状态可打开模拟器配置。
+兼容菜单栏和顶部入口共享 `MainWindow._actions` 创建的 `QAction`，不重复绑定业务回调，`Ctrl+Q` 与 `F5` 保持有效。底部状态栏由 `StatusChips`（`src/ui/app/status_chips.py`）渲染：左侧显示数据统计及采集、生成、截图、OCR 预热等当前任务消息；右侧模拟器状态常驻显示 ADB 连接；OCR 状态常驻显示轮询运行状态。任务消息不会覆盖后两者，点击常驻状态可打开模拟器配置。
+
+资料库的卡牌图鉴、专属牌、武将分类三个主从面板统一接入 `MasterDetailPane`（`src/ui/shared/master_detail.py`，103 行）——主从列表骨架封装左侧列表 + 右侧详情 + 上下文操作栏的通用布局与状态同步，三个面板只注入数据适配与编辑入口，避免各自实现主从滚动与选中同步。资料库编辑对话框统一走 `run_edit_dialog()`（模态编辑循环），编辑成功后由面板自行刷新，不再逐处手写 `exec()` 与刷新分支。
 
 ```
 MainWindow.__init__
@@ -1187,12 +1266,12 @@ _start_import()
 
 ### 5.13 知识库维护工作台（RagMaintenancePanel）
 
-主导航第 4 页，本地维护 RAG 语料与源数据，包含 6 个页签：
+主导航第 4 页，本地维护 RAG 语料与源数据。2026-09 布局重排为**左栏维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志**（`MaintenanceSourceNav` / `MaintenanceWorkspace`）：左栏 10 项，上组 5 个**可编辑维护对象**（专属牌 / 卡牌点数 / 装备属性 / 武将分类 / 元规则母本），下组 5 个**只读语料**（状态点对齐其语料任务状态，仅状态展示）；点击导航项切换右侧工作区，保存后左栏状态点即时变「待重建」并可就地重建。下表按维护对象列出：
 
-| 页签 | 数据源 | 能力 |
+| 维护对象 | 数据源 | 能力 |
 |------|--------|------|
-| 语料状态 | `scripts/maintain_rag.py` + `rag_audit.py` | 8 个语料任务状态表（最新/待重建/缺源 + 块数）、结构化人工维护审计横幅（可跳转定位）、一键重建（QProcess 实时日志） |
-| 元规则维护 | `docs/元规则整理-完整版.md` | 文档状态（audit）/ 数据段差异（sync）/ 提案工作台（propose+apply）/ 疑难登记（pending）四个子页签 |
+| 语料状态 | `src/scripts/maintain_rag.py` + `rag_audit.py` | 10 个语料任务状态表（最新/待重建/缺源 + 块数）、结构化人工维护审计横幅（可跳转定位）、一键重建（QProcess 实时日志） |
+| 元规则母本 | `docs/元规则整理-完整版.md` | 文档状态（audit）/ 数据段差异（sync）/ 提案工作台（propose+apply）/ 疑难登记（pending）四个子页签 |
 | 专属牌维护 | `data/special_cards.json` | 5 类条目 CRUD，专属牌/战法牌含花色/点数/攻击范围/结算详情字段 |
 | 卡牌点数维护 | `data/card_points.json` | 72 花色点数组合 × 数量与 12 条判定规则增删改；「从 xlsx 导入」应急通道 |
 | 装备属性维护 | `data/equip_attrs.json` | 26 件装备细分/攻击范围/距离修正表格编辑 + 保存校验 |
@@ -1200,7 +1279,7 @@ _start_import()
 
 联动机制：任一子面板保存 → `data_changed` 信号 → `refresh()` 重算任务状态并标记“待重建” → 用户点击“重建全部语料 / 重建语料+索引”调用 `maintain_rag.py`。脚本执行统一走 `ScriptRunner`（QProcess 公共封装，`output(bytes)` / `finished(int)` 信号 + `is_running()` 防并发）；语料块数读取带 `(mtime, size)` 缓存（`_output_count()`）。审计由 `AuditIssue`（kind/message/severity/target_tab/target）结构化驱动，覆盖：未归类武将、**分类表引用未知武将（`orphan_category_key` 反向校验）**、special_cards 引用未知武将、卡牌点数花色/张数=162、装备件数/字段、专属牌结算回填率（死士豁免）、索引字段待精化（排第一位）；`audit_summary()` 可接收同一轮已算好的 `list_pending()` 清单避免重复读语料。每条可点「跳转」定位到对应维护页签（`HeroClassificationPanel.focus_unclassified()` / `SpecialCardsPanel.focus_item()` / 直接打开索引精化）。数据安全：四个维护仓库继承 `JsonRepository`（原子写 + 加锁 + 写盘失败内存回滚）；装备属性表格一次性分配行并恢复滚动位置；卡牌点数 xlsx 导入改异步执行；`mark_recommendation_index_stale()` 记录调用来源 traceback 日志。
 
-语料层「索引精化」对话框（`IndexRefinementDialog`，1160×720）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 待精化/已精化/全部模式切换）、清单区（搜索与类型筛选同行、4 列表格固定列宽，行状态 ○/◉/✎/✓/○，说明列按范围显示缺失字段/来源·时间，批量行 LLM 建议（全部）/保存全部仅待精化模式可见）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/saved/manual 着色 + 来源/时间徽标 + 底部条目操作行：LLM 建议（当前）/跳过当前/取消精化/保存当前 PRIMARY）、底部仅「关闭」。2026-09 下沉为业务层三层架构（F2）：纯函数服务 `refinement_service.py`（`scan_blocks` 三分类、`apply_curated`/`clear_curated` 原子读写、`suggest_one` 单块 LLM 建议、`build_generator` 构造器）+ 纯 Python 状态层 `RefinementSession`（三池清单 pending/curated/normal、磁盘/LLM 双基线、行状态；`collect_update` 与磁盘基线比对判改动并与 LLM 基线比对判定 method=llm/manual，`apply_updates` 按语料文件分组批量写回且失败文件不迁移其任何块，`sync_saved` 写回并迁移池，`skip_block`/`clear_curated_block` 跳过与取消精化）+ `SuggestController`(QObject) 线程编排（`SuggestWorker`(QThread) 逐块建议，`LIVE_WORKERS` 全局持有与 `_zombies` 列表防 dialog 销毁后线程析构，`cancel_and_shutdown` 善后）；`IndexRefinementDialog` 仅负责渲染与交互确认，不持清单本体。入口按钮无待办时仍可用（`索引精化 ✓`）。
+语料层「索引精化」对话框（`IndexRefinementDialog`，两段式尺寸）2026-08 重设计：对卡牌/武将语料中无 curated 且索引字段为空的块补 `timing / trigger_condition / keywords / related` 四个字段；顶部总览条（进度 + 待精化/已精化/全部模式切换）、清单区（搜索与类型筛选同行、4 列表格固定列宽，行状态 ○/◉/✎/✓/○，说明列按范围显示缺失字段/来源·时间，批量行 LLM 建议（全部）/保存全部仅待精化模式可见）、工作区（左原文卡片占满高度 + 右字段状态卡片 empty/llm/saved/manual 着色 + 来源/时间徽标 + 底部条目操作行：LLM 建议（当前）/跳过当前/取消精化/保存当前 PRIMARY）、底部仅「关闭」。2026-09 下沉为业务层三层架构（F2）：纯函数服务 `refinement_service.py`（`scan_blocks` 三分类、`apply_curated`/`clear_curated` 原子读写、`suggest_one` 单块 LLM 建议、`build_generator` 构造器）+ 纯 Python 状态层 `RefinementSession`（三池清单 pending/curated/normal、磁盘/LLM 双基线、行状态；`collect_update` 与磁盘基线比对判改动并与 LLM 基线比对判定 method=llm/manual，`apply_updates` 按语料文件分组批量写回且失败文件不迁移其任何块，`sync_saved` 写回并迁移池，`skip_block`/`clear_curated_block` 跳过与取消精化）+ `SuggestController`(QObject) 线程编排（`SuggestWorker`(QThread) 逐块建议，`LIVE_WORKERS` 全局持有与 `_zombies` 列表防 dialog 销毁后线程析构，`cancel_and_shutdown` 善后）；`IndexRefinementDialog` 仅负责渲染与交互确认，不持清单本体。入口按钮无待办时仍可用（`索引精化 ✓`）。
 
 #### 5.13.1 元规则维护页签（RuleDocPanel）
 
@@ -1360,12 +1439,20 @@ AI 回复文本（浏览器 inner_text 或 API response）
 
 | 函数 | 说明 |
 |------|------|
-| `parse_env_file(path)` | 解析 .env → `dict[str, str]` |
-| `load_env_config(path)` | 解析后映射为小写 key → `dict` |
-| `get_api_config()` | 合并 config.env + 环境变量 + 默认值 |
+| `parse_env_file(env_path)` | 解析 .env → `dict[str, str]` |
+| `load_env_config(env_path)` | 解析后映射为小写 key → `dict`（含类型转换） |
+| `get_api_config()` | 回退链：`config.env` + 环境变量 + 默认值（仅兼容旧调用方） |
+| `resolve_api_config(name=None)` | **生成链路实际入口**：优先取唯一启用档案，否则回退 `config.env` → 环境变量 → 默认值 |
+| `has_available_api_profile()` | 是否存在可用档案（`enabled` + URL 非空 + 供应商 Key 语义） |
+| `list_api_profiles()` / `get_api_profile(name)` | 读取全部档案 / 单个档案 |
+| `save_api_profiles(data, profiles_path)` | 原子写入 `config/api_profiles.json`（启用互斥） |
+| `migrate_legacy_api_config()` | 首启迁移：存在旧 `DEEPSEEK_*` 三件套时自动落成 `deepseek-main` 档案 |
+| `load_pricing_config()` / `save_pricing_config()` / `get_model_pricing(model)` | `config/model_pricing.json` 读/写/按模型取价 |
 | `get_runtime_params()` | 获取运行时参数（含 `log_to_file: bool`） |
 | `get_mumu_config()` | 获取模拟器（MuMu）ADB/OCR 配置 |
-| `save_env_file(path, data)` | 原子写入 .env 文件 |
+| `save_env_file(env_path, data)` | 原子写入 .env 文件 |
+
+路径常量集中收敛在 `env.py`：`IS_FROZEN`、`PROJECT_ROOT`（可写根）、`BUNDLE_ROOT`（打包只读根 `_internal`）、`DEFAULT_ENV_FILE`、`DEFAULT_PRICING_FILE`、`DEFAULT_PROFILES_FILE`、`IMAGES_DIR` / `IMAGES_OUTPUT_DIR`、`SCREENSHOTS_DIR`。打包态下资源只读、数据可写，两者分离。
 
 ### 8.2 Key 映射表
 
@@ -1378,6 +1465,7 @@ key_mapping = {
     "REQUESTS_PER_MINUTE": "requests_per_minute",
     "HTTP_TIMEOUT": "http_timeout",
     "MAX_RETRIES": "max_retries",
+    "MAX_OUTPUT_TOKENS": "max_output_tokens",
     # 日志
     "LOG_LEVEL": "log_level",
     "LOG_TO_FILE": "log_to_file",
@@ -1386,14 +1474,23 @@ key_mapping = {
     "MUMU_ADB_PORT": "mumu_adb_port",
     "MUMU_OCR_ENABLED": "mumu_ocr_enabled",
     "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
+    "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
     "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
     "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
-"MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
-"MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
+    "MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
+    "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
+    "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
+    "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
+    "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
+    # 推荐算法
+    "RECOMMENDATION_P_FLOOR": "recommendation_p_floor",
+    "RECOMMENDATION_BAN_WEIGHT": "recommendation_ban_weight",
+    "RECOMMENDATION_SIGMOID_K": "recommendation_sigmoid_k",
+    "RECOMMENDATION_LOW_WIN_RATE_GAP": "recommendation_low_win_rate_gap",
 }
 ```
 
-数值类型配置项自动转型（`int` / `float` / `bool`），失败时使用默认值并打 warning。
+int 型：`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`；bool 型：`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu`；float 型：三处 threshold 与四个 `RECOMMENDATION_*`。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -1522,8 +1619,13 @@ logs/
 │   └── ocr.log
 ├── capture/
 │   └── capture.log
+├── rag/
+│   ├── rag.log              # src.rag 检索基础设施
+│   └── <script>.log         # 各 CLI 脚本日志（get_script_logger，DEBUG+ 落盘、WARNING+ 镜像 stderr）
 └── subprocess/
     └── unclassified.log     # 未声明工作流的子进程输出
+
+debug.log（与 logs/ 平级）  # 跨模块全量留底（DEBUG、无前缀过滤、单独较大轮转上限）
 ```
 
 ### 10.3 模块过滤表
@@ -1539,18 +1641,35 @@ logs/
 | `src.data` | `data/data.log` |
 | `src.capture` | `capture/capture.log` |
 | `src.ocr` | `ocr/ocr.log` |
+| `src.rag` | `rag/rag.log` |
 | 其他 `subprocess.*` | `subprocess/unclassified.log` |
-| 其他（含 `src.ui.*`） | `app.log` |
+| 其他（含 `src.ui.*`、`src.config`、`src.business` 根） | `app.log` |
 
 QProcess 子进程统一设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 Handler（含 AI 子进程）。武将采集由父进程以 `subprocess.official.*` 接管，攻略和相性生成以 `subprocess.ai.*` 接管；两者分别进入官网和 AI 日志。**AI 日志保留失败原因**：`scraper/ai_generation.log` 承载 `src.scraper.ai` / `subprocess.ai` 流并设 `keep_debug=True`（handler 级别固定 DEBUG、不跟随用户级别），因此 root level≥WARNING 时 `api_generator` 的 429/length/JSON 失败原因仍被保留；另有 `debug.log` 跨模块全量留底（DEBUG、无前缀过滤、单独较大轮转上限）。每条记录只进入一个目标文件，历史的 `scraper.log`、`ai_batch.log`、`stdout.log` 和 `stderr.log` 不自动删除或迁移。
 
-### 10.4 日志轮转
+### 10.4 级别分配（反转策略）
+
+`setup_logging()` 采用**根级别下限 + 项目前缀强制 DEBUG**的双段分配：
+
+1. `root.setLevel(max(level, WARNING))` —— 第三方库（chromadb / transformers 等）是 root 的直接子且为 `NOTSET`，有效级别继承 root，其 INFO/DEBUG 在 logger 层即被拦截、不创建 `LogRecord`，等效零库名清单的高效压制；
+2. `logging.getLogger("src").setLevel(DEBUG)` 与 `logging.getLogger("subprocess").setLevel(DEBUG)` —— 项目自身与子进程流恒定 DEBUG 全量创建，保证 `debug.log` 留底完整；
+3. 文件 Handler 级别：`keep_debug=True` 的三处（`app.log` / `scraper/official.log` / `scraper/ai_generation.log`）固定 DEBUG，其余跟随用户级别。
+
+### 10.5 脚本日志（CLI）
+
+语料构建与维护脚本经 `src/scripts/rag_common.py` 统一取 logger：
+
+- `get_script_logger(script_name)` —— 惰性装载，import 时不 `mkdir`、不开 `FileHandler`（避免 Windows 句柄锁住测试进程）；首次写日志时才经 `_ensure_script_logger_handlers` 幂等挂上 `logs/rag/<script>.log`（DEBUG+）与 stderr 镜像（WARNING+）；
+- `install_crash_logger(script_name)` —— 替换 `sys.excepthook`，未捕获异常先 `logger.exception` 落盘，再向 stderr 打印 `❌ 执行失败，详见 logs/rag/<script>.log`，返回 `_restore()` 供收尾恢复。
+
+### 10.6 日志轮转
 
 - 单个日志文件最大 10MB
 - 保留 5 个备份（`app.log.1` ~ `app.log.5`）
+- `debug.log` 使用单独较大的轮转上限
 - 超过上限自动轮转
 
-### 10.5 异常处理规范
+### 10.7 异常处理规范
 
 所有 except 块遵循以下规范：
 - 使用 `logger.error("描述: %s", e)` 记录错误
@@ -1582,9 +1701,9 @@ src/capture/
 | 函数 | 返回 | 说明 |
 |------|------|------|
 | `probe_mumu_adb()` | `str` | 查找 adb.exe（PATH → 注册表 → 安装路径） |
-| `probe_mumu_port()` | `int` | 通过 MuMuManager 获取运行中实例的 ADB 端口 |
-| `probe_all_devices()` | `list[MuMuDeviceInfo]` | 列出所有 MuMu 实例信息 |
-| `probe_all_devices_with_status()` | `(list[MuMuDeviceInfo], str)` | 列出实例；MuMuManager 失败时重试一次并返回错误原因 |
+| `probe_all_devices()` | `list[MuMuDeviceInfo]` | 列出所有 MuMu 实例信息（`MuMuManager.exe info --vmindex all`） |
+| `probe_all_devices_with_status(retries=1)` | `(list[MuMuDeviceInfo], str)` | 列出实例；MuMuManager 失败时重试一次并返回错误原因 |
+| `probe_running_devices()` | `list[MuMuDeviceInfo]` | 过滤出 `is_running` 为真的实例（原 `probe_mumu_port()` 已废弃） |
 | `test_adb_path(path)` | `(bool, str)` | 验证 ADB 可执行文件是否有效 |
 
 #### 数据类
@@ -1787,7 +1906,7 @@ else:
 | 拼音 | pypinyin | 同上 | JSON 缓存 / 纠错时按需加载 |
 | 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `CharacterFeatureRepository` | 通过 `unihan_etl.Options().work_dir` 解析文本文件 |
 
-数据文件 `src/data/char_info_cache.json` 包含 314 个高频汉字（武将名 + 已知 OCR 误识字）。
+数据文件 `src/data/char_info_cache.json` 包含 365 个高频汉字（武将名 + 已知 OCR 误识字）。
 `CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。UNIHAN 导出 CSV 已存在时直接读取，只有目标文件不存在时才执行 `Packager.export()`，避免因重复覆盖默认 AppData 文件而使动态补齐整体降级。pypinyin 预热或查询失败时记录一次 warning 并将拼音源标记为不可用，后续查询直接降级为空值；cnradical 的单字查询失败会记录字符和异常，但不禁用整个部首源。
 
 #### 类结构
@@ -2019,7 +2138,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 
 ### 13.1 运行与统计
 
-测试覆盖 AI 生成、数据管理、OCR、模拟器交互、对局攻略和桌面 UI。用例数量由 pytest 收集结果作为唯一来源，不再维护容易漂移的按文件静态计数。
+测试覆盖 AI 生成、数据管理、OCR、模拟器交互、对局攻略、巅峰赛选将与桌面 UI。用例数量以 pytest 收集结果作为唯一来源，不再维护容易漂移的按文件静态计数。
 
 ```bash
 python -m ruff check src tests
@@ -2027,7 +2146,11 @@ python -m pytest --collect-only -q
 python -m pytest tests/ -v
 ```
 
-开发环境与 CI 统一使用 Ruff 0.12.0。当前以 `pytest --collect-only -q` 收集 **498** 项测试。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
+
+当前仓库有 **100 个测试文件 / 1129 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+
+> 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
 ### 13.2 AIBatchGenerator 测试要点
 
@@ -2458,23 +2581,48 @@ detect_selection_cards(image)
 
 ### 15.3 巅峰赛识别循环（PeakSelectWatcher）
 
-与标准轮询并存；首次进入牌面自动挂起 `hero_selection` / `match_guide` 标准轮询任务，连续多拍未见牌面（`BOARD_EXIT_TICKS=2`）后恢复原状态。
+识别会话以 `start()` / `stop()` 为边界，会话内对标准轮询的挂起是**会话级**而非"牌面进出"级：`hero_selection` 在整个会话保持挂起（停止识别才恢复），`match_guide` 仅牌面自动退出时按原状态恢复，其余拍次维持挂起。常量：`POLL_INTERVAL_MS=1500`、`OCR_WAIT_TIMEOUT_SECONDS=15`、`BOARD_EXIT_TICKS=2`、`SIGNATURE_POSITION_QUANTUM_PX=8`、`SIGNATURE_SIZE_QUANTUM_PX=16`、`_BAN_PHASE_MIN_CARDS=12`。
+
+**会话世代校验**：`_session` 在 `start()` 与 `stop()` 各递增一次；在途识别拍在四处关键写入点前比对（截图后、检测/缺席前、写签名前、发布前），世代不符即整拍放弃，防止停止或重启后的旧拍反向挂起标准任务、把旧签名与旧快照写回新会话。
 
 ```
-Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
-  ├─ CaptureService.capture_for_poll(capture)
-  ├─ detect_selection_cards(frame)
-  │   └─ None → _handle_board_absent() → miss_ticks++
-  │       └─ == BOARD_EXIT_TICKS=2 → _restore_standard_tasks() + 状态重置
-  ├─ board_signature(cards)
-  │   └─ == _signature → 牌面未变化，沿用结果（避免翻页动画误触发）
-  ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide
+start()  会话制挂起（start 即生效，不等待首拍检出牌面）
+  ├─ _state_lock: _session += 1；签名/已禁名单/人工确认/最近牌面全部重置
+  ├─ _suspend_standard_tasks()   ← 首拍之前挂起，避免固定 ROI 在巅峰页跑垃圾结果
+  ├─ clear_task_cooldown("hero_selection") / ("match_guide")
+  ├─ invalidate_inflight_poll()  ← 作废点击开始前已发出的在途轮询
+  └─ _timer.start()
+
+stop()
+  ├─ _timer.stop()
+  ├─ _state_lock: _session += 1   ← 先作废旧拍，消除"停止后被旧拍重新挂起"
+  └─ _restore_standard_tasks()    ← 恢复全部标准任务原状态
+
+_tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后台线程 _do_work()
+  ├─ 快照 session
+  ├─ capture 未连接 / capture_for_poll 失败 → status_changed，return
+  ├─ 世代校验①  → detect_selection_cards(frame)
+  │   └─ None → _handle_board_absent(session)
+  │       ├─ 世代校验②（锁内）→ _miss_ticks += 1；每拍清签名
+  │       └─ == BOARD_EXIT_TICKS=2 → 清已禁名单与人工确认
+  │           → _restore_match_guide()（只恢复 match_guide，hero_selection 仍挂起）
+  │           → board_exited 信号 → 主窗口按轮询状态衔接激活对局攻略页
+  ├─ board_signature(cards)  ← 坐标全量量化（8px / 尺寸 16px 步长）
+  ├─ 锁内：世代校验③ → _miss_ticks=0 → 每拍幂等挂起（置于 unchanged 短路之前）
+  │   → 签名未变 → return（沿用上一次结果）
   ├─ _recognize_board(image, cards)
-  │   └─ CaptureService.submit_ocr_task(image, hero_names, "hero_selection", rois, match_template=False)
-  │       → task.completed.wait(15)  15s 超时保护
-  ├─ _publish_pool(ocr_results, len(cards))
-  │   └─ parse_pool() → PoolSnapshot → pool_updated 信号
+  │   ├─ derive_name_rois(cards) → submit_ocr_task(template_name="hero_selection", match_template=False)
+  │   └─ task.completed.wait(15)；outcome != "matched" → return None
+  │       → 签名清零，下一拍强制重试（仅实时循环路径；图片导入不动签名）
+  ├─ 锁内：世代校验④ → 写签名 → carry_over_resolutions() 沿用人工确认
+  └─ _publish_pool()  ← 全程持 _state_lock，防跨牌面快照交错
+       ├─ parse_pool(ocr_results, card_count, _ban_names, _resolutions)
+       └─ stage == "ban" → 快照名单留作已禁差集基准
 ```
+
+**人工确认沿用（`carry_over_resolutions`）**：新牌面不再清空 `_resolutions`，而是按内容沿用——确认跟着武将走、不跟槽位走。槽位未重排时原地保留，重排时迁移到候选集唯一命中的槽位（同名不扩散到多个槽位），内容消失的确认自然失效，歧义槽位保守丢弃。判据与 `parse_pool` 的生效判据对齐，故只可能保留仍然生效的确认。候选阶段卡面的 idle 浮动动画会使签名假性翻转，无条件清空会反复丢失人工确认，这是引入沿用而非清空的直接原因。
+
+**双锁分工**：`_thread_lock` 只保证识别拍单飞；`_state_lock` 串行化识别线程、图片导入线程与 GUI 线程（`start` / `confirm_pending`）对 `_signature` / `_ban_names` / `_resolutions` / `_last_board` 的并发读写。锁内只做纯内存读写，不发 IO、不 emit 信号。
 
 **PoolSnapshot 字段**：`card_count / names / pending / stage / overlap / banned`
 - `stage`: ≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
@@ -2483,7 +2631,7 @@ Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
 
 **图片导入**：`recognize_image_file()` 使用独立 `_import_lock`，不影响循环签名与标准任务挂起状态。
 
-**人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验候选在白名单内才生效；确认后重发快照，待确认槽位计入候选与已禁口径。
+**人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验确认名确实在该槽候选集内才生效；确认后重发快照，待确认槽位计入候选与已禁口径。
 
 ### 15.4 巅峰赛选将工作台（PeakSelectPanel）
 

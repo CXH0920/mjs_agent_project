@@ -200,9 +200,10 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 
 公告列表页是 Nuxt 对公开 JSON API 的 SSR 展示，接口为 `https://ucmsv2api.ztgame.com/api/news/list`（`site=mjs&type=notice&page=1&per_page=5`），单次返回 5 条公告全文。
 
-- `fetch_latest_announcements()` — 请求公告 API；失败回退解析 `notice-1.html` 的 `<li>`（仅 title/date/url，`content_missing=True`，无真实 id 使用负数合成 id，避免与 API 正数 id 混同；去重主键是 URL）。
+- `fetch_latest_announcements()` — 请求公告 API；失败回退解析 `notice-1.html` 的 `<li>`（仅 title/date/url，`content_missing=True`，无真实 id 使用负数合成 id，避免与 API 正数 id 混同；去重主键是 URL）。API 与 HTML 回退均失败时抛 `AnnouncementFetchError`（带两次失败原因）。
 - `classify_hero_related(title, content_html, hero_names)` — 仅按 `【新增武将】/【武将调整】/【武将加强】/【武将削弱】/【武将修改】` 章节标题判定相关；新增章节内独立成行的 2-8 字中文/间隔号视为新武将名；调整章节内按 `名称（增强|削弱|调整|加强|修改|新增）` 或已知武将名单字面命中；正文其他位置提及武将名不判相关；不在本地名单的名字标 `known=False`。
-- `extract_hero_changes(title, content_html)` — 从公告正文提取武将变更事件（`hero` + `change_type` + `skills`），用于时间轴 `data/mjs_adjustments.json` 持久化；"修改前/修改后"两行配对捕获同一技能前后描述。
+- `extract_hero_changes(title, content_html)` — 从公告正文提取武将变更事件（`hero` + `change_type` + `skills`），供 `build_timeline_events` 组装后写入 `data/mjs_adjustments.json`。新增章节内独立短名称行开启武将块，后续 `技能名：描述` 收集登场技能名列表（属性行以 `——`/`--` 开头跳过）；调整章节按 `ADJUST_SECTION_NAMES` 逐章节名扫一遍，`武将名（类型）` 行开启武将块且 `change_type` 经 `normalize_change_type` 归一（"加强"→"增强"、"修改"→"调整"），`修改前/修改后：` 两行配对捕获同一技能的前后描述，独立短名称行开启技能块，`技能名：描述` 视为变更摘要（全/半角冒号均可）；解析不出技能明细时保留 hero 级事件（`skills` 为空）不丢变更。
+- `build_timeline_events(announcements, cutoff_date=None)` — 遍历 `hero_related=True` 的公告，经 `extract_hero_changes` 拆出事件并补上 `date`/`source="announcement"`/`ref`（公告 URL 或 `id:<id>`）/`announcement_title`；`cutoff_date` 缺省取时间轴 `init_source_last_updated`，过滤 A 类全量快照已覆盖的旧公告；时间轴未初始化时缺省回退空串（全新安装全量收录）。
 - `hero_content_hash(hero)` — 官网字段（name/faction/position/max_hp/max_hand/gender/skills/icon_url）NFKC+去标签规范化后 md5，不含本地扩展字段。
 - `build_hero_snapshot()` / `diff_heroes()` — 与 `data/baike_snapshot.json` 逐武将比对，输出 `{added, modified, removed}`。
 - `fetch_baike_heroes()` — 复用 `fetch_all_raw() → transform() → validate_heroes()` 获取清洗后百科武将，失败返回 `None` 不中断。
@@ -216,6 +217,13 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 - `AnnouncementManager.mark_ready_if_updated(diff, current_names)`：`PENDING` → `READY` 的推进条件收紧为两个之一——① 公告提及的武将名命中 `diff.added|modified|removed` 的 changed 集合；② 公告新增武将（`change=="新增"`）的名字**已全部**出现在当前百科 `current_names` 中（即 `new_names <= current_names`）。兜底场景：基线快照若用本地已手动采集的数据初始化，`diff` 检测不到该"新增"，此时用百科全量名集兜底推进。
 - `AnnouncementManager.mark_applied()`：只推进 `READY` → `APPLIED`；`PENDING` 公告保留。采集子进程成功不代表数据已落地百科（滞后窗口期），此时推进为终态会**永久吞掉公告**，故仅在百科已确认（`READY`）时才推进终态。
 - `build_update_candidates()` 对 `diff.added` 武将先**回查本地数据**（先按 ID、再按名称兜底）：若本地已收录且与官网内容一致（`hero_field_diff_summary` 为空），直接剔除，不报"新增"，避免本地已采集武将被误报为新增。
+
+**公告 → 时间轴 → 语料版本戳（`data/mjs_adjustments.json`）：**
+
+- `AnnouncementService._sync_timeline()`（`src/business/announcement/announcement_service.py`）在每次 `_do_check` 末尾调用，扫描全部 `hero_related` 公告而非仅本批新增——`append_announcement_events` 按 `ref` 或 `(date, hero)` 幂等去重，重复检查与此前写盘失败的公告都能在下次检查补齐；失败仅记录日志，不中断检查。
+- `append_announcement_events` 落到 `data/mjs_adjustments.json`（由 `src/data/hero_timeline.py` 统一管理），与 `src/scripts/import_hero_adjustments.py` 一次性初始化的 A 类全量快照（`source="init"`，回填 `init_source_last_updated`）并存——快照基线之前的公告经 `build_timeline_events` 的 `cutoff_date` 过滤，避免重复收录。
+- 时间轴事件字段：`date`/`hero`/`change_type`（新增/增强/削弱/调整/重做）/`skills`/`source`（`init` 或 `announcement`）/`ref`/`announcement_title`；`change_type` 词汇归一由 `normalize_change_type` 完成（"加强"→"增强"、"修改"→"调整"，未知类型兜底"调整"）。
+- 时间轴是 RAG 语料版本戳的事实源：`build_*_corpus.py` 依此给武将/攻略语料块打 `as_of`/`is_current`，检索层默认只召当前版本块；同时供 `rag_audit` 检查 `TRIGGER_OVERRIDES` 失效风险与 `heroes.json` 疑未同步武将。
 
 ### 3.6 实战配队导入（`src/scripts/import_combos.py`，2026-08 新增）
 
@@ -299,8 +307,8 @@ def transform(raw: dict) -> dict | None:
 | `parse_heroes_chunk(js_text)` | `adapter.py` | 组合 `extract_js_array` + `js_to_json` |
 | `fetch_latest_announcements()` | `announcement.py` | 公告 API，失败回退 HTML 解析 |
 | `classify_hero_related(title, content_html, hero_names)` | `announcement.py` | 章节标题判定武将相关，返回 `(bool, list[dict])` |
-| `extract_hero_changes(title, content_html)` | `announcement.py` | 提取武将变更事件（供时间轴持久化） |
-| `build_timeline_events(announcements, cutoff_date=None)` | `announcement.py` | hero_related 公告 → 时间轴事件 |
+| `extract_hero_changes(title, content_html)` | `announcement.py` | 从公告正文提取武将变更事件（新增/调整章节分扫，供 `build_timeline_events` 组装） |
+| `build_timeline_events(announcements, cutoff_date=None)` | `announcement.py` | hero_related 公告 → 时间轴事件；`cutoff_date` 缺省取时间轴 `init_source_last_updated` |
 | `hero_content_hash(hero)` | `announcement.py` | 官网字段内容哈希 |
 | `build_hero_snapshot(heroes)` | `announcement.py` | `{id: {name, hash}}` 快照 |
 | `diff_heroes(current, baseline)` | `announcement.py` | `{added, modified, removed}` 清单 |
@@ -319,7 +327,7 @@ def transform(raw: dict) -> dict | None:
 | 依赖 | `src.config.env` | 读取 `PROJECT_ROOT` / `BUNDLE_ROOT` 与日志配置 |
 | 依赖 | `src.config.logging_config` | 设置日志级别与输出 |
 | 依赖 | `src.data.announcement_manager` | 公告持久化与 `AnnouncementStatus` 状态机 |
-| 依赖 | `src.data.hero_timeline` | 时间轴事件追加与变更类型规范化 |
+| 依赖 | `src.data.hero_timeline` | 时间轴事件追加（`append_announcement_events`）、变更类型归一（`normalize_change_type`）与时间轴读取（`load_timeline`，用于 `build_timeline_events` 的 `cutoff_date` 缺省值） |
 | 被调用方 | `src.business.fetching.hero_fetch_service` | 通过 QProcess 启动爬虫 CLI |
-| 被调用方 | `src.business.announcement.announcement_service` | 公告检查 / 更新候选准备 |
+| 被调用方 | `src.business.announcement.announcement_service` | 公告检查 / 更新候选准备；`_sync_timeline()` 在每次检查末尾落地 `data/mjs_adjustments.json` |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 武将获取"触发爬虫 |
