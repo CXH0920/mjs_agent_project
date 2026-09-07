@@ -74,6 +74,8 @@ class _RoiCanvas(QLabel):
 
     替代此前"把 4 个事件处理函数赋给 QLabel 实例属性"的 monkey-patch 写法，
     让事件流可被子类化与静态追踪（#E7）。
+    底图一律经 paintEvent 等比缩放绘制，不能 setPixmap：那会把 QLabel 的
+    最小尺寸提示撑到图片原始分辨率，导致对话框被顶出屏幕外。
     """
 
     def __init__(self, owner, parent=None) -> None:
@@ -126,7 +128,6 @@ class RoiSelectorDialog(QDialog):
         layout.addWidget(PageHeader(self.windowTitle(), "拖拽画面以设置模板匹配区域"))
 
         self._image_label = _RoiCanvas(self)
-        self._image_label.setPixmap(self._pixmap)
         layout.addWidget(self._image_label, stretch=1)
 
         self._info_label = QLabel("在画面上拖拽鼠标框选模板区域")
@@ -285,7 +286,6 @@ class RoiLayoutEditorDialog(QDialog):
         layout.addLayout(selector_row)
 
         self._image_label = _RoiCanvas(self)
-        self._image_label.setPixmap(self._pixmap)
         layout.addWidget(self._image_label, stretch=1)
 
         self._info_label = QLabel("拖拽调整当前区域")

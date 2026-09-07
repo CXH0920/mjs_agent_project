@@ -48,3 +48,18 @@ def test_single_roi_selector_maps_coordinates_inside_letterboxed_preview() -> No
     assert displayed.width() == 800
     assert displayed.height() == 450
     assert mapped == QPoint(1280, 720)
+
+
+def test_dialog_minimum_size_does_not_scale_with_the_screenshot() -> None:
+    """回归：画布禁止 setPixmap，否则 QLabel 最小尺寸提示等于底图原始分辨率，
+    对话框会被布局撑到超过屏幕高度。"""
+    _app()
+    layout = OcrRoiConfig().layout_for("hero_selection")
+    small = RoiLayoutEditorDialog(QPixmap(1280, 720), layout, "hero_selection")
+    large = RoiLayoutEditorDialog(QPixmap(2560, 1440), layout, "hero_selection")
+    selector = RoiSelectorDialog(QPixmap(2560, 1440))
+
+    editor_min = small.layout().totalMinimumSize()
+    assert large.layout().totalMinimumSize() == editor_min
+    assert editor_min.height() < 1000
+    assert selector.layout().totalMinimumSize().height() < 1000
