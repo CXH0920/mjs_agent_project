@@ -157,6 +157,10 @@ class PeakSelectWatcher(QObject):
         # 只保证识别拍单飞，覆盖不到 GUI 调用，统一用 _state_lock 串行化。
         # 锁内只做纯内存读写，不发 IO、不 emit 信号。
         self._state_lock = threading.Lock()
+        # 会话世代：start/stop 各递增一次；在途识别拍在挂起、写签名、发布等
+        # 关键写入点前校验世代，停止/重启后的旧拍直接放弃，防止旧拍反向挂起
+        # 标准任务或把旧签名/旧快照写回新会话
+        self._session = 0
         self._signature: tuple | None = None
         self._ban_names: tuple[str, ...] = ()
         self._resolutions: dict[int, str] = {}
@@ -170,6 +174,7 @@ class PeakSelectWatcher(QObject):
     def start(self) -> None:
         # 上一轮停止后可能仍有在途识别线程，重置须与其互斥
         with self._state_lock:
+            self._session += 1  # 作废上一会话的在途旧拍
             self._signature = None
             self._ban_names = ()
             self._resolutions = {}
@@ -187,6 +192,10 @@ class PeakSelectWatcher(QObject):
 
     def stop(self) -> None:
         self._timer.stop()
+        # 先作废在途旧拍再恢复任务：未执行到挂起点的旧拍会因世代过期放弃，
+        # 已挂起的由本次恢复收回，消除"停止后被旧拍重新挂起"的竞态
+        with self._state_lock:
+            self._session += 1
         self._restore_standard_tasks()
 
     # ── 识别循环 ──────────────────────────────────────────────────────
@@ -197,6 +206,7 @@ class PeakSelectWatcher(QObject):
         threading.Thread(target=self._do_work, daemon=True, name="peak-select-watch").start()
 
     def _do_work(self) -> None:
+        session = self._session  # 本拍所属会话世代；start/stop 后旧拍即过期
         try:
             capture = self._capture_service.capture
             if not capture:
@@ -206,26 +216,37 @@ class PeakSelectWatcher(QObject):
             if not ok:
                 self.status_changed.emit(f"截图失败({failure_kind}): {result}")
                 return
+            with self._state_lock:
+                if session != self._session:
+                    return  # 停止/重启后的旧拍：不检测、不清理、不发布
             frame = cv2.cvtColor(np.array(result.convert("RGB")), cv2.COLOR_RGB2BGR)
             cards = detect_selection_cards(frame)
             if cards is None:
-                self._handle_board_absent()
+                self._handle_board_absent(session)
                 return
 
-            self._miss_ticks = 0
             signature = board_signature(cards)
             with self._state_lock:
-                if signature == self._signature:
-                    return  # 牌面未变化，沿用上一次结果
-            # 幂等：启动后的首牌面为空操作，缺席恢复后的重进牌面在此重新挂起
-            self._suspend_standard_tasks()
+                if session != self._session:
+                    return
+                self._miss_ticks = 0
+                # 每拍确认牌面存在即幂等挂起（含签名未变的拍）：外部如 ADB 重连
+                # start_poll 会重新激活标准任务，若只在签名变化时挂起，unchanged
+                # 短路会让垃圾轮询在巅峰页常驻
+                self._suspend_standard_tasks()
+                unchanged = signature == self._signature
+            if unchanged:
+                return  # 牌面未变化，沿用上一次结果
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
                 # 识别失败清签名，下一拍强制重试；仅实时循环路径，图片导入不动签名
                 with self._state_lock:
-                    self._signature = None
+                    if session == self._session:
+                        self._signature = None
                 return
             with self._state_lock:
+                if session != self._session:
+                    return  # 停止/重启后的旧拍：不写签名、不沿用确认、不发布
                 self._signature = signature
                 # 新牌面：人工确认按内容沿用而非清空——候选阶段浮动动画会让
                 # 签名假性翻转，无条件清空会反复丢确认；沿用基准取当前值，
@@ -360,10 +381,12 @@ class PeakSelectWatcher(QObject):
         self._saved_task_states = None
         logger.debug("巅峰赛识别结束，标准轮询任务已恢复")
 
-    def _handle_board_absent(self) -> None:
-        self._miss_ticks += 1
-        exiting = self._miss_ticks == BOARD_EXIT_TICKS
+    def _handle_board_absent(self, session: int) -> None:
         with self._state_lock:
+            if session != self._session:
+                return  # 停止/重启后的旧拍：不累计缺席、不清理状态、不发信号
+            self._miss_ticks += 1
+            exiting = self._miss_ticks == BOARD_EXIT_TICKS
             self._signature = None
             if exiting:
                 self._ban_names = ()

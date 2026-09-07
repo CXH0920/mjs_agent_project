@@ -745,10 +745,10 @@ def test_watcher_board_absent_restores_match_guide_only(qapp):
     assert ocr_service.get_task_state("hero_selection").active is False
     assert ocr_service.get_task_state("match_guide").active is False
 
-    watcher._handle_board_absent()  # 第一拍缺席：尚未退出
+    watcher._handle_board_absent(watcher._session)  # 第一拍缺席：尚未退出
     assert exited == []
 
-    watcher._handle_board_absent()
+    watcher._handle_board_absent(watcher._session)
     assert exited == [True]
     assert ocr_service.get_task_state("hero_selection").active is False  # 方案一：保持挂起
     assert ocr_service.get_task_state("match_guide").active is True      # 恢复原状态
@@ -830,6 +830,79 @@ def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):
     watcher._do_work()
     assert watcher._resolutions == {}
     assert pools[-1].pending[0]["candidates"] == ["荀彧", "荀灌"]
+
+
+def test_stop_invalidates_inflight_work(qapp, monkeypatch):
+    """回归：停止识别后在途旧拍不得重新挂起任务、写回签名或发布快照（世代校验）。"""
+    blocked = threading.Event()
+    release = threading.Event()
+
+    def blocking_detect(frame):
+        blocked.set()
+        release.wait(2)
+        return [(100 + i * 276, 247, 238, 326) for i in range(9)]
+
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards", blocking_detect
+    )
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(
+            [{"name": "荆轲", "resolution": "exact"}]
+        ),
+    )
+    ocr_service = _FakeOcrService()
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = ocr_service
+
+    watcher.start()
+    assert watcher._thread_lock.acquire(blocking=False)
+    worker = threading.Thread(target=watcher._do_work, daemon=True)
+    worker.start()
+    assert blocked.wait(2)
+
+    watcher.stop()  # 在途拍阻塞在检测点时停止：任务被恢复
+    assert ocr_service.get_task_state("hero_selection").active is True
+
+    release.set()
+    worker.join(2)
+
+    # 旧拍世代过期：不重新挂起、不写回旧签名、不发布
+    assert ocr_service.get_task_state("hero_selection").active is True
+    assert watcher._signature is None
+    assert pools == []
+
+
+def test_unchanged_still_resuspends_externally_reactivated_tasks(qapp, monkeypatch):
+    """回归：签名未变的拍也要重新挂起外部激活的任务（ADB 重连 start_poll 场景）。"""
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: [(100 + i * 276, 247, 238, 326) for i in range(9)],
+    )
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(
+            [{"name": "荆轲", "resolution": "exact"}]
+        ),
+    )
+    ocr_service = _FakeOcrService()
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = ocr_service
+
+    assert watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()  # 首拍：挂起并记录签名
+    assert ocr_service.get_task_state("hero_selection").active is False
+
+    ocr_service.activate_task("hero_selection")  # 模拟重连 start_poll 重置激活
+    ocr_service.activate_task("match_guide")
+    assert watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()  # 同牌面：unchanged 跳过发布，但仍应重新挂起
+
+    assert ocr_service.get_task_state("hero_selection").active is False
+    assert ocr_service.get_task_state("match_guide").active is False
+    assert len(pools) == 1
 
 
 def test_watcher_manual_stop_does_not_emit_board_exited(qapp):
