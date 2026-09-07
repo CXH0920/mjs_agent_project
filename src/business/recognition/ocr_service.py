@@ -218,6 +218,16 @@ class OcrService(QObject):
         self._replace_poll_session()
         self._set_poll_state("stopped", "轮询未启用")
 
+    def invalidate_inflight_poll(self) -> None:
+        """作废在途轮询：取消当前会话并复位在途标记，供巅峰赛识别启动时调用。
+
+        作废使在途一轮不再回发结果（complete_poll 无人调用），故必须同时复位
+        _poll_in_flight，否则后续轮询拍会被在途标记永久挡住；已回发未消费的
+        旧结果由消费端代数检查丢弃。
+        """
+        self._replace_poll_session()
+        self._poll_in_flight = False
+
     def resume_poll(self) -> None:
         """用户主动恢复已暂停的轮询。"""
         if self._poll_interval_ms <= 0:

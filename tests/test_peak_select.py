@@ -17,6 +17,7 @@ from src.business.analysis.peak_ban_advice import PeakBanAdvice
 from src.business.recognition.peak_select_watcher import (
     PeakSelectWatcher,
     board_signature,
+    carry_over_resolutions,
     parse_pool,
 )
 from src.ui.match.peak_hero_card import PeakHeroCard
@@ -72,14 +73,57 @@ def test_parse_pool_ban_stage_keeps_full_board():
     assert len(snapshot.names) == 14
 
 
-def test_board_signature_ignores_pixel_jitter():
-    """签名对 1~2px 检测抖动稳定，对布局变化敏感。"""
-    cards = [(100, 200, 238, 326), (400, 200, 238, 326)]
-    jittered = [(101, 202, 239, 325), (399, 198, 237, 327)]
-    moved = [(100, 600, 238, 326), (400, 200, 238, 326)]
+def test_carry_over_resolutions_keeps_migrates_and_drops():
+    """确认跟随内容：槽位未变原地保留，重排迁移到内容匹配槽位，内容消失自然失效。"""
+    ocr = [
+        {"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀勖", "荀彧"]},
+        {"resolution": "exact", "name": "袁术", "candidates": ["袁术"]},  # 自动确认槽不接入
+        {"resolution": "unresolved", "raw_name": "黄忠", "candidates": ["黄忠"]},
+        {"resolution": "unresolved", "raw_name": "凌统", "candidates": ["凌统"]},
+    ]
 
-    assert board_signature(cards) == board_signature(jittered)
+    assert carry_over_resolutions({0: "荀勖", 2: "黄忠"}, ocr) == {0: "荀勖", 2: "黄忠"}
+
+    ocr_moved = [
+        {"resolution": "unresolved", "raw_name": "荀或", "candidates": ["荀彧", "荀灌"]},
+        {"resolution": "exact", "name": "袁术", "candidates": ["袁术"]},
+        {"resolution": "unresolved", "raw_name": "凌统", "candidates": ["凌统"]},
+        {"resolution": "unresolved", "raw_name": "黄忠", "candidates": ["黄忠", "黄盖"]},
+    ]
+
+    # 荀勖所在卡被选走（候选集消失）确认失效；黄忠重排迁移到新槽位
+    assert carry_over_resolutions({0: "荀勖", 2: "黄忠"}, ocr_moved) == {3: "黄忠"}
+
+
+def test_carry_over_resolutions_drops_ambiguous_slot():
+    """候选集同时命中两个已确认名的歧义槽位保守丢弃，不猜测归属。"""
+    ocr = [{"resolution": "unresolved", "candidates": ["黄忠", "凌统"]}]
+
+    assert carry_over_resolutions({1: "黄忠", 2: "凌统"}, ocr) == {}
+
+
+def test_board_signature_ignores_animation_drift():
+    """签名吸收候选阶段卡面浮动动画的实测漂移（y±3、剪影 h±5），真实位移仍翻转。
+
+    漂移数据取自 2026-09-06 日志实测：卡2 三拍 bbox (904,297,71,124)/
+    (904,294,71,122)/(904,296,71,124)，旧步长 (4/8) 下 h 跨桶逐拍翻转。
+    """
+    cards = [(200, 200, 238, 326), (520, 200, 238, 326)]
+    drifted = [(197, 203, 237, 324), (523, 197, 239, 328)]
+    moved = [(200, 600, 238, 326), (520, 200, 238, 326)]
+    measured = [(904, 297, 71, 124), (904, 294, 71, 122), (904, 296, 71, 124)]
+
+    assert board_signature(cards) == board_signature(drifted)
+    assert len({board_signature([card]) for card in measured}) == 1
     assert board_signature(cards) != board_signature(moved)
+
+
+def test_board_signature_flips_on_card_count_change():
+    """卡数变化（换人/禁选）必然翻转签名，与量化步长无关。"""
+    ten_cards = [(904, 297, 71, 124)] * 10
+    nine_cards = [(904, 297, 71, 124)] * 9
+
+    assert board_signature(ten_cards) != board_signature(nine_cards)
 
 
 def _make_panel(
@@ -103,7 +147,7 @@ def _make_panel(
 
 
 class _FakeOcrService:
-    """覆盖 watcher 协调标准轮询任务（挂起/恢复/清冷却）所需的最小接口。"""
+    """覆盖 watcher 协调标准轮询任务（挂起/恢复/清冷却/作废在途）所需的最小接口。"""
 
     def __init__(self, active_states: dict[str, bool] | None = None) -> None:
         self._tasks = {
@@ -113,6 +157,7 @@ class _FakeOcrService:
         for name, active in (active_states or {}).items():
             self._tasks[name].active = active
         self.cleared_cooldowns: list[str] = []
+        self.invalidated_polls = 0
 
     def get_task_state(self, name):
         return self._tasks[name]
@@ -125,6 +170,9 @@ class _FakeOcrService:
 
     def clear_task_cooldown(self, name) -> None:
         self.cleared_cooldowns.append(name)
+
+    def invalidate_inflight_poll(self) -> None:
+        self.invalidated_polls += 1
 
 
 def test_panel_renders_pool_snapshot(qapp):
@@ -671,7 +719,7 @@ def test_watcher_live_loop_timeout_resets_signature(qapp, monkeypatch):
 
 
 def test_watcher_start_suspends_standard_tasks_immediately(qapp):
-    """回归：挂起在 start 即生效（不等牌面检测），并清除两个标准任务的冷却污染。"""
+    """回归：挂起在 start 即生效（不等牌面检测），清除冷却污染并作废在途轮询。"""
     ocr_service = _FakeOcrService()
     watcher, _, _ = _make_watcher(SimpleNamespace(submit_ocr_task=None))
     watcher._ocr_service = ocr_service
@@ -681,12 +729,13 @@ def test_watcher_start_suspends_standard_tasks_immediately(qapp):
     assert ocr_service.get_task_state("hero_selection").active is False
     assert ocr_service.get_task_state("match_guide").active is False
     assert ocr_service.cleared_cooldowns == ["hero_selection", "match_guide"]
+    assert ocr_service.invalidated_polls == 1
     watcher.stop()
 
 
-def test_watcher_board_absent_restores_tasks_and_emits_board_exited(qapp):
-    """连续缺席达到阈值后恢复标准任务原状态并发出 board_exited。"""
-    ocr_service = _FakeOcrService()
+def test_watcher_board_absent_restores_match_guide_only(qapp):
+    """自动退出仅恢复 match_guide 原状态；hero_selection 整个会话保持挂起，停止才全量恢复。"""
+    ocr_service = _FakeOcrService(active_states={"match_guide": True})
     watcher, _, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=None))
     watcher._ocr_service = ocr_service
     exited: list[bool] = []
@@ -694,15 +743,93 @@ def test_watcher_board_absent_restores_tasks_and_emits_board_exited(qapp):
 
     watcher.start()
     assert ocr_service.get_task_state("hero_selection").active is False
+    assert ocr_service.get_task_state("match_guide").active is False
 
     watcher._handle_board_absent()  # 第一拍缺席：尚未退出
     assert exited == []
 
     watcher._handle_board_absent()
     assert exited == [True]
-    assert ocr_service.get_task_state("hero_selection").active is True  # 恢复原状态
+    assert ocr_service.get_task_state("hero_selection").active is False  # 方案一：保持挂起
+    assert ocr_service.get_task_state("match_guide").active is True      # 恢复原状态
     assert statuses[-1] == "未检测到巅峰赛选将页牌面"
+
     watcher.stop()
+    assert ocr_service.get_task_state("hero_selection").active is True
+    assert ocr_service.get_task_state("match_guide").active is True
+
+
+def test_watcher_live_loop_resuspends_on_board_reappear(qapp, monkeypatch):
+    """回归：缺席恢复后牌面重现时重新挂起标准任务（_do_work 调用点重武装）。"""
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: [(100 + i * 276, 247, 238, 326) for i in range(9)],
+    )
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(
+            [{"name": "荆轲", "resolution": "exact"}]
+        ),
+    )
+    ocr_service = _FakeOcrService()
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = ocr_service
+
+    watcher.start()
+    # 模拟上一局退出后主窗口衔接激活了 match_guide（方案一下 hero_selection 保持挂起）
+    ocr_service.activate_task("match_guide")
+
+    assert watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+
+    assert ocr_service.get_task_state("hero_selection").active is False
+    assert ocr_service.get_task_state("match_guide").active is False  # 牌面重现 → 重新挂起
+    assert len(pools) == 1
+
+
+def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):
+    """回归：浮动动画致签名假性翻转（布局跨桶位移）时人工确认按内容沿用不丢。"""
+    detect_results = [
+        [(100, 247, 238, 326)],   # 第一拍
+        [(108, 249, 239, 330)],   # 第二拍：位置跨桶位移（动画/重排），OCR 内容不变
+        [(116, 247, 238, 326)],   # 第三拍：内容真变（候选集换人）
+    ]
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: detect_results.pop(0),
+    )
+    ocr_results = [
+        [{"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀勖", "荀彧"]}],
+        [{"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀勖", "荀彧"]}],
+        [{"resolution": "unresolved", "raw_name": "荀或", "candidates": ["荀彧", "荀灌"]}],
+    ]
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(ocr_results.pop(0)),
+    )
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = _FakeOcrService()
+
+    assert watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+    watcher.confirm_pending(0, "荀勖")
+    assert watcher._resolutions == {0: "荀勖"}
+
+    # 第二拍签名翻转但内容未变：确认沿用，不再回到待确认
+    # （pools[1] 是 confirm_pending 的重发快照，pools[2] 才是第二拍产物）
+    watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+    assert watcher._resolutions == {0: "荀勖"}
+    assert pools[2].names == ("荀勖",)
+    assert pools[2].pending == ()
+
+    # 第三拍内容真变（候选集里没有荀勖）：确认失效
+    watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+    assert watcher._resolutions == {}
+    assert pools[-1].pending[0]["candidates"] == ["荀彧", "荀灌"]
 
 
 def test_watcher_manual_stop_does_not_emit_board_exited(qapp):

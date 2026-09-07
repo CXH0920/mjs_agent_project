@@ -87,6 +87,24 @@ def test_resume_poll_starts_new_generation() -> None:
     assert service.poll_state == "running"
 
 
+def test_invalidate_inflight_poll_cancels_session_and_resets_inflight_flag() -> None:
+    """作废在途轮询：代数递增、旧取消事件置位、在途标记复位，定时器不受影响。"""
+    _app()
+    service = OcrService()
+    service.start_poll(1_000)
+    old_generation = service.poll_generation
+    old_event = service.poll_cancel_event
+    service._poll_in_flight = True  # 模拟在途一轮尚未回写
+
+    service.invalidate_inflight_poll()
+
+    assert service.poll_generation == old_generation + 1
+    assert old_event.is_set()
+    assert not service.is_poll_cancelled(service.poll_generation)
+    assert service._poll_in_flight is False
+    assert service._poll_timer.isActive()
+
+
 def test_stop_poll_cancels_active_session() -> None:
     _app()
     service = OcrService()

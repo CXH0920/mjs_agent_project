@@ -1,8 +1,9 @@
 """巅峰赛（2v2）选将实时识别循环：截图 → 卡位检测 → 牌面变化才 OCR。
 
 与标准轮询并存：巅峰赛页与标准选将页共用"武将选择"标题模板，启动识别循环
-即挂起 hero_selection / match_guide 轮询任务避免互触，连续多拍未见牌面或
-停止后恢复原任务状态；自动退出另发 board_exited 供主窗口衔接对局攻略。
+即挂起标准轮询任务避免互触——hero_selection 整个会话保持挂起（停止识别才
+恢复），match_guide 牌面出现期间挂起、自动退出时恢复原状态并由主窗口衔接
+激活；自动退出另发 board_exited 供主窗口使用。
 """
 
 from __future__ import annotations
@@ -24,10 +25,12 @@ POLL_INTERVAL_MS = 1500
 OCR_WAIT_TIMEOUT_SECONDS = 15
 # 连续多拍未检出牌面才判定离开巅峰赛页，避免翻页动画误恢复标准任务
 BOARD_EXIT_TICKS = 2
-# 牌面签名量化步长：位置与尺寸分开量化，吸收卡位检测的像素级抖动，
-# 仅布局变化才触发 OCR
-SIGNATURE_POSITION_QUANTUM_PX = 4
-SIGNATURE_SIZE_QUANTUM_PX = 8
+# 牌面签名量化步长：候选阶段卡面带 idle 浮动动画，实测剪影 bbox 逐拍漂移
+# y ±3~4px、尺寸 ±5px（2026-09-06 日志实测），步长须覆盖 2 倍漂移幅度，
+# 否则签名逐拍翻转误判"新牌面"（清确认+全量 OCR）；真实换牌表现为卡数
+# 变化或整排重排（位移 ≥ 一个卡位宽），远超步长不会漏
+SIGNATURE_POSITION_QUANTUM_PX = 8
+SIGNATURE_SIZE_QUANTUM_PX = 16
 # 14 张为禁选阶段（双方尚未提交禁选），8~11 张为候选阶段
 _BAN_PHASE_MIN_CARDS = 12
 _STANDARD_POLL_TASKS = ("hero_selection", "match_guide")
@@ -88,6 +91,37 @@ def parse_pool(
     )
 
 
+def carry_over_resolutions(
+    old_resolutions: dict[int, str],
+    ocr_results: list[dict],
+) -> dict[int, str]:
+    """新牌面上按内容沿用人工确认：确认跟着武将走，不跟槽位走。
+
+    沿用判据与 parse_pool 的生效判据对齐（确认名仍在该槽候选集内才保留），
+    因此只可能保留仍然生效的确认：槽位未重排时原地保留，重排时迁移到内容
+    匹配的槽位，内容消失（换人/选走）的确认自然失效。候选集同时命中多个
+    已确认名的歧义槽位保守丢弃。
+    """
+    remaining = set(old_resolutions.values())
+    carried: dict[int, str] = {}
+    for slot, item in enumerate(ocr_results):
+        if item.get("resolution") not in _CONFIRM_RESOLUTIONS:
+            continue  # 已自动确认的槽位不接入人工确认
+        candidates = {str(c) for c in (item.get("candidates") or [])}
+        if not candidates:
+            continue
+        old_name = old_resolutions.get(slot)
+        if old_name in candidates:
+            carried[slot] = old_name
+            continue
+        hits = remaining & candidates
+        if len(hits) == 1:
+            name = next(iter(hits))
+            carried[slot] = name
+            remaining.discard(name)  # 同名不扩散到多个槽位
+    return carried
+
+
 def board_signature(cards: list[Roi]) -> tuple:
     """生成牌面布局签名：坐标全量量化，抖动不触发重复 OCR。"""
     return tuple(
@@ -146,6 +180,9 @@ class PeakSelectWatcher(QObject):
         self._suspend_standard_tasks()
         self._ocr_service.clear_task_cooldown("hero_selection")
         self._ocr_service.clear_task_cooldown("match_guide")
+        # 作废在途轮询：点击开始前已发出的那一轮会在挂起之后落地，
+        # 其冷却/激活/跳转副作用会对抗刚刚建立的挂起状态
+        self._ocr_service.invalidate_inflight_poll()
         self._timer.start()
 
     def stop(self) -> None:
@@ -178,11 +215,10 @@ class PeakSelectWatcher(QObject):
             self._miss_ticks = 0
             signature = board_signature(cards)
             with self._state_lock:
-                unchanged = signature == self._signature
-                if not unchanged:
-                    self._resolutions = {}  # 新牌面：人工确认不跨牌沿用
-            if unchanged:
-                return  # 牌面未变化，沿用上一次结果
+                if signature == self._signature:
+                    return  # 牌面未变化，沿用上一次结果
+            # 幂等：启动后的首牌面为空操作，缺席恢复后的重进牌面在此重新挂起
+            self._suspend_standard_tasks()
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
                 # 识别失败清签名，下一拍强制重试；仅实时循环路径，图片导入不动签名
@@ -191,6 +227,10 @@ class PeakSelectWatcher(QObject):
                 return
             with self._state_lock:
                 self._signature = signature
+                # 新牌面：人工确认按内容沿用而非清空——候选阶段浮动动画会让
+                # 签名假性翻转，无条件清空会反复丢确认；沿用基准取当前值，
+                # 覆盖 OCR 期间用户对新牌面 pending 的点击
+                self._resolutions = carry_over_resolutions(self._resolutions, ocr_results)
             self._publish_pool(ocr_results, len(cards))
         except Exception:
             logger.exception("巅峰赛识别循环异常")
@@ -283,16 +323,33 @@ class PeakSelectWatcher(QObject):
     # ── 标准轮询任务协调 ──────────────────────────────────────────────
 
     def _suspend_standard_tasks(self) -> None:
-        """启动识别循环时挂起标准轮询任务，记住原状态便于恢复。"""
-        if self._saved_task_states is not None:
-            return
-        self._saved_task_states = {name: self._ocr_service.get_task_state(name).active for name in _STANDARD_POLL_TASKS}
-        for name, active in self._saved_task_states.items():
-            if active:
+        """挂起当前活跃的标准轮询任务，可随牌面重现重复调用（幂等）。
+
+        hero_selection 整个识别会话保持挂起（巅峰模式内标准选将推荐不参与，
+        杜绝每局重进空窗期的垃圾轮询），仅停止识别时恢复；match_guide 牌面
+        出现期间挂起，自动退出时恢复原状态并由主窗口按轮询状态衔接激活。
+        """
+        if self._saved_task_states is None:
+            self._saved_task_states = {
+                name: self._ocr_service.get_task_state(name).active
+                for name in _STANDARD_POLL_TASKS
+            }
+        for name in _STANDARD_POLL_TASKS:
+            if self._ocr_service.get_task_state(name).active:
                 self._ocr_service.deactivate_task(name)
                 logger.debug("巅峰赛识别期间挂起轮询任务: %s", name)
 
+    def _restore_match_guide(self) -> None:
+        """牌面自动退出时仅恢复 match_guide 原状态；hero_selection 留待停止识别恢复。"""
+        if self._saved_task_states is None:
+            return
+        if self._saved_task_states["match_guide"]:
+            self._ocr_service.activate_task("match_guide")
+        else:
+            self._ocr_service.deactivate_task("match_guide")
+
     def _restore_standard_tasks(self) -> None:
+        """停止识别时恢复全部标准任务原状态。"""
         if self._saved_task_states is None:
             return
         for name, active in self._saved_task_states.items():
@@ -312,7 +369,7 @@ class PeakSelectWatcher(QObject):
                 self._ban_names = ()
                 self._resolutions = {}
         if exiting:
-            self._restore_standard_tasks()
+            self._restore_match_guide()
             # match_guide 的激活与跳转属界面策略，由主窗口的 board_exited 处理器完成
             self.board_exited.emit()
             self.status_changed.emit("未检测到巅峰赛选将页牌面")
