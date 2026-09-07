@@ -485,7 +485,7 @@ class OcrWorker(QThread):
         return all(
             patch.shape == other.shape
             and int(cv2.absdiff(patch, other).max()) <= PAGE_FINGERPRINT_TOLERANCE
-            for patch, other in zip(left, right)
+            for patch, other in zip(left, right, strict=True)
         )
 
     def _get_recognizer(
