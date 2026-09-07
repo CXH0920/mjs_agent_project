@@ -17,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.business.recognition import ocr_worker as _ocr_worker_module
 from src.ocr import character_feature_repository
+from src.scraper.ai import rag_prompt
 
 # 注销生产环境的退役 worker 进程退出钩子。该钩子在 xdist worker 子进程退出时会
 # 因 QThread 未及时结束而调用 os._exit(1) 杀掉整个进程，导致 xdist 报
@@ -61,6 +62,18 @@ def _disable_user_character_cache(monkeypatch) -> None:
 def _clear_ocr_retired_workers() -> None:
     """每个测试后清空退役 worker 列表，防止残留的未退出 QThread 在后续测试中累积。"""
     _ocr_worker_module._RETIRED_WORKERS.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rag_degraded_reason() -> None:
+    """每个测试前清空 rag_prompt.degraded_reason 模块全局。
+
+    CI 精简环境缺 RAG 依赖，走真实现的用例（如 test_build_guide_prompt）会把
+    ModuleNotFoundError 写入该全局且不消费；残留被同 xdist worker 后续生成循环
+    用例的 _report_rag_degradation 消费后多打一行降级提示，击穿
+    test_generation_loops 的 stdout 逐字符断言（时绿时红，取决于调度）。
+    """
+    rag_prompt.degraded_reason = None
 
 
 @pytest.fixture(scope="session")

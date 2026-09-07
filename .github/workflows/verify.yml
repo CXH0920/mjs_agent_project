@@ -44,11 +44,6 @@ jobs:
         shell: bash -l {0}
         env:
           QT_QPA_PLATFORM: offscreen
-          # CI 精简环境未装 RAG 依赖（sentence-transformers/chromadb），RAG 默认开启时
-          # build_rag_context 会把 ModuleNotFoundError 写入 rag_prompt.degraded_reason
-          # 模块全局，被同 xdist worker 后续用例消费，导致 test_generation_loops 的
-          # stdout 协议断言时绿时红；仅作用于 CI，本地 config.env 的 RAG_ENABLED=true 照常
-          RAG_ENABLED: "false"
         # --timeout-method=thread：默认 signal 方法打不断阻塞在 Qt/PySide6 C++ 层的
         # 用例（CI 曾在 92% 处僵死 30+ 分钟）；thread 方法超时后先 dump 全线程栈再
         # 强杀 worker，既能兜底又能留下死锁定位信息
