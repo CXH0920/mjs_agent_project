@@ -11,11 +11,12 @@ from datetime import date
 from pathlib import Path
 
 from src.business.rag.refinement_service import (
-    INDEX_FIELDS,
+    PENDING_FIELDS,
     PendingBlock,
     RefinementUpdate,
     apply_curated,
     clear_curated,
+    fields_for,
     scan_blocks,
 )
 
@@ -36,6 +37,10 @@ class RefinementSession:
         self._curated: list[PendingBlock] = blocks["curated"]  # 已精化（curated 块）
         self._normal: list[PendingBlock] = blocks["normal"]    # 普通块（字段已满，未精化）
         self._total = len(self._pending)  # 初始待精化总数（进度条分母，不随保存/跳过变化）
+        # 块类型字段集（card 2 字段 / skill 4 字段），collect_update 按其收集编辑器文本
+        self._fields_by_id: dict[str, tuple[str, ...]] = {
+            b.block_id: fields_for(b.kind)
+            for b in (*self._pending, *self._curated, *self._normal)}
         # 磁盘基线：block_id -> {field: 文本}，保存是否 no-op 与字段状态判定的依据
         self._saved_baseline: dict[str, dict[str, str]] = {}
         self._row_states: dict[str, str] = {}  # block_id -> 行状态
@@ -44,8 +49,9 @@ class RefinementSession:
         for block in self._normal:
             self._row_states[block.block_id] = "generated"
         for block in self._pending + self._curated + self._normal:
+            block_fields = self._fields_by_id[block.block_id]
             self._saved_baseline[block.block_id] = {
-                f: "\n".join(block.fields[f]) for f in INDEX_FIELDS}
+                f: "\n".join(block.fields[f]) for f in block_fields}
         self._llm_baseline: dict[str, dict[str, str]] = {}  # 本次会话 LLM 建议内容
         self._skipped_count = 0  # 跳过的条目数（进度文案区分 #34）
 
@@ -97,7 +103,8 @@ class RefinementSession:
 
     def note_suggested(self, block: PendingBlock, update: RefinementUpdate) -> None:
         """记录批量建议结果：写入 LLM 基线并置行状态（不回填编辑器）。"""
-        baseline = {field: "\n".join(getattr(update, field)) for field in INDEX_FIELDS}
+        baseline = {field: "\n".join(getattr(update, field))
+                    for field in fields_for(block.kind)}
         self._llm_baseline[block.block_id] = baseline
         self._row_states[block.block_id] = "suggested"
 
@@ -110,15 +117,9 @@ class RefinementSession:
         baseline = self._llm_baseline.get(block_id)
         if baseline is None:
             return None
-        values = {field: [line.strip() for line in baseline[field].splitlines() if line.strip()]
-                  for field in INDEX_FIELDS}
-        return RefinementUpdate(
-            timing=values["timing"],
-            trigger_condition=values["trigger_condition"],
-            keywords=values["keywords"],
-            related=values["related"],
-            method="llm",
-        )
+        values = {field: [line.strip() for line in text.splitlines() if line.strip()]
+                  for field, text in baseline.items()}
+        return RefinementUpdate(**values, method="llm")
 
     # ── 收集 / 保存 ──────────────────────────────────────────────────
 
@@ -126,16 +127,21 @@ class RefinementSession:
         """把字段文本收集为 RefinementUpdate；与磁盘基线一致（无改动）返回 None。
 
         method 判定沿用现状：与本次 LLM 建议完全一致 → llm，否则 manual。
+        texts 的键集合须与该块类型字段集一致（卡牌 2 键 / 武将技能 4 键），
+        由调用方（对话框）按 fields_for 收集。
 
         Args:
             block_id: 目标块 id；
-            texts: {field: 已 strip 的编辑器文本}，由调用方（对话框）收集。
+            texts: {field: 已 strip 的编辑器文本}。
         """
+        fields = self._fields_by_id.get(block_id)
+        if fields is None:
+            return None
         saved = self._saved_baseline.get(block_id, {})
         llm = self._llm_baseline.get(block_id)
         values: dict[str, list[str]] = {}
         changed = False
-        for field in INDEX_FIELDS:
+        for field in fields:
             text = texts[field]
             values[field] = [line.strip() for line in text.splitlines() if line.strip()]
             if text != saved.get(field, ""):
@@ -143,26 +149,27 @@ class RefinementSession:
         if not changed:
             return None
         if llm is not None:
-            modified = any(texts[f] != llm.get(f, "") for f in INDEX_FIELDS)
+            modified = any(texts[f] != llm.get(f, "") for f in fields)
             method = "manual" if modified else "llm"
         else:
             method = "manual"
         return RefinementUpdate(
-            timing=values["timing"],
-            trigger_condition=values["trigger_condition"],
-            keywords=values["keywords"],
-            related=values["related"],
+            timing=values.get("timing", []),
+            trigger_condition=values.get("trigger_condition", []),
+            target=values.get("target", []),
+            special_rules=values.get("special_rules", []),
             method=method,
         )
 
     def sync_saved(self, block: PendingBlock, update: RefinementUpdate) -> None:
         """保存成功后的内存同步：更新磁盘基线、行状态、列表归属（pending/normal → curated）。"""
-        baseline = {f: "\n".join(getattr(update, f)) for f in INDEX_FIELDS}
+        block_fields = fields_for(block.kind)
+        baseline = {f: "\n".join(getattr(update, f)) for f in block_fields}
         self._saved_baseline[block.block_id] = baseline
         self._llm_baseline.pop(block.block_id, None)
         self._row_states[block.block_id] = "refined"
-        block.fields = {f: list(getattr(update, f)) for f in INDEX_FIELDS}
-        block.missing = [f for f in INDEX_FIELDS if not block.fields[f]]
+        block.fields = {f: list(getattr(update, f)) for f in block_fields}
+        block.missing = [f for f in PENDING_FIELDS[block.kind] if not block.fields[f]]
         block.method = update.method
         block.updated_at = update.updated_at or date.today().isoformat()
         if any(b.block_id == block.block_id for b in self._pending):

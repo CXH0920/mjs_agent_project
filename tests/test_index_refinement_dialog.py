@@ -130,8 +130,6 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
-        keywords=["测试牌"],
-        related=[],
         method="llm",
     ))
     dialog._suggest_current()
@@ -139,13 +137,10 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
     block = dialog._current
     # 测试环境无事件循环（跨线程信号不投递）：同步驱动线程体与主线程回调
     dialog._controller.current_worker.run()
-    update = RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=["打出时"],
-        keywords=["测试牌"], related=[], method="llm",
-    )
+    update = RefinementUpdate(timing=["出牌阶段"], trigger_condition=["打出时"], method="llm")
     dialog._on_suggest_result(block, update, is_single=True)
     assert dialog._field_editors["timing"].toPlainText().strip() == "出牌阶段"
-    assert dialog._field_editors["keywords"].toPlainText().strip() == "测试牌"
+    assert dialog._field_editors["trigger_condition"].toPlainText().strip() == "打出时"
     assert dialog._current.block_id in dialog._llm_baseline
     dialog.close()
 
@@ -189,8 +184,6 @@ def test_save_all_writes_every_pending(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"],
         trigger_condition=["打出时"],
-        keywords=["测试牌"],
-        related=[],
         method="llm",
     ))
     _suggest_all_sync(dialog, monkeypatch)
@@ -258,12 +251,12 @@ def test_field_state_tracks_manual_edit(tmp_path: Path, monkeypatch) -> None:
     dialog._table.selectRow(0)
     _fake_generator(monkeypatch)
     monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
+        timing=["出牌阶段"], trigger_condition=[], method="llm"))
     dialog._suggest_current()
     block = dialog._current
     dialog._controller.current_worker.run()  # 同步驱动线程体（测试环境无事件循环）
     dialog._on_suggest_result(block, RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"),
+        timing=["出牌阶段"], trigger_condition=[], method="llm"),
         is_single=True)
     assert dialog._field_cards["timing"].property("fieldState") == "llm"
     assert dialog._field_badges["timing"].text() == "LLM 建议"
@@ -299,7 +292,7 @@ def test_suggest_all_finishes_and_empty_state(tmp_path: Path, monkeypatch) -> No
     dialog = IndexRefinementDialog(root)
     _fake_generator(monkeypatch)
     monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=["打出时"], keywords=["测试牌"], related=[], method="llm"))
+        timing=["出牌阶段"], trigger_condition=["打出时"], method="llm"))
     _suggest_all_sync(dialog, monkeypatch)
     assert all(dialog._row_states[block.block_id] == "suggested" for block in dialog._pending)
     # 批量结束后按钮必须恢复可用（曾因 controller 提前复位 _running 使收尾槽
@@ -443,7 +436,7 @@ def test_save_all_groups_writes_by_corpus_file(tmp_path: Path, monkeypatch) -> N
     dialog = IndexRefinementDialog(root)
     _fake_generator(monkeypatch)
     monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=[], keywords=[], related=[], method="llm"))
+        timing=["出牌阶段"], trigger_condition=[], method="llm"))
     _suggest_all_sync(dialog, monkeypatch)
     assert len(dialog._llm_baseline) == 2
 
@@ -483,7 +476,7 @@ def test_suggest_result_dropped_for_skipped_block(tmp_path: Path, monkeypatch) -
     assert skipped.block_id not in dialog._row_states
 
     late_update = RefinementUpdate(
-        timing=["x"], trigger_condition=[], keywords=[], related=[], method="llm")
+        timing=["x"], trigger_condition=[], method="llm")
     controller._on_result_ready(skipped, late_update)
 
     assert skipped.block_id not in dialog._llm_baseline
@@ -549,12 +542,34 @@ def test_collect_update_method_llm_manual_and_no_baseline(tmp_path: Path) -> Non
     dialog._field_editors["timing"].setPlainText("出牌阶段")
     assert dialog._collect_update().method == "manual"  # 无 LLM 基线
 
-    dialog._llm_baseline[block_id] = {
-        "timing": "出牌阶段", "trigger_condition": "", "keywords": "", "related": ""}
+    dialog._llm_baseline[block_id] = {"timing": "出牌阶段", "trigger_condition": ""}
     assert dialog._collect_update().method == "llm"  # 与建议逐字一致
 
-    dialog._field_editors["keywords"].setPlainText("测试牌")
+    dialog._field_editors["trigger_condition"].setPlainText("偏离建议")
     assert dialog._collect_update().method == "manual"  # 偏离建议
+    dialog.close()
+
+
+def test_card_block_disables_non_applicable_fields(tmp_path: Path) -> None:
+    """卡牌块没有 target/special_rules 字段：编辑器置灰、提示"卡牌块无此字段"、徽标 —。
+
+    武将技能块 4 张卡片全部可用（字段按块类型启用）。
+    """
+    _app()
+    root = _dual_file_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)
+    assert dialog._current.kind == "card"
+    assert not dialog._field_editors["target"].isEnabled()
+    assert dialog._field_editors["target"].placeholderText() == dialog_module._NOT_APPLICABLE_HINT
+    assert dialog._field_badges["target"].text() == "—"
+    assert dialog._field_editors["special_rules"].placeholderText() == dialog_module._NOT_APPLICABLE_HINT
+    # 切到武将技能块：target/special_rules 恢复可用与常规提示
+    dialog._table.selectRow(1)
+    assert dialog._current.kind == "skill"
+    assert dialog._field_editors["target"].isEnabled()
+    assert dialog._field_editors["special_rules"].isEnabled()
+    assert dialog._field_editors["target"].placeholderText() != dialog_module._NOT_APPLICABLE_HINT
     dialog.close()
 
 

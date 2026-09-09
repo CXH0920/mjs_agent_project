@@ -42,8 +42,10 @@ def _norm_hero(blocks):
                     f'技能：{b.get("skill", "")}\n'
                     f'时机：{"、".join(b.get("timing", []))}\n'
                     f'触发条件：{"；".join(b.get("trigger_condition", []))}\n'
+                    f'影响对象：{"、".join(b.get("target", []))}\n'
                     f'描述：{b.get("description", "")}\n'
-                    f'结算：{b.get("settlement", "")}')
+                    f'结算：{b.get("settlement", "")}\n'
+                    f'结算边界：{"；".join(b.get("special_rules", []))}')
             meta['skill'] = b.get('skill', '')
         out.append((bid, text.strip(), meta))
     return out
@@ -55,6 +57,8 @@ def _norm_card(blocks):
         bid = b.get('block_id', '')
         name = bid.split('_', 2)[-1] if '_' in bid else ''
         text = (f'【卡牌】{name}（{b.get("card_type", "")}）x{b.get("card_amount", "")}\n'
+                f'时机：{"、".join(b.get("timing", []))}\n'
+                f'触发条件：{"；".join(b.get("trigger_condition", []))}\n'
                 f'效果：{b.get("effect", "")}\n'
                 f'细则：{b.get("effect_detail", "")}')
         out.append((bid, text.strip(), {'block_id': bid, 'kind': 'card', 'card': name,

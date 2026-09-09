@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 from src.business.rag import refinement_session as session_module
-from src.business.rag.refinement_service import RefinementUpdate
+from src.business.rag.refinement_service import CARD_FIELDS, RefinementUpdate
 from src.business.rag.refinement_session import RefinementSession
 
-FIELDS = ("timing", "trigger_condition", "keywords", "related")
+FIELDS = CARD_FIELDS  # 本文件主语料是卡牌块（2 字段）；武将技能块为 4 字段见文末用例
 
 
 def _write(path: Path, payload: object) -> None:
@@ -49,7 +49,7 @@ def _curated_corpus(tmp_path: Path) -> Path:
 
 
 def _update(**overrides) -> RefinementUpdate:
-    fields = {"timing": ["出牌阶段"], "trigger_condition": [], "keywords": [], "related": [],
+    fields = {"timing": ["出牌阶段"], "trigger_condition": [], "target": [], "special_rules": [],
               "method": "llm"}
     fields.update(overrides)
     return RefinementUpdate(**fields)
@@ -84,8 +84,8 @@ def test_collect_update_method_judgement(tmp_path: Path) -> None:
     session.record_llm_baseline(bid, dict(empty_texts, timing="出牌阶段"))
     assert session.collect_update(bid, texts).method == "llm"
 
-    # 偏离建议 → manual
-    assert session.collect_update(bid, dict(texts, keywords="测试牌")).method == "manual"
+    # 偏离建议 → manual（在块类型字段集内的任一字段偏离都算修改）
+    assert session.collect_update(bid, dict(texts, trigger_condition="偏离")).method == "manual"
 
 
 def test_baseline_update_restores_llm_suggestion(tmp_path: Path) -> None:
@@ -94,12 +94,28 @@ def test_baseline_update_restores_llm_suggestion(tmp_path: Path) -> None:
 
     session.record_llm_baseline(
         "card_1_测试牌",
-        {"timing": "出牌阶段\n弃牌阶段", "trigger_condition": "", "keywords": "", "related": ""})
+        {"timing": "出牌阶段\n弃牌阶段", "trigger_condition": ""})
     update = session.baseline_update("card_1_测试牌")
 
     assert update is not None
     assert update.timing == ["出牌阶段", "弃牌阶段"]
     assert update.method == "llm"
+
+
+def test_collect_update_uses_skill_field_set(tmp_path: Path) -> None:
+    """武将技能块（4 字段）：target/special_rules 参与 texts 收集与 method 判定。"""
+    session = RefinementSession(_corpus(tmp_path))
+    bid = "hero_1_甲"
+    empty_texts = {f: "" for f in ("timing", "trigger_condition", "target", "special_rules")}
+
+    assert session.collect_update(bid, dict(empty_texts)) is None  # 无改动
+
+    update = session.collect_update(
+        bid, dict(empty_texts, timing="回合开始时", target="一名其他角色"))
+    assert update is not None
+    assert update.timing == ["回合开始时"]
+    assert update.target == ["一名其他角色"]
+    assert update.method == "manual"  # 无 LLM 基线
 
 
 def test_sync_saved_migrates_pending_to_curated(tmp_path: Path) -> None:

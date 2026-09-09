@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""索引精化对话框：补全卡牌/武将语料的索引字段（timing/trigger_condition/keywords/related）。
+"""索引精化对话框：补全卡牌/武将语料的索引字段（timing/trigger_condition/target/special_rules）。
+
+keywords/related 为规则自动生成的只读字段，不在此精化。卡牌块只有 timing/trigger_condition
+两张可用卡片，target/special_rules 置灰提示"卡牌块无此字段"。
 
 流程：待精化清单 -> LLM 建议（可编辑）-> 保存写回 curated；人工修改过的记录 method=manual。
 
@@ -34,10 +37,11 @@ from PySide6.QtWidgets import (
 )
 from src.business.rag.refinement_service import (
     DEFAULT_CORPUS_DIR,
-    INDEX_FIELDS,
+    HERO_FIELDS,
     PendingBlock,
     RefinementUpdate,
     build_generator,
+    fields_for,
 )
 from src.business.rag.refinement_session import RefinementSession
 from src.business.rag.suggest_controller import SuggestController
@@ -65,16 +69,20 @@ logger = logging.getLogger("index_refinement")
 _FIELD_LABELS = {
     "timing": "时机",
     "trigger_condition": "触发条件",
-    "keywords": "关键词",
-    "related": "关联",
+    "target": "影响对象",
+    "special_rules": "结算边界",
 }
 
 _FIELD_HINTS = {
-    "timing": "每行一个值，如：出牌阶段、回合开始时",
-    "trigger_condition": "每行一个值，如：打出时",
-    "keywords": "每行一个值，检索用",
-    "related": "每行一个值，如：卡牌:诸葛连弩、规则:时机-回合开始",
+    "timing": "每行一个时机锚点，如：出牌阶段、其他角色的回合结束时、常驻被动",
+    "trigger_condition": "每行一个完整触发情形（时机+前提+次数写成一句话，前提交集用“且”，"
+                         "多个触发器分多行），如：出牌阶段结束时，且你本回合未发动过技能；"
+                         "常驻技能写：常驻生效",
+    "target": "每行一个影响对象，如：一名其他角色、所有角色",
+    "special_rules": "每行一条结算边界，只压缩结算说明原文，如：被封禁时首次达到条件仍算已达成",
 }
+
+_NOT_APPLICABLE_HINT = "卡牌块无此字段"
 
 # 字段卡片状态：空 / LLM 建议 / 已精化（磁盘已有内容）/ 人工修改
 _FIELD_STATE_LABELS = {"empty": "待填写", "llm": "LLM 建议", "saved": "已精化", "manual": "已修改"}
@@ -375,7 +383,7 @@ class IndexRefinementDialog(QDialog):
         return card
 
     def _build_fields_pane(self) -> QWidget:
-        """字段编辑区：4 个状态卡片纵向均分，提示词移入输入框 placeholder 减密。"""
+        """字段编辑区：4 个状态卡片纵向均分（全字段集，卡牌块不适用字段动态置灰）。"""
         pane = QWidget()
         pane_layout = QVBoxLayout(pane)
         pane_layout.setContentsMargins(0, 0, 0, 0)
@@ -383,7 +391,7 @@ class IndexRefinementDialog(QDialog):
         self._field_editors: dict[str, QPlainTextEdit] = {}
         self._field_cards: dict[str, QFrame] = {}
         self._field_badges: dict[str, StatusBadge] = {}
-        for field in INDEX_FIELDS:
+        for field in HERO_FIELDS:
             pane_layout.addWidget(self._build_field_card(field), 1)
         return pane
 
@@ -528,14 +536,27 @@ class IndexRefinementDialog(QDialog):
         self._block_id_label.setText(block.block_id)
         self._source_view.setPlainText(block.text)
         baseline = self._llm_baseline.get(block.block_id, {})
-        for field in INDEX_FIELDS:
+        block_fields = fields_for(block.kind)
+        for field in HERO_FIELDS:
             editor = self._field_editors[field]
             editor.blockSignals(True)
-            # 已生成过 LLM 建议的块切回时还原建议内容，避免丢失
-            editor.setPlainText(baseline.get(field) or "\n".join(block.fields[field]))
+            if field in block_fields:
+                # 已生成过 LLM 建议的块切回时还原建议内容，避免丢失
+                editor.setPlainText(baseline.get(field) or "\n".join(block.fields.get(field, [])))
+            else:
+                editor.setPlainText("")
             editor.blockSignals(False)
+        self._apply_field_availability(block_fields)
         self._refresh_field_states()
         self._update_overview()
+
+    def _apply_field_availability(self, block_fields: tuple[str, ...]) -> None:
+        """卡牌块没有 target/special_rules 字段：对应编辑器置灰并提示（保存时也不收集）。"""
+        for field in HERO_FIELDS:
+            applicable = field in block_fields
+            editor = self._field_editors[field]
+            editor.setEnabled(applicable)
+            editor.setPlaceholderText(_FIELD_HINTS[field] if applicable else _NOT_APPLICABLE_HINT)
 
     def _clear_editor(self) -> None:
         self._current = None
@@ -546,11 +567,13 @@ class IndexRefinementDialog(QDialog):
         self._missing_badge.setVisible(False)
         self._block_id_label.setText("")
         self._source_view.clear()
-        for field in INDEX_FIELDS:
+        for field in HERO_FIELDS:
             editor = self._field_editors[field]
             editor.blockSignals(True)
             editor.clear()
             editor.blockSignals(False)
+            editor.setEnabled(True)
+            editor.setPlaceholderText(_FIELD_HINTS[field])
         self._refresh_field_states()
         self._update_overview()
 
@@ -573,14 +596,21 @@ class IndexRefinementDialog(QDialog):
 
     def _refresh_field_states(self) -> None:
         if self._current is None:
-            for field in INDEX_FIELDS:
+            for field in HERO_FIELDS:
                 self._field_badges[field].setText(_FIELD_STATE_LABELS["empty"])
                 self._field_badges[field].set_tone(TONE_NEUTRAL)
                 set_style_property(self._field_cards[field], "fieldState", "empty")
             self._dirty = False
             return
-        states = {field: self._field_state(field) for field in INDEX_FIELDS}
-        for field, state in states.items():
+        block_fields = fields_for(self._current.kind)
+        states = {field: self._field_state(field) for field in block_fields}
+        for field in HERO_FIELDS:
+            state = states.get(field)
+            if state is None:  # 卡牌块不适用字段（编辑器已置灰）
+                self._field_badges[field].setText("—")
+                self._field_badges[field].set_tone(TONE_NEUTRAL)
+                set_style_property(self._field_cards[field], "fieldState", "empty")
+                continue
             self._field_badges[field].setText(_FIELD_STATE_LABELS[state])
             self._field_badges[field].set_tone(_FIELD_STATE_TONES[state])
             set_style_property(self._field_cards[field], "fieldState", state)
@@ -685,7 +715,7 @@ class IndexRefinementDialog(QDialog):
         if self._current is None or self._current.block_id != block.block_id:
             return
         baseline: dict[str, str] = {}
-        for field in INDEX_FIELDS:
+        for field in fields_for(block.kind):
             value = getattr(update, field)
             text = "\n".join(value)
             editor = self._field_editors[field]
@@ -783,8 +813,9 @@ class IndexRefinementDialog(QDialog):
         """
         if self._current is None:
             return None
+        fields = fields_for(self._current.kind)
         texts = {field: self._field_editors[field].toPlainText().strip()
-                 for field in INDEX_FIELDS}
+                 for field in fields}
         return self._session.collect_update(self._current.block_id, texts)
 
     def _save_current(self) -> None:
@@ -830,7 +861,7 @@ class IndexRefinementDialog(QDialog):
                 # 批量建议不回填当前块编辑器：编辑器未动但已有 LLM 建议时，
                 # 当前块与其余块同样采用建议，否则当前块的建议会被静默跳过
                 update = self._session.baseline_update(block.block_id)
-            if update is None or not any(getattr(update, field) for field in INDEX_FIELDS):
+            if update is None or not any(getattr(update, field) for field in fields_for(block.kind)):
                 skipped += 1
                 continue
             updates_by_file.setdefault(block.corpus, {})[block.block_id] = update

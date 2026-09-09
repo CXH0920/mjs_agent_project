@@ -97,6 +97,25 @@ def test_norm_combo_omits_optional_fields_when_absent() -> None:
     assert "bv" not in meta and "source_md" not in meta
 
 
+def test_norm_hero_and_card_embed_logic_fields() -> None:
+    """逻辑层字段进入向量文本：技能块拼影响对象/结算边界，卡牌块拼时机/触发条件。"""
+    _, hero_text, _ = indexer._norm_hero([{
+        "block_id": "hero_a_skill_甲", "hero": "甲", "faction": "魏", "position": "攻击",
+        "skill": "甲技", "timing": ["回合开始时"], "trigger_condition": ["受到伤害后"],
+        "target": ["一名其他角色"], "special_rules": ["封禁状态下不生效"],
+        "description": "描述", "settlement": "结算",
+    }])[0]
+    assert "影响对象：一名其他角色" in hero_text
+    assert "结算边界：封禁状态下不生效" in hero_text
+
+    _, card_text, _ = indexer._norm_card([{
+        "block_id": "card_1_杀", "card_type": "基本牌", "card_amount": "x",
+        "timing": ["出牌阶段"], "trigger_condition": ["使用时"], "effect": "造成伤害",
+    }])[0]
+    assert "时机：出牌阶段" in card_text
+    assert "触发条件：使用时" in card_text
+
+
 def test_norm_guide_tags_single_hero_for_generation_recall() -> None:
     bid, text, meta = indexer._norm_guide([
         {"block_id": "g_1", "hero": "曹操", "section": "定位", "text": "肉盾"},
