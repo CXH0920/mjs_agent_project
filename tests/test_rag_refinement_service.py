@@ -254,6 +254,17 @@ def test_merge_curated_preserves_refinement(tmp_path: Path) -> None:
     assert blocks[0]["keywords"] == ["新抽取词"]
 
 
+def test_card_block_name_from_block_id(tmp_path: Path) -> None:
+    """卡牌块无名称字段：名称从 block_id 取卡名段（card_{id}_{卡名}），不再裸显 block_id。"""
+    root = tmp_path / "rag_corpus"
+    _write(root / "卡牌RAG语料.json", [
+        {"block_id": "card_22_轩辕剑", "card_type": "装备牌", "card_amount": "1",
+         "timing": ["回合开始"], "trigger_condition": ["装备时"],
+         "effect": "效果", "effect_detail": ""},
+    ])
+    assert list_normal(root)[0].name == "轩辕剑"
+
+
 def test_scan_blocks_classifies_three_ways(tmp_path: Path) -> None:
     root = _corpus(tmp_path)
     blocks = scan_blocks(root)

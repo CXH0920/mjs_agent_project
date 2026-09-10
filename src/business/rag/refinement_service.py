@@ -134,7 +134,12 @@ def _to_block(kind: str, block: dict, fields: dict[str, list[str]],
               method: str = "", updated_at: str = "") -> PendingBlock:
     """从语料块构建 PendingBlock 视图（名称/原文/缺失字段统一推导）。"""
     name = str(block.get("skill") or block.get("name") or block.get("card")
-               or block.get("hero") or block["block_id"])
+               or block.get("hero") or "")
+    if not name and kind == "card":
+        # 卡牌块无名称字段：block_id 形如 card_{id}_{卡名}，取卡名段（与 indexer 派生一致）
+        name = str(block["block_id"]).split("_", 2)[-1]
+    if not name:
+        name = str(block["block_id"])
     missing = [f for f in PENDING_FIELDS[kind] if not fields[f]]
     return PendingBlock(
         corpus="卡牌RAG语料.json" if kind == "card" else "武将RAG语料.json",

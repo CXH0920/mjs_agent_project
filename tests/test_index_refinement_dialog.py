@@ -217,8 +217,8 @@ def test_filter_filters_rows(tmp_path: Path) -> None:
     dialog._search_edit.setText("半空")
     dialog._apply_filter()  # 搜索带防抖（250ms），测试环境无事件循环需手动触发
     assert dialog._table.rowCount() == 1
-    # 语料块无 name 字段时名称回退为 block_id
-    assert dialog._table.item(0, 1).text() == "card_2_半空牌"
+    # 卡牌块无名称字段时从 block_id 取卡名段（card_2_半空牌 → 半空牌）
+    assert dialog._table.item(0, 1).text() == "半空牌"
     dialog._search_edit.setText("")
     dialog._apply_filter()
     assert dialog._table.rowCount() == 2
@@ -315,7 +315,7 @@ def test_scope_filter_switches_lists(tmp_path: Path) -> None:
     assert dialog._table.rowCount() == 1  # 默认待精化范围
     _click_scope(dialog, "已精化")
     assert dialog._table.rowCount() == 1
-    assert dialog._table.item(0, 1).text() == "card_3_已精化"
+    assert dialog._table.item(0, 1).text() == "已精化"  # 名称取 block_id 卡名段
     assert dialog._table.item(0, 2).text() == "LLM · 2026-08-14"
     _click_scope(dialog, "全部")
     assert dialog._table.rowCount() == 3
@@ -547,6 +547,34 @@ def test_collect_update_method_llm_manual_and_no_baseline(tmp_path: Path) -> Non
 
     dialog._field_editors["trigger_condition"].setPlainText("偏离建议")
     assert dialog._collect_update().method == "manual"  # 偏离建议
+    dialog.close()
+
+
+def test_save_current_selects_next_row(tmp_path: Path) -> None:
+    """保存后定位到原位置（下一条顺位补上），不跳回全局第一条（连续编辑流）。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)  # card_1_测试牌
+    dialog._field_editors["timing"].setPlainText("出牌阶段")
+    dialog._save_current()
+    # card_1 保存后移出待精化清单，原位置由 card_2 补上并自动选中
+    assert dialog._table.rowCount() == 1
+    assert dialog._current is not None and dialog._current.block_id == "card_2_半空牌"
+    assert dialog._table.currentRow() == 0
+    dialog.close()
+
+
+def test_save_curated_stays_on_same_row(tmp_path: Path) -> None:
+    """已精化范围保存后块仍在清单：定位回原块而非跳转。"""
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _click_scope(dialog, "已精化")
+    dialog._field_editors["timing"].setPlainText("回合开始时")
+    dialog._save_current()
+    assert any(b.block_id == "card_3_已精化" for b in dialog._curated)
+    assert dialog._current is not None and dialog._current.block_id == "card_3_已精化"
     dialog.close()
 
 

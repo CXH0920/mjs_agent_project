@@ -263,13 +263,15 @@ class IndexRefinementDialog(QDialog):
         self._table.setObjectName("indexRefineTable")
         self._table.setHorizontalHeaderLabels(["语料", "名称", "说明", "状态"])
         # 固定列宽而非 ResizeToContents：大清单（全部范围 470+ 行）下逐行 sizeHint 计算会卡 UI
+        # 三列固定宽合计 320px，为名称列（Stretch）留出可读宽度——名称列被挤到 <40px 时
+        # 文本省略成"…"，看起来像一列未定义的占位符
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(0, 60)
+        self._table.setColumnWidth(0, 50)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(2, 210)
+        self._table.setColumnWidth(2, 170)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(3, 130)
+        self._table.setColumnWidth(3, 100)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -519,6 +521,16 @@ class IndexRefinementDialog(QDialog):
                 return
         self._current = block
         self._load_current(block)
+
+    def _select_visible_row(self, row: int) -> None:
+        """选中清单指定行；目标行与当前行相同（selectRow 不发信号）时直接加载。"""
+        row = max(0, min(row, len(self._visible) - 1))
+        if row == self._table.currentRow():
+            block = self._visible[row]
+            self._current = block
+            self._load_current(block)
+        else:
+            self._table.selectRow(row)
 
     def _load_current(self, block: PendingBlock) -> None:
         self._editor_title.setText(block.name)
@@ -826,6 +838,8 @@ class IndexRefinementDialog(QDialog):
             show_toast(self, "无修改，未保存")
             return
         block = self._current
+        saved_row = next((i for i, visible in enumerate(self._visible)
+                          if visible.block_id == block.block_id), 0)
         _, errors = self._session.apply_updates({block.corpus: {block.block_id: update}})
         if errors:
             QMessageBox.critical(self, "保存失败", errors[block.corpus])
@@ -834,6 +848,13 @@ class IndexRefinementDialog(QDialog):
         self._dirty = False
         self._current = None
         self._refresh_table()
+        # 保存后定位：原块仍在清单（已精化/全部范围）回到原块；
+        # 已移出清单（待精化范围）选中原位置——下一条顺位补上，连续编辑不跳回首行
+        if self._visible:
+            same = next((i for i, visible in enumerate(self._visible)
+                         if visible.block_id == block.block_id), None)
+            row = same if same is not None else min(saved_row, len(self._visible) - 1)
+            self._select_visible_row(row)
         show_toast(self, f"已保存「{block.name}」（{update.method}）")
 
     def _save_all(self) -> None:
