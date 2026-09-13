@@ -1,0 +1,7637 @@
+[
+ {
+  "block_id": "combo_主父偃_陈宫",
+  "hero_a": "主父偃",
+  "hero_b": "陈宫",
+  "highlight": "相互递牌增伤陷害",
+  "bv": "BV1VLbr6LESX",
+  "pub_date": "2026-08-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:主父偃",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_曹仁_郑国",
+  "hero_a": "曹仁",
+  "hero_b": "郑国",
+  "highlight": "双塞答辩组合",
+  "bv": "BV1oobe6AE5p",
+  "pub_date": "2026-08-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹仁",
+   "武将:郑国"
+  ]
+ },
+ {
+  "block_id": "combo_张骞_羊献容",
+  "hero_a": "张骞",
+  "hero_b": "羊献容",
+  "highlight": "三倍丝绸之路凿烂西域",
+  "bv": "BV1cJbQ6pEnt",
+  "pub_date": "2026-08-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张骞",
+   "武将:羊献容"
+  ]
+ },
+ {
+  "block_id": "combo_张梁_羊献容",
+  "hero_a": "张梁",
+  "hero_b": "羊献容",
+  "highlight": "六打二群殴组合",
+  "bv": "BV1KGbk6TEYZ",
+  "pub_date": "2026-08-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张梁",
+   "武将:羊献容"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_平阳公主",
+  "hero_a": "孙权",
+  "hero_b": "平阳公主",
+  "highlight": "劝学空城补满组合",
+  "bv": "BV1SAur69EwJ",
+  "pub_date": "2026-08-14",
+  "mechanism": "配合逻辑：通过劝学励士把牌全部交过去，轻松打空",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_赵姬_魏咎",
+  "hero_a": "赵姬",
+  "hero_b": "魏咎",
+  "highlight": "合成大魏王（赵姬技能弃牌魏咎联动获得义兵牌）",
+  "bv": "BV1bNur6WEqB",
+  "pub_date": "2026-08-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵姬",
+   "武将:魏咎"
+  ]
+ },
+ {
+  "block_id": "combo_张春华_赵婕妤",
+  "hero_a": "张春华",
+  "hero_b": "赵婕妤",
+  "highlight": "玉钩无限蹭牌回血组合",
+  "bv": "BV1UNur6pEjY",
+  "pub_date": "2026-08-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张春华",
+   "武将:赵婕妤"
+  ]
+ },
+ {
+  "block_id": "combo_甄宓_赵奢",
+  "hero_a": "甄宓",
+  "hero_b": "赵奢",
+  "highlight": "狭路相逢刷牌组合",
+  "bv": "BV1fvui64E1D",
+  "pub_date": "2026-08-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:甄宓",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_杜预_郑袖",
+  "hero_a": "杜预",
+  "hero_b": "郑袖",
+  "highlight": "肘击杜武库组合（短线作战，主要是快速使用杜预的\"杜武库\"）",
+  "bv": "BV1GGuS6DELi",
+  "pub_date": "2026-08-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:杜预",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_徐盛",
+  "hero_a": "巴清",
+  "hero_b": "徐盛",
+  "highlight": "丹砂无限扭装备组合",
+  "bv": "BV1q3uh6BEAE",
+  "pub_date": "2026-08-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:徐盛"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_山涛",
+  "hero_a": "周勃",
+  "hero_b": "山涛",
+  "highlight": "醉翁补天阵（周勃配合山涛技能给山涛刷牌，然后自己开削平诸吕）",
+  "bv": "BV1yXu86DERk",
+  "pub_date": "2026-08-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:山涛"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_李牧",
+  "hero_a": "吕布",
+  "hero_b": "李牧",
+  "highlight": "无限溅射出杀组合",
+  "bv": "BV1H9ut63EDA",
+  "pub_date": "2026-08-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:李牧"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_王戎",
+  "hero_a": "巴清",
+  "hero_b": "王戎",
+  "highlight": "一牌N用组合",
+  "bv": "BV1eBun6gEyg",
+  "pub_date": "2026-08-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:王戎"
+  ]
+ },
+ {
+  "block_id": "combo_徐盛_赵威后",
+  "hero_a": "徐盛",
+  "hero_b": "赵威后",
+  "highlight": "盖牌陷害组合",
+  "bv": "BV1CtMr6CE6m",
+  "pub_date": "2026-08-05",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:徐盛",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_主父偃_王元姬",
+  "hero_a": "主父偃",
+  "hero_b": "王元姬",
+  "highlight": "三倍徙豪茂陵组合",
+  "bv": "BV1AgM96yEXH",
+  "pub_date": "2026-08-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:主父偃",
+   "武将:王元姬"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_终军",
+  "hero_a": "大乔",
+  "hero_b": "终军",
+  "highlight": "出伤拆牌双效组合",
+  "bv": "BV1G9MX64EEk",
+  "pub_date": "2026-08-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:终军"
+  ]
+ },
+ {
+  "block_id": "combo_吕不韦_马钧",
+  "hero_a": "吕不韦",
+  "hero_b": "马钧",
+  "highlight": "装备包养马钧",
+  "bv": "BV19WGg6SE2c",
+  "pub_date": "2026-08-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕不韦",
+   "武将:马钧"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_马钧",
+  "hero_a": "夏侯惇",
+  "hero_b": "马钧",
+  "highlight": "装备包养马钧",
+  "bv": "BV19WGg6SE2c",
+  "pub_date": "2026-08-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:马钧"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_赵奢",
+  "hero_a": "吕布",
+  "hero_b": "赵奢",
+  "highlight": "溅射出杀组合",
+  "bv": "BV1niGw66Efp",
+  "pub_date": "2026-07-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_终军",
+  "hero_a": "卫子夫",
+  "hero_b": "终军",
+  "highlight": "递牌爆发刷牌组合",
+  "bv": "BV1V4346fEWK",
+  "pub_date": "2026-07-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:终军"
+  ]
+ },
+ {
+  "block_id": "combo_张郃_霍光",
+  "hero_a": "张郃",
+  "hero_b": "霍光",
+  "highlight": "以0嫖多组合2.0（主动空手，霍光开限定）",
+  "bv": "BV1rq3r6EEbB",
+  "pub_date": "2026-07-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张郃",
+   "武将:霍光"
+  ]
+ },
+ {
+  "block_id": "combo_霍光_韩信",
+  "hero_a": "霍光",
+  "hero_b": "韩信",
+  "highlight": "以0嫖多组合2.0（主动空手，霍光开限定）",
+  "bv": "BV1rq3r6EEbB",
+  "pub_date": "2026-07-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:霍光",
+   "武将:韩信"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_韩安国",
+  "hero_a": "夏侯惇",
+  "hero_b": "韩安国",
+  "highlight": "全额递牌与刷牌组合",
+  "bv": "BV1q93e6WEeZ",
+  "pub_date": "2026-07-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:韩安国"
+  ]
+ },
+ {
+  "block_id": "combo_赵奢_韩娥",
+  "hero_a": "赵奢",
+  "hero_b": "韩娥",
+  "highlight": "狭路相逢肘击队友组合",
+  "bv": "BV13KKP6LEpF",
+  "pub_date": "2026-07-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵奢",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_赵奢_陈宫",
+  "hero_a": "赵奢",
+  "hero_b": "陈宫",
+  "highlight": "狭路相逢肘击队友组合",
+  "bv": "BV13KKP6LEpF",
+  "pub_date": "2026-07-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵奢",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_王异",
+  "hero_a": "卫子夫",
+  "hero_b": "王异",
+  "highlight": "瞬间启动的刷牌组合2.0",
+  "bv": "BV1aTKP61EKE",
+  "pub_date": "2026-07-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_典韦_步练师",
+  "hero_a": "典韦",
+  "hero_b": "步练师",
+  "highlight": "自残暴击组合",
+  "bv": "BV1JaKP6bErN",
+  "pub_date": "2026-07-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:典韦",
+   "武将:步练师"
+  ]
+ },
+ {
+  "block_id": "combo_侯嬴_孙尚香",
+  "hero_a": "侯嬴",
+  "hero_b": "孙尚香",
+  "highlight": "装备大师组合",
+  "bv": "BV1HtKP6wE3H",
+  "pub_date": "2026-07-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:侯嬴",
+   "武将:孙尚香"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_鲁仲连",
+  "hero_a": "刘邦",
+  "hero_b": "鲁仲连",
+  "highlight": "稳定大风歌补牌组合",
+  "bv": "BV1wbKP6aEgk",
+  "pub_date": "2026-07-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:鲁仲连"
+  ]
+ },
+ {
+  "block_id": "combo_刘禅_白起",
+  "hero_a": "刘禅",
+  "hero_b": "白起",
+  "highlight": "刘禅辅助菜刀爆发",
+  "bv": "BV17iKP6dEBu",
+  "pub_date": "2026-07-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘禅",
+   "武将:白起"
+  ]
+ },
+ {
+  "block_id": "combo_刘禅_霍去病",
+  "hero_a": "刘禅",
+  "hero_b": "霍去病",
+  "highlight": "刘禅辅助菜刀爆发",
+  "bv": "BV17iKP6dEBu",
+  "pub_date": "2026-07-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘禅",
+   "武将:霍去病"
+  ]
+ },
+ {
+  "block_id": "combo_刘禅_朱亥",
+  "hero_a": "刘禅",
+  "hero_b": "朱亥",
+  "highlight": "刘禅辅助菜刀爆发",
+  "bv": "BV17iKP6dEBu",
+  "pub_date": "2026-07-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘禅",
+   "武将:朱亥"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_张华",
+  "hero_a": "平阳公主",
+  "hero_b": "张华",
+  "highlight": "四剑合璧组合",
+  "bv": "BV1TEKP6uE5M",
+  "pub_date": "2026-07-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:张华"
+  ]
+ },
+ {
+  "block_id": "combo_张春华_韩娥",
+  "hero_a": "张春华",
+  "hero_b": "韩娥",
+  "highlight": "体力流失真伤组合",
+  "bv": "BV1sJKP6qEmX",
+  "pub_date": "2026-07-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张春华",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_卫玠_李夫人",
+  "hero_a": "卫玠",
+  "hero_b": "李夫人",
+  "highlight": "珠玉同辉组合（卫玠的高手牌上限配合李夫人的姗姗来迟为卫玠进行一次大额补牌）",
+  "bv": "BV1psKP6PEbL",
+  "pub_date": "2026-07-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫玠",
+   "武将:李夫人"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_张郃",
+  "hero_a": "太子丹",
+  "hero_b": "张郃",
+  "highlight": "主动清手牌双阶段冷门组合",
+  "bv": "BV1VyKP6nE5f",
+  "pub_date": "2026-07-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:张郃"
+  ]
+ },
+ {
+  "block_id": "combo_萧何_霍光",
+  "hero_a": "萧何",
+  "hero_b": "霍光",
+  "highlight": "以0嫖多组合（萧何空手，霍光开限定）",
+  "bv": "BV1pkKG6REcm",
+  "pub_date": "2026-07-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:萧何",
+   "武将:霍光"
+  ]
+ },
+ {
+  "block_id": "combo_张春华_赵威后",
+  "hero_a": "张春华",
+  "hero_b": "赵威后",
+  "highlight": "双陷害流血组合",
+  "bv": "BV1KDNq6aERv",
+  "pub_date": "2026-07-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张春华",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_赵云_钟无艳",
+  "hero_a": "赵云",
+  "hero_b": "钟无艳",
+  "highlight": "发育型菜刀组合",
+  "bv": "BV1LfNQ6pEtR",
+  "pub_date": "2026-07-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵云",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_如姬_桑弘羊",
+  "hero_a": "如姬",
+  "hero_b": "桑弘羊",
+  "highlight": "换牌白嫖组合",
+  "bv": "BV1qnNy6NEZs",
+  "pub_date": "2026-07-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:如姬",
+   "武将:桑弘羊"
+  ]
+ },
+ {
+  "block_id": "combo_刘彻_赵婕妤",
+  "hero_a": "刘彻",
+  "hero_b": "赵婕妤",
+  "highlight": "武帝后宫组合（靠推恩令额外蹭牌）",
+  "bv": "BV1RTNp6eEAA",
+  "pub_date": "2026-07-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘彻",
+   "武将:赵婕妤"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_赵威后",
+  "hero_a": "子婴",
+  "hero_b": "赵威后",
+  "highlight": "质子为兵扒光对手",
+  "bv": "BV19TNp6eEaC",
+  "pub_date": "2026-07-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_赵奢",
+  "hero_a": "张仪",
+  "hero_b": "赵奢",
+  "highlight": "双倍狭路相逢/奉公如法组合（两局连播）",
+  "bv": "BV1ULNn6nE6j",
+  "pub_date": "2026-07-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_司马炎_李牧",
+  "hero_a": "司马炎",
+  "hero_b": "李牧",
+  "highlight": "无限肘击队友组合",
+  "bv": "BV13pMi6kE6F",
+  "pub_date": "2026-07-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:司马炎",
+   "武将:李牧"
+  ]
+ },
+ {
+  "block_id": "combo_扶苏_田单",
+  "hero_a": "扶苏",
+  "hero_b": "田单",
+  "highlight": "无限卖血组合",
+  "bv": "BV1M5Td6dE6z",
+  "pub_date": "2026-07-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:扶苏",
+   "武将:田单"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_陈宫",
+  "hero_a": "吕布",
+  "hero_b": "陈宫",
+  "highlight": "无限多刀组合",
+  "bv": "BV1QvTm6uES6",
+  "pub_date": "2026-07-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_陆机_陈平",
+  "hero_a": "陆机",
+  "hero_b": "陈平",
+  "highlight": "双倍游云梦泽",
+  "bv": "BV1Gchw6uEkW",
+  "pub_date": "2026-08-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:陆机",
+   "武将:陈平"
+  ]
+ },
+ {
+  "block_id": "combo_刘彻_赵威后",
+  "hero_a": "刘彻",
+  "hero_b": "赵威后",
+  "highlight": "递牌罪己，拆牌陷害",
+  "bv": "BV1EETs6DETs",
+  "pub_date": "2026-07-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘彻",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_钟无艳",
+  "hero_a": "卢莫愁",
+  "hero_b": "钟无艳",
+  "highlight": "一牌四用组合",
+  "bv": "BV1xyTi6eEd2",
+  "pub_date": "2026-07-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_项羽",
+  "hero_a": "荀彧",
+  "hero_b": "项羽",
+  "highlight": "破釜沉舟大补牌组合",
+  "bv": "BV1ytTv6xEKs",
+  "pub_date": "2026-07-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:项羽"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_项羽",
+  "hero_a": "张仪",
+  "hero_b": "项羽",
+  "highlight": "破釜沉舟大补牌组合",
+  "bv": "BV1ytTv6xEKs",
+  "pub_date": "2026-07-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:项羽"
+  ]
+ },
+ {
+  "block_id": "combo_蔺相如_郑袖",
+  "hero_a": "蔺相如",
+  "hero_b": "郑袖",
+  "highlight": "递牌肘击队友组合",
+  "bv": "BV1zNTT6BE4h",
+  "pub_date": "2026-06-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:蔺相如",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_张飞_范增",
+  "hero_a": "张飞",
+  "hero_b": "范增",
+  "highlight": "增加上限发育组合",
+  "bv": "BV1TSTK6UEq4",
+  "pub_date": "2026-06-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张飞",
+   "武将:范增"
+  ]
+ },
+ {
+  "block_id": "combo_孙策_范增",
+  "hero_a": "孙策",
+  "hero_b": "范增",
+  "highlight": "增加上限发育组合",
+  "bv": "BV1TSTK6UEq4",
+  "pub_date": "2026-06-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙策",
+   "武将:范增"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_赵奢",
+  "hero_a": "卫子夫",
+  "hero_b": "赵奢",
+  "highlight": "狭路相逢队友收益第二期",
+  "bv": "BV1ydTK6yEaN",
+  "pub_date": "2026-06-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_陆机",
+  "hero_a": "孟尝君",
+  "hero_b": "陆机",
+  "highlight": "印群转伤组合",
+  "bv": "BV1BJ7p66E2w",
+  "pub_date": "2026-06-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:陆机"
+  ]
+ },
+ {
+  "block_id": "combo_张良_陆机",
+  "hero_a": "张良",
+  "hero_b": "陆机",
+  "highlight": "无限战法组合",
+  "bv": "BV1e37v6eEGk",
+  "pub_date": "2026-06-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:陆机"
+  ]
+ },
+ {
+  "block_id": "combo_周瑜_尉缭",
+  "hero_a": "周瑜",
+  "hero_b": "尉缭",
+  "highlight": "卜卦收益组合2.0",
+  "bv": "BV1Bz7Y6iEBy",
+  "pub_date": "2026-06-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周瑜",
+   "武将:尉缭"
+  ]
+ },
+ {
+  "block_id": "combo_公孙瓒_马超",
+  "hero_a": "公孙瓒",
+  "hero_b": "马超",
+  "highlight": "双马卡距离组合",
+  "bv": "BV1YhjU6PEcB",
+  "pub_date": "2026-06-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:公孙瓒",
+   "武将:马超"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_蔺相如",
+  "hero_a": "巴清",
+  "hero_b": "蔺相如",
+  "highlight": "丹砂大刷牌组合",
+  "bv": "BV1kgjU6mEuH",
+  "pub_date": "2026-06-24",
+  "mechanism": "配合逻辑：巴清把丹砂交给对面拿对面一张牌时 → 蔺相如立刻发动\"完璧归赵\"把交给敌方的那张丹砂**销毁掉** → **无损拿敌方一张牌** → 避免下回合对面用丹砂反过来拿我们的牌的困境",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_袁术",
+  "hero_a": "张仪",
+  "hero_b": "袁术",
+  "highlight": "双倍传国玉玺组合2.0",
+  "bv": "BV1jgjh6REsi",
+  "pub_date": "2026-06-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:袁术"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_吕蒙",
+  "hero_a": "卢莫愁",
+  "hero_b": "吕蒙",
+  "highlight": "首回合觉醒白衣渡江3.0",
+  "bv": "BV1QJjh6mEG5",
+  "pub_date": "2026-06-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:吕蒙"
+  ]
+ },
+ {
+  "block_id": "combo_吕不韦_陈宫",
+  "hero_a": "吕不韦",
+  "hero_b": "陈宫",
+  "highlight": "交互手牌额外输出组合",
+  "bv": "BV1NUjt6wE14",
+  "pub_date": "2026-06-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕不韦",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_司马炎",
+  "hero_a": "刘备",
+  "hero_b": "司马炎",
+  "highlight": "刘备包养司马炎",
+  "bv": "BV1rojz6sE3w",
+  "pub_date": "2026-06-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:司马炎"
+  ]
+ },
+ {
+  "block_id": "combo_李牧_赵云",
+  "hero_a": "李牧",
+  "hero_b": "赵云",
+  "highlight": "三进三出肘击队友组合（赵云杀李牧双方一起发育）",
+  "bv": "BV12RjF6WE2K",
+  "pub_date": "2026-06-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:李牧",
+   "武将:赵云"
+  ]
+ },
+ {
+  "block_id": "combo_白起_赵奢",
+  "hero_a": "白起",
+  "hero_b": "赵奢",
+  "highlight": "赵奢对白起发动狭路相逢触发白起出杀销毁去销毁敌方",
+  "bv": "BV15FjV6BEmn",
+  "pub_date": "2026-06-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_张春华_蔺相如",
+  "hero_a": "张春华",
+  "hero_b": "蔺相如",
+  "highlight": "渑池之会四流血组合",
+  "bv": "BV1ppJn62EfG",
+  "pub_date": "2026-06-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张春华",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_华佗_韩娥",
+  "hero_a": "华佗",
+  "hero_b": "韩娥",
+  "highlight": "无限加血余音绕梁组合",
+  "bv": "BV16hJn63Ect",
+  "pub_date": "2026-06-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:华佗",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_徐盛",
+  "hero_a": "孙尚香",
+  "hero_b": "徐盛",
+  "highlight": "无限刷装备组合",
+  "bv": "BV1BaJn66Ea5",
+  "pub_date": "2026-06-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:徐盛"
+  ]
+ },
+ {
+  "block_id": "combo_吕蒙_郭嘉",
+  "hero_a": "吕蒙",
+  "hero_b": "郭嘉",
+  "highlight": "首回合觉醒白衣渡江2.0",
+  "bv": "BV1EaJn66EJr",
+  "pub_date": "2026-06-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕蒙",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_甄宓_韩娥",
+  "hero_a": "甄宓",
+  "hero_b": "韩娥",
+  "highlight": "宫调余音刷战法组合",
+  "bv": "BV1gDJn6tEA4",
+  "pub_date": "2026-06-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:甄宓",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_韩非",
+  "hero_a": "平阳公主",
+  "hero_b": "韩非",
+  "highlight": "百变组合（双人快乐刷技能）",
+  "bv": "BV1CbEz6hEwB",
+  "pub_date": "2026-06-12",
+  "mechanism": "机制：平阳通过\"凤历三春\"学习韩非的\"不期修古\"并立即发动 → 将\"凤历三春\"替换掉 → 平阳保留不期修古 + 新技能\n效果：韩非凭\"不期修古\"不断换技能，两轮内凭空多出**至少 2 个技能**；两次机会用完后可用不期修古移除\"荐姝入掖\" → 平阳也成拥有额外 2 个技能的技能怪（用张仪替换平阳也可实现）\n配合逻辑：韩非的\"不期修古\"可替换自身技能 / 平阳公主既可以给自己用技能，也可以给队友加技能 → 两人靠不期修古**不断替换技能** → 形成**技能套技能的无限循环**，越打越强",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:韩非"
+  ]
+ },
+ {
+  "block_id": "combo_英布_陈阿娇",
+  "hero_a": "英布",
+  "hero_b": "陈阿娇",
+  "highlight": "大喜过望摸牌组合",
+  "bv": "BV1SMEv68ESJ",
+  "pub_date": "2026-06-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:英布",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_赵云",
+  "hero_a": "荀彧",
+  "hero_b": "赵云",
+  "highlight": "借刀流打法速叠三进三出",
+  "bv": "BV1T9E26tEdd",
+  "pub_date": "2026-06-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:赵云"
+  ]
+ },
+ {
+  "block_id": "combo_孙坚_徐盛",
+  "hero_a": "孙坚",
+  "hero_b": "徐盛",
+  "highlight": "移牌破防暴击强命组合",
+  "bv": "BV17DE36CEnq",
+  "pub_date": "2026-06-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙坚",
+   "武将:徐盛"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_吕蒙",
+  "hero_a": "刘备",
+  "hero_b": "吕蒙",
+  "highlight": "首回合觉醒白衣渡江组合",
+  "bv": "BV1ZDE36kEjJ",
+  "pub_date": "2026-06-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:吕蒙"
+  ]
+ },
+ {
+  "block_id": "combo_吕蒙_夏侯惇",
+  "hero_a": "吕蒙",
+  "hero_b": "夏侯惇",
+  "highlight": "首回合觉醒白衣渡江组合",
+  "bv": "BV1ZDE36kEjJ",
+  "pub_date": "2026-06-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕蒙",
+   "武将:夏侯惇"
+  ]
+ },
+ {
+  "block_id": "combo_侯嬴_田单",
+  "hero_a": "侯嬴",
+  "hero_b": "田单",
+  "highlight": "自残无限刷战法装备组合",
+  "bv": "BV1HhEt6hEdj",
+  "pub_date": "2026-06-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:侯嬴",
+   "武将:田单"
+  ]
+ },
+ {
+  "block_id": "combo_吕蒙_平阳公主",
+  "hero_a": "吕蒙",
+  "hero_b": "平阳公主",
+  "highlight": "双倍白衣渡江组合",
+  "bv": "BV14tEn6JEJV",
+  "pub_date": "2026-06-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕蒙",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_吕蒙_如姬",
+  "hero_a": "吕蒙",
+  "hero_b": "如姬",
+  "highlight": "快速觉醒白衣渡江组合",
+  "bv": "BV1xs7y61Ece",
+  "pub_date": "2026-06-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕蒙",
+   "武将:如姬"
+  ]
+ },
+ {
+  "block_id": "combo_白起_赵威后",
+  "hero_a": "白起",
+  "hero_b": "赵威后",
+  "highlight": "销牌联动组合",
+  "bv": "BV1ZeEA6HEyB",
+  "pub_date": "2026-06-05",
+  "mechanism": "机制：白起出杀 / 杀命中时销毁敌方区域内任意一张牌；赵威后\"无民何有君\"在他人牌被销毁时触发判定\n效果：判非梅花 → 敌方流失 1 体力；**不断销牌 + 判定**，压制力拉满；白起销光对方手牌触发空城 → 赵威后再判定；\"质子为兵\"还可交互手牌（丈八蛇矛、盗骊等关键牌）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_张良_王异",
+  "hero_a": "张良",
+  "hero_b": "王异",
+  "highlight": "人造文韬组合（首回合15+战法觉醒）",
+  "bv": "BV14U7f6xEd5",
+  "pub_date": "2026-06-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_赵婕妤",
+  "hero_a": "荀彧",
+  "hero_b": "赵婕妤",
+  "highlight": "刷牌发育等儿出生组合",
+  "bv": "BV1dyV66rEEA",
+  "pub_date": "2026-06-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:赵婕妤"
+  ]
+ },
+ {
+  "block_id": "combo_曹植_申不害",
+  "hero_a": "曹植",
+  "hero_b": "申不害",
+  "highlight": "明牌无限喝酒组合",
+  "bv": "BV16g5F6iE76",
+  "pub_date": "2026-06-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹植",
+   "武将:申不害"
+  ]
+ },
+ {
+  "block_id": "combo_赵奢_郭嘉",
+  "hero_a": "赵奢",
+  "hero_b": "郭嘉",
+  "highlight": "狭路相逢卖血组合",
+  "bv": "BV1tvVU6DEJk",
+  "pub_date": "2026-06-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵奢",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_赵奢",
+  "hero_a": "荀彧",
+  "hero_b": "赵奢",
+  "highlight": "狭路相逢卖血组合",
+  "bv": "BV1tvVU6DEJk",
+  "pub_date": "2026-06-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_孙坚",
+  "hero_a": "卢莫愁",
+  "hero_b": "孙坚",
+  "highlight": "定向批发惊羽弓",
+  "bv": "BV1P3Vn6YEh7",
+  "pub_date": "2026-05-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:孙坚"
+  ]
+ },
+ {
+  "block_id": "combo_孙坚_貂蝉",
+  "hero_a": "孙坚",
+  "hero_b": "貂蝉",
+  "highlight": "人形惊羽弓计划",
+  "bv": "BV1P3Vn6YEh7",
+  "pub_date": "2026-05-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙坚",
+   "武将:貂蝉"
+  ]
+ },
+ {
+  "block_id": "combo_王异_韩娥",
+  "hero_a": "王异",
+  "hero_b": "韩娥",
+  "highlight": "羽调弃牌陷害组合",
+  "bv": "BV1DLVM63Eoz",
+  "pub_date": "2026-05-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:王异",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_韩娥_鲁仲连",
+  "hero_a": "韩娥",
+  "hero_b": "鲁仲连",
+  "highlight": "羽调弃牌陷害组合",
+  "bv": "BV1DLVM63Eoz",
+  "pub_date": "2026-05-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:韩娥",
+   "武将:鲁仲连"
+  ]
+ },
+ {
+  "block_id": "combo_王异_郑袖",
+  "hero_a": "王异",
+  "hero_b": "郑袖",
+  "highlight": "究极陷害组合（郑袖给敌方A牌杀王异，王异弃敌方A触发郑袖技能杀）",
+  "bv": "BV12sVM6NEjX",
+  "pub_date": "2026-05-30",
+  "mechanism": "机制：郑袖将牌交给卖血将（郭嘉 / 荀彧 / 曹丕等）→ 对方打出郑袖的牌 → 郑袖杀队友触发其卖血 → 过牌 + 卖血双收益\n效果：徐盛让\"不动白\"有发挥（类似的还有李牧、项燕）；大乔让\"掩袖工谗\"杀转移出去 → 敌方卖血为我方补牌（类孟尝君）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:王异",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_郑国",
+  "hero_a": "夏侯惇",
+  "hero_b": "郑国",
+  "highlight": "通渠刷牌与陷害塞渠（郑国技能传牌过程中可触发夏侯惇的清俭尊师）",
+  "bv": "BV1jXVW6wEzW",
+  "pub_date": "2026-05-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:郑国"
+  ]
+ },
+ {
+  "block_id": "combo_吕不韦_郑国",
+  "hero_a": "吕不韦",
+  "hero_b": "郑国",
+  "highlight": "通渠刷牌与陷害塞渠（郑国给吕不韦渠的时候吕不韦可以把渠给敌方）",
+  "bv": "BV1jXVW6wEzW",
+  "pub_date": "2026-05-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕不韦",
+   "武将:郑国"
+  ]
+ },
+ {
+  "block_id": "combo_侯嬴_张春华",
+  "hero_a": "侯嬴",
+  "hero_b": "张春华",
+  "highlight": "体力流失陷害组合",
+  "bv": "BV1a2VP6eEGR",
+  "pub_date": "2026-05-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:侯嬴",
+   "武将:张春华"
+  ]
+ },
+ {
+  "block_id": "combo_李夫人_项梁",
+  "hero_a": "李夫人",
+  "hero_b": "项梁",
+  "highlight": "姗姗来迟满血复活组合",
+  "bv": "BV1bXVP68Eno",
+  "pub_date": "2026-05-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:李夫人",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_庞煖_李夫人",
+  "hero_a": "庞煖",
+  "hero_b": "李夫人",
+  "highlight": "姗姗来迟满血复活组合",
+  "bv": "BV1bXVP68Eno",
+  "pub_date": "2026-05-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:庞煖",
+   "武将:李夫人"
+  ]
+ },
+ {
+  "block_id": "combo_扶苏_陈宫",
+  "hero_a": "扶苏",
+  "hero_b": "陈宫",
+  "highlight": "频繁刷牌与陷害暴击组合2.0",
+  "bv": "BV1fLGH6REs7",
+  "pub_date": "2026-05-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:扶苏",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_赵奢",
+  "hero_a": "卢莫愁",
+  "hero_b": "赵奢",
+  "highlight": "狭路相逢队友收益",
+  "bv": "BV1B7GH6WENQ",
+  "pub_date": "2026-05-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:赵奢"
+  ]
+ },
+ {
+  "block_id": "combo_赵奢_郑袖",
+  "hero_a": "赵奢",
+  "hero_b": "郑袖",
+  "highlight": "陷害弃牌组合",
+  "bv": "BV1qgG76kEit",
+  "pub_date": "2026-05-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵奢",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_李牧_钟无艳",
+  "hero_a": "李牧",
+  "hero_b": "钟无艳",
+  "highlight": "狂肘队友永动机组合",
+  "bv": "BV1pvGi6uEux",
+  "pub_date": "2026-05-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:李牧",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_陈宫",
+  "hero_a": "刘备",
+  "hero_b": "陈宫",
+  "highlight": "交互刷牌与陷害暴击组合",
+  "bv": "BV1JeL86xEhG",
+  "pub_date": "2026-05-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_庞统_诸葛亮",
+  "hero_a": "庞统",
+  "hero_b": "诸葛亮",
+  "highlight": "卧龙凤雏组合（靠舌战群儒和给牌辅助庞统爆发）",
+  "bv": "BV1LfLB63Ehq",
+  "pub_date": "2026-05-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:庞统",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_卓文君_卫青",
+  "hero_a": "卓文君",
+  "hero_b": "卫青",
+  "highlight": "刀刀酒杀强命暴击组合",
+  "bv": "BV19GLp64Eik",
+  "pub_date": "2026-05-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卓文君",
+   "武将:卫青"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_庞煖",
+  "hero_a": "刘备",
+  "hero_b": "庞煖",
+  "highlight": "首回合觉醒摸5杀5组合",
+  "bv": "BV1ByLp6vEeN",
+  "pub_date": "2026-05-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:庞煖"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_赵婕妤",
+  "hero_a": "孟尝君",
+  "hero_b": "赵婕妤",
+  "highlight": "全场蹭牌组合（赵婕妤配孟尝君能用玉钩感染全场）",
+  "bv": "BV1sFL76cEGf",
+  "pub_date": "2026-05-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:赵婕妤"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_张仪",
+  "hero_a": "大乔",
+  "hero_b": "张仪",
+  "highlight": "联动拆牌扒光对手组合",
+  "bv": "BV1oWLg6hEVq",
+  "pub_date": "2026-05-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:张仪"
+  ]
+ },
+ {
+  "block_id": "combo_赵婕妤_陈阿娇",
+  "hero_a": "赵婕妤",
+  "hero_b": "陈阿娇",
+  "highlight": "金屋藏娇双倍刷牌组合（武帝后妃组合）",
+  "bv": "BV1hM5d6LEma",
+  "pub_date": "2026-05-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵婕妤",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_张骞_郑袖",
+  "hero_a": "张骞",
+  "hero_b": "郑袖",
+  "highlight": "自残一轮20+牌组合",
+  "bv": "BV1eS556KEh3",
+  "pub_date": "2026-05-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张骞",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_庞统",
+  "hero_a": "夏侯惇",
+  "hero_b": "庞统",
+  "highlight": "无限战法爆发组合（给牌让庞统技能转化战法）",
+  "bv": "BV1JJ5L61Ex5",
+  "pub_date": "2026-05-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:庞统"
+  ]
+ },
+ {
+  "block_id": "combo_庞统_西门豹",
+  "hero_a": "庞统",
+  "hero_b": "西门豹",
+  "highlight": "无限战法爆发组合（给牌让庞统技能转化战法）",
+  "bv": "BV1JJ5L61Ex5",
+  "pub_date": "2026-05-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:庞统",
+   "武将:西门豹"
+  ]
+ },
+ {
+  "block_id": "combo_卓文君_钟无艳",
+  "hero_a": "卓文君",
+  "hero_b": "钟无艳",
+  "highlight": "双出牌阶段+刷红桃组合",
+  "bv": "BV1435J6qEfS",
+  "pub_date": "2026-05-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卓文君",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_郑袖",
+  "hero_a": "太子丹",
+  "hero_b": "郑袖",
+  "highlight": "可以主动空手触发太子丹技能，是双递牌双出牌阶段组合",
+  "bv": "BV1yzRdBvE2W",
+  "pub_date": "2026-05-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_范雎",
+  "hero_a": "太子丹",
+  "hero_b": "范雎",
+  "highlight": "双递牌双出牌阶段组合",
+  "bv": "BV1yzRdBvE2W",
+  "pub_date": "2026-05-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:范雎"
+  ]
+ },
+ {
+  "block_id": "combo_曹植_郭嘉",
+  "hero_a": "曹植",
+  "hero_b": "郭嘉",
+  "highlight": "包养酒蒙子组合",
+  "bv": "BV1eJRdB7E7Q",
+  "pub_date": "2026-05-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹植",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_曹植",
+  "hero_a": "刘备",
+  "hero_b": "曹植",
+  "highlight": "包养酒蒙子组合",
+  "bv": "BV1eJRdB7E7Q",
+  "pub_date": "2026-05-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:曹植"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_平阳公主",
+  "hero_a": "卫青",
+  "hero_b": "平阳公主",
+  "highlight": "无限技能官配组合",
+  "bv": "BV111d3B2E5Z",
+  "pub_date": "2026-05-09",
+  "mechanism": "配合逻辑：卫青的\"车骑合战\"可获得**武刚车**；失去武刚车后能**重置自身所有技能** / 平阳公主的凤历三春、荐姝入掖都是全局限 2/3 次的技能 → 一旦触发车骑合战，**重置效果直接刷新技能次数** → 平阳公主源源不断地给队友造技能 / 复制技能 → **强度直接拉满**",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_鲁仲连",
+  "hero_a": "夏侯惇",
+  "hero_b": "鲁仲连",
+  "highlight": "稳定递牌爆发组合",
+  "bv": "BV1mUdPBhEcZ",
+  "pub_date": "2026-05-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:鲁仲连"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_龙且",
+  "hero_a": "平阳公主",
+  "hero_b": "龙且",
+  "highlight": "打空手牌类组合（第二期）双倍安营筑垒",
+  "bv": "BV1tpRbBaE43",
+  "pub_date": "2026-05-07",
+  "mechanism": "配合逻辑：学习安营筑垒，回合结束清空所有手牌 → 到龙且回合直接补满",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_王异_白起",
+  "hero_a": "王异",
+  "hero_b": "白起",
+  "highlight": "弃牌与补刀陷害",
+  "bv": "BV1yLRnBNE7B",
+  "pub_date": "2026-05-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:王异",
+   "武将:白起"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_赵婕妤",
+  "hero_a": "孙权",
+  "hero_b": "赵婕妤",
+  "highlight": "超级蹭牌组合",
+  "bv": "BV1FsRCBtEeL",
+  "pub_date": "2026-05-05",
+  "mechanism": "机制：孙权坐赵婕妤前面，优先打出与玉钩花色 / 点数相同的牌 → 赵婕妤把玉钩交给孙权 → 孙权发动\"劝学励士\"置换手牌 → 赵婕妤一次性复制 → 赵婕妤回合再通过\"劝学励士\"把牌交回孙权 → 再复制一遍\n效果：**无限刷牌**；回合外敌方摸 4 张牌时孙权触发\"乘马射虎\"摸 1 张 + 赵婕妤蹭牌；孙权有\"玉钩\"不掉时每回合回血，**基本打不死**",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:赵婕妤"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_张角",
+  "hero_a": "张仪",
+  "hero_b": "张角",
+  "highlight": "双倍太平道快速觉醒组合",
+  "bv": "BV1XCovBFEJX",
+  "pub_date": "2026-05-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:张角"
+  ]
+ },
+ {
+  "block_id": "combo_凌统_陈阿娇",
+  "hero_a": "凌统",
+  "hero_b": "陈阿娇",
+  "highlight": "三刀大买赋组合",
+  "bv": "BV17aovBqE8M",
+  "pub_date": "2026-05-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:凌统",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_关羽_貂蝉",
+  "hero_a": "关羽",
+  "hero_b": "貂蝉",
+  "highlight": "强命大暴击组合",
+  "bv": "BV1FuoiBGEba",
+  "pub_date": "2026-05-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:关羽",
+   "武将:貂蝉"
+  ]
+ },
+ {
+  "block_id": "combo_吕不韦_张良",
+  "hero_a": "吕不韦",
+  "hero_b": "张良",
+  "highlight": "无限战法组合青春版（首回合15+战法觉醒）",
+  "bv": "BV1ysZFBEEMA",
+  "pub_date": "2026-05-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕不韦",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_王翦_赵威后",
+  "hero_a": "王翦",
+  "hero_b": "赵威后",
+  "highlight": "移除与清空手牌的卜卦陷害",
+  "bv": "BV1ssZFBJEjT",
+  "pub_date": "2026-05-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:王翦",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_曹植",
+  "hero_a": "刘邦",
+  "hero_b": "曹植",
+  "highlight": "无限弃牌与补牌组合",
+  "bv": "BV1rhZFB5ENy",
+  "pub_date": "2026-05-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:曹植"
+  ]
+ },
+ {
+  "block_id": "combo_甄宓_郑袖",
+  "hero_a": "甄宓",
+  "hero_b": "郑袖",
+  "highlight": "自残刷牌组合（运营起来超级无解）",
+  "bv": "BV1hzo9ByEgB",
+  "pub_date": "2026-04-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:甄宓",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_赵威后_陆逊",
+  "hero_a": "赵威后",
+  "hero_b": "陆逊",
+  "highlight": "烧毁卜卦联动组合",
+  "bv": "BV1byo9B3Ej8",
+  "pub_date": "2026-04-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵威后",
+   "武将:陆逊"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_张骞",
+  "hero_a": "太子丹",
+  "hero_b": "张骞",
+  "highlight": "可以主动空手触发太子丹技能，并且双出牌阶段四丝绸之路",
+  "bv": "BV1d8o9BDEKi",
+  "pub_date": "2026-04-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_步练师_黄盖",
+  "hero_a": "步练师",
+  "hero_b": "黄盖",
+  "highlight": "自残联动技能组合",
+  "bv": "BV1BPoRBtERC",
+  "pub_date": "2026-04-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:步练师",
+   "武将:黄盖"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_庞统",
+  "hero_a": "太子丹",
+  "hero_b": "庞统",
+  "highlight": "双回合无限战法组合",
+  "bv": "BV1ogoRBWEJ7",
+  "pub_date": "2026-04-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:庞统"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_张骞",
+  "hero_a": "平阳公主",
+  "hero_b": "张骞",
+  "highlight": "打空手牌类组合，双倍丝绸之路",
+  "bv": "BV1HtoUBmEyn",
+  "pub_date": "2026-04-25",
+  "mechanism": "配合逻辑：平阳公主复制张骞的\"丝绸之路\" → 先和张骞**互换手牌**，把牌全部交给张骞（张骞不回牌） → 平阳公主手牌只剩技能摸的两张 → 用掉后**直接空城** → 等张骞回合先发动新造的技能 → 平阳公主**瞬间补满五张** → 再继续和张骞换牌 → 第二轮按同样流程还能再摸六张 / **收益直接起飞**",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_黄月英",
+  "hero_a": "孟尝君",
+  "hero_b": "黄月英",
+  "highlight": "鸡鸣狗盗双重收益组合",
+  "bv": "BV1wtoUBUEiu",
+  "pub_date": "2026-04-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:黄月英"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_孟尝君",
+  "hero_a": "卢莫愁",
+  "hero_b": "孟尝君",
+  "highlight": "鸡鸣狗盗双重收益组合",
+  "bv": "BV1wtoUBUEiu",
+  "pub_date": "2026-04-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:孟尝君"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_鲁仲连",
+  "hero_a": "大乔",
+  "hero_b": "鲁仲连",
+  "highlight": "双弃牌陷害组合",
+  "bv": "BV1xsoTBBE3F",
+  "pub_date": "2026-04-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:鲁仲连"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_王异",
+  "hero_a": "子婴",
+  "hero_b": "王异",
+  "highlight": "王异子婴弃牌技能联动+子婴高手牌上限",
+  "bv": "BV1s4oTBTEmX",
+  "pub_date": "2026-04-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_王异",
+  "hero_a": "孙权",
+  "hero_b": "王异",
+  "highlight": "配合劝学励士主动空手拆光一名敌方",
+  "bv": "BV1s4oTBTEmX",
+  "pub_date": "2026-04-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_张宝_王异",
+  "hero_a": "张宝",
+  "hero_b": "王异",
+  "highlight": "卖血给张宝补牌让张宝拆迁、输出对面",
+  "bv": "BV1s4oTBTEmX",
+  "pub_date": "2026-04-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张宝",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_陈阿娇",
+  "hero_a": "张仪",
+  "hero_b": "陈阿娇",
+  "highlight": "双倍金屋藏娇组合（无限加上限与回血）",
+  "bv": "BV1cKosB1EJU",
+  "pub_date": "2026-04-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_芈八子",
+  "hero_a": "太子丹",
+  "hero_b": "芈八子",
+  "highlight": "技能可以主动空手触发太子丹技能，一回合扭死对面组合（还可以实现双回合多次递牌）",
+  "bv": "BV1qedQBjEUH",
+  "pub_date": "2026-04-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:芈八子"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_孟尝君",
+  "hero_a": "太子丹",
+  "hero_b": "孟尝君",
+  "highlight": "双回合多次递牌组合",
+  "bv": "BV1qedQBjEUH",
+  "pub_date": "2026-04-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:孟尝君"
+  ]
+ },
+ {
+  "block_id": "combo_吕不韦_张骞",
+  "hero_a": "吕不韦",
+  "hero_b": "张骞",
+  "highlight": "凿烂西域组合2.0",
+  "bv": "BV1uxoFBREBm",
+  "pub_date": "2026-04-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕不韦",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_张骞",
+  "hero_a": "夏侯惇",
+  "hero_b": "张骞",
+  "highlight": "凿烂西域组合2.0",
+  "bv": "BV1uxoFBREBm",
+  "pub_date": "2026-04-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_庞统_申不害",
+  "hero_a": "庞统",
+  "hero_b": "申不害",
+  "highlight": "战法用一摸一永动机",
+  "bv": "BV1ZKoFBqEZ7",
+  "pub_date": "2026-04-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:庞统",
+   "武将:申不害"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_韩信",
+  "hero_a": "大乔",
+  "hero_b": "韩信",
+  "highlight": "埋伏与弃牌联动组合",
+  "bv": "BV1a9dWBfEQJ",
+  "pub_date": "2026-04-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:韩信"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_申不害",
+  "hero_a": "平阳公主",
+  "hero_b": "申不害",
+  "highlight": "新晋用一摸二组合",
+  "bv": "BV1V8dpB4E9G",
+  "pub_date": "2026-04-18",
+  "mechanism": "配合逻辑：平阳公主复制申不害的\"君操其柄\" / 额外给申不害叠一层\"以术驭国\" → 直接让申不害变成**用一摸二的怪物**",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:申不害"
+  ]
+ },
+ {
+  "block_id": "combo_白起_荀彧",
+  "hero_a": "白起",
+  "hero_b": "荀彧",
+  "highlight": "出杀无限销牌组合",
+  "bv": "BV1c3daBhE3p",
+  "pub_date": "2026-04-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:荀彧"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_张良",
+  "hero_a": "卢莫愁",
+  "hero_b": "张良",
+  "highlight": "交递战法组合",
+  "bv": "BV1oxQnB2E82",
+  "pub_date": "2026-04-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_张仪",
+  "hero_a": "平阳公主",
+  "hero_b": "张仪",
+  "highlight": "无限技能组合",
+  "bv": "BV1CgQnBoEXU",
+  "pub_date": "2026-04-15",
+  "mechanism": "配合逻辑：平阳公主可复制张仪的\"折竹\" → 再通过\"折竹\"去刻写其他角色的技能 / 张仪也可以复制平阳公主的凤历三春把技能再度复制，或复制荐姝入掖给平阳公主新增技能 → **两人相互联动堪称技能的永动机**",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:张仪"
+  ]
+ },
+ {
+  "block_id": "combo_萧何_赵云",
+  "hero_a": "萧何",
+  "hero_b": "赵云",
+  "highlight": "三进三出速速发育组合",
+  "bv": "BV1swQtBjEvr",
+  "pub_date": "2026-04-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:萧何",
+   "武将:赵云"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_韩信",
+  "hero_a": "太子丹",
+  "hero_b": "韩信",
+  "highlight": "双倍登台拜将&背水一战组合",
+  "bv": "BV1m5DXBnEMZ",
+  "pub_date": "2026-04-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:韩信"
+  ]
+ },
+ {
+  "block_id": "combo_尉缭_董仲舒",
+  "hero_a": "尉缭",
+  "hero_b": "董仲舒",
+  "highlight": "卜卦双收益组合",
+  "bv": "BV1HaD1BdEUd",
+  "pub_date": "2026-04-13",
+  "mechanism": "机制：两者与\"卜卦\"机制高度绑定：有人卜卦 → 董仲舒获得卜卦牌复制 + 尉缭获得一张梅花牌；董仲舒把战法牌转天雷地火 → 全场频繁触发卜卦判定\n效果：两人技能收益拉满，**打运营发育**非常强势；尉缭还有卖血强化手牌机制，防御也不错",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:尉缭",
+   "武将:董仲舒"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_孟尝君",
+  "hero_a": "吕布",
+  "hero_b": "孟尝君",
+  "highlight": "转杀陷害组合",
+  "bv": "BV1phD1B4EbP",
+  "pub_date": "2026-04-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:孟尝君"
+  ]
+ },
+ {
+  "block_id": "combo_郑袖_项燕",
+  "hero_a": "郑袖",
+  "hero_b": "项燕",
+  "highlight": "自残双回合组合",
+  "bv": "BV1EdDkBkEFX",
+  "pub_date": "2026-04-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郑袖",
+   "武将:项燕"
+  ]
+ },
+ {
+  "block_id": "combo_廉颇_张仪",
+  "hero_a": "廉颇",
+  "hero_b": "张仪",
+  "highlight": "双倍尚能饭否超大闭月组合（或者双倍负荆请罪，双倍强取豪夺）",
+  "bv": "BV16nDxBaEso",
+  "pub_date": "2026-04-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:廉颇",
+   "武将:张仪"
+  ]
+ },
+ {
+  "block_id": "combo_嬴政_白起",
+  "hero_a": "嬴政",
+  "hero_b": "白起",
+  "highlight": "双强将（同势力加速一统六合的速度）",
+  "bv": "BV1rTDkBLE2v",
+  "pub_date": "2026-04-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:嬴政",
+   "武将:白起"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_巴清",
+  "hero_a": "周勃",
+  "hero_b": "巴清",
+  "highlight": "蹭丹砂数量大摸牌组合",
+  "bv": "BV1ojDkBuEig",
+  "pub_date": "2026-04-08",
+  "mechanism": "配合逻辑：巴清手牌多 → 英布和周勃可通过**场上牌数最多的人的数量**进行嫖牌",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:巴清"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_英布",
+  "hero_a": "巴清",
+  "hero_b": "英布",
+  "highlight": "蹭丹砂数量大摸牌组合",
+  "bv": "BV1ojDkBuEig",
+  "pub_date": "2026-04-08",
+  "mechanism": "配合逻辑：巴清手牌多 → 英布和周勃可通过**场上牌数最多的人的数量**进行嫖牌",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:英布"
+  ]
+ },
+ {
+  "block_id": "combo_王翦_袁术",
+  "hero_a": "王翦",
+  "hero_b": "袁术",
+  "highlight": "请田共享玉玺组合",
+  "bv": "BV1y2DcBqE9x",
+  "pub_date": "2026-04-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:王翦",
+   "武将:袁术"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_张梁",
+  "hero_a": "张仪",
+  "hero_b": "张梁",
+  "highlight": "无限召唤黄巾兵组合",
+  "bv": "BV1sASfBFEqT",
+  "pub_date": "2026-04-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:张梁"
+  ]
+ },
+ {
+  "block_id": "combo_蔺相如_袁术",
+  "hero_a": "蔺相如",
+  "hero_b": "袁术",
+  "highlight": "将相和大刷牌组合（袁术初始手牌多，触发蔺相如技能可以增强一大批牌从而增加优势）",
+  "bv": "BV1HpSdBUEuF",
+  "pub_date": "2026-04-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:蔺相如",
+   "武将:袁术"
+  ]
+ },
+ {
+  "block_id": "combo_章邯_蔺相如",
+  "hero_a": "章邯",
+  "hero_b": "蔺相如",
+  "highlight": "将相和大刷牌组合（章邯能囤牌，可提供多牌来触发蔺相如技能）",
+  "bv": "BV1HpSdBUEuF",
+  "pub_date": "2026-04-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:章邯",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_扶苏_虞姬",
+  "hero_a": "扶苏",
+  "hero_b": "虞姬",
+  "highlight": "无解刷牌组合",
+  "bv": "BV1BbSdByEox",
+  "pub_date": "2026-04-06",
+  "mechanism": "机制：虞姬刷出 1 张桃 / 怒即可启动；虞姬绑定扶苏；扶苏用\"山有扶苏\"给自己和虞姬卖血补牌 → 扶苏掉到 1 血时对虞姬造成 1 点伤害 → 虞姬替扶苏承受 → 扶苏回血 + 得 1 张决斗 → 再用山有扶苏 + 决斗循环\n效果：**Bug 级无限循环刷牌**，靠技能组联动疯狂刷控制 / 输出战法打出额外伤害；虞姬濒死吃桃 / 怒回满（山有扶苏效果可叠加）⚠️ 短板：摸到基本牌太多就循环不下去",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:扶苏",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_马超",
+  "hero_a": "卫青",
+  "hero_b": "马超",
+  "highlight": "疯狂复制坐骑组合",
+  "bv": "BV1irSUBpEaJ",
+  "pub_date": "2026-04-05",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:马超"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_芈八子",
+  "hero_a": "卢莫愁",
+  "hero_b": "芈八子",
+  "highlight": "莫愁刷牌组合第一期·相互递牌类",
+  "bv": "BV1xbDPB2EUd",
+  "pub_date": "2026-04-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:芈八子"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_桑弘羊",
+  "hero_a": "巴清",
+  "hero_b": "桑弘羊",
+  "highlight": "丹砂白嫖组合",
+  "bv": "BV1fo9MB9Erm",
+  "pub_date": "2026-04-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:桑弘羊"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_扶苏",
+  "hero_a": "张仪",
+  "hero_b": "扶苏",
+  "highlight": "双倍山有扶苏秒回血组合",
+  "bv": "BV1HaXZBwE8V",
+  "pub_date": "2026-04-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:扶苏"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_章邯",
+  "hero_a": "乐毅",
+  "hero_b": "章邯",
+  "highlight": "复制囤牌组合",
+  "bv": "BV1fWXSBeEP6",
+  "pub_date": "2026-04-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:章邯"
+  ]
+ },
+ {
+  "block_id": "combo_张春华_秦舞阳",
+  "hero_a": "张春华",
+  "hero_b": "秦舞阳",
+  "highlight": "流血陷害组合",
+  "bv": "BV1PgXSB5EUF",
+  "pub_date": "2026-03-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张春华",
+   "武将:秦舞阳"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_庞统",
+  "hero_a": "周勃",
+  "hero_b": "庞统",
+  "highlight": "连环暴击组合",
+  "bv": "BV1bCXSBQEcf",
+  "pub_date": "2026-03-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:庞统"
+  ]
+ },
+ {
+  "block_id": "combo_关羽_庞统",
+  "hero_a": "关羽",
+  "hero_b": "庞统",
+  "highlight": "连环暴击组合",
+  "bv": "BV1bCXSBQEcf",
+  "pub_date": "2026-03-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:关羽",
+   "武将:庞统"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_甘宁",
+  "hero_a": "太子丹",
+  "hero_b": "甘宁",
+  "highlight": "双回合拆光对手组合",
+  "bv": "BV1kzXTBWEzj",
+  "pub_date": "2026-03-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_李斯_董卓",
+  "hero_a": "李斯",
+  "hero_b": "董卓",
+  "highlight": "双倍减手牌上限组合",
+  "bv": "BV1avX4BZEgA",
+  "pub_date": "2026-03-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:李斯",
+   "武将:董卓"
+  ]
+ },
+ {
+  "block_id": "combo_芈八子_诸葛亮",
+  "hero_a": "芈八子",
+  "hero_b": "诸葛亮",
+  "highlight": "多倍舌战群儒组合（用一摸五，刷空牌库）",
+  "bv": "BV1hqX4B4Eah",
+  "pub_date": "2026-03-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:芈八子",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_步练师_郭嘉",
+  "hero_a": "步练师",
+  "hero_b": "郭嘉",
+  "highlight": "卖血双收益组合",
+  "bv": "BV1ycXpBvESc",
+  "pub_date": "2026-03-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:步练师",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_章邯_萧何",
+  "hero_a": "章邯",
+  "hero_b": "萧何",
+  "highlight": "双倍衔枚速囤组合",
+  "bv": "BV1pbQ6BjES3",
+  "pub_date": "2026-03-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:章邯",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_廉颇_荀彧",
+  "hero_a": "廉颇",
+  "hero_b": "荀彧",
+  "highlight": "发育大闭月组合",
+  "bv": "BV1CbQ6BjEqn",
+  "pub_date": "2026-03-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:廉颇",
+   "武将:荀彧"
+  ]
+ },
+ {
+  "block_id": "combo_廉颇_范增",
+  "hero_a": "廉颇",
+  "hero_b": "范增",
+  "highlight": "发育大闭月组合",
+  "bv": "BV1CbQ6BjEqn",
+  "pub_date": "2026-03-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:廉颇",
+   "武将:范增"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_张骞",
+  "hero_a": "刘邦",
+  "hero_b": "张骞",
+  "highlight": "换牌补五组合",
+  "bv": "BV1GsXFBDEb1",
+  "pub_date": "2026-03-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_郑袖",
+  "hero_a": "卫子夫",
+  "hero_b": "郑袖",
+  "highlight": "刷牌卖血永动机",
+  "bv": "BV15NQQBaEe7",
+  "pub_date": "2026-03-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_季布_张骞",
+  "hero_a": "季布",
+  "hero_b": "张骞",
+  "highlight": "首回合觉醒凿空西域",
+  "bv": "BV1pWAMzSEAM",
+  "pub_date": "2026-03-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:季布",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_张骞_陈阿娇",
+  "hero_a": "张骞",
+  "hero_b": "陈阿娇",
+  "highlight": "首回合觉醒凿空西域",
+  "bv": "BV1pWAMzSEAM",
+  "pub_date": "2026-03-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张骞",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_高渐离",
+  "hero_a": "太子丹",
+  "hero_b": "高渐离",
+  "highlight": "易水促行官配组合（双回合过牌拆牌·两局连播）",
+  "bv": "BV11pAHzZE48",
+  "pub_date": "2026-03-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:高渐离"
+  ]
+ },
+ {
+  "block_id": "combo_白起_郭嘉",
+  "hero_a": "白起",
+  "hero_b": "郭嘉",
+  "highlight": "多刀无限销牌组合",
+  "bv": "BV1spAHzZEQ7",
+  "pub_date": "2026-03-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_白起_陈阿娇",
+  "hero_a": "白起",
+  "hero_b": "陈阿娇",
+  "highlight": "多刀无限销牌组合",
+  "bv": "BV1spAHzZEQ7",
+  "pub_date": "2026-03-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_白起_芈八子",
+  "hero_a": "白起",
+  "hero_b": "芈八子",
+  "highlight": "双倍出杀首回合陷害销光全场",
+  "bv": "BV12yAVz6EZC",
+  "pub_date": "2026-03-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:芈八子"
+  ]
+ },
+ {
+  "block_id": "combo_张宝_萧何",
+  "hero_a": "张宝",
+  "hero_b": "萧何",
+  "highlight": "弃牌凑点公式组合（张宝能每轮两次发动技能弃牌）",
+  "bv": "BV1myAVz6ETE",
+  "pub_date": "2026-03-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张宝",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_张良_钟无艳",
+  "hero_a": "张良",
+  "hero_b": "钟无艳",
+  "highlight": "刷战法快速觉醒组合",
+  "bv": "BV13UwizVE2m",
+  "pub_date": "2026-03-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_夏侯惇",
+  "hero_a": "刘邦",
+  "hero_b": "夏侯惇",
+  "highlight": "反复交互刷牌组合",
+  "bv": "BV115wRzEEcj",
+  "pub_date": "2026-03-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:夏侯惇"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_诸葛亮",
+  "hero_a": "太子丹",
+  "hero_b": "诸葛亮",
+  "highlight": "双出牌阶段四战法妙计组合",
+  "bv": "BV1Tgw3zAEyp",
+  "pub_date": "2026-03-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_张骞",
+  "hero_a": "卫子夫",
+  "hero_b": "张骞",
+  "highlight": "存活即刷牌永动机",
+  "bv": "BV1AGwTzLE8S",
+  "pub_date": "2026-03-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_扶苏",
+  "hero_a": "卫子夫",
+  "hero_b": "扶苏",
+  "highlight": "存活即刷牌永动机",
+  "bv": "BV1AGwTzLE8S",
+  "pub_date": "2026-03-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:扶苏"
+  ]
+ },
+ {
+  "block_id": "combo_嬴政_张仪",
+  "hero_a": "嬴政",
+  "hero_b": "张仪",
+  "highlight": "双倍秦弩齐射组合（加速一统六合）",
+  "bv": "BV1FjwTzkEd9",
+  "pub_date": "2026-03-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:嬴政",
+   "武将:张仪"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_郑袖",
+  "hero_a": "孟尝君",
+  "hero_b": "郑袖",
+  "highlight": "双重陷害对手组合",
+  "bv": "BV1JwwJz6EjK",
+  "pub_date": "2026-03-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_张角_蔺相如",
+  "hero_a": "张角",
+  "hero_b": "蔺相如",
+  "highlight": "点石成金组合青春版",
+  "bv": "BV11NcyzDESS",
+  "pub_date": "2026-03-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张角",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_虞姬",
+  "hero_a": "刘邦",
+  "hero_b": "虞姬",
+  "highlight": "频繁人造大风歌组合",
+  "bv": "BV1hWcBz5Ep5",
+  "pub_date": "2026-03-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_吕不韦_孙尚香",
+  "hero_a": "吕不韦",
+  "hero_b": "孙尚香",
+  "highlight": "刷递装备组合",
+  "bv": "BV1vncQz9Evz",
+  "pub_date": "2026-03-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕不韦",
+   "武将:孙尚香"
+  ]
+ },
+ {
+  "block_id": "combo_章邯_英布",
+  "hero_a": "章邯",
+  "hero_b": "英布",
+  "highlight": "囤牌大嫖牌组合",
+  "bv": "BV1iENczoEDr",
+  "pub_date": "2026-03-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:章邯",
+   "武将:英布"
+  ]
+ },
+ {
+  "block_id": "combo_刘协_霍去病",
+  "hero_a": "刘协",
+  "hero_b": "霍去病",
+  "highlight": "双负鼎见胁高伤组合",
+  "bv": "BV1ZWP9zgEbX",
+  "pub_date": "2026-03-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘协",
+   "武将:霍去病"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_萧何",
+  "hero_a": "乐毅",
+  "hero_b": "萧何",
+  "highlight": "双出牌阶段联动技能组合",
+  "bv": "BV1n9NGzYEwD",
+  "pub_date": "2026-03-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_萧何_诸葛亮",
+  "hero_a": "萧何",
+  "hero_b": "诸葛亮",
+  "highlight": "双出牌阶段联动技能组合",
+  "bv": "BV1n9NGzYEwD",
+  "pub_date": "2026-03-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:萧何",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_法正",
+  "hero_a": "子婴",
+  "hero_b": "法正",
+  "highlight": "定向递牌包养歌王组合",
+  "bv": "BV12PPhzREK9",
+  "pub_date": "2026-03-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:法正"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_王翦",
+  "hero_a": "太子丹",
+  "hero_b": "王翦",
+  "highlight": "双出牌四刀组合",
+  "bv": "BV1ehPhzTEjL",
+  "pub_date": "2026-03-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:王翦"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_芈八子",
+  "hero_a": "卫青",
+  "hero_b": "芈八子",
+  "highlight": "一刀双暴击组合",
+  "bv": "BV18kPyzTEZb",
+  "pub_date": "2026-03-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:芈八子"
+  ]
+ },
+ {
+  "block_id": "combo_章邯_袁术",
+  "hero_a": "章邯",
+  "hero_b": "袁术",
+  "highlight": "双囤牌组合（回合外人均10+牌）",
+  "bv": "BV1GzPyzuEGR",
+  "pub_date": "2026-03-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:章邯",
+   "武将:袁术"
+  ]
+ },
+ {
+  "block_id": "combo_申不害_韩非",
+  "hero_a": "申不害",
+  "hero_b": "韩非",
+  "highlight": "呼吸超大大大摸牌组合",
+  "bv": "BV1PHPqzBEP9",
+  "pub_date": "2026-03-05",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:申不害",
+   "武将:韩非"
+  ]
+ },
+ {
+  "block_id": "combo_陆逊_陈阿娇",
+  "hero_a": "陆逊",
+  "hero_b": "陈阿娇",
+  "highlight": "千金买赋嫖一把牌组合",
+  "bv": "BV12TAfzYExN",
+  "pub_date": "2026-03-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:陆逊",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_赵姬_陈阿娇",
+  "hero_a": "赵姬",
+  "hero_b": "陈阿娇",
+  "highlight": "千金买赋嫖一把牌组合",
+  "bv": "BV12TAfzYExN",
+  "pub_date": "2026-03-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵姬",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_张良_春申君",
+  "hero_a": "张良",
+  "hero_b": "春申君",
+  "highlight": "猛猛触发战法双倍效果，锦囊妙计组合",
+  "bv": "BV1xVfsBoE1z",
+  "pub_date": "2026-03-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:春申君"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_孙权",
+  "hero_a": "太子丹",
+  "hero_b": "孙权",
+  "highlight": "技能可以空手（或者暂时空手）触发太子丹技能",
+  "bv": "BV16qPuzXEkf",
+  "pub_date": "2026-03-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:孙权"
+  ]
+ },
+ {
+  "block_id": "combo_孙坚_孙尚香",
+  "hero_a": "孙坚",
+  "hero_b": "孙尚香",
+  "highlight": "东吴父女操控装备组合",
+  "bv": "BV1sLfsBxE7h",
+  "pub_date": "2026-03-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙坚",
+   "武将:孙尚香"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_霍去病",
+  "hero_a": "孙权",
+  "hero_b": "霍去病",
+  "highlight": "双回合双换牌组合",
+  "bv": "BV13FfsBiEoe",
+  "pub_date": "2026-02-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:霍去病"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_大乔",
+  "hero_a": "乐毅",
+  "hero_b": "大乔",
+  "highlight": "用底拆牌联动组合",
+  "bv": "BV1YFfsBiEuR",
+  "pub_date": "2026-02-28",
+  "mechanism": "机制：大乔绑定角色只要弃牌或掉血 → 大乔可拆其他角色一张牌；乐毅\"废苛顺民\"回合外用行动牌时翻看牌底 → 选打或不打 → 剩余弃置（触发大乔弃牌效果）；\"报惠王书\"也有弃牌\n效果：打大乔 → 大乔转给乐毅 → 乐毅看牌 + 掉血 → 弃对方 2 张牌；**越打越强、越打越恶心**的控制组合",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:大乔"
+  ]
+ },
+ {
+  "block_id": "combo_宋玉_诸葛亮",
+  "hero_a": "宋玉",
+  "hero_b": "诸葛亮",
+  "highlight": "多战法触发宋玉技能（牌堆中识破不多，所以战法的响应较难）",
+  "bv": "BV15dfWBuEGM",
+  "pub_date": "2026-02-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:宋玉",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_刘彻_韩非",
+  "hero_a": "刘彻",
+  "hero_b": "韩非",
+  "highlight": "呼吸大摸牌组合2.0",
+  "bv": "BV1VofWBBE4E",
+  "pub_date": "2026-02-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘彻",
+   "武将:韩非"
+  ]
+ },
+ {
+  "block_id": "combo_申不害_赵姬",
+  "hero_a": "申不害",
+  "hero_b": "赵姬",
+  "highlight": "用一摸二组合",
+  "bv": "BV1WRfFBXEhY",
+  "pub_date": "2026-02-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:申不害",
+   "武将:赵姬"
+  ]
+ },
+ {
+  "block_id": "combo_嬴政_子婴",
+  "hero_a": "嬴政",
+  "hero_b": "子婴",
+  "highlight": "始皇祖孙组合（同势力加速一统六合的速度）",
+  "bv": "BV1WRfFBQEPj",
+  "pub_date": "2026-02-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:嬴政",
+   "武将:子婴"
+  ]
+ },
+ {
+  "block_id": "combo_左慈_春申君",
+  "hero_a": "左慈",
+  "hero_b": "春申君",
+  "highlight": "双倍夺粮截营组合",
+  "bv": "BV1mmfFB4EEe",
+  "pub_date": "2026-02-25",
+  "mechanism": "机制：春申君的\"无妄之灾\"能让包含自身战法牌效果翻倍；左慈出牌时可将一名其他角色视为虚拟目标\n效果：左慈对敌方使用\"夺粮劫营\" + 春申君当虚拟目标 → 这张战法牌**结算两次**，敌方被偷两次牌（左慈没摸到夺粮时也可让春申君转化出）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:左慈",
+   "武将:春申君"
+  ]
+ },
+ {
+  "block_id": "combo_刘表_高渐离",
+  "hero_a": "刘表",
+  "hero_b": "高渐离",
+  "highlight": "捡破烂组合",
+  "bv": "BV1bCfFBFE59",
+  "pub_date": "2026-02-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘表",
+   "武将:高渐离"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_董仲舒",
+  "hero_a": "大乔",
+  "hero_b": "董仲舒",
+  "highlight": "卜卦弃牌联动组合",
+  "bv": "BV1byfFBbEwi",
+  "pub_date": "2026-02-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:董仲舒"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_张仪",
+  "hero_a": "卫青",
+  "hero_b": "张仪",
+  "highlight": "双倍直捣龙城组合",
+  "bv": "BV1mFZZBDEWj",
+  "pub_date": "2026-02-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:张仪"
+  ]
+ },
+ {
+  "block_id": "combo_刘表_甘宁",
+  "hero_a": "刘表",
+  "hero_b": "甘宁",
+  "highlight": "捡破烂组合（第三期）",
+  "bv": "BV1zjZvBrE7Z",
+  "pub_date": "2026-02-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘表",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_太史慈_步练师",
+  "hero_a": "太史慈",
+  "hero_b": "步练师",
+  "highlight": "辅助决战组合",
+  "bv": "BV1EEZvBgEwP",
+  "pub_date": "2026-02-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太史慈",
+   "武将:步练师"
+  ]
+ },
+ {
+  "block_id": "combo_左慈_董仲舒",
+  "hero_a": "左慈",
+  "hero_b": "董仲舒",
+  "highlight": "卜卦收益组合",
+  "bv": "BV15tZvBPEnQ",
+  "pub_date": "2026-02-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:左慈",
+   "武将:董仲舒"
+  ]
+ },
+ {
+  "block_id": "combo_吕雉_张仪",
+  "hero_a": "吕雉",
+  "hero_b": "张仪",
+  "highlight": "双倍临朝称制组合",
+  "bv": "BV1WTZvBmENo",
+  "pub_date": "2026-02-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕雉",
+   "武将:张仪"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_高渐离",
+  "hero_a": "大乔",
+  "hero_b": "高渐离",
+  "highlight": "拆迁队组合",
+  "bv": "BV1xPZvBSENa",
+  "pub_date": "2026-02-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:高渐离"
+  ]
+ },
+ {
+  "block_id": "combo_刘表_赵姬",
+  "hero_a": "刘表",
+  "hero_b": "赵姬",
+  "highlight": "捡破烂组合（第二期）",
+  "bv": "BV1WKZvBEE2W",
+  "pub_date": "2026-02-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘表",
+   "武将:赵姬"
+  ]
+ },
+ {
+  "block_id": "combo_如姬_蔺相如",
+  "hero_a": "如姬",
+  "hero_b": "蔺相如",
+  "highlight": "换牌强抢组合",
+  "bv": "BV1ZiZRBbE6h",
+  "pub_date": "2026-02-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:如姬",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_董仲舒",
+  "hero_a": "张仪",
+  "hero_b": "董仲舒",
+  "highlight": "双倍天人感应组合",
+  "bv": "BV1EyZ4BnEUU",
+  "pub_date": "2026-02-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:董仲舒"
+  ]
+ },
+ {
+  "block_id": "combo_袁绍_陈阿娇",
+  "hero_a": "袁绍",
+  "hero_b": "陈阿娇",
+  "highlight": "双倍万箭齐发组合",
+  "bv": "BV1iUZ4BmEar",
+  "pub_date": "2026-02-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:袁绍",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_蔺相如",
+  "hero_a": "孙权",
+  "hero_b": "蔺相如",
+  "highlight": "传牌然后强化牌点石成金组合",
+  "bv": "BV16pZtBWEYz",
+  "pub_date": "2026-02-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_张角_霍去病",
+  "hero_a": "张角",
+  "hero_b": "霍去病",
+  "highlight": "两轮超速觉醒组合",
+  "bv": "BV1zWZtBXEAi",
+  "pub_date": "2026-02-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张角",
+   "武将:霍去病"
+  ]
+ },
+ {
+  "block_id": "combo_芈八子_项梁",
+  "hero_a": "芈八子",
+  "hero_b": "项梁",
+  "highlight": "刀刀双倍组合（战胜秦始皇对局）",
+  "bv": "BV1k9ZxBsE9d",
+  "pub_date": "2026-02-17",
+  "mechanism": "机制：芈八子觉醒后可将队友划入自身势力，通过\"权御四贵\"交付贵牌；队友拥有贵牌时每回合前两次打出的牌生效两次；项梁在其他角色回合开始时打出杀\n效果：**双倍杀**直接触发两次伤害；推荐芈八子 2 号位 + 项梁 3 号位 → 首回合即吃到贵牌收益，每个敌方回合开始时双倍杀 → 对方拿不出 2 闪就被命中 + 项梁偷牌，效果**毁天灭地**",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:芈八子",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_甄宓",
+  "hero_a": "刘备",
+  "hero_b": "甄宓",
+  "highlight": "交互黑桃刷牌组合",
+  "bv": "BV1VBZEBpEyP",
+  "pub_date": "2026-02-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_甘宁_西门豹",
+  "hero_a": "甘宁",
+  "hero_b": "西门豹",
+  "highlight": "西门豹发黑桃甘宁得黑桃拆敌方",
+  "bv": "BV1yzZJB6E9c",
+  "pub_date": "2026-02-15",
+  "mechanism": "机制：西门豹通过技能为队友刷出大量**黑桃牌**\n效果：配甄宓：甄宓获黑桃牌可多摸牌，西门豹回合内攒下**十几张牌**；配甘宁：甘宁获黑桃牌可拆牌，把对手手牌扒光，让对手完全没游戏体验",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:甘宁",
+   "武将:西门豹"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_西门豹",
+  "hero_a": "夏侯惇",
+  "hero_b": "西门豹",
+  "highlight": "西门豹发黑桃夏侯惇递牌给西门豹提供续航",
+  "bv": "BV1yzZJB6E9c",
+  "pub_date": "2026-02-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:西门豹"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_高渐离",
+  "hero_a": "夏侯惇",
+  "hero_b": "高渐离",
+  "highlight": "包养歌王组合2.0",
+  "bv": "BV1KDZjBiEgr",
+  "pub_date": "2026-02-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:高渐离"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_范雎",
+  "hero_a": "卫青",
+  "hero_b": "范雎",
+  "highlight": "主动交互武刚车组合",
+  "bv": "BV1w1c7zzE9S",
+  "pub_date": "2026-02-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:范雎"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_张角",
+  "hero_a": "卫青",
+  "hero_b": "张角",
+  "highlight": "主动交互武刚车组合",
+  "bv": "BV1w1c7zzE9S",
+  "pub_date": "2026-02-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:张角"
+  ]
+ },
+ {
+  "block_id": "combo_君王后_萧何",
+  "hero_a": "君王后",
+  "hero_b": "萧何",
+  "highlight": "双回合四摸牌组合",
+  "bv": "BV1thcLz3Eh4",
+  "pub_date": "2026-02-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:君王后",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_刘表_大乔",
+  "hero_a": "刘表",
+  "hero_b": "大乔",
+  "highlight": "捡破烂组合",
+  "bv": "BV1WXcGzbEL4",
+  "pub_date": "2026-02-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘表",
+   "武将:大乔"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_张角",
+  "hero_a": "卫子夫",
+  "hero_b": "张角",
+  "highlight": "符水陷害的邪门组合（卫子夫复制符水给对面，复制的符水属于卫子夫，由于卫子夫没有太平道所以对面会掉血）",
+  "bv": "BV1yecizfEAp",
+  "pub_date": "2026-02-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:张角"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_子婴",
+  "hero_a": "大乔",
+  "hero_b": "子婴",
+  "highlight": "弃牌双收益组合",
+  "bv": "BV12ncuz9EHi",
+  "pub_date": "2026-02-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:子婴"
+  ]
+ },
+ {
+  "block_id": "combo_步练师_赵姬",
+  "hero_a": "步练师",
+  "hero_b": "赵姬",
+  "highlight": "亡语无限刷牌组合",
+  "bv": "BV1G4F1zaEqe",
+  "pub_date": "2026-02-11",
+  "mechanism": "机制：步练师\"亡语\"把所有手牌交给队友，让队友摸装备并装备到上限；赵姬每打出一张牌可弃一张再摸一张（可弃装备区）\n效果：步练师让赵姬装装备 → 赵姬弃装备再摸 → 装备永远装不满 → **无限循环摸牌直到牌堆无装备牌**，大量爆发",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:步练师",
+   "武将:赵姬"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_钟无艳",
+  "hero_a": "卫子夫",
+  "hero_b": "钟无艳",
+  "highlight": "首轮一牌三用组合",
+  "bv": "BV1NLFkzVEkF",
+  "pub_date": "2026-02-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_郭嘉",
+  "hero_a": "孟尝君",
+  "hero_b": "郭嘉",
+  "highlight": "转移卖血组合",
+  "bv": "BV1WEFkz3EVJ",
+  "pub_date": "2026-02-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_华佗_郑袖",
+  "hero_a": "华佗",
+  "hero_b": "郑袖",
+  "highlight": "无偿献血组合",
+  "bv": "BV1vJFezqE26",
+  "pub_date": "2026-02-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:华佗",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_宋玉",
+  "hero_a": "子婴",
+  "hero_b": "宋玉",
+  "highlight": "弃牌交互组合",
+  "bv": "BV1vJFezqE1d",
+  "pub_date": "2026-02-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:宋玉"
+  ]
+ },
+ {
+  "block_id": "combo_郭嘉_高渐离",
+  "hero_a": "郭嘉",
+  "hero_b": "高渐离",
+  "highlight": "包养歌王组合",
+  "bv": "BV1hyFkzpEvM",
+  "pub_date": "2026-02-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郭嘉",
+   "武将:高渐离"
+  ]
+ },
+ {
+  "block_id": "combo_袁术_钟无艳",
+  "hero_a": "袁术",
+  "hero_b": "钟无艳",
+  "highlight": "三倍传国玉玺组合（钟无艳的限定）",
+  "bv": "BV1hgFvzYEoo",
+  "pub_date": "2026-02-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:袁术",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_蔺相如_陈阿娇",
+  "hero_a": "蔺相如",
+  "hero_b": "陈阿娇",
+  "highlight": "满手强化牌组合",
+  "bv": "BV1syfDBaEnm",
+  "pub_date": "2026-02-05",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:蔺相如",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_吕雉_小乔",
+  "hero_a": "吕雉",
+  "hero_b": "小乔",
+  "highlight": "双倍桃花组合（桃花可以通过吕雉限定拿回来）",
+  "bv": "BV1A56zBmEHw",
+  "pub_date": "2026-02-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕雉",
+   "武将:小乔"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_张骞",
+  "hero_a": "刘备",
+  "hero_b": "张骞",
+  "highlight": "凿烂西域组合",
+  "bv": "BV1M26zBdENp",
+  "pub_date": "2026-02-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_吕不韦",
+  "hero_a": "卫子夫",
+  "hero_b": "吕不韦",
+  "highlight": "一牌无限用组合",
+  "bv": "BV12U6zBWEUT",
+  "pub_date": "2026-02-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:吕不韦"
+  ]
+ },
+ {
+  "block_id": "combo_袁术_陈阿娇",
+  "hero_a": "袁术",
+  "hero_b": "陈阿娇",
+  "highlight": "双传国玉玺组合",
+  "bv": "BV19v6zBAELS",
+  "pub_date": "2026-02-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:袁术",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_郑袖_郭嘉",
+  "hero_a": "郑袖",
+  "hero_b": "郭嘉",
+  "highlight": "一血4牌组合",
+  "bv": "BV1X56BBZELD",
+  "pub_date": "2026-01-31",
+  "mechanism": "机制：郑袖将牌交给卖血将（郭嘉 / 荀彧 / 曹丕等）→ 对方打出郑袖的牌 → 郑袖杀队友触发其卖血 → 过牌 + 卖血双收益\n效果：徐盛让\"不动白\"有发挥（类似的还有李牧、项燕）；大乔让\"掩袖工谗\"杀转移出去 → 敌方卖血为我方补牌（类孟尝君）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:郑袖",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_赵姬",
+  "hero_a": "大乔",
+  "hero_b": "赵姬",
+  "highlight": "扭扭拆牌怪，标记赵姬清空敌方手牌",
+  "bv": "BV1oJ6cBfEAT",
+  "pub_date": "2026-01-30",
+  "mechanism": "机制：赵姬被削弱但组合无损；开局大乔与赵姬绑定；赵姬尽情发动\"绝好善舞\"弃牌刷牌；大乔把对手手牌扒光；赵姬打连环 + 喝怒酒；手牌不够时开限定技\n效果：一波将对面击败",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:赵姬"
+  ]
+ },
+ {
+  "block_id": "combo_春申君_项羽",
+  "hero_a": "春申君",
+  "hero_b": "项羽",
+  "highlight": "转群刷决斗强命组合",
+  "bv": "BV15o6MBmE5u",
+  "pub_date": "2026-01-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:春申君",
+   "武将:项羽"
+  ]
+ },
+ {
+  "block_id": "combo_小乔_步练师",
+  "hero_a": "小乔",
+  "hero_b": "步练师",
+  "highlight": "呼吸双摸牌组合",
+  "bv": "BV1jX6MBnEiX",
+  "pub_date": "2026-01-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:小乔",
+   "武将:步练师"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_子婴",
+  "hero_a": "刘备",
+  "hero_b": "子婴",
+  "highlight": "囤牌砸人组合",
+  "bv": "BV1NEzqBVEg8",
+  "pub_date": "2026-01-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:子婴"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_郑袖",
+  "hero_a": "大乔",
+  "hero_b": "郑袖",
+  "highlight": "掩袖工馋转杀组合",
+  "bv": "BV1hc6TBTEuV",
+  "pub_date": "2026-01-27",
+  "mechanism": "机制：郑袖将牌交给卖血将（郭嘉 / 荀彧 / 曹丕等）→ 对方打出郑袖的牌 → 郑袖杀队友触发其卖血 → 过牌 + 卖血双收益\n效果：徐盛让\"不动白\"有发挥（类似的还有李牧、项燕）；大乔让\"掩袖工谗\"杀转移出去 → 敌方卖血为我方补牌（类孟尝君）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_小乔_张春华",
+  "hero_a": "小乔",
+  "hero_b": "张春华",
+  "highlight": "流血下的呼吸摸牌",
+  "bv": "BV1LzzxBFEpF",
+  "pub_date": "2026-01-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:小乔",
+   "武将:张春华"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_赵威后",
+  "hero_a": "孟尝君",
+  "hero_b": "赵威后",
+  "highlight": "递牌免伤组合",
+  "bv": "BV1LjzmBsEso",
+  "pub_date": "2026-01-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_孙权",
+  "hero_a": "孙尚香",
+  "hero_b": "孙权",
+  "highlight": "东吴兄妹刷装备组合",
+  "bv": "BV1s8zuBwEpx",
+  "pub_date": "2026-01-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:孙权"
+  ]
+ },
+ {
+  "block_id": "combo_芈八子_郑袖",
+  "hero_a": "芈八子",
+  "hero_b": "郑袖",
+  "highlight": "卖血陷害组合",
+  "bv": "BV1oizNB6EXw",
+  "pub_date": "2026-01-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:芈八子",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_袁绍_陈胜",
+  "hero_a": "袁绍",
+  "hero_b": "陈胜",
+  "highlight": "四万箭抢回合组合",
+  "bv": "BV1Z8zWBtEuW",
+  "pub_date": "2026-01-22",
+  "mechanism": "机制：袁绍坐 1 号位放万箭齐发；4 张万箭让陈胜直接掉到 1 血\n效果：1 血陈胜发动限定技抢回合 → 4 号位陈胜回合结束 → 轮回 1 号位袁绍再打一个回合 → **连续 3 个回合**，首轮即可拿下对手",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:袁绍",
+   "武将:陈胜"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_夏侯惇",
+  "hero_a": "刘备",
+  "hero_b": "夏侯惇",
+  "highlight": "交互大刷牌组合",
+  "bv": "BV1LUkEBDErX",
+  "pub_date": "2026-01-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:夏侯惇"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_吕不韦",
+  "hero_a": "刘备",
+  "hero_b": "吕不韦",
+  "highlight": "交互大刷牌组合",
+  "bv": "BV1LUkEBDErX",
+  "pub_date": "2026-01-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:吕不韦"
+  ]
+ },
+ {
+  "block_id": "combo_步练师_蒙毅",
+  "hero_a": "步练师",
+  "hero_b": "蒙毅",
+  "highlight": "步练师互保组合（步练师辅助能力强，但缺乏自保能力。蒙毅保护步练师，并被步练师各种装备包养）",
+  "bv": "BV1TQkgB2EWc",
+  "pub_date": "2026-01-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:步练师",
+   "武将:蒙毅"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_甘宁",
+  "hero_a": "卫子夫",
+  "hero_b": "甘宁",
+  "highlight": "刷牌拆牌组合",
+  "bv": "BV1yPk4BXEQP",
+  "pub_date": "2026-01-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_曹丕_曹操",
+  "hero_a": "曹丕",
+  "hero_b": "曹操",
+  "highlight": "无限aoe组合plus版（曹丕先动）",
+  "bv": "BV1rMrDB5Ejn",
+  "pub_date": "2026-01-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹丕",
+   "武将:曹操"
+  ]
+ },
+ {
+  "block_id": "combo_刘彻_陈平",
+  "hero_a": "刘彻",
+  "hero_b": "陈平",
+  "highlight": "专属战法陷害销牌组合",
+  "bv": "BV12HrkBYEEg",
+  "pub_date": "2026-01-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘彻",
+   "武将:陈平"
+  ]
+ },
+ {
+  "block_id": "combo_芈八子_陈平",
+  "hero_a": "芈八子",
+  "hero_b": "陈平",
+  "highlight": "三倍游云梦泽",
+  "bv": "BV1vArkB1E85",
+  "pub_date": "2026-01-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:芈八子",
+   "武将:陈平"
+  ]
+ },
+ {
+  "block_id": "combo_董仲舒_赵威后",
+  "hero_a": "董仲舒",
+  "hero_b": "赵威后",
+  "highlight": "卜卦销毁双机制联动",
+  "bv": "BV12jkcBUENP",
+  "pub_date": "2026-01-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:董仲舒",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_郑袖",
+  "hero_a": "刘备",
+  "hero_b": "郑袖",
+  "highlight": "传牌卖血组合",
+  "bv": "BV1QfrWBsEHq",
+  "pub_date": "2026-01-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_法正_虞姬",
+  "hero_a": "法正",
+  "hero_b": "虞姬",
+  "highlight": "强制卖血组合2.0",
+  "bv": "BV1kqrvBuEah",
+  "pub_date": "2026-01-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:法正",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_吕雉_韩非",
+  "hero_a": "吕雉",
+  "hero_b": "韩非",
+  "highlight": "呼吸大摸牌组合",
+  "bv": "BV1wV6UBgE9X",
+  "pub_date": "2026-01-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕雉",
+   "武将:韩非"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_曹丕",
+  "hero_a": "孙尚香",
+  "hero_b": "曹丕",
+  "highlight": "卖血与奶妈",
+  "bv": "BV1w56UBzEAh",
+  "pub_date": "2026-01-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:曹丕"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_钟无艳",
+  "hero_a": "夏侯惇",
+  "hero_b": "钟无艳",
+  "highlight": "互递杀牌大爆发",
+  "bv": "BV1RYrVBaEWJ",
+  "pub_date": "2026-01-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:钟无艳"
+  ]
+ },
+ {
+  "block_id": "combo_孙策_虞姬",
+  "hero_a": "孙策",
+  "hero_b": "虞姬",
+  "highlight": "强制卖血组合",
+  "bv": "BV1DPrPBhEmk",
+  "pub_date": "2026-01-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙策",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_郭嘉",
+  "hero_a": "刘邦",
+  "hero_b": "郭嘉",
+  "highlight": "刘邦刷牌组合",
+  "bv": "BV1LqiDBoERa",
+  "pub_date": "2026-01-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_张骞_甄宓",
+  "hero_a": "张骞",
+  "hero_b": "甄宓",
+  "highlight": "交换黑桃刷牌组合",
+  "bv": "BV1RCqPBFE69",
+  "pub_date": "2026-01-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张骞",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_张良_鲁肃",
+  "hero_a": "张良",
+  "hero_b": "鲁肃",
+  "highlight": "嫖牌爆发，爆杀阴间组合",
+  "bv": "BV1asibBxEDF",
+  "pub_date": "2026-01-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:鲁肃"
+  ]
+ },
+ {
+  "block_id": "combo_甄宓_西门豹",
+  "hero_a": "甄宓",
+  "hero_b": "西门豹",
+  "highlight": "西门豹发黑桃甄宓得黑桃额外过牌",
+  "bv": "BV1tYi7BnELs",
+  "pub_date": "2026-01-05",
+  "mechanism": "机制：西门豹通过技能为队友刷出大量**黑桃牌**\n效果：配甄宓：甄宓获黑桃牌可多摸牌，西门豹回合内攒下**十几张牌**；配甘宁：甘宁获黑桃牌可拆牌，把对手手牌扒光，让对手完全没游戏体验",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:甄宓",
+   "武将:西门豹"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_张良",
+  "hero_a": "夏侯惇",
+  "hero_b": "张良",
+  "highlight": "无限战法组合（首回合20+战法，直接觉醒）",
+  "bv": "BV1WNBCBpELt",
+  "pub_date": "2026-01-04",
+  "mechanism": "机制：夏侯惇开局把所有牌交给张良；张良在回合内把一张牌转化为\"先拔头筹\"；夏侯惇再拿牌再全交\n效果：张良获得**用不完的杀**，回合内即可觉醒六韬技能，轻松打残甚至直接带走一名对手",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_春申君_霍去病",
+  "hero_a": "春申君",
+  "hero_b": "霍去病",
+  "highlight": "双倍群伤收场",
+  "bv": "BV1iCvxBQEx7",
+  "pub_date": "2026-01-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:春申君",
+   "武将:霍去病"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_孙权",
+  "hero_a": "周勃",
+  "hero_b": "孙权",
+  "highlight": "削平诸吕大过牌组合",
+  "bv": "BV1oCvxBQEEc",
+  "pub_date": "2026-01-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:孙权"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_季布",
+  "hero_a": "周勃",
+  "hero_b": "季布",
+  "highlight": "削平诸吕大过牌组合",
+  "bv": "BV1oCvxBQEEc",
+  "pub_date": "2026-01-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:季布"
+  ]
+ },
+ {
+  "block_id": "combo_吴国太_孙尚香",
+  "hero_a": "吴国太",
+  "hero_b": "孙尚香",
+  "highlight": "超级装备大师组合",
+  "bv": "BV1eUvxBEEAu",
+  "pub_date": "2026-01-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吴国太",
+   "武将:孙尚香"
+  ]
+ },
+ {
+  "block_id": "combo_张春华_龙且",
+  "hero_a": "张春华",
+  "hero_b": "龙且",
+  "highlight": "体力流失陷害组合",
+  "bv": "BV1HMBCBnE9f",
+  "pub_date": "2025-12-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张春华",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_孙权",
+  "hero_a": "卫子夫",
+  "hero_b": "孙权",
+  "highlight": "瞬间启动的阴间刷牌组合",
+  "bv": "BV1Q3vxBCEhW",
+  "pub_date": "2025-12-30",
+  "mechanism": "机制：卫子夫手牌易卡住、难觉醒，但孙权配合让首回合即可觉醒\n效果：首回合卫子夫把牌全交给孙权 → 交牌瞬间即觉醒 → 孙权把能打出的牌换回 → 卫子夫不停印牌，**几乎无敌**",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:孙权"
+  ]
+ },
+ {
+  "block_id": "combo_曹操_袁绍",
+  "hero_a": "曹操",
+  "hero_b": "袁绍",
+  "highlight": "无限aoe组合",
+  "bv": "BV1pNBCBpEDT",
+  "pub_date": "2025-12-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹操",
+   "武将:袁绍"
+  ]
+ },
+ {
+  "block_id": "combo_曹操_虞姬",
+  "hero_a": "曹操",
+  "hero_b": "虞姬",
+  "highlight": "无限aoe组合",
+  "bv": "BV1pNBCBpEDT",
+  "pub_date": "2025-12-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹操",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_小乔_董仲舒",
+  "hero_a": "小乔",
+  "hero_b": "董仲舒",
+  "highlight": "全员判定呼吸摸牌",
+  "bv": "BV1nTBrBVEBn",
+  "pub_date": "2025-12-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:小乔",
+   "武将:董仲舒"
+  ]
+ },
+ {
+  "block_id": "combo_张良_诸葛亮",
+  "hero_a": "张良",
+  "hero_b": "诸葛亮",
+  "highlight": "诸葛亮战法加速张良出六韬（诸葛亮【舌战群儒】高收益可辅助张良）",
+  "bv": "BV1RpBRBzEpE",
+  "pub_date": "2025-12-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_蔺相如",
+  "hero_a": "子婴",
+  "hero_b": "蔺相如",
+  "highlight": "递牌强化组合",
+  "bv": "BV1VjBjBcEUX",
+  "pub_date": "2025-12-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_申不害_陆逊",
+  "hero_a": "申不害",
+  "hero_b": "陆逊",
+  "highlight": "用一摸二组合",
+  "bv": "BV1oXBTBCExN",
+  "pub_date": "2025-12-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:申不害",
+   "武将:陆逊"
+  ]
+ },
+ {
+  "block_id": "combo_钟无艳_陈阿娇",
+  "hero_a": "钟无艳",
+  "hero_b": "陈阿娇",
+  "highlight": "多刀战法刷牌组合",
+  "bv": "BV18MBJBAE2Q",
+  "pub_date": "2025-12-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:钟无艳",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_吴国太_孙权",
+  "hero_a": "吴国太",
+  "hero_b": "孙权",
+  "highlight": "东吴装备大师组合",
+  "bv": "BV1YABJBiE38",
+  "pub_date": "2025-12-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吴国太",
+   "武将:孙权"
+  ]
+ },
+ {
+  "block_id": "combo_曹操_郑袖",
+  "hero_a": "曹操",
+  "hero_b": "郑袖",
+  "highlight": "郑袖肘击曹操，曹操吸牌转杀敌方，自残多刀组合",
+  "bv": "BV156q1BVEa1",
+  "pub_date": "2025-12-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹操",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_曹植_萧何",
+  "hero_a": "曹植",
+  "hero_b": "萧何",
+  "highlight": "无限喝酒出杀组合",
+  "bv": "BV11rqqB6ErQ",
+  "pub_date": "2025-12-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹植",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_甄宓_郭嘉",
+  "hero_a": "甄宓",
+  "hero_b": "郭嘉",
+  "highlight": "刷牌组合",
+  "bv": "BV15osXzHEvS",
+  "pub_date": "2025-10-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:甄宓",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_孟姚",
+  "hero_a": "孙权",
+  "hero_b": "孟姚",
+  "highlight": "过牌与回牌组合",
+  "bv": "BV1LosXzHEFD",
+  "pub_date": "2025-10-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:孟姚"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_项梁",
+  "hero_a": "子婴",
+  "hero_b": "项梁",
+  "highlight": "递牌养C，拒绝断杀",
+  "bv": "BV1L9sXzWEY4",
+  "pub_date": "2025-10-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_申不害_虞姬",
+  "hero_a": "申不害",
+  "hero_b": "虞姬",
+  "highlight": "极限保C，共担兵戈",
+  "bv": "BV18hspzoEMT",
+  "pub_date": "2025-10-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:申不害",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_赵威后",
+  "hero_a": "张仪",
+  "hero_b": "赵威后",
+  "highlight": "销牌陷害plus版",
+  "bv": "BV1D1shzJEX3",
+  "pub_date": "2025-10-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_华佗_燕昭王",
+  "hero_a": "华佗",
+  "hero_b": "燕昭王",
+  "highlight": "华佗刮骨能累计强兵伐齐",
+  "bv": "BV1hkshzHEDb",
+  "pub_date": "2025-10-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:华佗",
+   "武将:燕昭王"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_申不害",
+  "hero_a": "孙尚香",
+  "hero_b": "申不害",
+  "highlight": "用一摸一plus（用一摸二版）",
+  "bv": "BV1EPWdzhETn",
+  "pub_date": "2025-10-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:申不害"
+  ]
+ },
+ {
+  "block_id": "combo_平原君_赵威后",
+  "hero_a": "平原君",
+  "hero_b": "赵威后",
+  "highlight": "销毁手牌的卜卦陷害",
+  "bv": "BV1pEW1z3EU6",
+  "pub_date": "2025-10-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:平原君",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_申不害_鲁肃",
+  "hero_a": "申不害",
+  "hero_b": "鲁肃",
+  "highlight": "23号位截胡敌方手牌的骚操作",
+  "bv": "BV1PVW1zyEDp",
+  "pub_date": "2025-10-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:申不害",
+   "武将:鲁肃"
+  ]
+ },
+ {
+  "block_id": "combo_宋玉_郭嘉",
+  "hero_a": "宋玉",
+  "hero_b": "郭嘉",
+  "highlight": "新式扒光对手计划",
+  "bv": "BV1emsAz5ErZ",
+  "pub_date": "2025-10-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:宋玉",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_郑袖_项梁",
+  "hero_a": "郑袖",
+  "hero_b": "项梁",
+  "highlight": "递牌包养项梁肘击过牌（有点配合）",
+  "bv": "BV1dysAzjEeF",
+  "pub_date": "2025-10-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郑袖",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_张良",
+  "hero_a": "孙尚香",
+  "hero_b": "张良",
+  "highlight": "传递武器联动组合",
+  "bv": "BV1GTWbzyEHm",
+  "pub_date": "2025-10-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_郑袖",
+  "hero_a": "荀彧",
+  "hero_b": "郑袖",
+  "highlight": "郑袖肘击配合卖血武将刷牌，一血四牌组合",
+  "bv": "BV1yRWpz7EcG",
+  "pub_date": "2025-10-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_张辽",
+  "hero_a": "乐毅",
+  "hero_b": "张辽",
+  "highlight": "伪多刀配白狼持麾",
+  "bv": "BV1sXWpzUELh",
+  "pub_date": "2025-10-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:张辽"
+  ]
+ },
+ {
+  "block_id": "combo_吕雉_赵威后",
+  "hero_a": "吕雉",
+  "hero_b": "赵威后",
+  "highlight": "锁死花色，控防兼备（一个负责销毁一个负责卜卦出伤）",
+  "bv": "BV1pZWpzLEHK",
+  "pub_date": "2025-10-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕雉",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_田单",
+  "hero_a": "刘备",
+  "hero_b": "田单",
+  "highlight": "蹲坑神将转行勇担输出大业",
+  "bv": "BV1pGWnzuEvw",
+  "pub_date": "2025-10-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:田单"
+  ]
+ },
+ {
+  "block_id": "combo_暴鸢_郑袖",
+  "hero_a": "暴鸢",
+  "hero_b": "郑袖",
+  "highlight": "郑袖肘击暴鸢，双双过牌，暴鸢猛猛出杀（愤怒的小鸟：队友祭天，法力无边）",
+  "bv": "BV1rGWEzhEU4",
+  "pub_date": "2025-10-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:暴鸢",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_范增_郑袖",
+  "hero_a": "范增",
+  "hero_b": "郑袖",
+  "highlight": "郑袖给敌方牌，敌方使用，郑袖出杀，范增跟着出战法",
+  "bv": "BV1wTWzzsEcg",
+  "pub_date": "2025-10-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:范增",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_吕雉_张良",
+  "hero_a": "吕雉",
+  "hero_b": "张良",
+  "highlight": "战法爆发组合",
+  "bv": "BV1LCaqzhEy8",
+  "pub_date": "2025-09-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕雉",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_董卓_郭嘉",
+  "hero_a": "董卓",
+  "hero_b": "郭嘉",
+  "highlight": "换位多刀多特性组合",
+  "bv": "BV1dCaqz8ESx",
+  "pub_date": "2025-09-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:董卓",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_左慈_甄宓",
+  "hero_a": "左慈",
+  "hero_b": "甄宓",
+  "highlight": "看似单打独斗，实则变身找搭配",
+  "bv": "BV1BEaBziERX",
+  "pub_date": "2025-09-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:左慈",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_田单_范雎",
+  "hero_a": "田单",
+  "hero_b": "范雎",
+  "highlight": "递攒装备，一击毙命",
+  "bv": "BV1oHaBzeESK",
+  "pub_date": "2025-09-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:田单",
+   "武将:范雎"
+  ]
+ },
+ {
+  "block_id": "combo_苏秦_龙且",
+  "hero_a": "苏秦",
+  "hero_b": "龙且",
+  "highlight": "满金神装疯杀实录，极致输出体验拉满！",
+  "bv": "BV1gbhzzRE8t",
+  "pub_date": "2025-09-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:苏秦",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_华佗_吕雉",
+  "hero_a": "华佗",
+  "hero_b": "吕雉",
+  "highlight": "临朝称制配合华佗技能过梅花拉升血上限（有点小配合）",
+  "bv": "BV1GshzztEpJ",
+  "pub_date": "2025-09-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:华佗",
+   "武将:吕雉"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_袁绍",
+  "hero_a": "周勃",
+  "hero_b": "袁绍",
+  "highlight": "四世三公搭配削平诸吕",
+  "bv": "BV1rKhzz6EUa",
+  "pub_date": "2025-09-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:袁绍"
+  ]
+ },
+ {
+  "block_id": "combo_貂蝉_钟离眜",
+  "hero_a": "貂蝉",
+  "hero_b": "钟离眜",
+  "highlight": "貂蝉技能+钟离眜双指定",
+  "bv": "BV1C7hizvE3R",
+  "pub_date": "2025-09-05",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:貂蝉",
+   "武将:钟离眜"
+  ]
+ },
+ {
+  "block_id": "combo_陆逊_项梁",
+  "hero_a": "陆逊",
+  "hero_b": "项梁",
+  "highlight": "烧闪强命，先发制人",
+  "bv": "BV1y5hizqE1f",
+  "pub_date": "2025-09-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:陆逊",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_蒙毅_韩信",
+  "hero_a": "蒙毅",
+  "hero_b": "韩信",
+  "highlight": "防御版背水一战",
+  "bv": "BV1RthRz6ESw",
+  "pub_date": "2025-09-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:蒙毅",
+   "武将:韩信"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_甘宁",
+  "hero_a": "刘邦",
+  "hero_b": "甘宁",
+  "highlight": "过牌与拆牌运营",
+  "bv": "BV1ARtwzaEE2",
+  "pub_date": "2025-08-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_郭嘉_钟离眜",
+  "hero_a": "郭嘉",
+  "hero_b": "钟离眜",
+  "highlight": "多刀多目标双亡语（收益buff叠满）",
+  "bv": "BV1kotwzFEKN",
+  "pub_date": "2025-08-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郭嘉",
+   "武将:钟离眜"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_春申君",
+  "hero_a": "张仪",
+  "hero_b": "春申君",
+  "highlight": "双倍移花接木，控死敌方战法",
+  "bv": "BV1qPtAzsEoz",
+  "pub_date": "2025-08-17",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:春申君"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_郭嘉",
+  "hero_a": "孙尚香",
+  "hero_b": "郭嘉",
+  "highlight": "卖血配奶妈、递装备刷牌伪多刀",
+  "bv": "BV1zctAz4Eee",
+  "pub_date": "2025-08-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_廉颇",
+  "hero_a": "刘备",
+  "hero_b": "廉颇",
+  "highlight": "仁德请罪（刘备包养廉颇）",
+  "bv": "BV1FctAztEMf",
+  "pub_date": "2025-08-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:廉颇"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_项梁",
+  "hero_a": "孟尝君",
+  "hero_b": "项梁",
+  "highlight": "递牌养C，杀尽敌方",
+  "bv": "BV141twzBEDX",
+  "pub_date": "2025-08-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_苏秦",
+  "hero_a": "张仪",
+  "hero_b": "苏秦",
+  "highlight": "合纵连横，携手并进（双增强提升卡牌收益）",
+  "bv": "BV1mytwzMEsp",
+  "pub_date": "2025-08-11",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:苏秦"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_廉颇",
+  "hero_a": "孙权",
+  "hero_b": "廉颇",
+  "highlight": "请罪销赃组合（廉颇把偷来的牌给孙权即可完成“销赃”）",
+  "bv": "BV1PQtwzeE86",
+  "pub_date": "2025-08-10",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:廉颇"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_甘宁",
+  "hero_a": "刘备",
+  "hero_b": "甘宁",
+  "highlight": "递牌中扒光对手",
+  "bv": "BV18eh8z8EAc",
+  "pub_date": "2025-08-09",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_张仪_萧何",
+  "hero_a": "张仪",
+  "hero_b": "萧何",
+  "highlight": "双倍举贤为将（互为“成也”）",
+  "bv": "BV1gYh8zwE92",
+  "pub_date": "2025-08-08",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张仪",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_项羽",
+  "hero_a": "刘备",
+  "hero_b": "项羽",
+  "highlight": "发育流破釜沉舟（包养菜刀武将）",
+  "bv": "BV1E38gzDEab",
+  "pub_date": "2025-08-07",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:项羽"
+  ]
+ },
+ {
+  "block_id": "combo_苏秦_马超",
+  "hero_a": "苏秦",
+  "hero_b": "马超",
+  "highlight": "强化马超杀或者装备提升马超的收益",
+  "bv": "BV1tqh8ztEQv",
+  "pub_date": "2025-08-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:苏秦",
+   "武将:马超"
+  ]
+ },
+ {
+  "block_id": "combo_信陵君_小乔",
+  "hero_a": "信陵君",
+  "hero_b": "小乔",
+  "highlight": "信陵小乔蹭牌流组合",
+  "bv": "BV1Jg8gzHEkX",
+  "pub_date": "2025-08-05",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:信陵君",
+   "武将:小乔"
+  ]
+ },
+ {
+  "block_id": "combo_廉颇_蔺相如",
+  "hero_a": "廉颇",
+  "hero_b": "蔺相如",
+  "highlight": "负荆请罪与完璧归赵（官配联动组合）",
+  "bv": "BV1tBh8zoEKV",
+  "pub_date": "2025-08-03",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:廉颇",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_孙权",
+  "hero_a": "刘邦",
+  "hero_b": "孙权",
+  "highlight": "递牌与刷牌组合",
+  "bv": "BV1FQuqz1EwV",
+  "pub_date": "2025-08-02",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:孙权"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_甄宓",
+  "hero_a": "孟尝君",
+  "hero_b": "甄宓",
+  "highlight": "交互黑桃计划",
+  "bv": "BV1Exg7zREJX",
+  "pub_date": "2025-08-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_张良_郭嘉",
+  "hero_a": "张良",
+  "hero_b": "郭嘉",
+  "highlight": "战法一轮清场",
+  "bv": "BV1Mvuqz4EPC",
+  "pub_date": "2025-07-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_龙且",
+  "hero_a": "子婴",
+  "hero_b": "龙且",
+  "highlight": "首回合大过牌的爆发",
+  "bv": "BV1ZRuqzkEBn",
+  "pub_date": "2025-07-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_马超",
+  "hero_a": "孙尚香",
+  "hero_b": "马超",
+  "highlight": "装备操控者的联动",
+  "bv": "BV1HDuqzjE7v",
+  "pub_date": "2025-07-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:马超"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_范雎",
+  "hero_a": "刘邦",
+  "hero_b": "范雎",
+  "highlight": "交互手牌，联动技能",
+  "bv": "BV1u2g7z3EAJ",
+  "pub_date": "2025-07-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:范雎"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_龙且",
+  "hero_a": "乐毅",
+  "hero_b": "龙且",
+  "highlight": "超高过牌集火C位",
+  "bv": "BV15eg7zJEDC",
+  "pub_date": "2025-07-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_子婴",
+  "hero_a": "乐毅",
+  "hero_b": "子婴",
+  "highlight": "乐毅起手复制子婴以大量初始手牌获取优势，遇强则强",
+  "bv": "BV17bg7zXETC",
+  "pub_date": "2025-07-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:子婴"
+  ]
+ },
+ {
+  "block_id": "combo_如姬_甄宓",
+  "hero_a": "如姬",
+  "hero_b": "甄宓",
+  "highlight": "如姬递黑桃牌触发甄宓摸牌过牌",
+  "bv": "BV1druPzVERK",
+  "pub_date": "2025-07-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:如姬",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_孟姚_张良",
+  "hero_a": "孟姚",
+  "hero_b": "张良",
+  "highlight": "战法双重收益",
+  "bv": "BV1oBuPzLEVh",
+  "pub_date": "2025-07-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟姚",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_信陵君_如姬",
+  "hero_a": "信陵君",
+  "hero_b": "如姬",
+  "highlight": "凑魏虎符传递给对面上流血增伤",
+  "bv": "BV1qBuPzLEEj",
+  "pub_date": "2025-07-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:信陵君",
+   "武将:如姬"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_龙且",
+  "hero_a": "孙权",
+  "hero_b": "龙且",
+  "highlight": "超标过牌与高效递牌",
+  "bv": "BV1JA33zgETK",
+  "pub_date": "2025-07-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_华佗_萧何",
+  "hero_a": "华佗",
+  "hero_b": "萧何",
+  "highlight": "青囊造神，多动加血",
+  "bv": "BV1Ai33zmEKb",
+  "pub_date": "2025-07-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:华佗",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_子婴",
+  "hero_a": "刘邦",
+  "hero_b": "子婴",
+  "highlight": "交互递牌，绝境逢生",
+  "bv": "BV1K8N4zjEPd",
+  "pub_date": "2025-07-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:子婴"
+  ]
+ },
+ {
+  "block_id": "combo_典韦_虞姬",
+  "hero_a": "典韦",
+  "hero_b": "虞姬",
+  "highlight": "碰瓷组合",
+  "bv": "BV1HiN4z3Ed6",
+  "pub_date": "2025-07-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:典韦",
+   "武将:虞姬"
+  ]
+ },
+ {
+  "block_id": "combo_春申君_陈平",
+  "hero_a": "春申君",
+  "hero_b": "陈平",
+  "highlight": "指定春申君的战法牌效果*2",
+  "bv": "BV1Ai33zmE3M",
+  "pub_date": "2025-07-04",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:春申君",
+   "武将:陈平"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_甄宓",
+  "hero_a": "刘邦",
+  "hero_b": "甄宓",
+  "highlight": "新晋强辅，联合过牌",
+  "bv": "BV1peN4zkEsG",
+  "pub_date": "2025-07-01",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_信陵君_张良",
+  "hero_a": "信陵君",
+  "hero_b": "张良",
+  "highlight": "武器传递，流血陷害",
+  "bv": "BV1k9gfz2EBL",
+  "pub_date": "2025-06-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:信陵君",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_项梁",
+  "hero_a": "刘邦",
+  "hero_b": "项梁",
+  "highlight": "销闪破防，强命增益",
+  "bv": "BV1tNNtzHE1A",
+  "pub_date": "2025-06-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_子婴_甘宁",
+  "hero_a": "子婴",
+  "hero_b": "甘宁",
+  "highlight": "递牌与拆牌",
+  "bv": "BV1uhMMzCE9L",
+  "pub_date": "2025-06-27",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:子婴",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_郭嘉_马超",
+  "hero_a": "郭嘉",
+  "hero_b": "马超",
+  "highlight": "封禁与多刀",
+  "bv": "BV1miMMzuEc1",
+  "pub_date": "2025-06-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郭嘉",
+   "武将:马超"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_季布",
+  "hero_a": "孟尝君",
+  "hero_b": "季布",
+  "highlight": "交互手牌，一牌多用",
+  "bv": "BV12qMMzBEz1",
+  "pub_date": "2025-06-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:季布"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_蒙恬",
+  "hero_a": "孟尝君",
+  "hero_b": "蒙恬",
+  "highlight": "孟尝君给牌 + 让蒙恬成为杀目标 → 蒙恬应战摸牌成长 + 孟尝君给牌被增强 → 孟尝君回收增强牌并再给牌。",
+  "bv": "BV1qwM3zFEUK",
+  "pub_date": "2025-06-24",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:蒙恬"
+  ]
+ },
+ {
+  "block_id": "combo_张辽_项梁",
+  "hero_a": "张辽",
+  "hero_b": "项梁",
+  "highlight": "张辽白狼持麾为先发制人提供过牌",
+  "bv": "BV1acTkzME5F",
+  "pub_date": "2025-06-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张辽",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_张良_荀彧",
+  "hero_a": "张良",
+  "hero_b": "荀彧",
+  "highlight": "无限战法，持续爆发",
+  "bv": "BV1o8Tkz7E9e",
+  "pub_date": "2025-06-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:荀彧"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_钟离眜",
+  "hero_a": "荀彧",
+  "hero_b": "钟离眜",
+  "highlight": "溅射刷牌让荀彧主动卖血",
+  "bv": "BV1iAM3zbEVN",
+  "pub_date": "2025-06-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:钟离眜"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_甘宁",
+  "hero_a": "大乔",
+  "hero_b": "甘宁",
+  "highlight": "大乔标记敌方A，甘宁拆标记角色触发大乔的拆牌拆敌方B",
+  "bv": "BV1xsM3z5E93",
+  "pub_date": "2025-06-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_龙且",
+  "hero_a": "周勃",
+  "hero_b": "龙且",
+  "highlight": "有点配合龙且回合内大过牌击杀敌方周勃抢回合回合内触发削平诸吕大过牌（触发难度大）",
+  "bv": "BV1BFM3zhEp7",
+  "pub_date": "2025-06-18",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:龙且"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_小乔",
+  "hero_a": "孙权",
+  "hero_b": "小乔",
+  "highlight": "小乔标记孙权，孙权回合外乘马射虎提供摸牌",
+  "bv": "BV1BFM3zhELz",
+  "pub_date": "2025-06-16",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:小乔"
+  ]
+ },
+ {
+  "block_id": "combo_吕雉_子婴",
+  "hero_a": "吕雉",
+  "hero_b": "子婴",
+  "highlight": "组合起手牌多能较快通过临朝称制启动刷牌滚雪球",
+  "bv": "BV1iEMMzQEpz",
+  "pub_date": "2025-06-15",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕雉",
+   "武将:子婴"
+  ]
+ },
+ {
+  "block_id": "combo_如姬_甘宁",
+  "hero_a": "如姬",
+  "hero_b": "甘宁",
+  "highlight": "如姬递牌触发甘宁技能拆迁",
+  "bv": "BV12qMMzBEaK",
+  "pub_date": "2025-06-14",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:如姬",
+   "武将:甘宁"
+  ]
+ },
+ {
+  "block_id": "combo_孟姚_萧何",
+  "hero_a": "孟姚",
+  "hero_b": "萧何",
+  "highlight": "双回合四鼓瑟（新女将首战告捷）",
+  "bv": "BV1oLMMzXE2c",
+  "pub_date": "2025-06-13",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孟姚",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_袁绍_郭嘉",
+  "hero_a": "袁绍",
+  "hero_b": "郭嘉",
+  "highlight": "aoe一轮清场组合（有一点配合）",
+  "bv": "BV19zTkz3EcG",
+  "pub_date": "2025-06-12",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:袁绍",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_荀彧",
+  "hero_a": "吕布",
+  "hero_b": "荀彧",
+  "highlight": "荀彧限定配合吕布的巧妙联动",
+  "bv": "BV1owTtzgEZb",
+  "pub_date": "2025-06-08",
+  "mechanism": "机制：荀彧坐 1 号位、吕布坐 4 号位\n效果：荀彧发动限定技\"驱虎吞狼\" → 吕布决斗中敌人受伤 → 吕布打出所有杀，每张命中从另一敌方要牌 → 荀彧再交战法转化为 4 张杀 → 二波\"二虎竞食\"，基本打死一个、打残另一个",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:荀彧"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_甄宓",
+  "hero_a": "孙权",
+  "hero_b": "甄宓",
+  "highlight": "超大过牌，一轮20张牌不是梦",
+  "bv": "BV16BTtz1EuP",
+  "pub_date": "2025-06-06",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:甄宓"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_孙坚",
+  "hero_a": "刘邦",
+  "hero_b": "孙坚",
+  "highlight": "斩闪孙坚刀刀暴击",
+  "bv": "BV181R3BXEWx",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:孙坚"
+  ]
+ },
+ {
+  "block_id": "combo_嬴政_芈八子",
+  "hero_a": "嬴政",
+  "hero_b": "芈八子",
+  "highlight": "嬴政废势力芈八子稳定弃牌",
+  "bv": "BV1hxZ9B7E9a",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:嬴政",
+   "武将:芈八子"
+  ]
+ },
+ {
+  "block_id": "combo_山涛_蔺相如",
+  "hero_a": "山涛",
+  "hero_b": "蔺相如",
+  "highlight": "八斗方醉刷牌组合",
+  "bv": "BV1SM8z6NEGs",
+  "pub_date": "2026-08-22",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:山涛",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_白起_魏延",
+  "hero_a": "白起",
+  "hero_b": "魏延",
+  "highlight": "魏延开限定白起响应并销毁敌方牌然后魏延一波流",
+  "bv": "BV1pc876hErT",
+  "pub_date": "2026-08-19",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:魏延"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_终军",
+  "hero_a": "太子丹",
+  "hero_b": "终军",
+  "highlight": "双出牌双爆发组合",
+  "bv": "BV16Q8J6PEY8",
+  "pub_date": "2026-08-20",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:终军"
+  ]
+ },
+ {
+  "block_id": "combo_羊献容_萧何",
+  "hero_a": "羊献容",
+  "hero_b": "萧何",
+  "highlight": "真·三连出牌联动组合？？？",
+  "bv": "BV1Dk8A6KEMw",
+  "pub_date": "2026-08-21",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:羊献容",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_甘宁_韩安国",
+  "hero_a": "甘宁",
+  "hero_b": "韩安国",
+  "highlight": "空城补给组合",
+  "bv": "BV17s826qEL4",
+  "pub_date": "2026-08-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:甘宁",
+   "武将:韩安国"
+  ]
+ },
+ {
+  "block_id": "combo_郑国_韩安国",
+  "hero_a": "郑国",
+  "hero_b": "韩安国",
+  "highlight": "空城补给组合",
+  "bv": "BV17s826qEL4",
+  "pub_date": "2026-08-23",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郑国",
+   "武将:韩安国"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_王翦",
+  "hero_a": "卢莫愁",
+  "hero_b": "王翦",
+  "highlight": "王翦向卢莫愁要牌，卢莫愁给牌并定向印装备",
+  "bv": "BV1y8hM6CEnU",
+  "pub_date": "2026-08-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:王翦"
+  ]
+ },
+ {
+  "block_id": "combo_羊献容_鲁仲连",
+  "hero_a": "羊献容",
+  "hero_b": "鲁仲连",
+  "highlight": "双倍一箭定聊崩死对家",
+  "bv": "BV1JmhG6mEq1",
+  "pub_date": "2026-08-25",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:羊献容",
+   "武将:鲁仲连"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_太子丹",
+  "hero_a": "刘备",
+  "hero_b": "太子丹",
+  "highlight": "无限刷牌",
+  "bv": "BV1vc8X67EjN",
+  "pub_date": "2026-08-26",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:太子丹"
+  ]
+ },
+ {
+  "block_id": "combo_王异_陈阿娇",
+  "hero_a": "王异",
+  "hero_b": "陈阿娇",
+  "highlight": "王异配合技能空手把敌方一员手牌变0组合",
+  "bv": "BV14AtF6EErH",
+  "pub_date": "2026-08-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:王异",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_张角_王异",
+  "hero_a": "张角",
+  "hero_b": "王异",
+  "highlight": "王异配合技能空手把敌方一员手牌变0组合",
+  "bv": "BV14AtF6EErH",
+  "pub_date": "2026-08-28",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张角",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_郑袖_陈宫",
+  "hero_a": "郑袖",
+  "hero_b": "陈宫",
+  "highlight": "肘击蓄势，暴击出伤",
+  "bv": "BV1MV4C6qEVq",
+  "pub_date": "2026-08-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郑袖",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_张郃_郑袖",
+  "hero_a": "张郃",
+  "hero_b": "郑袖",
+  "highlight": "肘击蓄势，暴击出伤",
+  "bv": "BV1MV4C6qEVq",
+  "pub_date": "2026-08-29",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张郃",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_刘据_萧何",
+  "hero_a": "刘据",
+  "hero_b": "萧何",
+  "highlight": "三连出牌阶段联动",
+  "bv": "BV15w416XEpS",
+  "pub_date": "2026-08-30",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘据",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_李牧_金日磾",
+  "hero_a": "李牧",
+  "hero_b": "金日磾",
+  "highlight": "限肘击队友",
+  "bv": "BV1xCtn6rE9K",
+  "pub_date": "2026-08-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:李牧",
+   "武将:金日磾"
+  ]
+ },
+ {
+  "block_id": "combo_钟无艳_陈宫",
+  "hero_a": "钟无艳",
+  "hero_b": "陈宫",
+  "highlight": "共享军火库，互相给牌发动",
+  "bv": "BV1b6ta6VE3x",
+  "pub_date": "2026-08-31",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:钟无艳",
+   "武将:陈宫"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_陈阿娇",
+  "hero_a": "卫青",
+  "hero_b": "陈阿娇",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：卫青\"强命\"技能刷新需失去武刚车；陈阿娇\"金屋藏娇\"让卫青任意数量牌交给陈阿娇\n效果：卫青**每回合**把武刚车交给陈阿娇 → 刷新技能 → 每回合**双刀暴击**，输出爆表",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_乐毅_袁术",
+  "hero_a": "乐毅",
+  "hero_b": "袁术",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：袁术登场得玉玺 + 4 号位初始 5 张 + 4 张 + 1 张 = **10 张牌**；乐毅\"报惠王书\"每轮开始时复制一名角色全部手牌\n效果：首回合乐毅复制袁术的 10 张牌 + 自己摸 2 张 = 合计 22 张 + 孤军连克收益 → **开局 24 张牌**，**游戏内开局手牌量断层领先**，前期压制力无解",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:乐毅",
+   "武将:袁术"
+  ]
+ },
+ {
+  "block_id": "combo_诸葛亮_黄月英",
+  "hero_a": "诸葛亮",
+  "hero_b": "黄月英",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：诸葛亮\"锦囊妙计\"有概率刷出\"舌战群儒\"；春申君和黄月英都能让打出的舌战群儒生效两次；黄月英还能叠自身复制叠 3 层\n效果：后续回合**1 张锦囊 = 一摸二甚至一摸三**，回合内超高爆发 ⚠️ 注意不要摸空牌堆（摸空判平局）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:诸葛亮",
+   "武将:黄月英"
+  ]
+ },
+ {
+  "block_id": "combo_春申君_诸葛亮",
+  "hero_a": "春申君",
+  "hero_b": "诸葛亮",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：诸葛亮\"锦囊妙计\"有概率刷出\"舌战群儒\"；春申君和黄月英都能让打出的舌战群儒生效两次；黄月英还能叠自身复制叠 3 层\n效果：后续回合**1 张锦囊 = 一摸二甚至一摸三**，回合内超高爆发 ⚠️ 注意不要摸空牌堆（摸空判平局）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:春申君",
+   "武将:诸葛亮"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_赵姬",
+  "hero_a": "太子丹",
+  "hero_b": "赵姬",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：太子丹：任意角色手牌为 0 时，自身流失 1 体力为该角色补 2 张牌；赵姬频繁打牌 / 弃牌清空手牌\n效果：完美触发太子丹补牌；太子丹本回合流失体力 → 把目标角色弃牌阶段改为出牌阶段 → 赵姬**双出牌阶段**二次爆发，配合频繁掉血补牌，**一回合可秒 2 名角色**",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:赵姬"
+  ]
+ },
+ {
+  "block_id": "combo_徐盛_郑袖",
+  "hero_a": "徐盛",
+  "hero_b": "郑袖",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：郑袖将牌交给卖血将（郭嘉 / 荀彧 / 曹丕等）→ 对方打出郑袖的牌 → 郑袖杀队友触发其卖血 → 过牌 + 卖血双收益\n效果：徐盛让\"不动白\"有发挥（类似的还有李牧、项燕）；大乔让\"掩袖工谗\"杀转移出去 → 敌方卖血为我方补牌（类孟尝君）",
+  "source_md": "强力组合.md",
+  "song": "",
+  "related": [
+   "武将:徐盛",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_张梁",
+  "hero_a": "平阳公主",
+  "hero_b": "张梁",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "机制：平阳学习张梁的\"黄天精勇\"召唤小兵\n效果：我方形成**2 真人 + 2 小兵 vs 2 对手**的**四打二**离谱局面\n配合逻辑：黄天精勇 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:张梁"
+  ]
+ },
+ {
+  "block_id": "combo_夏侯惇_巴清",
+  "hero_a": "夏侯惇",
+  "hero_b": "巴清",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：把丹砂给到夏侯惇 → 夏侯惇再把牌刷一次，**全部给回来**",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:夏侯惇",
+   "武将:巴清"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_巴清",
+  "hero_a": "孙权",
+  "hero_b": "巴清",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：通过劝学励士把自己用不出去的额外丹砂交给孙权 → 孙权回合内可**置换成别的牌**，也可以打",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:巴清"
+  ]
+ },
+ {
+  "block_id": "combo_卫青_巴清",
+  "hero_a": "卫青",
+  "hero_b": "巴清",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：卫青强度依赖销毁/交互\"武刚车\"的武将 → 巴清丹砂正好拿走卫青身上的武刚车 → **帮卫青刷技能**；巴清也能持有武刚车获得**防御**",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:卫青",
+   "武将:巴清"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_袁术",
+  "hero_a": "巴清",
+  "hero_b": "袁术",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：两人互相拿**玉玺** → 保证两个人每回合都不用弃牌：巴清先把玉玺拿过来 + 给一张丹砂 → 袁术待会儿再用这张丹砂把玉玺拿回来",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:袁术"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_张骞",
+  "hero_a": "巴清",
+  "hero_b": "张骞",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：巴清初始手牌多，且每轮新增丹砂数量 → 配合张骞往往能在**一个回合之内**就让张骞觉醒；后续张骞拿到丹砂也可以去拿对面牌，增加自己技能层数",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:张骞"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_陈阿娇",
+  "hero_a": "巴清",
+  "hero_b": "陈阿娇",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：要求比较苛刻，但可以实现——完整流程：① 巴清先装一个\"盗骊\" → ② 通过\"金屋藏娇\"把盗骊交给陈阿娇 → ③ 再用丹砂把盗骊拿回来 → ④ 巴清再把盗骊装一遍（此时**巴清装备了两次盗骊**）→ ⑤ 回合结束时陈阿娇\"千金买赋\"买过来 → 再买两张盗骊上来 → **一张盗骊被两人一共用了四次**",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_信陵君_巴清",
+  "hero_a": "信陵君",
+  "hero_b": "巴清",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：通过巴清的丹砂去找敌方或找巴清要一张装备牌 → 装备牌要过来就可以给敌方**增加一个流血** → 实现信陵君在回合内让敌方流血的效果",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:信陵君",
+   "武将:巴清"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_巴清",
+  "hero_a": "吕布",
+  "hero_b": "巴清",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：能转化大量杀 → 配合巴清每轮开始获得多张丹砂",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:巴清"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_章邯",
+  "hero_a": "巴清",
+  "hero_b": "章邯",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：能摸到大量杀 → 配合巴清每轮开始获得多张丹砂",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:章邯"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_庞统",
+  "hero_a": "巴清",
+  "hero_b": "庞统",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：庞统需要方片牌，但方片可能比较少 → 巴清把丹砂给到庞统 → 庞统正好可以出这张方片的连环 → **实现自制连环**",
+  "source_md": "巴清搭配.md",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:庞统"
+  ]
+ },
+ {
+  "block_id": "combo_左慈_平阳公主",
+  "hero_a": "左慈",
+  "hero_b": "平阳公主",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：左慈的\"遁甲天书\"能在回合开始时**随机获得一名武将的技能** / 平阳公主用凤历三春学到的遁甲天书后，可以**每回合刷新武将技能** → 花样换技能、换机制，玩法和强度都很在线",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:左慈",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_蔺相如",
+  "hero_a": "平阳公主",
+  "hero_b": "蔺相如",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：蔺相如的\"将相和\"在失去体力时可以让其他角色给她任意一张牌；给牌的角色下个回合开始时能摸等量的牌 / 平阳公主也复制到了将相和 → 蔺相如发动渑池之会掉血时 → **双方相互给牌、相互刷牌** → 每轮牌量成倍数级增长\n配合逻辑：第一轮 / 几张牌\n配合逻辑：第二轮 / 十几张牌\n配合逻辑：第三轮 / 二十几张牌",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:蔺相如"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_法正",
+  "hero_a": "平阳公主",
+  "hero_b": "法正",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：奇画策算 / 顶级",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:法正"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_陆逊",
+  "hero_a": "平阳公主",
+  "hero_b": "陆逊",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：解衣共舞 / 顶级",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:陆逊"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_白起",
+  "hero_a": "平阳公主",
+  "hero_b": "白起",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：歼灭 / 顶级\n配合逻辑：嬴政的**秦弩齐射** / —",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:白起"
+  ]
+ },
+ {
+  "block_id": "combo_嬴政_平阳公主",
+  "hero_a": "嬴政",
+  "hero_b": "平阳公主",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：一统六合 / 秦弩齐射 / 顶级",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:嬴政",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_霍去病",
+  "hero_a": "平阳公主",
+  "hero_b": "霍去病",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：何以家为 / 顶级",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:霍去病"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_董仲舒",
+  "hero_a": "平阳公主",
+  "hero_b": "董仲舒",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：天人感应 / 顶级",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:董仲舒"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_扶苏",
+  "hero_a": "平阳公主",
+  "hero_b": "扶苏",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：山有扶苏 / 人上人",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:扶苏"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_张角",
+  "hero_a": "平阳公主",
+  "hero_b": "张角",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：太平道 / 人上人",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:张角"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_廉颇",
+  "hero_a": "平阳公主",
+  "hero_b": "廉颇",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：尚能饭否 / 人上人",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:廉颇"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_春申君",
+  "hero_a": "平阳公主",
+  "hero_b": "春申君",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：移花接木 / 人上人",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:春申君"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_项梁",
+  "hero_a": "平阳公主",
+  "hero_b": "项梁",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：先发制人 / 人上人",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_高渐离",
+  "hero_a": "平阳公主",
+  "hero_b": "高渐离",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：击筑而歌 / 人上人",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:高渐离"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_董卓",
+  "hero_a": "平阳公主",
+  "hero_b": "董卓",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：欺天废主 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:董卓"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_曹丕",
+  "hero_a": "平阳公主",
+  "hero_b": "曹丕",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：嗣承魏武 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:曹丕"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_曹操",
+  "hero_a": "平阳公主",
+  "hero_b": "曹操",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：天不负我 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:曹操"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_项羽",
+  "hero_a": "平阳公主",
+  "hero_b": "项羽",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：破釜沉舟 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:项羽"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_韩信",
+  "hero_a": "平阳公主",
+  "hero_b": "韩信",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：十面埋伏 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:韩信"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_张良",
+  "hero_a": "平阳公主",
+  "hero_b": "张良",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：运筹帷幄 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:张良"
+  ]
+ },
+ {
+  "block_id": "combo_平原君_平阳公主",
+  "hero_a": "平原君",
+  "hero_b": "平阳公主",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：斩笑立信 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平原君",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_陈胜",
+  "hero_a": "平阳公主",
+  "hero_b": "陈胜",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：篝火狐鸣 / NPC",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:陈胜"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_萧何",
+  "hero_a": "平阳公主",
+  "hero_b": "萧何",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：复制萧何的\"举贤为将\" → 把所有手牌交给萧何 → 让萧何触发给的技能 → 平阳直接摸牌到上限 → 萧何自己回合还能再给一个**出牌阶段** / **二三联动，打出四个回合的效果，节奏感拉满**",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:萧何"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_郭嘉",
+  "hero_a": "平阳公主",
+  "hero_b": "郭嘉",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：平阳复制郭嘉的\"十胜十败\" → 郭嘉回合杀一刀平阳 → 平阳把牌全部交给郭嘉 → 随后郭嘉触发新造的技能 → 为平阳补满手牌 / **完美实现空牌补牌的循环，直接盘活郭嘉**",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_平阳公主",
+  "hero_a": "孟尝君",
+  "hero_b": "平阳公主",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：通过狡兔三窟把牌交给孟尝君，完成空牌",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:孟尝君",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_刘备_平阳公主",
+  "hero_a": "刘备",
+  "hero_b": "平阳公主",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：惟贤惟德相互递牌，刷牌效果极强",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:刘备",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_庞统",
+  "hero_a": "平阳公主",
+  "hero_b": "庞统",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：复制庞统的转化战法牌技能 → 全部转化为战法牌，一波打空",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:庞统"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_王翦",
+  "hero_a": "平阳公主",
+  "hero_b": "王翦",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：向平阳公主请田，平阳把牌全部交给王翦，后续再补回",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:王翦"
+  ]
+ },
+ {
+  "block_id": "combo_季布_平阳公主",
+  "hero_a": "季布",
+  "hero_b": "平阳公主",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：平阳公主靠一诺千金把牌全部交给季布，季布回合触发技能，平阳直接补满",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:季布",
+   "武将:平阳公主"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_曹植",
+  "hero_a": "平阳公主",
+  "hero_b": "曹植",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "配合逻辑：赵姬的**绝好善舞** / —",
+  "source_md": "平阳公主盘点.md",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:曹植"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_张梁",
+  "hero_a": "卢莫愁",
+  "hero_b": "张梁",
+  "highlight": "惊羽弓",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:张梁"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_吕布",
+  "hero_a": "卢莫愁",
+  "hero_b": "吕布",
+  "highlight": "方天画戟连弩",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:吕布"
+  ]
+ },
+ {
+  "block_id": "combo_吴国太_田单",
+  "hero_a": "吴国太",
+  "hero_b": "田单",
+  "highlight": "恶心阵容",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吴国太",
+   "武将:田单"
+  ]
+ },
+ {
+  "block_id": "combo_白起_韩娥",
+  "hero_a": "白起",
+  "hero_b": "韩娥",
+  "highlight": "徵标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:白起",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_平阳公主_羊献容",
+  "hero_a": "平阳公主",
+  "hero_b": "羊献容",
+  "highlight": "发技能",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:平阳公主",
+   "武将:羊献容"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_苏武",
+  "hero_a": "卢莫愁",
+  "hero_b": "苏武",
+  "highlight": "首回合觉醒给连弩",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:苏武"
+  ]
+ },
+ {
+  "block_id": "combo_周勃_陈阿娇",
+  "hero_a": "周勃",
+  "hero_b": "陈阿娇",
+  "highlight": "双刀不卡上限",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:周勃",
+   "武将:陈阿娇"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_韩娥",
+  "hero_a": "孙权",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_张角_韩娥",
+  "hero_a": "张角",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张角",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_吕布_韩娥",
+  "hero_a": "吕布",
+  "hero_b": "韩娥",
+  "highlight": "徵标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕布",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_临海公主_赵云",
+  "hero_a": "临海公主",
+  "hero_b": "赵云",
+  "highlight": "对己方使用技能",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:临海公主",
+   "武将:赵云"
+  ]
+ },
+ {
+  "block_id": "combo_刘禅_卢莫愁",
+  "hero_a": "刘禅",
+  "hero_b": "卢莫愁",
+  "highlight": "需要无中盗骊",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘禅",
+   "武将:卢莫愁"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_项燕",
+  "hero_a": "卢莫愁",
+  "hero_b": "项燕",
+  "highlight": "连弩",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:项燕"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_赵姬",
+  "hero_a": "卢莫愁",
+  "hero_b": "赵姬",
+  "highlight": "连弩",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:赵姬"
+  ]
+ },
+ {
+  "block_id": "combo_太子丹_西门豹",
+  "hero_a": "太子丹",
+  "hero_b": "西门豹",
+  "highlight": "双回合扭扭怪",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:太子丹",
+   "武将:西门豹"
+  ]
+ },
+ {
+  "block_id": "combo_巴清_韩娥",
+  "hero_a": "巴清",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:巴清",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_孙坚_杨艳",
+  "hero_a": "孙坚",
+  "hero_b": "杨艳",
+  "highlight": "需要起手牌刷装备",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙坚",
+   "武将:杨艳"
+  ]
+ },
+ {
+  "block_id": "combo_步练师_韩娥",
+  "hero_a": "步练师",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:步练师",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_郭嘉_马钧",
+  "hero_a": "郭嘉",
+  "hero_b": "马钧",
+  "highlight": "刷拿牌",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:郭嘉",
+   "武将:马钧"
+  ]
+ },
+ {
+  "block_id": "combo_张良_韩娥",
+  "hero_a": "张良",
+  "hero_b": "韩娥",
+  "highlight": "宫标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张良",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_吕蒙_韩娥",
+  "hero_a": "吕蒙",
+  "hero_b": "韩娥",
+  "highlight": "角宫标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:吕蒙",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_刘彻_韩娥",
+  "hero_a": "刘彻",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘彻",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_韩娥",
+  "hero_a": "孙尚香",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_赵云_韩娥",
+  "hero_a": "赵云",
+  "hero_b": "韩娥",
+  "highlight": "徵标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:赵云",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_诸葛亮_韩娥",
+  "hero_a": "诸葛亮",
+  "hero_b": "韩娥",
+  "highlight": "宫标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:诸葛亮",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_甘宁_韩娥",
+  "hero_a": "甘宁",
+  "hero_b": "韩娥",
+  "highlight": "敌方羽标记角",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:甘宁",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_小乔_韩娥",
+  "hero_a": "小乔",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:小乔",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_蒙恬_韩娥",
+  "hero_a": "蒙恬",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:蒙恬",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_临海公主_韩娥",
+  "hero_a": "临海公主",
+  "hero_b": "韩娥",
+  "highlight": "公主角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:临海公主",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_临海公主_张角",
+  "hero_a": "临海公主",
+  "hero_b": "张角",
+  "highlight": "公主把牌传给",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:临海公主",
+   "武将:张角"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_卢莫愁",
+  "hero_a": "刘邦",
+  "hero_b": "卢莫愁",
+  "highlight": "给点的牌",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:卢莫愁"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_太史慈",
+  "hero_a": "卢莫愁",
+  "hero_b": "太史慈",
+  "highlight": "惊羽弓",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:太史慈"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_夏侯惇",
+  "hero_a": "卢莫愁",
+  "hero_b": "夏侯惇",
+  "highlight": "连弩",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:夏侯惇"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_苏秦",
+  "hero_a": "卢莫愁",
+  "hero_b": "苏秦",
+  "highlight": "飒露紫",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:苏秦"
+  ]
+ },
+ {
+  "block_id": "combo_卫子夫_郭嘉",
+  "hero_a": "卫子夫",
+  "hero_b": "郭嘉",
+  "highlight": "无限卖血",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卫子夫",
+   "武将:郭嘉"
+  ]
+ },
+ {
+  "block_id": "combo_大乔_韩娥",
+  "hero_a": "大乔",
+  "hero_b": "韩娥",
+  "highlight": "敌方羽己方角",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:大乔",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_太子丹",
+  "hero_a": "刘邦",
+  "hero_b": "太子丹",
+  "highlight": "双回合刷牌扭扭怪",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:太子丹"
+  ]
+ },
+ {
+  "block_id": "combo_华佗_孙坚",
+  "hero_a": "华佗",
+  "hero_b": "孙坚",
+  "highlight": "刮骨敌方",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:华佗",
+   "武将:孙坚"
+  ]
+ },
+ {
+  "block_id": "combo_孙权_徐盛",
+  "hero_a": "孙权",
+  "hero_b": "徐盛",
+  "highlight": "递装备",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙权",
+   "武将:徐盛"
+  ]
+ },
+ {
+  "block_id": "combo_春申君_韩娥",
+  "hero_a": "春申君",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:春申君",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_杨艳_王异",
+  "hero_a": "杨艳",
+  "hero_b": "王异",
+  "highlight": "给补牌",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:杨艳",
+   "武将:王异"
+  ]
+ },
+ {
+  "block_id": "combo_典韦_郑袖",
+  "hero_a": "典韦",
+  "hero_b": "郑袖",
+  "highlight": "卖血暴击组合",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:典韦",
+   "武将:郑袖"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_韩信",
+  "hero_a": "卢莫愁",
+  "hero_b": "韩信",
+  "highlight": "惊羽弓",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:韩信"
+  ]
+ },
+ {
+  "block_id": "combo_钟无艳_韩娥",
+  "hero_a": "钟无艳",
+  "hero_b": "韩娥",
+  "highlight": "徵标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:钟无艳",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_卓文君_韩娥",
+  "hero_a": "卓文君",
+  "hero_b": "韩娥",
+  "highlight": "敌方羽标记己方角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卓文君",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_韩娥_黄月英",
+  "hero_a": "韩娥",
+  "hero_b": "黄月英",
+  "highlight": "宫标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:韩娥",
+   "武将:黄月英"
+  ]
+ },
+ {
+  "block_id": "combo_张宝_韩娥",
+  "hero_a": "张宝",
+  "hero_b": "韩娥",
+  "highlight": "敌方羽标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张宝",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_董仲舒_韩娥",
+  "hero_a": "董仲舒",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:董仲舒",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_李斯_韩娥",
+  "hero_a": "李斯",
+  "hero_b": "韩娥",
+  "highlight": "敌方羽标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:李斯",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_范增_韩娥",
+  "hero_a": "范增",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:范增",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_关羽_韩娥",
+  "hero_a": "关羽",
+  "hero_b": "韩娥",
+  "highlight": "徵标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:关羽",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_卢莫愁_项梁",
+  "hero_a": "卢莫愁",
+  "hero_b": "项梁",
+  "highlight": "需要轩辕剑方天画戟惊羽弓",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:卢莫愁",
+   "武将:项梁"
+  ]
+ },
+ {
+  "block_id": "combo_曹操_马钧",
+  "hero_a": "曹操",
+  "hero_b": "马钧",
+  "highlight": "刷队友拿牌",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:曹操",
+   "武将:马钧"
+  ]
+ },
+ {
+  "block_id": "combo_荀彧_马钧",
+  "hero_a": "荀彧",
+  "hero_b": "马钧",
+  "highlight": "刷队友拿牌",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:荀彧",
+   "武将:马钧"
+  ]
+ },
+ {
+  "block_id": "combo_关羽_李牧",
+  "hero_a": "关羽",
+  "hero_b": "李牧",
+  "highlight": "找乌骓小心万军取首",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:关羽",
+   "武将:李牧"
+  ]
+ },
+ {
+  "block_id": "combo_刘据_杨艳",
+  "hero_a": "刘据",
+  "hero_b": "杨艳",
+  "highlight": "赌秒一个",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘据",
+   "武将:杨艳"
+  ]
+ },
+ {
+  "block_id": "combo_刘邦_杨艳",
+  "hero_a": "刘邦",
+  "hero_b": "杨艳",
+  "highlight": "摸不到点",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:刘邦",
+   "武将:杨艳"
+  ]
+ },
+ {
+  "block_id": "combo_张飞_荀彧",
+  "hero_a": "张飞",
+  "hero_b": "荀彧",
+  "highlight": "卖血超级",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:张飞",
+   "武将:荀彧"
+  ]
+ },
+ {
+  "block_id": "combo_孙坚_韩娥",
+  "hero_a": "孙坚",
+  "hero_b": "韩娥",
+  "highlight": "角标记",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙坚",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_钟离眜_韩娥",
+  "hero_a": "钟离眜",
+  "hero_b": "韩娥",
+  "highlight": "徵标记需要距离",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:钟离眜",
+   "武将:韩娥"
+  ]
+ },
+ {
+  "block_id": "combo_杨艳_赵威后",
+  "hero_a": "杨艳",
+  "hero_b": "赵威后",
+  "highlight": "两个角色都需要先手不推荐",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:杨艳",
+   "武将:赵威后"
+  ]
+ },
+ {
+  "block_id": "combo_孙尚香_田单",
+  "hero_a": "孙尚香",
+  "hero_b": "田单",
+  "highlight": "有短板别玩",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "",
+  "source_md": "",
+  "song": "",
+  "related": [
+   "武将:孙尚香",
+   "武将:田单"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_黄月英_1",
+  "hero_a": "孟尝君",
+  "hero_b": "黄月英",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "| 黄月英 | 战法牌可以生效两次 |\n| 孟尝君 | 可以让黄月英主动将一张牌**当作顺手牵羊打出** |\n| 联动效果 | 在孟尝君回合，让黄月英直接用一张牌**顺对面两张牌** → **用一偷二** |\n| 评价 | **最表面最简单的组合思路**，多数玩家已知 |\n\n---",
+  "source_md": "孟尝君+黄月英.md",
+  "song": "第一曲：双倍顺手牵羊",
+  "related": [
+   "武将:孟尝君",
+   "武将:黄月英"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_黄月英_2",
+  "hero_a": "孟尝君",
+  "hero_b": "黄月英",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "| 黄月英复制装备 | 复制一张装备牌（或手牌） |\n| 兔牌标记传递 | 如果这张装备牌**本来属于孟尝君**，黄月英复制出来的牌也会带有**兔牌标记** |\n| 孟尝君回收 | 装备装上后，孟尝君可以在回合开始时**拿走带兔牌的装备** |\n| ★ 关键装备 | **盗骊、银狮盔、丈八蛇矛**等可重复利用的装备牌 |\n| **具体操作流程** | ① 孟尝君给黄月英一张\"盗骊\"（带兔牌标记）② 黄月英装上盗骊 → 摸两张牌 ③ 黄月英复制这张盗骊 → 再摸两张牌 ④ 回合结束时孟尝君收回去（两张带兔牌的盗骊） → **每回合凭空多刷两张牌，收益逐渐递增** |\n| 评价 | **隐藏思路**，大多数玩家不了解 |\n\n---",
+  "source_md": "孟尝君+黄月英.md",
+  "song": "第二曲：双倍兔牌",
+  "related": [
+   "武将:孟尝君",
+   "武将:黄月英"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_黄月英_3",
+  "hero_a": "孟尝君",
+  "hero_b": "黄月英",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "| 孟尝君转移 | 孟尝君成为其他角色牌的目标时，可以让**有兔牌标记的角色**代替自己成为目标 |\n| 黄月英战法双倍 | 黄月英的战法牌（AOE 战法）**双倍生效**，包括**烽火狼烟、箭雨齐射**等 |\n| **具体操作流程** | ① 孟尝君先给对面一张带兔牌的牌 ② 黄月英打出 AOE 战法（如烽火狼烟）→ 双倍生效 ③ 孟尝君把目标转移到对面（有兔牌标记的角色） → **对面承受四次该群锦囊的伤害** |\n| 评价 | **隐藏思路**，连讲者也是打很多局才测试出来 |\n\n---",
+  "source_md": "孟尝君+黄月英.md",
+  "song": "第三曲：双倍转移目标",
+  "related": [
+   "武将:孟尝君",
+   "武将:黄月英"
+  ]
+ },
+ {
+  "block_id": "combo_孟尝君_黄月英_4",
+  "hero_a": "孟尝君",
+  "hero_b": "黄月英",
+  "highlight": "",
+  "bv": "",
+  "pub_date": "",
+  "mechanism": "| 来源 | 讲者做视频后，粉丝分享的另一个组合 |\n| **前置条件** | 孟尝君需要有一张**霜冻**（一种卡牌） |\n| **操作流程** | ① 孟尝君将霜冻递给黄月英 ② 黄月英替孟尝君成为一次牌的目标 → 霜冻被**强化**（变成强化版霜冻） ③ 黄月英每回合复制一张手牌 → **永远手上保存一张强化版霜冻** ④ 每回合只需打出一张强化版霜冻出去，另一张留在手上复制 → **永远卡死对面**——一个人永远出不了牌，只能对自己用牌，直到阵亡 |\n| **连环策略** | 对方阵亡一人后，再反复用强化版霜冻贴对面剩下一个人 → **对面毫无游戏体验** |\n| 评价 | **极度恶心的控制手段**，讲者特意补充分享 |\n\n---\n\n## 五、总结\n\n| **第一曲** | 双倍顺手牵羊 | 用一张牌顺对面**两张牌** | ★ 基础 |\n| **第二曲** | 双倍兔牌 | 孟尝君给装备 → 黄月英复制 → 每回合凭空多刷**两张牌** | ★★ 隐藏 |\n| **第三曲** | 双倍转移目标 | 孟尝君转移 + 黄月英 AOE 双倍 → 对面承受**四次伤害** | ★★ 隐藏 |\n| **第四曲** | 无限强化霜冻 | 强化版霜冻无限复制 → **永远卡死对面**，毫无游戏体验 | ★★★ 粉丝补充 |",
+  "source_md": "孟尝君+黄月英.md",
+  "song": "第四曲：无限强化霜冻，卡死对面（粉丝补充）",
+  "related": [
+   "武将:孟尝君",
+   "武将:黄月英"
+  ]
+ }
+]

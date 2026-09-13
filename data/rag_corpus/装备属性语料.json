@@ -1,0 +1,325 @@
+[
+ {
+  "block_id": "equipattr_乌骓",
+  "card": "乌骓",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": -1,
+  "distance_mod_type": "攻击距离",
+  "effect": "出杀，摸1张牌。",
+  "related": [
+   "卡牌:乌骓"
+  ]
+ },
+ {
+  "block_id": "equipattr_爪黄飞电",
+  "card": "爪黄飞电",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": 1,
+  "distance_mod_type": "防御距离",
+  "effect": "回合结束时，摸1张牌。",
+  "related": [
+   "卡牌:爪黄飞电"
+  ]
+ },
+ {
+  "block_id": "equipattr_白蹄乌",
+  "card": "白蹄乌",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": -1,
+  "distance_mod_type": "攻击距离",
+  "effect": "击杀，摸3张牌。",
+  "related": [
+   "卡牌:白蹄乌"
+  ]
+ },
+ {
+  "block_id": "equipattr_的卢",
+  "card": "的卢",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": 1,
+  "distance_mod_type": "防御距离",
+  "effect": "受伤，卜卦，若结果点数为1~7，摸2张牌，若结果点数为8，弃置所有手牌和装备，并销毁此牌。",
+  "related": [
+   "卡牌:的卢"
+  ]
+ },
+ {
+  "block_id": "equipattr_盗骊",
+  "card": "盗骊",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": -1,
+  "distance_mod_type": "攻击距离",
+  "effect": "装备，摸2张牌。",
+  "related": [
+   "卡牌:盗骊"
+  ]
+ },
+ {
+  "block_id": "equipattr_绝影",
+  "card": "绝影",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": 1,
+  "distance_mod_type": "防御距离",
+  "effect": "应战，摸1张牌。",
+  "related": [
+   "卡牌:绝影"
+  ]
+ },
+ {
+  "block_id": "equipattr_赤兔",
+  "card": "赤兔",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": -1,
+  "distance_mod_type": "攻击距离",
+  "effect": "回合开始时，摸1张牌。",
+  "related": [
+   "卡牌:赤兔"
+  ]
+ },
+ {
+  "block_id": "equipattr_飒露紫",
+  "card": "飒露紫",
+  "equip_subtype": "坐骑",
+  "attack_range": null,
+  "distance_mod": 1,
+  "distance_mod_type": "防御距离",
+  "effect": "每回合限1次，重伤，回复体力至1点，摸3张牌，然后销毁此牌。",
+  "related": [
+   "卡牌:飒露紫"
+  ]
+ },
+ {
+  "block_id": "equipattr_丈八蛇矛",
+  "card": "丈八蛇矛",
+  "equip_subtype": "武器",
+  "attack_range": 3,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "装备，添加2张随机花色的杀到你的手牌。",
+  "related": [
+   "卡牌:丈八蛇矛"
+  ]
+ },
+ {
+  "block_id": "equipattr_亮银枪",
+  "card": "亮银枪",
+  "equip_subtype": "武器",
+  "attack_range": 3,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "应战，你可以立即对目标打出1张杀。",
+  "related": [
+   "卡牌:亮银枪"
+  ]
+ },
+ {
+  "block_id": "equipattr_干将莫邪",
+  "card": "干将莫邪",
+  "equip_subtype": "武器",
+  "attack_range": 2,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "每个回合限1次，其他角色打出杀时，若此杀的目标也在你的攻击范围内，你可以对相同目标打出1张杀。",
+  "related": [
+   "卡牌:干将莫邪"
+  ]
+ },
+ {
+  "block_id": "equipattr_开山斧",
+  "card": "开山斧",
+  "equip_subtype": "武器",
+  "attack_range": 3,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "出杀，你可以弃置1张牌，令此杀的伤害+1。",
+  "related": [
+   "卡牌:开山斧"
+  ]
+ },
+ {
+  "block_id": "equipattr_惊羽弓",
+  "card": "惊羽弓",
+  "equip_subtype": "武器",
+  "attack_range": 5,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "出杀，若此杀是你本回合打出的第1张行动牌，则此杀获得强命。",
+  "related": [
+   "卡牌:惊羽弓"
+  ]
+ },
+ {
+  "block_id": "equipattr_方天画戟",
+  "card": "方天画戟",
+  "equip_subtype": "武器",
+  "attack_range": 4,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "当你选择杀的目标时，你可以弃置1或2张牌，令此杀的目标+1或+2。",
+  "related": [
+   "卡牌:方天画戟"
+  ]
+ },
+ {
+  "block_id": "equipattr_羽扇",
+  "card": "羽扇",
+  "equip_subtype": "武器",
+  "attack_range": 4,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "你造成的所有火焰伤害+1。",
+  "related": [
+   "卡牌:羽扇"
+  ]
+ },
+ {
+  "block_id": "equipattr_诸葛连弩",
+  "card": "诸葛连弩",
+  "equip_subtype": "武器",
+  "attack_range": 1,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "出杀，你可以对其依次打出手牌中的所有杀，直到有目标因此重伤。",
+  "related": [
+   "卡牌:诸葛连弩"
+  ]
+ },
+ {
+  "block_id": "equipattr_轩辕剑",
+  "card": "轩辕剑",
+  "equip_subtype": "武器",
+  "attack_range": 2,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "你打出的杀获得贯穿和封禁。",
+  "related": [
+   "卡牌:轩辕剑"
+  ]
+ },
+ {
+  "block_id": "equipattr_青龙偃月刀",
+  "card": "青龙偃月刀",
+  "equip_subtype": "武器",
+  "attack_range": 3,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "当你的杀被抵消时，你本回合的出杀次数+1。",
+  "related": [
+   "卡牌:青龙偃月刀"
+  ]
+ },
+ {
+  "block_id": "equipattr_鸣鸿刀",
+  "card": "鸣鸿刀",
+  "equip_subtype": "武器",
+  "attack_range": 2,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "你打出的杀需要2张闪才能抵消，当你打出的杀被抵消时，你随机弃置1张牌。",
+  "related": [
+   "卡牌:鸣鸿刀"
+  ]
+ },
+ {
+  "block_id": "equipattr_龙舌弓",
+  "card": "龙舌弓",
+  "equip_subtype": "武器",
+  "attack_range": 5,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "杀伤，你可以选择弃置目标任意区域的1张牌。",
+  "related": [
+   "卡牌:龙舌弓"
+  ]
+ },
+ {
+  "block_id": "equipattr_云锦袍",
+  "card": "云锦袍",
+  "equip_subtype": "防具",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "装备上限+2。",
+  "related": [
+   "卡牌:云锦袍"
+  ]
+ },
+ {
+  "block_id": "equipattr_八卦盾",
+  "card": "八卦盾",
+  "equip_subtype": "防具",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "应战，你可以卜卦，若结果花色为♣，你回复1点体力；若结果花色为♠，则抵消此杀。",
+  "related": [
+   "卡牌:八卦盾"
+  ]
+ },
+ {
+  "block_id": "equipattr_凤羽盔",
+  "card": "凤羽盔",
+  "equip_subtype": "防具",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "手牌上限+2。",
+  "related": [
+   "卡牌:凤羽盔"
+  ]
+ },
+ {
+  "block_id": "equipattr_玄武盾",
+  "card": "玄武盾",
+  "equip_subtype": "防具",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "应战，你可以打出杀抵消此杀。",
+  "related": [
+   "卡牌:玄武盾"
+  ]
+ },
+ {
+  "block_id": "equipattr_藤甲",
+  "card": "藤甲",
+  "equip_subtype": "防具",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "防止你即将受到的所有无属性伤害，当你受到火焰伤害时，令此伤害+1，然后烧毁此牌。",
+  "related": [
+   "卡牌:藤甲"
+  ]
+ },
+ {
+  "block_id": "equipattr_银狮盔",
+  "card": "银狮盔",
+  "equip_subtype": "防具",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "装备，回复1点体力；当你受到大于1点的伤害时，将此伤害改为1点，然后销毁此牌。",
+  "related": [
+   "卡牌:银狮盔"
+  ]
+ },
+ {
+  "block_id": "equipattr_规则_距离计算",
+  "card": "距离计算规则",
+  "equip_subtype": "系统规则",
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null,
+  "effect": "见内容",
+  "related": [],
+  "content": "1. 基础攻击范围=1（无特殊技能/武器/马匹加持，只能打到距离1的玩家）\n2. 多件武器攻击范围取最大值\n3. 距离分攻击距离/防御距离，同类修正各自相加：\n   - 距离-1马 → 攻击距离修正（你到目标距离-1，等效能打更远）\n   - 距离+1马 → 防御距离修正（他人到你距离+1）\n   - 例：两匹-1马 + 一匹+1马 → 攻击距离-2、防御距离+1\n4. 坐骑明细：距离-1=赤兔/盗骊/白蹄乌/乌骓；距离+1=飒露紫/爪黄飞电/绝影/的卢"
+ }
+]
