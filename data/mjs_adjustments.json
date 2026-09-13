@@ -1349,6 +1349,19 @@
    "source": "announcement",
    "ref": "https://mjs.ztgame.com/news/002-1788-000e5-344798.html",
    "announcement_title": "9月3日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-09",
+   "hero": "司马睿",
+   "change_type": "新增",
+   "skills": [
+    "上巳耀舆",
+    "渡江化龙",
+    "“同升御床”"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1788-000e7-949971.html",
+   "announcement_title": "9月10日05：00停服更新预告"
   }
  ]
 }

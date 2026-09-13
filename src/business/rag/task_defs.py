@@ -21,7 +21,7 @@ TASKS: list[dict] = [
         "script": "build_rag_corpus.py",
         "sources": ["data/heroes.json", "data/cards.json", "data/mjs_adjustments.json"],
         "outputs": ["武将RAG语料.json"],
-        "expected": 615,
+        "expected": 622,
     },
     {
         "name": "卡牌语料",
