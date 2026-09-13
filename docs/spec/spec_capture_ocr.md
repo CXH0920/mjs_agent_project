@@ -245,17 +245,15 @@ irg_path = Options().work_dir / "Unihan_IRGSources.txt"
 
 ### 规则 4.1：轮询逻辑独立于 OCR 启用开关
 
-```python
-should_ocr = config.get("mumu_ocr_enabled", False) or is_poll
-```
+轮询链路（`PollCoordinator._on_poll_tick()` → `capture_for_poll()` → `submit_ocr_task()`）全程不读取 `mumu_ocr_enabled`，该开关只作用于手动截图路径。
 
 **为什么：** 轮询模式有自己的独立决策链（模板匹配 → OCR），不应受"手动截图自动识别"开关的影响。用户可能关掉手动识别的 OCR（因为截图按钮只是取画面），但希望轮询模式在检测到武将页面时自动识别。
 
-### 规则 4.2：冷却期内完全跳过
+### 规则 4.2：任务命中后按任务冷却
 
-`_poll_cooldown_until` 检查放在 `_on_poll_capture()` 最顶部，冷却期内不截图、不匹配、不 OCR。
+轮询任务命中后由 `MainWindow` 经 `OcrService.set_task_cooldown()` 记任务级冷却（`hero_selection` 的时长取 `mumu_hero_selection_cooldown` 配置，默认 180 秒），冷却中的任务不进入 `due_poll_tasks()`；若全部任务都在冷却，该拍直接跳过（不截图、不匹配、不 OCR）。
 
-**为什么：** 武将选择页出现后用户通常会花 10-30 秒选将，3 分钟内没必要重复识别。冷却不仅跳过 OCR，也跳过截图和模板匹配，因为已知会匹配成功（画面没变）。这是最轻量的处理方式——什么都不做。
+**为什么：** 武将选择页出现后用户通常会花 10-30 秒选将，3 分钟内没必要重复识别。冷却粒度是单个轮询任务，两个模板任务彼此独立、互不影响。
 
 ### 规则 4.3：轮询定位在 PollCoordinator 而非 CaptureService
 

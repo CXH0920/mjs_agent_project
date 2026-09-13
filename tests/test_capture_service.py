@@ -69,8 +69,53 @@ def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
     )
 
     assert submitted[0]["match_template"] is False
-    assert submitted[0]["is_poll"] is False
     service.shutdown()
+
+
+def test_manual_capture_not_gated_by_poll_cooldown(monkeypatch, tmp_path) -> None:
+    """回归：轮询模式下连续手动识别不受轮询冷却影响，首次命中后再次识别仍提交 OCR。"""
+    service = CaptureService()
+    service._config = {"mumu_ocr_poll_mode": True}
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
+    submitted_tasks: list[SimpleNamespace] = []
+
+    def make_task(*_args, **_kwargs) -> SimpleNamespace:
+        task = SimpleNamespace(
+            task_id=f"manual-{len(submitted_tasks)}", warmup=False, result={"outcome": "matched"},
+        )
+        submitted_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(service, "submit_ocr_task", make_task)
+
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=True, perform_ocr=True,
+    )
+    service._on_ocr_task_completed(submitted_tasks[0])
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=True, perform_ocr=True,
+    )
+    service.shutdown()
+
+    assert len(submitted_tasks) == 2
+
+
+def test_poll_mode_alone_does_not_enable_manual_ocr(monkeypatch, tmp_path) -> None:
+    """回归：仅开轮询模式不构成手动截图的 OCR 依据，仍需 OCR 开关或强制识别。"""
+    service = CaptureService()
+    service._config = {"mumu_ocr_poll_mode": True}
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
+    submitted: list[dict] = []
+    monkeypatch.setattr(service, "_queue_capture_ocr", lambda **kwargs: submitted.append(kwargs))
+
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=False, perform_ocr=True,
+    )
+    service.shutdown()
+
+    assert submitted == []
 
 
 def test_capture_queues_ocr_copy_before_saving_image(monkeypatch, tmp_path) -> None:

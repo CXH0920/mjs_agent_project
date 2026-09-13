@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
@@ -27,10 +26,6 @@ logger = logging.getLogger(__name__)
 
 # 截图默认保存目录（与 match 面板共用 env.SCREENSHOTS_DIR，#E8）
 DEFAULT_SCREENSHOTS_DIR = SCREENSHOTS_DIR
-
-# 轮询识别命中一次页面后的 OCR 冷却秒数（避免同一页面反复识别；语义同
-# OcrService.POLL_MATCH_COOLDOWN_MS，单位为秒）
-POLL_MATCH_COOLDOWN_SECONDS = 180
 
 
 class CaptureService(QObject):
@@ -57,7 +52,6 @@ class CaptureService(QObject):
         self._connection_detail = ""
         self._ocr_warmup_state = "idle"
         self._warmup_task = None
-        self._poll_cooldown_until: float = 0.0  # 轮询冷却到期时间戳
         self._ocr_worker: OcrWorker | None = None
         self._pending_ocr_captures: dict[str, dict] = {}
         self._pending_official_imports: set[str] = set()
@@ -282,23 +276,18 @@ class CaptureService(QObject):
         self.status_changed.emit(f"截图成功 ({image.width}x{image.height})")
 
         # 2. OCR 和 PNG 保存进入不同后台执行器，互不等待。
-        is_poll = self.config.get("mumu_ocr_poll_mode", False)
         should_ocr = perform_ocr and (
-            force_ocr or self.config.get("mumu_ocr_enabled", False) or is_poll
+            force_ocr or self.config.get("mumu_ocr_enabled", False)
         )
         ocr_task = None
         if should_ocr:
-            if is_poll and self._poll_cooldown_until > time.time():
-                logger.debug("轮询冷却中，跳过 OCR")
-            else:
-                ocr_task = self._queue_capture_ocr(
-                    image=image.copy(),
-                    save_path=None,
-                    hero_names=hero_names,
-                    template_name=template_name,
-                    is_poll=is_poll,
-                    match_template=not force_ocr,
-                )
+            ocr_task = self._queue_capture_ocr(
+                image=image.copy(),
+                save_path=None,
+                hero_names=hero_names,
+                template_name=template_name,
+                match_template=not force_ocr,
+            )
 
         save_dir = DEFAULT_SCREENSHOTS_DIR
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -313,7 +302,7 @@ class CaptureService(QObject):
                 pending["save_future"] = save_future
             return
 
-        # 3. OCR 未启用或处于轮询冷却时，直接返回保存结果。
+        # 3. OCR 未启用时，直接返回保存结果。
         self.capture_completed.emit({
             "image": image,
             "save_path": self._completed_save_path(save_future, save_path),
@@ -423,7 +412,6 @@ class CaptureService(QObject):
         save_path: str | Path | None,
         hero_names: list[str] | None,
         template_name: str,
-        is_poll: bool = False,
         match_template: bool = True,
     ) -> OcrTask:
         task = self.submit_ocr_task(
@@ -435,7 +423,6 @@ class CaptureService(QObject):
         self._pending_ocr_captures[task.task_id] = {
             "image": image,
             "save_path": save_path,
-            "is_poll": is_poll,
             "template_name": template_name,
         }
         return task
@@ -514,9 +501,6 @@ class CaptureService(QObject):
         if ocr_matched:
             page_name = "对局攻略页面" if pending["template_name"] == "match_guide" else "武将选择页面"
             self.status_changed.emit(f"已识别到{page_name}")
-            if pending["is_poll"]:
-                self._poll_cooldown_until = time.time() + POLL_MATCH_COOLDOWN_SECONDS
-                logger.debug("轮询 OCR 匹配成功，冷却 %d 秒", POLL_MATCH_COOLDOWN_SECONDS)
 
         self.capture_completed.emit({
             "image": pending["image"],

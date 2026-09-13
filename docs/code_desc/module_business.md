@@ -170,7 +170,7 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 
 **页面指纹去重**：标准轮询提交时置 `allow_result_reuse=True`，`OcrWorker` 按名条 ROI 生成 16×16 灰度块指纹，页面未变化时复用上次 OCR 结果（返回 `matched_reused` + 条目级拷贝）。指纹 ROI 与 recognizer 同规则按参考尺寸比例缩放以适配非参考分辨率；缓存键包含 `hero_names`，武将数据重载后强制失效。手动识别与巅峰赛动态 ROI 路径不启用指纹。
 
-`submit_ocr_task()` 的参数集为 `(image, hero_names, template_name, recognize=True, rois=None, match_template=True, fallback_on_template_miss=False, allow_result_reuse=False)`；`fallback_on_template_miss=True` 用于对局攻略任务，模板未命中仍继续 OCR 以保留跳转判断素材。轮询 OCR 命中一次页面后 `CaptureService` 记 180 秒冷却（`POLL_MATCH_COOLDOWN_SECONDS`），窗口期内的轮询 OCR 被跳过；`OcrService.POLL_MATCH_COOLDOWN_MS` 与之同值但作用于任务级冷却，两者语义不同。
+`submit_ocr_task()` 的参数集为 `(image, hero_names, template_name, recognize=True, rois=None, match_template=True, fallback_on_template_miss=False, allow_result_reuse=False)`；`fallback_on_template_miss=True` 用于对局攻略任务，模板未命中仍继续 OCR 以保留跳转判断素材。轮询任务命中一次页面后由 `OcrService.set_task_cooldown()` 按任务记冷却（`POLL_MATCH_COOLDOWN_MS`，`hero_selection` 的时长取 `mumu_hero_selection_cooldown` 配置），冷却中的任务不进入 `due_poll_tasks()`，窗口期内该任务不再匹配、不 OCR。
 
 **OCR 预热**：`warmup_ocr_model()` 把模型加载、特征预热与推理预热作为特殊 `OcrTask` 投入同一串行队列（状态 `idle/warming/ready/failed`，经 `ocr_warmup_state_changed` 广播）；`wait_ocr_warmup(timeout_ms=15_000)` 供主窗口显示前的启动画面阶段阻塞等待——Paddle 初始化期间长时间持有 GIL，若在事件循环运行后再预热会卡住界面。
 
