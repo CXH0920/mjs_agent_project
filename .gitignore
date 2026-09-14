@@ -58,10 +58,11 @@ logs/
 tests/fixtures_local/
 
 # RAG 生成材料（向量索引/模型缓存可由维护管道重建，不入库；
-# 语料 JSON 承载 curated 精化成果，不可由管道重建，入库存档）
+# 语料 JSON 仅跟踪承载 curated 精化成果的武将/卡牌两文件，其余为零精化纯生成物不入库）
 data/rag_models/
 data/rag_corpus/*
-!data/rag_corpus/*.json
+!data/rag_corpus/武将RAG语料.json
+!data/rag_corpus/卡牌RAG语料.json
 !data/rag_corpus/核心规则摘要.md
 data/rag_index/
 
