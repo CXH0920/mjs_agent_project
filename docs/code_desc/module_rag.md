@@ -259,6 +259,8 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `card_points_*` | 结构 / 总张数 162 / 异常花色 / 异常点数 | 卡牌点数 |
 | `equip_attrs_*` | 结构 / 件数 26 / 细分类型 / 距离修正 | 装备属性 |
 | `timeline_risk` | `heroes.json` 疑未同步 | 无跳转 |
+| `curated_stale` | 技能块精化早于该技能最近调整（时间轴点名技能，确证复核项） | 索引精化工作台 |
+| `curated_stale_possible` | 精化早于武将级调整记录（公告未注明技能，存疑兜底） | 索引精化工作台 |
 | `*_unreadable` / `heroes_source_unavailable` | 数据源缺失或无法解析 | 对应面板 |
 
 **审计双消费方**：`collect_*()` 系列函数由 UI 侧 `audit_summary()` 与脚本侧 `scripts/rag_audit.py` 共用，避免两侧各维护一份校验逻辑。`rag_audit.py` 额外做两项 UI 不做的事：技能描述中疑似牌名/道具名的启发式提取（`_SUFFIX` 结尾字 + `_BLACKLIST` 通用术语黑名单 + 已知名称区间覆盖，仅作人工确认提示），以及语料目录 `is_current='false'` 过时块统计。

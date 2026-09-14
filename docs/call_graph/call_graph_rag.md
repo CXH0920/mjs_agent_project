@@ -937,6 +937,9 @@ audit_service.audit_summary(root, pending_refinement=None)
   -> collect_equip_attrs(equips) -> AuditIssue(equip_attrs_structure/count/bad_equip_attrs)
      [件数=26、细分类型、距离修正校验；常量来自 equip_attrs_repository]
   -> [pending_refinement 非空] issues.insert(0, AuditIssue(pending_refinement))   [始终插入首位]
+  -> collect_stale_curated(root) -> AuditIssue(curated_stale / curated_stale_possible)
+     -> [skill_last_change > curated.updated_at] 技能级确证 → 去复核（索引精化）
+     -> [hero 级事件（skills 空、非新增）> curated.updated_at] 整将存疑
   -> collect_timeline_risk_messages(root) -> AuditIssue(timeline_risk)
      -> [hero.last_updated < hero_last_change] heroes.json 疑未同步
 ```

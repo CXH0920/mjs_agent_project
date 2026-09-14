@@ -172,6 +172,68 @@ def collect_unknown_heroes(specials: list, hero_names: set) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def collect_stale_curated(root: Path) -> list[dict]:
+    """精化时效检查：curated 精化早于该技能最近官方调整的技能块。
+
+    - 技能级（确证）：时间轴事件点名该技能且日期晚于 curated.updated_at；
+    - 武将级（存疑兜底）：skills 为空的变更类事件（公告未注明技能）晚于
+      curated.updated_at——此时武将级就是信息上限，提示整将复核；
+    - "新增"事件为登场本身，curated 块必然产生于登场后，天然不触发；
+    - 只覆盖武将技能块（时间轴不记录卡牌变更，卡牌 curated 不在检查范围）。
+    返回 [{"level": "skill"|"hero", "hero", "skill", "curated_at", "changed_at"}]。
+    """
+    timeline_path = root / "data" / "mjs_adjustments.json"
+    if not timeline_path.exists():
+        return []
+    from src.data.hero_timeline import load_timeline  # noqa: PLC0415
+    timeline = load_timeline(timeline_path)
+    skill_index: dict[tuple[str, str], str] = {}
+    hero_level_index: dict[str, str] = {}
+    for event in timeline.get("events") or []:
+        date = str(event.get("date") or "")
+        hero = str(event.get("hero") or "")
+        if not date or not hero:
+            continue
+        skills = event.get("skills") or []
+        if skills:
+            for entry in skills:
+                name = str(entry.get("skill") if isinstance(entry, dict) else entry or "").strip()
+                if name:
+                    key = (hero, name)
+                    skill_index[key] = max(date, skill_index.get(key, ""))
+        elif event.get("change_type") != "新增":
+            hero_level_index[hero] = max(date, hero_level_index.get(hero, ""))
+    corpus_path = root / CORPUS_DIR / "武将RAG语料.json"
+    if not corpus_path.exists():
+        return []
+    try:
+        blocks = json.loads(corpus_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        logger.warning("精化时效检查读取语料失败 %s: %s", corpus_path, error)
+        return []
+    if not isinstance(blocks, list):
+        return []
+    hits = []
+    for block in blocks:
+        if not isinstance(block, dict) or not block.get("skill"):
+            continue  # overview 块不参与
+        curated = block.get("curated")
+        curated_at = str(curated.get("updated_at") or "") if isinstance(curated, dict) else ""
+        if not curated_at:
+            continue
+        hero, skill = str(block.get("hero") or ""), str(block.get("skill") or "")
+        changed = skill_index.get((hero, skill))
+        if changed and changed > curated_at:
+            hits.append({"level": "skill", "hero": hero, "skill": skill,
+                         "curated_at": curated_at, "changed_at": changed})
+        else:
+            hero_changed = hero_level_index.get(hero)
+            if hero_changed and hero_changed > curated_at:
+                hits.append({"level": "hero", "hero": hero, "skill": skill,
+                             "curated_at": curated_at, "changed_at": hero_changed})
+    return hits
+
+
 def audit_summary(root: Path, pending_refinement: list | None = None) -> list[AuditIssue]:
     """返回人工维护提示清单（结构化条目；空列表表示无问题）。
 
@@ -318,6 +380,30 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
             kind="pending_refinement",
             message=f"索引字段待精化 {len(pending_refinement)} 块（卡牌/武将语料）",
             severity="warning",
+        ))
+    # 精化时效：curated 精化早于该技能最近官方调整（复核提示，非确证过时，不自动改数据）
+    stale_hits = collect_stale_curated(root)
+    skill_hits = [h for h in stale_hits if h["level"] == "skill"]
+    if skill_hits:
+        examples = "、".join(
+            f"{h['hero']}/{h['skill']}（精化 {h['curated_at']}，调整 {h['changed_at']}）"
+            for h in skill_hits[:2])
+        more = f" 等 {len(skill_hits)} 个" if len(skill_hits) > 2 else ""
+        issues.append(AuditIssue(
+            kind="curated_stale",
+            message=f"{len(skill_hits)} 个技能块的精化早于该技能最近调整：{examples}{more}，建议在索引精化中复核",
+            target_tab="索引精化",
+        ))
+    hero_hits = [h for h in stale_hits if h["level"] == "hero"]
+    if hero_hits:
+        by_hero: dict[str, int] = {}
+        for h in hero_hits:
+            by_hero[h["hero"]] = by_hero.get(h["hero"], 0) + 1
+        detail = "、".join(f"{hero} {count} 块" for hero, count in list(by_hero.items())[:3])
+        issues.append(AuditIssue(
+            kind="curated_stale_possible",
+            message=f"{detail} 的精化早于武将级调整记录（公告未注明技能，建议整将复核）",
+            target_tab="索引精化",
         ))
     # 武将变更时间轴一致性（heroes.json 疑未同步），无跳转页签
     timeline_messages = collect_timeline_risk_messages(root)
