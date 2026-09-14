@@ -321,6 +321,7 @@ class RagMaintenancePanel(QWidget):
         "missing_settlement": "去补全",
         "curated_stale": "去复核",
         "curated_stale_possible": "去复核",
+        "card_curated_stale": "去复核",
     }
 
     def _refresh_audit_banner(self, issues: list[AuditIssue]) -> None:
@@ -368,7 +369,8 @@ class RagMaintenancePanel(QWidget):
         AuditIssue.target_tab 仍是页签名（如「武将分类维护」），去掉「维护」
         后缀即左栏项 key；audit_service 侧无需改动。
         """
-        if issue.kind in ("pending_refinement", "curated_stale", "curated_stale_possible"):
+        if issue.kind in ("pending_refinement", "curated_stale", "curated_stale_possible",
+                          "card_curated_stale"):
             self._open_refinement()
             return
         if not issue.target_tab:

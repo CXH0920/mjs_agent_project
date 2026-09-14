@@ -136,3 +136,14 @@ GET https://ucmsv2api.ztgame.com/api/news/list?site=mjs&type=notice&page=1&per_p
 - 全取消勾选 = “已查看本版本”：不执行任何采集，但刷新快照（`mark_applied`），保留全部本地内容；官网下次变化会重新提示。
 - **可视化进度**：所有联网等待必须有进度反馈——公告检查与更新前置拉取显示状态栏不确定进度条（动画 + 阶段文字），武将采集子进程解析 stdout `[n/N]` 显示确定进度；完成/失败自动隐藏，避免用户误以为卡死而重复点击。
 - **全文比对采用 Git 风格 diff**：`src/ui/shared/rich_diff.py` 基于 `difflib.SequenceMatcher` 做行级 diff，修改块再做字符级染色；删除行浅红 + `-`，新增行浅绿 + `+`，未变化行无标记，相同前缀/后缀不染色。
+
+### 规则 5.5：卡牌百科变更捕获（官网同步通道，与公告体系零耦合）
+
+- **数据源**：`https://mjs.ztgame.com/shoupaiku/`（手牌库）页面引用的 `/_nuxt/spk.<hash>.js`，内嵌 49 张基础牌。与武将 mjbk chunk **同机制、不同页面**——`/baike/` 页面只有 `spk-legacy.*` 预取引用，不可作发现源；正则 `spk\.` 紧跟点号，天然排除 legacy 文件。官网改版时按 `find_card_chunk_url` 的现场信息定位。
+- **解析**：modern chunk 无 `const e=` 起始标记，`parse_cards_chunk` 逐个 `=[{` 候选位置提取平衡数组，以「对象列表且含 `card_type` 键」自证；`js_to_json` 字符状态机与武将侧共用。
+- **哈希口径**：`card_content_hash()` 仅覆盖 `name/card_type/card_desc/card_detail` 四件套（NFKC+去标签归一后 md5）。`card_amount` 官网没有；`img_url/story_source/design_idea/display_priority/status` 本地不存，均不入哈希（`status` 实测恒为 1）。
+- **与公告的关系**：官方公告章节体系无卡牌章节（实证：公告仅含【新增武将】【新增活动】【系统调整】等），卡牌变更不走公告判定、不进武将时间轴；`AnnouncementService` 与公告数据模型零改动。检查入口为独立菜单「数据 → 检查卡牌百科更新」，独立 60 秒冷却。
+- **确认式覆盖**：差异对话框按 新增/修改/官网已删除 三态列出，字段级摘要标注差异与点数表提醒；三页签全文对比（复用武将侧 Git 风格 diff）后逐卡勾选。应用 = 官网四件套覆盖本地（`card_amount` 保留原值，新增卡数量默认 1 待人工核对）；removed 仅提醒不自动删。
+- **增量基线**：基线快照 `data/card_snapshot.json` 首启用本地 `cards.json` 哈希初始化（防人工编辑误报，同规则 5.3）；应用后**按卡**推进基线，未勾选的卡保留旧基线条目、下次检查继续提示。
+- **变更记录**：每次应用幂等追加 `data/card_changes.json`（date + applied_ids + added_ids），供 `collect_stale_card_curated()` 做卡牌精化时效检查（`curated.updated_at` 早于该卡最近同步日期 → 索引精化页「去复核」）。
+- **失败边界**：官网不可达只报检查失败，不影响本地数据与公告检查；应用前必须有成功的检查结果。

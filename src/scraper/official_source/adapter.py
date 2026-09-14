@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://mjs.ztgame.com"
 CHUNK_URL_PATTERN = re.compile(r"/_nuxt/mjbk\.[a-f0-9]+\.js")
+# 卡牌数据 chunk：与武将同机制但页面不同（/shoupaiku/），spk 后要求紧跟点号，
+# 天然排除同页引用的 spk-legacy.* 预取脚本
+CARD_CHUNK_URL_PATTERN = re.compile(r"/_nuxt/spk\.[a-f0-9]+\.js")
 # 官网改版诊断用：页面里引用的全部 _nuxt 脚本（不限文件名格式）
 _NUXT_SCRIPT_PATTERN = re.compile(r"/_nuxt/[A-Za-z0-9._-]+\.js")
 # 对象键位置：{ 或 , 之后的 标识符 + 可选空白 + 冒号
@@ -36,9 +39,24 @@ def find_chunk_url(html: str) -> str:
     )
 
 
-def extract_js_array(js_text: str) -> str:
-    """提取 ``const e=[...]`` 中的数组，并忽略字符串内的方括号。"""
-    start_marker = "const e=["
+def find_card_chunk_url(html: str) -> str:
+    """从手牌库页面找到卡牌数据 JS chunk 的完整 URL。"""
+    match = CARD_CHUNK_URL_PATTERN.search(html)
+    if match:
+        return BASE_URL + match.group()
+    # 与 find_chunk_url 一致：改版当天即可凭现场信息定位
+    hints = sorted({m.group() for m in _NUXT_SCRIPT_PATTERN.finditer(html)})
+    preview = html[:300].replace("\n", " ")
+    logger.error("官网卡牌数据 chunk 未找到，可能已改版。发现的 _nuxt 脚本: %s；页面开头: %s",
+                 hints or "无", preview)
+    raise RuntimeError(
+        "官网页面中未找到卡牌数据 JS chunk（可能已改版）。"
+        f"发现的 _nuxt 脚本: {hints or '无'}；页面开头: {preview}"
+    )
+
+
+def extract_js_array(js_text: str, start_marker: str = "const e=[") -> str:
+    """提取起始标记后的平衡数组，并忽略字符串内的方括号。"""
     start = js_text.find(start_marker)
     if start < 0:
         # 官网改版会更换变量名/打包形态：与 find_chunk_url 一致，把现场信息
@@ -48,8 +66,11 @@ def extract_js_array(js_text: str) -> str:
         raise RuntimeError(
             f"官网 JS 中未找到 {start_marker!r} 起始标记（可能已改版）。JS 开头: {prefix}"
         )
+    return _extract_balanced_array(js_text, start + len(start_marker) - 1)
 
-    start += len(start_marker) - 1
+
+def _extract_balanced_array(js_text: str, start: int) -> str:
+    """从 start（``[`` 的位置）提取括号平衡的数组文本；字符串字面量内的括号不计数。"""
     depth = 0
     quote: str | None = None
     escaped = False
@@ -143,3 +164,31 @@ def _to_json_text(text: str) -> str:
 def parse_heroes_chunk(js_text: str) -> list[dict]:
     """解析官网武将 JS chunk，返回原始武将记录。"""
     return js_to_json(extract_js_array(js_text))
+
+
+# 卡牌数组入口：手牌库 modern chunk 无 const e= 标记，数据数组以 ``=[{`` 形式内嵌
+CARD_ARRAY_START_RE = re.compile(r"=\s*\[\{")
+
+
+def parse_cards_chunk(js_text: str) -> list[dict]:
+    """解析官网卡牌 JS chunk，返回原始卡牌记录。
+
+    逐个 ``=[{`` 候选位置提取平衡数组，以「对象列表且含 card_type 键」自证，
+    避免误抓页面其他数据数组；全部候选失败时按官网改版处理。
+    """
+    for match in CARD_ARRAY_START_RE.finditer(js_text):
+        try:
+            text = _extract_balanced_array(js_text, match.end() - 2)
+        except RuntimeError:
+            continue
+        try:
+            records = js_to_json(text)
+        except ValueError:
+            continue
+        if (
+            records
+            and all(isinstance(record, dict) for record in records)
+            and any("card_type" in record for record in records)
+        ):
+            return records
+    raise RuntimeError("官网 JS 中未找到卡牌数据数组（可能已改版）。")

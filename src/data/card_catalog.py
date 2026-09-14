@@ -175,7 +175,7 @@ class CardViewModel:
         return []
 
 
-def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
+def _atomic_json_write(path: Path, payload: dict[str, Any] | list[Any]) -> None:
     """以 UTF-8、LF 和同目录临时文件原子保存 JSON（委托公共实现，含 fsync）。"""
     atomic_write_json(path, payload, indent=2)
 
@@ -203,7 +203,7 @@ class _JsonRepository:
 
 
 class CardRepository(_JsonRepository):
-    """官方基础卡牌只读仓储，绝不提供写入接口。"""
+    """官方基础卡牌仓储：常规维护只读，唯一写入接口为官网同步 apply_official_updates。"""
 
     def __init__(self, file_path: str | Path = DEFAULT_CARDS_FILE):
         super().__init__(file_path)
@@ -233,6 +233,46 @@ class CardRepository(_JsonRepository):
 
     def get_card(self, card_id: str) -> Card | None:
         return self._cards.get(str(card_id))
+
+    def apply_official_updates(
+        self,
+        modified: dict[str, dict],
+        added: list[dict],
+    ) -> list[str]:
+        """官网同步唯一写入口：四件套按官网值覆盖（card_amount 保留原值），新增卡插入
+        （数量用模型默认 1，待人工核对）。返回实际应用的卡牌 id 列表。
+
+        modified 为 {card_id: 清洗后的官网文本字段}，added 为同结构记录列表
+        （含 id），清洗口径见 CardSyncService。既有卡牌保持原文件顺序，新增追加尾部。
+        """
+        applied: list[str] = []
+        for card_id, official in modified.items():
+            card = self._cards.get(str(card_id))
+            if card is None:
+                logger.warning("官网同步跳过本地不存在的卡牌 id: %s", card_id)
+                continue
+            payload = card.model_dump(mode="json")
+            payload.update(official)
+            payload["card_amount"] = card.card_amount
+            self._cards[str(card_id)] = Card.model_validate(payload)
+            applied.append(str(card_id))
+        for official in added:
+            card = Card.model_validate(official)
+            if str(card.id) in self._cards:
+                logger.warning("官网同步新增卡已存在，跳过: %s", card.id)
+                continue
+            self._cards[str(card.id)] = card
+            applied.append(str(card.id))
+        if applied:
+            self._save()
+        return applied
+
+    def _save(self) -> None:
+        """以 JSON 列表覆盖保存（原子写）。"""
+        _atomic_json_write(
+            self.file_path,
+            [card.model_dump(mode="json") for card in self._cards.values()],
+        )
 
 
 class CardFieldSchemaRepository(_JsonRepository):

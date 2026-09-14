@@ -179,7 +179,8 @@ def collect_stale_curated(root: Path) -> list[dict]:
     - 武将级（存疑兜底）：skills 为空的变更类事件（公告未注明技能）晚于
       curated.updated_at——此时武将级就是信息上限，提示整将复核；
     - "新增"事件为登场本身，curated 块必然产生于登场后，天然不触发；
-    - 只覆盖武将技能块（时间轴不记录卡牌变更，卡牌 curated 不在检查范围）。
+    - 只覆盖武将技能块；卡牌 curated 的时效检查见 collect_stale_card_curated
+      （卡牌无公告时间轴，依据为官网同步的应用记录）。
     返回 [{"level": "skill"|"hero", "hero", "skill", "curated_at", "changed_at"}]。
     """
     timeline_path = root / "data" / "mjs_adjustments.json"
@@ -231,6 +232,57 @@ def collect_stale_curated(root: Path) -> list[dict]:
             if hero_changed and hero_changed > curated_at:
                 hits.append({"level": "hero", "hero": hero, "skill": skill,
                              "curated_at": curated_at, "changed_at": hero_changed})
+    return hits
+
+
+def collect_stale_card_curated(root: Path) -> list[dict]:
+    """卡牌精化时效检查：curated 精化早于该卡最近官网同步应用的卡牌块。
+
+    数据源为 data/card_changes.json（官网同步的应用记录；卡牌无公告时间轴），
+    block_id 形如 card_{id}_{name}，按前缀反解卡牌 id。
+    返回 [{"card", "curated_at", "changed_at"}]。
+    """
+    changes_path = root / "data" / "card_changes.json"
+    if not changes_path.exists():
+        return []
+    from src.data.card_sync_store import load_card_changes  # noqa: PLC0415
+
+    changed_at: dict[str, str] = {}
+    for record in load_card_changes(changes_path):
+        for card_id in (*record.applied_ids, *record.added_ids):
+            card_id = str(card_id)
+            changed_at[card_id] = max(record.date, changed_at.get(card_id, ""))
+    if not changed_at:
+        return []
+    corpus_path = root / CORPUS_DIR / "卡牌RAG语料.json"
+    if not corpus_path.exists():
+        return []
+    try:
+        blocks = json.loads(corpus_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        logger.warning("卡牌精化时效检查读取语料失败 %s: %s", corpus_path, error)
+        return []
+    if not isinstance(blocks, list):
+        return []
+    hits = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        curated = block.get("curated")
+        curated_at = str(curated.get("updated_at") or "") if isinstance(curated, dict) else ""
+        if not curated_at:
+            continue
+        match = re.match(r"card_(\w+?)_", str(block.get("block_id") or ""))
+        if not match:
+            continue
+        changed = changed_at.get(match.group(1))
+        if changed and changed > curated_at:
+            parts = str(block.get("block_id")).split("_", 2)
+            hits.append({
+                "card": parts[2] if len(parts) > 2 else block.get("block_id"),
+                "curated_at": curated_at,
+                "changed_at": changed,
+            })
     return hits
 
 
@@ -403,6 +455,18 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
         issues.append(AuditIssue(
             kind="curated_stale_possible",
             message=f"{detail} 的精化早于武将级调整记录（公告未注明技能，建议整将复核）",
+            target_tab="索引精化",
+        ))
+    # 卡牌精化时效：curated 精化早于该卡最近官网同步（官网同步通道的应用记录）
+    card_stale_hits = collect_stale_card_curated(root)
+    if card_stale_hits:
+        examples = "、".join(
+            f"{h['card']}（精化 {h['curated_at']}，同步 {h['changed_at']}）"
+            for h in card_stale_hits[:2])
+        more = f" 等 {len(card_stale_hits)} 个" if len(card_stale_hits) > 2 else ""
+        issues.append(AuditIssue(
+            kind="card_curated_stale",
+            message=f"{len(card_stale_hits)} 个卡牌块的精化早于该卡最近官网同步：{examples}{more}，建议在索引精化中复核",
             target_tab="索引精化",
         ))
     # 武将变更时间轴一致性（heroes.json 疑未同步），无跳转页签

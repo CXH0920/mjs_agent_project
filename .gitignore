@@ -34,6 +34,9 @@ data/武将分类20*.md
 # 公告监控运行时产物（运行时自动生成/更新）
 data/announcements.json
 data/baike_snapshot.json
+# 卡牌官网同步运行时产物（检查基线与应用记录，运行时自动生成/更新）
+data/card_snapshot.json
+data/card_changes.json
 data/backups/
 data/edge_profile/
 PLANS.md

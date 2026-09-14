@@ -24,7 +24,12 @@ from urllib.parse import urljoin, urlparse
 
 from PIL import Image
 from src.config.env import IMAGES_OUTPUT_DIR
-from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
+from src.scraper.official_source.adapter import (
+    find_card_chunk_url,
+    find_chunk_url,
+    parse_cards_chunk,
+    parse_heroes_chunk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 BAIKE_URL = "https://mjs.ztgame.com/baike/"
+SHOUPAIKU_URL = "https://mjs.ztgame.com/shoupaiku/"
 BASE_URL = "https://mjs.ztgame.com"
 
 TIMEOUT = 30
@@ -297,6 +303,17 @@ def fetch_all_raw() -> list[dict]:
     js_text = fetch(chunk_url)
     raw_list = parse_heroes_chunk(js_text)
     logger.info("官网原始数据: %d 条", len(raw_list))
+    return raw_list
+
+
+def fetch_all_cards_raw() -> list[dict]:
+    """从官网手牌库获取全部卡牌的原始数据。"""
+    html = fetch(SHOUPAIKU_URL)
+    chunk_url = find_card_chunk_url(html)
+    logger.info("官网卡牌数据 chunk: %s", chunk_url)
+    js_text = fetch(chunk_url)
+    raw_list = parse_cards_chunk(js_text)
+    logger.info("官网卡牌原始数据: %d 条", len(raw_list))
     return raw_list
 
 

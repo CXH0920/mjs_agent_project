@@ -32,6 +32,7 @@ from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_wi
 from src.ui.app.app_services import AppServices
 from src.ui.app.status_chips import StatusChips
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
+from src.ui.data_admin.card_sync_dialog import CardSyncDialog
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,8 @@ class MainWindow(QMainWindow):
         self._poll_coordinator = self._services.poll
         self._announcement_manager = self._services.announcement_manager
         self._announcement_service = self._services.announcement_service
+        self._card_repository = self._services.card_repository
+        self._card_sync_service = self._services.card_sync_service
         self._announcement_dialog: AnnouncementDialog | None = None
         self._last_announcement_diff: dict = {"added": [], "modified": [], "removed": []}
         self._pending_update_phases: list[tuple[str, list[int] | None]] | None = None
@@ -247,6 +250,26 @@ class MainWindow(QMainWindow):
             )
             return
         self._announcement_service.check_now()
+
+    def _open_card_sync(self) -> None:
+        """打开卡牌百科更新对话框并自动触发一次官网检查。"""
+        from src.data.card_points_repository import CardPointsRepository
+
+        points = CardPointsRepository()
+        points.load()
+        dialog = CardSyncDialog(
+            self._card_sync_service,
+            self._card_repository,
+            points.list_card_names(),
+            parent=self,
+        )
+        dialog.exec()
+        applied = dialog.applied_count
+        dialog.deleteLater()
+        if applied:
+            self._status_label.setText(
+                f"卡牌官网同步已应用 {applied} 张，建议在知识库维护重建卡牌语料。"
+            )
 
     def _on_announcement_check_started(self) -> None:
         self._status_label.setText("正在检查公告更新...")
@@ -595,6 +618,7 @@ class MainWindow(QMainWindow):
             "combos_import": QAction("实战配队导入", self),
             "announcement_check": QAction("检查公告更新", self),
             "announcement_log": QAction("公告记录", self),
+            "card_sync_check": QAction("检查卡牌百科更新", self),
             "about": QAction("关于", self),
         }
         self._actions["exit"].setShortcut("Ctrl+Q")
@@ -619,6 +643,7 @@ class MainWindow(QMainWindow):
             "combos_import": self._open_combos_import,
             "announcement_check": self._check_announcements,
             "announcement_log": self._open_announcement_dialog,
+            "card_sync_check": self._open_card_sync,
             "about": self._show_about,
         }
         for name, callback in callbacks.items():
@@ -643,6 +668,7 @@ class MainWindow(QMainWindow):
         data_menu.addAction(self._actions["reload"])
         data_menu.addAction(self._actions["announcement_check"])
         data_menu.addAction(self._actions["announcement_log"])
+        data_menu.addAction(self._actions["card_sync_check"])
         self._add_generation_submenus(data_menu)
 
         help_menu = bar.addMenu("帮助")

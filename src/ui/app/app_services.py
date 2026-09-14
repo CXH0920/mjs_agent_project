@@ -11,6 +11,7 @@ MainWindow 持有本对象后调用 attach(parent) 统一挂载，再解包到�
 from __future__ import annotations
 
 from src.business.announcement.announcement_service import AnnouncementService
+from src.business.card_sync import CardSyncService
 from src.business.emulator.capture_service import CaptureService
 from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.hero_fetch_service import HeroFetchService
@@ -18,6 +19,7 @@ from src.business.fetching.synergy_fetch_service import SynergyFetchService
 from src.business.recognition.ocr_service import OcrService
 from src.config.env import get_mumu_config
 from src.data.announcement_manager import AnnouncementManager
+from src.data.card_catalog import CardRepository
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.manager import (
@@ -85,6 +87,11 @@ class AppServices:
             self.announcement_manager, self.data.heroes,
         )
 
+        # 卡牌官网同步（独立于公告体系；仓库启动即加载，供检查基线与同步写回使用）
+        self.card_repository = CardRepository()
+        self.card_repository.load()
+        self.card_sync_service = CardSyncService(self.card_repository)
+
     def attach(self, parent) -> None:
         """MainWindow 持有本对象后统一挂载 QObject 父子与窗口引用。"""
         for qobject in (
@@ -96,6 +103,7 @@ class AppServices:
             self.ocr,
             self.poll,
             self.announcement_service,
+            self.card_sync_service,
         ):
             qobject.setParent(parent)
         # AiGenerationWorkflow 缓存窗口引用作弹窗归属（组合根无头构造时为 None）

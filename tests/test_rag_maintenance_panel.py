@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
-from src.business.rag.audit_service import audit_summary, format_audit_issues
+from src.business.rag.audit_service import AuditIssue, audit_summary, format_audit_issues
 from src.ui.maintenance.rag_maintenance_panel import (
     RagMaintenancePanel,
     task_states,
@@ -258,6 +258,27 @@ def test_jump_to_bad_card_points(tmp_path: Path) -> None:
     panel._jump_to_issue(issue)
     # 非法行已被 repository 过滤（仅记日志），跳转只定位到对应维护对象
     assert panel._workspace.current_source_key() == "卡牌点数"
+    panel.close()
+
+
+def test_jump_to_card_curated_stale_opens_refinement(tmp_path: Path, monkeypatch) -> None:
+    """卡牌精化过期条目的「去复核」应打开索引精化对话框（与武将侧同路径）。
+
+    回归背景：card_curated_stale 曾不在 _jump_to_issue 直连名单内，落入
+    target_tab fallback 而左栏无「索引精化」维护对象，按钮点击静默无效。
+    """
+    _app()
+    panel = RagMaintenancePanel(root=_make_root(tmp_path))
+    calls: list[int] = []
+    monkeypatch.setattr(panel, "_open_refinement", lambda: calls.append(1))
+
+    panel._jump_to_issue(AuditIssue(
+        kind="card_curated_stale",
+        message="1 个卡牌块的精化早于该卡最近官网同步：多多益善",
+        target_tab="索引精化",
+    ))
+
+    assert calls == [1]
     panel.close()
 
 
