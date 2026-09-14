@@ -375,8 +375,7 @@ Combo.note 自由文本解析
 │  MainWindow._on_synergy_*     → SynergyManager.load()           │
 │  MainWindow._on_guide_*       → GuideManager.load()             │
 │  AnnouncementService          → append_announcement_events()    │
-│  audit_service                → load_timeline / stale_overrides │
-│                                 / hero_last_change              │
+│  audit_service                → load_timeline / hero_last_change│
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -391,14 +390,13 @@ Combo.note 自由文本解析
 │                     RAG / 语料构建层                             │
 │  src/rag/indexer.py            → CORPUS_BASE_DATE               │
 │  build_rag_corpus.py           → stamp_hero_block /             │
-│                                 TRIGGER_OVERRIDES /             │
-│                                 stale_overrides / load_timeline │
+│                                 load_timeline                   │
 │  build_guide_corpus.py         → stamp_guide_block /            │
 │                                 load_timeline / CORPUS_BASE_DATE│
 │  import_hero_adjustments.py    → save_timeline /                │
 │                                 append_announcement_events /     │
 │                                 load_timeline / hero_last_change│
-│  rag_audit.py                  → load_timeline / stale_overrides│
+│  rag_audit.py                  → load_timeline /                │
 │                                 / hero_last_change              │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -454,7 +452,6 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `load_timeline()` / `save_timeline()` / `append_announcement_events()` | `hero_timeline.py` | `AnnouncementService`, `import_hero_adjustments.py` | 时间轴读写与幂等追加（按 ref 或 (date, hero) 去重） |
 | `hero_last_change()` / `skill_last_change()` / `changes_after()` / `hero_first_seen()` | `hero_timeline.py` | 构建脚本、`audit_service`、`rag_audit.py` | 按武将/技能查询变更日期 |
 | `stamp_hero_block()` / `stamp_guide_block()` | `hero_timeline.py` | `build_rag_corpus.py` / `build_guide_corpus.py` | 语料块版本戳（`as_of` / `is_current` / 硬/软过时判定） |
-| `stale_overrides()` | `hero_timeline.py` | `audit_service` / `rag_audit.py` | TRIGGER_OVERRIDES 失效风险清单 |
 | `normalize_change_type()` | `hero_timeline.py` | `announcement.py`、`import_hero_adjustments.py` | 变更类型词汇归一 |
 | `parse_skill_entry()` | `hero_timeline.py` | `import_hero_adjustments.py` | 技能条目"技能名：变更描述"解析 |
 
@@ -518,8 +515,6 @@ CardPointsPanel / EquipAttrsPanel / SpecialCardsPanel / HeroClassificationPanel 
                                     -> 武将攻略RAG语料（guide类，357块，贴hero）
         -> build_rag_corpus.py  读 heroes.json + mjs_adjustments.json
                                     -> stamp_hero_block()  武将/技能块恒 is_current=true
-                                    -> TRIGGER_OVERRIDES 命中优先返回
-                                    -> stale_overrides() 失效风险告警
 ```
 
 ### 10.3 从 xlsx 应急重导入
@@ -619,8 +614,6 @@ build_rag_corpus.py
      -> block.is_current = "true"                     [武将块恒当前版本]
      -> block.last_change_date = hero_last_change() or CORPUS_BASE_DATE
   -> 每技能块同样 stamp_hero_block()
-  -> TRIGGER_OVERRIDES 命中 (hero, skill) -> 优先返回人工精化触发条件
-  -> stale_overrides(timeline) 告警 TRIGGER_OVERRIDES 语义失效风险
 
 build_guide_corpus.py
   -> timeline = load_timeline()
@@ -633,17 +626,9 @@ build_guide_corpus.py
      -> 无变更                  -> is_current="true" 不写额外字段
 ```
 
-### 12.3 TRIGGER_OVERRIDES 审计消费
+### 12.3 爬虫侧时间轴读取
 
 ```
-rag_audit.py / audit_service.check_trigger_overrides()
-  -> timeline = load_timeline()
-  -> stale_overrides(timeline)
-     -> 对每条 (hero, skill) 检查 skill_last_change 是否晚于 TRIGGER_OVERRIDES_AUTHORED
-     -> skill 级命中 -> level="skill"；回退 hero_last_change -> level="hero"
-     -> 返回 [{hero, skill, date, level}]，按 (date, hero, skill) 排序
-  -> 打印/推送失效风险告警
-
 announcement.py（爬虫侧）
   -> load_timeline() 读取已落地时间轴
   -> normalize_change_type() 归一公告原文的变更类型

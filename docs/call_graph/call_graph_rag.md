@@ -210,11 +210,11 @@ stdout 是 QProcess 进度契约：只允许协议行与面向用户的汇总，
 
 ```
 build_rag_corpus.py（武将语料，最复杂）
-  -> load_timeline() + [TRIGGER_OVERRIDES 失效校验] + stale_overrides(timeline) 风险提示
+  -> load_timeline()
   -> [每个有技能的武将] stamp_hero_block(overview 块, name, timeline)
      -> as_of=CORPUS_BASE_DATE, is_current='true', last_change_date（仅审计用，不入检索元数据）
      -> [每个技能] skill_block(h, s) -> extract_timing() / extract_trigger_cond()
-        （TRIGGER_OVERRIDES 人工映射优先）/ extract_target() / extract_keywords() / extract_related()
+        / extract_target() / extract_keywords() / extract_related()
   -> merge_curated() -> 写 武将RAG语料.md + save_json(武将RAG语料.json)
 
 build_card_corpus.py -> 每卡 extract_timing/trigger/keywords/related
@@ -938,7 +938,6 @@ audit_service.audit_summary(root, pending_refinement=None)
      [件数=26、细分类型、距离修正校验；常量来自 equip_attrs_repository]
   -> [pending_refinement 非空] issues.insert(0, AuditIssue(pending_refinement))   [始终插入首位]
   -> collect_timeline_risk_messages(root) -> AuditIssue(timeline_risk)
-     -> stale_overrides(timeline) -> TRIGGER_OVERRIDES 失效风险
      -> [hero.last_updated < hero_last_change] heroes.json 疑未同步
 ```
 
@@ -967,7 +966,6 @@ maintain_rag.main()（构建前门禁）
      -> collect_card_points() / collect_equip_attrs() / collect_missing_settlements()
   -> rag_audit.audit_version_timeline(ROOT)
      -> [无 mjs_adjustments.json] 提示未初始化
-     -> stale_overrides(timeline) -> 失效风险
      -> hero_last_change 对比 last_updated -> 疑未同步
      -> [遍历语料目录] is_current=='false' 块统计 -> 语料过时块
   -> [issues 非空] 打印人工补充清单
@@ -1148,7 +1146,7 @@ src.scraper.ai.batch (main)
 | `src.data.json_repository.atomic_write_json()` | 全部写路径的原子写实现 |
 | `src.data.card_points_repository` / `equip_attrs_repository` | 审计校验常量（花色/点数/张数/件数/细分类型/距离修正）单一事实源 |
 | `src.data.card_points_repository.CardPointsRepository` 等四个仓储 | 维护面板底层数据源 |
-| `src.data.hero_timeline` | 武将变更时间轴（`CORPUS_BASE_DATE`、`TRIGGER_OVERRIDES` / `TRIGGER_OVERRIDES_AUTHORED`、`load_timeline` / `save_timeline` / `append_announcement_events`、`stamp_hero_block` / `stamp_guide_block`、`hero_last_change` / `skill_last_change` / `changes_after`、`stale_overrides`、`normalize_change_type` / `parse_skill_entry`） |
+| `src.data.hero_timeline` | 武将变更时间轴（`CORPUS_BASE_DATE`、`load_timeline` / `save_timeline` / `append_announcement_events`、`stamp_hero_block` / `stamp_guide_block`、`hero_last_change` / `skill_last_change` / `changes_after`、`normalize_change_type` / `parse_skill_entry`） |
 | `src.scraper.official_source.announcement.build_timeline_events()` | 公告正文 → 时间轴事件（归 module_scraper；公告捕获服务与 `import_hero_adjustments.py` 共用） |
 | `src.data.hero_classification_repository` / `special_cards_repository` | 分类与专属牌仓储 |
 | `src.data.combo_manager.ComboManager` | 实战配队（归 module_peak_combos） |

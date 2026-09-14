@@ -1,4 +1,4 @@
-"""武将变更时间轴（hero_timeline）解析、读写、查询、版本戳与 override 风险测试。"""
+"""武将变更时间轴（hero_timeline）解析、读写、查询与版本戳测试。"""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ import hashlib
 import pytest
 from src.data.hero_timeline import (
     CORPUS_BASE_DATE,
-    TRIGGER_OVERRIDES,
-    TRIGGER_OVERRIDES_AUTHORED,
     append_announcement_events,
     changes_after,
     hero_first_seen,
@@ -18,7 +16,6 @@ from src.data.hero_timeline import (
     parse_skill_entry,
     save_timeline,
     skill_last_change,
-    stale_overrides,
     stamp_guide_block,
     stamp_hero_block,
 )
@@ -197,39 +194,3 @@ def test_stamp_guide_block_preserves_as_of_when_text_unchanged():
     stamp_guide_block(block, prev_as_of="2026-08-20", prev_md5=_md5("法正攻略初版内容。"),
                       timeline=FIXTURE_TIMELINE)
     assert block["as_of"] == CORPUS_BASE_DATE
-
-
-# ---------------------------------------------------------------
-# TRIGGER_OVERRIDES 语义失效风险
-# ---------------------------------------------------------------
-
-def test_triggers_overrides_migrated():
-    """override 表自 build_rag_corpus 迁出后保持完整（构建侧 import 无副作用）。"""
-    assert ("贾诩", "算无遗策") in TRIGGER_OVERRIDES
-    assert TRIGGER_OVERRIDES_AUTHORED == "2026-08-12"
-
-
-def test_stale_overrides_skill_level_hit():
-    timeline = {"events": [
-        {"date": "2026-08-13", "hero": "贾诩", "change_type": "增强",
-         "skills": [{"skill": "算无遗策", "change": "增加抵挡战法牌"}], "source": "init"},
-    ]}
-    risks = stale_overrides(timeline)
-    assert {"hero": "贾诩", "skill": "算无遗策", "date": "2026-08-13", "level": "skill"} in risks
-
-
-def test_stale_overrides_hero_level_fallback():
-    timeline = {"events": [
-        {"date": "2026-09-01", "hero": "刘禅", "change_type": "调整",
-         "skills": [{"skill": "放权", "change": "调整"}], "source": "announcement"},
-    ]}
-    risks = stale_overrides(timeline)
-    assert {"hero": "刘禅", "skill": "乐不思蜀", "date": "2026-09-01", "level": "hero"} in risks
-
-
-def test_stale_overrides_ignores_changes_before_authored():
-    timeline = {"events": [
-        {"date": "2026-03-05", "hero": "章邯", "change_type": "增强",
-         "skills": [{"skill": "赦徒授兵", "change": "改为消耗出杀次数"}], "source": "init"},
-    ]}
-    assert stale_overrides(timeline) == []

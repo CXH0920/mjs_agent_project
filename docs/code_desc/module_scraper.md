@@ -223,7 +223,7 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 - `AnnouncementService._sync_timeline()`（`src/business/announcement/announcement_service.py`）在每次 `_do_check` 末尾调用，扫描全部 `hero_related` 公告而非仅本批新增——`append_announcement_events` 按 `ref` 或 `(date, hero)` 幂等去重，重复检查与此前写盘失败的公告都能在下次检查补齐；失败仅记录日志，不中断检查。
 - `append_announcement_events` 落到 `data/mjs_adjustments.json`（由 `src/data/hero_timeline.py` 统一管理），与 `src/scripts/import_hero_adjustments.py` 一次性初始化的 A 类全量快照（`source="init"`，回填 `init_source_last_updated`）并存——快照基线之前的公告经 `build_timeline_events` 的 `cutoff_date` 过滤，避免重复收录。
 - 时间轴事件字段：`date`/`hero`/`change_type`（新增/增强/削弱/调整/重做）/`skills`/`source`（`init` 或 `announcement`）/`ref`/`announcement_title`；`change_type` 词汇归一由 `normalize_change_type` 完成（"加强"→"增强"、"修改"→"调整"，未知类型兜底"调整"）。
-- 时间轴是 RAG 语料版本戳的事实源：`build_*_corpus.py` 依此给武将/攻略语料块打 `as_of`/`is_current`，检索层默认只召当前版本块；同时供 `rag_audit` 检查 `TRIGGER_OVERRIDES` 失效风险与 `heroes.json` 疑未同步武将。
+- 时间轴是 RAG 语料版本戳的事实源：`build_*_corpus.py` 依此给武将/攻略语料块打 `as_of`/`is_current`，检索层默认只召当前版本块；同时供 `rag_audit` 检查 `heroes.json` 疑未同步武将。
 
 ### 3.6 实战配队导入（`src/scripts/import_combos.py`，2026-08 新增）
 

@@ -271,7 +271,7 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python -m src.scripts.maintain_rag --force --build-index` 或应用内「知识库维护」页面。
 - **规模（2026-09）**：`src/business/rag/task_defs.py` 定义 **10 个语料任务**，对应 `data/rag_corpus/` 下 **12 个语料 JSON**，合计 **2090 个检索块**（武将技能 622 / 专属牌 509 / 武将攻略 357 / 卡牌效果 83 / FAQ 79 / 强化技能卡 49 / 武将总览 49 / 技能色卡 49 / 卡牌 48 / 元规则章节 38 / 装备属性 27 / 武将分类 180）。
-- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 133 条事件 = 126 条初始化 + 7 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。`TRIGGER_OVERRIDES` 的作者日期基线为 2026-08-12，供 `rag_audit.py` 做失效审计。
+- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 133 条事件 = 126 条初始化 + 7 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。
 - **检索性能（2026-08）**：`Retriever` 加载语料时构建武将/牌名倒排 `_hero_index` 与 `_id2text/_id2meta` 字典，`hero_blocks()`、`_text_of()`、`_meta_of()` 不再线性遍历全量块；静态 `KEYWORDS` 关键词倒排 `_keyword_index` 惰性构建，`_keyword_hits()` 中查询相关名称保持线性扫描（数量少），避免每次查询全量遍历。`src/rag/config.py` 不再在 import 时创建目录，改由使用点确保（#49）。
 - **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `src/scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `src/scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `src/.rule_doc_snapshot.json`（项目根））；③ `src/scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`src/scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `src/scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `src/scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
 - **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`src/scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
@@ -775,7 +775,7 @@ def apply_incremental_update(data_dir, update)
 
 ### 4.8 武将变更时间轴（hero_timeline.py）
 
-纯数据层模块，无 UI 与 Qt 依赖，职责边界为「时间轴读写 + RAG 版本戳 + `TRIGGER_OVERRIDES` 审计」。事实源 `data/mjs_adjustments.json`：
+纯数据层模块，无 UI 与 Qt 依赖，职责边界为「时间轴读写 + RAG 版本戳」。事实源 `data/mjs_adjustments.json`：
 
 ```
 {
@@ -795,7 +795,7 @@ def apply_incremental_update(data_dir, update)
 
 **读写与查询接口**：`load_timeline()` / `save_timeline()` / `append_announcement_events()` / `normalize_change_type()`，以及按武将取当前与历史版本的时间轴查询。
 
-**语料块版本戳**：`build_guide_corpus.py` / `build_rag_corpus.py` 读取时间轴后为武将语料块打 `as_of`、`is_current`、`content_md5`，过时块附 `staleness_reason` / `staleness_hint`；`rag_prompt` 检索层**默认只召当前版本**（`is_current=true`），避免旧版本语料进入 Prompt。`TRIGGER_OVERRIDES` 的作者日期基线 `2026-08-12` 供 `rag_audit.py` 做失效审计。
+**语料块版本戳**：`build_guide_corpus.py` / `build_rag_corpus.py` 读取时间轴后为武将语料块打 `as_of`、`is_current`、`content_md5`，过时块附 `staleness_reason` / `staleness_hint`；`rag_prompt` 检索层**默认只召当前版本**（`is_current=true`），避免旧版本语料进入 Prompt。
 
 ---
 

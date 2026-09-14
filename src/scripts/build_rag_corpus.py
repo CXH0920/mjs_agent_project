@@ -3,10 +3,7 @@
 import re
 
 from src.data.hero_timeline import (
-    TRIGGER_OVERRIDES,
-    TRIGGER_OVERRIDES_AUTHORED,
     load_timeline,
-    stale_overrides,
     stamp_hero_block,
 )
 from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
@@ -75,14 +72,7 @@ FIXED_TRIGGER_REGEXES = [
     (r'^[^，。；。]{4,20}?时', None),
 ]
 
-# TRIGGER_OVERRIDES 人工精化触发条件表已迁至 src/data/hero_timeline.py（供审计共用）
-
-
-def extract_trigger_cond(hero, skill, desc):
-    # 人工精化映射表优先（命中则不再走规则提取）
-    key = (hero, skill)
-    if key in TRIGGER_OVERRIDES:
-        return TRIGGER_OVERRIDES[key][:3]
+def extract_trigger_cond(desc):
     conds = []
     # 当...时 场景
     for m in re.finditer(r'当([^，。；]{2,22}?)(?:时|后|前)', desc):
@@ -148,7 +138,7 @@ def skill_block(h, s):
     settle = s.get('settlement', '').strip()
     text = desc + ' ' + settle
     timing = extract_timing(desc)
-    cond = extract_trigger_cond(h['name'], s['name'], desc)
+    cond = extract_trigger_cond(desc)
     tgt = extract_target(desc)
     kws = extract_keywords(text)
     rel = extract_related(text)
@@ -170,16 +160,6 @@ md_lines = ['# 武将 RAG 语料', '',
             '> 来源：heroes.json（%d 武将 / %d 技能 + %d 总览块）。索引字段由规则抽取生成，'
             % (len(heroes), sum(len(h.get('skills', [])) for h in heroes), overview_total),
             '> 时机/触发条件/关联可后续用大模型精化。', '']
-# TRIGGER_OVERRIDES 失效校验（官方改技能名/删除后提醒清理）
-_hero_skill_keys = {(h['name'], s['name']) for h in heroes for s in h.get('skills', [])}
-for _k in TRIGGER_OVERRIDES:
-    if _k not in _hero_skill_keys:
-        print(f'⚠️ TRIGGER_OVERRIDES 失效条目: {_k[0]}/{_k[1]} 不在 heroes.json（技能改名或删除？）')
-# 语义失效风险：时间轴上晚于人工审核日的调整（技能级=确证，武将级=提示核对）
-for _risk in stale_overrides(timeline):
-    _level = '技能级' if _risk['level'] == 'skill' else '武将级'
-    print(f"⚠️ TRIGGER_OVERRIDES {_level}失效风险: {_risk['hero']}/{_risk['skill']}"
-          f" 于 {_risk['date']} 调整（晚于审核日 {TRIGGER_OVERRIDES_AUTHORED}），请人工复核")
 
 hero_counter = 0  # 有技能武将数 = 实际生成的总览块数
 for h in heroes:

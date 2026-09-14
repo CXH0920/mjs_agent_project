@@ -141,7 +141,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 **索引字段的两条来源**：
 
-1. **规则抽取**（`build_rag_corpus.py`）—— `TIMING_PATTERNS` 三段正则抽时机、`FIXED_TRIGGER_PATTERNS` 固定句式 + `FIXED_TRIGGER_REGEXES` 抽触发条件、`TERMS`（按长度降序避免短词先命中）抽关键词、`RULE_MAP` + 牌名扫描抽关联引用。人工精化表 `TRIGGER_OVERRIDES`（已迁至 `src/data/hero_timeline.py` 供审计共用）命中时优先，不再走规则提取。
+1. **规则抽取**（`build_rag_corpus.py`）—— `TIMING_PATTERNS` 三段正则抽时机、`FIXED_TRIGGER_PATTERNS` 固定句式 + `FIXED_TRIGGER_REGEXES` 抽触发条件、`TERMS`（按长度降序避免短词先命中）抽关键词、`RULE_MAP` + 牌名扫描抽关联引用。
 2. **人工精化 / 大模型精化**（`refinement_service.py`，见 3.5）。
 
 **精化成果不被重建冲掉**：`rag_curated.merge_curated(blocks, old_json_path)` 在 build 脚本写文件前调用，把旧语料中同 `block_id` 的 `curated` 覆盖回新生成块的顶层索引字段并保留 `curated` 字段。
@@ -151,7 +151,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 - `stamp_hero_block(block, hero, timeline)` —— 武将语料块由当前 `heroes.json` 构建，恒为当前版本（`is_current="true"` / `as_of=CORPUS_BASE_DATE`）；另写 `last_change_date` 供审计比对 heroes.json 是否跟得上公告，该字段不入检索元数据。
 - `stamp_guide_block(block, prev_as_of, prev_md5, timeline)` —— 攻略块先算 `content_md5`：文本未变则沿用旧 `as_of`，变了重置到基线（避免整批攻略因一次重建被误判过时）。再取 `changes_after(hero, as_of)` 之后的变更并**排除 `change_type="新增"`**——"新增"是武将登场本身而非技能调整，登场后生成的攻略必然提及登场技能名，若计入会导致新武将攻略被永久排除出检索。块文本提及被改技能名则 `is_current="false"` 并写 `staleness_reason`（硬证据，检索默认排除）；仅有武将级时间漂移则 `is_current="true"` 并写 `staleness_hint`（软提示，仍参与召回）。
 
-`indexer.load_all_blocks()` 对所有语料块统一兜底注入 `is_current` / `as_of`（缺省 `CORPUS_BASE_DATE`），`retriever.build_search_where()` 默认叠加 `is_current='true'` 硬过滤，因此检索**默认只召当前版本**。`TRIGGER_OVERRIDES` 的人工审核基准日由 `TRIGGER_OVERRIDES_AUTHORED`（`2026-08-12`）标记，`stale_overrides()` 据此输出语义失效风险清单（技能级＝该技能在时间轴上有晚于审核日的记录，属确证；武将级＝仅该武将有晚于审核日的记录，属提示人工核对）。
+`indexer.load_all_blocks()` 对所有语料块统一兜底注入 `is_current` / `as_of`（缺省 `CORPUS_BASE_DATE`），`retriever.build_search_where()` 默认叠加 `is_current='true'` 硬过滤，因此检索**默认只召当前版本**。
 
 **增量调度**（`maintain_rag.py`）：`file_fingerprint()` 对文件源取 `(md5, size, mtime)`，对目录源（如 `raw_guides/jinxia/guides/`）聚合内部全部文件的相对路径 + 内容 md5（Windows 上不能直接 open 目录）；`task_changed()` 同时检查依赖源与脚本自身；状态落盘到项目根 `.rag_state.json`。关键防护：`update_state_fingerprints()` 让失败任务及其依赖路径一律保持旧指纹，否则失败任务的变更被"洗掉"后会永久跳过，坏语料一直驻留。
 
@@ -258,7 +258,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `missing_settlement` | 专属牌/战法牌缺结算详情（"死士"为非实体牌标记，豁免） | 专属牌，`focus_item()` |
 | `card_points_*` | 结构 / 总张数 162 / 异常花色 / 异常点数 | 卡牌点数 |
 | `equip_attrs_*` | 结构 / 件数 26 / 细分类型 / 距离修正 | 装备属性 |
-| `timeline_risk` | `TRIGGER_OVERRIDES` 失效风险、`heroes.json` 疑未同步 | 无跳转 |
+| `timeline_risk` | `heroes.json` 疑未同步 | 无跳转 |
 | `*_unreadable` / `heroes_source_unavailable` | 数据源缺失或无法解析 | 对应面板 |
 
 **审计双消费方**：`collect_*()` 系列函数由 UI 侧 `audit_summary()` 与脚本侧 `scripts/rag_audit.py` 共用，避免两侧各维护一份校验逻辑。`rag_audit.py` 额外做两项 UI 不做的事：技能描述中疑似牌名/道具名的启发式提取（`_SUFFIX` 结尾字 + `_BLACKLIST` 通用术语黑名单 + 已知名称区间覆盖，仅作人工确认提示），以及语料目录 `is_current='false'` 过时块统计。
@@ -612,7 +612,7 @@ TASKS: list[dict] = [
 | 依赖 | `src.data.hero_classification_repository` | 武将分类数据源仓储（UI 面板持有，审计读 JSON） |
 | 依赖 | `src.data.special_cards_repository` | 专属牌数据源仓储 |
 | 依赖 | `src.data.combo_manager` | `ComboService` 的手工配队写路径（归 `module_peak_combos.md`） |
-| 依赖 | `src.data.hero_timeline` | `CORPUS_BASE_DATE` / `TRIGGER_OVERRIDES` / `TRIGGER_OVERRIDES_AUTHORED` / `VALID_CHANGE_TYPES` / `load_timeline` / `save_timeline` / `append_announcement_events` / `normalize_change_type` / `parse_skill_entry` / `hero_last_change` / `skill_last_change` / `hero_first_seen` / `changes_after` / `stale_overrides` / `stamp_hero_block` / `stamp_guide_block` / `DEFAULT_TIMELINE_FILE`——语料版本戳、时间轴读写与人工精化触发条件表 |
+| 依赖 | `src.data.hero_timeline` | `CORPUS_BASE_DATE` / `VALID_CHANGE_TYPES` / `load_timeline` / `save_timeline` / `append_announcement_events` / `normalize_change_type` / `parse_skill_entry` / `hero_last_change` / `skill_last_change` / `hero_first_seen` / `changes_after` / `stamp_hero_block` / `stamp_guide_block` / `DEFAULT_TIMELINE_FILE`——语料版本戳与时间轴读写 |
 | 依赖 | `src.scraper.official_source.announcement` | `build_timeline_events()`：公告正文 → 时间轴事件（`import_hero_adjustments.py` 回填与公告捕获增量共用；归 `module_scraper.md`） |
 | 依赖 | `src.scraper.ai.api_generator` | `AIBatchGenerator.complete()`：精化建议与武将分类建议的 LLM 调用 |
 | 依赖 | `src.scraper.ai.json_extract` | `extract_json()` 解析 LLM 输出 |

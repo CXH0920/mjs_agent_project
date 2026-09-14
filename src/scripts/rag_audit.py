@@ -8,7 +8,7 @@
 4. card_points.json（原 xlsx sheet1）花色/点数/张数合法性；
 5. equip_attrs.json（原 xlsx sheet2）件数/字段合法性；
 6. 专属牌/战法牌结算详情回填完整性（死士为非实体牌标记，豁免）；
-7. 武将变更时间轴一致性（TRIGGER_OVERRIDES 语义失效 / heroes.json 疑未同步 / 语料过时块统计）。
+7. 武将变更时间轴一致性（heroes.json 疑未同步 / 语料过时块统计）。
 
 返回问题清单（list[str]）；无问题时返回空列表。不影响语料构建，
 由 maintain_rag.py 选择是否以 --strict-audit 视为失败。
@@ -29,10 +29,8 @@ from src.business.rag.audit_service import (  # noqa: E402
 )
 from src.config.env import PROJECT_ROOT as ROOT
 from src.data.hero_timeline import (  # noqa: E402
-    TRIGGER_OVERRIDES_AUTHORED,
     hero_last_change,
     load_timeline,
-    stale_overrides,
 )
 
 # 疑似专属牌名的结尾字（收窄，避免把通用术语误判为牌名）
@@ -152,18 +150,13 @@ def audit_hero_coverage(root):
 
 
 def audit_version_timeline(root):
-    """时间轴一致性审计（item 7）：override 语义失效 / 疑未同步武将 / 语料过时块。"""
+    """时间轴一致性审计（item 7）：疑未同步武将 / 语料过时块。"""
     issues = []
     timeline_path = os.path.join(root, 'data', 'mjs_adjustments.json')
     if not os.path.exists(timeline_path):
         return ['时间轴未初始化：缺少 data/mjs_adjustments.json'
                 '（运行 python -m src.scripts.import_hero_adjustments 导入）']
     timeline = load_timeline()
-
-    for risk in stale_overrides(timeline):
-        level = '技能级' if risk['level'] == 'skill' else '武将级'
-        issues.append(f"TRIGGER_OVERRIDES {level}失效风险: {risk['hero']}/{risk['skill']}"
-                      f"（{risk['date']} 调整，晚于审核日 {TRIGGER_OVERRIDES_AUTHORED}，请人工复核）")
 
     try:
         with open(os.path.join(root, 'data', 'heroes.json'), encoding='utf-8') as f:
