@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.shared.faction_colors import sort_factions_by_config
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 
@@ -40,7 +41,7 @@ class HeroRelationSelectDialog(QDialog):
         layout.addWidget(self._search_edit)
 
         self._faction_combo = CheckableComboBox()
-        self._faction_combo.set_items(self._hero_mgr.list_factions())
+        self._faction_combo.set_items(sort_factions_by_config(self._hero_mgr.list_factions()))
         self._faction_combo.checked_values_changed.connect(self._refresh_list)
         layout.addWidget(self._faction_combo)
 

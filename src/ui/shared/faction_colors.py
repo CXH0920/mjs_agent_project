@@ -1,10 +1,14 @@
-"""势力配色读取、校验和展示缓存。"""
+"""势力配色与筛选展示顺序读取、校验和展示缓存。
+
+配置文件为数组结构（faction + color），数组位置即筛选界面的势力展示顺序。
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from src.config.env import BUNDLE_ROOT
@@ -24,20 +28,27 @@ _faction_colors_cache: dict[str, str] | None = None
 
 
 def load_faction_colors(path: Path = FACTION_COLORS_FILE) -> dict[str, str]:
-    """读取并规范化已保存的势力颜色，读取失败时返回空字典。"""
+    """读取并规范化已保存的势力颜色，字典顺序即配置的展示顺序，失败时返回空字典。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         logger.warning("读取势力配色失败: %s", exc)
         return {}
-    if not isinstance(data, dict):
-        logger.warning("势力配色格式无效：根节点不是对象")
+    if not isinstance(data, list):
+        logger.warning("势力配色格式无效：根节点不是数组")
         return {}
-    return {
-        str(name): value.upper()
-        for name, value in data.items()
-        if isinstance(name, str) and isinstance(value, str) and HEX_COLOR_RE.fullmatch(value)
-    }
+    colors: dict[str, str] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("faction")
+        value = entry.get("color")
+        if (
+            isinstance(name, str) and name
+            and isinstance(value, str) and HEX_COLOR_RE.fullmatch(value)
+        ):
+            colors[name] = value.upper()
+    return colors
 
 
 def get_faction_colors() -> dict[str, str]:
@@ -46,6 +57,15 @@ def get_faction_colors() -> dict[str, str]:
     if _faction_colors_cache is None:
         _faction_colors_cache = load_faction_colors() or dict(DEFAULT_FACTION_COLORS)
     return _faction_colors_cache
+
+
+def sort_factions_by_config(factions: Iterable[str]) -> list[str]:
+    """按配置文件中的势力顺序排序；配置外的势力按码点序追加尾部。"""
+    ordered = get_faction_colors()
+    pending = set(factions)
+    known = [name for name in ordered if name in pending]
+    unknown = sorted(name for name in pending if name not in ordered)
+    return known + unknown
 
 
 def reload_faction_colors() -> dict[str, str]:

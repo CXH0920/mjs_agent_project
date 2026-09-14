@@ -37,6 +37,7 @@ from src.ui.library.guide_edit_dialog import GuideEditDialog
 from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView, HeroSynergyView
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
+from src.ui.shared.faction_colors import sort_factions_by_config
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
@@ -113,7 +114,7 @@ class HeroListPanel(QWidget):
         self._faction_combo.blockSignals(True)
         self._faction_combo.clear()
         self._faction_combo.addItem("全部")
-        for faction in self._hero_mgr.list_factions():
+        for faction in sort_factions_by_config(self._hero_mgr.list_factions()):
             self._faction_combo.addItem(faction)
         self._faction_combo.blockSignals(False)
 

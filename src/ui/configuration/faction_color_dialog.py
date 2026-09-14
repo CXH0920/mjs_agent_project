@@ -32,15 +32,16 @@ HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def save_faction_colors(colors: dict[str, str], path: Path = COLORS_FILE) -> None:
-    """校验并保存势力颜色，避免把无效颜色写入配置文件。"""
+    """校验并保存势力颜色与展示顺序（字典顺序即展示顺序），避免把无效颜色写入配置文件。"""
     normalized = {}
     for name, value in colors.items():
         if not HEX_COLOR_RE.fullmatch(value):
             raise ValueError(f"势力“{name}”的颜色不是有效 Hex 颜色：{value}")
         normalized[name] = value.upper()
+    payload = [{"faction": name, "color": color} for name, color in normalized.items()]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(normalized, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -138,6 +139,7 @@ class FactionColorDialog(QDialog):
         super().__init__(parent)
         self._path = path
         self._pickers: dict[str, ColorPicker] = {}
+        self._row_frames: dict[str, QWidget] = {}
         self._rows_layout: QVBoxLayout | None = None
         self._empty_state_label: QLabel | None = None
         self._colors = load_faction_colors(path)
@@ -152,7 +154,7 @@ class FactionColorDialog(QDialog):
 
         layout.addWidget(PageHeader(
             "势力配色",
-            "点击颜色小方块调整颜色，保存后应用到全部相关页面。",
+            "点击颜色小方块调整颜色，↑/↓ 调整势力筛选顺序，保存后应用到全部相关页面。",
         ))
 
         scroll = QScrollArea()
@@ -203,7 +205,34 @@ class FactionColorDialog(QDialog):
         picker = ColorPicker(color)
         self._pickers[faction] = picker
         row_layout.addWidget(picker)
+        up_button = QPushButton("↑")
+        up_button.setFixedWidth(32)
+        up_button.setToolTip("上移：提前该势力在筛选中的顺序")
+        up_button.clicked.connect(lambda checked=False, name=faction: self._move_faction(name, -1))
+        row_layout.addWidget(up_button)
+        down_button = QPushButton("↓")
+        down_button.setFixedWidth(32)
+        down_button.setToolTip("下移：延后该势力在筛选中的顺序")
+        down_button.clicked.connect(lambda checked=False, name=faction: self._move_faction(name, 1))
+        row_layout.addWidget(down_button)
+        self._row_frames[faction] = row
         return row
+
+    def _move_faction(self, faction: str, offset: int) -> None:
+        """将势力与相邻行交换顺序，行序即保存后的筛选展示顺序。"""
+        names = list(self._pickers)
+        index = names.index(faction)
+        target = index + offset
+        if not 0 <= target < len(names):
+            return
+        names[index], names[target] = names[target], names[index]
+        self._pickers = {name: self._pickers[name] for name in names}
+        self._row_frames = {name: self._row_frames[name] for name in names}
+        # 摘除全部行控件（末尾弹簧保留），再按新顺序放回
+        while self._rows_layout.count() > 1:
+            self._rows_layout.takeAt(0)
+        for name in self._pickers:
+            self._rows_layout.addWidget(self._row_frames[name])
 
     def _add_faction(self) -> None:
         """将合法的新势力加入当前配置草稿，保存时统一落盘。"""

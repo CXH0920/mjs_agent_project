@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
+from src.ui.shared.faction_colors import sort_factions_by_config
 from src.ui.shared.style import PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, EmptyState, FlowLayout, PageHeader
 
@@ -106,7 +107,7 @@ class BaseHeroSelectDialog(QDialog):
             layout.addWidget(footer)
             return
 
-        factions = self._hero_mgr.list_factions()
+        factions = sort_factions_by_config(self._hero_mgr.list_factions())
         layout = QVBoxLayout(self)
         layout.addWidget(PageHeader(self.windowTitle(), tip_text))
 
