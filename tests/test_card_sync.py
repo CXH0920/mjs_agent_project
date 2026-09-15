@@ -5,7 +5,6 @@ import threading
 from pathlib import Path
 
 import pytest
-
 from src.business.card_sync import CardSyncService
 from src.business.rag.audit_service import collect_stale_card_curated
 from src.data.card_catalog import CardRepository
