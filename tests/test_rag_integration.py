@@ -85,6 +85,12 @@ def test_rag_corpus_loaded():
     if not any(rag_config.CORPUS_DIR.glob("*.json")):
         pytest.skip("rag_corpus 语料未入库（CI），跳过真实语料加载回归")
     blocks = load_all_blocks()
+    # 生成态语料（武将分类/加强削弱等 10 个）按设计不入库（e31e7ec），仅本地由
+    # 构建脚本从源数据重建；CI 只跟踪 curated 武将/卡牌语料，故仅有生成态语料
+    # 的本地环境才断言全量量级与 classification/modify 块类型
+    if not (rag_config.CORPUS_DIR / "武将分类语料.json").exists():
+        assert len(blocks) > 500
+        return
     assert len(blocks) > 1000
     kinds = {meta["kind"] for _, _, meta in blocks}
     assert "classification" in kinds
