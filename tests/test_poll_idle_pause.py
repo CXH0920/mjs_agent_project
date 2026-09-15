@@ -7,7 +7,6 @@ import time
 from types import SimpleNamespace
 
 from PIL import Image
-
 from src.ui.app.frame_fingerprint import FINGERPRINT_SIZE, compute_fingerprint, frames_match
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult
 

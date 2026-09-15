@@ -19,8 +19,7 @@ import sys
 from pathlib import Path
 
 from PIL import Image
-
-from src.ui.app.frame_fingerprint import MAD_THRESHOLD, compute_fingerprint, frames_match
+from src.ui.app.frame_fingerprint import MAD_THRESHOLD, compute_fingerprint
 
 
 def _collect_images(directory: Path) -> list[Path]:
@@ -65,10 +64,10 @@ def main() -> int:
         return 1
 
     mads: list[tuple[str, float]] = []
-    for (name_a, fp_a), (name_b, fp_b) in zip(fingerprints, fingerprints[1:]):
+    for (name_a, fp_a), (name_b, fp_b) in zip(fingerprints, fingerprints[1:], strict=False):
         if fp_a is None or fp_b is None or len(fp_a) != len(fp_b):
             continue
-        mad = sum(abs(a - b) for a, b in zip(fp_a, fp_b)) / len(fp_a)
+        mad = sum(abs(a - b) for a, b in zip(fp_a, fp_b, strict=True)) / len(fp_a)
         mads.append((f"{name_a} -> {name_b}", mad))
 
     values = [mad for _, mad in mads]

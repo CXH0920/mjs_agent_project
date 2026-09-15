@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from PySide6.QtCore import QObject, Signal
-
 from src.ui.app.frame_fingerprint import compute_fingerprint, frames_match
 
 logger = logging.getLogger(__name__)

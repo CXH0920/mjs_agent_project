@@ -36,5 +36,5 @@ def frames_match(left: bytes | None, right: bytes | None) -> bool:
     """比较两份指纹，平均绝对差低于阈值视为同一画面。"""
     if left is None or right is None or len(left) != len(right):
         return False
-    total = sum(abs(a - b) for a, b in zip(left, right))
+    total = sum(abs(a - b) for a, b in zip(left, right, strict=True))
     return total / len(left) < MAD_THRESHOLD

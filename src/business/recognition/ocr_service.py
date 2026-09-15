@@ -232,11 +232,6 @@ class OcrService(QObject):
         self._replace_poll_session()
         self._set_poll_state(state, detail)
 
-    @property
-    def poll_state(self) -> str:
-        """返回当前轮询状态（stopped/running/backing_off/cooldown/paused/idle_paused）。"""
-        return self._poll_state
-
     def is_poll_idle_paused(self) -> bool:
         """是否处于闲置暂停态。"""
         return self._poll_state == "idle_paused"
