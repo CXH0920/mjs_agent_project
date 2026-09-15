@@ -1,7 +1,8 @@
-"""实战配队全量管理对话框：列表筛选 + 新增/编辑/删除。
+"""实战配队全量管理对话框：列表筛选 + 新增/编辑/删除（逻辑删除，可恢复）。
 
 列表使用轻量 QListWidget 承载上千条配队（不做逐行控件渲染），保证打开零卡顿；
-编辑/删除作用于当前选中行，双击行等同编辑。
+编辑/删除作用于当前选中行，双击行等同编辑；删除为打标屏蔽，可在
+「仅看已删除」视图中恢复，且不会被导入还原。
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -71,6 +73,9 @@ class ComboManagementDialog(QDialog):
         self._manual_only_check = QCheckBox("仅看手工")
         self._manual_only_check.stateChanged.connect(self._refresh_list)
         filter_row.addWidget(self._manual_only_check)
+        self._deleted_only_check = QCheckBox("仅看已删除")
+        self._deleted_only_check.stateChanged.connect(self._refresh_list)
+        filter_row.addWidget(self._deleted_only_check)
         layout.addLayout(filter_row)
 
         action_row = QHBoxLayout()
@@ -97,7 +102,8 @@ class ComboManagementDialog(QDialog):
         self._empty_label = QLabel("没有匹配的实战配队，调整筛选或点击「＋ 新增配队」")
         set_tone(self._empty_label, TONE_NEUTRAL)
         self._empty_label.setWordWrap(True)
-        layout.addWidget(self._empty_label)
+        # 拉伸因子：列表隐藏时由提示行接管其原区域，避免布局失去吸收者而散架
+        layout.addWidget(self._empty_label, 1, Qt.AlignmentFlag.AlignTop)
 
         footer = DialogFooter(accept_text="关闭", show_cancel=False, accept_role=ROLE_SECONDARY)
         footer.accepted.connect(self.accept)
@@ -107,27 +113,34 @@ class ComboManagementDialog(QDialog):
 
     def _refresh_list(self) -> None:
         combos = sorted(
-            self._combo_manager.list_combos(),
+            self._combo_manager.list_all_combos(),
             key=lambda combo: (-combo.rating, combo.hero1_name, combo.hero2_name),
         )
         hero_id = self._hero_filter.currentData()
         manual_only = self._manual_only_check.isChecked()
+        deleted_only = self._deleted_only_check.isChecked()
         visible = [
             combo
             for combo in combos
             if (hero_id is None or hero_id in (combo.hero1_id, combo.hero2_id))
             and (not manual_only or combo.manual)
+            and (combo.deleted if deleted_only else not combo.deleted)
         ]
-        manual_count = sum(1 for combo in combos if combo.manual)
+        active = [combo for combo in combos if not combo.deleted]
+        manual_count = sum(1 for combo in active if combo.manual)
         self._summary_label.setText(
-            f"共 {len(combos)} 条 · 手工 {manual_count} · 导入 {len(combos) - manual_count}"
+            f"共 {len(active)} 条 · 手工 {manual_count} · 导入 {len(active) - manual_count}"
+            f" · 已删 {len(combos) - len(active)}"
         )
 
         selected_key = self._selected_key()
         self._combo_list.blockSignals(True)
         self._combo_list.clear()
         for combo in visible:
-            source = "🖊 手工" if combo.manual else "📥 导入"
+            if combo.deleted:
+                source = "🗑 已删除"
+            else:
+                source = "🖊 手工" if combo.manual else "📥 导入"
             text = (
                 f"★{combo.rating}  {combo.hero1_name}[{format_seats(combo.hero1_seats)}]"
                 f" ＋ {combo.hero2_name}[{format_seats(combo.hero2_seats)}]    {source}"
@@ -139,7 +152,12 @@ class ComboManagementDialog(QDialog):
                 Qt.ItemDataRole.UserRole,
                 tuple(sorted((combo.hero1_id, combo.hero2_id))),
             )
-            item.setToolTip(f"{combo.hero1_name} + {combo.hero2_name} · 评级 {combo.rating}")
+            tooltip = f"{combo.hero1_name} + {combo.hero2_name} · 评级 {combo.rating}"
+            if combo.deleted:
+                item.setForeground(QColor("#8a8a8a"))
+                if combo.deleted_at:
+                    tooltip += f" · 删除于 {combo.deleted_at}"
+            item.setToolTip(tooltip)
             self._combo_list.addItem(item)
             if selected_key is not None and item.data(Qt.ItemDataRole.UserRole) == selected_key:
                 item.setSelected(True)
@@ -156,15 +174,16 @@ class ComboManagementDialog(QDialog):
         key = self._selected_key()
         if key is None:
             return None
-        for combo in self._combo_manager.list_combos():
+        for combo in self._combo_manager.list_all_combos():
             if tuple(sorted((combo.hero1_id, combo.hero2_id))) == key:
                 return combo
         return None
 
     def _update_action_buttons(self) -> None:
-        has_selection = self._selected_key() is not None
-        self._edit_button.setEnabled(has_selection)
-        self._delete_button.setEnabled(has_selection)
+        combo = self._selected_combo()
+        self._edit_button.setEnabled(combo is not None and not combo.deleted)
+        self._delete_button.setEnabled(combo is not None)
+        self._delete_button.setText("恢复" if combo is not None and combo.deleted else "删除")
 
     # ── 增删改 ────────────────────────────────────────────────────────
 
@@ -187,11 +206,23 @@ class ComboManagementDialog(QDialog):
         combo = self._selected_combo()
         if combo is None:
             return
+        if combo.deleted:
+            self._service.restore_combo(combo)
+            if not combo.manual:
+                QMessageBox.information(
+                    self,
+                    "已恢复导入配队",
+                    "该记录来自导入。若导出源中已无此配对，下次导入会按「源中已不存在」规则移除；"
+                    "想长期保留请在恢复后编辑一次（转为手工）。",
+                )
+            self.combos_changed.emit()
+            self._refresh_list()
+            return
         answer = QMessageBox.question(
             self,
             "删除实战配队",
             f"确定删除 ★{combo.rating} {combo.hero1_name} + {combo.hero2_name}？\n"
-            "若该组合存在于导入源，下次导入会恢复。",
+            "删除后可在「仅看已删除」中恢复，且不会被导入还原。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

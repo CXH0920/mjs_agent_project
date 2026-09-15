@@ -220,6 +220,11 @@ class Combo(BaseModel):
         default=False,
         description="手工录入/编辑标记：导入合并时保留本记录，同 key 冲突时优先于导出源",
     )
+    deleted: bool = Field(
+        default=False,
+        description="逻辑删除标记：展示查询过滤本记录，导入合并时无条件保留并跳过同 key 源记录",
+    )
+    deleted_at: str | None = Field(default=None, description="删除时间（ISO 本地时间），恢复时清空")
 
     @field_validator("hero1_id", "hero2_id")
     @classmethod

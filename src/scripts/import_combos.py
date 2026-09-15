@@ -29,6 +29,10 @@ def _print_report(report: dict) -> None:
         print(f"⚠ 与手工记录冲突 {len(report['manual_collisions'])} 条（已保留手工版本）：")
         for item in report["manual_collisions"]:
             print(f"  源 #{item['index']} {item['hero1']} + {item['hero2']}")
+    if report["deleted_skipped"]:
+        print(f"⚠ 撞已删除记录 {len(report['deleted_skipped'])} 条（跳过导入，可在管理中恢复）：")
+        for item in report["deleted_skipped"]:
+            print(f"  源 #{item['index']} {item['hero1']} + {item['hero2']}")
     if report["removed_stale"]:
         print(f"⚠ 源中已不存在而移除 {len(report['removed_stale'])} 条：")
         for item in report["removed_stale"]:

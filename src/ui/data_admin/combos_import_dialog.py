@@ -204,6 +204,10 @@ class CombosImportDialog(QDialog):
             lambda i: f"源 #{i['index']} {i['hero1']} + {i['hero2']}",
         )
         append_block(
+            "撞已删除记录（跳过导入，可在管理中恢复）", report["deleted_skipped"],
+            lambda i: f"源 #{i['index']} {i['hero1']} + {i['hero2']}",
+        )
+        append_block(
             "源中已不存在而移除", report["removed_stale"],
             lambda i: f"{i['hero1']} + {i['hero2']}",
         )

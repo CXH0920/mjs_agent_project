@@ -2,12 +2,14 @@
 名将杀 Agent - 实战配队数据管理器
 
 提供 combos 数据集的加载、查询与手工维护；批量数据由 src/scripts/import_combos.py
-从外部工具导出导入，导入合并时手工记录（manual=True）同 key 冲突优先保留。
+从外部工具导出导入，导入合并时手工记录（manual=True）同 key 冲突优先保留，
+逻辑删除记录（deleted=True）无条件保留并屏蔽同 key 源记录。
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from src.data.manager import DEFAULT_DATA_DIR, DataManager
@@ -65,16 +67,24 @@ class ComboManager(DataManager[Combo]):
     # ============================================================
 
     def get_combo(self, hero_a_id: int, hero_b_id: int) -> Combo | None:
-        """查询一对武将的实战配队"""
+        """查询一对武将的实战配队；含逻辑删除记录（编辑覆盖检查与导入合并依赖）。"""
         return self.get(self._combo_key(hero_a_id, hero_b_id))
 
     def list_combos_for_hero(self, hero_id: int) -> list[Combo]:
-        """查询某个武将参与的所有实战配队"""
+        """查询某个武将参与的实战配队（不含逻辑删除记录）"""
         with self._lock:
-            return [combo for combo in self._items.values() if hero_id in (combo.hero1_id, combo.hero2_id)]
+            return [
+                combo
+                for combo in self._items.values()
+                if not combo.deleted and hero_id in (combo.hero1_id, combo.hero2_id)
+            ]
 
     def list_combos(self) -> list[Combo]:
-        """获取全部实战配队"""
+        """获取全部实战配队（不含逻辑删除记录，供展示查询）"""
+        return [combo for combo in self.list_all() if not combo.deleted]
+
+    def list_all_combos(self) -> list[Combo]:
+        """获取全部记录（含逻辑删除），供导入合并等需要看到已删除记录的场景"""
         return self.list_all()
 
     # ============================================================
@@ -98,7 +108,24 @@ class ComboManager(DataManager[Combo]):
             self._save_unlocked()
 
     def delete_combo(self, combo: Combo) -> None:
-        """删除一条配队并原子落盘；若该组合存在于导入源，下次导入会恢复。"""
+        """逻辑删除一条配队并原子落盘：标记 deleted，不物理移除。
+
+        删除后展示查询不可见，且导入合并时屏蔽同 key 源记录（永久，直至恢复）。
+        """
         with self._lock:
-            self._items.pop(self._combo_key(combo.hero1_id, combo.hero2_id), None)
+            stored = self._items.get(self._combo_key(combo.hero1_id, combo.hero2_id))
+            if stored is None:
+                return
+            stored.deleted = True
+            stored.deleted_at = datetime.now().isoformat(timespec="seconds")
+            self._save_unlocked()
+
+    def restore_combo(self, combo: Combo) -> None:
+        """恢复一条逻辑删除的配队并原子落盘。"""
+        with self._lock:
+            stored = self._items.get(self._combo_key(combo.hero1_id, combo.hero2_id))
+            if stored is None:
+                return
+            stored.deleted = False
+            stored.deleted_at = None
             self._save_unlocked()

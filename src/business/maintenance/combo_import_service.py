@@ -6,7 +6,8 @@
   解析失败/部分成功的条目照常导入（座次留空）并列入报告供人工复核；
 - 解析结果与 position 字段交叉校验（以 note 为准），不一致清单进报告；
 - 合并语义：源导出记录 upsert；manual 手工记录保留（同 key 冲突时手工优先）；
-  非手工记录若源中已不存在则移除并计数；重复执行输出稳定（幂等）。
+  逻辑删除记录无条件保留并跳过同 key 源记录（含源内容更新的情况）；
+  非手工活跃记录若源中已不存在则移除并计数；重复执行输出稳定（幂等）。
 
 CLI 入口（src/scripts/import_combos.py）与 UI 导入对话框共用本模块。
 """
@@ -57,10 +58,13 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
     manager = ComboManager(output_path)
     manager.load()
     manual_by_key: dict[tuple[int, int], Combo] = {}
+    deleted_by_key: dict[tuple[int, int], Combo] = {}
     imported_keys: set[tuple[int, int]] = set()
-    for combo in manager.list_combos():
+    for combo in manager.list_all_combos():
         key = tuple(sorted((combo.hero1_id, combo.hero2_id)))
-        if combo.manual:
+        if combo.deleted:
+            deleted_by_key[key] = combo
+        elif combo.manual:
             manual_by_key[key] = combo
         else:
             imported_keys.add(key)
@@ -76,6 +80,7 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
         "position_mismatch": [],
         "manual_kept": [],
         "manual_collisions": [],
+        "deleted_skipped": [],
         "removed_stale": [],
     }
 
@@ -90,6 +95,12 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
         key = tuple(sorted((id1, id2)))
         if key in seen_keys:
             report["duplicates"].append({"index": index, "hero1": name1, "hero2": name2})
+            continue
+
+        if key in deleted_by_key:
+            # 逻辑删除永久屏蔽：同 key 源记录不导入（源内容更新也不复活）
+            seen_keys.add(key)
+            report["deleted_skipped"].append({"index": index, "hero1": name1, "hero2": name2})
             continue
 
         if key in manual_by_key:
@@ -136,6 +147,9 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
             report["manual_kept"].append(
                 {"hero1": combo.hero1_name, "hero2": combo.hero2_name, "note": combo.note}
             )
+    # 逻辑删除记录无条件保留（源中是否存在均不影响，直至界面恢复）
+    for key, combo in deleted_by_key.items():
+        merged[key] = combo
     # 非手工旧记录若源中已不存在 → 移除
     for key in imported_keys - seen_keys:
         combo = manager.get_combo(*key)

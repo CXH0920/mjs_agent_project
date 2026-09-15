@@ -198,7 +198,8 @@ class ComboEditDialog(QDialog):
             and existing is not None
             and {self._original.hero1_id, self._original.hero2_id} == {self._hero1.id, self._hero2.id}
         )
-        if existing is not None and not editing_same_pair:
+        if existing is not None and not editing_same_pair and not existing.deleted:
+            # 已删除记录不弹覆盖确认：重新创建即静默复活
             answer = QMessageBox.question(
                 self,
                 "组合已存在",

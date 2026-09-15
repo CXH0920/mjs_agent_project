@@ -115,3 +115,6 @@ class ComboService:
 
     def delete_combo(self, combo) -> None:
         self._manager.delete_combo(combo)
+
+    def restore_combo(self, combo) -> None:
+        self._manager.restore_combo(combo)

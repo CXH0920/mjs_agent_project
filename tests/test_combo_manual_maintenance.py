@@ -95,7 +95,8 @@ def test_save_manual_combo_migrates_key_when_pair_changes(tmp_path):
     assert manager.get_combo(1, 3) is not None
 
 
-def test_delete_combo_removes_record(tmp_path):
+def test_delete_combo_marks_deleted_and_restore(tmp_path):
+    """删除为逻辑删除：标记可见、展示查询过滤、落盘持久，恢复后复位。"""
     manager = ComboManager(tmp_path / "combos.json")
     manager.load()
     combo = _combo(1, 2)
@@ -103,7 +104,37 @@ def test_delete_combo_removes_record(tmp_path):
 
     manager.delete_combo(combo)
 
-    assert manager.get_combo(1, 2) is None
+    stored = manager.get_combo(1, 2)
+    assert stored is not None
+    assert stored.deleted is True
+    assert stored.deleted_at  # 记录删除时间
+    assert manager.list_combos() == []  # 展示查询不再返回
+    assert manager.list_all_combos() == [stored]
+
+    fresh = ComboManager(tmp_path / "combos.json")
+    fresh.load()
+    assert fresh.get_combo(1, 2).deleted is True  # 已原子落盘
+
+    manager.restore_combo(combo)
+    restored = manager.get_combo(1, 2)
+    assert restored.deleted is False
+    assert restored.deleted_at is None
+    assert len(manager.list_combos()) == 1
+
+
+def test_save_manual_combo_over_deleted_pair_resurrects(tmp_path):
+    """重新创建已删除的组合即静默复活（deleted 复位，内容覆盖）。"""
+    manager = ComboManager(tmp_path / "combos.json")
+    manager.load()
+    combo = _combo(1, 2, rating=5)
+    manager.save_manual_combo(combo)
+    manager.delete_combo(combo)
+
+    manager.save_manual_combo(_combo(1, 2, rating=8))
+
+    stored = manager.get_combo(1, 2)
+    assert stored.deleted is False and stored.rating == 8
+    assert len(manager.list_combos()) == 1
 
 
 # ── 编辑表单 ──────────────────────────────────────────────────────
@@ -181,6 +212,33 @@ def test_edit_dialog_warns_before_overwriting_existing_pair(qapp, tmp_path, monk
     )
     dialog._on_save()
     assert manager.get_combo(1, 2).rating == 9  # 选是：覆盖并转手工
+
+
+def test_edit_dialog_resurrects_deleted_pair_without_confirm(qapp, tmp_path, monkeypatch):
+    """保存到已删除的组合时跳过覆盖确认，静默复活。"""
+    _app()
+    hero_mgr, heroes = _make_hero_mgr()
+    manager = ComboManager(tmp_path / "combos.json")
+    manager.load()
+    original = _combo(1, 2, rating=5)
+    manager.save_manual_combo(original)
+    manager.delete_combo(original)
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
+    dialog._hero1 = heroes[1]
+    dialog._hero2 = heroes[2]
+    dialog._rating_spin.setValue(9)
+    dialog._hero1_seat_checks[0].setChecked(True)  # 勾座次，避开"未选择座次"确认弹窗
+    questions: list[str] = []
+    monkeypatch.setattr(
+        "src.ui.library.combo_edit_dialog.QMessageBox.question",
+        lambda *_args, **_kwargs: questions.append("asked") or QMessageBox.StandardButton.No,
+    )
+
+    dialog._on_save()
+
+    assert questions == []  # 已删除记录静默复活，不弹覆盖确认
+    stored = manager.get_combo(1, 2)
+    assert stored.deleted is False and stored.rating == 9
 
 
 def test_edit_dialog_asks_when_no_seat_selected(qapp, tmp_path, monkeypatch):
@@ -262,8 +320,12 @@ def test_management_dialog_lists_counts_and_filters(qapp, tmp_path):
     dialog._manual_only_check.setChecked(True)
     assert dialog._combo_list.count() == 2  # 荆轲的两条均为手工
 
+    dialog._manual_only_check.setChecked(False)
+    dialog._deleted_only_check.setChecked(True)
+    assert dialog._combo_list.count() == 0  # 无已删除记录
 
-def test_management_dialog_delete_emits_and_persists(qapp, tmp_path, monkeypatch):
+
+def test_management_dialog_delete_marks_and_restores(qapp, tmp_path, monkeypatch):
     _app()
     hero_mgr, _heroes = _make_hero_mgr()
     manager = _make_manager_with_combos(tmp_path)
@@ -276,11 +338,77 @@ def test_management_dialog_delete_emits_and_persists(qapp, tmp_path, monkeypatch
         lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
     )
 
-    dialog._combo_list.setCurrentRow(0)
+    dialog._combo_list.setCurrentRow(0)  # ★9 手工 1+2
     dialog._on_delete_selected()
 
     assert changed == [1]
-    assert manager.get_combo(1, 2) is None
+    stored = manager.get_combo(1, 2)
+    assert stored is not None and stored.deleted is True
+    assert len(manager.list_combos()) == 2  # 展示查询不再可见
+
+    dialog._deleted_only_check.setChecked(True)
+    assert dialog._combo_list.count() == 1
+    dialog._combo_list.setCurrentRow(0)
+    assert dialog._delete_button.text() == "恢复"
+    assert not dialog._edit_button.isEnabled()  # 已删除行编辑禁用
+    dialog._on_delete_selected()  # 按钮此时执行恢复（手工记录不弹提示）
+
+    assert manager.get_combo(1, 2).deleted is False
+    assert len(manager.list_combos()) == 3
+
+
+def test_management_dialog_restore_imported_shows_hint(qapp, tmp_path, monkeypatch):
+    """恢复导入来源的记录时弹 removed_stale 陷阱提示，恢复动作本身无确认。"""
+    _app()
+    hero_mgr, _heroes = _make_hero_mgr()
+    manager = _make_manager_with_combos(tmp_path)
+    imported = _combo(2, 3, rating=7, manual=False)
+    manager.delete_combo(imported)
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
+    infos: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, _title, message: infos.append(message),
+    )
+
+    dialog._deleted_only_check.setChecked(True)
+    assert dialog._combo_list.count() == 1
+    dialog._combo_list.setCurrentRow(0)
+    dialog._on_delete_selected()
+
+    assert len(infos) == 1
+    assert manager.get_combo(2, 3).deleted is False
+
+
+def test_management_dialog_summary_counts_deleted(qapp, tmp_path):
+    _app()
+    hero_mgr, _heroes = _make_hero_mgr()
+    manager = _make_manager_with_combos(tmp_path)
+    manager.delete_combo(manager.get_combo(1, 3))
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
+
+    assert "共 2 条 · 手工 1 · 导入 1 · 已删 1" in dialog._summary_label.text()
+
+
+def test_management_dialog_empty_result_keeps_layout_stable(qapp, tmp_path):
+    """空结果时列表隐藏、提示行以拉伸因子接管其区域，布局不塌陷。"""
+    _app()
+    hero_mgr, _heroes = _make_hero_mgr()
+    manager = _make_manager_with_combos(tmp_path)
+    dialog = ComboManagementDialog(hero_mgr, ComboService(manager))
+
+    dialog._deleted_only_check.setChecked(True)  # 无已删除记录 → 空结果
+
+    assert dialog._combo_list.isHidden()
+    assert not dialog._empty_label.isHidden()
+    layout = dialog.layout()
+    assert layout.stretch(layout.indexOf(dialog._empty_label)) == 1
+
+    dialog._deleted_only_check.setChecked(False)  # 回到非空 → 列表恢复显示
+
+    assert not dialog._combo_list.isHidden()
+    assert dialog._empty_label.isHidden()
 
 
 def test_management_dialog_add_opens_edit_dialog_and_refreshes(qapp, tmp_path, monkeypatch):

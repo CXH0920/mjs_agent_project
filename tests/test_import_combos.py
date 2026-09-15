@@ -239,3 +239,84 @@ def test_idempotent_rerun_with_manual(tmp_path: Path) -> None:
     first = output.read_text(encoding="utf-8")
     run_import(source, heroes, output)
     assert output.read_text(encoding="utf-8") == first
+
+
+def test_deleted_records_block_source_and_survive(tmp_path: Path) -> None:
+    """逻辑删除永久屏蔽同 key 源记录（内容更新也不复活），源中消失仍保留。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧导出记录", "manual": False,
+         "deleted": True},
+        {"hero1_name": "刘备", "hero2_name": "吕布", "hero1_id": 1, "hero2_id": 3,
+         "rating": 5, "position": "both", "note": "旧导出记录", "manual": False},
+    ])
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "孙权", "hero2": "刘备", "rating": 9, "position": "both", "note": "源更新版"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    report = run_import(source, heroes, output)
+
+    mgr = ComboManager(output)
+    mgr.load()
+    deleted = mgr.get_combo(1, 2)
+    assert deleted.deleted is True and deleted.rating == 8  # 源更新未进入
+    assert len(mgr.list_combos()) == 0  # 展示查询过滤已删除
+    assert [f"{i['hero1']}+{i['hero2']}" for i in report["deleted_skipped"]] == ["孙权+刘备"]
+    assert report["imported"] == 0
+    assert [f"{i['hero1']}+{i['hero2']}" for i in report["removed_stale"]] == ["刘备+吕布"]
+    assert mgr.get_combo(1, 3) is None  # 活跃旧记录仍按 removed_stale 移除
+
+
+def test_idempotent_rerun_with_deleted(tmp_path: Path) -> None:
+    """含已删除记录时重复导入输出仍稳定。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧导出记录", "manual": False,
+         "deleted": True, "deleted_at": "2026-09-01T10:00:00"},
+    ])
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "刘备", "hero2": "孙权", "rating": 9, "position": "both", "note": "源记录"},
+        {"hero1": "吕布", "hero2": "张辽", "rating": 6, "position": "both", "note": "12 34"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    run_import(source, heroes, output)
+    first = output.read_text(encoding="utf-8")
+    run_import(source, heroes, output)
+    assert output.read_text(encoding="utf-8") == first
+
+
+def test_restored_imported_record_upserts_when_in_source(tmp_path: Path) -> None:
+    """恢复后的记录回到正常生命周期：源中重新出现则正常 upsert。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧记录", "manual": False,
+         "deleted": True},
+    ])
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    # 界面恢复（清除删除标记）后再导入
+    restore_mgr = ComboManager(output)
+    restore_mgr.load()
+    restore_mgr.restore_combo(restore_mgr.get_combo(1, 2))
+
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "刘备", "hero2": "孙权", "rating": 9, "position": "both", "note": "源记录"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    report = run_import(source, heroes, output)
+
+    mgr = ComboManager(output)
+    mgr.load()
+    combo = mgr.get_combo(1, 2)
+    assert combo.deleted is False and combo.rating == 9
+    assert report["deleted_skipped"] == []
