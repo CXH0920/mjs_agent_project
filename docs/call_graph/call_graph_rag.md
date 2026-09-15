@@ -1,7 +1,7 @@
 # 调用链路：RAG 知识库模块
 
 > 对应源码：`src/rag/`、`src/business/rag/`、`src/business/maintenance/` 的 RAG 三文件、`src/ui/maintenance/` 全部、`src/scripts/` 的语料与维护脚本。
-> 代码基线：`6cbe8b6`（2026-09-07）。
+> 代码基线：`2026-09-15`。
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 虚线 `───` 表示跨越进程边界（QProcess / subprocess 子进程）。
 > 与 AI 批量生成、巅峰赛识别、实战配队相关的调用链路见 [call_graph_ai_batch.md](./call_graph_ai_batch.md)、[call_graph_peak_combos.md](./call_graph_peak_combos.md)；业务服务层与界面层总览见 [call_graph_business.md](./call_graph_business.md)、[call_graph_ui.md](./call_graph_ui.md)。
@@ -474,13 +474,22 @@ clear_curated_block(block)                                        [写盘成功�
 scan_blocks(corpus_dir) -> {"pending": [...], "curated": [...], "normal": [...]}
   -> [遍历 REFINABLE_FILES = (卡牌RAG语料.json, 武将RAG语料.json)]
      -> json.loads(path)
+     -> fields = fields_for(kind)                                [data/corpus_fields.py]
+        -> kind="card" -> CARD_FIELDS = (timing, trigger_condition)
+        -> kind="skill" -> HERO_FIELDS = (timing, trigger_condition, target, special_rules)
      -> [武将语料且无 skill] 跳过 overview 块
      -> curated = block.get("curated")
-        -> [是 dict] fields 以 curated 内容为权威 -> result["curated"].append(_to_block(..., method, updated_at))
-        -> [否] values = {f: block.get(f) for f in INDEX_FIELDS}
-           -> missing = [f for f in INDEX_FIELDS if not values[f]]
+        -> [是 dict] fields 以 curated 内容为权威（缺键回退顶层）
+           -> result["curated"].append(_to_block(..., method=curated.get("method"), updated_at=curated.get("updated_at")))
+        -> [否] values = {f: block.get(f) for f in fields}
+           -> missing = [f for f in PENDING_FIELDS[kind] if not values[f]]
            -> [missing 非空] result["pending"].append
            -> [全非空] result["normal"].append
+
+_to_block(kind, block, fields, method="", updated_at="")
+  -> name = block.get("skill") or block.get("name") or block.get("card") or block.get("hero")
+  -> [卡牌块无名称字段] name = block_id.split("_", 2)[-1]          [card_{id}_{卡名}]
+  -> missing = [f for f in PENDING_FIELDS[kind] if not fields[f]]
 
 suggest_one(block, generator) -> RefinementUpdate | None          [单块 LLM 建议，公开接口]
   -> messages = [system: REFINEMENT_SYSTEM_PROMPT, user: 语料类型/名称/原文]
@@ -494,7 +503,7 @@ apply_curated(corpus_dir, updates, fname) -> int
   -> json.loads(path) -> [非 list] raise ValueError
   -> by_id = {block_id: block}
   -> [block_id 不存在] raise ValueError
-  -> [每块] 更新顶层 4 个索引字段 + 新增 curated 字段（含 method/updated_at）
+  -> [每块] 更新顶层逻辑层字段 + 新增 curated 字段（含 method/updated_at）
   -> _atomic_json_write(path, data) -> atomic_write_json(path, data, indent=1)
 
 clear_curated(corpus_dir, block_id, fname) -> bool                [删除 curated 字段；本无 curated 返回 False]
@@ -510,7 +519,8 @@ build_generator(profile_name) -> AIBatchGenerator | None          [供应商需 
 | `apply_curated(corpus_dir, updates, fname)` | 同上 | 写回 curated 并原子保存 | `RefinementSession.apply_updates()` |
 | `clear_curated(corpus_dir, block_id, fname)` | 同上 | 取消精化 | `RefinementSession.clear_curated_block()` |
 | `build_generator(profile_name)` | 同上 | 构造 LLM 生成器 | `IndexRefinementDialog._generator()`, `propose_rule_changes.py` |
-| `INDEX_FIELDS` / `REFINABLE_FILES` | 同上 | 4 个索引字段名 / 2 个可精化语料文件 | 会话层、对话框层 |
+| `fields_for(kind)` | `data/corpus_fields.py` | 按块类型返回可精化字段集 | `scan_blocks()`, `apply_curated()` |
+| `CARD_FIELDS` / `HERO_FIELDS` | `data/corpus_fields.py` | 卡牌/武将技能可精化字段常量 | `refinement_service`, `rag_curated.py` |
 
 ### 6.3 线程编排层 suggest_controller.py
 
@@ -938,10 +948,16 @@ audit_service.audit_summary(root, pending_refinement=None)
      [件数=26、细分类型、距离修正校验；常量来自 equip_attrs_repository]
   -> [pending_refinement 非空] issues.insert(0, AuditIssue(pending_refinement))   [始终插入首位]
   -> collect_stale_curated(root) -> AuditIssue(curated_stale / curated_stale_possible)
-     -> [skill_last_change > curated.updated_at] 技能级确证 → 去复核（索引精化）
-     -> [hero 级事件（skills 空、非新增）> curated.updated_at] 整将存疑
+     -> hero_timeline.load_timeline() + 读取 data/rag_corpus/武将RAG语料.json
+     -> [技能级] skill_last_change > curated.updated_at -> curated_stale（去复核）
+     -> [武将级，skills 空且非新增] hero 级事件 > curated.updated_at -> curated_stale_possible
+  -> collect_stale_card_curated(root) -> AuditIssue(card_curated_stale)
+     -> card_sync_store.load_card_changes(data/card_changes.json)
+     -> 读取 data/rag_corpus/卡牌RAG语料.json，block_id 形如 card_{id}_{name}
+     -> [该卡最近官网同步 > curated.updated_at] -> card_curated_stale（去复核）
   -> collect_timeline_risk_messages(root) -> AuditIssue(timeline_risk)
      -> [hero.last_updated < hero_last_change] heroes.json 疑未同步
+     -> [TRIGGER_OVERRIDES 拆除后] 不再输出 override 风险段
 ```
 
 ### 9.3 审计跳转
@@ -985,7 +1001,9 @@ maintain_rag.main()（构建前门禁）
 | `collect_missing_settlements(specials)` | 同上 | 专属牌缺结算详情 | 同上 |
 | `collect_unclassified()` / `collect_orphan_category_keys()` | 同上 | 武将归类正反向校验 | 同上 |
 | `collect_unknown_heroes(specials, hero_names)` | 同上 | 专属牌引用未知武将 | 同上 |
-| `collect_timeline_risk_messages(root)` | 同上 | 时间轴风险摘要 | `audit_summary()` |
+| `collect_timeline_risk_messages(root)` | 同上 | 时间轴风险摘要（TRIGGER_OVERRIDES 拆除后仅输出 heroes.json 疑未同步） | `audit_summary()` |
+| `collect_stale_curated(root)` | 同上 | 武将技能精化时效检查（curated 早于最近官方调整） | `audit_summary()` |
+| `collect_stale_card_curated(root)` | 同上 | 卡牌精化时效检查（curated 早于最近官网同步） | `audit_summary()` |
 | `format_audit_issues(issues)` | 同上 | `AuditIssue` 转纯文本列表 | 兼容旧消费方/测试 |
 | `audit_hero_coverage(root)` | `scripts/rag_audit.py` | CLI 版人工补充清单 | `maintain_rag.main()` |
 | `audit_version_timeline(root)` | 同上 | 时间轴一致性审计 | `maintain_rag.main()`, `scripts/rag_audit.py __main__` |
@@ -1091,7 +1109,7 @@ _set_busy(busy)                                                [执行期间]
 
 | 函数 | 调用方 | 被调用方 |
 |------|--------|----------|
-| `scan_blocks(corpus_dir)` | `RefinementSession.__init__()`, `list_pending/curated/normal()` | `_to_block()`, `json.loads` |
+| `scan_blocks(corpus_dir)` | `RefinementSession.__init__()`, `list_pending/curated/normal()` | `_to_block()`, `json.loads`, `fields_for()` |
 | `suggest_one(block, generator)` | `SuggestWorker.run()`, `generate_suggestions()` | `generator.complete()`, `extract_json()`, `_to_update()` |
 | `apply_curated(corpus_dir, updates, fname)` | `RefinementSession.apply_updates()` | `_atomic_json_write()` |
 | `build_generator(profile_name)` | `IndexRefinementDialog._generator()`, `propose_rule_changes.py` | `resolve_api_config()`, `AIBatchGenerator` |
@@ -1191,5 +1209,5 @@ src.scraper.ai.batch (main)
 | 4 | `rag_prompt.py` 后半段（`_format_rag_chunks`、`build_synergy_rag_context` 内部细节）未逐行复读 | 相关描述引自 `call_graph_ai_batch.md`（同基线） |
 | 5 | `config.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | 仅 `config.py` 定义并回显（`config.txt` / `config.env.example` 有预留项），全项目无消费点，未列入调用链 |
 | 6 | 语料块数期望值（如武将 615 / 卡牌 49 / 特殊机制 83 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；当前磁盘实测武将语料 622 块（`expected=615` 未同步），`expected=None` 的动态任务实测：武将分类 180 / 组合 509 / 攻略 357 |
-| 7 | `rag_curated.INDEX_FIELDS` 含 5 字段（含 `target`），`refinement_service.INDEX_FIELDS` 只有 4 字段（`target` 已从精化流程退役） | 重建时 `merge_curated()` 仍会把旧 `curated` 中的 `target` 覆盖回块顶层，`rag_curated.py` 字段集是否同步收敛待确认 |
+| 7 | `rag_curated.INDEX_FIELDS` 含 5 字段（含 `target`），`refinement_service.INDEX_FIELDS` 只有 4 字段 | **已修复**：2026-09-15 新增 `data/corpus_fields.py` 字段契约模块，`CARD_FIELDS`/`HERO_FIELDS` 为唯一权威定义，`refinement_service` 与 `rag_curated` 共用 `fields_for(kind)`，消除字段集漂移 |
 | 8 | `eval_rule_faqs.py --generate` 生成的评估集 `version` 字段为生成日，磁盘实测 79 题（与 `FAQ裁定块.json` 79 块同源，非巧合） | 评估集由 `--generate` 重建会丢弃人工追加的新题，追加须手工编辑 `data/rag_evals/rule_faq_eval.json` |

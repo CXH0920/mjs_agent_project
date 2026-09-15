@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-08-29）
+## 当前实现基线（2026-09-15）
 
 `DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。武将变更时间轴 `data/mjs_adjustments.json` 于 2026-08-29 首次落地，与 `heroes.json` 并行供 RAG 构建脚本使用。
 
@@ -110,10 +110,13 @@ ComboManager.save()
 
 | 方法 | 说明 |
 |------|------|
-| `get_combo(a_id, b_id)` | 以双向归一 key 查询一对武将的配队 |
-| `list_combos_for_hero(hero_id)` | 列出某武将参与的全部配队 |
+| `get_combo(a_id, b_id)` | 以双向归一 key 查询一对武将的配队；**含逻辑删除记录**（编辑覆盖检查与导入合并依赖） |
+| `list_combos()` | 获取全部实战配队（**不含逻辑删除记录**，供展示查询） |
+| `list_all_combos()` | 获取全部记录（**含逻辑删除**），供导入合并等需要看到已删除记录的场景 |
+| `list_combos_for_hero(hero_id)` | 列出某武将参与的全部配队（不含逻辑删除） |
 | `save_manual_combo(combo, previous)` | 新增/编辑一条手工配队；previous 变化时迁移存储 key；固定 `manual=True` |
-| `delete_combo(combo)` | 删除一条配队并原子落盘 |
+| `delete_combo(combo)` | **逻辑删除**：标记 `deleted=True` + `deleted_at`，不物理移除；删除后展示查询不可见，且导入合并时屏蔽同 key 源记录（永久，直至恢复） |
+| `restore_combo(combo)` | 恢复逻辑删除的配队：`deleted=False` + `deleted_at=None` |
 
 ---
 
@@ -441,9 +444,13 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `GuideManager.load()` | `guide_manager.py` | `DataFacade.load_all()` | `json.load()`, `HeroGuide.validate()` |
 | `GuideManager.get_guide()` | `guide_manager.py` | `HeroDetailPanel`, `GuideDetailDialog` | dict get |
 | `ComboManager.save()` | `combo_manager.py` | 导入服务、手工维护 | 按 `(-rating, hero1_id, hero2_id)` 排序后原子写 |
-| `ComboManager.get_combo()` | `combo_manager.py` | 面板查询 | `_combo_key()` + dict get |
-| `ComboManager.list_combos_for_hero()` | `combo_manager.py` | `HeroDetailView`, `RecommendationPanel` | 线性遍历 O(N) |
+| `ComboManager.get_combo()` | `combo_manager.py` | 面板查询、编辑覆盖检查、导入合并 | `_combo_key()` + dict get（含逻辑删除） |
+| `ComboManager.list_combos()` | `combo_manager.py` | `PeakSelectPanel`, `ComboManagementDialog` | `list_all()` 过滤 `deleted` |
+| `ComboManager.list_all_combos()` | `combo_manager.py` | `combo_import_service.run_import()` | `list_all()`（含逻辑删除） |
+| `ComboManager.list_combos_for_hero()` | `combo_manager.py` | `HeroDetailView`, `RecommendationPanel` | 线性遍历 O(N)，过滤 `deleted` |
 | `ComboManager.save_manual_combo()` | `combo_manager.py` | 手工配队编辑 | 内存写入 + `_save_unlocked()` |
+| `ComboManager.delete_combo()` | `combo_manager.py` | `ComboManagementDialog` | 标记 `deleted=True` + `deleted_at`，原子落盘 |
+| `ComboManager.restore_combo()` | `combo_manager.py` | `ComboManagementDialog` | 标记 `deleted=False`，原子落盘 |
 | `parse_seats()` | `combo_seats.py` | 配队导入/显示 | 正则匹配 + ALIAS 别名映射 |
 | `apply_incremental_update()` | `manager.py` | 测试和外部导入工具 | 按 added/modified/removed 更新三个 Manager，并执行武将删除级联 |
 | `load_win_rates()` | `win_rate_repository.py` | `RecommendationPanel`, `MatchGuidePanel` | CSV 解析、百分比转浮点、默认路径缓存 |
@@ -454,6 +461,10 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `stamp_hero_block()` / `stamp_guide_block()` | `hero_timeline.py` | `build_rag_corpus.py` / `build_guide_corpus.py` | 语料块版本戳（`as_of` / `is_current` / 硬/软过时判定） |
 | `normalize_change_type()` | `hero_timeline.py` | `announcement.py`、`import_hero_adjustments.py` | 变更类型词汇归一 |
 | `parse_skill_entry()` | `hero_timeline.py` | `import_hero_adjustments.py` | 技能条目"技能名：变更描述"解析 |
+| `load_card_snapshot(path)` | `card_sync_store.py` | `CardSyncService._do_check()`, `_finalize_check()`, `apply_updates()` | 读取卡牌官网内容哈希快照；文件缺失/损坏返回空快照 |
+| `save_card_snapshot(snapshot, path)` | `card_sync_store.py` | `CardSyncService._finalize_check()`, `apply_updates()` | 原子写入卡牌快照 |
+| `load_card_changes(path)` | `card_sync_store.py` | `append_card_change()`, `audit_service.collect_stale_card_curated()` | 读取变更记录列表；单条损坏跳过 |
+| `append_card_change(record, path)` | `card_sync_store.py` | `CardSyncService.apply_updates()` | 幂等追加变更记录（date+id 集合判重），返回是否写入 |
 
 ---
 
@@ -475,7 +486,48 @@ AnnouncementService._do_check()
 
 ---
 
-## 十、RAG 源数据维护仓储链路
+## 十、卡牌同步基线与变更记录（card_sync_store.py）
+
+```
+CardSyncService._do_check()
+  -> fetch_official_cards()                                 [card_baike.py]
+  -> build_card_snapshot(official)                          [card_baike.py]
+     -> card_content_hash(card) ×N                           [MD5 四字段哈希]
+  -> load_card_snapshot(path)                               [card_sync_store.py]
+     -> CardSnapshot.model_validate_json(path.read_text())
+     -> [文件缺失/损坏] CardSnapshot()                         [空快照，调用方重建基线]
+  -> _snapshot_to_plain(snapshot) / _snapshot_to_plain(baseline)
+  -> diff_cards(current_plain, baseline_plain)              [card_baike.py]
+  -> [首跑基线初始化] pending_saves.append(baseline)
+
+CardSyncService._finalize_check(result)
+  -> save_card_snapshot(snapshot, path)                      [card_sync_store.py]
+     -> _atomic_write_json(snapshot_path, snapshot.model_dump())
+        -> mkstemp + fsync + Path.replace()
+
+CardSyncService.apply_updates(modified_ids, added_ids)
+  -> CardRepository.apply_official_updates(modified, added)
+  -> load_card_snapshot() -> 按卡增量更新基线
+  -> save_card_snapshot(baseline, path)
+  -> append_card_change(CardChangeRecord(date, applied_ids, added_ids), path)
+     -> load_card_changes(changes_path)
+     -> _record_key(record) 幂等判重（date + id 集合完全相同视为重复）
+     -> _atomic_write_json(changes_path, records)
+     -> [重复] return False；[新写] return True
+```
+
+| 函数 | 职责 |
+|------|------|
+| `load_card_snapshot(path)` | 读取卡牌快照；文件缺失/损坏返回空快照 |
+| `save_card_snapshot(snapshot, path)` | 原子写入卡牌快照 |
+| `load_card_changes(path)` | 读取变更记录列表；单条损坏跳过 |
+| `append_card_change(record, path)` | 幂等追加变更记录，返回是否真的写入 |
+
+> **设计说明**：CardSnapshot 结构镜像 BaikeSnapshot（覆盖式，恒定大小）；CardChangeRecord 为追加式记录，驱动卡牌 curated 精化时效检查（`audit_service.collect_stale_card_curated`）。
+
+---
+
+## 十一、RAG 源数据维护仓储链路
 
 ### 10.1 加载与校验
 
@@ -542,7 +594,7 @@ scripts/migrate_excel_to_json.py [--only points|equips|special]
 
 ---
 
-## 十一、推荐指数状态自愈链路（2026-08 新增）
+## 十二、推荐指数状态自愈链路（2026-08 新增）
 
 ```
 选将推荐页 / 启动刷新：is_recommendation_index_stale(index_path=武将推荐指数.csv)
@@ -582,9 +634,9 @@ refresh_recommendation_indexes(config)
 
 ---
 
-## 十二、武将变更时间轴链路（2026-08 新增）
+## 十三、武将变更时间轴链路（2026-08 新增）
 
-### 12.1 初始化与增量追加
+### 13.1 初始化与增量追加
 
 ```
 import_hero_adjustments.py main()
@@ -604,7 +656,7 @@ AnnouncementService._do_check()
      -> 无新增不写盘；写盘失败仅记录日志，不中断检查
 ```
 
-### 12.2 语料块版本戳（构建链路）
+### 13.2 语料块版本戳（构建链路）
 
 ```
 build_rag_corpus.py
@@ -626,10 +678,17 @@ build_guide_corpus.py
      -> 无变更                  -> is_current="true" 不写额外字段
 ```
 
-### 12.3 爬虫侧时间轴读取
+### 13.3 爬虫侧时间轴读取
 
 ```
 announcement.py（爬虫侧）
   -> load_timeline() 读取已落地时间轴
   -> normalize_change_type() 归一公告原文的变更类型
 ```
+
+### 13.4 TRIGGER_OVERRIDES 拆除（2026-09-15）
+
+`hero_timeline.py` 中原有的 `TRIGGER_OVERRIDES` 映射表及相关辅助函数已删除。此前 `build_rag_corpus.py` 的 `extract_trigger_cond()` 会通过查表覆盖触发条件，`audit_service.collect_timeline_risk_messages()` 与 `rag_audit.audit_version_timeline()` 会输出 override 风险段。拆除后：
+- `extract_trigger_cond()` 仅做正则匹配（`FIXED_TRIGGER_REGEXES` + `FIXED_TRIGGER_PATTERNS`），无查表分支；
+- `collect_timeline_risk_messages()` 仅输出 `heroes.json` 疑未同步条目，无 override 风险段；
+- `audit_version_timeline()` 仅输出疑未同步武将 + 语料过时块，无 override 风险段。

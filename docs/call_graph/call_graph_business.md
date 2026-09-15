@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（6cbe8b6 / 2026-09-07）
+## 当前实现基线（2026-09-15）
 
 成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回；`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`，非零退出时由基类发射 `error_occurred(msg)`；`HeroFetchService` 无论成败都发 `fetch_completed(exit_code == 0)`。
 
@@ -889,4 +889,67 @@ AnnouncementService._check_done(object)           -> _finalize_check()（内部�
 ## 十一、知识库相关服务（已迁出）
 
 `RuleDocService`（元规则 T0 文档维护）、`AuditService`（知识库审计）、`RefinementService` / `RefinementSession` / `SuggestController`（索引精化三层架构：对话框 / 纯 Python 状态层 / 线程编排）的调用链已整体迁至 [./call_graph_rag.md](./call_graph_rag.md)，此处不再重复。相关 `scripts/` 协作（`audit_rule_doc.py` / `sync_rule_stats.py` / `propose_rule_changes.py` / `apply_rule_proposal.py` / `eval_rule_faqs.py` / `maintain_rag.py`）亦以该文档为准。
+
+## 十二、CardSyncService（卡牌百科同步）链路
+
+### 12.1 检查链路与信号拓扑
+
+```
+MainWindow._check_card_sync()
+  -> CardSyncDialog(auto_check=True)                             [菜单入口语义即"检查"]
+     -> CardSyncService.check_now() -> bool
+       -> is_busy 检查（_thread 存活即忙碌）
+       -> 冷却检查（CHECK_COOLDOWN_SECONDS = 60 秒最小间隔）
+       -> 记 _last_check_started_at -> check_started / status_changed 信号
+       -> threading.Thread(_run_check) -> _do_check()
+         -> fetch_official_cards()                               [card_baike.py]
+           -> fetch_all_cards_raw()                              [crawler.py]
+         -> build_card_snapshot(official)                         [card_baike.py]
+           -> card_content_hash(card) ×N
+         -> load_card_snapshot(snapshot_path)                     [card_sync_store.py]
+         -> [基线空] 首跑初始化：local cards.json / 官网快照 / 空快照
+         -> diff_cards(snapshot_plain, baseline_plain)            [card_baike.py]
+         -> 返回 CardSyncCheckResult(diff, official_cards, snapshot, pending_saves)
+       -> _check_done(object) 内部信号（跨线程排队到 GUI 线程）
+       -> _finalize_check(result)
+         -> 缓存官网数据 + 快照
+         -> 持久化 pending_saves（首跑基线初始化）
+         -> check_finished(result)                                [广播到 GUI]
+  -> CardSyncDialog._on_check_finished(result)
+    -> _build_candidates(result)
+       -> card_field_diff_summary(local, official)                [字段级摘要]
+       -> format_card_full_text(local/official)                   [全文对比]
+       -> [点数表提醒] card_point_names 交集
+    -> _refresh_list(candidates)
+
+[应用]
+  -> CardSyncDialog._apply_selected()
+    -> CardSyncService.apply_updates(modified_ids, added_ids)
+      -> CardRepository.apply_official_updates(modified, added)  [写回 cards.json，card_amount 保留]
+      -> load_card_snapshot() -> 按卡增量更新基线
+      -> save_card_snapshot(baseline, path)
+      -> append_card_change(CardChangeRecord, changes_path)      [幂等追加变更记录]
+    -> 从列表移除已应用项 -> 更新计数
+```
+
+### 12.2 信号与函数清单
+
+```
+CardSyncService.check_started                   -> 主窗口开始检查状态
+CardSyncService.check_finished(object)          -> CardSyncDialog._on_check_finished()
+CardSyncService.status_changed(str) / progress_changed(str) -> UI 状态与阶段文字
+CardSyncService._check_done(object)             -> _finalize_check()（内部，仅 GUI 线程写共享状态）
+```
+
+| 函数 | 职责 |
+|------|------|
+| `check_now()` -> `bool` | 手动触发一次检查（busy + 冷却防重），未启动返回 False |
+| `apply_updates(modified_ids, added_ids)` -> `dict` | 应用勾选卡牌：写回 cards.json、按卡增量更新基线、追加变更记录 |
+| `_run_check()` / `_do_check()` | 后台执行检查并返回 `CardSyncCheckResult` |
+| `_finalize_check(result)` | GUI 线程统一写共享状态、持久化 `pending_saves`、广播 `check_finished` |
+| `_clean_official_card(official)` | 官网原始记录 → 存盘纯文本四件套（card_detail 保留分段结构） |
+| `_snapshot_to_plain(snapshot)` | CardSnapshot → diff_cards 所需 `{id: {name, hash}}` 结构 |
+
+> **与公告体系对比**：CardSyncService 与 AnnouncementService 结构同构（`_run_check` → `_check_done` → `_finalize_check` 三段式跨线程收尾），但二者零耦合：卡牌百科不依赖公告时间轴，变更记录独立存储在 `data/card_changes.json`，驱动卡牌 curated 精化时效检查（见 [call_graph_rag.md](./call_graph_rag.md) 的 `collect_stale_card_curated`）。
+
 

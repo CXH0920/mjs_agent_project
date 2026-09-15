@@ -168,6 +168,37 @@ root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即�
 - `get_model_pricing(model)` 校验单价必须为非负数字（且不是 bool），非法返回 `None`。
 - API 配置对话框的"价格配置"页签直接维护该文件，保存前会校验模型名称唯一且单价为非负数。
 
+### 3.6 势力配色配置
+
+`config/faction_colors.json` 是势力配色与筛选展示顺序的唯一配置源，由 `src/ui/shared/faction_colors.py` 读取：
+
+```json
+[
+  {"faction": "西周", "color": "#D95471"},
+  {"faction": "韩", "color": "#347632"},
+  {"faction": "赵", "color": "#9D7732"},
+  {"faction": "魏", "color": "#B02D34"},
+  {"faction": "楚", "color": "#AE2D34"},
+  {"faction": "燕", "color": "#2B2D59"},
+  {"faction": "齐", "color": "#54196A"},
+  {"faction": "秦", "color": "#3A3737"},
+  {"faction": "张楚", "color": "#C5C5C4"},
+  {"faction": "西楚", "color": "#CACAC8"},
+  {"faction": "西汉", "color": "#8F231F"},
+  {"faction": "东汉", "color": "#AC2C32"},
+  {"faction": "黄巾", "color": "#AB7E3E"},
+  {"faction": "曹魏", "color": "#2F5470"},
+  {"faction": "蜀汉", "color": "#921822"},
+  {"faction": "孙吴", "color": "#297540"},
+  {"faction": "西晋", "color": "#3A5E89"},
+  {"faction": "东晋", "color": "#566D81"}
+]
+```
+
+**结构升级说明**（2026-09-15）：原 dict 结构 `{"秦": "#8B4513", "汉": "#B22222", ...}` 升级为数组结构 `[{faction, color}, ...]`。数组位置即筛选界面的势力展示顺序——配置方按所需展示次序排列条目，无需额外排序字段。`load_faction_colors()` 返回 dict（字典插入顺序即配置顺序），`get_faction_colors()` 带缓存，`reload_faction_colors()` 清缓存重读。`sort_factions_by_config(factions)` 按配置顺序排序势力名列表，配置外的势力按码点序追加尾部。
+
+配置文件的唯一权威源是版本控制的 `config/faction_colors.json`；frozen 打包时随 `_internal/config/` 只读分发。UI 的势力筛选与配色面板（`faction_colors_dialog`）可直接编辑此文件，保存后调用 `reload_faction_colors()` 即时生效。
+
 ---
 
 ## 四、关键代码片段

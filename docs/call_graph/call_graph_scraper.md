@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-04）
+## 当前实现基线（2026-09-15）
 
 ```
 official.py:main()      ← shim, 转调 official_source.full.main()
@@ -594,7 +594,33 @@ AnnouncementService (business 层)
 
 ---
 
-## 七、函数清单总表
+## 七、卡牌百科抓取与逐卡 diff（card_baike.py）
+
+```
+CardSyncService._do_check()                                  [business/card_sync.py]
+  -> card_baike.fetch_official_cards()                       [card_baike.py]
+     -> crawler.fetch_all_cards_raw()                         [crawler.py]
+        -> fetch(BAIKE_URL) → find_chunk_url(html) → fetch(chunk_url)
+        -> adapter.parse_heroes_chunk(js_text)                [复用武将 chunk 解析]
+     -> [异常] logger.exception → return None                 [不中断检查]
+  -> card_baike.build_card_snapshot(official)                 [card_baike.py]
+     -> card_content_hash(card) ×N                             [MD5: name+card_type+card_desc+card_detail]
+  -> card_baike.diff_cards(current, baseline)                 [card_baike.py]
+     -> added / modified / removed 三态
+  -> card_baike._clean_official_card(official)                [business/card_sync.py]
+     -> card_baike.normalize_text(field)                      [NFKC + clean_html + strip]
+     -> card_baike.clean_card_detail(html)                    [块级标签→换行，保留分段]
+
+CardSyncDialog._build_candidates(result)                      [ui/data_admin/card_sync_dialog.py]
+  -> card_baike.card_field_diff_summary(local, official)      [字段级摘要：四件套逐字段对比]
+  -> card_baike.format_card_full_text(local/official)         [全文对比：名称/类型/描述/结算详解]
+```
+
+> **设计说明**：`card_baike.py` 是官网手牌库（卡牌百科）的抓取清洗与逐卡 diff 基元模块，与武将百科（`announcement.py`）同构但数据源不同。哈希口径为 name/card_type/card_desc/card_detail 四件套（card_amount 官网不提供，不入哈希）。基线快照与变更记录持久化见 [call_graph_data.md](./call_graph_data.md) 的 `card_sync_store.py`。
+
+---
+
+## 八、函数清单总表
 
 | 函数 | 文件 | 调用方（主要） | 被调用方（主要） |
 |------|------|----------------|------------------|
@@ -642,3 +668,11 @@ AnnouncementService (business 层)
 | `announcement.format_hero_full_text(hero)` | `announcement.py` | `build_update_candidates()` | `_normalize_text()` |
 | `announcement.hero_field_diff_summary(local, official)` | `announcement.py` | `build_update_candidates()` | `_normalize_text()`, `_skill_by_name()` |
 | `announcement.build_update_candidates(anns, local, official, diff)` | `announcement.py` | `AnnouncementService.prepare_update_candidates()` | `hero_field_diff_summary()`, `format_hero_full_text()` |
+| `card_baike.fetch_official_cards()` | `card_baike.py` | `CardSyncService._do_check()` | `crawler.fetch_all_cards_raw()` |
+| `card_baike.build_card_snapshot(cards)` | `card_baike.py` | `CardSyncService._do_check()` | `card_content_hash()` ×N |
+| `card_baike.card_content_hash(card)` | `card_baike.py` | `build_card_snapshot()` | `normalize_text()`, `hashlib.md5()` |
+| `card_baike.diff_cards(current, baseline)` | `card_baike.py` | `CardSyncService._do_check()` | set 运算（added/modified/removed） |
+| `card_baike.normalize_text(value)` | `card_baike.py` | `_clean_official_card()`, `card_field_diff_summary()`, `format_card_full_text()` | `clean_html()`, `unicodedata.normalize()` |
+| `card_baike.clean_card_detail(html)` | `card_baike.py` | `_clean_official_card()` | `re.sub()` 块级标签→换行, `html.unescape()` |
+| `card_baike.card_field_diff_summary(local, official)` | `card_baike.py` | `CardSyncDialog._build_candidates()` | `normalize_text()`, 四字段逐字段对比 |
+| `card_baike.format_card_full_text(card)` | `card_baike.py` | `CardSyncDialog._build_candidates()` | `normalize_text()` |

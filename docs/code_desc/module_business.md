@@ -3,6 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
+> 文档日期：2026-09-15
 
 ---
 
@@ -30,6 +31,7 @@
 src/business/
 ├── __init__.py
 ├── card_catalog.py                    # 卡牌图鉴：跨仓储视图、取值校验、追加写编排
+├── card_sync.py                       # 卡牌百科同步服务（CardSyncService）
 ├── ai_cost.py                         # AI 成本估算业务层入口
 ├── fetching/
 │   ├── base_fetch_service.py          # QProcess 生命周期、行缓冲与统一收尾
@@ -143,11 +145,12 @@ do_capture(hero_names, template_name="hero_selection", force_ocr=False, perform_
        ├─ [_adb_io_lock] AdbCapture.screencap_full() → PIL Image（不写磁盘、不触发 OCR）
        └─ future.add_done_callback → _capture_ready 信号
             └─ [GUI 线程] _on_background_capture_ready() → _handle_capture_result()
-                 ├─ should_ocr = perform_ocr 且（force_ocr 或 启用 OCR 或 轮询模式）
-                 ├─ [轮询且未过冷却] 跳过 OCR
-                 ├─ _queue_capture_ocr() → OcrTask 入唯一队列（结果经 _on_ocr_task_completed 回来）
+                  ├─ should_ocr = perform_ocr 且（force_ocr 或 启用 OCR）
+                  ├─ _queue_capture_ocr() → OcrTask 入唯一队列（结果经 _on_ocr_task_completed 回来）
                  └─ _schedule_image_save() → [_image_save_executor] save_image() → image_saved 信号
 ```
+
+> **2026-09 变更**：删除了 `is_poll` 全局配置误读（原从 `mumu_ocr_poll_mode` 读取）、`POLL_MATCH_COOLDOWN_SECONDS` 常量、`_poll_cooldown_until` 字段与冷却跳过分支。`should_ocr` 不再包含 `or is_poll` 项。真实轮询冷却统一由 `OcrService.set_task_cooldown()` 按任务级承担（见 3.3），CaptureService 不再自行持有冷却状态。
 
 `do_capture()` 和 `do_capture_from_file()` 支持传入 `template_name` 与 `force_ocr`。对局攻略导入使用 `match_guide` 模板并强制执行 OCR，不受"启用 OCR 识别"开关影响；选将推荐保持默认的 `hero_selection` 模板流程。`perform_ocr=False` 时直接发 `capture_completed` 并附带保存结果。模板匹配阈值按模板名分键：`mumu_match_guide_threshold` 与 `mumu_hero_selection_threshold`，缺省回落到 `mumu_ocr_match_threshold`（0.8）。
 
@@ -440,7 +443,50 @@ class ScriptRunner(QObject):
 - `missing_data` — 收集"暂无攻略"与"暂无历史单将胜率"的武将，逐条列出；
 - 每条提示都带 `source_field`（`counter_strategy` / `key_points[i]` / `tips_for_beginners`）供界面标注来源。
 
-### 3.14 知识库相关功能（已迁出）
+### 3.14 CardSyncService（卡牌同步服务）
+
+`CardSyncService(QObject)` 提供手动"检查卡牌更新"，与 `AnnouncementService` 共享同一设计模式：`check_now()` 在后台线程执行检查，受 `CHECK_COOLDOWN_SECONDS=60` 秒最小间隔限制。
+
+**信号**：
+
+| 信号 | 参数 | 说明 |
+|------|------|------|
+| `check_started` | - | 检查开始 |
+| `check_finished(object)` | `dict` | 检查结果（`added` / `modified` / `removed` 数量 + `ok`） |
+| `status_changed(str)` | `str` | 状态栏文字 |
+| `progress_changed(str)` | `str` | 后台阶段文字 |
+| `_check_done(object)` | `object` | **内部信号**：后台线程完成 → GUI 线程做收尾（缓存官网数据 + 持久化首跑基线） |
+
+**工作流程**：
+
+```
+check_now()
+  └─ [threading.Thread] _do_check()
+        ├─ fetch_official_cards()                        → 官网卡牌原始数据
+        ├─ build_card_snapshot(official_cards)           → 官网快照
+        ├─ load_card_snapshot()                          → 本地基线快照
+        ├─ diff_cards(current, baseline)                 → {added, modified, removed}
+        └─ emit _check_done(result)
+             └─ [GUI 线程] _on_check_done()
+                  ├─ 缓存官网数据到 _last_official_cards
+                  └─ 持久化首跑基线（首次安装场景）
+```
+
+**首跑基线初始化**：
+
+- 本地 `cards.json` 有数据时，用本地初始化基线，避免官网快照掩盖本地缺失；
+- 全新安装（本地无任何卡牌数据）以当前官网数据为基线；
+- 本地文件存在但为空则不写快照并记录警告。
+
+**`apply_updates(modified_ids, added_ids)`**：
+
+1. 写回 `cards.json`——更新卡牌字段（`card_amount` 保留，不随官网覆盖）；
+2. 按卡牌增量更新基线快照（新增加入、修改更新、移除删除）；
+3. 追加 `CardChangeRecord` 到变更日志，记录同步时间、变更类型与卡牌 ID。
+
+**`is_busy` 防重复**：`check_now()` 返回 `bool`，`False` 表示被忙碌或冷却拦截。主窗口据此弹出提示。
+
+### 3.15 知识库相关功能（已迁出）
 
 元规则维护、知识库审计、索引精化、RAG 语料任务定义、武将分类 LLM 建议已整体迁至 [`./module_rag.md`](./module_rag.md)，此处不再重复。
 
@@ -547,6 +593,7 @@ def _cleanup_tmp_file(self) -> None:
 | 依赖 | `src.data.announcement_manager` | AnnouncementService 的公告合并去重与百科快照持久化 |
 | 依赖 | `src.data.hero_timeline` | 武将变更时间轴（announcement 同步） |
 | 依赖 | `src.scraper.official_source.announcement` | 公告 / 百科拉取、武将快照与更新候选计算 |
+| 依赖 | `src.scraper.official_source.card_baike` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` / `card_field_diff_summary` |
 | 依赖 | `src.scraper.ai.*` | 成本估算入口（`estimate_cost` / `estimate_item_cost`）与分类建议的 JSON 解析 |
 | 依赖 | `src.config.env` | API 档案解析（`resolve_api_config` / `get_api_config`）、供应商预设（`PROVIDER_PRESETS`）、截图目录与模拟器配置读写 |
 | 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 `fetch_*()`；`PollCoordinator` 编排三板块轮询 |

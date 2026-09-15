@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-09-07（`6cbe8b6`）
+> 代码基线：2026-09-15（`624c8c5`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-09-07
+> 文档日期：2026-09-15
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -25,12 +25,13 @@
 - [十三、测试体系细节](#十三测试体系细节)
 - [十四、数据全流程详解](#十四数据全流程详解)
 - [十五、巅峰赛选将识别与实战配队](#十五巅峰赛选将识别与实战配队)
+- [十六、卡牌百科同步](#十六卡牌百科同步)
 
 ---
 
-## 当前代码基线与业务不变量（2026-09-07）
+## 当前代码基线与业务不变量（2026-09-15）
 
-本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成，`src/data/` 提供 JSON 持久化和内存模型。
+本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化）。
 
 ### 核心功能调用总览
 
@@ -44,7 +45,8 @@
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 | 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> 会话世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务 |
-| 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查 -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
+| 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
+| 卡牌百科同步 | 「数据」菜单 → `CardSyncDialog` | `CardSyncService.check_now()`（后台抓官网手牌库）→ `card_baike.fetch_cards()` → diff 快照 → `apply_updates()`（确认应用）→ `card_sync_store` 持久化 | 更新确认对话框展示变更明细，确认后原子写入 `data/cards.json`，快照和变更记录落盘 |
 
 ### 数据完整性与只读恢复
 
@@ -61,7 +63,7 @@ DataFacade.load_all()
 
 `ComboManager` 在应用启动时由 `MainWindow.__init__` 独立加载 `data/combos.json`（`Combo` Pydantic 模型，key 为排序后的 `(hero1_id, hero2_id)` 二元组）。巅峰赛胜率仓库在首次页面渲染时按需懒加载 `data/巅峰赛胜率排行.csv` 和 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。
 
-加载过程不会调用 `save()`，原始 JSON 和内存数据均保持不变。主窗口会向用户展示 `missing_reference` 问题，并仅在用户确认后通过 `DataMutationService` 创建备份、修复失效关联并保存；拒绝修复时保留原始数据。
+`card_sync_store` 管理 `data/card_snapshot.json`（`CardSnapshot` 卡片快照）和 `data/card_changes.json`（`CardChangeRecord` 变更记录），持久化卡牌百科同步的历史状态和变更详情，供 `CardSyncService` 在后台检查时做 diff 比对与确认后应用。加载过程不写盘，原始 JSON 和内存数据均保持不变。主窗口会向用户展示 `missing_reference` 问题，并仅在用户确认后通过 `DataMutationService` 创建备份、修复失效关联并保存；拒绝修复时保留原始数据。
 
 ### 进程与任务提交边界
 
@@ -84,6 +86,7 @@ src/scraper/official_source/adapter.py     ← 官网 HTML/JS chunk 格式适配
 src/scraper/official_source/crawler.py     ← 网络请求、数据清洗、校验与头像下载
 src/scraper/official_source/full.py        ← 全量采集实现
 src/scraper/official_source/incremental.py ← 增量/指定采集实现
+src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（卡牌百科同步用）
 ```
 
 ### 1.2 crawler.py 详细说明（349 行）
@@ -251,6 +254,25 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 4. 确定写入策略（append / replace / 全覆盖）
 5. `json.dump(merged, f, ensure_ascii=False, indent=2)`
 6. `download_hero_images(raw_list)`（非 dry_run 时）
+
+### 1.5 card_baike.py：官网手牌库抓取与 diff
+
+`card_baike.py` 为卡牌百科同步功能（第十六章）提供官网手牌库抓取与差异比对能力，由 `CardSyncService` 在后台调用，不直接面向 CLI。
+
+**核心函数**：
+
+| 函数 | 说明 |
+|------|------|
+| `fetch_cards() → list[dict]` | 从官网手牌库页面抓取全部卡片原始数据，字段包括 `id`、`name`、`type`、`points`、`effect` 等 |
+| `normalize_cards(raw) → list[dict]` | 字段映射与清洗，与 `cards.json` 格式对齐 |
+| `diff_cards(current, official) → list[dict]` | 与当前 `cards.json` 逐条 diff，返回变更列表（added / modified / removed） |
+
+**抓取流程**：
+1. 请求官网手牌库 JS chunk 或 HTML 页面
+2. 解析卡片数据（结构解析方式与武将百科 chunk 类似）
+3. 返回标准化卡片列表供 `CardSyncService` 做 diff 比对
+
+> `card_baike.py` 的 HTTP 请求复用 `crawler.fetch()` 基础设施（3 次重试、30s 超时、反爬头），但不依赖 `adapter.py` 的武将 chunk 解析逻辑，因其页面结构与武将百科不同。
 
 ---
 
@@ -455,6 +477,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
 | OcrService | `ocr_service.py` | ~355 | QObject | 3 |
 | OfficialDataImportService / Worker | `official_data_import_service.py` | ~610 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py` |
+| CardSyncService | `card_sync.py` | ~120 | QObject | 2 |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
@@ -646,6 +669,43 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 
 为提升兜底能力（2026-08-14）：新增混淆字对校正（`候↔侯`、`怀↔惇`，变体唯一命中词表才采用）、未知名字字形回退、跨榜单一致性消歧；校验失败时将完整批次写入 `data/official_import_pending.json`，导入对话框可打开“待复核修正”逐行选择词表内武将后重新写入，不重新 OCR；放逐榜导入支持页末右栏不满（左栏满栏且右栏不超过左栏）。
 
+### 3.8 CardSyncService（卡牌百科同步）
+
+卡牌百科同步服务负责后台定时检查官网手牌库更新、抓取差异、确认后应用变更，与武将公告更新监控（announcement_service）互不干扰。
+
+```python
+class CardSyncService(QObject):
+    status_changed = Signal(str)      # 状态消息（"检查中..."、"发现 N 条更新"）
+    sync_completed = Signal(bool, str) # (成功/失败, 消息)
+```
+
+**主要方法**：
+
+| 方法 | 说明 |
+|------|------|
+| `check_now()` | 后台执行：调用 `card_baike.fetch_cards()` 抓取官网手牌库 → 与 `card_sync_store.load_snapshot()` 比对 → 生成 diff 变更列表 → 写入 `card_sync_store.save_changes()` → 更新状态信号 |
+| `apply_updates() → None` | 确认后应用：读取变更记录 → 更新 `cards.json` → 更新快照 → 清除变更 → 通知 audit_service 复核时效 |
+| `has_pending_changes() → bool` | 检查是否存在未确认的变更 |
+
+**调用流程**：
+
+```
+数据菜单 → CardSyncDialog.show()
+  └── CardSyncService.check_now()
+       ├── card_baike.fetch_cards()              → 官网手牌库抓取
+       ├── card_sync_store.load_snapshot()       → 上次快照
+       ├── diff_cards(snapshot, official)        → 变更列表
+       ├── card_sync_store.save_changes(diff)    → 变更记录持久化
+       └── emit status_changed("发现 N 条更新")
+            └── CardSyncDialog 展示变更明细
+                 └── 用户确认 → CardSyncService.apply_updates()
+                      ├── 更新 data/cards.json
+                      ├── card_sync_store.save_snapshot(current)
+                      ├── card_sync_store.clear_changes()
+                      └── audit_service.collect_stale_card_curated() → 时效复核
+```
+
+> CardSyncService 的后台检查由 `QTimer` 驱动（默认每日一次），也可通过「数据 → 检查卡牌百科更新」菜单手动触发。变更记录持久化到 `data/card_changes.json`，快照持久化到 `data/card_snapshot.json`。
 
 ---
 
@@ -696,7 +756,9 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 | `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
 | `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（16 类、180 条武将归类；AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
 | `data/mjs_adjustments.json` | hero_timeline（`load_timeline` / `append_announcement_events`） | 武将变更时间轴：133 条事件（126 初始化 + 7 公告追加）；RAG 语料块 `as_of` 版本戳的事实源，不属"裁定权威 6 JSON" |
-| `data/combos.json` | ComboManager | 实战配队 1228 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序） |
+| `data/combos.json` | ComboManager | 实战配队 1228 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序；含逻辑删除字段 `deleted` / `deleted_at`） |
+| `data/card_snapshot.json` | card_sync_store | 卡牌百科快照（`CardSnapshot`，全量卡片当前状态） |
+| `data/card_changes.json` | card_sync_store | 卡牌百科变更记录（`CardChangeRecord`，未确认的官网差异列表） |
 | `data/武将推荐指数状态.json` | —（`recommendation_index_repository` 写） | 推荐指数生成状态（运行时状态文件，非榜单数据） |
 | `data/2v2{胜率,出场}排行.csv` `data/巅峰赛{胜率,出场}排行.csv` `data/武将放逐.csv` | —（榜单导入写） | 官方榜单，各 175 行；表头：胜率榜 `排名,武将,胜率`，出场/放逐榜 `排名,武将`；`_待复核.csv` 为同名副本 |
 | `data/raw_guides/` | —（社区素材，未入库 raw） | jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv |
@@ -775,7 +837,7 @@ def apply_incremental_update(data_dir, update)
 
 ### 4.8 武将变更时间轴（hero_timeline.py）
 
-纯数据层模块，无 UI 与 Qt 依赖，职责边界为「时间轴读写 + RAG 版本戳」。事实源 `data/mjs_adjustments.json`：
+纯数据层模块，无 UI 与 Qt 依赖，职责边界为「时间轴读写 + RAG 版本戳」（TRIGGER_OVERRIDES 映射表及相关函数已于 2026-09 拆除，模块回归纯时间轴读写与版本戳职责）。事实源 `data/mjs_adjustments.json`：
 
 ```
 {
@@ -796,6 +858,29 @@ def apply_incremental_update(data_dir, update)
 **读写与查询接口**：`load_timeline()` / `save_timeline()` / `append_announcement_events()` / `normalize_change_type()`，以及按武将取当前与历史版本的时间轴查询。
 
 **语料块版本戳**：`build_guide_corpus.py` / `build_rag_corpus.py` 读取时间轴后为武将语料块打 `as_of`、`is_current`、`content_md5`，过时块附 `staleness_reason` / `staleness_hint`；`rag_prompt` 检索层**默认只召当前版本**（`is_current=true`），避免旧版本语料进入 Prompt。
+
+### 4.9 卡牌百科同步仓储（card_sync_store.py）
+
+纯数据层模块，无 UI 与 Qt 依赖，负责卡牌百科同步的快照与变更记录持久化。
+
+**数据模型**：
+
+| 模型 | 文件 | 说明 |
+|------|------|------|
+| `CardSnapshot` | `data/card_snapshot.json` | 卡片快照：全量卡片当前状态（id / name / type / points / effect 等），用于下次 diff 的基准 |
+| `CardChangeRecord` | `data/card_changes.json` | 变更记录：官网与快照的差异列表（added / modified / removed），确认后应用并清除 |
+
+**核心函数**：
+
+| 函数 | 说明 |
+|------|------|
+| `load_snapshot() → CardSnapshot \| None` | 加载上次快照 |
+| `save_snapshot(cards) → None` | 保存当前快照 |
+| `load_changes() → list[CardChangeRecord]` | 加载未确认的变更记录 |
+| `save_changes(changes) → None` | 保存变更记录 |
+| `clear_changes() → None` | 清除变更记录（应用更新后调用） |
+
+> `card_sync_store` 使用 `JsonRepository` 基类，继承原子写、加锁和写盘失败内存回滚能力，与四个维护仓库（CardPointsRepository 等）共享同一数据安全基建。
 
 ---
 
@@ -840,7 +925,7 @@ def apply_incremental_update(data_dir, update)
 | configuration/mumu_config_dialog.py | 773 | QDialog（模拟器配置状态与操作协调） |
 | configuration/mumu_config_sections.py | 365 | QGroupBox（设备、模板和 OCR 参数视图） |
 | configuration/settings_dialog.py | 582 | QDialog（多 API 档案 + 运行参数 + 价格） |
-| configuration/faction_color_dialog.py | — | QDialog（势力配色） |
+| configuration/faction_color_dialog.py | — | QDialog（势力配色，数组结构 `[{faction, color}]`，位置即展示顺序） |
 | configuration/roi_selector.py | 403 | QDialog（框选模板区域，不随底图原始分辨率撑高） |
 | data_admin/official_data_import_dialog.py | 224 | QDialog（榜单图片选择、进度条、完成/失败提示） |
 | data_admin/official_import_review_dialog.py | 145 | QDialog（待复核逐条确认） |
@@ -848,6 +933,7 @@ def apply_incremental_update(data_dir, update)
 | data_admin/announcement_dialog.py | 176 | QDialog（公告检查与逐武将 diff） |
 | data_admin/hero_update_confirm_dialog.py | 213 | QDialog（武将更新确认） |
 | data_admin/data_management_dialog.py | 133 | QDialog（攻略/相性清空与恢复） |
+| data_admin/card_sync_dialog.py | ~160 | QDialog（卡牌百科更新确认：展示变更明细 + 确认后应用更新） |
 | maintenance/maintenance_workspace.py | 349 | QWidget（左栏维护对象导航 + 右侧工作区 + 底部折叠日志） |
 | maintenance/rag_maintenance_panel.py | 449 | QWidget（知识库维护工作台外壳） |
 | maintenance/rule_doc_panel.py | 927 | QWidget（元规则母本四子页签） |
@@ -866,7 +952,7 @@ def apply_incremental_update(data_dir, update)
 | shared/rich_diff.py | 123 | 富文本 diff |
 | shared/portrait.py | 34 | 头像加载 |
 | shared/persist.py | 67 | UI 尺寸/几何持久化 |
-| shared/faction_colors.py | 55 | 势力配色读取 |
+| shared/faction_colors.py | 55 | 势力配色读取（`sort_factions_by_config()` 按配置数组位置排序） |
 | shared/markdown_renderer.py | 17 | Markdown → HTML |
 
 > 合计 76 个 UI 模块文件。行数随迭代变动，以仓库实际为准。
@@ -1143,19 +1229,28 @@ RecommendationPanel (QWidget)
 ```
 
 **势力配色**：
-从 `config/faction_colors.json` 配置文件加载，启动后缓存到全局变量。文件不存在时使用内建兜底配色：
+从 `config/faction_colors.json` 配置文件加载，启动后缓存到全局变量。文件不存在时使用内建兜底配色。2026-09 从 dict 升级为数组结构，数组位置即筛选界面展示顺序：
 
 ```json
-{
-  "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F",
-  "赵": "#556B2F", "魏": "#800020", "燕": "#6A0DAD",
-  "齐": "#1B7A3D", "韩": "#CD853F",
-  "孙吴": "#4169E1", "蜀": "#228B22", "曹魏": "#800020",
-  "群雄": "#8B0000", "晋": "#4A6741", "新朝": "#B8860B"
-}
+[
+  {"faction": "秦", "color": "#8B4513"},
+  {"faction": "汉", "color": "#B22222"},
+  {"faction": "楚", "color": "#2F4F4F"},
+  {"faction": "赵", "color": "#556B2F"},
+  {"faction": "魏", "color": "#800020"},
+  {"faction": "燕", "color": "#6A0DAD"},
+  {"faction": "齐", "color": "#1B7A3D"},
+  {"faction": "韩", "color": "#CD853F"},
+  {"faction": "孙吴", "color": "#4169E1"},
+  {"faction": "蜀", "color": "#228B22"},
+  {"faction": "曹魏", "color": "#800020"},
+  {"faction": "群雄", "color": "#8B0000"},
+  {"faction": "晋", "color": "#4A6741"},
+  {"faction": "新朝", "color": "#B8860B"}
+]
 ```
 
-配色通过公开共享模块 `src/ui/shared/faction_colors.py` 管理：`load_faction_colors()` 负责读取和校验 JSON，`get_faction_colors()` 提供带内建兜底色的缓存，`reload_faction_colors()` 在配置保存后清空缓存并重新加载。势力配色对话框允许新增势力并在点击“保存”后写入该文件，但不允许删除或改名。推荐面板、对局攻略、武将浏览器和可勾选组合控件只依赖这些公开函数，未知势力使用灰色 `#888` 兜底。
+配色通过公开共享模块 `src/ui/shared/faction_colors.py` 管理：`load_faction_colors()` 负责读取和校验 JSON（数组结构），`sort_factions_by_config()` 按配置数组位置排序（筛选界面展示顺序），`get_faction_colors()` 提供带内建兜底色的缓存，`reload_faction_colors()` 在配置保存后清空缓存并重新加载。势力配色对话框允许新增势力并在点击“保存”后写入该文件（追加到数组末尾），但不允许删除或改名。推荐面板、对局攻略、武将浏览器和可勾选组合控件只依赖这些公开函数，未知势力使用灰色 `#888` 兜底。
 
 **共享 UI 与胜率数据访问**：
 - `src/ui/shared/widgets.py` 提供 `DoubleClickLabel`，统一头像双击信号，推荐卡片和对局攻略卡片复用同一控件。
@@ -2148,7 +2243,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **100 个测试文件 / 1129 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **108 个测试文件 / 1223 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -2693,9 +2788,12 @@ clear_peak_win_rate_cache()
 `ComboManager(DataManager[Combo])` 管理 `data/combos.json`：
 
 - **双向归一 key**：`_combo_key(a_id, b_id) = tuple(sorted((a_id, b_id)))`
-- **查询**：`get_combo()` / `list_combos_for_hero()` / `list_combos()`
+- **Combo 模型新增字段**：`deleted`（bool，默认 False）、`deleted_at`（str|None，记录删除时间）
+- **查询**：`get_combo()` / `list_combos_for_hero()` / `list_combos()`（过滤 `deleted=True` 的记录，默认不返回已删除）/ `list_all_combos()`（包含已删除）
+- **逻辑删除**：`delete_combo()` 标记 `deleted=True` + `deleted_at=当前时间`，原子落盘；`restore_combo()` 恢复 `deleted=False` + `deleted_at=None`
 - **`save_manual_combo(combo, previous)`**：编辑时 key 变化则迁移；`manual=True` 固定标记；导入合并时同 key 冲突手工优先
-- **删除**：`delete_combo()` 原子落盘，删除后下次导入会恢复
+- **导入合并**：deleted 记录屏蔽同 key 源记录（被删除的手工配队不会被导入覆盖恢复）
+- **combos.json 全量迁移**：加载时自动为旧数据补充 `deleted=False` / `deleted_at=None` 字段
 
 **座次解析**（`combo_seats.parse_seats(note, hero1, hero2)`）：
 - 优先级 1：匹配 "武将名+数字" 或 "数字+武将名"（含 ALIAS 别名：牢布→吕布、甄姬→甄宓、夏侯停→夏侯惇）
@@ -2726,3 +2824,102 @@ PeakSelectPanel._open_combo_management()
   └─ ComboManagementDialog(hero_manager, ComboService(combo_manager), parent)
      └─ combos_changed → _render_cards()
 ```
+
+---
+
+## 十六、卡牌百科同步
+
+本章覆盖 2026-09 新增的**卡牌百科变更捕获**完整链路：`card_baike.py`（官网手牌库抓取与 diff）→ `CardSyncService`（后台检查 + 应用更新）→ `card_sync_store`（快照与变更记录持久化）→ `CardSyncDialog`（更新确认对话框）→ `audit_service.collect_stale_card_curated()`（时效复核）。
+
+### 16.1 背景：卡牌数据缺乏更新监控
+
+武将数据通过公告监控 + 百科 diff 保持更新，但卡牌数据（手牌库）长期缺乏自动化更新渠道。官网手牌库更新时（新增卡牌、修改卡牌效果/点数等），本地 `cards.json` 无法及时感知。卡牌百科同步功能填补此缺口：后台定期检查官网手牌库，发现差异后提示用户确认，确认后应用更新并落地快照。
+
+### 16.2 官网手牌库抓取（card_baike.py）
+
+`card_baike.py` 位于 `src/scraper/official_source/`，提供官网手牌库抓取与差异比对能力。详见[第一章第 1.5 节](#15-card_baikepy官网手牌库抓取与-diff)。
+
+### 16.3 卡牌百科同步服务（CardSyncService）
+
+`CardSyncService` 位于 `src/business/card_sync.py`，负责后台定时检查官网手牌库更新、抓取差异、确认后应用变更。详见[第三章第 3.8 节](#38-cardsyncservice卡牌百科同步)。
+
+### 16.4 快照与变更记录持久化（card_sync_store.py）
+
+`card_sync_store.py` 位于 `src/data/`，负责卡牌百科同步的快照与变更记录持久化。详见[第四章第 4.9 节](#49-卡牌百科同步仓储cardsync_storepy)。
+
+### 16.5 更新确认对话框（CardSyncDialog）
+
+`CardSyncDialog` 位于 `src/ui/data_admin/card_sync_dialog.py`，展示官网手牌库与本地快照的差异明细，用户确认后调用 `CardSyncService.apply_updates()` 应用更新。
+
+**UI 结构**：
+
+```
+CardSyncDialog
+  ├── 标题区："卡牌百科更新确认"
+  ├── 状态条：检查状态 / 发现 N 条更新
+  ├── 变更明细列表（QTableWidget）
+  │   ├── 列：类型 / 卡牌名 / 字段 / 旧值 / 新值
+  │   └── 类型：新增 / 修改 / 删除
+  ├── 底部操作栏
+  │   ├── [全部确认并应用] (PRIMARY)
+  │   └── [取消]
+  └── [关闭]
+```
+
+**交互流程**：
+
+```
+用户点击「数据 → 检查卡牌百科更新」
+  ├── CardSyncDialog.show()
+  ├── CardSyncService.check_now()
+  │   ├── card_baike.fetch_cards()
+  │   ├── card_sync_store.load_snapshot()
+  │   ├── diff_cards() → 变更列表
+  │   └── card_sync_store.save_changes(diff)
+  ├── 若有变更 → 展示变更明细表
+  │   └── 用户点击「全部确认并应用」
+  │       └── CardSyncService.apply_updates()
+  │            ├── 更新 data/cards.json
+  │            ├── card_sync_store.save_snapshot()
+  │            ├── card_sync_store.clear_changes()
+  │            └── audit_service.collect_stale_card_curated()
+  └── 若无变更 → 提示"已是最新"
+```
+
+### 16.6 时效复核（audit_service）
+
+`audit_service` 新增 `collect_stale_card_curated()` 方法，检查卡牌百科更新后是否有 RAG 语料块的时效标记需要刷新。该方法与已有的 `collect_stale_curated()`（技能块时效）类似，但作用于卡牌相关语料。
+
+**新增 AuditIssue kind**：
+
+| kind | 说明 |
+|------|------|
+| `curated_stale` | 技能块语料时效过时 |
+| `curated_stale_possible` | 技能块语料可能过时 |
+| `card_curated_stale` | 卡牌块语料时效过时 |
+
+时效复核横幅支持「去复核」按钮，点击后跳转到索引精化对话框，定位到过时效应语料块。
+
+### 16.7 完整调用链
+
+```
+数据菜单 → 检查卡牌百科更新
+  └── CardSyncDialog.show()
+       ├── CardSyncService.check_now()          [后台线程]
+       │    ├── card_baike.fetch_cards()
+       │    ├── card_sync_store.load_snapshot()
+       │    ├── diff_cards()
+       │    └── card_sync_store.save_changes()
+       ├── 用户确认 → CardSyncService.apply_updates()
+       │    ├── 更新 cards.json
+       │    ├── card_sync_store.save_snapshot()
+       │    ├── card_sync_store.clear_changes()
+       │    └── audit_service.collect_stale_card_curated()
+       └── 关闭对话框
+```
+
+### 16.8 新增武将数据
+
+2026-09 新增武将数据同步更新：
+- **司马睿**（id 197，东晋 / 控制 / 体力5 / 手牌上限3）
+- **张角**新增呼风唤雨技能

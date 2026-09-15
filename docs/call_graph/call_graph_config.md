@@ -5,7 +5,7 @@
 
 ---
 
-## 当前实现基线（2026-09-07）
+## 当前实现基线（2026-09-15）
 
 `get_api_config()` 优先级为 `config/api_profiles.json（可用档案）> 仅环境变量 > config.env 旧链 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。任务侧统一经 `resolve_api_config(name)` 解析，可用性判定统一经 `_usable_profile_config()`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。
 
@@ -182,7 +182,31 @@ save_api_profiles(data, profiles_path)
 | `save_env_file(path, data)` | `config/env.py` | `ui/app/main_window.py` (_open_mumu_config), `ui/configuration/settings_dialog.py` (_on_save) | `Path.write_text()`, 原子替换 |
 | `migrate_legacy_api_config()` | `config/env.py` | `src/main.py::main()` | `parse_env_file()`, `save_api_profiles()` |
 
-### 2.5 模型价格配置
+### 2.6 势力配色配置（faction_colors.json）
+
+势力配色为独立 JSON 文件（`config/faction_colors.json`），**数组结构**（非字典），每个元素为 `{faction, color}` 对象：
+
+```
+FactionColorDialog._add_faction() / _remove_faction() / _change_color()
+  -> save_faction_colors(colors, config/faction_colors.json)
+     -> json.dumps([{faction, color}, ...], ensure_ascii=False, indent=2)
+     -> *.tmp -> replace(path)
+  -> reload_faction_colors()
+     -> load_faction_colors()                                 [ui/shared/faction_colors.py]
+        -> json.loads(path.read_text())
+        -> [非 list] 返回 {}                                  [根节点必须是数组]
+        -> [{faction: str, color: "#XXXXXX"}] -> dict[str, str]
+        -> [HEX_COLOR_RE 不匹配] 跳过该条目
+     -> 字典顺序即配置展示顺序（sort_factions_by_config 据此排序）
+
+DEFAULT_FACTION_COLORS（内建兜底，dict 结构）
+  秦/汉/楚/赵/魏/燕/齐/韩/孙吴/蜀/曹魏/群雄/晋/新朝 共 14 个势力
+  仅在 config/faction_colors.json 不可读时使用
+```
+
+> **注意**：配置文件为数组（`[{faction, color}, ...]`），数组位置即筛选界面的势力展示顺序；`load_faction_colors()` 返回的 `dict` 保持插入顺序（Python 3.7+），`sort_factions_by_config()` 据此排序。内建兜底 `DEFAULT_FACTION_COLORS` 为 dict 结构。
+
+### 2.7 模型价格配置
 
 成本估算读取独立 JSON，不混入 `config.env`：
 

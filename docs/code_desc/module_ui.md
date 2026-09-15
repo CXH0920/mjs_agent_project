@@ -2,6 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
+> 文档日期：2026-09-15
 
 ---
 
@@ -71,6 +72,7 @@ src/ui/
 │   ├── combos_import_dialog.py         # 实战配队导入对话框
 │   ├── official_import_review_dialog.py # 官方榜单导入待复核数据审查
 │   ├── hero_update_confirm_dialog.py   # 公告更新武将确认对话框
+│   ├── card_sync_dialog.py             # 卡牌百科变更捕获与同步确认
 │   └── announcement_dialog.py
 ├── shared/                     # 跨功能控件、展示与样式
 │   ├── master_detail.py        # MasterDetailPane 主从列表骨架（列表窗格 + 滚动详情区）
@@ -303,7 +305,9 @@ def update_recommendations(self, data: list[dict]) -> None
 
 ### 3.4.2 势力配色配置
 
-势力配色由 `FactionColorDialog` 以紧凑列表展示，每行只显示势力名称、颜色小方块和 Hex 代码，不在主界面长期占用调色板区域。对话框可输入势力名称并选定初始颜色新增势力；名称不能为空且不能重复，现有势力仅能调整颜色，不能删除或改名。点击颜色小方块后打开 `ColorPicker` 浮层，提供 HSB 调整和屏幕取色；取消时恢复打开前的颜色，点击“保存”后才写入配置文件。
+势力配色由 `FactionColorDialog` 以紧凑列表展示，每行只显示势力名称、颜色小方块和 Hex 代码，不在主界面长期占用调色板区域。对话框可输入势力名称并选定初始颜色新增势力；名称不能为空且不能重复，现有势力仅能调整颜色，不能删除或改名。行内 ↑/↓ 按钮调整势力在筛选界面的展示顺序（行序即保存后的筛选顺序）。点击颜色小方块后打开 `ColorPicker` 浮层，提供 HSB 调整和屏幕取色；取消时恢复打开前的颜色，点击“保存”后才写入配置文件。
+
+配置文件 `config/faction_colors.json` 已从 dict 结构升级为数组结构 `[{faction, color}, ...]`（1398692），数组位置即筛选界面的势力展示顺序——配置方按所需展示次序排列条目，无需额外排序字段。`load_faction_colors()` 返回 dict（字典插入顺序即配置顺序），`sort_factions_by_config(factions)` 按配置顺序排序势力名列表，配置外的势力按码点序追加尾部。`save_faction_colors()` 输出 `[{faction, color}, ...]` 数组。
 
 模拟器配置使用“设备与连接”“识别与自动化”两个左侧导航页，顶部共享 ADB 状态和底部保存栏固定显示。识别页先显示 OCR/轮询开关，再由 `MumuTemplateSection` 将武将选择、对局攻略各自的模板、阈值和 ROI 操作组织在同一任务面板中；窄窗口上下排列，宽窗口双列展示。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 只构造控件并发出用户操作信号；`MumuConfigDialog` 连接信号、处理文件选择与 ROI 框选，`MumuConfigCoordinator` 仍是唯一业务协调器。两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击，后台自动建立连接并获取截图，只有未配置 ADB 或正在连接时禁用模板制作；“恢复轮询”仅在轮询暂停时显示。
 
@@ -401,6 +405,19 @@ PeakSelectPanel
 ### 3.8 数据管理对话框
 
 `DataManagementDialog` 由菜单“配置 → 数据管理”打开，可勾选批量清空武将攻略和武将相性。“清空选中数据”使用危险角色，与普通“关闭”明显区分；提交前要求输入“清空”确认，服务执行期间底栏禁用。`DataManagementService` 会先将所选 JSON 复制到 `data/backups/` 的时间戳备份文件，再清空 Manager 并原子保存正式 JSON。完成结果以模态消息列出清空数量和备份路径，随后主窗口刷新攻略详情、相性表、推荐摘要和状态栏计数。
+
+### 3.8.1 卡牌百科变更捕获（CardSyncDialog，624c8c5 新增）
+
+`CardSyncDialog`（`src/ui/data_admin/card_sync_dialog.py`）由菜单“数据 → 卡牌百科更新”打开，检查官网手牌库与本地卡牌差异，勾选后应用官网值覆盖本地（`card_amount` 保留本地值）：
+
+- **自动检查** — `auto_check=True` 时打开对话框后自动触发一次检查；冷却限制 60 秒（`CardSyncService.cooldown_remaining`），检查中提示“检查过于频繁”
+- **候选列表** — `modified`/`added` 条目可勾选应用（默认全选），`removed` 条目仅提醒（不可勾选，删除本地卡风险不对称由人工处理）；每行显示卡牌名称 + 变更类型标签（修改/新增/官网已删除），Tooltip 展示字段级差异摘要
+- **全选/清空** — 仅作用于可应用条目（`modified`/`added`），`removed` 条目不受影响
+- **查看全文对比** — 双击行或点击按钮打开 `HeroDiffDetailDialog`（本地 vs 官网全文对比，Git 风格 diff）
+- **应用选中** — 调用 `CardSyncService.apply_updates(modified_ids, added_ids)`，成功后从列表移除已处理项，剩余条目下次检查继续提示
+- **点数提醒** — 候选卡在点数表中有配置时，摘要首位插入“该卡在点数表中有配置，记得核对花色点数”
+
+候选构建流程：`CardSyncService.check_now()` 后台拉取官网手牌库 → `card_field_diff_summary()` 逐字段对比本地 vs 官网 → `format_card_full_text()` 生成全文对比文本 → `CardSyncCheckResult` 含 `diff`（added/modified/removed 三态）与 `official_cards`。
 
 ---
 
@@ -556,6 +573,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | `ProposalDetailDialog` | 元规则提案项差异对比 + 文档上下文（只读） |
 | `ProposalItemConfirmDialog` | 元规则提案项逐条确认（approved/revised/rejected + 可编辑文本） |
 | `DiffDetailDialog` | 数据段差异详情（行号定位 + Git 风格 diff + 文档过期警示） |
+| `CardSyncDialog` | 卡牌百科变更捕获与同步确认（官网手牌库 diff 检查 + 勾选应用） |
 
 ---
 
@@ -577,6 +595,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.maintenance.corpus_services` | 实战配队/专属牌/分类写路径服务 |
 | 依赖 | `src.business.maintenance.classification_suggest` | 武将分类 LLM 建议（后台 worker 调用） |
 | 依赖 | `src.business.card_catalog` | 卡牌目录服务（`CardManagementPanel`） |
+| 依赖 | `src.business.card_sync` | 卡牌百科变更检查与同步（`CardSyncDialog`） |
 | 依赖 | `src.business.announcement` | 公告与百科 diff 检查 |
 | 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |

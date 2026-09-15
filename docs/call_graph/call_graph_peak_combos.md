@@ -231,7 +231,7 @@ import_combos.py main()
      -> _load_hero_name_map(heroes_path)
         -> {hero.name: hero.id}
      -> ComboManager(output_path).load()
-     -> 遍历 manager.list_combos():
+     -> 遍历 manager.list_all_combos():                    [含逻辑删除记录，屏蔽同 key 源记录]
         -> manual -> manual_by_key[key] = combo
         -> 否则 -> imported_keys.add(key)
      -> 遍历 combos_raw:
@@ -424,9 +424,14 @@ MatchAnalysisView.render_analysis(analysis: MatchAnalysis)
 | `parse_seats` | `combo_seats.py` | run_import | note 座次解析 |
 | `format_seats` | `combo_seats.py` | PeakSelectPanel._render_combo_chips / _combo_tooltip | 座次列表 → 展示文本 |
 | `ComboManager._combo_key` | `combo_manager.py` | 内部调用 | sorted((a_id, b_id)) |
-| `ComboManager._save_unlocked` | `combo_manager.py` | save_manual_combo / delete_combo / save() | sorted by (-rating, hero1_id, hero2_id) + atomic_write_json |
+| `ComboManager._save_unlocked` | `combo_manager.py` | save_manual_combo / delete_combo / restore_combo / save() | sorted by (-rating, hero1_id, hero2_id) + atomic_write_json |
 | `ComboManager.save_manual_combo` | `combo_manager.py` | ComboManagementDialog | key 迁移 + manual=True + _save_unlocked |
-| `ComboManager.get_combo/list_combos_for_hero/list_combos` | `combo_manager.py` | run_import / PeakSelectPanel / ComboManagementDialog | 查询 |
+| `ComboManager.get_combo` | `combo_manager.py` | 编辑覆盖检查、run_import | _combo_key() + dict get（含逻辑删除） |
+| `ComboManager.list_combos` | `combo_manager.py` | PeakSelectPanel、ComboManagementDialog | list_all() 过滤 deleted |
+| `ComboManager.list_all_combos` | `combo_manager.py` | run_import | list_all()（含逻辑删除） |
+| `ComboManager.list_combos_for_hero` | `combo_manager.py` | HeroDetailView、RecommendationPanel | 线性遍历 O(N)，过滤 deleted |
+| `ComboManager.delete_combo` | `combo_manager.py` | ComboManagementDialog | 标记 deleted=True + deleted_at，原子落盘 |
+| `ComboManager.restore_combo` | `combo_manager.py` | ComboManagementDialog | 标记 deleted=False，原子落盘 |
 | `LineupState.load_from_ocr/set_side/validate/confirm` | `match_lineup_state.py` | MatchGuidePanel（load_from_ocr / _set_side / _replace_hero / _confirm_lineup / clear_blocks） | OCR 导入、敌我确认、完整性校验 |
 | `MatchAnalysisView.render_unconfirmed/render_analysis` | `match_analysis_view.py` | MatchGuidePanel._refresh_analysis / _clear_lineup_display | 四页签渲染 |
 | `load_peak_win_rates/load_peak_pick_ranks` | `peak_win_rate_repository.py` | _win_rates_provider/_pick_ranks_provider | CSV 读取 + 缓存 |

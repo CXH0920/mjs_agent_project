@@ -1,6 +1,6 @@
 # 名将杀 Agent
 
-面向[名将杀手游](https://mjs.ztgame.com/)的桌面辅助工具，运行于 PC 端。提供**选将推荐**、**武将资料库**、**对局攻略**、**巅峰赛选将**、**AI 批量攻略/相性生成**与**屏幕采集 OCR 识别**功能；攻略与相性生成支持 **RAG 官方规则语料增强**（推荐）与经典模式双版本。
+面向[名将杀手游](https://mjs.ztgame.com/)的桌面辅助工具，运行于 PC 端。提供**选将推荐**、**武将资料库**、**对局攻略**、**巅峰赛选将**、**AI 批量攻略/相性生成**、**卡牌百科变更捕获**与**屏幕采集 OCR 识别**功能；攻略与相性生成支持 **RAG 官方规则语料增强**（推荐）与经典模式双版本。
 
 **核心功能**
 
@@ -10,6 +10,7 @@
 - **屏幕采集与 OCR** — MuMu ADB 截图 + OpenCV 模板匹配 + PaddleOCR 识别 + 持续轮询；选将、巅峰赛、对局攻略三板块共享一次截图
 - **知识库维护** — RAG 语料状态/元规则 T0 母本/专属牌·点数·装备·分类数据源本地可视化维护 + 索引精化（LLM 建议 + 人工补全索引字段，已下沉业务层）
 - **公告更新监控** — 拉取官方公告 + 百科逐武将 diff，仅武将相关且 diff 确认后提示可更新，并落地武将变更时间轴驱动语料版本戳
+- **卡牌百科变更捕获** — 手牌库卡片快照 + 变更记录持久化，官网手牌库抓取与 diff，确认后应用更新并落地快照，audit_service 复核时效
 
 ---
 
@@ -102,20 +103,24 @@ test_project/
 │   ├── main.py                 # 应用入口（启动画面 + OCR 阻塞预热）
 │   ├── config/                 # 配置（env.py / logging_config.py）
 │   ├── data/                   # 数据模型 + Manager + JSON 持久化 + RAG 源数据仓储
-│   │                           #   + hero_timeline（武将变更时间轴）
+│   │                           #   + hero_timeline（武将变更时间轴）+ card_sync_store（卡牌快照/变更记录）
 │   ├── scraper/                # 官网爬虫（official_source/）+ AI 批量生成（ai/）
+│   │                           #   + card_baike（官网手牌库抓取与 diff）
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 分析 + 维护 + RAG 业务）
+│   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
 │   ├── capture/                # ADB 截图与 MuMu 实例探测
 │   ├── ocr/                    # 模板匹配 + PaddleOCR + 名称纠错 + 卡位检测
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
 │   └── ui/                     # PySide6 界面（app / configuration / data_admin / generation /
 │                               #   library / match / maintenance / recommendation / shared）
+│                               #   + card_sync_dialog（更新确认对话框）
 ├── data/                       # JSON 数据 + RAG 语料/索引 + 官方榜单 CSV
+│                               #   + card_snapshot.json / card_changes.json（卡牌百科同步）
 ├── images/                     # 武将头像（从官网下载）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（100 文件 / 1129 个 test_* 函数）
+├── tests/                      # 测试用例（108 文件 / 1223 个 test_* 函数）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -141,6 +146,7 @@ test_project/
 │  业务服务层 (src/business/)                                 │
 │  QProcess 子进程管理、ADB 截图编排、OCR 轮询控制             │
 │  分析（推荐/对局/巅峰赛禁选）、维护、RAG 业务编排             │
+│  卡牌百科同步（CardSyncService：后台检查 + 应用更新）         │
 │  无 UI 引用，通过 Qt Signal 通信                             │
 ├────────────────────────────────────────────────────────────┤
 │  采集层 (src/scraper/ + src/capture/ + src/ocr/)           │
@@ -161,6 +167,7 @@ AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校�
 屏幕识别   ADB 截图 → 模板匹配过滤 → PaddleOCR → 名称纠错 → 推荐面板/对局攻略
 巅峰赛     ADB 截图 → 卡位检测 → 名条 OCR → 候选池/禁选建议/实战配队
 公告监控   官方公告 → 章节过滤 → 百科逐武将 diff → 确认 → 精准更新 + 时间轴追加
+卡牌百科   官网手牌库 → card_baike 抓取 diff → 快照 → 确认 → 应用更新 + 变更记录
 语料维护   data/*.json 源数据 → build_*_corpus → rag_corpus → chroma 索引 → 生成时注入
 ```
 
@@ -206,6 +213,7 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新。
 - **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + 会话世代校验，候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。
 - **实战配队**：外部导出 JSON 或 UI 手工维护 1228 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
+- **卡牌百科变更捕获**：`CardSyncService` 后台定时检查官网手牌库更新，快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，audit_service 复核时效。
 
 ---
 
@@ -244,7 +252,7 @@ RAG_MODEL_DIR=
 RAG_PROJECT_DIR=
 ```
 
-**多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。生成链路经 `resolve_api_config()` 解析（启用档案优先，否则回退 `config.env` → 环境变量 → 默认值）。价格参考来自 `config/model_pricing.json`，势力配色经「配置 → 势力配色」可视化编辑。
+**多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。生成链路经 `resolve_api_config()` 解析（启用档案优先，否则回退 `config.env` → 环境变量 → 默认值）。价格参考来自 `config/model_pricing.json`，势力配色经「配置 → 势力配色」可视化编辑（`faction_colors.json` 为数组结构 `[{faction, color}, ...]`，数组位置即筛选界面展示顺序）。
 
 定价参考：输入 CNY 3/百万 tokens，输出 CNY 6/百万 tokens（deepseek-v4-flash，缓存未命中）。
 
@@ -292,7 +300,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（15 章，基线 2026-09-07） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（16 章，基线 2026-09-15） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
 | [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（10 个调用图） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
@@ -329,5 +337,6 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 二十 | 多 API 档案（多供应商 + 启用互斥 + 首启迁移） | ✅ 已完成 |
 | 二十一 | 武将变更时间轴与语料版本戳（默认只召当前版本） | ✅ 已完成 |
 | 二十二 | 巅峰赛识别会话治理与三板块共享一次截图 | ✅ 已完成 |
+| 二十三 | 卡牌百科变更捕获（快照 + diff + 应用更新 + 时效复核） | ✅ 已完成 |
 
-> 文档基线：2026-09-07（`6cbe8b6`）。测试 100 文件 / 1129 个 `test_*` 函数，Ruff 0.12.0 全通过。
+> 文档基线：2026-09-15（`624c8c5`）。测试 108 文件 / 1223 个 `test_*` 函数，Ruff 0.12.0 全通过。

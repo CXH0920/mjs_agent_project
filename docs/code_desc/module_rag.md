@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：commit `6cbe8b6`（2026-09-07）
+> 代码基线：commit `624c8c5`（2026-09-15）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -11,7 +11,7 @@
 这个模块做的事情，可以类比成一个"游戏攻略编委会"：
 
 1. **收集原始资料**。游戏官方的武将、卡牌、规则文档是"权威原文"，社区博主写的攻略和配队心得是"参考资料"。它们被原样存起来，不做改动。
-2. **整理成便于查找的小卡片**。把大段原文拆成一块一块的"知识卡片"，每张卡片除了正文，还额外标注了"什么时机生效""触发条件是什么""该搜哪些关键词""跟哪些规则相关"。这些标注一开始由程序按固定规则抽取，抽不全的再交给大模型或人工补齐。
+2. **整理成便于查找的小卡片**。把大段原文拆成一块一块的"知识卡片"，每张卡片除了正文，还额外标注了"什么时机生效""触发条件是什么""目标是什么""特殊规则"等精化字段（卡牌块标注时机与触发条件，武将块标注时机、触发条件、目标与特殊规则）。这些标注一开始由程序按固定规则抽取，抽不全的再交给大模型或人工补齐。关键词与关联引用由构建脚本自动抽取，不参与精化。
 3. **建一个能"按意思搜"的目录**。每一张卡片被转换成一组数字（一段文字变成一串数字），存进本地向量数据库。用户用大白话提问时，就能按意思相近的程度找到最相关的卡片，而不只是按关键词匹配。
 4. **让 AI 有据可依地写作**。当软件批量生成武将攻略或武将相性评分时，先把最相关的卡片挑出来塞进提示词，AI 就能照着官方规则写，而不是凭想象编。
 5. **提供维护工作台**。软件里有一整个"知识库维护"页面：可以看到每类资料是否需要重新生成、哪些数据源有问题、哪些卡片的标注还空着（叫"待精化"）、官方的规则母本文档有没有和数据对不上。发现问题可以一键跳转过去修。
@@ -72,14 +72,18 @@ mart（AI 生成产物，只写不读，绝不反喂 DWD）
 
 | 文件 | 说明 |
 |------|------|
-| `data/rag_corpus/*.json` | 10 个语料任务产出的 12 个语料文件，脚本生成、可重建、进向量库 |
+| `data/rag_corpus/*.json` | 10 个语料任务产出的 12 个语料文件，脚本生成、可重建、进向量库。**git 跟踪范围（2026-09 收窄）**：仅含 `curated` 精化字段的 2 个文件纳入 git 版本控制——`武将RAG语料.json`、`卡牌RAG语料.json`；其余 10 个纯生成物语料退回 `.gitignore` 忽略 |
 | `data/rag_corpus/*.md` | 每个语料 JSON 的同名 Markdown 双写（JSON 供检索，MD 供人工阅读与审计跳转） |
-| `data/rag_corpus/核心规则摘要.md` | 仅 MD 无 JSON，**不入向量检索**，是"非 RAG 模式"的手维护规则速查兜底 |
+| `data/rag_corpus/核心规则摘要.md` | 仅 MD 无 JSON，**不入向量检索**，是"非 RAG 模式"的手维护规则速查兜底。git 豁免保持不变 |
+| `data/rag_index/` | 向量索引（ChromaDB 持久化），**不入 git** |
+| `data/rag_models/` | 嵌入模型缓存，**不入 git** |
 | `data/raw_guides/jinxia/guides/` | 社区侧攻略 45 篇，已被 `build_guide_corpus.py` 加工成检索块 |
 | `data/raw_guides/jinxia/combos/` | 社区侧配队素材（4 个 md + 2 个 csv），已被 `build_combo_corpus.py` 加工 |
 | `data/hero_classification.json` | AI 全量修订产物（文件自述 `note`：基于 `heroes.json` 技能文本逐将核对；`source` 指向 `data/武将分类20260724.md`，标注"2026-08-15 AI 全量修订"），`hero_categories` 180 键、`categories` 16 类 |
 
 > **入库 ≠ ODS**：`hero_classification.json` 虽在 `data/` 下，但它是 AI 修订成果，权威性不成立，故归 DWD。链路为 `heroes.json`(ODS) → 分类快照 MD → `hero_classification.json` → `武将分类语料.json`(检索块)。
+
+> **2026-09 git 跟踪范围收窄**：含 `curated` 精化字段的 `武将RAG语料.json` 与 `卡牌RAG语料.json` 纳入 git 版本控制（精化成果是人工维护资产，需版本追踪）；其余 10 个纯生成物语料退回 `.gitignore` 忽略；`核心规则摘要.md` 豁免保持不变；向量索引与模型缓存维持不入库。
 
 ### 2.4 mart（集市层，AI 生成产物）
 
@@ -98,8 +102,9 @@ src/rag/                          # 向量索引基础设施层
 ├── indexer.py                    # 语料规范化 + 向量化 + ChromaDB 写入
 └── retriever.py                  # 混合检索（向量 + 关键词 RRF 融合）
 
-src/business/rag/                 # 业务层（7 文件，本模块全部）
+src/business/rag/                 # 业务层（8 文件，本模块全部）
 ├── task_defs.py                  # 语料任务单一事实源（10 任务）
+├── corpus_fields.py              # 字段契约单一来源（CARD_FIELDS / HERO_FIELDS / fields_for）
 ├── refinement_service.py         # 索引精化纯函数（扫描 / 建议 / 写回）
 ├── refinement_session.py         # 索引精化会话状态（三池 + 双基线）
 ├── suggest_controller.py         # LLM 建议 Qt 线程编排
@@ -193,17 +198,34 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 ### 3.5 索引精化三层架构
 
-语料块的四个索引字段 `INDEX_FIELDS = ("timing", "trigger_condition", "keywords", "related")` 若规则抽取填不全，就在"索引精化"工作台补齐。逻辑下沉为三层，对话框只负责渲染与交互确认：
+语料块的精化字段集由 `src/data/corpus_fields.py` 统一定义（字段契约单一来源）：
+
+| 字段集 | 字段 | 适用 |
+|--------|------|------|
+| `CARD_FIELDS` | `("timing", "trigger_condition")` | 卡牌块 |
+| `HERO_FIELDS` | `("timing", "trigger_condition", "target", "special_rules")` | 武将块 |
+| `CURATED_FIELDS` | `HERO_FIELDS` | 精化写回 |
+| `fields_for(kind)` | 按块类型返回对应字段集 | 统一接口 |
+
+> `keywords` / `related` 已从精化模型中退出（构建时自动抽取，精化工作台不再维护）。旧版 `INDEX_FIELDS = ("timing", "trigger_condition", "keywords", "related")` 已替换。
+
+逻辑下沉为三层，对话框只负责渲染与交互确认：
 
 **① 纯函数服务层 `refinement_service.py`**
 
+`PendingBlock` dataclass：`corpus`（语料文件名）、`block_id`、`name`（卡牌块从 `block_id` 取 `card_{id}_{name}` 的卡名段，无名称字段时回退）、`kind`、`text`、`fields`（字段集元组）、`missing`（缺失字段列表）、`method`、`updated_at`。
+
+`RefinementUpdate` dataclass：`timing` / `trigger_condition` / `target` / `special_rules`（四字段，按 `fields_for` 取子集）+ `method` + `updated_at`。
+
 `scan_blocks(corpus_dir)` 一次扫描 `REFINABLE_FILES`（`卡牌RAG语料.json` / `武将RAG语料.json`）并**三分类**：
 
-- `pending` 待精化 —— 无 `curated` 且任一索引字段为空
-- `curated` 已精化 —— 有 `curated`（此时 `fields` 以 `curated` 内容为权威，并记录 `method` / `updated_at`）
-- `normal` 普通块 —— 无 `curated` 且四字段全非空（构建规则已填满）
+- `pending` 待精化 —— 无 `curated` 且任一精化字段为空
+- `curated` 已精化 —— 有 `curated`（此时 `fields` 以 `curated` 已有键为权威；缺键时回退读顶层，存量 curated 无 `target`/`special_rules` 键时不会静默清空）
+- `normal` 普通块 —— 无 `curated` 且精化字段全非空
 
-武将语料只取技能块（跳过 overview 块）。`suggest_one(block, generator)` 用 `REFINEMENT_SYSTEM_PROMPT` 提示 LLM 输出四字段 JSON，经 `extract_json()` 解析；`_to_update()` 截断上限为 timing/trigger_condition 各 8 条、keywords/related 各 12 条。`apply_curated()` / `clear_curated()` 原子读写语料文件。
+`list_pending()` / `list_curated()` / `list_normal()` 三方法供 UI 按分类读取。
+
+`suggest_one(block, generator)` 用 `REFINEMENT_SYSTEM_PROMPT` 提示 LLM 输出字段 JSON，经 `extract_json()` 解析；`_to_update()` 截断上限按字段集动态计算。`apply_curated()` / `clear_curated()` 原子读写语料文件。
 
 **② 会话状态层 `RefinementSession`（纯 Python，无 Qt 依赖）**
 
@@ -261,7 +283,17 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `timeline_risk` | `heroes.json` 疑未同步 | 无跳转 |
 | `curated_stale` | 技能块精化早于该技能最近调整（时间轴点名技能，确证复核项） | 索引精化工作台 |
 | `curated_stale_possible` | 精化早于武将级调整记录（公告未注明技能，存疑兜底） | 索引精化工作台 |
+| `card_curated_stale` | 卡牌精化早于官网同步变更记录（`data/card_changes.json`，block_id 按 `card_{id}_{name}` 前缀反解卡牌 id） | 索引精化工作台 |
 | `*_unreadable` / `heroes_source_unavailable` | 数据源缺失或无法解析 | 对应面板 |
+
+**精化时效复核**（2026-09 新增）：
+
+- `collect_stale_curated(root)` — 武将精化时效检查，两级判定：
+  - **技能级（确证，`level="skill"`）**：时间轴事件点名该技能且日期晚于 `curated.updated_at` → 触发 `curated_stale`；
+  - **武将级（存疑兜底，`level="hero"`）**：`skills` 为空的变更类事件（公告未注明技能）晚于 `curated.updated_at` → 触发 `curated_stale_possible`；
+  - `"新增"` 事件不触发（登场后生成的攻略必然提及登场技能名）。
+- `collect_stale_card_curated(root)` — 卡牌精化时效检查，数据源为 `data/card_changes.json`（官网同步应用记录）；`block_id` 形如 `card_{id}_{name}`，按前缀反解卡牌 id，生成 `card_curated_stale` 条目。
+- 两种时效提示均带"去复核"按钮，点击跳转索引精化工作台。
 
 **审计双消费方**：`collect_*()` 系列函数由 UI 侧 `audit_summary()` 与脚本侧 `scripts/rag_audit.py` 共用，避免两侧各维护一份校验逻辑。`rag_audit.py` 额外做两项 UI 不做的事：技能描述中疑似牌名/道具名的启发式提取（`_SUFFIX` 结尾字 + `_BLACKLIST` 通用术语黑名单 + 已知名称区间覆盖，仅作人工确认提示），以及语料目录 `is_current='false'` 过时块统计。
 
@@ -335,19 +367,28 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 > 任务 6 一个任务产出**三个** JSON（章节块 / 术语表 / FAQ 裁定块），故 10 个任务产出 12 个语料文件。
 
+**`corpus_fields.py`**
+
+| 接口 | 说明 |
+|------|------|
+| `CARD_FIELDS` | `("timing", "trigger_condition")` — 卡牌块精化字段 |
+| `HERO_FIELDS` | `("timing", "trigger_condition", "target", "special_rules")` — 武将块精化字段 |
+| `CURATED_FIELDS` | `HERO_FIELDS` — 精化写回字段集别名 |
+| `fields_for(kind)` | 按块类型（`"card"` / `"hero"`）返回对应字段集 |
+
 **`refinement_service.py`**
 
 | 接口 | 说明 |
 |------|------|
-| `PendingBlock` / `RefinementUpdate` | 数据类：块视图（`corpus` / `block_id` / `name` / `kind` / `text` / `fields` / `missing` / `method` / `updated_at`）与精化结果（四字段 + `method` + `updated_at`） |
+| `PendingBlock` / `RefinementUpdate` | 数据类：块视图（`corpus` / `block_id` / `name` / `kind` / `text` / `fields` / `missing` / `method` / `updated_at`）与精化结果（按 `fields_for` 取子集 + `method` + `updated_at`）；卡牌块无名称字段时从 `block_id` 取 `card_{id}_{name}` 的卡名段 |
 | `scan_blocks(corpus_dir)` | 一次扫描三分类，返回 `{"pending": [], "curated": [], "normal": []}` |
 | `list_pending()` / `list_curated()` / `list_normal()` | 三分类之一的薄封装 |
 | `suggest_one(block, generator)` | 单块 LLM 建议（公开接口），API/解析失败返回 `None` |
 | `generate_suggestions(pending, generator)` | 逐块调用，返回 `{block_id: RefinementUpdate}`，单块失败跳过 |
-| `apply_curated(corpus_dir, updates, fname)` | 写回精化结果：更新顶层索引字段并新增 `curated` 字段（原子保存），返回写入块数 |
+| `apply_curated(corpus_dir, updates, fname)` | 写回精化结果：更新顶层精化字段并新增 `curated` 字段（原子保存），返回写入块数 |
 | `clear_curated(corpus_dir, block_id, fname)` | 删除 `curated` 字段（取消精化）；块不存在抛 `ValueError`，本就没有 curated 返回 `False` |
 | `build_generator(profile_name=None)` | 按 API 档案构造 `AIBatchGenerator`；供应商语义缺 Key 返回 `None` |
-| `INDEX_FIELDS` / `REFINABLE_FILES` / `DEFAULT_CORPUS_DIR` | 常量：四字段元组 / 两个可精化语料文件名 / 语料目录 |
+| `REFINABLE_FILES` / `DEFAULT_CORPUS_DIR` | 常量：两个可精化语料文件名 / 语料目录 |
 
 **`refinement_session.py` — `RefinementSession(corpus_dir)`**
 
@@ -404,7 +445,9 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `collect_unclassified(hero_names, classification)` | 未归类武将名（升序） |
 | `collect_orphan_category_keys(hero_names, classification)` | 分类表引用未知武将（反向校验，升序） |
 | `collect_unknown_heroes(specials, hero_names)` | 专属牌引用未知武将（泛指/括号注释跳过，升序） |
-| `collect_timeline_risk_messages(root)` | 时间轴风险摘要（UI 横幅用） |
+| `collect_timeline_risk_messages(root)` | 时间轴风险摘要（UI 横幅用）。**2026-09 变更**：移除 override 风险段（TRIGGER_OVERRIDES 已删除） |
+| `collect_stale_curated(root)` | 精化时效复核（武将）：技能级确证 + 武将级存疑兜底，`"新增"` 事件不触发 |
+| `collect_stale_card_curated(root)` | 精化时效复核（卡牌）：数据源 `data/card_changes.json`，block_id 按 `card_{id}_{name}` 前缀反解卡牌 id |
 | `GENERIC_HERO_NAMES` | 泛指/占位武将名 `{"通用", "—", "众多武将"}`，校验与 UI 共用 |
 
 **`hero_brief.py`**
@@ -512,11 +555,13 @@ def collect_update(self, block_id: str, texts: dict[str, str]) -> RefinementUpda
 
     method 判定沿用现状：与本次 LLM 建议完全一致 → llm，否则 manual。
     """
+    block = self._find_block(block_id)
+    fields = block.fields  # 来自 corpus_fields.fields_for(block.kind)
     saved = self._saved_baseline.get(block_id, {})
     llm = self._llm_baseline.get(block_id)
     values: dict[str, list[str]] = {}
     changed = False
-    for field in INDEX_FIELDS:
+    for field in fields:
         text = texts[field]
         values[field] = [line.strip() for line in text.splitlines() if line.strip()]
         if text != saved.get(field, ""):
@@ -524,15 +569,15 @@ def collect_update(self, block_id: str, texts: dict[str, str]) -> RefinementUpda
     if not changed:
         return None
     if llm is not None:
-        modified = any(texts[f] != llm.get(f, "") for f in INDEX_FIELDS)
+        modified = any(texts[f] != llm.get(f, "") for f in fields)
         method = "manual" if modified else "llm"
     else:
         method = "manual"
     return RefinementUpdate(
-        timing=values["timing"],
-        trigger_condition=values["trigger_condition"],
-        keywords=values["keywords"],
-        related=values["related"],
+        timing=values.get("timing", []),
+        trigger_condition=values.get("trigger_condition", []),
+        target=values.get("target", []),
+        special_rules=values.get("special_rules", []),
         method=method,
     )
 ```
@@ -614,7 +659,7 @@ TASKS: list[dict] = [
 | 依赖 | `src.data.hero_classification_repository` | 武将分类数据源仓储（UI 面板持有，审计读 JSON） |
 | 依赖 | `src.data.special_cards_repository` | 专属牌数据源仓储 |
 | 依赖 | `src.data.combo_manager` | `ComboService` 的手工配队写路径（归 `module_peak_combos.md`） |
-| 依赖 | `src.data.hero_timeline` | `CORPUS_BASE_DATE` / `VALID_CHANGE_TYPES` / `load_timeline` / `save_timeline` / `append_announcement_events` / `normalize_change_type` / `parse_skill_entry` / `hero_last_change` / `skill_last_change` / `hero_first_seen` / `changes_after` / `stamp_hero_block` / `stamp_guide_block` / `DEFAULT_TIMELINE_FILE`——语料版本戳与时间轴读写 |
+| 依赖 | `src.data.hero_timeline` | `CORPUS_BASE_DATE` / `VALID_CHANGE_TYPES` / `load_timeline` / `save_timeline` / `append_announcement_events` / `normalize_change_type` / `parse_skill_entry` / `hero_last_change` / `skill_last_change` / `hero_first_seen` / `changes_after` / `stamp_hero_block` / `stamp_guide_block` / `DEFAULT_TIMELINE_FILE`——语料版本戳与时间轴读写。**2026-09 变更**：删除 TRIGGER_OVERRIDES 映射表、TRIGGER_OVERRIDES_AUTHORED、stale_overrides()；模块回归纯时间轴读写与版本戳职责 |
 | 依赖 | `src.scraper.official_source.announcement` | `build_timeline_events()`：公告正文 → 时间轴事件（`import_hero_adjustments.py` 回填与公告捕获增量共用；归 `module_scraper.md`） |
 | 依赖 | `src.scraper.ai.api_generator` | `AIBatchGenerator.complete()`：精化建议与武将分类建议的 LLM 调用 |
 | 依赖 | `src.scraper.ai.json_extract` | `extract_json()` 解析 LLM 输出 |
@@ -639,9 +684,9 @@ TASKS: list[dict] = [
 
 1. **【假设】武将语料期望块数漂移**：`task_defs.py` 写 `expected=615`，磁盘 `data/rag_corpus/武将RAG语料.json` 实测 **622** 块。按当前 `heroes.json`（180 武将 / 442 技能）推算 180 总览块 + 442 技能块 = 622，与磁盘一致；615 疑为 `heroes.json` 于近期更新后 `task_defs.expected` 未同步。改 ODS 数据后重建语料须同步更新 `expected`，否则 `maintain_rag.py --strict-audit` 会因块数漂移报警。**待确认**：615 是否为待修的正确值，或应改为 622。
 2. **【假设】模块间文档的过期数字**：`module_data.md` 末尾记"组合 RAG 语料 437 块"，磁盘实测 **509** 块（`expected=None` 动态值，不报错但文档已过期）；`module_ui.md` 第七节与 `equip_attrs_panel.py` docstring 记"26 件装备"，与仓储常量 `EXPECTED_EQUIP_COUNT=26` 一致，但语料块数为 **27**——差额 1 块是 `build_equip_attr.py` 额外追加的 `equipattr_规则_距离计算` 规则块（已在 3.1 核实）。
-3. **【假设】`rag_curated.py` 与 `refinement_service.py` 的字段集不一致**：`rag_curated.INDEX_FIELDS` 含 5 个字段 `("timing", "trigger_condition", "keywords", "related", "target")`，而 `refinement_service.INDEX_FIELDS` 只有 4 个（已去掉 `target`）。重建时 `merge_curated()` 仍会把旧 `curated` 中的 `target` 覆盖回块顶层。若 `target` 已从精化流程退役，`rag_curated.py` 的字段集是否也应同步收敛为 4 个，待确认。
+3. **【假设】`rag_curated.py` 字段集与新版精化模型不一致**：`rag_curated.INDEX_FIELDS` 含 5 个字段 `("timing", "trigger_condition", "keywords", "related", "target")`，而新版 `corpus_fields.py` 将精化字段改为 `CARD_FIELDS=("timing","trigger_condition")` 与 `HERO_FIELDS=("timing","trigger_condition","target","special_rules")`（`keywords/related` 已退出精化模型，`special_rules` 新增）。重建时 `merge_curated()` 仍会把旧 `curated` 中的 `keywords/related` 覆盖回块顶层。`rag_curated.py` 的字段集是否应同步收敛至新版字段集，待确认。
 4. **【假设】`build_cardpts.py` 块数与牌行数关系**：`card_points.json` 有 72 行牌面明细（`count` 合计 162），脚本按**牌名去重聚合**产出 49 块（与 `expected=49` 一致）。聚合规则已核实，但 72 行的 `suit`/`point` 组合维度在聚合中是否仍有信息丢失，属设计取舍，未进一步核对。
-5. **【假设】`data/rag_corpus/` 实际文件清单**：磁盘有 12 个 `.json` + 12 个同名 `.md` + 1 个仅 MD 的 `核心规则摘要.md`。`indexer.CORPUS_FILES` 只登记 12 个 JSON，与磁盘一致；`核心规则摘要.md` 确实不入向量检索（代码注释已证），但它与 `元规则RAG语料-章节块.md` 的内容是否有重叠未逐条比对。
+5. **【假设】`data/rag_corpus/` 实际文件清单与 git 跟踪**：磁盘有 12 个 `.json` + 12 个同名 `.md` + 1 个仅 MD 的 `核心规则摘要.md`。`indexer.CORPUS_FILES` 只登记 12 个 JSON，与磁盘一致；`核心规则摘要.md` 确实不入向量检索。**2026-09 git 变更**：仅 `curated` 精化文件（`武将RAG语料.json`、`卡牌RAG语料.json`）纳入 git 跟踪，其余 10 个 `.json` 退回 `.gitignore`。
 6. **【已核定】时间轴数据源归属**：`data/mjs_adjustments.json` 由 `import_hero_adjustments.py`（本模块脚本）导入，源是官方更新公告侧的 A 类全量快照与公告正文，故归 ODS（贴源层，官方权威原文），但**不属"裁定权威 6 个 JSON"之列**——那 6 个 JSON 才是武将/卡牌/规则事实的裁定依据，时间轴只提供"何时变过"的版本线索。它被登记为"武将语料"与"武将攻略语料"两个任务的 source，`build_guide_corpus.py` 调用 `load_timeline()` / `stamp_guide_block()`。写入口径有两条：`import_hero_adjustments.py` 一次性初始化 + 公告捕获增量（`append_announcement_events` 按 `ref` / `(date, hero)` 幂等去重），均经 `save_timeline()` 校验后原子写，不属人工可编辑面板。
 7. **【已核定】审计正反校验当前为空**：`hero_classification.json` 的 `hero_categories` 实测 180 键，`heroes.json` 实测 180 武将，`collect_unclassified()` 与 `collect_orphan_category_keys()` 双向结果均为空列表（此前 178 键 / 172 武将时存在"贾诩(限定)""赵姬妾→刘弗陵"类脏键，已清理）。`audit_summary()` 输出未实际运行，其余条目（专属牌/卡牌点数/装备属性/时间轴）以实际运行结果为准，本文不给出具体数量。
 8. **【部分核定】评测集规模与集合条目数**：`data/rag_evals/rule_faq_eval.json` 实测 `{"version", "k": 5, "items": 79 题}`，与 `FAQ裁定块.json` 的 79 块**同源**——`eval_rule_faqs.py --generate` 由 FAQ 语料逐条生成（问句＝裁定文本 + ？），并非数值巧合。12 个语料 JSON 磁盘实测合计 **2090** 块（79+38+49+49+49+48+622+180+357+83+509+27），ChromaDB 集合 `mjs_rag_v1` 的实际条目数未打开核对，二者理论上应相等（`indexer.build_index()` 对块 ID 重复直接抛异常，故一致是硬约束）。

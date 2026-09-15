@@ -27,11 +27,12 @@ src/data/
 ├── hero_manager.py               # Hero CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py            # SynergyScore CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
 ├── guide_manager.py              # HeroGuide CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
-├── combo_manager.py              # Combo CRUD + JSON 持久化 + 手工配队维护（继承 DataManager[Combo]）
+├── combo_manager.py              # Combo CRUD + JSON 持久化 + 手工配队维护 + 逻辑删除（继承 DataManager[Combo]）
 ├── combo_seats.py                # parse_seats() — 从 note 自由文本解析双方武将座次要求
 ├── announcement_manager.py       # AnnouncementStatus / Announcement / HeroChange 模型 + AnnouncementManager 状态机
 ├── hero_timeline.py              # 武将变更时间轴：读写 / 增量追加 / 版本戳（data/mjs_adjustments.json）
 ├── card_catalog.py               # CardRepository / CardFieldSchemaRepository / CardAnnotationRepository + CardViewModel
+├── card_sync_store.py            # 卡牌百科快照与变更记录持久化（CardSnapshot / CardChangeRecord / load/save/append）
 ├── card_points_repository.py     # 卡牌点数花色维护（data/card_points.json，原 xlsx sheet1 迁移）
 ├── equip_attrs_repository.py     # 装备属性维护（data/equip_attrs.json，原 xlsx sheet2 迁移）
 ├── hero_classification_repository.py # 武将分类/克制链/武将归类维护（data/hero_classification.json）
@@ -95,6 +96,8 @@ class Combo(BaseModel):
     hero1_seats: list[int] = []    # 1-4，自动排序
     hero2_seats: list[int] = []    # 1-4，自动排序
     manual: bool = False           # 手工录入标记，导入合并时优先保留
+    deleted: bool = False          # 逻辑删除标记：展示查询过滤，导入合并时无条件保留并屏蔽同 key 源记录
+    deleted_at: str | None = None  # 删除时间（ISO 本地时间），恢复时清空
     # model_validator：双方不能是同 ID
 
 class HeroGuide(BaseModel):
@@ -185,7 +188,9 @@ def _save_unlocked(self) -> None:
     atomic_write_json(self.file_path, data, indent=2)
 ```
 
-> **设计思路：** 物理行序与武将名解绑——新增武将（id 较大）自然落到各 rating 段末尾，避免按名排序时新名字插入中段、其后条目整体平移造成的 git diff 噪音。
+逻辑删除记录（`deleted=True`）仍参与排序落盘——它们保留在内存 `_items` 中不被物理移除，仅在展示查询（`list_combos` / `list_combos_for_hero`）中被过滤。导入合并时通过 `list_all_combos()` 获取全部记录（含 deleted），deleted 记录无条件保留并屏蔽同 key 源记录。
+
+> **设计思路：** 物理行序与武将名解绑——新增武将（id 较大）自然落到各 rating 段末尾，避免按名排序时新名字插入中段、其后条目整体平移造成的 git diff 噪音。逻辑删除采用软删除而非物理移除，确保导入合并时能看到已删除记录并屏蔽同 key 源记录，恢复时只需重置 `deleted` 标记。
 
 ### 3.6 公告记录与百科快照
 
@@ -271,7 +276,9 @@ def _save_unlocked(self) -> None:
 
 **TRIGGER_OVERRIDES 人工精化触发条件表**已拆除（2026-09-14）：实测 35 条表值在语料中生效 0 条（465 个精化块全部由 curated 覆盖），构建期查表短路、失效审计与周更同步流程一并移除，触发条件语义由索引精化工作台的 curated 体系承接。
 
-> **设计思路：** 时间轴是 RAG 检索"当前版本"契约的物理载体——武将语料块直接由 `heroes.json` 构建，恒为当前版本；攻略语料块是文本生成物，需要通过时间轴 + 技能名提及判重做硬/软分级过时判定。"新增"事件被排除在过时依据之外，避免新将攻略被永久排除出检索。
+**精化时效检查（`audit_service` 消费）**：`collect_stale_curated(root)` 遍历武将语料块，将 `curated.updated_at` 与时间轴中该技能最近变更日期比对，输出两级提示：技能级确证（`curated_stale`，时间轴事件点名该技能）与武将级存疑（`curated_stale_possible`，公告未注明技能、仅武将级变更）。`collect_stale_card_curated(root)` 遍历卡牌语料块，将 `curated.updated_at` 与 `card_changes.json` 中该卡最近同步日期比对（卡牌无公告时间轴，依据为官网同步的应用记录），输出 `card_curated_stale` 提示。三者均为复核提示，不自动改数据。
+
+> **设计思路：** 时间轴是 RAG 检索"当前版本"契约的物理载体——武将语料块直接由 `heroes.json` 构建，恒为当前版本；攻略语料块是文本生成物，需要通过时间轴 + 技能名提及判重做硬/软分级过时判定。"新增"事件被排除在过时依据之外，避免新将攻略被永久排除出检索。`collect_stale_curated` 是时间轴的又一下游消费方——它不再参与构建期的版本戳写入，而是读取时间轴 + 语料文件做精化时效审计。
 
 ### 3.9 巅峰赛胜率仓库
 
@@ -308,6 +315,42 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 四个维护仓库已继承本基类（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）；`card_catalog.py` 的 `_JsonRepository`（卡牌基础/字段定义/追加内容三个仓储）与 `manager.py` 的 `DataManager._save_unlocked`、`hero_timeline.save_timeline()` 也改为委托 `atomic_write_json`（全库原子写收敛）。
 
 另有社区侧 combo/guide 语料由 `src/scripts/build_combo_corpus.py`（组合 RAG 语料，437 块，combo 类，不贴单值 hero 但贴 heroes 列表）与 `build_guide_corpus.py`（武将攻略 RAG 语料，357 块，guide 类，贴 hero）从 `data/raw_guides/` 生成，进向量库供 RAG 检索，非 Pydantic 模型不入维护仓库。
+
+### 3.12 卡牌百科快照与变更记录（`card_sync_store.py`）
+
+`card_sync_store.py` 维护卡牌百科同步的两个持久化文件，与 `CardSyncService`（`src/business/card_sync.py`）配合使用：
+
+**CardSnapshot**（`data/card_snapshot.json`，覆盖式保存）：官网逐卡内容哈希快照，恒定大小，结构镜像 `BaikeSnapshot`（公告侧武将快照）：
+
+```json
+{
+  "checked_at": "2026-09-14T10:30:00",
+  "cards": {
+    "1": {"name": "杀", "hash": "a1b2c3d4e5f6..."},
+    "2": {"name": "闪", "hash": "f6e5d4c3b2a1..."}
+  }
+}
+```
+
+- `CardSnapshotEntry`：单卡快照 `{name, hash}`；
+- `load_card_snapshot(path=None)`：读取快照；文件缺失或损坏时返回空快照（由调用方重建基线）；
+- `save_card_snapshot(snapshot, path=None)`：原子写入快照。
+
+**CardChangeRecord**（`data/card_changes.json`，追加式保存）：每次同步应用的变更记录，驱动卡牌精化时效检查：
+
+```json
+[
+  {"date": "2026-09-14", "applied_ids": ["1", "5"], "added_ids": ["20"]}
+]
+```
+
+- `CardChangeRecord`：`date`（应用日）+ `applied_ids`（修改的卡 ID）+ `added_ids`（新增的卡 ID）；
+- `load_card_changes(path=None)`：读取变更记录；文件缺失或损坏时返回空列表（单条损坏跳过）；
+- `append_card_change(record, path=None)`：幂等追加（date + id 集合完全相同视为重复），返回是否真的写入。
+
+**首次启用策略**：`CardSyncService._do_check()` 在基线为空时用本地 `cards.json` 初始化快照，避免人工编辑被误判为官网变更；本地文件存在但为空时不写快照（避免用官网基线掩盖本地缺失）；本地文件不存在（全新安装）则以当前官网为基线。
+
+**哈希口径**：`card_baike.py` 的 `CARD_HASH_FIELDS = ("name", "card_type", "card_desc", "card_detail")` 四件套；`card_amount`（官网不提供）与 `img_url` / `story_source` / `design_idea` / `display_priority` / `status`（本地不存）均不入哈希。`normalize_text()` 去标签/HTML 解码/去空白/全半角统一，`clean_card_detail()` 去 HTML 但保留分段结构。
 
 ---
 
@@ -425,11 +468,13 @@ class SpecialCardRepository(JsonRepository):
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
-| `get_combo(a_id, b_id)` | int, int | `Combo \| None` | 双向归一查找 |
-| `list_combos_for_hero(hero_id)` | int | `list[Combo]` | 某武将参与的所有配队 |
-| `list_combos()` | — | `list[Combo]` | 全部配队 |
+| `get_combo(a_id, b_id)` | int, int | `Combo \| None` | 双向归一查找（含逻辑删除记录，供编辑覆盖检查与导入合并依赖） |
+| `list_combos_for_hero(hero_id)` | int | `list[Combo]` | 某武将参与的所有配队（不含逻辑删除记录） |
+| `list_combos()` | — | `list[Combo]` | 全部配队（不含逻辑删除记录，供展示查询） |
+| `list_all_combos()` | — | `list[Combo]` | 全部记录（含逻辑删除），供导入合并等需要看到已删除记录的场景 |
 | `save_manual_combo(combo, previous=None)` | Combo, Combo\|None | `None` | 新增/编辑手工配队，原子落盘 |
-| `delete_combo(combo)` | Combo | `None` | 删除并落盘 |
+| `delete_combo(combo)` | Combo | `None` | 逻辑删除：标记 `deleted=True`、`deleted_at` 为当前时间，原子落盘（不物理移除） |
+| `restore_combo(combo)` | Combo | `None` | 恢复逻辑删除的配队：`deleted=False`、`deleted_at=None`，原子落盘 |
 
 ### AnnouncementManager
 
@@ -490,6 +535,17 @@ class SpecialCardRepository(JsonRepository):
 | `is_recommendation_index_stale(path)` | 快照是否过期（带自愈校验） |
 | `mark_recommendation_index_stale(stale, path)` | 原子写入 stale 状态 |
 
+### 卡牌百科快照与变更记录（`card_sync_store.py` 模块级函数）
+
+| 函数 | 说明 |
+|------|------|
+| `load_card_snapshot(path=None)` | 读取卡牌快照；缺失/损坏返回空快照 |
+| `save_card_snapshot(snapshot, path=None)` | 原子写入卡牌快照 |
+| `load_card_changes(path=None)` | 读取变更记录列表；缺失/损坏返回空列表 |
+| `append_card_change(record, path=None)` | 幂等追加变更记录（date+id 集合去重），返回是否写入 |
+| 模型 | `CardSnapshot` / `CardSnapshotEntry` / `CardChangeRecord` |
+| 常量 | `DEFAULT_CARD_SNAPSHOT_FILE` / `DEFAULT_CARD_CHANGES_FILE` |
+
 ---
 
 ## 六、模块间关系
@@ -497,12 +553,12 @@ class SpecialCardRepository(JsonRepository):
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `pydantic` / Python 标准库 | 模型校验、JSON/CSV/tempfile/csv/math 等 |
-| 被调用方 | `src/scraper/` | 爬虫采集写入数据文件后通知 Manager 重新加载；`src/scraper/official_source/announcement.py` 用 `load_timeline()` / `normalize_change_type()` 归一变更类型 |
-| 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存；索引精化通过 `DataFacade` 读取 heroes/synergies/guides；`announcement_service` 用 `append_announcement_events()` 落地 hero_related 公告变更，`audit_service` 用 `hero_last_change()` 审计 `heroes.json` 疑未同步武将 |
+| 被调用方 | `src/scraper/` | 爬虫采集写入数据文件后通知 Manager 重新加载；`src/scraper/official_source/announcement.py` 用 `load_timeline()` / `normalize_change_type()` 归一变更类型；`src/scraper/official_source/card_baike.py` 提供卡牌百科抓取清洗与逐卡 diff 基元 |
+| 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存；索引精化通过 `DataFacade` 读取 heroes/synergies/guides；`announcement_service` 用 `append_announcement_events()` 落地 hero_related 公告变更；`audit_service` 用 `hero_last_change()` / `load_timeline()` 审计 `heroes.json` 疑未同步武将，并调用 `collect_stale_curated()`（技能块精化时效，curated.updated_at 对比变更时间轴）与 `collect_stale_card_curated()`（卡牌块精化时效，curated.updated_at 对比 card_changes.json）；`CardSyncService` 用 `load_card_snapshot` / `save_card_snapshot` / `append_card_change` 持久化卡牌快照与变更记录 |
 | 被调用方 | `src/rag/` | `src/rag/indexer.py` 引用 `CORPUS_BASE_DATE` 统一检索基线 |
 | 被调用方 | `src/ui/` | UI 层通过 `DataFacade` / 各 Manager / 各 Repository 读取与写入数据 |
 | 被调用方 | `src/scripts/build_*_corpus.py` | RAG 语料构建脚本读取四个维护仓库（card_points/equip_attrs/hero_classification/special_cards）JSON 源生成向量库；`build_rag_corpus.py` / `build_guide_corpus.py` 通过 `hero_timeline` 的 `stamp_hero_block` / `stamp_guide_block` 给语料块打版本戳 |
 | 被调用方 | `src/scripts/import_hero_adjustments.py` | 从 A 类全量快照注入 `mjs_adjustments.json` 初始化 `hero_timeline`，并回填历史公告 |
-| 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` 统一委托此函数原子写盘 |
+| 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` / `card_sync_store` 统一委托此函数原子写盘 |
 | 内部依赖 | `src/data/manager.DataIssue` | `json_repository` 的 `_issue()` 统一使用 `DataIssue` 结构收集加载问题 |
 | 被调用方 | `src/data/combo_manager` | `src/scripts/import_combos.py` 调用 `save_manual_combo()` 持久化手工配队 |

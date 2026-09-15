@@ -2,6 +2,7 @@
 
 > 对应目录：`src/capture/` + `src/ocr/`
 > 职责：ADB 连接与截图、MuMu 模拟器探测、图像处理、模板匹配、PaddleOCR 武将名识别
+> 文档日期：2026-09-15
 
 ---
 
@@ -107,6 +108,21 @@ match(image, threshold=0.8)
 ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给独立的单线程 `image-save` 执行器压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
 自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；至少确认 3 个角色名才自动切换页面并停用该任务，`unresolved`、`unknown` 和 `conflict` 不计入数量。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
+
+### 3.2.1 手动识别与轮询冷却（e6d67c0 修复）
+
+`CaptureService` 提供两条截图 → OCR 路径，共享同一 `OcrWorker` 队列但走不同入口：
+
+| 路径 | 入口 | 调用来源 | 冷却处理 |
+|------|------|---------|---------|
+| 手动识别 | `do_capture()` / `do_capture_from_file()` | 选将推荐/对局攻略"识别当前阵容"按钮、本地图片导入 | 无冷却，每次点击均执行 OCR |
+| 自动轮询 | `capture_for_poll()` | `PollCoordinator` 后台定时器 | 由 `OcrService.set_task_cooldown()` 按任务独立记冷却 |
+
+**Bug 根因**：`do_capture()` 原实现中 `should_ocr` 判断包含 `or is_poll` 项，其中 `is_poll` 从 `mumu_ocr_poll_mode` 全局配置读取而非按调用来源判断。该路径只被手动 `do_capture` 触发（轮询走 `capture_for_poll` 不经过此处），因此当轮询开启时，手动识别被误标 `is_poll=True`，命中选将/攻略页面后误写 180 秒冷却（`POLL_MATCH_COOLDOWN_SECONDS` 常量 + `_poll_cooldown_until` 字段）；冷却内再次点击手动识别时 OCR 被跳过、返回空结果。
+
+**修复**：删除 `POLL_MATCH_COOLDOWN_SECONDS` 常量、`_poll_cooldown_until` 字段、冷却跳过分支、`_queue_capture_ocr` 的 `is_poll` 参数与 pending 键；`should_ocr` 同步移除 `or is_poll` 项。手动识别恢复为"每次点击即执行 OCR"的预期行为。
+
+**真实轮询冷却**：由 `OcrService.set_task_cooldown(task_name, seconds)` 承担。`main_window.py` 在轮询命中 `hero_selection` 后调用该方法，时长取 `mumu_hero_selection_cooldown` 配置（默认 180 秒）；冷却中的任务不进入 `due_poll_tasks()`，窗口期内该任务不再匹配、不 OCR。该机制仅作用于自动轮询路径，不影响手动识别。
 
 ### 3.3 2v2 巅峰赛卡位检测（card_grid_detector.py）
 

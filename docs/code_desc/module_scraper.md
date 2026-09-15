@@ -2,6 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载
+> 文档日期：2026-09-15
 
 ---
 
@@ -31,7 +32,8 @@ src/scraper/
     ├── crawler.py           # 网络请求、数据清洗、校验与头像下载
     ├── full.py              # 全量采集实现（含 CLI main）
     ├── incremental.py       # 增量/指定采集实现（含 CLI main）
-    └── announcement.py      # 公告 API/回退解析、武将相关判定、百科逐武将 diff
+    ├── announcement.py      # 公告 API/回退解析、武将相关判定、百科逐武将 diff
+    └── card_baike.py        # 官网手牌库卡牌抓取、diff 与快照
 ```
 
 根目录的 `official.py` 与 `incremental.py` 是薄薄的兼容入口（仅 6 行，导入子包 `main`），真正的业务逻辑都在 `official_source/` 下；`official_source/__init__.py` 为空文件。
@@ -225,7 +227,36 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 - 时间轴事件字段：`date`/`hero`/`change_type`（新增/增强/削弱/调整/重做）/`skills`/`source`（`init` 或 `announcement`）/`ref`/`announcement_title`；`change_type` 词汇归一由 `normalize_change_type` 完成（"加强"→"增强"、"修改"→"调整"，未知类型兜底"调整"）。
 - 时间轴是 RAG 语料版本戳的事实源：`build_*_corpus.py` 依此给武将/攻略语料块打 `as_of`/`is_current`，检索层默认只召当前版本块；同时供 `rag_audit` 检查 `heroes.json` 疑未同步武将。
 
-### 3.6 实战配队导入（`src/scripts/import_combos.py`，2026-08 新增）
+### 3.6 卡牌百科抓取（`card_baike.py`）
+
+官网手牌库 `/shoupaiku/` 页面将卡牌数据打包在 `spk.<hash>.js` 文件中。`card_baike.py` 从该页面引用的 JS 提取卡牌原始数据，提供与武将百科同构的 diff / 快照工具，供 `CardSyncService` 使用。
+
+**数据提取流程**：
+
+```
+/shoupaiku/ 页面 HTML
+  ① fetch(OFFICIAL_CARD_BAIKE_URL)  → HTML
+  ② 正则提取 spk.<hash>.js 引用     → JS chunk URL
+  ③ fetch(chunk_url)               → JS 文本
+  ④ adapter.parse_heroes_chunk(js_text)  → Python list[dict]
+```
+
+**核心函数**：
+
+| 函数 | 说明 |
+|------|------|
+| `fetch_official_cards()` | 从官网手牌库获取全部卡牌原始数据；复用 `adapter.parse_heroes_chunk` 解析 JS 数组，与武将百科同一套字符级状态机 |
+| `normalize_text(text)` | NFKC 统一化 + 去标签解码，用于卡牌名称 / 类型等字段标准化 |
+| `clean_card_detail(detail)` | card_detail 去 HTML 保留分段结构（`\n` 分段），供哈希与全文展示 |
+| `card_content_hash(card)` | MD5 哈希（`name` / `card_type` / `card_desc` / `card_detail` 四件套），不含本地扩展字段（如 `card_amount`） |
+| `build_card_snapshot(cards)` | 构建 `{id: {name, hash}}` 快照结构，与 `build_hero_snapshot` 同构 |
+| `diff_cards(current, baseline)` | 三态对比：`{added, modified, removed}`，与 `diff_heroes` 同构 |
+| `card_field_diff_summary(local, official)` | 逐字段差异中文摘要（卡牌类型 / 描述 / 详细），含新增/移除标记 |
+| `format_card_full_text(card)` | 只读全文格式化，供确认对话框本地 vs 官网对比 |
+
+**与武将百科的差异**：卡牌哈希取四件套（`name` / `card_type` / `card_desc` / `card_detail`）而非官网字段全集，因为 `card_amount` 是本地维护的数量字段，不反映官网内容变化。`build_card_snapshot` 的 id 键同样为卡牌 ID 整数。
+
+### 3.7 实战配队导入（`src/scripts/import_combos.py`，2026-08 新增）
 
 `src/business/maintenance/combo_import_service.run_import()` 是 CLI 与 UI 导入对话框共用的业务层入口：
 
@@ -316,6 +347,14 @@ def transform(raw: dict) -> dict | None:
 | `hero_field_diff_summary(local, official)` | `announcement.py` | 字段级差异中文摘要 |
 | `format_hero_full_text(hero)` | `announcement.py` | 只读全文（用于确认对话框对比） |
 | `build_update_candidates(announcements, local_heroes, official_heroes, diff)` | `announcement.py` | 组装"更新武将数据"确认候选 |
+| `fetch_official_cards()` | `card_baike.py` | 从官网手牌库获取全部卡牌原始数据（复用 `adapter.parse_heroes_chunk`） |
+| `normalize_text(text)` | `card_baike.py` | NFKC 统一化 + 去标签解码 |
+| `clean_card_detail(detail)` | `card_baike.py` | card_detail 去 HTML 保留分段结构 |
+| `card_content_hash(card)` | `card_baike.py` | MD5 哈希（name/card_type/card_desc/card_detail 四件套） |
+| `build_card_snapshot(cards)` | `card_baike.py` | `{id: {name, hash}}` 卡牌快照 |
+| `diff_cards(current, baseline)` | `card_baike.py` | `{added, modified, removed}` 三态对比 |
+| `card_field_diff_summary(local, official)` | `card_baike.py` | 卡牌字段级差异中文摘要 |
+| `format_card_full_text(card)` | `card_baike.py` | 只读全文格式化（用于确认对话框对比） |
 
 ---
 
@@ -331,3 +370,4 @@ def transform(raw: dict) -> dict | None:
 | 被调用方 | `src.business.fetching.hero_fetch_service` | 通过 QProcess 启动爬虫 CLI |
 | 被调用方 | `src.business.announcement.announcement_service` | 公告检查 / 更新候选准备；`_sync_timeline()` 在每次检查末尾落地 `data/mjs_adjustments.json` |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 武将获取"触发爬虫 |
+| 被调用方 | `src.business.card_sync` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` / `card_field_diff_summary` / `format_card_full_text` 进行卡牌百科变更捕获 |

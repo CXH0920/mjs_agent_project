@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（6cbe8b6 / 2026-09-07）
+## 当前实现基线（2026-09-15）
 
 ```
 MainWindow.__init__()
@@ -1320,6 +1320,7 @@ AiGenerationWorkflow.request_synergy_combos()                     [菜单"实战
 | `OfficialImportReviewDialog` | 待复核数据 | 只读查看 |
 | `CardAnnotationEditDialog` | CardCatalogService + card_id | 保存追加字段 |
 | `CardFieldSchemaDialog` | CardCatalogService | 字段定义管理 |
+| `CardSyncDialog` | CardSyncService + CardRepository + card_point_names | 卡牌百科更新检查与应用；`applied_count` 属性 |
 
 
 ## 九、公告更新菜单、横幅与对话框链路
@@ -1377,6 +1378,49 @@ AnnouncementDialog / 顶部横幅:
 
 ---
 
-## 十、知识库维护界面（已迁出）
+## 十、卡牌百科同步对话框链路
+
+```
+菜单: 数据 > 检查卡牌百科更新 -> MainWindow._open_card_sync_dialog()
+  -> CardSyncDialog(card_sync_service, card_repository, card_point_names, auto_check=True)
+     -> _build_ui()
+        -> PageHeader("卡牌百科更新", 说明文字)
+        -> QListWidget（候选列表，modified/added 可勾选，removed 仅展示）
+        -> QTextBrowser（字段级摘要）
+        -> 按钮: 重新检查 / 全选 / 清空选择 / 查看全文对比 / 应用选中 / 关闭
+        -> _service.check_finished.connect(_on_check_finished)
+     -> auto_check=True -> check()                           [菜单入口语义即"检查"]
+        -> [is_busy] 提示"检查正在进行中"
+        -> [cooldown_remaining > 0] 提示"检查过于频繁"
+        -> CardSyncService.check_now()
+
+  CardSyncService.check_finished -> _on_check_finished(result)
+    -> [result.error] 显示错误信息 + 禁用应用按钮
+    -> _build_candidates(result)
+       -> [modified] card_field_diff_summary(local, official) + format_card_full_text()
+       -> [added]    format_card_full_text(official) + 点数提醒
+       -> [removed]  format_card_full_text(local) + 提示"请人工确认是否从本地移除"
+       -> [point_hint] 该卡在点数表中有配置，记得核对花色点数
+    -> _refresh_list(candidates)
+       -> [APPLICABLE_CHANGES = (modified, added)] 可勾选 + 默认全选
+       -> [removed] 不可勾选
+    -> 汇总提示: 修改 N；新增 M；官网已删除 K
+
+  查看全文对比 -> _show_detail()
+    -> HeroDiffDetailDialog(本地全文, 官网全文, parent)       [Git 风格 diff]
+
+  应用选中 -> _apply_selected()
+    -> CardSyncService.apply_updates(modified_ids, added_ids)
+       -> [is_busy] RuntimeError -> QMessageBox.warning
+       -> CardRepository.apply_official_updates()
+       -> save_card_snapshot() + append_card_change()
+    -> 从列表移除已应用项 -> 更新计数 -> 更新状态标签
+```
+
+> **与公告对话框对比**：CardSyncDialog 与 AnnouncementDialog/HeroUpdateConfirmDialog 同属 `data_admin/` 目录，结构同构（候选列表 + 字段级差异 + 应用确认），但数据源独立（官网手牌库 vs 武将百科），变更记录独立存储（`card_changes.json` vs 公告时间轴）。
+
+---
+
+## 十一、知识库维护界面（已迁出）
 
 知识库维护工作台（`MaintenanceWorkspace` / `RagMaintenancePanel`）、索引精化对话框（`IndexRefinementDialog` → `SuggestController` → `RefinementSession`）、元规则母本面板（`RuleDocPanel`）与四个数据源页签（`CardPointsPanel` / `EquipAttrsPanel` / `SpecialCardsPanel` / `HeroClassificationPanel`）的调用链已整体迁至 [./call_graph_rag.md](./call_graph_rag.md)，此处不再重复。

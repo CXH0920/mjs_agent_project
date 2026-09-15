@@ -2,6 +2,7 @@
 
 > 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
 > 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、牌面签名去重、标准轮询互斥）、禁选建议象限判定、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染
+> 文档日期：2026-09-15
 
 ---
 
@@ -21,7 +22,7 @@
 - **热门强将** — 版本热门强将（胜率 ≥ 50% 且出场排名 ≤ 50），BPI 权重 500
 - 弱势象限不打标签；任一维度缺失也不打标签
 
-实战配队数据由 `ComboManager` 管理：外部工具导出 JSON → 异步导入合并（手工记录 `manual=True` 同 key 冲突优先保留）→ 落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序（物理行序与武将名解绑，消除 combos.json 名序抖动）→ 巅峰赛候选池中按 rating 匹配并显示。
+实战配队数据由 `ComboManager` 管理：外部工具导出 JSON → 异步导入合并（手工记录 `manual=True` 同 key 冲突优先保留，逻辑删除记录 `deleted=True` 无条件保留并屏蔽同 key 源记录）→ 落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序（物理行序与武将名解绑，消除 combos.json 名序抖动）→ 巅峰赛候选池中按 rating 匹配并显示。
 
 ---
 
@@ -29,7 +30,7 @@
 
 ```
 src/data/
-  ├── combo_manager.py                  # ComboManager — Combo 数据 CRUD + 手工记录管理 + 稳定排序落盘
+  ├── combo_manager.py                  # ComboManager — Combo 数据 CRUD + 手工记录管理 + 逻辑删除/恢复 + 稳定排序落盘
   ├── combo_seats.py                    # parse_seats() / format_seats() — 从 note 文本解析双方武将座次
   └── peak_win_rate_repository.py       # 巅峰赛专属胜率/出场排行 CSV 读取（独立于 2v2）
 
@@ -148,11 +149,22 @@ def evaluate_peak_ban_advice(
 
 ### 3.4 实战配队数据（ComboManager + combo_seats.py）
 
+`Combo` 模型（`src/data/models.py`）新增两个字段：
+
+- `deleted: bool = False` — 逻辑删除标记，默认 False（活跃）
+- `deleted_at: str | None = None` — 删除时间（ISO 本地时间），恢复时清空
+
 `ComboManager` 继承 `DataManager[Combo]`，key = 排序后的 `(hero1_id, hero2_id)`（`_combo_key` 取 `sorted((a_id, b_id))`，确保 (A,B) 与 (B,A) 一致）：
 
-- `get_combo(hero_a_id, hero_b_id)` / `list_combos_for_hero(hero_id)` / `list_combos()` 查询
-- `save_manual_combo(combo, previous=None)`: 编辑时若 key 变化则迁移（删除旧 key）；`combo.manual = True` 标记；导入合并时同 key 冲突优先保留手工记录
-- `delete_combo(combo)`: 原子落盘
+- `get_combo(hero_a_id, hero_b_id)` — 按配对查询，**含逻辑删除记录**（编辑覆盖检查与导入合并依赖）
+- `list_combos_for_hero(hero_id)` — 按武将查询，**过滤 deleted 记录**（不含逻辑删除）
+- `list_combos()` — 获取全部实战配队，**过滤 deleted 记录**（展示查询）
+- `list_all_combos()` — 获取全部记录（含逻辑删除），供导入合并等需要看到已删除记录的场景
+- `save_manual_combo(combo, previous=None)`: 编辑时若 key 变化则迁移（删除旧 key）；`combo.manual = True` 固定标记；导入合并时同 key 冲突优先保留手工记录
+- `delete_combo(combo)`: 逻辑删除——标记 `deleted=True` + `deleted_at=当前时间`，不物理移除，原子落盘
+- `restore_combo(combo)`: 恢复——标记 `deleted=False` + `deleted_at=None`，原子落盘
+
+**逻辑删除与恢复**：删除后展示查询不可见（`list_combos` / `list_combos_for_hero` 过滤），且导入合并时屏蔽同 key 源记录（永久，直至恢复）。恢复后记录重新进入展示查询，导入合并不再屏蔽。逻辑删除不物理移除记录，保留了历史数据供追溯。
 
 **稳定排序落盘**（`_save_unlocked`）：按 `(-c.rating, c.hero1_id, c.hero2_id)` 排序后写入。物理行序与武将名解绑——新增武将（id 较大）自然落到各 rating 段末尾，避免按名排序时新名字插入中段、其后条目整体平移造成的 diff 噪音。
 
@@ -171,13 +183,13 @@ def evaluate_peak_ban_advice(
 **业务层** `run_import(source_path, heroes_path, output_path) -> dict`（幂等合并）：
 
 1. 读取 heroes.json 建立武将名→ID 映射，未匹配项进 `report["unmatched"]`
-2. 现有记录分为 `manual_by_key`（手工）与 `imported_keys`（导入）
-3. 逐条源记录：重复 key 进 `duplicates`；同 key 存在手工记录则跳过进 `manual_collisions`
+2. 现有记录通过 `list_all_combos()` 分为三组：`manual_by_key`（手工活跃）、`deleted_by_key`（逻辑删除）、`imported_keys`（导入活跃）
+3. 逐条源记录：重复 key 进 `duplicates`；同 key 存在**逻辑删除记录**则跳过进 `deleted_skipped`（逻辑删除永久屏蔽，源内容更新也不复活）；同 key 存在手工记录则跳过进 `manual_collisions`
 4. `parse_seats` 解析座次，非 parsed/none 进 `seat_review`；与 `position` 字段交叉校验（`_check_position_mismatch`：seat 全座 vs 单一 14/23；`position=="both"` 不校验），不一致进 `position_mismatch`
-5. 合并：源导出 upsert → 手工记录原样保留（进 `manual_kept`）→ 非手工旧记录若源中已不存在则移除（进 `removed_stale`）
+5. 合并：源导出 upsert → 手工记录原样保留（进 `manual_kept`）→ 逻辑删除记录无条件保留（进 `merged`，直至界面恢复）→ 非手工旧记录若源中已不存在则移除（进 `removed_stale`）
 6. `manager.clear_all()` + 逐条 `update` + `save()` 原子落盘
 
-报告 dict 含 11 个区块：`total` / `imported` / `unmatched` / `duplicates` / `invalid` / `seat_stats`（parsed/none/partial/unparsed 计数）/ `seat_review` / `position_mismatch` / `manual_kept` / `manual_collisions` / `removed_stale`。保留判据是「手工记录未进入 merged」而非「不在源导出中」，因此同 key 发生手工冲突的条目会同时出现在 `manual_collisions` 与 `manual_kept`（保留的正是手工版本）。
+报告 dict 含 12 个区块：`total` / `imported` / `unmatched` / `duplicates` / `invalid` / `seat_stats`（parsed/none/partial/unparsed 计数）/ `seat_review` / `position_mismatch` / `manual_kept` / `manual_collisions` / `deleted_skipped` / `removed_stale`。保留判据是「手工记录未进入 merged」而非「不在源导出中」，因此同 key 发生手工冲突的条目会同时出现在 `manual_collisions` 与 `manual_kept`（保留的正是手工版本）；逻辑删除记录同理，同 key 源记录进 `deleted_skipped`，删除记录无条件保留。
 
 **UI 层** `CombosImportDialog`（异步化）：通过 `_ImportWorker(QThread)` 后台执行 `run_import`，主线程不冻结。导入完成后 `combos_imported(int)` 信号通知调用方（main_window 侧栏刷新）。`_LIVE_WORKERS` 集合持有运行中 worker，防止对话框销毁后 QThread 被 GC 析构。报告渲染到 QTextBrowser，预览上限 50 条，超限省略剩余。
 
@@ -398,11 +410,13 @@ class _ImportWorker(QThread):
 | `parse_pool(ocr_results, card_count, ban_names, resolutions) -> PoolSnapshot` | OCR 槽位结果整理为候选池快照 |
 | `carry_over_resolutions(old_resolutions, ocr_results) -> dict[int, str]` | 新牌面上按内容沿用人工确认 |
 | `board_signature(cards) -> tuple` | 牌面布局签名（量化去重，位置 8px / 尺寸 16px） |
-| `ComboManager.get_combo(a_id, b_id) -> Combo \| None` | 按配对查询 |
-| `ComboManager.list_combos_for_hero(hero_id) -> list[Combo]` | 按武将查询 |
-| `ComboManager.list_combos() -> list[Combo]` | 获取全部 |
-| `ComboManager.save_manual_combo(combo, previous) -> None` | 手工配队保存（含 key 迁移） |
-| `ComboManager.delete_combo(combo) -> None` | 删除配队并原子落盘 |
+| `ComboManager.get_combo(a_id, b_id) -> Combo \| None` | 按配对查询（含逻辑删除记录，供编辑覆盖检查与导入合并） |
+| `ComboManager.list_combos_for_hero(hero_id) -> list[Combo]` | 按武将查询（过滤 deleted 记录） |
+| `ComboManager.list_combos() -> list[Combo]` | 获取全部（过滤 deleted 记录，展示查询） |
+| `ComboManager.list_all_combos() -> list[Combo]` | 获取全部记录（含逻辑删除，供导入合并等场景） |
+| `ComboManager.save_manual_combo(combo, previous) -> None` | 手工配队保存（含 key 迁移，固定 manual=True） |
+| `ComboManager.delete_combo(combo) -> None` | 逻辑删除（标记 deleted=True + deleted_at，不物理移除） |
+| `ComboManager.restore_combo(combo) -> None` | 恢复逻辑删除（标记 deleted=False + deleted_at=None） |
 | `parse_seats(note, hero1, hero2) -> tuple[str, list[int], list[int]]` | note 座次解析 |
 | `format_seats(seats) -> str` | 号位列表→展示文本 |
 | `run_import(source_path, heroes_path, output_path) -> dict` | 实战配队导入合并（幂等，CLI 与 UI 共用） |
