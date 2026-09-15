@@ -209,6 +209,20 @@ class OcrService(QObject):
 
     def stop_poll(self) -> None:
         """停止轮询并清除当前会话状态。"""
+        self._halt_poll("stopped", "轮询未启用")
+
+    def pause_for_idle(self, idle_minutes: int) -> None:
+        """画面长时间无变化的闲置暂停：停轮询、保留 ADB 连接，等待用户交互恢复。
+
+        与故障 paused 不同：闲置暂停不代表异常，点击状态栏或激活窗口即恢复。
+        """
+        self._halt_poll(
+            "idle_paused",
+            f"轮询已闲置暂停（{idle_minutes} 分钟无画面变化），点击恢复",
+        )
+
+    def _halt_poll(self, state: str, detail: str) -> None:
+        """停定时器、清除任务与会话状态，并迁移到指定终止态。"""
         self._poll_timer.stop()
         for task in self._poll_tasks.values():
             task.active = False
@@ -216,7 +230,16 @@ class OcrService(QObject):
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
         self._replace_poll_session()
-        self._set_poll_state("stopped", "轮询未启用")
+        self._set_poll_state(state, detail)
+
+    @property
+    def poll_state(self) -> str:
+        """返回当前轮询状态（stopped/running/backing_off/cooldown/paused/idle_paused）。"""
+        return self._poll_state
+
+    def is_poll_idle_paused(self) -> bool:
+        """是否处于闲置暂停态。"""
+        return self._poll_state == "idle_paused"
 
     def invalidate_inflight_poll(self) -> None:
         """作废在途轮询：取消当前会话并复位在途标记，供巅峰赛识别启动时调用。

@@ -274,6 +274,11 @@ class MumuOcrPollingSection(QFrame):
         switch_grid.setVerticalSpacing(8)
         self.ocr_enabled_check = QCheckBox("启用 OCR 识别")
         self.poll_mode_check = QCheckBox("持续轮询")
+        self.poll_idle_pause_check = QCheckBox("长时间无画面变化时自动暂停轮询")
+        self.poll_idle_pause_check.setToolTip(
+            "开启后，画面连续 5 分钟无变化会暂停轮询（模拟器仍在运行、连接保持）；"
+            "点击状态栏提示或重新激活本窗口即可恢复"
+        )
         self.auto_switch_tab_check = QCheckBox("识别后自动跳转到结果页面")
         self.poll_mode_check.toggled.connect(self.poll_mode_changed)
         switch_grid.addWidget(self.ocr_enabled_check, 0, 0)
@@ -285,6 +290,7 @@ class MumuOcrPollingSection(QFrame):
         self.poll_interval_spin.setFixedWidth(80)
         switch_grid.addWidget(self.poll_interval_spin, 0, 3)
         switch_grid.addWidget(self.auto_switch_tab_check, 1, 0, 1, 2)
+        switch_grid.addWidget(self.poll_idle_pause_check, 2, 0, 1, 3)
         self.resume_button = QPushButton("恢复轮询")
         self.resume_button.setFixedWidth(80)
         self.resume_button.setStyleSheet(PRIMARY_BUTTON_STYLE)

@@ -27,7 +27,8 @@ src/ui/
 ├── app/                        # 应用外壳、组合根与全局轮询编排
 │   ├── main_window.py          # 主窗口（菜单栏/Tab/状态栏 + PollCoordinator 界面绑定）
 │   ├── shell_widgets.py        # NavigationRail 左侧导航外壳组件
-│   ├── poll_coordinator.py     # 轮询后台编排、结果过滤与状态提交
+│   ├── poll_coordinator.py     # 轮询后台编排、结果过滤、闲置暂停判定与状态提交
+│   ├── frame_fingerprint.py    # 轮询闲置检测的整帧指纹（降采样灰度 + MAD 判等）
 │   ├── app_services.py         # 协作对象组合根（可无头构造，一次挂载 QObject 父子与窗口引用）
 │   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
@@ -105,7 +106,7 @@ src/ui/
 
 阶段六新增两个常驻状态与服务装配的收敛点：
 
-- **`StatusChips`** — 底部状态栏的常驻胶囊（模拟器 ADB / OCR 轮询），点击发出 `mumu_config_requested` 由主窗口连到 `_open_mumu_config`。胶囊文案/色/背景由内部 `_EMULATOR_STYLES` / `_POLL_STYLES` 常量表驱动，`set_emulator_state()` 与 `set_poll_state()` 在业务回调中渲染，普通状态文本与业务进度条不在此层——它们的写点遍布业务回调，仍归 `MainWindow`。
+- **`StatusChips`** — 底部状态栏的常驻胶囊（模拟器 ADB / OCR 轮询），点击默认发出 `mumu_config_requested` 由主窗口连到 `_open_mumu_config`，轮询处于 `idle_paused` 时点击改为发出 `poll_resume_requested` 恢复轮询。胶囊文案/色/背景由内部 `_EMULATOR_STYLES` / `_POLL_STYLES` 常量表驱动，`set_emulator_state()` 与 `set_poll_state()` 在业务回调中渲染，普通状态文本与业务进度条不在此层——它们的写点遍布业务回调，仍归 `MainWindow`。
 - **`AppServices`** — `MainWindow` 的协作对象组合根。构造 `DataFacade` / 三个 Fetch 服务 / `AiGenerationWorkflow` / `CaptureService` / `OcrService` / `PollCoordinator` / `AnnouncementManager` / `AnnouncementService`，并在 `attach(parent)` 中一次性挂载 QObject 父子与 `AiGenerationWorkflow.set_window(parent)`（组合根无头构造时窗口引用为 None，只 `setParent` 会漏弹窗归属）。`MainWindow.__init__` 从 `_services` 解包到 `_fetch_service` / `_guide_service` / `_capture_service` 等惯用属性，其余接线/建 UI 代码零感知；`__new__` 式测试与属性替换依赖普通实例属性，刻意不做 property 委托。
 
 G1 样式止血（2026-08）删除被 token 层覆盖的旧样式层，并把三色残留归一为 `PRIMARY` / `DANGER` / `WARNING`。全局 QSS 只读 `style.py` 里的 token，控件不再各自维护 `QPushButton { background-color: #... }` 硬编码；状态胶囊与卡片角标使用 `PRIMARY_SOFT` / `DANGER_SOFT` / `WARNING_SOFT` 的浅色底 + 深色文字组合，与 token 对齐。
@@ -161,6 +162,12 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 
 轮询冷却期间的重复匹配不会重复抢占用户当前页面；截图为空、图像截断等可重试结果也不会重置选将页面状态。对局攻略任务在后台线程经 `_validate_match_guide_result()` 校验：只有 `MATCHED` 且已确认角色数 `>= MATCH_GUIDE_MIN_CONFIRMED_NAMES=3` 才视作命中，不足时降级为 `HEALTHY_NO_MATCH` 并写入 detail。
 
+### 3.1.2 轮询闲置自动暂停（idle_paused）
+
+开启 `mumu_ocr_poll_idle_pause`（默认开）后，轮询在画面长时间无变化时自动进入待机。`PollCoordinator.do_poll_work()` 每拍用 `frame_fingerprint`（32×18 灰度降采样、MAD<3 判同，阈值由 `src/scripts/calibrate_idle_threshold.py` 依据真实截图分布标定）与上一拍比较，经 `PollResult.frame_unchanged` 随结果回传；`_consume_poll_result()` 末尾的 `_track_idle_watch()` 只有 `HEALTHY_NO_MATCH` 且 `frame_unchanged` 的拍才累计 `IDLE_PAUSE_MINUTES=5` 分钟（对局长考仅数十秒，留数倍余量），MATCHED、截图/连接失败、无到期任务等其余结果一律清零——宁漏暂停不误暂停。达到阈值即调 `OcrService.pause_for_idle()`：停轮询、保留 ADB 连接、状态迁移为 `idle_paused`（独立于故障 `paused`，chip 用中性灰区分）。
+
+恢复入口三条，均经 `resume_from_idle_pause()`（仅在闲置暂停态生效）回到 `sync_with_connection()`：点击状态栏闲置暂停胶囊（`StatusChips.poll_resume_requested`，其余状态点击仍是打开配置）、重新激活主窗口（`MainWindow.changeEvent` 的 ActivationChange）、以及既有配置保存/连接变化/导入对话框关闭触发的 `sync_with_connection()`。`sync_with_connection()` 会无条件清空指纹与计数；指纹基线只在会话边界（sync/停启/无到期任务拍）清除，结果消费路径只清计数不动基线，否则相邻比较会失去前帧。手动截图链路与本功能完全无关，不承担恢复职责。
+
 ### 3.1 主窗口信号拓扑
 
 协作对象装配收敛到 `AppServices`：`__init__` 构造 `DataFacade` / `HeroFetchService` / `GuideFetchService` / `SynergyFetchService` / `ComboManager` / `AiGenerationWorkflow` / `CaptureService` / `OcrService` / `PollCoordinator` / `AnnouncementManager` / `AnnouncementService`，`attach(self)` 一次性 `setParent` 并回填 `AiGenerationWorkflow._window`。`MainWindow` 直接连接武将采集、截图和 OCR 服务的信号；攻略/相性服务的任务信号由 `AiGenerationWorkflow` 统一连接和处理，主窗口只接收工作流的状态与数据刷新通知：
@@ -180,7 +187,7 @@ MainWindow
 
 工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；后端选择对话框同时返回 `(backend, use_rag)`（API/浏览器 + RAG 增强/经典模式），工作流将 `use_rag` 透传给攻略/相性获取服务；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
 
-底部状态栏按职责分为三部分：普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击任一胶囊经 `mumu_config_requested` 打开模拟器配置；`QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）。任务消息不会覆盖后两类连接状态。
+底部状态栏按职责分为三部分：普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击默认经 `mumu_config_requested` 打开模拟器配置（唯一例外：轮询闲置暂停态点击发出 `poll_resume_requested` 恢复轮询）；`QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）。任务消息不会覆盖后两类连接状态。
 
 攻略全量、增量、指定与相性配对、选定武将、实战配队批量共六个菜单入口保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
@@ -309,7 +316,7 @@ def update_recommendations(self, data: list[dict]) -> None
 
 配置文件 `config/faction_colors.json` 已从 dict 结构升级为数组结构 `[{faction, color}, ...]`（1398692），数组位置即筛选界面的势力展示顺序——配置方按所需展示次序排列条目，无需额外排序字段。`load_faction_colors()` 返回 dict（字典插入顺序即配置顺序），`sort_factions_by_config(factions)` 按配置顺序排序势力名列表，配置外的势力按码点序追加尾部。`save_faction_colors()` 输出 `[{faction, color}, ...]` 数组。
 
-模拟器配置使用“设备与连接”“识别与自动化”两个左侧导航页，顶部共享 ADB 状态和底部保存栏固定显示。识别页先显示 OCR/轮询开关，再由 `MumuTemplateSection` 将武将选择、对局攻略各自的模板、阈值和 ROI 操作组织在同一任务面板中；窄窗口上下排列，宽窗口双列展示。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 只构造控件并发出用户操作信号；`MumuConfigDialog` 连接信号、处理文件选择与 ROI 框选，`MumuConfigCoordinator` 仍是唯一业务协调器。两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击，后台自动建立连接并获取截图，只有未配置 ADB 或正在连接时禁用模板制作；“恢复轮询”仅在轮询暂停时显示。
+模拟器配置使用“设备与连接”“识别与自动化”两个左侧导航页，顶部共享 ADB 状态和底部保存栏固定显示。识别页先显示 OCR/轮询开关（含“长时间无画面变化时自动暂停轮询”，随持续轮询开关联动启用/禁用），再由 `MumuTemplateSection` 将武将选择、对局攻略各自的模板、阈值和 ROI 操作组织在同一任务面板中；窄窗口上下排列，宽窗口双列展示。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 只构造控件并发出用户操作信号；`MumuConfigDialog` 连接信号、处理文件选择与 ROI 框选，`MumuConfigCoordinator` 仍是唯一业务协调器。两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击，后台自动建立连接并获取截图，只有未配置 ADB 或正在连接时禁用模板制作；“恢复轮询”仅在轮询暂停时显示。
 
 保存流程如下：
 

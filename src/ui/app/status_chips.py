@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """状态栏服务状态 chips：模拟器 ADB 与 OCR 轮询的常驻状态胶囊（批次6步骤3，自 MainWindow 抽取）。
 
-点击任一 chip 发出 mumu_config_requested，由主窗口连接到打开模拟器配置的动作。
+点击 chip 默认发出 mumu_config_requested，由主窗口连接到打开模拟器配置的动作；
+唯一例外是轮询处于闲置暂停态时点击发出 poll_resume_requested（点击即恢复轮询）。
 全局消息文本与业务进度条不在此层——它们的写点遍布业务回调，归 MainWindow。
 """
 
@@ -23,6 +24,8 @@ _POLL_STYLES = {
     "backing_off": ("OCR轮询：恢复中", "#8a5a00", "#fff3cd"),
     "cooldown": ("OCR轮询：冷却中", "#165a9e", "#e7f1fd"),
     "paused": ("OCR轮询：已暂停", "#a12622", "#fde8e8"),
+    # 闲置暂停是待机而非故障，用中性灰与故障暂停（红）区分
+    "idle_paused": ("OCR轮询：闲置暂停", "#4a5568", "#e2e6ea"),
 }
 
 
@@ -30,20 +33,29 @@ class StatusChips(QWidget):
     """模拟器 ADB / OCR 轮询两个常驻状态胶囊（点击请求打开模拟器配置）。"""
 
     mumu_config_requested = Signal()
+    poll_resume_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._poll_state = "stopped"
         self._emulator_label = QLabel()
         self._emulator_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._emulator_label.mousePressEvent = lambda _: self.mumu_config_requested.emit()
         self._poll_label = QLabel()
         self._poll_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._poll_label.mousePressEvent = lambda _: self.mumu_config_requested.emit()
+        self._poll_label.mousePressEvent = lambda _: self._on_poll_clicked()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.addWidget(self._emulator_label)
         layout.addWidget(self._poll_label)
+
+    def _on_poll_clicked(self) -> None:
+        """闲置暂停态点击即恢复轮询，其余状态点击打开模拟器配置。"""
+        if self._poll_state == "idle_paused":
+            self.poll_resume_requested.emit()
+        else:
+            self.mumu_config_requested.emit()
 
     @property
     def emulator_label(self) -> QLabel:
@@ -60,6 +72,7 @@ class StatusChips(QWidget):
 
     def set_poll_state(self, state: str, detail: str = "") -> None:
         """渲染不受业务进度覆盖的常驻 OCR 轮询状态。"""
+        self._poll_state = state
         text, color, background = _POLL_STYLES.get(state, _POLL_STYLES["stopped"])
         self._apply_chip(self._poll_label, text, color, background, detail)
 

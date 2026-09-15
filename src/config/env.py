@@ -153,6 +153,7 @@ def load_env_config(env_path=None):
         "MUMU_ADB_PORT": "mumu_adb_port",
         "MUMU_OCR_ENABLED": "mumu_ocr_enabled",
         "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
+        "MUMU_OCR_POLL_IDLE_PAUSE": "mumu_ocr_poll_idle_pause",
         "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
         "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
         "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
@@ -176,7 +177,7 @@ def load_env_config(env_path=None):
                 except (ValueError, TypeError):
                     logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
                     continue
-            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_auto_switch_tab", "mumu_ocr_use_gpu"):
+            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_poll_idle_pause", "mumu_ocr_auto_switch_tab", "mumu_ocr_use_gpu"):
                 value = value.lower() in ("true", "1", "yes")
             elif cfg_key in (
                 "mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold",
@@ -368,6 +369,7 @@ def get_mumu_config():
         "mumu_adb_port": config.get("mumu_adb_port", 0),
         "mumu_ocr_enabled": config.get("mumu_ocr_enabled", False),
         "mumu_ocr_poll_mode": config.get("mumu_ocr_poll_mode", False),
+        "mumu_ocr_poll_idle_pause": config.get("mumu_ocr_poll_idle_pause", True),
         "mumu_ocr_auto_switch_tab": config.get("mumu_ocr_auto_switch_tab", False),
         "mumu_ocr_poll_interval": config.get("mumu_ocr_poll_interval", 2),
         "mumu_ocr_match_threshold": config.get("mumu_ocr_match_threshold", 0.8),

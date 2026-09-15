@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
 from PySide6.QtCore import QObject, Signal
+
+from src.ui.app.frame_fingerprint import compute_fingerprint, frames_match
+
+logger = logging.getLogger(__name__)
 
 
 class PollOutcome(str, Enum):
@@ -52,6 +58,7 @@ class PollResult:
     capture: object | None = None
     task_results: dict[str, PollTaskResult] = field(default_factory=dict)
     ocr_results: list[dict] = field(default_factory=list)
+    frame_unchanged: bool = False
 
     @classmethod
     def from_raw(cls, value: object) -> "PollResult":
@@ -69,6 +76,7 @@ class PollResult:
         return cls(
             int(raw.get("generation", -1)), outcome, str(raw.get("detail", "")),
             raw.get("capture"), task_results, list(raw.get("ocr_results") or []),
+            bool(raw.get("frame_unchanged", False)),
         )
 
 
@@ -81,6 +89,7 @@ class PollCoordinator(QObject):
 
     POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
     MATCH_GUIDE_MIN_CONFIRMED_NAMES = 3
+    IDLE_PAUSE_MINUTES = 5  # 连续无画面变化达到该时长即暂停轮询（对局长考仅数十秒，留 3~5 倍余量）
 
     def __init__(
         self,
@@ -94,6 +103,8 @@ class PollCoordinator(QObject):
         self._ocr_service = ocr_service
         self._hero_names_provider = hero_names_provider
         self._poll_thread_lock = threading.Lock()
+        self._last_fingerprint: bytes | None = None
+        self._idle_unchanged_count = 0
 
         self._ocr_service.poll_tick.connect(self._on_poll_tick)
         self._ocr_service.poll_state_changed.connect(self.poll_state_changed.emit)
@@ -101,6 +112,7 @@ class PollCoordinator(QObject):
 
     def sync_with_connection(self) -> None:
         """根据配置和 ADB 连接状态启动或停止轮询。"""
+        self._reset_idle_watch()
         capture = self._capture_service.capture
         poll_enabled = self._ocr_service.config.get("mumu_ocr_poll_mode", False)
         if not poll_enabled or not capture or not capture.connected:
@@ -112,7 +124,15 @@ class PollCoordinator(QObject):
 
     def shutdown(self) -> None:
         """停止轮询，并取消正在运行的后台工作。"""
+        self._reset_idle_watch()
         self._ocr_service.stop_poll()
+
+    def resume_from_idle_pause(self) -> None:
+        """闲置暂停后由用户交互恢复；仅闲置暂停态生效，其他状态一律忽略。"""
+        if not self._ocr_service.is_poll_idle_paused():
+            return
+        logger.info("闲置暂停的轮询已由用户交互恢复")
+        self.sync_with_connection()
 
     def _on_poll_tick(self) -> None:
         """在后台执行一次采集，再将结构化结果送回 GUI 线程。"""
@@ -124,6 +144,8 @@ class PollCoordinator(QObject):
         cancel_event = self._ocr_service.poll_cancel_event
         task_names = self._ocr_service.due_poll_tasks()
         if not task_names:
+            # 无帧可比对，按约定清零闲置计数（宁漏暂停不误暂停）
+            self._reset_idle_watch()
             self._ocr_service.complete_poll(
                 generation,
                 PollOutcome.HEALTHY_NO_MATCH.value,
@@ -146,6 +168,9 @@ class PollCoordinator(QObject):
             return
 
         hero_names = self._hero_names_provider()
+        idle_watch_enabled = bool(
+            self._ocr_service.config.get("mumu_ocr_poll_idle_pause", True)
+        )
 
         def do_poll_work() -> None:
             try:
@@ -166,6 +191,11 @@ class PollCoordinator(QObject):
                     return
 
                 image = result
+                # 指纹状态仅由持锁的 poll 线程串行读写；GUI 线程 _reset_idle_watch
+                # 的并发清空只是原子赋值，最坏情况多比一对陈旧帧，无碍正确性
+                fingerprint = compute_fingerprint(image) if idle_watch_enabled else None
+                frame_unchanged = frames_match(fingerprint, self._last_fingerprint)
+                self._last_fingerprint = fingerprint
                 task_results: dict[str, PollTaskResult] = {}
                 has_match = False
                 has_retryable_error = False
@@ -198,6 +228,7 @@ class PollCoordinator(QObject):
                 )
                 self._poll_result_received.emit(PollResult(
                     generation, outcome, capture=capture, task_results=task_results,
+                    frame_unchanged=frame_unchanged,
                 ))
             finally:
                 self._poll_thread_lock.release()
@@ -261,4 +292,39 @@ class PollCoordinator(QObject):
             poll_result.outcome.value,
             poll_result.detail,
         )
+        self._track_idle_watch(poll_result)
         self.poll_result_ready.emit(poll_result)
+
+    # ── 闲置自动暂停 ──────────────────────────────────────────────────
+
+    def _track_idle_watch(self, result: PollResult) -> None:
+        """统计连续无变化拍数；只有健康无命中且画面未变的拍才累计，其余一律清零。
+
+        注意只清计数、不清 _last_fingerprint：指纹是相邻比较的基线，由
+        do_poll_work 随每次采集更新，在此清除会让下一拍失去前帧可比。
+        """
+        if not self._ocr_service.config.get("mumu_ocr_poll_idle_pause", True):
+            self._idle_unchanged_count = 0
+            return
+        if result.outcome is not PollOutcome.HEALTHY_NO_MATCH or not result.frame_unchanged:
+            self._idle_unchanged_count = 0
+            return
+
+        self._idle_unchanged_count += 1
+        interval = max(self._ocr_service.config.get("mumu_ocr_poll_interval", 2), 1)
+        threshold = math.ceil(self.IDLE_PAUSE_MINUTES * 60 / interval)
+        if self._idle_unchanged_count < threshold:
+            return
+
+        logger.info(
+            "轮询连续 %d 拍无画面变化，闲置暂停（阈值 %d 分钟）",
+            self._idle_unchanged_count,
+            self.IDLE_PAUSE_MINUTES,
+        )
+        self._reset_idle_watch()
+        self._ocr_service.pause_for_idle(self.IDLE_PAUSE_MINUTES)
+
+    def _reset_idle_watch(self) -> None:
+        """清空闲置计数与指纹缓存；恢复、停启和任何异常结果后都必须回到干净状态。"""
+        self._idle_unchanged_count = 0
+        self._last_fingerprint = None

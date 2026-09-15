@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 
+from PySide6.QtCore import QEvent
 from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -578,6 +579,12 @@ class MainWindow(QMainWindow):
         self._capture_service.shutdown()
         super().closeEvent(event)
 
+    def changeEvent(self, event) -> None:
+        """窗口重新激活时唤醒闲置暂停中的轮询（仅在闲置暂停态生效，其余状态无操作）。"""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._poll_coordinator.resume_from_idle_pause()
+
     def _handle_legacy_poll_result(self, outcome: PollOutcome, ocr_results: list[dict]) -> None:
         """兼容旧版单任务轮询结果，避免外部调用方行为改变。"""
         if outcome is PollOutcome.HEALTHY_NO_MATCH:
@@ -871,6 +878,7 @@ class MainWindow(QMainWindow):
         # 服务状态 chips 自足小部件（批次6步骤3）：点击经信号回到 _open_mumu_config
         self._status_chips = StatusChips()
         self._status_chips.mumu_config_requested.connect(self._open_mumu_config)
+        self._status_chips.poll_resume_requested.connect(self._poll_coordinator.resume_from_idle_pause)
         bar.addPermanentWidget(self._status_chips)
         self.setStatusBar(bar)
         state, detail = self._capture_service.connection_state
@@ -1141,6 +1149,7 @@ class MainWindow(QMainWindow):
             "MUMU_ADB_PORT": str(new_config["mumu_adb_port"]),
             "MUMU_OCR_ENABLED": "true" if new_config["mumu_ocr_enabled"] else "false",
             "MUMU_OCR_POLL_MODE": "true" if new_config["mumu_ocr_poll_mode"] else "false",
+            "MUMU_OCR_POLL_IDLE_PAUSE": "true" if new_config["mumu_ocr_poll_idle_pause"] else "false",
             "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config["mumu_ocr_auto_switch_tab"] else "false",
             "MUMU_OCR_POLL_INTERVAL": str(new_config["mumu_ocr_poll_interval"]),
             "MUMU_OCR_MATCH_THRESHOLD": str(new_config["mumu_ocr_match_threshold"]),

@@ -173,6 +173,7 @@ class MumuConfigDialog(QDialog):
         self._ocr_polling_section.roi_reset_requested.connect(self._reset_roi_layout)
         self._ocr_enabled_check = self._ocr_polling_section.ocr_enabled_check
         self._poll_mode_check = self._ocr_polling_section.poll_mode_check
+        self._poll_idle_pause_check = self._ocr_polling_section.poll_idle_pause_check
         self._auto_switch_tab_check = self._ocr_polling_section.auto_switch_tab_check
         self._poll_interval_spin = self._ocr_polling_section.poll_interval_spin
         self._resume_poll_btn = self._ocr_polling_section.resume_button
@@ -223,6 +224,7 @@ class MumuConfigDialog(QDialog):
 
         self._ocr_enabled_check.setChecked(self._config.get("mumu_ocr_enabled", False))
         self._poll_mode_check.setChecked(self._config.get("mumu_ocr_poll_mode", False))
+        self._poll_idle_pause_check.setChecked(self._config.get("mumu_ocr_poll_idle_pause", True))
         self._auto_switch_tab_check.setChecked(self._config.get("mumu_ocr_auto_switch_tab", False))
         # 配置出自 get_mumu_config() 全键字典（协调器持有），默认值以 env 层为唯一权威，直接取键
         self._poll_interval_spin.setValue(self._config["mumu_ocr_poll_interval"])
@@ -719,6 +721,7 @@ class MumuConfigDialog(QDialog):
         """持续轮询关闭时，禁用只与轮询相关的控件。"""
         polling_enabled = self._poll_mode_check.isChecked()
         self._poll_interval_spin.setEnabled(polling_enabled)
+        self._poll_idle_pause_check.setEnabled(polling_enabled)
         self._auto_switch_tab_check.setEnabled(polling_enabled)
         polling_paused = polling_enabled and self._coordinator.poll_is_paused()
         self._resume_poll_btn.setEnabled(polling_paused)
@@ -742,6 +745,7 @@ class MumuConfigDialog(QDialog):
                 "mumu_adb_path": raw_path,
                 "mumu_ocr_enabled": self._ocr_enabled_check.isChecked(),
                 "mumu_ocr_poll_mode": self._poll_mode_check.isChecked(),
+                "mumu_ocr_poll_idle_pause": self._poll_idle_pause_check.isChecked(),
                 "mumu_ocr_auto_switch_tab": self._auto_switch_tab_check.isChecked(),
                 "mumu_ocr_poll_interval": self._poll_interval_spin.value(),
                 "mumu_ocr_match_threshold": round(self._threshold_spin.value(), 2),
