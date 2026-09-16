@@ -60,8 +60,17 @@ def _disable_user_character_cache(monkeypatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _clear_ocr_retired_workers() -> None:
-    """每个测试后清空退役 worker 列表，防止残留的未退出 QThread 在后续测试中累积。"""
-    _ocr_worker_module._RETIRED_WORKERS.clear()
+    """每个测试后从退役列表移除已结束的 worker；仍在运行的必须保留。
+
+    _RETIRED_WORKERS 是 shutdown 超时转退役、线程尚未退出的 QThread 唯一的
+    保活引用，直接 clear() 会令对象在线程运行中被 GC 析构，原生层访问已释放
+    内存直接杀死测试进程（xdist 报 node down: Not properly terminated，
+    2026-09-16 CI 实证；最小复现为运行中 QThread 零引用后退出码 127）。
+    仍在运行的保留下次 teardown 再清，届时线程早已退出，析构安全。
+    """
+    _ocr_worker_module._RETIRED_WORKERS[:] = [
+        w for w in _ocr_worker_module._RETIRED_WORKERS if not w.isRunning()
+    ]
 
 
 @pytest.fixture(autouse=True)
