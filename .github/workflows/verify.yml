@@ -2,7 +2,17 @@ name: verify
 
 on:
   push:
+    # 纯文档推送不触发全量测试；仅当所有变更文件都命中忽略模式才跳过，docs+code 混合推送照常全量跑
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   pull_request:
+  workflow_dispatch:
+
+# 同分支连续推送时取消旧 run，只验最新一次提交
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
