@@ -672,3 +672,35 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
+
+
+━━━━━━━━━━━━━━━━━━━━ 附加使用条款 ━━━━━━━━━━━━━━━━━━━━
+
+本项目版权持有人（chen-xianghao920）在上述 GNU General Public License v3
+授权之外，就「名将杀 Agent」声明以下附加使用条件。使用者须将本附加条款
+与 GPL v3 一并遵守；不接受本附加条款者，不得使用、复制、修改或分发本项目。
+
+一、禁止商业使用
+   不得将本项目或其衍生作品用于任何商业目的，包括但不限于出售、
+   许可收费、基于本项目采集数据建立收费服务、API 或网站。
+
+二、禁止外挂化改造
+   不得将本项目改造或扩展为游戏外挂，包括但不限于：
+   自动点击、自动操作、自动选将、自动战斗等自动化功能；
+   游戏进程注入、内存修改、hook；绕过或干扰游戏反作弊机制。
+
+三、数据仅限本地使用
+   通过本项目采集的数据仅限使用者本地查阅，不得上传或二次发布至
+   公共数据仓库、代码托管平台、对象存储或其他公开渠道。
+
+四、独立声明
+   本项目与《名将杀》游戏及其运营方无任何关联，未经运营方授权。
+
+五、无担保
+   本项目按"现状"提供，不附带任何担保。使用者应自行承担使用本项目的
+   法律风险。完整条款见随项目分发的 TERMS.md。
+
+违反上述任一附加条款的，依 GNU GPL v3 第 8 条授权自动终止，
+版权持有人保留追究法律责任的权利。
+
+附加条款版本：1.0（生效日期：2026-09-16）

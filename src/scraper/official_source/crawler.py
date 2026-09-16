@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html as html_module
 import json
 import logging
@@ -17,13 +18,13 @@ import unicodedata
 import urllib.error
 import urllib.request
 import warnings
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from PIL import Image
-from src.config.env import IMAGES_OUTPUT_DIR
+from src.config.env import IMAGES_OUTPUT_DIR, PROJECT_ROOT
 from src.scraper.official_source.adapter import (
     find_card_chunk_url,
     find_chunk_url,
@@ -40,6 +41,12 @@ logger = logging.getLogger(__name__)
 BAIKE_URL = "https://mjs.ztgame.com/baike/"
 SHOUPAIKU_URL = "https://mjs.ztgame.com/shoupaiku/"
 BASE_URL = "https://mjs.ztgame.com"
+
+# robots.txt 存档：作为遵守站点爬取规则的善意访问证据留存本地（logs/ 已 gitignore），
+# 24 小时内不重复请求；存档失败仅告警不阻断采集（见 _ensure_robots_txt_cached）
+ROBOTS_URL = f"{BASE_URL}/robots.txt"
+ROBOTS_CACHE_TTL_HOURS = 24
+ROBOTS_CACHE_DIR = PROJECT_ROOT / "logs" / "robots_cache"
 
 TIMEOUT = 30
 MAX_RETRIES = 3
@@ -79,12 +86,60 @@ SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能�
 # ============================================================
 
 
+def _robots_cache_fresh(meta_path: Path) -> bool:
+    """存档时间在 TTL 内视为新鲜；元数据缺失或损坏按过期处理。"""
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        fetched_at = datetime.fromisoformat(meta["fetched_at"])
+    except (OSError, KeyError, TypeError, ValueError) as e:
+        logger.info("robots.txt 缓存缺失或损坏，将重新抓取: %s", e)
+        return False
+    elapsed = datetime.now() - fetched_at
+    return elapsed.total_seconds() < ROBOTS_CACHE_TTL_HOURS * 3600
+
+
+def cache_robots_txt(cache_dir: Path | None = None) -> bool:
+    """抓取并存档站点 robots.txt，返回本次是否发生新的抓取。
+
+    自带独立请求而不复用 fetch()：fetch 每次调用前都会触发存档检查，
+    复用会互相递归。
+    """
+    cache_dir = cache_dir or ROBOTS_CACHE_DIR
+    if _robots_cache_fresh(cache_dir / "robots_meta.json"):
+        return False
+    req = urllib.request.Request(ROBOTS_URL, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        content = resp.read().decode("utf-8", errors="replace")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "robots.txt").write_text(content, encoding="utf-8", newline="\n")
+    meta = {
+        "fetched_at": datetime.now().isoformat(timespec="seconds"),
+        "url": ROBOTS_URL,
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    }
+    (cache_dir / "robots_meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    logger.info("robots.txt 已存档: %s", cache_dir / "robots.txt")
+    return True
+
+
+def _ensure_robots_txt_cached() -> None:
+    """robots 存档是合规证据而非功能依赖，失败仅告警，不阻断正常采集。"""
+    try:
+        cache_robots_txt()
+    except Exception as e:
+        logger.warning("robots.txt 存档失败（不阻断采集）: %s", e)
+
+
 def fetch(url: str, binary: bool = False) -> str | bytes:
     """带重试机制的 HTTP GET 请求
 
     binary=True 时返回原始 bytes（用于下载图片等二进制资源），
     否则解码为 utf-8 字符串返回。
+    每次调用前先确保站点 robots.txt 已存档（24 小时缓存，失败不阻断）。
     """
+    _ensure_robots_txt_cached()
     req = urllib.request.Request(url, headers=HEADERS)
     for attempt in range(1, MAX_RETRIES + 1):
         try:

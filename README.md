@@ -1,16 +1,36 @@
 # 名将杀 Agent
 
-面向[名将杀手游](https://mjs.ztgame.com/)的桌面辅助工具，运行于 PC 端。提供**选将推荐**、**武将资料库**、**对局攻略**、**巅峰赛选将**、**AI 批量攻略/相性生成**、**卡牌百科变更捕获**与**屏幕采集 OCR 识别**功能；攻略与相性生成支持 **RAG 官方规则语料增强**（推荐）与经典模式双版本。
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
+[![Tests](https://img.shields.io/badge/Tests-1233%20cases-brightgreen.svg)](.github/workflows/verify.yml)
+[![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
-**核心功能**
+一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
 
-- **选将推荐** — 2 列 × 4 行卡片，ADB 截图或本地图片导入后 OCR 识别武将，展示相性、历史单将胜率与推荐指数；实战配队横条与卡片角标共用同一数据源
-- **武将资料库** — 武将列表搜索/势力筛选、技能/攻略/相性详情查看与编辑，卡牌图鉴只读浏览；卡牌/专属牌/武将分类三面板统一接入 `MasterDetailPane` 主从骨架
-- **AI 攻略/相性生成** — 多供应商 LLM API 或浏览器自动化批量生成，默认 RAG 语料增强，可切换经典模式
-- **屏幕采集与 OCR** — MuMu ADB 截图 + OpenCV 模板匹配 + PaddleOCR 识别 + 持续轮询；选将、巅峰赛、对局攻略三板块共享一次截图
-- **知识库维护** — RAG 语料状态/元规则 T0 母本/专属牌·点数·装备·分类数据源本地可视化维护 + 索引精化（LLM 建议 + 人工补全索引字段，已下沉业务层）
-- **公告更新监控** — 拉取官方公告 + 百科逐武将 diff，仅武将相关且 diff 确认后提示可更新，并落地武将变更时间轴驱动语料版本戳
-- **卡牌百科变更捕获** — 手牌库卡片快照 + 变更记录持久化，官网手牌库抓取与 diff，确认后应用更新并落地快照，audit_service 复核时效
+- **多模态屏幕识别**：模板匹配前置过滤 + PaddleOCR 识别 + 汉字特征库名称纠错
+- **RAG 语料分层架构**：ODS/DWD/mart 三层数仓分层，语料任务单一事实源调度与版本戳
+- **多供应商 LLM 集成**：API（多供应商档案）+ 浏览器自动化双后端，RAG 语料增强生成
+- **桌面应用工程化**：PySide6 + PyInstaller 双模式打包，CI 集成与发版烟雾测试流水线
+
+> ⚠️ **使用须知**
+>
+> 本项目为**个人技术探索与作品集展示**项目，与《名将杀》游戏运营方无任何关联，仅供个人学习、研究、技术交流使用：
+>
+> 1. 禁止商业使用；
+> 2. 禁止外挂化改造（自动点击、进程注入、内存修改、hook、反作弊绕过）；
+> 3. 采集数据仅限本地使用，禁止二次发布；
+> 4. 武将头像默认从官网下载用于本地展示，AI 生成内容仅供参考，法律风险请自行评估。
+>
+> 详见 [LICENSE](LICENSE)（附加使用条款）与 [TERMS.md](TERMS.md)。桌面应用将在首次启动或条款更新后展示免责声明，确认后进入。
+
+---
+
+## 技术亮点
+
+1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 PaddleOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
+2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
+3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
+4. **测试与交付工程化** — 106 个测试模块 / 1233 个测试用例；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
 
 ---
 
@@ -45,14 +65,14 @@ python -m pytest tests/ -v
 python -m src.main
 ```
 
-启动画面期间阻塞预热 OCR 模型（上限 120 秒），预热完成后才显示主窗口。
+首次启动或免责声明条款更新后会先展示使用须知，确认后进入；启动画面期间阻塞预热 OCR 模型（上限 120 秒），预热完成后才显示主窗口。
 
 ### 4. 数据采集
 
 ```bash
-python -m src.scraper.official                              # 全量采集（自动下载头像）
-python -m src.scraper.official --skip-images                # 跳过头像
-python -m src.scraper.incremental --incremental             # 增量采集
+python -m src.scraper.official              # 全量采集（自动下载头像）
+python -m src.scraper.official --skip-images            # 跳过头像
+python -m src.scraper.incremental --incremental         # 增量采集
 python -m src.scraper.incremental --hero 诸葛亮,关羽        # 按名称采集
 python -m src.scraper.incremental --hero-id 52,114          # 按 ID 采集
 ```
@@ -100,15 +120,15 @@ python -m src.scripts.import_hero_adjustments --input <json>  # 首次注入武�
 ```
 test_project/
 ├── src/
-│   ├── main.py                 # 应用入口（启动画面 + OCR 阻塞预热）
-│   ├── config/                 # 配置（env.py / logging_config.py）
+│   ├── main.py                 # 应用入口（免责声明 + 启动画面 + OCR 阻塞预热）
+│   ├── config/                 # 配置（env.py / logging_config.py / disclaimer_state.py）
 │   ├── data/                   # 数据模型 + Manager + JSON 持久化 + RAG 源数据仓储
 │   │                           #   + hero_timeline（武将变更时间轴）+ card_sync_store（卡牌快照/变更记录）
 │   ├── scraper/                # 官网爬虫（official_source/）+ AI 批量生成（ai/）
 │   │                           #   + card_baike（官网手牌库抓取与 diff）
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 分析 + 维护 + RAG 业务）
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
-│   ├── capture/                # ADB 截图与 MuMu 实例探测
+│   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + PaddleOCR + 名称纠错 + 卡位检测
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
@@ -120,10 +140,11 @@ test_project/
 ├── images/                     # 武将头像（从官网下载）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（108 文件 / 1223 个 test_* 函数）
+├── tests/                      # 测试用例（106 个测试模块 / 1233 个测试用例）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
+├── LICENSE / TERMS.md          # GPL v3 + 附加使用条款
 └── README.md
 ```
 
@@ -290,6 +311,7 @@ logs/
 ├── data/ ocr/ capture/      # 各模块同名日志
 ├── rag/rag.log              # 检索基础设施
 ├── rag/<script>.log         # 各语料/维护脚本
+├── robots_cache/            # 站点 robots.txt 存档（善意访问证据）
 └── subprocess/unclassified.log
 debug.log（与 logs/ 平级）   # 跨模块全量留底
 ```
@@ -338,5 +360,18 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 二十一 | 武将变更时间轴与语料版本戳（默认只召当前版本） | ✅ 已完成 |
 | 二十二 | 巅峰赛识别会话治理与三板块共享一次截图 | ✅ 已完成 |
 | 二十三 | 卡牌百科变更捕获（快照 + diff + 应用更新 + 时效复核） | ✅ 已完成 |
+| 二十四 | 合规化改造（LICENSE 附加条款 + 免责声明弹窗 + robots.txt 存档 + 架构防火墙） | ✅ 已完成 |
 
-> 文档基线：2026-09-15（`624c8c5`）。测试 108 文件 / 1223 个 `test_*` 函数，Ruff 0.12.0 全通过。
+> 文档基线：2026-09-16。测试 106 个测试模块 / 1233 个测试用例（`pytest --collect-only -q` 实测），Ruff 0.12.0 全通过。
+
+---
+
+## 合规说明
+
+- 本项目对官网的访问为只读采集，遵守该站 robots.txt 规则，并逐次将 robots.txt 连同抓取时间与内容哈希存档到 `logs/robots_cache/`，作为善意访问的本地记录；
+- 代码**不包含**任何 ADB 输入、自动点击等自动操作能力（见 `src/capture/adb_screen.py` 与 `src/business/emulator/emulator_operation_service.py` 模块文档字符串，及 CLAUDE.md / AGENTS.md 的「法律红线」节），相关功能的 Issue / PR 一律拒绝；
+- 采集数据与头像仅限本地使用，禁止二次发布；AI 生成内容仅供参考。完整条款见 [LICENSE](LICENSE)（附加使用条款）与 [TERMS.md](TERMS.md)。
+
+## 项目历史说明
+
+本项目 Git 历史中存在三个提交署名（`chen-xianghao920` / `Chen-XH` / `CXH0920`），均为开发者本人于不同机器配置下的早期提交。为保证提交记录真实完整，未对历史签名做统一改写；当前统一署名为 [chen-xianghao920](https://github.com/chen-xianghao920)。

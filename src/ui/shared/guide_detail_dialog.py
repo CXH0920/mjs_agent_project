@@ -93,6 +93,11 @@ class GuideDetailDialog(QDialog):
         summary_layout.setContentsMargins(10, 8, 10, 8)
         summary_layout.setSpacing(8)
 
+        ai_note = QLabel("AI 生成内容由第三方大语言模型提供，准确性未经保证，仅供参考，不构成任何竞技建议")
+        ai_note.setWordWrap(True)
+        ai_note.setStyleSheet("color: #65758b; font-size: 12px;")
+        content_layout.addWidget(ai_note)
+
         self._add_section_title(summary_layout, "核心要点")
         if guide.key_points:
             for point in guide.key_points:
@@ -276,6 +281,11 @@ class GuideMarkdownDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
 
         layout.addWidget(PageHeader(f"{hero_name} · 完整攻略", "完整 Markdown 正文"))
+
+        ai_note = QLabel("AI 生成内容由第三方大语言模型提供，准确性未经保证，仅供参考，不构成任何竞技建议")
+        ai_note.setWordWrap(True)
+        ai_note.setStyleSheet("color: #65758b; font-size: 12px;")
+        layout.addWidget(ai_note)
 
         body = QTextBrowser()
         body.setOpenExternalLinks(False)

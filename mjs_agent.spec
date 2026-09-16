@@ -146,9 +146,11 @@ datas += _collect_dir(HERE / "config", "config", excludes=["ocr_rois.json", "api
 # templates / images
 datas += _collect_dir(HERE / "templates", "templates")
 datas += _collect_dir(HERE / "images", "images")
-# 根级静态文件
+# 根级静态文件（LICENSE/TERMS.md 为合规条款文本，需随包分发）
 datas += [(str(HERE / "mjs.ico"), ".")]
 datas += [(str(HERE / "config.env.example"), ".")]
+datas += [(str(HERE / "LICENSE"), ".")]
+datas += [(str(HERE / "TERMS.md"), ".")]
 # src/data 静态基线（character_feature_repository 读 BUNDLE_ROOT/src/data，踩坑5）
 datas += [(str(HERE / "src" / "data" / "char_info_cache.json"), "src/data")]
 datas += [(str(HERE / "src" / "data" / "wubi86.txt"), "src/data")]

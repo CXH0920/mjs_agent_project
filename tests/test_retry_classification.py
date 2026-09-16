@@ -54,6 +54,8 @@ def test_crawler_404_not_retried(monkeypatch) -> None:
         raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, None)
 
     monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    # 本测试只关注 fetch 重试语义，屏蔽 fetch 前置的 robots.txt 存档请求
+    monkeypatch.setattr(crawler, "_ensure_robots_txt_cached", lambda: None)
 
     with pytest.raises(urllib.error.HTTPError):
         crawler.fetch("https://example.com/missing.json")
@@ -71,6 +73,8 @@ def test_crawler_transient_error_still_retries(monkeypatch) -> None:
 
     monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(crawler.time, "sleep", lambda _s: None)
+    # 本测试只关注 fetch 重试语义，屏蔽 fetch 前置的 robots.txt 存档请求
+    monkeypatch.setattr(crawler, "_ensure_robots_txt_cached", lambda: None)
 
     with pytest.raises(OSError):
         crawler.fetch("https://example.com/data.json")

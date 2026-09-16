@@ -1,7 +1,15 @@
 """
-ADB 连接与截图模块
+ADB 连接与截图模块：仅提供屏幕读取能力。
 
 通过 ADB 连接 MuMu 模拟器，执行 screencap 命令获取屏幕截图。
+本模块**故意不实现**以下功能，遵守项目法律红线（见 CLAUDE.md 与 AGENTS.md）：
+- ADB 输入（tap、click、input）
+- 自动点击、自动选将、自动战斗
+- 游戏进程注入、内存修改、hook
+- 反作弊绕过
+任何请求此类功能的 Issue/PR 都将被拒绝合并。
+如需扩展，请先更新 LICENSE（附加使用条款）、TERMS.md、CLAUDE.md、AGENTS.md，
+并通过开发者本人审批。
 """
 
 from __future__ import annotations

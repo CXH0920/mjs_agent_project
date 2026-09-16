@@ -47,6 +47,8 @@ config.env
 config/ocr_rois.json
 # API 档案含敏感 Key（多供应商/多账号配置，见 api_multi_config_design.md）
 config/api_profiles.json
+# 免责声明接受状态（用户本机运行时状态，见 src/config/disclaimer_state.py）
+config/.disclaimer_state.json
 
 # Edge browser profile (Playwright browser mode)
 data/edge_profile/

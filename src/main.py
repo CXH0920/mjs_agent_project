@@ -13,7 +13,7 @@ import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSplashScreen
 from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
 from src.ui.app.chinese_translator import install_chinese_qt_translator
 from src.ui.app.main_window import MainWindow
@@ -170,6 +170,19 @@ def main() -> None:
 
     # 设置全局样式
     app.setStyleSheet(GLOBAL_STYLE)
+
+    # 免责声明：文本版本变化时弹出，未同意不进入加载流程（OCR 预热较重，先同意再加载）
+    from src.config.disclaimer_state import accept as accept_disclaimer
+    from src.config.disclaimer_state import should_show
+    from src.ui.app.disclaimer_dialog import DisclaimerDialog
+    if should_show():
+        disclaimer = DisclaimerDialog()
+        if disclaimer.exec() == QDialog.Accepted:
+            accept_disclaimer()
+        else:
+            logger.info("用户未接受免责声明，退出应用")
+            sys.exit(0)
+
     splash = _create_startup_splash()
     splash.show()
     app.processEvents()

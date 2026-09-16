@@ -1,8 +1,10 @@
-"""官网头像安全下载测试。"""
+"""官网爬虫测试：头像安全下载 + robots.txt 存档。"""
 
 from __future__ import annotations
 
 import json
+import urllib.error
+from datetime import datetime, timedelta
 from email.message import Message
 from io import BytesIO
 from pathlib import Path
@@ -254,3 +256,84 @@ def test_js_to_json_parses_key_like_text_inside_strings() -> None:
     ]
     for text, expected in cases:
         assert official_adapter.js_to_json(text) == expected, text
+
+
+# ============================================================
+# robots.txt 存档
+# ============================================================
+
+
+def test_cache_robots_txt_writes_archive_and_meta(monkeypatch, tmp_path: Path) -> None:
+    requests: list[str] = []
+
+    def fake_urlopen(req, timeout=0):
+        requests.append(req.full_url)
+        return _FakeResponse(b"User-agent: *\nAllow: /", content_type="text/plain")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    cache_dir = tmp_path / "robots_cache"
+
+    assert crawler.cache_robots_txt(cache_dir) is True
+    assert requests == [crawler.ROBOTS_URL]
+    assert "Allow: /" in (cache_dir / "robots.txt").read_text(encoding="utf-8")
+    meta = json.loads((cache_dir / "robots_meta.json").read_text(encoding="utf-8"))
+    assert meta["url"] == crawler.ROBOTS_URL
+    assert len(meta["sha256"]) == 64
+
+
+def test_cache_robots_txt_skips_request_when_fresh(monkeypatch, tmp_path: Path) -> None:
+    cache_dir = tmp_path / "robots_cache"
+    cache_dir.mkdir()
+    meta = {"fetched_at": datetime.now().isoformat(timespec="seconds")}
+    (cache_dir / "robots_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("缓存新鲜时不应发起 robots 请求")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", refuse)
+    assert crawler.cache_robots_txt(cache_dir) is False
+
+
+def test_cache_robots_txt_refetches_when_stale(monkeypatch, tmp_path: Path) -> None:
+    cache_dir = tmp_path / "robots_cache"
+    cache_dir.mkdir()
+    stale = datetime.now() - timedelta(hours=crawler.ROBOTS_CACHE_TTL_HOURS + 1)
+    meta = {"fetched_at": stale.isoformat(timespec="seconds")}
+    (cache_dir / "robots_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    monkeypatch.setattr(
+        crawler.urllib.request, "urlopen",
+        lambda req, timeout=0: _FakeResponse(b"Allow: /", content_type="text/plain"),
+    )
+
+    assert crawler.cache_robots_txt(cache_dir) is True
+
+
+def test_fetch_tolerates_robots_archive_failure(monkeypatch, tmp_path: Path) -> None:
+    """robots 存档失败仅告警，不阻断采集主流程，也不留半成品存档。"""
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    seen: list[str] = []
+
+    def fake_urlopen(req, timeout=0):
+        seen.append(req.full_url)
+        if req.full_url == crawler.ROBOTS_URL:
+            raise urllib.error.URLError("robots 不可达")
+        return _FakeResponse(b"<html></html>", content_type="text/html")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    assert crawler.fetch("https://mjs.ztgame.com/baike/") == "<html></html>"
+    assert crawler.ROBOTS_URL in seen
+    assert not (tmp_path / "rc" / "robots.txt").exists()
+
+
+def test_fetch_archives_robots_before_first_request(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    seen: list[str] = []
+
+    def fake_urlopen(req, timeout=0):
+        seen.append(req.full_url)
+        return _FakeResponse(b"<html></html>", content_type="text/html")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    crawler.fetch("https://mjs.ztgame.com/baike/")
+    assert seen[0] == crawler.ROBOTS_URL
+    assert (tmp_path / "rc" / "robots.txt").exists()

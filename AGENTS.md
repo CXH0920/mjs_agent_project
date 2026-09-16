@@ -38,6 +38,15 @@
 - 不要自动 commit，先展示修改内容，等待用户确认
 - 使用 Conventional Commits（feat/fix/refactor/docs/test）
 
+## 法律红线（绝对禁止）
+本项目严禁加入以下功能，违反视为违反 LICENSE 附加使用条款（依 GPL v3 第 8 条授权终止）：
+- 自动点击、自动操作、自动选将、自动战斗
+- 游戏进程注入、内存修改、hook、反作弊绕过
+- 任何绕过或干扰游戏反作弊机制的功能
+- 商业化本工具或其衍生作品
+- 二次发布抓取的数据
+违反者授权自动终止，开发者保留追究法律责任的权利。完整条款见 LICENSE（附加使用条款）与 TERMS.md。
+
 ## 默认遵守
 - 默认使用中文回复
 - 使用 `G:\CONDA\Anaconda3\envs\myenv\python.exe` 运行 Python、pytest 及相关脚本；不要依赖单次 PowerShell 命令中的 `conda activate`，以免误用 Base 环境
