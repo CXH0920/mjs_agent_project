@@ -641,8 +641,6 @@
   "effect_detail": "1.贯穿的效果只对打出的这张杀有效，也就是目标的防具失效的效果只持续到杀的效果结束。\n\n2.封禁会令目标的武将技能失效，但是不会令目标的装备，身份等其他类型的技能失效。",
   "equip_subtype": "武器",
   "attack_range": 2,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "出牌阶段"
@@ -650,7 +648,9 @@
    "trigger_condition": [],
    "method": "manual",
    "updated_at": "2026-09-10"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_23_开山斧",
@@ -677,8 +677,6 @@
   "effect_detail": "1.伤害增加的效果可以累加。\n\n2.如果此杀的目标不止1个，则对每个目标造成的伤害都+1。\n\n3.可以弃置除了这张装备牌之外的装备牌来发动效果。\n\n4.最终造成伤害的时候，如果开山斧已经不在装备区了，则伤害不会增加。",
   "equip_subtype": "武器",
   "attack_range": 3,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "打出杀时"
@@ -688,7 +686,9 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_24_鸣鸿刀",
@@ -740,8 +740,6 @@
   "effect_detail": "目前行动牌包括，杀，闪避，蟠桃，怒气，易。",
   "equip_subtype": "武器",
   "attack_range": 5,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "打出杀时"
@@ -751,7 +749,9 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_26_龙舌弓",
@@ -776,8 +776,6 @@
   "effect_detail": "1.只有打出的杀造成的伤害后才会触发弃牌效果。\n\n2.可以弃置目标卜卦区的牌。",
   "equip_subtype": "武器",
   "attack_range": 5,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "杀造成伤害时"
@@ -787,7 +785,9 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_27_干将莫邪",
@@ -815,8 +815,6 @@
   "effect_detail": "1.此效果打出的杀不会消耗出杀次数。\n\n2.即使在自己的回合也可以触发效果，比如通过调兵遣将。",
   "equip_subtype": "武器",
   "attack_range": 2,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "打出杀时"
@@ -826,7 +824,9 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_28_方天画戟",
@@ -917,8 +917,6 @@
   "effect_detail": "1.添加的2张杀属性和点数都是随机的\n\n2.随机的属性如果是♥则会有火焰伤害，如果不是♥，但是点数是4，则会有雷电伤害",
   "equip_subtype": "武器",
   "attack_range": 3,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "装备时"
@@ -928,7 +926,9 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_31_羽扇",
@@ -958,8 +958,6 @@
   "effect_detail": "1.对目标造成并计算火属性伤害时，如果羽扇在你的装备区，则此火属性伤害+1\n\n2.战法牌地火没有伤害来源，所以装备羽扇不会令其伤害+1",
   "equip_subtype": "武器",
   "attack_range": 4,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "造成伤害时"
@@ -969,7 +967,9 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_32_诸葛连弩",
@@ -1085,9 +1085,6 @@
   "effect": "装备上限+2。",
   "effect_detail": "1.装备此装备后，最多可以装备5件装备。\n\n2.如果在装备5件装备的情况下，此装备被弃置，则会额外自动弃置1张最早进入装备区的装备牌。\n\n3.装备上限支持负数，例如子婴在装备云锦袍的情况下将装备上限减为0，则失去云锦袍时装备上限为-2。",
   "equip_subtype": "防具",
-  "attack_range": null,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "出牌阶段"
@@ -1097,7 +1094,10 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_36_八卦盾",
@@ -1125,9 +1125,6 @@
   "effect": "应战，你可以卜卦，若结果花色为♣，你回复1点体力；若结果花色为♠，则抵消此杀。",
   "effect_detail": "1.装备两个八卦盾时，可以卜卦两次，两次都会生效。\n\n2.如果被具有强命效果的杀指定为目标，则卜卦为♠时将会无效。\n\n3.卜卦为♣时，回复体力的效果会先生效。",
   "equip_subtype": "防具",
-  "attack_range": null,
-  "distance_mod": null,
-  "distance_mod_type": null,
   "curated": {
    "timing": [
     "成为杀的目标时"
@@ -1137,7 +1134,10 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null,
+  "distance_mod": null,
+  "distance_mod_type": null
  },
  {
   "block_id": "card_37_玄武盾",
@@ -1285,7 +1285,6 @@
   "equip_subtype": "坐骑",
   "distance_mod": -1,
   "distance_mod_type": "攻击距离",
-  "attack_range": null,
   "curated": {
    "timing": [
     "回合开始"
@@ -1295,7 +1294,8 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null
  },
  {
   "block_id": "card_42_的卢",
@@ -1328,7 +1328,6 @@
   "equip_subtype": "坐骑",
   "distance_mod": 1,
   "distance_mod_type": "防御距离",
-  "attack_range": null,
   "curated": {
    "timing": [
     "受到伤害时"
@@ -1338,7 +1337,8 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null
  },
  {
   "block_id": "card_43_绝影",
@@ -1399,7 +1399,6 @@
   "equip_subtype": "坐骑",
   "distance_mod": 1,
   "distance_mod_type": "防御距离",
-  "attack_range": null,
   "curated": {
    "timing": [
     "回合结束时"
@@ -1409,7 +1408,8 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null
  },
  {
   "block_id": "card_45_飒露紫",
@@ -1458,7 +1458,6 @@
   "equip_subtype": "坐骑",
   "distance_mod": -1,
   "distance_mod_type": "攻击距离",
-  "attack_range": null,
   "curated": {
    "timing": [
     "击杀时"
@@ -1468,7 +1467,8 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null
  },
  {
   "block_id": "card_47_盗骊",
@@ -1489,7 +1489,6 @@
   "equip_subtype": "坐骑",
   "distance_mod": -1,
   "distance_mod_type": "攻击距离",
-  "attack_range": null,
   "curated": {
    "timing": [
     "装备时"
@@ -1499,6 +1498,7 @@
    ],
    "method": "manual",
    "updated_at": "2026-09-11"
-  }
+  },
+  "attack_range": null
  }
 ]

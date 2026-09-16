@@ -5,7 +5,7 @@
 - 精简版（默认）：核心对战辅助 + OCR + AI(httpx)，exclude playwright 重链
 - 完整版（MJS_FULL=1）：精简 + RAG 知识库维护页 + Playwright 抓取
 
-关键设计详见 打包发版指南.md（踩坑 1-10）；改动相关代码切勿回退踩坑处理。
+关键设计详见 打包发版指南.md（踩坑 1-16）；改动相关代码切勿回退踩坑处理。
 验证靠 release.py 打包 + 烟雾测试，OCR 模型路径/excludes 等可能需迭代调试。
 """
 
@@ -113,6 +113,9 @@ DATA_GLOBS = ("eval_*.json", "syn_*.json", "sample_*.json", "test_guide.json",
 DATA_NAMES = ("edge_profile", "char_info_cache.json", "backups", "archive",
               "rag_index", "rag_models",
               "announcements.json", "baike_snapshot.json", "武将推荐指数状态.json",
+              # 卡牌官网同步运行时产物（首启用本地 cards.json 初始化基线，打包过期
+              # 快照会被 _ensure_clean_runtime 部署到运行时 data/，首查全量误报）
+              "card_snapshot.json", "card_changes.json",
               "eval_review.md", "_skills_dump.txt", "_syn_review.md")
 
 

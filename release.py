@@ -10,7 +10,7 @@
     conda run -n myenv python release.py --zip      # 额外产出 zip 分发包
     conda run -n myenv python release.py --skip-build  # 只对已有 dist 做校验
 
-关键点（来自实际踩坑，详见 docs/打包发布指南.md）：
+关键点（来自实际踩坑，详见 打包发版指南.md）：
 - build_deps/ 由 prepare_build_deps() 自动安装 CPU 版 paddlepaddle 2.6.2（独立目录、
   不碰 myenv GPU 版）；靠 PYTHONPATH 让 PyInstaller 优先收集它，spec 内也做了
   sys.path.insert 双保险。
@@ -58,6 +58,7 @@ RUNTIME_ARTIFACTS = [
     DIST / "mjs_agent" / "mjs.ico",
     DIST / "mjs_agent" / "logs",
     DIST / "mjs_agent" / "docs",
+    DIST / "mjs_agent" / "screenshots",
 ]
 
 # ANSI 颜色（Git Bash / 现代终端支持）
@@ -221,6 +222,14 @@ def purity_check() -> None:
         _die("在 _internal/config/ 发现 api_profiles.json（含真实 API Key 的敏感档案），"
              "spec 的 config excludes 未生效，请检查后重新构建")
 
+    # 卡牌百科同步基线/变更记录是运行时状态文件（spec DATA_NAMES 排除）：
+    # _internal/data 下出现 = spec 排除未生效；过期基线会被首启部署到运行时
+    # data/，首次「检查卡牌百科更新」对快照之后的每张卡全量误报
+    for stale in ("card_snapshot.json", "card_changes.json"):
+        if (INTERNAL / "data" / stale).exists():
+            _die(f"在 _internal/data/ 发现 {stale}（卡牌百科同步运行时产物），"
+                 "spec 的 data 排除未生效，请检查后重新构建")
+
     # api key 残留扫描（sk- 开头 20+ 位）；扫整个交付目录，覆盖 exe 根的
     # config.env / config/ 与 _internal 全部文本文件
     _scan_apikey(root)
@@ -281,10 +290,11 @@ def smoke_test() -> None:
         _die(f"无法启动 exe：{e}")
     time.sleep(SMOKE_TIMEOUT_S)
 
-    # startfile 不返回进程句柄，用 tasklist 查存活
+    # startfile 不返回进程句柄，用 tasklist 查存活（中文 Windows 下 tasklist 输出为 GBK，
+    # UTF-8 模式按严格解码会崩掉读取线程导致存活误判，replace 兜底）
     res = subprocess.run(
         ["tasklist", "/FI", "IMAGENAME eq mjs_agent.exe", "/NH"],
-        capture_output=True, text=True)
+        capture_output=True, text=True, errors="replace")
     alive = "mjs_agent.exe" in (res.stdout or "")
 
     # 双击模式无 stdout 捕获，改读 logs 判断致命错误
@@ -301,7 +311,7 @@ def smoke_test() -> None:
                                        "模型加载失败"))
     # 清理 exe 进程（无论是否存活）
     subprocess.run(["taskkill", "/IM", "mjs_agent.exe", "/F"],
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, errors="replace")
 
     if not alive:
         _warn("exe 未保持运行（疑似一闪而过）")
