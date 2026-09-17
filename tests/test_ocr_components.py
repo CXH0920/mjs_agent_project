@@ -14,7 +14,7 @@ from src.ocr import paddle_loader
 from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
-from src.ocr.recognizer import GeneralRecognizer
+from src.ocr.recognizer import _BATCH_CANVAS_MAX_WIDTH, _BATCH_SLOT_GAP, GeneralRecognizer
 from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
 
 
@@ -392,6 +392,16 @@ def test_character_similarity_uses_revised_scores_for_wang_jian_candidates() -> 
     assert service.single_substitution_similarity("王翡", "王翦") == 1.0
 
 
+def test_character_similarity_whitelists_recurring_name_misreads() -> None:
+    service = CharacterSimilarityService()
+
+    # 2026-09 语料实测的反复误读对（樊哙/荀勖），白名单后恢复自动纠正
+    assert service.single_substitution_similarity("樊会", "樊哙") == 1.0
+    assert service.single_substitution_similarity("荀助", "荀勖") == 1.0
+    assert service.single_substitution_similarity("荀歇", "荀勖") == 1.0
+    assert service.is_safe_single_substitution("樊会", "樊哙") is True
+
+
 def test_general_recognizer_maps_batch_boxes_by_slot_center() -> None:
     class FakeEngine:
         def ocr(self, _image, cls):
@@ -410,7 +420,7 @@ def test_general_recognizer_maps_batch_boxes_by_slot_center() -> None:
     }
 
 
-def test_general_recognizer_rejects_ambiguous_or_low_confidence_batch_slot() -> None:
+def test_general_recognizer_joins_fragments_and_rejects_low_confidence_slot() -> None:
     class FakeEngine:
         def ocr(self, _image, cls):
             assert cls is False
@@ -423,7 +433,47 @@ def test_general_recognizer_rejects_ambiguous_or_low_confidence_batch_slot() -> 
     recognizer = GeneralRecognizer()
     recognizer.adopt_engine(FakeEngine())
 
-    assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8), 2: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}
+    assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8), 2: np.zeros((10, 10), dtype=np.uint8)}, "name") == {
+        2: ("重复", 0.9),
+    }
+
+
+def test_general_recognizer_does_not_join_team_kind_fragments() -> None:
+    class FakeEngine:
+        def ocr(self, _image, cls):
+            assert cls is False
+            return [[
+                [[[2, 0], [12, 0], [12, 8], [2, 8]], ("楚", 0.9)],
+                [[[14, 0], [24, 0], [24, 8], [14, 8]], ("军", 0.9)],
+            ]]
+
+    recognizer = GeneralRecognizer()
+    recognizer.adopt_engine(FakeEngine())
+
+    assert recognizer._recognize_prepared_batch({1: np.zeros((10, 30), dtype=np.uint8)}, "team") == {}
+
+
+def test_split_canvas_groups_caps_group_width_and_keeps_slot_order() -> None:
+    strips = {i: np.zeros((372, 213), dtype=np.uint8) for i in range(1, 15)}
+
+    groups = GeneralRecognizer._split_canvas_groups(strips)
+
+    assert [slot for group in groups for slot in group] == list(range(1, 15))
+    for group in groups:
+        width = sum(strips[slot].shape[1] for slot in group) + _BATCH_SLOT_GAP * (len(group) - 1)
+        assert width <= _BATCH_CANVAS_MAX_WIDTH
+
+
+def test_split_canvas_groups_passes_oversized_single_strip_alone() -> None:
+    strips = {1: np.zeros((10, 1200), dtype=np.uint8), 2: np.zeros((10, 100), dtype=np.uint8)}
+
+    assert GeneralRecognizer._split_canvas_groups(strips) == [[1], [2]]
+
+
+def test_join_name_fragments_sorts_by_y_and_uses_min_confidence() -> None:
+    fragments = [("信", 0.99, 150.0), ("韩", 1.0, 40.0)]
+
+    assert GeneralRecognizer._join_name_fragments(2, fragments) == [("韩信", 0.99, 150.0)]
 
 
 def test_general_recognizer_rejects_truncated_name_with_multiple_corrections() -> None:
