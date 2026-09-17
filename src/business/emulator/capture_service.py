@@ -112,6 +112,7 @@ class CaptureService(QObject):
         with self._session_lock:
             path_changed = config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
             port_changed = config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
+            mode_changed = config.get("mumu_screenshot_mode") != self._config.get("mumu_screenshot_mode")
 
             self._config = dict(config)
 
@@ -120,10 +121,11 @@ class CaptureService(QObject):
                 self._set_connection_state("unconfigured")
                 return
 
-            if path_changed or port_changed or self._capture is None:
+            if path_changed or port_changed or mode_changed or self._capture is None:
                 self._capture = AdbCapture(
                     adb_path=config["mumu_adb_path"],
                     adb_port=config.get("mumu_adb_port", 0),
+                    screenshot_mode=config.get("mumu_screenshot_mode", "auto"),
                 )
                 self._set_connection_state("disconnected")
                 logger.info("CaptureService 配置已更新，ADB: %s:%s",

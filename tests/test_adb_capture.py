@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import logging
+import struct
 from types import SimpleNamespace
 
+import numpy as np
 from PIL import Image
 from src.capture.adb_screen import AdbCapture
 
@@ -152,6 +154,88 @@ def test_screencap_can_suppress_success_log(monkeypatch, caplog) -> None:
 
     assert ok
     assert "截图成功" not in caplog.text
+
+
+def _raw_screencap_frame(rgb: Image.Image) -> bytes:
+    """按 Android screencap raw 帧格式构造字节：16 字节头 + RGBA_8888 像素。"""
+    pixels = np.asarray(rgb.convert("RGBA"), dtype=np.uint8)
+    height, width = pixels.shape[:2]
+    header = struct.pack("<IIII", width, height, 1, 1)
+    return header + pixels.tobytes()
+
+
+def test_decode_raw_screencap_matches_png_pixels() -> None:
+    rgb = Image.new("RGB", (3, 2))
+    rgb.putdata([(i * 30 % 256, i * 70 % 256, i * 110 % 256) for i in range(6)])
+
+    decoded = AdbCapture._decode_raw_screencap(_raw_screencap_frame(rgb))
+
+    assert decoded is not None
+    assert decoded.mode == "RGB"
+    assert np.asarray(decoded).tolist() == np.asarray(rgb).tolist()
+
+
+def test_decode_raw_screencap_rejects_bad_frames() -> None:
+    rgb = Image.new("RGB", (2, 2), "red")
+    frame = _raw_screencap_frame(rgb)
+    wrong_format = struct.pack("<IIII", 2, 2, 3, 1) + frame[16:]
+    wrong_size = struct.pack("<IIII", 2, 3, 1, 1) + frame[16:]
+    truncated = frame[:-1]
+
+    assert AdbCapture._decode_raw_screencap(b"\x00" * 8) is None
+    assert AdbCapture._decode_raw_screencap(wrong_format) is None
+    assert AdbCapture._decode_raw_screencap(wrong_size) is None
+    assert AdbCapture._decode_raw_screencap(truncated) is None
+
+
+def test_screencap_raw_mode_returns_image(monkeypatch, caplog) -> None:
+    cap = AdbCapture("adb.exe", 16448, screenshot_mode="raw")
+    cap._connected = True
+    cap._device_serial = "127.0.0.1:16448"
+    frame = _raw_screencap_frame(Image.new("RGB", (2, 2), "blue"))
+    captured_args: list[tuple] = []
+
+    def fake_run(*args, **kwargs):
+        captured_args.append(args[0])
+        return SimpleNamespace(returncode=0, stderr=b"", stdout=frame)
+
+    monkeypatch.setattr("src.capture.adb_screen.subprocess.run", fake_run)
+
+    with caplog.at_level(logging.INFO, logger="src.capture.adb_screen"):
+        ok, result = cap.screencap_full()
+
+    assert ok
+    assert result.size == (2, 2)
+    assert captured_args[0][-1] != "-p"  # raw 模式不带 -p
+    assert "（raw）" in caplog.text
+
+
+def test_screencap_auto_falls_back_to_png_when_raw_undecodable(monkeypatch) -> None:
+    cap = AdbCapture("adb.exe", 16448, screenshot_mode="auto")
+    cap._connected = True
+    cap._device_serial = "127.0.0.1:16448"
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(buffer, format="PNG")
+    captured_args: list[tuple] = []
+
+    def fake_run(*args, **kwargs):
+        captured_args.append(args[0])
+        return SimpleNamespace(returncode=0, stderr=b"", stdout=buffer.getvalue())
+
+    monkeypatch.setattr("src.capture.adb_screen.subprocess.run", fake_run)
+
+    ok, result = cap.screencap_full()
+
+    assert ok
+    assert result.size == (2, 2)
+    assert captured_args[0][-1] != "-p"  # 第一轮先尝试 raw
+    assert captured_args[-1][-1] == "-p"  # 回退 PNG
+
+
+def test_screencap_invalid_mode_falls_back_to_auto(monkeypatch) -> None:
+    cap = AdbCapture("adb.exe", 16448, screenshot_mode="bogus")
+
+    assert cap._screenshot_mode == "auto"
 
 
 def test_connect_with_auto_port_uses_unique_running_instance(monkeypatch) -> None:

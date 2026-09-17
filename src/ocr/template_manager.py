@@ -29,6 +29,16 @@ MATCH_GUIDE_TEMPLATE_FILE = DEFAULT_TEMPLATE_DIR / "match_guide" / "template.png
 DEFAULT_REFERENCE_SIZE = (2560, 1440)
 _LOCAL_SEARCH_PADDING_RATIO = 0.2
 
+# 跨实例时序缓存：实际加载的模板路径 → (模板文件 mtime_ns, 上次匹配的最佳缩放比例)。
+# ocr_worker 每个任务都新建 TemplateManager，实例字段无法跨轮保留；该缓存让
+# "上一轮命中的缩放比例"在下一轮直接作为局部复验的首选，免去多尺度扫描。
+# mtime 校验保证模板重制/替换后缓存自动失效。
+_LAST_SCALE_CACHE: dict[str, tuple[int, float]] = {}
+# 全图兜底的粗扫降采样比例与甄别余量：非目标页全尺度得分实测 ~0.43（阈值 0.8），
+# 1/4 降采样的得分损失远小于该差距，粗扫可可靠区分"布局偏移"与"完全非目标页"
+_COARSE_SCAN_RATIO = 0.25
+_COARSE_SCAN_MARGIN = 0.15
+
 
 class TemplateManager:
     """模板管理器 — 保存/加载/匹配武将选择页面模板"""
@@ -49,7 +59,9 @@ class TemplateManager:
         self._template: np.ndarray | None = None  # 灰度模板图像
         self._reference_size = DEFAULT_REFERENCE_SIZE
         self._template_roi: tuple[int, int, int, int] | None = None
+        self._loaded_template_path: Path | None = None
         self._last_match_scale = 1.0
+        self._has_scale_history = False
         self._last_match_confidence = 0.0
         self._last_match_strategy = "unmatched"
         logger.debug("TemplateManager 初始化, 模板路径: %s", self._template_path)
@@ -110,6 +122,8 @@ class TemplateManager:
                 img = cv2.imdecode(np.frombuffer(_f.read(), np.uint8), cv2.IMREAD_GRAYSCALE)
             if img is not None and img.size > 0:
                 self._template = img
+                self._loaded_template_path = path
+                self._restore_scale_history(path)
                 self._load_metadata(path.with_suffix(".json"))
                 logger.debug("模板已加载: %s (%sx%s)", path.name, img.shape[1], img.shape[0])
             else:
@@ -119,6 +133,19 @@ class TemplateManager:
             logger.error("模板加载异常: %s", e)
             logger.debug(traceback.format_exc())
             self._template = None
+
+    def _restore_scale_history(self, path: Path) -> None:
+        """从跨实例缓存恢复上次匹配的缩放比例；文件已变更时视为失效。"""
+        try:
+            cached = _LAST_SCALE_CACHE.get(str(path))
+            if cached and cached[0] == path.stat().st_mtime_ns:
+                self._last_match_scale = cached[1]
+                self._has_scale_history = True
+                return
+        except OSError:
+            pass
+        self._last_match_scale = 1.0
+        self._has_scale_history = False
 
     @property
     def _metadata_path(self) -> Path:
@@ -190,6 +217,7 @@ class TemplateManager:
 
         # 加载到内存
         self._template = gray
+        self._loaded_template_path = self._template_path
         self._reference_size = (img_w, img_h)
         self._template_roi = (x, y, w, h)
         try:
@@ -233,6 +261,7 @@ class TemplateManager:
             return False, 0.0
 
         try:
+            history_scale = self._last_match_scale if self._has_scale_history else None
             self._last_match_scale = 1.0
             self._last_match_confidence = 0.0
             self._last_match_strategy = "unmatched"
@@ -243,6 +272,24 @@ class TemplateManager:
             )
             scales = self._candidate_scales(base_scale)
             local_region = self._local_search_region(gray, base_scale)
+
+            # 时序复验：模拟器分辨率不会逐帧变化，上一轮的最佳缩放比例大概率仍命中，
+            # 在期望位置附近直接复验即可返回，免去整轮多尺度扫描
+            if (
+                history_scale is not None
+                and self._template_roi is not None
+                and history_scale != base_scale
+            ):
+                cached_region = self._local_search_region(gray, history_scale)
+                cached_value = self._match_at_scale(gray, history_scale, cached_region)
+                if cached_value is not None and cached_value >= threshold:
+                    self._set_match_details(cached_value, history_scale, "cached_local")
+                    logger.debug(
+                        "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=cached_local, 匹配",
+                        cached_value, history_scale, threshold,
+                    )
+                    return True, float(cached_value)
+
             base_value = self._match_at_scale(gray, base_scale, local_region)
             base_strategy = "base_local" if local_region is not None else "base_full"
             if base_value is not None and base_value >= threshold:
@@ -255,18 +302,61 @@ class TemplateManager:
 
             best_value = base_value if base_value is not None else -1.0
             best_scale = base_scale
+            # 局部多尺度：各候选缩放的期望位置仍由模板 ROI 比例定位（缩放只影响窗口
+            # 大小，不影响位置），先在局部完成全部候选缩放，命中即免掉全图扫描
+            if local_region is not None:
+                for scale in scales:
+                    if scale == round(base_scale, 4):
+                        continue
+                    value = self._match_at_scale(gray, scale, self._local_search_region(gray, scale))
+                    if value is not None and value > best_value:
+                        best_value = value
+                        best_scale = scale
+                if best_value >= threshold:
+                    self._set_match_details(best_value, best_scale, "fallback_local_multiscale")
+                    logger.debug(
+                        "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=fallback_local_multiscale, 匹配",
+                        best_value, best_scale, threshold,
+                    )
+                    return True, float(best_value)
+
+            # 全图兜底：先对全部候选缩放做 1/4 降采样粗扫，只有粗扫得分逼近阈值的
+            # 最优缩放才回原尺寸做全图精扫。非目标页（轮询常态）全尺度得分远低于
+            # 阈值，粗扫即可判否，避免每拍都付整幅全图多尺度扫描的几百毫秒
             fallback_scales = scales if local_region is not None else [
                 scale for scale in scales if scale != round(base_scale, 4)
             ]
+            coarse_gray = cv2.resize(
+                gray, None, fx=_COARSE_SCAN_RATIO, fy=_COARSE_SCAN_RATIO,
+                interpolation=cv2.INTER_AREA,
+            )
+            coarse_threshold = max(0.0, threshold - _COARSE_SCAN_MARGIN)
+            best_coarse_value = -1.0
+            best_coarse_scale: float | None = None
             for scale in fallback_scales:
-                value = self._match_at_scale(gray, scale)
+                value = self._match_at_coarse_scale(coarse_gray, scale * _COARSE_SCAN_RATIO)
                 if value is not None and value > best_value:
                     best_value = value
                     best_scale = scale
+                if value is not None and value > best_coarse_value:
+                    best_coarse_value = value
+                    best_coarse_scale = scale
+            if best_coarse_scale is not None and best_coarse_value >= coarse_threshold:
+                value = self._match_at_scale(gray, best_coarse_scale)
+                if value is not None and value > best_value:
+                    best_value = value
+                    best_scale = best_coarse_scale
             if best_value < 0:
                 logger.debug("所有模板缩放比例均大于当前截图，跳过匹配")
                 return False, 0.0
-            fallback_strategy = "fallback_full_multiscale" if local_region is not None else "fallback_multiscale"
+            refined_coarse = best_coarse_scale is not None and best_coarse_value >= coarse_threshold
+            if refined_coarse:
+                fallback_strategy = (
+                    "fallback_full_multiscale" if local_region is not None else "fallback_multiscale"
+                )
+            else:
+                # 粗扫即判否（完全非目标页），未发生原尺寸全图扫描
+                fallback_strategy = "coarse_reject_multiscale"
             self._set_match_details(best_value, best_scale, fallback_strategy)
             matched = bool(best_value >= threshold)
             logger.debug(
@@ -318,10 +408,28 @@ class TemplateManager:
         _, max_value, _, _ = cv2.minMaxLoc(result)
         return float(max_value)
 
+    def _match_at_coarse_scale(self, coarse_gray: np.ndarray, coarse_scale: float) -> float | None:
+        """在降采样图上按已折算的比例做一次全图模板匹配（全图兜底的粗扫）。"""
+        width = max(1, round(self._template.shape[1] * coarse_scale))
+        height = max(1, round(self._template.shape[0] * coarse_scale))
+        if width > coarse_gray.shape[1] or height > coarse_gray.shape[0]:
+            return None
+        template = cv2.resize(self._template, (width, height), interpolation=cv2.INTER_AREA)
+        result = cv2.matchTemplate(coarse_gray, template, cv2.TM_CCOEFF_NORMED)
+        _, max_value, _, _ = cv2.minMaxLoc(result)
+        return float(max_value)
+
     def _set_match_details(self, confidence: float, scale: float, strategy: str) -> None:
         self._last_match_confidence = confidence
         self._last_match_scale = scale
         self._last_match_strategy = strategy
+        self._has_scale_history = True
+        path = self._loaded_template_path
+        if path is not None:
+            try:
+                _LAST_SCALE_CACHE[str(path)] = (path.stat().st_mtime_ns, scale)
+            except OSError:
+                pass
 
     # ── 删除 ──────────────────────────────────────────────────────────
 
@@ -330,7 +438,9 @@ class TemplateManager:
         self._template = None
         self._reference_size = DEFAULT_REFERENCE_SIZE
         self._template_roi = None
+        self._loaded_template_path = None
         self._last_match_scale = 1.0
+        self._has_scale_history = False
         self._last_match_confidence = 0.0
         self._last_match_strategy = "unmatched"
         if self._template_path.exists():

@@ -159,6 +159,7 @@ def load_env_config(env_path=None):
         "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
         "MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
         "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
+        "MUMU_SCREENSHOT_MODE": "mumu_screenshot_mode",
         "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
         "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
         "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",

@@ -19,6 +19,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PIL import Image
 from src.capture.image_validation import load_png_image_bytes
 
@@ -27,19 +29,33 @@ logger = logging.getLogger(__name__)
 _ADB_TIMEOUT = 15
 _SCREENSHOT_RETRIES = 3
 _SCREENSHOT_RETRY_DELAY = 0.15
+SCREENSHOT_MODES = ("auto", "raw", "png")
+# Android screencap raw 帧：16 字节头（宽/高/像素格式/色彩空间，各 u32 小端）+ 裸像素
+_RAW_HEADER_BYTES = 16
+_RAW_BYTES_PER_PIXEL = 4
+# HAL_PIXEL_FORMAT：1=RGBA_8888，2=RGBX_8888（X 为无效字节，按 RGBA 处理）
+_RAW_FORMAT_RGBA = 1
+_RAW_FORMAT_RGBX = 2
+_MAX_RAW_DIMENSION = 8192
 
 
 class AdbCapture:
     """封装 ADB 连接与截图操作，支持多设备。"""
 
-    def __init__(self, adb_path: str, adb_port: int = 7555) -> None:
+    def __init__(self, adb_path: str, adb_port: int = 7555,
+                 screenshot_mode: str = "auto") -> None:
         """
         Args:
             adb_path: adb.exe 的完整路径。
             adb_port: MuMu 模拟器的 ADB 端口。
+            screenshot_mode: auto=raw 优先失败回退 PNG / raw=仅 raw / png=仅 PNG。
         """
         self._adb_path = adb_path
         self._adb_port = adb_port
+        if screenshot_mode not in SCREENSHOT_MODES:
+            logger.warning("未知截图模式 %r，回退 auto", screenshot_mode)
+            screenshot_mode = "auto"
+        self._screenshot_mode = screenshot_mode
         self._device_serial: str = ""
         self._connected = False
 
@@ -163,62 +179,114 @@ class AdbCapture:
             return False, "尚未连接，请先连接模拟器"
 
         for attempt in range(1, _SCREENSHOT_RETRIES + 1):
-            try:
-                command_started = time.perf_counter()
-                result = subprocess.run(
-                    [self._adb_path, "-s", self._device_serial, "exec-out", "screencap", "-p"],
-                    capture_output=True,
-                    timeout=_ADB_TIMEOUT,
-                )
-                command_elapsed_ms = (time.perf_counter() - command_started) * 1000
-            except FileNotFoundError:
-                return False, f"找不到 adb: {self._adb_path}"
-            except subprocess.TimeoutExpired:
-                logger.error("截图命令执行超时")
-                return False, "截图命令执行超时"
-            except OSError as e:
-                logger.error("截图命令执行异常: %s", e)
-                return False, f"截图命令执行异常: {e}"
-
-            if result.returncode != 0:
-                err = result.stderr.decode("utf-8", errors="replace").strip()
-                logger.error("screencap 失败 (returncode=%d): %s", result.returncode, err)
-                if self._is_device_unavailable(err):
-                    self._invalidate_connection()
-                return False, f"screencap 失败: {err}"
-
-            if not result.stdout:
-                error = "截图返回空数据"
-            else:
-                try:
-                    decode_started = time.perf_counter()
-                    image = load_png_image_bytes(result.stdout)
-                    if log_success:
-                        logger.info(
-                            "截图成功: %s x %s，ADB命令=%.1fms，PNG解码=%.1fms",
-                            image.width,
-                            image.height,
-                            command_elapsed_ms,
-                            (time.perf_counter() - decode_started) * 1000,
-                        )
-                    return True, image
-                except Exception as e:
-                    error = f"解析截图图像失败: {e}"
+            # 命令级失败（超时/设备离线）直接终止；数据级失败（空数据/解析失败）重试
+            image, error, command_ms, decode_ms, mode = self._capture_and_decode()
+            if image is not None:
+                if log_success:
+                    logger.info(
+                        "截图成功: %s x %s，ADB命令=%.1fms，图像解码=%.1fms（%s）",
+                        image.width, image.height, command_ms, decode_ms, mode,
+                    )
+                return True, image
 
             if attempt < _SCREENSHOT_RETRIES:
                 logger.warning(
-                    "截图数据无效，将重试 (%d/%d): %s，字节数=%d",
-                    attempt,
-                    _SCREENSHOT_RETRIES,
-                    error,
-                    len(result.stdout),
+                    "截图数据无效，将重试 (%d/%d): %s",
+                    attempt, _SCREENSHOT_RETRIES, error,
                 )
                 time.sleep(_SCREENSHOT_RETRY_DELAY)
             else:
-                logger.error("%s，字节数=%d", error, len(result.stdout))
+                logger.error("截图失败: %s", error)
                 return False, error
 
         return False, "截图失败"
+
+    def _capture_and_decode(self) -> tuple[Image.Image | None, str, float, float, str]:
+        """单轮截图尝试：按模式执行 raw/PNG 截图并解码。
+
+        Returns:
+            (图像或 None, 错误消息, ADB命令耗时ms, 解码耗时ms, 实际生效模式)。
+        """
+        if self._screenshot_mode in ("auto", "raw"):
+            ok, payload, command_ms = self._run_screencap([])
+            if not ok:
+                return None, str(payload), command_ms, 0.0, "raw"
+            decode_started = time.perf_counter()
+            image = self._decode_raw_screencap(payload)
+            decode_ms = (time.perf_counter() - decode_started) * 1000
+            if image is not None:
+                return image, "", command_ms, decode_ms, "raw"
+            if self._screenshot_mode == "raw":
+                return None, "raw 帧解析失败", command_ms, decode_ms, "raw"
+            logger.debug("raw 帧解析失败（%s 字节），本轮回退 PNG 模式", len(payload))
+
+        ok, payload, command_ms = self._run_screencap(["-p"])
+        if not ok:
+            return None, str(payload), command_ms, 0.0, "png"
+        if not payload:
+            return None, "截图返回空数据", command_ms, 0.0, "png"
+        try:
+            decode_started = time.perf_counter()
+            image = load_png_image_bytes(payload)
+            decode_ms = (time.perf_counter() - decode_started) * 1000
+            return image, "", command_ms, decode_ms, "png"
+        except Exception as e:
+            return None, f"解析截图图像失败: {e}", command_ms, 0.0, "png"
+
+    def _run_screencap(self, extra_args: list[str]) -> tuple[bool, bytes | str, float]:
+        """执行一条 screencap 命令。
+
+        Returns:
+            (是否成功, 字节数据或错误消息, 命令耗时ms)。
+            设备不可达时清除失效会话。
+        """
+        try:
+            started = time.perf_counter()
+            result = subprocess.run(
+                [self._adb_path, "-s", self._device_serial, "exec-out", "screencap", *extra_args],
+                capture_output=True,
+                timeout=_ADB_TIMEOUT,
+            )
+            command_elapsed_ms = (time.perf_counter() - started) * 1000
+        except FileNotFoundError:
+            return False, f"找不到 adb: {self._adb_path}", 0.0
+        except subprocess.TimeoutExpired:
+            logger.error("截图命令执行超时")
+            return False, "截图命令执行超时", _ADB_TIMEOUT * 1000.0
+        except OSError as e:
+            logger.error("截图命令执行异常: %s", e)
+            return False, f"截图命令执行异常: {e}", 0.0
+
+        if result.returncode != 0:
+            err = result.stderr.decode("utf-8", errors="replace").strip()
+            logger.error("screencap 失败 (returncode=%d): %s", result.returncode, err)
+            if self._is_device_unavailable(err):
+                self._invalidate_connection()
+            return False, f"screencap 失败: {err}", command_elapsed_ms
+        return True, result.stdout, command_elapsed_ms
+
+    @staticmethod
+    def _decode_raw_screencap(data: bytes) -> Image.Image | None:
+        """解析 Android screencap raw 帧（16 字节头 + RGBA_8888/RGBX_8888 裸像素）。
+
+        任一校验不满足（头/格式/尺寸/字节数）返回 None，由调用方回退 PNG。
+        """
+        if len(data) < _RAW_HEADER_BYTES:
+            return None
+        width, height, pixel_format, _colorspace = np.frombuffer(
+            data[:_RAW_HEADER_BYTES], dtype="<u4",
+        )
+        if pixel_format not in (_RAW_FORMAT_RGBA, _RAW_FORMAT_RGBX):
+            return None
+        if not (0 < width <= _MAX_RAW_DIMENSION and 0 < height <= _MAX_RAW_DIMENSION):
+            return None
+        if len(data) != _RAW_HEADER_BYTES + int(width) * int(height) * _RAW_BYTES_PER_PIXEL:
+            return None
+        pixels = np.frombuffer(data[_RAW_HEADER_BYTES:], dtype=np.uint8).reshape(
+            height, width, _RAW_BYTES_PER_PIXEL,
+        )
+        rgb = cv2.cvtColor(pixels, cv2.COLOR_RGBA2RGB)
+        return Image.fromarray(rgb)
 
     # ── 内部方法 ──────────────────────────────────────────────────────
 
