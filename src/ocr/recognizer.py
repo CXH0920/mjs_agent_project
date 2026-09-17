@@ -6,6 +6,8 @@
   1. 同类名称 ROI 拼图后批量执行 PaddleOCR，异常槽位逐槽复核
   2. 按字数门禁建立候选闭包，多路证据必须在候选交集内确认
   3. 等长且仅错一字时，在合法候选内使用结构化字形评分决胜
+  4. 全部证据族以极高置信度一致读出词表外原文时不做评分决胜绑定：有候选时
+     保留候选待人工确认，完全无候选时判为新武将（unknown_new_hero）
 
 预处理操作在图像层面：放大、自适应对比度增强、锐化。
 PaddleOCR 延迟加载，首次调用时初始化。
@@ -39,6 +41,9 @@ _MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
 _MULTI_CANDIDATE_MIN_SIMILARITY = 0.35
 _MULTI_CANDIDATE_MIN_MARGIN = 0.15
 _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
+# 词表外新武将保护：全部证据族以不低于此值的置信度一致读出同一词表外原文时，
+# 判定为新武将而不强制纠错绑定（历史 _HIGH_CONFIDENCE 保护在证据体系迁移中遗失后重建）
+_UNMATCHED_CONSENSUS_MIN_CONFIDENCE = 0.995
 _CONFIRMED_RESOLUTIONS = frozenset({
     "exact", "unique_prefix", "unique_similarity", "multi_similarity",
     "slot_unique", "manual",
@@ -375,6 +380,16 @@ class GeneralRecognizer:
             result["candidates"] = sorted(candidate_union | confirmed)
             return result
 
+        consensus = self._unmatched_consensus_name(evidence)
+        if consensus:
+            if not candidate_sets:
+                result.update(candidates=[], resolution="unknown_new_hero")
+            else:
+                # 词表外但存在候选：可能是新武将（王导），也可能是生僻字被稳定
+                # 误读或整字漏识（王濬→"王"），抑制评分决胜、保留候选走人工确认
+                result.update(candidates=sorted(candidate_union), resolution="unresolved")
+            return result
+
         if not candidate_sets:
             return result
 
@@ -516,6 +531,40 @@ class GeneralRecognizer:
         ):
             return winners.pop()
         return ""
+
+    def _unmatched_consensus_name(self, evidence: list[dict]) -> str:
+        """全部证据族以极高置信度一致读出同一词表外原文时返回该原文，否则空串。
+
+        词表外但命中确定性混淆字对白名单的原文不视为新武将，
+        交由既有评分决胜纠错（如"王翡"→王翦）。
+        """
+        by_family: dict[str, tuple[str, float]] = {}
+        for raw in evidence:
+            text = str(raw.get("text", "")).strip()
+            confidence = float(raw.get("confidence", 0.0))
+            if not text or confidence < _UNMATCHED_CONSENSUS_MIN_CONFIDENCE:
+                return ""
+            family = self._evidence_family(str(raw.get("source", "")))
+            current = by_family.get(family)
+            if current is None or confidence > current[1]:
+                by_family[family] = (text, confidence)
+        if len(by_family) < _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES:
+            return ""
+        texts = {text for text, _ in by_family.values()}
+        if len(texts) != 1:
+            return ""
+        text = next(iter(texts))
+        if text in self._hero_names or self._has_whitelist_correction(text):
+            return ""
+        return text
+
+    def _has_whitelist_correction(self, text: str) -> bool:
+        """等长替换一处即可命中白名单混淆字对的词表武将时返回 True。"""
+        return any(
+            self._similarity_service.single_substitution_similarity(text, hero) == 1.0
+            for hero in self._hero_names
+            if len(hero) == len(text)
+        )
 
     @staticmethod
     def _evidence_family(source: str) -> str:

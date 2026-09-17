@@ -598,6 +598,111 @@ def test_general_recognizer_enforces_all_multi_candidate_score_thresholds() -> N
         assert result["candidates"] == ["王丙", "王乙"]
 
 
+def test_general_recognizer_suppresses_binding_for_consistent_unknown_with_candidates() -> None:
+    # 高置信度一致读出词表外原文时抑制评分决胜（王导不再误绑王异），
+    # 但候选可能是生僻字被稳定误读，必须保留待人工确认
+    result = GeneralRecognizer(hero_names=["王异", "王戎", "王濬", "王翦"])._resolve_name_evidence(7, [
+        {"source": "batch_enhanced", "text": "王导", "confidence": 0.9997},
+        {"source": "single_enhanced", "text": "王导", "confidence": 0.9995},
+        {"source": "single_plain", "text": "王导", "confidence": 0.9998},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["candidates"] == ["王异", "王戎", "王濬", "王翦"]
+    assert result["raw_name"] == "王导"
+
+
+def test_general_recognizer_keeps_truncated_rare_char_read_pending() -> None:
+    # 生僻字被整字漏识（王濬 只读出"王"）时保留全部前缀候选待人工确认
+    result = GeneralRecognizer(
+        hero_names=["王元姬", "王异", "王戎", "王濬", "王翦"],
+    )._resolve_name_evidence(6, [
+        {"source": "batch_plain", "text": "王", "confidence": 0.9998},
+        {"source": "single_enhanced", "text": "王", "confidence": 0.9997},
+        {"source": "single_plain", "text": "王", "confidence": 0.9997},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["candidates"] == ["王元姬", "王异", "王戎", "王濬", "王翦"]
+
+
+def test_general_recognizer_prefers_whitelist_correction_over_new_hero_consensus() -> None:
+    # 翡→翦 是确定性混淆字对，极高置信度读出"王翡"仍应纠正为王翦而非新武将
+    result = GeneralRecognizer(hero_names=["王翦", "王异"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王翡", "confidence": 0.9997},
+        {"source": "single_plain", "text": "王翡", "confidence": 0.9998},
+    ])
+
+    assert (result["name"], result["resolution"]) == ("王翦", "multi_similarity")
+
+
+def test_general_recognizer_binds_medium_confidence_unknown_via_multi_similarity() -> None:
+    # 低于共识门槛的一致读数仍按既有字形评分决胜
+    result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王导", "confidence": 0.95},
+        {"source": "single_enhanced", "text": "王导", "confidence": 0.93},
+        {"source": "single_plain", "text": "王导", "confidence": 0.94},
+    ])
+
+    assert (result["name"], result["resolution"]) == ("王异", "multi_similarity")
+
+
+def test_general_recognizer_keeps_split_evidence_out_of_new_hero_consensus() -> None:
+    # 任一路证据读出不同原文即非共识，精确命中照常生效
+    result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王导", "confidence": 0.9997},
+        {"source": "single_enhanced", "text": "王导", "confidence": 0.9995},
+        {"source": "single_plain", "text": "王异", "confidence": 0.9998},
+    ])
+
+    assert (result["name"], result["resolution"]) == ("王异", "exact")
+
+
+def test_general_recognizer_does_not_fire_new_hero_consensus_from_single_family() -> None:
+    # 仅批图单族证据不满足共识门槛，保持未确认等待逐槽复核
+    result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王导", "confidence": 0.9997},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unresolved"
+    assert result["candidates"] == ["王异", "王翦"]
+
+
+def test_general_recognizer_marks_candidate_free_consensus_as_new_hero() -> None:
+    # 词表外且无编辑距离候选的共识读数同样归入新武将而非 unknown
+    result = GeneralRecognizer(hero_names=["张飞"])._resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "王导", "confidence": 0.9997},
+        {"source": "single_plain", "text": "王导", "confidence": 0.9998},
+    ])
+
+    assert result["name"] == ""
+    assert result["resolution"] == "unknown_new_hero"
+    assert result["candidates"] == []
+
+
+def test_general_recognize_keeps_consistent_unknown_name_unresolved() -> None:
+    class FakeEngine:
+        def ocr(self, _image, cls=False):
+            return [[[[[0, 0], [5, 0], [5, 5], [0, 5]], ("王导", 0.9997)]]]
+
+    recognizer = GeneralRecognizer(
+        hero_names=["王异", "王翦"],
+        rois=[[10 * index, 100, 20, 40] for index in range(8)],
+        reference_size=(200, 200),
+    )
+    recognizer.adopt_engine(FakeEngine())
+
+    results = recognizer.recognize(np.zeros((200, 200, 3), dtype=np.uint8))
+
+    assert results[0]["name"] == ""
+    assert results[0]["resolution"] == "unresolved"
+    assert results[0]["raw_name"] == "王导"
+    assert results[0]["candidates"] == ["王异", "王翦"]
+
+
 def test_general_recognizer_rejects_evidence_outside_prefix_candidate_closure() -> None:
     result = GeneralRecognizer(hero_names=["卫青", "卫玠", "周瑜"])._resolve_name_evidence(1, [
         {"source": "batch_enhanced", "text": "卫", "confidence": 0.99},
