@@ -10862,8 +10862,8 @@
       3
     ],
     "manual": false,
-    "deleted": false,
-    "deleted_at": null
+    "deleted": true,
+    "deleted_at": "2026-09-17T10:00:41"
   },
   {
     "hero1_name": "郭嘉",

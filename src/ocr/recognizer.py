@@ -209,7 +209,7 @@ class GeneralRecognizer:
             batch_text, batch_confidence = recognized.get(i, ("", 0.0))
             initial = self._resolve_name_evidence(i, evidence)
             if self._requires_slot_recheck(initial, batch_text, batch_confidence):
-                self._append_single_name_evidence(evidence, prepared, raw_slots[i], i)
+                self._append_single_name_evidence(evidence, raw_slots[i], i)
             result = self._resolve_name_evidence(i, evidence)
             results.append(result)
             logger.debug(
@@ -258,7 +258,7 @@ class GeneralRecognizer:
             initial = self._resolve_name_evidence(seat_index, evidence)
             if self._requires_slot_recheck(initial, batch_text, batch_confidence):
                 self._append_single_name_evidence(
-                    evidence, prepared_name, raw_name_slots[seat_index], seat_index,
+                    evidence, raw_name_slots[seat_index], seat_index,
                 )
             name_result = self._resolve_name_evidence(seat_index, evidence)
             team_text, team_confidence = recognized_teams.get(seat_index, ("", 0.0))
@@ -288,12 +288,12 @@ class GeneralRecognizer:
     def _append_single_name_evidence(
         self,
         evidence: list[dict],
-        prepared: np.ndarray,
         raw_roi: np.ndarray,
         slot: int,
     ) -> None:
-        """仅为未确认槽位补充增强图和原始放大图两路证据。"""
-        text, confidence = self._recognize_prepared_single(prepared, slot, "name")
+        """仅为未确认槽位补充 gamma 提亮图和 plain 放大图两路证据。"""
+        enhanced = self._preprocessor.preprocess_roi_enhanced(raw_roi)
+        text, confidence = self._recognize_prepared_single(enhanced, slot, "name")
         self._append_evidence(evidence, "single_enhanced", text, confidence)
         plain = self._preprocess_plain_roi(raw_roi)
         text, confidence = self._recognize_prepared_single(plain, slot, "name")
@@ -655,7 +655,7 @@ class GeneralRecognizer:
                     if evidence_by_slot is not None:
                         self._append_evidence(
                             evidence_by_slot.setdefault(slot, []),
-                            f"batch_{'enhanced' if kind == 'name' else kind}",
+                            f"batch_{'plain' if kind == 'name' else kind}",
                             text,
                             float(confidence),
                         )

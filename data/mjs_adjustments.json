@@ -1362,6 +1362,56 @@
    "source": "announcement",
    "ref": "https://mjs.ztgame.com/news/000-1788-000e7-949971.html",
    "announcement_title": "9月10日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-16",
+   "hero": "公孙瓒",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "筑京自固",
+     "before": "受伤，你获得1张坐骑牌。",
+     "after": "受伤，你获得1张坐骑牌，并且可以立即打出此牌。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1789-000f0-554132.html",
+   "announcement_title": "9月17日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-16",
+   "hero": "魏华存",
+   "change_type": "新增",
+   "skills": [
+    "存思身神",
+    "上清真经",
+    "黄庭化仙",
+    "（玉剑",
+    "魏华存（武将牌）"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1789-000f0-554132.html",
+   "announcement_title": "9月17日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-16",
+   "hero": "魏咎",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "流亡储君",
+     "before": "登场，你可以选择一名其他角色，当其弃置牌时，你获得其中1张牌，并转化为“义兵”。",
+     "after": "登场，你可以选择一名其他角色，当其弃置牌时，你获得其中1张牌，并转化为“义兵”。"
+    },
+    {
+     "skill": "焚身救民",
+     "before": "回合结束时，你进入连环状态，摸2张牌，然后受到1点火焰伤害，并失去1点体力上限。",
+     "after": "回合结束时，你进入连环状态，摸2张牌，然后受到1点火焰伤害。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1789-000f0-554132.html",
+   "announcement_title": "9月17日05：00停服更新预告"
   }
  ]
 }
