@@ -204,11 +204,11 @@ def evaluate_peak_ban_advice(
 
 **槽位索引约定**：`SLOT_COUNT=4`、`PLAYER_SLOT_INDEX=5`（OCR 排序键，非槽位索引）、`ENEMY_SLOT_INDICES={1,2}`、`TEAMMATE_SLOT_INDICES={3,4}`。
 
-**敌我判定**（`_side_from_position`）：需先识别出 player slot 且四名已确认名称唯一。player slot → 我方；enemy slots → 敌方；唯一 teammate → 我方。阵营标签校验（`_check_team_labels`）：楚军/汉军标签必须与固定席位规则一致，标签缺失返回 None（不阻断流程）。
+**敌我判定**（`_side_from_position`）：需先识别出 player slot（名字未决的槽位同样按座次先归边，名称由用户稍后补齐）。player slot → 我方；enemy slots → 敌方；唯一 teammate → 我方。阵营标签校验（`_check_team_labels`）：楚军/汉军标签必须与固定席位规则一致，标签缺失返回 None（不阻断流程）。
 
 **确认链**：`validate()` 依次检查待确认名称、四人齐备、无重复武将、敌我均确认、双方各 2 名；`can_confirm()` = `validate().is_valid`；`confirm()` 置 `_analysis_confirmed=True`。任何 `set_side` / `replace_hero` / `clear` 操作都会重置 `_analysis_confirmed`，要求重新确认。
 
-`set_side(index, side)` 限制每方最多 2 名（返回 `side_full` 拒绝），主将 slot 随敌我变更自动重选。`replace_hero` 清除全部敌我状态并重置主将与确认标记。
+`set_side(index, side)` 限制每方最多 2 名（返回 `side_full` 拒绝），主将 slot 随敌我变更自动重选。`replace_hero` 清除全部敌我状态并重置主将与确认标记；候选内纠正错读时面板传 `keep_sides=True`——只换名，卡面与座次未变，敌我、阵营标签与主将保留。
 
 ### 3.7 对局攻略分析渲染（match_analysis_view.py）
 
@@ -418,7 +418,7 @@ class _ImportWorker(QThread):
 | `LineupState.load_from_ocr(ocr_results, hero_by_name, recognized_at) -> bool` | OCR 导入阵容 |
 | `LineupState.set_side(index, side) -> LineupMutationResult` | 设置敌我（限制每方 ≤2） |
 | `LineupState.set_ally_leader(index) -> bool` | 设置我方主将 |
-| `LineupState.replace_hero(index, hero) -> None` | 替换槽位（重置全部敌我状态） |
+| `LineupState.replace_hero(index, hero, keep_sides=False) -> None` | 替换槽位（默认重置全部敌我状态；候选内纠错传 keep_sides=True 保留敌我与主将） |
 | `LineupState.validate() -> LineupValidationResult` | 阵容可用性判定 |
 | `LineupState.confirm() -> bool` | 确认阵容，允许生成攻略 |
 | `LineupState.clear() -> None` | 清空全部状态 |

@@ -225,8 +225,15 @@ class MatchHeroCard(QFrame):
         set_style_property(self, "side", normalized_side)
         self._sync_side_buttons(side)
         if self._hero is None:
-            self._side_status_label.setText("敌我未定")
-            self._side_status_label.set_tone(TONE_NEUTRAL)
+            if side == SIDE_ALLY:
+                self._side_status_label.setText("我方 · 待定名")
+                self._side_status_label.set_tone(TONE_INFO)
+            elif side == SIDE_ENEMY:
+                self._side_status_label.setText("敌方 · 待定名")
+                self._side_status_label.set_tone(TONE_DANGER)
+            else:
+                self._side_status_label.setText("敌我未定")
+                self._side_status_label.set_tone(TONE_NEUTRAL)
             self._leader_btn.setVisible(False)
             return
 
@@ -584,9 +591,10 @@ class MatchGuidePanel(QWidget):
         hero = self._hero_mgr.get_hero(dialog.selected_ids[0])
         if hero is None:
             return
-        # 仅当所选答案在 OCR 候选集内时视为「纠正错读」并记录（候选外 = 主动换将）
+        # 仅当所选答案在 OCR 候选集内时视为「纠正错读」并记录（候选外 = 主动换将）；
+        # 纠错的卡面与座次未变，保留已归边的敌我，仅主动换将才重置
         record_confirmation(original_raw, hero.name, sorted(candidates))
-        self._lineup.replace_hero(index, hero)
+        self._lineup.replace_hero(index, hero, keep_sides=hero.name in candidates)
         self._analysis = None
         self._win_rates = load_win_rates()
         self._render_cards()

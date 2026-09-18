@@ -7,13 +7,26 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QScrollArea
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton, QScrollArea
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.match.match_lineup_state import SIDE_ALLY, SIDE_ENEMY
 from src.ui.shared.capture_lock import CaptureSource
 from src.ui.shared.widgets import EmptyState, NoticeBanner, PageActionBar
+
+
+class _CandidateDialog:
+    """替身选将对话框：直接返回候选中的第一名武将（甲，id=1）。"""
+
+    DialogCode = QDialog.DialogCode
+
+    def __init__(self, *_args, **_kwargs) -> None:
+        self.selected_ids = [1]
+
+    def exec(self) -> int:
+        return QDialog.DialogCode.Accepted
 
 
 def _app() -> QApplication:
@@ -77,8 +90,25 @@ def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatc
     ])
 
     assert panel._cards[0]._status_label.text() == "待确认 · 2 个候选"
+    assert panel._lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
+    assert panel._cards[0]._side_status_label.text() == "敌方 · 待定名"
     assert panel._lineup.validate().reason == "unresolved_name"
     assert not panel._confirm_btn.isEnabled()
+
+    confirmed: list[tuple[str, str, list[str]]] = []
+    monkeypatch.setattr(
+        "src.ui.match.match_guide_panel.record_confirmation",
+        lambda raw, answer, candidates: confirmed.append((raw, answer, candidates)),
+    )
+    monkeypatch.setattr(
+        "src.ui.match.match_guide_panel.BaseHeroSelectDialog", _CandidateDialog
+    )
+    panel._replace_hero(0)
+
+    assert confirmed == [("甲", "甲", sorted(("甲", "乙")))]
+    assert panel._lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
+    assert panel._lineup.ally_leader_slot == 3
+    assert panel._confirm_btn.isEnabled()
 
 
 def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title(monkeypatch) -> None:

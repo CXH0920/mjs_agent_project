@@ -95,6 +95,49 @@ def test_side_limit_and_replacement_reset_confirmation_state() -> None:
     assert not lineup.can_confirm()
 
 
+def test_load_from_ocr_assigns_sides_even_when_one_name_unresolved() -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+
+    assert lineup.load_from_ocr([
+        {
+            "index": 1,
+            "raw_name": "甲",
+            "name": "",
+            "candidates": ["甲", "乙"],
+            "resolution": "unresolved",
+        },
+        {"index": 2, "name": "乙", "resolution": "exact"},
+        {"index": 3, "name": "丙", "resolution": "exact"},
+        {"index": 5, "name": "丁", "resolution": "exact"},
+    ], heroes.get, "12:30")
+
+    assert lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
+    assert lineup.ally_leader_slot == 3
+    assert lineup.validate().reason == "unresolved_name"
+    assert not lineup.can_confirm()
+
+
+def test_replace_hero_keep_sides_preserves_seat_assignment() -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+    assert lineup.load_from_ocr([
+        {"index": 1, "name": "甲", "team": "楚军"},
+        {"index": 2, "name": "乙", "team": "楚军"},
+        {"index": 3, "name": "丙", "team": "汉军"},
+        {"index": 5, "name": "丁", "team": "汉军"},
+    ], heroes.get, "12:30")
+
+    lineup.replace_hero(0, heroes["戊"], keep_sides=True)
+
+    assert lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
+    assert [slot.team for slot in lineup.slots] == ["楚军", "楚军", "汉军", "汉军"]
+    assert lineup.ally_leader_slot == 3
+    assert lineup.team_labels_match_positions is True
+    assert not lineup.analysis_confirmed
+    assert lineup.can_confirm()
+
+
 def test_duplicate_or_missing_hero_cannot_be_confirmed() -> None:
     heroes = _heroes()
     lineup = LineupState()

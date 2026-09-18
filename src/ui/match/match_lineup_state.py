@@ -132,15 +132,8 @@ class LineupState:
             if self._ocr_sort_key(item) in self.TEAMMATE_SLOT_INDICES
         ]
         has_unique_teammate = len(teammate_items) == 1
-        confirmed_names = [
-            str(item.get("name", "")).strip()
-            for item in selected_items if self._is_confirmed_item(item)
-        ]
-        has_unique_names = (
-            len(confirmed_names) == len(selected_items)
-            and len(set(confirmed_names)) == len(confirmed_names)
-        )
 
+        # 敌我只按座次推导，名字未决的槽位同样先归边，名称由用户稍后补齐
         slots: list[LineupSlot] = []
         for item in selected_items:
             name = str(item.get("name", "")).strip()
@@ -159,7 +152,7 @@ class LineupState:
                 team=team,
                 side=self._side_from_position(
                     source_index,
-                    player_item is not None and has_unique_names,
+                    player_item is not None,
                     has_unique_teammate,
                 ),
             ))
@@ -208,9 +201,21 @@ class LineupState:
         self._ally_leader_slot = index
         return True
 
-    def replace_hero(self, index: int, hero: Hero) -> None:
-        """替换一个槽位，并要求重新确认全部敌我阵营。"""
+    def replace_hero(self, index: int, hero: Hero, keep_sides: bool = False) -> None:
+        """替换一个槽位；keep_sides 用于候选内纠正错读，保留按座次划分的敌我。"""
         self._check_index(index)
+        if keep_sides:
+            # 纠错只换名，卡面与座次未变，敌我、阵营标签与主将仍然成立
+            self._slots[index] = replace(
+                self._slots[index],
+                hero=hero,
+                recognized_name=hero.name,
+                raw_name=hero.name,
+                candidates=(hero.name,),
+                resolution="manual",
+            )
+            self._analysis_confirmed = False
+            return
         self._slots[index] = LineupSlot(
             hero=hero,
             recognized_name=hero.name,
