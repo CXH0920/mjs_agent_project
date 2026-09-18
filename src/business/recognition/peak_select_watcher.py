@@ -36,6 +36,10 @@ SIGNATURE_SIZE_QUANTUM_PX = 16
 _BAN_PHASE_MIN_CARDS = 12
 _STANDARD_POLL_TASKS = ("hero_selection", "match_guide")
 _CONFIRM_RESOLUTIONS = {"unresolved", "unknown", "conflict"}
+# 人工确认连续未通过内容验证的拍数上限：候选阶段浮动动画会让单拍闭包
+# 缺名、读数漂移，宽限期内确认保留但展示回退为识别结果；真换人/选走
+# 的确认在连续失验后淘汰，防止旧确认顶在新牌上
+_STALE_MISS_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -58,12 +62,17 @@ def parse_pool(
 ) -> PoolSnapshot:
     """把 OCR 槽位结果整理为候选池快照：已确认名单 + 待确认槽位。
 
-    resolutions 为人工确认（槽位序号 → 武将名），仅当该槽仍未自动确认且
-    确认名确实在其候选内才生效，避免旧牌面的确认串到新牌面上。
+    resolutions 为人工确认（槽位序号 → 武将名），优先于一切自动结论：
+    确认落定后即使本拍闭包缺名（读数抖动）或自动决胜出别的猜测结论，
+    也按人工结果展示；过期确认由 watcher 的逐拍内容验证剔除后才会消失。
     """
     names: list[str] = []
     pending: list[dict] = []
     for index, item in enumerate(ocr_results):
+        manual = (resolutions or {}).get(index)
+        if manual:
+            names.append(manual)
+            continue
         name = str(item.get("name") or "").strip()
         if name and item.get("resolution") not in _CONFIRM_RESOLUTIONS:
             names.append(name)
@@ -71,10 +80,6 @@ def parse_pool(
         raw_name = str(item.get("raw_name") or "").strip()
         candidates = [str(c) for c in (item.get("candidates") or [])]
         if not (raw_name or candidates):
-            continue
-        manual = (resolutions or {}).get(index)
-        if manual and manual in candidates:
-            names.append(manual)
             continue
         pending.append({"slot": index, "raw_name": raw_name, "candidates": candidates})
 
@@ -92,35 +97,72 @@ def parse_pool(
     )
 
 
-def carry_over_resolutions(
-    old_resolutions: dict[int, str],
+def refresh_resolutions(
+    resolutions: dict[int, str],
+    raws: dict[int, str],
     ocr_results: list[dict],
-) -> dict[int, str]:
-    """新牌面上按内容沿用人工确认：确认跟着武将走，不跟槽位走。
+) -> tuple[dict[int, str], dict[int, str], set[int]]:
+    """逐拍验证人工确认的内容存续，返回 (沿用映射, 读数指纹, 未验证槽位)。
 
-    沿用判据与 parse_pool 的生效判据对齐（确认名仍在该槽候选集内才保留），
-    因此只可能保留仍然生效的确认：槽位未重排时原地保留，重排时迁移到内容
-    匹配的槽位，内容消失（换人/选走）的确认自然失效。候选集同时命中多个
-    已确认名的歧义槽位保守丢弃。
+    验证判据（满足其一即视为仍是同一张牌）：确认名仍在本槽候选闭包；
+    确认时的读数原文在本槽复现（稳定错读的确认名可能永远不在候选闭包，
+    读数原文是其内容指纹）；确认名或读数在其它槽位唯一命中（牌面重排
+    后迁移槽位）。未验证的确认原槽保留进宽限，由调用方按连续未验证拍
+    数淘汰——浮动动画导致的单拍闭包缺名不应丢确认。
     """
-    remaining = set(old_resolutions.values())
+    slots = [
+        (
+            str(item.get("raw_name") or "").strip(),
+            {str(c) for c in (item.get("candidates") or [])},
+        )
+        for item in ocr_results
+    ]
     carried: dict[int, str] = {}
-    for slot, item in enumerate(ocr_results):
-        if item.get("resolution") not in _CONFIRM_RESOLUTIONS:
-            continue  # 已自动确认的槽位不接入人工确认
-        candidates = {str(c) for c in (item.get("candidates") or [])}
-        if not candidates:
+    carried_raws: dict[int, str] = {}
+    unverified: set[int] = set()
+    claimed: set[int] = set()
+    all_names = set(resolutions.values())
+
+    def locate(old_slot: int, name: str, raw: str) -> int | None:
+        # 单字读数信息量不足，不同牌极易读出同字，不作指纹使用
+        raw_matchable = len(raw) >= 2
+        if old_slot < len(slots) and old_slot not in claimed:
+            slot_raw, candidates = slots[old_slot]
+            if name in candidates or (raw_matchable and slot_raw == raw):
+                return old_slot
+        # 闭包同时命中多个已确认名的歧义槽不猜测归属（无法断定哪张牌在哪）
+        other_names = all_names - {name}
+        closure_hits = [
+            slot
+            for slot, (_, candidates) in enumerate(slots)
+            if slot != old_slot
+            and slot not in claimed
+            and name in candidates
+            and not other_names & candidates
+        ]
+        if len(closure_hits) == 1:
+            return closure_hits[0]
+        if not raw_matchable:
+            return None
+        raw_hits = [
+            slot
+            for slot, (slot_raw, _) in enumerate(slots)
+            if slot != old_slot and slot not in claimed and slot_raw == raw
+        ]
+        return raw_hits[0] if len(raw_hits) == 1 else None
+
+    for old_slot, name in resolutions.items():
+        raw = raws.get(old_slot, "")
+        target = locate(old_slot, name, raw)
+        if target is None:
+            carried[old_slot] = name
+            carried_raws[old_slot] = raw
+            unverified.add(old_slot)
             continue
-        old_name = old_resolutions.get(slot)
-        if old_name in candidates:
-            carried[slot] = old_name
-            continue
-        hits = remaining & candidates
-        if len(hits) == 1:
-            name = next(iter(hits))
-            carried[slot] = name
-            remaining.discard(name)  # 同名不扩散到多个槽位
-    return carried
+        carried[target] = name
+        carried_raws[target] = raw
+        claimed.add(target)
+    return carried, carried_raws, unverified
 
 
 def board_signature(cards: list[Roi]) -> tuple:
@@ -165,6 +207,11 @@ class PeakSelectWatcher(QObject):
         self._signature: tuple | None = None
         self._ban_names: tuple[str, ...] = ()
         self._resolutions: dict[int, str] = {}
+        # 确认槽位的读数原文指纹（确认时的 raw_name）：稳定错读的确认名可能
+        # 永远不在候选闭包里，原文复现是它仍属于这张牌的验证信号
+        self._resolution_raws: dict[int, str] = {}
+        # 连续未通过内容验证的拍数（槽位 → 拍数），达到上限丢弃确认
+        self._stale_rounds: dict[int, int] = {}
         self._last_board: tuple[list[dict], int] | None = None
         self._miss_ticks = 0
         self._saved_task_states: dict[str, bool] | None = None
@@ -179,6 +226,8 @@ class PeakSelectWatcher(QObject):
             self._signature = None
             self._ban_names = ()
             self._resolutions = {}
+            self._resolution_raws = {}
+            self._stale_rounds = {}
             self._last_board = None
         self._miss_ticks = 0
         # 挂起在启动瞬间生效而非检测到牌面后：首拍之前标准轮询用固定 ROI 在
@@ -249,10 +298,9 @@ class PeakSelectWatcher(QObject):
                 if session != self._session:
                     return  # 停止/重启后的旧拍：不写签名、不沿用确认、不发布
                 self._signature = signature
-                # 新牌面：人工确认按内容沿用而非清空——候选阶段浮动动画会让
-                # 签名假性翻转，无条件清空会反复丢确认；沿用基准取当前值，
-                # 覆盖 OCR 期间用户对新牌面 pending 的点击
-                self._resolutions = carry_over_resolutions(self._resolutions, ocr_results)
+                # 人工确认逐拍做内容验证：单拍闭包缺名或自动结论翻转不清确认，
+                # 连续多拍验证不到（真换人/选走）才淘汰
+                self._refresh_resolutions(ocr_results)
             self._publish_pool(ocr_results, len(cards))
         except Exception:
             logger.exception("巅峰赛识别循环异常")
@@ -281,6 +329,31 @@ class PeakSelectWatcher(QObject):
             return None
         return (task.result or {}).get("ocr_results") or []
 
+    def _refresh_resolutions(self, ocr_results: list[dict]) -> None:
+        """逐拍验证人工确认存续（调用方持 _state_lock），连续失验达上限才丢弃。"""
+        if not self._resolutions:
+            return
+        carried, carried_raws, unverified = refresh_resolutions(
+            self._resolutions, self._resolution_raws, ocr_results
+        )
+        for slot in list(self._stale_rounds):
+            if slot not in unverified:
+                del self._stale_rounds[slot]  # 内容重新命中，解除宽限
+        for slot in unverified:
+            rounds = self._stale_rounds.get(slot, 0) + 1
+            if rounds < _STALE_MISS_LIMIT:
+                self._stale_rounds[slot] = rounds
+                continue
+            logger.info(
+                "巅峰赛人工确认连续 %d 拍未在牌面验证到，剔除槽位 %d：%s",
+                rounds, slot + 1, carried[slot],
+            )
+            del carried[slot]
+            carried_raws.pop(slot, None)
+            self._stale_rounds.pop(slot, None)
+        self._resolutions = carried
+        self._resolution_raws = carried_raws
+
     def _publish_pool(self, ocr_results: list[dict], card_count: int) -> None:
         """整理候选池快照并推送面板；禁选阶段快照留作已禁差集基准。
 
@@ -289,23 +362,35 @@ class PeakSelectWatcher(QObject):
         """
         with self._state_lock:
             self._last_board = (ocr_results, card_count)
-            snapshot = parse_pool(ocr_results, card_count, self._ban_names, self._resolutions)
+            # 宽限期内内容存疑的确认不参与展示，回退为该槽识别结果
+            display = {
+                slot: name
+                for slot, name in self._resolutions.items()
+                if slot not in self._stale_rounds
+            }
+            snapshot = parse_pool(ocr_results, card_count, self._ban_names, display)
             if snapshot.stage == "ban":
                 self._ban_names = snapshot.names
         self.pool_updated.emit(snapshot)
 
     def confirm_pending(self, slot: int, name: str) -> None:
-        """人工确认一个待确认槽位；有效性由 parse_pool 校验，确认后立即重发快照。"""
+        """人工确认一个待确认槽位；确认后立即重发快照。
+
+        确认名与该槽读数原文一并登记：原文是这张牌的内容指纹，供后续拍
+        验证确认仍然有效（稳定错读的确认名可能永远不在候选闭包里）。
+        """
         with self._state_lock:
             self._resolutions[slot] = name
+            self._stale_rounds.pop(slot, None)
             last_board = self._last_board
-        raw_name = ""
-        slot_candidates: list[str] = []
-        if last_board is not None and 0 <= slot < len(last_board[0]):
-            raw_name = str(last_board[0][slot].get("raw_name", "")).strip()
-            slot_candidates = [
-                str(c) for c in (last_board[0][slot].get("candidates") or [])
-            ]
+            raw_name = ""
+            slot_candidates: list[str] = []
+            if last_board is not None and 0 <= slot < len(last_board[0]):
+                raw_name = str(last_board[0][slot].get("raw_name", "")).strip()
+                slot_candidates = [
+                    str(c) for c in (last_board[0][slot].get("candidates") or [])
+                ]
+            self._resolution_raws[slot] = raw_name
         record_confirmation(raw_name, name, slot_candidates)
         if last_board is not None:
             self._publish_pool(*last_board)
@@ -400,6 +485,8 @@ class PeakSelectWatcher(QObject):
             if exiting:
                 self._ban_names = ()
                 self._resolutions = {}
+                self._resolution_raws = {}
+                self._stale_rounds = {}
         if exiting:
             self._restore_match_guide()
             # match_guide 的激活与跳转属界面策略，由主窗口的 board_exited 处理器完成

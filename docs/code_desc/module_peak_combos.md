@@ -12,7 +12,7 @@
 
 巅峰赛选将完整链路：`card_grid_detector`（卡位检测）→ `PeakSelectWatcher`（识别循环）→ `peak_ban_advice`（象限判定）→ `PeakHeroCard`（卡片渲染）→ `ComboManager`/`combo_seats`（配队匹配与座次）。识别循环与标准轮询并存但互斥，采用**会话制挂起**：点击「开始识别」即挂起 `hero_selection` / `match_guide` 两个标准任务（并清除二者冷却、作废在途轮询），牌面出现期间每拍幂等重挂；`hero_selection` 整个识别会话保持挂起（手动停止识别才恢复原状态），`match_guide` 牌面出现期间挂起、牌面自动退出时恢复原状态并另发 `board_exited` 信号供主窗口衔接激活对局攻略轮询。
 
-候选面板持续刷新受两处机制治理：**牌面签名**量化步长取位置 8px / 尺寸 16px，覆盖候选阶段卡面 idle 浮动动画实测漂移（纵向 ±3~4px、剪影尺寸 ±5px）的 2 倍，避免逐拍误判新牌面；真实换牌表现为卡数变化或整排重排（位移 ≥ 一个卡位宽），远超步长不会漏。**人工确认**在新牌面上按内容沿用而非清空（`carry_over_resolutions`），确认跟着武将走而不是槽位走，槽位重排时迁移、内容消失时自然失效。
+候选面板持续刷新受两处机制治理：**牌面签名**量化步长取位置 8px / 尺寸 16px，覆盖候选阶段卡面 idle 浮动动画实测漂移（纵向 ±3~4px、剪影尺寸 ±5px）的 2 倍，避免逐拍误判新牌面；真实换牌表现为卡数变化或整排重排（位移 ≥ 一个卡位宽），远超步长不会漏。**人工确认**逐拍做内容验证（`refresh_resolutions`）而非清空：确认跟着武将走而不是槽位走，单拍闭包缺名进宽限不丢确认，读数原文指纹兜底稳定错读的牌，连续多拍验证不到才淘汰。
 
 本模块同时承载**对局攻略**（2v2 标准选将后的离线分析）：`LineupState` 维护四名武将的敌我确认与主将选择状态（纯逻辑无 Qt），`MatchAnalysisView` 将已确认阵容的分析结果渲染为四个攻略页。`ComboManager` 供巅峰赛候选池匹配与对局攻略共享使用。
 
@@ -95,14 +95,14 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
       │      覆盖 ADB 重连 start_poll 等外部重新激活标准任务的场景
       ├─ board_signature(cards) 量化坐标/尺寸
       │   └─ == 上次（_state_lock 内读）→ 牌面未变化，沿用结果 return
-      ├─ 新牌面 → [_state_lock] carry_over_resolutions() 按内容沿用人工确认
+      ├─ 新牌面 → [_state_lock] refresh_resolutions() 逐拍验证人工确认存续
       ├─ _recognize_board(image, cards)
       │   └─ 提交 OcrTask 到 OcrWorker，OCR_WAIT_TIMEOUT_SECONDS=15 超时保护
       │   └─ 失败 → [_state_lock]（世代校验后）清签名 _signature=None，下一拍强制重试
       └─ _publish_pool() → parse_pool() → PoolSnapshot → pool_updated 信号
 ```
 
-**会话世代校验**：`_session` 在 `start()` / `stop()` 各于状态锁内递增一次；在途识别拍在截图完成后、挂起前、OCR 失败清签名前、写签名/沿用确认/发布前四处校验世代，过期旧拍直接放弃。这消除了「停止识别瞬间在途旧拍反向重新挂起标准任务」「旧签名写回新会话」「停止后面板仍被旧快照刷新」三类竞态；缺席计数自增同步移入锁内，消除非原子更新。
+**会话世代校验**：`_session` 在 `start()` / `stop()` 各于状态锁内递增一次；在途识别拍在截图完成后、挂起前、OCR 失败清签名前、写签名/验证确认/发布前四处校验世代，过期旧拍直接放弃。这消除了「停止识别瞬间在途旧拍反向重新挂起标准任务」「旧签名写回新会话」「停止后面板仍被旧快照刷新」三类竞态；缺席计数自增同步移入锁内，消除非原子更新。
 
 **并发安全**：`_thread_lock` 仅保证识别拍单飞；`_state_lock` 串行化 GUI 线程（start / confirm_pending）、识别线程与图片导入线程对 `_session` / `_miss_ticks` / `_signature` / `_ban_names` / `_resolutions` / `_last_board` 的读写。锁内只做纯内存读写，不发 IO、不 emit 信号（`pool_updated` 在锁外发出）。
 
@@ -114,7 +114,7 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
 - `overlap`: 候选阶段双方撞车数（池大小 − 8）
 - `banned`: 相对禁选期已确认名单的差集
 
-**人工确认**：`confirm_pending(slot, name)` 写入 `_resolutions[slot]` 后立即用 `_last_board` 重发快照；`parse_pool` 校验确认名必须在候选内（且该槽仍处于 `_CONFIRM_RESOLUTIONS = {"unresolved", "unknown", "conflict"}` 未自动确认态）才生效，避免旧牌面的确认串到新牌面。新牌面到来时由 `carry_over_resolutions()` 按内容沿用：确认名仍在原槽候选集则原地保留；否则在「仍未自动确认且候选集同时只命中一个已确认名」的槽位迁移过去（同名不扩散到多个槽位），内容消失（换人/选走）的确认自然失效，歧义槽保守丢弃。沿用基准取当前 `_resolutions`，覆盖 OCR 期间用户对新牌面 pending 的点击。
+**人工确认**：`confirm_pending(slot, name)` 把确认名与该槽读数原文指纹一并写入 `_resolutions` / `_resolution_raws` 后立即用 `_last_board` 重发快照。`parse_pool` 中人工确认优先于一切自动结论：确认落定后即使本拍候选闭包缺名（读数抖动）或自动决胜出别的猜测结论（`multi_similarity` 等），也按人工结果展示，杜绝「用户选完被自动结果顶掉/拍一更新又弹回待确认」。确认的过期由 `refresh_resolutions()` 逐拍内容验证负责：确认名仍在本槽候选闭包、或确认时的读数原文在本槽复现（稳定错读的确认名可能永远不在候选闭包，原文指纹是其内容锚点）、或确认名/读数在其它槽位唯一命中（牌面重排迁移），三者满足其一即视为仍是同一张牌；闭包同时命中多个已确认名的歧义槽不猜测归属。验证不过的确认原槽保留进宽限（`_stale_rounds` 计数），宽限期内展示回退为该槽识别结果，连续 `_STALE_MISS_LIMIT=3` 拍仍未验证才丢弃——浮动动画导致的单拍闭包缺名不再把确认打回待确认。
 
 **图片导入**：`recognize_image_file()` 在独立锁（`_import_lock`）下执行，不影响循环签名与标准任务挂起状态（不写 `_signature`、不校验会话世代）。
 
@@ -264,26 +264,20 @@ def board_signature(cards: list[Roi]) -> tuple:
         for x, y, w, h in cards
     )
 
-def carry_over_resolutions(old_resolutions, ocr_results) -> dict[int, str]:
-    """新牌面上按内容沿用人工确认：确认跟着武将走，不跟槽位走。"""
-    remaining = set(old_resolutions.values())
-    carried = {}
-    for slot, item in enumerate(ocr_results):
-        if item.get("resolution") not in _CONFIRM_RESOLUTIONS:
-            continue  # 已自动确认的槽位不接入人工确认
-        candidates = {str(c) for c in (item.get("candidates") or [])}
-        if not candidates:
-            continue
-        old_name = old_resolutions.get(slot)
-        if old_name in candidates:
-            carried[slot] = old_name
-            continue
-        hits = remaining & candidates
-        if len(hits) == 1:          # 歧义槽位（命中多个已确认名）保守丢弃
-            name = next(iter(hits))
-            carried[slot] = name
-            remaining.discard(name)  # 同名不扩散到多个槽位
-    return carried
+def refresh_resolutions(resolutions, raws, ocr_results) -> tuple[dict, dict, set]:
+    """逐拍验证人工确认的内容存续，返回 (沿用映射, 读数指纹, 未验证槽位)。"""
+    slots = [
+        (str(item.get("raw_name") or "").strip(),
+         {str(c) for c in (item.get("candidates") or [])})
+        for item in ocr_results
+    ]
+    # locate(old_slot, name, raw) 验证判据（满足其一即仍是同一张牌）：
+    #   1. 确认名仍在本槽候选闭包
+    #   2. 确认时的读数原文在本槽复现（≥2 字才作指纹，稳定错读的兜底锚点）
+    #   3. 确认名/读数在其它槽位唯一命中（牌面重排后迁移；闭包同时命中
+    #      多个已确认名的歧义槽不猜测归属）
+    # 未验证 → 原槽保留并计入 unverified，由调用方按连续失验拍数淘汰
+    ...
 ```
 
 > 位置/尺寸分开量化，吸收卡位检测像素级抖动，仅布局变化才触发 OCR。候选阶段卡面有 idle 浮动动画（日志实测剪影纵向 ±3~4px、尺寸 ±5px），步长须覆盖 2 倍漂移幅度，故取 8/16；真实换牌表现为卡数变化或整排重排（位移 ≥ 一个卡位宽），远超步长不会漏。
@@ -312,9 +306,9 @@ def _do_work(self) -> None:
     ...
     with self._state_lock:
         if session != self._session:
-            return  # 不写签名、不沿用确认、不发布
+            return  # 不写签名、不验证确认、不发布
         self._signature = signature
-        self._resolutions = carry_over_resolutions(self._resolutions, ocr_results)
+        self._refresh_resolutions(ocr_results)  # 逐拍验证人工确认存续
 ```
 
 > 四处世代校验（截图后、挂起前、失败清签名前、写签名/发布前）加锁内缺席计数，保证停止或重启后的在途旧拍不会反向挂起标准任务、写回旧签名或刷新面板。
@@ -408,7 +402,7 @@ class _ImportWorker(QThread):
 | `PeakSelectWatcher.status_changed` | 状态文本信号 |
 | `PeakSelectWatcher.board_exited` | 牌面自动退出信号（经面板透出），供主窗口衔接对局攻略轮询 |
 | `parse_pool(ocr_results, card_count, ban_names, resolutions) -> PoolSnapshot` | OCR 槽位结果整理为候选池快照 |
-| `carry_over_resolutions(old_resolutions, ocr_results) -> dict[int, str]` | 新牌面上按内容沿用人工确认 |
+| `refresh_resolutions(resolutions, raws, ocr_results) -> tuple[dict, dict, set]` | 逐拍验证人工确认的内容存续（闭包/读数指纹/重排迁移），返回未验证槽位 |
 | `board_signature(cards) -> tuple` | 牌面布局签名（量化去重，位置 8px / 尺寸 16px） |
 | `ComboManager.get_combo(a_id, b_id) -> Combo \| None` | 按配对查询（含逻辑删除记录，供编辑覆盖检查与导入合并） |
 | `ComboManager.list_combos_for_hero(hero_id) -> list[Combo]` | 按武将查询（过滤 deleted 记录） |

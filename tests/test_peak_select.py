@@ -17,8 +17,8 @@ from src.business.analysis.peak_ban_advice import PeakBanAdvice
 from src.business.recognition.peak_select_watcher import (
     PeakSelectWatcher,
     board_signature,
-    carry_over_resolutions,
     parse_pool,
+    refresh_resolutions,
 )
 from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.match.peak_select_panel import PeakSelectPanel
@@ -48,18 +48,22 @@ def test_parse_pool_splits_confirmed_and_pending():
 
 
 def test_parse_pool_applies_manual_resolutions():
-    """人工确认仅在确认名属于该槽候选内时生效，防旧牌面确认串台。"""
-    results = [
-        {"name": "", "raw_name": "卓文君", "candidates": ["卓文君", "君王后"], "resolution": "conflict"},
+    """人工确认优先于一切自动结论：闭包缺名的抖动拍与猜测型决胜都按确认展示。"""
+    jittered = [
+        {"name": "", "raw_name": "文君", "candidates": ["卓瑀", "卓瑒"], "resolution": "unresolved"},
     ]
 
-    resolved = parse_pool(results, 14, resolutions={0: "卓文君"})
+    resolved = parse_pool(jittered, 14, resolutions={0: "卓文君"})
     assert resolved.names == ("卓文君",)
     assert resolved.pending == ()
 
-    invalid = parse_pool(results, 14, resolutions={0: "荆轲"})
-    assert invalid.names == ()
-    assert invalid.pending[0]["slot"] == 0
+    guessed = [
+        {"name": "君王后", "raw_name": "文君", "candidates": ["君王后"], "resolution": "multi_similarity"},
+    ]
+
+    overridden = parse_pool(guessed, 14, resolutions={0: "卓文君"})
+    assert overridden.names == ("卓文君",)
+    assert overridden.pending == ()
 
 
 def test_parse_pool_ban_stage_keeps_full_board():
@@ -73,33 +77,58 @@ def test_parse_pool_ban_stage_keeps_full_board():
     assert len(snapshot.names) == 14
 
 
-def test_carry_over_resolutions_keeps_migrates_and_drops():
-    """确认跟随内容：槽位未变原地保留，重排迁移到内容匹配槽位，内容消失自然失效。"""
+def test_refresh_resolutions_keeps_migrates_and_marks_stale():
+    """内容命中原地保留/唯一命中迁移；未命中的确认原槽保留进宽限，不立即丢弃。"""
     ocr = [
         {"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀勖", "荀彧"]},
-        {"resolution": "exact", "name": "袁术", "candidates": ["袁术"]},  # 自动确认槽不接入
+        {"resolution": "exact", "name": "袁术", "raw_name": "袁术", "candidates": ["袁术"]},
         {"resolution": "unresolved", "raw_name": "黄忠", "candidates": ["黄忠"]},
         {"resolution": "unresolved", "raw_name": "凌统", "candidates": ["凌统"]},
     ]
 
-    assert carry_over_resolutions({0: "荀勖", 2: "黄忠"}, ocr) == {0: "荀勖", 2: "黄忠"}
+    carried, _, unverified = refresh_resolutions(
+        {0: "荀勖", 2: "黄忠"}, {0: "荀歇", 2: "黄忠"}, ocr
+    )
+    assert carried == {0: "荀勖", 2: "黄忠"}
+    assert unverified == set()
 
     ocr_moved = [
         {"resolution": "unresolved", "raw_name": "荀或", "candidates": ["荀彧", "荀灌"]},
-        {"resolution": "exact", "name": "袁术", "candidates": ["袁术"]},
+        {"resolution": "exact", "name": "袁术", "raw_name": "袁术", "candidates": ["袁术"]},
         {"resolution": "unresolved", "raw_name": "凌统", "candidates": ["凌统"]},
         {"resolution": "unresolved", "raw_name": "黄忠", "candidates": ["黄忠", "黄盖"]},
     ]
 
-    # 荀勖所在卡被选走（候选集消失）确认失效；黄忠重排迁移到新槽位
-    assert carry_over_resolutions({0: "荀勖", 2: "黄忠"}, ocr_moved) == {3: "黄忠"}
+    # 黄忠重排迁移到新槽位；荀勖内容消失但原槽宽限保留（读数也变了，验不到）
+    carried, _, unverified = refresh_resolutions(
+        {0: "荀勖", 2: "黄忠"}, {0: "荀歇", 2: "黄忠"}, ocr_moved
+    )
+    assert carried == {0: "荀勖", 3: "黄忠"}
+    assert unverified == {0}
 
 
-def test_carry_over_resolutions_drops_ambiguous_slot():
-    """候选集同时命中两个已确认名的歧义槽位保守丢弃，不猜测归属。"""
-    ocr = [{"resolution": "unresolved", "candidates": ["黄忠", "凌统"]}]
+def test_refresh_resolutions_raw_fingerprint_keeps_stable_misread():
+    """稳定错读的牌闭包永远缺确认名，读数原文复现即验证通过，不进宽限。"""
+    ocr = [
+        {"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀彧", "荀蔼"]},
+    ]
 
-    assert carry_over_resolutions({1: "黄忠", 2: "凌统"}, ocr) == {}
+    carried, _, unverified = refresh_resolutions({0: "荀勖"}, {0: "荀歇"}, ocr)
+
+    assert carried == {0: "荀勖"}
+    assert unverified == set()
+
+
+def test_refresh_resolutions_stale_slot_never_claims_ambiguous_hit():
+    """确认名同时命中多个槽位闭包时不猜测归属，原槽保留进宽限。"""
+    ocr = [{"resolution": "unresolved", "raw_name": "", "candidates": ["黄忠", "凌统"]}]
+
+    carried, _, unverified = refresh_resolutions(
+        {1: "黄忠", 2: "凌统"}, {1: "黄忠", 2: "凌统"}, ocr
+    )
+
+    assert carried == {1: "黄忠", 2: "凌统"}
+    assert unverified == {1, 2}
 
 
 def test_board_signature_ignores_animation_drift():
@@ -794,6 +823,8 @@ def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):
         [(100, 247, 238, 326)],   # 第一拍
         [(108, 249, 239, 330)],   # 第二拍：位置跨桶位移（动画/重排），OCR 内容不变
         [(116, 247, 238, 326)],   # 第三拍：内容真变（候选集换人）
+        [(124, 249, 238, 326)],   # 第四、五拍：内容持续缺失
+        [(140, 247, 238, 326)],
     ]
     monkeypatch.setattr(
         "src.business.recognition.peak_select_watcher.detect_selection_cards",
@@ -802,6 +833,8 @@ def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):
     ocr_results = [
         [{"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀勖", "荀彧"]}],
         [{"resolution": "unresolved", "raw_name": "荀歇", "candidates": ["荀勖", "荀彧"]}],
+        [{"resolution": "unresolved", "raw_name": "荀或", "candidates": ["荀彧", "荀灌"]}],
+        [{"resolution": "unresolved", "raw_name": "荀或", "candidates": ["荀彧", "荀灌"]}],
         [{"resolution": "unresolved", "raw_name": "荀或", "candidates": ["荀彧", "荀灌"]}],
     ]
     capture_service = SimpleNamespace(
@@ -825,11 +858,60 @@ def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):
     assert pools[2].names == ("荀勖",)
     assert pools[2].pending == ()
 
-    # 第三拍内容真变（候选集里没有荀勖）：确认失效
+    # 第三拍内容真变（候选集与读数指纹都无荀勖）：确认进宽限，展示先回退
+    # 为识别结果，连续三拍验证不到才丢弃
+    watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+    assert watcher._resolutions == {0: "荀勖"}
+    assert watcher._stale_rounds == {0: 1}
+    assert pools[-1].pending[0]["candidates"] == ["荀彧", "荀灌"]
+
+    watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+    assert watcher._stale_rounds == {0: 2}
+
     watcher._thread_lock.acquire(blocking=False)
     watcher._do_work()
     assert watcher._resolutions == {}
+    assert watcher._stale_rounds == {}
     assert pools[-1].pending[0]["candidates"] == ["荀彧", "荀灌"]
+
+
+def test_watcher_keeps_confirmation_over_auto_resolution(qapp, monkeypatch):
+    """自动决胜翻转不清人工确认：指纹仍复现时按确认名压过猜测型结论展示。"""
+    detect_results = [
+        [(100, 247, 238, 326)],
+        [(108, 249, 238, 326)],   # 签名翻转（动画位移），同一张牌
+    ]
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: detect_results.pop(0),
+    )
+    ocr_results = [
+        [{"resolution": "unresolved", "raw_name": "卓文君", "candidates": ["卓文君", "君王后"]}],
+        [{"resolution": "multi_similarity", "name": "君王后", "raw_name": "卓文君", "candidates": ["君王后"]}],
+    ]
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(ocr_results.pop(0)),
+    )
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = _FakeOcrService()
+
+    assert watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+    watcher.confirm_pending(0, "卓文君")
+
+    watcher._thread_lock.acquire(blocking=False)
+    watcher._do_work()
+
+    # 读数原文未变（验证通过）：确认不被自动结论清掉，展示也以确认为准
+    assert watcher._resolutions == {0: "卓文君"}
+    assert watcher._stale_rounds == {}
+    # （pools[1] 是 confirm_pending 的重发快照，pools[2] 才是第二拍产物）
+    assert pools[2].names == ("卓文君",)
+    assert pools[2].pending == ()
 
 
 def test_stop_invalidates_inflight_work(qapp, monkeypatch):
