@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """导入实战配队（业务逻辑）：外部工具导出 JSON → data/combos.json
 
-- 武将名 → 角色 ID 映射（heroes.json），未匹配项进报告，不静默丢弃；
-- note 座次解析（src.data.combo_seats，含别名表与数字前置写法），
-  解析失败/部分成功的条目照常导入（座次留空）并列入报告供人工复核；
+- 武将名 → 角色 ID 映射（heroes.json，含 hero 字段手录简称），未匹配项进报告，不静默丢弃；
+- note 座次解析（src.data.combo_seats，含别名表、去首尾简称片段与座次词句式），
+  解析失败的条目照常导入（座次留空）并列入报告供人工复核；
+  单边座次（partial）视为正常结果直接入库；
 - 解析结果与 position 字段交叉校验（以 note 为准），不一致清单进报告；
 - 合并语义：源导出记录 upsert；manual 手工记录保留（同 key 冲突时手工优先）；
   逻辑删除记录无条件保留并跳过同 key 源记录（含源内容更新的情况）；
@@ -19,14 +20,20 @@ from pathlib import Path
 from src.config.env import PROJECT_ROOT
 from src.data.combo_manager import ComboManager
 from src.data.combo_seats import (
-    STATUS_NONE,
     STATUS_PARSED,
+    STATUS_UNPARSED,
     parse_seats,
 )
 from src.data.models import Combo
 
 DEFAULT_HEROES = PROJECT_ROOT / "data" / "heroes.json"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "combos.json"
+
+# 源 hero1/hero2 字段的手录简称 → heroes.json 全名（管身份映射；note 简称见 combo_seats 片段规则）
+HERO_NAME_ALIAS: dict[str, str] = {
+    "临海": "临海公主",
+    "平阳": "平阳公主",
+}
 
 
 def _load_hero_name_map(heroes_path: Path) -> dict[str, int]:
@@ -88,6 +95,7 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
     seen_keys: set[tuple[int, int]] = set()
     for index, raw in enumerate(combos_raw):
         name1, name2 = str(raw.get("hero1", "")).strip(), str(raw.get("hero2", "")).strip()
+        name1, name2 = HERO_NAME_ALIAS.get(name1, name1), HERO_NAME_ALIAS.get(name2, name2)
         id1, id2 = name2id.get(name1), name2id.get(name2)
         if id1 is None or id2 is None:
             report["unmatched"].append({"index": index, "hero1": name1, "hero2": name2})
@@ -112,7 +120,8 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
         note = str(raw.get("note", ""))
         status, seats1, seats2 = parse_seats(note, name1, name2)
         report["seat_stats"][status] += 1
-        if status not in (STATUS_PARSED, STATUS_NONE):
+        if status == STATUS_UNPARSED:
+            # 单边座次（partial）视为正常结果入库，仅解析失败进人工复核
             report["seat_review"].append({"index": index, "hero1": name1, "hero2": name2, "note": note})
 
         try:

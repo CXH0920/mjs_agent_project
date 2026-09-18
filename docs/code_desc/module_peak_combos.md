@@ -176,16 +176,16 @@ def evaluate_peak_ban_advice(
 4. 状态：`STATUS_PARSED`（parsed）/ `STATUS_PARTIAL`（partial）/ `STATUS_NONE`（none，note 无任何数字）/ `STATUS_UNPARSED`（unparsed，有数字但无法归类）
 5. 号位范围校验 1~4，越界返回 None
 
-`format_seats(seats)` 将号位列表转为展示文本，空列表显示 "任意"。规则全量验证：1170 条可 100% 分类（1144 解析出座次 + 26 无座次要求，0 失败）。
+`format_seats(seats)` 将号位列表转为展示文本，空列表显示 "任意"。规则全量验证：1170 条可 100% 分类（1144 解析出座次 + 26 无座次要求，0 失败）。2026-09 起匹配范围扩展为 hero1/hero2 的全名 + ALIAS 别名 + 去首/尾简称片段（两将共享片段剔除；单字片段仅限座次词句式），句式覆盖 坐N/坐N号/坐前(面)=先手12号/坐后(面)=后手34号/不坐N·别坐N=取补/N号位+名/先手·后手。
 
 ### 3.5 实战配队导入（combo_import_service.py + combos_import_dialog.py）
 
 **业务层** `run_import(source_path, heroes_path, output_path) -> dict`（幂等合并）：
 
-1. 读取 heroes.json 建立武将名→ID 映射，未匹配项进 `report["unmatched"]`
+1. 读取 heroes.json 建立武将名→ID 映射（含 hero 字段手录简称，如 临海→临海公主），未匹配项进 `report["unmatched"]`
 2. 现有记录通过 `list_all_combos()` 分为三组：`manual_by_key`（手工活跃）、`deleted_by_key`（逻辑删除）、`imported_keys`（导入活跃）
 3. 逐条源记录：重复 key 进 `duplicates`；同 key 存在**逻辑删除记录**则跳过进 `deleted_skipped`（逻辑删除永久屏蔽，源内容更新也不复活）；同 key 存在手工记录则跳过进 `manual_collisions`
-4. `parse_seats` 解析座次，非 parsed/none 进 `seat_review`；与 `position` 字段交叉校验（`_check_position_mismatch`：seat 全座 vs 单一 14/23；`position=="both"` 不校验），不一致进 `position_mismatch`
+4. `parse_seats` 解析座次，解析失败（unparsed）进 `seat_review`（单边座次 partial 视为正常结果直接入库）；与 `position` 字段交叉校验（`_check_position_mismatch`：seat 全座 vs 单一 14/23；`position=="both"` 不校验），不一致进 `position_mismatch`
 5. 合并：源导出 upsert → 手工记录原样保留（进 `manual_kept`）→ 逻辑删除记录无条件保留（进 `merged`，直至界面恢复）→ 非手工旧记录若源中已不存在则移除（进 `removed_stale`）
 6. `manager.clear_all()` + 逐条 `update` + `save()` 原子落盘
 

@@ -105,3 +105,139 @@ class TestParseSeats:
         status, s1, s2 = parse_seats("牢布3+孟尝君2", "牢布", "孟尝君")  # hero1 直接叫"牢布"（非法武将名场景由导入侧过滤）
         # 名字表校验属导入脚本职责，此处只验证解析不崩溃且座次归位
         assert status == STATUS_PARSED
+
+    def test_sit_front_is_seats_12_and_back_is_34(self):
+        """坐前(面)/坐后(面) = 先手12号/后手34号，兼容"做"字连写与尽量修饰"""
+        status, s1, s2 = parse_seats("王元姬坐前，烛奸李牧", "李牧", "王元姬")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1, 2]
+
+        status, s1, s2 = parse_seats("马超尽量坐后面防止装备不够", "马超", "陈宫")
+        assert status == STATUS_PARTIAL
+        assert s1 == [3, 4]
+
+        status, s1, s2 = parse_seats("董卓尽量坐前面，小心脆", "董卓", "李斯")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 2]
+
+        status, s1, s2 = parse_seats("鲁仲连做坐前，一箭定聊", "鲁仲连", "张春华")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 2]
+
+    def test_sit_seat_number_word(self):
+        """坐N/坐N号/坐多位数字组"""
+        status, s1, s2 = parse_seats("韩信坐2号，十面埋伏稳定空城", "霍光", "韩信")
+        assert status == STATUS_PARTIAL
+        assert s2 == [2]
+
+        status, s1, s2 = parse_seats("郑国坐13，渠卡对面手牌", "杜预", "郑国")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1, 3]
+
+        status, s1, s2 = parse_seats("廉颇坐123，负荆请罪流失体力", "廉颇", "张春华")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 2, 3]
+
+        status, s1, s2 = parse_seats("袁绍尽量坐1，郭嘉给袁绍补伤害牌", "郭嘉", "袁绍")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1]
+
+    def test_not_sit_takes_complement(self):
+        """不坐N/别坐N = 其余三个号位"""
+        status, s1, s2 = parse_seats("李夫人不坐3，位置看情况安排", "孟获", "李夫人")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1, 2, 4]
+
+        status, s1, s2 = parse_seats("李夫人别坐3，司马懿提高手", "李夫人", "司马懿")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 2, 4]
+
+        status, s1, s2 = parse_seats("董不坐4，武库有天雷地火", "杜预", "董仲舒")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1, 2, 3]
+
+    def test_first_move_words(self):
+        """先手=12号 / 后手=34号，名字在先在后均可；裸数字句式优先于先手"""
+        status, s1, s2 = parse_seats("王元姬坐前，陆逊想先手压制也可以陆逊坐1", "陆逊", "王元姬")
+        assert status == STATUS_PARSED
+        assert s1 == [1] and s2 == [1, 2]
+
+        status, s1, s2 = parse_seats("位置不限，后手吴国太死不掉", "田单", "吴国太")
+        assert status == STATUS_PARTIAL
+        assert s2 == [3, 4]
+
+    def test_seat_number_before_name(self):
+        """N号位+名字 写法；配对声明的裸数字优先于语境提及的 N号位"""
+        status, s1, s2 = parse_seats("刘邦24司马炎13，4号位刘邦开局记得刷5大风歌", "刘邦", "司马炎")
+        assert status == STATUS_PARSED
+        assert s1 == [2, 4] and s2 == [1, 3]
+
+        status, s1, s2 = parse_seats("4号位刘邦开局记得刷5大风歌给司马炎补牌", "刘邦", "司马炎")
+        assert status == STATUS_PARTIAL
+        assert s1 == [4]
+
+        status, s1, s2 = parse_seats("跟山涛交互可以酿很多酒，24号位王翦盖牌", "山涛", "王翦")
+        assert status == STATUS_PARTIAL
+        assert s2 == [2, 4]
+
+    def test_short_name_fragments(self):
+        """去首/去尾简称片段：临海=临海公主、相如=司马相如、羊=羊献容"""
+        status, s1, s2 = parse_seats("临海24，钟离眜没距离可杀临海", "临海公主", "钟离眜")
+        assert status == STATUS_PARTIAL
+        assert s1 == [2, 4]
+
+        status, s1, s2 = parse_seats("相如24，黄月英通过相如拿到战法", "司马相如", "黄月英")
+        assert status == STATUS_PARTIAL
+        assert s1 == [2, 4]
+
+        status, s1, s2 = parse_seats("平阳坐前，学习八斗方醉", "山涛", "平阳公主")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1, 2]
+
+        status, s1, s2 = parse_seats("羊坐后，羊献容卖血有收益", "羊献容", "荆轲")
+        assert status == STATUS_PARTIAL
+        assert s1 == [3, 4] and s2 == []
+
+    def test_shared_fragment_dropped(self):
+        """两将共享的简称片段无法归属，须剔除（王导 vs 王元姬 的"王"）"""
+        status, s1, s2 = parse_seats("王坐前，另一个随意", "王导", "王元姬")
+        assert status == STATUS_NONE
+        assert s1 == [] and s2 == []
+
+    def test_single_char_fragment_rejects_bare_digits(self):
+        """单字片段不参与裸数字句式，避免误配普通数字"""
+        status, s1, s2 = parse_seats("风云3变", "赵云", "华佗")
+        assert status == STATUS_UNPARSED
+        assert s1 == [] and s2 == []
+
+    def test_adverb_filler_between_name_and_seat_word(self):
+        """尽量/尽可能/永远/只能 修饰词可夹在名字与座次词之间"""
+        status, s1, s2 = parse_seats("羊祜尽量不坐2，杜预武库很多装备牌", "羊祜", "杜预")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 3, 4]
+
+        status, s1, s2 = parse_seats("霍光尽可能坐3，让韩安国有空城时机", "霍光", "韩安国")
+        assert status == STATUS_PARTIAL
+        assert s1 == [3]
+
+        status, s1, s2 = parse_seats("鲁肃只能坐2，截胡敌方手牌", "申不害", "鲁肃")
+        assert status == STATUS_PARTIAL
+        assert s2 == [2]
+
+        status, s1, s2 = parse_seats("信陵君永远坐13，如姬把装备给信陵君", "信陵君", "如姬")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 3]
+
+        status, s1, s2 = parse_seats("信陵君永远13，小乔绑信陵君", "信陵君", "小乔")
+        assert status == STATUS_PARTIAL
+        assert s1 == [1, 3]
+
+    def test_seat_number_without_wei_and_typo_alias(self):
+        """N号(省略"位")+名字；错别字别名 刘绑=刘邦"""
+        status, s1, s2 = parse_seats("开局先发制人杀1号荀灌", "项梁", "荀灌")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1]
+
+        status, s1, s2 = parse_seats("刘绑坐前，先斩蛇，给夏侯惇牌", "夏侯惇", "刘邦")
+        assert status == STATUS_PARTIAL
+        assert s2 == [1, 2]

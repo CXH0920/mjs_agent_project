@@ -320,3 +320,24 @@ def test_restored_imported_record_upserts_when_in_source(tmp_path: Path) -> None
     combo = mgr.get_combo(1, 2)
     assert combo.deleted is False and combo.rating == 9
     assert report["deleted_skipped"] == []
+
+
+def test_hero_name_alias_mapping(tmp_path: Path) -> None:
+    """hero1/hero2 字段的手录简称（临海/平阳）映射到全名武将，落库存全名。"""
+    output = tmp_path / "combos.json"
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "临海", "hero2": "刘备", "rating": 7, "position": "both", "note": "0"},
+        {"hero1": "孙权", "hero2": "平阳", "rating": 8, "position": "both", "note": "0"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES + [{"id": 5, "name": "临海公主"}, {"id": 6, "name": "平阳公主"}])
+
+    report = run_import(source, heroes, output)
+
+    assert report["unmatched"] == []
+    assert report["imported"] == 2
+    mgr = ComboManager(output)
+    mgr.load()
+    assert mgr.get_combo(1, 5).hero1_name == "临海公主"
+    assert mgr.get_combo(2, 6).hero2_name == "平阳公主"
