@@ -326,6 +326,10 @@ class CaptureService(QObject):
         """在 GUI 线程中初始化 OCR worker，供应用启动阶段调用。"""
         self._ensure_ocr_worker()
 
+    def reset_ocr_recognizer_cache(self) -> None:
+        """丢弃 OCR recognizer 缓存，使下次识别读到新的用户层白名单。"""
+        self._ensure_ocr_worker().reset_recognizer_cache()
+
     def warmup_ocr_model(self, hero_names: list[str] | None = None) -> None:
         """在 OCR worker 中预热模型、推理算子和词表特征。"""
         if self._ocr_warmup_state in {"warming", "ready"}:

@@ -17,6 +17,9 @@ data/synergies.json
 data/guides.json
 data/*.corrupt-*.json
 data/*_待复核.csv
+# OCR 错法频次与人工确认记录（用户运行数据，经"白名单配置"界面消费）
+data/ocr_name_pending_stats.json
+data/ocr_confusion_overrides.json
 # 官方榜单导入生成物（由官方导入/推荐指数计算生成）
 data/2v2胜率排行.csv
 data/2v2出场排行.csv

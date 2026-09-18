@@ -240,6 +240,7 @@ def test_shell_exposes_all_compatible_actions_and_shortcuts(window) -> None:
         "api_settings",
         "emulator_settings",
         "faction_colors",
+        "whitelist_config",
         "data_management",
         "reload",
         "official_import",
@@ -260,13 +261,13 @@ def test_shell_exposes_all_compatible_actions_and_shortcuts(window) -> None:
     }
 
     assert set(window._actions) == expected_keys
-    assert len(window._actions) == 21
+    assert len(window._actions) == 22
     assert window._actions["reload"].shortcut().toString() == "F5"
     assert window._actions["exit"].shortcut().toString() == "Ctrl+Q"
 
 
 def test_menubar_mounts_all_actions(window) -> None:
-    """壳式入口移除后，菜单栏是唯一常驻入口，应挂载全部 21 个 QAction。"""
+    """壳式入口移除后，菜单栏是唯一常驻入口，应挂载全部 22 个 QAction。"""
     all_action_ids = {id(action) for action in window._actions.values()}
     menubar_actions = []
     for menu_action in window.menuBar().actions():
@@ -274,5 +275,5 @@ def test_menubar_mounts_all_actions(window) -> None:
         if menu is not None:
             menubar_actions.extend(_leaf_actions(menu))
 
-    assert len(menubar_actions) == 21
+    assert len(menubar_actions) == 22
     assert {id(action) for action in menubar_actions} == all_action_ids

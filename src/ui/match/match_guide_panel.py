@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.analysis.match_analysis_service import MatchAnalysis, MatchAnalysisService
+from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
@@ -571,6 +572,7 @@ class MatchGuidePanel(QWidget):
 
     def _replace_hero(self, index: int) -> None:
         candidates = set(self._lineup.slots[index].candidates)
+        original_raw = str(self._lineup.slots[index].raw_name)
         dialog = BaseHeroSelectDialog(
             self._hero_mgr, title="替换武将", tip_text="替换只影响本次对局攻略，不会写入武将数据。",
             selection_mode=SelectionMode.SINGLE,
@@ -582,6 +584,8 @@ class MatchGuidePanel(QWidget):
         hero = self._hero_mgr.get_hero(dialog.selected_ids[0])
         if hero is None:
             return
+        # 仅当所选答案在 OCR 候选集内时视为「纠正错读」并记录（候选外 = 主动换将）
+        record_confirmation(original_raw, hero.name, sorted(candidates))
         self._lineup.replace_hero(index, hero)
         self._analysis = None
         self._win_rates = load_win_rates()

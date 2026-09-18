@@ -353,6 +353,7 @@ class OcrWorker(QThread):
             result_save_started = time.perf_counter()
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
             GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json")
+            self._record_pending_names(results, task.template_name)
             result_save_ms = (time.perf_counter() - result_save_started) * 1000
             result["ocr_results"] = results
             if fingerprint is not None:
@@ -409,6 +410,25 @@ class OcrWorker(QThread):
             logger.warning("PaddleOCR 模型预热失败，首次识别将按需加载: %s", exc)
             logger.debug(traceback.format_exc())
             return {"outcome": "warmup_failed", "detail": str(exc)}
+
+    def _record_pending_names(self, results: list[dict], template_name: str) -> None:
+        """把无法自动确认的错法读数记入频次文件，供白名单配置界面消费。"""
+        from src.business.recognition.pending_stats import record_pending
+
+        for item in results:
+            if str(item.get("resolution", "")) in {
+                "exact", "unique_prefix", "unique_similarity",
+                "multi_similarity", "slot_unique", "manual",
+            }:
+                continue
+            raw_name = str(item.get("raw_name", "")).strip()
+            if not raw_name:
+                continue  # 对局攻略页的正常空席
+            record_pending(
+                raw_name,
+                [str(c) for c in (item.get("candidates") or [])],
+                template_name,
+            )
 
     @staticmethod
     def _log_timing(
@@ -487,6 +507,15 @@ class OcrWorker(QThread):
             and int(cv2.absdiff(patch, other).max()) <= PAGE_FINGERPRINT_TOLERANCE
             for patch, other in zip(left, right, strict=True)
         )
+
+    def reset_recognizer_cache(self) -> None:
+        """丢弃缓存的 recognizer，使下一次识别重建 service 并读到新白名单文件。
+
+        供"白名单配置"界面写入用户层对后调用，避免重启应用。
+        """
+        self._recognizer = None
+        self._recognizer_signature = None
+        logger.info("OCR 识别器缓存已重置，用户层白名单将在下次识别生效")
 
     def _get_recognizer(
         self,

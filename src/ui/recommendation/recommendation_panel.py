@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
 from src.business.maintenance.corpus_services import ComboService
+from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
 from src.data.combo_manager import ComboManager
 from src.data.combo_seats import format_seats
@@ -743,6 +744,9 @@ class RecommendationPanel(QWidget):
         hero = self._hero_mgr.get_hero(dialog.selected_ids[0])
         if hero is None:
             return
+        record_confirmation(
+            str(item.get("raw_name", "")), hero.name, sorted(candidates),
+        )
         item.update(name=hero.name, candidates=[hero.name], resolution="manual")
         data = list(self._ocr_results_by_slot.values())
         self.update_recommendations(data)

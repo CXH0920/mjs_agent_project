@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
+from src.config.env import PROJECT_ROOT
 from src.ocr.character_feature_repository import CharacterFeatureRepository
 
 logger = logging.getLogger(__name__)
+
+# 用户层白名单文件：基线表之外的人工补充对（经"白名单配置"界面写入），
+# 加载时与基线合并为生效表；文件缺失或损坏仅降级基线，不影响识别。
+OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
+
+
+def find_whitelist_conflicts(
+    hero_names: list[str], whitelist_pairs: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    """枚举词表中「等长仅差一字、且该差异对在白名单内」的高危武将名对。
+
+    这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），
+    供新增白名单对或新武将入库时做常驻检查。
+    """
+    conflicts: list[tuple[str, str, str]] = []
+    for index, first in enumerate(hero_names):
+        for second in hero_names[index + 1:]:
+            if len(first) != len(second):
+                continue
+            diffs = [
+                (a, b) for a, b in zip(first, second, strict=True) if a != b
+            ]
+            if len(diffs) != 1:
+                continue
+            source, target = diffs[0]
+            if whitelist_pairs.get(source) == target:
+                conflicts.append((first, second, f"{source}→{target}"))
+            elif whitelist_pairs.get(target) == source:
+                conflicts.append((first, second, f"{target}→{source}"))
+    return conflicts
 
 
 def levenshtein_distance(first: str, second: str) -> int:
@@ -39,15 +71,51 @@ class CharacterSimilarityService:
     CANGJIE_WEIGHT = 0.3
     WUBI_WEIGHT = 0.4
     # 确定性纠错映射：OCR 高频且多维相似度不足的「错字 → 正字」，命中即视为安全。
+    # 仅保留新预处理（纯放大、无增强）时代实测仍活跃的对；2026-09-17 移除的
+    # 16 对增强时代旧错法（敦惇/邵绍/雨羽/赞瓒/桥乔/正政/旦且/菲非/睢雎/
+    # 表袁/央英/合郃/神禅/种钟/易勖/菜蔡）经出场统计与移除重放证实已不再发生，
+    # 如复发会由错法频次记录重新捕获，经"白名单配置"界面补回。
     SAFE_SUBSTITUTION_WHITELIST: dict[str, str] = {
-        "昧": "眜", "敦": "惇", "邵": "绍", "雨": "羽", "半": "芈", "易": "勖",
-        "赞": "瓒", "桥": "乔", "正": "政", "旦": "且", "菲": "非", "睢": "雎",
-        "表": "袁", "央": "英", "合": "郃", "神": "禅", "菜": "蔡", "种": "钟",
-        "翡": "翦", "会": "哙", "助": "勖", "歇": "勖",
+        "昧": "眜", "半": "芈", "翡": "翦", "会": "哙",
+        "助": "勖", "歇": "勖", "怀": "惇",
     }
 
     def __init__(self, repository: CharacterFeatureRepository | None = None) -> None:
         self._repository = repository or CharacterFeatureRepository()
+        self._effective_whitelist = dict(self.SAFE_SUBSTITUTION_WHITELIST)
+        self._load_overrides()
+
+    def _load_overrides(self) -> None:
+        """合并用户层白名单文件；缺失仅用基线，损坏/非法条目降级并告警。"""
+        if not OVERRIDES_PATH.exists():
+            return
+        try:
+            document = json.loads(OVERRIDES_PATH.read_text(encoding="utf-8"))
+            pairs = document["pairs"]
+            if not isinstance(document, dict) or not isinstance(pairs, dict):
+                raise ValueError("根节点必须为含 pairs 对象的对象")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            logger.warning("用户层白名单加载失败，仅使用基线表: %s", exc)
+            return
+        merged = dict(self.SAFE_SUBSTITUTION_WHITELIST)
+        for source, target in pairs.items():
+            if (
+                not isinstance(source, str) or not isinstance(target, str)
+                or len(source) != 1 or len(target) != 1 or source == target
+            ):
+                logger.warning("用户层白名单条目非法，已跳过: %r→%r", source, target)
+                continue
+            merged[source] = target
+        self._effective_whitelist = merged
+        logger.debug(
+            "用户层白名单已合并: 基线 %d 对 + 用户层 %d 对",
+            len(self.SAFE_SUBSTITUTION_WHITELIST), len(pairs),
+        )
+
+    def reload_whitelist(self) -> None:
+        """重读用户层白名单并重建生效表，供界面写入后调用。"""
+        self._effective_whitelist = dict(self.SAFE_SUBSTITUTION_WHITELIST)
+        self._load_overrides()
 
     def warmup(self) -> None:
         self._repository.warmup()
@@ -95,7 +163,7 @@ class CharacterSimilarityService:
         if len(mismatches) != 1:
             return None
         source, target = mismatches[0]
-        if self.SAFE_SUBSTITUTION_WHITELIST.get(source) == target:
+        if self._effective_whitelist.get(source) == target:
             return 1.0
         return self._multi_dim_similarity(source, target)
 

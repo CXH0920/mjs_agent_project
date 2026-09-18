@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal
+from src.business.recognition.pending_stats import record_confirmation
 from src.capture.image_validation import load_local_image
 from src.ocr.card_grid_detector import derive_name_rois, detect_selection_cards
 from src.ocr.roi_config import Roi
@@ -298,6 +299,14 @@ class PeakSelectWatcher(QObject):
         with self._state_lock:
             self._resolutions[slot] = name
             last_board = self._last_board
+        raw_name = ""
+        slot_candidates: list[str] = []
+        if last_board is not None and 0 <= slot < len(last_board[0]):
+            raw_name = str(last_board[0][slot].get("raw_name", "")).strip()
+            slot_candidates = [
+                str(c) for c in (last_board[0][slot].get("candidates") or [])
+            ]
+        record_confirmation(raw_name, name, slot_candidates)
         if last_board is not None:
             self._publish_pool(*last_board)
 

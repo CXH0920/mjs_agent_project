@@ -610,6 +610,7 @@ class MainWindow(QMainWindow):
             "api_settings": QAction("API 配置", self),
             "emulator_settings": QAction("模拟器配置", self),
             "faction_colors": QAction("势力配色", self),
+            "whitelist_config": QAction("白名单配置", self),
             "data_management": QAction("数据管理", self),
             "reload": QAction("重新加载数据", self),
             "official_import": QAction("官方数据导入", self),
@@ -635,6 +636,7 @@ class MainWindow(QMainWindow):
             "api_settings": self._open_settings,
             "emulator_settings": self._open_mumu_config,
             "faction_colors": self._open_faction_colors,
+            "whitelist_config": self._open_whitelist_config,
             "data_management": self._open_data_management,
             "reload": self._reload_data,
             "official_import": self._open_official_data_import,
@@ -669,6 +671,7 @@ class MainWindow(QMainWindow):
         tools_menu.addAction(self._actions["api_settings"])
         tools_menu.addAction(self._actions["emulator_settings"])
         tools_menu.addAction(self._actions["faction_colors"])
+        tools_menu.addAction(self._actions["whitelist_config"])
         tools_menu.addAction(self._actions["data_management"])
 
         data_menu = bar.addMenu("数据")
@@ -1124,6 +1127,18 @@ class MainWindow(QMainWindow):
         self._recommendation.refresh_faction_colors()
         self._match_guide.refresh_faction_colors()
         self._status_label.setText("势力配色已更新")
+
+    def _open_whitelist_config(self) -> None:
+        """打开白名单配置页（错法观察 + 用户层确定性纠错对维护）。"""
+        from src.ui.configuration.whitelist_config_dialog import WhitelistConfigDialog
+
+        hero_names = [hero.name for hero in self._data.heroes.list_heroes()]
+        dialog = WhitelistConfigDialog(
+            hero_names,
+            reset_ocr_cache=self._capture_service.reset_ocr_recognizer_cache,
+            parent=self,
+        )
+        dialog.exec()
 
     def _open_mumu_config(self) -> None:
         """打开模拟器配置对话框"""
