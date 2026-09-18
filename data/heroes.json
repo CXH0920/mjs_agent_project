@@ -456,37 +456,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/YvQDc9rlr4TqKWxv2O6VSvoKCkbpcvPvLEfbTQba.png_200x282.png"
   },
   {
-    "id": 156,
-    "name": "魏咎",
-    "title": "",
-    "faction": "魏",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 5,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "焚身救民",
-        "description": "回合结束时，你进入连环状态，摸2张牌，然后受到1点火焰伤害，并失去1点体力上限。",
-        "settlement": "1.若回合结束时已经处于连环状态，此技能效果不会解除连环状态。 2.无法选择是否失去体力上限，一定会失去。"
-      },
-      {
-        "name": "受立魏王",
-        "description": "限定，回合开始时，你每有1张“义兵”，你可以增加1点体力上限，并且回复1点体力，并获得技能“焚身救民”。",
-        "settlement": "仅依据发动此技能时的义兵数量，决定后续效果。"
-      },
-      {
-        "name": "流亡储君",
-        "description": "登场，你可以选择一名其他角色，当其弃置牌时，你获得其中1张牌，并转化为“义兵”。当你打出“义兵”时，你令一名其他角色进入连环状态。",
-        "settlement": "1.随机获得的目标弃置的牌转化为的义兵会继承原牌的花色点数。 2.此技能后段效果只能令其他角色进入连环状态，而不能解除连环状态。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/JweWzj3tEJXh1sk4bKVpzFfGmLFveDJ4LP2fG3Ns.png_200x282.png"
-  },
-  {
     "id": 155,
     "name": "卓文君",
     "title": "",
@@ -739,32 +708,6 @@
     "mode_viability": {},
     "last_updated": "2026-07-16",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-04/tMhGc4I950afMqpeTDm4tCSe1myfgwgdfthT5OSe.png_200x282.png"
-  },
-  {
-    "id": 144,
-    "name": "公孙瓒",
-    "title": "",
-    "faction": "东汉",
-    "position": "攻击",
-    "max_hp": 5,
-    "max_hand": 4,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "筑京自固",
-        "description": "受伤，你获得1张坐骑牌。",
-        "settlement": "如果牌堆没有坐骑牌，则不会获得。"
-      },
-      {
-        "name": "白马义从",
-        "description": "登场，复制牌堆中所有的坐骑牌，并洗入牌堆；你的坐骑牌的效果会触发2次。",
-        "settlement": "1.飒露紫的效果只会发动1次； 2.只会复制牌堆中有的坐骑牌。 3.此技能不会对武刚车复制的坐骑技能生效。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-04/iN52RQdpqSPZEKIDazUAW6EgcpWfuN3iU92bGRMz.png_200x282.png"
   },
   {
     "id": 143,
@@ -4001,7 +3944,7 @@
         "description": "每个角色出牌阶段限1次，获得1张符水并打乱牌堆，然后可以交给你2张牌。",
         "settlement": "1.可以选择已经装备的装备牌。 2.通过太平道获得的符水一定是获得你的牌的张角放入牌堆的。"
       },
-	  {
+      {
         "name": "呼风唤雨",
         "description": "回合开始时，将牌堆顶的3张牌放入天书，出牌阶段你可以打出天书中的牌；回合结束时，弃置天书中的所有牌，若你本回合未打出天书中的牌，你可以对一名角色造成2点雷电伤害。天书：特殊的场外区",
         "settlement": "1.这个技能翻开的3张牌不算是获得到手牌。2.其他角色也可以看到翻开的3张牌。3.翻开的3张牌可以向手牌那样正常打出，但是只要有1张牌被打出了，就无法触发回合结束时的伤害效果。4.回合结束时，先弃置所有呼风唤雨的牌，再触发伤害效果。"
@@ -5124,5 +5067,155 @@
     "mode_viability": {},
     "last_updated": "2026-09-13",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/IknjfdOIIvgM4JanWlK5pBUznOD6P96FJANuhEXu.png_200x282.png"
+  },
+  {
+    "id": 156,
+    "name": "魏咎",
+    "title": "",
+    "faction": "魏",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "焚身救民",
+        "description": "回合结束时，你进入连环状态，摸2张牌，然后受到1点火焰伤害。",
+        "settlement": "1.若回合结束时已经处于连环状态，此技能效果不会解除连环状态。 2.受到的伤害为无来源伤害。"
+      },
+      {
+        "name": "受立魏王",
+        "description": "限定，回合开始时，你每有1张“义兵”，你可以增加1点体力上限，并且回复1点体力，并获得技能“焚身救民”。",
+        "settlement": "仅依据发动此技能时的义兵数量，决定后续效果。"
+      },
+      {
+        "name": "流亡储君",
+        "description": "登场，你可以选择一名其他角色，当其弃置牌时，你获得其中1张牌，并转化为“义兵”。 当你获得或打出“义兵”时，你可以令一名其他角色进入连环状态。",
+        "settlement": "1.随机获得的目标弃置的牌转化为的义兵会继承原牌的花色点数。 2.此技能后段效果只能令其他角色进入连环状态，而不能解除连环状态。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-18",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-05/JweWzj3tEJXh1sk4bKVpzFfGmLFveDJ4LP2fG3Ns.png_200x282.png"
+  },
+  {
+    "id": 144,
+    "name": "公孙瓒",
+    "title": "",
+    "faction": "东汉",
+    "position": "攻击",
+    "max_hp": 5,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "筑京自固",
+        "description": "受伤，你获得1张坐骑牌，并且可以立即打出此牌。",
+        "settlement": "如果牌堆没有坐骑牌，则不会获得。"
+      },
+      {
+        "name": "白马义从",
+        "description": "登场，复制牌堆中所有的坐骑牌，并洗入牌堆；你的坐骑牌的效果会触发2次。",
+        "settlement": "1.飒露紫的效果只会发动1次； 2.只会复制牌堆中有的坐骑牌。 3.此技能不会对武刚车复制的坐骑技能生效。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-18",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-04/iN52RQdpqSPZEKIDazUAW6EgcpWfuN3iU92bGRMz.png_200x282.png"
+  },
+  {
+    "id": 200,
+    "name": "王导",
+    "title": "",
+    "faction": "东晋",
+    "position": "辅助",
+    "max_hp": 4,
+    "max_hand": 5,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "镇之以静",
+        "description": "当你成为其他角色打出牌的目标，并且没有响应此牌后，你可以令一名角色获得1张士族牌。",
+        "settlement": "这个技能很简单..."
+      },
+      {
+        "name": "江左夷吾",
+        "description": "登场，你可以令一名其他角色在本局游戏中可以打出士族牌。出牌阶段限1次，你可以将至少1张牌转化为士族牌并放入士族牌堆顶，然后令一名角色获得等量+1或-1张士族牌。",
+        "settlement": "这个技能很简单..."
+      },
+      {
+        "name": "琅琊王氏",
+        "description": "士族。每轮开始时，你查看士族牌堆顶的5张牌，并且选择获得其中2张牌。 士族:游戏开始时，将牌堆顶的10张牌转化为士族牌并放入士族牌堆。士族牌堆与公共牌堆相互独立，并且只有“士族”角色，才可以打出士族牌。",
+        "settlement": "1.士族牌堆和士族弃牌堆均为全场共用的特殊区域，与普通牌堆及弃牌堆相互独立。 2.士族牌被使用或打出后，进入士族弃牌堆，当士族牌堆为空时，将士族弃牌堆洗牌，并组成新的士族牌堆。 3.除非技能另有说明，拥有“士族”技能的角色摸牌时，仍从普通牌堆摸牌。 4.游戏开始时，每有一个“士族”技能，便将牌堆顶的10张牌转化为士族牌并放入士族牌堆。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-18",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/9whuju4ObMu3txWVFrN5JstAVLiHziSGQ849JQuj.png_200x282.png"
+  },
+  {
+    "id": 199,
+    "name": "祖逖",
+    "title": "",
+    "faction": "东晋",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "孤军自募",
+        "description": "你始终跳过摸牌阶段。每个角色的回合结束时，你可以失去1点体力或手牌上限，然后随机获得本回合进入弃牌堆的每种类型的牌各1张。",
+        "settlement": "1.如果手牌上限小于等于0，则无法选择减少手牌上限。 2.无法获得无类型的牌。"
+      },
+      {
+        "name": "中流击楫",
+        "description": "出牌阶段限1次，你可以亮出牌堆中间的1张牌，在此牌离开牌堆前，你打出的与此牌花色或点数相同的牌生效2次，且在打出后，你可以查看并选择是否弃置牌堆顶的3张牌。",
+        "settlement": "可以在技能页面查看因此技能记录的牌。"
+      },
+      {
+        "name": "闻鸡起舞",
+        "description": "登场/牌堆洗牌后，你立即进行1个出牌阶段。",
+        "settlement": "仅当牌堆无法满足本次摸牌或获得牌的要求，因而将弃牌堆的牌洗入牌堆时，才会触发此技能。(刘邦大风歌、张角太平道、甘宁锦帆游侠等技能直接引发的洗牌，均不会触发此技能。)"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-18",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/hkiZyEEGRksX5RgeHcsizlnszZOcSYX5AdMOAa5w.png_200x282.png"
+  },
+  {
+    "id": 198,
+    "name": "魏华存",
+    "title": "",
+    "faction": "西晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "黄庭化仙",
+        "description": "阵亡，你可以将魏华存的武将牌洗入牌堆，并且可以将1张“玉剑”添加至一名其他角色的装备区。 （玉剑：土-1，攻击范围2，抵消你受到的雷电伤害。当你打出的杀即将造成伤害时，你可以将此伤害改为令目标失去等量体力。） 魏华存（武将牌）：获得时自动打出，对所有角色造成1点雷电伤害，然后重复此过程，直到一名角色进入重伤状态，然后销毁此牌。",
+        "settlement": "如果在此过程中没有角色因此技能受到雷电伤害，武将牌的效果也会终止。"
+      },
+      {
+        "name": "上清真经",
+        "description": "每种效果限1次，你的每个阶段结束时，若你连续5个阶段没有获得/打出牌，你之后的回合永久获得1个摸牌/出牌阶段。",
+        "settlement": "通过此技能获得的额外阶段，添加在每个回合原有的所有阶段之后。"
+      },
+      {
+        "name": "存思身神",
+        "description": "当你从牌堆获得牌时，你可以将这些牌按原顺序放回牌堆顶，然后将自己的1个阶段永久改为另1个阶段。",
+        "settlement": "1.初始有回合开始、出牌、摸牌、弃牌、回合结束5个阶段。 2.本技能不影响临时获得的阶段。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-18",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/wnfdjh3YfZBIEnyD8T9Vf4ub8CgvLFS6TigabugL.png_200x282.png"
   }
 ]
