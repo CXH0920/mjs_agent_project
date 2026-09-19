@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 from src.business.maintenance.classification_suggest import suggest_hero_categories
 from src.business.maintenance.corpus_services import ClassificationService
+from src.business.rag.hero_brief import load_hero_briefs
 from src.business.rag.refinement_service import build_generator
 from src.data.hero_classification_repository import (
     ClassificationCategory,
@@ -169,11 +171,13 @@ class HeroClassificationPanel(QWidget):
 
     def __init__(self, repository: HeroClassificationRepository,
                  hero_positions: dict[str, str] | None = None,
-                 hero_skills: dict[str, str] | None = None, parent=None):
+                 hero_skills: dict[str, str] | None = None, *,
+                 root: Path, parent=None):
         super().__init__(parent)
         # 写路径经业务服务（#A1）；读查询沿用 _repo 透传
         self._service = ClassificationService(repository)
         self._repo = self._service.repository
+        self._root = root
         self._hero_positions = hero_positions or {}
         self._hero_skills = hero_skills or {}
         self._hero_names = sorted(repository.hero_names)
@@ -377,6 +381,7 @@ class HeroClassificationPanel(QWidget):
         """重新加载数据。
 
         - 有未保存修改时先确认（刷新/重载入口），确认后丢弃并重置 dirty；
+        - 同步刷新武将名单环境（heroes.json，见 refresh_roster）；
         - 加载失败（error）时在状态栏提示并禁用「保存」，防止空数据覆盖原文件。
         """
         if self._dirty:
@@ -391,17 +396,32 @@ class HeroClassificationPanel(QWidget):
                     return
             self._dirty = False
         issues = self._repo.load()
-        self._hero_names = sorted(self._repo.hero_names)
         errors = [item.message for item in issues if item.severity == "error"]
         self._load_errors = bool(errors)
+        self.refresh_roster()
         self._refresh_categories()  # 内部已刷新克制链下拉，不重复调用 _refresh_chain_options
-        self._refresh_heroes()
         if errors:
             self._action_bar.set_status(f"加载异常 {len(errors)} 条（详见日志），已禁止保存", TONE_WARNING)
             self._save_button.setEnabled(False)
         else:
             self._save_button.setEnabled(True)
             self._update_status("已加载", TONE_INFO)
+
+    def refresh_roster(self) -> None:
+        """同步武将名单环境（heroes.json 的名单/定位/技能），不触碰归类编辑数据。
+
+        爬虫/公告更新 heroes.json 后由各刷新入口调用；读取失败时保留现有
+        名单（fallback 语义），面板不因数据文件缺失而瘫痪。
+        """
+        try:
+            names, positions, skills = load_hero_briefs(self._root, self._repo.hero_names)
+        except Exception:
+            logger.exception("刷新武将名单失败，保留现有名单")
+            return
+        self._repo.update_hero_names(names)
+        self._hero_positions, self._hero_skills = positions, skills
+        self._hero_names = sorted(names)
+        self._refresh_heroes()
 
     def _update_status(self, text: str, tone: str) -> None:
         # 加载失败时保持只读提示，不被编辑状态文案覆盖（#38）
@@ -787,6 +807,8 @@ class HeroClassificationPanel(QWidget):
     def focus_unclassified(self) -> None:
         """切到「武将归类」子页签并定位第一个未归类武将（供知识库维护审计跳转）。"""
         self._tabs.setCurrentIndex(self._tabs.indexOf(self._hero_tab))
+        # 审计基于磁盘现读，跳转前先同步名单环境，保证 heroes.json 的新武将可被定位
+        self.refresh_roster()
         if not self._repo.list_unclassified():
             return
         self._goto_next_unclassified()

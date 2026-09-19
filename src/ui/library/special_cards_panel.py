@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 from src.business.maintenance.corpus_services import SpecialCardsService
 from src.business.rag.audit_service import GENERIC_HERO_NAMES
+from src.business.rag.hero_brief import load_hero_briefs
 from src.data.special_cards_repository import (
     SPECIAL_CATEGORIES,
     SpecialCardItem,
@@ -222,11 +224,13 @@ class SpecialCardsPanel(QWidget):
 
     data_changed = Signal()
 
-    def __init__(self, repository: SpecialCardRepository, hero_names: set[str], parent=None):
+    def __init__(self, repository: SpecialCardRepository, hero_names: set[str], *,
+                 root: Path, parent=None):
         super().__init__(parent)
         # 写路径经业务服务（#A1）；读查询沿用 repository 透传
         self._service = SpecialCardsService(repository)
         self._repository = self._service.repository
+        self._root = root
         self._hero_names = hero_names
         self._current: SpecialCardItem | None = None
         self._load_error = False
@@ -289,7 +293,20 @@ class SpecialCardsPanel(QWidget):
         if self._load_error:
             self._status_label.setText(f"数据加载失败（{len(errors)} 条），已禁止修改，详见日志")
             set_tone(self._status_label, TONE_WARNING)
+        self._refresh_roster()
         self._refresh_list()
+
+    def _refresh_roster(self) -> None:
+        """同步武将名单（heroes.json），读取失败时保留现有名单。
+
+        爬虫/公告更新 heroes.json 后由 reload_data 调用，新增武将可关联专属牌。
+        """
+        try:
+            names = load_hero_briefs(self._root, self._hero_names)[0]
+        except Exception:
+            logger.exception("刷新武将名单失败，保留现有名单")
+            return
+        self._hero_names = set(names)
 
     def _ensure_writable(self) -> bool:
         """数据加载失败时禁止写操作；返回是否可写。"""

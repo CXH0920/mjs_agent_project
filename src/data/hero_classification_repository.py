@@ -182,6 +182,10 @@ class HeroClassificationRepository(JsonRepository):
     # ---------------------------------------------------------------
     # 武将归类
     # ---------------------------------------------------------------
+    def update_hero_names(self, names: set[str] | None) -> None:
+        """更新武将名单环境（不触碰归类数据；heroes.json 更新后由面板刷新）。"""
+        self.hero_names = set(names or ())
+
     def hero_categories(self) -> dict[str, list[str]]:
         return {k: list(v) for k, v in self._hero_categories.items()}
 

@@ -30,8 +30,14 @@ def _panel(tmp_path: Path) -> tuple[HeroClassificationPanel, Path]:
         "counter_chain": {"高爆发型": "防御/保核型"},
     })
     repo = HeroClassificationRepository(path, hero_names={"庞煖", "典韦"})
-    panel = HeroClassificationPanel(repo, {"庞煖": "攻击"})
+    panel = HeroClassificationPanel(repo, {"庞煖": "攻击"}, root=tmp_path)
     return panel, path
+
+
+def _write_heroes(tmp_path: Path, names: list[str]) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    _write(data_dir / "heroes.json", [{"name": name} for name in names])
 
 
 def test_panel_renders_tabs(tmp_path: Path) -> None:
@@ -186,6 +192,51 @@ def test_load_error_disables_save_button(tmp_path: Path) -> None:
     path = tmp_path / "hero_classification.json"
     path.write_text("{broken", encoding="utf-8")
     repo = HeroClassificationRepository(path, hero_names={"庞煖"})
-    panel = HeroClassificationPanel(repo, {})
+    panel = HeroClassificationPanel(repo, {}, root=tmp_path)
     assert not panel._save_button.isEnabled()
     assert "加载异常" in panel._status_label.text()
+
+
+def test_roster_refresh_picks_up_new_heroes(tmp_path: Path) -> None:
+    """爬虫更新 heroes.json 后 refresh_roster 使新武将可见、可归类。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    assert panel._repo.hero_names == {"庞煖", "典韦"}
+    _write_heroes(tmp_path, ["庞煖", "典韦", "王导"])
+    panel.refresh_roster()
+    assert panel._repo.hero_names == {"庞煖", "典韦", "王导"}
+    listed = [panel._hero_list.item(i).data(0x0100) for i in range(panel._hero_list.count())]
+    assert "王导" in listed
+    assert panel._repo.list_unclassified() == ["典韦", "王导"]
+    panel._repo.set_hero_categories("王导", ["高爆发型"])  # 新武将不再被校验拒绝
+    assert panel._repo.get_hero_categories("王导") == ["高爆发型"]
+
+
+def test_reload_data_refreshes_roster(tmp_path: Path) -> None:
+    """面板「刷新」按钮与菜单 F5 共用的 reload_data 同步加载新武将名单。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    _write_heroes(tmp_path, ["庞煖", "典韦", "王导"])
+    panel.reload_data()
+    assert "王导" in panel._repo.hero_names
+    assert panel._repo.list_unclassified() == ["典韦", "王导"]
+
+
+def test_focus_unclassified_finds_new_hero(tmp_path: Path) -> None:
+    """审计「去归类」跳转前同步名单，新武将能被直接定位。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._repo.set_hero_categories("典韦", ["高爆发型"])  # 先归满现有武将
+    _write_heroes(tmp_path, ["庞煖", "典韦", "祖逖"])
+    panel.focus_unclassified()
+    assert panel._current_hero == "祖逖"
+
+
+def test_roster_refresh_keeps_names_when_heroes_missing(tmp_path: Path) -> None:
+    """heroes.json 缺失/损坏时保留现有名单，面板不瘫痪。"""
+    _app()
+    panel, _ = _panel(tmp_path)  # tmp_path 下无 data/heroes.json
+    panel.refresh_roster()
+    assert panel._repo.hero_names == {"庞煖", "典韦"}
+    assert panel._hero_list.count() == 2
+    assert panel._repo.list_unclassified() == ["典韦"]

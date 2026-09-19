@@ -34,7 +34,7 @@ def _repo(tmp_path: Path) -> SpecialCardRepository:
 def test_panel_lists_and_shows_detail(tmp_path: Path) -> None:
     _app()
     repo = _repo(tmp_path)
-    panel = SpecialCardsPanel(repo, {"张华"})
+    panel = SpecialCardsPanel(repo, {"张华"}, root=tmp_path)
     assert panel._list.count() == 2
     panel._list.setCurrentRow(0)
     assert panel._current is not None
@@ -47,7 +47,7 @@ def test_panel_lists_and_shows_detail(tmp_path: Path) -> None:
 def test_panel_filters_by_category(tmp_path: Path) -> None:
     _app()
     repo = _repo(tmp_path)
-    panel = SpecialCardsPanel(repo, {"张华"})
+    panel = SpecialCardsPanel(repo, {"张华"}, root=tmp_path)
     panel._category_filter.setCurrentIndex(1)  # 专属牌
     assert panel._list.count() == 1
     assert panel._list.item(0).data(Qt.ItemDataRole.UserRole) == ("专属牌", "龙泉剑")
@@ -141,7 +141,7 @@ def test_switching_items_leaves_no_button_ghost(tmp_path: Path) -> None:
     """连续浏览多个条目后，详情区按钮不残留（修复子布局未清理的残影问题）。"""
     _app()
     repo = _repo(tmp_path)
-    panel = SpecialCardsPanel(repo, {"张华"})
+    panel = SpecialCardsPanel(repo, {"张华"}, root=tmp_path)
     app = _app()
     for _ in range(3):
         for row in range(panel._list.count()):
@@ -157,6 +157,6 @@ def test_load_error_disables_add_button(tmp_path: Path) -> None:
     path = tmp_path / "special_cards.json"
     path.write_text("{broken", encoding="utf-8")
     repo = SpecialCardRepository(path)
-    panel = SpecialCardsPanel(repo, set())
+    panel = SpecialCardsPanel(repo, set(), root=tmp_path)
     assert not panel._add_button.isEnabled()
     assert "已禁止修改" in panel._count_label.text()

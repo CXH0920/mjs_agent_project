@@ -225,7 +225,8 @@ class RagMaintenancePanel(QWidget):
         self._rule_doc.script_output.connect(self._on_rule_doc_output)
         self._rule_doc.script_finished.connect(self._on_rule_doc_script_finished)
         self._special_cards = SpecialCardsPanel(
-            SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names)
+            SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names,
+            root=self._root)
         self._special_cards.data_changed.connect(self._on_child_changed)
         self._card_points = CardPointsPanel(
             CardPointsRepository(self._root / "data" / "card_points.json"), self._root)
@@ -236,7 +237,7 @@ class RagMaintenancePanel(QWidget):
         self._classification = HeroClassificationPanel(
             HeroClassificationRepository(
                 self._root / "data" / "hero_classification.json", self._hero_names),
-            self._hero_positions, self._hero_skills)
+            self._hero_positions, self._hero_skills, root=self._root)
         self._classification.data_changed.connect(self._on_child_changed)
 
         panels = {
