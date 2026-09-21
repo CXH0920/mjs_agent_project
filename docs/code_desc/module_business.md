@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-09-15
+> 文档日期：2026-09-21
 
 ---
 
@@ -48,6 +48,7 @@ src/business/
 │   ├── ocr_service.py                 # OCR 控制、模板和轮询
 │   ├── ocr_worker.py                  # 唯一后台识别队列
 │   ├── official_data_import_service.py # 官方榜单导入（面板守卫 + 批量写回）
+│   ├── pending_stats.py               # OCR 未决错法频次与人工确认答案记录
 │   └── peak_select_watcher.py         # 巅峰赛（2v2）选将实时识别循环
 ├── analysis/
 │   ├── recommendation_service.py      # 推荐数据组装
@@ -179,6 +180,10 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 
 同步等待路径带超时保护：`OcrService.run_ocr()` 对 `OcrTask.completed` 做 30 秒有限等待，超时记录告警并返回 `None`，配合识别器加载熔断，避免引擎异常时调用线程无限阻塞。`shutdown()` 停止两个执行器并把 OCR worker 转入退役列表（不在 GUI 线程同步等待），进程退出钩子统一收尾。
 
+**2026-09 变更**：
+- **ADB raw 帧截图提速（cd35c98）**：`capture_for_poll()` 直接返回 numpy 数组（经 `_adb_executor` 排队），与手动截图、模板截图互斥；`AdbCapture.screencap_raw()` 跳过 PIL 解码直接返回 PNG bytes，大幅降低轮询路径的 IO 与解码开销。
+- **`reset_ocr_recognizer_cache()`（9ca1b91）**：白名单治理后调用的引擎缓存重置入口。OCR 识别器（含复核引擎）按 `hero_names` 分片缓存，用户层白名单更新后需使全部旧缓存失效，该方法清除所有分片并在下一轮 OCR 时按新词表重建。
+
 ### 3.3 OcrService（OCR 控制）
 
 控制模板制作、轮询会话与退避状态；不持有任何截图或识别器，识别工作全部经注入的 `set_ocr_task_submitter()` 交给 `CaptureService.submit_ocr_task()`：
@@ -199,6 +204,8 @@ OcrService (QObject)
   ├── stop_poll()                                → 停止轮询会话
   ├── resume_poll()                              → 用户主动恢复已暂停轮询
   ├── begin_poll() -> int | None                 → 标记一轮开始，返回会话代数
+  ├── pause_for_idle()                          → 闲置检测达阈值时暂停轮询（独立于故障 paused）
+  ├── is_poll_idle_paused() -> bool             → 当前是否处于闲置暂停态
   ├── complete_poll(generation, outcome, detail) → 主线程记录一轮结果并迁移状态
   ├── invalidate_inflight_poll()                 → 作废在途轮询（巅峰赛启动时调用）
   ├── is_poll_cancelled(generation)              → 代数过期或取消标记已置位
@@ -211,11 +218,12 @@ OcrService (QObject)
 
 **轮询会话模型**：`PollSession(generation, cancel_event)` 提供会话代数——`start_poll()` / `stop_poll()` / `invalidate_inflight_poll()` 各递增一次代数并置位旧取消标记。在途轮询的后台线程在每个关键写入点检查取消标记，结果回 GUI 线程时再经代数校验，过期结果直接丢弃，避免"停止后又被旧拍重新挂起"或旧结果回写冷却。`_poll_in_flight` 单飞标记保证同一时刻只有一拍在执行；`invalidate_inflight_poll()` 必须同时复位该标记，否则在途一轮不再调用 `complete_poll()` 会让后续轮询永久假死。
 
-**状态机**：`stopped / running / backing_off / paused`，由 `complete_poll()` 依 outcome 迁移——
+**状态机**：`stopped / running / backing_off / paused / idle_paused`，由 `complete_poll()` 依 outcome 迁移——
 
 - `matched` / `healthy_no_match`：失败计数归零，若定时器间隔已被拉长则恢复基础间隔，状态回 `running`；
 - `prerequisite_unconfigured` / `prerequisite_template_missing`：停止定时器并转 `paused`（提示未配置 ADB / 未加载识别模板）；
 - 其他可重试失败（连接、截图、OCR、超时）：失败计数 +1，连续达到 `POLL_MAX_FAILURES = 5` 转 `paused`，否则把定时器间隔动态拉长为 `max(基础间隔, POLL_BACKOFF_DELAYS_MS[计数-1])`（`2s / 5s / 15s / 30s`）并转 `backing_off`，提示剩余重试次数。定时器持续运行（Qt 对激活中的定时器改间隔会重启计数），因此不再需要"单次触发 + 重新排程"。
+- **`idle_paused`（2026-09 新增）**：连续 5 分钟无画面变化时由 `PollCoordinator` 检测帧指纹不变后调 `pause_for_idle()` 进入。独立于故障 `paused`，由整帧指纹判闲（`frame_fingerprint` 32×18 灰度、MAD<3 判同）驱动。恢复路径：点击状态栏闲置暂停胶囊、重新激活主窗口、或触发 `sync_with_connection()`（配置保存/连接变化/导入对话框关闭）。
 
 `start_poll()` 把间隔钳到 `max(interval_ms, 1000)`，并把任务状态重置为 `hero_selection` 激活、`match_guide` 停用；两个任务各自维护 `PollTaskState(active, cooldown_until, last_match_time, consecutive_failures)`，冷却彼此独立，任一任务冷却只跳过自己。任务级冷却缺省取 `POLL_MATCH_COOLDOWN_MS = 180_000`（3 分钟）。
 
@@ -224,6 +232,8 @@ OcrService (QObject)
 ### 3.4 EmulatorOperationService（模拟器后台操作）
 
 `EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与 MuMu 实例枚举，ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会在 MuMuManager 异常退出时重试一次，并把失败原因与"正常但没有实例"区分开。
+
+> **架构防火墙声明（637102b）**：模块文档字符串明确声明 `EmulatorOperationService` 不包含 ADB 输入能力（不提供 `input_tap` / `input_swipe` / `input_text` 等 ADB 输入方法），仅承担设备探测、连接管理与截图获取。此声明是合规化改造的一部分，确保业务层无法被调用方误用为自动化操作入口。
 
 ```
 MumuConfigDialog
@@ -316,6 +326,8 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 该顺序能优先恢复低置信度但完整的词表候选，同时避免将"郭""范"等多候选单字或"夏侯""司马"等复姓公共前缀强行改为错误角色。
 
+**B2 复核模式集成（d88fc2f）**：官方导入流程与标准 OCR 识别路径共享同一复核引擎。当未决名称经词表校正仍无法唯一确认时，`recognizer.py` 将候选送入 PP-OCRv6-small/ONNX 引擎（`paddle_loader.get_recheck_ocr_engine()`）做候选内确认，复核通过则直接补全，不通过则走原有的待复核流程。复核引擎由 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制，缺失模型时直接报错熔断不触发联网下载。
+
 ---
 
 ### 3.6 AnnouncementService（公告更新检查）
@@ -353,6 +365,11 @@ Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程
 - **`stage` 判定**：≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
 - **牌面签名** `board_signature()`：坐标全量量化（位置 4px、尺寸 8px 步长），吸收卡位检测像素级抖动，仅布局变化才触发 OCR
 
+**2026-09 巅峰赛优化（e39b746）**：
+- **兜底人工确认不再随拍重置**：人工确认结果在单拍闭包缺名时进入宽限期保留（不因拍面变化而丢弃），确认优先于自动结论。
+- **逐拍内容验证加宽限淘汰**：确认后的候选名在后续拍中持续比对牌面内容指纹，连续多拍验证不到才淘汰。宽限期确保单拍牌面抖动或漏识别不会直接清除已确认候选。
+- **读数原文指纹兜底**：当 OCR 识别出的牌面内容与预期不符时，以原文指纹作为兜底证据稳定错读，避免在宽限期内因单次误读导致候选被错误淘汰。
+
 ### 3.8 巅峰赛禁选建议（peak_ban_advice.py）
 
 纯函数双维度象限判定，阈值按版本微调只需改常量：
@@ -375,6 +392,10 @@ Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程
 ### 3.10 实战配队导入（combo_import_service.py）
 
 `run_import(source, heroes, output)` 幂等合并。武将名→ID 映射，未匹配项进报告；座次解析 + position 交叉校验；手工记录优先；非手工旧记录源中已不存在则移除；重复执行输出稳定。报告字段见 `module_scraper.md` 3.6 节。
+
+**2026-09 导入合并保护增强（4fa9a5d）**：
+- **手工记录优先保留**：`manual=True` 的记录在同 key（武将对 + 座次）冲突时优先于源记录保留，确保用户手动维护的配队不被外部导入覆盖。
+- **逻辑删除无条件保留**：`deleted=True` 的记录在导入合并时不可被源数据覆盖或恢复，同时屏蔽同 key 的源记录写入。已逻辑删除的配队即使出现在外部数据源中也不会被复活。
 
 ### 3.11 脚本运行器（script_runner.py）
 
@@ -486,7 +507,26 @@ check_now()
 
 **`is_busy` 防重复**：`check_now()` 返回 `bool`，`False` 表示被忙碌或冷却拦截。主窗口据此弹出提示。
 
-### 3.15 知识库相关功能（已迁出）
+### 3.15 白名单治理与未决错法记录（pending_stats.py）
+
+`pending_stats` 模块提供 OCR 未决错法频次统计与人工确认答案收集服务（9ca1b91）。双事件流汇入同一文件 `data/ocr_name_pending_stats.json`：
+
+- **识别线程** — `record_pending(original_name, candidates, slot)`：OCR 识别未决时记录原始错法名、候选列表与槽位，60 秒节流窗口防虚增（同一错法在节流窗口内不重复计数），原子替换写入。
+- **GUI 线程** — `record_confirmation(pending_name, confirmed_name)`：用户人工确认候选时记录确认答案，用于白名单观察清单生成时统计"最终正确名 → 错法名"的映射频次。
+
+`PendingStatsService` 提供以下核心方法：
+
+| 方法 | 说明 |
+|------|------|
+| `record_pending(original, candidates, slot)` | 识别线程调用，记录未决错法 |
+| `record_confirmation(pending_name, confirmed_name)` | GUI 线程调用，记录人工确认 |
+| `load_pending_stats()` → `dict[str, PendingRecord]` | 加载全量错法记录 |
+| `get_sorted_pending_records(threshold=0)` → `list[PendingRecord]` | 按频次降序获取错法清单（A+/A/B/C 分类由 UI 层处理） |
+| `clear_stats()` | 清空统计文件 |
+
+`PendingRecord` 包含 `original`（原文）、`candidates`（候选）、`pending_count`（出现次数）、`confirmed_count`（确认次数）、`confirmed_names`（确认答案列表）。错法观察清单的 A+/A/B/C 分类由 `whitelist_config_dialog.py` 按频次与确认状态计算，业务层只提供数据。
+
+### 3.16 知识库相关功能（已迁出）
 
 元规则维护、知识库审计、索引精化、RAG 语料任务定义、武将分类 LLM 建议已整体迁至 [`./module_rag.md`](./module_rag.md)，此处不再重复。
 
@@ -576,28 +616,29 @@ def _cleanup_tmp_file(self) -> None:
 |------|------|------|
 | 依赖 | `src.data.manager` | `DataIssue` 模型（CardCatalogService 的仓储校验结果） |
 | 依赖 | `src.scraper.*` | 构建 CLI 参数调用爬虫/AI 脚本（`official` / `incremental` / `ai_batch`） |
-| 依赖 | `src.capture.adb_screen` | CaptureService / EmulatorOperationService 持有 AdbCapture 实例 |
+| 依赖 | `src.capture.adb_screen` | CaptureService / EmulatorOperationService 持有 AdbCapture 实例；`screencap_raw()` 直接返回 PNG bytes 跳过 PIL 解码 |
 | 依赖 | `src.capture.prober` | ADB 路径探测与 MuMu 实例枚举（`probe_mumu_adb` / `test_adb_path` / `probe_all_devices_with_status`） |
 | 依赖 | `src.capture.image_utils` / `image_validation` | 截图文件保存与本地图片加载 |
 | 依赖 | `src.ocr.*` | 模板管理器、识别器、ROI 布局配置 |
-| 依赖 | `src.ocr.paddle_loader` | 官方榜单按需提供简体 / 繁体 PaddleOCR 引擎 |
+| 依赖 | `src.ocr.paddle_loader` | 官方榜单按需提供简体 / 繁体 PaddleOCR 引擎；B2 复核引擎（`get_recheck_ocr_engine()`）惰性加载 |
 | 依赖 | `src.ocr.official_board_parser` | 官方榜单图片读取、固定版式切分、横线恢复和胜率数字模板算法 |
-| 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务 |
+| 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务；`find_whitelist_conflicts()` 静态冲突检查 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存（`clear_win_rate_cache`） |
 | 依赖 | `src.data.peak_win_rate_repository` | 巅峰赛胜率 CSV 覆盖后清空读取缓存（`clear_peak_win_rate_cache`） |
 | 依赖 | `src.data.recommendation_index_repository` | 推荐指数加载 / 重建 / 过期标记（`mark_recommendation_index_stale`） |
 | 依赖 | `src.data.combo_manager` / `combo_seats` | 实战配队导入合并与 note 座次解析 |
 | 依赖 | `src.data.hero_manager` / `guide_manager` / `synergy_manager` | 数据清理、失效关联修复与修改事务 |
 | 依赖 | `src.data.card_catalog` | CardCatalogService 的三个仓储（cards/schema/annotations）与基础模型 |
-| 依赖 | `src.data.json_repository` | `atomic_write_json()`（RuleDocOpsService，知识库范围） |
+| 依赖 | `src.data.json_repository` | `atomic_write_json()`（RuleDocOpsService，知识库范围）；pending_stats 原子替换写入 |
 | 依赖 | `src.data.announcement_manager` | AnnouncementService 的公告合并去重与百科快照持久化 |
 | 依赖 | `src.data.hero_timeline` | 武将变更时间轴（announcement 同步） |
 | 依赖 | `src.scraper.official_source.announcement` | 公告 / 百科拉取、武将快照与更新候选计算 |
 | 依赖 | `src.scraper.official_source.card_baike` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` / `card_field_diff_summary` |
 | 依赖 | `src.scraper.ai.*` | 成本估算入口（`estimate_cost` / `estimate_item_cost`）与分类建议的 JSON 解析 |
-| 依赖 | `src.config.env` | API 档案解析（`resolve_api_config` / `get_api_config`）、供应商预设（`PROVIDER_PRESETS`）、截图目录与模拟器配置读写 |
-| 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 `fetch_*()`；`PollCoordinator` 编排三板块轮询 |
-| 被调用方 | `src.ui.app.poll_coordinator` | 消费 `OcrService.poll_tick`，调用 `CaptureService.capture_for_poll` / `submit_ocr_task` |
+| 依赖 | `src.config.env` | API 档案解析（`resolve_api_config` / `get_api_config`）、供应商预设（`PROVIDER_PRESETS`）、截图目录与模拟器配置读写；新增 `MUMU_OCR_RECHECK_ENABLED` / `MUMU_OCR_POLL_IDLE_PAUSE` 配置 |
+| 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 `fetch_*()`；`PollCoordinator` 编排三板块轮询；闲置暂停恢复交互 |
+| 被调用方 | `src.ui.app.poll_coordinator` | 消费 `OcrService.poll_tick`，调用 `CaptureService.capture_for_poll` / `submit_ocr_task`；帧指纹判闲与闲置暂停状态提交 |
+| 被调用方 | `src.ui.configuration.whitelist_config_dialog` | 白名单配置界面调 `find_whitelist_conflicts()` / `reset_ocr_recognizer_cache()` |
 | 被调用方 | `src.ui.data_admin.official_data_import_dialog` | 触发后台导入、展示进度，并串联复核会话 |
 | 被调用方 | `src.ui.data_admin.official_import_review_dialog` | 调用 `review_candidates()` / `apply_reviewed_records()` 完成人工修正落盘 |
 | 知识库相关 | [`./module_rag.md`](./module_rag.md) | 元规则维护、知识库审计、索引精化、语料任务定义、武将分类 LLM 建议的依赖与被调用方 |

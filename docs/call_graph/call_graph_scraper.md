@@ -6,14 +6,14 @@
 
 ---
 
-## 当前实现基线（2026-09-15）
+## 当前实现基线（2026-09-21）
 
 ```
 official.py:main()      ← shim, 转调 official_source.full.main()
 incremental.py:main()   ← shim, 转调 official_source.incremental.main()
 
 full.crawl() / incremental.main()
-  -> crawler.fetch(BAIKE_URL)                 [HTTP GET 首页 HTML, 可重试]
+  -> crawler.fetch(BAIKE_URL)                 [HTTP GET 首页 HTML, 可重试；每次调用前存档 robots.txt 到 logs/robots_cache/]
   -> adapter.find_chunk_url(html)             [正则 /_nuxt/mjbk.[a-f0-9]+\.js；失败带改版诊断]
   -> crawler.fetch(chunk_url)                 [HTTP GET JS chunk, ~300KB]
   -> adapter.parse_heroes_chunk(js_text)      [JS chunk 解析]
@@ -28,6 +28,8 @@ full.crawl() / incremental.main()
 ```
 
 官网格式解析集中在 `official_source/adapter.py`。旧版 `extract_js_array()` + 三步正则 `js_to_json()` 已改为**字符级状态机**：`extract_js_array()` 用 `depth/quote/escaped` 忽略字符串内方括号；`js_to_json()` 委托给 `_to_json_text()` 状态机完成键加引号、`:undefined→null`、尾逗号移除，只在字符串字面量之外执行——避免把技能描述里的 `"效果{x:1}"`、`,变化:无` 等误改写。`find_chunk_url()` 与 `extract_js_array()` 均携带 HTML/JS 开头 300 字符作为改版诊断日志。全量和增量入口均通过 `save_json_atomic()` 原子写入，并对每条原始记录只调用一次 `transform()`。
+
+**合规化改造（2026-09-21 新增）：** `crawler.fetch()` 每次调用前先执行 `_ensure_robots_txt_cached()`：24 小时内不重复请求，将站点 robots.txt 存档至 `logs/robots_cache/robots.txt`，作为遵守站点爬取规则的善意访问证据留存。存档失败仅告警不阻断采集，robots.txt 是合规证据而非功能依赖。
 
 ---
 
@@ -146,7 +148,7 @@ MainWindow._request_fetch_all()
 | `official.main()` | `official.py` | QProcess 子进程 | `official_source.full.main()`（shim） |
 | `official_source.full.main()` | `full.py` | 子进程入口 | `argparse`, `setup_logging`, `full.crawl()` |
 | `full.crawl()` | `full.py` | `full.main()` | `fetch()`, `find_chunk_url()`, `parse_heroes_chunk()`, `transform()`, `validate_heroes()`, `save_json_atomic()`, `download_hero_images()` |
-| `crawler.fetch(url, binary)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | `urllib.request.urlopen()`，400-404 立即 raise |
+| `crawler.fetch(url, binary)` | `crawler.py` | `crawl()`, `fetch_all_raw()` | `_ensure_robots_txt_cached()`（24h 缓存 robots.txt 存档），`urllib.request.urlopen()`，400-404 立即 raise |
 | `adapter.find_chunk_url(html)` | `adapter.py` | `crawl()`, `fetch_all_raw()` | `CHUNK_URL_PATTERN.search()`, 改版诊断 |
 | `adapter.parse_heroes_chunk(js)` | `adapter.py` | `crawl()`, `fetch_all_raw()` | `extract_js_array()`, `js_to_json()` |
 | `adapter.extract_js_array(js)` | `adapter.py` | `parse_heroes_chunk()` | 字符级状态机（depth/quote/escaped） |

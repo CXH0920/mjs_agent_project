@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-15）
+## 当前实现基线（2026-09-21）
 
 `DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。武将变更时间轴 `data/mjs_adjustments.json` 于 2026-08-29 首次落地，与 `heroes.json` 并行供 RAG 构建脚本使用。
 
@@ -324,6 +324,13 @@ Combo.note 自由文本解析
        -> 两个 token -> 分别对应 hero1_seats / hero2_seats
     -> 返回 (status, hero1_seats, hero2_seats)
        status ∈ {parsed, partial, none, unparsed}
+
+position 交叉校验（combo_import_service.py 导入时）
+  -> _check_position_mismatch(combo, seats1, seats2)
+     -> combo.position == "both" -> 不校验（双座次兼容）
+     -> union = sorted(set(seats1) | set(seats2))
+     -> len(union) == 2 and "".join(union) != combo.position -> 不一致
+     -> [不一致] 追加到 report["position_mismatch"]，以 note 解析结果为准
 ```
 
 ---
@@ -547,6 +554,11 @@ SpecialCardRepository.load()
 HeroClassificationRepository.load()
   -> _read_root() -> 读取 data/hero_classification.json（分类/克制链/hero_categories）
   -> ClassificationCategory 校验；unknown_category_ref / chain_list_legacy 兼容处理
+   -> update_hero_names(names)                                    [归类/专属牌名单同步：heroes.json 更新后刷新武将名单环境]
+
+HeroClassificationRepository.update_hero_names(names)             [由 HeroClassificationPanel.refresh_roster() 调用]
+   -> self.hero_names = set(names or ())                          [更新武将名单环境，不触碰归类数据]
+   -> list_unclassified() 重新计算未归类武将                       [names - hero_categories]
 ```
 
 ### 10.2 保存与联动

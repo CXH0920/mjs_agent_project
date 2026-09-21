@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-09-15
+> 文档日期：2026-09-21
 
 ---
 
@@ -31,6 +31,7 @@ src/ui/
 │   ├── frame_fingerprint.py    # 轮询闲置检测的整帧指纹（降采样灰度 + MAD 判等）
 │   ├── app_services.py         # 协作对象组合根（可无头构造，一次挂载 QObject 父子与窗口引用）
 │   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
+│   ├── disclaimer_dialog.py    # 免责声明对话框（637102b 合规化改造）
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
 │   └── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器
 ├── library/                    # 资料库：武将浏览、编辑、卡牌与武将获取
@@ -66,7 +67,8 @@ src/ui/
 │   ├── faction_color_dialog.py
 │   ├── mumu_config_dialog.py
 │   ├── mumu_config_sections.py
-│   └── roi_selector.py
+│   ├── roi_selector.py
+│   └── whitelist_config_dialog.py     # 白名单配置对话框（错法观察清单 + 用户层白名单维护）
 ├── data_admin/                 # 数据维护、官方榜单导入与公告更新
 │   ├── data_management_dialog.py
 │   ├── official_data_import_dialog.py
@@ -292,7 +294,7 @@ RecommendationPanel (QWidget)
 **实战配队横条**：`_refresh_combo_strip()` 在当前 8 人已确认时遍历 `ComboManager.list_combos()`，两条 hero_id 都在当前集合内的配队按评级降序进入横条；同一配对多座次变体逐条展示。`_update_combo_badges()` 为每个当前武将取参战配队中最高评级，通过 `HeroCardWidget.set_combo_badge("实战 ★N")` 在头像右上角显示金色徽章。点击 chip 调 `shared.combo_detail.show_combo_detail()` 展示 2×2 号位示意 + 座次要求 + note 原文；[管理] 打开 `ComboManagementDialog` 增删改后发 `combos_changed` 立即刷新横条与角标。
 
 - `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌、实战角标及卡片信号；`cardState` 动态属性驱动 QSS 的卡片状态样式（empty / pending / unknown / ready / indexStale / insufficientData / missingGuide / missingPortrait）。
-- `guide_detail_dialog.py`：`GuideDetailDialog` 以外层滚动区展示摘要和正文预览；双击预览会打开 `GuideMarkdownDialog` 阅读完整 Markdown 正文。
+- `guide_detail_dialog.py`：`GuideDetailDialog` 以外层滚动区展示摘要和正文预览；双击预览会打开 `GuideMarkdownDialog` 阅读完整 Markdown 正文。**2026-09 合规化调整（637102b）**：调整了内容展示逻辑以符合合规要求。
 - `markdown_renderer.py`：统一将攻略与相性 Markdown 转为安全 HTML，负责原始 HTML 转义和解析前长度限制。
 
 `RecommendationPanel` 通过 `hero_id`、`hero_name`、`set_unrecognized_name()` / `set_pending_name()`、`set_combo_badge()`、`set_recommendation_stale()` 和 `refresh_faction_color()` 使用卡片状态，不访问卡片内部字段或重绘方法。
@@ -305,6 +307,8 @@ def update_recommendations(self, data: list[dict]) -> None
 ```
 
 `update_recommendations` 两遍扫描：第一遍收集所有已确认武将的 id 到 `_current_hero_ids`（保证相性过滤时 8 个 ID 齐全），第二遍按槽位填充卡片；未确认槽位走 `set_pending_name(raw_name, candidates)` 显示候选数量与候选名单 Tooltip，仅允许 `_confirm_candidate()` 从白名单 `allowed_names=candidates` 中人工选择，选择后 `resolution="manual"` 写回 `_ocr_results_by_slot` 并重跑 `update_recommendations`。
+
+**2026-09 白名单治理集成（9ca1b91）**：未决槽位人工确认时，`_confirm_candidate()` 同步调用 `pending_stats.record_confirmation(pending_name, confirmed_name)` 记录确认答案，供白名单观察清单统计错法→正解映射频次。
 
 ### 3.4.1 胜率前三视觉锚点
 
@@ -342,6 +346,12 @@ ColorPicker.color()
 后台轮询命中独立模板后只刷新对应页面数据，不自动切换 Tab，避免抢占用户当前页面。
 
 `MatchGuidePanel` 只保留截图/图片导入、四张武将卡片和信号绑定。`LineupState` 是阵容的唯一状态来源，负责 OCR 槽位导入、两名我方/两名敌方限制、主将选择、重复武将校验和显式确认；它不依赖 Qt，可独立测试。确认前的提示页和确认后的总览、我方、敌方、详情四个攻略页由 `MatchAnalysisView` 渲染；主面板只将确认后的阵容交给 `MatchAnalysisService`。
+
+**2026-09 对局攻略修复（ec81790）**：
+- **名字未决时仍按座次划分敌我**：`match_guide_panel.py` 在 OCR 候选内纠错不再清空重划——未决槽位（名字未确认）仍按座次位置划分敌我阵营，候选替换后保持阵营归属不变。修复了之前"纠正候选名字 → 清空全部阵营 → 重新划分"导致用户手动确认状态丢失的问题。
+- **`LineupState` 座次划分逻辑修复**：`match_lineup_state.py` 的敌我划分改为按座次位置（而非按名字确认状态），确保 4 个槽位始终对应"我、队友、敌方 1、敌方 2"的固定布局。
+
+**2026-09 白名单治理集成（9ca1b91）**：未决槽位人工确认时，`match_guide_panel.py` 同步调用 `pending_stats.record_confirmation(pending_name, confirmed_name)` 记录确认答案，供白名单观察清单统计错法→正解映射频次。
 
 ### 3.6 后端选择 + 进度条
 
@@ -446,6 +456,48 @@ PeakSelectPanel
 - **导入** — `CombosImportDialog`（菜单“导入 → 实战配队导入”）导入外部配队，成功后 `MainWindow._on_combos_imported()` 刷新共享 combos 数据、相性视图与选将推荐横条。
 
 **分类建议 worker**（`hero_classification_panel.py`）— 武将分类维护面板的“LLM 建议分类”按钮把当前武将的技能文本、定位、现有分类清单交给 `_HeroCategoryWorker(QThread)` 后台线程执行 `suggest_hero_categories()`。生命周期与面板解耦：worker `parent=None`，`_LIVE_WORKERS` 集合持有运行中的线程防止 Python 引用丢失导致 QThread 被 GC 析构，`run()` 结束时 `_LIVE_WORKERS.discard(self)` + 释放 generator；`finished` 连接 `deleteLater()` 让面板销毁后线程也能自回收。建议返回时若 `hero != self._current_hero` 则只弹 Toast 提示“已切换武将，X 的建议未应用”；否则 `set_checked(suggested)` 写回勾选（`set_checked` 不发信号，手动走 `_on_hero_categories_changed()` 让归类变更写 repo 并 `mark_dirty`）。
+
+### 3.11 白名单配置对话框（whitelist_config_dialog.py，9ca1b91 新增）
+
+`WhitelistConfigDialog` 由菜单"配置 → 白名单配置"打开（`main_window.py` 新增入口），提供 OCR 错法白名单治理的两层界面：
+
+**错法观察清单**（只读，数据来自 `pending_stats.get_sorted_pending_records()`）：
+
+按频次降序展示未决错法，按频次与确认状态自动分为 A+ / A / B / C 四级分类：
+- **A+** — 出现 ≥5 次且有人工确认答案的高频错法，建议优先加入白名单；
+- **A** — 出现 ≥3 次的中频错法，可作为观察候选；
+- **B** — 出现 2 次的一般错法；
+- **C** — 仅出现 1 次的低频错法。
+
+每行显示错法名、候选列表、出现次数、确认答案及 Tooltip 详情。
+
+**用户层白名单维护**（读写 `data/ocr_confusion_overrides.json`）：
+
+以 `QListWidget` 承载用户自定义的错法→正解映射，支持：
+- **新增** — 输入错法名 + 正确武将名，保存后自动写入 overrides 文件；
+- **删除** — 选中条目删除；
+- **静态冲突检查** — 新增时调 `find_whitelist_conflicts()` 检测与内置白名单是否冲突（如错法名已存在于内置映射中），冲突时弹出警告但允许强制保存；
+- **即时生效** — 保存后调 `CaptureService.reset_ocr_recognizer_cache()` 清除 OCR 引擎分片缓存，下一轮识别即按新白名单执行。
+
+### 3.12 免责声明对话框（disclaimer_dialog.py，637102b 新增）
+
+`DisclaimerDialog` 在应用启动时由 `main.py` 检查免责声明状态后弹出。状态管理由 `src.config.disclaimer_state` 负责：
+
+- **版本控制** — `DISCLAIMER_VERSION = "1.0"`，仅当文本版本变化时要求重新确认；
+- **状态文件** — `config/.disclaimer_state.json` 记录已确认的版本与时间；
+- **对话框内容** — 展示完整的免责声明文本（工具为辅助识别工具，不包含自动化操作能力，禁止违反游戏条款使用），底部"我已阅读并同意"按钮确认；
+- **首次启动** — 全新安装时状态文件不存在，强制弹出确认；
+- **版本更新** — 已确认但版本不匹配时重新弹出。
+
+### 3.13 知识库归类/专属牌名单同步（241e965 新增）
+
+爬虫更新 `heroes.json` 后，武将分类与专属牌名单需同步刷新。三个面板在刷新入口新增同步加载逻辑：
+
+- **`hero_classification_panel.py`** — 武将分类维护面板刷新时同步加载 `heroes.json` 最新武将列表，确保新增武将可被分类。
+- **`special_cards_panel.py`** — 专属牌维护面板同上。
+- **`rag_maintenance_panel.py`** — RAG 维护工作台同上。
+
+三者通过 `HeroClassificationRepository.reload()` / `SpecialCardsRepository.reload()` 接口触发，在面板的"刷新"按钮或爬虫采集完成回调中调用，避免数据源更新后名单不同步。
 
 ---
 
@@ -581,6 +633,8 @@ def update_recommendations(self, data: list[dict]) -> None:
 | `ProposalItemConfirmDialog` | 元规则提案项逐条确认（approved/revised/rejected + 可编辑文本） |
 | `DiffDetailDialog` | 数据段差异详情（行号定位 + Git 风格 diff + 文档过期警示） |
 | `CardSyncDialog` | 卡牌百科变更捕获与同步确认（官网手牌库 diff 检查 + 勾选应用） |
+| `WhitelistConfigDialog` | 白名单配置：错法观察清单（A+/A/B/C 分类）+ 用户层白名单维护 |
+| `DisclaimerDialog` | 免责声明对话框（启动时检查版本并确认） |
 
 ---
 
@@ -597,6 +651,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.analysis.recommendation_service` | 推荐指数加载与手动重建 |
 | 依赖 | `src.business.analysis.peak_ban_advice` | 巅峰赛禁选建议 |
 | 依赖 | `src.business.recognition.peak_select_watcher` | 巅峰赛识别循环驱动 |
+| 依赖 | `src.business.recognition.pending_stats` | OCR 未决错法频次记录与人工确认答案收集（白名单治理） |
 | 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
 | 依赖 | `src.business.maintenance.data_management_service` | 武将/攻略/相性变更的快照与备份写入 |
 | 依赖 | `src.business.maintenance.corpus_services` | 实战配队/专属牌/分类写路径服务 |
@@ -605,7 +660,9 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.card_sync` | 卡牌百科变更检查与同步（`CardSyncDialog`） |
 | 依赖 | `src.business.announcement` | 公告与百科 diff 检查 |
 | 依赖 | `src.config.env` | 配置文件读取 |
+| 依赖 | `src.config.disclaimer_state` | 免责声明状态管理（版本控制与确认记录） |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |
+| 依赖 | `src.ocr.character_similarity` | 白名单静态冲突检查（`find_whitelist_conflicts()`） |
 | 依赖 | `src.ui.shared.persist.run_edit_dialog` | 模态编辑对话框的标准保存循环 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |

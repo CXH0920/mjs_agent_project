@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
 > 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、牌面签名去重、标准轮询互斥）、禁选建议象限判定、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染
-> 文档日期：2026-09-15
+> 文档日期：2026-09-21
 
 ---
 
@@ -115,6 +115,8 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
 - `banned`: 相对禁选期已确认名单的差集
 
 **人工确认**：`confirm_pending(slot, name)` 把确认名与该槽读数原文指纹一并写入 `_resolutions` / `_resolution_raws` 后立即用 `_last_board` 重发快照。`parse_pool` 中人工确认优先于一切自动结论：确认落定后即使本拍候选闭包缺名（读数抖动）或自动决胜出别的猜测结论（`multi_similarity` 等），也按人工结果展示，杜绝「用户选完被自动结果顶掉/拍一更新又弹回待确认」。确认的过期由 `refresh_resolutions()` 逐拍内容验证负责：确认名仍在本槽候选闭包、或确认时的读数原文在本槽复现（稳定错读的确认名可能永远不在候选闭包，原文指纹是其内容锚点）、或确认名/读数在其它槽位唯一命中（牌面重排迁移），三者满足其一即视为仍是同一张牌；闭包同时命中多个已确认名的歧义槽不猜测归属。验证不过的确认原槽保留进宽限（`_stale_rounds` 计数），宽限期内展示回退为该槽识别结果，连续 `_STALE_MISS_LIMIT=3` 拍仍未验证才丢弃——浮动动画导致的单拍闭包缺名不再把确认打回待确认。
+
+**白名单确认（9ca1b91 新增）**：`peak_select_watcher` 集成白名单确认机制——未决错法经 `pending_stats.record_pending()` 频次记录，人工确认答案经 `record_confirmation()` 收集，用户层白名单（`data/ocr_confusion_overrides.json`）在确认优先于自动结论的验证链路中作为候选来源，避免已知错法反复弹回待确认。
 
 **图片导入**：`recognize_image_file()` 在独立锁（`_import_lock`）下执行，不影响循环签名与标准任务挂起状态（不写 `_signature`、不校验会话世代）。
 

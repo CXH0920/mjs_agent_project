@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-15）
+## 当前实现基线（2026-09-21）
 
 ```
 MainWindow.__init__()
@@ -133,6 +133,8 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
   -> setWindowTitle(), setMinimumSize(960, 640), resize(1100, 760)
   -> load_app_icon() -> setWindowIcon()
   -> _setup_actions() + _setup_menu()                             [共享 QAction]
+   -> [disclaimer_state.should_show()]                              [启动时免责声明检查]
+      -> disclaimer_dialog.py -> disclaimer_state.accept()           [用户确认后持久化]
   -> _load_data()
      -> self._data.load_all() -> report
      -> [missing_reference 存在] QMessageBox.question("是否修复并保存")
@@ -561,8 +563,29 @@ MainWindow._on_poll_result(result)                              [仅界面更新
 | `_on_poll_result()` | `MainWindow` | 主线程：按 task_results 消费结果，更新页面与任务级状态 |
 | `_deactivate_match_guide_if_idle()` | `MainWindow` | 激活后超过 90s 空闲即失活对局攻略任务 |
 | `_on_peak_exited_to_match()` | `MainWindow` | 巅峰赛牌面自动退出：激活对局攻略任务，等待用户进入对局页 |
+| `_track_idle_watch(frame_fp)` | `PollCoordinator` | 帧指纹闲置追踪：连续无变化达阈值时调 `pause_for_idle()` |
+| `_reset_idle_watch()` | `PollCoordinator` | 有画面变化时重置闲置计数 |
 
 > **关键架构决策：** 手动 ADB 截图（`do_capture`）在 `QTimer.singleShot(0)` 回调中运行，仍在主线程；文件导入和轮询的模板匹配/OCR 均提交到唯一 `OcrWorker`。轮询的 ADB 截图与 OCR 全部在 `PollCoordinator` 内部由 `threading.Thread(target=do_poll_work, daemon=True)` 运行在后台线程，并以 PySide6 信号把结构化 `PollResult` 传回主线程；`_consume_poll_result()` 负责丢弃过期 `generation`、完成轮询状态迁移后再发 `poll_result_ready` 通知界面。
+
+### 3.3b 轮询闲置自动暂停（bca4092 新增）
+
+```
+PollCoordinator._on_poll_tick()
+   -> [is_poll_idle_paused()] 拦截轮询，等待用户交互恢复
+   -> compute_fingerprint(image)                              [整帧 32×18 灰度降采样，576 字节]
+   -> frames_match(prev_fp, new_fp)                           [MAD 阈值 3.0]
+   -> [无变化] _track_idle_watch()
+      -> _idle_watch_ticks += 1
+      -> [_idle_watch_ticks >= 5 * 12]                        [IDLE_PAUSE_MINUTES=5]
+         -> ocr_service.pause_for_idle()                      [暂停轮询]
+         -> poll_state_changed.emit("idle_paused", "画面静止")
+   -> [有变化] _reset_idle_watch()                             [重置计数]
+```
+
+`frame_fingerprint.py` 提供 `compute_fingerprint()` 和 `frames_match()` 两个函数，MAD 阈值 3.0 由 `calibrate_idle_threshold.py` 对真实截图序列标定。三路交互恢复：用户点击任意按钮、窗口切换、手动触发截图均可恢复轮询。
+
+> **配置：** `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）、`MUMU_OCR_POLL_IDLE_MINUTES`（默认 5）。
 
 ---
 
@@ -1172,6 +1195,19 @@ AiGenerationWorkflow.request_synergy_combos()                     [菜单"实战
                                     overwrite=dialog.overwrite_existing,
                                     use_rag=use_rag))
 ```
+
+### 5.x 白名单配置对话框（9ca1b91 新增）
+
+```
+WhitelistConfigDialog.exec()
+   -> load_overrides()                                            [读取 data/ocr_confusion_overrides.json]
+   -> load_pending_entries()                                      [读取 data/ocr_name_pending_stats.json 未决条目]
+   -> classify_entry()                                            [A+/A/B/C 分类排序：A+=高频错法、A=已确认错法、B=低频、C=偶发]
+   -> 用户编辑白名单 → save_overrides()                            [原子写入]
+   -> 用户确认未决条目 → pending_stats.record_confirmation()      [收集人工答案]
+```
+
+白名单治理闭环：识别线程 `record_pending()` 记录未决错法 → 白名单对话框分类展示 → 用户确认后 `record_confirmation()` 收集答案 → `find_whitelist_conflicts()` 静态冲突检查 → `reset_ocr_recognizer_cache()` 立即生效。
 
 ---
 

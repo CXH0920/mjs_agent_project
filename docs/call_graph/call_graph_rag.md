@@ -1,7 +1,7 @@
 # 调用链路：RAG 知识库模块
 
 > 对应源码：`src/rag/`、`src/business/rag/`、`src/business/maintenance/` 的 RAG 三文件、`src/ui/maintenance/` 全部、`src/scripts/` 的语料与维护脚本。
-> 代码基线：`2026-09-15`。
+> 代码基线：`2026-09-21`。
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 虚线 `───` 表示跨越进程边界（QProcess / subprocess 子进程）。
 > 与 AI 批量生成、巅峰赛识别、实战配队相关的调用链路见 [call_graph_ai_batch.md](./call_graph_ai_batch.md)、[call_graph_peak_combos.md](./call_graph_peak_combos.md)；业务服务层与界面层总览见 [call_graph_business.md](./call_graph_business.md)、[call_graph_ui.md](./call_graph_ui.md)。
@@ -885,6 +885,16 @@ HeroClassificationPanel（LLM 建议归类，与索引精化共用同一 LLM 通
         -> [失败] return None
   -> [LIVE_WORKERS 持有] result_ready -> set_checked() 回填勾选（不发信号，手动触发归类变更）
   -> focus_unclassified()                                      [审计横幅跳转定位]
+
+HeroClassificationPanel.reload_data() / SpecialCardsPanel.reload_data()  [归类/专属牌名单同步]
+   -> [有未保存修改] 确认丢弃 -> 丢弃并重置 dirty
+   -> repo.load() -> [error] 禁用保存 + 状态栏告警
+   -> refresh_roster()                                          [同步 heroes.json 名单环境，不触碰归类编辑数据]
+      -> load_hero_briefs(root, repo.hero_names)                [重新读取 heroes.json 的名单/定位/技能]
+      -> repo.update_hero_names(names)                           [刷新仓储的武将名单环境]
+      -> [加载失败] 保留现有名单（fallback 语义）
+   -> _refresh_categories() + _refresh_heroes()                 [重绘分类与归类列表]
+
 ```
 
 | 函数 | 所在文件 | 作用 | 调用方 |

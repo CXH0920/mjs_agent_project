@@ -2,6 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作
+> 文档日期：2026-09-21
 
 ---
 
@@ -39,10 +40,11 @@ src/data/
 ├── special_cards_repository.py   # 专属牌/战法牌/特殊牌区/状态/概念维护（data/special_cards.json）
 ├── peak_win_rate_repository.py   # 巅峰赛单将胜率 + 出场排行 CSV 读取（独立于 2v2 胜率）
 ├── win_rate_repository.py        # 2v2 胜率 CSV 读取（打包基线 BUNDLE_ROOT/data）
-└── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验
+├── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验
+└── char_info_cache.json          # 武将名词表字形基线缓存（OCR 辅助，CI 覆盖率断言；2026-09 补齐 29 字）
 ```
 
-四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
+四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。2026-09 起（241e965），`hero_classification_repository.py` 在爬虫更新 `heroes.json` 后，归类/专属牌名单随刷新入口同步加载，无需手动重建语料。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
 
 武将变更时间轴 `hero_timeline.py` 维护 `data/mjs_adjustments.json`（顶层 `init_imported_at` / `init_source_last_updated` / `corpus_base_date` + `events` 列表），由 `import_hero_adjustments.py` 全量注入与 `AnnouncementService` 公告捕获增量追加；`build_rag_corpus.py` / `build_guide_corpus.py` 据此给语料块打 `as_of` / `is_current` 版本戳，`rag_audit.py` / `audit_service.py` 据此审计 `heroes.json` 疑未同步武将。
 
@@ -205,18 +207,21 @@ def _save_unlocked(self) -> None:
 
 ### 3.7 实战配队座次解析
 
-`combo_seats.py` 从 note 自由文本解析双方武将座次：
+`combo_seats.py` 从 note 自由文本解析双方武将座次。2026-09 起（4fa9a5d）匹配范围从单纯的"武将名+数字"扩展为 hero1/hero2 的全名 + ALIAS 别名 + 去首/尾简称片段（两将共享片段剔除；单字片段仅限座次词句式），句式覆盖"坐N/坐N号/坐前(面)=先手12号/坐后(面)=后手34号/不坐N·别坐N=取补/N号位+名/先手·后手"等：
 
 | 规则 | 说明 |
 |------|------|
-| 优先级 1 | 匹配"武将名+数字"或"数字+武将名"（含 ALIAS 别名：牢布→吕布、甄姬→甄宓、夏侯停→夏侯惇） |
+| 优先级 1 | 匹配"武将名+数字"或"数字+武将名"（含 ALIAS 别名：牢布→吕布、甄姬→甄宓、夏侯停→夏侯惇；去首/尾简称片段，两将共享片段剔除） |
 | 优先级 2 | 剥离武将名后取开头纯数字 token，按顺序对应 hero1/hero2 |
+| 句式扩展 | 坐N/坐N号/坐前(面)=先手12号/坐后(面)=后手34号/不坐N·别坐N=取补/N号位+名/先手·后手 |
 | "0" | 无座次要求，返回空列表 |
 | 两位数字 | 可选区间（如 "34"=3 或 4 号） |
 
 状态：`STATUS_PARSED` / `STATUS_PARTIAL` / `STATUS_NONE` / `STATUS_UNPARSED`。`parse_seats(note, hero1, hero2) -> (status, hero1_seats, hero2_seats)`。`format_seats(seats)` 将列表转为展示文本（如 "1/3/4" 或 "任意"）。
 
 `Combo.position` 字段是配对级无序摘要（如 `both`/`14`/`23`），不含顺序信息；`note` 才是座次顺序的权威来源。
+
+**Position 交叉校验（4fa9a5d 新增）**：`combo_import_service._check_position_mismatch()` 将解析出的座次与 `position` 字段交叉校验——座次全座 vs 单一 14/23；`position=="both"` 时不校验。不一致条目进 `position_mismatch` 报告供人工复核。
 
 ### 3.8 武将变更时间轴
 

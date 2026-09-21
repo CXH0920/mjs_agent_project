@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：commit `624c8c5`（2026-09-15）
+> 代码基线：commit `624c8c5`（2026-09-15）→ 2026-09-21 增量更新
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -265,6 +265,8 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 `hero_brief.load_hero_briefs(root, fallback_names)` 是跨面板共享的武将概要视图，返回 `(names, positions, skills)` 三元组。技能文本格式 `名称：描述　结算：settlement` 是 RAG 语料域知识，归位业务层后 UI 不再自行拼接。
 
+**归类/专属牌名单同步（241e965）**：爬虫更新 `heroes.json` 后，`rag_maintenance_panel.py` 的归类/专属牌名单随刷新入口自动同步加载，无需手动重建语料或手动刷新面板。
+
 ### 3.8 审计与工作流
 
 `audit_service.audit_summary(root, pending_refinement=None)` 返回 `AuditIssue` 列表（frozen dataclass，含 `kind` / `message` / `severity` / `target_tab` / `target`），供 UI 渲染跳转按钮。`pending_refinement` 参数允许调用方传入已算好的待精化清单，避免同一轮刷新重复读语料文件。
@@ -501,7 +503,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `run_synergy_drift.py` | 10 对 × 3 次相性漂移采样 | `--out-prefix`；`--rounds`（默认 3）；`--pairs`；`--heroes` | 只读（产物可删） |
 | `build_*.py`（10 个） | 语料生成（各 build 脚本产出前调用 `rag_curated.merge_curated()` 保留精化成果，仅卡牌/武将两个） | 无参数 | DWD |
 
-> `src/scripts/` 下另有四个跨模块脚本，参数与职责归其所属模块文档：`import_combos.py`（巅峰赛配队，见 `module_peak_combos.md`）、`build_character_feature_cache.py`（武将特征缓存，见 `module_capture_ocr.md`）、`capture_ui_baselines.py`（UI 基线截图，见 `module_ui.md`）、`migrate_excel_to_json.py`（xlsx 应急导入，见 `module_data.md`）；`rag_common.py`（公共基建）与 `rag_curated.py`（curated 合并）无 CLI 入口。
+> `src/scripts/` 下另有六个跨模块脚本，参数与职责归其所属模块文档：`import_combos.py`（巅峰赛配队，见 `module_peak_combos.md`）、`build_character_feature_cache.py`（武将特征缓存，见 `module_capture_ocr.md`）、`capture_ui_baselines.py`（UI 基线截图，见 `module_ui.md`）、`migrate_excel_to_json.py`（xlsx 应急导入，见 `module_data.md`）、`ocr_baseline.py`（OCR 回归基线工具，见 `module_capture_ocr.md`，cd35c98 新增）、`calibrate_idle_threshold.py`（闲置阈值校准工具，见 `module_config.md`，bca4092 新增）；`rag_common.py`（公共基建）与 `rag_curated.py`（curated 合并）无 CLI 入口。
 
 ---
 

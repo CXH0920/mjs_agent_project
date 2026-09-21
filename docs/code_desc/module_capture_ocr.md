@@ -1,8 +1,8 @@
 # 模块：屏幕采集与 OCR 识别
 
 > 对应目录：`src/capture/` + `src/ocr/`
-> 职责：ADB 连接与截图、MuMu 模拟器探测、图像处理、模板匹配、PaddleOCR 武将名识别
-> 文档日期：2026-09-15
+> 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、PaddleOCR 武将名识别与 B2 复核、白名单治理
+> 文档日期：2026-09-21
 
 ---
 
@@ -10,10 +10,11 @@
 
 本模块连接模拟器屏幕数据和 UI 推荐面板，实现"看到游戏画面 → 识别出武将名"的完整链路：
 
-- **ADB 截图**（`src/capture/`）— 通过 ADB 连接 MuMu 模拟器，执行 `exec-out screencap` 全屏截图，全程内存中处理
+- **ADB 截图**（`src/capture/`）— 通过 ADB 连接 MuMu 模拟器，执行 `exec-out screencap` 全屏截图，全程内存中处理；支持 raw 帧模式跳过 PNG 编解码提速
 - **设备探测** — 自动查找 ADB 路径和 MuMu 实例的 ADB 端口
-- **模板匹配**（`src/ocr/`）— OpenCV 模板匹配快速过滤非武将选择页画面
-- **OCR 识别**（`src/ocr/`）— PaddleOCR 批量识别名称区域，按字数门禁、候选闭包和候选内汉字特征评分确认名称
+- **模板匹配**（`src/ocr/`）— OpenCV 模板匹配快速过滤非武将选择页画面，分层加速先粗筛后精匹配
+- **OCR 识别**（`src/ocr/`）— PaddleOCR 批量识别名称区域，按字数门禁、候选闭包和候选内汉字特征评分确认名称；未决槽位经 B2 复核引擎（PP-OCRv6-small/ONNX）二次确认
+- **白名单治理**（`src/ocr/`）— 名称纠错白名单的静态冲突检查与错法半自动补对闭环
 
 ---
 
@@ -22,22 +23,22 @@
 ```
 src/capture/
 ├── __init__.py
-├── adb_screen.py          # AdbCapture — ADB 连接与截图
+├── adb_screen.py          # AdbCapture — ADB 连接与截图（含 raw 帧模式、架构防火墙声明）
 ├── image_validation.py    # 不可信图片输入校验（格式、体积、像素）
 ├── prober.py              # MuMu 设备自动探测
 └── image_utils.py         # 图像工具（PIL ↔ QPixmap / 剪贴板 / 保存）
 
 src/ocr/
 ├── __init__.py
-├── template_manager.py    # TemplateManager — OpenCV 模板匹配
-├── image_preprocessor.py  # ImagePreprocessor — 放大、CLAHE、锐化、灰度
+├── template_manager.py    # TemplateManager — OpenCV 模板匹配（分层加速）
+├── image_preprocessor.py  # ImagePreprocessor — 放大、灰度、gamma 差异视图回退
 ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
 ├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI
 ├── roi_config.py           # OcrRoiConfig / OcrRoiLayout — 选将页与对局攻略页 ROI 布局及本地覆盖
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
-├── character_similarity.py # CharacterSimilarityService — 名称纠错
-├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排
-├── paddle_loader.py       # PaddleOCR 统一构造（GPU/CPU 推理配置、CPU 线程限制）与 Windows 加载闪窗抑制、打包态模型路径
+├── character_similarity.py # CharacterSimilarityService — 名称纠错与白名单静态冲突检查
+├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排、B2 复核
+├── paddle_loader.py       # PaddleOCR 统一构造 + B2 复核引擎（RapidOCR/PP-OCRv6-small/ONNX）
 └── ocr_loader.py          # 模板管理器单例
 ```
 
@@ -69,6 +70,7 @@ AdbCapture(adb_path, adb_port=7555)
 - 目标设备精确校验：连接后必须 `adb -s <serial> get-state` 返回 `device`，在线但不属于本次目标设备不算成功；`device_serial` setter 仅接受 `IP:port` 且端口为纯数字的写法（用于同步内部端口），不做数值范围校验
 - 超时保护：`subprocess.run` 设置 timeout（截图 15s，连接类命令默认 10s，断开 5s）
 - 图片输入防护：本地 OCR/ROI 仅接受实际 PNG/JPEG，ADB 数据仅接受实际 PNG；统一限制 6 MiB、4,000,000 像素，并将 Pillow 解压炸弹警告提升为异常（`image_validation.MAX_IMAGE_SIZE_BYTES` / `MAX_IMAGE_PIXELS`）
+- **架构防火墙声明**（637102b）：模块文档字符串明确声明仅提供屏幕读取能力，禁止实现 ADB 输入（tap/click/input）、自动点击/选将/战斗、游戏进程注入、内存修改、hook、反作弊绕过，违反项目法律红线（见 AGENTS.md 与 CLAUDE.md）
 
 **`screencap` 使用 `exec-out` 模式**而非 `shell screencap`：
 ```python
@@ -77,6 +79,8 @@ adb -s 127.0.0.1:16448 exec-out screencap -p
 `exec-out` 直接输出二进制到 stdout，不经过设备 shell 解析，更快且不会损坏二进制 PNG 数据。
 
 ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回不完整的 PNG。`screencap_full()` 经 `load_png_image_bytes()` 校验实际格式与像素数并强制解码（等价于 `verify()` + `load()`），对空输出与解码失败两类瞬态结果最多执行 3 次尝试（首次 + 2 次重试，间隔 0.15s）。命令返回码非零属于明确故障，立即返回错误而不重试；错误消息命中 `device offline`、`device not found`、`transport closed` 等标记时同步清除已失效的连接会话。
+
+**raw 帧模式提速（cd35c98）**：构造时 `screenshot_mode` 参数支持 `auto`（默认，raw 优先失败回退 PNG）、`raw`（仅 raw）和 `png`（仅 PNG）。raw 模式直接解析 Android screencap 输出的裸像素帧（16 字节头：宽/高/像素格式/色彩空间各 u32 小端 + RGBA_8888 或 RGBX_8888 裸像素），跳过 PNG 编解码，减少约 50-70% 的截图耗时。校验（头长度、像素格式、尺寸、字节数一致性）任一不满足时返回 `None`，由 `_capture_and_decode()` 自动回退 PNG 模式。`CaptureService.capture_for_poll()` 在轮询路径直接复用 raw 帧解码结果，避免额外的 PIL 解码。
 
 ### 3.2 模板匹配
 
@@ -97,7 +101,9 @@ match(image, threshold=0.8)
   └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
 ```
 
-**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 PaddleOCR。
+**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `coarse_reject_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 PaddleOCR。
+
+**分层加速（cd35c98）**：全屏多尺度回退阶段新增粗扫粗筛——先将原图降采样至 1/4 尺寸（`_COARSE_SCAN_RATIO=0.25`），在降采样图上遍历全部候选缩放比例做粗匹配，仅当最优粗扫得分 ≥ `threshold - _COARSE_SCAN_MARGIN` 时才回到原尺寸做全图精扫。非目标页（轮询常态）粗扫即可判否，避免每拍付整幅多尺度扫描的几百毫秒；匹配策略记录 `coarse_reject_multiscale` 区分"粗扫即判否"与"精扫确认不匹配"。局部匹配路径不受此优化影响，仍按原始全尺寸执行。
 
 **人工识别例外：** 用户从页面点击"识别当前阵容"或导入本地图片时会传入 `force_ocr=True`，此类已明确指定识别页类型的请求跳过模板匹配，直接执行 OCR。只有自动轮询仍将模板匹配作为前置门禁，避免对无关游戏画面反复执行 OCR。
 
@@ -189,7 +195,7 @@ Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
 
 **第一段：PaddleOCR 全量字典识别**
 
-ROI 裁剪 → 放大 3× → CLAHE 增强对比度 → 锐化 → 灰度 → PaddleOCR
+ROI 裁剪 → 放大 3× → 灰度 → PaddleOCR
 
 **第二段：候选确认与页面消歧**
 
@@ -218,6 +224,8 @@ PaddleOCR → 文字 + 置信度
 拼图检测时额外设有**批处理回退门槛**：拼图结果只接受单候选且置信度 `>= 0.5`；若结果不在武将词表内且按编辑距离筛选不出唯一候选（0 个或多个），则视为截断文本风险，跳过拼图结果直接逐槽复核，避免被多候选纠错静默绑定到错误武将。
 
 结构化结果为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`。`name` 只保存已确认名称；`length_mode` 为 `complete`、`missing`、`uncertain` 或 `unknown`；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`multi_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown`、`unknown_new_hero` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
+
+**B2 复核模式（d88fc2f）**：页面消解后仍未决（`resolution ∈ {unresolved, conflict}`）且候选闭包非空的槽位，由 `_recheck_unresolved_slots()` 调用 v6 复核引擎（`get_recheck_ocr_engine()`，RapidOCR/PP-OCRv6-small/ONNX）补充证据。喂法与生产同构（3× 灰度条、30px 间隙、960 分组画布），但接受纪律严格：读数必须精确命中该槽候选闭包内的成员才作为 `source="recheck"` 证据注入并重跑消解；不命中一律维持原状，绝不引入新名字。页面唯一性已确认的名字不可再被复核绑定，避免同页重名被复核坐实。开关 `MUMU_OCR_RECHECK_ENABLED`（默认 `true`），引擎加载失败自动熔断停用，不影响主流程。
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
@@ -253,10 +261,12 @@ else:
 
 | 层 | 速度 | 覆盖 |
 |----|------|------|
-| `char_info_cache.json`（365 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
+| `char_info_cache.json`（396 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
 `CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`（随包只读基线），也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `src/scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。五笔 86 全码来自离线码表 `src/data/wubi86.txt`，笔画数来自 UNIHAN `Unihan_IRGSources.txt`；码表缺失时对应维度按 0 分处理，不阻断识别。
+
+基线缓存已补齐「存祖逖」等 29 字（a1f5ff0、2583571），总计 396 字，修复 CI 武将名词表覆盖断言。
 
 用户层缓存 `data/char_info_cache.json` 与基线缓存合并：运行时动态补齐的特征写入用户层，基线缓存保持只读（随包分发）。用户层格式异常时仅警告并忽略，不影响基线功能。
 
@@ -272,6 +282,14 @@ else:
 `src/ocr/recognizer.py::GeneralRecognizer._engine` 增加**加载熔断**：PaddleOCR 引擎加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"，不再对每次识别重复尝试加载（避免反复触发昂贵的模型初始化）。同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）改为 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
 
 **OCR 任务模板控制**：`OcrTask` 中 `match_template=True` 时执行模板匹配前置过滤；`match_template=False` 时跳过模板匹配直接 OCR（巅峰赛卡位检测路径通过 `submit_ocr_task(match_template=False)` 使用）。模板未命中时，`fallback_on_template_miss=True` 可强制回退执行 OCR（对局攻略路径使用），否则返回 `healthy_no_match`。
+
+**B2 复核引擎配置（d88fc2f）**：`paddle_loader.py` 新增三组函数与一个包装类，为未决槽位提供独立的 v6 复核引擎：
+
+- **`create_rapidocr_ocr()`** — 构造 RapidOCR/PP-OCRv6-small/ONNX 复核引擎。设备固定 CPU（GPU 已否决），onnxruntime 走默认 CPU 执行提供者；det 参数显式 `limit_type=max`、`limit_side_len=960`，与生产画布同一喂法口径（默认 `limit_type=min/736` 会把短边不足的图强制放大冲出检测工作尺度）。模型文件显式指向 rapidocr 内置目录，绕过联网下载检查，缺失直接报错。frozen 下复用 PaddleOCR 的 `%TEMP%` 纯 ASCII 路径复制模式，复制到 `%TEMP%\mjs_rapidocr_models`。
+- **`RapidOcrEngine`** — 包装层，将 RapidOCR 结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`。画布喂法为灰度图，RapidOCR 3.x 要求 HWC 三通道，统一转换；框必须转纯 Python list，否则下游 `isinstance(line[0], (list, tuple))` 行格式判别会被 numpy 数组打穿。
+- **`get_recheck_ocr_engine()`** — 进程内共享的 v6 复核引擎，惰性加载（首次调用时才构造）、失败熔断（加载异常后标记 `_RECHECK_ENGINE_FAILED=True`，后续调用快速返回 `None`，直到进程重启）。受 `MUMU_OCR_RECHECK_ENABLED`（默认 `true`）开关控制。
+
+**白名单静态冲突检查**：`character_similarity.py::find_whitelist_conflicts()` 枚举词表中"等长仅差一字、且该差异对在白名单内"的高危武将名对——这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），供新增白名单对或新武将入库时做常驻检查。拼图画布同步按检测器工作尺度（960）分块修复（3f8f30b），避免超宽画布被检测器强制降采样后行级检测退化。
 
 ### 3.10 官方榜单固定版式解析（official_board_parser.py）
 
@@ -328,22 +346,19 @@ def probe_mumu_adb() -> str:
 ### 4.2 图像预处理流水线
 
 ```python
-def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
-    # 1. 放大 3×
-    roi = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-    # 2. CLAHE 自适应直方图均衡
-    lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    lab[..., 0] = clahe.apply(lab[..., 0])
-    roi = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    # 3. 锐化
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    roi = cv2.filter2D(roi, -1, kernel)
-    # 4. 灰度
-    return cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+def preprocess_roi(roi: np.ndarray) -> np.ndarray:
+    """放大并转为灰度，供批量拼图画布与常规识别使用。"""
+    enlarged = cv2.resize(roi, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    return cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+
+def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
+    """gamma 提亮的差异视图，仅供逐槽回退的第二证据票使用。"""
+    enlarged = cv2.resize(roi, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    lut = ((np.arange(256) / 255.0) ** 0.7 * 255).astype(np.uint8)
+    return cv2.cvtColor(cv2.LUT(enlarged, lut), cv2.COLOR_BGR2GRAY)
 ```
 
-> **设计思路：** 2560×1440 基准下，默认武将名称 ROI 为 50×145px。额外的 5px 高度用于给竖排名称留出上下缓冲，降低字符被截断的概率。放大使字符像素更密集；CLAHE 解决游戏 UI 渐变背景的干扰；锐化强化边缘清晰度；最后灰度化是 OCR 引擎的期望输入。顺序不可调换。
+> **设计思路：** 2560×1440 基准下，默认武将名称 ROI 为 50×145px。额外的 5px 高度用于给竖排名称留出上下缓冲，降低字符被截断的概率。放大使字符像素更密集；灰度化是 OCR 引擎的期望输入。09c904d 事故（4 字武将名被 CLAHE + 锐化 + 拼图画布检测缩放叠加拆成两框）后，主路径去掉了 CLAHE 与锐化——局部对比度增强会加深字间灰度谷，与画布检测缩放叠加会切断文本行，且深度 OCR 模型对光照自带鲁棒性。逐槽回退的第二证据票改用 gamma 0.7 提亮的差异视图：与 plain 的差异集中在暗区（拉开暗横幅上被压扁的细节），属全局色调映射不碰空间结构，只作用于单条竖条（长边 435 < 检测器工作尺度 960，永不触发降采样），不喂批量拼图画布。
 
 识别日志会按槽位记录缩放后的 ROI 坐标，以及 PaddleOCR 返回的原始文本和置信度。每个任务完成后还会记录 ADB 截图、模板加载与匹配、模型初始化、名称/阵营预处理与 OCR、名称纠错、结果落盘和总耗时，便于比较冷启动与热启动。格式类似：
 
@@ -360,11 +375,11 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 
 | 类/函数 | 说明 |
 |---------|------|
-| `AdbCapture(adb_path, adb_port=7555)` | 构造 ADB 截图器 |
+| `AdbCapture(adb_path, adb_port=7555, screenshot_mode="auto")` | 构造 ADB 截图器（`screenshot_mode`: auto/raw/png） |
 | `AdbCapture.connect()` → `(bool, str)` | 连接模拟器，并校验目标设备状态为 `device` |
 | `AdbCapture.check_device()` → `(bool, str)` | 复用连接前确认目标设备仍在线 |
 | `AdbCapture.disconnect()` → `(bool, str)` | 断开模拟器 |
-| `AdbCapture.screencap_full(log_success=True)` → `(bool, Image\|str)` | 全屏截图（关键字参数，轮询传 `False` 抑制成功日志） |
+| `AdbCapture.screencap_full(log_success=True)` → `(bool, Image\|str)` | 全屏截图（raw 帧优先失败回退 PNG，关键字参数轮询传 `False` 抑制成功日志） |
 | `probe_mumu_adb()` → `str` | 探测 ADB 路径 |
 | `probe_all_devices()` / `probe_all_devices_with_status()` | 列出 MuMu 实例；状态化版本区分"无实例"与"探测失败" |
 | `probe_running_devices()` → `list[MuMuDeviceInfo]` | 仅返回运行中且端口有效的实例 |
@@ -382,8 +397,12 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别页面名称并返回候选、状态和多路证据 |
 | `GeneralRecognizer.warmup()` / `warmup_inference()` | 预热引擎与字符特征 / 执行一次代表性拼图推理 |
 | `GeneralRecognizer.adopt_engine(engine)` / `shared_engine()` | 与同进程其它识别器共享同一 PaddleOCR 实例 |
-| `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | OCR 图像预处理 |
+| `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | 放大 3× + 灰度（主路径） |
+| `ImagePreprocessor.preprocess_roi_enhanced(roi)` → `np.ndarray` | 放大 3× + gamma 提亮 + 灰度（逐槽回退第二证据票） |
 | `paddle_loader.create_paddle_ocr(**kwargs)` | 构造 PaddleOCR：推理设备/CPU 线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN，抑制 Windows 首次加载闪窗，打包态把模型指向 `%TEMP%` ASCII 路径 |
+| `paddle_loader.create_rapidocr_ocr()` | 构造 B2 复核引擎（RapidOCR/PP-OCRv6-small/ONNX），设备固定 CPU，det 参数 `limit_type=max`/`limit_side_len=960` |
+| `paddle_loader.get_recheck_ocr_engine()` → `RapidOcrEngine\|None` | 进程内共享复核引擎，惰性加载 + 失败熔断，受 `MUMU_OCR_RECHECK_ENABLED` 开关控制 |
+| `paddle_loader.RapidOcrEngine` | RapidOCR 包装层，将结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]` |
 | `OcrRoiConfig.layout_for(page_type)` / `save_layout(...)` / `reset_layout(...)` / `reload()` | 布局读取、本地覆盖写盘（立即生效）、恢复默认、重新读盘 |
 | `official_board_parser.detect_layout(image, key)` | 按纵横比与行数校验确认旧版/分页版式 |
 | `official_board_parser.extract_panels(image, layout)` | 按版式比例切出榜单面板 |
@@ -395,6 +414,7 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
 | `CharacterSimilarityService.is_safe_single_substitution(text, candidate)` → `bool` | 判断唯一错字是否达到自动纠正门槛 |
 | `CharacterSimilarityService.rank_single_substitution_candidates(text, candidates)` | 候选闭包内按错字字形分排序 |
+| `find_whitelist_conflicts(hero_names, whitelist_pairs)` → `list[tuple[str,str,str]]` | 枚举词表中等长仅差一字且差异对在白名单内的高危武将名对 |
 | `CharacterFeatureRepository(cache_path=None, user_cache_path=None)` | 汉字特征缓存加载、动态补齐与用户层持久化 |
 | `CharacterFeatureRepository.warmup()` / `warmup_characters(chars)` | 预热缓存与拼音库 / 批量补齐词表字符 |
 | `get_template_manager(template_name)` → `TemplateManager` | 获取模板管理器单例（仅 `hero_selection` / `match_guide`） |
@@ -410,9 +430,11 @@ def ImagePreprocessor.preprocess_roi(roi: np.ndarray) -> np.ndarray:
 
 | 方向 | 模块 | 说明 |
 |------|------|------|
-| 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型（GPU 推理需 CUDA 11.8 + cuDNN 8 运行时，见 environment.yml） |
-| 被调用方 | `src.business.emulator.capture_service` | 持有 AdbCapture 实例，编排截图流程 |
+| 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型（GPU 推理需 CUDA 11.8 + cuDNN 8 运行时，见 environment.yml）；B2 复核模式额外依赖 rapidocr + onnxruntime + PP-OCRv6-small/ONNX 模型 |
+| 被调用方 | `src.business.emulator.capture_service` | 持有 AdbCapture 实例，编排截图流程；轮询路径通过 raw 帧提速 |
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
 | 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 detect_selection_cards 与 derive_name_rois 做 2v2 牌面识别 |
+| 被调用方 | `src.business.recognition.ocr_worker` | 未决错法调 `pending_stats.record_pending()`；B2 复核引擎由 recognizer 内部调用 |
+| 被调用方 | `src.ui.configuration.whitelist_config_dialog` | 调用 `find_whitelist_conflicts` 做白名单静态冲突检查 |
 | 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
 | 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |

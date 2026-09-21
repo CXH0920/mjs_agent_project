@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-09-15（`624c8c5`）
+> 代码基线：2026-09-21（`0bd1228`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-09-15
+> 文档日期：2026-09-21
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -29,7 +29,7 @@
 
 ---
 
-## 当前代码基线与业务不变量（2026-09-15）
+## 当前代码基线与业务不变量（2026-09-21）
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化）。
 
@@ -42,7 +42,7 @@
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` 队列 -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 与常规 OCR 共享同一 `OcrWorker` 的 FIFO 队列（互斥由 `OcrService._import_busy` 串行化，并非独占 worker）；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
-| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` -> `CaptureService` -> `AdbCapture.screencap_full()` -> `OcrWorker` -> 模板匹配 -> `GeneralRecognizer` | 将识别结果分发到推荐页或对局攻略页 |
+| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` → `AdbCapture.screencap_full()`/`screencap_raw()` → `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复） |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 | 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> 会话世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
@@ -71,7 +71,15 @@ DataFacade.load_all()
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
 
+**B2 复核模式（2026-09 新增）**：对未决识别槽位，`GeneralRecognizer` 调用 `paddle_loader.get_recheck_ocr_engine()` 惰性加载 PP-OCRv6-small/ONNX 引擎（RapidOCR 包装层 `RapidOcrEngine` 翻译为 paddleocr 2.x 风格），在候选闭包内做二次确认。设备固定 CPU（GPU 已否决），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制开关。设计文档：`docs/design/ocr_engine_upgrade_eval.md`。
+
+**轮询闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。`PollCoordinator` 在闲置暂停 5 分钟（`IDLE_PAUSE_MINUTES=5`）后自动暂停轮询，用户交互（点击导航、打开配置等）触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关。阈值校准工具：`src/scripts/calibrate_idle_threshold.py`。
+
+**未决错法频次记录（2026-09 新增）**：`pending_stats.py` 记录 OCR 未决错法频次与人工确认答案，供白名单配置界面消费。双事件流（识别线程 `record_pending` + GUI `record_confirmation`）汇入同一文件 `data/ocr_name_pending_stats.json`。60 秒节流窗口防虚增，原子替换写入。
+
 **三板块共享一次截图（2026-09）**：选将推荐、巅峰赛选将、对局攻略三个板块的识别由同一次截图驱动——`OcrService.poll_tick` 触发 `PollCoordinator._on_poll_tick()`，后台线程一次截图后并发派生三条判定路径（固定 ROI 的 `hero_selection`、对局攻略页 `match_guide`、内容驱动的巅峰赛卡位检测），**不做三张截图**。`hero_selection` 在单拍内最多被消费一次，避免同一次识别结果既刷新推荐页又重复触发自动跳转。官方榜单导入的互斥不靠独占 worker，而是由 `OcrService._import_busy` 标志串行化，与常规轮询任务共享同一 FIFO 队列。
+
+**截图提速（2026-09）**：`adb_screen.py` 新增 `screencap_raw()` 方法，直接返回 PNG bytes 跳过 PIL 解码；`CaptureService.capture_for_poll()` 直接返回 numpy 数组，避免轮询路径的冗余 Image 转换。配置参数 `MUMU_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式，`auto` 为默认（raw 优先，失败自动回退 PNG），1440p 实测每拍省约 1.3 秒。
 
 ---
 
@@ -111,7 +119,11 @@ src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（�
 - 3 次重试，间隔 2 秒，最后一次失败抛异常
 - 不可用于异步环境，同步阻塞
 
-#### 1.2.3 `adapter.py`：JS chunk 解析适配器
+#### 1.2.3 robots.txt 存档（2026-09 合规化新增）
+
+每次抓取前调用 `_ensure_robots_txt_cached()` 确保站点 robots.txt 已存档（24 小时缓存，存档失败仅告警不阻断采集）。存档目录 `logs/robots_cache/`（已 gitignore），含 `robots.txt` 原文与 `robots_meta.json` 元数据（抓取时间戳）。作为遵守站点爬取规则的善意访问证据留存本地，不依赖在线访问。
+
+#### 1.2.4 `adapter.py`：JS chunk 解析适配器
 
 官网 HTML 与 JS chunk 的格式假设集中在 `src/scraper/official_source/adapter.py`；`crawler.py` 仅负责请求编排和数据清洗。
 
@@ -128,7 +140,7 @@ src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（�
 - 三步预处理：key 加引号 → `undefined` 替换为 `null` → 移除尾部多余逗号
 - 最后 `json.loads()` 解析
 
-#### 1.2.4 数据清洗函数
+#### 1.2.5 数据清洗函数
 
 **`clean_html(html_text) → str`**：
 1. 正则去掉所有 `<...>` 标签
@@ -143,7 +155,7 @@ src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（�
 - 丢弃「技能典故」「设计思路」
 - 无标题段落整体作为 description
 
-#### 1.2.5 `transform(raw) → dict | None`
+#### 1.2.6 `transform(raw) → dict | None`
 
 字段映射流程：
 
@@ -168,13 +180,13 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 - `p_blood_max` / `p_card_max` 转型失败时使用默认值 4，不跳过
 - skill 遍历时，`skill_name` 为空跳过该技能，不跳过整个武将
 
-#### 1.2.6 `validate_heroes(heroes) → list[dict]`
+#### 1.2.7 `validate_heroes(heroes) → list[dict]`
 
 - 逐条调用 `Hero.model_validate(h)` 进行 Pydantic 校验
 - 校验失败条目标记错误日志并跳过（不中断流程）
 - 成功条目标调用 `model_dump(mode="json")` 序列化
 
-#### 1.2.7 `fetch_all_raw() → list[dict]`
+#### 1.2.8 `fetch_all_raw() → list[dict]`
 
 快捷组合函数：
 1. `fetch(BAIKE_URL)` → 首页 HTML
@@ -182,7 +194,7 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 3. `fetch(chunk_url)` → JS 文本
 4. `parse_heroes_chunk(js_text)` → 165 条原始数据
 
-#### 1.2.8 头像下载（第 297-348 行）
+#### 1.2.9 头像下载（第 297-348 行）
 
 **`download_hero_images(raw_list, image_dir, skip_existing) → int`**：
 - 遍历 `raw_list`，取 `icon_url` 和 `name`
@@ -472,12 +484,14 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | HeroFetchService | `fetch_service.py` | ~102 | BaseFetchService | 3 |
 | GuideFetchService | `guide_fetch_service.py` | ~179 | BaseFetchService | 6 |
 | SynergyFetchService | `synergy_fetch_service.py` | ~104 | BaseFetchService | 3 |
-| CaptureService | `capture_service.py` | ~426 | QObject | 4 |
+| CaptureService | `capture_service.py` | ~480 | QObject | 4 |
 | EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
 | MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
-| OcrService | `ocr_service.py` | ~355 | QObject | 3 |
+| OcrService | `ocr_service.py` | ~420 | QObject | 3 |
 | OfficialDataImportService / Worker | `official_data_import_service.py` | ~610 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py` |
 | CardSyncService | `card_sync.py` | ~120 | QObject | 2 |
+| PendingStats | `pending_stats.py` | ~120 | 普通模块 | — |
+| DisclaimerState | `disclaimer_state.py` | ~53 | 普通模块 | — |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
 
@@ -571,6 +585,8 @@ class CaptureService(QObject):
 | `connect_emulator()` | 连接模拟器 |
 | `disconnect_emulator()` | 断开模拟器 |
 | `capture_screenshot()` | 通过共享会话获取截图，不写文件、不执行 OCR；供模板制作后台任务使用 |
+| `capture_for_poll()` | 轮询专用截图（2026-09 新增）：直接返回 numpy 数组，跳过 PIL Image 转换；根据 `MUMU_SCREENSHOT_MODE` 选择 raw/PNG 路径 |
+| `reset_ocr_recognizer_cache()` | 清除 OCR 识别器缓存（2026-09 新增）：白名单配置写入后调用，使新白名单立即生效 |
 
 **手动截图全流程**：
 
@@ -590,7 +606,7 @@ do_capture_from_file()
                       └─ _on_ocr_task_completed() → capture_completed
 ```
 
-**注意**：轮询路径不走 `do_capture()`，轮询在后台执行 `screencap_full()`，随后将模板匹配与 OCR 提交给同一个 `OcrWorker`，**不保存截图文件到磁盘**，全程内存中处理。这样轮询与手动导入仍按任务顺序共用一个识别器。
+**注意**：轮询路径不走 `do_capture()`，轮询在后台执行 `capture_for_poll()`（优先 raw 帧，失败回退 PNG），随后将模板匹配与 OCR 提交给同一个 `OcrWorker`，**不保存截图文件到磁盘**，全程内存中处理。这样轮询与手动导入仍按任务顺序共用一个识别器。
 
 ### 3.6 OcrService（OCR 控制服务）
 
@@ -618,6 +634,11 @@ class OcrService(QObject):
 | `stop_poll()` | 停止轮询并清除冷却 |
 | `set_cooldown(seconds)` | 设置冷却时间（OCR 匹配成功后调用） |
 | `run_ocr(image, rois)` | 对单张图片执行 OCR（同步等待最多 30 秒，超时返回 None） |
+| `pause_for_idle()` | 闲置暂停：由 `PollCoordinator` 调用，标记轮询因闲置而暂停 |
+| `is_poll_idle_paused() → bool` | 检查轮询是否处于闲置暂停状态 |
+| `begin_poll()` / `complete_poll(generation, outcome)` | 轮询世代管理（2026-09 新增）：`begin_poll()` 递增世代号，`complete_poll()` 提交结果；过期世代的结果被丢弃 |
+| `due_poll_tasks()` | 查询当前到期的轮询任务列表 |
+| `poll_cancel_event` / `poll_generation` | 取消事件与世代属性（供 `PollCoordinator` 检查） |
 
 **异常处理**：所有 except 块记录 `logger.error` + `logger.debug(traceback.format_exc())`，不允许静默异常。
 
@@ -707,6 +728,32 @@ class CardSyncService(QObject):
 
 > CardSyncService 的后台检查由 `QTimer` 驱动（默认每日一次），也可通过「数据 → 检查卡牌百科更新」菜单手动触发。变更记录持久化到 `data/card_changes.json`，快照持久化到 `data/card_snapshot.json`。
 
+### 3.9 未决错法频次记录（pending_stats.py）
+
+`src/business/recognition/pending_stats.py`（120 行）记录 OCR 未决错法频次与人工确认答案，供白名单配置界面消费。识别线程记录无法自动确认的错法（发现），用户在界面上的人工点选记录为候选内的答案（收集）。
+
+**双事件流设计**：
+
+| 函数 | 调用方 | 说明 |
+|------|--------|------|
+| `record_pending(raw_name, candidates, slot_index)` | `OcrWorker` 工作线程 | 识别时遇到未决槽位调用，记录 OCR 原文 + 候选列表 |
+| `record_confirmation(raw_name, confirmed_name, slot_index)` | GUI 线程 | 用户在 MatchGuidePanel / RecommendationPanel 人工确认时调用 |
+
+**文件**：`data/ocr_name_pending_stats.json`（版本化 JSON），结构为 `{version, entries: {"<OCR原文>": {count, candidates, confirmations, last_seen}}}`。
+
+**防虚增**：60 秒节流窗口（`_THROTTLE_SECONDS=60`），同一错法在该窗口内的重复识别不累计。计数语义为「节流后的记录次数」，排序有意义、绝对值无意义。
+
+**原子写入**：`_LOCK = threading.Lock()` 串行化"读-改-原子替换"；任何 IO 失败仅告警降级，绝不影响识别主流程。
+
+### 3.10 免责声明状态管理（disclaimer_state.py）
+
+`src/config/disclaimer_state.py`（53 行）管理免责声明的接受状态，持久化到 `config/.disclaimer_state.json`。
+
+- **版本化**：`DISCLAIMER_VERSION = "1.0"`，对应 `TERMS.md` 第 9 节版本号。仅在免责声明文本实质修订时递增，驱动启动弹窗重新展示。
+- **`should_show()`**：检查是否需要展示免责声明——从未接受过，或接受的文本版本已过期。状态文件缺失、损坏或字段非法时一律按"未接受"处理。
+- **`mark_accepted()`**：记录当前版本为已接受。
+- **启动流程**：`main.py` 在 `QApplication()` 初始化后、窗口创建前检查免责声明，需要展示时弹出 `DisclaimerDialog`，用户确认后进入应用。
+
 ---
 
 ## 四、数据管理层细节
@@ -746,7 +793,7 @@ class CardSyncService(QObject):
 
 | 数据文件 | 管理类 | 数据量 |
 |----------|--------|--------|
-| `data/heroes.json` | HeroManager(DataManager[Hero]) | 171 武将 / 418 技能 |
+| `data/heroes.json` | HeroManager(DataManager[Hero]) | 184 武将 / 438 技能 |
 | `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 55 条相性（当前数据） |
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
@@ -756,13 +803,15 @@ class CardSyncService(QObject):
 | `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
 | `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（16 类、180 条武将归类；AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
 | `data/mjs_adjustments.json` | hero_timeline（`load_timeline` / `append_announcement_events`） | 武将变更时间轴：133 条事件（126 初始化 + 7 公告追加）；RAG 语料块 `as_of` 版本戳的事实源，不属"裁定权威 6 JSON" |
-| `data/combos.json` | ComboManager | 实战配队 1228 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序；含逻辑删除字段 `deleted` / `deleted_at`） |
+| `data/combos.json` | ComboManager | 实战配队 1570 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序；含逻辑删除字段 `deleted` / `deleted_at`） |
 | `data/card_snapshot.json` | card_sync_store | 卡牌百科快照（`CardSnapshot`，全量卡片当前状态） |
 | `data/card_changes.json` | card_sync_store | 卡牌百科变更记录（`CardChangeRecord`，未确认的官网差异列表） |
 | `data/武将推荐指数状态.json` | —（`recommendation_index_repository` 写） | 推荐指数生成状态（运行时状态文件，非榜单数据） |
 | `data/2v2{胜率,出场}排行.csv` `data/巅峰赛{胜率,出场}排行.csv` `data/武将放逐.csv` | —（榜单导入写） | 官方榜单，各 175 行；表头：胜率榜 `排名,武将,胜率`，出场/放逐榜 `排名,武将`；`_待复核.csv` 为同名副本 |
 | `data/raw_guides/` | —（社区素材，未入库 raw） | jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv |
 | `data/rag_corpus/*.json` | —（`build_*_corpus.py` 生成） | 12 个语料文件 / 2090 个检索块（含组合 437、攻略 357、武将分类 180） |
+| `data/ocr_name_pending_stats.json` | pending_stats | OCR 未决错法频次与人工确认记录（运行时状态文件，60 秒节流，原子写入） |
+| `config/.disclaimer_state.json` | disclaimer_state | 免责声明接受状态（版本化，`config/` 下） |
 
 ### 4.3 HeroManager 方法清单
 
@@ -890,11 +939,13 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| app/main_window.py | 1144 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
+| app/main_window.py | 1161 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
 | app/app_services.py | 102 | 组合根（聚合业务服务实例并注入主窗口与各面板） |
 | app/shell_widgets.py | 209 | QWidget（左侧 NavigationRail 与顶部 ContextHeader） |
-| app/poll_coordinator.py | 264 | QObject（轮询编排、后台任务与结果状态迁移） |
+| app/poll_coordinator.py | 324 | QObject（轮询编排、后台任务与结果状态迁移；含闲置暂停检测） |
+| app/frame_fingerprint.py | 33 | 整帧降采样指纹（32×18 灰度，MAD 阈值 3.0） |
 | app/status_chips.py | 75 | 状态栏胶囊（常驻状态展示与点击打开配置） |
+| app/disclaimer_dialog.py | 68 | QDialog（免责声明对话框） |
 | app/chinese_translator.py | 96 | Qt 标准控件中文翻译安装 |
 | app/app_icon.py | 59 | 应用图标（多目录回退定位） |
 | generation/ai_generation_workflow.py | 364 | QObject（攻略与相性 UI 工作流） |
@@ -924,6 +975,7 @@ def apply_incremental_update(data_dir, update)
 | recommendation/hero_card_widget.py | — | 推荐卡片 |
 | configuration/mumu_config_dialog.py | 773 | QDialog（模拟器配置状态与操作协调） |
 | configuration/mumu_config_sections.py | 365 | QGroupBox（设备、模板和 OCR 参数视图） |
+| configuration/whitelist_config_dialog.py | 273 | QDialog（白名单配置：错法观察清单 A+/A/B/C 分类 + 用户层白名单维护） |
 | configuration/settings_dialog.py | 582 | QDialog（多 API 档案 + 运行参数 + 价格） |
 | configuration/faction_color_dialog.py | — | QDialog（势力配色，数组结构 `[{faction, color}]`，位置即展示顺序） |
 | configuration/roi_selector.py | 403 | QDialog（框选模板区域，不随底图原始分辨率撑高） |
@@ -955,13 +1007,17 @@ def apply_incremental_update(data_dir, update)
 | shared/faction_colors.py | 55 | 势力配色读取（`sort_factions_by_config()` 按配置数组位置排序） |
 | shared/markdown_renderer.py | 17 | Markdown → HTML |
 
-> 合计 76 个 UI 模块文件。行数随迭代变动，以仓库实际为准。
+> 合计 79 个 UI 模块文件。行数随迭代变动，以仓库实际为准。
 
 ### 5.2 主窗口外壳与信号拓扑
 
 阶段三应用外壳由左侧 `NavigationRail`、顶部 `ContextHeader`、工作区内容和底部状态栏组成。左侧导航固定承载**资料库、选将推荐、巅峰赛选将、对局攻略**四个长期工作区（知识库维护为第 5 个工作区）；顶部显示当前工作区标题、说明、资料库操作及全局设置。主内容继续复用原 `QTabWidget` 和页面实例，仅隐藏主 `TabBar`，由 `NavigationRail` 驱动切换；资料库内部仍使用可见的”武将资料 / 卡牌图鉴”二级页签，因此搜索、滚动、识别结果和二级页签状态不会因切换工作区而丢失。
 
 业务服务的装配与注入收敛到组合根 `AppServices`（`src/ui/app/app_services.py`）：集中实例化采集 / OCR / 生成 / 分析等服务并完成信号接线，主窗口只消费其聚合句柄。轮询编排由 `PollCoordinator` 承接（信号 `OcrService.poll_tick` → `_on_poll_tick()` → 后台线程执行截图与 OCR → `_consume_poll_result()` 提交状态）。
+
+**启动时免责声明（2026-09 新增）**：`main.py` 在 `QApplication()` 初始化后检查 `disclaimer_state.should_show()`，需要展示时弹出 `DisclaimerDialog`（`src/ui/app/disclaimer_dialog.py`），用户确认后写入接受状态再进入应用。版本化策略确保仅在条款实质修订时重复展示。
+
+**白名单配置入口（2026-09 新增）**：主窗口「工具」菜单增加「白名单配置」项，打开 `WhitelistConfigDialog`（`src/ui/configuration/whitelist_config_dialog.py`）。对话框展示错法观察清单（按 A+/A/B/C 分类排序，A+ 为高频未决错法）与用户层白名单维护（`data/ocr_confusion_overrides.json`）。新增对白名单的静态冲突检查（`find_whitelist_conflicts()`），写入后调用 `CaptureService.reset_ocr_recognizer_cache()` 使新白名单立即生效。
 
 左侧导航请求通过主 Tab 容器切换，Tab 的 `currentChanged` 再同步导航选中态和 `ContextHeader`。OCR 自动跳转保持原调用边界，只执行 `setCurrentWidget()`，无需直接访问外壳控件。窗口宽度小于 1040px 时导航强制折叠；回到宽屏后恢复用户本次会话中的展开/折叠选择。
 
@@ -1003,6 +1059,8 @@ MainWindow.__init__
 对局攻略与资料库、选将推荐同属左侧导航的一级工作区。页面内部使用 `PageActionBar` 展示识别状态、唯一主要识别操作和“更多”菜单，不重复外壳标题。结果区采用不可折叠的 42/58 水平分割：左栏固定阵容确认区，并在独立纵向滚动区展示四张 176～250px 宽的紧凑卡片；右栏展示总览、我方打法、对抗敌方和单将详情。两侧禁止横向滚动，长文本自动换行。
 
 页面可识别已连接的 MuMu 画面或从本地图片导入，结果态将图片导入、保存截图和清空阵容收纳到“更多”。两种识别入口均通过 `template_name="match_guide"` 和 `force_ocr=True` 更新卡片；保存截图不触发 OCR。卡片分别展示识别状态与敌我席位状态，并用互斥“我方 / 敌方 / 未定”分段控件调整；【楚军】/【汉军】标签只用于校验席位结果。`LineupState` 继续负责槽位、敌我人数限制、主将和显式确认；新 OCR 或人工调整会清除旧分析并要求重新确认。
+
+**名字未决时按座次划分敌我（2026-09 修复）**：当 OCR 识别的武将名字未决（未确认）时，仍按座次位置划分敌我阵营——候选内纠错不再清空重划。`LineupState`（`match_lineup_state.py`）的敌我划分逻辑修复为按座次而非按名字确认状态，确保未决槽位也能正确显示阵营归属。
 
 ### 5.4 模拟器配置对话框（MumuConfigDialog）
 
@@ -1048,6 +1106,7 @@ MainWindow.__init__
 - **匹配阈值**：武将选择和对局攻略分别配置；对局攻略在每次选将模板命中后只触发一次
 - **轮询间隔**：1-60 秒；未勾选持续轮询时禁用
 - **恢复轮询**：仅持续轮询已勾选且服务处于暂停状态时显示并可用
+- **闲置暂停（2026-09 新增）**：连续 5 分钟无画面变化时自动暂停轮询，状态芯片显示"闲置暂停"。用户交互（点击导航、打开配置等）触发恢复。`MUMU_OCR_POLL_IDLE_PAUSE` 控制开关（默认 true）
 - **识别区域编辑**：选将推荐编辑 8 个名称区域；对局攻略编辑 5 组名称和阵营区域。可从共享 ADB 截图或本地图片打开编辑器，保存后下一次识别立即使用新布局；恢复默认只清除当前页面的本地覆盖
 - **保存反馈**：保存识别参数时固定底栏进入 busy 状态，成功后显示短暂 Toast 并关闭
 
@@ -1199,6 +1258,8 @@ HeroDetailPanel._on_synergy_edit()
 - 武将信息、攻略和相性详情均关闭横向滚动，只允许内容区纵向滚动或文本换行。
 - 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
 
+**知识库归类/专属牌名单同步（2026-09 新增）**：爬虫更新 `heroes.json` 后，`hero_classification_repository.py` / `hero_classification_panel.py` / `special_cards_panel.py` / `rag_maintenance_panel.py` 随刷新入口同步加载归类/专属牌名单，确保新增武将在分类和专属牌页面中即时可见。
+
 #### 5.8.2 卡牌图鉴（CardManagementPanel）
 
 卡牌图鉴与武将资料共享资料库二级导航。顶部工具栏提供搜索、卡牌类型、调整状态、重置和省略号“更多”；左栏限制为 240–360px，显示结果计数、类型分组和卡牌摘要。右侧只用一个基础资料表面承载卡牌身份、官方只读标识、卡牌简述和规则详解，版本调整作为后续内容区，不在基础表面内嵌套卡片。详情区关闭横向滚动，切换卡牌后回到顶部。
@@ -1275,6 +1336,8 @@ def update_recommendations(self, data: list[dict]) → None
 2. “更多 > 从图片导入”提交本地图片到 `OcrWorker`。
 3. “更多 > 保存截图”调用 `do_capture(perform_ocr=False)`，不更新推荐结果。
 4. `_pending_capture_source` 防止重复提交并隔离共享服务回调；空结果和失败通过页内 `NoticeBanner` 提供恢复提示。
+
+**人工确认记录（2026-09 新增）**：用户在推荐面板或对局攻略面板对未决槽位进行人工确认时，调用 `pending_stats.record_confirmation(raw_name, confirmed_name, slot_index)` 记录确认答案。这些数据与 `OcrWorker` 记录的 `record_pending()` 汇入同一文件 `data/ocr_name_pending_stats.json`，供白名单配置对话框的错法观察清单消费。
 
 **`load_from_ocr(ocr_results)`**：
 - 接收 OCR 结构化结果 `[{index, raw_name, name, candidates, resolution, confidence, evidence}, ...]`，并兼容旧的 `{index, name, confidence}`
@@ -1569,11 +1632,14 @@ key_mapping = {
     "MUMU_ADB_PORT": "mumu_adb_port",
     "MUMU_OCR_ENABLED": "mumu_ocr_enabled",
     "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
+    "MUMU_OCR_POLL_IDLE_PAUSE": "mumu_ocr_poll_idle_pause",
     "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
     "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
     "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
     "MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
     "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
+    "MUMU_OCR_RECHECK_ENABLED": "mumu_ocr_recheck_enabled",
+    "MUMU_SCREENSHOT_MODE": "mumu_screenshot_mode",
     "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
     "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
     "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
@@ -1585,7 +1651,7 @@ key_mapping = {
 }
 ```
 
-int 型：`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`；bool 型：`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu`；float 型：三处 threshold 与四个 `RECOMMENDATION_*`。转型失败使用默认值并打 warning。
+int 型：`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`；bool 型：`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu` / `mumu_ocr_recheck_enabled`；str 型：`mumu_screenshot_mode`（`auto`/`raw`/`png`）；float 型：三处 threshold 与四个 `RECOMMENDATION_*`。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -1610,10 +1676,13 @@ MUMU_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
 MUMU_ADB_PORT=16448
 MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=false
+MUMU_OCR_POLL_IDLE_PAUSE=true
 MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
 MUMU_OCR_USE_GPU=false
 MUMU_OCR_CPU_THREADS=6
+MUMU_OCR_RECHECK_ENABLED=true
+MUMU_SCREENSHOT_MODE=auto
 RAG_ENABLED=true
 RAG_TOP_K=12
 RAG_PROMPT_CHARS=6000
@@ -1844,6 +1913,7 @@ class AdbCapture:
 | `reconnect()` | `(bool, str)` | 强制重连 |
 | `check_device()` | `(bool, str)` | 设备在线检查 |
 | `screencap_full()` | `(bool, Image|str)` | ADB exec-out screencap 全屏截图 |
+| `screencap_raw()` | `(bool, bytes|str)` | 直接返回 PNG bytes 跳过 PIL 解码（2026-09 新增）；配置参数 `MUMU_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式，`auto` 为默认（raw 优先，失败自动回退 PNG） |
 
 **属性**：
 - `device_serial`：可读写，切换目标设备（如 `127.0.0.1:16448`）
@@ -1853,6 +1923,8 @@ class AdbCapture:
 - 命令注入防护：`_run_adb(*args)` 使用列表参数
 - 设备序列号格式校验：`_check_device_serial_safe()` 校验 IP:端口 格式
 - 超时保护：所有 `subprocess.run` 设置 `timeout`
+
+**架构防火墙声明（2026-09 新增）**：`adb_screen.py` 和 `emulator_operation_service.py` 的模块文档字符串明确声明不包含 ADB 输入能力（不实现 `adb shell input`、`input tap` 等命令），不通过 ADB 向设备发送触摸、按键或剪贴板操作。本工具仅提供屏幕截图与 OCR 识别能力，严禁用于自动操作、反作弊绕过等违规用途（参见 LICENSE 附加使用条款）。
 
 ### 11.4 图像工具（image_utils.py）
 
@@ -1879,16 +1951,16 @@ class AdbCapture:
 ```
 src/ocr/
  ├── __init__.py              # 包 init
- ├── template_manager.py     # TemplateManager — OpenCV 模板匹配（~180 行）
- ├── image_preprocessor.py  # ImagePreprocessor — 纯图像预处理
+ ├── template_manager.py      # TemplateManager — OpenCV 模板匹配（~210 行，含分层加速）
+ ├── image_preprocessor.py    # ImagePreprocessor — 纯图像预处理（含 gamma 差异视图回退证据）
  ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
- ├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI（HSV 掩码 + 连通域过滤）
- ├── roi_config.py           # Roi / RoiLayoutEditor — 巅峰赛与多布局 ROI 配置
+ ├── card_grid_detector.py    # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI（HSV 掩码 + 连通域过滤）
+ ├── roi_config.py            # Roi / RoiLayoutEditor — 巅峰赛与多布局 ROI 配置
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
- ├── character_similarity.py # CharacterSimilarityService — 名称纠错
- ├── recognizer.py           # GeneralRecognizer — ROI、PaddleOCR 与组件编排
- ├── paddle_loader.py        # PaddleOCR 统一构造及 Windows 首次加载闪窗抑制
- └── ocr_loader.py           # 模板管理器单例
+ ├── character_similarity.py  # CharacterSimilarityService — 名称纠错（含拼图画布按检测器工作尺度分块）
+ ├── recognizer.py            # GeneralRecognizer — ROI、PaddleOCR 与组件编排（含 B2 复核、unknown_new_hero、4字拆框修复）
+ ├── paddle_loader.py         # PaddleOCR 统一构造 + B2 复核引擎（RapidOCR/ONNX）+ Windows 首次加载闪窗抑制
+ └── ocr_loader.py            # 模板管理器单例
 ```
 
 ### 12.2 模板管理器（template_manager.py）
@@ -1926,6 +1998,8 @@ match(image, threshold=0.8)
 旧模板没有元数据时兼容使用 2560×1440；外部替换模板会清理旧元数据，避免沿用上一份模板的参考尺寸。
 
 **匹配算法**：`cv2.TM_CCOEFF_NORMED`（归一化相关系数匹配），输出 0~1 的置信度。
+
+**模板匹配分层加速（2026-09 新增）**：先以低分辨率粗筛缩小搜索范围，再在粗筛区域内进行高分辨率精匹配。粗筛阶段将模板和输入图像同时缩小至 1/4 尺寸执行 `TM_CCOEFF_NORMED`，找到大致位置后扩展搜索窗口，仅在窗口内执行全分辨率匹配。避免了全图全尺度的冗余计算，对 2560×1440 截图匹配速度提升显著。
 
 **模板制作流程**：
 ```
@@ -2001,7 +2075,7 @@ else:
 | 拼音 | pypinyin | 同上 | JSON 缓存 / 纠错时按需加载 |
 | 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `CharacterFeatureRepository` | 通过 `unihan_etl.Options().work_dir` 解析文本文件 |
 
-数据文件 `src/data/char_info_cache.json` 包含 365 个高频汉字（武将名 + 已知 OCR 误识字）。
+数据文件 `src/data/char_info_cache.json` 包含 396 个高频汉字（武将名 + 已知 OCR 误识字，2026-09 补齐 29 字）。
 `CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。UNIHAN 导出 CSV 已存在时直接读取，只有目标文件不存在时才执行 `Packager.export()`，避免因重复覆盖默认 AppData 文件而使动态补齐整体降级。pypinyin 预热或查询失败时记录一次 warning 并将拼音源标记为不可用，后续查询直接降级为空值；cnradical 的单字查询失败会记录字符和异常，但不禁用整个部首源。
 
 #### 类结构
@@ -2025,6 +2099,7 @@ class CharacterSimilarityService:
     correct_hero_name(text, hero_names) → str
     single_substitution_similarity(text, candidate) → float | None
     rank_single_substitution_candidates(text, candidates) → list[tuple[str, float]]
+    find_whitelist_conflicts() → list[dict]  # 白名单静态冲突检查（2026-09 新增）
 
 class CharacterFeatureRepository:
     load() / get_feature(char) / save()
@@ -2094,6 +2169,10 @@ ROI 裁剪 (40×100 原始区域)
   └── 送 PaddleOCR 识别
 ```
 
+**批量预处理去增强（2026-09 修复）**：批量路径（`_recognize_prepared_batch`）的预处理已去掉 CLAHE + 锐化增强，仅保留放大 + 灰度化。原因是增强图会导致 4 字武将名在检测框中字符粘连、拆分异常。单槽路径仍保留完整增强流程作为独立证据族。
+
+**gamma 差异视图回退证据（2026-09 新增）**：`ImagePreprocessor.preprocess_roi_grey()` 返回仅灰度化（不放大、不增强）的原始 ROI，供单槽回退证据使用。该视图与增强图构成两个独立证据族，确保候选内消歧时两个证据族独立投票。
+
 #### PaddleOCR 调用
 
 ```python
@@ -2118,6 +2197,41 @@ def _engine(self):
 - 同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）对 `OcrTask.completed` 做 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞
 - 应用启动时由唯一 `OcrWorker` 预热模型和代表性拼图推理；预热失败或未执行时，首次实际调用才承担加载成本
 - Windows 首次导入期间，统一加载入口为 Paddle 的系统与 CUDA 探测短命令设置 `CREATE_NO_WINDOW`，加载完成后恢复标准 `Popen` 行为
+
+#### B2 复核模式（2026-09 新增）
+
+对未决识别槽位，`GeneralRecognizer` 调用 `paddle_loader.get_recheck_ocr_engine()` 惰性加载 PP-OCRv6-small/ONNX 引擎（RapidOCR 包装层 `RapidOcrEngine` 将结果翻译为 paddleocr 2.x 风格），在候选闭包内做二次确认。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制开关，依赖 `rapidocr==3.9.2` + `onnxruntime==1.23.2`，缺失时自动停用复核并维持原识别行为。
+
+**paddle_loader.py 新增接口**：
+
+| 函数 | 说明 |
+|------|------|
+| `create_rapidocr_ocr()` | 构造 v6 复核引擎（RapidOCR/ONNX，固定 CPU），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径 |
+| `get_recheck_ocr_engine()` | 惰性加载 + 失败熔断：首次调用时加载引擎，加载失败后后续调用快速返回 None |
+| `RapidOcrEngine` | 包装类，将 RapidOCR 输出翻译为 paddleocr 2.x 风格（`[[box, text, score], ...]`） |
+
+**调用时机**：在第三段候选确认之前，对第一/二段仍未决的槽位执行复核。复核结果仅在候选闭包内生效——不命中候选闭包一律维持原状，不扩展候选。
+
+**设计文档**：`docs/design/ocr_engine_upgrade_eval.md`（含 v6-small/ONNX 路线实测数据与迁移决策，阶段一 B2 复核模式已实施）。
+
+#### 词表外新武将共识保护（2026-09 新增）
+
+当 OCR 原文与候选闭包均无法确认时，`GeneralRecognizer` 新增 `unknown_new_hero` 判定：检查候选闭包外的词表外武将名是否与 OCR 原文高度相似（单字错字相似度评分）。若相似度达到阈值（`SAFE_CHARACTER_SIMILARITY=0.55`）且候选闭包内无其他合理解，则输出 `unknown_new_hero` 信号标记该槽位为"疑似词表外新武将"，供人工确认。
+
+该判定防止词表外新武将被误判为已有武将的错字，同时不自动扩展候选词表。
+
+#### 4 字武将名拆框修复（2026-09 新增）
+
+`image_preprocessor.py` 的回退证据改用 gamma 差异视图替代增强图。此前批量预处理去增强导致选将页 4 字武将名（如"夏侯惇"、"司马懿"等 3 字名及 4 字复合名）在批量与单槽路径下检测结果不一致——批量路径因增强图字符粘连导致检测框拆分，单槽路径正常。
+
+**修复方案**：
+- 批量预处理统一去增强（仅放大 + 灰度），消除增强图导致的字符粘连
+- 单槽回退证据改用 gamma 差异视图（`preprocess_roi_grey`）作为独立证据族，不依赖增强图
+- 识别调用链中 `_append_single_name_evidence` 增加 gamma 证据路径
+
+#### 拼图画布按检测器工作尺度分块（2026-09 新增）
+
+`character_similarity.py` 的拼图画布按检测器工作尺度（`limit_side_len=960`）分块，而非按整帧尺寸。此前画布按原始 ROI 尺寸拼接，导致批量 OCR 时检测框坐标与画布尺寸不匹配。修复后画布按检测器缩放后的实际工作尺度分块，确保检测结果正确映射回槽位。
 
 #### 兼容纠正服务边界
 
@@ -2199,7 +2313,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
        ├── begin_poll() → due_poll_tasks()（对局攻略仅由选将命中解锁）
        ├── ADB 未配置/未连接？→ 返回前置条件结果（服务暂停或退避）
        │
-       ├── ① 后台线程 screencap_full() → PIL Image（全在内存，不写磁盘）
+       ├── ① 后台线程 screencap_full()/screencap_raw() → numpy array（全在内存，不写磁盘；raw 帧优先，失败回退 PNG）
        │
        ├── ② 每个到期页面提交 CaptureService.submit_ocr_task()
        │     └── OcrWorker._execute() → TemplateManager.match()
@@ -2218,10 +2332,11 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 ```
 
 **关键设计**：
-- 轮询路径全程无磁盘 I/O：ADB 截图 → BytesIO → PIL Image → OpenCV ndarray → PaddleOCR，数据一直驻留内存
+- 轮询路径全程无磁盘 I/O：ADB 截图 → numpy array → OpenCV ndarray → PaddleOCR，数据一直驻留内存
 - 模板匹配是前置快速过滤器（<50ms），匹配成功后才执行 PaddleOCR（0.5-3 秒）
 - 轮询独立于「启用 OCR 识别」复选框，勾选轮询即可独立运行
 - 轮询定时器永不自杀：条件不满足时 return 等待下一次 tick
+- **闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。连续 5 分钟无变化自动暂停轮询（`IDLE_PAUSE_MINUTES=5`），用户交互触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关
 
 #### 模板匹配的作用
 
@@ -2243,7 +2358,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **108 个测试文件 / 1223 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **110+ 个测试文件 / 1280+ 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -2717,6 +2832,8 @@ _tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后�
 
 **人工确认沿用（`carry_over_resolutions`）**：新牌面不再清空 `_resolutions`，而是按内容沿用——确认跟着武将走、不跟槽位走。槽位未重排时原地保留，重排时迁移到候选集唯一命中的槽位（同名不扩散到多个槽位），内容消失的确认自然失效，歧义槽位保守丢弃。判据与 `parse_pool` 的生效判据对齐，故只可能保留仍然生效的确认。候选阶段卡面的 idle 浮动动画会使签名假性翻转，无条件清空会反复丢失人工确认，这是引入沿用而非清空的直接原因。
 
+**兜底人工确认不再随拍重置（2026-09 优化）**：逐拍内容验证加入宽限淘汰机制。此前人工确认的兜底候选在每拍都会随新截图重新验证，导致确认内容被反复淘汰。优化后，兜底人工确认在牌面稳定期间不再随拍重置，仅在内容发生实质变化（签名变化）时才重新验证。宽限淘汰确保确认内容不会因临时波动而丢失。
+
 **双锁分工**：`_thread_lock` 只保证识别拍单飞；`_state_lock` 串行化识别线程、图片导入线程与 GUI 线程（`start` / `confirm_pending`）对 `_signature` / `_ban_names` / `_resolutions` / `_last_board` 的并发读写。锁内只做纯内存读写，不发 IO、不 emit 信号。
 
 **PoolSnapshot 字段**：`card_count / names / pending / stage / overlap / banned`
@@ -2803,6 +2920,8 @@ clear_peak_win_rate_cache()
 - 1170 条规则可 100% 分类（1144 解析出座次 + 26 无座次要求）
 
 **实战配队导入**（`combo_import_service.run_import`，幂等）：武将名→ID 映射，未匹配进报告；座次解析 + position 交叉校验；手工记录优先保留；非手工旧记录源中已不存在则移除。报告字段：`total / imported / unmatched / duplicates / invalid / seat_stats / seat_review / position_mismatch / manual_kept / manual_collisions / removed_stale`。
+
+**导入合并保护（2026-09 新增）**：导入时增加合并保护策略——手工记录（`manual=True`）在同 key 冲突时无条件优先保留；逻辑删除记录（`deleted=True`）无条件保留并屏蔽同 key 源记录（被删除的手工配队不会被导入覆盖恢复）。非手工旧记录仅在源中已不存在时才移除。报告新增 `manual_kept` 和 `manual_collisions` 字段统计手工保留与冲突数量。
 
 ### 15.8 巅峰赛实战配队综合展示链路
 
@@ -2921,5 +3040,11 @@ CardSyncDialog
 ### 16.8 新增武将数据
 
 2026-09 新增武将数据同步更新：
+- **王导**（id 182，东晋 / 辅助 / 体力3 / 手牌上限3）
+- **祖逖**（id 183，东晋 / 辅助 / 体力3 / 手牌上限3）
+- **魏华存**（id 184，群雄 / 辅助 / 体力3 / 手牌上限3）
+- 修正**魏咎**、**公孙瓒**存量数据（技能描述 / 属性校准）
+
+2026-09 中期更新：
 - **司马睿**（id 197，东晋 / 控制 / 体力5 / 手牌上限3）
 - **张角**新增呼风唤雨技能

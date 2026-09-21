@@ -5,9 +5,9 @@
 
 ---
 
-## 当前实现基线（2026-09-15）
+## 当前实现基线（2026-09-21）
 
-`get_api_config()` 优先级为 `config/api_profiles.json（可用档案）> 仅环境变量 > config.env 旧链 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。任务侧统一经 `resolve_api_config(name)` 解析，可用性判定统一经 `_usable_profile_config()`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。
+`get_api_config()` 优先级为 `config/api_profiles.json（可用档案）> 仅环境变量 > config.env 旧链 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。任务侧统一经 `resolve_api_config(name)` 解析，可用性判定统一经 `_usable_profile_config()`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。新增三项配置参数：`MUMU_OCR_RECHECK_ENABLED`（B2 复核引擎开关，默认 true）、`MUMU_OCR_POLL_IDLE_PAUSE`（轮询闲置暂停开关，默认 true）、`MUMU_OCR_POLL_IDLE_MINUTES`（闲置阈值，默认 5 分钟）。免责声明状态由独立模块 `disclaimer_state.py` 管理，持久化至 `config/.disclaimer_state.json`。
 
 ```
 main() -> get_runtime_params() -> setup_logging()
@@ -149,10 +149,13 @@ get_mumu_config()
      -> mumu_match_guide_threshold: from env or 0.8 (float)     [对局攻略模板阈值]
      -> mumu_ocr_use_gpu: from env or False (bool)              [推理设备开关]
      -> mumu_ocr_cpu_threads: from env or 6 (int)               [CPU 推理线程上限]
-  -> return config dict
+  -> mumu_ocr_recheck_enabled: from env or True (bool)       [B2 复核引擎开关（PP-OCRv6-small/ONNX 候选内确认）]
+      -> mumu_ocr_poll_idle_pause: from env or True (bool)       [轮询闲置自动暂停开关]
+      -> mumu_ocr_poll_idle_minutes: from env or 5 (int)         [闲置暂停阈值（分钟）]
+   -> return config dict
 ```
 
-消费方：`AppServices.__init__()` 注入 `CaptureService` / `OcrService.update_config()`；`paddle_loader.create_paddle_ocr()` 读 `mumu_ocr_use_gpu` / `mumu_ocr_cpu_threads` 决定推理设备；`MainWindow._open_mumu_config()` 以同一份字典为对话框数据源并回写 `config.env`。
+消费方：`AppServices.__init__()` 注入 `CaptureService` / `OcrService.update_config()`；`paddle_loader.create_paddle_ocr()` 读 `mumu_ocr_use_gpu` / `mumu_ocr_cpu_threads` 决定推理设备；`GeneralRecognizer._recheck_engine` 读 `mumu_ocr_recheck_enabled` 决定是否启用 B2 复核引擎；`PollCoordinator` 读 `mumu_ocr_poll_idle_pause` / `mumu_ocr_poll_idle_minutes` 控制轮询闲置暂停；`MainWindow._open_mumu_config()` 以同一份字典为对话框数据源并回写 `config.env`。
 
 ### 2.4 配置文件保存
 
@@ -249,6 +252,31 @@ RAG_PROJECT_DIR            # 预留的 RAG 项目目录（兼容旧配置）
 
 调用方：`src/scraper/ai/rag_prompt.py`（开关与注入预算）、`src/rag/retriever.py`（检索参数）、`src/rag/indexer.py`（语料与索引路径）。详见 AI 批量生成模块文档。
 
+### 2.8 免责声明状态（disclaimer_state.py）
+
+免责声明文本版本由 `disclaimer_state.py` 独立管理，不混入 `config.env`。状态文件 `config/.disclaimer_state.json` 记录用户对免责声明文本版本的接受时间与版本。仅在 TERMS.md 附加条款实质修订（版本号递增）时要求重新确认，避免用户盲点无效弹窗。
+
+```
+src/config/disclaimer_state.py
+
+DISCLAIMER_VERSION = "1.0"                                     [文本版本常量；TERMS.md 第 9 节实质修订时递增]
+
+should_show(state_file=_STATE_FILE) -> bool
+   -> [文件不存在] return True                                  [从未接受过]
+   -> json.loads(state_file.read_text())
+   -> accepted_version = str(data["disclaimer_version"])
+   -> return accepted_version != DISCLAIMER_VERSION              [版本不一致 -> 需重新展示]
+   -> [文件损坏/字段非法] logger.warning + return True          [异常一律按未接受处理]
+
+accept(state_file=_STATE_FILE, version=DISCLAIMER_VERSION) -> None
+   -> state_file.parent.mkdir(parents=True, exist_ok=True)
+   -> payload = {"disclaimer_version": version, "accepted_at": datetime.now().isoformat()}
+   -> state_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+   -> logger.info("免责声明已确认: 文本版本 v%s", version)
+```
+
+调用方：`src/main.py::main()` 启动时 `should_show()` 判定是否需要展示免责声明对话框；`ui/app/disclaimer_dialog.py::DisclaimerDialog` 用户点击确认后调用 `accept()` 持久化。状态文件缺失、损坏或字段非法时一律按"未接受"处理（记日志后重新弹窗）。
+
 ---
 
 ## 三、日志系统链路
@@ -341,6 +369,7 @@ src.config.env 的消费方:
 | `src.ui.app.chinese_translator.install_chinese_qt_translator` | Qt 标准控件中文翻译器 |
 | `src.ui.shared.style.GLOBAL_STYLE` | 全局样式表 |
 | `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.paddle_loader` | 启动页阶段完成 PaddleOCR 冷加载（传递依赖，主入口不直接引用） |
+| `src.config.disclaimer_state.should_show()` / `accept()` | 启动时免责声明弹窗判定与持久化 |
 | `runpy` | frozen 重入下以模块模式运行 `-m` 子脚本 |
 
 ---
@@ -359,6 +388,7 @@ src.config.env 的消费方:
 | `load_api_profiles()` / `save_api_profiles()` | `config/env.py` | `settings_dialog`, `_normalize_profiles()` | 归一化（启用互斥/名称去重）+ UTF-8、LF、原子替换 |
 | `get_mumu_config()` | `config/env.py` | `app_services`, `main_window`, `paddle_loader` | `load_env_config()`, 类型转换 |
 | `get_runtime_params()` | `config/env.py` | `main()`, 各 CLI 入口 | `load_env_config()` |
+| `should_show()` / `accept()` | `config/disclaimer_state.py` | `src/main.py::main()`, `ui/app/disclaimer_dialog.py` | 独立状态文件 `config/.disclaimer_state.json`；`DISCLAIMER_VERSION` 常量驱动重新确认 |
 | `parse_env_file(path)` | `config/env.py` | `load_env_config()`, 迁移链 | `Path.read_text()`, 逐行解析 |
 | `load_env_config(path)` | `config/env.py` | `get_runtime_params()`, `get_mumu_config()`, `_legacy_api_config()`, `rag/config.py` | `parse_env_file()`, key_mapping |
 | `save_env_file(path, data)` | `config/env.py` | `main_window`, `settings_dialog` | `Path.write_text()`, 原子替换 |

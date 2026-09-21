@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-1233%20cases-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-1280%2B%20cases-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
@@ -30,7 +30,10 @@
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 PaddleOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-4. **测试与交付工程化** — 106 个测试模块 / 1233 个测试用例；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
+4. **测试与交付工程化** — 110+ 个测试模块 / 1280+ 个测试用例；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
+5. **B2 复核模式** — 对未决识别槽位，使用 PP-OCRv6-small/ONNX 引擎（RapidOCR）做候选内确认；惰性加载+失败熔断，模型缺失不联网下载，设备固定 CPU。
+6. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
+7. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
 
 ---
 
@@ -128,19 +131,24 @@ test_project/
 │   │                           #   + card_baike（官网手牌库抓取与 diff）
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 分析 + 维护 + RAG 业务）
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
+│   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
-│   ├── ocr/                    # 模板匹配 + PaddleOCR + 名称纠错 + 卡位检测
+│   ├── ocr/                    # 模板匹配 + PaddleOCR + 名称纠错 + 卡位检测 + B2 复核引擎
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
+│   │                           #   + ocr_baseline / calibrate_idle_threshold
 │   └── ui/                     # PySide6 界面（app / configuration / data_admin / generation /
 │                               #   library / match / maintenance / recommendation / shared）
 │                               #   + card_sync_dialog（更新确认对话框）
+│                               #   + whitelist_config_dialog（白名单配置界面）
+│                               #   + frame_fingerprint / poll_coordinator（轮询闲置检测与协调）
+│                               #   + disclaimer_dialog（免责声明对话框）
 ├── data/                       # JSON 数据 + RAG 语料/索引 + 官方榜单 CSV
 │                               #   + card_snapshot.json / card_changes.json（卡牌百科同步）
 ├── images/                     # 武将头像（从官网下载）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（106 个测试模块 / 1233 个测试用例）
+├── tests/                      # 测试用例（110+ 个测试模块 / 1280+ 个测试用例）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -235,6 +243,9 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + 会话世代校验，候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。
 - **实战配队**：外部导出 JSON 或 UI 手工维护 1228 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
 - **卡牌百科变更捕获**：`CardSyncService` 后台定时检查官网手牌库更新，快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，audit_service 复核时效。
+- **白名单配置**：未决错法观察清单（A+/A/B/C 分类排序）+ 用户层白名单维护（`ocr_confusion_overrides.json`），静态冲突检查与即时生效（`reset_ocr_recognizer_cache()`）。
+- **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。
+- **合规化改造**：免责声明弹窗（版本感知，仅条款更新时重新确认）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（逐次记录善意访问）+ 架构防火墙声明（代码不含 ADB 输入能力）。
 
 ---
 
@@ -261,6 +272,8 @@ MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
 MUMU_OCR_USE_GPU=false
 MUMU_OCR_CPU_THREADS=6
+MUMU_OCR_RECHECK_ENABLED=false
+MUMU_OCR_POLL_IDLE_PAUSE=true
 MUMU_HERO_SELECTION_THRESHOLD=0.8
 MUMU_HERO_SELECTION_COOLDOWN=180
 MUMU_MATCH_GUIDE_THRESHOLD=0.6
@@ -289,6 +302,7 @@ RAG_PROJECT_DIR=
 | playwright 1.60.0 | 浏览器自动化（浏览器模式） |
 | mistune 3.3.0 | Markdown → HTML 渲染 |
 | paddlepaddle 2.6.2 / paddleocr 2.8.1 | OCR 识别引擎 |
+| rapidocr 3.9.2 / onnxruntime 1.23.2 | B2 复核引擎（PP-OCRv6-small/ONNX） |
 | opencv-python 4.11.0.86 | 模板匹配 + 卡位检测 + 图像预处理 |
 | pillow 12.3.0 / numpy 1.26.4 | 图像处理 |
 | chromadb 1.5.9 + sentence-transformers 5.7.0 | RAG 向量检索（bge-small-zh-v1.5） |
@@ -361,8 +375,11 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 二十二 | 巅峰赛识别会话治理与三板块共享一次截图 | ✅ 已完成 |
 | 二十三 | 卡牌百科变更捕获（快照 + diff + 应用更新 + 时效复核） | ✅ 已完成 |
 | 二十四 | 合规化改造（LICENSE 附加条款 + 免责声明弹窗 + robots.txt 存档 + 架构防火墙） | ✅ 已完成 |
+| 二十五 | B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认） | ✅ 已完成 |
+| 二十六 | 白名单治理与错法半自动补对闭环（频次记录 + 人工确认 + 配置界面） | ✅ 已完成 |
+| 二十七 | 轮询闲置自动暂停（整帧指纹 + 三路恢复 + 阈值校准工具） | ✅ 已完成 |
 
-> 文档基线：2026-09-16。测试 106 个测试模块 / 1233 个测试用例（`pytest --collect-only -q` 实测），Ruff 0.12.0 全通过。
+> 文档基线：2026-09-16。测试 110+ 个测试模块 / 1280+ 个测试用例（`pytest --collect-only -q` 实测），Ruff 0.12.0 全通过。
 
 ---
 

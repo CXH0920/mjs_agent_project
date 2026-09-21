@@ -2,6 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、统一日志初始化
+> 文档日期：2026-09-21
 
 ---
 
@@ -24,6 +25,7 @@ src/
 ├── config/
 │   ├── __init__.py
 │   ├── env.py               # .env、API 档案与模型价格配置解析/加载/保存（原子写入）
+│   ├── disclaimer_state.py  # 免责声明状态管理（DISCLAIMER_VERSION、config/.disclaimer_state.json）
 │   └── logging_config.py    # 统一日志配置（按模块拆分 + 文件轮转 + 全量留底）
 ```
 
@@ -48,6 +50,7 @@ _install_no_window_patch()         # frozen 下 patch subprocess.Popen，注入 
 runtime_params = get_runtime_params()
 setup_logging(log_level=..., log_to_file=...)   # 日志先于 QApplication 初始化
 migrate_legacy_api_config()        # 首次启动：旧 DEEPSEEK_* 三件套 → deepseek-main 档案（幂等）
+check_disclaimer()                 # 启动时检查免责声明（仅文本版本变化时要求重新确认）
 
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts=false;...")
 if sys.platform == "win32":
@@ -123,11 +126,11 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后通过 `key_mapping` 将大写 KEY 映射为内部小写 key，并完成类型转型：整数型（`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`）、布尔型（`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu`）、浮点型（`mumu_ocr_match_threshold` / `mumu_hero_selection_threshold` / `mumu_match_guide_threshold` / `recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`）。
+`load_env_config(env_path)` 解析 `.env` 后通过 `key_mapping` 将大写 KEY 映射为内部小写 key，并完成类型转型：整数型（`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads` / `mumu_ocr_poll_idle_minutes`）、布尔型（`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu` / `mumu_ocr_recheck_enabled` / `mumu_ocr_poll_idle_pause`）、浮点型（`mumu_ocr_match_threshold` / `mumu_hero_selection_threshold` / `mumu_match_guide_threshold` / `recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`）。
 
 `get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(16384) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
-`get_mumu_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_use_gpu`(False) / `mumu_ocr_cpu_threads`(6)。OCR 推理配置（GPU 开关、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `paddle_loader.create_paddle_ocr()`。
+`get_mumu_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_use_gpu`(False) / `mumu_ocr_cpu_threads`(6) / `mumu_ocr_recheck_enabled`(True，B2 复核模式开关，d88fc2f 新增) / `mumu_ocr_poll_idle_pause`(True，轮询闲置自动暂停开关，bca4092 新增) / `mumu_ocr_poll_idle_minutes`(5，闲置暂停阈值分钟数，bca4092 新增)。OCR 推理配置（GPU 开关、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `paddle_loader.create_paddle_ocr()`。2026-09 起（cd35c98）另新增模板匹配分层加速与 ADB raw 帧截图提速相关配置参数，详见 `config.env.example`。
 
 ### 3.4 日志系统
 
@@ -303,6 +306,8 @@ def _normalize_profiles(profiles) -> list[dict]:
 | `has_available_api_profile()` | `env.py` | `bool` | 是否存在可用（enabled+URL 非空+供应商 Key 语义）的档案 |
 | `migrate_legacy_api_config(env_path, profiles_path)` | `env.py` | `bool` | 旧 DEEPSEEK_* 三件套 → deepseek-main 档案（幂等） |
 | `setup_logging(...)` | `logging_config.py` | `None` | 初始化日志系统（幂等，只清理自身 Handler） |
+| `DISCLAIMER_VERSION` | `disclaimer_state.py` | `str` | 免责声明版本常量（当前 `"1.0"`），仅版本变化时要求重新确认 |
+| `check_disclaimer()` | `disclaimer_state.py` | `None` | 检查免责声明状态：版本匹配则静默通过，不匹配或未确认则弹出对话框（`src/ui/app/disclaimer_dialog.py`），确认后写入 `config/.disclaimer_state.json` |
 | `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `ChineseQtTranslator` | 安装应用级 Qt 标准控件中文翻译器 |
 | `install_details_button_translator(msgbox)` | `ui/app/chinese_translator.py` | `_DetailsButtonFilter` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"），随对话框销毁；Qt 内部展开/收起时直接 setText 不走 QTranslator，需在 layout 变化时遍历子按钮翻译 |
 
@@ -325,6 +330,7 @@ def _normalize_profiles(profiles) -> list[dict]:
 | 被依赖 | `src.rag.config` | RAG 语料/向量索引与预算配置（RAG_ENABLED / RAG_TOP_K / RAG_PROMPT_CHARS / RAG_BROWSER_PROMPT_CHARS / RAG_SYNERGY_PROMPT_CHARS / RAG_MODEL_DIR），由 AI 批量生成模块使用 |
 | 被依赖 | 所有模块 | 共享同一日志系统；QProcess 子进程经 `MJS_QPROCESS_CHILD=1` 环境变量跳过文件 Handler、仅输出控制台，stdout/stderr 由父进程转发落盘 |
 | 依赖 | `src.ui.app.main_window` | 应用入口创建 MainWindow 并调用 `start_ocr_warmup()` / `wait_ocr_warmup(timeout_ms=120_000)` |
+| 依赖 | `src.config.disclaimer_state` | `main.py` 启动时调用 `check_disclaimer()` 检查免责声明状态（仅版本变化时要求重新确认） |
 | 依赖 | `src.ui.app.app_icon` / `src.ui.app.chinese_translator` / `src.ui.shared.style` | 启动阶段安装应用图标、Qt 标准控件中文翻译器与全局样式表 `GLOBAL_STYLE` |
 | 依赖（传递） | `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.paddle_loader` | 启动页阶段完成 PaddleOCR 冷加载，主入口仅触发、不直接引用 |
 | 依赖 | `runpy`（frozen 重入） | `-m` 子脚本以模块模式运行，避免 exe 重入拉起 GUI |

@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-15）
+## 当前实现基线（2026-09-21）
 
 成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回；`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`，非零退出时由基类发射 `error_occurred(msg)`；`HeroFetchService` 无论成败都发 `fetch_completed(exit_code == 0)`。
 
@@ -445,6 +445,8 @@ MumuConfigDialog
 | `MumuConfigCoordinator.resume_poll()` / `poll_is_paused()` | `mumu_config_coordinator.py` | 配置页轮询恢复按钮 | `OcrService.resume_poll()`（仅 `paused` 时生效） |
 | `MumuConfigCoordinator.template_status()` / `select_template()` / `create_template()` | `mumu_config_coordinator.py` | 配置页模板区 | `OcrService` 同名方法 → 返回 `TemplateStatus(loaded, path)` |
 
+**架构防火墙声明（合规化改造）：** `emulator_operation_service.py` 和 `adb_screen.py` 模块文档字符串明确声明"不包含 ADB 输入能力"——仅支持截图、连接管理、设备探测，不提供任何 ADB 输入（点击、滑动、文本输入）能力。这确保了工具仅作为 OCR 识别辅助，不涉及自动操作游戏进程，符合项目法律红线（不自动点击、不自动操作、不自动选将、不自动战斗）。
+
 ---
 
 ## 六、OcrService（OCR 控制服务）
@@ -515,6 +517,8 @@ MainWindow._on_poll_result(result)                             [主线程仅更�
 | `complete_poll(generation, outcome, detail)` | `ocr_service.py` | `PollCoordinator._consume_poll_result()` / `_on_poll_tick()` | 状态迁移 + 动态调整定时器间隔 |
 | `invalidate_inflight_poll()` | `ocr_service.py` | `PeakSelectWatcher.start()` | 作废在途会话并复位 `_poll_in_flight` |
 | `is_poll_cancelled(generation)` | `ocr_service.py` | 在途轮询线程 | 代数比较 + 取消标记 |
+| `pause_for_idle()` | `ocr_service.py` | `PollCoordinator._track_idle_watch()` | 闲置达阈值时暂停轮询，状态迁移为 "idle_paused" |
+| `is_poll_idle_paused()` | `ocr_service.py` | `PollCoordinator._on_poll_tick()` | 闲置暂停状态下拦截轮询，返回 True |
 | `activate_task()` / `deactivate_task()` / `set_task_cooldown()` / `clear_task_cooldown()` | `ocr_service.py` | `MainWindow._on_poll_result()` / 巅峰赛 watcher | 按任务独立维护 `PollTaskState` |
 | `due_poll_tasks()` | `ocr_service.py` | `PollCoordinator` | 过滤 active 且未冷却的任务 |
 | `run_ocr(image, rois)` | `ocr_service.py` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed`（30 秒超时返回 None） |
@@ -533,6 +537,23 @@ OcrService.status_changed         → UI 状态栏
 ```
 
 `poll_tick` 由常驻重复 `QTimer` 驱动；`PollCoordinator` 的 `poll_result_ready` / `poll_state_changed` 才是对 UI 的结果信号。
+
+### 6.2b 轮询闲置自动暂停（bca4092 新增）
+
+```
+PollCoordinator._on_poll_tick()
+   -> [is_poll_idle_paused() == True] 拦截轮询，等待用户交互恢复
+   -> _track_idle_watch(frame_fingerprint)
+      -> compute_fingerprint(image)                            [整帧降采样指纹]
+      -> frames_match(prev_fingerprint, new_fingerprint)        [MAD 阈值 3.0]
+      -> [连续无变化] _idle_watch_ticks += 1
+         -> [_idle_watch_ticks >= IDLE_PAUSE_MINUTES * 12]    [IDLE_PAUSE_MINUTES=5]
+            -> ocr_service.pause_for_idle()                    [暂停轮询]
+            -> poll_state_changed.emit("idle_paused", "画面静止")
+   -> _reset_idle_watch()                                      [有画面变化时重置计数]
+```
+
+> **配置：** `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）、`MUMU_OCR_POLL_IDLE_MINUTES`（默认 5）。三路交互恢复：用户点击任意按钮、窗口切换、或手动触发截图均可恢复轮询。
 
 ---
 
@@ -827,6 +848,8 @@ src.ui.data_admin.official_import_review_dialog
 | `recommendation_service.RecommendationService.load() / rebuild_indexes() / mark_indexes_stale()` | `analysis/recommendation_service.py` | 推荐面板 / 官方导入后 | 胜率与推荐指数仓储；`rank_win_rates(names)` 取前三 |
 | `match_analysis_service.MatchAnalysisService.analyze()` | `analysis/match_analysis_service.py` | 对局攻略面板 | `guide_manager` 攻略 + 单将胜率 → `MatchAnalysis` |
 | `combo_import_service.run_import(source, heroes, output)` | `maintenance/combo_import_service.py` | 导入对话框 / CLI 脚本 | 武将名→ID 映射、`parse_seats()`、`ComboManager` 幂等合并 |
+
+**实战配队导入合并保护：** `run_import()` 对已存在的手工记录（source != "csv"）优先保留，不覆盖用户手工编辑内容。导入报告区分 "manual_kept"（手工记录保留）、"imported"（新导入）、"updated"（更新）三类计数。手工记录优先原则：若目标 hero1+hero2 配对已存在且 source="manual"，跳过该条目并在报告中记录。
 | `data_management_service.clear_data()` / `repair_missing_references()` / `update_*` / `delete_*` | `maintenance/data_management_service.py` | 数据管理面板 | `_ManagerTransaction` 备份 + 写入失败回滚 |
 | `official_data_import_service.OfficialDataImportService.*` | `recognition/official_data_import_service.py` | `OcrWorker` / 复核界面 | 见"官方榜单数据导入"章节 |
 

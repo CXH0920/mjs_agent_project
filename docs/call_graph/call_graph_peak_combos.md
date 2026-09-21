@@ -78,7 +78,9 @@ PeakSelectPanel._build_pending_row(item)
            -> parse_pool() 校验 name 在候选内才生效
            -> pool_updated.emit
 
-carry_over_resolutions(old_resolutions, ocr_results) — 新牌面到达时按内容沿用
+**白名单确认集成（9ca1b91）：** `confirm_pending(slot, name)` 确认时同步调用 `pending_stats.record_confirmation(raw_name, name, candidates)` 收集人工答案，供白名单治理闭环使用。
+
+**确认持久化增强：** `_resolutions` 中的确认结果按内容（而非槽位索引）沿用到后续牌面，`carry_over_resolutions()` 确保用户人工确认不因牌面重排而丢失——原地保留（同名在候选内）、重排迁移（同名唯一命中）、歧义丢弃（同名多命中或无命中）。
   -> remaining = set(old_resolutions.values())
   -> for slot, item in enumerate(ocr_results):
      -> item.resolution 不在 _CONFIRM_RESOLUTIONS -> 跳过（已自动确认的槽位不接入）
@@ -298,6 +300,8 @@ parse_seats(note, hero1, hero2) -> (status, hero1_seats, hero2_seats)
   -> note 无数字 -> STATUS_NONE
   -> note 有数字但无法归类 -> STATUS_UNPARSED
 ```
+
+> **座次划分修复：** `match_lineup_state.py` 在名字未决（resolution 含 unresolved/conflict）时，按座次（index 0-3）划分阵营——index 0-1 为敌方、index 2-3 为友方。此前未决名字全部归入敌方，修复后按实际座次分布。
 
 ## 五、巅峰赛胜率数据加载链路
 

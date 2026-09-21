@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载
-> 文档日期：2026-09-15
+> 文档日期：2026-09-21
 
 ---
 
@@ -29,7 +29,7 @@ src/scraper/
 └── official_source/
     ├── __init__.py          # 空
     ├── adapter.py           # 官网页面与 JS chunk 解析适配器（状态机核心）
-    ├── crawler.py           # 网络请求、数据清洗、校验与头像下载
+    ├── crawler.py           # 网络请求、数据清洗、校验与头像下载（2026-09 新增：每次抓取前存档 robots.txt 到 logs/robots_cache/）
     ├── full.py              # 全量采集实现（含 CLI main）
     ├── incremental.py       # 增量/指定采集实现（含 CLI main）
     ├── announcement.py      # 公告 API/回退解析、武将相关判定、百科逐武将 diff
@@ -57,6 +57,8 @@ src/scraper/
 ```
 
 **适配器边界：** `official_source/adapter.py` 集中承载官网页面与 chunk 的格式假设；官网改版时只需修改该文件。两个关键函数——`find_chunk_url`（从首页定位 `/_nuxt/mjbk.<hash>.js`）与 `extract_js_array`（定位 `const e=[...]` 变量）——在找不到预期模式时都会把现场信息（页面/JS 前 300 字符 + 已发现的其他 `_nuxt` 脚本列表）写入错误日志和异常消息，改版当天即可定位。
+
+**robots.txt 存档（637102b 合规化改造新增）**：`crawler.py` 在每次抓取前，先将目标站点的 robots.txt 存档到 `logs/robots_cache/<hostname>.txt`，作为合规审计证据。存档失败不影响抓取流程（仅记 warning）。
 
 **字符级状态机（`js_to_json`）：** JS 对象数组（无引号键、`undefined`、尾逗号）不是合法 JSON。旧实现使用三步正则预处理，会被技能描述里的 `效果{x:1}`、`,变化:无` 等内容误改写。当前改为**字符级状态机**，单遍扫描，仅在字符串字面量之外执行改写：
 

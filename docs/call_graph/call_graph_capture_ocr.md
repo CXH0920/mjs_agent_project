@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-15）
+## 当前实现基线（2026-09-21）
 
 模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。
 
@@ -91,6 +91,7 @@ AdbCapture.screencap_full(log_success=True)
 |------|------|--------|------|
 | `screencap_full(log_success=True)` | `adb_screen.py` | `CaptureService._execute_capture()`、轮询线程 | ADB 截屏→PIL Image；关键字参数，轮询传 `False` 抑制成功日志 |
 | `load_png_image_bytes(data)` | `image_validation.py` | `screencap_full()` | ADB 返回数据的格式、体积、像素校验 |
+| `screencap_raw(log_success=True)` | `adb_screen.py` | 轮询指纹检测 | 与 screencap_full 同流程，但返回原始 PNG bytes（不校验/不解析），用于 frame_fingerprint 降采样指纹计算 |
 
 > **说明：** 使用 `exec-out` 模式而非 `shell screencap`，直接输出二进制到 stdout，不经过设备 shell 解析。
 
@@ -208,6 +209,7 @@ TemplateManager.match(image_screenshot, threshold=0.8)
 | `set_template(image, roi)` | `template_manager.py` | `OcrService.create_template()` | `cv2.cvtColor()`, `cv2.imencode()` + 二进制写入, 元数据 JSON 写入 |
 | `match(image, threshold)` | `template_manager.py` | `OcrWorker._execute()` | `_candidate_scales()`, `_local_search_region()`, `_match_at_scale()` |
 | `_match_at_scale(gray, scale, region=None)` | `template_manager.py` | `match()` | `cv2.resize()`, `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
+| `_match_at_coarse_scale(coarse_gray, coarse_scale)` | `template_manager.py` | `match()`（粗筛阶段） | `cv2.resize()`, `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
 | `_load()` / `reload()` | `template_manager.py` | 构造、`OcrService.select_template()` | `_load_internal()`、随包默认模板回退、`_load_metadata()` |
 | `delete_template()` | `template_manager.py` | `OcrService.delete_template()` | `Path.unlink()`（模板 + 元数据） |
 | `is_loaded` / `reference_size` / `last_match_scale` / `last_match_confidence` / `last_match_strategy` | `template_manager.py` | `OcrWorker`、任务日志 | 内存属性 |
@@ -332,7 +334,42 @@ GeneralRecognizer._resolve_name_evidence(index, evidence)
 
 > **边界：** 当前字数门禁比较 OCR 原文与候选名称长度。名称 ROI 受卡框和底部定位字干扰，视觉字符分割暂不作为硬门禁。势力关联尚未接入；未来只能过滤已有候选，不能扩展候选集合。
 
-### 4.4 汉字特征补齐链路（性能关键路径）
+### 4.4 B2 复核模式调用链（d88fc2f 新增）
+
+```
+GeneralRecognizer._recheck_unresolved_slots(results, evidence_list)
+   -> [未决槽位存在 且 B2 复核启用] 激活复核
+      -> [未决槽位来源] _resolve_name_evidence() 返回 unresolved 且候选数 > 1
+      -> self._recheck_engine                                 [惰性加载，见下方]
+         -> get_mumu_config().get("mumu_ocr_recheck_enabled", True)
+         -> [关闭] return None（跳过复核）
+         -> paddle_loader.get_recheck_ocr_engine()
+            -> [缓存命中] return cached_engine
+            -> create_rapidocr_ocr()
+               -> RapidOCR()                                   [ONNX Runtime 推理，固定 CPU]
+                  -> 设备：CPU only（GPU 已否决）
+                  -> det 参数：limit_type=max, limit_side_len=960
+                  -> [模型缺失] 直接报错熔断，绝不触发联网下载
+                  -> [frozen] 复制到 %TEMP% 纯 ASCII 路径
+            -> engine = RapidOcrEngine(rapidocr_wrapper)       [paddleocr 2.x 风格适配层]
+            -> _LOAD_LOCK 保护（与 PaddleOCR 共享锁）
+         -> [加载失败] return None（降级跳过复核）
+      -> 对每个未决槽位执行复核：
+         -> engine.ocr(preprocessed_roi, cls=False)
+            -> RapidOcrEngine.ocr()                            [翻译为 paddleocr 2.x 风格]
+               -> rapidocr.detect(image)                       [检测]
+               -> rapidocr.recognize(image, boxes)             [识别]
+               -> 返回 [[box, (text, confidence)], ...]
+         -> 将复核结果注入 evidence_list（source="recheck"）
+         -> _resolve_name_evidence(index, evidence) 重新消解
+            -> 候选内确认：复核文本在候选集内 → 采纳
+            -> 不在候选集内 → 维持 unresolved，不引入新名字
+   -> [复核引擎不可用] 跳过复核，维持原状
+```
+
+> **设计要点：** B2 复核仅在 `_resolve_name_evidence()` 判定 unresolved 后触发，属于候选内确认而非自由识别——复核结果必须在原有候选集内才采纳，绝不引入新名字。引擎固定 CPU，det 参数与生产画布同口径（limit_type=max, limit_side_len=960）。模型缺失直接报错熔断，绝不触发联网下载。
+
+### 4.5 汉字特征补齐链路（性能关键路径）
 
 ```
 CharacterFeatureRepository.get_feature(char)
@@ -355,7 +392,7 @@ CharacterFeatureRepository.get_feature(char)
 
 > **性能标注：** 默认缓存包含 365 个常见字，覆盖当前武将名用字和已知 OCR 误识字。缓存未命中时的原始库查询仍可能约 1 秒，因此由 `GeneralRecognizer.warmup()` / `warmup_hero_names()` 在显式预热时提前加载与批量补齐。
 
-### 4.5 汉字特征评分详情
+### 4.6 汉字特征评分详情
 
 ```
 各维度评分方法:
@@ -486,6 +523,28 @@ OcrWorker 预热 / GeneralRecognizer._engine（首次识别）
      -> 后续识别立即抛 RuntimeError（重启应用后可重试），不再重复加载
 ```
 
+### 6.4 白名单治理与未决错法记录（9ca1b91 新增）
+
+```
+OcrWorker._execute() -> GeneralRecognizer.recognize()
+   -> ... _resolve_name_evidence() -> unresolved 且候选数 > 1
+      -> [B2 复核后仍未决] 记录未决错法
+         -> pending_stats.record_pending(raw_name, candidates, scene)
+            -> 60 秒节流窗口：同一错法在该窗口内不重复记录
+            -> 写入 data/ocr_name_pending_stats.json
+            -> [IO 失败] 仅告警，绝不影响识别主流程
+         -> 同时触发 B2 复核（见 §4.4）
+
+OcrWorker._execute() -> 识别完成后（人工确认入口）
+   -> peak_select_watcher.confirm_pending(slot, name)
+      -> pending_stats.record_confirmation(raw_name, answer, candidates)
+         -> [答案不在候选集内] 静默跳过
+         -> [raw_name == answer] 不构成错法对，不记录
+         -> 写入 data/ocr_name_pending_stats.json（confirmed 字段）
+```
+
+> **设计要点：** `pending_stats` 是双事件流汇入同一文件的架构——识别线程 `record_pending()` 记录未决错法频次，GUI 确认 `record_confirmation()` 收集人工答案。两者由模块内一把锁串行化"读-改-原子替换"，60 秒节流窗口防虚增。
+
 同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）对 `OcrTask.completed` 做 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
 
 ---
@@ -511,6 +570,10 @@ src.ui.configuration.mumu_config_dialog
   -> EmulatorOperationService                                [后台探测/连接/测试/截图]
   -> RoiSelectorDialog                                       [UI 鼠标框选]
   -> OcrService.create_template() / select_template()        [模板持久化]
+
+src.business.recognition.pending_stats
+   -> OcrWorker._execute() 未决错法 -> record_pending()           [白名单治理]
+   -> peak_select_watcher.confirm_pending() -> record_confirmation() [人工确认收集]
 ```
 
 ### 7.2 本模块调用的外部模块
@@ -525,6 +588,8 @@ src.ui.configuration.mumu_config_dialog
 | `cnradical.Radical` | 部首查询（汉字特征） |
 | `unihan_etl.Packager` | UNIHAN 数据查询（四角号码、仓颉码） |
 | `pypinyin.pinyin` | 拼音查询 |
+| `rapidocr_onnxruntime.RapidOCR` | B2 复核引擎（PP-OCRv6-small/ONNX, CPU only） |
+| `src.business.recognition.pending_stats` | 未决错法频次与人工确认记录 |
 
 ---
 
@@ -592,6 +657,9 @@ src.ui.configuration.mumu_config_dialog
 | `GeneralRecognizer.warmup()` / `warmup_inference()` | `recognizer.py` | 应用启动时的 `OcrWorker` 预热任务 | 模型、字符特征、代表性拼图推理 |
 | `GeneralRecognizer.adopt_engine()` / `shared_engine()` / `ensure_engine()` | `recognizer.py` | `OcrWorker` | 跨识别器共享 PaddleOCR 实例 |
 | `create_paddle_ocr(**kwargs)` | `paddle_loader.py` | `GeneralRecognizer`、`OfficialDataImportService` | Windows 依赖探测短命令隐藏、打包态模型路径、`PaddleOCR()` |
+| `create_rapidocr_ocr()` | `paddle_loader.py` | `get_recheck_ocr_engine()` | RapidOCR()（ONNX Runtime, CPU, limit_type=max, limit_side_len=960） |
+| `get_recheck_ocr_engine()` | `paddle_loader.py` | `GeneralRecognizer._recheck_engine` | 惰性加载 B2 复核引擎，失败熔断返回 None |
+| `RapidOcrEngine.ocr()` | `paddle_loader.py` | `GeneralRecognizer._recheck_unresolved_slots()` | paddleocr 2.x 风格适配层，翻译 RapidOCR 结果 |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `OcrRoiConfig.layout_for()` / `save_layout()` / `reset_layout()` / `reload()` | `roi_config.py` | `GeneralRecognizer`、`CaptureService`、`OcrWorker`、配置协调器 | 默认布局加载、本地覆盖原子写盘、页面要求校验 |
 | `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
