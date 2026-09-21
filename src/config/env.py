@@ -159,6 +159,7 @@ def load_env_config(env_path=None):
         "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
         "MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
         "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
+        "MUMU_OCR_RECHECK_ENABLED": "mumu_ocr_recheck_enabled",
         "MUMU_SCREENSHOT_MODE": "mumu_screenshot_mode",
         "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
         "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
@@ -178,7 +179,7 @@ def load_env_config(env_path=None):
                 except (ValueError, TypeError):
                     logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
                     continue
-            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_poll_idle_pause", "mumu_ocr_auto_switch_tab", "mumu_ocr_use_gpu"):
+            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_poll_idle_pause", "mumu_ocr_auto_switch_tab", "mumu_ocr_use_gpu", "mumu_ocr_recheck_enabled"):
                 value = value.lower() in ("true", "1", "yes")
             elif cfg_key in (
                 "mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold",
@@ -379,6 +380,7 @@ def get_mumu_config():
         "mumu_match_guide_threshold": config.get("mumu_match_guide_threshold", 0.8),
         "mumu_ocr_use_gpu": config.get("mumu_ocr_use_gpu", False),
         "mumu_ocr_cpu_threads": config.get("mumu_ocr_cpu_threads", 6),
+        "mumu_ocr_recheck_enabled": config.get("mumu_ocr_recheck_enabled", False),
     }
 
 # ============================================================

@@ -15,7 +15,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
-from src.config.env import PROJECT_ROOT
+from src.config.env import PROJECT_ROOT, get_mumu_config
 from src.data.recommendation_index_repository import mark_recommendation_index_stale
 from src.ocr import official_board_parser
 from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
@@ -92,11 +92,23 @@ class OfficialDataImportService:
 
     @property
     def _rare_char_engine(self):
-        """按需加载繁体模型，以覆盖简体模型字典外的罕见字。"""
+        """按需加载罕见字兜底引擎：复核开关开启时优先 v6，不可用回退 cht。
+
+        v6 复核引擎（RapidOCR/ONNX）与生产管线共用 engine.ocr 接口，读数仅在
+        allowed_names 候选闭包内被采纳（_recognize_name_with_engine 既有纪律）。
+        """
         if self._rare_char_engine_failed:
             return None
         if self._rare_char_ocr is None:
             try:
+                if get_mumu_config().get("mumu_ocr_recheck_enabled", False):
+                    from src.ocr.paddle_loader import get_recheck_ocr_engine
+
+                    v6_engine = get_recheck_ocr_engine()
+                    if v6_engine is not None:
+                        logger.info("官方榜单罕见字兜底使用 v6 复核引擎")
+                        self._rare_char_ocr = v6_engine
+                        return self._rare_char_ocr
                 logger.info("正在加载官方榜单罕见字 OCR 模型")
                 self._rare_char_ocr = create_paddle_ocr(
                     use_angle_cls=False, lang="chinese_cht", show_log=False,

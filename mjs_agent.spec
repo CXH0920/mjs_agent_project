@@ -10,6 +10,7 @@
 """
 
 import fnmatch
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -27,6 +28,13 @@ FULL = os.environ.get("MJS_FULL") == "1"
 # 规避 myenv GPU 版带 CUDA/cuDNN 的体积膨胀（release.py 另设 PYTHONPATH 双保险）
 if BUILD_DEPS.is_dir():
     sys.path.insert(0, str(BUILD_DEPS))
+
+# B2 复核引擎依赖必须已装入打包环境（缺失时明确报错，避免静默产出无复核引擎的包）
+for _pkg, _pin in (("onnxruntime", "1.23.2"), ("rapidocr", "3.9.2")):
+    if importlib.util.find_spec(_pkg) is None:
+        raise SystemExit(
+            f"B2 复核引擎依赖缺失：请先在打包环境安装 {_pkg}=={_pin}（见 environment.yml）"
+        )
 
 
 # ── _collect_dir：替代裸 Tree（PyInstaller 6.x 兼容，踩坑1）──
@@ -65,7 +73,10 @@ hiddenimports = []
 
 # CPU paddle + paddleocr + 推理 import 链依赖（pyclipper/shapely/skimage/rapidfuzz/
 # imgaug/lmdb 在 paddleocr 内部 import，PyInstaller 静态分析漏收其 C 扩展，需显式 collect_all）
-for pkg in ("paddle", "paddleocr", "pyclipper", "shapely", "skimage", "rapidfuzz", "imgaug", "lmdb"):
+# B2 复核引擎：rapidocr（含内置 PP-OCRv6 模型）+ onnxruntime + 其纯 py 依赖
+# （omegaconf/colorlog 动态配置与日志，静态分析不稳，一并 collect_all 兜住）
+for pkg in ("paddle", "paddleocr", "pyclipper", "shapely", "skimage", "rapidfuzz", "imgaug", "lmdb",
+            "onnxruntime", "rapidocr", "omegaconf", "colorlog"):
     b, d, h = collect_all(pkg)
     binaries += b
     datas += d
@@ -184,8 +195,9 @@ excludes = [
     # paddleocr.ppstructure 依赖，OCR 仅 det+rec 不用（踩坑9，~430MB）。
     # 注意 torch/transformers/tokenizers 同时是 sentence_transformers（RAG 检索）的
     # 推理底座：精简版排除 → RAG 降级为经典模式；完整版在下方移除这三项启用 RAG（踩坑15）。
-    # onnxruntime 仅 chromadb 默认 embedding 用（检索显式传 query_embeddings），恒排除
-    "torch", "torchvision", "transformers", "tokenizers", "onnxruntime", "onnx",
+    # onnxruntime 已移出本清单：B2 复核引擎（rapidocr）必需（此前仅 chromadb 默认
+    # embedding 用，恒排除）
+    "torch", "torchvision", "transformers", "tokenizers", "onnx",
     # PySide6 WebEngine/QML（markdown 用 QTextBrowser，零 WebEngine，~150MB）
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.QtWebChannel", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",

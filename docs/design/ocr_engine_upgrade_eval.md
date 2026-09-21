@@ -1,6 +1,6 @@
 # OCR 引擎升级评估与设计（v4 → v6-small，ONNX 部署形态）
 
-> 状态：评估完成，待拍板（本文档只记录调研与实测结论，未实施任何代码改动）
+> 状态：阶段一（B2 复核模式）已实施（2026-09-19）；阶段二（B1 全量切换）由阶段一数据触发，暂不实施
 > 关联模块：`src/ocr/recognizer.py`、`src/ocr/paddle_loader.py`、`src/ocr/character_similarity.py`、`src/business/recognition/official_data_import_service.py`、`src/business/emulator/capture_service.py`（引擎接线）
 > 验证资产：`.tmp_test/v5_validation/`（8 个脚本 + 全量结果 JSON + 三套 ONNX 模型），评估环境 `paddle3x`（paddlepaddle 3.3.1 + paddleocr 3.7.0 + rapidocr 3.9.2 + onnxruntime 1.23.2），项目环境 `myenv` 未改动
 
@@ -322,3 +322,53 @@ RTX 2070 8GB 单卡，显示器直连（`Disp.A: On`），桌面合成器 + MuMu
 | 5 | 官方导入喂法 | 改 rec-only 逐 cell | 实测 7.7 倍提速（22.2s→2.9s/页） |
 | 6 | 当下是否实施 | **暂缓**（维持现状运行） | 改造成本与当下痛感权衡后由需求方拍板；验证资产已备齐，随时可启动 |
 | 7 | GPU 推理（v6-small-ONNX） | **不启用**，维持 CPU（MKLDNN / 默认 ORT 线程配置） | 冻结根因为 GPU 资源挤兑而非框架（§11.3）；本机显存 88% 占用为否决项；收益封顶 1.5~2 倍且仅作用于计算段（§11.4） |
+
+---
+
+## 十三、阶段一（B2 复核模式）实施记录（2026-09-19）
+
+按交接书执行，任务三回写采用方案 (b)：在 recognizer 证据层注入 `source="recheck"` 证据后重跑消解，
+不引入新 resolution 值，全部既有消解消费方零改动。
+
+**代码落点**：
+- `src/ocr/paddle_loader.py`：`RapidOcrEngine` 适配层（RapidOCR 输出 → 2.x 风格 `[[box,(text,conf)],...]`、
+  灰度转三通道、np 框转纯 list——np 框会打穿官方导入 `isinstance(line[0],(list,tuple))` 行判别）、
+  `create_rapidocr_ocr`（det 参数写死 `max/960`、显式指向内置模型文件绕过在线下载检查、CPU 设备）、
+  `get_recheck_ocr_engine`（进程内共享惰性加载 + 失败熔断）；frozen 复用 `_frozen_ocr_model_dirs`
+  的 %TEMP% 纯 ASCII 复制模式；
+- `src/ocr/recognizer.py`：`_recheck_unresolved_slots`——页面消解后对 `resolution ∈ {unresolved, conflict}`
+  且候选闭包非空的槽位，用生产同构画布喂法（3x 灰度条、30px 间隙、960 分组）跑 v6；
+  接受纪律：读数必须精确命中该槽闭包成员（且未被其他槽占用）才注入 `source="recheck"` 证据重跑消解；
+- `src/business/recognition/official_data_import_service.py`：`_rare_char_engine` 开关开启时优先 v6
+  （读数仅在 allowed_names 候选闭包内被采纳），v6 不可用回退 cht；
+- 配置：`MUMU_OCR_RECHECK_ENABLED`（默认 false，缺失依赖自动停用复核）；
+- 打包/依赖：spec 摘除 onnxruntime 排除 + `collect_all("onnxruntime"/"rapidocr"/"omegaconf"/"colorlog")`
+  + 缺依赖构建前置报错；environment.yml 声明 `rapidocr==3.9.2 + onnxruntime==1.23.2`（版本钉死）。
+
+**验收数据（页面三环境详细重放 `b2_pages_detail.py`，119 图 × 关/开两遍同数据自洽对照）**：
+- 已决槽零退化：基线已确认槽复核开启后逐一相同，违例 **0**；
+- 未决槽复核确认 **11 处全部命中基线候选闭包**（0 错绑）：
+  选将 王濬 ×2（'王' → 0.9997）、荀勖 ×3（'荀'/'荀歇' → 0.9475~0.9887）；
+  对局 **卫玠 ×1（'卫珍' → 0.9727，原始痛点直解）**、荀勖 ×2；巅峰 荀勖 ×2、羊祜 ×1（'羊' → 0.9998）；
+- 残余未决 1 处（'早文君'→卓文君）：v6 复核读数同样读错、未命中闭包，按纪律拒绝采信维持人工——
+  引擎读错时不会被强行绑定，接受纪律双向有效；
+- 对局 team 标签覆盖随确认同步 +3（94→97），复核不影响 team 识别；
+- 性能（复核关 → 开）：选将均值 327→340ms / 对局 763→856ms / 巅峰 923→1069ms，
+  增量集中在含未决槽页面（每槽画布 ~0.3s），轮询节拍（2s）不受影响。
+
+**官方导入试运行（四期全量 `b2_official_allphases.py`，2v2/巅峰/放逐共 10 批次 × 关/开两遍，CSV 已备份还原）**：
+- Run A（cht 基线）：20260715/20260814 两期 4 批通过（确认 967/待复核 41）；**20260827 与 20260910
+  两期 6 批全部校验失败被阻断**——每批均为王濬截断'王'（放逐 1 条、2v2/巅峰各榜 1 条），整批不可入库（生产现状）；
+- Run B（v6 复核）：**10 批全部通过**，确认 2692/待复核 86；A 遍已通过的 4 批待复核行也下降
+  （12→10、7→6、15→13、7→6，v6 兜底在 cht 读不出的 cell 上多确认 8 行）；B 遍无任何错误/异常；
+- 耗时持平（2v2 121~129s、放逐 51~54s；基线 46~152s 区间内波动）。
+
+**上线后的遗留观察**：金日磾、赵婕妤（'好'/'妤'）、公孙瓒（'瓚'）等仍靠白名单/维持人工，
+属阶段二 B1 范围（白名单治理 + 全量切换）。
+
+**遗留与上线步骤**：
+1. myenv 尚未安装 rapidocr（红线：不动生产环境）——上线时执行
+   `pip install rapidocr==3.9.2 onnxruntime==1.23.2` 后在 config.env 打开 `MUMU_OCR_RECHECK_ENABLED=true`；
+2. 下次打包（release.py）前置条件：打包环境必须已装上述依赖（spec 有缺依赖报错保护）；
+3. 单元测试 `tests/test_ocr_recheck.py` 19 例 + 全量套件 1308 例通过；
+4. 阶段二（B1）触发条件与白名单治理清单见 §八，暂不实施。

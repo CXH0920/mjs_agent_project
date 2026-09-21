@@ -128,6 +128,15 @@ class GeneralRecognizer:
         """确保 PaddleOCR 引擎已加载并返回它；首次调用触发惰性加载（不可中断）。"""
         return self._engine
 
+    @property
+    def _recheck_engine(self):
+        """v6 复核引擎（B2 复核模式）；开关关闭或引擎不可用时返回 None。"""
+        from src.config.env import get_mumu_config
+        if not get_mumu_config().get("mumu_ocr_recheck_enabled", False):
+            return None
+        from src.ocr.paddle_loader import get_recheck_ocr_engine
+        return get_recheck_ocr_engine()
+
     # ── 提前初始化 ────────────────────────────────────────────────────
 
     def warmup(self) -> None:
@@ -225,7 +234,9 @@ class GeneralRecognizer:
                 i, result["name"] or "(未确认)", result["resolution"], result["raw_name"],
             )
 
-        return self._resolve_page_names(results)
+        final = self._resolve_page_names(results)
+        self._recheck_unresolved_slots(final, prepared_slots)
+        return final
 
     def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
         """识别 2v2 对局中的角色名与楚/汉军标签。"""
@@ -278,7 +289,9 @@ class GeneralRecognizer:
             team = self._normalize_team(team_text, seat_index)
             name_result["team"] = team
             results.append(name_result)
-        return self._resolve_page_names(results)
+        final = self._resolve_page_names(results)
+        self._recheck_unresolved_slots(final, name_slots)
+        return final
 
     @staticmethod
     def _empty_name_result(index: int) -> dict:
@@ -636,6 +649,62 @@ class GeneralRecognizer:
                 item.update(name="", candidates=[name], resolution="conflict")
         return results
 
+    def _recheck_unresolved_slots(
+        self,
+        results: list[dict],
+        prepared_slots: dict[int, np.ndarray],
+    ) -> None:
+        """B2 复核模式：对页面消解后仍未决的槽位用 v6 复核引擎补充证据。
+
+        触发条件：resolution ∈ {unresolved, conflict} 且候选闭包非空。喂法与
+        生产同构（3x 灰度条、30px 间隙、960 分组画布）。接受纪律（8b8a3d5
+        误绑事故教训）：读数必须精确命中该槽候选闭包内的成员才作为
+        source="recheck" 证据注入并重跑消解；不命中一律维持原状，绝不引入新名字。
+        """
+        pending = [
+            item for item in results
+            if item["resolution"] in {"unresolved", "conflict"} and item["candidates"]
+        ]
+        if not pending:
+            return
+        engine = self._recheck_engine
+        if engine is None:
+            return
+        strips = {
+            item["index"]: prepared_slots[item["index"]]
+            for item in pending
+            if item["index"] in prepared_slots
+        }
+        if not strips:
+            return
+        # 页面唯一性已确认的名字不可再被复核绑定，避免同页重名被复核坐实
+        occupied = {item["name"] for item in results if item["name"]}
+        recognized = self._recognize_prepared_batch(strips, "name", engine=engine)
+        for item in pending:
+            text, confidence = recognized.get(item["index"], ("", 0.0))
+            if not text:
+                continue
+            if text not in set(item["candidates"]) - occupied:
+                logger.debug(
+                    "武将 %d 复核读数 %r 未命中候选闭包，维持原状", item["index"], text,
+                )
+                continue
+            item.update(self._resolve_name_evidence(item["index"], [
+                *item["evidence"],
+                {
+                    "source": "recheck",
+                    "text": text,
+                    "confidence": round(float(confidence), 4),
+                },
+            ]))
+            logger.info(
+                "武将 %d 复核确认: %r → %s (%s, %.4f)",
+                item["index"], item["raw_name"], item["name"] or "(未决)",
+                item["resolution"], item["confidence"],
+            )
+            if item["name"]:
+                occupied.add(item["name"])
+
     @staticmethod
     def _preprocess_plain_roi(roi: np.ndarray) -> np.ndarray:
         enlarged = cv2.resize(roi, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
@@ -679,14 +748,18 @@ class GeneralRecognizer:
         prepared_slots: dict[int, np.ndarray],
         kind: str,
         evidence_by_slot: dict[int, list[dict]] | None = None,
+        engine=None,
     ) -> dict[int, tuple[str, float]]:
-        """将同类 ROI 分块拼图检测（画布不超过检测器工作尺度）；异常槽位由调用方逐槽回退。"""
+        """将同类 ROI 分块拼图检测（画布不超过检测器工作尺度）；异常槽位由调用方逐槽回退。
+
+        engine 缺省用主引擎；B2 复核模式传入 v6 复核引擎对未决槽重读。
+        """
         mapped: dict[int, list[tuple[str, float, float]]] = {slot: [] for slot in prepared_slots}
         for group in self._split_canvas_groups(prepared_slots):
             canvas, ranges = self._build_batch_canvas({slot: prepared_slots[slot] for slot in group})
             try:
                 ocr_started = time.perf_counter()
-                result = self._engine.ocr(canvas, cls=False)
+                result = (engine or self._engine).ocr(canvas, cls=False)
                 self._add_timing(f"{kind}_ocr", ocr_started)
             except Exception as exc:
                 logger.warning("%s ROI 拼图 OCR 失败，将逐槽回退: %s", kind, exc)
