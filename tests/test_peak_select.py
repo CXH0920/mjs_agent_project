@@ -17,6 +17,7 @@ from src.business.analysis.peak_ban_advice import PeakBanAdvice
 from src.business.recognition.peak_select_watcher import (
     PeakSelectWatcher,
     board_signature,
+    board_signature_equal,
     parse_pool,
     refresh_resolutions,
 )
@@ -132,27 +133,35 @@ def test_refresh_resolutions_stale_slot_never_claims_ambiguous_hit():
 
 
 def test_board_signature_ignores_animation_drift():
-    """签名吸收候选阶段卡面浮动动画的实测漂移（y±3、剪影 h±5），真实位移仍翻转。
+    """签名判等吸收候选阶段卡面浮动动画的实测漂移（y±3、剪影 h±5），真实位移仍判新板。
 
     漂移数据取自 2026-09-06 日志实测：卡2 三拍 bbox (904,297,71,124)/
-    (904,294,71,122)/(904,296,71,124)，旧步长 (4/8) 下 h 跨桶逐拍翻转。
+    (904,294,71,122)/(904,296,71,124)。09-21 的 x=1179↔1180 振荡在旧
+    round 量化下跨 147.5 边界逐拍翻转（同一牌面被全量重识别约 15 次），
+    容差比较是连续判断，对任意坐标无此边界，本用例防其回归。
     """
     cards = [(200, 200, 238, 326), (520, 200, 238, 326)]
     drifted = [(197, 203, 237, 324), (523, 197, 239, 328)]
     moved = [(200, 600, 238, 326), (520, 200, 238, 326)]
-    measured = [(904, 297, 71, 124), (904, 294, 71, 122), (904, 296, 71, 124)]
+    measured_0906 = [(904, 297, 71, 124), (904, 294, 71, 122), (904, 296, 71, 124)]
+    measured_0921 = [(1179, 620, 71, 124), (1180, 621, 71, 122), (1179, 620, 72, 124)]
 
-    assert board_signature(cards) == board_signature(drifted)
-    assert len({board_signature([card]) for card in measured}) == 1
-    assert board_signature(cards) != board_signature(moved)
+    assert board_signature_equal(board_signature(cards), board_signature(drifted))
+    for measured in (measured_0906, measured_0921):
+        for other in measured[1:]:
+            assert board_signature_equal(
+                board_signature(measured[:1]), board_signature([other])
+            )
+    assert not board_signature_equal(board_signature(cards), board_signature(moved))
+    assert not board_signature_equal(None, board_signature(cards))
 
 
 def test_board_signature_flips_on_card_count_change():
-    """卡数变化（换人/禁选）必然翻转签名，与量化步长无关。"""
+    """卡数变化（换人/禁选）必然判为新牌面，与容差无关。"""
     ten_cards = [(904, 297, 71, 124)] * 10
     nine_cards = [(904, 297, 71, 124)] * 9
 
-    assert board_signature(ten_cards) != board_signature(nine_cards)
+    assert not board_signature_equal(board_signature(ten_cards), board_signature(nine_cards))
 
 
 def _make_panel(
@@ -818,13 +827,17 @@ def test_watcher_live_loop_resuspends_on_board_reappear(qapp, monkeypatch):
 
 
 def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):
-    """回归：浮动动画致签名假性翻转（布局跨桶位移）时人工确认按内容沿用不丢。"""
+    """回归：布局位移触发重识别而内容未变时，人工确认按内容沿用不丢。
+
+    位移取超容差真实值（32px > 8px）；旧量化签名下动画跨桶假翻转也走
+    此路径，容差化后假翻转病根已消除，本用例继续守住"重识别不清确认"。
+    """
     detect_results = [
         [(100, 247, 238, 326)],   # 第一拍
-        [(108, 249, 239, 330)],   # 第二拍：位置跨桶位移（动画/重排），OCR 内容不变
-        [(116, 247, 238, 326)],   # 第三拍：内容真变（候选集换人）
-        [(124, 249, 238, 326)],   # 第四、五拍：内容持续缺失
-        [(140, 247, 238, 326)],
+        [(132, 249, 239, 330)],   # 第二拍：布局位移超容差，OCR 内容不变
+        [(164, 247, 238, 326)],   # 第三拍：内容真变（候选集换人）
+        [(196, 249, 238, 326)],   # 第四、五拍：内容持续缺失
+        [(228, 247, 238, 326)],
     ]
     monkeypatch.setattr(
         "src.business.recognition.peak_select_watcher.detect_selection_cards",
@@ -881,7 +894,7 @@ def test_watcher_keeps_confirmation_over_auto_resolution(qapp, monkeypatch):
     """自动决胜翻转不清人工确认：指纹仍复现时按确认名压过猜测型结论展示。"""
     detect_results = [
         [(100, 247, 238, 326)],
-        [(108, 249, 238, 326)],   # 签名翻转（动画位移），同一张牌
+        [(132, 249, 238, 326)],   # 布局位移超容差触发重识别，同一张牌
     ]
     monkeypatch.setattr(
         "src.business.recognition.peak_select_watcher.detect_selection_cards",

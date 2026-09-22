@@ -26,12 +26,14 @@ POLL_INTERVAL_MS = 1500
 OCR_WAIT_TIMEOUT_SECONDS = 15
 # 连续多拍未检出牌面才判定离开巅峰赛页，避免翻页动画误恢复标准任务
 BOARD_EXIT_TICKS = 2
-# 牌面签名量化步长：候选阶段卡面带 idle 浮动动画，实测剪影 bbox 逐拍漂移
-# y ±3~4px、尺寸 ±5px（2026-09-06 日志实测），步长须覆盖 2 倍漂移幅度，
-# 否则签名逐拍翻转误判"新牌面"（清确认+全量 OCR）；真实换牌表现为卡数
-# 变化或整排重排（位移 ≥ 一个卡位宽），远超步长不会漏
-SIGNATURE_POSITION_QUANTUM_PX = 8
-SIGNATURE_SIZE_QUANTUM_PX = 16
+# 牌面签名容差：候选阶段卡面带 idle 浮动动画，实测剪影 bbox 逐拍漂移
+# y ±3~4px、尺寸 ±5px（2026-09-06 日志实测），容差取 2 倍幅度。不用分桶
+# 量化：基点贴近量化边界时签名逐拍翻转误判"新牌面"（2026-09-21 实测
+# x=1179↔1180 跨 round 量化 147.5 边界，54 秒内同一牌面被全量重识别约
+# 15 次），逐卡容差比较无边界；真实换牌表现为卡数变化或整排重排（位移
+# ≥ 一个卡位宽），远超容差不会漏
+SIGNATURE_POSITION_TOLERANCE_PX = 8
+SIGNATURE_SIZE_TOLERANCE_PX = 16
 # 14 张为禁选阶段（双方尚未提交禁选），8~11 张为候选阶段
 _BAN_PHASE_MIN_CARDS = 12
 _STANDARD_POLL_TASKS = ("hero_selection", "match_guide")
@@ -166,15 +168,20 @@ def refresh_resolutions(
 
 
 def board_signature(cards: list[Roi]) -> tuple:
-    """生成牌面布局签名：坐标全量量化，抖动不触发重复 OCR。"""
-    return tuple(
-        (
-            round(x / SIGNATURE_POSITION_QUANTUM_PX),
-            round(y / SIGNATURE_POSITION_QUANTUM_PX),
-            round(w / SIGNATURE_SIZE_QUANTUM_PX),
-            round(h / SIGNATURE_SIZE_QUANTUM_PX),
-        )
-        for x, y, w, h in cards
+    """生成牌面布局签名（原始 bbox 元组）；判等必须用 board_signature_equal。"""
+    return tuple(cards)
+
+
+def board_signature_equal(left: tuple | None, right: tuple | None) -> bool:
+    """逐卡容差比较：漂移在容差内判同板，卡数变化或真实位移判新板。"""
+    if left is None or right is None or len(left) != len(right):
+        return False
+    return all(
+        abs(a[0] - b[0]) <= SIGNATURE_POSITION_TOLERANCE_PX
+        and abs(a[1] - b[1]) <= SIGNATURE_POSITION_TOLERANCE_PX
+        and abs(a[2] - b[2]) <= SIGNATURE_SIZE_TOLERANCE_PX
+        and abs(a[3] - b[3]) <= SIGNATURE_SIZE_TOLERANCE_PX
+        for a, b in zip(left, right, strict=True)
     )
 
 
@@ -284,7 +291,7 @@ class PeakSelectWatcher(QObject):
                 # start_poll 会重新激活标准任务，若只在签名变化时挂起，unchanged
                 # 短路会让垃圾轮询在巅峰页常驻
                 self._suspend_standard_tasks()
-                unchanged = signature == self._signature
+                unchanged = board_signature_equal(signature, self._signature)
             if unchanged:
                 return  # 牌面未变化，沿用上一次结果
             ocr_results = self._recognize_board(result, cards)
