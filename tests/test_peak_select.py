@@ -234,6 +234,32 @@ def test_panel_renders_pool_snapshot(qapp):
     assert panel._empty_state.isHidden()
 
 
+def _card_grid_row_columns(panel) -> dict[int, list[int]]:
+    positions: dict[int, list[int]] = {}
+    for index in range(panel._card_grid.count()):
+        row, column, _, _ = panel._card_grid.getItemPosition(index)
+        positions.setdefault(row, []).append(column)
+    return {row: sorted(columns) for row, columns in positions.items()}
+
+
+def test_panel_odd_pool_puts_fewer_cards_in_top_row(qapp):
+    """奇数张候选：上排下取整（9 张 → 上 4 下 5），与游戏牌面排布一致。"""
+    panel = _make_panel()
+    results = [{"name": f"武将{index}", "resolution": "exact"} for index in range(9)]
+    panel._on_pool_updated(parse_pool(results, 9))
+
+    assert _card_grid_row_columns(panel) == {0: [0, 1, 2, 3], 1: [0, 1, 2, 3, 4]}
+
+
+def test_panel_even_pool_splits_rows_evenly(qapp):
+    """偶数张候选：上下两排均分（8 张 → 4/4），行为不变。"""
+    panel = _make_panel()
+    results = [{"name": f"武将{index}", "resolution": "exact"} for index in range(8)]
+    panel._on_pool_updated(parse_pool(results, 8))
+
+    assert _card_grid_row_columns(panel) == {0: [0, 1, 2, 3], 1: [0, 1, 2, 3]}
+
+
 def test_panel_renders_ban_stage(qapp):
     """禁选阶段快照不显示撞车数与已禁差集。"""
     panel = _make_panel()

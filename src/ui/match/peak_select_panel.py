@@ -363,8 +363,8 @@ class PeakSelectPanel(QWidget):
         best_ratings = self._refresh_combo_strip(entries)
 
         self._clear_card_row()
-        # 两排布局：前半进第一排，后半进第二排，阅读顺序仍为行优先
-        half = (len(entries) + 1) // 2
+        # 两排布局：奇数张时上排少一张（下取整，与游戏牌面一致），阅读顺序仍为行优先
+        top_count = len(entries) // 2
         for index, (name, hero, rate) in enumerate(entries):
             card = PeakHeroCard()
             card.set_hero(hero, display_name=name, confirmed=True)
@@ -374,7 +374,9 @@ class PeakSelectPanel(QWidget):
             )
             rating = best_ratings.get(hero.id) if hero else None
             card.set_combo_badge(f"实战 ★{rating}" if rating else None)
-            row, column = divmod(index, half) if half else (0, 0)
+            in_top = index < top_count
+            row = 0 if in_top else 1
+            column = index if in_top else index - top_count
             self._card_grid.addWidget(card, row, column)
             self._cards.append(card)
         self._cards_title.setText(f"候选武将({len(names)})")
