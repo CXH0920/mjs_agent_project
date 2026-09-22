@@ -337,7 +337,6 @@ class OcrWorker(QThread):
                         template_scale=template_scale,
                         template_strategy=template_strategy,
                     )
-                    logger.debug("页面未变化，复用上次 OCR 结果: %s", task.template_name)
                     return {
                         **result,
                         # dict 级拷贝：下游修改结果条目不得污染缓存
@@ -446,7 +445,14 @@ class OcrWorker(QThread):
         recognizer_timing: dict[str, float] | None = None,
     ) -> None:
         timings = recognizer_timing or {}
-        logger.info(
+        # healthy_no_match / matched_reused 是轮询常态（未发生真实识别），降 DEBUG
+        # 避免每轮心跳刷 INFO；仅真实识别与异常路径保留 INFO
+        log_timing = (
+            logger.debug
+            if outcome in ("healthy_no_match", "matched_reused")
+            else logger.info
+        )
+        log_timing(
             "OCR阶段耗时[%s/%s]: outcome=%s，模板置信度=%.4f，阈值=%.2f，缩放=%.4f，策略=%s，"
             "模板加载=%.1fms，模板匹配=%.1fms，模型初始化=%.1fms，"
             "名称预处理=%.1fms，名称OCR=%.1fms，名称纠错=%.1fms，"

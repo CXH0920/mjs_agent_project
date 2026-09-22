@@ -34,6 +34,9 @@ _LOCAL_SEARCH_PADDING_RATIO = 0.2
 # "上一轮命中的缩放比例"在下一轮直接作为局部复验的首选，免去多尺度扫描。
 # mtime 校验保证模板重制/替换后缓存自动失效。
 _LAST_SCALE_CACHE: dict[str, tuple[int, float]] = {}
+# 已打过"模板已加载"日志的模板路径：轮询每轮新建实例并重新 imread，同一模板
+# 路径只在进程内首次加载时打一次 DEBUG。模板重制走 set_template 的 INFO 可见。
+_LOGGED_LOADED_PATHS: set[str] = set()
 # 全图兜底的粗扫降采样比例与甄别余量：非目标页全尺度得分实测 ~0.43（阈值 0.8），
 # 1/4 降采样的得分损失远小于该差距，粗扫可可靠区分"布局偏移"与"完全非目标页"
 _COARSE_SCAN_RATIO = 0.25
@@ -64,7 +67,6 @@ class TemplateManager:
         self._has_scale_history = False
         self._last_match_confidence = 0.0
         self._last_match_strategy = "unmatched"
-        logger.debug("TemplateManager 初始化, 模板路径: %s", self._template_path)
         self._load()
 
     # ── 属性 ──────────────────────────────────────────────────────────
@@ -125,7 +127,9 @@ class TemplateManager:
                 self._loaded_template_path = path
                 self._restore_scale_history(path)
                 self._load_metadata(path.with_suffix(".json"))
-                logger.debug("模板已加载: %s (%sx%s)", path.name, img.shape[1], img.shape[0])
+                if str(path) not in _LOGGED_LOADED_PATHS:
+                    _LOGGED_LOADED_PATHS.add(str(path))
+                    logger.debug("模板已加载: %s (%sx%s)", path.name, img.shape[1], img.shape[0])
             else:
                 logger.warning("模板文件读取失败: %s", self._template_path)
                 self._template = None
@@ -284,20 +288,12 @@ class TemplateManager:
                 cached_value = self._match_at_scale(gray, history_scale, cached_region)
                 if cached_value is not None and cached_value >= threshold:
                     self._set_match_details(cached_value, history_scale, "cached_local")
-                    logger.debug(
-                        "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=cached_local, 匹配",
-                        cached_value, history_scale, threshold,
-                    )
                     return True, float(cached_value)
 
             base_value = self._match_at_scale(gray, base_scale, local_region)
             base_strategy = "base_local" if local_region is not None else "base_full"
             if base_value is not None and base_value >= threshold:
                 self._set_match_details(base_value, base_scale, base_strategy)
-                logger.debug(
-                    "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=%s, 匹配",
-                    base_value, base_scale, threshold, base_strategy,
-                )
                 return True, float(base_value)
 
             best_value = base_value if base_value is not None else -1.0
@@ -314,10 +310,6 @@ class TemplateManager:
                         best_scale = scale
                 if best_value >= threshold:
                     self._set_match_details(best_value, best_scale, "fallback_local_multiscale")
-                    logger.debug(
-                        "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=fallback_local_multiscale, 匹配",
-                        best_value, best_scale, threshold,
-                    )
                     return True, float(best_value)
 
             # 全图兜底：先对全部候选缩放做 1/4 降采样粗扫，只有粗扫得分逼近阈值的
@@ -359,10 +351,6 @@ class TemplateManager:
                 fallback_strategy = "coarse_reject_multiscale"
             self._set_match_details(best_value, best_scale, fallback_strategy)
             matched = bool(best_value >= threshold)
-            logger.debug(
-                "模板匹配: 置信度=%.4f, 缩放=%.4f, 阈值=%.2f, 策略=%s, %s",
-                best_value, best_scale, threshold, fallback_strategy, "匹配" if matched else "不匹配",
-            )
             return matched, float(best_value)
         except Exception as e:
             logger.error("模板匹配异常: %s", e)

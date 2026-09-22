@@ -86,6 +86,8 @@ class GeneralRecognizer:
         self._preprocessor = preprocessor or ImagePreprocessor()
         self._similarity_service = similarity_service or CharacterSimilarityService()
         self._timing_ms: dict[str, float] = {}
+        # 已打过 ROI 明细的缩放比：同实例同缩放下 ROI 坐标恒定，仅首次识别打
+        self._logged_roi_scale: tuple[float, float] | None = None
 
     # ── OCR 引擎 ──────────────────────────────────────────────────────
 
@@ -184,6 +186,8 @@ class GeneralRecognizer:
         reference_width, reference_height = self._layout.reference_size
         scale_x = image_width / reference_width
         scale_y = image_height / reference_height
+        log_rois = self._logged_roi_scale != (scale_x, scale_y)
+        self._logged_roi_scale = (scale_x, scale_y)
         logger.debug("武将 ROI 缩放: %.4f×%.4f，当前截图=%sx%s，参考=%sx%s",
                      scale_x, scale_y, image_width, image_height,
                      reference_width, reference_height)
@@ -196,10 +200,11 @@ class GeneralRecognizer:
             roi_y = round(y * scale_y)
             roi_w = max(1, round(w * scale_x))
             roi_h = max(1, round(h * scale_y))
-            logger.debug(
-                "武将 %d OCR ROI: x=%d, y=%d, w=%d, h=%d (参考 ROI=%s)",
-                i + 1, roi_x, roi_y, roi_w, roi_h, [x, y, w, h],
-            )
+            if log_rois:
+                logger.debug(
+                    "武将 %d OCR ROI: x=%d, y=%d, w=%d, h=%d (参考 ROI=%s)",
+                    i + 1, roi_x, roi_y, roi_w, roi_h, [x, y, w, h],
+                )
             roi_img = image[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
             if roi_img.size == 0:
                 logger.warning(
@@ -730,7 +735,8 @@ class GeneralRecognizer:
             return "楚军"
         if "汉" in normalized:
             return "汉军"
-        logger.debug("武将 %d 阵营标签未识别: %r", slot, text)
+        if text:
+            logger.debug("武将 %d 阵营标签未识别: %r", slot, text)
         return ""
 
     def _recognize_prepared_single(
@@ -740,7 +746,8 @@ class GeneralRecognizer:
         ocr_started = time.perf_counter()
         text, confidence = self._extract_text(self._engine.ocr(prepared, cls=False))
         self._add_timing(f"{kind}_ocr", ocr_started)
-        logger.debug("武将 %d %s OCR 原始结果: text=%r, confidence=%.4f", slot, kind, text, confidence)
+        if text:
+            logger.debug("武将 %d %s OCR 原始结果: text=%r, confidence=%.4f", slot, kind, text, confidence)
         return text, confidence
 
     def _recognize_prepared_batch(
@@ -900,6 +907,5 @@ class GeneralRecognizer:
             with open(json_path, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 f.write("\n")
-            logger.info("识别结果已保存: %s", json_path)
         except Exception as e:
             logger.error("识别结果保存失败 %s: %s", json_path, e)

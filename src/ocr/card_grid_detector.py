@@ -44,6 +44,10 @@ NAME_ROI_Y_RATIO = 0.15
 NAME_ROI_W_RATIO = 0.30
 NAME_ROI_H_RATIO = 0.38
 
+# 上次检测结果：轮询期间结果基本恒定（如持续"检出 0 张"），仅状态翻转时打
+# 日志，避免每轮重复一条相同内容。仅在 OCR worker 单线程中调用，无并发问题。
+_LAST_DETECTION_PASSED: bool | None = None
+
 
 def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
     """检测 2v2 选将页牌面，返回行优先（上→下、行内左→右）的卡牌 bbox 列表。
@@ -51,6 +55,7 @@ def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
     非 2v2 牌面（卡数不在合法区间或几何不符）返回 None，语义对齐轮询的
     healthy_no_match，由调用方决定回退行为。
     """
+    global _LAST_DETECTION_PASSED
     height, width = image.shape[:2]
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = (
@@ -88,8 +93,13 @@ def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
 
     low, high = CARD_COUNT_RANGE
     if not low <= len(cards) <= high:
-        logger.debug("2v2 卡位检测未通过：检出 %d 张（合法区间 %d~%d）", len(cards), low, high)
+        if _LAST_DETECTION_PASSED is not False:
+            logger.debug("2v2 卡位检测未通过：检出 %d 张（合法区间 %d~%d）", len(cards), low, high)
+        _LAST_DETECTION_PASSED = False
         return None
+    if _LAST_DETECTION_PASSED is False:
+        logger.debug("2v2 卡位检测恢复：检出 %d 张（合法区间 %d~%d）", len(cards), low, high)
+    _LAST_DETECTION_PASSED = True
     return _sort_row_major(cards)
 
 
