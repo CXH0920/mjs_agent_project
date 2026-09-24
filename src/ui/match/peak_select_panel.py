@@ -249,6 +249,10 @@ class PeakSelectPanel(QWidget):
         """停止识别循环；主窗口关闭时调用。"""
         self._watcher.stop()
 
+    def is_recognizing(self) -> bool:
+        """巅峰赛识别会话是否运行中；主窗口据此丢弃泄漏的选将轮询结果。"""
+        return self._watcher.is_running()
+
     # ── 界面状态 ──────────────────────────────────────────────────────
 
     def _on_toggle_watcher(self) -> None:

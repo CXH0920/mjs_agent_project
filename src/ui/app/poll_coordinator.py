@@ -34,6 +34,9 @@ class PollTaskResult:
     outcome: PollOutcome
     detail: str = ""
     ocr_results: list[dict] = field(default_factory=list)
+    # 模板未命中但走兜底 OCR 时为 False：此类结果的读数来自错位 ROI，
+    # 不得作为 match_guide 命中触发自动导入/跳转
+    template_matched: bool = True
 
     @classmethod
     def from_raw(cls, value: object) -> "PollTaskResult":
@@ -44,7 +47,12 @@ class PollTaskResult:
             outcome = PollOutcome(raw.get("outcome", PollOutcome.RETRYABLE_OCR.value))
         except ValueError:
             outcome = PollOutcome.RETRYABLE_OCR
-        return cls(outcome, str(raw.get("detail", "")), list(raw.get("ocr_results") or []))
+        return cls(
+            outcome,
+            str(raw.get("detail", "")),
+            list(raw.get("ocr_results") or []),
+            bool(raw.get("template_matched", True)),
+        )
 
 
 @dataclass(frozen=True)
@@ -88,6 +96,11 @@ class PollCoordinator(QObject):
 
     POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
     MATCH_GUIDE_MIN_CONFIRMED_NAMES = 3
+    # 兜底 OCR（模板未命中）的读数质量门槛：ROI 与页面错位时（如巅峰牌面）
+    # 读数靠拼图/逐槽回退拼凑，完整直读的槽位很少且置信度低；对齐的对局页
+    # 则为 batch_plain 完整直读。按 2026-09-22/24 日志实测标定：对齐页
+    # confidence ≥0.997，错位页 ≤0.90，取 0.95 分界
+    FALLBACK_MIN_CLEAN_CONFIDENCE = 0.95
     IDLE_PAUSE_MINUTES = 5  # 连续无画面变化达到该时长即暂停轮询（对局长考仅数十秒，留 3~5 倍余量）
 
     def __init__(
@@ -253,10 +266,44 @@ class PollCoordinator(QObject):
         return PollTaskResult.from_raw(ocr_task.result)
 
     @classmethod
+    def _is_clean_fallback_read(cls, item: dict) -> bool:
+        """完整精确的高置信读数：ROI 与页面对齐时 batch_plain 直读的形态。
+
+        模板未命中的兜底 OCR 无法靠模板区分"真对局页"与"错位页面"（两者
+        置信度同为 0.3 档），但读数质量可以：错位页的读数靠拼图碎片/逐槽
+        回退拼凑，length_mode 降级或置信度不足；对齐页完整直读。
+        """
+        try:
+            confidence = float(item.get("confidence") or 0)
+        except (TypeError, ValueError):
+            return False
+        return (
+            bool(str(item.get("name", "")).strip())
+            and item.get("resolution") not in {"unresolved", "unknown", "conflict"}
+            and item.get("length_mode") == "complete"
+            and confidence >= cls.FALLBACK_MIN_CLEAN_CONFIDENCE
+        )
+
+    @classmethod
     def _validate_match_guide_result(cls, result: PollTaskResult) -> PollTaskResult:
-        """仅在确认足够的角色名称后触发对局攻略自动跳转。"""
+        """仅在确认足够的角色名称后触发对局攻略自动跳转。
+
+        模板未命中的兜底结果额外按读取质量把关：错位 ROI 也能读出真实
+        武将名（确认数达标），但完整直读的槽位少，不足以证明页面正确。
+        """
         if result.outcome is not PollOutcome.MATCHED:
             return result
+        if not result.template_matched:
+            clean_count = sum(
+                1 for item in result.ocr_results if cls._is_clean_fallback_read(item)
+            )
+            if clean_count >= cls.MATCH_GUIDE_MIN_CONFIRMED_NAMES:
+                return result
+            return PollTaskResult(
+                PollOutcome.HEALTHY_NO_MATCH,
+                f"对局攻略模板未命中，兜底读数质量不足: {clean_count}/{cls.MATCH_GUIDE_MIN_CONFIRMED_NAMES}",
+                result.ocr_results,
+            )
         confirmed_count = sum(
             bool(str(item.get("name", "")).strip())
             and item.get("resolution") not in {"unresolved", "unknown", "conflict"}

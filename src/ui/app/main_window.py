@@ -507,6 +507,11 @@ class MainWindow(QMainWindow):
             self._capture_service.warmup_ocr_model()
         self._poll_coordinator.sync_with_connection()
 
+    def _peak_select_recognizing(self) -> bool:
+        """巅峰赛识别会话是否运行中；面板未创建时（初始化早期/测试桩）视为否。"""
+        panel = getattr(self, "_peak_select", None)
+        return panel is not None and panel.is_recognizing()
+
     def _on_poll_result(self, result: PollResult | dict) -> None:
         """消费已完成状态迁移的轮询结果，并更新相关界面。"""
         poll_result = PollResult.from_raw(result)
@@ -522,24 +527,29 @@ class MainWindow(QMainWindow):
         elif hero_result and hero_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
             self._selection_page_active = False
         elif hero_result and hero_result.outcome is PollOutcome.MATCHED:
-            self._ocr_service.set_task_cooldown(
-                "hero_selection",
-                self._ocr_service.config["mumu_hero_selection_cooldown"],
-            )
-            self._ocr_service.clear_task_cooldown("match_guide")
-            self._ocr_service.activate_task("match_guide")
-            self._match_guide_activated_at = time.monotonic()
-            # 每次新选将命中都开启一轮新的对局攻略自动跳转。
-            self._match_guide_page_active = False
-            if not self._selection_page_active:
-                self._selection_page_active = True
-                if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
-                    self._tabs.setCurrentWidget(self._recommendation)
-            ocr_results = hero_result.ocr_results
-            if ocr_results:
-                self._recommendation.load_from_ocr(ocr_results)
-                recognized = len([item for item in ocr_results if item.get("name")])
-                logger.debug("轮询: OCR 识别到 %d 个武将", recognized)
+            if self._peak_select_recognizing():
+                # 持有锁之外的残余泄漏（如在途竞态）：会话中选将轮询结果一律
+                # 不可信，冷却/激活/跳转/面板刷新全部跳过，guide 分支不受影响
+                logger.debug("巅峰赛识别运行中，丢弃泄漏的选将轮询结果")
+            else:
+                self._ocr_service.set_task_cooldown(
+                    "hero_selection",
+                    self._ocr_service.config["mumu_hero_selection_cooldown"],
+                )
+                self._ocr_service.clear_task_cooldown("match_guide")
+                self._ocr_service.activate_task("match_guide")
+                self._match_guide_activated_at = time.monotonic()
+                # 每次新选将命中都开启一轮新的对局攻略自动跳转。
+                self._match_guide_page_active = False
+                if not self._selection_page_active:
+                    self._selection_page_active = True
+                    if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                        self._tabs.setCurrentWidget(self._recommendation)
+                ocr_results = hero_result.ocr_results
+                if ocr_results:
+                    self._recommendation.load_from_ocr(ocr_results)
+                    recognized = len([item for item in ocr_results if item.get("name")])
+                    logger.debug("轮询: OCR 识别到 %d 个武将", recognized)
 
         guide_result = task_results.get("match_guide")
         if guide_result and guide_result.outcome is PollOutcome.TEMPLATE_MISSING:
@@ -591,6 +601,9 @@ class MainWindow(QMainWindow):
             self._selection_page_active = False
             return
         if outcome is not PollOutcome.MATCHED:
+            return
+        if self._peak_select_recognizing():
+            logger.debug("巅峰赛识别运行中，丢弃泄漏的选将轮询结果")
             return
         if not self._selection_page_active:
             self._selection_page_active = True

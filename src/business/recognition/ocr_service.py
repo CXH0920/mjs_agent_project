@@ -59,6 +59,9 @@ class OcrService(QObject):
             "hero_selection": PollTaskState(),
             "match_guide": PollTaskState(),
         }
+        # 巅峰赛会话持有的任务：持有期间任何激活入口（start_poll/activate_task）
+        # 都无法唤醒，互斥从"事后补挂起"改为"激活源头拒绝"
+        self._held_tasks: set[str] = set()
         self._poll_interval_ms = 0
         self._consecutive_poll_failures = 0
         self._poll_state = "stopped"
@@ -201,7 +204,9 @@ class OcrService(QObject):
         self._consecutive_poll_failures = 0
         self._poll_in_flight = False
         self._replace_poll_session()
-        self._poll_tasks["hero_selection"] = PollTaskState(active=True)
+        self._poll_tasks["hero_selection"] = PollTaskState(
+            active="hero_selection" not in self._held_tasks,
+        )
         self._poll_tasks["match_guide"] = PollTaskState(active=False)
         self._poll_timer.setInterval(self._poll_interval_ms)
         self._poll_timer.start()
@@ -267,8 +272,24 @@ class OcrService(QObject):
             if task.active and (task.cooldown_until is None or now >= task.cooldown_until)
         ]
 
+    def set_task_hold(self, task_name: str, held: bool) -> None:
+        """设置任务的巅峰赛会话持有标记；持有期间任务不得被任何入口激活。
+
+        置位时立即停用该任务，保证"持有 ⇒ 不活跃"在调用返回后即成立，
+        不依赖激活方自觉检查。
+        """
+        self._validate_task_name(task_name)
+        if held:
+            self._held_tasks.add(task_name)
+            self._get_task(task_name).active = False
+        else:
+            self._held_tasks.discard(task_name)
+
     def activate_task(self, task_name: str) -> None:
-        """激活指定轮询任务。"""
+        """激活指定轮询任务；被巅峰赛会话持有的任务拒绝激活。"""
+        if task_name in self._held_tasks:
+            logger.debug("任务被巅峰赛会话持有，拒绝激活: %s", task_name)
+            return
         self._get_task(task_name).active = True
         logger.debug("轮询任务已激活: %s", task_name)
 

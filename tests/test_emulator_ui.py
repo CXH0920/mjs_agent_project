@@ -644,6 +644,97 @@ def test_match_guide_poll_runs_once_until_next_hero_selection_match() -> None:
     ]
 
 
+def test_poll_hero_match_discarded_while_peak_recognizing() -> None:
+    """回归：巅峰赛识别会话运行中，泄漏的选将轮询命中不得产生任何副作用
+    （不写冷却/不激活 guide/不刷推荐面板）；guide 命中不受守卫影响，衔接链照常。"""
+
+    class OcrService:
+        poll_generation = 1
+        config = {
+            "mumu_ocr_auto_switch_tab": False,
+            "mumu_hero_selection_cooldown": 180,
+        }
+
+        def __init__(self) -> None:
+            self.transitions: list[tuple] = []
+
+        def set_task_cooldown(self, task_name: str, seconds: int) -> None:
+            self.transitions.append(("cooldown", task_name, seconds))
+
+        def clear_task_cooldown(self, task_name: str) -> None:
+            self.transitions.append(("clear", task_name))
+
+        def activate_task(self, task_name: str) -> None:
+            self.transitions.append(("activate", task_name))
+
+        def deactivate_task(self, task_name: str) -> None:
+            self.transitions.append(("deactivate", task_name))
+
+    class Recommendation:
+        def __init__(self) -> None:
+            self.loaded: list[list[dict]] = []
+
+        def load_from_ocr(self, results: list[dict]) -> None:
+            self.loaded.append(results)
+
+    class MatchGuide:
+        def __init__(self) -> None:
+            self.updates = 0
+
+        def update_block(self, _index: int, _result: PollTaskResult) -> None:
+            self.updates += 1
+
+    class PeakPanel:
+        def __init__(self, recognizing: bool) -> None:
+            self._recognizing = recognizing
+
+        def is_recognizing(self) -> bool:
+            return self._recognizing
+
+    window = MainWindow.__new__(MainWindow)
+    window._selection_page_active = False
+    window._match_guide_page_active = False
+    window._ocr_service = OcrService()
+    window._recommendation = Recommendation()
+    window._match_guide = MatchGuide()
+    window._peak_select = PeakPanel(recognizing=True)
+    hero_match = PollResult(
+        1,
+        PollOutcome.MATCHED,
+        task_results={
+            "hero_selection": PollTaskResult(
+                PollOutcome.MATCHED,
+                ocr_results=[{"name": "曹操"}],
+            ),
+        },
+    )
+    guide_match = PollResult(
+        1,
+        PollOutcome.MATCHED,
+        task_results={"match_guide": PollTaskResult(PollOutcome.MATCHED)},
+    )
+
+    window._on_poll_result(hero_match)
+    assert window._ocr_service.transitions == []
+    assert window._recommendation.loaded == []
+    assert window._match_guide.updates == 0
+    assert window._selection_page_active is False
+
+    window._on_poll_result(guide_match)  # 衔接链不受守卫影响
+    assert window._ocr_service.transitions == [("deactivate", "match_guide")]
+    assert window._match_guide.updates == 1
+
+    window._peak_select._recognizing = False  # 会话结束后恢复正常处理
+    window._on_poll_result(hero_match)
+    assert window._ocr_service.transitions == [
+        ("deactivate", "match_guide"),
+        ("cooldown", "hero_selection", 180),
+        ("clear", "match_guide"),
+        ("activate", "match_guide"),
+    ]
+    assert len(window._recommendation.loaded) == 1
+
+
 def test_match_guide_poll_switches_for_each_hero_selection_match() -> None:
     class OcrService:
         config = {

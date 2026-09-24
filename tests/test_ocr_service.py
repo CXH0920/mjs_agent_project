@@ -151,6 +151,26 @@ def test_match_guide_task_stays_disabled_until_hero_selection_reactivates() -> N
     assert service.due_poll_tasks() == ["match_guide"]
 
 
+def test_task_hold_blocks_all_activation_entries_until_released() -> None:
+    """巅峰赛会话持有 hero_selection 期间，activate_task 与 start_poll 等
+    外部激活入口一律无法唤醒，释放后恢复。"""
+    _app()
+    service = OcrService()
+    service.start_poll(1_000)
+
+    service.set_task_hold("hero_selection", True)
+    assert service.due_poll_tasks() == []  # 持有即停用
+
+    service.activate_task("hero_selection")
+    service.stop_poll()
+    service.start_poll(1_000)  # 模拟 ADB 重连/配置保存触发的 start_poll
+    assert service.due_poll_tasks() == []
+
+    service.set_task_hold("hero_selection", False)
+    service.start_poll(1_000)
+    assert service.due_poll_tasks() == ["hero_selection"]
+
+
 def test_select_template_clears_stale_reference_metadata(tmp_path: Path, monkeypatch) -> None:
     class _TemplateManager:
         def __init__(self) -> None:

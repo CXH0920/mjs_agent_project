@@ -116,3 +116,69 @@ def test_match_guide_confirmed_count_remains_compatible_with_legacy_results() ->
     ))
 
     assert result.outcome is PollOutcome.MATCHED
+
+
+def test_match_guide_fallback_clean_reads_still_navigate() -> None:
+    """模板未命中但 ROI 与页面对齐（如对局页模板过期）时，兜底读数完整精确，
+    达到质量门槛仍应触发对局攻略导入——2026-09-24 对局页实测形态。"""
+    result = PollCoordinator._validate_match_guide_result(PollTaskResult(
+        PollOutcome.MATCHED,
+        ocr_results=[
+            {"name": "刘协", "resolution": "exact", "length_mode": "complete", "confidence": 0.9993},
+            {"name": "孟姚", "resolution": "exact", "length_mode": "complete", "confidence": 0.9998},
+            {"name": "", "raw_name": "", "resolution": "unknown", "length_mode": "unknown"},
+            {"name": "宋玉", "resolution": "exact", "length_mode": "complete", "confidence": 0.9978},
+            {"name": "卢莫愁", "resolution": "exact", "length_mode": "complete", "confidence": 0.9994},
+        ],
+        template_matched=False,
+    ))
+
+    assert result.outcome is PollOutcome.MATCHED
+
+
+def test_match_guide_fallback_degraded_reads_blocked() -> None:
+    """模板未命中且读数靠碎片/低置信拼凑（错位 ROI 形态，2026-09-22 巅峰页
+    实测）时，确认数再多也不得触发对局攻略自动跳转。"""
+    result = PollCoordinator._validate_match_guide_result(PollTaskResult(
+        PollOutcome.MATCHED,
+        ocr_results=[
+            # 相似度纠错读数（'庞媛'→庞煖），置信度低于门槛
+            {"name": "庞煖", "resolution": "multi_similarity", "length_mode": "complete", "confidence": 0.89},
+            # 碎片拼接槽位，未确认
+            {"name": "", "raw_name": "西汉陈", "candidates": ["西汉陈"], "resolution": "unresolved"},
+            # 完整但置信度不足的直读
+            {"name": "张辽", "resolution": "exact", "length_mode": "complete", "confidence": 0.81},
+            # 缺 length_mode 的旧形态读数
+            {"name": "郭嘉", "resolution": "exact", "confidence": 0.99},
+        ],
+        template_matched=False,
+    ))
+
+    assert result.outcome is PollOutcome.HEALTHY_NO_MATCH
+    assert "兜底读数质量不足: 0/3" in result.detail
+
+
+def test_match_guide_template_hit_keeps_confirmed_count_rule() -> None:
+    """模板真实命中时维持原确认数规则，不叠加读取质量门槛。"""
+    result = PollCoordinator._validate_match_guide_result(PollTaskResult(
+        PollOutcome.MATCHED,
+        ocr_results=[
+            {"name": "曹操", "resolution": "multi_similarity", "confidence": 0.7},
+            {"name": "张辽", "resolution": "exact"},
+            {"name": "郭嘉", "resolution": "slot_unique"},
+        ],
+        template_matched=True,
+    ))
+
+    assert result.outcome is PollOutcome.MATCHED
+
+
+def test_fall_back_result_from_raw_defaults_to_template_matched() -> None:
+    """旧载荷无 template_matched 字段时默认 True，兼容既有生产方与测试桩。"""
+    result = PollTaskResult.from_raw({"outcome": "matched", "ocr_results": []})
+    fallback = PollTaskResult.from_raw({
+        "outcome": "matched", "ocr_results": [], "template_matched": False,
+    })
+
+    assert result.template_matched is True
+    assert fallback.template_matched is False

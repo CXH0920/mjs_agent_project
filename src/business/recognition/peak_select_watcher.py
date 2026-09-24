@@ -1,8 +1,9 @@
 """巅峰赛（2v2）选将实时识别循环：截图 → 卡位检测 → 牌面变化才 OCR。
 
 与标准轮询并存：巅峰赛页与标准选将页共用"武将选择"标题模板，启动识别循环
-即挂起标准轮询任务避免互触——hero_selection 整个会话保持挂起（停止识别才
-恢复），match_guide 牌面出现期间挂起、自动退出时恢复原状态并由主窗口衔接
+即挂起标准轮询任务避免互触——hero_selection 整个会话保持挂起并加持有锁
+（ADB 重连 start_poll、手动激活等外部入口在会话期间一律被拒，停止识别才
+释放），match_guide 牌面出现期间挂起、自动退出时恢复原状态并由主窗口衔接
 激活；自动退出另发 board_exited 供主窗口使用。
 """
 
@@ -240,6 +241,9 @@ class PeakSelectWatcher(QObject):
         # 挂起在启动瞬间生效而非检测到牌面后：首拍之前标准轮询用固定 ROI 在
         # 巅峰页只会跑出垃圾结果，还可能误触冷却与自动跳页
         self._suspend_standard_tasks()
+        # hero_selection 加持有锁：牌面缺席期（等候进局/对局间隙）每拍重挂起
+        # 不生效，持有让 ADB 重连 start_poll 等外部激活入口在源头即被拒绝
+        self._ocr_service.set_task_hold("hero_selection", True)
         self._ocr_service.clear_task_cooldown("hero_selection")
         self._ocr_service.clear_task_cooldown("match_guide")
         # 作废在途轮询：点击开始前已发出的那一轮会在挂起之后落地，
@@ -253,6 +257,8 @@ class PeakSelectWatcher(QObject):
         # 已挂起的由本次恢复收回，消除"停止后被旧拍重新挂起"的竞态
         with self._state_lock:
             self._session += 1
+        # 先解除持有再恢复：顺序反了恢复激活会被自己的持有拒绝
+        self._ocr_service.set_task_hold("hero_selection", False)
         self._restore_standard_tasks()
 
     # ── 识别循环 ──────────────────────────────────────────────────────

@@ -90,6 +90,7 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
     assert first.result == {
         "outcome": "matched",
         "confidence": 0.8,
+        "template_matched": True,
         "ocr_results": [{"index": 1, "name": "first", "confidence": 1.0}],
     }
 
@@ -291,6 +292,7 @@ def test_match_guide_template_miss_can_fall_back_to_ocr(monkeypatch) -> None:
     ))
 
     assert result["outcome"] == "matched"
+    assert result["template_matched"] is False
     assert result["ocr_results"][0]["name"] == "曹操"
     assert recognized == ["image"]
 
@@ -646,6 +648,46 @@ def test_result_reuse_skips_ocr_on_unchanged_page(monkeypatch) -> None:
     assert second["outcome"] == "matched"
     assert second["skipped_ocr"] is True
     assert second["ocr_results"] == first["ocr_results"]
+
+
+def test_result_reuse_carries_template_miss_marker(monkeypatch) -> None:
+    """模板未命中走兜底 OCR 时，后续复用结果同样带 template_matched=False，
+    防止垃圾读数经指纹复用回流后仍被当成模板命中。"""
+    from PIL import Image
+
+    recognized: list = []
+    _, FakeRecognizer = _make_reuse_fakes(recognized)
+
+    class MissTemplateManager:
+        is_loaded = True
+        last_match_scale = 1.0
+        last_match_strategy = "base_local"
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            return False, 0.35
+
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", MissTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def make_task(image) -> OcrTask:
+        return OcrTask(
+            image=image, hero_names=(), rois=None, template_name="match_guide",
+            threshold=0.8, roi_layout=_reuse_layout(),
+            fallback_on_template_miss=True, allow_result_reuse=True,
+        )
+
+    worker = OcrWorker()
+    image = Image.new("L", (2560, 1440), 200)
+    first = worker._execute(make_task(image))
+    second = worker._execute(make_task(image))
+
+    assert len(recognized) == 1
+    assert first["template_matched"] is False
+    assert second["skipped_ocr"] is True
+    assert second["template_matched"] is False
 
 
 def test_result_reuse_reruns_ocr_when_page_changes(monkeypatch) -> None:

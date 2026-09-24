@@ -185,7 +185,7 @@ def _make_panel(
 
 
 class _FakeOcrService:
-    """覆盖 watcher 协调标准轮询任务（挂起/恢复/清冷却/作废在途）所需的最小接口。"""
+    """覆盖 watcher 协调标准轮询任务（挂起/恢复/持有/清冷却/作废在途）所需的最小接口。"""
 
     def __init__(self, active_states: dict[str, bool] | None = None) -> None:
         self._tasks = {
@@ -196,11 +196,15 @@ class _FakeOcrService:
             self._tasks[name].active = active
         self.cleared_cooldowns: list[str] = []
         self.invalidated_polls = 0
+        self.holds: list[tuple[str, bool]] = []
+        self._held: set[str] = set()
 
     def get_task_state(self, name):
         return self._tasks[name]
 
     def activate_task(self, name) -> None:
+        if name in self._held:
+            return  # 与真实服务一致：持有期间拒绝激活
         self._tasks[name].active = True
 
     def deactivate_task(self, name) -> None:
@@ -211,6 +215,14 @@ class _FakeOcrService:
 
     def invalidate_inflight_poll(self) -> None:
         self.invalidated_polls += 1
+
+    def set_task_hold(self, name, held) -> None:
+        self.holds.append((name, held))
+        if held:
+            self._held.add(name)
+        else:
+            self._held.discard(name)
+        self._tasks[name].active = False
 
 
 def test_panel_renders_pool_snapshot(qapp):
@@ -794,7 +806,25 @@ def test_watcher_start_suspends_standard_tasks_immediately(qapp):
     assert ocr_service.get_task_state("match_guide").active is False
     assert ocr_service.cleared_cooldowns == ["hero_selection", "match_guide"]
     assert ocr_service.invalidated_polls == 1
+    assert ocr_service.holds == [("hero_selection", True)]
     watcher.stop()
+
+
+def test_watcher_stop_releases_hold_before_restoring_tasks(qapp):
+    """回归：会话期间持有 hero_selection（外部激活入口源头被拒）；
+    停止时先释放持有再恢复，顺序反了恢复激活会被自己的持有拒绝。"""
+    ocr_service = _FakeOcrService()
+    watcher, _, _ = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    watcher._ocr_service = ocr_service
+
+    watcher.start()
+    # 模拟会话期间外部入口尝试激活（真实服务会拒绝，fake 同语义）
+    ocr_service.activate_task("hero_selection")
+    assert ocr_service.get_task_state("hero_selection").active is False
+
+    watcher.stop()
+    assert ocr_service.holds == [("hero_selection", True), ("hero_selection", False)]
+    assert ocr_service.get_task_state("hero_selection").active is True  # 释放后恢复成功
 
 
 def test_watcher_board_absent_restores_match_guide_only(qapp):

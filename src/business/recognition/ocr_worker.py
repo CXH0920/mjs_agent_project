@@ -298,7 +298,13 @@ class OcrWorker(QThread):
                             "outcome": "healthy_no_match",
                             "confidence": confidence,
                         }
-                result = {"outcome": "matched", "confidence": confidence}
+                # 未命中但 fallback 放行时 matched=False：轮询侧校验器据此拦截
+                # 兜底结果，防止错位 ROI 的垃圾读数触发对局攻略自动导入
+                result = {
+                    "outcome": "matched",
+                    "confidence": confidence,
+                    "template_matched": matched,
+                }
             else:
                 result = {"outcome": "matched"}
             if not task.recognize:
