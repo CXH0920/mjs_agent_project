@@ -270,15 +270,6 @@ class RecommendationPanel(QWidget):
         self._cards_scroll.setWidget(self._cards_container)
         layout.addWidget(self._cards_scroll, 1)
 
-    def _load_default_heroes(self) -> None:
-        """清空卡片并恢复待识别状态。"""
-        self._ocr_mode = False
-        self._current_hero_ids = set()
-        for card in self._cards:
-            card.set_hero(None)
-        self._refresh_combo_strip()
-        self._show_empty_state()
-
     def _show_empty_state(self) -> None:
         self._empty_state.show()
         self._cards_widget.hide()

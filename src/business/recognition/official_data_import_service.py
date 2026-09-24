@@ -119,15 +119,6 @@ class OfficialDataImportService:
                 return None
         return self._rare_char_ocr
 
-    def import_selected(self, paths: dict[str, str | list[str]]) -> list[dict]:
-        """执行所有已选择的导入流程。"""
-        summaries = []
-        for key, selected in paths.items():
-            page_paths = [selected] if isinstance(selected, str) else selected
-            if page_paths:
-                summaries.append(self.import_pages(key, [Path(path) for path in page_paths]))
-        return summaries
-
     def import_file(
         self,
         key: str,

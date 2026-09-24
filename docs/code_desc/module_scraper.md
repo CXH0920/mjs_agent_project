@@ -188,7 +188,7 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
    - **指定（`replace_ids`）**：先按 ID 删除旧数据再写入新数据（精确替换，覆盖已采集武将的陈旧数据）；
    - **皆否**：全量覆盖。
 
-`load_existing_ids()` / `load_existing_names()` 用 `_load_heroes_file()` 读取本地 JSON，文件损坏时以 `corrupt-<timestamp>` 后缀备份原文件后按空集合继续，避免裸崩或静默丢数据。
+`load_existing_ids()` 用 `_load_heroes_file()` 读取本地 JSON，文件损坏时以 `corrupt-<timestamp>` 后缀备份原文件后按空集合继续，避免裸崩或静默丢数据。
 
 ### 3.4 头像下载
 

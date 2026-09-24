@@ -37,24 +37,6 @@ def pil_to_qpixmap(image: Image.Image):
         return QPixmap()
 
 
-def copy_image_to_clipboard(image: Image.Image) -> None:
-    """复制图像到系统剪贴板。
-
-    Args:
-        image: PIL Image 对象。
-    """
-    from PySide6.QtGui import QGuiApplication
-
-    pixmap = pil_to_qpixmap(image)
-    if pixmap and not pixmap.isNull():
-        try:
-            clipboard = QGuiApplication.clipboard()
-            clipboard.setPixmap(pixmap)
-            logger.debug("图像已复制到剪贴板")
-        except Exception as e:
-            logger.error("复制到剪贴板失败: %s", e)
-
-
 def save_image(image: Image.Image, save_path: str | Path) -> tuple[bool, str]:
     """保存图像为 PNG 文件。
 

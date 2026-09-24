@@ -169,15 +169,6 @@ class CardPointsRepository(JsonRepository):
         self._cards.append(item)
         self._save_or_rollback(snapshot)
 
-    def update_card(self, item: CardPointItem) -> None:
-        for index, existing in enumerate(self._cards):
-            if existing.name == item.name and existing.suit == item.suit and existing.point == item.point:
-                snapshot = self._snapshot()
-                self._cards[index] = item
-                self._save_or_rollback(snapshot)
-                return
-        raise ValueError(f"牌行不存在: {item.name} {item.suit}{item.point}")
-
     def replace_card(self, old_name: str, old_suit: str, old_point: str, item: CardPointItem) -> None:
         """编辑牌行：按旧键定位、单步替换为新内容（键可能变化），失败整批回滚。"""
         for index, existing in enumerate(self._cards):

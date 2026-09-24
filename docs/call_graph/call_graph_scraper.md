@@ -245,8 +245,7 @@ MainWindow._request_fetch_incremental()
 | `incremental.main()` | `official_source/incremental.py` | QProcess 子进程 | `fetch_all_raw()`, 筛选函数, `run()` |
 | `crawler.fetch_all_raw()` | `crawler.py` | `incremental.main()` | `fetch()`, `find_chunk_url()`, `parse_heroes_chunk()` |
 | `load_existing_ids(path)` | `official_source/incremental.py` | `incremental.main()` | `_load_heroes_file()` |
-| `load_existing_names(path)` | `official_source/incremental.py` | 外部（公告服务） | `_load_heroes_file()` |
-| `_load_heroes_file(path)` | `official_source/incremental.py` | `load_existing_ids()`, `load_existing_names()`, `run()` | `json.load()`，损坏时 `path.replace()` 备份 |
+| `_load_heroes_file(path)` | `official_source/incremental.py` | `load_existing_ids()`, `run()` | `json.load()`，损坏时 `path.replace()` 备份 |
 | `incremental_collect(raw_list, existing_ids)` | `official_source/incremental.py` | `incremental.main()` | 列表推导式差集 |
 | `filter_by_names(raw_list, names)` | `official_source/incremental.py` | `incremental.main()` | 双向子串匹配 |
 | `filter_by_ids(raw_list, ids)` | `official_source/incremental.py` | `incremental.main()` | ID set 交集 |
@@ -649,7 +648,6 @@ CardSyncDialog._build_candidates(result)                      [ui/data_admin/car
 | `adapter.parse_heroes_chunk(js)` | `adapter.py` | `full.crawl()`, `fetch_all_raw()` | `extract_js_array()`, `js_to_json()` |
 | `incremental.main()` | `official_source/incremental.py` | QProcess 子进程 | `fetch_all_raw()`, 筛选, `run()` |
 | `load_existing_ids(path)` | `official_source/incremental.py` | `incremental.main()` | `_load_heroes_file()` |
-| `load_existing_names(path)` | `official_source/incremental.py` | 外部 | `_load_heroes_file()` |
 | `_load_heroes_file(path)` | `official_source/incremental.py` | 多入口 | `json.load()`，损坏时 `path.replace()` 备份 |
 | `incremental_collect(raw, ids)` | `official_source/incremental.py` | `incremental.main()` | 列表推导式差集 |
 | `filter_by_names(raw, names)` | `official_source/incremental.py` | `incremental.main()` | 双向子串匹配 |

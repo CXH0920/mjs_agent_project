@@ -704,17 +704,6 @@ RecommendationPanel._load_real_synergies(card_idx, hero_id)
   -> [无数据] card.set_synergies([("等待数据", "--"), ...])
 ```
 
-### 4.5 默认加载（启动/重新加载）
-
-```
-RecommendationPanel._load_default_heroes()
-  -> self._ocr_mode = False
-  -> self._current_hero_ids.clear()
-  -> [遍历 8 个] card.set_hero(None)
-  -> _refresh_combo_strip()                                     [空匹配，隐藏横条]
-  -> _show_empty_state()                                        [不预填业务数据]
-```
-
 ### 4.6 奖牌计算
 
 ```
@@ -726,7 +715,6 @@ RecommendationPanel._apply_medal_rankings()
 | 函数 | 所在类 | 调用方 | 被调用方 |
 |------|--------|--------|----------|
 | `load_from_ocr(results)` | `RecommendationPanel` | `_on_capture_result()`, `_on_poll_result()` | `get_hero_by_name()`, `set_hero()`, `_load_real_synergies()` |
-| `_load_default_heroes()` | `RecommendationPanel` | 页面清空 | `set_hero(None)`, `_refresh_combo_strip()`, `_show_empty_state()` |
 | `_load_real_synergies(idx, id)` | `RecommendationPanel` | `update_recommendations()`, `refresh_synergies()` | `list_synergies_for_hero()`, `get_hero()`, `set_synergies()` |
 | `_load_card_stats(idx, name, data)` | `RecommendationPanel` | `update_recommendations()` | `set_win_rate()`, `set_recommendation_index()` |
 | `_apply_medal_rankings()` | `RecommendationPanel` | `update_recommendations()`, `_rebuild_recommendation_indexes()` | `rank_win_rates()`, `set_medal()` |

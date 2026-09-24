@@ -312,7 +312,6 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 | 接口 | 参数 | 返回/信号 | 说明 |
 |---|---|---|---|
-| `OfficialDataImportService.import_selected()` | `{类型: 图片路径或列表}` | `list[dict]` | 空路径跳过；多个类型依次执行 |
 | `OfficialDataImportService.import_pages()` | `key`, `image_paths`, `progress_callback`, `status_callback` | `{name, pages, variant, records, reviews, outputs}` | 合并同类有序分页，全部校验后覆盖 CSV |
 | `OfficialDataImportService.import_file()` | `key`, `image_path`, `progress_callback`, `status_callback` | `dict` | 单页快捷入口，委托 `import_pages` |
 | `OfficialDataImportService.apply_reviewed_records()` | `pending`, `{(榜单, 排名): 武将名}` | `dict` | 人工复核修正后重跑门禁并写正式 CSV；失败抛错且不写文件 |

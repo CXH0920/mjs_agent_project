@@ -630,7 +630,6 @@ src.business.recognition.pending_stats
 |------|------|--------|------|
 | `pil_to_qpixmap(image)` | `image_utils.py` | `MumuConfigDialog` | PIL → QPixmap |
 | `save_image(image, path)` | `image_utils.py` | `CaptureService._execute_capture()` | 截图保存到磁盘 |
-| `copy_image_to_clipboard(image)` | `image_utils.py` | 外部 UI | 复制到剪贴板 |
 
 ### 模板匹配层
 

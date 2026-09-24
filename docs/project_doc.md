@@ -866,7 +866,6 @@ class DataFacade:
     guides: GuideManager
 
     def load_all(self) → LoadReport # 三个 load()、引用校验和问题汇总
-    def save_all(self) → None      # 三个 save() 依次调用
     def get_stats(self) → dict     # 返回 {heroes: N, synergies: N, guides: N}
 ```
 
@@ -1931,7 +1930,6 @@ class AdbCapture:
 | 函数 | 说明 |
 |------|------|
 | `pil_to_qpixmap(image)` | PIL Image → QPixmap |
-| `copy_image_to_clipboard(image)` | 复制图像到系统剪贴板 |
 | `save_image(image, path)` | 保存为 PNG，返回 `(bool, str)` |
 
 ### 11.5 截图业务服务（capture_service.py）

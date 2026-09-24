@@ -339,12 +339,6 @@ class DataFacade:
         )
         logger.error("数据问题 [%s] %s: %s", kind, file_path, message)
 
-    def save_all(self) -> None:
-        """保存所有数据"""
-        self.heroes.save()
-        self.synergies.save()
-        self.guides.save()
-
     def get_stats(self) -> dict[str, int]:
         """获取各数据计数"""
         return {

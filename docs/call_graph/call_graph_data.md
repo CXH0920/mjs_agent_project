@@ -127,7 +127,7 @@ ComboManager.save()
 2v2 胜率 CSV 不属于三个 JSON Manager，由独立仓库按名称读取并缓存：
 
 ```
-RecommendationPanel._load_win_rate_by_name() / MatchGuidePanel._load_default_heroes()
+RecommendationPanel._load_win_rate_by_name()
   -> load_win_rates()
      -> [默认路径] data/2v2胜率排行.csv
      -> csv.DictReader()
@@ -216,7 +216,6 @@ RecommendationPanel.update_recommendations()
 | `RecommendationPanel._load_real_synergies()` | `recommendation_panel.py` | 相性伙伴名称→ID 解析 |
 | `GuideEditDialog._open_relation_selector()` | `guide_edit_dialog.py` | 打开攻略关系武将选择器并回填 ID 列表 |
 | `HeroRelationSelectDialog._accept_selection()` | `hero_relation_select_dialog.py` | 按英雄 ID 的稳定顺序提交已选择关系 |
-| `RecommendationPanel._load_default_heroes()` | `recommendation_panel.py` | 启动时默认武将加载 |
 
 > **性能标注：** `get_hero_by_name()` 内部是 O(N) 线性遍历（N=165）。在 OCR 矫正流程中，每帧可由 `CharacterSimilarityService.correct_hero_name()` 触发 8 次编辑距离遍历。如果修改为 `name -> id` 的 dict 索引可消除 O(N) 查找，但当前 165 规模下线性扫描的延迟可以忽略（< 0.01ms）。
 
@@ -271,7 +270,6 @@ RecommendationPanel._load_real_synergies(card_idx, hero_id)
 
 | 调用方 | 说明 |
 |--------|------|
-| `RecommendationPanel._load_default_heroes()` | 启动时加载前 8 武将相性 |
 | `RecommendationPanel.update_recommendations()` | OCR 导入后刷新相性 |
 
 > **性能标注：** `list_synergies_for_hero()` 全表扫描当前相性数据量。如果相性条目很多（C(165,2)=13,530 条满数据），8 张卡片就是 8 次全表扫描。当前实际数据量较小，不是性能瓶颈。
@@ -437,7 +435,6 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | 函数 | 文件 | 调用方（主要） | 被调用方（主要） |
 |------|------|----------------|------------------|
 | `DataFacade.load_all()` | `manager.py` | `MainWindow._load_data()` | 三个 Manager.load() + `_validate_references()` |
-| `DataFacade.save_all()` | `manager.py` | 外部批量保存 | 三个 Manager.save() |
 | `DataFacade.get_stats()` | `manager.py` | `MainWindow._update_status()` | 三个 Manager 的计数接口 |
 | `HeroManager.load()` | `hero_manager.py` | `DataFacade.load_all()` | `json.load()`, `Hero.model_validate()` |
 | `HeroManager.save()` | `hero_manager.py` | `DataMutationService.update_hero()` | `json.dump()`, 原子替换 |

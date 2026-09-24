@@ -152,7 +152,6 @@ facade = DataFacade()                          # 默认 heroes/synergies/guides 
 facade = DataFacade.from_managers(h, s, g)    # 复用已有 Manager（避免循环依赖）
 report = facade.load_all()                     # 三个 load() + 跨实体校验 → LoadReport
 stats  = facade.get_stats()                    # {"heroes": N, "synergies": N, "guides": N}
-facade.save_all()                              # 原子保存三个文件
 ```
 
 `load_all()` 内部对每个 Manager 执行 `load()` 后将 `DataIssue` 汇总到 `LoadReport`，随后 `_validate_references()` 校验跨实体引用：相性双方 ID、攻略归属 ID、攻略 `synergizes_with` 列表中的武将 ID 都必须存在于英雄库。失效引用仅记入报告（`kind="missing_reference"`），不在加载时删除内存数据；报告持久化到 `facade.last_load_report`。
@@ -504,7 +503,7 @@ class SpecialCardRepository(JsonRepository):
 
 | 仓库 | 数据文件 | 关键 CRUD |
 |------|----------|-----------|
-| `CardPointsRepository` | `data/card_points.json` | `add_card/update_card/replace_card/delete_card` + `add_rule/update_rule/delete_rule` |
+| `CardPointsRepository` | `data/card_points.json` | `add_card/replace_card/delete_card` + `add_rule/update_rule/delete_rule` |
 | `EquipAttrsRepository` | `data/equip_attrs.json` | `add_equip/update_equip/delete_equip` |
 | `HeroClassificationRepository` | `data/hero_classification.json` | `add_category/update_category/delete_category` + `set_counter_chain` + `set_hero_categories` + `list_unclassified` |
 | `SpecialCardRepository` | `data/special_cards.json` | `add_item/update_item/delete_item`（同类别同名不可重复） |

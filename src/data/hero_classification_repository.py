@@ -168,9 +168,6 @@ class HeroClassificationRepository(JsonRepository):
     # ---------------------------------------------------------------
     # 克制链
     # ---------------------------------------------------------------
-    def counter_chain(self) -> dict[str, str]:
-        return dict(self._counter_chain)
-
     def get_chain_description(self, category: str) -> str:
         return self._counter_chain.get(category, "")
 
@@ -186,9 +183,6 @@ class HeroClassificationRepository(JsonRepository):
         """更新武将名单环境（不触碰归类数据；heroes.json 更新后由面板刷新）。"""
         self.hero_names = set(names or ())
 
-    def hero_categories(self) -> dict[str, list[str]]:
-        return {k: list(v) for k, v in self._hero_categories.items()}
-
     def get_hero_categories(self, hero: str) -> list[str]:
         return list(self._hero_categories.get(hero, []))
 
@@ -199,9 +193,6 @@ class HeroClassificationRepository(JsonRepository):
         if self.hero_names and hero not in self.hero_names:
             raise ValueError(f"武将不在武将库中: {hero}")
         self._hero_categories[hero] = list(dict.fromkeys(categories))
-
-    def clear_hero(self, hero: str) -> None:
-        self._hero_categories.pop(hero, None)
 
     def list_unclassified(self) -> list[str]:
         if not self.hero_names:
