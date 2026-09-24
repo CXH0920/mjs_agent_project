@@ -36,12 +36,6 @@ def _get_retriever():
     return _retriever_instance
 
 
-def reset_retriever() -> None:
-    """清空 Retriever 单例（测试用）。"""
-    global _retriever_instance
-    _retriever_instance = None
-
-
 def build_rag_context(hero: dict, max_chars: int | None = None) -> str:
     """检索并格式化 RAG 官方规则语料区块；失败时返回空串（降级）。"""
     if not is_rag_enabled():

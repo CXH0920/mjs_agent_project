@@ -767,10 +767,6 @@ class MumuConfigDialog(QDialog):
         """获取用户修改后的配置"""
         return self._coordinator.config
 
-    def get_connected(self) -> bool:
-        """是否已连接"""
-        return self._coordinator.connection_state[0] == "connected"
-
     def done(self, result: int) -> None:
         """关闭时停止接收后台操作结果，避免更新已关闭的对话框。"""
         self._coordinator.shutdown()

@@ -48,15 +48,6 @@ class ViabilityTier(str, Enum):
     T4 = "T4"
 
 
-class GameMode(str, Enum):
-    """游戏模式"""
-    MODE_1V1 = "1v1"
-    MODE_2V2 = "2v2"
-    MODE_3V3 = "3v3"
-    MODE_5V5 = "5v5"
-    MODE_BRAWL = "乱斗"
-
-
 class CardType(str, Enum):
     """卡牌类型"""
     ACTION = "行动牌"

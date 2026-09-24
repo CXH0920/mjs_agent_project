@@ -273,10 +273,6 @@ class LineupState:
         """四名不同武将且敌我各两名时，阵容可由用户确认。"""
         return self.validate().is_valid
 
-    def is_confirmed(self) -> bool:
-        """兼容确认规则的语义化名称。"""
-        return self.can_confirm()
-
     def confirm(self) -> bool:
         """确认当前可用阵容，允许生成攻略。"""
         if not self.can_confirm():

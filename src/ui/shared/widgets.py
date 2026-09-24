@@ -163,9 +163,6 @@ class PageHeader(QWidget):
         self.actions_layout.setSpacing(SPACE_SM)
         layout.addLayout(self.actions_layout)
 
-    def set_title(self, title: str) -> None:
-        self.title_label.setText(title)
-
     def set_subtitle(self, subtitle: str) -> None:
         self.subtitle_label.setText(subtitle)
         self.subtitle_label.setVisible(bool(subtitle))

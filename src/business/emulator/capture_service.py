@@ -655,10 +655,6 @@ class CaptureService(QObject):
 
     # ── 公开接口（供外部调用，替代直接访问私有成员） ─────────────────
 
-    def get_matching_threshold(self) -> float:
-        """获取模板匹配阈值。"""
-        return self._config.get("mumu_ocr_match_threshold", 0.8)
-
     def shutdown(self) -> None:
         """停止截图执行器和 OCR worker，供应用退出时调用。
 
