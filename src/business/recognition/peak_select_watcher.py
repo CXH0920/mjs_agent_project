@@ -328,7 +328,9 @@ class PeakSelectWatcher(QObject):
         task = self._capture_service.submit_ocr_task(
             image,
             hero_names=hero_names,
-            template_name="hero_selection",
+            # 独立页名：日志与错法频次 scene 归属巅峰渠道，不与选将轮询混淆；
+            # 布局由本拍派生 rois 整页覆盖，此处页名仅用于日志/数据归档
+            template_name="peak_board",
             rois=rois,
             match_template=False,
         )

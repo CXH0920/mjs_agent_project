@@ -7,7 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from src.business.emulator.capture_service import CaptureService
+from src.ocr.card_grid_detector import derive_name_rois
 from src.ocr.roi_config import (
     DEFAULT_ROI_CONFIG_PATH,
     OcrRoiConfig,
@@ -30,6 +32,8 @@ def test_default_layouts_contain_expected_slots(tmp_path: Path) -> None:
     assert len(config.layout_for("hero_selection").slots) == 8
     assert len(config.layout_for("match_guide").slots) == 5
     assert all(slot.team_roi is not None for slot in config.layout_for("match_guide").slots)
+    assert config.layout_for("peak_board").reference_size == (2560, 1440)
+    assert len(config.layout_for("peak_board").slots) == 8
 
 
 def test_save_layout_writes_local_override_with_utf8_lf(tmp_path: Path) -> None:
@@ -105,3 +109,35 @@ def test_capture_task_keeps_layout_snapshot_after_config_update(tmp_path: Path, 
     assert submitted == [first_task, second_task]
     assert first_task.roi_layout.slots[0].name_roi == (155, 370, 50, 145)
     assert second_task.roi_layout.slots[0].name_roi == (160, 370, 50, 145)
+
+
+def test_peak_board_layout_reference_matches_frame_size(tmp_path: Path, monkeypatch) -> None:
+    """watcher 派生的 rois 与截帧同像素空间：布局参考尺寸取当帧尺寸，
+    非 1440p 分辨率下不再被模板页参考尺寸二次缩放。"""
+    config = OcrRoiConfig(_copy_default_config(tmp_path), tmp_path / "ocr_rois.json")
+    service = CaptureService(roi_config=config)
+    submitted = []
+
+    class _Worker:
+        def submit(self, task) -> None:
+            submitted.append(task)
+
+    monkeypatch.setattr(service, "_ensure_ocr_worker", lambda: _Worker())
+
+    cards = [(100 + i * 200, 180, 170, 240) for i in range(9)]
+    rois = [list(roi) for roi in derive_name_rois(cards)]
+    task = service.submit_ocr_task(
+        Image.new("RGB", (1920, 1080)),
+        template_name="peak_board",
+        rois=rois,
+        match_template=False,
+    )
+
+    assert task.roi_layout.reference_size == (1920, 1080)
+    assert [slot.name_roi for slot in task.roi_layout.slots] == [tuple(roi) for roi in rois]
+
+    # 对照：固定布局页（rois=None）仍按配置参考尺寸缩放，行为不变
+    fixed = service.submit_ocr_task(
+        Image.new("RGB", (1920, 1080)), template_name="hero_selection"
+    )
+    assert fixed.roi_layout.reference_size == (2560, 1440)

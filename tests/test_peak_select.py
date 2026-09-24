@@ -859,12 +859,16 @@ def test_watcher_live_loop_resuspends_on_board_reappear(qapp, monkeypatch):
         "src.business.recognition.peak_select_watcher.detect_selection_cards",
         lambda frame: [(100 + i * 276, 247, 238, 326) for i in range(9)],
     )
+    submitted: list[dict] = []
+
+    def _submit(image, **kwargs):
+        submitted.append(kwargs)
+        return _fake_ocr_task([{"name": "荆轲", "resolution": "exact"}])
+
     capture_service = SimpleNamespace(
         capture=SimpleNamespace(connected=True),
         capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
-        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(
-            [{"name": "荆轲", "resolution": "exact"}]
-        ),
+        submit_ocr_task=_submit,
     )
     ocr_service = _FakeOcrService()
     watcher, pools, _ = _make_watcher(capture_service)
@@ -880,6 +884,9 @@ def test_watcher_live_loop_resuspends_on_board_reappear(qapp, monkeypatch):
     assert ocr_service.get_task_state("hero_selection").active is False
     assert ocr_service.get_task_state("match_guide").active is False  # 牌面重现 → 重新挂起
     assert len(pools) == 1
+    # 识别任务用独立页名：日志与错法 scene 归属巅峰渠道，不与选将轮询混淆
+    assert submitted and submitted[0]["template_name"] == "peak_board"
+    assert submitted[0]["match_template"] is False
 
 
 def test_watcher_carries_resolution_across_signature_flip(qapp, monkeypatch):

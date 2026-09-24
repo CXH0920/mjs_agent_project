@@ -358,7 +358,10 @@ class OcrWorker(QThread):
             result_save_started = time.perf_counter()
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
             GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json")
-            self._record_pending_names(results, task.template_name)
+            # 模板未命中的兜底读数来自错位 ROI（巅峰页等非本页画面），
+            # 是跨页噪声而非本页错法，不进白名单治理数据
+            if result.get("template_matched", True):
+                self._record_pending_names(results, task.template_name)
             result_save_ms = (time.perf_counter() - result_save_started) * 1000
             result["ocr_results"] = results
             if fingerprint is not None:

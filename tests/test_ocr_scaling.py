@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from src.ocr.recognizer import GeneralRecognizer
-from src.ocr.roi_config import OcrRoiConfig
+from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 from src.ocr.template_manager import TemplateManager
 
 
@@ -103,6 +103,32 @@ def test_general_recognizer_scales_rois_to_current_image(monkeypatch) -> None:
     assert results[0]["resolution"] == "exact"
     assert results[0]["raw_name"] == "测试"
     assert captured_shapes == [(30, 60)]
+
+
+def test_frame_space_reference_keeps_rois_unscaled(monkeypatch) -> None:
+    """参考尺寸与截图同尺寸（巅峰 watcher 派生 ROI 场景）时缩放比恒为 1，
+    ROI 按原始坐标原样使用，任意分辨率下不发生二次缩放。"""
+    slots = (OcrRoiSlot(name_roi=(100, 100, 20, 40)),)
+    recognizer = GeneralRecognizer(layout=OcrRoiLayout((1920, 1080), slots), hero_names=["测试"])
+    captured_shapes: list[tuple[int, int]] = []
+
+    def fake_batch(prepared_slots, _kind, evidence_by_slot=None):
+        captured_shapes.extend((image.shape[1], image.shape[0]) for image in prepared_slots.values())
+        evidence_by_slot[1] = [
+            {"source": "batch_enhanced", "text": "测试", "confidence": 1.0},
+        ]
+        return {1: ("测试", 1.0)}
+
+    monkeypatch.setattr(recognizer, "_recognize_prepared_batch", fake_batch)
+    image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+    results = recognizer.recognize(image)
+
+    assert results[0]["name"] == "测试"
+    # ROI (20,40) 零缩放裁剪后，识别器内部对名称条做 3× 放大供 OCR
+    # （与既有用例 (10,20)→(30,60) 同一倍率）；若仍按 2560×1440 参考
+    # 二次缩放（×0.75），此处会是 (45, 90)
+    assert captured_shapes == [(60, 120)]
 
 
 def test_default_general_rois_leave_vertical_name_padding() -> None:

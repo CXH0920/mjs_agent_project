@@ -28,6 +28,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_SCREENSHOTS_DIR = SCREENSHOTS_DIR
 
 
+def _image_pixel_size(image) -> tuple[int, int] | None:
+    """读取图像像素尺寸 (宽, 高)；PIL Image 与 numpy 数组之外的类型返回 None。"""
+    size = getattr(image, "size", None)
+    if isinstance(size, tuple) and len(size) == 2:
+        return int(size[0]), int(size[1])
+    shape = getattr(image, "shape", None)
+    if shape is not None and len(shape) >= 2:
+        return int(shape[1]), int(shape[0])
+    return None
+
+
 class CaptureService(QObject):
     """截图业务服务"""
 
@@ -374,8 +385,11 @@ class CaptureService(QObject):
         )
         layout = self._roi_config.layout_for(template_name)
         if rois is not None:
+            # 调用方派生的 rois 与 image 同一像素空间（如巅峰 watcher 按当帧
+            # 卡位派生名称条），参考尺寸取 image 实际尺寸使缩放比恒为 1，
+            # 不再叠加模板页参考尺寸的二次缩放
             layout = OcrRoiLayout(
-                layout.reference_size,
+                _image_pixel_size(image) or layout.reference_size,
                 tuple(OcrRoiSlot(name_roi=tuple(roi)) for roi in rois),
             )
         task = OcrTask(

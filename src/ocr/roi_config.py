@@ -17,6 +17,10 @@ SCHEMA_VERSION = 1
 _PAGE_REQUIREMENTS = {
     "hero_selection": (8, False),
     "match_guide": (5, True),
+    # 巅峰赛牌面识别页（PeakSelectWatcher 专用标签）：布局由识别拍按检测到的
+    # 卡位派生并整页覆盖，登记值仅用于通过默认文档校验；参考尺寸亦随当帧
+    # 尺寸在提交时解析，登记布局不参与缩放
+    "peak_board": (8, False),
 }
 
 Roi = tuple[int, int, int, int]

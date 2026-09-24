@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -16,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition import ocr_worker as ocr_worker_module
+from src.business.recognition import pending_stats
 from src.business.recognition.ocr_service import OcrService
 from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
 from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
@@ -688,6 +690,84 @@ def test_result_reuse_carries_template_miss_marker(monkeypatch) -> None:
     assert first["template_matched"] is False
     assert second["skipped_ocr"] is True
     assert second["template_matched"] is False
+
+
+def _install_pending_fakes(monkeypatch, *, template_hits: bool) -> None:
+    """模板命中/未命中两档 fakes：识别结果带一个未决错法读数（西汉陈）。"""
+
+    class FakeTemplateManager:
+        is_loaded = True
+        last_match_scale = 1.0
+        last_match_strategy = "base_local"
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            return (True, threshold) if template_hits else (False, 0.35)
+
+    class FakeRecognizer:
+        timing_ms = {}
+
+        def __init__(self, hero_names, page_type, layout) -> None:
+            pass
+
+        def adopt_engine(self, engine) -> None:
+            self._ocr = engine
+
+        def shared_engine(self):
+            return self._ocr if hasattr(self, '_ocr') else None
+
+        def recognize(self, image):
+            return [{
+                "index": 1, "raw_name": "西汉陈", "candidates": ["西汉陈"],
+                "name": "", "resolution": "unresolved", "confidence": 0.5,
+            }]
+
+        @staticmethod
+        def save_results(results, path) -> None:
+            return None
+
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+
+def _pending_entries(stats_path):
+    if not stats_path.exists():
+        return {}
+    document = json.loads(stats_path.read_text(encoding="utf-8"))
+    return document.get("entries", {})
+
+
+def test_fallback_result_skips_pending_name_recording(tmp_path, monkeypatch) -> None:
+    """模板未命中的兜底读数是错位 ROI 的跨页噪声，不进白名单治理数据。"""
+    stats_path = tmp_path / "ocr_name_pending_stats.json"
+    monkeypatch.setattr(pending_stats, "STATS_PATH", stats_path)
+    _install_pending_fakes(monkeypatch, template_hits=False)
+
+    result = OcrWorker()._execute(OcrTask(
+        image="image", hero_names=("曹操",), rois=None,
+        template_name="match_guide", threshold=0.8, fallback_on_template_miss=True,
+    ))
+
+    assert result["template_matched"] is False
+    assert _pending_entries(stats_path) == {}
+
+
+def test_template_hit_result_records_pending_names(tmp_path, monkeypatch) -> None:
+    """模板真实命中时未决读数照常记录（对照：跳过由 template_matched 驱动）。"""
+    stats_path = tmp_path / "ocr_name_pending_stats.json"
+    monkeypatch.setattr(pending_stats, "STATS_PATH", stats_path)
+    _install_pending_fakes(monkeypatch, template_hits=True)
+
+    OcrWorker()._execute(OcrTask(
+        image="image", hero_names=("曹操",), rois=None,
+        template_name="match_guide", threshold=0.8, fallback_on_template_miss=True,
+    ))
+
+    entries = _pending_entries(stats_path)
+    assert list(entries.keys()) == ["西汉陈"]
+    assert entries["西汉陈"]["scenes"] == ["match_guide"]
 
 
 def test_result_reuse_reruns_ocr_when_page_changes(monkeypatch) -> None:
