@@ -15,7 +15,6 @@ cls = load_json(project_path('data', 'hero_classification.json'))
 heroes = load_json(project_path('data', 'heroes.json'))
 
 cat_by_name = {c['name']: c for c in cls['categories']}
-hero_map = {h['name']: h for h in heroes}
 chain = cls.get('counter_chain', {})
 
 

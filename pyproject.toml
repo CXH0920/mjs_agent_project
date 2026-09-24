@@ -23,6 +23,8 @@ select = ["F", "T201", "I", "B905"]
 "src/scraper/**" = ["T201"]
 "src/scripts/**" = ["T201"]
 "tests/**" = ["T201"]
+# vulture 白名单：故意裸引用框架回调符号（不在作用域内），F821 属预期
+"tests/vulture_whitelist.py" = ["F821"]
 
 [tool.pyright]
 include = ["src", "tests"]

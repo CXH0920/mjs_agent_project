@@ -20,6 +20,8 @@ dependencies:
     - pytest-xdist       # verify.yml -n auto 并行跑测试用例
     - pytest-timeout     # verify.yml --timeout=60 单测试超时兜底
     - ruff==0.12.0
+    - import-linter==2.15   # verify.yml 架构契约门禁（.importlinter）
+    - vulture==2.16         # verify.yml 死代码 report-only（tests/vulture_whitelist.py）
     - pillow==12.3.0
     - numpy==1.26.4
     - playwright==1.60.0   # browser_session.py 顶层硬 import（仅需 pip 包，测试全程 mock 不需浏览器）

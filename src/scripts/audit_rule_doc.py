@@ -40,7 +40,6 @@ SNAPSHOT_VERSION = 1
 
 CARD_REF_RE = re.compile(r'卡牌\s*(\d+)')
 HERO_REF_RE = re.compile(r'武将\s+([^，,、+（(/等]+)')
-CHAPTER_RE = re.compile(r'^##\s+(\d+)\.\s*(.*)$')
 
 
 def load_snapshot(path=DEFAULT_SNAPSHOT):

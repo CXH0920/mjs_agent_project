@@ -40,7 +40,6 @@ from src.ui.shared.widgets import PageHeader
 logger = logging.getLogger(__name__)
 
 _OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
-_CONFIRMED = {"exact", "unique_prefix", "unique_similarity", "multi_similarity", "slot_unique", "manual"}
 # 分类排序权重：A+（已有人工确认答案）> A（候选唯一）> B（候选不唯一）> C（截断）
 _CATEGORY_ORDER = {"A+": 0, "A": 1, "B": 2, "C": 3, "D": 4}
 

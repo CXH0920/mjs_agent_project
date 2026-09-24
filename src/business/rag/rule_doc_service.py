@@ -249,10 +249,6 @@ def update_proposal_item(root: Path, proposal_path: str, item_id: str,
 # 疑难登记（本地待办文件 docs/rule_doc_pending.json）
 # ---------------------------------------------------------------------------
 
-PENDING_SCHEMA = {"items": [{"id": int, "date": str, "description": str,
-                             "involved": str, "source": str, "status": str}]}
-
-
 def load_pending(root: Path = PROJECT_ROOT) -> list[dict]:
     path = root / "docs" / "rule_doc_pending.json"
     if not path.exists():

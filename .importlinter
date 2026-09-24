@@ -1,0 +1,47 @@
+# import-linter 契约：架构分层守门（配合 tests/test_architecture.py 的运行期检查）。
+# 跑法：python -m importlinter
+#
+# 灰度约定：
+# - no-upward / business-no-ui 当天零违规，是纯保险；
+# - ui-not-infra 带显式豁免清单（ignore_imports），每修复一条直连边就删一行豁免；
+#   豁免清零后该契约即为硬门禁。
+
+[importlinter]
+root_package = src
+
+[importlinter:contract:no-upward]
+name = 底层包禁止向上依赖（data/ocr/capture/rag/scraper 不得 import business/ui）
+type = forbidden
+source_modules =
+    src.data
+    src.ocr
+    src.capture
+    src.rag
+    src.scraper
+forbidden_modules =
+    src.business
+    src.ui
+
+[importlinter:contract:business-no-ui]
+name = business 层不得依赖 ui 层
+type = forbidden
+source_modules = src.business
+forbidden_modules = src.ui
+
+[importlinter:contract:ui-not-infra]
+name = ui 不得直连 ocr/scraper/capture 基础设施
+type = forbidden
+# 仅禁直接 import；ui -> business -> scraper 属合法编排链路，不拦
+allow_indirect_imports = true
+source_modules = src.ui
+forbidden_modules =
+    src.ocr
+    src.scraper
+    src.capture
+ignore_imports =
+    src.ui.configuration.mumu_config_dialog -> src.capture.image_utils
+    src.ui.configuration.mumu_config_dialog -> src.capture.image_validation
+    src.ui.configuration.mumu_config_dialog -> src.capture.prober
+    src.ui.configuration.whitelist_config_dialog -> src.ocr.character_similarity
+    src.ui.configuration.roi_selector -> src.ocr.roi_config
+    src.ui.data_admin.card_sync_dialog -> src.scraper.official_source.card_baike

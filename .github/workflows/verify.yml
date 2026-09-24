@@ -41,6 +41,15 @@ jobs:
       - name: Lint
         shell: bash -l {0}
         run: python -m ruff check src tests
+      # 架构契约（.importlinter）：ui-not-infra 的 6 条豁免随修复逐条删除，清零后为纯硬门禁
+      - name: Import contracts
+        shell: bash -l {0}
+        run: lint-imports
+      # 死代码扫描（report-only）：约 98 条存量候选待清点，清零后移除 continue-on-error 升级为强门禁
+      - name: Dead code scan (vulture, report-only)
+        continue-on-error: true
+        shell: bash -l {0}
+        run: python -m vulture src tests/vulture_whitelist.py --min-confidence 60 --ignore-decorators "@field_validator,@model_validator"
       # pyright（pyproject 已配 basic 模式）2026-09 实测 src 237 处报错：
       # reportArgumentType 79 / reportOptionalMemberAccess 57 / reportAttributeAccessIssue 46，
       # Optional 系合计约 39%——多为动态模型属性与第三方库缺类型桩，清零属数天级类型治理，

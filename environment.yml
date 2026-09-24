@@ -14,6 +14,10 @@ dependencies:
     - PySide6==6.11.1
     - pytest==9.0.3
     - ruff==0.12.0
+    # 架构契约检查（.importlinter；配合 tests/test_architecture.py 守护分层）
+    - import-linter==2.15
+    # 死代码扫描（report-only；白名单见 tests/vulture_whitelist.py）
+    - vulture==2.16
     - pillow==12.3.0
     - numpy==1.26.4
     - paddlepaddle-gpu==2.6.2

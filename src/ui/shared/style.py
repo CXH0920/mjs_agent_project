@@ -49,7 +49,6 @@ RADIUS_SM = 4
 RADIUS_MD = 6
 CONTROL_HEIGHT_COMPACT = 28
 CONTROL_HEIGHT_DEFAULT = 32
-CONTROL_HEIGHT_PRIMARY = 36
 ICON_SIZE = 16
 
 UI_ROLE_PROPERTY = "uiRole"
@@ -63,26 +62,6 @@ TONE_INFO = "info"
 TONE_SUCCESS = "success"
 TONE_WARNING = "warning"
 TONE_DANGER = "danger"
-
-# 页面级标题和顶部操作栏：选将推荐、对局攻略等工作台页面共用。
-PAGE_TITLE_STYLE = (
-    f"font-size: {FONT_SIZE_PAGE_TITLE}px; font-weight: bold; "
-    f"color: {TEXT_PRIMARY}; padding: {SPACE_XS}px 0;"
-)
-HEADER_PRIMARY_BUTTON_STYLE = (
-    f"QPushButton {{ background-color: {PRIMARY}; color: white; border: 1px solid {PRIMARY}; "
-    f"border-radius: {RADIUS_SM}px; padding: {SPACE_XS}px 14px; "
-    f"font-size: {FONT_SIZE_SM}px; font-weight: bold; }}"
-    f"QPushButton:hover {{ background-color: {PRIMARY_HOVER}; border-color: {PRIMARY_HOVER}; }}"
-    f"QPushButton:pressed {{ background-color: {PRIMARY_PRESSED}; border-color: {PRIMARY_PRESSED}; }}"
-    f"QPushButton:disabled {{ background-color: {SUBTLE_SURFACE}; color: {BORDER_STRONG}; "
-    f"border-color: {BORDER}; }}"
-)
-HEADER_SECONDARY_BUTTON_STYLE = (
-    f"QPushButton {{ background-color: {SURFACE}; color: {PRIMARY}; border: 1px solid {BORDER}; "
-    f"border-radius: {RADIUS_SM}px; padding: {SPACE_XS}px 14px; font-size: {FONT_SIZE_SM}px; }}"
-    f"QPushButton:hover {{ background-color: {SUBTLE_SURFACE}; }}"
-)
 
 
 def refresh_style(widget) -> None:

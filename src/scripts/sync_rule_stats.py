@@ -41,7 +41,6 @@ DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.
 
 SECTION_NAMES = ('0.1', '0.2', '3.1', '3.2', '3.5', '5.2')
 FULL_FAQ_ROWS = ('46', '47', '48', '49', '59', '60', '61', '62')
-CHECK_FAQ_ROWS = ('58',)
 
 # 历史 LLM 统计的人工顺序（同计数时保持文档原顺序，避免无意义 diff）
 FACTION_ORDER = ('西汉', '曹魏', '秦', '蜀汉', '孙吴', '东汉', '西晋', '赵', '西楚', '燕', '魏', '韩', '楚', '齐', '黄巾', '张楚', '西周')
