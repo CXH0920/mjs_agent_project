@@ -182,3 +182,74 @@ def test_fall_back_result_from_raw_defaults_to_template_matched() -> None:
 
     assert result.template_matched is True
     assert fallback.template_matched is False
+
+
+class _TaskOcrService(_OcrService):
+    """带任务状态 API 的桩：记录路由层对任务激活/失活/冷却的全部写点。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.config.update({
+            "mumu_ocr_auto_switch_tab": False,
+            "mumu_hero_selection_cooldown": 180,
+        })
+        self.transitions: list[tuple] = []
+
+    def set_task_cooldown(self, task_name: str, seconds: int | None = None) -> None:
+        self.transitions.append(("cooldown", task_name, seconds))
+
+    def clear_task_cooldown(self, task_name: str) -> None:
+        self.transitions.append(("clear", task_name))
+
+    def activate_task(self, task_name: str) -> None:
+        self.transitions.append(("activate", task_name))
+
+    def deactivate_task(self, task_name: str) -> None:
+        self.transitions.append(("deactivate", task_name))
+
+
+def _make_router() -> tuple:
+    """只含路由状态的最小协调器；返回 (router, ocr, switched, loaded, guide_matched)。"""
+    ocr = _TaskOcrService()
+    router = PollCoordinator(_CaptureService(None), ocr, lambda: [])
+    switched: list[str] = []
+    loaded: list[list[dict]] = []
+    guide_matched: list[object] = []
+    router.page_switch_requested.connect(switched.append)
+    router.hero_selection_matched.connect(loaded.append)
+    router.match_guide_matched.connect(guide_matched.append)
+    return router, ocr, switched, loaded, guide_matched
+
+
+def test_route_hero_template_missing_deactivates_task_only() -> None:
+    """hero_selection 模板缺失即失活该任务，不触碰 match_guide、不发任何界面信号。"""
+    router, ocr, switched, loaded, guide_matched = _make_router()
+
+    router._route_result(PollResult(
+        4,
+        PollOutcome.TEMPLATE_MISSING,
+        task_results={"hero_selection": PollTaskResult(PollOutcome.TEMPLATE_MISSING)},
+    ))
+
+    assert ocr.transitions == [("deactivate", "hero_selection")]
+    assert switched == []
+    assert loaded == []
+    assert guide_matched == []
+
+
+def test_route_guide_template_missing_deactivates_and_resets_activation() -> None:
+    """match_guide 模板缺失即失活并清激活时间戳，闲置超时随之失去作用点。"""
+    router, ocr, switched, loaded, guide_matched = _make_router()
+    router._match_guide_activated_at = 123.0
+
+    router._route_result(PollResult(
+        4,
+        PollOutcome.TEMPLATE_MISSING,
+        task_results={"match_guide": PollTaskResult(PollOutcome.TEMPLATE_MISSING)},
+    ))
+
+    assert ocr.transitions == [("deactivate", "match_guide")]
+    assert router._match_guide_activated_at is None
+    assert switched == []
+    assert loaded == []
+    assert guide_matched == []

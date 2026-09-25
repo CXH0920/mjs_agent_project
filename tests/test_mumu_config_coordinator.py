@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
-from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
+from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator, persist_mumu_env_config
 from src.capture.prober import MuMuDeviceInfo
 from src.ocr.roi_config import DEFAULT_ROI_CONFIG_PATH, OcrRoiConfig
 
@@ -177,3 +177,45 @@ def test_roi_layout_capture_and_save_are_separate_from_template_lifecycle(tmp_pa
     coordinator.save_roi_layout("hero_selection", layout)
     assert received == [("hero_selection", "image")]
     assert roi_config.user_path.exists()
+
+
+def test_persist_mumu_env_config_writes_eleven_dialog_keys(monkeypatch) -> None:
+    """env 持久化固定写对话框可编辑的 11 键，部署键（GPU/线程/复检）不落盘。"""
+    recorded: list[tuple[object, dict]] = []
+    monkeypatch.setattr(
+        "src.business.emulator.mumu_config_coordinator.save_env_file",
+        lambda path, data: recorded.append((path, dict(data))),
+    )
+
+    persist_mumu_env_config({
+        "mumu_adb_path": "adb.exe",
+        "mumu_adb_port": 16384,
+        "mumu_ocr_enabled": True,
+        "mumu_ocr_poll_mode": False,
+        "mumu_ocr_poll_idle_pause": True,
+        "mumu_ocr_auto_switch_tab": True,
+        "mumu_ocr_poll_interval": 3,
+        "mumu_ocr_match_threshold": 0.82,
+        "mumu_hero_selection_threshold": 0.9,
+        "mumu_hero_selection_cooldown": 120,
+        "mumu_match_guide_threshold": 0.85,
+        "mumu_ocr_use_gpu": True,
+        "mumu_ocr_cpu_threads": 8,
+        "mumu_ocr_recheck_enabled": True,
+    })
+
+    assert len(recorded) == 1
+    path, data = recorded[0]
+    assert data == {
+        "MUMU_ADB_PATH": "adb.exe",
+        "MUMU_ADB_PORT": "16384",
+        "MUMU_OCR_ENABLED": "true",
+        "MUMU_OCR_POLL_MODE": "false",
+        "MUMU_OCR_POLL_IDLE_PAUSE": "true",
+        "MUMU_OCR_AUTO_SWITCH_TAB": "true",
+        "MUMU_OCR_POLL_INTERVAL": "3",
+        "MUMU_OCR_MATCH_THRESHOLD": "0.82",
+        "MUMU_HERO_SELECTION_THRESHOLD": "0.9",
+        "MUMU_HERO_SELECTION_COOLDOWN": "120",
+        "MUMU_MATCH_GUIDE_THRESHOLD": "0.85",
+    }

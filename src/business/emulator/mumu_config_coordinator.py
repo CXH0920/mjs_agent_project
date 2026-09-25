@@ -10,6 +10,7 @@ from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.business.recognition.ocr_service import OcrService
 from src.capture.prober import MuMuDeviceInfo
+from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 
 
@@ -286,3 +287,24 @@ class MumuConfigCoordinator(QObject):
         if self._config.get("mumu_adb_port", 0) == 0 and len(running_devices) > 1 and not selected_explicitly:
             return "检测到多个运行中的 MuMu 实例，请先选择要使用的实例。"
         return ""
+
+
+def persist_mumu_env_config(new_config: dict) -> None:
+    """把对话框确认后的配置写入 config.env（原子替换既有键，保留其它键与注释）。
+
+    new_config 出自 get_mumu_config() 全键字典（对话框经协调器持有），直接取键；
+    只写对话框可编辑的运行键，mumu_ocr_use_gpu 等部署键不在此列。
+    """
+    save_env_file(DEFAULT_ENV_FILE, {
+        "MUMU_ADB_PATH": new_config["mumu_adb_path"],
+        "MUMU_ADB_PORT": str(new_config["mumu_adb_port"]),
+        "MUMU_OCR_ENABLED": "true" if new_config["mumu_ocr_enabled"] else "false",
+        "MUMU_OCR_POLL_MODE": "true" if new_config["mumu_ocr_poll_mode"] else "false",
+        "MUMU_OCR_POLL_IDLE_PAUSE": "true" if new_config["mumu_ocr_poll_idle_pause"] else "false",
+        "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config["mumu_ocr_auto_switch_tab"] else "false",
+        "MUMU_OCR_POLL_INTERVAL": str(new_config["mumu_ocr_poll_interval"]),
+        "MUMU_OCR_MATCH_THRESHOLD": str(new_config["mumu_ocr_match_threshold"]),
+        "MUMU_HERO_SELECTION_THRESHOLD": str(new_config["mumu_hero_selection_threshold"]),
+        "MUMU_HERO_SELECTION_COOLDOWN": str(new_config["mumu_hero_selection_cooldown"]),
+        "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config["mumu_match_guide_threshold"]),
+    })

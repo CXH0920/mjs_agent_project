@@ -34,6 +34,7 @@ from src.scraper.official_source.announcement import (
     hero_field_diff_summary,
     parse_announcement_list,
 )
+from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
 from src.ui.app.main_window import MainWindow
 
 HERO_NAMES = {"贾诩", "马钧", "山涛", "王元姬", "羊祜"}
@@ -573,11 +574,11 @@ def test_service_do_check_uses_baike_baseline_when_no_local_file(tmp_path, monke
 
 def test_update_no_candidates_shows_toast(monkeypatch) -> None:
     """无候选时点击更新给出明确 toast，而不是静默无反应。"""
-    from src.ui.app import main_window as main_window_module
+    from src.ui.app import announcement_update_coordinator as coordinator_module
 
     toasts = []
     monkeypatch.setattr(
-        main_window_module,
+        coordinator_module,
         "show_toast",
         lambda parent, message, **kwargs: toasts.append(message),
     )
@@ -588,15 +589,17 @@ def test_update_no_candidates_shows_toast(monkeypatch) -> None:
 
     fake = SimpleNamespace(
         _fetch_service=SimpleNamespace(is_busy=False),
-        _announcement_service=SimpleNamespace(
+        _service=SimpleNamespace(
             collect_base_candidates=lambda local, announcements, diff: [],
         ),
-        _announcement_manager=SimpleNamespace(list_announcements=lambda: []),
-        _last_announcement_diff={"added": [], "modified": [], "removed": []},
+        _manager=SimpleNamespace(list_announcements=lambda: []),
+        _last_diff={"added": [], "modified": [], "removed": []},
         _data=SimpleNamespace(heroes=_Heroes()),
-        _status_label=SimpleNamespace(setText=lambda s: None),
+        _window=None,
+        _heroes_provider=lambda: [],
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
     )
-    MainWindow._update_hero_data_from_announcements(fake)
+    AnnouncementUpdateCoordinator.update_hero_data_from_announcements(fake)
     assert toasts
     assert "没有需要更新" in toasts[0]
 
@@ -664,7 +667,7 @@ def test_main_window_check_announcements_shows_dialogs(monkeypatch) -> None:
         def check_now(self):
             raise AssertionError("冷却期不应启动检查")
 
-    MainWindow._check_announcements(SimpleNamespace(_announcement_service=_CooldownService()))
+    AnnouncementUpdateCoordinator.check_announcements(SimpleNamespace(_window=None, _service=_CooldownService()))
     assert len(messages) == 1
     assert messages[0][0] == "公告检查"
     assert "秒后再试" in messages[0][1]
@@ -677,7 +680,7 @@ def test_main_window_check_announcements_shows_dialogs(monkeypatch) -> None:
             raise AssertionError("忙碌时不应启动检查")
 
     messages.clear()
-    MainWindow._check_announcements(SimpleNamespace(_announcement_service=_BusyService()))
+    AnnouncementUpdateCoordinator.check_announcements(SimpleNamespace(_window=None, _service=_BusyService()))
     assert len(messages) == 1
     assert "正在进行" in messages[0][1]
 
@@ -694,7 +697,7 @@ def test_main_window_check_announcements_shows_dialogs(monkeypatch) -> None:
 
     messages.clear()
     ready = _ReadyService()
-    MainWindow._check_announcements(SimpleNamespace(_announcement_service=ready))
+    AnnouncementUpdateCoordinator.check_announcements(SimpleNamespace(_window=None, _service=ready))
     assert messages == []
     assert ready.started is True
 
@@ -703,11 +706,11 @@ def test_on_announcement_check_finished_hero_related_toast(monkeypatch) -> None:
     """回归：matched_heroes 是 HeroChange 模型对象，不能用下标访问。"""
     from src.business.announcement.announcement_service import AnnouncementCheckResult
     from src.data.announcement_manager import Announcement, HeroChange
-    from src.ui.app import main_window as main_window_module
+    from src.ui.app import announcement_update_coordinator as coordinator_module
 
     toasts = []
     monkeypatch.setattr(
-        main_window_module,
+        coordinator_module,
         "show_toast",
         lambda parent, message, **kwargs: toasts.append(message),
     )
@@ -731,14 +734,15 @@ def test_on_announcement_check_finished_hero_related_toast(monkeypatch) -> None:
         baike_ok=True,
     )
     fake = SimpleNamespace(
-        _last_announcement_diff={"added": [], "modified": [], "removed": []},
-        _status_label=SimpleNamespace(setText=lambda s: None),
+        _last_diff={"added": [], "modified": [], "removed": []},
+        _window=None,
+        _heroes_provider=lambda: [],
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
     )
-    fake._refresh_announcement_banner = lambda: None
-    fake._refresh_announcement_dialog = lambda: None
-    fake._hide_progress = lambda: None
+    fake._refresh_banner = lambda: None
+    fake._refresh_dialog = lambda: None
 
-    MainWindow._on_announcement_check_finished(fake, result)
+    AnnouncementUpdateCoordinator._on_check_finished(fake, result)
     assert toasts
     assert "贾诩" in toasts[0]
     assert "东方朔" in toasts[0]
@@ -746,35 +750,37 @@ def test_on_announcement_check_finished_hero_related_toast(monkeypatch) -> None:
 
 def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> None:
     """令牌未置位时，无关采集的完成事件不得消费公告更新阶段（H5 回归）。"""
-    from src.ui.app import main_window as main_window_module
+    from src.ui.app import announcement_update_coordinator as coordinator_module
 
     toasts = []
     monkeypatch.setattr(
-        main_window_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+        coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
     )
     applied = []
     window = SimpleNamespace(
-        _hide_progress=lambda: None,
-        _pending_update_phases=[("incremental", None)],
-        _update_phase_fetch_in_flight=False,
-        _announcement_service=SimpleNamespace(mark_applied=lambda: applied.append(1)),
-        _last_announcement_diff={"added": [1], "modified": [], "removed": []},
-        _refresh_announcement_banner=lambda: None,
-        _refresh_announcement_dialog=lambda: None,
+        _window=None,
+        _heroes_provider=lambda: [],
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _pending_phases=[("incremental", None)],
+        _phase_in_flight=False,
+        _service=SimpleNamespace(mark_applied=lambda: applied.append(1)),
+        _last_diff={"added": [1], "modified": [], "removed": []},
+        _refresh_banner=lambda: None,
+        _refresh_dialog=lambda: None,
     )
 
-    MainWindow._on_fetch_completed(window, True)
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
 
-    assert window._pending_update_phases == [("incremental", None)]
+    assert window._pending_phases == [("incremental", None)]
     assert applied == []
     assert toasts == ["武将数据已采集完成，请重新加载数据。"]
 
-    window._update_phase_fetch_in_flight = True
-    MainWindow._on_fetch_completed(window, True)
+    window._phase_in_flight = True
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
 
-    assert window._pending_update_phases is None
+    assert window._pending_phases is None
     assert applied == [1]
-    assert window._last_announcement_diff == {"added": [], "modified": [], "removed": []}
+    assert window._last_diff == {"added": [], "modified": [], "removed": []}
 
 
 def test_update_phase_aborts_when_fetch_service_busy(monkeypatch) -> None:
@@ -799,19 +805,20 @@ def test_update_phase_aborts_when_fetch_service_busy(monkeypatch) -> None:
             return True
 
     window = SimpleNamespace(
-        _hide_progress=lambda: None,
-        _status_label=SimpleNamespace(setText=lambda s: None),
-        _pending_update_phases=[("specific", [3]), ("incremental", None)],
-        _update_phase_fetch_in_flight=False,
+        _window=None,
+        _heroes_provider=lambda: [],
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _pending_phases=[("specific", [3]), ("incremental", None)],
+        _phase_in_flight=False,
         _fetch_service=_BusyFetchService(),
     )
     # 非绑定调用下把真实中止逻辑接回假对象，断言才覆盖真实现
-    window._abort_pending_update_phases = lambda: MainWindow._abort_pending_update_phases(window)
+    window._abort_pending_phases = lambda: AnnouncementUpdateCoordinator._abort_pending_phases(window)
 
-    MainWindow._start_next_update_phase(window)
+    AnnouncementUpdateCoordinator._start_next_phase(window)
 
-    assert window._pending_update_phases is None
-    assert window._update_phase_fetch_in_flight is False
+    assert window._pending_phases is None
+    assert window._phase_in_flight is False
     assert started == []
     assert warnings
 
@@ -832,19 +839,20 @@ def test_update_phase_aborts_when_dispatch_reports_busy(monkeypatch) -> None:
             return False  # 发起瞬间已被占用
 
     window = SimpleNamespace(
-        _hide_progress=lambda: None,
-        _status_label=SimpleNamespace(setText=lambda s: None),
-        _pending_update_phases=[("specific", [3])],
-        _update_phase_fetch_in_flight=False,
+        _window=None,
+        _heroes_provider=lambda: [],
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _pending_phases=[("specific", [3])],
+        _phase_in_flight=False,
         _fetch_service=_RacyFetchService(),
     )
-    window._abort_pending_update_phases = lambda: MainWindow._abort_pending_update_phases(window)
-    window._dispatch_update_phase = lambda: MainWindow._dispatch_update_phase(window)
+    window._abort_pending_phases = lambda: AnnouncementUpdateCoordinator._abort_pending_phases(window)
+    window._dispatch_phase = lambda: AnnouncementUpdateCoordinator._dispatch_phase(window)
 
-    MainWindow._start_next_update_phase(window)
+    AnnouncementUpdateCoordinator._start_next_phase(window)
 
-    assert window._pending_update_phases is None
-    assert window._update_phase_fetch_in_flight is False
+    assert window._pending_phases is None
+    assert window._phase_in_flight is False
     assert warnings
 
 
@@ -885,11 +893,11 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
     from src.data.announcement_manager import Announcement, AnnouncementStatus, HeroChange
     from src.data.guide_manager import GuideManager
     from src.data.synergy_manager import SynergyManager
-    from src.ui.app import main_window as main_window_module
+    from src.ui.app import announcement_update_coordinator as coordinator_module
 
     toasts = []
     monkeypatch.setattr(
-        main_window_module,
+        coordinator_module,
         "show_toast",
         lambda parent, message, **kwargs: toasts.append(message),
     )
@@ -915,11 +923,11 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
                 HeroChange(name="贾诩", change="增强", known=True),
             ],
         )
-        window._announcement_manager._items[announcement.url] = announcement
+        window._announcement_coordinator._manager._items[announcement.url] = announcement
 
         jia_id = window._data.heroes.get_hero_by_name("贾诩").id
         ma_id = window._data.heroes.get_hero_by_name("马钧").id
-        window._on_announcement_check_finished(AnnouncementCheckResult(
+        window._announcement_coordinator._on_check_finished(AnnouncementCheckResult(
             new_announcements=[],
             hero_related=[],
             pending_count=0,
@@ -937,9 +945,9 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         assert "贾诩（增强）" in banner_text
         assert toasts
 
-        window._open_announcement_dialog()
+        window._announcement_coordinator.open_announcement_dialog()
         qapp.processEvents()
-        dialog = window._announcement_dialog
+        dialog = window._announcement_coordinator._dialog
         assert dialog._list.count() == 1
         dialog._list.setCurrentRow(0)
         qapp.processEvents()
@@ -948,7 +956,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         assert "东方朔（新增）·未收录" in full_text
 
         calls = []
-        monkeypatch.setattr(window._announcement_service, "mark_applied", lambda: None)
+        monkeypatch.setattr(window._announcement_coordinator._service, "mark_applied", lambda: None)
 
         class _FakeFetchService:
             is_busy = False
@@ -961,13 +969,13 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
                 calls.append(("incremental", None))
                 return True
 
-        window._fetch_service = _FakeFetchService()
+        window._announcement_coordinator._fetch_service = _FakeFetchService()
 
         # 基础候选：公告 ready matched + diff added/modified 并集、去重
-        base = window._announcement_service.collect_base_candidates(
+        base = window._announcement_coordinator._service.collect_base_candidates(
             [hero.model_dump(mode="json") for hero in window._data.heroes.list_heroes()],
-            window._announcement_manager.list_announcements(),
-            window._last_announcement_diff,
+            window._announcement_coordinator._manager.list_announcements(),
+            window._announcement_coordinator._last_diff,
         )
         base_names = [candidate["name"] for candidate in base]
         assert "贾诩" in base_names and "东方朔" in base_names and "马钧" in base_names
@@ -985,16 +993,16 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
             def exec(self):
                 return QDialog.DialogCode.Accepted
 
-        monkeypatch.setattr(main_window_module, "HeroUpdateConfirmDialog", _AcceptDialog)
-        window._on_hero_update_prepared({"candidates": base, "official_ok": True})
+        monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _AcceptDialog)
+        window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
         assert calls == [("specific", [jia_id, ma_id])]
-        window._on_fetch_completed(True)  # 模拟子进程完成，驱动下一阶段
+        window._announcement_coordinator._on_fetch_completed(True)  # 模拟子进程完成，驱动下一阶段
         assert calls == [("specific", [jia_id, ma_id]), ("incremental", None)]
-        window._on_fetch_completed(True)  # 第二阶段完成：队列清空并 mark_applied
+        window._announcement_coordinator._on_fetch_completed(True)  # 第二阶段完成：队列清空并 mark_applied
 
         # 全取消：不采集，但刷新快照（mark_applied）
         applied = []
-        monkeypatch.setattr(window._announcement_service, "mark_applied", lambda: applied.append(1))
+        monkeypatch.setattr(window._announcement_coordinator._service, "mark_applied", lambda: applied.append(1))
 
         class _AllUncheckedDialog:
             selected_ids = []
@@ -1006,10 +1014,10 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
             def exec(self):
                 return QDialog.DialogCode.Accepted
 
-        monkeypatch.setattr(main_window_module, "HeroUpdateConfirmDialog", _AllUncheckedDialog)
+        monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _AllUncheckedDialog)
         calls.clear()
-        window._pending_update_phases = None
-        window._on_hero_update_prepared({"candidates": base, "official_ok": True})
+        window._announcement_coordinator._pending_phases = None
+        window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
         assert calls == []
         assert applied == [1]
 
@@ -1021,17 +1029,17 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
             def exec(self):
                 return QDialog.DialogCode.Rejected
 
-        monkeypatch.setattr(main_window_module, "HeroUpdateConfirmDialog", _RejectDialog)
+        monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _RejectDialog)
         applied.clear()
-        window._on_hero_update_prepared({"candidates": base, "official_ok": True})
+        window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
         assert calls == []
         assert applied == []
 
         # 无候选：不启动线程，直接提示
-        window._announcement_manager._items.clear()
-        window._last_announcement_diff = {"added": [], "modified": [], "removed": []}
-        window._update_hero_data_from_announcements()
-        assert "没有需要更新" in window._status_label.text()
+        window._announcement_coordinator._manager._items.clear()
+        window._announcement_coordinator._last_diff = {"added": [], "modified": [], "removed": []}
+        window._announcement_coordinator.update_hero_data_from_announcements()
+        assert "没有需要更新" in window._reporter.message_label.text()
 
         # pending 公告：横幅显示等待文案，但更新按钮仍可用（点击有反馈）
         pending_ann = Announcement(
@@ -1042,40 +1050,40 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
             status=AnnouncementStatus.PENDING,
             matched_heroes=[HeroChange(name="贾诩", change="增强", known=True)],
         )
-        window._announcement_manager._items[pending_ann.url] = pending_ann
-        window._refresh_announcement_banner()
+        window._announcement_coordinator._manager._items[pending_ann.url] = pending_ann
+        window._announcement_coordinator._refresh_banner()
         assert window._announcement_banner.isVisible()
         assert window._announcement_update_button.isEnabled()
 
         # 有候选：经公告服务后台线程准备候选（mock 百科拉取走降级路径），
         # queued 信号回 GUI 后弹出确认框（此刻 patch 为 Reject → 走"已取消"终态）
         monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: None)
-        window._announcement_manager._items[announcement.url] = announcement
-        window._last_announcement_diff = {
+        window._announcement_coordinator._manager._items[announcement.url] = announcement
+        window._announcement_coordinator._last_diff = {
             "added": [],
             "modified": [{"name": "贾诩", "id": jia_id}, {"name": "马钧", "id": ma_id}],
             "removed": [],
         }
-        window._update_hero_data_from_announcements()
+        window._announcement_coordinator.update_hero_data_from_announcements()
         deadline = time.time() + 5
-        while "正在获取官网数据" in window._status_label.text() and time.time() < deadline:
+        while "正在获取官网数据" in window._reporter.message_label.text() and time.time() < deadline:
             qapp.processEvents()
             time.sleep(0.01)
-        assert "已取消更新武将数据" in window._status_label.text()
+        assert "已取消更新武将数据" in window._reporter.message_label.text()
 
         # 进度条生命周期：检查开始显示/结束隐藏；子进程进度驱动；完成隐藏
-        window._on_announcement_check_started()
-        assert window._progress_bar.isVisible()
-        window._on_announcement_progress("正在获取百科数据...")
-        assert "百科" in window._progress_bar.format()
-        window._on_announcement_check_finished(AnnouncementCheckResult(baike_ok=True))
-        assert not window._progress_bar.isVisible()
-        window._on_fetch_progress(2, 5, "数据清洗")
-        assert window._progress_bar.isVisible()
-        assert window._progress_bar.maximum() == 5
-        assert window._progress_bar.value() == 2
-        window._on_fetch_completed(True)
-        assert not window._progress_bar.isVisible()
+        window._announcement_coordinator._on_check_started()
+        assert window._reporter.progress_bar.isVisible()
+        window._reporter.set_progress_text("正在获取百科数据...")
+        assert "百科" in window._reporter.progress_bar.format()
+        window._announcement_coordinator._on_check_finished(AnnouncementCheckResult(baike_ok=True))
+        assert not window._reporter.progress_bar.isVisible()
+        window._reporter.show_progress(2, 5, "数据清洗")
+        assert window._reporter.progress_bar.isVisible()
+        assert window._reporter.progress_bar.maximum() == 5
+        assert window._reporter.progress_bar.value() == 2
+        window._announcement_coordinator._on_fetch_completed(True)
+        assert not window._reporter.progress_bar.isVisible()
         dialog.close()
     finally:
         window.close()

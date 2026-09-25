@@ -13,7 +13,6 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
 from src.data.synergy_manager import SynergyManager
-from src.ui.app.main_window import MainWindow
 from src.ui.generation import ai_generation_workflow as workflow_module
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
@@ -392,39 +391,3 @@ def test_progress_dialog_shows_wait_seconds_during_silence() -> None:
     dialog.close()
 
 
-def test_main_window_generation_entries_delegate_to_workflow() -> None:
-    class _WorkflowRecorder:
-        def __init__(self) -> None:
-            self.calls: list[str] = []
-
-        def request_guide_all(self) -> None:
-            self.calls.append("guide_all")
-
-        def request_guide_incremental(self) -> None:
-            self.calls.append("guide_incremental")
-
-        def request_guide_specific(self) -> None:
-            self.calls.append("guide_specific")
-
-        def request_synergy_pair(self) -> None:
-            self.calls.append("synergy_pair")
-
-        def request_synergy_single(self) -> None:
-            self.calls.append("synergy_single")
-
-    window = MainWindow.__new__(MainWindow)
-    window._ai_workflow = _WorkflowRecorder()
-
-    window._request_guide_all()
-    window._request_guide_incremental()
-    window._request_guide_specific()
-    window._request_synergy_pair()
-    window._request_synergy_single()
-
-    assert window._ai_workflow.calls == [
-        "guide_all",
-        "guide_incremental",
-        "guide_specific",
-        "synergy_pair",
-        "synergy_single",
-    ]

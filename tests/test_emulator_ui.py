@@ -16,8 +16,8 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, Skill
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.data.synergy_manager import SynergyManager
-from src.ui.app.main_window import MainWindow, PollOutcome
-from src.ui.app.poll_coordinator import PollCoordinator, PollResult, PollTaskResult
+from src.ui.app.main_window import MainWindow
+from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult, PollTaskResult
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.recommendation.recommendation_panel import HeroCardWidget, RecommendationPanel
 from src.ui.shared.capture_lock import CaptureSource
@@ -528,6 +528,34 @@ def test_poll_stays_stopped_until_emulator_is_connected() -> None:
     assert window._capture_service.warmup_count == 1
 
 
+class _QuietSignal:
+    """纯 Python 信号桩：路由单测不触发轮询线程，只需 connect 可用。"""
+
+    def connect(self, _slot) -> None:
+        pass
+
+
+def _make_poll_router(ocr_service, peak_recognizing=None):
+    """构造只含路由状态的最小 PollCoordinator（不跑采集线程）。
+
+    返回 (router, switched, loaded, guide_matched)：后三者依次记录
+    page_switch_requested / hero_selection_matched / match_guide_matched 的发射。
+    """
+    for name in ("poll_tick", "poll_state_changed"):
+        if not hasattr(ocr_service, name):
+            setattr(ocr_service, name, _QuietSignal())
+    router = PollCoordinator(object(), ocr_service, lambda: [])
+    switched: list[str] = []
+    loaded: list[list[dict]] = []
+    guide_matched: list[object] = []
+    router.page_switch_requested.connect(switched.append)
+    router.hero_selection_matched.connect(loaded.append)
+    router.match_guide_matched.connect(guide_matched.append)
+    if peak_recognizing is not None:
+        router.set_peak_recognizing_provider(peak_recognizing)
+    return router, switched, loaded, guide_matched
+
+
 def test_poll_match_does_not_switch_tab_by_default() -> None:
     class OcrService:
         poll_generation = 1
@@ -539,41 +567,19 @@ def test_poll_match_does_not_switch_tab_by_default() -> None:
         def complete_poll(self, generation: int, outcome: str, detail: str = "") -> None:
             self.completed.append(outcome)
 
-    class CaptureService:
-        capture = None
-
-    class Tabs:
-        def __init__(self) -> None:
-            self.switched_to = []
-
-        def setCurrentWidget(self, widget) -> None:
-            self.switched_to.append(widget)
-
-    class Recommendation:
-        def __init__(self) -> None:
-            self.loaded: list[list[dict]] = []
-
-        def load_from_ocr(self, results: list[dict]) -> None:
-            self.loaded.append(results)
-
-    window = MainWindow.__new__(MainWindow)
-    window._selection_page_active = False
-    window._ocr_service = OcrService()
-    window._capture_service = CaptureService()
-    window._tabs = Tabs()
-    window._recommendation = Recommendation()
+    router, switched, loaded, _guide_matched = _make_poll_router(OcrService())
 
     matched = {"generation": 1, "outcome": "matched", "ocr_results": [{"name": "测试武将"}]}
-    window._on_poll_result(matched)
-    window._on_poll_result(matched)
+    router._route_result(matched)
+    router._route_result(matched)
 
-    assert window._tabs.switched_to == []
-    assert len(window._recommendation.loaded) == 2
+    assert switched == []
+    assert len(loaded) == 2
 
-    window._on_poll_result({"generation": 1, "outcome": "healthy_no_match"})
-    window._on_poll_result(matched)
+    router._route_result({"generation": 1, "outcome": "healthy_no_match"})
+    router._route_result(matched)
 
-    assert window._tabs.switched_to == []
+    assert switched == []
 
 
 def test_match_guide_poll_runs_once_until_next_hero_selection_match() -> None:
@@ -599,20 +605,8 @@ def test_match_guide_poll_runs_once_until_next_hero_selection_match() -> None:
         def deactivate_task(self, task_name: str) -> None:
             self.transitions.append(("deactivate", task_name))
 
-    class Recommendation:
-        def load_from_ocr(self, _results: list[dict]) -> None:
-            pass
-
-    class MatchGuide:
-        def update_block(self, _index: int, _result: PollTaskResult) -> None:
-            pass
-
-    window = MainWindow.__new__(MainWindow)
-    window._selection_page_active = False
-    window._match_guide_page_active = False
-    window._ocr_service = OcrService()
-    window._recommendation = Recommendation()
-    window._match_guide = MatchGuide()
+    ocr = OcrService()
+    router, _switched, loaded, guide_matched = _make_poll_router(ocr)
     hero_match = PollResult(
         1,
         PollOutcome.MATCHED,
@@ -629,11 +623,11 @@ def test_match_guide_poll_runs_once_until_next_hero_selection_match() -> None:
         task_results={"match_guide": PollTaskResult(PollOutcome.MATCHED)},
     )
 
-    window._on_poll_result(hero_match)
-    window._on_poll_result(guide_match)
-    window._on_poll_result(hero_match)
+    router._route_result(hero_match)
+    router._route_result(guide_match)
+    router._route_result(hero_match)
 
-    assert window._ocr_service.transitions == [
+    assert ocr.transitions == [
         ("cooldown", "hero_selection", 180),
         ("clear", "match_guide"),
         ("activate", "match_guide"),
@@ -670,34 +664,11 @@ def test_poll_hero_match_discarded_while_peak_recognizing() -> None:
         def deactivate_task(self, task_name: str) -> None:
             self.transitions.append(("deactivate", task_name))
 
-    class Recommendation:
-        def __init__(self) -> None:
-            self.loaded: list[list[dict]] = []
-
-        def load_from_ocr(self, results: list[dict]) -> None:
-            self.loaded.append(results)
-
-    class MatchGuide:
-        def __init__(self) -> None:
-            self.updates = 0
-
-        def update_block(self, _index: int, _result: PollTaskResult) -> None:
-            self.updates += 1
-
-    class PeakPanel:
-        def __init__(self, recognizing: bool) -> None:
-            self._recognizing = recognizing
-
-        def is_recognizing(self) -> bool:
-            return self._recognizing
-
-    window = MainWindow.__new__(MainWindow)
-    window._selection_page_active = False
-    window._match_guide_page_active = False
-    window._ocr_service = OcrService()
-    window._recommendation = Recommendation()
-    window._match_guide = MatchGuide()
-    window._peak_select = PeakPanel(recognizing=True)
+    session = {"recognizing": True}
+    ocr = OcrService()
+    router, _switched, loaded, guide_matched = _make_poll_router(
+        ocr, peak_recognizing=lambda: session["recognizing"]
+    )
     hero_match = PollResult(
         1,
         PollOutcome.MATCHED,
@@ -714,25 +685,25 @@ def test_poll_hero_match_discarded_while_peak_recognizing() -> None:
         task_results={"match_guide": PollTaskResult(PollOutcome.MATCHED)},
     )
 
-    window._on_poll_result(hero_match)
-    assert window._ocr_service.transitions == []
-    assert window._recommendation.loaded == []
-    assert window._match_guide.updates == 0
-    assert window._selection_page_active is False
+    router._route_result(hero_match)
+    assert ocr.transitions == []
+    assert loaded == []
+    assert guide_matched == []
+    assert router._selection_page_active is False
 
-    window._on_poll_result(guide_match)  # 衔接链不受守卫影响
-    assert window._ocr_service.transitions == [("deactivate", "match_guide")]
-    assert window._match_guide.updates == 1
+    router._route_result(guide_match)  # 衔接链不受守卫影响
+    assert ocr.transitions == [("deactivate", "match_guide")]
+    assert len(guide_matched) == 1
 
-    window._peak_select._recognizing = False  # 会话结束后恢复正常处理
-    window._on_poll_result(hero_match)
-    assert window._ocr_service.transitions == [
+    session["recognizing"] = False  # 会话结束后恢复正常处理
+    router._route_result(hero_match)
+    assert ocr.transitions == [
         ("deactivate", "match_guide"),
         ("cooldown", "hero_selection", 180),
         ("clear", "match_guide"),
         ("activate", "match_guide"),
     ]
-    assert len(window._recommendation.loaded) == 1
+    assert len(loaded) == 1
 
 
 def test_match_guide_poll_switches_for_each_hero_selection_match() -> None:
@@ -754,31 +725,8 @@ def test_match_guide_poll_switches_for_each_hero_selection_match() -> None:
         def deactivate_task(self, _task_name: str) -> None:
             pass
 
-    class Tabs:
-        def __init__(self) -> None:
-            self.switched_to = []
-
-        def setCurrentWidget(self, widget) -> None:
-            self.switched_to.append(widget)
-
-    class Recommendation:
-        def load_from_ocr(self, _results: list[dict]) -> None:
-            pass
-
-    class MatchGuide:
-        def __init__(self) -> None:
-            self.loaded = 0
-
-        def update_block(self, _index: int, _result: PollTaskResult) -> None:
-            self.loaded += 1
-
-    window = MainWindow.__new__(MainWindow)
-    window._selection_page_active = False
-    window._match_guide_page_active = False
-    window._ocr_service = OcrService()
-    window._tabs = Tabs()
-    window._recommendation = Recommendation()
-    window._match_guide = MatchGuide()
+    ocr = OcrService()
+    router, switched, _loaded, guide_matched = _make_poll_router(ocr)
     hero_match = PollResult(
         1,
         PollOutcome.MATCHED,
@@ -790,17 +738,13 @@ def test_match_guide_poll_switches_for_each_hero_selection_match() -> None:
         task_results={"match_guide": PollTaskResult(PollOutcome.MATCHED)},
     )
 
-    window._on_poll_result(hero_match)
-    window._on_poll_result(guide_match)
-    window._on_poll_result(hero_match)
-    window._on_poll_result(guide_match)
+    router._route_result(hero_match)
+    router._route_result(guide_match)
+    router._route_result(hero_match)
+    router._route_result(guide_match)
 
-    assert window._tabs.switched_to == [
-        window._recommendation,
-        window._match_guide,
-        window._match_guide,
-    ]
-    assert window._match_guide.loaded == 2
+    assert switched == ["recommendation", "match_guide", "match_guide"]
+    assert len(guide_matched) == 2
 
 
 def test_poll_match_switches_tab_when_enabled() -> None:
@@ -811,30 +755,11 @@ def test_poll_match_switches_tab_when_enabled() -> None:
         def complete_poll(self, *_args) -> None:
             pass
 
-    class CaptureService:
-        capture = None
+    router, switched, _loaded, _guide_matched = _make_poll_router(OcrService())
 
-    class Tabs:
-        def __init__(self) -> None:
-            self.switched_to = []
+    router._route_result({"generation": 1, "outcome": "matched", "ocr_results": []})
 
-        def setCurrentWidget(self, widget) -> None:
-            self.switched_to.append(widget)
-
-    class Recommendation:
-        def load_from_ocr(self, _results: list[dict]) -> None:
-            pass
-
-    window = MainWindow.__new__(MainWindow)
-    window._selection_page_active = False
-    window._ocr_service = OcrService()
-    window._capture_service = CaptureService()
-    window._tabs = Tabs()
-    window._recommendation = Recommendation()
-
-    window._on_poll_result({"generation": 1, "outcome": "matched", "ocr_results": []})
-
-    assert window._tabs.switched_to == [window._recommendation]
+    assert switched == ["recommendation"]
 
 
 def test_poll_ocr_wait_times_out_without_blocking() -> None:

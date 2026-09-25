@@ -20,6 +20,7 @@ from src.business.recognition.ocr_service import OcrService
 from src.config.env import get_mumu_config
 from src.data.announcement_manager import AnnouncementManager
 from src.data.card_catalog import CardRepository
+from src.data.card_points_repository import CardPointsRepository
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.manager import (
@@ -91,6 +92,8 @@ class AppServices:
         self.card_repository = CardRepository()
         self.card_repository.load()
         self.card_sync_service = CardSyncService(self.card_repository)
+        # 卡牌点数表仓库：打开卡牌同步对话框时惰性加载，供候选摘要的点数提醒
+        self.card_points_repository = CardPointsRepository()
 
     def attach(self, parent) -> None:
         """MainWindow 持有本对象后统一挂载 QObject 父子与窗口引用。"""

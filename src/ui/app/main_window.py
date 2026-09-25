@@ -8,17 +8,14 @@
 from __future__ import annotations
 
 import logging
-import time
 
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QAction, QResizeEvent
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
-    QLabel,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QStatusBar,
     QStyle,
@@ -26,20 +23,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.business.announcement.announcement_service import AnnouncementCheckResult
 from src.business.card_catalog import CardCatalogService
-from src.data.announcement_manager import AnnouncementStatus
 from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
+from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
 from src.ui.app.app_services import AppServices
 from src.ui.app.status_chips import StatusChips
-from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.ui.data_admin.card_sync_dialog import CardSyncDialog
-from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
 logger = logging.getLogger(__name__)
 
 from src.config.env import PROJECT_ROOT, is_full_build
-from src.ui.app.poll_coordinator import PollOutcome, PollResult
+from src.ui.app.progress_reporter import ProgressReporter
 from src.ui.app.shell_widgets import NavigationRail
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
 from src.ui.configuration.settings_dialog import SettingsDialog
@@ -51,7 +45,7 @@ from src.ui.library.hero_browser import HeroBrowser
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
-from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
+from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO
 from src.ui.shared.widgets import NoticeBanner, show_toast
 
 
@@ -62,9 +56,6 @@ class MainWindow(QMainWindow):
     """
 
     NAV_COLLAPSE_THRESHOLD = 1040
-    # match_guide 激活后的空闲上限：覆盖进局加载动画，超时仍无命中视为没进对局，
-    # 避免在非对局页面（如巅峰赛后回大厅）无限期 fallback 空转 OCR
-    MATCH_GUIDE_IDLE_TIMEOUT_SECONDS = 90
     _PAGE_CONTEXTS_BASE = (
         ("资料库", "浏览并维护武将、攻略、相性和卡牌数据。"),
         ("选将推荐", "根据当前阵容查看武将优先级与搭配依据。"),
@@ -82,10 +73,6 @@ class MainWindow(QMainWindow):
         guide_manager=None,
     ):
         super().__init__()
-        # 轮询冷却期间可能连续收到匹配结果，只在进入选将页的边沿切换一次标签页。
-        self._selection_page_active = False
-        self._match_guide_page_active = False
-        self._match_guide_activated_at: float | None = None
         self._user_nav_collapsed: bool | None = None
         self._navigation_forced_collapsed = False
         # 协作对象装配收敛到组合根（F1）：构造顺序与参数依赖集中一处，可无头
@@ -102,26 +89,25 @@ class MainWindow(QMainWindow):
         self._capture_service = self._services.capture
         self._ocr_service = self._services.ocr
         self._poll_coordinator = self._services.poll
-        self._announcement_manager = self._services.announcement_manager
-        self._announcement_service = self._services.announcement_service
         self._card_repository = self._services.card_repository
         self._card_sync_service = self._services.card_sync_service
-        self._announcement_dialog: AnnouncementDialog | None = None
-        self._last_announcement_diff: dict = {"added": [], "modified": [], "removed": []}
-        self._pending_update_phases: list[tuple[str, list[int] | None]] | None = None
-        # 阶段令牌：只有成功发起的阶段采集才置位，完成回调据此只消费对应阶段
-        self._update_phase_fetch_in_flight = False
         self._announcement_banner: NoticeBanner | None = None
         self._announcement_update_button: QPushButton | None = None
-        self._announcement_service.check_started.connect(self._on_announcement_check_started)
-        self._announcement_service.check_finished.connect(self._on_announcement_check_finished)
-        self._announcement_service.progress_changed.connect(self._on_announcement_progress)
-        self._announcement_service.update_candidates_prepared.connect(self._on_hero_update_prepared)
-        self._announcement_service.status_changed.connect(self._on_fetch_status)
+        # 进度出口早于信号接线创建；_setup_status_bar 只负责挂载到状态栏
+        self._reporter = ProgressReporter()
+        # 公告管线与阶段机整体迁入协调器（含 fetch_completed 的令牌消费）
+        self._announcement_coordinator = AnnouncementUpdateCoordinator(
+            self._services.announcement_service,
+            self._services.announcement_manager,
+            self._fetch_service,
+            self._reporter,
+            heroes_provider=self._data.heroes.list_heroes,
+            parent=self,
+        )
 
         self._connect_fetch_signals()
         self._connect_capture_signals()
-        self._ai_workflow.status_changed.connect(self._on_fetch_status)
+        self._ai_workflow.status_changed.connect(self._reporter.show_message)
         self._ai_workflow.guides_changed.connect(self._on_guides_generated)
         self._ai_workflow.synergies_changed.connect(self._on_synergies_generated)
 
@@ -162,101 +148,18 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------
 
     def _connect_fetch_signals(self) -> None:
-        """连接采集服务的信号到状态栏"""
-        self._fetch_service.status_changed.connect(self._on_fetch_status)
-        self._fetch_service.fetch_completed.connect(self._on_fetch_completed)
-        self._fetch_service.progress_updated.connect(self._on_fetch_progress)
+        """连接采集服务的信号到状态栏（fetch_completed 由公告协调器消费）"""
+        self._fetch_service.status_changed.connect(self._reporter.show_message)
+        self._fetch_service.progress_updated.connect(self._reporter.show_progress)
         self._fetch_service.error_occurred.connect(self._on_fetch_error)
-
-    def _on_fetch_status(self, message: str) -> None:
-        """采集状态更新"""
-        self._status_label.setText(message)
-
-    def _on_fetch_completed(self, success: bool) -> None:
-        """采集完成处理；公告驱动的多阶段更新在此串联。
-
-        只有阶段令牌在位的完成事件才消费更新队列：无关采集（如手动采集）
-        的完成不得冒领阶段结果，否则公告武将会被静默跳过并 mark_applied。
-        """
-        self._hide_progress()
-        if self._pending_update_phases is not None and self._update_phase_fetch_in_flight:
-            self._update_phase_fetch_in_flight = False
-            self._pending_update_phases.pop(0)
-            if success and self._pending_update_phases:
-                self._start_next_update_phase()
-                return
-            self._pending_update_phases = None
-            if success:
-                self._announcement_service.mark_applied()
-                self._last_announcement_diff = {"added": [], "modified": [], "removed": []}
-                self._refresh_announcement_banner()
-                self._refresh_announcement_dialog()
-                show_toast(self, "武将数据已更新，请重新加载数据（F5）。", duration=4000)
-            else:
-                QMessageBox.warning(self, "采集失败", "武将数据更新失败")
-            return
-        if success:
-            show_toast(self, "武将数据已采集完成，请重新加载数据。", duration=3000)
-        else:
-            QMessageBox.warning(self, "采集失败", "武将数据采集失败")
 
     def _on_fetch_error(self, error_msg: str) -> None:
         """采集错误处理"""
         QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{error_msg}")
 
-    # ---------------------------------------------------------------
-    # 进度可视化（状态栏进度条）
-    # ---------------------------------------------------------------
-
-    def _show_indeterminate_progress(self, text: str) -> None:
-        """显示不确定进度（动画），用于无法精确计数的联网阶段。"""
-        self._progress_bar.setRange(0, 0)
-        self._progress_bar.setFormat(text)
-        self._progress_bar.show()
-
-    def _set_progress(self, current: int, total: int, text: str) -> None:
-        """显示确定进度（子进程 [n/N] 阶段）。"""
-        total = max(total, 1)
-        self._progress_bar.setRange(0, total)
-        self._progress_bar.setValue(min(current, total))
-        self._progress_bar.setFormat(text)
-        self._progress_bar.show()
-
-    def _hide_progress(self) -> None:
-        self._progress_bar.hide()
-
-    def _on_announcement_progress(self, text: str) -> None:
-        """公告检查阶段文字更新（进度条已由 check_started 显示）。"""
-        self._progress_bar.setFormat(text)
-
-    def _on_fetch_progress(self, current: int, total: int, text: str) -> None:
-        """武将采集子进程 [n/N] 进度更新。"""
-        self._set_progress(current, total, text)
-
-    # ---------------------------------------------------------------
-    # 公告更新（手动检查 + 百科 diff + 精准更新）
-    # ---------------------------------------------------------------
-
-    def _check_announcements(self) -> None:
-        """手动触发一次公告与百科 diff 检查；忙碌/冷却中给出提示弹窗。"""
-        if self._announcement_service.is_busy:
-            QMessageBox.information(self, "公告检查", "公告检查正在进行中，请稍候。")
-            return
-        remaining = self._announcement_service.cooldown_remaining
-        if remaining > 0:
-            QMessageBox.information(
-                self,
-                "公告检查",
-                f"检查过于频繁，请 {int(remaining) + 1} 秒后再试。",
-            )
-            return
-        self._announcement_service.check_now()
-
     def _open_card_sync(self) -> None:
         """打开卡牌百科更新对话框并自动触发一次官网检查。"""
-        from src.data.card_points_repository import CardPointsRepository
-
-        points = CardPointsRepository()
+        points = self._services.card_points_repository
         points.load()
         dialog = CardSyncDialog(
             self._card_sync_service,
@@ -268,237 +171,46 @@ class MainWindow(QMainWindow):
         applied = dialog.applied_count
         dialog.deleteLater()
         if applied:
-            self._status_label.setText(
+            self._reporter.show_message(
                 f"卡牌官网同步已应用 {applied} 张，建议在知识库维护重建卡牌语料。"
             )
 
-    def _on_announcement_check_started(self) -> None:
-        self._status_label.setText("正在检查公告更新...")
-        self._show_indeterminate_progress("正在检查公告更新...")
-
-    def _on_announcement_check_finished(self, result: AnnouncementCheckResult) -> None:
-        """处理一次公告检查结果，更新横幅/对话框与提示。"""
-        self._hide_progress()
-        self._last_announcement_diff = result.diff
-        self._refresh_announcement_banner()
-        self._refresh_announcement_dialog()
-        if result.error:
-            self._status_label.setText(f"公告检查失败：{result.error}")
-            logger.warning("公告检查失败: %s", result.error)
-            return
-        summary = (
-            f"公告检查完成：新 {len(result.new_announcements)} · "
-            f"待生效 {result.pending_count} · 可更新 {result.ready_count}"
-        )
-        if not result.baike_ok:
-            summary += "（百科数据获取失败）"
-        self._status_label.setText(summary)
-        if result.hero_related:
-            names = "、".join(
-                change.name
-                for announcement in result.hero_related
-                for change in announcement.matched_heroes[:3]
-            ) or "武将"
-            show_toast(
-                self,
-                f"发现 {len(result.hero_related)} 条武将相关新公告：{names}",
-                tone=TONE_WARNING,
-                duration=4000,
-            )
-        elif result.ready_count:
-            show_toast(self, "百科数据已更新，可更新武将数据", duration=3000)
-        elif any(result.diff.values()):
-            show_toast(self, "检测到百科数据变化，建议更新武将数据", tone=TONE_WARNING, duration=3000)
-
-    def _refresh_announcement_banner(self) -> None:
-        """根据公告状态与百科 diff 刷新顶部横幅。"""
-        if self._announcement_banner is None or self._announcement_update_button is None:
-            return
-        announcements = self._announcement_manager.list_announcements()
-        ready = [a for a in announcements if a.status is AnnouncementStatus.READY]
-        pending = [a for a in announcements if a.status is AnnouncementStatus.PENDING]
-        diff = self._last_announcement_diff
-        if ready:
-            self._announcement_banner.set_tone(TONE_SUCCESS)
-            self._announcement_banner.title_label.setText("武将数据可更新")
-            self._announcement_banner.set_message(
-                f"百科已更新，涉及：{'、'.join(self._announcement_names(ready))}。"
-                "点击「更新武将数据」同步本地资料。"
-            )
-            self._announcement_update_button.setEnabled(True)
-            self._announcement_banner.show()
-        elif pending:
-            self._announcement_banner.set_tone(TONE_INFO)
-            self._announcement_banner.title_label.setText("检测到武将相关公告")
-            self._announcement_banner.set_message(
-                "公告已发布，官网百科数据通常滞后半天到一天，请稍后再次检查；"
-                "也可点击「更新武将数据」核对当前差异。"
-            )
-            self._announcement_update_button.setEnabled(True)
-            self._announcement_banner.show()
-        elif any(diff.values()):
-            self._announcement_banner.set_tone(TONE_WARNING)
-            self._announcement_banner.title_label.setText("检测到百科数据变化")
-            self._announcement_banner.set_message(
-                f"官网武将数据有变更（新增 {len(diff['added'])} / "
-                f"修改 {len(diff['modified'])} / 删除 {len(diff['removed'])}），"
-                "建议更新武将数据。"
-            )
-            self._announcement_update_button.setEnabled(True)
-            self._announcement_banner.show()
-        else:
-            self._announcement_banner.hide()
-
-    @staticmethod
-    def _announcement_names(announcements) -> list[str]:
-        """汇总公告涉及的武将展示标签。"""
-        names = []
-        for announcement in announcements:
-            for change in announcement.matched_heroes:
-                label = change.name
-                if change.change:
-                    label += f"（{change.change}）"
-                if not change.known:
-                    label += "·未收录"
-                names.append(label)
-        return names[:6]
-
-    def _refresh_announcement_dialog(self) -> None:
-        if self._announcement_dialog is not None and self._announcement_dialog.isVisible():
-            self._announcement_dialog.reload()
-            self._announcement_dialog.set_diff(self._last_announcement_diff)
-
-    def _open_announcement_dialog(self) -> None:
-        """打开公告更新对话框（非模态，可边看边操作）。"""
-        if self._announcement_dialog is None:
-            self._announcement_dialog = AnnouncementDialog(self._announcement_manager, self)
-            self._announcement_dialog.check_requested.connect(self._announcement_service.check_now)
-            self._announcement_dialog.update_requested.connect(
-                self._update_hero_data_from_announcements
-            )
-        self._announcement_dialog.reload()
-        self._announcement_dialog.set_diff(self._last_announcement_diff)
-        self._announcement_dialog.show()
-        self._announcement_dialog.raise_()
-        self._announcement_dialog.activateWindow()
-
-    def _update_hero_data_from_announcements(self) -> None:
-        """按公告与百科 diff 更新武将数据：先经用户确认，避免覆盖手动修正。
-
-        编排职责在 AnnouncementService：这里只做预判、进度展示与结果消费。
-        """
-        if self._fetch_service.is_busy:
-            QMessageBox.warning(self, "采集进行中", "武将采集正在进行，请稍后再试。")
-            return
-        candidates = self._announcement_service.collect_base_candidates(
-            [hero.model_dump(mode="json") for hero in self._data.heroes.list_heroes()],
-            self._announcement_manager.list_announcements(),
-            self._last_announcement_diff,
-        )
-        if not candidates:
-            self._status_label.setText("没有需要更新的武将数据")
-            show_toast(
-                self,
-                "当前没有需要更新的武将数据（公告可能仍在等待百科数据更新）",
-                tone=TONE_INFO,
-                duration=3000,
-            )
-            return
-        self._status_label.setText("正在获取官网数据以核对差异...")
-        self._show_indeterminate_progress("正在获取官网数据以核对差异...")
-        local_heroes = [hero.model_dump(mode="json") for hero in self._data.heroes.list_heroes()]
-        announcements = self._announcement_manager.list_announcements()
-        if not self._announcement_service.prepare_update_candidates(
-                local_heroes, announcements, self._last_announcement_diff):
-            self._hide_progress()
-            self._status_label.setText("公告服务忙碌，请稍后再试")
-            QMessageBox.information(self, "公告服务忙碌", "公告数据获取正在进行，请稍后再试。")
-            return
-
-    def _on_hero_update_prepared(self, payload: dict) -> None:
-        """展示更新确认对话框，按用户勾选执行；全取消视为已查看本版本。"""
-        self._hide_progress()
-        error = payload.get("error")
-        if error:
-            self._status_label.setText(f"获取官网数据失败：{error}")
-            show_toast(self, error, duration=4000)
-            return
-        candidates = payload.get("candidates") or []
-        if not candidates:
-            self._status_label.setText("没有需要更新的武将数据")
-            return
-        dialog = HeroUpdateConfirmDialog(candidates, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            self._status_label.setText("已取消更新武将数据")
-            return
-        selected_ids = dialog.selected_ids
-        update_new = dialog.update_new
-        if not selected_ids and not update_new:
-            # 全取消：保留本地内容，刷新快照视为“本版本已查看”
-            self._announcement_service.mark_applied()
-            self._last_announcement_diff = {"added": [], "modified": [], "removed": []}
-            self._refresh_announcement_banner()
-            self._refresh_announcement_dialog()
-            show_toast(self, "已保留本地武将内容，本次未更新", duration=3000)
-            return
-        phases: list[tuple[str, list[int] | None]] = []
-        if selected_ids:
-            phases.append(("specific", selected_ids))
-        if update_new:
-            phases.append(("incremental", None))
-        self._pending_update_phases = phases
-        self._start_next_update_phase()
-
-    def _start_next_update_phase(self) -> None:
-        """启动公告驱动的下一阶段采集。
-
-        发起前 is_busy 检查与发起后返回值双重把关（忙碌时服务不发完成信号，
-        只能靠返回值识别）；任一关失败都整条更新流作废并告知用户——不
-        mark_applied，公告横幅保留，用户可稍后重试。只有成功发起的阶段才
-        置令牌，完成回调据此只消费对应阶段。
-        """
-        if not self._pending_update_phases:
-            return
-        if self._fetch_service.is_busy or not self._dispatch_update_phase():
-            self._abort_pending_update_phases()
-            return
-        self._update_phase_fetch_in_flight = True
-
-    def _dispatch_update_phase(self) -> bool:
-        """按阶段类型发起采集，返回是否成功启动。"""
-        kind, hero_ids = self._pending_update_phases[0]
-        if kind == "specific":
-            return self._fetch_service.fetch_specific(hero_ids or [])
-        return self._fetch_service.fetch_incremental()
-
-    def _abort_pending_update_phases(self) -> None:
-        """作废整条公告更新流：清队列与令牌，不 mark_applied（横幅保留可重试）。"""
-        self._pending_update_phases = None
-        self._update_phase_fetch_in_flight = False
-        self._hide_progress()
-        self._status_label.setText("公告更新已取消：武将采集正在进行")
-        QMessageBox.warning(self, "采集进行中", "公告更新与当前采集冲突，已取消。请稍后重新检查公告并更新。")
-
     def _connect_capture_signals(self) -> None:
         """连接截图、连接状态和轮询服务信号。"""
-        self._capture_service.status_changed.connect(self._on_fetch_status)
+        self._capture_service.status_changed.connect(self._reporter.show_message)
         self._capture_service.capture_failed.connect(self._on_capture_failed)
         self._capture_service.connection_changed.connect(self._on_capture_connection_changed)
         self._capture_service.ocr_warmup_state_changed.connect(self._on_ocr_warmup_state_changed)
         self._poll_coordinator.poll_state_changed.connect(self._update_poll_status)
-        self._poll_coordinator.poll_result_ready.connect(self._on_poll_result)
+        # 轮询结果路由在 PollCoordinator 内完成，界面只消费三类出口信号
+        self._poll_coordinator.hero_selection_matched.connect(self._on_poll_hero_selection_matched)
+        self._poll_coordinator.match_guide_matched.connect(self._on_poll_match_guide_matched)
+        self._poll_coordinator.page_switch_requested.connect(self._on_poll_page_switch_requested)
+
+    def _on_poll_hero_selection_matched(self, ocr_results: list[dict]) -> None:
+        """轮询选将命中：把识别读数灌入选将推荐面板。"""
+        self._recommendation.load_from_ocr(ocr_results)
+
+    def _on_poll_match_guide_matched(self, task_result) -> None:
+        """轮询对局命中：把任务结果灌入对局攻略面板。"""
+        self._match_guide.update_block(0, task_result)
+
+    def _on_poll_page_switch_requested(self, page: str) -> None:
+        """按路由请求自动切换工作区页面。"""
+        target = self._recommendation if page == "recommendation" else self._match_guide
+        self._tabs.setCurrentWidget(target)
 
     def _on_capture_failed(self, message: str) -> None:
         """将截图失败原因显示在普通状态栏。"""
-        self._status_label.setText(f"截图失败：{message}")
+        self._reporter.show_message(f"截图失败：{message}")
 
     def _on_ocr_warmup_state_changed(self, state: str, detail: str = "") -> None:
         if state == "warming":
-            self._status_label.setText("正在预热 OCR 模型...")
+            self._reporter.show_message("正在预热 OCR 模型...")
         elif state == "ready":
-            self._status_label.setText("OCR 模型已就绪")
+            self._reporter.show_message("OCR 模型已就绪")
         elif state == "failed":
-            self._status_label.setText(f"OCR 预热失败：{detail}")
+            self._reporter.show_message(f"OCR 预热失败：{detail}")
 
     def _on_capture_connection_changed(self, state: str, detail: str = "") -> None:
         """同步 ADB 状态，并确保轮询只在设备已连接时运行。"""
@@ -512,76 +224,6 @@ class MainWindow(QMainWindow):
         panel = getattr(self, "_peak_select", None)
         return panel is not None and panel.is_recognizing()
 
-    def _on_poll_result(self, result: PollResult | dict) -> None:
-        """消费已完成状态迁移的轮询结果，并更新相关界面。"""
-        poll_result = PollResult.from_raw(result)
-        outcome = poll_result.outcome
-        task_results = poll_result.task_results
-        if not task_results:
-            self._handle_legacy_poll_result(outcome, poll_result.ocr_results)
-            return
-
-        hero_result = task_results.get("hero_selection")
-        if hero_result and hero_result.outcome is PollOutcome.TEMPLATE_MISSING:
-            self._ocr_service.deactivate_task("hero_selection")
-        elif hero_result and hero_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
-            self._selection_page_active = False
-        elif hero_result and hero_result.outcome is PollOutcome.MATCHED:
-            if self._peak_select_recognizing():
-                # 持有锁之外的残余泄漏（如在途竞态）：会话中选将轮询结果一律
-                # 不可信，冷却/激活/跳转/面板刷新全部跳过，guide 分支不受影响
-                logger.debug("巅峰赛识别运行中，丢弃泄漏的选将轮询结果")
-            else:
-                self._ocr_service.set_task_cooldown(
-                    "hero_selection",
-                    self._ocr_service.config["mumu_hero_selection_cooldown"],
-                )
-                self._ocr_service.clear_task_cooldown("match_guide")
-                self._ocr_service.activate_task("match_guide")
-                self._match_guide_activated_at = time.monotonic()
-                # 每次新选将命中都开启一轮新的对局攻略自动跳转。
-                self._match_guide_page_active = False
-                if not self._selection_page_active:
-                    self._selection_page_active = True
-                    if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
-                        self._tabs.setCurrentWidget(self._recommendation)
-                ocr_results = hero_result.ocr_results
-                if ocr_results:
-                    self._recommendation.load_from_ocr(ocr_results)
-                    recognized = len([item for item in ocr_results if item.get("name")])
-                    logger.debug("轮询: OCR 识别到 %d 个武将", recognized)
-
-        guide_result = task_results.get("match_guide")
-        if guide_result and guide_result.outcome is PollOutcome.TEMPLATE_MISSING:
-            self._ocr_service.deactivate_task("match_guide")
-            self._match_guide_activated_at = None
-        elif guide_result and guide_result.outcome is PollOutcome.MATCHED:
-            self._ocr_service.deactivate_task("match_guide")
-            self._match_guide_activated_at = None
-            if not getattr(self, "_match_guide_page_active", False):
-                self._match_guide_page_active = True
-                if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
-                    self._tabs.setCurrentWidget(self._match_guide)
-            self._match_guide.update_block(0, guide_result)
-        elif guide_result and guide_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
-            self._deactivate_match_guide_if_idle()
-
-    def _on_peak_exited_to_match(self) -> None:
-        """巅峰赛牌面自动退出：衔接对局攻略轮询，等待用户进入对局页。"""
-        self._match_guide_page_active = False
-        if self._ocr_service.is_polling:
-            self._ocr_service.activate_task("match_guide")
-            self._match_guide_activated_at = time.monotonic()
-
-    def _deactivate_match_guide_if_idle(self) -> None:
-        """激活后超过空闲阈值仍无命中即失活，停止非对局页面上的空转轮询。"""
-        if self._match_guide_activated_at is None:
-            return
-        if time.monotonic() - self._match_guide_activated_at <= self.MATCH_GUIDE_IDLE_TIMEOUT_SECONDS:
-            return
-        self._ocr_service.deactivate_task("match_guide")
-        self._match_guide_activated_at = None
-
     def closeEvent(self, event) -> None:
         """在窗口销毁前结束轮询与 OCR worker。"""
         self._poll_coordinator.shutdown()
@@ -594,23 +236,6 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
         if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
             self._poll_coordinator.resume_from_idle_pause()
-
-    def _handle_legacy_poll_result(self, outcome: PollOutcome, ocr_results: list[dict]) -> None:
-        """兼容旧版单任务轮询结果，避免外部调用方行为改变。"""
-        if outcome is PollOutcome.HEALTHY_NO_MATCH:
-            self._selection_page_active = False
-            return
-        if outcome is not PollOutcome.MATCHED:
-            return
-        if self._peak_select_recognizing():
-            logger.debug("巅峰赛识别运行中，丢弃泄漏的选将轮询结果")
-            return
-        if not self._selection_page_active:
-            self._selection_page_active = True
-            if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
-                self._tabs.setCurrentWidget(self._recommendation)
-        if ocr_results:
-            self._recommendation.load_from_ocr(ocr_results)
 
     # ---------------------------------------------------------------
     # 菜单栏
@@ -656,15 +281,15 @@ class MainWindow(QMainWindow):
             "fetch_all": self._request_fetch_all,
             "fetch_incremental": self._request_fetch_incremental,
             "fetch_specific": self._request_fetch_specific,
-            "guide_all": self._request_guide_all,
-            "guide_incremental": self._request_guide_incremental,
-            "guide_specific": self._request_guide_specific,
-            "synergy_single": self._request_synergy_single,
-            "synergy_pair": self._request_synergy_pair,
-            "synergy_combos": self._request_synergy_combos,
+            "guide_all": self._ai_workflow.request_guide_all,
+            "guide_incremental": self._ai_workflow.request_guide_incremental,
+            "guide_specific": self._ai_workflow.request_guide_specific,
+            "synergy_single": self._ai_workflow.request_synergy_single,
+            "synergy_pair": self._ai_workflow.request_synergy_pair,
+            "synergy_combos": self._ai_workflow.request_synergy_combos,
             "combos_import": self._open_combos_import,
-            "announcement_check": self._check_announcements,
-            "announcement_log": self._open_announcement_dialog,
+            "announcement_check": self._announcement_coordinator.check_announcements,
+            "announcement_log": self._announcement_coordinator.open_announcement_dialog,
             "card_sync_check": self._open_card_sync,
             "about": self._show_about,
         }
@@ -756,13 +381,19 @@ class MainWindow(QMainWindow):
 
         self._announcement_banner = NoticeBanner("公告更新", "", tone=TONE_INFO, parent=workspace)
         view_button = QPushButton("查看")
-        view_button.clicked.connect(self._open_announcement_dialog)
+        view_button.clicked.connect(self._announcement_coordinator.open_announcement_dialog)
         self._announcement_banner.add_action(view_button, role=ROLE_SECONDARY)
         self._announcement_update_button = QPushButton("更新武将数据")
-        self._announcement_update_button.clicked.connect(self._update_hero_data_from_announcements)
+        self._announcement_update_button.clicked.connect(
+            self._announcement_coordinator.update_hero_data_from_announcements
+        )
         self._announcement_banner.add_action(self._announcement_update_button, role=ROLE_PRIMARY)
         self._announcement_banner.hide()
         workspace_layout.addWidget(self._announcement_banner)
+        # 横幅建好后挂载到协调器，作为其刷新目标与弹窗归属
+        self._announcement_coordinator.attach(
+            self, self._announcement_banner, self._announcement_update_button
+        )
 
         self._tabs = QTabWidget(workspace)
         self._tabs.setObjectName("workspaceTabs")
@@ -814,7 +445,9 @@ class MainWindow(QMainWindow):
             combo_manager=self._combo_manager,
         )
         self._peak_select.request_mumu_config.connect(self._open_mumu_config)
-        self._peak_select.board_exited.connect(self._on_peak_exited_to_match)
+        self._peak_select.board_exited.connect(self._poll_coordinator.handle_peak_exit)
+        # 面板就绪后回填巅峰识别会话查询，供轮询路由丢弃会话中的泄漏结果
+        self._poll_coordinator.set_peak_recognizing_provider(self._peak_select_recognizing)
         self._tabs.addTab(self._peak_select, "巅峰赛选将")
 
         # Tab 4: 对局攻略（42/58 阵容与攻略工作台）
@@ -884,13 +517,8 @@ class MainWindow(QMainWindow):
     def _setup_status_bar(self) -> None:
         """构建状态栏"""
         bar = QStatusBar()
-        self._status_label = QLabel()
-        bar.addWidget(self._status_label)
-        self._progress_bar = QProgressBar()
-        self._progress_bar.setMaximumWidth(220)
-        self._progress_bar.setTextVisible(True)
-        self._progress_bar.hide()
-        bar.addWidget(self._progress_bar)
+        # reporter 已在 __init__ 信号接线前创建，此处仅挂载（addWidget 会重设父级）
+        bar.addWidget(self._reporter)
         # 服务状态 chips 自足小部件（批次6步骤3）：点击经信号回到 _open_mumu_config
         self._status_chips = StatusChips()
         self._status_chips.mumu_config_requested.connect(self._open_mumu_config)
@@ -950,13 +578,11 @@ class MainWindow(QMainWindow):
                     "已保留原始数据。请在修复前避免保存相关数据，以便后续人工检查。",
                 )
                 return
-            from src.business.maintenance.data_management_service import DataMutationService
+            from src.business.maintenance.data_management_service import repair_missing_references
 
-            result = DataMutationService(
-                self._data.heroes,
-                self._data.guides,
-                self._data.synergies,
-            ).repair_missing_references()
+            result = repair_missing_references(
+                self._data.heroes, self._data.guides, self._data.synergies
+            )
             self._data.load_all()
             QMessageBox.information(
                 self,
@@ -1023,7 +649,7 @@ class MainWindow(QMainWindow):
     def _update_status(self) -> None:
         """更新状态栏显示"""
         stats = self._data.get_stats()
-        self._status_label.setText(
+        self._reporter.show_message(
             f"武将: {stats['heroes']}  |  相性: {stats['synergies']}  |  攻略: {stats['guides']}"
         )
 
@@ -1065,32 +691,6 @@ class MainWindow(QMainWindow):
             self._fetch_service.fetch_specific(dialog.selected_ids)
 
     # ---------------------------------------------------------------
-    # 攻略获取入口（委托给 GuideFetchService）
-    # ---------------------------------------------------------------
-
-    def _request_guide_all(self) -> None:
-        self._ai_workflow.request_guide_all()
-
-    def _request_guide_incremental(self) -> None:
-        self._ai_workflow.request_guide_incremental()
-
-    def _request_guide_specific(self) -> None:
-        self._ai_workflow.request_guide_specific()
-
-    # ---------------------------------------------------------------
-    # 相性获取入口
-    # ---------------------------------------------------------------
-
-    def _request_synergy_pair(self) -> None:
-        self._ai_workflow.request_synergy_pair()
-
-    def _request_synergy_single(self) -> None:
-        self._ai_workflow.request_synergy_single()
-
-    def _request_synergy_combos(self) -> None:
-        self._ai_workflow.request_synergy_combos()
-
-    # ---------------------------------------------------------------
     # 对话框
     # ---------------------------------------------------------------
 
@@ -1118,7 +718,7 @@ class MainWindow(QMainWindow):
             self._hero_browser.refresh_synergies()
             self._recommendation.refresh_synergies()
         self._update_status()
-        self._status_label.setText("数据已清空并完成备份")
+        self._reporter.show_message("数据已清空并完成备份")
 
     def _open_faction_colors(self) -> None:
         """打开势力配色配置页。"""
@@ -1131,7 +731,7 @@ class MainWindow(QMainWindow):
         reload_faction_colors()
         self._recommendation.refresh_faction_colors()
         self._match_guide.refresh_faction_colors()
-        self._status_label.setText("势力配色已更新")
+        self._reporter.show_message("势力配色已更新")
 
     def _open_whitelist_config(self) -> None:
         """打开白名单配置页（错法观察 + 用户层确定性纠错对维护）。"""
@@ -1147,7 +747,8 @@ class MainWindow(QMainWindow):
 
     def _open_mumu_config(self) -> None:
         """打开模拟器配置对话框"""
-        from src.config.env import DEFAULT_ENV_FILE, get_mumu_config, save_env_file
+        from src.business.emulator.mumu_config_coordinator import persist_mumu_env_config
+        from src.config.env import get_mumu_config
         from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 
         config = get_mumu_config()
@@ -1162,21 +763,8 @@ class MainWindow(QMainWindow):
 
         new_config = dialog.get_config()
 
-        # 保存到 config.env
-        # new_config 出自 get_mumu_config() 全键字典（对话框经协调器持有），直接取键
-        save_env_file(DEFAULT_ENV_FILE, {
-            "MUMU_ADB_PATH": new_config["mumu_adb_path"],
-            "MUMU_ADB_PORT": str(new_config["mumu_adb_port"]),
-            "MUMU_OCR_ENABLED": "true" if new_config["mumu_ocr_enabled"] else "false",
-            "MUMU_OCR_POLL_MODE": "true" if new_config["mumu_ocr_poll_mode"] else "false",
-            "MUMU_OCR_POLL_IDLE_PAUSE": "true" if new_config["mumu_ocr_poll_idle_pause"] else "false",
-            "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config["mumu_ocr_auto_switch_tab"] else "false",
-            "MUMU_OCR_POLL_INTERVAL": str(new_config["mumu_ocr_poll_interval"]),
-            "MUMU_OCR_MATCH_THRESHOLD": str(new_config["mumu_ocr_match_threshold"]),
-            "MUMU_HERO_SELECTION_THRESHOLD": str(new_config["mumu_hero_selection_threshold"]),
-            "MUMU_HERO_SELECTION_COOLDOWN": str(new_config["mumu_hero_selection_cooldown"]),
-            "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config["mumu_match_guide_threshold"]),
-        })
+        # 保存到 config.env（键集与序列化细节在协调器模块）
+        persist_mumu_env_config(new_config)
 
         # 更新服务配置
         self._capture_service.update_config(new_config)
@@ -1185,7 +773,7 @@ class MainWindow(QMainWindow):
         # 只有 ADB 已连接且配置启用轮询时才启动
         self._poll_coordinator.sync_with_connection()
 
-        self._status_label.setText("模拟器配置已更新")
+        self._reporter.show_message("模拟器配置已更新")
 
     def _show_about(self) -> None:
         """显示关于对话框"""

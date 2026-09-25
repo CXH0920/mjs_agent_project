@@ -222,3 +222,14 @@ class DataMutationService:
             raise
         transaction.commit()
         return transaction.backup_paths
+
+
+def repair_missing_references(
+    hero_manager: HeroManager,
+    guide_manager: GuideManager,
+    synergy_manager: SynergyManager,
+) -> DataRepairResult:
+    """构造一次性修复服务并清理失效关联（数据加载流程的 business 层入口）。"""
+    return DataMutationService(
+        hero_manager, guide_manager, synergy_manager
+    ).repair_missing_references()

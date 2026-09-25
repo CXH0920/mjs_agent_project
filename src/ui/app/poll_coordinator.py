@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -88,14 +89,25 @@ class PollResult:
 
 
 class PollCoordinator(QObject):
-    """协调轮询定时、后台采集和 OCR 任务，不直接更新界面。"""
+    """协调轮询定时、后台采集、OCR 任务与结果路由；界面更新只经信号通知。
+
+    结果路由（选将/对局任务的激活、冷却、超时失活与页面跳转请求）
+    自 MainWindow 迁入：任务状态的写者收敛一处，界面出口只有三个信号。
+    """
 
     poll_result_ready = Signal(object)
     poll_state_changed = Signal(str, str)
     _poll_result_received = Signal(object)
+    # ── 路由的界面出口 ──
+    hero_selection_matched = Signal(list)  # 选将命中：携带 ocr_results 灌入选将推荐页
+    match_guide_matched = Signal(object)   # 对局命中：携带 PollTaskResult 灌入对局攻略页
+    page_switch_requested = Signal(str)    # 自动切页请求："recommendation" / "match_guide"
 
     POLL_OCR_WAIT_TIMEOUT_SECONDS = 10
     MATCH_GUIDE_MIN_CONFIRMED_NAMES = 3
+    # match_guide 激活后的空闲上限：覆盖进局加载动画，超时仍无命中视为没进对局，
+    # 避免在非对局页面（如巅峰赛后回大厅）无限期 fallback 空转 OCR
+    MATCH_GUIDE_IDLE_TIMEOUT_SECONDS = 90
     # 兜底 OCR（模板未命中）的读数质量门槛：ROI 与页面错位时（如巅峰牌面）
     # 读数靠拼图/逐槽回退拼凑，完整直读的槽位很少且置信度低；对齐的对局页
     # 则为 batch_plain 完整直读。按 2026-09-22/24 日志实测标定：对齐页
@@ -117,10 +129,21 @@ class PollCoordinator(QObject):
         self._poll_thread_lock = threading.Lock()
         self._last_fingerprint: bytes | None = None
         self._idle_unchanged_count = 0
+        # ── 路由状态（选将/对局页的激活与跳转去重）──
+        self._selection_page_active = False
+        self._match_guide_page_active = False
+        self._match_guide_activated_at: float | None = None
+        # 巅峰赛识别面板晚于本协调器创建（组合根先建、_setup_ui 后建），
+        # 由主窗口在面板创建后注入查询；未注入时按"未在识别"处理
+        self._peak_recognizing_provider: Callable[[], bool] = lambda: False
 
         self._ocr_service.poll_tick.connect(self._on_poll_tick)
         self._ocr_service.poll_state_changed.connect(self.poll_state_changed.emit)
         self._poll_result_received.connect(self._consume_poll_result)
+
+    def set_peak_recognizing_provider(self, provider: Callable[[], bool]) -> None:
+        """注入巅峰赛识别会话查询；面板创建后由主窗口回填。"""
+        self._peak_recognizing_provider = provider
 
     def sync_with_connection(self) -> None:
         """根据配置和 ADB 连接状态启动或停止轮询。"""
@@ -340,6 +363,99 @@ class PollCoordinator(QObject):
         )
         self._track_idle_watch(poll_result)
         self.poll_result_ready.emit(poll_result)
+        self._route_result(poll_result)
+
+    # ── 结果路由（自 MainWindow 迁入）────────────────────────────────
+
+    def handle_peak_exit(self) -> None:
+        """巅峰赛牌面自动退出：衔接对局攻略轮询，等待用户进入对局页。"""
+        self._match_guide_page_active = False
+        if self._ocr_service.is_polling:
+            self._ocr_service.activate_task("match_guide")
+            self._match_guide_activated_at = time.monotonic()
+
+    def _route_result(self, result: PollResult | dict) -> None:
+        """按任务结果迁移识别任务状态，界面效果经信号通知。
+
+        只有阶段令牌式的任务级结果才走任务路由；无 task_results 的旧载荷
+        走单任务兼容分支，避免外部调用方行为改变。
+        """
+        poll_result = PollResult.from_raw(result)
+        task_results = poll_result.task_results
+        if not task_results:
+            self._route_legacy_result(poll_result.outcome, poll_result.ocr_results)
+            return
+
+        hero_result = task_results.get("hero_selection")
+        if hero_result and hero_result.outcome is PollOutcome.TEMPLATE_MISSING:
+            self._ocr_service.deactivate_task("hero_selection")
+        elif hero_result and hero_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
+            self._selection_page_active = False
+        elif hero_result and hero_result.outcome is PollOutcome.MATCHED:
+            if self._peak_recognizing_provider():
+                # 持有锁之外的残余泄漏（如在途竞态）：会话中选将轮询结果一律
+                # 不可信，冷却/激活/跳转/面板刷新全部跳过，guide 分支不受影响
+                logger.debug("巅峰赛识别运行中，丢弃泄漏的选将轮询结果")
+            else:
+                self._ocr_service.set_task_cooldown(
+                    "hero_selection",
+                    self._ocr_service.config["mumu_hero_selection_cooldown"],
+                )
+                self._ocr_service.clear_task_cooldown("match_guide")
+                self._ocr_service.activate_task("match_guide")
+                self._match_guide_activated_at = time.monotonic()
+                # 每次新选将命中都开启一轮新的对局攻略自动跳转。
+                self._match_guide_page_active = False
+                if not self._selection_page_active:
+                    self._selection_page_active = True
+                    if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                        self.page_switch_requested.emit("recommendation")
+                ocr_results = hero_result.ocr_results
+                if ocr_results:
+                    self.hero_selection_matched.emit(ocr_results)
+                    recognized = len([item for item in ocr_results if item.get("name")])
+                    logger.debug("轮询: OCR 识别到 %d 个武将", recognized)
+
+        guide_result = task_results.get("match_guide")
+        if guide_result and guide_result.outcome is PollOutcome.TEMPLATE_MISSING:
+            self._ocr_service.deactivate_task("match_guide")
+            self._match_guide_activated_at = None
+        elif guide_result and guide_result.outcome is PollOutcome.MATCHED:
+            self._ocr_service.deactivate_task("match_guide")
+            self._match_guide_activated_at = None
+            if not self._match_guide_page_active:
+                self._match_guide_page_active = True
+                if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                    self.page_switch_requested.emit("match_guide")
+            self.match_guide_matched.emit(guide_result)
+        elif guide_result and guide_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
+            self._deactivate_match_guide_if_idle()
+
+    def _deactivate_match_guide_if_idle(self) -> None:
+        """激活后超过空闲阈值仍无命中即失活，停止非对局页面上的空转轮询。"""
+        if self._match_guide_activated_at is None:
+            return
+        if time.monotonic() - self._match_guide_activated_at <= self.MATCH_GUIDE_IDLE_TIMEOUT_SECONDS:
+            return
+        self._ocr_service.deactivate_task("match_guide")
+        self._match_guide_activated_at = None
+
+    def _route_legacy_result(self, outcome: PollOutcome, ocr_results: list[dict]) -> None:
+        """兼容旧版单任务轮询结果（载荷无 task_results），避免行为改变。"""
+        if outcome is PollOutcome.HEALTHY_NO_MATCH:
+            self._selection_page_active = False
+            return
+        if outcome is not PollOutcome.MATCHED:
+            return
+        if self._peak_recognizing_provider():
+            logger.debug("巅峰赛识别运行中，丢弃泄漏的选将轮询结果")
+            return
+        if not self._selection_page_active:
+            self._selection_page_active = True
+            if self._ocr_service.config.get("mumu_ocr_auto_switch_tab", False):
+                self.page_switch_requested.emit("recommendation")
+        if ocr_results:
+            self.hero_selection_matched.emit(ocr_results)
 
     # ── 闲置自动暂停 ──────────────────────────────────────────────────
 

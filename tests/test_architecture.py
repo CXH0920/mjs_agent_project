@@ -230,7 +230,7 @@ def test_no_new_import_cycles() -> None:
 # ---------------------------------------------------------------------------
 DEFAULT_MAX_METHODS = 40
 CLASS_BUDGETS: dict[str, int] = {
-    "ui/app/main_window.py:MainWindow": 75,
+    "ui/app/main_window.py:MainWindow": 47,
     "ui/configuration/mumu_config_dialog.py:MumuConfigDialog": 52,
     "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 47,
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,

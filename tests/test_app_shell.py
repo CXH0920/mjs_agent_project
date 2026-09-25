@@ -58,9 +58,9 @@ def window(shared_window):
     shared_window._sync_navigation_width(1100)
     shared_window._tabs.setCurrentIndex(0)
     shared_window._library_tabs.setCurrentIndex(0)
-    shared_window._selection_page_active = False
-    shared_window._match_guide_page_active = False
-    shared_window._match_guide_activated_at = None
+    shared_window._poll_coordinator._selection_page_active = False
+    shared_window._poll_coordinator._match_guide_page_active = False
+    shared_window._poll_coordinator._match_guide_activated_at = None
     _app().processEvents()
     return shared_window
 
@@ -96,7 +96,7 @@ def test_ocr_auto_switch_syncs_navigation_and_context(window, monkeypatch) -> No
     monkeypatch.setattr(window._ocr_service, "clear_task_cooldown", lambda *_args: None)
     monkeypatch.setattr(window._ocr_service, "activate_task", lambda *_args: None)
 
-    window._on_poll_result(PollResult(
+    window._poll_coordinator._route_result(PollResult(
         1,
         PollOutcome.MATCHED,
         task_results={
@@ -113,13 +113,13 @@ def test_peak_board_exited_activates_match_guide(window, monkeypatch) -> None:
     activated: list[str] = []
     monkeypatch.setattr(window._ocr_service, "activate_task", activated.append)
     window._ocr_service._poll_state = "running"
-    window._match_guide_page_active = True
+    window._poll_coordinator._match_guide_page_active = True
 
     window._peak_select.board_exited.emit()
 
-    assert window._match_guide_page_active is False
+    assert window._poll_coordinator._match_guide_page_active is False
     assert activated == ["match_guide"]
-    assert window._match_guide_activated_at is not None
+    assert window._poll_coordinator._match_guide_activated_at is not None
 
 
 def test_peak_board_exited_skips_activation_when_polling_stopped(window, monkeypatch) -> None:
@@ -131,17 +131,17 @@ def test_peak_board_exited_skips_activation_when_polling_stopped(window, monkeyp
     window._peak_select.board_exited.emit()
 
     assert activated == []
-    assert window._match_guide_page_active is False
-    assert window._match_guide_activated_at is None
+    assert window._poll_coordinator._match_guide_page_active is False
+    assert window._poll_coordinator._match_guide_activated_at is None
 
 
 def test_match_guide_deactivates_after_idle_timeout(window, monkeypatch) -> None:
     """match_guide 激活超时仍无命中即自动失活，停止非对局页面的空转轮询。"""
     deactivated: list[str] = []
     monkeypatch.setattr(window._ocr_service, "deactivate_task", deactivated.append)
-    window._match_guide_activated_at = time.monotonic() - 91
+    window._poll_coordinator._match_guide_activated_at = time.monotonic() - 91
 
-    window._on_poll_result(PollResult(
+    window._poll_coordinator._route_result(PollResult(
         1,
         PollOutcome.HEALTHY_NO_MATCH,
         task_results={
@@ -150,16 +150,16 @@ def test_match_guide_deactivates_after_idle_timeout(window, monkeypatch) -> None
     ))
 
     assert deactivated == ["match_guide"]
-    assert window._match_guide_activated_at is None
+    assert window._poll_coordinator._match_guide_activated_at is None
 
 
 def test_match_guide_stays_active_within_idle_timeout(window, monkeypatch) -> None:
     """激活后未超时的无命中（如进局加载动画）不失活。"""
     deactivated: list[str] = []
     monkeypatch.setattr(window._ocr_service, "deactivate_task", deactivated.append)
-    window._match_guide_activated_at = time.monotonic() - 10
+    window._poll_coordinator._match_guide_activated_at = time.monotonic() - 10
 
-    window._on_poll_result(PollResult(
+    window._poll_coordinator._route_result(PollResult(
         1,
         PollOutcome.HEALTHY_NO_MATCH,
         task_results={
@@ -168,7 +168,7 @@ def test_match_guide_stays_active_within_idle_timeout(window, monkeypatch) -> No
     ))
 
     assert deactivated == []
-    assert window._match_guide_activated_at is not None
+    assert window._poll_coordinator._match_guide_activated_at is not None
 
 
 def test_navigation_keeps_page_instances_and_library_section_state(window) -> None:
@@ -277,3 +277,26 @@ def test_menubar_mounts_all_actions(window) -> None:
 
     assert len(menubar_actions) == 22
     assert {id(action) for action in menubar_actions} == all_action_ids
+
+
+def test_poll_route_signals_feed_panels(window, monkeypatch) -> None:
+    """轮询路由的三条界面出口接线全链路锁定：信号 → 窗口处理器 → 真面板灌入。"""
+    loaded: list[list[dict]] = []
+    monkeypatch.setattr(
+        window._recommendation, "load_from_ocr",
+        lambda results: loaded.append(results),
+    )
+    updates: list[tuple[int, object]] = []
+    monkeypatch.setattr(
+        window._match_guide, "update_block",
+        lambda index, data: updates.append((index, data)),
+    )
+
+    window._poll_coordinator.hero_selection_matched.emit([{"name": "曹操"}])
+    task_result = PollTaskResult(PollOutcome.MATCHED)
+    window._poll_coordinator.match_guide_matched.emit(task_result)
+    window._poll_coordinator.page_switch_requested.emit("match_guide")
+
+    assert loaded == [[{"name": "曹操"}]]
+    assert updates == [(0, task_result)]
+    assert window._tabs.currentWidget() is window._match_guide

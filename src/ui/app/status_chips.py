@@ -3,7 +3,7 @@
 
 点击 chip 默认发出 mumu_config_requested，由主窗口连接到打开模拟器配置的动作；
 唯一例外是轮询处于闲置暂停态时点击发出 poll_resume_requested（点击即恢复轮询）。
-全局消息文本与业务进度条不在此层——它们的写点遍布业务回调，归 MainWindow。
+全局消息文本与业务进度条在 progress_reporter.ProgressReporter，与本部件互不覆盖。
 """
 
 from __future__ import annotations
