@@ -52,22 +52,6 @@ class MatchAnalysisView(QWidget):
     def tabs(self) -> QTabWidget:
         return self._tabs
 
-    @property
-    def overview_page(self) -> QScrollArea:
-        return self._overview_page
-
-    @property
-    def allies_page(self) -> QScrollArea:
-        return self._allies_page
-
-    @property
-    def enemies_page(self) -> QScrollArea:
-        return self._enemies_page
-
-    @property
-    def details_page(self) -> QScrollArea:
-        return self._details_page
-
     def render_unconfirmed(
         self,
         heroes: list,

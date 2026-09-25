@@ -51,13 +51,12 @@ def test_dynamic_style_properties_are_applied() -> None:
 
 def test_page_header_owns_title_status_and_actions() -> None:
     _app()
-    header = PageHeader("选将推荐", "尚未识别阵容")
+    header = PageHeader("选将推荐", "最近识别：12:30")
     recognize = QPushButton("识别当前阵容")
     import_file = QPushButton("从图片导入")
 
     header.add_action(recognize, ROLE_PRIMARY)
     header.add_action(import_file, ROLE_SECONDARY)
-    header.set_subtitle("最近识别：12:30")
 
     assert header.title_label.text() == "选将推荐"
     assert header.subtitle_label.text() == "最近识别：12:30"

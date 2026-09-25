@@ -19,7 +19,7 @@ def test_config_change_discards_previous_connection() -> None:
     service.capture._device_serial = "127.0.0.1:16448"
     service.update_config({"mumu_adb_path": "adb-a.exe", "mumu_adb_port": 16416})
 
-    assert not service.is_connected
+    assert service.connection_state[0] == "disconnected"
     assert service.capture.device_serial == ""
     assert states[-1][0] == "disconnected"
 

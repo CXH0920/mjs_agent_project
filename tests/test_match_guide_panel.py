@@ -238,10 +238,10 @@ def test_analysis_scrolls_vertically_and_new_ocr_returns_to_overview(monkeypatch
     panel._confirm_lineup()
 
     analysis_pages = (
-        panel._analysis_view.overview_page,
-        panel._analysis_view.allies_page,
-        panel._analysis_view.enemies_page,
-        panel._analysis_view.details_page,
+        panel._analysis_view.tabs.widget(0),
+        panel._analysis_view.tabs.widget(1),
+        panel._analysis_view.tabs.widget(2),
+        panel._analysis_view.tabs.widget(3),
     )
     assert all(isinstance(page, QScrollArea) for page in analysis_pages)
     assert all(
@@ -273,16 +273,16 @@ def test_missing_data_is_collapsible_and_detail_text_wraps(monkeypatch) -> None:
     panel.load_from_ocr(_complete_ocr())
     panel._confirm_lineup()
 
-    missing_toggle = panel._analysis_view.overview_page.findChild(
+    missing_toggle = panel._analysis_view.tabs.widget(0).findChild(
         QPushButton,
         "matchMissingToggle",
     )
     missing_notice = next(
         notice
-        for notice in panel._analysis_view.overview_page.findChildren(NoticeBanner)
+        for notice in panel._analysis_view.tabs.widget(0).findChildren(NoticeBanner)
         if notice.property("noticeRole") == "missingData"
     )
-    detail_labels = panel._analysis_view.details_page.findChildren(QLabel, "matchDetailText")
+    detail_labels = panel._analysis_view.tabs.widget(3).findChildren(QLabel, "matchDetailText")
 
     assert missing_toggle is not None
     assert missing_toggle.isCheckable()

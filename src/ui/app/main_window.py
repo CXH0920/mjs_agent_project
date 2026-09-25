@@ -901,14 +901,6 @@ class MainWindow(QMainWindow):
         self._update_emulator_status(state, detail)
         self._update_poll_status(self._ocr_service.poll_state, "轮询未启用")
 
-    @property
-    def _emulator_status_label(self) -> QLabel:
-        return self._status_chips.emulator_label
-
-    @property
-    def _poll_status_label(self) -> QLabel:
-        return self._status_chips.poll_label
-
     def _update_emulator_status(self, state: str, detail: str = "") -> None:
         """渲染不受业务进度覆盖的常驻 ADB 状态。"""
         self._status_chips.set_emulator_state(state, detail)

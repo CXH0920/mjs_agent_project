@@ -386,9 +386,9 @@ MatchAnalysisView.render_analysis(analysis: MatchAnalysis)
      -> "本局行动优先级" -> for item in analysis.priorities: _add_priority_card
      -> "敌方威胁" -> _add_threats
      -> "我方速览" -> _add_ally_tips
-  -> allies_page: "我方打法" -> for summary in analysis.allies: _add_guide_card
-  -> enemies_page: "对抗敌方" -> for summary in analysis.enemies: _add_guide_card
-  -> details_page: "单将详情" -> for summary: _add_detail_row
+  -> _allies_page: "我方打法" -> for summary in analysis.allies: _add_guide_card
+  -> _enemies_page: "对抗敌方" -> for summary in analysis.enemies: _add_guide_card
+  -> _details_page: "单将详情" -> for summary: _add_detail_row
 ```
 
 ## 七、函数清单总表

@@ -456,8 +456,8 @@ def test_import_keeps_formal_csv_when_a_name_cannot_be_confirmed(tmp_path, monke
     output_path.write_text(original, encoding="utf-8", newline="\n")
 
     with pytest.raises(ValueError, match="存在未确认武将：2:空值"):
-        service.import_file(
-            "2v2", tmp_path / "official.png",
+        service.import_pages(
+            "2v2", [tmp_path / "official.png"],
             lambda current, total: progress.append((current, total)),
         )
 
@@ -761,7 +761,7 @@ def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatc
         recognize_rate_with_templates=[("54.40%", 0.99), ("50.00%", 0.99)],
     )
 
-    summary = service.import_file("2v2", tmp_path / "official.png")
+    summary = service.import_pages("2v2", [tmp_path / "official.png"])
 
     win = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
     appear = list(csv.DictReader((tmp_path / "2v2出场排行.csv").open(encoding="utf-8")))

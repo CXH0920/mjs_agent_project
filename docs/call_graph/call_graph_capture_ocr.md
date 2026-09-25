@@ -422,7 +422,7 @@ wubi_score(c1, c2):
 不走 `TemplateManager` 与 `GeneralRecognizer`：版式由固定常量决定，OCR 只在版式切出的单元格上执行（业务层注入的 `recognize_cell` 用 `det=False` 跳过检测网络）。
 
 ```
-OfficialDataImportService.import_file()
+OfficialDataImportService.import_pages()
   -> official_board_parser.read_image(path)
      -> cv2.imdecode(np.fromfile(path))                        [规避非 ASCII 路径]
   -> detect_layout(image, key)                                 [key = 2v2 / peak / exile]
@@ -662,13 +662,13 @@ src.business.recognition.pending_stats
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `OcrRoiConfig.layout_for()` / `save_layout()` / `reset_layout()` / `reload()` | `roi_config.py` | `GeneralRecognizer`、`CaptureService`、`OcrWorker`、配置协调器 | 默认布局加载、本地覆盖原子写盘、页面要求校验 |
 | `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
-| `official_board_parser.read_image()` / `detect_layout()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 非 ASCII 路径读图、按纵横比与行数校验选版式 |
-| `official_board_parser.extract_panels()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 按版式比例切分面板 |
-| `official_board_parser.find_data_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 旧版 Canny + HoughLinesP 横线检测 / 分页排名列行投影恢复 |
-| `official_board_parser.restore_missing_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 按中位行高补回漏检横线 |
-| `official_board_parser.split_row_cells()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 按列分界比例切单元格（胜率列左内缩 -4px） |
-| `official_board_parser.prepare_rate_templates()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 排名格 + 胜率小数位数字模板与胜率 OCR 预计算 |
-| `official_board_parser.recognize_rate_with_templates()` | `official_board_parser.py` | `OfficialDataImportService.import_file()` | 字形切分、归一化到 40×28、Dice 分数匹配 |
+| `official_board_parser.read_image()` / `detect_layout()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 非 ASCII 路径读图、按纵横比与行数校验选版式 |
+| `official_board_parser.extract_panels()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 按版式比例切分面板 |
+| `official_board_parser.find_data_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 旧版 Canny + HoughLinesP 横线检测 / 分页排名列行投影恢复 |
+| `official_board_parser.restore_missing_boundaries()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 按中位行高补回漏检横线 |
+| `official_board_parser.split_row_cells()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 按列分界比例切单元格（胜率列左内缩 -4px） |
+| `official_board_parser.prepare_rate_templates()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 排名格 + 胜率小数位数字模板与胜率 OCR 预计算 |
+| `official_board_parser.recognize_rate_with_templates()` | `official_board_parser.py` | `OfficialDataImportService.import_pages()` | 字形切分、归一化到 40×28、Dice 分数匹配 |
 | `CharacterSimilarityService.correct_hero_name()` | `character_similarity.py` | 官方榜单导入、兼容单槽接口 | 编辑距离、视觉评分；调用方约束候选范围 |
 | `CharacterSimilarityService.is_safe_single_substitution()` | `character_similarity.py` | `GeneralRecognizer._parse_name_evidence()` | 唯一错字字形分与 0.55 门槛 |
 | `CharacterSimilarityService.rank_single_substitution_candidates()` | `character_similarity.py` | `GeneralRecognizer._resolve_multi_candidate_similarity()` | 候选内唯一错字评分排序 |

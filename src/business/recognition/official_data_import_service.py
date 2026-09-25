@@ -119,18 +119,6 @@ class OfficialDataImportService:
                 return None
         return self._rare_char_ocr
 
-    def import_file(
-        self,
-        key: str,
-        image_path: Path,
-        progress_callback: Callable[[int, int], None] | None = None,
-        status_callback: Callable[[str], None] | None = None,
-    ) -> dict:
-        """从一张官方榜单图片识别并覆盖对应数据文件。"""
-        return self.import_pages(
-            key, [image_path], progress_callback, status_callback,
-        )
-
     def import_pages(
         self,
         key: str,

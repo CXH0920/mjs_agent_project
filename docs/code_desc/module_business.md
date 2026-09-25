@@ -313,7 +313,6 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 | 接口 | 参数 | 返回/信号 | 说明 |
 |---|---|---|---|
 | `OfficialDataImportService.import_pages()` | `key`, `image_paths`, `progress_callback`, `status_callback` | `{name, pages, variant, records, reviews, outputs}` | 合并同类有序分页，全部校验后覆盖 CSV |
-| `OfficialDataImportService.import_file()` | `key`, `image_path`, `progress_callback`, `status_callback` | `dict` | 单页快捷入口，委托 `import_pages` |
 | `OfficialDataImportService.apply_reviewed_records()` | `pending`, `{(榜单, 排名): 武将名}` | `dict` | 人工复核修正后重跑门禁并写正式 CSV；失败抛错且不写文件 |
 | `OfficialDataImportService.review_candidates()` | `ocr_name`, `current=None` | `list[str]` | 复核界面候选名（当前值 ∪ 距离 ≤2 ∪ 歧义候选，空则全表按距离排序） |
 | `OfficialDataImportService.is_known_hero_name()` | `name` | `bool` | 复核界面统计用 |
@@ -439,7 +438,7 @@ class ScriptRunner(QObject):
 - `list_views(keyword, card_type, adjustment)` — 组装视图列表（`CardViewModel`），支持关键词搜索、类型筛选、加强/削弱/活跃/待办四态过滤，保持 cards.json 类型分组和同组基础 ID 顺序
 - `get_view(card_id)` — 获取单张卡牌视图，含字段值校验（`effect_entries`/`markdown`/`tags`/`boolean`/`number`/`select` 六种类型）
 - `save_annotation_fields(card_id, fields)` — 校验字段类型、必填规则后写盘
-- `add_effect_entry()` / `add_field()` / `update_field()` / `archive_field()` — 追加内容写编排
+- `add_field()` / `update_field()` / `archive_field()` — 追加内容写编排
 
 **editable 守卫**：`self.editable = base_available and schema.available and annotations.available`，编辑前检查，不可用时抛 `ValueError`。
 

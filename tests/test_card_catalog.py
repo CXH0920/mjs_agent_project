@@ -51,7 +51,9 @@ def test_annotation_never_changes_official_cards_file(tmp_path: Path) -> None:
 
 def test_effect_entry_uses_internal_timestamps_without_legacy_fields(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    service.add_effect_entry("8", "strengthen_effect", EffectEntry(content="加强", status="active"))
+    service.save_annotation_fields("8", {"strengthen_effect": [
+        EffectEntry(content="加强", status="active").model_dump(mode="json"),
+    ]})
 
     raw = service.annotations.get_annotation("8").fields["strengthen_effect"][0]
     assert raw["content"] == "加强"
@@ -60,10 +62,10 @@ def test_effect_entry_uses_internal_timestamps_without_legacy_fields(tmp_path: P
 
 def test_effect_entry_keeps_optional_settlement_rules(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    service.add_effect_entry(
-        "8", "strengthen_effect",
-        EffectEntry(content="加强", status="active", settlement_rules="  先结算伤害，再结算摸牌  "),
-    )
+    service.save_annotation_fields("8", {"strengthen_effect": [
+        EffectEntry(content="加强", status="active",
+                    settlement_rules="  先结算伤害，再结算摸牌  ").model_dump(mode="json"),
+    ]})
 
     raw = service.annotations.get_annotation("8").fields["strengthen_effect"][0]
     assert raw["settlement_rules"] == "先结算伤害，再结算摸牌"

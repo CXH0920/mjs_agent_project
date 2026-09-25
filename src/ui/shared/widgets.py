@@ -163,10 +163,6 @@ class PageHeader(QWidget):
         self.actions_layout.setSpacing(SPACE_SM)
         layout.addLayout(self.actions_layout)
 
-    def set_subtitle(self, subtitle: str) -> None:
-        self.subtitle_label.setText(subtitle)
-        self.subtitle_label.setVisible(bool(subtitle))
-
     def add_action(self, button: QAbstractButton, role: str = ROLE_SECONDARY) -> None:
         set_ui_role(button, role)
         self.actions_layout.addWidget(button)

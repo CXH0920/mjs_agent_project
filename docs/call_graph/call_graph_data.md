@@ -30,7 +30,7 @@ MainWindow._load_data() -> DataFacade.load_all()
 | 对象 | 职责 |
 |------|------|
 | `DataIssue` | 记录严重级别、类别、文件、记录下标、实体键、字段和消息 |
-| `LoadReport` | 汇总 `issues`，提供 `error_count` |
+| `LoadReport` | 汇总 `issues` |
 | `last_load_report` | 保存最近一次 `load_all()` 的完整报告 |
 
 示例：攻略关联英雄 ID 不存在时，正文、关联列表和原 `guides.json` 都保持不变，并生成 `missing_reference`；只有用户确认修复后才会清理并保存。
@@ -139,7 +139,7 @@ RecommendationPanel._load_win_rate_by_name()
 `load_win_rates()` 传入自定义 `Path` 时不污染默认缓存，便于测试和离线数据校验。文件缺失、I/O 错误或单行百分比格式非法只记录 warning/跳过该行，不阻断页面加载。官方数据导入成功覆盖 2v2 CSV 后调用 `clear_win_rate_cache()`，使后续页面查询读取新数据。
 
 ```
-OfficialDataImportService.import_file("2v2", image_path)
+OfficialDataImportService.import_pages("2v2", [image_path])
   -> _resolve_batch_names() / _validate_output_names()
   -> [名称校验失败] 只写对应 *_待复核.csv，保留正式 CSV
   -> [名称校验通过]
@@ -150,7 +150,7 @@ OfficialDataImportService.import_file("2v2", image_path)
   -> clear_win_rate_cache()
   -> RecommendationPanel / MatchGuidePanel 下次 load_win_rates() 读取新胜率
 
-OfficialDataImportService.import_file("exile", image_path)
+OfficialDataImportService.import_pages("exile", [image_path])
   -> 合并左右表视觉行序
   -> 榜单内部唯一性补全 / 未知名与重复名校验
   -> _write_csv(data/武将放逐.csv, ["排名", "武将"], rows)

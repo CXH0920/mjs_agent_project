@@ -648,11 +648,6 @@ class CaptureService(QObject):
             ok, result = capture.screencap_full(log_success=False)
         return ok, result, "" if ok else "capture"
 
-    @property
-    def is_connected(self) -> bool:
-        with self._session_lock:
-            return self._capture.connected if self._capture else False
-
     # ── 公开接口（供外部调用，替代直接访问私有成员） ─────────────────
 
     def shutdown(self) -> None:

@@ -773,7 +773,6 @@ class CardSyncService(QObject):
 | `clear_all()` | — | int | 清空并返回清除条数 |
 | `snapshot_items()` | — | dict | 当前内存数据快照 |
 | `restore_items(snapshot)` | dict | None | 按快照恢复内存（写盘失败回滚用） |
-| `error_count()` | — | int | `LoadReport` 问题计数 |
 
 `HeroManager` / `SynergyManager` / `GuideManager` / `ComboManager` / `AnnouncementManager` 五个子类各自实现领域键（`ComboManager` 的键为排序后的 `(hero1_id, hero2_id)`）。坏记录和重复键仅跳过该项并记录 `DataIssue`，不会阻断同文件中的其他合法记录。`DataFacade.load_all()` 汇总为 `LoadReport`，再执行英雄、相性和攻略之间的引用校验。
 

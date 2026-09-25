@@ -57,7 +57,7 @@ def test_load_all_reports_missing_references_without_mutating_loaded_data():
         assert guide.synergizes_with == [99]
         assert facade.guides.get_guide(88) is not None
         assert report is facade.last_load_report
-        assert report.error_count == 3
+        assert sum(issue.severity == "error" for issue in report.issues) == 3
         assert all(issue.kind == "missing_reference" for issue in report.issues)
         assert synergies_path.read_text(encoding="utf-8") == synergies_source
         assert guides_path.read_text(encoding="utf-8") == guides_source

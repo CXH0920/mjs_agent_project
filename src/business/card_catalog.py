@@ -150,16 +150,6 @@ class CardCatalogService:
     def _has_value(value: Any) -> bool:
         return value is not None and value != "" and value != []
 
-    def add_effect_entry(self, card_id: str, field_key: str, entry: EffectEntry) -> None:
-        definition = self.schema.get_field(field_key)
-        if definition is None or definition.value_type != "effect_entries" or definition.archived:
-            raise ValueError("当前字段不可追加版本效果")
-        existing = self.annotations.get_annotation(card_id)
-        fields = dict(existing.fields) if existing else {}
-        entries = list(fields.get(field_key, []))
-        entries.append(entry.model_dump(mode="json"))
-        self.save_annotation_fields(card_id, {field_key: entries})
-
     def add_field(self, definition: CardFieldDefinition) -> None:
         if not self.schema.available:
             raise ValueError("字段定义不可用")
