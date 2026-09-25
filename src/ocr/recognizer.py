@@ -285,10 +285,10 @@ class GeneralRecognizer:
                     evidence, raw_name_slots[seat_index], seat_index,
                 )
             name_result = self._resolve_name_evidence(seat_index, evidence)
-            team_text, team_confidence = recognized_teams.get(seat_index, ("", 0.0))
+            team_text, _ = recognized_teams.get(seat_index, ("", 0.0))
             prepared_team = team_slots.get(seat_index)
             if not team_text and prepared_team is not None:
-                team_text, team_confidence = self._recognize_prepared_single(
+                team_text, _ = self._recognize_prepared_single(
                     prepared_team, seat_index, "team",
                 )
             team = self._normalize_team(team_text, seat_index)

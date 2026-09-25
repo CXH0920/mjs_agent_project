@@ -616,7 +616,6 @@ do_capture_from_file()
 class OcrService(QObject):
     status_changed = Signal(str)           # 状态消息
     template_changed = Signal(bool)        # 模板加载/已删除
-    ocr_completed = Signal(list)           # 识别结果
     poll_tick = Signal()                   # 轮询触发信号（由 QTimer 驱动，连接至 PollCoordinator._on_poll_tick）
 ```
 
@@ -774,7 +773,7 @@ class CardSyncService(QObject):
 | `clear_all()` | — | int | 清空并返回清除条数 |
 | `snapshot_items()` | — | dict | 当前内存数据快照 |
 | `restore_items(snapshot)` | dict | None | 按快照恢复内存（写盘失败回滚用） |
-| `error_count()` / `warning_count()` | — | int | `LoadReport` 问题计数 |
+| `error_count()` | — | int | `LoadReport` 问题计数 |
 
 `HeroManager` / `SynergyManager` / `GuideManager` / `ComboManager` / `AnnouncementManager` 五个子类各自实现领域键（`ComboManager` 的键为排序后的 `(hero1_id, hero2_id)`）。坏记录和重复键仅跳过该项并记录 `DataIssue`，不会阻断同文件中的其他合法记录。`DataFacade.load_all()` 汇总为 `LoadReport`，再执行英雄、相性和攻略之间的引用校验。
 
@@ -820,12 +819,10 @@ class CardSyncService(QObject):
 | `add_hero(hero)` | Hero | None | 已存在抛 ValueError |
 | `get_hero(hero_id)` | int | Hero \| None | 精确 ID 查找 |
 | `get_hero_by_name(name)` | str | Hero \| None | 精确名称查找 |
-| `search_heroes(keyword)` | str | list[Hero] | 模糊匹配 id/name/title/faction |
 | `update_hero(hero)` | Hero | None | 覆盖式 upsert |
 | `delete_hero(hero_id)` | int | None | 不存在静默退出 |
 | `list_heroes()` | — | list[Hero] | 全部（已排序） |
 | `list_factions()` | — | list[str] | 所有势力名称 |
-| `list_heroes_by_faction(faction)` | str | list[Hero] | 势力筛选 |
 
 ### 4.4 SynergyManager 方法清单
 

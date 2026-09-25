@@ -41,7 +41,6 @@ class OcrService(QObject):
 
     status_changed = Signal(str)
     template_changed = Signal(bool)      # 模板加载/已删除
-    ocr_completed = Signal(list)         # 识别结果
     poll_tick = Signal()                 # 轮询触发（由主窗口连接截图流程）
     poll_state_changed = Signal(str, str)  # (状态, 详情)
 

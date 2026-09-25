@@ -263,8 +263,6 @@ def _save_unlocked(self) -> None:
 | 函数 | 返回 | 语义 |
 |------|------|------|
 | `hero_last_change(hero, timeline)` | `str \| None` | 该武将最近一次变更日期（含新增） |
-| `skill_last_change(hero, skill, timeline)` | `str \| None` | 该武将某技能最近一次变更日期 |
-| `hero_first_seen(hero, timeline)` | `str \| None` | 该武将作为新武将登场的日期（仅"新增"事件），非新增武将返回 `None` |
 | `changes_after(hero, as_of, timeline)` | `list[dict]` | 该武将 `as_of`（不含）之后的全部变更事件，按日期升序 |
 
 **语料块版本戳**（`CORPUS_BASE_DATE = "2026-08-28"`）：
@@ -437,9 +435,7 @@ class SpecialCardRepository(JsonRepository):
 | `save()` | 无 | `None` | 原子写入 JSON |
 | `get_hero(id)` | int | `Hero \| None` | 精确 ID 查找 |
 | `get_hero_by_name(name)` | str | `Hero \| None` | 精确名称查找 |
-| `search_heroes(keyword)` | str | `list[Hero]` | 模糊搜索 id/name/title/faction |
 | `list_heroes()` | — | `list[Hero]` | 全部武将 |
-| `list_heroes_by_faction(faction)` | str | `list[Hero]` | 按势力筛选 |
 | `list_factions()` | — | `list[str]` | 所有势力（排序去重） |
 | `add_hero(hero)` | Hero | `None` | 已存在抛 ValueError |
 | `update_hero(hero)` | Hero | `None` | 覆盖式 upsert |
@@ -518,8 +514,6 @@ class SpecialCardRepository(JsonRepository):
 | `normalize_change_type(raw)` | 归一公告/A 类快照的变更类型到标准词汇（未知→"调整"） |
 | `parse_skill_entry(raw)` | 解析"技能名：变更描述"；无冒号或超长→ `(None, 原文)` |
 | `hero_last_change(hero, timeline=None)` | 该武将最近一次变更日期（含新增） |
-| `skill_last_change(hero, skill, timeline=None)` | 该武将某技能最近一次变更日期 |
-| `hero_first_seen(hero, timeline=None)` | 该武将作为新武将登场日期（仅"新增"事件） |
 | `changes_after(hero, as_of, timeline=None)` | 该武将 `as_of` 之后的全部变更事件，按日期升序 |
 | `stamp_hero_block(block, hero, timeline=None)` | 武将语料块版本戳（恒 `is_current="true"`，附 `last_change_date`） |
 | `stamp_guide_block(block, prev_as_of, prev_md5, timeline=None)` | 攻略语料块版本戳：写 `content_md5/as_of`，按硬证据（提及变更技能）/软提示分级 |

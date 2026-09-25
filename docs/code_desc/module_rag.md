@@ -251,7 +251,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 文档校验 | `audit_rule_doc.py` | `parse_audit_output()` 解析 `[ERROR]/[WARN]/[INFO]` 行与"汇总："行；`audit_issue_counts()` 统计级别 |
 | 数据段同步 | `sync_rule_stats.py` | `parse_sync_diff()` 读 `--json` 差异报告（段/行号/类型/旧值/新值）；`sync_json_path()` / `confirmed_diff_path()` 定位两个隐藏文件 |
 | 变更提案 | `propose_rule_changes.py` / `apply_rule_proposal.py` | `list_proposals()` / `parse_proposal()` / `doc_target_line()` / `doc_section_context()` / `doc_line_at()` / `doc_context_around()`；`update_proposal_item()` 原位更新条目 |
-| 疑难登记 | 无脚本（本地待办） | `load_pending()` / `add_pending()` / `pending_to_proposal()`（转 FAQ 新增提案）；`parse_doc_chapter7()` 只读解析文档第 7 章疑难表 |
+| 疑难登记 | 无脚本（本地待办） | `load_pending()` / `add_pending()` / `pending_to_proposal()`（转 FAQ 新增提案） |
 
 `sync_rule_stats.py` 处理六个数据段 `SECTION_NAMES = ('0.1', '0.2', '3.1', '3.2', '3.5', '5.2')`，其中 `3.1/3.2` 是时机频次、`3.5` 是"每种牌限 1 次 / 首次类 / 累计阈值"（checkpoint 段仅报告不自动应用）。`rule_doc_service._doc_lines()` 带 mtime 缓存，文档未变化时不重复整文件读取。
 
@@ -426,13 +426,13 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 | 分组 | 接口 |
 |------|------|
-| 常量 | `DEFAULT_DOC` / `PROPOSAL_DIR` / `PENDING_FILE` / `RAG_EVALS_DIR` / `VALID_PROPOSAL_STATUSES` |
+| 常量 | `VALID_PROPOSAL_STATUSES` |
 | audit 解析 | `parse_audit_output(text)` / `audit_issue_counts(issues)` |
 | 数据段差异 | `parse_sync_diff(path)` / `sync_json_path(root)` / `confirmed_diff_path(root)` |
 | 提案读写 | `list_proposals(root)` / `parse_proposal(path)` / `update_proposal_item(root, proposal_path, item_id, status, edited_text=None)` |
 | 文档定位 | `doc_target_line()` / `doc_section_context()` / `doc_line_at()` / `doc_context_around()` |
 | FAQ 原位修订 | `build_faq_revise_row(line, text)`（脚本实合入与 UI 差异预览共用，仅替换裁定列 `cells[2]`） |
-| 疑难登记 | `load_pending()` / `add_pending()` / `pending_to_proposal()` / `parse_doc_chapter7()` |
+| 疑难登记 | `load_pending()` / `add_pending()` / `pending_to_proposal()` |
 
 **`audit_service.py`**
 
@@ -661,7 +661,7 @@ TASKS: list[dict] = [
 | 依赖 | `src.data.hero_classification_repository` | 武将分类数据源仓储（UI 面板持有，审计读 JSON） |
 | 依赖 | `src.data.special_cards_repository` | 专属牌数据源仓储 |
 | 依赖 | `src.data.combo_manager` | `ComboService` 的手工配队写路径（归 `module_peak_combos.md`） |
-| 依赖 | `src.data.hero_timeline` | `CORPUS_BASE_DATE` / `VALID_CHANGE_TYPES` / `load_timeline` / `save_timeline` / `append_announcement_events` / `normalize_change_type` / `parse_skill_entry` / `hero_last_change` / `skill_last_change` / `hero_first_seen` / `changes_after` / `stamp_hero_block` / `stamp_guide_block` / `DEFAULT_TIMELINE_FILE`——语料版本戳与时间轴读写。**2026-09 变更**：删除 TRIGGER_OVERRIDES 映射表、TRIGGER_OVERRIDES_AUTHORED、stale_overrides()；模块回归纯时间轴读写与版本戳职责 |
+| 依赖 | `src.data.hero_timeline` | `CORPUS_BASE_DATE` / `VALID_CHANGE_TYPES` / `load_timeline` / `save_timeline` / `append_announcement_events` / `normalize_change_type` / `parse_skill_entry` / `hero_last_change` / `changes_after` / `stamp_hero_block` / `stamp_guide_block` / `DEFAULT_TIMELINE_FILE`——语料版本戳与时间轴读写。**2026-09 变更**：删除 TRIGGER_OVERRIDES 映射表、TRIGGER_OVERRIDES_AUTHORED、stale_overrides()、skill_last_change()、hero_first_seen()；模块回归纯时间轴读写与版本戳职责 |
 | 依赖 | `src.scraper.official_source.announcement` | `build_timeline_events()`：公告正文 → 时间轴事件（`import_hero_adjustments.py` 回填与公告捕获增量共用；归 `module_scraper.md`） |
 | 依赖 | `src.scraper.ai.api_generator` | `AIBatchGenerator.complete()`：精化建议与武将分类建议的 LLM 调用 |
 | 依赖 | `src.scraper.ai.json_extract` | `extract_json()` 解析 LLM 输出 |

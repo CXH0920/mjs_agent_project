@@ -69,29 +69,12 @@ class TestHeroManager:
         assert "蜀" in factions
         assert "吴" in factions
 
-    def test_list_heroes_by_faction(self):
-        mgr = HeroManager()
-        mgr.add_hero(self._make_hero(1, "曹操", "魏"))
-        mgr.add_hero(self._make_hero(2, "刘备", "蜀"))
-        mgr.add_hero(self._make_hero(3, "夏侯惇", "魏"))
-        wei = mgr.list_heroes_by_faction("魏")
-        assert len(wei) == 2
-        assert all(h.faction == "魏" for h in wei)
-
     def test_get_hero_by_name(self):
         mgr = HeroManager()
         mgr.add_hero(self._make_hero(1, "曹操", "魏"))
         mgr.add_hero(self._make_hero(2, "刘备", "蜀"))
         assert mgr.get_hero_by_name("曹操") is not None
         assert mgr.get_hero_by_name("不存在") is None
-
-    def test_search_heroes(self):
-        mgr = HeroManager()
-        mgr.add_hero(self._make_hero(1, "曹操", "魏"))
-        mgr.add_hero(self._make_hero(2, "曹植", "魏"))
-        mgr.add_hero(self._make_hero(3, "刘备", "蜀"))
-        results = mgr.search_heroes("曹")
-        assert len(results) == 2
 
     # ---------------------------------------------------------------
     # 持久化

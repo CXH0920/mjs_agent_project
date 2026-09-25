@@ -9,13 +9,11 @@ from src.data.hero_timeline import (
     CORPUS_BASE_DATE,
     append_announcement_events,
     changes_after,
-    hero_first_seen,
     hero_last_change,
     load_timeline,
     normalize_change_type,
     parse_skill_entry,
     save_timeline,
-    skill_last_change,
     stamp_guide_block,
     stamp_hero_block,
 )
@@ -114,17 +112,10 @@ def test_append_same_ref_multiple_events_in_one_batch(tmp_path):
 # 查询
 # ---------------------------------------------------------------
 
-def test_hero_last_change_and_skill_last_change():
+def test_hero_last_change():
     timeline = FIXTURE_TIMELINE
     assert hero_last_change("法正", timeline) == "2026-01-29"
-    assert skill_last_change("法正", "奇画策算", timeline) == "2026-01-29"
-    assert skill_last_change("法正", "睚眦必报", timeline) is None
     assert hero_last_change("左慈", timeline) is None
-
-
-def test_hero_first_seen_only_counts_new():
-    assert hero_first_seen("苏武", FIXTURE_TIMELINE) == "2026-09-10"
-    assert hero_first_seen("法正", FIXTURE_TIMELINE) is None
 
 
 def test_changes_after_strict_and_sorted():

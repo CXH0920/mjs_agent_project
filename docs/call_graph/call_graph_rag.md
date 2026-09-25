@@ -48,7 +48,7 @@ config.py 模块导入时（无函数，纯常量初始化）
      -> [均未命中] EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"（在线下载）
 ```
 
-关键常量：`CORPUS_DIR`（语料目录）、`RAG_INDEX_DIR` / `CHROMA_DIR`（向量库目录）、`EMBEDDING_MODEL`（本地 bge 路径）、`EMBEDDING_QUERY_INSTRUCTION`（查询前置指令）、`TOP_K`（默认 12）、`RRF_K`（默认 60）、`MIN_VECTOR_SCORE`（默认 0.25）、`MAX_KEYWORD_ONLY`（默认 3）、`KEYWORD_BONUS`（默认 0.15）、`KIND_MAX`（12 类语料的每条结果配额上限）、`MAX_PROMPT_CHARS`（默认 12000）。
+关键常量：`CORPUS_DIR`（语料目录）、`RAG_INDEX_DIR` / `CHROMA_DIR`（向量库目录）、`EMBEDDING_MODEL`（本地 bge 路径）、`EMBEDDING_QUERY_INSTRUCTION`（查询前置指令）、`TOP_K`（默认 12）、`RRF_K`（默认 60）、`MIN_VECTOR_SCORE`（默认 0.25）、`MAX_KEYWORD_ONLY`（默认 3）、`KEYWORD_BONUS`（默认 0.15）、`KIND_MAX`（12 类语料的每条结果配额上限）。
 
 | 常量 / 函数 | 所在文件 | 作用 | 调用方 |
 |-------------|----------|------|--------|
@@ -791,7 +791,6 @@ _to_proposal() -> rds.pending_to_proposal(root, item["id"])
 | `update_proposal_item(root, path, item_id, status, edited_text)` | 原位更新提案条目（原子写，非法状态抛 ValueError） | `ProposalItemConfirmDialog` |
 | `load_pending(root)` / `add_pending(root, desc, involved, source)` | 疑难登记读/增 | 疑难登记页 |
 | `pending_to_proposal(root, pending_id)` | 疑难转 FAQ 新增提案并置 `status=proposed` | `_to_proposal()` |
-| `parse_doc_chapter7(doc_path)` | 只读解析文档第 7 章疑难登记表 | 展示/审计 |
 
 ### 7.3 业务操作服务（rule_doc_ops_service.py）
 
@@ -959,7 +958,7 @@ audit_service.audit_summary(root, pending_refinement=None)
   -> [pending_refinement 非空] issues.insert(0, AuditIssue(pending_refinement))   [始终插入首位]
   -> collect_stale_curated(root) -> AuditIssue(curated_stale / curated_stale_possible)
      -> hero_timeline.load_timeline() + 读取 data/rag_corpus/武将RAG语料.json
-     -> [技能级] skill_last_change > curated.updated_at -> curated_stale（去复核）
+     -> [技能级] 技能事件日期 > curated.updated_at -> curated_stale（去复核）
      -> [武将级，skills 空且非新增] hero 级事件 > curated.updated_at -> curated_stale_possible
   -> collect_stale_card_curated(root) -> AuditIssue(card_curated_stale)
      -> card_sync_store.load_card_changes(data/card_changes.json)
@@ -1177,7 +1176,7 @@ src.scraper.ai.batch (main)
 | `src.data.json_repository.atomic_write_json()` | 全部写路径的原子写实现 |
 | `src.data.card_points_repository` / `equip_attrs_repository` | 审计校验常量（花色/点数/张数/件数/细分类型/距离修正）单一事实源 |
 | `src.data.card_points_repository.CardPointsRepository` 等四个仓储 | 维护面板底层数据源 |
-| `src.data.hero_timeline` | 武将变更时间轴（`CORPUS_BASE_DATE`、`load_timeline` / `save_timeline` / `append_announcement_events`、`stamp_hero_block` / `stamp_guide_block`、`hero_last_change` / `skill_last_change` / `changes_after`、`normalize_change_type` / `parse_skill_entry`） |
+| `src.data.hero_timeline` | 武将变更时间轴（`CORPUS_BASE_DATE`、`load_timeline` / `save_timeline` / `append_announcement_events`、`stamp_hero_block` / `stamp_guide_block`、`hero_last_change` / `changes_after`、`normalize_change_type` / `parse_skill_entry`） |
 | `src.scraper.official_source.announcement.build_timeline_events()` | 公告正文 → 时间轴事件（归 module_scraper；公告捕获服务与 `import_hero_adjustments.py` 共用） |
 | `src.data.hero_classification_repository` / `special_cards_repository` | 分类与专属牌仓储 |
 | `src.data.combo_manager.ComboManager` | 实战配队（归 module_peak_combos） |

@@ -48,29 +48,9 @@ class HeroManager(DataManager[Hero]):
                     return hero
         return None
 
-    def search_heroes(self, keyword: str) -> list[Hero]:
-        """按关键词模糊搜索武将（匹配 ID、名称、称号、势力）"""
-        keyword_lower = keyword.lower()
-        results = []
-        with self._lock:
-            for hero in self._items.values():
-                if (
-                    keyword_lower in str(hero.id)
-                    or keyword_lower in hero.name
-                    or keyword_lower in hero.title
-                    or keyword_lower in hero.faction
-                ):
-                    results.append(hero)
-        return results
-
     def list_heroes(self) -> list[Hero]:
         """获取所有武将列表"""
         return self.list_all()
-
-    def list_heroes_by_faction(self, faction: str) -> list[Hero]:
-        """按势力筛选武将"""
-        with self._lock:
-            return [h for h in self._items.values() if h.faction == faction]
 
     def list_factions(self) -> list[str]:
         """获取所有势力列表"""

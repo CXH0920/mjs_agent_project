@@ -30,7 +30,7 @@ MainWindow._load_data() -> DataFacade.load_all()
 | 对象 | 职责 |
 |------|------|
 | `DataIssue` | 记录严重级别、类别、文件、记录下标、实体键、字段和消息 |
-| `LoadReport` | 汇总 `issues`，提供 `error_count`、`warning_count` |
+| `LoadReport` | 汇总 `issues`，提供 `error_count` |
 | `last_load_report` | 保存最近一次 `load_all()` 的完整报告 |
 
 示例：攻略关联英雄 ID 不存在时，正文、关联列表和原 `guides.json` 都保持不变，并生成 `missing_reference`；只有用户确认修复后才会清理并保存。
@@ -235,21 +235,6 @@ RecommendationPanel.update_recommendations()
 | `HeroGuideSummaryView.show_guide()` | 渲染攻略中的搭配武将名 |
 | `GuideDetailDialog.__init__()` | 弹出攻略详情时获取伙伴名 |
 
-### 3.3 模糊搜索
-
-```
-HeroBrowser._setup_ui()                                       [搜索框 textChanged 信号]
-  -> HeroListPanel._apply_filters()
-    -> self._hero_mgr.search_heroes(keyword)                  [关键词匹配 id/name/title/faction]
-  -> _refresh_list()                                           [刷新 QListWidget]
-```
-
-| 调用方 | 说明 |
-|--------|------|
-| `HeroListPanel._load_heroes()` | 初始化时加载全部 |
-| `HeroListPanel.relad()` | 数据重载 |
-| 搜索框 `textChanged` 信号 | 实时过滤列表 |
-
 ---
 
 ## 四、相性查询链路
@@ -440,7 +425,6 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `HeroManager.save()` | `hero_manager.py` | `DataMutationService.update_hero()` | `json.dump()`, 原子替换 |
 | `HeroManager.get_hero()` | `hero_manager.py` | `RecommendationPanel` 等 | dict get O(1) |
 | `HeroManager.get_hero_by_name()` | `hero_manager.py` | `RecommendationPanel` | 线性遍历 O(N) |
-| `HeroManager.search_heroes()` | `hero_manager.py` | `HeroListPanel` | 模糊匹配 4 字段 |
 | `SynergyManager.load()` | `synergy_manager.py` | `DataFacade.load_all()` | `json.load()`, `SynergyScore.model_validate()` |
 | `SynergyManager.list_synergies_for_hero()` | `synergy_manager.py` | `RecommendationPanel` | 全表扫描 O(N) |
 | `SynergyManager.get_synergy()` | `synergy_manager.py` | 外部查询 | `_synergy_key()` + dict get |
@@ -461,7 +445,7 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `load_peak_win_rates()` | `peak_win_rate_repository.py` | 巅峰赛面板 | CSV 解析、巅峰赛专属缓存 |
 | `load_peak_pick_ranks()` | `peak_win_rate_repository.py` | 巅峰赛面板 | CSV 解析、出场排名缓存 |
 | `load_timeline()` / `save_timeline()` / `append_announcement_events()` | `hero_timeline.py` | `AnnouncementService`, `import_hero_adjustments.py` | 时间轴读写与幂等追加（按 ref 或 (date, hero) 去重） |
-| `hero_last_change()` / `skill_last_change()` / `changes_after()` / `hero_first_seen()` | `hero_timeline.py` | 构建脚本、`audit_service`、`rag_audit.py` | 按武将/技能查询变更日期 |
+| `hero_last_change()` / `changes_after()` | `hero_timeline.py` | 构建脚本、`audit_service`、`rag_audit.py` | 按武将查询变更日期 |
 | `stamp_hero_block()` / `stamp_guide_block()` | `hero_timeline.py` | `build_rag_corpus.py` / `build_guide_corpus.py` | 语料块版本戳（`as_of` / `is_current` / 硬/软过时判定） |
 | `normalize_change_type()` | `hero_timeline.py` | `announcement.py`、`import_hero_adjustments.py` | 变更类型词汇归一 |
 | `parse_skill_entry()` | `hero_timeline.py` | `import_hero_adjustments.py` | 技能条目"技能名：变更描述"解析 |

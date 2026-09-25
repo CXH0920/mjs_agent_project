@@ -113,20 +113,6 @@ def test_add_pending_and_to_proposal(tmp_path):
     assert rds.load_pending(tmp_path)[0]["status"] == "proposed"
 
 
-def test_parse_doc_chapter7(tmp_path):
-    doc = tmp_path / "元规则整理-完整版.md"
-    _write(doc, """## 7. 待确认与疑难登记
-
-### 7.1 疑难登记
-| 登记日期 | 疑难描述 | 涉及技能/卡牌 | 来源 | 状态 |
-|---|---|---|---|---|
-| 2026-08-16 | 组合盲点 | 张华 | 实战 | 进行中 |
-""")
-    rows = rds.parse_doc_chapter7(doc)
-    assert rows[0]["description"] == "组合盲点"
-    assert rows[0]["status"] == "进行中"
-
-
 def _write_doc(tmp_path) -> Path:
     doc = tmp_path / "元规则整理-完整版.md"
     _write(doc, """### 5.2 武将类裁定（15 条）

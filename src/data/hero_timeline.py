@@ -132,26 +132,6 @@ def hero_last_change(hero: str, timeline: dict | None = None) -> str | None:
     return max(dates) if dates else None
 
 
-def skill_last_change(hero: str, skill: str, timeline: dict | None = None) -> str | None:
-    """该武将某技能最近一次变更日期；无记录返回 None。"""
-    dates = []
-    for event in _events(timeline):
-        if event.get("hero") != hero or not event.get("date"):
-            continue
-        for entry in event.get("skills") or []:
-            name = entry.get("skill") if isinstance(entry, dict) else entry
-            if name == skill:
-                dates.append(event["date"])
-    return max(dates) if dates else None
-
-
-def hero_first_seen(hero: str, timeline: dict | None = None) -> str | None:
-    """该武将作为新武将登场的日期；非新增武将返回 None。"""
-    dates = [e["date"] for e in _events(timeline)
-             if e.get("hero") == hero and e.get("change_type") == "新增" and e.get("date")]
-    return min(dates) if dates else None
-
-
 def changes_after(hero: str, as_of: str, timeline: dict | None = None) -> list[dict]:
     """该武将 as_of（不含）之后的全部变更事件，按日期升序（攻略过时判定用）。"""
     found = [e for e in _events(timeline)

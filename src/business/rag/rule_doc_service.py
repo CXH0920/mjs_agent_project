@@ -15,11 +15,6 @@ from pathlib import Path
 from src.config.env import PROJECT_ROOT
 from src.data.json_repository import atomic_write_json
 
-DEFAULT_DOC = PROJECT_ROOT / "docs" / "元规则整理-完整版.md"
-PROPOSAL_DIR = PROJECT_ROOT / "docs" / "archive" / "proposals"
-PENDING_FILE = PROJECT_ROOT / "docs" / "rule_doc_pending.json"
-RAG_EVALS_DIR = PROJECT_ROOT / "data" / "rag_evals"
-
 # ---------------------------------------------------------------------------
 # audit 输出解析
 # ---------------------------------------------------------------------------
@@ -313,34 +308,3 @@ def pending_to_proposal(root: Path, pending_id: int) -> Path:
         {"items": items},
     )
     return out
-
-
-# ---------------------------------------------------------------------------
-# 文档第 7 章疑难解析（只读展示）
-# ---------------------------------------------------------------------------
-
-def parse_doc_chapter7(doc_path: Path | str = DEFAULT_DOC) -> list[dict]:
-    """解析完整版第 7 章疑难登记表，返回 [{date, description, involved, source, status}]。"""
-    doc_path = Path(doc_path)
-    if not doc_path.exists():
-        return []
-    lines = doc_path.read_text(encoding="utf-8").splitlines()
-    start = None
-    for i, ln in enumerate(lines):
-        if re.match(r"^###?\s*7\.1", ln):
-            start = i
-            break
-    if start is None:
-        return []
-    rows = []
-    for ln in lines[start:]:
-        if ln.startswith("## "):
-            break
-        if not ln.startswith("|") or re.match(r"^\|\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|$", ln):
-            continue
-        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
-        if len(cells) < 5 or cells[0] in ("登记日期", "#"):
-            continue
-        rows.append({"date": cells[0], "description": cells[1], "involved": cells[2],
-                     "source": cells[3], "status": cells[4] if len(cells) > 4 else ""})
-    return rows

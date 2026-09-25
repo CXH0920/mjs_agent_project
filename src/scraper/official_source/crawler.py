@@ -382,7 +382,7 @@ IMAGES_DIR = IMAGES_OUTPUT_DIR
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """将重定向交由图片下载逻辑逐跳校验。"""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(self, req, fp, code, msg, headers, _newurl):
         return None
 
 

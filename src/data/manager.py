@@ -68,10 +68,6 @@ class LoadReport:
     def error_count(self) -> int:
         return sum(issue.severity == "error" for issue in self.issues)
 
-    @property
-    def warning_count(self) -> int:
-        return sum(issue.severity == "warning" for issue in self.issues)
-
 
 class DataManager(Generic[V_co]):
     """泛型数据管理器基类
