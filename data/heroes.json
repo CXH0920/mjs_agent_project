@@ -5182,7 +5182,7 @@
         "settlement": "仅当牌堆无法满足本次摸牌或获得牌的要求，因而将弃牌堆的牌洗入牌堆时，才会触发此技能。(刘邦大风歌、张角太平道、甘宁锦帆游侠等技能直接引发的洗牌，均不会触发此技能。)"
       }
     ],
-    "difficulty": 2,
+    "difficulty": 3,
     "mode_viability": {},
     "last_updated": "2026-09-18",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/hkiZyEEGRksX5RgeHcsizlnszZOcSYX5AdMOAa5w.png_200x282.png"

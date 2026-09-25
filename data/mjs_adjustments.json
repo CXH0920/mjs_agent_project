@@ -1412,6 +1412,75 @@
    "source": "announcement",
    "ref": "https://mjs.ztgame.com/news/000-1789-000f0-554132.html",
    "announcement_title": "9月17日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-23",
+   "hero": "谢灵运",
+   "change_type": "新增",
+   "skills": [
+    "陈郡谢氏",
+    "（士族",
+    "山水诗宗",
+    "池塘春草"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1790-000f4-166366.html",
+   "announcement_title": "9月24日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-23",
+   "hero": "貂蝉",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "隔帘送目",
+     "before": "出牌阶段限1次，你可以令一名其他男性角色对你选择的另一名其他男性角色打出1张具有强命的杀，否则令其随机弃置1张牌并失去1点体力。",
+     "after": "出牌阶段限1次，你可以令一名其他男性角色对你选择的另一名其他角色打出1张具有强命的杀，否则令其随机弃置1张牌并失去1点体力。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1790-000f4-166366.html",
+   "announcement_title": "9月24日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-23",
+   "hero": "陶渊明",
+   "change_type": "新增",
+   "skills": [
+    "采菊东篱",
+    "（菊 ♣1",
+    "归去来兮",
+    "桃花源",
+    "（桃花源"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1790-000f4-166366.html",
+   "announcement_title": "9月24日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-23",
+   "hero": "黄忠",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "宝刀不老",
+     "before": "回合开始时，获得1张武器牌，若牌堆中没有武器牌，改为获得1张杀。",
+     "after": "回合开始时，获得1张武器牌；当你打出武器牌时，可以将1张牌转化为杀。"
+    },
+    {
+     "skill": "百步穿杨",
+     "before": "每个回合限1次，当你选择杀的目标时，若你与目标距离＞1，则此杀对其强命，否则此杀对其伤害+1。",
+     "after": "当你选择杀的目标时，若你与目标距离＞1，则此杀对其强命；否则你可以令此杀对其伤害+1，然后此技能无效直到当前回合结束。"
+    },
+    {
+     "skill": "骄兵之计",
+     "before": "其他角色回合结束时，若其手牌数＜你，你可以立即对其打出1张杀或者下个出牌阶段的出杀次数+1。",
+     "after": "其他角色回合结束时，若其在你的攻击范围内，你可以立即对其打出1张杀或者下个出牌阶段的出杀次数+1。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/002-1790-000f4-166366.html",
+   "announcement_title": "9月24日05：00停服更新预告"
   }
  ]
 }
