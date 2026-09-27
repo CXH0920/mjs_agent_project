@@ -488,7 +488,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
 | MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
 | OcrService | `ocr_service.py` | ~420 | QObject | 3 |
-| OfficialDataImportService / Worker | `official_data_import_service.py` | ~610 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py` |
+| OfficialDataImportService / Worker | `official_data_import_service.py` | ~640 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py`，纠错规则在 `name_resolution.py`、引擎策略在 `official_ocr_engines.py` |
 | CardSyncService | `card_sync.py` | ~120 | QObject | 2 |
 | PendingStats | `pending_stats.py` | ~120 | 普通模块 | — |
 | DisclaimerState | `disclaimer_state.py` | ~53 | 普通模块 | — |
@@ -645,7 +645,7 @@ class OcrService(QObject):
 
 ### 3.7 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留多页聚合、排名顺序校验、姓名纠错、复核、进度与 CSV 输出，并使用 worker 注入的 PaddleOCR 引擎。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个 Paddle native 线程池并发初始化或推理。
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出，并使用 worker 注入的 PaddleOCR 引擎（引擎懒加载与罕见字兜底策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个 Paddle native 线程池并发初始化或推理。
 
 ```
 OfficialDataImportDialog._start_import()
@@ -658,10 +658,10 @@ OfficialDataImportDialog._start_import()
       -> prepare_rate_templates()（仅 2v2 胜率表）
       -> _recognize_row() -> 名称/胜率识别（名称歧义按需受限繁体兜底） -> _review_reasons()
       -> _validate_panel_rank_sequence()                   # 有充分 OCR 证据时阻止页面错序
-      -> _resolve_batch_names() -> 榜单内部唯一性补全未决名称
-      -> _validate_output_names() -> 未知名/重复名/集合不一致时阻止正式覆盖
+      -> HeroNameResolver.resolve_batch_names() -> 榜单内部唯一性补全未决名称
+      -> HeroNameResolver.validate_output_names() -> 未知名/重复名/集合不一致时阻止正式覆盖
       -> 全部校验通过 -> _write_csv() -> Path.replace() 原子覆盖
-      -> [胜率] clear_win_rate_cache()
+      -> notify_official_outputs_written()                 # data 层联动：标脏推荐指数 + 清胜率缓存
       -> CaptureService emit official_import_completed(summaries)
 ```
 
@@ -680,7 +680,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。候选去除非汉字后精确命中 `heroes.json` 时优先使用完整候选；若两路精确结果指向不同武将，则不按置信度强选。
 2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `CharacterSimilarityService.correct_hero_name()` 校正后必须命中词表。
 3. 逐字补识别失败时，只有 OCR 原文作为词表前缀的候选唯一才补全；`夏侯`、`司马`等公共前缀对应多个武将时禁止自动补全。
-4. 多个候选共享至少两个汉字前缀时，不使用编辑距离或微小视觉分差强行决胜；服务按需加载 `chinese_cht` 繁体模型继续确认。繁体原文及其编辑距离纠正结果必须仍属于简体 OCR 产生的候选白名单，禁止从“卫青/卫玠”等候选跳转到无关武将。
+4. 多个候选共享至少两个汉字前缀时，不使用编辑距离或微小视觉分差强行决胜；经 `OfficialOcrEngines` 按需加载 `chinese_cht` 繁体模型继续确认。繁体原文及其编辑距离纠正结果必须仍属于简体 OCR 产生的候选白名单，禁止从“卫青/卫玠”等候选跳转到无关武将。
 5. 繁体模型仍不能确认时保留 OCR 原文。整榜识别结束后，从该行候选中排除榜单里已经确认的武将；只有剩余一个候选且没有其他未决行竞争该名称时才自动补全，并记录补全依据。
 
 每个正式 CSV 都有对应的 `*_待复核.csv`。异常记录含 OCR 原文、置信度、原因、原图坐标及 `screenshot_data/official_import/` 下的行截图；通过榜单唯一性补全的行也保留复核记录。若最终存在未确认名称、重复名称，或同规模的 2v2 胜率/出场榜武将集合不一致，服务只更新待复核证据并报错，原正式 CSV 和推荐指数状态保持不变。名称完整性通过后，其他低置信度、排名 OCR 不一致或胜率模板异常仍按视觉行序写入正式 CSV 并留待复核。

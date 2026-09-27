@@ -9,10 +9,12 @@ import math
 import os
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT, load_env_config
+from src.data import peak_win_rate_repository, win_rate_repository
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +140,22 @@ def mark_recommendation_index_stale(
     except BaseException:
         Path(tmp_name).unlink(missing_ok=True)
         raise
+
+
+def notify_official_outputs_written(output_names: Iterable[str]) -> None:
+    """官方榜单正式 CSV 落盘后的跨仓储联动。
+
+    - 巅峰赛胜率不是推荐指数的输入（输入为 2v2 胜率/出场/放逐），因此仅当本次
+      导入不含巅峰赛胜率榜（即导入的是 2v2/放逐数据）时才标记快照"待重建"；
+    - 2v2/巅峰胜率更新后清空对应读取缓存，避免推荐页与对局攻略读到旧快照。
+    """
+    names = set(output_names)
+    if peak_win_rate_repository.PEAK_WIN_RATE_CSV.name not in names:
+        mark_recommendation_index_stale(True)
+    if WIN_RATE_CSV.name in names:
+        win_rate_repository.clear_win_rate_cache()
+    if peak_win_rate_repository.PEAK_WIN_RATE_CSV.name in names:
+        peak_win_rate_repository.clear_peak_win_rate_cache()
 
 
 def load_recommendation_indexes(

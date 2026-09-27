@@ -8,8 +8,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
+from src.business.recognition import name_resolution
 from src.business.recognition import official_data_import_service as import_module
-from src.business.recognition.official_data_import_service import OfficialDataImportService
+from src.business.recognition.name_resolution import HeroNameResolver
 from src.ui.data_admin.official_import_review_dialog import OfficialImportReviewDialog
 
 
@@ -18,9 +19,9 @@ def _app() -> QApplication:
 
 
 def test_review_candidates_include_near_roster_names() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇", "白起"])
 
-    candidates = service.review_candidates("夏候怀", None)
+    candidates = resolver.review_candidates("夏候怀", None)
 
     assert "夏侯惇" in candidates
     assert candidates[0] == "夏侯惇"
@@ -44,14 +45,13 @@ def test_review_dialog_applies_corrections_and_emits_applied(tmp_path, monkeypat
             },
         },
     }
-    monkeypatch.setattr(
-        OfficialDataImportService,
-        "_load_hero_names",
-        staticmethod(lambda: ["夏侯惇"]),
-    )
+    monkeypatch.setattr(name_resolution, "_load_hero_names", lambda: ["夏侯惇"])
     monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
     monkeypatch.setattr(import_module, "clear_pending_session", lambda *_: None)
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        lambda *_: None,
+    )
     monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
 
     dialog = OfficialImportReviewDialog(pending)

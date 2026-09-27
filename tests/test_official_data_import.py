@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import pytest
 from src.business.recognition import official_data_import_service as import_module
+from src.business.recognition.name_resolution import HeroNameResolver
 from src.business.recognition.official_data_import_service import OfficialDataImportService
 from src.ocr import official_board_parser
 from src.ocr.official_board_parser import LAYOUTS
@@ -36,7 +37,11 @@ def import_env(tmp_path, monkeypatch):
         "src.data.peak_win_rate_repository.clear_peak_win_rate_cache",
         lambda: env.peak_clears.append(True),
     )
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", env.stale_calls.append)
+    # notify_official_outputs_written 内部直调定义处同名函数，patch 定义模块才能拦截
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        env.stale_calls.append,
+    )
     return env
 
 
@@ -143,19 +148,20 @@ def test_missing_rank_ocr_uses_table_row_rank_without_review() -> None:
 
 
 def test_hero_name_reuses_template_two_stage_correction() -> None:
-    service = OfficialDataImportService(hero_names=["曹操"])
+    resolver = HeroNameResolver(hero_names=["曹操"])
 
-    name, confidence = service._normalize_name(("曹还", 0.80))
+    name, confidence = resolver.normalize_name(("曹还", 0.80))
 
     assert name == "曹操"
     assert confidence == 0.80
 
 
 def test_high_confidence_unknown_complete_name_is_corrected_and_reviewed() -> None:
-    service = OfficialDataImportService(hero_names=["曹植", "曹仁", "曹丕", "曹操", "贾诩"])
+    resolver = HeroNameResolver(hero_names=["曹植", "曹仁", "曹丕", "曹操", "贾诩"])
+    service = OfficialDataImportService(name_resolver=resolver)
 
-    name, confidence = service._normalize_name(("贾谢", 0.996))
-    common_surname_name, _ = service._normalize_name(("曹不", 0.996))
+    name, confidence = resolver.normalize_name(("贾谢", 0.996))
+    common_surname_name, _ = resolver.normalize_name(("曹不", 0.996))
     reasons = service._review_reasons(
         1, {"排名": ("1", 0.99), "武将": ("贾谢", confidence)}, name, {"排名": 1, "武将": name},
     )
@@ -166,35 +172,35 @@ def test_high_confidence_unknown_complete_name_is_corrected_and_reviewed() -> No
 
 
 def test_compound_surname_prefix_stays_unresolved_when_candidates_are_ambiguous() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊", "夏侯婴", "夏侯霸"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇", "夏侯渊", "夏侯婴", "夏侯霸"])
 
-    prefix_name, _ = service._normalize_name(("夏侯", 0.83))
-    complete_typo, _ = service._normalize_name(("夏侯怀", 0.71))
+    prefix_name, _ = resolver.normalize_name(("夏侯", 0.83))
+    complete_typo, _ = resolver.normalize_name(("夏侯怀", 0.71))
 
     assert prefix_name == "夏侯"
     assert complete_typo == "夏侯怀"
-    assert service._unresolved_name_reason(prefix_name) == (
+    assert resolver.unresolved_name_reason(prefix_name) == (
         "武将名称候选不唯一：夏侯惇/夏侯渊/夏侯婴/夏侯霸"
     )
-    assert service._unresolved_name_reason(complete_typo) == (
+    assert resolver.unresolved_name_reason(complete_typo) == (
         "武将名称候选不唯一：夏侯惇/夏侯渊/夏侯婴/夏侯霸"
     )
 
 
 def test_compound_surname_guard_does_not_change_common_single_surname_correction() -> None:
-    service = OfficialDataImportService(
+    resolver = HeroNameResolver(
         hero_names=["曹植", "曹仁", "曹丕", "曹操", "夏侯惇", "夏侯渊"],
     )
 
-    name, confidence = service._normalize_name(("曹不", 0.98))
+    name, confidence = resolver.normalize_name(("曹不", 0.98))
 
     assert (name, confidence) == ("曹丕", 0.98)
 
 
 def test_unknown_complete_name_is_marked_as_missing_from_dictionary() -> None:
-    service = OfficialDataImportService(hero_names=["曹操"])
+    resolver = HeroNameResolver(hero_names=["曹操"])
 
-    assert service._unresolved_name_reason("新武将") == "武将名称未命中词表"
+    assert resolver.unresolved_name_reason("新武将") == "武将名称未命中词表"
 
 
 def test_name_cell_prefers_complete_candidate_in_hero_list(monkeypatch) -> None:
@@ -314,7 +320,7 @@ def test_rare_character_engine_cannot_escape_primary_name_candidates(monkeypatch
 
 
 def test_batch_uniqueness_resolves_the_only_unused_name_candidate() -> None:
-    service = OfficialDataImportService(hero_names=["卫青", "卫玠", "周瑜"])
+    resolver = HeroNameResolver(hero_names=["卫青", "卫玠", "周瑜"])
     batch = {
         "records": [
             {"排名": 1, "武将": "卫"},
@@ -324,7 +330,7 @@ def test_batch_uniqueness_resolves_the_only_unused_name_candidate() -> None:
         "reviews": [{"期望排名": 1, "异常原因": "武将名称候选不唯一：卫青/卫玠"}],
     }
 
-    service._resolve_batch_names(batch)
+    resolver.resolve_batch_names(batch)
 
     assert batch["records"][0]["武将"] == "卫玠"
     assert batch["reviews"][0]["异常原因"].endswith("已按榜单唯一性由卫补全为卫玠")
@@ -553,16 +559,17 @@ def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch, impor
 
 
 def test_confusion_swap_corrects_swapped_compound_surname() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇"])
 
-    assert service._normalize_name(("夏候", 0.79)) == ("夏侯惇", 0.79)
-    assert service._normalize_name(("夏候怀", 0.70)) == ("夏侯惇", 0.70)
+    assert resolver.normalize_name(("夏候", 0.79)) == ("夏侯惇", 0.79)
+    assert resolver.normalize_name(("夏候怀", 0.70)) == ("夏侯惇", 0.70)
 
 
 def test_confusion_swap_review_reason() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇"])
+    service = OfficialDataImportService(name_resolver=resolver)
 
-    name, confidence = service._normalize_name(("夏候怀", 0.70))
+    name, confidence = resolver.normalize_name(("夏候怀", 0.70))
     reasons = service._review_reasons(
         28, {"排名": ("28", 0.99), "武将": ("夏候怀", 0.70)}, name, {"排名": 28, "武将": name},
     )
@@ -572,23 +579,24 @@ def test_confusion_swap_review_reason() -> None:
 
 
 def test_confusion_swap_skips_when_reachable_is_ambiguous() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇", "夏侯渊"])
 
-    assert service._normalize_name(("夏候怀", 0.70)) == ("夏候怀", 0.70)
-    assert service._normalize_name(("夏侯怀", 0.70)) == ("夏侯怀", 0.70)
+    assert resolver.normalize_name(("夏候怀", 0.70)) == ("夏候怀", 0.70)
+    assert resolver.normalize_name(("夏侯怀", 0.70)) == ("夏侯怀", 0.70)
 
 
 def test_confusion_swap_does_not_touch_known_name() -> None:
-    service = OfficialDataImportService(hero_names=["侯嬴", "夏侯惇"])
+    resolver = HeroNameResolver(hero_names=["侯嬴", "夏侯惇"])
 
-    assert service._normalize_name(("侯嬴", 0.99)) == ("侯嬴", 0.99)
-    assert service._corrected_via_confusion_swap("侯嬴", "侯嬴") is False
+    assert resolver.normalize_name(("侯嬴", 0.99)) == ("侯嬴", 0.99)
+    assert resolver.corrected_via_confusion_swap("侯嬴", "侯嬴") is False
 
 
 def test_plain_wordlist_correction_has_no_confusion_marker() -> None:
-    service = OfficialDataImportService(hero_names=["曹丕"])
+    resolver = HeroNameResolver(hero_names=["曹丕"])
+    service = OfficialDataImportService(name_resolver=resolver)
 
-    name, _confidence = service._normalize_name(("曹不", 0.98))
+    name, _confidence = resolver.normalize_name(("曹不", 0.98))
     reasons = service._review_reasons(
         1, {"排名": ("1", 0.99), "武将": ("曹不", 0.98)}, name, {"排名": 1, "武将": name},
     )
@@ -609,7 +617,7 @@ def test_name_cell_runs_glyph_fallback_for_unknown_name(monkeypatch) -> None:
 
 
 def test_cross_output_resolution_aligns_unknown_names() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇", "白起"])
     outputs = {
         "2v2胜率排行.csv": {
             "records": [{"排名": 1, "武将": "夏候"}, {"排名": 2, "武将": "白起"}],
@@ -621,16 +629,16 @@ def test_cross_output_resolution_aligns_unknown_names() -> None:
         },
     }
 
-    service._resolve_names_across_outputs(outputs)
+    resolver.resolve_names_across_outputs(outputs)
 
     assert outputs["2v2胜率排行.csv"]["records"][0]["武将"] == "夏侯惇"
     assert outputs["2v2出场排行.csv"]["records"][0]["武将"] == "夏侯惇"
     assert "跨榜单一致性" in outputs["2v2胜率排行.csv"]["reviews"][0]["异常原因"]
-    assert service._validate_output_names(outputs) == []
+    assert resolver.validate_output_names(outputs) == []
 
 
 def test_cross_output_resolution_skips_when_no_common_candidate() -> None:
-    service = OfficialDataImportService(hero_names=["夏侯惇", "夏侯渊"])
+    resolver = HeroNameResolver(hero_names=["夏侯惇", "夏侯渊"])
     outputs = {
         "2v2胜率排行.csv": {
             "records": [{"排名": 1, "武将": "夏侯怀"}, {"排名": 2, "武将": "白起"}],
@@ -642,7 +650,7 @@ def test_cross_output_resolution_skips_when_no_common_candidate() -> None:
         },
     }
 
-    service._resolve_names_across_outputs(outputs)
+    resolver.resolve_names_across_outputs(outputs)
 
     assert outputs["2v2胜率排行.csv"]["records"][0]["武将"] == "夏侯怀"
 
@@ -683,7 +691,10 @@ def test_apply_reviewed_records_writes_fixed_records(tmp_path, monkeypatch) -> N
         },
     }
     monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        lambda *_: None,
+    )
     monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
     cleared: list = []
     monkeypatch.setattr(import_module, "clear_pending_session", cleared.append)
@@ -710,7 +721,10 @@ def test_apply_reviewed_records_rejects_unknown_after_fix(tmp_path, monkeypatch)
         },
     }
     monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        lambda *_: None,
+    )
 
     with pytest.raises(ValueError, match="存在未确认武将"):
         service.apply_reviewed_records(pending, {})
@@ -733,7 +747,10 @@ def test_apply_reviewed_records_rejects_duplicate_after_fix(tmp_path, monkeypatc
         },
     }
     monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(import_module, "mark_recommendation_index_stale", lambda *_: None)
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        lambda *_: None,
+    )
 
     with pytest.raises(ValueError, match="存在重复武将"):
         service.apply_reviewed_records(pending, {("2v2胜率排行.csv", 1): "白起"})

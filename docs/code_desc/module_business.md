@@ -45,9 +45,11 @@ src/business/
 │   ├── emulator_operation_service.py  # 模拟器后台操作
 │   └── mumu_config_coordinator.py     # MuMu 配置状态协调
 ├── recognition/
+│   ├── name_resolution.py             # 武将名纠错与词表消解纯规则（HeroNameResolver）
 │   ├── ocr_service.py                 # OCR 控制、模板和轮询
 │   ├── ocr_worker.py                  # 唯一后台识别队列
-│   ├── official_data_import_service.py # 官方榜单导入（面板守卫 + 批量写回）
+│   ├── official_data_import_service.py # 官方榜单导入（识别编排 + 面板守卫 + 批量写回）
+│   ├── official_ocr_engines.py        # 官方导入双 OCR 引擎懒加载与跨任务移交（OfficialOcrEngines）
 │   ├── pending_stats.py               # OCR 未决错法频次与人工确认答案记录
 │   └── peak_select_watcher.py         # 巅峰赛（2v2）选将实时识别循环
 ├── analysis/
@@ -249,7 +251,7 @@ MumuConfigDialog
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务接收 `OcrWorker` 注入的 PaddleOCR 引擎，并负责姓名纠错、复核记录、进度编排与 CSV 持久化。目标仍是用视觉行边界确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
+该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务接收 `OcrWorker` 注入的 PaddleOCR 引擎，负责识别编排、复核记录与 CSV 持久化。按职责域拆分后的协作模块：武将名纠错与词表消解纯规则在 `name_resolution.HeroNameResolver`（服务与复核对话框共用同一实例），双 OCR 引擎懒加载与罕见字兜底策略在 `official_ocr_engines.OfficialOcrEngines`（worker 经服务的 `ocr_engine` / `rare_char_ocr_engine` property 跨任务移交引擎）。目标仍是用视觉行边界确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
 
 ```
 OfficialDataImportDialog
@@ -277,7 +279,7 @@ OfficialDataImportDialog
 
 低置信度、排名 OCR 不一致、胜率模板异常或名称被词表校正仍写入正式 CSV，并写入对应 `*_待复核.csv`（含行截图路径、来源图片、页序号与原图坐标）。未确认名称、重复名称或同规模输出集合不一致属于阻断错误：服务保存复核记录和行截图，但**保留原正式 CSV** 并抛 `ValueError`，同时把整批结果持久化到 `data/official_import_pending.json` 供复核界面修正后直接落盘。
 
-**复核会话（`official_import_pending.json`）**：`_save_pending_session()` 在名称校验失败时写入 `{key, image_paths, page_count, variant, validation_errors, outputs}`（`outputs` 含每个榜单的 `records` 与 `reviews`）。复核界面经 `review_candidates(ocr_name, current)` 取候选（当前值 ∪ OCR 原文 ∪ 距离 ≤ `CANDIDATE_EXPANSION_EDIT_DISTANCE=2` 且共享字符的武将 ∪ 歧义候选，为空时全表按距离排序），修正后调用 `apply_reviewed_records(pending, {(榜单, 排名): 武将名})` 重跑名称门禁——通过则写正式 CSV 并清理会话，不通过则抛错且不写任何文件。`load_pending_session()` / `clear_pending_session()` 为模块级函数，损坏或不存在时返回 `None` / 静默跳过。
+**复核会话（`official_import_pending.json`）**：`_save_pending_session()` 在名称校验失败时写入 `{key, image_paths, page_count, variant, validation_errors, outputs}`（`outputs` 含每个榜单的 `records` 与 `reviews`）。复核界面经 `HeroNameResolver.review_candidates(ocr_name, current)` 取候选（当前值 ∪ OCR 原文 ∪ 距离 ≤ `CANDIDATE_EXPANSION_EDIT_DISTANCE=2` 且共享字符的武将 ∪ 歧义候选，为空时全表按距离排序），修正后调用 `apply_reviewed_records(pending, {(榜单, 排名): 武将名})` 重跑名称门禁——通过则写正式 CSV 并清理会话，不通过则抛错且不写任何文件。`load_pending_session()` / `clear_pending_session()` 为模块级函数，损坏或不存在时返回 `None` / 静默跳过。
 
 **面板守卫（`_validate_panel_rank_sequence`）**：在排名 OCR 提供足够一致证据时阻止错序页面覆盖数据。收集每个面板的 `rank_offsets`（`OCR排名 − 行序`），有效偏移不足 3 个时不判定（避免短面板误伤）；否则要求最频繁偏移出现次数 ≥ `max(3, round(len × 0.6))` 且与期望起始位（`期望起始排名 − 1`）不符才抛错并拒绝导入，防止用户上传了页序混乱的图片却无感知覆盖历史数据。
 
@@ -293,11 +295,11 @@ for top, bottom in zip(boundaries, boundaries[1:]):
     fields = self._recognize_row(row, columns, column_breaks)
 ```
 
-`boundaries` 由视觉行检测得到，因此 `expected_rank` 来自行序而非 OCR 排名。若相邻边界间距超过中位行高度的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2/巅峰赛 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；两路精确结果冲突时不按置信度强选。单字结果继续按字形补识别；公共前缀再调用 `chinese_cht` 时，精确或编辑距离纠正结果必须属于简体 OCR 产生的候选白名单。仍未确认的名称在整榜完成后先做**榜单内部唯一性补全**（排除已占用候选，只有唯一剩余且无竞争时才补全），再做**跨榜单交集补全**（`_resolve_names_across_outputs`：各未确认行的扩展候选集交集恰为 1 时统一改名，避免同一名将因左右榜 OCR 差异被误判为"集合不一致"）。最终未知名、重复名或同规模输出集合不一致会阻止正式覆盖。该逻辑仅用于官方导入，不影响常规武将识别。胜率继续由排名格和同列小数位构建字体模板。
+`boundaries` 由视觉行检测得到，因此 `expected_rank` 来自行序而非 OCR 排名。若相邻边界间距超过中位行高度的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2/巅峰赛 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；两路精确结果冲突时不按置信度强选。单字结果继续按字形补识别；公共前缀再调用 `chinese_cht` 时，精确或编辑距离纠正结果必须属于简体 OCR 产生的候选白名单。仍未确认的名称在整榜完成后先做**榜单内部唯一性补全**（排除已占用候选，只有唯一剩余且无竞争时才补全），再做**跨榜单交集补全**（`HeroNameResolver.resolve_names_across_outputs`：各未确认行的扩展候选集交集恰为 1 时统一改名，避免同一名将因左右榜 OCR 差异被误判为"集合不一致"）。最终未知名、重复名或同规模输出集合不一致会阻止正式覆盖。该逻辑仅用于官方导入，不影响常规武将识别。胜率继续由排名格和同列小数位构建字体模板。
 
 **复核阈值**：名称 OCR 置信度 < `NAME_CONFIDENCE_REVIEW_THRESHOLD = 0.75` 标记"武将名称置信度低"；胜率数字模板置信度 < `TEMPLATE_RATE_REVIEW_THRESHOLD = 0.90` 且与 OCR 胜率不一致时标记"胜率OCR与数字模板不一致"（两者语义不同，勿合并）；候选池扩展编辑距离 `CANDIDATE_EXPANSION_EDIT_DISTANCE = 2`，宽松于名称纠错的 1——此处是"扩大候选集供后续复核"，不是直接纠错。
 
-**进度与收尾**：worker 的进度先报 `total_steps`（每行 `2` 步当该列含"胜率"——模板准备 + 行识别，否则 `1` 步），罕见字兜底只更新状态文字（`current = -1` 时仅改状态）。全部写入用 `NamedTemporaryFile` + `replace()` 原子覆盖。正式 CSV 落盘后清理缓存：本批未包含 `巅峰赛胜率排行.csv` 时调 `mark_recommendation_index_stale(True)` 标记推荐指数待重建（对话框据此发 `recommendation_indexes_stale` 到推荐面板）；写入 `2v2胜率排行.csv` / `巅峰赛胜率排行.csv` 时分别调 `clear_win_rate_cache()` / `clear_peak_win_rate_cache()`。2v2、巅峰赛与放逐图片作为整批任务在唯一 `OcrWorker` 中串行执行，`import_pages()` 返回 `{name, pages, variant, records, reviews, outputs}`。
+**进度与收尾**：worker 的进度先报 `total_steps`（每行 `2` 步当该列含"胜率"——模板准备 + 行识别，否则 `1` 步），罕见字兜底只更新状态文字（`current = -1` 时仅改状态）。全部写入用 `NamedTemporaryFile` + `replace()` 原子覆盖。正式 CSV 落盘后调 data 层 `notify_official_outputs_written(outputs)`（`recommendation_index_repository`）做跨仓储联动：本批未包含 `巅峰赛胜率排行.csv` 时标记推荐指数待重建（对话框据此发 `recommendation_indexes_stale` 到推荐面板）；包含 `2v2胜率排行.csv` / `巅峰赛胜率排行.csv` 时分别调 `clear_win_rate_cache()` / `clear_peak_win_rate_cache()`。2v2、巅峰赛与放逐图片作为整批任务在唯一 `OcrWorker` 中串行执行，`import_pages()` 返回 `{name, pages, variant, records, reviews, outputs}`。
 
 **名称降级决策顺序：**
 
@@ -314,8 +316,9 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 |---|---|---|---|
 | `OfficialDataImportService.import_pages()` | `key`, `image_paths`, `progress_callback`, `status_callback` | `{name, pages, variant, records, reviews, outputs}` | 合并同类有序分页，全部校验后覆盖 CSV |
 | `OfficialDataImportService.apply_reviewed_records()` | `pending`, `{(榜单, 排名): 武将名}` | `dict` | 人工复核修正后重跑门禁并写正式 CSV；失败抛错且不写文件 |
-| `OfficialDataImportService.review_candidates()` | `ocr_name`, `current=None` | `list[str]` | 复核界面候选名（当前值 ∪ 距离 ≤2 ∪ 歧义候选，空则全表按距离排序） |
-| `OfficialDataImportService.is_known_hero_name()` | `name` | `bool` | 复核界面统计用 |
+| `OfficialDataImportService.ocr_engine` / `rare_char_ocr_engine` | - | 已注入/已加载的引擎实例 | 供 OcrWorker 任务前后收回复用（原始值，不触发懒加载；懒加载策略在 `OfficialOcrEngines`） |
+| `HeroNameResolver.review_candidates()` | `ocr_name`, `current=None` | `list[str]` | 复核界面候选名（当前值 ∪ 距离 ≤2 ∪ 歧义候选，空则全表按距离排序） |
+| `HeroNameResolver.is_known_hero_name()` | `name` | `bool` | 复核界面统计用 |
 | `load_pending_session()` / `clear_pending_session()` | `path=None` | `dict \| None` | 模块级读写 `data/official_import_pending.json` |
 | `CaptureService.submit_official_import()` | `{类型: 路径列表}` | `OfficialImportTask` | 空选择 / 任务重叠时抛 `ValueError` / `RuntimeError` |
 | `CaptureService.official_import_progress` | `status`, `current`, `total` | 当前榜单的 OCR 工作进度 | 等待队列、胜率模板准备、逐行识别和罕见字兜底状态都会更新；`current < 0` 仅更新状态文字 |
@@ -324,7 +327,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 该顺序能优先恢复低置信度但完整的词表候选，同时避免将"郭""范"等多候选单字或"夏侯""司马"等复姓公共前缀强行改为错误角色。
 
-**B2 复核模式集成（d88fc2f）**：官方导入流程与标准 OCR 识别路径共享同一复核引擎。当未决名称经词表校正仍无法唯一确认时，`recognizer.py` 将候选送入 PP-OCRv6-small/ONNX 引擎（`paddle_loader.get_recheck_ocr_engine()`）做候选内确认，复核通过则直接补全，不通过则走原有的待复核流程。复核引擎由 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制，缺失模型时直接报错熔断不触发联网下载。
+**B2 复核模式集成（d88fc2f）**：官方导入流程与标准 OCR 识别路径共享同一复核引擎。当未决名称经词表校正仍无法唯一确认时，`recognizer.py` 将候选送入 PP-OCRv6-small/ONNX 引擎（`paddle_loader.get_recheck_ocr_engine()`）做候选内确认，复核通过则直接补全，不通过则走原有的待复核流程。复核引擎由 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制，缺失模型时直接报错熔断不触发联网下载。官方导入侧的 v6 引擎加载位于 `official_ocr_engines.OfficialOcrEngines.rare_char`（同一 `paddle_loader.get_recheck_ocr_engine()` 入口，v6 不可用回退 `chinese_cht`）。
 
 ---
 

@@ -589,33 +589,34 @@ MainWindow._open_official_data_import()
             -> [每行] _recognize_row()
                -> 排名/普通单元格: _recognize_cell()
                -> 武将单元格: _recognize_name_cell()
-                  -> [同首字无法唯一确认] _rare_char_engine（懒加载 chinese_cht）
+                  -> [同首字无法唯一确认] self._rare_char_engine -> OfficialOcrEngines.rare_char（懒加载，v6 优先回退 chinese_cht）
                   -> _recognize_name_with_engine() -> 仅在当前候选白名单内纠正
                   -> status_callback("正在执行罕见字兜底识别")
                -> 胜率单元格: 预计算 OCR + official_board_parser.recognize_rate_with_templates()
             -> _validate_panel_rank_sequence()                 [排名 OCR 一致证据足够时阻止错序页覆盖]
             -> _review_reasons() -> 必要时 _save_review_crop()
-            -> 全部页面结束 -> _resolve_batch_names(batch)     [榜单内部唯一性补全]
-            -> _resolve_names_across_outputs(outputs)          [跨榜单候选集交集唯一时统一补全]
-            -> _validate_output_names(outputs) -> 未确认/重复/集合不一致错误列表
+            -> 全部页面结束 -> HeroNameResolver.resolve_batch_names(batch)   [榜单内部唯一性补全]
+            -> HeroNameResolver.resolve_names_across_outputs(outputs)        [跨榜单候选集交集唯一时统一补全]
+            -> HeroNameResolver.validate_output_names(outputs) -> 未确认/重复/集合不一致错误列表
             -> [始终] 写待复核 CSV + 行截图（screenshot_data/official_import/）
             -> [有校验错误] _save_pending_session() -> data/official_import_pending.json
                                 -> raise ValueError("官方榜单名称校验失败：...")
             -> [通过] 每表 _write_csv() -> 同目录临时文件 replace 正式 CSV
-            -> [本批未含巅峰赛胜率榜] mark_recommendation_index_stale(True)
-            -> [写入 2v2 胜率榜] clear_win_rate_cache()
-            -> [写入巅峰赛胜率榜] clear_peak_win_rate_cache()
+            -> notify_official_outputs_written(outputs)        [data 层跨仓储联动]
+               -> [本批未含巅峰赛胜率榜] mark_recommendation_index_stale(True)
+               -> [写入 2v2 胜率榜] clear_win_rate_cache()
+               -> [写入巅峰赛胜率榜] clear_peak_win_rate_cache()
           -> CaptureService emit official_import_completed(summaries) / official_import_failed(detail)
   -> [finally 且原轮询活跃] PollCoordinator.sync_with_connection()
 
 [人工复核回路，不重新 OCR]
 OfficialImportReviewDialog
   -> load_pending_session()                                    [损坏/不存在 -> None]
-  -> OfficialDataImportService.review_candidates(ocr_name, current)
+  -> HeroNameResolver.review_candidates(ocr_name, current)     [对话框持有 resolver 并注入服务，词表单次加载]
      -> 当前值 ∪ 距离 ≤ CANDIDATE_EXPANSION_EDIT_DISTANCE=2 ∪ 歧义候选；空则全表按距离排序
-  -> apply_reviewed_records(pending, {(output_name, rank): 武将名})
-     -> _validate_output_names()                               [失败即抛错，不写任何文件]
-     -> _write_csv() 正式覆盖 + 同样的缓存清理
+  -> OfficialDataImportService.apply_reviewed_records(pending, {(output_name, rank): 武将名})
+     -> HeroNameResolver.validate_output_names()               [失败即抛错，不写任何文件]
+     -> _write_csv() 正式覆盖 + notify_official_outputs_written 联动
      -> clear_pending_session()
   -> OfficialDataImportDialog.recommendation_indexes_stale 信号 -> 推荐面板
 ```
@@ -734,7 +735,7 @@ src.ui.data_admin.official_data_import_dialog
   -> load_pending_session()                                   [待复核会话入口]
 
 src.ui.data_admin.official_import_review_dialog
-  -> OfficialDataImportService.review_candidates()            [候选名]
+  -> HeroNameResolver.review_candidates()                     [候选名；resolver 由对话框持有并注入服务]
   -> OfficialDataImportService.apply_reviewed_records()       [人工修正落盘]
 ```
 
@@ -851,7 +852,7 @@ src.ui.data_admin.official_import_review_dialog
 
 **实战配队导入合并保护：** `run_import()` 对已存在的手工记录（source != "csv"）优先保留，不覆盖用户手工编辑内容。导入报告区分 "manual_kept"（手工记录保留）、"imported"（新导入）、"updated"（更新）三类计数。手工记录优先原则：若目标 hero1+hero2 配对已存在且 source="manual"，跳过该条目并在报告中记录。
 | `data_management_service.clear_data()` / `repair_missing_references()` / `update_*` / `delete_*` | `maintenance/data_management_service.py` | 数据管理面板 | `_ManagerTransaction` 备份 + 写入失败回滚 |
-| `official_data_import_service.OfficialDataImportService.*` | `recognition/official_data_import_service.py` | `OcrWorker` / 复核界面 | 见"官方榜单数据导入"章节 |
+| `official_data_import_service.OfficialDataImportService.*` | `recognition/official_data_import_service.py` | `OcrWorker` / 复核界面 | 见"官方榜单数据导入"章节；纠错规则与引擎策略已拆至 `name_resolution.py` / `official_ocr_engines.py` |
 
 
 ## 十、AnnouncementService（公告更新检查）链路

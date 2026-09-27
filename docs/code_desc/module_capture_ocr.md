@@ -229,7 +229,7 @@ PaddleOCR → 文字 + 置信度
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
-官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格跳过检测网络直接识别（`det=False`），并继续独立负责受限候选繁体兜底、整榜唯一性和正式写入门禁；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格跳过检测网络直接识别（`det=False`），负责识别编排、面板守卫与正式写入门禁；受限候选繁体兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`（v6 优先回退 `chinese_cht`），整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
 ### 3.7 候选内单字字形评分
 

@@ -40,7 +40,7 @@ src/data/
 ├── special_cards_repository.py   # 专属牌/战法牌/特殊牌区/状态/概念维护（data/special_cards.json）
 ├── peak_win_rate_repository.py   # 巅峰赛单将胜率 + 出场排行 CSV 读取（独立于 2v2 胜率）
 ├── win_rate_repository.py        # 2v2 胜率 CSV 读取（打包基线 BUNDLE_ROOT/data）
-├── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验
+├── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验 / 官方导入落盘跨仓储联动
 └── char_info_cache.json          # 武将名词表字形基线缓存（OCR 辅助，CI 覆盖率断言；2026-09 补齐 29 字）
 ```
 
@@ -48,7 +48,7 @@ src/data/
 
 武将变更时间轴 `hero_timeline.py` 维护 `data/mjs_adjustments.json`（顶层 `init_imported_at` / `init_source_last_updated` / `corpus_base_date` + `events` 列表），由 `import_hero_adjustments.py` 全量注入与 `AnnouncementService` 公告捕获增量追加；`build_rag_corpus.py` / `build_guide_corpus.py` 据此给语料块打 `as_of` / `is_current` 版本戳，`rag_audit.py` / `audit_service.py` 据此审计 `heroes.json` 疑未同步武将。
 
-2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `BUNDLE_ROOT/data/2v2胜率排行.csv` 读取（打包只读基线，结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入后写 `stale=true` 标记，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均不晚于快照，自动写回 `false` 避免误弹横幅。
+2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `BUNDLE_ROOT/data/2v2胜率排行.csv` 读取（打包只读基线，结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入落盘后经 `notify_official_outputs_written(output_names)` 做跨仓储联动——本批未含巅峰赛胜率榜（即导入 2v2/放逐数据）时写 `stale=true` 标记并清理对应胜率缓存，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均不晚于快照，自动写回 `false` 避免误弹横幅。
 
 ---
 
@@ -532,6 +532,7 @@ class SpecialCardRepository(JsonRepository):
 | `load_recommendation_indexes(path)` | 读取已有推荐指数快照 |
 | `is_recommendation_index_stale(path)` | 快照是否过期（带自愈校验） |
 | `mark_recommendation_index_stale(stale, path)` | 原子写入 stale 状态 |
+| `notify_official_outputs_written(output_names)` | 官方榜单正式 CSV 落盘后的跨仓储联动：未含巅峰胜率榜时标记 stale，含 2v2/巅峰胜率榜时清理对应读取缓存 |
 
 ### 卡牌百科快照与变更记录（`card_sync_store.py` 模块级函数）
 

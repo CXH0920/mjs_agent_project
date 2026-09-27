@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
+from src.business.recognition.name_resolution import HeroNameResolver
 from src.business.recognition.official_data_import_service import OfficialDataImportService
 from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
 
@@ -43,7 +44,10 @@ class OfficialImportReviewDialog(QDialog):
     def __init__(self, pending: dict, parent=None) -> None:
         super().__init__(parent)
         self._pending = pending
-        self._service = OfficialDataImportService()
+        # 候选建议走纯规则的 HeroNameResolver；注入同一实例供服务内部校验复用，
+        # 词表只加载一次（构造 OfficialDataImportService 不再隐式读 heroes.json）
+        self._names = HeroNameResolver()
+        self._service = OfficialDataImportService(name_resolver=self._names)
         self._rows: list[tuple[str, int, dict, str]] = []
         self.setWindowTitle("官方榜单待复核修正")
         self.setMinimumSize(1020, 600)
@@ -87,7 +91,7 @@ class OfficialImportReviewDialog(QDialog):
             self._table.setItem(row_index, 1, QTableWidgetItem(str(rank)))
             self._table.setItem(row_index, 2, QTableWidgetItem(ocr_name))
             combo = QComboBox()
-            candidates = self._service.review_candidates(ocr_name, current or None)
+            candidates = self._names.review_candidates(ocr_name, current or None)
             for candidate in candidates:
                 combo.addItem(candidate)
             default_index = candidates.index(current) if current in candidates else 0
@@ -101,7 +105,7 @@ class OfficialImportReviewDialog(QDialog):
             self._table.setCellWidget(row_index, 6, self._crop_label(review.get("行截图路径", "")))
         unresolved = sum(
             1 for _output, _rank, _review, current in self._rows
-            if not self._service.is_known_hero_name(current)
+            if not self._names.is_known_hero_name(current)
         )
         self._summary_label.setText(
             f"共 {len(self._rows)} 行待复核，其中 {unresolved} 行未确认，请在“修正后武将”列选择。"

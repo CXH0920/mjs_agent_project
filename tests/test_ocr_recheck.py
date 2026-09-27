@@ -10,7 +10,7 @@ import types
 
 import numpy as np
 import pytest
-from src.business.recognition import official_data_import_service as official_mod
+from src.business.recognition import official_ocr_engines as engines_mod
 from src.config.env import load_env_config
 from src.ocr.paddle_loader import RapidOcrEngine, create_rapidocr_ocr
 from src.ocr.paddle_loader import get_recheck_ocr_engine as _loader_get_recheck
@@ -334,13 +334,13 @@ def test_get_recheck_ocr_engine_breaks_on_load_failure(monkeypatch) -> None:
 # ── 官方导入罕见字兜底接线 ────────────────────────────────────────────────
 
 
-def _make_service() -> official_mod.OfficialDataImportService:
-    return official_mod.OfficialDataImportService(hero_names=["王濬"])
+def _make_engines() -> engines_mod.OfficialOcrEngines:
+    return engines_mod.OfficialOcrEngines()
 
 
 def test_rare_char_engine_prefers_v6_when_recheck_enabled(monkeypatch) -> None:
     monkeypatch.setattr(
-        official_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr(
         "src.ocr.paddle_loader.get_recheck_ocr_engine", lambda: "v6-engine",
@@ -349,14 +349,14 @@ def test_rare_char_engine_prefers_v6_when_recheck_enabled(monkeypatch) -> None:
     def _boom(**_kwargs):
         raise AssertionError("v6 可用时不应回退创建 cht 引擎")
 
-    monkeypatch.setattr(official_mod, "create_paddle_ocr", _boom)
+    monkeypatch.setattr(engines_mod, "create_paddle_ocr", _boom)
 
-    assert _make_service()._rare_char_engine == "v6-engine"
+    assert _make_engines().rare_char == "v6-engine"
 
 
 def test_rare_char_engine_falls_back_to_cht_when_v6_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(
-        official_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr("src.ocr.paddle_loader.get_recheck_ocr_engine", lambda: None)
     created = {}
@@ -365,41 +365,41 @@ def test_rare_char_engine_falls_back_to_cht_when_v6_unavailable(monkeypatch) -> 
         created.update(kwargs)
         return "cht-engine"
 
-    monkeypatch.setattr(official_mod, "create_paddle_ocr", _fake_create)
+    monkeypatch.setattr(engines_mod, "create_paddle_ocr", _fake_create)
 
-    assert _make_service()._rare_char_engine == "cht-engine"
+    assert _make_engines().rare_char == "cht-engine"
     assert created["lang"] == "chinese_cht"
 
 
 def test_rare_char_engine_uses_cht_when_recheck_disabled(monkeypatch) -> None:
-    monkeypatch.setattr(official_mod, "get_mumu_config", lambda: {})
+    monkeypatch.setattr(engines_mod, "get_mumu_config", lambda: {})
     created = {}
 
     def _fake_create(**kwargs):
         created.update(kwargs)
         return "cht-engine"
 
-    monkeypatch.setattr(official_mod, "create_paddle_ocr", _fake_create)
+    monkeypatch.setattr(engines_mod, "create_paddle_ocr", _fake_create)
 
-    assert _make_service()._rare_char_engine == "cht-engine"
+    assert _make_engines().rare_char == "cht-engine"
     assert created["lang"] == "chinese_cht"
 
 
 def test_rare_char_engine_failure_breaks_further_requests(monkeypatch) -> None:
     monkeypatch.setattr(
-        official_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr("src.ocr.paddle_loader.get_recheck_ocr_engine", lambda: None)
 
     def _boom(**_kwargs):
         raise RuntimeError("模型缺失")
 
-    monkeypatch.setattr(official_mod, "create_paddle_ocr", _boom)
-    service = _make_service()
+    monkeypatch.setattr(engines_mod, "create_paddle_ocr", _boom)
+    engines = _make_engines()
 
-    assert service._rare_char_engine is None
-    assert service._rare_char_engine is None
-    assert service._rare_char_engine_failed is True
+    assert engines.rare_char is None
+    assert engines.rare_char is None
+    assert engines.rare_char_failed is True
 
 
 # ── 配置解析 ─────────────────────────────────────────────────────────────

@@ -339,8 +339,9 @@ RTX 2070 8GB 单卡，显示器直连（`Disp.A: On`），桌面合成器 + MuMu
 - `src/ocr/recognizer.py`：`_recheck_unresolved_slots`——页面消解后对 `resolution ∈ {unresolved, conflict}`
   且候选闭包非空的槽位，用生产同构画布喂法（3x 灰度条、30px 间隙、960 分组）跑 v6；
   接受纪律：读数必须精确命中该槽闭包成员（且未被其他槽占用）才注入 `source="recheck"` 证据重跑消解；
-- `src/business/recognition/official_data_import_service.py`：`_rare_char_engine` 开关开启时优先 v6
-  （读数仅在 allowed_names 候选闭包内被采纳），v6 不可用回退 cht；
+- `src/business/recognition/official_ocr_engines.py`（2026-09-27 自 `official_data_import_service.py` 拆出）：
+  `OfficialOcrEngines.rare_char` 开关开启时优先 v6（读数仅在 allowed_names 候选闭包内被采纳），
+  v6 不可用回退 cht；服务经同名委托 property 访问；
 - 配置：`MUMU_OCR_RECHECK_ENABLED`（默认 false，缺失依赖自动停用复核）；
 - 打包/依赖：spec 摘除 onnxruntime 排除 + `collect_all("onnxruntime"/"rapidocr"/"omegaconf"/"colorlog")`
   + 缺依赖构建前置报错；environment.yml 声明 `rapidocr==3.9.2 + onnxruntime==1.23.2`（版本钉死）。
