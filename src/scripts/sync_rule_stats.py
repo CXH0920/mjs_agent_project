@@ -33,6 +33,7 @@ from src.scripts.rag_common import (
     save_json,
     setup_stdout,
 )
+from src.scripts.snapshot_common import DEFAULT_SNAPSHOT, build_snapshot, write_snapshot
 
 logger = get_script_logger("sync_rule_stats")
 
@@ -504,7 +505,6 @@ def append_changelog(applied, changelog_path=DEFAULT_CHANGELOG):
 
 def refresh_snapshot(doc_path):
     """应用后刷新 .rule_doc_snapshot.json，使数据段更新成为新基线。"""
-    from src.scripts.audit_rule_doc import DEFAULT_SNAPSHOT, build_snapshot, write_snapshot
     write_snapshot(build_snapshot(doc_path, ROOT), DEFAULT_SNAPSHOT)
     return True
 

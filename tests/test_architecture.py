@@ -82,17 +82,22 @@ def test_no_upward_layer_dependency() -> None:
 # 循环依赖：运行期 import 图中不允许出现任何强连通分量（SCC）。
 #
 # 历史：审计 F3 的循环簇（manager <-> json_repository/三个 manager，根因是
-# DataIssue/DataFacade 放置在 manager.py）已随 issues.py / facade.py 拆分修复，
-# 白名单随之清空；此后发现任何循环一律直接修复，不得重新加白名单。
+# DataIssue/DataFacade 放置在 manager.py）已随 issues.py / facade.py 拆分修复；
+# scripts.sync_rule_stats <-> scripts.audit_rule_doc 互引环已随快照读写下沉
+# snapshot_common.py 消除。白名单保持为空：发现任何循环一律直接修复。
 # ---------------------------------------------------------------------------
 ALLOWED_CYCLES: list[frozenset[str]] = []
 
 
 def _module_modules() -> dict[str, Path]:
-    """dotted 模块名 -> 文件路径（含包 __init__.py）。"""
+    """dotted 模块名 -> 文件路径（含包 __init__.py）。
+
+    键与 import 语句同命名空间（"src.x.y"，相对项目根）——此前误用
+    ROOT.parent 前缀导致绝对导入永远解析不到，SCC 检测在空图上空转。
+    """
     modules: dict[str, Path] = {}
     for py in _iter_py_files():
-        rel = py.relative_to(ROOT.parent).with_suffix("")
+        rel = py.relative_to(ROOT).with_suffix("")
         parts = list(rel.parts)
         if parts[-1] == "__init__":
             parts = parts[:-1]
@@ -132,7 +137,7 @@ def _module_edges() -> dict[str, set[str]]:
                 if node.level == 0:
                     base = (node.module or "").split(".") if node.module else []
                 else:
-                    pkg_parts = list(path.parent.relative_to(ROOT.parent).parts)
+                    pkg_parts = list(path.parent.relative_to(ROOT).parts)
                     base = pkg_parts[: len(pkg_parts) - (node.level - 1)]
                     base += (node.module or "").split(".") if node.module else []
                 targets = [".".join(base)] if base else []

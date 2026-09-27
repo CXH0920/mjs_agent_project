@@ -19,8 +19,6 @@
     python -m src.scripts.audit_rule_doc --doc <path> --snapshot <path>  # 指定路径（测试用）
 """
 import argparse
-import datetime
-import hashlib
 import io
 import json
 import os
@@ -28,68 +26,26 @@ import re
 import sys
 
 from src.scripts import build_rule_corpus as brc
+from src.scripts import sync_rule_stats as srs
 from src.scripts.rag_common import get_script_logger
+from src.scripts.snapshot_common import (
+    DEFAULT_SNAPSHOT,
+    build_snapshot,
+    chapters,
+    load_snapshot,
+    norm,
+    snapshot_counts,  # noqa: F401  re-export：maintain_rag.py 经本模块属性访问
+    write_snapshot,
+)
 
 logger = get_script_logger("audit_rule_doc")
 
 from src.config.env import PROJECT_ROOT as ROOT
 
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
-DEFAULT_SNAPSHOT = os.path.join(ROOT, '.rule_doc_snapshot.json')
-SNAPSHOT_VERSION = 1
 
 CARD_REF_RE = re.compile(r'卡牌\s*(\d+)')
 HERO_REF_RE = re.compile(r'武将\s+([^，,、+（(/等]+)')
-
-
-def load_snapshot(path=DEFAULT_SNAPSHOT):
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else None
-    except Exception as error:
-        print(f'  ⚠️ 快照加载失败，按无快照处理（全部章节将视为新增）: {error}')
-        logger.warning("快照 %s 加载失败，按无快照处理: %s", path, error)
-        return None
-
-
-def snapshot_counts(path=DEFAULT_SNAPSHOT):
-    """供 maintain_rag.py 使用：返回 语料文件名 -> 快照期望块数；无快照返回 None。"""
-    snap = load_snapshot(path)
-    if not snap:
-        return None
-    c = snap.get('counts', {})
-    return {
-        '元规则RAG语料-章节块.json': c.get('sections'),
-        '术语表.json': c.get('terms'),
-        'FAQ裁定块.json': c.get('faqs'),
-    }
-
-def doc_md5(path):
-    with open(path, 'rb') as f:
-        return hashlib.md5(f.read()).hexdigest()
-
-
-def _norm(content_lines):
-    return '\n'.join(content_lines).strip('\n')
-
-
-def _chapters(doc_path):
-    """扫描 ## 章标题，返回 [{'no': int, 'title': str}]。"""
-    out = []
-    with open(doc_path, encoding='utf-8') as f:
-        for ln in f.read().splitlines():
-            m = brc.HEADING_RE.match(ln)
-            if m and len(m.group(1)) == 2:
-                text = m.group(2).strip()
-                no, _ = brc._parse_heading(text)
-                if no is None:
-                    continue
-                title = re.sub(r'^\d+\.\s*', '', text)
-                out.append({'no': no, 'title': title})
-    return out
 
 
 def _cross_ref_sets(root):
@@ -131,39 +87,6 @@ def _longest_prefix(text, names):
         if text.startswith(n):
             return n
     return None
-
-
-def build_snapshot(doc_path, root):
-    blocks, terms, faqs, dropped = brc.parse_rule_doc(doc_path)
-    chapters = _chapters(doc_path)
-    chapter_blocks = [b['block_id'] for b in blocks if b['section'] is None]
-    sections = {}
-    for b in blocks:
-        if b['section'] is not None:
-            sections.setdefault(str(b['chapter']), []).append(b['block_id'])
-    block_map = {}
-    for b in blocks:
-        block_map[b['block_id']] = {'title': b['title'], 'content': _norm(b['content'])}
-    with open(doc_path, encoding='utf-8') as f:
-        text = f.read()
-    return {
-        'version': SNAPSHOT_VERSION,
-        'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'doc_md5': doc_md5(doc_path),
-        'chapters': chapters,
-        'chapter_blocks': chapter_blocks,
-        'sections': sections,
-        'faq_ids': ['faq_%03d' % q['faq_no'] for q in sorted(faqs, key=lambda x: x['faq_no'])],
-        'term_ids': [t['block_id'] for t in terms],
-        'blocks': block_map,
-        'counts': {'sections': len(blocks), 'terms': len(terms), 'faqs': len(faqs),
-                   'pending': text.count('[待确认')},
-    }
-
-
-def write_snapshot(snap, path):
-    with open(path, 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(snap, f, ensure_ascii=False, indent=2)
 
 
 def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
@@ -208,13 +131,13 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
                            % (bid, len(locs), ' / '.join(locs))})
 
     # ---- 4. 章节结构指纹 ----
-    chapters = _chapters(doc_path)
+    chapter_list = chapters(doc_path)
     if snap:
-        if snap.get('chapters') != chapters:
+        if snap.get('chapters') != chapter_list:
             issues.append({'level': 'ERROR',
                            'msg': '章节结构变更：快照=%s 当前=%s'
                            % ([c['title'] for c in snap.get('chapters', [])],
-                              [c['title'] for c in chapters])})
+                              [c['title'] for c in chapter_list])})
 
     # ---- 5. ID 稳定性（需快照） ----
     if snap:
@@ -262,7 +185,7 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
 
     # ---- 9. 已定稿块指纹（防回归，允许末尾追加） ----
     if snap:
-        cur_map = {b['block_id']: {'title': b['title'], 'content': _norm(b['content'])}
+        cur_map = {b['block_id']: {'title': b['title'], 'content': norm(b['content'])}
                    for b in blocks}
         for bid, old in snap.get('blocks', {}).items():
             cur = cur_map.get(bid)
@@ -285,9 +208,11 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
 
     # ---- 10. 数据段一致性（sync_rule_stats，A 层数据快照） ----
     try:
-        from src.scripts import sync_rule_stats as srs
         with open(doc_path, encoding='utf-8') as f:
             doc_text = f.read()
+    except OSError as exc:
+        issues.append({'level': 'WARN', 'msg': '数据段一致性校验失败：%s' % exc})
+    else:
         diffs = srs.diff_sections(doc_text, srs.load_data(root))
         full = [d for d in diffs if d['kind'] == 'full']
         cand = [d for d in diffs if d['kind'] == 'candidate']
@@ -301,8 +226,6 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
         if chk:
             issues.append({'level': 'INFO', 'msg': '数据段校验点：%d 处数字不一致（段：%s），需人工核对'
                            % (len(chk), '、'.join(sorted({d['section'] for d in chk})))})
-    except Exception as exc:
-        issues.append({'level': 'WARN', 'msg': '数据段一致性校验失败：%s' % exc})
 
     # ---- 汇总 ----
     if update_snapshot:
