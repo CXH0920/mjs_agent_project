@@ -21,13 +21,13 @@ from src.config.env import get_mumu_config
 from src.data.announcement_manager import AnnouncementManager
 from src.data.card_catalog import CardRepository
 from src.data.card_points_repository import CardPointsRepository
+from src.data.facade import DataFacade
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.manager import (
     DEFAULT_GUIDES_FILE,
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
-    DataFacade,
 )
 from src.data.synergy_manager import SynergyManager
 from src.ui.app.poll_coordinator import PollCoordinator

@@ -79,21 +79,13 @@ def test_no_upward_layer_dependency() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 循环依赖：运行期 import 图中不允许出现白名单之外的强连通分量（SCC）。
+# 循环依赖：运行期 import 图中不允许出现任何强连通分量（SCC）。
 #
-# 现存唯一已知循环簇（审计 F3，根因：DataIssue/DataFacade 放置在 manager.py）：
-#   src.data.manager <-> {json_repository, hero_manager, synergy_manager, guide_manager}
-# F3 修复（移动 DataIssue / DataFacade 出 manager.py）后应删除整张白名单。
+# 历史：审计 F3 的循环簇（manager <-> json_repository/三个 manager，根因是
+# DataIssue/DataFacade 放置在 manager.py）已随 issues.py / facade.py 拆分修复，
+# 白名单随之清空；此后发现任何循环一律直接修复，不得重新加白名单。
 # ---------------------------------------------------------------------------
-ALLOWED_CYCLES: list[frozenset[str]] = [
-    frozenset({
-        "src.data.manager",
-        "src.data.json_repository",
-        "src.data.hero_manager",
-        "src.data.synergy_manager",
-        "src.data.guide_manager",
-    }),
-]
+ALLOWED_CYCLES: list[frozenset[str]] = []
 
 
 def _module_modules() -> dict[str, Path]:

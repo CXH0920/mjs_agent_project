@@ -11,7 +11,7 @@
 本模块是项目的**数据基础层**，承担四个核心角色：
 
 1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 `Skill`、`Card`、`Hero`、`SynergyScore`、`Combo`、`HeroGuide`、`IncrementalUpdate` 等核心数据模型，作为项目唯一的 JSON 格式契约，确保官网爬虫与 AI 生成的输出格式一致
-2. **数据管理**（`manager.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用 CRUD、加载、保存与内存快照回滚；六个子类 Manager 继承基类并添加各自的查询与领域方法；`DataFacade` 门面统一访问入口，并可通过 `from_managers()` 复用外部 Manager
+2. **数据管理**（`manager.py` / `facade.py` / `issues.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用 CRUD、加载、保存与内存快照回滚；六个子类 Manager 继承基类并添加各自的查询与领域方法；`DataFacade` 门面（`facade.py`，审计 F3 自 manager.py 拆出）统一访问入口，并可通过 `from_managers()` 复用外部 Manager；`DataIssue` / `LoadReport` 问题值对象独立于 `issues.py`
 3. **JSON 仓库基类**（`json_repository.py`）— `JsonRepository` 统一维护仓库的原子写盘、加锁读盘与写盘失败内存回滚；`atomic_write_json` 是全库唯一原子写入口（`DataManager` / `card_catalog` / 所有维护仓库均委托于此）
 4. **武将变更时间轴**（`hero_timeline.py`）— 维护 `data/mjs_adjustments.json` 的武将变更事件流，为 RAG 语料构建提供按版本打戳（`as_of` / `is_current`）与过时判定能力
 
@@ -23,7 +23,9 @@
 src/data/
 ├── __init__.py
 ├── models.py                     # Pydantic 核心模型：Skill / Card / Hero / SynergyScore / Combo / HeroGuide / IncrementalUpdate
-├── manager.py                    # DataIssue / LoadReport / DataManager[V_co] 泛型基类 / DataFacade 门面 / apply_incremental_update()
+├── manager.py                    # 默认路径常量 / DataManager[V_co] 泛型基类 / apply_incremental_update()
+├── facade.py                     # DataFacade 门面（组装三个 Manager，审计 F3 自 manager.py 拆出）
+├── issues.py                     # DataIssue / LoadReport 问题值对象（审计 F3 自 manager.py 拆出）
 ├── json_repository.py            # atomic_write_json / JsonRepository 基类（原子写 + 加锁读 + 写失败回滚）
 ├── hero_manager.py               # Hero CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py            # SynergyScore CRUD + JSON 持久化（继承 DataManager[SynergyScore]）

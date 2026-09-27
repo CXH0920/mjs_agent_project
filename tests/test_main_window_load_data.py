@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.data.manager import DataFacade
+from src.data.facade import DataFacade
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.ui.app import main_window as main_window_module
 from src.ui.app.main_window import MainWindow

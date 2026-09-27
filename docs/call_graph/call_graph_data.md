@@ -65,8 +65,8 @@ MainWindow._load_data()
 
 | 调用方 | 被调用方 | 所在文件 | 说明 |
 |--------|----------|----------|------|
-| `MainWindow.__init__()` | `DataFacade.load_all()` | `manager.py` | 主窗口构造时加载全部数据 |
-| `MainWindow._reload_data()` | `DataFacade.load_all()` | `manager.py` | 菜单"重新加载数据" |
+| `MainWindow.__init__()` | `DataFacade.load_all()` | `facade.py` | 主窗口构造时加载全部数据 |
+| `MainWindow._reload_data()` | `DataFacade.load_all()` | `facade.py` | 菜单"重新加载数据" |
 | `DataFacade.load_all()` | `HeroManager.load()` | `hero_manager.py` | 加载武将 JSON→内存（以 id 为键） |
 | `DataFacade.load_all()` | `SynergyManager.load()` | `synergy_manager.py` | 加载相性 JSON→内存（以双向归一 key 为键） |
 | `DataFacade.load_all()` | `GuideManager.load()` | `guide_manager.py` | 加载攻略 JSON→内存（以 hero_id 为键） |
@@ -419,8 +419,8 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 
 | 函数 | 文件 | 调用方（主要） | 被调用方（主要） |
 |------|------|----------------|------------------|
-| `DataFacade.load_all()` | `manager.py` | `MainWindow._load_data()` | 三个 Manager.load() + `_validate_references()` |
-| `DataFacade.get_stats()` | `manager.py` | `MainWindow._update_status()` | 三个 Manager 的计数接口 |
+| `DataFacade.load_all()` | `facade.py` | `MainWindow._load_data()` | 三个 Manager.load() + `_validate_references()` |
+| `DataFacade.get_stats()` | `facade.py` | `MainWindow._update_status()` | 三个 Manager 的计数接口 |
 | `HeroManager.load()` | `hero_manager.py` | `DataFacade.load_all()` | `json.load()`, `Hero.model_validate()` |
 | `HeroManager.save()` | `hero_manager.py` | `DataMutationService.update_hero()` | `json.dump()`, 原子替换 |
 | `HeroManager.get_hero()` | `hero_manager.py` | `RecommendationPanel` 等 | dict get O(1) |

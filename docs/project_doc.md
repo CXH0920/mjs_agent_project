@@ -855,6 +855,8 @@ def _make_key(self, a_id: int, b_id: int) -> tuple[int, int]:
 
 ### 4.6 DataFacade 门面
 
+定义于 `src/data/facade.py`（审计 F3：原与基类同居 manager.py 形成循环依赖，拆出后循环消除）：
+
 ```python
 class DataFacade:
     heroes: HeroManager

@@ -19,7 +19,7 @@ from src.data.card_catalog import (
     CardViewModel,
     EffectEntry,
 )
-from src.data.manager import DataIssue
+from src.data.issues import DataIssue
 
 
 class CardCatalogService:

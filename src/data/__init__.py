@@ -1,6 +1,6 @@
 """名将杀 Agent - 数据管理包
 
-从 manager 导出全部公共 API，保持向后兼容的导入路径。
+聚合导出全部公共 API，保持向后兼容的导入路径。
 """
 
 from src.data.card_catalog import (
@@ -15,16 +15,15 @@ from src.data.card_catalog import (
     CardViewModel,
     EffectEntry,
 )
+from src.data.facade import DataFacade
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
+from src.data.issues import DataIssue, LoadReport
 from src.data.manager import (
     DEFAULT_GUIDES_FILE,
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
-    DataFacade,
-    DataIssue,
     DataManager,
-    LoadReport,
     apply_incremental_update,
 )
 from src.data.synergy_manager import SynergyManager

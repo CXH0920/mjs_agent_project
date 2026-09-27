@@ -10,7 +10,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from src.data.manager import DEFAULT_DATA_DIR, DataIssue, DataManager
+from src.data.issues import DataIssue
+from src.data.manager import DEFAULT_DATA_DIR, DataManager
 from src.data.models import SynergyScore
 
 logger = logging.getLogger(__name__)

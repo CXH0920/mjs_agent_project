@@ -76,7 +76,7 @@ ai_batch.main() -> resolve_api_config(None)
 | `setup_logging()` | `config/logging_config.py` | `main()`, 各 CLI 入口 | 见 §3.1 |
 | `MainWindow.__init__()` | `ui/app/main_window.py` | `main()` | `AppServices` 组合根、`_load_data()`, `_setup_ui()`, `_setup_status_bar()`, `_update_status()` |
 | `MainWindow.start_ocr_warmup()` / `wait_ocr_warmup()` | `ui/app/main_window.py` | `main()` | `CaptureService.warmup_ocr_model()` / `CaptureService.wait_ocr_warmup()` |
-| `DataFacade.load_all()` | `data/manager.py` | `MainWindow._load_data()` | `HeroManager.load()`, `SynergyManager.load()`, `GuideManager.load()` |
+| `DataFacade.load_all()` | `data/facade.py` | `MainWindow._load_data()` | `HeroManager.load()`, `SynergyManager.load()`, `GuideManager.load()` |
 
 > **启动顺序说明：** `main()` 只做骨架、日志、Qt 外壳与窗口创建；模拟器的 ADB/OCR 配置经 `AppServices` 组合根注入，OCR 模型冷加载在启动页阶段阻塞完成。这样窗口显示后事件循环保持流畅，模型加载成本不落入交互期。
 

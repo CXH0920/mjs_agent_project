@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from src.data.manager import DataIssue
+from src.data.issues import DataIssue
 
 logger = logging.getLogger(__name__)
 
