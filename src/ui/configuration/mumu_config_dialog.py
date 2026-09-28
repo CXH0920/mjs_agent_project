@@ -31,17 +31,16 @@ from PySide6.QtWidgets import (
 )
 from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
-from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
+from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator, MuMuDeviceInfo
 from src.business.recognition.ocr_service import OcrService
-from src.capture.image_utils import pil_to_qpixmap
 from src.capture.image_validation import load_local_image
-from src.capture.prober import MuMuDeviceInfo
 from src.config.env import BUNDLE_ROOT, SCREENSHOTS_DIR
 from src.ui.configuration.mumu_config_sections import (
     MumuDeviceSection,
     MumuOcrPollingSection,
     MumuTemplateSection,
 )
+from src.ui.shared.image_utils import pil_to_qpixmap
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast, show_toast
 
 logger = logging.getLogger(__name__)
@@ -56,14 +55,14 @@ class MumuConfigDialog(QDialog):
     def __init__(
         self,
         config: dict,
-        capture_service: CaptureService | None = None,
-        ocr_service: OcrService | None = None,
+        capture_service: CaptureService,
+        ocr_service: OcrService,
         operation_service: EmulatorOperationService | None = None,
         parent=None,
     ):
         super().__init__(parent)
-        self._capture_service = capture_service or CaptureService(self)
-        self._ocr_service = ocr_service or OcrService(self)
+        self._capture_service = capture_service
+        self._ocr_service = ocr_service
         self._coordinator = MumuConfigCoordinator(
             config,
             self._capture_service,

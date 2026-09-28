@@ -29,6 +29,37 @@ OCR_NAME_CONFUSION_PAIRS: tuple[tuple[str, str], ...] = (
 # EDIT_DISTANCE_THRESHOLD=1——此处是"扩大候选集供后续复核"，非直接纠错）。
 CANDIDATE_EXPANSION_EDIT_DISTANCE = 2
 
+# 安全替换基线表的转发引用。CharacterSimilarityService 的该类属性自定义起
+# 全仓只读（实例侧均为 dict 拷贝，无 reassign），模块级绑定不会陈旧；
+# 若类属性改为实例可变，此转发失效，需改为 getter。
+SAFE_SUBSTITUTION_WHITELIST = CharacterSimilarityService.SAFE_SUBSTITUTION_WHITELIST
+
+
+def find_whitelist_conflicts(
+    hero_names: list[str], whitelist_pairs: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    """枚举词表中「等长仅差一字、且该差异对在白名单内」的高危武将名对。
+
+    这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），
+    供新增白名单对或新武将入库时做常驻检查。
+    """
+    conflicts: list[tuple[str, str, str]] = []
+    for index, first in enumerate(hero_names):
+        for second in hero_names[index + 1:]:
+            if len(first) != len(second):
+                continue
+            diffs = [
+                (a, b) for a, b in zip(first, second, strict=True) if a != b
+            ]
+            if len(diffs) != 1:
+                continue
+            source, target = diffs[0]
+            if whitelist_pairs.get(source) == target:
+                conflicts.append((first, second, f"{source}→{target}"))
+            elif whitelist_pairs.get(target) == source:
+                conflicts.append((first, second, f"{target}→{source}"))
+    return conflicts
+
 
 def _load_hero_names() -> list[str]:
     try:

@@ -628,8 +628,9 @@ src.business.recognition.pending_stats
 
 | 函数 | 文件 | 调用方 | 说明 |
 |------|------|--------|------|
-| `pil_to_qpixmap(image)` | `image_utils.py` | `MumuConfigDialog` | PIL → QPixmap |
 | `save_image(image, path)` | `image_utils.py` | `CaptureService._execute_capture()` | 截图保存到磁盘 |
+
+（`pil_to_qpixmap` 已迁至 `ui/shared/image_utils.py`，调用方仍为 `MumuConfigDialog`，见 [call_graph_ui.md](./call_graph_ui.md)。）
 
 ### 模板匹配层
 

@@ -462,8 +462,10 @@ class MainWindow(QMainWindow):
         # Tab 5: 知识库维护（RAG 语料/索引本地维护工作台，仅完整版）
         # lazy import：精简版不 import rag 依赖链，配合 spec excludes 排除 rag
         if is_full_build():
+            from src.business.maintenance.maintenance_repositories import build
             from src.ui.maintenance.rag_maintenance_panel import RagMaintenancePanel
-            self._rag_maintenance = RagMaintenancePanel(PROJECT_ROOT, hero_names)
+            self._rag_maintenance = RagMaintenancePanel(
+                PROJECT_ROOT, hero_names, repositories=build(PROJECT_ROOT))
             self._tabs.addTab(self._rag_maintenance, "知识库维护")
 
         workspace_layout.addWidget(self._tabs, 1)

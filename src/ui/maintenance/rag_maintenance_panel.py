@@ -24,15 +24,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from src.business.maintenance.maintenance_repositories import MaintenanceRepositories
 from src.business.rag.audit_service import CORPUS_DIR, AuditIssue, audit_summary
 from src.business.rag.hero_brief import load_hero_briefs
 from src.business.rag.refinement_service import list_pending
 from src.business.rag.task_defs import TASKS as _RAG_TASKS
 from src.config.env import PROJECT_ROOT
-from src.data.card_points_repository import CardPointsRepository
-from src.data.equip_attrs_repository import EquipAttrsRepository
-from src.data.hero_classification_repository import HeroClassificationRepository
-from src.data.special_cards_repository import SpecialCardRepository
 from src.ui.library.hero_classification_panel import HeroClassificationPanel
 from src.ui.library.special_cards_panel import SpecialCardsPanel
 from src.ui.maintenance.card_points_panel import CardPointsPanel
@@ -139,13 +136,17 @@ class RagMaintenancePanel(QWidget):
 
     data_changed = Signal()
 
-    def __init__(self, root: Path = PROJECT_ROOT, hero_names: set[str] | None = None, parent=None):
+    def __init__(self, root: Path = PROJECT_ROOT, hero_names: set[str] | None = None,
+                 *, repositories: MaintenanceRepositories, parent=None):
         super().__init__(parent)
         self._root = root
+        self._repositories = repositories
         self._runner = ScriptRunner(self)
         self._runner.output.connect(self._append_log)
         self._runner.finished.connect(self._on_finished)
         self._hero_names, self._hero_positions, self._hero_skills = self._load_heroes(self._root, hero_names)
+        # 合并后的名单回填 classification 仓储（原直接以 self._hero_names 构造仓储的语义）
+        self._repositories.classification.update_hero_names(self._hero_names)
         self._setup_ui()
         self.refresh()
 
@@ -225,18 +226,17 @@ class RagMaintenancePanel(QWidget):
         self._rule_doc.script_output.connect(self._on_rule_doc_output)
         self._rule_doc.script_finished.connect(self._on_rule_doc_script_finished)
         self._special_cards = SpecialCardsPanel(
-            SpecialCardRepository(self._root / "data" / "special_cards.json"), self._hero_names,
+            self._repositories.special_cards, self._hero_names,
             root=self._root)
         self._special_cards.data_changed.connect(self._on_child_changed)
         self._card_points = CardPointsPanel(
-            CardPointsRepository(self._root / "data" / "card_points.json"), self._root)
+            self._repositories.card_points, self._root)
         self._card_points.data_changed.connect(self._on_child_changed)
         self._equip_attrs = EquipAttrsPanel(
-            EquipAttrsRepository(self._root / "data" / "equip_attrs.json"))
+            self._repositories.equip_attrs)
         self._equip_attrs.data_changed.connect(self._on_child_changed)
         self._classification = HeroClassificationPanel(
-            HeroClassificationRepository(
-                self._root / "data" / "hero_classification.json", self._hero_names),
+            self._repositories.classification,
             self._hero_positions, self._hero_skills, root=self._root)
         self._classification.data_changed.connect(self._on_child_changed)
 

@@ -259,3 +259,127 @@ def test_class_method_count_within_budget() -> None:
         "类方法数超出预算（重构缩小后请同步下调预算；放宽预算需在 PR 说明理由）：\n"
         + "\n".join(offenders)
     )
+
+
+# ---------------------------------------------------------------------------
+# UI 禁止构造数据层仓储/Manager：持久化对象的装配只属于组合根（app_services）
+# 与业务层工厂（maintenance_repositories.build 等）。名单由 src/data(+business)
+# 对持久化基类的继承闭包动态生成，不依赖命名约定——值对象（pydantic/enum/
+# dataclass）与模块级函数天然不在列。守卫落地前 UI 命中 7 处，落地后应为 0。
+# ---------------------------------------------------------------------------
+COMPOSITION_ROOTS = {"src/ui/app/app_services.py"}
+PERSISTENCE_ROOTS = {"DataManager", "JsonRepository", "DataFacade", "_JsonRepository"}
+
+
+def _base_names(node: ast.ClassDef) -> list[str]:
+    """提取基类名；泛型下标（DataManager[Hero]，5 个 Manager 均此写法）解包为 DataManager。"""
+    names: list[str] = []
+    for base in node.bases:
+        if isinstance(base, ast.Name):
+            names.append(base.id)
+        elif isinstance(base, ast.Attribute):
+            names.append(base.attr)
+        elif isinstance(base, ast.Subscript):
+            value = base.value
+            if isinstance(value, ast.Name):
+                names.append(value.id)
+            elif isinstance(value, ast.Attribute):
+                names.append(value.attr)
+    return names
+
+
+def _class_table() -> dict[str, dict]:
+    """src/data 与 src/business 的类 -> {file, bases, dataclass}。"""
+    table: dict[str, dict] = {}
+    for pkg in ("data", "business"):
+        for py in (SRC / pkg).rglob("*.py"):
+            if "__pycache__" in py.parts:
+                continue
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    table[node.name] = {
+                        "file": py.relative_to(ROOT).as_posix(),
+                        "bases": _base_names(node),
+                        "dataclass": any(
+                            (isinstance(d, ast.Name) and d.id == "dataclass")
+                            or (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass")
+                            or (isinstance(d, ast.Attribute) and d.attr == "dataclass")
+                            for d in node.decorator_list
+                        ),
+                    }
+    return table
+
+
+def _persistence_classes(table: dict[str, dict]) -> set[str]:
+    """继承闭包：所有（传递地）可达持久化根的类名。"""
+    resolved: set[str] = set()
+
+    def reaches(name: str, seen: frozenset) -> bool:
+        if name in resolved:
+            return True
+        if name in seen or name not in table:
+            return False
+        if name in PERSISTENCE_ROOTS:
+            resolved.add(name)
+            return True
+        if any(reaches(base, seen | {name}) for base in table[name]["bases"]):
+            resolved.add(name)
+            return True
+        return False
+
+    for name in table:
+        reaches(name, frozenset())
+    return resolved
+
+
+def test_ui_must_not_construct_data_layer() -> None:
+    table = _class_table()
+    repos = _persistence_classes(table)
+    offenders = []
+    for py in (SRC / "ui").rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        rel = py.relative_to(ROOT).as_posix()
+        if rel in COMPOSITION_ROOTS:
+            continue
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+        local_classes = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.id if isinstance(func, ast.Name) else (
+                func.attr if isinstance(func, ast.Attribute) else None)
+            if name in repos and name not in local_classes:
+                offenders.append(f"{rel}:{node.lineno}  {name}()")
+    assert not offenders, (
+        "UI 直接构造数据层仓储/Manager（装配只属于组合根 app_services 或业务层工厂）：\n"
+        + "\n".join(f"  {o}" for o in offenders)
+    )
+
+
+def test_data_layer_classes_are_classified() -> None:
+    """tripwire：src/data 新类必须归类为持久化闭包后代 / pydantic / enum / dataclass。
+
+    从零手写、不继承任何现有基类的新存储类会让本测试变红——此时应继承
+    DataManager/JsonRepository 复用原子写与文件锁，或在该 PR 中说明理由并
+    显式扩充 PERSISTENCE_ROOTS。
+    """
+    table = _class_table()
+    repos = _persistence_classes(table)
+    unclassified = []
+    for name, info in table.items():
+        if not info["file"].startswith("src/data/"):
+            continue
+        if name in repos:
+            continue
+        bases = info["bases"]
+        if "BaseModel" in bases or any("Enum" in b for b in bases) or info["dataclass"]:
+            continue
+        unclassified.append(f"{info['file']}  {name}")
+    assert not unclassified, (
+        "src/data 出现既非仓储后代也非值对象（pydantic/enum/dataclass）的新类：\n"
+        + "\n".join(f"  {u}" for u in unclassified)
+        + "\n新持久化类应继承 DataManager/JsonRepository；确需新根请在 PR 说明并扩充 PERSISTENCE_ROOTS"
+    )

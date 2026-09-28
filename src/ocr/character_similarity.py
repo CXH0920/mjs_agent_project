@@ -15,32 +15,6 @@ logger = logging.getLogger(__name__)
 OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
 
 
-def find_whitelist_conflicts(
-    hero_names: list[str], whitelist_pairs: dict[str, str],
-) -> list[tuple[str, str, str]]:
-    """枚举词表中「等长仅差一字、且该差异对在白名单内」的高危武将名对。
-
-    这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），
-    供新增白名单对或新武将入库时做常驻检查。
-    """
-    conflicts: list[tuple[str, str, str]] = []
-    for index, first in enumerate(hero_names):
-        for second in hero_names[index + 1:]:
-            if len(first) != len(second):
-                continue
-            diffs = [
-                (a, b) for a, b in zip(first, second, strict=True) if a != b
-            ]
-            if len(diffs) != 1:
-                continue
-            source, target = diffs[0]
-            if whitelist_pairs.get(source) == target:
-                conflicts.append((first, second, f"{source}→{target}"))
-            elif whitelist_pairs.get(target) == source:
-                conflicts.append((first, second, f"{target}→{source}"))
-    return conflicts
-
-
 def levenshtein_distance(first: str, second: str) -> int:
     """两串的最小编辑距离；名称纠错与官方导入的候选筛选共用。"""
     if len(first) < len(second):

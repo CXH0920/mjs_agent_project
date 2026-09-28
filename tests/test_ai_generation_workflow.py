@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QDialog
+from src.data.combo_manager import ComboManager
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
@@ -209,6 +210,7 @@ def _workflow(tmp_path: Path) -> tuple[AiGenerationWorkflow, _GuideService, _Syn
         synergy_manager,
         guide_service,
         synergy_service,
+        combo_manager=ComboManager(tmp_path / "combos.json"),
     )
     return workflow, guide_service, synergy_service
 

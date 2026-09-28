@@ -45,7 +45,7 @@ src/business/
 │   ├── emulator_operation_service.py  # 模拟器后台操作
 │   └── mumu_config_coordinator.py     # MuMu 配置状态协调
 ├── recognition/
-│   ├── name_resolution.py             # 武将名纠错与词表消解纯规则（HeroNameResolver）
+│   ├── name_resolution.py             # 武将名纠错与词表消解纯规则（HeroNameResolver）；白名单静态冲突检查（find_whitelist_conflicts）
 │   ├── ocr_service.py                 # OCR 控制、模板和轮询
 │   ├── ocr_worker.py                  # 唯一后台识别队列
 │   ├── official_data_import_service.py # 官方榜单导入（识别编排 + 面板守卫 + 批量写回）
@@ -623,7 +623,7 @@ def _cleanup_tmp_file(self) -> None:
 | 依赖 | `src.ocr.*` | 模板管理器、识别器、ROI 布局配置 |
 | 依赖 | `src.ocr.paddle_loader` | 官方榜单按需提供简体 / 繁体 PaddleOCR 引擎；B2 复核引擎（`get_recheck_ocr_engine()`）惰性加载 |
 | 依赖 | `src.ocr.official_board_parser` | 官方榜单图片读取、固定版式切分、横线恢复和胜率数字模板算法 |
-| 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务；`find_whitelist_conflicts()` 静态冲突检查 |
+| 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存（`clear_win_rate_cache`） |
 | 依赖 | `src.data.peak_win_rate_repository` | 巅峰赛胜率 CSV 覆盖后清空读取缓存（`clear_peak_win_rate_cache`） |
 | 依赖 | `src.data.recommendation_index_repository` | 推荐指数加载 / 重建 / 过期标记（`mark_recommendation_index_stale`） |
@@ -634,7 +634,7 @@ def _cleanup_tmp_file(self) -> None:
 | 依赖 | `src.data.announcement_manager` | AnnouncementService 的公告合并去重与百科快照持久化 |
 | 依赖 | `src.data.hero_timeline` | 武将变更时间轴（announcement 同步） |
 | 依赖 | `src.scraper.official_source.announcement` | 公告 / 百科拉取、武将快照与更新候选计算 |
-| 依赖 | `src.scraper.official_source.card_baike` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` / `card_field_diff_summary` |
+| 依赖 | `src.scraper.official_source.card_baike` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards`，并复用 `CARD_HASH_FIELDS` / `CARD_FIELD_LABELS` / `normalize_text` 口径（diff 摘要 `card_field_diff_summary` 与全文格式化 `format_card_full_text` 位于本模块 card_sync.py，供卡牌同步对话框使用） |
 | 依赖 | `src.scraper.ai.*` | 成本估算入口（`estimate_cost` / `estimate_item_cost`）与分类建议的 JSON 解析 |
 | 依赖 | `src.config.env` | API 档案解析（`resolve_api_config` / `get_api_config`）、供应商预设（`PROVIDER_PRESETS`）、截图目录与模拟器配置读写；新增 `MUMU_OCR_RECHECK_ENABLED` / `MUMU_OCR_POLL_IDLE_PAUSE` 配置 |
 | 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 `fetch_*()`；`PollCoordinator` 编排三板块轮询；闲置暂停恢复交互 |

@@ -23,6 +23,8 @@ from src.data.card_sync_store import (
     save_card_snapshot,
 )
 from src.scraper.official_source.card_baike import (
+    CARD_FIELD_LABELS,
+    CARD_HASH_FIELDS,
     build_card_snapshot,
     clean_card_detail,
     diff_cards,
@@ -238,3 +240,39 @@ class CardSyncService(QObject):
             snapshot=snapshot,
             pending_saves=pending_saves,
         )
+
+
+_SUMMARY_LINE_LIMIT = 120
+
+
+def _truncate(value, limit: int = _SUMMARY_LINE_LIMIT) -> str:
+    text = str(value or "").strip()
+    return text[:limit] + "…" if len(text) > limit else text
+
+
+def card_field_diff_summary(local: dict, official: dict) -> list[str]:
+    """对比本地与官网卡牌的四件套字段，返回中文差异摘要；无差异返回空列表。"""
+    lines: list[str] = []
+    for key in CARD_HASH_FIELDS:
+        local_text = normalize_text(local.get(key, ""))
+        official_text = normalize_text(official.get(key, ""))
+        if local_text != official_text:
+            lines.append(
+                f"{CARD_FIELD_LABELS[key]}：本地「{_truncate(local_text)}」→ 官网「{_truncate(official_text)}」"
+            )
+    return lines
+
+
+def format_card_full_text(card: dict) -> str:
+    """将卡牌字段格式化为只读全文（用于确认对话框的本地/官网对比）。"""
+    if not card:
+        return ""
+    lines = [
+        f"名称：{normalize_text(card.get('name', ''))}",
+        f"类型：{normalize_text(card.get('card_type', ''))}",
+        f"描述：{normalize_text(card.get('card_desc', ''))}",
+        "",
+        "结算详解：",
+        normalize_text(card.get("card_detail", "")) or "（无）",
+    ]
+    return "\n".join(lines)

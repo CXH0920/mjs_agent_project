@@ -10,6 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
+from src.business.maintenance.maintenance_repositories import build
 from src.business.rag.audit_service import AuditIssue, audit_summary, format_audit_issues
 from src.ui.maintenance.rag_maintenance_panel import (
     RagMaintenancePanel,
@@ -19,6 +20,11 @@ from src.ui.maintenance.rag_maintenance_panel import (
 
 def _app() -> QApplication:
     return QApplication.instance() or QApplication([])
+
+
+def _panel(root: Path) -> RagMaintenancePanel:
+    """构造带注入仓储的面板（组合根 build 的测试等价物）。"""
+    return RagMaintenancePanel(root, repositories=build(root))
 
 
 def _write(path: Path, payload: object) -> None:
@@ -132,7 +138,7 @@ def test_audit_reports_orphan_category_keys(tmp_path: Path) -> None:
 def test_panel_renders(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     # 布局重排：左栏 10 项（5 维护对象 + 5 只读语料），右侧复用 5 个现有面板
     nav = panel._workspace.nav
     assert nav.item_keys()[:5] == ["武将分类", "专属牌", "卡牌点数", "装备属性", "元规则母本"]
@@ -219,7 +225,7 @@ def test_audit_issues_structured(tmp_path: Path) -> None:
 def test_jump_to_unclassified(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     issue = next(i for i in audit_summary(root) if i.kind == "unclassified_hero")
     panel._jump_to_issue(issue)
     assert panel._workspace.current_source_key() == "武将分类"
@@ -237,7 +243,7 @@ def test_jump_to_missing_settlement(tmp_path: Path) -> None:
     special.write_text(json.dumps([
         {"category": "专属牌", "name": "龙泉剑", "hero": "乐广"},
     ], ensure_ascii=False), encoding="utf-8")
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     issue = next(i for i in audit_summary(root) if i.kind == "missing_settlement")
     panel._jump_to_issue(issue)
     assert panel._workspace.current_source_key() == "专属牌"
@@ -253,7 +259,7 @@ def test_jump_to_bad_card_points(tmp_path: Path) -> None:
         "cards": [{"name": "火杀", "suit": "星", "point": "9"}],
         "judge_rules": [],
     })
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     issue = next(i for i in audit_summary(root) if i.kind in ("bad_card_suit", "bad_card_point"))
     panel._jump_to_issue(issue)
     # 非法行已被 repository 过滤（仅记日志），跳转只定位到对应维护对象
@@ -268,7 +274,7 @@ def test_jump_to_card_curated_stale_opens_refinement(tmp_path: Path, monkeypatch
     target_tab fallback 而左栏无「索引精化」维护对象，按钮点击静默无效。
     """
     _app()
-    panel = RagMaintenancePanel(root=_make_root(tmp_path))
+    panel = _panel(_make_root(tmp_path))
     calls: list[int] = []
     monkeypatch.setattr(panel, "_open_refinement", lambda: calls.append(1))
 
@@ -298,7 +304,7 @@ def test_audit_reports_pending_refinement(tmp_path: Path) -> None:
 def test_refine_button_shows_pending_count(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     assert "索引精化（1）" in panel._refine_button.text()
     assert panel._refine_button.isEnabled()
     # 全部补全 curated 后按钮禁用并显示完成态
@@ -320,7 +326,7 @@ def test_source_save_marks_nav_item_stale(tmp_path: Path) -> None:
     """数据源变更后：对应左栏项状态变「待重建」且 ↻ 按钮可见（保存→重建闭环）。"""
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     nav = panel._workspace.nav
     assert nav.status_text("专属牌") == "最新"
     assert not nav.rebuild_button("专属牌").isVisibleTo(panel)
@@ -336,7 +342,7 @@ def test_rebuild_button_runs_only_matching_task(tmp_path: Path) -> None:
     """点左栏 ↻ 触发 --only <该语料>，参数正确（维护对象与只读语料均可重建）。"""
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     calls: list[list[str]] = []
     panel._run = lambda args: calls.append(args)  # 拦截，不启动真实子进程
     panel._workspace.nav.rebuild_button("专属牌").click()
@@ -354,7 +360,7 @@ def test_audit_banner_limits_rows_and_folds_rest(tmp_path: Path) -> None:
         {"category": "专属牌", "name": "龙泉剑", "hero": "白蹄乌", "settlement": ""},
         {"category": "专属牌", "name": "青釭剑", "hero": "乐广", "settlement": ""},
     ])
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     issues = audit_summary(root)
     assert len(issues) > 3
     note = next(row for row in panel._audit_rows
@@ -375,7 +381,7 @@ def test_nav_items_fit_without_scrollbar(tmp_path: Path) -> None:
     """
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     panel.resize(900, 760)
     panel._audit_banner.hide()
     panel.show()
@@ -392,7 +398,7 @@ def test_log_collapsed_by_default_and_expands_on_run(tmp_path: Path) -> None:
     """日志默认折叠 32px；展开到 180px 可手动收起；折叠态累计未读输出条数。"""
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     ws = panel._workspace
     assert not ws.is_log_expanded()
     assert ws._log_surface.height() == 32
@@ -414,7 +420,7 @@ def test_panels_reused_across_source_switch(tmp_path: Path) -> None:
     """左侧切换数据源：右侧面板实例复用不重建（保留选中项与滚动位置）。"""
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     ws = panel._workspace
     ws.select_source("武将分类")
     classification = ws.stack.currentWidget()
@@ -430,7 +436,7 @@ def test_rule_doc_output_forwards_to_workspace_log(tmp_path: Path) -> None:
     """C5' 方案 A：元规则脚本输出转发到工作台底部日志（模块单一日志出口）。"""
     _app()
     root = _make_root(tmp_path)
-    panel = RagMaintenancePanel(root=root)
+    panel = _panel(root)
     panel._rule_doc._clear_script_output()
     panel._rule_doc._append_log("$ python -m src.scripts.audit_rule_doc.py\n✔ 完成".encode("utf-8"))
     log_text = panel._workspace.log.toPlainText()

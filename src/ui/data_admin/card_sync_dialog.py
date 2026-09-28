@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
     QTextBrowser,
     QVBoxLayout,
 )
-from src.business.card_sync import CardSyncCheckResult, CardSyncService
-from src.scraper.official_source.card_baike import (
+from src.business.card_sync import (
+    CardSyncCheckResult,
+    CardSyncService,
     card_field_diff_summary,
     format_card_full_text,
 )

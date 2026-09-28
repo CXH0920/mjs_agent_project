@@ -292,10 +292,10 @@ class MatchGuidePanel(QWidget):
 
     request_mumu_config = Signal()
 
-    def __init__(self, hero_manager: HeroManager, guide_manager: GuideManager | None = None, capture_service=None, parent=None) -> None:
+    def __init__(self, hero_manager: HeroManager, guide_manager: GuideManager, capture_service=None, parent=None) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_manager
-        self._guide_mgr = guide_manager or GuideManager()
+        self._guide_mgr = guide_manager
         self._capture_service = capture_service
         self._capture_lock = CaptureRequestLock()
         self._cards: list[MatchHeroCard] = []

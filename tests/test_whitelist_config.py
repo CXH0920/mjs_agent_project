@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 
 import pytest
-from src.business.recognition import pending_stats
-from src.ocr.character_similarity import (
-    CharacterSimilarityService,
-    find_whitelist_conflicts,
-)
+from src.business.recognition import name_resolution, pending_stats
+from src.business.recognition.name_resolution import find_whitelist_conflicts
+from src.ocr.character_similarity import CharacterSimilarityService
 from src.ui.configuration import whitelist_config_dialog as wcd
 from src.ui.configuration.whitelist_config_dialog import WhitelistConfigDialog, classify_entry
+
+# 转发常量必须与源类属性同一对象：源改为实例可变时此断言失败，转发需改 getter
+assert name_resolution.SAFE_SUBSTITUTION_WHITELIST is CharacterSimilarityService.SAFE_SUBSTITUTION_WHITELIST
 
 
 @pytest.fixture

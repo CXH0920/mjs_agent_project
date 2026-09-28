@@ -289,7 +289,7 @@ else:
 - **`RapidOcrEngine`** — 包装层，将 RapidOCR 结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`。画布喂法为灰度图，RapidOCR 3.x 要求 HWC 三通道，统一转换；框必须转纯 Python list，否则下游 `isinstance(line[0], (list, tuple))` 行格式判别会被 numpy 数组打穿。
 - **`get_recheck_ocr_engine()`** — 进程内共享的 v6 复核引擎，惰性加载（首次调用时才构造）、失败熔断（加载异常后标记 `_RECHECK_ENGINE_FAILED=True`，后续调用快速返回 `None`，直到进程重启）。受 `MUMU_OCR_RECHECK_ENABLED`（默认 `true`）开关控制。
 
-**白名单静态冲突检查**：`character_similarity.py::find_whitelist_conflicts()` 枚举词表中"等长仅差一字、且该差异对在白名单内"的高危武将名对——这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），供新增白名单对或新武将入库时做常驻检查。拼图画布同步按检测器工作尺度（960）分块修复（3f8f30b），避免超宽画布被检测器强制降采样后行级检测退化。
+**白名单静态冲突检查**：`find_whitelist_conflicts()`（已迁至 `business/recognition/name_resolution.py`，原 `character_similarity.py`）枚举词表中"等长仅差一字、且该差异对在白名单内"的高危武将名对——这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），供新增白名单对或新武将入库时做常驻检查。拼图画布同步按检测器工作尺度（960）分块修复（3f8f30b），避免超宽画布被检测器强制降采样后行级检测退化。
 
 ### 3.10 官方榜单固定版式解析（official_board_parser.py）
 
@@ -385,7 +385,8 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `probe_running_devices()` → `list[MuMuDeviceInfo]` | 仅返回运行中且端口有效的实例 |
 | `test_adb_path(adb_path)` → `(bool, str)` | 校验 adb.exe 可执行并返回版本行 |
 | `load_local_image(path)` / `load_png_image_bytes(data)` → `Image` | 不可信图片输入的格式、体积、像素校验 |
-| `pil_to_qpixmap(image)` → `QPixmap` | PIL → Qt 转换 |
+
+（`pil_to_qpixmap` 展示转换已迁至 `ui/shared/image_utils.py`。）
 
 ### OCR 层公共方法
 
@@ -414,7 +415,6 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `CharacterSimilarityService.correct_hero_name(text, hero_names)` → `str` | 武将名称纠错 |
 | `CharacterSimilarityService.is_safe_single_substitution(text, candidate)` → `bool` | 判断唯一错字是否达到自动纠正门槛 |
 | `CharacterSimilarityService.rank_single_substitution_candidates(text, candidates)` | 候选闭包内按错字字形分排序 |
-| `find_whitelist_conflicts(hero_names, whitelist_pairs)` → `list[tuple[str,str,str]]` | 枚举词表中等长仅差一字且差异对在白名单内的高危武将名对 |
 | `CharacterFeatureRepository(cache_path=None, user_cache_path=None)` | 汉字特征缓存加载、动态补齐与用户层持久化 |
 | `CharacterFeatureRepository.warmup()` / `warmup_characters(chars)` | 预热缓存与拼音库 / 批量补齐词表字符 |
 | `get_template_manager(template_name)` → `TemplateManager` | 获取模板管理器单例（仅 `hero_selection` / `match_guide`） |
@@ -435,6 +435,5 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
 | 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 detect_selection_cards 与 derive_name_rois 做 2v2 牌面识别 |
 | 被调用方 | `src.business.recognition.ocr_worker` | 未决错法调 `pending_stats.record_pending()`；B2 复核引擎由 recognizer 内部调用 |
-| 被调用方 | `src.ui.configuration.whitelist_config_dialog` | 调用 `find_whitelist_conflicts` 做白名单静态冲突检查 |
 | 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
 | 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |

@@ -36,8 +36,8 @@ class AiGenerationWorkflow(QObject):
         synergy_manager: SynergyManager,
         guide_service: GuideFetchService,
         synergy_service: SynergyFetchService,
+        combo_manager: ComboManager,
         parent: QWidget | None = None,
-        combo_manager: ComboManager | None = None,
     ) -> None:
         super().__init__(parent)
         self._hero_manager = hero_manager
@@ -45,7 +45,7 @@ class AiGenerationWorkflow(QObject):
         self._synergy_manager = synergy_manager
         self._guide_service = guide_service
         self._synergy_service = synergy_service
-        self._combo_manager = combo_manager or ComboManager()
+        self._combo_manager = combo_manager
         self._window = parent
         self._guide_progress_dialog: GuideProgressDialog | None = None
         self._synergy_progress_dialog: GuideProgressDialog | None = None

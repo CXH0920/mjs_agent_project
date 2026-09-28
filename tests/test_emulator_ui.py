@@ -155,7 +155,7 @@ def test_recommendation_current_recognition_requests_ocr(monkeypatch) -> None:
 
 def test_match_guide_panel_starts_in_empty_state() -> None:
     _app()
-    panel = MatchGuidePanel(_hero_manager())
+    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager())
 
     assert len(panel._cards) == 4
     assert [card._hero_id for card in panel._cards] == [0, 0, 0, 0]
@@ -168,7 +168,7 @@ def test_match_guide_panel_starts_in_empty_state() -> None:
 def test_match_guide_empty_state_matches_recommendation_actions() -> None:
     app = _app()
     recommendation = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
-    guide = MatchGuidePanel(_hero_manager())
+    guide = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager())
 
     assert guide._recognize_btn.property("uiRole") == recommendation._recognize_btn.property("uiRole")
     assert guide._empty_recognize_btn.property("uiRole") == recommendation._empty_recognize_btn.property("uiRole")
@@ -198,7 +198,7 @@ def test_match_guide_current_recognition_requests_ocr(monkeypatch) -> None:
     service.capture = object()
     requests: list[dict] = []
     monkeypatch.setattr(service, "do_capture", lambda **kwargs: requests.append(kwargs))
-    panel = MatchGuidePanel(_hero_manager(), capture_service=service)
+    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), capture_service=service)
     loaded: list[list[dict]] = []
     monkeypatch.setattr(panel, "load_from_ocr", loaded.append)
 
@@ -215,7 +215,7 @@ def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch)
     recommendation = RecommendationPanel(
         _hero_manager(), SynergyManager(), GuideManager(), capture_service=service
     )
-    match_guide = MatchGuidePanel(_hero_manager(), capture_service=service)
+    match_guide = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), capture_service=service)
     recommendation_loaded: list[list[dict]] = []
     match_guide_loaded: list[list[dict]] = []
     monkeypatch.setattr(recommendation, "load_from_ocr", recommendation_loaded.append)
@@ -231,7 +231,7 @@ def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch)
 def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -> None:
     _app()
     monkeypatch.setattr(HeroSkillDialog, "exec", lambda self: 0)
-    panel = MatchGuidePanel(_hero_manager())
+    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager())
     card = panel._cards[0]
     card.set_hero(_hero_manager().get_hero(1))
     selected: list[int] = []

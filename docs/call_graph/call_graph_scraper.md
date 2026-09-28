@@ -613,8 +613,8 @@ CardSyncService._do_check()                                  [business/card_sync
      -> card_baike.clean_card_detail(html)                    [块级标签→换行，保留分段]
 
 CardSyncDialog._build_candidates(result)                      [ui/data_admin/card_sync_dialog.py]
-  -> card_baike.card_field_diff_summary(local, official)      [字段级摘要：四件套逐字段对比]
-  -> card_baike.format_card_full_text(local/official)         [全文对比：名称/类型/描述/结算详解]
+  -> card_sync.card_field_diff_summary(local, official)       [字段级摘要：四件套逐字段对比，函数在 business/card_sync.py]
+  -> card_sync.format_card_full_text(local/official)          [全文对比：名称/类型/描述/结算详解，同在 business/card_sync.py]
 ```
 
 > **设计说明**：`card_baike.py` 是官网手牌库（卡牌百科）的抓取清洗与逐卡 diff 基元模块，与武将百科（`announcement.py`）同构但数据源不同。哈希口径为 name/card_type/card_desc/card_detail 四件套（card_amount 官网不提供，不入哈希）。基线快照与变更记录持久化见 [call_graph_data.md](./call_graph_data.md) 的 `card_sync_store.py`。
@@ -672,7 +672,7 @@ CardSyncDialog._build_candidates(result)                      [ui/data_admin/car
 | `card_baike.build_card_snapshot(cards)` | `card_baike.py` | `CardSyncService._do_check()` | `card_content_hash()` ×N |
 | `card_baike.card_content_hash(card)` | `card_baike.py` | `build_card_snapshot()` | `normalize_text()`, `hashlib.md5()` |
 | `card_baike.diff_cards(current, baseline)` | `card_baike.py` | `CardSyncService._do_check()` | set 运算（added/modified/removed） |
-| `card_baike.normalize_text(value)` | `card_baike.py` | `_clean_official_card()`, `card_field_diff_summary()`, `format_card_full_text()` | `clean_html()`, `unicodedata.normalize()` |
+| `card_baike.normalize_text(value)` | `card_baike.py` | `_clean_official_card()`；`business/card_sync.py` 的 `card_field_diff_summary()` / `format_card_full_text()` 跨层复用 | `clean_html()`, `unicodedata.normalize()` |
 | `card_baike.clean_card_detail(html)` | `card_baike.py` | `_clean_official_card()` | `re.sub()` 块级标签→换行, `html.unescape()` |
-| `card_baike.card_field_diff_summary(local, official)` | `card_baike.py` | `CardSyncDialog._build_candidates()` | `normalize_text()`, 四字段逐字段对比 |
-| `card_baike.format_card_full_text(card)` | `card_baike.py` | `CardSyncDialog._build_candidates()` | `normalize_text()` |
+
+（`card_field_diff_summary()` / `card_baike.format_card_full_text()` 已迁至 `business/card_sync.py`（被 `CardSyncDialog._build_candidates()` 调用），不再属 scraper 边表；详见 [call_graph_business.md](./call_graph_business.md)。）

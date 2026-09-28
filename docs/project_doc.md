@@ -1927,8 +1927,9 @@ class AdbCapture:
 
 | 函数 | 说明 |
 |------|------|
-| `pil_to_qpixmap(image)` | PIL Image → QPixmap |
 | `save_image(image, path)` | 保存为 PNG，返回 `(bool, str)` |
+
+（`pil_to_qpixmap` 展示转换已迁至 `ui/shared/image_utils.py`，供 UI 层使用。）
 
 ### 11.5 截图业务服务（capture_service.py）
 
@@ -2095,7 +2096,7 @@ class CharacterSimilarityService:
     correct_hero_name(text, hero_names) → str
     single_substitution_similarity(text, candidate) → float | None
     rank_single_substitution_candidates(text, candidates) → list[tuple[str, float]]
-    find_whitelist_conflicts() → list[dict]  # 白名单静态冲突检查（2026-09 新增）
+    # 白名单静态冲突检查 find_whitelist_conflicts() 已迁 business/recognition/name_resolution.py（2026-09）
 
 class CharacterFeatureRepository:
     load() / get_feature(char) / save()

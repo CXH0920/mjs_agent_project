@@ -21,10 +21,9 @@ from src.scraper.official_source.crawler import clean_html, fetch_all_cards_raw
 
 logger = logging.getLogger(__name__)
 
-# 哈希覆盖的官网字段（与 card_field_diff_summary 共用口径）
+# 哈希覆盖的官网字段（diff 摘要 business/card_sync.card_field_diff_summary 共用口径）
 CARD_HASH_FIELDS = ("name", "card_type", "card_desc", "card_detail")
 CARD_FIELD_LABELS = {"name": "名称", "card_type": "类型", "card_desc": "描述", "card_detail": "结算详解"}
-SUMMARY_LINE_LIMIT = 120
 
 
 def normalize_text(value: Any) -> str:
@@ -108,36 +107,3 @@ def diff_cards(current: dict[str, dict], baseline: dict[str, dict]) -> dict[str,
         "modified": [entry(card_id, current) for card_id in modified],
         "removed": [entry(card_id, baseline) for card_id in removed],
     }
-
-
-def _truncate(value, limit: int = SUMMARY_LINE_LIMIT) -> str:
-    text = str(value or "").strip()
-    return text[:limit] + "…" if len(text) > limit else text
-
-
-def card_field_diff_summary(local: dict, official: dict) -> list[str]:
-    """对比本地与官网卡牌的四件套字段，返回中文差异摘要；无差异返回空列表。"""
-    lines: list[str] = []
-    for key in CARD_HASH_FIELDS:
-        local_text = normalize_text(local.get(key, ""))
-        official_text = normalize_text(official.get(key, ""))
-        if local_text != official_text:
-            lines.append(
-                f"{CARD_FIELD_LABELS[key]}：本地「{_truncate(local_text)}」→ 官网「{_truncate(official_text)}」"
-            )
-    return lines
-
-
-def format_card_full_text(card: dict) -> str:
-    """将卡牌字段格式化为只读全文（用于确认对话框的本地/官网对比）。"""
-    if not card:
-        return ""
-    lines = [
-        f"名称：{normalize_text(card.get('name', ''))}",
-        f"类型：{normalize_text(card.get('card_type', ''))}",
-        f"描述：{normalize_text(card.get('card_desc', ''))}",
-        "",
-        "结算详解：",
-        normalize_text(card.get("card_detail", "")) or "（无）",
-    ]
-    return "\n".join(lines)

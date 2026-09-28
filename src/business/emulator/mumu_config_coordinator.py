@@ -9,7 +9,10 @@ from PySide6.QtCore import QObject, Signal
 from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.business.recognition.ocr_service import OcrService
-from src.capture.prober import MuMuDeviceInfo
+
+# MuMuDeviceInfo 显式再导出：设备值对象经本协调器透出给 UI（类型注解用），
+# UI 不直连 src.capture.prober。
+from src.capture.prober import MuMuDeviceInfo as MuMuDeviceInfo
 from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 

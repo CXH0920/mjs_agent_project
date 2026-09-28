@@ -1,10 +1,10 @@
 # import-linter 契约：架构分层守门（配合 tests/test_architecture.py 的运行期检查）。
 # 跑法：python -m importlinter
 #
-# 灰度约定：
+# 契约说明：
 # - no-upward / business-no-ui 当天零违规，是纯保险；
-# - ui-not-infra 带显式豁免清单（ignore_imports），每修复一条直连边就删一行豁免；
-#   豁免清零后该契约即为硬门禁。
+# - ui-not-infra 的豁免清单（ignore_imports）= 已评审的合法边，
+#   每行必须写明定性依据；新增直连边会被拦下。
 
 [importlinter]
 root_package = src
@@ -39,9 +39,7 @@ forbidden_modules =
     src.scraper
     src.capture
 ignore_imports =
-    src.ui.configuration.mumu_config_dialog -> src.capture.image_utils
+    # 共享叶子校验原语：UI 与 business 双消费，模块自身无任何 src.* 依赖
     src.ui.configuration.mumu_config_dialog -> src.capture.image_validation
-    src.ui.configuration.mumu_config_dialog -> src.capture.prober
-    src.ui.configuration.whitelist_config_dialog -> src.ocr.character_similarity
+    # 跨三层共享的 ROI 领域类型（同 data/models.py 地位），非业务编排逃逸
     src.ui.configuration.roi_selector -> src.ocr.roi_config
-    src.ui.data_admin.card_sync_dialog -> src.scraper.official_source.card_baike

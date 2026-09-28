@@ -253,8 +253,8 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 | `card_content_hash(card)` | MD5 哈希（`name` / `card_type` / `card_desc` / `card_detail` 四件套），不含本地扩展字段（如 `card_amount`） |
 | `build_card_snapshot(cards)` | 构建 `{id: {name, hash}}` 快照结构，与 `build_hero_snapshot` 同构 |
 | `diff_cards(current, baseline)` | 三态对比：`{added, modified, removed}`，与 `diff_heroes` 同构 |
-| `card_field_diff_summary(local, official)` | 逐字段差异中文摘要（卡牌类型 / 描述 / 详细），含新增/移除标记 |
-| `format_card_full_text(card)` | 只读全文格式化，供确认对话框本地 vs 官网对比 |
+
+（`card_field_diff_summary` / `format_card_full_text` 两个展示辅助函数已迁至 `business/card_sync.py`，复用本模块的 `CARD_HASH_FIELDS` / `CARD_FIELD_LABELS` / `normalize_text` 口径。）
 
 **与武将百科的差异**：卡牌哈希取四件套（`name` / `card_type` / `card_desc` / `card_detail`）而非官网字段全集，因为 `card_amount` 是本地维护的数量字段，不反映官网内容变化。`build_card_snapshot` 的 id 键同样为卡牌 ID 整数。
 
@@ -355,8 +355,6 @@ def transform(raw: dict) -> dict | None:
 | `card_content_hash(card)` | `card_baike.py` | MD5 哈希（name/card_type/card_desc/card_detail 四件套） |
 | `build_card_snapshot(cards)` | `card_baike.py` | `{id: {name, hash}}` 卡牌快照 |
 | `diff_cards(current, baseline)` | `card_baike.py` | `{added, modified, removed}` 三态对比 |
-| `card_field_diff_summary(local, official)` | `card_baike.py` | 卡牌字段级差异中文摘要 |
-| `format_card_full_text(card)` | `card_baike.py` | 只读全文格式化（用于确认对话框对比） |
 
 ---
 
@@ -372,4 +370,4 @@ def transform(raw: dict) -> dict | None:
 | 被调用方 | `src.business.fetching.hero_fetch_service` | 通过 QProcess 启动爬虫 CLI |
 | 被调用方 | `src.business.announcement.announcement_service` | 公告检查 / 更新候选准备；`_sync_timeline()` 在每次检查末尾落地 `data/mjs_adjustments.json` |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 武将获取"触发爬虫 |
-| 被调用方 | `src.business.card_sync` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` / `card_field_diff_summary` / `format_card_full_text` 进行卡牌百科变更捕获 |
+| 被调用方 | `src.business.card_sync` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` 与 `CARD_HASH_FIELDS` / `CARD_FIELD_LABELS` / `normalize_text` 口径进行卡牌百科变更捕获（diff 摘要与全文格式化已迁 card_sync 本模块） |

@@ -11,6 +11,8 @@ import pytest
 from PIL import Image
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton
+from src.business.emulator.capture_service import CaptureService
+from src.business.recognition.ocr_service import OcrService
 from src.capture.prober import MuMuDeviceInfo
 from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
@@ -102,7 +104,8 @@ _FULL_MUMU_CONFIG = {
 def _dialog(config: dict, devices: list[MuMuDeviceInfo], ocr_service=None) -> MumuConfigDialog:
     return MumuConfigDialog(
         {**_FULL_MUMU_CONFIG, **config},
-        ocr_service=ocr_service,
+        capture_service=CaptureService(),
+        ocr_service=ocr_service or OcrService(),
         operation_service=_OperationService(devices),
     )
 

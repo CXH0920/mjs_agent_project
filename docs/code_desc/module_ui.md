@@ -434,7 +434,7 @@ PeakSelectPanel
 - **应用选中** — 调用 `CardSyncService.apply_updates(modified_ids, added_ids)`，成功后从列表移除已处理项，剩余条目下次检查继续提示
 - **点数提醒** — 候选卡在点数表中有配置时，摘要首位插入“该卡在点数表中有配置，记得核对花色点数”
 
-候选构建流程：`CardSyncService.check_now()` 后台拉取官网手牌库 → `card_field_diff_summary()` 逐字段对比本地 vs 官网 → `format_card_full_text()` 生成全文对比文本 → `CardSyncCheckResult` 含 `diff`（added/modified/removed 三态）与 `official_cards`。
+候选构建流程：`CardSyncService.check_now()` 后台拉取官网手牌库 → `card_sync.card_field_diff_summary()` 逐字段对比本地 vs 官网 → `card_sync.format_card_full_text()` 生成全文对比文本（两函数位于 `business/card_sync.py`）→ `CardSyncCheckResult` 含 `diff`（added/modified/removed 三态）与 `official_cards`。
 
 ---
 
@@ -662,7 +662,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.config.disclaimer_state` | 免责声明状态管理（版本控制与确认记录） |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |
-| 依赖 | `src.ocr.character_similarity` | 白名单静态冲突检查（`find_whitelist_conflicts()`） |
+| 依赖 | `src.business.recognition.name_resolution` | 白名单静态冲突检查（`find_whitelist_conflicts()` 与 `SAFE_SUBSTITUTION_WHITELIST` 基线表） |
 | 依赖 | `src.ui.shared.persist.run_edit_dialog` | 模态编辑对话框的标准保存循环 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |

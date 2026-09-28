@@ -49,14 +49,14 @@ class SynergyCombosDialog(QDialog):
     def __init__(
         self,
         synergy_manager: SynergyManager,
-        combo_manager: ComboManager | None = None,
+        combo_manager: ComboManager,
         parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("实战配队批量生成")
         self.setMinimumSize(720, 540)
         self._synergy_mgr = synergy_manager
-        self._combo_mgr = combo_manager or ComboManager()
+        self._combo_mgr = combo_manager
         self._combo_mgr.load()
         self.overwrite_existing = False
         self.selected_pairs: list[dict] = []

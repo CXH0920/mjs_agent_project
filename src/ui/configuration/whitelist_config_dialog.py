@@ -29,12 +29,12 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
-from src.business.recognition.pending_stats import STATS_PATH
-from src.config.env import PROJECT_ROOT
-from src.ocr.character_similarity import (
-    CharacterSimilarityService,
+from src.business.recognition.name_resolution import (
+    SAFE_SUBSTITUTION_WHITELIST,
     find_whitelist_conflicts,
 )
+from src.business.recognition.pending_stats import STATS_PATH
+from src.config.env import PROJECT_ROOT
 from src.ui.shared.widgets import PageHeader
 
 logger = logging.getLogger(__name__)
@@ -243,7 +243,7 @@ class WhitelistConfigDialog(QDialog):
         if len(source) != 1 or len(target) != 1 or source == target:
             QMessageBox.warning(self, "白名单配置", "请填写单个汉字，且错字与正字不同。")
             return
-        merged = dict(CharacterSimilarityService.SAFE_SUBSTITUTION_WHITELIST)
+        merged = dict(SAFE_SUBSTITUTION_WHITELIST)
         merged.update(self._overrides)
         merged[source] = target
         conflicts = find_whitelist_conflicts(self._hero_names, merged)

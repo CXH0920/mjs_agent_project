@@ -5,7 +5,11 @@ import threading
 from pathlib import Path
 
 import pytest
-from src.business.card_sync import CardSyncService
+from src.business.card_sync import (
+    CardSyncService,
+    card_field_diff_summary,
+    format_card_full_text,
+)
 from src.business.rag.audit_service import collect_stale_card_curated
 from src.data.card_catalog import CardRepository
 from src.data.card_sync_store import (
@@ -24,10 +28,8 @@ from src.scraper.official_source.adapter import (
 from src.scraper.official_source.card_baike import (
     build_card_snapshot,
     card_content_hash,
-    card_field_diff_summary,
     clean_card_detail,
     diff_cards,
-    format_card_full_text,
 )
 
 # 模仿手牌库 modern chunk 的真实形态：无 const e= 标记、噪声数组在前、
