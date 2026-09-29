@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction
@@ -31,15 +32,11 @@ from src.business.analysis.recommendation_service import RecommendationData, Rec
 from src.business.maintenance.corpus_services import ComboService
 from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
-from src.data.combo_manager import ComboManager
-from src.data.combo_seats import format_seats
-from src.data.guide_manager import GuideManager
-from src.data.hero_manager import HeroManager
-from src.data.synergy_manager import SynergyManager
 from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
 from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.combo_detail import show_combo_detail
+from src.ui.shared.combo_format import format_seats
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.hero_dialogs import HeroSkillDialog
@@ -60,6 +57,12 @@ from src.ui.shared.widgets import (
     PageActionBar,
     show_toast,
 )
+
+if TYPE_CHECKING:
+    from src.data.combo_manager import ComboManager
+    from src.data.guide_manager import GuideManager
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)
 

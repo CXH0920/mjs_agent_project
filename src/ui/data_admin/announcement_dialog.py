@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -15,13 +17,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.business.announcement import clean_html
-from src.data.announcement_manager import (
-    Announcement,
-    AnnouncementManager,
-    AnnouncementStatus,
-)
+from src.data.announcement_manager import Announcement, AnnouncementStatus
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import PageHeader, set_ui_role
+
+if TYPE_CHECKING:
+    from src.data.announcement_manager import AnnouncementManager
 
 STATUS_LABELS = {
     AnnouncementStatus.PENDING: "待生效",

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""架构守护测试：分层禁令 / 循环依赖 / 类规模棘轮。
+"""架构守护测试：分层禁令 / 循环依赖 / 类规模棘轮 / UI 数据 import 白名单 /
+跨层直连禁令 / 文件行数棘轮。
 
 全部基于 stdlib AST 静态分析，不 import 项目代码，无 Qt 依赖，可无头运行。
 预算/白名单只许收紧（缩小），放宽必须在 PR 说明里给出理由。
@@ -382,4 +383,151 @@ def test_data_layer_classes_are_classified() -> None:
         "src/data 出现既非仓储后代也非值对象（pydantic/enum/dataclass）的新类：\n"
         + "\n".join(f"  {u}" for u in unclassified)
         + "\n新持久化类应继承 DataManager/JsonRepository；确需新根请在 PR 说明并扩充 PERSISTENCE_ROOTS"
+    )
+
+
+# ---------------------------------------------------------------------------
+# UI 对数据层的 import 白名单：运行期只许消费值对象（pydantic/enum/dataclass）
+# 与下列显式白名单符号；仓储/Manager 类一律由组合根（app_services）注入——
+# 构造禁令见 test_ui_must_not_construct_data_layer，本条管住 import 层面。
+# 棘轮哲学同上：白名单只许收紧，放宽必须在 PR 说明理由。
+# ---------------------------------------------------------------------------
+ALLOWED_DATA_CONSTANTS = {
+    "EFFECT_STATUSES",        # 卡牌图鉴：效果状态词汇（UI 表单选项与入库校验同源）
+    "FIELD_TYPES",            # 卡牌图鉴：字段类型词汇
+    "SPECIAL_CATEGORIES",     # 专属牌：类别词汇
+    "VALID_POINTS",           # 牌点维护：合法点数
+    "VALID_SUITS",            # 牌点维护：合法花色
+    "VALID_SUBTYPES",         # 装备属性：合法子类型
+    "MAX_GUIDE_TEXT_LENGTH",  # 攻略文本长度上限（与模型约束同源）
+}
+ALLOWED_DATA_FUNCTIONS = {
+    # 评分→相性评级映射：SynergyScore 模型校验器同源（data/models.py），
+    # 搬出 data 会制造反向依赖，故白名单放行 UI 展示共用。
+    "synergy_rating_for_score",
+}
+
+
+def _runtime_imports_from(path: Path, prefixes: tuple[str, ...]) -> list[tuple[str, str, int]]:
+    """ui 文件运行期对指定前缀模块的 (模块, 符号, 行号) 清单。
+
+    - 跳过 ``if TYPE_CHECKING:`` 块（与 _internal_imports 同语义）；
+    - 函数内延迟导入计入（运行期真实加载）；
+    - ``import a.b`` 形式以空符号记录（无符号可用，按模块判定）。
+    """
+
+    def is_type_checking(node: ast.If) -> bool:
+        test = node.test
+        target = test.attr if isinstance(test, ast.Attribute) else (
+            test.id if isinstance(test, ast.Name) else None)
+        return target == "TYPE_CHECKING"
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[tuple[str, str, int]] = []
+
+    def visit(node: ast.AST) -> None:
+        if isinstance(node, ast.If) and is_type_checking(node):
+            return
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            if node.module.startswith(prefixes):
+                for alias in node.names:
+                    found.append((node.module, alias.name, node.lineno))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith(prefixes):
+                    found.append((alias.name, "", node.lineno))
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    visit(tree)
+    return found
+
+
+def _is_value_object(table: dict[str, dict], symbol: str) -> bool:
+    info = table.get(symbol)
+    if not info or not info["file"].startswith("src/data/"):
+        return False
+    bases = info["bases"]
+    return "BaseModel" in bases or any("Enum" in b for b in bases) or info["dataclass"]
+
+
+def test_ui_data_import_allowlist() -> None:
+    table = _class_table()
+    repos = _persistence_classes(table)
+    offenders = []
+    for py in (SRC / "ui").rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        rel = py.relative_to(ROOT).as_posix()
+        if rel in COMPOSITION_ROOTS:
+            continue
+        for module, symbol, lineno in _runtime_imports_from(py, ("src.data",)):
+            if symbol in repos:
+                offenders.append(
+                    f"{rel}:{lineno}  {module} :: {symbol}（仓储/Manager 由组合根注入，不 import）")
+                continue
+            if _is_value_object(table, symbol):
+                continue
+            if symbol in ALLOWED_DATA_CONSTANTS:
+                continue
+            if symbol and symbol in ALLOWED_DATA_FUNCTIONS:
+                continue
+            offenders.append(f"{rel}:{lineno}  {module} :: {symbol or '(模块级 import)'}")
+    assert not offenders, (
+        "UI 运行期 import 了数据层非白名单符号（值对象/词汇常量除外；"
+        "仓储与读函数经组合根或业务服务注入）：\n"
+        + "\n".join(f"  {o}" for o in offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# UI 禁止直连基础设施层（ocr/scraper/capture）：跨层能力经 business 服务或
+# 组合根注入。豁免须逐条写明理由；新豁免默认拒绝。
+# ---------------------------------------------------------------------------
+INFRA_IMPORT_EXCEPTIONS = {
+    # ROI 版位定义是 UI 编辑、OCR 消费的同一份共享契约（拆出反而造两处真相）
+    ("src/ui/configuration/roi_selector.py", "src.ocr.roi_config"),
+}
+
+
+def test_ui_must_not_import_infra() -> None:
+    offenders = []
+    for py in (SRC / "ui").rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        rel = py.relative_to(ROOT).as_posix()
+        for module, _symbol, lineno in _runtime_imports_from(py, ("src.ocr", "src.scraper", "src.capture")):
+            if (rel, module) in INFRA_IMPORT_EXCEPTIONS:
+                continue
+            offenders.append(f"{rel}:{lineno}  {module}")
+    assert not offenders, (
+        "UI 直连基础设施层（经 business 服务或组合根注入；豁免须在 INFRA_IMPORT_EXCEPTIONS 说明理由）：\n"
+        + "\n".join(f"  {o}" for o in offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# 文件行数棘轮：观察名单内单文件行数不得超过预算（种子 = 当前实测值）。
+# 与类方法数棘轮互补——拦住"往大文件继续堆代码"；重构缩小后应下调种子。
+# recognizer.py 条目即绞杀者规则的机械化：只减不增，新特征一律进新模块。
+# ---------------------------------------------------------------------------
+FILE_LINE_BUDGETS: dict[str, int] = {
+    "ui/app/main_window.py": 792,
+    "ui/configuration/mumu_config_dialog.py": 771,
+    "ui/recommendation/recommendation_panel.py": 860,
+    "ui/maintenance/rule_doc_panel.py": 928,
+    "ui/maintenance/index_refinement_dialog.py": 953,
+    "ocr/recognizer.py": 911,
+}
+
+
+def test_file_line_count_within_budget() -> None:
+    offenders = []
+    for rel, budget in FILE_LINE_BUDGETS.items():
+        count = len((SRC / rel).read_text(encoding="utf-8").splitlines())
+        if count > budget:
+            offenders.append(f"src/{rel}: {count} > 预算 {budget}")
+    assert not offenders, (
+        "文件行数超出预算（重构缩小后请同步下调预算；放宽预算需在 PR 说明理由）：\n"
+        + "\n".join(offenders)
     )

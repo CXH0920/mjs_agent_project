@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -13,11 +15,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.faction_colors import sort_factions_by_config
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
 
 
 class HeroRelationSelectDialog(QDialog):

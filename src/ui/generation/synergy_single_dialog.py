@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
-from src.data.hero_manager import HeroManager
+from typing import TYPE_CHECKING
+
 from src.ui.shared.hero_select_dialog import (
     BaseHeroSelectDialog,
     SelectionMode,
 )
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
 
 
 class SynergySingleDialog(BaseHeroSelectDialog):

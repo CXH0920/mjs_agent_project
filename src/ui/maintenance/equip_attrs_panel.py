@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -21,13 +22,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.data.equip_attrs_repository import (
-    VALID_SUBTYPES,
-    EquipAttrItem,
-    EquipAttrsRepository,
-)
+from src.data.equip_attrs_repository import VALID_SUBTYPES, EquipAttrItem
 from src.ui.shared.style import ROLE_PRIMARY, TONE_WARNING, set_ui_role
 from src.ui.shared.widgets import PageActionBar, show_toast
+
+if TYPE_CHECKING:
+    from src.data.equip_attrs_repository import EquipAttrsRepository
 
 logger = logging.getLogger(__name__)
 

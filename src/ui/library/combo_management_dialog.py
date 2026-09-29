@@ -25,8 +25,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.business.maintenance.corpus_services import ComboService
-from src.data.combo_seats import format_seats
 from src.ui.library.combo_edit_dialog import ComboEditDialog
+from src.ui.shared.combo_format import format_seats
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_NEUTRAL, set_tone, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageHeader
 

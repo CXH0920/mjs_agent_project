@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -29,11 +30,7 @@ from PySide6.QtWidgets import (
 from src.business.maintenance.corpus_services import SpecialCardsService
 from src.business.rag.audit_service import GENERIC_HERO_NAMES
 from src.business.rag.hero_brief import load_hero_briefs
-from src.data.special_cards_repository import (
-    SPECIAL_CATEGORIES,
-    SpecialCardItem,
-    SpecialCardRepository,
-)
+from src.data.special_cards_repository import SPECIAL_CATEGORIES, SpecialCardItem
 from src.ui.shared.master_detail import MasterDetailPane
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import (
@@ -46,6 +43,9 @@ from src.ui.shared.style import (
     set_ui_role,
 )
 from src.ui.shared.widgets import DialogFooter, PageActionBar, PageHeader, clear_layout, show_toast
+
+if TYPE_CHECKING:
+    from src.data.special_cards_repository import SpecialCardRepository
 
 logger = logging.getLogger(__name__)
 

@@ -54,6 +54,18 @@ Pydantic `BaseModel` 是**项目唯一的 JSON 格式契约**。所有数据写�
 
 **为什么：** 避免 `MainWindow` 中散落多份数据引用（如 `self._hero_mgr` / `self._synergy_mgr` / `self._guide_mgr` 各 3 处），统一入口确保重新加载时所有 Manager 同步刷新。
 
+### 规则 3.2：UI 对数据层的运行期 import 白名单（架构守卫已固化）
+
+UI 层运行期（非 `TYPE_CHECKING`）import `src.data.*` 仅允许三类：
+
+1. **值对象**：pydantic 模型 / enum / dataclass（如 `Hero`、`Combo`、`CardPointItem`）——UI 展示层认识领域模型是合法消费；
+2. **领域词汇常量**：`EFFECT_STATUSES`、`FIELD_TYPES`、`SPECIAL_CATEGORIES`、`VALID_POINTS`、`VALID_SUITS`、`VALID_SUBTYPES`、`MAX_GUIDE_TEXT_LENGTH`——UI 表单选项与入库校验必须同源，复制会制造两处真相；
+3. **同源函数**：`synergy_rating_for_score`（`SynergyScore` 模型校验器自用，搬出即反向依赖）。
+
+仓储/Manager 类与读函数（`load_*`）一律**不 import**：装配只属于组合根 `app_services`（构造禁令另见 `test_ui_must_not_construct_data_layer`），榜单读取经组合根暴露的 provider 注入（如 `win_rates_provider`）。例外以类型注解存在的 import 须置于 `if TYPE_CHECKING:` 块。
+
+**为什么：** 契约的判定必须可机检。守护见 `tests/test_architecture.py` 的 `test_ui_data_import_allowlist`（符号级白名单）与 `test_ui_must_not_import_infra`（UI ↮ ocr/scraper/capture，唯一豁免 `roi_selector → src.ocr.roi_config`——ROI 版位定义是 UI 编辑、OCR 消费的同一份共享契约）。白名单只许收紧，放宽必须在 PR 说明理由。
+
 ## 四、增量更新
 
 ### 规则 4.1：删除武将必须级联清理关联数据

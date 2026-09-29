@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -24,12 +24,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.faction_colors import sort_factions_by_config
 from src.ui.shared.style import PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, EmptyState, FlowLayout, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
 
 logger = logging.getLogger(__name__)
 

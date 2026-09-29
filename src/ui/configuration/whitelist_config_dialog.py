@@ -34,12 +34,13 @@ from src.business.recognition.name_resolution import (
     find_whitelist_conflicts,
 )
 from src.business.recognition.pending_stats import STATS_PATH
-from src.config.env import PROJECT_ROOT
+from src.config.env import OCR_CONFUSION_OVERRIDES_PATH
 from src.ui.shared.widgets import PageHeader
 
 logger = logging.getLogger(__name__)
 
-_OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
+# 路径单一事实源在 config.env（保留模块级私有名，测试可 monkeypatch）
+_OVERRIDES_PATH = OCR_CONFUSION_OVERRIDES_PATH
 # 分类排序权重：A+（已有人工确认答案）> A（候选唯一）> B（候选不唯一）> C（截断）
 _CATEGORY_ORDER = {"A+": 0, "A": 1, "B": 2, "C": 3, "D": 4}
 

@@ -1209,7 +1209,7 @@ WhitelistConfigDialog.exec()
 | `src.data.synergy_manager.SynergyManager` | 相性 CRUD 和查询 |
 | `src.data.guide_manager.GuideManager` | 攻略 CRUD 和查询 |
 | `src.data.combo_manager.ComboManager` | 实战配队 CRUD，选将推荐与巅峰赛匹配共用 |
-| `src.data.combo_seats.format_seats` | 座次字段格式化 |
+| `src.ui.shared.combo_format.format_seats` | 座次字段格式化 |
 | `src.data.recommendation_index_repository` | 推荐指数快照加载 |
 | `src.data.peak_win_rate_repository` | 巅峰赛胜率/出场排行加载 |
 | `src.data.hero_classification_repository` | 武将分类（分类建议 worker 调用） |

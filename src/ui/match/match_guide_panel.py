@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING, Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
@@ -27,9 +28,6 @@ from PySide6.QtWidgets import (
 from src.business.analysis.match_analysis_service import MatchAnalysis, MatchAnalysisService
 from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
-from src.data.guide_manager import GuideManager
-from src.data.hero_manager import HeroManager
-from src.data.win_rate_repository import load_win_rates
 from src.ui.match.match_analysis_view import MatchAnalysisView
 from src.ui.match.match_lineup_state import SIDE_ALLY, SIDE_ENEMY, LineupState
 from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
@@ -54,6 +52,10 @@ from src.ui.shared.widgets import (
     PageActionBar,
     StatusBadge,
 )
+
+if TYPE_CHECKING:
+    from src.data.guide_manager import GuideManager
+    from src.data.hero_manager import HeroManager
 
 logger = logging.getLogger(__name__)
 
@@ -292,11 +294,20 @@ class MatchGuidePanel(QWidget):
 
     request_mumu_config = Signal()
 
-    def __init__(self, hero_manager: HeroManager, guide_manager: GuideManager, capture_service=None, parent=None) -> None:
+    def __init__(
+        self,
+        hero_manager: HeroManager,
+        guide_manager: GuideManager,
+        capture_service=None,
+        parent=None,
+        *,
+        win_rates_provider: Callable[[], dict[str, float]],
+    ) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
         self._capture_service = capture_service
+        self._win_rates_provider = win_rates_provider
         self._capture_lock = CaptureRequestLock()
         self._cards: list[MatchHeroCard] = []
         self._lineup = LineupState()
@@ -510,7 +521,7 @@ class MatchGuidePanel(QWidget):
             self._clear_lineup_display()
             return
         self._analysis = None
-        self._win_rates = load_win_rates()
+        self._win_rates = self._win_rates_provider()
         self._show_cards()
         self._render_cards()
         self._refresh_analysis()
@@ -596,7 +607,7 @@ class MatchGuidePanel(QWidget):
         record_confirmation(original_raw, hero.name, sorted(candidates))
         self._lineup.replace_hero(index, hero, keep_sides=hero.name in candidates)
         self._analysis = None
-        self._win_rates = load_win_rates()
+        self._win_rates = self._win_rates_provider()
         self._render_cards()
         self._refresh_analysis()
         self._update_recognition_status()

@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -36,16 +37,13 @@ from PySide6.QtWidgets import (
 )
 from src.business.maintenance.corpus_services import CardPointsService
 from src.config.env import PROJECT_ROOT
-from src.data.card_points_repository import (
-    VALID_POINTS,
-    VALID_SUITS,
-    CardPointItem,
-    CardPointsRepository,
-    JudgeRuleItem,
-)
+from src.data.card_points_repository import VALID_POINTS, VALID_SUITS, CardPointItem, JudgeRuleItem
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_SECONDARY, TONE_WARNING, set_ui_role
 from src.ui.shared.widgets import DialogFooter, PageActionBar, ScriptRunner, show_toast
+
+if TYPE_CHECKING:
+    from src.data.card_points_repository import CardPointsRepository
 
 logger = logging.getLogger(__name__)
 

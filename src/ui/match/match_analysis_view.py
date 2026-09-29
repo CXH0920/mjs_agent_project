@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -15,7 +17,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.analysis.match_analysis_service import MatchAnalysis
-from src.data.hero_manager import HeroManager
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.style import (
     ROLE_GHOST,
@@ -25,6 +26,9 @@ from src.ui.shared.style import (
     set_ui_role,
 )
 from src.ui.shared.widgets import NoticeBanner, clear_layout
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
 
 
 class MatchAnalysisView(QWidget):

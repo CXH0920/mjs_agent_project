@@ -29,7 +29,9 @@ from src.data.manager import (
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
 )
+from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.data.synergy_manager import SynergyManager
+from src.data.win_rate_repository import load_win_rates
 from src.ui.app.poll_coordinator import PollCoordinator
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
 
@@ -94,6 +96,12 @@ class AppServices:
         self.card_sync_service = CardSyncService(self.card_repository)
         # 卡牌点数表仓库：打开卡牌同步对话框时惰性加载，供候选摘要的点数提醒
         self.card_points_repository = CardPointsRepository()
+
+        # 官方榜单读取 provider：榜 CSV 的加载入口由组合根统一持有，
+        # UI（巅峰选将/对局攻略）经构造注入消费，不再自带 data 层 import
+        self.win_rates_provider = load_win_rates
+        self.peak_win_rates_provider = load_peak_win_rates
+        self.peak_pick_ranks_provider = load_peak_pick_ranks
 
     def attach(self, parent) -> None:
         """MainWindow 持有本对象后统一挂载 QObject 父子与窗口引用。"""

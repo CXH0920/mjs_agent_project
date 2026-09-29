@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -20,11 +22,13 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
-from src.data.combo_manager import ComboManager
-from src.data.combo_seats import format_seats
 from src.data.models import Combo
-from src.data.synergy_manager import SynergyManager
+from src.ui.shared.combo_format import format_seats
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.combo_manager import ComboManager
+    from src.data.synergy_manager import SynergyManager
 
 # 评级筛选项（标签, 下界, 上界）
 RATING_FILTERS = [

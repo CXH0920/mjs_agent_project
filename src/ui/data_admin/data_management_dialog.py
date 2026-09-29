@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -16,10 +17,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.business.maintenance.data_management_service import DataManagementService
-from src.data.guide_manager import GuideManager
-from src.data.synergy_manager import SynergyManager
 from src.ui.shared.style import ROLE_DANGER
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.guide_manager import GuideManager
+    from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)
 

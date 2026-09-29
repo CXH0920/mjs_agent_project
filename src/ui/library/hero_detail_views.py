@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -22,14 +24,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.data.combo_manager import ComboManager
-from src.data.combo_seats import format_seats
-from src.data.hero_manager import HeroManager
 from src.data.models import Combo, Hero, HeroGuide, SynergyScore
-from src.data.synergy_manager import SynergyManager
+from src.ui.shared.combo_format import format_seats
 from src.ui.shared.markdown_renderer import render_markdown
 from src.ui.shared.style import ROLE_GHOST, ROLE_SECONDARY, set_ui_role
 from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.combo_manager import ComboManager
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
 
 
 class HeroInfoView(QWidget):

@@ -29,11 +29,11 @@ from src.business.analysis.peak_ban_advice import (
 from src.business.maintenance.corpus_services import ComboService
 from src.business.recognition.peak_select_watcher import PeakSelectWatcher, PoolSnapshot
 from src.config.env import SCREENSHOTS_DIR
-from src.data.combo_seats import format_seats
 from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.combo_detail import show_combo_detail
+from src.ui.shared.combo_format import format_seats
 from src.ui.shared.style import (
     FONT_SIZE_LG,
     ROLE_DANGER,

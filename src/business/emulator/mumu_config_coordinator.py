@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image
 from PySide6.QtCore import QObject, Signal
 from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
@@ -12,6 +13,7 @@ from src.business.recognition.ocr_service import OcrService
 
 # MuMuDeviceInfo 显式再导出：设备值对象经本协调器透出给 UI（类型注解用），
 # UI 不直连 src.capture.prober。
+from src.capture.image_validation import load_local_image
 from src.capture.prober import MuMuDeviceInfo as MuMuDeviceInfo
 from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
@@ -213,6 +215,10 @@ class MumuConfigCoordinator(QObject):
         """保存经 UI 框选后的模板区域。"""
         self._ocr_service.create_template(image, roi, template_name)
         return self.template_status(template_name)
+
+    def load_preview_image(self, path: str | Path) -> Image.Image:
+        """加载本地图片供 ROI 编辑预览；校验语义与采集侧一致，异常原样上抛。"""
+        return load_local_image(path)
 
     def resume_poll(self) -> bool:
         """仅在轮询暂停时恢复。"""

@@ -43,6 +43,9 @@ SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
 # 注意 frozen 态后果：UI 头像读取固定自只读 IMAGES_DIR，下载到本目录的新头像
 # 不会被 UI 读取；运行时回退读取属独立需求，尚未实现。
 IMAGES_OUTPUT_DIR = PROJECT_ROOT / "images"
+# OCR 混淆白名单：UI"白名单配置"界面写入、识别侧（character_similarity）读取，
+# 路径单一事实源在此，双侧只引用不再各自拼接。
+OCR_CONFUSION_OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
 
 
 def is_full_build() -> bool:

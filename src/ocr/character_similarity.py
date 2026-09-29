@@ -5,14 +5,15 @@ from __future__ import annotations
 import json
 import logging
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import OCR_CONFUSION_OVERRIDES_PATH
 from src.ocr.character_feature_repository import CharacterFeatureRepository
 
 logger = logging.getLogger(__name__)
 
 # 用户层白名单文件：基线表之外的人工补充对（经"白名单配置"界面写入），
 # 加载时与基线合并为生效表；文件缺失或损坏仅降级基线，不影响识别。
-OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
+# 路径单一事实源在 config.env（保留模块级公开名，测试可 monkeypatch）。
+OVERRIDES_PATH = OCR_CONFUSION_OVERRIDES_PATH
 
 
 def levenshtein_distance(first: str, second: str) -> int:

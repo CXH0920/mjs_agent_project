@@ -49,10 +49,9 @@ def _complete_ocr(names: tuple[str, str, str, str] = ("甲", "乙", "丙", "丁"
     ]
 
 
-def test_panel_preserves_recognition_issue_and_clears_old_lineup(monkeypatch) -> None:
+def test_panel_preserves_recognition_issue_and_clears_old_lineup() -> None:
     _app()
-    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
 
     panel.load_from_ocr([
         {"index": 1, "name": "甲"},
@@ -73,8 +72,7 @@ def test_panel_preserves_recognition_issue_and_clears_old_lineup(monkeypatch) ->
 
 def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatch) -> None:
     _app()
-    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
 
     panel.load_from_ocr([
         {
@@ -111,10 +109,9 @@ def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatc
     assert panel._confirm_btn.isEnabled()
 
 
-def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title(monkeypatch) -> None:
+def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title() -> None:
     _app()
-    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
 
     assert isinstance(panel._action_bar, PageActionBar)
     assert isinstance(panel._empty_state, EmptyState)
@@ -127,7 +124,7 @@ def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title(mo
 
 def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
     panel._capture_lock.begin(CaptureSource.ADB_SAVE)
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -151,7 +148,7 @@ def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
 
 def test_result_action_menu_contains_import_save_and_clear() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
 
     action_texts = [action.text() for action in panel._more_menu.actions() if not action.isSeparator()]
 
@@ -160,10 +157,9 @@ def test_result_action_menu_contains_import_save_and_clear() -> None:
     assert panel._more_btn.accessibleName() == "更多操作"
 
 
-def test_splitter_and_confirmation_area_keep_stable_workspace_geometry(monkeypatch) -> None:
+def test_splitter_and_confirmation_area_keep_stable_workspace_geometry() -> None:
     app = _app()
-    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
     panel.load_from_ocr([{"index": 1, "name": "甲", "resolution": "exact"}])
     panel.resize(1000, 700)
     panel.show()
@@ -193,7 +189,7 @@ def test_splitter_and_confirmation_area_keep_stable_workspace_geometry(monkeypat
 
 def test_match_card_segment_is_exclusive_and_exposes_semantic_state() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
     card = panel._cards[0]
     hero = panel._hero_mgr.get_hero(1)
 
@@ -230,10 +226,9 @@ def test_match_card_segment_is_exclusive_and_exposes_semantic_state() -> None:
     assert card.property("cardState") == "unknown"
 
 
-def test_analysis_scrolls_vertically_and_new_ocr_returns_to_overview(monkeypatch) -> None:
+def test_analysis_scrolls_vertically_and_new_ocr_returns_to_overview() -> None:
     _app()
-    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager())
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
     panel.load_from_ocr(_complete_ocr())
     panel._confirm_lineup()
 
@@ -259,9 +254,8 @@ def test_analysis_scrolls_vertically_and_new_ocr_returns_to_overview(monkeypatch
     assert not panel._lineup.analysis_confirmed
 
 
-def test_missing_data_is_collapsible_and_detail_text_wraps(monkeypatch) -> None:
+def test_missing_data_is_collapsible_and_detail_text_wraps() -> None:
     _app()
-    monkeypatch.setattr("src.ui.match.match_guide_panel.load_win_rates", lambda: {})
     heroes = _heroes()
     heroes._items[1] = Hero(
         id=1,
@@ -269,7 +263,7 @@ def test_missing_data_is_collapsible_and_detail_text_wraps(monkeypatch) -> None:
         faction="魏",
         position="需要在狭窄详情区域完整换行显示的超长武将定位说明",
     )
-    panel = MatchGuidePanel(heroes, guide_manager=GuideManager())
+    panel = MatchGuidePanel(heroes, guide_manager=GuideManager(), win_rates_provider=lambda: {})
     panel.load_from_ocr(_complete_ocr())
     panel._confirm_lineup()
 

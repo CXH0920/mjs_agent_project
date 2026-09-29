@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 from src.business.ai_cost import estimate_generation_cost
 from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.synergy_fetch_service import SynergyFetchService
-from src.data.combo_manager import ComboManager
-from src.data.guide_manager import GuideManager
-from src.data.hero_manager import HeroManager
-from src.data.synergy_manager import SynergyManager
 from src.ui.app.chinese_translator import install_details_button_translator
 from src.ui.generation.backend_choose_dialog import BackendChooseDialog
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
@@ -20,6 +17,12 @@ from src.ui.generation.guide_progress_dialog import GuideProgressDialog
 from src.ui.generation.synergy_combos_dialog import SynergyCombosDialog
 from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
 from src.ui.generation.synergy_single_dialog import SynergySingleDialog
+
+if TYPE_CHECKING:
+    from src.data.combo_manager import ComboManager
+    from src.data.guide_manager import GuideManager
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
 
 
 class AiGenerationWorkflow(QObject):

@@ -48,11 +48,6 @@ def _complement(seat: str) -> list[int]:
     return [s for s in (1, 2, 3, 4) if s != int(seat.translate(_CN_NUM))]
 
 
-def format_seats(seats: list[int]) -> str:
-    """号位列表 → 展示文本（空 = 任意座）。"""
-    return "/".join(str(s) for s in seats) if seats else "任意"
-
-
 def _raw_fragments(hero: str) -> set[str]:
     """武将的候选写法：全名 + 别名 + 去首/去尾简称片段。"""
     frags = {hero, *ALIAS.get(hero, [])}

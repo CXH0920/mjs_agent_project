@@ -6,13 +6,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QRadioButton, QVBoxLayout
-from src.data.hero_manager import HeroManager
-from src.data.synergy_manager import SynergyManager
 from src.ui.shared.hero_select_dialog import (
     BaseHeroSelectDialog,
     SelectionMode,
 )
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
 
 
 class SynergyPairDialog(BaseHeroSelectDialog):

@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.card_catalog import CardCatalogService
-from src.data.peak_win_rate_repository import load_peak_pick_ranks, load_peak_win_rates
 from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
 from src.ui.app.app_services import AppServices
 from src.ui.app.status_chips import StatusChips
@@ -91,6 +90,9 @@ class MainWindow(QMainWindow):
         self._poll_coordinator = self._services.poll
         self._card_repository = self._services.card_repository
         self._card_sync_service = self._services.card_sync_service
+        self._win_rates_provider = self._services.win_rates_provider
+        self._peak_win_rates_provider = self._services.peak_win_rates_provider
+        self._peak_pick_ranks_provider = self._services.peak_pick_ranks_provider
         self._announcement_banner: NoticeBanner | None = None
         self._announcement_update_button: QPushButton | None = None
         # 进度出口早于信号接线创建；_setup_status_bar 只负责挂载到状态栏
@@ -440,8 +442,8 @@ class MainWindow(QMainWindow):
             ocr_service=self._ocr_service,
             hero_names_provider=lambda: [hero.name for hero in self._data.heroes.list_heroes()],
             hero_manager=self._data.heroes,
-            win_rates_provider=load_peak_win_rates,
-            pick_ranks_provider=load_peak_pick_ranks,
+            win_rates_provider=self._peak_win_rates_provider,
+            pick_ranks_provider=self._peak_pick_ranks_provider,
             combo_manager=self._combo_manager,
         )
         self._peak_select.request_mumu_config.connect(self._open_mumu_config)
@@ -455,6 +457,7 @@ class MainWindow(QMainWindow):
             self._data.heroes,
             guide_manager=self._data.guides,
             capture_service=self._capture_service,
+            win_rates_provider=self._win_rates_provider,
         )
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")

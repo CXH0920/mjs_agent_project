@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -11,9 +13,11 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
 )
-from src.data.hero_manager import HeroManager
 from src.data.models import SynergyScore, synergy_rating_for_score
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
 
 
 class SynergyEditDialog(QDialog):

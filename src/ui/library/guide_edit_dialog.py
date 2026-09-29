@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -12,10 +14,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.data.hero_manager import HeroManager
 from src.data.models import HeroGuide
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
 from src.ui.shared.widgets import DialogFooter, PageHeader
+
+if TYPE_CHECKING:
+    from src.data.hero_manager import HeroManager
 
 
 class GuideEditDialog(QDialog):

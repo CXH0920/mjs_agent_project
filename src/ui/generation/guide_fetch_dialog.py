@@ -8,15 +8,18 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
-from src.data.guide_manager import GuideManager
-from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.ui.shared.hero_select_dialog import (
     BaseHeroSelectDialog,
     SelectionMode,
 )
+
+if TYPE_CHECKING:
+    from src.data.guide_manager import GuideManager
+    from src.data.hero_manager import HeroManager
 
 
 class GuideStatus(Enum):
