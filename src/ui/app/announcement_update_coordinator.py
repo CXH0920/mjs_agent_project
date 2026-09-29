@@ -266,7 +266,7 @@ class AnnouncementUpdateCoordinator(QObject):
         if not candidates:
             self._reporter.show_message("没有需要更新的武将数据")
             return
-        dialog = HeroUpdateConfirmDialog(candidates, self._window)
+        dialog = HeroUpdateConfirmDialog(candidates, self._window, ignore_service=self._service)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             self._reporter.show_message("已取消更新武将数据")
             return

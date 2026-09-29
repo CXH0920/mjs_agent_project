@@ -59,6 +59,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 胜率数据源模式：选将推荐链路进对局用 2v2 榜，巅峰赛选将链路用巅峰赛榜
+WIN_RATE_MODE_2V2 = "2v2"
+WIN_RATE_MODE_PEAK = "peak"
+_WIN_RATE_MODE_LABELS = {
+    WIN_RATE_MODE_2V2: "2v2",
+    WIN_RATE_MODE_PEAK: "巅峰赛",
+}
+
 
 class MatchHeroCard(QFrame):
     """对局阵容中的单个武将卡片。"""
@@ -302,12 +310,15 @@ class MatchGuidePanel(QWidget):
         parent=None,
         *,
         win_rates_provider: Callable[[], dict[str, float]],
+        peak_win_rates_provider: Callable[[], dict[str, float]],
     ) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
         self._capture_service = capture_service
         self._win_rates_provider = win_rates_provider
+        self._peak_win_rates_provider = peak_win_rates_provider
+        self._win_rate_mode = WIN_RATE_MODE_2V2
         self._capture_lock = CaptureRequestLock()
         self._cards: list[MatchHeroCard] = []
         self._lineup = LineupState()
@@ -327,6 +338,12 @@ class MatchGuidePanel(QWidget):
 
         self._action_bar = PageActionBar("尚未识别阵容", self)
         self._recognition_status_label = self._action_bar.status_label
+        # 胜率榜模式标签：进入对局时按链路自动置位，手动入口兜底可点击纠正
+        self._win_rate_mode_btn = QPushButton()
+        self._win_rate_mode_btn.clicked.connect(self._toggle_win_rate_mode)
+        self._action_bar.add_action(self._win_rate_mode_btn, ROLE_GHOST)
+        self._sync_win_rate_mode_button()
+
         self._recognize_btn = QPushButton("识别当前阵容")
         self._recognize_btn.setObjectName("matchRecognizeButton")
         self._recognize_btn.clicked.connect(self._on_recognize_current)
@@ -509,6 +526,51 @@ class MatchGuidePanel(QWidget):
             tone,
         )
 
+    # ---------------------------------------------------------------
+    # 胜率榜模式：2v2 选将链路与巅峰赛链路共用本页，按来源区分数据
+    # ---------------------------------------------------------------
+
+    def _current_win_rates(self) -> dict[str, float]:
+        provider = (
+            self._peak_win_rates_provider
+            if self._win_rate_mode == WIN_RATE_MODE_PEAK
+            else self._win_rates_provider
+        )
+        return provider()
+
+    def set_win_rate_mode(self, mode: str) -> None:
+        """切换胜率榜来源；已有阵容时按新榜重取数据重渲染（阵容不动）。"""
+        if mode not in _WIN_RATE_MODE_LABELS or mode == self._win_rate_mode:
+            return
+        self._win_rate_mode = mode
+        self._sync_win_rate_mode_button()
+        if self._lineup.valid_count:
+            self._win_rates = self._current_win_rates()
+            self._render_cards()
+            self._refresh_analysis()
+
+    def _toggle_win_rate_mode(self) -> None:
+        other = (
+            WIN_RATE_MODE_2V2
+            if self._win_rate_mode == WIN_RATE_MODE_PEAK
+            else WIN_RATE_MODE_PEAK
+        )
+        self.set_win_rate_mode(other)
+
+    def _sync_win_rate_mode_button(self) -> None:
+        """刷新模式标签；当前榜为空（未导入）时显式提示，避免误判为缺武将数据。"""
+        label = _WIN_RATE_MODE_LABELS[self._win_rate_mode]
+        empty = not self._current_win_rates()
+        text = f"胜率榜：{label}（榜单未导入）" if empty else f"胜率榜：{label}"
+        self._win_rate_mode_btn.setText(text)
+        tip = (
+            "点击切换胜率数据来源：选将推荐进入的对局用 2v2 榜，"
+            "巅峰赛选将进入的对局用巅峰赛榜。"
+        )
+        if empty:
+            tip += "当前榜单尚未导入，请先通过 OCR 官方榜单导入生成。"
+        self._win_rate_mode_btn.setToolTip(tip)
+
     def load_from_ocr(self, ocr_results: list[dict]) -> None:
         """按 OCR 槽位导入；每次导入都清空旧阵营确认。"""
         loaded = self._lineup.load_from_ocr(
@@ -521,7 +583,7 @@ class MatchGuidePanel(QWidget):
             self._clear_lineup_display()
             return
         self._analysis = None
-        self._win_rates = self._win_rates_provider()
+        self._win_rates = self._current_win_rates()
         self._show_cards()
         self._render_cards()
         self._refresh_analysis()
@@ -607,7 +669,7 @@ class MatchGuidePanel(QWidget):
         record_confirmation(original_raw, hero.name, sorted(candidates))
         self._lineup.replace_hero(index, hero, keep_sides=hero.name in candidates)
         self._analysis = None
-        self._win_rates = self._win_rates_provider()
+        self._win_rates = self._current_win_rates()
         self._render_cards()
         self._refresh_analysis()
         self._update_recognition_status()

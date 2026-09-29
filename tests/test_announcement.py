@@ -21,6 +21,7 @@ from src.data.announcement_manager import (
     load_baike_snapshot,
     save_baike_snapshot,
 )
+from src.data.baike_ignore_store import IgnoreEntry, ignore_entry, remove_entry
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
 from src.scraper.official_source import announcement as announcement_module
@@ -163,7 +164,7 @@ def _raw_announcement(announcement_id: int, url: str, **overrides) -> dict:
     return raw
 
 
-def _make_service(tmp_path):
+def _make_service(tmp_path, with_ignore: bool = False):
     manager = AnnouncementManager(tmp_path / "announcements.json")
     heroes = HeroManager()
     heroes._items = {
@@ -174,6 +175,7 @@ def _make_service(tmp_path):
         manager,
         heroes,
         snapshot_path=tmp_path / "baike_snapshot.json",
+        ignore_path=tmp_path / "baike_ignore.json" if with_ignore else None,
     )
     return service, manager
 
@@ -986,7 +988,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
 
         # 确认流程：勾选部分（调整+新增）→ 链式执行
         class _AcceptDialog:
-            def __init__(self, candidates, parent=None):
+            def __init__(self, candidates, parent=None, ignore_service=None):
                 self.selected_ids = [jia_id, ma_id]
                 self.update_new = True
 
@@ -1008,7 +1010,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
             selected_ids = []
             update_new = False
 
-            def __init__(self, candidates, parent=None):
+            def __init__(self, candidates, parent=None, ignore_service=None):
                 pass
 
             def exec(self):
@@ -1023,7 +1025,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
 
         # 用户取消：不采集、不刷新
         class _RejectDialog:
-            def __init__(self, candidates, parent=None):
+            def __init__(self, candidates, parent=None, ignore_service=None):
                 pass
 
             def exec(self):
@@ -1277,3 +1279,67 @@ def test_build_update_candidates_identical_shows_consistent_summary() -> None:
     assert candidates[0]["summary"] == ["本地与官网内容一致"]
     assert "东方朔" in candidates[0]["local_full"]
     assert "东方朔" in candidates[0]["official_full"]
+
+
+def test_service_do_check_suppresses_ignored_heroes(tmp_path, monkeypatch) -> None:
+    """忽略武将差异 = 检查链路一致压制：diff 扣除、公告不 ready；恢复后自动回 ready。"""
+    service, manager = _make_service(tmp_path, with_ignore=True)
+    announcements = [
+        _raw_announcement(208, "https://mjs.ztgame.com/news/old.html", title="8月10日在线更新"),
+    ]
+    baike = [_hero(id=1, name="贾诩"), _hero(id=2, name="马钧")]
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: announcements)
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: baike)
+    _run_check(service)
+
+    # 新公告 → pending；百科变化 + 忽略马钧 → 公告不 ready、diff 一致扣除
+    announcements.append(
+        _raw_announcement(209, "https://mjs.ztgame.com/news/new.html", content=ANNOUNCEMENT_813)
+    )
+    baike[1] = _hero(id=2, name="马钧", position="输出")
+    ignore_entry("heroes", "2", "马钧", "modified",
+                 hero_content_hash(_hero(id=2, name="马钧", position="输出")),
+                 tmp_path / "baike_ignore.json")
+    result = _run_check(service)
+    assert result.pending_count == 1
+    assert result.ready_count == 0
+    assert result.diff["modified"] == []
+    assert result.ignored_count == 1
+
+    # 恢复忽略：下次检查公告自动回到 ready
+    remove_entry("heroes", "2", tmp_path / "baike_ignore.json")
+    result2 = _run_check(service)
+    assert result2.ready_count == 1
+    assert [entry["id"] for entry in result2.diff["modified"]] == [2]
+
+
+def test_build_update_candidates_suppresses_announcement_source_by_ignore() -> None:
+    """公告来源候选同样被忽略名单压制（官网哈希与忽略时一致才压制）。"""
+    official = _hero(id=2, name="马钧", position="输出")
+    announcement = Announcement(
+        id=209,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/new.html",
+        hero_related=True,
+        matched_heroes=[HeroChange(name="马钧", change="调整", known=True)],
+        status=AnnouncementStatus.READY,
+    )
+    ignored = {"2": IgnoreEntry(name="马钧", state="modified",
+                                hash=hero_content_hash(official), ignored_at="2026-09-29")}
+
+    candidates = build_update_candidates(
+        [announcement], [_hero(id=2, name="马钧")], [official],
+        {"added": [], "modified": [], "removed": []},
+        ignore_entries=ignored,
+    )
+    assert candidates == []
+
+    # 官网内容再变化（哈希不匹配）→ 公告来源候选重新出现
+    changed_official = _hero(id=2, name="马钧", position="爆发")
+    candidates = build_update_candidates(
+        [announcement], [_hero(id=2, name="马钧")], [changed_official],
+        {"added": [], "modified": [], "removed": []},
+        ignore_entries=ignored,
+    )
+    assert [candidate["name"] for candidate in candidates] == ["马钧"]
+    assert candidates[0]["content_hash"] == hero_content_hash(changed_official)

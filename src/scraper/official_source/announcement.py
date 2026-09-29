@@ -554,18 +554,43 @@ def hero_field_diff_summary(local: dict, official: dict) -> list[str]:
     return lines
 
 
+def _hero_is_ignored(
+    name: str,
+    hero_id: int | None,
+    official_by_name: dict[str, dict],
+    entries: dict,
+) -> bool:
+    """候选是否被忽略名单压制：官网当前哈希与忽略时一致即压制。
+
+    id 优先匹配（与 diff 层过滤同键），缺失时按名单条目名兜底；官网已无
+    该武将（removed）按 state 匹配。
+    """
+    entry = entries.get(str(hero_id)) if hero_id is not None else None
+    if entry is None:
+        entry = next((item for item in entries.values() if item.name == name), None)
+    if entry is None:
+        return False
+    official = official_by_name.get(name)
+    if official is None:
+        return entry.state == "removed"
+    return bool(entry.hash) and entry.hash == hero_content_hash(official)
+
+
 def build_update_candidates(
     announcements: list,
     local_heroes: list[dict],
     official_heroes: list[dict] | None,
     diff: dict,
+    ignore_entries: dict | None = None,
 ) -> list[dict]:
     """组装“更新武将数据”的确认候选。
 
     来源 = ready 公告解析出的武将 + diff 的 added/modified，按武将名去重。
-    每个候选：{name, hero_id|None, change, source, known, summary[]}。
+    每个候选：{name, hero_id|None, change, source, known, summary[], content_hash}。
     diff added 武将若本地已收录则降级为“调整”，与官网内容一致时直接剔除。
     official_heroes 为 None 时（官网获取失败）跳过差异摘要计算。
+    ignore_entries（百科忽略名单 heroes 段）压制对应候选——diff 来源条目已在
+    服务层 diff 过滤，这里兜底公告来源候选（官网哈希与忽略时一致才压制）。
     """
     local_by_name: dict[str, dict] = {}
     local_by_id: dict[int, dict] = {}
@@ -588,6 +613,8 @@ def build_update_candidates(
     def add(name: str, change: str, source: str, hero_id: int | None = None, known: bool = False) -> None:
         if not name:
             return
+        if ignore_entries and _hero_is_ignored(name, hero_id, official_by_name, ignore_entries):
+            return
         if name in seen:
             # 已存在：仅补充后续来源（如 diff）提供的本地未知 ID
             for candidate in candidates:
@@ -606,6 +633,8 @@ def build_update_candidates(
             "summary": [],
             "local_full": "",
             "official_full": "",
+            # 官网当前内容哈希（确认对话框"忽略此条差异"写入名单时同源）
+            "content_hash": "",
         })
 
     for announcement in announcements or []:
@@ -648,6 +677,8 @@ def build_update_candidates(
             # id 可能缺失或与本地不一致（如重名兜底命中的候选），按名字回查
             local = local_by_name.get(candidate["name"])
         official = official_by_name.get(candidate["name"])
+        if official is not None:
+            candidate["content_hash"] = hero_content_hash(official)
         if candidate["change"] == "新增" and local is None:
             if official is not None:
                 candidate["summary"] = [

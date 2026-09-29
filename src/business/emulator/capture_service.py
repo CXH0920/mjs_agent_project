@@ -43,6 +43,9 @@ class CaptureService(QObject):
     """截图业务服务"""
 
     status_changed = Signal(str)
+    # 完成/事件类瞬时消息（UI 侧短暂停留后回落默认文案）；status_changed 语义
+    # 保持"进行中/失败常驻"，两类消息分信号发射，避免 UI 侧做文案分类
+    event_status_changed = Signal(str)
     capture_completed = Signal(dict)
     capture_failed = Signal(str)
     connection_changed = Signal(str, str)  # (状态, 详情)
@@ -286,7 +289,7 @@ class CaptureService(QObject):
             return
 
         image = result
-        self.status_changed.emit(f"截图成功 ({image.width}x{image.height})")
+        self.event_status_changed.emit(f"截图成功 ({image.width}x{image.height})")
 
         # 2. OCR 和 PNG 保存进入不同后台执行器，互不等待。
         should_ocr = perform_ocr and (
@@ -520,7 +523,7 @@ class CaptureService(QObject):
         ocr_matched = result.get("outcome") == "matched"
         if ocr_matched:
             page_name = "对局攻略页面" if pending["template_name"] == "match_guide" else "武将选择页面"
-            self.status_changed.emit(f"已识别到{page_name}")
+            self.event_status_changed.emit(f"已识别到{page_name}")
 
         self.capture_completed.emit({
             "image": pending["image"],
@@ -578,7 +581,10 @@ class CaptureService(QObject):
             else:
                 self._set_connection_state("disconnected", message)
         if ok:
-            self.status_changed.emit(f"ADB 已连接：{capture.device_serial}")
+            self.event_status_changed.emit(f"ADB 已连接：{capture.device_serial}")
+        else:
+            # 失败必须常驻，否则左下角残留"正在连接模拟器..."直到下一条消息
+            self.status_changed.emit(f"连接失败：{message}")
         return ok, message
 
     def disconnect_emulator(self) -> tuple[bool, str]:
@@ -592,7 +598,7 @@ class CaptureService(QObject):
             ok, message = capture.disconnect()
         with self._session_lock:
             self._set_connection_state("disconnected")
-        self.status_changed.emit("ADB 已断开")
+        self.event_status_changed.emit("ADB 已断开")
         return ok, message
 
     def capture_screenshot(self) -> tuple[bool, object]:
@@ -620,7 +626,7 @@ class CaptureService(QObject):
             self.sync_connection_state(str(result))
             return False, str(result)
 
-        self.status_changed.emit(f"截图成功 ({result.width}x{result.height})")
+        self.event_status_changed.emit(f"截图成功 ({result.width}x{result.height})")
         return True, result
 
     def capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:

@@ -15,6 +15,13 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from PySide6.QtCore import QObject, Signal
+from src.data.baike_ignore_store import (
+    IgnoreEntry,
+    filter_ignored,
+    ignore_entry,
+    load_baike_ignores,
+    remove_entry,
+)
 from src.data.card_sync_store import (
     CardChangeRecord,
     CardSnapshot,
@@ -26,6 +33,7 @@ from src.scraper.official_source.card_baike import (
     CARD_FIELD_LABELS,
     CARD_HASH_FIELDS,
     build_card_snapshot,
+    card_content_hash,
     clean_card_detail,
     diff_cards,
     fetch_official_cards,
@@ -49,6 +57,8 @@ class CardSyncCheckResult:
     official_ok: bool = False
     error: str | None = None
     snapshot: CardSnapshot | None = None
+    # 本次检查被忽略名单过滤掉的差异条数（diff 已扣除，供 UI 显示"已忽略 N"）
+    ignored_count: int = 0
     # 首跑基线初始化产物，由 GUI 线程统一落盘（镜像公告检查的 pending_saves）
     pending_saves: list[CardSnapshot] = field(default_factory=list)
 
@@ -87,11 +97,13 @@ class CardSyncService(QObject):
         parent=None,
         snapshot_path: str | None = None,
         changes_path: str | None = None,
+        ignore_path: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._cards = card_repository
         self._snapshot_path = snapshot_path
         self._changes_path = changes_path
+        self._ignore_path = ignore_path
         self._thread: threading.Thread | None = None
         self._last_check_started_at: float | None = None
         # 最近一次检查的官网数据与快照（GUI 线程持有，供应用流程使用）
@@ -180,6 +192,32 @@ class CardSyncService(QObject):
         return {"applied": len(applied_ids), "modified": len(modified_applied), "added": len(added_applied)}
 
     # ---------------------------------------------------------------
+    # 忽略名单（哈希与快照同源，服务端计算；UI 经服务操作不触数据层）
+    # ---------------------------------------------------------------
+
+    def ignore_card(self, card_id: str, name: str, change: str) -> None:
+        """把一张卡的当前差异写入忽略名单（官网数据取最近一次检查缓存）。"""
+        official_by_id = {str(card.get("id")): card for card in self._last_official_cards}
+        official = official_by_id.get(str(card_id)) or {}
+        ignore_entry(
+            "cards", str(card_id), name, change,
+            content_hash=card_content_hash(official), path=self._ignore_path,
+        )
+
+    def ignored_card_count(self) -> int:
+        return len(load_baike_ignores(self._ignore_path).cards)
+
+    def list_ignored_cards(self) -> dict[str, IgnoreEntry]:
+        return load_baike_ignores(self._ignore_path).cards
+
+    def restore_cards(self, entry_ids: list[str] | None = None) -> None:
+        """恢复被忽略的卡牌差异；entry_ids 为 None 时全部恢复。"""
+        if entry_ids is None:
+            entry_ids = list(load_baike_ignores(self._ignore_path).cards)
+        for entry_id in entry_ids:
+            remove_entry("cards", entry_id, self._ignore_path)
+
+    # ---------------------------------------------------------------
     # 内部实现
     # ---------------------------------------------------------------
 
@@ -233,11 +271,17 @@ class CardSyncService(QObject):
             diff_cards(_snapshot_to_plain(snapshot), _snapshot_to_plain(baseline))
             if baseline.cards else dict(EMPTY_DIFF)
         )
+        # 忽略名单过滤：被压制条目在检查链路上视为不存在（基线推进不受影响）
+        official_hashes = {key: entry.hash for key, entry in snapshot.cards.items()}
+        diff, ignored_count = filter_ignored(
+            diff, official_hashes, load_baike_ignores(self._ignore_path).cards
+        )
         return CardSyncCheckResult(
             diff=diff,
             official_cards=official,
             official_ok=True,
             snapshot=snapshot,
+            ignored_count=ignored_count,
             pending_saves=pending_saves,
         )
 

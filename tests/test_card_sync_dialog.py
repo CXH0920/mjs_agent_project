@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from src.business.card_sync import CardSyncService
+from src.data.baike_ignore_store import load_baike_ignores
 from src.data.card_catalog import CardRepository
 from src.ui.data_admin.card_sync_dialog import CardSyncDialog
 
@@ -90,3 +91,37 @@ def test_dialog_marks_removed_cards_as_display_only(tmp_path, monkeypatch) -> No
     assert not (item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
     assert "点数表" in candidate["summary"][0]  # 点数提醒
     assert not dialog._apply_button.isEnabled()
+
+
+def test_dialog_ignore_current_writes_store_and_removes_item(tmp_path, monkeypatch) -> None:
+    _app()
+    repo = _make_repo(tmp_path, [
+        {"id": "2", "name": "卡2", "card_type": "战法牌",
+         "card_desc": "旧描述", "card_detail": "详解", "card_amount": 1},
+    ])
+    ignore_path = tmp_path / "ignore.json"
+    service = CardSyncService(repo, snapshot_path=tmp_path / "snap.json",
+                              changes_path=tmp_path / "changes.json",
+                              ignore_path=ignore_path)
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official(2, "旧描述")])
+    service._finalize_check(service._do_check())
+    result = service._do_check()
+    service._finalize_check(result)
+
+    dialog = CardSyncDialog(service, repo, card_point_names=[], parent=None,
+                            auto_check=False)
+    dialog._on_check_finished(result)
+    dialog._list.setCurrentRow(0)
+
+    assert dialog._ignore_button.isEnabled()
+    dialog._ignore_current()
+
+    assert dialog._list.count() == 0
+    store = load_baike_ignores(ignore_path)
+    assert store.cards["2"].state == "modified"
+    assert dialog._ignore_manager_button.text() == "已忽略 1 条（管理）"
+    # 忽略后服务层检查一致压制并计入 ignored_count
+    next_result = service._do_check()
+    assert not any(next_result.diff.values())
+    assert next_result.ignored_count == 1

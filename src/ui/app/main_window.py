@@ -27,6 +27,7 @@ from src.business.card_catalog import CardCatalogService
 from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
 from src.ui.app.app_services import AppServices
 from src.ui.app.status_chips import StatusChips
+from src.ui.data_admin.baike_ignore_manager_dialog import BaikeIgnoreManagerDialog
 from src.ui.data_admin.card_sync_dialog import CardSyncDialog
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,11 @@ from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDial
 from src.ui.library.card_management_panel import CardManagementPanel
 from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.library.hero_browser import HeroBrowser
-from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.match.match_guide_panel import (
+    WIN_RATE_MODE_2V2,
+    WIN_RATE_MODE_PEAK,
+    MatchGuidePanel,
+)
 from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO
@@ -173,13 +178,22 @@ class MainWindow(QMainWindow):
         applied = dialog.applied_count
         dialog.deleteLater()
         if applied:
-            self._reporter.show_message(
+            self._reporter.show_event_message(
                 f"卡牌官网同步已应用 {applied} 张，建议在知识库维护重建卡牌语料。"
             )
+
+    def _open_baike_ignore_manager(self) -> None:
+        """打开百科忽略名单管理（全局兜底入口，不依赖 diff 对话框可达）。"""
+        BaikeIgnoreManagerDialog(
+            self,
+            announcement_service=self._services.announcement_service,
+            card_sync_service=self._services.card_sync_service,
+        ).exec()
 
     def _connect_capture_signals(self) -> None:
         """连接截图、连接状态和轮询服务信号。"""
         self._capture_service.status_changed.connect(self._reporter.show_message)
+        self._capture_service.event_status_changed.connect(self._reporter.show_event_message)
         self._capture_service.capture_failed.connect(self._on_capture_failed)
         self._capture_service.connection_changed.connect(self._on_capture_connection_changed)
         self._capture_service.ocr_warmup_state_changed.connect(self._on_ocr_warmup_state_changed)
@@ -191,6 +205,7 @@ class MainWindow(QMainWindow):
 
     def _on_poll_hero_selection_matched(self, ocr_results: list[dict]) -> None:
         """轮询选将命中：把识别读数灌入选将推荐面板。"""
+        self._match_guide.set_win_rate_mode(WIN_RATE_MODE_2V2)
         self._recommendation.load_from_ocr(ocr_results)
 
     def _on_poll_match_guide_matched(self, task_result) -> None:
@@ -202,6 +217,11 @@ class MainWindow(QMainWindow):
         target = self._recommendation if page == "recommendation" else self._match_guide
         self._tabs.setCurrentWidget(target)
 
+    def _on_peak_board_exited(self) -> None:
+        """巅峰赛牌面退出：先置位攻略胜率榜模式，再衔接对局轮询。"""
+        self._match_guide.set_win_rate_mode(WIN_RATE_MODE_PEAK)
+        self._poll_coordinator.handle_peak_exit()
+
     def _on_capture_failed(self, message: str) -> None:
         """将截图失败原因显示在普通状态栏。"""
         self._reporter.show_message(f"截图失败：{message}")
@@ -210,7 +230,7 @@ class MainWindow(QMainWindow):
         if state == "warming":
             self._reporter.show_message("正在预热 OCR 模型...")
         elif state == "ready":
-            self._reporter.show_message("OCR 模型已就绪")
+            self._reporter.show_event_message("OCR 模型已就绪")
         elif state == "failed":
             self._reporter.show_message(f"OCR 预热失败：{detail}")
 
@@ -267,6 +287,7 @@ class MainWindow(QMainWindow):
             "announcement_check": QAction("检查公告更新", self),
             "announcement_log": QAction("公告记录", self),
             "card_sync_check": QAction("检查卡牌百科更新", self),
+            "baike_ignore_manager": QAction("百科忽略名单管理", self),
             "about": QAction("关于", self),
         }
         self._actions["exit"].setShortcut("Ctrl+Q")
@@ -293,6 +314,7 @@ class MainWindow(QMainWindow):
             "announcement_check": self._announcement_coordinator.check_announcements,
             "announcement_log": self._announcement_coordinator.open_announcement_dialog,
             "card_sync_check": self._open_card_sync,
+            "baike_ignore_manager": self._open_baike_ignore_manager,
             "about": self._show_about,
         }
         for name, callback in callbacks.items():
@@ -319,6 +341,7 @@ class MainWindow(QMainWindow):
         data_menu.addAction(self._actions["announcement_check"])
         data_menu.addAction(self._actions["announcement_log"])
         data_menu.addAction(self._actions["card_sync_check"])
+        data_menu.addAction(self._actions["baike_ignore_manager"])
         self._add_generation_submenus(data_menu)
 
         help_menu = bar.addMenu("帮助")
@@ -447,7 +470,8 @@ class MainWindow(QMainWindow):
             combo_manager=self._combo_manager,
         )
         self._peak_select.request_mumu_config.connect(self._open_mumu_config)
-        self._peak_select.board_exited.connect(self._poll_coordinator.handle_peak_exit)
+        # 巅峰赛牌面退出 → 后续对局轮询命中的是巅峰赛对局，攻略胜率切巅峰榜
+        self._peak_select.board_exited.connect(self._on_peak_board_exited)
         # 面板就绪后回填巅峰识别会话查询，供轮询路由丢弃会话中的泄漏结果
         self._poll_coordinator.set_peak_recognizing_provider(self._peak_select_recognizing)
         self._tabs.addTab(self._peak_select, "巅峰赛选将")
@@ -458,6 +482,7 @@ class MainWindow(QMainWindow):
             guide_manager=self._data.guides,
             capture_service=self._capture_service,
             win_rates_provider=self._win_rates_provider,
+            peak_win_rates_provider=self._peak_win_rates_provider,
         )
         self._match_guide.request_mumu_config.connect(self._open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")
@@ -654,7 +679,7 @@ class MainWindow(QMainWindow):
     def _update_status(self) -> None:
         """更新状态栏显示"""
         stats = self._data.get_stats()
-        self._reporter.show_message(
+        self._reporter.set_default_message(
             f"武将: {stats['heroes']}  |  相性: {stats['synergies']}  |  攻略: {stats['guides']}"
         )
 

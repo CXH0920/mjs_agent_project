@@ -11,7 +11,11 @@ from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton, QScrol
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
-from src.ui.match.match_guide_panel import MatchGuidePanel
+from src.ui.match.match_guide_panel import (
+    WIN_RATE_MODE_2V2,
+    WIN_RATE_MODE_PEAK,
+    MatchGuidePanel,
+)
 from src.ui.match.match_lineup_state import SIDE_ALLY, SIDE_ENEMY
 from src.ui.shared.capture_lock import CaptureSource
 from src.ui.shared.widgets import EmptyState, NoticeBanner, PageActionBar
@@ -51,7 +55,7 @@ def _complete_ocr(names: tuple[str, str, str, str] = ("甲", "乙", "丙", "丁"
 
 def test_panel_preserves_recognition_issue_and_clears_old_lineup() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     panel.load_from_ocr([
         {"index": 1, "name": "甲"},
@@ -72,7 +76,7 @@ def test_panel_preserves_recognition_issue_and_clears_old_lineup() -> None:
 
 def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatch) -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     panel.load_from_ocr([
         {
@@ -111,7 +115,7 @@ def test_panel_displays_unresolved_candidates_and_blocks_confirmation(monkeypatc
 
 def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     assert isinstance(panel._action_bar, PageActionBar)
     assert isinstance(panel._empty_state, EmptyState)
@@ -124,7 +128,7 @@ def test_panel_uses_shared_action_bar_and_empty_state_without_duplicate_title() 
 
 def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     panel._capture_lock.begin(CaptureSource.ADB_SAVE)
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -148,7 +152,7 @@ def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
 
 def test_result_action_menu_contains_import_save_and_clear() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     action_texts = [action.text() for action in panel._more_menu.actions() if not action.isSeparator()]
 
@@ -159,7 +163,7 @@ def test_result_action_menu_contains_import_save_and_clear() -> None:
 
 def test_splitter_and_confirmation_area_keep_stable_workspace_geometry() -> None:
     app = _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     panel.load_from_ocr([{"index": 1, "name": "甲", "resolution": "exact"}])
     panel.resize(1000, 700)
     panel.show()
@@ -189,7 +193,7 @@ def test_splitter_and_confirmation_area_keep_stable_workspace_geometry() -> None
 
 def test_match_card_segment_is_exclusive_and_exposes_semantic_state() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     card = panel._cards[0]
     hero = panel._hero_mgr.get_hero(1)
 
@@ -228,7 +232,7 @@ def test_match_card_segment_is_exclusive_and_exposes_semantic_state() -> None:
 
 def test_analysis_scrolls_vertically_and_new_ocr_returns_to_overview() -> None:
     _app()
-    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     panel.load_from_ocr(_complete_ocr())
     panel._confirm_lineup()
 
@@ -263,7 +267,7 @@ def test_missing_data_is_collapsible_and_detail_text_wraps() -> None:
         faction="魏",
         position="需要在狭窄详情区域完整换行显示的超长武将定位说明",
     )
-    panel = MatchGuidePanel(heroes, guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(heroes, guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     panel.load_from_ocr(_complete_ocr())
     panel._confirm_lineup()
 
@@ -292,3 +296,41 @@ def test_missing_data_is_collapsible_and_detail_text_wraps() -> None:
     assert all(label.wordWrap() for label in detail_labels)
     assert all(label.minimumWidth() == 0 for label in detail_labels)
     assert any("超长武将定位说明" in label.text() for label in detail_labels)
+
+
+def test_set_win_rate_mode_switches_provider_and_rerenders() -> None:
+    _app()
+    panel = MatchGuidePanel(
+        _heroes(),
+        guide_manager=GuideManager(),
+        win_rates_provider=lambda: {"甲": 55.5, "乙": 50.0},
+        peak_win_rates_provider=lambda: {"甲": 61.2},
+    )
+    panel.load_from_ocr(_complete_ocr())
+
+    assert panel._cards[0]._win_rate_label.text() == "历史单将胜率：55.5%"
+    # 巅峰榜缺"乙"：切换后显示暂无，绝不回退 2v2 数据
+    panel.set_win_rate_mode(WIN_RATE_MODE_PEAK)
+    assert panel._cards[0]._win_rate_label.text() == "历史单将胜率：61.2%"
+    assert panel._cards[1]._win_rate_label.text() == "历史单将胜率：暂无数据"
+    assert panel._win_rate_mode_btn.text() == "胜率榜：巅峰赛"
+
+    panel.set_win_rate_mode(WIN_RATE_MODE_2V2)
+    assert panel._cards[0]._win_rate_label.text() == "历史单将胜率：55.5%"
+    assert panel._win_rate_mode_btn.text() == "胜率榜：2v2"
+
+
+def test_win_rate_mode_button_toggles_and_marks_missing_board() -> None:
+    _app()
+    panel = MatchGuidePanel(
+        _heroes(),
+        guide_manager=GuideManager(),
+        win_rates_provider=lambda: {"甲": 55.5},
+        peak_win_rates_provider=lambda: {},
+    )
+
+    assert panel._win_rate_mode_btn.text() == "胜率榜：2v2"
+    panel._win_rate_mode_btn.click()
+    assert panel._win_rate_mode == WIN_RATE_MODE_PEAK
+    assert panel._win_rate_mode_btn.text() == "胜率榜：巅峰赛（榜单未导入）"
+    assert "尚未导入" in panel._win_rate_mode_btn.toolTip()

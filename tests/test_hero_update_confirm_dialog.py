@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
+from src.data.baike_ignore_store import ignore_entry, load_baike_ignores
 from src.ui.data_admin import hero_update_confirm_dialog as dialog_module
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
 
@@ -132,3 +133,56 @@ def test_summary_browser_shows_selected_candidate() -> None:
     dialog._list.setCurrentRow(0)
     assert "定位" in dialog._summary_browser.toPlainText()
     dialog.close()
+
+class _IgnoreServiceStub:
+    """AnnouncementService 忽略名单子集的桩：直写 tmp 文件，验证对话框经服务操作。"""
+
+    def __init__(self, path) -> None:
+        self._path = path
+
+    def ignore_hero(self, entry_id, name, state, content_hash="") -> None:
+        ignore_entry("heroes", entry_id, name, state, content_hash, self._path)
+
+    def ignored_hero_count(self) -> int:
+        return len(load_baike_ignores(self._path).heroes)
+
+
+def test_dialog_ignore_current_writes_heroes_section_and_updates_label(tmp_path) -> None:
+    _app()
+    service = _IgnoreServiceStub(tmp_path / "ignore.json")
+    candidates = [
+        _candidate(content_hash="hash-jiaxu"),
+        _candidate(name="东方朔", hero_id=None, change="新增", known=False,
+                   content_hash="hash-dongfangshuo"),
+    ]
+    dialog = HeroUpdateConfirmDialog(candidates, ignore_service=service)
+    assert dialog._ignore_manager_button.text() == "已忽略 0 条（管理）"
+
+    dialog._list.setCurrentRow(0)
+    assert dialog._ignore_button.isEnabled()
+    dialog._ignore_current()
+
+    assert dialog._list.count() == 1
+    assert dialog._list.item(0).text().startswith("东方朔")
+    store = load_baike_ignores(service._path)
+    assert store.heroes["161"].name == "贾诩"
+    assert store.heroes["161"].state == "modified"
+    assert store.heroes["161"].hash == "hash-jiaxu"
+    assert dialog._ignore_manager_button.text() == "已忽略 1 条（管理）"
+
+
+def test_dialog_ignore_button_disabled_without_content_hash(tmp_path) -> None:
+    """官网数据不可用（无 content_hash）的候选不可忽略——忽略后无法匹配压制。"""
+    _app()
+    service = _IgnoreServiceStub(tmp_path / "ignore.json")
+    dialog = HeroUpdateConfirmDialog([_candidate(content_hash="")], ignore_service=service)
+    dialog._list.setCurrentRow(0)
+    assert not dialog._ignore_button.isEnabled()
+
+
+def test_dialog_hides_ignore_entry_without_service() -> None:
+    """未注入忽略服务（如独立复用对话框）时隐藏忽略入口。"""
+    _app()
+    dialog = HeroUpdateConfirmDialog([_candidate()])
+    assert not hasattr(dialog, "_ignore_button")
+    assert not hasattr(dialog, "_ignore_manager_button")

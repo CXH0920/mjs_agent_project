@@ -11,6 +11,7 @@ from src.business.card_sync import (
     format_card_full_text,
 )
 from src.business.rag.audit_service import collect_stale_card_curated
+from src.data.baike_ignore_store import ignore_entry, remove_entry
 from src.data.card_catalog import CardRepository
 from src.data.card_sync_store import (
     CardChangeRecord,
@@ -359,3 +360,38 @@ def test_card_curated_stale_ignores_fresh_or_uncurated_blocks(tmp_path) -> None:
     ], ensure_ascii=False), encoding="utf-8")
 
     assert collect_stale_card_curated(tmp_path) == []
+
+
+def test_service_filters_ignored_cards_in_check(monkeypatch, tmp_path) -> None:
+    """忽略名单过滤：被忽略差异视为不存在；恢复后下次检查重现。"""
+    repo = _make_repo(tmp_path, [_make_card("1", "卡1"), _make_card("2", "卡2")])
+    snap_path = tmp_path / "snap.json"
+    ignore_path = tmp_path / "ignore.json"
+    service = CardSyncService(repo, snapshot_path=snap_path,
+                              changes_path=tmp_path / "changes.json",
+                              ignore_path=ignore_path)
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "旧描述"), _official_record(2, "旧描述")])
+    service._finalize_check(service._do_check())
+
+    # 官网两张卡的描述都变化 → 忽略卡 2 后仅剩卡 1
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "新描述"), _official_record(2, "新描述")])
+    ignore_entry("cards", "2", "卡2", "modified",
+                 card_content_hash(_official_record(2, "新描述")), ignore_path)
+    result = service._do_check()
+
+    assert [entry["id"] for entry in result.diff["modified"]] == ["1"]
+    assert result.ignored_count == 1
+
+    # 官网卡 2 再变化（哈希不匹配）→ 忽略失效自动重现
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "新描述"), _official_record(2, "更新描述")])
+    result = service._do_check()
+    assert sorted(entry["id"] for entry in result.diff["modified"]) == ["1", "2"]
+
+    # 恢复忽略后全部重现
+    remove_entry("cards", "2", ignore_path)
+    result = service._do_check()
+    assert sorted(entry["id"] for entry in result.diff["modified"]) == ["1", "2"]
+    assert result.ignored_count == 0

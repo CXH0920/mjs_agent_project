@@ -21,6 +21,13 @@ from src.data.announcement_manager import (
     load_baike_snapshot,
     save_baike_snapshot,
 )
+from src.data.baike_ignore_store import (
+    IgnoreEntry,
+    filter_ignored,
+    ignore_entry,
+    load_baike_ignores,
+    remove_entry,
+)
 from src.data.hero_timeline import append_announcement_events
 from src.scraper.official_source.announcement import (
     build_hero_snapshot,
@@ -51,6 +58,8 @@ class AnnouncementCheckResult:
     diff: dict = field(default_factory=lambda: dict(EMPTY_DIFF))
     baike_ok: bool = False
     timeline_added: int = 0
+    # 本次检查被忽略名单过滤掉的差异条数（diff 已扣除，供 UI 显示"已忽略 N"）
+    ignored_count: int = 0
     error: str | None = None
     # 以下字段由 worker 线程填充、GUI 线程消费（见 _finalize_check）：
     # 本轮百科快照（供 mark_applied 后续刷新）与需要落盘的快照集合
@@ -85,11 +94,13 @@ class AnnouncementService(QObject):
         hero_manager,
         parent=None,
         snapshot_path: str | Path | None = None,
+        ignore_path: str | Path | None = None,
     ) -> None:
         super().__init__(parent)
         self._announcements = announcement_manager
         self._heroes = hero_manager
         self._snapshot_path = snapshot_path
+        self._ignore_path = ignore_path
         self._thread: threading.Thread | None = None
         self._prepare_thread: threading.Thread | None = None
         self._last_snapshot: BaikeSnapshot | None = None
@@ -145,6 +156,29 @@ class AnnouncementService(QObject):
             save_baike_snapshot(self._last_snapshot, self._snapshot_path)
             logger.info("已刷新百科快照")
 
+    # ---------------------------------------------------------------
+    # 忽略名单（UI 经服务操作不触数据层）
+    # ---------------------------------------------------------------
+
+    def ignore_hero(
+        self, entry_id: str, name: str, state: str, content_hash: str = ""
+    ) -> None:
+        """把一名武将的当前差异写入忽略名单。"""
+        ignore_entry("heroes", entry_id, name, state, content_hash, self._ignore_path)
+
+    def ignored_hero_count(self) -> int:
+        return len(load_baike_ignores(self._ignore_path).heroes)
+
+    def list_ignored_heroes(self) -> dict[str, IgnoreEntry]:
+        return load_baike_ignores(self._ignore_path).heroes
+
+    def restore_heroes(self, entry_ids: list[str] | None = None) -> None:
+        """恢复被忽略的武将差异；entry_ids 为 None 时全部恢复。"""
+        if entry_ids is None:
+            entry_ids = list(load_baike_ignores(self._ignore_path).heroes)
+        for entry_id in entry_ids:
+            remove_entry("heroes", entry_id, self._ignore_path)
+
     def collect_base_candidates(
         self,
         local_heroes_plain: list[dict],
@@ -155,7 +189,10 @@ class AnnouncementService(QObject):
 
         diff 由调用方在 GUI 线程传入快照。
         """
-        return build_update_candidates(announcements, local_heroes_plain, None, diff)
+        return build_update_candidates(
+            announcements, local_heroes_plain, None, diff,
+            ignore_entries=load_baike_ignores(self._ignore_path).heroes,
+        )
 
     def prepare_update_candidates(
         self,
@@ -187,13 +224,18 @@ class AnnouncementService(QObject):
         diff: dict,
     ) -> None:
         try:
+            ignored_heroes = load_baike_ignores(self._ignore_path).heroes
             official_heroes = fetch_baike_heroes()
             if official_heroes is None:
-                candidates = build_update_candidates(announcements, local_heroes_plain, None, diff)
+                candidates = build_update_candidates(
+                    announcements, local_heroes_plain, None, diff,
+                    ignore_entries=ignored_heroes,
+                )
                 official_ok = False
             else:
                 candidates = build_update_candidates(
                     announcements, local_heroes_plain, official_heroes, diff,
+                    ignore_entries=ignored_heroes,
                 )
                 official_ok = True
             payload = {"candidates": candidates, "official_ok": official_ok}
@@ -261,6 +303,7 @@ class AnnouncementService(QObject):
 
         diff = dict(EMPTY_DIFF)
         baike_ok = False
+        ignored_count = 0
         pending_saves: list[BaikeSnapshot] = []
         snapshot: BaikeSnapshot | None = None
         self.progress_changed.emit("正在获取百科数据...")
@@ -292,6 +335,12 @@ class AnnouncementService(QObject):
                     _snapshot_to_plain(snapshot),
                     _snapshot_to_plain(baseline),
                 )
+                # 忽略名单过滤：被压制条目在检查链路上视为不存在（公告 ready
+                # 判定随之一致压制；时间轴数据源是公告列表，不受此过滤影响）
+                official_hashes = {key: entry.hash for key, entry in snapshot.heroes.items()}
+                diff, ignored_count = filter_ignored(
+                    diff, official_hashes, load_baike_ignores(self._ignore_path).heroes
+                )
             current_names = {str(hero.get("name") or "") for hero in current_heroes}
             self._announcements.mark_ready_if_updated(diff, current_names)
 
@@ -307,6 +356,7 @@ class AnnouncementService(QObject):
             diff=diff,
             baike_ok=baike_ok,
             timeline_added=timeline_added,
+            ignored_count=ignored_count,
             snapshot=snapshot,
             pending_saves=pending_saves,
         )

@@ -155,7 +155,7 @@ def test_recommendation_current_recognition_requests_ocr(monkeypatch) -> None:
 
 def test_match_guide_panel_starts_in_empty_state() -> None:
     _app()
-    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     assert len(panel._cards) == 4
     assert [card._hero_id for card in panel._cards] == [0, 0, 0, 0]
@@ -168,7 +168,7 @@ def test_match_guide_panel_starts_in_empty_state() -> None:
 def test_match_guide_empty_state_matches_recommendation_actions() -> None:
     app = _app()
     recommendation = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
-    guide = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    guide = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     assert guide._recognize_btn.property("uiRole") == recommendation._recognize_btn.property("uiRole")
     assert guide._empty_recognize_btn.property("uiRole") == recommendation._empty_recognize_btn.property("uiRole")
@@ -198,7 +198,7 @@ def test_match_guide_current_recognition_requests_ocr(monkeypatch) -> None:
     service.capture = object()
     requests: list[dict] = []
     monkeypatch.setattr(service, "do_capture", lambda **kwargs: requests.append(kwargs))
-    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), capture_service=service, win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), capture_service=service, win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     loaded: list[list[dict]] = []
     monkeypatch.setattr(panel, "load_from_ocr", loaded.append)
 
@@ -215,7 +215,7 @@ def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch)
     recommendation = RecommendationPanel(
         _hero_manager(), SynergyManager(), GuideManager(), capture_service=service
     )
-    match_guide = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), capture_service=service, win_rates_provider=lambda: {})
+    match_guide = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), capture_service=service, win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     recommendation_loaded: list[list[dict]] = []
     match_guide_loaded: list[list[dict]] = []
     monkeypatch.setattr(recommendation, "load_from_ocr", recommendation_loaded.append)
@@ -231,7 +231,7 @@ def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch)
 def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -> None:
     _app()
     monkeypatch.setattr(HeroSkillDialog, "exec", lambda self: 0)
-    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(_hero_manager(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     card = panel._cards[0]
     card.set_hero(_hero_manager().get_hero(1))
     selected: list[int] = []
@@ -275,7 +275,7 @@ def test_match_guide_generates_summary_after_explicit_lineup_confirmation() -> N
         ),
         4: HeroGuide(hero_id=4, counter_strategy="限制丁"),
     }
-    panel = MatchGuidePanel(heroes, guide_manager=guides, win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(heroes, guide_manager=guides, win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
     panel.load_from_ocr([
         {"index": index, "name": name}
         for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
@@ -328,7 +328,7 @@ def test_match_guide_auto_assigns_sides_from_positions() -> None:
         index: Hero(id=index, name=name, faction="魏")
         for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
     }
-    panel = MatchGuidePanel(heroes, guide_manager=GuideManager(), win_rates_provider=lambda: {})
+    panel = MatchGuidePanel(heroes, guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
 
     panel.load_from_ocr([
         {"index": 1, "name": "甲", "team": "楚军"},
