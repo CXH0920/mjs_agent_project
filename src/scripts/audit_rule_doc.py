@@ -213,19 +213,26 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
     except OSError as exc:
         issues.append({'level': 'WARN', 'msg': '数据段一致性校验失败：%s' % exc})
     else:
-        diffs = srs.diff_sections(doc_text, srs.load_data(root))
-        full = [d for d in diffs if d['kind'] == 'full']
-        cand = [d for d in diffs if d['kind'] == 'candidate']
-        chk = [d for d in diffs if d['kind'] == 'checkpoint']
-        if full:
-            issues.append({'level': 'WARN', 'msg': '数据段一致性：%d 处全自动差异（段：%s）；请运行 src/scripts/sync_rule_stats.py 确认后 --apply'
-                           % (len(full), '、'.join(sorted({d['section'] for d in full})))})
-        if cand:
-            issues.append({'level': 'INFO', 'msg': '数据段候选：%d 处半自动候选差异（段：%s），需人工确认后 --apply-candidates'
-                           % (len(cand), '、'.join(sorted({d['section'] for d in cand})))})
-        if chk:
-            issues.append({'level': 'INFO', 'msg': '数据段校验点：%d 处数字不一致（段：%s），需人工核对'
-                           % (len(chk), '、'.join(sorted({d['section'] for d in chk})))})
+        # 数据段比对独立降级：数据文件"语法合法但结构畸形"（顶层类型错、
+        # 字段值非数字等）只降级 WARN，不拖垮其余校验段与快照刷新
+        # （maintain_rag 的快照路径依赖此隔离）。只兜统计函数处理畸形数据
+        # 形状会抛的异常，编程错误仍向上抛。
+        try:
+            diffs = srs.diff_sections(doc_text, srs.load_data(root))
+            full = [d for d in diffs if d['kind'] == 'full']
+            cand = [d for d in diffs if d['kind'] == 'candidate']
+            chk = [d for d in diffs if d['kind'] == 'checkpoint']
+            if full:
+                issues.append({'level': 'WARN', 'msg': '数据段一致性：%d 处全自动差异（段：%s）；请运行 src/scripts/sync_rule_stats.py 确认后 --apply'
+                               % (len(full), '、'.join(sorted({d['section'] for d in full})))})
+            if cand:
+                issues.append({'level': 'INFO', 'msg': '数据段候选：%d 处半自动候选差异（段：%s），需人工确认后 --apply-candidates'
+                               % (len(cand), '、'.join(sorted({d['section'] for d in cand})))})
+            if chk:
+                issues.append({'level': 'INFO', 'msg': '数据段校验点：%d 处数字不一致（段：%s），需人工核对'
+                               % (len(chk), '、'.join(sorted({d['section'] for d in chk})))})
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:
+            issues.append({'level': 'WARN', 'msg': '数据段一致性校验失败：%s' % exc})
 
     # ---- 汇总 ----
     if update_snapshot:

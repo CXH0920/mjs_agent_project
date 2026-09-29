@@ -164,6 +164,23 @@ def test_cross_ref_skipped_when_sources_missing(tmp_path) -> None:
     assert not _has(issues, "未知卡牌编号")
 
 
+def test_data_section_malformed_json_degrades_to_warn(tmp_path) -> None:
+    doc, snap = _baseline(
+        tmp_path, lines=["## 0.2 武将体系", "| 武将数 | 占位 |", ""] + BASE_DOC
+    )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    # 合法 JSON 但结构畸形（顶层应为 list 却是 dict）：load_data 的降级拦不住，
+    # 异常在 diff_sections 的统计函数（h.get）里暴露
+    (data_dir / "heroes.json").write_text('{"heroes": []}', encoding="utf-8")
+
+    issues = _run(doc, snap, tmp_path)
+
+    # 第 10 段独立降级：WARN 而非崩溃，其余校验段照常返回
+    assert _has(issues, "数据段一致性校验失败")
+    assert not [i for i in issues if i["level"] == "ERROR"]
+
+
 def test_update_snapshot_flag_refreshes_file(tmp_path) -> None:
     doc, snap = _baseline(tmp_path)
     before = load_snapshot(snap)["doc_md5"]
