@@ -117,9 +117,6 @@ class WhitelistConfigDialog(QDialog):
         self._hero_names = hero_names
         self._reset_ocr_cache = reset_ocr_cache
         self._overrides = load_overrides()
-        self._selected_raw = ""
-        self._selected_source = ""
-        self._selected_suggestion = ("", "")
 
         layout = QVBoxLayout(self)
         layout.addWidget(PageHeader(
@@ -232,8 +229,6 @@ class WhitelistConfigDialog(QDialog):
         if not data:
             return
         raw_name, source, target, category = data
-        self._selected_raw = raw_name
-        self._selected_suggestion = (source, target)
         # 仅 A+/A 类预填建议对；B/C 由用户自行填写（或不允许）
         self._source_edit.setText(source if category in ("A+", "A") else "")
         self._target_edit.setText(target if category in ("A+", "A") else "")

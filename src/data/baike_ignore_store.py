@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BAIKE_IGNORE_FILE = DEFAULT_DATA_DIR / "baike_ignore.json"
 
-VALID_KINDS = ("heroes", "cards")
-
 
 class IgnoreEntry(BaseModel):
     """单条被忽略的差异：state + hash 共同决定"同一差异"的判定。"""

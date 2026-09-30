@@ -56,7 +56,6 @@ class HeroClassificationRepository(JsonRepository):
         self._hero_categories: dict[str, list[str]] = {}
         self._version = "1.0"
         self._source = ""
-        self._updated_at = ""
         self._note = ""
         # 上次成功持久化/加载的内存快照：保存失败时回滚到该状态（显式保存模式的 #11）
         self._saved_snapshot: tuple[list[ClassificationCategory], dict[str, str], dict[str, list[str]]] | None = None
@@ -81,7 +80,6 @@ class HeroClassificationRepository(JsonRepository):
         self._hero_categories = {}
         self._version = str(root.get("version", "1.0"))
         self._source = str(root.get("source", "") or "")
-        self._updated_at = str(root.get("updated_at", "") or "")
         self._note = str(root.get("note", "") or "")
 
         cat_names: set[str] = set()
@@ -223,5 +221,4 @@ class HeroClassificationRepository(JsonRepository):
             if self._saved_snapshot is not None:
                 self._restore(self._saved_snapshot)
             raise
-        self._updated_at = payload["updated_at"]
         self._saved_snapshot = self._snapshot()

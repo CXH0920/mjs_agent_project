@@ -24,7 +24,6 @@ class PollTaskState:
 
     active: bool = False
     cooldown_until: datetime | None = None
-    last_match_time: datetime | None = None
     consecutive_failures: int = 0
 
 
@@ -304,7 +303,6 @@ class OcrService(QObject):
         if seconds > 0:
             now = datetime.now()
             task.cooldown_until = now + timedelta(seconds=seconds)
-            task.last_match_time = now
             logger.debug("轮询任务进入冷却: %s, %.1f 秒", task_name, seconds)
 
     def clear_task_cooldown(self, task_name: str) -> None:
