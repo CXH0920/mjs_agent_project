@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作
-> 文档日期：2026-09-21
+> 文档日期：2026-09-29
 
 ---
 
@@ -36,6 +36,7 @@ src/data/
 ├── hero_timeline.py              # 武将变更时间轴：读写 / 增量追加 / 版本戳（data/mjs_adjustments.json）
 ├── card_catalog.py               # CardRepository / CardFieldSchemaRepository / CardAnnotationRepository + CardViewModel
 ├── card_sync_store.py            # 卡牌百科快照与变更记录持久化（CardSnapshot / CardChangeRecord / load/save/append）
+├── baike_ignore_store.py         # 百科 diff 忽略名单（data/baike_ignore.json，武将/卡牌两段覆盖式保存）
 ├── card_points_repository.py     # 卡牌点数花色维护（data/card_points.json，原 xlsx sheet1 迁移）
 ├── equip_attrs_repository.py     # 装备属性维护（data/equip_attrs.json，原 xlsx sheet2 迁移）
 ├── hero_classification_repository.py # 武将分类/克制链/武将归类维护（data/hero_classification.json）
@@ -47,6 +48,8 @@ src/data/
 ```
 
 四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。2026-09 起（241e965），`hero_classification_repository.py` 在爬虫更新 `heroes.json` 后，归类/专属牌名单随刷新入口同步加载，无需手动重建语料。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
+
+百科 diff 忽略名单 `baike_ignore_store.py`（0007fc4 新增）管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化。`BaikeIgnoreStore` 模型含 `version` 与 `heroes` / `cards` 两段 `dict[str, IgnoreEntry]`，覆盖式保存；`IgnoreEntry` 以 `state`（added/modified/removed）+ `hash` 共同定位"同一差异"，`filter_ignored()` 在检查链路上过滤被压制条目——`modified/added` 需 state 匹配且 hash 等于当前官网哈希（官网内容再变即重现），`removed` 仅按 state 匹配（官网再上线会以 `added` 出现，state 不匹配自然重现）。忽略不影响基线快照推进，也不影响武将时间轴（时间轴数据源是公告列表，与 diff 无关）。
 
 武将变更时间轴 `hero_timeline.py` 维护 `data/mjs_adjustments.json`（顶层 `init_imported_at` / `init_source_last_updated` / `corpus_base_date` + `events` 列表），由 `import_hero_adjustments.py` 全量注入与 `AnnouncementService` 公告捕获增量追加；`build_rag_corpus.py` / `build_guide_corpus.py` 据此给语料块打 `as_of` / `is_current` 版本戳，`rag_audit.py` / `audit_service.py` 据此审计 `heroes.json` 疑未同步武将。
 
@@ -147,7 +150,7 @@ class DataManager(Generic[V_co]):
 
 ### 3.3 DataFacade 门面
 
-`DataFacade` 聚合三个 Manager，提供统一的数据访问入口：
+`DataFacade` 定义在 `facade.py`（审计 F3 自 `manager.py` 拆出——门面须顶层 import 三个 Manager 子类，而子类继承 `manager.DataManager`，同文件会形成"基类模块 ↔ 子类"循环依赖，此前靠 `__init__` 内延迟导入压制），聚合三个 Manager，提供统一的数据访问入口：
 
 ```python
 facade = DataFacade()                          # 默认 heroes/synergies/guides 文件
@@ -159,6 +162,8 @@ stats  = facade.get_stats()                    # {"heroes": N, "synergies": N, "
 `load_all()` 内部对每个 Manager 执行 `load()` 后将 `DataIssue` 汇总到 `LoadReport`，随后 `_validate_references()` 校验跨实体引用：相性双方 ID、攻略归属 ID、攻略 `synergizes_with` 列表中的武将 ID 都必须存在于英雄库。失效引用仅记入报告（`kind="missing_reference"`），不在加载时删除内存数据；报告持久化到 `facade.last_load_report`。
 
 `from_managers()` 使用 `__new__` 跳过 `__init__` 的默认构造，直接注入已有 Manager，供测试与业务层注入 mock。
+
+`load_all()` 返回的 `LoadReport` 与 `DataIssue` 定义在 `issues.py`（审计 F3 自 `manager.py` 拆出——`json_repository`、各仓储与 business 层均需构造 `DataIssue`，留在基类模块会形成底层工具反向依赖基类的循环依赖，此前靠 `manager` 内延迟导入压制）。`manager.py` 回归为管理器基类与默认路径常量所在。
 
 ### 3.4 相性与配队的双向归一
 
@@ -356,6 +361,39 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 
 **哈希口径**：`card_baike.py` 的 `CARD_HASH_FIELDS = ("name", "card_type", "card_desc", "card_detail")` 四件套；`card_amount`（官网不提供）与 `img_url` / `story_source` / `design_idea` / `display_priority` / `status`（本地不存）均不入哈希。`normalize_text()` 去标签/HTML 解码/去空白/全半角统一，`clean_card_detail()` 去 HTML 但保留分段结构。
 
+### 3.13 百科 diff 忽略名单（`baike_ignore_store.py`）
+
+0007fc4 新增，管理 `data/baike_ignore.json`——用户显式压制的百科差异条目。忽略 = 该差异条目在检查链路上视为不存在（服务层 diff 产出即过滤，公告 ready 判定随之一致压制，恢复忽略后下次检查自动重现）。**不影响基线快照推进，也不影响武将时间轴**——时间轴数据源是公告列表，与 diff 无关。
+
+**数据模型**：
+
+```python
+class IgnoreEntry(BaseModel):
+    name: str = ""            # 展示名
+    state: str = ""           # added / modified / removed
+    hash: str = ""            # 忽略时的官网内容哈希；removed 时官网侧无哈希可比
+    ignored_at: str = ""      # ISO 时间戳
+
+class BaikeIgnoreStore(BaseModel):
+    version: int = 1
+    heroes: dict[str, IgnoreEntry] = {}   # 键为武将 ID
+    cards:  dict[str, IgnoreEntry] = {}   # 键为卡牌 ID
+```
+
+**两段覆盖式保存**：`heroes`（武将，由 `AnnouncementService` 操作）与 `cards`（卡牌，由 `CardSyncService` 操作）共用同一文件，各占一段；`ignore_entry()` / `remove_entry()` 均为 load-modify-save 覆盖式写入（非追加），与 `card_snapshot.json` / `baike_snapshot.json` 的快照推进相互独立。
+
+**`filter_ignored()` 过滤矩阵**（核心判定逻辑）：
+
+| 差异状态 | 忽略生效条件 | 重新出现条件 |
+|----------|-------------|-------------|
+| `modified` | `entry.state == "modified"` 且 `entry.hash == 当前官网哈希` | 官网内容再变（哈希不等） |
+| `added` | `entry.state == "added"` 且 `entry.hash == 当前官网哈希` | 官网内容再变（哈希不等） |
+| `removed` | `entry.state == "removed"`（官网侧无哈希可比） | 官网再上线（以 `added` 出现，state 不匹配自然重现） |
+
+**降级策略**：`load_baike_ignores()` 在文件缺失或解析失败时返回空名单（无忽略），不中断检查流程。
+
+> **设计思路：** 忽略名单以 `state + hash` 定位"同一差异"而非仅凭 ID——同一武将/卡牌在忽略期间若官网再次变化，新差异不会被误压制。`removed` 状态因官网侧无内容可哈希，退化为仅按 state 匹配，安全性由"官网再上线必然以 added 出现"的 diff 语义保证。覆盖式保存（非追加）使文件恒定大小，与快照语义一致。
+
 ---
 
 ## 四、关键代码片段
@@ -547,6 +585,20 @@ class SpecialCardRepository(JsonRepository):
 | 模型 | `CardSnapshot` / `CardSnapshotEntry` / `CardChangeRecord` |
 | 常量 | `DEFAULT_CARD_SNAPSHOT_FILE` / `DEFAULT_CARD_CHANGES_FILE` |
 
+### 百科 diff 忽略名单（`baike_ignore_store.py` 模块级函数）
+
+| 函数 | 说明 |
+|------|------|
+| `load_baike_ignores(path=None)` | 读取忽略名单；文件缺失或损坏返回空名单（降级为无忽略） |
+| `save_baike_ignores(store, path=None)` | 原子写入忽略名单 |
+| `ignore_entry(kind, entry_id, name, state, content_hash="", path=None)` | 写入一条忽略（load-modify-save 覆盖式，UI 忽略按钮调用） |
+| `remove_entry(kind, entry_id, path=None)` | 恢复一条忽略（下次检查该差异将重新显示） |
+| `filter_ignored(diff, official_hashes, entries)` | 过滤 diff 三态中被忽略的条目，返回 `(过滤后 diff, 被过滤条数)` |
+| 模型 | `IgnoreEntry`（`name`/`state`/`hash`/`ignored_at`）/ `BaikeIgnoreStore`（`version`/`heroes`/`cards` 两段） |
+| 常量 | `DEFAULT_BAIKE_IGNORE_FILE` / `VALID_KINDS = ("heroes", "cards")` |
+
+> 业务服务不直接导入本模块——`AnnouncementService`（武将段）与 `CardSyncService`（卡牌段）各封装一组方法（`ignore_hero` / `ignored_hero_count` / `list_ignored_heroes` / `restore_heroes`；`ignore_card` / `ignored_card_count` / `list_ignored_cards` / `restore_cards`），UI 经服务操作不触数据层。
+
 ---
 
 ## 六、模块间关系
@@ -555,11 +607,11 @@ class SpecialCardRepository(JsonRepository):
 |------|------|------|
 | 依赖 | `pydantic` / Python 标准库 | 模型校验、JSON/CSV/tempfile/csv/math 等 |
 | 被调用方 | `src/scraper/` | 爬虫采集写入数据文件后通知 Manager 重新加载；`src/scraper/official_source/announcement.py` 用 `load_timeline()` / `normalize_change_type()` 归一变更类型；`src/scraper/official_source/card_baike.py` 提供卡牌百科抓取清洗与逐卡 diff 基元 |
-| 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存；索引精化通过 `DataFacade` 读取 heroes/synergies/guides；`announcement_service` 用 `append_announcement_events()` 落地 hero_related 公告变更；`audit_service` 用 `hero_last_change()` / `load_timeline()` 审计 `heroes.json` 疑未同步武将，并调用 `collect_stale_curated()`（技能块精化时效，curated.updated_at 对比变更时间轴）与 `collect_stale_card_curated()`（卡牌块精化时效，curated.updated_at 对比 card_changes.json）；`CardSyncService` 用 `load_card_snapshot` / `save_card_snapshot` / `append_card_change` 持久化卡牌快照与变更记录 |
+| 被调用方 | `src/business/` | 业务服务在子进程结束后调用 `manager.load()` 刷新缓存；索引精化通过 `DataFacade` 读取 heroes/synergies/guides；`announcement_service` 用 `append_announcement_events()` 落地 hero_related 公告变更，并通过 `ignore_hero` / `ignored_hero_count` / `list_ignored_heroes` / `restore_heroes` / `filter_ignored()` 操作武将忽略名单；`audit_service` 用 `hero_last_change()` / `load_timeline()` 审计 `heroes.json` 疑未同步武将，并调用 `collect_stale_curated()`（技能块精化时效，curated.updated_at 对比变更时间轴）与 `collect_stale_card_curated()`（卡牌块精化时效，curated.updated_at 对比 card_changes.json）；`CardSyncService` 用 `load_card_snapshot` / `save_card_snapshot` / `append_card_change` 持久化卡牌快照与变更记录，并通过 `ignore_card` / `ignored_card_count` / `list_ignored_cards` / `restore_cards` / `filter_ignored()` 操作卡牌忽略名单 |
 | 被调用方 | `src/rag/` | `src/rag/indexer.py` 引用 `CORPUS_BASE_DATE` 统一检索基线 |
 | 被调用方 | `src/ui/` | UI 层通过 `DataFacade` / 各 Manager / 各 Repository 读取与写入数据 |
 | 被调用方 | `src/scripts/build_*_corpus.py` | RAG 语料构建脚本读取四个维护仓库（card_points/equip_attrs/hero_classification/special_cards）JSON 源生成向量库；`build_rag_corpus.py` / `build_guide_corpus.py` 通过 `hero_timeline` 的 `stamp_hero_block` / `stamp_guide_block` 给语料块打版本戳 |
 | 被调用方 | `src/scripts/import_hero_adjustments.py` | 从 A 类全量快照注入 `mjs_adjustments.json` 初始化 `hero_timeline`，并回填历史公告 |
-| 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` / `card_sync_store` 统一委托此函数原子写盘 |
-| 内部依赖 | `src/data/manager.DataIssue` | `json_repository` 的 `_issue()` 统一使用 `DataIssue` 结构收集加载问题 |
+| 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` / `card_sync_store` / `baike_ignore_store` 统一委托此函数原子写盘 |
+| 内部依赖 | `src/data/issues.DataIssue` | `json_repository` 的 `_issue()` 与各仓储、`facade._add_reference_issue()` 统一使用 `DataIssue` 结构收集加载问题（审计 F3 自 `manager.py` 拆至 `issues.py`） |
 | 被调用方 | `src/data/combo_manager` | `src/scripts/import_combos.py` 调用 `save_manual_combo()` 持久化手工配队 |

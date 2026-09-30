@@ -12,9 +12,10 @@
 
 ```
 CaptureService.do_capture() / do_capture_from_file()
-  -> _execute_capture() / _execute_file_ocr()
-  -> CaptureService.submit_ocr_task()
-    -> OcrWorker.submit(OcrTask)
+  -> capture_screenshot()（_adb_executor 后台串行）/ _execute_file_ocr()
+  -> _on_background_capture_ready() / _handle_capture_result()
+  -> CaptureService._queue_capture_ocr() -> submit_ocr_task()
+    -> OcrWorker.submit(OcrTask)                              [FIFO 串行队列]
        -> OcrWorker._execute()
           -> TemplateManager(template_name).match()
           -> GeneralRecognizer.recognize()                      [命中且需要识别时]
@@ -22,7 +23,9 @@ CaptureService.do_capture() / do_capture_from_file()
   -> capture_completed -> RecommendationPanel / MainWindow
 ```
 
-轮询：`OcrService.start_poll()` -> `_schedule_poll()` -> `poll_tick` -> `PollCoordinator._on_poll_tick()`。协调器在短生命周期后台线程执行 `AdbCapture.screencap_full()`，随后为每个到期页面提交 `CaptureService.submit_ocr_task()`；其在 GUI 线程过滤过期结果、调用 `complete_poll()`，再通过 `poll_result_ready` 通知主窗口更新界面。`hero_selection` 命中会重置并激活一次 `match_guide`；后者命中后立即停用，直到下次选将命中才可再次执行。前置条件缺失会暂停，其他失败指数退避。
+轮询：`OcrService.start_poll()` -> `_poll_timer` 周期触发 `poll_tick` -> `PollCoordinator._on_poll_tick()`。协调器在短生命周期后台线程执行 `CaptureService.capture_for_poll()`（内部 `AdbCapture.screencap_full(log_success=False)`），随后为每个到期页面提交 `CaptureService.submit_ocr_task()`（`match_guide` 允许模板未命中兜底 OCR，`allow_result_reuse=True`）；其在 GUI 线程过滤过期结果、调用 `complete_poll()`，再通过 `poll_result_ready` 通知主窗口更新界面。`hero_selection` 命中会重置并激活一次 `match_guide`；后者命中后立即停用，直到下次选将命中才可再次执行，且兜底/常规读数须过质量门槛（确认名称数 >= `MATCH_GUIDE_MIN_CONFIRMED_NAMES=3`，兜底读数另要求完整直读且置信度 >= 0.95）。前置条件缺失会暂停，其他失败指数退避。
+
+闲置自动暂停：轮询拍在后台线程对整帧计算 `frame_fingerprint.compute_fingerprint()`（32×18 灰度降采样）并以 `frames_match()`（MAD < 3.0）做相邻帧比较；`_track_idle_watch()` 统计"健康无命中且画面未变"的连续拍数，达到 `IDLE_PAUSE_MINUTES=5` 分钟即调用 `OcrService.pause_for_idle()` 进入 `idle_paused` 态（停轮询、保留 ADB 连接），用户交互经 `resume_from_idle_pause()` 恢复。开关由 `mumu_ocr_poll_idle_pause`（默认开）控制。帧指纹与 `OcrWorker` 的页面指纹（ROI 级 16×16，服务于 OCR 结果复用）是两套独立机制。
 
 > **手动识别误读轮询配置修复（2026-09-15）**：`CaptureService` 删除 `is_poll` 全局配置误读路径、`POLL_MATCH_COOLDOWN_SECONDS` 与 `_poll_cooldown_until`（180 秒手动识别冷却）；`_queue_capture_ocr()` 不再接收 `is_poll` 参数，`do_capture()` 不再传递该参数。真实轮询冷却改为 `OcrService.set_task_cooldown` 按页面粒度管理，不再与手动识别耦合。
 
@@ -68,20 +71,26 @@ AdbCapture.connect()
 ### 1.2 全屏截图
 
 ```
-AdbCapture.screencap_full(log_success=True)
+AdbCapture.screencap_full(*, log_success=True)
   -> [未连接] return (False, "尚未连接，请先连接模拟器")
   -> for attempt in 1..3:                                     [最多 3 次尝试，间隔 0.15s]
-     -> subprocess.run([adb, "-s", serial, "exec-out", "screencap", "-p"],
-                       capture_output=True, timeout=15)        [ADB 截图命令]
-     -> [returncode != 0]
-        -> _is_device_unavailable(stderr)                      [offline/transport closed 等标记]
-        -> [命中] _invalidate_connection()                     [清除失效会话]
-        -> return (False, "screencap 失败: ...")                [不重试]
-     -> [stdout 为空] error = "截图返回空数据"
-     -> load_png_image_bytes(stdout)                          [格式/体积/像素校验 + 强制解码]
-        -> 6 MiB 上限 → 实际 PNG 格式 → 4,000,000 像素上限
-        -> Image.verify() → 重新打开 → load() → copy()
-     -> [解析成功] log_success 时记录 ADB 命令耗时与 PNG 解码耗时
+     -> _capture_and_decode()                                 [单轮截图尝试，按模式分流]
+        -> [screenshot_mode 为 auto/raw] _run_screencap([])   [raw 模式：screencap 无 -p]
+           -> subprocess.run([adb, "-s", serial, "exec-out", "screencap"],
+                             capture_output=True, timeout=15)
+           -> [returncode != 0]
+              -> _is_device_unavailable(stderr)                [offline/transport closed 等标记]
+              -> [命中] _invalidate_connection()               [清除失效会话]
+              -> return (False, "screencap 失败: ...")         [不重试]
+           -> _decode_raw_screencap(payload)
+              -> 16 字节头解析宽高/像素格式（RGBA_8888/RGBX_8888）
+              -> 尺寸/字节数校验 -> np.frombuffer -> cv2.cvtColor(RGBA2RGB) -> PIL Image
+           -> [raw 解析失败且 mode=auto] 回退 PNG 模式；mode=raw 直接失败
+        -> [PNG 模式] _run_screencap(["-p"])
+           -> load_png_image_bytes(payload)                    [格式/体积/像素校验 + 强制解码]
+              -> 6 MiB 上限 → 实际 PNG 格式 → 4,000,000 像素上限
+              -> Image.verify() → 重新打开 → load() → copy()
+     -> [解析成功] log_success 时记录 ADB 命令耗时与图像解码耗时（含实际生效模式）
         -> return (True, image)
      -> [解析失败或空] 未到上限则 warning + sleep(0.15) 后重试
   -> return (False, error)
@@ -89,11 +98,13 @@ AdbCapture.screencap_full(log_success=True)
 
 | 函数 | 文件 | 调用方 | 说明 |
 |------|------|--------|------|
-| `screencap_full(log_success=True)` | `adb_screen.py` | `CaptureService._execute_capture()`、轮询线程 | ADB 截屏→PIL Image；关键字参数，轮询传 `False` 抑制成功日志 |
-| `load_png_image_bytes(data)` | `image_validation.py` | `screencap_full()` | ADB 返回数据的格式、体积、像素校验 |
-| `screencap_raw(log_success=True)` | `adb_screen.py` | 轮询指纹检测 | 与 screencap_full 同流程，但返回原始 PNG bytes（不校验/不解析），用于 frame_fingerprint 降采样指纹计算 |
+| `screencap_full(*, log_success=True)` | `adb_screen.py` | `CaptureService.capture_screenshot()`、`_capture_for_poll()`（轮询传 `False` 抑制成功日志） | 截屏→PIL Image；关键字参数 |
+| `_capture_and_decode()` | `adb_screen.py` | `screencap_full()` | 按 `screenshot_mode`（auto/raw/png，构造时来自 `mumu_screenshot_mode`）分流 raw/PNG |
+| `_run_screencap(extra_args)` | `adb_screen.py` | `_capture_and_decode()` | 执行单条 `exec-out screencap` 命令并计时 |
+| `_decode_raw_screencap(data)` | `adb_screen.py` | `_capture_and_decode()` | Android raw 帧（头 + RGBA/RGBX 裸像素）→ PIL Image |
+| `load_png_image_bytes(data)` | `image_validation.py` | `_capture_and_decode()` PNG 分支 | ADB 返回数据的格式、体积、像素校验 |
 
-> **说明：** 使用 `exec-out` 模式而非 `shell screencap`，直接输出二进制到 stdout，不经过设备 shell 解析。
+> **说明：** 使用 `exec-out` 模式而非 `shell screencap`，直接输出二进制到 stdout，不经过设备 shell 解析。auto 模式优先 raw 帧（免 PNG 编解码），raw 解析失败自动回退 PNG。
 
 ---
 
@@ -191,14 +202,21 @@ TemplateManager.match(image_screenshot, threshold=0.8)
   -> _local_search_region(gray, base_scale)
      -> [有框选坐标] 原始位置按 base_scale 缩放 + 20% 内边距裁局部
      -> [无坐标（旧模板）] return None
+  -> [时序复验] 上一轮最佳缩放 history_scale 存在且 != base_scale 时
+     -> _local_search_region(gray, history_scale) -> _match_at_scale(gray, history_scale, cached_region)
+     -> [>= threshold] 策略 cached_local，直接返回
   -> _match_at_scale(gray, base_scale, region)
      -> cv2.resize(template, INTER_AREA) -> cv2.matchTemplate(TM_CCOEFF_NORMED)
      -> cv2.minMaxLoc(result)                                  [该比例最佳匹配]
   -> [base >= threshold] return (True, base_value)
      -> 策略 base_local（局部）/ base_full（旧模板全屏）
-  -> [未命中] 对剩余比例逐个 _match_at_scale 全屏匹配
-     -> 取所有比例中最高 max_val，并记录对应 scale
-     -> 策略 fallback_full_multiscale（新模板）/ fallback_multiscale（旧模板）
+  -> [未命中且局部可用] 局部多尺度：其余候选比例逐个 _match_at_scale 局部匹配
+     -> [命中] 策略 fallback_local_multiscale
+  -> [仍未命中] 全图兜底：先对全部候选缩放做 1/4 降采样粗扫
+     -> _match_at_coarse_scale(coarse_gray, scale * _COARSE_SCAN_RATIO)
+     -> [粗扫最优分 >= threshold - margin] 仅该最优缩放回原尺寸全图精扫
+        -> 策略 fallback_full_multiscale（新模板）/ fallback_multiscale（旧模板）
+     -> [粗扫即判否] 策略 coarse_reject_multiscale（未发生原尺寸全图扫描）
   -> [全部比例大于截图] return (False, 0.0)
   -> [max_val >= threshold] return (True, max_val)
   -> [default] return (False, max_val)
@@ -254,14 +272,14 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
-| `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | ROI 缩放裁剪、`_recognize_prepared_batch()`、`_resolve_name_evidence()`、`_resolve_page_names()` |
+| `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | ROI 缩放裁剪、`_recognize_prepared_batch()`、`_resolve_name_evidence()`、`_resolve_page_names()`、`_recheck_unresolved_slots()` |
 | `_recognize_match_guide(image)` | `recognizer.py` | `recognize()` | 名称/阵营分开批量识别、逐槽回退、`_normalize_team()` |
-| `_recognize_prepared_batch(slots, kind, evidence_by_slot=None)` | `recognizer.py` | 两类页面入口 | `_build_batch_canvas()`、`_engine.ocr()`、框中心映射、`_requires_name_batch_fallback()` |
+| `_recognize_prepared_batch(slots, kind, evidence_by_slot=None, engine=None)` | `recognizer.py` | 两类页面入口、B2 复核 | `_build_batch_canvas()`、`engine.ocr()`（缺省用生产 `_engine`）、框中心映射、`_requires_name_batch_fallback()` |
 | `_append_single_name_evidence(...)` | `recognizer.py` | 两类页面入口 | `_recognize_prepared_single()`、`_preprocess_plain_roi()` |
 | `_requires_slot_recheck(result, text, confidence)` | `recognizer.py` | 两类页面入口 | 空文本 / 置信度 < 0.8 / 未确认状态判定 |
 | `_resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | `_parse_name_evidence()`、`_resolve_multi_candidate_similarity()` |
 | `_resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面候选排除、重复确认结果回退 |
-| `warmup()` / `warmup_inference()` | `recognizer.py` | 应用启动时的 `OcrWorker` 预热任务 | `_engine`、`_similarity_service.warmup()`、代表性拼图检测与识别 |
+| `warmup()` / `warmup_inference()` | `recognizer.py` | `OcrWorker._warmup_model()`（应用启动预热任务） | `_engine`、`_similarity_service.warmup()`、代表性拼图检测与识别 |
 | `adopt_engine(engine)` / `shared_engine()` / `ensure_engine()` | `recognizer.py` | `OcrWorker` | 跨识别器共享同一 PaddleOCR 实例 |
 | `preprocess_roi(roi)` | `image_preprocessor.py` | `GeneralRecognizer` | `cv2.resize()`、`cv2.cvtColor()`、`cv2.createCLAHE()`、`cv2.filter2D()` |
 | `_engine` (property) | `recognizer.py` | 批量/逐槽识别 | `create_paddle_ocr()` 延迟初始化，失败后熔断 |
@@ -308,6 +326,12 @@ GeneralRecognizer._resolve_name_evidence(index, evidence)
       multi_similarity / slot_unique / manual）]
      -> [唯一] 取最高优先级 resolution 采纳
      -> [多个或与其它路候选冲突] conflict
+  -> _unmatched_consensus_name(evidence)
+     -> [全部证据族以置信度 >= 0.995 一致读出同一词表外原文
+         且该原文不命中白名单混淆字对] 返回该原文
+        -> [无候选] unknown_new_hero
+        -> [有候选] unresolved（抑制评分决胜，保留候选走人工确认）
+     -> [否则] 返回空串继续
   -> 取全部非空候选集合的交集 common
      -> [交集为空] conflict
   -> _resolve_multi_candidate_similarity(evidence, parsed, common)

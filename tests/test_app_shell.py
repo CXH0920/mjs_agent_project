@@ -280,6 +280,12 @@ def test_menubar_mounts_all_actions(window) -> None:
     assert {id(action) for action in menubar_actions} == all_action_ids
 
 
+def test_menubar_top_level_titles(window) -> None:
+    """菜单栏顶层结构锁定：文件/配置/数据/帮助。"""
+    titles = [action.text() for action in window.menuBar().actions()]
+    assert titles == ["文件", "配置", "数据", "帮助"]
+
+
 def test_poll_route_signals_feed_panels(window, monkeypatch) -> None:
     """轮询路由的三条界面出口接线全链路锁定：信号 → 窗口处理器 → 真面板灌入。"""
     loaded: list[list[dict]] = []

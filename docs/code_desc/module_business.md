@@ -1,9 +1,9 @@
 # 模块：业务服务层
 
 > 对应目录：`src/business/`
-> 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装
+> 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-09-21
+> 文档日期：2026-09-29
 
 ---
 
@@ -18,6 +18,9 @@
 5. **官方榜单导入** — 解析固定版式的 2v2 胜率/出场榜、巅峰赛胜率/出场榜与武将放逐榜，按表格行安全覆盖 CSV；名称校验不通过时保存复核会话供人工修正后复用（不重新 OCR）
 6. **推荐数据组装** — 一次读取胜率与推荐指数快照，并提供数值化的卡片排名数据
 7. **卡牌图鉴服务** — 跨仓储视图组装、取值校验与追加内容写编排
+8. **公告检查与百科 diff** — 手动触发公告更新检查，百科内容哈希 diff 与忽略名单过滤；首次基线本地化、阶段令牌跨线程统一持久化
+9. **卡牌百科同步** — 手动触发官网同步检查（非定时轮询），差异比对与忽略名单管理；首跑基线本地化、变更记录追加驱动 curated 精化
+10. **忽略名单基础设施** — `baike_ignore_store` 统一管理卡牌与武将百科差异的忽略/恢复/查询，CardSyncService 与 AnnouncementService 共享
 
 元规则文档维护纯函数与 RAG 索引精化三层架构已整体迁至 [`./module_rag.md`](./module_rag.md)，本层不再承担其职责描述。
 
@@ -335,7 +338,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 `AnnouncementService(QObject)` 提供手动"检查公告更新"：`check_now()` 在 `threading.Thread`（`announcement-check`）中执行 `_do_check()`，结果通过内部信号 `_check_done(object)` 回到 GUI 线程，再由 `_finalize_check()` 统一写共享状态、持久化快照并对外广播 `check_finished(object)`（避免 worker 线程与 `mark_applied()` 跨线程竞争及快照文件并发写碰撞）；`is_busy` 防重复点击，`cooldown_remaining` 提供 `CHECK_COOLDOWN_SECONDS = 60` 秒最小检查间隔，主窗口对忙碌/冷却状态弹出提示。`check_now()` 与 `prepare_update_candidates()` 均返回 `bool`——`False` 表示被忙碌或冷却拦截，由调用方提示用户；后台阶段文字经 `progress_changed(str)` 广播。
 
-一次检查 = 拉公告（`fetch_latest_announcements`）→ 章节标题分类（`classify_hero_related`）→ `AnnouncementManager.merge_new` 去重落盘 → 拉百科（`fetch_baike_heroes`）→ 内容哈希 diff（`build_hero_snapshot`/`diff_heroes`）→ `mark_ready_if_updated` → `_sync_timeline` 武将变更时间轴同步。公告或百科拉取异常只写入 `result.error` / `baike_ok=False` 并记日志，不覆盖旧快照、不中断应用。
+一次检查 = 拉公告（`fetch_latest_announcements`）→ 章节标题分类（`classify_hero_related`）→ `AnnouncementManager.merge_new` 去重落盘 → 拉百科（`fetch_baike_heroes`）→ 内容哈希 diff（`build_hero_snapshot`/`diff_heroes`）→ **忽略名单过滤**（`baike_ignore_store.filter_ignored` 扣除已忽略差异，`ready` 判定一致压制）→ `mark_ready_if_updated` → `_sync_timeline` 武将变更时间轴同步。公告或百科拉取异常只写入 `result.error` / `baike_ok=False` 并记日志，不覆盖旧快照、不中断应用。
 
 **阶段令牌（`_last_snapshot` / `pending_saves`）**：worker 线程计算的百科快照不直接写盘，而是通过 `AnnouncementCheckResult.snapshot` / `pending_saves` 字段带回到 `_finalize_check()`，由 GUI 线程统一持久化并更新 `_last_snapshot`。`mark_applied()` 在"更新武将数据"完成后由主窗口调用：公告置已处理，并把 `_last_snapshot` 写回快照使差异归零。
 
@@ -344,6 +347,15 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 **`collect_base_candidates()` / `prepare_update_candidates()`**：提供"更新候选准备"接口，两者都由调用方在 GUI 线程传入 `local_heroes_plain` / `announcements` / `diff` 只读快照，后台线程不再访问主窗口可变状态。`collect_base_candidates()` 纯内存、无网络，供 UI 预判是否有可更新项；`prepare_update_candidates()` 在独立 `_prepare_thread`（`announcement-prepare-update`）中拉取官网百科并计算字段级差异候选，完成后发 `update_candidates_prepared({"candidates", "official_ok", "error"?)}`——异常被兜底为 `official_ok=False` + `error`，避免 UI 进度条永不消失。两者与 `check_now()` 共用 `is_busy`（任一在途即视为忙碌）防并发。
 
 **`_sync_timeline()`**：将 hero_related 公告的武将变更同步到时间轴（`append_announcement_events`），幂等、按 `ref/(date, hero)` 去重，全量扫描而非仅本批新增，重复检查可补齐此前同步失败的记录；失败仅记日志并返回 0，不中断检查。
+
+**忽略名单（`baike_ignore_store` 集成）**：
+
+- `ignore_hero(entry_id, name, state, content_hash)` — 把一名武将的当前差异写入忽略名单（`heroes` 命名空间）
+- `ignored_hero_count()` / `list_ignored_heroes()` — 查询忽略名单条数与全量条目
+- `restore_heroes(entry_ids=None)` — 恢复被忽略的武将差异（`None` 时全部恢复）
+- `_do_check()` 在 `diff_heroes()` 之后调用 `filter_ignored()` 过滤差异，`AnnouncementCheckResult.ignored_count` 记录被过滤条数供 UI 显示"已忽略 N"
+- `collect_base_candidates()` / `prepare_update_candidates()` 均传入 `ignore_entries` 参数，候选列表同样压制已忽略条目
+- 忽略名单文件由 `baike_ignore_store` 模块管理（`load_baike_ignores` / `ignore_entry` / `remove_entry`），CardSyncService 也共享同一基础设施
 
 ### 3.7 巅峰赛识别循环（peak_select_watcher.py）
 
@@ -465,33 +477,40 @@ class ScriptRunner(QObject):
 - `missing_data` — 收集"暂无攻略"与"暂无历史单将胜率"的武将，逐条列出；
 - 每条提示都带 `source_field`（`counter_strategy` / `key_points[i]` / `tips_for_beginners`）供界面标注来源。
 
-### 3.14 CardSyncService（卡牌同步服务）
+### 3.14 CardSyncService（卡牌百科同步）
 
-`CardSyncService(QObject)` 提供手动"检查卡牌更新"，与 `AnnouncementService` 共享同一设计模式：`check_now()` 在后台线程执行检查，受 `CHECK_COOLDOWN_SECONDS=60` 秒最小间隔限制。
+`CardSyncService(QObject)` 提供手动"检查卡牌更新"，与 `AnnouncementService` 共享同一设计模式（`_run_check` → `_check_done` → `_finalize_check` 三段式跨线程收尾）：`check_now()` 在后台线程执行检查，受 `CHECK_COOLDOWN_SECONDS=60` 秒最小间隔限制。与公告检查零耦合：不依赖公告时间轴，变更记录独立存储在 `data/card_changes.json`，驱动卡牌 curated 精化时效检查（见 [`./module_rag.md`](./module_rag.md)）。
 
 **信号**：
 
 | 信号 | 参数 | 说明 |
 |------|------|------|
 | `check_started` | - | 检查开始 |
-| `check_finished(object)` | `dict` | 检查结果（`added` / `modified` / `removed` 数量 + `ok`） |
+| `check_finished(object)` | `CardSyncCheckResult` | 检查结果（`diff` / `official_ok` / `ignored_count` / `error` / `snapshot` / `pending_saves`） |
 | `status_changed(str)` | `str` | 状态栏文字 |
 | `progress_changed(str)` | `str` | 后台阶段文字 |
 | `_check_done(object)` | `object` | **内部信号**：后台线程完成 → GUI 线程做收尾（缓存官网数据 + 持久化首跑基线） |
 
+**`CardSyncCheckResult` 结构**：`diff`（`{added, modified, removed}`）、`official_cards`、`official_ok`、`error`、`snapshot`（官网快照）、`ignored_count`（被忽略名单过滤掉的差异条数）、`pending_saves`（首跑基线初始化产物，GUI 线程统一落盘）。
+
 **工作流程**：
 
 ```
-check_now()
-  └─ [threading.Thread] _do_check()
-        ├─ fetch_official_cards()                        → 官网卡牌原始数据
-        ├─ build_card_snapshot(official_cards)           → 官网快照
-        ├─ load_card_snapshot()                          → 本地基线快照
-        ├─ diff_cards(current, baseline)                 → {added, modified, removed}
-        └─ emit _check_done(result)
-             └─ [GUI 线程] _on_check_done()
-                  ├─ 缓存官网数据到 _last_official_cards
-                  └─ 持久化首跑基线（首次安装场景）
+check_now() -> bool
+  └─ [threading.Thread] _run_check()
+       └─ _do_check()
+            ├─ fetch_official_cards()                     → 官网卡牌原始数据
+            ├─ build_card_snapshot(official_cards)        → 官网快照
+            ├─ load_card_snapshot(snapshot_path)          → 本地基线快照
+            ├─ [基线空] 首跑初始化
+            ├─ diff_cards(snapshot, baseline)             → {added, modified, removed}
+            ├─ filter_ignored(diff, hashes, ignores)      → 扣除已忽略条目
+            └─ 返回 CardSyncCheckResult
+       └─ _check_done(result) 内部信号
+            └─ [GUI 线程] _finalize_check()
+                  ├─ 缓存官网数据到 _last_official_cards / _last_snapshot
+                  ├─ 持久化 pending_saves（首跑基线初始化）
+                  └─ check_finished(result)               → 广播到 GUI
 ```
 
 **首跑基线初始化**：
@@ -499,12 +518,21 @@ check_now()
 - 本地 `cards.json` 有数据时，用本地初始化基线，避免官网快照掩盖本地缺失；
 - 全新安装（本地无任何卡牌数据）以当前官网数据为基线；
 - 本地文件存在但为空则不写快照并记录警告。
+- 首跑初始化产物通过 `pending_saves` 带回 GUI 线程统一落盘，避免 worker 线程与 `_last_snapshot` 写操作竞争。
 
 **`apply_updates(modified_ids, added_ids)`**：
 
 1. 写回 `cards.json`——更新卡牌字段（`card_amount` 保留，不随官网覆盖）；
 2. 按卡牌增量更新基线快照（新增加入、修改更新、移除删除）；
 3. 追加 `CardChangeRecord` 到变更日志，记录同步时间、变更类型与卡牌 ID。
+4. 返回 `{"applied": N, "modified": N, "added": N}`。
+
+**忽略名单（`baike_ignore_store` 集成）**：
+
+- `ignore_card(card_id, name, change)` — 把一张卡的当前差异写入忽略名单（`cards` 命名空间，哈希与官网快照同源）
+- `ignored_card_count()` / `list_ignored_cards()` — 查询忽略名单条数与全量条目
+- `restore_cards(entry_ids=None)` — 恢复被忽略的卡牌差异（`None` 时全部恢复）
+- `_do_check()` 在 `diff_cards()` 之后调用 `filter_ignored()` 过滤差异，`CardSyncCheckResult.ignored_count` 记录被过滤条数供 UI 显示"已忽略 N"
 
 **`is_busy` 防重复**：`check_now()` 返回 `bool`，`False` 表示被忙碌或冷却拦截。主窗口据此弹出提示。
 
@@ -530,6 +558,24 @@ check_now()
 ### 3.16 知识库相关功能（已迁出）
 
 元规则维护、知识库审计、索引精化、RAG 语料任务定义、武将分类 LLM 建议已整体迁至 [`./module_rag.md`](./module_rag.md)，此处不再重复。
+
+### 3.17 ProgressReporter（进度出口统一组件）
+
+`ProgressReporter`（`src/ui/app/progress_reporter.py`）是状态栏消息文本与业务进度条的唯一渲染出口，自 `MainWindow` 抽取。业务服务只调 `show_*` API 或把服务信号直接连接到 API，不直接操作状态栏控件；常驻服务状态 chips 在 `status_chips.StatusChips`，与本部件互不覆盖。
+
+**核心方法**：
+
+| 方法 | 说明 |
+|------|------|
+| `show_message(text, duration_ms=None)` | 渲染全局消息文本；计时消息到期后回落 `set_default_message` 设置的默认文案 |
+| `show_event_message(text)` | 完成/事件类消息，停留 5 秒后回落 |
+| `show_indeterminate(text)` | 不确定进度（动画），用于联网阶段 |
+| `show_progress(current, total, text)` | 确定进度（子进程 `[n/N]` 阶段） |
+| `set_progress_text(text)` | 仅更新进度条文字 |
+| `hide_progress()` | 隐藏进度条（消息文本保留） |
+| `set_default_message(text)` | 记录默认统计文案；消息显示期间只暂存不覆盖 |
+
+与公告/卡牌检查服务的 `status_changed` / `progress_changed` 信号配合，由主窗口统一转发至本组件。
 
 ---
 
@@ -643,3 +689,12 @@ def _cleanup_tmp_file(self) -> None:
 | 被调用方 | `src.ui.data_admin.official_data_import_dialog` | 触发后台导入、展示进度，并串联复核会话 |
 | 被调用方 | `src.ui.data_admin.official_import_review_dialog` | 调用 `review_candidates()` / `apply_reviewed_records()` 完成人工修正落盘 |
 | 知识库相关 | [`./module_rag.md`](./module_rag.md) | 元规则维护、知识库审计、索引精化、语料任务定义、武将分类 LLM 建议的依赖与被调用方 |
+
+---
+
+## 六、代码规模
+
+| 指标 | 数量 |
+|------|------|
+| 测试模块数 | 112 文件 |
+| 测试用例数 | 1337 个 `test_*` 函数 |

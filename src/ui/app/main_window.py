@@ -271,7 +271,7 @@ class MainWindow(QMainWindow):
             "emulator_settings": QAction("模拟器配置", self),
             "faction_colors": QAction("势力配色", self),
             "whitelist_config": QAction("白名单配置", self),
-            "data_management": QAction("数据管理", self),
+            "data_management": QAction("清空攻略/相性数据", self),
             "reload": QAction("重新加载数据", self),
             "official_import": QAction("官方数据导入", self),
             "fetch_all": QAction("全量获取", self),
@@ -322,42 +322,44 @@ class MainWindow(QMainWindow):
             self._actions[name].triggered.connect(callback)
 
     def _setup_menu(self) -> None:
-        """使用共享 QAction 构建兼容菜单栏。"""
+        """使用共享 QAction 构建菜单栏。"""
         bar = self.menuBar()
 
-        import_menu = bar.addMenu("导入")
-        import_menu.addAction(self._actions["combos_import"])
-        import_menu.addAction(self._actions["official_import"])
+        file_menu = bar.addMenu("文件")
+        file_menu.addAction(self._actions["reload"])
+        file_menu.addSeparator()
+        file_menu.addAction(self._actions["exit"])
 
         tools_menu = bar.addMenu("配置")
         tools_menu.addAction(self._actions["api_settings"])
         tools_menu.addAction(self._actions["emulator_settings"])
         tools_menu.addAction(self._actions["faction_colors"])
         tools_menu.addAction(self._actions["whitelist_config"])
-        tools_menu.addAction(self._actions["data_management"])
 
         data_menu = bar.addMenu("数据")
-        data_menu.addAction(self._actions["reload"])
         data_menu.addAction(self._actions["announcement_check"])
         data_menu.addAction(self._actions["announcement_log"])
         data_menu.addAction(self._actions["card_sync_check"])
         data_menu.addAction(self._actions["baike_ignore_manager"])
+        data_menu.addSeparator()
         self._add_generation_submenus(data_menu)
+        data_menu.addSeparator()
+        data_menu.addAction(self._actions["official_import"])
+        data_menu.addAction(self._actions["combos_import"])
+        data_menu.addAction(self._actions["data_management"])
 
         help_menu = bar.addMenu("帮助")
         help_menu.addAction(self._actions["about"])
-        help_menu.addSeparator()
-        help_menu.addAction(self._actions["exit"])
 
     def _add_generation_submenus(self, parent_menu) -> None:
-        """挂载武将获取/攻略获取/武将相性三个生成子菜单（菜单栏与生成维护菜单共用）。"""
+        """挂载武将获取/攻略生成/武将相性三个生成子菜单。"""
         fetch_menu = parent_menu.addMenu("武将获取")
         fetch_menu.addActions([
             self._actions["fetch_all"],
             self._actions["fetch_incremental"],
             self._actions["fetch_specific"],
         ])
-        guide_menu = parent_menu.addMenu("攻略获取")
+        guide_menu = parent_menu.addMenu("攻略生成")
         guide_menu.addActions([
             self._actions["guide_all"],
             self._actions["guide_incremental"],

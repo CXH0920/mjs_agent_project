@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-1280%2B%20cases-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-1337%20cases-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
@@ -30,7 +30,7 @@
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 PaddleOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-4. **测试与交付工程化** — 110+ 个测试模块 / 1280+ 个测试用例；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
+4. **测试与交付工程化** — 112 个测试模块 / 1337 个测试用例；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
 5. **B2 复核模式** — 对未决识别槽位，使用 PP-OCRv6-small/ONNX 引擎（RapidOCR）做候选内确认；惰性加载+失败熔断，模型缺失不联网下载，设备固定 CPU。
 6. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
 7. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
@@ -125,8 +125,9 @@ test_project/
 ├── src/
 │   ├── main.py                 # 应用入口（免责声明 + 启动画面 + OCR 阻塞预热）
 │   ├── config/                 # 配置（env.py / logging_config.py / disclaimer_state.py）
-│   ├── data/                   # 数据模型 + Manager + JSON 持久化 + RAG 源数据仓储
+│   ├── data/                   # 数据模型 + DataFacade（facade/manager/issues 解环拆分）+ JSON 持久化
 │   │                           #   + hero_timeline（武将变更时间轴）+ card_sync_store（卡牌快照/变更记录）
+│   │                           #   + baike_ignore_store（百科差异忽略名单）
 │   ├── scraper/                # 官网爬虫（official_source/）+ AI 批量生成（ai/）
 │   │                           #   + card_baike（官网手牌库抓取与 diff）
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 分析 + 维护 + RAG 业务）
@@ -139,12 +140,17 @@ test_project/
 │   │                           #   + ocr_baseline / calibrate_idle_threshold
 │   └── ui/                     # PySide6 界面（app / configuration / data_admin / generation /
 │                               #   library / match / maintenance / recommendation / shared）
+│                               #   + 主窗口协调器与自足组件（app_services / status_chips /
+│                               #     progress_reporter / poll_coordinator /
+│                               #     announcement_update_coordinator）
 │                               #   + card_sync_dialog（更新确认对话框）
 │                               #   + whitelist_config_dialog（白名单配置界面）
-│                               #   + frame_fingerprint / poll_coordinator（轮询闲置检测与协调）
+│                               #   + baike_ignore_manager_dialog（百科忽略名单）
+│                               #   + frame_fingerprint（闲置指纹）
 │                               #   + disclaimer_dialog（免责声明对话框）
 ├── data/                       # JSON 数据 + RAG 语料/索引 + 官方榜单 CSV
 │                               #   + card_snapshot.json / card_changes.json（卡牌百科同步）
+│                               #   + baike_ignore.json（百科差异忽略名单）
 ├── images/                     # 武将头像（从官网下载）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
@@ -167,7 +173,9 @@ test_project/
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  UI 层 (src/ui/)                                            │
-│  PySide6 主窗口（AppServices 组合根 + StatusChips）          │
+│  PySide6 主窗口（AppServices 组合根 + StatusChips +           │
+│  ProgressReporter / PollCoordinator / AnnouncementUpdate     │
+│  Coordinator 协调器）                                        │
 │  对话框、推荐面板、武将浏览器、巅峰赛选将、知识库维护工作台     │
 │  公共骨架 MasterDetailPane / run_edit_dialog / CaptureLock   │
 │  信号连接 → 业务服务 → 子进程 → 数据刷新                     │
@@ -175,7 +183,7 @@ test_project/
 │  业务服务层 (src/business/)                                 │
 │  QProcess 子进程管理、ADB 截图编排、OCR 轮询控制             │
 │  分析（推荐/对局/巅峰赛禁选）、维护、RAG 业务编排             │
-│  卡牌百科同步（CardSyncService：后台检查 + 应用更新）         │
+│  卡牌百科同步（CardSyncService：手动检查 + 应用更新）         │
 │  无 UI 引用，通过 Qt Signal 通信                             │
 ├────────────────────────────────────────────────────────────┤
 │  采集层 (src/scraper/ + src/capture/ + src/ocr/)           │
@@ -183,8 +191,9 @@ test_project/
 │  RAG 检索基础设施 (src/rag/) + 语料与维护脚本 (src/scripts/)  │
 ├────────────────────────────────────────────────────────────┤
 │  数据层 (src/data/)                                         │
-│  Pydantic 模型 + DataFacade + JSON 持久化 + 维护仓储         │
-│  武将变更时间轴 (hero_timeline) + 榜单/推荐指数仓储           │
+│  Pydantic 模型 + DataFacade（facade/manager/issues 解环拆分）│
+│  JSON 持久化 + 维护仓储 + 武将变更时间轴 (hero_timeline)      │
+│  + 榜单/推荐指数仓储 + 百科忽略名单 (baike_ignore_store)      │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -232,17 +241,17 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 ## 核心功能
 
 - **选将推荐**：固定 2×4 卡片，支持识别模拟器画面或从本地图片导入；卡片展示头像、推荐指数、最佳搭档与相性摘要、历史单将胜率（前三 TOP 徽章）。OCR 待确认名称可在候选白名单内人工确认。轮询模式定时检测武将选择页自动填充。
-- **对局攻略**：42/58 分割的 2v2 阵容核对与临场攻略工作台；OCR 导入后按"我方/敌方/未定"分组，确认阵容后展示总览、我方打法、对抗敌方与单将详情。
+- **对局攻略**：42/58 分割的 2v2 阵容核对与临场攻略工作台；OCR 导入后按"我方/敌方/未定"分组，确认阵容后展示总览、我方打法、对抗敌方与单将详情；胜率榜按对局链路区分 2v2 / 巅峰赛（`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）。
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
 - **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体与 2~8 武将两两配对。生成失败时弹窗详情列出失败武将/相性对清单。
 - **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 PaddleOCR；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
-- **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2090 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/keywords/related）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
+- **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2118 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/keywords/related）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
-- **官方榜单导入**：2v2 胜率/出场与武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+受限繁体兜底，未确认写入待复核。
-- **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新。
+- **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+受限繁体兜底，未确认写入待复核。
+- **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`），主窗口提供「百科忽略名单管理」入口。
 - **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + 会话世代校验，候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。
 - **实战配队**：外部导出 JSON 或 UI 手工维护 1228 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
-- **卡牌百科变更捕获**：`CardSyncService` 后台定时检查官网手牌库更新，快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，audit_service 复核时效。
+- **卡牌百科变更捕获**：`CardSyncService` 手动检查官网手牌库更新（60 秒冷却防密集请求），快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，支持差异条目级忽略名单（`baike_ignore.json`），audit_service 复核时效。
 - **白名单配置**：未决错法观察清单（A+/A/B/C 分类排序）+ 用户层白名单维护（`ocr_confusion_overrides.json`），静态冲突检查与即时生效（`reset_ocr_recognizer_cache()`）。
 - **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。
 - **合规化改造**：免责声明弹窗（版本感知，仅条款更新时重新确认）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（逐次记录善意访问）+ 架构防火墙声明（代码不含 ADB 输入能力）。
@@ -336,7 +345,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（16 章，基线 2026-09-15） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（16 章，基线 2026-09-29） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
 | [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（10 个调用图） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
@@ -378,8 +387,11 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 二十五 | B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认） | ✅ 已完成 |
 | 二十六 | 白名单治理与错法半自动补对闭环（频次记录 + 人工确认 + 配置界面） | ✅ 已完成 |
 | 二十七 | 轮询闲置自动暂停（整帧指纹 + 三路恢复 + 阈值校准工具） | ✅ 已完成 |
+| 二十八 | 架构分层收口与主窗口拆分（UI 数据 import 白名单 + 协调器下沉 + src/data 解环） | ✅ 已完成 |
+| 二十九 | 百科差异条目级忽略名单（state+hash 定位 + 服务层过滤 + 管理界面） | ✅ 已完成 |
+| 三十 | 菜单栏重排（文件/配置/数据/帮助 + 生成子菜单整合） | ✅ 已完成 |
 
-> 文档基线：2026-09-16。测试 110+ 个测试模块 / 1280+ 个测试用例（`pytest --collect-only -q` 实测），Ruff 0.12.0 全通过。
+> 文档基线：2026-09-29（`0007fc4` + 工作树未提交改动）。测试 112 个测试模块 / 1337 个测试用例（`pytest --collect-only -q` 实测），Ruff 0.12.0 全通过。
 
 ---
 

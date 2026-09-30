@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-09-21（基线 `624c8c5`）
+> 文档日期：2026-09-29（基线 `0007fc4` + 工作树未提交改动）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -14,13 +14,13 @@
 
 - **资料库浏览** — 在”武将资料”中查询武将详情、技能和攻略；在”卡牌图鉴”中只读浏览官方卡牌及维护独立的效果配置
 - **选将推荐** — 4×2 网格展示推荐武将，集成相性评分、胜率排名与 OCR 截图导入
-- **对局攻略** — 2×2 展示四名武将，支持 ADB/本地图片导入并加载 2v2 胜率
-- **AI 攻略生成** — 通过 DeepSeek API 或浏览器自动化批量生成武将攻略，默认 RAG 官方规则语料增强，可切换经典模式（无 RAG 注入）；API 模式支持扩展额度与思考重试
+- **对局攻略** — 2×2 展示四名武将，支持 ADB/本地图片导入并加载胜率榜（按对局链路区分 2v2 / 巅峰赛，`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）
+- **AI 攻略生成** — 通过多供应商 API（DeepSeek / OpenAI / Ollama / OpenAI 兼容档案）或浏览器自动化批量生成武将攻略，默认 RAG 官方规则语料增强，可切换经典模式（无 RAG 注入）；API 模式支持扩展额度与思考重试
 - **AI 相性评分** — 全量/指定武将的相性评分，支持 2~8 武将两两配对；RAG 注入双方武将语料块与规则/FAQ/卡牌跨类块，支持 RAG 增强/经典双版本
 - **屏幕采集与 OCR** — 通过 ADB 连接模拟器截图，OpenCV 模板匹配 + PaddleOCR 识别武将名
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
-- **官方数据导入** — 可独立或同时导入 2v2/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
-- **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；更新流程引入阶段令牌与本地回查防止跨阶段误消费
+- **官方数据导入** — 可独立或同时导入 2v2/巅峰赛/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
+- **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费
 - **卡牌百科变更捕获** — 手动检查官网手牌库与本地卡牌差异，勾选后应用官网文本覆盖本地（`card_amount` 保留）；快照（`card_snapshot.json`）与变更记录（`card_changes.json`）持久化，驱动卡牌精化时效检查
 - **知识库维护（RAG）** — 本地 RAG 语料维护工作台，布局为重排的「左栏维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」：左栏 10 项（5 个可编辑数据源 专属牌/卡牌点数/装备属性/武将分类/元规则母本 + 5 个只读语料，状态点对齐其语料任务状态）；支持单项 `--only` / 全部 / 加索引三级重建、保存后左栏状态点即时变「待重建」并可就地重建、结构化审计提示并支持跳转定位、10 个语料任务状态常驻可见；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
 - **元规则 T0 文档维护** — 以 `docs/元规则整理-完整版.md` 为规则知识库母本（只增不删、机器校验），提供文档校验（audit）、数据段差异同步（sync）、变更提案起草/合入（propose/apply）与疑难登记（pending）完整工作流，并在「知识库维护 → 元规则母本」维护对象（内嵌四个子页签）可视化操作
@@ -36,13 +36,13 @@
 |------|------|
 | 桌面 UI | PySide6（Qt for Python） |
 | 数据模型 | Pydantic v2（数据校验与序列化） |
-| AI 生成 | httpx（DeepSeek API 同步请求）/ Playwright（浏览器自动化） |
+| AI 生成 | httpx（多供应商 OpenAI 风格 API 同步请求）/ Playwright（浏览器自动化） |
 | RAG 检索 | ChromaDB + sentence-transformers（bge-small-zh-v1.5 本地嵌入）+ 关键词 RRF 混合检索 |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
-| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，365 字缓存）+ B2 复核引擎（RapidOCR 3.9.2 / PP-OCRv6-small/ONNX） |
+| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，396 字特征缓存）+ B2 复核引擎（RapidOCR 3.9.2 / PP-OCRv6-small/ONNX） |
 | 数据持久化 | JSON + CSV 文件（原子写入，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（110+ 文件 / 1280+ 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`） |
+| 测试与静态检查 | pytest 9.0.3（112 文件 / 1337 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -52,7 +52,7 @@ test_project/
 ├── src/
 │   ├── main.py                  # 应用入口
 │   ├── config/                  # 配置管理（.env 解析、日志配置、disclaimer_state 免责声明状态）
-│   ├── data/                    # 数据模型与数据管理层（含 hero_timeline 武将变更时间轴、card_sync_store 卡牌百科快照）
+│   ├── data/                    # 数据模型与数据管理层（DataFacade 门面 + manager/issues 解环拆分；含 hero_timeline 武将变更时间轴、card_sync_store 卡牌百科快照、baike_ignore_store 百科忽略名单）
 │   ├── scraper/                 # 爬虫与 AI 批量生成层（含 card_baike 卡牌百科抓取清洗）
 │   ├── rag/                     # RAG 向量索引与混合检索基础设施（ChromaDB + bge-small-zh + 关键词 RRF）
 │   ├── scripts/                 # 语料构建与维护脚本（build_*_corpus / maintain_rag / import_hero_adjustments / 元规则维护 CLI）
@@ -62,9 +62,10 @@ test_project/
 │   ├── capture/                 # 屏幕采集层（ADB 连接、截图、MuMu 实例探测）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR + 卡位检测 + paddle_loader B2 复核引擎）
 │   └── ui/                      # PySide6 用户界面层（app / configuration / data_admin / generation / library / match / maintenance / recommendation / shared）
-│                               #   + whitelist_config（白名单配置）/ frame_fingerprint / poll_coordinator（轮询闲置检测）
+│                               #   + 主窗口协调器与自足组件（app_services / status_chips / progress_reporter / poll_coordinator / announcement_update_coordinator）
+│                               #   + whitelist_config_dialog（白名单配置）/ baike_ignore_manager_dialog（百科忽略名单）/ frame_fingerprint（闲置指纹）
 │                               #   + disclaimer_dialog（免责声明对话框）
-├── data/                        # 数据文件（JSON + 2v2 胜率/出场、放逐 CSV；RAG 源数据 JSON 与归档 archive/；含 card_snapshot.json / card_changes.json 卡牌百科快照）
+├── data/                        # 数据文件（JSON + 2v2/巅峰赛胜率出场、放逐 CSV；RAG 源数据 JSON 与归档 archive/；含 card_snapshot.json / card_changes.json 卡牌百科快照与 baike_ignore.json 忽略名单）
 ├── images/                      # 武将头像（PNG）
 ├── templates/                   # OCR 模板截图
 ├── screenshots/                 # 手动截图导出目录
@@ -85,9 +86,12 @@ test_project/
 │  UI 层 (src/ui/)                                                             │
 │  PySide6 窗口、对话框、推荐面板、武将浏览器、对局攻略页                         │
 │  知识库维护工作台（含元规则维护与索引精化对话框）                                │
+│  主窗口协调器与自足组件（AppServices 组合根 / StatusChips / ProgressReporter    │
+│  / PollCoordinator / AnnouncementUpdateCoordinator）                          │
 │  白名单配置界面（whitelist_config_dialog）、轮询闲置检测与协调                    │
-│  （frame_fingerprint / poll_coordinator）、免责声明对话框                      │
+│  （frame_fingerprint / poll_coordinator）、百科忽略名单管理、免责声明对话框      │
 │  索引精化对话框只负责渲染与交互确认，清单归属、基线判定与写盘全部经业务层完成     │
+│  UI 层数据 import 白名单：UI 不构造数据层对象（tests/test_architecture 守护）    │
 │  信号连接 → 业务服务 → 子进程 → 数据刷新                                      │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  业务服务层 (src/business/)                                                   │
@@ -105,7 +109,7 @@ test_project/
 │  / 公告 API 与 HTML 回退                                                    │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  数据层 (src/data/)                                                           │
-│  Pydantic 模型 + DataFacade + JSON 持久化                                     │
+│  Pydantic 模型 + DataFacade（facade / manager / issues 解环拆分）+ JSON 持久化  │
 │  ComboManager 落盘按 (-rating, hero1_id, hero2_id) 稳定排序                    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -117,13 +121,13 @@ test_project/
 | # | 模块 | 目录 | 主要职责 |
 |---|------|------|---------|
 | 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化 |
-| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**） |
+| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分） |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`** |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
 | 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议 |
-| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2090 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
+| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2118 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
 | 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、PaddleOCR 识别、官方榜单版式解析 |
-| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板、`MasterDetailPane` 主从列表骨架与实战配队三入口 |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板、`MasterDetailPane` 主从列表骨架与实战配队三入口 |
 | 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
 
 ## 本轮文档校准（2026-09-21）
@@ -152,3 +156,27 @@ test_project/
 **已知但未处理的死代码**（按"发现只提醒、不擅自删除"原则保留）
 - `src/business/maintenance/classification_suggest.py` 与 `classification_suggest_worker.py`：武将 LLM 建议归类功能，当前 `src/` 内零调用
 - `src/config/env.py::list_api_profiles()`：当前仅测试消费
+
+> （2026-09-29 校准更新：上一条已失效——`classification_suggest_worker.py` 已随死代码清理删除，`classification_suggest.py` 经 `HeroClassificationPanel`（知识库维护·武将归类）接入使用；`list_api_profiles()` 现状不变。详见下方 2026-09-29 校准记录。）
+
+## 本轮文档校准（2026-09-29）
+
+自基线 `0007fc4`（含工作树未提交改动）以来，本轮校准覆盖了以下变更：
+
+**架构与主窗口**
+- **架构分层收口**（363188a / 9454849）：UI 数据 import 白名单落地（UI 层构造数据层禁令，`tests/test_architecture.py` 以 `ALLOWED_DATA_CONSTANTS` / `ALLOWED_DATA_FUNCTIONS` 白名单守护）、榜数据 provider 注入（对局攻略/巅峰赛胜率与推荐指数改经 provider 回调获取）、`FILE_LINE_BUDGETS` 行数棘轮守护防止单文件行数反弹
+- **主窗口拆分**（1f9417b）：`MainWindow` 上帝类四阶段拆分——协作对象装配收敛到 `AppServices` 组合根，状态栏常驻态由 `StatusChips` 自足组件承载，进度出口统一走 `ProgressReporter`，OCR 轮询与公告更新两条管线分别下沉 `PollCoordinator` / `AnnouncementUpdateCoordinator`
+- **src/data 解除循环依赖**（2882833）：`DataFacade` 拆分至 `facade.py`、`DataIssue` / `LoadReport` 值对象拆分至 `issues.py`，`manager.py` 回归管理器基类与默认路径（审计 F3）
+- **官方榜单导入服务按职责域拆分**（55e3587）：纠错规则、引擎策略与数据联动各归其位
+
+**功能与修复**
+- **百科差异条目级忽略名单**（0007fc4）：新增 `src/data/baike_ignore_store.py`（`data/baike_ignore.json`，state+hash 定位"同一差异"，武将/卡牌两段覆盖式保存）与 `src/ui/data_admin/baike_ignore_manager_dialog.py` 管理界面（主窗口「数据」菜单全局兜底入口）；服务层 diff 产出即过滤，公告 ready 判定一致压制；另含状态栏消息超时回落、对局攻略胜率榜按对局链路区分（`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）
+- **菜单栏重排**（工作树未提交）：菜单栏重排为 文件（重新加载数据 / 退出）/ 配置（API 配置、模拟器配置、势力配色、白名单配置）/ 数据（公告与百科 4 项 ▸ 武将获取、攻略生成、武将相性三个生成子菜单 ▸ 官方数据导入、实战配队导入、清空攻略/相性数据）/ 帮助（关于）；原「导入」菜单取消，「攻略获取」改名「攻略生成」，「数据管理」改名「清空攻略/相性数据」并入「数据」菜单
+- **多批次全仓零引用死符号清理**（869dcac / b7d6ef8 / fac671f / c85d60a / e9436c2）：2026-09-21 记录的 `classification_suggest_worker.py` 已随之删除，`classification_suggest.py` 经 `HeroClassificationPanel`（知识库维护·武将归类）接入使用、不再是死代码；`list_api_profiles()` 现状不变（仅测试消费）
+- **其他**（7116489 / d43d549 / f77559c）：巅峰识别页名独立化与派生 ROI 分辨率自适应缩放；RAG 快照读写下沉 `scripts/snapshot_common` 解除 sync/audit 互引环；audit 数据段比对恢复独立降级
+
+**修正的失效描述**
+- 代码规模台账：112 文件 / 1337 个 `test_*` 函数（原 110+ / 1280+）
+- 字形特征缓存 396 字（原 365 字）；RAG 语料块 2118 块（原 2090 块）
+- 官方数据导入实为 2v2 / 巅峰赛 / 武将放逐三类榜单（原描述缺巅峰赛）；AI 生成后端为多供应商档案（deepseek / openai / ollama / openai-compatible），非仅 DeepSeek
+- 配置默认值与键：`mumu_ocr_recheck_enabled` 默认 `False`；`MUMU_OCR_POLL_IDLE_MINUTES` 配置键已移除，闲置阈值固定为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5`；`check_disclaimer()` 已拆分为 `should_show()` / `accept()`（详见 `./module_config.md`）

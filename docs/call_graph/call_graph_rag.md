@@ -1,7 +1,7 @@
 # 调用链路：RAG 知识库模块
 
 > 对应源码：`src/rag/`、`src/business/rag/`、`src/business/maintenance/` 的 RAG 三文件、`src/ui/maintenance/` 全部、`src/scripts/` 的语料与维护脚本。
-> 代码基线：`2026-09-21`。
+> 代码基线：`2026-09-29`（含 `d43d549` snapshot_common 下沉）。
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 虚线 `───` 表示跨越进程边界（QProcess / subprocess 子进程）。
 > 与 AI 批量生成、巅峰赛识别、实战配队相关的调用链路见 [call_graph_ai_batch.md](./call_graph_ai_batch.md)、[call_graph_peak_combos.md](./call_graph_peak_combos.md)；业务服务层与界面层总览见 [call_graph_business.md](./call_graph_business.md)、[call_graph_ui.md](./call_graph_ui.md)。
@@ -121,13 +121,13 @@ build_index(rebuild=True)                                        [CLI 入口：p
 
 | 任务名 | 构建脚本 | 源文件 | 输出语料 | 期望块数 |
 |--------|----------|--------|----------|----------|
-| 武将语料 | `build_rag_corpus.py` | `data/heroes.json`、`data/cards.json`、`data/mjs_adjustments.json` | 武将RAG语料.json | 615 |
+| 武将语料 | `build_rag_corpus.py` | `data/heroes.json`、`data/cards.json`、`data/mjs_adjustments.json` | 武将RAG语料.json | 639 |
 | 卡牌语料 | `build_card_corpus.py` | `data/cards.json` | 卡牌RAG语料.json | 49 |
 | 点数花色语料 | `build_cardpts.py` | `data/card_points.json` | 卡牌点数花色语料.json | 49 |
 | 装备属性语料 | `build_equip_attr.py` | `data/cards.json`、`data/equip_attrs.json`、卡牌RAG语料.json | 装备属性语料.json | 27 |
 | 加强削弱语料 | `build_modify_corpus.py` | `data/cards.json`、`data/card_annotations.json` | 加强削弱语料.json | 49 |
 | 元规则/术语/FAQ | `build_rule_corpus.py` | `docs/元规则整理-完整版.md` | 元规则RAG语料-章节块.json、术语表.json、FAQ裁定块.json | `snapshot` |
-| 特殊机制语料 | `build_special_corpus.py` | `data/special_cards.json` | 特殊机制语料.json | 83 |
+| 特殊机制语料 | `build_special_corpus.py` | `data/special_cards.json` | 特殊机制语料.json | 85 |
 | 武将分类语料 | `build_classification_corpus.py` | `data/hero_classification.json`、`data/heroes.json` | 武将分类语料.json | 动态 |
 | 组合语料 | `build_combo_corpus.py` | `data/raw_guides/jinxia/combos/` 多文件、`data/heroes.json` | 组合RAG语料.json | 动态 |
 | 武将攻略语料 | `build_guide_corpus.py` | `data/raw_guides/jinxia/guides/`、`data/heroes.json`、`data/mjs_adjustments.json` | 武将攻略RAG语料.json | 动态 |
@@ -155,9 +155,9 @@ RagMaintenancePanel._run(args)                                    [维护面板�
          [孙进程] build_*_corpus.py（见 2.4）
          ────────────────────────────────────────────────
       -> verify_outputs(task)                                     [块数校验：精确匹配 / snapshot 只增 / 动态只报]
-         -> [expected=='snapshot'] audit_rule_doc.snapshot_counts()
+         -> [expected=='snapshot'] snapshot_common.snapshot_counts()
       -> [snapshot 任务且校验通过] audit_rule_doc.audit(..., update_snapshot=True)
-         -> build_snapshot() -> write_snapshot()                  [刷新 .rule_doc_snapshot.json]
+         -> snapshot_common.build_snapshot() -> snapshot_common.write_snapshot()                  [刷新 .rule_doc_snapshot.json]
       -> update_state_fingerprints(plan, failed, force, state)    [失败任务及其依赖源保持旧指纹]
       -> save_state(state)
       -> [args.build_index 且无失败] subprocess.run(['-m', 'src.rag.indexer']) -> build_index()
@@ -681,7 +681,7 @@ RuleDocPanel(root)
        ──────────────────────────────
        [子进程] audit_rule_doc.main() -> audit(...)
          -> build_rule_corpus.parse_rule_doc(doc_path) -> (blocks, terms, faqs, dropped)
-         -> load_snapshot()
+         -> snapshot_common.load_snapshot(path)                          [加载快照；不存在/解析失败返回 None]
          -> 1 解析回声 / 2 表格列数 / 3 块 ID 唯一 / 4 章节结构指纹 /
             5 ID 稳定性 / 6 FAQ 编号 / 7 确认状态 / 8 交叉引用 /
             9 已定稿块指纹 / 10 数据段一致性（调 sync_rule_stats.diff_sections）
@@ -722,6 +722,7 @@ _apply_diffs()                                             [应用已确认差�
         -> [预检全部行：行号越界 / 当前行 != old / 空值 / 非表格行 / 列数不一致]
         -> [有 errors] 整批拒绝，返回原文本（文档零副作用）
         -> _atomic_write_text(doc) + append_changelog() + refresh_snapshot()
+            -> snapshot_common.build_snapshot(doc_path, root) -> write_snapshot(snap, path)
         -> exit(0 成功 / 1 预检失败 / 2 前置失败)
      ──────────────────────────────
   -> _on_apply_json_finished() -> refresh_diffs()           [成功行消失，失败行保留]
@@ -810,6 +811,44 @@ _to_proposal() -> rds.pending_to_proposal(root, item["id"])
 | `eval_rule_faqs.py` | `--generate` / `--top-k 5` | 全部命中返回 0，否则 1 |
 | `diff_source_data.py` | `--old data/backups` | 被 `propose_rule_changes.py` 复用 |
 | `migrate_excel_to_json.py` | `--only points` | 卡牌点数应急导入通道 |
+
+### 7.5 快照读写公共层 snapshot_common.py（commit `d43d549` 下沉）
+
+`.rule_doc_snapshot.json` 的格式与读写原先分居 `audit_rule_doc.py` 与 `sync_rule_stats.py` 并互相函数内延迟导入，形成运行期互引环（`scripts.sync_rule_stats` ↔ `scripts.audit_rule_doc`）；下沉至本模块后两个脚本均只向下依赖，环消除。
+
+```
+snapshot_common 模块导入时
+  -> get_script_logger("snapshot_common")                    [惰性 logger，不建文件句柄]
+  -> from src.config.env import PROJECT_ROOT as ROOT
+  -> DEFAULT_SNAPSHOT = os.path.join(ROOT, '.rule_doc_snapshot.json')
+
+# 读路径
+audit_rule_doc.audit()
+  -> snapshot_common.load_snapshot(path)                     [加载快照；不存在/解析失败返回 None]
+
+maintain_rag.verify_outputs(task)
+  -> snapshot_common.snapshot_counts(path)                    [返回语料文件名→快照期望块数]
+
+# 写路径
+sync_rule_stats.refresh_snapshot()
+  -> snapshot_common.build_snapshot(doc_path, root)
+     -> brc.parse_rule_doc(doc_path)                         [复用 build_rule_corpus 解析]
+     -> snapshot_common.chapters(doc_path)                   [扫描 ## 章标题]
+     -> snapshot_common.norm(content_lines)                  [行列表规范化]
+     -> snapshot_common.doc_md5(doc_path)                    [文档 MD5 哈希]
+     -> return {version, updated_at, doc_md5, chapters, blocks, counts, ...}
+  -> snapshot_common.write_snapshot(snap, path)              [UTF-8/LF/indent=2 写盘]
+```
+
+| 函数 | 所在文件 | 作用 | 调用方 |
+|------|----------|------|--------|
+| `doc_md5(path)` | `scripts/snapshot_common.py` | 文档 MD5 哈希 | `build_snapshot()` |
+| `norm(content_lines)` | 同上 | 行列表规范化（去首尾空行） | `build_snapshot()` |
+| `chapters(doc_path)` | 同上 | 扫描 `##` 章标题返回 `[{'no', 'title'}]` | `build_snapshot()` |
+| `load_snapshot(path)` | 同上 | 加载快照（不存在/解析失败返回 `None`） | `audit_rule_doc.audit()` |
+| `snapshot_counts(path)` | 同上 | 返回语料文件名→快照期望块数 | `maintain_rag.verify_outputs()` |
+| `build_snapshot(doc_path, root)` | 同上 | 构建完整快照字典 | `sync_rule_stats.refresh_snapshot()` |
+| `write_snapshot(snap, path)` | 同上 | 写入快照 JSON | `sync_rule_stats.refresh_snapshot()` |
 
 `eval_rule_faqs.py` 用 RAG 检索评估 FAQ 可命中率：评估集 `data/rag_evals/rule_faq_eval.json`，`run_eval()` 对每题调 `Retriever._vector_search(question, where={'kind': 'faq'}, n=...)`，断言期望 `block_id` 出现在 top-k 内，零 LLM 成本，可进 CI。
 
@@ -1106,7 +1145,7 @@ _set_busy(busy)                                                [执行期间]
 |------|--------|----------|
 | `maintain_rag.main()` | QProcess 子进程 | `rag_audit.*`, `audit_rule_doc.audit()`, `task_changed()`, `run_script()`, `verify_outputs()` |
 | `run_script(script_name, timeout)` | `maintain_rag.main()` | `subprocess.run(['-m', 'src.scripts.' + module])` |
-| `verify_outputs(task)` | `maintain_rag.main()` | `audit_rule_doc.snapshot_counts()` |
+| `verify_outputs(task)` | `maintain_rag.main()` | `snapshot_common.snapshot_counts()` |
 | `rag_common.load_json()` / `save_json()` | 全部 build 脚本、`import_hero_adjustments.py` | `atomic_write_json()` |
 | `rag_common.install_crash_logger(name)` | 10 个 build 脚本、元规则脚本 `main()` 首行 | `setup_stdout()`, `get_script_logger()`, `_ensure_script_logger_handlers()` |
 | `import_hero_adjustments.main()` | `python -m src.scripts.import_hero_adjustments` | `collect_snapshot_events()`, `save_timeline()`, `build_timeline_events()`, `append_announcement_events()` |
@@ -1141,7 +1180,11 @@ _set_busy(busy)                                                [执行期间]
 | `rule_doc_ops_service.save_confirmed_diffs(root, rows)` | `RuleDocPanel._apply_diffs()` | `atomic_write_json()` |
 | `audit_rule_doc.audit(...)` | `audit_rule_doc.main()`, `maintain_rag.main()`, `apply_rule_proposal.run_audit_strict()` | `parse_rule_doc()`, `sync_rule_stats.diff_sections()` |
 | `sync_rule_stats.diff_sections(doc_text, data, only)` | `sync_rule_stats.main()`, `audit_rule_doc.audit()` | `find_section()`, `table_rows_in()`, `gen_*_rows()` |
-| `sync_rule_stats.apply_confirmed(confirmed, doc_text)` | `sync_rule_stats.main() --apply-json` | 预检 + `_atomic_write_text()`, `append_changelog()`, `refresh_snapshot()` |
+| `sync_rule_stats.apply_confirmed(confirmed, doc_text)` | `sync_rule_stats.main() --apply-json` | 预检 + `_atomic_write_text()`, `append_changelog()`, `snapshot_common.build_snapshot()` / `write_snapshot()` |
+| `snapshot_common.load_snapshot(path)` | `audit_rule_doc.audit()` | JSON 加载，不存在/解析失败返回 `None` |
+| `snapshot_common.snapshot_counts(path)` | `maintain_rag.verify_outputs()` | 语料文件名→快照期望块数映射 |
+| `snapshot_common.build_snapshot(doc_path, root)` | `sync_rule_stats.refresh_snapshot()` | `parse_rule_doc()`, `chapters()`, `norm()`, `doc_md5()` |
+| `snapshot_common.write_snapshot(snap, path)` | `sync_rule_stats.refresh_snapshot()` | JSON 写盘 |
 | `apply_rule_proposal.apply_proposal(doc_text, proposal)` | `apply_rule_proposal.main()` | `APPLYERS` 五种合入动作 |
 | `CardPointsService.add_card/replace_card/delete_card` | `CardPointsPanel._add/edit/delete_card()` | `CardPointsRepository.*` |
 | `ClassificationService.save/set_hero_categories/...` | `HeroClassificationPanel` | `HeroClassificationRepository.*` |
@@ -1217,6 +1260,6 @@ src.scraper.ai.batch (main)
 | 3 | `SpecialCardsPanel`、`HeroClassificationPanel` 的完整内部方法清单未逐行复读 | 本文档只覆盖与本模块相关的写路径与 `data_changed` 联动；物理位置已确认为 `src/ui/library/` |
 | 4 | `rag_prompt.py` 后半段（`_format_rag_chunks`、`build_synergy_rag_context` 内部细节）未逐行复读 | 相关描述引自 `call_graph_ai_batch.md`（同基线） |
 | 5 | `config.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | 仅 `config.py` 定义并回显（`config.txt` / `config.env.example` 有预留项），全项目无消费点，未列入调用链 |
-| 6 | 语料块数期望值（如武将 615 / 卡牌 49 / 特殊机制 83 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；当前磁盘实测武将语料 622 块（`expected=615` 未同步），`expected=None` 的动态任务实测：武将分类 180 / 组合 509 / 攻略 357 |
+| 6 | 语料块数期望值（如武将 639 / 卡牌 49 / 特殊机制 85 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；当前磁盘实测武将语料 639 块（`expected=639` 已同步），`expected=None` 的动态任务实测：武将分类 184 / 组合 509 / 攻略 357 |
 | 7 | `rag_curated.INDEX_FIELDS` 含 5 字段（含 `target`），`refinement_service.INDEX_FIELDS` 只有 4 字段 | **已修复**：2026-09-15 新增 `data/corpus_fields.py` 字段契约模块，`CARD_FIELDS`/`HERO_FIELDS` 为唯一权威定义，`refinement_service` 与 `rag_curated` 共用 `fields_for(kind)`，消除字段集漂移 |
 | 8 | `eval_rule_faqs.py --generate` 生成的评估集 `version` 字段为生成日，磁盘实测 79 题（与 `FAQ裁定块.json` 79 块同源，非巧合） | 评估集由 `--generate` 重建会丢弃人工追加的新题，追加须手工编辑 `data/rag_evals/rule_faq_eval.json` |

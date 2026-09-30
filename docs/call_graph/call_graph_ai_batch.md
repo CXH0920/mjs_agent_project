@@ -374,7 +374,7 @@ src.business.fetching.synergy_fetch_service
      [经典模式 use_rag=False] -> 追加 --no-rag
 
 src.ui.app.main_window
-  -> 菜单「数据 → 攻略获取 / 武将相性」-> AiGenerationWorkflow -> GuideFetchService / SynergyFetchService [间接调用]
+  -> 菜单「数据 → 攻略生成 / 武将相性」-> AiGenerationWorkflow -> GuideFetchService / SynergyFetchService [间接调用]
 
 复用 complete() / generate_synergy() 做通用对话补全（不经生成循环，直接调 API 生成器；后两者经 refinement_service.build_generator() 取生成器）:
 src.business.rag.refinement_service            -> resolve_api_config(profile_name) -> AIBatchGenerator -> complete(messages, 0.2)

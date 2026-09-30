@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载
-> 文档日期：2026-09-21
+> 文档日期：2026-09-29
 
 ---
 
@@ -270,6 +270,32 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 
 报告字段：`total` / `imported` / `unmatched` / `duplicates` / `invalid` / `seat_stats` / `seat_review` / `position_mismatch` / `manual_kept` / `manual_collisions` / `removed_stale`
 
+### 3.8 官方榜单导入服务按职责域拆分（2026-09-29 新增）
+
+`src/business/recognition/official_data_import_service.py` 从原先的单文件实现拆分为三个职责域，commit 55e3587 落地：
+
+| 模块 | 文件 | 职责 | 依赖边界 |
+|------|------|------|----------|
+| 纠错规则 | `name_resolution.py` | 武将名纠错与词表消解（`HeroNameResolver`）：精确匹配、前缀歧义、编辑距离纠错、混淆字对变体、批次唯一性补全、跨榜一致性消解、名称校验与复核候选生成 | 零 cv2/numpy/OCR 引擎依赖，仅依赖 `data/heroes.json` 与 `CharacterSimilarityService` |
+| 引擎策略 | `official_ocr_engines.py` | 双 OCR 引擎生命周期（`OfficialOcrEngines`）：简体主引擎懒加载、罕见字兜底引擎按需加载（v6 复核引擎优先 / 繁体回退）、兜底引擎失败标记、跨任务移交（`ocr`/`rare_char_ocr` 原始值属性） | 仅依赖 `create_paddle_ocr` / `get_recheck_ocr_engine` |
+| 数据联动 | `official_data_import_service.py` | OCR 识别编排（表格线切分、逐行识别、排名序列校验、复核原因生成、CSV 写入、待复核会话持久化、人工修正应用） | 持有 `HeroNameResolver` 与 `OfficialOcrEngines` 两个协作者；只认 `main`/`rare_char` 两个识别入口 |
+
+**拆分收益：**
+- 导入服务只认 `main`/`rare_char` 两个识别入口，不再关心引擎加载策略
+- 纠错规则零 cv2/numpy/OCR 依赖，可独立单元测试
+- 导入服务与复核对话框共用同一 `HeroNameResolver` 实例，词表只加载一次（`OfficialDataImportService` 构造不再隐式读 `heroes.json`）
+- `ocr_worker` 经 `ocr`/`rare_char_ocr` 原始值属性在任务前后移交引擎，避免跨任务重复加载模型
+
+### 3.9 知识库归类/专属牌名单同步（2026-09-29 新增）
+
+爬虫与公告检查更新 `data/heroes.json` 后，知识库归类面板（`hero_classification_panel.py`）与专属牌面板（`special_cards_panel.py`）随刷新入口同步加载武将名单，commit 241e965 落地：
+
+- **hero_classification_panel.py** — `reload_data()` → `refresh_roster()` → `load_hero_briefs(root, repo.hero_names)` → `repo.update_hero_names(names)` → `_refresh_heroes()`。同步 heroes.json 的名单/定位/技能，不触碰归类编辑数据；读取失败时保留现有名单（fallback 语义）。
+- **special_cards_panel.py** — `reload_data()` → `_refresh_roster()` → `load_hero_briefs(root, _hero_names)` → 更新 `_hero_names` 集合。新增武将可关联专属牌。
+- **hero_classification_repository.py** — `update_hero_names(names)` 仅更新武将名单环境（不触碰归类数据），heroes.json 更新后由面板刷新入口调用。
+
+> **设计思路：** heroes.json 是官方榜单导入服务（词表消解）与知识库面板（归类/专属牌）的共同事实源。爬虫更新 heroes.json 后，各面板的 `reload_data` 入口统一调用 `load_hero_briefs` 刷新武将名单，确保新增武将可被归类或关联专属牌。
+
 ---
 
 ## 四、字段清洗与默认值代码节选
@@ -371,3 +397,10 @@ def transform(raw: dict) -> dict | None:
 | 被调用方 | `src.business.announcement.announcement_service` | 公告检查 / 更新候选准备；`_sync_timeline()` 在每次检查末尾落地 `data/mjs_adjustments.json` |
 | 被调用方 | `src.ui.app.main_window` | 菜单"数据 → 武将获取"触发爬虫 |
 | 被调用方 | `src.business.card_sync` | CardSyncService 调用 `fetch_official_cards` / `build_card_snapshot` / `diff_cards` 与 `CARD_HASH_FIELDS` / `CARD_FIELD_LABELS` / `normalize_text` 口径进行卡牌百科变更捕获（diff 摘要与全文格式化已迁 card_sync 本模块） |
+
+---
+
+## 七、代码规模（2026-09-29）
+
+- 测试模块数：112 文件（`tests/test_*.py`）
+- 测试用例数：1337 个 `test_*` 函数

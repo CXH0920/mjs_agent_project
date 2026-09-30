@@ -512,7 +512,8 @@ def test_ui_must_not_import_infra() -> None:
 # recognizer.py 条目即绞杀者规则的机械化：只减不增，新特征一律进新模块。
 # ---------------------------------------------------------------------------
 FILE_LINE_BUDGETS: dict[str, int] = {
-    "ui/app/main_window.py": 817,
+    # 819：菜单栏重排新增"文件"菜单组与数据菜单两条分组分隔线（净 +2，2026-09）
+    "ui/app/main_window.py": 819,
     "ui/configuration/mumu_config_dialog.py": 771,
     "ui/recommendation/recommendation_panel.py": 860,
     "ui/maintenance/rule_doc_panel.py": 928,

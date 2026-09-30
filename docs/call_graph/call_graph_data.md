@@ -6,9 +6,15 @@
 
 ---
 
-## 当前实现基线（2026-09-21）
+## 当前实现基线（2026-09-29）
 
 `DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。武将变更时间轴 `data/mjs_adjustments.json` 于 2026-08-29 首次落地，与 `heroes.json` 并行供 RAG 构建脚本使用。
+
+**2026-09 架构拆分（审计 F3 解环）**：`DataFacade` 门面自 `manager.py` 拆至 `facade.py`（门面须顶层 import 三个 Manager 子类，而子类继承 `manager.DataManager`，同文件会形成"基类模块 ↔ 子类"循环依赖）；`DataIssue` / `LoadReport` 问题值对象自 `manager.py` 拆至 `issues.py`（`json_repository`、各仓储与 business 层均需构造 `DataIssue`，留在基类模块会形成底层工具反向依赖基类的循环依赖）；`manager.py` 回归为管理器基类与默认路径常量所在。
+
+**新增（0007fc4）**：`baike_ignore_store.py`——百科 diff 忽略名单，管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化，详见 [十四、百科 diff 忽略名单链路](#十四百科-diff-忽略名单链路baike_ignore_storepy)。
+
+**代码规模**：112 个测试文件 / 1337 个 `test_*` 函数（AST 静态计数，未计入 `parametrize` 展开）。
 
 ```
 MainWindow._load_data() -> DataFacade.load_all()
@@ -453,6 +459,11 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `save_card_snapshot(snapshot, path)` | `card_sync_store.py` | `CardSyncService._finalize_check()`, `apply_updates()` | 原子写入卡牌快照 |
 | `load_card_changes(path)` | `card_sync_store.py` | `append_card_change()`, `audit_service.collect_stale_card_curated()` | 读取变更记录列表；单条损坏跳过 |
 | `append_card_change(record, path)` | `card_sync_store.py` | `CardSyncService.apply_updates()` | 幂等追加变更记录（date+id 集合判重），返回是否写入 |
+| `load_baike_ignores(path)` | `baike_ignore_store.py` | `AnnouncementService`（武将段）/ `CardSyncService`（卡牌段）| 读取忽略名单；文件缺失/损坏返回空名单 |
+| `save_baike_ignores(store, path)` | `baike_ignore_store.py` | `ignore_entry()`, `remove_entry()` | 原子写入忽略名单（覆盖式） |
+| `ignore_entry(kind, entry_id, ...)` | `baike_ignore_store.py` | `AnnouncementService.ignore_hero()`, `CardSyncService.ignore_card()` | load-modify-save 写入一条忽略 |
+| `remove_entry(kind, entry_id, path)` | `baike_ignore_store.py` | `AnnouncementService.restore_heroes()`, `CardSyncService.restore_cards()` | 恢复一条忽略（下次检查重新显示） |
+| `filter_ignored(diff, hashes, entries)` | `baike_ignore_store.py` | `AnnouncementService._do_check()`, `CardSyncService._do_check()` | 按 state+hash 矩阵过滤 diff，返回 (过滤后, 被过滤条数) |
 
 ---
 
@@ -685,3 +696,87 @@ announcement.py（爬虫侧）
 - `extract_trigger_cond()` 仅做正则匹配（`FIXED_TRIGGER_REGEXES` + `FIXED_TRIGGER_PATTERNS`），无查表分支；
 - `collect_timeline_risk_messages()` 仅输出 `heroes.json` 疑未同步条目，无 override 风险段；
 - `audit_version_timeline()` 仅输出疑未同步武将 + 语料过时块，无 override 风险段。
+
+---
+
+## 十四、百科 diff 忽略名单链路（`baike_ignore_store.py`）
+
+0007fc4 新增。`BaikeIgnoreStore` 管理 `data/baike_ignore.json`——用户显式压制的百科差异条目。忽略 = 该差异条目在检查链路上视为不存在，**不影响基线快照推进，也不影响武将时间轴**（时间轴数据源是公告列表，与 diff 无关）。
+
+### 14.1 武将段（`AnnouncementService`）
+
+```
+AnnouncementService.ignore_hero(entry_id, name, state, content_hash)
+  -> ignore_entry("heroes", entry_id, name, state, content_hash, self._ignore_path)
+     -> load_baike_ignores(path)
+     -> store.heroes[entry_id] = IgnoreEntry(name, state, hash, ignored_at)
+     -> save_baike_ignores(store, path)                     [覆盖式写入]
+
+AnnouncementService.ignored_hero_count() / list_ignored_heroes()
+  -> load_baike_ignores(self._ignore_path).heroes           [返回段引用]
+
+AnnouncementService.restore_heroes(entry_ids=None)
+  -> [entry_ids=None] list(load_baike_ignores(path).heroes) [全部恢复]
+  -> for entry_id: remove_entry("heroes", entry_id, path)
+     -> store.heroes.pop(entry_id, None)
+     -> save_baike_ignores(store, path)
+
+AnnouncementService._do_check()                              [检查链路过滤]
+  -> diff = diff_heroes(current_plain, baseline_plain)
+  -> official_hashes = {id: entry.hash for entry in snapshot.heroes.values()}
+  -> diff, ignored_count = filter_ignored(diff, official_hashes,
+      load_baike_ignores(self._ignore_path).heroes)
+     -> for state, items in diff.items():
+        -> for item: entry = entries.get(str(item["id"]))
+           -> _matches(entry, state, official_hashes.get(id)):
+              -> state != "removed": entry.state == state 且 entry.hash == 当前官网哈希
+              -> state == "removed": entry.state == "removed"（官网侧无哈希可比）
+           -> [匹配] ignored_count += 1；[不匹配] kept.append(item)
+     -> return (filtered, ignored_count)
+  -> AnnouncementManager.mark_ready_if_updated(filtered_diff, current_names)
+                                                    [压制后 diff 传入 -> ready 判定随之一致压制]
+```
+
+### 14.2 卡牌段（`CardSyncService`）
+
+```
+CardSyncService.ignore_card(card_id, name, change)
+  -> official_by_id = {str(card["id"]): card for card in self._last_official_cards}
+  -> ignore_entry("cards", str(card_id), name, change,
+      content_hash=card_content_hash(official), path=self._ignore_path)
+
+CardSyncService.ignored_card_count() / list_ignored_cards()
+  -> load_baike_ignores(self._ignore_path).cards
+
+CardSyncService.restore_cards(entry_ids=None)
+  -> [entry_ids=None] list(load_baike_ignores(path).cards)
+  -> for entry_id: remove_entry("cards", entry_id, path)
+
+CardSyncService._do_check()                                  [检查链路过滤]
+  -> diff = diff_cards(current_plain, baseline_plain)
+  -> official_hashes = {id: entry.hash for entry in snapshot.cards.values()}
+  -> diff, ignored_count = filter_ignored(diff, official_hashes,
+      load_baike_ignores(self._ignore_path).cards)
+```
+
+### 14.3 过滤矩阵
+
+| 差异状态 | 忽略生效条件 | 重新出现条件 |
+|----------|-------------|-------------|
+| `modified` | `entry.state == "modified"` 且 `entry.hash == 当前官网哈希` | 官网内容再变（哈希不等） |
+| `added` | `entry.state == "added"` 且 `entry.hash == 当前官网哈希` | 官网内容再变（哈希不等） |
+| `removed` | `entry.state == "removed"`（官网侧无哈希可比） | 官网再上线（以 `added` 出现，state 不匹配自然重现） |
+
+### 14.4 降级与存储
+
+```
+load_baike_ignores(path)
+  -> [文件不存在] return BaikeIgnoreStore()                  [空名单，无忽略]
+  -> BaikeIgnoreStore.model_validate_json(path.read_text())
+  -> [解析失败] logger.warning + return BaikeIgnoreStore()   [降级为无忽略，不中断检查]
+
+save_baike_ignores(store, path)
+  -> atomic_write_json(path, store.model_dump(mode="json"), indent=2)
+```
+
+> **设计说明**：`state + hash` 定位"同一差异"而非仅凭 ID——同一武将/卡牌在忽略期间若官网再次变化，新差异不会被误压制。覆盖式保存使文件恒定大小，与快照语义一致。武将段与卡牌段共用同一文件但各占一段，互不干扰。

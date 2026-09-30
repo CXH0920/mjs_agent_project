@@ -419,5 +419,5 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | 依赖 | `src.scraper.ai.prompt_utils` | 共享 prompt 构建函数（`load_prompt`/`build_guide_prompt`/`build_synergy_prompt`/`_skill_lines`），消除 API 与浏览器生成器之间的代码重复 |
 | 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成（`--guide` + 可选 `--heroes-file` / `--update` / `--browser` / `--no-rag`） |
 | 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成（`--synergy-pair` / `--synergy-single` / `--synergy-list` + 可选 `--update` / `--browser` / `--no-rag`） |
-| 被调用方 | `src.ui.app.main_window` | 菜单「数据 → 攻略获取 / 武将相性」子菜单触发生成（经 `src.ui.generation.ai_generation_workflow`） |
+| 被调用方 | `src.ui.app.main_window` | 菜单「数据 → 攻略生成 / 武将相性」子菜单触发生成（经 `src.ui.generation.ai_generation_workflow`） |
 | 被调用方 | `src.business.rag.refinement_service` / `src.business.maintenance.classification_suggest` / `src.scripts.propose_rule_changes` / `src.scripts.run_synergy_drift` | 复用 `AIBatchGenerator.complete()` 做通用对话补全（语料精炼建议、武将分类建议、规则变更提案、相性漂移采样） |

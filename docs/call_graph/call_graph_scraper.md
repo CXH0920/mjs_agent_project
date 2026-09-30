@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-21）
+## 当前实现基线（2026-09-29）
 
 ```
 official.py:main()      ← shim, 转调 official_source.full.main()
@@ -676,3 +676,150 @@ CardSyncDialog._build_candidates(result)                      [ui/data_admin/car
 | `card_baike.clean_card_detail(html)` | `card_baike.py` | `_clean_official_card()` | `re.sub()` 块级标签→换行, `html.unescape()` |
 
 （`card_field_diff_summary()` / `card_baike.format_card_full_text()` 已迁至 `business/card_sync.py`（被 `CardSyncDialog._build_candidates()` 调用），不再属 scraper 边表；详见 [call_graph_business.md](./call_graph_business.md)。）
+
+---
+
+## 九、官方榜单导入服务调用链（按职责域拆分，2026-09-29 新增）
+
+commit 55e3587 将官方榜单导入服务拆分为三个职责域：`name_resolution.py`（纠错规则）、`official_ocr_engines.py`（引擎策略）、`official_data_import_service.py`（数据联动）。以下是拆分后的调用链：
+
+### 9.1 导入服务构造与词表加载
+
+```
+OfficialDataImportService(hero_names, ocr_engine, rare_char_ocr_engine, name_resolver)
+  -> HeroNameResolver(hero_names)
+     -> _load_hero_names()               [data/heroes.json 词表加载, 零 cv2/numpy 依赖]
+     -> CharacterSimilarityService()      [基线纠错白名单表]
+  -> OfficialOcrEngines(ocr_engine, rare_char_ocr_engine)
+     -> 不触发懒加载（仅保存注入值）
+```
+
+### 9.2 OCR 识别编排（数据联动）
+
+```
+OfficialDataImportService.import_pages(key, image_paths)
+  -> official_board_parser.read_image(path) ×N
+  -> official_board_parser.detect_layout(image, key)
+  -> official_board_parser.extract_panels(image, layout) ×N
+  -> official_board_parser.find_data_boundaries(panel, height, layout, panel_index)
+  -> official_board_parser.restore_missing_boundaries(boundaries)
+  -> [遍历 panel_tasks]
+     -> official_board_parser.prepare_rate_templates(...)              [胜率列]
+     -> official_board_parser.split_row_cells(row, columns, breaks)
+     -> OfficialDataImportService._recognize_row(row, ...)
+        -> [column == "武将"]
+           -> OfficialDataImportService._recognize_name_cell(cell)
+              -> _recognize_cell_candidates(cell)
+                 -> OfficialOcrEngines.main.ocr(candidate, cls=False)   [懒加载简体主引擎]
+              -> HeroNameResolver.exact_hero_matches(candidates)
+              -> HeroNameResolver.select_unique_name_match(matches)
+              -> HeroNameResolver.chinese_text(text)
+              -> HeroNameResolver.ambiguous_name_candidates(name)
+              -> _recognize_name_glyphs(cell)
+                 -> _recognize_cell(glyph)                              [逐字识别]
+                 -> HeroNameResolver.chinese_text(text)
+              -> HeroNameResolver.correct_official_name(glyph_name)
+                 -> CharacterSimilarityService.correct_hero_name(name, hero_names)
+                 -> HeroNameResolver._confusion_variants(name)
+              -> HeroNameResolver._recognize_name_with_engine(cell, rare_char_engine, allowed_names)
+                 -> HeroNameResolver.exact_hero_matches(candidates)
+                 -> HeroNameResolver.select_unique_name_match(exact_matches)
+                 -> HeroNameResolver._recognize_name_glyphs(cell, engine)
+                 -> HeroNameResolver.chinese_text(text)
+              -> HeroNameResolver.correct_official_name_with_path(name)
+                 -> HeroNameResolver.correct_official_name(name)
+        -> [column != "武将"]
+           -> OfficialDataImportService._recognize_cell(cell)
+              -> _recognize_cell_candidates(cell)
+                 -> OfficialOcrEngines.main.ocr(candidate, cls=False)
+  -> HeroNameResolver.resolve_batch_names(batch)               [榜单内唯一性补全]
+  -> HeroNameResolver.resolve_names_across_outputs(outputs)    [跨榜一致性消解]
+  -> HeroNameResolver.validate_output_names(outputs)
+  -> [校验失败] _save_pending_session(...)                     [持久化待复核会话]
+  -> [校验通过] _write_csv(...) ×N
+  -> notify_official_outputs_written(outputs)                  [通知推荐索引重建]
+```
+
+### 9.3 复核对话框调用链
+
+```
+OfficialImportReviewDialog(pending)
+  -> HeroNameResolver()                              [词表只加载一次, 注入服务复用]
+  -> OfficialDataImportService(name_resolver=self._names)
+
+OfficialImportReviewDialog._accept()
+  -> HeroNameResolver.review_candidates(ocr_name, current)    [候选建议: 距离≤2/歧义候选]
+  -> OfficialDataImportService.apply_reviewed_records(pending, corrections)
+     -> HeroNameResolver.validate_output_names(outputs)
+     -> _write_csv(...) ×N
+     -> notify_official_outputs_written(outputs)
+     -> clear_pending_session(session_path)
+```
+
+### 9.4 白名单配置对话框调用链
+
+```
+WhitelistConfigDialog(hero_names, reset_ocr_cache)
+  -> load_overrides()                                [data/ocr_confusion_overrides.json]
+  -> load_pending_entries()                          [data/ocr_name_pending_stats.json]
+
+WhitelistConfigDialog._add_pair()
+  -> find_whitelist_conflicts(hero_names, merged)    [静态冲突检查: 等长差一字高危对]
+  -> save_overrides(self._overrides)
+  -> reset_ocr_cache()                               [CaptureService.reset_ocr_recognizer_cache()]
+  -> self.refresh()                                  [重新加载错法观察表]
+```
+
+> **设计说明**：`name_resolution.py` 的 `HeroNameResolver` 是纯规则模块（零 cv2/numpy/OCR 依赖），被导入服务、复核对话框与白名单配置对话框三处共用。`official_ocr_engines.py` 的 `OfficialOcrEngines` 持有两个 OCR 引擎原始值，导入服务只认 `main`/`rare_char` 两个识别入口，`ocr_worker` 经原始值属性在任务前后移交引擎避免重复加载。
+
+---
+
+## 十、知识库归类/专属牌名单同步调用链（2026-09-29 新增）
+
+commit 241e965 新增：爬虫/公告更新 `data/heroes.json` 后，知识库归类面板与专属牌面板随刷新入口同步加载武将名单。
+
+### 10.1 武将分类面板（hero_classification_panel.py）
+
+```
+HeroClassificationPanel.reload_data(confirm_discard)
+  -> [有未保存修改] QMessageBox.question() → self._dirty = False
+  -> HeroClassificationRepository.load()                 [data/hero_classification.json]
+  -> HeroClassificationPanel.refresh_roster()
+     -> load_hero_briefs(root, repo.hero_names)          [src/business/rag/hero_brief.py]
+        -> 读取 data/heroes.json，提取 name/position/skills
+        -> [文件缺失] logger.warning + 返回空集合（不阻断）
+     -> HeroClassificationRepository.update_hero_names(names)  [仅更新名单环境，不触碰归类数据]
+     -> HeroClassificationPanel._hero_positions, _hero_skills = positions, skills
+     -> HeroClassificationPanel._hero_names = sorted(names)
+     -> HeroClassificationPanel._refresh_heroes()        [重建武将列表]
+  -> HeroClassificationPanel._refresh_categories()       [重建分类列表]
+  -> [加载失败] 禁用保存按钮 + 状态栏提示
+```
+
+### 10.2 专属牌面板（special_cards_panel.py）
+
+```
+SpecialCardsPanel.reload_data()
+  -> SpecialCardsRepository.load()                      [data/special_cards.json]
+  -> SpecialCardsPanel._refresh_roster()
+     -> load_hero_briefs(root, _hero_names)             [读取 data/heroes.json]
+     -> [读取失败] logger.exception + 保留现有名单（fallback 语义）
+     -> self._hero_names = set(names)                   [更新武将名单集合]
+  -> SpecialCardsPanel._refresh_list()                  [重建专属牌列表]
+```
+
+### 10.3 仓库层（hero_classification_repository.py）
+
+```
+HeroClassificationRepository.update_hero_names(names)
+  -> self.hero_names = set(names or ())                 [仅更新名单环境]
+  -> [不触碰] _hero_categories / _counter_chain        [归类编辑数据保持]
+
+HeroClassificationRepository.list_unclassified()
+  -> sorted(self.hero_names - set(self._hero_categories))  [新增武将自动出现在未归类列表]
+
+HeroClassificationRepository.set_hero_categories(hero, categories)
+  -> [hero not in self.hero_names] raise ValueError("武将不在武将库中")  [依赖刷新后的名单环境]
+```
+
+> **设计说明**：heroes.json 是官方榜单导入服务（词表消解）与知识库面板（归类/专属牌）的共同事实源。爬虫更新 heroes.json 后，各面板的 `reload_data` 入口统一调用 `load_hero_briefs` 刷新武将名单，确保新增武将可被归类或关联专属牌。`update_hero_names` 仅更新名单环境，不触碰归类编辑数据，保证用户正在编辑的归类不被覆盖。

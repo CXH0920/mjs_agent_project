@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-09-21（`0bd1228`）
+> 代码基线：2026-09-29（`0007fc4` + 工作树未提交改动）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-09-21
+> 文档日期：2026-09-29
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -26,10 +26,11 @@
 - [十四、数据全流程详解](#十四数据全流程详解)
 - [十五、巅峰赛选将识别与实战配队](#十五巅峰赛选将识别与实战配队)
 - [十六、卡牌百科同步](#十六卡牌百科同步)
+- [十七、开发状态表](#十七开发状态表)
 
 ---
 
-## 当前代码基线与业务不变量（2026-09-21）
+## 当前代码基线与业务不变量（2026-09-29）
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化）。
 
@@ -97,13 +98,14 @@ src/scraper/official_source/incremental.py ← 增量/指定采集实现
 src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（卡牌百科同步用）
 ```
 
-### 1.2 crawler.py 详细说明（349 行）
+### 1.2 crawler.py 详细说明
 
 #### 1.2.1 常量定义
 
 | 常量 | 值 | 用途 |
 |------|-----|------|
 | `BAIKE_URL` | `https://mjs.ztgame.com/baike/` | 官网百科首页 |
+| `SHOUPAIKU_URL` | `https://mjs.ztgame.com/shoupaiku/` | 官网手牌库首页（卡牌百科同步用） |
 | `BASE_URL` | `https://mjs.ztgame.com` | 用于拼接相对路径 |
 | `TIMEOUT` | `30` (秒) | HTTP 请求超时 |
 | `MAX_RETRIES` | `3` | 请求失败重试次数 |
@@ -116,7 +118,8 @@ src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（�
 
 - 使用 `urllib.request`（无第三方依赖）
 - 支持 `binary=True` 返回原始 bytes（头像下载用）
-- 3 次重试，间隔 2 秒，最后一次失败抛异常
+- 每次调用前先确保站点 robots.txt 已存档
+- 3 次重试，间隔 2 秒，最后一次失败抛异常；HTTP 400/401/403/404 属不可重试状态，立即抛出让调用方记录该条并继续
 - 不可用于异步环境，同步阻塞
 
 #### 1.2.3 robots.txt 存档（2026-09 合规化新增）
@@ -192,17 +195,20 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 1. `fetch(BAIKE_URL)` → 首页 HTML
 2. `find_chunk_url(html)` → JS chunk URL
 3. `fetch(chunk_url)` → JS 文本
-4. `parse_heroes_chunk(js_text)` → 165 条原始数据
+4. `parse_heroes_chunk(js_text)` → 全部原始武将数据（条数随官网版本变化）
 
-#### 1.2.9 头像下载（第 297-348 行）
+另有 `fetch_all_cards_raw()`：请求 `SHOUPAIKU_URL` → `find_card_chunk_url()` → `parse_cards_chunk()`，供卡牌百科同步使用。
+
+#### 1.2.9 头像下载
 
 **`download_hero_images(raw_list, image_dir, skip_existing) → int`**：
 - 遍历 `raw_list`，取 `icon_url` 和 `name`
-- 角色名经白名单校验后，文件路径固定为 `images/{武将名}.png`
-- 仅允许 HTTPS 官方图片域名，重定向目标逐跳复验
+- 角色名经白名单校验（`SAFE_IMAGE_NAME_PATTERN`，并排除 Windows 保留文件名）后，文件路径固定为 `images/{武将名}.png`，并做输出路径越界检查
+- 仅允许 HTTPS 官方图片域名（`ALLOWED_IMAGE_HOSTS`），重定向目标逐跳复验（上限 3 跳）
 - 以 64 KiB 分块写入临时文件，响应最大 5 MiB；Pillow 验证 PNG 格式与最大 4,000,000 像素
 - 本地 OCR/ROI 输入仅接受实际 PNG/JPEG，ADB 内存截图仅接受实际 PNG；所有入口均将解压炸弹警告视为错误
 - 验证成功后原子替换正式头像；失败时删除临时文件并保留已有头像
+- 逐张请求间隔 0.5 秒（跳过项不占用）；连续 5 张下载失败触发熔断中止本次下载，避免对源站瞬时连发触发限流
 - `skip_existing=True` 时检查文件存在性
 - 使用 `fetch(icon_url, binary=True)` 下载二进制
 - 单个失败只打 warning 不影响其他武将
@@ -217,13 +223,13 @@ raw["skill"] 遍历     → hero["skills"][]        (list[dict], split_skill_des
 |------|------|------|
 | [1/5] 定位数据源 | `fetch(BAIKE_URL)` → `find_chunk_url()` | 打印 chunk URL |
 | [2/5] 下载 JS | `fetch(chunk_url)` | 打印大小 |
-| [3/5] 解析数据 | `js_to_json(extract_js_array())` | 打印原始条数(165) |
+| [3/5] 解析数据 | `js_to_json(extract_js_array())` | 打印原始条数 |
 | [4/5] 清洗映射 | `[transform(r) for r in raw_list]` | 打印清洗后条数 + 势力分布 |
 | [5/5] 校验 | `validate_heroes(transformed)` | 打印通过/失败条数 |
 
 输出阶段：
 - `dry_run=True` → 仅预览前 5 条
-- 否则 → 写入 `data/heroes.json` + 下载头像
+- 否则 → 经 `save_json_atomic()`（临时文件 + 原子替换）写入 `data/heroes.json` + 下载头像
 
 #### 1.3.2 命令行参数
 
@@ -263,28 +269,26 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 1. `[transform(r) for r in raw_list]` → 清洗
 2. `validate_heroes(transformed)` → Pydantic 校验
 3. `dry_run` → 预览退出
-4. 确定写入策略（append / replace / 全覆盖）
-5. `json.dump(merged, f, ensure_ascii=False, indent=2)`
+4. 确定写入策略（append / replace / 全覆盖）；读取本地旧文件失败时先备份为 `*.corrupt-*` 再以空列表继续，避免解析异常裸崩或静默覆盖丢失
+5. `save_json_atomic()` 原子写入（临时文件 + 替换）
 6. `download_hero_images(raw_list)`（非 dry_run 时）
 
 ### 1.5 card_baike.py：官网手牌库抓取与 diff
 
-`card_baike.py` 为卡牌百科同步功能（第十六章）提供官网手牌库抓取与差异比对能力，由 `CardSyncService` 在后台调用，不直接面向 CLI。
+`card_baike.py` 为卡牌百科同步功能（第十六章）提供官网手牌库抓取清洗与逐卡 diff 基元，由 `CardSyncService` 在后台调用，不直接面向 CLI。数据源为 `/shoupaiku/` 页面引用的 `spk.<hash>.js`（内嵌 49 张基础牌），发现机制与武将 mjbk chunk 同构但页面不同。
 
 **核心函数**：
 
 | 函数 | 说明 |
 |------|------|
-| `fetch_cards() → list[dict]` | 从官网手牌库页面抓取全部卡片原始数据，字段包括 `id`、`name`、`type`、`points`、`effect` 等 |
-| `normalize_cards(raw) → list[dict]` | 字段映射与清洗，与 `cards.json` 格式对齐 |
-| `diff_cards(current, official) → list[dict]` | 与当前 `cards.json` 逐条 diff，返回变更列表（added / modified / removed） |
+| `fetch_official_cards() → list[dict] | None` | 经 `crawler.fetch_all_cards_raw()` 获取官网手牌库全部卡牌原始记录，失败返回 None（不中断检查） |
+| `card_content_hash(card) → str` | 基于官网字段计算内容哈希（MD5），哈希口径为 `name / card_type / card_desc / card_detail` 四件套；`card_amount` 官网没有、本地扩展字段不入哈希 |
+| `build_card_snapshot(cards) → dict[str, dict]` | 将卡牌列表转为 `{id: {name, hash}}` 快照结构（id 统一字符串，与本地对齐） |
+| `diff_cards(current, baseline) → dict[str, list[dict]]` | 对比当前与基线快照，返回 `{added, modified, removed}` 卡牌清单（id 为字符串，按数值排序展示） |
 
-**抓取流程**：
-1. 请求官网手牌库 JS chunk 或 HTML 页面
-2. 解析卡片数据（结构解析方式与武将百科 chunk 类似）
-3. 返回标准化卡片列表供 `CardSyncService` 做 diff 比对
+**辅助函数**：`normalize_text()`（去标签/HTML 解码/去空白/全半角统一，与武将侧同口径）、`clean_card_detail()`（card_detail 块级标签转换行保留分段结构，存盘格式用）。
 
-> `card_baike.py` 的 HTTP 请求复用 `crawler.fetch()` 基础设施（3 次重试、30s 超时、反爬头），但不依赖 `adapter.py` 的武将 chunk 解析逻辑，因其页面结构与武将百科不同。
+> `card_baike.py` 复用 `crawler.fetch_all_cards_raw()` 基础设施（3 次重试、30s 超时、反爬头），chunk 发现与解析走 `adapter.py` 的 `find_card_chunk_url()` / `parse_cards_chunk()`——与武将 chunk 同机制但页面与正则不同（`spk.` 后紧跟点号，天然排除同页引用的 `spk-legacy.*` 预取脚本）。
 
 ---
 
@@ -304,13 +308,13 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python -m src.scripts.maintain_rag --force --build-index` 或应用内「知识库维护」页面。
-- **规模（2026-09）**：`src/business/rag/task_defs.py` 定义 **10 个语料任务**，对应 `data/rag_corpus/` 下 **12 个语料 JSON**，合计 **2090 个检索块**（武将技能 622 / 专属牌 509 / 武将攻略 357 / 卡牌效果 83 / FAQ 79 / 强化技能卡 49 / 武将总览 49 / 技能色卡 49 / 卡牌 48 / 元规则章节 38 / 装备属性 27 / 武将分类 180）。
-- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 133 条事件 = 126 条初始化 + 7 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。
+- **规模（2026-09）**：`src/business/rag/task_defs.py` 定义 **10 个语料任务**，对应 `data/rag_corpus/` 下 **12 个语料 JSON**，合计 **2118 个检索块**（武将语料 639 / 组合语料 509 / 武将攻略语料 357 / 武将分类语料 184 / 特殊机制语料 85 / FAQ 裁定块 82 / 术语表 50 / 加强削弱语料 49 / 卡牌语料 49 / 卡牌点数花色语料 49 / 元规则章节块 38 / 装备属性语料 27）。
+- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 141 条事件 = 126 条初始化 + 15 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。
 - **检索性能（2026-08）**：`Retriever` 加载语料时构建武将/牌名倒排 `_hero_index` 与 `_id2text/_id2meta` 字典，`hero_blocks()`、`_text_of()`、`_meta_of()` 不再线性遍历全量块；静态 `KEYWORDS` 关键词倒排 `_keyword_index` 惰性构建，`_keyword_hits()` 中查询相关名称保持线性扫描（数量少），避免每次查询全量遍历。`src/rag/config.py` 不再在 import 时创建目录，改由使用点确保（#49）。
 - **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `src/scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `src/scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `src/.rule_doc_snapshot.json`（项目根））；③ `src/scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`src/scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `src/scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `src/scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
 - **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`src/scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
 
-- **社区侧语料接入（2026-08）**：raw_guides/（jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv）加工成检索块进向量库。`src/scripts/build_combo_corpus.py` 把 csv（武将对+亮点）与 combos md（强力组合表格/平阳公主强势组合盘点/巴清搭配/孟尝君+黄月英深解）切块归并为组合RAG语料（combo 类，437 块）；`src/scripts/build_guide_corpus.py` 把 guides 45 篇按 ## 章节拆为武将攻略RAG语料（guide 类，357 块）。设计点：组合块**不贴单值 hero**（避免 post-filter 丢一侧武将）**但贴 heroes 列表** `[hero_a, hero_b]`，post-filter 按武将列表过滤根治"text 提'类XX'"的跨武将噪声；攻略块贴 `hero=武将名` 保证必召回。`_norm_combo`/`_norm_guide` 在 `indexer.py` 规范化，`KIND_MAX` 加 `combo:3/guide:2` 配额。
+- **社区侧语料接入（2026-08）**：raw_guides/（jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv）加工成检索块进向量库。`src/scripts/build_combo_corpus.py` 把 csv（武将对+亮点）与 combos md（强力组合表格/平阳公主强势组合盘点/巴清搭配/孟尝君+黄月英深解）切块归并为组合RAG语料（combo 类，509 块）；`src/scripts/build_guide_corpus.py` 把 guides 45 篇按 ## 章节拆为武将攻略RAG语料（guide 类，357 块）。设计点：组合块**不贴单值 hero**（避免 post-filter 丢一侧武将）**但贴 heroes 列表** `[hero_a, hero_b]`，post-filter 按武将列表过滤根治"text 提'类XX'"的跨武将噪声；攻略块贴 `hero=武将名` 保证必召回。`_norm_combo`/`_norm_guide` 在 `indexer.py` 规范化，`KIND_MAX` 加 `combo:3/guide:2` 配额。
 - **RAG 注入分两段（2026-08）**：`rag_prompt._format_rag_chunks` 按 kind 分两段注入——「官方规则语料」（hero/rule/card/faq 等硬依据）与「社区实战参考」（combo/guide 启发层）；官方/社区独立预算池（core_ratio 给官方，剩余给社区，官方未用滚给社区），社区池内 combo 优先于 guide（组合信息对相性更直接，避免长攻略挤掉组合块）。社区段定位"取思路非文风"，约束 AI 借鉴联动思路但用规范语言重述，不照搬口语/网络用语。两处 post-filter（`build_rag_context` 单武将 / `build_synergy_rag_context` 双武将）按 `metadata.hero` 或 `heroes` 列表过滤，combo 块含任一目标武将才保留。
 - **卡牌体系防串味兜底（2026-08）**：RAG 开启时卡牌类语料块因向量召不回，`build_guide_prompt`/`build_synergy_prompt` 在 RAG 段后兜底注入 `rule_summary.load_card_system()` 提取的「卡牌体系」段（行动/战法/装备/专属牌名清单），防止 AI 用三国杀牌名串味；RAG 关闭且无语料召回时仍注入完整 `load_core_rules()`。Prompt 底层规则补充：本游戏"杀/闪/桃"是通用说法不必回避，严禁混用三国杀特有牌名。
 - **索引字段扩展（2026-08）**：`src/rag/indexer.py` 的 `_norm_hero` 在武将技能块文本中追加 `时机`（`timing` 字段）与 `触发条件`（`trigger_condition` 字段），提升技能触发时机相关查询的召回质量。
@@ -323,6 +327,7 @@ ai_batch.py (兼容 CLI) -> ai/batch.py (实际入口)
  ├── 委托给各 run_* 函数
  └── ai/generation.py → run_guide_generation() / run_synergy_generation()
                          / run_synergy_pair_generation() / run_synergy_single_generation()
+                         / run_synergy_list_generation()
                          _save_json() 写入结果
 ```
 
@@ -341,6 +346,7 @@ ai_batch.py (兼容 CLI) -> ai/batch.py (实际入口)
 | `--score-threshold` | int | 0 | 相性评分下限 |
 | `--synergy-pair` | str | None | 指定两武将配对 |
 | `--synergy-single` | str | None | 选定武将 vs 全体 |
+| `--synergy-list` | str | None | 实战配队清单：按显式配对列表（`[{"hero_a_id": int, "hero_b_id": int}, ...]` JSON）生成 |
 | `--browser` | bool | False | Playwright 浏览器模式 |
 | `--update` | bool | False | 更新模式（重新生成已有数据） |
 | `--verbose` | bool | False | 详细日志 |
@@ -368,6 +374,7 @@ else:
 - `--synergy`（全量生成）：始终重新生成所有组合；成功配对分批覆盖，失败配对保留旧数据
 - `--synergy-single`（选定武将）：断点续传，已有的相性对跳过不重复生成
 - `--synergy-pair`（指定配对）：更新模式，支持 2~8 武将，用 itertools.combinations 遍历 C(N,2) 配对；成功配对按批提交
+- `--synergy-list`（实战配队清单）：显式配对清单 JSON，武将按 id 从全量表解析（解析失败或同 ID 配对记为失败项）；支持断点续传与分批原子提交，协议与两两配对模式一致
 
 武将输入先经 `HeroManager` 完整校验，任一错误都会终止生成。攻略或相性断点文件存在错误时，原文件保留为 `.corrupt-时间戳.json`，当前路径只写回对应 Manager 已验证的记录；备份失败时不覆盖原文件。
 
@@ -380,13 +387,16 @@ else:
 #### 2.3.1 构造函数
 
 ```python
-def __init__(self, api_key, api_url, model, requests_per_minute, max_retries, http_timeout)
+def __init__(self, api_key, api_url=None, model=None, provider="deepseek",
+             requests_per_minute=30, max_retries=3, http_timeout=300,
+             max_output_tokens=MAX_OUTPUT_TOKENS)
 ```
 
-- `api_key` 为空时抛 `ValueError`
-- `_client = httpx.Client(timeout=http_timeout)` — 同步 HTTP 客户端
+- Key 校验为供应商语义：`PROVIDER_PRESETS[provider].requires_key=True`（如 deepseek）时 `api_key` 为空抛 `ValueError`；`requires_key=False`（如 ollama 本地服务）允许空 Key
+- `_client = httpx.Client(timeout=http_timeout)` — 同步 HTTP 客户端（连接类异常损坏连接池时自动重建）
 - `_min_interval = 60.0 / rpm` — 速率控制（秒/请求）
 - `_last_request_time = 0.0` — 上次请求时间戳
+- `cancel()` / `complete()`：对外提供请求中断（重试循环开头检查 `_cancelled`）与公开对话补全接口
 
 #### 2.3.2 API 调用
 
@@ -405,12 +415,15 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 }
 ```
 
+`thinking` 为 DeepSeek 私有参数，仅 `provider == "deepseek"` 时附带（非 DeepSeek 端点会因未知字段返回 400）。
+
 重试逻辑：
 1. 发送前检测距上次请求是否超过 `_min_interval`，不足则 sleep 补齐
 2. HTTP 请求 → 检查 `resp.raise_for_status()`
-3. 成功 → 更新 `_last_request_time`，返回 `resp.json()`
-4. HTTP 错误 / 异常 → `time.sleep(2 ** attempt)` 指数退避（2s/4s/8s），并向 stdout 输出 `[重试] 原因，第 n/N 次，w 秒后重试`（进度窗口显示"重试中"）
-5. 3 次全部失败 → 返回 None
+3. 成功 → 更新 `_last_request_time`，返回 content/finish_reason/usage
+4. HTTP 错误 → 不可重试状态（Key 配错/参数错误）立即抛出；否则按 `_retry_wait` 退避——429 限流优先读 `Retry-After`（夹在 3~30 秒），无该头时按 5×attempt（下限 3 秒），其他状态指数退避 `2**attempt`（2s/4s/8s），并向 stdout 输出 `[重试] HTTP <状态>，第 n/N 次，w 秒后重试`（进度窗口显示"重试中"）
+5. 连接类异常同样指数退避并重建 httpx client，避免后续重试级联失败
+6. 3 次全部失败 → 返回 None
 
 > 输出额度上限 `MAX_OUTPUT_TOKENS` 默认 16384（可按供应商语义上调），缓解长攻略正文被截断（`finish_reason=length`）；正文被"思考过程耗尽输出额度"截断时由 `_request_content()` 自动重试；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content token 拆分，定位思考 token 挤占正文预算。
 
@@ -418,14 +431,14 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 
 ```
 load_prompt(hero_guide.md)    → system_prompt
-_build_guide_prompt(hero)     → user_prompt
-_call_api([system, user])     → response JSON
-_log_usage(hero.name, usage)  → 记录 prompt/completion + reasoning/content 拆分
-_extract_json(response.text)  → raw dict
+build_guide_prompt(hero)      → user_prompt
+_request_content(messages, temperature=0.7, label=武将名)
+                              → content, usage（思考耗尽输出额度时自动重试）
+extract_json(content)         → raw dict
 raw["hero_id"] = hero.id
-_convert_ids_to_int()         → ID 字段转 int
+convert_ids_to_int()          → ID 字段转 int
 has_required_guide_fields(raw) → 必填字段 + 占位符/过短正文预检
-_validate_guide(raw)          → Pydantic 校验
+validate_guide(raw)           → Pydantic 校验
 return (validated_dict, usage_dict)
 ```
 
@@ -434,12 +447,12 @@ return (validated_dict, usage_dict)
 #### 2.3.4 `generate_synergy(hero_a, hero_b) → (dict | None, dict | None)`
 
 同 `generate_guide` 但：
-- 使用 `synergy_score.md` prompt 模板
+- 使用 `synergy_score.md` prompt 模板，`temperature=0.3`，label 为 `甲名/乙名`
 - 注入 `hero_a_id` + `hero_b_id`
 - 兼容旧字段：`combat_synergy` → `combo_ceiling`
-- 使用 `_validate_synergy` 校验
+- 先经 `has_required_synergy_fields(raw)` 预检，再使用 `validate_synergy` 校验
 
-### 2.4 generation.py — 四种生成循环
+### 2.4 generation.py — 五种生成循环
 
 ```python
 def run_guide_generation(heroes, generator, guide_path, existing_guides, api_config, update_mode=False)
@@ -472,6 +485,13 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 
 支持断点续传：已有的相性对跳过不重复生成；新增成功项按批提交，失败项不改变旧数据。
 
+### 2.8 run_synergy_list_generation() — 实战配队清单（显式配对列表）
+
+- 读取配对清单 JSON（`[{"hero_a_id": int, "hero_b_id": int}, ...]`），武将由全量武将表按 id 解析，解析失败或同 ID 配对记为失败项
+- `update_mode=True` 时重新生成已有相性；False 时跳过已有相性（断点续传）
+- 每 10 对（`SYNERGY_BATCH_SAVE_INTERVAL`）校验成功结果原子提交一次，结束时提交尾批
+- 由 `SynergyFetchService` 的实战配队清单方法传入显式 id 配对列表调用（写入临时文件后走 `--synergy-list` CLI）
+
 ---
 
 ## 三、业务服务层细节
@@ -480,16 +500,16 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 
 | 类 | 文件 | 行数 | 父类 | 信号数量 |
 |--------|------|------|------|----------|
-| BaseFetchService | `base_fetch_service.py` | ~70 | QObject | 3 |
-| HeroFetchService | `fetch_service.py` | ~102 | BaseFetchService | 3 |
-| GuideFetchService | `guide_fetch_service.py` | ~179 | BaseFetchService | 6 |
-| SynergyFetchService | `synergy_fetch_service.py` | ~104 | BaseFetchService | 3 |
-| CaptureService | `capture_service.py` | ~480 | QObject | 4 |
-| EmulatorOperationService | `emulator_operation_service.py` | ~111 | QObject | 8 |
-| MumuConfigCoordinator | `mumu_config_coordinator.py` | ~220 | QObject | 10 |
-| OcrService | `ocr_service.py` | ~420 | QObject | 3 |
-| OfficialDataImportService / Worker | `official_data_import_service.py` | ~640 | 普通类 / QThread | 3（Worker）；版式解析委托 `official_board_parser.py`，纠错规则在 `name_resolution.py`、引擎策略在 `official_ocr_engines.py` |
-| CardSyncService | `card_sync.py` | ~120 | QObject | 2 |
+| BaseFetchService | `base_fetch_service.py` | ~280 | QObject | 3（status_changed / error_occurred / cancelled） |
+| HeroFetchService | `hero_fetch_service.py` | ~87 | BaseFetchService | 自身 2（fetch_completed / progress_updated）+ 基类 3 |
+| GuideFetchService | `guide_fetch_service.py` | ~122 | BaseFetchService | 自身 3（progress_output / progress_value / fetch_completed）+ 基类 3 |
+| SynergyFetchService | `synergy_fetch_service.py` | ~164 | BaseFetchService | 自身 5（progress_output / progress_value / fetch_completed / reload_finished / reload_failed）+ 基类 3 |
+| CaptureService | `capture_service.py` | ~670 | QObject | 12 |
+| EmulatorOperationService | `emulator_operation_service.py` | ~145 | QObject | 9 |
+| MumuConfigCoordinator | `mumu_config_coordinator.py` | ~319 | QObject | 14 |
+| OcrService | `ocr_service.py` | ~407 | QObject | 4（status_changed / template_changed / poll_tick / poll_state_changed） |
+| OfficialDataImportService | `official_data_import_service.py` | ~640 | 普通类（无 Qt 信号，进度经 OcrWorker 回调转发） | —；配套 `OcrWorker(QThread)` 在 `ocr_worker.py`（task_completed / official_progress 2 个信号）；版式解析委托 `official_board_parser.py`，纠错规则在 `name_resolution.py`、引擎策略在 `official_ocr_engines.py` |
+| CardSyncService | `card_sync.py` | ~322 | QObject | 5（check_started / check_finished / status_changed / progress_changed / _check_done） |
 | PendingStats | `pending_stats.py` | ~120 | 普通模块 | — |
 | DisclaimerState | `disclaimer_state.py` | ~53 | 普通模块 | — |
 
@@ -500,19 +520,25 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 #### 信号
 
 ```python
+# 继承 BaseFetchService
 status_changed = Signal(str)      # 状态文字
-fetch_completed = Signal(bool)    # True=成功, False=失败
 error_occurred = Signal(str)      # 错误信息
+cancelled = Signal()              # 用户取消
+# 自身定义
+fetch_completed = Signal(bool)            # True=成功, False=失败
+progress_updated = Signal(int, int, str)  # (当前步, 总步数, 阶段文字)
 ```
 
 #### 方法
 
 | 方法 | 调用的 CLI | 参数 |
 |------|-----------|------|
-| `fetch_all()` | `-m src.scraper.official` | 无 |
-| `fetch_incremental()` | `-m src.scraper.incremental --incremental` | 无 |
-| `fetch_specific(hero_ids)` | `-m src.scraper.incremental --hero-id ...` | ID 列表（逗号拼接） |
+| `fetch_all() → bool` | `-m src.scraper.official` | 无 |
+| `fetch_incremental() → bool` | `-m src.scraper.incremental --incremental` | 无 |
+| `fetch_specific(hero_ids) → bool` | `-m src.scraper.incremental --hero-id ...` | ID 列表（逗号拼接） |
 | `cancel()` | `process.kill()` | 无 |
+
+`_on_stdout_line` 解析子进程 `[n/N]` 步骤进度行（全量 [1/5]、增量/指定 [1/3]）转发为 `progress_updated`；忙碌等未启动场景返回 False 且不发完成信号。
 
 #### 信号连接模式
 
@@ -557,11 +583,13 @@ error_occurred = Signal(str)               # 错误信息
 
 ### 3.4 SynergyFetchService
 
-同 GuideFetchService 模式，但 args 不同：
+同 GuideFetchService 模式，但 args 不同（公共提交流程 `_submit()`：payload 写临时文件 → 拼 CLI 参数 → 启动子进程）：
 - `fetch_pair(heroes, backend, overwrite=False, use_rag=True)` → `--synergy-pair <tmp_file>`
 - `fetch_single(hero, all_heroes, backend, use_rag=True)` → `--synergy-single <tmp_file>`
+- `fetch_pairs_list(pairs, backend, overwrite=False, use_rag=True)` → `--synergy-list <tmp_file>`（实战配队清单，pairs 元素格式 `{"hero_a_id": int, "hero_b_id": int}`）
+- `reload_from_disk()`：后台 `SynergyReloadWorker` 重载相性文件并原子写回共享 manager（`replace_loaded_data`），取消生成后保住已分批提交的数据；完成发 `reload_finished`，失败发 `reload_failed`
 - 同样支持 `backend` 参数追加 `--browser`
-- `use_rag=False`（经典模式）→ 追加 `--no-rag`
+- `use_rag=False`（经典模式）→ 追加 `--no-rag`；`overwrite=True` → 追加 `--update`
 
 ### 3.5 CaptureService（截图业务服务）
 
@@ -691,41 +719,46 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 
 ### 3.8 CardSyncService（卡牌百科同步）
 
-卡牌百科同步服务负责后台定时检查官网手牌库更新、抓取差异、确认后应用变更，与武将公告更新监控（announcement_service）互不干扰。
+卡牌百科同步服务负责**手动触发**的官网手牌库更新检查（不轮询、不自动联网）、抓取差异、确认后应用变更；网络请求在 worker 线程执行，通过 Qt 信号回到 GUI 线程收尾，与武将公告更新监控（announcement_service）零耦合。
 
 ```python
 class CardSyncService(QObject):
-    status_changed = Signal(str)      # 状态消息（"检查中..."、"发现 N 条更新"）
-    sync_completed = Signal(bool, str) # (成功/失败, 消息)
+    check_started = Signal()           # 检查开始
+    check_finished = Signal(object)    # 携带 CardSyncCheckResult（diff / official_cards / error / ignored_count 等）
+    status_changed = Signal(str)       # 状态消息（"正在检查卡牌百科更新..."、"发现 N 条更新"）
+    progress_changed = Signal(str)     # 检查阶段进度文字
+    _check_done = Signal(object)       # worker 线程内部信号；收尾（官网数据缓存 + 首跑基线落盘）统一回 GUI 线程
 ```
 
 **主要方法**：
 
 | 方法 | 说明 |
 |------|------|
-| `check_now()` | 后台执行：调用 `card_baike.fetch_cards()` 抓取官网手牌库 → 与 `card_sync_store.load_snapshot()` 比对 → 生成 diff 变更列表 → 写入 `card_sync_store.save_changes()` → 更新状态信号 |
-| `apply_updates() → None` | 确认后应用：读取变更记录 → 更新 `cards.json` → 更新快照 → 清除变更 → 通知 audit_service 复核时效 |
-| `has_pending_changes() → bool` | 检查是否存在未确认的变更 |
+| `check_now() → bool` | 后台线程执行一次检查（忙碌或 60 秒冷却内返回 False）：`card_baike.fetch_official_cards()` 抓官网手牌库 → `build_card_snapshot()` 建快照 → `card_sync_store.load_card_snapshot()` 取基线（首跑用本地 `cards.json` 初始化基线，避免人工编辑误报；本地文件为空则跳过初始化）→ `diff_cards()` 生成 diff → `baike_ignore_store.filter_ignored()` 扣除被忽略条目 → GUI 线程收尾后发 `check_finished` |
+| `apply_updates(modified_ids, added_ids) → dict` | 确认后应用：清洗官网四件套（`card_detail` 保留分段结构）→ `card_repository.apply_official_updates()` 写回 `cards.json`（`card_amount` 保留）→ 基线按卡增量推进（未应用的卡基线条目不动，下次检查继续提示）→ `append_card_change()` 追加变更记录；检查进行中拒绝应用 |
+| `ignore_card(card_id, name, change)` | 把当前差异条目写入百科忽略名单（官网内容哈希取最近一次检查缓存） |
+| `restore_cards(entry_ids=None)` | 恢复被忽略的卡牌差异（None 时全部恢复），下次检查该差异自动重现 |
+| `ignored_card_count() / list_ignored_cards()` | 忽略名单查询（供 UI 显示"已忽略 N"） |
 
 **调用流程**：
 
 ```
-数据菜单 → CardSyncDialog.show()
+「数据 → 检查卡牌百科更新」/ CardSyncDialog 按钮
   └── CardSyncService.check_now()
-       ├── card_baike.fetch_cards()              → 官网手牌库抓取
-       ├── card_sync_store.load_snapshot()       → 上次快照
-       ├── diff_cards(snapshot, official)        → 变更列表
-       ├── card_sync_store.save_changes(diff)    → 变更记录持久化
-       └── emit status_changed("发现 N 条更新")
-            └── CardSyncDialog 展示变更明细
-                 └── 用户确认 → CardSyncService.apply_updates()
-                      ├── 更新 data/cards.json
-                      ├── card_sync_store.save_snapshot(current)
-                      ├── card_sync_store.clear_changes()
-                      └── audit_service.collect_stale_card_curated() → 时效复核
+       ├── card_baike.fetch_official_cards()    → 官网手牌库抓取（worker 线程）
+       ├── build_card_snapshot(official)        → 当前快照（{id: {name, hash}}）
+       ├── card_sync_store.load_card_snapshot() → 基线快照（首跑从本地 cards.json 初始化）
+       ├── diff_cards(snapshot, baseline)       → 变更列表（added/modified/removed）
+       ├── filter_ignored(diff, hashes, 忽略名单) → 压制已忽略条目并计数
+       └── check_finished(result)               → CardSyncDialog 展示变更明细
+            └── 用户勾选确认 → CardSyncService.apply_updates(modified_ids, added_ids)
+                 ├── card_repository.apply_official_updates() → 更新 data/cards.json
+                 ├── card_sync_store.save_card_snapshot()     → 基线按卡增量推进
+                 ├── card_sync_store.append_card_change()     → 变更记录追加
+                 └── audit_service 时效复核消费变更记录（卡牌 curated 精化）
 ```
 
-> CardSyncService 的后台检查由 `QTimer` 驱动（默认每日一次），也可通过「数据 → 检查卡牌百科更新」菜单手动触发。变更记录持久化到 `data/card_changes.json`，快照持久化到 `data/card_snapshot.json`。
+> CardSyncService 为手动触发（「数据 → 检查卡牌百科更新」菜单或 `CardSyncDialog` 内按钮），两次检查间有 60 秒冷却（`CHECK_COOLDOWN_SECONDS`，与公告检查同款防密集请求）。变更记录持久化到 `data/card_changes.json`，快照持久化到 `data/card_snapshot.json`，忽略名单持久化到 `data/baike_ignore.json`。
 
 ### 3.9 未决错法频次记录（pending_stats.py）
 
@@ -807,7 +840,7 @@ class CardSyncService(QObject):
 | `data/武将推荐指数状态.json` | —（`recommendation_index_repository` 写） | 推荐指数生成状态（运行时状态文件，非榜单数据） |
 | `data/2v2{胜率,出场}排行.csv` `data/巅峰赛{胜率,出场}排行.csv` `data/武将放逐.csv` | —（榜单导入写） | 官方榜单，各 175 行；表头：胜率榜 `排名,武将,胜率`，出场/放逐榜 `排名,武将`；`_待复核.csv` 为同名副本 |
 | `data/raw_guides/` | —（社区素材，未入库 raw） | jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv |
-| `data/rag_corpus/*.json` | —（`build_*_corpus.py` 生成） | 12 个语料文件 / 2090 个检索块（含组合 437、攻略 357、武将分类 180） |
+| `data/rag_corpus/*.json` | —（`build_*_corpus.py` 生成） | 12 个语料文件 / 2118 个检索块（含组合 437、攻略 357、武将分类 180） |
 | `data/ocr_name_pending_stats.json` | pending_stats | OCR 未决错法频次与人工确认记录（运行时状态文件，60 秒节流，原子写入） |
 | `config/.disclaimer_state.json` | disclaimer_state | 免责声明接受状态（版本化，`config/` 下） |
 
@@ -866,6 +899,28 @@ class DataFacade:
     def load_all(self) → LoadReport # 三个 load()、引用校验和问题汇总
     def get_stats(self) → dict     # 返回 {heroes: N, synergies: N, guides: N}
 ```
+
+### 4.6.1 架构分层收口（2026-09，阶段三十）
+
+架构分层收口围绕三层防线推进，确保 UI 层不直接引用数据层内部实现、榜单数据通过 provider 回调注入、行数增长受棘轮守护：
+
+**① UI 数据 import 白名单**：`tests/test_architecture.py` 的 `ALLOWED_DATA_CONSTANTS` / `ALLOWED_DATA_FUNCTIONS` 定义 UI 层允许从数据层导入的常量与函数白名单，未在白名单内的数据层符号导入会在架构测试中报错。新依赖需经评审后加入白名单，防止 UI 层隐式绑定数据层内部结构。
+
+**② 榜数据 provider 注入**：对局攻略页与巅峰赛胜率/推荐指数数据不再直接 import 数据层仓库，改为经 provider 回调注入。`AppServices` 装配时注册 provider 回调，UI 面板通过回调获取胜率排行、出场排行和推荐指数快照，切断 UI → data 的直接 import 链。
+
+**③ FILE_LINE_BUDGETS 行数棘轮守护**：`tests/test_architecture.py` 的 `FILE_LINE_BUDGETS` 字典为关键文件设定行数上限，CI 执行时检查每个文件实际行数不超过预算值，超限则测试失败。棘轮机制确保重构后文件行数可以下调，但不允许无评审地增长。
+
+### 4.6.2 src/data 解除循环依赖（2026-09，阶段三十）
+
+`src/data/` 模块曾存在三处循环依赖，通过拆分门面与数据问题类型消除：
+
+| 循环 | 原状 | 拆分方案 |
+|------|------|----------|
+| `facade.py` ↔ `manager.py` | DataFacade 与基类 Manager 同居 `manager.py`，相互引用形成循环 | DataFacade 拆分至独立 `facade.py`，Manager 基类回归 `manager.py`，打破循环 |
+| `DataIssue` / `LoadReport` ↔ Manager | 数据问题类型定义在 `manager.py`，与 Manager 基类耦合 | `DataIssue` 与 `LoadReport` 拆分至独立 `issues.py`，Manager 与 Facade 均引用 `issues.py`，问题类型不再绑定管理器 |
+| `manager.py` 职责过载 | 基类同时承担"管理器基类"与"数据问题定义"与"门面聚合"三重职责 | `manager.py` 回归纯管理器基类职责，门面聚合由 `facade.py` 承担，数据问题类型由 `issues.py` 承担 |
+
+拆分后依赖关系为：`facade.py` → `manager.py` + `issues.py`；`manager.py` → `issues.py`；`issues.py` 无上游依赖（纯数据定义）。CI 架构测试 `test_no_circular_imports` 验证 `src/data/` 模块间无循环导入。
 
 ### 4.7 增量更新
 
@@ -1021,6 +1076,24 @@ def apply_incremental_update(data_dir, update)
 兼容菜单栏和顶部入口共享 `MainWindow._actions` 创建的 `QAction`，不重复绑定业务回调，`Ctrl+Q` 与 `F5` 保持有效。底部状态栏由 `StatusChips`（`src/ui/app/status_chips.py`）渲染：左侧显示数据统计及采集、生成、截图、OCR 预热等当前任务消息；右侧模拟器状态常驻显示 ADB 连接；OCR 状态常驻显示轮询运行状态。任务消息不会覆盖后两者，点击常驻状态可打开模拟器配置。
 
 资料库的卡牌图鉴、专属牌、武将分类三个主从面板统一接入 `MasterDetailPane`（`src/ui/shared/master_detail.py`，103 行）——主从列表骨架封装左侧列表 + 右侧详情 + 上下文操作栏的通用布局与状态同步，三个面板只注入数据适配与编辑入口，避免各自实现主从滚动与选中同步。资料库编辑对话框统一走 `run_edit_dialog()`（模态编辑循环），编辑成功后由面板自行刷新，不再逐处手写 `exec()` 与刷新分支。
+
+**菜单栏重排（2026-09，阶段二十八）**：主窗口菜单栏从原来的「文件 / 配置 / 导入 / 数据管理 / 帮助」重排为四顶层：**文件、配置、数据、帮助**。变化点：① 原「导入」菜单取消，官方数据导入 / 实战配队导入等入口移入「数据」菜单；② 「攻略获取」改名为「攻略生成」；③ 原「数据管理」菜单改名为「清空攻略/相性数据」并入「数据」菜单。当前菜单栏结构：
+
+- **文件**：重新加载数据 / 退出
+- **配置**：API 配置 / 模拟器配置 / 势力配色 / 白名单配置
+- **数据**：公告更新检查 / 公告日志 / 卡牌百科更新检查 / 百科忽略名单管理 / 武将获取(全量/增量/指定) / 攻略生成(全量/增量/指定) / 武将相性(全量/指定/清单) / 官方数据导入 / 实战配队导入 / 清空攻略/相性数据
+- **帮助**：关于
+
+测试 `test_menubar_top_level_titles` 锁定顶层标题为 `["文件", "配置", "数据", "帮助"]`。
+
+**主窗口四阶段拆分（2026-09，阶段二十九）**：主窗口 `MainWindow` 从"全装配"收敛为组合根，四阶段渐进拆分：
+
+| 阶段 | 组件 | 文件 | 职责 |
+|------|------|------|------|
+| ① | `AppServices`（组合根） | `app/app_services.py`（102 行） | 协作对象装配收敛：集中实例化采集 / OCR / 生成 / 分析等服务并完成信号接线，主窗口只消费其聚合句柄 |
+| ② | `StatusChips`（自足组件） | `app/status_chips.py`（75 行） | 状态栏常驻态：数据统计、当前任务消息、模拟器 ADB 连接状态、OCR 轮询运行状态；点击常驻状态可打开模拟器配置 |
+| ③ | `ProgressReporter`（进度出口） | `app/progress_reporter.py` | 进度出口统一：各服务进度信号经此统一转换为主窗口可消费格式 |
+| ④ | `PollCoordinator` / `AnnouncementUpdateCoordinator`（管线下沉） | `app/poll_coordinator.py`（324 行） | OCR 轮询与公告更新两条管线下沉：轮询编排、后台任务与结果状态迁移；公告更新检查编排 |
 
 ```
 MainWindow.__init__
@@ -1240,7 +1313,7 @@ HeroDetailPanel._on_synergy_edit()
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将并显示 Toast；写入失败时保留输入，删除完成使用模态结果反馈
 - `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
-- 数据栏的武将获取、攻略获取、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
+- 数据栏的武将获取、攻略生成、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
 
 **Markdown 渲染**：统一通过 `src.ui.shared.markdown_renderer.render_markdown()` 调用 Mistune，并转义原始 HTML；攻略正文超过 20,000 字时不进入解析。`Skill`、`SynergyScore` 与 `HeroGuide` 的 AI 文本和列表字段均由 Pydantic 限制长度及项目数。
 
@@ -2355,7 +2428,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **110+ 个测试文件 / 1280+ 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **112 个测试文件 / 1337 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -3045,3 +3118,62 @@ CardSyncDialog
 2026-09 中期更新：
 - **司马睿**（id 197，东晋 / 控制 / 体力5 / 手牌上限3）
 - **张角**新增呼风唤雨技能
+
+### 16.9 百科差异条目级忽略名单（2026-09）
+
+卡牌百科同步新增**条目级忽略**能力：用户可逐条忽略特定差异条目（武将/卡牌），被忽略的条目不再重复提示，官网更新后该差异自动重现（哈希变化时忽略名单不压制）。
+
+**`src/data/baike_ignore_store.py`**：
+- 持久化到 `data/baike_ignore.json`
+- 数据结构：`{version, entries: [{target, state, hash, name, added_at}, ...]}`
+- **state+hash 定位同一差异**：`target` 为 `"hero"` 或 `"card"`，`state` 为 `"added"`/`"modified"`/`"removed"`，`hash` 为官网内容哈希——三者组合唯一标识一条差异
+- 武将/卡牌两段覆盖式保存：同一 target+state+hash 只保留最新条目，避免忽略名单膨胀
+- 核心函数：`filter_ignored(diff, hashes)` 过滤已忽略条目并返回被过滤数量；`ignore_entry(target, state, hash, name)` 写入忽略；`restore_entries(entry_ids)` 恢复
+
+**`src/ui/data_admin/baike_ignore_manager_dialog.py`**：管理界面，位于「数据 → 百科忽略名单管理」菜单入口，展示已忽略条目清单（武将/卡牌分组），支持查看详情、恢复条目。
+
+**服务层集成**：
+- `CardSyncService.check_now()` 在 `diff_cards()` 产出后立即调用 `filter_ignored()` 过滤，返回 `CardSyncCheckResult` 含 `ignored_count` 字段
+- `CardSyncService.ignore_card()` 供 `CardSyncDialog` 逐条忽略
+- **公告 ready 判定一致压制**：公告更新检查在判断是否有待应用变更时，同样应用忽略名单过滤，确保公告检查与卡牌百科检查的 ready 判定口径一致——被忽略的差异不会触发公告横幅提示
+
+---
+
+## 十七、开发状态表
+
+本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-09-29 基线，共完成三十个阶段：
+
+| 阶段 | 名称 | 时间 | 主要内容 |
+|------|------|------|----------|
+| 一 | 数据采集与 AI 生成基础 | — | 官网爬虫、AI 批量生成、QProcess 编排 |
+| 二 | 数据管理与持久化 | — | DataManager 泛型基类、JSON 原子写、Pydantic 校验 |
+| 三 | 应用外壳与导航 | — | 左侧 NavigationRail、顶部 ContextHeader、工作区切换 |
+| 四 | 资料库与卡牌图鉴 | — | 武将浏览器、卡牌管理面板、编辑对话框体系 |
+| 五 | 识别工作台 | — | 选将推荐、对局攻略、巅峰赛选将三工作区 |
+| 六 | OCR 识别引擎 | — | PaddleOCR 集成、模板匹配、候选消歧、字形评分 |
+| 七 | RAG 语料体系 | — | 语料分层架构、向量检索、注入 Prompt |
+| 八 | 知识库维护工作台 | — | 元规则母本、专属牌/卡牌点数/装备属性/武将分类维护 |
+| 九 | 日志系统 | — | 分模块日志、反转级别策略、QProcess 子进程接管 |
+| 十 | 配置管理 | — | 多 API 档案、模拟器配置、势力配色、白名单配置 |
+| 十一 | 巅峰赛选将 | 2026-08 | 卡位检测、识别循环、禁选建议、实战配队 |
+| 十二 | 实战配队 | 2026-08 | ComboManager、座次解析、导入合并 |
+| 十三 | 官方榜单导入 | 2026-08 | 新旧版式识别、名称纠错、胜率数字模板 |
+| 十四 | T0 元规则文档维护 | 2026-08 | 审计、同步、提案、合入、FAQ 评估 |
+| 十五 | 社区语料接入 | 2026-08 | 组合语料、攻略语料、分两段注入 |
+| 十六 | 卡牌体系防串味 | 2026-08 | 兜底注入、卡牌类语料块扩展 |
+| 十七 | B2 复核模式 | 2026-09 | PP-OCRv6-small/ONNX 引擎、候选闭包内二次确认 |
+| 十八 | 轮询闲置自动暂停 | 2026-09 | 整帧降采样指纹、MAD 阈值、交互恢复 |
+| 十九 | 未决错法频次记录 | 2026-09 | 双事件流、60 秒节流、白名单配置消费 |
+| 二十 | 截图提速 | 2026-09 | `screencap_raw()`、numpy 直通、`MUMU_SCREENSHOT_MODE` |
+| 二十一 | 免责声明状态管理 | 2026-09 | 版本化接受状态、启动弹窗 |
+| 二十二 | 卡牌百科同步 | 2026-09 | 官网手牌库抓取、diff 快照、确认应用 |
+| 二十三 | 模板匹配分层加速 | 2026-09 | 低分辨率粗筛 + 高分辨率精匹配 |
+| 二十四 | OCR 识别增强 | 2026-09 | 批量预处理去增强、gamma 差异视图、4 字拆框修复 |
+| 二十五 | 词表外新武将共识保护 | 2026-09 | `unknown_new_hero` 判定、人工确认信号 |
+| 二十六 | 巅峰赛实战配队综合展示 | 2026-09 | 胜率排序、禁选建议徽章、实战配队条 |
+| 二十七 | 导入合并保护 | 2026-09 | 手工记录优先、逻辑删除屏蔽、报告扩展 |
+| **二十八** | **菜单栏重排** | **2026-09** | **四顶层菜单（文件/配置/数据/帮助）；原「导入」取消、「攻略获取」改名「攻略生成」、「数据管理」并入「数据」** |
+| **二十九** | **主窗口拆分** | **2026-09** | **四阶段渐进拆分：AppServices 组合根 / StatusChips 自足组件 / ProgressReporter 进度出口 / PollCoordinator + AnnouncementUpdateCoordinator 管线下沉** |
+| **三十** | **架构分层收口与 src/data 解环** | **2026-09** | **UI 数据 import 白名单、榜数据 provider 注入、FILE_LINE_BUDGETS 行数棘轮；DataFacade/Issues/Manager 三拆消除循环依赖；百科差异条目级忽略名单** |
+
+> 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。

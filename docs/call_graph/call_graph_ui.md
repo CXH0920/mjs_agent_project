@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-21）
+## 当前实现基线（2026-09-29）
 
 ```
 MainWindow.__init__()
@@ -21,14 +21,21 @@ MainWindow.__init__()
      -> CaptureService() / OcrService()
      -> PollCoordinator(capture, ocr, hero_names_provider)
      -> AnnouncementManager() / AnnouncementService(...)
+     -> CardRepository() / CardSyncService(...)
+     -> WinRatesProvider() / PeakWinRatesProvider() / PeakPickRanksProvider()
+     -> CardPointsRepository()
   -> AppServices.attach(self)                       [统一挂载 QObject 父子 + AiGenerationWorkflow.set_window]
   -> 解包 _fetch_service / _capture_service / ... 到惯用属性
+  -> ProgressReporter()                             [状态栏消息文本与进度条，统一渲染出口]
+  -> AnnouncementUpdateCoordinator(...)              [公告管线与武将更新阶段机协调器]
+  -> _connect_fetch_signals()
+  -> _connect_capture_signals()
   -> _load_data() -> load_all()
   -> _setup_ui()
     -> HeroBrowser(hero_mgr, guide_mgr, synergy_mgr, combo_manager=...)
     -> RecommendationPanel(hero_mgr, synergy_mgr, guide_mgr, capture_svc, ocr_svc, combo_manager=...)
     -> PeakSelectPanel(capture_svc, ocr_svc, hero_names_provider, hero_mgr, win_rates_provider, pick_ranks_provider, combo_manager)
-    -> MatchGuidePanel(hero_mgr, guide_mgr, capture_svc)
+    -> MatchGuidePanel(hero_mgr, guide_mgr, capture_svc, win_rates_provider, peak_win_rates_provider)
   -> _setup_status_bar()                            [StatusChips 常驻胶囊]
 ```
 
@@ -38,10 +45,11 @@ MainWindow.__init__()
 | 攻略生成 | `_request_guide_*()` | `AiGenerationWorkflow.request_guide_*()` -> `GuideFetchService.fetch_*()` | `GuideManager.load()` + 状态栏统计刷新 |
 | 相性生成 | `_request_synergy_pair/single/combos()` | `AiGenerationWorkflow.request_synergy_*()` -> `SynergyFetchService.fetch_pair/single/pairs_list()` | `SynergyManager.load()` + 浏览器、推荐页刷新 |
 | 官方数据导入 | `_open_official_data_import()` | `OfficialDataImportDialog` -> `CaptureService` -> `OcrWorker(OfficialImportTask)` -> `OfficialDataImportService` | 暂停轮询，覆盖 2v2/放逐 CSV，弹窗退出后恢复轮询 |
-| 实战配队维护 | 选将推荐“实战配队”横条 [管理] | `ComboManagementDialog` -> `ComboService.save_manual_combo()/delete_combo()` | `_refresh_combo_strip()` + 卡片角标 + 相性表 |
-| 实战配队批量生成 | 菜单“数据 → 武将相性 → 实战配队生成” | `SynergyCombosDialog` -> `fetch_pairs_list(selected_pairs)` | 相性 JSON + 浏览器/推荐页刷新 |
+| 实战配队维护 | 选将推荐"实战配队"横条 [管理] | `ComboManagementDialog` -> `ComboService.save_manual_combo()/delete_combo()` | `_refresh_combo_strip()` + 卡片角标 + 相性表 |
+| 实战配队批量生成 | 菜单"数据 → 武将相性 → 实战配队生成" | `SynergyCombosDialog` -> `fetch_pairs_list(selected_pairs)` | 相性 JSON + 浏览器/推荐页刷新 |
 | 截图、图片导入、轮询 | 推荐页或 `poll_tick` | `CaptureRequestLock` -> `CaptureService` -> `OcrWorker` | 推荐卡或对局攻略页 |
-| 公告更新 | 菜单“数据 > 检查公告更新 / 更新武将数据” | `AnnouncementService.prepare_update_candidates()` -> `HeroUpdateConfirmDialog` -> 两阶段 `fetch_specific/incremental` | `_pending_update_phases` 队列串接 |
+| 公告更新 | 菜单"数据 > 检查公告更新 / 更新武将数据" | `AnnouncementUpdateCoordinator.check_announcements()` / `update_hero_data_from_announcements()` -> `AnnouncementService.prepare_update_candidates()` -> `HeroUpdateConfirmDialog` -> 两阶段 `fetch_specific/incremental` | `_pending_update_phases` 队列串接 |
+| 百科忽略名单管理 | 菜单"数据 > 百科忽略名单管理" | `BaikeIgnoreManagerDialog` -> `AnnouncementService.list_ignored_heroes()` + `CardSyncService.list_ignored_cards()` | 恢复后刷新忽略名单 |
 
 数据完整性问题存于 `self._data.last_load_report`；当前 UI 使用已恢复的内存数据，尚未提供报告查看或写回修复界面。服务完成状态以 CLI 退出码为准，不解析 `RESULT: FAIL=`。
 
@@ -120,14 +128,19 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
      -> ocr.set_hero_names([...])                                 [设置武将名列表]
      -> PollCoordinator(capture, ocr, hero_names_provider)        [轮询编排]
      -> AnnouncementManager() / AnnouncementService(mgr, heroes)  [公告检查]
+     -> CardRepository() / CardSyncService(...)                   [卡牌百科]
+     -> WinRatesProvider() / PeakWinRatesProvider() / PeakPickRanksProvider()
+     -> CardPointsRepository()
   -> AppServices.attach(self)                                     [统一 setParent + ai_workflow.set_window]
   -> 解包到 _fetch_service / _guide_service / _capture_service / _ocr_service / _poll_coordinator / ...
-  -> AnnouncementService.check_started/connect
-  -> AnnouncementService.check_finished/connect
-  -> AnnouncementService.update_candidates_prepared -> _on_hero_update_prepared
+  -> ProgressReporter()                                           [状态栏消息文本与进度条，统一渲染出口]
+  -> AnnouncementUpdateCoordinator(announcement_service, announcement_manager,
+                                   fetch_service, reporter,
+                                   heroes_provider=self._data.heroes.list_heroes,
+                                   parent=self)                    [公告管线与武将更新阶段机协调器]
   -> _connect_fetch_signals()
   -> _connect_capture_signals()
-  -> AiGenerationWorkflow.status_changed -> _on_fetch_status()
+  -> AiGenerationWorkflow.status_changed -> _reporter.show_message()
   -> AiGenerationWorkflow.guides_changed -> _on_guides_generated()
   -> AiGenerationWorkflow.synergies_changed -> _on_synergies_generated()
   -> setWindowTitle(), setMinimumSize(960, 640), resize(1100, 760)
@@ -156,11 +169,15 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
                               hero_mgr, win_rates_provider,
                               pick_ranks_provider,
                               combo_manager=_combo_manager)         [Tab 2: 巅峰赛选将]
-           -> MatchGuidePanel(heroes, guides, capture_svc)         [Tab 3: 对局攻略]
+           -> MatchGuidePanel(heroes, guides, capture_svc,
+                              win_rates_provider=_win_rates_provider,
+                              peak_win_rates_provider=_peak_win_rates_provider)  [Tab 3: 对局攻略]
            -> [is_full_build] RagMaintenancePanel(PROJECT_ROOT, hero_names) [Tab 4: 知识库维护]
   -> _setup_status_bar()
-     -> QLabel + QProgressBar + StatusChips()
+     -> QStatusBar.addWidget(_reporter)                             [ProgressReporter 挂载]
+     -> StatusChips()                                               [常驻胶囊]
      -> StatusChips.mumu_config_requested -> _open_mumu_config
+     -> StatusChips.poll_resume_requested -> _poll_coordinator.resume_from_idle_pause()
   -> _update_status()
   -> PollCoordinator.sync_with_connection()
 ```
@@ -169,19 +186,19 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
 
 ```
 _connect_fetch_signals():
-  HeroFetchService.status_changed   → _on_fetch_status       → status_label.setText()
-  HeroFetchService.fetch_completed  → _on_fetch_completed    → QMessageBox
-  HeroFetchService.error_occurred   → _on_fetch_error        → QMessageBox.warning()
+  HeroFetchService.status_changed   → _reporter.show_message()          [状态栏消息]
+  HeroFetchService.progress_updated → _reporter.show_progress()          [状态栏进度条]
+  HeroFetchService.error_occurred   → _on_fetch_error                    [QMessageBox.warning()]
 
 AiGenerationWorkflow._connect_services():
-  GuideFetchService.status_changed    → workflow.status_changed → MainWindow._on_fetch_status()
+  GuideFetchService.status_changed    → workflow.status_changed → _reporter.show_message()
   GuideFetchService.fetch_completed   → workflow._on_guide_completed()
     → GuideProgressDialog.on_process_finished()
     → [success] GuideManager.load() → workflow.guides_changed → MainWindow._on_guides_generated()
   GuideFetchService.error_occurred    → workflow._on_guide_error() → QMessageBox（详情列出 failed_items 失败武将清单 + 详情按钮翻译过滤器）
   GuideFetchService.progress_output/value → workflow._on_guide_progress*() → GuideProgressDialog
 
-  SynergyFetchService.status_changed  → workflow.status_changed → MainWindow._on_fetch_status()
+  SynergyFetchService.status_changed  → workflow.status_changed → _reporter.show_message()
   SynergyFetchService.fetch_completed → workflow._on_synergy_completed()
     → GuideProgressDialog.on_process_finished()
     → [success] SynergyManager.load() → workflow.synergies_changed
@@ -190,15 +207,18 @@ AiGenerationWorkflow._connect_services():
   SynergyFetchService.progress_output/value → workflow._on_synergy_progress*() → GuideProgressDialog
 
 _connect_capture_signals():
-  CaptureService.status_changed         → _on_fetch_status            [截图服务状态文字]
-  CaptureService.capture_failed         → _on_capture_failed          [截图失败原因]
+  CaptureService.status_changed         → _reporter.show_message()      [截图服务状态文字]
+  CaptureService.event_status_changed   → _reporter.show_event_message() [事件提示]
+  CaptureService.capture_failed         → _on_capture_failed             [截图失败原因]
   CaptureService.connection_changed     → _on_capture_connection_changed
     → _update_emulator_status(state, detail)  [StatusChips.set_emulator_state]
     → [state == "connected"] CaptureService.warmup_ocr_model()
     → PollCoordinator.sync_with_connection()
   CaptureService.ocr_warmup_state_changed → _on_ocr_warmup_state_changed
   PollCoordinator.poll_state_changed  → _update_poll_status          [StatusChips.set_poll_state]
-  PollCoordinator.poll_result_ready   → _on_poll_result              [已提交状态的结果]
+  PollCoordinator.hero_selection_matched → _on_poll_hero_selection_matched  [选将命中 → 推荐页]
+  PollCoordinator.match_guide_matched  → _on_poll_match_guide_matched      [对局命中 → 攻略页]
+  PollCoordinator.page_switch_requested → _on_poll_page_switch_requested   [工作区跳转]
 
 PollCoordinator._consume_poll_result(result):
   → PollResult.from_raw(result)                          [兼容旧版 dict]
@@ -277,7 +297,7 @@ PollCoordinator._consume_poll_result(result):
 ### 2.2 攻略生成菜单
 
 ```
-菜单「数据 → 攻略获取 → 全量获取」
+菜单「数据 → 攻略生成 → 全量获取」
   -> MainWindow._request_guide_all()
     -> AiGenerationWorkflow.request_guide_all()
       -> _get_heroes_as_dicts()                                  [HeroManager.list_heroes() → dict]
@@ -289,7 +309,7 @@ PollCoordinator._consume_poll_result(result):
             -> GuideFetchService.fetch_all(heroes, backend, use_rag)
             -> GuideProgressDialog.exec()                        [模态等待]
 
-菜单「数据 → 攻略获取 → 增量获取」
+菜单「数据 → 攻略生成 → 增量获取」
   -> MainWindow._request_guide_incremental()
     -> AiGenerationWorkflow.request_guide_incremental()
       -> HeroManager.list_heroes() + GuideManager.list_guides() [对比已有攻略]
@@ -299,7 +319,7 @@ PollCoordinator._consume_poll_result(result):
         -> GuideFetchService.fetch_incremental(missing, backend, use_rag)
         -> GuideProgressDialog(len(missing))                     [总数与实际任务一致]
 
-菜单「数据 → 攻略获取 → 指定获取」
+菜单「数据 → 攻略生成 → 指定获取」
   -> MainWindow._request_guide_specific()
     -> AiGenerationWorkflow.request_guide_specific()
       -> GuideFetchDialog(hero_manager, guide_manager, parent)   [默认筛选未生成]
@@ -318,7 +338,7 @@ GuideFetchService [signal] fetch_completed
 
 | 函数 | 菜单路径 | 调用链 |
 |------|----------|--------|
-| `MainWindow._request_guide_*()` | 数据→攻略获取 | 仅委托 `AiGenerationWorkflow.request_guide_*()` |
+| `MainWindow._request_guide_*()` | 数据→攻略生成 | 仅委托 `AiGenerationWorkflow.request_guide_*()` |
 | `request_guide_all()` | 全量获取 | `_get_heroes_as_dicts()` → `_start_guide_generation()` → `GuideFetchService.fetch_all()` |
 | `request_guide_incremental()` | 增量获取 | `GuideManager.list_guides()` → 缺失筛选 → `fetch_incremental(missing)` |
 | `request_guide_specific()` | 指定获取 | `GuideFetchDialog(HeroManager, GuideManager)` → 状态筛选 → `_start_guide_generation()` → `fetch_specific()` |
@@ -1237,6 +1257,8 @@ WhitelistConfigDialog.exec()
 | `src.ui.shared.persist.run_edit_dialog` | 模态编辑对话框的标准保存循环 |
 | `src.ui.shared.master_detail.MasterDetailPane` | 主从列表骨架 |
 | `src.ui.shared.capture_lock.CaptureRequestLock` | 截图/文件导入单飞锁 |
+| `src.business.card_sync.CardSyncService` | 卡牌百科变更检查与同步（`BaikeIgnoreManagerDialog` 使用） |
+| `src.data.card_repository.CardRepository` | 卡牌数据仓库（`BaikeIgnoreManagerDialog` 使用） |
 
 ---
 
@@ -1246,7 +1268,7 @@ WhitelistConfigDialog.exec()
 
 | 函数 | 调用方（触发方式） | 被调用方 |
 |------|-------------------|----------|
-| `__init__(hero_manager, synergy_manager, guide_manager)` | `main.py:main()` | `AppServices(...)` 构造、`attach(self)`、`_setup_ui()`、`_load_data()`、`_setup_status_bar()` |
+| `__init__(hero_manager, synergy_manager, guide_manager)` | `main.py:main()` | `AppServices(...)` 构造、`attach(self)`、`ProgressReporter()`、`AnnouncementUpdateCoordinator(...)`、`_setup_ui()`、`_load_data()`、`_setup_status_bar()` |
 | `start_ocr_warmup()` | 启动画面 | `CaptureService.warmup_ocr_model()` |
 | `wait_ocr_warmup(timeout_ms)` | 启动画面阻塞等待 | `CaptureService.wait_ocr_warmup()` |
 | `_load_data()` | `__init__()`, `_reload_data()` | `DataFacade.load_all()` + `DataMutationService.repair_missing_references()` |
@@ -1259,19 +1281,24 @@ WhitelistConfigDialog.exec()
 | `_request_synergy_pair()` / `_request_synergy_single()` / `_request_synergy_combos()` | 菜单 | `AiGenerationWorkflow.request_synergy_*()` |
 | `_open_settings()` | 菜单”配置→API 配置” | `SettingsDialog` |
 | `_open_faction_colors()` | 菜单”配置→势力配色” | `FactionColorDialog` → `reload_faction_colors()` → `RecommendationPanel.refresh_faction_colors()` + `MatchGuidePanel.refresh_faction_colors()` |
-| `_open_data_management()` | 菜单”配置→数据管理” | `DataManagementDialog` |
+| `_open_data_management()` | 菜单"数据→清空攻略/相性数据" | `DataManagementDialog` |
 | `_open_mumu_config()` | 菜单”配置→模拟器配置” / StatusChips 点击 | `MumuConfigDialog` → `save_env_file()` → `PollCoordinator.sync_with_connection()` |
-| `_open_official_data_import()` | 菜单”导入→官方数据导入” | `OfficialDataImportDialog` + 轮询暂停/恢复 |
-| `_open_combos_import()` | 菜单”导入→实战配队导入” | `CombosImportDialog` |
+| `_open_official_data_import()` | 菜单”数据→官方数据导入” | `OfficialDataImportDialog` + 轮询暂停/恢复 |
+| `_open_combos_import()` | 菜单"数据→实战配队导入" | `CombosImportDialog` |
+| `_open_baike_ignore_manager()` | 菜单"数据→百科忽略名单管理" | `BaikeIgnoreManagerDialog` -> `AnnouncementService.list_ignored_heroes()` + `CardSyncService.list_ignored_cards()` |
+| `_open_whitelist_config()` | 菜单"配置→白名单配置" | `WhitelistConfigDialog` |
+| `_open_card_sync()` | 菜单"数据→检查卡牌百科更新" | `CardSyncDialog` |
 | `_on_combos_imported(count)` | `CombosImportDialog.combos_imported` | `ComboManager.load()` + `HeroBrowser.refresh_synergies()` |
-| `_check_announcements()` | 菜单”数据→检查公告更新” | `AnnouncementService.check_now()` + is_busy/cooldown 检查 |
-| `_open_announcement_dialog()` | 菜单”数据→公告记录” | `AnnouncementDialog` (非模态) |
-| `_update_hero_data_from_announcements()` | 横幅/对话框按钮 | `AnnouncementService.collect_base_candidates()` + `prepare_update_candidates()` |
+| `_check_announcements()` | 菜单"数据→检查公告更新" | `AnnouncementUpdateCoordinator.check_announcements()` -> `AnnouncementService.check_now()` |
+| `_open_announcement_dialog()` | 菜单"数据→公告记录" | `AnnouncementUpdateCoordinator.open_announcement_dialog()` -> `AnnouncementDialog` (非模态) |
+| `_update_hero_data_from_announcements()` | 横幅/对话框按钮 | `AnnouncementUpdateCoordinator.update_hero_data_from_announcements()` |
 | `_on_hero_update_prepared(payload)` | `AnnouncementService.update_candidates_prepared` | `HeroUpdateConfirmDialog` → `_pending_update_phases` 队列 |
 | `_start_next_update_phase()` / `_dispatch_update_phase()` | 上一阶段完成回调 | `fetch_specific(ids)` / `fetch_incremental()` + is_busy 检查 |
 | `_on_fetch_completed(success)` | `HeroFetchService.fetch_completed` | 消费阶段队列 → `mark_applied()` / 普通 toast |
-| `_on_poll_result(result)` | `PollCoordinator.poll_result_ready` | 按 `task_results` 分派到推荐页/对局攻略页 |
-| `_on_peak_exited_to_match()` | `PeakSelectPanel.board_exited` | 激活对局攻略任务 |
+| `_on_poll_hero_selection_matched(ocr_results)` | `PollCoordinator.hero_selection_matched` | `_match_guide.set_win_rate_mode(WIN_RATE_MODE_2V2)` + `_recommendation.load_from_ocr()` |
+| `_on_poll_match_guide_matched(task_result)` | `PollCoordinator.match_guide_matched` | `_match_guide.update_block(0, task_result)` |
+| `_on_poll_page_switch_requested(page)` | `PollCoordinator.page_switch_requested` | `_tabs.setCurrentWidget(target)` |
+| `_on_peak_exited_to_match()` | `PeakSelectPanel.board_exited` | `_match_guide.set_win_rate_mode(WIN_RATE_MODE_PEAK)` + `PollCoordinator.handle_peak_exit()` |
 | `_deactivate_match_guide_if_idle()` | `healthy_no_match` 回调 | 激活后 90s 空闲失活对局攻略任务 |
 | `_on_ocr_warmup_state_changed(state)` | `CaptureService.ocr_warmup_state_changed` | 状态栏 OCR 预热提示 |
 | `_on_capture_connection_changed(state, detail)` | `CaptureService.connection_changed` | `_update_emulator_status()` + `warmup_ocr_model()` + `sync_with_connection()` |
@@ -1345,15 +1372,16 @@ WhitelistConfigDialog.exec()
 | `CardAnnotationEditDialog` | CardCatalogService + card_id | 保存追加字段 |
 | `CardFieldSchemaDialog` | CardCatalogService | 字段定义管理 |
 | `CardSyncDialog` | CardSyncService + CardRepository + card_point_names | 卡牌百科更新检查与应用；`applied_count` 属性 |
+| `BaikeIgnoreManagerDialog` | AnnouncementService + CardSyncService | 百科忽略名单查看/恢复；`exec()` 后关闭 |
 
 
 ## 九、公告更新菜单、横幅与对话框链路
 
 ```
-菜单: 数据 > 检查公告更新 -> _check_announcements() -> AnnouncementService.check_now()
-菜单: 数据 > 公告记录 -> _open_announcement_dialog() -> AnnouncementDialog（非模态）
+菜单: 数据 > 检查公告更新 -> AnnouncementUpdateCoordinator.check_announcements() -> AnnouncementService.check_now()
+菜单: 数据 > 公告记录 -> AnnouncementUpdateCoordinator.open_announcement_dialog() -> AnnouncementDialog（非模态）
 
-AnnouncementService.check_finished -> _on_announcement_check_finished()
+AnnouncementService.check_finished -> AnnouncementUpdateCoordinator._on_announcement_check_finished()
   -> _refresh_announcement_banner()
      ready>0: 横幅“武将数据可更新” + [查看][更新武将数据]（success 色调）
      pending>0: 横幅“检测到武将相关公告，等待百科更新”（info 色调，更新按钮禁用）
@@ -1362,16 +1390,15 @@ AnnouncementService.check_finished -> _on_announcement_check_finished()
   -> _refresh_announcement_dialog()（对话框打开时刷新列表与 diff）
 
 进度可视化链路:
-  AnnouncementService.check_started -> MainWindow._on_announcement_check_started()
-    -> _show_indeterminate_progress("正在检查公告更新...")
+  AnnouncementService.check_started -> AnnouncementUpdateCoordinator._on_announcement_check_started()
+    -> ProgressReporter.show_indeterminate_progress("正在检查公告更新...")
   AnnouncementService.progress_changed -> _on_announcement_progress()   [阶段文字]
-  AnnouncementService.check_finished -> _on_announcement_check_finished() -> _hide_progress()
-  HeroFetchService.progress_updated -> _on_fetch_progress(current, total, text)
-    -> _set_progress() [QProgressBar setRange/setValue/setFormat]
-  HeroFetchService.fetch_completed -> _on_fetch_completed() -> _hide_progress()
+  AnnouncementService.check_finished -> AnnouncementUpdateCoordinator._on_announcement_check_finished() -> ProgressReporter.hide_progress()
+  HeroFetchService.progress_updated -> ProgressReporter.show_progress(current, total, text)
+  HeroFetchService.fetch_completed -> _on_fetch_completed() -> ProgressReporter.hide_progress()
 
 AnnouncementDialog / 顶部横幅:
-  update_requested -> MainWindow._update_hero_data_from_announcements()
+  update_requested -> AnnouncementUpdateCoordinator.update_hero_data_from_announcements()
     -> AnnouncementService.collect_base_candidates(local_heroes, announcements, diff)
        [公告 matched + 内存 diff，无摘要]
     -> 无候选 -> 状态栏“没有需要更新的武将数据” + 状态栏 Toast（info 色调）
@@ -1402,10 +1429,36 @@ AnnouncementDialog / 顶部横幅:
 
 ---
 
+## 九b、百科忽略名单管理对话框链路
+
+```
+菜单: 数据 > 百科忽略名单管理 -> MainWindow._open_baike_ignore_manager()
+  -> BaikeIgnoreManagerDialog(self,
+       announcement_service=_services.announcement_service,
+       card_sync_service=_services.card_sync_service).exec()
+     -> _refresh()
+        -> _sections()
+           -> AnnouncementService.list_ignored_heroes()  [武将侧忽略名单]
+           -> CardSyncService.list_ignored_cards()        [卡牌侧忽略名单]
+        -> 逐条展示: "{类型} · {名称}（{变更类型}）· 忽略于 {时间}"
+     -> 恢复选中:
+        -> _restore_selected()
+           -> [hero_ids] AnnouncementService.restore_heroes(hero_ids)
+           -> [card_ids] CardSyncService.restore_cards(card_ids)
+           -> _refresh()
+     -> 全部恢复:
+        -> _restore_all()
+           -> AnnouncementService.restore_heroes()          [无参数清空全部]
+           -> CardSyncService.restore_cards()
+           -> _refresh()
+```
+
+---
+
 ## 十、卡牌百科同步对话框链路
 
 ```
-菜单: 数据 > 检查卡牌百科更新 -> MainWindow._open_card_sync_dialog()
+菜单: 数据 > 检查卡牌百科更新 -> MainWindow._open_card_sync()
   -> CardSyncDialog(card_sync_service, card_repository, card_point_names, auto_check=True)
      -> _build_ui()
         -> PageHeader("卡牌百科更新", 说明文字)

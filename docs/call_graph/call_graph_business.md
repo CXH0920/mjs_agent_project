@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-21）
+## 当前实现基线（2026-09-29）
 
 成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回；`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`，非零退出时由基类发射 `error_occurred(msg)`；`HeroFetchService` 无论成败都发 `fetch_completed(exit_code == 0)`。
 
@@ -870,6 +870,7 @@ MainWindow._check_announcements()
       -> fetch_latest_announcements() + classify_hero_related()
       -> AnnouncementManager.merge_new()
       -> fetch_baike_heroes() -> build_hero_snapshot() -> diff_heroes()
+      -> filter_ignored(diff, hashes, load_baike_ignores().heroes)  [忽略名单过滤]
       -> AnnouncementManager.mark_ready_if_updated()
       -> _sync_timeline() -> append_announcement_events()
       -> 阶段令牌 snapshot / pending_saves 挂到 AnnouncementCheckResult
@@ -909,6 +910,10 @@ AnnouncementService._check_done(object)           -> _finalize_check()（内部�
 | `_finalize_check()` | GUI 线程统一写共享状态、持久化 `pending_saves`、广播 `check_finished` |
 | `mark_applied()` | 采集完成后公告置已处理 + 写回 `_last_snapshot` |
 | `_sync_timeline()` -> `int` | 武将变更时间轴同步，失败仅记日志返回 0 |
+| `ignore_hero(entry_id, name, state, content_hash)` | 把一名武将的当前差异写入忽略名单（`heroes` 命名空间） |
+| `ignored_hero_count()` -> `int` | 查询忽略名单条数 |
+| `list_ignored_heroes()` -> `dict[str, IgnoreEntry]` | 查询全量忽略条目 |
+| `restore_heroes(entry_ids=None)` | 恢复被忽略的武将差异（`None` 时全部恢复） |
 
 ## 十一、知识库相关服务（已迁出）
 
@@ -933,7 +938,8 @@ MainWindow._check_card_sync()
          -> load_card_snapshot(snapshot_path)                     [card_sync_store.py]
          -> [基线空] 首跑初始化：local cards.json / 官网快照 / 空快照
          -> diff_cards(snapshot_plain, baseline_plain)            [card_baike.py]
-         -> 返回 CardSyncCheckResult(diff, official_cards, snapshot, pending_saves)
+         -> filter_ignored(diff, hashes, load_baike_ignores().cards)  [忽略名单过滤]
+         -> 返回 CardSyncCheckResult(diff, official_cards, snapshot, pending_saves, ignored_count)
        -> _check_done(object) 内部信号（跨线程排队到 GUI 线程）
        -> _finalize_check(result)
          -> 缓存官网数据 + 快照
@@ -973,7 +979,78 @@ CardSyncService._check_done(object)             -> _finalize_check()（内部，
 | `_finalize_check(result)` | GUI 线程统一写共享状态、持久化 `pending_saves`、广播 `check_finished` |
 | `_clean_official_card(official)` | 官网原始记录 → 存盘纯文本四件套（card_detail 保留分段结构） |
 | `_snapshot_to_plain(snapshot)` | CardSnapshot → diff_cards 所需 `{id: {name, hash}}` 结构 |
+| `ignore_card(card_id, name, change)` | 把一张卡的当前差异写入忽略名单（`cards` 命名空间，哈希与官网快照同源） |
+| `ignored_card_count()` -> `int` | 查询忽略名单条数 |
+| `list_ignored_cards()` -> `dict[str, IgnoreEntry]` | 查询全量忽略条目 |
+| `restore_cards(entry_ids=None)` | 恢复被忽略的卡牌差异（`None` 时全部恢复） |
 
 > **与公告体系对比**：CardSyncService 与 AnnouncementService 结构同构（`_run_check` → `_check_done` → `_finalize_check` 三段式跨线程收尾），但二者零耦合：卡牌百科不依赖公告时间轴，变更记录独立存储在 `data/card_changes.json`，驱动卡牌 curated 精化时效检查（见 [call_graph_rag.md](./call_graph_rag.md) 的 `collect_stale_card_curated`）。
+
+## 十三、BaikeIgnoreStore（忽略名单）调用链
+
+`baike_ignore_store`（`src/data/baike_ignore_store.py`）统一管理卡牌与武将百科差异的忽略/恢复/查询，由 CardSyncService 与 AnnouncementService 共享调用，提供两个命名空间（`heroes` / `cards`）的条目管理。
+
+### 13.1 调用关系总览
+
+```
+[忽略]
+CardSyncService.ignore_card(card_id, name, change)
+  -> ignore_entry("cards", card_id, name, change, content_hash, path)
+     -> 计算 content_hash = card_content_hash(official) [哈希与官网快照同源]
+     -> load_baike_ignores(path) -> BaikeIgnoreStore.cards 命名空间追加
+
+AnnouncementService.ignore_hero(entry_id, name, state, content_hash)
+  -> ignore_entry("heroes", entry_id, name, state, content_hash, path)
+     -> load_baike_ignores(path) -> BaikeIgnoreStore.heroes 命名空间追加
+
+[查询]
+CardSyncService.ignored_card_count()
+  -> load_baike_ignores(path).cards -> len()
+
+CardSyncService.list_ignored_cards()
+  -> load_baike_ignores(path).cards
+
+AnnouncementService.ignored_hero_count()
+  -> load_baike_ignores(path).heroes -> len()
+
+AnnouncementService.list_ignored_heroes()
+  -> load_baike_ignores(path).heroes
+
+[过滤差异]
+CardSyncService._do_check()
+  -> diff_cards() -> {added, modified, removed}
+  -> filter_ignored(diff, official_hashes, load_baike_ignores(path).cards)
+     -> 返回 (过滤后diff, 被过滤条数)
+
+AnnouncementService._do_check()
+  -> diff_heroes() -> {added, modified, removed}
+  -> filter_ignored(diff, official_hashes, load_baike_ignores(path).heroes)
+     -> 返回 (过滤后diff, 被过滤条数)
+
+[候选列表压制]
+AnnouncementService.collect_base_candidates(local, announcements, diff)
+  -> build_update_candidates(..., ignore_entries=load_baike_ignores(path).heroes)
+
+AnnouncementService._run_prepare()
+  -> build_update_candidates(..., ignore_entries=load_baike_ignores(path).heroes)
+
+[恢复]
+CardSyncService.restore_cards(entry_ids=None)
+  -> [None] entry_ids = list(load_baike_ignores(path).cards)
+  -> for entry_id in entry_ids: remove_entry("cards", entry_id, path)
+
+AnnouncementService.restore_heroes(entry_ids=None)
+  -> [None] entry_ids = list(load_baike_ignores(path).heroes)
+  -> for entry_id in entry_ids: remove_entry("heroes", entry_id, path)
+```
+
+### 13.2 函数清单
+
+| 函数 | 文件 | 调用方 | 被调用方 |
+|------|------|--------|----------|
+| `load_baike_ignores(path)` -> `BaikeIgnoreStore` | `baike_ignore_store.py` | CardSyncService / AnnouncementService | 读取忽略名单文件，缺失返回空对象 |
+| `filter_ignored(diff, hashes, entries)` -> `(diff, ignored_count)` | `baike_ignore_store.py` | `_do_check()` | 按哈希匹配扣除已忽略条目 |
+| `ignore_entry(ns, id, name, state, hash, path)` | `baike_ignore_store.py` | `ignore_card()` / `ignore_hero()` | 追加/更新忽略条目 |
+| `remove_entry(ns, id, path)` | `baike_ignore_store.py` | `restore_cards()` / `restore_heroes()` | 删除指定忽略条目 |
 
 
