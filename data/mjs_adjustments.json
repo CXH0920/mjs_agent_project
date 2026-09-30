@@ -1481,6 +1481,46 @@
    "source": "announcement",
    "ref": "https://mjs.ztgame.com/news/002-1790-000f4-166366.html",
    "announcement_title": "9月24日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-30",
+   "hero": "左思",
+   "change_type": "新增",
+   "skills": [
+    "洛阳纸贵",
+    "振衣千仞",
+    "山水清音"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1790-000f9-759375.html",
+   "announcement_title": "10月1日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-30",
+   "hero": "左棻",
+   "change_type": "新增",
+   "skills": [
+    "诏为赋颂",
+    "离思赋"
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1790-000f9-759375.html",
+   "announcement_title": "10月1日05：00停服更新预告"
+  },
+  {
+   "date": "2026-09-30",
+   "hero": "魏延",
+   "change_type": "增强",
+   "skills": [
+    {
+     "skill": "子午奇谋",
+     "before": "每轮结束时，你可以将任意牌当作杀对一名其他角色打出，若此杀造成伤害，你摸2张牌。",
+     "after": "每轮结束时，你可以将任意牌当作杀对一名其他角色打出，此杀攻击范围无限，若此杀造成伤害，你摸2张牌。"
+    }
+   ],
+   "source": "announcement",
+   "ref": "https://mjs.ztgame.com/news/000-1790-000f9-759375.html",
+   "announcement_title": "10月1日05：00停服更新预告"
   }
  ]
 }

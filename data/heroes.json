@@ -2965,37 +2965,6 @@
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/EHdJkQUL6almywop0YKEImqChmRGDRant2i87My5.png_200x282.png"
   },
   {
-    "id": 58,
-    "name": "黄忠",
-    "title": "",
-    "faction": "蜀汉",
-    "position": "攻击",
-    "max_hp": 6,
-    "max_hand": 3,
-    "gender": "男",
-    "skills": [
-      {
-        "name": "骄兵之计",
-        "description": "其他角色回合结束时，若其手牌数＜你，你可以立即对其打出1张杀或者下个出牌阶段的出杀次数+1。",
-        "settlement": "技能触发时，如果选择不打出杀，则自己下回合的出杀次数就会+1"
-      },
-      {
-        "name": "百步穿杨",
-        "description": "每个回合限1次，当你选择杀的目标时，若你与目标距离＞1，则此杀对其强命，否则此杀对其伤害+1。（强命：打出的杀无法被抵消）",
-        "settlement": "只对每个回合第1次打出的杀生效，也就是如果对距离1以内的角色出杀，即使没有造成伤害，再次出杀也不会增加伤害了。"
-      },
-      {
-        "name": "宝刀不老",
-        "description": "回合开始时，获得1张武器牌，若牌堆中没有武器牌，改为获得1张杀。",
-        "settlement": "1.随机获得武器牌，是从当前牌堆中，按顺序查找到最上方的武器牌获得。 2.如果牌堆中没有武器牌，并且也没有杀，则不会获得任何牌。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/ywfcE53ekfYL0JBMSt48UugZ09q4vO3QG8qRsBmo.png_200x282.png"
-  },
-  {
     "id": 57,
     "name": "刘备",
     "title": "",
@@ -3985,32 +3954,6 @@
     "mode_viability": {},
     "last_updated": "2026-07-16",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/O0xI6VOx3KSJAUCiWg1Upiw41oncoH719ctWsMrL.png_200x282.png"
-  },
-  {
-    "id": 21,
-    "name": "貂蝉",
-    "title": "",
-    "faction": "东汉",
-    "position": "控制",
-    "max_hp": 4,
-    "max_hand": 4,
-    "gender": "女",
-    "skills": [
-      {
-        "name": "闭月之姿",
-        "description": "回合结束时，摸2张牌，然后可以打出其中1张牌。",
-        "settlement": "这个技能的效果很简单...不需要详细解释。"
-      },
-      {
-        "name": "隔帘送目",
-        "description": "出牌阶段限1次，你可以令一名其他男性角色对你选择的另一名其他男性角色打出1张具有强命的杀，否则令其随机弃置1张牌并失去1点体力。",
-        "settlement": "1.失去体力不算是受到伤害，不会触发受伤相关的技能，也没有伤害来源。 2.此技能不检查攻击范围，也就是选择的出杀的角色后，可以选择任意其他的另一名男性角色。"
-      }
-    ],
-    "difficulty": 2,
-    "mode_viability": {},
-    "last_updated": "2026-07-16",
-    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/Qa7ylAVxr1Rj6ZiuzRrwgFLg7GaSzNw9xccvQQZP.png_200x282.png"
   },
   {
     "id": 20,
@@ -5217,5 +5160,124 @@
     "mode_viability": {},
     "last_updated": "2026-09-18",
     "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/wnfdjh3YfZBIEnyD8T9Vf4ub8CgvLFS6TigabugL.png_200x282.png"
+  },
+  {
+    "id": 58,
+    "name": "黄忠",
+    "title": "",
+    "faction": "蜀汉",
+    "position": "攻击",
+    "max_hp": 6,
+    "max_hand": 3,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "骄兵之计",
+        "description": "其他角色回合结束时，若其在你的攻击范围内，你可以立即对其打出1张杀或者下个出牌阶段的出杀次数+1。",
+        "settlement": "技能触发时，如果选择不打出杀，则自己下回合的出杀次数就会+1"
+      },
+      {
+        "name": "百步穿杨",
+        "description": "当你选择杀的目标时，若你与目标距离＞1，则此杀对其强命；否则你可以令此杀对其伤害+1，然后此技能无效直到当前回合结束。",
+        "settlement": "只对每个回合第1次打出的杀生效，也就是如果对距离1以内的角色出杀，即使没有造成伤害，再次出杀也不会增加伤害了。"
+      },
+      {
+        "name": "宝刀不老",
+        "description": "回合开始时，获得1张武器牌；当你打出武器牌时，可以将1张牌转化为杀。",
+        "settlement": "1.随机获得武器牌，是从当前牌堆中，按顺序查找到最上方的武器牌获得。 2.如果牌堆中没有武器牌，并且也没有杀，则不会获得任何牌。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-30",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-06/ywfcE53ekfYL0JBMSt48UugZ09q4vO3QG8qRsBmo.png_200x282.png"
+  },
+  {
+    "id": 21,
+    "name": "貂蝉",
+    "title": "",
+    "faction": "东汉",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "女",
+    "skills": [
+      {
+        "name": "闭月之姿",
+        "description": "回合结束时，摸2张牌，然后可以打出其中1张牌。",
+        "settlement": "这个技能的效果很简单...不需要详细解释。"
+      },
+      {
+        "name": "隔帘送目",
+        "description": "出牌阶段限1次，你可以令一名其他男性角色对你选择的另一名其他角色打出1张具有强命的杀，否则令其随机弃置1张牌并失去1点体力。",
+        "settlement": "1.失去体力不算是受到伤害，不会触发受伤相关的技能，也没有伤害来源。 2.此技能不检查攻击范围，也就是选择的出杀的角色后，可以选择任意其他的另一名男性角色。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-30",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2025-08/Qa7ylAVxr1Rj6ZiuzRrwgFLg7GaSzNw9xccvQQZP.png_200x282.png"
+  },
+  {
+    "id": 202,
+    "name": "谢灵运",
+    "title": "",
+    "faction": "东晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "池塘春草",
+        "description": "出牌阶段限1次，可以选择1个你手牌中没有的点数，选择并添加1张此点数的牌到你的手牌。",
+        "settlement": "选择是指从初始牌堆中存在的随机3张选中点数的牌中选择1张。"
+      },
+      {
+        "name": "山水诗宗",
+        "description": "当你打出牌的总点数等于13时，获得点数6和7的牌各1张；大于13时，重置此技能。",
+        "settlement": "重置此技能的意思是技能所记录点数变成0点。"
+      },
+      {
+        "name": "陈郡谢氏",
+        "description": "士族。每轮结束时，获得士族牌堆中每种类型的牌各1张。 （士族：游戏开始时，将牌堆顶的10张牌转化为士族牌并放入士族牌堆。士族牌堆与公共牌堆相互独立，并且只有“士族”角色，才可以打出士族牌。）",
+        "settlement": "1.士族牌堆和士族弃牌堆均为全场共用的特殊区域，与普通牌堆及弃牌堆相互独立。 2.士族牌被使用或打出后，进入士族弃牌堆，当士族牌堆为空时，将士族弃牌堆洗牌，并组成新的士族牌堆。 3.除非技能另有说明，拥有“士族”技能的角色摸牌时，仍从普通牌堆摸牌。 4.游戏开始时，每有一个“士族”技能，便将牌堆顶的10张牌转化为士族牌并放入士族牌堆。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-30",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/EmAXCXH28NWKRbZRJWUbFTT3ScGghk32CK8ahCOb.png_200x282.png"
+  },
+  {
+    "id": 201,
+    "name": "陶渊明",
+    "title": "",
+    "faction": "东晋",
+    "position": "控制",
+    "max_hp": 4,
+    "max_hand": 4,
+    "gender": "男",
+    "skills": [
+      {
+        "name": "桃花源",
+        "description": "限定，你可以离开游戏，进入“桃花源”，本轮结束时返回。 （桃花源：进入桃花源的角色会立即结束阶段或回合，且不会在桃花源中进入阶段或回合。每个回合结束时，你摸1张牌。）",
+        "settlement": "在桃花源中，有角色造成伤害时无法发动采菊东篱。"
+      },
+      {
+        "name": "归去来兮",
+        "description": "限定，你可以弃置所有牌，然后从任意位置获得所有“菊”，其他角色与你距离永久+1。",
+        "settlement": "无法从士族牌堆，燕昭王的黄金台等技能的特殊区域获得菊。"
+      },
+      {
+        "name": "采菊东篱",
+        "description": "当有角色造成伤害时，你可以添加1张菊到牌堆底，或获得1张菊。你的菊不计入手牌上限。 菊 ♣1：无法被打出。回合开始/结束时，将此牌洗回牌堆，然后摸等量张牌。",
+        "settlement": "从牌堆中取出的菊，不会立即因该效果洗回牌堆。"
+      }
+    ],
+    "difficulty": 2,
+    "mode_viability": {},
+    "last_updated": "2026-09-30",
+    "icon_url": "https://siteres.ztgame.com/s4/mjs/images/activity/2026-09/wZxNpsQsAZtiWXu0MONdB6IQwF8DjuaxCs4y2M4C.png_200x282.png"
   }
 ]

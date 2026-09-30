@@ -12,6 +12,11 @@
       "input_per_million": 1.5,
       "output_per_million": 4.5,
       "cached_input_per_million": 0.05
+    },
+    "sensenova-6.8-flash-lite": {
+      "input_per_million": 0.0,
+      "output_per_million": 0.0,
+      "cached_input_per_million": 0.0
     }
   }
 }
