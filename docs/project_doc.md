@@ -925,6 +925,7 @@ class DataFacade:
 ### 4.7 增量更新
 
 ```python
+# src/data/facade.py（审计 C1 自 manager.py 迁入）
 def apply_incremental_update(data_dir, update)
 ```
 

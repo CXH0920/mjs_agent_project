@@ -86,6 +86,10 @@ def test_no_upward_layer_dependency() -> None:
 # DataIssue/DataFacade 放置在 manager.py）已随 issues.py / facade.py 拆分修复；
 # scripts.sync_rule_stats <-> scripts.audit_rule_doc 互引环已随快照读写下沉
 # snapshot_common.py 消除。白名单保持为空：发现任何循环一律直接修复。
+# 2026-09 审计 C1：manager.py 的 TYPE_CHECKING 反向导入三个子 Manager 构成
+# 类型级环（运行期不可见，上面的运行期 SCC 检测漏掉），随
+# apply_incremental_update 迁 facade.py 消解；守护同步扩展到类型边
+# （test_no_type_level_import_cycles）。
 # ---------------------------------------------------------------------------
 ALLOWED_CYCLES: list[frozenset[str]] = []
 
@@ -106,8 +110,13 @@ def _module_modules() -> dict[str, Path]:
     return modules
 
 
-def _module_edges() -> dict[str, set[str]]:
-    """模块级运行期 import 边（含函数内延迟导入，跳过 TYPE_CHECKING 块）。"""
+def _module_edges(include_type_checking: bool = False) -> dict[str, set[str]]:
+    """模块级 import 边（含函数内延迟导入）。
+
+    默认跳过 ``if TYPE_CHECKING:`` 块（仅类型检查用，非运行期依赖）；
+    include_type_checking=True 时计入——类型级依赖同样不得成环
+    （基类模块不得反向知晓子类），见 test_no_type_level_import_cycles。
+    """
     modules = _module_modules()
     edges: dict[str, set[str]] = {m: set() for m in modules}
 
@@ -129,7 +138,7 @@ def _module_edges() -> dict[str, set[str]]:
             return target == "TYPE_CHECKING"
 
         def visit(node: ast.AST) -> None:
-            if isinstance(node, ast.If) and is_type_checking(node):
+            if isinstance(node, ast.If) and is_type_checking(node) and not include_type_checking:
                 return
             targets: list[str] = []
             if isinstance(node, ast.Import):
@@ -222,6 +231,15 @@ def test_no_new_import_cycles() -> None:
     )
 
 
+def test_no_type_level_import_cycles() -> None:
+    edges = _module_edges(include_type_checking=True)
+    cycles = [c for c in _strongly_connected_components(edges) if len(c) > 1]
+    assert not cycles, (
+        "TYPE_CHECKING 类型级循环依赖（解法：搬函数/提取协议，而非加白名单）：\n"
+        + "\n".join("  {" + ", ".join(sorted(c)) + "}" for c in cycles)
+    )
+
+
 # ---------------------------------------------------------------------------
 # 类规模棘轮：单类直接方法数不得超过预算。预算 = 当前全仓最差值，
 # 重构缩小后应下调预算；新增超过 DEFAULT_MAX_METHODS 的类会被拦下。
@@ -258,6 +276,61 @@ def test_class_method_count_within_budget() -> None:
             offenders.append(f"{key}: {count} > 预算 {budget}")
     assert not offenders, (
         "类方法数超出预算（重构缩小后请同步下调预算；放宽预算需在 PR 说明理由）：\n"
+        + "\n".join(offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# 类字段数棘轮：类体直属方法内 self.X 赋值的去重属性名数不得超过预算。
+# 口径与 _method_counts 一致（仅直属成员，不含嵌套作用域）——pydantic/enum/
+# dataclass 值对象走类级注解，天然计 0，无需豁免。2026-09-30 实测 236 类：
+# 9 类超 30，次高 25，阈值切在干净带上。种子 = 当前实测值，只许收紧；
+# 字段归组为状态对象是首选解法。
+# ---------------------------------------------------------------------------
+DEFAULT_MAX_FIELDS = 30
+CLASS_FIELD_BUDGETS: dict[str, int] = {
+    "ui/recommendation/recommendation_panel.py:RecommendationPanel": 44,
+    "ui/configuration/mumu_config_dialog.py:MumuConfigDialog": 43,
+    "ui/match/peak_select_panel.py:PeakSelectPanel": 41,
+    "ui/library/hero_classification_panel.py:HeroClassificationPanel": 38,
+    "ui/maintenance/rule_doc_panel.py:RuleDocPanel": 35,
+    "ui/match/match_guide_panel.py:MatchGuidePanel": 34,
+    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 34,
+    "ui/app/main_window.py:MainWindow": 33,
+    "ui/recommendation/hero_card_widget.py:HeroCardWidget": 32,
+}
+
+
+def _field_counts() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for py in _iter_py_files():
+        rel = py.relative_to(SRC).as_posix()
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            fields: set[str] = set()
+            for child in node.body:  # 仅直属成员，与 _method_counts 同口径
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for st in ast.walk(child):
+                        targets = st.targets if isinstance(st, ast.Assign) else (
+                            [st.target] if isinstance(st, ast.AnnAssign) else [])
+                        for t in targets:
+                            if (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                                    and t.value.id == "self"):
+                                fields.add(t.attr)
+            counts[f"{rel}:{node.name}"] = len(fields)
+    return counts
+
+
+def test_class_field_count_within_budget() -> None:
+    offenders = []
+    for key, count in _field_counts().items():
+        budget = CLASS_FIELD_BUDGETS.get(key, DEFAULT_MAX_FIELDS)
+        if count > budget:
+            offenders.append(f"{key}: {count} > 预算 {budget}")
+    assert not offenders, (
+        "类字段数超出预算（字段归组为状态对象是首选解法；预算只许收紧）：\n"
         + "\n".join(offenders)
     )
 
@@ -507,6 +580,44 @@ def test_ui_must_not_import_infra() -> None:
 
 
 # ---------------------------------------------------------------------------
+# scraper 直接构造 data 持久化类的棘轮：scraper/ai 是无组合根的 CLI 批处理
+# 进程入口，断点续传读侧直接构造 Manager 属成文豁免——注入式改造对独立进程
+# 收益不成立（2026-09 审计 C2 决策）。清单只许收紧；新增第 4 处构造必须先
+# 在本清单写明理由。
+# ---------------------------------------------------------------------------
+SCRAPER_MANAGER_CONSTRUCTIONS: dict[tuple[str, str], int] = {
+    ("src/scraper/ai/batch.py", "SynergyManager"): 1,
+    ("src/scraper/ai/batch.py", "GuideManager"): 1,
+    ("src/scraper/ai/utils.py", "HeroManager"): 1,
+}
+
+
+def test_scraper_manager_construction_ratchet() -> None:
+    repos = _persistence_classes(_class_table())
+    found: dict[tuple[str, str], int] = {}
+    for py in (SRC / "scraper").rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        rel = py.relative_to(ROOT).as_posix()
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            if node.func.id in repos:
+                found[(rel, node.func.id)] = found.get((rel, node.func.id), 0) + 1
+    added = {k: v for k, v in found.items() if k not in SCRAPER_MANAGER_CONSTRUCTIONS}
+    assert not added, (
+        "scraper 新增直接构造 data 持久化类（CLI 入口豁免清单之外，须注入或在此成文理由）：\n"
+        + "\n".join(f"  {k[0]}  {k[1]} x{v}" for k, v in added.items())
+    )
+    stale = {k for k in SCRAPER_MANAGER_CONSTRUCTIONS if k not in found}
+    assert not stale, (
+        "豁免清单存在已消失的构造点（很好，说明解耦有进展）——请同步收缩清单：\n"
+        + "\n".join(f"  {k[0]}  {k[1]}" for k in stale)
+    )
+
+
+# ---------------------------------------------------------------------------
 # 文件行数棘轮：观察名单内单文件行数不得超过预算（种子 = 当前实测值）。
 # 与类方法数棘轮互补——拦住"往大文件继续堆代码"；重构缩小后应下调种子。
 # recognizer.py 条目即绞杀者规则的机械化：只减不增，新特征一律进新模块。
@@ -519,6 +630,17 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/maintenance/rule_doc_panel.py": 928,
     "ui/maintenance/index_refinement_dialog.py": 953,
     "ocr/recognizer.py": 911,
+    # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
+    "ui/library/card_management_panel.py": 877,
+    "ui/library/hero_classification_panel.py": 827,
+    "scraper/official_source/announcement.py": 699,
+    "business/emulator/capture_service.py": 670,
+    "config/env.py": 641,
+    "business/recognition/official_data_import_service.py": 638,
+    "ui/library/hero_browser.py": 610,
+    "scripts/sync_rule_stats.py": 601,
+    # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
+    # 无行为逻辑，拆分只会制造间接层。
 }
 
 

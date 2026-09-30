@@ -446,7 +446,7 @@ RecommendationPanel.update_recommendations()    [OCR 每帧触发]
 | `ComboManager.delete_combo()` | `combo_manager.py` | `ComboManagementDialog` | 标记 `deleted=True` + `deleted_at`，原子落盘 |
 | `ComboManager.restore_combo()` | `combo_manager.py` | `ComboManagementDialog` | 标记 `deleted=False`，原子落盘 |
 | `parse_seats()` | `combo_seats.py` | 配队导入/显示 | 正则匹配 + ALIAS 别名映射 |
-| `apply_incremental_update()` | `manager.py` | 测试和外部导入工具 | 按 added/modified/removed 更新三个 Manager，并执行武将删除级联 |
+| `apply_incremental_update()` | `facade.py` | 测试和外部导入工具 | 按 added/modified/removed 更新三个 Manager，并执行武将删除级联（审计 C1 自 manager.py 迁入） |
 | `load_win_rates()` | `win_rate_repository.py` | `RecommendationPanel`, `MatchGuidePanel` | CSV 解析、百分比转浮点、默认路径缓存 |
 | `load_peak_win_rates()` | `peak_win_rate_repository.py` | 巅峰赛面板 | CSV 解析、巅峰赛专属缓存 |
 | `load_peak_pick_ranks()` | `peak_win_rate_repository.py` | 巅峰赛面板 | CSV 解析、出场排名缓存 |

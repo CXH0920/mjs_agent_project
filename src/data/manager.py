@@ -1,8 +1,9 @@
 """
 名将杀 Agent - 数据管理器（基类模块）
 
-提供默认路径常量、DataManager 泛型基类与跨实体的增量更新函数。
-DataFacade 门面拆分至 facade.py，问题值对象拆分至 issues.py（审计 F3 解环）。
+提供默认路径常量与 DataManager 泛型基类。
+DataFacade 门面拆分至 facade.py，问题值对象拆分至 issues.py（审计 F3 解环），
+跨实体增量更新 apply_incremental_update 亦居 facade.py（审计 C1 解环）。
 """
 
 from __future__ import annotations
@@ -11,18 +12,12 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from pydantic import BaseModel
 from src.config.env import PROJECT_ROOT
 from src.data.issues import DataIssue
 from src.data.json_repository import atomic_write_json
-from src.data.models import IncrementalUpdate
-
-if TYPE_CHECKING:
-    from src.data.guide_manager import GuideManager
-    from src.data.hero_manager import HeroManager
-    from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +29,6 @@ DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 
 __all__ = [
     "DataManager",
-    "apply_incremental_update",
     "DEFAULT_HEROES_FILE",
     "DEFAULT_SYNERGIES_FILE",
     "DEFAULT_GUIDES_FILE",
@@ -200,85 +194,3 @@ class DataManager(Generic[V_co]):
             self._items.clear()
             logger.info("清空 %s 的 %d 条记录", self.file_path, count)
             return count
-
-
-def apply_incremental_update(
-    hero_mgr: HeroManager,
-    synergy_mgr: SynergyManager,
-    guide_mgr: GuideManager,
-    update: IncrementalUpdate,
-) -> dict[str, int]:
-    """应用增量更新，返回变更统计
-
-    协调三个 Manager 执行批量数据更新操作。
-    """
-    stats = {
-        "added_heroes": 0,
-        "modified_heroes": 0,
-        "removed_heroes": 0,
-        "added_synergies": 0,
-        "modified_synergies": 0,
-        "removed_synergies": 0,
-        "added_guides": 0,
-        "modified_guides": 0,
-        "removed_guides": 0,
-    }
-
-    # 新增武将
-    for hero in update.added_heroes:
-        try:
-            hero_mgr.add_hero(hero)
-            stats["added_heroes"] += 1
-        except ValueError:
-            logger.warning("武将已存在，跳过: %s", hero.id)
-
-    # 修改武将
-    for hero in update.modified_heroes:
-        hero_mgr.update_hero(hero)
-        stats["modified_heroes"] += 1
-
-    # 删除武将（同时清理关联的相性和攻略）
-    for hid in update.removed_hero_ids:
-        hero_mgr.delete_hero(hid)
-        synergy_mgr.delete_synergies_for_hero(hid)
-        guide_mgr.delete_guide(hid)
-        stats["removed_heroes"] += 1
-
-    # 新增相性
-    for synergy in update.added_synergies:
-        try:
-            synergy_mgr.add_synergy(synergy)
-            stats["added_synergies"] += 1
-        except ValueError:
-            logger.warning("相性已存在，跳过: %s <-> %s", synergy.hero_a_id, synergy.hero_b_id)
-
-    # 修改相性
-    for synergy in update.modified_synergies:
-        synergy_mgr.update_synergy(synergy)
-        stats["modified_synergies"] += 1
-
-    # 删除相性
-    for a_id, b_id in update.removed_synergy_ids:
-        synergy_mgr.delete_synergy(a_id, b_id)
-        stats["removed_synergies"] += 1
-
-    # 新增攻略
-    for guide in update.added_guides:
-        try:
-            guide_mgr.add_guide(guide)
-            stats["added_guides"] += 1
-        except ValueError:
-            logger.warning("攻略已存在，跳过: %s", guide.hero_id)
-
-    # 修改攻略
-    for guide in update.modified_guides:
-        guide_mgr.update_guide(guide)
-        stats["modified_guides"] += 1
-
-    # 删除攻略
-    for gid in update.removed_guide_ids:
-        guide_mgr.delete_guide(gid)
-        stats["removed_guides"] += 1
-
-    logger.info("增量更新完成: %s", stats)
-    return stats

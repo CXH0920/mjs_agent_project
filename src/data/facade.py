@@ -5,6 +5,9 @@ DataFacade 组装 Hero/Synergy/Guide 三个 Manager，提供统一的加载/校�
 独立成模块的原因：门面必须顶层 import 三个 Manager 子类，而子类继承
 manager.DataManager；若门面与基类同居 manager.py，将形成"基类模块 ↔ 子类"
 的循环依赖（审计 F3，此前靠 __init__ 内延迟导入压制）。
+跨实体增量更新 apply_incremental_update 亦居于此：其签名引用三个子 Manager，
+留在 manager.py 须 TYPE_CHECKING 反向导入子类，构成类型级循环
+（审计 C1，2026-09 迁入解环）。
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from src.data.manager import (
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
 )
+from src.data.models import IncrementalUpdate
 from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)
@@ -133,3 +137,85 @@ class DataFacade:
             "synergies": len(self.synergies.list_synergies()),
             "guides": len(self.guides.list_guides()),
         }
+
+
+def apply_incremental_update(
+    hero_mgr: HeroManager,
+    synergy_mgr: SynergyManager,
+    guide_mgr: GuideManager,
+    update: IncrementalUpdate,
+) -> dict[str, int]:
+    """应用增量更新，返回变更统计
+
+    协调三个 Manager 执行批量数据更新操作。
+    """
+    stats = {
+        "added_heroes": 0,
+        "modified_heroes": 0,
+        "removed_heroes": 0,
+        "added_synergies": 0,
+        "modified_synergies": 0,
+        "removed_synergies": 0,
+        "added_guides": 0,
+        "modified_guides": 0,
+        "removed_guides": 0,
+    }
+
+    # 新增武将
+    for hero in update.added_heroes:
+        try:
+            hero_mgr.add_hero(hero)
+            stats["added_heroes"] += 1
+        except ValueError:
+            logger.warning("武将已存在，跳过: %s", hero.id)
+
+    # 修改武将
+    for hero in update.modified_heroes:
+        hero_mgr.update_hero(hero)
+        stats["modified_heroes"] += 1
+
+    # 删除武将（同时清理关联的相性和攻略）
+    for hid in update.removed_hero_ids:
+        hero_mgr.delete_hero(hid)
+        synergy_mgr.delete_synergies_for_hero(hid)
+        guide_mgr.delete_guide(hid)
+        stats["removed_heroes"] += 1
+
+    # 新增相性
+    for synergy in update.added_synergies:
+        try:
+            synergy_mgr.add_synergy(synergy)
+            stats["added_synergies"] += 1
+        except ValueError:
+            logger.warning("相性已存在，跳过: %s <-> %s", synergy.hero_a_id, synergy.hero_b_id)
+
+    # 修改相性
+    for synergy in update.modified_synergies:
+        synergy_mgr.update_synergy(synergy)
+        stats["modified_synergies"] += 1
+
+    # 删除相性
+    for a_id, b_id in update.removed_synergy_ids:
+        synergy_mgr.delete_synergy(a_id, b_id)
+        stats["removed_synergies"] += 1
+
+    # 新增攻略
+    for guide in update.added_guides:
+        try:
+            guide_mgr.add_guide(guide)
+            stats["added_guides"] += 1
+        except ValueError:
+            logger.warning("攻略已存在，跳过: %s", guide.hero_id)
+
+    # 修改攻略
+    for guide in update.modified_guides:
+        guide_mgr.update_guide(guide)
+        stats["modified_guides"] += 1
+
+    # 删除攻略
+    for gid in update.removed_guide_ids:
+        guide_mgr.delete_guide(gid)
+        stats["removed_guides"] += 1
+
+    logger.info("增量更新完成: %s", stats)
+    return stats

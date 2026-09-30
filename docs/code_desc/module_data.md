@@ -23,8 +23,8 @@
 src/data/
 ├── __init__.py
 ├── models.py                     # Pydantic 核心模型：Skill / Card / Hero / SynergyScore / Combo / HeroGuide / IncrementalUpdate
-├── manager.py                    # 默认路径常量 / DataManager[V_co] 泛型基类 / apply_incremental_update()
-├── facade.py                     # DataFacade 门面（组装三个 Manager，审计 F3 自 manager.py 拆出）
+├── manager.py                    # 默认路径常量 / DataManager[V_co] 泛型基类
+├── facade.py                     # DataFacade 门面（组装三个 Manager，审计 F3 自 manager.py 拆出）/ apply_incremental_update()（审计 C1 迁入）
 ├── issues.py                     # DataIssue / LoadReport 问题值对象（审计 F3 自 manager.py 拆出）
 ├── json_repository.py            # atomic_write_json / JsonRepository 基类（原子写 + 加锁读 + 写失败回滚）
 ├── hero_manager.py               # Hero CRUD + JSON 持久化（继承 DataManager[Hero]）
@@ -426,7 +426,7 @@ def atomic_write_json(path: Path | str, data: Any, indent: int = 2) -> None:
 ### 4.2 增量更新级联删除
 
 ```python
-# src/data/manager.py
+# src/data/facade.py
 def apply_incremental_update(hero_mgr, synergy_mgr, guide_mgr, update) -> dict[str, int]:
     # 新增武将
     for hero in update.added_heroes:

@@ -15,7 +15,7 @@ from src.data.card_catalog import (
     CardViewModel,
     EffectEntry,
 )
-from src.data.facade import DataFacade
+from src.data.facade import DataFacade, apply_incremental_update
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.issues import DataIssue, LoadReport
@@ -24,7 +24,6 @@ from src.data.manager import (
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
     DataManager,
-    apply_incremental_update,
 )
 from src.data.synergy_manager import SynergyManager
 
