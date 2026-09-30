@@ -43,16 +43,10 @@ class SelectionMode(Enum):
     SINGLE = "single"        # 单选（列表选中）
 
 
-class ReturnFormat(Enum):
-    """返回值格式"""
-    IDS = "ids"              # 只返回 ID 列表
-    HEROES_DICT = "dicts"    # 返回武将完整信息（dict）
-
-
 class BaseHeroSelectDialog(QDialog):
     """武将选择对话框基类
 
-    通过 selection_mode 和 return_format 参数调节行为。
+    通过 selection_mode 参数调节行为。
     子类只需传参即可，无需重写 UI 构建逻辑。
     """
 
@@ -62,7 +56,6 @@ class BaseHeroSelectDialog(QDialog):
         title: str = "选择武将",
         tip_text: str = "",
         selection_mode: SelectionMode = SelectionMode.MULTI,
-        return_format: ReturnFormat = ReturnFormat.IDS,
         max_selection: int = 0,
         min_selection: int = 1,
         allowed_names: set[str] | None = None,
@@ -71,7 +64,6 @@ class BaseHeroSelectDialog(QDialog):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._selection_mode = selection_mode
-        self._return_format = return_format
         self._max_selection = max_selection
         self._min_selection = min_selection
         self._allowed_names = allowed_names

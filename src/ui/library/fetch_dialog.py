@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 from src.ui.shared.hero_select_dialog import (
     BaseHeroSelectDialog,
-    ReturnFormat,
     SelectionMode,
 )
 
@@ -30,6 +29,5 @@ class HeroFetchDialog(BaseHeroSelectDialog):
             title="选择要获取的武将",
             tip_text="勾选需要获取的武将，支持搜索和势力筛选",
             selection_mode=SelectionMode.MULTI,
-            return_format=ReturnFormat.IDS,
             parent=parent,
         )
