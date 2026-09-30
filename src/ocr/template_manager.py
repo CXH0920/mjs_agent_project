@@ -65,7 +65,6 @@ class TemplateManager:
         self._loaded_template_path: Path | None = None
         self._last_match_scale = 1.0
         self._has_scale_history = False
-        self._last_match_confidence = 0.0
         self._last_match_strategy = "unmatched"
         self._load()
 
@@ -87,10 +86,6 @@ class TemplateManager:
     @property
     def last_match_scale(self) -> float:
         return self._last_match_scale
-
-    @property
-    def last_match_confidence(self) -> float:
-        return self._last_match_confidence
 
     @property
     def last_match_strategy(self) -> str:
@@ -267,7 +262,6 @@ class TemplateManager:
         try:
             history_scale = self._last_match_scale if self._has_scale_history else None
             self._last_match_scale = 1.0
-            self._last_match_confidence = 0.0
             self._last_match_strategy = "unmatched"
             reference_width, reference_height = self._reference_size
             base_scale = min(
@@ -287,13 +281,13 @@ class TemplateManager:
                 cached_region = self._local_search_region(gray, history_scale)
                 cached_value = self._match_at_scale(gray, history_scale, cached_region)
                 if cached_value is not None and cached_value >= threshold:
-                    self._set_match_details(cached_value, history_scale, "cached_local")
+                    self._set_match_details(history_scale, "cached_local")
                     return True, float(cached_value)
 
             base_value = self._match_at_scale(gray, base_scale, local_region)
             base_strategy = "base_local" if local_region is not None else "base_full"
             if base_value is not None and base_value >= threshold:
-                self._set_match_details(base_value, base_scale, base_strategy)
+                self._set_match_details(base_scale, base_strategy)
                 return True, float(base_value)
 
             best_value = base_value if base_value is not None else -1.0
@@ -309,7 +303,7 @@ class TemplateManager:
                         best_value = value
                         best_scale = scale
                 if best_value >= threshold:
-                    self._set_match_details(best_value, best_scale, "fallback_local_multiscale")
+                    self._set_match_details(best_scale, "fallback_local_multiscale")
                     return True, float(best_value)
 
             # 全图兜底：先对全部候选缩放做 1/4 降采样粗扫，只有粗扫得分逼近阈值的
@@ -349,7 +343,7 @@ class TemplateManager:
             else:
                 # 粗扫即判否（完全非目标页），未发生原尺寸全图扫描
                 fallback_strategy = "coarse_reject_multiscale"
-            self._set_match_details(best_value, best_scale, fallback_strategy)
+            self._set_match_details(best_scale, fallback_strategy)
             matched = bool(best_value >= threshold)
             return matched, float(best_value)
         except Exception as e:
@@ -407,8 +401,7 @@ class TemplateManager:
         _, max_value, _, _ = cv2.minMaxLoc(result)
         return float(max_value)
 
-    def _set_match_details(self, confidence: float, scale: float, strategy: str) -> None:
-        self._last_match_confidence = confidence
+    def _set_match_details(self, scale: float, strategy: str) -> None:
         self._last_match_scale = scale
         self._last_match_strategy = strategy
         self._has_scale_history = True
@@ -429,7 +422,6 @@ class TemplateManager:
         self._loaded_template_path = None
         self._last_match_scale = 1.0
         self._has_scale_history = False
-        self._last_match_confidence = 0.0
         self._last_match_strategy = "unmatched"
         if self._template_path.exists():
             try:
