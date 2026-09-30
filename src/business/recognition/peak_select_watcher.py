@@ -168,6 +168,25 @@ def refresh_resolutions(
     return carried, carried_raws, unverified
 
 
+def verified_resolutions_for_import(
+    resolutions: dict[int, str],
+    raws: dict[int, str],
+    ocr_results: list[dict],
+) -> tuple[dict[int, str], dict[int, str], int]:
+    """导入快照前校验人工确认，返回 (确认, 读数指纹, 丢弃数)。
+
+    与实时循环的逐拍验证同一套定位语义（名在闭包 / 原文复现 / 唯一迁移），
+    但导入是一次性快照、没有后续拍可宽限：无法定位的确认立即丢弃。
+    槽位号是跨牌面不稳定键——选将板与禁将板同槽位并非同一张牌，不校验
+    直接套用会把旧确认顶到别的武将头上（2026-09-30 卓文君事故）。
+    """
+    carried, carried_raws, unverified = refresh_resolutions(resolutions, raws, ocr_results)
+    for slot in unverified:
+        carried.pop(slot, None)
+        carried_raws.pop(slot, None)
+    return carried, carried_raws, len(resolutions) - len(carried)
+
+
 def board_signature(cards: list[Roi]) -> tuple:
     """生成牌面布局签名（原始 bbox 元组）；判等必须用 board_signature_equal。"""
     return tuple(cards)
@@ -257,6 +276,15 @@ class PeakSelectWatcher(QObject):
         # 已挂起的由本次恢复收回，消除"停止后被旧拍重新挂起"的竞态
         with self._state_lock:
             self._session += 1
+            # 会话状态随停止一并清空：确认表/禁将基线/牌面板引用是当次对局
+            # 的上下文。槽位号是跨牌面不稳定键（选将板与禁将板同槽位并非
+            # 同一张牌），残留确认会被后续图片导入按槽位号盲目套用，曾把
+            # 禁将板的卓文君顶成选将板确认的孙尚香（2026-09-30 事故）。
+            self._resolutions = {}
+            self._resolution_raws = {}
+            self._stale_rounds = {}
+            self._ban_names = ()
+            self._last_board = None
         # 先解除持有再恢复：顺序反了恢复激活会被自己的持有拒绝
         self._ocr_service.set_task_hold("hero_selection", False)
         self._restore_standard_tasks()
@@ -393,22 +421,31 @@ class PeakSelectWatcher(QObject):
 
         确认名与该槽读数原文一并登记：原文是这张牌的内容指纹，供后续拍
         验证确认仍然有效（稳定错读的确认名可能永远不在候选闭包里）。
+        无在识别中的牌面（退出/停止后残留的待确认行）时拒绝确认：槽位号
+        是跨牌面不稳定键，旧确认写入会污染后续识别与图片导入。
         """
         with self._state_lock:
-            self._resolutions[slot] = name
-            self._stale_rounds.pop(slot, None)
             last_board = self._last_board
-            raw_name = ""
-            slot_candidates: list[str] = []
-            if last_board is not None and 0 <= slot < len(last_board[0]):
-                raw_name = str(last_board[0][slot].get("raw_name", "")).strip()
-                slot_candidates = [
-                    str(c) for c in (last_board[0][slot].get("candidates") or [])
-                ]
-            self._resolution_raws[slot] = raw_name
+            accepted = last_board is not None
+            if accepted:
+                self._resolutions[slot] = name
+                self._stale_rounds.pop(slot, None)
+                raw_name = ""
+                slot_candidates: list[str] = []
+                if 0 <= slot < len(last_board[0]):
+                    raw_name = str(last_board[0][slot].get("raw_name", "")).strip()
+                    slot_candidates = [
+                        str(c) for c in (last_board[0][slot].get("candidates") or [])
+                    ]
+                self._resolution_raws[slot] = raw_name
+        if not accepted:
+            logger.info(
+                "人工确认被拒绝：当前无在识别中的巅峰赛牌面（槽位 %d → %s）", slot + 1, name
+            )
+            self.status_changed.emit("牌面已不在识别中，确认未生效")
+            return
         record_confirmation(raw_name, name, slot_candidates)
-        if last_board is not None:
-            self._publish_pool(*last_board)
+        self._publish_pool(*last_board)
 
     # ── 手动图片导入 ──────────────────────────────────────────────────
 
@@ -442,7 +479,27 @@ class PeakSelectWatcher(QObject):
             if ocr_results is None:
                 self.status_changed.emit("图片识别未完成，请重试")
                 return
-            self.status_changed.emit("图片识别完成")
+            with self._state_lock:
+                old_slots = set(self._resolutions)
+                self._stale_rounds = {}
+                (
+                    self._resolutions,
+                    self._resolution_raws,
+                    dropped,
+                ) = verified_resolutions_for_import(
+                    self._resolutions, self._resolution_raws, ocr_results
+                )
+                migrated = len(set(self._resolutions) - old_slots)
+            if dropped:
+                self.status_changed.emit(
+                    f"图片识别完成（{dropped} 条旧人工确认与该牌面不符，已丢弃）"
+                )
+            elif migrated:
+                self.status_changed.emit(
+                    f"图片识别完成（{migrated} 条旧人工确认已按牌面重新定位）"
+                )
+            else:
+                self.status_changed.emit("图片识别完成")
             self._publish_pool(ocr_results, len(cards))
         except Exception:
             logger.exception("巅峰赛图片导入识别异常")
@@ -502,6 +559,7 @@ class PeakSelectWatcher(QObject):
                 self._resolutions = {}
                 self._resolution_raws = {}
                 self._stale_rounds = {}
+                self._last_board = None
         if exiting:
             self._restore_match_guide()
             # match_guide 的激活与跳转属界面策略，由主窗口的 board_exited 处理器完成

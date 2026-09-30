@@ -94,7 +94,7 @@ class PeakSelectPanel(QWidget):
         self._watcher = PeakSelectWatcher(capture_service, ocr_service, hero_names_provider, self)
         self._watcher.pool_updated.connect(self._on_pool_updated)
         self._watcher.status_changed.connect(self._on_status_changed)
-        self._watcher.board_exited.connect(self.board_exited.emit)
+        self._watcher.board_exited.connect(self._on_watcher_board_exited)
         self._capture_lock = CaptureRequestLock()
         capture_completed = getattr(capture_service, "capture_completed", None)
         if capture_completed is not None:
@@ -258,6 +258,7 @@ class PeakSelectPanel(QWidget):
     def _on_toggle_watcher(self) -> None:
         if self._watcher.is_running():
             self._watcher.stop()
+            self._mark_stale("阶段：已停止")
             self._toggle_button.setText("开始识别")
             set_ui_role(self._toggle_button, ROLE_PRIMARY)
             self._action_bar.set_status("已停止识别", TONE_NEUTRAL)
@@ -267,9 +268,43 @@ class PeakSelectPanel(QWidget):
             self.request_mumu_config.emit()
             return
         self._watcher.start()
+        self._reset_view()
         self._toggle_button.setText("停止识别")
         set_ui_role(self._toggle_button, ROLE_DANGER)
         self._action_bar.set_status("已开始，等待进入巅峰赛选将页…", TONE_INFO)
+
+    def _reset_view(self) -> None:
+        """开始新识别会话时清空上一局残影：卡片/待确认/已禁/配队一并复位。"""
+        self._last_snapshot = None
+        self._matched_combos = []
+        self._clear_card_row()
+        self._cards_section.hide()
+        self._clear_pending_rows()
+        self._pending_area.hide()
+        self._clear_banned_chips()
+        self._banned_area.hide()
+        self._combo_title.setText("⚔ 实战配队 · 命中 0")
+        self._render_combo_chips()
+        self._stage_badge.setText("阶段：未开始")
+        set_tone(self._stage_badge, TONE_NEUTRAL)
+        self._summary_label.setText("剩余候选：—")
+        self._empty_state.show()
+
+    def _mark_stale(self, badge_text: str) -> None:
+        """会话结束（停止/牌面退出）：摘掉待确认行防误点，卡片保留供复盘。
+
+        待确认行的按钮落在旧牌面的槽位号上，牌面不在了就不该再点；
+        误点的兜底由 watcher 的 confirm_pending 在位守卫承担。
+        """
+        self._clear_pending_rows()
+        self._pending_area.hide()
+        self._stage_badge.setText(badge_text)
+        set_tone(self._stage_badge, TONE_NEUTRAL)
+
+    def _on_watcher_board_exited(self) -> None:
+        """牌面自动退出：摘待确认行、标记过期，再转发主窗口衔接轮询。"""
+        self._mark_stale("阶段：牌面退出")
+        self.board_exited.emit()
 
     def _on_import_from_file(self) -> None:
         """选择本地截图做一次完整识别，用于手动验证（无需连接模拟器）。"""
@@ -339,6 +374,18 @@ class PeakSelectPanel(QWidget):
         self._render_cards()
 
         names = list(dict.fromkeys(snapshot.names))
+        duplicate_count = len(snapshot.names) - len(set(snapshot.names))
+        if duplicate_count:
+            # 同名槽位意味着有人工确认或识别结论互相打架（如旧确认顶掉
+            # 同槽武将），静默去重会把"14 张牌只显示 13 个名字"藏起来
+            logger.warning(
+                "巅峰赛候选出现 %d 个同名槽位（人工确认或识别冲突），请复核",
+                duplicate_count,
+            )
+            self._append_log(f"⚠ 同名槽位 {duplicate_count} 个，请复核待确认行")
+            self._action_bar.set_status(
+                f"检测到 {duplicate_count} 个同名槽位，请复核", TONE_WARNING
+            )
         self._render_pending(snapshot)
         self._render_banned(snapshot)
 
@@ -491,13 +538,16 @@ class PeakSelectPanel(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
-    def _render_banned(self, snapshot: PoolSnapshot) -> None:
+    def _clear_banned_chips(self) -> None:
         while self._banned_chip_flow.count():
             item = self._banned_chip_flow.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.setParent(None)
                 widget.deleteLater()
+
+    def _render_banned(self, snapshot: PoolSnapshot) -> None:
+        self._clear_banned_chips()
         if snapshot.banned:
             for name in snapshot.banned:
                 chip = QLabel(name)

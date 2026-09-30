@@ -499,10 +499,10 @@ class _AlreadySetEvent(threading.Event):
         self.set()
 
 
-def _make_watcher(capture_service) -> tuple[PeakSelectWatcher, list, list]:
+def _make_watcher(capture_service, ocr_service=None) -> tuple[PeakSelectWatcher, list, list]:
     watcher = PeakSelectWatcher(
         capture_service,
-        None,
+        ocr_service,
         lambda: ["荆轲", "典韦"],
     )
     pools: list = []
@@ -1086,3 +1086,224 @@ def test_panel_forwards_board_exited_signal(qapp):
     panel._watcher.board_exited.emit()
 
     assert forwarded == [True]
+
+
+def test_watcher_stop_clears_session_state(qapp):
+    """停止识别后清空会话状态：确认表/禁将基线/牌面板引用不跨会话存活。
+
+    回归：确认表残留会被后续图片导入按槽位号盲目套用（槽位号是跨牌面
+    不稳定键），曾导致选将板确认顶掉禁将板同槽位的武将（卓文君事故）。
+    """
+    watcher, _, _ = _make_watcher(
+        SimpleNamespace(submit_ocr_task=None), ocr_service=_FakeOcrService()
+    )
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 14)
+    watcher.confirm_pending(0, "荆轲")
+    assert watcher._resolutions == {0: "荆轲"}  # 前置：确认已写入
+
+    watcher.stop()
+
+    assert watcher._resolutions == {}
+    assert watcher._resolution_raws == {}
+    assert watcher._stale_rounds == {}
+    assert watcher._ban_names == ()
+    assert watcher._last_board is None
+
+
+def test_watcher_confirm_rejected_after_board_exit(qapp):
+    """牌面退出（连续 2 拍缺席）后人工确认被拒：无在识别牌面时不得写入。"""
+    watcher, _, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=None))
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+
+    watcher._handle_board_absent(watcher._session)
+    watcher._handle_board_absent(watcher._session)  # 第 2 拍缺席 → exiting 清空
+
+    watcher.confirm_pending(0, "荆轲")
+
+    assert watcher._resolutions == {}
+    assert watcher._last_board is None
+    assert any("确认未生效" in text for text in statuses)
+
+
+def test_watcher_confirm_rejected_after_stop(qapp):
+    """停止识别后人工确认被拒：残留待确认行不得写入新上下文。"""
+    watcher, _, statuses = _make_watcher(
+        SimpleNamespace(submit_ocr_task=None), ocr_service=_FakeOcrService()
+    )
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+    watcher.stop()
+
+    watcher.confirm_pending(0, "荆轲")
+
+    assert watcher._resolutions == {}
+    assert watcher._last_board is None
+    assert any("确认未生效" in text for text in statuses)
+
+
+def _ban_board_results() -> list[dict]:
+    """2026-09-30 事故当天的 14 将禁将牌面（槽位 0 基：6=卓文君、10=孙尚香）。"""
+    ban_board = [
+        "郑袖", "黄月英", "金日磾", "孙权", "王戎", "华佗", "卓文君",
+        "荀彧", "马超", "燕昭王", "孙尚香", "孟尝君", "曹操", "羊祜",
+    ]
+    return [
+        {"name": name, "raw_name": name, "candidates": [name], "resolution": "exact"}
+        for name in ban_board
+    ]
+
+
+def _import_with_results(qapp, monkeypatch, tmp_path, ocr_results, card_count):
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.load_local_image",
+        lambda path: Image.new("RGB", (2560, 1440)),
+    )
+    fake_cards = [(100 + i * 276, 247, 238, 326) for i in range(card_count)]
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: fake_cards,
+    )
+    capture_service = SimpleNamespace(
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(ocr_results)
+    )
+    watcher, pools, statuses = _make_watcher(capture_service)
+    return watcher, pools, statuses
+
+
+def test_import_stale_resolution_not_overwrite_different_board(qapp, monkeypatch, tmp_path):
+    """事故复现：选将板的旧确认不得顶掉禁将板同槽位的武将。
+
+    {6:"孙尚香"}（选将板确认）对禁将板验证时孙尚香在槽位 10 闭包唯一
+    命中 → 确认迁移，槽位 6 释放，卓文君按 OCR 显示，候选 14 张无同名。
+    """
+    watcher, pools, statuses = _import_with_results(
+        qapp, monkeypatch, tmp_path, _ban_board_results(), 14
+    )
+    watcher._resolutions = {6: "孙尚香"}
+    watcher._resolution_raws = {6: "孙尚禾"}
+
+    watcher._do_file_recognition(str(tmp_path / "ban.png"))
+
+    names = pools[0].names
+    assert len(names) == 14
+    assert names.count("卓文君") == 1
+    assert names.count("孙尚香") == 1
+    assert names[6] == "卓文君"
+    assert watcher._resolutions == {10: "孙尚香"}
+    assert any("重新定位" in text for text in statuses)
+
+
+def test_import_drops_unlocatable_resolution_and_notifies(qapp, monkeypatch, tmp_path):
+    """旧确认在导入牌面上无处定位（闭包不命中、原文不复现、无法迁移）→ 丢弃并提示。"""
+    board = ["荆轲", "典韦", "君王后", "张梁", "陈阿娇", "吕雉", "孙策", "张辽", "王异"]
+    results = [
+        {"name": n, "raw_name": n, "candidates": [n], "resolution": "exact"} for n in board
+    ]
+    watcher, pools, statuses = _import_with_results(
+        qapp, monkeypatch, tmp_path, results, len(board)
+    )
+    watcher._resolutions = {3: "蒙恬"}
+    watcher._resolution_raws = {3: "蒙恬"}
+
+    watcher._do_file_recognition(str(tmp_path / "pick.png"))
+
+    assert pools[0].names == tuple(board)
+    assert watcher._resolutions == {}
+    assert any("已丢弃" in text for text in statuses)
+
+
+def test_import_keeps_matching_resolution(qapp, monkeypatch, tmp_path):
+    """确认名仍在原槽闭包内的确认原样保留，不影响识别结果。"""
+    board = ["荆轲", "典韦", "君王后", "张梁", "陈阿娇", "吕雉", "孙策", "张辽", "王异"]
+    results = [
+        {"name": n, "raw_name": n, "candidates": [n], "resolution": "exact"} for n in board
+    ]
+    watcher, pools, statuses = _import_with_results(
+        qapp, monkeypatch, tmp_path, results, len(board)
+    )
+    watcher._resolutions = {0: "荆轲"}
+    watcher._resolution_raws = {0: "荆轲"}
+
+    watcher._do_file_recognition(str(tmp_path / "pick.png"))
+
+    assert pools[0].names[0] == "荆轲"
+    assert watcher._resolutions == {0: "荆轲"}
+    assert statuses[-1] == "图片识别完成"
+
+
+def test_import_with_empty_resolutions_is_pure_ocr(qapp, monkeypatch, tmp_path):
+    """无历史确认时导入=纯 OCR 快照（重启后用户看到的正确行为）。"""
+    watcher, pools, statuses = _import_with_results(
+        qapp, monkeypatch, tmp_path, _ban_board_results(), 14
+    )
+
+    watcher._do_file_recognition(str(tmp_path / "ban.png"))
+
+    assert len(pools[0].names) == 14
+    assert "卓文君" in pools[0].names
+    assert watcher._resolutions == {}
+    assert statuses[-1] == "图片识别完成"
+
+
+def test_panel_start_resets_previous_game_view(qapp):
+    """开始新识别会话时清空上一局残影：卡片/待确认/已禁复位到未开始态。"""
+    panel = _make_panel(capture=SimpleNamespace(connected=True))
+    results = [
+        {"name": "荆轲", "resolution": "exact"},
+        {"name": "", "raw_name": "典韦", "candidates": ["典韦"], "resolution": "unresolved"},
+    ]
+    panel._on_pool_updated(parse_pool(results, 9, ban_names=("陈阿娇",)))
+    assert not panel._cards_section.isHidden()  # 前置：上局内容在展示
+
+    panel._toggle_button.click()  # 开始识别
+
+    assert panel._cards_section.isHidden()
+    assert panel._pending_area.isHidden()
+    assert panel._banned_area.isHidden()
+    assert not panel._empty_state.isHidden()
+    assert "未开始" in panel._stage_badge.text()
+    assert "—" in panel._summary_label.text()
+    assert panel._last_snapshot is None
+
+
+def test_panel_stop_hides_pending_and_marks_stale(qapp):
+    """停止识别：待确认行摘除（防幽灵点击），候选卡片保留供复盘。"""
+    panel = _make_panel(capture=SimpleNamespace(connected=True))
+    results = [
+        {"name": "荆轲", "resolution": "exact"},
+        {"name": "", "raw_name": "典韦", "candidates": ["典韦"], "resolution": "unresolved"},
+    ]
+
+    panel._toggle_button.click()  # 开始识别
+    panel._on_pool_updated(parse_pool(results, 9))  # 识别中的牌面
+    assert not panel._pending_area.isHidden()  # 前置：待确认行在展示
+
+    panel._toggle_button.click()  # 停止识别
+
+    assert panel._pending_area.isHidden()
+    assert not panel._cards_section.isHidden()
+    assert "已停止" in panel._stage_badge.text()
+
+
+def test_panel_board_exit_hides_pending_and_marks_stale(qapp):
+    """牌面自动退出：摘待确认行、徽章标过期，且仍向主窗口转发。"""
+    panel = _make_panel()
+    forwarded: list[bool] = []
+    panel.board_exited.connect(lambda: forwarded.append(True))
+    panel._on_pool_updated(parse_pool([{"name": "荆轲", "resolution": "exact"}], 9))
+
+    panel._watcher.board_exited.emit()
+
+    assert panel._pending_area.isHidden()
+    assert "牌面退出" in panel._stage_badge.text()
+    assert forwarded == [True]
+
+
+def test_panel_warns_on_duplicate_names(qapp):
+    """同名槽位显性告警：多槽解析出同一武将时不再静默去重。"""
+    panel = _make_panel()
+    results = [{"name": "荆轲", "resolution": "exact"}] * 10
+    panel._on_pool_updated(parse_pool(results, 10))
+
+    assert panel._cards_title.text() == "候选武将(1)"
+    assert "10" in panel._summary_label.text()
+    assert "同名槽位" in panel._log_view.toPlainText()
