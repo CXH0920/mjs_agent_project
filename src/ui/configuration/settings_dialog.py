@@ -38,12 +38,14 @@ from src.config.env import (
     DEFAULT_PROFILES_FILE,
     PROVIDER_LABELS,
     PROVIDER_PRESETS,
-    load_api_profiles,
     load_pricing_config,
     parse_env_file,
-    save_api_profiles,
     save_env_file,
     save_pricing_config,
+)
+from src.config.profiles import (
+    load_api_profiles,
+    save_api_profiles,
 )
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 

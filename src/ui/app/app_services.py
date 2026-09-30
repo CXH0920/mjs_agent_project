@@ -75,7 +75,6 @@ class AppServices:
         # 屏幕采集服务
         self.capture = CaptureService()
         self.ocr = OcrService()
-        self.ocr.set_ocr_task_submitter(self.capture.submit_ocr_task)
         self.capture.update_config(get_mumu_config())
         self.ocr.update_config(get_mumu_config())
         self.ocr.set_hero_names([h.name for h in self.data.heroes.list_heroes()])

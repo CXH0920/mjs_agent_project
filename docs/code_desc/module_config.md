@@ -24,7 +24,8 @@ src/
 ├── ui/app/chinese_translator.py  # Qt 标准控件中文翻译 + QMessageBox 详情按钮事件过滤器
 ├── config/
 │   ├── __init__.py
-│   ├── env.py               # .env、API 档案与模型价格配置解析/加载/保存（原子写入）
+│   ├── env.py               # .env、模型价格配置解析/加载/保存（原子写入）
+│   ├── profiles.py          # API 档案域（api_profiles.json）：读取/归一化/写入/解析/迁移（自 env.py 拆出，审计 G7）
 │   ├── disclaimer_state.py  # 免责声明状态管理（DISCLAIMER_VERSION、config/.disclaimer_state.json）
 │   └── logging_config.py    # 统一日志配置（按模块拆分 + 文件轮转 + 全量留底）
 ```
@@ -300,20 +301,20 @@ def _normalize_profiles(profiles) -> list[dict]:
 | `is_full_build()` | `env.py` | `bool` | frozen 下 `.full_build` 标记是否存在 |
 | `parse_env_file(path)` | `env.py` | `dict[str, str]` | 解析 .env 文件（含注释、引号处理） |
 | `load_env_config(path)` | `env.py` | `dict` | 解析并完成类型转型（整数/布尔/浮点） |
-| `get_api_config()` | `env.py` | `dict` | 三段式获取 API 配置：首个可用档案 → 仅环境变量+默认值（档案文件存在但无可用档案）→ 旧链（`config.env` → 环境变量 → 默认值） |
+| `get_api_config()` | `profiles.py` | `dict` | 三段式获取 API 配置：首个可用档案 → 仅环境变量+默认值（档案文件存在但无可用档案）→ 旧链（`config.env` → 环境变量 → 默认值） |
 | `get_runtime_params()` | `env.py` | `dict` | 运行参数：RPM / 重试 / max_output_tokens / 超时 / 日志等级 / log_to_file |
 | `get_mumu_config()` | `env.py` | `dict` | 模拟器配置（ADB / OCR / 阈值 / 冷却） |
 | `save_env_file(path, data)` | `env.py` | `None` | 原子写入 .env（保留注释与无关键） |
 | `load_pricing_config(path)` | `env.py` | `dict` | 加载模型价格配置 |
 | `save_pricing_config(path, data)` | `env.py` | `None` | 原子保存模型价格配置 |
 | `get_model_pricing(model)` | `env.py` | `dict \| None` | 查询模型单价，未知模型返回 `None` |
-| `load_api_profiles(path)` | `env.py` | `dict` | 读取 API 档案（含归一化与启用互斥） |
-| `save_api_profiles(data, path)` | `env.py` | `None` | 原子保存 API 档案（空档案自动删文件回到旧链兜底） |
-| `list_api_profiles()` | `env.py` | `list[dict]` | 列表视图模型：api_key 以 `has_key` 布尔代替，不回显明文（当前 SettingsDialog 直接消费 `load_api_profiles()`，本函数主要供回归测试锚定掩码语义） |
-| `get_api_profile(name)` | `env.py` | `dict \| None` | 按名称取完整档案（含 api_key），仅供任务解析，不入日志/UI |
-| `resolve_api_config(name)` | `env.py` | `dict` | 任务侧唯一 API 解析入口：指定档案 → 默认解析 |
-| `has_available_api_profile()` | `env.py` | `bool` | 是否存在可用（enabled+URL 非空+供应商 Key 语义）的档案 |
-| `migrate_legacy_api_config(env_path, profiles_path)` | `env.py` | `bool` | 旧 DEEPSEEK_* 三件套 → deepseek-main 档案（幂等） |
+| `load_api_profiles(path)` | `profiles.py` | `dict` | 读取 API 档案（含归一化与启用互斥） |
+| `save_api_profiles(data, path)` | `profiles.py` | `None` | 原子保存 API 档案（空档案自动删文件回到旧链兜底） |
+| `list_api_profiles()` | `profiles.py` | `list[dict]` | 列表视图模型：api_key 以 `has_key` 布尔代替，不回显明文（当前 SettingsDialog 直接消费 `load_api_profiles()`，本函数主要供回归测试锚定掩码语义） |
+| `get_api_profile(name)` | `profiles.py` | `dict \| None` | 按名称取完整档案（含 api_key），仅供任务解析，不入日志/UI |
+| `resolve_api_config(name)` | `profiles.py` | `dict` | 任务侧唯一 API 解析入口：指定档案 → 默认解析 |
+| `has_available_api_profile()` | `profiles.py` | `bool` | 是否存在可用（enabled+URL 非空+供应商 Key 语义）的档案 |
+| `migrate_legacy_api_config(env_path, profiles_path)` | `profiles.py` | `bool` | 旧 DEEPSEEK_* 三件套 → deepseek-main 档案（幂等） |
 | `setup_logging(...)` | `logging_config.py` | `None` | 初始化日志系统（幂等，只清理自身 Handler） |
 | `DISCLAIMER_VERSION` | `disclaimer_state.py` | `str` | 免责声明版本常量（当前 `"1.0"`），仅版本变化时要求重新确认 |
 | `should_show(state_file)` | `disclaimer_state.py` | `bool` | 免责声明是否需要展示：从未接受或接受版本 ≠ `DISCLAIMER_VERSION` 时为 True；状态文件缺失/损坏/字段非法一律按"未接受"处理（记日志后重新弹窗） |
@@ -327,7 +328,7 @@ def _normalize_profiles(profiles) -> list[dict]:
 
 | 方向 | 模块 | 说明 |
 |------|------|------|
-| 被依赖 | — | 配置的唯一权威来源：多数模块 `from src.config.env import ...` 直接导入，部分经 `src.config.__init__` 聚合导出 |
+| 被依赖 | — | 配置的唯一权威来源：多数模块 `from src.config.env import ...` 直接导入，API 档案域自 `src.config.profiles` 导入（自 env.py 拆出，审计 G7），部分经 `src.config.__init__` 聚合导出 |
 | 被依赖 | `src.ui.configuration.settings_dialog` | 档案列表/编辑面板与价格页签：`load_api_profiles()` / `save_api_profiles()` / `load_pricing_config()` / `save_pricing_config()` / `save_env_file()` / `PROVIDER_PRESETS` / `PROVIDER_LABELS` / `parse_env_file()` |
 | 被依赖 | `src.ui.generation.backend_choose_dialog` | `has_available_api_profile()` 判定 API 后端是否可用（与生成链路共用同一可用性判定） |
 | 被依赖 | `src.scraper.ai.batch` | `resolve_api_config(None)` 取生效档案；`get_runtime_params()` + `setup_logging()` 初始化 CLI 运行参数 |

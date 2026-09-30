@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS, resolve_api_config
+from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS
+from src.config.profiles import resolve_api_config
 from src.data.corpus_fields import CARD_FIELDS, HERO_FIELDS, fields_for
 from src.data.json_repository import atomic_write_json
 from src.scraper.ai.api_generator import AIBatchGenerator
@@ -159,16 +160,6 @@ def list_pending(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
     return scan_blocks(corpus_dir)["pending"]
 
 
-def list_curated(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
-    """返回已有 curated 的块（已精化，fields 以 curated 内容为权威）。"""
-    return scan_blocks(corpus_dir)["curated"]
-
-
-def list_normal(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> list[PendingBlock]:
-    """返回无 curated 且判定字段全非空的块（构建规则抽取已填满）。"""
-    return scan_blocks(corpus_dir)["normal"]
-
-
 def _block_text(block: dict) -> str:
     """拼接块的原文（卡牌效果+说明 / 技能描述+结算），供 LLM 与界面展示。"""
     if block.get("effect") or block.get("effect_detail"):
@@ -184,16 +175,6 @@ def _block_text(block: dict) -> str:
             parts.append("结算：" + str(block["settlement"]))
         return "\n".join(parts)
     return json.dumps(block, ensure_ascii=False)[:2000]
-
-
-def generate_suggestions(pending: list[PendingBlock], generator) -> dict[str, RefinementUpdate]:
-    """逐块调用 LLM 生成建议；单块失败跳过，返回 {block_id: RefinementUpdate}。"""
-    updates: dict[str, RefinementUpdate] = {}
-    for block in pending:
-        suggestion = suggest_one(block, generator)
-        if suggestion is not None:
-            updates[block.block_id] = suggestion
-    return updates
 
 
 def suggest_one(block: PendingBlock, generator) -> RefinementUpdate | None:

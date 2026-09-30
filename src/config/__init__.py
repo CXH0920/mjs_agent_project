@@ -8,20 +8,22 @@ from src.config.env import (
     DEFAULT_PROFILES_FILE,
     PROVIDER_LABELS,
     PROVIDER_PRESETS,
-    get_api_config,
-    get_api_profile,
     get_model_pricing,
     get_runtime_params,
-    list_api_profiles,
-    load_api_profiles,
     load_env_config,
     load_pricing_config,
-    migrate_legacy_api_config,
     parse_env_file,
-    resolve_api_config,
-    save_api_profiles,
     save_env_file,
     save_pricing_config,
+)
+from src.config.profiles import (
+    get_api_config,
+    get_api_profile,
+    list_api_profiles,
+    load_api_profiles,
+    migrate_legacy_api_config,
+    resolve_api_config,
+    save_api_profiles,
 )
 
 __all__ = [

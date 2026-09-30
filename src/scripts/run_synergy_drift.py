@@ -17,7 +17,8 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 from src.config.env import PROJECT_ROOT as ROOT
-from src.config.env import get_api_config, get_runtime_params
+from src.config.env import get_runtime_params
+from src.config.profiles import get_api_config
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.utils import load_heroes
 

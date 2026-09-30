@@ -10,7 +10,8 @@ import json
 from pathlib import Path
 
 from src.config import env as config_env
-from src.config.env import (
+from src.config import profiles as config_profiles
+from src.config.profiles import (
     get_api_config,
     get_api_profile,
     list_api_profiles,
@@ -157,7 +158,7 @@ class TestLoadSave:
 class TestListProfiles:
     def test_list_masks_api_key(self, tmp_path: Path, monkeypatch):
         monkeypatch.setattr(
-            config_env, "DEFAULT_PROFILES_FILE",
+            config_profiles, "DEFAULT_PROFILES_FILE",
             tmp_path / "api_profiles.json",
         )
         save_api_profiles({"version": 1, "profiles": [_profile(api_key="sk-very-secret")]})
@@ -168,7 +169,7 @@ class TestListProfiles:
 
     def test_list_has_key_false_when_empty(self, tmp_path: Path, monkeypatch):
         monkeypatch.setattr(
-            config_env, "DEFAULT_PROFILES_FILE",
+            config_profiles, "DEFAULT_PROFILES_FILE",
             tmp_path / "api_profiles.json",
         )
         save_api_profiles({"version": 1, "profiles": [_profile(api_key="")]})
@@ -181,7 +182,7 @@ class TestListProfiles:
 
 class TestResolve:
     def test_get_profile_by_name(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
         save_api_profiles({"version": 1, "profiles": [_profile("relay", is_default=False)]})
         profile = get_api_profile("relay")
         assert profile is not None
@@ -192,7 +193,7 @@ class TestResolve:
         assert get_api_profile("") is None
 
     def test_resolve_by_name(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
         save_api_profiles({
             "version": 1,
             "profiles": [
@@ -206,7 +207,7 @@ class TestResolve:
         assert resolved["api_key"] == "sk-secret"
 
     def test_resolve_disabled_falls_back_to_default(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
         save_api_profiles({
             "version": 1,
             "profiles": [
@@ -218,13 +219,13 @@ class TestResolve:
         assert resolved["api_key"] == "sk-main"
 
     def test_resolve_missing_name_falls_back(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
         save_api_profiles({"version": 1, "profiles": [_profile("main", api_key="sk-main")]})
         resolved = resolve_api_config("ghost")
         assert resolved["api_key"] == "sk-main"
 
     def test_resolve_none_uses_default_profile(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "p.json")
         save_api_profiles({
             "version": 1,
             "profiles": [
@@ -236,10 +237,10 @@ class TestResolve:
         assert resolved["api_key"] == "sk-main"
 
     def test_resolve_without_any_profile_falls_back_legacy(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "nope.json")
-        monkeypatch.setattr(config_env, "load_api_profiles", lambda: {"version": 1, "profiles": []})
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "nope.json")
+        monkeypatch.setattr(config_profiles, "load_api_profiles", lambda: {"version": 1, "profiles": []})
         monkeypatch.setattr(
-            config_env, "_legacy_api_config",
+            config_profiles, "_legacy_api_config",
             lambda: {"api_key": "sk-legacy", "api_url": "", "model": ""},
         )
         assert resolve_api_config()["api_key"] == "sk-legacy"
@@ -251,7 +252,7 @@ class TestResolve:
 
 class TestGetApiConfigCompatibility:
     def test_prefers_default_profile(self, monkeypatch):
-        monkeypatch.setattr(config_env, "load_api_profiles", lambda: {
+        monkeypatch.setattr(config_profiles, "load_api_profiles", lambda: {
             "version": 1,
             "profiles": [
                 _profile("main", api_key="sk-main"),
@@ -263,17 +264,17 @@ class TestGetApiConfigCompatibility:
 
     def test_falls_back_to_legacy_when_no_profiles_file(self, monkeypatch, tmp_path):
         """从未配置档案（文件不存在）时走旧链，保持历史语义。"""
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", tmp_path / "nope.json")
-        monkeypatch.setattr(config_env, "load_api_profiles", lambda: {"version": 1, "profiles": []})
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "nope.json")
+        monkeypatch.setattr(config_profiles, "load_api_profiles", lambda: {"version": 1, "profiles": []})
         monkeypatch.setattr(
-            config_env, "_legacy_api_config",
+            config_profiles, "_legacy_api_config",
             lambda: {"api_key": "sk-legacy", "api_url": "", "model": ""},
         )
         assert get_api_config()["api_key"] == "sk-legacy"
 
     def test_skips_disabled_takes_first_enabled(self, monkeypatch):
         """停用档案被跳过，取第一个 enabled 档案（启用互斥语义）。"""
-        monkeypatch.setattr(config_env, "load_api_profiles", lambda: {
+        monkeypatch.setattr(config_profiles, "load_api_profiles", lambda: {
             "version": 1,
             "profiles": [
                 _profile("off", enabled=False, api_key="sk-off"),
@@ -288,7 +289,7 @@ class TestGetApiConfigCompatibility:
         profiles_path.write_text(json.dumps({"version": 1, "profiles": [
             _profile("off", is_default=True, enabled=False, api_key=""),
         ]}), encoding="utf-8")
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", profiles_path)
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", profiles_path)
         env_path = tmp_path / "config.env"
         env_path.write_text("DEEPSEEK_API_KEY=sk-old-envfile\n", encoding="utf-8")
         monkeypatch.setattr(config_env, "DEFAULT_ENV_FILE", env_path)
@@ -301,16 +302,16 @@ class TestGetApiConfigCompatibility:
 
     def test_as_bool_none_uses_default(self):
         """A3：_as_bool(None, default) 返回 default（旧实现返回 bool(None)=False）。"""
-        assert config_env._as_bool(None, True) is True
-        assert config_env._as_bool(None, False) is False
-        assert config_env._as_bool(True, False) is True
-        assert config_env._as_bool(False, True) is False
-        assert config_env._as_bool("true", False) is True
-        assert config_env._as_bool("false", True) is False
+        assert config_profiles._as_bool(None, True) is True
+        assert config_profiles._as_bool(None, False) is False
+        assert config_profiles._as_bool(True, False) is True
+        assert config_profiles._as_bool(False, True) is False
+        assert config_profiles._as_bool("true", False) is True
+        assert config_profiles._as_bool("false", True) is False
 
     def test_get_api_config_skips_empty_url_profile(self, monkeypatch):
         """BUG-5：空 URL 的 enabled 档案被跳过，不回退 DeepSeek 默认 URL。"""
-        monkeypatch.setattr(config_env, "load_api_profiles", lambda: {"version": 1, "profiles": [
+        monkeypatch.setattr(config_profiles, "load_api_profiles", lambda: {"version": 1, "profiles": [
             _profile("bad", api_url="", api_key="sk-x"),
             _profile("good", api_url="https://good.example.com/v1/chat/completions", api_key="sk-y"),
         ]})
@@ -322,8 +323,8 @@ class TestGetApiConfigCompatibility:
         """BUG-8：_env_var_fallback 回读 DEEPSEEK_API_URL/MODEL 环境变量（CI/脚本注入完整配置）。"""
         profiles_path = tmp_path / "api_profiles.json"
         profiles_path.write_text('{"version": 1, "profiles": []}', encoding="utf-8")
-        monkeypatch.setattr(config_env, "DEFAULT_PROFILES_FILE", profiles_path)
-        monkeypatch.setattr(config_env, "load_api_profiles", lambda: {"version": 1, "profiles": []})
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", profiles_path)
+        monkeypatch.setattr(config_profiles, "load_api_profiles", lambda: {"version": 1, "profiles": []})
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-ci")
         monkeypatch.setenv("DEEPSEEK_API_URL", "https://ci.example.com/v1/chat/completions")
         monkeypatch.setenv("DEEPSEEK_MODEL", "ci-model")

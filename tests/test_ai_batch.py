@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 import src.config.env as config_env
-from src.config.env import get_api_config, get_runtime_params, parse_env_file
+import src.config.profiles as config_profiles
+from src.config.env import get_runtime_params, parse_env_file
+from src.config.profiles import get_api_config
 from src.scraper.ai import prompt_utils
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.batch import (
@@ -476,7 +478,7 @@ class TestConfigLoading:
         会使 get_api_config 走档案分支而非 tmp env，导致断言读到档案 Key。
         指向不存在的 tmp 文件即可（A4 测试隔离缺口）。"""
         monkeypatch.setattr(
-            config_env, "DEFAULT_PROFILES_FILE", tmp_path / "nonexistent_profiles.json"
+            config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "nonexistent_profiles.json"
         )
 
     def test_parse_env_file_nonexistent(self):

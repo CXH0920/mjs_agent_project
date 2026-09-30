@@ -89,7 +89,6 @@ class OcrWorker(QThread):
         super().__init__(parent)
         self._tasks: queue.Queue[OcrTask | OfficialImportTask | None] = queue.Queue()
         self._cancel_event = threading.Event()
-        self._current_task_kind: str | None = None
         self._recognizer: GeneralRecognizer | None = None
         self._recognizer_signature: tuple | None = None
         # template_name → (页面指纹, hero_names, 上次 OCR 结果)；
@@ -156,33 +155,25 @@ class OcrWorker(QThread):
             if task is None:
                 self._drain_pending_tasks()
                 return
-            self._current_task_kind = (
-                "official" if isinstance(task, OfficialImportTask)
-                else "warmup" if task.warmup
-                else "regular"
-            )
             try:
-                try:
-                    if isinstance(task, OfficialImportTask):
-                        task.result = self._execute_official_import(task)
-                    else:
-                        task.result = self._execute(task)
-                        if task.warmup and task.result.get("outcome") == "warmup_failed":
-                            self._warmup_queued = False
-                except BaseException:
-                    # _execute 内部已兜底 Exception，这里兜住漏网的 BaseException：
-                    # completed 必须置位，否则等待方只能吃满 15~30 秒超时，
-                    # capture_service 的 _pending_ocr_captures 还会连带泄漏图像引用
-                    logger.exception("OCR 任务执行异常（%s）", type(task).__name__)
-                    task.result = {"outcome": "failed", "detail": "worker 内部异常"}
-                finally:
-                    task.completed.set()
-                    try:
-                        self.task_completed.emit(task)
-                    except Exception:
-                        logger.exception("OCR 任务完成信号发送失败")
+                if isinstance(task, OfficialImportTask):
+                    task.result = self._execute_official_import(task)
+                else:
+                    task.result = self._execute(task)
+                    if task.warmup and task.result.get("outcome") == "warmup_failed":
+                        self._warmup_queued = False
+            except BaseException:
+                # _execute 内部已兜底 Exception，这里兜住漏网的 BaseException：
+                # completed 必须置位，否则等待方只能吃满 15~30 秒超时，
+                # capture_service 的 _pending_ocr_captures 还会连带泄漏图像引用
+                logger.exception("OCR 任务执行异常（%s）", type(task).__name__)
+                task.result = {"outcome": "failed", "detail": "worker 内部异常"}
             finally:
-                self._current_task_kind = None
+                task.completed.set()
+                try:
+                    self.task_completed.emit(task)
+                except Exception:
+                    logger.exception("OCR 任务完成信号发送失败")
 
     def _drain_pending_tasks(self) -> None:
         """停止时把队列中滞留的任务逐个置位并广播完成，等待方立即醒来而非吃满超时。

@@ -59,6 +59,19 @@ def _disable_user_character_cache(monkeypatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_api_profiles_file(tmp_path, monkeypatch) -> None:
+    """测试默认把 api_profiles.json 默认路径指向 tmp，保证任何 patch 失效也
+    不会写真实用户配置（2026-09-30 事故：profiles 域拆分期间 patch 目标与
+    值副本绑定脱节，无参 save_api_profiles 覆盖了真实档案）。需要写默认路径
+    的测试显式传 path 或自行 patch；本 fixture 是兜底而非替代。"""
+    from src.config import profiles as config_profiles
+
+    monkeypatch.setattr(
+        config_profiles, "DEFAULT_PROFILES_FILE", tmp_path / "api_profiles.json"
+    )
+
+
+@pytest.fixture(autouse=True)
 def _clear_ocr_retired_workers() -> None:
     """每个测试后从退役列表移除已结束的 worker；仍在运行的必须保留。
 

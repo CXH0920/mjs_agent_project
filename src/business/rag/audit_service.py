@@ -56,11 +56,6 @@ class AuditIssue:
     target: object = None
 
 
-def format_audit_issues(issues: list[AuditIssue]) -> list[str]:
-    """结构化审计条目 → 纯文本列表（兼容旧消费方/测试）。"""
-    return [issue.message for issue in issues]
-
-
 # ---------------------------------------------------------------------------
 # 共享校验收集（audit_summary 与 scripts/rag_audit.py 共用）
 # ---------------------------------------------------------------------------

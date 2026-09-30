@@ -6,7 +6,7 @@ UI（生成工作流/后端选择对话框）经本模块估算成本，不直�
 
 from __future__ import annotations
 
-from src.config.env import get_api_config
+from src.config.profiles import get_api_config
 
 
 def estimate_generation_cost(

@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from src.business.maintenance.maintenance_repositories import build
-from src.business.rag.audit_service import AuditIssue, audit_summary, format_audit_issues
+from src.business.rag.audit_service import AuditIssue, audit_summary
 from src.ui.maintenance.rag_maintenance_panel import (
     RagMaintenancePanel,
     task_states,
@@ -34,6 +34,11 @@ def _write(path: Path, payload: object) -> None:
 
 def _utime(path: Path, mtime: float) -> None:
     os.utime(path, (mtime, mtime))
+
+
+def _issue_texts(issues: list[AuditIssue]) -> str:
+    """AuditIssue 列表 → 纯文本（断言便捷转换）。"""
+    return "\n".join(issue.message for issue in issues)
 
 
 def _make_root(tmp_path: Path) -> Path:
@@ -118,7 +123,7 @@ def test_equip_task_tracks_card_corpus_dependency(tmp_path: Path) -> None:
 
 def test_audit_reports_unclassified_and_unknown_hero(tmp_path: Path) -> None:
     root = _make_root(tmp_path)
-    texts = "\n".join(format_audit_issues(audit_summary(root)))
+    texts = _issue_texts(audit_summary(root))
     assert "未归类武将" in texts
     assert "专属牌引用未知武将" in texts
 
@@ -162,7 +167,7 @@ def test_audit_splits_hero_field_and_skips_generic(tmp_path: Path) -> None:
         {"category": "概念", "name": "限定技", "hero": "众多武将"},
     ], ensure_ascii=False), encoding="utf-8")
     issues = audit_summary(root)
-    texts = "\n".join(format_audit_issues(issues))
+    texts = _issue_texts(issues)
     assert "白蹄乌" in texts
     assert "众多武将" not in texts
 
@@ -173,7 +178,7 @@ def test_audit_reports_bad_card_points(tmp_path: Path) -> None:
         "cards": [{"name": "火杀", "suit": "星", "point": "9"}, {"name": "杀", "suit": "♦", "point": "2"}],
         "judge_rules": [],
     })
-    texts = "\n".join(format_audit_issues(audit_summary(root)))
+    texts = _issue_texts(audit_summary(root))
     assert "卡牌点数张数 2 != 期望 162" in texts
     assert "异常花色" in texts
     assert "异常点数" in texts
@@ -186,7 +191,7 @@ def test_audit_reports_missing_settlement_but_skips_exempt(tmp_path: Path) -> No
         {"category": "专属牌", "name": "死士", "card_type": "标记（非实体牌）"},
         {"category": "专属战法牌", "name": "新战法", "effect": "x"},
     ], ensure_ascii=False), encoding="utf-8")
-    texts = "\n".join(format_audit_issues(audit_summary(root)))
+    texts = _issue_texts(audit_summary(root))
     assert "缺结算详情 1 个" in texts
     assert "新战法" in texts
     assert "死士" not in texts
@@ -197,7 +202,7 @@ def test_audit_reports_bad_equip_attrs(tmp_path: Path) -> None:
     _write(root / "data" / "equip_attrs.json", [
         {"name": "赤兔", "subtype": "飞船", "attack_range": None, "distance_mod": 99},
     ])
-    texts = "\n".join(format_audit_issues(audit_summary(root)))
+    texts = _issue_texts(audit_summary(root))
     assert "装备属性件数 1 != 期望 26" in texts
     assert "细分类型异常" in texts
     assert "距离修正异常" in texts

@@ -5,9 +5,9 @@
 
 ---
 
-## 当前实现基线（2026-09-21）
+## 当前实现基线（2026-09-30）
 
-`get_api_config()` 优先级为 `config/api_profiles.json（可用档案）> 仅环境变量 > config.env 旧链 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。任务侧统一经 `resolve_api_config(name)` 解析，可用性判定统一经 `_usable_profile_config()`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。新增三项配置参数：`MUMU_OCR_RECHECK_ENABLED`（B2 复核引擎开关，默认 true）、`MUMU_OCR_POLL_IDLE_PAUSE`（轮询闲置暂停开关，默认 true）、`MUMU_OCR_POLL_IDLE_MINUTES`（闲置阈值，默认 5 分钟）。免责声明状态由独立模块 `disclaimer_state.py` 管理，持久化至 `config/.disclaimer_state.json`。
+API 档案域（`get_api_config` / `resolve_api_config` / `has_available_api_profile` / `load_api_profiles` / `save_api_profiles` / `list_api_profiles` / `get_api_profile` / `migrate_legacy_api_config` 及 `_normalize_profiles` / `_as_bool` / `_usable_profile_config` / `_env_var_fallback` / `_legacy_api_config`）自 `env.py` 拆出至 `config/profiles.py`（审计 G7，2026-09），依赖单向指向 env.py 的路径常量与 .env 解析原语。`get_api_config()` 优先级为 `config/api_profiles.json（可用档案）> 仅环境变量 > config.env 旧链 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。任务侧统一经 `resolve_api_config(name)` 解析，可用性判定统一经 `_usable_profile_config()`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。新增三项配置参数：`MUMU_OCR_RECHECK_ENABLED`（B2 复核引擎开关，默认 true）、`MUMU_OCR_POLL_IDLE_PAUSE`（轮询闲置暂停开关，默认 true）、`MUMU_OCR_POLL_IDLE_MINUTES`（闲置阈值，默认 5 分钟）。免责声明状态由独立模块 `disclaimer_state.py` 管理，持久化至 `config/.disclaimer_state.json`。
 
 ```
 main() -> get_runtime_params() -> setup_logging()
@@ -176,14 +176,14 @@ save_api_profiles(data, profiles_path)
 
 | 函数 | 所在文件 | 调用方 | 被调用方 |
 |------|----------|--------|----------|
-| `get_api_config()` | `config/env.py` | `resolve_api_config()`, `business/ai_cost.py`, `scripts/run_synergy_drift.py` | `load_api_profiles()`, `_usable_profile_config()`, `_env_var_fallback()`, `_legacy_api_config()` |
-| `resolve_api_config(name)` | `config/env.py` | `scraper/ai/batch.py`, `business/rag/refinement_service.py` | `get_api_profile()`, `_usable_profile_config()`, `get_api_config()` |
-| `has_available_api_profile()` | `config/env.py` | `ui/generation/backend_choose_dialog.py` | `load_api_profiles()`, `_usable_profile_config()` |
+| `get_api_config()` | `config/profiles.py` | `resolve_api_config()`, `business/ai_cost.py`, `scripts/run_synergy_drift.py` | `load_api_profiles()`, `_usable_profile_config()`, `_env_var_fallback()`, `_legacy_api_config()` |
+| `resolve_api_config(name)` | `config/profiles.py` | `scraper/ai/batch.py`, `business/rag/refinement_service.py` | `get_api_profile()`, `_usable_profile_config()`, `get_api_config()` |
+| `has_available_api_profile()` | `config/profiles.py` | `ui/generation/backend_choose_dialog.py` | `load_api_profiles()`, `_usable_profile_config()` |
 | `get_mumu_config()` | `config/env.py` | `ui/app/app_services.py`, `ui/app/main_window.py`, `ocr/paddle_loader.py` | `load_env_config()` |
 | `parse_env_file(path)` | `config/env.py` | `load_env_config()`, `load_api_profiles` 迁移链 | `Path.read_text()`, 逐行解析 |
 | `load_env_config(path)` | `config/env.py` | `get_runtime_params()`, `get_mumu_config()`, `_legacy_api_config()`, `rag/config.py` | `parse_env_file()`, key_mapping, 类型转换 |
 | `save_env_file(path, data)` | `config/env.py` | `ui/app/main_window.py` (_open_mumu_config), `ui/configuration/settings_dialog.py` (_on_save) | `Path.write_text()`, 原子替换 |
-| `migrate_legacy_api_config()` | `config/env.py` | `src/main.py::main()` | `parse_env_file()`, `save_api_profiles()` |
+| `migrate_legacy_api_config()` | `config/profiles.py` | `src/main.py::main()` | `parse_env_file()`, `save_api_profiles()` |
 
 ### 2.6 势力配色配置（faction_colors.json）
 

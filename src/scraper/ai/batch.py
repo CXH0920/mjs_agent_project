@@ -28,12 +28,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.config.env import (
-    BUNDLE_ROOT,
-    PROVIDER_PRESETS,
-    get_runtime_params,
-    resolve_api_config,
-)
+from src.config.env import BUNDLE_ROOT, PROVIDER_PRESETS, get_runtime_params
+from src.config.profiles import resolve_api_config
 from src.data.guide_manager import GuideManager
 from src.data.synergy_manager import SynergyManager
 from src.scraper.ai.api_generator import AIBatchGenerator

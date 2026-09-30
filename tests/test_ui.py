@@ -281,25 +281,25 @@ def test_settings_dialog_remove_last_row_refreshes_panel(tmp_path, monkeypatch):
 def test_has_available_api_profile_checks_usable(monkeypatch):
     """BUG-6：可用性判定校验 enabled+URL+Key，仅 enabled 但 Key 空不算可用。
 
-    判定逻辑已归位 src.config.env.has_available_api_profile（dialog 复刻版删除）。
+    判定逻辑已归位 src.config.profiles.has_available_api_profile（dialog 复刻版删除）。
     """
-    from src.config import env
+    from src.config import profiles
 
     # enabled 但 requires_key 供应商的 Key 为空 → 不可用
-    monkeypatch.setattr(env, "load_api_profiles", lambda: {"profiles": [
+    monkeypatch.setattr(profiles, "load_api_profiles", lambda: {"profiles": [
         {"name": "bad", "provider": "deepseek", "enabled": True,
          "api_url": "https://x", "api_key": ""},
     ]})
-    assert env.has_available_api_profile() is False
+    assert profiles.has_available_api_profile() is False
     # enabled + URL + Key 非空 → 可用
-    monkeypatch.setattr(env, "load_api_profiles", lambda: {"profiles": [
+    monkeypatch.setattr(profiles, "load_api_profiles", lambda: {"profiles": [
         {"name": "good", "provider": "deepseek", "enabled": True,
          "api_url": "https://x", "api_key": "sk-x"},
     ]})
-    assert env.has_available_api_profile() is True
+    assert profiles.has_available_api_profile() is True
     # 停用档案不算可用
-    monkeypatch.setattr(env, "load_api_profiles", lambda: {"profiles": [
+    monkeypatch.setattr(profiles, "load_api_profiles", lambda: {"profiles": [
         {"name": "off", "provider": "deepseek", "enabled": False,
          "api_url": "https://x", "api_key": "sk-x"},
     ]})
-    assert env.has_available_api_profile() is False
+    assert profiles.has_available_api_profile() is False

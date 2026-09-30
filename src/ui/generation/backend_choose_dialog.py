@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.ai_cost import estimate_generation_cost
-from src.config.env import has_available_api_profile
+from src.config.profiles import has_available_api_profile
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)

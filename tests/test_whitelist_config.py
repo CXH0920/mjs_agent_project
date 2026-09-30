@@ -76,14 +76,17 @@ def test_overrides_invalid_entries_skipped(overrides_path) -> None:
     assert service._effective_whitelist.get("两字") is None
 
 
-def test_reload_whitelist_picks_up_new_file(overrides_path) -> None:
+def test_overrides_file_pickup_requires_new_instance(overrides_path) -> None:
+    """用户层白名单文件在服务构造时读取：写入后已构造的实例不感知（见待开发记录）。"""
     service = CharacterSimilarityService()
     assert service.single_substitution_similarity("早文君", "卓文君") != 1.0
     overrides_path.write_text(
         json.dumps({"version": 1, "pairs": {"早": "卓"}}), encoding="utf-8"
     )
-    service.reload_whitelist()
-    assert service.single_substitution_similarity("早文君", "卓文君") == 1.0
+    refreshed = CharacterSimilarityService()
+    assert refreshed.single_substitution_similarity("早文君", "卓文君") == 1.0
+    # 旧实例保持基线行为，不受新文件影响
+    assert service.single_substitution_similarity("早文君", "卓文君") != 1.0
 
 
 # ── R6 静态冲突检查 ───────────────────────────────────────────────────

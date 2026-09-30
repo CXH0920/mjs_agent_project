@@ -18,11 +18,9 @@ from src.business.rag.refinement_service import (
     build_generator,
     clear_curated,
     fields_for,
-    generate_suggestions,
-    list_curated,
-    list_normal,
     list_pending,
     scan_blocks,
+    suggest_one,
 )
 
 
@@ -123,7 +121,7 @@ def test_curated_missing_keys_fallback_to_top_level(tmp_path: Path) -> None:
          "curated": {"timing": [], "trigger_condition": ["阵亡"], "keywords": [], "related": [],
                      "method": "manual", "updated_at": "2026-08-16"}},
     ])
-    block = list_curated(root)[0]
+    block = scan_blocks(root)["curated"][0]
     assert block.fields["target"] == ["其他角色"]
     assert block.fields["special_rules"] == []
     # 保存后顶层与 curated 一致，顶层 target 不丢
@@ -147,7 +145,7 @@ def test_curated_explicit_empty_list_not_fallback(tmp_path: Path) -> None:
          "curated": {"timing": [], "trigger_condition": [], "keywords": [], "related": [],
                      "method": "manual", "updated_at": "2026-08-16"}},
     ])
-    block = list_curated(root)[0]
+    block = scan_blocks(root)["curated"][0]
     assert block.fields["timing"] == []  # curated 显式空，顶层 ["回合开始"] 不回退
 
 
@@ -157,16 +155,20 @@ def test_list_pending_skips_missing_file(tmp_path: Path) -> None:
     assert list_pending(root) == []
 
 
-def test_generate_suggestions_maps_payload(tmp_path: Path) -> None:
+def test_suggest_one_maps_payload(tmp_path: Path) -> None:
+    """suggest_one 管线唯一单元级覆盖：LLM payload → RefinementUpdate 映射（生产走 SuggestController）。"""
     root = _corpus(tmp_path)
-    pending = list_pending(root)
     fake = FakeGenerator({
         "timing": ["回合结束"],
         "trigger_condition": ["满足条件"],
         "target": ["一名其他角色"],
         "special_rules": ["封禁状态下不生效"],
     })
-    updates = generate_suggestions(pending, fake)
+    updates = {}
+    for block in list_pending(root):
+        update = suggest_one(block, fake)
+        if update is not None:
+            updates[block.block_id] = update
     assert len(updates) == 3
     assert len(fake.calls) == 3
     update = updates["card_1_测试牌"]
@@ -186,11 +188,14 @@ def test_system_prompt_uses_new_field_contract() -> None:
     assert "碎片" in prompt  # 正反对照例
 
 
-def test_generate_suggestions_handles_failure(tmp_path: Path) -> None:
+def test_suggest_one_handles_failure(tmp_path: Path) -> None:
     root = _corpus(tmp_path)
-    pending = list_pending(root)
     fake = FakeGenerator(None)
-    updates = generate_suggestions(pending, fake)
+    updates = {}
+    for block in list_pending(root):
+        update = suggest_one(block, fake)
+        if update is not None:
+            updates[block.block_id] = update
     assert updates == {}
 
 
@@ -262,7 +267,7 @@ def test_card_block_name_from_block_id(tmp_path: Path) -> None:
          "timing": ["回合开始"], "trigger_condition": ["装备时"],
          "effect": "效果", "effect_detail": ""},
     ])
-    assert list_normal(root)[0].name == "轩辕剑"
+    assert scan_blocks(root)["normal"][0].name == "轩辕剑"
 
 
 def test_scan_blocks_classifies_three_ways(tmp_path: Path) -> None:
@@ -275,9 +280,9 @@ def test_scan_blocks_classifies_three_ways(tmp_path: Path) -> None:
     assert all(b.block_id != "hero_1_overview" for bucket in blocks.values() for b in bucket)
 
 
-def test_list_curated_returns_curated_blocks(tmp_path: Path) -> None:
+def test_scan_blocks_curated_bucket_fields(tmp_path: Path) -> None:
     root = _corpus(tmp_path)
-    curated = list_curated(root)
+    curated = scan_blocks(root)["curated"]
     assert len(curated) == 1
     block = curated[0]
     assert block.block_id == "card_3_已精化"
@@ -287,7 +292,7 @@ def test_list_curated_returns_curated_blocks(tmp_path: Path) -> None:
     assert block.updated_at == "2026-08-14"
     assert block.corpus == "卡牌RAG语料.json"
     assert block.kind == "card"
-    assert list_normal(root)[0].block_id == "card_4_已生成"
+    assert scan_blocks(root)["normal"][0].block_id == "card_4_已生成"
 
 
 def test_clear_curated_removes_field(tmp_path: Path) -> None:

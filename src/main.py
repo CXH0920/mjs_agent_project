@@ -128,7 +128,7 @@ def main() -> None:
     )
 
     # 首次启动迁移：旧 DEEPSEEK_* 三件套 → 默认档案（幂等，文件已存在即跳过）
-    from src.config.env import migrate_legacy_api_config
+    from src.config.profiles import migrate_legacy_api_config
     migrate_legacy_api_config()
 
     # 抑制 Qt 字体回退调试日志（Windows 上大量刷屏但无害）

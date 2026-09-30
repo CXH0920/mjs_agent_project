@@ -66,7 +66,6 @@ class OcrService(QObject):
         self._poll_detail = ""
         self._poll_session = PollSession()
         self._poll_in_flight = False
-        self._ocr_task_submitter = None
 
     # ── 配置 ──────────────────────────────────────────────────────────
 
@@ -89,10 +88,6 @@ class OcrService(QObject):
     def set_hero_names(self, names: list[str]) -> None:
         """设置用于编辑距离矫正的武将名列表。"""
         self._hero_names = names
-
-    def set_ocr_task_submitter(self, submitter) -> None:
-        """注入 CaptureService 的串行 OCR 任务入口。"""
-        self._ocr_task_submitter = submitter
 
     # ── 模板管理 ──────────────────────────────────────────────────────
 
@@ -187,10 +182,6 @@ class OcrService(QObject):
     def poll_cancel_event(self) -> threading.Event:
         """返回当前轮询会话的取消标记。"""
         return self._poll_session.cancel_event
-
-    def is_poll_cancelled(self, generation: int) -> bool:
-        """检查指定会话是否已停止或被新的会话取代。"""
-        return generation != self._poll_session.generation or self._poll_session.cancel_event.is_set()
 
     def _replace_poll_session(self) -> None:
         self._poll_session.cancel_event.set()
@@ -368,38 +359,3 @@ class OcrService(QObject):
             return
         self._set_poll_state("running", "正在执行轮询")
         self.poll_tick.emit()
-
-    # ── OCR ───────────────────────────────────────────────────────────
-
-    def run_ocr(self, image, rois=None) -> list[dict] | None:
-        """对单张图片执行 OCR 识别。
-
-        Args:
-            image: PIL Image 或 numpy array。
-            rois: ROI 坐标列表（可选，默认使用配置值）。
-
-        Returns:
-            识别结果列表，失败则返回 None。
-        """
-        try:
-            if self._ocr_task_submitter is None:
-                raise RuntimeError("OCR worker 未初始化")
-            task = self._ocr_task_submitter(
-                image,
-                hero_names=self._hero_names,
-                template_name="hero_selection",
-                rois=rois,
-                match_template=False,
-            )
-            # 有限等待：引擎异常（如 GPU 驱动问题）时避免调用线程无限阻塞
-            if not task.completed.wait(30):
-                logger.warning("OCR 任务等待超时（30 秒），返回空结果")
-                return None
-            result = task.result or {}
-            results = result.get("ocr_results")
-            logger.info("OCR 完成: %s", results)
-            return results
-        except Exception as e:
-            logger.error("OCR 识别异常: %s", e)
-            logger.debug(traceback.format_exc())
-            return None

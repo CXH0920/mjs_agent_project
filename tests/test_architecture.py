@@ -635,7 +635,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/library/hero_classification_panel.py": 827,
     "scraper/official_source/announcement.py": 699,
     "business/emulator/capture_service.py": 670,
-    "config/env.py": 641,
+    # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）
+    "config/env.py": 363,
     "business/recognition/official_data_import_service.py": 638,
     "ui/library/hero_browser.py": 610,
     "scripts/sync_rule_stats.py": 601,

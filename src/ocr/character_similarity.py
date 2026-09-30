@@ -87,11 +87,6 @@ class CharacterSimilarityService:
             len(self.SAFE_SUBSTITUTION_WHITELIST), len(pairs),
         )
 
-    def reload_whitelist(self) -> None:
-        """重读用户层白名单并重建生效表，供界面写入后调用。"""
-        self._effective_whitelist = dict(self.SAFE_SUBSTITUTION_WHITELIST)
-        self._load_overrides()
-
     def warmup(self) -> None:
         self._repository.warmup()
 

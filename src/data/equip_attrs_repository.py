@@ -132,15 +132,6 @@ class EquipAttrsRepository(JsonRepository):
                 return
         raise ValueError(f"条目不存在: {item.name}")
 
-    def delete_equip(self, name: str) -> None:
-        for index, existing in enumerate(self._items):
-            if existing.name == name:
-                snapshot = self._snapshot()
-                self._items.pop(index)
-                self._save_or_rollback(snapshot)
-                return
-        raise ValueError(f"条目不存在: {name}")
-
     def save(self) -> None:
         self.save_payload(
             [item.model_dump(mode="json", exclude_defaults=True) for item in self._items],

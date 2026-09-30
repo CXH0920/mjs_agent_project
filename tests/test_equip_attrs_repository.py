@@ -50,14 +50,12 @@ def test_update_and_persist(tmp_path: Path) -> None:
     assert repo2.get_equip("亮银枪").attack_range == 4
 
 
-def test_add_delete(tmp_path: Path) -> None:
+def test_add_rejects_duplicate(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     repo.add_equip(EquipAttrItem(name="新武器", subtype="武器", attack_range=2))
     assert repo.get_equip("新武器") is not None
     with pytest.raises(ValueError):
         repo.add_equip(EquipAttrItem(name="赤兔", subtype="坐骑"))
-    repo.delete_equip("新武器")
-    assert repo.get_equip("新武器") is None
 
 
 def test_invalid_values_rejected(tmp_path: Path) -> None:

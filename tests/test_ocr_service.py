@@ -100,7 +100,7 @@ def test_invalidate_inflight_poll_cancels_session_and_resets_inflight_flag() -> 
 
     assert service.poll_generation == old_generation + 1
     assert old_event.is_set()
-    assert not service.is_poll_cancelled(service.poll_generation)
+    assert not service.poll_cancel_event.is_set()
     assert service._poll_in_flight is False
     assert service._poll_timer.isActive()
 
@@ -115,7 +115,7 @@ def test_stop_poll_cancels_active_session() -> None:
     service.stop_poll()
 
     assert cancel_event.is_set()
-    assert service.is_poll_cancelled(generation)
+    assert service.poll_generation != generation or service.poll_cancel_event.is_set()
 
 
 def test_poll_tasks_have_independent_activation_and_cooldowns() -> None:

@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 import time
 import types
-from types import SimpleNamespace
 
 import pytest
 
@@ -18,7 +16,6 @@ from PySide6.QtWidgets import QApplication
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition import ocr_worker as ocr_worker_module
 from src.business.recognition import pending_stats
-from src.business.recognition.ocr_service import OcrService
 from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
 from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
 
@@ -461,34 +458,6 @@ def test_ocr_worker_logs_stage_timings(monkeypatch, caplog) -> None:
     assert "名称OCR=5.0ms" in caplog.text
 
 
-def test_ocr_service_routes_direct_requests_to_injected_worker() -> None:
-    submitted: list[tuple[object, dict]] = []
-    task = SimpleNamespace(
-        completed=threading.Event(),
-        result={"outcome": "matched", "ocr_results": [{"name": "曹操"}]},
-    )
-    task.completed.set()
-
-    def submit(image, **kwargs):
-        submitted.append((image, kwargs))
-        return task
-
-    service = OcrService()
-    service.set_hero_names(["曹操"])
-    service.set_ocr_task_submitter(submit)
-
-    assert service.run_ocr("image", rois=[[1, 2, 3, 4]]) == [{"name": "曹操"}]
-    assert submitted == [(
-        "image",
-        {
-            "hero_names": ["曹操"],
-            "template_name": "hero_selection",
-            "rois": [[1, 2, 3, 4]],
-            "match_template": False,
-        },
-    )]
-
-
 def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> None:
     app = QApplication.instance() or QApplication([])
 
@@ -550,7 +519,6 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
 def test_retire_requests_stop_and_appends_retired(monkeypatch) -> None:
     """retire 只置停止标志并把线程交退役列表收尾，不再强杀线程（预热已分步可取消）。"""
     worker = OcrWorker()
-    worker._current_task_kind = "warmup"
     stop_requested: list[bool] = []
     monkeypatch.setattr(worker, "request_stop", lambda: stop_requested.append(True))
     monkeypatch.setattr(ocr_worker_module, "_RETIRED_WORKERS", [])
