@@ -35,7 +35,6 @@ _ENV = parse_env_file()
 RAG_ENABLED = str(os.environ.get("RAG_ENABLED") or _ENV.get("RAG_ENABLED", "true")).lower() in ("true", "1", "yes")
 # 默认留空：不硬编码机器绝对路径（#50）；未配置时 _find_local_model 回退项目内缓存/HF 在线下载
 RAG_MODEL_DIR = os.environ.get("RAG_MODEL_DIR") or _ENV.get("RAG_MODEL_DIR") or ""
-RAG_PROJECT_DIR = os.environ.get("RAG_PROJECT_DIR") or _ENV.get("RAG_PROJECT_DIR") or ""
 
 def _to_int(key: str, default: int) -> int:
     try:

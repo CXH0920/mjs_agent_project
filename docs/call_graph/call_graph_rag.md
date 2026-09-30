@@ -1259,7 +1259,7 @@ src.scraper.ai.batch (main)
 | 2 | `call_graph_business.md` 第 10.1 节与 `call_graph_ui.md` 第 10.1 节写"遍历 8 个语料任务 TASK_DEFS" | 两份文档基线为 2026-07-22 / 2026-09-04，早于 2 个新任务（武将分类、组合、攻略）的口径；本文档按当前代码写 10 个 |
 | 3 | `SpecialCardsPanel`、`HeroClassificationPanel` 的完整内部方法清单未逐行复读 | 本文档只覆盖与本模块相关的写路径与 `data_changed` 联动；物理位置已确认为 `src/ui/library/` |
 | 4 | `rag_prompt.py` 后半段（`_format_rag_chunks`、`build_synergy_rag_context` 内部细节）未逐行复读 | 相关描述引自 `call_graph_ai_batch.md`（同基线） |
-| 5 | `config.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | 仅 `config.py` 定义并回显（`config.txt` / `config.env.example` 有预留项），全项目无消费点，未列入调用链 |
+| 5 | `config.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | 已移除（2026-09 死代码清理）；移除前结论为"仅 `config.py` 定义并回显，全项目无消费点，未列入调用链" |
 | 6 | 语料块数期望值（如武将 639 / 卡牌 49 / 特殊机制 85 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；当前磁盘实测武将语料 639 块（`expected=639` 已同步），`expected=None` 的动态任务实测：武将分类 184 / 组合 509 / 攻略 357 |
 | 7 | `rag_curated.INDEX_FIELDS` 含 5 字段（含 `target`），`refinement_service.INDEX_FIELDS` 只有 4 字段 | **已修复**：2026-09-15 新增 `data/corpus_fields.py` 字段契约模块，`CARD_FIELDS`/`HERO_FIELDS` 为唯一权威定义，`refinement_service` 与 `rag_curated` 共用 `fields_for(kind)`，消除字段集漂移 |
 | 8 | `eval_rule_faqs.py --generate` 生成的评估集 `version` 字段为生成日，磁盘实测 79 题（与 `FAQ裁定块.json` 79 块同源，非巧合） | 评估集由 `--generate` 重建会丢弃人工追加的新题，追加须手工编辑 `data/rag_evals/rule_faq_eval.json` |

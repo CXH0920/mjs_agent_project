@@ -247,7 +247,6 @@ RAG_PROMPT_CHARS           # 攻略 RAG 注入字符预算，默认 6000
 RAG_BROWSER_PROMPT_CHARS   # 浏览器模式攻略预算，默认 3000
 RAG_SYNERGY_PROMPT_CHARS   # 相性 RAG 注入字符预算，默认 6000
 RAG_MODEL_DIR              # 本地 bge-small-zh-v1.5 嵌入模型缓存目录
-RAG_PROJECT_DIR            # 预留的 RAG 项目目录（兼容旧配置）
 ```
 
 调用方：`src/scraper/ai/rag_prompt.py`（开关与注入预算）、`src/rag/retriever.py`（检索参数）、`src/rag/indexer.py`（语料与索引路径）。详见 AI 批量生成模块文档。

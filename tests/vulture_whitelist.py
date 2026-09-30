@@ -54,6 +54,3 @@ BASIC  # CardType.BASIC
 # ── 动态读取字段（refinement_session.getattr(update, field)）───────
 trigger_condition  # RefinementUpdate 精化字段
 special_rules  # RefinementUpdate 精化字段
-
-# ── 配置回显预留（项目既有审计决策，见 call_graph_rag.md"预留"条目）─
-RAG_PROJECT_DIR  # config.env.example 预留键回显，全项目无消费点
