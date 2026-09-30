@@ -64,7 +64,6 @@ class OfficialDataImportDialog(QDialog):
         layout.addWidget(self._progress_bar)
         self._footer = DialogFooter(accept_text="导入", cancel_text="取消")
         self._import_button = self._footer.accept_button
-        self._cancel_button = self._footer.cancel_button
         self._footer.accepted.connect(self._start_import)
         self._footer.rejected.connect(self.reject)
         layout.addWidget(self._footer)

@@ -245,8 +245,6 @@ class HeroClassificationPanel(QWidget):
             with_count_label=False,
             detail_margins=(8, 4, 8, 8),
         )
-        self._category_detail_scroll = splitter.detail_scroll
-        self._category_detail = splitter.detail
         self._category_detail_layout = splitter.detail_layout
         self._category_list = splitter.list
         self._category_list.currentItemChanged.connect(self._on_category_selected)

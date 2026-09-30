@@ -87,7 +87,6 @@ class RecommendationPanel(QWidget):
         self._capture_service = capture_service
         self._ocr_service = ocr_service
         self._cards: list[HeroCardWidget] = []
-        self._mumu_config_dialog = None  # lazy import
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
         self._capture_lock = CaptureRequestLock()
