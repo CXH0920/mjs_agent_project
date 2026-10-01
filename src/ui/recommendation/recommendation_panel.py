@@ -18,8 +18,6 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
-    QHBoxLayout,
-    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -29,14 +27,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
-from src.business.maintenance.corpus_services import ComboService
 from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
-from src.ui.library.combo_management_dialog import ComboManagementDialog
+from src.ui.recommendation.combo_strip import ComboStrip
 from src.ui.recommendation.hero_card_widget import HeroCardWidget
-from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
-from src.ui.shared.combo_detail import show_combo_detail
-from src.ui.shared.combo_format import format_seats
+from src.ui.shared.capture_flow import CaptureRequestFlow
+from src.ui.shared.capture_lock import CaptureRequestLock
 from src.ui.shared.faction_colors import reload_faction_colors
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.hero_dialogs import HeroSkillDialog
@@ -52,7 +48,6 @@ from src.ui.shared.style import (
 )
 from src.ui.shared.widgets import (
     EmptyState,
-    FlowLayout,
     NoticeBanner,
     PageActionBar,
     show_toast,
@@ -89,18 +84,15 @@ class RecommendationPanel(QWidget):
         self._cards: list[HeroCardWidget] = []
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
-        self._capture_lock = CaptureRequestLock()
         self._last_failed_source: str | None = None
-        self._last_status_text = "尚未识别阵容"
-        self._last_status_tone = TONE_NEUTRAL
+        # 截图/导入请求单飞 + 忙碌控件清单 + 状态文案记忆（G5 切片 4.4b 抽出）
+        self._capture_flow = CaptureRequestFlow(default_status="尚未识别阵容")
         self._recommendation_service = RecommendationService()
         self._recommendation_data = RecommendationData({}, {})
         self._ocr_results_by_slot: dict[int, dict] = {}
         self._combo_mgr = combo_manager
         if self._combo_mgr is not None:
             self._combo_mgr.load()
-        self._matched_combos: list = []
-        self._combo_chips_collapsed = False
 
         self._setup_ui()
         self._connect_capture_signals()
@@ -125,7 +117,7 @@ class RecommendationPanel(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(8)
 
-        self._action_bar = PageActionBar(self._last_status_text, self)
+        self._action_bar = PageActionBar(self._capture_flow.last_status[0], self)
         self._recognition_status_label = self._action_bar.status_label
         self._recognize_btn = QPushButton("识别当前阵容")
         self._recognize_btn.setObjectName("recommendationRecognizeButton")
@@ -183,35 +175,10 @@ class RecommendationPanel(QWidget):
         self._error_notice.hide()
 
         # 实战配队横条：当前识别的 8 名武将中命中的 combos 配队（含号位筛选）
-        self._combo_strip = QWidget()
-        self._combo_strip.setObjectName("recommendationComboStrip")
-        strip_layout = QVBoxLayout(self._combo_strip)
-        strip_layout.setContentsMargins(8, 6, 8, 6)
-        strip_layout.setSpacing(4)
-
-        strip_header = QHBoxLayout()
-        self._combo_title = QLabel("⚔ 实战配队")
-        self._combo_title.setObjectName("recommendationComboTitle")
-        strip_header.addWidget(self._combo_title)
-        strip_header.addStretch()
-        self._combo_manage_btn = QPushButton("管理")
-        self._combo_manage_btn.setToolTip("新增、编辑或删除实战配队")
-        self._combo_manage_btn.setAccessibleName("管理实战配队")
-        self._combo_manage_btn.clicked.connect(self._open_combo_management)
-        strip_header.addWidget(self._combo_manage_btn)
-        self._combo_toggle_btn = QToolButton()
-        self._combo_toggle_btn.setObjectName("recommendationComboToggle")
-        self._combo_toggle_btn.setText("收起")
-        self._combo_toggle_btn.setAccessibleName("收起实战配队列表")
-        self._combo_toggle_btn.clicked.connect(self._toggle_combo_chips)
-        strip_header.addWidget(self._combo_toggle_btn)
-        strip_layout.addLayout(strip_header)
-
-        self._combo_chips_container = QWidget()
-        self._combo_chip_flow = FlowLayout(self._combo_chips_container, spacing=6)
-        strip_layout.addWidget(self._combo_chips_container)
+        # （审计 G5 切片 4.4a 拆出；评级结果经信号回传刷卡片角标）
+        self._combo_strip = ComboStrip(self._hero_mgr, self._combo_mgr, self)
+        self._combo_strip.ratings_computed.connect(self._apply_combo_badges)
         layout.addWidget(self._combo_strip)
-        self._combo_strip.setVisible(False)
 
         self._cards_container = QWidget()
         self._cards_container.setObjectName("recommendationCardsContainer")
@@ -272,6 +239,17 @@ class RecommendationPanel(QWidget):
         self._cards_scroll.setWidget(self._cards_container)
         layout.addWidget(self._cards_scroll, 1)
 
+        self._capture_flow.bind_controls(
+            [
+                self._recognize_btn,
+                self._empty_recognize_btn,
+                self._empty_import_file_btn,
+                self._more_btn,
+                self._stale_rebuild_btn,
+            ],
+            [self._import_action, self._save_action, self._rebuild_index_action],
+        )
+
     def _show_empty_state(self) -> None:
         self._empty_state.show()
         self._cards_widget.hide()
@@ -294,50 +272,28 @@ class RecommendationPanel(QWidget):
         self, text: str, tone: str = TONE_NEUTRAL, *, remember: bool = True,
     ) -> None:
         if remember:
-            self._last_status_text = text
-            self._last_status_tone = tone
+            self._capture_flow.remember_status(text, tone)
         self._action_bar.set_status(text, tone)
 
-    def _set_capture_controls_enabled(self, enabled: bool) -> None:
-        for button in (
-            self._recognize_btn,
-            self._empty_recognize_btn,
-            self._empty_import_file_btn,
-            self._more_btn,
-            self._stale_rebuild_btn,
-        ):
-            button.setEnabled(enabled)
-        for action in (
-            self._import_action,
-            self._save_action,
-            self._rebuild_index_action,
-        ):
-            action.setEnabled(enabled)
+    @property
+    def _capture_lock(self) -> CaptureRequestLock:
+        """在途请求锁（既有测试锚点；语义归 CaptureRequestFlow）。"""
+        return self._capture_flow.lock
 
     def _begin_capture_request(self, source: str) -> bool:
         """锁定本页捕获来源，避免共享服务回调覆盖另一项请求。"""
-        if not self._capture_lock.begin(CaptureSource(source)):
+        if not self._capture_flow.begin(source):
             return False
         self._clear_error_notice()
-        self._set_capture_controls_enabled(False)
-        status = {
-            "adb_recognize": "正在识别当前阵容...",
-            "adb_save": "正在保存截图...",
-            "file": "正在导入图片...",
-        }[source]
-        self._set_page_status(status, TONE_INFO, remember=False)
+        self._set_page_status(self._capture_flow.begin_status(source), TONE_INFO, remember=False)
         return True
 
     def _finish_capture_request(self) -> str | None:
-        source = self._capture_lock.finish()
+        source = self._capture_flow.finish()
         if source is None:
             return None
-        self._set_capture_controls_enabled(True)
-        self._set_page_status(
-            self._last_status_text,
-            self._last_status_tone,
-            remember=False,
-        )
+        text, tone = self._capture_flow.last_status
+        self._set_page_status(text, tone, remember=False)
         return source
 
     def _show_error_notice(self, title: str, message: str, source: str | None) -> None:
@@ -373,73 +329,18 @@ class RecommendationPanel(QWidget):
                 self._load_real_synergies(index, card.hero_id)
 
     # ---------------------------------------------------------------
-    # 实战配队横条
+    # 实战配队横条（控件见 combo_strip.py）
     # ---------------------------------------------------------------
 
     def _refresh_combo_strip(self) -> None:
         """按当前识别的武将集合匹配实战配队，刷新横条与卡片角标。"""
-        self._matched_combos = []
-        if self._combo_mgr is not None and len(self._current_hero_ids) >= 2:
-            for combo in self._combo_mgr.list_combos():
-                if combo.hero1_id in self._current_hero_ids and combo.hero2_id in self._current_hero_ids:
-                    self._matched_combos.append(combo)
-            self._matched_combos.sort(key=lambda c: (-c.rating, c.hero1_name, c.hero2_name))
-        self._update_combo_badges()
-        self._render_combo_chips()
+        self._combo_strip.refresh(self._current_hero_ids)
 
-    def _update_combo_badges(self) -> None:
+    def _apply_combo_badges(self, best_rating: dict[int, int]) -> None:
         """参战配队的卡片头像区显示"实战 ★最高评级"角标。"""
-        best_rating: dict[int, int] = {}
-        for combo in self._matched_combos:
-            for hero_id in (combo.hero1_id, combo.hero2_id):
-                best_rating[hero_id] = max(best_rating.get(hero_id, 0), combo.rating)
         for card in self._cards:
             rating = best_rating.get(card.hero_id)
             card.set_combo_badge(f"实战 ★{rating}" if rating else None)
-
-    def _render_combo_chips(self) -> None:
-        """重建配队 chip：按评级降序展示全部命中配队。"""
-        while self._combo_chip_flow.count():
-            item = self._combo_chip_flow.takeAt(0)
-            widget = item.widget() if item else None
-            if widget is not None:
-                widget.deleteLater()
-
-        for combo in self._matched_combos:
-            chip = QPushButton(
-                f"★{combo.rating} {combo.hero1_name}[{format_seats(combo.hero1_seats)}]"
-                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
-            )
-            chip.setObjectName("recommendationComboChip")
-            chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            chip.setToolTip(self._combo_tooltip(combo))
-            chip.clicked.connect(lambda checked=False, target=combo: self._show_combo_detail(target))
-            self._combo_chip_flow.addWidget(chip)
-        self._combo_strip.setVisible(bool(self._matched_combos))
-
-    @staticmethod
-    def _combo_tooltip(combo) -> str:
-        seats = (
-            f"{combo.hero1_name}[{format_seats(combo.hero1_seats)}] "
-            f"+ {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
-        )
-        return f"{seats}\n{combo.note}" if combo.note else seats
-
-    def _toggle_combo_chips(self) -> None:
-        self._combo_chips_collapsed = not self._combo_chips_collapsed
-        self._combo_chips_container.setVisible(not self._combo_chips_collapsed)
-        self._combo_toggle_btn.setText("展开" if self._combo_chips_collapsed else "收起")
-
-    def _open_combo_management(self) -> None:
-        """打开实战配队全量管理对话框；增删改后即时刷新命中条与卡片角标。"""
-        dialog = ComboManagementDialog(
-            self._hero_mgr, ComboService(self._combo_mgr), self)
-        dialog.combos_changed.connect(self._refresh_combo_strip)
-        dialog.exec()
-
-    def _show_combo_detail(self, combo) -> None:
-        """配队详情：2×2 号位示意 + 座次要求 + note 原文。"""
-        show_combo_detail(self, combo)
 
     def refresh_faction_colors(self) -> None:
         """重新应用当前势力颜色，不改变 OCR 识别和推荐数据。"""

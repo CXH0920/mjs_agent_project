@@ -246,9 +246,12 @@ def test_no_type_level_import_cycles() -> None:
 # ---------------------------------------------------------------------------
 DEFAULT_MAX_METHODS = 40
 CLASS_BUDGETS: dict[str, int] = {
-    "ui/app/main_window.py:MainWindow": 49,
-    "ui/configuration/mumu_config_dialog.py:MumuConfigDialog": 52,
-    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 47,
+    # IndexRefinementDialog 47 → 62：清单/编辑构建与纯渲染拆入
+    # refinement_list_pane / refinement_editor_pane（审计 G4 切片 4.3，字段 34 → 12、
+    # 文件 953 → 781 行）；方法数上涨全部来自 ~20 个单行 property 控件桥——
+    # 为保持 151+ 处既有测试锚点名（dialog._table 等）不改动，编排留对话框经
+    # property 读写 pane 控件。属机械膨胀非职责增加，后续测试锚点迁移后可回落。
+    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 62,
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,
 }
 
@@ -289,14 +292,18 @@ def test_class_method_count_within_budget() -> None:
 # ---------------------------------------------------------------------------
 DEFAULT_MAX_FIELDS = 30
 CLASS_FIELD_BUDGETS: dict[str, int] = {
-    "ui/recommendation/recommendation_panel.py:RecommendationPanel": 44,
-    "ui/configuration/mumu_config_dialog.py:MumuConfigDialog": 43,
+    # RecommendationPanel 44 → 35：配队横条拆 combo_strip.py、捕获流抽
+    # shared/capture_flow.py（审计 G5 切片 4.4a/4.4b）
+    "ui/recommendation/recommendation_panel.py:RecommendationPanel": 35,
     "ui/match/peak_select_panel.py:PeakSelectPanel": 41,
-    "ui/library/hero_classification_panel.py:HeroClassificationPanel": 38,
     "ui/maintenance/rule_doc_panel.py:RuleDocPanel": 35,
     "ui/match/match_guide_panel.py:MatchGuidePanel": 34,
-    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 34,
-    "ui/app/main_window.py:MainWindow": 33,
+    # index_refinement_dialog 34 → 12：清单/编辑控件拆入两个 pane（审计 G4 切片 4.3），
+    # 12 低于默认预算 30，条目出表
+    # MainWindow 33 → 34：对话框开启器编排以 self._dialogs 组合字段接入（审计 G1 切片
+    # 4.2a）——以 1 个组合字段置换 16 个对话框/采集方法（方法数 49 → 33 出表），
+    # 属结构性放宽，后续拆分状态条 chips 时可回落。
+    "ui/app/main_window.py:MainWindow": 34,
     "ui/recommendation/hero_card_widget.py:HeroCardWidget": 32,
 }
 
@@ -623,16 +630,23 @@ def test_scraper_manager_construction_ratchet() -> None:
 # recognizer.py 条目即绞杀者规则的机械化：只减不增，新特征一律进新模块。
 # ---------------------------------------------------------------------------
 FILE_LINE_BUDGETS: dict[str, int] = {
-    # 819：菜单栏重排新增"文件"菜单组与数据菜单两条分组分隔线（净 +2，2026-09）
-    "ui/app/main_window.py": 819,
-    "ui/configuration/mumu_config_dialog.py": 771,
+    # 819 → 552：对话框开启器与菜单构建拆出 dialog_coordinator.py / menu_builder.py
+    # （审计 G1 切片 4.2a/4.2b，方法数 49 → 33）
+    "ui/app/main_window.py": 552,
+    # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
+    # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
     "ui/maintenance/rule_doc_panel.py": 928,
-    "ui/maintenance/index_refinement_dialog.py": 953,
-    "ocr/recognizer.py": 911,
+    # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
+    # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
+    "ui/maintenance/index_refinement_dialog.py": 781,
+    # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
+    # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
+    "ocr/recognizer.py": 492,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
-    "ui/library/hero_classification_panel.py": 827,
+    # hero_classification_panel.py（原 827）出表：三页签拆入
+    # library/classification/ 后仅余 181 行装配壳（审计 G6 切片 4.5）
     "scraper/official_source/announcement.py": 699,
     "business/emulator/capture_service.py": 670,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）

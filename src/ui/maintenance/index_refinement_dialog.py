@@ -15,23 +15,17 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QSplitter,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -45,54 +39,36 @@ from src.business.rag.refinement_service import (
 )
 from src.business.rag.refinement_session import RefinementSession
 from src.business.rag.suggest_controller import SuggestController
+from src.ui.maintenance.refinement_editor_pane import RefinementEditorPane
+from src.ui.maintenance.refinement_list_pane import RefinementListPane
+from src.ui.maintenance.refinement_vocab import (
+    FIELD_HINTS,
+    FIELD_LABELS,
+    FIELD_STATE_LABELS,
+    FIELD_STATE_TONES,
+    NOT_APPLICABLE_HINT,
+)
 from src.ui.shared.style import (
-    MUTED_TEXT,
-    PRIMARY,
-    ROLE_DANGER,
     ROLE_GHOST,
-    ROLE_PRIMARY,
-    ROLE_SECONDARY,
-    SPACE_MD,
-    SUCCESS,
     TONE_INFO,
     TONE_NEUTRAL,
     TONE_SUCCESS,
-    TONE_WARNING,
     set_style_property,
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import EmptyState, PageHeader, StatusBadge, show_toast
+from src.ui.shared.widgets import PageHeader, show_toast
 
 logger = logging.getLogger("index_refinement")
 
-_FIELD_LABELS = {
-    "timing": "时机",
-    "trigger_condition": "触发条件",
-    "target": "影响对象",
-    "special_rules": "结算边界",
-}
-
-_FIELD_HINTS = {
-    "timing": "每行一个时机锚点，如：出牌阶段、其他角色的回合结束时、常驻被动",
-    "trigger_condition": "每行一个完整触发情形（时机+前提+次数写成一句话，前提交集用“且”，"
-                         "多个触发器分多行），如：出牌阶段结束时，且你本回合未发动过技能；"
-                         "常驻技能写：常驻生效",
-    "target": "每行一个影响对象，如：一名其他角色、所有角色",
-    "special_rules": "每行一条结算边界，只压缩结算说明原文，如：被封禁时首次达到条件仍算已达成",
-}
-
-_NOT_APPLICABLE_HINT = "卡牌块无此字段"
-
-# 字段卡片状态：空 / LLM 建议 / 已精化（磁盘已有内容）/ 人工修改
-_FIELD_STATE_LABELS = {"empty": "待填写", "llm": "LLM 建议", "saved": "已精化", "manual": "已修改"}
-_FIELD_STATE_TONES = {"empty": TONE_NEUTRAL, "llm": TONE_INFO, "saved": TONE_SUCCESS, "manual": TONE_SUCCESS}
-
-# 清单行状态
-_ROW_STATE_TEXT = {"pending": "○ 未处理", "suggested": "◉ 已建议", "modified": "✎ 已修改",
-                   "refined": "✓ 已精化", "generated": "○ 已生成"}
-_ROW_STATE_COLOR = {"pending": MUTED_TEXT, "suggested": PRIMARY, "modified": SUCCESS,
-                    "refined": SUCCESS, "generated": MUTED_TEXT}
+# 渲染词汇表归 refinement_vocab.py（对话框与两个 pane 共用）；以下历史名字
+# 保留绑定：_NOT_APPLICABLE_HINT 被测试经 dialog_module 读取，其余供本模块
+# 仍在对话框的渲染编排方法使用。
+_FIELD_LABELS = FIELD_LABELS
+_FIELD_HINTS = FIELD_HINTS
+_NOT_APPLICABLE_HINT = NOT_APPLICABLE_HINT
+_FIELD_STATE_LABELS = FIELD_STATE_LABELS
+_FIELD_STATE_TONES = FIELD_STATE_TONES
 
 
 class IndexRefinementDialog(QDialog):
@@ -106,9 +82,6 @@ class IndexRefinementDialog(QDialog):
         self._scope = "pending"  # 范围筛选：pending / curated / all
         self._current: PendingBlock | None = None
         self._dirty = False  # 当前条目存在未保存的人工修改
-        self._visible: list[PendingBlock] = []
-        self._kind_filter = "全部"
-        self._search_text = ""
         # 批量/单块建议由 SuggestController 后台线程驱动，避免同步循环冻结 UI；
         # worker 生命周期与取消善后归控制器，对话框只接信号渲染
         self._controller = SuggestController(self)
@@ -170,14 +143,28 @@ class IndexRefinementDialog(QDialog):
         ))
         layout.addWidget(self._build_overview_bar())
 
+        # 清单/编辑两个 pane 只做构建与纯渲染（审计 G4 切片 4.3a/4.3b）；
+        # 编排信号由对话框接回自身，保持既有交互链不变
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self._build_table_pane())
-        splitter.addWidget(self._build_editor_pane())
+        self._list_pane = RefinementListPane()
+        splitter.addWidget(self._list_pane)
+        self._editor_pane = RefinementEditorPane()
+        splitter.addWidget(self._editor_pane)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([460, 700])
         layout.addWidget(splitter, 1)
+
+        self._list_pane.table.currentCellChanged.connect(lambda *_: self._on_table_selected())
+        self._list_pane.filter_changed.connect(self._refresh_table)
+        self._list_pane.suggest_all_button.clicked.connect(self._suggest_all)
+        self._list_pane.save_all_button.clicked.connect(self._save_all)
+        self._editor_pane.field_edited.connect(self._on_field_edited)
+        self._editor_pane.suggest_one_button.clicked.connect(self._suggest_current)
+        self._editor_pane.skip_button.clicked.connect(self._skip_current)
+        self._editor_pane.clear_button.clicked.connect(self._clear_curated)
+        self._editor_pane.save_button.clicked.connect(self._save_current)
 
         # 底部仅保留关闭：单条操作归工作区操作行，批量操作归清单区批量行
         footer = QHBoxLayout()
@@ -222,212 +209,6 @@ class IndexRefinementDialog(QDialog):
             bar_layout.addWidget(button)
         return bar
 
-    def _build_table_pane(self) -> QWidget:
-        """B 清单区：搜索+类型筛选同行，表格，批量操作行（仅待精化模式可见）。"""
-        pane = QFrame()
-        pane.setObjectName("indexRefineListPane")
-        pane_layout = QVBoxLayout(pane)
-        pane_layout.setContentsMargins(12, 12, 12, 12)
-        pane_layout.setSpacing(8)
-
-        # 搜索框与类型筛选同行：类型筛选贴近数据，与总览条的模式切换物理隔离
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(8)
-        self._search_edit = QLineEdit()
-        self._search_edit.setObjectName("indexRefineSearch")
-        self._search_edit.setPlaceholderText("搜索名称 / block_id…")
-        self._search_edit.setClearButtonEnabled(True)
-        # 防抖：大清单下逐键全表重建会卡 UI，停顿 250ms 后才刷新
-        self._search_debounce = QTimer(self)
-        self._search_debounce.setSingleShot(True)
-        self._search_debounce.setInterval(250)
-        self._search_debounce.timeout.connect(self._apply_filter)
-        self._search_edit.textChanged.connect(lambda *_: self._search_debounce.start())
-        filter_row.addWidget(self._search_edit, 1)
-        kind_label = QLabel("类型:")
-        kind_label.setObjectName("indexRefineFilterLabel")
-        filter_row.addWidget(kind_label)
-        self._kind_group = QButtonGroup(self)
-        self._kind_group.setExclusive(True)
-        for index, kind in enumerate(("全部", "卡牌", "武将")):
-            button = QPushButton(kind)
-            button.setCheckable(True)
-            button.setChecked(index == 0)
-            set_ui_role(button, ROLE_GHOST)
-            button.clicked.connect(lambda _=False, text=kind: self._set_kind_filter(text))
-            self._kind_group.addButton(button, index)
-            filter_row.addWidget(button)
-        pane_layout.addLayout(filter_row)
-
-        self._table = QTableWidget(0, 4)
-        self._table.setObjectName("indexRefineTable")
-        self._table.setHorizontalHeaderLabels(["语料", "名称", "说明", "状态"])
-        # 固定列宽而非 ResizeToContents：大清单（全部范围 470+ 行）下逐行 sizeHint 计算会卡 UI
-        # 三列固定宽合计 320px，为名称列（Stretch）留出可读宽度——名称列被挤到 <40px 时
-        # 文本省略成"…"，看起来像一列未定义的占位符
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(0, 50)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(2, 170)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(3, 100)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._table.setShowGrid(False)
-        self._table.verticalHeader().setVisible(False)
-        # 列已固定+名称列 Stretch，内容完整显示，横向滚动条纯属多余（#61）
-        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._table.currentCellChanged.connect(lambda *_: self._on_table_selected())
-        pane_layout.addWidget(self._table, 1)
-
-        self._empty_state = EmptyState(
-            "没有待精化条目",
-            "卡牌/武将语料的索引字段已全部补全，重建语料不会被覆盖。",
-        )
-        self._empty_state.setVisible(False)
-        pane_layout.addWidget(self._empty_state, 1)
-
-        # 批量操作行：仅待精化模式可见（整行隐藏而非禁用，避免灰按钮堆积）
-        self._batch_bar = QWidget()
-        batch_layout = QHBoxLayout(self._batch_bar)
-        batch_layout.setContentsMargins(0, 0, 0, 0)
-        batch_layout.setSpacing(8)
-        self._suggest_all_button = QPushButton("LLM 建议（全部）")
-        set_ui_role(self._suggest_all_button, ROLE_SECONDARY)
-        self._suggest_all_button.clicked.connect(self._suggest_all)
-        batch_layout.addWidget(self._suggest_all_button)
-        self._save_all_button = QPushButton("保存全部")
-        set_ui_role(self._save_all_button, ROLE_SECONDARY)
-        self._save_all_button.clicked.connect(self._save_all)
-        batch_layout.addWidget(self._save_all_button)
-        batch_layout.addStretch(1)
-        pane_layout.addWidget(self._batch_bar)
-        return pane
-
-    def _build_editor_pane(self) -> QWidget:
-        """C 工作区：条目头 + 左右分栏（左原文持续展示 / 右字段编辑区）。"""
-        pane = QFrame()
-        pane.setObjectName("indexRefineWorkPane")
-        pane_layout = QVBoxLayout(pane)
-        pane_layout.setContentsMargins(12, 12, 12, 12)
-        pane_layout.setSpacing(8)
-
-        head = QHBoxLayout()
-        head.setSpacing(8)
-        self._editor_title = QLabel("未选择条目")
-        self._editor_title.setObjectName("indexRefineItemTitle")
-        head.addWidget(self._editor_title)
-        self._kind_badge = StatusBadge("", TONE_INFO)
-        head.addWidget(self._kind_badge)
-        self._method_badge = StatusBadge("", TONE_SUCCESS)
-        self._method_badge.setVisible(False)
-        head.addWidget(self._method_badge)
-        self._missing_badge = StatusBadge("", TONE_WARNING)
-        self._missing_badge.setVisible(False)
-        head.addWidget(self._missing_badge)
-        head.addStretch(1)
-        self._block_id_label = QLabel()
-        self._block_id_label.setObjectName("indexRefineItemMeta")
-        head.addWidget(self._block_id_label)
-        pane_layout.addLayout(head)
-
-        # 原文常驻左栏（不可折叠），字段编辑在右栏：编辑任何字段时原文始终可见
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self._build_source_pane())
-        splitter.addWidget(self._build_fields_pane())
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([300, 400])
-        pane_layout.addWidget(splitter, 1)
-
-        # 条目操作行：对「当前条目」的单条操作，横跨左右分栏底部；
-        # 保存当前为全对话框唯一 PRIMARY（最右，编辑完手指自然落在保存上）
-        item_actions = QHBoxLayout()
-        item_actions.setSpacing(8)
-        self._suggest_one_button = QPushButton("LLM 建议（当前）")
-        set_ui_role(self._suggest_one_button, ROLE_SECONDARY)
-        self._suggest_one_button.clicked.connect(self._suggest_current)
-        item_actions.addWidget(self._suggest_one_button)
-        item_actions.addStretch(1)
-        self._skip_button = QPushButton("跳过当前")
-        set_ui_role(self._skip_button, ROLE_SECONDARY)
-        self._skip_button.clicked.connect(self._skip_current)
-        item_actions.addWidget(self._skip_button)
-        self._clear_button = QPushButton("取消精化")
-        set_ui_role(self._clear_button, ROLE_DANGER)
-        self._clear_button.clicked.connect(self._clear_curated)
-        item_actions.addWidget(self._clear_button)
-        self._save_button = QPushButton("保存当前")
-        set_ui_role(self._save_button, ROLE_PRIMARY)
-        self._save_button.clicked.connect(self._save_current)
-        item_actions.addWidget(self._save_button)
-        pane_layout.addLayout(item_actions)
-        return pane
-
-    def _build_source_pane(self) -> QWidget:
-        """原文卡片：只读、占满高度、持续展示。"""
-        card = QFrame()
-        card.setObjectName("indexRefineSourceCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(12, 8, 12, 8)
-        card_layout.setSpacing(6)
-        source_title = QLabel("原文")
-        source_title.setObjectName("indexRefineFieldName")
-        card_layout.addWidget(source_title)
-        self._source_view = QPlainTextEdit()
-        self._source_view.setObjectName("indexRefineSource")
-        self._source_view.setReadOnly(True)
-        self._source_view.setPlaceholderText("选中条目后显示原文……")
-        card_layout.addWidget(self._source_view, 1)
-        return card
-
-    def _build_fields_pane(self) -> QWidget:
-        """字段编辑区：4 个状态卡片纵向均分（全字段集，卡牌块不适用字段动态置灰）。"""
-        pane = QWidget()
-        pane_layout = QVBoxLayout(pane)
-        pane_layout.setContentsMargins(0, 0, 0, 0)
-        pane_layout.setSpacing(SPACE_MD)
-        self._field_editors: dict[str, QPlainTextEdit] = {}
-        self._field_cards: dict[str, QFrame] = {}
-        self._field_badges: dict[str, StatusBadge] = {}
-        for field in HERO_FIELDS:
-            pane_layout.addWidget(self._build_field_card(field), 1)
-        return pane
-
-    def _build_field_card(self, field: str) -> QFrame:
-        """单个索引字段卡片：字段名 + 状态徽标 + 编辑器（提示词为 placeholder）。"""
-        card = QFrame()
-        card.setObjectName("indexRefineFieldCard")
-        set_style_property(card, "fieldState", "empty")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(12, 8, 12, 8)
-        card_layout.setSpacing(6)
-
-        head = QHBoxLayout()
-        head.setSpacing(8)
-        name_label = QLabel(_FIELD_LABELS[field])
-        name_label.setObjectName("indexRefineFieldName")
-        head.addWidget(name_label)
-        badge = StatusBadge(_FIELD_STATE_LABELS["empty"], TONE_NEUTRAL)
-        head.addWidget(badge)
-        head.addStretch(1)
-        card_layout.addLayout(head)
-
-        editor = QPlainTextEdit()
-        editor.setObjectName("indexRefineFieldEditor")
-        editor.setPlaceholderText(_FIELD_HINTS[field])
-        editor.setMaximumBlockCount(30)
-        editor.textChanged.connect(self._on_field_edited)
-        card_layout.addWidget(editor)
-
-        self._field_editors[field] = editor
-        self._field_cards[field] = card
-        self._field_badges[field] = badge
-        return card
-
     # ---------------------------------------------------------------
     # 清单与选中
     # ---------------------------------------------------------------
@@ -444,64 +225,106 @@ class IndexRefinementDialog(QDialog):
     def _scope_blocks(self) -> list[PendingBlock]:
         return self._session.blocks_for_scope(self._scope)
 
-    def _matches(self, block: PendingBlock) -> bool:
-        if self._kind_filter == "卡牌" and block.kind != "card":
-            return False
-        if self._kind_filter == "武将" and block.kind != "skill":
-            return False
-        if self._search_text and self._search_text not in (block.name + block.block_id).lower():
-            return False
-        return True
+    # ---------------------------------------------------------------
+    # 清单/编辑 pane 控件桥（既有测试经 dialog._table 等访问，保持锚点名）
+    # ---------------------------------------------------------------
+    @property
+    def _table(self):
+        return self._list_pane.table
+
+    @property
+    def _search_edit(self):
+        return self._list_pane.search_edit
+
+    @property
+    def _kind_group(self):
+        return self._list_pane.kind_group
+
+    @property
+    def _batch_bar(self):
+        return self._list_pane.batch_bar
+
+    @property
+    def _suggest_all_button(self):
+        return self._list_pane.suggest_all_button
+
+    @property
+    def _save_all_button(self):
+        return self._list_pane.save_all_button
+
+    @property
+    def _empty_state(self):
+        return self._list_pane.empty_state
+
+    @property
+    def _visible(self) -> list[PendingBlock]:
+        return self._list_pane.visible_blocks
+
+    @property
+    def _editor_title(self):
+        return self._editor_pane.editor_title
+
+    @property
+    def _kind_badge(self):
+        return self._editor_pane.kind_badge
+
+    @property
+    def _method_badge(self):
+        return self._editor_pane.method_badge
+
+    @property
+    def _missing_badge(self):
+        return self._editor_pane.missing_badge
+
+    @property
+    def _block_id_label(self):
+        return self._editor_pane.block_id_label
+
+    @property
+    def _source_view(self):
+        return self._editor_pane.source_view
+
+    @property
+    def _field_editors(self):
+        return self._editor_pane.field_editors
+
+    @property
+    def _field_cards(self):
+        return self._editor_pane.field_cards
+
+    @property
+    def _field_badges(self):
+        return self._editor_pane.field_badges
+
+    @property
+    def _suggest_one_button(self):
+        return self._editor_pane.suggest_one_button
+
+    @property
+    def _skip_button(self):
+        return self._editor_pane.skip_button
+
+    @property
+    def _clear_button(self):
+        return self._editor_pane.clear_button
+
+    @property
+    def _save_button(self):
+        return self._editor_pane.save_button
 
     def _apply_filter(self) -> None:
-        self._search_text = self._search_edit.text().strip().lower()
-        self._refresh_table()
-
-    def _set_kind_filter(self, kind: str) -> None:
-        self._kind_filter = kind
-        self._refresh_table()
-
-    def _detail_text(self, block: PendingBlock) -> str:
-        """清单第 3 列（说明）：已精化块显示来源与时间，待精化块显示缺失字段，其余为 —。"""
-        if block.method:
-            label = "LLM" if block.method == "llm" else "人工"
-            return f"{label} · {block.updated_at}" if block.updated_at else label
-        if block.missing:
-            return "、".join(_FIELD_LABELS[f] for f in block.missing)
-        return "—"
+        # pane 内发 filter_changed 回来驱动 _refresh_table；测试直调此处绕过防抖
+        self._list_pane.apply_filter()
 
     def _refresh_table(self) -> None:
         selected_id = self._current.block_id if self._current is not None else None
-        self._visible = [block for block in self._scope_blocks() if self._matches(block)]
-        self._table.setRowCount(len(self._visible))
-        for row, block in enumerate(self._visible):
-            corpus_item = QTableWidgetItem("卡牌" if block.kind == "card" else "武将")
-            name_item = QTableWidgetItem(block.name)
-            name_item.setToolTip(block.block_id)
-            detail_item = QTableWidgetItem(self._detail_text(block))
-            state = self._row_states.get(block.block_id, "pending")
-            state_item = QTableWidgetItem(_ROW_STATE_TEXT[state])
-            state_item.setForeground(QColor(_ROW_STATE_COLOR[state]))
-            self._table.setItem(row, 0, corpus_item)
-            self._table.setItem(row, 1, name_item)
-            self._table.setItem(row, 2, detail_item)
-            self._table.setItem(row, 3, state_item)
-        if self._visible:
-            row = next((i for i, block in enumerate(self._visible)
-                        if block.block_id == selected_id), 0)
-            self._table.selectRow(row)
-        else:
+        self._list_pane.render(self._scope_blocks(), self._row_states, selected_id)
+        if not self._list_pane.visible_blocks:
             self._clear_editor()
         self._update_overview()
 
     def _refresh_row_state(self, block: PendingBlock) -> None:
-        for row, visible in enumerate(self._visible):
-            if visible.block_id == block.block_id:
-                state = self._row_states.get(block.block_id, "pending")
-                item = QTableWidgetItem(_ROW_STATE_TEXT[state])
-                item.setForeground(QColor(_ROW_STATE_COLOR[state]))
-                self._table.setItem(row, 3, item)
-                return
+        self._list_pane.refresh_row_state(block, self._row_states)
 
     def _on_table_selected(self) -> None:
         row = self._table.currentRow()
@@ -564,11 +387,7 @@ class IndexRefinementDialog(QDialog):
 
     def _apply_field_availability(self, block_fields: tuple[str, ...]) -> None:
         """卡牌块没有 target/special_rules 字段：对应编辑器置灰并提示（保存时也不收集）。"""
-        for field in HERO_FIELDS:
-            applicable = field in block_fields
-            editor = self._field_editors[field]
-            editor.setEnabled(applicable)
-            editor.setPlaceholderText(_FIELD_HINTS[field] if applicable else _NOT_APPLICABLE_HINT)
+        self._editor_pane.apply_field_availability(block_fields)
 
     def _clear_editor(self) -> None:
         self._current = None
@@ -653,6 +472,12 @@ class IndexRefinementDialog(QDialog):
         return answer == QMessageBox.StandardButton.Yes
 
     def _update_overview(self) -> None:
+        """总览刷新编排：进度文字/空态（_update_overview_text）+ 按钮态（_update_overview_buttons）。"""
+        self._update_overview_text()
+        self._update_overview_buttons()
+
+    def _update_overview_text(self) -> None:
+        """总览条文字、表格可见性与空态提示。"""
         if self._scope == "pending":
             done = self._total - len(self._pending)
             self._progress.setVisible(True)
@@ -690,6 +515,9 @@ class IndexRefinementDialog(QDialog):
             self._empty_state.setVisible(True)
         else:
             self._empty_state.setVisible(False)
+
+    def _update_overview_buttons(self) -> None:
+        """按范围与后台任务态刷新按钮显隐/可用。"""
         # 按钮按模式显隐（隐藏而非禁用，避免灰按钮堆积）：
         # - 批量行（LLM 全部/保存全部）仅待精化模式
         # - 跳过仅待精化模式；取消精化仅已精化/全部模式（且当前块有 curated）

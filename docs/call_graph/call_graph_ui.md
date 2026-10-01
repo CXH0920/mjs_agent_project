@@ -41,10 +41,10 @@ MainWindow.__init__()
 
 | 用户动作 | UI 入口 | 核心调用 | 刷新 |
 |----------|---------|----------|------|
-| 武将采集 | `_request_fetch_*()` | `HeroFetchService.fetch_*()` | `_reload_data()` |
+| 武将采集 | `DialogCoordinator.request_fetch_*()` | `HeroFetchService.fetch_*()` | `_reload_data()` |
 | 攻略生成 | `_request_guide_*()` | `AiGenerationWorkflow.request_guide_*()` -> `GuideFetchService.fetch_*()` | `GuideManager.load()` + 状态栏统计刷新 |
 | 相性生成 | `_request_synergy_pair/single/combos()` | `AiGenerationWorkflow.request_synergy_*()` -> `SynergyFetchService.fetch_pair/single/pairs_list()` | `SynergyManager.load()` + 浏览器、推荐页刷新 |
-| 官方数据导入 | `_open_official_data_import()` | `OfficialDataImportDialog` -> `CaptureService` -> `OcrWorker(OfficialImportTask)` -> `OfficialDataImportService` | 暂停轮询，覆盖 2v2/放逐 CSV，弹窗退出后恢复轮询 |
+| 官方数据导入 | `DialogCoordinator.open_official_data_import()` | `OfficialDataImportDialog` -> `CaptureService` -> `OcrWorker(OfficialImportTask)` -> `OfficialDataImportService` | 暂停轮询，覆盖 2v2/放逐 CSV，弹窗退出后恢复轮询 |
 | 实战配队维护 | 选将推荐"实战配队"横条 [管理] | `ComboManagementDialog` -> `ComboService.save_manual_combo()/delete_combo()` | `_refresh_combo_strip()` + 卡片角标 + 相性表 |
 | 实战配队批量生成 | 菜单"数据 → 武将相性 → 实战配队生成" | `SynergyCombosDialog` -> `fetch_pairs_list(selected_pairs)` | 相性 JSON + 浏览器/推荐页刷新 |
 | 截图、图片导入、轮询 | 推荐页或 `poll_tick` | `CaptureRequestLock` -> `CaptureService` -> `OcrWorker` | 推荐卡或对局攻略页 |
@@ -98,7 +98,7 @@ Dialog / configuration / import / progress
   -> show_toast(parent, message)
      -> ToastOverlay.show_message() [非模态、复用实例并重置计时器]
 
-MainWindow._open_faction_colors()
+DialogCoordinator.open_faction_colors()
   -> save_faction_colors()
   -> reload_faction_colors()
   -> RecommendationPanel.refresh_faction_colors()
@@ -145,7 +145,7 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
   -> AiGenerationWorkflow.synergies_changed -> _on_synergies_generated()
   -> setWindowTitle(), setMinimumSize(960, 640), resize(1100, 760)
   -> load_app_icon() -> setWindowIcon()
-  -> _setup_actions() + _setup_menu()                             [共享 QAction]
+  -> menu_builder.build_actions() + build_menu_bar()               [共享 QAction]
    -> [disclaimer_state.should_show()]                              [启动时免责声明检查]
       -> disclaimer_dialog.py -> disclaimer_state.accept()           [用户确认后持久化]
   -> _load_data()
@@ -176,7 +176,7 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
   -> _setup_status_bar()
      -> QStatusBar.addWidget(_reporter)                             [ProgressReporter 挂载]
      -> StatusChips()                                               [常驻胶囊]
-     -> StatusChips.mumu_config_requested -> _open_mumu_config
+     -> StatusChips.mumu_config_requested -> DialogCoordinator.open_mumu_config
      -> StatusChips.poll_resume_requested -> _poll_coordinator.resume_from_idle_pause()
   -> _update_status()
   -> PollCoordinator.sync_with_connection()
@@ -244,7 +244,7 @@ PollCoordinator._consume_poll_result(result):
 
 ```
 菜单「数据 → 官方数据导入」clicked
-  -> MainWindow._open_official_data_import()
+  -> DialogCoordinator.open_official_data_import()
     -> [轮询活跃] OcrService.stop_poll()
     -> OfficialDataImportDialog(capture_service, self).exec()
       -> 用户选择 2v2 和/或武将放逐图片
@@ -269,7 +269,7 @@ PollCoordinator._consume_poll_result(result):
 
 ```
 菜单「数据 → 武将获取 → 全量获取」clicked
-  -> MainWindow._request_fetch_all()
+  -> DialogCoordinator.request_fetch_all()
     -> QMessageBox.question("确认全量获取？")
     -> [Yes] HeroFetchService.fetch_all()
       -> _start_process(["-m", "src.scraper.official"])
@@ -278,11 +278,11 @@ PollCoordinator._consume_poll_result(result):
         -> QMessageBox.information()
 
 菜单「数据 → 武将获取 → 增量获取」
-  -> MainWindow._request_fetch_incremental()
+  -> DialogCoordinator.request_fetch_incremental()
     -> HeroFetchService.fetch_incremental()
 
 菜单「数据 → 武将获取 → 指定获取」
-  -> MainWindow._request_fetch_specific()
+  -> DialogCoordinator.request_fetch_specific()
     -> HeroFetchDialog(self._data.heroes, parent)                [武将选择对话框]
       -> BaseHeroSelectDialog(MULTI mode → 多选 checkbox)
     -> [accepted] HeroFetchService.fetch_specific(dialog.selected_ids)
@@ -290,9 +290,9 @@ PollCoordinator._consume_poll_result(result):
 
 | 函数 | 菜单路径 | 调用链 |
 |------|----------|--------|
-| `_request_fetch_all()` | 数据→武将获取→全量获取 | `QAction` → `fetch_all()` → `_start_process()` |
-| `_request_fetch_incremental()` | 数据→武将获取→增量获取 | `QAction` → `fetch_incremental()` → `_start_process()` |
-| `_request_fetch_specific()` | 数据→武将获取→指定获取 | `QAction` → `HeroFetchDialog` → `fetch_specific(ids)` |
+| `DialogCoordinator.request_fetch_all()` | 数据→武将获取→全量获取 | `QAction` → `fetch_all()` → `_start_process()` |
+| `DialogCoordinator.request_fetch_incremental()` | 数据→武将获取→增量获取 | `QAction` → `fetch_incremental()` → `_start_process()` |
+| `DialogCoordinator.request_fetch_specific()` | 数据→武将获取→指定获取 | `QAction` → `HeroFetchDialog` → `fetch_specific(ids)` |
 
 ### 2.2 攻略生成菜单
 
@@ -398,7 +398,7 @@ SynergyFetchService [signal] fetch_completed
 ```
 RecommendationPanel._on_recognize_current()                    [「识别当前阵容」]
   -> [capture_lock.current is not None] return                    [另一请求在途]
-  -> [未配置 ADB] request_mumu_config.emit() -> _open_mumu_config()
+  -> [未配置 ADB] request_mumu_config.emit() -> DialogCoordinator.open_mumu_config()
   -> _begin_capture_request("adb_recognize")
      -> CaptureRequestLock.begin(CaptureSource.ADB_RECOGNIZE)   [抢占来源]
      -> _set_capture_controls_enabled(False)                       [禁用识别/导入/重建]
@@ -462,7 +462,7 @@ MatchHeroCard._portrait [左键双击]
 
 MatchGuidePanel._on_recognize_current()
   -> [capture_lock.current is not None] return                    [另一请求在途]
-  -> [未配置 ADB] request_mumu_config → MainWindow._open_mumu_config()
+  -> [未配置 ADB] request_mumu_config → DialogCoordinator.open_mumu_config()
   -> [不 begin_capture_request("adb_recognize")] return
   -> CaptureService.do_capture(template_name="match_guide", force_ocr=True)
   -> CaptureService.capture_completed → MatchGuidePanel._on_capture_result(result)
@@ -645,7 +645,7 @@ RecommendationPanel.load_from_ocr(ocr_results)                  [OCR 结果 list
 ```
 RecommendationPanel._on_recognize_current()
   -> [capture_lock.current is not None] return                    [另一请求在途，忽略本次触发]
-  -> [未配置 ADB] request_mumu_config.emit() → MainWindow._open_mumu_config()
+  -> [未配置 ADB] request_mumu_config.emit() → DialogCoordinator.open_mumu_config()
   -> _capture_lock.begin(CaptureSource.ADB_RECOGNIZE)             [抢占来源]
   -> _set_capture_controls_enabled(False)                          [禁用识别/导入/重建控件]
   -> _set_page_status("正在识别当前阵容...", TONE_INFO)
@@ -1036,7 +1036,7 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
 ### 6.3 模拟器配置对话框
 
 ```
-MainWindow._open_faction_colors()
+DialogCoordinator.open_faction_colors()
   -> FactionColorDialog(parent=self).exec()
   -> FactionColorDialog._add_faction()
      -> 校验非空且未重复 -> 加入颜色草稿列表
@@ -1049,21 +1049,22 @@ MainWindow._open_faction_colors()
 
 MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
   -> _setup_ui()
-     -> MumuDeviceSection()                                  [设备控件与操作信号]
-     -> MumuTemplateSection()                                [模板状态与操作信号]
-     -> MumuOcrPollingSection()                              [轮询参数与 ROI 操作信号]
-     -> 各 Section 信号连接到 MumuConfigDialog 槽函数
-  -> MumuConfigCoordinator(config, capture_service, ocr_service)
+     -> MumuConfigCoordinator(config, capture_service, ocr_service)
+     -> MumuDevicePage(coordinator)                          [设备与连接页：Section 信号 + 协调器回执]
+     -> MumuRecognitionPage(coordinator)                     [识别与自动化页：模板/ROI/轮询]
+     -> 页面滚装 + 页头 ADB 状态 + DialogFooter
   -> _load_config()
-    -> MumuConfigCoordinator.sync_capture_config()              [唯一 ADB 会话]
-    -> _on_refresh_devices()
+    -> MumuDevicePage.load_config() / MumuRecognitionPage.load_config()
+    -> MumuDevicePage.sync_capture_config()
+       -> MumuConfigCoordinator.sync_capture_config()              [唯一 ADB 会话]
+    -> MumuDevicePage.refresh_devices()
        -> MumuConfigCoordinator.refresh_devices()
-       -> [signal] devices_changed -> _on_devices_refreshed() -> 填充设备下拉列表
-       -> [signal] device_refresh_failed -> _on_device_refresh_failed() -> 保留当前选择
-    -> _refresh_template_status()
+       -> [signal] devices_changed -> MumuDevicePage._on_devices_refreshed() -> 填充设备下拉列表
+       -> [signal] device_refresh_failed -> MumuDevicePage._on_device_refresh_failed() -> 保留当前选择
+    -> MumuRecognitionPage 模板状态刷新
        -> OcrService.is_template_loaded()
 
-  → 模板制作:
+  → 模板制作（MumuRecognitionPage 内）:
   _on_make_template()
     -> MumuConfigCoordinator.start_template_capture()
       -> EmulatorOperationService.capture_template_screenshot() [后台]
@@ -1083,9 +1084,10 @@ MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
   → 保存配置:
   _on_save()
     -> DialogFooter.set_busy(True, "正在保存...")
-    -> 收集控件值到 self._config
+    -> MumuDevicePage.collect_device_draft() + MumuRecognitionPage.collect_parameters()
+    -> 收集控件值到协调器草稿
     -> show_toast("识别参数已保存") -> self.accept()
-  [MainWindow._open_mumu_config() 中]
+  [DialogCoordinator.open_mumu_config() 中]
     -> dialog.get_config()
     -> save_env_file(DEFAULT_ENV_FILE, config)
     -> CaptureService.update_config(config)
@@ -1098,12 +1100,12 @@ MumuConfigDialog.__init__(config, capture_service, ocr_service, parent)
 |------|--------|--------|----------|
 | `RoiSelectorDialog` 鼠标事件 | `RoiSelectorDialog` | Qt 事件 | `_on_mouse_press/move/release`, `_update_info()`, `_on_paint()` |
 | `RoiSelectorDialog._on_confirm()` | `RoiSelectorDialog` | "确认"按钮 | 计算 ROI → `self.accept()` |
-| `MumuDeviceSection` 用户操作信号 | `mumu_config_sections.py` | 设备区按钮/下拉框 | `MumuConfigDialog` 对应槽函数 |
-| `MumuTemplateSection` 用户操作信号 | `mumu_config_sections.py` | 模板选择/制作按钮 | `MumuConfigDialog` 对应槽函数 |
-| `MumuOcrPollingSection` 用户操作信号 | `mumu_config_sections.py` | 轮询与 ROI 控件 | `MumuConfigDialog` 对应槽函数 |
-| `MumuConfigDialog._on_auto_detect()` | `MumuConfigDialog` | "自动探测"按钮 | `MumuConfigCoordinator.detect_adb()` |
-| `MumuConfigDialog._on_make_template()` | `MumuConfigDialog` | "制作模板"按钮 | 协调器截图 → `RoiSelectorDialog` → 协调器保存模板 |
-| `MumuConfigDialog._on_save()` | `MumuConfigDialog` | "保存"按钮 | 收集表单 → 协调器校验草稿 → `accept()` |
+| `MumuDeviceSection` 用户操作信号 | `mumu_config_sections.py` | 设备区按钮/下拉框 | `MumuDevicePage` 对应槽函数 |
+| `MumuTemplateSection` 用户操作信号 | `mumu_config_sections.py` | 模板选择/制作按钮 | `MumuRecognitionPage` 对应槽函数 |
+| `MumuOcrPollingSection` 用户操作信号 | `mumu_config_sections.py` | 轮询与 ROI 控件 | `MumuRecognitionPage` 对应槽函数 |
+| `MumuDevicePage._on_auto_detect()` | `MumuDevicePage` | "自动探测"按钮 | `MumuConfigCoordinator.detect_adb()` |
+| `MumuRecognitionPage._on_make_template()` | `MumuRecognitionPage` | "制作模板"按钮 | 协调器截图 → `RoiSelectorDialog` → 协调器保存模板 |
+| `MumuConfigDialog._on_save()` | `MumuConfigDialog` | "保存"按钮 | 页面收集草稿 → 协调器校验 → `accept()` |
 
 ### 6.4 进度对话框
 
@@ -1274,15 +1276,15 @@ WhitelistConfigDialog.exec()
 | `_load_data()` | `__init__()`, `_reload_data()` | `DataFacade.load_all()` + `DataMutationService.repair_missing_references()` |
 | `_reload_data()` | 菜单”重新加载数据” (F5) | `_load_data()`, `HeroBrowser.reload_data()`, `CardManagementPanel.reload_data()`, `RagMaintenancePanel.reload_data()`, `RecommendationPanel.refresh_synergies()`, `_update_status()` |
 | `_update_status()` | 各 fetch 完成回调 | `DataFacade.get_stats()`, `status_label.setText()` |
-| `_request_fetch_all()` | 菜单 | `QMessageBox.question` → `HeroFetchService.fetch_all()` |
-| `_request_fetch_incremental()` | 菜单 | `QMessageBox.question` → `HeroFetchService.fetch_incremental()` |
-| `_request_fetch_specific()` | 菜单 | `HeroFetchDialog` → `fetch_specific(ids)` |
+| `DialogCoordinator.request_fetch_all()` | 菜单 | `QMessageBox.question` → `HeroFetchService.fetch_all()` |
+| `DialogCoordinator.request_fetch_incremental()` | 菜单 | `QMessageBox.question` → `HeroFetchService.fetch_incremental()` |
+| `DialogCoordinator.request_fetch_specific()` | 菜单 | `HeroFetchDialog` → `fetch_specific(ids)` |
 | `_request_guide_*()` | 菜单 | `AiGenerationWorkflow.request_guide_*()` |
 | `_request_synergy_pair()` / `_request_synergy_single()` / `_request_synergy_combos()` | 菜单 | `AiGenerationWorkflow.request_synergy_*()` |
-| `_open_settings()` | 菜单”配置→API 配置” | `SettingsDialog` |
-| `_open_faction_colors()` | 菜单”配置→势力配色” | `FactionColorDialog` → `reload_faction_colors()` → `RecommendationPanel.refresh_faction_colors()` + `MatchGuidePanel.refresh_faction_colors()` |
-| `_open_data_management()` | 菜单"数据→清空攻略/相性数据" | `DataManagementDialog` |
-| `_open_mumu_config()` | 菜单”配置→模拟器配置” / StatusChips 点击 | `MumuConfigDialog` → `save_env_file()` → `PollCoordinator.sync_with_connection()` |
+| `DialogCoordinator.open_settings()` | 菜单”配置→API 配置” | `SettingsDialog` |
+| `DialogCoordinator.open_faction_colors()` | 菜单”配置→势力配色” | `FactionColorDialog` → `reload_faction_colors()` → `RecommendationPanel.refresh_faction_colors()` + `MatchGuidePanel.refresh_faction_colors()` |
+| `DialogCoordinator.open_data_management()` | 菜单"数据→清空攻略/相性数据" | `DataManagementDialog` |
+| `DialogCoordinator.open_mumu_config()` | 菜单”配置→模拟器配置” / StatusChips 点击 | `MumuConfigDialog` → `save_env_file()` → `PollCoordinator.sync_with_connection()` |
 | `_open_official_data_import()` | 菜单”数据→官方数据导入” | `OfficialDataImportDialog` + 轮询暂停/恢复 |
 | `_open_combos_import()` | 菜单"数据→实战配队导入" | `CombosImportDialog` |
 | `_open_baike_ignore_manager()` | 菜单"数据→百科忽略名单管理" | `BaikeIgnoreManagerDialog` -> `AnnouncementService.list_ignored_heroes()` + `CardSyncService.list_ignored_cards()` |
@@ -1432,7 +1434,7 @@ AnnouncementDialog / 顶部横幅:
 ## 九b、百科忽略名单管理对话框链路
 
 ```
-菜单: 数据 > 百科忽略名单管理 -> MainWindow._open_baike_ignore_manager()
+菜单: 数据 > 百科忽略名单管理 -> DialogCoordinator.open_baike_ignore_manager()
   -> BaikeIgnoreManagerDialog(self,
        announcement_service=_services.announcement_service,
        card_sync_service=_services.card_sync_service).exec()
@@ -1458,7 +1460,7 @@ AnnouncementDialog / 顶部横幅:
 ## 十、卡牌百科同步对话框链路
 
 ```
-菜单: 数据 > 检查卡牌百科更新 -> MainWindow._open_card_sync()
+菜单: 数据 > 检查卡牌百科更新 -> DialogCoordinator.open_card_sync()
   -> CardSyncDialog(card_sync_service, card_repository, card_point_names, auto_check=True)
      -> _build_ui()
         -> PageHeader("卡牌百科更新", 说明文字)

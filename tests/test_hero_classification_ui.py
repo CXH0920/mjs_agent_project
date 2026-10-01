@@ -8,7 +8,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 from src.data.hero_classification_repository import HeroClassificationRepository
-from src.ui.library.hero_classification_panel import CategoryEditDialog, HeroClassificationPanel
+from src.ui.library.classification.category_tab import CategoryEditDialog
+from src.ui.library.hero_classification_panel import HeroClassificationPanel
 
 
 def _app() -> QApplication:
@@ -44,8 +45,8 @@ def test_panel_renders_tabs(tmp_path: Path) -> None:
     _app()
     panel, _ = _panel(tmp_path)
     assert panel._tabs.count() == 3
-    assert panel._category_list.count() == 2
-    assert panel._hero_list.count() == 2
+    assert panel._category_tab.category_list.count() == 2
+    assert panel._hero_tab.hero_list.count() == 2
     assert panel._repo.list_unclassified() == ["典韦"]
 
 
@@ -57,8 +58,8 @@ def test_add_category_marks_dirty(tmp_path: Path, monkeypatch) -> None:
     dialog._features_edit.setPlainText("打乱节奏")
     dialog._accept_if_valid()
     panel._repo.add_category(dialog.category())
-    panel._current_category = "控制/扰乱型"
-    panel._refresh_categories()
+    panel._category_tab.current_category = "控制/扰乱型"
+    panel._category_tab.refresh()
     panel._mark_dirty()
     assert panel._repo.get_category("控制/扰乱型") is not None
     assert "未保存修改" in panel._status_label.text()
@@ -69,11 +70,11 @@ def test_chain_edit_and_save_emits_signal(tmp_path: Path) -> None:
     panel, path = _panel(tmp_path)
     signals = []
     panel.data_changed.connect(lambda: signals.append(True))
-    panel._chain_category_combo.setCurrentText("高爆发型")
-    panel._chain_edit.blockSignals(True)
-    panel._chain_edit.setPlainText("防御/保核型（不给发育时间）")
-    panel._chain_edit.blockSignals(False)
-    panel._on_chain_text_changed()
+    panel._chain_tab.chain_category_combo.setCurrentText("高爆发型")
+    panel._chain_tab.chain_edit.blockSignals(True)
+    panel._chain_tab.chain_edit.setPlainText("防御/保核型（不给发育时间）")
+    panel._chain_tab.chain_edit.blockSignals(False)
+    panel._chain_tab.on_chain_text_changed()
     panel._save()
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     assert data["counter_chain"]["高爆发型"] == "防御/保核型（不给发育时间）"
@@ -84,18 +85,18 @@ def test_chain_edit_and_save_emits_signal(tmp_path: Path) -> None:
 def test_hero_categorization_filter_and_edit(tmp_path: Path) -> None:
     _app()
     panel, path = _panel(tmp_path)
-    panel._hero_filter.setCurrentText("未归类")
-    assert panel._hero_list.count() == 1
-    assert panel._hero_list.item(0).data(0x0100) == "典韦"
-    panel._hero_list.setCurrentRow(0)
-    assert panel._current_hero == "典韦"
-    panel._hero_combo.set_checked(["防御/保核型"])
-    panel._on_hero_categories_changed()
+    panel._hero_tab.hero_filter.setCurrentText("未归类")
+    assert panel._hero_tab.hero_list.count() == 1
+    assert panel._hero_tab.hero_list.item(0).data(0x0100) == "典韦"
+    panel._hero_tab.hero_list.setCurrentRow(0)
+    assert panel._hero_tab.current_hero == "典韦"
+    panel._hero_tab.hero_combo.set_checked(["防御/保核型"])
+    panel._hero_tab.on_hero_categories_changed()
     panel._save()
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     assert data["hero_categories"]["典韦"] == ["防御/保核型"]
-    panel._hero_filter.setCurrentText("已归类")
-    assert panel._hero_list.count() == 2
+    panel._hero_tab.hero_filter.setCurrentText("已归类")
+    assert panel._hero_tab.hero_list.count() == 2
 
 
 def test_goto_next_unclassified(tmp_path: Path, monkeypatch) -> None:
@@ -103,11 +104,11 @@ def test_goto_next_unclassified(tmp_path: Path, monkeypatch) -> None:
     panel, _ = _panel(tmp_path)
     infos = []
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: infos.append(a))
-    panel._goto_next_unclassified()
-    assert panel._hero_filter.currentText() == "未归类"
-    assert panel._current_hero == "典韦"
+    panel._hero_tab.goto_next_unclassified()
+    assert panel._hero_tab.hero_filter.currentText() == "未归类"
+    assert panel._hero_tab.current_hero == "典韦"
     panel._repo.set_hero_categories("典韦", ["高爆发型"])
-    panel._goto_next_unclassified()
+    panel._hero_tab.goto_next_unclassified()
     assert infos, "全部已归类时应提示完成"
 
 
@@ -115,8 +116,8 @@ def test_delete_category_cleans_references(tmp_path: Path, monkeypatch) -> None:
     _app()
     panel, _ = _panel(tmp_path)
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
-    panel._current_category = "高爆发型"
-    panel._delete_category()
+    panel._category_tab.current_category = "高爆发型"
+    panel._category_tab.delete_current()
     assert panel._repo.get_category("高爆发型") is None
     assert panel._repo.get_chain_description("高爆发型") == ""
     assert panel._repo.get_hero_categories("庞煖") == []
@@ -205,7 +206,7 @@ def test_roster_refresh_picks_up_new_heroes(tmp_path: Path) -> None:
     _write_heroes(tmp_path, ["庞煖", "典韦", "王导"])
     panel.refresh_roster()
     assert panel._repo.hero_names == {"庞煖", "典韦", "王导"}
-    listed = [panel._hero_list.item(i).data(0x0100) for i in range(panel._hero_list.count())]
+    listed = [panel._hero_tab.hero_list.item(i).data(0x0100) for i in range(panel._hero_tab.hero_list.count())]
     assert "王导" in listed
     assert panel._repo.list_unclassified() == ["典韦", "王导"]
     panel._repo.set_hero_categories("王导", ["高爆发型"])  # 新武将不再被校验拒绝
@@ -229,7 +230,7 @@ def test_focus_unclassified_finds_new_hero(tmp_path: Path) -> None:
     panel._repo.set_hero_categories("典韦", ["高爆发型"])  # 先归满现有武将
     _write_heroes(tmp_path, ["庞煖", "典韦", "祖逖"])
     panel.focus_unclassified()
-    assert panel._current_hero == "祖逖"
+    assert panel._hero_tab.current_hero == "祖逖"
 
 
 def test_roster_refresh_keeps_names_when_heroes_missing(tmp_path: Path) -> None:
@@ -238,5 +239,5 @@ def test_roster_refresh_keeps_names_when_heroes_missing(tmp_path: Path) -> None:
     panel, _ = _panel(tmp_path)  # tmp_path 下无 data/heroes.json
     panel.refresh_roster()
     assert panel._repo.hero_names == {"庞煖", "典韦"}
-    assert panel._hero_list.count() == 2
+    assert panel._hero_tab.hero_list.count() == 2
     assert panel._repo.list_unclassified() == ["典韦"]

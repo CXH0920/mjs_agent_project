@@ -235,7 +235,7 @@ def test_jump_to_unclassified(tmp_path: Path) -> None:
     panel._jump_to_issue(issue)
     assert panel._workspace.current_source_key() == "武将分类"
     assert panel._classification._tabs.currentIndex() == 2  # 武将归类子页签
-    current = panel._classification._hero_list.currentItem()
+    current = panel._classification._hero_tab.hero_list.currentItem()
     assert current is not None
     assert current.data(Qt.ItemDataRole.UserRole) in issue.target
     panel.close()

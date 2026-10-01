@@ -10,9 +10,8 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QEvent
-from PySide6.QtGui import QAction, QResizeEvent
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
-    QDialog,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -26,21 +25,16 @@ from PySide6.QtWidgets import (
 from src.business.card_catalog import CardCatalogService
 from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
 from src.ui.app.app_services import AppServices
+from src.ui.app.dialog_coordinator import DialogCoordinator
+from src.ui.app.menu_builder import build_actions, build_menu_bar
 from src.ui.app.status_chips import StatusChips
-from src.ui.data_admin.baike_ignore_manager_dialog import BaikeIgnoreManagerDialog
-from src.ui.data_admin.card_sync_dialog import CardSyncDialog
 
 logger = logging.getLogger(__name__)
 
 from src.config.env import PROJECT_ROOT, is_full_build
 from src.ui.app.progress_reporter import ProgressReporter
 from src.ui.app.shell_widgets import NavigationRail
-from src.ui.configuration.faction_color_dialog import FactionColorDialog
-from src.ui.configuration.settings_dialog import SettingsDialog
-from src.ui.data_admin.data_management_dialog import DataManagementDialog
-from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.card_management_panel import CardManagementPanel
-from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.library.hero_browser import HeroBrowser
 from src.ui.match.match_guide_panel import (
     WIN_RATE_MODE_2V2,
@@ -102,6 +96,8 @@ class MainWindow(QMainWindow):
         self._announcement_update_button: QPushButton | None = None
         # 进度出口早于信号接线创建；_setup_status_bar 只负责挂载到状态栏
         self._reporter = ProgressReporter()
+        # 对话框/采集入口编排器早于菜单构建创建；沿窗口属性访问共享服务与面板
+        self._dialogs = DialogCoordinator(self)
         # 公告管线与阶段机整体迁入协调器（含 fetch_completed 的令牌消费）
         self._announcement_coordinator = AnnouncementUpdateCoordinator(
             self._services.announcement_service,
@@ -163,32 +159,6 @@ class MainWindow(QMainWindow):
     def _on_fetch_error(self, error_msg: str) -> None:
         """采集错误处理"""
         QMessageBox.warning(self, "采集失败", f"武将数据采集失败\n{error_msg}")
-
-    def _open_card_sync(self) -> None:
-        """打开卡牌百科更新对话框并自动触发一次官网检查。"""
-        points = self._services.card_points_repository
-        points.load()
-        dialog = CardSyncDialog(
-            self._card_sync_service,
-            self._card_repository,
-            points.list_card_names(),
-            parent=self,
-        )
-        dialog.exec()
-        applied = dialog.applied_count
-        dialog.deleteLater()
-        if applied:
-            self._reporter.show_event_message(
-                f"卡牌官网同步已应用 {applied} 张，建议在知识库维护重建卡牌语料。"
-            )
-
-    def _open_baike_ignore_manager(self) -> None:
-        """打开百科忽略名单管理（全局兜底入口，不依赖 diff 对话框可达）。"""
-        BaikeIgnoreManagerDialog(
-            self,
-            announcement_service=self._services.announcement_service,
-            card_sync_service=self._services.card_sync_service,
-        ).exec()
 
     def _connect_capture_signals(self) -> None:
         """连接截图、连接状态和轮询服务信号。"""
@@ -264,113 +234,36 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------
 
     def _setup_actions(self) -> None:
-        """集中创建菜单和新应用外壳复用的命令。"""
-        self._actions = {
-            "exit": QAction("退出", self),
-            "api_settings": QAction("API 配置", self),
-            "emulator_settings": QAction("模拟器配置", self),
-            "faction_colors": QAction("势力配色", self),
-            "whitelist_config": QAction("白名单配置", self),
-            "data_management": QAction("清空攻略/相性数据", self),
-            "reload": QAction("重新加载数据", self),
-            "official_import": QAction("官方数据导入", self),
-            "fetch_all": QAction("全量获取", self),
-            "fetch_incremental": QAction("增量获取", self),
-            "fetch_specific": QAction("指定获取", self),
-            "guide_all": QAction("全量获取", self),
-            "guide_incremental": QAction("增量获取", self),
-            "guide_specific": QAction("指定获取", self),
-            "synergy_single": QAction("选定武将", self),
-            "synergy_pair": QAction("指定获取", self),
-            "synergy_combos": QAction("实战配队生成", self),
-            "combos_import": QAction("实战配队导入", self),
-            "announcement_check": QAction("检查公告更新", self),
-            "announcement_log": QAction("公告记录", self),
-            "card_sync_check": QAction("检查卡牌百科更新", self),
-            "baike_ignore_manager": QAction("百科忽略名单管理", self),
-            "about": QAction("关于", self),
-        }
-        self._actions["exit"].setShortcut("Ctrl+Q")
-        self._actions["reload"].setShortcut("F5")
-        callbacks = {
+        """集中创建菜单动作并接线回调（构建逻辑见 menu_builder）。"""
+        self._actions = build_actions(self, {
             "exit": self.close,
-            "api_settings": self._open_settings,
-            "emulator_settings": self._open_mumu_config,
-            "faction_colors": self._open_faction_colors,
-            "whitelist_config": self._open_whitelist_config,
-            "data_management": self._open_data_management,
+            "api_settings": self._dialogs.open_settings,
+            "emulator_settings": self._dialogs.open_mumu_config,
+            "faction_colors": self._dialogs.open_faction_colors,
+            "whitelist_config": self._dialogs.open_whitelist_config,
+            "data_management": self._dialogs.open_data_management,
             "reload": self._reload_data,
-            "official_import": self._open_official_data_import,
-            "fetch_all": self._request_fetch_all,
-            "fetch_incremental": self._request_fetch_incremental,
-            "fetch_specific": self._request_fetch_specific,
+            "official_import": self._dialogs.open_official_data_import,
+            "fetch_all": self._dialogs.request_fetch_all,
+            "fetch_incremental": self._dialogs.request_fetch_incremental,
+            "fetch_specific": self._dialogs.request_fetch_specific,
             "guide_all": self._ai_workflow.request_guide_all,
             "guide_incremental": self._ai_workflow.request_guide_incremental,
             "guide_specific": self._ai_workflow.request_guide_specific,
             "synergy_single": self._ai_workflow.request_synergy_single,
             "synergy_pair": self._ai_workflow.request_synergy_pair,
             "synergy_combos": self._ai_workflow.request_synergy_combos,
-            "combos_import": self._open_combos_import,
+            "combos_import": self._dialogs.open_combos_import,
             "announcement_check": self._announcement_coordinator.check_announcements,
             "announcement_log": self._announcement_coordinator.open_announcement_dialog,
-            "card_sync_check": self._open_card_sync,
-            "baike_ignore_manager": self._open_baike_ignore_manager,
-            "about": self._show_about,
-        }
-        for name, callback in callbacks.items():
-            self._actions[name].setObjectName(f"action_{name}")
-            self._actions[name].triggered.connect(callback)
+            "card_sync_check": self._dialogs.open_card_sync,
+            "baike_ignore_manager": self._dialogs.open_baike_ignore_manager,
+            "about": self._dialogs.show_about,
+        })
 
     def _setup_menu(self) -> None:
-        """使用共享 QAction 构建菜单栏。"""
-        bar = self.menuBar()
-
-        file_menu = bar.addMenu("文件")
-        file_menu.addAction(self._actions["reload"])
-        file_menu.addSeparator()
-        file_menu.addAction(self._actions["exit"])
-
-        tools_menu = bar.addMenu("配置")
-        tools_menu.addAction(self._actions["api_settings"])
-        tools_menu.addAction(self._actions["emulator_settings"])
-        tools_menu.addAction(self._actions["faction_colors"])
-        tools_menu.addAction(self._actions["whitelist_config"])
-
-        data_menu = bar.addMenu("数据")
-        data_menu.addAction(self._actions["announcement_check"])
-        data_menu.addAction(self._actions["announcement_log"])
-        data_menu.addAction(self._actions["card_sync_check"])
-        data_menu.addAction(self._actions["baike_ignore_manager"])
-        data_menu.addSeparator()
-        self._add_generation_submenus(data_menu)
-        data_menu.addSeparator()
-        data_menu.addAction(self._actions["official_import"])
-        data_menu.addAction(self._actions["combos_import"])
-        data_menu.addAction(self._actions["data_management"])
-
-        help_menu = bar.addMenu("帮助")
-        help_menu.addAction(self._actions["about"])
-
-    def _add_generation_submenus(self, parent_menu) -> None:
-        """挂载武将获取/攻略生成/武将相性三个生成子菜单。"""
-        fetch_menu = parent_menu.addMenu("武将获取")
-        fetch_menu.addActions([
-            self._actions["fetch_all"],
-            self._actions["fetch_incremental"],
-            self._actions["fetch_specific"],
-        ])
-        guide_menu = parent_menu.addMenu("攻略生成")
-        guide_menu.addActions([
-            self._actions["guide_all"],
-            self._actions["guide_incremental"],
-            self._actions["guide_specific"],
-        ])
-        synergy_menu = parent_menu.addMenu("武将相性")
-        synergy_menu.addActions([
-            self._actions["synergy_single"],
-            self._actions["synergy_pair"],
-            self._actions["synergy_combos"],
-        ])
+        """使用共享 QAction 构建菜单栏（装配逻辑见 menu_builder）。"""
+        build_menu_bar(self.menuBar(), self._actions)
 
     # ---------------------------------------------------------------
     # UI 构建
@@ -458,7 +351,7 @@ class MainWindow(QMainWindow):
             ocr_service=self._ocr_service,
             combo_manager=self._combo_manager,
         )
-        self._recommendation.request_mumu_config.connect(self._open_mumu_config)
+        self._recommendation.request_mumu_config.connect(self._dialogs.open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
 
         # Tab 3: 巅峰赛选将（2v2 禁选后剩余候选池实时识别）
@@ -471,7 +364,7 @@ class MainWindow(QMainWindow):
             pick_ranks_provider=self._peak_pick_ranks_provider,
             combo_manager=self._combo_manager,
         )
-        self._peak_select.request_mumu_config.connect(self._open_mumu_config)
+        self._peak_select.request_mumu_config.connect(self._dialogs.open_mumu_config)
         # 巅峰赛牌面退出 → 后续对局轮询命中的是巅峰赛对局，攻略胜率切巅峰榜
         self._peak_select.board_exited.connect(self._on_peak_board_exited)
         # 面板就绪后回填巅峰识别会话查询，供轮询路由丢弃会话中的泄漏结果
@@ -486,7 +379,7 @@ class MainWindow(QMainWindow):
             win_rates_provider=self._win_rates_provider,
             peak_win_rates_provider=self._peak_win_rates_provider,
         )
-        self._match_guide.request_mumu_config.connect(self._open_mumu_config)
+        self._match_guide.request_mumu_config.connect(self._dialogs.open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")
 
         # Tab 5: 知识库维护（RAG 语料/索引本地维护工作台，仅完整版）
@@ -553,7 +446,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(self._reporter)
         # 服务状态 chips 自足小部件（批次6步骤3）：点击经信号回到 _open_mumu_config
         self._status_chips = StatusChips()
-        self._status_chips.mumu_config_requested.connect(self._open_mumu_config)
+        self._status_chips.mumu_config_requested.connect(self._dialogs.open_mumu_config)
         self._status_chips.poll_resume_requested.connect(self._poll_coordinator.resume_from_idle_pause)
         bar.addPermanentWidget(self._status_chips)
         self.setStatusBar(bar)
@@ -646,34 +539,6 @@ class MainWindow(QMainWindow):
         self._update_status()
         show_toast(self, "数据已重新加载")
 
-    def _open_combos_import(self) -> None:
-        """打开实战配队导入对话框"""
-        from src.ui.data_admin.combos_import_dialog import CombosImportDialog
-        dialog = CombosImportDialog(parent=self)
-        dialog.combos_imported.connect(self._on_combos_imported)
-        dialog.exec()
-
-    def _on_combos_imported(self, count: int) -> None:
-        """导入完成后刷新共享 combos 数据与相性视图。"""
-        self._combo_manager.load()
-        self._hero_browser.refresh_synergies()
-        show_toast(self, f"实战配队已导入 {count} 条，相性板块与选将推荐已更新。", duration=4000)
-
-    def _open_official_data_import(self) -> None:
-        """打开官方 2v2、巅峰赛与武将放逐榜单导入窗口。"""
-        dialog = OfficialDataImportDialog(self._capture_service, self)
-        dialog.recommendation_indexes_stale.connect(
-            self._recommendation.mark_recommendation_indexes_stale
-        )
-        poll_was_active = self._ocr_service.poll_state not in {"stopped", "paused"}
-        if poll_was_active:
-            self._ocr_service.stop_poll()
-        try:
-            dialog.exec()
-        finally:
-            if poll_was_active:
-                self._poll_coordinator.sync_with_connection()
-
     # ---------------------------------------------------------------
     # 状态栏更新
     # ---------------------------------------------------------------
@@ -685,135 +550,3 @@ class MainWindow(QMainWindow):
             f"武将: {stats['heroes']}  |  相性: {stats['synergies']}  |  攻略: {stats['guides']}"
         )
 
-    # ---------------------------------------------------------------
-    # 采集入口（委托给 HeroFetchService）
-    # ---------------------------------------------------------------
-
-    def _request_fetch_all(self) -> None:
-        """请求全量采集"""
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            "是否全量获取武将数据？\n此操作将从官网重新采集所有武将信息。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self._fetch_service.fetch_all()
-
-    def _request_fetch_incremental(self) -> None:
-        """请求增量采集"""
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            "是否增量获取武将数据？\n仅爬取本地还未拥有的武将并追加写入。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self._fetch_service.fetch_incremental()
-
-    def _request_fetch_specific(self) -> None:
-        """请求指定采集：弹出选择对话框，选中后委托给 service"""
-        dialog = HeroFetchDialog(self._data.heroes, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        if dialog.selected_ids:
-            self._fetch_service.fetch_specific(dialog.selected_ids)
-
-    # ---------------------------------------------------------------
-    # 对话框
-    # ---------------------------------------------------------------
-
-    def _open_settings(self) -> None:
-        """打开 API 配置对话框"""
-        dialog = SettingsDialog(parent=self)
-        dialog.exec()
-
-    def _open_data_management(self) -> None:
-        """打开攻略与相性数据的批量清空入口。"""
-        dialog = DataManagementDialog(
-            self._data.guides,
-            self._data.synergies,
-            lambda: self._guide_service.is_busy or self._synergy_service.is_busy,
-            self,
-        )
-        dialog.data_cleared.connect(self._on_data_cleared)
-        dialog.exec()
-
-    def _on_data_cleared(self, guides_cleared: bool, synergies_cleared: bool) -> None:
-        """刷新清空数据后受影响的页面与统计。"""
-        if guides_cleared:
-            self._hero_browser.reload_data()
-        if synergies_cleared:
-            self._hero_browser.refresh_synergies()
-            self._recommendation.refresh_synergies()
-        self._update_status()
-        self._reporter.show_message("数据已清空并完成备份")
-
-    def _open_faction_colors(self) -> None:
-        """打开势力配色配置页。"""
-        dialog = FactionColorDialog(parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        from src.ui.shared.faction_colors import reload_faction_colors
-
-        reload_faction_colors()
-        self._recommendation.refresh_faction_colors()
-        self._match_guide.refresh_faction_colors()
-        self._reporter.show_message("势力配色已更新")
-
-    def _open_whitelist_config(self) -> None:
-        """打开白名单配置页（错法观察 + 用户层确定性纠错对维护）。"""
-        from src.ui.configuration.whitelist_config_dialog import WhitelistConfigDialog
-
-        hero_names = [hero.name for hero in self._data.heroes.list_heroes()]
-        dialog = WhitelistConfigDialog(
-            hero_names,
-            reset_ocr_cache=self._capture_service.reset_ocr_recognizer_cache,
-            parent=self,
-        )
-        dialog.exec()
-
-    def _open_mumu_config(self) -> None:
-        """打开模拟器配置对话框"""
-        from src.business.emulator.mumu_config_coordinator import persist_mumu_env_config
-        from src.config.env import get_mumu_config
-        from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
-
-        config = get_mumu_config()
-        dialog = MumuConfigDialog(
-            config,
-            capture_service=self._capture_service,
-            ocr_service=self._ocr_service,
-            parent=self,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        new_config = dialog.get_config()
-
-        # 保存到 config.env（键集与序列化细节在协调器模块）
-        persist_mumu_env_config(new_config)
-
-        # 更新服务配置
-        self._capture_service.update_config(new_config)
-        self._ocr_service.update_config(new_config)
-
-        # 只有 ADB 已连接且配置启用轮询时才启动
-        self._poll_coordinator.sync_with_connection()
-
-        self._reporter.show_message("模拟器配置已更新")
-
-    def _show_about(self) -> None:
-        """显示关于对话框"""
-        QMessageBox.about(
-            self, "关于 名将杀 Agent",
-            "名将杀 Agent v0.1.0\n\n"
-            "名将杀桌面辅助工具\n"
-            "面向名将杀手游的轻度玩家\n\n"
-            "技术栈: PySide6 + Pydantic + httpx\n"
-            "数据来源: 游戏官网 + DeepSeek API"
-        )

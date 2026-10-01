@@ -27,40 +27,15 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
+from src.ocr.batch_canvas import build_batch_canvas, join_name_fragments, split_canvas_groups
 from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
 from src.ocr.image_preprocessor import ImagePreprocessor
+from src.ocr.name_resolution import NameResolver
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
 
-_BATCH_SLOT_GAP = 30
-# PaddleOCR 检测器长边 960 上限：画布不超过它就不会被内部降采样；超限缩放过深时
-# 行级检测退化（0.68×切行、0.285×逐字，见 2026-09 巅峰赛 14 卡画布回归）。
-_BATCH_CANVAS_MAX_WIDTH = 960
 _BATCH_MIN_CONFIDENCE = 0.5
-_NAME_RECHECK_CONFIDENCE = 0.8
-_UNIQUE_PREFIX_MIN_LENGTH = 2
-_MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
-_MULTI_CANDIDATE_MIN_SIMILARITY = 0.35
-_MULTI_CANDIDATE_MIN_MARGIN = 0.15
-_MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
-# 词表外新武将保护：全部证据族以不低于此值的置信度一致读出同一词表外原文时，
-# 判定为新武将而不强制纠错绑定（历史 _HIGH_CONFIDENCE 保护在证据体系迁移中遗失后重建）
-_UNMATCHED_CONSENSUS_MIN_CONFIDENCE = 0.995
-_CONFIRMED_RESOLUTIONS = frozenset({
-    "exact", "unique_prefix", "unique_similarity", "multi_similarity",
-    "slot_unique", "manual",
-})
-_RESOLUTION_PRIORITY = {
-    "manual": 5,
-    "exact": 4,
-    "unique_prefix": 3,
-    "unique_similarity": 2,
-    "multi_similarity": 2,
-    "slot_unique": 1,
-}
-
-
 class GeneralRecognizer:
     """武将名称识别器，按页面类型使用独立的 ROI 布局。"""
 
@@ -85,6 +60,8 @@ class GeneralRecognizer:
         self._ocr = None  # PaddleOCR 引擎（延迟加载）
         self._preprocessor = preprocessor or ImagePreprocessor()
         self._similarity_service = similarity_service or CharacterSimilarityService()
+        # 名称证据解析与页面消歧的纯决策层（审计 G3 切片 4.6a 出仓）
+        self._resolver = NameResolver(self._hero_names, self._similarity_service)
         self._timing_ms: dict[str, float] = {}
         # 已打过 ROI 明细的缩放比：同实例同缩放下 ROI 坐标恒定，仅首次识别打
         self._logged_roi_scale: tuple[float, float] | None = None
@@ -151,7 +128,7 @@ class GeneralRecognizer:
         """执行一次与名称拼图一致的检测和识别，完成运行时算子初始化。"""
         roi = np.zeros((145, 50, 3), dtype=np.uint8)
         prepared = self._preprocessor.preprocess_roi(roi)
-        canvas, _ = self._build_batch_canvas({slot: prepared for slot in range(1, 9)})
+        canvas, _ = build_batch_canvas({slot: prepared for slot in range(1, 9)})
         self._engine.ocr(canvas, cls=False)
         horizontal = cv2.cvtColor(
             cv2.rotate(prepared, cv2.ROTATE_90_COUNTERCLOCKWISE),
@@ -225,21 +202,21 @@ class GeneralRecognizer:
         for i, _slot in enumerate(self._layout.slots, 1):
             prepared = prepared_slots.get(i)
             if prepared is None:
-                results.append(self._empty_name_result(i))
+                results.append(self._resolver.empty_name_result(i))
                 continue
             evidence = list(batch_evidence.get(i, []))
             batch_text, batch_confidence = recognized.get(i, ("", 0.0))
-            initial = self._resolve_name_evidence(i, evidence)
-            if self._requires_slot_recheck(initial, batch_text, batch_confidence):
+            initial = self._resolver.resolve_name_evidence(i, evidence)
+            if self._resolver.requires_slot_recheck(initial, batch_text, batch_confidence):
                 self._append_single_name_evidence(evidence, raw_slots[i], i)
-            result = self._resolve_name_evidence(i, evidence)
+            result = self._resolver.resolve_name_evidence(i, evidence)
             results.append(result)
             logger.debug(
                 "武将 %d 识别: %s (状态=%s, 原文=%r)",
                 i, result["name"] or "(未确认)", result["resolution"], result["raw_name"],
             )
 
-        final = self._resolve_page_names(results)
+        final = self._resolver.resolve_page_names(results)
         self._recheck_unresolved_slots(final, prepared_slots)
         return final
 
@@ -279,12 +256,12 @@ class GeneralRecognizer:
                 continue
             evidence = list(name_evidence.get(seat_index, []))
             batch_text, batch_confidence = recognized_names.get(seat_index, ("", 0.0))
-            initial = self._resolve_name_evidence(seat_index, evidence)
-            if self._requires_slot_recheck(initial, batch_text, batch_confidence):
+            initial = self._resolver.resolve_name_evidence(seat_index, evidence)
+            if self._resolver.requires_slot_recheck(initial, batch_text, batch_confidence):
                 self._append_single_name_evidence(
                     evidence, raw_name_slots[seat_index], seat_index,
                 )
-            name_result = self._resolve_name_evidence(seat_index, evidence)
+            name_result = self._resolver.resolve_name_evidence(seat_index, evidence)
             team_text, _ = recognized_teams.get(seat_index, ("", 0.0))
             prepared_team = team_slots.get(seat_index)
             if not team_text and prepared_team is not None:
@@ -294,365 +271,23 @@ class GeneralRecognizer:
             team = self._normalize_team(team_text, seat_index)
             name_result["team"] = team
             results.append(name_result)
-        final = self._resolve_page_names(results)
+        final = self._resolver.resolve_page_names(results)
         self._recheck_unresolved_slots(final, name_slots)
         return final
-
-    @staticmethod
-    def _empty_name_result(index: int) -> dict:
-        return {
-            "index": index,
-            "raw_name": "",
-            "name": "",
-            "candidates": [],
-            "resolution": "unknown",
-            "length_mode": "unknown",
-            "confidence": 0.0,
-            "evidence": [],
-        }
 
     def _append_single_name_evidence(
         self,
         evidence: list[dict],
-        raw_roi: np.ndarray,
+        raw_roi: "np.ndarray",
         slot: int,
     ) -> None:
         """仅为未确认槽位补充 gamma 提亮图和 plain 放大图两路证据。"""
         enhanced = self._preprocessor.preprocess_roi_enhanced(raw_roi)
         text, confidence = self._recognize_prepared_single(enhanced, slot, "name")
-        self._append_evidence(evidence, "single_enhanced", text, confidence)
+        self._resolver.append_evidence(evidence, "single_enhanced", text, confidence)
         plain = self._preprocess_plain_roi(raw_roi)
         text, confidence = self._recognize_prepared_single(plain, slot, "name")
-        self._append_evidence(evidence, "single_plain", text, confidence)
-
-    @staticmethod
-    def _append_evidence(
-        evidence: list[dict], source: str, text: str, confidence: float,
-    ) -> None:
-        normalized = text.strip()
-        if normalized:
-            evidence.append({
-                "source": source,
-                "text": normalized,
-                "confidence": round(float(confidence), 4),
-            })
-
-    def _resolve_name_evidence(self, index: int, evidence: list[dict]) -> dict:
-        """在各路证据候选闭包的交集内确认名称。"""
-        result = self._empty_name_result(index)
-        result["evidence"] = list(evidence)
-        if not evidence:
-            return result
-
-        strongest = max(evidence, key=lambda item: float(item.get("confidence", 0.0)))
-        result["raw_name"] = str(strongest.get("text", "")).strip()
-        result["confidence"] = round(float(strongest.get("confidence", 0.0)), 4)
-        parsed = [self._parse_name_evidence(item) for item in evidence]
-        candidate_sets = [set(item["candidates"]) for item in parsed if item["candidates"]]
-        candidate_union = set().union(*candidate_sets) if candidate_sets else set()
-        length_modes = {
-            item["length_mode"] for item in parsed if item["candidates"]
-        }
-        if len(length_modes) == 1:
-            result["length_mode"] = next(iter(length_modes))
-        elif length_modes:
-            result["length_mode"] = "uncertain"
-
-        exact_names = {item["name"] for item in parsed if item["resolution"] == "exact"}
-        if len(exact_names) == 1:
-            name = exact_names.pop()
-            if any(name not in candidates for candidates in candidate_sets):
-                result.update(
-                    candidates=sorted(candidate_union | {name}),
-                    resolution="conflict",
-                )
-                return result
-            result.update(name=name, resolution="exact")
-            result["candidates"] = [result["name"]]
-            return result
-        if len(exact_names) > 1:
-            result["resolution"] = "conflict"
-            result["candidates"] = sorted(candidate_union | exact_names)
-            return result
-
-        confirmed = {
-            item["name"] for item in parsed
-            if item["resolution"] in _CONFIRMED_RESOLUTIONS and item["name"]
-        }
-        if len(confirmed) == 1:
-            name = confirmed.pop()
-            if any(name not in candidates for candidates in candidate_sets):
-                result.update(
-                    candidates=sorted(candidate_union | {name}),
-                    resolution="conflict",
-                )
-                return result
-            resolutions = [
-                item["resolution"] for item in parsed if item["name"] == name
-            ]
-            result.update(
-                name=name,
-                candidates=[name],
-                resolution=max(resolutions, key=_RESOLUTION_PRIORITY.get),
-            )
-            return result
-        if len(confirmed) > 1:
-            result["resolution"] = "conflict"
-            result["candidates"] = sorted(candidate_union | confirmed)
-            return result
-
-        consensus = self._unmatched_consensus_name(evidence)
-        if consensus:
-            if not candidate_sets:
-                result.update(candidates=[], resolution="unknown_new_hero")
-            else:
-                # 词表外但存在候选：可能是新武将（王导），也可能是生僻字被稳定
-                # 误读或整字漏识（王濬→"王"），抑制评分决胜、保留候选走人工确认
-                result.update(candidates=sorted(candidate_union), resolution="unresolved")
-            return result
-
-        if not candidate_sets:
-            return result
-
-        common = set.intersection(*candidate_sets)
-        if not common:
-            result.update(candidates=sorted(candidate_union), resolution="conflict")
-            return result
-
-        winner = self._resolve_multi_candidate_similarity(evidence, parsed, common)
-        if winner:
-            result.update(
-                name=winner,
-                candidates=[winner],
-                resolution="multi_similarity",
-            )
-            return result
-
-        result.update(candidates=sorted(common), resolution="unresolved")
-        return result
-
-    def _parse_name_evidence(self, evidence: dict) -> dict:
-        text = str(evidence.get("text", "")).strip()
-        if not text:
-            return {
-                "name": "",
-                "candidates": [],
-                "resolution": "unknown",
-                "length_mode": "unknown",
-            }
-        if text in self._hero_names:
-            return {
-                "name": text,
-                "candidates": [text],
-                "resolution": "exact",
-                "length_mode": "complete",
-            }
-        prefix_candidates = [
-            hero for hero in self._hero_names
-            if len(hero) > len(text) and hero.startswith(text)
-        ]
-        same_length_candidates = [
-            hero for hero in self._hero_names
-            if len(hero) == len(text)
-            if levenshtein_distance(text, hero)
-            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
-        ]
-        if prefix_candidates and same_length_candidates:
-            return {
-                "name": "",
-                "candidates": sorted(set(prefix_candidates) | set(same_length_candidates)),
-                "resolution": "unresolved",
-                "length_mode": "uncertain",
-            }
-        if len(prefix_candidates) == 1 and len(text) >= _UNIQUE_PREFIX_MIN_LENGTH:
-            return {
-                "name": prefix_candidates[0],
-                "candidates": prefix_candidates,
-                "resolution": "unique_prefix",
-                "length_mode": "missing",
-            }
-        if prefix_candidates:
-            return {
-                "name": "",
-                "candidates": prefix_candidates,
-                "resolution": "unresolved",
-                "length_mode": "missing",
-            }
-        if len(same_length_candidates) == 1 and self._similarity_service.is_safe_single_substitution(
-            text, same_length_candidates[0],
-        ):
-            return {
-                "name": same_length_candidates[0],
-                "candidates": same_length_candidates,
-                "resolution": "unique_similarity",
-                "length_mode": "complete",
-            }
-        if same_length_candidates:
-            return {
-                "name": "",
-                "candidates": same_length_candidates,
-                "resolution": "unresolved",
-                "length_mode": "complete",
-            }
-        length_mismatch_candidates = [
-            hero for hero in self._hero_names
-            if levenshtein_distance(text, hero)
-            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
-        ]
-        return {
-            "name": "",
-            "candidates": length_mismatch_candidates,
-            "resolution": "unresolved" if length_mismatch_candidates else "unknown",
-            "length_mode": "uncertain" if length_mismatch_candidates else "unknown",
-        }
-
-    def _resolve_multi_candidate_similarity(
-        self,
-        evidence: list[dict],
-        parsed: list[dict],
-        candidates: set[str],
-    ) -> str:
-        """完整等长名称仅在两个独立证据族均通过双门槛时决胜。"""
-        if len(candidates) < 2:
-            return ""
-
-        by_family: dict[str, tuple[dict, dict]] = {}
-        for raw, item in zip(evidence, parsed, strict=False):
-            confidence = float(raw.get("confidence", 0.0))
-            if (
-                item.get("length_mode") != "complete"
-                or confidence < _MULTI_CANDIDATE_MIN_CONFIDENCE
-            ):
-                continue
-            family = self._evidence_family(str(raw.get("source", "")))
-            current = by_family.get(family)
-            if current is None or confidence > float(current[0].get("confidence", 0.0)):
-                by_family[family] = (raw, item)
-
-        supported: dict[str, str] = {}
-        for family, (raw, _item) in by_family.items():
-            text = str(raw.get("text", "")).strip()
-            ranked = self._similarity_service.rank_single_substitution_candidates(
-                text, candidates,
-            )
-            if len(ranked) < 2:
-                continue
-            best_name, best_score = ranked[0]
-            margin = best_score - ranked[1][1]
-            if (
-                best_score >= _MULTI_CANDIDATE_MIN_SIMILARITY
-                and margin >= _MULTI_CANDIDATE_MIN_MARGIN
-            ):
-                supported[family] = best_name
-
-        winners = set(supported.values())
-        if (
-            len(supported) >= _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES
-            and len(winners) == 1
-        ):
-            return winners.pop()
-        return ""
-
-    def _unmatched_consensus_name(self, evidence: list[dict]) -> str:
-        """全部证据族以极高置信度一致读出同一词表外原文时返回该原文，否则空串。
-
-        词表外但命中确定性混淆字对白名单的原文不视为新武将，
-        交由既有评分决胜纠错（如"王翡"→王翦）。
-        """
-        by_family: dict[str, tuple[str, float]] = {}
-        for raw in evidence:
-            text = str(raw.get("text", "")).strip()
-            confidence = float(raw.get("confidence", 0.0))
-            if not text or confidence < _UNMATCHED_CONSENSUS_MIN_CONFIDENCE:
-                return ""
-            family = self._evidence_family(str(raw.get("source", "")))
-            current = by_family.get(family)
-            if current is None or confidence > current[1]:
-                by_family[family] = (text, confidence)
-        if len(by_family) < _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES:
-            return ""
-        texts = {text for text, _ in by_family.values()}
-        if len(texts) != 1:
-            return ""
-        text = next(iter(texts))
-        if text in self._hero_names or self._has_whitelist_correction(text):
-            return ""
-        return text
-
-    def _has_whitelist_correction(self, text: str) -> bool:
-        """等长替换一处即可命中白名单混淆字对的词表武将时返回 True。"""
-        return any(
-            self._similarity_service.single_substitution_similarity(text, hero) == 1.0
-            for hero in self._hero_names
-            if len(hero) == len(text)
-        )
-
-    @staticmethod
-    def _evidence_family(source: str) -> str:
-        if "plain" in source:
-            return "plain"
-        if "enhanced" in source:
-            return "enhanced"
-        return source or "unknown"
-
-    @staticmethod
-    def _requires_slot_recheck(result: dict, text: str, confidence: float) -> bool:
-        return (
-            not text
-            or confidence < _NAME_RECHECK_CONFIDENCE
-            or result["resolution"] in {"unresolved", "unknown", "conflict"}
-        )
-
-    def _resolve_page_names(self, results: list[dict]) -> list[dict]:
-        """按页面唯一性消歧，并将重复确认结果回退为冲突。"""
-        occupied = {item["name"] for item in results if item["name"]}
-        pending = [
-            item for item in results
-            if (
-                item["resolution"] == "unresolved"
-                and len(item["candidates"]) > 1
-                and item.get("length_mode") in {"missing", "complete"}
-            )
-        ]
-        remaining = {
-            item["index"]: set(item["candidates"]) - occupied
-            for item in pending
-        }
-        for item in pending:
-            candidates = remaining[item["index"]]
-            if not candidates and item["candidates"]:
-                item["resolution"] = "conflict"
-                continue
-            if len(candidates) != 1:
-                item["candidates"] = sorted(candidates)
-                continue
-            candidate = next(iter(candidates))
-            if any(
-                candidate in other_candidates
-                for other_index, other_candidates in remaining.items()
-                if other_index != item["index"]
-            ):
-                item["candidates"] = [candidate]
-                continue
-            item.update(name=candidate, candidates=[candidate], resolution="slot_unique")
-
-        by_name: dict[str, list[dict]] = {}
-        for item in results:
-            if item["name"]:
-                by_name.setdefault(item["name"], []).append(item)
-        for name, duplicates in by_name.items():
-            if len(duplicates) < 2:
-                continue
-            strongest = max(_RESOLUTION_PRIORITY[item["resolution"]] for item in duplicates)
-            winners = [
-                item for item in duplicates
-                if _RESOLUTION_PRIORITY[item["resolution"]] == strongest
-            ]
-            for item in duplicates:
-                if len(winners) == 1 and item is winners[0]:
-                    continue
-                item.update(name="", candidates=[name], resolution="conflict")
-        return results
+        self._resolver.append_evidence(evidence, "single_plain", text, confidence)
 
     def _recheck_unresolved_slots(
         self,
@@ -694,7 +329,7 @@ class GeneralRecognizer:
                     "武将 %d 复核读数 %r 未命中候选闭包，维持原状", item["index"], text,
                 )
                 continue
-            item.update(self._resolve_name_evidence(item["index"], [
+            item.update(self._resolver.resolve_name_evidence(item["index"], [
                 *item["evidence"],
                 {
                     "source": "recheck",
@@ -762,8 +397,8 @@ class GeneralRecognizer:
         engine 缺省用主引擎；B2 复核模式传入 v6 复核引擎对未决槽重读。
         """
         mapped: dict[int, list[tuple[str, float, float]]] = {slot: [] for slot in prepared_slots}
-        for group in self._split_canvas_groups(prepared_slots):
-            canvas, ranges = self._build_batch_canvas({slot: prepared_slots[slot] for slot in group})
+        for group in split_canvas_groups(prepared_slots):
+            canvas, ranges = build_batch_canvas({slot: prepared_slots[slot] for slot in group})
             try:
                 ocr_started = time.perf_counter()
                 result = (engine or self._engine).ocr(canvas, cls=False)
@@ -789,10 +424,10 @@ class GeneralRecognizer:
         recognized: dict[int, tuple[str, float]] = {}
         for slot, candidates in mapped.items():
             if kind == "name" and len(candidates) > 1:
-                candidates = self._join_name_fragments(slot, candidates)
+                candidates = join_name_fragments(slot, candidates)
             if evidence_by_slot is not None:
                 for text, confidence, _center_y in candidates:
-                    self._append_evidence(
+                    self._resolver.append_evidence(
                         evidence_by_slot.setdefault(slot, []),
                         f"batch_{'plain' if kind == 'name' else kind}",
                         text,
@@ -808,43 +443,6 @@ class GeneralRecognizer:
                 logger.info("武将 %d %s 拼图结果不唯一或置信度过低，逐槽回退", slot, kind)
         return recognized
 
-    @staticmethod
-    def _split_canvas_groups(prepared_slots: dict[int, np.ndarray]) -> list[list[int]]:
-        """按宽度累积分组，保证每组画布（含槽间隙）不超过检测器工作尺度。
-
-        画布超宽会被 PaddleOCR 检测器整体降采样（长边压到 960），缩放过深时
-        竖排名的行级检测退化为逐字分段（2026-09 巅峰赛 14 卡 3372px 画布事故）；
-        分块让每次检测都落在与单条回退一致的原生尺度上。
-        """
-        groups: list[list[int]] = []
-        current: list[int] = []
-        width = 0
-        for slot in sorted(prepared_slots):
-            strip_width = prepared_slots[slot].shape[1]
-            if current and width + _BATCH_SLOT_GAP + strip_width > _BATCH_CANVAS_MAX_WIDTH:
-                groups.append(current)
-                current, width = [], 0
-            current.append(slot)
-            width += strip_width + (_BATCH_SLOT_GAP if len(current) > 1 else 0)
-        if current:
-            groups.append(current)
-        return groups
-
-    @staticmethod
-    def _join_name_fragments(
-        slot: int,
-        candidates: list[tuple[str, float, float]],
-    ) -> list[tuple[str, float, float]]:
-        """同槽多框按 y 序拼接为整名——竖排名条被拆成碎片时，框内文本按上下顺序重排即为原文。
-
-        拼接置信度取碎片最小值：整名的可信度取决于最不可信的一截。
-        """
-        ordered = sorted(candidates, key=lambda item: item[2])
-        joined = "".join(text for text, _confidence, _center_y in ordered)
-        confidence = min(confidence for _text, confidence, _center_y in ordered)
-        logger.debug("武将 %d 拼图碎片拼接: %s -> %r", slot, [text for text, _c, _y in ordered], joined)
-        return [(joined, confidence, ordered[-1][2])]
-
     def _requires_name_batch_fallback(self, text: str) -> bool:
         """避免截断文本被多候选纠错静默绑定到错误武将。"""
         if not self._hero_names or text in self._hero_names:
@@ -855,23 +453,6 @@ class GeneralRecognizer:
             <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
         ]
         return len(candidates) != 1
-
-    @staticmethod
-    def _build_batch_canvas(
-        prepared_slots: dict[int, np.ndarray],
-    ) -> tuple[np.ndarray, dict[int, tuple[int, int]]]:
-        height = max(image.shape[0] for image in prepared_slots.values())
-        width = sum(image.shape[1] for image in prepared_slots.values())
-        width += _BATCH_SLOT_GAP * (len(prepared_slots) - 1)
-        canvas = np.zeros((height, width), dtype=np.uint8)
-        ranges: dict[int, tuple[int, int]] = {}
-        left = 0
-        for slot, image in prepared_slots.items():
-            image_height, image_width = image.shape[:2]
-            canvas[:image_height, left:left + image_width] = image
-            ranges[slot] = (left, left + image_width)
-            left += image_width + _BATCH_SLOT_GAP
-        return canvas, ranges
 
     def _add_timing(self, key: str, started: float) -> None:
         self._timing_ms[key] = self._timing_ms.get(key, 0.0) + (time.perf_counter() - started) * 1000

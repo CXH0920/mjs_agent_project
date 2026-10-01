@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 from src.main import _create_startup_splash
+from src.ui.app.dialog_coordinator import DialogCoordinator
 from src.ui.app.main_window import MainWindow
 
 
@@ -75,9 +76,10 @@ def test_official_import_temporarily_stops_and_restores_polling(monkeypatch) -> 
     window._recommendation = SimpleNamespace(
         mark_recommendation_indexes_stale=lambda: None,
     )
-    monkeypatch.setattr("src.ui.app.main_window.OfficialDataImportDialog", Dialog)
+    window._dialogs = DialogCoordinator(window)
+    monkeypatch.setattr("src.ui.app.dialog_coordinator.OfficialDataImportDialog", Dialog)
 
-    window._open_official_data_import()
+    window._dialogs.open_official_data_import()
 
     assert calls[-3:] == ["stop", "exec", "sync"]
 
@@ -111,8 +113,9 @@ def test_official_import_preserves_paused_poll_state(monkeypatch) -> None:
     window._recommendation = SimpleNamespace(
         mark_recommendation_indexes_stale=lambda: None,
     )
-    monkeypatch.setattr("src.ui.app.main_window.OfficialDataImportDialog", Dialog)
+    window._dialogs = DialogCoordinator(window)
+    monkeypatch.setattr("src.ui.app.dialog_coordinator.OfficialDataImportDialog", Dialog)
 
-    window._open_official_data_import()
+    window._dialogs.open_official_data_import()
 
     assert calls == ["exec"]

@@ -38,6 +38,8 @@ src/ocr/
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
 ├── character_similarity.py # CharacterSimilarityService — 名称纠错与白名单静态冲突检查
 ├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排、B2 复核
+├── name_resolution.py         # 名称证据解析与页面消歧（纯决策层，审计 G3 4.6a）
+├── batch_canvas.py             # 名称拼图批量画布（分块/拼接/碎片重排，审计 G3 4.6b）
 ├── paddle_loader.py       # PaddleOCR 统一构造 + B2 复核引擎（RapidOCR/PP-OCRv6-small/ONNX）
 └── ocr_loader.py          # 模板管理器单例
 ```

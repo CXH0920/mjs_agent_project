@@ -125,7 +125,10 @@ src/business/maintenance/         # 本模块占 3 文件
 src/ui/maintenance/               # 维护工作台 UI（全部）
 ├── maintenance_workspace.py      # 工作台外壳（左栏导航 + 右工作区 + 折叠日志）
 ├── rag_maintenance_panel.py      # 业务逻辑：语料状态 / 审计横幅 / 一键重建
-├── index_refinement_dialog.py    # 索引精化对话框（只渲染与确认）
+├── index_refinement_dialog.py    # 索引精化对话框（范围/选中/保存编排 + 渲染词汇绑定）
+├── refinement_vocab.py           # 索引精化渲染词汇表（字段标签/提示/状态色，对话框与 pane 共用）
+├── refinement_list_pane.py       # 清单区 pane（搜索/筛选/表格填充，纯渲染）
+├── refinement_editor_pane.py     # 编辑区 pane（条目头/原文/字段卡片构建，纯渲染）
 ├── rule_doc_panel.py             # 元规则母本四个子页签
 ├── card_points_panel.py          # 卡牌点数维护面板
 └── equip_attrs_panel.py          # 装备属性维护面板
@@ -495,7 +498,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 |------|---------|
 | `maintenance_workspace.py` | `MaintenanceSourceNav`（`WIDTH=230`；信号 `source_selected` / `rebuild_requested` / `meta_requested`；`add_group` / `add_source` / `select` / `set_selected` / `set_task_states` / `item_keys` / `status_text`）；`MaintenanceWorkspace`（`LOG_COLLAPSED_HEIGHT=32` / `LOG_EXPANDED_HEIGHT=180`；`add_group` / `add_source` / `select_source` / `has_source` / `current_source_key` / `set_interactive` / `expand_log` / `collapse_log` / `is_log_expanded` / `on_log_output` / `reset_unread` / `set_log_meta`） |
 | `rag_maintenance_panel.py` | `RagMaintenancePanel`（信号 `data_changed`；`refresh()` / `reload_data()` / `_run(args)` / `_jump_to_issue(issue)` / `_show_corpus_meta(key)`）；`task_states(root)` 计算 `最新`/`待重建`/`缺源`；`_output_count(path)` 带 `(mtime, size)` 缓存；`EDITABLE_SOURCE_ITEMS` 5 项 / `READONLY_CORPUS_ITEMS` 5 项 / `_MAX_AUDIT_ROWS=3` |
-| `index_refinement_dialog.py` | `IndexRefinementDialog(corpus_dir, parent)`，构造时 `resize(1160, 720)` 作为最小窗口，`_open_refinement()` 打开前再按主窗口尺寸 `resize`（否则工作台最小尺寸会把它撑到整屏）。顶部三档范围 `pending`/`curated`/`all`；行状态 `pending`/`suggested`/`modified`/`refined`/`generated`；字段状态 `empty`/`llm`/`manual`/`saved` |
+| `index_refinement_dialog.py` | 清单/编辑构建与纯渲染拆入 `refinement_list_pane.py` / `refinement_editor_pane.py`（对话框以 ~20 个单行 property 桥保持既有测试锚点名）；`IndexRefinementDialog(corpus_dir, parent)`，构造时 `resize(1160, 720)` 作为最小窗口，`_open_refinement()` 打开前再按主窗口尺寸 `resize`（否则工作台最小尺寸会把它撑到整屏）。顶部三档范围 `pending`/`curated`/`all`；行状态 `pending`/`suggested`/`modified`/`refined`/`generated`；字段状态 `empty`/`llm`/`manual`/`saved` |
 | `rule_doc_panel.py` | `RuleDocPanel(root)`，四个子页签（文档状态 / 数据段差异 / 提案工作台 / 疑难登记）；信号 `data_changed` / `script_started` / `script_output(bytes)` / `script_finished(int)` |
 | `card_points_panel.py` | `CardPointsPanel(repository, root)`，信号 `data_changed`；牌行 + `judge_rules` 判定规则增删改；「从 xlsx 导入」经 `ScriptRunner` 异步执行 |
 | `equip_attrs_panel.py` | `EquipAttrsPanel(repository)`，信号 `data_changed`；列 `("名称","细分类型","攻击范围","距离修正","备注")`，名称/备注只读 |

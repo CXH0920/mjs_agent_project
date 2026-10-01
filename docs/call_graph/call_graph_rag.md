@@ -944,7 +944,7 @@ HeroClassificationPanel.reload_data() / SpecialCardsPanel.reload_data()  [归类
 | `CardPointsService.*` | `business/maintenance/corpus_services.py` | 卡牌点数写路径 | `CardPointsPanel` |
 | `SpecialCardsService.*` | 同上 | 专属牌写路径 | `SpecialCardsPanel` |
 | `ClassificationService.*` | 同上 | 武将分类写路径（内存 + 显式 save） | `HeroClassificationPanel` |
-| `suggest_hero_categories(...)` | `business/maintenance/classification_suggest.py` | 武将分类 LLM 建议 | `HeroClassificationPanel._HeroCategoryWorker` |
+| `suggest_hero_categories(...)` | `business/maintenance/classification_suggest.py` | 武将分类 LLM 建议 | `HeroTab._HeroCategoryWorker`（classification/hero_tab.py） |
 | `run_edit_dialog(dialog, persist, ...)` | `ui/shared/persist.py` | 模态编辑 + 保存失败重试循环 | `CardPointsPanel` |
 
 > 【假设】`SpecialCardsPanel` 与 `HeroClassificationPanel` 的完整方法清单（如 `add_item` 调用细节、`reload_data` 内部实现）未逐行复读，本文档只覆盖它们与本模块相关的写路径与 `data_changed` 联动。两文件物理位置已确认为 `src/ui/library/`。
@@ -1188,7 +1188,7 @@ _set_busy(busy)                                                [执行期间]
 | `apply_rule_proposal.apply_proposal(doc_text, proposal)` | `apply_rule_proposal.main()` | `APPLYERS` 五种合入动作 |
 | `CardPointsService.add_card/replace_card/delete_card` | `CardPointsPanel._add/edit/delete_card()` | `CardPointsRepository.*` |
 | `ClassificationService.save/set_hero_categories/...` | `HeroClassificationPanel` | `HeroClassificationRepository.*` |
-| `suggest_hero_categories(...)` | `HeroClassificationPanel._HeroCategoryWorker` | `generator.complete()`, `extract_json()` |
+| `suggest_hero_categories(...)` | `HeroTab._HeroCategoryWorker` | `generator.complete()`, `extract_json()` |
 | `atomic_write_json(path, data, indent)` | 全部仓储、`refinement_service`、`rule_doc_service`、`rag_common.save_json` | `tempfile.mkstemp`, `os.replace` |
 | `JsonRepository._save_or_rollback(snapshot)` | 四个仓储 CRUD | `save()`, `_restore()` |
 
@@ -1230,7 +1230,7 @@ src.scraper.ai.batch (main)
 | `src.business.common.script_runner.ScriptRunner` | QProcess 公共封装（经 `src/ui/shared/widgets.py` 再导出） |
 | `src.ui.shared.persist.run_edit_dialog` | 模态编辑 + 保存失败重试循环 |
 | `src.ui.shared.rich_diff` | 提案/差异详情对话框的 Git 风格差异渲染 |
-| `src.ui.library.hero_classification_panel` / `special_cards_panel` | 物理位于 `src/ui/library/`，由本模块工作台承载 |
+| `src.ui.library.hero_classification_panel`（页签在 `src/ui/library/classification/`） / `special_cards_panel` | 物理位于 `src/ui/library/`，由本模块工作台承载 |
 | `src.config.env` | `PROJECT_ROOT`、`parse_env_file()`、`resolve_api_config()`、`PROVIDER_PRESETS` |
 | `sentence_transformers.SentenceTransformer` | bge-small-zh-v1.5 向量模型 |
 | `chromadb.PersistentClient` | 本地向量数据库 |
