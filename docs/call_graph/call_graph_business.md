@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-29）
+## 当前实现基线（2026-10-01）
 
 成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回；`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`，非零退出时由基类发射 `error_occurred(msg)`；`HeroFetchService` 无论成败都发 `fetch_completed(exit_code == 0)`。
 
@@ -516,12 +516,10 @@ MainWindow._on_poll_result(result)                             [主线程仅更�
 | `begin_poll()` -> `int \| None` | `ocr_service.py` | `PollCoordinator._on_poll_tick()` | 检查状态与在途标记，置 `_poll_in_flight` |
 | `complete_poll(generation, outcome, detail)` | `ocr_service.py` | `PollCoordinator._consume_poll_result()` / `_on_poll_tick()` | 状态迁移 + 动态调整定时器间隔 |
 | `invalidate_inflight_poll()` | `ocr_service.py` | `PeakSelectWatcher.start()` | 作废在途会话并复位 `_poll_in_flight` |
-| `is_poll_cancelled(generation)` | `ocr_service.py` | 在途轮询线程 | 代数比较 + 取消标记 |
 | `pause_for_idle()` | `ocr_service.py` | `PollCoordinator._track_idle_watch()` | 闲置达阈值时暂停轮询，状态迁移为 "idle_paused" |
 | `is_poll_idle_paused()` | `ocr_service.py` | `PollCoordinator._on_poll_tick()` | 闲置暂停状态下拦截轮询，返回 True |
 | `activate_task()` / `deactivate_task()` / `set_task_cooldown()` / `clear_task_cooldown()` | `ocr_service.py` | `MainWindow._on_poll_result()` / 巅峰赛 watcher | 按任务独立维护 `PollTaskState` |
 | `due_poll_tasks()` | `ocr_service.py` | `PollCoordinator` | 过滤 active 且未冷却的任务 |
-| `run_ocr(image, rois)` | `ocr_service.py` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed`（30 秒超时返回 None） |
 | `create_template(image, roi, template_name)` | `ocr_service.py` | `MumuConfigCoordinator` | `get_template_manager(name).set_template()` |
 | `select_template(file_path, template_name)` | `ocr_service.py` | `MumuConfigCoordinator` | `shutil.copy2()` + 删元数据, `tm.reload()` |
 | `delete_template(template_name)` | `ocr_service.py` | `MumuConfigCoordinator` | `get_template_manager(name).delete_template()` |
@@ -838,8 +836,6 @@ src.ui.data_admin.official_import_review_dialog
 | `create_template(image, roi, template_name)` | `MumuConfigCoordinator` | `get_template_manager(name).set_template()` |
 | `select_template(file_path, template_name)` / `delete_template(template_name)` | `MumuConfigCoordinator` | `shutil.copy2()` + `tm.reload()` / `tm.delete_template()` |
 | `template_path(name)` / `is_template_loaded(name)` | `MumuConfigCoordinator.template_status()` | 模板管理器只读查询 |
-| `set_hero_names(names)` | `MainWindow.__init__()` | 存储 hero_names 供 `run_ocr()` |
-| `run_ocr(image, rois)` | 兼容外部同步调用 | 注入的 `submit_ocr_task()`，等待 `OcrTask.completed`（30 秒超时返回 None） |
 
 ### 其他业务服务
 

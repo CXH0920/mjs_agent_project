@@ -2,7 +2,7 @@
 
 > 对应目录：`src/capture/` + `src/ocr/`
 > 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、PaddleOCR 武将名识别与 B2 复核、白名单治理
-> 文档日期：2026-09-21
+> 文档日期：2026-10-01
 
 ---
 
@@ -263,12 +263,12 @@ else:
 
 | 层 | 速度 | 覆盖 |
 |----|------|------|
-| `char_info_cache.json`（396 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
+| `char_info_cache.json`（424 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
 `CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`（随包只读基线），也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `src/scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。五笔 86 全码来自离线码表 `src/data/wubi86.txt`，笔画数来自 UNIHAN `Unihan_IRGSources.txt`；码表缺失时对应维度按 0 分处理，不阻断识别。
 
-基线缓存已补齐「存祖逖」等 29 字（a1f5ff0、2583571），总计 396 字，修复 CI 武将名词表覆盖断言。
+基线缓存已补齐「存祖逖」等 29 字（a1f5ff0、2583571）及后续官网武将同步新增字符（74234a8），总计 424 字，修复 CI 武将名词表覆盖断言。
 
 用户层缓存 `data/char_info_cache.json` 与基线缓存合并：运行时动态补齐的特征写入用户层，基线缓存保持只读（随包分发）。用户层格式异常时仅警告并忽略，不影响基线功能。
 
@@ -281,7 +281,9 @@ else:
 
 **打包态模型路径**：frozen 下 Paddle 的 C++ 层不支持中文路径，若随包带了 `paddleocr_models/`（det/rec/cls）且 `%TEMP%` 为纯 ASCII，则把模型复制到 `%TEMP%\mjs_ocr_models` 并把 `det_model_dir` / `rec_model_dir` / `cls_model_dir` 指向副本（`.synced` 标记避免重复复制）；`%TEMP%` 含中文或打包未含模型时回退默认路径。开发态不做复制，沿用 PaddleOCR 默认缓存目录。`create_paddle_ocr()` 全程持有模块级 `_LOAD_LOCK`，保证并发预热与首次识别只构造一份引擎。
 
-`src/ocr/recognizer.py::GeneralRecognizer._engine` 增加**加载熔断**：PaddleOCR 引擎加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"，不再对每次识别重复尝试加载（避免反复触发昂贵的模型初始化）。同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）改为 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
+`src/ocr/recognizer.py::GeneralRecognizer._engine` 增加**加载熔断**：PaddleOCR 引擎加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"，不再对每次识别重复尝试加载（避免反复触发昂贵的模型初始化）。
+
+> **78fd65c 死代码清理：** `CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()` 同步等待路径（30 秒有限等待）已移除，生产识别全部走异步 `submit_ocr_task()`。
 
 **OCR 任务模板控制**：`OcrTask` 中 `match_template=True` 时执行模板匹配前置过滤；`match_template=False` 时跳过模板匹配直接 OCR（巅峰赛卡位检测路径通过 `submit_ocr_task(match_template=False)` 使用）。模板未命中时，`fallback_on_template_miss=True` 可强制回退执行 OCR（对局攻略路径使用），否则返回 `healthy_no_match`。
 

@@ -1,9 +1,13 @@
-﻿# 调用链路：巅峰赛与实战配队
+# 调用链路：巅峰赛与实战配队
 
 > 对应源码：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/business/maintenance/combo_import_service.py` + `src/scripts/import_combos.py`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 
 ---
+
+## 当前实现基线（2026-09-30）
+
+**48b0f99 fix(peak) 巅峰赛选将人工确认残留修复：** 巅峰赛识别循环会话状态随停止一并清空（stop() 清 `_resolutions`/`_resolution_raws`/`_stale_rounds`/`_ban_names`/`_last_board`）；图片导入前经 `verified_resolutions_for_import()` 按内容校验旧确认（无后续拍可宽限，无法定位立即丢弃）；`confirm_pending()` 加牌面在位守卫（`last_board is None` 时拒绝并提示）；面板 `_on_pool_updated()` 加同名槽位显性告警（duplicate_count>0 时日志 + 状态栏 TONE_WARNING）；停止/牌面退出经 `_mark_stale()` 摘待确认行防误点，卡片保留供复盘。此前残留确认会被后续图片导入按槽位号盲目套用（2026-09-30 卓文君被顶成孙尚香事故）。
 
 ## 一、巅峰赛选将实时识别链路
 
@@ -14,17 +18,22 @@ PeakSelectPanel._on_toggle_watcher()
   -> [已运行] PeakSelectWatcher.stop()
      -> _timer.stop()
      -> [_state_lock] _session += 1 — 先作废在途旧拍再恢复任务
+     -> [_state_lock] 清空 _resolutions / _resolution_raws / _stale_rounds / _ban_names / _last_board
+        — 会话状态随停止一并清空（48b0f99）：槽位号是跨牌面不稳定键，残留确认会被
+        后续图片导入按槽位号盲目套用（2026-09-30 卓文君事故）
      -> ocr_service.set_task_hold("hero_selection", False) — 解除持有（顺序先于恢复：否则恢复激活会被自己持有拒绝）
       -> _restore_standard_tasks() — 恢复 hero_selection/match_guide 原状态
+     -> PeakSelectPanel._mark_stale("阶段：已停止") — 摘待确认行防误点，卡片保留供复盘
   -> [未连接] request_mumu_config 信号 + 状态提示
   -> PeakSelectWatcher.start()
-     -> [_state_lock] _session += 1 / 重置 _signature/_ban_names/_resolutions/_last_board
+     -> [_state_lock] _session += 1 / 重置 _signature/_ban_names/_resolutions/_resolution_raws/_stale_rounds/_last_board
      -> _miss_ticks = 0
      -> _suspend_standard_tasks() — 挂起即时生效，记录原状态快照
      -> ocr_service.set_task_hold("hero_selection", True) — 持有加固：会话期间不得被任何入口激活
       -> ocr_service.clear_task_cooldown("hero_selection") / ("match_guide")
      -> ocr_service.invalidate_inflight_poll() — 作废点击开始前在途轮询
      -> _timer.start() 1.5s
+     -> PeakSelectPanel._reset_view() — 清空上一局残影
   -> _timer.timeout -> _on_tick()
      -> _thread_lock.acquire(blocking=False) — 上一拍未完成则跳过
      -> [后台线程] _do_work()
@@ -75,15 +84,20 @@ PeakSelectPanel._build_pending_row(item)
   -> 点击 -> _confirm_candidate(slot, name)
      -> PeakSelectWatcher.confirm_pending(slot, name)
         -> [_state_lock]
-           -> _resolutions[slot] = name
            -> last_board = _last_board
-        -> if last_board: _publish_pool(*last_board)
+           -> accepted = last_board is not None — 牌面在位守卫（48b0f99）
+           -> [accepted] _resolutions[slot] = name / _stale_rounds.pop(slot)
+           -> [accepted] 0 <= slot < len(last_board[0]) 时登记 _resolution_raws[slot] = raw_name
+        -> [not accepted] status_changed("牌面已不在识别中，确认未生效") + return
+           — 停止/退出后残留的待确认行点击兜底（配合 _mark_stale 摘除）
+        -> record_confirmation(raw_name, name, slot_candidates) — 白名单确认集成
+        -> _publish_pool(*last_board)
            -> parse_pool() 校验 name 在候选内才生效
            -> pool_updated.emit
 
 **白名单确认集成（9ca1b91）：** `confirm_pending(slot, name)` 确认时同步调用 `pending_stats.record_confirmation(raw_name, name, candidates)` 收集人工答案，供白名单治理闭环使用。
 
-**确认持久化增强：** `_resolutions` 中的确认结果按内容（而非槽位索引）沿用到后续牌面，`carry_over_resolutions()` 确保用户人工确认不因牌面重排而丢失——原地保留（同名在候选内）、重排迁移（同名唯一命中）、歧义丢弃（同名多命中或无命中）。
+**确认持久化增强：** `_resolutions` 中的确认结果按内容（而非槽位索引）沿用到后续牌面，`refresh_resolutions()` 确保用户人工确认不因牌面重排而丢失——原地保留（同名在候选内）、重排迁移（同名唯一命中）、歧义丢弃（同名多命中或无命中）。
   -> remaining = set(old_resolutions.values())
   -> for slot, item in enumerate(ocr_results):
      -> item.resolution 不在 _CONFIRM_RESOLUTIONS -> 跳过（已自动确认的槽位不接入）
@@ -93,8 +107,10 @@ PeakSelectPanel._build_pending_row(item)
      -> hits = remaining & candidates
         -> len(hits) == 1 -> carried[slot] = 该名 + remaining.discard（重排迁移，同名不扩散）
         -> len(hits) != 1 -> 丢弃（内容消失或候选歧义）
-  -> 由 _do_work() 在新牌面写入签名同一把锁内调用，基准取当前 _resolutions
+  -> 由 `_do_work()` 在新牌面写入签名同一把锁内经 `_refresh_resolutions()` 调用，基准取当前 `_resolutions`
      （覆盖 OCR 期间用户对新牌面 pending 的点击）
+  -> 返回 (carried, carried_raws, unverified)：调用方 `_refresh_resolutions()` 维护 `_stale_rounds`
+     连续失验达 `_STALE_MISS_LIMIT` 上限才丢弃，宽限期内确认回退为该槽识别结果
 ```
 
 ### 1.3 图片导入链路（独立锁，不影响循环）
@@ -114,6 +130,13 @@ PeakSelectPanel._on_import_from_file()
         -> status_changed("检测到 N 张牌面，识别中…")
         -> _recognize_board(image, cards)
            -> None -> status_changed("图片识别未完成，请重试")
+        -> [_state_lock] verified_resolutions_for_import(_resolutions, _resolution_raws, ocr_results)
+           — 48b0f99：导入前校验旧确认，返回 (沿用, 读数指纹, 丢弃数)；与实时循环
+           同一套定位语义，但导入是一次性快照、没有后续拍可宽限，无法定位的确认
+           立即丢弃；顺带把 _stale_rounds 清零
+        -> [dropped > 0] status_changed("图片识别完成（N 条旧人工确认与该牌面不符，已丢弃）")
+        -> [migrated > 0] status_changed("图片识别完成（N 条旧人工确认已按牌面重新定位）")
+        -> [均未] status_changed("图片识别完成")
         -> _publish_pool(ocr_results, len(cards)) — 不动 _signature、不校验会话世代
         -> _import_lock.release()
 ```
@@ -146,7 +169,7 @@ _handle_board_absent(session)
      -> _miss_ticks += 1（锁内自增，避免非原子更新）
      -> exiting = _miss_ticks == BOARD_EXIT_TICKS(=2)
      -> _signature = None
-     -> exiting -> _ban_names = () / _resolutions = {}
+     -> exiting -> _ban_names = () / _resolutions = {} / _resolution_raws = {} / _stale_rounds = {} / _last_board = None
   -> exiting -> _restore_match_guide()
   -> exiting -> board_exited.emit() — 对局攻略的激活/跳转交由主窗口决定
   -> exiting -> status_changed("未检测到巅峰赛选将页牌面")
@@ -155,12 +178,15 @@ _handle_board_absent(session)
 ### 1.5 三板块流程串联（主窗口侧）
 
 ```
-PeakSelectWatcher.board_exited -> PeakSelectPanel.board_exited -> MainWindow
-  -> MainWindow._on_peak_board_exited()
-     -> set_win_rate_mode(WIN_RATE_MODE_PEAK) — 先置位攻略胜率榜为巅峰赛模式
+PeakSelectWatcher.board_exited -> PeakSelectPanel._on_watcher_board_exited()
+  -> _mark_stale("阶段：牌面退出") — 48b0f99：摘待确认行（旧槽位号不再可点），卡片保留供复盘
+     -> _clear_pending_rows() + _pending_area.hide()
+     -> _stage_badge.setText(badge_text)
+  -> PeakSelectPanel.board_exited.emit() -> MainWindow._on_peak_board_exited()
+      -> set_win_rate_mode(WIN_RATE_MODE_PEAK) — 先置位攻略胜率榜为巅峰赛模式
       -> _match_guide_page_active = False
-     -> ocr_service.is_polling -> activate_task("match_guide")
-        -> _match_guide_activated_at = time.monotonic() — 记录激活时刻
+      -> ocr_service.is_polling -> activate_task("match_guide")
+         -> _match_guide_activated_at = time.monotonic() — 记录激活时刻
   -> [match_guide 轮询结果]
      -> TEMPLATE_MISSING / MATCHED -> deactivate_task("match_guide") + 复位激活时刻
         -> MATCHED 且未切过页 -> 可选自动切到对局攻略页 -> MatchGuidePanel.update_block()
@@ -168,6 +194,21 @@ PeakSelectWatcher.board_exited -> PeakSelectPanel.board_exited -> MainWindow
         -> 距 _match_guide_activated_at > MATCH_GUIDE_IDLE_TIMEOUT_SECONDS(=90)
            -> deactivate_task("match_guide") + 复位激活时刻（停止非对局页空转）
 ```
+
+### 1.6 同名槽位显性告警（48b0f99）
+
+```
+PeakSelectPanel._on_pool_updated(snapshot)
+  -> _render_cards() — 先渲染候选卡片（卡片端 dict.fromkeys 去重展示）
+  -> names = list(dict.fromkeys(snapshot.names))
+  -> duplicate_count = len(snapshot.names) - len(set(snapshot.names))
+  -> [duplicate_count > 0]  # 同名槽位意味着人工确认或识别结论打架
+     -> logger.warning("巅峰赛候选出现 N 个同名槽位（人工确认或识别冲突），请复核")
+     -> _append_log("⚠ 同名槽位 N 个，请复核待确认行")
+     -> _action_bar.set_status("检测到 N 个同名槽位，请复核", TONE_WARNING)
+```
+
+> 此前同名槽位被静默去重，"14 张牌只显示 13 个名字"的异常被藏起来。48b0f99 起显性告警，用户可回到待确认行人工复核。
 
 ## 二、禁选建议判定链路
 
@@ -422,23 +463,31 @@ MainWindow._on_peak_board_exited() -> set_win_rate_mode(WIN_RATE_MODE_PEAK)
 | `derive_name_rois(cards)` | `card_grid_detector.py` | PeakSelectWatcher._recognize_board() | 按卡内比例派生名条 ROI |
 | `board_signature(cards)` | `peak_select_watcher.py` | PeakSelectWatcher._do_work() | 原始 bbox 元组签名（判等必须用 board_signature_equal） |
 | oard_signature_equal(left, right) | peak_select_watcher.py | PeakSelectWatcher._do_work() | 逐卡容差判等（位置 8px / 尺寸 16px），消除量化边界翻转致同板反复全量 OCR |
-| `PeakSelectWatcher.start/stop` | `peak_select_watcher.py` | PeakSelectPanel._on_toggle_watcher() / shutdown() | _state_lock 内会话世代递增、状态重置、挂起/恢复标准任务、set_task_hold 持有加固、清双任务冷却、作废在途轮询 |
+| `PeakSelectWatcher.start/stop` | `peak_select_watcher.py` | PeakSelectPanel._on_toggle_watcher() / shutdown() | _state_lock 内会话世代递增、状态重置（start 清 6 项、stop 48b0f99 起也清 _resolutions/_resolution_raws/_stale_rounds/_ban_names/_last_board）、挂起/恢复标准任务、set_task_hold 持有加固、清双任务冷却、作废在途轮询 |
 | `PeakSelectWatcher._do_work` | `peak_select_watcher.py` | _on_tick | 会话世代校验（四处）、capture、detect、每拍幂等重挂、board_signature_equal 容差判等、recognize、_refresh_resolutions、publish |
 | `PeakSelectWatcher._recognize_board` | `peak_select_watcher.py` | _do_work / _do_file_recognition | submit_ocr_task、超时/未完成处理 |
 | `PeakSelectWatcher._publish_pool` | `peak_select_watcher.py` | _do_work / _do_file_recognition / confirm_pending | _state_lock 全程组装、parse_pool、pool_updated 信号（锁外发出） |
 | `PeakSelectWatcher._suspend_standard_tasks` | `peak_select_watcher.py` | start() / _do_work()（每拍，含签名未变的拍） | 首次记录原状态快照，之后仅挂起 active 任务（幂等） |
 | `PeakSelectWatcher._restore_match_guide` | `peak_select_watcher.py` | _handle_board_absent() | 牌面自动退出时仅恢复 match_guide 原状态 |
 | `PeakSelectWatcher._restore_standard_tasks` | `peak_select_watcher.py` | stop()（set_task_hold(False) 之后） | activate/deactivate_task 恢复全部标准任务原状态 |
-| `PeakSelectWatcher._handle_board_absent(session)` | `peak_select_watcher.py` | _do_work | 锁内世代校验、miss_ticks 计数、_state_lock 清理、_restore_match_guide、board_exited 信号 |
-| `PeakSelectWatcher.confirm_pending` | `peak_select_watcher.py` | PeakSelectPanel._confirm_candidate | _state_lock 写入确认、_publish_pool 重发快照 |
+| `PeakSelectWatcher._handle_board_absent(session)` | `peak_select_watcher.py` | _do_work | 锁内世代校验、miss_ticks 计数、_state_lock 清理（exiting 时清 _ban_names/_resolutions/_resolution_raws/_stale_rounds/_last_board）、_restore_match_guide、board_exited 信号 |
+| `PeakSelectWatcher.confirm_pending` | `peak_select_watcher.py` | PeakSelectPanel._confirm_candidate | _state_lock 写入确认 + 读数指纹、**牌面在位守卫**（last_board 为 None 时拒绝并提示"牌面已不在识别中"，48b0f99）、record_confirmation 白名单登记、_publish_pool 重发快照 |
 | `PeakSelectWatcher.recognize_image_file` | `peak_select_watcher.py` | PeakSelectPanel._on_import_from_file | _do_file_recognition 后台线程（独立锁，不校验会话世代） |
 | `PeakSelectWatcher.board_exited` | `peak_select_watcher.py` | _handle_board_absent（经 PeakSelectPanel 透出） | MainWindow._on_peak_board_exited 切换胜率榜模式 + 衔接激活 match_guide |
 | `parse_pool(ocr_results, card_count, ...)` | `peak_select_watcher.py` | _publish_pool | PoolSnapshot 构造（已确认/待确认/已禁/阶段/撞车数） |
 | `refresh_resolutions(resolutions, raws, ocr_results)` | `peak_select_watcher.py` | _do_work（新牌面） | 逐拍验证人工确认内容存续（闭包/读数指纹/重排迁移），连续失验达上限才丢弃 |
+| `verified_resolutions_for_import(resolutions, raws, ocr_results)` | `peak_select_watcher.py` | _do_file_recognition | 48b0f99 新增：复用 refresh_resolutions 的定位语义，但导入是一次性快照、无法定位的确认**立即丢弃**（返回 dropped 计数），避免旧槽位号盲目套用到新牌面 |
+| `PeakSelectPanel._on_toggle_watcher` | `peak_select_panel.py` | 开始识别按钮 | watcher.start/stop + _mark_stale / _reset_view + 状态提示 |
+| `PeakSelectPanel._mark_stale(badge_text)` | `peak_select_panel.py` | _on_toggle_watcher(停止分支) / _on_watcher_board_exited | 48b0f99 新增：_clear_pending_rows + hide(_pending_area) + 阶段徽章置灰（卡片保留供复盘） |
+| `PeakSelectPanel._on_watcher_board_exited` | `peak_select_panel.py` | watcher.board_exited | _mark_stale("阶段：牌面退出") + board_exited.emit 转主窗口 |
+| `PeakSelectPanel._on_import_from_file` | `peak_select_panel.py` | 三点菜单 [从图片导入] | ocr_warmup_state 守卫、QFileDialog、watcher.recognize_image_file |
+| `PeakSelectPanel._update_import_availability` | `peak_select_panel.py` | capture_service.ocr_warmup_state_changed | 预热中禁用 [从图片导入]（Paddle 加载持 GIL 会冻结界面） |
+| `PeakSelectPanel._on_save_screenshot` | `peak_select_panel.py` | 三点菜单 [保存截图] | CaptureRequestLock(ADB_SAVE) + do_capture(perform_ocr=False) |
+| `PeakSelectPanel._on_capture_result / _on_capture_failed` | `peak_select_panel.py` | capture_service.capture_completed / capture_failed | CaptureRequestLock.finish 校验，仅 ADB_SAVE 来源时更新状态栏 |
 | `evaluate_peak_ban_advice` | `peak_ban_advice.py` | PeakSelectPanel._render_cards | 缺失/弱势/冷门强势/热门强势四步判定 |
 | `derive_win_rate_ranks` | `peak_ban_advice.py` | PeakSelectPanel._render_cards | 胜率排名推导 |
 | `PeakHeroCard.set_hero/set_win_rate/set_ban_advice/set_combo_badge` | `peak_hero_card.py` | PeakSelectPanel._render_cards | 卡片头像/胜率/禁选徽章/实战角标渲染 |
-| `PeakSelectPanel._on_pool_updated` | `peak_select_panel.py` | watcher.pool_updated | 阶段/候选汇总、_render_cards、pending、banned |
+| `PeakSelectPanel._on_pool_updated` | `peak_select_panel.py` | watcher.pool_updated | 阶段/候选汇总、_render_cards、pending、banned；48b0f99 起 **同名槽位显性告警**（duplicate_count>0 时 logger.warning + 日志追加 + 状态栏 TONE_WARNING） |
 | `PeakSelectPanel._render_cards` | `peak_select_panel.py` | _on_pool_updated / 排序切换 / combos_changed | 卡片两排布局 + 禁选建议 + 实战角标 |
 | `PeakSelectPanel._refresh_combo_strip` | `peak_select_panel.py` | _render_cards | ComboManager.list_combos 匹配 + best_ratings |
 | `PeakSelectPanel._render_combo_chips` | `peak_select_panel.py` | _refresh_combo_strip | 实战配队 chip 渲染 |

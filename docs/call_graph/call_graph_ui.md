@@ -1,4 +1,4 @@
-# 调用链路：UI 界面层
+﻿# 调用链路：UI 界面层
 
 > 对应源码：`src/ui/`
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-29）
+## 当前实现基线（2026-09-30）
 
 ```
 MainWindow.__init__()
@@ -123,7 +123,7 @@ MainWindow.__init__(hero_manager, synergy_manager, guide_manager)
                              guide_fetch, synergy_fetch,
                              combo_manager=ComboManager())        [AI 任务工作流]
      -> CaptureService()                                          [截图服务]
-     -> OcrService() + set_ocr_task_submitter(capture.submit_ocr_task)
+     -> OcrService()
      -> get_mumu_config() -> capture.update_config() / ocr.update_config()
      -> ocr.set_hero_names([...])                                 [设置武将名列表]
      -> PollCoordinator(capture, ocr, hero_names_provider)        [轮询编排]
@@ -998,12 +998,12 @@ HeroDetailPanel.show_hero(hero_id)
 ### 6.1 武将选择对话框基类
 
 ```
-BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, parent)
-  -> self._setup_ui(tip)
+BaseHeroSelectDialog.__init__(hero_manager, title, tip_text, selection_mode, max_selection, min_selection, allowed_names, parent)
+  -> self._setup_ui(tip_text)
     -> self._hero_mgr.list_heroes()                             [加载全部武将]
     -> self._hero_mgr.list_factions()                           [加载势力列表]
     -> [UI 布局]:
-       -> PageHeader(title, tip)
+       -> PageHeader(title, tip_text)
        -> QLineEdit(搜索) → textChanged → _apply_filter
        -> CheckableComboBox(彩色势力标签 + 多选下拉) → checked_values_changed → _apply_filter
           -> 右侧上下箭头随浮动筛选层展开/收起切换，同一按钮再次点击显式收起
@@ -1024,14 +1024,16 @@ BaseHeroSelectDialog.__init__(hero_manager, title, tip, mode, format, max, paren
     -> self.accept()
 ```
 
+> **bf7a0df 死代码清理（D1）：** `ReturnFormat` 参数管线（`IDS`/`HEROES_DICT`）已删除——此前子类通过它声明返回格式，但从未有任何消费方按格式分支，全部直接读 `selected_ids`/`selected_heroes`/`selected_hero`。现子类无需再传 `format`，仅按需用这三个公开属性读取结果。
+
 ### 6.2 子类配置
 
-| 对话框 | 继承自 | SelectionMode | max_selection | 返回格式 | 特殊覆盖 |
-|--------|--------|---------------|---------------|----------|----------|
-| `HeroFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 无限制 | `IDS` | 无 |
-| `GuideFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 无限制 | `HEROES_DICT` | 攻略状态筛选、状态标签和重新生成提示 |
-| `SynergyPairDialog` | `BaseHeroSelectDialog` | `MULTI_LIMIT` | 8 | `HEROES_DICT` | `_on_accept`: 允许 2~8 个 |
-| `SynergySingleDialog` | `BaseHeroSelectDialog` | `SINGLE` | 1 | `HEROES_DICT` | 无 |
+| 对话框 | 继承自 | SelectionMode | max_selection | min_selection | 特殊覆盖 |
+|--------|--------|---------------|---------------|---------------|----------|
+| `HeroFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 0（无限制） | 1 | 无；调用方读 `selected_ids` |
+| `GuideFetchDialog` | `BaseHeroSelectDialog` | `MULTI` | 0（无限制） | 1 | 攻略状态筛选、状态标签和重新生成提示；调用方读 `selected_heroes` |
+| `SynergyPairDialog` | `BaseHeroSelectDialog` | `MULTI_LIMIT` | 8 | 2 | `_on_accept`: 允许 2~8 个，直接构造 pair 组合；调用方读 `selected_heroes` |
+| `SynergySingleDialog` | `BaseHeroSelectDialog` | `SINGLE` | 0 | 1 | 无；调用方读 `selected_hero` |
 
 ### 6.3 模拟器配置对话框
 

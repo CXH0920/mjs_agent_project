@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-09-29
+> 文档日期：2026-10-01
 
 ---
 
@@ -445,8 +445,12 @@ PeakSelectPanel
 - 候选池按 `_sort_by_win_rate` 开关可选按巅峰赛胜率降序排列（无胜率沉底）
 - 实时匹配实战配队：`ComboManager.list_combos()` 中 hero1/hero2 均在当前池内 → 按 rating 降序显示 chip，点击 chip 打开 `show_combo_detail`
 - 禁选建议徽章通过 `evaluate_peak_ban_advice(rate, pick_rank, win_rate_rank)` 渲染，`PeakHeroCard.set_ban_advice()`
-- 待确认槽位点击候选即触发 `PeakSelectWatcher.confirm_pending(slot, name)`，确认后计入候选与已禁口径
+- 待确认槽位点击候选即触发 `PeakSelectWatcher.confirm_pending(slot, name)`，确认后计入候选与已禁口径；无在识别中的牌面时确认被拒绝并提示"牌面已不在识别中，确认未生效"
 - OCR 模型预热（`ocr_warmup_state == "warming"`）时禁用图片导入，避免界面冻结
+
+**2026-09 人工确认残留修复（48b0f99）**：
+- **同名槽位显性告警**：`_on_pool_updated()` 检测候选池出现重复武将名时（`duplicate_count = len(names) - len(set(names))`），写日志 + 追加识别日志"⚠ 同名槽位 N 个，请复核待确认行" + 状态栏 warning 提示复核，不再静默去重隐藏"14 张牌只显示 13 个名字"
+- **会话结束摘待确认行**：`_mark_stale()` 在停止识别或牌面退出时清空待确认行（`_clear_pending_rows()` + `_pending_area.hide()`），卡片保留供复盘；待确认行按钮落在旧牌面槽位号上，牌面不在就不该再点，误点兜底由 `confirm_pending()` 在位守卫承担
 
 ### 3.7 API 配置对话框
 
@@ -719,11 +723,11 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 
-## 七、代码规模（2026-09-29 基线）
+## 七、代码规模（2026-10-01 基线）
 
 - **测试模块数**：112 个测试文件
-- **测试用例数**：1337 个 `test_*` 函数
-- **`main_window.py` 行数预算**：819 行（`FILE_LINE_BUDGETS` 棘轮，菜单栏重排新增「文件」菜单组与数据菜单两条分组分隔线，净 +2）
+- **测试用例数**：1350 个 `test_*` 函数
+- **`main_window.py` 行数预算**：552 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩）
 
 ## 八、知识库维护界面（已迁出）
 

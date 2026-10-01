@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作
-> 文档日期：2026-09-29
+> 文档日期：2026-10-01
 
 ---
 
@@ -44,10 +44,13 @@ src/data/
 ├── peak_win_rate_repository.py   # 巅峰赛单将胜率 + 出场排行 CSV 读取（独立于 2v2 胜率）
 ├── win_rate_repository.py        # 2v2 胜率 CSV 读取（打包基线 BUNDLE_ROOT/data）
 ├── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验 / 官方导入落盘跨仓储联动
-└── char_info_cache.json          # 武将名词表字形基线缓存（OCR 辅助，CI 覆盖率断言；2026-09 补齐 29 字）
+├── corpus_fields.py              # 语料索引字段契约（CARD_FIELDS / HERO_FIELDS / fields_for，精化服务与构建合并共用单一来源）
+└── char_info_cache.json          # 武将名词表字形基线缓存（OCR 辅助，CI 覆盖率断言；424 字）
 ```
 
 四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。2026-09 起（241e965），`hero_classification_repository.py` 在爬虫更新 `heroes.json` 后，归类/专属牌名单随刷新入口同步加载，无需手动重建语料。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
+
+四个维护仓库的磁盘实测规模（2026-10-01）：`card_points.json`（72 行牌面 + 12 条判定规则）、`equip_attrs.json`（26 件装备）、`special_cards.json`（85 条专属牌/战法/状态/概念）、`hero_classification.json`（7 个顶层键：`version` 2.0 / `updated_at` / `source` / `note` / `categories` 16 项分类定义 / `hero_categories` 186 键武将归类映射 / `counter_chain` 8 键克制链）。
 
 百科 diff 忽略名单 `baike_ignore_store.py`（0007fc4 新增）管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化。`BaikeIgnoreStore` 模型含 `version` 与 `heroes` / `cards` 两段 `dict[str, IgnoreEntry]`，覆盖式保存；`IgnoreEntry` 以 `state`（added/modified/removed）+ `hash` 共同定位"同一差异"，`filter_ignored()` 在检查链路上过滤被压制条目——`modified/added` 需 state 匹配且 hash 等于当前官网哈希（官网内容再变即重现），`removed` 仅按 state 匹配（官网再上线会以 `added` 出现，state 不匹配自然重现）。忽略不影响基线快照推进，也不影响武将时间轴（时间轴数据源是公告列表，与 diff 无关）。
 
@@ -231,7 +234,7 @@ def _save_unlocked(self) -> None:
 
 ### 3.8 武将变更时间轴
 
-`hero_timeline.py` 维护 `data/mjs_adjustments.json`——武将变更事件流的唯一事实源，用于给 RAG 语料块打版本戳并默认只召当前版本。
+`hero_timeline.py` 维护 `data/mjs_adjustments.json`——武将变更事件流的唯一事实源，用于给 RAG 语料块打版本戳并默认只召当前版本。实测 4 个顶层键（`init_imported_at` / `init_source_last_updated` / `corpus_base_date` / `events`），事件 144 条（126 条 `source=init` + 18 条 `source=announcement`）；2026-09-30 公告追加左思调整、陶渊明新增、魏华存增强三条事件（74234a8）。
 
 **数据文件结构**（`DEFAULT_DATA_DIR / "mjs_adjustments.json"`）：
 
@@ -540,7 +543,7 @@ class SpecialCardRepository(JsonRepository):
 | 仓库 | 数据文件 | 关键 CRUD |
 |------|----------|-----------|
 | `CardPointsRepository` | `data/card_points.json` | `add_card/replace_card/delete_card` + `add_rule/update_rule/delete_rule` |
-| `EquipAttrsRepository` | `data/equip_attrs.json` | `add_equip/update_equip/delete_equip` |
+| `EquipAttrsRepository` | `data/equip_attrs.json` | `add_equip/update_equip` |
 | `HeroClassificationRepository` | `data/hero_classification.json` | `add_category/update_category/delete_category` + `set_counter_chain` + `set_hero_categories` + `list_unclassified` |
 | `SpecialCardRepository` | `data/special_cards.json` | `add_item/update_item/delete_item`（同类别同名不可重复） |
 
@@ -595,7 +598,7 @@ class SpecialCardRepository(JsonRepository):
 | `remove_entry(kind, entry_id, path=None)` | 恢复一条忽略（下次检查该差异将重新显示） |
 | `filter_ignored(diff, official_hashes, entries)` | 过滤 diff 三态中被忽略的条目，返回 `(过滤后 diff, 被过滤条数)` |
 | 模型 | `IgnoreEntry`（`name`/`state`/`hash`/`ignored_at`）/ `BaikeIgnoreStore`（`version`/`heroes`/`cards` 两段） |
-| 常量 | `DEFAULT_BAIKE_IGNORE_FILE` / `VALID_KINDS = ("heroes", "cards")` |
+| 常量 | `DEFAULT_BAIKE_IGNORE_FILE` |
 
 > 业务服务不直接导入本模块——`AnnouncementService`（武将段）与 `CardSyncService`（卡牌段）各封装一组方法（`ignore_hero` / `ignored_hero_count` / `list_ignored_heroes` / `restore_heroes`；`ignore_card` / `ignored_card_count` / `list_ignored_cards` / `restore_cards`），UI 经服务操作不触数据层。
 

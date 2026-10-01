@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-29）
+## 当前实现基线（2026-10-01）
 
 `DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。武将变更时间轴 `data/mjs_adjustments.json` 于 2026-08-29 首次落地，与 `heroes.json` 并行供 RAG 构建脚本使用。
 
@@ -14,7 +14,7 @@
 
 **新增（0007fc4）**：`baike_ignore_store.py`——百科 diff 忽略名单，管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化，详见 [十四、百科 diff 忽略名单链路](#十四百科-diff-忽略名单链路baike_ignore_storepy)。
 
-**代码规模**：112 个测试文件 / 1337 个 `test_*` 函数（AST 静态计数，未计入 `parametrize` 展开）。
+**代码规模**：112 个测试文件 / 1350 个 `test_*` 函数（AST 静态计数，未计入 `parametrize` 展开）。
 
 ```
 MainWindow._load_data() -> DataFacade.load_all()

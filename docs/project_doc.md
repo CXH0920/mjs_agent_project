@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-09-29（`0007fc4` + 工作树未提交改动）
+> 代码基线：2026-09-30（`885ea96` + 工作树未提交改动）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-09-29
+> 文档日期：2026-09-30
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -30,7 +30,7 @@
 
 ---
 
-## 当前代码基线与业务不变量（2026-09-29）
+## 当前代码基线与业务不变量（2026-09-30）
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化）。
 
@@ -45,7 +45,7 @@
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` 队列 -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 与常规 OCR 共享同一 `OcrWorker` 的 FIFO 队列（互斥由 `OcrService._import_busy` 串行化，并非独占 worker）；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` → `AdbCapture.screencap_full()`/`screencap_raw()` → `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复） |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
-| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> 会话世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务 |
+| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> 会话世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时清空确认表与牌面引用 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
 | 卡牌百科同步 | 「数据」菜单 → `CardSyncDialog` | `CardSyncService.check_now()`（后台抓官网手牌库）→ `card_baike.fetch_cards()` → diff 快照 → `apply_updates()`（确认应用）→ `card_sync_store` 持久化 | 更新确认对话框展示变更明细，确认后原子写入 `data/cards.json`，快照和变更记录落盘 |
 
@@ -308,8 +308,8 @@ def run(raw_list, output_path, dry_run, append=False, replace_ids=None, skip_ima
 - **配置**：`RAG_ENABLED`（true）、`RAG_TOP_K`（12）、`RAG_PROMPT_CHARS`（6000）、`RAG_BROWSER_PROMPT_CHARS`（3000）、`RAG_SYNERGY_PROMPT_CHARS`（6000）、`RAG_MODEL_DIR`。
 - **CLI**：`--no-rag` 禁用增强；`--rebuild-rag-index` 重建向量索引后退出；dry-run 分别展示 RAG 增强与经典模式两套成本。
 - **维护**：`python -m src.scripts.maintain_rag --force --build-index` 或应用内「知识库维护」页面。
-- **规模（2026-09）**：`src/business/rag/task_defs.py` 定义 **10 个语料任务**，对应 `data/rag_corpus/` 下 **12 个语料 JSON**，合计 **2118 个检索块**（武将语料 639 / 组合语料 509 / 武将攻略语料 357 / 武将分类语料 184 / 特殊机制语料 85 / FAQ 裁定块 82 / 术语表 50 / 加强削弱语料 49 / 卡牌语料 49 / 卡牌点数花色语料 49 / 元规则章节块 38 / 装备属性语料 27）。
-- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 141 条事件 = 126 条初始化 + 15 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。
+- **规模（2026-09）**：`src/business/rag/task_defs.py` 定义 **10 个语料任务**，对应 `data/rag_corpus/` 下 **12 个语料 JSON**，合计 **2128 个检索块**（武将语料 647 / 组合语料 509 / 武将攻略语料 357 / 武将分类语料 186 / 特殊机制语料 85 / FAQ 裁定块 82 / 术语表 50 / 加强削弱语料 49 / 卡牌语料 49 / 卡牌点数花色语料 49 / 元规则章节块 38 / 装备属性语料 27）。
+- **语料块版本戳（2026-09，`hero_timeline` 接入）**：武将变更时间轴以 `data/mjs_adjustments.json` 为事实源（`init_imported_at=2026-08-29`、`init_source_last_updated=2026-08-25`、`corpus_base_date=2026-08-28`，当前 144 条事件 = 126 条初始化 + 18 条公告追加）。`stamp_hero_block` / `stamp_guide_block` 为武将语料块打 `as_of` 版本戳、`is_current` 当前性标记与 `content_md5` 内容指纹，过时块带 `staleness_reason` / `staleness_hint` 提示；检索层**默认只召当前版本**（`is_current=true`）。首次注入用 `python -m src.scripts.import_hero_adjustments --input <json>`，后续公告检查由 `_sync_timeline()` 按 `ref` / `(date, hero)` 幂等追加。
 - **检索性能（2026-08）**：`Retriever` 加载语料时构建武将/牌名倒排 `_hero_index` 与 `_id2text/_id2meta` 字典，`hero_blocks()`、`_text_of()`、`_meta_of()` 不再线性遍历全量块；静态 `KEYWORDS` 关键词倒排 `_keyword_index` 惰性构建，`_keyword_hits()` 中查询相关名称保持线性扫描（数量少），避免每次查询全量遍历。`src/rag/config.py` 不再在 import 时创建目录，改由使用点确保（#49）。
 - **T0 元规则文档增量维护（2026-08-15，工作台 2026-08 落地）**：`docs/元规则整理-完整版.md` 为规则专家知识库 T0 权威文档，只增不删语义。完整工作流：① 官方更新先跑 `src/scripts/diff_source_data.py` 对比 `data/backups` 生成变更清单（含“是否新机制”启发式标记）；② `src/scripts/audit_rule_doc.py` 机器校验（解析回声/表格结构/块 ID 唯一/ID 稳定性/FAQ 编号/确认状态一致性/交叉引用/已定稿块指纹/章节结构指纹，`--strict` 可进 CI，快照 `src/.rule_doc_snapshot.json`（项目根））；③ `src/scripts/sync_rule_stats.py` 把 `data/*.json` 统计同步到文档数据快照段（0.1/0.2/3.1/3.2/3.5/5.2，full 全自动、candidate 半自动、checkpoint 校验点）；④ 新机制走提案-确认（`src/scripts/propose_rule_changes.py` 用 DeepSeek 起草结构化提案，模板 `docs/templates/元规则提案单.md`，归档 `docs/archive/proposals/`；人工把条目置 approved/revised/rejected）；⑤ `src/scripts/apply_rule_proposal.py` 合入（faq_new/faq_revise/term_new/row_revise/section_new）→ audit --strict（失败回滚）→ 重建元规则语料 → 写 `docs/changelog/元规则changelog.md` → 提案归档；⑥ 疑难先登记 `docs/rule_doc_pending.json`，可一键转 FAQ 提案；⑦ `src/scripts/eval_rule_faqs.py` 做 FAQ 裁定回归评估（向量检索命中率，零 LLM 成本，评估集 `data/rag_evals/rule_faq_eval.json`）。`maintain_rag.py` 的「元规则/术语/FAQ」任务改为 dynamic（按快照块数只增校验，任务成功自动刷新快照）。以上全部能力集成在「知识库维护 → 元规则维护」页签（`rule_doc_panel.py` + `rule_doc_service.py`），完整流程见 `docs/元规则T0文档维护方案.md`。
 - **T0 源数据与可视化维护（2026-08 迁移）**：RAG 源数据已从 xlsx 拆分为 JSON——`data/card_points.json`（162 张牌花色点数，72 组合 × 数量 + 12 条牌名级判定规则）、`data/equip_attrs.json`（26 件装备属性）、`data/special_cards.json`（专属牌/专属战法牌并入并回填花色/点数/攻击范围/结算详情，当前 83 条）；xlsx 归档 `data/archive/`，「知识库维护」页提供语料状态 / 元规则维护 / 专属牌 / 卡牌点数 / 装备属性 / 武将分类六个页签，保存后自动标记待重建；`src/scripts/migrate_excel_to_json.py` 保留“从 xlsx 导入”应急通道。
@@ -660,7 +660,6 @@ class OcrService(QObject):
 | `start_poll(interval_ms)` | 启动轮询 QTimer |
 | `stop_poll()` | 停止轮询并清除冷却 |
 | `set_cooldown(seconds)` | 设置冷却时间（OCR 匹配成功后调用） |
-| `run_ocr(image, rois)` | 对单张图片执行 OCR（同步等待最多 30 秒，超时返回 None） |
 | `pause_for_idle()` | 闲置暂停：由 `PollCoordinator` 调用，标记轮询因闲置而暂停 |
 | `is_poll_idle_paused() → bool` | 检查轮询是否处于闲置暂停状态 |
 | `begin_poll()` / `complete_poll(generation, outcome)` | 轮询世代管理（2026-09 新增）：`begin_poll()` 递增世代号，`complete_poll()` 提交结果；过期世代的结果被丢弃 |
@@ -824,7 +823,7 @@ class CardSyncService(QObject):
 
 | 数据文件 | 管理类 | 数据量 |
 |----------|--------|--------|
-| `data/heroes.json` | HeroManager(DataManager[Hero]) | 184 武将 / 438 技能 |
+| `data/heroes.json` | HeroManager(DataManager[Hero]) | 186 武将 / 461 技能 |
 | `data/synergies.json` | SynergyManager(DataManager[SynergyScore]) | 55 条相性（当前数据） |
 | `data/guides.json` | GuideManager(DataManager[HeroGuide]) | 162 份攻略（当前数据） |
 | `data/cards.json` | — | 基础卡牌 |
@@ -833,14 +832,14 @@ class CardSyncService(QObject):
 | `data/equip_attrs.json` | EquipAttrsRepository | 26 件装备属性（细分/攻击范围/距离修正） |
 | `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
 | `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（16 类、180 条武将归类；AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
-| `data/mjs_adjustments.json` | hero_timeline（`load_timeline` / `append_announcement_events`） | 武将变更时间轴：133 条事件（126 初始化 + 7 公告追加）；RAG 语料块 `as_of` 版本戳的事实源，不属"裁定权威 6 JSON" |
+| `data/mjs_adjustments.json` | hero_timeline（`load_timeline` / `append_announcement_events`） | 武将变更时间轴：144 条事件（126 初始化 + 18 公告追加）；RAG 语料块 `as_of` 版本戳的事实源，不属"裁定权威 6 JSON" |
 | `data/combos.json` | ComboManager | 实战配队 1570 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序；含逻辑删除字段 `deleted` / `deleted_at`） |
 | `data/card_snapshot.json` | card_sync_store | 卡牌百科快照（`CardSnapshot`，全量卡片当前状态） |
 | `data/card_changes.json` | card_sync_store | 卡牌百科变更记录（`CardChangeRecord`，未确认的官网差异列表） |
 | `data/武将推荐指数状态.json` | —（`recommendation_index_repository` 写） | 推荐指数生成状态（运行时状态文件，非榜单数据） |
 | `data/2v2{胜率,出场}排行.csv` `data/巅峰赛{胜率,出场}排行.csv` `data/武将放逐.csv` | —（榜单导入写） | 官方榜单，各 175 行；表头：胜率榜 `排名,武将,胜率`，出场/放逐榜 `排名,武将`；`_待复核.csv` 为同名副本 |
 | `data/raw_guides/` | —（社区素材，未入库 raw） | jinxia/guides 45 篇武将攻略 + jinxia/combos 4md+1csv |
-| `data/rag_corpus/*.json` | —（`build_*_corpus.py` 生成） | 12 个语料文件 / 2118 个检索块（含组合 437、攻略 357、武将分类 180） |
+| `data/rag_corpus/*.json` | —（`build_*_corpus.py` 生成） | 12 个语料文件 / 2128 个检索块（含组合 509、攻略 357、武将分类 186） |
 | `data/ocr_name_pending_stats.json` | pending_stats | OCR 未决错法频次与人工确认记录（运行时状态文件，60 秒节流，原子写入） |
 | `config/.disclaimer_state.json` | disclaimer_state | 免责声明接受状态（版本化，`config/` 下） |
 
@@ -946,7 +945,7 @@ def apply_incremental_update(data_dir, update)
   "init_imported_at": "2026-08-29",        # 首次全量注入日期
   "init_source_last_updated": "2026-08-25", # 初始化快照对应源最后更新日
   "corpus_base_date": "2026-08-28",         # 语料块默认 as_of 基线
-  "events": [ ...133 条... ]                # 126 条初始化 + 7 条公告追加
+  "events": [ ...144 条... ]                # 126 条初始化 + 18 条公告追加
 }
 ```
 
@@ -1436,14 +1435,13 @@ def update_recommendations(self, data: list[dict]) → None
 ```
 BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
  ├── SelectionMode 枚举: MULTI / MULTI_LIMIT / SINGLE
- ├── ReturnFormat 枚举: IDS / HEROES_DICT
  ├── 搜索框 + 势力网格 + 复选框列表 + 已选计数 + 确认/取消
  │
  ├── HeroFetchDialog (fetch_dialog.py, ~31行)
- │   SelectionMode=MULTI, ReturnFormat=IDS
+ │   SelectionMode=MULTI
  │
  ├── GuideFetchDialog (guide_fetch_dialog.py, ~90行)
- │   SelectionMode=MULTI, ReturnFormat=HEROES_DICT
+ │   SelectionMode=MULTI
  │   依赖 HeroManager + GuideManager，按未生成/待更新/已有攻略筛选
  │
  ├── SynergyPairDialog (synergy_pair_dialog.py, ~49行)
@@ -2146,7 +2144,7 @@ else:
 | 拼音 | pypinyin | 同上 | JSON 缓存 / 纠错时按需加载 |
 | 笔画数 | UNIHAN `kTotalStrokes`（从 `Unihan_IRGSources.txt` 懒加载） | `CharacterFeatureRepository` | 通过 `unihan_etl.Options().work_dir` 解析文本文件 |
 
-数据文件 `src/data/char_info_cache.json` 包含 396 个高频汉字（武将名 + 已知 OCR 误识字，2026-09 补齐 29 字）。
+数据文件 `src/data/char_info_cache.json` 包含 424 个高频汉字（武将名 + 已知 OCR 误识字）。
 `CharacterFeatureRepository` 可注入缓存路径；缓存缺失的汉字在运行时由原始库动态补齐并写入进程内存，显式 `save()` 时以 UTF-8/LF 原子写入。UNIHAN 导出 CSV 已存在时直接读取，只有目标文件不存在时才执行 `Packager.export()`，避免因重复覆盖默认 AppData 文件而使动态补齐整体降级。pypinyin 预热或查询失败时记录一次 warning 并将拼音源标记为不可用，后续查询直接降级为空值；cnradical 的单字查询失败会记录字符和异常，但不禁用整个部首源。
 
 #### 类结构
@@ -2265,7 +2263,6 @@ def _engine(self):
 - `show_log=False`：不输出 PaddleOCR 的调试日志
 - **推理设备**：`create_paddle_ocr()` 按 `MUMU_OCR_USE_GPU`（默认 false）决定 GPU/CPU；CPU 模式限制 `cpu_threads`（默认 6）并启用 `enable_mkldnn=True`，防止推理打满全部逻辑核心；调用方显式传 `use_gpu` 时优先尊重显式值
 - **加载熔断**：引擎加载失败后置 `self._ocr = False`，后续识别立即快速失败，避免对每次识别重复尝试昂贵的模型初始化
-- 同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）对 `OcrTask.completed` 做 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞
 - 应用启动时由唯一 `OcrWorker` 预热模型和代表性拼图推理；预热失败或未执行时，首次实际调用才承担加载成本
 - Windows 首次导入期间，统一加载入口为 Paddle 的系统与 CUDA 探测短命令设置 `CREATE_NO_WINDOW`，加载完成后恢复标准 `Popen` 行为
 
@@ -2429,7 +2426,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **112 个测试文件 / 1337 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **112 个测试文件 / 1350 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -2862,21 +2859,24 @@ detect_selection_cards(image)
 
 ### 15.3 巅峰赛识别循环（PeakSelectWatcher）
 
-识别会话以 `start()` / `stop()` 为边界，会话内对标准轮询的挂起是**会话级**而非"牌面进出"级：`hero_selection` 在整个会话保持挂起（停止识别才恢复），`match_guide` 仅牌面自动退出时按原状态恢复，其余拍次维持挂起。常量：`POLL_INTERVAL_MS=1500`、`OCR_WAIT_TIMEOUT_SECONDS=15`、`BOARD_EXIT_TICKS=2`、`SIGNATURE_POSITION_QUANTUM_PX=8`、`SIGNATURE_SIZE_QUANTUM_PX=16`、`_BAN_PHASE_MIN_CARDS=12`。
+识别会话以 `start()` / `stop()` 为边界，会话内对标准轮询的挂起是**会话级**而非"牌面进出"级：`hero_selection` 在整个会话保持挂起（停止识别才恢复），`match_guide` 仅牌面自动退出时按原状态恢复，其余拍次维持挂起。`start()` 时 `set_task_hold("hero_selection", True)` 持有锁，拒绝外部（如 ADB 重连）重新激活。`stop()` 和牌面退出时清空确认表、原始指纹、宽限轮次、禁将基线与牌面引用——槽位号是跨牌面不稳定键，残留确认会被图片导入按槽位号盲目套用。常量：`POLL_INTERVAL_MS=1500`、`OCR_WAIT_TIMEOUT_SECONDS=15`、`BOARD_EXIT_TICKS=2`、`SIGNATURE_POSITION_QUANTUM_PX=8`、`SIGNATURE_SIZE_QUANTUM_PX=16`、`_BAN_PHASE_MIN_CARDS=12`。
 
-**会话世代校验**：`_session` 在 `start()` 与 `stop()` 各递增一次；在途识别拍在四处关键写入点前比对（截图后、检测/缺席前、写签名前、发布前），世代不符即整拍放弃，防止停止或重启后的旧拍反向挂起标准任务、把旧签名与旧快照写回新会话。
+**会话世代校验**：`_session` 在 `start()` 与 `stop()` 各递增一次；在途识别拍在四处关键写入点前比对（截图后、检测/缺席前、写签名前、发布前），世代不符即整拍放弃，防止停止或重启后的旧拍反向挂起标准任务、把旧签名与旧快照写回新会话。`start()` 时 `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_ban_names` / `_last_board` 全部重置，`stop()` 和牌面退出（`_handle_board_absent` 达 `BOARD_EXIT_TICKS`）同样清空。
 
 ```
 start()  会话制挂起（start 即生效，不等待首拍检出牌面）
-  ├─ _state_lock: _session += 1；签名/已禁名单/人工确认/最近牌面全部重置
+  ├─ _state_lock: _session += 1；签名/已禁名单/人工确认/原始指纹/宽限轮次/最近牌面全部重置
   ├─ _suspend_standard_tasks()   ← 首拍之前挂起，避免固定 ROI 在巅峰页跑垃圾结果
   ├─ clear_task_cooldown("hero_selection") / ("match_guide")
+  ├─ set_task_hold("hero_selection", True) ← 持有锁，拒绝外部重新激活
   ├─ invalidate_inflight_poll()  ← 作废点击开始前已发出的在途轮询
   └─ _timer.start()
 
 stop()
   ├─ _timer.stop()
-  ├─ _state_lock: _session += 1   ← 先作废旧拍，消除"停止后被旧拍重新挂起"
+  ├─ _state_lock: _session += 1；清 _resolutions / _resolution_raws / _stale_rounds / _ban_names / _last_board
+  │   ← 会话状态随停止清空：槽位号跨牌面不稳定，残留确认会被图片导入盲目套用
+  ├─ set_task_hold("hero_selection", False) ← 先解除持有再恢复
   └─ _restore_standard_tasks()    ← 恢复全部标准任务原状态
 
 _tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后台线程 _do_work()
@@ -2885,25 +2885,29 @@ _tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后�
   ├─ 世代校验①  → detect_selection_cards(frame)
   │   └─ None → _handle_board_absent(session)
   │       ├─ 世代校验②（锁内）→ _miss_ticks += 1；每拍清签名
-  │       └─ == BOARD_EXIT_TICKS=2 → 清已禁名单与人工确认
+  │       └─ == BOARD_EXIT_TICKS=2 → 清 _ban_names / _resolutions / _resolution_raws / _stale_rounds / _last_board
   │           → _restore_match_guide()（只恢复 match_guide，hero_selection 仍挂起）
   │           → board_exited 信号 → 主窗口按轮询状态衔接激活对局攻略页
   ├─ board_signature(cards)  ← 坐标全量量化（8px / 尺寸 16px 步长）
   ├─ 锁内：世代校验③ → _miss_ticks=0 → 每拍幂等挂起（置于 unchanged 短路之前）
   │   → 签名未变 → return（沿用上一次结果）
   ├─ _recognize_board(image, cards)
-  │   ├─ derive_name_rois(cards) → submit_ocr_task(template_name="hero_selection", match_template=False)
+  │   ├─ derive_name_rois(cards) → submit_ocr_task(template_name="peak_board", match_template=False)
   │   └─ task.completed.wait(15)；outcome != "matched" → return None
   │       → 签名清零，下一拍强制重试（仅实时循环路径；图片导入不动签名）
-  ├─ 锁内：世代校验④ → 写签名 → carry_over_resolutions() 沿用人工确认
+  ├─ 锁内：世代校验④ → 写签名 → _refresh_resolutions() 逐拍内容验证
   └─ _publish_pool()  ← 全程持 _state_lock，防跨牌面快照交错
        ├─ parse_pool(ocr_results, card_count, _ban_names, _resolutions)
        └─ stage == "ban" → 快照名单留作已禁差集基准
 ```
 
-**人工确认沿用（`carry_over_resolutions`）**：新牌面不再清空 `_resolutions`，而是按内容沿用——确认跟着武将走、不跟槽位走。槽位未重排时原地保留，重排时迁移到候选集唯一命中的槽位（同名不扩散到多个槽位），内容消失的确认自然失效，歧义槽位保守丢弃。判据与 `parse_pool` 的生效判据对齐，故只可能保留仍然生效的确认。候选阶段卡面的 idle 浮动动画会使签名假性翻转，无条件清空会反复丢失人工确认，这是引入沿用而非清空的直接原因。
+**人工确认逐拍内容验证（`_refresh_resolutions`）**：确认登记时同时记录确认槽位的读数原文指纹（`_resolution_raws`），后续每拍用原文在新候选闭包中验证确认仍有效——稳定错读的确认名可能永远不在候选闭包里，原文复现是它仍属于这张牌的验证信号。连续多拍验证不到（真换人/选走）才淘汰，宽限轮次上限 `_STALE_MISS_LIMIT`。
 
-**兜底人工确认不再随拍重置（2026-09 优化）**：逐拍内容验证加入宽限淘汰机制。此前人工确认的兜底候选在每拍都会随新截图重新验证，导致确认内容被反复淘汰。优化后，兜底人工确认在牌面稳定期间不再随拍重置，仅在内容发生实质变化（签名变化）时才重新验证。宽限淘汰确保确认内容不会因临时波动而丢失。
+**兜底人工确认宽限淘汰（2026-09 优化）**：此前人工确认的兜底候选在每拍都会随新截图重新验证，导致确认内容被反复淘汰。优化后，兜底人工确认在牌面稳定期间不再随拍重置，仅在内容发生实质变化（签名变化）时才重新验证。宽限淘汰确保确认内容不会因临时波动而丢失。
+
+**牌面在位守卫（2026-09-30 新增）**：`confirm_pending` 增加牌面在位守卫——无在识别中的牌面（退出/停止后残留的待确认行）时拒绝确认：槽位号是跨牌面不稳定键，旧确认写入会污染后续识别与图片导入。拒绝时发 `status_changed` 提示"牌面已不在识别中，确认未生效"。
+
+**图片导入前校验旧确认（2026-09-30 新增）**：`_do_file_recognition` 在图片导入识别完成后，调用 `verified_resolutions_for_import` 按当前牌面校验旧人工确认——确认名能在新牌面唯一命中的迁移到对应槽位、无法定位的立即丢弃。状态栏报告丢弃/迁移数量。
 
 **双锁分工**：`_thread_lock` 只保证识别拍单飞；`_state_lock` 串行化识别线程、图片导入线程与 GUI 线程（`start` / `confirm_pending`）对 `_signature` / `_ban_names` / `_resolutions` / `_last_board` 的并发读写。锁内只做纯内存读写，不发 IO、不 emit 信号。
 
@@ -2912,9 +2916,9 @@ _tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后�
 - `overlap`: 候选阶段双方撞车数 = `card_count - 8`
 - `banned`: 相对禁选期已确认名单的差集
 
-**图片导入**：`recognize_image_file()` 使用独立 `_import_lock`，不影响循环签名与标准任务挂起状态。
+**图片导入**：`recognize_image_file()` 使用独立 `_import_lock`，不影响循环签名与标准任务挂起状态。导入识别完成后按当前牌面校验旧人工确认（确认名能唯一命中的迁移、无法定位的丢弃），并在状态栏报告丢弃/迁移数量。
 
-**人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验确认名确实在该槽候选集内才生效；确认后重发快照，待确认槽位计入候选与已禁口径。
+**人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验确认名确实在该槽候选集内才生效；确认名与读数原文一并登记供后续拍验证。无在识别中的牌面（`_last_board` 为 None）时拒绝写入并提示确认未生效。确认后重发快照，待确认槽位计入候选与已禁口径。
 
 ### 15.4 巅峰赛选将工作台（PeakSelectPanel）
 
@@ -2944,6 +2948,9 @@ PeakSelectPanel
 - `_render_cards()` 实时匹配实战配队 + 渲染禁选建议徽章
 - OCR 模型预热（`ocr_warmup_state == "warming"`）时禁用图片导入，避免界面冻结
 - 关闭面板时 `shutdown()` 调用 `watcher.stop()`
+- 开始识别时 `_reset_view()` 重置上一局残影：候选卡片、待确认行、已禁徽章、配队条全部复位
+- 停止识别或牌面退出时 `_mark_stale()` 摘除待确认行并标记过期（防误点旧槽位），卡片保留供复盘
+- 候选出现同名槽位时在面板日志与状态栏显性告警（`duplicate_count > 0`），防止静默去重隐藏识别冲突
 
 ### 15.5 禁选建议象限判定（peak_ban_advice.py）
 
@@ -3120,6 +3127,13 @@ CardSyncDialog
 - **司马睿**（id 197，东晋 / 控制 / 体力5 / 手牌上限3）
 - **张角**新增呼风唤雨技能
 
+2026-09 末次更新（74234a8）：
+- **陶渊明**（id 201，东晋 / 控制 / 体力4 / 手牌上限4）
+- **谢灵运**（id 202，东晋 / 控制 / 体力4 / 手牌上限4）
+- `hero_classification.json` 补充两将分类（东晋 / 控制）
+- `mjs_adjustments.json` 登记左思技能调整（洛阳纸贵/振衣千仞/山水清音）
+- `model_pricing.json` 新增 `sensenova-6.8-flash-lite`（占位价格 0）
+
 ### 16.9 百科差异条目级忽略名单（2026-09）
 
 卡牌百科同步新增**条目级忽略**能力：用户可逐条忽略特定差异条目（武将/卡牌），被忽略的条目不再重复提示，官网更新后该差异自动重现（哈希变化时忽略名单不压制）。
@@ -3176,5 +3190,6 @@ CardSyncDialog
 | **二十八** | **菜单栏重排** | **2026-09** | **四顶层菜单（文件/配置/数据/帮助）；原「导入」取消、「攻略获取」改名「攻略生成」、「数据管理」并入「数据」** |
 | **二十九** | **主窗口拆分** | **2026-09** | **四阶段渐进拆分：AppServices 组合根 / StatusChips 自足组件 / ProgressReporter 进度出口 / PollCoordinator + AnnouncementUpdateCoordinator 管线下沉** |
 | **三十** | **架构分层收口与 src/data 解环** | **2026-09** | **UI 数据 import 白名单、榜数据 provider 注入、FILE_LINE_BUDGETS 行数棘轮；DataFacade/Issues/Manager 三拆消除循环依赖；百科差异条目级忽略名单** |
+| **三十一** | **巅峰赛确认修复 + 死代码清理 + 数据同步** | **2026-09** | **巅峰赛选将人工确认残留修复（牌面在位守卫、导入前校验、停止/退出清空确认表）；死代码 D1–D9 清理（ReturnFormat/last_match_confidence/VALID_KINDS/last_match_time/_updated_at/_selected_*/RAG_PROJECT_DIR）；新增谢灵运/陶渊明武将；model_pricing 新增 sensenova-6.8-flash-lite** |
 
 > 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。

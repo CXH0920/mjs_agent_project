@@ -1,7 +1,7 @@
 # 调用链路：RAG 知识库模块
 
 > 对应源码：`src/rag/`、`src/business/rag/`、`src/business/maintenance/` 的 RAG 三文件、`src/ui/maintenance/` 全部、`src/scripts/` 的语料与维护脚本。
-> 代码基线：`2026-09-29`（含 `d43d549` snapshot_common 下沉）。
+> 代码基线：`2026-10-01`（含 `d43d549` snapshot_common 下沉）。
 > 调用链路说明：箭头 `A() -> B()` 表示函数 A 直接调用函数 B，缩进表示调用嵌套层次。
 > 虚线 `───` 表示跨越进程边界（QProcess / subprocess 子进程）。
 > 与 AI 批量生成、巅峰赛识别、实战配队相关的调用链路见 [call_graph_ai_batch.md](./call_graph_ai_batch.md)、[call_graph_peak_combos.md](./call_graph_peak_combos.md)；业务服务层与界面层总览见 [call_graph_business.md](./call_graph_business.md)、[call_graph_ui.md](./call_graph_ui.md)。

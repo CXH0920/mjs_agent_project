@@ -39,7 +39,5 @@ forbidden_modules =
     src.scraper
     src.capture
 ignore_imports =
-    # 共享叶子校验原语：UI 与 business 双消费，模块自身无任何 src.* 依赖
-    src.ui.configuration.mumu_config_dialog -> src.capture.image_validation
     # 跨三层共享的 ROI 领域类型（同 data/models.py 地位），非业务编排逃逸
     src.ui.configuration.roi_selector -> src.ocr.roi_config

@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-09-29
+> 文档日期：2026-10-01
 
 ---
 
@@ -183,15 +183,13 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 
 **OCR 预热**：`warmup_ocr_model()` 把模型加载、特征预热与推理预热作为特殊 `OcrTask` 投入同一串行队列（状态 `idle/warming/ready/failed`，经 `ocr_warmup_state_changed` 广播）；`wait_ocr_warmup(timeout_ms=15_000)` 供主窗口显示前的启动画面阶段阻塞等待——Paddle 初始化期间长时间持有 GIL，若在事件循环运行后再预热会卡住界面。
 
-同步等待路径带超时保护：`OcrService.run_ocr()` 对 `OcrTask.completed` 做 30 秒有限等待，超时记录告警并返回 `None`，配合识别器加载熔断，避免引擎异常时调用线程无限阻塞。`shutdown()` 停止两个执行器并把 OCR worker 转入退役列表（不在 GUI 线程同步等待），进程退出钩子统一收尾。
-
 **2026-09 变更**：
 - **ADB raw 帧截图提速（cd35c98）**：`capture_for_poll()` 直接返回 numpy 数组（经 `_adb_executor` 排队），与手动截图、模板截图互斥；`AdbCapture.screencap_raw()` 跳过 PIL 解码直接返回 PNG bytes，大幅降低轮询路径的 IO 与解码开销。
 - **`reset_ocr_recognizer_cache()`（9ca1b91）**：白名单治理后调用的引擎缓存重置入口。OCR 识别器（含复核引擎）按 `hero_names` 分片缓存，用户层白名单更新后需使全部旧缓存失效，该方法清除所有分片并在下一轮 OCR 时按新词表重建。
 
 ### 3.3 OcrService（OCR 控制）
 
-控制模板制作、轮询会话与退避状态；不持有任何截图或识别器，识别工作全部经注入的 `set_ocr_task_submitter()` 交给 `CaptureService.submit_ocr_task()`：
+控制模板制作、轮询会话与退避状态；不持有任何截图或识别器，识别工作全部经 `submit_ocr_task()` 交给 `CaptureService`：
 
 ```
 OcrService (QObject)
@@ -213,12 +211,10 @@ OcrService (QObject)
   ├── is_poll_idle_paused() -> bool             → 当前是否处于闲置暂停态
   ├── complete_poll(generation, outcome, detail) → 主线程记录一轮结果并迁移状态
   ├── invalidate_inflight_poll()                 → 作废在途轮询（巅峰赛启动时调用）
-  ├── is_poll_cancelled(generation)              → 代数过期或取消标记已置位
   ├── activate_task(name) / deactivate_task(name)
   ├── set_task_cooldown(name, seconds=None) / clear_task_cooldown(name)
   ├── due_poll_tasks() -> list[str]              → 获取当前到期任务
   ├── get_task_state(name) -> PollTaskState      → 供调度与测试读取
-  └── run_ocr(image, rois=None)                   → 兼容外部同步调用（30 秒有限等待）
 ```
 
 **轮询会话模型**：`PollSession(generation, cancel_event)` 提供会话代数——`start_poll()` / `stop_poll()` / `invalidate_inflight_poll()` 各递增一次代数并置位旧取消标记。在途轮询的后台线程在每个关键写入点检查取消标记，结果回 GUI 线程时再经代数校验，过期结果直接丢弃，避免"停止后又被旧拍重新挂起"或旧结果回写冷却。`_poll_in_flight` 单飞标记保证同一时刻只有一拍在执行；`invalidate_inflight_poll()` 必须同时复位该标记，否则在途一轮不再调用 `complete_poll()` 会让后续轮询永久假死。
@@ -230,7 +226,7 @@ OcrService (QObject)
 - 其他可重试失败（连接、截图、OCR、超时）：失败计数 +1，连续达到 `POLL_MAX_FAILURES = 5` 转 `paused`，否则把定时器间隔动态拉长为 `max(基础间隔, POLL_BACKOFF_DELAYS_MS[计数-1])`（`2s / 5s / 15s / 30s`）并转 `backing_off`，提示剩余重试次数。定时器持续运行（Qt 对激活中的定时器改间隔会重启计数），因此不再需要"单次触发 + 重新排程"。
 - **`idle_paused`（2026-09 新增）**：连续 5 分钟无画面变化时由 `PollCoordinator` 检测帧指纹不变后调 `pause_for_idle()` 进入。独立于故障 `paused`，由整帧指纹判闲（`frame_fingerprint` 32×18 灰度、MAD<3 判同）驱动。恢复路径：点击状态栏闲置暂停胶囊、重新激活主窗口、或触发 `sync_with_connection()`（配置保存/连接变化/导入对话框关闭）。
 
-`start_poll()` 把间隔钳到 `max(interval_ms, 1000)`，并把任务状态重置为 `hero_selection` 激活、`match_guide` 停用；两个任务各自维护 `PollTaskState(active, cooldown_until, last_match_time, consecutive_failures)`，冷却彼此独立，任一任务冷却只跳过自己。任务级冷却缺省取 `POLL_MATCH_COOLDOWN_MS = 180_000`（3 分钟）。
+`start_poll()` 把间隔钳到 `max(interval_ms, 1000)`，并把任务状态重置为 `hero_selection` 激活、`match_guide` 停用；两个任务各自维护 `PollTaskState(active, cooldown_until, consecutive_failures)`，冷却彼此独立，任一任务冷却只跳过自己。任务级冷却缺省取 `POLL_MATCH_COOLDOWN_MS = 180_000`（3 分钟）。
 
 模板按名称独立管理：武将选择模板继续使用 `templates/wujiang_select.png`，对局攻略模板使用 `templates/match_guide/template.png`。模板缺失时对应任务返回 `template_missing`，由消费端停用该任务，不影响另一个任务。
 
@@ -366,22 +362,29 @@ Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程
   ├─ CaptureService.capture_for_poll() 截图
   ├─ detect_selection_cards() → None → _handle_board_absent()
   │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _restore_standard_tasks()
-  ├─ board_signature(cards) 量化坐标/尺寸
-  │   └─ == 上次 → 牌面未变化，沿用结果
+  ├─ board_signature(cards) 生成原始 bbox 元组签名
+  │   └─ board_signature_equal() 逐卡容差判等 → 牌面未变化，沿用结果
   ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide
+  ├─ _refresh_resolutions() 逐拍验证人工确认存续（闭包/读数指纹/重排迁移）
   ├─ _recognize_board() 提交 OcrTask，15s 超时
   └─ _publish_pool() → parse_pool() → PoolSnapshot → pool_updated
 ```
 
 - **PoolSnapshot**：`card_count / names / pending / stage("ban"/"pick") / overlap / banned`
-- **图片导入** `recognize_image_file()`：独立 `_import_lock`，不影响循环
+- **图片导入** `recognize_image_file()`：独立 `_import_lock`，不影响循环签名与挂起状态；**导入前校验旧确认**（48b0f99）——`verified_resolutions_for_import()` 与实时循环共用定位语义（名在闭包 / 原文复现 / 唯一迁移），但导入是一次性快照、没有后续拍可宽限，无法定位的旧确认立即丢弃并提示"图片识别完成（N 条旧人工确认与该牌面不符，已丢弃）"
 - **`stage` 判定**：≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
-- **牌面签名** `board_signature()`：坐标全量量化（位置 4px、尺寸 8px 步长），吸收卡位检测像素级抖动，仅布局变化才触发 OCR
+- **牌面签名** `board_signature()` / `board_signature_equal()`：原始 bbox 元组 + 逐卡容差比较（位置 ±8px、尺寸 ±16px），吸收卡面 idle 浮动动画实测漂移 2 倍幅度，消除 round 量化边界翻转致同板反复全量 OCR（a01836d）
 
 **2026-09 巅峰赛优化（e39b746）**：
 - **兜底人工确认不再随拍重置**：人工确认结果在单拍闭包缺名时进入宽限期保留（不因拍面变化而丢弃），确认优先于自动结论。
 - **逐拍内容验证加宽限淘汰**：确认后的候选名在后续拍中持续比对牌面内容指纹，连续多拍验证不到才淘汰。宽限期确保单拍牌面抖动或漏识别不会直接清除已确认候选。
 - **读数原文指纹兜底**：当 OCR 识别出的牌面内容与预期不符时，以原文指纹作为兜底证据稳定错读，避免在宽限期内因单次误读导致候选被错误淘汰。
+
+**2026-09 巅峰赛选将人工确认残留修复（48b0f99）**：
+- **停止识别后清空会话状态**：`stop()` 在状态锁内清空确认表 `_resolutions` / 读数指纹 `_resolution_raws` / 失验计数 `_stale_rounds` / 禁将基线 `_ban_names` / 牌面板引用 `_last_board`——槽位号是跨牌面不稳定键（选将板与禁将板同槽位并非同一张牌），残留确认会被后续图片导入按槽位号盲目套用，曾把禁将板的卓文君顶成选将板确认的孙尚香（2026-09-30 事故）。
+- **`confirm_pending()` 牌面在位守卫**：无在识别中的牌面（`_last_board is None`）时拒绝确认并提示"牌面已不在识别中，确认未生效"，杜绝退出/停止后残留待确认行被误点写入旧确认。
+- **`_handle_board_absent()` 同步清理**：牌面连续 `BOARD_EXIT_TICKS=2` 拍缺席时清空确认表/读数/失验/禁将基线/牌面板引用，与 `stop()` 对称。
+- **面板同名槽位显性告警**：`peak_select_panel.py` 候选池出现重复武将名时写日志 + 追加识别日志 + 状态栏 warning 提示复核（TONE_WARNING），不再静默去重隐藏"14 张牌只显示 13 个名字"；会话结束（停止/牌面退出）摘除待确认行防误点，卡片保留供复盘。
 
 ### 3.8 巅峰赛禁选建议（peak_ban_advice.py）
 
@@ -697,4 +700,4 @@ def _cleanup_tmp_file(self) -> None:
 | 指标 | 数量 |
 |------|------|
 | 测试模块数 | 112 文件 |
-| 测试用例数 | 1337 个 `test_*` 函数 |
+| 测试用例数 | 1350 个 `test_*` 函数 |

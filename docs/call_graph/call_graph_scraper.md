@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-29）
+## 当前实现基线（2026-10-01）
 
 ```
 official.py:main()      ← shim, 转调 official_source.full.main()

@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、统一日志初始化
-> 文档日期：2026-09-29
+> 文档日期：2026-10-01
 
 ---
 
@@ -174,7 +174,7 @@ root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即�
 ### 3.5 模型价格
 
 - `config/model_pricing.json`（frozen 下位于 `BUNDLE_ROOT/config/`）是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回"无法自动估算"（`get_model_pricing` 返回 `None`）。
-- 价格文件包含 `currency`、`unit`、`updated_at` 和 `models`；计价单位为"百万tokens"，每个模型维护 `input_per_million`、`output_per_million`、可选 `cached_input_per_million` 单价。
+- 价格文件包含 `currency`、`unit`、`updated_at` 和 `models`；计价单位为"百万tokens"，每个模型维护 `input_per_million`、`output_per_million`、可选 `cached_input_per_million` 单价。2026-09 新增 `sensenova-6.8-flash-lite`（74234a8），当前表内实测 3 个模型（deepseek-v4-pro / deepseek-v4-flash / sensenova-6.8-flash-lite）。
 - `load_pricing_config(path)` 负责读取价格表，文件不存在或格式无效时返回默认空表 `{"currency":"CNY","unit":"百万tokens","updated_at":"","models":{}}`。
 - `save_pricing_config(path, data)` 负责 UTF-8 无 BOM、LF 换行的原子写入。
 - `get_model_pricing(model)` 校验单价必须为非负数字（且不是 bool），非法返回 `None`。

@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-09-29（基线 `0007fc4` + 工作树未提交改动）
+> 文档日期：2026-10-01（基线 `885ea96` + 工作树未提交改动）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -8,7 +8,7 @@
 
 名将杀 Agent 是一款面向[名将杀手游](https://mjs.ztgame.com/)的桌面辅助工具。它提供武将数据库查询、AI 批量攻略/相性生成、武将相性分析、实时屏幕采集与 OCR 武将识别、RAG 语料知识库维护等功能，帮助玩家在游戏中快速决策。RAG 语料维护含索引精化工作台，将 LLM 建议编排、清单状态管理与持久化写回下沉为纯业务层，与 UI 解耦。
 
-自基线 `624c8c5`（2026-09-15）以来，项目新增 B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认）、白名单治理（错法频次记录 + 人工确认 + 用户层白名单维护）、轮询闲置自动暂停（整帧指纹判闲 + 三路恢复）与合规化改造（免责声明弹窗 + 附加法律条款 + robots.txt 存档）。
+自基线 `624c8c5`（2026-09-15）以来，项目新增 B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认）、白名单治理（错法频次记录 + 人工确认 + 用户层白名单维护）、轮询闲置自动暂停（整帧指纹判闲 + 三路恢复）与合规化改造（免责声明弹窗 + 附加法律条款 + robots.txt 存档）。2026-09-29 后进一步落地 Phase 4 上帝类拆分（六大目标按职责域出仓 14 个新模块）、API 档案域拆分、巅峰赛选将人工确认残留修复（导入前校验、停止清空确认表/禁将基线、牌面在位守卫、同名槽位显性告警）与官网武将数据同步（新增谢灵运/陶渊明）。
 
 ## 核心功能
 
@@ -40,9 +40,9 @@
 | RAG 检索 | ChromaDB + sentence-transformers（bge-small-zh-v1.5 本地嵌入）+ 关键词 RRF 混合检索 |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
-| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，396 字特征缓存）+ B2 复核引擎（RapidOCR 3.9.2 / PP-OCRv6-small/ONNX） |
+| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，424 字特征缓存）+ B2 复核引擎（RapidOCR 3.9.2 / PP-OCRv6-small/ONNX） |
 | 数据持久化 | JSON + CSV 文件（原子写入，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（112 文件 / 1337 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
+| 测试与静态检查 | pytest 9.0.3（112 文件 / 1350 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -124,11 +124,11 @@ test_project/
 | 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分） |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`** |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议 |
-| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2118 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
-| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、PaddleOCR 识别、官方榜单版式解析 |
-| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板、`MasterDetailPane` 主从列表骨架与实战配队三入口 |
-| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）** |
+| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2128 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
+| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、PaddleOCR 识别、官方榜单版式解析、424 字静态汉字特征缓存 |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口 |
+| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理 + 人工确认残留修复**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
 
 ## 本轮文档校准（2026-09-21）
 
@@ -177,6 +177,27 @@ test_project/
 
 **修正的失效描述**
 - 代码规模台账：112 文件 / 1337 个 `test_*` 函数（原 110+ / 1280+）
-- 字形特征缓存 396 字（原 365 字）；RAG 语料块 2118 块（原 2090 块）
+- 字形特征缓存 424 字（原 365 字）；RAG 语料块 2128 块（原 2090 块）
 - 官方数据导入实为 2v2 / 巅峰赛 / 武将放逐三类榜单（原描述缺巅峰赛）；AI 生成后端为多供应商档案（deepseek / openai / ollama / openai-compatible），非仅 DeepSeek
 - 配置默认值与键：`mumu_ocr_recheck_enabled` 默认 `False`；`MUMU_OCR_POLL_IDLE_MINUTES` 配置键已移除，闲置阈值固定为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5`；`check_disclaimer()` 已拆分为 `should_show()` / `accept()`（详见 `./module_config.md`）
+
+## 本轮文档校准（2026-10-01）
+
+自基线 `885ea96`（含工作树未提交改动）以来，本轮校准覆盖了以下变更：
+
+**功能与数据同步**
+- **官网武将数据同步**（74234a8）：新增谢灵运、陶渊明两名武将（`heroes.json` 186 名）；`mjs_adjustments.json` 登记左思技能调整（2026-09-30 事件追加，事件总数 141 → 144，`source=announcement` 15 → 18 条）；`model_pricing.json`（`config/model_pricing.json`）新增 `sensenova-6.8-flash-lite` 计价条目；`char_info_cache.json` 静态汉字特征缓存基线 396 → 424 字
+- **巅峰赛选将人工确认残留修复**（48b0f99）：`peak_select_watcher.py` 新增图片导入前旧确认校验（`verified_resolutions_for_import()`，与实时循环共用定位语义但一次性快照不宽限、无法定位的确认立即丢弃）、停止识别后清空确认表/读数指纹/失验计数/禁将基线、`confirm_pending()` 牌面在位守卫（无在识别中的牌面时拒绝确认并提示"牌面已不在识别中，确认未生效"）；`peak_select_panel.py` 同名槽位显性告警（候选池出现重复武将名时写日志 + 追加识别日志 + 状态栏 warning 提示复核，不再静默去重隐藏"14 张牌只显示 13 个名字"），会话结束（停止/牌面退出）摘除待确认行防误点
+
+**架构与死代码清理**
+- **Phase 4 上帝类拆分**（885ea96）：六大目标按职责域出仓 14 个新模块，棘轮与文档同步收缩（详见 `./module_business.md` / `./module_ui.md` / `./module_rag.md` / `./module_capture_ocr.md`）
+- **API 档案域拆分**（78fd65c）：`profiles.py` 自 `env.py` 拆出（审计 G7，`env.py` 641 → 363 行），同步清理 rag / recognition / data / ocr 四域生产死代码
+- **apply_incremental_update 迁移**（ee332c4）：自 `manager.py` 迁至 `facade.py` 消解类型级循环，架构守护扩展类型边与字段/行数棘轮
+- **多批次死代码清理**（bf7a0df / fd1ed15 / 6c541b3 / 4455094 / 07be64d）：删除武将选择对话框无效 `ReturnFormat` 参数管线（D1）、模板匹配零消费 `last_match_confidence` 及死存储（D2）、`VALID_KINDS` / `last_match_time` / `_updated_at` / `_selected_*` 四处写后不读字段（D3–D6）、UI 三处写后不读属性（D7/D8）、全项目无消费点的 `RAG_PROJECT_DIR` 预留键（D9）
+
+**修正的失效描述**
+- 代码规模台账：112 文件 / 1350 个 `test_*` 函数（原 112 / 1337，巅峰赛修复补测 13 例）
+- 字形特征缓存 424 字（原 396 字）；RAG 语料块 2128 块（原 2118 块，`武将RAG语料` 639 → 647、`武将分类语料` 184 → 186）
+- 武将数 186 名（原 180 名）；`hero_classification.json` 实测 7 个顶层键（version / updated_at / source / note / categories 16 项 / hero_categories 186 键 / counter_chain 8 键）；`mjs_adjustments.json` 实测 4 个顶层键（init_imported_at / init_source_last_updated / corpus_base_date / events 144 条）
+- `model_pricing.json` 实际位于 `config/model_pricing.json`（非 `data/`），已随 `sensenova-6.8-flash-lite` 新增计价
+- `main_window.py` 行数预算实际为 552 行（审计 G1 拆分后棘轮值，`module_ui.md` 第七章原误记 819 已修正）；新增 `src/data/corpus_fields.py`（语料索引字段契约单一来源，12 行）入表

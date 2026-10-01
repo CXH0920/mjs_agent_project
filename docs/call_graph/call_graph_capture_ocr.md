@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-09-21）
+## 当前实现基线（2026-09-30）
 
 模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。
 
@@ -230,7 +230,7 @@ TemplateManager.match(image_screenshot, threshold=0.8)
 | `_match_at_coarse_scale(coarse_gray, coarse_scale)` | `template_manager.py` | `match()`（粗筛阶段） | `cv2.resize()`, `cv2.matchTemplate()`, `cv2.minMaxLoc()` |
 | `_load()` / `reload()` | `template_manager.py` | 构造、`OcrService.select_template()` | `_load_internal()`、随包默认模板回退、`_load_metadata()` |
 | `delete_template()` | `template_manager.py` | `OcrService.delete_template()` | `Path.unlink()`（模板 + 元数据） |
-| `is_loaded` / `reference_size` / `last_match_scale` / `last_match_confidence` / `last_match_strategy` | `template_manager.py` | `OcrWorker`、任务日志 | 内存属性 |
+| `is_loaded` / `reference_size` / `last_match_scale` / `last_match_strategy` | `template_manager.py` | `OcrWorker`、任务日志 | 内存属性（`last_match_confidence` 已在 fd1ed15 死代码清理中删除：模板匹配零消费） |
 
 > **性能标注：** 局部区域匹配通常 < 50ms（新模板 roi 约 50×145px），作为 OCR 的前置过滤器，先低成本过滤非武将选择页画面。该数值是实测经验值，代码中没有对应的时间预算常量；只有基础比例未命中时才会走全屏多尺度回退，耗时明显更高。
 
@@ -569,7 +569,7 @@ OcrWorker._execute() -> 识别完成后（人工确认入口）
 
 > **设计要点：** `pending_stats` 是双事件流汇入同一文件的架构——识别线程 `record_pending()` 记录未决错法频次，GUI 确认 `record_confirmation()` 收集人工答案。两者由模块内一把锁串行化"读-改-原子替换"，60 秒节流窗口防虚增。
 
-同步等待路径（`CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()`）对 `OcrTask.completed` 做 30 秒有限等待，超时返回空结果，防止引擎异常（如 GPU 驱动问题）时调用线程无限阻塞。
+> **78fd65c 死代码清理：** `CaptureService.run_ocr_if_matched()` 与 `OcrService.run_ocr()` 同步等待路径（30 秒有限等待）及 `set_ocr_task_submitter()` 注入链已移除，生产识别全部走异步 `submit_ocr_task()`。
 
 ---
 
@@ -584,7 +584,7 @@ src.business.emulator.capture_service
 
 src.business.recognition.ocr_service
   -> get_template_manager().set_template() / reload() / delete_template()
-  -> 注入 CaptureService.submit_ocr_task()                     [兼容同步 run_ocr]
+  -> 注入 CaptureService.submit_ocr_task()
 
 src.ui.app.main_window
   -> 后台线程：AdbCapture.screencap_full()
