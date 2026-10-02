@@ -609,7 +609,7 @@ class TestConfigLoading:
                 params = get_runtime_params()
                 assert params["requests_per_minute"] == 30
                 assert params["max_retries"] == 3
-                assert params["max_output_tokens"] == 16_384
+                assert params["max_output_tokens"] == 32_768
                 assert params["http_timeout"] == 300
             finally:
                 config_env.DEFAULT_ENV_FILE = original

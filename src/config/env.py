@@ -271,7 +271,7 @@ def get_runtime_params():
         "requests_per_minute": config.get("requests_per_minute", 30),
         "max_retries": config.get("max_retries", 3),
         # 与 AIBatchGenerator.MAX_OUTPUT_TOKENS 默认一致；思考型模型可按供应商上限调大
-        "max_output_tokens": config.get("max_output_tokens", 16_384),
+        "max_output_tokens": config.get("max_output_tokens", 32_768),
         "http_timeout": config.get("http_timeout", 300),
         "log_level": config.get("log_level", "INFO"),
         "log_to_file": config.get("log_to_file", True),

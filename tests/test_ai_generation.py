@@ -122,7 +122,7 @@ def test_api_request_disables_thinking_and_discards_reasoning(caplog) -> None:
     with caplog.at_level("DEBUG", logger="src.scraper.ai"):
         response = generator._call_api([{"role": "user", "content": "test"}])
 
-    assert client.payload["max_tokens"] == MAX_OUTPUT_TOKENS == 16_384
+    assert client.payload["max_tokens"] == MAX_OUTPUT_TOKENS == 32_768
     assert client.payload["thinking"] == {"type": "disabled"}
     assert response == {
         "content": "最终正文",
