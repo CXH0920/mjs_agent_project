@@ -142,11 +142,11 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 
 ### 3.2 CaptureService（截图业务门面）与同包协作模块
 
-`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**2026-10 职责域出仓（审计 G8）**后，CaptureService（570 行）只保留截图流水线与连接状态机，三块编排职责下沉到同包协作模块，对 UI 仍以门面信号转发：
+`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**2026-10 职责域出仓（审计 G8）**后，CaptureService（569 行）只保留截图流水线与连接状态机，三块编排职责下沉到同包协作模块，对 UI 仍以门面信号转发：
 
 | 模块 | 职责 | 与 CaptureService 的边界 |
 |------|------|------|
-| `OcrTaskCoordinator`（ocr_task_coordinator.py） | OCR worker 唯一创建点（`ensure_worker()`，经 `worker_created` 信号通知宿主接线）、模型预热状态机（idle/warming/ready/failed）、识别任务的阈值/ROI 组装（`build_task()`） | 持有 `_ocr_worker`/`_warmup_task`/`_ocr_warmup_state`；配置经 `config_provider` 晚绑定读取（阈值改动实时生效），ROI 共享 `CaptureService._roi_config` |
+| `OcrTaskCoordinator`（ocr_task_coordinator.py） | OCR worker 唯一创建点（`ensure_worker()`，经构造注入的 `on_worker_created` 回调同步接线后才 `start()`，跨线程首建同样成立）、模型预热状态机（idle/warming/ready/failed）、识别任务的阈值/ROI 组装（`build_task()`） | 持有 `_worker`（创建由 `_worker_lock` 双检保护）/`_on_worker_created`/`_warmup_task`/`_warmup_state`；配置经 `config_provider` 晚绑定读取（阈值改动实时生效），ROI 共享 `CaptureService._roi_config` |
 | `OfficialImportGateway`（official_import_gateway.py） | 官方榜单导入网关：整批任务提交、进行中排他集合、worker 进度转发、完成/失败分派 | 持有 `_pending` 排他集合；`progress/completed/failed` 三信号与 CaptureService 同名门面信号直连 |
 | `ImageSaveScheduler`（image_save_scheduler.py） | PNG 后台保存：单线程执行器（`image-save`）串行落盘，完成后广播 `image_saved` | 无锁、无挂起表；`save_future` 由 CaptureService 持有用于结果拼装 |
 
@@ -198,7 +198,7 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 - **ADB raw 帧截图提速（cd35c98）**：`capture_for_poll()` 直接返回 numpy 数组（经 `_adb_executor` 排队），与手动截图、模板截图互斥；`AdbCapture.screencap_raw()` 跳过 PIL 解码直接返回 PNG bytes，大幅降低轮询路径的 IO 与解码开销。
 - **`reset_ocr_recognizer_cache()`（9ca1b91）**：白名单治理后调用的引擎缓存重置入口。OCR 识别器（含复核引擎）按 `hero_names` 分片缓存，用户层白名单更新后需使全部旧缓存失效，该方法清除所有分片并在下一轮 OCR 时按新词表重建。
 
-**2026-10 职责域出仓（审计 G8）**：官方导入网关 / 图像保存调度 / OCR 任务编排依次出仓为 `official_import_gateway.py`、`image_save_scheduler.py`、`ocr_task_coordinator.py`（见 3.2 开头的职责表）。对外契约不变：UI 侧 12 处信号连接与全部公共方法名保持原样，`submit_ocr_task()` 的提交动作仍经 `self._ensure_ocr_worker()`（实例级补丁锚点语义保留）；worker 接线（`task_completed` → CaptureService 完成分派 / OfficialImportGateway 结果分派，`official_progress` → Gateway 进度转发）在 `worker_created` 槽内完成，先于 worker `start()`。
+**2026-10 职责域出仓（审计 G8）**：官方导入网关 / 图像保存调度 / OCR 任务编排依次出仓为 `official_import_gateway.py`、`image_save_scheduler.py`、`ocr_task_coordinator.py`（见 3.2 开头的职责表）。对外契约不变：UI 侧 12 处信号连接与全部公共方法名保持原样，`submit_ocr_task()` 的提交动作仍经 `self._ensure_ocr_worker()`（实例级补丁锚点语义保留）；worker 接线（`task_completed` → CaptureService 完成分派 / OfficialImportGateway 结果分派，`official_progress` → Gateway 进度转发）经构造注入的 `on_worker_created` 回调同步完成，回调在 `_worker_lock` 持有期间执行且先于 worker `start()`（2026-10-02 修复：替代原 `worker_created` 信号，消除跨线程首建时 Queued 投递致接线滞后、官方导入 `_pending` 永久锁死的竞态）。
 
 ### 3.3 OcrService（OCR 控制）
 

@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
 from src.business.recognition.ocr_worker import OcrTask, OcrWorker
@@ -32,18 +34,21 @@ class OcrTaskCoordinator(QObject):
     """OCR worker 生命周期、模型预热状态机与识别任务组装入队。"""
 
     warmup_state_changed = Signal(str, str)
-    worker_created = Signal(object)
 
     def __init__(
         self,
         parent=None,
         config_provider=None,
         roi_config: OcrRoiConfig | None = None,
+        *,
+        on_worker_created: Callable[[OcrWorker], None],
     ):
         super().__init__(parent)
         self._config_provider = config_provider
         self._roi_config = roi_config or OcrRoiConfig()
         self._worker: OcrWorker | None = None
+        self._worker_lock = threading.Lock()
+        self._on_worker_created = on_worker_created
         self._warmup_state = "idle"
         self._warmup_task = None
 
@@ -59,12 +64,22 @@ class OcrTaskCoordinator(QObject):
         self.warmup_state_changed.emit(state, detail)
 
     def ensure_worker(self) -> OcrWorker:
-        """返回唯一 OCR worker；首次调用时创建，经 worker_created 通知宿主接线。"""
+        """返回唯一 OCR worker；首次调用时创建，同步回调接线后才 start。
+
+        接线回调是普通同步调用而非 Qt 信号：跨线程发射的信号会退化为
+        Queued 投递，宿主未接线 worker 即已开跑，官方导入完成回执丢失会
+        把 OfficialImportGateway._pending 永久锁死。回调在 _worker_lock
+        持有期间执行，Lock 不可重入——回调内禁止重入 ensure_worker 或
+        调用 reset_recognizer_cache 等任何触发 worker 创建的接口，否则
+        同线程重入会永久死锁且无任何日志。
+        """
         if self._worker is None:
-            self._worker = OcrWorker()
-            # 信号同步发射：宿主在槽内接好 task_completed 等连线后才 start
-            self.worker_created.emit(self._worker)
-            self._worker.start()
+            with self._worker_lock:
+                if self._worker is None:
+                    worker = OcrWorker()
+                    self._on_worker_created(worker)
+                    worker.start()
+                    self._worker = worker
         return self._worker
 
     def reset_recognizer_cache(self) -> None:

@@ -63,9 +63,9 @@ class CaptureService(QObject):
             parent=self,
             config_provider=lambda: self.config,
             roi_config=self._roi_config,
+            on_worker_created=self._on_worker_created,
         )
         self._ocr_coordinator.warmup_state_changed.connect(self.ocr_warmup_state_changed)
-        self._ocr_coordinator.worker_created.connect(self._on_worker_created)
         self._session_lock = threading.RLock()
         # ADB 连接/截屏是秒级阻塞调用（超时重试最坏约 45 秒），不能在 _session_lock
         # 内执行——该锁同时被 GUI 线程的 update_config/config 属性等快速路径争用，
@@ -323,7 +323,7 @@ class CaptureService(QObject):
         return self._ocr_coordinator.ensure_worker()
 
     def _on_worker_created(self, worker: OcrWorker) -> None:
-        """为新建 OCR worker 接线：完成回执与官方导入进度。"""
+        """为新建 OCR worker 接线：完成回执与官方导入进度（同步先于 start）。"""
         worker.task_completed.connect(self._on_ocr_task_completed)
         worker.task_completed.connect(self._official_gateway.on_task_completed)
         worker.official_progress.connect(self._official_gateway.on_worker_progress)

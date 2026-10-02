@@ -16,7 +16,7 @@ CaptureService.do_capture() / do_capture_from_file()
   -> _on_background_capture_ready() / _handle_capture_result()
   -> CaptureService._queue_capture_ocr() -> submit_ocr_task()
     -> OcrTaskCoordinator.build_task()                        [阈值/ROI 布局组装]
-    -> _ensure_ocr_worker() -> OcrTaskCoordinator.ensure_worker()（首次创建经 worker_created 通知宿主接线）
+    -> _ensure_ocr_worker() -> OcrTaskCoordinator.ensure_worker()（首次创建经 on_worker_created 回调同步接线后才 start）
     -> OcrWorker.submit(OcrTask)                              [FIFO 串行队列]
        -> OcrWorker._execute()
           -> TemplateManager(template_name).match()

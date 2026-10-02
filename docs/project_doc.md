@@ -505,7 +505,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | GuideFetchService | `guide_fetch_service.py` | ~122 | BaseFetchService | 自身 3（progress_output / progress_value / fetch_completed）+ 基类 3 |
 | SynergyFetchService | `synergy_fetch_service.py` | ~164 | BaseFetchService | 自身 5（progress_output / progress_value / fetch_completed / reload_finished / reload_failed）+ 基类 3 |
 | CaptureService | `capture_service.py` | ~570 | QObject | 11（门面；官方导入 3 个经 OfficialImportGateway 转发） |
-| OcrTaskCoordinator | `ocr_task_coordinator.py` | ~153 | QObject | 2（warmup_state_changed / worker_created；审计 G8 出仓） |
+| OcrTaskCoordinator | `ocr_task_coordinator.py` | ~167 | QObject | 1（warmup_state_changed；审计 G8 出仓） |
 | OfficialImportGateway | `official_import_gateway.py` | ~57 | QObject | 3（progress / completed / failed；审计 G8 出仓） |
 | ImageSaveScheduler | `image_save_scheduler.py` | ~57 | QObject | 2（image_saved / _save_ready；审计 G8 出仓） |
 | EmulatorOperationService | `emulator_operation_service.py` | ~145 | QObject | 9 |
@@ -606,7 +606,7 @@ class CaptureService(QObject):
 截图操作直接在 Python 中执行（不通过 QProcess），因为需要即时获取图像数据更新 UI。
 模板匹配与 PaddleOCR 识别提交到唯一的 `OcrWorker` 后台队列；结果通过信号回到 GUI 线程。
 
-**2026-10 职责域出仓（审计 G8）**：CaptureService 缩为门面（570 行），保留截图流水线（`_pending_ocr_captures` 关联表、`_handle_capture_result`）与连接状态机；OCR worker 生命周期/预热状态机/任务组装出仓到 `OcrTaskCoordinator`（ocr_task_coordinator.py），官方导入提交/排他/分派出仓到 `OfficialImportGateway`（official_import_gateway.py），PNG 保存出仓到 `ImageSaveScheduler`（image_save_scheduler.py）。对外信号名与公共方法全部保留（UI 侧 12 处连接零改动）；worker 的 `task_completed` / `official_progress` 接线在 `worker_created` 槽内完成，先于 worker `start()`。
+**2026-10 职责域出仓（审计 G8）**：CaptureService 缩为门面（569 行），保留截图流水线（`_pending_ocr_captures` 关联表、`_handle_capture_result`）与连接状态机；OCR worker 生命周期/预热状态机/任务组装出仓到 `OcrTaskCoordinator`（ocr_task_coordinator.py），官方导入提交/排他/分派出仓到 `OfficialImportGateway`（official_import_gateway.py），PNG 保存出仓到 `ImageSaveScheduler`（image_save_scheduler.py）。对外信号名与公共方法全部保留（UI 侧 12 处连接零改动）；worker 的 `task_completed` / `official_progress` 接线经构造注入的 `on_worker_created` 回调同步完成——回调在 `_worker_lock` 持有期间执行且先于 worker `start()`，跨线程首建同样成立（2026-10-02 修复：替代原 `worker_created` 信号，消除 Queued 投递致接线滞后、官方导入 `_pending` 永久锁死的竞态）。
 
 **主要方法**：
 

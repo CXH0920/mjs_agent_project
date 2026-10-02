@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 from PIL import Image
+from PySide6.QtCore import QObject, Signal
+from src.business.emulator import ocr_task_coordinator
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_worker import OfficialImportTask
 
@@ -205,6 +208,79 @@ def test_capture_service_rejects_overlapping_official_import(monkeypatch) -> Non
         assert "已有官方榜单导入任务" in str(exc)
     else:
         raise AssertionError("应拒绝重叠的官方榜单导入任务")
+
+
+def test_official_import_not_stranded_when_worker_created_off_gui_thread(
+    monkeypatch, qapp
+) -> None:
+    """后台线程首建 worker 后，官方导入完成回执不经事件循环即可分派。
+
+    回归接线竞态：worker 首建通知曾是 Qt 信号，跨线程发射退化为 Queued，
+    start() 先于宿主接线执行；窗口期内完成的官方导入任务回执丢失，
+    OfficialImportGateway._pending 永不清理，官方导入永久锁死。
+    """
+    created: list[QObject] = []
+
+    class _StubOcrWorker(QObject):
+        task_completed = Signal(object)
+        official_progress = Signal(str, str, int, int)
+
+        def __init__(self) -> None:
+            super().__init__()
+            created.append(self)
+
+        def start(self) -> None:
+            pass
+
+        def submit(self, task) -> None:
+            pass
+
+        def retire(self) -> None:
+            pass
+
+    monkeypatch.setattr(ocr_task_coordinator, "OcrWorker", _StubOcrWorker)
+    service = CaptureService()
+    completed: list[list[dict]] = []
+    failures: list[str] = []
+    service.official_import_completed.connect(completed.append)
+    service.official_import_failed.connect(failures.append)
+
+    creator = threading.Thread(target=service._ensure_ocr_worker)
+    creator.start()
+    creator.join()
+
+    task = service.submit_official_import({"exile": ["page1.png"]})
+    task.result = {
+        "outcome": "official_imported",
+        "summaries": [{"name": "武将放逐数据", "records": 100}],
+    }
+    # 不经 processEvents：接线必须已同步完成，完成回执立即送达
+    created[0].task_completed.emit(task)
+
+    assert completed == [[{"name": "武将放逐数据", "records": 100}]]
+    assert failures == []
+    service.submit_official_import({"2v2": ["page1.png"]})  # _pending 已清理，不再拒绝重叠导入
+    service.shutdown()
+
+
+def test_ensure_worker_wires_before_start_from_background_thread(monkeypatch) -> None:
+    """协调器契约：无论哪个线程首建 worker，接线回调必须先于 start() 执行。"""
+    order: list[str] = []
+
+    class _StubWorker:
+        def start(self) -> None:
+            order.append("start")
+
+    monkeypatch.setattr(ocr_task_coordinator, "OcrWorker", _StubWorker)
+    coordinator = ocr_task_coordinator.OcrTaskCoordinator(
+        on_worker_created=lambda worker: order.append("wired")
+    )
+
+    creator = threading.Thread(target=coordinator.ensure_worker)
+    creator.start()
+    creator.join()
+
+    assert order == ["wired", "start"]
 
 
 def test_capture_service_returns_none_until_async_image_save_completes() -> None:
