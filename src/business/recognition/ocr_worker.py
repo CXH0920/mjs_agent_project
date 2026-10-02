@@ -348,7 +348,7 @@ class OcrWorker(QThread):
             recognizer_timing = getattr(recognizer, "timing_ms", {})
             result_save_started = time.perf_counter()
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json")
+            GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json", page_type=task.template_name)
             # 模板未命中的兜底读数来自错位 ROI（巅峰页等非本页画面），
             # 是跨页噪声而非本页错法，不进白名单治理数据
             if result.get("template_matched", True):

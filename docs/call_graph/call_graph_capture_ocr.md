@@ -6,24 +6,28 @@
 
 ---
 
-## 当前实现基线（2026-09-30）
+## 当前实现基线（2026-10-02）
 
-模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。
+模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。**审计 G8（2026-10）**后 CaptureService 是门面：任务组装在 `OcrTaskCoordinator.build_task()`，提交仍经 `CaptureService._ensure_ocr_worker()`，官方导入经 `OfficialImportGateway`，PNG 保存经 `ImageSaveScheduler`（见 `module_business.md` §3.2 职责表）。
 
 ```
 CaptureService.do_capture() / do_capture_from_file()
   -> capture_screenshot()（_adb_executor 后台串行）/ _execute_file_ocr()
   -> _on_background_capture_ready() / _handle_capture_result()
   -> CaptureService._queue_capture_ocr() -> submit_ocr_task()
+    -> OcrTaskCoordinator.build_task()                        [阈值/ROI 布局组装]
+    -> _ensure_ocr_worker() -> OcrTaskCoordinator.ensure_worker()（首次创建经 worker_created 通知宿主接线）
     -> OcrWorker.submit(OcrTask)                              [FIFO 串行队列]
        -> OcrWorker._execute()
           -> TemplateManager(template_name).match()
           -> GeneralRecognizer.recognize()                      [命中且需要识别时]
+          -> GeneralRecognizer.save_results(…, page_type=task.template_name)   [latest.json，审计 F3a 修复后带真实页型]
   -> CaptureService._on_ocr_task_completed()
   -> capture_completed -> RecommendationPanel / MainWindow
+  （并行）ImageSaveScheduler.schedule() -> save_image() -> image_saved
 ```
 
-轮询：`OcrService.start_poll()` -> `_poll_timer` 周期触发 `poll_tick` -> `PollCoordinator._on_poll_tick()`。协调器在短生命周期后台线程执行 `CaptureService.capture_for_poll()`（内部 `AdbCapture.screencap_full(log_success=False)`），随后为每个到期页面提交 `CaptureService.submit_ocr_task()`（`match_guide` 允许模板未命中兜底 OCR，`allow_result_reuse=True`）；其在 GUI 线程过滤过期结果、调用 `complete_poll()`，再通过 `poll_result_ready` 通知主窗口更新界面。`hero_selection` 命中会重置并激活一次 `match_guide`；后者命中后立即停用，直到下次选将命中才可再次执行，且兜底/常规读数须过质量门槛（确认名称数 >= `MATCH_GUIDE_MIN_CONFIRMED_NAMES=3`，兜底读数另要求完整直读且置信度 >= 0.95）。前置条件缺失会暂停，其他失败指数退避。
+轮询：`OcrService.start_poll()` -> `_poll_timer` 周期触发 `poll_tick` -> `PollCoordinator._on_poll_tick()`。协调器在短生命周期后台线程执行 `CaptureService.capture_for_poll()`（内部 `AdbCapture.screencap_full(log_success=False)`），随后为每个到期页面提交 `CaptureService.submit_ocr_task()`（门面：`OcrTaskCoordinator.build_task()` 组装后经 `_ensure_ocr_worker()` 提交；`match_guide` 允许模板未命中兜底 OCR，`allow_result_reuse=True`）；其在 GUI 线程过滤过期结果、调用 `complete_poll()`，再通过 `poll_result_ready` 通知主窗口更新界面。`hero_selection` 命中会重置并激活一次 `match_guide`；后者命中后立即停用，直到下次选将命中才可再次执行，且兜底/常规读数须过质量门槛（确认名称数 >= `MATCH_GUIDE_MIN_CONFIRMED_NAMES=3`，兜底读数另要求完整直读且置信度 >= 0.95）。前置条件缺失会暂停，其他失败指数退避。
 
 闲置自动暂停：轮询拍在后台线程对整帧计算 `frame_fingerprint.compute_fingerprint()`（32×18 灰度降采样）并以 `frames_match()`（MAD < 3.0）做相邻帧比较；`_track_idle_watch()` 统计"健康无命中且画面未变"的连续拍数，达到 `IDLE_PAUSE_MINUTES=5` 分钟即调用 `OcrService.pause_for_idle()` 进入 `idle_paused` 态（停轮询、保留 ADB 连接），用户交互经 `resume_from_idle_pause()` 恢复。开关由 `mumu_ocr_poll_idle_pause`（默认开）控制。帧指纹与 `OcrWorker` 的页面指纹（ROI 级 16×16，服务于 OCR 结果复用）是两套独立机制。
 
@@ -580,7 +584,9 @@ OcrWorker._execute() -> 识别完成后（人工确认入口）
 ```
 src.business.emulator.capture_service
   -> AdbCapture.connect() / screencap_full()                   [截图]
-  -> OcrWorker.submit(OcrTask)                                 [提交，不直接匹配]
+  -> OcrTaskCoordinator.build_task() -> _ensure_ocr_worker() -> OcrWorker.submit(OcrTask)   [组装与提交]
+  -> OfficialImportGateway.submit(worker, paths) -> OcrWorker.submit(OfficialImportTask)    [官方导入，审计 G8 后经网关]
+  -> ImageSaveScheduler.schedule() -> save_image()             [PNG 保存，审计 G8 后经调度器]
 
 src.business.recognition.ocr_service
   -> get_template_manager().set_template() / reload() / delete_template()
@@ -652,7 +658,7 @@ src.business.recognition.pending_stats
 
 | 函数 | 文件 | 调用方 | 说明 |
 |------|------|--------|------|
-| `save_image(image, path)` | `image_utils.py` | `CaptureService._execute_capture()` | 截图保存到磁盘 |
+| `save_image(image, path)` | `image_utils.py` | `ImageSaveScheduler.schedule()`（审计 G8 前为 CaptureService 内部执行器） | 截图保存到磁盘 |
 
 （`pil_to_qpixmap` 已迁至 `ui/shared/image_utils.py`，调用方仍为 `MumuConfigDialog`，见 [call_graph_ui.md](./call_graph_ui.md)。）
 

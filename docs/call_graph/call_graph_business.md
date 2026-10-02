@@ -335,9 +335,9 @@ RecommendationPanel._on_import_from_screenshot()
           -> Image.open(BytesIO(result.stdout))
        -> future.add_done_callback -> _capture_ready 信号
     -> [GUI 线程] _on_background_capture_ready() -> _handle_capture_result()
-       -> should_ocr = perform_ocr 且（force_ocr 或 启用 OCR 或 轮询模式）
+       -> should_ocr = perform_ocr 且（force_ocr 或 启用 OCR）
        -> _queue_capture_ocr(image.copy(), save_path=None, template_name, match_template=not force_ocr)
-       -> _schedule_image_save(image, screenshots/screenshot_<时间戳>.png)
+       -> _save_scheduler.schedule(image, screenshots/screenshot_<时间戳>.png)   [审计 G8：ImageSaveScheduler]
           -> [image-save 单线程] save_image() -> image_saved 信号
        -> [OCR 完成] _on_ocr_task_completed() -> emit capture_completed({image, save_path, ocr_results, ocr_matched})
 ```
@@ -364,7 +364,7 @@ RecommendationPanel._on_import_from_file()
 |------|------|--------|----------|
 | `do_capture(hero_names, template_name, force_ocr, perform_ocr)` | `capture_service.py` | `RecommendationPanel` / `MatchGuidePanel` / `PeakSelectPanel` | `_adb_executor.submit(capture_screenshot)` → `_capture_ready` → GUI 线程处理 |
 | `do_capture_from_file(path, names, template_name, force_ocr, perform_ocr)` | `capture_service.py` | `_on_import_from_file()` | `QTimer.singleShot(0, _execute_file_ocr)` |
-| `_handle_capture_result(...)` | `capture_service.py` | `_on_background_capture_ready()` | 按参数决定入 OCR 队列；`_schedule_image_save()` |
+| `_handle_capture_result(...)` | `capture_service.py` | `_on_background_capture_ready()` | 按参数决定入 OCR 队列；`_save_scheduler.schedule()`（审计 G8 后经 ImageSaveScheduler） |
 | `_execute_file_ocr(...)` | `capture_service.py` | `do_capture_from_file()` 延迟调用 | `load_local_image()`, `_queue_capture_ocr()` |
 | `capture_screenshot()` | `capture_service.py` | `EmulatorOperationService` / `_adb_executor` | 共享会话锁 → 必要时连接 → `screencap_full()` |
 | `capture_for_poll(capture)` | `capture_service.py` | `PollCoordinator._on_poll_tick()` | `_adb_executor.submit(_capture_for_poll)` → `(ok, image, failure_kind)` |

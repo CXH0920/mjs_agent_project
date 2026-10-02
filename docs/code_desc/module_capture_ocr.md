@@ -113,7 +113,7 @@ match(image, threshold=0.8)
 
 应用在启动画面阶段即向同一 `OcrWorker` 队列提交预热任务，并在窗口显示前同步等待完成（Paddle 初始化会长时间持有 Python GIL，若与界面事件循环同时运行会卡住界面），不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。`paddle_loader.create_paddle_ocr()` 统一负责模型构造，并在 Windows 首次导入期间隐藏依赖探测命令窗口，完成后恢复标准子进程行为。
 
-ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给独立的单线程 `image-save` 执行器压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
+ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给 `ImageSaveScheduler` 的单线程 `image-save` 执行器（审计 G8 后该调度器独立于 CaptureService，见 module_business.md §3.2）压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
 自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；至少确认 3 个角色名才自动切换页面并停用该任务，`unresolved`、`unknown` 和 `conflict` 不计入数量。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
 

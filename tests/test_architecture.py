@@ -648,14 +648,30 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # hero_classification_panel.py（原 827）出表：三页签拆入
     # library/classification/ 后仅余 181 行装配壳（审计 G6 切片 4.5）
     "scraper/official_source/announcement.py": 699,
-    "business/emulator/capture_service.py": 670,
+    # 670 → 570：官方导入网关 official_import_gateway、图像保存调度
+    # image_save_scheduler、OCR 协调器 ocr_task_coordinator 依次出仓（审计 G8）
+    "business/emulator/capture_service.py": 570,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）
     "config/env.py": 363,
     "business/recognition/official_data_import_service.py": 638,
     "ui/library/hero_browser.py": 610,
     "scripts/sync_rule_stats.py": 601,
+    # 2026-10 tripwire 落地补种（种子 = 当前实测值，只许收紧）。此前名单靠
+    # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）
+    "ui/match/match_guide_panel.py": 840,
+    "ui/configuration/settings_dialog.py": 584,
+    "business/recognition/peak_select_watcher.py": 567,
+    "ui/match/peak_select_panel.py": 561,
+    "business/recognition/ocr_worker.py": 542,
+    "scraper/official_source/crawler.py": 541,
+    "ui/library/hero_detail_views.py": 538,
+    "ui/recommendation/hero_card_widget.py": 531,
+    "data/recommendation_index_repository.py": 526,
+    "ui/library/special_cards_panel.py": 517,
+    "scraper/ai/generation.py": 514,
+    "business/rag/audit_service.py": 501,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
-    # 无行为逻辑，拆分只会制造间接层。
+    # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }
 
 
@@ -668,4 +684,32 @@ def test_file_line_count_within_budget() -> None:
     assert not offenders, (
         "文件行数超出预算（重构缩小后请同步下调预算；放宽预算需在 PR 说明理由）：\n"
         + "\n".join(offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# 行数 tripwire：超过默认行数线的文件必须显式登记（入册或豁免），堵住
+# "棘轮只保护名单上的文件"的盲区——match_guide_panel 曾在名单外
+# 778 → 840 行无拦截。种子补种见 FILE_LINE_BUDGETS 尾部，豁免须写明理由。
+# ---------------------------------------------------------------------------
+LINE_TRIPWIRE = 500
+LINE_TRIPWIRE_EXEMPTS = {
+    # ui/shared/style.py：纯设计 token 与 QSS 常量字符串，无行为逻辑，
+    # 拆分只会制造间接层（同 FILE_LINE_BUDGETS 注释）
+    "ui/shared/style.py",
+}
+
+
+def test_files_over_line_tripwire_are_budgeted() -> None:
+    missing = []
+    for py in _iter_py_files():
+        rel = py.relative_to(SRC).as_posix()
+        if rel in FILE_LINE_BUDGETS or rel in LINE_TRIPWIRE_EXEMPTS:
+            continue
+        count = len(py.read_text(encoding="utf-8").splitlines())
+        if count > LINE_TRIPWIRE:
+            missing.append(f"src/{rel}: {count} 行")
+    assert not missing, (
+        "超过 500 行的文件既未入册 FILE_LINE_BUDGETS 也未豁免"
+        "（入册种子 = 实测值只许收紧；豁免须写明理由）：\n" + "\n".join(missing)
     )

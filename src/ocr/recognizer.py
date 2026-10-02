@@ -474,12 +474,12 @@ class GeneralRecognizer:
     # ── 保存结果 ──────────────────────────────────────────────────────
 
     @staticmethod
-    def save_results(results: list[dict], json_path: str | Path, image_path: str | Path | None = None) -> None:
+    def save_results(results: list[dict], json_path: str | Path, image_path: str | Path | None = None, page_type: str = "wujiang_select") -> None:
         """将识别结果保存为 JSON 文件。"""
         data = {
             "image": str(image_path) if image_path else "",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "page_type": "wujiang_select",
+            "page_type": page_type,
             "generals": results,
         }
         json_path = Path(json_path)

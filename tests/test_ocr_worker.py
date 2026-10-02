@@ -52,7 +52,7 @@ def test_ocr_worker_serializes_tasks_and_reuses_matching_recognizer(monkeypatch)
             return [{"index": 1, "name": image, "confidence": 1.0}]
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
@@ -142,7 +142,7 @@ def test_official_import_shares_worker_queue_and_ocr_engine(monkeypatch, tmp_pat
             return []
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             pass
 
     class FakeOfficialDataImportService:
@@ -233,7 +233,7 @@ def test_ocr_worker_keeps_default_roi_reference_independent_of_template(monkeypa
             return []
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
@@ -279,7 +279,7 @@ def test_match_guide_template_miss_can_fall_back_to_ocr(monkeypatch) -> None:
             return [{"index": 1, "name": "曹操", "confidence": 1.0}]
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
@@ -338,7 +338,7 @@ def test_ocr_worker_warmup_reuses_model_for_later_recognition(monkeypatch) -> No
             return []
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
@@ -437,7 +437,7 @@ def test_ocr_worker_logs_stage_timings(monkeypatch, caplog) -> None:
             return [{"index": 1, "name": "曹操", "confidence": 1.0}]
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
@@ -486,7 +486,7 @@ def test_capture_service_returns_worker_result_to_gui_thread(monkeypatch) -> Non
             return [{"index": 1, "name": "曹操", "confidence": 1.0}]
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
@@ -579,7 +579,7 @@ def _make_reuse_fakes(recognized: list):
             return [{"index": 0, "name": "曹操", "confidence": 1.0}]
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     return FakeTemplateManager, FakeRecognizer
@@ -693,7 +693,7 @@ def _install_pending_fakes(monkeypatch, *, template_hits: bool) -> None:
             }]
 
         @staticmethod
-        def save_results(results, path) -> None:
+        def save_results(results, path, page_type="wujiang_select") -> None:
             return None
 
     monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)

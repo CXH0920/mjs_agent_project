@@ -41,13 +41,13 @@ def test_capture_can_skip_ocr_and_return_saved_image(monkeypatch, tmp_path) -> N
     completed: list[dict] = []
     service.capture_completed.connect(completed.append)
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
-    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr("src.business.emulator.image_save_scheduler.save_image", lambda image, path: (True, ""))
 
     service._handle_capture_result(
         True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=False, perform_ocr=False,
     )
 
-    assert service._ocr_worker is None
+    assert service._ocr_coordinator._worker is None
     assert completed[0]["ocr_results"] is None
     assert not completed[0]["ocr_matched"]
     service.shutdown()
@@ -57,7 +57,7 @@ def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
     service = CaptureService()
     submitted: list[dict] = []
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
-    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr("src.business.emulator.image_save_scheduler.save_image", lambda image, path: (True, ""))
     monkeypatch.setattr(
         service,
         "_queue_capture_ocr",
@@ -77,7 +77,7 @@ def test_manual_capture_not_gated_by_poll_cooldown(monkeypatch, tmp_path) -> Non
     service = CaptureService()
     service._config = {"mumu_ocr_poll_mode": True}
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
-    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr("src.business.emulator.image_save_scheduler.save_image", lambda image, path: (True, ""))
     submitted_tasks: list[SimpleNamespace] = []
 
     def make_task(*_args, **_kwargs) -> SimpleNamespace:
@@ -106,7 +106,7 @@ def test_poll_mode_alone_does_not_enable_manual_ocr(monkeypatch, tmp_path) -> No
     service = CaptureService()
     service._config = {"mumu_ocr_poll_mode": True}
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
-    monkeypatch.setattr("src.business.emulator.capture_service.save_image", lambda image, path: (True, ""))
+    monkeypatch.setattr("src.business.emulator.image_save_scheduler.save_image", lambda image, path: (True, ""))
     submitted: list[dict] = []
     monkeypatch.setattr(service, "_queue_capture_ocr", lambda **kwargs: submitted.append(kwargs))
 
@@ -134,7 +134,7 @@ def test_capture_queues_ocr_copy_before_saving_image(monkeypatch, tmp_path) -> N
     monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
     monkeypatch.setattr(service, "_queue_capture_ocr", queue)
     monkeypatch.setattr(
-        "src.business.emulator.capture_service.save_image",
+        "src.business.emulator.image_save_scheduler.save_image",
         lambda _image, _path: (events.append("save") is None, ""),
     )
 
@@ -179,12 +179,12 @@ def test_capture_service_routes_official_import_through_shared_worker(monkeypatc
     monkeypatch.setattr(service, "_ensure_ocr_worker", lambda: worker)
 
     task = service.submit_official_import({"exile": ["page1.png", "page2.png"]})
-    service._on_official_import_progress(task.task_id, "正在识别", 2, 10)
+    service._official_gateway.on_worker_progress(task.task_id, "正在识别", 2, 10)
     task.result = {
         "outcome": "official_imported",
         "summaries": [{"name": "武将放逐数据", "records": 100}],
     }
-    service._on_ocr_task_completed(task)
+    service._official_gateway.on_task_completed(task)
 
     assert submitted == [task]
     assert task.paths == {"exile": ("page1.png", "page2.png")}

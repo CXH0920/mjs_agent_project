@@ -44,7 +44,10 @@ src/business/
 │   ├── synergy_fetch_service.py       # 相性生成业务
 │   └── synergy_reload_worker.py       # 相性数据后台重载
 ├── emulator/
-│   ├── capture_service.py             # ADB 截图与 OCR 调度
+│   ├── capture_service.py             # ADB 截图与 OCR 调度门面（截图流水线 + 连接状态机，审计 G8 后 570 行）
+│   ├── ocr_task_coordinator.py        # OCR worker 生命周期、预热状态机与任务组装（审计 G8 刀 3）
+│   ├── official_import_gateway.py     # 官方榜单导入网关（提交/排他/进度转发/结果分派，审计 G8 刀 1）
+│   ├── image_save_scheduler.py        # PNG 后台保存调度（单线程执行器，审计 G8 刀 2）
 │   ├── emulator_operation_service.py  # 模拟器后台操作
 │   └── mumu_config_coordinator.py     # MuMu 配置状态协调
 ├── recognition/
@@ -137,9 +140,17 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 
 **相性三种提交模式**：`fetch_pair`（两个武将配对，`--synergy-pair`）、`fetch_single`（一个武将对全体，`--synergy-single`）与 `fetch_pairs_list`（实战配队清单的显式 `hero_a_id/hero_b_id` 配对列表，`--synergy-list`）共用 `_submit()`：`_is_busy()` 拦截 → 写临时 JSON → 拼 CLI 参数（`--no-rag` / `--update` / `--browser`）→ `_start_process()`。`overwrite=True` 追加 `--update`，与 Guide 的增量/指定模式一致。
 
-### 3.2 CaptureService（截图业务）
+### 3.2 CaptureService（截图业务门面）与同包协作模块
 
-`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口。内部持有两把互不嵌套的锁与两个单线程执行器：`_session_lock` 只保护会话对象与状态字段的快速读写，`_adb_io_lock` 单独串行化 `connect()` / `screencap_full()` 这类秒级阻塞 IO（超时重试最坏约 45 秒）；`_adb_executor`（`adb-capture`）串行执行 ADB 截图，`_image_save_executor`（`image-save`）并行保存 PNG，两者互不等待。
+`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**2026-10 职责域出仓（审计 G8）**后，CaptureService（570 行）只保留截图流水线与连接状态机，三块编排职责下沉到同包协作模块，对 UI 仍以门面信号转发：
+
+| 模块 | 职责 | 与 CaptureService 的边界 |
+|------|------|------|
+| `OcrTaskCoordinator`（ocr_task_coordinator.py） | OCR worker 唯一创建点（`ensure_worker()`，经 `worker_created` 信号通知宿主接线）、模型预热状态机（idle/warming/ready/failed）、识别任务的阈值/ROI 组装（`build_task()`） | 持有 `_ocr_worker`/`_warmup_task`/`_ocr_warmup_state`；配置经 `config_provider` 晚绑定读取（阈值改动实时生效），ROI 共享 `CaptureService._roi_config` |
+| `OfficialImportGateway`（official_import_gateway.py） | 官方榜单导入网关：整批任务提交、进行中排他集合、worker 进度转发、完成/失败分派 | 持有 `_pending` 排他集合；`progress/completed/failed` 三信号与 CaptureService 同名门面信号直连 |
+| `ImageSaveScheduler`（image_save_scheduler.py） | PNG 后台保存：单线程执行器（`image-save`）串行落盘，完成后广播 `image_saved` | 无锁、无挂起表；`save_future` 由 CaptureService 持有用于结果拼装 |
+
+CaptureService 自身仍持有两把互不嵌套的锁与一个单线程执行器：`_session_lock` 只保护会话对象与状态字段的快速读写，`_adb_io_lock` 单独串行化 `connect()` / `screencap_full()` 这类秒级阻塞 IO（超时重试最坏约 45 秒）；`_adb_executor`（`adb-capture`）串行执行 ADB 截图，与图像保存执行器（已迁入 `ImageSaveScheduler`）互不等待。截图请求与 OCR 结果的关联表（`_pending_ocr_captures`）与完成分派留在 CaptureService。
 
 截图流程（手动截图路径）：
 
@@ -152,8 +163,8 @@ do_capture(hero_names, template_name="hero_selection", force_ocr=False, perform_
        └─ future.add_done_callback → _capture_ready 信号
             └─ [GUI 线程] _on_background_capture_ready() → _handle_capture_result()
                   ├─ should_ocr = perform_ocr 且（force_ocr 或 启用 OCR）
-                  ├─ _queue_capture_ocr() → OcrTask 入唯一队列（结果经 _on_ocr_task_completed 回来）
-                 └─ _schedule_image_save() → [_image_save_executor] save_image() → image_saved 信号
+                  ├─ _queue_capture_ocr() → build_task() 组装 → _ensure_ocr_worker().submit() 入唯一队列（结果经 _on_ocr_task_completed 回来）
+                 └─ _save_scheduler.schedule() → [ImageSaveScheduler 单线程] save_image() → image_saved 信号
 ```
 
 > **2026-09 变更**：删除了 `is_poll` 全局配置误读（原从 `mumu_ocr_poll_mode` 读取）、`POLL_MATCH_COOLDOWN_SECONDS` 常量、`_poll_cooldown_until` 字段与冷却跳过分支。`should_ocr` 不再包含 `or is_poll` 项。真实轮询冷却统一由 `OcrService.set_task_cooldown()` 按任务级承担（见 3.3），CaptureService 不再自行持有冷却状态。
@@ -181,11 +192,13 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 
 `submit_ocr_task()` 的参数集为 `(image, hero_names, template_name, recognize=True, rois=None, match_template=True, fallback_on_template_miss=False, allow_result_reuse=False)`；`fallback_on_template_miss=True` 用于对局攻略任务，模板未命中仍继续 OCR 以保留跳转判断素材。轮询任务命中一次页面后由 `OcrService.set_task_cooldown()` 按任务记冷却（`POLL_MATCH_COOLDOWN_MS`，`hero_selection` 的时长取 `mumu_hero_selection_cooldown` 配置），冷却中的任务不进入 `due_poll_tasks()`，窗口期内该任务不再匹配、不 OCR。
 
-**OCR 预热**：`warmup_ocr_model()` 把模型加载、特征预热与推理预热作为特殊 `OcrTask` 投入同一串行队列（状态 `idle/warming/ready/failed`，经 `ocr_warmup_state_changed` 广播）；`wait_ocr_warmup(timeout_ms=15_000)` 供主窗口显示前的启动画面阶段阻塞等待——Paddle 初始化期间长时间持有 GIL，若在事件循环运行后再预热会卡住界面。
+**OCR 预热**：`warmup_ocr_model()` 把模型加载、特征预热与推理预热作为特殊 `OcrTask` 投入同一串行队列（状态 `idle/warming/ready/failed`，经 `ocr_warmup_state_changed` 广播；状态机在 `OcrTaskCoordinator`，CaptureService 保留门面）；`wait_ocr_warmup(timeout_ms=15_000)` 供主窗口显示前的启动画面阶段阻塞等待——Paddle 初始化期间长时间持有 GIL，若在事件循环运行后再预热会卡住界面。
 
 **2026-09 变更**：
 - **ADB raw 帧截图提速（cd35c98）**：`capture_for_poll()` 直接返回 numpy 数组（经 `_adb_executor` 排队），与手动截图、模板截图互斥；`AdbCapture.screencap_raw()` 跳过 PIL 解码直接返回 PNG bytes，大幅降低轮询路径的 IO 与解码开销。
 - **`reset_ocr_recognizer_cache()`（9ca1b91）**：白名单治理后调用的引擎缓存重置入口。OCR 识别器（含复核引擎）按 `hero_names` 分片缓存，用户层白名单更新后需使全部旧缓存失效，该方法清除所有分片并在下一轮 OCR 时按新词表重建。
+
+**2026-10 职责域出仓（审计 G8）**：官方导入网关 / 图像保存调度 / OCR 任务编排依次出仓为 `official_import_gateway.py`、`image_save_scheduler.py`、`ocr_task_coordinator.py`（见 3.2 开头的职责表）。对外契约不变：UI 侧 12 处信号连接与全部公共方法名保持原样，`submit_ocr_task()` 的提交动作仍经 `self._ensure_ocr_worker()`（实例级补丁锚点语义保留）；worker 接线（`task_completed` → CaptureService 完成分派 / OfficialImportGateway 结果分派，`official_progress` → Gateway 进度转发）在 `worker_created` 槽内完成，先于 worker `start()`。
 
 ### 3.3 OcrService（OCR 控制）
 
@@ -255,6 +268,7 @@ MumuConfigDialog
 ```
 OfficialDataImportDialog
   -> CaptureService.submit_official_import()
+     -> OfficialImportGateway.submit(worker, paths)          [审计 G8 后经网关：排他集合与排队提示在此]
      -> OcrWorker.submit(OfficialImportTask)
         -> OfficialDataImportService.import_pages()（按已选图片顺序串行执行）
            -> official_board_parser 读取图片、检测横线并按列比例裁剪单元格
@@ -319,7 +333,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 | `HeroNameResolver.review_candidates()` | `ocr_name`, `current=None` | `list[str]` | 复核界面候选名（当前值 ∪ 距离 ≤2 ∪ 歧义候选，空则全表按距离排序） |
 | `HeroNameResolver.is_known_hero_name()` | `name` | `bool` | 复核界面统计用 |
 | `load_pending_session()` / `clear_pending_session()` | `path=None` | `dict \| None` | 模块级读写 `data/official_import_pending.json` |
-| `CaptureService.submit_official_import()` | `{类型: 路径列表}` | `OfficialImportTask` | 空选择 / 任务重叠时抛 `ValueError` / `RuntimeError` |
+| `CaptureService.submit_official_import()` | `{类型: 路径列表}` | `OfficialImportTask` | 空选择 / 任务重叠时抛 `ValueError` / `RuntimeError`（门面委托 `OfficialImportGateway.submit()`，排他集合在网关内） |
 | `CaptureService.official_import_progress` | `status`, `current`, `total` | 当前榜单的 OCR 工作进度 | 等待队列、胜率模板准备、逐行识别和罕见字兜底状态都会更新；`current < 0` 仅更新状态文字 |
 | `CaptureService.official_import_completed` | - | `list[dict]` | 整批任务完成 |
 | `CaptureService.official_import_failed` | - | `str` | 整批任务失败原因 |

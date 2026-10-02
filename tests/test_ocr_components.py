@@ -842,3 +842,11 @@ def test_general_recognizer_rolls_weaker_duplicate_back_to_conflict() -> None:
     assert results[0]["name"] == "周瑜"
     assert results[1]["name"] == ""
     assert results[1]["resolution"] == "conflict"
+
+
+def test_save_results_writes_given_page_type(tmp_path) -> None:
+    json_path = tmp_path / "latest.json"
+    GeneralRecognizer.save_results([], json_path, page_type="match_guide")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    assert data["page_type"] == "match_guide"

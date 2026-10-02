@@ -504,7 +504,10 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | HeroFetchService | `hero_fetch_service.py` | ~87 | BaseFetchService | 自身 2（fetch_completed / progress_updated）+ 基类 3 |
 | GuideFetchService | `guide_fetch_service.py` | ~122 | BaseFetchService | 自身 3（progress_output / progress_value / fetch_completed）+ 基类 3 |
 | SynergyFetchService | `synergy_fetch_service.py` | ~164 | BaseFetchService | 自身 5（progress_output / progress_value / fetch_completed / reload_finished / reload_failed）+ 基类 3 |
-| CaptureService | `capture_service.py` | ~670 | QObject | 12 |
+| CaptureService | `capture_service.py` | ~570 | QObject | 11（门面；官方导入 3 个经 OfficialImportGateway 转发） |
+| OcrTaskCoordinator | `ocr_task_coordinator.py` | ~153 | QObject | 2（warmup_state_changed / worker_created；审计 G8 出仓） |
+| OfficialImportGateway | `official_import_gateway.py` | ~57 | QObject | 3（progress / completed / failed；审计 G8 出仓） |
+| ImageSaveScheduler | `image_save_scheduler.py` | ~57 | QObject | 2（image_saved / _save_ready；审计 G8 出仓） |
 | EmulatorOperationService | `emulator_operation_service.py` | ~145 | QObject | 9 |
 | MumuConfigCoordinator | `mumu_config_coordinator.py` | ~319 | QObject | 14 |
 | OcrService | `ocr_service.py` | ~407 | QObject | 4（status_changed / template_changed / poll_tick / poll_state_changed） |
@@ -591,7 +594,7 @@ error_occurred = Signal(str)               # 错误信息
 - 同样支持 `backend` 参数追加 `--browser`
 - `use_rag=False`（经典模式）→ 追加 `--no-rag`；`overwrite=True` → 追加 `--update`
 
-### 3.5 CaptureService（截图业务服务）
+### 3.5 CaptureService（截图业务门面）
 
 ```python
 class CaptureService(QObject):
@@ -601,7 +604,9 @@ class CaptureService(QObject):
 ```
 
 截图操作直接在 Python 中执行（不通过 QProcess），因为需要即时获取图像数据更新 UI。
-模板匹配与 PaddleOCR 识别提交到唯一的 `OcrWorker` 后台队列；结果通过信号回到 GUI 线程。`QTimer.singleShot(0, ...)` 仅延后回调，并不提供异步执行。
+模板匹配与 PaddleOCR 识别提交到唯一的 `OcrWorker` 后台队列；结果通过信号回到 GUI 线程。
+
+**2026-10 职责域出仓（审计 G8）**：CaptureService 缩为门面（570 行），保留截图流水线（`_pending_ocr_captures` 关联表、`_handle_capture_result`）与连接状态机；OCR worker 生命周期/预热状态机/任务组装出仓到 `OcrTaskCoordinator`（ocr_task_coordinator.py），官方导入提交/排他/分派出仓到 `OfficialImportGateway`（official_import_gateway.py），PNG 保存出仓到 `ImageSaveScheduler`（image_save_scheduler.py）。对外信号名与公共方法全部保留（UI 侧 12 处连接零改动）；worker 的 `task_completed` / `official_progress` 接线在 `worker_created` 槽内完成，先于 worker `start()`。
 
 **主要方法**：
 
@@ -610,28 +615,30 @@ class CaptureService(QObject):
 | `update_config(config)` | 更新配置并重建 AdbCapture（路径/端口变化时重建） |
 | `do_capture(hero_names, perform_ocr)` | 执行截图；选将推荐和对局攻略的截图按钮均传入 `perform_ocr=False`，仅保存到 `screenshots/` |
 | `do_capture_from_file(file_path, hero_names)` | 从本地图片执行 OCR（不依赖 ADB） |
+| `submit_ocr_task(...)` | 门面：`OcrTaskCoordinator.build_task()` 组装（阈值/ROI 布局）后经 `_ensure_ocr_worker()` 提交唯一队列 |
+| `submit_official_import(paths)` | 门面：委托 `OfficialImportGateway.submit(worker, paths)`（排他与排队提示在网关内） |
 | `connect_emulator()` | 连接模拟器 |
 | `disconnect_emulator()` | 断开模拟器 |
 | `capture_screenshot()` | 通过共享会话获取截图，不写文件、不执行 OCR；供模板制作后台任务使用 |
 | `capture_for_poll()` | 轮询专用截图（2026-09 新增）：直接返回 numpy 数组，跳过 PIL Image 转换；根据 `MUMU_SCREENSHOT_MODE` 选择 raw/PNG 路径 |
-| `reset_ocr_recognizer_cache()` | 清除 OCR 识别器缓存（2026-09 新增）：白名单配置写入后调用，使新白名单立即生效 |
+| `reset_ocr_recognizer_cache()` | 清除 OCR 识别器缓存（2026-09 新增）：白名单配置写入后调用，使新白名单立即生效（委托 OcrTaskCoordinator） |
 
 **手动截图全流程**：
 
 ```
 do_capture()
-  └─ QTimer.singleShot(0, _execute_capture)
-       ├─ AdbCapture.screencap_full() → PIL Image
-       ├─ 保存截图到 screenshots/ 目录（手动调用路径特有）
-       └─ emit capture_completed({image, save_path, ocr_results, ocr_matched})
+  └─ [_adb_executor 单线程] capture_screenshot()
+       ├─ AdbCapture 连接（未连接时自动连接）→ screencap_full() → PIL Image
+       └─ future 回调 → _capture_ready 信号 → [GUI 线程] _handle_capture_result()
+            ├─ 需要 OCR → _queue_capture_ocr() → submit_ocr_task() → OcrWorker.submit(OcrTask)
+            │    └─ OcrWorker._execute() → 模板匹配 → GeneralRecognizer.recognize()
+            │         └─ _on_ocr_task_completed() → 拼装 save_future → capture_completed
+            └─ ImageSaveScheduler.schedule() → image-save 单线程 save_image()
+                 └─ image_saved 信号（OCR 与保存互不等待）
 
 do_capture_from_file()
   └─ QTimer.singleShot(0, _execute_file_ocr)
-       ├─ PIL.Image.open(file_path)
-       └─ _queue_capture_ocr()
-            └─ submit_ocr_task() → OcrWorker.submit(OcrTask)
-                 └─ OcrWorker._execute() → 模板匹配 → GeneralRecognizer.recognize()
-                      └─ _on_ocr_task_completed() → capture_completed
+       └─ load_local_image() → _queue_capture_ocr() → 同上提交链
 ```
 
 **注意**：轮询路径不走 `do_capture()`，轮询在后台执行 `capture_for_poll()`（优先 raw 帧，失败回退 PNG），随后将模板匹配与 OCR 提交给同一个 `OcrWorker`，**不保存截图文件到磁盘**，全程内存中处理。这样轮询与手动导入仍按任务顺序共用一个识别器。
@@ -677,6 +684,7 @@ class OcrService(QObject):
 ```
 OfficialDataImportDialog._start_import()
   -> CaptureService.submit_official_import(paths)
+    -> OfficialImportGateway.submit(worker, paths)          # 审计 G8 后经网关：排他集合、排队提示
     -> OcrWorker.submit(OfficialImportTask)
       -> emit official_progress(status, 0, 0)              # 排队、读取、版式识别与行检测阶段
       -> OfficialDataImportService.import_pages(key, paths, callback)
@@ -1464,6 +1472,7 @@ BaseHeroSelectDialog (hero_select_dialog.py, ~293行)
 ```
 _start_import()
   -> CaptureService.submit_official_import(paths)
+  -> OfficialImportGateway.submit()                          # 审计 G8 后经网关
   -> official_import_progress -> _on_progress_changed()
   -> official_import_completed -> _on_completed() -> accept()
   -> official_import_failed -> _on_failed()
@@ -2005,7 +2014,7 @@ class AdbCapture:
 
 ### 11.5 截图业务服务（capture_service.py）
 
-见[第三章第 3.5 节](#35-captureservice截图业务服务)。
+见[第三章第 3.5 节](#35-captureservice截图业务门面)。**审计 G8（2026-10）**后同包新增三个协作模块：`official_import_gateway.py`（官方导入网关，3 信号）、`image_save_scheduler.py`（PNG 保存调度，1 公开信号）、`ocr_task_coordinator.py`（worker 生命周期/预热状态机/任务组装，2 信号）——均由 CaptureService 组合并以同名门面信号对外，详见 3.5 节职责表与 `module_business.md` §3.2。
 
 ### 11.6 OCR 控制服务（ocr_service.py）
 
