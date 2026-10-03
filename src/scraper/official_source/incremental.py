@@ -20,6 +20,7 @@ from pathlib import Path
 
 # 复用爬虫核心模块的公开 API
 from src.config.env import BUNDLE_ROOT
+from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.crawler import (
     fetch_all_raw,
     save_json_atomic,
@@ -54,13 +55,17 @@ def _load_heroes_file(path: Path) -> list | None:
         return None
 
 
-def load_existing_ids(path: Path) -> set[int]:
-    """加载本地已有武将的 ID 集合"""
+def load_existing_ids(path: Path) -> set[int] | None:
+    """加载本地已有武将的 ID 集合；文件损坏（已备份 corrupt-*）时返回 None。
+
+    返回 None 表示调用方必须中止，而不是当成空集继续——否则替换模式
+    会把整个 heroes.json 覆盖成只剩本次指定的武将。
+    """
     if not path.exists():
         return set()
     heroes = _load_heroes_file(path)
     if heroes is None:
-        return set()
+        return None
     existing = set()
     for h in heroes:
         hid = h.get("id")
@@ -119,12 +124,17 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     print(f"  -> 清洗后: {len(transformed)} 条", flush=True)
 
     if not transformed:
-        print("  无新数据需要处理。", flush=True)
-        return
+        # 真无更新走 main() 的"无目标武将"正常分支；此处 0 条几乎必然是
+        # 官网结构变更导致 transform 全失败，退出码 1 让 UI 显示失败而非"完成"
+        print("  [中止] 目标武将清洗后 0 条（疑似官网结构变更），未写入任何数据。", flush=True)
+        sys.exit(1)
 
     print("\n[Pydantic 模型校验...]", flush=True)
     validated = validate_heroes(transformed)
     print(f"  -> 校验通过: {len(validated)} 条", flush=True)
+    if not validated:
+        print(f"  [中止] {len(transformed)} 条清洗数据校验全部失败，未写入。", flush=True)
+        sys.exit(1)
 
     # 预览模式
     if dry_run:
@@ -140,20 +150,27 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     if not output_path.exists():
         merged = validated
     elif replace_ids is not None:
-        existing = _load_heroes_file(output_path) or []
+        existing = _load_heroes_file(output_path)
+        if existing is None:
+            print(f"  [中止] {output_path} 解析失败（已备份 corrupt-*），中止替换写入。", flush=True)
+            sys.exit(1)
         before = len(existing)
         existing = [h for h in existing if h["id"] not in replace_ids]
         removed = before - len(existing)
         merged = existing + validated
         print(f"  -> 替换写入: 删除 {removed} 条旧数据 + 写入 {len(validated)} 条新数据", flush=True)
     elif append:
-        existing = _load_heroes_file(output_path) or []
+        existing = _load_heroes_file(output_path)
+        if existing is None:
+            print(f"  [中止] {output_path} 解析失败（已备份 corrupt-*），中止追加写入。", flush=True)
+            sys.exit(1)
         existing_ids = {h["id"] for h in existing}
         merged = existing + [h for h in validated if h["id"] not in existing_ids]
         print(f"  -> 追加写入: 原有 {len(existing)} + 新增 {len(validated) - (len(merged) - len(existing))}", flush=True)
     else:
         merged = validated
 
+    snapshot_to_backups(output_path)
     save_json_atomic(output_path, merged)
     print(f"  -> 已保存: {output_path} ({len(merged)} 条)", flush=True)
 
@@ -212,6 +229,10 @@ def main() -> None:
 
     if args.incremental:
         existing_ids = load_existing_ids(output_path)
+        if existing_ids is None:
+            print(f"\n[中止] {output_path} 解析失败，原文件已备份为同目录 corrupt-*，"
+                  f"请先确认备份后再执行采集。", flush=True)
+            sys.exit(1)
         target_raw = incremental_collect(all_raw, existing_ids)
         print(f"  增量目标: {len(target_raw)} 个武将要处理", flush=True)
 
