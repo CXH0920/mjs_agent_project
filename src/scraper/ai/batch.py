@@ -31,6 +31,7 @@ from pathlib import Path
 from src.config.env import BUNDLE_ROOT, PROVIDER_PRESETS, get_runtime_params
 from src.config.profiles import resolve_api_config
 from src.data.guide_manager import GuideManager
+from src.data.json_repository import snapshot_to_backups
 from src.data.synergy_manager import SynergyManager
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.prompt_utils import estimate_cost, estimate_cost_by_tokens
@@ -273,6 +274,12 @@ def main():
 
     guide_path = Path(args.guides_file)
     synergy_path = Path(args.synergies_file)
+    # 写前快照（每次运行一次，而非每 10 条批量提交一次）：生成期间旧数据
+    # 可从 data/backups 找回，避免新一轮生成覆盖后无基线可回滚
+    if args.guide:
+        snapshot_to_backups(guide_path)
+    if has_synergy_mode:
+        snapshot_to_backups(synergy_path)
     existing_guides = _load_existing_guides(guide_path) if args.guide else {}
     existing_synergy_dict, existing_synergy_keys = (
         _load_existing_synergies(synergy_path) if has_synergy_mode

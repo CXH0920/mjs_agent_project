@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
+from src.data.json_repository import snapshot_to_backups
 from src.data.models import Hero, HeroGuide, SynergyScore
 from src.data.synergy_manager import SynergyManager
 
@@ -51,13 +52,8 @@ class _ManagerTransaction:
 
     @staticmethod
     def _backup(source: Path, timestamp: str) -> Path | None:
-        if not source.exists():
-            return None
-        backup_dir = source.parent / "backups"
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        backup_path = backup_dir / f"{source.stem}-{timestamp}{source.suffix}"
-        shutil.copy2(source, backup_path)
-        return backup_path
+        """备份到 backups/ 子目录；命名与轮转统一由 snapshot_to_backups 管理。"""
+        return snapshot_to_backups(source)
 
     def commit(self) -> None:
         try:
