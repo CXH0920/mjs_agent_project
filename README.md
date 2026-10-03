@@ -118,6 +118,25 @@ python -m src.scripts.import_hero_adjustments --input <json>  # 首次注入武�
 
 ---
 
+## 数据与合规
+
+本仓库仅包含源代码、测试与 `data/samples/` 中的**全虚构示例数据**。官网抓取内容
+（武将/卡牌数据与文案、头像、攻略语料）依据 [LICENSE](LICENSE) 附加条款不随仓库分发，
+存放于独立私有数据仓，经以下命令在本地获取：
+
+```bash
+git clone <私有数据仓地址> ../mjs_data_private   # 首次：私有仓与公开仓同级放置
+python -m src.scripts.pull_data pull             # 拉取 + sha256 校验 + 落位工作区
+python -m src.scripts.pull_data push             # 周更/采集后回推私有仓
+```
+
+- 来源与采集时间登记：[data/SOURCES.md](data/SOURCES.md)
+- 项目早期提交（2026-06-07 ~ 2026-10-02）中曾包含过此类内容，完整 git 历史按原样
+  保留以如实记录开发过程；处置说明见 LICENSE「第三方内容说明」与 [TERMS.md](TERMS.md) 第 10 节。
+- `guides.json` / `synergies.json` 为 AI 生成内容，不入任何仓库，可随时重新生成。
+
+---
+
 ## 目录结构
 
 ```

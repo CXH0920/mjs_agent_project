@@ -47,6 +47,9 @@
 - 二次发布抓取的数据
 违反者授权自动终止，开发者保留追究法律责任的权利。完整条款见 LICENSE（附加使用条款）与 TERMS.md。
 
+上述红线同样约束本项目自身：抓取数据自 2026-10-03 起不入版本库，经私有数据仓同步
+（`src/scripts/pull_data.py`，`data/SOURCES.md` 登记来源）；历史说明见 LICENSE「第三方内容说明」。
+
 ## 默认遵守
 - 默认使用中文回复
 - 使用 `G:\CONDA\Anaconda3\envs\myenv\python.exe` 运行 Python、pytest 及相关脚本；不要依赖单次 PowerShell 命令中的 `conda activate`，以免误用 Base 环境
