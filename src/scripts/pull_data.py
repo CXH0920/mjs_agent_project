@@ -26,6 +26,8 @@ DATA_REPO = ROOT.parent / "mjs_data_private"
 PRIVATE_PATHS = [
     "data/heroes.json", "data/combos.json", "data/cards.json",
     "data/card_annotations.json", "data/special_cards.json",
+    "data/card_points.json", "data/equip_attrs.json",
+    "data/hero_classification.json", "data/mjs_adjustments.json",
     "data/announcements.json", "data/baike_snapshot.json",
     "data/raw_guides", "data/rag_corpus", "images",
 ]

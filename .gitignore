@@ -119,5 +119,9 @@ src/scripts/.*.json
 /data/cards.json
 /data/card_annotations.json
 /data/special_cards.json
+/data/card_points.json
+/data/equip_attrs.json
+/data/hero_classification.json
+/data/mjs_adjustments.json
 /data/raw_guides/
 /images/
