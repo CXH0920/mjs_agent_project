@@ -19,8 +19,7 @@ def import_env(tmp_path, monkeypatch):
     """官方导入集成测试公共环境。
 
     写盘重定向到 tmp_path，胜率缓存清理静音，推荐指数/巅峰赛缓存标记
-    记录到 env.stale_calls / env.peak_clears 供用例断言；real_data_dir
-    保留重定向前的真实数据目录（个别用例需要真实 heroes.json 词表）。
+    记录到 env.stale_calls / env.peak_clears 供用例断言。
     """
     from types import SimpleNamespace
 
@@ -28,7 +27,6 @@ def import_env(tmp_path, monkeypatch):
         tmp_path=tmp_path,
         stale_calls=[],
         peak_clears=[],
-        real_data_dir=import_module.DATA_DIR,
     )
     monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
     monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
@@ -864,12 +862,9 @@ def test_detect_layout_rejects_exile_right_heavier_panel(monkeypatch) -> None:
 
 
 def test_import_pages_merges_exile_short_right_panel_pages(tmp_path, monkeypatch, import_env) -> None:
-    import json as _json
-
-    all_names = [
-        hero["name"]
-        for hero in _json.loads((import_env.real_data_dir / "heroes.json").read_text(encoding="utf-8"))
-    ][:170]
+    first = "甲乙丙丁戊己庚辛壬癸子女天地玄黄宇宙洪"
+    second = "壹贰叁肆伍陆柒捌玖拾"
+    all_names = [a + b for a in first for b in second][:170]
     names = {rank: all_names[rank - 1] for rank in range(1, 171)}
     service = OfficialDataImportService(hero_names=all_names)
     panel = np.zeros((1100, 100, 3), dtype=np.uint8)

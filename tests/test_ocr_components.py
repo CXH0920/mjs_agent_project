@@ -16,7 +16,7 @@ from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr.recognizer import GeneralRecognizer
-from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, required_characters
+from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, HEROES_PATH, required_characters
 
 
 def test_paddle_loader_hides_windows_child_consoles_and_restores_popen(monkeypatch) -> None:
@@ -251,6 +251,8 @@ def test_character_feature_cache_character_set_includes_names_and_common_misread
 
 
 def test_static_character_feature_cache_covers_current_hero_names_and_common_misreads() -> None:
+    if not HEROES_PATH.exists():
+        pytest.skip("真实武将数据已出库：python -m src.scripts.pull_data pull 后运行")
     entries = CharacterFeatureRepository().load()
 
     assert required_characters() <= entries.keys()

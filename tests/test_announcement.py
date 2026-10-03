@@ -544,7 +544,9 @@ def test_service_do_check_baike_failure_keeps_snapshot(tmp_path, monkeypatch) ->
 
 def test_service_do_check_skips_baseline_when_local_unavailable(tmp_path, monkeypatch) -> None:
     """本地 heroes 文件存在但列表为空时，不得用官网当前建基线（否则 diff 恒空）。"""
-    heroes = HeroManager()  # 默认文件存在但未加载 → items 空
+    heroes_file = tmp_path / "empty_heroes.json"
+    heroes_file.write_text("[]", encoding="utf-8")
+    heroes = HeroManager(heroes_file)  # 文件存在但列表为空 → items 空
     service = AnnouncementService(
         AnnouncementManager(tmp_path / "announcements.json"),
         heroes,
