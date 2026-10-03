@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -204,6 +205,7 @@ class HeroDetailPanel(QWidget):
         synergy_manager: SynergyManager,
         parent=None,
         combo_manager: ComboManager | None = None,
+        busy_check: Callable[[], str | None] | None = None,
     ):
         super().__init__(parent)
         self._hero_mgr = hero_manager
@@ -214,10 +216,26 @@ class HeroDetailPanel(QWidget):
             self._guide_mgr,
             self._synergy_mgr,
         )
+        self._busy_check = busy_check
         self._current_hero: Optional[Hero] = None
         self._current_guide: Optional[HeroGuide] = None
 
         self._setup_ui(combo_manager)
+
+    def _notify_generation_busy(self) -> bool:
+        """AI 生成进行中时提示并拦截编辑/删除。
+
+        AI 子进程按批全量覆盖写 guides/synergies.json（落点是它启动时读入的
+        旧快照），期间的人工编辑会被下一次批量提交静默冲掉，故写动作前置拦截。
+        """
+        reason = self._busy_check() if self._busy_check else None
+        if reason is None:
+            return False
+        QMessageBox.warning(
+            self, "AI 生成进行中",
+            f"{reason}任务正在运行，请等待完成后再编辑或删除，避免修改被生成结果覆盖。",
+        )
+        return True
 
     # ---------------------------------------------------------------
     # UI 构建
@@ -391,6 +409,8 @@ class HeroDetailPanel(QWidget):
 
     def _on_synergy_edit(self) -> None:
         """编辑表格中选中的相性。"""
+        if self._notify_generation_busy():
+            return
         synergy = self._synergy_tab.selected_synergy()
         if not self._current_hero or not synergy:
             return
@@ -414,6 +434,8 @@ class HeroDetailPanel(QWidget):
 
     def _on_synergy_delete(self) -> None:
         """删除表格中选中的相性。"""
+        if self._notify_generation_busy():
+            return
         synergy = self._synergy_tab.selected_synergy()
         if not synergy:
             return
@@ -504,6 +526,8 @@ class HeroDetailPanel(QWidget):
 
     def _on_guide_edit(self) -> None:
         """打开编辑对话框修改攻略"""
+        if self._notify_generation_busy():
+            return
         if not self._current_guide:
             return
         dialog = GuideEditDialog(self._current_guide, self._hero_mgr, parent=self)
@@ -523,6 +547,8 @@ class HeroDetailPanel(QWidget):
 
     def _on_guide_delete(self) -> None:
         """删除当前攻略（含确认）"""
+        if self._notify_generation_busy():
+            return
         if not self._current_guide:
             return
         reply = QMessageBox.question(
@@ -556,15 +582,17 @@ class HeroBrowser(QWidget):
         synergy_manager: SynergyManager,
         parent=None,
         combo_manager: ComboManager | None = None,
+        busy_check: Callable[[], str | None] | None = None,
     ):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._guide_mgr = guide_manager
         self._synergy_mgr = synergy_manager
 
-        self._setup_ui(combo_manager)
+        self._setup_ui(combo_manager, busy_check)
 
-    def _setup_ui(self, combo_manager: ComboManager | None = None) -> None:
+    def _setup_ui(self, combo_manager: ComboManager | None = None,
+                  busy_check: Callable[[], str | None] | None = None) -> None:
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -580,6 +608,7 @@ class HeroBrowser(QWidget):
             self._guide_mgr,
             self._synergy_mgr,
             combo_manager=combo_manager,
+            busy_check=busy_check,
         )
         self._splitter.addWidget(self._detail_panel)
         self._splitter.setStretchFactor(0, 0)

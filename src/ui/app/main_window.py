@@ -334,6 +334,11 @@ class MainWindow(QMainWindow):
             self._data.guides,
             self._data.synergies,
             combo_manager=self._combo_manager,
+            # AI 子进程全量覆盖写 guides/synergies.json，编辑入口前置拦截防人工修改被冲掉
+            busy_check=lambda: (
+                "攻略生成" if self._guide_service.is_busy
+                else ("相性生成" if self._synergy_service.is_busy else None)
+            ),
         )
         self._hero_browser.synergies_changed.connect(self._on_synergies_changed)
         self._library_tabs.addTab(self._hero_browser, "武将资料")

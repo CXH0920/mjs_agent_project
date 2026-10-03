@@ -485,6 +485,9 @@ ALLOWED_DATA_FUNCTIONS = {
     # 评分→相性评级映射：SynergyScore 模型校验器同源（data/models.py），
     # 搬出 data 会制造反向依赖，故白名单放行 UI 展示共用。
     "synergy_rating_for_score",
+    # 原子写盘基元（json_repository.py）：无状态底层 IO 工具、非仓储/读函数，
+    # 值对象同地位；UI 写配置文件（白名单覆盖等）直接使用，注入反而造转发壳。
+    "atomic_write_json",
 }
 
 
@@ -631,8 +634,9 @@ def test_scraper_manager_construction_ratchet() -> None:
 # ---------------------------------------------------------------------------
 FILE_LINE_BUDGETS: dict[str, int] = {
     # 819 → 552：对话框开启器与菜单构建拆出 dialog_coordinator.py / menu_builder.py
-    # （审计 G1 切片 4.2a/4.2b，方法数 49 → 33）
-    "ui/app/main_window.py": 552,
+    # （审计 G1 切片 4.2a/4.2b，方法数 49 → 33）；552 → 557：资料库编辑入口
+    # 接入 AI 生成忙碌守卫闭包（T1 运维加固，2026-10）
+    "ui/app/main_window.py": 557,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
@@ -651,10 +655,12 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 670 → 570：官方导入网关 official_import_gateway、图像保存调度
     # image_save_scheduler、OCR 协调器 ocr_task_coordinator 依次出仓（审计 G8）
     "business/emulator/capture_service.py": 570,
-    # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）
-    "config/env.py": 363,
+    # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
+    # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）
+    "config/env.py": 366,
     "business/recognition/official_data_import_service.py": 638,
-    "ui/library/hero_browser.py": 610,
+    # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
+    "ui/library/hero_browser.py": 639,
     "scripts/sync_rule_stats.py": 601,
     # 2026-10 tripwire 落地补种（种子 = 当前实测值，只许收紧）。此前名单靠
     # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）

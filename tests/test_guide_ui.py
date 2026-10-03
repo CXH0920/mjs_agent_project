@@ -743,3 +743,68 @@ def test_guide_detail_defers_repaint_while_moving(tmp_path: Path) -> None:
     dialog._restore_updates_after_move()
     assert dialog.updatesEnabled()
     dialog.close()
+
+
+# ── AI 生成忙碌守卫（编辑/删除入口前置拦截） ──────────────────────────
+
+
+def _busy_panel(tmp_path: Path, busy_check) -> HeroDetailPanel:
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    guide_manager.add_guide(HeroGuide(hero_id=1, description="攻略"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=3))
+    panel = HeroDetailPanel(hero_manager, guide_manager, synergy_manager, busy_check=busy_check)
+    panel.show_hero(1)
+    panel._synergy_tab._table.selectRow(0)
+    return panel
+
+
+def test_guide_delete_blocked_while_generation_busy(tmp_path: Path, monkeypatch) -> None:
+    """AI 生成进行中删除攻略 → 立即弹窗拦截，不做任何数据变更"""
+    panel = _busy_panel(tmp_path, lambda: "攻略生成")
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda _parent, title, text: warnings.append((title, text))
+    )
+
+    panel._on_guide_delete()
+
+    assert len(warnings) == 1
+    assert warnings[0][0] == "AI 生成进行中"
+    assert "攻略生成" in warnings[0][1]
+    # 数据未被删除
+    assert panel._guide_mgr.get_guide(1) is not None
+
+
+def test_synergy_edit_blocked_while_generation_busy(tmp_path: Path, monkeypatch) -> None:
+    panel = _busy_panel(tmp_path, lambda: "相性生成")
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda _parent, title, text: warnings.append((title, text))
+    )
+
+    panel._on_synergy_edit()
+
+    assert len(warnings) == 1
+    assert "相性生成" in warnings[0][1]
+
+
+def test_deletes_proceed_when_not_busy(tmp_path: Path, monkeypatch) -> None:
+    """busy_check 返回 None（默认）时行为与原先一致：确认后正常删除"""
+    panel = _busy_panel(tmp_path, lambda: None)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *_args: QMessageBox.StandardButton.Yes
+    )
+    results: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda _parent, title, _text: results.append(title)
+    )
+
+    panel._on_guide_delete()
+    panel._on_synergy_delete()
+
+    assert results == ["删除完成", "删除完成"]
+    assert panel._guide_mgr.get_guide(1) is None
