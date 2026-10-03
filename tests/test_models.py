@@ -35,6 +35,18 @@ class TestSkill:
         with pytest.raises(ValidationError):
             Skill(name="奸雄", **{field: "x" * 4001})
 
+    @pytest.mark.parametrize("field", ["description", "settlement"])
+    def test_skill_text_explicit_empty_should_raise(self, field: str) -> None:
+        """显式空串必须被拦：官网改版解析失败会产出空描述，模型层就要失败"""
+        with pytest.raises(ValidationError):
+            Skill(name="奸雄", **{field: ""})
+
+    def test_skill_omitted_text_fields_still_default(self) -> None:
+        """pydantic v2 不校验 default：字段缺失仍放行（采集侧占比守卫负责该场景）"""
+        s = Skill(name="奸雄")
+        assert s.description == ""
+        assert s.settlement == ""
+
 
 class TestHero:
     def test_basic_hero(self) -> None:

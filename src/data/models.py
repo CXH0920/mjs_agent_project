@@ -64,8 +64,10 @@ class CardType(str, Enum):
 class Skill(BaseModel):
     """武将技能"""
     name: str = Field(..., description="技能名称")
-    description: str = Field(default="", max_length=MAX_SKILL_TEXT_LENGTH, description="技能描述")
-    settlement: str = Field(default="", max_length=MAX_SKILL_TEXT_LENGTH, description="结算详情")
+    # min_length=1 拦截显式空串（官网改版导致解析产出空描述的写入守卫之一）；
+    # pydantic v2 不校验 default 值，字段整体缺失仍会放行，由采集侧占比守卫兜底
+    description: str = Field(default="", min_length=1, max_length=MAX_SKILL_TEXT_LENGTH, description="技能描述")
+    settlement: str = Field(default="", min_length=1, max_length=MAX_SKILL_TEXT_LENGTH, description="结算详情")
 
     @field_validator("name")
     @classmethod

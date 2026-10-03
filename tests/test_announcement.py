@@ -145,7 +145,7 @@ def _hero(**overrides) -> dict:
         "last_updated": "2026-07-16",
         "icon_url": "https://siteres.ztgame.com/a.png",
         "skills": [
-            {"name": "算无遗策", "description": "你打出的战法牌无法被识破抵消。", "settlement": ""},
+            {"name": "算无遗策", "description": "你打出的战法牌无法被识破抵消。", "settlement": "结算详情。"},
         ],
     }
     hero.update(overrides)
@@ -268,10 +268,10 @@ def test_hero_content_hash_ignores_local_fields() -> None:
 
 def test_hero_content_hash_normalizes_format_variations() -> None:
     plain = _hero(skills=[
-        {"name": "算无遗策", "description": "可以将1张牌当作识破打出", "settlement": ""},
+        {"name": "算无遗策", "description": "可以将1张牌当作识破打出", "settlement": "结算详情。"},
     ])
     styled = _hero(skills=[
-        {"name": "<b>算无遗策</b>", "description": "可以将１张牌当作识破打出  ", "settlement": " "},
+        {"name": "<b>算无遗策</b>", "description": "可以将１张牌当作识破打出  ", "settlement": "结算详情。  "},
     ])
     assert hero_content_hash(plain) == hero_content_hash(styled)
 
@@ -279,7 +279,7 @@ def test_hero_content_hash_normalizes_format_variations() -> None:
 def test_hero_content_hash_changes_on_skill_change() -> None:
     before = _hero()
     after = _hero(skills=[
-        {"name": "算无遗策", "description": "修改后的描述", "settlement": ""},
+        {"name": "算无遗策", "description": "修改后的描述", "settlement": "结算详情。"},
     ])
     assert hero_content_hash(before) != hero_content_hash(after)
 
@@ -1102,7 +1102,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
 def _hero_dict(id_: int, name: str, position: str = "控制", skills=None, **overrides) -> dict:
     hero = _hero(id=id_, name=name, position=position)
     hero["skills"] = skills if skills is not None else [
-        {"name": "技能A", "description": "技能A的描述", "settlement": ""},
+        {"name": "技能A", "description": "技能A的描述", "settlement": "结算详情。"},
     ]
     hero.update(overrides)
     return hero
@@ -1117,20 +1117,20 @@ def test_hero_field_diff_summary_position() -> None:
 
 def test_hero_field_diff_summary_skill_description() -> None:
     local = _hero_dict(106, "曹丕", skills=[
-        {"name": "嗣承魏武", "description": "受伤，随机获得1张牌。受伤，随机获得1张牌。", "settlement": ""},
+        {"name": "嗣承魏武", "description": "受伤，随机获得1张牌。受伤，随机获得1张牌。", "settlement": "结算详情。"},
     ])
     official = _hero_dict(106, "曹丕", skills=[
-        {"name": "嗣承魏武", "description": "受伤，随机获得1张牌。", "settlement": ""},
+        {"name": "嗣承魏武", "description": "受伤，随机获得1张牌。", "settlement": "结算详情。"},
     ])
     lines = hero_field_diff_summary(local, official)
     assert any("嗣承魏武" in line and "描述不一致" in line for line in lines)
 
 
 def test_hero_field_diff_summary_new_skill() -> None:
-    local = _hero_dict(1, "贾诩", skills=[{"name": "技能A", "description": "描述", "settlement": ""}])
+    local = _hero_dict(1, "贾诩", skills=[{"name": "技能A", "description": "描述", "settlement": "结算详情。"}])
     official = _hero_dict(1, "贾诩", skills=[
-        {"name": "技能A", "description": "描述", "settlement": ""},
-        {"name": "技能B", "description": "新技能", "settlement": ""},
+        {"name": "技能A", "description": "描述", "settlement": "结算详情。"},
+        {"name": "技能B", "description": "新技能", "settlement": "结算详情。"},
     ])
     lines = hero_field_diff_summary(local, official)
     assert any("官网新增技能" in line and "技能B" in line for line in lines)
