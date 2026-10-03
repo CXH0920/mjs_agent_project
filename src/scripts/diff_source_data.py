@@ -275,6 +275,7 @@ def main():
 
     words = load_lexicon()
     rows = []
+    missing_baseline = 0
     for name in args.data.split(','):
         name = name.strip()
         if name not in HANDLERS:
@@ -288,6 +289,7 @@ def main():
         old_path = find_old(fname, args.old)
         if not old_path:
             print('跳过 %s：无旧基线（backups 目录无 %s-*.json）' % (fname, os.path.splitext(fname)[0]))
+            missing_baseline += 1
             continue
         old = load_json(old_path)
         if old is None:
@@ -298,7 +300,10 @@ def main():
         rows.extend(handler(old, new, words))
 
     if not rows:
-        print('未发现变更。')
+        if missing_baseline:
+            print('未发现变更（注意：%d 个文件无旧基线被跳过，不构成"无变化"结论）。' % missing_baseline)
+        else:
+            print('未发现变更。')
         return
     lines = ['| 类型 | 文件 | 对象 | 名称 | 变更摘要 | 是否新机制 |', '|---|---|---|---|---|---|']
     for r in rows:
