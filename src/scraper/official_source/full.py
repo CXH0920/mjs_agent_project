@@ -18,11 +18,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 from src.config.env import BUNDLE_ROOT
+from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 from src.scraper.official_source.crawler import (
     BAIKE_URL,
@@ -36,6 +38,35 @@ logger = logging.getLogger(__name__)
 
 # 默认输出路径
 DEFAULT_OUTPUT = BUNDLE_ROOT / "data" / "heroes.json"
+
+# 写入守卫阈值：官网改版会让 transform 产出大量空描述甚至全部失败，
+# 覆盖 heroes.json 前按规模与非空占比拦截，避免整库被一次采集静默清空
+MAX_EMPTY_DESC_RATIO = 0.2   # 空技能描述占比上限
+MAX_COUNT_DROP_RATIO = 0.3   # 相对现存文件的最大条数跌幅
+
+
+def refuse_write_reason(validated: list[dict], out_path: Path) -> str | None:
+    """写入前守卫；返回拒绝原因，None 表示允许写入。"""
+    if not validated:
+        return "校验通过条数为 0"
+    total = sum(len(h.get("skills", [])) for h in validated)
+    if total == 0:
+        return "技能总数为 0"
+    empty = sum(
+        1 for h in validated for s in h.get("skills", [])
+        if not str(s.get("description", "")).strip()
+    )
+    if empty / total > MAX_EMPTY_DESC_RATIO:
+        return f"空技能描述占比 {empty}/{total} 超过 {MAX_EMPTY_DESC_RATIO:.0%}"
+    if out_path.exists():
+        try:
+            old = json.loads(out_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            # 旧文件已损坏时不拦：全量重爬正是恢复手段
+            return None
+        if isinstance(old, list) and old and len(validated) < len(old) * (1 - MAX_COUNT_DROP_RATIO):
+            return f"条数 {len(validated)} 较现存 {len(old)} 跌幅超过 {MAX_COUNT_DROP_RATIO:.0%}"
+    return None
 
 
 def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bool = False) -> None:
@@ -101,6 +132,12 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
                 print(f"    ID={h['id']:>3}  {h['name']}  [{h['faction']}]  {sk}", flush=True)
             print("\n  (使用 --output 或去除 --dry-run 写入文件)", flush=True)
         else:
+            reason = refuse_write_reason(validated, out_path)
+            if reason:
+                print(f"\n[中止] 写入守卫触发: {reason}（旧文件未修改）", flush=True)
+                logger.error("写入守卫触发: %s", reason)
+                sys.exit(1)
+            snapshot_to_backups(out_path)
             save_json_atomic(out_path, validated)
             print(f"\n  已保存: {out_path}", flush=True)
 

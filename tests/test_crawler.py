@@ -9,6 +9,7 @@ from email.message import Message
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from src.scraper.official_source import adapter as official_adapter
 from src.scraper.official_source import crawler, incremental
@@ -137,7 +138,12 @@ def test_official_crawl_transforms_each_item_once(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(
         official,
         "transform",
-        lambda raw: transform_calls.append(raw) or {"id": raw["id"], "faction": ""},
+        lambda raw: transform_calls.append(raw)
+        or {
+            "id": raw["id"],
+            "faction": "",
+            "skills": [{"name": f"s{raw['id']}", "description": "描述"}],
+        },
     )
     monkeypatch.setattr(official, "validate_heroes", lambda heroes: heroes)
 
@@ -145,8 +151,8 @@ def test_official_crawl_transforms_each_item_once(monkeypatch, tmp_path: Path) -
 
     assert transform_calls == raw_list
     assert json.loads(output_path.read_text(encoding="utf-8")) == [
-        {"id": 1, "faction": ""},
-        {"id": 2, "faction": ""},
+        {"id": 1, "faction": "", "skills": [{"name": "s1", "description": "描述"}]},
+        {"id": 2, "faction": "", "skills": [{"name": "s2", "description": "描述"}]},
     ]
 
 
@@ -154,7 +160,12 @@ def test_incremental_run_transforms_each_item_once(monkeypatch, tmp_path: Path) 
     raw_list = [{"id": 1}, {"id": 2}]
     transform_calls: list[dict] = []
 
-    monkeypatch.setattr(incremental, "transform", lambda raw: transform_calls.append(raw))
+    monkeypatch.setattr(
+        incremental,
+        "transform",
+        lambda raw: transform_calls.append(raw)
+        or {"id": raw["id"], "name": f"武将{raw['id']}", "faction": "", "skills": []},
+    )
 
     incremental.run(raw_list, tmp_path / "heroes.json", dry_run=True)
 
@@ -337,3 +348,106 @@ def test_fetch_archives_robots_before_first_request(monkeypatch, tmp_path: Path)
     crawler.fetch("https://mjs.ztgame.com/baike/")
     assert seen[0] == crawler.ROBOTS_URL
     assert (tmp_path / "rc" / "robots.txt").exists()
+
+
+def _hero_dict(hero_id: int, skills: list[dict]) -> dict:
+    return {"id": hero_id, "faction": "魏", "skills": skills}
+
+
+class TestFullWriteGuard:
+    """full.py 写入守卫：官网改版产出的空数据不得覆盖 heroes.json"""
+
+    def test_empty_validated_rejected(self, tmp_path: Path) -> None:
+        reason = official.refuse_write_reason([], tmp_path / "heroes.json")
+        assert reason is not None and "校验通过条数为 0" in reason
+
+    def test_zero_skills_rejected(self, tmp_path: Path) -> None:
+        reason = official.refuse_write_reason([_hero_dict(1, [])], tmp_path / "heroes.json")
+        assert reason is not None and "技能总数为 0" in reason
+
+    def test_empty_desc_over_ratio_rejected(self, tmp_path: Path) -> None:
+        skills = [{"name": f"s{i}", "description": "d"} for i in range(3)]
+        skills.append({"name": "bad", "description": ""})
+        reason = official.refuse_write_reason([_hero_dict(1, skills)], tmp_path / "heroes.json")
+        assert reason is not None and "空技能描述占比" in reason
+
+    def test_empty_desc_under_ratio_allowed(self, tmp_path: Path) -> None:
+        skills = [{"name": f"s{i}", "description": "d"} for i in range(9)]
+        skills.append({"name": "bad", "description": ""})
+        assert official.refuse_write_reason([_hero_dict(1, skills)], tmp_path / "heroes.json") is None
+
+    def test_count_drop_rejected(self, tmp_path: Path) -> None:
+        output_path = tmp_path / "heroes.json"
+        output_path.write_text(json.dumps([_hero_dict(i, [{"name": "s", "description": "d"}]) for i in range(10)]), encoding="utf-8")
+        reason = official.refuse_write_reason([_hero_dict(1, [{"name": "s", "description": "d"}])], output_path)
+        assert reason is not None and "跌幅" in reason
+
+    def test_corrupt_old_file_allowed(self, tmp_path: Path) -> None:
+        """旧文件损坏时放行：全量重爬正是恢复手段"""
+        output_path = tmp_path / "heroes.json"
+        output_path.write_text("{broken", encoding="utf-8")
+        assert official.refuse_write_reason([_hero_dict(1, [{"name": "s", "description": "d"}])], output_path) is None
+
+    def test_missing_old_file_allowed(self, tmp_path: Path) -> None:
+        assert official.refuse_write_reason([_hero_dict(1, [{"name": "s", "description": "d"}])], tmp_path / "heroes.json") is None
+
+    def test_crawl_blocked_when_desc_all_empty(self, monkeypatch, tmp_path: Path) -> None:
+        """集成：官网改版导致描述全空 → 守卫拦截，旧文件字节不变"""
+        output_path = tmp_path / "heroes.json"
+        old_bytes = json.dumps([_hero_dict(1, [{"name": "旧技能", "description": "旧描述"}])]).encode("utf-8")
+        output_path.write_bytes(old_bytes)
+
+        monkeypatch.setattr(official, "fetch", lambda _url: "source")
+        monkeypatch.setattr(official, "find_chunk_url", lambda _html: "chunk")
+        monkeypatch.setattr(official, "parse_heroes_chunk", lambda _js: [{"id": 1}])
+        monkeypatch.setattr(
+            official,
+            "transform",
+            lambda raw: _hero_dict(raw["id"], [{"name": "新技能", "description": ""}]),
+        )
+        monkeypatch.setattr(official, "validate_heroes", lambda heroes: heroes)
+
+        with pytest.raises(SystemExit) as excinfo:
+            official.crawl(output_path=str(output_path), skip_images=True)
+        assert excinfo.value.code == 1
+        assert output_path.read_bytes() == old_bytes
+
+    def test_crawl_writes_when_guard_passes(self, monkeypatch, tmp_path: Path) -> None:
+        output_path = tmp_path / "heroes.json"
+        monkeypatch.setattr(official, "fetch", lambda _url: "source")
+        monkeypatch.setattr(official, "find_chunk_url", lambda _html: "chunk")
+        monkeypatch.setattr(official, "parse_heroes_chunk", lambda _js: [{"id": 1}])
+        monkeypatch.setattr(
+            official,
+            "transform",
+            lambda raw: _hero_dict(raw["id"], [{"name": "技能", "description": "描述"}]),
+        )
+        monkeypatch.setattr(official, "validate_heroes", lambda heroes: heroes)
+
+        official.crawl(output_path=str(output_path), skip_images=True)
+        assert json.loads(output_path.read_text(encoding="utf-8")) == [
+            _hero_dict(1, [{"name": "技能", "description": "描述"}])
+        ]
+        # 首次写入（无旧文件）不产生快照
+        assert not (output_path.parent / "backups").exists()
+
+    def test_crawl_snapshots_existing_file_before_overwrite(self, monkeypatch, tmp_path: Path) -> None:
+        output_path = tmp_path / "heroes.json"
+        output_path.write_text(json.dumps([_hero_dict(9, [{"name": "旧", "description": "旧"}])]), encoding="utf-8")
+        monkeypatch.setattr(official, "fetch", lambda _url: "source")
+        monkeypatch.setattr(official, "find_chunk_url", lambda _html: "chunk")
+        monkeypatch.setattr(official, "parse_heroes_chunk", lambda _js: [{"id": 1}])
+        monkeypatch.setattr(
+            official,
+            "transform",
+            lambda raw: _hero_dict(raw["id"], [{"name": "技能", "description": "描述"}]),
+        )
+        monkeypatch.setattr(official, "validate_heroes", lambda heroes: heroes)
+
+        official.crawl(output_path=str(output_path), skip_images=True)
+
+        backups = list((tmp_path / "backups").glob("heroes-*.json"))
+        assert len(backups) == 1
+        assert json.loads(backups[0].read_text(encoding="utf-8")) == [
+            _hero_dict(9, [{"name": "旧", "description": "旧"}])
+        ]
