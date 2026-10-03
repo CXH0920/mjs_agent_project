@@ -88,13 +88,21 @@ class AIBatchGenerator:
         self.http_timeout = http_timeout
         # 思考+正文共享的输出额度；思考型模型经 config.env MAX_OUTPUT_TOKENS 按供应商上限调大
         self.max_output_tokens = max_output_tokens
-        self._client = httpx.Client(timeout=http_timeout)
+        self._client = httpx.Client(timeout=self._build_timeout())
 
         # 限速控制
         self._min_interval = 60.0 / max(requests_per_minute, 1)
         self._last_request_time = 0.0
         # 取消标志：reject/面板销毁时置 True，重试循环在下次循环开头退出，避免 in-flight close 后继续 post
         self._cancelled = False
+
+    def _build_timeout(self) -> "httpx.Timeout":
+        """分层超时：connect/pool 短超时让黑洞化地址快速失败，read 保持完整超时。
+
+        若用标量 timeout，连接黑掉时也要等满 read 时长；一次生成会拖长数倍。
+        __init__ 与连接异常重建两处共用，避免重试后退化为标量配置。
+        """
+        return httpx.Timeout(connect=5.0, read=float(self.http_timeout), write=30.0, pool=5.0)
 
     def cancel(self) -> None:
         """请求中断：重试循环将在下次循环开头退出。
@@ -202,7 +210,7 @@ class AIBatchGenerator:
                         self._client.close()
                     except Exception as error:
                         logger.debug("旧 client 关闭失败: %s", error)
-                    self._client = httpx.Client(timeout=self.http_timeout)
+                    self._client = httpx.Client(timeout=self._build_timeout())
                 if attempt < self.max_retries:
                     wait = 2 ** attempt
                     print(f"  [重试] {type(e).__name__}，第 {attempt}/{self.max_retries} 次，{wait} 秒后重试", flush=True)

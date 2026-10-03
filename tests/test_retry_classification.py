@@ -80,3 +80,17 @@ def test_crawler_transient_error_still_retries(monkeypatch) -> None:
         crawler.fetch("https://example.com/data.json")
 
     assert len(calls) == crawler.MAX_RETRIES
+
+
+def test_client_timeout_is_layered() -> None:
+    """超时必须分层：connect/pool 短超时快速失败，read 保持配置值（含重试重建后）。"""
+    generator = AIBatchGenerator(api_key="sk-test", http_timeout=300)
+    try:
+        timeout = generator._client.timeout
+        assert timeout.connect == 5.0
+        assert timeout.read == 300.0
+        assert timeout.write == 30.0
+        assert timeout.pool == 5.0
+        assert generator._build_timeout() == timeout
+    finally:
+        generator._client.close()
