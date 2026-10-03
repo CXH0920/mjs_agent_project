@@ -69,12 +69,9 @@ logs/
 tests/fixtures_local/
 
 # RAG 生成材料（向量索引/模型缓存可由维护管道重建，不入库；
-# 语料 JSON 仅跟踪承载 curated 精化成果的武将/卡牌两文件，其余为零精化纯生成物不入库）
+# 语料（含 curated 精化成果）自 2026-10-03 起出库，经私有数据仓同步）
 data/rag_models/
-data/rag_corpus/*
-!data/rag_corpus/武将RAG语料.json
-!data/rag_corpus/卡牌RAG语料.json
-!data/rag_corpus/核心规则摘要.md
+data/rag_corpus/
 data/rag_index/
 
 # RAG 维护运行时状态（脚本已迁移到 src/scripts/，ROOT 为项目根；旧 scripts/ 前缀不再生效）
@@ -115,3 +112,12 @@ docs/archive/proposals/CP-*.json.merged
 
 # scripts 运行时状态/快照（整合到 src/scripts/ 后生成于此）
 src/scripts/.*.json
+
+# ---- 抓取数据出库（2026-10-03）：经 src/scripts/pull_data.py 从私有数据仓同步，见 data/SOURCES.md ----
+/data/heroes.json
+/data/combos.json
+/data/cards.json
+/data/card_annotations.json
+/data/special_cards.json
+/data/raw_guides/
+/images/
