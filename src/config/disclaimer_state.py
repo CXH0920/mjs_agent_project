@@ -19,7 +19,7 @@ from src.config.env import PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 # 免责声明文本版本：TERMS.md / LICENSE 附加条款实质修订时递增，驱动启动弹窗重新展示
-DISCLAIMER_VERSION = "1.0"
+DISCLAIMER_VERSION = "1.1"
 
 _STATE_FILE = PROJECT_ROOT / "config" / ".disclaimer_state.json"
 
