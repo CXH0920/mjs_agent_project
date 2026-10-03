@@ -353,7 +353,7 @@ def transform(raw: dict) -> dict | None:
 | 函数 | 文件 | 说明 |
 |------|------|------|
 | `fetch(url, binary=False)` | `crawler.py` | HTTP 请求，最多 3 次重试、`RETRY_DELAY=2s`；400/401/403/404 立即抛出 |
-| `save_json_atomic(path, data)` | `crawler.py` | 临时文件写入后 `os.replace` 原子替换 |
+| `save_json_atomic(path, data)` | `crawler.py` | 委托 `src.data.json_repository.atomic_write_json`（mkstemp 唯一临时名 + fsync + 原子替换） |
 | `clean_html(html_text)` | `crawler.py` | 去 HTML 标签、unescape、归一化空白 |
 | `split_skill_desc(raw_desc)` | `crawler.py` | 按段落标题拆分技能描述/结算 |
 | `transform(raw)` | `crawler.py` | 字段清洗与映射，返回 dict 或 None |

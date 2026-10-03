@@ -17,6 +17,7 @@ import time
 from datetime import datetime
 
 from src.config.env import PROJECT_ROOT
+from src.data.json_repository import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,7 @@ def _load_document() -> dict:
 
 
 def _write_document(document: dict) -> None:
-    STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = STATS_PATH.with_suffix(".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as file:
-        json.dump(document, file, ensure_ascii=False, indent=1)
-        file.write("\n")
-    temporary.replace(STATS_PATH)
+    atomic_write_json(STATS_PATH, document, indent=1)
 
 
 def _entry_for(document: dict, raw_name: str, candidates: list[str]) -> dict:

@@ -7,12 +7,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from src.data.hero_manager import HeroManager
+from src.data.json_repository import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +63,8 @@ def load_heroes(filepath: str | Path = "") -> list[dict]:
 
 
 def _save_json(filepath: str | Path, data: list) -> None:
-    """原子写入 JSON 文件"""
-    path = Path(filepath)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    tmp_path.replace(path)
+    """原子写入 JSON 文件（统一委托 json_repository，跨进程写同一路径不再共用固定临时名）"""
+    atomic_write_json(filepath, data)
     logger.debug("已保存 %d 条到 %s", len(data), filepath)
 
 

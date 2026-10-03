@@ -25,6 +25,7 @@ from urllib.parse import urljoin, urlparse
 
 from PIL import Image
 from src.config.env import IMAGES_OUTPUT_DIR, PROJECT_ROOT
+from src.data.json_repository import atomic_write_json
 from src.scraper.official_source.adapter import (
     find_card_chunk_url,
     find_chunk_url,
@@ -165,13 +166,8 @@ def fetch(url: str, binary: bool = False) -> str | bytes:
 
 
 def save_json_atomic(path: Path, data: list[dict]) -> None:
-    """将 JSON 数据写入临时文件后原子替换目标文件。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
-    with tmp_path.open("w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    tmp_path.replace(path)
+    """将 JSON 数据写入唯一临时文件后原子替换目标文件（统一委托 json_repository）。"""
+    atomic_write_json(path, data)
 
 
 # ============================================================

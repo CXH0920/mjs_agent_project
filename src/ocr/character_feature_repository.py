@@ -12,6 +12,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+from src.data.json_repository import atomic_write_json
 
 DEFAULT_CHARACTER_FEATURE_CACHE = BUNDLE_ROOT / "src" / "data" / "char_info_cache.json"
 USER_CHARACTER_FEATURE_CACHE = PROJECT_ROOT / "data" / "char_info_cache.json"
@@ -92,13 +93,8 @@ class CharacterFeatureRepository:
     def save(self) -> None:
         """将当前缓存以 UTF-8/LF 原子写入指定路径。"""
         entries = self.load()
-        temporary_path = self._cache_path.with_suffix(self._cache_path.suffix + ".tmp")
-        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with temporary_path.open("w", encoding="utf-8", newline="\n") as file:
-                json.dump(entries, file, ensure_ascii=False, indent=2, sort_keys=True)
-                file.write("\n")
-            temporary_path.replace(self._cache_path)
+            atomic_write_json(self._cache_path, entries, sort_keys=True)
         except OSError as exc:
             logger.error("汉字特征缓存保存失败 %s: %s", self._cache_path, exc)
             raise
@@ -154,14 +150,7 @@ class CharacterFeatureRepository:
             user_entries = self._read_entries(self._user_cache_path, "汉字特征用户层缓存")
             user_entries.update({char: entries[char] for char in chars if char in entries})
             try:
-                self._user_cache_path.parent.mkdir(parents=True, exist_ok=True)
-                temporary_path = self._user_cache_path.with_suffix(
-                    self._user_cache_path.suffix + ".tmp"
-                )
-                with temporary_path.open("w", encoding="utf-8", newline="\n") as file:
-                    json.dump(user_entries, file, ensure_ascii=False, indent=2, sort_keys=True)
-                    file.write("\n")
-                temporary_path.replace(self._user_cache_path)
+                atomic_write_json(self._user_cache_path, user_entries, sort_keys=True)
                 logger.debug(
                     "汉字特征用户层缓存已更新: %s (%d 字)",
                     self._user_cache_path,

@@ -10,6 +10,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+from src.data.json_repository import atomic_write_text
 
 DEFAULT_ROI_CONFIG_PATH = BUNDLE_ROOT / "config" / "ocr_rois.default.json"
 USER_ROI_CONFIG_PATH = PROJECT_ROOT / "config" / "ocr_rois.json"
@@ -221,12 +222,9 @@ class OcrRoiConfig:
                 for page_type, layout in sorted(self._overrides.items())
             },
         }
-        self._user_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self._user_path.with_suffix(self._user_path.suffix + ".tmp")
         content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
         try:
-            tmp_path.write_text(content, encoding="utf-8", newline="\n")
-            tmp_path.replace(self._user_path)
+            atomic_write_text(self._user_path, content)
         except OSError as exc:
             logger.error("保存 OCR ROI 配置失败: %s", exc)
             raise OcrRoiConfigError(f"保存 OCR ROI 配置失败: {exc}") from exc

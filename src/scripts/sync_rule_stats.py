@@ -25,6 +25,7 @@ import sys
 from collections import Counter, defaultdict
 
 from src.config.env import PROJECT_ROOT as ROOT
+from src.data.json_repository import atomic_write_text
 from src.scripts.rag_common import (
     HEADING_RE,
     SEPARATOR_RE,
@@ -466,14 +467,11 @@ def apply_confirmed(confirmed, doc_text):
 
 
 def _atomic_write_text(path, content: str) -> None:
-    """同目录临时文件中转后 os.replace：写中途崩溃留下的是旧文件而非半截文件。
+    """同目录唯一临时文件中转后原子替换：写中途崩溃留下的是旧文件而非半截文件。
 
-    元规则母本是唯一权威文档且无备份兜底，必须原子写。
+    元规则母本是唯一权威文档且无备份兜底，必须原子写（实现统一走 json_repository）。
     """
-    tmp_path = f'{path}.tmp'
-    with open(tmp_path, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(content)
-    os.replace(tmp_path, path)
+    atomic_write_text(path, content)
 
 
 def append_changelog(applied, changelog_path=DEFAULT_CHANGELOG):

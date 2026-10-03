@@ -35,6 +35,7 @@ from src.business.recognition.name_resolution import (
 )
 from src.business.recognition.pending_stats import STATS_PATH
 from src.config.env import OCR_CONFUSION_OVERRIDES_PATH
+from src.data.json_repository import atomic_write_json
 from src.ui.shared.widgets import PageHeader
 
 logger = logging.getLogger(__name__)
@@ -68,12 +69,7 @@ def load_overrides(path: Path | None = None) -> dict[str, str]:
 def save_overrides(pairs: dict[str, str], path: Path | None = None) -> None:
     path = path or _OVERRIDES_PATH
     document = {"version": 1, "pairs": dict(sorted(pairs.items()))}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as file:
-        json.dump(document, file, ensure_ascii=False, indent=1)
-        file.write("\n")
-    temporary.replace(path)
+    atomic_write_json(path, document, indent=1)
 
 
 def load_pending_entries(path: Path | None = None) -> dict[str, dict]:

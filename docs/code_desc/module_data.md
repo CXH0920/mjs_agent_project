@@ -319,7 +319,9 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 
 `src/data/json_repository.py` 提供维护仓库公共基建：
 
-- **`atomic_write_json(path, data, indent=2)`** — UTF-8/LF 原子写：`mkstemp` 生成同目录唯一临时文件 → 写入后 `flush + fsync` → `replace`；任一异常清理临时文件并重新抛出（原文件保持不变）。`path.parent.mkdir(parents=True, exist_ok=True)` 保证目标目录存在。
+- **`atomic_write_json(path, data, indent=2, sort_keys=False)`** — UTF-8/LF 原子写：`mkstemp` 生成同目录唯一临时文件 → 写入后 `flush + fsync` → `replace`；任一异常清理临时文件并重新抛出（原文件保持不变）。`path.parent.mkdir(parents=True, exist_ok=True)` 保证目标目录存在。**全库唯一 JSON 原子写入口**：2026-10 T1 收敛后 crawler `save_json_atomic`、AI `_save_json`、pending_stats、汉字特征缓存、env/profiles 配置写盘、白名单覆盖等原独立实现均委托于此（`src/config/env.py`、`profiles.py` 经函数内延迟导入以避免 config↔data 循环初始化）。
+- **`atomic_write_text(path, content)`** — 文本版原子写（同骨架），供 env 文件回写、ROI/价格配置等字符串写入使用。
+- **`snapshot_to_backups(source, keep=10)`** — 写前快照到同目录 `backups/`（命名 `{stem}-{时间戳}{suffix}`，与数据管理服务备份及 `diff_source_data` 基线 glob 约定一致），同 stem 自动轮转仅留最近 keep 份；`corrupt-*` 与手工抢救文件不匹配轮转模式永不清。接入点：官网全量/增量采集、AI 批量生成入口、`_ManagerTransaction._backup`。
 - **`JsonRepository` 基类** — 子类职责：`__init__` 先 `super().__init__(file_path)`；`load()` 用 `_read_root()` 取 `(root, ok)` 后做根结构校验与逐条解析；`save()` 构造 payload 后调 `save_payload(payload)`；CRUD 用 `_snapshot()/_restore()/_save_or_rollback()` 实现"先改内存、写盘失败回滚"。
   - `_read_root()` 加 `RLock`（防止与写盘并发），文件缺失记 warning、解析失败记 error（`DataIssue`）；
   - 写盘失败时 `_save_or_rollback()` 恢复内存快照并重新抛出，避免"看似失败、实际已变"的脏状态。

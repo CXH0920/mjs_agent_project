@@ -221,12 +221,12 @@ def save_api_profiles(data: dict, profiles_path=None) -> None:
         "version": int(data.get("version", 1)),
         "profiles": profiles,
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    # 函数内导入：config 是被 src.data 各仓库依赖的底层包，
+    # 模块级导入 src.data.json_repository 会触发 src.data.__init__ 循环初始化
+    from src.data.json_repository import atomic_write_text
+
     content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(content)
-    tmp_path.replace(path)
+    atomic_write_text(path, content)
 
 
 def list_api_profiles() -> list[dict]:
