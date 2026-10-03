@@ -228,13 +228,13 @@ def load_pricing_config(pricing_path=None) -> dict:
 
 def save_pricing_config(pricing_path, data: dict) -> None:
     """以 UTF-8 无 BOM、LF 换行原子写入模型价格配置。"""
+    # 函数内导入：config 是被 src.data 各仓库依赖的底层包，
+    # 模块级导入 src.data.json_repository 会触发 src.data.__init__ 循环初始化
+    from src.data.json_repository import atomic_write_text
+
     path = Path(pricing_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
     content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-    with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(content)
-    tmp_path.replace(path)
+    atomic_write_text(path, content)
 
 
 def get_model_pricing(model: str) -> dict | None:
@@ -283,6 +283,7 @@ def get_mumu_config():
 
     Returns:
         {"mumu_adb_path": str, "mumu_adb_port": int,
+         "mumu_screenshot_mode": str,
          "mumu_ocr_enabled": bool, "mumu_ocr_auto_switch_tab": bool,
          "mumu_ocr_match_threshold": float}
     """
@@ -290,6 +291,7 @@ def get_mumu_config():
     return {
         "mumu_adb_path": config.get("mumu_adb_path", ""),
         "mumu_adb_port": config.get("mumu_adb_port", 0),
+        "mumu_screenshot_mode": config.get("mumu_screenshot_mode", "auto"),
         "mumu_ocr_enabled": config.get("mumu_ocr_enabled", False),
         "mumu_ocr_poll_mode": config.get("mumu_ocr_poll_mode", False),
         "mumu_ocr_poll_idle_pause": config.get("mumu_ocr_poll_idle_pause", True),
@@ -357,7 +359,8 @@ def save_env_file(env_path, data):
     for key, value in data_copy.items():
         result_lines.append(f"{key}={value}")
 
-    tmp_path = env_path.with_suffix(".env.tmp")
-    tmp_path.write_text("\n".join(result_lines) + "\n", encoding="utf-8")
-    tmp_path.replace(env_path)
+    # 函数内导入原因同 save_pricing_config（避免 config↔data 循环初始化）
+    from src.data.json_repository import atomic_write_text
+
+    atomic_write_text(env_path, "\n".join(result_lines) + "\n")
 
