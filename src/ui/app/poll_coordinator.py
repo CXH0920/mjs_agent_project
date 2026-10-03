@@ -460,15 +460,21 @@ class PollCoordinator(QObject):
     # ── 闲置自动暂停 ──────────────────────────────────────────────────
 
     def _track_idle_watch(self, result: PollResult) -> None:
-        """统计连续无变化拍数；只有健康无命中且画面未变的拍才累计，其余一律清零。
+        """统计连续无进展拍数：健康无命中且画面未变、或设备连接失败时累计，其余一律清零。
 
+        设备离线时每拍产生 RETRYABLE_CONNECTION，若按"非健康即清零"，计数
+        永远归零、闲置暂停永不达成，会以轮询间隔无限重连刷 ERROR（
+        2026-09-21/22 两天 1,617 条即此模式），故连接失败同样视为"无进展"。
         注意只清计数、不清 _last_fingerprint：指纹是相邻比较的基线，由
         do_poll_work 随每次采集更新，在此清除会让下一拍失去前帧可比。
         """
         if not self._ocr_service.config.get("mumu_ocr_poll_idle_pause", True):
             self._idle_unchanged_count = 0
             return
-        if result.outcome is not PollOutcome.HEALTHY_NO_MATCH or not result.frame_unchanged:
+        if result.outcome is PollOutcome.RETRYABLE_CONNECTION:
+            # 设备离线：累计计数，达到阈值后暂停轮询而不是无限重连
+            pass
+        elif result.outcome is not PollOutcome.HEALTHY_NO_MATCH or not result.frame_unchanged:
             self._idle_unchanged_count = 0
             return
 

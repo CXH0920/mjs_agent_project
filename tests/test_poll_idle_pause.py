@@ -164,6 +164,21 @@ def test_repeated_unchanged_frames_trigger_idle_pause(monkeypatch) -> None:
     assert coordinator._idle_unchanged_count == 0  # 暂停后回到干净状态
 
 
+def test_connection_failures_accumulate_to_idle_pause(monkeypatch) -> None:
+    """设备离线（RETRYABLE_CONNECTION）同样累计：达到阈值后暂停轮询，
+    不再以轮询间隔无限重连刷 ERROR。"""
+    monkeypatch.setattr(PollCoordinator, "IDLE_PAUSE_MINUTES", 0.05)  # 阈值 = ceil(3/3) = 1 拍
+    capture = object()
+    ocr_service = _OcrService()
+    coordinator = PollCoordinator(_CaptureService(capture), ocr_service, lambda: [])
+
+    offline = PollResult(4, PollOutcome.RETRYABLE_CONNECTION, "设备离线", capture=capture)
+    coordinator._consume_poll_result(offline)
+
+    assert ocr_service.pause_calls == [0.05]
+    assert coordinator._idle_unchanged_count == 0  # 暂停后回到干净状态
+
+
 def test_any_non_healthy_result_resets_idle_count(monkeypatch) -> None:
     monkeypatch.setattr(PollCoordinator, "IDLE_PAUSE_MINUTES", 0.1)  # 阈值 2 拍
     capture = object()
@@ -173,7 +188,8 @@ def test_any_non_healthy_result_resets_idle_count(monkeypatch) -> None:
     coordinator._consume_poll_result(_unchanged_result(capture))
     assert coordinator._idle_unchanged_count == 1
 
-    # MATCHED 即使帧未变也清零；失败类结果同样清零
+    # MATCHED 即使帧未变也清零；截图/OCR 失败（非连接类）同样清零——
+    # 只有设备离线（RETRYABLE_CONNECTION）才累计（见上一用例）
     coordinator._consume_poll_result(PollResult(
         4, PollOutcome.MATCHED, capture=capture, frame_unchanged=True,
     ))
