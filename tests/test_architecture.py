@@ -635,8 +635,9 @@ def test_scraper_manager_construction_ratchet() -> None:
 FILE_LINE_BUDGETS: dict[str, int] = {
     # 819 → 552：对话框开启器与菜单构建拆出 dialog_coordinator.py / menu_builder.py
     # （审计 G1 切片 4.2a/4.2b，方法数 49 → 33）；552 → 557：资料库编辑入口
-    # 接入 AI 生成忙碌守卫闭包（T1 运维加固，2026-10）
-    "ui/app/main_window.py": 557,
+    # 接入 AI 生成忙碌守卫闭包（T1 运维加固，2026-10）；
+    # 557 → 561：启动 2 分钟后自动公告检查接线（P1-4，2026-10）
+    "ui/app/main_window.py": 561,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,

@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, qVersion
@@ -33,6 +34,28 @@ def _bundle_data_signature(bundle_data: Path) -> str:
         return "empty"
     newest = max(int(p.stat().st_mtime) for p in files)
     return f"{len(files)}:{newest}"
+
+
+def _prune_old_screenshots(*, keep_days: int = 14) -> None:
+    """删除 screenshots 顶层超过 keep_days 的运行产物截图（P1-6，零回收堆积 606MB 的出口）。
+
+    只清顶层时间戳命名的 png——子目录（test_2v2 等标注样本）被 OCR 回归
+    测试引用，不动。失败仅告警，不阻断启动。
+    """
+    shots_dir = PROJECT_ROOT / "screenshots"
+    if not shots_dir.is_dir():
+        return
+    cutoff = time.time() - keep_days * 86400
+    removed = 0
+    for path in shots_dir.glob("*.png"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError as error:
+            logger.warning("清理旧截图失败 %s: %s", path, error)
+    if removed:
+        logger.info("已清理 %d 张 %d 天前的运行截图", removed, keep_days)
 
 
 def _ensure_clean_runtime() -> None:
@@ -156,6 +179,7 @@ def main() -> None:
         "应用启动：版本=%s, Python=%s, Qt=%s, 运行时根=%s, frozen=%s",
         _APP_VERSION, sys.version.split()[0], qVersion(), PROJECT_ROOT, IS_FROZEN,
     )
+    _prune_old_screenshots()
 
     # 首次启动迁移：旧 DEEPSEEK_* 三件套 → 默认档案（幂等，文件已存在即跳过）
     from src.config.profiles import migrate_legacy_api_config

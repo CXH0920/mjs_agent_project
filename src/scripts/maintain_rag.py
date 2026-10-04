@@ -212,6 +212,7 @@ def summarize_counts():
 
 def main():
     install_crash_logger("maintain_rag")
+    main_started = time.monotonic()
     parser = argparse.ArgumentParser(description='RAG 语料维护调度脚本')
     parser.add_argument('--force', action='store_true', help='强制重跑全部任务')
     parser.add_argument('--check', action='store_true', help='只检测变更，不执行')
@@ -284,11 +285,13 @@ def main():
         return
 
     failed = []
+    from src.business.common.task_ledger import record_task
     for task, reason in plan:
         print('\n' + '-' * 64)
         print(f'[执行] {task["name"]}  <-  {task["script"]}')
         if reason:
             print(f'  （变更源：{reason}）')
+        task_started = time.monotonic()
         ok, output = run_script(task['script'])
         if output:
             # 只显示前 15 行，避免刷屏
@@ -300,6 +303,9 @@ def main():
                 print(f'  | ...（共 {len(lines)} 行输出，已截断）')
         if not ok:
             failed.append(task['name'])
+            record_task(f'maintain_rag:{task["name"]}', ok=False, failed=1,
+                        duration_s=time.monotonic() - task_started,
+                        reason=f'脚本退出异常: {task["script"]}')
             print(f'  ❌ 执行失败：{task["script"]}')
             if not args.keep_going:
                 print('终止后续任务（可加 --keep-going 继续）。')
@@ -310,20 +316,27 @@ def main():
                 print('  校验: ' + d)
             if v_ok:
                 succeeded.append(task['name'])
+                record_task(f'maintain_rag:{task["name"]}', ok=True,
+                            duration_s=time.monotonic() - task_started)
                 print('  ✅ 生成与校验通过')
                 if task.get('expected') == 'snapshot':
                     audit_rule_doc.audit(doc_path=audit_rule_doc.DEFAULT_DOC,
                                          snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
                                          root=ROOT, update_snapshot=True, print_report=False)
                     print('  [快照] 元规则文档基线快照已刷新')
-            else:
-                failed.append(task['name'])
-                print('  ⚠️ 块数校验未通过')
+    else:
+        failed.append(task['name'])
+        record_task(f'maintain_rag:{task["name"]}', ok=False, failed=1,
+                    duration_s=time.monotonic() - task_started, reason='块数校验未通过')
+        print('  ⚠️ 块数校验未通过')
 
     # 更新状态文件：失败任务不记录任何指纹（保证下次 task_changed 仍判定为已变更）
     update_state_fingerprints(plan, failed, args.force, state)
     state['last_run'] = now
     save_state(state)
+    record_task('maintain_rag', ok=not failed, total=len(plan), failed=len(failed),
+                duration_s=time.monotonic() - main_started,
+                reason='、'.join(failed) if failed else '')
 
     # 语料更新后的索引联动：--build-index 显式重建；否则仅提示
     if not failed and succeeded:

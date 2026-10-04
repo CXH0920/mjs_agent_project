@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -260,6 +260,10 @@ class MainWindow(QMainWindow):
             "baike_ignore_manager": self._dialogs.open_baike_ignore_manager,
             "about": self._dialogs.show_about,
         })
+
+        # 启动 2 分钟后自动公告检查（P1-4）：每日最多一次、只提示不自动应用；
+        # 菜单手动入口不变，忙碌/冷却由 coordinator 静默守卫
+        QTimer.singleShot(120_000, self._announcement_coordinator.auto_check_if_due)
 
     def _setup_menu(self) -> None:
         """使用共享 QAction 构建菜单栏（装配逻辑见 menu_builder）。"""

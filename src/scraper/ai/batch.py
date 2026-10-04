@@ -22,13 +22,14 @@ API 配置优先级（从高到低）：
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT, PROVIDER_PRESETS, get_runtime_params
+from src.config.env import BUNDLE_ROOT, PROJECT_ROOT, PROVIDER_PRESETS, get_runtime_params
 from src.config.profiles import resolve_api_config
 from src.data.guide_manager import GuideManager
 from src.data.json_repository import snapshot_to_backups
@@ -50,6 +51,9 @@ DEFAULT_DATA_DIR = BUNDLE_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
+# 上次失败项清单：全量生成 6~8 小时、失败只能全量重跑是最大的流程损耗，
+# 落盘清单让 --retry-failed 只重跑失败项（成功项字节不变）
+LAST_FAILURES_PATH = PROJECT_ROOT / "logs" / "ai_last_failures.json"
 
 
 def _preserve_invalid_data_file(path: Path, manager) -> Path:
@@ -153,6 +157,39 @@ def _check_api_key(api_config: dict) -> None:
         sys.exit(1)
 
 
+def _save_last_failures(args, failed_items: list[str]) -> None:
+    """失败项清单落盘，供 --retry-failed 读取。"""
+    state = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "guide": bool(args.guide),
+        "synergy_full": bool(args.synergy),
+        "failed_items": failed_items,
+    }
+    try:
+        LAST_FAILURES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LAST_FAILURES_PATH.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  失败清单已记录: {LAST_FAILURES_PATH}", flush=True)
+    except OSError as exc:
+        logger.warning("失败清单写入失败: %s", exc)
+
+
+def _load_retry_items() -> list[str]:
+    """--retry-failed 时读取上次失败清单；无记录则直接结束。"""
+    try:
+        state = json.loads(LAST_FAILURES_PATH.read_text(encoding="utf-8"))
+        items = state.get("failed_items") or []
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"  [错误] 无法读取失败清单 {LAST_FAILURES_PATH}: {exc}", flush=True)
+        sys.exit(1)
+    if not items:
+        print("  上次运行无失败记录，无事可做。", flush=True)
+        sys.exit(0)
+    preview = "、".join(items[:10]) + ("..." if len(items) > 10 else "")
+    print(f"  [定向重试] 上次失败 {len(items)} 项: {preview}", flush=True)
+    return items
+
+
 def _format_cost_estimate(estimation: dict) -> str:
     cost = estimation.get("estimated_cost_cny")
     if cost is None:
@@ -211,6 +248,8 @@ def main():
                          help="使用 Playwright + Edge 浏览器方式（替代 API 直连）")
     parser.add_argument("--update", action="store_true",
                          help="更新模式：重新生成已存在的数据（默认跳过已存在的）")
+    parser.add_argument("--retry-failed", action="store_true",
+                         help="只重跑上次失败项（读 logs/ai_last_failures.json，仅 --guide 模式）")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     parser.add_argument("--no-rag", action="store_true",
                          help="禁用 RAG 语料增强（默认启用）")
@@ -244,6 +283,19 @@ def main():
     if not heroes:
         logger.error("没有加载到武将数据")
         sys.exit(1)
+
+    # 定向重试（P1-2）：heroes 过滤到上次失败项并强制重新生成，其余项字节不变
+    retry_items = _load_retry_items() if args.retry_failed else None
+    if retry_items is not None:
+        if has_synergy_mode or not args.guide:
+            print("  [错误] --retry-failed 目前仅支持 --guide 模式（相性失败请用 --synergy-pair 指定）", flush=True)
+            sys.exit(1)
+        heroes = [h for h in heroes
+                  if h.get("name") in retry_items or str(h.get("id")) in retry_items]
+        if not heroes:
+            print("  失败清单中的武将已不在 heroes.json（可能已下架），无事可做。", flush=True)
+            sys.exit(0)
+        print(f"  本次仅重跑 {len(heroes)} 个武将（其余项字节不变）", flush=True)
 
     api_config = resolve_api_config(None)
 
@@ -293,7 +345,7 @@ def main():
             task_results.append(run_guide_generation(
                 heroes=heroes, generator=generator, guide_path=guide_path,
                 existing_guides=existing_guides, api_config=api_config,
-                update_mode=args.update,
+                update_mode=args.update or retry_items is not None,
             ))
 
         if args.synergy:
@@ -340,12 +392,19 @@ def main():
     total_completion_tokens = sum(result.completion_tokens for result in task_results)
     _print_token_summary(total_prompt_tokens, total_completion_tokens, api_config["model"])
 
+    if retry_items is not None and task_results:
+        still_failed = set(task_results[0].failed_items)
+        print(f"\n  [定向重试] 上次失败 {len(retry_items)} 项，本次恢复 {len(retry_items) - len(still_failed)} 项，"
+              f"仍失败 {len(still_failed)} 项", flush=True)
+
     failed_results = [result for result in task_results if not result.succeeded]
     if failed_results:
         failed_items = [item for result in failed_results for item in result.failed_items]
+        _save_last_failures(args, failed_items)
         print(f"\n  [错误] 生成失败：{len(failed_items)} 项；成功项已提交，失败项保留旧数据", flush=True)
         sys.exit(1)
 
+    LAST_FAILURES_PATH.unlink(missing_ok=True)  # 全部成功，清除旧失败清单
     print("\n  全部完成！\n")
 
 

@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from src.config.env import PROJECT_ROOT as ROOT
@@ -225,9 +226,17 @@ def main() -> None:
     parser.add_argument("command", choices=["pull", "push", "verify"])
     parser.add_argument("--dry-run", action="store_true", help="只打印将发生的动作，不执行")
     args = parser.parse_args()
+
+    from src.business.common.task_ledger import record_task
+    started = time.monotonic()
     if args.command == "verify":
-        sys.exit(verify())
-    sys.exit({"pull": pull, "push": push}[args.command](dry_run=args.dry_run))
+        code = verify()
+    else:
+        code = {"pull": pull, "push": push}[args.command](dry_run=args.dry_run)
+    record_task(f"pull_data_{args.command}", ok=code == 0, exit_code=code,
+                duration_s=time.monotonic() - started,
+                reason="dry-run" if args.dry_run else "")
+    sys.exit(code)
 
 
 if __name__ == "__main__":

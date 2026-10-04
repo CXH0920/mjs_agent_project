@@ -14,9 +14,11 @@ import logging
 import os
 import re
 import sys
+import time
 from subprocess import Popen
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+from src.business.common.task_ledger import record_task
 from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,
@@ -159,6 +161,7 @@ class BaseFetchService(QObject):
         self._process.setProcessEnvironment(process_env)
         logger.info("启动子进程: python %s", " ".join(args))
         self._process.start(sys.executable, args)
+        self._task_started = time.monotonic()
         self._start_watchdog()
 
     # 卡死看门狗：AI 生成单条 1~3 分钟属正常，30 分钟上限只拦"黑洞化永不结束"——
@@ -269,6 +272,14 @@ class BaseFetchService(QObject):
 
         msg = _process_failure_message(exit_code, full_stdout, full_stderr)
         logger.info("%s 子进程结束，%s", self._service_name, msg)
+        record_task(
+            self._service_name,
+            ok=exit_code == 0 and not self._cancel_requested,
+            exit_code=exit_code,
+            failed=len(self._failed_items),
+            duration_s=time.monotonic() - getattr(self, "_task_started", time.monotonic()),
+            reason=msg,
+        )
 
         if self._cancel_requested:
             self._finish_cancellation()

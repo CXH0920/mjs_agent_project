@@ -7,11 +7,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 from src.business.announcement.announcement_service import AnnouncementCheckResult
+from src.config.env import PROJECT_ROOT
 from src.data.announcement_manager import AnnouncementStatus
 from src.ui.app.progress_reporter import ProgressReporter
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
@@ -20,6 +24,16 @@ from src.ui.shared.style import TONE_INFO, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import NoticeBanner, show_toast
 
 logger = logging.getLogger(__name__)
+
+AUTO_CHECK_MARKER = PROJECT_ROOT / "logs" / ".last_auto_check.json"
+
+
+def is_auto_check_due(marker_path: Path, today: str) -> bool:
+    """每日一次判定：标记文件记录最近自动检查日期，缺失/损坏视为到期。"""
+    try:
+        return json.loads(marker_path.read_text(encoding="utf-8")).get("date") != today
+    except (OSError, json.JSONDecodeError):
+        return True
 
 
 class AnnouncementUpdateCoordinator(QObject):
@@ -79,6 +93,26 @@ class AnnouncementUpdateCoordinator(QObject):
                 f"检查过于频繁，请 {int(remaining) + 1} 秒后再试。",
             )
             return
+        self._service.check_now()
+
+    def auto_check_if_due(self) -> None:
+        """启动自动公告检查（P1-4）：每日最多一次、忙碌/冷却静默跳过。
+
+        与手动入口走同一 check_now 管线——只提示不自动应用，不触碰确认流程；
+        标记在触发前写入（当日即使检查失败也不再重试，次日自动恢复）。
+        """
+        today = date.today().isoformat()
+        if not is_auto_check_due(AUTO_CHECK_MARKER, today):
+            return
+        if self._service.is_busy or self._service.cooldown_remaining > 0:
+            return
+        try:
+            AUTO_CHECK_MARKER.parent.mkdir(parents=True, exist_ok=True)
+            AUTO_CHECK_MARKER.write_text(json.dumps({"date": today}), encoding="utf-8")
+        except OSError as error:
+            logger.warning("自动检查标记写入失败: %s", error)
+            return
+        logger.info("启动自动公告检查（每日一次）")
         self._service.check_now()
 
     def open_announcement_dialog(self) -> None:

@@ -346,10 +346,17 @@ if __name__ == '__main__':
     args = p.parse_args()
     from src.config.logging_config import setup_logging
     setup_logging()
+    from src.business.common.task_ledger import record_task
+    started = time.monotonic()
     try:
         n, name = build_index(rebuild=not args.no_rebuild)
     except Exception:
         logger.error('索引构建失败', exc_info=True)
+        record_task('rag_index', ok=False, exit_code=1,
+                    duration_s=time.monotonic() - started, reason='构建异常')
         sys.exit(1)
+    record_task('rag_index', ok=n > 0, exit_code=0 if n else 1, total=n,
+                duration_s=time.monotonic() - started,
+                reason='' if n else '索引块数为 0')
     if n == 0:
         sys.exit(1)

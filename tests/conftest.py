@@ -94,6 +94,15 @@ def _isolate_api_profiles_file(tmp_path, monkeypatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_task_ledger(tmp_path, monkeypatch) -> None:
+    """测试默认把任务台账指向 tmp：fetch 系用例触发 _on_finished 时会写台账，
+    不隔离则测试运行持续污染真实 logs/task_results.jsonl（2026-10-04 实证）。"""
+    from src.business.common import task_ledger
+
+    monkeypatch.setattr(task_ledger, "LEDGER_PATH", tmp_path / "task_results.jsonl")
+
+
+@pytest.fixture(autouse=True)
 def _clear_ocr_retired_workers() -> None:
     """每个测试后从退役列表移除已结束的 worker；仍在运行的必须保留。
 
