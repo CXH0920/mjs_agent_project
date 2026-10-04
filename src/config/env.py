@@ -151,6 +151,8 @@ def load_env_config(env_path=None):
         "MAX_OUTPUT_TOKENS": "max_output_tokens",
         "LOG_LEVEL": "log_level",
         "LOG_TO_FILE": "log_to_file",
+        # 私有数据仓根目录（src/scripts/pull_data.py 用；默认项目同级 mjs_data_private）
+        "MJS_DATA_REPO": "mjs_data_repo",
         # 模拟器 (MuMu) 配置
         "MUMU_ADB_PATH": "mumu_adb_path",
         "MUMU_ADB_PORT": "mumu_adb_port",

@@ -127,9 +127,14 @@ python -m src.scripts.import_hero_adjustments --input <json>  # 首次注入武�
 
 ```bash
 git clone <私有数据仓地址> ../mjs_data_private   # 首次：私有仓与公开仓同级放置
-python -m src.scripts.pull_data pull             # 拉取 + sha256 校验 + 落位工作区
-python -m src.scripts.pull_data push             # 周更/采集后回推私有仓
+python -m src.scripts.pull_data pull             # 拉取 + sha256 校验 + 原子落位工作区
+python -m src.scripts.pull_data push             # 周更/采集后回推私有仓（先做数据有效性守卫）
+python -m src.scripts.pull_data push --dry-run   # 只打印将发生的动作
 ```
+
+私有仓位置默认为项目同级 `mjs_data_private`；位置不同时设置环境变量 `MJS_DATA_REPO`
+或在 `config.env` 配置 `MJS_DATA_REPO`（见 `config.env.example`）。push 内置数据有效性
+守卫（JSON 可解析、非空、heroes 条数下限）与脏工作区拒绝，校验不过不会写入私有仓。
 
 - 来源与采集时间登记：[data/SOURCES.md](data/SOURCES.md)
 - 项目早期提交（2026-06-07 ~ 2026-10-02）中曾包含过此类内容，完整 git 历史按原样

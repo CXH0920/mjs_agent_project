@@ -656,8 +656,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # image_save_scheduler、OCR 协调器 ocr_task_coordinator 依次出仓（审计 G8）
     "business/emulator/capture_service.py": 570,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
-    # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）
-    "config/env.py": 366,
+    # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
+    # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）
+    "config/env.py": 368,
     "business/recognition/official_data_import_service.py": 638,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
     "ui/library/hero_browser.py": 639,
