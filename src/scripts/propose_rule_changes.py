@@ -46,10 +46,15 @@ SYSTEM_PROMPT = (
 
 
 def collect_diff_rows(old_arg=None):
-    """复用 diff_source_data 收集变更行，返回 [{type,file,object,name,summary,mechanism}]。"""
-    import diff_source_data as dsd
+    """复用 diff_source_data 收集变更行，返回 ([{type,...,mechanism}], missing_baseline)。
+
+    missing_baseline 为无旧基线被跳过的文件数：rows 为空且 missing_baseline > 0
+    时不构成"无变化"结论（与 diff_source_data.main 的终局输出同一语义）。
+    """
+    from src.scripts import diff_source_data as dsd
     words = dsd.load_lexicon()
     rows = []
+    missing_baseline = 0
     for name in dsd.HANDLERS:
         fname, handler = dsd.HANDLERS[name]
         new = dsd.load_json(os.path.join(dsd.DATA_DIR, fname))
@@ -57,6 +62,7 @@ def collect_diff_rows(old_arg=None):
             continue
         old_path = dsd.find_old(fname, old_arg or dsd.BACKUP_DIR)
         if not old_path:
+            missing_baseline += 1
             continue
         old = dsd.load_json(old_path)
         if old is None or old == new:
@@ -65,7 +71,7 @@ def collect_diff_rows(old_arg=None):
     return [
         {'type': r[0], 'file': r[1], 'object': r[2], 'name': r[3], 'summary': r[4], 'mechanism': r[5]}
         for r in rows
-    ]
+    ], missing_baseline
 
 
 def next_proposal_id(out_dir):
@@ -178,9 +184,12 @@ def main():
         with open(args.changes_json, encoding='utf-8') as f:
             rows = json.load(f)
     else:
-        rows = collect_diff_rows()
+        rows, missing_baseline = collect_diff_rows()
         if not rows:
-            print('未发现数据变更（data/backups 无旧基线或数据未变化）。')
+            if missing_baseline:
+                print('未发现数据变更（注意：%d 个文件无旧基线被跳过，不构成"无变化"结论）。' % missing_baseline)
+            else:
+                print('未发现数据变更。')
             sys.exit(0)
 
     with open(args.doc, encoding='utf-8') as f:

@@ -94,3 +94,38 @@ def test_client_timeout_is_layered() -> None:
         assert generator._build_timeout() == timeout
     finally:
         generator._client.close()
+
+
+def test_client_rebuilt_after_connection_error_keeps_layered_timeout(monkeypatch) -> None:
+    """连接类异常触发 client 重建：重建的 client 必须沿用分层超时，而非退化为标量。"""
+    generator = AIBatchGenerator(api_key="sk-test", max_retries=2, requests_per_minute=1000)
+    generator._min_interval = 0.0  # 测试不等限速
+
+    built_timeouts: list[httpx.Timeout] = []
+
+    class _BrokenClient:
+        def post(self, *args, **kwargs):
+            raise httpx.ConnectError("connection refused")
+
+        def close(self):
+            pass
+
+    def fake_client_factory(**kwargs):
+        built_timeouts.append(kwargs["timeout"])
+        return _BrokenClient()
+
+    # generator 已构造完成，此处仅拦截重建路径上的 httpx.Client 调用
+    monkeypatch.setattr(httpx, "Client", fake_client_factory)
+    monkeypatch.setattr("src.scraper.ai.api_generator.time.sleep", lambda _s: None)
+    # 首建 client 同样抛 ConnectError，驱动完整的"异常 → 重建 → 重试"链路
+    generator._client = fake_client_factory(timeout=generator._build_timeout())
+
+    result = generator.complete([{"role": "user", "content": "hi"}])
+
+    assert result is None  # max_retries=2 耗尽后的既有契约
+    assert len(built_timeouts) == 3  # 首建 1 次 + 每轮连接异常重建 1 次
+    for timeout in built_timeouts:
+        assert timeout.connect == 5.0
+        assert timeout.read == 300.0
+        assert timeout.write == 30.0
+        assert timeout.pool == 5.0

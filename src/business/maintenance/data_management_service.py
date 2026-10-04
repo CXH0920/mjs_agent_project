@@ -6,7 +6,6 @@ import logging
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from src.data.guide_manager import GuideManager
@@ -40,18 +39,18 @@ class DataRepairResult:
 class _ManagerTransaction:
     """为同一次跨文件变更创建备份，并在写入失败时恢复。"""
 
-    def __init__(self, managers: tuple, timestamp: str) -> None:
+    def __init__(self, managers: tuple) -> None:
         self._managers = managers
         self._snapshots = {manager: manager.snapshot_items() for manager in managers}
         self._existed = {manager: manager.file_path.exists() for manager in managers}
         self._backup_paths = {
-            manager: self._backup(manager.file_path, timestamp)
+            manager: self._backup(manager.file_path)
             for manager in managers
         }
         self.backup_paths = tuple(path for path in self._backup_paths.values() if path is not None)
 
     @staticmethod
-    def _backup(source: Path, timestamp: str) -> Path | None:
+    def _backup(source: Path) -> Path | None:
         """备份到 backups/ 子目录；命名与轮转统一由 snapshot_to_backups 管理。"""
         return snapshot_to_backups(source)
 
@@ -89,13 +88,12 @@ class DataManagementService:
         if not guides and not synergies:
             raise ValueError("请至少选择一种数据")
 
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         managers = []
         if guides:
             managers.append(self._guide_manager)
         if synergies:
             managers.append(self._synergy_manager)
-        transaction = _ManagerTransaction(tuple(managers), timestamp)
+        transaction = _ManagerTransaction(tuple(managers))
 
         cleared_guides = self._guide_manager.clear_all() if guides else 0
         cleared_synergies = self._synergy_manager.clear_all() if synergies else 0
@@ -169,10 +167,7 @@ class DataMutationService:
     def repair_missing_references(self) -> DataRepairResult:
         """删除失效实体并清理攻略关系；必须由 UI 在用户确认后调用。"""
         hero_ids = {hero.id for hero in self._hero_manager.list_heroes()}
-        transaction = _ManagerTransaction(
-            (self._guide_manager, self._synergy_manager),
-            datetime.now().strftime("%Y%m%d-%H%M%S-%f"),
-        )
+        transaction = _ManagerTransaction((self._guide_manager, self._synergy_manager))
         removed_synergies = 0
         removed_guides = 0
         cleaned_guide_references = 0
@@ -207,10 +202,7 @@ class DataMutationService:
     @staticmethod
     def _commit_mutation(managers: tuple, mutation: Callable[[], None]) -> tuple[Path, ...]:
         """在修改内存数据后统一保存；修改阶段异常同样恢复快照。"""
-        transaction = _ManagerTransaction(
-            managers,
-            datetime.now().strftime("%Y%m%d-%H%M%S-%f"),
-        )
+        transaction = _ManagerTransaction(managers)
         try:
             mutation()
         except Exception:

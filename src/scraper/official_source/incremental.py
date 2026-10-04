@@ -36,23 +36,33 @@ DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 
 
 def _load_heroes_file(path: Path) -> list | None:
-    """读取本地武将 JSON；内容损坏时备份原文件（corrupt-*）后返回 None。
+    """读取本地武将 JSON；内容损坏或顶层结构非数组时备份原文件（corrupt-*）后返回 None。
 
     与 batch._preserve_invalid_data_file 同一健壮性标准：调用方以空列表继续，
     旧数据可从备份找回，而不是解析异常裸崩或静默覆盖丢失。
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        backup_path = path.with_name(f"{path.stem}.corrupt-{timestamp}{path.suffix}")
-        try:
-            path.replace(backup_path)
-            logger.error("数据文件读取失败已备份 %s → %s: %s", path, backup_path, exc)
-        except OSError as backup_exc:
-            logger.error("数据文件读取失败 %s: %s（备份也失败: %s）", path, exc, backup_exc)
+        _backup_corrupt_file(path, exc)
         return None
+    if not isinstance(data, list):
+        # 合法 JSON 但顶层是 dict 等：照常遍历会 AttributeError 裸崩，按损坏同语义处理
+        _backup_corrupt_file(path, TypeError(f"顶层结构为 {type(data).__name__}，期望 list"))
+        return None
+    return data
+
+
+def _backup_corrupt_file(path: Path, exc: Exception) -> None:
+    """把无法使用的本地数据文件改名留存为 corrupt-*，供人工找回。"""
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = path.with_name(f"{path.stem}.corrupt-{timestamp}{path.suffix}")
+    try:
+        path.replace(backup_path)
+        logger.error("数据文件读取失败已备份 %s → %s: %s", path, backup_path, exc)
+    except OSError as backup_exc:
+        logger.error("数据文件读取失败 %s: %s（备份也失败: %s）", path, exc, backup_exc)
 
 
 def load_existing_ids(path: Path) -> set[int] | None:

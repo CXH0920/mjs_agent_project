@@ -87,3 +87,28 @@ def test_run_replace_still_merges_for_valid_file(monkeypatch, tmp_path: Path) ->
 def test_load_existing_ids_missing_file_returns_empty_set(tmp_path: Path) -> None:
     """首次运行（文件不存在）仍返回空集，正常建新文件"""
     assert incremental.load_existing_ids(tmp_path / "heroes.json") == set()
+
+
+def test_load_existing_ids_returns_none_for_non_list_json(tmp_path: Path) -> None:
+    """合法 JSON 但顶层非数组（如整个对象）→ 同损坏语义：备份 corrupt-* 并返回 None"""
+    output_path = tmp_path / "heroes.json"
+    output_path.write_text('{"heroes": []}', encoding="utf-8")
+    assert incremental.load_existing_ids(output_path) is None
+    assert not output_path.exists()
+    corrupts = list(tmp_path.glob("heroes.corrupt-*.json"))
+    assert len(corrupts) == 1
+    assert corrupts[0].read_text(encoding="utf-8") == '{"heroes": []}'
+
+
+def test_run_replace_aborts_when_local_file_is_non_list_json(monkeypatch, tmp_path: Path) -> None:
+    """替换模式遇顶层非数组的本地文件：不裸崩 AttributeError，硬停且不覆盖"""
+    output_path = tmp_path / "heroes.json"
+    output_path.write_text('{"heroes": []}', encoding="utf-8")
+    monkeypatch.setattr(incremental, "transform", lambda raw: _hero_dict(raw["id"]))
+    monkeypatch.setattr(incremental, "validate_heroes", lambda heroes: heroes)
+
+    with pytest.raises(SystemExit) as excinfo:
+        incremental.run([{"id": 1}], output_path, dry_run=False, replace_ids={1})
+    assert excinfo.value.code == 1
+    assert not output_path.exists()
+    assert list(tmp_path.glob("heroes.corrupt-*.json"))
