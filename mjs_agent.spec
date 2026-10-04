@@ -98,6 +98,9 @@ datas += collect_data_files("Cython")
 datas += copy_metadata("imageio")
 datas += collect_data_files("cnradical")
 
+# VERSION：版本单一来源（main.py frozen 态从 _internal/VERSION 读取，与 release.py 同源）
+datas.append((str(HERE / "VERSION"), "."))
+
 # ── OCR 模型（~/.paddleocr/whl → paddleocr_models，离线用）──
 # paddle_loader frozen 下复制 BUNDLE_ROOT/paddleocr_models 到 %TEMP%，det/rec/cls 指向它
 ocr_home = Path.home() / ".paddleocr" / "whl"

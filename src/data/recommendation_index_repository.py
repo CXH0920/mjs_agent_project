@@ -6,7 +6,6 @@ import csv
 import json
 import logging
 import math
-import os
 import tempfile
 from collections import defaultdict
 from collections.abc import Iterable
@@ -15,6 +14,7 @@ from pathlib import Path
 
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT, load_env_config
 from src.data import peak_win_rate_repository, win_rate_repository
+from src.data.json_repository import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -128,18 +128,8 @@ def mark_recommendation_index_stale(
     # stale 属于正常业务状态流转（每次官方导入后触发），debug 级即可；
     # 此前曾遗留 10 层调用栈 WARNING 输出（每次导入刷屏淹没真实告警），已移除
     logger.debug("推荐指数状态标记 stale=%s", stale)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # mkstemp 唯一中转名：固定 .tmp 在并发保存时会互相覆盖（与 save_baike_snapshot 同理）
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps({"stale": stale}, ensure_ascii=False, indent=2) + "\n")
-        Path(tmp_name).replace(path)
-    except BaseException:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
+    # 统一走 json_repository 原子写：mkstemp 唯一名防并发保存互相覆盖
+    atomic_write_json(path, {"stale": stale}, indent=2)
 
 
 def notify_official_outputs_written(output_names: Iterable[str]) -> None:

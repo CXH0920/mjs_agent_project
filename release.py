@@ -28,11 +28,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 # ── 路径常量 ─────────────────────────────────────────────────────
@@ -110,10 +113,19 @@ def preflight(full: bool = False) -> str:
         _die(f"找不到 PaddleOCR 模型：{det_model}\n"
              f"  请先在 myenv 运行 PaddleOCR 一次以下载模型，或从其他机器拷贝 ~/.paddleocr")
 
-    # git 版本号（tag 或短 commit）
-    ver = _git("describe", "--tags", "--always", fallback="0.0.0-unknown")
+    # 版本单一来源：项目根 VERSION 文件（main.py 运行时同源解析）；
+    # 缺失时回退 git describe，再回退 0.0.0-unknown
+    ver = _read_version_file() or _git("describe", "--tags", "--always", fallback="0.0.0-unknown")
     _ok(f"版本号 {ver}")
     return ver
+
+
+def _read_version_file() -> str:
+    try:
+        text = (HERE / "VERSION").read_text(encoding="utf-8").strip()
+        return text or ""
+    except OSError:
+        return ""
 
 
 def _git(*args: str, fallback: str = "") -> str:
@@ -334,7 +346,7 @@ def smoke_test() -> None:
 
 # ── zip 分发包 ──────────────────────────────────────────────────
 def make_zip(version: str) -> Path:
-    """把 dist/mjs_agent 打成 zip 分发包。"""
+    """把 dist/mjs_agent 打成 zip 分发包，并产出 sha256 校验文件。"""
     import zipfile
 
     _info("打包 zip 分发包…")
@@ -347,8 +359,33 @@ def make_zip(version: str) -> Path:
             if p.is_file():
                 zf.write(p, p.relative_to(DIST))
     size_mb = zip_path.stat().st_size / 1024 / 1024
-    _ok(f"zip 分发包：{zip_path}（{size_mb:.0f} MB）")
+    checksum = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    checksum_path = zip_path.with_suffix(".zip.sha256")
+    checksum_path.write_text(f"{checksum}  {zip_path.name}\n", encoding="utf-8")
+    _ok(f"zip 分发包：{zip_path}（{size_mb:.0f} MB，sha256 前 16 位 {checksum[:16]}…）")
     return zip_path
+
+
+def write_release_manifest(version: str, zip_path: Path | None, full: bool,
+                           smoke_status: str) -> Path:
+    """发版清单落 logs/：版本/构建模式/烟测/zip 指纹，分发包具备校验与追溯手段。"""
+    entry = {
+        "version": version,
+        "built_at": datetime.now().isoformat(timespec="seconds"),
+        "full_build": full,
+        "smoke_test": smoke_status,
+        "zip": zip_path.name if zip_path else None,
+        "zip_sha256": (
+            zip_path.with_suffix(".zip.sha256").read_text(encoding="utf-8").split()[0]
+            if zip_path else None
+        ),
+        "zip_size_mb": round(zip_path.stat().st_size / 1048576, 1) if zip_path else None,
+    }
+    manifest_path = HERE / "logs" / f"release-{version}.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+    _ok(f"发版清单：{manifest_path}")
+    return manifest_path
 
 
 # ── 汇总 ───────────────────────────────────────────────────────
@@ -407,10 +444,13 @@ def main() -> None:
 
     if not args.no_smoke:
         smoke_test()
+        smoke_status = "passed"
     else:
         _warn("已跳过烟雾测试")
+        smoke_status = "skipped"
 
     zip_path = make_zip(version) if args.zip else None
+    write_release_manifest(version, zip_path, args.full, smoke_status)
     report(version, zip_path, args.full)
 
 

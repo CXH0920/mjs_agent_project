@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+from src.data.json_repository import atomic_write_json
 from src.data.manager import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -48,17 +47,8 @@ def load_card_snapshot(path: str | Path | None = None) -> CardSnapshot:
 
 
 def _atomic_write_json(path: Path, payload: object) -> None:
-    """UTF-8、LF、同目录 mkstemp 临时文件原子写（防并发保存互相覆盖）。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-        Path(tmp_name).replace(path)
-    except BaseException:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
+    """统一走 json_repository 原子写（mkstemp 唯一名 + fsync + 失败清理）。"""
+    atomic_write_json(path, payload)
 
 
 def save_card_snapshot(snapshot: CardSnapshot, path: str | Path | None = None) -> None:
