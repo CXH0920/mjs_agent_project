@@ -31,6 +31,11 @@ atexit.unregister(_ocr_worker_module._drain_retired_workers)
 # 把栈同时写入每个 worker 独立的日志文件（.tmp_test/timeout_dumps/pytest-timeout-<pid>.log），
 # CI 末尾统一 cat 出来即可定位卡死点。dump 与 pytest 临时文件同收 .tmp_test，不再污染 logs/。
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# pyproject 的 --basetemp=.tmp_test/pytest-tmp：pathlib.mkdir 默认不建父级，CI 全新
+# checkout 时 .tmp_test 不在仓库里，xdist sessionstart 会直接 INTERNALERROR（2026-10-04
+# Actions 实证）。conftest 先于 sessionstart 导入，在此兜底建父目录；xdist 各 worker
+# 重复执行幂等无害。
+(_PROJECT_ROOT / ".tmp_test").mkdir(parents=True, exist_ok=True)
 _TIMEOUT_DUMP_DIR = Path(
     os.environ.get("MJS_TIMEOUT_DUMP_DIR") or (_PROJECT_ROOT / ".tmp_test" / "timeout_dumps")
 )
