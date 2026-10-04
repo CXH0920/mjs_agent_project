@@ -28,6 +28,36 @@ logger = logging.getLogger(__name__)
 
 _ADB_TIMEOUT = 15
 _SCREENSHOT_RETRIES = 3
+
+# 瞬时态失败告警的去重状态：{key: (窗口起始 monotonic, 窗口内已失败次数)}。
+# 设备离线在轮询下每 2 秒重试一次，无条件 error 会把 debug.log 刷成单一事件
+# 的日志（2026-09 实测 1,617/1,666 条 ERROR 同属一次设备离线）
+_ERROR_REPORT_STATE: dict[str, tuple[float, int]] = {}
+_ERROR_DEDUP_WINDOW = 300.0  # 同类失败 5 分钟内只告警一次
+_ERROR_ESCALATE_COUNT = 30   # 窗口内连续失败达此数升级回 ERROR（约 1 分钟 @2s 轮询）
+
+
+def _report_transient_error(key: str, message: str, *args) -> None:
+    """瞬时态失败告警：warning + 窗口去重 + 持续失败升级回 ERROR。
+
+    首条 warning 留内容；窗口内后续降为 debug 只留次数；连续失败达阈值时
+    升级 ERROR 并重置窗口——瞬时态不刷屏，持续故障仍保持可发现。
+    """
+    detail = message % args if args else message
+    now = time.monotonic()
+    first_seen, count = _ERROR_REPORT_STATE.get(key, (now, 0))
+    count += 1
+    if now - first_seen > _ERROR_DEDUP_WINDOW:
+        first_seen, count = now, 1
+    if count >= _ERROR_ESCALATE_COUNT:
+        logger.error("%s（已连续失败 %d 次，判定为持续故障）", detail, count)
+        _ERROR_REPORT_STATE[key] = (now, 0)
+        return
+    _ERROR_REPORT_STATE[key] = (first_seen, count)
+    if count == 1:
+        logger.warning("%s", detail)
+    else:
+        logger.debug("(第 %d 次，告警窗口内去重) %s", count, detail)
 _SCREENSHOT_RETRY_DELAY = 0.15
 SCREENSHOT_MODES = ("auto", "raw", "png")
 # Android screencap raw 帧：16 字节头（宽/高/像素格式/色彩空间，各 u32 小端）+ 裸像素
@@ -103,18 +133,18 @@ class AdbCapture:
 
         ok, msg = self._run_adb("connect", target)
         if not ok:
-            logger.error("ADB 连接失败: %s", msg)
+            _report_transient_error(f"adb-connect:{target}", "ADB 连接失败: %s", msg)
             return False, f"ADB 连接失败: {msg}"
 
         # 验证请求的目标设备，不能误选其它在线设备
         dev_ok, dev_msg = self._get_device_state(target)
         if not dev_ok:
             self._disconnect_safe()
-            logger.error("目标 ADB 设备不可用: %s", dev_msg)
+            _report_transient_error(f"adb-device:{target}", "目标 ADB 设备不可用: %s", dev_msg)
             return False, f"目标设备不可用: {dev_msg}"
         if dev_msg != "device":
             self._disconnect_safe()
-            logger.error("目标 ADB 设备状态异常: %s", dev_msg)
+            _report_transient_error(f"adb-device-state:{target}", "目标 ADB 设备状态异常: %s", dev_msg)
             return False, f"目标设备状态异常: {dev_msg}"
 
         self._connected = True
@@ -251,15 +281,19 @@ class AdbCapture:
         except FileNotFoundError:
             return False, f"找不到 adb: {self._adb_path}", 0.0
         except subprocess.TimeoutExpired:
-            logger.error("截图命令执行超时")
+            _report_transient_error(
+                f"screencap-timeout:{self._device_serial}", "截图命令执行超时")
             return False, "截图命令执行超时", _ADB_TIMEOUT * 1000.0
         except OSError as e:
-            logger.error("截图命令执行异常: %s", e)
+            _report_transient_error(
+                f"screencap-oserror:{self._device_serial}", "截图命令执行异常: %s", e)
             return False, f"截图命令执行异常: {e}", 0.0
 
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace").strip()
-            logger.error("screencap 失败 (returncode=%d): %s", result.returncode, err)
+            _report_transient_error(
+                f"screencap-rc:{self._device_serial}", "screencap 失败 (returncode=%d): %s",
+                result.returncode, err)
             if self._is_device_unavailable(err):
                 self._invalidate_connection()
             return False, f"screencap 失败: {err}", command_elapsed_ms

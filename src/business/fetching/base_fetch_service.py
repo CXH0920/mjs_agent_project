@@ -240,7 +240,13 @@ class BaseFetchService(QObject):
             return
         self._stderr_buffer.extend(data)
         text = data.decode("utf-8", errors="replace")
-        if text.strip():
+        if not text.strip():
+            return
+        if "%|" in text:
+            # Paddle/transformers 的 tqdm 进度条走 stderr，属正常加载进度而非故障
+            # （原一律 warning 曾贡献 ai_generation.log 89% 的 WARNING 噪声）
+            self._log_stderr.debug("%s", text.strip())
+        else:
             self._log_stderr.warning("%s", text.strip())
 
     # ---------------------------------------------------------------
