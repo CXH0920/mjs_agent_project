@@ -44,6 +44,7 @@ def load_peak_win_rates(path: Path = PEAK_WIN_RATE_CSV) -> dict[str, float]:
                         try:
                             rates[name] = float(rate_str.replace("%", ""))
                         except ValueError:
+                            logger.warning("巅峰赛胜率行畸形已跳过: 武将=%s 胜率=%r", name, rate_str)
                             continue
             logger.debug("已加载 %d 条巅峰赛胜率数据", len(rates))
         except OSError as exc:
@@ -73,6 +74,7 @@ def load_peak_pick_ranks(path: Path = PEAK_PICK_RANK_CSV) -> dict[str, int]:
                         try:
                             ranks[name] = int(rank_str)
                         except ValueError:
+                            logger.warning("巅峰赛出场排行行畸形已跳过: 武将=%s 排名=%r", name, rank_str)
                             continue
             logger.debug("已加载 %d 条巅峰赛出场排行数据", len(ranks))
         except OSError as exc:

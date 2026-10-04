@@ -531,7 +531,7 @@ def test_retire_requests_stop_and_appends_retired(monkeypatch) -> None:
 
 
 def test_drain_retired_workers_force_exits_on_timeout(monkeypatch) -> None:
-    """退役 worker 15 秒仍未退出时调用 os._exit(1)，避免进程挂起。"""
+    """退役 worker 15 秒仍未退出时兜底强杀进程，避免挂起；慢退出非故障，退出码 0。"""
     class FakeWorker:
         def isRunning(self) -> bool:
             return True
@@ -546,7 +546,7 @@ def test_drain_retired_workers_force_exits_on_timeout(monkeypatch) -> None:
     monkeypatch.setattr(ocr_worker_module, "os", fake_os)
     monkeypatch.setattr(ocr_worker_module, "_RETIRED_WORKERS", [FakeWorker()])
 
-    with pytest.raises(RuntimeError, match=r"os\._exit\(1\)"):
+    with pytest.raises(RuntimeError, match=r"os\._exit\(0\)"):
         ocr_worker_module._drain_retired_workers()
 
 
@@ -867,3 +867,23 @@ def test_result_reuse_invalidated_by_hero_names_change(monkeypatch) -> None:
     assert len(recognized) == 2
     assert "skipped_ocr" not in third
 
+
+
+def test_drain_retired_workers_forced_exit_uses_zero_code(monkeypatch) -> None:
+    """退役 worker 15 秒未退出的兜底：慢退出非故障，退出码 0（原 1 把正常关闭伪装成失败）"""
+
+    class _StuckWorker:
+        def isRunning(self):
+            return True
+
+        def wait(self, _ms):
+            return False
+
+    exit_codes: list[int] = []
+    monkeypatch.setattr(ocr_worker_module.os, "_exit", lambda code: exit_codes.append(code))
+    monkeypatch.setattr(ocr_worker_module.logging, "shutdown", lambda: None)
+    monkeypatch.setattr(ocr_worker_module, "_RETIRED_WORKERS", [_StuckWorker()])
+
+    ocr_worker_module._drain_retired_workers()
+
+    assert exit_codes == [0]

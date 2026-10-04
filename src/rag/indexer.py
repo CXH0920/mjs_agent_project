@@ -324,12 +324,19 @@ def build_index(rebuild=True):
                      metadatas=metas[i:i+BATCH], embeddings=embs[i:i+BATCH].tolist())
 
     total = time.time() - t0
+    # 写后条数一致性校验：逐批 add/update 中途崩溃会留下"能查但少一半"的索引，
+    # 检索层照常服务、正确性不自曝——总数核对通过才算构建成功
+    stored = coll.count()
+    if stored != len(ids):
+        raise RuntimeError(
+            f'索引 {coll_name} 条数不一致：语料 {len(ids)} 块，库中 {stored} 块（疑似写入中断）'
+        )
     print('-' * 60)
-    print(f'✅ 索引构建完成：集合 {coll_name}，{coll.count()} 块，总耗时 {total:.1f}s')
-    logger.info('索引构建完成：%s %d 块，总耗时 %.1fs', coll_name, coll.count(), total)
+    print(f'✅ 索引构建完成：集合 {coll_name}，{stored} 块，总耗时 {total:.1f}s')
+    logger.info('索引构建完成：%s %d 块，总耗时 %.1fs', coll_name, stored, total)
     print(f'   向量库位置：{config.CHROMA_DIR}')
     print('=' * 60)
-    return coll.count(), coll_name
+    return stored, coll_name
 
 
 if __name__ == '__main__':
@@ -341,8 +348,8 @@ if __name__ == '__main__':
     setup_logging()
     try:
         n, name = build_index(rebuild=not args.no_rebuild)
-    except Exception as e:
-        logger.error('索引构建失败：%s', e)
+    except Exception:
+        logger.error('索引构建失败', exc_info=True)
         sys.exit(1)
     if n == 0:
         sys.exit(1)

@@ -31,7 +31,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import get_script_logger
+from src.scripts.rag_common import get_script_logger, install_crash_logger
 
 logger = get_script_logger("ocr_baseline")
 
@@ -231,6 +231,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    install_crash_logger("ocr_baseline")
     parser = argparse.ArgumentParser(description="OCR 识别准确率回归基线工具")
     sub = parser.add_subparsers(dest="command", required=True)
 

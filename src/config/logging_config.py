@@ -11,6 +11,7 @@ import logging
 import logging.handlers
 import os
 import sys
+import threading
 
 from src.config.env import PROJECT_ROOT
 
@@ -28,6 +29,22 @@ DEFAULT_MAX_MB = 10
 DEFAULT_BACKUP_COUNT = 5
 _MANAGED_HANDLER_ATTR = "_mjs_managed_handler"
 _QPROCESS_CHILD_ENV = "MJS_QPROCESS_CHILD"
+
+
+def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
+    """后台线程未捕获异常的兜底记录。
+
+    QThread 的异常默认完全静默（不经过 sys.excepthook），OCR/截图线程之死
+    在日志里一个字都没有；这里至少留下一条带堆栈的 ERROR。SystemExit 是
+    线程主动退出的正常路径，不记录。
+    """
+    if args.exc_type is SystemExit:
+        return
+    thread_name = args.thread.name if args.thread is not None else "?"
+    logging.getLogger("threading").error(
+        "线程 %s 未捕获异常: %s", thread_name, args.exc_value,
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
 
 
 class ModuleFilter(logging.Filter):
@@ -94,6 +111,9 @@ def setup_logging(
     console.setFormatter(formatter)
     setattr(console, _MANAGED_HANDLER_ATTR, True)
     root.addHandler(console)
+
+    # 后台线程异常兜底：须在 QProcess 子进程的提前 return 之前注册
+    threading.excepthook = _thread_excepthook
 
     # QProcess 子进程的 stdout/stderr 会被父进程统一收集，避免多个进程
     # 同时轮转同一组文件导致 Windows 文件占用和备份竞争。

@@ -17,7 +17,7 @@ from typing import Callable, Generic, TypeVar
 from pydantic import BaseModel
 from src.config.env import PROJECT_ROOT
 from src.data.issues import DataIssue
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, snapshot_to_backups
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,7 @@ class DataManager(Generic[V_co]):
                 data = json.load(f)
         except (json.JSONDecodeError, EOFError, UnicodeDecodeError) as error:
             logger.warning("文件解析失败: %s", self.file_path)
+            self._preserve_corrupt_file()
             self._items = {}
             self._record_issue("error", "invalid_json", str(error))
             return self.load_issues
@@ -85,6 +86,20 @@ class DataManager(Generic[V_co]):
         self._items = self._parse_items(data)
         return self.load_issues
 
+    def _preserve_corrupt_file(self) -> None:
+        """解析失败/结构非法时把坏文件快照到 backups/。
+
+        置空后用户任意一次 save() 会把空数据原子写回，没有这份保底副本
+        就等于把"读不出来的数据"升级成"不可逆丢失"。
+        """
+        try:
+            backup_path = snapshot_to_backups(self.file_path)
+        except OSError as error:
+            logger.error("坏文件保底副本失败 %s: %s", self.file_path, error)
+            return
+        if backup_path is not None:
+            logger.warning("已留存坏文件副本: %s", backup_path)
+
     def _parse_items(self, data: object) -> dict:
         """子类重写：从 JSON 列表构建 _items dict"""
         return {}
@@ -92,6 +107,7 @@ class DataManager(Generic[V_co]):
     def _parse_models(self, data: object, key_of: Callable[[V_co], object]) -> dict:
         """逐条校验 JSON 列表，跳过坏记录和重复键。"""
         if not isinstance(data, list):
+            self._preserve_corrupt_file()
             self._record_issue("error", "invalid_root", "文件内容必须是 JSON 列表")
             return {}
 

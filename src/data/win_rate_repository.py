@@ -40,6 +40,7 @@ def load_win_rates(path: Path = WIN_RATE_CSV) -> dict[str, float]:
                         try:
                             rates[name] = float(rate_str.replace("%", ""))
                         except ValueError:
+                            logger.warning("胜率行畸形已跳过: 武将=%s 胜率=%r", name, rate_str)
                             continue
             logger.debug("已加载 %d 条胜率数据", len(rates))
         except OSError as exc:

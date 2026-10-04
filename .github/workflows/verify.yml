@@ -72,7 +72,7 @@ jobs:
         shell: bash -l {0}
         run: |
           shopt -s nullglob
-          for f in logs/pytest-timeout-*.log; do
+          for f in .tmp_test/timeout_dumps/pytest-timeout-*.log; do
             echo "=== $f ==="
             cat "$f"
           done

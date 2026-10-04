@@ -170,6 +170,7 @@ class CardViewModel:
                 try:
                     entries.append(EffectEntry.model_validate(raw))
                 except ValidationError:
+                    logger.warning("效果条目解析失败已跳过: %s", str(raw)[:200])
                     continue
             return entries
         return []

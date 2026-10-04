@@ -329,3 +329,22 @@ def test_build_index_without_corpus_returns_zero(monkeypatch, tmp_path) -> None:
     _patch_heavy_deps(monkeypatch, client)
 
     assert indexer.build_index(rebuild=True) == (0, "")
+
+
+def test_build_index_fails_when_stored_count_mismatch(monkeypatch, tmp_path) -> None:
+    """写入中断留下部分索引：完成前必须核对总条数，不得给出"能查但少一半"的索引"""
+    _patch_corpus(monkeypatch, tmp_path)
+    collection = _FakeCollection()
+    client = _FakeClient(collection)
+    _patch_heavy_deps(monkeypatch, client)
+
+    original_add = collection.add
+
+    def add_with_loss(ids, documents, metadatas, embeddings):
+        original_add(ids, documents, metadatas, embeddings)
+        collection.count_value -= 1  # 模拟末批写入中断
+
+    collection.add = add_with_loss
+
+    with pytest.raises(RuntimeError, match="条数不一致"):
+        indexer.build_index(rebuild=True)

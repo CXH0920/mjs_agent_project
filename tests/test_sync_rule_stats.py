@@ -245,3 +245,16 @@ def test_apply_confirmed_mixed_rejects_all(doc_text):
     assert applied == []
     assert len(errors) == 1
     assert new_text == doc_text
+
+def test_load_data_missing_sources_logged_as_error(tmp_path, caplog, monkeypatch) -> None:
+    """数据出库后新机未 pull：缺源必须逐项显式报错，不得拿空气基线无声跑完"""
+    import logging
+
+    # 脚本 logger propagate=False（不向 root 传播），caplog 挂在 root 收不到，显式打开
+    monkeypatch.setattr(srs.logger, "propagate", True)
+
+    with caplog.at_level(logging.ERROR):
+        data = srs.load_data(root=tmp_path)
+
+    assert set(data.values()) == {None}
+    assert len([r for r in caplog.records if "数据源缺失" in r.message]) == 6

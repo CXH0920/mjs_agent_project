@@ -25,7 +25,7 @@ import time
 from src.business.rag.task_defs import TASKS
 from src.config.env import PROJECT_ROOT as ROOT
 from src.scripts import audit_rule_doc, rag_audit
-from src.scripts.rag_common import get_script_logger
+from src.scripts.rag_common import get_script_logger, install_crash_logger
 
 logger = get_script_logger("maintain_rag")
 
@@ -211,6 +211,7 @@ def summarize_counts():
 # ---------------------------------------------------------------------------
 
 def main():
+    install_crash_logger("maintain_rag")
     parser = argparse.ArgumentParser(description='RAG 语料维护调度脚本')
     parser.add_argument('--force', action='store_true', help='强制重跑全部任务')
     parser.add_argument('--check', action='store_true', help='只检测变更，不执行')

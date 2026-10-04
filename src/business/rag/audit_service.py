@@ -239,6 +239,7 @@ def collect_stale_card_curated(root: Path) -> list[dict]:
     """
     changes_path = root / "data" / "card_changes.json"
     if not changes_path.exists():
+        logger.warning("card_changes.json 不存在，卡牌精化时效检查未执行（缺官网同步应用记录）")
         return []
     from src.data.card_sync_store import load_card_changes  # noqa: PLC0415
 

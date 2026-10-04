@@ -10,8 +10,9 @@ import logging
 import os
 import shutil
 import sys
+from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, qVersion
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSplashScreen
 from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
@@ -20,6 +21,18 @@ from src.ui.app.main_window import MainWindow
 from src.ui.shared.style import GLOBAL_STYLE
 
 logger = logging.getLogger(__name__)
+
+# 版本单一来源的第一步：启动日志、setApplicationVersion 共用此常量（P2-1 收口前的过渡）
+_APP_VERSION = "0.1.0"
+
+
+def _bundle_data_signature(bundle_data: Path) -> str:
+    """静态资料源树指纹：文件数 + 最新 mtime（秒）。升级包带新数据时签名变化，仍会补齐。"""
+    files = [p for p in bundle_data.rglob("*") if p.is_file()]
+    if not files:
+        return "empty"
+    newest = max(int(p.stat().st_mtime) for p in files)
+    return f"{len(files)}:{newest}"
 
 
 def _ensure_clean_runtime() -> None:
@@ -47,16 +60,27 @@ def _ensure_clean_runtime() -> None:
             shutil.copy2(default_roi, user_roi)
     # 打包资料部署：BUNDLE_ROOT/data 的静态资料（核心库 json / 官方榜单 csv / RAG 语料 /
     # 评估集 / raw_guides 等）复制到运行时根——维护脚本、构建脚本等读 PROJECT_ROOT/data，
-    # 不部署会全量报"缺源"（task_states）。只补缺失文件，不覆盖用户已有数据
+    # 不部署会全量报"缺源"（task_states）。只补缺失文件，不覆盖用户已有数据。
+    # 部署标记带源树签名：一致则跳过约 280MB 的逐文件 rglob 扫描（范式同 paddle_loader
+    # 的 .synced；签名解决"升级包带新数据时不能跳过"的问题）
     bundle_data = BUNDLE_ROOT / "data"
     if bundle_data.is_dir():
-        for src in bundle_data.rglob("*"):
-            if not src.is_file():
-                continue
-            dst = PROJECT_ROOT / "data" / src.relative_to(bundle_data)
-            if not dst.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+        deploy_mark = PROJECT_ROOT / "data" / ".deployed"
+        signature = _bundle_data_signature(bundle_data)
+        if deploy_mark.exists() and deploy_mark.read_text(encoding="utf-8").strip() == signature:
+            logger.debug("数据部署标记未变化，跳过资料部署")
+        else:
+            deployed = 0
+            for src in bundle_data.rglob("*"):
+                if not src.is_file():
+                    continue
+                dst = PROJECT_ROOT / "data" / src.relative_to(bundle_data)
+                if not dst.exists():
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+                    deployed += 1
+            deploy_mark.write_text(signature, encoding="utf-8")
+            logger.info("数据部署完成：补齐 %d 个文件（签名 %s）", deployed, signature)
     # 元规则母本（元规则/术语/FAQ 语料任务的源，build_rule_corpus 读 PROJECT_ROOT/docs/）
     meta_doc = BUNDLE_ROOT / "docs" / "元规则整理-完整版.md"
     target_doc = PROJECT_ROOT / "docs" / "元规则整理-完整版.md"
@@ -126,6 +150,12 @@ def main() -> None:
         log_level=runtime_params["log_level"],
         log_to_file=runtime_params["log_to_file"],
     )
+    # 版本与环境入日志：此前版本号只进 setApplicationVersion 从不落日志，
+    # 历史日志无法归属代码版本，排障时无从判断行为差异
+    logger.info(
+        "应用启动：版本=%s, Python=%s, Qt=%s, 运行时根=%s, frozen=%s",
+        _APP_VERSION, sys.version.split()[0], qVersion(), PROJECT_ROOT, IS_FROZEN,
+    )
 
     # 首次启动迁移：旧 DEEPSEEK_* 三件套 → 默认档案（幂等，文件已存在即跳过）
     from src.config.profiles import migrate_legacy_api_config
@@ -151,7 +181,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("名将杀 Agent")
     app.setOrganizationName("MingJiangSha")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion(_APP_VERSION)
     _translator = install_chinese_qt_translator(app)
 
     # Windows 任务栏图标修正：设置 AppUserModelID 确保自定义图标生效

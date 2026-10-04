@@ -159,6 +159,34 @@ class BaseFetchService(QObject):
         self._process.setProcessEnvironment(process_env)
         logger.info("启动子进程: python %s", " ".join(args))
         self._process.start(sys.executable, args)
+        self._start_watchdog()
+
+    # 卡死看门狗：AI 生成单条 1~3 分钟属正常，30 分钟上限只拦"黑洞化永不结束"——
+    # 否则 _is_busy 永久 True，只有用户手点取消才能恢复
+    _WATCHDOG_TIMEOUT_MS = 30 * 60 * 1000
+
+    def _start_watchdog(self) -> None:
+        self._watchdog_timer = QTimer(self)
+        self._watchdog_timer.setSingleShot(True)
+        self._watchdog_timer.timeout.connect(self._on_watchdog_timeout)
+        self._watchdog_timer.start(self._WATCHDOG_TIMEOUT_MS)
+
+    def _stop_watchdog(self) -> None:
+        timer = getattr(self, "_watchdog_timer", None)
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+            self._watchdog_timer = None
+
+    def _on_watchdog_timeout(self) -> None:
+        process = self._process
+        if process is None or process.state() == QProcess.ProcessState.NotRunning:
+            return
+        logger.error(
+            "%s 子进程超过 %d 分钟未结束，看门狗强制终止",
+            self._service_name, self._WATCHDOG_TIMEOUT_MS // 60000,
+        )
+        process.kill()
 
     # ---------------------------------------------------------------
     # stdout / stderr 读取
@@ -221,6 +249,7 @@ class BaseFetchService(QObject):
 
     def _on_finished(self, exit_code: int) -> None:
         """子进程完成回调：清理资源 → 子类钩子 → 日志"""
+        self._stop_watchdog()
         self._read_stdout()
         self._read_stderr()
         self._dispatch_stdout_lines(flush=True)
@@ -266,6 +295,7 @@ class BaseFetchService(QObject):
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         """子进程出错回调"""
+        self._stop_watchdog()
         if self._cancel_requested and error == QProcess.ProcessError.Crashed:
             return
         self._read_stdout()

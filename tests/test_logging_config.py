@@ -137,3 +137,30 @@ def test_third_party_suppressed_and_debug_log_keeps_full(tmp_path, monkeypatch) 
     assert "proj_debug_token" in debug_content
     assert "proj_info_token" in debug_content
     assert "proj_warn_token" in debug_content
+
+
+def test_setup_logging_installs_thread_excepthook() -> None:
+    """QThread 异常默认静默（不经过 sys.excepthook）：setup_logging 必须装兜底钩子"""
+    import threading
+
+    logging_config.setup_logging(log_to_file=False)
+    assert threading.excepthook is logging_config._thread_excepthook
+
+
+def test_thread_excepthook_logs_error_with_stack(caplog) -> None:
+    """线程未捕获异常留下带堆栈的 ERROR；SystemExit 是线程正常退出路径，不记录"""
+    import threading
+
+    logging_config.setup_logging(log_to_file=False)
+
+    with caplog.at_level(logging.ERROR):
+        threading.excepthook(threading.ExceptHookArgs(
+            (ValueError, ValueError("线程爆炸"), None, threading.current_thread())
+        ))
+        threading.excepthook(threading.ExceptHookArgs(
+            (SystemExit, SystemExit(0), None, threading.current_thread())
+        ))
+
+    errors = [r for r in caplog.records if "未捕获异常" in r.message]
+    assert len(errors) == 1
+    assert "线程爆炸" in errors[0].getMessage()

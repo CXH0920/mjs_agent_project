@@ -41,7 +41,11 @@ def _drain_retired_workers() -> None:
     for worker in _RETIRED_WORKERS:
         if worker.isRunning() and not worker.wait(15_000):
             logger.error("退役 OCR worker 15 秒未退出，强制结束进程")
-            os._exit(1)
+            # os._exit 绕过 atexit/logging.shutdown：先手动冲刷日志句柄，
+            # 否则这条现场记录必丢；慢退出属兜底放弃而非故障，退出码 0，
+            # 不把正常关闭伪装成失败（1 会让上层误读为 OCR 异常）
+            logging.shutdown()
+            os._exit(0)
 
 
 atexit.register(_drain_retired_workers)

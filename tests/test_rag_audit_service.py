@@ -56,3 +56,15 @@ def test_valid_heroes_keeps_normal_checks(tmp_path: Path) -> None:
     assert all(issue.kind != "heroes_source_unavailable" for issue in issues)
     unclassified = next(i for i in issues if i.kind == "unclassified_hero")
     assert set(unclassified.target) == {"刘备"}
+
+
+def test_collect_stale_card_curated_warns_when_changes_missing(tmp_path: Path, caplog) -> None:
+    """card_changes.json 缺失 ≠ 没有超期卡牌：检查能力失效必须显式可见"""
+    import logging
+
+    from src.business.rag.audit_service import collect_stale_card_curated
+
+    with caplog.at_level(logging.WARNING):
+        assert collect_stale_card_curated(tmp_path) == []
+
+    assert any("card_changes.json 不存在" in r.message for r in caplog.records)

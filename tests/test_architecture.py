@@ -661,21 +661,22 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "business/recognition/official_data_import_service.py": 638,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
     "ui/library/hero_browser.py": 639,
-    "scripts/sync_rule_stats.py": 601,
+    # 601 → 605：基线置空/缺源显式报错 + 终局"基线不完整"标注（P1-5，2026-10）
+    "scripts/sync_rule_stats.py": 605,
     # 2026-10 tripwire 落地补种（种子 = 当前实测值，只许收紧）。此前名单靠
     # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）
     "ui/match/match_guide_panel.py": 840,
     "ui/configuration/settings_dialog.py": 584,
     "business/recognition/peak_select_watcher.py": 567,
     "ui/match/peak_select_panel.py": 561,
-    "business/recognition/ocr_worker.py": 542,
+    "business/recognition/ocr_worker.py": 546,
     "scraper/official_source/crawler.py": 541,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     "data/recommendation_index_repository.py": 526,
     "ui/library/special_cards_panel.py": 517,
     "scraper/ai/generation.py": 514,
-    "business/rag/audit_service.py": 501,
+    "business/rag/audit_service.py": 502,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

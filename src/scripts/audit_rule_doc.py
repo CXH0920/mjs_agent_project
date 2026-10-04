@@ -27,7 +27,7 @@ import sys
 
 from src.scripts import build_rule_corpus as brc
 from src.scripts import sync_rule_stats as srs
-from src.scripts.rag_common import get_script_logger
+from src.scripts.rag_common import get_script_logger, install_crash_logger
 from src.scripts.snapshot_common import (
     DEFAULT_SNAPSHOT,
     build_snapshot,
@@ -307,6 +307,7 @@ def _print_report(issues, snap, updated):
 
 
 def main():
+    install_crash_logger("audit_rule_doc")
     parser = argparse.ArgumentParser(description='元规则 T0 文档机器校验')
     parser.add_argument('--strict', action='store_true', help='有任一 ERROR/WARN 时退出码 1')
     parser.add_argument('--update-snapshot', action='store_true', help='校验后刷新基线快照')

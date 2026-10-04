@@ -4,6 +4,7 @@ import atexit
 import faulthandler
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -27,20 +28,41 @@ atexit.unregister(_ocr_worker_module._drain_retired_workers)
 
 # pytest-timeout 的 thread 方法把超时线程栈写到 pytest 终端，而 xdist worker 被
 # 强杀（node down）时该输出随缓冲丢失，CI 上只能看到用例名看不到卡在哪一行。
-# 把栈同时写入每个 worker 独立的日志文件（logs/pytest-timeout-<pid>.log），
-# CI 末尾统一 cat 出来即可定位卡死点。
+# 把栈同时写入每个 worker 独立的日志文件（.tmp_test/timeout_dumps/pytest-timeout-<pid>.log），
+# CI 末尾统一 cat 出来即可定位卡死点。dump 与 pytest 临时文件同收 .tmp_test，不再污染 logs/。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_TIMEOUT_DUMP_DIR = Path(
+    os.environ.get("MJS_TIMEOUT_DUMP_DIR") or (_PROJECT_ROOT / ".tmp_test" / "timeout_dumps")
+)
 _TIMEOUT_DUMP_HANDLE = None
 _orig_dump_stacks = pytest_timeout.dump_stacks
+
+
+def _prune_stale_timeout_dumps(keep_days: int = 7) -> None:
+    """清理超期转储；转储是诊断辅助，清理失败静默（不构成失败）。"""
+    cutoff = time.time() - keep_days * 86400
+    try:
+        for path in _TIMEOUT_DUMP_DIR.glob("pytest-timeout-*.log"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+# xdist 下每个 worker 导入 conftest 时各清一次，幂等无害
+_prune_stale_timeout_dumps()
 
 
 def _dump_stacks_to_file(terminal) -> None:
     global _TIMEOUT_DUMP_HANDLE
     try:
         if _TIMEOUT_DUMP_HANDLE is None:
-            log_dir = os.environ.get("MJS_TIMEOUT_DUMP_DIR") or "logs"
-            os.makedirs(log_dir, exist_ok=True)
+            _TIMEOUT_DUMP_DIR.mkdir(parents=True, exist_ok=True)
             _TIMEOUT_DUMP_HANDLE = open(
-                os.path.join(log_dir, f"pytest-timeout-{os.getpid()}.log"),
+                _TIMEOUT_DUMP_DIR / f"pytest-timeout-{os.getpid()}.log",
                 "a", encoding="utf-8",
             )
         faulthandler.dump_traceback(file=_TIMEOUT_DUMP_HANDLE)

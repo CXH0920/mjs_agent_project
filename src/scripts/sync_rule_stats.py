@@ -60,19 +60,20 @@ TABLE_HEADER_FIRST_CELLS = {'类型', '数量', '内容', '项', '数据', '时�
 # ---------------------------------------------------------------------------
 
 def load_data(root=ROOT):
-    """加载全部数据源；单个失败返回 None（diff 报告会提示缺源）。"""
+    """加载全部数据源；单个失败返回 None（终局输出会标明基线不完整）。"""
     out = {}
     for rel in ('cards.json', 'heroes.json', 'card_points.json', 'equip_attrs.json',
                 'card_annotations.json', 'special_cards.json'):
         path = os.path.join(root, 'data', rel)
         if not os.path.exists(path):
+            logger.error("数据源缺失，校验基线不完整: %s", rel)
             out[rel.split('.')[0]] = None
             continue
         try:
             with open(path, encoding='utf-8') as f:
                 out[rel.split('.')[0]] = json.load(f)
         except Exception:
-            logger.warning("读取数据文件失败，校验基线置空: %s", rel, exc_info=True)
+            logger.error("读取数据文件失败，校验基线置空: %s", rel, exc_info=True)
             out[rel.split('.')[0]] = None
     return out
 
@@ -542,6 +543,11 @@ def main():
     with open(args.doc, encoding='utf-8') as f:
         doc_text = f.read()
     data = load_data()
+    # 数据出库后（2026-10-03）新机未跑 pull_data pull 时全部置空，diff 会拿空气基线
+    # 生成假差异/假通过——终局输出必须显式标注，读者不能只看到"未发现差异"
+    missing_sources = sorted(name for name, value in data.items() if value is None)
+    if missing_sources:
+        print('[基线不完整] 以下数据源缺失或读取失败，本次校验结果不可信：%s' % '、'.join(missing_sources))
     issues = diff_sections(doc_text, data, args.only)
     report = build_report(issues)
 
