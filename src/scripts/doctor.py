@@ -165,6 +165,13 @@ def check_private_repo() -> list[Finding]:
         return findings
     findings.append(Finding("私有仓", "存在性", PASS, str(repo)))
 
+    # manifest 缺失时 pull_data._manifest 会 sys.exit，SystemExit 不是 Exception
+    # 子类、能穿透 run_checks 的兜底，必须先预检转成 FAIL finding
+    if not (repo / "manifest.json").is_file():
+        findings.append(Finding(
+            "私有仓", "manifest 一致性", FAIL, f"{repo / 'manifest.json'} 不存在",
+            fix="在私有仓运行 scripts/gen_manifest.py 后重试"))
+        return findings
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         code = pull_data.verify(repo)
@@ -174,7 +181,41 @@ def check_private_repo() -> list[Finding]:
         findings.append(Finding(
             "私有仓", "manifest 一致性", FAIL, buffer.getvalue().strip(),
             fix="在私有仓重跑 scripts/gen_manifest.py；若工作区文件损坏，从远端重新 clone"))
+
+    findings.append(_check_worktree_sync(repo))
     return findings
+
+
+def _check_worktree_sync(repo: Path) -> Finding:
+    """工作区数据文件 vs 私有仓 manifest：把"未 push 的本地修改"变成可见项。"""
+    from src.scripts import pull_data
+
+    try:
+        entries = json.loads(
+            (repo / "manifest.json").read_text(encoding="utf-8"))["files"]
+    except (OSError, KeyError, ValueError):
+        return Finding("私有仓", "工作区同步", SKIP, "manifest.json 不可读")
+    diverged, absent = [], []
+    for item in entries:
+        local = ROOT / item["path"]
+        if not local.exists():
+            absent.append(item["path"])
+        elif pull_data._sha256(local) != item["sha256"]:
+            diverged.append(item["path"])
+    if absent and diverged:
+        return Finding(
+            "私有仓", "工作区同步", WARN,
+            f"{len(diverged)} 个文件与私有仓不同（未 push 的修改？）、{len(absent)} 个缺失",
+            fix="push 后再 pull；pull 覆盖前会自动备份到 data/backups")
+    if diverged:
+        return Finding(
+            "私有仓", "工作区同步", WARN,
+            f"与私有仓不同（可能是未 push 的本地修改）：{'、'.join(diverged[:5])}",
+            fix="python -m src.scripts.pull_data push 回推；或确认后 pull（覆盖前自动备份）")
+    if absent:
+        return Finding("私有仓", "工作区同步", WARN, f"{len(absent)} 个文件尚未落位",
+                       fix="python -m src.scripts.pull_data pull")
+    return Finding("私有仓", "工作区同步", PASS, f"{len(entries)} 个文件与私有仓一致")
 
 
 # ── 数据 ──────────────────────────────────────────────────────────────
@@ -227,7 +268,43 @@ def check_data() -> list[Finding]:
         else:
             findings.append(Finding(
                 "数据", f"backups/{stem}", PASS, f"最新基线 {age_days:.0f} 天前"))
+
+    findings.append(_check_load_issues())
     return findings
+
+
+def _check_load_issues() -> Finding:
+    """DataManager 族 load_issues 的出口（此前已产出但零消费）。
+
+    与"可解析"互补：那条只看 JSON 语法，这里覆盖模型级问题
+    （invalid_record / duplicate_key / invalid_root 等）。
+    """
+    from src.data.guide_manager import GuideManager
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
+
+    issues = []
+    try:
+        for manager in (
+            HeroManager(ROOT / "data" / "heroes.json"),
+            GuideManager(ROOT / "data" / "guides.json"),
+            SynergyManager(ROOT / "data" / "synergies.json"),
+        ):
+            manager.load()
+            issues.extend(manager.load_issues)
+    except Exception as error:  # noqa: BLE001 — 数据文件缺失/异常不拖垮整组
+        return Finding("数据", "load_issues", SKIP, f"无法实例化管理器: {error!r}")
+
+    errors = [i for i in issues if i.severity == "error"]
+    if errors:
+        kinds = "；".join(f"{i.kind}({Path(i.file_path).name})" for i in errors[:5])
+        return Finding(
+            "数据", "load_issues", FAIL,
+            f"{len(errors)} 条 error 级加载问题：{kinds}",
+            fix="在数据管理界面核对对应记录；损坏文件可从 data/backups 恢复")
+    if issues:
+        return Finding("数据", "load_issues", WARN, f"{len(issues)} 条 warning 级加载问题")
+    return Finding("数据", "load_issues", PASS, "无")
 
 
 # ── 配置 ──────────────────────────────────────────────────────────────
@@ -444,7 +521,7 @@ def run_checks(offline: bool = False) -> list[Finding]:
             continue
         try:
             findings.extend(checker())
-        except Exception as error:  # noqa: BLE001 — 单组失败不得拖垮整份报告
+        except (Exception, SystemExit) as error:  # noqa: BLE001 — 单组失败不得拖垮整份报告
             findings.append(Finding(group, checker.__name__, FAIL,
                                     f"检查器异常: {error!r}"))
     return findings

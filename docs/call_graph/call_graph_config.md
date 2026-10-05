@@ -44,7 +44,7 @@ ai_batch.main() -> resolve_api_config(None)
        [cmd 默认 GBK；windowed 模式为 None 需守卫]
     -> QApplication.setHighDpiScaleFactorRoundingPolicy(PassThrough)
     -> app = QApplication(sys.argv)                            [创建 Qt 应用]
-    -> app.setApplicationName("名将杀 Agent") / setOrganizationName("MingJiangSha") / setApplicationVersion("0.1.0")
+    -> app.setApplicationName("名将杀 Agent") / setOrganizationName("MingJiangSha") / setApplicationVersion(app_version())
     -> install_chinese_qt_translator(app)                      [Qt 标准控件中文翻译器]
     -> [win32] ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MingJiangSha.MJSAgent")
        [修正 Windows 任务栏图标, 静默失败]

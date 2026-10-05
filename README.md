@@ -116,6 +116,21 @@ python -m src.scripts.import_hero_adjustments --input <json>  # 首次注入武�
 
 维护脚本（`maintain_rag.py` / `rag_audit.py` / `build_*_corpus.py`）已收编到 `src/scripts/`，以 `python -m src.scripts.<脚本名>` 运行，全部本地执行。语料与维护脚本统一接入 `install_crash_logger` / `get_script_logger`，日志落 `logs/rag/<脚本名>.log`。元规则 T0 文档维护脚本：`audit_rule_doc.py` / `sync_rule_stats.py` / `propose_rule_changes.py` / `apply_rule_proposal.py` / `eval_rule_faqs.py`，均可在应用内「知识库维护 → 元规则母本」可视化操作。
 
+### 7. 周更运维入口
+
+```bash
+python -m src.scripts.ops weekly            # 一条命令串完周更（pull → diff → 语料维护 → pytest → push）
+python -m src.scripts.ops health            # 等效 doctor，只读体检
+python -m src.scripts.ops retry-failed      # 只重跑上次 AI 生成失败的条目
+python -m src.scripts.ops clean --dry       # 预览可清理的测试残留（.tmp_test）
+python -m src.scripts.doctor                # 10 秒只读自检：环境/设备/私有仓/数据/配置/合规等
+python -m src.scripts.doctor --offline      # 跳过网络检查
+```
+
+doctor 输出一页 PASS/WARN/FAIL（含修复动作），有 FAIL 时退出码非 0，可直接接入
+周更前的例行检查；任务台账统一落 `logs/task_results.jsonl`（周更各步成败可回溯）。
+完整周更步骤见 [docs/周更操作手册.md](docs/周更操作手册.md)。
+
 ---
 
 ## 数据与合规
@@ -135,6 +150,9 @@ python -m src.scripts.pull_data push --dry-run   # 只打印将发生的动作
 私有仓位置默认为项目同级 `mjs_data_private`；位置不同时设置环境变量 `MJS_DATA_REPO`
 或在 `config.env` 配置 `MJS_DATA_REPO`（见 `config.env.example`）。push 内置数据有效性
 守卫（JSON 可解析、非空、heroes 条数下限）与脏工作区拒绝，校验不过不会写入私有仓。
+**pull 方向注意**：落位会覆盖工作区中与私有仓不同的文件（可能是尚未 push 的本地修改）；
+覆盖前会先把这类文件备份到 `data/backups/`（扁平化命名 `data__<文件名>-<时间戳>.json`），
+误覆盖可从那里找回。
 
 - 来源与采集时间登记：[data/SOURCES.md](data/SOURCES.md)
 - 项目早期提交（2026-06-07 ~ 2026-10-02）中曾包含过此类内容，完整 git 历史按原样

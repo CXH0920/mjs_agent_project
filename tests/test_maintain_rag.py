@@ -6,6 +6,7 @@
 规划阶段也调用 task_changed，任何任务都不会执行）。
 """
 import builtins
+import sys
 
 import pytest
 from src.scripts import maintain_rag
@@ -180,3 +181,67 @@ class TestUpdateStateFingerprints:
         maintain_rag.update_state_fingerprints(plan, [], force=False, state=state)
 
         assert state['files'] == self.FINGERPRINTS
+
+
+class TestMainLoop:
+    """main() 执行循环回归测试。
+
+    回归背景：c88bf63 加台账时把 `if v_ok` 的 else 误缩进成 for-else——
+    全部成功也会把最后一个任务记为"块数校验未通过"，而真实的块数校验
+    失败反而不进 failed（且不写台账）。两用例分别命中这两种错误形态。
+    """
+
+    @staticmethod
+    def _patch_main_dependencies(monkeypatch, *, run_script, verify_outputs):
+        monkeypatch.setattr(maintain_rag, 'TASKS', [
+            {'name': '任务A', 'script': 'a.py', 'sources': ['a'], 'outputs': ['a.out'], 'expected': None},
+            {'name': '任务B', 'script': 'b.py', 'sources': ['b'], 'outputs': ['b.out'], 'expected': None},
+        ])
+        monkeypatch.setattr(maintain_rag, 'task_changed', lambda task, state: (True, '测试'))
+        monkeypatch.setattr(maintain_rag, 'run_script', run_script)
+        monkeypatch.setattr(maintain_rag, 'verify_outputs', verify_outputs)
+        monkeypatch.setattr(maintain_rag, 'load_state', lambda: {'files': {}})
+        monkeypatch.setattr(maintain_rag, 'save_state', lambda state: None)
+        monkeypatch.setattr(maintain_rag, 'update_state_fingerprints', lambda *a, **k: None)
+        monkeypatch.setattr(maintain_rag, 'install_crash_logger', lambda *a, **k: None)
+        monkeypatch.setattr(maintain_rag, 'summarize_counts', lambda: None)
+        monkeypatch.setattr(maintain_rag.rag_audit, 'audit_hero_coverage', lambda root: [])
+        monkeypatch.setattr(maintain_rag.rag_audit, 'audit_version_timeline', lambda root: [])
+        monkeypatch.setattr(maintain_rag.audit_rule_doc, 'audit', lambda **k: [])
+        monkeypatch.setattr(sys, 'argv', ['maintain_rag'])
+        # record_task 在 main() 内经 `from ... import record_task` 局部导入，
+        # 必须打在源模块上才会被拿到
+        calls: list = []
+        monkeypatch.setattr(
+            'src.business.common.task_ledger.record_task',
+            lambda task, **kw: calls.append((task, kw)),
+        )
+        return calls
+
+    def test_all_success_records_no_failure(self, fake_root, monkeypatch, capsys):
+        """全成功：不得出现任何 ok=False 台账，终局汇总 ok=True。"""
+        calls = self._patch_main_dependencies(
+            monkeypatch,
+            run_script=lambda script, timeout=180: (True, ''),
+            verify_outputs=lambda task: (True, []),
+        )
+        maintain_rag.main()
+        assert [task for task, kw in calls if kw.get('ok') is False] == []
+        final = [kw for task, kw in calls if task == 'maintain_rag'][-1]
+        assert final['ok'] is True and final['failed'] == 0
+        assert '全部任务执行成功' in capsys.readouterr().out
+
+    def test_verify_failure_recorded_as_failed(self, fake_root, monkeypatch, capsys):
+        """块数校验失败：任务进 failed、写 ok=False 台账，终局汇总携带原因。"""
+        calls = self._patch_main_dependencies(
+            monkeypatch,
+            run_script=lambda script, timeout=180: (True, ''),
+            verify_outputs=lambda task: (False, ['块数 3 != 5']),
+        )
+        maintain_rag.main()
+        failed_tasks = [task for task, kw in calls if kw.get('ok') is False]
+        assert failed_tasks == ['maintain_rag:任务A', 'maintain_rag:任务B', 'maintain_rag']
+        final = [kw for task, kw in calls if task == 'maintain_rag'][-1]
+        assert final['ok'] is False and final['failed'] == 2
+        out = capsys.readouterr().out
+        assert '块数校验未通过' in out and '任务A' in final['reason']

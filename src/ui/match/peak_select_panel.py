@@ -337,8 +337,12 @@ class PeakSelectPanel(QWidget):
     def _on_capture_result(self, result: dict) -> None:
         if self._capture_lock.finish() != CaptureSource.ADB_SAVE:
             return
-        save_path = result.get("save_path") or ""
-        self._action_bar.set_status(f"截图已保存：{save_path}", TONE_SUCCESS)
+        save_path = result.get("save_path")
+        if save_path:
+            self._action_bar.set_status(f"截图已保存：{save_path}", TONE_SUCCESS)
+        else:
+            # None = 保存中或保存失败（失败原因见日志），不能谎报"已保存"
+            self._action_bar.set_status("截图未落盘（保存中或失败，详见日志）", TONE_WARNING)
 
     def _on_capture_failed(self, message: str) -> None:
         if self._capture_lock.finish() != CaptureSource.ADB_SAVE:

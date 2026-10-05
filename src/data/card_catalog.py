@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from src.config.env import PROJECT_ROOT
 from src.data.issues import DataIssue
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, snapshot_to_backups
 from src.data.models import Card
 
 logger = logging.getLogger(__name__)
@@ -200,6 +200,15 @@ class _JsonRepository:
             self._issue("warning", "file_missing", "文件不存在")
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
             self._issue("error", "file_read_error", str(error))
+            # 坏文件保底副本：apply_official_updates 不校验加载结果，损坏后的
+            # 一次官网同步会把空库全量覆盖上去——先按原字节留底才可恢复
+            try:
+                backup_path = snapshot_to_backups(self.file_path)
+            except OSError as backup_error:
+                logger.error("坏文件保底副本失败 %s: %s", self.file_path, backup_error)
+            else:
+                if backup_path:
+                    logger.warning("已留存坏文件副本: %s", backup_path)
         return None
 
 

@@ -32,11 +32,12 @@ _QPROCESS_CHILD_ENV = "MJS_QPROCESS_CHILD"
 
 
 def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
-    """后台线程未捕获异常的兜底记录。
+    """threading.Thread 后台线程未捕获异常的兜底记录。
 
-    QThread 的异常默认完全静默（不经过 sys.excepthook），OCR/截图线程之死
-    在日志里一个字都没有；这里至少留下一条带堆栈的 ERROR。SystemExit 是
-    线程主动退出的正常路径，不记录。
+    仅覆盖 CPython threading.Thread 的工作者（如 card_sync 的裸线程）；
+    QThread 的 run() 在 Qt 原生线程执行、不经过 threading.excepthook
+    （PySide6 6.11 实测），其异常走 sys.excepthook——由
+    _install_sys_excepthook 兜底。SystemExit 是线程主动退出的正常路径，不记录。
     """
     if args.exc_type is SystemExit:
         return
@@ -45,6 +46,34 @@ def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
         "线程 %s 未捕获异常: %s", thread_name, args.exc_value,
         exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
     )
+
+
+_MANAGED_EXCEPTHOOK_ATTR = "_mjs_managed_excepthook"
+
+
+def _install_sys_excepthook() -> None:
+    """安装链式 sys.excepthook，让逃逸到顶层的异常留下带堆栈的 ERROR。
+
+    PySide6 6.11 实测：QThread.run() 抛出的异常经 Qt 调 sys.excepthook，
+    默认 hook 只向 stderr 打印——打包成 windowed exe 后无处可看；主线程
+    Qt 槽内逃逸的异常同样走这里。记录后回调前一 hook，保持控制台行为不变。
+    """
+    previous_hook = sys.excepthook
+    if getattr(previous_hook, _MANAGED_EXCEPTHOOK_ATTR, False):
+        return
+
+    def _hook(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            previous_hook(exc_type, exc_value, exc_tb)
+            return
+        logging.getLogger("excepthook").error(
+            "未捕获异常: %s", exc_value,
+            exc_info=(exc_type, exc_value, exc_tb),
+        )
+        previous_hook(exc_type, exc_value, exc_tb)
+
+    setattr(_hook, _MANAGED_EXCEPTHOOK_ATTR, True)
+    sys.excepthook = _hook
 
 
 class ModuleFilter(logging.Filter):
@@ -114,6 +143,8 @@ def setup_logging(
 
     # 后台线程异常兜底：须在 QProcess 子进程的提前 return 之前注册
     threading.excepthook = _thread_excepthook
+    # QThread/主线程槽异常兜底（同样须在提前 return 之前，子进程也生效）
+    _install_sys_excepthook()
 
     # QProcess 子进程的 stdout/stderr 会被父进程统一收集，避免多个进程
     # 同时轮转同一组文件导致 Windows 文件占用和备份竞争。

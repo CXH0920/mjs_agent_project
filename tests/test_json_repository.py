@@ -149,3 +149,30 @@ def test_snapshot_never_deletes_corrupt_or_manual_rescue_files(tmp_path) -> None
 def test_snapshot_missing_source_is_noop(tmp_path) -> None:
     assert snapshot_to_backups(tmp_path / "absent.json") is None
     assert not (tmp_path / "backups").exists()
+
+
+def test_read_root_preserves_corrupt_file_to_backups(tmp_path) -> None:
+    """回归：加载损坏 JSON 时先按原字节留底到 backups——save() 不校验
+    available，坏文件加载后的任意一次保存会把空数据原子覆盖上去。"""
+    from src.data.json_repository import JsonRepository
+
+    path = tmp_path / "cards.json"
+    path.write_text('{"broken": ', encoding="utf-8")
+
+    repo = JsonRepository(path)
+    root, ok = repo._read_root()
+
+    assert ok is False and root is None
+    backups = sorted((tmp_path / "backups").glob("cards-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == '{"broken": '
+
+
+def test_read_root_missing_file_creates_no_backup(tmp_path) -> None:
+    from src.data.json_repository import JsonRepository
+
+    repo = JsonRepository(tmp_path / "absent.json")
+    root, ok = repo._read_root()
+
+    assert ok is False and root is None
+    assert not (tmp_path / "backups").exists()

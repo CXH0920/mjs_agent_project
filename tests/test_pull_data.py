@@ -94,6 +94,29 @@ def test_pull_places_files_atomically(sync_env):
     assert not list((root / ".tmp_test").glob(".pull_staging-*"))
 
 
+def test_pull_backs_up_dirty_local_file(sync_env, capsys):
+    """回归：未 push 的本地修改被 pull 覆盖前必须先留备份（否则无处找回）。"""
+    root, repo = sync_env
+    (root / "data").mkdir()
+    (root / "data" / "cards.json").write_text('[{"id": 1, "本地修改": true}]', encoding="utf-8")
+
+    assert pull_data.pull(repo) == 0
+    # 覆盖后为私有仓版本
+    assert json.loads((root / "data" / "cards.json").read_text(encoding="utf-8")) == [{"id": 1}]
+    # 被覆盖的本地修改在 data/backups 留有扁平化命名的副本
+    backups = sorted((root / "data" / "backups").glob("data__cards-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == '[{"id": 1, "本地修改": true}]'
+    assert "未 push 的修改" in capsys.readouterr().out
+
+
+def test_pull_clean_worktree_creates_no_backup(sync_env):
+    """工作区与私有仓一致时落位不产生备份（正常周更路径零额外产物）。"""
+    root, repo = sync_env
+    assert pull_data.pull(repo) == 0
+    assert not (root / "data" / "backups").exists()
+
+
 def test_pull_dry_run_touches_nothing(sync_env):
     root, repo = sync_env
     assert pull_data.pull(repo, dry_run=True) == 0

@@ -98,6 +98,35 @@ def test_run_checks_survives_checker_exception(monkeypatch):
     assert "模拟检查器崩溃" in findings[0].detail
 
 
+def test_run_checks_survives_system_exit(monkeypatch):
+    """回归：pull_data._manifest 缺 manifest 时 sys.exit——SystemExit 不是
+    Exception 子类，原 `except Exception` 兜不住会杀死整份报告"""
+    def boom():
+        import sys
+        sys.exit("FAIL: 找不到 manifest.json")
+
+    monkeypatch.setattr(doctor, "CHECK_GROUPS", [("测试组", boom)])
+    findings = doctor.run_checks(offline=True)
+
+    assert len(findings) == 1
+    assert findings[0].status == doctor.FAIL
+    assert "manifest.json" in findings[0].detail
+
+
+def test_check_private_repo_flags_missing_manifest(tmp_path, monkeypatch):
+    """回归：私有仓存在但无 manifest 时应得 FAIL finding（带修复指引），
+    而不是被 pull_data._manifest 的 sys.exit 穿透"""
+    repo = tmp_path / "mjs_data_private"
+    (repo / ".git").mkdir(parents=True)
+    monkeypatch.setenv("MJS_DATA_REPO", str(repo))
+
+    findings = doctor.check_private_repo()
+
+    manifest = next(f for f in findings if f.name == "manifest 一致性")
+    assert manifest.status == doctor.FAIL
+    assert "gen_manifest" in manifest.fix
+
+
 def test_render_contains_tally_line():
     findings = [
         doctor.Finding("组", "项A", doctor.PASS, "ok"),
@@ -108,3 +137,58 @@ def test_render_contains_tally_line():
     assert "[PASS] 组/项A: ok" in text
     assert "↳ 修复: 做点什么" in text
     assert "1 PASS / 1 WARN / 0 FAIL / 0 SKIP" in text
+
+
+def test_check_data_reports_load_issues(tmp_path, monkeypatch):
+    """load_issues 出口：模型级加载问题（invalid_json 等）必须可见。"""
+    monkeypatch.setattr(doctor, "ROOT", tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "heroes.json").write_text('{"截断": ', encoding="utf-8")
+
+    findings = doctor.check_data()
+
+    load_issues = next(f for f in findings if f.name == "load_issues")
+    assert load_issues.status == doctor.FAIL
+    assert "invalid_json" in load_issues.detail
+
+
+def test_check_data_load_issues_pass_when_clean(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "ROOT", tmp_path)
+    (tmp_path / "data").mkdir()
+    for name in ("heroes.json", "guides.json", "synergies.json"):
+        (tmp_path / "data" / name).write_text("[]", encoding="utf-8")
+
+    findings = doctor.check_data()
+
+    load_issues = next(f for f in findings if f.name == "load_issues")
+    assert load_issues.status == doctor.PASS
+
+
+def test_check_private_repo_flags_worktree_divergence(tmp_path, monkeypatch):
+    """工作区同步：本地文件与私有仓 manifest 指纹不同 = 未 push 的修改，须 WARN。"""
+    import hashlib
+    import json
+
+    repo = tmp_path / "mjs_data_private"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "data").mkdir()
+    (repo / "data" / "cards.json").write_text('[{"id": 1}]', encoding="utf-8")
+    sha = hashlib.sha256((repo / "data" / "cards.json").read_bytes()).hexdigest()
+    (repo / "manifest.json").write_text(
+        json.dumps({"files": [{"path": "data/cards.json", "sha256": sha, "bytes": 10}]}),
+        encoding="utf-8")
+    monkeypatch.setenv("MJS_DATA_REPO", str(repo))
+    monkeypatch.setattr(doctor, "ROOT", tmp_path / "project")
+    # manifest 预检通过但 verify 走 _manifest——此处直接验证 _check_worktree_sync
+    (tmp_path / "project" / "data").mkdir(parents=True)
+    (tmp_path / "project" / "data" / "cards.json").write_text('[{"id": 1, "local": true}]', encoding="utf-8")
+
+    finding = doctor._check_worktree_sync(repo)
+
+    assert finding.status == doctor.WARN
+    assert "data/cards.json" in finding.detail
+
+    # 本地与私有仓一致 → PASS
+    (tmp_path / "project" / "data" / "cards.json").write_text('[{"id": 1}]', encoding="utf-8")
+    finding = doctor._check_worktree_sync(repo)
+    assert finding.status == doctor.PASS

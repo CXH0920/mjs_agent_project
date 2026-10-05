@@ -164,3 +164,34 @@ def test_thread_excepthook_logs_error_with_stack(caplog) -> None:
     errors = [r for r in caplog.records if "未捕获异常" in r.message]
     assert len(errors) == 1
     assert "线程爆炸" in errors[0].getMessage()
+
+
+def test_setup_logging_installs_chained_sys_excepthook(monkeypatch) -> None:
+    """QThread/主线程槽的逃逸异常走 sys.excepthook（PySide6 6.11 实测）：
+    setup_logging 必须装链式钩子，且重复调用不叠加"""
+    import sys
+
+    monkeypatch.setattr(sys, "excepthook", sys.__excepthook__)
+    logging_config.setup_logging(log_to_file=False)
+    hook = sys.excepthook
+    assert getattr(hook, logging_config._MANAGED_EXCEPTHOOK_ATTR, False)
+    logging_config.setup_logging(log_to_file=False)
+    assert sys.excepthook is hook  # 幂等：不因二次 setup 再包一层
+
+
+def test_sys_excepthook_logs_error_and_chains(monkeypatch, caplog) -> None:
+    """顶层异常记录带堆栈的 ERROR 并回调前一 hook；KeyboardInterrupt 只直通"""
+    import sys
+
+    chained: list = []
+    monkeypatch.setattr(sys, "excepthook", lambda *a: chained.append(a))
+    logging_config._install_sys_excepthook()
+
+    with caplog.at_level(logging.ERROR):
+        sys.excepthook(ValueError, ValueError("槽内爆炸"), None)
+
+    assert chained and isinstance(chained[0][0], type(ValueError))
+    assert any("槽内爆炸" in r.getMessage() for r in caplog.records)
+
+    sys.excepthook(KeyboardInterrupt, KeyboardInterrupt(), None)
+    assert len(chained) == 2  # KeyboardInterrupt 也回调前 hook（默认打印 ^C）

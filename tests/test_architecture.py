@@ -648,6 +648,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     "ocr/recognizer.py": 492,
+    # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
+    # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
+    "scripts/doctor.py": 568,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
     # hero_classification_panel.py（原 827）出表：三页签拆入
@@ -655,7 +658,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "scraper/official_source/announcement.py": 699,
     # 670 → 570：官方导入网关 official_import_gateway、图像保存调度
     # image_save_scheduler、OCR 协调器 ocr_task_coordinator 依次出仓（审计 G8）
-    "business/emulator/capture_service.py": 570,
+    # 570 → 575：截图存盘失败补 warning 日志（修复批 2026-10-05，+1 行，留余量）
+    "business/emulator/capture_service.py": 575,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）
@@ -670,7 +674,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/match/match_guide_panel.py": 840,
     "ui/configuration/settings_dialog.py": 584,
     "business/recognition/peak_select_watcher.py": 567,
-    "ui/match/peak_select_panel.py": 561,
+    # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
+    "ui/match/peak_select_panel.py": 565,
     "business/recognition/ocr_worker.py": 546,
     "scraper/official_source/crawler.py": 541,
     "ui/library/hero_detail_views.py": 538,

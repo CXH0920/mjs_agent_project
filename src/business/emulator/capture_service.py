@@ -406,7 +406,8 @@ class CaptureService(QObject):
             return None
         try:
             saved, _detail = future.result()
-        except Exception:
+        except Exception as error:
+            logger.warning("截图存盘失败（%s）: %s", save_path, error)
             return None
         return save_path if saved else None
 

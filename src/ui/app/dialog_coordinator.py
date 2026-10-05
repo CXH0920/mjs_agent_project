@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import QDialog, QMessageBox
+from src.config.version import app_version
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
 from src.ui.configuration.settings_dialog import SettingsDialog
 from src.ui.data_admin.baike_ignore_manager_dialog import BaikeIgnoreManagerDialog
@@ -178,7 +179,7 @@ class DialogCoordinator:
         """显示关于对话框"""
         QMessageBox.about(
             self._window, "关于 名将杀 Agent",
-            "名将杀 Agent v0.1.0\n\n"
+            f"名将杀 Agent v{app_version()}\n\n"
             "名将杀桌面辅助工具\n"
             "面向名将杀手游的轻度玩家\n\n"
             "技术栈: PySide6 + Pydantic + httpx\n"

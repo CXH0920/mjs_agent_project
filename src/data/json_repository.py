@@ -146,6 +146,15 @@ class JsonRepository:
                 return None, False
             except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
                 self._issue("error", "file_read_error", str(error))
+                # 坏文件保底副本：save() 不校验 available，加载失败后的任意一次
+                # 保存会把空数据原子覆盖上去——先按原字节留底才可恢复
+                try:
+                    backup_path = snapshot_to_backups(self.file_path)
+                except OSError as backup_error:
+                    logger.error("坏文件保底副本失败 %s: %s", self.file_path, backup_error)
+                else:
+                    if backup_path:
+                        logger.warning("已留存坏文件副本: %s", backup_path)
                 return None, False
 
     # ---------------------------------------------------------------

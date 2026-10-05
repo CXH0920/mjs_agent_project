@@ -324,11 +324,11 @@ def main():
                                          snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
                                          root=ROOT, update_snapshot=True, print_report=False)
                     print('  [快照] 元规则文档基线快照已刷新')
-    else:
-        failed.append(task['name'])
-        record_task(f'maintain_rag:{task["name"]}', ok=False, failed=1,
-                    duration_s=time.monotonic() - task_started, reason='块数校验未通过')
-        print('  ⚠️ 块数校验未通过')
+            else:
+                failed.append(task['name'])
+                record_task(f'maintain_rag:{task["name"]}', ok=False, failed=1,
+                            duration_s=time.monotonic() - task_started, reason='块数校验未通过')
+                print('  ⚠️ 块数校验未通过')
 
     # 更新状态文件：失败任务不记录任何指纹（保证下次 task_changed 仍判定为已变更）
     update_state_fingerprints(plan, failed, args.force, state)

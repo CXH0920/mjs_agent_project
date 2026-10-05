@@ -61,7 +61,7 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(PassThrough)
 app = QApplication(sys.argv)
 app.setApplicationName("名将杀 Agent")
 app.setOrganizationName("MingJiangSha")
-app.setApplicationVersion("0.1.0")
+app.setApplicationVersion(app_version())   # 版本单一来源：src/config/version.py 读 VERSION 文件
 install_chinese_qt_translator(app)
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MingJiangSha.MJSAgent")   # 任务栏图标修正
 install_app_icon(app)

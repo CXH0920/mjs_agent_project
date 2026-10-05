@@ -11,31 +11,18 @@ import os
 import shutil
 import sys
 import time
-from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import Qt, qVersion
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSplashScreen
 from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
+from src.config.version import app_version
 from src.ui.app.chinese_translator import install_chinese_qt_translator
 from src.ui.app.main_window import MainWindow
 from src.ui.shared.style import GLOBAL_STYLE
 
 logger = logging.getLogger(__name__)
-
-# 版本单一来源：VERSION 文件（release.py 打包/zip 命名同源读取），本函数运行时解析
-@lru_cache(maxsize=1)
-def _app_version() -> str:
-    for base in (PROJECT_ROOT, BUNDLE_ROOT):
-        candidate = base / "VERSION"
-        try:
-            text = candidate.read_text(encoding="utf-8").strip()
-            if text:
-                return text
-        except OSError:
-            continue
-    return "0.0.0-dev"
 
 
 def _bundle_data_signature(bundle_data: Path) -> str:
@@ -188,7 +175,7 @@ def main() -> None:
     # 历史日志无法归属代码版本，排障时无从判断行为差异
     logger.info(
         "应用启动：版本=%s, Python=%s, Qt=%s, 运行时根=%s, frozen=%s",
-        _app_version(), sys.version.split()[0], qVersion(), PROJECT_ROOT, IS_FROZEN,
+        app_version(), sys.version.split()[0], qVersion(), PROJECT_ROOT, IS_FROZEN,
     )
     _prune_old_screenshots()
 
@@ -216,7 +203,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("名将杀 Agent")
     app.setOrganizationName("MingJiangSha")
-    app.setApplicationVersion(_app_version())
+    app.setApplicationVersion(app_version())
     _translator = install_chinese_qt_translator(app)
 
     # Windows 任务栏图标修正：设置 AppUserModelID 确保自定义图标生效

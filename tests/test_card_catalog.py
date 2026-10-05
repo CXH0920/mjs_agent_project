@@ -132,3 +132,18 @@ def test_required_enabled_field_must_have_a_value(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="必填"):
         service.save_annotation_fields("8", {"mode": "2v2"})
+
+
+def test_repository_read_root_preserves_corrupt_file(tmp_path: Path) -> None:
+    """回归：cards.json 损坏时先按原字节留底——apply_official_updates 不校验
+    加载结果，损坏后的一次官网同步会把空库全量覆盖上去。"""
+    cards = tmp_path / "cards.json"
+    cards.write_text('{"broken": ', encoding="utf-8")
+
+    repo = CardRepository(cards)
+    issues = repo.load()
+
+    assert any(i.kind == "file_read_error" for i in issues)
+    backups = sorted((tmp_path / "backups").glob("cards-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == '{"broken": '

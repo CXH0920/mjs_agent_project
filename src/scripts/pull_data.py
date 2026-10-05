@@ -105,6 +105,26 @@ def verify(repo: Path | None = None) -> int:
     return 0
 
 
+def _backup_dirty_file(dst: Path, rel: str) -> bool:
+    """pull 覆盖前把与私有仓不同的本地文件备份到 data/backups。
+
+    用相对路径扁平化命名（data__cards-<时间戳>.json）：既不把 backups/ 目录
+    散落进 raw_guides 等会被 push 整目录回拷的目录，也与常规自动快照的
+    {stem}-*.json 命名区分开，不会被任何轮转逻辑清理。返回是否备份成功。
+    """
+    backup_dir = ROOT / "data" / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    flat = Path(rel).with_suffix("").as_posix().replace("/", "__")
+    backup_path = backup_dir / f"{flat}-{stamp}{dst.suffix}"
+    try:
+        shutil.copy2(dst, backup_path)
+    except OSError as error:
+        print(f"WARN: 备份失败（仍将覆盖）{rel}: {error}")
+        return False
+    return True
+
+
 def pull(repo: Path | None = None, dry_run: bool = False) -> int:
     repo = repo or _repo()
     if not dry_run:
@@ -128,14 +148,24 @@ def pull(repo: Path | None = None, dry_run: bool = False) -> int:
             tmp.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repo / item["path"], tmp)
         count = 0
+        dirty = []
         for item in entries:
             dst = ROOT / item["path"]
+            # 本地与私有仓不同 = 未 push 的本地修改会被本次覆盖，先留副本再替换
+            if dst.exists() and _sha256(dst) != _sha256(staging / item["path"]):
+                if _backup_dirty_file(dst, item["path"]):
+                    dirty.append(item["path"])
             dst.parent.mkdir(parents=True, exist_ok=True)
             (staging / item["path"]).replace(dst)
             count += 1
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     print(f"OK: 已原子落位 {count} 个文件")
+    if dirty:
+        print(f"WARN: {len(dirty)} 个本地文件与私有仓不同（可能是未 push 的修改），"
+              f"已先备份到 data/backups 后覆盖：")
+        for rel in dirty:
+            print(f"  - {rel}")
     return 0
 
 
