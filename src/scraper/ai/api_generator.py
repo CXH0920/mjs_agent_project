@@ -257,7 +257,9 @@ class AIBatchGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        content, usage = self._request_content(messages, temperature=0.7, label=hero.get("name", ""))
+        # 0.55：结构化攻略的温度甜点——压格式漂移与牌名串味的采样噪声，
+        # 保住"反直觉技巧"类内容多样性（0.7 实测 20% JSON 抛错，模板加固后仍有全量长尾风险）
+        content, usage = self._request_content(messages, temperature=0.55, label=hero.get("name", ""))
         if content is None:
             return None, usage
 
