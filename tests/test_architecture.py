@@ -650,7 +650,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ocr/recognizer.py": 492,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
-    "scripts/doctor.py": 568,
+    # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）
+    "scripts/doctor.py": 570,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
     # hero_classification_panel.py（原 827）出表：三页签拆入

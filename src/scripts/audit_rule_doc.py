@@ -237,6 +237,10 @@ def audit(doc_path=DEFAULT_DOC, snapshot_path=DEFAULT_SNAPSHOT, root=None,
     # ---- 汇总 ----
     if update_snapshot:
         snap_new = build_snapshot(doc_path, root)
+        # corpus_counts 段由 maintain_rag 维护（武将语料等 snapshot 任务的成功基线），
+        # 元规则重建必须保留，否则下次校验退化为"快照未建立"
+        if isinstance(snap, dict) and snap.get('corpus_counts'):
+            snap_new['corpus_counts'] = snap['corpus_counts']
         write_snapshot(snap_new, snapshot_path)
     if print_report:
         _print_report(issues, snap, update_snapshot)

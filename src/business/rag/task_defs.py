@@ -21,7 +21,9 @@ TASKS: list[dict] = [
         "script": "build_rag_corpus.py",
         "sources": ["data/heroes.json", "data/cards.json", "data/mjs_adjustments.json"],
         "outputs": ["武将RAG语料.json"],
-        "expected": 627,
+        # 快照基线（2026-10-05 起）：加将自动适应、丢块仍拦截。硬编码精确值
+        # （615→622→627）历史上两次追着加将人工校准过期，不再使用
+        "expected": "snapshot",
     },
     {
         "name": "卡牌语料",
@@ -67,7 +69,9 @@ TASKS: list[dict] = [
         "script": "build_special_corpus.py",
         "sources": ["data/special_cards.json"],
         "outputs": ["特殊机制语料.json"],
-        "expected": 83,
+        # 快照基线（2026-10-05 起）：同武将语料，加卡自动适应、丢块仍拦截。
+        # 硬编码 83 校准于 08-16，09-24 魏华存专属牌加卡后实际 85，精确值已过期
+        "expected": "snapshot",
     },
     {
         "name": "武将分类语料",

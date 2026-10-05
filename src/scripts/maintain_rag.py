@@ -182,6 +182,27 @@ def verify_outputs(task):
     return all_ok, results
 
 
+def _record_corpus_baseline(task):
+    """snapshot 任务成功后，把各 output 实际块数写入快照 corpus_counts 段。
+
+    元规则三件的 counts 段由 audit 重建维护，两段互不覆盖；本函数失败只告警，
+    不改变任务的成功状态（下次成功运行会重建基线）。
+    """
+    snap_path = audit_rule_doc.DEFAULT_SNAPSHOT
+    snap = audit_rule_doc.load_snapshot(snap_path) or {}
+    corpus = dict(snap.get('corpus_counts') or {})
+    for fname in task['outputs']:
+        try:
+            with open(os.path.join(DOCS_DIR, fname), encoding='utf-8') as f:
+                corpus[fname] = len(json.load(f))
+        except (OSError, json.JSONDecodeError) as error:
+            logger.warning("语料基线更新失败（%s）: %s", fname, error)
+            print(f'  [快照] {fname} 基线更新失败: {error}')
+            return
+    snap['corpus_counts'] = corpus
+    audit_rule_doc.write_snapshot(snap, snap_path)
+
+
 def summarize_counts():
     """打印当前各语料 json 的块数概览。"""
     print('\n当前语料块数概览：')
@@ -323,11 +344,13 @@ def main():
                     audit_rule_doc.audit(doc_path=audit_rule_doc.DEFAULT_DOC,
                                          snapshot_path=audit_rule_doc.DEFAULT_SNAPSHOT,
                                          root=ROOT, update_snapshot=True, print_report=False)
-                    print('  [快照] 元规则文档基线快照已刷新')
+                    _record_corpus_baseline(task)
+                    print('  [快照] 基线快照已刷新')
             else:
                 failed.append(task['name'])
                 record_task(f'maintain_rag:{task["name"]}', ok=False, failed=1,
-                            duration_s=time.monotonic() - task_started, reason='块数校验未通过')
+                            duration_s=time.monotonic() - task_started,
+                            reason='块数校验未通过: ' + '；'.join(details))
                 print('  ⚠️ 块数校验未通过')
 
     # 更新状态文件：失败任务不记录任何指纹（保证下次 task_changed 仍判定为已变更）

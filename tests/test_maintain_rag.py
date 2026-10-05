@@ -7,6 +7,7 @@
 """
 import builtins
 import sys
+from pathlib import Path
 
 import pytest
 from src.scripts import maintain_rag
@@ -245,3 +246,89 @@ class TestMainLoop:
         assert final['ok'] is False and final['failed'] == 2
         out = capsys.readouterr().out
         assert '块数校验未通过' in out and '任务A' in final['reason']
+
+
+class TestVerifyOutputsSnapshot:
+    """expected='snapshot' 的快照基线校验（武将语料 2026-10 切换，元规则先例）。"""
+
+    BASELINE = {'武将RAG语料.json': 647}
+
+    @pytest.fixture
+    def docs_dir(self, fake_root, monkeypatch):
+        docs = fake_root / 'rag_corpus'
+        docs.mkdir()
+        monkeypatch.setattr(maintain_rag, 'DOCS_DIR', str(docs))
+        return docs
+
+    @staticmethod
+    def _task():
+        return {'name': '武将语料', 'outputs': ['武将RAG语料.json'], 'expected': 'snapshot'}
+
+    def test_first_run_without_baseline_passes(self, docs_dir, monkeypatch):
+        """首次运行快照未建立：只报不拦（首次成功后由 _record_corpus_baseline 建基线）。"""
+        (docs_dir / '武将RAG语料.json').write_text('[1, 2, 3]', encoding='utf-8')
+        monkeypatch.setattr(maintain_rag.audit_rule_doc, 'snapshot_counts', lambda: {})
+
+        ok, details = maintain_rag.verify_outputs(self._task())
+
+        assert ok is True
+        assert '快照未建立' in details[0]
+
+    def test_growth_over_baseline_passes(self, docs_dir, monkeypatch):
+        """加将增长（只增）：通过。"""
+        (docs_dir / '武将RAG语料.json').write_text('[1, 2, 3, 4]', encoding='utf-8')
+        monkeypatch.setattr(maintain_rag.audit_rule_doc, 'snapshot_counts',
+                            lambda: {'武将RAG语料.json': 3})
+
+        ok, details = maintain_rag.verify_outputs(self._task())
+
+        assert ok is True
+        assert '只增允许' in details[0]
+
+    def test_drop_below_baseline_fails(self, docs_dir, monkeypatch):
+        """低于基线：拦截（疑似丢块）。"""
+        (docs_dir / '武将RAG语料.json').write_text('[1]', encoding='utf-8')
+        monkeypatch.setattr(maintain_rag.audit_rule_doc, 'snapshot_counts', lambda: self.BASELINE)
+
+        ok, details = maintain_rag.verify_outputs(self._task())
+
+        assert ok is False
+        assert '疑似丢块' in details[0]
+
+
+class TestRecordCorpusBaseline:
+    """snapshot 任务成功后的基线写入（快照 corpus_counts 段）。"""
+
+    TASK = {'name': '武将语料', 'outputs': ['武将RAG语料.json'], 'expected': 'snapshot'}
+
+    @pytest.fixture
+    def snap_path(self, fake_root, monkeypatch):
+        docs = fake_root / 'rag_corpus'
+        docs.mkdir()
+        monkeypatch.setattr(maintain_rag, 'DOCS_DIR', str(docs))
+        path = fake_root / 'snap.json'
+        monkeypatch.setattr(maintain_rag.audit_rule_doc, 'DEFAULT_SNAPSHOT', str(path))
+        return path
+
+    def test_writes_corpus_counts_preserving_other_keys(self, snap_path):
+        Path(maintain_rag.DOCS_DIR, '武将RAG语料.json').write_text('[1, 2, 3]', encoding='utf-8')
+        import json as _json
+        snap_path.write_text(_json.dumps({'counts': {'sections': 7}, 'chapters': []}),
+                             encoding='utf-8')
+
+        maintain_rag._record_corpus_baseline(self.TASK)
+
+        snap = maintain_rag.audit_rule_doc.load_snapshot(str(snap_path))
+        assert snap['corpus_counts'] == {'武将RAG语料.json': 3}
+        assert snap['counts'] == {'sections': 7}  # 元规则段不被触碰
+
+    def test_missing_output_warns_without_partial_write(self, snap_path, capsys):
+        import json as _json
+        snap_path.write_text(_json.dumps({'counts': {'sections': 7}}), encoding='utf-8')
+        task = {'name': '武将语料', 'outputs': ['不存在.json'], 'expected': 'snapshot'}
+
+        maintain_rag._record_corpus_baseline(task)  # 不应抛异常
+
+        assert '基线更新失败' in capsys.readouterr().out
+        snap = maintain_rag.audit_rule_doc.load_snapshot(str(snap_path))
+        assert 'corpus_counts' not in snap  # 部分失败不写基线

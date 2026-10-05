@@ -191,3 +191,21 @@ def test_update_snapshot_flag_refreshes_file(tmp_path) -> None:
     after = load_snapshot(snap)
     assert after["doc_md5"] != before
     assert "追加" in after["blocks"]["rule_section_01_01"]["content"]
+
+
+def test_update_snapshot_preserves_corpus_counts(tmp_path) -> None:
+    """audit 重建快照必须保留 corpus_counts 段——它由 maintain_rag 维护
+    （武将语料等 snapshot 任务的成功基线），元规则任务刷新时不得抹掉。"""
+    doc, snap = _baseline(tmp_path)
+    data = load_snapshot(snap)
+    data["corpus_counts"] = {"武将RAG语料.json": 647}
+    write_snapshot(data, snap)
+    _write(doc, BASE_DOC[:4] + ["追加了新内容的行。"] + BASE_DOC[4:])
+
+    _run(doc, snap, tmp_path, update_snapshot=True)
+
+    after = load_snapshot(snap)
+    assert after["corpus_counts"] == {"武将RAG语料.json": 647}
+    # 快照确已按新文档重建（而非未动的旧文件）
+    assert after["doc_md5"] != data["doc_md5"]
+    assert "追加" in after["blocks"]["rule_section_01_01"]["content"]

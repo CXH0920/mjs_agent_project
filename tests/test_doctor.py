@@ -192,3 +192,25 @@ def test_check_private_repo_flags_worktree_divergence(tmp_path, monkeypatch):
     (tmp_path / "project" / "data" / "cards.json").write_text('[{"id": 1}]', encoding="utf-8")
     finding = doctor._check_worktree_sync(repo)
     assert finding.status == doctor.PASS
+
+
+def test_check_ai_link_ignores_token_counts(tmp_path, monkeypatch):
+    """HTTP 401 精确匹配故障主行；token 统计行（completion=4012）不得误计。"""
+    import time
+
+    monkeypatch.setattr(doctor, "ROOT", tmp_path)
+    log_dir = tmp_path / "logs" / "scraper"
+    log_dir.mkdir(parents=True)
+    today = time.strftime("%Y-%m-%d")
+    (log_dir / "ai_generation.log").write_text(
+        f"{today} 10:00:00 [INFO] subprocess.ai.stdout: [刘备] token: prompt=4327 completion=4012 (reasoning=0, content=4012)\n"
+        f"{today} 10:00:05 [ERROR] src.scraper.ai.api_generator: API 请求不可重试: HTTP 401（不再重试）\n",
+        encoding="utf-8",
+    )
+
+    findings = doctor.check_ai_link()
+
+    assert len(findings) == 1
+    assert findings[0].status == doctor.WARN
+    # 仅故障主行命中一次；token 行若被误计会出现 "401×2"
+    assert findings[0].detail == "HTTP 401×1"

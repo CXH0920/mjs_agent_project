@@ -23,9 +23,10 @@
 | `test_rag_integration.py`（真实语料加载回归） | rag_corpus 语料未入公开仓（数据出库，经私有仓同步） | 该文件 L86 `pytest.skip("rag_corpus 语料未入库（CI）…")` |
 | `test_rag_block_ids.py`（block_id 唯一性校验） | 同上 | 该文件 L31 |
 | `test_card_grid_detector.py`（牌面识别网格检测） | 缺少本地真图样本（screenshots/test_2v2_top 等，不入库） | 该文件 L194、L290 |
+| `test_ocr_components.py`（静态字库覆盖武将名） | 真实武将数据已出库（data/heroes.json 走私有仓同步，pull 后可运行） | 该文件 L255 `pytest.skip("真实武将数据已出库…")` |
 
-**推论**：RAG 语料质量回归与牌面识别几何回归只在开发机生效——语料/样本的变更
-必须在本机跑全量 pytest 确认后才能 push。
+**推论**：RAG 语料质量回归、牌面识别几何回归与 OCR 静态字库覆盖只在开发机
+生效——语料/样本/数据的变更必须在本机跑全量 pytest 确认后才能 push。
 
 ## 后续：OCR 回归样本库纳入 CI 的路径（P1-7）
 

@@ -66,16 +66,22 @@ def load_snapshot(path=DEFAULT_SNAPSHOT):
 
 
 def snapshot_counts(path=DEFAULT_SNAPSHOT):
-    """供 maintain_rag.py 使用：返回 语料文件名 -> 快照期望块数；无快照返回 None。"""
+    """供 maintain_rag.py 使用：返回 语料文件名 -> 快照期望块数；无快照返回 None。
+
+    counts 段存元规则三件（audit 重建维护）；corpus_counts 段存通用语料基线
+    （如 武将RAG语料.json，由 maintain_rag 在 snapshot 任务成功后写入）。
+    """
     snap = load_snapshot(path)
     if not snap:
         return None
     c = snap.get('counts', {})
-    return {
+    counts = {
         '元规则RAG语料-章节块.json': c.get('sections'),
         '术语表.json': c.get('terms'),
         'FAQ裁定块.json': c.get('faqs'),
     }
+    counts.update(snap.get('corpus_counts', {}))
+    return counts
 
 
 def build_snapshot(doc_path, root):

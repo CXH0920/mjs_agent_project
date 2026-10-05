@@ -42,7 +42,9 @@ OPTIONAL_CONFIG_KEYS = (
 DIVERGING_DEFAULT_KEYS = ("MUMU_OCR_RECHECK_ENABLED", "MUMU_OCR_AUTO_SWITCH_TAB")
 BACKUP_STEMS = ("heroes", "guides", "synergies")
 KEY_DATA_FILES = ("data/heroes.json", "data/guides.json", "data/synergies.json")
-AI_LOG_PATTERNS = ("401", "思考过程耗尽", "超过最大重试", "10061")
+# "HTTP 401" 精确匹配故障主行（api_generator 每次不可重试 401 必打）；
+# 裸 "401" 会误伤 token 统计行（如 completion=4012）
+AI_LOG_PATTERNS = ("HTTP 401", "思考过程耗尽", "超过最大重试", "10061")
 
 
 @dataclass
