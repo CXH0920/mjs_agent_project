@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 class ComboStrip(QWidget):
     """实战配队横条：命中配队 chip 流式展示与管理入口。"""
 
-    ratings_computed = Signal(dict)  # hero_id -> 参战配队最高评级
+    # 负载是 hero_id(int)→评级 的 dict：Signal(dict) 会按 QVariantMap 编译，
+    # int 键转换失败后槽只收到空 dict（角标静默失效），须走 object 保原样送达
+    ratings_computed = Signal(object)
 
     def __init__(self, hero_mgr, combo_mgr, parent=None) -> None:
         super().__init__(parent)
