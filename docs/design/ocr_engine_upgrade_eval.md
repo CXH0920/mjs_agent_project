@@ -391,13 +391,20 @@ v6 同目录同机制；det/rec 哈希与官方逐字节一致，字典仅末行
   加载日志含模型指纹且与钉死基线比对（不符告警）；
 - `src/ocr/recognizer.py`：`_engine` property → `get_primary_ocr_engine()`（None 时显式 RuntimeError 熔断）；
   **team 徽记修复**——归一化失败（含批量画布读出非空乱码绕过原 `if not team_text` 回退旁路）即按
-  主引擎→复核引擎链式单条重试（`_recognize_prepared_single` 增 engine 参数）；
+  主引擎→复核引擎链式单条重试（`_recognize_prepared_single` 增 engine 参数）；**预热契约修复**——
+  `warmup_inference` 删除 paddle 2.x 时代的 rec-only 调用（`det=/rec=` 关键字打穿 RapidOcrEngine
+  签名致预热告警，rec-only 在新管线已无消费方），回归测试用严格签名引擎锁死适配层契约；
 - `src/business/recognition/official_ocr_engines.py`：`main` 与识别管线同源（v6）；`rare_char` 仅取复核
   引擎（v4），**chinese_cht 兜底链退役**（8b8a3d5 事故链路就此出清），闭包采纳纪律（
   `_recognize_name_with_engine`）零改动；
-- `src/ocr/character_similarity.py`：基线白名单 7 对 → 12 对——退役 翡→翦/会→哙/助→勖/歇→勖/怀→惇
-  （v6 raw 活跃度 0）与用户层 珍→玠，新增 丰→羊/口→吕/好→妤/邻→郃/瓚→瓒/赢→嬴/苟→荀/早→卓/哈→哙/黃→黄；
-  新增 `whitelist_conflicts_with_roster` 冲突谓词（错字不得出现在任何武将名）；
+- `src/ocr/character_similarity.py`：基线白名单 7 对 → 10 对——退役 翡→翦/会→哙/助→勖/歇→勖/怀→惇
+  （v6 raw 活跃度 0）与用户层 珍→玠，新增 丰→羊/口→吕/好→妤/邻→郃/赢→嬴/苟→荀/早→卓/哈→哙
+  （均为视觉评分 <0.55 的形近临界错法）；新增 `whitelist_conflicts_with_roster` 冲突谓词
+  （错字不得出现在任何武将名）。**简繁变体对不入表**（2026-10-06 论证并实测）：v6 误读的
+  简繁对均为字形相近子集（瓚↔瓒 视觉 0.94、黃↔黄 0.725，已过 0.55 安全线由视觉路径自动
+  矫正，入表冗余——剥除后 901 槽重放零退化零错绑实测；字形远的简繁对（發↔发 0.12、
+  濬↔浚 0.325 等）v6 从不混淆，不预建覆盖。曾评估的 Unihan 变体等价层就此否决，理由
+  见本节末"简繁混淆性质"附记）；
 - `src/ocr/name_resolution.py`：`_NAME_RECHECK_CONFIDENCE` 0.8→0.75（触发率守恒定标：v6 0.7~0.99 中带
   占 17.9% vs v4 7.5%，实测 B1 触发率 1.7% 低于基线 4.5%）；
 - 配置：`MUMU_OCR_PRIMARY_ENGINE`（env.py 映射/默认 "v6"/非法回退）、`MUMU_OCR_USE_GPU` 转死键
@@ -436,6 +443,15 @@ v6 同目录同机制；det/rec 哈希与官方逐字节一致，字典仅末行
 
 **上线后的遗留观察**：3 槽书法体徽记双引擎不读（对局攻略侧别归属退化 2.5%）；rapidocr 版本升级需按
 §七 协议复测并同步指纹基线；白名单新增对须过 doctor「白名单」检查（武将库扩充自动重检）。
+
+**附记：简繁混淆性质与治理结论（2026-10-06 实测）**：v6 的简繁类误读只有 瓚（公孙瓚×5）与
+黃（黃盖，官方页）两种，二者视觉评分 0.94/0.725 均远超 0.55 安全线——即**简繁混淆只发生在
+字形相近子集，本质是形近混淆而非简繁属性使然**；字形远的简繁对（發↔发 0.12、濬↔浚 0.325、
+衞↔卫 表内无链接且词表不含）在全部语料中零误读。据此：曾评估的"Unihan 变体等价层"（曾拟按
+kTraditional/Simplified/SemanticVariant 自动等价，独立 destination 导出以避开生产缓存字段集
+复用陷阱）**否决不建**——其增量只覆盖不发生的错误类；字形近子集由既有视觉机制天然覆盖，
+白名单两对变体对实测冗余已剥除（剥除后 119 图重放全指标逐项一致：违例 0/丢失 0/错绑 0/
+增益 12/残余 0）。未来字体改版若出现新简繁错法，由错法频次记录捕获后按实例补入。
 
 **遗留与上线步骤**：
 1. 运行机/构建机一次性执行 `python -m src.scripts.fetch_recheck_models`（幂等，离线纪律不变）；

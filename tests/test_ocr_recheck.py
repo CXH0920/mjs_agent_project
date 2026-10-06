@@ -227,6 +227,20 @@ def test_recognize_prepared_batch_uses_injected_engine() -> None:
     assert recognized == {1: ("王濬", 0.99)}
 
 
+def test_warmup_inference_uses_adapter_engine_contract() -> None:
+    """预热只走适配层契约 ``ocr(img, cls=False)``——paddle 时代的 rec-only
+    调用（det=/rec= 关键字）曾打穿 RapidOcrEngine 签名导致预热失败。"""
+
+    class _StrictSignatureEngine:
+        def ocr(self, img, cls=False):  # 严格签名：多余关键字即 TypeError
+            assert cls is False
+            return [None]
+
+    recognizer = GeneralRecognizer(hero_names=["王濬"], page_type="hero_selection")
+    recognizer.adopt_engine(_StrictSignatureEngine())
+    recognizer.warmup_inference()  # 不抛异常即通过
+
+
 def test_team_label_retries_single_then_recheck_on_garbage(monkeypatch) -> None:
     """team 批量读出非空乱码（归一化失败）也须触发单条重试，直至复核引擎救回。"""
     _enable_recheck(monkeypatch, _SlotTextEngine("汉军", 0.9))

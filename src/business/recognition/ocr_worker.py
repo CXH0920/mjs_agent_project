@@ -385,7 +385,7 @@ class OcrWorker(QThread):
         """在 worker 线程加载一次模型，供后续不同页面的识别器复用。
 
         各步骤间检查取消标记：应用关闭时尽快退出预热；只有引擎加载本身
-        （Paddle 原生初始化）不可中断。
+        （onnxruntime 原生初始化）不可中断。
         """
         started = time.perf_counter()
         if self._cancel_event.is_set():
@@ -407,10 +407,10 @@ class OcrWorker(QThread):
                 logger.info("OCR 预热已取消（特征预热完成），跳过推理预热")
                 return {"outcome": "cancelled"}
             recognizer.warmup_inference()
-            logger.info("PaddleOCR 模型和推理预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
+            logger.info("OCR 引擎和推理预热完成，耗时 %.1fms", (time.perf_counter() - started) * 1000)
             return {"outcome": "warmed"}
         except Exception as exc:
-            logger.warning("PaddleOCR 模型预热失败，首次识别将按需加载: %s", exc)
+            logger.warning("OCR 引擎预热失败，首次识别将按需加载: %s", exc)
             logger.debug(traceback.format_exc())
             return {"outcome": "warmup_failed", "detail": str(exc)}
 

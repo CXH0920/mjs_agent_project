@@ -128,12 +128,9 @@ class GeneralRecognizer:
         roi = np.zeros((145, 50, 3), dtype=np.uint8)
         prepared = self._preprocessor.preprocess_roi(roi)
         canvas, _ = build_batch_canvas({slot: prepared for slot in range(1, 9)})
+        # 画布全流程（det+rec）与生产喂法同构；rec-only 是 paddle 2.x 时代的
+        # 第二条预热路径，B1 后管线无 rec-only 消费方（官方导入同为 det+rec），已删
         self._engine.ocr(canvas, cls=False)
-        horizontal = cv2.cvtColor(
-            cv2.rotate(prepared, cv2.ROTATE_90_COUNTERCLOCKWISE),
-            cv2.COLOR_GRAY2BGR,
-        )
-        self._engine.ocr([horizontal], det=False, rec=True, cls=False)
 
     @property
     def timing_ms(self) -> dict[str, float]:

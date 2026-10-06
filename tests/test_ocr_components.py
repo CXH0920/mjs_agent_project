@@ -347,13 +347,16 @@ def test_character_similarity_uses_revised_scores_for_wang_jian_candidates() -> 
 def test_character_similarity_whitelists_recurring_name_misreads() -> None:
     service = CharacterSimilarityService()
 
-    # 2026-10 B1 语料实测的 v6 反复误读对（樊哙/赵婕妤/公孙瓒/张郃）与
-    # 双引擎仍活跃的旧对（芈八子），白名单后恢复自动纠正
+    # 2026-10 B1 语料实测的 v6 反复误读对（樊哙/赵婕妤/张郃）与双引擎仍活跃的
+    # 旧对（芈八子），白名单后恢复自动纠正
     assert service.single_substitution_similarity("樊哈", "樊哙") == 1.0
     assert service.single_substitution_similarity("赵婕好", "赵婕妤") == 1.0
-    assert service.single_substitution_similarity("公孙瓚", "公孙瓒") == 1.0
     assert service.single_substitution_similarity("半八子", "芈八子") == 1.0
     assert service.is_safe_single_substitution("樊哈", "樊哙") is True
+    # 字形相近的简繁对不入白名单：视觉评分（0.94）已过 0.55 安全线，
+    # 视觉路径自动矫正，入表冗余（剥对后 901 槽零退化实测，2026-10-06）
+    assert service.single_substitution_similarity("公孙瓚", "公孙瓒") == pytest.approx(0.94)
+    assert service.is_safe_single_substitution("公孙瓚", "公孙瓒") is True
 
 
 def test_general_recognizer_maps_batch_boxes_by_slot_center() -> None:
