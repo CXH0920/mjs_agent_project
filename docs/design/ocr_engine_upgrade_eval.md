@@ -373,3 +373,77 @@ RTX 2070 8GB 单卡，显示器直连（`Disp.A: On`），桌面合成器 + MuMu
 2. 下次打包（release.py）前置条件：打包环境必须已装上述依赖（spec 有缺依赖报错保护）；
 3. 单元测试 `tests/test_ocr_recheck.py` 19 例 + 全量套件 1308 例通过；
 4. 阶段二（B1）触发条件与白名单治理清单见 §八，暂不实施。
+
+## 十四、阶段二（B1 全量切换）实施记录（2026-10-06）
+
+按 §八 路径与实施计划执行，架构终态：**v6-small 主引擎 + v4-mobile 复核引擎互为异构**（`MUMU_OCR_PRIMARY_ENGINE`
+默认 v6，回滚档 v4 时两套件角色互换），paddle/paddleocr 及 6 个链依赖（pyclipper/shapely/skimage/rapidfuzz/
+imgaug/lmdb）+ protobuf + nvidia CUDA 运行时全量退役，净体积约 -230M。v4 三件套不入仓，由
+`src/scripts/fetch_recheck_models.py` 从 RapidOCR 官方 modelscope 清单预取（URL+SHA256 钉死，与 wheel 内置
+v6 同目录同机制；det/rec 哈希与官方逐字节一致，字典仅末行换行差异、行为等价）。
+
+**代码落点**：
+- `src/ocr/engine_loader.py`（原 paddle_loader.py 更名，paddle 路径全删）：套件字典（v6/v4 模型文件名 +
+  sha256 漂移哨兵基线）、`create_rapidocr_ocr(suite)`（det 写死 max/960、`Rec.rec_keys_path` 指外部 v4 字典、
+  `EngineConfig.onnxruntime.intra_op_num_threads` 钉为 `MUMU_OCR_CPU_THREADS` 默认 6）、
+  `_suite_model_dir`/`_sync_temp_models`（%TEMP% 复制加源文件 size+mtime 指纹，模型变更自动重拷）、
+  `get_primary_ocr_engine`/`get_recheck_ocr_engine`（套件级惰性单例 + 失败熔断，互斥选套件）、
+  加载日志含模型指纹且与钉死基线比对（不符告警）；
+- `src/ocr/recognizer.py`：`_engine` property → `get_primary_ocr_engine()`（None 时显式 RuntimeError 熔断）；
+  **team 徽记修复**——归一化失败（含批量画布读出非空乱码绕过原 `if not team_text` 回退旁路）即按
+  主引擎→复核引擎链式单条重试（`_recognize_prepared_single` 增 engine 参数）；
+- `src/business/recognition/official_ocr_engines.py`：`main` 与识别管线同源（v6）；`rare_char` 仅取复核
+  引擎（v4），**chinese_cht 兜底链退役**（8b8a3d5 事故链路就此出清），闭包采纳纪律（
+  `_recognize_name_with_engine`）零改动；
+- `src/ocr/character_similarity.py`：基线白名单 7 对 → 12 对——退役 翡→翦/会→哙/助→勖/歇→勖/怀→惇
+  （v6 raw 活跃度 0）与用户层 珍→玠，新增 丰→羊/口→吕/好→妤/邻→郃/瓚→瓒/赢→嬴/苟→荀/早→卓/哈→哙/黃→黄；
+  新增 `whitelist_conflicts_with_roster` 冲突谓词（错字不得出现在任何武将名）；
+- `src/ocr/name_resolution.py`：`_NAME_RECHECK_CONFIDENCE` 0.8→0.75（触发率守恒定标：v6 0.7~0.99 中带
+  占 17.9% vs v4 7.5%，实测 B1 触发率 1.7% 低于基线 4.5%）；
+- 配置：`MUMU_OCR_PRIMARY_ENGINE`（env.py 映射/默认 "v6"/非法回退）、`MUMU_OCR_USE_GPU` 转死键
+  （doctor 登记）；config.env.example 重写为 B1 语义；
+- doctor：paddle 环境检查重写为 onnxruntime/rapidocr 版本 + 双套件模型就位检查；新增「白名单」检查组
+  （基线+用户层 × 武将库冲突重检，红线 6 的自动化）；
+- 打包/发版：spec collect_all 缩至 onnxruntime/rapidocr/omegaconf/colorlog（v4 模型随 collect_all 自然
+  带入，spec+release 双前置检查 v4 哈希）；release.py 删 `prepare_build_deps`/BUILD_DEPS，preflight 改查
+  双套件模型，smoke 清理扩至 mjs_rapidocr_models；environment.yml 删 paddle 系 8 行。
+
+**验收数据（119 图三环境重放 `b1_pages_replay.py`，B1 生产形态 vs 2026-09-19 v4-paddle 基线）**：
+- **已决槽零退化：违例 0**（基线已确认槽逐一同名，含零异名错绑）；
+- 基线未决 → B1 确认 **12 处全部命中基线候选闭包**（0 错绑）：王濬×2、荀勖×6、卫玠、**卓文君（早文君→1.0000，
+  白名单新对直解，B2 时代的唯一残余未决就此出清）**、羊祜；**残余未决 0**；
+- **team 修复闭环**：v6 对竖排书法体徽记为引擎级弱项（批量乱码绕过单槽回退 + 单条 13/18 读丢），
+  链式重试救回 15/18，覆盖 108/120（90.0%）≈ 基线 94/104（90.4%）；残差 3 槽双引擎皆不读，记录在案；
+- 单槽回退触发率：基线 4.5% → B1 **1.7%**（0.75 定标有效且宽松）；
+- 性能（均值 v4 基线 → B1）：选将 327→529ms / 对局 763→1050ms / 巅峰 923→845ms，P95 均在 1.3s 内，
+  轮询节拍（2s）不受影响；
+- 全量单测 1510 例通过（含新增：双套件参数/指纹哨兵/同步加固/角色互换/team 链式重试/白名单冲突 ×2）。
+
+**素材门禁与官方导入试运行**：
+- 29 素材双门槛门禁（`b1_asset_gate.py`，生产口径参数）：**v6 27/29 零空框**（2 个 WRONG 为白名单
+  覆盖的历史错法，与 §四 一致）；v4 复核引擎 12/29——与 §四 记载的 paddle v4 历史分完全一致，
+  独立佐证 ONNX 版 v4 行为等价；
+- 官方导入 20260925 期试运行（`b1_official_20260925_trial.py`，B1 生产形态）：**待复核 2v2=1 / 巅峰=0 /
+  放逐=2**（对比 B2 生产形态 13/12/8 与 B2 复核形态 9/8：王濬/卫玠/张郃截断全部消失，仅余樊哙/祖逖/
+  金日磾低置信行正常走人审）；v6 单独遍与 B1 生产遍持平——v4 罕见字二遍在本期无增量（残余待复核均为
+  低置信有效名，罕见字链无从发力），作为未知混淆的保险保留；单期耗时 2v2 ~199s/4 页（B2 时代 ~143s，
+  v6 rec 模型更大所致，批量导入场景可接受）；
+- **打包全流程**（release.py 精简版 --zip）：预检双套件模型哈希通过、构建 188s、纯净度通过、双击烟雾
+  通过（产物端到端验证 %TEMP% 模型复制与引擎加载）；**总体积 608MB**（2026-08 基线 834MB → 净
+  **-226MB**，命中 §八 -230M 预期），zip 312MB。打包坑：rapidocr 的 paddle 推理后端 import 图会静态
+  牵出环境内 paddlepaddle 的 libpaddle.pyd/mkldnn.dll ~148MB，`paddle`/`paddleocr` 已加入 spec
+  excludes 恒排除（第一次构建 763MB 即此因，修复后复测通过）。
+
+**上线后的遗留观察**：3 槽书法体徽记双引擎不读（对局攻略侧别归属退化 2.5%）；rapidocr 版本升级需按
+§七 协议复测并同步指纹基线；白名单新增对须过 doctor「白名单」检查（武将库扩充自动重检）。
+
+**遗留与上线步骤**：
+1. 运行机/构建机一次性执行 `python -m src.scripts.fetch_recheck_models`（幂等，离线纪律不变）；
+2. config.env 确认 `MUMU_OCR_RECHECK_ENABLED=true`（用户已开启）；`MUMU_OCR_PRIMARY_ENGINE` 缺省即 v6；
+3. 白名单配置界面删除用户层 珍→玠（v6 直读卫玠后冗余）；
+4. myenv 可选清理：`pip uninstall paddlepaddle-gpu paddleocr paddlex` 及 nvidia 系包、删 `~/.paddleocr`
+   （卸载 paddle 后 OCR 不受影响；全量测试在 paddle 仍在的环境验证通过，卸载后建议复跑 doctor）；
+5. 回滚梯度：① `MUMU_OCR_PRIMARY_ENGINE=v4` 重启（v4-ONNX 主 + v6 复核，语料已验证镜像）；
+   ② 装回上一版包（v4-paddle 主 + v6 复核，生产已验证态）；
+6. v4 复核引擎退出判据：连续数周人工纠正为 0 且复核确认计数趋零后，可评估整体退役（届时删 15.7M 模型
+   与复核插槽，成本极低）。

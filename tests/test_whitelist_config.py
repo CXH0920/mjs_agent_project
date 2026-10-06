@@ -32,12 +32,12 @@ def stats_path(tmp_path, monkeypatch):
 # ── R1 白名单基线 ─────────────────────────────────────────────────────
 
 
-def test_huai_dun_whitelist_hit_and_direction() -> None:
+def test_ha_kuai_whitelist_hit_and_direction() -> None:
     service = CharacterSimilarityService()
-    assert service.single_substitution_similarity("夏侯怀", "夏侯惇") == 1.0
-    assert service.is_safe_single_substitution("夏侯怀", "夏侯惇")
-    # 单向性：OCR 读出「夏侯惇」时不会被反向拉成「夏侯怀」
-    assert service.single_substitution_similarity("夏侯惇", "夏侯怀") != 1.0
+    assert service.single_substitution_similarity("樊哈", "樊哙") == 1.0
+    assert service.is_safe_single_substitution("樊哈", "樊哙")
+    # 单向性：OCR 读出「樊哙」时不会被反向拉成「樊哈」
+    assert service.single_substitution_similarity("樊哙", "樊哈") != 1.0
 
 
 # ── R4 用户层白名单合并 ───────────────────────────────────────────────
@@ -45,48 +45,48 @@ def test_huai_dun_whitelist_hit_and_direction() -> None:
 
 def test_overrides_merge_into_effective_whitelist(overrides_path) -> None:
     overrides_path.write_text(
-        json.dumps({"version": 1, "pairs": {"早": "卓"}}), encoding="utf-8"
+        json.dumps({"version": 1, "pairs": {"呆": "杏"}}), encoding="utf-8"
     )
     service = CharacterSimilarityService()
-    assert service.single_substitution_similarity("早文君", "卓文君") == 1.0
+    assert service.single_substitution_similarity("王呆", "王杏") == 1.0
     # 基线对不受影响
-    assert service.single_substitution_similarity("樊会", "樊哙") == 1.0
+    assert service.single_substitution_similarity("张邻", "张郃") == 1.0
 
 
 def test_overrides_missing_file_falls_back_to_baseline(overrides_path) -> None:
     service = CharacterSimilarityService()
-    assert service.single_substitution_similarity("樊会", "樊哙") == 1.0
+    assert service.single_substitution_similarity("半八子", "芈八子") == 1.0
 
 
 def test_overrides_corrupt_file_degrades_to_baseline(overrides_path) -> None:
     overrides_path.write_text("{not json", encoding="utf-8")
     service = CharacterSimilarityService()
-    assert service.single_substitution_similarity("樊会", "樊哙") == 1.0
+    assert service.single_substitution_similarity("半八子", "芈八子") == 1.0
 
 
 def test_overrides_invalid_entries_skipped(overrides_path) -> None:
     overrides_path.write_text(
-        json.dumps({"version": 1, "pairs": {"早": "卓", "好": "好", "两字": "合"}}),
+        json.dumps({"version": 1, "pairs": {"呆": "杏", "杏": "杏", "两字": "合"}}),
         encoding="utf-8",
     )
     service = CharacterSimilarityService()
-    assert service.single_substitution_similarity("早文君", "卓文君") == 1.0
-    # 合法性存疑条目被跳过：好→好 无意义，两字→合 长度非法
-    assert service._effective_whitelist.get("好") is None
+    assert service.single_substitution_similarity("王呆", "王杏") == 1.0
+    # 合法性存疑条目被跳过：杏→杏 无意义，两字→合 长度非法
+    assert service._effective_whitelist.get("杏") is None
     assert service._effective_whitelist.get("两字") is None
 
 
 def test_overrides_file_pickup_requires_new_instance(overrides_path) -> None:
     """用户层白名单文件在服务构造时读取：写入后已构造的实例不感知（见待开发记录）。"""
     service = CharacterSimilarityService()
-    assert service.single_substitution_similarity("早文君", "卓文君") != 1.0
+    assert service.single_substitution_similarity("王呆", "王杏") != 1.0
     overrides_path.write_text(
-        json.dumps({"version": 1, "pairs": {"早": "卓"}}), encoding="utf-8"
+        json.dumps({"version": 1, "pairs": {"呆": "杏"}}), encoding="utf-8"
     )
     refreshed = CharacterSimilarityService()
-    assert refreshed.single_substitution_similarity("早文君", "卓文君") == 1.0
+    assert refreshed.single_substitution_similarity("王呆", "王杏") == 1.0
     # 旧实例保持基线行为，不受新文件影响
-    assert service.single_substitution_similarity("早文君", "卓文君") != 1.0
+    assert service.single_substitution_similarity("王呆", "王杏") != 1.0
 
 
 # ── R6 静态冲突检查 ───────────────────────────────────────────────────

@@ -647,11 +647,15 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/maintenance/index_refinement_dialog.py": 781,
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
-    "ocr/recognizer.py": 492,
+    # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试
+    # （修批量乱码绕过单槽回退的旁路 + v6 书法体徽记弱项，重放实测救回 14/18 槽）
+    "ocr/recognizer.py": 498,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）
-    "scripts/doctor.py": 570,
+    # 2026-10-06 B1 引擎切换：paddle 环境检查重写为 onnxruntime/rapidocr 双套件
+    # 版本+模型就位检查，新增「白名单」冲突重检组（570 → 610，设计文档 §十四）
+    "scripts/doctor.py": 610,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
     # hero_classification_panel.py（原 827）出表：三页签拆入

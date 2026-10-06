@@ -5,12 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
-import threading
 from types import ModuleType
 
 import numpy as np
 import pytest
-from src.ocr import paddle_loader
 from src.ocr.batch_canvas import _BATCH_CANVAS_MAX_WIDTH, _BATCH_SLOT_GAP, join_name_fragments, split_canvas_groups
 from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
@@ -19,75 +17,26 @@ from src.ocr.recognizer import GeneralRecognizer
 from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, HEROES_PATH, required_characters
 
 
-def test_paddle_loader_hides_windows_child_consoles_and_restores_popen(monkeypatch) -> None:
-    calls: list[int] = []
+def test_recognizer_engine_loads_via_primary_getter(monkeypatch) -> None:
+    """主引擎经 engine_loader 的共享 getter 惰性加载，实例内缓存。"""
+    sentinel = object()
+    monkeypatch.setattr("src.ocr.engine_loader.get_primary_ocr_engine", lambda: sentinel)
+    recognizer = GeneralRecognizer(hero_names=["王濬"], page_type="hero_selection")
 
-    class FakePopen:
-        def __init__(self, *_args, **kwargs) -> None:
-            calls.append(kwargs.get("creationflags", 0))
-
-    class FakePaddleOCR:
-        def __init__(self, **_kwargs) -> None:
-            paddle_loader.subprocess.Popen(["dependency-probe"])
-
-    module = ModuleType("paddleocr")
-    module.PaddleOCR = FakePaddleOCR
-    original_init = FakePopen.__init__
-    monkeypatch.setattr(paddle_loader.sys, "platform", "win32")
-    monkeypatch.setattr(paddle_loader.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(paddle_loader.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
-    monkeypatch.setitem(sys.modules, "paddleocr", module)
-
-    paddle_loader.create_paddle_ocr(lang="ch")
-
-    assert calls == [0x08000000]
-    assert FakePopen.__init__ is original_init
+    assert recognizer.ensure_engine() is sentinel
+    assert recognizer.shared_engine() is sentinel
 
 
-def test_paddle_loader_does_not_inject_flags_for_other_threads(monkeypatch) -> None:
-    """窗口抑制只作用于发起 create_paddle_ocr 的线程，其他线程的 Popen 不被注入标志。"""
-    records: list[tuple[int, int]] = []  # (thread_id, creationflags)
-    entered = threading.Event()
-    release = threading.Event()
-    done = threading.Event()
-    owner_tid = threading.get_ident()
+def test_recognizer_engine_fuses_when_primary_unavailable(monkeypatch) -> None:
+    """主引擎不可用：报错并熔断，二次访问快速失败不再重试加载。"""
+    monkeypatch.setattr("src.ocr.engine_loader.get_primary_ocr_engine", lambda: None)
+    recognizer = GeneralRecognizer(hero_names=["王濬"], page_type="hero_selection")
 
-    class FakePopen:
-        def __init__(self, *_args, **kwargs) -> None:
-            records.append((threading.get_ident(), kwargs.get("creationflags", 0)))
-
-    class FakePaddleOCR:
-        def __init__(self, **_kwargs) -> None:
-            entered.set()
-            assert release.wait(5)
-            paddle_loader.subprocess.Popen(["dependency-probe"])
-
-    def other_thread_popen() -> None:
-        assert entered.wait(5)
-        paddle_loader.subprocess.Popen(["other-thread"])
-        release.set()
-        done.set()
-
-    module = ModuleType("paddleocr")
-    module.PaddleOCR = FakePaddleOCR
-    monkeypatch.setattr(paddle_loader.sys, "platform", "win32")
-    monkeypatch.setattr(paddle_loader.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(paddle_loader.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
-
-    helper = threading.Thread(target=other_thread_popen)
-    helper.start()
-    try:
-        monkeypatch.setitem(sys.modules, "paddleocr", module)
-        paddle_loader.create_paddle_ocr(lang="ch")
-    finally:
-        release.set()
-        helper.join(timeout=5)
-
-    assert done.is_set()
-    owner_flags = [flags for tid, flags in records if tid == owner_tid]
-    other_flags = [flags for tid, flags in records if tid != owner_tid]
-    assert owner_flags == [0x08000000]
-    assert other_flags == [0]
+    with pytest.raises(RuntimeError, match="不可用"):
+        recognizer.ensure_engine()
+    assert recognizer._ocr is False
+    with pytest.raises(RuntimeError, match="熔断"):
+        recognizer.ensure_engine()
 
 
 def test_image_preprocessor_outputs_tripled_grayscale_image() -> None:
@@ -391,18 +340,20 @@ def test_character_similarity_uses_revised_scores_for_wang_jian_candidates() -> 
     # 权重 0.3/0.3/0.4：剪→翦 五笔 UEJV/UEJN 仅末码差 → 0.75
     assert service.single_substitution_similarity("王剪", "王翦") == pytest.approx(0.75)
     assert service.single_substitution_similarity("王剪", "王异") == pytest.approx(0.1)
-    # 翡→翦 命中确定性白名单，直接视为安全
-    assert service.single_substitution_similarity("王翡", "王翦") == 1.0
+    # 邻→郃 命中确定性白名单，直接视为安全
+    assert service.single_substitution_similarity("张邻", "张郃") == 1.0
 
 
 def test_character_similarity_whitelists_recurring_name_misreads() -> None:
     service = CharacterSimilarityService()
 
-    # 2026-09 语料实测的反复误读对（樊哙/荀勖），白名单后恢复自动纠正
-    assert service.single_substitution_similarity("樊会", "樊哙") == 1.0
-    assert service.single_substitution_similarity("荀助", "荀勖") == 1.0
-    assert service.single_substitution_similarity("荀歇", "荀勖") == 1.0
-    assert service.is_safe_single_substitution("樊会", "樊哙") is True
+    # 2026-10 B1 语料实测的 v6 反复误读对（樊哙/赵婕妤/公孙瓒/张郃）与
+    # 双引擎仍活跃的旧对（芈八子），白名单后恢复自动纠正
+    assert service.single_substitution_similarity("樊哈", "樊哙") == 1.0
+    assert service.single_substitution_similarity("赵婕好", "赵婕妤") == 1.0
+    assert service.single_substitution_similarity("公孙瓚", "公孙瓒") == 1.0
+    assert service.single_substitution_similarity("半八子", "芈八子") == 1.0
+    assert service.is_safe_single_substitution("樊哈", "樊哙") is True
 
 
 def test_general_recognizer_maps_batch_boxes_by_slot_center() -> None:
@@ -539,15 +490,15 @@ def test_general_recognizer_keeps_mixed_prefix_and_equal_length_candidates_unres
 
 
 def test_general_recognizer_scores_complete_multi_candidates_with_two_evidence_families() -> None:
-    result = GeneralRecognizer(hero_names=["王异", "王翦"])._resolver.resolve_name_evidence(1, [
-        {"source": "batch_enhanced", "text": "王翡", "confidence": 0.9065},
-        {"source": "single_enhanced", "text": "王翡", "confidence": 0.7623},
-        {"source": "single_plain", "text": "王翡", "confidence": 0.7889},
+    result = GeneralRecognizer(hero_names=["张郃", "张飞"])._resolver.resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "张邻", "confidence": 0.9065},
+        {"source": "single_enhanced", "text": "张邻", "confidence": 0.7623},
+        {"source": "single_plain", "text": "张邻", "confidence": 0.7889},
     ])
 
-    assert result["name"] == "王翦"
+    assert result["name"] == "张郃"
     assert result["resolution"] == "multi_similarity"
-    assert result["candidates"] == ["王翦"]
+    assert result["candidates"] == ["张郃"]
 
 
 def test_general_recognizer_accepts_revised_multi_candidate_score_threshold() -> None:
@@ -682,13 +633,13 @@ def test_general_recognizer_keeps_truncated_rare_char_read_pending() -> None:
 
 
 def test_general_recognizer_prefers_whitelist_correction_over_new_hero_consensus() -> None:
-    # 翡→翦 是确定性混淆字对，极高置信度读出"王翡"仍应纠正为王翦而非新武将
-    result = GeneralRecognizer(hero_names=["王翦", "王异"])._resolver.resolve_name_evidence(1, [
-        {"source": "batch_enhanced", "text": "王翡", "confidence": 0.9997},
-        {"source": "single_plain", "text": "王翡", "confidence": 0.9998},
+    # 邻→郃 是确定性混淆字对，极高置信度读出"张邻"仍应纠正为张郃而非新武将
+    result = GeneralRecognizer(hero_names=["张郃", "张飞"])._resolver.resolve_name_evidence(1, [
+        {"source": "batch_enhanced", "text": "张邻", "confidence": 0.9997},
+        {"source": "single_plain", "text": "张邻", "confidence": 0.9998},
     ])
 
-    assert (result["name"], result["resolution"]) == ("王翦", "multi_similarity")
+    assert (result["name"], result["resolution"]) == ("张郃", "multi_similarity")
 
 
 def test_general_recognizer_binds_medium_confidence_unknown_via_multi_similarity() -> None:

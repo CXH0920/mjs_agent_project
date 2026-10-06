@@ -46,13 +46,18 @@ class CharacterSimilarityService:
     CANGJIE_WEIGHT = 0.3
     WUBI_WEIGHT = 0.4
     # 确定性纠错映射：OCR 高频且多维相似度不足的「错字 → 正字」，命中即视为安全。
-    # 仅保留新预处理（纯放大、无增强）时代实测仍活跃的对；2026-09-17 移除的
-    # 16 对增强时代旧错法（敦惇/邵绍/雨羽/赞瓒/桥乔/正政/旦且/菲非/睢雎/
-    # 表袁/央英/合郃/神禅/种钟/易勖/菜蔡）经出场统计与移除重放证实已不再发生，
-    # 如复发会由错法频次记录重新捕获，经"白名单配置"界面补回。
+    # B1 引擎切换（v6-small 主 + v4 复核，2026-10）按 901 槽三环境重放与官方 37 页对照重定：
+    # - 保留双引擎均仍错读的 昧→眜/半→芈；退役 v6 直读已修复的 翡→翦/会→哙/助→勖/
+    #   歇→勖/怀→惇（v6 raw 活跃度 0）；用户层 珍→玠 随 v6 直读卫玠同步退役
+    # - 新增 v6 系统性错法：繁体变体（瓚→瓒/黃→黄）、形近（丰→羊/口→吕/好→妤/
+    #   邻→郃/苟→荀/早→卓/赢→嬴/哈→哙），均过「错字不出现在任何武将名」冲突检查
+    # （2026-09-17 移除的 16 对增强时代旧错法与上述退役对如复发，由错法频次记录
+    #  重新捕获，经"白名单配置"界面补回；武将库扩充后需重检存量对，见
+    #  whitelist_conflicts_with_roster 与 doctor「白名单冲突」检查）
     SAFE_SUBSTITUTION_WHITELIST: dict[str, str] = {
-        "昧": "眜", "半": "芈", "翡": "翦", "会": "哙",
-        "助": "勖", "歇": "勖", "怀": "惇",
+        "昧": "眜", "半": "芈",
+        "丰": "羊", "口": "吕", "好": "妤", "邻": "郃", "瓚": "瓒",
+        "赢": "嬴", "苟": "荀", "早": "卓", "哈": "哙", "黃": "黄",
     }
 
     def __init__(self, repository: CharacterFeatureRepository | None = None) -> None:
@@ -86,6 +91,11 @@ class CharacterSimilarityService:
             "用户层白名单已合并: 基线 %d 对 + 用户层 %d 对",
             len(self.SAFE_SUBSTITUTION_WHITELIST), len(pairs),
         )
+
+    @property
+    def effective_whitelist(self) -> dict[str, str]:
+        """基线与用户层合并后的生效白名单（冲突检查/展示用）。"""
+        return dict(self._effective_whitelist)
 
     def warmup(self) -> None:
         self._repository.warmup()
@@ -241,3 +251,23 @@ class CharacterSimilarityService:
 
     def _value(self, char: str, key: str) -> str:
         return self._repository.get_value(char, key)
+
+
+def whitelist_conflicts_with_roster(
+    pairs: dict[str, str], hero_names: list[str],
+) -> list[str]:
+    """白名单对与武将库的冲突清单；空列表即无冲突。
+
+    - 错字出现在任何武将名中 → 冲突（替换可能破坏该名的合法读数）；
+    - 正字不在任何武将名中 → 冲突（当前词表下不可能生效，疑似配置错误）。
+    武将库扩充或换 OCR 引擎后必须重检存量对（8b8a3d5 误绑事故后的治理纪律，
+    消费方：tests/test_whitelist_conflicts.py 与 doctor「白名单冲突」检查）。
+    """
+    conflicts = []
+    for wrong, right in pairs.items():
+        clash = [name for name in hero_names if wrong in name]
+        if clash:
+            conflicts.append(f"{wrong}→{right}: 错字出现在武将名 {clash[:3]}")
+        elif not any(right in name for name in hero_names):
+            conflicts.append(f"{wrong}→{right}: 正字未命中任何武将名")
+    return conflicts

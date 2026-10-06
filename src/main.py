@@ -82,7 +82,7 @@ def _ensure_clean_runtime() -> None:
     # 打包资料部署：BUNDLE_ROOT/data 的静态资料（核心库 json / 官方榜单 csv / RAG 语料 /
     # 评估集 / raw_guides 等）复制到运行时根——维护脚本、构建脚本等读 PROJECT_ROOT/data，
     # 不部署会全量报"缺源"（task_states）。只补缺失文件，不覆盖用户已有数据。
-    # 部署标记带源树签名：一致则跳过约 280MB 的逐文件 rglob 扫描（范式同 paddle_loader
+    # 部署标记带源树签名：一致则跳过约 280MB 的逐文件 rglob 扫描（范式同 engine_loader
     # 的 .synced；签名解决"升级包带新数据时不能跳过"的问题）
     bundle_data = BUNDLE_ROOT / "data"
     if bundle_data.is_dir():

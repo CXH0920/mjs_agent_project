@@ -72,7 +72,7 @@ DataFacade.load_all()
 
 OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
 
-**B2 复核模式（2026-09 新增）**：对未决识别槽位，`GeneralRecognizer` 调用 `paddle_loader.get_recheck_ocr_engine()` 惰性加载 PP-OCRv6-small/ONNX 引擎（RapidOCR 包装层 `RapidOcrEngine` 翻译为 paddleocr 2.x 风格），在候选闭包内做二次确认。设备固定 CPU（GPU 已否决），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制开关。设计文档：`docs/design/ocr_engine_upgrade_eval.md`。
+**OCR 双套件引擎（B1，2026-10 切换）**：主引擎为 RapidOCR/PP-OCRv6-small（ONNX，随 rapidocr wheel 内置）；对未决识别槽位，`GeneralRecognizer` 调用 `engine_loader.get_recheck_ocr_engine()` 惰性加载复核引擎——与主引擎互为异构（主 v6 时复核 v4-mobile，v4 三件套经 `src/scripts/fetch_recheck_models.py` 从官方清单预取），在候选闭包内做二次确认。设备固定 CPU（GPU 已否决），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径，ORT 线程钉为 `MUMU_OCR_CPU_THREADS`。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 false）控制复核开关、`MUMU_OCR_PRIMARY_ENGINE`（默认 v6，可切 v4 作回滚档）控制主引擎。paddle/paddleocr 已全量退役。设计文档：`docs/design/ocr_engine_upgrade_eval.md`。
 
 **轮询闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。`PollCoordinator` 在闲置暂停 5 分钟（`IDLE_PAUSE_MINUTES=5`）后自动暂停轮询，用户交互（点击导航、打开配置等）触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关。阈值校准工具：`src/scripts/calibrate_idle_threshold.py`。
 
@@ -2037,7 +2037,7 @@ src/ocr/
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
  ├── character_similarity.py  # CharacterSimilarityService — 名称纠错（含拼图画布按检测器工作尺度分块）
  ├── recognizer.py            # GeneralRecognizer — ROI、PaddleOCR 与组件编排（含 B2 复核、unknown_new_hero、4字拆框修复）
- ├── paddle_loader.py         # PaddleOCR 统一构造 + B2 复核引擎（RapidOCR/ONNX）+ Windows 首次加载闪窗抑制
+ ├── engine_loader.py          # OCR 引擎装载层（RapidOCR/ONNX：v6 主 + v4 复核双套件、%TEMP% 同步、指纹哨兵）
  └── ocr_loader.py            # 模板管理器单例
 ```
 
@@ -2257,35 +2257,38 @@ ROI 裁剪 (40×100 原始区域)
 @property
 def _engine(self):
     if self._ocr is False:                      # 熔断标记：此前加载失败
-        raise RuntimeError("PaddleOCR 引擎此前加载失败，已熔断（重启应用后可重试）")
+        raise RuntimeError("OCR 主引擎此前加载失败，已熔断（重启应用后可重试）")
     if self._ocr is None:
         try:
-            self._ocr = create_paddle_ocr(use_angle_cls=False, lang="ch", show_log=False)
+            from src.ocr.engine_loader import get_primary_ocr_engine
+            engine = get_primary_ocr_engine()  # 套件级惰性单例 + 失败熔断
+            if engine is None:
+                raise RuntimeError("OCR 主引擎不可用（rapidocr/onnxruntime 或模型缺失，详见日志）")
+            self._ocr = engine
         except Exception as e:
-            logger.error("PaddleOCR 模型加载失败: %s", e)
+            logger.error("OCR 主引擎加载失败: %s", e)
             self._ocr = False                   # 熔断：后续识别快速失败，不再重复加载
             raise
     return self._ocr
 ```
 
-- `use_angle_cls=False`：不启用文字方向分类，节省推理时间
-- `show_log=False`：不输出 PaddleOCR 的调试日志
-- **推理设备**：`create_paddle_ocr()` 按 `MUMU_OCR_USE_GPU`（默认 false）决定 GPU/CPU；CPU 模式限制 `cpu_threads`（默认 6）并启用 `enable_mkldnn=True`，防止推理打满全部逻辑核心；调用方显式传 `use_gpu` 时优先尊重显式值
+- 主引擎套件由 `MUMU_OCR_PRIMARY_ENGINE`（默认 v6）决定；`MUMU_OCR_RECHECK_ENABLED` 控制复核引擎
+- **推理设备**：固定 CPU（GPU 已否决）；onnxruntime 线程钉为 `MUMU_OCR_CPU_THREADS`（默认 6），防止推理吃满全部物理核心与模拟器抢核
 - **加载熔断**：引擎加载失败后置 `self._ocr = False`，后续识别立即快速失败，避免对每次识别重复尝试昂贵的模型初始化
 - 应用启动时由唯一 `OcrWorker` 预热模型和代表性拼图推理；预热失败或未执行时，首次实际调用才承担加载成本
-- Windows 首次导入期间，统一加载入口为 Paddle 的系统与 CUDA 探测短命令设置 `CREATE_NO_WINDOW`，加载完成后恢复标准 `Popen` 行为
 
-#### B2 复核模式（2026-09 新增）
+#### 复核引擎（与主引擎互为异构，B1 起 v4）
 
-对未决识别槽位，`GeneralRecognizer` 调用 `paddle_loader.get_recheck_ocr_engine()` 惰性加载 PP-OCRv6-small/ONNX 引擎（RapidOCR 包装层 `RapidOcrEngine` 将结果翻译为 paddleocr 2.x 风格），在候选闭包内做二次确认。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制开关，依赖 `rapidocr==3.9.2` + `onnxruntime==1.23.2`，缺失时自动停用复核并维持原识别行为。
+对未决识别槽位，`GeneralRecognizer` 调用 `engine_loader.get_recheck_ocr_engine()` 惰性加载复核引擎——主 v6 时为 PP-OCRv4-mobile（ONNX，官方清单预取），`MUMU_OCR_PRIMARY_ENGINE=v4` 回滚档时互换为 v6。复核读数仅在候选闭包内生效，依赖 `rapidocr==3.9.2` + `onnxruntime==1.23.2`（v4 模型缺失时复核自动停用，不影响主识别）。
 
-**paddle_loader.py 新增接口**：
+**engine_loader.py 接口**：
 
 | 函数 | 说明 |
 |------|------|
-| `create_rapidocr_ocr()` | 构造 v6 复核引擎（RapidOCR/ONNX，固定 CPU），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径 |
-| `get_recheck_ocr_engine()` | 惰性加载 + 失败熔断：首次调用时加载引擎，加载失败后后续调用快速返回 None |
-| `RapidOcrEngine` | 包装类，将 RapidOCR 输出翻译为 paddleocr 2.x 风格（`[[box, text, score], ...]`） |
+| `create_rapidocr_ocr(suite)` | 构造指定套件引擎（"v6"/"v4"，RapidOCR/ONNX 固定 CPU），det 参数显式 `limit_type=max/limit_side_len=960`，模型指纹与钉死基线比对（漂移告警） |
+| `get_primary_ocr_engine()` | 主引擎套件级惰性单例 + 失败熔断 |
+| `get_recheck_ocr_engine()` | 复核引擎（与主引擎互斥选套件）惰性单例 + 失败熔断 |
+| `RapidOcrEngine` | 包装类，将 RapidOCR 输出翻译为 paddleocr 2.x 风格（`[[box, (text, conf)], ...]`） |
 
 **调用时机**：在第三段候选确认之前，对第一/二段仍未决的槽位执行复核。复核结果仅在候选闭包内生效——不命中候选闭包一律维持原状，不扩展候选。
 

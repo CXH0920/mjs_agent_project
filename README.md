@@ -7,7 +7,7 @@
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
 
-- **多模态屏幕识别**：模板匹配前置过滤 + PaddleOCR 识别 + 汉字特征库名称纠错
+- **多模态屏幕识别**：模板匹配前置过滤 + RapidOCR 识别 + 汉字特征库名称纠错
 - **RAG 语料分层架构**：ODS/DWD/mart 三层数仓分层，语料任务单一事实源调度与版本戳
 - **多供应商 LLM 集成**：API（多供应商档案）+ 浏览器自动化双后端，RAG 语料增强生成
 - **桌面应用工程化**：PySide6 + PyInstaller 双模式打包，CI 集成与发版烟雾测试流水线
@@ -27,7 +27,7 @@
 
 ## 技术亮点
 
-1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 PaddleOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
+1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
 4. **测试与交付工程化** — 116 个测试模块 / 1491 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
@@ -48,7 +48,8 @@ conda activate myenv
 # 浏览器模式需额外安装 Edge 浏览器内核（playwright 包已在 environment.yml 中）
 playwright install msedge
 
-# CUDA 11.8 / cuDNN 8.x 运行时 DLL 需复制到 paddle/libs（Windows + paddlepaddle-gpu）
+# v4 复核引擎模型三件套预取（rapidocr/models 内，哈希校验，幂等）
+python -m src.scripts.fetch_recheck_models
 ```
 
 ### 2. 运行测试
@@ -177,7 +178,7 @@ test_project/
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
-│   ├── ocr/                    # 模板匹配 + PaddleOCR + 名称纠错 + 卡位检测 + B2 复核引擎
+│   ├── ocr/                    # 模板匹配 + RapidOCR(v6) + 名称纠错 + 卡位检测 + v4 复核引擎
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
 │   │                           #   + ocr_baseline / calibrate_idle_threshold
@@ -245,7 +246,7 @@ test_project/
 ```
 武将采集   官网 JS chunk → 字符级状态机解析 → 清洗 → Pydantic 校验 → data/heroes.json + 头像
 AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校验 → data/guides.json / synergies.json
-屏幕识别   ADB 截图 → 模板匹配过滤 → PaddleOCR → 名称纠错 → 推荐面板/对局攻略
+屏幕识别   ADB 截图 → 模板匹配过滤 → RapidOCR → 名称纠错 → 推荐面板/对局攻略
 巅峰赛     ADB 截图 → 卡位检测 → 名条 OCR → 候选池/禁选建议/实战配队
 公告监控   官方公告 → 章节过滤 → 百科逐武将 diff → 确认 → 精准更新 + 时间轴追加
 卡牌百科   官网手牌库 → card_baike 抓取 diff → 快照 → 确认 → 应用更新 + 变更记录
@@ -258,7 +259,7 @@ AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校�
 - AI 子进程（`subprocess.ai`）同样只设 `MJS_QPROCESS_CHILD=1` 走 stdout/stderr 转发，不做子进程直写；失败原因由父进程 `scraper/ai_generation.log` handler 的 `keep_debug=True` 保留（级别固定 DEBUG、不跟随用户级别）——即使 root level≥WARNING 时 429/length/JSON 失败原因也不丢；API 限流退避时输出 `[重试]` 行，进度窗口显示"重试中"。
 - AI 生成每累计 10 条已校验成功结果原子提交正式 JSON，失败项保留对应旧数据。
 - OCR 全部任务（预热 / 常规识别 / 官方整批导入 / 巅峰赛识别）共享唯一 `OcrWorker` 的 FIFO 队列，互斥由 `OcrService._import_busy` 串行化；轮询全程内存处理不写磁盘。
-- 启动阶段 OCR 模型在启动画面期间阻塞预热（`wait_ocr_warmup(timeout_ms=120_000)`），避免 Paddle 初始化持有 GIL 时卡住事件循环。
+- 启动阶段 OCR 模型在启动画面期间阻塞预热（`wait_ocr_warmup(timeout_ms=120_000)`），避免 OCR 引擎初始化持有 GIL 时卡住事件循环。
 
 ### 多模式 AI 生成
 
@@ -287,7 +288,7 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **对局攻略**：42/58 分割的 2v2 阵容核对与临场攻略工作台；OCR 导入后按"我方/敌方/未定"分组，确认阵容后展示总览、我方打法、对抗敌方与单将详情；胜率榜按对局链路区分 2v2 / 巅峰赛（`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）。
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
 - **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体与 2~8 武将两两配对。生成失败时弹窗详情列出失败武将/相性对清单。
-- **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 PaddleOCR；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
+- **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 RapidOCR；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
 - **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/keywords/related）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
 - **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+受限繁体兜底，未确认写入待复核。
@@ -352,8 +353,7 @@ RAG_MODEL_DIR=
 | httpx 0.28.1 | 多供应商 LLM API 请求（API 模式） |
 | playwright 1.60.0 | 浏览器自动化（浏览器模式） |
 | mistune 3.3.0 | Markdown → HTML 渲染 |
-| paddlepaddle 2.6.2 / paddleocr 2.8.1 | OCR 识别引擎 |
-| rapidocr 3.9.2 / onnxruntime 1.23.2 | B2 复核引擎（PP-OCRv6-small/ONNX） |
+| rapidocr 3.9.2 / onnxruntime 1.23.2 | OCR 识别引擎（PP-OCRv6 主 + PP-OCRv4 复核，均 ONNX 形态；paddle 已退役） |
 | opencv-python 4.11.0.86 | 模板匹配 + 卡位检测 + 图像预处理 |
 | pillow 12.3.0 / numpy 1.26.4 | 图像处理 |
 | chromadb 1.5.9 + sentence-transformers 5.7.0 | RAG 向量检索（bge-small-zh-v1.5） |
@@ -409,7 +409,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 五 | 武将头像下载 | ✅ 已完成 |
 | 六 | 选将推荐（2×4 卡片 + OCR 导入） | ✅ 已完成 |
 | 七 | 浏览器自动化双模式 AI 生成 | ✅ 已完成 |
-| 八 | 屏幕采集（ADB + 模板匹配 + PaddleOCR + 轮询） | ✅ 已完成 |
+| 八 | 屏幕采集（ADB + 模板匹配 + RapidOCR + 轮询） | ✅ 已完成 |
 | 九 | 推荐引擎（相性/胜率/OCR 导入） | ✅ 已完成 |
 | 十 | 武将与攻略编辑 | ✅ 已完成 |
 | 十一 | 相性配对多武将组合（最多 8 武将） | ✅ 已完成 |

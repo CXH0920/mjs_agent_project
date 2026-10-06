@@ -11,17 +11,17 @@
     conda run -n myenv python release.py --skip-build  # 只对已有 dist 做校验
 
 关键点（来自实际踩坑，详见 打包发版指南.md）：
-- build_deps/ 由 prepare_build_deps() 自动安装 CPU 版 paddlepaddle 2.6.2（独立目录、
-  不碰 myenv GPU 版）；靠 PYTHONPATH 让 PyInstaller 优先收集它，spec 内也做了
-  sys.path.insert 双保险。
+- OCR 引擎为 RapidOCR/ONNX 双套件（v6 主 + v4 复核）：v6 随 rapidocr wheel 内置，
+  v4 三件套由 src/scripts/fetch_recheck_models.py 从官方清单预取（构建前必须先跑，
+  spec 前置检查与本项目 preflight 双重兜底）。
 - mjs_agent.spec 已处理 PyInstaller 6.x Tree 兼容、Cython/imageio/cnradical 数据、
-  char_info_cache/wubi86 路径、torch 等 ppstructure 依赖排除、Qt 裁剪等；本脚本只
+  char_info_cache/wubi86 路径、torch 等 RAG 依赖排除、Qt 裁剪等；本脚本只
   负责编排，不改 spec 逻辑。
 - 构建产物本身不含任何用户资料（config.env/api_profiles/edge_profile/logs/api key），
   首次启动由 main._ensure_clean_runtime 生成。烟雾测试会在运行后清理它产生的运行时文件。
 - 烟雾测试用 os.startfile 模拟真实双击（windowed exe 无控制台 → sys.stdout=None），
   暴露 Popen(PIPE) 启动会掩盖的双击场景崩溃。
-- 中文路径支持：paddle 模型复制到 %TEMP%、cv2 用 imdecode/imencode 规避 ANSI fopen
+- 中文路径支持：rapidocr 模型复制到 %TEMP%、cv2 用 imdecode/imencode 规避 ANSI fopen
   限制（详见指南"中文路径"一节）。
 """
 
@@ -41,7 +41,6 @@ from pathlib import Path
 # ── 路径常量 ─────────────────────────────────────────────────────
 HERE = Path(__file__).resolve().parent  # 项目根（release.py 与 mjs_agent.spec 同级）
 SPEC = HERE / "mjs_agent.spec"
-BUILD_DEPS = HERE / "build_deps"               # CPU paddlepaddle 独立安装目录
 DIST = HERE / "dist"
 BUILD = HERE / "build"
 EXE = DIST / "mjs_agent" / "mjs_agent.exe"
@@ -106,12 +105,26 @@ def preflight(full: bool = False) -> str:
             _die("完整版需 playwright：conda run -n myenv pip install playwright")
         _ok("playwright 已就绪")
 
-    # PaddleOCR 模型必须存在（spec 从 ~/.paddleocr 收集 det/rec/cls 到包内离线用）
-    ocr_home = Path(os.path.expanduser("~")) / ".paddleocr" / "whl"
-    det_model = ocr_home / "det" / "ch" / "ch_PP-OCRv4_det_infer"
-    if not det_model.is_dir():
-        _die(f"找不到 PaddleOCR 模型：{det_model}\n"
-             f"  请先在 myenv 运行 PaddleOCR 一次以下载模型，或从其他机器拷贝 ~/.paddleocr")
+    # OCR 模型前置检查之二（spec 是其一）：v4 三件套须已预取（哈希校验），
+    # v6 内置三件存在性一并确认；缺失即终止并给出预取指引
+    sys.path.insert(0, str(HERE))
+    from src.scripts.fetch_recheck_models import verify_v4_models
+
+    problems = verify_v4_models()
+    if not problems:
+        import rapidocr
+
+        models_dir = Path(rapidocr.__file__).resolve().parent / "models"
+        problems = [
+            f"缺失 {name}" for name in (
+                "PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx",
+                "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+            ) if not (models_dir / name).is_file()
+        ]
+    if problems:
+        _die("OCR 模型未就位：{}\n  请先运行 python -m src.scripts.fetch_recheck_models".format(
+            "；".join(problems)))
+    _ok("OCR 双套件模型（v6 内置 + v4 预取）已就位")
 
     # 版本单一来源：项目根 VERSION 文件（main.py 运行时同源解析）；
     # 缺失时回退 git describe，再回退 0.0.0-unknown
@@ -136,33 +149,6 @@ def _git(*args: str, fallback: str = "") -> str:
         return fallback
 
 
-# ── CPU paddlepaddle 准备 ─────────────────────────────────────
-def prepare_build_deps() -> None:
-    """若 build_deps/paddle 不存在，独立安装 CPU 版 paddlepaddle 2.6.2。
-
-    与 myenv 的 GPU 版隔离（--target + --no-deps，不碰全局环境），
-    仅供 PyInstaller 收集 CPU 版 paddle，规避 GPU 版带 CUDA/cuDNN 的体积膨胀。
-    """
-    if (BUILD_DEPS / "paddle").is_dir():
-        _ok("build_deps/ CPU paddle 已就绪")
-        return
-    _info("向 build_deps/ 安装 CPU 版 paddlepaddle 2.6.2（独立目录，不影响 myenv）…")
-    BUILD_DEPS.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        sys.executable, "-m", "pip", "install",
-        "--target", str(BUILD_DEPS),
-        "--no-deps", "--no-cache-dir",
-        "paddlepaddle==2.6.2",
-    ]
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        _die(f"安装 CPU paddlepaddle 失败（exit {e.returncode}）：请检查网络/pip 源")
-    if not (BUILD_DEPS / "paddle").is_dir():
-        _die("安装后 build_deps/paddle 仍不存在，CPU paddlepaddle 未就绪")
-    _ok("CPU paddlepaddle 安装完成")
-
-
 # ── 构建 ───────────────────────────────────────────────────────
 def build(full: bool = False) -> None:
     """干净构建：清 build/dist → PyInstaller --clean --noconfirm。"""
@@ -170,10 +156,8 @@ def build(full: bool = False) -> None:
     shutil.rmtree(BUILD, ignore_errors=True)
     shutil.rmtree(DIST, ignore_errors=True)
 
-    _info("PyInstaller 构建中（约 2-3 分钟，CPU 版 PaddleOCR 收集较慢）…")
-    # PYTHONPATH=build_deps 让 collect_all 优先命中 CPU 版 paddle（spec 内也有 sys.path.insert 双保险）
+    _info("PyInstaller 构建中…")
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(BUILD_DEPS) + os.pathsep + env.get("PYTHONPATH", "")
     if full:
         env["MJS_FULL"] = "1"  # spec 顶部据此切换完整版 excludes/collect
     cmd = [sys.executable, "-m", "PyInstaller", str(SPEC), "--noconfirm", "--clean"]
@@ -293,9 +277,10 @@ def smoke_test() -> None:
     import tempfile
     _info(f"烟雾启动测试（{SMOKE_TIMEOUT_S}s，双击模式，覆盖 OCR 模型加载）…")
     # 清掉 %TEMP% 的 OCR 模型缓存，强制重新从本次构建的包内复制，确保验证的是新模型
-    _temp_ocr = Path(tempfile.gettempdir()) / "mjs_ocr_models"
-    if _temp_ocr.is_dir():
-        shutil.rmtree(_temp_ocr, ignore_errors=True)
+    for _temp_ocr in (Path(tempfile.gettempdir()) / "mjs_rapidocr_models",
+                      Path(tempfile.gettempdir()) / "mjs_ocr_models"):
+        if _temp_ocr.is_dir():
+            shutil.rmtree(_temp_ocr, ignore_errors=True)
     try:
         os.startfile(str(EXE))
     except OSError as e:
@@ -408,7 +393,7 @@ def report(version: str, zip_path: Path | None, full: bool = False) -> None:
     print()
     print("  注意：")
     print("  - 中文路径已支持（OCR 模型复制到 %TEMP%、cv2 用 imdecode/imencode）")
-    print("  - 更新 paddleocr_models 后重新发版，需删 %TEMP%\\mjs_ocr_models 让其重新复制")
+    print("  - 更新 rapidocr/模型后重新发版，%TEMP%\\mjs_rapidocr_models 会按指纹自动重拷")
     print("  - 首启生成的 config.env 内 API Key 为空（核心对战辅助无需填）")
     print("=" * 56)
 
@@ -428,8 +413,6 @@ def main() -> None:
     ap.add_argument("--skip-build", action="store_true", help="跳过构建，只校验已有 dist")
     args = ap.parse_args()
 
-    if not args.skip_build:
-        prepare_build_deps()
     version = preflight(args.full)
 
     if not args.skip_build:

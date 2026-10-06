@@ -70,33 +70,32 @@ class GeneralRecognizer:
 
     @property
     def _engine(self):
-        """PaddleOCR（ch），延迟加载；加载失败后熔断，避免每次识别重复重试。"""
+        """主 OCR 引擎（RapidOCR/PP-OCRv6-small），延迟加载；加载失败后熔断。"""
         if self._ocr is False:
             raise RuntimeError(
-                "PaddleOCR 引擎此前加载失败，已熔断（重启应用后可重试）"
+                "OCR 主引擎此前加载失败，已熔断（重启应用后可重试）"
             )
         if self._ocr is None:
-            logger.info("首次调用，正在加载 PaddleOCR 模型...")
+            logger.info("首次调用，正在加载 OCR 主引擎...")
             try:
                 started = time.perf_counter()
-                from src.ocr.paddle_loader import create_paddle_ocr
-                self._ocr = create_paddle_ocr(
-                    use_angle_cls=False,
-                    lang="ch",
-                    show_log=False,
-                )
+                from src.ocr.engine_loader import get_primary_ocr_engine
+                engine = get_primary_ocr_engine()
+                if engine is None:
+                    raise RuntimeError("OCR 主引擎不可用（rapidocr/onnxruntime 或模型缺失，详见日志）")
+                self._ocr = engine
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 self._timing_ms["model_load"] = self._timing_ms.get("model_load", 0.0) + elapsed_ms
-                logger.info("PaddleOCR 模型加载完成，耗时 %.1fms", elapsed_ms)
+                logger.info("OCR 主引擎加载完成，耗时 %.1fms", elapsed_ms)
             except Exception as e:
-                logger.error("PaddleOCR 模型加载失败: %s", e)
+                logger.error("OCR 主引擎加载失败: %s", e)
                 logger.debug(traceback.format_exc())
                 self._ocr = False  # 熔断标记：后续识别快速失败，不再重复加载
                 raise
         return self._ocr
 
     def adopt_engine(self, engine) -> None:
-        """注入外部共享的 PaddleOCR 引擎，避免同进程重复加载多份模型。"""
+        """注入外部共享的 OCR 引擎，避免同进程重复加载多份模型。"""
         self._ocr = engine
 
     def shared_engine(self):
@@ -104,16 +103,16 @@ class GeneralRecognizer:
         return self._ocr if self._ocr else None
 
     def ensure_engine(self):
-        """确保 PaddleOCR 引擎已加载并返回它；首次调用触发惰性加载（不可中断）。"""
+        """确保 OCR 主引擎已加载并返回它；首次调用触发惰性加载（不可中断）。"""
         return self._engine
 
     @property
     def _recheck_engine(self):
-        """v6 复核引擎（B2 复核模式）；开关关闭或引擎不可用时返回 None。"""
+        """复核引擎（与主引擎互为异构，B1 起为 v4）；开关关闭或不可用时返回 None。"""
         from src.config.env import get_mumu_config
         if not get_mumu_config().get("mumu_ocr_recheck_enabled", False):
             return None
-        from src.ocr.paddle_loader import get_recheck_ocr_engine
+        from src.ocr.engine_loader import get_recheck_ocr_engine
         return get_recheck_ocr_engine()
 
     # ── 提前初始化 ────────────────────────────────────────────────────
@@ -264,11 +263,18 @@ class GeneralRecognizer:
             name_result = self._resolver.resolve_name_evidence(seat_index, evidence)
             team_text, _ = recognized_teams.get(seat_index, ("", 0.0))
             prepared_team = team_slots.get(seat_index)
-            if not team_text and prepared_team is not None:
-                team_text, _ = self._recognize_prepared_single(
-                    prepared_team, seat_index, "team",
-                )
             team = self._normalize_team(team_text, seat_index)
+            if not team and prepared_team is not None:
+                # 归一化失败（含批量画布读出非空乱码绕过原 `if not team_text`
+                # 回退旁路）即重试单条：先主引擎，再复核引擎——书法体徽记是
+                # v6 的引擎级弱项，B1 重放实测 18 个丢标签槽此链可救回 14 个
+                for engine in filter(None, (self._engine, self._recheck_engine)):
+                    text, _ = self._recognize_prepared_single(
+                        prepared_team, seat_index, "team", engine=engine,
+                    )
+                    team = self._normalize_team(text, seat_index)
+                    if team:
+                        break
             name_result["team"] = team
             results.append(name_result)
         final = self._resolver.resolve_page_names(results)
@@ -375,11 +381,11 @@ class GeneralRecognizer:
         return ""
 
     def _recognize_prepared_single(
-        self, prepared: np.ndarray, slot: int, kind: str,
+        self, prepared: np.ndarray, slot: int, kind: str, engine=None,
     ) -> tuple[str, float]:
-        """识别已预处理的单个 ROI，供批处理异常槽位回退。"""
+        """识别已预处理的单个 ROI，供批处理异常槽位回退；engine 缺省用主引擎。"""
         ocr_started = time.perf_counter()
-        text, confidence = self._extract_text(self._engine.ocr(prepared, cls=False))
+        text, confidence = self._extract_text((engine or self._engine).ocr(prepared, cls=False))
         self._add_timing(f"{kind}_ocr", ocr_started)
         if text:
             logger.debug("武将 %d %s OCR 原始结果: text=%r, confidence=%.4f", slot, kind, text, confidence)

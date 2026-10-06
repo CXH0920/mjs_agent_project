@@ -13,7 +13,9 @@ from __future__ import annotations
 from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
 
 _UNIQUE_PREFIX_MIN_LENGTH = 2
-_NAME_RECHECK_CONFIDENCE = 0.8
+# 单槽回退触发线（B1 按 v6 置信分布定标：v6 0.7~0.99 中带占 17.9%、v4 仅 7.5%，
+# 0.75 使触发率回到 v4 时代 0.8 的水平，避免切换后单槽回退量放大约一个数量级）
+_NAME_RECHECK_CONFIDENCE = 0.75
 _MULTI_CANDIDATE_MIN_CONFIDENCE = 0.7
 _MULTI_CANDIDATE_MIN_SIMILARITY = 0.35
 _MULTI_CANDIDATE_MIN_MARGIN = 0.15

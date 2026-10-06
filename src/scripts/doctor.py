@@ -33,7 +33,7 @@ PASS, WARN, FAIL, SKIP = "PASS", "WARN", "FAIL", "SKIP"
 REPO_SLUG = "CXH0920/mjs_agent_project"
 # retrospective.md「升级触发器」：满足任一立即转全量历史重写预案
 COMPLIANCE_TRIGGERS = "fork > 0 ｜ stars > 50 ｜ 权利人联系 ｜ takedown ｜ 商业化"
-DEAD_CONFIG_KEYS = ("RAG_PROJECT_DIR", "MUMU_MATCH_GUIDE_COOLDOWN")
+DEAD_CONFIG_KEYS = ("RAG_PROJECT_DIR", "MUMU_MATCH_GUIDE_COOLDOWN", "MUMU_OCR_USE_GPU")
 OPTIONAL_CONFIG_KEYS = (
     "RECOMMENDATION_P_FLOOR", "RECOMMENDATION_BAN_WEIGHT",
     "RECOMMENDATION_SIGMOID_K", "RECOMMENDATION_LOW_WIN_RATE_GAP",
@@ -93,24 +93,40 @@ def check_environment() -> list[Finding]:
             "环境", "ruff 版本三处一致", FAIL, f"各处={versions}",
             fix="同步 .pre-commit-config.yaml / environment.yml / environment-ci.yml 的 ruff 版本，否则钩子与 CI 判定分叉"))
 
-    spec = importlib.util.find_spec("paddle")
-    if spec is None:
-        findings.append(Finding("环境", "paddle 可导入", FAIL, "未安装",
-                                fix="conda env 按 environment.yml 安装 paddlepaddle-gpu"))
-    else:
-        version = None
-        for dist in ("paddlepaddle-gpu", "paddlepaddle"):
-            with contextlib.suppress(importlib.metadata.PackageNotFoundError):
-                version = importlib.metadata.version(dist)
-                break
-        findings.append(Finding("环境", "paddle 可导入", PASS, version or "已安装（版本未知）"))
+    # B1 起唯一 OCR 栈：onnxruntime + rapidocr（v6 主引擎内置 + v4 复核预取模型）
+    rapidocr_spec = importlib.util.find_spec("rapidocr")
+    for pkg, pin, spec in (
+        ("onnxruntime", "1.23.2", importlib.util.find_spec("onnxruntime")),
+        ("rapidocr", "3.9.2", rapidocr_spec),
+    ):
+        if spec is None:
+            findings.append(Finding("环境", f"{pkg} 可导入", FAIL, "未安装",
+                                    fix=f"按 environment.yml 安装 {pkg}=={pin}（OCR 引擎依赖）"))
+            continue
+        with contextlib.suppress(importlib.metadata.PackageNotFoundError):
+            version = importlib.metadata.version(pkg)
+            if version == pin:
+                findings.append(Finding("环境", f"{pkg} 版本", PASS, version))
+            else:
+                findings.append(Finding("环境", f"{pkg} 版本", WARN, f"{version}（钉死 {pin}）",
+                                        fix=f"OCR 行为对 rapidocr 小版本敏感，安装 {pkg}=={pin}"))
+    if rapidocr_spec is not None:
+        import rapidocr
+        from src.scripts.fetch_recheck_models import verify_v4_models
 
-    ocr_model = Path.home() / ".paddleocr" / "whl" / "det" / "ch" / "ch_PP-OCRv4_det_infer"
-    if ocr_model.is_dir():
-        findings.append(Finding("环境", "OCR 检测模型", PASS, str(ocr_model)))
-    else:
-        findings.append(Finding("环境", "OCR 检测模型", WARN, f"缺少 {ocr_model}",
-                                fix="首次运行 OCR 功能会自动下载，或从备份环境复制"))
+        models_dir = Path(rapidocr.__file__).resolve().parent / "models"
+        problems = verify_v4_models() + [
+            f"缺失 {name}" for name in (
+                "PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx",
+                "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+            ) if not (models_dir / name).is_file()
+        ]
+        if problems:
+            findings.append(Finding(
+                "环境", "OCR 模型（v6 内置 + v4 预取）", WARN, "；".join(problems),
+                fix="python -m src.scripts.fetch_recheck_models 预取 v4；v6 缺失则重装 rapidocr==3.9.2"))
+        else:
+            findings.append(Finding("环境", "OCR 模型（v6 内置 + v4 预取）", PASS, "双套件模型齐备"))
     return findings
 
 
@@ -501,12 +517,35 @@ def check_security() -> list[Finding]:
     return findings
 
 
+# ── 白名单 ────────────────────────────────────────────────────────────
+
+def check_whitelist() -> list[Finding]:
+    """基线+用户层白名单与武将库的冲突重检（武将库扩充/换引擎后必查，红线 6）。"""
+    heroes_path = ROOT / "data" / "heroes.json"
+    if not heroes_path.exists():
+        return [Finding("白名单", "冲突重检", SKIP, "data/heroes.json 未入库（私有数据仓同步后生效）")]
+    from src.ocr.character_similarity import CharacterSimilarityService, whitelist_conflicts_with_roster
+
+    document = json.loads(heroes_path.read_text(encoding="utf-8"))
+    if isinstance(document, dict):
+        document = document.get("heroes", document)
+    names = [h["name"] if isinstance(h, dict) else h for h in document]
+    service = CharacterSimilarityService()
+    conflicts = whitelist_conflicts_with_roster(service.effective_whitelist, names)
+    if conflicts:
+        return [Finding("白名单", "冲突重检", FAIL, "；".join(conflicts),
+                        fix="在「白名单配置」界面移除冲突对，或核对新武将用字后再启用")]
+    return [Finding("白名单", "冲突重检", PASS,
+                    f"{len(service.effective_whitelist)} 对 × {len(names)} 武将，无冲突")]
+
+
 CHECK_GROUPS = [
     ("环境", check_environment),
     ("设备", check_devices),
     ("私有仓", check_private_repo),
     ("数据", check_data),
     ("配置", check_config),
+    ("白名单", check_whitelist),
     ("AI链路", check_ai_link),
     ("日志", check_logs),
     ("磁盘", check_disk),

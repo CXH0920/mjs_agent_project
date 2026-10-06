@@ -19,22 +19,30 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_sub
 
 # 项目根（spec 文件所在目录，与 release.py 同级）
 HERE = Path(SPECPATH).resolve()
-BUILD_DEPS = HERE / "build_deps"  # CPU paddlepaddle 独立安装目录
 
 # ── 双模式开关 ──
 FULL = os.environ.get("MJS_FULL") == "1"
 
-# CPU paddle 优先收集：让 collect_all("paddle") 命中 build_deps 的 CPU 版，
-# 规避 myenv GPU 版带 CUDA/cuDNN 的体积膨胀（release.py 另设 PYTHONPATH 双保险）
-if BUILD_DEPS.is_dir():
-    sys.path.insert(0, str(BUILD_DEPS))
-
-# B2 复核引擎依赖必须已装入打包环境（缺失时明确报错，避免静默产出无复核引擎的包）
+# OCR 引擎（RapidOCR/onnxruntime，v6 主 + v4 复核双套件）依赖必须已装入打包环境
+# （缺失时明确报错，避免静默产出无引擎的包）
 for _pkg, _pin in (("onnxruntime", "1.23.2"), ("rapidocr", "3.9.2")):
     if importlib.util.find_spec(_pkg) is None:
         raise SystemExit(
-            f"B2 复核引擎依赖缺失：请先在打包环境安装 {_pkg}=={_pin}（见 environment.yml）"
+            f"OCR 引擎依赖缺失：请先在打包环境安装 {_pkg}=={_pin}（见 environment.yml）"
         )
+
+# B1 复核引擎 v4 模型必须已在打包环境就位（collect_all("rapidocr") 才能带入包；
+# 仓库零模型字节，URL+SHA256 与来源登记见 src/scripts/fetch_recheck_models.py）
+sys.path.insert(0, str(HERE))
+from src.scripts.fetch_recheck_models import verify_v4_models  # noqa: E402
+
+_v4_problems = verify_v4_models()
+if _v4_problems:
+    raise SystemExit(
+        "v4 复核模型未就位：{}\n请先运行 python -m src.scripts.fetch_recheck_models".format(
+            "；".join(_v4_problems)
+        )
+    )
 
 
 # ── _collect_dir：替代裸 Tree（PyInstaller 6.x 兼容，踩坑1）──
@@ -71,12 +79,11 @@ binaries = []
 datas = []
 hiddenimports = []
 
-# CPU paddle + paddleocr + 推理 import 链依赖（pyclipper/shapely/skimage/rapidfuzz/
-# imgaug/lmdb 在 paddleocr 内部 import，PyInstaller 静态分析漏收其 C 扩展，需显式 collect_all）
-# B2 复核引擎：rapidocr（含内置 PP-OCRv6 模型）+ onnxruntime + 其纯 py 依赖
+# OCR 引擎（B1 起 paddle/paddleocr 及其 6 个链依赖 pyclipper/shapely/skimage/
+# rapidfuzz/imgaug/lmdb 已全部退役）：rapidocr（内置 v6 模型 + 预取的 v4 三件套，
+# collect_all 连同 models/ 目录一并带入）+ onnxruntime + 其纯 py 依赖
 # （omegaconf/colorlog 动态配置与日志，静态分析不稳，一并 collect_all 兜住）
-for pkg in ("paddle", "paddleocr", "pyclipper", "shapely", "skimage", "rapidfuzz", "imgaug", "lmdb",
-            "onnxruntime", "rapidocr", "omegaconf", "colorlog"):
+for pkg in ("onnxruntime", "rapidocr", "omegaconf", "colorlog"):
     b, d, h = collect_all(pkg)
     binaries += b
     datas += d
@@ -101,18 +108,8 @@ datas += collect_data_files("cnradical")
 # VERSION：版本单一来源（main.py frozen 态从 _internal/VERSION 读取，与 release.py 同源）
 datas.append((str(HERE / "VERSION"), "."))
 
-# ── OCR 模型（~/.paddleocr/whl → paddleocr_models，离线用）──
-# paddle_loader frozen 下复制 BUNDLE_ROOT/paddleocr_models 到 %TEMP%，det/rec/cls 指向它
-ocr_home = Path.home() / ".paddleocr" / "whl"
-for sub in ("det", "rec", "cls"):
-    ch_dir = ocr_home / sub / "ch"
-    if not ch_dir.is_dir():
-        continue
-    for p in ch_dir.rglob("*"):
-        if p.is_file():
-            # 扁平化到 paddleocr_models/{sub}/，det_model_dir 指向它
-            # （paddle inference 在 model_dir 内 glob *.pdmodel 加载）
-            datas.append((str(p), f"paddleocr_models/{sub}"))
+# OCR 模型：v6 内置 + v4 预取三件套均位于 rapidocr 包 models/ 目录，随上方
+# collect_all("rapidocr") 一并带入；engine_loader frozen 下复制到 %TEMP% 纯 ASCII 路径
 
 # ── 静态资源 ──
 # data：排除运行时产物（对应 .gitignore + 首启生成物）。
@@ -195,8 +192,10 @@ if FULL:
 
 # ── excludes ──
 excludes = [
-    # paddleocr.ppstructure 依赖，OCR 仅 det+rec 不用（踩坑9，~430MB）。
-    # 注意 torch/transformers/tokenizers 同时是 sentence_transformers（RAG 检索）的
+    # paddle 系恒排除（B1 退役后 rapidocr 的 paddle 推理后端 import 图仍会静态牵出
+    # 环境内 paddlepaddle 的 libpaddle.pyd/common.dll/mkldnn.dll ~148MB，必须显式排除）
+    "paddle", "paddleocr",
+    # torch/transformers/tokenizers 是 sentence_transformers（RAG 检索）的
     # 推理底座：精简版排除 → RAG 降级为经典模式；完整版在下方移除这三项启用 RAG（踩坑15）。
     # onnxruntime 已移出本清单：B2 复核引擎（rapidocr）必需（此前仅 chromadb 默认
     # embedding 用，恒排除）
@@ -217,7 +216,7 @@ else:
 # ── Analysis ──
 a = Analysis(
     [str(HERE / "src" / "main.py")],
-    pathex=[str(HERE), str(BUILD_DEPS)],
+    pathex=[str(HERE)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

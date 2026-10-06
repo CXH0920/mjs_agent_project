@@ -16,6 +16,7 @@
 | 装备属性 equip_attrs.json | 官方装备的距离/范围修正 | 2026-08 起维护 | 「装备属性维护」页维护 |
 | 武将分类 hero_classification.json | 基于官方武将技能文本的自研归类 | 2026-09-30 更新 | 「武将分类维护」页维护 |
 | 武将调整时间轴 mjs_adjustments.json | 官方加强/削弱公告的事件化记录 | 随公告更新 | 公告驱动追加 |
+| 复核引擎模型 ch_PP-OCRv4_{det,rec}_mobile.onnx + ppocr_keys_v1.txt | RapidOCR modelscope 官方分发（PaddleOCR 模型，Apache-2.0） | 2026-10 | 构建时经 `src/scripts/fetch_recheck_models.py` 预取（URL+SHA256 钉死），不入仓 |
 
 不入仓说明：`guides.json` / `synergies.json` 为 AI 生成内容（见 TERMS 第 7 节免责），
 可随时重新生成，不随任何仓库分发。
