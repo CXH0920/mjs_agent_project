@@ -67,6 +67,8 @@ class RapidOcrEngine:
 
     def __init__(self, engine) -> None:
         self._engine = engine
+        self._det_calls = 0
+        self._det_empty_calls = 0
 
     def ocr(self, img, cls=False):
         if img.ndim == 2:
@@ -85,7 +87,24 @@ class RapidOcrEngine:
              (str(text).strip(), float(score)))
             for box, text, score in zip(boxes, txts, scores, strict=False)
         ]
+        # 空检统计：det 零框调用。rapidocr 的逐次 WARNING 已被
+        # _EmptyDetFilter 静音，聚合摘要经识别收尾的阶段耗时日志输出
+        self._det_calls += 1
+        if not lines:
+            self._det_empty_calls += 1
         return [lines] if lines else [None]
+
+    def reset_call_stats(self) -> None:
+        """清零空检统计，供识别任务开头对齐统计窗口。"""
+        self._det_calls = 0
+        self._det_empty_calls = 0
+
+    def drain_call_stats(self) -> tuple[int, int]:
+        """返回 (det 调用数, 空检数) 并清零，供识别收尾聚合输出。"""
+        stats = (self._det_calls, self._det_empty_calls)
+        self._det_calls = 0
+        self._det_empty_calls = 0
+        return stats
 
 
 def primary_suite() -> str:
@@ -168,6 +187,24 @@ def _rapidocr_version() -> str:
     return "未知"
 
 
+class _EmptyDetFilter(logging.Filter):
+    """只滤 rapidocr 逐次抛出的空检测告警；空检聚合统计经识别收尾摘要输出。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "The text detection result is empty" not in record.getMessage()
+
+
+def _silence_empty_det_warning() -> None:
+    """静音 RapidOCR logger 的空检测逐条告警（幂等挂载）。
+
+    兜底 OCR 在非对局页整链空转时每轮会刷十几条，单条毫无诊断价值；
+    其余 rapidocr 告警不受影响。
+    """
+    rapidocr_logger = logging.getLogger("RapidOCR")
+    if not any(isinstance(item, _EmptyDetFilter) for item in rapidocr_logger.filters):
+        rapidocr_logger.addFilter(_EmptyDetFilter())
+
+
 def create_rapidocr_ocr(suite: str = "v6"):
     """构造指定套件的 RapidOCR 引擎（v6=主引擎、v4=复核引擎），经 RapidOcrEngine 适配。
 
@@ -194,6 +231,8 @@ def create_rapidocr_ocr(suite: str = "v6"):
         suite, sha["det"][:8], sha["rec"][:8], _rapidocr_version(),
     )
     from rapidocr import RapidOCR
+
+    _silence_empty_det_warning()
 
     params = {
         "Det.limit_type": "max",

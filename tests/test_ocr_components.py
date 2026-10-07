@@ -14,7 +14,21 @@ from src.ocr.character_feature_repository import CharacterFeatureRepository
 from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr.recognizer import GeneralRecognizer
+from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
 from src.scripts.build_character_feature_cache import COMMON_OCR_CONFUSION_CHARACTERS, HEROES_PATH, required_characters
+
+# 真实 match_guide 默认布局（config/ocr_rois.default.json）：名称批次按 960 上限
+# 分 2 组（4+1 条），阵营批次分 2 组（3+2 条），一批识别共 4 次画布调用
+_MATCH_GUIDE_LAYOUT = OcrRoiLayout(
+    (2560, 1440),
+    (
+        OcrRoiSlot(name_roi=(780, 190, 55, 140), team_roi=(990, 120, 80, 120)),
+        OcrRoiSlot(name_roi=(1515, 190, 55, 140), team_roi=(1725, 130, 65, 90)),
+        OcrRoiSlot(name_roi=(31, 361, 61, 170), team_roi=(225, 310, 90, 115)),
+        OcrRoiSlot(name_roi=(2256, 374, 50, 150), team_roi=(2442, 304, 87, 99)),
+        OcrRoiSlot(name_roi=(2249, 971, 60, 165), team_roi=(2450, 930, 65, 90)),
+    ),
+)
 
 
 def test_recognizer_engine_loads_via_primary_getter(monkeypatch) -> None:
@@ -806,3 +820,94 @@ def test_save_results_writes_given_page_type(tmp_path) -> None:
 
     data = json.loads(json_path.read_text(encoding="utf-8"))
     assert data["page_type"] == "match_guide"
+
+
+def test_match_guide_empty_detection_short_circuits_per_slot_evidence() -> None:
+    """det 全空（错位页常态）时批次零产出即短路：仅剩 4 次批次调用，
+    逐槽双证据与阵营重试链不再对无字画面空转。"""
+
+    class _EmptyEverywhereEngine:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def ocr(self, _image, cls=False):
+            assert cls is False
+            self.calls += 1
+            return [None]
+
+    recognizer = GeneralRecognizer(
+        hero_names=["王濬", "王翦"], page_type="match_guide", layout=_MATCH_GUIDE_LAYOUT,
+    )
+    engine = _EmptyEverywhereEngine()
+    recognizer.adopt_engine(engine)
+
+    results = recognizer._recognize_match_guide(np.zeros((1440, 2560, 3), dtype=np.uint8))
+
+    assert engine.calls == 4
+    assert all(item["name"] == "" for item in results)
+
+
+def test_match_guide_slot_recheck_still_runs_when_batch_has_text() -> None:
+    """批次有产出而个别槽未决时，逐槽双证据照常触发——短路只针对批次整体零产出。"""
+
+    class _PartialCanvasEngine:
+        def __init__(self) -> None:
+            self.widths: list[int] = []
+
+        def ocr(self, image, cls=False):
+            assert cls is False
+            self.widths.append(image.shape[1])
+            if image.shape[1] > 400:  # 双槽批次画布（2×240 + 30 间隙）：仅槽 1 直读
+                line = [[[10, 10], [20, 10], [20, 30], [10, 30]], ("王濬", 0.9)]
+            else:  # 单条回退
+                line = [[[10, 10], [20, 10], [20, 30], [10, 30]], ("王", 0.9)]
+            return [[line]]
+
+    recognizer = GeneralRecognizer(
+        hero_names=["王濬", "王翦"],
+        page_type="match_guide",
+        layout=OcrRoiLayout(
+            (510, 120),
+            (OcrRoiSlot(name_roi=(0, 0, 80, 40)), OcrRoiSlot(name_roi=(90, 0, 80, 40))),
+        ),
+    )
+    engine = _PartialCanvasEngine()
+    recognizer.adopt_engine(engine)
+
+    results = recognizer._recognize_match_guide(np.zeros((120, 510, 3), dtype=np.uint8))
+
+    assert results[0]["name"] == "王濬"
+    # 1 次批次 + 槽 2 未决的 2 次逐槽（gamma 提亮 + plain 放大）
+    assert engine.widths == [510, 240, 240]
+
+
+def test_recognize_collects_det_stats_into_timing() -> None:
+    """识别收尾把主引擎 det 调用/空检统计并入 timing_ms，供阶段耗时日志聚合输出。"""
+
+    class _CountingEngine:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def ocr(self, _image, cls=False):
+            assert cls is False
+            self.calls += 1
+            return [None]
+
+        def reset_call_stats(self) -> None:
+            self.calls = 0
+
+        def drain_call_stats(self) -> tuple[int, int]:
+            stats = (self.calls, self.calls)
+            self.calls = 0
+            return stats
+
+    engine = _CountingEngine()
+    recognizer = GeneralRecognizer(
+        hero_names=["王濬", "王翦"], page_type="match_guide", layout=_MATCH_GUIDE_LAYOUT,
+    )
+    recognizer.adopt_engine(engine)
+
+    recognizer.recognize(np.zeros((1440, 2560, 3), dtype=np.uint8))
+
+    assert recognizer.timing_ms["det_calls"] == 4
+    assert recognizer.timing_ms["det_empty_calls"] == 4

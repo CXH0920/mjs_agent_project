@@ -449,6 +449,10 @@ class OcrWorker(QThread):
         recognizer_timing: dict[str, float] | None = None,
     ) -> None:
         timings = recognizer_timing or {}
+        det_calls = timings.get("det_calls")
+        det_stats = (
+            f"{timings.get('det_empty_calls', 0)}/{det_calls}" if det_calls is not None else "-/-"
+        )
         # healthy_no_match / matched_reused 是轮询常态（未发生真实识别），降 DEBUG
         # 避免每轮心跳刷 INFO；仅真实识别与异常路径保留 INFO
         log_timing = (
@@ -460,7 +464,7 @@ class OcrWorker(QThread):
             "OCR阶段耗时[%s/%s]: outcome=%s，模板置信度=%.4f，阈值=%.2f，缩放=%.4f，策略=%s，"
             "模板加载=%.1fms，模板匹配=%.1fms，模型初始化=%.1fms，"
             "名称预处理=%.1fms，名称OCR=%.1fms，名称纠错=%.1fms，"
-            "阵营预处理=%.1fms，阵营OCR=%.1fms，结果落盘=%.1fms，识别合计=%.1fms，总计=%.1fms",
+            "阵营预处理=%.1fms，阵营OCR=%.1fms，结果落盘=%.1fms，空检=%s，识别合计=%.1fms，总计=%.1fms",
             task.template_name,
             task.task_id[:8],
             outcome,
@@ -477,6 +481,7 @@ class OcrWorker(QThread):
             timings.get("team_preprocess", 0.0),
             timings.get("team_ocr", 0.0),
             result_save_ms,
+            det_stats,
             recognition_ms,
             (time.perf_counter() - task_started) * 1000,
         )

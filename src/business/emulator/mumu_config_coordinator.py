@@ -255,6 +255,10 @@ class MumuConfigCoordinator(QObject):
 
     def shutdown(self) -> None:
         self._operation_service.shutdown()
+        # signal.emit 形式的中继连接没有 QObject receiver，不随对话框销毁
+        # 自动解除；残留连接会在下次连接状态广播时对已销毁的对话框抛
+        # "Signal source has been deleted"（2026-10-07 实测），须显式断开。
+        self._capture_service.connection_changed.disconnect(self.connection_state_changed.emit)
 
     def _on_adb_detected(self, success: bool, adb_path: str, message: str) -> None:
         if success:

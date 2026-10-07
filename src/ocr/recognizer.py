@@ -134,7 +134,7 @@ class GeneralRecognizer:
 
     @property
     def timing_ms(self) -> dict[str, float]:
-        """返回最近一次识别各阶段的累计耗时（毫秒）。"""
+        """返回最近一次识别各阶段的累计耗时（毫秒）与 det 调用统计（det_calls/det_empty_calls）。"""
         return dict(self._timing_ms)
 
     # ── 识别 ──────────────────────────────────────────────────────────
@@ -149,6 +149,7 @@ class GeneralRecognizer:
             含候选、确认状态、长度模式和多路证据的槽位结果。
         """
         self._timing_ms = {}
+        self._reset_det_stats()
         if isinstance(image, Image.Image):
             image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
@@ -214,6 +215,7 @@ class GeneralRecognizer:
 
         final = self._resolver.resolve_page_names(results)
         self._recheck_unresolved_slots(final, prepared_slots)
+        self._record_det_stats()
         return final
 
     def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
@@ -244,7 +246,13 @@ class GeneralRecognizer:
         recognized_names = self._recognize_prepared_batch(
             name_slots, "name", evidence_by_slot=name_evidence,
         )
+        # 批次画布零文本行即整幅画面无名条可检（错位页常态）：逐槽双证据必然
+        # 同样空检，短路以免每槽 2 次、共 10 次空 det 调用刷空检告警
+        name_batch_has_text = any(name_evidence.values())
         recognized_teams = self._recognize_prepared_batch(team_slots, "team")
+        # 阵营同口径短路；但"批次读出字而归一化失败"必须保留逐槽重试——
+        # 那是书法体徽记的 v4 异构救回场景，只有批次零产出才允许跳过
+        team_batch_has_text = any(text for text, _confidence in recognized_teams.values())
         results: list[dict] = []
         for seat_index, _slot in enumerate(self._layout.slots, 1):
             prepared_name = name_slots.get(seat_index)
@@ -253,7 +261,9 @@ class GeneralRecognizer:
             evidence = list(name_evidence.get(seat_index, []))
             batch_text, batch_confidence = recognized_names.get(seat_index, ("", 0.0))
             initial = self._resolver.resolve_name_evidence(seat_index, evidence)
-            if self._resolver.requires_slot_recheck(initial, batch_text, batch_confidence):
+            if name_batch_has_text and self._resolver.requires_slot_recheck(
+                initial, batch_text, batch_confidence,
+            ):
                 self._append_single_name_evidence(
                     evidence, raw_name_slots[seat_index], seat_index,
                 )
@@ -261,7 +271,7 @@ class GeneralRecognizer:
             team_text, _ = recognized_teams.get(seat_index, ("", 0.0))
             prepared_team = team_slots.get(seat_index)
             team = self._normalize_team(team_text, seat_index)
-            if not team and prepared_team is not None:
+            if not team and prepared_team is not None and team_batch_has_text:
                 # 归一化失败（含批量画布读出非空乱码绕过原 `if not team_text`
                 # 回退旁路）即重试单条：先主引擎，再复核引擎——书法体徽记是
                 # v6 的引擎级弱项，B1 重放实测 18 个丢标签槽此链可救回 14 个
@@ -276,6 +286,7 @@ class GeneralRecognizer:
             results.append(name_result)
         final = self._resolver.resolve_page_names(results)
         self._recheck_unresolved_slots(final, name_slots)
+        self._record_det_stats()
         return final
 
     def _append_single_name_evidence(
@@ -459,6 +470,19 @@ class GeneralRecognizer:
 
     def _add_timing(self, key: str, started: float) -> None:
         self._timing_ms[key] = self._timing_ms.get(key, 0.0) + (time.perf_counter() - started) * 1000
+
+    def _reset_det_stats(self) -> None:
+        """清零主引擎空检统计，与本轮识别任务对齐统计窗口。"""
+        reset = getattr(self._ocr, "reset_call_stats", None)
+        if reset is not None:
+            reset()
+
+    def _record_det_stats(self) -> None:
+        """把本轮主引擎 det 调用与空检数并入耗时统计，替代逐条空检告警的聚合出口。"""
+        drain = getattr(self._ocr, "drain_call_stats", None)
+        if drain is None:
+            return
+        self._timing_ms["det_calls"], self._timing_ms["det_empty_calls"] = drain()
 
     # ── 辅助 ──────────────────────────────────────────────────────────
 

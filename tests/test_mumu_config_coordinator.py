@@ -179,6 +179,28 @@ def test_roi_layout_capture_and_save_are_separate_from_template_lifecycle(tmp_pa
     assert roi_config.user_path.exists()
 
 
+def test_shutdown_disconnects_connection_state_relay(tmp_path: Path) -> None:
+    """对话框关闭后，挂在常驻 CaptureService 上的连接状态中继必须解除。
+
+    signal.emit 形式的中继连接没有 QObject receiver，不随对话框销毁自动
+    清理；残留连接会在下次 ADB 状态广播时对已销毁对话框抛
+    "Signal source has been deleted"（2026-10-07 17:50 实测两条 ERROR）。
+    """
+    coordinator, capture, _ocr, _operation = _coordinator(tmp_path)
+    relayed: list[tuple[str, str]] = []
+    coordinator.connection_state_changed.connect(
+        lambda state, detail: relayed.append((state, detail)),
+    )
+
+    capture.connection_changed.emit("connected", "127.0.0.1:16448")
+    assert relayed == [("connected", "127.0.0.1:16448")]
+
+    coordinator.shutdown()
+    capture.connection_changed.emit("disconnected", "")
+
+    assert relayed == [("connected", "127.0.0.1:16448")]
+
+
 def test_persist_mumu_env_config_writes_eleven_dialog_keys(monkeypatch) -> None:
     """env 持久化固定写对话框可编辑的 11 键，部署键（GPU/线程/复检）不落盘。"""
     recorded: list[tuple[object, dict]] = []

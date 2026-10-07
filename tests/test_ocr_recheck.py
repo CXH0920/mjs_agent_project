@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from src.business.recognition import official_ocr_engines as engines_mod
 from src.config.env import load_env_config
-from src.ocr.engine_loader import RapidOcrEngine, create_rapidocr_ocr, primary_suite
+from src.ocr.engine_loader import RapidOcrEngine, _EmptyDetFilter, create_rapidocr_ocr, primary_suite
 from src.ocr.engine_loader import get_recheck_ocr_engine as _loader_get_recheck
 from src.ocr.recognizer import GeneralRecognizer
 from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
@@ -298,6 +298,49 @@ def test_rapidocr_engine_translates_empty_result() -> None:
             return types.SimpleNamespace(txts=None, boxes=None, scores=None)
 
     assert RapidOcrEngine(_FakeRapid()).ocr(np.zeros((4, 4), dtype=np.uint8)) == [None]
+
+
+class _EmptyOrHitRapid:
+    """det 替身：按构造参数决定每次调用返回零框还是命中。"""
+
+    def __init__(self, empty: bool) -> None:
+        self._empty = empty
+
+    def __call__(self, *_args, **_kwargs):
+        if self._empty:
+            return types.SimpleNamespace(txts=None, boxes=None, scores=None)
+        return types.SimpleNamespace(
+            txts=("王濬",), boxes=(np.array([[1, 2], [3, 2], [3, 4], [1, 4]]),), scores=(0.99,),
+        )
+
+
+def test_rapidocr_engine_counts_and_drains_empty_detections() -> None:
+    """空检计数随调用累计，drain 读取后清零；命中调用不计入空检。"""
+    empty_engine = RapidOcrEngine(_EmptyOrHitRapid(empty=True))
+    empty_engine.ocr(np.zeros((4, 4), dtype=np.uint8))
+    empty_engine.ocr(np.zeros((4, 4), dtype=np.uint8))
+
+    assert empty_engine.drain_call_stats() == (2, 2)
+    assert empty_engine.drain_call_stats() == (0, 0)  # 读取即清零
+
+    hit_engine = RapidOcrEngine(_EmptyOrHitRapid(empty=False))
+    hit_engine.ocr(np.zeros((4, 4), dtype=np.uint8))
+    assert hit_engine.drain_call_stats() == (1, 0)
+
+
+def test_empty_det_filter_silences_only_empty_detection() -> None:
+    """过滤器只滤空检测告警文本，rapidocr 其余记录照常通过。"""
+    import logging
+
+    empty = logging.LogRecord(
+        "RapidOCR", logging.WARNING, "p", 1, "The text detection result is empty", None, None,
+    )
+    other = logging.LogRecord(
+        "RapidOCR", logging.WARNING, "p", 1, "model load failed", None, None,
+    )
+
+    assert _EmptyDetFilter().filter(empty) is False
+    assert _EmptyDetFilter().filter(other) is True
 
 
 # ── 双套件构造（v6 主 / v4 复核）────────────────────────────────────────
