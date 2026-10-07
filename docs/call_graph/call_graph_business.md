@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-10-01）
+## 当前实现基线（2026-10-06）
 
 成功语义以子进程退出码为准，`RESULT: FAIL=` 不再是服务协议。AI CLI 失败时以 `sys.exit(1)` 返回；`GuideFetchService` 和 `SynergyFetchService` 只在 `exit_code == 0` 时发送 `fetch_completed(True, ...)`，非零退出时由基类发射 `error_occurred(msg)`；`HeroFetchService` 无论成败都发 `fetch_completed(exit_code == 0)`。
 
@@ -557,7 +557,7 @@ PollCoordinator._on_poll_tick()
 
 ## 官方榜单数据导入
 
-官方榜单导入不经过 QProcess、ADB 或页面模板匹配，但会作为一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列。worker 在自己的线程中向 `OfficialDataImportService` 注入已预热的 PaddleOCR 引擎，串行处理全部已选图片，并经 `CaptureService` 信号向弹窗报告进度。
+官方榜单导入不经过 QProcess、ADB 或页面模板匹配，但会作为一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列。worker 在自己的线程中向 `OfficialDataImportService` 注入已预热的 OCR 引擎（B1 起 v6 主引擎），串行处理全部已选图片，并经 `CaptureService` 信号向弹窗报告进度。
 
 ```
 MainWindow._open_official_data_import()
@@ -587,7 +587,7 @@ MainWindow._open_official_data_import()
             -> [每行] _recognize_row()
                -> 排名/普通单元格: _recognize_cell()
                -> 武将单元格: _recognize_name_cell()
-                  -> [同首字无法唯一确认] self._rare_char_engine -> OfficialOcrEngines.rare_char（懒加载，v6 优先回退 chinese_cht）
+                  -> [同首字无法唯一确认] self._rare_char_engine -> OfficialOcrEngines.rare_char（懒加载，B1 起只取复核引擎 v4；开关关闭或不可用时 rare_char_failed=True 保留原结果，chinese_cht 兜底链已退役）
                   -> _recognize_name_with_engine() -> 仅在当前候选白名单内纠正
                   -> status_callback("正在执行罕见字兜底识别")
                -> 胜率单元格: 预计算 OCR + official_board_parser.recognize_rate_with_templates()
@@ -651,7 +651,7 @@ _recognize_name_cell(cell)
 | 函数/信号 | 调用方 | 关键下游 | 说明 |
 |---|---|---|---|
 | `CaptureService.submit_official_import(paths)` | `OfficialDataImportDialog._start_import()` | `OcrWorker.submit(OfficialImportTask)` | 空选择/重叠任务抛错；转发进度、完成和失败信号 |
-| `OcrWorker._execute_official_import(task)` | worker 队列 | `OfficialDataImportService.import_pages()` | 复用同线程 PaddleOCR 引擎并完整执行整批任务 |
+| `OcrWorker._execute_official_import(task)` | worker 队列 | `OfficialDataImportService.import_pages()` | 复用同线程 OCR 引擎并完整执行整批任务 |
 | `import_pages(key, image_paths, progress_callback, status_callback)` | Worker | `official_board_parser`、OCR、复核、CSV 原子写入 | 按列表顺序合并分页，全部校验后一次覆盖 CSV；失败抛错并保存复核会话 |
 | `official_board_parser.detect_layout / extract_panels / find_data_boundaries / restore_missing_boundaries / prepare_rate_templates / recognize_rate_with_templates / validate_exile_row_counts` | `import_pages()` | OpenCV、确定性图像与数字模板算法 | 不持有 OCR 模型、词表或输出状态 |
 | `_recognize_name_cell()` | `_recognize_row()` | 候选汇总、逐字兜底、受限繁体兜底、词表校正 | 仅官方导入使用，不影响常规 OCR |
@@ -751,7 +751,7 @@ src.ui.data_admin.official_import_review_dialog
 | `src.ocr.recognizer.GeneralRecognizer` | 由 OcrWorker 缓存和调用 |
 | `src.ocr.official_board_parser` | 官方榜单版式切分、横线检测、胜率数字模板 |
 | `src.ocr.character_similarity.CharacterSimilarityService` | 官方榜单武将词表纠错 |
-| `src.ocr.paddle_loader.create_paddle_ocr` | 官方榜单按需创建简体 / 繁体引擎 |
+| `src.ocr.engine_loader.get_primary_ocr_engine` / `get_recheck_ocr_engine` | 官方榜单主引擎（v6，与识别管线同源）与复核引擎（v4）按需创建；chinese_cht 兜底链已退役 |
 | `src.config.env.get_mumu_config() / save_env_file() / get_api_config() / PROVIDER_PRESETS` | 模拟器配置与 API 档案读写 |
 | `src.scraper.ai.prompt_utils.estimate_cost / estimate_item_cost` | `ai_cost.estimate_generation_cost()` 成本估算 |
 | `src.scraper.ai.json_extract.extract_json` | 分类建议 JSON 解析（知识库范围） |
@@ -1049,4 +1049,19 @@ AnnouncementService.restore_heroes(entry_ids=None)
 | `ignore_entry(ns, id, name, state, hash, path)` | `baike_ignore_store.py` | `ignore_card()` / `ignore_hero()` | 追加/更新忽略条目 |
 | `remove_entry(ns, id, path)` | `baike_ignore_store.py` | `restore_cards()` / `restore_heroes()` | 删除指定忽略条目 |
 
+---
 
+## 十二、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增调用链**
+- **任务台账**（c88bf63）：`BaseFetchService._on_finished()` -> `task_ledger.record_task(service_name, ok, exit_code, failed, duration_s, reason)` -> JSONL 追加 `logs/task_results.jsonl`（reason 优先取 CLI 失败摘要行 `[错误] 生成失败：N 项…`，其次"思考过程耗尽输出额度"，否则退出码）
+- **QProcess 看门狗**（b3327f1）：`_start_process()` 尾部 `_start_watchdog()` -> QTimer 单发 30 分钟 -> `_on_watchdog_timeout()` 记 ERROR + `process.kill()`；`_on_finished`/`_on_error` 先 `_stop_watchdog()`
+- **OCR worker 首建同步接线**（c0f2143，2026-10-02）：`CaptureService` 构造 `OcrTaskCoordinator(on_worker_created=self._on_worker_created)` -> `ensure_worker()` 持 `_worker_lock` 双检内同步回调接线（`task_completed` -> 自身与 `OfficialImportGateway.on_task_completed`）后才 `worker.start()`——替代原 `worker_created` 信号，消除跨线程首建 Queued 投递致官方导入 `_pending` 永久锁死的竞态
+
+**修正**
+- 官方导入引擎策略（1694ab7）：`OfficialOcrEngines.main` 改 `get_primary_ocr_engine()`（v6，与识别管线同源）；`rare_char` 只取复核引擎（v4），`chinese_cht` 兜底链退役
+- stderr tqdm 降噪（1426686）：`_read_stderr` 转发链中含 `%|` 的行降 DEBUG（其余保持 WARNING）
+- `ocr_worker` 退役强杀兜底（b3327f1）：`os._exit(1)` 前先 `logging.shutdown()`，退出码改 0
+- `data_management_service._ManagerTransaction._backup` 委托 `json_repository.snapshot_to_backups()`（8a46a43 移除失效 timestamp 参数）

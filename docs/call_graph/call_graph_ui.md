@@ -7,7 +7,7 @@
 
 ---
 
-## 当前实现基线（2026-09-30）
+## 当前实现基线（2026-10-06）
 
 ```
 MainWindow.__init__()
@@ -597,10 +597,12 @@ PollCoordinator._on_poll_tick()
    -> frames_match(prev_fp, new_fp)                           [MAD 阈值 3.0]
    -> [无变化] _track_idle_watch()
       -> _idle_watch_ticks += 1
-      -> [_idle_watch_ticks >= 5 * 12]                        [IDLE_PAUSE_MINUTES=5]
+      -> [_idle_watch_ticks >= ceil(5 * 60 / interval)]        [IDLE_PAUSE_MINUTES=5]
          -> ocr_service.pause_for_idle()                      [暂停轮询]
          -> poll_state_changed.emit("idle_paused", "画面静止")
-   -> [有变化] _reset_idle_watch()                             [重置计数]
+   -> [RETRYABLE_CONNECTION（设备离线）] 计数不清零、按"无进展"累计       [f9f3b53：
+      离线期间闲置暂停仍可达成，消除约 2s 间隔无限重连刷 ERROR]
+   -> [其余非健康（RETRYABLE_CAPTURE/OCR 等）] _reset_idle_watch()      [重置计数]
 ```
 
 `frame_fingerprint.py` 提供 `compute_fingerprint()` 和 `frames_match()` 两个函数，MAD 阈值 3.0 由 `calibrate_idle_threshold.py` 对真实截图序列标定。三路交互恢复：用户点击任意按钮、窗口切换、手动触发截图均可恢复轮询。
@@ -685,6 +687,9 @@ RecommendationPanel.update_recommendations(data)
         -> combo.hero1_id in _current_hero_ids AND combo.hero2_id in _current_hero_ids
         -> self._matched_combos.append(combo)
      -> sort by (-rating, hero1_name, hero2_name)
+     -> ratings_computed.emit(best_rating)                          [Signal(object)：int 键 dict 负载
+       必须按 object 原样送达——Signal(dict) 会按 QVariantMap 编译、int 键转换失败
+       致槽收到空 dict、角标静默失效（0ffed36）；宿主据此刷卡片角标]
      -> _update_combo_badges()                                     [头像右上角「实战 ★N」金色徽章]
         -> [遍历 combo.hero1_id / combo.hero2_id] best_rating[hero_id] = max(...)
         -> [遍历 card] card.set_combo_badge("实战 ★N" if rating else None)
@@ -912,6 +917,15 @@ HeroDetailPanel._on_info_delete()                              ["删除武将"�
 ### 5.4 攻略编辑链路
 
 ```
+HeroDetailPanel._on_guide_edit() / _on_guide_delete()
+  -> _notify_generation_busy()                                     [eebd622：busy_check 注入自主窗口，
+     攻略生成优先于相性生成；忙碌时 QMessageBox.warning 拦截并中止]
+     -> [返回 True] return                                          [AI 子进程按批全量覆盖写，
+       期间人工修改会被下一次批量提交静默冲掉]
+  -> [空闲] 进入编辑对话框流程
+```
+
+```
 HeroDetailPanel._on_guide_edit()                               ["编辑攻略"按钮]
   -> GuideEditDialog(self._current_guide, self._hero_mgr, parent)
      -> _setup_ui():
@@ -941,6 +955,13 @@ HeroDetailPanel._on_guide_delete()                             ["删除攻略"�
 ```
 
 ### 5.5 相性浏览与编辑链路
+
+```
+HeroDetailPanel._on_synergy_edit() / _on_synergy_delete()
+  -> _notify_generation_busy()                                     [eebd622 同上；四个编辑/删除入口
+     在打开对话框之前前置调用，武将信息编辑/删除不加守卫]
+  -> [空闲] 进入编辑对话框流程
+```
 
 ```
 HeroDetailPanel.show_hero(hero_id)
@@ -1505,3 +1526,17 @@ AnnouncementDialog / 顶部横幅:
 ## 十一、知识库维护界面（已迁出）
 
 知识库维护工作台（`MaintenanceWorkspace` / `RagMaintenancePanel`）、索引精化对话框（`IndexRefinementDialog` → `SuggestController` → `RefinementSession`）、元规则母本面板（`RuleDocPanel`）与四个数据源页签（`CardPointsPanel` / `EquipAttrsPanel` / `SpecialCardsPanel` / `HeroClassificationPanel`）的调用链已整体迁至 [./call_graph_rag.md](./call_graph_rag.md)，此处不再重复。
+
+---
+
+## 六、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增/修改链路**
+- ComboStrip 信号契约（0ffed36）：`ratings_computed` 改 `Signal(object)`——int 键 dict 打穿 QVariantMap 致槽收空 dict、"实战 ★评级"角标静默失效；回归测试 `tests/test_combo_strip.py`（§4.3 已更新）
+- 资料库编辑忙碌守卫（eebd622）：主窗口构造 `HeroBrowser(busy_check=...)`（攻略生成优先于相性生成）→ `HeroDetailPanel._notify_generation_busy()` 在相性/攻略四个编辑删除入口打开对话框前拦截（§5.4/§5.5 已更新）；武将信息编辑/删除不加守卫
+- 闲置暂停设备离线分支（f9f3b53）：`_track_idle_watch()` 对 `RETRYABLE_CONNECTION` 不清零、按"无进展"累计（§3.3b 已更新）——消除离线无限重连刷 ERROR（约 1800 条/小时 → 约 12 条/小时）
+- 启动自动公告检查（c88bf63）：`MainWindow` 启动 2 分钟后 `QTimer.singleShot(120_000, coordinator.auto_check_if_due)`——每日最多一次（`AUTO_CHECK_MARKER` 标记先写），忙碌/冷却静默跳过，只提示不自动应用
+- 关于对话框版本（80cc75b）：`dialog_coordinator` 改读 `app_version()`（`src/config/version.py`，原硬编码 v0.1.0）
+- 截图未落盘提示（80cc75b）：`peak_select_panel` 截图保存路径 None 时状态栏 TONE_WARNING"截图未落盘（保存中或失败，详见日志）"

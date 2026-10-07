@@ -6,13 +6,13 @@
 
 ---
 
-## 当前实现基线（2026-10-01）
+## 当前实现基线（2026-10-06）
 
 AI 生成按批原子提交：每批校验成功结果立即提交，失败项仅保留对应旧数据；任务汇总失败时以退出码 `1` 结束，成功项不受影响。
 
 双生成器：API 模式（`AIBatchGenerator -> httpx -> 供应商端点`）/ 浏览器模式（`PlaywrightGenerator -> Edge -> chat.deepseek.com`）。API 模式按 `provider` 适配多供应商档案（deepseek / openai / ollama / openai-compatible，取自 `config/api_profiles.json` 唯一启用档案），仅 `provider=deepseek` 注入私有参数 `thinking.type=disabled`；`requires_key=False` 的 ollama 本地服务允许空 Key。
 
-API 模式输出上限 `max_output_tokens`（默认 16384，按供应商语义可上调）；`_request_content()` 在正文被"思考过程耗尽输出额度"截断时，最多重试 `max_retries` 次；`_call_api()` 对 HTTP 429 优先读 `Retry-After` 头（钳到 3-30s，无头则 5/10/15s）退避、408/5xx/连接异常按 2^attempt 指数退避，400/401/403/404/422 立即失败，连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client 避免级联失败；`cancel()` 置 `_cancelled` 标志使重试循环在下次循环开头退出；每次重试向 stdout 输出 `[重试]` 行，`_log_usage()` 记录 reasoning/content token 拆分。
+API 模式输出上限 `max_output_tokens`（默认 32768，思考+正文共享额度，按供应商上限可调）；guide 温度 0.55（cfca666，相性 0.3 不变）；连接类异常重试重建 client 时经 `_build_timeout()` 保持分层超时（connect/pool=5s、write=30s、read=http_timeout，4720366）；`_request_content()` 在正文被"思考过程耗尽输出额度"截断时，最多重试 `max_retries` 次；`_call_api()` 对 HTTP 429 优先读 `Retry-After` 头（钳到 3-30s，无头则 5/10/15s）退避、408/5xx/连接异常按 2^attempt 指数退避，400/401/403/404/422 立即失败，连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client 避免级联失败；`cancel()` 置 `_cancelled` 标志使重试循环在下次循环开头退出；每次重试向 stdout 输出 `[重试]` 行，`_log_usage()` 记录 reasoning/content token 拆分。
 
 攻略与相性默认启用 RAG 官方规则语料注入（`rag_prompt.py`），`--no-rag` 关闭；RAG 运行时异常自动降级为经典模式，循环输出一次 `[RAG]` 提示。RAG 开启时 `build_*_prompt()` 兜底注入 `load_card_system()` 卡牌体系段防止牌名串味；RAG 关闭且无语料时兜底注入 `load_core_rules()` 完整核心规则摘要。技能行由 `_skill_lines()` 构建：语料块已注入的技能指针化省 token，未注入的自动回退完整描述并附结算后缀。
 
@@ -89,7 +89,7 @@ ai_batch.py -> ai/batch.py:main()                             [兼容入口 -> �
 | `main()` | `ai/batch.py` | QProcess 子进程入口 | `load_heroes()`, `_load_existing_*()`, `run_*_generation()` |
 | `load_heroes()` | `ai/utils.py` | `ai_batch.main()` | `HeroManager.load()`, `Hero.model_validate()` |
 | `resolve_api_config()` | `config/env.py` | `ai_batch.main()` | 任务侧唯一 API 解析入口：`api_profiles.json` 唯一启用档案 → config.env 旧键 → 环境变量 → 默认值；返回 provider/api_key/api_url/model |
-| `get_runtime_params()` | `config/env.py` | `ai_batch.main()` | 获取 RPM、最大重试次数、HTTP 超时、输出 token 上限（默认 16384） |
+| `get_runtime_params()` | `config/env.py` | `ai_batch.main()` | 获取 RPM、最大重试次数、HTTP 超时、输出 token 上限（默认 32768） |
 | `_load_existing_guides()` | `ai/batch.py` | `main()` | `GuideManager.load()`；错误文件备份后写回有效记录 |
 | `_load_existing_synergies()` | `ai/batch.py` | `main()` | `SynergyManager.load()`；错误文件备份后写回有效记录 |
 | `_show_cost_estimate()` | `ai/batch.py` | `main()` | `_print_mode_estimates()` -> `estimate_cost(..., use_rag)` 分别输出 RAG/经典 |
@@ -119,7 +119,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
            -> _skill_lines(skills, hero_id, rag)                 [语料块已注入→指针化，否则完整描述+结算]
            -> [is_rag_enabled()] load_card_system()              [RAG 开：卡牌体系段兜底防串味]
            -> [not rag_enabled and not rag] load_core_rules()    [RAG 关：完整核心规则摘要兜底]
-        -> self._request_content(messages, temperature=0.7, label=hero.name)
+        -> self._request_content(messages, temperature=0.55, label=hero.name)
            -> [重试循环 attempt=1..max_retries]
               -> self._call_api(messages)                         [API 请求]
                  -> [循环开头] _cancelled -> 返回 None            [取消标志：面板销毁/中止]
@@ -130,7 +130,7 @@ generation.run_guide_generation(heroes, generator, guide_path, existing_guides, 
                  -> [HTTP 429] _retry_wait(status, attempt, headers) [Retry-After 钳到 3-30s，无头则 max(5*attempt,3)]
                     [HTTP 408/5xx] 2^attempt 秒
                     [HTTP 400/401/403/404/422] 立即抛错失败，不重试
-                 -> [连接异常 _CONN_ERRORS] close()+重建 httpx.Client [避免 RemoteProtocolError 级联]
+                 -> [连接异常 _CONN_ERRORS] close()+重建 httpx.Client(timeout=_build_timeout()) [避免级联失败；分层超时在重建时保持]
                  -> print("[重试] ...")                            [stdout 进度白名单放行]
               -> _read_completion_content(response, max_output_tokens)
                  -> [finish_reason=="length" or content 为空] 返回 None (额度耗尽)
@@ -392,7 +392,7 @@ src.scripts.run_synergy_drift                  -> AIBatchGenerator.generate_syne
 | `src.data.{hero,guide,synergy}_manager` | 断点加载逐条校验；错误文件备份为 `.corrupt-时间戳.json` 后仅写回有效记录 |
 | `src.config.env.resolve_api_config()` | 任务侧唯一 API 解析入口（多 API 档案唯一启用档案 → config.env 旧键 → 环境变量 → 默认值） |
 | `src.config.env.PROVIDER_PRESETS` | 供应商语义：`requires_key` 判定 Key 是否必填（ollama 本地服务可空） |
-| `src.config.env.get_runtime_params()` | 获取 RPM、最大重试、HTTP 超时、输出 token 上限（默认 16384） |
+| `src.config.env.get_runtime_params()` | 获取 RPM、最大重试、HTTP 超时、输出 token 上限（默认 32768） |
 | `src.config.env.get_model_pricing()` | 按 `config/model_pricing.json` 取模型单价，用于 dry-run 与结束汇总估价 |
 | `config/api_profiles.json` | 多 API 档案（多供应商/多账号，启用互斥；含 Key，已 gitignore） |
 | `src.config.logging_config.setup_logging()` | 日志初始化 |
@@ -411,7 +411,7 @@ src.scripts.run_synergy_drift                  -> AIBatchGenerator.generate_syne
 | 重试 | `_request_content` 重试额度耗尽（2^attempt）；`_call_api` 429 优先读 Retry-After（钳到 3-30s）、无头则 5/10/15s，其余 2^attempt；400/401/403/404/422 立即抛错失败；每次重试 stdout 输出 `[重试]` 行 | JSON 提取失败时发送格式纠正消息重试一次 |
 | Token 统计 | API 返回 usage（含 reasoning/content 拆分） | 无（返回 None） |
 | 成本估算 | 支持 dry-run（RAG/经典双模式） | 不支持 |
-| 输出额度 | `max_output_tokens` 参数（默认 16384，config.env 可调） | 无限制（浏览器模式） |
+| 输出额度 | `max_output_tokens` 参数（默认 32768，config.env 可调） | 无限制（浏览器模式） |
 | RAG 预算 | `RAG_PROMPT_CHARS`（攻略，默认 6000）/ `RAG_SYNERGY_PROMPT_CHARS`（相性，默认 6000） | `RAG_BROWSER_PROMPT_CHARS`（默认 3000） |
 | 取消 | `cancel()` 置 `_cancelled`，重试循环下次循环开头退出（不打断 in-flight 请求，靠超时退出） | 无取消机制 |
 | 连接健壮性 | 连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client | 依赖页面稳定性（`_page_diagnostics()` 辅助排查选择器失效） |
@@ -428,7 +428,7 @@ src.scripts.run_synergy_drift                  -> AIBatchGenerator.generate_syne
 | `_show_cost_estimate()` | `ai/batch.py` | `main()` | `_print_mode_estimates()` -> `estimate_cost()` |
 | `_print_token_summary()` | `ai/batch.py` | `main()` | `estimate_cost_by_tokens()` |
 | `_check_api_key()` | `ai/batch.py` | `main()` | `PROVIDER_PRESETS.requires_key` |
-| `AIBatchGenerator.__init__()` | `api_generator.py` | `batch.main()` / `refinement_service.build_generator()` | `PROVIDER_PRESETS.requires_key` Key 语义校验（不满足抛 ValueError）；`httpx.Client()`；初始化限速器与 `_cancelled` |
+| `AIBatchGenerator.__init__()` | `api_generator.py` | `batch.main()` / `refinement_service.build_generator()` | `PROVIDER_PRESETS.requires_key` Key 语义校验（不满足抛 ValueError）；`httpx.Client(timeout=_build_timeout())` 分层超时（connect/pool=5s、write=30s、read=http_timeout）；初始化限速器与 `_cancelled` |
 | `AIBatchGenerator.generate_guide()` | `api_generator.py` | `generation.py` | `load_prompt()`, `build_guide_prompt()`, `_request_content()`, `extract_json()`, `validate_guide()` |
 | `AIBatchGenerator.generate_synergy()` | `api_generator.py` | `generation.py` / `scripts/run_synergy_drift.py` | `load_prompt()`, `build_synergy_prompt()`, `_request_content()`, `extract_json()`, `validate_synergy()` |
 | `AIBatchGenerator._request_content()` | `api_generator.py` | `generate_guide/synergy` | `_call_api()`, `_read_completion_content()`, `_log_usage()` |
@@ -480,3 +480,19 @@ src.scripts.run_synergy_drift                  -> AIBatchGenerator.generate_syne
 | `estimate_cost_by_tokens(input, output, model)` | `prompt_utils.py` | `_print_token_summary()` | `get_model_pricing()` |
 
 ---
+
+---
+
+## 六、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增链路**
+- **定向重试**（c88bf63）：`ai_batch.main() --retry-failed`（仅 --guide）-> `_load_retry_items()` 读 `logs/ai_last_failures.json` -> heroes 过滤到失败项（按 name 或 id 匹配）+ 强制 update 模式 -> 结束打印 `[定向重试] 上次失败 N 项，本次恢复 M 项，仍失败 K 项`；全部成功后 `unlink(missing_ok=True)` 清清单；生成结束有失败时 `_save_last_failures()` 落盘 `{ts, guide, synergy_full, failed_items}`
+- **写前快照**（d2c5b83）：`main()` 加载既有数据前对 `guide_path`/`synergy_path` 各 `snapshot_to_backups()` 一次（每次运行一次，非每 10 条一批）
+- **prompt 工程纪律**（cfca666，仅改 docs/prompts/ 两文件 + 温度）：相性四层决策门（score=协同增量，先过门再打分）+ 锚例校准（分布预期 + 三档真实锚例，膨胀映射删除）；攻略 JSON 纪律（JSON 必须是全文最后一个 ```json 代码块、description 单行转义、字数 1200-2000）+ 联动判定强化（技能两两配对、输出恰好是输入才算联动、禁止硬凑循环）+ 牌名核对；guide 温度 0.7 → 0.55。解析代码零改动（仍走 `extract_json` 四段回退）
+
+**修正**
+- httpx 超时分层化（4720366）：`_build_timeout()` 单一方法供 `__init__` 与重试重建两处共用
+- `MAX_OUTPUT_TOKENS` 16384 → 32768（cf9c927，三处同步）
+- `utils._save_json` 委托 `json_repository.atomic_write_json`（9737d52）

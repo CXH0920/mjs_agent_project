@@ -1,9 +1,9 @@
 # 模块：业务服务层
 
 > 对应目录：`src/business/`
-> 职责：QProcess 子进程管理、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理
+> 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-10-01
+> 文档日期：2026-10-06
 
 ---
 
@@ -11,7 +11,7 @@
 
 本层是 UI 层和采集层之间的**桥梁**，负责：
 
-1. **QProcess 子进程管理** — 构建 CLI 参数、启动/监控/终止子进程、转发 stdout/stderr、清理临时文件
+1. **QProcess 子进程管理** — 构建 CLI 参数、启动/监控/终止子进程、转发 stdout/stderr、清理临时文件；30 分钟看门狗兜底（超时 kill + ERROR）与任务结果台账（`task_ledger`，跨日志轮转窗口留痕）
 2. **ADB 截图业务编排** — 管理 AdbCapture 生命周期，协调截图 → 模板匹配 → OCR 的流程，并提供选将推荐 / 巅峰赛 / 对局攻略三板块共享的单次截图入口
 3. **OCR 控制服务** — 模板管理、轮询会话与退避控制、冷却管理，以及会话代数取消
 4. **模拟器后台操作** — 独立执行设备探测与 ADB 会话操作，避免实例枚举阻塞模板截图
@@ -68,7 +68,8 @@ src/business/
 ├── announcement/
 │   └── announcement_service.py        # 公告检查与百科 diff 服务（线程 + Qt 信号）
 └── common/
-    └── script_runner.py               # QProcess 异步执行 Python 脚本公共封装
+    ├── script_runner.py               # QProcess 异步执行 Python 脚本公共封装（含 30 分钟看门狗）
+    └── task_ledger.py                 # 任务结果台账（JSONL 追加 logs/task_results.jsonl，跨日志轮转窗口留痕）
 ```
 
 `emulator` 只向 `recognition` 依赖 OCR 服务和任务类型；各二级包的
@@ -129,6 +130,12 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 **失败消息来源**（`_process_failure_message`）：优先取 CLI 结束前输出的失败摘要行 `^\s*\[错误\]\s*生成失败：(.+)$`（多行搜索，部分成功时比单个错误标记更准确），其次在完整 stdout/stderr 缓冲中识别"思考过程耗尽输出额度"并作为明确原因透传，其余失败显示"进程退出码: N"。基类在退出码非零时发射 `error_occurred(msg)`；Guide/Synergy 仅在退出码为 0 时发 `fetch_completed(True, ...)`，Hero 无论成败都发 `fetch_completed(exit_code == 0)`。完整 stdout/stderr 缓冲只用于失败原因识别，结束后立即清空，不再整体写入业务日志。
 
 **失败项收集**：`_dispatch_stdout_line` 在转发每行 stdout 时按 `\[(\d+)/(\d+)\]\s+(.+?)\s+FAIL(?:\s|$)` 把失败项名（武将名/相性对名）追加到 `_failed_items`，对外通过 `failed_items` 属性暴露；工作流出错弹窗的"查看详情"据此列出失败清单，而非仅显示退出码。`_start_process` 每次启动前清空该列表与全部缓冲。
+
+**看门狗（b3327f1）**：`_WATCHDOG_TIMEOUT_MS = 30*60*1000`，`_start_process` 尾部 `_start_watchdog()` 开启 QTimer 单发定时器，`_on_finished` / `_on_error` 先 `_stop_watchdog()`；超时回调记 ERROR（含超时秒数）后 `process.kill()`——消除 AI 生成卡网络时 `_is_busy` 永久 True 只能手点取消的挂死。
+
+**任务台账（c88bf63，`common/task_ledger.py`）**：`_on_finished` 调 `record_task(self._service_name, ok=exit_code==0 and not self._cancel_requested, exit_code=..., failed=len(self._failed_items), duration_s=..., reason=...)` 逐任务追加 JSONL 到 `logs/task_results.jsonl`——日志按 10MB×5 轮转（65~78 天窗口），失败痕迹会随轮转消失，台账是唯一能跨窗口留住"某天某任务是否失败"的记录。reason 优先取 CLI 失败摘要行，其次"思考过程耗尽输出额度"，否则退出码。
+
+**stderr tqdm 降噪（1426686）**：子进程 stderr 文本含 `%|`（tqdm 进度条特征，权重加载走 stderr 属正常行为）降为 DEBUG，其余 stderr 保持 WARNING——原一律 WARNING 曾占 ai_generation.log 中 89% 的 WARNING 噪声。
 
 **进度协议**：`fetch_utils.parse_generation_event` 把 `[i/N] ... START/OK/FAIL/SKIP`、`[重试]`、`[休息]` 等 CLI 协议行解析为 `GenerationEvent`，与白名单过滤共用同一解析源。Guide 在带 `(current, total)` 的事件（start/ok/fail/skip）上推进 `progress_value`；Synergy 只在结果落定（ok/fail/skip）后推进，避免 START 行先推进度条。
 
@@ -192,7 +199,7 @@ OcrService.poll_tick → PollCoordinator._on_poll_tick()
 
 `submit_ocr_task()` 的参数集为 `(image, hero_names, template_name, recognize=True, rois=None, match_template=True, fallback_on_template_miss=False, allow_result_reuse=False)`；`fallback_on_template_miss=True` 用于对局攻略任务，模板未命中仍继续 OCR 以保留跳转判断素材。轮询任务命中一次页面后由 `OcrService.set_task_cooldown()` 按任务记冷却（`POLL_MATCH_COOLDOWN_MS`，`hero_selection` 的时长取 `mumu_hero_selection_cooldown` 配置），冷却中的任务不进入 `due_poll_tasks()`，窗口期内该任务不再匹配、不 OCR。
 
-**OCR 预热**：`warmup_ocr_model()` 把模型加载、特征预热与推理预热作为特殊 `OcrTask` 投入同一串行队列（状态 `idle/warming/ready/failed`，经 `ocr_warmup_state_changed` 广播；状态机在 `OcrTaskCoordinator`，CaptureService 保留门面）；`wait_ocr_warmup(timeout_ms=15_000)` 供主窗口显示前的启动画面阶段阻塞等待——Paddle 初始化期间长时间持有 GIL，若在事件循环运行后再预热会卡住界面。
+**OCR 预热**：`warmup_ocr_model()` 把模型加载、特征预热与推理预热作为特殊 `OcrTask` 投入同一串行队列（状态 `idle/warming/ready/failed`，经 `ocr_warmup_state_changed` 广播；状态机在 `OcrTaskCoordinator`，CaptureService 保留门面）；`wait_ocr_warmup(timeout_ms=15_000)` 供主窗口显示前的启动画面阶段阻塞等待——引擎初始化期间长时间持有 GIL，若在事件循环运行后再预热会卡住界面。
 
 **2026-09 变更**：
 - **ADB raw 帧截图提速（cd35c98）**：`capture_for_poll()` 直接返回 numpy 数组（经 `_adb_executor` 排队），与手动截图、模板截图互斥；`AdbCapture.screencap_raw()` 跳过 PIL 解码直接返回 PNG bytes，大幅降低轮询路径的 IO 与解码开销。
@@ -263,7 +270,7 @@ MumuConfigDialog
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务接收 `OcrWorker` 注入的 PaddleOCR 引擎，负责识别编排、复核记录与 CSV 持久化。按职责域拆分后的协作模块：武将名纠错与词表消解纯规则在 `name_resolution.HeroNameResolver`（服务与复核对话框共用同一实例），双 OCR 引擎懒加载与罕见字兜底策略在 `official_ocr_engines.OfficialOcrEngines`（worker 经服务的 `ocr_engine` / `rare_char_ocr_engine` property 跨任务移交引擎）。目标仍是用视觉行边界确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
+该服务处理本地官方榜单图片，不依赖 ADB 或模板匹配。固定版式、横线检测、单元格切分和胜率数字模板算法位于 `src.ocr.official_board_parser`；服务接收 `OcrWorker` 注入的 OCR 引擎，负责识别编排、复核记录与 CSV 持久化。按职责域拆分后的协作模块：武将名纠错与词表消解纯规则在 `name_resolution.HeroNameResolver`（服务与复核对话框共用同一实例），双 OCR 引擎懒加载与罕见字兜底策略在 `official_ocr_engines.OfficialOcrEngines`（worker 经服务的 `ocr_engine` / `rare_char_ocr_engine` property 跨任务移交引擎；B1 起 `main` 与识别管线同源取 v6 主引擎，`rare_char` 只取 v4 复核引擎——`chinese_cht` 繁体兜底链已退役）。目标仍是用视觉行边界确定行，而不是按 OCR 成功数量排列，避免漏识别一个名称后其余排名整体错位。
 
 ```
 OfficialDataImportDialog
@@ -272,7 +279,7 @@ OfficialDataImportDialog
      -> OcrWorker.submit(OfficialImportTask)
         -> OfficialDataImportService.import_pages()（按已选图片顺序串行执行）
            -> official_board_parser 读取图片、检测横线并按列比例裁剪单元格
-           -> 简体 PaddleOCR；名称歧义时在原候选白名单内使用繁体模型 / 胜率数字模板识别
+           -> 简体主引擎（v6）；名称歧义时在原候选白名单内用复核引擎（v4） / 胜率数字模板识别
            -> 面板守卫 + 榜单内部唯一性补全 + 跨榜单交集补全 + 名称完整性门禁
            -> 校验通过：逐榜单写待复核 CSV → 原子覆盖正式 CSV → 清理推荐指数/胜率缓存
            -> 校验不通过：写待复核 CSV/行截图 → 保存复核会话 JSON（不重新 OCR）→ 抛 ValueError
@@ -308,7 +315,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
     fields = self._recognize_row(row, columns, column_breaks)
 ```
 
-`boundaries` 由视觉行检测得到，因此 `expected_rank` 来自行序而非 OCR 排名。若相邻边界间距超过中位行高度的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2/巅峰赛 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；两路精确结果冲突时不按置信度强选。单字结果继续按字形补识别；公共前缀再调用 `chinese_cht` 时，精确或编辑距离纠正结果必须属于简体 OCR 产生的候选白名单。仍未确认的名称在整榜完成后先做**榜单内部唯一性补全**（排除已占用候选，只有唯一剩余且无竞争时才补全），再做**跨榜单交集补全**（`HeroNameResolver.resolve_names_across_outputs`：各未确认行的扩展候选集交集恰为 1 时统一改名，避免同一名将因左右榜 OCR 差异被误判为"集合不一致"）。最终未知名、重复名或同规模输出集合不一致会阻止正式覆盖。该逻辑仅用于官方导入，不影响常规武将识别。胜率继续由排名格和同列小数位构建字体模板。
+`boundaries` 由视觉行检测得到，因此 `expected_rank` 来自行序而非 OCR 排名。若相邻边界间距超过中位行高度的 1.5 倍，服务会按常规行高补插边界，并将补插边界后的数据行写入待复核，防止单条横线漏检导致后续排名整体前移。2v2/巅峰赛 胜率格会先向左扩展 ROI，避免截断贴近列线的首位数字；出场榜及放逐榜的排名/武将分界固定为面板宽度的 45%，避免排名数字落入武将 OCR 区域。武将格汇总原图与增强图的 OCR 候选，优先采用精确命中词表的完整姓名；两路精确结果冲突时不按置信度强选。单字结果继续按字形补识别；公共前缀再调用复核引擎（v4）时，精确或编辑距离纠正结果必须属于主引擎 OCR 产生的候选白名单。仍未确认的名称在整榜完成后先做**榜单内部唯一性补全**（排除已占用候选，只有唯一剩余且无竞争时才补全），再做**跨榜单交集补全**（`HeroNameResolver.resolve_names_across_outputs`：各未确认行的扩展候选集交集恰为 1 时统一改名，避免同一名将因左右榜 OCR 差异被误判为"集合不一致"）。最终未知名、重复名或同规模输出集合不一致会阻止正式覆盖。该逻辑仅用于官方导入，不影响常规武将识别。胜率继续由排名格和同列小数位构建字体模板。
 
 **复核阈值**：名称 OCR 置信度 < `NAME_CONFIDENCE_REVIEW_THRESHOLD = 0.75` 标记"武将名称置信度低"；胜率数字模板置信度 < `TEMPLATE_RATE_REVIEW_THRESHOLD = 0.90` 且与 OCR 胜率不一致时标记"胜率OCR与数字模板不一致"（两者语义不同，勿合并）；候选池扩展编辑距离 `CANDIDATE_EXPANSION_EDIT_DISTANCE = 2`，宽松于名称纠错的 1——此处是"扩大候选集供后续复核"，不是直接纠错。
 
@@ -320,8 +327,8 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 2. 写入前，完整候选统一通过 `CharacterSimilarityService.correct_hero_name()` 的编辑距离与字形特征二次判定，不因高置信度跳过校正；发生校正时以"武将名称已由词表校正"写入待复核 CSV 和行截图。
 3. 若最高候选为单字，按亮色字形切分 2-4 个字符，保留原背景、左右内容与边缘留白后逐字 OCR；拼接结果通过 `CharacterSimilarityService.correct_hero_name()` 校正后必须仍命中词表。
 4. 逐字 OCR 未得到可用名称时，只有 OCR 原文在词表中唯一对应一个前缀候选才自动补全。
-5. 公共前缀存在多个候选时，按需调用繁体 `chinese_cht` 模型继续确认；繁体结果只能在当前候选白名单内精确命中或唯一纠正，不能跳转到其他武将。
-6. 繁体仍无法确认时保留原文，整榜结束后排除已确认名称。只剩一个未占用候选且没有其他行竞争时自动补全；否则进入跨榜单交集补全，仍不唯一则写入待复核、保存复核会话并阻止正式 CSV 覆盖。
+5. 公共前缀存在多个候选时，按需调用复核引擎（v4）继续确认；复核结果只能在当前候选白名单内精确命中或唯一纠正，不能跳转到其他武将。
+6. 复核仍无法确认时保留原文，整榜结束后排除已确认名称。只剩一个未占用候选且没有其他行竞争时自动补全；否则进入跨榜单交集补全，仍不唯一则写入待复核、保存复核会话并阻止正式 CSV 覆盖。
 
 **公共接口：**
 
@@ -340,7 +347,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 该顺序能优先恢复低置信度但完整的词表候选，同时避免将"郭""范"等多候选单字或"夏侯""司马"等复姓公共前缀强行改为错误角色。
 
-**B2 复核模式集成（d88fc2f）**：官方导入流程与标准 OCR 识别路径共享同一复核引擎。当未决名称经词表校正仍无法唯一确认时，`recognizer.py` 将候选送入 PP-OCRv6-small/ONNX 引擎（`paddle_loader.get_recheck_ocr_engine()`）做候选内确认，复核通过则直接补全，不通过则走原有的待复核流程。复核引擎由 `MUMU_OCR_RECHECK_ENABLED`（默认 true）控制，缺失模型时直接报错熔断不触发联网下载。官方导入侧的 v6 引擎加载位于 `official_ocr_engines.OfficialOcrEngines.rare_char`（同一 `paddle_loader.get_recheck_ocr_engine()` 入口，v6 不可用回退 `chinese_cht`）。
+**复核引擎集成（d88fc2f 引入，B1 起复核为 v4）**：官方导入流程与标准 OCR 识别路径共享同一复核引擎。当未决名称经词表校正仍无法唯一确认时，`recognizer.py` 将候选送入复核引擎（`engine_loader.get_recheck_ocr_engine()`，当前为 PP-OCRv4-mobile/ONNX，与主引擎互为异构）做候选内确认，复核通过则直接补全，不通过则走原有的待复核流程。复核引擎由 `MUMU_OCR_RECHECK_ENABLED`（代码默认 False）控制，缺失模型时直接报错熔断不触发联网下载。官方导入侧的引擎加载位于 `official_ocr_engines.OfficialOcrEngines`（`main` 取 `get_primary_ocr_engine()` 与识别管线同源；`rare_char` 只取 `get_recheck_ocr_engine()`，开关关闭或引擎不可用时 `rare_char_failed=True` 保留原结果走待复核——`chinese_cht` 兜底链已退役）。
 
 ---
 
@@ -456,6 +463,7 @@ class ScriptRunner(QObject):
 - `is_running()` 防并发（同一时刻只允许一个任务）
 - `output(bytes)` / `finished(int)` 信号
 - `run(python, script, args, working_dir)` 启动；已有任务返回 False
+- **看门狗（b3327f1）**：`DEFAULT_WATCHDOG_MS = 30*60*1000`，`__init__` 接受 `watchdog_ms` 参数；`run()` 启动子进程后开启 QTimer 单发定时器，超时回调记 ERROR（含超时秒数与命令行参数）后 `proc.kill()`；`_on_finished`/`_stop_watchdog` 停表清理。QTimer 挂在 QObject 上随对象销毁，不影响正常短任务。
 - `_on_finished(code)`：置 `_proc = None` 后发 `finished(code)`——先清引用再广播，保证 `finished` 回调里再次 `run()` 不会被 `is_running()` 误拦
 
 业务层（RuleDocOpsService）与 UI 均可使用，仅依赖 QtCore，无 UI 控件依赖。
@@ -684,7 +692,7 @@ def _cleanup_tmp_file(self) -> None:
 | 依赖 | `src.capture.prober` | ADB 路径探测与 MuMu 实例枚举（`probe_mumu_adb` / `test_adb_path` / `probe_all_devices_with_status`） |
 | 依赖 | `src.capture.image_utils` / `image_validation` | 截图文件保存与本地图片加载 |
 | 依赖 | `src.ocr.*` | 模板管理器、识别器、ROI 布局配置 |
-| 依赖 | `src.ocr.paddle_loader` | 官方榜单按需提供简体 / 繁体 PaddleOCR 引擎；B2 复核引擎（`get_recheck_ocr_engine()`）惰性加载 |
+| 依赖 | `src.ocr.engine_loader` | 官方榜单主引擎（`get_primary_ocr_engine()`，v6，与识别管线同源）与复核引擎（`get_recheck_ocr_engine()`，v4）经 `OfficialOcrEngines` 懒加载与跨任务移交；`chinese_cht` 兜底链已退役 |
 | 依赖 | `src.ocr.official_board_parser` | 官方榜单图片读取、固定版式切分、横线恢复和胜率数字模板算法 |
 | 依赖 | `src.ocr.character_similarity` | 官方榜单复用公开的武将词表纠错服务 |
 | 依赖 | `src.data.win_rate_repository` | 胜率 CSV 覆盖后清空读取缓存（`clear_win_rate_cache`） |
@@ -693,7 +701,8 @@ def _cleanup_tmp_file(self) -> None:
 | 依赖 | `src.data.combo_manager` / `combo_seats` | 实战配队导入合并与 note 座次解析 |
 | 依赖 | `src.data.hero_manager` / `guide_manager` / `synergy_manager` | 数据清理、失效关联修复与修改事务 |
 | 依赖 | `src.data.card_catalog` | CardCatalogService 的三个仓储（cards/schema/annotations）与基础模型 |
-| 依赖 | `src.data.json_repository` | `atomic_write_json()`（RuleDocOpsService，知识库范围）；pending_stats 原子替换写入 |
+| 依赖 | `src.data.json_repository` | `atomic_write_json()`（RuleDocOpsService，知识库范围）；pending_stats 原子替换写入；`data_management_service._ManagerTransaction._backup` 委托 `snapshot_to_backups()`（备份命名与轮转统一） |
+| 被调用方 | `src.business.common.task_ledger` | `base_fetch_service._on_finished` 逐任务写台账（`logs/task_results.jsonl`）；`pull_data` / `maintain_rag` / `indexer` / `ops` 各写入点见 `module_rag.md` / `module_data.md` |
 | 依赖 | `src.data.announcement_manager` | AnnouncementService 的公告合并去重与百科快照持久化 |
 | 依赖 | `src.data.hero_timeline` | 武将变更时间轴（announcement 同步） |
 | 依赖 | `src.scraper.official_source.announcement` | 公告 / 百科拉取、武将快照与更新候选计算 |
@@ -713,5 +722,24 @@ def _cleanup_tmp_file(self) -> None:
 
 | 指标 | 数量 |
 |------|------|
-| 测试模块数 | 112 文件 |
-| 测试用例数 | 1350 个 `test_*` 函数 |
+| 测试模块数 | 129 文件 |
+| 测试用例数 | 1481 个 `test_*` 函数 |
+
+---
+
+## 七、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增**
+- `common/task_ledger.py`（c88bf63，67 行）：任务结果台账，`record_task()` / `read_entries()` API，JSONL 追加 `logs/task_results.jsonl`（跨日志轮转窗口留痕）；写入点五处（base_fetch_service / indexer / maintain_rag / pull_data / ops）
+- QProcess 看门狗（b3327f1）：`script_runner.DEFAULT_WATCHDOG_MS = 30min`（QTimer 单发 kill + ERROR）与 `base_fetch_service._WATCHDOG_TIMEOUT_MS` 同规格接线——消除 AI 生成卡网络时 `_is_busy` 永久 True 的挂死
+- stderr tqdm 降噪（1426686）：base_fetch stderr 含 `%|` 降 DEBUG，原占 ai_generation.log 89% 的 WARNING 噪声
+
+**修正**
+- `ocr_task_coordinator.py`（c0f2143，2026-10-02）：OCR worker 首建接线改同步回调注入（构造参数 `on_worker_created` + `ensure_worker` 双检锁），删除 `worker_created` 信号（2→1）——原跨线程 Queued 投递致 worker 先 start、宿主接线滞后，官方导入 `_pending` 排他集合永不清理、功能永久锁死（本文档 3.2 节已含该修复描述）
+- `official_ocr_engines.py`（1694ab7）：`main` 改 `get_primary_ocr_engine()`（v6，与识别管线同源）；`rare_char` 只取复核引擎（v4），chinese_cht 繁体兜底链退役
+- `ocr_worker.py`（b3327f1/d1a55e1）：退役 worker 强杀兜底先 `logging.shutdown()`、退出码改 0；预热文案引擎中性化
+- `data_management_service.py`（d2c5b83/8a46a43）：`_ManagerTransaction._backup` 委托 `snapshot_to_backups()`，移除失效 timestamp 参数
+- `capture_service.py`（80cc75b）：截图存盘失败补 warning（状态栏不再显示"截图已保存："空路径，见 `module_peak_combos.md`）
+- 测试规模台账：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）

@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-1491%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-1481%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
@@ -30,8 +30,8 @@
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-4. **测试与交付工程化** — 116 个测试模块 / 1491 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试。
-5. **B2 复核模式** — 对未决识别槽位，使用 PP-OCRv6-small/ONNX 引擎（RapidOCR）做候选内确认；惰性加载+失败熔断，模型缺失不联网下载，设备固定 CPU。
+4. **测试与交付工程化** — 129 个测试模块 / 1481 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包 608MB）。
+5. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
 6. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
 7. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
 
@@ -60,8 +60,8 @@ python -m pytest --collect-only -q      # 查看用例数（以实际输出为�
 python -m pytest tests/ -v
 ```
 
-> 本机 `Temp` 目录访问受限时，需加 `--basetemp=.tmp_test/pytest-tmp`。
-> CI 执行 `pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
+> `--basetemp=.tmp_test/pytest-tmp` 已写入 `pyproject.toml` 默认参数（conftest 兜底创建父目录）。
+> CI 执行 `pytest -q -n auto --timeout=60 --timeout-method=thread`，超时转储收集 `.tmp_test/timeout_dumps/pytest-timeout-*.log`（本地保留 7 天自动清理）。
 
 ### 3. 启动桌面应用
 
@@ -124,7 +124,7 @@ python -m src.scripts.ops weekly            # 一条命令串完周更（pull �
 python -m src.scripts.ops health            # 等效 doctor，只读体检
 python -m src.scripts.ops retry-failed      # 只重跑上次 AI 生成失败的条目
 python -m src.scripts.ops clean --dry       # 预览可清理的测试残留（.tmp_test）
-python -m src.scripts.doctor                # 10 秒只读自检：环境/设备/私有仓/数据/配置/合规等
+python -m src.scripts.doctor                # 10 秒只读自检：环境/设备/私有仓/数据/配置/白名单/AI 链路/合规等
 python -m src.scripts.doctor --offline      # 跳过网络检查
 ```
 
@@ -168,7 +168,7 @@ python -m src.scripts.pull_data push --dry-run   # 只打印将发生的动作
 test_project/
 ├── src/
 │   ├── main.py                 # 应用入口（免责声明 + 启动画面 + OCR 阻塞预热）
-│   ├── config/                 # 配置（env.py / logging_config.py / disclaimer_state.py）
+│   ├── config/                 # 配置（env.py / logging_config.py / disclaimer_state.py / version.py 版本单一来源）
 │   ├── data/                   # 数据模型 + DataFacade（facade/manager/issues 解环拆分）+ JSON 持久化
 │   │                           #   + hero_timeline（武将变更时间轴）+ card_sync_store（卡牌快照/变更记录）
 │   │                           #   + baike_ignore_store（百科差异忽略名单）
@@ -178,10 +178,11 @@ test_project/
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
-│   ├── ocr/                    # 模板匹配 + RapidOCR(v6) + 名称纠错 + 卡位检测 + v4 复核引擎
+│   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
-│   │                           #   + ocr_baseline / calibrate_idle_threshold
+│   │                           #   + doctor（一键自检）/ ops（周更编排）/ pull_data（私有数据仓同步）
+│   │                           #   + fetch_recheck_models（v4 模型预取）/ ocr_baseline / calibrate_idle_threshold
 │   └── ui/                     # PySide6 界面（app / configuration / data_admin / generation /
 │                               #   library / match / maintenance / recommendation / shared）
 │                               #   + 主窗口协调器与自足组件（app_services / status_chips /
@@ -193,12 +194,13 @@ test_project/
 │                               #   + frame_fingerprint（闲置指纹）
 │                               #   + disclaimer_dialog（免责声明对话框）
 ├── data/                       # JSON 数据 + RAG 语料/索引 + 官方榜单 CSV
+│                               #   源数据自 2026-10-03 起不入版本库，经私有数据仓同步（SOURCES.md 登记来源）
 │                               #   + card_snapshot.json / card_changes.json（卡牌百科同步）
 │                               #   + baike_ignore.json（百科差异忽略名单）
-├── images/                     # 武将头像（从官网下载）
+├── images/                     # 武将头像（从官网下载，不入版本库）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（116 个测试模块 / 1491 个测试函数）
+├── tests/                      # 测试用例（129 个测试模块 / 1481 个测试函数）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -260,6 +262,7 @@ AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校�
 - AI 生成每累计 10 条已校验成功结果原子提交正式 JSON，失败项保留对应旧数据。
 - OCR 全部任务（预热 / 常规识别 / 官方整批导入 / 巅峰赛识别）共享唯一 `OcrWorker` 的 FIFO 队列，互斥由 `OcrService._import_busy` 串行化；轮询全程内存处理不写磁盘。
 - 启动阶段 OCR 模型在启动画面期间阻塞预热（`wait_ocr_warmup(timeout_ms=120_000)`），避免 OCR 引擎初始化持有 GIL 时卡住事件循环。
+- QProcess 子进程统一带 30 分钟看门狗（`script_runner.DEFAULT_WATCHDOG_MS`），超时 `kill()` 并记 ERROR，消除生成卡网络时"忙碌"永久挂死；各任务成败写任务台账 `logs/task_results.jsonl`（跨日志轮转窗口可回溯）。
 
 ### 多模式 AI 生成
 
@@ -268,7 +271,7 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 浏览器模式 (--browser) → PlaywrightGenerator → Playwright + Edge → chat.deepseek.com
 ```
 
-- **API 模式**：速度快、支持 Token 统计与费用估算、需要付费 API Key。输出上限默认 16384 token（可按供应商语义经 `MAX_OUTPUT_TOKENS` 上调）；正文被"思考过程耗尽输出额度"截断时自动重试；每次调用记录 reasoning/content token 拆分用于定位思考挤占正文预算导致的截断；429 按 `Retry-After` 钳到 3–30 秒退避；连接类异常先 `close()` 再重建 client；限流退避重试时进度窗口显示"重试中"。
+- **API 模式**：速度快、支持 Token 统计与费用估算、需要付费 API Key。输出上限默认 32768 token（思考+正文共享额度，可按供应商上限经 `MAX_OUTPUT_TOKENS` 调整）；正文被"思考过程耗尽输出额度"截断时自动重试；每次调用记录 reasoning/content token 拆分用于定位思考挤占正文预算导致的截断；429 按 `Retry-After` 钳到 3–30 秒退避；连接类异常先 `close()` 再重建 client（超时分层保持 connect/pool=5s 快速失败）；限流退避重试时进度窗口显示"重试中"；生成失败清单落 `logs/ai_last_failures.json`，`ai_batch --retry-failed` 可只重跑上次失败项。
 - **浏览器模式**：免费、无需 API Key、速度较慢、不支持 Token 统计。
 - 两种模式 JSON 输出格式一致，差异仅在后端传输方式。`thinking` 参数仅 `provider=deepseek` 注入。
 
@@ -288,10 +291,10 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **对局攻略**：42/58 分割的 2v2 阵容核对与临场攻略工作台；OCR 导入后按"我方/敌方/未定"分组，确认阵容后展示总览、我方打法、对抗敌方与单将详情；胜率榜按对局链路区分 2v2 / 巅峰赛（`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）。
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
 - **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体与 2~8 武将两两配对。生成失败时弹窗详情列出失败武将/相性对清单。
-- **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 RapidOCR；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
+- **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 RapidOCR/ONNX 双套件（v6 主 + v4 复核，未决槽位候选闭包内确认）；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
 - **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/keywords/related）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
-- **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+受限繁体兜底，未确认写入待复核。
+- **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+复核引擎候选闭包兜底，未确认写入待复核。
 - **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`），主窗口提供「百科忽略名单管理」入口。
 - **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + 会话世代校验，候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。人工确认残留修复：图片导入前按当前牌面校验旧确认（可定位则迁移槽位，不可定位则丢弃），停止识别/牌面退出后清空确认表与禁将基线，牌面在位守卫防止跨板污染，同名槽位显性告警。
 - **实战配队**：外部导出 JSON 或 UI 手工维护 1570 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
@@ -311,19 +314,20 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 REQUESTS_PER_MINUTE=30
 HTTP_TIMEOUT=300
 MAX_RETRIES=3
-MAX_OUTPUT_TOKENS=16384
+MAX_OUTPUT_TOKENS=32768
 LOG_LEVEL=INFO
 LOG_TO_FILE=true
 
 # 模拟器 (MuMu)
 MUMU_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
 MUMU_ADB_PORT=16448
+MUMU_SCREENSHOT_MODE=auto
 MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=true
 MUMU_OCR_AUTO_SWITCH_TAB=true
 MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
-MUMU_OCR_USE_GPU=false
+MUMU_OCR_PRIMARY_ENGINE=v6
 MUMU_OCR_CPU_THREADS=6
 MUMU_OCR_RECHECK_ENABLED=false
 MUMU_OCR_POLL_IDLE_PAUSE=true
@@ -387,9 +391,9 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（16 章，基线 2026-09-30） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（16 章，基线 2026-10-06） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
-| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（10 个调用图） |
+| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（9 个调用图） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/design/](docs/design/) | 设计决策记录 |
 | [docs/prompts/](docs/prompts/) | AI 攻略/相性生成 Prompt 模板 |
@@ -426,7 +430,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 二十二 | 巅峰赛识别会话治理与三板块共享一次截图 | ✅ 已完成 |
 | 二十三 | 卡牌百科变更捕获（快照 + diff + 应用更新 + 时效复核） | ✅ 已完成 |
 | 二十四 | 合规化改造（LICENSE 附加条款 + 免责声明弹窗 + robots.txt 存档 + 架构防火墙） | ✅ 已完成 |
-| 二十五 | B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认） | ✅ 已完成 |
+| 二十五 | 复核引擎（RapidOCR/ONNX 未决槽位候选确认；B1 起为 v4 与主引擎异构） | ✅ 已完成 |
 | 二十六 | 白名单治理与错法半自动补对闭环（频次记录 + 人工确认 + 配置界面） | ✅ 已完成 |
 | 二十七 | 轮询闲置自动暂停（整帧指纹 + 三路恢复 + 阈值校准工具） | ✅ 已完成 |
 | 二十八 | 架构分层收口与主窗口拆分（UI 数据 import 白名单 + 协调器下沉 + src/data 解环） | ✅ 已完成 |
@@ -435,8 +439,12 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 三十一 | 上帝类拆分与架构收口（业务/OCR/UI 六大目标出仓 14 个新模块） | ✅ 已完成 |
 | 三十二 | 巅峰赛选将人工确认残留修复（导入前校验/停止清空/牌面守卫/同名告警） | ✅ 已完成 |
 | 三十三 | CaptureService 职责域出仓（官方导入网关/图像保存调度/OCR 任务协调器三模块 + page_type 参数化 + 行数棘轮 tripwire） | ✅ 已完成 |
+| 三十四 | B1 OCR 全量切换（RapidOCR 双套件 v6 主 + v4 复核替代 paddle 全栈 + 白名单简繁对退役） | ✅ 已完成 |
+| 三十五 | 数据出库与私有数据仓同步（pull_data 守卫链 + 原子落位 + SOURCES.md 来源登记） | ✅ 已完成 |
+| 三十六 | 运维工具链（doctor 自检 + ops 周更编排 + 任务台账 + 版本单一来源 + QProcess 看门狗） | ✅ 已完成 |
+| 三十七 | 数据健壮性与 prompt 强化（原子写收敛 + 写前快照 + 采集守卫 + 四层决策门/锚例校准/JSON 纪律） | ✅ 已完成 |
 
-> 文档基线：2026-10-02（`885ea96` + 工作树 G8 重构）。测试 116 个测试模块 / 1491 个测试函数（`pytest --collect-only -q` 实测），Ruff 0.12.0 全通过。
+> 文档基线：2026-10-06（`0ffed36`）。测试 129 个测试模块 / 1481 个测试函数（grep 统计），Ruff 0.12.0 全通过。
 
 ---
 

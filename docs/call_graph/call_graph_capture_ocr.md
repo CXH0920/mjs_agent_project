@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-10-02）
+## 当前实现基线（2026-10-06）
 
 模板匹配和 OCR 由唯一 `OcrWorker` 串行执行；`OcrService` 管理模板和轮询状态，`CaptureService` 提交实际任务。**审计 G8（2026-10）**后 CaptureService 是门面：任务组装在 `OcrTaskCoordinator.build_task()`，提交仍经 `CaptureService._ensure_ocr_worker()`，官方导入经 `OfficialImportGateway`，PNG 保存经 `ImageSaveScheduler`（见 `module_business.md` §3.2 职责表）。
 
@@ -284,10 +284,10 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 | `_resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | `_parse_name_evidence()`、`_resolve_multi_candidate_similarity()` |
 | `_resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面候选排除、重复确认结果回退 |
 | `warmup()` / `warmup_inference()` | `recognizer.py` | `OcrWorker._warmup_model()`（应用启动预热任务） | `_engine`、`_similarity_service.warmup()`、代表性拼图检测与识别 |
-| `adopt_engine(engine)` / `shared_engine()` / `ensure_engine()` | `recognizer.py` | `OcrWorker` | 跨识别器共享同一 PaddleOCR 实例 |
+| `adopt_engine(engine)` / `shared_engine()` / `ensure_engine()` | `recognizer.py` | `OcrWorker` | 跨识别器共享同一 OCR 引擎实例（B1 起 RapidOCR/ONNX） |
 | `preprocess_roi(roi)` | `image_preprocessor.py` | `GeneralRecognizer` | `cv2.resize()`、`cv2.cvtColor()`、`cv2.createCLAHE()`、`cv2.filter2D()` |
-| `_engine` (property) | `recognizer.py` | 批量/逐槽识别 | `create_paddle_ocr()` 延迟初始化，失败后熔断 |
-| `create_paddle_ocr(**kwargs)` | `paddle_loader.py` | 常规识别、官方榜单识别 | Windows 首次加载子进程隐藏、打包态模型路径、`PaddleOCR()` |
+| `_engine` (property) | `recognizer.py` | 批量/逐槽识别 | `engine_loader.get_primary_ocr_engine()` 延迟初始化（v6 主引擎），loader 返回 None 抛 RuntimeError、失败后二级熔断 |
+| `create_rapidocr_ocr(suite="v6")` | `engine_loader.py` | 主引擎（v6）与复核引擎（v4）构造 | 显式 model_path（离线纪律）、det max/960、线程钉 `MUMU_OCR_CPU_THREADS`、SHA256 漂移哨兵、frozen %TEMP% 指纹同步 |
 
 ### 4.2 图像预处理流水线
 
@@ -306,7 +306,7 @@ GeneralRecognizer 裁剪名称或阵营 ROI
   -> [回退路径] _recognize_prepared_single(preprocessed_roi) [逐槽直接识别]
 ```
 
-> **重要：** 预处理顺序不可调换。选将页默认名称 ROI 为 50×145px（对局攻略为 55×140px），放大让 PaddleOCR 对小字符识别率更高；CLAHE 处理渐变背景；锐化强化边缘；最后灰度化是 OCR 引擎期望输入。
+> **重要：** 预处理顺序不可调换。选将页默认名称 ROI 为 50×145px（对局攻略为 55×140px），放大让 OCR 引擎对小字符识别率更高；CLAHE 处理渐变背景；锐化强化边缘；最后灰度化是 OCR 引擎期望输入。
 
 ### 4.3 OCR 名称候选确认链路（核心逻辑）
 
@@ -362,40 +362,49 @@ GeneralRecognizer._resolve_name_evidence(index, evidence)
 
 > **边界：** 当前字数门禁比较 OCR 原文与候选名称长度。名称 ROI 受卡框和底部定位字干扰，视觉字符分割暂不作为硬门禁。势力关联尚未接入；未来只能过滤已有候选，不能扩展候选集合。
 
-### 4.4 B2 复核模式调用链（d88fc2f 新增）
+### 4.4 未决槽位复核调用链（d88fc2f 引入，B1 起复核引擎为 v4）
 
 ```
 GeneralRecognizer._recheck_unresolved_slots(results, evidence_list)
-   -> [未决槽位存在 且 B2 复核启用] 激活复核
+   -> [未决槽位存在 且 复核启用] 激活复核
       -> [未决槽位来源] _resolve_name_evidence() 返回 unresolved 且候选数 > 1
       -> self._recheck_engine                                 [惰性加载，见下方]
-         -> get_mumu_config().get("mumu_ocr_recheck_enabled", True)
+         -> get_mumu_config().get("mumu_ocr_recheck_enabled", False)
          -> [关闭] return None（跳过复核）
-         -> paddle_loader.get_recheck_ocr_engine()
+         -> engine_loader.get_recheck_ocr_engine()            [B1 起为 v4，与主引擎套件互斥]
             -> [缓存命中] return cached_engine
-            -> create_rapidocr_ocr()
-               -> RapidOCR()                                   [ONNX Runtime 推理，固定 CPU]
-                  -> 设备：CPU only（GPU 已否决）
+            -> [已在 _FAILED_SUITES] return None（熔断）
+            -> create_rapidocr_ocr("v4")
+               -> RapidOCR(params)                             [ONNX Runtime 推理，固定 CPU]
+                  -> 设备：CPU only（GPU 已否决），intra_op 钉 MUMU_OCR_CPU_THREADS
                   -> det 参数：limit_type=max, limit_side_len=960
+                  -> model_path 显式指向 rapidocr 包内 models/（v4 三件套经 fetch_recheck_models.py 预取）
                   -> [模型缺失] 直接报错熔断，绝不触发联网下载
-                  -> [frozen] 复制到 %TEMP% 纯 ASCII 路径
+                  -> [frozen] 复制到 %TEMP%\mjs_rapidocr_models（size+mtime 指纹 .synced，不一致即重拷）
+                  -> [SHA256 漂移] det/rec 与钉死基线比对，不符仅 warning
+               -> [构造异常] _FAILED_SUITES.add("v4")，此后恒返回 None
             -> engine = RapidOcrEngine(rapidocr_wrapper)       [paddleocr 2.x 风格适配层]
-            -> _LOAD_LOCK 保护（与 PaddleOCR 共享锁）
          -> [加载失败] return None（降级跳过复核）
       -> 对每个未决槽位执行复核：
          -> engine.ocr(preprocessed_roi, cls=False)
-            -> RapidOcrEngine.ocr()                            [翻译为 paddleocr 2.x 风格]
-               -> rapidocr.detect(image)                       [检测]
-               -> rapidocr.recognize(image, boxes)             [识别]
+            -> RapidOcrEngine.ocr()                            [翻译为 paddleocr 2.x 风格，box 必须 tolist]
+               -> rapidocr(img, use_det=True, use_cls=False, use_rec=True)
+               -> 防御性读取 txts/boxes/scores
                -> 返回 [[box, (text, confidence)], ...]
          -> 将复核结果注入 evidence_list（source="recheck"）
          -> _resolve_name_evidence(index, evidence) 重新消解
             -> 候选内确认：复核文本在候选集内 → 采纳
             -> 不在候选集内 → 维持 unresolved，不引入新名字
    -> [复核引擎不可用] 跳过复核，维持原状
+
+（另一复核触发点）GeneralRecognizer team 徽记链式重试（1694ab7）
+   -> _normalize_team(raw) 归一化失败（含批量画布读出非空乱码）
+      -> for engine in filter(None, (self._engine, self._recheck_engine))
+         -> _recognize_prepared_single(prepared, engine=engine)   [先主引擎后复核引擎]
+         -> 读出楚/汉即停
 ```
 
-> **设计要点：** B2 复核仅在 `_resolve_name_evidence()` 判定 unresolved 后触发，属于候选内确认而非自由识别——复核结果必须在原有候选集内才采纳，绝不引入新名字。引擎固定 CPU，det 参数与生产画布同口径（limit_type=max, limit_side_len=960）。模型缺失直接报错熔断，绝不触发联网下载。
+> **设计要点：** 复核仅在 `_resolve_name_evidence()` 判定 unresolved 后触发，属于候选内确认而非自由识别——复核结果必须在原有候选集内才采纳，绝不引入新名字。引擎固定 CPU，det 参数与生产画布同口径（limit_type=max, limit_side_len=960）。模型缺失直接报错熔断，绝不触发联网下载。`MUMU_OCR_PRIMARY_ENGINE=v4` 回滚档时主复核角色互换（v4 主 + v6 复核）。
 
 ### 4.5 汉字特征补齐链路（性能关键路径）
 
@@ -532,23 +541,38 @@ OcrWorker._get_recognizer(rois, hero_names, reference_size)
 | `get_template_manager(template_name)` | `ocr_loader.py` | 按页面模板名称惰性缓存，供配置页管理模板 |
 | `OcrWorker._get_recognizer(...)` | `ocr_worker.py` | 以 ROI、武将列表、参考尺寸为签名，在唯一 worker 内重建识别器 |
 
-### 6.3 PaddleOCR 引擎构造与加载熔断
+### 6.3 RapidOCR 引擎构造与加载熔断（B1 起）
 
 ```
 OcrWorker 预热 / GeneralRecognizer._engine（首次识别）
-  -> paddle_loader.create_paddle_ocr(use_angle_cls=False, lang="ch", show_log=False)
-     -> get_mumu_config() 读取 MUMU_OCR_USE_GPU / MUMU_OCR_CPU_THREADS
-        -> GPU=false（默认）: kwargs 设 use_gpu=False + cpu_threads=6 + enable_mkldnn=True
-        -> 调用方显式传 use_gpu 时优先尊重显式值
-     -> _hide_windows_child_consoles()                        [仅本线程子进程加 CREATE_NO_WINDOW]
-     -> _frozen_ocr_model_dirs()
-        -> frozen 且随包含 paddleocr_models/ 且 %TEMP% 为纯 ASCII
-           -> 复制 det/rec/cls 到 %TEMP%\mjs_ocr_models（.synced 跳过重复复制）
-           -> 注入 det_model_dir / rec_model_dir / cls_model_dir
-        -> 开发态或 %TEMP% 含中文 -> 返回空，沿用 PaddleOCR 默认路径
-     -> 模块级 _LOAD_LOCK 内 from paddleocr import PaddleOCR + PaddleOCR(**kwargs)
-  -> 加载失败：recognizer._engine 置熔断标记 self._ocr=False
+  -> engine_loader.get_primary_ocr_engine()
+     -> primary_suite() 读取 MUMU_OCR_PRIMARY_ENGINE（默认 "v6"，非法值告警回退）
+     -> _get_shared_engine("v6")
+        -> [缓存命中] return cached_engine
+        -> [已在 _FAILED_SUITES] return None
+        -> create_rapidocr_ocr("v6")
+           -> _suite_model_dir(spec) 定位 Path(rapidocr.__file__).parent/"models"
+              -> [缺件] FileNotFoundError（缺 v4 件时 hint 指向 fetch_recheck_models）
+           -> [frozen] _sync_temp_models() 复制全部 6 件到 %TEMP%\mjs_rapidocr_models
+              -> 指纹 = 名字:st_size:st_mtime_ns 拼接写入 .synced；不一致即 rmtree 重拷
+           -> SHA256 漂移哨兵：det/rec 实测哈希 vs 套件钉死基线（不符仅 warning）
+           -> RapidOCR(params)
+              -> Det.limit_type=max, Det.limit_side_len=960（与生产画布同口径）
+              -> model_path 显式三件（绕过联网下载检查，缺文件熔断）
+              -> EngineConfig.onnxruntime.intra_op_num_threads = _cpu_threads()（MUMU_OCR_CPU_THREADS 默认 6）
+              -> v4 套件额外 Rec.rec_keys_path = ppocr_keys_v1.txt
+           -> return RapidOcrEngine(RapidOCR(...))
+        -> [构造异常] _FAILED_SUITES.add(suite)（warn + debug 堆栈），此后恒返回 None
+  -> [loader 返回 None] recognizer 抛 RuntimeError("OCR 主引擎不可用…")
+  -> [加载异常] recognizer._engine 置熔断标记 self._ocr=False
      -> 后续识别立即抛 RuntimeError（重启应用后可重试），不再重复加载
+
+官方榜单导入引擎（OfficialOcrEngines，1694ab7 起）
+  -> .main     -> get_primary_ocr_engine()（v6，与识别管线同源；None 即 RuntimeError）
+  -> .rare_char -> get_mumu_config()["mumu_ocr_recheck_enabled"]
+                   -> [开] engine_loader.get_recheck_ocr_engine()（v4）
+                   -> [关/不可用] rare_char_failed=True + return None（保留原结果走待复核；
+                                  chinese_cht 繁体兜底链已退役）
 ```
 
 ### 6.4 白名单治理与未决错法记录（9ca1b91 新增）
@@ -614,7 +638,7 @@ src.business.recognition.pending_stats
 | Python `PIL.Image` | 图片解析/处理 |
 | Python `cv2` (OpenCV) | 图像预处理、模板匹配 |
 | Python `io.BytesIO` | 二进制流处理 |
-| `paddleocr.PaddleOCR` | OCR 推理引擎（推理设备/线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN） |
+| `rapidocr.RapidOCR` | OCR 推理引擎（B1 起 v6 主 + v4 复核双套件，ONNX Runtime CPU；det max/960，线程由 `MUMU_OCR_CPU_THREADS` 钉定；`MUMU_OCR_USE_GPU` 已退役） |
 | `cnradical.Radical` | 部首查询（汉字特征） |
 | `unihan_etl.Packager` | UNIHAN 数据查询（四角号码、仓颉码） |
 | `pypinyin.pinyin` | 拼音查询 |
@@ -685,11 +709,12 @@ src.business.recognition.pending_stats
 | `GeneralRecognizer._resolve_name_evidence(index, evidence)` | `recognizer.py` | 两类页面入口 | 字数门禁、已确认名称聚合、候选交集、多候选评分 |
 | `GeneralRecognizer._resolve_page_names(results)` | `recognizer.py` | 两类页面入口 | 页面唯一性、重复名称回退 |
 | `GeneralRecognizer.warmup()` / `warmup_inference()` | `recognizer.py` | 应用启动时的 `OcrWorker` 预热任务 | 模型、字符特征、代表性拼图推理 |
-| `GeneralRecognizer.adopt_engine()` / `shared_engine()` / `ensure_engine()` | `recognizer.py` | `OcrWorker` | 跨识别器共享 PaddleOCR 实例 |
-| `create_paddle_ocr(**kwargs)` | `paddle_loader.py` | `GeneralRecognizer`、`OfficialDataImportService` | Windows 依赖探测短命令隐藏、打包态模型路径、`PaddleOCR()` |
-| `create_rapidocr_ocr()` | `paddle_loader.py` | `get_recheck_ocr_engine()` | RapidOCR()（ONNX Runtime, CPU, limit_type=max, limit_side_len=960） |
-| `get_recheck_ocr_engine()` | `paddle_loader.py` | `GeneralRecognizer._recheck_engine` | 惰性加载 B2 复核引擎，失败熔断返回 None |
-| `RapidOcrEngine.ocr()` | `paddle_loader.py` | `GeneralRecognizer._recheck_unresolved_slots()` | paddleocr 2.x 风格适配层，翻译 RapidOCR 结果 |
+| `GeneralRecognizer.adopt_engine()` / `shared_engine()` / `ensure_engine()` | `recognizer.py` | `OcrWorker` | 跨识别器共享 OCR 引擎实例 |
+| `primary_suite()` | `engine_loader.py` | `create_rapidocr_ocr` 调用方 | 读 `MUMU_OCR_PRIMARY_ENGINE`（默认 v6）定主引擎套件 |
+| `create_rapidocr_ocr(suite="v6")` | `engine_loader.py` | 主/复核引擎构造 | RapidOCR()（ONNX Runtime, CPU, det max/960, 线程钉定, SHA256 哨兵, %TEMP% 指纹同步） |
+| `get_primary_ocr_engine()` | `engine_loader.py` | `GeneralRecognizer._engine`、`OfficialOcrEngines.main` | 主引擎套件级惰性单例；不可用返回 None |
+| `get_recheck_ocr_engine()` | `engine_loader.py` | `GeneralRecognizer._recheck_engine`、`OfficialOcrEngines.rare_char` | 惰性加载复核引擎（当前 v4，与主引擎互斥），失败熔断返回 None |
+| `RapidOcrEngine.ocr()` | `engine_loader.py` | `GeneralRecognizer._recheck_unresolved_slots()`、team 链式重试 | paddleocr 2.x 风格适配层，翻译 RapidOCR 结果（box 必须 tolist） |
 | `GeneralRecognizer.save_results()` | `recognizer.py` | `OcrWorker._execute()` | JSON 序列化 |
 | `OcrRoiConfig.layout_for()` / `save_layout()` / `reset_layout()` / `reload()` | `roi_config.py` | `GeneralRecognizer`、`CaptureService`、`OcrWorker`、配置协调器 | 默认布局加载、本地覆盖原子写盘、页面要求校验 |
 | `ImagePreprocessor.preprocess_roi()` | `image_preprocessor.py` | `GeneralRecognizer` | 放大、CLAHE、锐化、灰度 |
@@ -706,3 +731,16 @@ src.business.recognition.pending_stats
 | `CharacterSimilarityService.warmup()` / `warmup_hero_names()` | `character_similarity.py` | `GeneralRecognizer.warmup()` | 缓存与拼音库预热、词表字符补齐 |
 | `CharacterFeatureRepository.get_feature()` | `character_feature_repository.py` | `CharacterSimilarityService` | 缓存加载、动态补齐、用户层持久化 |
 | `CharacterFeatureRepository.get_value()` | `character_feature_repository.py` | `CharacterSimilarityService` | `get_feature()` |
+
+---
+
+## 八、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更（B1 OCR 全量切换，1694ab7 + d1a55e1）：
+
+- **引擎装载链重写**：`paddle_loader.create_paddle_ocr()` → `engine_loader.get_primary_ocr_engine()` / `get_recheck_ocr_engine()`（见 §6.3 新链路）；`RapidOcrEngine` 适配层迁至 `engine_loader.py`
+- **预热链**：`warmup_inference()` 单路径化（画布 det+rec 一次），rec-only 横条预热删除——paddle 时代 `det=False, rec=True` 关键字打穿适配层签名致预热状态机误报 `warmup_failed`
+- **复核链**（§4.4）：复核引擎当前为 v4（原 v6 与主引擎同款）；默认开关值更正为 `False`；新增 team 徽记归一化失败链式重试分支
+- **官方导入引擎链**：`main` 与识别管线同源（v6）；`rare_char` 只取复核引擎，`chinese_cht` 兜底链退役
+- 单槽回退触发线 `_NAME_RECHECK_CONFIDENCE` 0.8 → 0.75
+- 模型预取：`fetch_recheck_models.py`（URL+SHA256 钉死、`--check`、`verify_v4_models()` 被 doctor/spec/release 复用）

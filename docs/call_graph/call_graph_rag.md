@@ -82,6 +82,9 @@ build_index(rebuild=True)                                        [CLI 入口：p
        -> coll.delete(where={}) -> coll.add(ids, documents, metadatas, embeddings)  [BATCH=200]
   -> [rebuild=False] existing = coll.get(include=[])['ids']
        -> coll.delete(ids=过期块) -> coll.add(新增) -> coll.update(交集)
+  -> [写后条数一致性校验（b3327f1）] coll.count() != len(blocks)
+       -> raise RuntimeError('索引 mjs_rag_v1 条数不一致：语料 N 块，库中 M 块（疑似写入中断）')
+  -> record_task('rag_index', ...)                    [任务台账，含块数为零与构建异常两路]
   -> return (coll.count(), coll_name)
 ```
 
@@ -158,8 +161,11 @@ RagMaintenancePanel._run(args)                                    [维护面板�
          -> [expected=='snapshot'] snapshot_common.snapshot_counts()
       -> [snapshot 任务且校验通过] audit_rule_doc.audit(..., update_snapshot=True)
          -> snapshot_common.build_snapshot() -> snapshot_common.write_snapshot()                  [刷新 .rule_doc_snapshot.json]
+      -> [snapshot 任务成功且已刷新基线] _record_corpus_baseline(task)                            [af8cd06]
+         -> 把各 output 实际块数写入快照 corpus_counts 通用段（单文件失败整段不写）
       -> update_state_fingerprints(plan, failed, force, state)    [失败任务及其依赖源保持旧指纹]
       -> save_state(state)
+      -> record_task('maintain_rag:<任务名>' / 'maintain_rag', ok, exit_code, reason=详情)        [任务台账；块数校验失败时 reason 携带"实际N/期望M"]
       -> [args.build_index 且无失败] subprocess.run(['-m', 'src.rag.indexer']) -> build_index()
       -> summarize_counts()
 ```
@@ -313,6 +319,7 @@ RagMaintenancePanel._run(["--force", "--build-index"])
           -> client.get_or_create_collection('mjs_rag_v1',
                metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'})
           -> coll.add(ids, documents, metadatas, embeddings)      [BATCH=200 分批]
+          -> [条数校验] coll.count() == len(blocks) 否则 RuntimeError（b3327f1）
           -> return (coll.count(), 'mjs_rag_v1')
         ────────────────────────
       -> [returncode == 0] print('✅ 索引重建完成')
@@ -1260,6 +1267,27 @@ src.scraper.ai.batch (main)
 | 3 | `SpecialCardsPanel`、`HeroClassificationPanel` 的完整内部方法清单未逐行复读 | 本文档只覆盖与本模块相关的写路径与 `data_changed` 联动；物理位置已确认为 `src/ui/library/` |
 | 4 | `rag_prompt.py` 后半段（`_format_rag_chunks`、`build_synergy_rag_context` 内部细节）未逐行复读 | 相关描述引自 `call_graph_ai_batch.md`（同基线） |
 | 5 | `config.py` 中 `RAG_PROJECT_DIR` 常量是否仍被使用 | 已移除（2026-09 死代码清理）；移除前结论为"仅 `config.py` 定义并回显，全项目无消费点，未列入调用链" |
-| 6 | 语料块数期望值（如武将 639 / 卡牌 49 / 特殊机制 85 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；当前磁盘实测武将语料 639 块（`expected=639` 已同步），`expected=None` 的动态任务实测：武将分类 184 / 组合 509 / 攻略 357 |
+| 6 | 语料块数期望值（如卡牌 49 / 装备 27）会随源数据变化 | 数值取自 `task_defs.py` 当前提交，属易变事实；af8cd06 后武将/特殊机制语料为 `"snapshot"`（快照基线 647 / 85，加将自动适应），其余 int 精确匹配；`expected=None` 的动态任务实测：武将分类 186 / 组合 509 / 攻略 357 |
 | 7 | `rag_curated.INDEX_FIELDS` 含 5 字段（含 `target`），`refinement_service.INDEX_FIELDS` 只有 4 字段 | **已修复**：2026-09-15 新增 `data/corpus_fields.py` 字段契约模块，`CARD_FIELDS`/`HERO_FIELDS` 为唯一权威定义，`refinement_service` 与 `rag_curated` 共用 `fields_for(kind)`，消除字段集漂移 |
 | 8 | `eval_rule_faqs.py --generate` 生成的评估集 `version` 字段为生成日，磁盘实测 79 题（与 `FAQ裁定块.json` 79 块同源，非巧合） | 评估集由 `--generate` 重建会丢弃人工追加的新题，追加须手工编辑 `data/rag_evals/rule_faq_eval.json` |
+
+---
+
+## 十一、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**快照基线根治口径过期**（af8cd06）
+- `task_defs.expected` 三态（int / `"snapshot"` / None）；武将语料 627→`"snapshot"`、特殊机制 83→`"snapshot"`（加将漂移致精确匹配必误报）
+- `maintain_rag.verify_outputs()` snapshot 分支（基线未建立不拦 / 只增允许 / 低于基线判丢块）；`_record_corpus_baseline()` 把实际块数写入快照 `corpus_counts` 通用段（失败不部分写）
+- `snapshot_common.snapshot_counts()` 合并 `counts` + `corpus_counts`；`audit_rule_doc` 重建快照时保留 `corpus_counts`
+- **maintain_rag 主循环误报修复**（80cc75b）：块数校验失败的 `else` 块缩进归位——修复前全部成功时最后一个任务被误记校验失败（台账恒失败、指纹不记录致重复重跑、索引联动永不触发），真实失败反而漏记
+- 台账 reason 携带详情（"块数校验未通过: 实际647/期望627"）
+
+**索引与脚本健壮性**（b3327f1）
+- `indexer.build_index()` 写后条数一致性校验（`coll.count()` 必须等于语料块数）+ 构建失败 `exc_info=True` + `rag_index` 任务台账
+- `maintain_rag.py` / `audit_rule_doc.py` / `ocr_baseline.py` 补装 `install_crash_logger`（此前 handler 永不装载）
+- `maintain_rag` 逐任务台账 `maintain_rag:<任务名>` + 总控 `maintain_rag`
+
+**数据出库**
+- `data/rag_corpus/`、`data/raw_guides/`、维护数据四件自 2026-10-03 起不入版本库，经 `pull_data` 私有数据仓同步

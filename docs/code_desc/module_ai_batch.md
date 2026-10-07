@@ -1,8 +1,8 @@
 # 模块：AI 批量生成
 
 > 对应目录：`src/scraper/ai/`
-> 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分
-> 文档日期：2026-10-01
+> 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律
+> 文档日期：2026-10-06
 
 ---
 
@@ -74,7 +74,7 @@ close()                 → None
 | 数据源 | 供应商端点（默认 `provider=deepseek`；支持 openai / ollama / openai-compatible，档案取自 `config/api_profiles.json`） | DeepSeek 网页版（chat.deepseek.com） |
 | 限速 | RPM 前置限流（默认 30 req/min，`_min_interval = 60/RPM`）+ 指数退避 | 每次成功生成后，在下一次请求前随机休息 60-180 秒 |
 | Token 统计 | 支持（拆分 reasoning/content 记录） | 返回 None |
-| 输出上限 | 默认 16384 token（可经 `MAX_OUTPUT_TOKENS` 配置调大） | 无上限限制（读取网页最终回复） |
+| 输出上限 | 默认 32768 token（思考+正文共享额度，可经 `MAX_OUTPUT_TOKENS` 按供应商上限调整） | 无上限限制（读取网页最终回复） |
 | 输出处理 | 仅 `provider=deepseek` 注入私有参数 `thinking.type=disabled`（非 DeepSeek 端点收到未知字段会 400）；仅解析最终 `content`；思考耗尽正文额度时自动重试 | 读取网页最终回复；JSON 提取失败时发送纠正消息重试 |
 | 成本估算 | 支持 dry-run | 不支持 |
 | 必备条件 | API Key（`requires_key=False` 的 ollama 本地服务可空；构造期按 `PROVIDER_PRESETS` 校验，不满足抛 `ValueError`） | 已登录的 Edge 浏览器 |
@@ -89,7 +89,8 @@ close()                 → None
 
 ```
 构造函数 → 供应商 Key 语义校验（PROVIDER_PRESETS[provider].requires_key，不满足抛 ValueError）
-         → 创建 httpx.Client() + 初始化限速器（_min_interval = 60/RPM）+ 取消标志 _cancelled=False
+         → 创建 httpx.Client(timeout=_build_timeout())（分层超时：connect/pool=5s、write=30s、read=http_timeout 默认 300s）
+         + 初始化限速器（_min_interval = 60/RPM）+ 取消标志 _cancelled=False
   │
 generate_guide(hero)
   ├── load_prompt("docs/prompts/hero_guide.md") → system_prompt（模板缺失直接返回 None）
@@ -97,7 +98,7 @@ generate_guide(hero)
   │   ├── build_rag_context(hero)               → RAG 语料区块（若启用）
   │   ├── _skill_lines()                        → 技能行（语料块已注入时指针化省 token，未注入回退完整描述+结算）
   │   └── load_card_system()                    → 卡牌体系段兜底（防牌名串味）
-  ├── _request_content(messages=[system, user], temperature=0.7, label=hero.name)
+  ├── _request_content(messages=[system, user], temperature=0.55, label=hero.name)
   │   ├── _call_api(messages, temperature)
   │   │   ├── 循环开头检查 _cancelled → 已取消返回 None（不打断 in-flight 请求，靠超时退出）
   │   │   ├── 限速检查（距上次请求不足 60/RPM 秒则 sleep）
@@ -106,7 +107,7 @@ generate_guide(hero)
   │   │   ├── 400/401/403/404/422 → 立即抛错失败（Key/参数问题重试无意义）
   │   │   ├── 429 → 优先读 Retry-After 头（钳到 3-30s），无头则 max(5*attempt, 3)（5/10/15s）
   │   │   ├── 其他 408/5xx → 2^attempt（2/4/8s）
-  │   │   └── 连接类异常（_CONN_ERRORS）→ 关闭并重建 httpx.Client 后重试（避免连接池损坏级联失败）
+  │   │   └── 连接类异常（_CONN_ERRORS）→ 关闭并重建 httpx.Client（timeout=_build_timeout()，分层超时在重建时保持）后重试（避免连接池损坏级联失败）
   │   │       （每次重试向 stdout 输出 [重试] 行，进度窗口可见）
   │   ├── _read_completion_content(response)
   │   │   ├── finish_reason="length" 或 content 为空 → 返回 None
@@ -180,7 +181,19 @@ for idx, (ha, hb) in enumerate(pairs, start=1):
 
 单个生成任务每累计 10 条攻略或相性校验成功，即通过临时文件 `replace()` 原子提交到正式 `guides.json` / `synergies.json`；任务结束时会提交不足一批的成功结果。任一失败项只保留原有对应记录，不回滚已成功批次。用户在进度对话框选择中止时会终止子进程，已提交批次保留，正在处理且尚未提交的数据不会写入。浏览器模式没有 token usage，不会因缺少 usage 被误判为失败，也不要求 API Key。
 
+**写前快照（d2c5b83）**：`main()` 在加载既有数据前，`--guide` 模式对 `guide_path`、相性模式对 `synergy_path` 各 `snapshot_to_backups()` 一次——**每次运行一次而非每 10 条批量提交一次**，避免一次全量生成产生大量备份；生成期间旧数据可从 `data/backups/` 找回（AI 子进程按批全量覆盖写，落点是它启动时读入的旧快照）。
+
 **相性日期标记：** 每次校验成功的相性结果通过 `_with_synergy_updated_date()` 写入 `last_updated` 字段（本次生成日期），用于追踪数据新鲜度。
+
+### 3.6.1 Prompt 工程纪律（cfca666，docs/prompts/）
+
+生成质量与解析稳定性的主要约束在 prompt 侧（`docs/prompts/synergy_score.md` / `hero_guide.md`），解析代码（`extract_json` 四段回退 + 字段预检 + pydantic 校验）零改动：
+
+- **相性评分四层决策门**：score 重定义为**协同增量**（组队相对各自独立作战多出来的价值，非强度加总），打分前先过门定层、层内微调——①技能机制冲突（抢同一资源/节奏互斥）→ 负分 D 档；②无直接联动也无功能配合（双方技能均只对自身生效）→ −2~2（C 档）；③功能互补但无触发链 → 0~5（C/B 档）；④存在直接技能联动（能指出具体触发链与量化收益）→ 3~10（B/A/S 档）。
+- **锚例校准**：分布预期段（随机配对大多应落第 2/3 层，A 档必须写出具体触发链与量化收益，S 档仅限闭环循环/多段叠加/理论无解）+ 文末三档真实锚例（S 档孟尝君+黄月英 score 9 / A 档芈八子+项梁 score 7 / C 档关羽+张华 score 1）；原"三维度平均映射 score"的膨胀条款删除（三维度是分解视角，不构成 score 充分条件）。效果：固定 10 对样本评分漂移（|Δscore|≥3）20% → 0%，A 档占比清零。
+- **攻略 JSON 纪律**：正文 → 单独一行 `---` → JSON，JSON 必须是全文**最后一个 ```json 代码块**、正文部分禁止出现任何代码块或花括号结构（防干扰 `extract_json` 回退）；`description` 回填正文时换行写 `\n`、双引号写 `\"` 保证 JSON 单行合法；字数区间 600-1000 → 1200-2000。效果：固定 20 武将样本 JSON 抛错率 20% → 0%。
+- **联动判定强化**：自身技能两两配对逐一判定（技能A×技能B），"一个技能的输出（牌、状态、次数、时机）恰好是另一个技能的输入"才构成机制联动，功能相似（"都能摸牌"）不算；无联动技能对一句带过，全部无联动明确写"无显著技能联动"，禁止硬凑循环。
+- **牌名核对**：牌名/战法名/装备名落笔前必须在【卡牌体系参考】或 RAG 语料块中找到对应，找不到改用效果描述。
 
 ### 3.6 RAG 语料注入（攻略 / 相性）
 
@@ -233,7 +246,7 @@ def _call_api(self, messages: list[dict], temperature: float = 0.7) -> dict | No
         except Exception as e:
             if isinstance(e, _CONN_ERRORS):  # 连接类异常重建 client
                 self._client.close()
-                self._client = httpx.Client(timeout=self.http_timeout)
+                self._client = httpx.Client(timeout=self._build_timeout())
 ```
 
 **额度层（`_request_content`）：**
@@ -252,7 +265,7 @@ def _request_content(self, messages, temperature, label):
             time.sleep(wait)
 ```
 
-> **设计思路：** 前置限速比后端限速更可靠——API 被 429 限流后虽然可以重试，但被限流的请求已经消耗了网络资源。`_min_interval` 控制每秒最多 N 次请求，RPM 可配置。429 优先服从服务端 `Retry-After`（钳到 3-30s，尊重真实冷却窗口），无该头时按 5/10/15s 走比通用退避更保守的节奏。不可重试状态（400/401/403/404/422）立即失败避免白等退避。连接类异常（RemoteProtocolError/ReadError/ReadTimeout 等）后先 close 再重建 httpx.Client，避免复用损坏 client/连接池导致后续重试级联失败。`thinking` 是 DeepSeek 私有参数，非 DeepSeek 端点收到未知字段会返回 400，故按 `provider == "deepseek"` 条件化组装。`cancel()` 只在重试循环开头生效、不打断 in-flight 请求（靠超时退出），保证中止后面板关闭不会继续 post。思考长度随采样波动，重试通常能让正文挤进额度；每次重试都输出 `[重试]` 进度行，避免子进程长时间静默让用户以为卡死。输出额度上限默认 16384 token（`MAX_OUTPUT_TOKENS` 常量，可经 config.env 调大以适配思考型模型），缓解长攻略正文被截断（`finish_reason=length`）。
+> **设计思路：** 前置限速比后端限速更可靠——API 被 429 限流后虽然可以重试，但被限流的请求已经消耗了网络资源。`_min_interval` 控制每秒最多 N 次请求，RPM 可配置。429 优先服从服务端 `Retry-After`（钳到 3-30s，尊重真实冷却窗口），无该头时按 5/10/15s 走比通用退避更保守的节奏。不可重试状态（400/401/403/404/422）立即失败避免白等退避。连接类异常（RemoteProtocolError/ReadError/ReadTimeout 等）后先 close 再重建 httpx.Client，避免复用损坏 client/连接池导致后续重试级联失败。**超时分层化（4720366）**：`_build_timeout()` 返回 `httpx.Timeout(connect=5.0, pool=5.0, write=30.0, read=http_timeout)`——连接黑洞化时 5 秒快速失败（单武将失败从最坏约 15 分钟降为约 15 秒），read 保持配置的完整读超时；构造抽成单一方法供 `__init__` 与重试重建两处共用，堵住"重建时退化为标量超时"的遗漏路径。`thinking` 是 DeepSeek 私有参数，非 DeepSeek 端点收到未知字段会返回 400，故按 `provider == "deepseek"` 条件化组装。`cancel()` 只在重试循环开头生效、不打断 in-flight 请求（靠超时退出），保证中止后面板关闭不会继续 post。思考长度随采样波动，重试通常能让正文挤进额度；每次重试都输出 `[重试]` 进度行，避免子进程长时间静默让用户以为卡死。输出额度上限默认 32768 token（`MAX_OUTPUT_TOKENS` 常量，思考+正文共享额度，可经 config.env 按供应商上限调大以适配思考型模型），缓解长攻略正文被截断（`finish_reason=length`）。guide 温度 0.55（cfca666，由 0.7 下调）：结构化攻略的温度甜点——压格式漂移与牌名串味的采样噪声，保住"反直觉技巧"类内容多样性；相性温度 0.3 维持不变。
 
 ### 4.2 状态机修复字面换行
 
@@ -370,6 +383,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `--score-threshold` | 0 | 相性评分下限 |
 | `--verbose` / `-v` | False | 详细日志 |
 | `--no-rag` | False | 禁用 RAG 语料增强（默认启用） |
+| `--retry-failed` | False | 定向重试（c88bf63，仅 `--guide` 模式）：读取上次失败清单 `logs/ai_last_failures.json`，heroes 过滤到失败项（按 name 或 id 匹配）并强制 update 模式，成功项字节不动；全部成功后自动清除清单；结束打印 `[定向重试] 上次失败 N 项，本次恢复 M 项，仍失败 K 项` |
 | `--rebuild-rag-index` | False | 重建 RAG 向量索引后退出 |
 
 ### AIBatchGenerator 公开方法
@@ -382,7 +396,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `cancel` | `() -> None` | 请求中断：重试循环将在下次循环开头退出 |
 | `close` | `() -> None` | 关闭 HTTP 客户端 |
 
-构造参数：`api_key` / `api_url` / `model` / `provider`（默认 `"deepseek"`）/ `requests_per_minute`（默认 30）/ `max_retries`（默认 3）/ `http_timeout`（默认 300 秒）/ `max_output_tokens`（默认 `MAX_OUTPUT_TOKENS` = 16384）。构造期先按 `PROVIDER_PRESETS[provider].requires_key` 校验 Key，不满足直接抛 `ValueError`（ollama 等本地服务可空 Key）；`provider` 还决定请求体是否注入 `thinking` 私有参数。
+构造参数：`api_key` / `api_url` / `model` / `provider`（默认 `"deepseek"`）/ `requests_per_minute`（默认 30）/ `max_retries`（默认 3）/ `http_timeout`（默认 300 秒）/ `max_output_tokens`（默认 `MAX_OUTPUT_TOKENS` = 32768）。构造期先按 `PROVIDER_PRESETS[provider].requires_key` 校验 Key，不满足直接抛 `ValueError`（ollama 等本地服务可空 Key）；`provider` 还决定请求体是否注入 `thinking` 私有参数。
 
 ### 公共函数
 
@@ -403,7 +417,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `_skill_lines(skills, hero_id, rag, indent)` | `prompt_utils.py` | 技能段构建：语料块已注入的技能指针化省 token，其余回退完整描述并附结算后缀；攻略与相性两条 prompt 共用 |
 | `is_rag_enabled()` | `rag_prompt.py` | RAG 增强开关：环境变量 `RAG_ENABLED`（`--no-rag` 覆盖）优先，其次 config.env |
 | `load_heroes(path)` | `utils.py` | 通过 `HeroManager` 完整校验武将 JSON；任一错误均拒绝部分加载 |
-| `_save_json(path, data)` | `utils.py` | 原子写入 JSON（临时文件 + `replace()`） |
+| `_save_json(path, data)` | `utils.py` | 原子写入 JSON（9737d52 起委托 `json_repository.atomic_write_json`，mkstemp 唯一临时名——跨进程写同一路径不再共用固定临时名） |
 
 `ai/batch.py` 的断点加载通过 `GuideManager` / `SynergyManager` 逐条校验。发现无效 JSON、错误记录或重复键时，原文件先保留为同目录 `.corrupt-时间戳.json`，随后仅将通过校验的记录原子写回；如果备份失败，任务中止且不覆盖原文件。
 
@@ -414,10 +428,23 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `src.data.models` / `src.data.{hero,guide,synergy}_manager` | 使用 Hero / HeroGuide / SynergyScore 模型进行 Pydantic 校验；断点加载经 HeroManager / GuideManager / SynergyManager 逐条校验，发现错误时备份损坏文件 |
-| 依赖 | `src.config.env` | `resolve_api_config()` 是任务侧唯一 API 解析入口（多 API 档案 `config/api_profiles.json` 启用档案优先 → config.env 旧键 → 环境变量 → 默认值，同时只允许一个启用档案）；`PROVIDER_PRESETS` 决定供应商语义（`requires_key` 与默认端点，含 deepseek / openai / ollama / openai-compatible）；`get_runtime_params()` 提供 RPM / 最大重试 / HTTP 超时 / 输出 token 上限（`MAX_OUTPUT_TOKENS` 默认 16384）；`get_model_pricing()` 提供价格表用于成本估算 |
+| 依赖 | `src.config.env` | `resolve_api_config()` 是任务侧唯一 API 解析入口（多 API 档案 `config/api_profiles.json` 启用档案优先 → config.env 旧键 → 环境变量 → 默认值，同时只允许一个启用档案）；`PROVIDER_PRESETS` 决定供应商语义（`requires_key` 与默认端点，含 deepseek / openai / ollama / openai-compatible）；`get_runtime_params()` 提供 RPM / 最大重试 / HTTP 超时 / 输出 token 上限（`MAX_OUTPUT_TOKENS` 默认 32768）；`get_model_pricing()` 提供价格表用于成本估算 |
 | 依赖 | `src.rag`（config/indexer/retriever） | ChromaDB 向量检索、bge-small-zh 嵌入与关键词 RRF 混合检索；`Retriever` 含武将/牌名倒排 `_hero_index` 与 KEYWORDS 关键词倒排 `_keyword_index`；`hero_blocks()`/`_keyword_hits()` 不再线性遍历全量块；检索默认只召当前版本块（`is_current`） |
 | 依赖 | `src.scraper.ai.prompt_utils` | 共享 prompt 构建函数（`load_prompt`/`build_guide_prompt`/`build_synergy_prompt`/`_skill_lines`），消除 API 与浏览器生成器之间的代码重复 |
 | 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成（`--guide` + 可选 `--heroes-file` / `--update` / `--browser` / `--no-rag`） |
 | 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成（`--synergy-pair` / `--synergy-single` / `--synergy-list` + 可选 `--update` / `--browser` / `--no-rag`） |
 | 被调用方 | `src.ui.app.main_window` | 菜单「数据 → 攻略生成 / 武将相性」子菜单触发生成（经 `src.ui.generation.ai_generation_workflow`） |
 | 被调用方 | `src.business.rag.refinement_service` / `src.business.maintenance.classification_suggest` / `src.scripts.propose_rule_changes` / `src.scripts.run_synergy_drift` | 复用 `AIBatchGenerator.complete()` 做通用对话补全（语料精炼建议、武将分类建议、规则变更提案、相性漂移采样） |
+
+---
+
+## 七、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+- **httpx 超时分层化**（4720366）：`_build_timeout()` 返回 `httpx.Timeout(connect=5.0, pool=5.0, write=30.0, read=http_timeout)`，`__init__` 与连接类异常重试重建两处共用——单武将失败最坏约 15 分钟 → 约 15 秒快速失败
+- **输出额度上调**（cf9c927）：`MAX_OUTPUT_TOKENS` 16384 → 32768（三处同步：api_generator 常量 / env.get_runtime_params 默认 / config.env.example）
+- **AI 定向重试**（c88bf63）：`--retry-failed`（仅 --guide）+ 失败清单 `logs/ai_last_failures.json` 落盘/清除，成功项字节不动
+- **写前快照**（d2c5b83）：main() 加载前对 guides/synergies 各快照一次（每次运行一次，非每批一次）
+- **prompt 强化**（cfca666，详见 3.6.1 节）：相性四层决策门 + 锚例校准（10 对样本漂移 20%→0%）；攻略 JSON 纪律 + 联动判定强化 + 牌名核对（20 武将样本 JSON 抛错率 20%→0%）；guide 温度 0.7 → 0.55（相性 0.3 不变）；解析代码零改动
+- **原子写收敛**（9737d52）：`utils._save_json` 委托 `json_repository.atomic_write_json`

@@ -5,7 +5,7 @@
 
 ---
 
-## 当前实现基线（2026-09-30）
+## 当前实现基线（2026-10-06）
 
 API 档案域（`get_api_config` / `resolve_api_config` / `has_available_api_profile` / `load_api_profiles` / `save_api_profiles` / `list_api_profiles` / `get_api_profile` / `migrate_legacy_api_config` 及 `_normalize_profiles` / `_as_bool` / `_usable_profile_config` / `_env_var_fallback` / `_legacy_api_config`）自 `env.py` 拆出至 `config/profiles.py`（审计 G7，2026-09），依赖单向指向 env.py 的路径常量与 .env 解析原语。`get_api_config()` 优先级为 `config/api_profiles.json（可用档案）> 仅环境变量 > config.env 旧链 > 默认值`；默认 API 地址为 `https://api.deepseek.com/v1/chat/completions`，默认模型为 `deepseek-v4-flash`。任务侧统一经 `resolve_api_config(name)` 解析，可用性判定统一经 `_usable_profile_config()`。`get_runtime_params()` 和 `get_mumu_config()` 经 `load_env_config()` 完成字段映射与类型转换。新增三项配置参数：`MUMU_OCR_RECHECK_ENABLED`（B2 复核引擎开关，默认 true）、`MUMU_OCR_POLL_IDLE_PAUSE`（轮询闲置暂停开关，默认 true）、`MUMU_OCR_POLL_IDLE_MINUTES`（闲置阈值，默认 5 分钟）。免责声明状态由独立模块 `disclaimer_state.py` 管理，持久化至 `config/.disclaimer_state.json`。
 
@@ -16,7 +16,7 @@ AppServices.__init__() -> get_mumu_config() -> CaptureService/OcrService.update_
 ai_batch.main() -> resolve_api_config(None)
 ```
 
-`save_env_file()` 先保留原文件注释和未修改键，再写入 `.env.tmp` 并 `replace()` 原子替换。启动阶段 `main()` 在启动页显示期间创建 `MainWindow`，随即 `start_ocr_warmup()` 并以 `wait_ocr_warmup(timeout_ms=120_000)` 阻塞完成 PaddleOCR 冷加载，之后再 `window.show()`——Paddle 初始化长时间持有 GIL，预热不能与事件循环并发。日志侧已无 AI 子进程直写文件的例外：所有 QProcess 子进程仅输出控制台，由父进程转发落盘。
+`save_env_file()` 先保留原文件注释和未修改键，写盘统一委托 `json_repository.atomic_write_text()`（mkstemp 唯一临时名 + fsync + 原子替换，063dc47/9737d52 收敛）。启动阶段 `main()` 在启动页显示期间创建 `MainWindow`，随即 `start_ocr_warmup()` 并以 `wait_ocr_warmup(timeout_ms=120_000)` 阻塞完成 OCR 引擎冷加载，之后再 `window.show()`——引擎初始化长时间持有 GIL，预热不能与事件循环并发。启动期轻运维：日志初始化后 `_prune_old_screenshots(keep_days=14)` 回收截图；主窗口显示后 2 分钟 `auto_check_if_due()` 每日一次自动公告检查（c88bf63）。日志侧已无 AI 子进程直写文件的例外：所有 QProcess 子进程仅输出控制台，由父进程转发落盘。
 
 ## 一、应用启动链路
 
@@ -155,7 +155,7 @@ get_mumu_config()
    -> return config dict
 ```
 
-消费方：`AppServices.__init__()` 注入 `CaptureService` / `OcrService.update_config()`；`paddle_loader.create_paddle_ocr()` 读 `mumu_ocr_use_gpu` / `mumu_ocr_cpu_threads` 决定推理设备；`GeneralRecognizer._recheck_engine` 读 `mumu_ocr_recheck_enabled` 决定是否启用 B2 复核引擎；`PollCoordinator` 读 `mumu_ocr_poll_idle_pause` / `mumu_ocr_poll_idle_minutes` 控制轮询闲置暂停；`MainWindow._open_mumu_config()` 以同一份字典为对话框数据源并回写 `config.env`。
+消费方：`AppServices.__init__()` 注入 `CaptureService` / `OcrService.update_config()`；`engine_loader.primary_suite()` 读 `mumu_ocr_primary_engine`（默认 v6）选主引擎套件、`_cpu_threads()` 读 `mumu_ocr_cpu_threads` 钉 onnxruntime intra_op；`GeneralRecognizer._recheck_engine` 读 `mumu_ocr_recheck_enabled` 决定是否启用复核引擎；`PollCoordinator` 读 `mumu_ocr_poll_idle_pause` 控制轮询闲置暂停（`MUMU_OCR_POLL_IDLE_MINUTES` 已移除，阈值为类常量 `IDLE_PAUSE_MINUTES=5`）；`MainWindow._open_mumu_config()` 以同一份字典为对话框数据源并回写 `config.env`。
 
 ### 2.4 配置文件保存
 
@@ -179,10 +179,10 @@ save_api_profiles(data, profiles_path)
 | `get_api_config()` | `config/profiles.py` | `resolve_api_config()`, `business/ai_cost.py`, `scripts/run_synergy_drift.py` | `load_api_profiles()`, `_usable_profile_config()`, `_env_var_fallback()`, `_legacy_api_config()` |
 | `resolve_api_config(name)` | `config/profiles.py` | `scraper/ai/batch.py`, `business/rag/refinement_service.py` | `get_api_profile()`, `_usable_profile_config()`, `get_api_config()` |
 | `has_available_api_profile()` | `config/profiles.py` | `ui/generation/backend_choose_dialog.py` | `load_api_profiles()`, `_usable_profile_config()` |
-| `get_mumu_config()` | `config/env.py` | `ui/app/app_services.py`, `ui/app/main_window.py`, `ocr/paddle_loader.py` | `load_env_config()` |
+| `get_mumu_config()` | `config/env.py` | `ui/app/app_services.py`, `ui/app/main_window.py`, `ocr/engine_loader.py` | `load_env_config()` |
 | `parse_env_file(path)` | `config/env.py` | `load_env_config()`, `load_api_profiles` 迁移链 | `Path.read_text()`, 逐行解析 |
 | `load_env_config(path)` | `config/env.py` | `get_runtime_params()`, `get_mumu_config()`, `_legacy_api_config()`, `rag/config.py` | `parse_env_file()`, key_mapping, 类型转换 |
-| `save_env_file(path, data)` | `config/env.py` | `ui/app/main_window.py` (_open_mumu_config), `ui/configuration/settings_dialog.py` (_on_save) | `Path.write_text()`, 原子替换 |
+| `save_env_file(path, data)` | `config/env.py` | `ui/app/main_window.py` (_open_mumu_config), `ui/configuration/settings_dialog.py` (_on_save) | 组装保留注释的行后委托 `atomic_write_text()` 原子替换 |
 | `migrate_legacy_api_config()` | `config/profiles.py` | `src/main.py::main()` | `parse_env_file()`, `save_api_profiles()` |
 
 ### 2.6 势力配色配置（faction_colors.json）
@@ -234,7 +234,7 @@ ui/configuration/settings_dialog.py ("价格配置"页签)
 |------|------|------|
 | `load_pricing_config(path)` | `config/env.py` | 读取并校验价格 JSON，异常时返回空模型表 |
 | `get_model_pricing(model)` | `config/env.py` | 返回指定模型单价，未知或非法配置返回 `None` |
-| `save_pricing_config(path, data)` | `config/env.py` | UTF-8、LF、无 BOM 原子写入 |
+| `save_pricing_config(path, data)` | `config/env.py` | UTF-8、LF、无 BOM 原子写入（委托 `atomic_write_text`，函数内延迟导入） |
 
 ### 2.6 RAG 语料配置（src/rag/config.py）
 
@@ -345,7 +345,7 @@ src.config.env 的消费方:
   list_api_profiles()           ← tests/test_api_profiles.py（当前无 UI 消费方）
   get_mumu_config()             ← src.ui.app.app_services.py（注入 Capture/Ocr 服务）
                                 ← src.ui.app.main_window.py（_open_mumu_config）
-                                ← src.ocr.paddle_loader.py（推理设备 / CPU 线程）
+                                ← src.ocr.engine_loader.py（主引擎套件 / CPU 线程）
   save_env_file()               ← src.ui.app.main_window.py（_open_mumu_config）
                                 ← src.ui.configuration.settings_dialog.py（_on_save）
   load_pricing_config()         ← src.ui.configuration.settings_dialog.py（"价格配置"页签）
@@ -367,7 +367,7 @@ src.config.env 的消费方:
 | `src.ui.app.app_icon.install_app_icon` | 加载/缓存图标并安装图标恢复器 |
 | `src.ui.app.chinese_translator.install_chinese_qt_translator` | Qt 标准控件中文翻译器 |
 | `src.ui.shared.style.GLOBAL_STYLE` | 全局样式表 |
-| `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.paddle_loader` | 启动页阶段完成 PaddleOCR 冷加载（传递依赖，主入口不直接引用） |
+| `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.engine_loader` | 启动页阶段完成 OCR 引擎冷加载（RapidOCR/ONNX 双套件，传递依赖，主入口不直接引用） |
 | `src.config.disclaimer_state.should_show()` / `accept()` | 启动时免责声明弹窗判定与持久化 |
 | `runpy` | frozen 重入下以模块模式运行 `-m` 子脚本 |
 
@@ -385,11 +385,30 @@ src.config.env 的消费方:
 | `resolve_api_config(name)` | `config/env.py` | `ai/batch.py`, `rag/refinement_service` | `get_api_profile()`, `_usable_profile_config()`, `get_api_config()` |
 | `has_available_api_profile()` | `config/env.py` | `backend_choose_dialog` | `load_api_profiles()`, `_usable_profile_config()` |
 | `load_api_profiles()` / `save_api_profiles()` | `config/env.py` | `settings_dialog`, `_normalize_profiles()` | 归一化（启用互斥/名称去重）+ UTF-8、LF、原子替换 |
-| `get_mumu_config()` | `config/env.py` | `app_services`, `main_window`, `paddle_loader` | `load_env_config()`, 类型转换 |
+| `get_mumu_config()` | `config/env.py` | `app_services`, `main_window`, `engine_loader` | `load_env_config()`, 类型转换（含 `mumu_screenshot_mode` 补回、`mumu_ocr_primary_engine`） |
 | `get_runtime_params()` | `config/env.py` | `main()`, 各 CLI 入口 | `load_env_config()` |
 | `should_show()` / `accept()` | `config/disclaimer_state.py` | `src/main.py::main()`, `ui/app/disclaimer_dialog.py` | 独立状态文件 `config/.disclaimer_state.json`；`DISCLAIMER_VERSION` 常量驱动重新确认 |
 | `parse_env_file(path)` | `config/env.py` | `load_env_config()`, 迁移链 | `Path.read_text()`, 逐行解析 |
 | `load_env_config(path)` | `config/env.py` | `get_runtime_params()`, `get_mumu_config()`, `_legacy_api_config()`, `rag/config.py` | `parse_env_file()`, key_mapping |
-| `save_env_file(path, data)` | `config/env.py` | `main_window`, `settings_dialog` | `Path.write_text()`, 原子替换 |
+| `save_env_file(path, data)` | `config/env.py` | `main_window`, `settings_dialog` | 委托 `atomic_write_text()` 原子替换 |
 | `migrate_legacy_api_config()` | `config/env.py` | `main()` | `parse_env_file()`, `save_api_profiles()` |
 | `load_pricing_config()` / `save_pricing_config()` / `get_model_pricing()` | `config/env.py` | `settings_dialog`, `prompt_utils` | 价格表校验 + 原子替换 |
+
+---
+
+## 六、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增链路**
+- `src/config/version.py::app_version()`（31f59be/80cc75b）：`PROJECT_ROOT/VERSION` → frozen `BUNDLE_ROOT/VERSION` → `0.0.0-dev`（lru_cache）；消费方 `main.py` 启动日志与 `setApplicationVersion`、`dialog_coordinator` 关于对话框（原硬编码 v0.1.0）、`release.py` 发版校验
+- `logging_config.setup_logging()` 尾部注册双钩子：`threading.excepthook`（R2，后台线程未捕获异常记带堆栈 ERROR）+ 链式 `sys.excepthook`（80cc75b，QThread 逃逸异常；KeyboardInterrupt 透传、幂等标记）
+- main.py 启动期轻运维（c88bf63）：`_prune_old_screenshots(keep_days=14)`；`QTimer.singleShot(120_000, coordinator.auto_check_if_due)` 每日一次自动公告检查（`AUTO_CHECK_MARKER` 标记先写）
+- 首启部署标记 `data/.deployed`（b3327f1）：签名一致跳过 280MB 逐文件扫描
+
+**修正**
+- `get_mumu_config()` 补回 `mumu_screenshot_mode`（063dc47，默认 "auto"——此前返回字典漏键致 `MUMU_SCREENSHOT_MODE` 沦为死开关）
+- `save_pricing_config` / `save_env_file` 写盘收敛到 `json_repository.atomic_write_text`（函数内延迟导入避免 config↔data 循环）
+- `get_runtime_params` 的 `max_output_tokens` 默认 32768（cf9c927）
+- `DISCLAIMER_VERSION` "1.0" → "1.1"（735a2d2）
+- 引擎配置消费方：`paddle_loader` → `engine_loader`（`mumu_ocr_primary_engine` 新增、`mumu_ocr_use_gpu` 死键退役）

@@ -1,17 +1,17 @@
 # 模块：应用入口与配置
 
 > 对应目录：`src/main.py` + `src/config/`
-> 职责：应用启动入口、API 档案与 .env 配置管理、统一日志初始化
-> 文档日期：2026-10-01
+> 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
+> 文档日期：2026-10-06
 
 ---
 
 ## 一、模块职责
 
 本模块负责三件事：
-1. **应用启动** — 创建 `QApplication`，在 frozen 打包模式下补齐可写运行时骨架、抑制子进程控制台弹窗，安装 Qt 中文翻译器、设置应用图标与全局样式；免责声明确认通过后，在启动页上构建 `MainWindow` 并等待 PaddleOCR 冷加载完成，随后进入事件循环
-2. **配置管理** — 以多 API 档案（`api_profiles.json`，启用互斥）为首选来源，回退 `config.env` 文件、环境变量与默认值多级加载配置；维护版本控制的模型价格表；旧 `DEEPSEEK_*` 三件套首启自动迁移为默认档案
-3. **统一日志** — 按模块分文件路由、10MB 轮转保留 5 份，并额外维护跨模块全量 `debug.log` 留底
+1. **应用启动** — 创建 `QApplication`，在 frozen 打包模式下补齐可写运行时骨架（`data/.deployed` 部署标记跳过重复扫描）、抑制子进程控制台弹窗，安装 Qt 中文翻译器、设置应用图标与全局样式；免责声明确认通过后，在启动页上构建 `MainWindow` 并等待 OCR 引擎冷加载完成，随后进入事件循环；另承担启动期轻运维：截图目录回收（14 天）与每日一次的自动公告检查
+2. **配置管理** — 以多 API 档案（`api_profiles.json`，启用互斥）为首选来源，回退 `config.env` 文件、环境变量与默认值多级加载配置；维护版本控制的模型价格表；旧 `DEEPSEEK_*` 三件套首启自动迁移为默认档案；版本号单一来源 `version.py::app_version()`（读根目录 `VERSION` 文件，当前 1.2.1）
+3. **统一日志** — 按模块分文件路由、10MB 轮转保留 5 份，并额外维护跨模块全量 `debug.log` 留底；注册 `threading.excepthook` 与链式 `sys.excepthook` 兜底记录线程/逃逸异常
 
 ---
 
@@ -27,7 +27,8 @@ src/
 │   ├── env.py               # .env、模型价格配置解析/加载/保存（原子写入）
 │   ├── profiles.py          # API 档案域（api_profiles.json）：读取/归一化/写入/解析/迁移（自 env.py 拆出，审计 G7）
 │   ├── disclaimer_state.py  # 免责声明状态管理（DISCLAIMER_VERSION、config/.disclaimer_state.json）
-│   └── logging_config.py    # 统一日志配置（按模块拆分 + 文件轮转 + 全量留底）
+│   ├── version.py           # 版本单一来源 app_version()：VERSION 文件 → frozen BUNDLE_ROOT → 0.0.0-dev
+│   └── logging_config.py    # 统一日志配置（按模块拆分 + 文件轮转 + 全量留底 + 线程/逃逸异常钩子）
 ```
 
 路径常量（`env.py` 顶部，按 `IS_FROZEN` 区分）：
@@ -79,7 +80,7 @@ app.processEvents()
 window = MainWindow()
 window.start_ocr_warmup()
 splash.showMessage("正在加载 OCR 模型…")
-window.wait_ocr_warmup(timeout_ms=120_000)       # 覆盖 Paddle 冷加载（实测可达 90 秒+，占 GIL）
+window.wait_ocr_warmup(timeout_ms=120_000)       # 覆盖 OCR 引擎冷加载（实测可达 90 秒+，占 GIL）
 window.show()
 splash.finish(window)
 sys.exit(app.exec())
@@ -89,9 +90,11 @@ sys.exit(app.exec())
 
 1. **frozen 首启骨架补齐** — `_ensure_clean_runtime()` 仅 frozen 态执行：从 `_internal/config.env.example` 复制出 `config.env`（用户填 Key），再把 `_internal/config/ocr_rois.default.json` 复制为 `config/ocr_rois.json`（用户 ROI 可编辑副本，缺失才复制），创建 `data/` / `logs/` / `config/` / `templates/` / `images/` 目录，将 `_internal/data/` 下静态资源（核心库 json / 官方榜单 csv / RAG 语料 / 评估集 / raw_guides）递归复制到 `PROJECT_ROOT/data/`（只补缺失、不覆盖已有数据），并把元规则母本 `元规则整理-完整版.md` 部署到 `PROJECT_ROOT/docs/`（`build_rule_corpus` 等维护脚本读该路径）。开发态直接返回。
 2. **抑制控制台弹窗** — `_install_no_window_patch()` 在 frozen 下给 `subprocess.Popen.__init__` 注入 `CREATE_NO_WINDOW`，避免 adb 等控制台子程序触发 Windows 新建控制台的轮询黑窗。`subprocess.run` 内部走 Popen，一并覆盖。开发态不 patch，保留控制台便于调试。
-3. **OCR 预热阻塞式** — `wait_ocr_warmup(timeout_ms=120_000)` 在启动画面上完成 PaddleOCR 冷加载。因 Paddle 初始化长时间持有 Python GIL，若与主窗口事件循环并发运行会导致界面卡死，故先预热后 `window.show()`。超时覆盖 120 秒，防止冷加载超过默认值时窗口已显示但预热仍阻塞 UI。
+3. **OCR 预热阻塞式** — `wait_ocr_warmup(timeout_ms=120_000)` 在启动画面上完成 OCR 引擎冷加载。因引擎初始化长时间持有 Python GIL，若与主窗口事件循环并发运行会导致界面卡死，故先预热后 `window.show()`。超时覆盖 120 秒，防止冷加载超过默认值时窗口已显示但预热仍阻塞 UI。
 4. **启动页异常兜底** — `MainWindow()` 或预热期间抛异常时，`splash.close()` + `logger.exception` + `QMessageBox.critical`，并 `sys.exit(1)`，避免启动页残留。
 5. **frozen 重入走 runpy** — `__main__` 分支中，`IS_FROZEN` 且 `sys.argv[1]=="-m"`（带模块参数）时以 `runpy.run_module()` 模块模式运行（AI 攻略/相性/武将生成走 `src.scraper.ai_batch` 等 `-m` 子脚本），防止 exe 重入又拉起一个 GUI 实例。开发态 python 自带 `-m` 处理，不触发此分支。
+6. **首启资料部署标记**（b3327f1）— `data/.deployed` 记录源树签名"文件数:最新mtime秒"（`_bundle_data_signature`），签名一致则跳过约 280MB 的逐文件 rglob 部署扫描；签名变化（升级包带新数据）仍会补齐。范式同 `engine_loader` 的 `.synced`。
+7. **启动期轻运维**（c88bf63）— 日志初始化后调用 `_prune_old_screenshots(keep_days=14)` 回收 `screenshots/` 顶层 mtime 超 14 天的 `*.png`（子目录标注样本被 OCR 回归测试引用、不动；失败仅 warning 不阻断启动）；主窗口显示后 `QTimer.singleShot(120_000, coordinator.auto_check_if_due)` 触发每日一次的自动公告检查（忙碌/冷却期内静默跳过，标记先写、当日失败不重试）。
 
 ### 3.2 配置加载优先级
 
@@ -133,11 +136,11 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后通过 `key_mapping` 将大写 KEY 映射为内部小写 key，并完成类型转型：整数型（`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`）、布尔型（`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu` / `mumu_ocr_recheck_enabled` / `mumu_ocr_poll_idle_pause`）、浮点型（`mumu_ocr_match_threshold` / `mumu_hero_selection_threshold` / `mumu_match_guide_threshold` / `recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`）。`MUMU_SCREENSHOT_MODE`（`mumu_screenshot_mode`）不经转型、按字符串透传给 `capture_service`。
+`load_env_config(env_path)` 解析 `.env` 后通过 `key_mapping` 将大写 KEY 映射为内部小写 key，并完成类型转型：整数型（`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`）、布尔型（`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_recheck_enabled` / `mumu_ocr_poll_idle_pause`）、浮点型（`mumu_ocr_match_threshold` / `mumu_hero_selection_threshold` / `mumu_match_guide_threshold` / `recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`）。`MUMU_SCREENSHOT_MODE`（`mumu_screenshot_mode`）与 `MUMU_OCR_PRIMARY_ENGINE`（`mumu_ocr_primary_engine`）不经转型、按字符串透传。
 
-`get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(16384) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
+`get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(32768，cf9c927 由 16384 上调，与 `AIBatchGenerator.MAX_OUTPUT_TOKENS` 默认一致) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
-`get_mumu_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_screenshot_mode`("auto"，MUMU_SCREENSHOT_MODE，透传给 capture_service) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_use_gpu`(False) / `mumu_ocr_cpu_threads`(6) / `mumu_ocr_recheck_enabled`(False，B2 复核模式开关，d88fc2f 新增) / `mumu_ocr_poll_idle_pause`(True，轮询闲置自动暂停开关，bca4092 新增)。OCR 推理配置（GPU 开关、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `paddle_loader.create_paddle_ocr()`。2026-09 起（cd35c98）另新增模板匹配分层加速与 ADB raw 帧截图提速相关配置参数，详见 `config.env.example`。
+`get_mumu_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_screenshot_mode`("auto"，MUMU_SCREENSHOT_MODE，透传给 capture_service；063dc47 补回返回字典——此前该键漏出、文档承诺的排障手段实为死开关) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_primary_engine`("v6"，B1 新增，v4 为回滚档且主复核引擎互换) / `mumu_ocr_cpu_threads`(6，钉入 onnxruntime intra_op) / `mumu_ocr_recheck_enabled`(False，复核引擎开关) / `mumu_ocr_poll_idle_pause`(True，轮询闲置自动暂停开关，bca4092 新增)。`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键（doctor `DEAD_CONFIG_KEYS` 登记）。OCR 推理配置（主引擎套件、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `engine_loader.create_rapidocr_ocr()`。2026-09 起（cd35c98）另新增模板匹配分层加速与 ADB raw 帧截图提速相关配置参数，详见 `config.env.example`。
 
 闲置暂停阈值分钟数不走配置键：早先的 `MUMU_OCR_POLL_IDLE_MINUTES` 已移除，现为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5` 类常量（`src/ui/app/poll_coordinator.py`），配置面只保留 `MUMU_OCR_POLL_IDLE_PAUSE` 开关。
 
@@ -169,6 +172,8 @@ handler 分两类：
 
 root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即使用户把 `LOG_LEVEL` 调到 DEBUG，root 仍不低于 WARNING）：第三方库（chromadb / transformers 等）作为 root 的直接子且级别 NOTSET，继承 root 后其 INFO/DEBUG 在 logger 层即被挡、不创建 LogRecord，实现零库名清单的高效压制。项目 `src` / `subprocess` 前缀单独设 `DEBUG` 全量创建，供 `debug.log` 留底与子进程输出转发。
 
+**线程与逃逸异常钩子**：`setup_logging()` 同时注册两类兜底钩子——`threading.excepthook`（R2，`_thread_excepthook`）把后台线程未捕获异常记为带堆栈 ERROR（`SystemExit` 视为正常退出不记录）；链式 `sys.excepthook`（80cc75b，`_install_sys_excepthook`）——PySide6 6.11 实测 `QThread.run()` 异常走 `sys.excepthook` 而非 `threading.excepthook`，新钩子把逃逸异常记为带堆栈 ERROR（logger 名 `excepthook`）后回调前一 hook 保留控制台行为，`KeyboardInterrupt` 直接透传，`_MANAGED_EXCEPTHOOK_ATTR` 标记保证幂等不重复包裹。
+
 **子进程日志策略**：由桌面应用启动的 QProcess 子进程设置 `MJS_QPROCESS_CHILD=1` 后跳过所有文件 Handler，仅输出控制台，stdout/stderr 由父进程统一收集并路由到对应日志文件，避免多进程同时轮转同一组文件导致 Windows 文件占用与备份竞争。`src.scraper.ai` / `subprocess.ai` 命名空间对应的 `ai_generation.log` handler 采用 `keep_debug=True` + 独立路由设计，使子进程原始输出（含 429 / length / JSON 等失败原因）在 root WARNING 下也不丢失。
 
 ### 3.5 模型价格
@@ -176,7 +181,7 @@ root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即�
 - `config/model_pricing.json`（frozen 下位于 `BUNDLE_ROOT/config/`）是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回"无法自动估算"（`get_model_pricing` 返回 `None`）。
 - 价格文件包含 `currency`、`unit`、`updated_at` 和 `models`；计价单位为"百万tokens"，每个模型维护 `input_per_million`、`output_per_million`、可选 `cached_input_per_million` 单价。2026-09 新增 `sensenova-6.8-flash-lite`（74234a8），当前表内实测 3 个模型（deepseek-v4-pro / deepseek-v4-flash / sensenova-6.8-flash-lite）。
 - `load_pricing_config(path)` 负责读取价格表，文件不存在或格式无效时返回默认空表 `{"currency":"CNY","unit":"百万tokens","updated_at":"","models":{}}`。
-- `save_pricing_config(path, data)` 负责 UTF-8 无 BOM、LF 换行的原子写入。
+- `save_pricing_config(path, data)` 负责 UTF-8 无 BOM、LF 换行的原子写入（9737d52 起委托 `json_repository.atomic_write_text`，函数内延迟导入避免 config↔data 循环初始化）。
 - `get_model_pricing(model)` 校验单价必须为非负数字（且不是 bool），非法返回 `None`。
 - API 配置对话框的"价格配置"页签直接维护该文件，保存前会校验模型名称唯一且单价为非负数。
 
@@ -234,13 +239,11 @@ def save_env_file(env_path, data):
                     lines.append(line)                   # 保留无关旧 key
                 if key:
                     existing_keys.add(key)
-    # 2. 追加新 key；3. 原地更新既有 key；4. .tmp → replace 原子覆盖
-    tmp_path = env_path.with_suffix(".env.tmp")
-    tmp_path.write_text("\n".join(result_lines) + "\n", encoding="utf-8")
-    tmp_path.replace(env_path)
+    # 2. 追加新 key；3. 原地更新既有 key；4. 组装结果交 atomic_write_text 原子覆盖
+    atomic_write_text(env_path, "\n".join(result_lines) + "\n")
 ```
 
-> **设计思路：** 直接写原文件如果中途崩溃会导致 .env 半损坏。`.tmp` → `.replace()` 在 NTFS 上是原子操作，写入成功前原文件不变。保留注释与无关键避免用户手写配置被覆盖丢失；若旧文件读失败则直接 `raise`，而非用空内容静默覆盖。
+> **设计思路：** 直接写原文件如果中途崩溃会导致 .env 半损坏。写盘统一委托 `json_repository.atomic_write_text`（mkstemp 唯一临时名 + fsync + `Path.replace` 原子替换），不再自建固定名 `.tmp`——固定名在并发写同一路径时会互相截断。保留注释与无关键避免用户手写配置被覆盖丢失；若旧文件读失败则直接 `raise`，而非用空内容静默覆盖。
 
 ### 4.2 日志路由的幂等性与根级别倒置
 
@@ -258,9 +261,12 @@ def setup_logging(log_level=DEFAULT_LEVEL, log_to_file=True, ...):
     # 反转级别：项目 src/subprocess 前缀恒定 DEBUG 全量创建，成全 debug.log 留底
     logging.getLogger("src").setLevel(logging.DEBUG)
     logging.getLogger("subprocess").setLevel(logging.DEBUG)
+    # 兜底钩子：后台线程与 QThread 逃逸异常记带堆栈 ERROR（幂等，不重复包裹）
+    threading.excepthook = _make_thread_excepthook()
+    _install_sys_excepthook()
 ```
 
-> **设计思路：** 只清理项目自身创建的 Handler，避免重复注册，同时不破坏外部日志 Handler。root 下限 WARNING + `src`/`subprocess` 单独设 DEBUG 形成"倒置"——第三方库静默、项目全量留底，`debug.log` 用 2 倍轮转上限承载。
+> **设计思路：** 只清理项目自身创建的 Handler，避免重复注册，同时不破坏外部日志 Handler。root 下限 WARNING + `src`/`subprocess` 单独设 DEBUG 形成"倒置"——第三方库静默、项目全量留底，`debug.log` 用 2 倍轮转上限承载。钩子链式回调前一 hook，KeyboardInterrupt 透传。
 
 ### 4.3 API 档案归一化与启用互斥
 
@@ -315,8 +321,9 @@ def _normalize_profiles(profiles) -> list[dict]:
 | `resolve_api_config(name)` | `profiles.py` | `dict` | 任务侧唯一 API 解析入口：指定档案 → 默认解析 |
 | `has_available_api_profile()` | `profiles.py` | `bool` | 是否存在可用（enabled+URL 非空+供应商 Key 语义）的档案 |
 | `migrate_legacy_api_config(env_path, profiles_path)` | `profiles.py` | `bool` | 旧 DEEPSEEK_* 三件套 → deepseek-main 档案（幂等） |
-| `setup_logging(...)` | `logging_config.py` | `None` | 初始化日志系统（幂等，只清理自身 Handler） |
-| `DISCLAIMER_VERSION` | `disclaimer_state.py` | `str` | 免责声明版本常量（当前 `"1.0"`），仅版本变化时要求重新确认 |
+| `setup_logging(...)` | `logging_config.py` | `None` | 初始化日志系统（幂等，只清理自身 Handler；同时注册 threading.excepthook 与链式 sys.excepthook） |
+| `app_version()` | `version.py` | `str` | 版本单一来源（lru_cache）：依次读 `PROJECT_ROOT/VERSION` → frozen `BUNDLE_ROOT/VERSION`，均失败回退 `"0.0.0-dev"`；消费方为 main.py 启动日志与 `setApplicationVersion`、关于对话框（80cc75b 起，原硬编码 v0.1.0）与 release.py 发版校验 |
+| `DISCLAIMER_VERSION` | `disclaimer_state.py` | `str` | 免责声明版本常量（当前 `"1.1"`），仅版本变化时要求重新确认；TERMS/LICENSE 实质修订时须与常量同批递增（735a2d2） |
 | `should_show(state_file)` | `disclaimer_state.py` | `bool` | 免责声明是否需要展示：从未接受或接受版本 ≠ `DISCLAIMER_VERSION` 时为 True；状态文件缺失/损坏/字段非法一律按"未接受"处理（记日志后重新弹窗） |
 | `accept(state_file, version)` | `disclaimer_state.py` | `None` | 记录用户接受的文本版本与时间（`config/.disclaimer_state.json`）；`main.py` 在 `should_show()` 为真时弹 `src/ui/app/disclaimer_dialog.py`，用户同意后调用，拒绝则退出应用 |
 | `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `ChineseQtTranslator` | 安装应用级 Qt 标准控件中文翻译器 |
@@ -338,11 +345,30 @@ def _normalize_profiles(profiles) -> list[dict]:
 | 被依赖 | `src.business.rag.refinement_service` | `resolve_api_config(profile_name)` + `PROVIDER_PRESETS` 解析指定档案 |
 | 被依赖 | `src.ui.app.main_window` / `src.ui.app.app_services` | `get_mumu_config()` 注入 `CaptureService` / `OcrService.update_config()`；`_open_mumu_config()` 经 `mumu_config_coordinator.persist_mumu_env_config()`（内部 `save_env_file()`）回写；`is_full_build()` 守卫 RAG 维护页 |
 | 被依赖 | `src.ocr.character_similarity` / `src.ui.configuration.whitelist_config_dialog` | 共享 `OCR_CONFUSION_OVERRIDES_PATH` 作为 OCR 混淆白名单路径单一事实源（识别侧读取、白名单界面写入） |
-| 被依赖 | `src.ocr.paddle_loader` | `create_paddle_ocr()` 读 `get_mumu_config()` 的 `mumu_ocr_use_gpu` / `mumu_ocr_cpu_threads` 决定推理设备 |
+| 被依赖 | `src.ocr.engine_loader` | `primary_suite()` 读 `mumu_ocr_primary_engine`（默认 v6）选主引擎套件；`_cpu_threads()` 读 `mumu_ocr_cpu_threads` 钉 onnxruntime intra_op 线程 |
 | 被依赖 | `src.rag.config` | RAG 语料/向量索引与预算配置（RAG_ENABLED / RAG_TOP_K / RAG_PROMPT_CHARS / RAG_BROWSER_PROMPT_CHARS / RAG_SYNERGY_PROMPT_CHARS / RAG_MODEL_DIR），由 AI 批量生成模块使用 |
 | 被依赖 | 所有模块 | 共享同一日志系统；QProcess 子进程经 `MJS_QPROCESS_CHILD=1` 环境变量跳过文件 Handler、仅输出控制台，stdout/stderr 由父进程转发落盘 |
 | 依赖 | `src.ui.app.main_window` | 应用入口创建 MainWindow 并调用 `start_ocr_warmup()` / `wait_ocr_warmup(timeout_ms=120_000)` |
 | 依赖 | `src.config.disclaimer_state` | `main.py` 启动时以 `should_show()` 判定是否弹免责声明、`accept()` 落盘确认状态（仅文本版本变化时要求重新确认） |
 | 依赖 | `src.ui.app.app_icon` / `src.ui.app.chinese_translator` / `src.ui.shared.style` | 启动阶段安装应用图标、Qt 标准控件中文翻译器与全局样式表 `GLOBAL_STYLE` |
-| 依赖（传递） | `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.paddle_loader` | 启动页阶段完成 PaddleOCR 冷加载，主入口仅触发、不直接引用 |
+| 依赖（传递） | `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.engine_loader` | 启动页阶段完成 OCR 引擎冷加载（RapidOCR/ONNX 双套件），主入口仅触发、不直接引用 |
 | 依赖 | `runpy`（frozen 重入） | `-m` 子脚本以模块模式运行，避免 exe 重入拉起 GUI |
+---
+
+## 七、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增**
+- `src/config/version.py`（31f59be / 80cc75b）：版本单一来源 `app_version()`（lru_cache，VERSION 文件优先 → frozen BUNDLE_ROOT → 回退 `0.0.0-dev`）；VERSION 文件当前 `1.2.1`。消费方：main.py 启动日志（版本/Python/Qt/运行时根/frozen）与 `setApplicationVersion`、关于对话框（原硬编码 v0.1.0）、release.py 发版校验与发版清单
+- `logging_config.py` 双钩子：`threading.excepthook`（R2）+ 链式 `sys.excepthook`（80cc75b，QThread 逃逸异常实测走 sys.excepthook；KeyboardInterrupt 透传；幂等标记）
+- main.py 启动期轻运维（c88bf63）：`_prune_old_screenshots(keep_days=14)` 截图回收、启动 2 分钟后 `auto_check_if_due()` 每日一次自动公告检查（标记先写、忙碌/冷却静默跳过）
+- 首启资料部署标记 `data/.deployed`（b3327f1）：签名一致跳过约 280MB 逐文件扫描
+
+**修正**
+- `get_mumu_config()` 补回 `mumu_screenshot_mode`（063dc47）——此前返回字典漏掉该键，`MUMU_SCREENSHOT_MODE` 排障手段实为死开关
+- `save_pricing_config` / `save_env_file` 写盘收敛到 `json_repository.atomic_write_text`（9737d52/063dc47，mkstemp 唯一临时名根治固定名 `.tmp` 并发互截；函数内延迟导入避免 config↔data 循环初始化）
+- `get_runtime_params` 的 `max_output_tokens` 默认 16384 → 32768（cf9c927，与 `AIBatchGenerator.MAX_OUTPUT_TOKENS` 对齐）
+- 配置键面：新增 `MUMU_OCR_PRIMARY_ENGINE`（默认 "v6"）、`MJS_DATA_REPO`（私有数据仓位置）；`MUMU_OCR_USE_GPU` 随 paddle 退役转死键（doctor `DEAD_CONFIG_KEYS` 登记）
+- `DISCLAIMER_VERSION` "1.0" → `"1.1"`（735a2d2，TERMS/LICENSE 实质修订须与常量同批递增）
+- OCR 推理配置消费方 `paddle_loader.create_paddle_ocr()` → `engine_loader.create_rapidocr_ocr()`（paddle 全栈退役）

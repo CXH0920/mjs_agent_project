@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-10-01
+> 文档日期：2026-10-06
 
 ---
 
@@ -196,7 +196,7 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 
 ### 3.1.2 轮询闲置自动暂停（idle_paused）
 
-开启 `mumu_ocr_poll_idle_pause`（默认开）后，轮询在画面长时间无变化时自动进入待机。`PollCoordinator.do_poll_work()` 每拍用 `frame_fingerprint`（32×18 灰度降采样、MAD<3 判同，阈值由 `src/scripts/calibrate_idle_threshold.py` 依据真实截图分布标定）与上一拍比较，经 `PollResult.frame_unchanged` 随结果回传；`_consume_poll_result()` 末尾的 `_track_idle_watch()` 只有 `HEALTHY_NO_MATCH` 且 `frame_unchanged` 的拍才累计 `IDLE_PAUSE_MINUTES=5` 分钟（对局长考仅数十秒，留数倍余量），MATCHED、截图/连接失败、无到期任务等其余结果一律清零——宁漏暂停不误暂停。达到阈值即调 `OcrService.pause_for_idle()`：停轮询、保留 ADB 连接、状态迁移为 `idle_paused`（独立于故障 `paused`，chip 用中性灰区分）。
+开启 `mumu_ocr_poll_idle_pause`（默认开）后，轮询在画面长时间无变化时自动进入待机。`PollCoordinator.do_poll_work()` 每拍用 `frame_fingerprint`（32×18 灰度降采样、MAD<3 判同，阈值由 `src/scripts/calibrate_idle_threshold.py` 依据真实截图分布标定）与上一拍比较，经 `PollResult.frame_unchanged` 随结果回传；`_consume_poll_result()` 末尾的 `_track_idle_watch()` 只有 `HEALTHY_NO_MATCH` 且 `frame_unchanged` 的拍才累计 `IDLE_PAUSE_MINUTES=5` 分钟（对局长考仅数十秒，留数倍余量），MATCHED、截图失败、无到期任务等其余结果一律清零——宁漏暂停不误暂停。**设备离线例外（f9f3b53）**：`RETRYABLE_CONNECTION`（设备离线）不再清零闲置计数、按"无进展"累计——旧逻辑"非健康即清零"导致离线期间闲置暂停永不达成、轮询以约 2 秒间隔无限重连刷 ERROR（2026-09 两天 1,617 条；修复后约 12 条/小时），连接恢复后由既有恢复机制自动继续。达到阈值即调 `OcrService.pause_for_idle()`：停轮询、保留 ADB 连接、状态迁移为 `idle_paused`（独立于故障 `paused`，chip 用中性灰区分）。
 
 恢复入口三条，均经 `resume_from_idle_pause()`（仅在闲置暂停态生效）回到 `sync_with_connection()`：点击状态栏闲置暂停胶囊（`StatusChips.poll_resume_requested`，其余状态点击仍是打开配置）、重新激活主窗口（`MainWindow.changeEvent` 的 ActivationChange）、以及既有配置保存/连接变化/导入对话框关闭触发的 `sync_with_connection()`。`sync_with_connection()` 会无条件清空指纹与计数；指纹基线只在会话边界（sync/停启/无到期任务拍）清除，结果消费路径只清计数不动基线，否则相邻比较会失去前帧。手动截图链路与本功能完全无关，不承担恢复职责。
 
@@ -286,6 +286,8 @@ HeroBrowser (QWidget)
 
 三个 Tab 的控件构造和只读渲染位于 `hero_detail_views.py`；`HeroDetailPanel` 保留当前武将/攻略状态、编辑对话框、`DataMutationService` 写入和视图刷新协调，并通过 `current_hero_id`、`refresh_synergies()` 提供公开边界。四个编辑/选择对话框仍位于独立模块；编辑器返回模型副本，服务统一创建快照和备份，写入失败时恢复原数据并重新显示保留输入的编辑弹窗。保存成功使用 Toast，删除完成使用模态结果反馈；相性说明只读窗口同样使用统一标题区和固定底栏。为兼容现有外部导入，`hero_browser.py` 继续导入并暴露这些对话框名称。
 
+**AI 生成忙碌守卫（eebd622）**：主窗口构造 `HeroBrowser` 时注入 `busy_check` 回调（攻略生成优先于相性生成——`guide_service.is_busy` 返回 `"攻略生成"`，否则 `synergy_service.is_busy` 返回 `"相性生成"`，都闲返回 `None`），经 `_setup_ui` 透传至 `HeroDetailPanel`。`_notify_generation_busy()` 在**四个编辑/删除入口打开对话框之前**前置调用（相性编辑/删除、攻略编辑/删除）：忙碌时 `QMessageBox.warning("AI 生成进行中", ...)` 拦截。防护原理：AI 子进程按批全量覆盖写 `guides/synergies.json`，落点是它启动时读入的旧快照，期间人工修改会被下一次批量提交静默冲掉。武将信息编辑/删除不加守卫（heroes.json 并发写方特征不同，维持最小改动）。
+
 **攻略展示布局：**
 - 主浏览页保留列表与详情摘要，方便快速切换武将。
 - 右侧顶部固定展示当前武将的名称、势力、定位、体力和手牌信息；内容切换使用弱化样式，避免与外层资料库导航竞争。
@@ -324,6 +326,8 @@ RecommendationPanel (QWidget)
 ```
 
 `recommendation_panel.py` 保留推荐数据更新、相性加载、OCR 导入、手动重建推荐指数与截图信号协调；实战配队横条拆至 `combo_strip.py`（命中匹配与 chip 渲染，评级经 `ratings_computed` 信号回传宿主刷卡片角标），捕获请求生命周期拆至 `shared/capture_flow.py`；`RecommendationService` 一次读取胜率与推荐指数快照，前三胜率排名基于数值快照计算。卡片固定高 141px、宽 390～640px，1100×760 默认窗口的 588px 视口正好容纳四行与三段间距；宽屏余量留在网格底部，960×640 才启用纵向滚动。卡片按“定位、推荐指数、最佳搭档、相性摘要、历史单将胜率、技能/攻略操作”呈现；完整相性列表通过 Tooltip 保留。
+
+**`ratings_computed` 信号契约（0ffed36）**：该信号负载是 `hero_id(int)→参战配队最高评级` 的 dict，必须声明为 `Signal(object)`——PySide6 将 `Signal(dict)` 编译为 QVariantMap 签名（键必须为字符串），int 键在发射时转换失败，槽只收到空 dict，"实战 ★最高评级"角标静默失效（修复前 Shiboken 打印 "Cannot copy-convert (dict) to C++"）。回归测试 `tests/test_combo_strip.py` 锁死该契约。
 
 **截图单飞锁与错误反馈**：`_begin_capture_request(source)` 经 `CaptureRequestLock.begin(CaptureSource(source))` 抢占来源，失败（另一请求在途）直接忽略本次触发；成功则禁用所有识别/导入/重建控件并把 `PageActionBar` 状态切到“正在识别…” / “正在保存…” / “正在导入图片…”。`_on_capture_result()` / `_on_capture_failed()` 调 `finish()` 释放锁：返回 None（过期回调）直接返回；返回来源后按来源分发：`adb_save` 仅复位控件，其余进入 OCR 结果导入。`_on_capture_failed` 把错误按来源写入 `NoticeBanner` 附可操作按钮——文件导入失败显示“重新选择”，ADB 失败显示“重试”与“打开模拟器配置”，`_retry_last_action()` 按上次失败来源重放。
 
@@ -723,12 +727,29 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 
-## 七、代码规模（2026-10-01 基线）
+## 七、代码规模（2026-10-06 基线）
 
-- **测试模块数**：112 个测试文件
-- **测试用例数**：1350 个 `test_*` 函数
+- **测试模块数**：129 个测试文件
+- **测试用例数**：1481 个 `test_*` 函数
 - **`main_window.py` 行数预算**：552 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩）
 
 ## 八、知识库维护界面（已迁出）
 
 知识库维护工作台、索引精化对话框、元规则面板、以及专属牌 / 卡牌点数 / 装备属性 / 武将分类四个数据源页签已整体迁至 [`./module_rag.md`](./module_rag.md)，此处不再重复。
+
+---
+
+## 九、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**功能与修复**
+- **ComboStrip 信号契约修复**（0ffed36）：`ratings_computed` 由 `Signal(dict)` 改 `Signal(object)`——int 键 dict 打穿 QVariantMap 编译致槽只收到空 dict、"实战 ★评级"角标静默失效；回归测试 `tests/test_combo_strip.py`（详见 3.4 节）
+- **资料库编辑 AI 生成忙碌守卫**（eebd622）：主窗口注入 `busy_check` → `HeroDetailPanel._notify_generation_busy()` 在相性/攻略四个编辑删除入口打开对话框前拦截（详见 3.3 节）
+- **设备离线计入闲置暂停**（f9f3b53）：`_track_idle_watch()` 对 `RETRYABLE_CONNECTION` 不再清零、按"无进展"累计——消除离线期间闲置暂停永不达成、无限重连刷 ERROR（约 1800 条/小时 → 约 12 条/小时）（详见 3.1.2 节）
+- **启动自动公告检查**（c88bf63）：`AnnouncementUpdateCoordinator.auto_check_if_due()` 每日最多一次（`AUTO_CHECK_MARKER = logs/.last_auto_check.json` 标记先写），忙碌/冷却静默跳过，与手动入口同 `check_now` 管线只提示不自动应用；主窗口启动 2 分钟后 `QTimer.singleShot(120_000, ...)` 接线
+- **关于对话框版本**（80cc75b）：`dialog_coordinator` 由硬编码 v0.1.0 改读 `app_version()`（`src/config/version.py` 单一来源，当前 1.2.1）
+- **截图未落盘提示**（80cc75b）：`peak_select_panel` 截图保存路径为 None 时状态栏改"截图未落盘（保存中或失败，详见日志）"（TONE_WARNING）
+
+**数字口径**
+- 测试规模：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）

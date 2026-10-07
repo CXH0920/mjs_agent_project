@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-10-01）
+## 当前实现基线（2026-10-06）
 
 `DataFacade.load_all()` 现在返回并保存 `LoadReport`，加载阶段不会调用 `save()`，因此源 JSON 不会被自动改写。武将变更时间轴 `data/mjs_adjustments.json` 于 2026-08-29 首次落地，与 `heroes.json` 并行供 RAG 构建脚本使用。
 
@@ -14,7 +14,7 @@
 
 **新增（0007fc4）**：`baike_ignore_store.py`——百科 diff 忽略名单，管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化，详见 [十四、百科 diff 忽略名单链路](#十四百科-diff-忽略名单链路baike_ignore_storepy)。
 
-**代码规模**：112 个测试文件 / 1350 个 `test_*` 函数（AST 静态计数，未计入 `parametrize` 展开）。
+**代码规模**：129 个测试文件 / 1481 个 `test_*` 函数（grep 静态计数，未计入 `parametrize` 展开）。
 
 ```
 MainWindow._load_data() -> DataFacade.load_all()
@@ -587,7 +587,9 @@ scripts/migrate_excel_to_json.py [--only points|equips|special]
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `atomic_write_json(path, data, indent)` | `json_repository.py` | 全库统一原子写（mkstemp + fsync + replace） |
+| `atomic_write_json(path, data, indent, sort_keys=False)` | `json_repository.py` | 全库统一 JSON 原子写（mkstemp 唯一临时名 + fsync + replace） |
+| `atomic_write_text(path, content)` | `json_repository.py` | 文本原子写（同骨架）；env/价格/ROI/档案配置写盘收敛于此 |
+| `snapshot_to_backups(source, *, keep=10)` | `json_repository.py` | 写前快照到同目录 `backups/`，同 stem 轮转保留 10 份；`corrupt-*` 与手工件不匹配轮转 |
 | `JsonRepository._read_root()` / `save_payload()` | `json_repository.py` | 加锁读盘骨架 / 加锁原子写盘 |
 | `JsonRepository._save_or_rollback()` | `json_repository.py` | 写盘失败恢复内存快照并重新抛出 |
 | `CardPointsRepository.save()` | `card_points_repository.py` | 原子写 card_points.json（继承 JsonRepository） |
@@ -780,3 +782,20 @@ save_baike_ignores(store, path)
 ```
 
 > **设计说明**：`state + hash` 定位"同一差异"而非仅凭 ID——同一武将/卡牌在忽略期间若官网再次变化，新差异不会被误压制。覆盖式保存使文件恒定大小，与快照语义一致。武将段与卡牌段共用同一文件但各占一段，互不干扰。
+
+---
+
+## 十二、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增链路**
+- **坏文件保底副本**：`DataManager._preserve_corrupt_file`（b3327f1）——`load` 路径解析失败/顶层非数组时先 `snapshot_to_backups(file_path)` 再置空，杜绝"损坏 → 置空 → 保存 → 空数据覆盖"；80cc75b 将同语义补齐到 `JsonRepository.load` 与 `card_catalog._JsonRepository._load`
+- **AI 生成入口写前快照**（d2c5b83）：`ai_batch.main()` 加载前对 `guide_path`/`synergy_path` 各快照一次（每次运行一次，非每批一次）
+- **数据管理备份收敛**（d2c5b83/8a46a43）：`_ManagerTransaction._backup` 单行委托 `snapshot_to_backups()`（`timestamp` 参数退役，同事务多文件共享时间戳的归组语义保留）
+- **私有数据仓同步**（7bdf075/8d23493/9958c79）：`src/scripts/pull_data.py` pull/push/verify——manifest sha256、push 有效性守卫（`MIN_HERO_COUNT=100` + 脏工作区拒绝）、pull staging + `Path.replace` 原子落位 + 脏覆盖先备份 `data/backups/`；`data/` 源数据自 2026-10-03 起不入版本库（`SOURCES.md` 登记来源）
+- 模型校验：`Skill.description`/`settlement` 加 `min_length=1`（608ed62）
+
+**修正**
+- `atomic_write_json` 补 `sort_keys` 参数（be40d26，兼容汉字特征缓存键序）
+- 全库 8 处固定名 `.tmp` 独立原子写实现收敛到 `json_repository` 基元（9737d52）

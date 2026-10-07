@@ -1,8 +1,8 @@
 # 模块：爬虫与数据采集
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
-> 职责：从官网解析武将数据、数据清洗与校验、头像下载
-> 文档日期：2026-10-01
+> 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量四道规模守卫 + 增量损坏硬停）**
+> 文档日期：2026-10-06
 
 ---
 
@@ -11,8 +11,8 @@
 本模块负责从[名将杀官网百科](https://mjs.ztgame.com/baike/)获取武将原始数据。官网不提供 REST API，数据通过 Nuxt.js 打包在 JS chunk 中。模块的核心工作是从 JS 文本中提取数据、清洗字段、映射到 Pydantic 模型并输出为 JSON。
 
 功能包括：
-- **全量采集** — 从官网下载全部武将数据
-- **增量采集** — 只采集本地没有的新武将
+- **全量采集** — 从官网下载全部武将数据（写入前四道规模守卫，拦截官网改版导致的空数据/截断数据覆盖）
+- **增量采集** — 只采集本地没有的新武将（损坏本地文件硬停，堵死"损坏 → 空集 → 全量覆盖"静默销毁链）
 - **指定采集** — 按武将名或 ID 采集特定武将
 - **头像下载** — 从官网下载武将头像到 `images/` 目录
 - **公告监控** — 拉取官方公告 API，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将哈希 diff 确认"什么真的变了"
@@ -29,9 +29,9 @@ src/scraper/
 └── official_source/
     ├── __init__.py          # 空
     ├── adapter.py           # 官网页面与 JS chunk 解析适配器（状态机核心）
-    ├── crawler.py           # 网络请求、数据清洗、校验与头像下载（2026-09 新增：每次抓取前存档 robots.txt 到 logs/robots_cache/）
-    ├── full.py              # 全量采集实现（含 CLI main）
-    ├── incremental.py       # 增量/指定采集实现（含 CLI main）
+    ├── crawler.py           # 网络请求、数据清洗、校验与头像下载（robots.txt 存档 + save_json_atomic 委托 atomic_write_json）
+    ├── full.py              # 全量采集实现（CLI main + refuse_write_reason 四道写入守卫 + 写前快照）
+    ├── incremental.py       # 增量/指定采集实现（CLI main + 损坏硬停 + 空结果退出码失败 + 写前快照）
     ├── announcement.py      # 公告 API/回退解析、武将相关判定、百科逐武将 diff
     └── card_baike.py        # 官网手牌库卡牌抓取、diff 与快照
 ```
@@ -170,6 +170,19 @@ def extract_js_array(js_text: str) -> str:
 - 保留「结算详情/结算详解/技能详解/技能详情」→ `settlement`（取第一个命中）
 - 丢弃「技能典故」「设计思路」（lore 文本，对游戏策略无帮助）
 
+### 3.2.1 全量采集写入前守卫（full.py，1fbfce4 新增）
+
+新增纯函数 `refuse_write_reason(validated: list[dict], out_path: Path) -> str | None`，四道规模守卫任一触发即返回拒绝原因，`crawl()` 写入分支据此打印 `[中止] 写入守卫触发` 并 `sys.exit(1)`（UI 经退出码显示失败而非"完成"）：
+
+1. **校验通过 0 条**——官网改版产出空数据；
+2. **技能总数为 0**——全部武将 `skills` 之和为空；
+3. **空技能描述占比超 20%**（`MAX_EMPTY_DESC_RATIO = 0.2`）——按 `description.strip()` 为空计数，拦截"官网返回壳子数据"；
+4. **较现存条数跌幅超 30%**（`MAX_COUNT_DROP_RATIO = 0.3`）——仅当 `out_path` 存在且可解析为非空 list 时比较 `len(validated) < len(old) * 0.7`；**旧文件损坏时该检查跳过直接放行**——全量重爬正是恢复手段，保持"官网正常时重爬可修复损坏文件"的路径畅通。
+
+通过守卫后先 `snapshot_to_backups(out_path)` 写前快照再 `save_json_atomic` 落盘。测试 `tests/test_crawler.py` 共 10 例（守卫纯函数 7 例 + crawl 集成 3 例）。
+
+> **设计思路：** 与模型层 `Skill` 字段 `min_length=1` 约束互补——模型层拦截"显式空串"，守卫层拦截"字段整体缺失/占比异常"的整批坏数据；两层共同保证"官网改版不会静默覆盖本地好数据"。
+
 ### 3.3 增量采集
 
 `src/scraper/official_source/incremental.py` 三种模式：
@@ -187,8 +200,11 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
    - **增量（`append=True`）**：追加本地缺失的武将；
    - **指定（`replace_ids`）**：先按 ID 删除旧数据再写入新数据（精确替换，覆盖已采集武将的陈旧数据）；
    - **皆否**：全量覆盖。
+4. 写入模式最后统一 `snapshot_to_backups(output_path)` 写前快照再 `save_json_atomic`（b181e13）。
 
-`load_existing_ids()` 用 `_load_heroes_file()` 读取本地 JSON，文件损坏时以 `corrupt-<timestamp>` 后缀备份原文件后按空集合继续，避免裸崩或静默丢数据。
+**空结果退出码改失败（b181e13）**：`run()` 清洗后 0 条不再打印"无新数据需要处理"以退出码 0 结束（会被 UI 读作完成），改为打印 `[中止] 目标武将清洗后 0 条（疑似官网结构变更）` 并 `sys.exit(1)`；校验全部失败同样 `sys.exit(1)`。`main()` 中"真无更新"（目标原始列表为空）仍走正常分支退出 0，不受影响。
+
+**损坏本地文件硬停（b181e13 / 8a46a43）**：`_load_heroes_file()` 对解析失败**或顶层非数组**（如整个 dict）的文件先 `_backup_corrupt_file()` 改名 `heroes.corrupt-<时间戳>.json` 留存再返回 `None`；`load_existing_ids()` 损坏时返回 `None` 而非空集——增量入口与替换/追加两个写入分支收到 `None` 均打印中止信息并 `sys.exit(1)`，堵死"损坏改名 → 空集 → 把整个 heroes.json 覆盖成只剩指定 1~2 个武将"的静默销毁链路。
 
 ### 3.4 头像下载
 
@@ -277,7 +293,7 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 | 模块 | 文件 | 职责 | 依赖边界 |
 |------|------|------|----------|
 | 纠错规则 | `name_resolution.py` | 武将名纠错与词表消解（`HeroNameResolver`）：精确匹配、前缀歧义、编辑距离纠错、混淆字对变体、批次唯一性补全、跨榜一致性消解、名称校验与复核候选生成 | 零 cv2/numpy/OCR 引擎依赖，仅依赖 `data/heroes.json` 与 `CharacterSimilarityService` |
-| 引擎策略 | `official_ocr_engines.py` | 双 OCR 引擎生命周期（`OfficialOcrEngines`）：简体主引擎懒加载、罕见字兜底引擎按需加载（v6 复核引擎优先 / 繁体回退）、兜底引擎失败标记、跨任务移交（`ocr`/`rare_char_ocr` 原始值属性） | 仅依赖 `create_paddle_ocr` / `get_recheck_ocr_engine` |
+| 引擎策略 | `official_ocr_engines.py` | 双 OCR 引擎生命周期（`OfficialOcrEngines`）：主引擎懒加载（`get_primary_ocr_engine()`，v6，与识别管线同源）、罕见字兜底引擎按需加载（复核引擎 v4，`chinese_cht` 繁体回退已退役）、兜底引擎失败标记（`rare_char_failed`）、跨任务移交（`ocr`/`rare_char_ocr` 原始值属性） | 仅依赖 `engine_loader.get_primary_ocr_engine` / `get_recheck_ocr_engine` |
 | 数据联动 | `official_data_import_service.py` | OCR 识别编排（表格线切分、逐行识别、排名序列校验、复核原因生成、CSV 写入、待复核会话持久化、人工修正应用） | 持有 `HeroNameResolver` 与 `OfficialOcrEngines` 两个协作者；只认 `main`/`rare_char` 两个识别入口 |
 
 **拆分收益：**
@@ -400,7 +416,18 @@ def transform(raw: dict) -> dict | None:
 
 ---
 
-## 七、代码规模（2026-10-01）
+## 七、代码规模（2026-10-06）
 
-- 测试模块数：112 文件（`tests/test_*.py`）
-- 测试用例数：1350 个 `test_*` 函数
+- 测试模块数：129 文件（`tests/test_*.py`）
+- 测试用例数：1481 个 `test_*` 函数
+
+---
+
+## 八、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+- **全量采集写入前守卫**（1fbfce4）：`refuse_write_reason()` 四道规模守卫（校验 0 条 / 技能总数 0 / 空技能描述占比 >20% / 条数跌幅 >30%，旧文件损坏时第 4 道放行），触发即 `sys.exit(1)`；通过后先 `snapshot_to_backups` 再落盘（详见 3.2.1 节）
+- **增量采集守卫**（b181e13 / 8a46a43）：空结果退出码改失败（0 条 → `sys.exit(1)`，"真无更新"仍为 0）；损坏/顶层非数组的本地 heroes.json 先 `_backup_corrupt_file` 留存再返回 `None`，各写入分支收到 `None` 硬停——堵死"损坏 → 空集 → 整个 heroes.json 被覆盖成 1~2 个武将"静默销毁链
+- **原子写收敛**（9737d52）：`crawler.save_json_atomic` 实现委托 `json_repository.atomic_write_json`，删除自建固定名 `.tmp` 实现（详见 `module_data.md` 3.11 节）
+- 测试规模台账：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）

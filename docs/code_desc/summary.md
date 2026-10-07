@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-10-02（基线 `885ea96` + 工作树未提交改动）
+> 文档日期：2026-10-06（基线 `0ffed36`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -8,7 +8,7 @@
 
 名将杀 Agent 是一款面向[名将杀手游](https://mjs.ztgame.com/)的桌面辅助工具。它提供武将数据库查询、AI 批量攻略/相性生成、武将相性分析、实时屏幕采集与 OCR 武将识别、RAG 语料知识库维护等功能，帮助玩家在游戏中快速决策。RAG 语料维护含索引精化工作台，将 LLM 建议编排、清单状态管理与持久化写回下沉为纯业务层，与 UI 解耦。
 
-自基线 `624c8c5`（2026-09-15）以来，项目新增 B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认）、白名单治理（错法频次记录 + 人工确认 + 用户层白名单维护）、轮询闲置自动暂停（整帧指纹判闲 + 三路恢复）与合规化改造（免责声明弹窗 + 附加法律条款 + robots.txt 存档）。2026-09-29 后进一步落地 Phase 4 上帝类拆分（六大目标按职责域出仓 14 个新模块）、API 档案域拆分、巅峰赛选将人工确认残留修复（导入前校验、停止清空确认表/禁将基线、牌面在位守卫、同名槽位显性告警）与官网武将数据同步（新增谢灵运/陶渊明）。2026-10-02 完成审计 G8：CaptureService 职责域出仓（官方导入网关 `official_import_gateway` / 图像保存调度 `image_save_scheduler` / OCR 任务协调器 `ocr_task_coordinator` 三模块，670→570 行，UI 门面信号零改动）、`save_results` 落盘 page_type 参数化（不再硬编码 `wujiang_select`）与行数棘轮 500 行 tripwire 落地（12 个 >500 行文件补种入册，超线未登记即测试变红）。
+自基线 `624c8c5`（2026-09-15）以来，项目新增 B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认）、白名单治理（错法频次记录 + 人工确认 + 用户层白名单维护）、轮询闲置自动暂停（整帧指纹判闲 + 三路恢复）与合规化改造（免责声明弹窗 + 附加法律条款 + robots.txt 存档）。2026-09-29 后进一步落地 Phase 4 上帝类拆分（六大目标按职责域出仓 14 个新模块）、API 档案域拆分、巅峰赛选将人工确认残留修复（导入前校验、停止清空确认表/禁将基线、牌面在位守卫、同名槽位显性告警）与官网武将数据同步（新增谢灵运/陶渊明）。2026-10-02 完成审计 G8：CaptureService 职责域出仓（官方导入网关 `official_import_gateway` / 图像保存调度 `image_save_scheduler` / OCR 任务协调器 `ocr_task_coordinator` 三模块，670→570 行，UI 门面信号零改动）、`save_results` 落盘 page_type 参数化（不再硬编码 `wujiang_select`）与行数棘轮 500 行 tripwire 落地（12 个 >500 行文件补种入册，超线未登记即测试变红）。2026-10-03 起实施数据出库与运维工具链建设：抓取与维护数据移出版本库、改经私有数据仓同步（`pull_data.py`，`data/SOURCES.md` 登记来源），落地 doctor 一键自检 / ops 周更编排 / 任务台账 / 版本单一来源 / 写前快照与全库原子写收敛 / 采集写入守卫。2026-10-06 完成 **B1 OCR 全量切换**——RapidOCR 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，ONNX/CPU）完全替代 paddle 全栈，打包含模型精简包 763MB→608MB。
 
 ## 核心功能
 
@@ -17,7 +17,7 @@
 - **对局攻略** — 2×2 展示四名武将，支持 ADB/本地图片导入并加载胜率榜（按对局链路区分 2v2 / 巅峰赛，`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）
 - **AI 攻略生成** — 通过多供应商 API（DeepSeek / OpenAI / Ollama / OpenAI 兼容档案）或浏览器自动化批量生成武将攻略，默认 RAG 官方规则语料增强，可切换经典模式（无 RAG 注入）；API 模式支持扩展额度与思考重试
 - **AI 相性评分** — 全量/指定武将的相性评分，支持 2~8 武将两两配对；RAG 注入双方武将语料块与规则/FAQ/卡牌跨类块，支持 RAG 增强/经典双版本
-- **屏幕采集与 OCR** — 通过 ADB 连接模拟器截图，OpenCV 模板匹配 + PaddleOCR 识别武将名
+- **屏幕采集与 OCR** — 通过 ADB 连接模拟器截图，OpenCV 模板匹配 + RapidOCR/ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎）识别武将名；v4 三件套经 `fetch_recheck_models.py` 官方清单预取（URL+SHA256 钉死），运行时离线纪律绝不联网下载
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
 - **官方数据导入** — 可独立或同时导入 2v2/巅峰赛/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 - **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费
@@ -28,7 +28,8 @@
 - **B2 复核模式** — 对未决识别槽位，使用 PP-OCRv6-small/ONNX 引擎（RapidOCR）做候选内确认；惰性加载+失败熔断，模型缺失不联网下载，设备固定 CPU；`RapidOcrEngine` 包装层将 RapidOCR 结果翻译为 paddleocr 2.x 风格
 - **白名单治理** — OCR 未决错法频次记录（`pending_stats.py`，双事件流 + 60 秒节流窗口 + 原子替换写入）+ 用户层白名单维护界面（`whitelist_config_dialog.py`，错法观察清单 A+/A/B/C 分类 + `ocr_confusion_overrides.json` 静态冲突检查 + `reset_ocr_recognizer_cache()` 即时生效）
 - **轮询闲置自动暂停** — 整帧降采样指纹（`frame_fingerprint.py`，32×18 灰度 576 字节，MAD 阈值 3.0）+ 轮询协调器（`poll_coordinator.py`，连续 5 分钟无画面变化自动暂停，三路交互恢复）+ 阈值校准工具（`calibrate_idle_threshold.py`）
-- **合规化改造** — 免责声明弹窗（`disclaimer_dialog.py` + `disclaimer_state.py`，版本感知仅条款更新时重新确认）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（`logs/robots_cache/`）+ 架构防火墙声明（代码不含 ADB 输入能力）
+- **合规化改造** — 免责声明弹窗（`disclaimer_dialog.py` + `disclaimer_state.py`，版本感知仅条款更新时重新确认，当前版本 1.1）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（`logs/robots_cache/`）+ 架构防火墙声明（代码不含 ADB 输入能力）+ **数据出库**（抓取与维护数据自 2026-10-03 起不入版本库，经私有数据仓同步，`data/SOURCES.md` 登记来源）
+- **运维自检与周更编排** — `doctor.py` 一键只读自检（11 组检查：环境/设备/私有仓/数据/配置/白名单/AI 链路/日志/磁盘/合规/安全，`--offline` / `--json`）；`ops.py` 周更运维统一入口（weekly 编排 pull→diff→maintain_rag→pytest→push，前置失败不 push；health / retry-failed / clean 子命令）；任务台账 `task_ledger.py`（`logs/task_results.jsonl`，跨日志轮转窗口留痕）；AI 定向重试 `ai_batch --retry-failed`（失败清单 `logs/ai_last_failures.json`）；版本单一来源 `src/config/version.py`（`app_version()`，VERSION 文件 1.2.1）
 
 ## 技术栈
 
@@ -40,9 +41,9 @@
 | RAG 检索 | ChromaDB + sentence-transformers（bge-small-zh-v1.5 本地嵌入）+ 关键词 RRF 混合检索 |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
-| OCR 识别 | PaddleOCR + 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，424 字特征缓存）+ B2 复核引擎（RapidOCR 3.9.2 / PP-OCRv6-small/ONNX） |
-| 数据持久化 | JSON + CSV 文件（原子写入，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（112 文件 / 1350 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
+| OCR 识别 | RapidOCR 3.9.2 / ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，`onnxruntime` 1.23.2，CPU 固定、线程可钉）+ 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，424 字特征缓存）；paddle 全栈已退役 |
+| 数据持久化 | JSON + CSV 文件（`json_repository` 原子写/写前快照基元，无数据库依赖） |
+| 测试与静态检查 | pytest 9.0.3（129 文件 / 1481 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -56,17 +57,19 @@ test_project/
 │   ├── scraper/                 # 爬虫与 AI 批量生成层（含 card_baike 卡牌百科抓取清洗）
 │   ├── rag/                     # RAG 向量索引与混合检索基础设施（ChromaDB + bge-small-zh + 关键词 RRF）
 │   ├── scripts/                 # 语料构建与维护脚本（build_*_corpus / maintain_rag / import_hero_adjustments / 元规则维护 CLI）
-│   │                           #   + ocr_baseline（OCR 回归基线工具）/ calibrate_idle_threshold（闲置阈值校准）
+│   │                           #   + doctor（一键只读自检）/ ops（周更运维统一入口）/ pull_data（私有数据仓同步）
+│   │                           #   + fetch_recheck_models（v4 复核模型预取）/ ocr_baseline（OCR 回归基线）/ calibrate_idle_threshold（闲置阈值校准）
 │   ├── business/                # 业务服务层（QProcess、OCR/官方榜单导入编排、公告与巅峰赛业务、卡牌百科同步）
 │   │                           #   + emulator 协作模块（capture_service 门面 + ocr_task_coordinator / official_import_gateway / image_save_scheduler，审计 G8）
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   ├── capture/                 # 屏幕采集层（ADB 连接、截图、MuMu 实例探测）
-│   ├── ocr/                     # OCR 识别层（模板匹配 + PaddleOCR + 卡位检测 + paddle_loader B2 复核引擎）
+│   ├── ocr/                     # OCR 识别层（模板匹配 + RapidOCR 双套件 + 卡位检测 + engine_loader 引擎装载）
 │   └── ui/                      # PySide6 用户界面层（app / configuration / data_admin / generation / library / match / maintenance / recommendation / shared）
 │                               #   + 主窗口协调器与自足组件（app_services / status_chips / progress_reporter / poll_coordinator / announcement_update_coordinator）
 │                               #   + whitelist_config_dialog（白名单配置）/ baike_ignore_manager_dialog（百科忽略名单）/ frame_fingerprint（闲置指纹）
 │                               #   + disclaimer_dialog（免责声明对话框）
 ├── data/                        # 数据文件（JSON + 2v2/巅峰赛胜率出场、放逐 CSV；RAG 源数据 JSON 与归档 archive/；含 card_snapshot.json / card_changes.json 卡牌百科快照与 baike_ignore.json 忽略名单）
+│                               #   源数据自 2026-10-03 起不入版本库，经私有数据仓同步（SOURCES.md 登记来源，samples/ 为虚构示例）
 ├── images/                      # 武将头像（PNG）
 ├── templates/                   # OCR 模板截图
 ├── screenshots/                 # 手动截图导出目录
@@ -106,12 +109,13 @@ test_project/
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  采集层 (src/scraper/ + src/capture/ + src/ocr/)                             │
 │  官网 JS 字符级状态机解析（extract_js_array）/ AI 生成 / ADB 截图               │
-│  模板匹配 / PaddleOCR / B2 复核引擎（RapidOCR）/ ADB raw 帧截图提速            │
+│  模板匹配 / RapidOCR 双套件（v6 主 + v4 复核）/ ADB raw 帧截图提速             │
 │  / 公告 API 与 HTML 回退                                                    │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  数据层 (src/data/)                                                           │
 │  Pydantic 模型 + DataFacade（facade / manager / issues 解环拆分）+ JSON 持久化  │
 │  ComboManager 落盘按 (-rating, hero1_id, hero2_id) 稳定排序                    │
+│  json_repository 原子写/写前快照基元全库收敛；源数据出库经私有数据仓同步        │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -121,14 +125,14 @@ test_project/
 
 | # | 模块 | 目录 | 主要职责 |
 |---|------|------|---------|
-| 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化 |
-| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分） |
-| 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`** |
-| 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器 |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）** |
-| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2128 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
-| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、PaddleOCR 识别、官方榜单版式解析、424 字静态汉字特征缓存 |
-| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口 |
+| 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化、**版本单一来源 `version.py`**、**启动自动公告检查与截图回收** |
+| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分）、**json_repository 原子写/写前快照基元全库收敛**、**数据出库与私有数据仓同步（pull_data）** |
+| 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`**、**全量四道规模写入守卫 + 增量损坏硬停** |
+| 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器、**httpx 超时分层 + 定向重试 `--retry-failed`**、**prompt 四层决策门/锚例校准/JSON 纪律** |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）**、**任务台账 `task_ledger` 与子进程看门狗（30 分钟）**、**OCR worker 首建同步回调接线（消除官方导入锁死竞态）** |
+| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2128 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、**语料块数校验快照基线三态（int / snapshot / None）**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
+| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、**RapidOCR 双套件识别（v6 主 + v4 复核，`engine_loader` 装载）**、官方榜单版式解析、424 字静态汉字特征缓存、**白名单 10 对基线与武将库冲突重检** |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口、**资料库编辑 AI 生成忙碌守卫**、**ComboStrip 信号契约修复（Signal(object)）**、**设备离线计入闲置暂停** |
 | 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理 + 人工确认残留修复**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
 
 ## 本轮文档校准（2026-09-21）
@@ -202,3 +206,42 @@ test_project/
 - 武将数 186 名（原 180 名）；`hero_classification.json` 实测 7 个顶层键（version / updated_at / source / note / categories 16 项 / hero_categories 186 键 / counter_chain 8 键）；`mjs_adjustments.json` 实测 4 个顶层键（init_imported_at / init_source_last_updated / corpus_base_date / events 144 条）
 - `model_pricing.json` 实际位于 `config/model_pricing.json`（非 `data/`），已随 `sensenova-6.8-flash-lite` 新增计价
 - `main_window.py` 行数预算实际为 552 行（审计 G1 拆分后棘轮值，`module_ui.md` 第七章原误记 819 已修正）；新增 `src/data/corpus_fields.py`（语料索引字段契约单一来源，12 行）入表
+
+## 本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来，共 30 个提交（10-03 至 10-06，至 `0ffed36`），本轮校准覆盖其全部变更：
+
+**B1 OCR 全量切换**（1694ab7 / d1a55e1，本轮最大变更）
+- **paddle 全栈退役**：`paddle_loader.py`（228 行）删除，由 `src/ocr/engine_loader.py`（248 行）替代；依赖从 paddlepaddle-gpu / paddleocr / protobuf + CUDA 系收敛为 **rapidocr==3.9.2 + onnxruntime==1.23.2 唯一 OCR 栈**
+- **RapidOCR 双套件**：PP-OCRv6-small 主引擎（v6 三件套 rapidocr wheel 内置）+ PP-OCRv4-mobile 复核引擎（三件套经 `src/scripts/fetch_recheck_models.py` 官方清单预取，URL+SHA256 钉死、幂等、`.part` 原子替换）；`MUMU_OCR_PRIMARY_ENGINE=v4` 为回滚档且主复核角色互换；设备恒 CPU、线程钉 `MUMU_OCR_CPU_THREADS`（默认 6）、det 统一 max/960 与生产画布同口径；`RapidOcrEngine` 包装类将 RapidOCR 结果翻译为 paddleocr 2.x 风格（box 必须 `tolist()`）
+- **白名单治理**：基线 7 对 → 12 对 → **10 对**（终态：昧→眜、半→芈、丰→羊、口→吕、好→妤、邻→郃、赢→嬴、苟→荀、早→卓、哈→哙）；简繁变体对退役（瓚↔瓒 0.94、黃↔黄 0.725 由视觉字形路径自动矫正，白名单回归"视觉评分不足 0.55 的形近临界对"本职）；新增 `effective_whitelist` property 与 `whitelist_conflicts_with_roster()` 武将库冲突重检谓词（doctor「白名单」检查组消费）
+- **识别链适配**：单槽回退触发线 `_NAME_RECHECK_CONFIDENCE` 0.8 → 0.75（v6 置信分布定标，触发率 4.5%→1.7%）；对局 team 徽记归一化失败即主→复核引擎链式重读（救回 15/18 个 v6 书法体徽记丢标签槽）；预热单路径化（rec-only 残留删除，修复预热状态机误报 `warmup_failed`）；官方榜单导入罕见字兜底 chinese_cht 繁体引擎链退役，改由复核引擎在 `allowed_names` 候选闭包内复核
+- **打包精简**：build_deps 机制删除、collect_all 缩至 4 包、excludes 恒排除 paddle 系（牵出 libpaddle.pyd 约 148MB 问题根除），精简包 763MB→**608MB**
+
+**数据出库与私有数据仓**（7bdf075 / 8d23493 / 9958c79 / 80cc75b）
+- 抓取数据（heroes/combos/cards/card_annotations/special_cards、raw_guides/、rag_corpus/、images/）与维护数据（card_points/equip_attrs/hero_classification/mjs_adjustments）自 2026-10-03 起移出版本库；公开仓只含源代码、测试与 `data/samples/` 虚构示例
+- 新增 `src/scripts/pull_data.py`：pull / push / verify 三子命令 + `--dry-run`；私有仓位置三级解析（环境变量 `MJS_DATA_REPO` > config.env > 默认同级 `mjs_data_private`）；manifest.json sha256 校验；push 守卫链（数据有效性校验 `MIN_HERO_COUNT=100` + 脏工作区拒绝 + `git pull --ff-only` 对齐远端）；pull 原子落位（staging + `Path.replace`）+ 脏覆盖先备份 `data/backups/`（扁平命名）
+- `data/SOURCES.md` 第三方内容来源登记表落地
+
+**运维工具链**（b3327f1 / 1426686 / c88bf63 / 31f59be）
+- `src/scripts/doctor.py`（新增 609 行）：11 组只读体检 + `--offline` / `--json`，FAIL 退出码 1；401 匹配收紧为 "HTTP 401"（af8cd06，消除 token 统计行误计）
+- `src/scripts/ops.py`（新增 149 行）：weekly（pull→diff→maintain_rag→pytest→push，前置失败不 push）/ health / retry-failed / clean 四子命令
+- `src/business/common/task_ledger.py`（新增）：任务台账 JSONL 落 `logs/task_results.jsonl`，五个写入点（base_fetch_service / indexer / maintain_rag / pull_data / ops）
+- `src/config/version.py`（新增）：版本单一来源 `app_version()`；release.py 发版校验与发版清单 `logs/release-{version}.json` 终结三源并存的局面
+- R2 十项：维护脚本 crash logger 补装、manager 坏文件保底副本、RAG 索引写后条数一致性校验、OCR 退役 worker 强杀兜底（先 `logging.shutdown()`）、threading.excepthook、首启资料部署标记 `data/.deployed`、QProcess 看门狗 30 分钟、缓存畸形行显式告警、sync_rule_stats 缺源升级 error、pytest basetemp 收口 `.tmp_test/pytest-tmp`
+- 启动自动公告检查（每日一次、启动 2 分钟后、忙碌/冷却静默跳过）与启动截图回收（14 天）
+
+**数据层健壮性与 AI 质量**（be40d26 / 9737d52 / d2c5b83 / 608ed62 / 1fbfce4 / b181e13 / 4720366 / f9f3b53 / cf9c927 / cfca666 / 0ffed36）
+- `json_repository.py` 三基元：`atomic_write_json`（+`sort_keys`）/ `atomic_write_text` / `snapshot_to_backups(keep=10)`；全库 8 处固定名 `.tmp` 写盘收敛（根治并发互截）；`JsonRepository.load` 与 `card_catalog` 坏文件分支补保底快照（80cc75b）
+- AI 生成入口与数据管理备份接入统一写前快照；Skill.description / settlement 禁止显式空串（`min_length=1`）
+- 采集守卫：全量四道规模守卫（`refuse_write_reason`，空描述占比 >20% / 条数跌幅 >30% 等即中止）；增量空结果退出码改失败 + 损坏本地文件硬停
+- httpx 超时分层化（connect/pool=5s 快速失败，read 保持配置值）并在重试重建时保持；`MAX_OUTPUT_TOKENS` 上调 32768；AI 定向重试 `--retry-failed`
+- prompt 强化（cfca666）：相性评分四层决策门（score=协同增量）与锚例校准（10 对样本漂移 20%→0%）；攻略 JSON 纪律与联动判定强化（20 武将样本 JSON 抛错率 20%→0%）；guide 温度 0.7→0.55
+- 设备离线计入闲置暂停（`RETRYABLE_CONNECTION` 不再清零闲置计数，ERROR 约 1800 条/小时→约 12 条/小时）；ComboStrip `ratings_computed` 改 `Signal(object)` 根治 int 键 dict 打穿 QVariantMap 的"实战 ★评级"角标静默失效（0ffed36）
+
+**修正的失效描述**
+- 代码规模台账：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）
+- 技术栈：OCR 引擎为 RapidOCR/ONNX 双套件（v6 主 + v4 复核），paddle 已退役；`MUMU_OCR_USE_GPU` 转死键（doctor 登记），新增 `MUMU_OCR_PRIMARY_ENGINE`（默认 "v6"）与 `MUMU_OCR_CPU_THREADS`（默认 6）
+- RAG 语料块数校验基线：武将语料/特殊机制语料改 `"snapshot"` 快照基线（快照值 647 / 85），加将自动适应、丢块仍拦截
+- 免责声明版本 1.1；VERSION 文件 1.2.1；打包体积 608MB（原 834MB 基线）
+- "B2 复核模式"提法更新为"复核引擎"（B1 起复核为 v4，与主引擎互为异构，回滚档时互换）

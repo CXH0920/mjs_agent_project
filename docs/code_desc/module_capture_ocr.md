@@ -1,8 +1,8 @@
 # 模块：屏幕采集与 OCR 识别
 
 > 对应目录：`src/capture/` + `src/ocr/`
-> 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、PaddleOCR 武将名识别与 B2 复核、白名单治理
-> 文档日期：2026-10-01
+> 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核）与未决槽位复核、白名单治理
+> 文档日期：2026-10-06（B1 全量切换后口径）
 
 ---
 
@@ -13,7 +13,7 @@
 - **ADB 截图**（`src/capture/`）— 通过 ADB 连接 MuMu 模拟器，执行 `exec-out screencap` 全屏截图，全程内存中处理；支持 raw 帧模式跳过 PNG 编解码提速
 - **设备探测** — 自动查找 ADB 路径和 MuMu 实例的 ADB 端口
 - **模板匹配**（`src/ocr/`）— OpenCV 模板匹配快速过滤非武将选择页画面，分层加速先粗筛后精匹配
-- **OCR 识别**（`src/ocr/`）— PaddleOCR 批量识别名称区域，按字数门禁、候选闭包和候选内汉字特征评分确认名称；未决槽位经 B2 复核引擎（PP-OCRv6-small/ONNX）二次确认
+- **OCR 识别**（`src/ocr/`）— RapidOCR/ONNX 双套件批量识别名称区域（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，均 CPU），按字数门禁、候选闭包和候选内汉字特征评分确认名称；未决槽位由复核引擎做候选内确认
 - **白名单治理**（`src/ocr/`）— 名称纠错白名单的静态冲突检查与错法半自动补对闭环
 
 ---
@@ -36,11 +36,12 @@ src/ocr/
 ├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI
 ├── roi_config.py           # OcrRoiConfig / OcrRoiLayout — 选将页与对局攻略页 ROI 布局及本地覆盖
 ├── character_feature_repository.py  # 汉字特征缓存与动态补齐
-├── character_similarity.py # CharacterSimilarityService — 名称纠错与白名单静态冲突检查
-├── recognizer.py          # GeneralRecognizer — ROI、PaddleOCR 与组件编排、B2 复核
+├── character_similarity.py # CharacterSimilarityService — 名称纠错与白名单静态冲突检查（基线 10 对）
+├── recognizer.py          # GeneralRecognizer — ROI、OCR 引擎与组件编排、未决槽位复核
 ├── name_resolution.py         # 名称证据解析与页面消歧（纯决策层，审计 G3 4.6a）
 ├── batch_canvas.py             # 名称拼图批量画布（分块/拼接/碎片重排，审计 G3 4.6b）
-├── paddle_loader.py       # PaddleOCR 统一构造 + B2 复核引擎（RapidOCR/PP-OCRv6-small/ONNX）
+├── engine_loader.py       # OCR 引擎装载层（RapidOCR/ONNX：PP-OCRv6 主引擎 + PP-OCRv4 复核引擎，
+│                          #   套件级惰性单例 + 熔断 + RapidOcrEngine 包装类；1694ab7 替代 paddle_loader）
 └── ocr_loader.py          # 模板管理器单例
 ```
 
@@ -86,7 +87,7 @@ ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回�
 
 ### 3.2 模板匹配
 
-模板匹配是 OCR 流程的**前置过滤器**，执行在 PaddleOCR 之前：
+模板匹配是 OCR 流程的**前置过滤器**，执行在 OCR 引擎之前：
 
 模板制作时会在 `templates/wujiang_select.json` 保存制作截图的参考尺寸和原始框选坐标（对局攻略模板存于 `templates/match_guide/template.json`）。用户模板缺失时回退随包只读默认模板（`BUNDLE_ROOT/templates/`），旧模板没有坐标元数据时，兼容使用 2560×1440 参考尺寸并保留全屏搜索。
 
@@ -103,7 +104,7 @@ match(image, threshold=0.8)
   └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
 ```
 
-**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `coarse_reject_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 PaddleOCR。
+**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `coarse_reject_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 OCR 推理。
 
 **分层加速（cd35c98）**：全屏多尺度回退阶段新增粗扫粗筛——先将原图降采样至 1/4 尺寸（`_COARSE_SCAN_RATIO=0.25`），在降采样图上遍历全部候选缩放比例做粗匹配，仅当最优粗扫得分 ≥ `threshold - _COARSE_SCAN_MARGIN` 时才回到原尺寸做全图精扫。非目标页（轮询常态）粗扫即可判否，避免每拍付整幅多尺度扫描的几百毫秒；匹配策略记录 `coarse_reject_multiscale` 区分"粗扫即判否"与"精扫确认不匹配"。局部匹配路径不受此优化影响，仍按原始全尺寸执行。
 
@@ -111,7 +112,7 @@ match(image, threshold=0.8)
 
 对局攻略模板应优先框选左侧常驻功能图标等固定 UI，避开回合数字、角色立绘和战场背景；这类内容会随对局状态变化，不能作为可靠的页面特征。
 
-应用在启动画面阶段即向同一 `OcrWorker` 队列提交预热任务，并在窗口显示前同步等待完成（Paddle 初始化会长时间持有 Python GIL，若与界面事件循环同时运行会卡住界面），不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 PaddleOCR、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。`paddle_loader.create_paddle_ocr()` 统一负责模型构造，并在 Windows 首次导入期间隐藏依赖探测命令窗口，完成后恢复标准子进程行为。
+应用在启动画面阶段即向同一 `OcrWorker` 队列提交预热任务，并在窗口显示前同步等待完成（引擎初始化会长时间持有 Python GIL，若与界面事件循环同时运行会卡住界面），不依赖模拟器连接。预热状态为 `idle`、`warming`、`ready` 或 `failed`，通过 `ocr_warmup_state_changed` 通知 UI；失败后允许重新提交。预热在 worker 线程加载 RapidOCR 主引擎、加载静态字符特征缓存，并以名称拼图的代表尺寸执行一次检测和识别推理（B1 起**预热单路径**——仅画布 det+rec 一次，paddle 时代的横条 rec-only 预热已删除：RapidOCR 适配层签名不接受 `det=`/`rec=` 关键字，且 rec-only 推理在 B1 管线已无消费方）；后续选将推荐和对局攻略识别复用该实例，因此首次实际 OCR 不再承担模型或运行时算子初始化。`engine_loader.create_rapidocr_ocr(suite)` 统一负责引擎构造：显式 `model_path` 绕过联网下载检查（缺文件直接熔断，绝不在线下载），det 参数显式 `limit_type=max`/`limit_side_len=960` 与生产画布同口径。
 
 ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给 `ImageSaveScheduler` 的单线程 `image-save` 执行器（审计 G8 后该调度器独立于 CaptureService，见 module_business.md §3.2）压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
@@ -186,23 +187,23 @@ Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
 
 ### 3.6 多路证据与候选确认
 
-`GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 PaddleOCR 检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.8 时，才追加增强图与仅放大原图的逐槽识别。ROI 坐标以参考分辨率保存，
+`GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 OCR 引擎检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.75 时，才追加增强图与仅放大原图的逐槽识别（`_NAME_RECHECK_CONFIDENCE` 由 0.8 降至 0.75，1694ab7 按 v6 置信分布定标——v6 在 0.7~0.99 中带占比 17.9%（v4 仅 7.5%），0.75 使回退触发量不因引擎切换放大一个数量级，实测触发率 4.5%→1.7%）。ROI 坐标以参考分辨率保存，
 识别前会分别按当前截图宽高进行换算，因此支持页面比例基本不变时的分辨率变化：
 
 ```
-参考 ROI → 当前截图宽高缩放 → 裁剪 → PaddleOCR
+参考 ROI → 当前截图宽高缩放 → 裁剪 → OCR 引擎
 ```
 
 换算后的识别流程为：
 
-**第一段：PaddleOCR 全量字典识别**
+**第一段：主引擎全量字典识别**
 
-ROI 裁剪 → 放大 3× → 灰度 → PaddleOCR
+ROI 裁剪 → 放大 3× → 灰度 → 主引擎（v6）
 
 **第二段：候选确认与页面消歧**
 
 ```
-PaddleOCR → 文字 + 置信度
+OCR 引擎 → 文字 + 置信度
   │
   └── 字数门禁与当前武将词表候选解析
        ├── 精确命中 → exact
@@ -221,17 +222,17 @@ PaddleOCR → 文字 + 置信度
 
 等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.35`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_enhanced` 与 `single_enhanced` 同属 `enhanced`，不能重复计票。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
 
-候选确认之前设有**词表外新武将保护**：全部证据族（`enhanced` 与 `plain` 至少两族）以 `>= 0.995` 的置信度一致读出同一词表外原文时，抑制候选内评分决胜，不做自动绑定。存在编辑距离候选时保持 `unresolved` 并保留候选（可能是新武将如"王导"，也可能是生僻字被稳定误读或整字漏识如"王濬"只读出"王"，无法区分，统一走人工确认）；完全无候选时判为 `unknown_new_hero`——保留 `raw_name`、候选清空。该检查在确定性纠错（含 `SAFE_SUBSTITUTION_WHITELIST` 混淆字对，如"王翡"→王翦）之后执行，置信度不足的一致读数仍走候选内评分。
+候选确认之前设有**词表外新武将保护**：全部证据族（`enhanced` 与 `plain` 至少两族）以 `>= 0.995` 的置信度一致读出同一词表外原文时，抑制候选内评分决胜，不做自动绑定。存在编辑距离候选时保持 `unresolved` 并保留候选（可能是新武将如"王导"，也可能是生僻字被稳定误读或整字漏识如"王濬"只读出"王"，无法区分，统一走人工确认）；完全无候选时判为 `unknown_new_hero`——保留 `raw_name`、候选清空。该检查在确定性纠错（含 `SAFE_SUBSTITUTION_WHITELIST` 混淆字对，如"苟彧"→荀彧）之后执行，置信度不足的一致读数仍走候选内评分。
 
 拼图检测时额外设有**批处理回退门槛**：拼图结果只接受单候选且置信度 `>= 0.5`；若结果不在武将词表内且按编辑距离筛选不出唯一候选（0 个或多个），则视为截断文本风险，跳过拼图结果直接逐槽复核，避免被多候选纠错静默绑定到错误武将。
 
 结构化结果为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`。`name` 只保存已确认名称；`length_mode` 为 `complete`、`missing`、`uncertain` 或 `unknown`；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`multi_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown`、`unknown_new_hero` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
 
-**B2 复核模式（d88fc2f）**：页面消解后仍未决（`resolution ∈ {unresolved, conflict}`）且候选闭包非空的槽位，由 `_recheck_unresolved_slots()` 调用 v6 复核引擎（`get_recheck_ocr_engine()`，RapidOCR/PP-OCRv6-small/ONNX）补充证据。喂法与生产同构（3× 灰度条、30px 间隙、960 分组画布），但接受纪律严格：读数必须精确命中该槽候选闭包内的成员才作为 `source="recheck"` 证据注入并重跑消解；不命中一律维持原状，绝不引入新名字。页面唯一性已确认的名字不可再被复核绑定，避免同页重名被复核坐实。开关 `MUMU_OCR_RECHECK_ENABLED`（默认 `true`），引擎加载失败自动熔断停用，不影响主流程。
+**未决槽位复核（B1 起复核引擎为 v4）**：页面消解后仍未决（`resolution ∈ {unresolved, conflict}`）且候选闭包非空的槽位，由 `_recheck_unresolved_slots()` 调用复核引擎（`get_recheck_ocr_engine()`，当前为 RapidOCR/PP-OCRv4-mobile/ONNX，与主引擎互为异构；`MUMU_OCR_PRIMARY_ENGINE=v4` 回滚档时两套件角色互换）补充证据。喂法与生产同构（3× 灰度条、30px 间隙、960 分组画布），但接受纪律严格：读数必须精确命中该槽候选闭包内的成员才作为 `source="recheck"` 证据注入并重跑消解；不命中一律维持原状，绝不引入新名字。页面唯一性已确认的名字不可再被复核绑定，避免同页重名被复核坐实。开关 `MUMU_OCR_RECHECK_ENABLED`（代码默认 `False`，config.env.example 亦为 false），引擎加载失败自动熔断停用，不影响主流程。另有一处复核触发点：对局攻略 team 徽记归一化失败（含批量画布读出非空乱码的情形）时，按 `主引擎 → 复核引擎` 链式单条重读，读出楚/汉即停——1694ab7 修复后 119 图重放救回 15/18 个 v6 书法体徽记丢标签槽，team 覆盖率恢复 90% 基线。
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
-官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 PaddleOCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格跳过检测网络直接识别（`det=False`），负责识别编排、面板守卫与正式写入门禁；受限候选繁体兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`（v6 优先回退 `chinese_cht`），整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别只复用简体引擎，不加载繁体模型，也不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 OCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格逐格识别，负责识别编排、面板守卫与正式写入门禁；罕见字兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`——B1 起 `main` 与识别管线同源（`get_primary_ocr_engine()`，v6），`rare_char` 只取复核引擎（v4）在 `allowed_names` 候选闭包内复核，**chinese_cht 繁体引擎兜底链整体退役**（开关关闭或引擎不可用 → `rare_char_failed=True` 保留原结果走待复核，不再加载第二识别引擎）；整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
 ### 3.7 候选内单字字形评分
 
@@ -243,7 +244,7 @@ PaddleOCR → 文字 + 置信度
 | 仓颉码 | 30% | `1 - Levenshtein / 较长码长度` |
 | 五笔 86 全码 | 40% | `1 - Levenshtein / 较长码长度`；码缺失记 0 分 |
 
-> 权重选型依据与完整评测数据见 `docs/design/character_similarity_design.md`。另有确定性白名单 `SAFE_SUBSTITUTION_WHITELIST`：命中"错字 → 正字"映射的等长单字替换直接视为安全（相似度按 1.0 处理），用于兜底多维相似度不足但 OCR 高频的错对。
+> 权重选型依据与完整评测数据见 `docs/design/character_similarity_design.md`。另有确定性白名单 `SAFE_SUBSTITUTION_WHITELIST`：命中"错字 → 正字"映射的等长单字替换直接视为安全（相似度按 1.0 处理），用于兜底多维相似度不足但 OCR 高频的错对。**B1 后基线为 10 对**（昧→眜、半→芈、丰→羊、口→吕、好→妤、邻→郃、赢→嬴、苟→荀、早→卓、哈→哙）：paddle 时代的 5 对旧对因 v6 直读修复退役，新增 v6 系统性错法 10 对后又退役简繁变体对 瓚→瓒 / 黃→黄（视觉字形评分 0.94 / 0.725 均远超 0.55 安全线，视觉相似路径已自动矫正，白名单回归"形近临界对"本职；简繁混淆本质是形近混淆的子集）。用户层白名单存 `data/ocr_confusion_overrides.json`，随版本退役的条目（如 珍→玠）需在白名单配置界面手动删除。
 
 评分公式：
 ```python
@@ -272,28 +273,33 @@ else:
 
 用户层缓存 `data/char_info_cache.json` 与基线缓存合并：运行时动态补齐的特征写入用户层，基线缓存保持只读（随包分发）。用户层格式异常时仅警告并忽略，不影响基线功能。
 
-### 3.9 OCR 引擎推理配置与加载熔断
+### 3.9 OCR 引擎装载与推理配置（engine_loader.py，B1 起）
 
-`src/ocr/paddle_loader.py::create_paddle_ocr()` 推理设备与线程由 `config.env` 控制：
+`src/ocr/engine_loader.py`（1694ab7 替代 `paddle_loader.py`）是 RapidOCR/ONNX 双套件的唯一装载层：
 
-- **`MUMU_OCR_USE_GPU`**（默认 `false`）— 推理走 CPU，避免 GPU 驱动异常导致整机卡顿；调用方显式传入 `use_gpu` 时优先尊重显式值。
-- **`MUMU_OCR_CPU_THREADS`**（默认 `6`）— CPU 模式限制 PaddleOCR 推理线程数，并默认启用 `enable_mkldnn=True`，防止推理打满全部逻辑核心。
+**套件定义**：
 
-**打包态模型路径**：frozen 下 Paddle 的 C++ 层不支持中文路径，若随包带了 `paddleocr_models/`（det/rec/cls）且 `%TEMP%` 为纯 ASCII，则把模型复制到 `%TEMP%\mjs_ocr_models` 并把 `det_model_dir` / `rec_model_dir` / `cls_model_dir` 指向副本（`.synced` 标记避免重复复制）；`%TEMP%` 含中文或打包未含模型时回退默认路径。开发态不做复制，沿用 PaddleOCR 默认缓存目录。`create_paddle_ocr()` 全程持有模块级 `_LOAD_LOCK`，保证并发预热与首次识别只构造一份引擎。
+| 角色 | 套件 | 模型文件（rapidocr 3.9.2 wheel 内 `models/` 目录） | 字典 | 来源 |
+|---|---|---|---|---|
+| 主引擎（默认） | v6 | `PP-OCRv6_det_small.onnx` + `ch_ppocr_mobile_v2.0_cls_mobile.onnx` + `PP-OCRv6_rec_small.onnx` | rec 模型内置 | wheel 内置 |
+| 复核引擎（默认） | v4 | `ch_PP-OCRv4_det_mobile.onnx` + 同一 cls + `ch_PP-OCRv4_rec_mobile.onnx` | 外挂 `ppocr_keys_v1.txt` | `fetch_recheck_models.py` 预取（URL+SHA256 钉死） |
 
-`src/ocr/recognizer.py::GeneralRecognizer._engine` 增加**加载熔断**：PaddleOCR 引擎加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"，不再对每次识别重复尝试加载（避免反复触发昂贵的模型初始化）。
+- **`primary_suite()`** — 读 `MUMU_OCR_PRIMARY_ENGINE`（默认 `"v6"`），非法值告警并回退；`"v4"` 为回滚档，此时主复核**角色互换**（v4 主 + v6 复核）。
+- **`create_rapidocr_ocr(suite="v6")`** — 构造指定套件引擎：模型 SHA256 漂移哨兵（与套件内钉死基线比对，不符仅 warning 提示"上游 wheel/模型漂移，行为需复测"）；成功日志落模型指纹（哈希前 8 位 + rapidocr 版本）；`Det.limit_type="max"` + `Det.limit_side_len=960` 显式写死与生产画布同口径；`Det/Cls/Rec.model_path` 显式指向模型文件，**绕过 rapidocr 在线下载检查，缺文件直接报错熔断（离线纪律）**；`EngineConfig.onnxruntime.intra_op_num_threads` 钉 `MUMU_OCR_CPU_THREADS`（默认 6），防推理吃满核心与模拟器抢核；v4 套件额外加 `Rec.rec_keys_path`。设备固定 CPU（GPU 已否决），不配置任何 CUDA/DirectML EP。
+- **`get_primary_ocr_engine()` / `get_recheck_ocr_engine()`** — 套件级惰性单例；复核套件与主引擎互斥（`"v4" if primary_suite()=="v6" else "v6"`）。`_get_shared_engine` 持锁缓存，**任何异常加入 `_FAILED_SUITES` 熔断**：此后直到进程重启恒返回 `None`（不再重试）。主引擎 `None` 意味识别停摆，由调用方按各自语义熔断（recognizer 抛 `RuntimeError`、官方导入停复核）。
+- **`RapidOcrEngine` 包装类** — `ocr(img, cls=False)` 签名（与 paddleocr 2.x 消费约定一致，`cls` 为兼容位）；灰度图自动转 HWC 三通道；防御性读取 `txts/boxes/scores`（scores 缺失补 0.0）；结果翻译为 `[[box, (text, conf)], ...]` 且 **box 必须 `tolist()` 转纯 Python list**（下游按 `isinstance(line[0], (list, tuple))` 判别行格式，np 数组会打穿该判别）；空结果返回 `[None]`。
+- **打包态模型路径**：frozen 下模型复制到 `%TEMP%\mjs_rapidocr_models`（规避打包路径含中文风险；`%TEMP%` 非纯 ASCII 回退打包路径）；同步指纹为全部 6 个模型文件的 `名字:st_size:st_mtime_ns` 拼接，写入 `.synced` 标记，**指纹不一致即 rmtree 整体重拷**（源模型更新后自动重拷）。两套件共享同一副本目录。
+
+**recognizer 侧二级熔断**：`GeneralRecognizer._engine` 加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"；loader 返回 `None` 时显式 `raise RuntimeError("OCR 主引擎不可用（rapidocr/onnxruntime 或模型缺失，详见日志）")`，不再对每次识别重复尝试加载。
+
 
 > **78fd65c 死代码清理：** `CaptureService.run_ocr_if_matched()` / `OcrService.run_ocr()` 同步等待路径（30 秒有限等待）已移除，生产识别全部走异步 `submit_ocr_task()`。
 
 **OCR 任务模板控制**：`OcrTask` 中 `match_template=True` 时执行模板匹配前置过滤；`match_template=False` 时跳过模板匹配直接 OCR（巅峰赛卡位检测路径通过 `submit_ocr_task(match_template=False)` 使用）。模板未命中时，`fallback_on_template_miss=True` 可强制回退执行 OCR（对局攻略路径使用），否则返回 `healthy_no_match`。
 
-**B2 复核引擎配置（d88fc2f）**：`paddle_loader.py` 新增三组函数与一个包装类，为未决槽位提供独立的 v6 复核引擎：
+**v4 复核模型预取（fetch_recheck_models.py，1694ab7 新增）**：rapidocr 3.9.2 wheel 只内置 v6 三件套，v4 的 det/rec/字典由 `python -m src.scripts.fetch_recheck_models` 从 RapidOCR 官方 modelscope 分发下载到 rapidocr 包 `models/` 目录（URL+SHA256 钉死、幂等：已就位且哈希匹配即跳过、流式写 `.part` 校验后 `.replace` 原子替换）。`verify_v4_models()` 返回问题清单，被 `--check`、doctor、mjs_agent.spec、release.py 四处复用做前置校验。**运行时离线纪律不变**：引擎显式 model_path、缺文件熔断、绝不在线下载；本脚本只在安装/构建时人工运行一次（需一次网络）。
 
-- **`create_rapidocr_ocr()`** — 构造 RapidOCR/PP-OCRv6-small/ONNX 复核引擎。设备固定 CPU（GPU 已否决），onnxruntime 走默认 CPU 执行提供者；det 参数显式 `limit_type=max`、`limit_side_len=960`，与生产画布同一喂法口径（默认 `limit_type=min/736` 会把短边不足的图强制放大冲出检测工作尺度）。模型文件显式指向 rapidocr 内置目录，绕过联网下载检查，缺失直接报错。frozen 下复用 PaddleOCR 的 `%TEMP%` 纯 ASCII 路径复制模式，复制到 `%TEMP%\mjs_rapidocr_models`。
-- **`RapidOcrEngine`** — 包装层，将 RapidOCR 结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`。画布喂法为灰度图，RapidOCR 3.x 要求 HWC 三通道，统一转换；框必须转纯 Python list，否则下游 `isinstance(line[0], (list, tuple))` 行格式判别会被 numpy 数组打穿。
-- **`get_recheck_ocr_engine()`** — 进程内共享的 v6 复核引擎，惰性加载（首次调用时才构造）、失败熔断（加载异常后标记 `_RECHECK_ENGINE_FAILED=True`，后续调用快速返回 `None`，直到进程重启）。受 `MUMU_OCR_RECHECK_ENABLED`（默认 `true`）开关控制。
-
-**白名单静态冲突检查**：`find_whitelist_conflicts()`（已迁至 `business/recognition/name_resolution.py`，原 `character_similarity.py`）枚举词表中"等长仅差一字、且该差异对在白名单内"的高危武将名对——这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），供新增白名单对或新武将入库时做常驻检查。拼图画布同步按检测器工作尺度（960）分块修复（3f8f30b），避免超宽画布被检测器强制降采样后行级检测退化。
+**白名单静态冲突检查**：`find_whitelist_conflicts()`（已迁至 `business/recognition/name_resolution.py`，原 `character_similarity.py`）枚举词表中"等长仅差一字、且该差异对在白名单内"的高危武将名对——这类名对意味着白名单会在两个真实名字之间单方面拉边（误绑风险），供新增白名单对或新武将入库时做常驻检查。`character_similarity.py` 另新增 `CharacterSimilarityService.effective_whitelist` property（基线 + 用户层合并拷贝）与模块级 `whitelist_conflicts_with_roster(pairs, hero_names)`（1694ab7）——**武将库扩充后重检存量对**的自动化谓词：①错字出现在任何武将名中（替换可能破坏该名合法读数）；②正字不在任何武将名中（当前词表下不可能生效，疑似配置错误）。消费方为 doctor「白名单」检查组与 `tests/test_whitelist_conflicts.py` 常驻重检。拼图画布同步按检测器工作尺度（960）分块修复（3f8f30b），避免超宽画布被检测器强制降采样后行级检测退化。
 
 ### 3.10 官方榜单固定版式解析（official_board_parser.py）
 
@@ -401,13 +407,14 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `TemplateManager.reload()` / `delete_template()` | 重新加载 / 删除模板与元数据 |
 | `GeneralRecognizer.recognize(image)` → `list[dict]` | 识别页面名称并返回候选、状态和多路证据 |
 | `GeneralRecognizer.warmup()` / `warmup_inference()` | 预热引擎与字符特征 / 执行一次代表性拼图推理 |
-| `GeneralRecognizer.adopt_engine(engine)` / `shared_engine()` | 与同进程其它识别器共享同一 PaddleOCR 实例 |
+| `GeneralRecognizer.adopt_engine(engine)` / `shared_engine()` | 与同进程其它识别器共享同一 OCR 引擎实例 |
 | `ImagePreprocessor.preprocess_roi(roi)` → `np.ndarray` | 放大 3× + 灰度（主路径） |
 | `ImagePreprocessor.preprocess_roi_enhanced(roi)` → `np.ndarray` | 放大 3× + gamma 提亮 + 灰度（逐槽回退第二证据票） |
-| `paddle_loader.create_paddle_ocr(**kwargs)` | 构造 PaddleOCR：推理设备/CPU 线程由 `MUMU_OCR_USE_GPU` / `MUMU_OCR_CPU_THREADS` 控制，CPU 模式启用 MKLDNN，抑制 Windows 首次加载闪窗，打包态把模型指向 `%TEMP%` ASCII 路径 |
-| `paddle_loader.create_rapidocr_ocr()` | 构造 B2 复核引擎（RapidOCR/PP-OCRv6-small/ONNX），设备固定 CPU，det 参数 `limit_type=max`/`limit_side_len=960` |
-| `paddle_loader.get_recheck_ocr_engine()` → `RapidOcrEngine\|None` | 进程内共享复核引擎，惰性加载 + 失败熔断，受 `MUMU_OCR_RECHECK_ENABLED` 开关控制 |
-| `paddle_loader.RapidOcrEngine` | RapidOCR 包装层，将结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]` |
+| `engine_loader.primary_suite()` → `str` | 读 `MUMU_OCR_PRIMARY_ENGINE`（默认 `"v6"`）确定主引擎套件，非法值告警回退 |
+| `engine_loader.create_rapidocr_ocr(suite="v6")` → `RapidOcrEngine` | 构造指定套件引擎（v6 主 / v4 复核，回滚档角色互换），设备固定 CPU、线程钉 `MUMU_OCR_CPU_THREADS`、det `max/960` 与生产画布同口径、SHA256 漂移哨兵 |
+| `engine_loader.get_primary_ocr_engine()` → `RapidOcrEngine\|None` | 主引擎套件级惰性单例；不可用返回 `None`（调用方自行熔断） |
+| `engine_loader.get_recheck_ocr_engine()` → `RapidOcrEngine\|None` | 复核引擎惰性单例（与主引擎套件互斥），受 `MUMU_OCR_RECHECK_ENABLED` 开关控制；失败熔断（`_FAILED_SUITES`） |
+| `engine_loader.RapidOcrEngine` | RapidOCR 包装层，`ocr(img, cls=False)` 契约，将结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`（box 必须 tolist） |
 | `OcrRoiConfig.layout_for(page_type)` / `save_layout(...)` / `reset_layout(...)` / `reload()` | 布局读取、本地覆盖写盘（立即生效）、恢复默认、重新读盘 |
 | `official_board_parser.detect_layout(image, key)` | 按纵横比与行数校验确认旧版/分页版式 |
 | `official_board_parser.extract_panels(image, layout)` | 按版式比例切出榜单面板 |
@@ -424,9 +431,9 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `get_template_manager(template_name)` → `TemplateManager` | 获取模板管理器单例（仅 `hero_selection` / `match_guide`） |
 | `OcrWorker.submit(task)` | 串行执行预热、常规 `OcrTask` 或官方 `OfficialImportTask`，并通过任务完成信号返回结果 |
 
-活动识别路径由 `src.business.recognition.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 PaddleOCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 PaddleOCR。关闭窗口时 worker 仅被通知停止并立即返回（不在 GUI 线程同步等待）；若正卡在模型预热中，会直接终止预热线程让进程快速退出，其余未完成任务由退役列表持有并在进程退出前收尾，避免窗口卡死、进程残留与运行中的 QThread 被提前销毁。
+活动识别路径由 `src.business.recognition.ocr_worker.OcrWorker` 统一执行。worker 在自己的线程内缓存 `GeneralRecognizer` 和 OCR 引擎，配置相同的连续任务复用识别器；官方榜单服务也只在该线程内使用注入引擎。手动截图、文件导入、轮询与官方榜单导入不会在不同线程同时运行 OCR 引擎。关闭窗口时 worker 仅被通知停止并立即返回（不在 GUI 线程同步等待）；若正卡在模型预热中，会直接终止预热线程让进程快速退出，其余未完成任务由退役列表持有并在进程退出前收尾，避免窗口卡死、进程残留与运行中的 QThread 被提前销毁。
 
-风险声明：`terminate` 会跳过 Paddle/CUDA 清理，GPU 上下文与显存由进程退出时 OS 回收；若预热线程 3 秒未退出则转入退役列表二次等待，15 秒仍未退出时以 `os._exit(1)` 强制结束进程，避免进程挂起；开发期热重启若进程残留可能累积显存，属已接受风险。
+风险声明：`terminate` 会跳过引擎清理，相关资源由进程退出时 OS 回收；若预热线程 3 秒未退出则转入退役列表二次等待，15 秒仍未退出时先 `logging.shutdown()` 冲刷日志（R2，b3327f1——`os._exit` 绕过 atexit 与日志冲刷）再以 `os._exit(1)` 强制结束进程（退出码改 0：慢退出属兜底放弃而非故障），避免进程挂起；开发期热重启若进程残留可能累积资源，属已接受风险。
 
 ---
 
@@ -434,10 +441,37 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 
 | 方向 | 模块 | 说明 |
 |------|------|------|
-| 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件和 PaddleOCR 模型（GPU 推理需 CUDA 11.8 + cuDNN 8 运行时，见 environment.yml）；B2 复核模式额外依赖 rapidocr + onnxruntime + PP-OCRv6-small/ONNX 模型 |
+| 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件与 RapidOCR/ONNX 运行时（rapidocr 3.9.2 + onnxruntime 1.23.2，CPU 推理，见 environment.yml）：v6 三件套随 wheel 内置，v4 三件套经 `src/scripts/fetch_recheck_models.py` 官方清单预取（URL+SHA256 钉死，不入仓）；运行时离线纪律绝不联网下载模型 |
 | 被调用方 | `src.business.emulator.capture_service` | 持有 AdbCapture 实例，编排截图流程；轮询路径通过 raw 帧提速 |
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
 | 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 detect_selection_cards 与 derive_name_rois 做 2v2 牌面识别 |
 | 被调用方 | `src.business.recognition.ocr_worker` | 未决错法调 `pending_stats.record_pending()`；B2 复核引擎由 recognizer 内部调用 |
 | 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
 | 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |
+
+---
+
+## 七、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更（B1 OCR 全量切换，1694ab7 + d1a55e1）：
+
+**引擎层替换**
+- `src/ocr/paddle_loader.py`（228 行）删除 → `src/ocr/engine_loader.py`（248 行）：RapidOCR/ONNX 双套件装载层（套件定义 / SHA256 漂移哨兵 / 指纹日志 / `_FAILED_SUITES` 熔断 / RapidOcrEngine 包装类）；依赖从 paddlepaddle-gpu / paddleocr / protobuf + CUDA 系收敛为 rapidocr==3.9.2 + onnxruntime==1.23.2
+- 主引擎 PP-OCRv6-small（wheel 内置三件套）+ 复核引擎 PP-OCRv4-mobile（`fetch_recheck_models.py` 预取，URL+SHA256 钉死、`.part` 原子替换、`verify_v4_models()` 被 doctor/spec/release 复用）；`MUMU_OCR_PRIMARY_ENGINE`（默认 v6）新增，v4 为回滚档且主复核互换；`MUMU_OCR_USE_GPU` 死键退役
+- 打包：collect_all 缩至 4 包、excludes 恒排除 paddle 系（根除 rapidocr paddle 后端静态牵出 libpaddle.pyd 约 148MB 问题），精简包 763MB→608MB；build_deps 机制删除
+
+**识别链适配**
+- 单槽回退触发线 `_NAME_RECHECK_CONFIDENCE` 0.8 → 0.75（v6 置信分布定标，实测触发率 4.5%→1.7%）
+- 对局 team 徽记归一化失败即主→复核引擎链式重读（原仅空文本重读，批量乱码绕过旁路）；119 图重放救回 15/18 个丢标签槽
+- 预热单路径化：rec-only 残留删除（RapidOCR 适配层签名不接受 `det=`/`rec=`，paddle 时代预热形态打穿签名致预热状态机误报 `warmup_failed`）；新增适配层契约测试锁死 `ocr(img, cls=False)` 签名
+- 复核开关口径：`MUMU_OCR_RECHECK_ENABLED` 代码默认 `False`（旧文档误记默认 true）
+- 官方榜单导入：`main` 与识别管线同源（v6）；`rare_char` 只取复核引擎（v4）在 allowed_names 候选闭包内复核，chinese_cht 繁体兜底链退役
+
+**白名单治理**
+- 基线 7 对 → 12 对 → 10 对（终态见 3.7 节）；简繁变体对退役论证（瓚↔瓒 0.94、黃↔黄 0.725 由视觉路径自动矫正）
+- 新增 `effective_whitelist` property 与 `whitelist_conflicts_with_roster()` 武将库冲突重检谓词（doctor「白名单」检查组 + `tests/test_whitelist_conflicts.py`）
+
+**其它**
+- ocr_worker 预热文案引擎中性化；退役 worker 强杀兜底先 `logging.shutdown()`、退出码改 0（b3327f1）
+- 陈旧文案说明：recognizer.py / ocr_loader.py / batch_canvas.py / ocr_service.py / ocr_task_coordinator.py 中仍有少量 paddle 时代注释字样未清（如 recognizer.py :300/:400 docstring 写"v6 复核引擎"实义为"复核引擎（当前 v4）"），功能无影响，本文档不照抄
+- 424 字特征缓存口径不变（实测仍 424 字）

@@ -2,8 +2,8 @@
 
 > 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/ui/match/match_guide_panel.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
 > 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、容差签名去重、标准轮询互斥持有）、禁选建议象限判定、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染、胜率榜按对局链路区分（2v2 / 巅峰赛）
-> 代码基线：2026-10-01（基线 885ea96 + 工作树改动）
-> 测试规模：112 个测试模块文件 / 1350 个 test_* 用例
+> 代码基线：2026-10-06（基线 0ffed36）
+> 测试规模：129 个测试模块文件 / 1481 个 test_* 用例
 
 ---
 
@@ -525,3 +525,13 @@ class _ImportWorker(QThread):
 | 被调用方 | `src/ui/recommendation/recommendation_panel` | 推荐页共享 ComboManager / combo_seats |
 | 被调用方 | `src/ui/library/hero_detail_views` | 武将详情页展示配队 |
 | 被调用方 | `src/ui/generation/synergy_combos_dialog` | 攻略生成页共享配队数据 |
+
+---
+
+## 七、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+- **截图失败可观测**（80cc75b）：`peak_select_panel.py` 截图保存路径为 `None` 时，状态栏由"截图已保存："空路径改为"截图未落盘（保存中或失败，详见日志）"（TONE_WARNING）；`capture_service` 存盘失败同步补 warning 日志
+- ComboStrip 信号契约修复（0ffed36）属选将推荐板块（见 `module_ui.md`），巅峰赛卡片角标同源数据走独立直调路径、不受该问题影响
+- 测试规模台账：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）

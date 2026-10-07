@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-09-30（`885ea96` + 工作树未提交改动）
+> 代码基线：2026-10-06（`0ffed36`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
 > 文档日期：2026-09-30
@@ -27,10 +27,11 @@
 - [十五、巅峰赛选将识别与实战配队](#十五巅峰赛选将识别与实战配队)
 - [十六、卡牌百科同步](#十六卡牌百科同步)
 - [十七、开发状态表](#十七开发状态表)
+- [十八、运维工具链与数据出库](#十八运维工具链与数据出库)
 
 ---
 
-## 当前代码基线与业务不变量（2026-09-30）
+## 当前代码基线与业务不变量（2026-10-06）
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化）。
 
@@ -38,7 +39,7 @@
 
 | 功能 | 主入口 | 关键调用顺序 | 结果 |
 |------|--------|--------------|------|
-| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` + `setApplicationVersion()` -> `install_chinese_qt_translator()` -> `install_app_icon()` -> `QSplashScreen` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `start_ocr_warmup()` -> `wait_ocr_warmup(timeout_ms=120_000)` -> `window.show()` -> `app.exec()` | 初始化日志和 Qt 标准控件中文翻译，加载数据并创建主窗口；OCR 模型在启动画面阶段**阻塞预热**（Paddle 初始化长时间持有 GIL，与事件循环并行会卡住界面，冷加载实测可达 90 秒以上，故超时取 120 秒覆盖全程），预热完成才显示窗口 |
+| 应用启动 | `src.main.main()` | `get_runtime_params()` -> `setup_logging()` -> `QApplication()` + `setApplicationVersion()` -> `install_chinese_qt_translator()` -> `install_app_icon()` -> `QSplashScreen` -> `MainWindow.__init__()` -> `DataFacade.load_all()` -> `start_ocr_warmup()` -> `wait_ocr_warmup(timeout_ms=120_000)` -> `window.show()` -> `app.exec()` | 初始化日志和 Qt 标准控件中文翻译，加载数据并创建主窗口；OCR 引擎在启动画面阶段**阻塞预热**（引擎初始化长时间持有 GIL，与事件循环并行会卡住界面，冷加载实测可达 90 秒以上，故超时取 120 秒覆盖全程），预热完成才显示窗口；启动期轻运维：日志初始化后回收 14 天前截图（`_prune_old_screenshots`）、主窗口显示后 2 分钟触发每日一次自动公告检查（c88bf63） |
 | 武将采集 | `MainWindow._request_fetch_*()` | `HeroFetchService.fetch_*()` -> QProcess -> `official` / `incremental` CLI -> `crawler` | 更新英雄 JSON 与头像，完成后全量重载数据 |
 | AI 攻略/相性 | `MainWindow._request_guide_*()` / `_request_synergy_*()` | `AiGenerationWorkflow.request_*()` -> 选择后端/进度 -> FetchService -> QProcess -> `ai_batch.main()` -> `run_*_generation()` | 每 10 条校验成功结果原子提交；任务结束后重载 Manager 并通知主窗口刷新 |
 | 数据管理 | `MainWindow._open_data_management()` | `DataManagementDialog` -> 输入“清空”确认 -> `DataManagementService` 备份 -> 批量保存/失败恢复 | 清空攻略和/或相性，保留时间戳备份并刷新关联页面 |
@@ -410,7 +411,7 @@ def _call_api(self, messages, temperature=0.7) → dict | None
   "model": "deepseek-v4-flash",
   "messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}],
   "temperature": 0.7,
-  "max_tokens": 16384,
+  "max_tokens": 32768,
   "thinking": {"type": "disabled"}
 }
 ```
@@ -425,7 +426,7 @@ def _call_api(self, messages, temperature=0.7) → dict | None
 5. 连接类异常同样指数退避并重建 httpx client，避免后续重试级联失败
 6. 3 次全部失败 → 返回 None
 
-> 输出额度上限 `MAX_OUTPUT_TOKENS` 默认 16384（可按供应商语义上调），缓解长攻略正文被截断（`finish_reason=length`）；正文被"思考过程耗尽输出额度"截断时由 `_request_content()` 自动重试；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content token 拆分，定位思考 token 挤占正文预算。
+> 输出额度上限 `MAX_OUTPUT_TOKENS` 默认 32768（思考+正文共享额度，可按供应商上限调整），缓解长攻略正文被截断（`finish_reason=length`）；正文被"思考过程耗尽输出额度"截断时由 `_request_content()` 自动重试；每次调用后 `_log_usage()` 记录 prompt/completion 与 reasoning/content token 拆分，定位思考 token 挤占正文预算。
 
 #### 2.3.3 `generate_guide(hero) → (dict | None, dict | None)`
 
@@ -604,7 +605,7 @@ class CaptureService(QObject):
 ```
 
 截图操作直接在 Python 中执行（不通过 QProcess），因为需要即时获取图像数据更新 UI。
-模板匹配与 PaddleOCR 识别提交到唯一的 `OcrWorker` 后台队列；结果通过信号回到 GUI 线程。
+模板匹配与 OCR 引擎识别（B1 起 RapidOCR 双套件）提交到唯一的 `OcrWorker` 后台队列；结果通过信号回到 GUI 线程。
 
 **2026-10 职责域出仓（审计 G8）**：CaptureService 缩为门面（569 行），保留截图流水线（`_pending_ocr_captures` 关联表、`_handle_capture_result`）与连接状态机；OCR worker 生命周期/预热状态机/任务组装出仓到 `OcrTaskCoordinator`（ocr_task_coordinator.py），官方导入提交/排他/分派出仓到 `OfficialImportGateway`（official_import_gateway.py），PNG 保存出仓到 `ImageSaveScheduler`（image_save_scheduler.py）。对外信号名与公共方法全部保留（UI 侧 12 处连接零改动）；worker 的 `task_completed` / `official_progress` 接线经构造注入的 `on_worker_created` 回调同步完成——回调在 `_worker_lock` 持有期间执行且先于 worker `start()`，跨线程首建同样成立（2026-10-02 修复：替代原 `worker_created` 信号，消除 Queued 投递致接线滞后、官方导入 `_pending` 永久锁死的竞态）。
 
@@ -679,7 +680,7 @@ class OcrService(QObject):
 
 ### 3.7 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出，并使用 worker 注入的 PaddleOCR 引擎（引擎懒加载与罕见字兜底策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个 Paddle native 线程池并发初始化或推理。
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出，并使用 worker 注入的 OCR 引擎（主引擎 v6 与识别管线同源；罕见字兜底只取复核引擎 v4，`chinese_cht` 兜底链已退役；策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个引擎线程池并发初始化或推理。
 
 ```
 OfficialDataImportDialog._start_import()
@@ -715,7 +716,7 @@ Worker 先发出 `progress_changed(status, 0, 0)`，UI 显示不定进度；检�
 1. `_recognize_cell_candidates()` 保留原图放大及增强锐化的全部 OCR 文本。候选去除非汉字后精确命中 `heroes.json` 时优先使用完整候选；若两路精确结果指向不同武将，则不按置信度强选。
 2. 最高候选为单字时，`_recognize_name_glyphs()` 用亮色列切分 2-4 个字形，保留原始背景与留白逐字 OCR；拼接结果经 `CharacterSimilarityService.correct_hero_name()` 校正后必须命中词表。
 3. 逐字补识别失败时，只有 OCR 原文作为词表前缀的候选唯一才补全；`夏侯`、`司马`等公共前缀对应多个武将时禁止自动补全。
-4. 多个候选共享至少两个汉字前缀时，不使用编辑距离或微小视觉分差强行决胜；经 `OfficialOcrEngines` 按需加载 `chinese_cht` 繁体模型继续确认。繁体原文及其编辑距离纠正结果必须仍属于简体 OCR 产生的候选白名单，禁止从“卫青/卫玠”等候选跳转到无关武将。
+4. 多个候选共享至少两个汉字前缀时，不使用编辑距离或微小视觉分差强行决胜；经 `OfficialOcrEngines` 按需加载复核引擎（B1 起 v4；`chinese_cht` 繁体兜底链已退役）继续确认。复核结果及其编辑距离纠正结果必须仍属于主引擎 OCR 产生的候选白名单，禁止从“卫青/卫玠”等候选跳转到无关武将。
 5. 繁体模型仍不能确认时保留 OCR 原文。整榜识别结束后，从该行候选中排除榜单里已经确认的武将；只有剩余一个候选且没有其他未决行竞争该名称时才自动补全，并记录补全依据。
 
 每个正式 CSV 都有对应的 `*_待复核.csv`。异常记录含 OCR 原文、置信度、原因、原图坐标及 `screenshot_data/official_import/` 下的行截图；通过榜单唯一性补全的行也保留复核记录。若最终存在未确认名称、重复名称，或同规模的 2v2 胜率/出场榜武将集合不一致，服务只更新待复核证据并报错，原正式 CSV 和推荐指数状态保持不变。名称完整性通过后，其他低置信度、排名 OCR 不一致或胜率模板异常仍按视觉行序写入正式 CSV 并留待复核。
@@ -1714,7 +1715,6 @@ key_mapping = {
     "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
     "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
     "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
-    "MUMU_OCR_USE_GPU": "mumu_ocr_use_gpu",
     "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
     "MUMU_OCR_RECHECK_ENABLED": "mumu_ocr_recheck_enabled",
     "MUMU_SCREENSHOT_MODE": "mumu_screenshot_mode",
@@ -1729,7 +1729,7 @@ key_mapping = {
 }
 ```
 
-int 型：`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`；bool 型：`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_use_gpu` / `mumu_ocr_recheck_enabled`；str 型：`mumu_screenshot_mode`（`auto`/`raw`/`png`）；float 型：三处 threshold 与四个 `RECOMMENDATION_*`。转型失败使用默认值并打 warning。
+int 型：`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`；bool 型：`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_recheck_enabled`；str 型：`mumu_screenshot_mode`（`auto`/`raw`/`png`）、`mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）、`mjs_data_repo`（私有数据仓位置）；float 型：三处 threshold 与四个 `RECOMMENDATION_*`。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -2036,7 +2036,7 @@ src/ocr/
  ├── roi_config.py            # Roi / RoiLayoutEditor — 巅峰赛与多布局 ROI 配置
  ├── character_feature_repository.py # CharacterFeatureRepository — 特征缓存
  ├── character_similarity.py  # CharacterSimilarityService — 名称纠错（含拼图画布按检测器工作尺度分块）
- ├── recognizer.py            # GeneralRecognizer — ROI、PaddleOCR 与组件编排（含 B2 复核、unknown_new_hero、4字拆框修复）
+ ├── recognizer.py            # GeneralRecognizer — ROI、OCR 引擎与组件编排（含未决槽位复核、unknown_new_hero、4字拆框修复）
  ├── engine_loader.py          # OCR 引擎装载层（RapidOCR/ONNX：v6 主 + v4 复核双套件、%TEMP% 同步、指纹哨兵）
  └── ocr_loader.py            # 模板管理器单例
 ```
@@ -2090,7 +2090,7 @@ match(image, threshold=0.8)
 
 ### 12.3 武将名称识别组件
 
-`GeneralRecognizer` 使用 PaddleOCR 对配置布局中的名称区域进行 OCR 识别；对局攻略还读取同一布局中的阵营区域。它负责 ROI 裁剪、引擎调用、多路证据汇总、候选状态和页面唯一性消歧。图像增强由 `ImagePreprocessor` 承担，单字字形安全门槛由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
+`GeneralRecognizer` 使用 RapidOCR 主引擎（v6）对配置布局中的名称区域进行 OCR 识别；对局攻略还读取同一布局中的阵营区域。它负责 ROI 裁剪、引擎调用、多路证据汇总、候选状态和页面唯一性消歧。图像增强由 `ImagePreprocessor` 承担，单字字形安全门槛由 `CharacterSimilarityService` 承担，汉字特征缓存由 `CharacterFeatureRepository` 承担。
 
 #### 多路证据识别策略
 
@@ -2167,7 +2167,7 @@ class GeneralRecognizer:
     _resolve_name_evidence(index, evidence) → dict
     _resolve_multi_candidate_similarity(...) → str
     _resolve_page_names(results) → list[dict]
-    _extract_text(ocr_result) → (str, float) # 解析 PaddleOCR 返回
+    _extract_text(ocr_result) → (str, float) # 解析引擎返回（RapidOcrEngine 已翻译为 2.x 风格）
     save_results(results, json_path, image_path)  # 静态方法
 
 class ImagePreprocessor:
@@ -2192,7 +2192,7 @@ scale_y = current_height / reference_height
 当前 ROI = (x*scale_x, y*scale_y, w*scale_x, h*scale_y)
 ```
 
-该换算发生在 PaddleOCR 之前，不改变现有的放大、CLAHE、锐化、灰度化和名称候选解析流程。
+该换算发生在 OCR 识别之前，不改变现有的放大、CLAHE、锐化、灰度化和名称候选解析流程。
 
 #### 识别调用链
 
@@ -2232,7 +2232,7 @@ CharacterSimilarityService.SAFE_CHARACTER_SIMILARITY = 0.55
 ROI 裁剪 (40×100 原始区域)
   │
   ├── 1. 放大 3× (cv2.resize, INTER_CUBIC)
-  │     原因：PaddleOCR 对过小的文字区域识别率低
+  │     原因：OCR 引擎对过小的文字区域识别率低
   │
   ├── 2. CLAHE 自适应直方图均衡 (LAB 色彩空间)
   │     clipLimit=2.0, tileGridSize=(8,8)
@@ -2242,16 +2242,16 @@ ROI 裁剪 (40×100 原始区域)
   │     原因：强化文字边缘
   │
   ├── 4. 灰度化 (BGR → GRAY)
-  │     原因：PaddleOCR 接受灰度图
+  │     原因：OCR 引擎接受灰度图
   │
-  └── 送 PaddleOCR 识别
+  └── 送 OCR 引擎识别
 ```
 
 **批量预处理去增强（2026-09 修复）**：批量路径（`_recognize_prepared_batch`）的预处理已去掉 CLAHE + 锐化增强，仅保留放大 + 灰度化。原因是增强图会导致 4 字武将名在检测框中字符粘连、拆分异常。单槽路径仍保留完整增强流程作为独立证据族。
 
 **gamma 差异视图回退证据（2026-09 新增）**：`ImagePreprocessor.preprocess_roi_grey()` 返回仅灰度化（不放大、不增强）的原始 ROI，供单槽回退证据使用。该视图与增强图构成两个独立证据族，确保候选内消歧时两个证据族独立投票。
 
-#### PaddleOCR 调用
+#### OCR 引擎调用
 
 ```python
 @property
@@ -2336,7 +2336,7 @@ def _engine(self):
 
 ### 12.4 单例加载器（ocr_loader.py）
 
-`ocr_loader.py` 仅延迟管理配置页所需的模板管理器；识别器（`GeneralRecognizer` / PaddleOCR）由 `OcrWorker` 在 worker 线程内独占创建，不再经过本模块。
+`ocr_loader.py` 仅延迟管理配置页所需的模板管理器；识别器（`GeneralRecognizer` / RapidOCR 引擎）由 `OcrWorker` 在 worker 线程内独占创建，不再经过本模块。
 
 - `get_template_manager()` → `TemplateManager` 单例
 - `OcrWorker` 在专用线程中按 ROI、武将列表和参考尺寸缓存 `GeneralRecognizer`
@@ -2412,15 +2412,15 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 ```
 
 **关键设计**：
-- 轮询路径全程无磁盘 I/O：ADB 截图 → numpy array → OpenCV ndarray → PaddleOCR，数据一直驻留内存
-- 模板匹配是前置快速过滤器（<50ms），匹配成功后才执行 PaddleOCR（0.5-3 秒）
+- 轮询路径全程无磁盘 I/O：ADB 截图 → numpy array → OpenCV ndarray → OCR 引擎，数据一直驻留内存
+- 模板匹配是前置快速过滤器（<50ms），匹配成功后才执行 OCR 推理（0.5-3 秒）
 - 轮询独立于「启用 OCR 识别」复选框，勾选轮询即可独立运行
 - 轮询定时器永不自杀：条件不满足时 return 等待下一次 tick
 - **闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。连续 5 分钟无变化自动暂停轮询（`IDLE_PAUSE_MINUTES=5`），用户交互触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关
 
 #### 模板匹配的作用
 
-模板匹配是整个 OCR 流程的**前置过滤**。只有匹配到武将选择页面（置信度 ≥ 阈值），才会执行 PaddleOCR 识别。阈值越高匹配越严格，避免对无关画面执行 OCR。
+模板匹配是整个 OCR 流程的**前置过滤**。只有匹配到武将选择页面（置信度 ≥ 阈值），才会执行 OCR 推理。阈值越高匹配越严格，避免对无关画面执行 OCR。
 
 ---
 
@@ -2438,7 +2438,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **112 个测试文件 / 1350 个 `test_*` 函数**（AST 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **129 个测试文件 / 1481 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -2574,7 +2574,7 @@ AIBatchGenerator.__init__(api_key, api_url, model, rpm, ...)
   │    │     字段: ID / 名称 / 势力 / 定位 / 体力 / 手牌 / 性别 / 技能
   │    ├── _call_api(messages=[system, user], temperature=0.7)
   │    │    ├── 检查距上次请求间隔（不够则 sleep 补齐）
-  │    │    ├── POST {model, messages, temperature, max_tokens=16384,
+  │    │    ├── POST {model, messages, temperature, max_tokens=32768,
   │    │    │         thinking={type: disabled}}
   │    │    ├── 成功: 仅保留 content / finish_reason / usage
   │    │    ├── _log_usage(hero.name, usage)  → 记录 prompt/completion + reasoning/content 拆分
@@ -2609,7 +2609,7 @@ Content-Type: application/json
     }
   ],
   "temperature": 0.7,
-  "max_tokens": 16384,
+  "max_tokens": 32768,
   "thinking": {"type": "disabled"}
 }
 ```
@@ -2834,6 +2834,18 @@ PlaywrightGenerator.__init__()
   "description": "诸葛亮与司马懿有很好的配合..."
 }
 ```
+
+### 14.8 数据出库与私有数据仓同步（2026-10-03 起）
+
+自 7bdf075 / 8d23493 起，抓取数据与维护数据**不入版本库**，公开仓只含源代码、测试与 `data/samples/` 全虚构示例数据：
+
+- **出库范围**（`pull_data.PRIVATE_PATHS` 共 14 项）：`heroes.json` / `combos.json` / `cards.json` / `card_annotations.json` / `special_cards.json` / `card_points.json` / `equip_attrs.json` / `hero_classification.json` / `mjs_adjustments.json` / `announcements.json` / `baike_snapshot.json` / `raw_guides/` / `rag_corpus/` / `images/`。`guides.json` / `synergies.json` 为 AI 生成物，不入私有仓也不入公开仓。数据来源逐项登记于 `data/SOURCES.md`（合规台账，含采集时间与权利人下架联系渠道）。
+- **同步工具 `src/scripts/pull_data.py`**（pull / push / verify 三子命令 + `--dry-run`）：
+  - 私有仓位置三级解析：环境变量 `MJS_DATA_REPO` > `config.env`（key_mapping 映射 `mjs_data_repo`）> 默认项目同级 `mjs_data_private`；
+  - 私有仓根 `manifest.json` 记录 `{path, sha256}`（由私有仓内 `scripts/gen_manifest.py` 生成），`verify()` 逐条比对；
+  - **push 守卫链**：数据有效性校验（目录非空、JSON 可解析非空、heroes 条数 ≥ `MIN_HERO_COUNT=100` 防截断）→ 脏工作区拒绝（`git status --porcelain` 非空即拒）→ 拷贝 → `git pull --ff-only` 对齐远端 → 刷新 manifest → verify → 提交推送；任一步失败不写私有仓；
+  - **pull 原子落位**：先拷进项目内同盘 staging（`.tmp_test/.pull_staging-*`）再逐文件 `Path.replace` 原子替换；落位前发现本地文件与私有仓不同（可能是未 push 的本地修改）先备份到 `data/backups/`（扁平命名 `data__<名>-<时间戳>`）再覆盖（80cc75b）。
+- **日常工作流**：周更步骤 0 = `pull_data pull`（出包机器必须先执行）、步骤 8 = `pull_data push`；`ops weekly` 把 0/2/3/7/8 编排为一条命令。各 Manager / Repository 读写逻辑不变——"文件从哪来"由 pull_data 解决，doctor「私有仓」「数据」检查组负责工作区一致性巡检。
 
 ---
 
@@ -3168,7 +3180,7 @@ CardSyncDialog
 
 ## 十七、开发状态表
 
-本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-09-29 基线，共完成三十个阶段：
+本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-10-06 基线，共完成三十六个阶段：
 
 | 阶段 | 名称 | 时间 | 主要内容 |
 |------|------|------|----------|
@@ -3203,5 +3215,43 @@ CardSyncDialog
 | **二十九** | **主窗口拆分** | **2026-09** | **四阶段渐进拆分：AppServices 组合根 / StatusChips 自足组件 / ProgressReporter 进度出口 / PollCoordinator + AnnouncementUpdateCoordinator 管线下沉** |
 | **三十** | **架构分层收口与 src/data 解环** | **2026-09** | **UI 数据 import 白名单、榜数据 provider 注入、FILE_LINE_BUDGETS 行数棘轮；DataFacade/Issues/Manager 三拆消除循环依赖；百科差异条目级忽略名单** |
 | **三十一** | **巅峰赛确认修复 + 死代码清理 + 数据同步** | **2026-09** | **巅峰赛选将人工确认残留修复（牌面在位守卫、导入前校验、停止/退出清空确认表）；死代码 D1–D9 清理（ReturnFormat/last_match_confidence/VALID_KINDS/last_match_time/_updated_at/_selected_*/RAG_PROJECT_DIR）；新增谢灵运/陶渊明武将；model_pricing 新增 sensenova-6.8-flash-lite** |
+| **三十二** | **Phase 4 上帝类拆分 + G8 出仓** | **2026-10** | **业务/OCR/UI 六大目标出仓 14 个新模块；CaptureService 职责域出仓（official_import_gateway / image_save_scheduler / ocr_task_coordinator）；行数棘轮 500 行 tripwire** |
+| **三十三** | **数据出库与私有数据仓** | **2026-10** | **抓取与维护数据移出版本库（14 项 PRIVATE_PATHS）；pull_data（pull/push/verify + 有效性守卫 + 原子落位 + 脏覆盖备份）；data/SOURCES.md 来源登记；免责声明 1.1** |
+| **三十四** | **运维工具链** | **2026-10** | **doctor 一键自检（11 组）；ops 周更编排（weekly/health/retry-failed/clean）；任务台账 task_ledger；版本单一来源 version.py；QProcess 看门狗 30 分钟；启动自动公告检查与截图回收** |
+| **三十五** | **B1 OCR 全量切换** | **2026-10** | **RapidOCR 双套件（v6 主 + v4 复核）替代 paddle 全栈；engine_loader 替代 paddle_loader；fetch_recheck_models v4 预取；白名单 10 对基线与简繁对退役；回退触发线 0.75；打包 763→608MB** |
+| **三十六** | **数据健壮性与 prompt 强化** | **2026-10** | **json_repository 三基元与全库原子写收敛；写前快照接入；Skill 空串禁令；采集四道守卫与增量硬停；httpx 超时分层；--retry-failed 定向重试；相性四层决策门/锚例、攻略 JSON 纪律、guide 温度 0.55** |
 
 > 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。
+
+
+---
+
+## 十八、运维工具链与数据出库
+
+2026-10-03 至 10-06 的运维批次（b3327f1 / 1426686 / c88bf63 / 31f59be / 80cc75b）与数据出库（7bdf075 / 8d23493 / 9958c79，详见 14.8 节）构成项目的日常运维面。数据出库链路见 14.8，本章覆盖工具链。
+
+### 18.1 doctor 一键自检（`src/scripts/doctor.py`）
+
+只读体检，无 FAIL 即环境健康。用法：`python -m src.scripts.doctor [--offline] [--json]`；有 FAIL 退出码 1（可接周更门禁）。11 组检查：**环境**（ruff 版本三处一致、onnxruntime/rapidocr 钉版、v6/v4 模型就位）、**设备**（ADB 路径与在线设备）、**私有仓**（仓存在、manifest 预检、sha256 校验、工作区逐文件同步三态）、**数据**（data/*.json 可解析、关键三件非空数组、备份基线年龄、Manager load_issues 出口）、**配置**（死键检测 `DEAD_CONFIG_KEYS=("RAG_PROJECT_DIR","MUMU_MATCH_GUIDE_COOLDOWN","MUMU_OCR_USE_GPU")`、可选键提示、本地与 example 默认相反键、模型计价核对）、**白名单**（`whitelist_conflicts_with_roster` 武将库冲突重检）、**AI 链路**（近 7 天日志故障模式统计，`"HTTP 401"` 精确匹配防 token 统计行误计）、**日志**（超时转储位置、rag 日志钩子）、**磁盘**（大目录 ≥500MB、截图回收）、**合规**（GitHub fork/star 升级触发器）、**安全**（config.env / api_profiles.json 不被 git 跟踪）。单组失败转 FAIL 条目不拖垮整份报告（`except (Exception, SystemExit)`，80cc75b 收紧防 `sys.exit` 穿透）。
+
+### 18.2 ops 周更运维统一入口（`src/scripts/ops.py`）
+
+argparse 子命令编排，只做转发：**weekly**（`--skip-tests` 可选）按序执行 pull（300s 超时）→ diff_source_data → maintain_rag（3600s）→ `pytest -q`（900s，可跳）→ push（600s）；**前置失败不 push**（数据不固化到私有仓）；人工步骤（获取新数据/LLM 精化/人工审阅/changelog）打印提醒；终局写 `ops_weekly` 台账并输出失败摘要与耗时。**health** 转调 doctor；**retry-failed** 转调 `ai_batch --retry-failed --guide`；**clean** 清理 `.tmp_test/` 下 mtime 超 7 天条目（`--dry` 预览）。release/backup 不在此收口（备份轮转由 `snapshot_to_backups` 内建，发布仍直接用 release.py）。
+
+### 18.3 任务台账（`src/business/common/task_ledger.py`）
+
+JSONL 逐行追加 `logs/task_results.jsonl`：`record_task(task, *, ok, exit_code, total, failed, duration_s, reason, path)` 每条 `{ts, task, ok, exit_code, total, failed, duration_s(1位), reason(截断200字)}`，写后 `fsync`；`read_entries(task=, only_failures=)` 供排查。设计动机：日志按 10MB×5 轮转（65~78 天窗口），失败痕迹会随轮转消失，台账是唯一跨窗口留痕。写入点：`base_fetch_service._on_finished`、`rag_indexer`、`maintain_rag`（逐任务+总控）、`pull_data`（三子命令）、`ops weekly`。写失败仅 warning 不抛出（台账不得影响任务本身）。
+
+### 18.4 版本单一来源（`src/config/version.py`）
+
+`app_version()`（lru_cache）：`PROJECT_ROOT/VERSION` → frozen `BUNDLE_ROOT/VERSION` → 回退 `"0.0.0-dev"`；VERSION 文件当前 `1.2.1`。消费方：启动日志（版本/Python/Qt/运行时根/frozen）、`setApplicationVersion`、关于对话框（原硬编码 v0.1.0）、release.py 发版校验——zip 名 `dist/mjs_agent-{version}.zip`、发版清单 `logs/release-{version}.json`、`.zip.sha256`，终结 exe/zip/git describe 三源并存的局面。
+
+### 18.5 其余可观测性收口
+
+- **QProcess 看门狗**（b3327f1）：`script_runner.DEFAULT_WATCHDOG_MS=30min`，超时 kill + ERROR——消除 AI 生成卡网络时 `_is_busy` 永久挂死
+- **异常钩子**（R2 + 80cc75b）：`threading.excepthook` + 链式 `sys.excepthook`（QThread 逃逸异常实测走后者），未捕获异常记带堆栈 ERROR；`KeyboardInterrupt` 透传
+- **启动自动公告检查**（c88bf63）：启动 2 分钟后 `auto_check_if_due()`，每日最多一次（标记先写）、忙碌/冷却静默跳过、只提示不自动应用
+- **启动截图回收**：`_prune_old_screenshots(keep_days=14)`（顶层 png，子目录标注样本不动）
+- **日志降噪**：adb_screen 瞬时态告警去重（5 分钟窗口同类失败降 debug，连续 30 次升级 ERROR）；base_fetch stderr tqdm 行降 DEBUG
+- **AI 定向重试**：`--retry-failed` 读 `logs/ai_last_failures.json` 只重跑上次失败项（成功项字节不动）
+- **conftest basetemp 兜底**（ac79157）：`--basetemp=.tmp_test/pytest-tmp` 已入 pyproject，conftest 兜底建父目录，修复 CI 全新 checkout 的 xdist INTERNALERROR

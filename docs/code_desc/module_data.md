@@ -1,8 +1,8 @@
 # 模块：数据模型与数据管理
 
 > 对应目录：`src/data/`
-> 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作
-> 文档日期：2026-10-01
+> 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
+> 文档日期：2026-10-06
 
 ---
 
@@ -12,7 +12,7 @@
 
 1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 `Skill`、`Card`、`Hero`、`SynergyScore`、`Combo`、`HeroGuide`、`IncrementalUpdate` 等核心数据模型，作为项目唯一的 JSON 格式契约，确保官网爬虫与 AI 生成的输出格式一致
 2. **数据管理**（`manager.py` / `facade.py` / `issues.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用 CRUD、加载、保存与内存快照回滚；六个子类 Manager 继承基类并添加各自的查询与领域方法；`DataFacade` 门面（`facade.py`，审计 F3 自 manager.py 拆出）统一访问入口，并可通过 `from_managers()` 复用外部 Manager；`DataIssue` / `LoadReport` 问题值对象独立于 `issues.py`
-3. **JSON 仓库基类**（`json_repository.py`）— `JsonRepository` 统一维护仓库的原子写盘、加锁读盘与写盘失败内存回滚；`atomic_write_json` 是全库唯一原子写入口（`DataManager` / `card_catalog` / 所有维护仓库均委托于此）
+3. **JSON 仓库基类**（`json_repository.py`）— `JsonRepository` 统一维护仓库的原子写盘、加锁读盘与写盘失败内存回滚；模块级三基元 `atomic_write_json`（全库唯一 JSON 原子写入口，支持 `sort_keys`）/ `atomic_write_text`（配置与 env 文本写入）/ `snapshot_to_backups`（写前快照到 `backups/` 并按同 stem 轮转保留 10 份）是全库写盘与备份的统一入口；坏文件加载分支自动保底快照（80cc75b）
 4. **武将变更时间轴**（`hero_timeline.py`）— 维护 `data/mjs_adjustments.json` 的武将变更事件流，为 RAG 语料构建提供按版本打戳（`as_of` / `is_current`）与过时判定能力
 
 ---
@@ -26,7 +26,8 @@ src/data/
 ├── manager.py                    # 默认路径常量 / DataManager[V_co] 泛型基类
 ├── facade.py                     # DataFacade 门面（组装三个 Manager，审计 F3 自 manager.py 拆出）/ apply_incremental_update()（审计 C1 迁入）
 ├── issues.py                     # DataIssue / LoadReport 问题值对象（审计 F3 自 manager.py 拆出）
-├── json_repository.py            # atomic_write_json / JsonRepository 基类（原子写 + 加锁读 + 写失败回滚）
+├── json_repository.py            # atomic_write_json / atomic_write_text / snapshot_to_backups 三基元
+│                                 #   + JsonRepository 基类（原子写 + 加锁读 + 写失败回滚 + 坏文件保底快照）
 ├── hero_manager.py               # Hero CRUD + JSON 持久化（继承 DataManager[Hero]）
 ├── synergy_manager.py            # SynergyScore CRUD + JSON 持久化（继承 DataManager[SynergyScore]）
 ├── guide_manager.py              # HeroGuide CRUD + JSON 持久化（继承 DataManager[HeroGuide]）
@@ -50,7 +51,7 @@ src/data/
 
 四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。2026-09 起（241e965），`hero_classification_repository.py` 在爬虫更新 `heroes.json` 后，归类/专属牌名单随刷新入口同步加载，无需手动重建语料。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
 
-四个维护仓库的磁盘实测规模（2026-10-01）：`card_points.json`（72 行牌面 + 12 条判定规则）、`equip_attrs.json`（26 件装备）、`special_cards.json`（85 条专属牌/战法/状态/概念）、`hero_classification.json`（7 个顶层键：`version` 2.0 / `updated_at` / `source` / `note` / `categories` 16 项分类定义 / `hero_categories` 186 键武将归类映射 / `counter_chain` 8 键克制链）。
+四个维护仓库的磁盘实测规模（2026-10-01）：`card_points.json`（72 行牌面 + 12 条判定规则）、`equip_attrs.json`（26 件装备）、`special_cards.json`（85 条专属牌/战法/状态/概念）、`hero_classification.json`（7 个顶层键：`version` 2.0 / `updated_at` / `source` / `note` / `categories` 16 项分类定义 / `hero_categories` 186 键武将归类映射 / `counter_chain` 8 键克制链）。**仓库口径注意**：上述数据文件连同 heroes/combos/cards 等源数据自 2026-10-03 起不入版本库（见 3.14 节），全新 clone 需先经 `pull_data pull` 获取。
 
 百科 diff 忽略名单 `baike_ignore_store.py`（0007fc4 新增）管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化。`BaikeIgnoreStore` 模型含 `version` 与 `heroes` / `cards` 两段 `dict[str, IgnoreEntry]`，覆盖式保存；`IgnoreEntry` 以 `state`（added/modified/removed）+ `hash` 共同定位"同一差异"，`filter_ignored()` 在检查链路上过滤被压制条目——`modified/added` 需 state 匹配且 hash 等于当前官网哈希（官网内容再变即重现），`removed` 仅按 state 匹配（官网再上线会以 `added` 出现，state 不匹配自然重现）。忽略不影响基线快照推进，也不影响武将时间轴（时间轴数据源是公告列表，与 diff 无关）。
 
@@ -124,6 +125,8 @@ class HeroGuide(BaseModel):
 
 **官网字段映射**：Hero 模型使用 `validation_alias` 将官网中文字段名映射到英文属性名，AI 生成结果直接使用英文字段名，`model_config = {"populate_by_name": True}` 使两种数据源均可校验。
 
+**Skill 字段禁止显式空串**（608ed62）：`Skill.description` 与 `Skill.settlement` 加 `min_length=1` 的 pydantic `Field` 约束——模型层拦截"显式空串"形态的采集失败数据（官网改版产出的空描述静默落库）。注意 pydantic v2 不校验 default 值，字段整体缺失仍会放行，该形态由 `scraper/official_source/full.py` 的空描述占比守卫负责，两层互补不重叠。
+
 **`synergy_rating_for_score(score)`** 函数根据综合评分推定评级：`>=9 → S`、`>=6 → A`、`>=3 → B`、`>=0 → C`、其余 `D`，在 `SynergyScore` 的 `model_validator` 中自动赋值，外部赋值会被覆盖。
 
 ### 3.2 DataManager 泛型基类
@@ -148,6 +151,8 @@ class DataManager(Generic[V_co]):
 ```
 
 `_parse_models()` 对 JSON 数组逐条执行 `model_class.model_validate()`，校验失败记为 `invalid_record`，重复键记为 `duplicate_key`，均不影响其他合法记录的加载。
+
+**坏文件保底副本**（b3327f1，`_preserve_corrupt_file`）：`load` 路径遇到解析失败/顶层非数组等坏文件时，置空前先 `snapshot_to_backups(file_path)` 快照到 `data/backups/`——杜绝"解析失败 → 内存置空 → 用户保存 → 空数据原子写回"的不可逆丢失链。80cc75b 将同一保底语义补齐到 `JsonRepository.load` 与 `card_catalog._JsonRepository._load` 两族。
 
 > **设计思路：** 子类仅需实现 `_parse_items()`（通过 `key_of` lambda 确定字典键）与领域查询方法，完全共享 CRUD 骨架。`Generic[V_co]` 协变使 `DataManager[Hero]` 可安全赋值给 `DataManager[BaseModel]` 类型变量。
 
@@ -323,12 +328,21 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 - **`atomic_write_text(path, content)`** — 文本版原子写（同骨架），供 env 文件回写、ROI/价格配置等字符串写入使用。
 - **`snapshot_to_backups(source, keep=10)`** — 写前快照到同目录 `backups/`（命名 `{stem}-{时间戳}{suffix}`，与数据管理服务备份及 `diff_source_data` 基线 glob 约定一致），同 stem 自动轮转仅留最近 keep 份；`corrupt-*` 与手工抢救文件不匹配轮转模式永不清。接入点：官网全量/增量采集、AI 批量生成入口、`_ManagerTransaction._backup`。
 - **`JsonRepository` 基类** — 子类职责：`__init__` 先 `super().__init__(file_path)`；`load()` 用 `_read_root()` 取 `(root, ok)` 后做根结构校验与逐条解析；`save()` 构造 payload 后调 `save_payload(payload)`；CRUD 用 `_snapshot()/_restore()/_save_or_rollback()` 实现"先改内存、写盘失败回滚"。
-  - `_read_root()` 加 `RLock`（防止与写盘并发），文件缺失记 warning、解析失败记 error（`DataIssue`）；
+  - `_read_root()` 加 `RLock`（防止与写盘并发），文件缺失记 warning、解析失败记 error（`DataIssue`）；坏文件分支先 `snapshot_to_backups(self.file_path)` 保底再返回失败（80cc75b）——`save()` 不校验加载结果，损坏后的任意一次保存会全量覆盖空数据，先按原字节留底；
   - 写盘失败时 `_save_or_rollback()` 恢复内存快照并重新抛出，避免"看似失败、实际已变"的脏状态。
 
 四个维护仓库已继承本基类（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）；`card_catalog.py` 的 `_JsonRepository`（卡牌基础/字段定义/追加内容三个仓储）与 `manager.py` 的 `DataManager._save_unlocked`、`hero_timeline.save_timeline()` 也改为委托 `atomic_write_json`（全库原子写收敛）。
 
-另有社区侧 combo/guide 语料由 `src/scripts/build_combo_corpus.py`（组合 RAG 语料，437 块，combo 类，不贴单值 hero 但贴 heroes 列表）与 `build_guide_corpus.py`（武将攻略 RAG 语料，357 块，guide 类，贴 hero）从 `data/raw_guides/` 生成，进向量库供 RAG 检索，非 Pydantic 模型不入维护仓库。
+另有社区侧 combo/guide 语料由 `src/scripts/build_combo_corpus.py`（组合 RAG 语料，509 块，combo 类，不贴单值 hero 但贴 heroes 列表）与 `build_guide_corpus.py`（武将攻略 RAG 语料，357 块，guide 类，贴 hero）从 `data/raw_guides/` 生成，进向量库供 RAG 检索，非 Pydantic 模型不入维护仓库。
+
+### 3.14 数据出库与私有数据仓同步（2026-10-03 起）
+
+自 7bdf075 / 8d23493 起，抓取数据与维护数据**不入版本库**，公开仓只含源代码、测试与 `data/samples/` 全虚构示例数据：
+
+- **出库范围**：`heroes.json` / `combos.json` / `cards.json` / `card_annotations.json` / `special_cards.json` / `card_points.json` / `equip_attrs.json` / `hero_classification.json` / `mjs_adjustments.json` / `announcements.json` / `baike_snapshot.json` / `raw_guides/` / `rag_corpus/` / `images/`（共 14 项，`pull_data.PRIVATE_PATHS`）。`guides.json` / `synergies.json` 为 AI 生成物，不入私有仓也不入公开仓。
+- **来源登记**：`data/SOURCES.md` 登记每项内容的来源、采集时间与备注（合规台账，不登记数据本身）。
+- **同步工具** `src/scripts/pull_data.py`：`pull` / `push` / `verify` 三子命令 + `--dry-run`；私有仓位置三级解析（环境变量 `MJS_DATA_REPO` > `config.env` > 默认项目同级 `mjs_data_private`）；私有仓根 `manifest.json` 记录 `{path, sha256}`，`verify()` 逐条比对；**push 守卫链**——数据有效性校验（JSON 可解析非空、heroes 条数 ≥ `MIN_HERO_COUNT=100` 防截断）+ 脏工作区拒绝 + `git pull --ff-only` 对齐远端后才提交；**pull 原子落位**——先拷进项目内同盘 staging（`.tmp_test/.pull_staging-*`）再逐文件 `Path.replace` 原子替换，发现本地文件与私有仓不同（可能未 push 的本地修改）先备份到 `data/backups/`（扁平命名 `data__<名>-<时间戳>`）再覆盖。
+- 本模块各 Manager / Repository 的读写逻辑不变——它们仍按本地路径读写文件，"文件从哪来"由 `pull_data` 解决；doctor「私有仓」「数据」检查组负责日常工作区一致性巡检。
 
 ### 3.12 卡牌百科快照与变更记录（`card_sync_store.py`）
 
@@ -407,7 +421,7 @@ class BaikeIgnoreStore(BaseModel):
 
 ```python
 # src/data/json_repository.py（全库统一入口）
-def atomic_write_json(path: Path | str, data: Any, indent: int = 2) -> None:
+def atomic_write_json(path: Path | str, data: Any, indent: int = 2, sort_keys: bool = False) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
@@ -426,7 +440,7 @@ def atomic_write_json(path: Path | str, data: Any, indent: int = 2) -> None:
         raise
 ```
 
-> **设计思路：** 所有写盘统一走此入口：`mkstemp` 保证临时文件唯一、`fsync` 保证断电/崩溃不留下空或半截文件、`replace` 原子替换；任何异常清理临时文件，原文件保持不变。2026-08 起 `DataManager`、`card_catalog` 与四个维护仓库统一委托于此。
+> **设计思路：** 所有写盘统一走此入口：`mkstemp` 保证临时文件唯一（根治固定名 `.tmp` 并发互截——AI 子进程批量提交与 UI 编辑写同一路径的既有冲突形态）、`fsync` 保证断电/崩溃不留下空或半截文件、`replace` 原子替换；任何异常清理临时文件，原文件保持不变。`sort_keys=True` 供汉字特征缓存等既有键序敏感方兼容（be40d26）。2026-08 起 `DataManager`、`card_catalog` 与四个维护仓库统一委托于此；9737d52 进一步把全库 8 处独立原子写实现收敛到本基元。
 
 ### 4.2 增量更新级联删除
 
@@ -620,3 +634,25 @@ class SpecialCardRepository(JsonRepository):
 | 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` / `card_sync_store` / `baike_ignore_store` 统一委托此函数原子写盘 |
 | 内部依赖 | `src/data/issues.DataIssue` | `json_repository` 的 `_issue()` 与各仓储、`facade._add_reference_issue()` 统一使用 `DataIssue` 结构收集加载问题（审计 F3 自 `manager.py` 拆至 `issues.py`） |
 | 被调用方 | `src/data/combo_manager` | `src/scripts/import_combos.py` 调用 `save_manual_combo()` 持久化手工配队 |
+| 被调用方 | `src/scripts/pull_data.py` | 私有数据仓同步工具按 `PRIVATE_PATHS`（14 项）整体搬运 `data/` 下源数据文件与目录（见 3.14 节）；doctor「私有仓/数据」检查组复用 `pull_data.verify()` 与 Manager `load_issues` 做工作区巡检 |
+
+---
+
+## 七、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**数据出库与私有数据仓**
+- 抓取数据与维护数据自 2026-10-03 起不入版本库（7bdf075 / 8d23493）：heroes/combos/cards/card_annotations/special_cards/card_points/equip_attrs/hero_classification/mjs_adjustments/announcements/baike_snapshot + raw_guides/ + rag_corpus/ + images/ 共 14 项；公开仓只含源代码、测试与 `data/samples/` 虚构示例；`data/SOURCES.md` 来源登记
+- 新增 `src/scripts/pull_data.py`（pull/push/verify + `--dry-run`；MJS_DATA_REPO 三级解析；manifest sha256；push 有效性守卫 `MIN_HERO_COUNT=100` + 脏工作区拒绝；pull staging + `Path.replace` 原子落位 + 脏覆盖先备份 `data/backups/` 扁平命名）；工作流详见 3.14 节
+
+**写盘与备份基建**
+- `snapshot_to_backups(source, *, keep=10)` 写前快照基元（be40d26）：AI 生成入口（d2c5b83，每次运行快照一次而非每 10 条一批）与数据管理备份（`_ManagerTransaction._backup` 委托，8a46a43 移除失效 timestamp 参数）统一接入
+- `atomic_write_json` 补 `sort_keys` 参数（be40d26，兼容汉字特征缓存键序）；全库 8 处固定名 `.tmp` 写盘收敛（9737d52）
+- 坏文件保底副本：`DataManager._preserve_corrupt_file`（b3327f1）+ `JsonRepository.load` / `card_catalog._JsonRepository._load` 两族（80cc75b）——置空前先快照，杜绝"损坏 → 置空 → 保存 → 空数据覆盖"
+
+**模型校验**
+- `Skill.description` / `Skill.settlement` 加 `min_length=1`（608ed62，pydantic Field 约束；整体缺失形态由 full.py 空描述占比守卫互补）
+
+**数字口径**
+- 组合 RAG 语料 437 → 509 块；维护仓库数据文件标注"不入版本库"口径

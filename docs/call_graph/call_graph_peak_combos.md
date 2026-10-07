@@ -5,7 +5,7 @@
 
 ---
 
-## 当前实现基线（2026-09-30）
+## 当前实现基线（2026-10-06）
 
 **48b0f99 fix(peak) 巅峰赛选将人工确认残留修复：** 巅峰赛识别循环会话状态随停止一并清空（stop() 清 `_resolutions`/`_resolution_raws`/`_stale_rounds`/`_ban_names`/`_last_board`）；图片导入前经 `verified_resolutions_for_import()` 按内容校验旧确认（无后续拍可宽限，无法定位立即丢弃）；`confirm_pending()` 加牌面在位守卫（`last_board is None` 时拒绝并提示）；面板 `_on_pool_updated()` 加同名槽位显性告警（duplicate_count>0 时日志 + 状态栏 TONE_WARNING）；停止/牌面退出经 `_mark_stale()` 摘待确认行防误点，卡片保留供复盘。此前残留确认会被后续图片导入按槽位号盲目套用（2026-09-30 卓文君被顶成孙尚香事故）。
 
@@ -481,7 +481,8 @@ MainWindow._on_peak_board_exited() -> set_win_rate_mode(WIN_RATE_MODE_PEAK)
 | `PeakSelectPanel._mark_stale(badge_text)` | `peak_select_panel.py` | _on_toggle_watcher(停止分支) / _on_watcher_board_exited | 48b0f99 新增：_clear_pending_rows + hide(_pending_area) + 阶段徽章置灰（卡片保留供复盘） |
 | `PeakSelectPanel._on_watcher_board_exited` | `peak_select_panel.py` | watcher.board_exited | _mark_stale("阶段：牌面退出") + board_exited.emit 转主窗口 |
 | `PeakSelectPanel._on_import_from_file` | `peak_select_panel.py` | 三点菜单 [从图片导入] | ocr_warmup_state 守卫、QFileDialog、watcher.recognize_image_file |
-| `PeakSelectPanel._update_import_availability` | `peak_select_panel.py` | capture_service.ocr_warmup_state_changed | 预热中禁用 [从图片导入]（Paddle 加载持 GIL 会冻结界面） |
+| `PeakSelectPanel._update_import_availability` | `peak_select_panel.py` | capture_service.ocr_warmup_state_changed | 预热中禁用 [从图片导入]（引擎加载持 GIL 会冻结界面） |
+| `PeakSelectPanel._on_capture_completed(save_path=None)` | `peak_select_panel.py` | capture_service.capture_completed | 截图未落盘时状态栏 TONE_WARNING「截图未落盘（保存中或失败，详见日志）」（80cc75b） |
 | `PeakSelectPanel._on_save_screenshot` | `peak_select_panel.py` | 三点菜单 [保存截图] | CaptureRequestLock(ADB_SAVE) + do_capture(perform_ocr=False) |
 | `PeakSelectPanel._on_capture_result / _on_capture_failed` | `peak_select_panel.py` | capture_service.capture_completed / capture_failed | CaptureRequestLock.finish 校验，仅 ADB_SAVE 来源时更新状态栏 |
 | `evaluate_peak_ban_advice` | `peak_ban_advice.py` | PeakSelectPanel._render_cards | 缺失/弱势/冷门强势/热门强势四步判定 |
@@ -517,3 +518,13 @@ MainWindow._on_peak_board_exited() -> set_win_rate_mode(WIN_RATE_MODE_PEAK)
 | `MatchGuidePanel._current_win_rates` | `match_guide_panel.py` | _refresh_analysis / _render_cards | 按当前模式返回胜率数据（巅峰赛榜 / 2v2 榜） |
 | `load_peak_win_rates/load_peak_pick_ranks` | `peak_win_rate_repository.py` | _win_rates_provider/_pick_ranks_provider | CSV 读取 + 缓存 |
 | `clear_peak_win_rate_cache` | `peak_win_rate_repository.py` | 数据更新后 | 清空胜率与出场排行缓存 |
+
+---
+
+## 八、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+- **截图失败可观测**（80cc75b）：`peak_select_panel` 截图保存路径为 `None` 时状态栏由"截图已保存："空路径改为"截图未落盘（保存中或失败，详见日志）"（TONE_WARNING）；`capture_service` 存盘失败同步补 warning
+- 引擎口径跟随 B1：巅峰赛识别链路经 `OcrWorker` -> `GeneralRecognizer` -> `engine_loader`（v6 主 + v4 复核），链路结构不变；识别内收益（team 链式重试、回退触发线 0.75）见 `call_graph_capture_ocr.md`
+- ComboStrip `Signal(object)` 修复（0ffed36）属选将推荐板块（见 `call_graph_ui.md` §4.3）；巅峰赛卡片角标同源数据走独立直调路径，不受影响

@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：commit `624c8c5`（2026-09-15）→ 2026-10-01 增量更新（含 `885ea96` Phase 4 上帝类拆分、`78fd65c` API 档案域拆分与死代码清理）
+> 代码基线：commit `624c8c5`（2026-09-15）→ 2026-10-06 增量更新（含 `885ea96` Phase 4 拆分、`af8cd06` 快照基线与 `1694ab7` B1 切换窗口）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -35,8 +35,8 @@
 
 ### 代码规模
 
-- 测试模块：112 个测试文件
-- 测试用例：1350 个 `test_*` 函数
+- 测试模块：129 个测试文件
+- 测试用例：1481 个 `test_*` 函数
 
 ---
 
@@ -351,7 +351,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 接口 | 签名 | 说明 |
 |------|------|------|
 | `load_all_blocks()` | `-> list[tuple[str, str, dict]]` | 读取全部 12 个语料 JSON，返回 `(block_id, text, metadata)`；缺文件 warning 跳过，块数不一致或 ID 重复抛异常 |
-| `build_index()` | `(rebuild=True) -> (int, str)` | 全量重建或增量同步；返回 `(块数, 集合名)` |
+| `build_index()` | `(rebuild=True) -> (int, str)` | 全量重建或增量同步；返回 `(块数, 集合名)`。构建完成后做**写后条数一致性校验**（b3327f1）：`coll.count()` 必须等于语料块数，否则 `RuntimeError('索引 mjs_rag_v1 条数不一致：语料 N 块，库中 M 块（疑似写入中断）')`；构建失败以 `exc_info=True` 落完整堆栈，并写 `rag_index` 任务台账 |
 | `CORPUS_FILES` | `list[tuple[str, Callable]]` | 12 个 `(文件名, 规范化函数)` 对，规范化函数契约：入参 JSON 数组，返回等长 `(block_id, text, meta)` 列表 |
 
 **`retriever.py`**
@@ -378,16 +378,18 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 | # | 任务名 | 脚本 | 期望块数 |
 |---|--------|------|----------|
-| 1 | 武将语料 | `build_rag_corpus.py` | 639 |
+| 1 | 武将语料 | `build_rag_corpus.py` | `"snapshot"`（af8cd06，基线 647） |
 | 2 | 卡牌语料 | `build_card_corpus.py` | 49 |
 | 3 | 点数花色语料 | `build_cardpts.py` | 49 |
 | 4 | 装备属性语料 | `build_equip_attr.py` | 27 |
 | 5 | 加强削弱语料 | `build_modify_corpus.py` | 49 |
 | 6 | 元规则/术语/FAQ | `build_rule_corpus.py` | `"snapshot"` |
-| 7 | 特殊机制语料 | `build_special_corpus.py` | 85 |
+| 7 | 特殊机制语料 | `build_special_corpus.py` | `"snapshot"`（af8cd06，基线 85） |
 | 8 | 武将分类语料 | `build_classification_corpus.py` | `None` |
 | 9 | 组合语料 | `build_combo_corpus.py` | `None` |
 | 10 | 武将攻略语料 | `build_guide_corpus.py` | `None` |
+
+> 块数校验切**快照基线**（af8cd06）：武将/特殊机制两项由精确 int 改 `"snapshot"`——int 精确匹配在加将后必然漂移误报（627 校准于 09-13，5 名新武将各产 4 块致实际 647）；快照语义下 `verify_outputs()` 经 `audit_rule_doc.snapshot_counts()` 取基线：基线未建立不拦、`n >= 基线` 通过（只增允许）、`n < 基线` 判"低于快照基线，疑似丢块"。snapshot 任务成功并刷新文档基线后由 `_record_corpus_baseline(task)` 把实际块数写入快照 `corpus_counts` 通用段作为下次基线（单文件失败整段不写）。其余 4 项 int（卡牌/点数花色/加强削弱/装备）针对静态卡牌集不会随加将漂移，维持精确匹配。
 
 > 任务 6 一个任务产出**三个** JSON（章节块 / 术语表 / FAQ 裁定块），故 10 个任务产出 12 个语料文件。
 
@@ -647,7 +649,7 @@ TASKS: list[dict] = [
         "script": "build_rag_corpus.py",
         "sources": ["data/heroes.json", "data/cards.json", "data/mjs_adjustments.json"],
         "outputs": ["武将RAG语料.json"],
-        "expected": 639,
+        "expected": "snapshot",
     },
     ...
     {
@@ -706,11 +708,37 @@ TASKS: list[dict] = [
 
 ## 七、待确认信息清单
 
-1. **【已核定】武将语料块数**：磁盘 `data/rag_corpus/武将RAG语料.json` 实测 **647** 块（2026-09-30 新增谢灵运、陶渊明后重建，74234a8），与 `heroes.json`（186 武将）匹配。`task_defs.py` 的 `expected` 当前为 627（可能未随新增武将同步，`maintain_rag.py --strict-audit` 会因块数漂移报警）。改 ODS 数据后重建语料须同步更新 `expected`。
-2. **【假设】模块间文档的过期数字**：`module_data.md` 末尾记"组合 RAG 语料 437 块"，磁盘实测 **509** 块（`expected=None` 动态值，不报错但文档已过期）；`module_ui.md` 第七节与 `equip_attrs_panel.py` docstring 记"26 件装备"，与仓储常量 `EXPECTED_EQUIP_COUNT=26` 一致，但语料块数为 **27**——差额 1 块是 `build_equip_attr.py` 额外追加的 `equipattr_规则_距离计算` 规则块（已在 3.1 核实）。
-3. **【假设】`rag_curated.py` 字段集与新版精化模型不一致**：`rag_curated.INDEX_FIELDS` 含 5 个字段 `("timing", "trigger_condition", "keywords", "related", "target")`，而新版 `corpus_fields.py` 将精化字段改为 `CARD_FIELDS=("timing","trigger_condition")` 与 `HERO_FIELDS=("timing","trigger_condition","target","special_rules")`（`keywords/related` 已退出精化模型，`special_rules` 新增）。重建时 `merge_curated()` 仍会把旧 `curated` 中的 `keywords/related` 覆盖回块顶层。`rag_curated.py` 的字段集是否应同步收敛至新版字段集，待确认。
-4. **【假设】`build_cardpts.py` 块数与牌行数关系**：`card_points.json` 有 72 行牌面明细（`count` 合计 162），脚本按**牌名去重聚合**产出 49 块（与 `expected=49` 一致）。聚合规则已核实，但 72 行的 `suit`/`point` 组合维度在聚合中是否仍有信息丢失，属设计取舍，未进一步核对。
-5. **【假设】`data/rag_corpus/` 实际文件清单与 git 跟踪**：磁盘有 12 个 `.json` + 12 个同名 `.md` + 1 个仅 MD 的 `核心规则摘要.md`。`indexer.CORPUS_FILES` 只登记 12 个 JSON，与磁盘一致；`核心规则摘要.md` 确实不入向量检索。**2026-09 git 变更**：仅 `curated` 精化文件（`武将RAG语料.json`、`卡牌RAG语料.json`）纳入 git 跟踪，其余 10 个 `.json` 退回 `.gitignore`。
-6. **【已核定】时间轴数据源归属**：`data/mjs_adjustments.json` 由 `import_hero_adjustments.py`（本模块脚本）导入，源是官方更新公告侧的 A 类全量快照与公告正文，故归 ODS（贴源层，官方权威原文），但**不属"裁定权威 6 个 JSON"之列**——那 6 个 JSON 才是武将/卡牌/规则事实的裁定依据，时间轴只提供"何时变过"的版本线索。它被登记为"武将语料"与"武将攻略语料"两个任务的 source，`build_guide_corpus.py` 调用 `load_timeline()` / `stamp_guide_block()`。写入口径有两条：`import_hero_adjustments.py` 一次性初始化 + 公告捕获增量（`append_announcement_events` 按 `ref` / `(date, hero)` 幂等去重），均经 `save_timeline()` 校验后原子写，不属人工可编辑面板。
-7. **【已核定】审计正反校验当前为空**：`hero_classification.json` 的 `hero_categories` 实测 186 键，`heroes.json` 实测 186 武将，`collect_unclassified()` 与 `collect_orphan_category_keys()` 双向结果均为空列表（此前 178 键 / 172 武将时存在"贾诩(限定)""赵姬妾→刘弗陵"类脏键，已清理）。`audit_summary()` 输出未实际运行，其余条目（专属牌/卡牌点数/装备属性/时间轴）以实际运行结果为准，本文不给出具体数量。
-8. **【部分核定】评测集规模与集合条目数**：`data/rag_evals/rule_faq_eval.json` 实测 `{"version", "k": 5, "items": 82 题}`，与 `FAQ裁定块.json` 的 82 块**同源**——`eval_rule_faqs.py --generate` 由 FAQ 语料逐条生成（问句＝裁定文本 + ？），并非数值巧合。12 个语料 JSON 磁盘实测合计 **2128** 块（82+38+49+49+49+50+647+186+357+85+509+27），ChromaDB 集合 `mjs_rag_v1` 的实际条目数未打开核对，二者理论上应相等（`indexer.build_index()` 对块 ID 重复直接抛异常，故一致是硬约束）。
+1. **【已核定 2026-10-05】武将语料块数口径**：磁盘 `data/rag_corpus/武将RAG语料.json` 实测 **647** 块（2026-09-30 新增谢灵运、陶渊明后重建，74234a8），与 `heroes.json`（186 武将）匹配。`task_defs.py` 的 `expected` 已改 `"snapshot"`（af8cd06），快照基线 647（加将自动适应，丢块仍按"低于快照基线"拦截）；**不再需要随加将手动同步 `expected`**，本条由"待确认"转为"已解决"。
+2. **【已解决 2026-10-05】语料快照基线存储**：`corpus_counts` 段（`武将RAG语料.json: 647` / `特殊机制语料.json: 85`）写入 `.rule_doc_snapshot.json`，`snapshot_common.snapshot_counts()` 合并 `counts`（元规则三件）与 `corpus_counts` 两段返回；`audit_rule_doc` 重建快照时保留 `corpus_counts` 段，避免元规则刷新抹掉语料基线。
+3. **【已解决 2026-10-06】模块间文档的过期数字**：`module_data.md` 的"组合 RAG 语料块数"已更新为实测 **509** 块（`expected=None` 动态值）；`module_ui.md` 第七节与 `equip_attrs_panel.py` docstring 记"26 件装备"，与仓储常量 `EXPECTED_EQUIP_COUNT=26` 一致，但语料块数为 **27**——差额 1 块是 `build_equip_attr.py` 额外追加的 `equipattr_规则_距离计算` 规则块（已在 3.1 核实）。
+4. **【假设】`rag_curated.py` 字段集与新版精化模型不一致**：`rag_curated.INDEX_FIELDS` 含 5 个字段 `("timing", "trigger_condition", "keywords", "related", "target")`，而新版 `corpus_fields.py` 将精化字段改为 `CARD_FIELDS=("timing","trigger_condition")` 与 `HERO_FIELDS=("timing","trigger_condition","target","special_rules")`（`keywords/related` 已退出精化模型，`special_rules` 新增）。重建时 `merge_curated()` 仍会把旧 `curated` 中的 `keywords/related` 覆盖回块顶层。`rag_curated.py` 的字段集是否应同步收敛至新版字段集，待确认。
+5. **【假设】`build_cardpts.py` 块数与牌行数关系**：`card_points.json` 有 72 行牌面明细（`count` 合计 162），脚本按**牌名去重聚合**产出 49 块（与 `expected=49` 一致）。聚合规则已核实，但 72 行的 `suit`/`point` 组合维度在聚合中是否仍有信息丢失，属设计取舍，未进一步核对。
+6. **【已解决 2026-10-03】`data/rag_corpus/` 的版本库口径**：磁盘 12 个 `.json` + 同名 `.md` + 1 个仅 MD 的 `核心规则摘要.md` 不变；`indexer.CORPUS_FILES` 只登记 12 个 JSON；`核心规则摘要.md` 不入向量检索。**2026-10-03 起语料全部出库**（7bdf075）：`data/rag_corpus/` 整目录退回 `.gitignore`，改经私有数据仓同步（`pull_data`），不再有部分入库状态。
+7. **【已核定】时间轴数据源归属**：`data/mjs_adjustments.json` 由 `import_hero_adjustments.py`（本模块脚本）导入，源是官方更新公告侧的 A 类全量快照与公告正文，故归 ODS（贴源层，官方权威原文），但**不属"裁定权威 6 个 JSON"之列**——那 6 个 JSON 才是武将/卡牌/规则事实的裁定依据，时间轴只提供"何时变过"的版本线索。它被登记为"武将语料"与"武将攻略语料"两个任务的 source，`build_guide_corpus.py` 调用 `load_timeline()` / `stamp_guide_block()`。写入口径有两条：`import_hero_adjustments.py` 一次性初始化 + 公告捕获增量（`append_announcement_events` 按 `ref` / `(date, hero)` 幂等去重），均经 `save_timeline()` 校验后原子写，不属人工可编辑面板。
+8. **【已核定】审计正反校验当前为空**：`hero_classification.json` 的 `hero_categories` 实测 186 键，`heroes.json` 实测 186 武将，`collect_unclassified()` 与 `collect_orphan_category_keys()` 双向结果均为空列表（此前 178 键 / 172 武将时存在"贾诩(限定)""赵姬妾→刘弗陵"类脏键，已清理）。`audit_summary()` 输出未实际运行，其余条目（专属牌/卡牌点数/装备属性/时间轴）以实际运行结果为准，本文不给出具体数量。
+9. **【部分核定】评测集规模与集合条目数**：`data/rag_evals/rule_faq_eval.json` 实测 `{"version", "k": 5, "items": 82 题}`，与 `FAQ裁定块.json` 的 82 块**同源**——`eval_rule_faqs.py --generate` 由 FAQ 语料逐条生成（问句＝裁定文本 + ？），并非数值巧合。12 个语料 JSON 磁盘实测合计 **2128** 块（82+38+49+49+49+50+647+186+357+85+509+27），ChromaDB 集合 `mjs_rag_v1` 的实际条目数未打开核对，二者理论上应相等（`indexer.build_index()` 对块 ID 重复直接抛异常，故一致是硬约束）。
+
+---
+
+## 八、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**语料块数校验切快照基线**（af8cd06，根治口径过期）
+- `task_defs.py` 的 `expected` 三态语义：`int` 精确匹配 / `"snapshot"` 快照基线只增不删 / `None` 动态只报不校验；"武将语料"与"特殊机制语料"由 627/83 改 `"snapshot"`
+- `maintain_rag.verify_outputs()` snapshot 分支：基线未建立不拦 / `n>=基线` 通过 / `n<基线` 判"低于快照基线疑似丢块"；`_record_corpus_baseline()` 把实际块数写入快照 `corpus_counts` 通用段（失败不部分写）
+- `snapshot_common.snapshot_counts()` 合并 `counts`（元规则三件）与 `corpus_counts` 两段；`audit_rule_doc` 重建快照时保留 `corpus_counts`
+- 台账 reason 携带详情（"块数校验未通过: 实际647/期望627"），可区分数据问题与口径过期
+- **maintain_rag 主循环误报修复**（80cc75b）：`else`（块数校验失败）块缩进归位——修复前全部任务成功时最后一个任务被误记块数校验未通过（台账恒失败、指纹不记录致重复重跑、索引联动永不触发），真实失败反而漏记
+
+**索引与脚本健壮性**
+- `indexer.build_index()` 写后条数一致性校验（b3327f1）+ 构建失败 `exc_info=True` + `rag_index` 任务台账（`task_ledger`）
+- `maintain_rag.py` / `audit_rule_doc.py` / `ocr_baseline.py` 补装 `install_crash_logger`（b3327f1）——此前只调 `get_script_logger`，handler 永不装载且 propagate=False
+- `maintain_rag` 逐任务台账 `maintain_rag:<任务名>` + 总控 `maintain_rag`
+
+**数据出库口径**
+- `data/rag_corpus/` 自 2026-10-03 起不入版本库（7bdf075），整目录退回 `.gitignore`，改经私有数据仓同步（`pull_data`）；`data/raw_guides/`、维护数据四件同理
+
+**数字口径**
+- 测试规模：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）
+- 谢灵运/陶渊明 6 个技能语料块人工精修（cf9c927：`curated` 子对象 `method: "manual"` + `special_rules` 数组）

@@ -6,7 +6,7 @@
 
 ---
 
-## 当前实现基线（2026-10-01）
+## 当前实现基线（2026-10-06）
 
 ```
 official.py:main()      ← shim, 转调 official_source.full.main()
@@ -104,7 +104,12 @@ MainWindow._request_fetch_all()
                     -> h.model_dump(mode="json")
                     -> [失败] logger.error + logger.info，不阻断
               -> dry_run 分支：打印前 5 条，不写文件
-              -> crawler.save_json_atomic(out_path, validated)  [原子写入]
+              -> refuse_write_reason(validated, out_path)        [1fbfce4 四道写入守卫]
+                 -> [0 条 / 技能总数 0 / 空描述占比>20% / 条数跌幅>30%] 返回原因
+                 -> [触发] print [中止] 写入守卫触发 + sys.exit(1)
+                 -> [旧文件损坏] 第 4 道跳过放行（全量重爬正是恢复手段）
+              -> snapshot_to_backups(out_path)                   [写前快照，data/backups 轮转]
+              -> crawler.save_json_atomic(out_path, validated)  [原子写入（委托 atomic_write_json）]
                  -> tmp_path = path.with_suffix(".tmp")
                  -> json.dump(data, tmp, ensure_ascii=False, indent=2)
                  -> tmp_path.replace(path)
@@ -158,7 +163,8 @@ MainWindow._request_fetch_all()
 | `crawler.split_skill_desc(desc)` | `crawler.py` | `transform()` | `clean_html()`，`</p>` 拆分 + 段落标题匹配 |
 | `crawler.clean_html(html)` | `crawler.py` | `transform()`, `split_skill_desc()` | `re.sub()`, `html.unescape()` |
 | `crawler.validate_heroes(list)` | `crawler.py` | `crawl()`, `run()`, `fetch_baike_heroes()` | `Hero.model_validate()` |
-| `crawler.save_json_atomic(path, data)` | `crawler.py` | `crawl()`, `run()` | `json.dump()`, `Path.replace()` |
+| `crawler.save_json_atomic(path, data)` | `crawler.py` | `crawl()`, `run()` | 委托 `json_repository.atomic_write_json()`（mkstemp 唯一临时名） |
+| `full.refuse_write_reason(validated, out_path)` | `full.py` | `crawl()` | 四道规模守卫纯函数；触发返回拒绝原因否则 None（1fbfce4） |
 | `crawler.download_hero_images(raw_list)` | `crawler.py` | `crawl()`, `run()` | `_safe_image_name()`, `_download_hero_image()` |
 | `crawler._safe_image_name(name)` | `crawler.py` | `download_hero_images()` | `clean_html()`, `unicodedata.normalize()`, 白名单/保留名 |
 | `crawler._download_hero_image(url, dest)` | `crawler.py` | `download_hero_images()` | `_open_image_response()`, `_validate_image_file()` |
@@ -193,7 +199,10 @@ MainWindow._request_fetch_incremental()
 
            -> [if args.incremental]
               -> load_existing_ids(output_path)                 [读本地 JSON, 抽 {id} set]
-                 -> _load_heroes_file(path)                     [损坏则备份为 .corrupt-{ts} 后返回 None]
+                 -> _load_heroes_file(path)                     [损坏/顶层非数组 -> _backup_corrupt_file 改名 .corrupt-{ts} 留存 -> 返回 None]
+                 -> [返回 None] print 中止信息 + sys.exit(1)     [b181e13 硬停，堵死"损坏->空集->整库覆盖"销毁链]
+                 -> [run() 清洗后 0 条] sys.exit(1)              [退出码改失败，"真无更新"仍为 0]
+                 -> snapshot_to_backups(output_path)             [写入模式统一写前快照]
                     -> json.load(f)
                     -> [OSError/JSONDecodeError] path.replace(backup_path) + logger.error
                  -> {h["id"] for h in heroes}
@@ -629,7 +638,7 @@ CardSyncDialog._build_candidates(result)                      [ui/data_admin/car
 | `official_source.full.main()` | `full.py` | 子进程入口 | `argparse`, `setup_logging`, `full.crawl()` |
 | `full.crawl()` | `full.py` | `full.main()` | `fetch()`, `find_chunk_url()`, `parse_heroes_chunk()`, `transform()`, `validate_heroes()`, `save_json_atomic()`, `download_hero_images()` |
 | `crawler.fetch(url, binary)` | `crawler.py` | `full.crawl()`, `fetch_all_raw()` | `urllib.request.urlopen()` |
-| `crawler.save_json_atomic(path, data)` | `crawler.py` | `full.crawl()`, `run()` | `json.dump()`, `Path.replace()` |
+| `crawler.save_json_atomic(path, data)` | `crawler.py` | `full.crawl()`, `run()` | 委托 `json_repository.atomic_write_json()` |
 | `crawler.fetch_all_raw()` | `crawler.py` | `incremental.main()`, `fetch_baike_heroes()` | `fetch()`, `find_chunk_url()`, `parse_heroes_chunk()` |
 | `crawler.transform(raw)` | `crawler.py` | `full.crawl()`, `run()`, `fetch_baike_heroes()` | `clean_html()`, `split_skill_desc()` |
 | `crawler.clean_html(html)` | `crawler.py` | `transform()`, `split_skill_desc()` | `re.sub()`, `html.unescape()` |
@@ -823,3 +832,17 @@ HeroClassificationRepository.set_hero_categories(hero, categories)
 ```
 
 > **设计说明**：heroes.json 是官方榜单导入服务（词表消解）与知识库面板（归类/专属牌）的共同事实源。爬虫更新 heroes.json 后，各面板的 `reload_data` 入口统一调用 `load_hero_briefs` 刷新武将名单，确保新增武将可被归类或关联专属牌。`update_hero_names` 仅更新名单环境，不触碰归类编辑数据，保证用户正在编辑的归类不被覆盖。
+
+---
+
+## 十、本轮文档校准（2026-10-06）
+
+自基线 `885ea96`（2026-10-02 校准）以来的变更：
+
+**新增链路**
+- **全量采集写入前守卫**（1fbfce4）：`crawl()` 写入分支先 `refuse_write_reason(validated, out_path)` 四道守卫（校验 0 条 / 技能总数 0 / 空技能描述占比 >20%（MAX_EMPTY_DESC_RATIO=0.2）/ 较现存条数跌幅 >30%（MAX_COUNT_DROP_RATIO=0.3）；旧文件损坏时第 4 道跳过放行）——触发即 `sys.exit(1)`；通过后 `snapshot_to_backups()` 再 `save_json_atomic()`
+- **增量采集守卫**（b181e13/8a46a43）：`_load_heroes_file()` 对解析失败或顶层非数组先 `_backup_corrupt_file()`（改名 `heroes.corrupt-{ts}.json`）再返回 None -> `main()`/`run()` 收到 None 硬停 `sys.exit(1)`；清洗后 0 条退出码 0 → 1（"真无更新"仍为 0）；写入前统一快照
+
+**修正**
+- `save_json_atomic` 实现收敛到 `json_repository.atomic_write_json`（9737d52，签名不变）
+- 引擎策略（1694ab7）：`OfficialOcrEngines.main` 改 v6 主引擎（与识别管线同源）、`rare_char` 只取 v4 复核引擎（chinese_cht 兜底链退役）
