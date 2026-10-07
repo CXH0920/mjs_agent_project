@@ -103,7 +103,7 @@ class OcrTaskCoordinator(QObject):
     def wait_warmup(self, timeout_ms: int = 15_000) -> bool:
         """阻塞等待启动阶段预热完成；超时或未启动预热时返回 False。
 
-        供主窗口显示前的启动画面阶段调用：Paddle 初始化期间会长时间持有
+        供主窗口显示前的启动画面阶段调用：OCR 引擎初始化期间会长时间持有
         Python GIL，若在事件循环运行后再预热会卡住界面，因此放在显示前完成。
         """
         task = self._warmup_task

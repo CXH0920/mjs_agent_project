@@ -1,16 +1,16 @@
 """
 武将名称识别模块
 
-使用 PaddleOCR 对 8 个武将名称区域进行 OCR 识别。
+使用 RapidOCR 对 8 个武将名称区域进行 OCR 识别。
 识别策略：
-  1. 同类名称 ROI 拼图后批量执行 PaddleOCR，异常槽位逐槽复核
+  1. 同类名称 ROI 拼图后批量执行 RapidOCR，异常槽位逐槽复核
   2. 按字数门禁建立候选闭包，多路证据必须在候选交集内确认
   3. 等长且仅错一字时，在合法候选内使用结构化字形评分决胜
   4. 全部证据族以极高置信度一致读出词表外原文时不做评分决胜绑定：有候选时
      保留候选待人工确认，完全无候选时判为新武将（unknown_new_hero）
 
 预处理操作在图像层面：放大、自适应对比度增强、锐化。
-PaddleOCR 延迟加载，首次调用时初始化。
+RapidOCR 延迟加载，首次调用时初始化。
 多维汉字相似度所使用的特征数据存储在 char_info_cache.json 中。
 如遇缓存未收录的汉字，会在运行时通过原始库动态补齐。
 """
@@ -57,7 +57,7 @@ class GeneralRecognizer:
         self._layout = base_layout
         self._hero_names = hero_names or []
         self._page_type = page_type
-        self._ocr = None  # PaddleOCR 引擎（延迟加载）
+        self._ocr = None  # RapidOCR 引擎（延迟加载）
         self._preprocessor = preprocessor or ImagePreprocessor()
         self._similarity_service = similarity_service or CharacterSimilarityService()
         # 名称证据解析与页面消歧的纯决策层（审计 G3 切片 4.6a 出仓）
@@ -464,7 +464,7 @@ class GeneralRecognizer:
 
     @staticmethod
     def _extract_text(ocr_result: list | None) -> tuple[str, float]:
-        """从 PaddleOCR 返回结果中提取文字和置信度。"""
+        """从 RapidOCR 返回结果中提取文字和置信度。"""
         if not ocr_result or not ocr_result[0]:
             return "", 0.0
         for line in ocr_result[0]:

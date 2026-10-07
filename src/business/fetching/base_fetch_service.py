@@ -246,7 +246,7 @@ class BaseFetchService(QObject):
         if not text.strip():
             return
         if "%|" in text:
-            # Paddle/transformers 的 tqdm 进度条走 stderr，属正常加载进度而非故障
+            # transformers 的 tqdm 进度条走 stderr，属正常加载进度而非故障
             # （原一律 warning 曾贡献 ai_generation.log 89% 的 WARNING 噪声）
             self._log_stderr.debug("%s", text.strip())
         else:

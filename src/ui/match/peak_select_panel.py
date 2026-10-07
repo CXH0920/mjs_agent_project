@@ -133,7 +133,7 @@ class PeakSelectPanel(QWidget):
         self._more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._more_btn.setMenu(self._more_menu)
         self._action_bar.add_action(self._more_btn, ROLE_GHOST)
-        # OCR 模型预热期（Paddle 初始化持 GIL）禁用图片导入，避免界面冻结
+        # OCR 模型预热期（引擎初始化持 GIL）禁用图片导入，避免界面冻结
         self._update_import_availability(
             getattr(self._capture_service, "ocr_warmup_state", "ready")
         )

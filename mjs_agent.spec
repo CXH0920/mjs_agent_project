@@ -235,7 +235,7 @@ exe = EXE(
     exclude_binaries=True,
     name="mjs_agent",
     console=False,  # windowed（无控制台，踩坑6/7）
-    upx=False,  # paddle .pyd 压缩易致加载失败（踩坑9）
+    upx=False,  # UPX 压缩易致 native dll（onnxruntime 等）加载失败
     icon=str(HERE / "mjs.ico"),
 )
 

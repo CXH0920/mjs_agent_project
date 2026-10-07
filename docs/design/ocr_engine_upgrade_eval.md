@@ -1,6 +1,6 @@
 # OCR 引擎升级评估与设计（v4 → v6-small，ONNX 部署形态）
 
-> 状态：阶段一（B2 复核模式）已实施（2026-09-19）；阶段二（B1 全量切换）由阶段一数据触发，暂不实施
+> 状态：已实施——阶段一（B2 复核模式，2026-09-19）与阶段二（B1 全量切换，commit 1694ab7）均已完成
 > 关联模块：`src/ocr/recognizer.py`、`src/ocr/paddle_loader.py`、`src/ocr/character_similarity.py`、`src/business/recognition/official_data_import_service.py`、`src/business/emulator/capture_service.py`（引擎接线）
 > 验证资产：`.tmp_test/v5_validation/`（8 个脚本 + 全量结果 JSON + 三套 ONNX 模型），评估环境 `paddle3x`（paddlepaddle 3.3.1 + paddleocr 3.7.0 + rapidocr 3.9.2 + onnxruntime 1.23.2），项目环境 `myenv` 未改动
 

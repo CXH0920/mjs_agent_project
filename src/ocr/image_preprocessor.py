@@ -13,7 +13,7 @@ import numpy as np
 
 
 class ImagePreprocessor:
-    """将武将名称 ROI 转为适合 PaddleOCR 的灰度图。"""
+    """将武将名称 ROI 转为适合 RapidOCR 的灰度图。"""
 
     @staticmethod
     def preprocess_roi(roi: np.ndarray) -> np.ndarray:

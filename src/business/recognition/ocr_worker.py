@@ -84,7 +84,7 @@ class OfficialImportTask:
 
 
 class OcrWorker(QThread):
-    """单线程队列，确保 PaddleOCR 仅在一个后台线程中使用。"""
+    """单线程队列，确保 RapidOCR 仅在一个后台线程中使用。"""
 
     task_completed = Signal(object)
     official_progress = Signal(str, str, int, int)

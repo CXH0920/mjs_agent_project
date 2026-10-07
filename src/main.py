@@ -216,7 +216,7 @@ def main() -> None:
         except Exception as error:
             logger.debug("AppUserModelID 设置失败（任务栏图标回退默认）: %s", error)
 
-    # 尽早设置并持续维护应用图标（在 PaddleOCR 等耗时操作之前）
+    # 尽早设置并持续维护应用图标（在 OCR 引擎预热等耗时操作之前）
     from src.ui.app.app_icon import install_app_icon
     install_app_icon(app)
 
@@ -242,7 +242,7 @@ def main() -> None:
     try:
         window = MainWindow()
         window.start_ocr_warmup()
-        # 在启动画面阶段完成 OCR 预热：Paddle 初始化会长时间持有 Python GIL，
+        # 在启动画面阶段完成 OCR 预热：OCR 引擎初始化会长时间持有 Python GIL，
         # 若预热与主窗口事件循环同时运行会导致界面卡住，故先预热后显示。
         # 模型冷加载实测可达 90 秒以上，超时须覆盖加载全程，避免窗口显示后
         # 预热仍占用 GIL 导致界面反复未响应。

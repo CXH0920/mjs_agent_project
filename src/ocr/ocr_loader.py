@@ -1,7 +1,7 @@
 """OCR 模板管理器单例。
 
 配置页与 OcrService 通过本模块获取按页面缓存的 TemplateManager；
-识别器（GeneralRecognizer / PaddleOCR）由 ``OcrWorker`` 在 worker 线程内独占创建，
+识别器（GeneralRecognizer / RapidOCR）由 ``OcrWorker`` 在 worker 线程内独占创建，
 不经过本模块。
 """
 

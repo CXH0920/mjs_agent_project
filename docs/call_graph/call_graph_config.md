@@ -147,7 +147,6 @@ get_mumu_config()
      -> mumu_hero_selection_threshold: from env or 0.8 (float)  [选将模板阈值，回退 match_threshold]
      -> mumu_hero_selection_cooldown: from env or 180 (int)     [选将冷却秒数]
      -> mumu_match_guide_threshold: from env or 0.8 (float)     [对局攻略模板阈值]
-     -> mumu_ocr_use_gpu: from env or False (bool)              [推理设备开关]
      -> mumu_ocr_cpu_threads: from env or 6 (int)               [CPU 推理线程上限]
   -> mumu_ocr_recheck_enabled: from env or True (bool)       [B2 复核引擎开关（PP-OCRv6-small/ONNX 候选内确认）]
       -> mumu_ocr_poll_idle_pause: from env or True (bool)       [轮询闲置自动暂停开关]

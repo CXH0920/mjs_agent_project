@@ -302,7 +302,7 @@ def persist_mumu_env_config(new_config: dict) -> None:
     """把对话框确认后的配置写入 config.env（原子替换既有键，保留其它键与注释）。
 
     new_config 出自 get_mumu_config() 全键字典（对话框经协调器持有），直接取键；
-    只写对话框可编辑的运行键，mumu_ocr_use_gpu 等部署键不在此列。
+    只写对话框可编辑的运行键，mumu_ocr_recheck_enabled 等部署键不在此列。
     """
     save_env_file(DEFAULT_ENV_FILE, {
         "MUMU_ADB_PATH": new_config["mumu_adb_path"],
