@@ -306,6 +306,30 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
     }
 
 
+def test_combos_synergy_workflow_passes_managers(tmp_path: Path, monkeypatch) -> None:
+    workflow, _, _ = _workflow(tmp_path)
+    captured: dict = {}
+
+    class _CombosDialog:
+        def __init__(self, hero_manager, synergy_manager, combo_manager=None, parent=None):
+            captured.update(
+                hero_manager=hero_manager,
+                synergy_manager=synergy_manager,
+                combo_manager=combo_manager,
+            )
+
+        def exec(self) -> QDialog.DialogCode:
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(workflow_module, "SynergyCombosDialog", _CombosDialog)
+
+    workflow.request_synergy_combos()
+
+    assert captured["hero_manager"] is workflow._hero_manager
+    assert captured["synergy_manager"] is workflow._synergy_manager
+    assert captured["combo_manager"] is workflow._combo_manager
+
+
 def test_guide_workflow_skips_modal_when_service_busy(tmp_path: Path, monkeypatch) -> None:
     """回归：服务忙碌时不得进入模态 exec——busy 静默返回没有完成信号，进度框会永久卡死。"""
     workflow, guide_service, _ = _workflow(tmp_path)

@@ -1,7 +1,7 @@
 """
 名将杀 Agent - 实战配队批量生成选择对话框
 
-从 combos 数据集按评级/座次/生成状态筛选配对清单，
+从 combos 数据集按武将/评级/座次/生成状态筛选配对清单，
 确认后通过 selected_pairs 获取待生成配对（评级降序）。
 """
 
@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCompleter,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -28,6 +29,7 @@ from src.ui.shared.widgets import DialogFooter, PageHeader
 
 if TYPE_CHECKING:
     from src.data.combo_manager import ComboManager
+    from src.data.hero_manager import HeroManager
     from src.data.synergy_manager import SynergyManager
 
 # 评级筛选项（标签, 下界, 上界）
@@ -52,6 +54,7 @@ class SynergyCombosDialog(QDialog):
 
     def __init__(
         self,
+        hero_manager: HeroManager,
         synergy_manager: SynergyManager,
         combo_manager: ComboManager,
         parent=None,
@@ -59,6 +62,7 @@ class SynergyCombosDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("实战配队批量生成")
         self.setMinimumSize(720, 540)
+        self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
         self._combo_mgr = combo_manager
         self._combo_mgr.load()
@@ -79,6 +83,21 @@ class SynergyCombosDialog(QDialog):
         ))
 
         filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("武将:"))
+        self._hero_filter = QComboBox()
+        # 武将上百，下拉框设为可编辑并配包含匹配补全：直接输入名册即可过滤定位
+        self._hero_filter.setEditable(True)
+        self._hero_filter.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._hero_filter.addItem("全部武将", None)
+        for hero in sorted(self._hero_mgr.list_heroes(), key=lambda item: item.id):
+            self._hero_filter.addItem(hero.name, hero.id)
+        self._hero_filter.currentIndexChanged.connect(self._refresh)
+        _hero_completer = QCompleter(self._hero_filter.model(), self._hero_filter)
+        _hero_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        _hero_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._hero_filter.setCompleter(_hero_completer)
+        filter_layout.addWidget(self._hero_filter)
+
         filter_layout.addWidget(QLabel("评级:"))
         self._rating_combo = QComboBox()
         for label, _, _ in RATING_FILTERS:
@@ -145,11 +164,14 @@ class SynergyCombosDialog(QDialog):
 
     def _filtered_combos(self) -> list[Combo]:
         """按筛选条件返回配对列表，评级降序。"""
+        hero_id = self._hero_filter.currentData()
         _, low, high = RATING_FILTERS[self._rating_combo.currentIndex()]
         position = self._position_combo.currentText()
         status = self._status_combo.currentText()
         rows: list[Combo] = []
         for combo in self._combo_mgr.list_combos():
+            if hero_id is not None and hero_id not in (combo.hero1_id, combo.hero2_id):
+                continue
             if not (low <= combo.rating <= high):
                 continue
             if position != "全部" and combo.position != position:

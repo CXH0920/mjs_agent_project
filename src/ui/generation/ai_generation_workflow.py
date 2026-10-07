@@ -169,10 +169,11 @@ class AiGenerationWorkflow(QObject):
         )
 
     def request_synergy_combos(self) -> None:
-        """实战配队批量生成：按评级/座次/生成状态筛选 combos 配对清单。"""
+        """实战配队批量生成：按武将/评级/座次/生成状态筛选 combos 配对清单。"""
         if not self._require_heroes():
             return
         dialog = SynergyCombosDialog(
+            self._hero_manager,
             self._synergy_manager,
             combo_manager=self._combo_manager,
             parent=self._window,

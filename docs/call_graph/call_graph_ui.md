@@ -1216,8 +1216,8 @@ RecommendationPanel._on_combos_imported(count)                    [CombosImportD
   -> show_toast(f"实战配队已导入 {count} 条，相性板块与选将推荐已更新。")
 
 AiGenerationWorkflow.request_synergy_combos()                     [菜单"实战配队生成"]
-  -> SynergyCombosDialog(synergy_mgr, combo_manager=_, parent=window).exec()
-     -> 按 RATING_FILTERS (9-10 / 8 / 6-7 / 1-5) + 座次 + 生成状态 筛选
+  -> SynergyCombosDialog(hero_mgr, synergy_mgr, combo_manager=_, parent=window).exec()
+     -> 按 武将 + RATING_FILTERS (9-10 / 8 / 6-7 / 1-5) + 座次 + 生成状态 筛选
      -> selected_pairs = [{"hero_a_id": int, "hero_b_id": int}, ...]
      -> overwrite_existing = bool
   -> estimate_generation_cost(len(pairs), "synergy")
@@ -1376,7 +1376,7 @@ WhitelistConfigDialog.exec()
 | `GuideFetchDialog` | HeroManager + GuideManager | `selected_heroes` + 攻略状态筛选 |
 | `SynergyPairDialog` | HeroManager | `selected_heroes` (2~8) + `overwrite_existing` |
 | `SynergySingleDialog` | HeroManager | `selected_hero` |
-| `SynergyCombosDialog` | SynergyManager + ComboManager | `selected_pairs` + `overwrite_existing` |
+| `SynergyCombosDialog` | HeroManager + SynergyManager + ComboManager | `selected_pairs` + `overwrite_existing` |
 | `ComboManagementDialog` | HeroManager + ComboService | `combos_changed` 信号（面板刷新） |
 | `ComboEditDialog` | HeroManager + ComboService + combo? | 保存后 accept（服务已落盘） |
 | `SettingsDialog` | env_path, pricing_path, profiles_path | 保存到 config.env / model_pricing.json / api_profiles.json |
