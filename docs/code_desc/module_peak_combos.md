@@ -87,9 +87,9 @@ src/scripts/
 ```
 Tick（每 1.5s，POLL_INTERVAL_MS=1500）
   └─ _thread_lock 非阻塞获取失败 → 跳过本轮（上一拍截图+OCR 尚未完成）
-  └─ _do_work() 后台线程（session = 当前 _session）
+  └─ _do_work() 后台线程（session = 会话世代快照 SessionGuard.current()）
       ├─ CaptureService.capture_for_poll() 截图
-      ├─ [_state_lock] session != _session → 停止/重启后的旧拍直接放弃（不检测、不清理、不发布）
+      ├─ [_state_lock] 世代过期（SessionGuard.is_current 为假）→ 停止/重启后的旧拍直接放弃（不检测、不清理、不发布）
       ├─ detect_selection_cards(frame) 卡位检测
       │   └─ None → _handle_board_absent(session) → miss_ticks++ → BOARD_EXIT_TICKS=2 后清空确认表/读数指纹/失验计数/禁将基线/牌面板引用，仅恢复 match_guide 并发 board_exited
       ├─ 检出牌面 → [_state_lock] miss_ticks 归零 + _suspend_standard_tasks()（幂等重挂）
@@ -108,9 +108,9 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
 
 **会话持有加固**（93b54ad）：`start()` 对 `hero_selection` 调用 `ocr_service.set_task_hold(True)`，会话期间任务不得被任何入口激活（ADB 重连 start_poll、手动激活等在源头即被拒）；`stop()` 先解除持有再恢复任务（顺序反了恢复激活会被自己的持有拒绝）。`match_guide` 不加持有，仅牌面出现期间挂起、自动退出时恢复原状态。消费端守卫：`PeakSelectPanel.is_recognizing()` 供主窗口丢弃会话期间泄漏的选将轮询结果。
 
-**会话世代校验**：`_session` 在 `start()` / `stop()` 各于状态锁内递增一次；在途识别拍在截图完成后、挂起前、OCR 失败清签名前、写签名/验证确认/发布前四处校验世代，过期旧拍直接放弃。这消除了「停止识别瞬间在途旧拍反向重新挂起标准任务」「旧签名写回新会话」「停止后面板仍被旧快照刷新」三类竞态；缺席计数自增同步移入锁内，消除非原子更新。
+**会话世代校验**：`SessionGuard`（`src/business/recognition/session_guard.py`，P0-1 收口）在 `start()` / `stop()` 各于状态锁内 `begin()` 开新世代一次；在途识别拍在截图完成后、挂起前、OCR 失败清签名前、写签名/验证确认/发布前四处校验世代，过期旧拍直接放弃。这消除了「停止识别瞬间在途旧拍反向重新挂起标准任务」「旧签名写回新会话」「停止后面板仍被旧快照刷新」三类竞态；缺席计数自增同步移入锁内，消除非原子更新。
 
-**并发安全**：`_thread_lock` 仅保证识别拍单飞；`_state_lock` 串行化 GUI 线程（start / confirm_pending）、识别线程与图片导入线程对 `_session` / `_miss_ticks` / `_signature` / `_ban_names` / `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_last_board` 的读写。锁内只做纯内存读写，不发 IO、不 emit 信号（`pool_updated` 在锁外发出）。
+**并发安全**：`_thread_lock` 仅保证识别拍单飞；`_state_lock` 串行化 GUI 线程（start / confirm_pending）、识别线程与图片导入线程对 `_session_guard` / `_miss_ticks` / `_signature` / `_ban_names` / `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_last_board` 的读写。锁内只做纯内存读写，不发 IO、不 emit 信号（`pool_updated` 在锁外发出）。
 
 `PoolSnapshot` 数据类：
 - `card_count`: 当前牌面卡牌数
@@ -131,7 +131,7 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
 **标准任务协调**（会话制 + 持有加固）：
 - `start()` 挂起即时生效而非等首拍检测到牌面——首拍之前标准轮询用固定 ROI 在巅峰页只会跑出垃圾结果，还可能误触冷却与自动跳页。挂起后依次对 `hero_selection` 调用 `set_task_hold(True)`（持有期间该任务不得被任何入口激活，保证「持有 ⇒ 不活跃」在调用返回后即成立）、清除 `hero_selection` / `match_guide` 双任务冷却、调用 `invalidate_inflight_poll()` 作废点击开始前已发出的在途轮询（其冷却/激活/跳转副作用会对抗刚建立的挂起状态），最后启动定时器。
 - `_suspend_standard_tasks()` 幂等：仅首次调用记录原状态快照（`_saved_task_states`），随后只挂起当前活跃任务，可随每拍重复调用。
-- `stop()` 先递增会话世代作废在途旧拍，再于状态锁内清空确认表 `_resolutions` / 读数指纹 `_resolution_raws` / 失验计数 `_stale_rounds` / 禁将基线 `_ban_names` / 牌面板引用 `_last_board`（48b0f99：槽位号跨牌面不稳定，残留确认会被后续图片导入按槽位号盲目套用），再解除持有 `set_task_hold(False)`，再 `_restore_standard_tasks()` 恢复全部标准任务原状态（活跃→activate、非活跃→deactivate），并清空快照。
+- `stop()` 先 `SessionGuard.begin()` 作废在途旧拍，再于状态锁内 `_clear_session_state()` 清空会话上下文（确认表/读数指纹/失验计数/禁将基线/牌面板引用；48b0f99：槽位号跨牌面不稳定，残留确认会被后续图片导入按槽位号盲目套用。P0-1 起与 `start()`、牌面退出共用同一清空方法，新增会话字段只改一处），再解除持有 `set_task_hold(False)`，再 `_restore_standard_tasks()` 恢复全部标准任务原状态（活跃→activate、非活跃→deactivate），并清空快照。
 - 牌面自动退出（连续 `BOARD_EXIT_TICKS=2` 拍未检出）只调 `_restore_match_guide()` 恢复 match_guide 原状态，`hero_selection` 留待停止识别恢复；同时发 `board_exited` 信号交由主窗口决定对局攻略轮询的激活与跳页。
 
 ### 3.3 禁选建议（peak_ban_advice.py）
@@ -313,14 +313,8 @@ def verified_resolutions_for_import(resolutions, raws, ocr_results) -> tuple[dic
 ```python
 def start(self) -> None:
     with self._state_lock:
-        self._session += 1  # 作废上一会话的在途旧拍
-        self._signature = None
-        self._ban_names = ()
-        self._resolutions = {}
-        self._resolution_raws = {}
-        self._stale_rounds = {}
-        self._last_board = None
-    self._miss_ticks = 0
+        self._session_guard.begin()  # 作废上一会话的在途旧拍
+        self._clear_session_state()  # 三处会话边界统一清空（P0-1 收口）
     self._suspend_standard_tasks()  # 挂起即时生效
     # 持有加固：持有期间 hero_selection 不得被任何入口激活（ADB 重连 start_poll 等）
     self._ocr_service.set_task_hold("hero_selection", True)

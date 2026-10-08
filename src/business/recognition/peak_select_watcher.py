@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal
 from src.business.recognition.pending_stats import record_confirmation
+from src.business.recognition.session_guard import SessionGuard
 from src.capture.image_validation import load_local_image
 from src.ocr.card_grid_detector import derive_name_rois, detect_selection_cards
 from src.ocr.roi_config import Roi
@@ -227,10 +228,8 @@ class PeakSelectWatcher(QObject):
         # 只保证识别拍单飞，覆盖不到 GUI 调用，统一用 _state_lock 串行化。
         # 锁内只做纯内存读写，不发 IO、不 emit 信号。
         self._state_lock = threading.Lock()
-        # 会话世代：start/stop 各递增一次；在途识别拍在挂起、写签名、发布等
-        # 关键写入点前校验世代，停止/重启后的旧拍直接放弃，防止旧拍反向挂起
-        # 标准任务或把旧签名/旧快照写回新会话
-        self._session = 0
+        # 会话世代守卫（语义见 session_guard）：停止/重启后的旧拍在关键写入点前放弃
+        self._session_guard = SessionGuard()
         self._signature: tuple | None = None
         self._ban_names: tuple[str, ...] = ()
         self._resolutions: dict[int, str] = {}
@@ -249,14 +248,8 @@ class PeakSelectWatcher(QObject):
     def start(self) -> None:
         # 上一轮停止后可能仍有在途识别线程，重置须与其互斥
         with self._state_lock:
-            self._session += 1  # 作废上一会话的在途旧拍
-            self._signature = None
-            self._ban_names = ()
-            self._resolutions = {}
-            self._resolution_raws = {}
-            self._stale_rounds = {}
-            self._last_board = None
-        self._miss_ticks = 0
+            self._session_guard.begin()  # 作废上一会话的在途旧拍
+            self._clear_session_state()
         # 挂起在启动瞬间生效而非检测到牌面后：首拍之前标准轮询用固定 ROI 在
         # 巅峰页只会跑出垃圾结果，还可能误触冷却与自动跳页
         self._suspend_standard_tasks()
@@ -275,19 +268,29 @@ class PeakSelectWatcher(QObject):
         # 先作废在途旧拍再恢复任务：未执行到挂起点的旧拍会因世代过期放弃，
         # 已挂起的由本次恢复收回，消除"停止后被旧拍重新挂起"的竞态
         with self._state_lock:
-            self._session += 1
-            # 会话状态随停止一并清空：确认表/禁将基线/牌面板引用是当次对局
-            # 的上下文。槽位号是跨牌面不稳定键（选将板与禁将板同槽位并非
-            # 同一张牌），残留确认会被后续图片导入按槽位号盲目套用，曾把
-            # 禁将板的卓文君顶成选将板确认的孙尚香（2026-09-30 事故）。
-            self._resolutions = {}
-            self._resolution_raws = {}
-            self._stale_rounds = {}
-            self._ban_names = ()
-            self._last_board = None
+            self._session_guard.begin()
+            self._clear_session_state(keep_signature=True, keep_miss_ticks=True)
         # 先解除持有再恢复：顺序反了恢复激活会被自己的持有拒绝
         self._ocr_service.set_task_hold("hero_selection", False)
         self._restore_standard_tasks()
+
+    def _clear_session_state(self, *, keep_signature: bool = False, keep_miss_ticks: bool = False) -> None:
+        """会话边界整体清空牌面上下文（调用方持 _state_lock）。
+
+        槽位号是跨牌面不稳定键，残留确认会被后续拍或导入按槽位号盲目套用
+        （2026-09-30 卓文君事故）；三处边界（start/stop/牌面退出）统一走本
+        方法，新增会话字段只改这里。keep_* 为各边界既有豁免：stop 后无拍
+        运行（保留无差异），牌面退出需缺席计数继续累加以精确等于判定退出。
+        """
+        if not keep_signature:
+            self._signature = None
+        self._ban_names = ()
+        self._resolutions = {}
+        self._resolution_raws = {}
+        self._stale_rounds = {}
+        self._last_board = None
+        if not keep_miss_ticks:
+            self._miss_ticks = 0
 
     # ── 识别循环 ──────────────────────────────────────────────────────
 
@@ -297,7 +300,7 @@ class PeakSelectWatcher(QObject):
         threading.Thread(target=self._do_work, daemon=True, name="peak-select-watch").start()
 
     def _do_work(self) -> None:
-        session = self._session  # 本拍所属会话世代；start/stop 后旧拍即过期
+        session = self._session_guard.current()  # 本拍所属会话世代；start/stop 后旧拍即过期
         try:
             capture = self._capture_service.capture
             if not capture:
@@ -308,7 +311,7 @@ class PeakSelectWatcher(QObject):
                 self.status_changed.emit(f"截图失败({failure_kind}): {result}")
                 return
             with self._state_lock:
-                if session != self._session:
+                if not self._session_guard.is_current(session):
                     return  # 停止/重启后的旧拍：不检测、不清理、不发布
             frame = cv2.cvtColor(np.array(result.convert("RGB")), cv2.COLOR_RGB2BGR)
             cards = detect_selection_cards(frame)
@@ -318,7 +321,7 @@ class PeakSelectWatcher(QObject):
 
             signature = board_signature(cards)
             with self._state_lock:
-                if session != self._session:
+                if not self._session_guard.is_current(session):
                     return
                 self._miss_ticks = 0
                 # 每拍确认牌面存在即幂等挂起（含签名未变的拍）：外部如 ADB 重连
@@ -332,11 +335,11 @@ class PeakSelectWatcher(QObject):
             if ocr_results is None:
                 # 识别失败清签名，下一拍强制重试；仅实时循环路径，图片导入不动签名
                 with self._state_lock:
-                    if session == self._session:
+                    if self._session_guard.is_current(session):
                         self._signature = None
                 return
             with self._state_lock:
-                if session != self._session:
+                if not self._session_guard.is_current(session):
                     return  # 停止/重启后的旧拍：不写签名、不沿用确认、不发布
                 self._signature = signature
                 # 人工确认逐拍做内容验证：单拍闭包缺名或自动结论翻转不清确认，
@@ -549,17 +552,13 @@ class PeakSelectWatcher(QObject):
 
     def _handle_board_absent(self, session: int) -> None:
         with self._state_lock:
-            if session != self._session:
+            if not self._session_guard.is_current(session):
                 return  # 停止/重启后的旧拍：不累计缺席、不清理状态、不发信号
             self._miss_ticks += 1
             exiting = self._miss_ticks == BOARD_EXIT_TICKS
-            self._signature = None
+            self._signature = None  # 缺席即无在识别牌面，退出拍随 clear 再清一次
             if exiting:
-                self._ban_names = ()
-                self._resolutions = {}
-                self._resolution_raws = {}
-                self._stale_rounds = {}
-                self._last_board = None
+                self._clear_session_state(keep_miss_ticks=True)
         if exiting:
             self._restore_match_guide()
             # match_guide 的激活与跳转属界面策略，由主窗口的 board_exited 处理器完成

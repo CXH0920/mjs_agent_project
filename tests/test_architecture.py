@@ -683,7 +683,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）
     "ui/match/match_guide_panel.py": 840,
     "ui/configuration/settings_dialog.py": 584,
-    "business/recognition/peak_select_watcher.py": 567,
+    # P0-1 会话状态收口（2026-10）：SessionGuard 替换裸 _session 比对，
+    # _clear_session_state 统一 start/stop/牌面退出三处手抄重置清单（567 → 566）
+    "business/recognition/peak_select_watcher.py": 566,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     "ui/match/peak_select_panel.py": 565,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯

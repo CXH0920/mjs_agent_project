@@ -839,10 +839,10 @@ def test_watcher_board_absent_restores_match_guide_only(qapp):
     assert ocr_service.get_task_state("hero_selection").active is False
     assert ocr_service.get_task_state("match_guide").active is False
 
-    watcher._handle_board_absent(watcher._session)  # 第一拍缺席：尚未退出
+    watcher._handle_board_absent(watcher._session_guard.current())  # 第一拍缺席：尚未退出
     assert exited == []
 
-    watcher._handle_board_absent(watcher._session)
+    watcher._handle_board_absent(watcher._session_guard.current())
     assert exited == [True]
     assert ocr_service.get_task_state("hero_selection").active is False  # 方案一：保持挂起
     assert ocr_service.get_task_state("match_guide").active is True      # 恢复原状态
@@ -1032,6 +1032,77 @@ def test_stop_invalidates_inflight_work(qapp, monkeypatch):
     assert pools == []
 
 
+def test_restart_invalidates_inflight_work_from_previous_session(qapp, monkeypatch):
+    """回归：重启（start）同样作废上一会话在途旧拍——旧拍不得把旧签名、旧快照
+    写进新会话（stop 校验已锁定，start 侧世代校验此前无直测）。"""
+    blocked = threading.Event()
+    release = threading.Event()
+
+    def blocking_detect(frame):
+        blocked.set()
+        release.wait(2)
+        return [(100 + i * 276, 247, 238, 326) for i in range(9)]
+
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards", blocking_detect
+    )
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(
+            [{"name": "荆轲", "resolution": "exact"}]
+        ),
+    )
+    ocr_service = _FakeOcrService()
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = ocr_service
+
+    watcher.start()
+    assert watcher._thread_lock.acquire(blocking=False)
+    worker = threading.Thread(target=watcher._do_work, daemon=True)
+    worker.start()
+    assert blocked.wait(2)
+
+    watcher.stop()
+    watcher.start()  # 上一会话旧拍仍阻塞在检测点时直接重启
+
+    release.set()
+    worker.join(2)
+
+    # 旧拍世代过期：不写旧签名、不发布旧快照、不干扰新会话的挂起
+    assert watcher._signature is None
+    assert pools == []
+    assert ocr_service.get_task_state("hero_selection").active is False
+
+
+def test_stale_board_absent_tick_after_restart_is_ignored(qapp):
+    """回归：重启后的过期缺席拍不得累计缺席、清空新会话确认、反向恢复
+    match_guide 或补发 board_exited（缺席路径的世代校验此前无直测）。"""
+    ocr_service = _FakeOcrService(active_states={"match_guide": True})
+    watcher, _, statuses = _make_watcher(
+        SimpleNamespace(submit_ocr_task=None), ocr_service=ocr_service
+    )
+    exited: list[bool] = []
+    watcher.board_exited.connect(lambda: exited.append(True))
+
+    watcher.start()
+    stale = watcher._session_guard.current()
+    watcher.stop()
+    watcher.start()  # 世代推进：stale 已过期
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+    watcher.confirm_pending(0, "荆轲")  # 新会话写入确认
+    assert watcher._resolutions == {0: "荆轲"}
+
+    watcher._handle_board_absent(stale)
+    watcher._handle_board_absent(stale)  # 连续两拍缺席本应触发退出——但世代已过期
+
+    assert watcher._miss_ticks == 0
+    assert watcher._resolutions == {0: "荆轲"}
+    assert ocr_service.get_task_state("match_guide").active is False  # 不被旧拍反向恢复
+    assert exited == []
+    assert not any("未检测到巅峰赛" in text for text in statuses)
+
+
 def test_unchanged_still_resuspends_externally_reactivated_tasks(qapp, monkeypatch):
     """回归：签名未变的拍也要重新挂起外部激活的任务（ADB 重连 start_poll 场景）。"""
     monkeypatch.setattr(
@@ -1115,8 +1186,8 @@ def test_watcher_confirm_rejected_after_board_exit(qapp):
     watcher, _, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=None))
     watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
 
-    watcher._handle_board_absent(watcher._session)
-    watcher._handle_board_absent(watcher._session)  # 第 2 拍缺席 → exiting 清空
+    watcher._handle_board_absent(watcher._session_guard.current())
+    watcher._handle_board_absent(watcher._session_guard.current())  # 第 2 拍缺席 → exiting 清空
 
     watcher.confirm_pending(0, "荆轲")
 
