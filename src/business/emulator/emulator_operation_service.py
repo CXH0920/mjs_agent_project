@@ -18,6 +18,7 @@ from typing import Callable, TypeVar
 
 from PySide6.QtCore import QObject, Signal
 from src.business.emulator.capture_service import CaptureService
+from src.business.recognition.session_guard import OneShotToken
 from src.capture.adb_screen import AdbCapture
 from src.capture.prober import probe_all_devices_with_status, probe_mumu_adb, test_adb_path
 
@@ -44,7 +45,7 @@ class EmulatorOperationService(QObject):
         self._capture_service = capture_service
         self._probe_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emulator-probe")
         self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emulator-adb")
-        self._closed = False
+        self._shutdown_token = OneShotToken()  # 关停一次性守卫（P0-3 收口）
 
     def detect_adb(self) -> None:
         def work() -> tuple[bool, str, str]:
@@ -114,7 +115,7 @@ class EmulatorOperationService(QObject):
 
     def shutdown(self) -> None:
         """停止接收新任务，应用退出时不再向已销毁的 UI 发射结果。"""
-        self._closed = True
+        self._shutdown_token.mark()
         self._probe_executor.shutdown(wait=False, cancel_futures=True)
         self._adb_executor.shutdown(wait=False, cancel_futures=True)
 
@@ -125,7 +126,7 @@ class EmulatorOperationService(QObject):
         work: Callable[[], _Result],
         completed: Callable[[_Result], None],
     ) -> None:
-        if self._closed:
+        if self._shutdown_token.spent:
             return
         future = executor.submit(work)
         future.add_done_callback(lambda item: self._complete(operation, item, completed))
@@ -136,7 +137,7 @@ class EmulatorOperationService(QObject):
         future: Future[_Result],
         completed: Callable[[_Result], None],
     ) -> None:
-        if self._closed:
+        if self._shutdown_token.spent:
             return
         try:
             completed(future.result())
