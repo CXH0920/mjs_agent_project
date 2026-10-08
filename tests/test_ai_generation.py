@@ -195,8 +195,10 @@ def _synergy_generator_with_client(monkeypatch, responses: list[dict], max_retri
     monkeypatch.setattr(api_module, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(api_module, "build_synergy_prompt", lambda _a, _b: "user")
     monkeypatch.setattr(api_module, "extract_json", lambda _content: {"score": 7})
-    monkeypatch.setattr(api_module, "has_required_synergy_fields", lambda _raw: True)
-    monkeypatch.setattr(api_module, "validate_synergy", lambda raw: raw)
+    monkeypatch.setattr(
+        api_module, "normalize_and_validate_synergy",
+        lambda raw, hero_a, hero_b, **_: {**raw, "hero_a_id": hero_a["id"], "hero_b_id": hero_b["id"]},
+    )
     monkeypatch.setattr(api_module.time, "sleep", lambda _s: None)
     return generator, client
 
@@ -574,8 +576,8 @@ def test_browser_generator_rests_before_next_successful_request(
     monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
     monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda *a, **k: "synergy")
     monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {"key_points": [], "description": "测试描述" * 100, "score": 5})
-    monkeypatch.setattr(ai_playwright, "validate_guide", lambda raw: raw)
-    monkeypatch.setattr(ai_playwright, "validate_synergy", lambda raw: raw)
+    monkeypatch.setattr(ai_playwright, "normalize_and_validate_guide", lambda raw, hero, **_: raw)
+    monkeypatch.setattr(ai_playwright, "normalize_and_validate_synergy", lambda raw, hero_a, hero_b, **_: raw)
 
     method = getattr(generator, method_name)
     method(*args)
@@ -722,7 +724,7 @@ def test_browser_generator_logs_no_reply_or_parsed_content(monkeypatch, caplog) 
     monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
     monkeypatch.setattr(browser_generator, "extract_json", lambda _reply: {"description": secret_parsed})
-    monkeypatch.setattr(browser_generator, "validate_guide", lambda _raw: None)
+    monkeypatch.setattr(browser_generator, "normalize_and_validate_guide", lambda raw, hero, **_: None)
 
     with caplog.at_level("DEBUG", logger="src.scraper.ai"):
         generator.generate_guide({"id": 1, "name": "甲"})
@@ -775,7 +777,7 @@ def test_browser_generator_retries_on_json_extract_failure(monkeypatch) -> None:
     generator._send_and_wait = fake_send
     monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
-    monkeypatch.setattr(browser_generator, "validate_guide", lambda raw: raw)
+    monkeypatch.setattr(browser_generator, "normalize_and_validate_guide", lambda raw, hero, **_: raw)
 
     result, usage = generator.generate_guide({"id": 1, "name": "甲"})
     assert result is not None
@@ -809,7 +811,7 @@ def test_browser_generator_prompt_ends_with_format_reminder(monkeypatch) -> None
     generator._send_and_wait = lambda prompt: sent.append(prompt) or '{"hero_id": 1, "description": "", "key_points": [], "weak_against_type": [], "strong_against_type": [], "synergizes_with": [], "counter_strategy": "", "tips_for_beginners": ""}'
     monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
     monkeypatch.setattr(browser_generator, "build_guide_prompt", lambda _hero, **kwargs: "guide")
-    monkeypatch.setattr(browser_generator, "validate_guide", lambda raw: raw)
+    monkeypatch.setattr(browser_generator, "normalize_and_validate_guide", lambda raw, hero, **_: raw)
 
     generator.generate_guide({"id": 1, "name": "甲"})
     assert len(sent) == 1

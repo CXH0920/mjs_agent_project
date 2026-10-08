@@ -116,9 +116,8 @@ generate_guide(hero)
   │   └── content=None 且 attempt < max_retries → 输出 [重试] 思考过程耗尽输出额度
   │       （思考长度随采样波动，重试通常能让正文挤进额度；每次重试向 stdout 输出 [重试] 进度行）
   ├── extract_json(content)                     → raw dict
-  ├── inject hero_id / convert_ids_to_int(synergizes_with)
-  ├── has_required_guide_fields(raw)            → 必填字段 + 占位符/过短正文预检
-  └── validate_guide(raw) → Pydantic 校验
+  └── normalize_and_validate_guide(raw, hero)   → 注 hero_id / synergizes_with 转 int /
+      必填预检 / Pydantic 校验（双生成器共用后处理，P1-5 收口）
 ```
 
 **两层重试的区别：**
@@ -405,6 +404,8 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `extract_json(text)` | `json_extract.py` | 4 策略宽容提取 JSON；失败抛 `ValueError` |
 | `validate_guide(raw)` | `utils.py` | Pydantic 校验攻略 |
 | `validate_synergy(raw)` | `utils.py` | Pydantic 校验相性 |
+| `normalize_and_validate_guide(raw, hero)` | `utils.py` | 攻略后处理管线（注 hero_id / synergizes_with 转 int / 必填预检 / Pydantic 校验），API 与浏览器双生成器共用（P1-5 收口，浏览器版经 `logger_prefix` 保留 `[攻略]` 前缀日志） |
+| `normalize_and_validate_synergy(raw, hero_a, hero_b)` | `utils.py` | 相性后处理管线（注双 ID / combat_synergy→combo_ceiling 兼容 shim / 必填预检 / Pydantic 校验），双生成器共用 |
 | `has_required_guide_fields(raw)` | `utils.py` | 攻略必填字段预检（key_points/description 存在、正文 ≥200 字、不含模板占位符标记「此处放入 / 放入此字段 / 保持原文不变」），命中缺失可省去一次 Pydantic 异常开销 |
 | `has_required_synergy_fields(raw)` | `utils.py` | 相性必填字段预检（score/description 存在、正文 ≥200 字、同一组占位符标记） |
 | `load_core_rules()` | `rule_summary.py` | 加载核心规则摘要全文（RAG 关闭兜底）；缺失返回空串 |

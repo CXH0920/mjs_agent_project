@@ -150,3 +150,47 @@ def has_required_synergy_fields(raw: dict) -> bool:
     if not isinstance(desc, str) or len(desc) < _MIN_SYNERGY_DESCRIPTION_LEN:
         return False
     return not any(marker in desc for marker in _PLACEHOLDER_MARKERS)
+
+
+# ============================================================
+# 生成结果后处理（API/浏览器双生成器共用管线，P1-5 收口）
+# ============================================================
+
+
+def normalize_and_validate_guide(raw: dict, hero: dict, *, logger_prefix: str = "") -> dict | None:
+    """攻略后处理：注入 hero_id、synergizes_with 转 int、必填预检与 Pydantic 校验。
+
+    此前 api/browser 两生成器各抄一份逐字同构管线，新增字段需改约 6 处，
+    收口为单一实现。logger_prefix 为浏览器版日志前缀（如 "[攻略] 武将名: "，
+    其进度窗口解析日志行，前缀语义保留），API 版为空串。
+    """
+    raw["hero_id"] = hero.get("id", 0)
+    convert_ids_to_int(raw, ["synergizes_with"])
+    if not has_required_guide_fields(raw):
+        logger.warning("%s攻略必填字段缺失: %s", logger_prefix, sorted(raw))
+        return None
+    result = validate_guide(raw)
+    if result is None:
+        logger.warning("%s攻略 Pydantic 校验失败", logger_prefix)
+        logger.debug("%s攻略校验失败字段: %s", logger_prefix, sorted(raw))
+        return None
+    return result
+
+
+def normalize_and_validate_synergy(raw: dict, hero_a: dict, hero_b: dict, *, logger_prefix: str = "") -> dict | None:
+    """相性后处理：注入双武将 ID、combat_synergy 兼容 shim、必填预检与 Pydantic 校验。"""
+    raw["hero_a_id"] = hero_a.get("id", 0)
+    raw["hero_b_id"] = hero_b.get("id", 0)
+    # 兼容旧 prompt 中的 combat_synergy 字段
+    if "combat_synergy" in raw and "combo_ceiling" not in raw:
+        logger.info("%s兼容字段 combat_synergy → combo_ceiling", logger_prefix)
+        raw["combo_ceiling"] = raw.pop("combat_synergy")
+    if not has_required_synergy_fields(raw):
+        logger.warning("%s相性必填字段缺失: %s", logger_prefix, sorted(raw))
+        return None
+    result = validate_synergy(raw)
+    if result is None:
+        logger.warning("%s相性 Pydantic 校验失败", logger_prefix)
+        logger.debug("%s相性校验失败字段: %s", logger_prefix, sorted(raw))
+        return None
+    return result

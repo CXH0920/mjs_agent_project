@@ -18,11 +18,8 @@ from src.scraper.ai.prompt_utils import (
     load_prompt,
 )
 from src.scraper.ai.utils import (
-    convert_ids_to_int,
-    has_required_guide_fields,
-    has_required_synergy_fields,
-    validate_guide,
-    validate_synergy,
+    normalize_and_validate_guide,
+    normalize_and_validate_synergy,
 )
 
 logger = logging.getLogger(__name__)
@@ -270,17 +267,7 @@ class AIBatchGenerator:
             logger.warning("JSON 提取失败: %s", e)
             return None, usage
 
-        raw["hero_id"] = hero.get("id", 0)
-        convert_ids_to_int(raw, ["synergizes_with"])
-        if not has_required_guide_fields(raw):
-            logger.warning("攻略必填字段缺失: %s", sorted(raw))
-            return None, usage
-
-        result = validate_guide(raw)
-        if result is None:
-            logger.warning("攻略 Pydantic 校验失败")
-            logger.debug("攻略校验失败字段: %s", sorted(raw))
-            return None, usage
+        result = normalize_and_validate_guide(raw, hero)
         return result, usage
 
     # ---------------------------------------------------------------
@@ -311,22 +298,7 @@ class AIBatchGenerator:
             logger.warning("JSON 提取失败: %s", e)
             return None, usage
 
-        raw["hero_a_id"] = hero_a.get("id", 0)
-        raw["hero_b_id"] = hero_b.get("id", 0)
-
-        # 兼容旧 prompt 中的 combat_synergy 字段
-        if "combat_synergy" in raw and "combo_ceiling" not in raw:
-            raw["combo_ceiling"] = raw.pop("combat_synergy")
-
-        if not has_required_synergy_fields(raw):
-            logger.warning("相性必填字段缺失: %s", sorted(raw))
-            return None, usage
-
-        result = validate_synergy(raw)
-        if result is None:
-            logger.warning("相性 Pydantic 校验失败")
-            logger.debug("相性校验失败字段: %s", sorted(raw))
-            return None, usage
+        result = normalize_and_validate_synergy(raw, hero_a, hero_b)
         return result, usage
 
     def close(self):

@@ -88,6 +88,8 @@ src/ui/
 │   ├── official_import_review_dialog.py # 官方榜单导入待复核数据审查
 │   ├── hero_update_confirm_dialog.py   # 公告更新武将确认对话框
 │   ├── card_sync_dialog.py             # 卡牌百科变更捕获与同步确认
+│   ├── ignoreable_diff_list.py         # 两对话框共用的忽略/详情/选中联动骨架（P0-2 收口，
+│   │                                      偏移语义为钩子：hero 忽略需 content_hash、无服务隐藏入口）
 │   ├── baike_ignore_manager_dialog.py  # 百科忽略名单管理对话框
 │   └── announcement_dialog.py
 ├── shared/                     # 跨功能控件、展示与样式

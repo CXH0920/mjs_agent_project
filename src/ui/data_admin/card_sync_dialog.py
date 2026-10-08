@@ -23,6 +23,7 @@ from src.business.card_sync import (
 )
 from src.ui.data_admin.baike_ignore_manager_dialog import BaikeIgnoreManagerDialog
 from src.ui.data_admin.hero_update_confirm_dialog import HeroDiffDetailDialog
+from src.ui.data_admin.ignoreable_diff_list import IgnoreableDiffListMixin
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import PageHeader, set_ui_role
 
@@ -31,7 +32,7 @@ CHANGE_LABELS = {"modified": "修改", "added": "新增", "removed": "官网已�
 APPLICABLE_CHANGES = ("modified", "added")
 
 
-class CardSyncDialog(QDialog):
+class CardSyncDialog(IgnoreableDiffListMixin, QDialog):
     """检查官网手牌库差异，勾选后应用官网值覆盖本地（card_amount 保留）。"""
 
     def __init__(
@@ -81,20 +82,9 @@ class CardSyncDialog(QDialog):
         clear_button = QPushButton("清空选择")
         clear_button.clicked.connect(self._clear_selection)
         actions.addWidget(clear_button)
-        self._ignore_button = QPushButton("忽略此条差异")
-        set_ui_role(self._ignore_button, ROLE_SECONDARY)
-        self._ignore_button.setEnabled(False)
-        self._ignore_button.setToolTip("选中条目后可忽略：该差异不再提示，官网内容再变化时自动重现。")
-        self._ignore_button.clicked.connect(self._ignore_current)
-        actions.addWidget(self._ignore_button)
-        self._ignore_manager_button = QPushButton()
-        self._ignore_manager_button.clicked.connect(self._open_ignore_manager)
-        actions.addWidget(self._ignore_manager_button)
-        self._refresh_ignore_label()
+        self._append_ignore_actions(actions)
         actions.addStretch()
-        self._detail_button = QPushButton("查看全文对比")
-        self._detail_button.clicked.connect(self._show_detail)
-        actions.addWidget(self._detail_button)
+        self._append_detail_button(actions)
         layout.addLayout(actions)
 
         self._list = QListWidget()
@@ -271,52 +261,27 @@ class CardSyncDialog(QDialog):
         self._update_count_label()
 
     # ---------------------------------------------------------------
-    # 详情与应用
+    # 忽略钩子（骨架见 IgnoreableDiffListMixin）
     # ---------------------------------------------------------------
 
-    def _on_selection_changed(self, current: QListWidgetItem | None, _previous=None) -> None:
-        self._ignore_button.setEnabled(current is not None)
-        if current is None:
-            self._summary_browser.clear()
-            return
-        candidate = current.data(Qt.ItemDataRole.UserRole)
-        summary = candidate.get("summary") or []
-        self._summary_browser.setPlainText("\n".join(summary) if summary else "（无差异摘要）")
-
-    # ---------------------------------------------------------------
-    # 忽略名单
-    # ---------------------------------------------------------------
-
-    def _ignore_current(self) -> None:
-        current = self._list.currentItem()
-        if current is None:
-            return
-        candidate = current.data(Qt.ItemDataRole.UserRole)
+    def _ignore_candidate(self, candidate: dict) -> None:
         self._service.ignore_card(candidate["card_id"], candidate["name"], candidate["change"])
-        row = self._list.row(current)
-        self._list.takeItem(row)
+
+    def _after_ignore_removed(self, candidate: dict) -> None:
         self._refresh_ignore_label()
 
-    def _open_ignore_manager(self) -> None:
+    def _exec_ignore_manager(self) -> None:
         BaikeIgnoreManagerDialog(self, card_sync_service=self._service).exec()
-        self._refresh_ignore_label()
 
-    def _refresh_ignore_label(self) -> None:
-        count = self._service.ignored_card_count()
-        self._ignore_manager_button.setText(f"已忽略 {count} 条（管理）")
+    def _ignored_count(self) -> int:
+        return self._service.ignored_card_count()
 
-    def _show_detail(self) -> None:
-        current = self._list.currentItem()
-        if current is None:
-            return
-        candidate = current.data(Qt.ItemDataRole.UserRole)
-        dialog = HeroDiffDetailDialog(
-            f"{candidate['name']} 本地 vs 官网",
-            candidate.get("local_full", ""),
-            candidate.get("official_full", ""),
-            self,
-        )
-        dialog.exec()
+    def _detail_dialog_class(self):
+        return HeroDiffDetailDialog
+
+    # ---------------------------------------------------------------
+    # 应用
+    # ---------------------------------------------------------------
 
     def _apply_selected(self) -> None:
         modified_ids = [

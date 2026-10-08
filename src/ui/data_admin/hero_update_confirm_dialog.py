@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.ui.data_admin.baike_ignore_manager_dialog import BaikeIgnoreManagerDialog
+from src.ui.data_admin.ignoreable_diff_list import IgnoreableDiffListMixin
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
@@ -61,8 +62,11 @@ class HeroDiffDetailDialog(QDialog):
         layout.addWidget(footer)
 
 
-class HeroUpdateConfirmDialog(QDialog):
+class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
     """列出待更新武将，用户勾选要覆盖的；未勾选的保留本地内容。"""
+
+    # 未注入 AnnouncementService（如独立复用对话框）时隐藏忽略入口
+    ignore_ui_optional = True
 
     def __init__(
         self,
@@ -104,20 +108,9 @@ class HeroUpdateConfirmDialog(QDialog):
         clear_button = QPushButton("清空选择")
         clear_button.clicked.connect(self._clear_selection)
         actions.addWidget(clear_button)
-        if self._ignore_service is not None:
-            self._ignore_button = QPushButton("忽略此条差异")
-            self._ignore_button.setEnabled(False)
-            self._ignore_button.setToolTip("选中条目后可忽略：该差异不再提示，官网内容再变化时自动重现。")
-            self._ignore_button.clicked.connect(self._ignore_current)
-            actions.addWidget(self._ignore_button)
-            self._ignore_manager_button = QPushButton()
-            self._ignore_manager_button.clicked.connect(self._open_ignore_manager)
-            actions.addWidget(self._ignore_manager_button)
-            self._refresh_ignore_label()
+        self._append_ignore_actions(actions)
         actions.addStretch()
-        self._detail_button = QPushButton("查看全文对比")
-        self._detail_button.clicked.connect(self._show_detail)
-        actions.addWidget(self._detail_button)
+        self._append_detail_button(actions)
         layout.addLayout(actions)
 
         self._list = QListWidget()
@@ -198,44 +191,24 @@ class HeroUpdateConfirmDialog(QDialog):
     def _on_item_changed(self, _item: QListWidgetItem) -> None:
         self._update_count_label()
 
-    def _on_selection_changed(self, current: QListWidgetItem | None, _previous=None) -> None:
-        candidate = current.data(Qt.ItemDataRole.UserRole) if current is not None else None
+    # ---------------------------------------------------------------
+    # 忽略/摘要钩子（骨架见 IgnoreableDiffListMixin）
+    # ---------------------------------------------------------------
+
+    def _update_ignore_button_state(self, candidate: dict | None) -> None:
+        # 无官网哈希的候选（官网获取失败）忽略后无法匹配压制，不提供忽略
         if self._ignore_service is not None:
-            # 无官网哈希的候选（官网获取失败）忽略后无法匹配压制，不提供忽略
             self._ignore_button.setEnabled(bool(candidate and candidate.get("content_hash")))
-        if current is None:
-            self._summary_browser.clear()
-            return
+
+    def _summary_text_for(self, candidate: dict) -> str:
         summary = candidate.get("summary") or []
         if summary:
-            self._summary_browser.setPlainText("\n".join(summary))
-        elif not candidate.get("known") and candidate.get("change") == "新增":
-            self._summary_browser.setPlainText("（官网数据暂不可用，请以官网公告为准）")
-        else:
-            self._summary_browser.setPlainText("（差异摘要暂不可用，可点击“查看全文对比”核对）")
+            return "\n".join(summary)
+        if not candidate.get("known") and candidate.get("change") == "新增":
+            return "（官网数据暂不可用，请以官网公告为准）"
+        return "（差异摘要暂不可用，可点击“查看全文对比”核对）"
 
-    def _show_detail(self) -> None:
-        current = self._list.currentItem()
-        if current is None:
-            return
-        candidate = current.data(Qt.ItemDataRole.UserRole)
-        dialog = HeroDiffDetailDialog(
-            f"{candidate['name']} 本地 vs 官网",
-            candidate.get("local_full", ""),
-            candidate.get("official_full", ""),
-            self,
-        )
-        dialog.exec()
-
-    # ---------------------------------------------------------------
-    # 忽略名单
-    # ---------------------------------------------------------------
-
-    def _ignore_current(self) -> None:
-        current = self._list.currentItem()
-        if current is None:
-            return
-        candidate = current.data(Qt.ItemDataRole.UserRole)
+    def _ignore_candidate(self, candidate: dict) -> None:
         hero_id = candidate.get("hero_id")
         entry_id = str(hero_id) if hero_id is not None else candidate["name"]
         self._ignore_service.ignore_hero(
@@ -244,21 +217,22 @@ class HeroUpdateConfirmDialog(QDialog):
             _CHANGE_TO_STATE.get(candidate["change"], "modified"),
             content_hash=candidate.get("content_hash", ""),
         )
+
+    def _after_ignore_removed(self, candidate: dict) -> None:
         self._candidates = [
             item for item in self._candidates if item is not candidate
         ]
-        row = self._list.row(current)
-        self._list.takeItem(row)
         self._update_count_label()
         self._refresh_ignore_label()
 
-    def _open_ignore_manager(self) -> None:
+    def _exec_ignore_manager(self) -> None:
         BaikeIgnoreManagerDialog(self, announcement_service=self._ignore_service).exec()
-        self._refresh_ignore_label()
 
-    def _refresh_ignore_label(self) -> None:
-        count = self._ignore_service.ignored_hero_count()
-        self._ignore_manager_button.setText(f"已忽略 {count} 条（管理）")
+    def _ignored_count(self) -> int:
+        return self._ignore_service.ignored_hero_count()
+
+    def _detail_dialog_class(self):
+        return HeroDiffDetailDialog
 
     def _accept_selection(self) -> None:
         selected = self._selected_candidates()

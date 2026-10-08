@@ -13,12 +13,9 @@
 _send_and_wait() → 原始回复文本(str)
   │ 2. Transform
   ▼
-_extract_json() → 解析为 Python dict
-_convert_ids_to_int() → 字段类型转换
-inject hero_id / hero_a_id / hero_b_id
+extract_json() → 解析为 Python dict
+normalize_and_validate_guide/synergy() → 注 ID/ID 转换/兼容 shim/Pydantic 校验
   │ 3. Load
-  ▼
-_validate_guide() / _validate_synergy() → Pydantic 校验
   ▼
 返回校验通过的 dict → _save_json() → JSON 文件
 """
@@ -38,11 +35,8 @@ from src.scraper.ai.prompt_utils import (
     load_prompt,
 )
 from src.scraper.ai.utils import (
-    convert_ids_to_int,
-    has_required_guide_fields,
-    has_required_synergy_fields,
-    validate_guide,
-    validate_synergy,
+    normalize_and_validate_guide,
+    normalize_and_validate_synergy,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,15 +146,10 @@ class PlaywrightGenerator:
                 logger.error("[攻略] %s: 纠正后仍 JSON 提取失败（回复长度 %d）", hero_name, len(retry_reply))
                 return None, None
 
-        raw["hero_id"] = hero_id
-        convert_ids_to_int(raw, ["synergizes_with"])
-        if not has_required_guide_fields(raw):
-            logger.warning("[攻略] %s: 必填字段缺失", hero_name)
-            return None, None
-        result = validate_guide(raw)
+        result = normalize_and_validate_guide(
+            raw, hero, logger_prefix=f"[攻略] {hero_name}: ",
+        )
         if result is None:
-            logger.error("[攻略] %s: Pydantic 校验失败", hero_name)
-            logger.debug("[攻略] %s: 校验失败字段: %s", hero_name, sorted(raw))
             return None, None
 
         logger.info("[攻略] %s: 校验通过, 结果字段: %s", hero_name, list(result.keys()))
@@ -217,22 +206,10 @@ class PlaywrightGenerator:
                 logger.error("[相性] %s <-> %s: 纠正后仍 JSON 提取失败（回复长度 %d）", name_a, name_b, len(retry_reply))
                 return None, None
 
-        raw["hero_a_id"] = hero_a.get("id", 0)
-        raw["hero_b_id"] = hero_b.get("id", 0)
-
-        if "combat_synergy" in raw and "combo_ceiling" not in raw:
-            logger.info("[相性] %s <-> %s: 兼容字段 combat_synergy → combo_ceiling",
-                        name_a, name_b)
-            raw["combo_ceiling"] = raw.pop("combat_synergy")
-
-        if not has_required_synergy_fields(raw):
-            logger.warning("[相性] %s <-> %s: 必填字段缺失", name_a, name_b)
-            return None, None
-
-        result = validate_synergy(raw)
+        result = normalize_and_validate_synergy(
+            raw, hero_a, hero_b, logger_prefix=f"[相性] {name_a} <-> {name_b}: ",
+        )
         if result is None:
-            logger.error("[相性] %s <-> %s: Pydantic 校验失败", name_a, name_b)
-            logger.debug("[相性] %s <-> %s: 校验失败字段: %s", name_a, name_b, sorted(raw))
             return None, None
 
         logger.info("[相性] %s <-> %s: 校验通过, 评分 %s",
