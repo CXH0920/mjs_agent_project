@@ -149,13 +149,14 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 
 ### 3.2 CaptureService（截图业务门面）与同包协作模块
 
-`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**2026-10 职责域出仓（审计 G8）**后，CaptureService（569 行）只保留截图流水线与连接状态机，三块编排职责下沉到同包协作模块，对 UI 仍以门面信号转发：
+`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**职责域出仓（审计 G8 + P1-8 第三刀，2026-10）**后，CaptureService（479 行）只保留截图流水线与结果拼装，四块职责下沉到同包协作模块，对 UI 仍以门面信号转发；关停守卫与全仓三处自造竞态守卫（ocr_service 在途拍、公告阶段推进）统一收口到 `src/business/recognition/session_guard.py` 命名原语（P0-3）：
 
 | 模块 | 职责 | 与 CaptureService 的边界 |
 |------|------|------|
 | `OcrTaskCoordinator`（ocr_task_coordinator.py） | OCR worker 唯一创建点（`ensure_worker()`，经构造注入的 `on_worker_created` 回调同步接线后才 `start()`，跨线程首建同样成立）、模型预热状态机（idle/warming/ready/failed）、识别任务的阈值/ROI 组装（`build_task()`） | 持有 `_worker`（创建由 `_worker_lock` 双检保护）/`_on_worker_created`/`_warmup_task`/`_warmup_state`；配置经 `config_provider` 晚绑定读取（阈值改动实时生效），ROI 共享 `CaptureService._roi_config` |
 | `OfficialImportGateway`（official_import_gateway.py） | 官方榜单导入网关：整批任务提交、进行中排他集合、worker 进度转发、完成/失败分派 | 持有 `_pending` 排他集合；`progress/completed/failed` 三信号与 CaptureService 同名门面信号直连 |
 | `ImageSaveScheduler`（image_save_scheduler.py） | PNG 后台保存：单线程执行器（`image-save`）串行落盘，完成后广播 `image_saved` | 无锁、无挂起表；`save_future` 由 CaptureService 持有用于结果拼装 |
+| `CaptureConnectionManager`（capture_connection.py） | ADB 连接域：配置热更与 AdbCapture 重建、会话状态机（unconfigured/disconnected/connecting/connected/offline）、连接/断开编排、`is_current` 过期实例校验 | 持有 `_capture`/`_config`/会话状态与 `_session_lock`/`_adb_io_lock`（锁职责原样迁移）；状态与状态栏消息经回调回发，emit 留在 CaptureService |
 
 CaptureService 自身仍持有两把互不嵌套的锁与一个单线程执行器：`_session_lock` 只保护会话对象与状态字段的快速读写，`_adb_io_lock` 单独串行化 `connect()` / `screencap_full()` 这类秒级阻塞 IO（超时重试最坏约 45 秒）；`_adb_executor`（`adb-capture`）串行执行 ADB 截图，与图像保存执行器（已迁入 `ImageSaveScheduler`）互不等待。截图请求与 OCR 结果的关联表（`_pending_ocr_captures`）与完成分派留在 CaptureService。
 
