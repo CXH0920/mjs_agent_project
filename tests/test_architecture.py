@@ -668,7 +668,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 670 → 570：官方导入网关 official_import_gateway、图像保存调度
     # image_save_scheduler、OCR 协调器 ocr_task_coordinator 依次出仓（审计 G8）
     # 570 → 575：截图存盘失败补 warning 日志（修复批 2026-10-05，+1 行，留余量）
-    "business/emulator/capture_service.py": 575,
+    # 575 → 479：P1-8 绞杀第三刀——连接域（配置热更/会话状态/连接编排）出仓
+    # capture_connection.py；关停守卫 _closed 改用共享 OneShotToken（P0-3）
+    "business/emulator/capture_service.py": 479,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）

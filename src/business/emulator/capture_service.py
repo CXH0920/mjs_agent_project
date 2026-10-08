@@ -10,15 +10,16 @@
 from __future__ import annotations
 
 import logging
-import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
+from src.business.emulator.capture_connection import CaptureConnectionManager
 from src.business.emulator.image_save_scheduler import ImageSaveScheduler
 from src.business.emulator.ocr_task_coordinator import OcrTaskCoordinator
 from src.business.emulator.official_import_gateway import OfficialImportGateway
 from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
+from src.business.recognition.session_guard import OneShotToken
 from src.capture.adb_screen import AdbCapture
 from src.capture.image_validation import load_local_image
 from src.config.env import SCREENSHOTS_DIR
@@ -49,11 +50,14 @@ class CaptureService(QObject):
 
     def __init__(self, parent=None, roi_config: OcrRoiConfig | None = None):
         super().__init__(parent)
-        self._capture: AdbCapture | None = None
-        self._config = {}  # 当前配置缓存
         self._roi_config = roi_config or OcrRoiConfig()
-        self._connection_state = "unconfigured"
-        self._connection_detail = ""
+        # 连接域（配置热更/会话状态/连接编排）已出仓 CaptureConnectionManager
+        # （P1-8）；状态与消息经回调回发，emit 留在本 QObject 上
+        self._connection = CaptureConnectionManager(
+            on_state_change=self.connection_changed.emit,
+            on_status=self.status_changed.emit,
+            on_event_status=self.event_status_changed.emit,
+        )
         self._pending_ocr_captures: dict[str, dict] = {}
         self._official_gateway = OfficialImportGateway(parent=self)
         self._official_gateway.progress.connect(self.official_import_progress)
@@ -66,92 +70,46 @@ class CaptureService(QObject):
             on_worker_created=self._on_worker_created,
         )
         self._ocr_coordinator.warmup_state_changed.connect(self.ocr_warmup_state_changed)
-        self._session_lock = threading.RLock()
-        # ADB 连接/截屏是秒级阻塞调用（超时重试最坏约 45 秒），不能在 _session_lock
-        # 内执行——该锁同时被 GUI 线程的 update_config/config 属性等快速路径争用，
-        # 锁内等待会让配置页保存等操作卡到截图结束。阻塞 IO 由 _adb_io_lock 单独
-        # 串行化（两把锁不嵌套持有，避免顺序倒置）；ADB 并发防护另由
-        # _adb_executor 单线程执行器保证。
-        self._adb_io_lock = threading.RLock()
+        # ADB 并发防护由 _adb_executor 单线程执行器保证（会话/IO 锁随连接域出仓）
         self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="adb-capture")
         self._save_scheduler = ImageSaveScheduler(parent=self)
         self._save_scheduler.image_saved.connect(self.image_saved)
-        self._closed = False
+        self._shutdown_token = OneShotToken()  # 关停一次性守卫（P0-3 收口）
         self._capture_ready.connect(self._on_background_capture_ready)
 
-    def _set_connection_state(self, state: str, detail: str = "") -> None:
-        """更新并广播当前 ADB 会话状态。"""
-        if (state, detail) == (self._connection_state, self._connection_detail):
-            return
-        self._connection_state = state
-        self._connection_detail = detail
-        self.connection_changed.emit(state, detail)
+    # ── 连接域委托（实现见 CaptureConnectionManager，P1-8 出仓） ──────
 
     @property
     def connection_state(self) -> tuple[str, str]:
         """返回当前 ADB 会话状态及详情。"""
-        with self._session_lock:
-            return self._connection_state, self._connection_detail
+        return self._connection.connection_state
 
     @property
     def ocr_warmup_state(self) -> str:
         """返回 OCR 预热状态：idle、warming、ready 或 failed。"""
         return self._ocr_coordinator.warmup_state
 
-    # ── 配置 ──────────────────────────────────────────────────────────
-
     def update_config(self, config: dict) -> None:
-        """更新配置并重建 AdbCapture（仅路径或端口变化时重建）。
-
-        重建时如果旧的 AdbCapture 已连通同一设备，保留已有连接状态。
-        在配置无变化时不重建实例。
-
-        Args:
-            config: {
-                "mumu_adb_path": str,
-                "mumu_adb_port": int,
-                "mumu_ocr_enabled": bool,
-                "mumu_ocr_match_threshold": float,
-            }
-        """
-        with self._session_lock:
-            path_changed = config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
-            port_changed = config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
-            mode_changed = config.get("mumu_screenshot_mode") != self._config.get("mumu_screenshot_mode")
-
-            self._config = dict(config)
-
-            if not config.get("mumu_adb_path"):
-                self._capture = None
-                self._set_connection_state("unconfigured")
-                return
-
-            if path_changed or port_changed or mode_changed or self._capture is None:
-                self._capture = AdbCapture(
-                    adb_path=config["mumu_adb_path"],
-                    adb_port=config.get("mumu_adb_port", 0),
-                    screenshot_mode=config.get("mumu_screenshot_mode", "auto"),
-                )
-                self._set_connection_state("disconnected")
-                logger.info("CaptureService 配置已更新，ADB: %s:%s",
-                            config["mumu_adb_path"], config.get("mumu_adb_port", "auto"))
-            else:
-                logger.debug("CaptureService 配置已更新（仅 OCR 参数）")
+        """更新配置并按需重建 AdbCapture（详见 CaptureConnectionManager.update_config）。"""
+        self._connection.update_config(config)
 
     def set_target_port(self, port: int) -> None:
         """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
-        if not self._config.get("mumu_adb_path"):
-            self._set_connection_state("unconfigured")
-            return
-        config = dict(self._config)
-        config["mumu_adb_port"] = port
-        self.update_config(config)
+        self._connection.set_target_port(port)
 
     @property
     def config(self) -> dict:
         """返回当前截图配置的副本。"""
-        with self._session_lock:
-            return dict(self._config)
+        return self._connection.config
+
+    @property
+    def _config(self) -> dict:
+        """配置缓存直通（测试直写兼容缝；生产代码走 update_config）。"""
+        return self._connection._config
+
+    @_config.setter
+    def _config(self, value: dict) -> None:
+        self._connection._config = value
 
     @property
     def roi_config(self) -> OcrRoiConfig:
@@ -160,13 +118,11 @@ class CaptureService(QObject):
 
     @property
     def capture(self) -> AdbCapture | None:
-        with self._session_lock:
-            return self._capture
+        return self._connection.capture
 
     @capture.setter
     def capture(self, cap: AdbCapture | None) -> None:
-        with self._session_lock:
-            self._capture = cap
+        self._connection.capture = cap
 
     # ── 截图 ──────────────────────────────────────────────────────────
 
@@ -184,7 +140,7 @@ class CaptureService(QObject):
         Args:
             hero_names: 用于编辑距离矫正的武将名列表（可选，从 HeroManager 获取）。
         """
-        if self._closed:
+        if self._shutdown_token.spent:
             return
         request = {
             "hero_names": hero_names,
@@ -248,7 +204,7 @@ class CaptureService(QObject):
 
     def _on_background_capture_ready(self, payload: object) -> None:
         """在 GUI 线程处理后台截图结果。"""
-        if self._closed:
+        if self._shutdown_token.spent:
             return
         request, future = payload
         try:
@@ -437,92 +393,44 @@ class CaptureService(QObject):
         })
 
 
-    # ── 连接管理 ──────────────────────────────────────────────────────
+    # ── 连接管理（实现已出仓 CaptureConnectionManager） ───────────────
 
     def sync_connection_state(self, error_detail: str = "") -> None:
         """根据底层会话状态同步 ADB 状态，供截图和轮询失败路径调用。"""
-        with self._session_lock:
-            if not self._capture:
-                self._set_connection_state("unconfigured")
-            elif not self._capture.connected:
-                self._set_connection_state("offline", error_detail)
+        self._connection.sync_connection_state(error_detail)
 
     def sync_poll_connection_state(self, capture: AdbCapture, error_detail: str = "") -> None:
         """仅同步当前轮询会话的连接状态，忽略过期 capture。"""
-        with self._session_lock:
-            if capture is not self._capture:
-                return
-            if capture.connected:
-                self._set_connection_state("connected", capture.device_serial)
-            else:
-                self._set_connection_state("offline", error_detail)
+        self._connection.sync_poll_connection_state(capture, error_detail)
 
     def connect_emulator(self) -> tuple[bool, str]:
-        """连接模拟器。
-
-        Returns:
-            (是否成功, 消息)
-        """
-        with self._session_lock:
-            capture = self._capture
-            if capture is None:
-                self._set_connection_state("unconfigured")
-                return False, "ADB 未配置"
-        return self._connect_capture(capture)
-
-    def _connect_capture(self, capture: AdbCapture) -> tuple[bool, str]:
-        """连接给定 AdbCapture：阻塞 IO 在 _adb_io_lock 内，状态字段在 _session_lock 内更新。"""
-        with self._session_lock:
-            self._set_connection_state("connecting")
-        self.status_changed.emit("正在连接模拟器...")
-        with self._adb_io_lock:
-            ok, message = capture.connect()
-        with self._session_lock:
-            if ok:
-                self._set_connection_state("connected", capture.device_serial)
-            else:
-                self._set_connection_state("disconnected", message)
-        if ok:
-            self.event_status_changed.emit(f"ADB 已连接：{capture.device_serial}")
-        else:
-            # 失败必须常驻，否则左下角残留"正在连接模拟器..."直到下一条消息
-            self.status_changed.emit(f"连接失败：{message}")
-        return ok, message
+        """连接模拟器。"""
+        return self._connection.connect_emulator()
 
     def disconnect_emulator(self) -> tuple[bool, str]:
         """断开模拟器。"""
-        with self._session_lock:
-            capture = self._capture
-            if capture is None:
-                self._set_connection_state("unconfigured")
-                return False, "ADB 未配置"
-        with self._adb_io_lock:
-            ok, message = capture.disconnect()
-        with self._session_lock:
-            self._set_connection_state("disconnected")
-        self.event_status_changed.emit("ADB 已断开")
-        return ok, message
+        return self._connection.disconnect_emulator()
 
     def capture_screenshot(self) -> tuple[bool, object]:
         """使用共享 ADB 会话获取一张截图，不保存文件也不触发 OCR。"""
-        with self._session_lock:
-            capture = self._capture
+        connection = self._connection
+        with connection.session_lock:
+            capture = connection.capture
             if capture is None:
-                self._set_connection_state("unconfigured")
+                connection.set_connection_state("unconfigured")
                 return False, "ADB 未配置，请在 配置 → 模拟器配置 中设置"
             need_connect = not capture.connected
 
         if need_connect:
-            ok, message = self._connect_capture(capture)
+            ok, message = connection.connect_capture(capture)
             if not ok:
                 return False, f"ADB 连接失败: {message}"
             # 连接期间配置可能已变更并重建 AdbCapture，旧引用不再可信
-            with self._session_lock:
-                if capture is not self._capture:
-                    return False, "ADB 配置已变更，请重试"
+            if not connection.is_current(capture):
+                return False, "ADB 配置已变更，请重试"
 
         self.status_changed.emit("正在截图...")
-        with self._adb_io_lock:
+        with connection.adb_io_lock:
             ok, result = capture.screencap_full()
         if not ok:
             self.sync_connection_state(str(result))
@@ -533,7 +441,7 @@ class CaptureService(QObject):
 
     def capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
         """经同一后台执行器完成轮询截图，避免与手动截图并发访问 ADB。"""
-        if self._closed:
+        if self._shutdown_token.spent:
             return False, "截图服务已关闭", "capture"
         future = self._adb_executor.submit(self._capture_for_poll, capture)
         try:
@@ -543,16 +451,17 @@ class CaptureService(QObject):
             return False, str(error), "capture"
 
     def _capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
-        with self._session_lock:
-            if capture is not self._capture:
+        connection = self._connection
+        with connection.session_lock:
+            if capture is not connection.capture:
                 return False, "ADB 配置已变更", "connection"
             need_connect = not capture.connected
         if need_connect:
-            with self._adb_io_lock:
+            with connection.adb_io_lock:
                 ok, message = capture.connect()
             if not ok:
                 return False, message, "connection"
-        with self._adb_io_lock:
+        with connection.adb_io_lock:
             ok, result = capture.screencap_full(log_success=False)
         return ok, result, "" if ok else "capture"
 
@@ -564,7 +473,7 @@ class CaptureService(QObject):
         OCR worker 仅通知停止并立即返回（不在 GUI 线程同步等待），
         线程由 OcrWorker 的退役列表持有并在进程退出前收尾，避免窗口卡死。
         """
-        self._closed = True
+        self._shutdown_token.mark()
         self._adb_executor.shutdown(wait=False, cancel_futures=True)
         self._save_scheduler.shutdown()
         self._ocr_coordinator.shutdown()
