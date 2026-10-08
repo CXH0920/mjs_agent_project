@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
+from src.business.recognition.session_guard import BusyGate
 from src.ocr.ocr_loader import get_template_manager
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,8 @@ class OcrService(QObject):
         self._poll_state = "stopped"
         self._poll_detail = ""
         self._poll_session = PollSession()
-        self._poll_in_flight = False
+        # 在途拍忙碌闸（P0-3 收口，原裸 bool _poll_in_flight；Qt 主循环单线程调用）
+        self._poll_gate = BusyGate()
 
     # ── 配置 ──────────────────────────────────────────────────────────
 
@@ -191,7 +193,7 @@ class OcrService(QObject):
         """启动或重新启动轮询（重复定时器，周期 = max(间隔, 单拍处理)）。"""
         self._poll_interval_ms = max(interval_ms, 1_000)
         self._consecutive_poll_failures = 0
-        self._poll_in_flight = False
+        self._poll_gate.release()
         self._replace_poll_session()
         self._poll_tasks["hero_selection"] = PollTaskState(
             active="hero_selection" not in self._held_tasks,
@@ -222,7 +224,7 @@ class OcrService(QObject):
             task.active = False
             task.cooldown_until = None
         self._consecutive_poll_failures = 0
-        self._poll_in_flight = False
+        self._poll_gate.release()
         self._replace_poll_session()
         self._set_poll_state(state, detail)
 
@@ -234,11 +236,11 @@ class OcrService(QObject):
         """作废在途轮询：取消当前会话并复位在途标记，供巅峰赛识别启动时调用。
 
         作废使在途一轮不再回发结果（complete_poll 无人调用），故必须同时复位
-        _poll_in_flight，否则后续轮询拍会被在途标记永久挡住；已回发未消费的
+        在途忙碌闸，否则后续轮询拍会被在途标记永久挡住；已回发未消费的
         旧结果由消费端代数检查丢弃。
         """
         self._replace_poll_session()
-        self._poll_in_flight = False
+        self._poll_gate.release()
 
     def resume_poll(self) -> None:
         """用户主动恢复已暂停的轮询。"""
@@ -248,9 +250,9 @@ class OcrService(QObject):
 
     def begin_poll(self) -> int | None:
         """标记一轮轮询开始，返回本轮会话代数。"""
-        if self._poll_state not in {"running", "backing_off", "cooldown"} or self._poll_in_flight:
+        if self._poll_state not in {"running", "backing_off", "cooldown"} or self._poll_gate.is_busy:
             return None
-        self._poll_in_flight = True
+        self._poll_gate.acquire()
         return self.poll_generation
 
     def due_poll_tasks(self) -> list[str]:
@@ -316,7 +318,7 @@ class OcrService(QObject):
         """由主线程记录一轮轮询结果；定时器持续运行，仅动态调整间隔。"""
         if generation != self.poll_generation:
             return
-        self._poll_in_flight = False
+        self._poll_gate.release()
         if outcome in {"healthy_no_match", "matched"}:
             self._consecutive_poll_failures = 0
             if self._poll_timer.interval() != self._poll_interval_ms:

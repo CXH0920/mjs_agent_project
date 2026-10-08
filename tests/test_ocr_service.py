@@ -94,14 +94,14 @@ def test_invalidate_inflight_poll_cancels_session_and_resets_inflight_flag() -> 
     service.start_poll(1_000)
     old_generation = service.poll_generation
     old_event = service.poll_cancel_event
-    service._poll_in_flight = True  # 模拟在途一轮尚未回写
+    service._poll_gate.acquire()  # 模拟在途一轮尚未回写
 
     service.invalidate_inflight_poll()
 
     assert service.poll_generation == old_generation + 1
     assert old_event.is_set()
     assert not service.poll_cancel_event.is_set()
-    assert service._poll_in_flight is False
+    assert service._poll_gate.is_busy is False
     assert service._poll_timer.isActive()
 
 
