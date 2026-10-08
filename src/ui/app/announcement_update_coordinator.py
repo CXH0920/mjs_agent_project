@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 from src.business.announcement.announcement_service import AnnouncementCheckResult
+from src.business.recognition.session_guard import BusyGate
 from src.config.env import PROJECT_ROOT
 from src.data.announcement_manager import AnnouncementStatus
 from src.ui.app.progress_reporter import ProgressReporter
@@ -60,8 +61,9 @@ class AnnouncementUpdateCoordinator(QObject):
         self._dialog: AnnouncementDialog | None = None
         self._last_diff: dict = {"added": [], "modified": [], "removed": []}
         self._pending_phases: list[tuple[str, list[int] | None]] | None = None
-        # 阶段令牌：只有成功发起的阶段采集才置位，完成回调据此只消费对应阶段
-        self._phase_in_flight = False
+        # 阶段忙碌闸（P0-3 收口，原裸 bool 阶段令牌）：只有成功发起的阶段
+        # 采集才占用，完成回调据此只消费对应阶段
+        self._phase_gate = BusyGate()
 
         self._service.check_started.connect(self._on_check_started)
         self._service.check_finished.connect(self._on_check_finished)
@@ -171,8 +173,8 @@ class AnnouncementUpdateCoordinator(QObject):
         的完成不得冒领阶段结果，否则公告武将会被静默跳过并 mark_applied。
         """
         self._reporter.hide_progress()
-        if self._pending_phases is not None and self._phase_in_flight:
-            self._phase_in_flight = False
+        if self._pending_phases is not None and self._phase_gate.is_busy:
+            self._phase_gate.release()
             self._pending_phases.pop(0)
             if success and self._pending_phases:
                 self._start_next_phase()
@@ -328,14 +330,14 @@ class AnnouncementUpdateCoordinator(QObject):
         发起前 is_busy 检查与发起后返回值双重把关（忙碌时服务不发完成信号，
         只能靠返回值识别）；任一关失败都整条更新流作废并告知用户——不
         mark_applied，公告横幅保留，用户可稍后重试。只有成功发起的阶段才
-        置令牌，完成回调据此只消费对应阶段。
+        置忙碌闸，完成回调据此只消费对应阶段。
         """
         if not self._pending_phases:
             return
         if self._fetch_service.is_busy or not self._dispatch_phase():
             self._abort_pending_phases()
             return
-        self._phase_in_flight = True
+        self._phase_gate.acquire()
 
     def _dispatch_phase(self) -> bool:
         """按阶段类型发起采集，返回是否成功启动。"""
@@ -347,7 +349,7 @@ class AnnouncementUpdateCoordinator(QObject):
     def _abort_pending_phases(self) -> None:
         """作废整条公告更新流：清队列与令牌，不 mark_applied（横幅保留可重试）。"""
         self._pending_phases = None
-        self._phase_in_flight = False
+        self._phase_gate.release()
         self._reporter.hide_progress()
         self._reporter.show_message("公告更新已取消：武将采集正在进行")
         QMessageBox.warning(self._window, "采集进行中", "公告更新与当前采集冲突，已取消。请稍后重新检查公告并更新。")

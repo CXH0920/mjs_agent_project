@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.business.announcement import announcement_service as service_module
 from src.business.announcement.announcement_service import AnnouncementService
+from src.business.recognition.session_guard import BusyGate
 from src.data.announcement_manager import (
     Announcement,
     AnnouncementManager,
@@ -766,7 +767,7 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
         _heroes_provider=lambda: [],
         _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
         _pending_phases=[("incremental", None)],
-        _phase_in_flight=False,
+        _phase_gate=BusyGate(),
         _service=SimpleNamespace(mark_applied=lambda: applied.append(1)),
         _last_diff={"added": [1], "modified": [], "removed": []},
         _refresh_banner=lambda: None,
@@ -779,7 +780,7 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
     assert applied == []
     assert toasts == ["武将数据已采集完成，请重新加载数据。"]
 
-    window._phase_in_flight = True
+    window._phase_gate.acquire()
     AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
 
     assert window._pending_phases is None
@@ -813,7 +814,7 @@ def test_update_phase_aborts_when_fetch_service_busy(monkeypatch) -> None:
         _heroes_provider=lambda: [],
         _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
         _pending_phases=[("specific", [3]), ("incremental", None)],
-        _phase_in_flight=False,
+        _phase_gate=BusyGate(),
         _fetch_service=_BusyFetchService(),
     )
     # 非绑定调用下把真实中止逻辑接回假对象，断言才覆盖真实现
@@ -822,7 +823,7 @@ def test_update_phase_aborts_when_fetch_service_busy(monkeypatch) -> None:
     AnnouncementUpdateCoordinator._start_next_phase(window)
 
     assert window._pending_phases is None
-    assert window._phase_in_flight is False
+    assert window._phase_gate.is_busy is False
     assert started == []
     assert warnings
 
@@ -847,7 +848,7 @@ def test_update_phase_aborts_when_dispatch_reports_busy(monkeypatch) -> None:
         _heroes_provider=lambda: [],
         _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
         _pending_phases=[("specific", [3])],
-        _phase_in_flight=False,
+        _phase_gate=BusyGate(),
         _fetch_service=_RacyFetchService(),
     )
     window._abort_pending_phases = lambda: AnnouncementUpdateCoordinator._abort_pending_phases(window)
@@ -856,7 +857,7 @@ def test_update_phase_aborts_when_dispatch_reports_busy(monkeypatch) -> None:
     AnnouncementUpdateCoordinator._start_next_phase(window)
 
     assert window._pending_phases is None
-    assert window._phase_in_flight is False
+    assert window._phase_gate.is_busy is False
     assert warnings
 
 
