@@ -651,8 +651,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # （修批量乱码绕过单槽回退的旁路 + v6 书法体徽记弱项，重放实测救回 14/18 槽）
     # 498 → 519：B1 收尾批 d1a55e1（白名单简繁变体退役+预热残留修复）与
     # 6ea1866（兜底批次零产出短路）+21 行未同步预算，补登记恢复绿灯；
-    # P1-6 模板方法合并后应净收回 498 以下
-    "ocr/recognizer.py": 519,
+    # 519 → 493：P1-6 模板方法合并——recognize/_recognize_match_guide 双路径
+    # 收口为 _recognize_page(image, plan)，批次 0 借出的 21 行净偿还
+    "ocr/recognizer.py": 493,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）

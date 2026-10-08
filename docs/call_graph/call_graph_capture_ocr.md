@@ -277,7 +277,8 @@ GeneralRecognizer.recognize(image)                            [PIL Image]
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | ROI 缩放裁剪、`_recognize_prepared_batch()`、`_resolve_name_evidence()`、`_resolve_page_names()`、`_recheck_unresolved_slots()` |
-| `_recognize_match_guide(image)` | `recognizer.py` | `recognize()` | 名称/阵营分开批量识别、逐槽回退、`_normalize_team()` |
+| `_recognize_match_guide(image)` | `recognizer.py` | `recognize()`、直测 | 直测入口，委托 `_recognize_page(image, plan)`（P1-6 双路径收口） |
+| `_recognize_page(image, plan)` | `recognizer.py` | `recognize()`、`_recognize_match_guide()` | 两页型共用骨架：缩放裁剪、批量识别、逐槽证据决议、页面消解、复核收尾；页型差异经 `_PagePlan` 注入（team 槽/短路/空槽占位/调试日志） |
 | `_recognize_prepared_batch(slots, kind, evidence_by_slot=None, engine=None)` | `recognizer.py` | 两类页面入口、B2 复核 | `_build_batch_canvas()`、`engine.ocr()`（缺省用生产 `_engine`）、框中心映射、`_requires_name_batch_fallback()` |
 | `_append_single_name_evidence(...)` | `recognizer.py` | 两类页面入口 | `_recognize_prepared_single()`、`_preprocess_plain_roi()` |
 | `_requires_slot_recheck(result, text, confidence)` | `recognizer.py` | 两类页面入口 | 空文本 / 置信度 < 0.8 / 未确认状态判定 |
@@ -702,7 +703,8 @@ src.business.recognition.pending_stats
 | 函数 | 文件 | 调用方 | 被调用方 |
 |------|------|--------|----------|
 | `GeneralRecognizer.recognize(image)` | `recognizer.py` | `OcrWorker._execute()` | ROI 缩放、同类拼图识别、多路证据解析、页面约束 |
-| `GeneralRecognizer._recognize_match_guide(image)` | `recognizer.py` | `recognize()` | 名称/阵营分开拼图、名称证据解析 |
+| `GeneralRecognizer._recognize_match_guide(image)` | `recognizer.py` | `recognize()`、直测 | 直测入口，委托 `_recognize_page(image, plan)`（P1-6 收口） |
+| `GeneralRecognizer._recognize_page(image, plan)` | `recognizer.py` | `recognize()`、`_recognize_match_guide()` | 两页型共用识别骨架，`_PagePlan` 注入页型差异 |
 | `GeneralRecognizer._recognize_prepared_batch(slots, kind, evidence_by_slot=None)` | `recognizer.py` | 两类页面入口 | `_build_batch_canvas()`、`_engine.ocr()`、检测框中心映射、`_requires_name_batch_fallback()` |
 | `GeneralRecognizer._append_single_name_evidence(...)` | `recognizer.py` | 两类页面入口 | `single_enhanced`、`single_plain` 逐槽复核 |
 | `GeneralRecognizer._requires_slot_recheck(...)` | `recognizer.py` | 两类页面入口 | 空文本 / 置信度 < 0.8 / 未确认状态判定 |

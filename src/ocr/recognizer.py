@@ -21,6 +21,7 @@ import json
 import logging
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,21 @@ from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 logger = logging.getLogger(__name__)
 
 _BATCH_MIN_CONFIDENCE = 0.5
+
+
+@dataclass(frozen=True)
+class _PagePlan:
+    """页型识别计划：_recognize_page 模板的差异注入点（P1-6 收口）。"""
+
+    has_team: bool = False                    # match_guide：识别楚/汉阵营标签槽
+    short_circuit_name_recheck: bool = False  # match_guide：批次零产出跳过逐槽复核（B1 兜底）
+    emit_empty_results: bool = False          # wujiang：缺槽补 empty_name_result 占位行
+    log_details: bool = False                 # wujiang：缩放/ROI 明细/越界/逐槽结果调试日志
+
+
+_WUJIANG_SELECT_PLAN = _PagePlan(emit_empty_results=True, log_details=True)
+_MATCH_GUIDE_PLAN = _PagePlan(has_team=True, short_circuit_name_recheck=True)
+
 class GeneralRecognizer:
     """武将名称识别器，按页面类型使用独立的 ROI 布局。"""
 
@@ -140,152 +156,110 @@ class GeneralRecognizer:
     # ── 识别 ──────────────────────────────────────────────────────────
 
     def recognize(self, image: np.ndarray | Image.Image) -> list[dict]:
-        """识别当前页面的武将名称，返回含置信度和阵营标签的结果。
-
-        Args:
-            image: 截图图像。
-
-        Returns:
-            含候选、确认状态、长度模式和多路证据的槽位结果。
-        """
+        """识别当前页面的武将名称，返回含置信度和阵营标签的结果。"""
         self._timing_ms = {}
         self._reset_det_stats()
         if isinstance(image, Image.Image):
             image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        if self._page_type == "match_guide":
-            return self._recognize_match_guide(image)
+        plan = _MATCH_GUIDE_PLAN if self._page_type == "match_guide" else _WUJIANG_SELECT_PLAN
+        return self._recognize_page(image, plan)
 
+    def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
+        """识别 2v2 对局中的角色名与楚/汉军标签（直测入口，委托模板）。"""
+        return self._recognize_page(image, _MATCH_GUIDE_PLAN)
+
+    def _recognize_page(self, image: np.ndarray, plan: _PagePlan) -> list[dict]:
+        """两页型共用识别骨架（P1-6 收口）：缩放 → 裁剪/预处理 → 批量识别 →
+        逐槽证据决议 → 页面消解 → 复核收尾；页型差异经 plan 注入，B1 兜底
+        短路与阵营引擎链式重试语义逐行保留。"""
         image_height, image_width = image.shape[:2]
         reference_width, reference_height = self._layout.reference_size
         scale_x = image_width / reference_width
         scale_y = image_height / reference_height
-        log_rois = self._logged_roi_scale != (scale_x, scale_y)
-        self._logged_roi_scale = (scale_x, scale_y)
-        logger.debug("武将 ROI 缩放: %.4f×%.4f，当前截图=%sx%s，参考=%sx%s",
-                     scale_x, scale_y, image_width, image_height,
-                     reference_width, reference_height)
+        log_rois = plan.log_details and self._logged_roi_scale != (scale_x, scale_y)
+        if plan.log_details:
+            self._logged_roi_scale = (scale_x, scale_y)
+            logger.debug("武将 ROI 缩放: %.4f×%.4f，当前截图=%sx%s，参考=%sx%s",
+                         scale_x, scale_y, image_width, image_height,
+                         reference_width, reference_height)
 
         raw_slots: dict[int, np.ndarray] = {}
         prepared_slots: dict[int, np.ndarray] = {}
-        for i, slot in enumerate(self._layout.slots):
+        team_slots: dict[int, np.ndarray] = {}
+        for index, slot in enumerate(self._layout.slots, 1):
             x, y, w, h = slot.name_roi
             roi_x = round(x * scale_x)
             roi_y = round(y * scale_y)
             roi_w = max(1, round(w * scale_x))
             roi_h = max(1, round(h * scale_y))
             if log_rois:
-                logger.debug(
-                    "武将 %d OCR ROI: x=%d, y=%d, w=%d, h=%d (参考 ROI=%s)",
-                    i + 1, roi_x, roi_y, roi_w, roi_h, [x, y, w, h],
-                )
+                logger.debug("武将 %d OCR ROI: x=%d, y=%d, w=%d, h=%d (参考 ROI=%s)", index, roi_x, roi_y, roi_w, roi_h, [x, y, w, h])
             roi_img = image[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
             if roi_img.size == 0:
-                logger.warning(
-                    "武将 %d OCR ROI 超出截图边界，跳过识别: x=%d, y=%d, w=%d, h=%d, 截图=%dx%d",
-                    i + 1, roi_x, roi_y, roi_w, roi_h, image_width, image_height,
-                )
+                if plan.log_details:
+                    logger.warning("武将 %d OCR ROI 超出截图边界，跳过识别: x=%d, y=%d, w=%d, h=%d, 截图=%dx%d", index, roi_x, roi_y, roi_w, roi_h, image_width, image_height)
                 continue
-            raw_slots[i + 1] = roi_img
+            raw_slots[index] = roi_img
             preprocess_started = time.perf_counter()
-            prepared_slots[i + 1] = self._preprocessor.preprocess_roi(roi_img)
+            prepared_slots[index] = self._preprocessor.preprocess_roi(roi_img)
             self._add_timing("name_preprocess", preprocess_started)
-
-        batch_evidence: dict[int, list[dict]] = {}
-        recognized = self._recognize_prepared_batch(
-            prepared_slots, "name", evidence_by_slot=batch_evidence,
-        )
-        results: list[dict] = []
-        for i, _slot in enumerate(self._layout.slots, 1):
-            prepared = prepared_slots.get(i)
-            if prepared is None:
-                results.append(self._resolver.empty_name_result(i))
-                continue
-            evidence = list(batch_evidence.get(i, []))
-            batch_text, batch_confidence = recognized.get(i, ("", 0.0))
-            initial = self._resolver.resolve_name_evidence(i, evidence)
-            if self._resolver.requires_slot_recheck(initial, batch_text, batch_confidence):
-                self._append_single_name_evidence(evidence, raw_slots[i], i)
-            result = self._resolver.resolve_name_evidence(i, evidence)
-            results.append(result)
-            logger.debug(
-                "武将 %d 识别: %s (状态=%s, 原文=%r)",
-                i, result["name"] or "(未确认)", result["resolution"], result["raw_name"],
-            )
-
-        final = self._resolver.resolve_page_names(results)
-        self._recheck_unresolved_slots(final, prepared_slots)
-        self._record_det_stats()
-        return final
-
-    def _recognize_match_guide(self, image: np.ndarray) -> list[dict]:
-        """识别 2v2 对局中的角色名与楚/汉军标签。"""
-        image_height, image_width = image.shape[:2]
-        reference_width, reference_height = self._layout.reference_size
-        scale_x = image_width / reference_width
-        scale_y = image_height / reference_height
-        raw_name_slots: dict[int, np.ndarray] = {}
-        name_slots: dict[int, np.ndarray] = {}
-        team_slots: dict[int, np.ndarray] = {}
-        for seat_index, slot in enumerate(self._layout.slots, 1):
-            name_img = self._crop_roi(image, list(slot.name_roi), scale_x, scale_y)
-            if name_img is None:
-                continue
-            raw_name_slots[seat_index] = name_img
-            preprocess_started = time.perf_counter()
-            name_slots[seat_index] = self._preprocessor.preprocess_roi(name_img)
-            self._add_timing("name_preprocess", preprocess_started)
-            if slot.team_roi is not None:
+            if plan.has_team and slot.team_roi is not None:
                 team_img = self._crop_roi(image, list(slot.team_roi), scale_x, scale_y)
                 if team_img is not None:
                     preprocess_started = time.perf_counter()
-                    team_slots[seat_index] = self._preprocessor.preprocess_roi(team_img)
+                    team_slots[index] = self._preprocessor.preprocess_roi(team_img)
                     self._add_timing("team_preprocess", preprocess_started)
 
-        name_evidence: dict[int, list[dict]] = {}
-        recognized_names = self._recognize_prepared_batch(
-            name_slots, "name", evidence_by_slot=name_evidence,
+        evidence_by_slot: dict[int, list[dict]] = {}
+        recognized = self._recognize_prepared_batch(
+            prepared_slots, "name", evidence_by_slot=evidence_by_slot,
         )
         # 批次画布零文本行即整幅画面无名条可检（错位页常态）：逐槽双证据必然
-        # 同样空检，短路以免每槽 2 次、共 10 次空 det 调用刷空检告警
-        name_batch_has_text = any(name_evidence.values())
-        recognized_teams = self._recognize_prepared_batch(team_slots, "team")
+        # 同样空检，短路以免每槽 2 次、共 10 次空 det 调用刷空检告警（B1；
+        # wujiang_select 历史上无此守卫，恒真维持原状）
+        batch_has_text = any(evidence_by_slot.values()) if plan.short_circuit_name_recheck else True
+        recognized_teams = self._recognize_prepared_batch(team_slots, "team") if team_slots else {}
         # 阵营同口径短路；但"批次读出字而归一化失败"必须保留逐槽重试——
         # 那是书法体徽记的 v4 异构救回场景，只有批次零产出才允许跳过
         team_batch_has_text = any(text for text, _confidence in recognized_teams.values())
+
         results: list[dict] = []
-        for seat_index, _slot in enumerate(self._layout.slots, 1):
-            prepared_name = name_slots.get(seat_index)
-            if prepared_name is None:
+        for index, _slot in enumerate(self._layout.slots, 1):
+            if prepared_slots.get(index) is None:
+                if plan.emit_empty_results:
+                    results.append(self._resolver.empty_name_result(index))
                 continue
-            evidence = list(name_evidence.get(seat_index, []))
-            batch_text, batch_confidence = recognized_names.get(seat_index, ("", 0.0))
-            initial = self._resolver.resolve_name_evidence(seat_index, evidence)
-            if name_batch_has_text and self._resolver.requires_slot_recheck(
+            evidence = list(evidence_by_slot.get(index, []))
+            batch_text, batch_confidence = recognized.get(index, ("", 0.0))
+            initial = self._resolver.resolve_name_evidence(index, evidence)
+            if batch_has_text and self._resolver.requires_slot_recheck(
                 initial, batch_text, batch_confidence,
             ):
-                self._append_single_name_evidence(
-                    evidence, raw_name_slots[seat_index], seat_index,
-                )
-            name_result = self._resolver.resolve_name_evidence(seat_index, evidence)
-            team_text, _ = recognized_teams.get(seat_index, ("", 0.0))
-            prepared_team = team_slots.get(seat_index)
-            team = self._normalize_team(team_text, seat_index)
-            if not team and prepared_team is not None and team_batch_has_text:
-                # 归一化失败（含批量画布读出非空乱码绕过原 `if not team_text`
-                # 回退旁路）即重试单条：先主引擎，再复核引擎——书法体徽记是
-                # v6 的引擎级弱项，B1 重放实测 18 个丢标签槽此链可救回 14 个
-                for engine in filter(None, (self._engine, self._recheck_engine)):
-                    text, _ = self._recognize_prepared_single(
-                        prepared_team, seat_index, "team", engine=engine,
-                    )
-                    team = self._normalize_team(text, seat_index)
-                    if team:
-                        break
-            name_result["team"] = team
-            results.append(name_result)
+                self._append_single_name_evidence(evidence, raw_slots[index], index)
+            result = self._resolver.resolve_name_evidence(index, evidence)
+            if plan.log_details:
+                logger.debug("武将 %d 识别: %s (状态=%s, 原文=%r)", index, result["name"] or "(未确认)", result["resolution"], result["raw_name"])
+            if plan.has_team:
+                team_text, _ = recognized_teams.get(index, ("", 0.0))
+                team = self._normalize_team(team_text, index)
+                prepared_team = team_slots.get(index)
+                if not team and prepared_team is not None and team_batch_has_text:
+                    # 归一化失败（含批量画布读出非空乱码绕过原 `if not team_text`
+                    # 回退旁路）即重试单条：先主引擎，再复核引擎——书法体徽记是
+                    # v6 的引擎级弱项，B1 重放实测 18 个丢标签槽此链可救回 14 个
+                    for engine in filter(None, (self._engine, self._recheck_engine)):
+                        text, _ = self._recognize_prepared_single(
+                            prepared_team, index, "team", engine=engine,
+                        )
+                        team = self._normalize_team(text, index)
+                        if team:
+                            break
+                result["team"] = team
+            results.append(result)
+
         final = self._resolver.resolve_page_names(results)
-        self._recheck_unresolved_slots(final, name_slots)
+        self._recheck_unresolved_slots(final, prepared_slots)
         self._record_det_stats()
         return final
 
