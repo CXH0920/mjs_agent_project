@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ def is_full_build() -> bool:
 
 DEFAULT_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEFAULT_MODEL = "deepseek-v4-flash"
+# max_output_tokens 单一事实源：下方键元表默认值与 api_generator.MAX_OUTPUT_TOKENS
+# 均引用本常量（此前两处硬编码 32_768 靠注释同步）；思考型模型可按供应商上限在 config.env 调大
+DEFAULT_MAX_OUTPUT_TOKENS = 32_768
 
 # 供应商预设表：UI 选择 provider 时自动预填（用户可覆盖），见设计文档 §4.2。
 # model 留空表示使用服务默认模型；requires_key=False 表示本地服务可不填 Key（如 ollama）。
@@ -128,11 +132,69 @@ def parse_env_file(env_path=None):
     logger.debug("已加载 .env 配置: %s (%d 项)", path, len(result))
     return result
 
+# ============================================================
+# 配置键元表（单一事实源）
+# ============================================================
+
+# config.env 全量键登记的唯一事实源：键映射、类型转换、两个 getter 的
+# 默认值全部由此派生。此前四处分头登记（key_mapping / 三张类型转换清单 /
+# get_runtime_params 与 get_mumu_config 默认值），截图模式键两次漏登记
+# 成死开关（063dc47、T1 运维加固），故收口为单表，新键只改这里。
+# getter 域：runtime → get_runtime_params；mumu → get_mumu_config；
+# 空 → 透传键（调用方直接从 load_env_config 取值，无默认值登记）。
+class _EnvKeySpec(NamedTuple):
+    cfg_key: str            # 内部小写键名
+    type: object            # int/bool/float/str，驱动解析时的类型转换
+    default: object         # getter 缺省值（透传键为 None）
+    getter: str = ""        # 归属 getter 域："runtime" | "mumu" | ""
+    default_from: str = ""  # 缺省回退到另一键的实配值（级联默认）
+
+
+_ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
+    # ── get_runtime_params 域（输出键序即本域登记序）──
+    "REQUESTS_PER_MINUTE": _EnvKeySpec("requests_per_minute", int, 30, "runtime"),
+    "MAX_RETRIES": _EnvKeySpec("max_retries", int, 3, "runtime"),
+    "MAX_OUTPUT_TOKENS": _EnvKeySpec("max_output_tokens", int, DEFAULT_MAX_OUTPUT_TOKENS, "runtime"),
+    "HTTP_TIMEOUT": _EnvKeySpec("http_timeout", int, 300, "runtime"),
+    "LOG_LEVEL": _EnvKeySpec("log_level", str, "INFO", "runtime"),
+    "LOG_TO_FILE": _EnvKeySpec("log_to_file", bool, True, "runtime"),
+    # ── get_mumu_config 域（输出键序即本域登记序）──
+    "MUMU_ADB_PATH": _EnvKeySpec("mumu_adb_path", str, "", "mumu"),
+    "MUMU_ADB_PORT": _EnvKeySpec("mumu_adb_port", int, 0, "mumu"),
+    "MUMU_SCREENSHOT_MODE": _EnvKeySpec("mumu_screenshot_mode", str, "auto", "mumu"),
+    "MUMU_OCR_ENABLED": _EnvKeySpec("mumu_ocr_enabled", bool, False, "mumu"),
+    "MUMU_OCR_POLL_MODE": _EnvKeySpec("mumu_ocr_poll_mode", bool, False, "mumu"),
+    "MUMU_OCR_POLL_IDLE_PAUSE": _EnvKeySpec("mumu_ocr_poll_idle_pause", bool, True, "mumu"),
+    "MUMU_OCR_AUTO_SWITCH_TAB": _EnvKeySpec("mumu_ocr_auto_switch_tab", bool, False, "mumu"),
+    "MUMU_OCR_POLL_INTERVAL": _EnvKeySpec("mumu_ocr_poll_interval", int, 2, "mumu"),
+    "MUMU_OCR_MATCH_THRESHOLD": _EnvKeySpec("mumu_ocr_match_threshold", float, 0.8, "mumu"),
+    "MUMU_HERO_SELECTION_THRESHOLD": _EnvKeySpec(
+        "mumu_hero_selection_threshold", float, 0.8, "mumu",
+        default_from="mumu_ocr_match_threshold",
+    ),
+    "MUMU_HERO_SELECTION_COOLDOWN": _EnvKeySpec("mumu_hero_selection_cooldown", int, 180, "mumu"),
+    "MUMU_MATCH_GUIDE_THRESHOLD": _EnvKeySpec("mumu_match_guide_threshold", float, 0.8, "mumu"),
+    "MUMU_OCR_PRIMARY_ENGINE": _EnvKeySpec("mumu_ocr_primary_engine", str, "v6", "mumu"),
+    "MUMU_OCR_CPU_THREADS": _EnvKeySpec("mumu_ocr_cpu_threads", int, 6, "mumu"),
+    "MUMU_OCR_RECHECK_ENABLED": _EnvKeySpec("mumu_ocr_recheck_enabled", bool, False, "mumu"),
+    # ── 透传键（无 getter，调用方直接 load_env_config 取）──
+    "DEEPSEEK_API_KEY": _EnvKeySpec("api_key", str, None),
+    "DEEPSEEK_API_URL": _EnvKeySpec("api_url", str, None),
+    "DEEPSEEK_MODEL": _EnvKeySpec("model", str, None),
+    # 私有数据仓根目录（src/scripts/pull_data.py 用；默认项目同级 mjs_data_private）
+    "MJS_DATA_REPO": _EnvKeySpec("mjs_data_repo", str, None),
+    "RECOMMENDATION_P_FLOOR": _EnvKeySpec("recommendation_p_floor", float, None),
+    "RECOMMENDATION_BAN_WEIGHT": _EnvKeySpec("recommendation_ban_weight", float, None),
+    "RECOMMENDATION_SIGMOID_K": _EnvKeySpec("recommendation_sigmoid_k", float, None),
+    "RECOMMENDATION_LOW_WIN_RATE_GAP": _EnvKeySpec("recommendation_low_win_rate_gap", float, None),
+}
+
+
 def load_env_config(env_path=None):
     """从 .env 文件加载配置（统一小写键名，便于使用）
 
-    将 config.env 中的大写 KEY 映射为小写键名供程序内部使用。
-    若文件不存在或解析失败则返回空 dict。
+    键映射与类型转换由 _ENV_KEY_SPECS 统一驱动，新键只登记元表。
+    若文件不存在或解析失败返回空 dict。
 
     Args:
         env_path: .env 文件路径
@@ -141,62 +203,21 @@ def load_env_config(env_path=None):
         dict: 小写键名的配置 dict，如 {"api_key": "...", "api_url": "..."}
     """
     raw = parse_env_file(env_path)
-    key_mapping = {
-        "DEEPSEEK_API_KEY": "api_key",
-        "DEEPSEEK_API_URL": "api_url",
-        "DEEPSEEK_MODEL": "model",
-        "REQUESTS_PER_MINUTE": "requests_per_minute",
-        "HTTP_TIMEOUT": "http_timeout",
-        "MAX_RETRIES": "max_retries",
-        "MAX_OUTPUT_TOKENS": "max_output_tokens",
-        "LOG_LEVEL": "log_level",
-        "LOG_TO_FILE": "log_to_file",
-        # 私有数据仓根目录（src/scripts/pull_data.py 用；默认项目同级 mjs_data_private）
-        "MJS_DATA_REPO": "mjs_data_repo",
-        # 模拟器 (MuMu) 配置
-        "MUMU_ADB_PATH": "mumu_adb_path",
-        "MUMU_ADB_PORT": "mumu_adb_port",
-        "MUMU_OCR_ENABLED": "mumu_ocr_enabled",
-        "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
-        "MUMU_OCR_POLL_IDLE_PAUSE": "mumu_ocr_poll_idle_pause",
-        "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
-        "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
-        "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
-        "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
-        "MUMU_OCR_PRIMARY_ENGINE": "mumu_ocr_primary_engine",
-        "MUMU_OCR_RECHECK_ENABLED": "mumu_ocr_recheck_enabled",
-        "MUMU_SCREENSHOT_MODE": "mumu_screenshot_mode",
-        "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
-        "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
-        "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
-        "RECOMMENDATION_P_FLOOR": "recommendation_p_floor",
-        "RECOMMENDATION_BAN_WEIGHT": "recommendation_ban_weight",
-        "RECOMMENDATION_SIGMOID_K": "recommendation_sigmoid_k",
-        "RECOMMENDATION_LOW_WIN_RATE_GAP": "recommendation_low_win_rate_gap",
-    }
     config = {}
-    for env_key, cfg_key in key_mapping.items():
-        if env_key in raw:
-            value = raw[env_key]
-            if cfg_key in ("requests_per_minute", "max_retries", "max_output_tokens", "http_timeout", "mumu_adb_port", "mumu_ocr_poll_interval", "mumu_hero_selection_cooldown", "mumu_ocr_cpu_threads"):
-                try:
-                    value = int(value)
-                except (ValueError, TypeError):
-                    logger.warning("配置 %s 值不是有效整数: %s，使用默认值", env_key, value)
-                    continue
-            elif cfg_key in ("log_to_file", "mumu_ocr_enabled", "mumu_ocr_poll_mode", "mumu_ocr_poll_idle_pause", "mumu_ocr_auto_switch_tab", "mumu_ocr_recheck_enabled"):
-                value = value.lower() in ("true", "1", "yes")
-            elif cfg_key in (
-                "mumu_ocr_match_threshold", "mumu_hero_selection_threshold", "mumu_match_guide_threshold",
-                "recommendation_p_floor", "recommendation_ban_weight", "recommendation_sigmoid_k",
-                "recommendation_low_win_rate_gap",
-            ):
-                try:
-                    value = float(value)
-                except (ValueError, TypeError):
-                    logger.warning("配置 %s 值不是有效浮点数: %s，使用默认值", env_key, value)
-                    continue
-            config[cfg_key] = value
+    for env_key, spec in _ENV_KEY_SPECS.items():
+        if env_key not in raw:
+            continue
+        value = raw[env_key]
+        if spec.type is int or spec.type is float:
+            kind = "整数" if spec.type is int else "浮点数"
+            try:
+                value = spec.type(value)
+            except (ValueError, TypeError):
+                logger.warning("配置 %s 值不是有效%s: %s，使用默认值", env_key, kind, value)
+                continue
+        elif spec.type is bool:
+            value = value.lower() in ("true", "1", "yes")
+        config[spec.cfg_key] = value
     return config
 
 
@@ -260,53 +281,28 @@ def get_model_pricing(model: str) -> dict | None:
         logger.warning("模型 %s 的价格配置不可用: %s", model, error)
     return None
 
-def get_runtime_params():
-    """从 config.env 获取运行时参数（带默认值）
+def _config_with_defaults(config: dict, getter: str) -> dict:
+    """按元表为指定 getter 域的键补默认值（default_from 表示缺省回退到另一键实配值）。"""
+    result = {}
+    for spec in _ENV_KEY_SPECS.values():
+        if spec.getter != getter:
+            continue
+        if spec.default_from:
+            default = config.get(spec.default_from, spec.default)
+        else:
+            default = spec.default
+        result[spec.cfg_key] = config.get(spec.cfg_key, default)
+    return result
 
-    Returns:
-        {"requests_per_minute": int, "max_retries": int,
-         "max_output_tokens": int, "http_timeout": int,
-         "log_level": str, "log_to_file": bool}
-    """
-    config = load_env_config()
-    return {
-        "requests_per_minute": config.get("requests_per_minute", 30),
-        "max_retries": config.get("max_retries", 3),
-        # 与 AIBatchGenerator.MAX_OUTPUT_TOKENS 默认一致；思考型模型可按供应商上限调大
-        "max_output_tokens": config.get("max_output_tokens", 32_768),
-        "http_timeout": config.get("http_timeout", 300),
-        "log_level": config.get("log_level", "INFO"),
-        "log_to_file": config.get("log_to_file", True),
-    }
+
+def get_runtime_params():
+    """从 config.env 获取运行时参数（键集与默认值见 _ENV_KEY_SPECS 的 runtime 域）"""
+    return _config_with_defaults(load_env_config(), "runtime")
 
 
 def get_mumu_config():
-    """从 config.env 获取模拟器配置（带默认值）
-
-    Returns:
-        {"mumu_adb_path": str, "mumu_adb_port": int,
-         "mumu_screenshot_mode": str,
-         "mumu_ocr_enabled": bool, "mumu_ocr_auto_switch_tab": bool,
-         "mumu_ocr_match_threshold": float}
-    """
-    config = load_env_config()
-    return {
-        "mumu_adb_path": config.get("mumu_adb_path", ""),
-        "mumu_adb_port": config.get("mumu_adb_port", 0),
-        "mumu_screenshot_mode": config.get("mumu_screenshot_mode", "auto"),
-        "mumu_ocr_enabled": config.get("mumu_ocr_enabled", False),
-        "mumu_ocr_poll_mode": config.get("mumu_ocr_poll_mode", False),
-        "mumu_ocr_poll_idle_pause": config.get("mumu_ocr_poll_idle_pause", True),
-        "mumu_ocr_auto_switch_tab": config.get("mumu_ocr_auto_switch_tab", False),
-        "mumu_ocr_poll_interval": config.get("mumu_ocr_poll_interval", 2),
-        "mumu_ocr_match_threshold": config.get("mumu_ocr_match_threshold", 0.8),
-        "mumu_hero_selection_threshold": config.get("mumu_hero_selection_threshold", config.get("mumu_ocr_match_threshold", 0.8)),
-        "mumu_hero_selection_cooldown": config.get("mumu_hero_selection_cooldown", 180),
-        "mumu_match_guide_threshold": config.get("mumu_match_guide_threshold", 0.8),
-        "mumu_ocr_primary_engine": config.get("mumu_ocr_primary_engine", "v6"),
-        "mumu_ocr_cpu_threads": config.get("mumu_ocr_cpu_threads", 6),
-        "mumu_ocr_recheck_enabled": config.get("mumu_ocr_recheck_enabled", False),
-    }
+    """从 config.env 获取模拟器配置（键集与默认值见 _ENV_KEY_SPECS 的 mumu 域）"""
+    return _config_with_defaults(load_env_config(), "mumu")
 
 # ============================================================
 # 配置保存

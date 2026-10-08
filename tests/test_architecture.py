@@ -649,7 +649,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试
     # （修批量乱码绕过单槽回退的旁路 + v6 书法体徽记弱项，重放实测救回 14/18 槽）
-    "ocr/recognizer.py": 498,
+    # 498 → 519：B1 收尾批 d1a55e1（白名单简繁变体退役+预热残留修复）与
+    # 6ea1866（兜底批次零产出短路）+21 行未同步预算，补登记恢复绿灯；
+    # P1-6 模板方法合并后应净收回 498 以下
+    "ocr/recognizer.py": 519,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）
@@ -668,7 +671,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）
-    "config/env.py": 368,
+    # 368 → 364：键元表单源化（P1-4/P1-7，2026-10）——key_mapping/三张类型
+    # 清单/两个 getter 默认值四处登记收口为 _ENV_KEY_SPECS 单表
+    "config/env.py": 364,
     "business/recognition/official_data_import_service.py": 638,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
     "ui/library/hero_browser.py": 639,
@@ -681,7 +686,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "business/recognition/peak_select_watcher.py": 567,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     "ui/match/peak_select_panel.py": 565,
-    "business/recognition/ocr_worker.py": 546,
+    # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
+    "business/recognition/ocr_worker.py": 551,
     "scraper/official_source/crawler.py": 541,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,

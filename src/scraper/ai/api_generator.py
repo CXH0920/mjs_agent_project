@@ -10,7 +10,7 @@ import logging
 import time
 
 import httpx
-from src.config.env import BUNDLE_ROOT, DEFAULT_MODEL, PROVIDER_PRESETS
+from src.config.env import BUNDLE_ROOT, DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MODEL, PROVIDER_PRESETS
 from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.prompt_utils import (
     build_guide_prompt,
@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 PROMPT_DIR = BUNDLE_ROOT / "docs" / "prompts"
 GUIDE_PROMPT_FILE = PROMPT_DIR / "hero_guide.md"
 SYNERGY_PROMPT_FILE = PROMPT_DIR / "synergy_score.md"
-MAX_OUTPUT_TOKENS = 32_768
+# 单一事实源在 env.DEFAULT_MAX_OUTPUT_TOKENS（此前两处硬编码 32_768 靠注释同步）
+MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
 OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"
 
 # 连接类异常：损坏 httpx.Client/连接池，重试前需重建 client，否则后续请求级联失败
