@@ -90,6 +90,40 @@ def set_tone(widget, tone: str) -> None:
 
 # token 层为当前唯一生效样式层（批次7 G1：旧全局样式层已被本层完整覆盖，
 # 整段删除；5 组此前仅旧层生效的控件规则已按旧视觉补齐，色值全部 token 化）
+def _section_tabs_qss(object_name: str) -> str:
+    """资料库二级页签与页面内分区页签共用的下划线页签视觉。
+
+    两组页签规则此前在 GLOBAL_STYLE 内逐字符重复（仅 objectName 不同），
+    等价性由 tests/test_style_qss.py 锁定。
+    """
+    return f"""QTabWidget#{object_name}::pane {{
+    background-color: {CANVAS};
+    border: none;
+    border-top: 1px solid {BORDER};
+    border-radius: 0;
+}}
+QTabWidget#{object_name} QTabBar::tab {{
+    background-color: transparent;
+    color: {MUTED_TEXT};
+    padding: 7px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: {RADIUS_SM}px {RADIUS_SM}px 0 0;
+    margin-right: 4px;
+    font-weight: normal;
+}}
+QTabWidget#{object_name} QTabBar::tab:hover:!selected {{
+    background-color: {SUBTLE_SURFACE};
+    color: {TEXT_PRIMARY};
+}}
+QTabWidget#{object_name} QTabBar::tab:selected {{
+    background-color: {PRIMARY_SOFT};
+    color: {PRIMARY};
+    border-bottom: 2px solid {PRIMARY};
+    font-weight: bold;
+}}"""
+
+
 GLOBAL_STYLE = f"""
 /* === Design system foundation === */
 QMainWindow, QDialog {{
@@ -201,32 +235,7 @@ QTabWidget#workspaceTabs::pane {{
     border: none;
     border-radius: 0;
 }}
-QTabWidget#librarySectionTabs::pane {{
-    background-color: {CANVAS};
-    border: none;
-    border-top: 1px solid {BORDER};
-    border-radius: 0;
-}}
-QTabWidget#librarySectionTabs QTabBar::tab {{
-    background-color: transparent;
-    color: {MUTED_TEXT};
-    padding: 7px 14px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: {RADIUS_SM}px {RADIUS_SM}px 0 0;
-    margin-right: 4px;
-    font-weight: normal;
-}}
-QTabWidget#librarySectionTabs QTabBar::tab:hover:!selected {{
-    background-color: {SUBTLE_SURFACE};
-    color: {TEXT_PRIMARY};
-}}
-QTabWidget#librarySectionTabs QTabBar::tab:selected {{
-    background-color: {PRIMARY_SOFT};
-    color: {PRIMARY};
-    border-bottom: 2px solid {PRIMARY};
-    font-weight: bold;
-}}
+{_section_tabs_qss("librarySectionTabs")}
 QWidget#heroListPane {{
     background-color: transparent;
 }}
@@ -773,32 +782,7 @@ QFrame#panelCardSurface QLabel, QWidget#emptyState QLabel {{
 }}
 
 /* 页面内分区页签（下划线选中态，与资料库二级页签同视觉） */
-QTabWidget#sectionTabs::pane {{
-    background-color: {CANVAS};
-    border: none;
-    border-top: 1px solid {BORDER};
-    border-radius: 0;
-}}
-QTabWidget#sectionTabs QTabBar::tab {{
-    background-color: transparent;
-    color: {MUTED_TEXT};
-    padding: 7px 14px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: {RADIUS_SM}px {RADIUS_SM}px 0 0;
-    margin-right: 4px;
-    font-weight: normal;
-}}
-QTabWidget#sectionTabs QTabBar::tab:hover:!selected {{
-    background-color: {SUBTLE_SURFACE};
-    color: {TEXT_PRIMARY};
-}}
-QTabWidget#sectionTabs QTabBar::tab:selected {{
-    background-color: {PRIMARY_SOFT};
-    color: {PRIMARY};
-    border-bottom: 2px solid {PRIMARY};
-    font-weight: bold;
-}}
+{_section_tabs_qss("sectionTabs")}
 
 QFrame#noticeBanner {{
     background-color: {PRIMARY_SOFT};

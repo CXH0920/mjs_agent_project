@@ -31,7 +31,7 @@ from PIL import Image
 from src.ocr.batch_canvas import build_batch_canvas, join_name_fragments, split_canvas_groups
 from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
 from src.ocr.image_preprocessor import ImagePreprocessor
-from src.ocr.name_resolution import NameResolver
+from src.ocr.name_resolution import ACTIONABLE_UNRESOLVED_RESOLUTIONS, NameResolver
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 
 logger = logging.getLogger(__name__)
@@ -291,7 +291,7 @@ class GeneralRecognizer:
         """
         pending = [
             item for item in results
-            if item["resolution"] in {"unresolved", "conflict"} and item["candidates"]
+            if item["resolution"] in ACTIONABLE_UNRESOLVED_RESOLUTIONS and item["candidates"]
         ]
         if not pending:
             return

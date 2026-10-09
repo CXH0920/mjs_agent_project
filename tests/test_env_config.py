@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -160,3 +161,85 @@ def test_table_keys_partition_into_getters_and_passthrough(monkeypatch, tmp_path
         "recommendation_p_floor", "recommendation_ban_weight",
         "recommendation_sigmoid_k", "recommendation_low_win_rate_gap",
     }
+
+
+# ---------------------------------------------------------------------------
+# pricing 域：文件缺失 / 格式无效 / 非法价格的回退语义（此前无直测）
+# ---------------------------------------------------------------------------
+
+_EMPTY_PRICING = {
+    "currency": "CNY",
+    "unit": "百万tokens",
+    "updated_at": "",
+    "models": {},
+}
+
+
+def _use_pricing_file(monkeypatch, tmp_path: Path, content: str | None) -> Path:
+    """把 DEFAULT_PRICING_FILE 指向临时文件；content=None 表示文件不存在。"""
+    pricing_file = tmp_path / "model_pricing.json"
+    if content is not None:
+        pricing_file.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(env, "DEFAULT_PRICING_FILE", pricing_file)
+    return pricing_file
+
+
+def test_load_pricing_config_missing_file_falls_back_to_empty(monkeypatch, tmp_path) -> None:
+    _use_pricing_file(monkeypatch, tmp_path, None)
+    assert env.load_pricing_config() == _EMPTY_PRICING
+
+
+@pytest.mark.parametrize("content", ["不是 JSON", "[1, 2]"], ids=["garbage", "not_dict"])
+def test_load_pricing_config_invalid_file_falls_back_to_empty(
+    monkeypatch, tmp_path, content: str
+) -> None:
+    _use_pricing_file(monkeypatch, tmp_path, content)
+    assert env.load_pricing_config() == _EMPTY_PRICING
+
+
+def test_load_pricing_config_reads_model_table(monkeypatch, tmp_path) -> None:
+    _use_pricing_file(monkeypatch, tmp_path, json.dumps({
+        "currency": "USD",
+        "models": {"m": {"input_per_million": 1, "output_per_million": 2}},
+    }, ensure_ascii=False))
+    data = env.load_pricing_config()
+    assert data["currency"] == "USD"
+    assert data["unit"] == "百万tokens"  # 未登记字段回默认
+    assert data["models"]["m"] == {"input_per_million": 1, "output_per_million": 2}
+
+
+def test_get_model_pricing_normalizes_valid_entry(monkeypatch, tmp_path) -> None:
+    _use_pricing_file(monkeypatch, tmp_path, json.dumps({
+        "currency": "USD",
+        "models": {"m": {
+            "input_per_million": 1, "output_per_million": 2.5, "cached_input_per_million": 0.1,
+        }},
+    }, ensure_ascii=False))
+    assert env.get_model_pricing("m") == {
+        "input_per_million": 1.0,
+        "output_per_million": 2.5,
+        "cached_input_per_million": 0.1,
+        "currency": "USD",
+        "updated_at": "",
+    }
+
+
+@pytest.mark.parametrize(
+    ("input_price", "output_price"),
+    [(-1, 2), (1, "x"), (True, 2)],
+    ids=["negative", "non_numeric", "bool_not_price"],
+)
+def test_get_model_pricing_rejects_invalid_prices(
+    monkeypatch, tmp_path, input_price, output_price
+) -> None:
+    _use_pricing_file(monkeypatch, tmp_path, json.dumps(
+        {"models": {"m": {
+            "input_per_million": input_price, "output_per_million": output_price,
+        }}}
+    ))
+    assert env.get_model_pricing("m") is None
+
+
+def test_get_model_pricing_unknown_model_returns_none(monkeypatch, tmp_path) -> None:
+    _use_pricing_file(monkeypatch, tmp_path, json.dumps({"models": {}}))
+    assert env.get_model_pricing("nope") is None

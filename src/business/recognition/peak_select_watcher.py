@@ -20,6 +20,7 @@ from src.business.recognition.pending_stats import record_confirmation
 from src.business.recognition.session_guard import SessionGuard
 from src.capture.image_validation import load_local_image
 from src.ocr.card_grid_detector import derive_name_rois, detect_selection_cards
+from src.ocr.name_resolution import UNRESOLVED_RESOLUTIONS
 from src.ocr.roi_config import Roi
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,6 @@ SIGNATURE_SIZE_TOLERANCE_PX = 16
 # 14 张为禁选阶段（双方尚未提交禁选），8~11 张为候选阶段
 _BAN_PHASE_MIN_CARDS = 12
 _STANDARD_POLL_TASKS = ("hero_selection", "match_guide")
-_CONFIRM_RESOLUTIONS = {"unresolved", "unknown", "conflict"}
 # 人工确认连续未通过内容验证的拍数上限：候选阶段浮动动画会让单拍闭包
 # 缺名、读数漂移，宽限期内确认保留但展示回退为识别结果；真换人/选走
 # 的确认在连续失验后淘汰，防止旧确认顶在新牌上
@@ -78,7 +78,7 @@ def parse_pool(
             names.append(manual)
             continue
         name = str(item.get("name") or "").strip()
-        if name and item.get("resolution") not in _CONFIRM_RESOLUTIONS:
+        if name and item.get("resolution") not in UNRESOLVED_RESOLUTIONS:
             names.append(name)
             continue
         raw_name = str(item.get("raw_name") or "").strip()

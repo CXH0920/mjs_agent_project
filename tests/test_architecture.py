@@ -692,7 +692,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     "ui/match/peak_select_panel.py": 565,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
-    "business/recognition/ocr_worker.py": 551,
+    # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
+    "business/recognition/ocr_worker.py": 518,
     "scraper/official_source/crawler.py": 541,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,

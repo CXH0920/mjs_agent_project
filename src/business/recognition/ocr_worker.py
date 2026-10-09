@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 from src.config.env import PROJECT_ROOT
+from src.ocr.name_resolution import CONFIRMED_RESOLUTIONS
 from src.ocr.recognizer import GeneralRecognizer
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
 from src.ocr.template_manager import TemplateManager
@@ -245,31 +246,33 @@ class OcrWorker(QThread):
             return self._warmup_model(task)
 
         task_started = time.perf_counter()
-        template_load_ms = 0.0
-        template_match_ms = 0.0
-        recognition_ms = 0.0
-        result_save_ms = 0.0
+        # 各阶段耗时逐段累积进同一 dict，5 个 _log_timing 调用点统一 ** 展开；
+        # 初值与 _log_timing 形参默认值一致，未走到的阶段日志显示 0.0/not_run
+        stage_timing: dict[str, float | str] = {
+            "template_load_ms": 0.0,
+            "template_match_ms": 0.0,
+            "template_confidence": 0.0,
+            "template_scale": 0.0,
+            "template_strategy": "not_run",
+            "recognition_ms": 0.0,
+            "result_save_ms": 0.0,
+        }
         recognizer_timing: dict[str, float] = {}
-        template_confidence = 0.0
-        template_scale = 0.0
-        template_strategy = "not_run"
         try:
             # 模板由 worker 自己按任务加载，避免与配置页的模板编辑共享可变实例。
             template_load_started = time.perf_counter()
             template_manager = TemplateManager(template_name=task.template_name)
-            template_load_ms = (time.perf_counter() - template_load_started) * 1000
+            stage_timing["template_load_ms"] = (time.perf_counter() - template_load_started) * 1000
             if task.match_template:
                 if not template_manager.is_loaded:
-                    self._log_timing(
-                        task, task_started, outcome="template_missing", template_load_ms=template_load_ms,
-                    )
+                    self._log_timing(task, task_started, outcome="template_missing", **stage_timing)
                     return {"outcome": "template_missing"}
                 template_match_started = time.perf_counter()
                 matched, confidence = template_manager.match(task.image, task.threshold)
-                template_match_ms = (time.perf_counter() - template_match_started) * 1000
-                template_confidence = confidence
-                template_scale = getattr(template_manager, "last_match_scale", 0.0)
-                template_strategy = getattr(template_manager, "last_match_strategy", "unknown")
+                stage_timing["template_match_ms"] = (time.perf_counter() - template_match_started) * 1000
+                stage_timing["template_confidence"] = confidence
+                stage_timing["template_scale"] = getattr(template_manager, "last_match_scale", 0.0)
+                stage_timing["template_strategy"] = getattr(template_manager, "last_match_strategy", "unknown")
                 if not matched:
                     if task.fallback_on_template_miss:
                         logger.debug(
@@ -279,16 +282,7 @@ class OcrWorker(QThread):
                         )
                         result = {"outcome": "matched", "confidence": confidence}
                     else:
-                        self._log_timing(
-                            task,
-                            task_started,
-                            outcome="healthy_no_match",
-                            template_load_ms=template_load_ms,
-                            template_match_ms=template_match_ms,
-                            template_confidence=template_confidence,
-                            template_scale=template_scale,
-                            template_strategy=template_strategy,
-                        )
+                        self._log_timing(task, task_started, outcome="healthy_no_match", **stage_timing)
                         return {
                             "outcome": "healthy_no_match",
                             "confidence": confidence,
@@ -303,16 +297,7 @@ class OcrWorker(QThread):
             else:
                 result = {"outcome": "matched"}
             if not task.recognize:
-                self._log_timing(
-                    task,
-                    task_started,
-                    outcome="matched",
-                    template_load_ms=template_load_ms,
-                    template_match_ms=template_match_ms,
-                    template_confidence=template_confidence,
-                    template_scale=template_scale,
-                    template_strategy=template_strategy,
-                )
+                self._log_timing(task, task_started, outcome="matched", **stage_timing)
                 return result
 
             layout = task.roi_layout or OcrRoiConfig().layout_for(task.template_name)
@@ -328,16 +313,7 @@ class OcrWorker(QThread):
                 if (cached is not None
                         and cached[1] == task.hero_names
                         and self._fingerprints_equal(fingerprint, cached[0])):
-                    self._log_timing(
-                        task,
-                        task_started,
-                        outcome="matched_reused",
-                        template_load_ms=template_load_ms,
-                        template_match_ms=template_match_ms,
-                        template_confidence=template_confidence,
-                        template_scale=template_scale,
-                        template_strategy=template_strategy,
-                    )
+                    self._log_timing(task, task_started, outcome="matched_reused", **stage_timing)
                     return {
                         **result,
                         # dict 级拷贝：下游修改结果条目不得污染缓存
@@ -348,7 +324,7 @@ class OcrWorker(QThread):
             recognition_started = time.perf_counter()
             results = recognizer.recognize(task.image)
             self._ocr_engine = recognizer.shared_engine()
-            recognition_ms = (time.perf_counter() - recognition_started) * 1000
+            stage_timing["recognition_ms"] = (time.perf_counter() - recognition_started) * 1000
             recognizer_timing = getattr(recognizer, "timing_ms", {})
             result_save_started = time.perf_counter()
             DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -357,7 +333,7 @@ class OcrWorker(QThread):
             # 是跨页噪声而非本页错法，不进白名单治理数据
             if result.get("template_matched", True):
                 self._record_pending_names(results, task.template_name)
-            result_save_ms = (time.perf_counter() - result_save_started) * 1000
+            stage_timing["result_save_ms"] = (time.perf_counter() - result_save_started) * 1000
             result["ocr_results"] = results
             if fingerprint is not None:
                 self._page_cache[task.template_name] = (fingerprint, task.hero_names, list(results))
@@ -365,14 +341,8 @@ class OcrWorker(QThread):
                 task,
                 task_started,
                 outcome="matched",
-                template_load_ms=template_load_ms,
-                template_match_ms=template_match_ms,
-                template_confidence=template_confidence,
-                template_scale=template_scale,
-                template_strategy=template_strategy,
-                recognition_ms=recognition_ms,
-                result_save_ms=result_save_ms,
                 recognizer_timing=recognizer_timing,
+                **stage_timing,
             )
             logger.debug("OCR 完成: %d 个武将识别", len([item for item in results if item.get("name")]))
             return result
@@ -419,10 +389,7 @@ class OcrWorker(QThread):
         from src.business.recognition.pending_stats import record_pending
 
         for item in results:
-            if str(item.get("resolution", "")) in {
-                "exact", "unique_prefix", "unique_similarity",
-                "multi_similarity", "slot_unique", "manual",
-            }:
+            if str(item.get("resolution", "")) in CONFIRMED_RESOLUTIONS:
                 continue
             raw_name = str(item.get("raw_name", "")).strip()
             if not raw_name:

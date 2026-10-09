@@ -23,10 +23,17 @@ _MULTI_CANDIDATE_MIN_EVIDENCE_FAMILIES = 2
 # 词表外新武将保护：全部证据族以不低于此值的置信度一致读出同一词表外原文时，
 # 判定为新武将而不强制纠错绑定（历史 _HIGH_CONFIDENCE 保护在证据体系迁移中遗失后重建）
 _UNMATCHED_CONSENSUS_MIN_CONFIDENCE = 0.995
-_CONFIRMED_RESOLUTIONS = frozenset({
+# 消解状态词表单源（此前 peak_select_watcher / recognizer / poll_coordinator /
+# match_lineup_state / match_guide_panel / recommendation_panel / ocr_worker 各自
+# 手抄副本，差异无注释易被当成漏同步"修正"）。已确认集与未定全集互补；
+# 收窄集是未定全集的有意子集：unknown 拒识无读数无候选、没有可供下一步
+# （复核注入 / 人工确认 / 待确认展示）消费的材料，各调用处另有守卫兜底
+CONFIRMED_RESOLUTIONS = frozenset({
     "exact", "unique_prefix", "unique_similarity", "multi_similarity",
     "slot_unique", "manual",
 })
+UNRESOLVED_RESOLUTIONS = frozenset({"unresolved", "unknown", "conflict"})
+ACTIONABLE_UNRESOLVED_RESOLUTIONS = frozenset({"unresolved", "conflict"})
 _RESOLUTION_PRIORITY = {
     "manual": 5,
     "exact": 4,
@@ -77,7 +84,7 @@ class NameResolver:
         return (
             not text
             or confidence < _NAME_RECHECK_CONFIDENCE
-            or result["resolution"] in {"unresolved", "unknown", "conflict"}
+            or result["resolution"] in UNRESOLVED_RESOLUTIONS
         )
 
     # ── 证据确认 ──────────────────────────────────────────────────────
@@ -122,7 +129,7 @@ class NameResolver:
 
         confirmed = {
             item["name"] for item in parsed
-            if item["resolution"] in _CONFIRMED_RESOLUTIONS and item["name"]
+            if item["resolution"] in CONFIRMED_RESOLUTIONS and item["name"]
         }
         if len(confirmed) == 1:
             name = confirmed.pop()
