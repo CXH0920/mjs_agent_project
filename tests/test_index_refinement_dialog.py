@@ -84,12 +84,16 @@ def _fake_generator(monkeypatch) -> None:
     monkeypatch.setattr(dialog_module, "build_generator", lambda _name: object())
 
 
-def _suggest_all_sync(dialog: IndexRefinementDialog, monkeypatch) -> None:
-    """用同步替身替换批量建议线程后同步执行批量建议。
+def _install_sync_suggest_worker(monkeypatch) -> None:
+    """用同步替身替换建议线程类：测试环境无事件循环，QThread 跨线程信号不投递。
 
-    测试环境无事件循环，QThread 跨线程信号不投递；替身 start() 内联产出全部
-    结果并直接发信号（同线程直连即时送达），与生产共用 _on_suggest_result /
-    _on_worker_finished 同一条状态链，替代此前与生产路径漂移的影子队列实现。
+    替身 start() 内联产出全部结果并直接发信号（同线程直连即时送达），与生产
+    共用 _on_suggest_result / _on_worker_finished 同一条状态链，替代此前与
+    生产路径漂移的影子队列实现。不得在测试中启动真线程替身：其跨线程信号
+    滞留应用队列，monkeypatch 拆除后线程才执行 suggest_one 时走真实实现、
+    以 None 失败收场，滞留的 (block, None) 会被此后任意恰好泵事件的用例投递，
+    触发 _on_suggest_result 的"建议失败"模态弹窗把 worker 阻塞至超时强杀，
+    无辜用例被记为 node down（2026-10-09 Actions #178/#179 连续实证）。
     """
 
     class _SyncSuggestWorker(QObject):
@@ -108,7 +112,18 @@ def _suggest_all_sync(dialog: IndexRefinementDialog, monkeypatch) -> None:
             self.finished.emit()
 
     monkeypatch.setattr(sc_module, "SuggestWorker", _SyncSuggestWorker)
+
+
+def _suggest_all_sync(dialog: IndexRefinementDialog, monkeypatch) -> None:
+    """同步执行批量建议（共用生产状态链，见 _install_sync_suggest_worker）。"""
+    _install_sync_suggest_worker(monkeypatch)
     dialog._suggest_all()
+
+
+def _suggest_current_sync(dialog: IndexRefinementDialog, monkeypatch) -> None:
+    """同步执行单块建议，链路内联完成（result_ready→回填→finished 恢复按钮）。"""
+    _install_sync_suggest_worker(monkeypatch)
+    dialog._suggest_current()
 
 
 def test_dialog_lists_pending(tmp_path: Path) -> None:
@@ -132,13 +147,9 @@ def test_suggest_current_fills_editors(tmp_path: Path, monkeypatch) -> None:
         trigger_condition=["打出时"],
         method="llm",
     ))
-    dialog._suggest_current()
-    assert dialog._controller.current_worker is not None
-    block = dialog._current
-    # 测试环境无事件循环（跨线程信号不投递）：同步驱动线程体与主线程回调
-    dialog._controller.current_worker.run()
-    update = RefinementUpdate(timing=["出牌阶段"], trigger_condition=["打出时"], method="llm")
-    dialog._on_suggest_result(block, update, is_single=True)
+    # 单块建议同样走同步替身：真线程版本曾以"手动 .run() 驱动 + 真线程自行
+    # 补发未投递信号"跨测试泄露失败结果，在别的用例里触发模态弹窗（见助手 docstring）
+    _suggest_current_sync(dialog, monkeypatch)
     assert dialog._field_editors["timing"].toPlainText().strip() == "出牌阶段"
     assert dialog._field_editors["trigger_condition"].toPlainText().strip() == "打出时"
     assert dialog._current.block_id in dialog._llm_baseline
@@ -252,12 +263,7 @@ def test_field_state_tracks_manual_edit(tmp_path: Path, monkeypatch) -> None:
     _fake_generator(monkeypatch)
     monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
         timing=["出牌阶段"], trigger_condition=[], method="llm"))
-    dialog._suggest_current()
-    block = dialog._current
-    dialog._controller.current_worker.run()  # 同步驱动线程体（测试环境无事件循环）
-    dialog._on_suggest_result(block, RefinementUpdate(
-        timing=["出牌阶段"], trigger_condition=[], method="llm"),
-        is_single=True)
+    _suggest_current_sync(dialog, monkeypatch)
     assert dialog._field_cards["timing"].property("fieldState") == "llm"
     assert dialog._field_badges["timing"].text() == "LLM 建议"
     dialog._field_editors["timing"].setPlainText("出牌阶段、弃牌阶段")

@@ -134,6 +134,29 @@ def _reset_rag_degraded_reason() -> None:
     rag_prompt.degraded_reason = None
 
 
+@pytest.fixture(autouse=True)
+def _fail_on_real_modal(monkeypatch) -> None:
+    """测试中禁止真实模态弹窗：QMessageBox 静态便捷方法内部 exec() 在无头环境
+    永久阻塞，xdist worker 被 pytest-timeout 强杀（node down）后失败记在任意
+    恰好泵事件的无关用例头上（2026-10-09 Actions #178/#179 连续实证：泄露线程
+    滞留的"建议失败"弹窗跨测试投递）。守卫把阻塞转为立即报错并指名调用点；
+    需要弹窗行为的用例自行 monkeypatch 覆盖本守卫（撤销为 LIFO，互不干扰）。
+    滞留队列的跨测试投递发生在 Qt 事件层，此处抛出的异常经 PySide6 事件循环
+    打印而非令用例失败，但足以消解 60 秒僵死并留下根因线索。
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    def _blocked(name: str):
+        def _raise(*args, **kwargs):
+            raise AssertionError(
+                f"测试触发真实模态弹窗 QMessageBox.{name}（无头环境会永久阻塞），"
+                "请在用例内 monkeypatch 替身")
+        return _raise
+
+    for name in ("warning", "critical", "information", "question", "about"):
+        monkeypatch.setattr(QMessageBox, name, _blocked(name))
+
+
 @pytest.fixture(scope="session")
 def qapp():
     """session 级 QApplication：整个测试进程仅创建一次，新测试直接以参数注入。
