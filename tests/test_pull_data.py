@@ -173,6 +173,31 @@ def test_push_dry_run_touches_nothing(sync_env, capsys):
     assert not (repo / "data" / "heroes.json").exists()
 
 
+def test_git_output_decoded_as_utf8(sync_env, monkeypatch):
+    """回归：git 输出恒为 UTF-8，_git 不显式指定编码时按进程默认编码解码——
+    中文 Windows 控制台（无 PYTHONUTF8）为 GBK，撞上中文提交摘要/远端消息时
+    reader 线程抛 UnicodeDecodeError，git 已执行成功但输出读取崩溃丢失
+    （2026-10-09 push 实际撞上）。进程默认编码随 PYTHONUTF8 漂移，无法在本测试
+    进程内确定性还原 GBK 场景，故以透明 spy 钉死显式 encoding="utf-8" 这一契约，
+    并验证中文提交主题经 _git 读回无损。"""
+    _, repo = sync_env
+    (repo / "data" / "cards.json").write_text('[{"id": 2}]', encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "同步：中文提交信息验证", cwd=repo)
+
+    real_run = subprocess.run
+    kwargs_seen: dict = {}
+
+    def run_spy(cmd, **kwargs):
+        kwargs_seen.update(kwargs)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(pull_data.subprocess, "run", run_spy)
+
+    assert pull_data._git(repo, "log", "--format=%s", "-1") == "同步：中文提交信息验证"
+    assert kwargs_seen.get("encoding") == "utf-8"
+
+
 def test_push_full_cycle(sync_env):
     """守卫 → 脏检查 → 拷贝 → 对齐远端 → 刷新 manifest → 提交推送：全链真实 git"""
     root, repo = sync_env

@@ -72,8 +72,12 @@ def _sha256(path: Path) -> str:
 
 
 def _git(repo: Path, *args: str) -> str:
+    # git 输出恒为 UTF-8；不显式指定编码时按进程默认（中文 Windows 控制台为 GBK）
+    # 解码，中文提交摘要/远端消息会让 reader 线程抛 UnicodeDecodeError——git 本身
+    # 已执行成功但输出丢失（2026-10-09 push 实际撞上）。replace 兜底异常字节。
     result = subprocess.run(["git", "-C", str(repo), *args],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace")
     if result.returncode != 0:
         sys.exit(f"FAIL: git {' '.join(args)}\n{result.stderr}")
     return result.stdout.strip()
