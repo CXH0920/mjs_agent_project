@@ -512,6 +512,29 @@ def _make_watcher(capture_service, ocr_service=None) -> tuple[PeakSelectWatcher,
     return watcher, pools, statuses
 
 
+def _run_live_ticks(watcher: PeakSelectWatcher, ticks: int = 1) -> None:
+    """按生产契约驱动识别拍：_do_work 由 _on_tick 持 _thread_lock 后调用。"""
+    for _ in range(ticks):
+        assert watcher._thread_lock.acquire(blocking=False)
+        watcher._do_work()
+
+
+def _make_loop_watcher(monkeypatch, boards: list, ocr_boards: list):
+    """实时循环桩：检测与 OCR 结果按拍弹出，拍数超出脚本即报错防跑偏。"""
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: boards.pop(0),
+    )
+    capture_service = SimpleNamespace(
+        capture=SimpleNamespace(connected=True),
+        capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
+        submit_ocr_task=lambda image, **kwargs: _fake_ocr_task(ocr_boards.pop(0)),
+    )
+    watcher, pools, _ = _make_watcher(capture_service)
+    watcher._ocr_service = _FakeOcrService()
+    return watcher, pools
+
+
 def test_watcher_file_recognition_publishes_pool(qapp, monkeypatch, tmp_path):
     """导入图片走完整链路：加载 → 检测 → OCR → 池子快照推送。"""
     monkeypatch.setattr(
@@ -1134,6 +1157,95 @@ def test_unchanged_still_resuspends_externally_reactivated_tasks(qapp, monkeypat
     assert len(pools) == 1
 
 
+def test_watcher_holds_rising_board_until_next_tick_confirms(qapp, monkeypatch):
+    """回归（2026-10-09 桑弘羊跳变）：候选期卡数回升的拍只可能是过场坏帧
+    （模拟器旧帧），扣住等下一拍签名复现才发布；首拍与禁选→候选的下降
+    照常立即发布，不受防抖影响。"""
+    watcher, pools = _make_loop_watcher(
+        monkeypatch,
+        boards=[
+            [(100 + i * 276, 247, 238, 326) for i in range(14)],  # 禁选 14 张
+            [(100 + i * 276, 247, 238, 326) for i in range(9)],   # 禁选结束 → 候选 9 张
+            [(100 + i * 276, 247, 238, 326) for i in range(10)],  # 坏帧：候选回升 10 张
+            [(100 + i * 276, 247, 238, 326) for i in range(10)],  # 下一拍原样复现
+        ],
+        ocr_boards=[
+            [{"name": f"禁将{i}", "resolution": "exact"} for i in range(14)],
+            [{"name": f"候选{i}", "resolution": "exact"} for i in range(9)],
+            [{"name": f"回升{i}", "resolution": "exact"} for i in range(10)],
+        ],
+    )
+
+    _run_live_ticks(watcher, 2)
+    assert [snapshot.card_count for snapshot in pools] == [14, 9]
+
+    _run_live_ticks(watcher, 1)
+    assert len(pools) == 2  # 回升拍扣住，不推送面板
+    assert watcher._deferred_board is not None and watcher._deferred_board[2] == 10
+
+    _run_live_ticks(watcher, 1)  # 复现拍走 unchanged 短路：确认并补发布扣住的牌面
+    assert [snapshot.card_count for snapshot in pools] == [14, 9, 10]
+    assert watcher._deferred_board is None
+
+
+def test_watcher_discards_rising_board_not_confirmed_next_tick(qapp, monkeypatch):
+    """坏帧下一拍未复现（真实牌面仍是 8 张）：扣住的牌丢弃不发布，面板不跳变。"""
+    watcher, pools = _make_loop_watcher(
+        monkeypatch,
+        boards=[
+            [(100 + i * 276, 247, 238, 326) for i in range(9)],  # 候选 9 张
+            [(100 + i * 276, 247, 238, 326) for i in range(8)],  # 桑弘羊被选走 → 8 张
+            [(100 + i * 276, 247, 238, 326) for i in range(9)],  # 坏帧：旧 9 张画面
+            [(100 + i * 276, 247, 238, 326) for i in range(8)],  # 真实牌面：仍是 8 张
+        ],
+        ocr_boards=[
+            [{"name": f"候选{i}", "resolution": "exact"} for i in range(9)],
+            [{"name": f"剩余{i}", "resolution": "exact"} for i in range(8)],
+            [{"name": f"候选{i}", "resolution": "exact"} for i in range(9)],
+            [{"name": f"剩余{i}", "resolution": "exact"} for i in range(8)],
+        ],
+    )
+
+    _run_live_ticks(watcher, 2)
+    assert [snapshot.card_count for snapshot in pools] == [9, 8]
+
+    _run_live_ticks(watcher, 1)
+    assert len(pools) == 2  # 坏帧扣住
+
+    _run_live_ticks(watcher, 1)
+    assert [snapshot.card_count for snapshot in pools] == [9, 8, 8]
+    assert watcher._deferred_board is None
+
+
+def test_watcher_board_absent_cancels_pending_confirmation(qapp, monkeypatch):
+    """复核窗口只认紧邻下一拍：牌面缺席即作废，坏帧隔拍重现须重新扣住。"""
+    ghost = [(100 + i * 276, 247, 238, 326) for i in range(10)]
+    watcher, pools = _make_loop_watcher(
+        monkeypatch,
+        boards=[
+            [(100 + i * 276, 247, 238, 326) for i in range(9)],  # 候选 9 张
+            ghost,  # 坏帧：回升 10 张，扣住
+            list(ghost),  # 缺席一拍后坏帧重现：同签名也不算复现
+        ],
+        ocr_boards=[
+            [{"name": f"候选{i}", "resolution": "exact"} for i in range(9)],
+            [{"name": f"回升{i}", "resolution": "exact"} for i in range(10)],
+            [{"name": f"回升{i}", "resolution": "exact"} for i in range(10)],
+        ],
+    )
+
+    _run_live_ticks(watcher, 2)
+    assert [snapshot.card_count for snapshot in pools] == [9]
+    assert watcher._deferred_board is not None
+
+    watcher._handle_board_absent(watcher._session_guard.current())
+    assert watcher._deferred_board is None
+
+    _run_live_ticks(watcher, 1)
+    assert len(pools) == 1  # 隔拍重现不构成确认，重新扣住
+    assert watcher._deferred_board is not None and watcher._deferred_board[2] == 10
+
+
 def test_watcher_manual_stop_does_not_emit_board_exited(qapp):
     """手动停止不发 board_exited：用户可能要切标准 2v2，match_guide 不被激活。"""
     ocr_service = _FakeOcrService()
@@ -1171,6 +1283,7 @@ def test_watcher_stop_clears_session_state(qapp):
     watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 14)
     watcher.confirm_pending(0, "荆轲")
     assert watcher._resolutions == {0: "荆轲"}  # 前置：确认已写入
+    watcher._deferred_board = (((1, 2, 3, 4),), [], 9)  # 扣住复核中的牌面
 
     watcher.stop()
 
@@ -1179,6 +1292,7 @@ def test_watcher_stop_clears_session_state(qapp):
     assert watcher._stale_rounds == {}
     assert watcher._ban_names == ()
     assert watcher._last_board is None
+    assert watcher._deferred_board is None
 
 
 def test_watcher_confirm_rejected_after_board_exit(qapp):

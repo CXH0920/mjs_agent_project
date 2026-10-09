@@ -239,6 +239,10 @@ class PeakSelectWatcher(QObject):
         # 连续未通过内容验证的拍数（槽位 → 拍数），达到上限丢弃确认
         self._stale_rounds: dict[int, int] = {}
         self._last_board: tuple[list[dict], int] | None = None
+        # 推迟发布的牌面（签名, OCR 结果, 卡数）：选将/禁选期真实池子单调不增，
+        # 卡数回升的拍只可能是过场坏帧（模拟器旧帧/撕裂帧，2026-10-09 桑弘羊
+        # 跳变事故），扣住一拍等签名复现再发布，未复现即丢弃
+        self._deferred_board: tuple[tuple, list[dict], int] | None = None
         self._miss_ticks = 0
         self._saved_task_states: dict[str, bool] | None = None
 
@@ -289,6 +293,7 @@ class PeakSelectWatcher(QObject):
         self._resolution_raws = {}
         self._stale_rounds = {}
         self._last_board = None
+        self._deferred_board = None
         if not keep_miss_ticks:
             self._miss_ticks = 0
 
@@ -330,6 +335,12 @@ class PeakSelectWatcher(QObject):
                 self._suspend_standard_tasks()
                 unchanged = board_signature_equal(signature, self._signature)
             if unchanged:
+                with self._state_lock:
+                    confirmed = self._deferred_board
+                    self._deferred_board = None
+                if confirmed is not None:
+                    # 回升牌面在紧邻下一拍原样复现：非单拍坏帧，补发布
+                    self._publish_pool(confirmed[1], confirmed[2])
                 return  # 牌面未变化，沿用上一次结果
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
@@ -345,7 +356,22 @@ class PeakSelectWatcher(QObject):
                 # 人工确认逐拍做内容验证：单拍闭包缺名或自动结论翻转不清确认，
                 # 连续多拍验证不到（真换人/选走）才淘汰
                 self._refresh_resolutions(ocr_results)
-            self._publish_pool(ocr_results, len(cards))
+                card_count = len(cards)
+                unconfirmed = self._deferred_board
+                self._deferred_board = None
+                last_count = self._last_board[1] if self._last_board else None
+                held = last_count is not None and card_count > last_count
+                if held:
+                    self._deferred_board = (signature, ocr_results, card_count)
+            if unconfirmed is not None:
+                logger.info("巅峰赛扣住复核的 %d 张牌面未复现，按过场坏帧丢弃", unconfirmed[2])
+            if held:
+                logger.info(
+                    "巅峰赛牌面 %d 张较上拍 %d 张回升，疑似过场坏帧，扣住待下一拍复核",
+                    card_count, last_count,
+                )
+                return
+            self._publish_pool(ocr_results, card_count)
         except Exception:
             logger.exception("巅峰赛识别循环异常")
             self.status_changed.emit("识别异常，详见运行日志")
@@ -557,6 +583,7 @@ class PeakSelectWatcher(QObject):
             self._miss_ticks += 1
             exiting = self._miss_ticks == BOARD_EXIT_TICKS
             self._signature = None  # 缺席即无在识别牌面，退出拍随 clear 再清一次
+            self._deferred_board = None  # 复核窗口只认紧邻下一拍，缺席即作废
             if exiting:
                 self._clear_session_state(keep_miss_ticks=True)
         if exiting:

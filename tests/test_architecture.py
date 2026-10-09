@@ -688,7 +688,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/configuration/settings_dialog.py": 584,
     # P0-1 会话状态收口（2026-10）：SessionGuard 替换裸 _session 比对，
     # _clear_session_state 统一 start/stop/牌面退出三处手抄重置清单（567 → 566）
-    "business/recognition/peak_select_watcher.py": 566,
+    # 566 → 593：候选期卡数回升防抖——过场坏帧（模拟器旧帧/撕裂帧）扣住一拍
+    # 签名复现再发布（2026-10-09 桑弘羊跳变事故：旧 9 张帧把已选走的牌打回面板）
+    "business/recognition/peak_select_watcher.py": 593,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     "ui/match/peak_select_panel.py": 565,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
