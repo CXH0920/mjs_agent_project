@@ -34,15 +34,15 @@ else:
     BUNDLE_ROOT = PROJECT_ROOT
 
 DEFAULT_ENV_FILE = PROJECT_ROOT / "config.env"
-DEFAULT_PRICING_FILE = BUNDLE_ROOT / "config" / "model_pricing.json"
+# 用户可改配置，读写均在运行时根（frozen 首启从打包默认部署副本，升级不覆盖）
+DEFAULT_PRICING_FILE = PROJECT_ROOT / "config" / "model_pricing.json"
 # API 档案含敏感 Key，放可写运行时根（frozen 下为 exe 目录，非只读 _internal）
 DEFAULT_PROFILES_FILE = PROJECT_ROOT / "config" / "api_profiles.json"
 # 共享资源目录（头像/截图；此前 match/peak/capture 三四处各自推导，收敛于此）
 IMAGES_DIR = BUNDLE_ROOT / "images"
 SCREENSHOTS_DIR = PROJECT_ROOT / "screenshots"
-# 头像下载输出目录：crawler 写入用，可写运行时根（区别于只读的 IMAGES_DIR）。
-# 注意 frozen 态后果：UI 头像读取固定自只读 IMAGES_DIR，下载到本目录的新头像
-# 不会被 UI 读取；运行时回退读取属独立需求，尚未实现。
+# 头像下载输出目录：crawler 写入用，可写运行时根；读取侧两级回退
+# （本目录优先、IMAGES_DIR 打包基线兜底）见 ui/shared/portrait
 IMAGES_OUTPUT_DIR = PROJECT_ROOT / "images"
 # OCR 混淆白名单：UI"白名单配置"界面写入、识别侧（character_similarity）读取，
 # 路径单一事实源在此，双侧只引用不再各自拼接。

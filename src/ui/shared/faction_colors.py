@@ -11,11 +11,13 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-FACTION_COLORS_FILE = BUNDLE_ROOT / "config" / "faction_colors.json"
+# 读写均在运行时可写根：frozen 下首启由 _ensure_clean_runtime 从打包默认
+# 部署可改副本（只补缺失），用户自定义不随升级包丢失
+FACTION_COLORS_FILE = PROJECT_ROOT / "config" / "faction_colors.json"
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 DEFAULT_FACTION_COLORS: dict[str, str] = {
     "秦": "#8B4513", "汉": "#B22222", "楚": "#2F4F4F", "赵": "#556B2F",

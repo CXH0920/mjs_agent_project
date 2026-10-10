@@ -6,12 +6,13 @@ import csv
 import logging
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-# 胜率 csv 为打包基线（BUNDLE_ROOT/data，只读）；用户官方导入更新的 fallback 后续再加
-WIN_RATE_CSV = BUNDLE_ROOT / "data" / "2v2胜率排行.csv"
+# 胜率 csv 读运行时可写根：frozen 下首启由 _ensure_clean_runtime 部署基线副本，
+# 用户官方导入的新榜单写同处即被读取（开发态两根相等，行为不变）
+WIN_RATE_CSV = PROJECT_ROOT / "data" / "2v2胜率排行.csv"
 _win_rate_cache: dict[str, float] | None = None
 
 

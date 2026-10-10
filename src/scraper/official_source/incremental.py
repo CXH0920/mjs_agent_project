@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 # 复用爬虫核心模块的公开 API
-from src.config.env import BUNDLE_ROOT
+from src.config.env import PROJECT_ROOT
 from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.crawler import (
     fetch_all_raw,
@@ -30,8 +30,8 @@ from src.scraper.official_source.crawler import (
 
 logger = logging.getLogger(__name__)
 
-# 默认数据路径
-DEFAULT_DATA_DIR = BUNDLE_ROOT / "data"
+# 默认数据路径：读写作运行时可写根（理由同 full.py 的 DEFAULT_OUTPUT）
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 
 

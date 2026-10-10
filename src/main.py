@@ -79,6 +79,15 @@ def _ensure_clean_runtime() -> None:
         default_roi = BUNDLE_ROOT / "config" / "ocr_rois.default.json"
         if default_roi.exists():
             shutil.copy2(default_roi, user_roi)
+    # 用户可改配置（阵营配色/模型价格）：读写均在运行时根，从打包默认复制
+    # 可改副本（只补缺失）——此前读写钉 BUNDLE_ROOT，frozen 下自定义会随
+    # 升级包被出厂值覆盖丢失
+    for cfg_name in ("faction_colors.json", "model_pricing.json"):
+        user_cfg = PROJECT_ROOT / "config" / cfg_name
+        if not user_cfg.exists():
+            bundled_cfg = BUNDLE_ROOT / "config" / cfg_name
+            if bundled_cfg.exists():
+                shutil.copy2(bundled_cfg, user_cfg)
     # 打包资料部署：BUNDLE_ROOT/data 的静态资料（核心库 json / 官方榜单 csv / RAG 语料 /
     # 评估集 / raw_guides 等）复制到运行时根——维护脚本、构建脚本等读 PROJECT_ROOT/data，
     # 不部署会全量报"缺源"（task_states）。只补缺失文件，不覆盖用户已有数据。

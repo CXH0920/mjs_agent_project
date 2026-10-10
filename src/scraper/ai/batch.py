@@ -29,7 +29,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT, PROJECT_ROOT, PROVIDER_PRESETS, get_runtime_params
+from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS, get_runtime_params
 from src.config.profiles import resolve_api_config
 from src.data.guide_manager import GuideManager
 from src.data.json_repository import snapshot_to_backups
@@ -47,7 +47,9 @@ logger = logging.getLogger(__name__)
 # 路径常量
 # ============================================================
 
-DEFAULT_DATA_DIR = BUNDLE_ROOT / "data"
+# 读写作运行时可写根：UI 与数据仓库均读 PROJECT_ROOT/data，写 BUNDLE_ROOT
+# 会落只读 _internal 且生成结果不可见（理由同 official_source/full.py）
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"

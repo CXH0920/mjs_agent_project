@@ -8,11 +8,14 @@ from __future__ import annotations
 import logging
 import re
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-_CORE_RULES_FILE = BUNDLE_ROOT / "data" / "rag_corpus" / "核心规则摘要.md"
+# 读运行时可写根：rag_corpus 首启由 _ensure_clean_runtime 部署副本，检索链路
+# （src/rag/config）与维护脚本（rag_common）均读该处，此处同根才能让用户对
+# 部署副本的修改在 AI 生成兜底中生效
+_CORE_RULES_FILE = PROJECT_ROOT / "data" / "rag_corpus" / "核心规则摘要.md"
 _CARD_SYSTEM_BODY = re.compile(r"## 卡牌体系\n(.*?)(?=\n## |\Z)", re.DOTALL)
 
 

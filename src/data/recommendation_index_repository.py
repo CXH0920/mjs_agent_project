@@ -12,19 +12,22 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT, PROJECT_ROOT, load_env_config
+from src.config.env import PROJECT_ROOT, load_env_config
 from src.data import peak_win_rate_repository, win_rate_repository
 from src.data.json_repository import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = BUNDLE_ROOT / "data"  # 读基线 csv/json（打包只读，frozen 下 __file__ 推导不可靠）
+# 读运行时可写根：frozen 下首启由 _ensure_clean_runtime 部署基线副本到
+# PROJECT_ROOT/data，用户导入/抓取的新数据写同处即被读取与重建（开发态
+# 与 BUNDLE_ROOT 相等，行为不变）
+DATA_DIR = PROJECT_ROOT / "data"
 WIN_RATE_CSV = DATA_DIR / "2v2胜率排行.csv"
 PICK_RANK_CSV = DATA_DIR / "2v2出场排行.csv"
 BAN_RANK_CSV = DATA_DIR / "武将放逐.csv"
 HEROES_JSON = DATA_DIR / "heroes.json"
 RECOMMENDATION_INDEX_CSV = DATA_DIR / "武将推荐指数.csv"
-# stale 状态写可写运行时根（BUNDLE_ROOT 只读，mark_stale 写它会失败）
+# stale 状态与快照同落运行时可写根（打包不含此文件，属首启/导入后的运行时产物）
 RECOMMENDATION_INDEX_STATE_FILE = PROJECT_ROOT / "data" / "武将推荐指数状态.json"
 
 DEFAULT_P_FLOOR = 0.2

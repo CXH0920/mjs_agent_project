@@ -23,7 +23,7 @@ import logging
 import sys
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import PROJECT_ROOT
 from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 from src.scraper.official_source.crawler import (
@@ -36,8 +36,9 @@ from src.scraper.official_source.crawler import (
 
 logger = logging.getLogger(__name__)
 
-# 默认输出路径
-DEFAULT_OUTPUT = BUNDLE_ROOT / "data" / "heroes.json"
+# 默认输出路径：写运行时可写根——UI/芯片/数据仓库均读 PROJECT_ROOT/data
+# （frozen 下首启部署基线副本），写 BUNDLE_ROOT 会落只读 _internal 且不可见
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "heroes.json"
 
 # 写入守卫阈值：官网改版会让 transform 产出大量空描述甚至全部失败，
 # 覆盖 heroes.json 前按规模与非空占比拦截，避免整库被一次采集静默清空

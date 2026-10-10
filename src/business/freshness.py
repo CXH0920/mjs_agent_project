@@ -11,8 +11,8 @@
   生成模式专补缺），某武将无攻略 = 未生成缺口（黄）。
 - 相性 synergies.json：逐对对齐两侧武将数据；相性是精选生成（无全覆盖
   预期），无 pair 的武将不计任何档位。
-- 官方榜单 6 CSV：纯 mtime 年龄取最旧；打包态读 BUNDLE_ROOT 基线（既有
-  读取链路缺口，如实显示基线年龄，不在本期处理）。
+- 官方榜单 6 CSV：纯 mtime 年龄取最旧；读运行时可写根（部署基线与用户
+  导入同处，与 QFileSystemWatcher 监听目录一致，导入后判定即时更新）。
 
 按天计量的档位统一为 7 天一个周期：[0,7) 绿 / [7,14) 黄 / ≥14 红——
 适用于攻略/相性的落后天数、武将兜底与榜单的纯年龄；周期内（<7 天）的
@@ -74,7 +74,7 @@ RANKING_CSV_PATHS = (
 )
 
 # UI 芯片 QFileSystemWatcher 的监听目录与目标文件名（mtime 快照过滤词汇，
-# 与上面监测路径同源维护；榜单打包态读 BUNDLE_ROOT 只读基线，不监听）
+# 与上面监测路径同源维护；榜单读取已统一运行时可写根，监听与判定同处）
 WATCH_DIR = DEFAULT_DATA_DIR
 WATCHED_FILE_NAMES = (
     "heroes.json", "guides.json", "synergies.json", "mjs_adjustments.json",

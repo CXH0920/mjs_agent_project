@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
 from src.data.json_repository import atomic_write_json
 
+# 基线缓存随包只读（spec 收集到 _internal/src/data，不在 _ensure_clean_runtime
+# 部署清单）；save() 仅开发机脚本 build_character_feature_cache 调用（重建基线
+# 走 git/pull_data 流程），frozen 下无 UI/-m 触发链。注意：将来维护页若接入
+# 该脚本，须先解决写入根——直接换 PROJECT_ROOT 会因基线未部署而读不到
+# （识别特征全失），正确形态是部署 src/data 或读写根分离，勿简单换根。
 DEFAULT_CHARACTER_FEATURE_CACHE = BUNDLE_ROOT / "src" / "data" / "char_info_cache.json"
 USER_CHARACTER_FEATURE_CACHE = PROJECT_ROOT / "data" / "char_info_cache.json"
 DEFAULT_WUBI_TABLE = BUNDLE_ROOT / "src" / "data" / "wubi86.txt"

@@ -6,14 +6,15 @@ import csv
 import logging
 from pathlib import Path
 
-from src.config.env import BUNDLE_ROOT
+from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
 # 巅峰赛专属榜单 csv（胜率列：排名,武将,胜率；出场列：排名,武将），与官方榜单
-# 导出格式一致；数据源尚未落地时返回空 dict，UI 显示"暂无数据"
-PEAK_WIN_RATE_CSV = BUNDLE_ROOT / "data" / "巅峰赛胜率排行.csv"
-PEAK_PICK_RANK_CSV = BUNDLE_ROOT / "data" / "巅峰赛出场排行.csv"
+# 导出格式一致；读运行时可写根（部署基线 + 用户导入），数据源尚未落地时返回
+# 空 dict，UI 显示"暂无数据"
+PEAK_WIN_RATE_CSV = PROJECT_ROOT / "data" / "巅峰赛胜率排行.csv"
+PEAK_PICK_RANK_CSV = PROJECT_ROOT / "data" / "巅峰赛出场排行.csv"
 _peak_win_rate_cache: dict[str, float] | None = None
 _peak_pick_rank_cache: dict[str, int] | None = None
 

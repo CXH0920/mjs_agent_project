@@ -22,12 +22,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.config.env import BUNDLE_ROOT
+from src.ui.shared.faction_colors import FACTION_COLORS_FILE as COLORS_FILE
 from src.ui.shared.faction_colors import load_faction_colors
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 
 logger = logging.getLogger(__name__)
-COLORS_FILE = BUNDLE_ROOT / "config" / "faction_colors.json"
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
