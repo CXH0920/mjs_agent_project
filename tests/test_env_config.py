@@ -61,6 +61,7 @@ _SENTINELS: dict[str, tuple[str, str, object]] = {
     "RECOMMENDATION_BAN_WEIGHT": ("2.5", "recommendation_ban_weight", 2.5),
     "RECOMMENDATION_SIGMOID_K": ("12", "recommendation_sigmoid_k", 12.0),
     "RECOMMENDATION_LOW_WIN_RATE_GAP": ("0.15", "recommendation_low_win_rate_gap", 0.15),
+    "DATA_FRESHNESS_TIMELINE_STALE_DAYS": ("21", "data_freshness_timeline_stale_days", 21),
 }
 
 
@@ -160,6 +161,7 @@ def test_table_keys_partition_into_getters_and_passthrough(monkeypatch, tmp_path
         "api_key", "api_url", "model", "mjs_data_repo",
         "recommendation_p_floor", "recommendation_ban_weight",
         "recommendation_sigmoid_k", "recommendation_low_win_rate_gap",
+        "data_freshness_timeline_stale_days",
     }
 
 

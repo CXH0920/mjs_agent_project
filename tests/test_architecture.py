@@ -302,8 +302,9 @@ CLASS_FIELD_BUDGETS: dict[str, int] = {
     # 12 低于默认预算 30，条目出表
     # MainWindow 33 → 34：对话框开启器编排以 self._dialogs 组合字段接入（审计 G1 切片
     # 4.2a）——以 1 个组合字段置换 16 个对话框/采集方法（方法数 49 → 33 出表），
-    # 属结构性放宽，后续拆分状态条 chips 时可回落。
-    "ui/app/main_window.py:MainWindow": 34,
+    # 属结构性放宽，后续拆分状态条 chips 时可回落；
+    # 34 → 35：状态栏数据新鲜度芯片挂载（self._freshness_chip，2026-10）
+    "ui/app/main_window.py:MainWindow": 35,
     "ui/recommendation/hero_card_widget.py:HeroCardWidget": 32,
 }
 
@@ -636,8 +637,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 819 → 552：对话框开启器与菜单构建拆出 dialog_coordinator.py / menu_builder.py
     # （审计 G1 切片 4.2a/4.2b，方法数 49 → 33）；552 → 557：资料库编辑入口
     # 接入 AI 生成忙碌守卫闭包（T1 运维加固，2026-10）；
-    # 557 → 561：启动 2 分钟后自动公告检查接线（P1-4，2026-10）
-    "ui/app/main_window.py": 561,
+    # 557 → 561：启动 2 分钟后自动公告检查接线（P1-4，2026-10）；
+    # 561 → 575：状态栏第三枚数据新鲜度芯片挂载接线（芯片本体在
+    # data_freshness_chip.py 自足，此处仅构造与两条信号回接）
+    "ui/app/main_window.py": 575,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
@@ -675,8 +678,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）
     # 368 → 364：键元表单源化（P1-4/P1-7，2026-10）——key_mapping/三张类型
-    # 清单/两个 getter 默认值四处登记收口为 _ENV_KEY_SPECS 单表
-    "config/env.py": 364,
+    # 清单/两个 getter 默认值四处登记收口为 _ENV_KEY_SPECS 单表；
+    # 364 → 366：数据新鲜度透传键 DATA_FRESHNESS_TIMELINE_STALE_DAYS（2026-10）
+    "config/env.py": 366,
     "business/recognition/official_data_import_service.py": 638,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
     "ui/library/hero_browser.py": 639,

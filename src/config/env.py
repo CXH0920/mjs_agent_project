@@ -187,6 +187,8 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     "RECOMMENDATION_BAN_WEIGHT": _EnvKeySpec("recommendation_ban_weight", float, None),
     "RECOMMENDATION_SIGMOID_K": _EnvKeySpec("recommendation_sigmoid_k", float, None),
     "RECOMMENDATION_LOW_WIN_RATE_GAP": _EnvKeySpec("recommendation_low_win_rate_gap", float, None),
+    # 数据新鲜度芯片：时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄判定
+    "DATA_FRESHNESS_TIMELINE_STALE_DAYS": _EnvKeySpec("data_freshness_timeline_stale_days", int, None),
 }
 
 

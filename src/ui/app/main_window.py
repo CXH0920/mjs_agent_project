@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from src.business.card_catalog import CardCatalogService
 from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
 from src.ui.app.app_services import AppServices
+from src.ui.app.data_freshness_chip import DataFreshnessChip
 from src.ui.app.dialog_coordinator import DialogCoordinator
 from src.ui.app.menu_builder import build_actions, build_menu_bar
 from src.ui.app.status_chips import StatusChips
@@ -458,6 +459,19 @@ class MainWindow(QMainWindow):
         self._status_chips.mumu_config_requested.connect(self._dialogs.open_mumu_config)
         self._status_chips.poll_resume_requested.connect(self._poll_coordinator.resume_from_idle_pause)
         bar.addPermanentWidget(self._status_chips)
+        # 数据新鲜度芯片：自足小部件（服务注入订阅刷新），动作经信号回采集入口
+        self._freshness_chip = DataFreshnessChip(
+            hero_fetch_service=self._fetch_service,
+            guide_fetch_service=self._guide_service,
+            synergy_fetch_service=self._synergy_service,
+            ai_workflow=self._ai_workflow,
+            announcement_service=self._services.announcement_service,
+        )
+        self._freshness_chip.fetch_incremental_requested.connect(
+            self._dialogs.request_fetch_incremental)
+        self._freshness_chip.fetch_specific_requested.connect(
+            self._dialogs.request_fetch_specific)
+        bar.addPermanentWidget(self._freshness_chip)
         self.setStatusBar(bar)
         state, detail = self._capture_service.connection_state
         self._update_emulator_status(state, detail)
