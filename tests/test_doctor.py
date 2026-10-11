@@ -214,3 +214,80 @@ def test_check_ai_link_ignores_token_counts(tmp_path, monkeypatch):
     assert findings[0].status == doctor.WARN
     # 仅故障主行命中一次；token 行若被误计会出现 "401×2"
     assert findings[0].detail == "HTTP 401×1"
+
+
+def _patch_rag_paths(monkeypatch, tmp_path):
+    from src.rag import config
+
+    monkeypatch.setattr(config, "CHROMA_DIR", tmp_path / "rag_index" / "chroma")
+    monkeypatch.setattr(config, "RAG_INDEX_DIR", tmp_path / "rag_index")
+    monkeypatch.setattr(config, "ONNX_MODEL_DIR", tmp_path / "onnx")
+    monkeypatch.setattr(config, "EMBEDDING_BACKEND", "onnx")
+    return config
+
+
+def test_check_rag_index_missing_dir_warns(tmp_path, monkeypatch):
+    _patch_rag_paths(monkeypatch, tmp_path)
+
+    findings = doctor.check_rag_index()
+
+    assert len(findings) == 1
+    assert findings[0].status == doctor.WARN
+    assert "src.rag.indexer" in findings[0].fix
+
+
+def test_check_rag_index_pass_when_small_and_single_segment(tmp_path, monkeypatch):
+    config = _patch_rag_paths(monkeypatch, tmp_path)
+    chroma = config.CHROMA_DIR
+    (chroma / "seg-1").mkdir(parents=True)
+    (chroma / "chroma.sqlite3").write_bytes(b"x" * 1024)
+    # 合法 ONNX 三件套
+    import hashlib
+    import json as jsonlib
+
+    onnx_dir = config.ONNX_MODEL_DIR
+    onnx_dir.mkdir()
+    (onnx_dir / "model.onnx").write_bytes(b"m")
+    (onnx_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+    (onnx_dir / "sha256.json").write_text(jsonlib.dumps({
+        "model.onnx": {"sha256": sha(onnx_dir / "model.onnx")},
+        "tokenizer.json": {"sha256": sha(onnx_dir / "tokenizer.json")},
+        "input_names": ["input_ids", "attention_mask", "token_type_ids"],
+    }), encoding="utf-8")
+
+    findings = doctor.check_rag_index()
+
+    by_name = {f.name: f for f in findings}
+    assert by_name["索引体积"].status == doctor.PASS
+    assert by_name["集合段目录"].status == doctor.PASS
+    assert by_name["ONNX 编码器"].status == doctor.PASS
+
+
+def test_check_rag_index_flags_bloat_orphans_and_missing_onnx(tmp_path, monkeypatch):
+    config = _patch_rag_paths(monkeypatch, tmp_path)
+    chroma = config.CHROMA_DIR
+    (chroma / "seg-1").mkdir(parents=True)
+    (chroma / "seg-2").mkdir(parents=True)
+    (chroma / "s").mkdir()
+    (chroma / "s" / "big.bin").write_bytes(b"x" * (30 * 1048576))  # 30MB → 超标
+
+    findings = doctor.check_rag_index()
+
+    by_name = {f.name: f for f in findings}
+    assert by_name["索引体积"].status == doctor.WARN
+    assert by_name["集合段目录"].status == doctor.WARN
+    assert by_name["ONNX 编码器"].status == doctor.FAIL
+    assert "export_embedding_onnx" in by_name["ONNX 编码器"].fix
+
+
+def test_check_rag_index_skips_onnx_when_st_backend(tmp_path, monkeypatch):
+    config = _patch_rag_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(config, "EMBEDDING_BACKEND", "st")
+    (config.CHROMA_DIR / "seg-1").mkdir(parents=True)
+
+    findings = doctor.check_rag_index()
+
+    onnx = next(f for f in findings if f.name == "ONNX 编码器")
+    assert onnx.status == doctor.SKIP
+    assert "st" in onnx.detail

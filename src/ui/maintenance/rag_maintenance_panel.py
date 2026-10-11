@@ -170,6 +170,10 @@ class RagMaintenancePanel(QWidget):
         self._refine_button = QPushButton("索引精化")
         self._refine_button.clicked.connect(self._open_refinement)
         self._action_bar.add_action(self._refine_button, ROLE_SECONDARY)
+        # 检索诊断：只读工具，定位语料/索引变动前后的召回差异（G5）
+        self._diagnose_button = QPushButton("检索诊断")
+        self._diagnose_button.clicked.connect(self._open_diagnostic)
+        self._action_bar.add_action(self._diagnose_button, ROLE_SECONDARY)
         # 分隔线：查看类 | 执行类
         _divider = QFrame()
         _divider.setObjectName("actionBarDivider")
@@ -415,6 +419,14 @@ class RagMaintenancePanel(QWidget):
         dialog.resize(self.window().size())
         dialog.exec()
         self.refresh()
+
+    def _open_diagnostic(self) -> None:
+        from src.ui.maintenance.retrieval_diagnostic_dialog import (
+            RetrievalDiagnosticDialog,
+        )
+
+        dialog = RetrievalDiagnosticDialog(self)
+        dialog.exec()
 
     # ---------------------------------------------------------------
     # 本地执行（ScriptRunner 封装 QProcess）

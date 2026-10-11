@@ -33,7 +33,7 @@
 
 ## 一、RAG 底层三件套（src/rag/）
 
-本模块只含三个文件，职责严格分工：`config.py` 集中路径与检索参数、`indexer.py` 把语料 JSON 变成向量写进 ChromaDB、`retriever.py` 做混合检索。三者都不依赖 Qt，GUI 进程和脚本进程共用。
+本模块含四个文件，职责严格分工：`config.py` 集中路径与检索参数、`embedder.py` 编码器抽象（ONNX 默认 / st 回滚档，侧车哈希自校验）、`indexer.py` 把语料 JSON 变成向量写进 ChromaDB、`retriever.py` 做混合检索（`search(trace=...)` 可输出每条候选的丢弃原因）。四者都不依赖 Qt，GUI 进程和脚本进程共用；onnxruntime/tokenizers 在 `embedder.py` 函数内惰性导入，CI 无依赖环境可导入。
 
 ### 1.1 配置层 config.py
 
@@ -72,7 +72,7 @@ build_index(rebuild=True)                                        [CLI 入口：p
         -> [len(blocks) != len(data)] raise ValueError           [规范化块数须与源 1:1]
         -> meta.setdefault('is_current' / 'as_of')              [版本元数据回填，默认只召当前版本]
   -> [block_id 唯一性校验] 重复 raise ValueError
-  -> SentenceTransformer(EMBEDDING_MODEL, device='cpu')          [2/4 加载向量模型]
+  -> get_embedder()                                             [2/4 编码器：OnnxEmbedder(默认)/STEmbedder(st)]
   -> model.encode(docs, batch_size=32, normalize_embeddings=True) [3/4 向量化]
   -> chromadb.PersistentClient(path=CHROMA_DIR)                  [4/4 写入]
   -> client.get_or_create_collection('mjs_rag_v1',

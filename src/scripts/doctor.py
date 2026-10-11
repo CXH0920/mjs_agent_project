@@ -471,6 +471,66 @@ def check_disk() -> list[Finding]:
     return findings
 
 
+# ── RAG 索引 ──────────────────────────────────────────────────────────
+
+def check_rag_index() -> list[Finding]:
+    """RAG 检索资产健康（只读，不打开 chroma 数据库——「索引块数==语料块数」
+    的深校验放发版流程做，那里本来就要打开索引）。"""
+    from src.rag import config
+
+    findings: list[Finding] = []
+    chroma_dir = config.CHROMA_DIR
+    if not chroma_dir.is_dir():
+        return [Finding("RAG索引", "索引目录", WARN, f"{chroma_dir} 不存在",
+                        fix="python -m src.rag.indexer 重建索引")]
+
+    size_mb = sum(p.stat().st_size for p in config.RAG_INDEX_DIR.rglob("*")
+                  if p.is_file()) / 1048576
+    if size_mb <= 25:
+        findings.append(Finding("RAG索引", "索引体积", PASS, f"{size_mb:.1f}MB"))
+    else:
+        findings.append(Finding(
+            "RAG索引", "索引体积", WARN, f"{size_mb:.1f}MB（应 ≤25MB）",
+            fix="python -m src.rag.indexer 整目录重建（清理历次残留的孤立段）"))
+
+    seg_dirs = [p for p in chroma_dir.iterdir() if p.is_dir()]
+    if len(seg_dirs) == 1:
+        findings.append(Finding(
+            "RAG索引", "集合段目录", PASS, f"{seg_dirs[0].name[:8]}…（1 组）"))
+    else:
+        findings.append(Finding(
+            "RAG索引", "集合段目录", WARN,
+            f"{len(seg_dirs)} 组（孤立段残留，历次 delete_collection 遗留）",
+            fix="python -m src.rag.indexer 整目录重建"))
+
+    if config.EMBEDDING_BACKEND != "onnx":
+        findings.append(Finding(
+            "RAG索引", "ONNX 编码器", SKIP,
+            f"backend={config.EMBEDDING_BACKEND}（st 回滚档，不检查 ONNX 产物）"))
+        return findings
+    problems = _check_onnx_artifacts(config.ONNX_MODEL_DIR)
+    if problems:
+        findings.append(Finding(
+            "RAG索引", "ONNX 编码器", FAIL, "；".join(problems),
+            fix="python -m src.scripts.export_embedding_onnx 重新导出"))
+    else:
+        findings.append(Finding("RAG索引", "ONNX 编码器", PASS, "三件套哈希一致"))
+    return findings
+
+
+def _check_onnx_artifacts(model_dir: Path) -> list[str]:
+    """ONNX 三件套（model.onnx / tokenizer.json / sha256.json）哈希校验。"""
+    if not (model_dir / "sha256.json").is_file():
+        return [f"缺少 {model_dir / 'sha256.json'}（未导出过）"]
+    try:
+        from src.rag.embedder import OnnxEmbedder
+
+        OnnxEmbedder(model_dir)  # 构造即校验
+    except RuntimeError as error:
+        return [str(error)]
+    return []
+
+
 # ── 合规触发器 ────────────────────────────────────────────────────────
 
 def check_compliance() -> list[Finding]:
@@ -544,6 +604,7 @@ CHECK_GROUPS = [
     ("设备", check_devices),
     ("私有仓", check_private_repo),
     ("数据", check_data),
+    ("RAG索引", check_rag_index),
     ("配置", check_config),
     ("白名单", check_whitelist),
     ("AI链路", check_ai_link),

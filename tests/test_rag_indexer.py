@@ -225,15 +225,13 @@ class _FakeClient:
 
 
 def _patch_heavy_deps(monkeypatch, client):
-    class _FakeModel:
-        def __init__(self, model_name, device=None):
-            self.model_name = model_name
-
+    class _FakeEmbedder:
         def encode(self, docs, **kwargs):
             return np.ones((len(docs), 4), dtype=np.float32)
 
-    monkeypatch.setitem(sys.modules, "sentence_transformers",
-                        SimpleNamespace(SentenceTransformer=_FakeModel))
+    from src.rag import embedder as embedder_mod
+
+    monkeypatch.setattr(embedder_mod, "get_embedder", lambda: _FakeEmbedder())
     monkeypatch.setitem(sys.modules, "chromadb",
                         SimpleNamespace(PersistentClient=lambda path: client.persistent_paths.append(path) or client))
 
@@ -246,15 +244,18 @@ def _patch_corpus(monkeypatch, tmp_path):
 
 def test_build_index_rebuild_writes_all_blocks(monkeypatch, tmp_path) -> None:
     _patch_corpus(monkeypatch, tmp_path)
+    (tmp_path / "chroma").mkdir()  # 旧索引目录存在 → 应整目录删除
     collection = _FakeCollection()
     client = _FakeClient(collection)
     _patch_heavy_deps(monkeypatch, client)
+    rmtree_calls = []
+    monkeypatch.setattr(indexer.shutil, "rmtree",
+                        lambda path: rmtree_calls.append(path))
 
     total, coll_name = indexer.build_index(rebuild=True)
 
     assert (total, coll_name) == (2, "mjs_rag_v1")
-    assert client.delete_attempts == ["mjs_rag_v1"]
-    assert collection.deleted_where_count == 0  # 空集合无需清空
+    assert rmtree_calls == [tmp_path / "chroma"]  # 整目录删除（新语义）
     assert len(collection.added) == 1  # 2 块单批写入
     ids, documents, metadatas = collection.added[0]
     assert ids == ["hero_caocao_skill", "hero_caocao_overview"]
@@ -263,38 +264,54 @@ def test_build_index_rebuild_writes_all_blocks(monkeypatch, tmp_path) -> None:
     assert collection.count() == 2
 
 
-def test_build_index_rebuild_clears_residual_vectors(monkeypatch, tmp_path) -> None:
+def test_build_index_rebuild_rmtree_cleans_orphan_segment_dirs(monkeypatch, tmp_path) -> None:
+    """整目录重建顺带清掉孤立段目录（S4 治理点，残留段实测占 80.9MB 的绝大部分）。"""
     _patch_corpus(monkeypatch, tmp_path)
+    chroma = tmp_path / "chroma"
+    orphan = chroma / "0ee62812-de15-4639-837a-a56cffd079f8"
+    orphan.mkdir(parents=True)
+    (orphan / "segment.bin").write_bytes(b"x" * 1024)
     collection = _FakeCollection()
-    collection.count_value = 5  # 残留旧向量
     client = _FakeClient(collection)
-    _patch_heavy_deps(monkeypatch, client)
-
-    indexer.build_index(rebuild=True)
-
-    assert collection.deleted_where_count == 1
-    assert collection.count() == 2  # 清空后仅剩本次写入
-
-
-def test_build_index_aborts_when_stale_collection_undeletable(monkeypatch, tmp_path) -> None:
-    """删除旧集合失败且集合仍在：必须中止，不能在残留向量上重建（静默吞异常回归）。"""
-    _patch_corpus(monkeypatch, tmp_path)
-    client = _FakeClient(_FakeCollection(), existing_collections=["mjs_rag_v1"], fail_delete=True)
-    _patch_heavy_deps(monkeypatch, client)
-
-    with pytest.raises(RuntimeError, match="删除失败"):
-        indexer.build_index(rebuild=True)
-
-
-def test_build_index_proceeds_when_collection_absent(monkeypatch, tmp_path) -> None:
-    _patch_corpus(monkeypatch, tmp_path)
-    collection = _FakeCollection()
-    client = _FakeClient(collection, existing_collections=[], fail_delete=True)
     _patch_heavy_deps(monkeypatch, client)
 
     total, _ = indexer.build_index(rebuild=True)
 
-    assert total == 2  # 首建集合不存在属正常路径
+    assert total == 2
+    assert not orphan.exists()  # 真实 rmtree 已清掉旧目录
+
+
+def test_build_index_aborts_when_rmtree_fails(monkeypatch, tmp_path) -> None:
+    """旧索引目录删不掉（文件占用/锁）：必须中止，不能在残留向量上重建。"""
+    _patch_corpus(monkeypatch, tmp_path)
+    (tmp_path / "chroma").mkdir()
+    collection = _FakeCollection()
+    client = _FakeClient(collection)
+    _patch_heavy_deps(monkeypatch, client)
+
+    def _locked_rmtree(path):
+        raise OSError("simulated file lock")
+
+    monkeypatch.setattr(indexer.shutil, "rmtree", _locked_rmtree)
+
+    with pytest.raises(RuntimeError, match="删除失败"):
+        indexer.build_index(rebuild=True)
+    assert not collection.added  # 中止：未写入任何块
+
+
+def test_build_index_proceeds_when_chroma_dir_absent(monkeypatch, tmp_path) -> None:
+    _patch_corpus(monkeypatch, tmp_path)
+    collection = _FakeCollection()
+    client = _FakeClient(collection)
+    _patch_heavy_deps(monkeypatch, client)
+    rmtree_calls = []
+    monkeypatch.setattr(indexer.shutil, "rmtree",
+                        lambda path: rmtree_calls.append(path))
+
+    total, _ = indexer.build_index(rebuild=True)
+
+    assert total == 2  # 首建目录不存在属正常路径
+    assert rmtree_calls == []
 
 
 def test_build_index_incremental_syncs_add_update_delete(monkeypatch, tmp_path) -> None:

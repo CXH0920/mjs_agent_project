@@ -33,6 +33,24 @@ def build_search_where(heroes=None):
     return conds[0] if len(conds) == 1 else {'$and': conds}
 
 
+def _trace_append(trace, item, dropped):
+    """向 trace 追加一条候选去向记录（trace 为 None 时零开销）。"""
+    if trace is None:
+        return
+    meta = item.get('metadata') or {}
+    trace.append({
+        'block_id': item.get('block_id', ''),
+        'kind': meta.get('kind', ''),
+        'hero': meta.get('hero', ''),
+        'score': round(float(item.get('score', 0.0)), 4),
+        'source': item.get('source', ''),
+        'rrf': round(float(item.get('rrf', 0.0)), 5),
+        'is_current': meta.get('is_current', 'true'),
+        'as_of': meta.get('as_of', ''),
+        'dropped': dropped,
+    })
+
+
 class Retriever:
     def __init__(self):
         self._client = None
@@ -57,11 +75,11 @@ class Retriever:
     @property
     def model(self):
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
-            # GUI 进程经 rag_prompt 也会加载模型，进度走 logger 而非 print
-            logger.info('模型加载 %s ...', config.EMBEDDING_MODEL)
+            from src.rag.embedder import get_embedder
+            # GUI 进程经 rag_prompt 也会加载编码器，进度走 logger 而非 print
+            logger.info('编码器加载（backend=%s）...', config.EMBEDDING_BACKEND)
             t0 = time.time()
-            self._model = SentenceTransformer(config.EMBEDDING_MODEL, device='cpu')
+            self._model = get_embedder()
             logger.info('模型就绪，耗时 %.1fs', time.time()-t0)
         return self._model
 
@@ -145,13 +163,20 @@ class Retriever:
             return hits
         return {bid: count * config.KEYWORD_BONUS for bid, count in hits.items()}
 
-    def search(self, query, heroes=None, top_k=None):
+    def search(self, query, heroes=None, top_k=None, trace=None):
         """混合检索：向量 + 关键词经 RRF 排名融合，再按类型配额取 top_k。
-        heroes: 指定武将名列表（元数据硬过滤，保证召回）。"""
+        heroes: 指定武将名列表（元数据硬过滤，保证召回）。
+        trace: 传入 list 时逐条记录候选去向（dropped=None 为最终保留，
+        其余为丢弃原因：below_threshold/not_current/hero_filter/
+        max_keyword_only/kind_quota），供 --explain 与检索诊断抽屉使用。"""
         top_k = top_k or config.TOP_K
         where = build_search_where(heroes)
-        vec = [v for v in self._vector_search(query, where=where, n=max(top_k * 2, 30))
-               if v['score'] >= config.MIN_VECTOR_SCORE]
+        vec = []
+        for v in self._vector_search(query, where=where, n=max(top_k * 2, 30)):
+            if v['score'] >= config.MIN_VECTOR_SCORE:
+                vec.append(v)
+            else:
+                _trace_append(trace, v, 'below_threshold')
         kw = self._keyword_hits(query)
 
         # RRF：向量与关键词各自按分数降序排名，融合分 = 1/(RRF_K + rank)
@@ -171,30 +196,38 @@ class Retriever:
         # 关键词兜底走内存索引，绕过了向量侧 where 过滤；融合后统一补齐
         # heroes 硬过滤（与 build_search_where 的 $in 语义一致）与 is_current 剔除
         hero_filter = set(heroes) if heroes else None
-        merged = {bid: item for bid, item in merged.items()
-                  if item.get('metadata', {}).get('is_current', 'true') != 'false'
-                  and (hero_filter is None
-                       or item.get('metadata', {}).get('hero') in hero_filter)}
+        kept = {}
+        for bid, item in merged.items():
+            if item.get('metadata', {}).get('is_current', 'true') == 'false':
+                _trace_append(trace, item, 'not_current')
+            elif hero_filter is not None and item.get('metadata', {}).get('hero') not in hero_filter:
+                _trace_append(trace, item, 'hero_filter')
+            else:
+                kept[bid] = item
+        merged = kept
 
         # 纯关键词块数量上限（RRF 单边分天然靠后，仅防数量失控）
         kw_only = sorted((it for it in merged.values() if it['source'] == 'keyword'),
                          key=lambda x: x['rrf'], reverse=True)
         for it in kw_only[config.MAX_KEYWORD_ONLY:]:
+            _trace_append(trace, it, 'max_keyword_only')
             del merged[it['block_id']]
 
         ranked = sorted(merged.values(), key=lambda x: x['rrf'], reverse=True)
-        return self._apply_kind_quota(ranked, top_k)
+        return self._apply_kind_quota(ranked, top_k, trace=trace)
 
-    def _apply_kind_quota(self, items, top_k):
+    def _apply_kind_quota(self, items, top_k, trace=None):
         """按语料类型配额挑选：每类最多 KIND_MAX 个，总数不超过 top_k。"""
         counts = {}
         out = []
         for it in items:
             kind = it.get('metadata', {}).get('kind', 'hero')
             if counts.get(kind, 0) >= config.KIND_MAX.get(kind, 1):
+                _trace_append(trace, it, 'kind_quota')
                 continue
             counts[kind] = counts.get(kind, 0) + 1
             out.append(it)
+            _trace_append(trace, it, None)
             if len(out) >= top_k:
                 break
         return out
@@ -220,15 +253,26 @@ if __name__ == '__main__':
     p.add_argument('--query', required=True)
     p.add_argument('--hero', action='append', default=None)
     p.add_argument('--top-k', type=int, default=config.TOP_K)
+    p.add_argument('--explain', action='store_true',
+                   help='输出每条候选的丢弃原因（检索诊断）')
     args = p.parse_args()
     t0 = time.time()
     print(f'[检索] {args.query}  过滤: {args.hero}   top_k={args.top_k}')
     r = Retriever()
-    res = r.search(args.query, heroes=args.hero, top_k=args.top_k)
+    trace = [] if args.explain else None
+    res = r.search(args.query, heroes=args.hero, top_k=args.top_k, trace=trace)
     print(f'[结果] 召回 {len(res)} 块，耗时 {time.time()-t0:.1f}s')
     print('-' * 60)
     for it in res:
         print(f'[{it["score"]:.3f}] {it["block_id"]} ({it["source"]})')
         print('   ', it['text'][:120].replace('\n', ' / '))
     print('-' * 60)
+    if trace is not None:
+        print(f'[候选去向] 共 {len(trace)} 条（含丢弃）')
+        for t in trace:
+            reason = t['dropped'] if t['dropped'] else '保留'
+            print(f'  {t["block_id"]:44s} {t["kind"]:14s} score={t["score"]:.3f} '
+                  f'rrf={t["rrf"]:.5f} {t["source"]:11s} → {reason}')
+        kept = sum(1 for t in trace if t['dropped'] is None)
+        print(f'[说明] 保留 {kept} 条，丢弃 {len(trace) - kept} 条')
     print(f'[完成] 总耗时 {time.time()-t0:.1f}s')

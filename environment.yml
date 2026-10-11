@@ -28,7 +28,20 @@ dependencies:
     - mistune==3.3.0
     # RAG 向量检索（src/rag/indexer、retriever 惰性导入；缺失时重建索引/检索直接 ImportError）
     - chromadb==1.5.9
+    # ONNX 编码器的分词器（tokenizers 库直读 tokenizer.json；显式声明，
+    # 将来去掉 ST 后不会断链）
+    - tokenizers==0.22.2
+    # sentence-transformers：编码器回滚档（RAG_EMBEDDING_BACKEND=st）与
+    # ONNX 导出的源；运行期默认走 onnxruntime，不依赖本包
     - sentence-transformers==5.7.0
+    # ONNX 导出链 dev 依赖（export_embedding_onnx.py）：torch 钉版——dynamo
+    # 导出的 opset 18/动态轴行为随大版本变动；onnx 用于把 dynamo 产出的
+    # 外部权重（model.onnx.data）内联回单文件 + int8 量化。两者均为无传递
+    # 依赖来源（无任何运行包 requires onnx），缺装会让 D2 重建链第一步挂
+    - torch==2.12.0
+    - onnx==1.23.2
+    - onnxscript==0.7.2  # torch.onnx.export dynamo 路径硬依赖（缺装在导出时报
+                         # ModuleNotFoundError: onnxscript，实测）
     # 汉字特征库（OCR 矫正用：四角号码、仓颉码、部首、笔画数、拼音）
     - unihan_etl==0.43.0
     - cnradical==0.1.0

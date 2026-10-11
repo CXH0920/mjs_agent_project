@@ -44,6 +44,19 @@ if _v4_problems:
         )
     )
 
+# RAG 编码器三件套前置检查（release.py preflight 是其一；此处拦截直接跑
+# pyinstaller 绕过 release.py 的场景——_collect_dir 对不存在目录 rglob
+# 返回空，会静默产出无编码器的包，运行期检索才熔断）
+from src.scripts.export_embedding_onnx import check as _check_onnx  # noqa: E402
+
+_onnx_problems = _check_onnx()
+if _onnx_problems:
+    raise SystemExit(
+        "ONNX 编码器未就位：{}\n请先运行 python -m src.scripts.export_embedding_onnx".format(
+            "；".join(_onnx_problems)
+        )
+    )
+
 
 # ── _collect_dir：替代裸 Tree（PyInstaller 6.x 兼容，踩坑1）──
 def _match_exclude(rel: Path, pattern: str) -> bool:
@@ -114,8 +127,8 @@ datas.append((str(HERE / "VERSION"), "."))
 # ── 静态资源 ──
 # data：排除运行时产物（对应 .gitignore + 首启生成物）。
 # rag_corpus 语料 / rag_evals 评估集是知识库维护页的运行资料（任务源/输出/状态判断都
-# 依赖，见 task_defs.py），不排除；rag_index / rag_models 仍排除（向量检索依赖的
-# transformers 已被 excludes，索引与模型缓存可由维护管道在开发机重建）
+# 依赖，见 task_defs.py），不排除；rag_index / rag_models 的通用收集仍排除——
+# 两者由上方显式 _collect_dir 精确收集（索引整目录 + ONNX 三件套，见 S6 注释）
 DATA_GLOBS = ("eval_*.json", "syn_*.json", "sample_*.json", "test_guide.json",
               "*.corrupt-*.json", "*_待复核.csv",
               # 示例占位数据（已被 prompt 内嵌 few-shot 替代，无代码引用）、
@@ -169,37 +182,42 @@ datas += [(str(HERE / "src" / "data" / "wubi86.txt"), "src/data")]
 if (HERE / "docs" / "prompts").is_dir():
     datas += _collect_dir(HERE / "docs" / "prompts", "docs/prompts")
 
-# ── 完整版额外：playwright + RAG 检索（踩坑15）──
+# ── RAG 向量检索（S6 起 chromadb 全模式收集：精简版也自带 RAG）──
+# chromadb 按文件系统全量收集：检索路径上 telemetry/api.rust 等子模块是运行时
+# 动态 import，静态分析不可见（实测 eval 检索报 No module named
+# 'chromadb.api.rust' / 'chromadb.telemetry.product.posthog'），必须 collect_all 兜住
+b, d, h = collect_all("chromadb")
+binaries += b
+datas += d
+hiddenimports += h
+# chroma 向量索引：检索数据，与 ONNX 编码器同源（release.py 发版前强制按
+# 打包 backend 重建）；运行期随资料部署复制到可写根（chroma 打开 sqlite
+# 需写权限，不能留在只读 _internal）
+datas += _collect_dir(HERE / "data" / "rag_index", "data/rag_index")
+# ONNX 编码器三件套（model.onnx / tokenizer.json / sha256.json）；int8 产物
+# 不入包（对齐不达标，S7 裁决维持 fp32）。st 档的 modelscope 权重不再收集
+datas += _collect_dir(HERE / "data" / "rag_models" / "onnx",
+                      "data/rag_models/onnx", excludes=["model.int8.onnx"])
+
+# ── 完整版额外：playwright（踩坑15）──
 if FULL:
     b, d, h = collect_all("playwright")
     binaries += b
     datas += d
     hiddenimports += h
-    # chromadb 按文件系统全量收集：检索路径上 telemetry/api.rust 等子模块是运行时
-    # 动态 import，静态分析不可见（实测 eval 检索报 No module named
-    # 'chromadb.api.rust' / 'chromadb.telemetry.product.posthog'），必须 collect_all 兜住
-    b, d, h = collect_all("chromadb")
-    binaries += b
-    datas += d
-    hiddenimports += h
-    # chroma 向量索引：检索数据，与 bge 模型配套（索引即用该模型编码）；
-    # 运行期随资料部署复制到可写根（chroma 打开 sqlite 需写权限，不能留在只读 _internal）
-    datas += _collect_dir(HERE / "data" / "rag_index", "data/rag_index")
-    # bge-small-zh 模型（HF snapshots 结构）：只收 safetensors 权重，
-    # pytorch_model.bin 为冗余副本（sentence_transformers 优先加载 safetensors）
-    datas += _collect_dir(HERE / "data" / "rag_models" / "modelscope",
-                          "data/rag_models/modelscope", excludes=["pytorch_model.bin"])
 
 # ── excludes ──
 excludes = [
     # paddle 系恒排除（B1 退役后 rapidocr 的 paddle 推理后端 import 图仍会静态牵出
     # 环境内 paddlepaddle 的 libpaddle.pyd/common.dll/mkldnn.dll ~148MB，必须显式排除）
     "paddle", "paddleocr",
-    # torch/transformers/tokenizers 是 sentence_transformers（RAG 检索）的
-    # 推理底座：精简版排除 → RAG 降级为经典模式；完整版在下方移除这三项启用 RAG（踩坑15）。
-    # onnxruntime 已移出本清单：B2 复核引擎（rapidocr）必需（此前仅 chromadb 默认
-    # embedding 用，恒排除）
-    "torch", "torchvision", "transformers", "tokenizers", "onnx",
+    # torch/transformers 已不再被任何包需要（RAG 编码走 ONNX + tokenizers，
+    # st 回滚档仅存在于开发环境）；onnx 包是量化/校验工具，运行期不需要。
+    # scipy/sklearn/pandas/matplotlib/hf_xet：src/ 零 import（S6 体积治理实测，
+    # 仅 tqdm 命中且已排除路径外）——chromadb collect_all 的静态 import 图牵入，
+    # 运行期检索路径不经过，排除回收 ~114MB
+    "torch", "torchvision", "transformers", "onnx",
+    "scipy", "sklearn", "pandas", "matplotlib", "hf_xet",
     # PySide6 WebEngine/QML（markdown 用 QTextBrowser，零 WebEngine，~150MB）
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.QtWebChannel", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
@@ -209,9 +227,6 @@ excludes = [
 ]
 if not FULL:
     excludes += ["playwright"]
-else:
-    for _rag_dep in ("torch", "transformers", "tokenizers"):
-        excludes.remove(_rag_dep)
 
 # ── Analysis ──
 a = Analysis(

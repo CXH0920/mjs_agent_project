@@ -126,11 +126,79 @@ def preflight(full: bool = False) -> str:
             "；".join(problems)))
     _ok("OCR 双套件模型（v6 内置 + v4 预取）已就位")
 
+    # RAG 编码器（S6b①）：ONNX 三件套缺失则自动导出（幂等；st 档显式回滚时跳过）
+    ensure_onnx_encoder()
+
     # 版本单一来源：项目根 VERSION 文件（main.py 运行时同源解析）；
     # 缺失时回退 git describe，再回退 0.0.0-unknown
     ver = _read_version_file() or _git("describe", "--tags", "--always", fallback="0.0.0-unknown")
     _ok(f"版本号 {ver}")
     return ver
+
+
+def ensure_onnx_encoder() -> None:
+    """ONNX 编码器就位检查：缺失/损坏时自动导出（导出依赖 torch，dev 机器可用）。"""
+    from src.scripts.export_embedding_onnx import check as check_onnx
+
+    problems = check_onnx()
+    if not problems:
+        _ok("ONNX 编码器三件套已就位（哈希一致）")
+        return
+    for line in problems:
+        _warn(f"ONNX 编码器未就位：{line}")
+    _info("自动导出 ONNX 编码器（python -m src.scripts.export_embedding_onnx）…")
+    result = subprocess.run(
+        [sys.executable, "-m", "src.scripts.export_embedding_onnx"],
+        cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if result.returncode != 0:
+        _die("ONNX 编码器自动导出失败：\n" + (result.stderr or "")[-800:])
+    problems = check_onnx()
+    if problems:
+        _die("ONNX 编码器导出后仍校验不过：" + "；".join(problems))
+    _ok("ONNX 编码器已自动导出并校验通过")
+
+
+def rebuild_rag_index_for_release() -> dict:
+    """发版前用与打包一致的 backend 强制重建项目内索引（S6b②）。
+
+    spec 在构建期收集 data/rag_index 进包，因此重建必须发生在 build 之前：
+    保证「包内索引 == 语料 == ONNX 编码」三者同源；fp32 建索引打 int8 包
+    一类的静默降级由本步骤根治。返回 manifest 字段素材。
+    """
+    from src.rag import config
+    from src.rag.indexer import load_all_blocks
+
+    _info(f"发版前重建 RAG 索引（backend={config.EMBEDDING_BACKEND}）…")
+    if config.EMBEDDING_BACKEND != "onnx":
+        _die(f"当前 EMBEDDING_BACKEND={config.EMBEDDING_BACKEND!r}，打包形态要求 onnx"
+             "（RAG_EMBEDDING_BACKEND 环境变量需清除）")
+    result = subprocess.run(
+        [sys.executable, "-m", "src.rag.indexer"],
+        cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if result.returncode != 0:
+        _die("RAG 索引重建失败：\n" + (result.stderr or result.stdout)[-800:])
+    stored = verify_rag_index_consistency()
+    _ok(f"RAG 索引同源校验通过（{stored} 块 == 语料 {stored} 块）")
+    return {"index_blocks": stored}
+
+
+def verify_rag_index_consistency() -> int:
+    """只读断言「项目内索引块数 == 语料块数」（rebuild 的校验半程独立成函数，
+    --skip-build 路径同样执行——只校验不重建，语料已变则提示走完整发版）。
+
+    返回索引块数（manifest 字段素材）。"""
+    from src.rag import config
+    from src.rag.indexer import load_all_blocks
+
+    corpus_blocks = len(load_all_blocks())
+    import chromadb
+
+    client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
+    stored = client.get_collection("mjs_rag_v1").count()
+    if stored != corpus_blocks:
+        _die(f"索引与语料不同源：索引 {stored} 块 != 语料 {corpus_blocks} 块"
+             "（--skip-build 不重建索引，语料变动后请走完整发版流程）")
+    return stored
 
 
 def _read_version_file() -> str:
@@ -190,6 +258,89 @@ def verify_full_artifacts() -> None:
     if not (INTERNAL / ".full_build").exists():
         _die(".full_build 标记未写入包内，运行期 is_full_build() 会误判为精简版")
     _ok(".full_build 标记已写入")
+
+
+# ── RAG 产物校验与检索门禁（S6b③④，替代仓库登记的保障）──────────
+def verify_rag_artifacts() -> str:
+    """包内 RAG 资产校验：ONNX 三件套存在且哈希一致 + chroma.sqlite3 存在
+    + 包内不含 int8 产物（S7 裁决维持 fp32，混入只是多背 24MB，但收集
+    边界回退要以断言可见）。
+
+    返回 onnx model sha256 前 12 位（manifest 字段素材）。"""
+    _info("RAG 产物校验：包内 ONNX 编码器 + 向量索引…")
+    onnx_dir = INTERNAL / "data" / "rag_models" / "onnx"
+    expected = {
+        "model.onnx": onnx_dir / "model.onnx",
+        "tokenizer.json": onnx_dir / "tokenizer.json",
+        "sha256.json": onnx_dir / "sha256.json",
+        "chroma.sqlite3": INTERNAL / "data" / "rag_index" / "chroma" / "chroma.sqlite3",
+    }
+    for label, path in expected.items():
+        if not path.is_file():
+            _die(f"包内缺失 {label}（{path}）：spec 的 RAG 收集未生效，请检查后重新构建")
+    if (onnx_dir / "model.int8.onnx").is_file():
+        _die("包内发现 model.int8.onnx：spec 的 onnx 收集 excludes 未生效（S7 裁决只收 fp32）")
+    sidecar = json.loads((onnx_dir / "sha256.json").read_text(encoding="utf-8"))
+    model_sha = ""
+    for name in ("model.onnx", "tokenizer.json"):
+        entry = sidecar.get(name, {})
+        expect_sha = entry.get("sha256") if isinstance(entry, dict) else entry
+        actual = hashlib.sha256(
+            (onnx_dir / name).read_bytes()).hexdigest()
+        if expect_sha != actual:
+            _die(f"包内 {name} 哈希与侧车不符（构建中文件被改动？）")
+        if name == "model.onnx":
+            model_sha = actual
+    _ok(f"RAG 产物校验通过（onnx sha256 前 12 位 {model_sha[:12]}）")
+    return model_sha[:12]
+
+
+def eval_gate(skip: bool = False) -> None:
+    """包内检索门禁（G4）：exe -m eval_rule_faqs --limit 3，拦截静默降级。
+
+    skip=True 对应 --skip-eval-gate：评估集仍在演化（前 3 题任一合理未命中
+    即阻断），确认为已知合理未命中时的人工 override 出口；退出码契约
+    （全对才退 0，周更步骤 7 依赖）不动。
+
+    -m 子进程不走 main.py 的首启部署，RAG 资产（评估集/ONNX 编码器/索引）仍在
+    只读 _internal 内，而 PROJECT_ROOT（打包态=exe 同级可写根）下没有——先把三处
+    部署过去（等价 _ensure_clean_runtime 补缺），门禁跑完即清理。"""
+    if skip:
+        _warn("已跳过包内 eval 门禁（--skip-eval-gate，人工确认已知未命中）")
+        return
+    _info("RAG 检索门禁：包内 eval_rule_faqs --limit 3…")
+    staged_roots = []
+    for rel in ("data/rag_evals", "data/rag_models/onnx", "data/rag_index"):
+        staged = DIST / "mjs_agent" / Path(rel)
+        source = INTERNAL / rel
+        if not staged.exists() and source.is_dir():
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, staged)
+            staged_roots.append(staged)
+    try:
+        result = subprocess.run(
+            [str(EXE), "-m", "src.scripts.eval_rule_faqs", "--limit", "3",
+             "--no-record"],
+            cwd=DIST / "mjs_agent", capture_output=True, timeout=600,
+            text=True, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        _die("包内 eval 门禁超时（600s）：疑似索引损坏或模型加载挂起，"
+             "请手动跑 dist/mjs_agent/mjs_agent.exe -m src.scripts.eval_rule_faqs --limit 3 排查")
+    finally:
+        for staged in staged_roots:
+            shutil.rmtree(staged, ignore_errors=True)
+            try:  # 撤掉因此变空的父目录（rag_models），避免残留空壳
+                staged.parent.rmdir()
+            except OSError:
+                pass
+    output = result.stdout or ""
+    if result.returncode != 0:
+        _die("包内 eval 门禁未通过（退出码 "
+             f"{result.returncode}）：\n{output[-600:]}\n{result.stderr or ''}")
+    if "命中率" not in output:
+        _die(f"包内 eval 门禁输出异常（未见命中率行）：\n{output[-600:]}")
+    _ok("包内 eval 门禁通过：" + next(
+        (line.strip() for line in output.splitlines() if "命中率" in line), ""))
 
 
 # ── 纯净度校验 ─────────────────────────────────────────────────
@@ -352,8 +503,8 @@ def make_zip(version: str) -> Path:
 
 
 def write_release_manifest(version: str, zip_path: Path | None, full: bool,
-                           smoke_status: str) -> Path:
-    """发版清单落 logs/：版本/构建模式/烟测/zip 指纹，分发包具备校验与追溯手段。"""
+                           smoke_status: str, rag_info: dict | None = None) -> Path:
+    """发版清单落 logs/：版本/构建模式/烟测/zip 指纹/RAG 资产，分发包具备校验与追溯手段。"""
     entry = {
         "version": version,
         "built_at": datetime.now().isoformat(timespec="seconds"),
@@ -366,6 +517,7 @@ def write_release_manifest(version: str, zip_path: Path | None, full: bool,
         ),
         "zip_size_mb": round(zip_path.stat().st_size / 1048576, 1) if zip_path else None,
     }
+    entry.update(rag_info or {})
     manifest_path = HERE / "logs" / f"release-{version}.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -411,19 +563,53 @@ def main() -> None:
     ap.add_argument("--no-smoke", action="store_true", help="跳过启动烟雾测试")
     ap.add_argument("--zip", action="store_true", help="额外产出 zip 分发包")
     ap.add_argument("--skip-build", action="store_true", help="跳过构建，只校验已有 dist")
+    ap.add_argument("--skip-eval-gate", action="store_true",
+                    help="跳过包内 eval 门禁（人工确认前 3 题未命中为已知合理变化时使用；"
+                         "退出码契约不动，仅发版流程 override）")
     args = ap.parse_args()
 
     version = preflight(args.full)
 
+    rag_info: dict = {}
     if not args.skip_build:
+        # spec 构建期收集 data/rag_index → 同源重建必须先于 build（S6b②）
+        rag_info.update(rebuild_rag_index_for_release())
         build(args.full)
-    elif not EXE.exists():
-        _die(f"--skip-build 但找不到已构建的 exe：{EXE}")
+    else:
+        if not EXE.exists():
+            _die(f"--skip-build 但找不到已构建的 exe：{EXE}")
+        # dist 实际模式须与 --full 参数一致（否则体积断言/manifest 模式错报）
+        dist_is_full = (INTERNAL / ".full_build").exists()
+        if dist_is_full != args.full:
+            _die(f"--skip-build 的 dist 是{'完整版' if dist_is_full else '精简版'}，"
+                 f"与 {'--full' if args.full else '无 --full'} 参数不符，请用匹配的参数重跑")
+        # skip-build 不重建索引，但同源断言不豁免：语料已变则此包索引过期
+        rag_info["index_blocks"] = verify_rag_index_consistency()
+        _ok(f"RAG 索引同源校验通过（--skip-build 只读校验，{rag_info['index_blocks']} 块）")
 
     purity_check()
 
     if args.full:
         verify_full_artifacts()
+
+    # S6b③④：RAG 产物校验 + 包内检索门禁（对 RAG 资产的断言，替代仓库登记）
+    rag_info["encoder_backend"] = "onnx"
+    rag_info["onnx_model_sha256"] = verify_rag_artifacts()
+    rag_info["unpacked_mb"] = round(
+        sum(p.stat().st_size for p in (DIST / "mjs_agent").rglob("*")
+            if p.is_file()) / 1048576, 1)
+    # G6 发版断言。方案原设 620MB 对应 int8 打包；2026-10-11 S7 裁决维持
+    # fp32（+67MB）且实测 chromadb rust bindings ~61MB（体积账漏算），按
+    # fp32 实测基线 + 余量调整。完整版 = 精简 + playwright（实测差 ~105MB），
+    # 收集边界回退（如 torch 栈被误 un-exclude）同样以断言可见
+    budget_mb = 800 if args.full else 670
+    if rag_info["unpacked_mb"] > budget_mb:
+        _die(f"{'完整版' if args.full else '精简版'}体积 "
+             f"{rag_info['unpacked_mb']}MB 超发版断言 {budget_mb}MB"
+             "（检查 spec excludes 是否被回退 / RAG 资产是否重复收集）")
+    _ok(f"体积断言通过：{rag_info['unpacked_mb']}MB ≤ {budget_mb}MB")
+    eval_gate(skip=args.skip_eval_gate)
+    rag_info["eval_gate"] = "skipped" if args.skip_eval_gate else "passed"
 
     if not args.no_smoke:
         smoke_test()
@@ -433,7 +619,7 @@ def main() -> None:
         smoke_status = "skipped"
 
     zip_path = make_zip(version) if args.zip else None
-    write_release_manifest(version, zip_path, args.full, smoke_status)
+    write_release_manifest(version, zip_path, args.full, smoke_status, rag_info)
     report(version, zip_path, args.full)
 
 

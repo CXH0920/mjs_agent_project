@@ -5,6 +5,7 @@
 """
 import json
 import logging
+import shutil
 import sys
 import time
 
@@ -256,11 +257,11 @@ def build_index(rebuild=True):
     if dup:
         raise ValueError(f'语料块 id 重复：{sorted(dup)[:10]}')
 
-    # 2/4 加载模型
+    # 2/4 加载编码器（onnx 默认 / st 回滚档，统一经 embedder 抽象）
     t2 = time.time()
-    print(f'[2/4] 加载向量模型：{config.EMBEDDING_MODEL}')
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(config.EMBEDDING_MODEL, device='cpu')
+    print(f'[2/4] 加载向量编码器：backend={config.EMBEDDING_BACKEND}')
+    from src.rag.embedder import get_embedder
+    model = get_embedder()
     print(f'      ✅ 模型就绪，耗时 {time.time()-t2:.1f}s')
     logger.info('模型就绪，耗时 %.1fs', time.time()-t2)
 
@@ -275,20 +276,20 @@ def build_index(rebuild=True):
     # 4/4 写入 Chroma
     print(f'[4/4] 写入向量库 → {config.CHROMA_DIR}')
     import chromadb
-    client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     coll_name = 'mjs_rag_v1'
     if rebuild:
-        try:
-            client.delete_collection(coll_name)
-        except Exception as error:
-            # 集合不存在属首次重建的正常路径；删除失败（文件被占用/锁）会让重建
-            # 建立在残留旧向量上，必须中止而不是静默继续
-            existing = {c.name for c in client.list_collections()}
-            if coll_name in existing:
+        # 索引完全可由语料重建；整目录删除顺带清掉历次 delete_collection 留下的
+        # 孤立段目录（实测 21 组 / 80.9MB 里绝大部分是残留）。删不掉（文件被
+        # 占用/锁）会让重建建立在残留旧向量上，必须中止而不是静默继续
+        if config.CHROMA_DIR.exists():
+            try:
+                shutil.rmtree(config.CHROMA_DIR)
+            except OSError as error:
                 raise RuntimeError(
-                    f"旧索引集合 {coll_name} 删除失败，请关闭占用该目录的程序后重试: {error}"
+                    f'旧索引目录 {config.CHROMA_DIR} 删除失败，'
+                    f'请关闭占用该目录的程序后重试: {error}'
                 ) from error
-            logger.debug('旧集合 %s 不存在，跳过删除', coll_name)
+    client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     coll = client.get_or_create_collection(
         coll_name, metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'})
     ids = [b[0] for b in all_blocks]
@@ -317,8 +318,7 @@ def build_index(rebuild=True):
                             metadatas=[metas[j] for j in idx], embeddings=[embs[j].tolist() for j in idx])
             print(f'      [更新 {len(to_update)} 块]')
     else:
-        if coll.count() > 0:
-            coll.delete(where={})
+        # 整目录删除后新建的库必为空，无需再清残留向量
         for i in tqdm(range(0, len(ids), BATCH), desc='写入', unit='批', file=sys.stdout):
             coll.add(ids=ids[i:i+BATCH], documents=docs[i:i+BATCH],
                      metadatas=metas[i:i+BATCH], embeddings=embs[i:i+BATCH].tolist())

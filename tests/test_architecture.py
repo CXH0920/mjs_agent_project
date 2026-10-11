@@ -662,7 +662,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）
     # 2026-10-06 B1 引擎切换：paddle 环境检查重写为 onnxruntime/rapidocr 双套件
     # 版本+模型就位检查，新增「白名单」冲突重检组（570 → 610，设计文档 §十四）
-    "scripts/doctor.py": 610,
+    # 2026-10-11 ONNX 迁移 S4：新增「RAG索引」检查组（体积/孤立段/编码器三件套，
+    # embedding_onnx_migration.md §S4）
+    "scripts/doctor.py": 675,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
     # hero_classification_panel.py（原 827）出表：三页签拆入

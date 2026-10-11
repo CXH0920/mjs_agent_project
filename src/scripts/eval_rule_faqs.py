@@ -14,6 +14,9 @@
     python -m src.scripts.eval_rule_faqs --generate          # 生成/重建评估集
     python -m src.scripts.eval_rule_faqs                     # 运行评估（需已建索引）
     python -m src.scripts.eval_rule_faqs --top-k 5
+    python -m src.scripts.eval_rule_faqs --no-record         # 不追加 eval_history.jsonl
+
+每次运行（默认）追加一条记录到 logs/rag/eval_history.jsonl 供周更对比。
 """
 import argparse
 import io
@@ -22,6 +25,7 @@ import os
 import sys
 
 from src.config.env import PROJECT_ROOT as ROOT
+from src.scripts.rag_eval_history import append_eval_history, dir_mb
 
 DEFAULT_DATASET = os.path.join(ROOT, 'data', 'rag_evals', 'rule_faq_eval.json')
 FAQ_CORPUS = os.path.join(ROOT, 'data', 'rag_corpus', 'FAQ裁定块.json')
@@ -88,6 +92,8 @@ def main():
     parser.add_argument('--dataset', default=DEFAULT_DATASET, help='评估集路径')
     parser.add_argument('--top-k', type=int, default=None, help='命中窗口（默认取评估集 k）')
     parser.add_argument('--limit', type=int, default=None, help='只评估前 N 条（调试用）')
+    parser.add_argument('--no-record', action='store_true',
+                        help='不追加 logs/rag/eval_history.jsonl')
     args = parser.parse_args()
 
     if args.generate:
@@ -102,6 +108,15 @@ def main():
     if args.limit:
         dataset = dict(dataset, items=items[:args.limit])
     report = run_eval(dataset, retriever, top_k=args.top_k)
+    append_eval_history('eval_rule_faqs', {
+        'dataset_version': dataset.get('version'),
+        'top_k': report['top_k'],
+        'total': report['total'],
+        'passed': report['passed'],
+        'hit_rate': report['hit_rate'],
+        'corpus_blocks': len(retriever.blocks),
+        'index_mb': dir_mb(os.path.join(ROOT, 'data', 'rag_index')),
+    }, record=not args.no_record)
     print('=' * 60)
     print('FAQ 裁定回归评估（top-k=%d，共 %d 题）' % (report['top_k'], report['total']))
     print('通过：%d / %d，命中率：%.1f%%' % (report['passed'], report['total'], report['hit_rate'] * 100))

@@ -26,7 +26,7 @@
 
 1. **语料资产分层管理** — 把数据文件按来源性质与加工程度归入贴源层（ODS）、明细层（DWD）与集市层（mart），并保证集市层不被回读加工
 2. **语料构建管线** — 10 个生成脚本从权威原文产出 12 个语料 JSON 文件，全部由 `src/business/rag/task_defs.py` 的 `TASKS` 统一定义，调度脚本 `maintain_rag.py` 按文件指纹增量重跑；构建时按武将变更时间轴给每块打 `is_current` / `as_of` 版本戳
-3. **向量索引基础设施** — 语料块规范化为文本、本地嵌入模型（bge-small-zh-v1.5）向量化、写入 ChromaDB 持久化集合
+3. **向量索引基础设施** — 语料块规范化为文本、编码器抽象层（`embedder.py`：ONNX 默认 / sentence-transformers 回滚档）向量化、写入 ChromaDB 持久化集合；整目录重建语义（rmtree + 新建，清理孤立段）
 4. **混合检索** — 元数据硬过滤（默认只召当前版本）+ 向量相似度 + 关键词兜底，经 RRF 排名融合与语料类型配额产出最终召回块
 5. **RAG 注入 AI 生成** — 为攻略/相性生成提供检索块与提示词预算控制（实际提示词拼装归 `module_ai_batch.md`，本模块只到 `src/rag/retriever.py` 的召回边界）
 6. **人工维护工作台** — 五个数据源编辑面板 + 元规则 T0 母本维护 + 索引精化三层架构 + 结构化审计驱动跳转
@@ -103,9 +103,11 @@ mart（AI 生成产物，只写不读，绝不反喂 DWD）
 
 ```
 src/rag/                          # 向量索引基础设施层
-├── config.py                     # 路径 / 开关 / 检索参数 / KIND_MAX 类型配额
-├── indexer.py                    # 语料规范化 + 向量化 + ChromaDB 写入
-└── retriever.py                  # 混合检索（向量 + 关键词 RRF 融合）
+├── config.py                     # 路径 / 开关 / 检索参数 / KIND_MAX 类型配额 / 编码器后端
+├── embedder.py                   # 编码器抽象：OnnxEmbedder（默认）/ STEmbedder（回滚档），
+│                                 #   侧车哈希自校验、缺件熔断、单例缓存；encode 返回 np.ndarray
+├── indexer.py                    # 语料规范化 + 向量化 + ChromaDB 写入（重建=整目录 rmtree）
+└── retriever.py                  # 混合检索（向量 + 关键词 RRF 融合；trace 插桩可观测）
 
 src/business/rag/                 # 业务层（8 文件，本模块全部）
 ├── task_defs.py                  # 语料任务单一事实源（10 任务）

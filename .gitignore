@@ -83,6 +83,10 @@ scripts/.rule_doc_snapshot.json
 scripts/.sync_*.json
 # pytest 临时目录（测试运行产物）
 .tmp_test/
+# OCR 模型 %TEMP% 缓存的意外落位副本（engine_loader 固定目录名，发版/测试运行残留）
+mjs_rapidocr_models/
+# 根目录意外落位的日志（正常应落 logs/，logs/ 已整目录忽略）
+/debug.log
 # 攻略/相性质量评估临时产物（验收用，可删）
 data/eval_*.json
 data/syn_*.json

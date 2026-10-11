@@ -22,7 +22,8 @@ MODELSCOPE_DIR = ROOT / "data" / "rag_models" / "modelscope"
 # CHROMA_DIR 由 chromadb.PersistentClient 自建；rag.log 由全局 setup_logging 创建；
 # CORPUS_DIR 由 scripts/build_*.py 创建；MODEL_CACHE 由模型加载器创建。
 
-# 必须在 import sentence_transformers / transformers 之前设置
+# 必须在 import sentence_transformers / transformers 之前设置（仅 st 回滚档需要；
+# onnx 后端不 import 这两个包，但保留全局设置无害，避免切换后端时漏配）
 os.environ.setdefault("HF_HOME", str(MODEL_CACHE))
 os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(MODEL_CACHE / "sentence_transformers"))
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")  # 国内镜像
@@ -49,8 +50,17 @@ RAG_SYNERGY_PROMPT_CHARS = _to_int("RAG_SYNERGY_PROMPT_CHARS", 6000)
 
 # ---------------------------------------------------------------
 # Embedding：本地 bge-small-zh-v1.5
-# 优先加载项目内 modelscope 缓存，其次共享 RAG_MODEL_DIR，最后 HF 在线下载
+# 编码器后端：onnx（默认，data/rag_models/onnx 三件套）/ st（回滚档，
+# sentence-transformers + torch）。ONNX 产物经 export_embedding_onnx.py
+# 从同一份源权重导出并写侧车哈希，缺失时检索/建索引熔断并给修复指引。
 # ---------------------------------------------------------------
+EMBEDDING_BACKEND = (os.environ.get("RAG_EMBEDDING_BACKEND")
+                     or _ENV.get("RAG_EMBEDDING_BACKEND", "onnx")).lower()
+ONNX_MODEL_DIR = ROOT / "data" / "rag_models" / "onnx"
+RAG_EMBED_THREADS = _to_int("RAG_EMBED_THREADS", 4)
+
+# 优先加载项目内 modelscope 缓存，其次共享 RAG_MODEL_DIR，最后 HF 在线下载
+# （仅 st 后端在用：onnx 侧车记录的 source_weights_sha256 也由此定位源权重）
 def _find_local_model():
     candidates = []
     if MODELSCOPE_DIR.exists():
