@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-10-06
+> 文档日期：2026-10-11（基线 2081b5b）
 
 ---
 
@@ -35,8 +35,8 @@ src/
 
 - `PROJECT_ROOT`：可写运行时根。开发态 = 项目根；frozen 下 = exe 所在目录，承载 `config.env` / `logs/` / 用户运行时数据
 - `BUNDLE_ROOT`：只读打包资源根。开发态 = 项目根；frozen 下 = `_internal/`，承载静态数据 / 模板 / 图片 / OCR 模型
-- `DEFAULT_ENV_FILE` / `DEFAULT_PRICING_FILE` / `DEFAULT_PROFILES_FILE` 分别指向 `PROJECT_ROOT/config.env` / `BUNDLE_ROOT/config/model_pricing.json`（frozen 下即 `_internal/config/`，随版本控制入库）/ `PROJECT_ROOT/config/api_profiles.json`（含敏感 Key，故落可写运行时根、不进只读包）
-- 共享资源目录（`6c674df` 路径常量收敛后的单一权威源）：`IMAGES_DIR` = `BUNDLE_ROOT/images`（只读，UI 头像读取）、`IMAGES_OUTPUT_DIR` = `PROJECT_ROOT/images`（可写，crawler 下载写盘；UI 不回读本目录）、`SCREENSHOTS_DIR` = `PROJECT_ROOT/screenshots`（推荐/实战/巅峰赛面板与采集服务共用）
+- `DEFAULT_ENV_FILE` / `DEFAULT_PRICING_FILE` / `DEFAULT_PROFILES_FILE` 分别指向 `PROJECT_ROOT/config.env` / `PROJECT_ROOT/config/model_pricing.json`（6b21d75 由 `BUNDLE_ROOT` 换根：用户可改配置读写均在运行时根，frozen 首启从打包默认部署可改副本、升级不覆盖）/ `PROJECT_ROOT/config/api_profiles.json`（含敏感 Key，故落可写运行时根、不进只读包）
+- 共享资源目录（`6c674df` 路径常量收敛后的单一权威源）：`IMAGES_DIR` = `BUNDLE_ROOT/images`（随包头像基线）、`IMAGES_OUTPUT_DIR` = `PROJECT_ROOT/images`（可写，crawler 下载写盘；读取侧两级回退——本目录优先、`IMAGES_DIR` 兜底，见 `ui/shared/portrait.find_portrait_path()`，6b21d75）、`SCREENSHOTS_DIR` = `PROJECT_ROOT/screenshots`（推荐/实战/巅峰赛面板与采集服务共用）
 - `OCR_CONFUSION_OVERRIDES_PATH`：`PROJECT_ROOT/data/ocr_confusion_overrides.json`，OCR 混淆白名单路径单一事实源——UI「白名单配置」界面写入、识别侧（`character_similarity`）读取，双侧只引用不再各自拼接
 - `is_full_build()`：开发态恒 True；frozen 下读 `BUNDLE_ROOT/.full_build` 标记，精简版（无 RAG 维护页）由此守卫
 
@@ -88,7 +88,7 @@ sys.exit(app.exec())
 
 关键设计点：
 
-1. **frozen 首启骨架补齐** — `_ensure_clean_runtime()` 仅 frozen 态执行：从 `_internal/config.env.example` 复制出 `config.env`（用户填 Key），再把 `_internal/config/ocr_rois.default.json` 复制为 `config/ocr_rois.json`（用户 ROI 可编辑副本，缺失才复制），创建 `data/` / `logs/` / `config/` / `templates/` / `images/` 目录，将 `_internal/data/` 下静态资源（核心库 json / 官方榜单 csv / RAG 语料 / 评估集 / raw_guides）递归复制到 `PROJECT_ROOT/data/`（只补缺失、不覆盖已有数据），并把元规则母本 `元规则整理-完整版.md` 部署到 `PROJECT_ROOT/docs/`（`build_rule_corpus` 等维护脚本读该路径）。开发态直接返回。
+1. **frozen 首启骨架补齐** — `_ensure_clean_runtime()` 仅 frozen 态执行：从 `_internal/config.env.example` 复制出 `config.env`（用户填 Key），再把 `_internal/config/ocr_rois.default.json` 复制为 `config/ocr_rois.json`（用户 ROI 可编辑副本，缺失才复制），并把 `faction_colors.json` / `model_pricing.json` 两份用户可改配置从 `BUNDLE_ROOT/config/` 复制为 `PROJECT_ROOT/config/` 可改副本（6b21d75，只补缺失——这两类配置的读写已换根到运行时根，不部署会因基线在只读包内而不可改）；创建 `data/` / `logs/` / `config/` / `templates/` / `images/` 目录，将 `_internal/data/` 下静态资源（核心库 json / 官方榜单 csv / RAG 语料 / 评估集 / raw_guides）递归复制到 `PROJECT_ROOT/data/`（只补缺失、不覆盖已有数据），并把元规则母本 `元规则整理-完整版.md` 部署到 `PROJECT_ROOT/docs/`（`build_rule_corpus` 等维护脚本读该路径）。开发态直接返回。
 2. **抑制控制台弹窗** — `_install_no_window_patch()` 在 frozen 下给 `subprocess.Popen.__init__` 注入 `CREATE_NO_WINDOW`，避免 adb 等控制台子程序触发 Windows 新建控制台的轮询黑窗。`subprocess.run` 内部走 Popen，一并覆盖。开发态不 patch，保留控制台便于调试。
 3. **OCR 预热阻塞式** — `wait_ocr_warmup(timeout_ms=120_000)` 在启动画面上完成 OCR 引擎冷加载。因引擎初始化长时间持有 Python GIL，若与主窗口事件循环并发运行会导致界面卡死，故先预热后 `window.show()`。超时覆盖 120 秒，防止冷加载超过默认值时窗口已显示但预热仍阻塞 UI。
 4. **启动页异常兜底** — `MainWindow()` 或预热期间抛异常时，`splash.close()` + `logger.exception` + `QMessageBox.critical`，并 `sys.exit(1)`，避免启动页残留。
@@ -136,13 +136,15 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口）完成大写 KEY → 内部小写 key 映射与类型转型（int/bool/float/str 四型，str 不经转型透传）；两个 getter 的键集与默认值同源于该表，新键只登记元表一处。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护。
+`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 30 键：runtime 6 + mumu 15 + 透传 9）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
 
 `get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(32768，cf9c927 由 16384 上调；P1-7 起单源于 `env.DEFAULT_MAX_OUTPUT_TOKENS`，`api_generator.MAX_OUTPUT_TOKENS` 仅引用) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
 `get_mumu_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_screenshot_mode`("auto"，MUMU_SCREENSHOT_MODE，透传给 capture_service；063dc47 补回返回字典——此前该键漏出、文档承诺的排障手段实为死开关) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_primary_engine`("v6"，B1 新增，v4 为回滚档且主复核引擎互换) / `mumu_ocr_cpu_threads`(6，钉入 onnxruntime intra_op) / `mumu_ocr_recheck_enabled`(False，复核引擎开关) / `mumu_ocr_poll_idle_pause`(True，轮询闲置自动暂停开关，bca4092 新增)。`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键（doctor `DEAD_CONFIG_KEYS` 登记）。OCR 推理配置（主引擎套件、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `engine_loader.create_rapidocr_ocr()`。2026-09 起（cd35c98）另新增模板匹配分层加速与 ADB raw 帧截图提速相关配置参数，详见 `config.env.example`。
 
 闲置暂停阈值分钟数不走配置键：早先的 `MUMU_OCR_POLL_IDLE_MINUTES` 已移除，现为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5` 类常量（`src/ui/app/poll_coordinator.py`），配置面只保留 `MUMU_OCR_POLL_IDLE_PAUSE` 开关。
+
+元表其余 9 键为透传键（无 getter，调用方直接从 `load_env_config()` 取值，不进 UI 配置对话框）：`api_key` / `api_url` / `model`（旧 `DEEPSEEK_*` 三件套，profiles 域旧链兜底消费）、`mjs_data_repo`（pull_data 私有仓位置）、`recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`（推荐指数计算参数）、`data_freshness_timeline_stale_days`（ae92c1d 随数据新鲜度芯片新增：公告时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄估算，非正整数回退默认 14；`config.env.example` 文件尾新增「数据新鲜度（状态栏芯片）」段）。
 
 ### 3.4 日志系统
 
@@ -178,12 +180,13 @@ root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即�
 
 ### 3.5 模型价格
 
-- `config/model_pricing.json`（frozen 下位于 `BUNDLE_ROOT/config/`）是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回"无法自动估算"（`get_model_pricing` 返回 `None`）。
+- `config/model_pricing.json`（frozen 下读写均在运行时根 `PROJECT_ROOT/config/`，6b21d75 由只读 `BUNDLE_ROOT/config/` 换根，首启由 `_ensure_clean_runtime` 部署可改副本）是版本控制的模型价格来源。未知模型不会套用默认价格，而是返回"无法自动估算"（`get_model_pricing` 返回 `None`）。
 - 价格文件包含 `currency`、`unit`、`updated_at` 和 `models`；计价单位为"百万tokens"，每个模型维护 `input_per_million`、`output_per_million`、可选 `cached_input_per_million` 单价。2026-09 新增 `sensenova-6.8-flash-lite`（74234a8），当前表内实测 3 个模型（deepseek-v4-pro / deepseek-v4-flash / sensenova-6.8-flash-lite）。
 - `load_pricing_config(path)` 负责读取价格表，文件不存在或格式无效时返回默认空表 `{"currency":"CNY","unit":"百万tokens","updated_at":"","models":{}}`。
 - `save_pricing_config(path, data)` 负责 UTF-8 无 BOM、LF 换行的原子写入（9737d52 起委托 `json_repository.atomic_write_text`，函数内延迟导入避免 config↔data 循环初始化）。
 - `get_model_pricing(model)` 校验单价必须为非负数字（且不是 bool），非法返回 `None`。
 - API 配置对话框的"价格配置"页签直接维护该文件，保存前会校验模型名称唯一且单价为非负数。
+- pricing 域回退语义由 `tests/test_env_config.py` 守护（b5e8e4f 补齐，共七函数十五用例）：文件缺失 / JSON 损坏 / 根非对象回退空表；负价格 / 非数字 / 布尔误判为价格返回 `None`；未知模型返回 `None`。
 
 ### 3.6 势力配色配置
 
@@ -214,7 +217,7 @@ root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即�
 
 **结构升级说明**（2026-09-15）：原 dict 结构 `{"秦": "#8B4513", "汉": "#B22222", ...}` 升级为数组结构 `[{faction, color}, ...]`。数组位置即筛选界面的势力展示顺序——配置方按所需展示次序排列条目，无需额外排序字段。`load_faction_colors()` 返回 dict（字典插入顺序即配置顺序），`get_faction_colors()` 带缓存，`reload_faction_colors()` 清缓存重读。`sort_factions_by_config(factions)` 按配置顺序排序势力名列表，配置外的势力按码点序追加尾部。
 
-配置文件的唯一权威源是版本控制的 `config/faction_colors.json`；frozen 打包时随 `_internal/config/` 只读分发。UI 的势力筛选与配色面板（`faction_colors_dialog`）可直接编辑此文件，保存后调用 `reload_faction_colors()` 即时生效。
+配置文件的唯一权威源是版本控制的 `config/faction_colors.json`。读写路径 `FACTION_COLORS_FILE` 位于 `src/ui/shared/faction_colors.py`，指向运行时可写根 `PROJECT_ROOT/config/`（6b21d75 由 `BUNDLE_ROOT` 换根：frozen 下首启由 `_ensure_clean_runtime` 从打包默认部署可改副本，用户自定义不随升级包丢失；`faction_color_dialog.py` 已删除本地硬编码路径、改从 `ui.shared.faction_colors` 导入）。UI 的势力筛选与配色面板（`faction_colors_dialog`）可直接编辑此文件，保存后调用 `reload_faction_colors()` 即时生效。
 
 ---
 
@@ -372,3 +375,23 @@ def _normalize_profiles(profiles) -> list[dict]:
 - 配置键面：新增 `MUMU_OCR_PRIMARY_ENGINE`（默认 "v6"）、`MJS_DATA_REPO`（私有数据仓位置）；`MUMU_OCR_USE_GPU` 随 paddle 退役转死键（doctor `DEAD_CONFIG_KEYS` 登记）
 - `DISCLAIMER_VERSION` "1.0" → `"1.1"`（735a2d2，TERMS/LICENSE 实质修订须与常量同批递增）
 - OCR 推理配置消费方 `paddle_loader.create_paddle_ocr()` → `engine_loader.create_rapidocr_ocr()`（paddle 全栈退役）
+
+---
+
+## 八、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+**重构收口（行为零变化）**
+- **env.py 键元表单源化**（1bfd65b）：`_EnvKeySpec` NamedTuple 五字段（`cfg_key` / `type` / `default` / `getter` / `default_from`）+ `_ENV_KEY_SPECS` 注册表（现 30 键：runtime 6 + mumu 15 + 透传 9）唯一事实源，替代四处手工同步；`load_env_config()` 按 `spec.type` 统一转换（int/float 失败告警并丢弃该键）；新增 `_config_with_defaults(config, getter)` 按域补默认，`default_from` 表达级联默认（`mumu_hero_selection_threshold` 未配置回退 `mumu_ocr_match_threshold` 实配值，消除 getter 特判）；`get_runtime_params` / `get_mumu_config` 缩为一行委托。`DEFAULT_MAX_OUTPUT_TOKENS = 32_768` 单源（`api_generator.MAX_OUTPUT_TOKENS` 引用同对象）。测试补 `_SENTINELS` 全量键哨兵表 + 8 函数（bool 七变体 / 级联 / 单源 `is` 断言 / 分域划分），详见 3.3 节
+- **main.py 注释措辞清理**（683fca6）：OCR 预热注释“Paddle 初始化…”→“OCR 引擎初始化…”（纯文档，无行为变化）
+
+**新增配置键**
+- `DATA_FRESHNESS_TIMELINE_STALE_DAYS`（ae92c1d）：元表追加透传键（int、default=None、不进 getter 域与 UI 配置对话框）；`config.env.example` 文件尾新增「数据新鲜度（状态栏芯片）」段。语义：公告时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄估算，默认 14（详见 3.3 节）
+
+**打包态读写根与首启部署**（6b21d75）
+- frozen 下 `BUNDLE_ROOT` = `<exe>/_internal` 只读、`PROJECT_ROOT` = exe 同级可写，开发态两根相等（口径不变，本轮起全面贯彻）；`DEFAULT_PRICING_FILE` 由 `BUNDLE_ROOT` 换 `PROJECT_ROOT`，与 `faction_colors.json` 一致
+- `src/main.py` `_ensure_clean_runtime()` 新增：首启若 `PROJECT_ROOT/config/faction_colors.json` / `model_pricing.json` 缺失，从 `BUNDLE_ROOT/config/` 复制可改副本（ocr_rois 同款范式，只补缺失），详见 3.1 关键设计点 1
+
+**测试**
+- `tests/test_env_config.py` 补 pricing 域（b5e8e4f，七函数十五用例）：文件缺失 / JSON 损坏 / 根非对象回退空表；负价格 / 非数字 / 布尔误判返回 `None`；未知模型 `None`（详见 3.5 节）

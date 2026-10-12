@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量四道规模守卫 + 增量损坏硬停）**
-> 文档日期：2026-10-06
+> 文档日期：2026-10-11（基线 2081b5b）
 
 ---
 
@@ -205,6 +205,8 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 **空结果退出码改失败（b181e13）**：`run()` 清洗后 0 条不再打印"无新数据需要处理"以退出码 0 结束（会被 UI 读作完成），改为打印 `[中止] 目标武将清洗后 0 条（疑似官网结构变更）` 并 `sys.exit(1)`；校验全部失败同样 `sys.exit(1)`。`main()` 中"真无更新"（目标原始列表为空）仍走正常分支退出 0，不受影响。
 
 **损坏本地文件硬停（b181e13 / 8a46a43）**：`_load_heroes_file()` 对解析失败**或顶层非数组**（如整个 dict）的文件先 `_backup_corrupt_file()` 改名 `heroes.corrupt-<时间戳>.json` 留存再返回 `None`；`load_existing_ids()` 损坏时返回 `None` 而非空集——增量入口与替换/追加两个写入分支收到 `None` 均打印中止信息并 `sys.exit(1)`，堵死"损坏改名 → 空集 → 把整个 heroes.json 覆盖成只剩指定 1~2 个武将"的静默销毁链路。
+
+**默认数据路径归运行时可写根（6b21d75）**：`full.py DEFAULT_OUTPUT = PROJECT_ROOT/"data"/"heroes.json"`、`incremental.py DEFAULT_DATA_DIR = PROJECT_ROOT/"data"`（原均为 BUNDLE_ROOT）。背景：打包 frozen 下 BUNDLE_ROOT（`<exe>/_internal`）只读、PROJECT_ROOT（exe 同级）可写，原"写入可写根、读取钉死只读根"的分裂不暴露于开发态（两根相等），打包态则致抓取结果落只读 `_internal`、UI 与数据芯片不可见；归位运行时根后与首启部署的基线副本、UI 读取链路同根。同批治理另有 `ai/batch.py DEFAULT_DATA_DIR` 与 `rule_summary._CORE_RULES_FILE`（见 module_ai_batch.md），常量落点由 `tests/test_ranking_csv_runtime_root.py` 以双根分裂模拟锁死。
 
 ### 3.4 头像下载
 
@@ -416,10 +418,10 @@ def transform(raw: dict) -> dict | None:
 
 ---
 
-## 七、代码规模（2026-10-06）
+## 七、代码规模（2026-10-11）
 
-- 测试模块数：129 文件（`tests/test_*.py`）
-- 测试用例数：1481 个 `test_*` 函数
+- 测试模块数：145 文件（`tests/test_*.py`）
+- 测试用例数：1626 个 `test_*` 函数
 
 ---
 
@@ -431,3 +433,12 @@ def transform(raw: dict) -> dict | None:
 - **增量采集守卫**（b181e13 / 8a46a43）：空结果退出码改失败（0 条 → `sys.exit(1)`，"真无更新"仍为 0）；损坏/顶层非数组的本地 heroes.json 先 `_backup_corrupt_file` 留存再返回 `None`，各写入分支收到 `None` 硬停——堵死"损坏 → 空集 → 整个 heroes.json 被覆盖成 1~2 个武将"静默销毁链
 - **原子写收敛**（9737d52）：`crawler.save_json_atomic` 实现委托 `json_repository.atomic_write_json`，删除自建固定名 `.tmp` 实现（详见 `module_data.md` 3.11 节）
 - 测试规模台账：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）
+
+---
+
+## 九、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+- **抓取输出默认路径归运行时可写根**（6b21d75）：`official_source/full.py DEFAULT_OUTPUT = PROJECT_ROOT/"data"/"heroes.json"`、`incremental.py DEFAULT_DATA_DIR = PROJECT_ROOT/"data"`（原均为 BUNDLE_ROOT）——修复打包 frozen 下 BUNDLE_ROOT（`<exe>/_internal`）只读、PROJECT_ROOT（exe 同级）可写，原"写入可写根、读取钉死只读根"致抓取结果 UI 不可见；开发态两根相等无差异（详见 3.3 节末）。同批治理 `ai/batch.py DEFAULT_DATA_DIR` 与 `rule_summary._CORE_RULES_FILE`（AI 侧，见 module_ai_batch.md）；常量落点由 `tests/test_ranking_csv_runtime_root.py` 双根分裂模拟锁死
+- 测试规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）

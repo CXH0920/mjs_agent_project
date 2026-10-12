@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-10-06
+> 文档日期：2026-10-11（代码基线 2081b5b）
 
 ---
 
@@ -21,6 +21,7 @@
 8. **公告检查与百科 diff** — 手动触发公告更新检查，百科内容哈希 diff 与忽略名单过滤；首次基线本地化、阶段令牌跨线程统一持久化
 9. **卡牌百科同步** — 手动触发官网同步检查（非定时轮询），差异比对与忽略名单管理；首跑基线本地化、变更记录追加驱动 curated 精化
 10. **忽略名单基础设施** — `baike_ignore_store` 统一管理卡牌与武将百科差异的忽略/恢复/查询，CardSyncService 与 AnnouncementService 共享
+11. **数据新鲜度判定** — `freshness.py` 无 Qt 依赖纯业务层：武将/攻略/相性/官方榜单四项健康判定与建议操作路由，供状态栏数据新鲜度芯片（`src/ui/app/data_freshness_chip.py`）消费
 
 元规则文档维护纯函数与 RAG 索引精化三层架构已整体迁至 [`./module_rag.md`](./module_rag.md)，本层不再承担其职责描述。
 
@@ -36,6 +37,7 @@ src/business/
 ├── card_catalog.py                    # 卡牌图鉴：跨仓储视图、取值校验、追加写编排
 ├── card_sync.py                       # 卡牌百科同步服务（CardSyncService）
 ├── ai_cost.py                         # AI 成本估算业务层入口
+├── freshness.py                       # 数据新鲜度判定核心（武将/攻略/相性/榜单四项，无 Qt 依赖）
 ├── fetching/
 │   ├── base_fetch_service.py          # QProcess 生命周期、行缓冲与统一收尾
 │   ├── fetch_utils.py                 # QProcess 公共工具函数
@@ -44,7 +46,8 @@ src/business/
 │   ├── synergy_fetch_service.py       # 相性生成业务
 │   └── synergy_reload_worker.py       # 相性数据后台重载
 ├── emulator/
-│   ├── capture_service.py             # ADB 截图与 OCR 调度门面（截图流水线 + 连接状态机，审计 G8 后 570 行）
+│   ├── capture_service.py             # ADB 截图与 OCR 调度门面（截图流水线 + 结果拼装；连接域出仓后 479 行）
+│   ├── capture_connection.py          # ADB 连接域（CaptureConnectionManager：配置热更/会话状态/连接编排，P1-8 第三刀出仓）
 │   ├── ocr_task_coordinator.py        # OCR worker 生命周期、预热状态机与任务组装（审计 G8 刀 3）
 │   ├── official_import_gateway.py     # 官方榜单导入网关（提交/排他/进度转发/结果分派，审计 G8 刀 1）
 │   ├── image_save_scheduler.py        # PNG 后台保存调度（单线程执行器，审计 G8 刀 2）
@@ -57,7 +60,8 @@ src/business/
 │   ├── official_data_import_service.py # 官方榜单导入（识别编排 + 面板守卫 + 批量写回）
 │   ├── official_ocr_engines.py        # 官方导入双 OCR 引擎懒加载与跨任务移交（OfficialOcrEngines）
 │   ├── pending_stats.py               # OCR 未决错法频次与人工确认答案记录
-│   └── peak_select_watcher.py         # 巅峰赛（2v2）选将实时识别循环
+│   ├── peak_select_watcher.py         # 巅峰赛（2v2）选将实时识别循环
+│   └── session_guard.py               # 竞态守卫原语（SessionGuard/BusyGate/OneShotToken，P0-3 定稿）
 ├── analysis/
 │   ├── recommendation_service.py      # 推荐数据组装
 │   ├── match_analysis_service.py      # 对局攻略分析
@@ -149,7 +153,7 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 
 ### 3.2 CaptureService（截图业务门面）与同包协作模块
 
-`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**职责域出仓（审计 G8 + P1-8 第三刀，2026-10）**后，CaptureService（479 行）只保留截图流水线与结果拼装，四块职责下沉到同包协作模块，对 UI 仍以门面信号转发；关停守卫与全仓三处自造竞态守卫（ocr_service 在途拍、公告阶段推进）统一收口到 `src/business/recognition/session_guard.py` 命名原语（P0-3）：
+`CaptureService` 是选将推荐 / 巅峰赛 / 对局攻略三板块共享的截图会话与 OCR 队列入口（UI 看到的公共信号面不变）。**职责域出仓（审计 G8 + P1-8 第三刀，2026-10）**后，CaptureService（479 行）只保留截图流水线与结果拼装，四块职责下沉到同包协作模块，对 UI 仍以门面信号转发；关停守卫与全仓自造竞态守卫统一收口到 `src/business/recognition/session_guard.py` 命名原语（P0-3，三原语定义与全部消费点见 3.18）：
 
 | 模块 | 职责 | 与 CaptureService 的边界 |
 |------|------|------|
@@ -158,16 +162,17 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 | `ImageSaveScheduler`（image_save_scheduler.py） | PNG 后台保存：单线程执行器（`image-save`）串行落盘，完成后广播 `image_saved` | 无锁、无挂起表；`save_future` 由 CaptureService 持有用于结果拼装 |
 | `CaptureConnectionManager`（capture_connection.py） | ADB 连接域：配置热更与 AdbCapture 重建、会话状态机（unconfigured/disconnected/connecting/connected/offline）、连接/断开编排、`is_current` 过期实例校验 | 持有 `_capture`/`_config`/会话状态与 `_session_lock`/`_adb_io_lock`（锁职责原样迁移）；状态与状态栏消息经回调回发，emit 留在 CaptureService |
 
-CaptureService 自身仍持有两把互不嵌套的锁与一个单线程执行器：`_session_lock` 只保护会话对象与状态字段的快速读写，`_adb_io_lock` 单独串行化 `connect()` / `screencap_full()` 这类秒级阻塞 IO（超时重试最坏约 45 秒）；`_adb_executor`（`adb-capture`）串行执行 ADB 截图，与图像保存执行器（已迁入 `ImageSaveScheduler`）互不等待。截图请求与 OCR 结果的关联表（`_pending_ocr_captures`）与完成分派留在 CaptureService。
+两把互不嵌套的锁随连接域迁入 `CaptureConnectionManager`：`_session_lock` 只保护会话对象与状态字段的快速读写（GUI 快速路径争用，锁内只做纯内存操作，不发 IO、不 emit），`_adb_io_lock` 单独串行化 `connect()` / `screencap_full()` 这类秒级阻塞 IO（超时重试最坏约 45 秒），经 `session_lock` / `adb_io_lock` 只读属性暴露给宿主的截图域临界区。CaptureService 自身保留 `_adb_executor`（`adb-capture`）单线程执行器串行执行 ADB 截图，与图像保存执行器（已迁入 `ImageSaveScheduler`）互不等待；截图请求与 OCR 结果的关联表（`_pending_ocr_captures`）与完成分派留在 CaptureService。关停守卫为 `_shutdown_token`（OneShotToken，P0-3 收口，原 `_closed` 裸 bool）：`do_capture()` / `_on_background_capture_ready()` / `capture_for_poll()` 在入口检查 `spent`，`shutdown()` 时 `mark()` 置位后拒绝新任务，语义不变。`_config` property 保留直通 `self._connection._config` 的测试兼容缝（生产代码走 `update_config()`）。
 
 截图流程（手动截图路径）：
 
 ```
 do_capture(hero_names, template_name="hero_selection", force_ocr=False, perform_ocr=True)
   └─ [_adb_executor 单线程] capture_screenshot()
-       ├─ [_session_lock] 取会话；未连接则 _connect_capture()
-       │   └─ [_adb_io_lock] AdbCapture.connect()
-       ├─ [_adb_io_lock] AdbCapture.screencap_full() → PIL Image（不写磁盘、不触发 OCR）
+       ├─ [connection.session_lock] 取会话；未连接则 connect_capture()
+       │   └─ [connection.adb_io_lock] AdbCapture.connect()
+       ├─ is_current(capture) 复核（连接期间配置热更重建实例则拒绝）
+       ├─ [connection.adb_io_lock] AdbCapture.screencap_full() → PIL Image（不写磁盘、不触发 OCR）
        └─ future.add_done_callback → _capture_ready 信号
             └─ [GUI 线程] _on_background_capture_ready() → _handle_capture_result()
                   ├─ should_ocr = perform_ocr 且（force_ocr 或 启用 OCR）
@@ -238,7 +243,7 @@ OcrService (QObject)
   ├── get_task_state(name) -> PollTaskState      → 供调度与测试读取
 ```
 
-**轮询会话模型**：`PollSession(generation, cancel_event)` 提供会话代数——`start_poll()` / `stop_poll()` / `invalidate_inflight_poll()` 各递增一次代数并置位旧取消标记。在途轮询的后台线程在每个关键写入点检查取消标记，结果回 GUI 线程时再经代数校验，过期结果直接丢弃，避免"停止后又被旧拍重新挂起"或旧结果回写冷却。`_poll_in_flight` 单飞标记保证同一时刻只有一拍在执行；`invalidate_inflight_poll()` 必须同时复位该标记，否则在途一轮不再调用 `complete_poll()` 会让后续轮询永久假死。
+**轮询会话模型**：`PollSession(generation, cancel_event)` 提供会话代数——`start_poll()` / `stop_poll()` / `invalidate_inflight_poll()` 各递增一次代数并置位旧取消标记。在途轮询的后台线程在每个关键写入点检查取消标记，结果回 GUI 线程时再经代数校验，过期结果直接丢弃，避免"停止后又被旧拍重新挂起"或旧结果回写冷却。在途拍单飞由 `_poll_gate`（`BusyGate`，89e4e8d/P0-3 收口，原 `_poll_in_flight` 裸 bool）保证：`begin_poll()` 检查 `is_busy` 后 `acquire()` 占用，`complete_poll()` / `invalidate_inflight_poll()` / `_halt_poll()`（`stop_poll` 与闲置暂停 `pause_for_idle` 共用）及重启 `start_poll()` 共五触点 `release()`；`invalidate_inflight_poll()` 必须同时释放该闸，否则在途一轮不再调用 `complete_poll()` 会让后续轮询永久假死。
 
 **状态机**：`stopped / running / backing_off / paused / idle_paused`，由 `complete_poll()` 依 outcome 迁移——
 
@@ -253,7 +258,7 @@ OcrService (QObject)
 
 ### 3.4 EmulatorOperationService（模拟器后台操作）
 
-`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与 MuMu 实例枚举，ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会在 MuMuManager 异常退出时重试一次，并把失败原因与"正常但没有实例"区分开。
+`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与 MuMu 实例枚举，ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会在 MuMuManager 异常退出时重试一次，并把失败原因与"正常但没有实例"区分开。关停守卫为 `_shutdown_token`（OneShotToken，df019a5/P0-3 收口，原 `_closed` 裸 bool）：`shutdown()` 时 `mark()` 置位，此后探测与 ADB 会话任务在入口检查 `spent` 拒绝，语义不变。
 
 > **架构防火墙声明（637102b）**：模块文档字符串明确声明 `EmulatorOperationService` 不包含 ADB 输入能力（不提供 `input_tap` / `input_swipe` / `input_text` 等 ADB 输入方法），仅承担设备探测、连接管理与截图获取。此声明是合规化改造的一部分，确保业务层无法被调用方误用为自动化操作入口。
 
@@ -267,7 +272,7 @@ MumuConfigDialog
   -> OcrService.create_template(image, roi, template_name)
 ```
 
-`MumuConfigCoordinator` 持有配置草稿、已探测设备和模板截图进行状态；设备刷新失败时视图保留上一次成功的列表与选择。ROI 框选和文件选择保留在 UI 线程，模板保存、运行时 ADB 配置和轮询恢复均由协调器委托服务完成；关闭对话框后协调器停止后台操作，避免迟到回调更新已销毁控件。
+`MumuConfigCoordinator` 持有配置草稿、已探测设备和模板截图进行状态；设备刷新失败时视图保留上一次成功的列表与选择。ROI 框选和文件选择保留在 UI 线程，模板保存、运行时 ADB 配置和轮询恢复均由协调器委托服务完成；关闭对话框后协调器停止后台操作，避免迟到回调更新已销毁控件。`shutdown()` 还会显式断开 `CaptureService.connection_changed` → `self.connection_state_changed.emit` 的中继连接（6ea1866）——`signal.emit` 形式的连接没有 QObject receiver，不随对话框销毁自动解除，残留连接会在下次 ADB 连接状态广播时对已销毁的对话框抛 "Signal source has been deleted"。
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 
@@ -380,17 +385,19 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 `PeakSelectWatcher` 独立 QObject，与标准轮询并存。标准轮询挂起/恢复由 watcher 内部自动协调。
 
 ```
-Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程
+Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程（session = SessionGuard.current() 快照，过期旧拍在写入点前放弃）
   ├─ CaptureService.capture_for_poll() 截图
   ├─ detect_selection_cards() → None → _handle_board_absent()
-  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _restore_standard_tasks()
+  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True)，仅恢复 match_guide 并发 board_exited
+  ├─ 检出牌面 → miss_ticks 归零 + _suspend_standard_tasks() 挂起 hero_selection/match_guide（幂等重挂）
   ├─ board_signature(cards) 生成原始 bbox 元组签名
-  │   └─ board_signature_equal() 逐卡容差判等 → 牌面未变化，沿用结果
-  ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide
+  │   └─ board_signature_equal() 逐卡容差判等 → 牌面未变化，沿用结果；扣住牌面在此复现即补发布
+  ├─ 新牌面 → _recognize_board() 提交 OcrTask，15s 超时
   ├─ _refresh_resolutions() 逐拍验证人工确认存续（闭包/读数指纹/重排迁移）
-  ├─ _recognize_board() 提交 OcrTask，15s 超时
-  └─ _publish_pool() → parse_pool() → PoolSnapshot → pool_updated
+  └─ 发布决策 → 卡数高于上一发布拍扣进 _deferred_board 复核（疑似过场坏帧）；正常 → _publish_pool() → parse_pool() → PoolSnapshot → pool_updated
 ```
+
+会话世代由 `SessionGuard`（`src/business/recognition/session_guard.py`，4542244/P0-1 收口，原裸 `_session` int）守卫：`start()` / `stop()` 各于状态锁内 `begin()` 开新世代，`start()` / `stop()` / 牌面退出三处会话边界统一走 `_clear_session_state(keep_signature, keep_miss_ticks)` 清空牌面上下文（新增会话字段只改一处）。**过场坏帧扣住复核**（036d0ae）：选将/禁选期真实池子单调不增，发布前发现新拍卡数严格高于上一发布拍即判疑似过场坏帧（2026-10-09 场景切换期 raw 截图返回旧 9 张帧致面板候选 8→9→8 跳变），扣进 `_deferred_board` 不发布；紧邻下一拍签名原样复现→补发布，签名不同→按坏帧丢弃，牌面缺席拍作废扣住状态（复核窗口只认紧邻下一拍，坏帧隔拍重现须重新扣住）；卡数下降（禁转选 14→9）与同数重排不受影响照常立即发布。完整规则与测试见 [`./module_peak_combos.md`](./module_peak_combos.md)。
 
 - **PoolSnapshot**：`card_count / names / pending / stage("ban"/"pick") / overlap / banned`
 - **图片导入** `recognize_image_file()`：独立 `_import_lock`，不影响循环签名与挂起状态；**导入前校验旧确认**（48b0f99）——`verified_resolutions_for_import()` 与实时循环共用定位语义（名在闭包 / 原文复现 / 唯一迁移），但导入是一次性快照、没有后续拍可宽限，无法定位的旧确认立即丢弃并提示"图片识别完成（N 条旧人工确认与该牌面不符，已丢弃）"
@@ -403,7 +410,7 @@ Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程
 - **读数原文指纹兜底**：当 OCR 识别出的牌面内容与预期不符时，以原文指纹作为兜底证据稳定错读，避免在宽限期内因单次误读导致候选被错误淘汰。
 
 **2026-09 巅峰赛选将人工确认残留修复（48b0f99）**：
-- **停止识别后清空会话状态**：`stop()` 在状态锁内清空确认表 `_resolutions` / 读数指纹 `_resolution_raws` / 失验计数 `_stale_rounds` / 禁将基线 `_ban_names` / 牌面板引用 `_last_board`——槽位号是跨牌面不稳定键（选将板与禁将板同槽位并非同一张牌），残留确认会被后续图片导入按槽位号盲目套用，曾把禁将板的卓文君顶成选将板确认的孙尚香（2026-09-30 事故）。
+- **停止识别后清空会话状态**：`stop()` 在状态锁内调 `_clear_session_state(keep_signature=True, keep_miss_ticks=True)` 清空确认表 `_resolutions` / 读数指纹 `_resolution_raws` / 失验计数 `_stale_rounds` / 禁将基线 `_ban_names` / 牌面板引用 `_last_board`（P0-1 起与 `start()`、牌面退出共用同一清空方法；停止后无拍运行，保留签名与缺席计数无差异）——槽位号是跨牌面不稳定键（选将板与禁将板同槽位并非同一张牌），残留确认会被后续图片导入按槽位号盲目套用，曾把禁将板的卓文君顶成选将板确认的孙尚香（2026-09-30 事故）。
 - **`confirm_pending()` 牌面在位守卫**：无在识别中的牌面（`_last_board is None`）时拒绝确认并提示"牌面已不在识别中，确认未生效"，杜绝退出/停止后残留待确认行被误点写入旧确认。
 - **`_handle_board_absent()` 同步清理**：牌面连续 `BOARD_EXIT_TICKS=2` 拍缺席时清空确认表/读数/失验/禁将基线/牌面板引用，与 `stop()` 对称。
 - **面板同名槽位显性告警**：`peak_select_panel.py` 候选池出现重复武将名时写日志 + 追加识别日志 + 状态栏 warning 提示复核（TONE_WARNING），不再静默去重隐藏"14 张牌只显示 13 个名字"；会话结束（停止/牌面退出）摘除待确认行防误点，卡片保留供复盘。
@@ -603,6 +610,39 @@ check_now() -> bool
 
 与公告/卡牌检查服务的 `status_changed` / `progress_changed` 信号配合，由主窗口统一转发至本组件。
 
+### 3.18 竞态守卫原语（session_guard.py）
+
+`session_guard.py`（81 行，无 Qt 依赖）把全仓 ≥5 次同类竞态 fix（faac3c0/93b54ad/8374acc/e6d67c0/c0f2143/634e027）年代各模块自造的令牌/世代/忙碌守卫（裸 int 比对、裸 bool 旗标）定稿为三个命名原语（8a08d5d，P0-3），调用方按语义显式选择，替换时不得顺手改语义（语义变更 = 行为变更，超出重构范畴）：
+
+| 原语 | 语义 | API |
+|------|------|------|
+| `SessionGuard` | 世代计数器：生命周期边界（启动/停止）开新世代作废在途工作 | `begin()` 世代 +1 作废旧 token；`current()` 取快照；`is_current(token)` 校验。单次读写依赖 GIL 原子性，调用方在自有锁内或单线程（Qt 主循环）使用 |
+| `BusyGate` | 忙碌闸：单飞标记，忙时拒绝新请求 | `acquire()` 锁内检查 + 置位原子（多线程争用下至多一个占用者），忙时返回 False；`release()` 幂等；`is_busy` 属性 |
+| `OneShotToken` | 一次性令牌：关闭/停机类只进不退的守卫 | `mark()` 幂等置位；`spent` 属性；置位不可复位 |
+
+全仓五个消费点（均为语义不变的纯收口）：
+
+- `ocr_service._poll_gate`（BusyGate，89e4e8d，原 `_poll_in_flight` 裸 bool）— 见 3.3
+- `announcement_update_coordinator._phase_gate`（BusyGate，76875dd，原 `_phase_in_flight`；UI 层公告更新阶段推进，见 [`./module_ui.md`](./module_ui.md)）
+- `capture_service._shutdown_token`（OneShotToken，118f59c，原 `_closed` 裸 bool）— 见 3.2
+- `emulator_operation_service._shutdown_token`（OneShotToken，df019a5，原 `_closed` 裸 bool）— 见 3.4
+- `peak_select_watcher._session_guard`（SessionGuard，4542244，原 `_session` 裸 int）— 见 3.7 与 [`./module_peak_combos.md`](./module_peak_combos.md)
+
+语义单测 `tests/test_session_guard.py`（5 用例）：世代 begin 作废旧 token、BusyGate acquire/release 循环、release 幂等、8 线程争用单赢家、OneShotToken 置位后不可复位。
+
+### 3.19 数据新鲜度判定（freshness.py）
+
+`freshness.py`（449 行，无 Qt 依赖纯业务层）是状态栏数据新鲜度芯片（`src/ui/app/data_freshness_chip.py`）的业务逻辑核心，判定四类监测对象的健康度（ae92c1d）：
+
+- **武将 heroes.json**：逐事件按武将核对——事件落后 ⇔ 该事件武将在 heroes.json 缺失，或该武将 `last_updated` 早于事件日期；批次按公告 ref 去重（无 ref 每条计一批）。这修复了旧"全局 max 对比"的缺陷：指定获取任一武将即可洗绿、混合批次只推增量致已存在且过期的武将永远漏掉、部分覆盖洗绿、部分攻略缺失未暴露。时间轴不健康（缺失/损坏/超过 `DATA_FRESHNESS_TIMELINE_STALE_DAYS` 天未更新，配置键透传，默认 14）时退化为全局 max 纯年龄兜底并产出 `timeline_warning` 菜单警示行。
+- **攻略 guides.json**：逐武将（hero_id）对齐武将数据；攻略是全覆盖物，某武将无攻略 = 未生成缺口（黄档）。
+- **相性 synergies.json**：逐对对齐两侧武将数据；相性是精选生成（无全覆盖预期），无 pair 的武将不计任何档位，孤儿 pair（引用不存在武将）忽略。
+- **官方榜单 6 CSV**（`RANKING_CSV_PATHS`：2v2 胜率/出场、巅峰赛胜率/出场、武将放逐、武将推荐指数）：纯 mtime 年龄取最旧，任一缺失整项红。
+
+按天计量的档位统一 7 天一个周期（写死不进配置）：`[0,7)` 绿 / `[7,14)` 黄 / `≥14` 红（`STALE_GREEN_DAYS=7` / `STALE_RED_DAYS=14`），周期内小幅落后计绿并在 detail 注明。
+
+`compute_freshness_report()` 返回 `FreshnessReport(items, state, headline, timeline_warning, suggested_actions)`；建议操作按采集模式能力路由：落后事件武将缺失 → `SUGGEST_INCREMENTAL`（增量获取，按 ID 缺失拉新）、已存在且过期 → `SUGGEST_SPECIFIC`（指定获取替换模式刷新），混合批次两者并给。精简版（`full_build=False`）只判武将 + 榜单。`WATCH_DIR` / `WATCHED_FILE_NAMES` 供 UI 芯片的 `QFileSystemWatcher` 监听 data/ 目录（与判定路径同源维护，覆盖终端 pull_data 原子落盘）。
+
 ---
 
 ## 四、关键代码片段
@@ -712,6 +752,7 @@ def _cleanup_tmp_file(self) -> None:
 | 依赖 | `src.config.env` | API 档案解析（`resolve_api_config` / `get_api_config`）、供应商预设（`PROVIDER_PRESETS`）、截图目录与模拟器配置读写；新增 `MUMU_OCR_RECHECK_ENABLED` / `MUMU_OCR_POLL_IDLE_PAUSE` 配置 |
 | 被调用方 | `src.ui.app.main_window` | 主窗口连接业务服务的 Signal，UI 操作触发 `fetch_*()`；`PollCoordinator` 编排三板块轮询；闲置暂停恢复交互 |
 | 被调用方 | `src.ui.app.poll_coordinator` | 消费 `OcrService.poll_tick`，调用 `CaptureService.capture_for_poll` / `submit_ocr_task`；帧指纹判闲与闲置暂停状态提交 |
+| 被调用方 | `src.ui.app.data_freshness_chip` | 状态栏数据新鲜度芯片调 `compute_freshness_report()` 做四项健康判定；`RANKING_CSV_PATHS` / `WATCH_DIR` / `WATCHED_FILE_NAMES` 供其监听 data/ 目录 |
 | 被调用方 | `src.ui.configuration.whitelist_config_dialog` | 白名单配置界面调 `find_whitelist_conflicts()` / `reset_ocr_recognizer_cache()` |
 | 被调用方 | `src.ui.data_admin.official_data_import_dialog` | 触发后台导入、展示进度，并串联复核会话 |
 | 被调用方 | `src.ui.data_admin.official_import_review_dialog` | 调用 `review_candidates()` / `apply_reviewed_records()` 完成人工修正落盘 |
@@ -723,8 +764,8 @@ def _cleanup_tmp_file(self) -> None:
 
 | 指标 | 数量 |
 |------|------|
-| 测试模块数 | 129 文件 |
-| 测试用例数 | 1481 个 `test_*` 函数 |
+| 测试模块数 | 145 文件 |
+| 测试用例数 | 1626 个 `test_*` 函数 |
 
 ---
 
@@ -744,3 +785,26 @@ def _cleanup_tmp_file(self) -> None:
 - `data_management_service.py`（d2c5b83/8a46a43）：`_ManagerTransaction._backup` 委托 `snapshot_to_backups()`，移除失效 timestamp 参数
 - `capture_service.py`（80cc75b）：截图存盘失败补 warning（状态栏不再显示"截图已保存："空路径，见 `module_peak_combos.md`）
 - 测试规模台账：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）
+
+---
+
+## 八、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+**新增**
+- `recognition/session_guard.py` 三原语定稿（8a08d5d，P0-3，81 行）：`SessionGuard`（世代计数器：`begin()` 世代 +1 作废旧 token、`current()` 取快照、`is_current(token)` 校验；单次读写依赖 GIL 原子性，调用方在自有锁内或单线程使用）、`BusyGate`（忙碌闸：`acquire()` 锁内检查 + 置位原子、忙时返回 False、`release()` 幂等、`is_busy` 属性）、`OneShotToken`（一次性令牌：`mark()` 幂等置位、`spent` 属性、置位不可复位）。语义单测 `tests/test_session_guard.py` 5 用例（含 8 线程争用单赢家）。全仓五个消费点收口见 3.18
+- `emulator/capture_connection.py`（118f59c，P1-8 第三刀，191 行）：`CaptureConnectionManager`（非 QObject 纯 Python 对象）承接 CaptureService 的 ADB 连接域四大职责——配置热更（`update_config()` 按三键 mumu_adb_path / mumu_adb_port / mumu_screenshot_mode 比对重建 AdbCapture、`set_target_port()`）、会话状态（`set_connection_state()` / `connection_state` / `sync_connection_state()` / `sync_poll_connection_state()`——先验 capture is `self._capture` 忽略过期实例）、连接编排（`connect_emulator()` / `connect_capture()` / `disconnect_emulator()`，阻塞 IO 全在 `_adb_io_lock`）、实例引用与锁只读暴露（`capture` / `is_current` / `session_lock` / `adb_io_lock`）。两把锁不嵌套（`_session_lock` 护内存态、锁内只做纯内存操作；`_adb_io_lock` 串行秒级 ADB IO，超时重试最坏约 45 秒）；状态与消息经构造注入回调广播（on_state_change / on_status / on_event_status），emit 留在 QObject 宿主。capture_service.py 575 → 479 行，连接域变一行薄委托，`_config` property 保留直通 `self._connection._config` 的测试兼容缝；关停旗标 `_closed` → OneShotToken；行数棘轮 575 → 479
+- `freshness.py`（ae92c1d，449 行，无 Qt 依赖纯业务层）：数据新鲜度判定核心。档位周期写死 `[0,7)` 绿 / `[7,14)` 黄 / `≥14` 红（`STALE_GREEN_DAYS=7` / `STALE_RED_DAYS=14`）；`compute_freshness_report()` 判定武将/攻略/相性/榜单四项——武将项逐事件逐武将核对（事件落后 ⇔ 该武将在 heroes.json 缺失或 `last_updated` 早于事件日期，批次按公告 ref 去重），修复旧全局 max 对比四缺陷（指定获取洗绿 / 混合批次只推增量 / 部分覆盖洗绿 / 部分攻略缺失未暴露）；建议路由 `SUGGEST_INCREMENTAL`（缺失 → 增量获取）/ `SUGGEST_SPECIFIC`（过期 → 指定获取）混合双给；时间轴不健康退化为纯年龄兜底 + `timeline_warning`；精简版 `full_build=False` 只判武将 + 榜单；`RANKING_CSV_PATHS` 六榜单 CSV、`WATCH_DIR` / `WATCHED_FILE_NAMES` 供 UI 芯片监听；配置键 `DATA_FRESHNESS_TIMELINE_STALE_DAYS`（默认 14，透传）。消费者：`src/ui/app/data_freshness_chip.py`（状态栏芯片）
+
+**收口（P0-3 纯重构，语义不变）**
+- ocr_service 在途拍忙碌旗标 → `_poll_gate`（BusyGate）（89e4e8d）：`begin_poll` / `complete_poll` / `invalidate_inflight_poll` / `start_poll`（含 `_halt_poll`）五触点，Qt 主循环单线程下严格等价
+- emulator_operation_service 关停旗标 `_closed` → `_shutdown_token`（OneShotToken）（df019a5）：`shutdown()` 后拒绝新任务语义不变
+- announcement_update_coordinator 阶段推进旗标 `_phase_in_flight` → `_phase_gate`（BusyGate）（76875dd，UI 层，见 [`./module_ui.md`](./module_ui.md)）
+- peak_select_watcher 会话世代 `_session` 裸 int → SessionGuard、三处手抄重置统一 `_clear_session_state()`（4542244，P0-1，详见 [`./module_peak_combos.md`](./module_peak_combos.md)）
+
+**修正**
+- mumu_config_coordinator shutdown 断连（6ea1866，行为修复）：`shutdown()` 显式 `disconnect` 掉 `CaptureService.connection_changed` → `self.connection_state_changed.emit` 的中继连接——emit 形式的连接无 QObject receiver，不随对话框销毁自动解除，残留连接在下次 ADB 连接状态广播时对已销毁对话框抛 "Signal source has been deleted"；配套回归测试
+- match_guide 兜底 OCR 批次零产出短路（6ea1866，recognizer 批次零文本行时短路逐槽双证据与阵营逐槽重试链；详见 [`./module_capture_ocr.md`](./module_capture_ocr.md)，同提交含上述 shutdown 修复）
+- 巅峰赛过场坏帧扣住一拍复核（036d0ae，行为修复，详见 [`./module_peak_combos.md`](./module_peak_combos.md)）
+- 测试规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）

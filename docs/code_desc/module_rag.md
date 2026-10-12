@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：commit `624c8c5`（2026-09-15）→ 2026-10-06 增量更新（含 `885ea96` Phase 4 拆分、`af8cd06` 快照基线与 `1694ab7` B1 切换窗口）
+> 代码基线：commit `624c8c5`（2026-09-15）→ 2026-10-11 增量更新（含 `885ea96` Phase 4 拆分、`af8cd06` 快照基线、`1694ab7` B1 切换与 `2081b5b` RAG 编码器 ONNX 化窗口）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -35,8 +35,8 @@
 
 ### 代码规模
 
-- 测试模块：129 个测试文件
-- 测试用例：1481 个 `test_*` 函数
+- 测试模块：145 个测试文件
+- 测试用例：1626 个 `test_*` 函数
 
 ---
 
@@ -109,9 +109,9 @@ src/rag/                          # 向量索引基础设施层
 ├── indexer.py                    # 语料规范化 + 向量化 + ChromaDB 写入（重建=整目录 rmtree）
 └── retriever.py                  # 混合检索（向量 + 关键词 RRF 融合；trace 插桩可观测）
 
-src/business/rag/                 # 业务层（8 文件，本模块全部）
+src/business/rag/                 # 业务层（9 文件，本模块全部）
 ├── task_defs.py                  # 语料任务单一事实源（10 任务）
-├── corpus_fields.py              # 字段契约单一来源（CARD_FIELDS / HERO_FIELDS / fields_for）
+├── retrieval_diagnostic.py       # 检索诊断业务服务（diagnose 纯 dict + QThread worker）
 ├── refinement_service.py         # 索引精化纯函数（扫描 / 建议 / 写回）
 ├── refinement_session.py         # 索引精化会话状态（三池 + 双基线）
 ├── suggest_controller.py         # LLM 建议 Qt 线程编排
@@ -127,6 +127,7 @@ src/business/maintenance/         # 本模块占 3 文件
 src/ui/maintenance/               # 维护工作台 UI（全部）
 ├── maintenance_workspace.py      # 工作台外壳（左栏导航 + 右工作区 + 折叠日志）
 ├── rag_maintenance_panel.py      # 业务逻辑：语料状态 / 审计横幅 / 一键重建
+├── retrieval_diagnostic_dialog.py # 检索诊断只读抽屉（9 列候选去向表）
 ├── index_refinement_dialog.py    # 索引精化对话框（范围/选中/保存编排 + 渲染词汇绑定）
 ├── refinement_vocab.py           # 索引精化渲染词汇表（字段标签/提示/状态色，对话框与 pane 共用）
 ├── refinement_list_pane.py       # 清单区 pane（搜索/筛选/表格填充，纯渲染）
@@ -136,9 +137,11 @@ src/ui/maintenance/               # 维护工作台 UI（全部）
 └── equip_attrs_panel.py          # 装备属性维护面板
 
 src/scripts/                      # 语料构建与维护脚本（见 4.5 参数表）
+                                  #   + export_embedding_onnx.py（ONNX 编码器导出链，dev）
+                                  #   + rag_eval_history.py（评估历史 JSONL，纯库无 CLI）
 ```
 
-> **物理位置说明**：知识库数据源维护面板的文件**跨目录分布**。`hero_classification_panel.py`（武将分类）与 `special_cards_panel.py`（专属牌）位于 `src/ui/library/`，而非 `src/ui/maintenance/`；但两者的宿主都是 `src/ui/maintenance/maintenance_workspace.py` 装配的同一个工作台，由 `rag_maintenance_panel.py` 统一创建实例并接入左栏导航。
+> **物理位置说明**：知识库数据源维护面板的文件**跨目录分布**。`hero_classification_panel.py`（武将分类）与 `special_cards_panel.py`（专属牌）位于 `src/ui/library/`，而非 `src/ui/maintenance/`；但两者的宿主都是 `src/ui/maintenance/maintenance_workspace.py` 装配的同一个工作台，由 `rag_maintenance_panel.py` 统一创建实例并接入左栏导航。精化字段契约 `corpus_fields.py` 已迁至 `src/data/`（字段集单一事实源归数据层，见 4.2）。
 
 ---
 
@@ -172,16 +175,21 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 ### 3.2 向量索引与嵌入
 
-`src/rag/config.py` 定义路径与参数。`HF_HOME`（缓存指向 `data/rag_models/models`）与 `SENTENCE_TRANSFORMERS_HOME`（指向其下的 `sentence_transformers`）及 `HF_ENDPOINT=https://hf-mirror.com`（国内镜像）必须在 import 嵌入模型之前设置，顺序错了缓存位置就不生效。`config.py` 不在 import 时创建任何目录（各目录由使用点自建：ChromaDB 自建 `CHROMA_DIR`、`logs/rag/` 由全局日志体系创建、语料目录由 build 脚本创建）。嵌入模型查找顺序：项目内 `data/rag_models/modelscope` → 环境变量 `RAG_MODEL_DIR` → 环境变量 `MJS_EMBEDDING_MODEL` → 在线下载 `BAAI/bge-small-zh-v1.5`，由 `_find_local_model()` 用 `rglob("config.json")` 匹配路径含 `bge-small-zh` 定位。
+`src/rag/config.py` 定义路径与参数。编码器经 `RAG_EMBEDDING_BACKEND`（环境变量 > `config.env` > 默认 `"onnx"`）选择后端：
+
+- **onnx（默认）**：`OnnxEmbedder` 走 onnxruntime CPU 推理 + `tokenizers` 直读 `tokenizer.json`，运行期完全不 import torch / transformers / sentence-transformers。模型三件套（`model.onnx` / `tokenizer.json` / `sha256.json` 侧车）位于 `data/rag_models/onnx`（`config.ONNX_MODEL_DIR`）；**构造即校验**——三件套缺失或哈希与侧车不符直接 `RuntimeError` 熔断，错误信息带修复指引 `python -m src.scripts.export_embedding_onnx`，阻止"带病运行产出与索引不同源的向量"。推理线程数 `RAG_EMBED_THREADS`（默认 4，`SessionOptions.intra_op_num_threads`），设备恒 CPU。池化取 CLS（`hidden[:, 0]`，右 padding 保证 CLS 恒在 0 位）后 L2 归一化。
+- **st（回滚档）**：`STEmbedder` 保留原 sentence-transformers 行为（`SentenceTransformer(config.EMBEDDING_MODEL, device='cpu')`）。模型查找顺序：项目内 `data/rag_models/modelscope` → 环境变量 `RAG_MODEL_DIR` → 环境变量 `MJS_EMBEDDING_MODEL` → 在线下载 `BAAI/bge-small-zh-v1.5`，由 `_find_local_model()` 定位。`HF_HOME` / `SENTENCE_TRANSFORMERS_HOME` / `HF_ENDPOINT` 三个 setdefault 仅此档需要。
+
+两个实现共享同一 `encode` 契约不变量（供 retriever 的 `q.tolist()` 与 indexer 的批量编码消费）：单字符串返回一维 `(D,)`、列表返回 `(B, D)` 的 `np.float32` ndarray、空列表返回 `(0, 0)`、归一化后余弦相似度等价于内积。`get_embedder()` 锁内按后端单例派发，未知后端直接 `RuntimeError`。三件套由 `src/scripts/export_embedding_onnx.py`（dev 依赖 torch/onnx）从同一份源权重导出：opset 18 + 动态 batch/seq 轴、两条不等长校准样本（防 dynamo 把 batch/seq 维专门化）、`do_lower_case` 按 `sentence_bert_config.json` 对齐 + `strip_accents=False`（保证与 ST 运行时分词逐 token 一致）、权重内联回单文件；`--int8` 追加动态量化（S7 裁决维持 fp32 打包，int8 不入包），导出幂等（文件存在且哈希与侧车一致即跳过）。
 
 `indexer.build_index(rebuild=True)` 四阶段执行：
 
 1. **加载语料** —— `load_all_blocks()` 遍历 `CORPUS_FILES`（12 个文件 × 对应 `_norm_*` 规范化函数）。缺文件只记 warning 跳过；规范化块数与源数据条数不一致直接抛 `ValueError`；块 ID 重复抛 `ValueError`（重复会让 Chroma 覆盖或写入失败）。统一注入版本元数据 `is_current` / `as_of`（默认 `CORPUS_BASE_DATE`）。
-2. **加载模型** —— `SentenceTransformer(..., device='cpu')`。
-3. **向量化** —— `model.encode(docs, batch_size=32, normalize_embeddings=True)`（归一化后余弦相似度等价于内积）。
+2. **加载编码器** —— `get_embedder()`（日志报 `backend=onnx|st`）。
+3. **向量化** —— `model.encode(docs, batch_size=32, normalize_embeddings=True)`。
 4. **写入 ChromaDB** —— 集合名固定 `mjs_rag_v1`，`metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'}`。HNSW（Hierarchical Navigable Small World，可导航小世界图）是 ChromaDB 的向量近似最近邻索引结构；`hnsw:space` 指定距离度量。批量 `BATCH=200`。
 
-**重建与增量语义不同**：`rebuild=True` 先 `delete_collection` 再 `get_or_create_collection`；删除失败且集合仍存在时抛 `RuntimeError`（文件被占用时中止，而不是静默在残留旧向量上继续）。`rebuild=False` 则做集合同步：新增 `add` / 交集 `update` / 过期 `delete`，保留 collection 结构与 HNSW 索引。
+**重建与增量语义不同**：`rebuild=True`（2081b5b 起）不再 `delete_collection`，而是 `shutil.rmtree(config.CHROMA_DIR)` 整目录删除 + 新建——`delete_collection` 会遗留孤立段目录（实测累计 21 组，索引体积 80.9MB→14.8MB）；rmtree 抛 `OSError` 时转 `RuntimeError("旧索引目录…删除失败，请关闭占用该目录的程序后重试")` 中止，不静默在残留旧向量上继续；`PersistentClient` 在 rmtree 之后才创建。`rebuild=False` 则做集合同步：新增 `add` / 交集 `update` / 过期 `delete`，保留 collection 结构与 HNSW 索引。
 
 ### 3.3 混合检索
 
@@ -194,6 +202,8 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 **RRF 融合**（Reciprocal Rank Fusion，倒数排名融合）：两路各自按分数降序排名，融合分 = `1/(RRF_K + rank)`，`RRF_K=60`。同一块两路都命中则两项相加，来源标记为 `vector+kw`。之所以用名次倒数而不是原始分数相加，是因为向量分数（0~1 连续）与关键词加分（0.15 的整数倍）量纲不同，直接相加会让某一侧主导结果。
 
 **融合后的统一补齐**：关键词兜底走内存索引，绕过了向量侧的 `where` 过滤，因此融合后统一补回 `heroes` 硬过滤与 `is_current` 剔除，再对纯关键词块施加 `MAX_KEYWORD_ONLY=3` 的数量上限（RRF 单边分天然靠后，此上限仅防数量失控），最后 `_apply_kind_quota()` 按 `KIND_MAX` 类型配额截取 `top_k`。
+
+**检索 trace 可观测（2081b5b）**：`search(query, heroes, top_k, trace=None)` 新增可选 trace 参数——传列表时逐候选记录 `block_id / kind / hero / score(4位) / source / rrf(5位) / is_current / as_of / dropped`，覆盖五个丢弃点：`below_threshold`（向量分低于阈值）、`not_current`（非当前版本，优先于 hero_filter 判定）、`hero_filter`（武将过滤）、`max_keyword_only`（纯关键词超限）、`kind_quota`（类型配额）；保留块 `dropped=None`。`trace=None`（默认）零开销，返回结构与旧版逐块一致（有专门测试锁定）。CLI 侧 `python -m src.rag.retriever --query … --explain` 打印每条候选去向与保留/丢弃计数，用于定位语料/索引变动前后的召回差异。
 
 ### 3.4 RAG 注入 AI 生成
 
@@ -327,6 +337,12 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 **保存→重建闭环**：维护对象保存后发 `data_changed` → `refresh()` → 左栏对应项状态点即时变"待重建"并亮出 ↻，全程不离开当前视图。重建三档：左栏 ↻ 单项 `--only <语料>`、顶部"重建全部语料"`--force`、"重建语料+索引"`--force --build-index`（全模块唯一 `ROLE_PRIMARY`）。
 
+### 3.9 检索诊断与评估历史（2081b5b）
+
+**检索诊断**（`src/business/rag/retrieval_diagnostic.py` + `src/ui/maintenance/retrieval_diagnostic_dialog.py`）是只读定位工具：在"语料/索引维护前后召回为什么变了"的场景下，把每次检索的候选去向摆到桌面上。业务层 `diagnose(query, top_k, heroes)` 纯 dict 输出、不碰 Qt（函数内惰性 import Retriever），返回 `{query, heroes, top_k, items, trace, backend, elapsed_ms}`；`DiagnosticWorker(QThread)` 把检索搬出 GUI 线程，模块级 `LIVE_WORKERS: set` 兜底持有运行中线程——对话框销毁后 Python 引用丢失也不会连带析构运行中 QThread（Qt6 对 running QThread 析构是 qFatal），线程结束自移除。UI 层抽屉呈现 9 列候选去向表（block_id / 类型 / 武将 / 得分 / 来源 / rrf / 当前版 / as_of / 剔除原因），剔除原因经 `DROP_LABELS` 中文映射（与 retriever 五个丢弃点一一对应，有测试防新增丢弃点漏映射）；`below_threshold` 行的 rrf 列显示占位符"—"（RRF 融合前被丢弃，无融合分）。一个 Qt 细节：表格填充前必须 `setSortingEnabled(False)`、填完恢复——排序开启下逐 `setItem` 即时重排会错位后续按坐标写入（实测丢列/串行）。入口在知识库维护页「检索诊断」按钮（只读，关闭不触发 `refresh()`）。
+
+**评估历史**（`src/scripts/rag_eval_history.py`，纯库无 CLI）：`eval_rule_faqs` / `eval_guide_quality` 每次运行默认追加 `logs/rag/eval_history.jsonl`，entry 含 `ts / script / 各自指标 / backend / model_sha256（侧车前 12 位）/ corpus_blocks / index_mb`，用于观察编码器切换与语料重建前后的指标漂移；`--no-record` 逃生，落盘失败只告警不影响评估结果，两个脚本的退出码契约不变（FAQ 命中 exit 0 / 未中 exit 1）。doctor 侧配套「RAG索引」检查组（12 组之一）：索引目录存在性、体积 ≤25MB、集合段目录唯一性（多组即历次孤立段残留）、ONNX 三件套哈希（st 回滚档 SKIP）——全部只读，不打开 chroma 数据库。
+
 ---
 
 ## 四、接口说明
@@ -340,6 +356,9 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `CORPUS_DIR` | `data/rag_corpus` | 语料目录 |
 | `CHROMA_DIR` | `data/rag_index/chroma` | ChromaDB 持久化目录 |
 | `RAG_ENABLED` | `true` | RAG 总开关（环境变量 > `config.env` > 默认） |
+| `EMBEDDING_BACKEND` | `"onnx"` | 编码器后端（`RAG_EMBEDDING_BACKEND`，可选 `onnx` / `st`） |
+| `ONNX_MODEL_DIR` | `data/rag_models/onnx` | ONNX 三件套目录（model.onnx / tokenizer.json / sha256.json） |
+| `RAG_EMBED_THREADS` | 4 | onnxruntime `intra_op_num_threads` |
 | `TOP_K` | 12 | 默认召回块数 |
 | `MAX_PROMPT_CHARS` | 12000 | 注入提示词的语料块总字符预算 |
 | `KEYWORD_BONUS` | 0.15 | 关键词命中的绝对加分 |
@@ -353,22 +372,22 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 接口 | 签名 | 说明 |
 |------|------|------|
 | `load_all_blocks()` | `-> list[tuple[str, str, dict]]` | 读取全部 12 个语料 JSON，返回 `(block_id, text, metadata)`；缺文件 warning 跳过，块数不一致或 ID 重复抛异常 |
-| `build_index()` | `(rebuild=True) -> (int, str)` | 全量重建或增量同步；返回 `(块数, 集合名)`。构建完成后做**写后条数一致性校验**（b3327f1）：`coll.count()` 必须等于语料块数，否则 `RuntimeError('索引 mjs_rag_v1 条数不一致：语料 N 块，库中 M 块（疑似写入中断）')`；构建失败以 `exc_info=True` 落完整堆栈，并写 `rag_index` 任务台账 |
+| `build_index()` | `(rebuild=True) -> (int, str)` | 全量重建或增量同步；返回 `(块数, 集合名)`。重建语义 2081b5b 起**整目录 rmtree + 新建**（清理孤立段，删除失败 `RuntimeError` 中止）。构建完成后做**写后条数一致性校验**（b3327f1）：`coll.count()` 必须等于语料块数，否则 `RuntimeError('索引 mjs_rag_v1 条数不一致：语料 N 块，库中 M 块（疑似写入中断）'）`；构建失败以 `exc_info=True` 落完整堆栈，并写 `rag_index` 任务台账 |
 | `CORPUS_FILES` | `list[tuple[str, Callable]]` | 12 个 `(文件名, 规范化函数)` 对，规范化函数契约：入参 JSON 数组，返回等长 `(block_id, text, meta)` 列表 |
 
 **`retriever.py`**
 
 | 接口 | 签名 | 说明 |
 |------|------|------|
-| `Retriever.search()` | `(query, heroes=None, top_k=None) -> list[dict]` | 混合检索主入口，返回块含 `block_id` / `text` / `metadata` / `score` / `source` / `rrf` |
+| `Retriever.search()` | `(query, heroes=None, top_k=None, trace=None) -> list[dict]` | 混合检索主入口，返回块含 `block_id` / `text` / `metadata` / `score` / `source` / `rrf`；传列表 `trace` 时逐候选记录去向（五种丢弃原因，见 3.3），默认 None 零开销 |
 | `Retriever.hero_blocks()` | `(hero) -> list[dict]` | 按武将名全量召回（不过阈值），`source='hero'` |
 | `Retriever._set_blocks()` | `(blocks) -> None` | 注入内存语料并重建索引（生产走懒加载，测试用它注入内存语料） |
 | `build_search_where()` | `(heroes=None) -> dict` | 构造 Chroma `where` 条件（`is_current` + 可选武将 `$in`） |
 | `KEYWORDS` | `list[str]` | 61 个规则高频状态/术语词，关键词兜底用 |
 
-属性 `collection` / `model` / `blocks` 均为惰性加载；`_id2meta`、`_id2text`、`_hero_index`、`_keyword_index` 是内部索引，随 `_set_blocks()` 重建。
+属性 `collection` / `model`（`get_embedder()` 单例）/ `blocks` 均为惰性加载；`_id2meta`、`_id2text`、`_hero_index`、`_keyword_index` 是内部索引，随 `_set_blocks()` 重建。
 
-### 4.2 `src/business/rag/`（7 文件）
+### 4.2 `src/business/rag/`（8 文件）
 
 **`task_defs.py`**
 
@@ -395,7 +414,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 > 任务 6 一个任务产出**三个** JSON（章节块 / 术语表 / FAQ 裁定块），故 10 个任务产出 12 个语料文件。
 
-**`corpus_fields.py`**
+**`corpus_fields.py`**（已迁至 `src/data/`，字段集单一事实源归数据层；`refinement_service` / `rag_curated` 经 `src.data.corpus_fields` 引用）
 
 | 接口 | 说明 |
 |------|------|
@@ -484,6 +503,14 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 |------|------|
 | `load_hero_briefs(root, fallback_names=None)` | 返回 `(names: set[str], positions: dict[str,str], skills: dict[str,str])`；`heroes.json` 缺失时用传入回退集合，技能文本按行拼接 |
 
+**`retrieval_diagnostic.py`（2081b5b 新增）**
+
+| 接口 | 说明 |
+|------|------|
+| `diagnose(query, top_k=12, heroes=None) -> dict` | 纯 dict 输出、不碰 Qt；函数内惰性 import Retriever。返回 `{query, heroes, top_k, items, trace, backend, elapsed_ms}`，items 行含 `block_id / kind / hero / score(4位) / source / rrf(5位) / is_current / as_of / dropped / text[:160]` |
+| `DiagnosticWorker(QThread)` | 信号 `result_ready = Signal(object)` / `failed = Signal(str)`；`run()` 中 `LIVE_WORKERS.add(self)` … `finally: discard(self)`，异常经 `failed` 回 GUI |
+| `LIVE_WORKERS` | 模块级 `set`，兜底持有运行中线程防对话框销毁连带析构（Qt6 running QThread 析构 = qFatal） |
+
 ### 4.3 `src/business/maintenance/`（RAG 三文件）
 
 | 文件 | 接口 | 说明 |
@@ -501,7 +528,8 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 文件 | 关键接口 |
 |------|---------|
 | `maintenance_workspace.py` | `MaintenanceSourceNav`（`WIDTH=230`；信号 `source_selected` / `rebuild_requested` / `meta_requested`；`add_group` / `add_source` / `select` / `set_selected` / `set_task_states` / `item_keys` / `status_text`）；`MaintenanceWorkspace`（`LOG_COLLAPSED_HEIGHT=32` / `LOG_EXPANDED_HEIGHT=180`；`add_group` / `add_source` / `select_source` / `has_source` / `current_source_key` / `set_interactive` / `expand_log` / `collapse_log` / `is_log_expanded` / `on_log_output` / `reset_unread` / `set_log_meta`） |
-| `rag_maintenance_panel.py` | `RagMaintenancePanel`（信号 `data_changed`；`refresh()` / `reload_data()` / `_run(args)` / `_jump_to_issue(issue)` / `_show_corpus_meta(key)`）；`task_states(root)` 计算 `最新`/`待重建`/`缺源`；`_output_count(path)` 带 `(mtime, size)` 缓存；`EDITABLE_SOURCE_ITEMS` 5 项 / `READONLY_CORPUS_ITEMS` 5 项 / `_MAX_AUDIT_ROWS=3` |
+| `rag_maintenance_panel.py` | `RagMaintenancePanel`（信号 `data_changed`；`refresh()` / `reload_data()` / `_run(args)` / `_jump_to_issue(issue)` / `_show_corpus_meta(key)` / `_open_diagnostic()`——打开只读检索诊断抽屉，关闭不触发 `refresh()`）；`task_states(root)` 计算 `最新`/`待重建`/`缺源`；`_output_count(path)` 带 `(mtime, size)` 缓存；`EDITABLE_SOURCE_ITEMS` 5 项 / `READONLY_CORPUS_ITEMS` 5 项 / `_MAX_AUDIT_ROWS=3` |
+| `retrieval_diagnostic_dialog.py` | `RetrievalDiagnosticDialog`（880×560 只读抽屉，2081b5b 新增）：查询框（回车触发）+ `top_k` 下拉（5/8/12/20）+ 9 列候选去向表（排序开启、首列 Stretch）；`DROP_LABELS` 剔除原因中文映射；填充前 `setSortingEnabled(False)` 填完恢复（防逐 setItem 即时重排串行）；`closeEvent` 只摘引用 + `worker.wait(2000)`，不 deleteLater 运行中线程（`LIVE_WORKERS` 兜底） |
 | `index_refinement_dialog.py` | 清单/编辑构建与纯渲染拆入 `refinement_list_pane.py` / `refinement_editor_pane.py`（对话框以 ~20 个单行 property 桥保持既有测试锚点名）；`IndexRefinementDialog(corpus_dir, parent)`，构造时 `resize(1160, 720)` 作为最小窗口，`_open_refinement()` 打开前再按主窗口尺寸 `resize`（否则工作台最小尺寸会把它撑到整屏）。顶部三档范围 `pending`/`curated`/`all`；行状态 `pending`/`suggested`/`modified`/`refined`/`generated`；字段状态 `empty`/`llm`/`manual`/`saved` |
 | `rule_doc_panel.py` | `RuleDocPanel(root)`，四个子页签（文档状态 / 数据段差异 / 提案工作台 / 疑难登记）；信号 `data_changed` / `script_started` / `script_output(bytes)` / `script_finished(int)` |
 | `card_points_panel.py` | `CardPointsPanel(repository, root)`，信号 `data_changed`；牌行 + `judge_rules` 判定规则增删改；「从 xlsx 导入」经 `ScriptRunner` 异步执行 |
@@ -517,14 +545,15 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 |------|------|------|---------|
 | `maintain_rag.py` | 语料维护调度主脚本，按依赖顺序重跑 build 脚本 | `--force` 强制重跑全部；`--check` 只检测不执行；`--only 关键词` 只跑名称含关键词的任务；`--keep-going` 单个失败后继续；`--build-index` 语料更新后重建向量索引；`--strict-audit` 审计未覆盖项视为失败 | DWD（+ 向量索引） |
 | `src.rag.indexer` | 构建向量索引 | `--no-rebuild` 增量同步（默认全量重建） | 向量索引 |
-| `src.rag.retriever` | 检索测试（不调用 LLM） | `--query`（必填）/ `--hero` 可重复 / `--top-k` | 只读 |
+| `src.rag.retriever` | 检索测试（不调用 LLM） | `--query`（必填）/ `--hero` 可重复 / `--top-k` / `--explain` 打印每条候选去向（五种丢弃原因）与保留/丢弃计数 | 只读 |
 | `import_hero_adjustments.py` | 初始化导入武将变更时间轴：A 类全量快照归一化入库 + 回填快照截止日之后的公告事件 | `--input`（默认 `.tmp_test/mjs_adjustments.json`） | ODS（时间轴） |
 | `audit_rule_doc.py` | 元规则 T0 文档机器校验 | `--strict` 有 ERROR/WARN 退出码 1；`--update-snapshot` 校验后刷新基线快照；`--doc`；`--snapshot` | ODS（只读，快照为审计基准） |
 | `sync_rule_stats.py` | 元规则数据段同步（六个数据段） | `--only 0.1` 等只处理指定段；`--apply` 应用差异（默认仅报告）；`--apply-candidates` 同时应用候选段；`--apply-json` 应用确认清单（退出码 0=成功/1=预检失败/2=前置失败）；`--doc`；`--json` 差异报告输出路径 | ODS（可写） |
 | `propose_rule_changes.py` | 变更提案起草器 | `--changes-json` 变更清单 JSON；`--no-llm` 不调用 LLM 生成占位提案；`--out-dir`；`--doc` | ODS（只读）+ 提案档案 |
 | `apply_rule_proposal.py` | 提案合入器 | `--proposal`（必填）；`--doc`；`--skip-maintain`；`--skip-audit` | ODS（可写）+ DWD |
-| `eval_rule_faqs.py` | FAQ 裁定回归评估 | `--generate` 生成/重建评估集后退出；`--dataset`（默认 `data/rag_evals/rule_faq_eval.json`）；`--top-k`；`--limit` | 只读（评测非检索） |
-| `eval_guide_quality.py` | 攻略/相性生成质量评估 | `--pick-sample` 采样 20 武将 + 10 对；`--stats`；`--guides`；`--synergies`（可多个）；`--attempts` | 只读 |
+| `eval_rule_faqs.py` | FAQ 裁定回归评估 | `--generate` 生成/重建评估集后退出；`--dataset`（默认 `data/rag_evals/rule_faq_eval.json`）；`--top-k`；`--limit`；`--no-record` 不追加评估历史 | 只读（评测非检索）；每次运行默认追加 `logs/rag/eval_history.jsonl` |
+| `eval_guide_quality.py` | 攻略/相性生成质量评估 | `--pick-sample` 采样 20 武将 + 10 对；`--stats`；`--guides`；`--synergies`（可多个）；`--attempts`；`--no-record` | 只读；同上追加评估历史 |
+| `export_embedding_onnx.py` | ONNX 编码器导出链（dev，依赖 torch/onnx）：fp32 导出（opset 18 + 动态轴）→ 权重内联 → 侧车 sha256.json；`--int8` 追加动态量化（产物不入包）；`--check` 只校验三件套就位；幂等（产物哈希与侧车一致即跳过） | `--int8` / `--check` | `data/rag_models/onnx`（不入 git） |
 | `diff_source_data.py` | 数据源变更清单生成 | `--old`（默认 `data/backups`）；`--data` 逗号分隔；`--out` 输出 markdown 路径 | 只读 |
 | `run_synergy_drift.py` | 10 对 × 3 次相性漂移采样 | `--out-prefix`；`--rounds`（默认 3）；`--pairs`；`--heroes` | 只读（产物可删） |
 | `build_*.py`（10 个） | 语料生成（各 build 脚本产出前调用 `rag_curated.merge_curated()` 保留精化成果，仅卡牌/武将两个） | 无参数 | DWD |
@@ -538,9 +567,10 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 ### 5.1 混合检索的 RRF 融合（`src/rag/retriever.py`）
 
 ```python
-def search(self, query, heroes=None, top_k=None):
+def search(self, query, heroes=None, top_k=None, trace=None):
     """混合检索：向量 + 关键词经 RRF 排名融合，再按类型配额取 top_k。
-    heroes: 指定武将名列表（元数据硬过滤，保证召回）。"""
+    heroes: 指定武将名列表（元数据硬过滤，保证召回）。
+    trace: 传入列表时逐候选记录去向（默认 None 零开销，返回结构不变）。"""
     top_k = top_k or config.TOP_K
     where = build_search_where(heroes)
     vec = [v for v in self._vector_search(query, where=where, n=max(top_k * 2, 30))
@@ -573,9 +603,30 @@ def search(self, query, heroes=None, top_k=None):
     return self._apply_kind_quota(ranked, top_k)
 ```
 
-**解读**：三个容易漏掉的细节——① 向量侧 `n=max(top_k*2, 30)` 取两倍召回量，给关键词融合留出余量，否则阈值过滤后块数不足；② 融合后必须**重新补齐**硬过滤，因为 `_keyword_hits()` 走的是内存块索引而非 Chroma `where`，向量侧的过滤对它无效，否则会出现"指定武将 A 却召回武将 B 的块"；③ 两个通道量纲不同（相似度 0~1 vs 加分 0.15 整数倍），用名次倒数而非原始分求和才能避免单侧主导。
+**解读**：三个容易漏掉的细节——① 向量侧 `n=max(top_k*2, 30)` 取两倍召回量，给关键词融合留出余量，否则阈值过滤后块数不足；② 融合后必须**重新补齐**硬过滤，因为 `_keyword_hits()` 走的是内存块索引而非 Chroma `where`，向量侧的过滤对它无效，否则会出现"指定武将 A 却召回武将 B 的块"；③ 两个通道量纲不同（相似度 0~1 vs 加分 0.15 整数倍），用名次倒数而非原始分求和才能避免单侧主导。`trace` 参数（2081b5b）把每个候选最终"保留还是丢弃、为何丢弃"记录下来（`below_threshold` / `not_current` / `hero_filter` / `max_keyword_only` / `kind_quota` 五种），默认 None 时行为与无 trace 版逐块一致——这是检索诊断抽屉（3.9）的数据来源。
 
-### 5.2 精化写回入口（`src/business/rag/refinement_session.py`）
+### 5.2 编码器缺件熔断（`src/rag/embedder.py`）
+
+```python
+def _verify_files(self) -> None:
+    """构造即校验：三件套齐全且哈希与侧车一致才允许加载，阻止带病运行。"""
+    sidecar = self._model_dir / "sha256.json"
+    if not sidecar.is_file():
+        raise RuntimeError(f"缺少 {sidecar}（先运行 {FIX_HINT}）")
+    manifest = json.loads(sidecar.read_text(encoding="utf-8"))
+    for name in ("model.onnx", "tokenizer.json"):
+        path = self._model_dir / name
+        if name not in manifest or not path.is_file():
+            raise RuntimeError(f"ONNX 三件套缺 {name}（先运行 {FIX_HINT}）")
+        digest = _sha256_of(path)
+        if digest != manifest[name]["sha256"]:
+            raise RuntimeError(f"{name} 哈希与 sha256.json 不符（先运行 {FIX_HINT}）")
+    self._expected_input_names = tuple(manifest.get("input_names", ()))
+```
+
+**解读**：`sha256.json` 侧车是"语料-索引-编码器同源"保障的核心——它记录三件套各自哈希、输入名清单与源权重指纹，由 `export_embedding_onnx.py` 导出时写入。`OnnxEmbedder.__init__` 即调 `_verify_files()`，模型文件被替换/损坏/缺件都在**构造期**熔断，而不是等检索时才产出不可复现的向量；`input_names` 从侧车读取，规避不同导出批次的 `token_type_ids` 有无差异在运行期报错。发版门禁（release.py）与 doctor「RAG索引」检查组复用同一校验语义。
+
+### 5.3 精化写回入口（`src/business/rag/refinement_session.py`）
 
 ```python
 def collect_update(self, block_id: str, texts: dict[str, str]) -> RefinementUpdate | None:
@@ -642,7 +693,7 @@ def apply_updates(
 
 **解读**：`continue` 而非 `break` 是关键——单文件失败不阻断其他文件，但也不迁移该文件的任何块，保证内存与磁盘状态一致（不会出现"界面显示已精化、磁盘其实没写"的假成功）。
 
-### 5.3 语料任务注册机制（`src/business/rag/task_defs.py`）
+### 5.4 语料任务注册机制（`src/business/rag/task_defs.py`）
 
 ```python
 TASKS: list[dict] = [
@@ -694,7 +745,7 @@ TASKS: list[dict] = [
 | 依赖 | `src.config.env` | `PROJECT_ROOT` / `parse_env_file()` / `resolve_api_config()` / `PROVIDER_PRESETS` |
 | 依赖 | `src.ui.shared.widgets` | `ScriptRunner`（QProcess 异步执行脚本）/ `PageActionBar` / `StatusBadge` / `DialogFooter` |
 | 依赖 | `src.ui.library.hero_classification_panel` / `special_cards_panel` | 两个维护对象面板（物理位置在 library 下） |
-| 依赖 | `chromadb` / `sentence-transformers` / `tqdm` | 向量库客户端、本地嵌入模型、进度条 |
+| 依赖 | `chromadb` / `onnxruntime` + `tokenizers`（onnx 默认档）/ `sentence-transformers`（st 回滚档）/ `tqdm` | 向量库客户端、本地编码器栈、进度条；运行期默认不 import torch 栈 |
 | 被调用方 | `src.scraper.ai.rag_prompt` | 经 `Retriever.search()` / `hero_blocks()` 取召回块并拼装提示词（提示词拼装归 `module_ai_batch.md`） |
 | 被调用方 | `src.ui.app.main_window` | 主导航第 4 页挂载 `RagMaintenancePanel` |
 | 被调用方 | `src.business.rag.refinement_service` ← `audit_service` | `list_pending()` 供 `audit_summary()` 计算待精化块数 |
@@ -744,3 +795,33 @@ TASKS: list[dict] = [
 **数字口径**
 - 测试规模：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）
 - 谢灵运/陶渊明 6 个技能语料块人工精修（cf9c927：`curated` 子对象 `method: "manual"` + `special_rules` 数组）
+
+---
+
+## 九、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更（主体为 `2081b5b` RAG 编码器 ONNX 化）：
+
+**编码器抽象层与 ONNX 切换**
+- 新增 `src/rag/embedder.py`：`OnnxEmbedder`（onnxruntime CPU + tokenizers 直读 tokenizer.json，CLS 池化 + L2 归一化，构造即校验三件套哈希、缺件熔断带修复指引）+ `STEmbedder` 回滚档 + `get_embedder()` 单例派发（`RAG_EMBEDDING_BACKEND`，默认 `onnx`）；retriever / indexer 模型加载统一走 `get_embedder()`，运行期不 import torch 栈
+- `src/scripts/export_embedding_onnx.py` 导出链：opset 18 + 动态 batch/seq 轴、两条不等长校准样本、`do_lower_case` 按 `sentence_bert_config.json` 对齐 + `strip_accents=False`、权重内联回单文件、`--int8` 量化（S7 裁决 fp32 打包，int8 不入包）、幂等跳过、`--check`
+- 对齐门禁 `tests/test_rag_onnx_parity.py`：fp32 逐条余弦对 ST ≥0.999 / top-30 重合 ≥29/30（"先测量后固化"定档，CI 无 torch 自动跳过）；int8 信息性下限
+
+**检索与索引**
+- `Retriever.search` 新增 `trace` 插桩（五个丢弃点，默认 None 零开销）与 `--explain` CLI（3.3/5.1）
+- `build_index(rebuild=True)` 改整目录 `rmtree` + 新建（孤立段根除，80.9→14.8MB），删除失败 `RuntimeError` 中止
+- 检索诊断：`retrieval_diagnostic.py`（diagnose 纯 dict + DiagnosticWorker + LIVE_WORKERS 兜底）+ `retrieval_diagnostic_dialog.py`（9 列去向表、DROP_LABELS 中文映射、填充前禁排序防串行）+ 维护页「检索诊断」按钮（3.9）
+- `config.py` 新增 `EMBEDDING_BACKEND` / `ONNX_MODEL_DIR` / `RAG_EMBED_THREADS`（4.1）
+
+**评估与体检**
+- `rag_eval_history.py` 新增：`eval_rule_faqs` / `eval_guide_quality` 默认追加 `logs/rag/eval_history.jsonl`（backend / 模型指纹 / corpus_blocks / index_mb），`--no-record` 逃生，退出码契约不变
+- `doctor` 新增「RAG索引」检查组（12 组之一）：索引体积 ≤25MB、集合段目录唯一性、ONNX 三件套哈希（st 档 SKIP），只读不打开 chroma
+
+**打包与发版**
+- mjs_agent.spec：chromadb / rag_index / rag_models/onnx 收集移出 `if FULL`（精简版自带完整 RAG），移除 tokenizers 排除，新增排除 scipy/sklearn/pandas/matplotlib/hf_xet，顶部 ONNX 三件套前置断言；FULL 块只剩 playwright；两包实测 658.9/764.1MB（发版断言 670/800MB）
+- release.py 四连门禁：ONNX 就位（缺则自动导出）/ 强制 onnx 后端同源重建索引 + 块数断言 / 包内产物校验（发现 int8 即 die）/ 包内 eval 检索门禁；manifest 新增 `encoder_backend / onnx_model_sha256 / index_blocks / unpacked_mb / eval_gate`
+- environment.yml 显式声明 `tokenizers==0.22.2` / `torch==2.12.0` / `onnx==1.23.2` / `onnxscript==0.7.2`
+
+**文档结构勘误**
+- 2.5 归属图：`corpus_fields.py` 实际位于 `src/data/`（2026-10-01 校准已迁移，本图漏改），本次修正并在 4.2 标注；`src/business/rag/` 补 `retrieval_diagnostic.py` 后为 8 文件
+- 代码规模：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）

@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-10-06
+> 文档日期：2026-10-11（基线 2081b5b）
 
 ---
 
@@ -10,7 +10,7 @@
 
 本模块是用户与程序交互的**门户**，提供完整的桌面应用界面：
 
-- **主窗口** — 左侧工作区导航、顶部上下文栏、兼容菜单和底部状态栏，协调所有业务服务的信号连接；默认尺寸为 1100×760px
+- **主窗口** — 左侧工作区导航、顶部上下文栏、兼容菜单和底部状态栏（模拟器 / OCR 轮询 / 数据新鲜度三枚常驻胶囊），协调所有业务服务的信号连接；默认尺寸为 1100×760px
 - **武将浏览器** — 武将列表搜索/筛选、详情查看、攻略展示、武将/攻略编辑
 - **选将推荐** — 固定 2 列 × 4 行推荐卡片、OCR 导入、相性/胜率与异常状态展示
 - **对局攻略** — 42/58 阵容核对与临场攻略工作台
@@ -33,6 +33,7 @@ src/ui/
 │   ├── frame_fingerprint.py    # 轮询闲置检测的整帧指纹（降采样灰度 + MAD 判等）
 │   ├── app_services.py         # 协作对象组合根（可无头构造，一次挂载 QObject 父子与窗口引用）
 │   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
+│   ├── data_freshness_chip.py  # 数据新鲜度常驻胶囊（四类数据健康度聚合，点击弹详情菜单）
 │   ├── progress_reporter.py    # 状态栏全局消息文本与业务进度条（统一渲染出口）
 │   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器
 │   ├── disclaimer_dialog.py    # 免责声明对话框（637102b 合规化改造）
@@ -101,6 +102,7 @@ src/ui/
 │   ├── persist.py              # run_edit_dialog 模态编辑对话框标准保存循环
 │   ├── hero_dialogs.py         # HeroSkillDialog
 │   ├── faction_colors.py       # 势力配色读取、兜底和缓存
+│   ├── portrait.py             # 头像路径两级回退 find_portrait_path + load_portrait LRU 缓存
 │   ├── hero_select_dialog.py   # 武将选择对话框基类
 │   ├── checkable_combo.py      # 势力多选筛选控件
 │   ├── guide_detail_dialog.py  # 攻略详情与 Markdown 阅读
@@ -112,7 +114,7 @@ src/ui/
 
 ### 2.1 UI 设计系统基础
 
-`src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。
+`src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。资料库二级页签（librarySectionTabs）与页面内分区页签（sectionTabs）共用的四条下划线页签 QSS 规则（pane / tab / :hover:!selected / :selected）由 `_section_tabs_qss(object_name)` 参数化生成（b5e8e4f），等价性由 `tests/test_style_qss.py` 锁定。
 
 `src.ui.shared.widgets` 提供 `PageHeader`、`PageActionBar`、`EmptyState`、`StatusBadge`、`NoticeBanner`、`DialogFooter`、`ToastOverlay` 和 `show_toast()`；`ScriptRunner` 经 `src.business.common.script_runner` 重新导出供 UI 层使用。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。`DialogFooter.set_busy()` 统一提交中的按钮禁用与文案恢复；同一父窗口复用一个 Toast 并重置隐藏计时器。`PageActionBar` 已用于选将推荐和对局攻略，避免在应用外壳标题下重复页面标题。`close_after_toast()` 用于三个配置对话框（模拟器 / API / 数据管理）的保存成功路径，先弹 Toast 再延迟关闭，避免立即关闭丢失提示。
 
@@ -151,7 +153,7 @@ G1 样式止血（2026-08）删除被 token 层覆盖的旧样式层，并把三
 - 「攻略获取」改名「攻略生成」
 - 「数据管理」改名「清空攻略/相性数据」并入「数据」菜单
 - `MainWindow._actions` 中的同一组 `QAction` 继续复用，原业务回调及快捷键保持不变
-- `FILE_LINE_BUDGETS` 中 `main_window.py` 预算更新为 552 行（审计 G1 切片 4.2：对话框/采集入口拆出 dialog_coordinator.py、菜单构建拆出 menu_builder.py，方法数 49 → 33）
+- `FILE_LINE_BUDGETS` 中 `main_window.py` 预算更新为 552 行（审计 G1 切片 4.2：对话框/采集入口拆出 dialog_coordinator.py、菜单构建拆出 menu_builder.py，方法数 49 → 33；后续接线增长棘轮上调，现 575 行，见 2026-10-11 校准）
 
 完整规范见 [UI 设计系统规范](../spec/spec_ui_design_system.md) 和 [UI 导航与页面归属规范](../spec/spec_ui_navigation.md)；改造前几何基线位于 `docs/ui_baseline/`。
 
@@ -222,12 +224,13 @@ MainWindow
  ├── AnnouncementService ── 公告检查与 diff
  ├── AnnouncementUpdateCoordinator ── 公告管线与武将更新阶段机
  ├── ProgressReporter ── 状态栏消息文本与进度条（统一渲染出口）
- └── StatusChips ── 模拟器 ADB / OCR 轮询常驻状态胶囊
+ ├── StatusChips ── 模拟器 ADB / OCR 轮询常驻状态胶囊
+ └── DataFreshnessChip ── 数据新鲜度常驻胶囊（服务信号 + data/ 目录监听自足刷新）
 ```
 
 工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；后端选择对话框同时返回 `(backend, use_rag)`（API/浏览器 + RAG 增强/经典模式），工作流将 `use_rag` 透传给攻略/相性获取服务；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
 
-底部状态栏按职责分为三部分：`ProgressReporter` 承载普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度，以及 `QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击默认经 `mumu_config_requested` 打开模拟器配置（唯一例外：轮询闲置暂停态点击发出 `poll_resume_requested` 恢复轮询）。任务消息不会覆盖后两类连接状态。
+底部状态栏按职责分为三部分：`ProgressReporter` 承载普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度，以及 `QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击默认经 `mumu_config_requested` 打开模拟器配置（唯一例外：轮询闲置暂停态点击发出 `poll_resume_requested` 恢复轮询）；`DataFreshnessChip` 常驻显示四类数据的新鲜度聚合档位，点击弹出详情与建议操作菜单（详见 3.14 节）。任务消息不会覆盖后两类连接状态与数据新鲜度胶囊。
 
 攻略全量、增量、指定与相性配对、选定武将、实战配队批量共六个菜单入口保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
@@ -335,7 +338,7 @@ RecommendationPanel (QWidget)
 
 **实战配队横条**：`_refresh_combo_strip()` 在当前 8 人已确认时遍历 `ComboManager.list_combos()`，两条 hero_id 都在当前集合内的配队按评级降序进入横条；同一配对多座次变体逐条展示。`_update_combo_badges()` 为每个当前武将取参战配队中最高评级，通过 `HeroCardWidget.set_combo_badge("实战 ★N")` 在头像右上角显示金色徽章。点击 chip 调 `shared.combo_detail.show_combo_detail()` 展示 2×2 号位示意 + 座次要求 + note 原文；[管理] 打开 `ComboManagementDialog` 增删改后发 `combos_changed` 立即刷新横条与角标。
 
-- `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌、实战角标及卡片信号；`cardState` 动态属性驱动 QSS 的卡片状态样式（empty / pending / unknown / ready / indexStale / insufficientData / missingGuide / missingPortrait）。
+- `hero_card_widget.py`：`HeroCardWidget`，负责头像、势力配色、推荐指数、相性摘要、胜率奖牌、实战角标及卡片信号；`cardState` 动态属性驱动 QSS 的卡片状态样式（empty / pending / unknown / ready / indexStale / insufficientData / missingGuide / missingPortrait）。头像路径经 `shared/portrait.find_portrait_path()` 两级回退解析（运行时可写根 `IMAGES_OUTPUT_DIR` 优先、随包基线 `IMAGES_DIR` 兜底，6b21d75），但缩放保留 `KeepAspectRatio` 留白式——与共享 `load_portrait()` 的 `KeepAspectRatioByExpanding` 裁剪式是刻意视觉差异。
 - `guide_detail_dialog.py`：`GuideDetailDialog` 以外层滚动区展示摘要和正文预览；双击预览会打开 `GuideMarkdownDialog` 阅读完整 Markdown 正文。**2026-09 合规化调整（637102b）**：调整了内容展示逻辑以符合合规要求。
 - `markdown_renderer.py`：统一将攻略与相性 Markdown 转为安全 HTML，负责原始 HTML 转义和解析前长度限制。
 
@@ -375,7 +378,7 @@ ColorPicker.color()
   -> RecommendationPanel.refresh_faction_colors()
 ```
 
-保存前校验每个值是否为六位 Hex 颜色，保存成功后刷新推荐卡片中的势力标签。文件不存在时使用内建兜底配色。配色页及颜色浮层的常用操作使用中文；Qt 样式统一使用 `background-color`，避免按钮刷新时出现 `Could not parse stylesheet of object QPushButton`。
+保存前校验每个值是否为六位 Hex 颜色，保存成功后刷新推荐卡片中的势力标签。文件不存在时使用内建兜底配色。配置文件读写均指向运行时可写根 `PROJECT_ROOT/config/faction_colors.json`（6b21d75 由 `BUNDLE_ROOT` 换根：frozen 下首启由 `main._ensure_clean_runtime` 从打包默认部署可改副本，用户自定义不随升级包丢失），`faction_color_dialog.py` 亦删除本地硬编码路径、改从 `ui.shared.faction_colors` 导入。配色页及颜色浮层的常用操作使用中文；Qt 样式统一使用 `background-color`，避免按钮刷新时出现 `Could not parse stylesheet of object QPushButton`。
 
 ### 3.5 对局攻略页面
 
@@ -484,6 +487,8 @@ PeakSelectPanel
 
 候选构建流程：`CardSyncService.check_now()` 后台拉取官网手牌库 → `card_sync.card_field_diff_summary()` 逐字段对比本地 vs 官网 → `card_sync.format_card_full_text()` 生成全文对比文本（两函数位于 `business/card_sync.py`）→ `CardSyncCheckResult` 含 `diff`（added/modified/removed 三态）与 `official_cards`。
 
+忽略入口 / 详情对比 / 选中联动骨架与 `HeroUpdateConfirmDialog` 共用 `data_admin/ignoreable_diff_list.py` 的 `IgnoreableDiffListMixin`（cd97677 收口）：card 版选中即可忽略、忽略入口恒显示，`_ignore_candidate()` 调 `CardSyncService.ignore_card(...)` 写忽略名单。
+
 ---
 
 ### 3.9 公告更新对话框与横幅
@@ -491,7 +496,7 @@ PeakSelectPanel
 - 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：可更新公告显示“武将数据可更新 · 百科已更新，涉及：…”（success 色调），待生效公告显示“检测到武将相关公告 · 公告已发布，官网百科数据通常滞后半天到一天”（info 色调），纯 diff 变化显示“检测到百科数据变化”（warning 色调）。
 - `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单，非模态；`check_requested` / `update_requested` 两个信号分别驱动检查与更新入口。
 - “更新武将数据”先由 `AnnouncementService.collect_base_candidates()` 预判候选，无候选时状态栏提示；有候选则调用 `prepare_update_candidates()` 后台拉取官网数据并计算字段级差异，结果经 `update_candidates_prepared` 信号回到 `_on_hero_update_prepared()`。
-- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。确认后按勾选执行：`_pending_update_phases` 构造为 `[("specific", ids)]` 与 `[("incremental", None)]` 两阶段队列，`_start_next_update_phase()` 逐个 `_dispatch_update_phase()` → `fetch_specific(ids)` / `fetch_incremental()`，`_on_fetch_completed` 消费阶段（仅 `_update_phase_fetch_in_flight=True` 时冒领），任一阶段失败或采集忙中断整条流并 `mark_applied` 保持横幅可见。全取消仅 `mark_applied()` 刷新快照、不执行采集。
+- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。确认后按勾选执行：`_pending_update_phases` 构造为 `[("specific", ids)]` 与 `[("incremental", None)]` 两阶段队列，`_start_next_update_phase()` 逐个 `_dispatch_update_phase()` → `fetch_specific(ids)` / `fetch_incremental()`，`_on_fetch_completed` 消费阶段（完成回调只消费已发起阶段——在途标记由 `_phase_gate = BusyGate()` 闸门承载，76875dd 收口：发起成功 `acquire()`、完成消费 `release()`、中止 `_abort_pending_phases` 也 `release()`），任一阶段失败或采集忙中断整条流并 `mark_applied` 保持横幅可见。全取消仅 `mark_applied()` 刷新快照、不执行采集。忽略骨架与 `CardSyncDialog` 共用 `IgnoreableDiffListMixin`（`ignore_ui_optional=True`：无 `AnnouncementService` 时整组隐藏忽略入口；保留 content_hash 门控——官网获取失败的差异忽略后无法匹配压制，不提供忽略；三态 summary 文案；忽略后过滤 `_candidates` 维持基数）。
 - 状态栏 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
 
 ### 3.10 实战配队维护、批量生成与分类建议
@@ -500,7 +505,7 @@ PeakSelectPanel
 
 - **手工维护** — `ComboManagementDialog`（选将推荐面板“实战配队”横条右上角“管理”打开）。列表用轻量 `QListWidget` 承载上千条配队（不做逐行控件渲染），支持按武将筛选（下拉框可编辑，`QCompleter` 包含匹配）与“仅看手工”；每行显示 `★rating 武将1[座次] + 武将2[座次]  🖊 手工/📥 导入  note`，双击行等同编辑。增删改后发 `combos_changed` 供面板刷新横条与卡片角标。
 - **单条编辑** — `ComboEditDialog` 承载双人选择（`BaseHeroSelectDialog` `SINGLE` 模式，两个位置不能相同）+ 实战评级 1–10 + 每个武将的四号座次复选 + note 备注。保存时若两个武将均未勾选座次会提示是否按“不限座次”保存；已存在同配对时提示覆盖（编辑同配对视为直接改，不提示）。保存前把 `hero1_id < hero2_id` 规范化并把座次取并集写入 `position` 字段；标记 `manual=True` 使下次官方导入时优先保留。
-- **批量生成** — `SynergyCombosDialog`（菜单“数据 → 武将相性 → 实战配队生成”）从 combos 数据集按武将（下拉框可编辑，`QCompleter` 包含匹配）/ 评级 / 座次 / 生成状态筛选配对清单，确认后 `AiGenerationWorkflow.request_synergy_combos()` 把选中的 pairs 列表交给 `SynergyFetchService.fetch_pairs_list()`，进度对话框以“相性评分”为 item 文案，`overwrite_existing` 决定覆盖已有 AI 评分。
+- **批量生成** — `SynergyCombosDialog`（菜单“数据 → 武将相性 → 实战配队生成”）从 combos 数据集按武将（筛选行最前的“武将:”下拉框，可编辑 + `QCompleter` 包含匹配，首项哨兵“全部武将”，其余按 `hero.id` 排序）/ 评级 / 座次 / 生成状态筛选配对清单，确认后 `AiGenerationWorkflow.request_synergy_combos()` 把选中的 pairs 列表交给 `SynergyFetchService.fetch_pairs_list()`，进度对话框以“相性评分”为 item 文案，`overwrite_existing` 决定覆盖已有 AI 评分。武将筛选按 `hero_id` 精确匹配 `combo.hero1_id` / `combo.hero2_id` 两个位置（免疫重名与孤儿 id），与评级/座次/生成状态筛选叠加（1a765da）。
 - **导入** — `CombosImportDialog`（菜单“数据 → 实战配队导入”）导入外部配队，成功后 `DialogCoordinator._on_combos_imported()` 刷新共享 combos 数据、相性视图与选将推荐横条。
 
 **分类建议 worker**（`classification/hero_tab.py`，原 `hero_classification_panel.py`）— 武将分类维护面板的“LLM 建议分类”按钮把当前武将的技能文本、定位、现有分类清单交给 `_HeroCategoryWorker(QThread)` 后台线程执行 `suggest_hero_categories()`。生命周期与面板解耦：worker `parent=None`，`_LIVE_WORKERS` 集合持有运行中的线程防止 Python 引用丢失导致 QThread 被 GC 析构，`run()` 结束时 `_LIVE_WORKERS.discard(self)` + 释放 generator；`finished` 连接 `deleteLater()` 让页签销毁后线程也能自回收。建议返回时若 `hero != self._current_hero` 则只弹 Toast 提示“已切换武将，X 的建议未应用”；否则 `set_checked(suggested)` 写回勾选（`set_checked` 不发信号，手动走归类变更路径写 repo 并经 `changed` 信号让宿主 `mark_dirty`）。
@@ -557,6 +562,15 @@ PeakSelectPanel
 - **`rag_maintenance_panel.py`** — RAG 维护工作台同上。
 
 三者通过 `HeroClassificationRepository.reload()` / `SpecialCardsRepository.reload()` 接口触发，在面板的"刷新"按钮或爬虫采集完成回调中调用，避免数据源更新后名单不同步。
+
+### 3.14 数据新鲜度芯片（DataFreshnessChip，ae92c1d 新增）
+
+`DataFreshnessChip`（`src/ui/app/data_freshness_chip.py`，201 行）是底部状态栏第三枚常驻胶囊（`StatusChips` 之后 `addPermanentWidget`），以 `QLabel` 承载武将 / 攻略 / 相性 / 官方榜单四类数据的健康度聚合档位（green / yellow / red，前景/背景色值与 `status_chips` 同值：#176b36/#e4f5e8、#8a5a00/#fff3cd、#a12622/#fde8e8），文案为 `report.headline`（“数据：N天前”）。判定逻辑位于 `src/business/freshness.py`（449 行，归 module_business.md；档位周期写死 7 天一档，时间轴不健康阈值经 config.env 透传键 `DATA_FRESHNESS_TIMELINE_STALE_DAYS` 调节，见 module_config.md）。
+
+- **刷新自足，无轮询定时器** — 双路驱动：①六路服务信号订阅（hero/guide/synergy 三类 `fetch_completed`，lambda 归一 `Signal(bool)` 与 `Signal(bool, str)` 签名差异；`ai_workflow.guides_changed` / `synergies_changed`；`announcement_service.check_finished`）；②`QFileSystemWatcher` 监听 `data/` 目录（`WATCH_DIR`），`directoryChanged` 触发 500ms 单发 `QTimer` 去抖，超时回调做 mtime 快照比对——仅 `WATCHED_FILE_NAMES` 10 个目标文件（核心 json 与五份榜单 csv）变化才刷新，覆盖终端 `pull_data` 同步的原子落盘。
+- **点击 / 键盘菜单** — 点击或 Space / Return / Enter / Down（`StrongFocus`）在芯片下方弹 `QMenu` 三组：内容年龄（四项 detail 禁用行 + 时间轴警示行）、数据源周期（`SOURCE_CYCLE_ROWS` 三条静态文案）、建议操作（可点动作与禁用建议行并存；非武将项黄/红档给禁用建议行）。
+- **建议动作路由与忙碌守卫** — 武将落后事件按模式能力路由：`SUGGEST_INCREMENTAL` → “增量获取武将数据（拉取新增武将）”、`SUGGEST_SPECIFIC` → “指定获取武将数据（替换模式，刷新过期武将）…”，混合批次两者并给。`_request_incremental()` / `_request_specific()` 先查 `hero_fetch_service.is_busy`，忙则 `show_toast` 拦截不发信号。
+- **接线** — 构造签名 `__init__(hero_fetch_service, guide_fetch_service, synergy_fetch_service, ai_workflow, announcement_service, parent=None)`；`main_window.py` 完成构造与两信号 `fetch_incremental_requested` / `fetch_specific_requested` 回接 `DialogCoordinator.request_fetch_incremental` / `request_fetch_specific`（L28 导入、L463-474 接线），动作不注册菜单栏。测试 `tests/test_data_freshness_chip.py`（279 行 13 用例）。
 
 ---
 
@@ -682,7 +696,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | `SynergyEditDialog` | 相性评分/维度/说明编辑 |
 | `RoiSelectorDialog` | 模板 ROI 区域框选 |
 | `BaseHeroSelectDialog`（及其子类 `HeroFetchDialog` / `GuideFetchDialog` / `SynergyPairDialog` / `SynergySingleDialog`） | 武将选择 |
-| `SynergyCombosDialog` | 实战配队批量生成配对清单筛选，返回 `selected_pairs` |
+| `SynergyCombosDialog` | 实战配队批量生成配对清单筛选（武将/评级/座次/生成状态），返回 `selected_pairs` |
 | `ComboManagementDialog` | 实战配队全量列表 + 增删改，`combos_changed` 通知面板刷新 |
 | `ComboEditDialog` | 实战配队新增/编辑表单（双人选择 + 评级 + 座次 + note） |
 | `CardAnnotationEditDialog` / `CardFieldSchemaDialog` / `CardFieldEditDialog` | 卡牌追加字段编辑与字段定义管理 |
@@ -721,6 +735,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.card_catalog` | 卡牌目录服务（`CardManagementPanel`） |
 | 依赖 | `src.business.card_sync` | 卡牌百科变更检查与同步（`CardSyncDialog`） |
 | 依赖 | `src.business.announcement` | 公告与百科 diff 检查 |
+| 依赖 | `src.business.freshness` | 数据新鲜度判定（`DataFreshnessChip` 消费 `compute_freshness_report()` / `FreshnessReport` / 档位与菜单常量） |
 | 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.config.disclaimer_state` | 免责声明状态管理（版本控制与确认记录） |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |
@@ -729,11 +744,11 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 
-## 七、代码规模（2026-10-06 基线）
+## 七、代码规模（2026-10-11 基线）
 
-- **测试模块数**：129 个测试文件
-- **测试用例数**：1481 个 `test_*` 函数
-- **`main_window.py` 行数预算**：552 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩）
+- **测试模块数**：145 个测试文件
+- **测试用例数**：1626 个 `test_*` 函数
+- **`main_window.py` 行数预算**：575 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查与数据新鲜度芯片接线棘轮上调至 575）
 
 ## 八、知识库维护界面（已迁出）
 
@@ -755,3 +770,27 @@ def update_recommendations(self, data: list[dict]) -> None:
 
 **数字口径**
 - 测试规模：129 文件 / 1481 个 `test_*` 函数（原 112 / 1350）
+
+---
+
+## 十、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+**新功能**
+- **数据新鲜度芯片**（ae92c1d）：状态栏第三枚常驻胶囊 `DataFreshnessChip`（`src/ui/app/data_freshness_chip.py`，201 行），六路服务信号 + `QFileSystemWatcher` 双路刷新自足、点击弹三组菜单、建议动作经忙碌守卫回接 `DialogCoordinator` 采集入口（详见 3.14 节）；数据来源 `src/business/freshness.py`（449 行，归 module_business.md），测试 `tests/test_data_freshness_chip.py`（279 行 13 用例）
+- **实战配队批量生成按配队武将筛选**（1a765da）：`SynergyCombosDialog` 构造签名破坏性变更——新增必选首位 `hero_manager`（对齐同族 `SynergyPairDialog` / `SynergySingleDialog` 传参惯例），`ai_generation_workflow.request_synergy_combos()` 补传；筛选行最前新增“武将:”可编辑下拉（哨兵“全部武将” + `QCompleter` 包含匹配），`_filtered_combos()` 按 `hero_id` 精确匹配两个位置（详见 3.10 节）；新测试 `test_synergy_combos_dialog.py`（109 行 5 用例）
+
+**重构收口（行为不变）**
+- **IgnoreableDiffListMixin 骨架收口**（cd97677）：新文件 `src/ui/data_admin/ignoreable_diff_list.py`（108 行），收口 `CardSyncDialog` 与 `HeroUpdateConfirmDialog` 逐字复制且已偏移的忽略入口/详情对比/选中联动骨架；偏移语义提升为钩子（`_detail_dialog_class` / `_ignore_candidate` / `_after_ignore_removed` / `_exec_ignore_manager` / `_ignored_count` 必须实现，`_update_ignore_button_state` / `_summary_text_for` 可覆盖；详情对话框类经钩子取宿主命名空间避免循环导入）。card 版选中即可忽略、入口恒显；hero 版 `ignore_ui_optional=True`（无服务整组隐藏入口）、保留 content_hash 门控与三态 summary（详见 3.8.1 / 3.9 节）；13 项既有用例原样通过
+- **公告更新阶段令牌 BusyGate**（76875dd）：`announcement_update_coordinator._phase_in_flight` 裸 bool → `_phase_gate = BusyGate()`（来自 `src/business/recognition/session_guard.py`），完成回调只消费已发起阶段的语义不变（详见 3.9 节）；测试桩同步改 BusyGate
+- **页签 QSS 参数化**（b5e8e4f）：`style.py` 新增 `_section_tabs_qss(object_name)`，资料库二级页签与页面内分区页签共用的四条 QSS 规则参数化提取；刻意选参数化而非逗号合并以保留 sectionTabs 在级联中的原有位置，`GLOBAL_STYLE` 渲染逐字节一致；守护测试 `tests/test_style_qss.py`
+- **OCR 注释措辞清理**（683fca6）：`main_window.py` 预热注释“Paddle 初始化…”→“OCR 引擎初始化…”，`peak_select_panel.py` L136 同改（纯文档，无行为变化）
+
+**打包态资源归位**（6b21d75）
+- **头像两级回退**：`shared/portrait.py` 新增 `find_portrait_path(hero_name)`——运行时可写根 `IMAGES_OUTPUT_DIR`（crawler 新下载头像）优先、随包基线 `IMAGES_DIR` 兜底，扩展序 .png/.jpg/.webp；`load_portrait`（lru_cache 128，`KeepAspectRatioByExpanding` 裁剪式）改复用它；`hero_card_widget._load_portrait` 删自持单根循环改调它但保留 `KeepAspectRatio` 留白式（刻意视觉差异）。动机：frozen 下新下载头像立即可显示；images 不纳入首启部署避免安装体积翻倍
+- **faction_colors 换根**：`FACTION_COLORS_FILE` 由 `BUNDLE_ROOT/config` 改 `PROJECT_ROOT/config`（读写均在运行时可写根，frozen 首启部署可改副本），`faction_color_dialog.py` 删本地硬编码改导入（详见 3.4.2 节）
+
+**数字口径**
+- 测试规模：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
+- `main_window.py` 预算 561 → 575（ae92c1d 芯片接线 +14 行；2026-10-06 校准误记 552，基线时实际已因忙碌守卫/自动公告检查接线升至 561）

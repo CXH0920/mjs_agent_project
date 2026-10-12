@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
-> 文档日期：2026-10-06
+> 文档日期：2026-10-11（基线 2081b5b）
 
 ---
 
@@ -43,10 +43,10 @@ src/data/
 ├── hero_classification_repository.py # 武将分类/克制链/武将归类维护（data/hero_classification.json）
 ├── special_cards_repository.py   # 专属牌/战法牌/特殊牌区/状态/概念维护（data/special_cards.json）
 ├── peak_win_rate_repository.py   # 巅峰赛单将胜率 + 出场排行 CSV 读取（独立于 2v2 胜率）
-├── win_rate_repository.py        # 2v2 胜率 CSV 读取（打包基线 BUNDLE_ROOT/data）
+├── win_rate_repository.py        # 2v2 胜率 CSV 读取（运行时可写根 PROJECT_ROOT/data）
 ├── recommendation_index_repository.py # 武将推荐指数计算、快照写入与读取 / stale 状态自愈校验 / 官方导入落盘跨仓储联动
 ├── corpus_fields.py              # 语料索引字段契约（CARD_FIELDS / HERO_FIELDS / fields_for，精化服务与构建合并共用单一来源）
-└── char_info_cache.json          # 武将名词表字形基线缓存（OCR 辅助，CI 覆盖率断言；424 字）
+└── char_info_cache.json          # 武将名词表字形基线缓存（OCR 辅助，CI 覆盖率断言；437 字）
 ```
 
 四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。2026-09 起（241e965），`hero_classification_repository.py` 在爬虫更新 `heroes.json` 后，归类/专属牌名单随刷新入口同步加载，无需手动重建语料。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
@@ -57,7 +57,7 @@ src/data/
 
 武将变更时间轴 `hero_timeline.py` 维护 `data/mjs_adjustments.json`（顶层 `init_imported_at` / `init_source_last_updated` / `corpus_base_date` + `events` 列表），由 `import_hero_adjustments.py` 全量注入与 `AnnouncementService` 公告捕获增量追加；`build_rag_corpus.py` / `build_guide_corpus.py` 据此给语料块打 `as_of` / `is_current` 版本戳，`rag_audit.py` / `audit_service.py` 据此审计 `heroes.json` 疑未同步武将。
 
-2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `BUNDLE_ROOT/data/2v2胜率排行.csv` 读取（打包只读基线，结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入落盘后经 `notify_official_outputs_written(output_names)` 做跨仓储联动——本批未含巅峰赛胜率榜（即导入 2v2/放逐数据）时写 `stale=true` 标记并清理对应胜率缓存，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均不晚于快照，自动写回 `false` 避免误弹横幅。
+2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `PROJECT_ROOT/data/2v2胜率排行.csv` 读取（结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。三仓常量均已锚定运行时可写根（6b21d75 读写根分裂治理）：`win_rate_repository.WIN_RATE_CSV`、`peak_win_rate_repository` 的 `PEAK_WIN_RATE_CSV` / `PEAK_PICK_RANK_CSV`、`recommendation_index_repository.DATA_DIR`（派生 `WIN_RATE_CSV` / `PICK_RANK_CSV`（2v2出场排行）/ `BAN_RANK_CSV`（武将放逐.csv）/ `HEROES_JSON` / `RECOMMENDATION_INDEX_CSV`（武将推荐指数.csv）五常量）全部由 `BUNDLE_ROOT/data` 换为 `PROJECT_ROOT/data`——修复 frozen 下"官方导入写可写根、算法读取钉死只读根"的分裂缺陷（用户 OCR 导入新榜单后推荐指数仍按旧基线计算）；开发态两根相等、行为不变。回归测试 `test_ranking_csv_runtime_root.py`（monkeypatch 双根 + `importlib.reload` 模拟分裂）。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入落盘后经 `notify_official_outputs_written(output_names)` 做跨仓储联动——本批未含巅峰赛胜率榜（即导入 2v2/放逐数据）时写 `stale=true` 标记并清理对应胜率缓存，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均不晚于快照，自动写回 `false` 避免误弹横幅。
 
 ---
 
@@ -341,7 +341,7 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 
 - **出库范围**：`heroes.json` / `combos.json` / `cards.json` / `card_annotations.json` / `special_cards.json` / `card_points.json` / `equip_attrs.json` / `hero_classification.json` / `mjs_adjustments.json` / `announcements.json` / `baike_snapshot.json` / `raw_guides/` / `rag_corpus/` / `images/`（共 14 项，`pull_data.PRIVATE_PATHS`）。`guides.json` / `synergies.json` 为 AI 生成物，不入私有仓也不入公开仓。
 - **来源登记**：`data/SOURCES.md` 登记每项内容的来源、采集时间与备注（合规台账，不登记数据本身）。
-- **同步工具** `src/scripts/pull_data.py`：`pull` / `push` / `verify` 三子命令 + `--dry-run`；私有仓位置三级解析（环境变量 `MJS_DATA_REPO` > `config.env` > 默认项目同级 `mjs_data_private`）；私有仓根 `manifest.json` 记录 `{path, sha256}`，`verify()` 逐条比对；**push 守卫链**——数据有效性校验（JSON 可解析非空、heroes 条数 ≥ `MIN_HERO_COUNT=100` 防截断）+ 脏工作区拒绝 + `git pull --ff-only` 对齐远端后才提交；**pull 原子落位**——先拷进项目内同盘 staging（`.tmp_test/.pull_staging-*`）再逐文件 `Path.replace` 原子替换，发现本地文件与私有仓不同（可能未 push 的本地修改）先备份到 `data/backups/`（扁平命名 `data__<名>-<时间戳>`）再覆盖。
+- **同步工具** `src/scripts/pull_data.py`：`pull` / `push` / `verify` 三子命令 + `--dry-run`；私有仓位置三级解析（环境变量 `MJS_DATA_REPO` > `config.env` > 默认项目同级 `mjs_data_private`）；私有仓根 `manifest.json` 记录 `{path, sha256}`，`verify()` 逐条比对；**push 守卫链**——数据有效性校验（JSON 可解析非空、heroes 条数 ≥ `MIN_HERO_COUNT=100` 防截断）+ 脏工作区拒绝 + `git pull --ff-only` 对齐远端后才提交；**pull 原子落位**——先拷进项目内同盘 staging（`.tmp_test/.pull_staging-*`）再逐文件 `Path.replace` 原子替换，发现本地文件与私有仓不同（可能未 push 的本地修改）先备份到 `data/backups/`（扁平命名 `data__<名>-<时间戳>`）再覆盖；**git 输出显式 UTF-8 解码**（2945f29）——`_git()` 显式 `encoding="utf-8", errors="replace"`，修复中文 Windows 控制台无 `PYTHONUTF8` 时 git 输出（恒 UTF-8）按 GBK 解码致读取线程 `UnicodeDecodeError`（git 本身已成功但输出丢失）；回归测试 `test_pull_data.py::test_git_output_decoded_as_utf8`（参数断言 + 中文提交主题读回无损）。
 - 本模块各 Manager / Repository 的读写逻辑不变——它们仍按本地路径读写文件，"文件从哪来"由 `pull_data` 解决；doctor「私有仓」「数据」检查组负责日常工作区一致性巡检。
 
 ### 3.12 卡牌百科快照与变更记录（`card_sync_store.py`）
@@ -656,3 +656,20 @@ class SpecialCardRepository(JsonRepository):
 
 **数字口径**
 - 组合 RAG 语料 437 → 509 块；维护仓库数据文件标注"不入版本库"口径
+
+---
+
+## 八、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+**读写根分裂治理**（6b21d75）
+- frozen 下"写入可写根、读取钉死只读根"缺陷修复：官方导入/爬虫把榜单写 `PROJECT_ROOT/data`，而 `win_rate_repository` / `peak_win_rate_repository` / `recommendation_index_repository` 的读取常量钉在 `BUNDLE_ROOT/data`——用户 OCR 导入新榜单后算法仍读旧基线；三仓常量全部换根（`win_rate_repository.WIN_RATE_CSV`、`peak_win_rate_repository` 两 CSV、`recommendation_index_repository.DATA_DIR` 及派生五常量），开发态两根相等无差异（详见「二、文件结构」后的数据源说明段落）
+- 回归测试 `test_ranking_csv_runtime_root.py`（90 行）：monkeypatch 双根 + `importlib.reload` 模拟打包态分裂
+- 同批换根还涉及 `src/scraper/ai/batch.py`、`rule_summary.py`、`official_source/full.py`、`incremental.py` 与 `src/ocr/character_feature_repository.py`（归各自模块文档）
+
+**char_info_cache.json**
+- 424 → 437 字（6b21d75）：运行时动态补齐的识别条目回填进随包基线；`src/ocr/character_feature_repository.py` 注释登记该文件为随包只读基线（frozen 下 `BUNDLE_ROOT/src/data/char_info_cache.json`，不在 `_ensure_clean_runtime` 部署清单），`save()` 在 frozen 下无 UI/`-m` 触发链属理论债——将来维护页若接入须先解决写入根，勿简单换根（详见该文件注释）
+
+**pull_data 编码修复**（2945f29）
+- `_git()` 显式 `encoding="utf-8", errors="replace"`：中文 Windows 控制台无 `PYTHONUTF8` 时 git 输出（恒 UTF-8）按 GBK 解码致读取线程 `UnicodeDecodeError`（git 本身已成功但输出丢失）；回归测试 `test_pull_data.py::test_git_output_decoded_as_utf8`（详见 3.14 节）

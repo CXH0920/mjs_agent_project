@@ -1,8 +1,8 @@
 # 模块：屏幕采集与 OCR 识别
 
 > 对应目录：`src/capture/` + `src/ocr/`
-> 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核）与未决槽位复核、白名单治理
-> 文档日期：2026-10-06（B1 全量切换后口径）
+> 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
+> 文档日期：2026-10-11（基线 2081b5b；B1 全量切换后口径延续）
 
 ---
 
@@ -116,7 +116,7 @@ match(image, threshold=0.8)
 
 ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR worker，原始图交给 `ImageSaveScheduler` 的单线程 `image-save` 执行器（审计 G8 后该调度器独立于 CaptureService，见 module_business.md §3.2）压缩 PNG。OCR 完成不等待保存；保存完成通过 `image_saved` 通知。对于仍在写入的 ADB 截图，`capture_completed.save_path` 为 `None`；本地导入则保留其已存在的源文件路径。
 
-自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；至少确认 3 个角色名才自动切换页面并停用该任务，`unresolved`、`unknown` 和 `conflict` 不计入数量。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
+自动轮询中，对局攻略仅在选将页命中后才会激活。对局攻略模板未命中时会回退执行一次候选角色 OCR；至少确认 3 个角色名才自动切换页面并停用该任务，`unresolved`、`unknown` 和 `conflict`（`UNRESOLVED_RESOLUTIONS` 词表，b5e8e4f 单源化）不计入数量。模板在此路径中用于加速命中，而非阻断不同战场 UI 的识别。
 
 ### 3.2.1 手动识别与轮询冷却（e6d67c0 修复）
 
@@ -172,7 +172,7 @@ Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
 - **PoolSnapshot**：`card_count / names / pending / stage("ban"/"pick") / overlap / banned`
 - **图片导入** `recognize_image_file()` 使用独立 `_import_lock`，不影响循环
 - **stage 判定**：≥12 张 = "ban" 禁选阶段；8~11 张 = "pick" 候选阶段
-- **人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验候选在白名单内才生效
+- **人工确认**：`confirm_pending(slot, name)` 由 `parse_pool` 校验候选在白名单内才生效（待确认槽按 `UNRESOLVED_RESOLUTIONS` 过滤）
 
 ### 3.5 ROI 布局配置（roi_config.py）
 
@@ -187,7 +187,9 @@ Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
 
 ### 3.6 多路证据与候选确认
 
-`GeneralRecognizer.recognize()` 先分别预处理同类 ROI，再横向拼图为一次 OCR 引擎检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。名称槽位记录批量增强图证据；缺失、多候选、冲突或置信度低于 0.75 时，才追加增强图与仅放大原图的逐槽识别（`_NAME_RECHECK_CONFIDENCE` 由 0.8 降至 0.75，1694ab7 按 v6 置信分布定标——v6 在 0.7~0.99 中带占比 17.9%（v4 仅 7.5%），0.75 使回退触发量不因引擎切换放大一个数量级，实测触发率 4.5%→1.7%）。ROI 坐标以参考分辨率保存，
+`GeneralRecognizer.recognize()` 按 `page_type` 选择冻结识别计划后统一走 `_recognize_page(image, plan)` 模板方法（2646fd4，纯等价重构，recognizer.py 519→493 行）：`_PagePlan` 冻结数据类以四个开关注入页型差异——`has_team`（match_guide：识别楚/汉阵营标签槽）、`short_circuit_name_recheck`（match_guide：批次零产出跳过逐槽复核，见下文）、`emit_empty_results`（wujiang：缺槽补 `empty_name_result` 占位行）、`log_details`（wujiang：缩放/ROI 明细/越界/逐槽结果调试日志）；两个模块级单例 `_WUJIANG_SELECT_PLAN` 与 `_MATCH_GUIDE_PLAN`，`_recognize_match_guide()` 保留为两行委托维持既有直测入口。模板骨架：缩放计算 → 逐槽 ROI 缩放裁剪 + 预处理（`plan.has_team` 时附加 team 槽）→ 名称批量识别 → 逐槽证据决议（`requires_slot_recheck` → `_append_single_name_evidence`，受批次短路门控）→ 页面消解 `resolve_page_names` → 复核收尾 `_recheck_unresolved_slots` → `_record_det_stats()`。
+
+骨架内先分别预处理同类 ROI，再横向拼图为一次 OCR 引擎检测。选将页使用一张名称拼图；对局攻略的名称和阵营各使用一张拼图，避免尺寸或方向不同的区域混合。名称槽位记录批量拼图证据（放大灰度 plain 族）；缺失、多候选、冲突或置信度低于 0.75 时，才追加增强图与仅放大原图的逐槽识别（`_NAME_RECHECK_CONFIDENCE` 由 0.8 降至 0.75，1694ab7 按 v6 置信分布定标——v6 在 0.7~0.99 中带占比 17.9%（v4 仅 7.5%），0.75 使回退触发量不因引擎切换放大一个数量级，实测触发率 4.5%→1.7%）。ROI 坐标以参考分辨率保存，
 识别前会分别按当前截图宽高进行换算，因此支持页面比例基本不变时的分辨率变化：
 
 ```
@@ -220,15 +222,19 @@ OCR 引擎 → 文字 + 置信度
        └── 重复名称保留唯一更强证据；同等级全部回退
 ```
 
-等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.35`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_enhanced` 与 `single_enhanced` 同属 `enhanced`，不能重复计票。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
+等长多候选的自动确认要求每路 OCR 置信度 `>= 0.7`、最高错字字形分 `>= 0.35`、与第二名分差 `>= 0.15`，并且 `enhanced` 与 `plain` 两个独立证据族支持同一结果。`batch_plain` 与 `single_plain` 同属 `plain` 族，不能重复计票（`evidence_family()` 按 source 含 `plain`/`enhanced` 子串分族；此前文档写 `batch_enhanced`，与生产代码实际的 `batch_plain` 不符，本轮勘正）。页面唯一性不会提升 `uncertain`，也不会把只有一个但未过字形安全门槛的候选自动提升。
 
 候选确认之前设有**词表外新武将保护**：全部证据族（`enhanced` 与 `plain` 至少两族）以 `>= 0.995` 的置信度一致读出同一词表外原文时，抑制候选内评分决胜，不做自动绑定。存在编辑距离候选时保持 `unresolved` 并保留候选（可能是新武将如"王导"，也可能是生僻字被稳定误读或整字漏识如"王濬"只读出"王"，无法区分，统一走人工确认）；完全无候选时判为 `unknown_new_hero`——保留 `raw_name`、候选清空。该检查在确定性纠错（含 `SAFE_SUBSTITUTION_WHITELIST` 混淆字对，如"苟彧"→荀彧）之后执行，置信度不足的一致读数仍走候选内评分。
 
 拼图检测时额外设有**批处理回退门槛**：拼图结果只接受单候选且置信度 `>= 0.5`；若结果不在武将词表内且按编辑距离筛选不出唯一候选（0 个或多个），则视为截断文本风险，跳过拼图结果直接逐槽复核，避免被多候选纠错静默绑定到错误武将。
 
+**批次零产出短路（6ea1866，行为修复）**：名称批次画布无任何文本行（`any(name_evidence.values())` 为 False）时短路逐槽双证据（`_append_single_name_evidence`）与阵营逐槽重试链——批次画布整幅无名条可检时，逐槽双证据必然同样空检，短路以免每槽 2 次、共 10 次空 det 调用刷空检告警（wujiang_select 历史上无此守卫，恒真维持原状）。阵营同口径（`team_batch_has_text`），但"批次读出字而归一化失败"保留逐槽重试——那是书法体徽记的 v4 异构救回场景，仅批次零产出才允许跳过。效果：错位页面（模板未命中仍放行的兜底 OCR）每轮 det 调用约 14 次 → 4 次，消除非对局页空转期间刷出的空检告警并缩短单轮识别耗时；真对局页识别行为不变。
+
 结构化结果为 `{index, raw_name, name, candidates, resolution, length_mode, confidence, evidence}`。`name` 只保存已确认名称；`length_mode` 为 `complete`、`missing`、`uncertain` 或 `unknown`；`resolution` 包含 `exact`、`unique_prefix`、`unique_similarity`、`multi_similarity`、`slot_unique`、`manual`、`unresolved`、`unknown`、`unknown_new_hero` 和 `conflict`。官方榜单仍使用独立的整榜解析与写入门禁，本节不抽取两条链路的共用解析器。
 
-**未决槽位复核（B1 起复核引擎为 v4）**：页面消解后仍未决（`resolution ∈ {unresolved, conflict}`）且候选闭包非空的槽位，由 `_recheck_unresolved_slots()` 调用复核引擎（`get_recheck_ocr_engine()`，当前为 RapidOCR/PP-OCRv4-mobile/ONNX，与主引擎互为异构；`MUMU_OCR_PRIMARY_ENGINE=v4` 回滚档时两套件角色互换）补充证据。喂法与生产同构（3× 灰度条、30px 间隙、960 分组画布），但接受纪律严格：读数必须精确命中该槽候选闭包内的成员才作为 `source="recheck"` 证据注入并重跑消解；不命中一律维持原状，绝不引入新名字。页面唯一性已确认的名字不可再被复核绑定，避免同页重名被复核坐实。开关 `MUMU_OCR_RECHECK_ENABLED`（代码默认 `False`，config.env.example 亦为 false），引擎加载失败自动熔断停用，不影响主流程。另有一处复核触发点：对局攻略 team 徽记归一化失败（含批量画布读出非空乱码的情形）时，按 `主引擎 → 复核引擎` 链式单条重读，读出楚/汉即停——1694ab7 修复后 119 图重放救回 15/18 个 v6 书法体徽记丢标签槽，team 覆盖率恢复 90% 基线。
+**未决槽位复核（B1 起复核引擎为 v4）**：页面消解后仍未决（`resolution ∈ ACTIONABLE_UNRESOLVED_RESOLUTIONS`，即 {unresolved, conflict}）且候选闭包非空的槽位，由 `_recheck_unresolved_slots()` 调用复核引擎（`get_recheck_ocr_engine()`，当前为 RapidOCR/PP-OCRv4-mobile/ONNX，与主引擎互为异构；`MUMU_OCR_PRIMARY_ENGINE=v4` 回滚档时两套件角色互换）补充证据。喂法与生产同构（3× 灰度条、30px 间隙、960 分组画布），但接受纪律严格：读数必须精确命中该槽候选闭包内的成员才作为 `source="recheck"` 证据注入并重跑消解；不命中一律维持原状，绝不引入新名字。页面唯一性已确认的名字不可再被复核绑定，避免同页重名被复核坐实。开关 `MUMU_OCR_RECHECK_ENABLED`（代码默认 `False`，config.env.example 亦为 false），引擎加载失败自动熔断停用，不影响主流程。另有一处复核触发点：对局攻略 team 徽记归一化失败（含批量画布读出非空乱码的情形）时，按 `主引擎 → 复核引擎` 链式单条重读，读出楚/汉即停——1694ab7 修复后 119 图重放救回 15/18 个 v6 书法体徽记丢标签槽，team 覆盖率恢复 90% 基线。
+
+**消解状态词表单源（b5e8e4f，纯等价重构）**：`src/ocr/name_resolution.py` 三个公共常量收口此前各处手抄副本——`CONFIRMED_RESOLUTIONS = frozenset({"exact", "unique_prefix", "unique_similarity", "multi_similarity", "slot_unique", "manual"})`（原私有 `_CONFIRMED_RESOLUTIONS` 转公共）、`UNRESOLVED_RESOLUTIONS = frozenset({"unresolved", "unknown", "conflict"})`（未定全集）、`ACTIONABLE_UNRESOLVED_RESOLUTIONS = frozenset({"unresolved", "conflict"})`（收窄集）。收窄属有意：`unknown` 拒识无读数无候选，没有可供下一步（复核注入 / 人工确认 / 待确认展示）消费的材料，各调用处另有守卫兜底。三个消费点改引常量：`ocr_worker` 待确认统计（CONFIRMED）、`peak_select_watcher.parse_pool` 人工确认过滤（UNRESOLVED，删本地 `_CONFIRM_RESOLUTIONS`）、`recognizer._recheck_unresolved_slots` 复核注入（ACTIONABLE）；`NameResolver.requires_slot_recheck` 与 `resolve_page_names` 同步改引。
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
@@ -264,12 +270,14 @@ else:
 
 | 层 | 速度 | 覆盖 |
 |----|------|------|
-| `char_info_cache.json`（424 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
+| `char_info_cache.json`（437 字） | ~10ms | 当前武将名全部字符 + 常见 OCR 误识字 |
 | 运行时原始库（按需补齐） | ~1060ms | 任意汉字（理论兜底） |
 
 `CharacterFeatureRepository` 默认读取 `src/data/char_info_cache.json`（随包只读基线），也可在构造时注入其他路径。静态缓存覆盖当前英雄名的全部字符；运行 `src/scripts/build_character_feature_cache.py` 可在 `heroes.json` 更新后补齐并以 UTF-8/LF 原子写入。缓存未命中的汉字仍由 unihan-etl / cnradical / pypinyin 按需补齐到进程内存；已有 `Options.destination` CSV 时直接复用，只有文件不存在时才调用 `Packager.export()`。pypinyin 失败会记录一次 warning 并禁用后续拼音查询，cnradical 单字失败会记录具体字符；两者均降级为空特征而不中断 OCR。五笔 86 全码来自离线码表 `src/data/wubi86.txt`，笔画数来自 UNIHAN `Unihan_IRGSources.txt`；码表缺失时对应维度按 0 分处理，不阻断识别。
 
-基线缓存已补齐「存祖逖」等 29 字（a1f5ff0、2583571）及后续官网武将同步新增字符（74234a8），总计 424 字，修复 CI 武将名词表覆盖断言。
+基线缓存已补齐「存祖逖」等 29 字（a1f5ff0、2583571）及后续官网武将同步新增字符（74234a8），并在 6b21d75 回填运行时动态补齐的条目，总计 437 字，修复 CI 武将名词表覆盖断言。
+
+`character_feature_repository.py` 模块头登记该文件为随包只读基线（`BUNDLE_ROOT/src/data`，不在首启部署清单）：`save()` 仅开发机脚本 `build_character_feature_cache.py` 调用（重建基线走 git/pull_data 流程），frozen 下无 UI/-m 触发链属理论债；将来维护页接入时勿简单换 `PROJECT_ROOT`——基线不在部署清单，直接换根会因文件不存在而读空识别特征，正确形态是部署 `src/data` 或读写根分离。
 
 用户层缓存 `data/char_info_cache.json` 与基线缓存合并：运行时动态补齐的特征写入用户层，基线缓存保持只读（随包分发）。用户层格式异常时仅警告并忽略，不影响基线功能。
 
@@ -287,7 +295,8 @@ else:
 - **`primary_suite()`** — 读 `MUMU_OCR_PRIMARY_ENGINE`（默认 `"v6"`），非法值告警并回退；`"v4"` 为回滚档，此时主复核**角色互换**（v4 主 + v6 复核）。
 - **`create_rapidocr_ocr(suite="v6")`** — 构造指定套件引擎：模型 SHA256 漂移哨兵（与套件内钉死基线比对，不符仅 warning 提示"上游 wheel/模型漂移，行为需复测"）；成功日志落模型指纹（哈希前 8 位 + rapidocr 版本）；`Det.limit_type="max"` + `Det.limit_side_len=960` 显式写死与生产画布同口径；`Det/Cls/Rec.model_path` 显式指向模型文件，**绕过 rapidocr 在线下载检查，缺文件直接报错熔断（离线纪律）**；`EngineConfig.onnxruntime.intra_op_num_threads` 钉 `MUMU_OCR_CPU_THREADS`（默认 6），防推理吃满核心与模拟器抢核；v4 套件额外加 `Rec.rec_keys_path`。设备固定 CPU（GPU 已否决），不配置任何 CUDA/DirectML EP。
 - **`get_primary_ocr_engine()` / `get_recheck_ocr_engine()`** — 套件级惰性单例；复核套件与主引擎互斥（`"v4" if primary_suite()=="v6" else "v6"`）。`_get_shared_engine` 持锁缓存，**任何异常加入 `_FAILED_SUITES` 熔断**：此后直到进程重启恒返回 `None`（不再重试）。主引擎 `None` 意味识别停摆，由调用方按各自语义熔断（recognizer 抛 `RuntimeError`、官方导入停复核）。
-- **`RapidOcrEngine` 包装类** — `ocr(img, cls=False)` 签名（与 paddleocr 2.x 消费约定一致，`cls` 为兼容位）；灰度图自动转 HWC 三通道；防御性读取 `txts/boxes/scores`（scores 缺失补 0.0）；结果翻译为 `[[box, (text, conf)], ...]` 且 **box 必须 `tolist()` 转纯 Python list**（下游按 `isinstance(line[0], (list, tuple))` 判别行格式，np 数组会打穿该判别）；空结果返回 `[None]`。
+- **`RapidOcrEngine` 包装类** — `ocr(img, cls=False)` 签名（与 paddleocr 2.x 消费约定一致，`cls` 为兼容位）；灰度图自动转 HWC 三通道；防御性读取 `txts/boxes/scores`（scores 缺失补 0.0）；结果翻译为 `[[box, (text, conf)], ...]` 且 **box 必须 `tolist()` 转纯 Python list**（下游按 `isinstance(line[0], (list, tuple))` 判别行格式，np 数组会打穿该判别）；空结果返回 `[None]`。内置 det 调用与空检计数（6ea1866）：`reset_call_stats()` 清零（识别任务开头对齐统计窗口）、`drain_call_stats()` 返回 `(det 调用数, 空检数)` 并清零（识别收尾聚合输出）。
+- **空检告警聚合（6ea1866）**：rapidocr 检测零框时逐次抛 `The text detection result is empty` WARNING，兜底 OCR 在非对局页整链空转时每轮刷十几条且单条毫无诊断价值；`_EmptyDetFilter` 在 `create_rapidocr_ocr` 构造引擎时幂等挂载到 `RapidOCR` logger，只滤该条告警，其余 rapidocr 告警不受影响。逐条告警的聚合出口：`GeneralRecognizer` 识别开头 `_reset_det_stats()` 清零统计窗口、收尾 `_record_det_stats()` 把 `(det 调用数, 空检数)` 并入 `timing_ms`（duck-typing 兼容无统计引擎），经 OCR 阶段耗时日志新增的 `空检=空检数/调用数` 摘要字段输出（无统计时显示 `-/-`），不新增日志行。
 - **打包态模型路径**：frozen 下模型复制到 `%TEMP%\mjs_rapidocr_models`（规避打包路径含中文风险；`%TEMP%` 非纯 ASCII 回退打包路径）；同步指纹为全部 6 个模型文件的 `名字:st_size:st_mtime_ns` 拼接，写入 `.synced` 标记，**指纹不一致即 rmtree 整体重拷**（源模型更新后自动重拷）。两套件共享同一副本目录。
 
 **recognizer 侧二级熔断**：`GeneralRecognizer._engine` 加载失败时写入熔断标记（`self._ocr = False`），后续识别立即快速失败并提示"重启应用后可重试"；loader 返回 `None` 时显式 `raise RuntimeError("OCR 主引擎不可用（rapidocr/onnxruntime 或模型缺失，详见日志）")`，不再对每次识别重复尝试加载。
@@ -370,11 +379,11 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 
 > **设计思路：** 2560×1440 基准下，默认武将名称 ROI 为 50×145px。额外的 5px 高度用于给竖排名称留出上下缓冲，降低字符被截断的概率。放大使字符像素更密集；灰度化是 OCR 引擎的期望输入。09c904d 事故（4 字武将名被 CLAHE + 锐化 + 拼图画布检测缩放叠加拆成两框）后，主路径去掉了 CLAHE 与锐化——局部对比度增强会加深字间灰度谷，与画布检测缩放叠加会切断文本行，且深度 OCR 模型对光照自带鲁棒性。逐槽回退的第二证据票改用 gamma 0.7 提亮的差异视图：与 plain 的差异集中在暗区（拉开暗横幅上被压扁的细节），属全局色调映射不碰空间结构，只作用于单条竖条（长边 435 < 检测器工作尺度 960，永不触发降采样），不喂批量拼图画布。
 
-识别日志会按槽位记录缩放后的 ROI 坐标，以及 PaddleOCR 返回的原始文本和置信度。每个任务完成后还会记录 ADB 截图、模板加载与匹配、模型初始化、名称/阵营预处理与 OCR、名称纠错、结果落盘和总耗时，便于比较冷启动与热启动。格式类似：
+识别日志会按槽位记录缩放后的 ROI 坐标，以及 OCR 引擎返回的原始文本和置信度（B1 后为 RapidOCR v6/v4 双套件，paddle 时代指代已经 683fca6 清理）。每个任务完成后，`OcrWorker._execute` 以 `stage_timing: dict[str, float | str]` 字典逐段累积各阶段耗时/标量（b5e8e4f，纯等价重构，ocr_worker.py 551→518 行；键：`template_load_ms` / `template_match_ms` / `template_confidence` / `template_scale` / `template_strategy`（未走模板匹配时初值 `"not_run"`）/ `recognition_ms` / `result_save_ms`），5 处 `_log_timing` 调用点统一以 `**stage_timing` 展开；`_log_timing` 签名保持，形参默认值与字典初值逐项一致，日志输出逐字节不变。耗时之外，识别收尾把主引擎 `(det 调用数, 空检数)` 以 `空检=空检数/调用数` 摘要并入同一行（6ea1866，无统计的引擎显示 `-/-`）。格式类似：
 
 ```text
 武将 6 OCR ROI: x=1615, y=370, w=50, h=145 (参考 ROI=[1615, 370, 50, 145])
-武将 6 OCR 原始结果: text='祝融夫', confidence=0.9980
+武将 6 name OCR 原始结果: text='祝融夫', confidence=0.9980
 ```
 
 ---
@@ -414,7 +423,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `engine_loader.create_rapidocr_ocr(suite="v6")` → `RapidOcrEngine` | 构造指定套件引擎（v6 主 / v4 复核，回滚档角色互换），设备固定 CPU、线程钉 `MUMU_OCR_CPU_THREADS`、det `max/960` 与生产画布同口径、SHA256 漂移哨兵 |
 | `engine_loader.get_primary_ocr_engine()` → `RapidOcrEngine\|None` | 主引擎套件级惰性单例；不可用返回 `None`（调用方自行熔断） |
 | `engine_loader.get_recheck_ocr_engine()` → `RapidOcrEngine\|None` | 复核引擎惰性单例（与主引擎套件互斥），受 `MUMU_OCR_RECHECK_ENABLED` 开关控制；失败熔断（`_FAILED_SUITES`） |
-| `engine_loader.RapidOcrEngine` | RapidOCR 包装层，`ocr(img, cls=False)` 契约，将结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`（box 必须 tolist） |
+| `engine_loader.RapidOcrEngine` | RapidOCR 包装层，`ocr(img, cls=False)` 契约，将结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`（box 必须 tolist）；`reset_call_stats()` / `drain_call_stats()` det 调用与空检计数（读取即清零，6ea1866） |
 | `OcrRoiConfig.layout_for(page_type)` / `save_layout(...)` / `reset_layout(...)` / `reload()` | 布局读取、本地覆盖写盘（立即生效）、恢复默认、重新读盘 |
 | `official_board_parser.detect_layout(image, key)` | 按纵横比与行数校验确认旧版/分页版式 |
 | `official_board_parser.extract_panels(image, layout)` | 按版式比例切出榜单面板 |
@@ -475,3 +484,28 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 - ocr_worker 预热文案引擎中性化；退役 worker 强杀兜底先 `logging.shutdown()`、退出码改 0（b3327f1）
 - 陈旧文案说明：recognizer.py / ocr_loader.py / batch_canvas.py / ocr_service.py / ocr_task_coordinator.py 中仍有少量 paddle 时代注释字样未清（如 recognizer.py :300/:400 docstring 写"v6 复核引擎"实义为"复核引擎（当前 v4）"），功能无影响，本文档不照抄
 - 424 字特征缓存口径不变（实测仍 424 字）
+
+---
+
+## 八、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+**页型模板方法收口（2646fd4，纯等价重构）**
+- `recognize()` 双页型路径收口为 `_recognize_page(image, plan)` 模板方法：`_PagePlan` 冻结数据类四开关（`has_team` / `short_circuit_name_recheck` / `emit_empty_results` / `log_details`）+ 模块级单例 `_WUJIANG_SELECT_PLAN` / `_MATCH_GUIDE_PLAN`；`_recognize_match_guide()` 保留为两行委托维持既有直测入口；recognizer.py 519 → 493 行，`test_architecture.py` 棘轮预算同步下调（详见 3.6 节）
+
+**match_guide 兜底 OCR 批次零产出短路（6ea1866，行为修复）**
+- 名称批次画布零文本行即短路逐槽双证据与阵营逐槽重试链（阵营同口径 `team_batch_has_text`；"批次读出字而归一化失败"保留重试，书法体徽记 v4 异构救回场景不动）——错位页面（模板未命中仍放行的兜底 OCR）每轮 det 调用约 14 次 → 4 次，真对局页识别行为不变（详见 3.6 节）
+- 配套：`RapidOcrEngine.reset_call_stats()` / `drain_call_stats()`（读取即清零）、`GeneralRecognizer._reset_det_stats` / `_record_det_stats`（duck-typing 兼容无统计引擎）、OCR 阶段耗时日志新增 `空检=n/m` 聚合摘要（无统计显示 `-/-`）、`_EmptyDetFilter` 幂等挂载 RapidOCR logger 只滤 "The text detection result is empty" 逐条告警（详见 3.9 节）
+- 新增 `tests/test_ocr_components.py`：批次零产出短路复现（det 全空断言仅 4 次画布调用）、批次有产出时逐槽双证据照常触发的回归、空检统计接线 / 引擎计数 / 过滤器行为用例
+
+**ocr_worker stage_timing 字典（b5e8e4f，纯等价重构）**
+- 七个阶段耗时/标量收口为 `stage_timing: dict[str, float | str]` 逐段写回（键：template_load_ms / template_match_ms / template_confidence / template_scale / template_strategy / recognition_ms / result_save_ms），5 处 `_log_timing` 调用点统一 `**` 展开（每处 6-10 行缩为 1-3 行）；`_log_timing` 签名保持，形参默认值与字典初值逐项一致，日志输出逐字节不变；ocr_worker.py 551 → 518 行（棘轮预算同步下调，详见 4.2 节）
+
+**name_resolution 消解状态词表单源（b5e8e4f，纯等价重构）**
+- 三个公共常量：`CONFIRMED_RESOLUTIONS`（原私有 `_CONFIRMED_RESOLUTIONS` 转公共）/ `UNRESOLVED_RESOLUTIONS`（未定全集）/ `ACTIONABLE_UNRESOLVED_RESOLUTIONS`（收窄集，不含 `unknown` 属有意——拒识无读数无候选，无材料可供下一步消费）；ocr_worker 待确认统计、`peak_select_watcher.parse_pool` 人工确认过滤（删本地 `_CONFIRM_RESOLUTIONS`）、recognizer 复核注入三处手抄副本改引常量（详见 3.6 节）
+
+**特征缓存与文档勘误**
+- `char_info_cache.json` 424 → 437 字（6b21d75 运行时动态补齐条目回填）；`character_feature_repository.py` 登记随包只读基线写入根风险——`save()` frozen 下无触发链属理论债，将来维护页接入勿简单换 `PROJECT_ROOT`（详见 3.8 节）
+- 683fca6 清理代码内 paddle 时代引擎指代（recognizer / ocr_loader / ocr_service / ocr_worker / image_preprocessor 等 docstring 改 RapidOCR 口径），上一轮校准「陈旧文案说明」条目已落地清零；随文勘正本文档 3.6 证据族命名（`batch_enhanced` → 生产代码实际的 `batch_plain`，生产从未产生过 batch_enhanced source）与 4.2 日志示例（补 `name` 类别段，实际格式为 `武将 6 name OCR 原始结果`）
+- 本轮范围（0ffed36..2081b5b）内另有 P0-3 竞态守卫原语（BusyGate / OneShotToken）、CaptureConnectionManager 出仓、巅峰赛 SessionGuard、状态栏数据新鲜度芯片、RAG 编码器 ONNX 化等变更，分别归属 module_business / module_emulator / module_rag 等文档；本模块公共接口未受影响

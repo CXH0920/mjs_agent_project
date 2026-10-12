@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/ai/`
 > 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律
-> 文档日期：2026-10-06
+> 文档日期：2026-10-11（基线 2081b5b）
 
 ---
 
@@ -207,7 +207,7 @@ for idx, (ha, hb) in enumerate(pairs, start=1):
 - **技能行指针化省 token**：`_skill_lines(skills, hero_id, rag, indent)` 按**单个技能**判定——语料块 id `hero_{id}_skill_{技能名}` 出现在已注入的 RAG 文本中时，该技能用指针标注替代完整描述（形如 `- 技能名:（完整描述见 [hero_1_skill_XXX] 语料块）`）；RAG 关闭 / 运行时降级 / 预算挤掉该块 / 语料块格式漂移导致判定失败时，该技能自动回退完整描述并附 ` ｜结算：...` 后缀。指针化与回退逐技能独立生效，同一武将可同时出现指针技能与完整描述技能。注意：结算说明依赖上游传入的 `skills` 字典带 `settlement` 字段（UI 全量/增量链路与指定武将选择对话框曾漏传该字段导致结算说明缺失，已修复）；块内语料侧的时机/触发条件标签由语料构建脚本写入，不在本模块。
 - **时间轴过时提示**：语料块带 `as_of` / `is_current` 版本戳，检索器默认只召当前版本块；仍被召回且带 `staleness_reason` 的块在 `_format_rag_chunks()` 前缀 `⚠️ 过时风险：...` 提示生成侧勿当硬依据。
 - **双版本选择**：UI 层可选「RAG 语料增强 / 经典模式」，经典模式向子进程追加 `--no-rag`（等价于 `RAG_ENABLED=false`）。
-- **卡牌体系防串味兜底**：RAG 开启时，卡牌类语料块因向量召不回，`build_guide_prompt`/`build_synergy_prompt` 会在 RAG 段后兜底注入 `rule_summary.load_card_system()` 提取的「卡牌体系」段（行动/战法/装备/专属牌名清单），防止 AI 用三国杀牌名串味；RAG 关闭且无语料召回时仍注入完整 `load_core_rules()`。
+- **卡牌体系防串味兜底**：RAG 开启时，卡牌类语料块因向量召不回，`build_guide_prompt`/`build_synergy_prompt` 会在 RAG 段后兜底注入 `rule_summary.load_card_system()` 提取的「卡牌体系」段（行动/战法/装备/专属牌名清单），防止 AI 用三国杀牌名串味；RAG 关闭且无语料召回时仍注入完整 `load_core_rules()`。核心规则摘要 6b21d75 起读运行时可写根 `_CORE_RULES_FILE = PROJECT_ROOT/data/rag_corpus/核心规则摘要.md`（与检索链路 `src/rag/config` 及维护脚本同根——frozen 下用户对部署副本的修改在兜底中生效；开发态两根相等无差异）。
 - **配置**：`RAG_ENABLED` / `RAG_TOP_K`（12）/ `RAG_PROMPT_CHARS`（6000，攻略）/ `RAG_BROWSER_PROMPT_CHARS`（3000，浏览器模式）/ `RAG_SYNERGY_PROMPT_CHARS`（6000，相性注入预算）/ `RAG_MODEL_DIR`。
 
 ---
@@ -264,7 +264,7 @@ def _request_content(self, messages, temperature, label):
             time.sleep(wait)
 ```
 
-> **设计思路：** 前置限速比后端限速更可靠——API 被 429 限流后虽然可以重试，但被限流的请求已经消耗了网络资源。`_min_interval` 控制每秒最多 N 次请求，RPM 可配置。429 优先服从服务端 `Retry-After`（钳到 3-30s，尊重真实冷却窗口），无该头时按 5/10/15s 走比通用退避更保守的节奏。不可重试状态（400/401/403/404/422）立即失败避免白等退避。连接类异常（RemoteProtocolError/ReadError/ReadTimeout 等）后先 close 再重建 httpx.Client，避免复用损坏 client/连接池导致后续重试级联失败。**超时分层化（4720366）**：`_build_timeout()` 返回 `httpx.Timeout(connect=5.0, pool=5.0, write=30.0, read=http_timeout)`——连接黑洞化时 5 秒快速失败（单武将失败从最坏约 15 分钟降为约 15 秒），read 保持配置的完整读超时；构造抽成单一方法供 `__init__` 与重试重建两处共用，堵住"重建时退化为标量超时"的遗漏路径。`thinking` 是 DeepSeek 私有参数，非 DeepSeek 端点收到未知字段会返回 400，故按 `provider == "deepseek"` 条件化组装。`cancel()` 只在重试循环开头生效、不打断 in-flight 请求（靠超时退出），保证中止后面板关闭不会继续 post。思考长度随采样波动，重试通常能让正文挤进额度；每次重试都输出 `[重试]` 进度行，避免子进程长时间静默让用户以为卡死。输出额度上限默认 32768 token（`MAX_OUTPUT_TOKENS` 常量，思考+正文共享额度，可经 config.env 按供应商上限调大以适配思考型模型），缓解长攻略正文被截断（`finish_reason=length`）。guide 温度 0.55（cfca666，由 0.7 下调）：结构化攻略的温度甜点——压格式漂移与牌名串味的采样噪声，保住"反直觉技巧"类内容多样性；相性温度 0.3 维持不变。
+> **设计思路：** 前置限速比后端限速更可靠——API 被 429 限流后虽然可以重试，但被限流的请求已经消耗了网络资源。`_min_interval` 控制每秒最多 N 次请求，RPM 可配置。429 优先服从服务端 `Retry-After`（钳到 3-30s，尊重真实冷却窗口），无该头时按 5/10/15s 走比通用退避更保守的节奏。不可重试状态（400/401/403/404/422）立即失败避免白等退避。连接类异常（RemoteProtocolError/ReadError/ReadTimeout 等）后先 close 再重建 httpx.Client，避免复用损坏 client/连接池导致后续重试级联失败。**超时分层化（4720366）**：`_build_timeout()` 返回 `httpx.Timeout(connect=5.0, pool=5.0, write=30.0, read=http_timeout)`——连接黑洞化时 5 秒快速失败（单武将失败从最坏约 15 分钟降为约 15 秒），read 保持配置的完整读超时；构造抽成单一方法供 `__init__` 与重试重建两处共用，堵住"重建时退化为标量超时"的遗漏路径。`thinking` 是 DeepSeek 私有参数，非 DeepSeek 端点收到未知字段会返回 400，故按 `provider == "deepseek"` 条件化组装。`cancel()` 只在重试循环开头生效、不打断 in-flight 请求（靠超时退出），保证中止后面板关闭不会继续 post。思考长度随采样波动，重试通常能让正文挤进额度；每次重试都输出 `[重试]` 进度行，避免子进程长时间静默让用户以为卡死。输出额度上限默认 32768 token（`api_generator.MAX_OUTPUT_TOKENS`，1bfd65b 起单源于 `env.DEFAULT_MAX_OUTPUT_TOKENS`，键元表 `MAX_OUTPUT_TOKENS` 默认值同引该常量，此前两处硬编码靠注释同步；思考+正文共享额度，可经 config.env 按供应商上限调大以适配思考型模型），缓解长攻略正文被截断（`finish_reason=length`）。guide 温度 0.55（cfca666，由 0.7 下调）：结构化攻略的温度甜点——压格式漂移与牌名串味的采样噪声，保住"反直觉技巧"类内容多样性；相性温度 0.3 维持不变。
 
 ### 4.2 状态机修复字面换行
 
@@ -395,7 +395,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `cancel` | `() -> None` | 请求中断：重试循环将在下次循环开头退出 |
 | `close` | `() -> None` | 关闭 HTTP 客户端 |
 
-构造参数：`api_key` / `api_url` / `model` / `provider`（默认 `"deepseek"`）/ `requests_per_minute`（默认 30）/ `max_retries`（默认 3）/ `http_timeout`（默认 300 秒）/ `max_output_tokens`（默认 `MAX_OUTPUT_TOKENS` = 32768）。构造期先按 `PROVIDER_PRESETS[provider].requires_key` 校验 Key，不满足直接抛 `ValueError`（ollama 等本地服务可空 Key）；`provider` 还决定请求体是否注入 `thinking` 私有参数。
+构造参数：`api_key` / `api_url` / `model` / `provider`（默认 `"deepseek"`）/ `requests_per_minute`（默认 30）/ `max_retries`（默认 3）/ `http_timeout`（默认 300 秒）/ `max_output_tokens`（默认 `MAX_OUTPUT_TOKENS` = 32768，单源 `env.DEFAULT_MAX_OUTPUT_TOKENS`）。构造期先按 `PROVIDER_PRESETS[provider].requires_key` 校验 Key，不满足直接抛 `ValueError`（ollama 等本地服务可空 Key）；`provider` 还决定请求体是否注入 `thinking` 私有参数。
 
 ### 公共函数
 
@@ -408,7 +408,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `normalize_and_validate_synergy(raw, hero_a, hero_b)` | `utils.py` | 相性后处理管线（注双 ID / combat_synergy→combo_ceiling 兼容 shim / 必填预检 / Pydantic 校验），双生成器共用 |
 | `has_required_guide_fields(raw)` | `utils.py` | 攻略必填字段预检（key_points/description 存在、正文 ≥200 字、不含模板占位符标记「此处放入 / 放入此字段 / 保持原文不变」），命中缺失可省去一次 Pydantic 异常开销 |
 | `has_required_synergy_fields(raw)` | `utils.py` | 相性必填字段预检（score/description 存在、正文 ≥200 字、同一组占位符标记） |
-| `load_core_rules()` | `rule_summary.py` | 加载核心规则摘要全文（RAG 关闭兜底）；缺失返回空串 |
+| `load_core_rules()` | `rule_summary.py` | 加载核心规则摘要全文（RAG 关闭兜底）；缺失返回空串。读运行时可写根 `PROJECT_ROOT/data/rag_corpus/核心规则摘要.md`（6b21d75） |
 | `load_card_system()` | `rule_summary.py` | 加载核心规则摘要的「卡牌体系」段（RAG 开启时防牌名串味兜底）；缺失返回空串 |
 | `estimate_cost(count, mode, model, use_rag=True)` | `prompt_utils.py` | 按模型价格表预览 Token 和费用；`use_rag=False` 为经典模式（输入更少）；未知模型不估价 |
 | `estimate_item_cost(item_count, mode, model, use_rag=True)` | `prompt_utils.py` | 按实际 API 请求项数预览 Token 和费用，用于指定范围的相性生成 |
@@ -429,7 +429,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `src.data.models` / `src.data.{hero,guide,synergy}_manager` | 使用 Hero / HeroGuide / SynergyScore 模型进行 Pydantic 校验；断点加载经 HeroManager / GuideManager / SynergyManager 逐条校验，发现错误时备份损坏文件 |
-| 依赖 | `src.config.env` | `resolve_api_config()` 是任务侧唯一 API 解析入口（多 API 档案 `config/api_profiles.json` 启用档案优先 → config.env 旧键 → 环境变量 → 默认值，同时只允许一个启用档案）；`PROVIDER_PRESETS` 决定供应商语义（`requires_key` 与默认端点，含 deepseek / openai / ollama / openai-compatible）；`get_runtime_params()` 提供 RPM / 最大重试 / HTTP 超时 / 输出 token 上限（`MAX_OUTPUT_TOKENS` 默认 32768）；`get_model_pricing()` 提供价格表用于成本估算 |
+| 依赖 | `src.config.env` | `resolve_api_config()` 是任务侧唯一 API 解析入口（多 API 档案 `config/api_profiles.json` 启用档案优先 → config.env 旧键 → 环境变量 → 默认值，同时只允许一个启用档案）；`PROVIDER_PRESETS` 决定供应商语义（`requires_key` 与默认端点，含 deepseek / openai / ollama / openai-compatible）；`get_runtime_params()` 提供 RPM / 最大重试 / HTTP 超时 / 输出 token 上限（`MAX_OUTPUT_TOKENS` 默认 32768，与 `api_generator.MAX_OUTPUT_TOKENS` 同源于 `DEFAULT_MAX_OUTPUT_TOKENS`，1bfd65b）；`get_model_pricing()` 提供价格表用于成本估算 |
 | 依赖 | `src.rag`（config/indexer/retriever） | ChromaDB 向量检索、bge-small-zh 嵌入与关键词 RRF 混合检索；`Retriever` 含武将/牌名倒排 `_hero_index` 与 KEYWORDS 关键词倒排 `_keyword_index`；`hero_blocks()`/`_keyword_hits()` 不再线性遍历全量块；检索默认只召当前版本块（`is_current`） |
 | 依赖 | `src.scraper.ai.prompt_utils` | 共享 prompt 构建函数（`load_prompt`/`build_guide_prompt`/`build_synergy_prompt`/`_skill_lines`），消除 API 与浏览器生成器之间的代码重复 |
 | 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成（`--guide` + 可选 `--heroes-file` / `--update` / `--browser` / `--no-rag`） |
@@ -449,3 +449,15 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 - **写前快照**（d2c5b83）：main() 加载前对 guides/synergies 各快照一次（每次运行一次，非每批一次）
 - **prompt 强化**（cfca666，详见 3.6.1 节）：相性四层决策门 + 锚例校准（10 对样本漂移 20%→0%）；攻略 JSON 纪律 + 联动判定强化 + 牌名核对（20 武将样本 JSON 抛错率 20%→0%）；guide 温度 0.7 → 0.55（相性 0.3 不变）；解析代码零改动
 - **原子写收敛**（9737d52）：`utils._save_json` 委托 `json_repository.atomic_write_json`
+
+---
+
+## 八、本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来的变更：
+
+- **双生成器后处理管线收口**（cd97677，纯重构，P1-5）：api/browser 双生成器逐字复制的攻略/相性后处理管线收口为 `utils.normalize_and_validate_guide(raw, hero, *, logger_prefix="")` / `normalize_and_validate_synergy(raw, hero_a, hero_b, *, logger_prefix="")` 单一实现（注 hero_id / 双武将 ID、`synergizes_with` 转 int、combat_synergy→combo_ceiling 兼容 shim 仅当 `combat_synergy` 在且 `combo_ceiling` 不在（带 info 日志）、必填预检、Pydantic 校验；失败路径 logger.warning/debug）；`api_generator` 两处约 10 行内联管线缩为一行调用（返回 `(result, usage)` 不变），`browser_generator` 传 `logger_prefix` 原样保留 `[攻略] {hero名}: ` / `[相性] {A} <-> {B}: ` 日志前缀（进度窗口解析日志行依赖，前缀语义必须不变）；`browser_generator` 模块头 ETL 图注释同步。3.2 生成流程图与公共函数表已随该 commit 同步入文档
+- **管线直测**（cd97677）：新增 `tests/test_ai_postprocess.py`（84 行 10 项直测，全部走真实 Pydantic 校验：ID 注入与缺省 / int 转换失败路径 / shim 触发与共存优先 / 缺字段 / 过短正文 / 占位符正文 / 非正 ID 模型拒绝）；`test_ai_generation.py` 6 处 `validate_*` 打桩点改 `normalize_and_validate_*`
+- **MAX_OUTPUT_TOKENS 单源**（1bfd65b）：`env.DEFAULT_MAX_OUTPUT_TOKENS = 32_768`（键元表 runtime 域登记），`api_generator.MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS`——此前 api_generator 常量与 `get_runtime_params` 默认值两处硬编码 32_768 靠注释同步；DeepSeek 请求 `max_tokens` 实际值不变
+- **默认数据路径归运行时可写根**（6b21d75）：`ai/batch.py DEFAULT_DATA_DIR = PROJECT_ROOT/"data"`（heroes / guides / synergies 默认文件与失败清单随之）——frozen 下 BUNDLE_ROOT（`<exe>/_internal`）只读，原落点致抓取与生成结果 UI 不可见；开发态两根相等无差异（抓取侧 full.py / incremental.py 同批治理，见 module_scraper.md）
+- **核心规则摘要兜底归根**（6b21d75）：`rule_summary._CORE_RULES_FILE = PROJECT_ROOT/"data"/"rag_corpus"/"核心规则摘要.md"`，与检索链路（`src/rag/config`）及维护脚本同根——用户对部署副本的修改在 AI 生成防串味兜底中生效（详见 3.6 节）

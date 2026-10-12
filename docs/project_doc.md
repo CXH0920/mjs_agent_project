@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-10-06（`0ffed36`）
+> 代码基线：2026-10-11（`2081b5b`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-09-30
+> 文档日期：2026-10-11
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -31,9 +31,9 @@
 
 ---
 
-## 当前代码基线与业务不变量（2026-10-06）
+## 当前代码基线与业务不变量（2026-10-11）
 
-本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流，`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化）。
+本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，ADB 连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心。
 
 ### 核心功能调用总览
 
@@ -46,9 +46,10 @@
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` 队列 -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 与常规 OCR 共享同一 `OcrWorker` 的 FIFO 队列（互斥由 `OcrService._import_busy` 串行化，并非独占 worker）；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` → `AdbCapture.screencap_full()`/`screencap_raw()` → `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复） |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
-| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> 会话世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时清空确认表与牌面引用 |
+| 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> SessionGuard 世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；候选期卡数回升拍扣住一拍复核（过场坏帧拦截）；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时经 `_clear_session_state` 清空确认表与牌面引用 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
 | 卡牌百科同步 | 「数据」菜单 → `CardSyncDialog` | `CardSyncService.check_now()`（后台抓官网手牌库）→ `card_baike.fetch_cards()` → diff 快照 → `apply_updates()`（确认应用）→ `card_sync_store` 持久化 | 更新确认对话框展示变更明细，确认后原子写入 `data/cards.json`，快照和变更记录落盘 |
+| 数据新鲜度 | 状态栏 `DataFreshnessChip` | 信号驱动 + 目录监听：三类采集完成 / `ai_workflow.guides/synergies_changed` / 公告检查完成 + `QFileSystemWatcher`（data/ 目录 mtime 快照 500ms 去抖）→ `compute_freshness_report()`（`src/business/freshness.py` 逐武将核对）→ 芯片取色与菜单 | 胶囊按 7/14 天档位显绿/黄/红；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口（忙碌 toast 拦截） |
 
 ### 数据完整性与只读恢复
 
@@ -82,6 +83,14 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 **三板块共享一次截图（2026-09）**：选将推荐、巅峰赛选将、对局攻略三个板块的识别由同一次截图驱动——`OcrService.poll_tick` 触发 `PollCoordinator._on_poll_tick()`，后台线程一次截图后并发派生三条判定路径（固定 ROI 的 `hero_selection`、对局攻略页 `match_guide`、内容驱动的巅峰赛卡位检测），**不做三张截图**。`hero_selection` 在单拍内最多被消费一次，避免同一次识别结果既刷新推荐页又重复触发自动跳转。官方榜单导入的互斥不靠独占 worker，而是由 `OcrService._import_busy` 标志串行化，与常规轮询任务共享同一 FIFO 队列。
 
 **截图提速（2026-09）**：`adb_screen.py` 新增 `screencap_raw()` 方法，直接返回 PNG bytes 跳过 PIL 解码；`CaptureService.capture_for_poll()` 直接返回 numpy 数组，避免轮询路径的冗余 Image 转换。配置参数 `MUMU_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式，`auto` 为默认（raw 优先，失败自动回退 PNG），1440p 实测每拍省约 1.3 秒。
+
+**竞态守卫三原语（2026-10 定稿）**：`src/business/recognition/session_guard.py` 收口全仓手抄的令牌/世代/忙碌守卫——`SessionGuard`（世代计数器，`begin()` 作废旧世代、`current()` 快照、`is_current(token)` 校验）、`BusyGate`（忙碌闸，`acquire()` 锁内检查+置位原子、忙时拒绝、`release()` 幂等）、`OneShotToken`（一次性令牌，`mark()` 置位不可复位）。全仓五处裸旗标语义不变收口：OCR 在途轮询拍 `_poll_gate`、公告更新阶段 `_phase_gate`、模拟器操作与截图服务关停 `_shutdown_token`（两处）、巅峰赛会话世代 `_session_guard`。语义单测 `tests/test_session_guard.py`。
+
+**CaptureService 连接域出仓（118f59c）**：ADB 连接域（配置热更 / 会话状态 / 连接编排 / 两把锁）出仓为 `src/business/emulator/capture_connection.py` 的 `CaptureConnectionManager`（191 行，非 QObject 纯对象，状态经构造注入回调广播、emit 留在 QObject 宿主）；`capture_service.py` 575→479 行变一行薄委托，对外 API 与信号零改动。两把锁职责：`_session_lock` 护内存态（锁内只做纯内存操作）、`_adb_io_lock` 串行秒级 ADB IO（超时重试最坏约 45 秒），两锁不嵌套。
+
+**数据新鲜度判定（ae92c1d）**：`src/business/freshness.py`（449 行，无 Qt 依赖）按 [0,7) 绿 / [7,14) 黄 / ≥14 红档位判定武将/攻略/相性/榜单四项数据年龄；武将项**逐事件逐武将核对**（事件落后 ⇔ 武将缺失或 `last_updated` 早于事件日期，批次按公告 ref 去重），修正旧全局 max 对比的"指定获取洗绿/混合批次只推增量"误绿漏报；建议动作按缺失→增量获取、过期→指定获取路由，混合批次双给；时间轴不健康退化为纯年龄兜底。UI 消费方为状态栏 `DataFreshnessChip`（六路服务信号 + QFileSystemWatcher mtime 快照 500ms 去抖，无轮询定时器）。配置键 `DATA_FRESHNESS_TIMELINE_STALE_DAYS`（默认 14）。
+
+**RAG 编码器 ONNX 化（2081b5b）**：检索/建索引默认编码器从 sentence-transformers（torch）切换为 onnxruntime——`src/rag/embedder.py` 抽象层 `OnnxEmbedder`（CLS 池化 + L2 归一化，`tokenizers` 直读 tokenizer.json，三件套 `model.onnx / tokenizer.json / sha256.json` 侧车哈希构造期熔断）+ `STEmbedder` 回滚档（`RAG_EMBEDDING_BACKEND=st`），`get_embedder()` 单例派发；运行期不 import torch 栈。三件套由 `python -m src.scripts.export_embedding_onnx` 导出（opset 18 + 动态轴，与 ST 分词逐 token 对齐）；对齐门禁 fp32 逐条余弦 ≥0.999。索引重建改整目录 rmtree（清理孤立段，80.9→14.8MB）；发版四连门禁强制"语料-索引-编码器"同源（见 18.6）。
 
 ---
 
@@ -505,7 +514,8 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | HeroFetchService | `hero_fetch_service.py` | ~87 | BaseFetchService | 自身 2（fetch_completed / progress_updated）+ 基类 3 |
 | GuideFetchService | `guide_fetch_service.py` | ~122 | BaseFetchService | 自身 3（progress_output / progress_value / fetch_completed）+ 基类 3 |
 | SynergyFetchService | `synergy_fetch_service.py` | ~164 | BaseFetchService | 自身 5（progress_output / progress_value / fetch_completed / reload_finished / reload_failed）+ 基类 3 |
-| CaptureService | `capture_service.py` | ~570 | QObject | 11（门面；官方导入 3 个经 OfficialImportGateway 转发） |
+| CaptureService | `capture_service.py` | ~479 | QObject | 11（门面；官方导入 3 个经 OfficialImportGateway 转发） |
+| CaptureConnectionManager | `capture_connection.py` | ~191 | 普通类（非 QObject，状态经构造注入回调广播；118f59c 出仓） | —（配置热更 / 会话状态 / 连接编排 / `_session_lock`+`_adb_io_lock` 两锁） |
 | OcrTaskCoordinator | `ocr_task_coordinator.py` | ~167 | QObject | 1（warmup_state_changed；审计 G8 出仓） |
 | OfficialImportGateway | `official_import_gateway.py` | ~57 | QObject | 3（progress / completed / failed；审计 G8 出仓） |
 | ImageSaveScheduler | `image_save_scheduler.py` | ~57 | QObject | 2（image_saved / _save_ready；审计 G8 出仓） |
@@ -518,6 +528,8 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | DisclaimerState | `disclaimer_state.py` | ~53 | 普通模块 | — |
 
 > `BaseFetchService` 提供 QProcess 管理的通用方法（`_is_busy`、`_start_process`、`_on_stdout_ready`、`_on_finished`、`_on_error`、`cancel`），三个子类继承后各自实现 `fetch_*` 方法和信号定义。
+
+> 2026-10 补充：竞态守卫统一走 `src/business/recognition/session_guard.py` 三原语（`SessionGuard` / `BusyGate` / `OneShotToken`）——`OcrService._poll_gate`、`AnnouncementUpdateCoordinator._phase_gate`、`EmulatorOperationService` 与 `CaptureService` 的 `_shutdown_token`、`PeakSelectWatcher._session_guard` 均为其消费方（语义不变收口）。数据新鲜度判定为纯函数模块 `src/business/freshness.py`（`compute_freshness_report()`，消费方 `DataFreshnessChip`），无 Qt 信号。
 
 ### 3.2 HeroFetchService
 
@@ -1677,59 +1689,39 @@ AI 回复文本（浏览器 inner_text 或 API response）
 | 函数 | 说明 |
 |------|------|
 | `parse_env_file(env_path)` | 解析 .env → `dict[str, str]` |
-| `load_env_config(env_path)` | 解析后映射为小写 key → `dict`（含类型转换） |
+| `load_env_config(env_path)` | 遍历键元表 `_ENV_KEY_SPECS` 按 `spec.type` 统一解析转换 → `dict`；非法 int/float 告警并丢弃该键（沿用"使用默认值"语义） |
+| `_config_with_defaults(config, getter)` | 按域（`runtime` / `mumu`）补默认值；`default_from` 表达级联默认（如 `mumu_hero_selection_threshold` 未配置回退 `mumu_ocr_match_threshold` 实配值） |
 | `get_api_config()` | 回退链：`config.env` + 环境变量 + 默认值（仅兼容旧调用方） |
 | `resolve_api_config(name=None)` | **生成链路实际入口**：优先取唯一启用档案，否则回退 `config.env` → 环境变量 → 默认值 |
 | `has_available_api_profile()` | 是否存在可用档案（`enabled` + URL 非空 + 供应商 Key 语义） |
 | `list_api_profiles()` / `get_api_profile(name)` | 读取全部档案 / 单个档案 |
 | `save_api_profiles(data, profiles_path)` | 原子写入 `config/api_profiles.json`（启用互斥） |
 | `migrate_legacy_api_config()` | 首启迁移：存在旧 `DEEPSEEK_*` 三件套时自动落成 `deepseek-main` 档案 |
-| `load_pricing_config()` / `save_pricing_config()` / `get_model_pricing(model)` | `config/model_pricing.json` 读/写/按模型取价 |
-| `get_runtime_params()` | 获取运行时参数（含 `log_to_file: bool`） |
-| `get_mumu_config()` | 获取模拟器（MuMu）ADB/OCR 配置 |
+| `load_pricing_config()` / `save_pricing_config()` / `get_model_pricing(model)` | `config/model_pricing.json` 读/写/按模型取价（损坏/缺失回退空表，负价格/非数字/布尔误判拒绝） |
+| `get_runtime_params()` | 获取运行时参数（含 `log_to_file: bool`），一行委托 `_config_with_defaults(config, "runtime")` |
+| `get_mumu_config()` | 获取模拟器（MuMu）ADB/OCR 配置，一行委托 `_config_with_defaults(config, "mumu")` |
 | `save_env_file(env_path, data)` | 原子写入 .env 文件 |
 
-路径常量集中收敛在 `env.py`：`IS_FROZEN`、`PROJECT_ROOT`（可写根）、`BUNDLE_ROOT`（打包只读根 `_internal`）、`DEFAULT_ENV_FILE`、`DEFAULT_PRICING_FILE`、`DEFAULT_PROFILES_FILE`、`IMAGES_DIR` / `IMAGES_OUTPUT_DIR`、`SCREENSHOTS_DIR`。打包态下资源只读、数据可写，两者分离。
+路径常量集中收敛在 `env.py`：`IS_FROZEN`、`PROJECT_ROOT`（可写根）、`BUNDLE_ROOT`（打包只读根 `_internal`）、`DEFAULT_ENV_FILE`、`DEFAULT_PRICING_FILE`（`PROJECT_ROOT/config/model_pricing.json`，6b21d75 换根）、`DEFAULT_PROFILES_FILE`、`IMAGES_DIR` / `IMAGES_OUTPUT_DIR`、`SCREENSHOTS_DIR`。打包态下资源只读、数据可写，两者分离（读取侧统一运行时根，见"当前代码基线"节的读写根治理）。
 
-### 8.2 Key 映射表
+### 8.2 键元表（`_ENV_KEY_SPECS`，1bfd65b 单源化）
+
+配置键的唯一事实源是一张 NamedTuple 注册表，替代了旧的 `key_mapping` 字典 + 三张类型清单 + 两处 getter 默认值共四处手工同步（历史上截图模式键两次漏登记成"死开关"）：
 
 ```python
-key_mapping = {
-    # API
-    "DEEPSEEK_API_KEY": "api_key",
-    "DEEPSEEK_API_URL": "api_url",
-    "DEEPSEEK_MODEL": "model",
-    "REQUESTS_PER_MINUTE": "requests_per_minute",
-    "HTTP_TIMEOUT": "http_timeout",
-    "MAX_RETRIES": "max_retries",
-    "MAX_OUTPUT_TOKENS": "max_output_tokens",
-    # 日志
-    "LOG_LEVEL": "log_level",
-    "LOG_TO_FILE": "log_to_file",
-    # 模拟器 (MuMu)
-    "MUMU_ADB_PATH": "mumu_adb_path",
-    "MUMU_ADB_PORT": "mumu_adb_port",
-    "MUMU_OCR_ENABLED": "mumu_ocr_enabled",
-    "MUMU_OCR_POLL_MODE": "mumu_ocr_poll_mode",
-    "MUMU_OCR_POLL_IDLE_PAUSE": "mumu_ocr_poll_idle_pause",
-    "MUMU_OCR_AUTO_SWITCH_TAB": "mumu_ocr_auto_switch_tab",
-    "MUMU_OCR_POLL_INTERVAL": "mumu_ocr_poll_interval",
-    "MUMU_OCR_MATCH_THRESHOLD": "mumu_ocr_match_threshold",
-    "MUMU_OCR_CPU_THREADS": "mumu_ocr_cpu_threads",
-    "MUMU_OCR_RECHECK_ENABLED": "mumu_ocr_recheck_enabled",
-    "MUMU_SCREENSHOT_MODE": "mumu_screenshot_mode",
-    "MUMU_HERO_SELECTION_THRESHOLD": "mumu_hero_selection_threshold",
-    "MUMU_HERO_SELECTION_COOLDOWN": "mumu_hero_selection_cooldown",
-    "MUMU_MATCH_GUIDE_THRESHOLD": "mumu_match_guide_threshold",
-    # 推荐算法
-    "RECOMMENDATION_P_FLOOR": "recommendation_p_floor",
-    "RECOMMENDATION_BAN_WEIGHT": "recommendation_ban_weight",
-    "RECOMMENDATION_SIGMOID_K": "recommendation_sigmoid_k",
-    "RECOMMENDATION_LOW_WIN_RATE_GAP": "recommendation_low_win_rate_gap",
-}
+class _EnvKeySpec(NamedTuple):
+    cfg_key: str        # 内部小写键名
+    type: object        # int/bool/float/str，驱动解析期类型转换
+    default: object     # getter 缺省值（透传键为 None）
+    getter: str = ""    # 归属域："runtime" / "mumu" / 空（透传键）
+    default_from: str = ""  # 缺省回退到另一键的实配值（级联默认）
+
+_ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 30 键
 ```
 
-int 型：`requests_per_minute` / `max_retries` / `max_output_tokens` / `http_timeout` / `mumu_adb_port` / `mumu_ocr_poll_interval` / `mumu_hero_selection_cooldown` / `mumu_ocr_cpu_threads`；bool 型：`log_to_file` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_recheck_enabled`；str 型：`mumu_screenshot_mode`（`auto`/`raw`/`png`）、`mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）、`mjs_data_repo`（私有数据仓位置）；float 型：三处 threshold 与四个 `RECOMMENDATION_*`。转型失败使用默认值并打 warning。
+三个消费方：`load_env_config()` 按 `spec.type` 统一转换；`get_runtime_params()` / `get_mumu_config()` 经 `_config_with_defaults()` 按域补默认值。测试侧 `tests/test_env_config.py` 维护 `_SENTINELS` 全量键哨兵表（独立手抄期望值，防漏登记复发）。
+
+30 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 15 键**（`mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 9 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -1757,7 +1749,6 @@ MUMU_OCR_POLL_MODE=false
 MUMU_OCR_POLL_IDLE_PAUSE=true
 MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
-MUMU_OCR_USE_GPU=false
 MUMU_OCR_CPU_THREADS=6
 MUMU_OCR_RECHECK_ENABLED=true
 MUMU_SCREENSHOT_MODE=auto
@@ -1766,6 +1757,7 @@ RAG_TOP_K=12
 RAG_PROMPT_CHARS=6000
 RAG_BROWSER_PROMPT_CHARS=3000
 RAG_SYNERGY_PROMPT_CHARS=6000
+DATA_FRESHNESS_TIMELINE_STALE_DAYS=14
 ```
 
 ### 8.5 原子保存
@@ -2438,7 +2430,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **129 个测试文件 / 1481 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **145 个测试文件 / 1626 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开）；实际收集项以 `pytest --collect-only -q` 为准。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -2885,11 +2877,13 @@ detect_selection_cards(image)
 
 识别会话以 `start()` / `stop()` 为边界，会话内对标准轮询的挂起是**会话级**而非"牌面进出"级：`hero_selection` 在整个会话保持挂起（停止识别才恢复），`match_guide` 仅牌面自动退出时按原状态恢复，其余拍次维持挂起。`start()` 时 `set_task_hold("hero_selection", True)` 持有锁，拒绝外部（如 ADB 重连）重新激活。`stop()` 和牌面退出时清空确认表、原始指纹、宽限轮次、禁将基线与牌面引用——槽位号是跨牌面不稳定键，残留确认会被图片导入按槽位号盲目套用。常量：`POLL_INTERVAL_MS=1500`、`OCR_WAIT_TIMEOUT_SECONDS=15`、`BOARD_EXIT_TICKS=2`、`SIGNATURE_POSITION_QUANTUM_PX=8`、`SIGNATURE_SIZE_QUANTUM_PX=16`、`_BAN_PHASE_MIN_CARDS=12`。
 
-**会话世代校验**：`_session` 在 `start()` 与 `stop()` 各递增一次；在途识别拍在四处关键写入点前比对（截图后、检测/缺席前、写签名前、发布前），世代不符即整拍放弃，防止停止或重启后的旧拍反向挂起标准任务、把旧签名与旧快照写回新会话。`start()` 时 `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_ban_names` / `_last_board` 全部重置，`stop()` 和牌面退出（`_handle_board_absent` 达 `BOARD_EXIT_TICKS`）同样清空。
+**会话世代校验（4542244 收口为 SessionGuard）**：世代语义由 `session_guard.SessionGuard` 承载（字段 `self._session_guard = SessionGuard()`，替代裸 `_session` int 自增/比对）——`start()` 与 `stop()` 各 `begin()` 一次作废旧世代；在途识别拍开始时 `current()` 取快照，在四处关键写入点前 `is_current(session)` 校验（截图后、检测/缺席前、写签名前、发布前），不符即整拍放弃，防止停止或重启后的旧拍反向挂起标准任务、把旧签名与旧快照写回新会话。三处手抄的字段重置统一收敛为 `_clear_session_state(keep_signature=False, keep_miss_ticks=False)`：清空 `_signature`（除非 keep_signature）/ `_ban_names` / `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_last_board` / `_deferred_board` / `_miss_ticks`（除非 keep_miss_ticks）。边界豁免语义逐一保真——`start()` 全清；`stop()` 保留 `_signature` 与 `_miss_ticks`（停止后无拍运行）；牌面退出只保留 `_miss_ticks`（缺席计数须继续累加到 `BOARD_EXIT_TICKS` 才判退出）。start 的 `_miss_ticks` 复位同步并入状态锁内，消除状态锁外的会话字段写点。
+
+**过场坏帧扣住一拍复核（036d0ae，2026-10-09 事故修复）**：场景切换期模拟器 raw 截图可能返回旧帧/撕裂帧（事故实例：桑弘羊已被选走后一帧旧 9 张画面使面板候选 8→9→8 跳变）。判定前提是"选将/禁选期真实池子单调不增"，规则：新拍卡数**严格高于**上一发布拍（`card_count > last_count`）即判疑似过场坏帧——扣住不发布，载荷 `(签名, OCR结果, 卡数)` 存入 `_deferred_board`；紧邻下一拍签名原样复现 → 取走并补发布（真牌面只是晚一拍确认）；下一拍签名不同（真实牌面回归）→ 扣住牌面按坏帧丢弃打 INFO 日志；若那张坏帧隔拍再现，因回升规则仍在会重新扣住，无法借过场闪烁获得确认。牌面缺席拍作废扣住状态，`_clear_session_state` 同步清 `_deferred_board` 不跨会话存活。卡数下降（禁转选 14→9 过渡）与同数重排不受影响，照常立即发布。
 
 ```
 start()  会话制挂起（start 即生效，不等待首拍检出牌面）
-  ├─ _state_lock: _session += 1；签名/已禁名单/人工确认/原始指纹/宽限轮次/最近牌面全部重置
+  ├─ _state_lock: _session_guard.begin()；_clear_session_state()（全清）
   ├─ _suspend_standard_tasks()   ← 首拍之前挂起，避免固定 ROI 在巅峰页跑垃圾结果
   ├─ clear_task_cooldown("hero_selection") / ("match_guide")
   ├─ set_task_hold("hero_selection", True) ← 持有锁，拒绝外部重新激活
@@ -2898,23 +2892,25 @@ start()  会话制挂起（start 即生效，不等待首拍检出牌面）
 
 stop()
   ├─ _timer.stop()
-  ├─ _state_lock: _session += 1；清 _resolutions / _resolution_raws / _stale_rounds / _ban_names / _last_board
+  ├─ _state_lock: _session_guard.begin()；_clear_session_state(keep_signature=True, keep_miss_ticks=True)
   │   ← 会话状态随停止清空：槽位号跨牌面不稳定，残留确认会被图片导入盲目套用
   ├─ set_task_hold("hero_selection", False) ← 先解除持有再恢复
   └─ _restore_standard_tasks()    ← 恢复全部标准任务原状态
 
 _tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后台线程 _do_work()
-  ├─ 快照 session
+  ├─ 快照 session = _session_guard.current()
   ├─ capture 未连接 / capture_for_poll 失败 → status_changed，return
   ├─ 世代校验①  → detect_selection_cards(frame)
   │   └─ None → _handle_board_absent(session)
-  │       ├─ 世代校验②（锁内）→ _miss_ticks += 1；每拍清签名
-  │       └─ == BOARD_EXIT_TICKS=2 → 清 _ban_names / _resolutions / _resolution_raws / _stale_rounds / _last_board
+  │       ├─ 世代校验②（锁内）→ _miss_ticks += 1；每拍清签名；_deferred_board = None（作废扣住）
+  │       └─ == BOARD_EXIT_TICKS=2 → _clear_session_state(keep_miss_ticks=True)
   │           → _restore_match_guide()（只恢复 match_guide，hero_selection 仍挂起）
   │           → board_exited 信号 → 主窗口按轮询状态衔接激活对局攻略页
   ├─ board_signature(cards)  ← 坐标全量量化（8px / 尺寸 16px 步长）
   ├─ 锁内：世代校验③ → _miss_ticks=0 → 每拍幂等挂起（置于 unchanged 短路之前）
-  │   → 签名未变 → return（沿用上一次结果）
+  │   → 卡数回升坏帧判定（card_count > 上发布拍卡数）→ 扣入 _deferred_board，本拍不发布
+  │   → 签名未变 → 取走 _deferred_board（如有则补发布）→ return（沿用上一次结果）
+  │   → 签名变化 → 丢弃未复现的 _deferred_board（按坏帧）
   ├─ _recognize_board(image, cards)
   │   ├─ derive_name_rois(cards) → submit_ocr_task(template_name="peak_board", match_template=False)
   │   └─ task.completed.wait(15)；outcome != "matched" → return None
@@ -3180,7 +3176,7 @@ CardSyncDialog
 
 ## 十七、开发状态表
 
-本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-10-06 基线，共完成三十六个阶段：
+本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-10-11 基线，共完成三十九个阶段：
 
 | 阶段 | 名称 | 时间 | 主要内容 |
 |------|------|------|----------|
@@ -3220,6 +3216,9 @@ CardSyncDialog
 | **三十四** | **运维工具链** | **2026-10** | **doctor 一键自检（11 组）；ops 周更编排（weekly/health/retry-failed/clean）；任务台账 task_ledger；版本单一来源 version.py；QProcess 看门狗 30 分钟；启动自动公告检查与截图回收** |
 | **三十五** | **B1 OCR 全量切换** | **2026-10** | **RapidOCR 双套件（v6 主 + v4 复核）替代 paddle 全栈；engine_loader 替代 paddle_loader；fetch_recheck_models v4 预取；白名单 10 对基线与简繁对退役；回退触发线 0.75；打包 763→608MB** |
 | **三十六** | **数据健壮性与 prompt 强化** | **2026-10** | **json_repository 三基元与全库原子写收敛；写前快照接入；Skill 空串禁令；采集四道守卫与增量硬停；httpx 超时分层；--retry-failed 定向重试；相性四层决策门/锚例、攻略 JSON 纪律、guide 温度 0.55** |
+| **三十七** | **竞态守卫原语定稿与连接域出仓** | **2026-10** | **session_guard 三原语（SessionGuard/BusyGate/OneShotToken）定稿，全仓五处裸旗标语义不变收口；CaptureConnectionManager 连接域出仓（capture_service 575→479 行）；巅峰赛 _clear_session_state 统一与过场坏帧扣住一拍复核；mumu_config_coordinator shutdown 断连修复** |
+| **三十八** | **数据新鲜度芯片** | **2026-10** | **freshness.py 逐武将核对判定核心（修正全局 max 误绿漏报四缺陷）；状态栏第三枚 DataFreshnessChip 胶囊（六路信号 + 目录监听去抖、三组菜单、建议动作直达采集入口）；DATA_FRESHNESS_TIMELINE_STALE_DAYS 配置键** |
+| **三十九** | **RAG 编码器 ONNX 化** | **2026-10** | **embedder.py 编码器抽象层（OnnxEmbedder 默认 + STEmbedder 回滚档，三件套 sha256 熔断）；export_embedding_onnx 导出链；索引整目录重建（80.9→14.8MB）；检索 trace 可观测与检索诊断抽屉；评估历史 JSONL；doctor「RAG索引」检查组；精简包自带 RAG（658.9/764.1MB）；发版四连门禁** |
 
 > 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。
 
@@ -3232,7 +3231,7 @@ CardSyncDialog
 
 ### 18.1 doctor 一键自检（`src/scripts/doctor.py`）
 
-只读体检，无 FAIL 即环境健康。用法：`python -m src.scripts.doctor [--offline] [--json]`；有 FAIL 退出码 1（可接周更门禁）。11 组检查：**环境**（ruff 版本三处一致、onnxruntime/rapidocr 钉版、v6/v4 模型就位）、**设备**（ADB 路径与在线设备）、**私有仓**（仓存在、manifest 预检、sha256 校验、工作区逐文件同步三态）、**数据**（data/*.json 可解析、关键三件非空数组、备份基线年龄、Manager load_issues 出口）、**配置**（死键检测 `DEAD_CONFIG_KEYS=("RAG_PROJECT_DIR","MUMU_MATCH_GUIDE_COOLDOWN","MUMU_OCR_USE_GPU")`、可选键提示、本地与 example 默认相反键、模型计价核对）、**白名单**（`whitelist_conflicts_with_roster` 武将库冲突重检）、**AI 链路**（近 7 天日志故障模式统计，`"HTTP 401"` 精确匹配防 token 统计行误计）、**日志**（超时转储位置、rag 日志钩子）、**磁盘**（大目录 ≥500MB、截图回收）、**合规**（GitHub fork/star 升级触发器）、**安全**（config.env / api_profiles.json 不被 git 跟踪）。单组失败转 FAIL 条目不拖垮整份报告（`except (Exception, SystemExit)`，80cc75b 收紧防 `sys.exit` 穿透）。
+只读体检，无 FAIL 即环境健康。用法：`python -m src.scripts.doctor [--offline] [--json]`；有 FAIL 退出码 1（可接周更门禁）。12 组检查：**环境**（ruff 版本三处一致、onnxruntime/rapidocr 钉版、v6/v4 模型就位）、**设备**（ADB 路径与在线设备）、**私有仓**（仓存在、manifest 预检、sha256 校验、工作区逐文件同步三态）、**数据**（data/*.json 可解析、关键三件非空数组、备份基线年龄、Manager load_issues 出口）、**RAG索引**（2081b5b 新增：索引目录存在性、体积 ≤25MB、集合段目录唯一性、ONNX 三件套哈希——st 回滚档 SKIP；只读不打开 chroma 数据库）、**配置**（死键检测 `DEAD_CONFIG_KEYS=("RAG_PROJECT_DIR","MUMU_MATCH_GUIDE_COOLDOWN","MUMU_OCR_USE_GPU")`、可选键提示、本地与 example 默认相反键、模型计价核对）、**白名单**（`whitelist_conflicts_with_roster` 武将库冲突重检）、**AI 链路**（近 7 天日志故障模式统计，`"HTTP 401"` 精确匹配防 token 统计行误计）、**日志**（超时转储位置、rag 日志钩子）、**磁盘**（大目录 ≥500MB、截图回收）、**合规**（GitHub fork/star 升级触发器）、**安全**（config.env / api_profiles.json 不被 git 跟踪）。单组失败转 FAIL 条目不拖垮整份报告（`except (Exception, SystemExit)`，80cc75b 收紧防 `sys.exit` 穿透）。
 
 ### 18.2 ops 周更运维统一入口（`src/scripts/ops.py`）
 
@@ -3255,3 +3254,15 @@ JSONL 逐行追加 `logs/task_results.jsonl`：`record_task(task, *, ok, exit_co
 - **日志降噪**：adb_screen 瞬时态告警去重（5 分钟窗口同类失败降 debug，连续 30 次升级 ERROR）；base_fetch stderr tqdm 行降 DEBUG
 - **AI 定向重试**：`--retry-failed` 读 `logs/ai_last_failures.json` 只重跑上次失败项（成功项字节不动）
 - **conftest basetemp 兜底**（ac79157）：`--basetemp=.tmp_test/pytest-tmp` 已入 pyproject，conftest 兜底建父目录，修复 CI 全新 checkout 的 xdist INTERNALERROR
+- **conftest 模态守卫**（2026-10-09 Actions #178/#179 修复）：autouse fixture `_fail_on_real_modal` 把 `QMessageBox` 五个静态便捷方法（warning/critical/information/question/about）替换为立即 AssertionError——无头环境真实模态 `exec()` 永久阻塞会令 xdist worker 被 pytest-timeout 强杀、失败记在无关用例；用例内 monkeypatch 替身不受影响（LIFO 撤销）
+
+### 18.6 发版流程与 RAG 四连门禁（release.py，2081b5b）
+
+release.py 在打包前新增四道串行门禁（任一不过即终止）：
+
+1. **ONNX 就位检查** `ensure_onnx_encoder()`：`check_onnx()` 不过则自动子进程跑 `python -m src.scripts.export_embedding_onnx` 再复检；要求 `RAG_EMBEDDING_BACKEND` 环境变量已清除（防环境残留改变打包语义）
+2. **同源索引重建** `rebuild_rag_index_for_release()`：`EMBEDDING_BACKEND != "onnx"` 直接 die；build 前强制按 onnx backend 重建索引并 `verify_rag_index_consistency()` 断言库中块数==语料块数（"语料-索引-编码器"同源保障），返回 `{"index_blocks": stored}`
+3. **包内产物校验** `verify_rag_artifacts()`：包内 `_internal/data/rag_models/onnx` 三件套哈希 + `chroma.sqlite3` 存在；**发现 `model.int8.onnx` 即 die**（spec excludes 未生效的反向断言）
+4. **包内 eval 检索门禁** `eval_gate(skip=False)`：包内 `eval_rule_faqs --limit 3` 检索必须命中；`--skip-eval-gate` 人工 override
+
+发版清单 manifest 新增 `encoder_backend / onnx_model_sha256 / index_blocks / unpacked_mb / eval_gate` 五字段；精简/完整版体积发版断言 670/800MB（fp32 实测 658.9/764.1MB + 余量）。打包 spec 侧对应变化：chromadb / rag_index / rag_models/onnx 收集移出 `if FULL`（精简版自带完整 RAG），excludes 移除 `tokenizers`、新增 `scipy/sklearn/pandas/matplotlib/hf_xet`（chromadb collect_all 静态牵入、运行期不经过），FULL 块只剩 playwright。

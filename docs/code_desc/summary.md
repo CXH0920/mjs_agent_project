@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-10-06（基线 `0ffed36`）
+> 文档日期：2026-10-11（基线 `2081b5b`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -8,7 +8,7 @@
 
 名将杀 Agent 是一款面向[名将杀手游](https://mjs.ztgame.com/)的桌面辅助工具。它提供武将数据库查询、AI 批量攻略/相性生成、武将相性分析、实时屏幕采集与 OCR 武将识别、RAG 语料知识库维护等功能，帮助玩家在游戏中快速决策。RAG 语料维护含索引精化工作台，将 LLM 建议编排、清单状态管理与持久化写回下沉为纯业务层，与 UI 解耦。
 
-自基线 `624c8c5`（2026-09-15）以来，项目新增 B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认）、白名单治理（错法频次记录 + 人工确认 + 用户层白名单维护）、轮询闲置自动暂停（整帧指纹判闲 + 三路恢复）与合规化改造（免责声明弹窗 + 附加法律条款 + robots.txt 存档）。2026-09-29 后进一步落地 Phase 4 上帝类拆分（六大目标按职责域出仓 14 个新模块）、API 档案域拆分、巅峰赛选将人工确认残留修复（导入前校验、停止清空确认表/禁将基线、牌面在位守卫、同名槽位显性告警）与官网武将数据同步（新增谢灵运/陶渊明）。2026-10-02 完成审计 G8：CaptureService 职责域出仓（官方导入网关 `official_import_gateway` / 图像保存调度 `image_save_scheduler` / OCR 任务协调器 `ocr_task_coordinator` 三模块，670→570 行，UI 门面信号零改动）、`save_results` 落盘 page_type 参数化（不再硬编码 `wujiang_select`）与行数棘轮 500 行 tripwire 落地（12 个 >500 行文件补种入册，超线未登记即测试变红）。2026-10-03 起实施数据出库与运维工具链建设：抓取与维护数据移出版本库、改经私有数据仓同步（`pull_data.py`，`data/SOURCES.md` 登记来源），落地 doctor 一键自检 / ops 周更编排 / 任务台账 / 版本单一来源 / 写前快照与全库原子写收敛 / 采集写入守卫。2026-10-06 完成 **B1 OCR 全量切换**——RapidOCR 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，ONNX/CPU）完全替代 paddle 全栈，打包含模型精简包 763MB→608MB。
+自基线 `624c8c5`（2026-09-15）以来，项目新增 B2 复核模式（PP-OCRv6-small/ONNX 未决槽位候选确认）、白名单治理（错法频次记录 + 人工确认 + 用户层白名单维护）、轮询闲置自动暂停（整帧指纹判闲 + 三路恢复）与合规化改造（免责声明弹窗 + 附加法律条款 + robots.txt 存档）。2026-09-29 后进一步落地 Phase 4 上帝类拆分（六大目标按职责域出仓 14 个新模块）、API 档案域拆分、巅峰赛选将人工确认残留修复（导入前校验、停止清空确认表/禁将基线、牌面在位守卫、同名槽位显性告警）与官网武将数据同步（新增谢灵运/陶渊明）。2026-10-02 完成审计 G8：CaptureService 职责域出仓（官方导入网关 `official_import_gateway` / 图像保存调度 `image_save_scheduler` / OCR 任务协调器 `ocr_task_coordinator` 三模块，670→570 行，UI 门面信号零改动）、`save_results` 落盘 page_type 参数化（不再硬编码 `wujiang_select`）与行数棘轮 500 行 tripwire 落地（12 个 >500 行文件补种入册，超线未登记即测试变红）。2026-10-03 起实施数据出库与运维工具链建设：抓取与维护数据移出版本库、改经私有数据仓同步（`pull_data.py`，`data/SOURCES.md` 登记来源），落地 doctor 一键自检 / ops 周更编排 / 任务台账 / 版本单一来源 / 写前快照与全库原子写收敛 / 采集写入守卫。2026-10-06 完成 **B1 OCR 全量切换**——RapidOCR 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，ONNX/CPU）完全替代 paddle 全栈，打包含模型精简包 763MB→608MB。2026-10-07 至 10-11 完成三件大事：**竞态守卫原语定稿**（`session_guard.py` 三原语 SessionGuard/BusyGate/OneShotToken，全仓五处裸旗标收口）、**RAG 编码器 ONNX 化**（检索/建索引默认走 onnxruntime，`embedder.py` 编码器抽象层 + `export_embedding_onnx.py` 导出链 + 检索 trace 可观测 + 索引整目录重建，精简包自带完整 RAG，两包 658.9/764.1MB）、**数据新鲜度芯片**（`freshness.py` 逐武将核对判定核心 + `data_freshness_chip.py` 状态栏第三枚胶囊，修正全局误绿漏报）；并完成打包态读写根分裂治理（榜单/抓取/配置/头像/规则摘要读取侧统一运行时可写根）与 CaptureService 连接域出仓（`CaptureConnectionManager`）。
 
 ## 核心功能
 
@@ -22,14 +22,15 @@
 - **官方数据导入** — 可独立或同时导入 2v2/巅峰赛/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 - **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费
 - **卡牌百科变更捕获** — 手动检查官网手牌库与本地卡牌差异，勾选后应用官网文本覆盖本地（`card_amount` 保留）；快照（`card_snapshot.json`）与变更记录（`card_changes.json`）持久化，驱动卡牌精化时效检查
-- **知识库维护（RAG）** — 本地 RAG 语料维护工作台，布局为重排的「左栏维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」：左栏 10 项（5 个可编辑数据源 专属牌/卡牌点数/装备属性/武将分类/元规则母本 + 5 个只读语料，状态点对齐其语料任务状态）；支持单项 `--only` / 全部 / 加索引三级重建、保存后左栏状态点即时变「待重建」并可就地重建、结构化审计提示并支持跳转定位、10 个语料任务状态常驻可见；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
+- **知识库维护（RAG）** — 本地 RAG 语料维护工作台，布局为重排的「左栏维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」：左栏 10 项（5 个可编辑数据源 专属牌/卡牌点数/装备属性/武将分类/元规则母本 + 5 个只读语料，状态点对齐其语料任务状态）；支持单项 `--only` / 全部 / 加索引三级重建、保存后左栏状态点即时变「待重建」并可就地重建、结构化审计提示并支持跳转定位、10 个语料任务状态常驻可见；**「检索诊断」只读抽屉**（9 列候选去向表：得分/RRF/当前版/as_of/剔除原因，top_k 可调，显示编码后端与耗时，五种丢弃原因中文映射）；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
 - **元规则 T0 文档维护** — 以 `docs/元规则整理-完整版.md` 为规则知识库母本（只增不删、机器校验），提供文档校验（audit）、数据段差异同步（sync）、变更提案起草/合入（propose/apply）与疑难登记（pending）完整工作流，并在「知识库维护 → 元规则母本」维护对象（内嵌四个子页签）可视化操作
 - **索引精化** — RAG 语料索引字段（timing / trigger_condition / keywords / related）精化工作台，架构下沉为三层纯业务代码：`refinement_service.py`（纯函数：清单扫描/LLM 建议生成/磁盘读写）+ `RefinementSession`（纯 Python 状态层：pending/curated/normal 三池清单、磁盘基线与 LLM 基线双基线、行状态 pending/suggested/modified/refined/generated）+ `SuggestController`（QObject，LLM 线程编排，SuggestWorker 批量建议，含 LIVE_WORKERS 全局僵尸防护列表防止 dialog 销毁后 QThread 运行中析构）
 - **B2 复核模式** — 对未决识别槽位，使用 PP-OCRv6-small/ONNX 引擎（RapidOCR）做候选内确认；惰性加载+失败熔断，模型缺失不联网下载，设备固定 CPU；`RapidOcrEngine` 包装层将 RapidOCR 结果翻译为 paddleocr 2.x 风格
 - **白名单治理** — OCR 未决错法频次记录（`pending_stats.py`，双事件流 + 60 秒节流窗口 + 原子替换写入）+ 用户层白名单维护界面（`whitelist_config_dialog.py`，错法观察清单 A+/A/B/C 分类 + `ocr_confusion_overrides.json` 静态冲突检查 + `reset_ocr_recognizer_cache()` 即时生效）
 - **轮询闲置自动暂停** — 整帧降采样指纹（`frame_fingerprint.py`，32×18 灰度 576 字节，MAD 阈值 3.0）+ 轮询协调器（`poll_coordinator.py`，连续 5 分钟无画面变化自动暂停，三路交互恢复）+ 阈值校准工具（`calibrate_idle_threshold.py`）
 - **合规化改造** — 免责声明弹窗（`disclaimer_dialog.py` + `disclaimer_state.py`，版本感知仅条款更新时重新确认，当前版本 1.1）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（`logs/robots_cache/`）+ 架构防火墙声明（代码不含 ADB 输入能力）+ **数据出库**（抓取与维护数据自 2026-10-03 起不入版本库，经私有数据仓同步，`data/SOURCES.md` 登记来源）
-- **运维自检与周更编排** — `doctor.py` 一键只读自检（11 组检查：环境/设备/私有仓/数据/配置/白名单/AI 链路/日志/磁盘/合规/安全，`--offline` / `--json`）；`ops.py` 周更运维统一入口（weekly 编排 pull→diff→maintain_rag→pytest→push，前置失败不 push；health / retry-failed / clean 子命令）；任务台账 `task_ledger.py`（`logs/task_results.jsonl`，跨日志轮转窗口留痕）；AI 定向重试 `ai_batch --retry-failed`（失败清单 `logs/ai_last_failures.json`）；版本单一来源 `src/config/version.py`（`app_version()`，VERSION 文件 1.2.1）
+- **数据新鲜度芯片** — 状态栏第三枚常驻胶囊（`data_freshness_chip.py`）+ 纯业务判定核心（`src/business/freshness.py`，无 Qt 依赖）：按 7/14 天档位（[0,7) 绿 / [7,14) 黄 / ≥14 红）判定武将/攻略/相性/榜单四项数据年龄，武将项**逐事件逐武将核对**（事件落后 ⇔ 该武将在 heroes.json 缺失或 `last_updated` 早于事件日期，批次按公告 ref 去重），修正旧全局 max 对比下"指定获取洗绿"与"混合批次只推增量"两类误绿漏报；时间轴不健康时退化为纯年龄兜底并出警示行；点击弹「内容年龄 / 数据源周期 / 建议操作」三组菜单，建议动作（增量获取 / 指定获取）可点击直达采集入口（忙碌时 toast 拦截）；刷新自足（六路服务信号 + QFileSystemWatcher 监听 data/ 目录 mtime 快照 500ms 去抖，无轮询定时器）；精简版只判武将+榜单两项
+- **运维自检与周更编排** — `doctor.py` 一键只读自检（12 组检查：环境/设备/私有仓/数据/**RAG 索引**/配置/白名单/AI 链路/日志/磁盘/合规/安全，`--offline` / `--json`）；`ops.py` 周更运维统一入口（weekly 编排 pull→diff→maintain_rag→pytest→push，前置失败不 push；health / retry-failed / clean 子命令）；任务台账 `task_ledger.py`（`logs/task_results.jsonl`，跨日志轮转窗口留痕）；AI 定向重试 `ai_batch --retry-failed`（失败清单 `logs/ai_last_failures.json`）；版本单一来源 `src/config/version.py`（`app_version()`，VERSION 文件 1.2.1）；**RAG 评估历史 `logs/rag/eval_history.jsonl`**（eval_rule_faqs / eval_guide_quality 每次运行默认追加编码后端与模型指纹，`--no-record` 逃生）
 
 ## 技术栈
 
@@ -38,12 +39,12 @@
 | 桌面 UI | PySide6（Qt for Python） |
 | 数据模型 | Pydantic v2（数据校验与序列化） |
 | AI 生成 | httpx（多供应商 OpenAI 风格 API 同步请求）/ Playwright（浏览器自动化） |
-| RAG 检索 | ChromaDB + sentence-transformers（bge-small-zh-v1.5 本地嵌入）+ 关键词 RRF 混合检索 |
+| RAG 检索 | ChromaDB + 编码器抽象层 `embedder.py`（默认 onnxruntime fp32 CLS 池化，`tokenizers` 直读 tokenizer.json；`RAG_EMBEDDING_BACKEND=st` 回滚 sentence-transformers；bge-small-zh-v1.5，三件套 sha256 侧车校验）+ 关键词 RRF 混合检索 |
 | 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | RapidOCR 3.9.2 / ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，`onnxruntime` 1.23.2，CPU 固定、线程可钉）+ 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，424 字特征缓存）；paddle 全栈已退役 |
 | 数据持久化 | JSON + CSV 文件（`json_repository` 原子写/写前快照基元，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（129 文件 / 1481 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
+| 测试与静态检查 | pytest 9.0.3（145 文件 / 1626 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -55,18 +56,20 @@ test_project/
 │   ├── config/                  # 配置管理（.env 解析、日志配置、disclaimer_state 免责声明状态）
 │   ├── data/                    # 数据模型与数据管理层（DataFacade 门面 + manager/issues 解环拆分；含 hero_timeline 武将变更时间轴、card_sync_store 卡牌百科快照、baike_ignore_store 百科忽略名单）
 │   ├── scraper/                 # 爬虫与 AI 批量生成层（含 card_baike 卡牌百科抓取清洗）
-│   ├── rag/                     # RAG 向量索引与混合检索基础设施（ChromaDB + bge-small-zh + 关键词 RRF）
+│   ├── rag/                     # RAG 向量索引与混合检索基础设施（ChromaDB + embedder.py 双后端编码器抽象（onnx 默认 / st 回滚）+ 关键词 RRF）
 │   ├── scripts/                 # 语料构建与维护脚本（build_*_corpus / maintain_rag / import_hero_adjustments / 元规则维护 CLI）
-│   │                           #   + doctor（一键只读自检）/ ops（周更运维统一入口）/ pull_data（私有数据仓同步）
+│   │                           #   + doctor（一键只读自检，含 RAG 索引组）/ ops（周更运维统一入口）/ pull_data（私有数据仓同步）
 │   │                           #   + fetch_recheck_models（v4 复核模型预取）/ ocr_baseline（OCR 回归基线）/ calibrate_idle_threshold（闲置阈值校准）
+│   │                           #   + export_embedding_onnx（ONNX 编码器导出链，dev）/ rag_eval_history（RAG 评估历史 JSONL）
 │   ├── business/                # 业务服务层（QProcess、OCR/官方榜单导入编排、公告与巅峰赛业务、卡牌百科同步）
-│   │                           #   + emulator 协作模块（capture_service 门面 + ocr_task_coordinator / official_import_gateway / image_save_scheduler，审计 G8）
-│   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
+│   │                           #   + emulator 协作模块（capture_service 门面 + capture_connection 连接域 + ocr_task_coordinator / official_import_gateway / image_save_scheduler，审计 G8+P1-8）
+│   │                           #   + recognition/session_guard（SessionGuard / BusyGate / OneShotToken 竞态守卫三原语）
+│   │                           #   + freshness.py（数据新鲜度判定核心，逐武将核对）+ pending_stats（OCR 未决错法频次与人工确认记录）
 │   ├── capture/                 # 屏幕采集层（ADB 连接、截图、MuMu 实例探测）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + RapidOCR 双套件 + 卡位检测 + engine_loader 引擎装载）
 │   └── ui/                      # PySide6 用户界面层（app / configuration / data_admin / generation / library / match / maintenance / recommendation / shared）
-│                               #   + 主窗口协调器与自足组件（app_services / status_chips / progress_reporter / poll_coordinator / announcement_update_coordinator）
-│                               #   + whitelist_config_dialog（白名单配置）/ baike_ignore_manager_dialog（百科忽略名单）/ frame_fingerprint（闲置指纹）
+│                               #   + 主窗口协调器与自足组件（app_services / status_chips / data_freshness_chip 数据新鲜度芯片 / progress_reporter / poll_coordinator / announcement_update_coordinator）
+│                               #   + data_admin/ignoreable_diff_list（忽略差异列表 mixin）/ whitelist_config_dialog（白名单配置）/ baike_ignore_manager_dialog（百科忽略名单）/ frame_fingerprint（闲置指纹）
 │                               #   + disclaimer_dialog（免责声明对话框）
 ├── data/                        # 数据文件（JSON + 2v2/巅峰赛胜率出场、放逐 CSV；RAG 源数据 JSON 与归档 archive/；含 card_snapshot.json / card_changes.json 卡牌百科快照与 baike_ignore.json 忽略名单）
 │                               #   源数据自 2026-10-03 起不入版本库，经私有数据仓同步（SOURCES.md 登记来源，samples/ 为虚构示例）
@@ -99,7 +102,10 @@ test_project/
 │  信号连接 → 业务服务 → 子进程 → 数据刷新                                      │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  业务服务层 (src/business/)                                                   │
-│  QProcess 子进程管理、ADB 截图编排、OCR 轮询控制（含闲置暂停治理）              │
+│  QProcess 子进程管理、ADB 截图编排（连接域出仓 CaptureConnectionManager）、     │
+│  OCR 轮询控制（含闲置暂停治理）；竞态守卫三原语 session_guard                  │
+│  （SessionGuard 世代 / BusyGate 忙碌闸 / OneShotToken 一次性令牌）             │
+│  数据新鲜度判定核心 freshness.py（逐武将核对，无 Qt 依赖）                     │
 │  RAG 索引精化：refinement_service（纯函数）+ RefinementSession（三池状态）     │
 │  + SuggestController（LLM 线程编排，僵尸防护）                                │
 │  卡牌百科：CardSyncService（手动检查官网手牌库差异，勾选后应用更新）              │
@@ -125,15 +131,15 @@ test_project/
 
 | # | 模块 | 目录 | 主要职责 |
 |---|------|------|---------|
-| 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化、**版本单一来源 `version.py`**、**启动自动公告检查与截图回收** |
-| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分）、**json_repository 原子写/写前快照基元全库收敛**、**数据出库与私有数据仓同步（pull_data）** |
-| 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`**、**全量四道规模写入守卫 + 增量损坏硬停** |
-| 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器、**httpx 超时分层 + 定向重试 `--retry-failed`**、**prompt 四层决策门/锚例校准/JSON 纪律** |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）**、**任务台账 `task_ledger` 与子进程看门狗（30 分钟）**、**OCR worker 首建同步回调接线（消除官方导入锁死竞态）** |
-| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2128 块）、向量索引与混合检索、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、**语料块数校验快照基线三态（int / snapshot / None）**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
-| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、**RapidOCR 双套件识别（v6 主 + v4 复核，`engine_loader` 装载）**、官方榜单版式解析、424 字静态汉字特征缓存、**白名单 10 对基线与武将库冲突重检** |
-| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口、**资料库编辑 AI 生成忙碌守卫**、**ComboStrip 信号契约修复（Signal(object)）**、**设备离线计入闲置暂停** |
-| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理 + 人工确认残留修复**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
+| 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化、**版本单一来源 `version.py`**、**启动自动公告检查与截图回收**、**env 键元表 `_ENV_KEY_SPECS` 单源（30 键）**、**首启部署配色/价格可改副本到运行时根** |
+| 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分）、**json_repository 原子写/写前快照基元全库收敛**、**数据出库与私有数据仓同步（pull_data）**、**榜单/推荐指数 CSV 仓储读侧统一运行时可写根** |
+| 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`**、**全量四道规模写入守卫 + 增量损坏硬停**、**抓取输出默认路径归运行时可写根** |
+| 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器、**httpx 超时分层 + 定向重试 `--retry-failed`**、**prompt 四层决策门/锚例校准/JSON 纪律**、**双生成器后处理共享管线 `normalize_and_validate_*`**、**MAX_OUTPUT_TOKENS 单源 env 键元表** |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）**、**任务台账 `task_ledger` 与子进程看门狗（30 分钟）**、**OCR worker 首建同步回调接线（消除官方导入锁死竞态）**、**竞态守卫三原语 `session_guard`（SessionGuard/BusyGate/OneShotToken）**、**连接域出仓 `CaptureConnectionManager`**、**数据新鲜度判定核心 `freshness.py`（逐武将核对）** |
+| 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2128 块）、向量索引与混合检索、**编码器抽象层 `embedder.py`（onnxruntime 默认 + st 回滚档，三件套 sha256 熔断）**、**检索 trace 可观测（五种丢弃原因 + `--explain`）**、**索引整目录重建（rmtree 清孤立段，80.9→14.8MB）**、**检索诊断抽屉**、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、**语料块数校验快照基线三态（int / snapshot / None）**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计 |
+| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、**RapidOCR 双套件识别（v6 主 + v4 复核，`engine_loader` 装载）**、官方榜单版式解析、437 字静态汉字特征缓存、**白名单 10 对基线与武将库冲突重检**、**`_recognize_page` 页型模板方法（`_PagePlan`）**、**兜底 OCR 批次零产出短路（det 调用 14→4）**、**识别状态词表单源三常量** |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + **DataFreshnessChip 数据新鲜度芯片** + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口、**资料库编辑 AI 生成忙碌守卫**、**ComboStrip 信号契约修复（Signal(object)）**、**设备离线计入闲置暂停**、**实战配队批量生成对话框按配队武将筛选**、**忽略差异列表 mixin `IgnoreableDiffListMixin` 收口**、**头像路径两级回退（运行时根 → 随包基线）** |
+| 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理 + 人工确认残留修复 + 过场坏帧扣住一拍复核**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入 |
 
 ## 本轮文档校准（2026-09-21）
 
@@ -245,3 +251,67 @@ test_project/
 - RAG 语料块数校验基线：武将语料/特殊机制语料改 `"snapshot"` 快照基线（快照值 647 / 85），加将自动适应、丢块仍拦截
 - 免责声明版本 1.1；VERSION 文件 1.2.1；打包体积 608MB（原 834MB 基线）
 - "B2 复核模式"提法更新为"复核引擎"（B1 起复核为 v4，与主引擎互为异构，回滚档时互换）
+
+## 本轮文档校准（2026-10-11）
+
+自基线 `0ffed36`（2026-10-06 校准）以来，共 18 个提交（10-07 至 10-11，至 `2081b5b`），本轮校准覆盖其全部变更：
+
+**RAG 编码器 ONNX 化**（2081b5b，本轮最大变更）
+- **编码器抽象层** `src/rag/embedder.py`（新增 175 行）：`OnnxEmbedder`（onnxruntime CPU + `tokenizers` 直读 tokenizer.json，CLS 池化 + L2 归一化，max_length 512 右 padding，输入名以 sha256.json 侧车记录为准，构造即校验三件套哈希、缺失/不符即 `RuntimeError` 熔断并带修复指引 `python -m src.scripts.export_embedding_onnx`）+ `STEmbedder` 回滚档（原 sentence-transformers 行为原样保留）+ `get_embedder()` 按 `RAG_EMBEDDING_BACKEND`（默认 `onnx`，可设 `st`）单例派发；encode 契约不变量（单字符串一维 / 列表二维 `(B, D)` float32）
+- **检索/建索引链路切换**：retriever 与 indexer 的模型加载统一走 `get_embedder()`；运行期不再 import torch/transformers/sentence-transformers
+- **ONNX 导出链** `src/scripts/export_embedding_onnx.py`（新增 250 行）：opset 18 + 动态轴（batch/seq）、两条不等长校准样本（防 dynamo 把 batch/seq 维专门化）、`do_lower_case` 按 `sentence_bert_config.json` 对齐 + `strip_accents=False`、权重内联回单文件、`--int8` 追加量化（S7 裁决维持 fp32 打包，int8 不入包）、侧车写 `sha256/bytes/input_names/source_weights_sha256`、幂等跳过、`--check` 只校验
+- **索引重建语义修复**：`build_index(rebuild=True)` 由 `delete_collection` 改为整目录 `shutil.rmtree(config.CHROMA_DIR)` + 新建，孤立段残留根除（实测索引体积 80.9MB→14.8MB），删除失败 `RuntimeError` 中止不静默
+- **检索 trace 可观测**：`Retriever.search(trace=...)` 记录五种丢弃原因（below_threshold / not_current / hero_filter / max_keyword_only / kind_quota），默认 None 零开销行为不变；`python -m src.rag.retriever --query … --explain` CLI 输出候选去向
+- **检索诊断抽屉**：`src/business/rag/retrieval_diagnostic.py`（`diagnose` 纯 dict + `DiagnosticWorker` QThread，`LIVE_WORKERS` 僵尸防护）+ `src/ui/maintenance/retrieval_diagnostic_dialog.py`（9 列候选去向表、top_k 下拉、backend/耗时/保留丢弃计数、排序开启下填充前禁排序防串行）+ 知识库维护页「检索诊断」按钮（只读，关闭不触发 refresh）
+- **评估历史**：`src/scripts/rag_eval_history.py`（新增，`logs/rag/eval_history.jsonl`，记录 backend / 模型指纹 / 语料块数 / 索引体积）；`eval_rule_faqs` / `eval_guide_quality` 每次运行默认追加、`--no-record` 逃生，退出码契约不变
+- **doctor 新增「RAG索引」检查组**（11 组 → 12 组）：索引目录存在性、体积 ≤25MB、集合段目录唯一性、ONNX 三件套哈希（st 档 SKIP）
+- **打包形态**：精简版自带完整 RAG（chromadb collect_all + data/rag_index + data/rag_models/onnx 三件套移出 FULL 块；st 档 modelscope 权重不再收集）；excludes 移除 `tokenizers`、新增 `scipy/sklearn/pandas/matplotlib/hf_xet`（回收约 114MB）；spec 顶部 ONNX 前置断言（拦截绕过 release.py 直接打包）；FULL 块只剩 playwright；两包实测 658.9/764.1MB（发版断言 670/800MB）
+- **发版四连门禁**（release.py +196 行）：ONNX 就位（缺则自动导出）/ 强制 onnx 后端同源重建索引 + 块数一致性断言 / 包内产物校验（发现 int8 即 die）/ 包内 eval 检索门禁；manifest 新增 `encoder_backend / onnx_model_sha256 / index_blocks / unpacked_mb / eval_gate`
+- **环境依赖**：environment.yml 新增 `tokenizers==0.22.2`（运行期）、`torch==2.12.0` / `onnx==1.23.2` / `onnxscript==0.7.2`（导出链 dev）；sentence-transformers 降级为回滚档与导出源
+- **配置键**：新增 `RAG_EMBEDDING_BACKEND`（默认 "onnx"）、`ONNX_MODEL_DIR`（`data/rag_models/onnx`）、`RAG_EMBED_THREADS`（默认 4，onnxruntime intra_op 线程）
+
+**数据新鲜度芯片**（ae92c1d）
+- **判定核心** `src/business/freshness.py`（新增 449 行，无 Qt 依赖）：档位周期写死 [0,7) 绿 / [7,14) 黄 / ≥14 红；`compute_freshness_report()` 判定武将/攻略/相性/榜单四项——武将项**逐事件逐武将核对**（事件落后 ⇔ 武将缺失或 `last_updated` 早于事件日期，批次按公告 ref 去重），修复旧全局 max 对比下「指定获取洗绿」「混合批次只推增量致调整武将漏掉」「攻略/相性部分覆盖洗绿」「部分攻略缺失未暴露」四缺陷（5 个缺陷复现用例先行转绿）；建议路由 `SUGGEST_INCREMENTAL`（缺失→增量获取）/ `SUGGEST_SPECIFIC`（过期→指定获取），混合批次双给；时间轴不健康（缺失/损坏/超阈值）退化为纯年龄兜底并出 `timeline_warning`；精简版 `full_build=False` 只判武将+榜单
+- **状态栏芯片** `src/ui/app/data_freshness_chip.py`（新增 201 行）：第三枚常驻胶囊，六路服务信号 + QFileSystemWatcher（data/ 目录，mtime 快照 500ms 去抖，过滤无关文件）双路刷新、无轮询定时器；点击/键盘弹「内容年龄 / 数据源周期 / 建议操作」三组菜单，建议动作直达 DialogCoordinator 采集入口（`hero_fetch_service.is_busy` 时 toast 拦截）；配置键 `DATA_FRESHNESS_TIMELINE_STALE_DAYS`（默认 14，透传键不进 UI 配置对话框）
+
+**竞态守卫原语定稿与全仓收口**（8a08d5d / 4542244 / 89e4e8d / 76875dd / df019a5，全部语义不变的纯收口）
+- `src/business/recognition/session_guard.py` 三原语：`SessionGuard`（世代计数器，快照—校验模式）、`BusyGate`（忙碌闸，acquire 锁内检查+置位原子、release 幂等）、`OneShotToken`（一次性令牌，置位不可复位）
+- 收口点：OCR 在途轮询拍 `_poll_in_flight` → `ocr_service._poll_gate`（BusyGate）；公告更新阶段令牌 `_phase_in_flight` → `announcement_update_coordinator._phase_gate`（BusyGate）；模拟器操作服务关停旗标 `_closed` → `_shutdown_token`（OneShotToken，emulator_operation_service 与 capture_service 两处）；巅峰赛会话世代 `_session` 裸自增 → `peak_select_watcher._session_guard`（SessionGuard）+ 三处手抄重置统一 `_clear_session_state(keep_signature/keep_miss_ticks)`
+- 语义单测 `tests/test_session_guard.py`（5 用例，含 8 线程争用单赢家）
+
+**CaptureService 连接域出仓**（118f59c，纯内部等价重构）
+- 新文件 `src/business/emulator/capture_connection.py`（191 行）：`CaptureConnectionManager` 承接配置热更（update_config 三键比对重建 AdbCapture / set_target_port）、会话状态（set/sync/sync_poll，过期实例忽略）、连接编排（connect/disconnect，阻塞 IO 全在 `_adb_io_lock`）四大职责；两把锁（`_session_lock` 护内存态 / `_adb_io_lock` 串行 ADB IO）不嵌套持有；状态与消息经构造注入回调广播（emit 留在 QObject 宿主）
+- `capture_service.py` 575→479 行，连接域全部变一行转发，关停旗标同步 `OneShotToken`；信号与对外 API 零改动
+- 连带修复（6ea1866）：`mumu_config_coordinator.shutdown()` 显式断开 `connection_changed` 中继连接（emit 形式中继无 receiver 不随销毁解除，残留连接对已销毁对话框抛 "Signal source has been deleted"）
+
+**OCR 识别链重构**（2646fd4 / b5e8e4f / 6ea1866）
+- `_recognize_page` 页型模板方法：`_PagePlan` 冻结数据类四开关（has_team / short_circuit_name_recheck / emit_empty_results / log_details）+ 两模块级单例（`_WUJIANG_SELECT_PLAN` / `_MATCH_GUIDE_PLAN`），recognize 双页型 90 行平行路径合一（519→493 行，纯等价重构）
+- match_guide 兜底 OCR 批次零产出即短路：名称批次画布无文本行时跳过逐槽双证据与阵营逐槽重试（"读出字但归一化失败"仍重试），错位页面每轮 det 调用约 14 次 → 4 次；`RapidOcrEngine` 新增 `reset/drain_call_stats()`，阶段耗时日志新增"空检=n/m"聚合摘要，`_EmptyDetFilter` 幂等滤除逐条空检告警
+- `ocr_worker.py` 七个阶段耗时标量收口为 `stage_timing` 字典逐段累积，5 处 `_log_timing` 调用点 `**` 展开（日志输出逐字节不变，551→518 行）
+- `name_resolution.py` 识别状态词表单源三常量：`CONFIRMED_RESOLUTIONS`（已确认集转公共）/ `UNRESOLVED_RESOLUTIONS`（未定全集）/ `ACTIONABLE_UNRESOLVED_RESOLUTIONS`（收窄集，unknown 拒识无材料有意收窄）；ocr_worker 待确认统计 / peak_select_watcher 人工确认 / recognizer 复核注入三处手抄副本改引常量
+
+**巅峰赛坏帧拦截**（036d0ae，行为修复）
+- `peak_select_watcher.py` 新增 `_deferred_board` 机制：选将/禁选期真实池子单调不增前提下，新拍卡数严格高于上一发布拍即判疑似过场坏帧（2026-10-09 事故：场景切换期 raw 截图返回旧 9 张帧致面板 8→9→8 跳变），扣住一拍待复核——紧邻下一拍签名复现即补发布，否则按坏帧丢弃；隔拍再现因回升规则仍在会重新扣住；牌面缺席拍作废扣住状态；`_clear_session_state` 同步清 `_deferred_board` 不跨会话存活；卡数下降（禁转选 14→9）与同数重排不受影响照常立即发布
+
+**打包态读写根分裂治理**（6b21d75）
+- 概念：frozen 下 `BUNDLE_ROOT`（`<exe>/_internal`，只读）与 `PROJECT_ROOT`（exe 同级，可写）分裂，缺陷形态是"写入可写根、读取钉死只读根"；治理方向为**读取侧统一到运行时根**，首启由 `_ensure_clean_runtime` 从打包默认部署可改副本（只补缺失）
+- 换根清单：三份榜单 CSV / 推荐指数与武将 JSON 常量（win_rate / peak_win_rate / recommendation_index 三仓储）、AI 批量输出 `DEFAULT_DATA_DIR`、全量/增量默认输出、`_CORE_RULES_FILE` 核心规则摘要、`DEFAULT_PRICING_FILE`、`FACTION_COLORS_FILE`；头像新增 `portrait.find_portrait_path()` 两级回退（运行时根 IMAGES_OUTPUT_DIR → 随包基线 IMAGES_DIR，扩展 .png/.jpg/.webp），`HeroCardWidget._load_portrait` 接入同源（保留 KeepAspectRatio 留白式，与共享 load_portrait 的 ByExpanding 裁剪式为刻意差异）；`images/` 不纳入首启部署（避免安装体积翻倍）
+- `main.py._ensure_clean_runtime` 新增部署 `config/faction_colors.json` / `config/model_pricing.json` 可改副本
+- 修复的打包态行为：OCR 导入新榜单后算法读旧基线、抓取与生成结果 UI 不可见、自定义配色/价格随升级丢失、Program Files 下保存失败、新下载头像永不显示
+- 新增守护测试 `test_ranking_csv_runtime_root.py`（monkeypatch 双根 + importlib.reload 模拟分裂）与 `test_runtime_root_config_and_portrait.py`
+
+**其他**
+- **env.py 键元表单源化**（1bfd65b，纯重构行为零变化）：`_EnvKeySpec` NamedTuple + `_ENV_KEY_SPECS` 注册表（现 30 键：runtime 6 + mumu 15 + 透传 9）唯一事实源，`load_env_config` 按 spec.type 统一转换、`default_from` 表达级联默认（`mumu_hero_selection_threshold` 未配置回退 `mumu_ocr_match_threshold` 实配值）；`DEFAULT_MAX_OUTPUT_TOKENS = 32_768` 单源（api_generator 引用同对象）；配套 `_SENTINELS` 全量键哨兵表测试
+- **AI 双生成器后处理管线收口**（cd97677，纯重构）：`src/scraper/ai/utils.py` 新增 `normalize_and_validate_guide / normalize_and_validate_synergy` 共享管线（注 ID / int 转换 / `combat_synergy → combo_ceiling` 兼容 shim / 必填预检 / Pydantic 校验），api/browser 双生成器各 ~10 行内联缩为一行调用；`logger_prefix` 参数保留浏览器版日志前缀（进度窗口解析依赖）
+- **忽略差异列表骨架收口**（cd97677，纯重构）：新文件 `src/ui/data_admin/ignoreable_diff_list.py`（108 行）`IgnoreableDiffListMixin`，收口 CardSyncDialog 与 HeroUpdateConfirmDialog 逐字复制且已偏移的忽略入口/详情对比/选中联动骨架；偏移语义提升为一等钩子（hero 版 content_hash 门控 + 无服务时整组隐藏，card 版选中即可忽略；`_detail_dialog_class` 钩子避免循环导入）
+- **实战配队批量生成对话框按配队武将筛选**（1a765da）：`SynergyCombosDialog` 构造签名新增必选首位 `hero_manager`（对齐同族传参惯例），可编辑下拉 + QCompleter 包含匹配；按 hero_id 精确匹配两个位置（免疫重名与孤儿 id），与评级/座次/生成状态筛选叠加
+- **UI 样式**（b5e8e4f）：`style.py` 新增 `_section_tabs_qss(object_name)` 参数化提取，资料库二级页签与页面内分区页签共用的四条 QSS 规则单源（GLOBAL_STYLE 渲染逐字节一致，守护测试 `test_style_qss.py`）
+- **pull_data 编码修复**（2945f29）：`_git()` 显式 `encoding="utf-8", errors="replace"`——中文 Windows 控制台无 PYTHONUTF8 时 git 输出（恒 UTF-8）按 GBK 解码致读取线程 UnicodeDecodeError（git 本身已成功但输出丢失）
+- **静态汉字特征缓存回填**（6b21d75 chore）：`src/data/char_info_cache.json` 424 → **437** 字
+- conftest 新增 autouse 模态守卫 `_fail_on_real_modal`（QMessageBox 五个静态便捷方法在测试中直接 AssertionError，根除无头环境真实模态 exec() 永久阻塞致 xdist worker 被强杀的失败漂移）
+
+**修正的失效描述**
+- 代码规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
+- 技术栈：RAG 编码器为 onnxruntime 默认 + sentence-transformers 回滚档（`RAG_EMBEDDING_BACKEND`），运行期不依赖 torch 栈；doctor 检查组 11 → 12（新增「RAG索引」）
+- 打包体积：精简 608MB → 658.9MB（自带完整 RAG + ONNX 编码器）、完整 764.1MB（发版断言 670/800MB）
+- `CaptureService` 行数 570 → 479（连接域出仓后）；`peak_select_watcher.py` 棘轮 566 → 593（坏帧拦截）；`ocr_worker.py` 棘轮 551 → 518（stage_timing 收口）；`recognizer.py` 棘轮 519 → 493（模板方法）

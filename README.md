@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-1481%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-1626%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
@@ -30,7 +30,7 @@
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-4. **测试与交付工程化** — 129 个测试模块 / 1481 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
+4. **测试与交付工程化** — 145 个测试模块 / 1626 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
 5. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
 6. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
 7. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
@@ -176,19 +176,23 @@ test_project/
 │   ├── scraper/                # 官网爬虫（official_source/）+ AI 批量生成（ai/）
 │   │                           #   + card_baike（官网手牌库抓取与 diff）
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 分析 + 维护 + RAG 业务）
+│   │                           #   + capture_connection（ADB 连接域：配置热更/会话状态/连接编排）
+│   │                           #   + recognition/session_guard（SessionGuard/BusyGate/OneShotToken 竞态守卫三原语）
+│   │                           #   + freshness（数据新鲜度判定核心，逐武将核对）
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader
-│   ├── rag/                    # 知识库：向量索引与混合检索基础设施
+│   ├── rag/                    # 知识库：向量索引与混合检索基础设施（embedder.py 双后端编码器抽象，onnx 默认）
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
 │   │                           #   + doctor（一键自检）/ ops（周更编排）/ pull_data（私有数据仓同步）
 │   │                           #   + fetch_recheck_models（v4 模型预取）/ ocr_baseline / calibrate_idle_threshold
+│   │                           #   + export_embedding_onnx（ONNX 编码器导出）/ rag_eval_history（评估历史）
 │   └── ui/                     # PySide6 界面（app / configuration / data_admin / generation /
 │                               #   library / match / maintenance / recommendation / shared）
 │                               #   + 主窗口协调器与自足组件（app_services / status_chips /
-│                               #     progress_reporter / poll_coordinator /
-│                               #     announcement_update_coordinator）
+│                               #     data_freshness_chip 数据新鲜度芯片 / progress_reporter /
+│                               #     poll_coordinator / announcement_update_coordinator）
 │                               #   + card_sync_dialog（更新确认对话框）
 │                               #   + whitelist_config_dialog（白名单配置界面）
 │                               #   + baike_ignore_manager_dialog（百科忽略名单）
@@ -201,7 +205,7 @@ test_project/
 ├── images/                     # 武将头像（从官网下载，不入版本库）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（129 个测试模块 / 1481 个测试函数）
+├── tests/                      # 测试用例（145 个测试模块 / 1626 个测试函数）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -221,21 +225,25 @@ test_project/
 ┌────────────────────────────────────────────────────────────┐
 │  UI 层 (src/ui/)                                            │
 │  PySide6 主窗口（AppServices 组合根 + StatusChips +           │
-│  ProgressReporter / PollCoordinator / AnnouncementUpdate     │
-│  Coordinator 协调器）                                        │
+│  DataFreshnessChip 新鲜度芯片 + ProgressReporter /           │
+│  PollCoordinator / AnnouncementUpdateCoordinator 协调器）     │
 │  对话框、推荐面板、武将浏览器、巅峰赛选将、知识库维护工作台     │
 │  公共骨架 MasterDetailPane / run_edit_dialog / CaptureLock   │
 │  信号连接 → 业务服务 → 子进程 → 数据刷新                     │
 ├────────────────────────────────────────────────────────────┤
 │  业务服务层 (src/business/)                                 │
-│  QProcess 子进程管理、ADB 截图编排、OCR 轮询控制             │
+│  QProcess 子进程管理、ADB 截图编排（连接域                    │
+│  CaptureConnectionManager）、OCR 轮询控制                    │
+│  竞态守卫三原语 session_guard（SessionGuard/BusyGate/        │
+│  OneShotToken）；数据新鲜度判定核心 freshness.py             │
 │  分析（推荐/对局/巅峰赛禁选）、维护、RAG 业务编排             │
 │  卡牌百科同步（CardSyncService：手动检查 + 应用更新）         │
 │  无 UI 引用，通过 Qt Signal 通信                             │
 ├────────────────────────────────────────────────────────────┤
 │  采集层 (src/scraper/ + src/capture/ + src/ocr/)           │
 │  官网爬虫 / AI 生成 / ADB 截图 / 模板匹配 / 卡位检测 / OCR    │
-│  RAG 检索基础设施 (src/rag/) + 语料与维护脚本 (src/scripts/)  │
+│  RAG 检索基础设施 (src/rag/，embedder.py ONNX 编码器)        │
+│  + 语料与维护脚本 (src/scripts/)                             │
 ├────────────────────────────────────────────────────────────┤
 │  数据层 (src/data/)                                         │
 │  Pydantic 模型 + DataFacade（facade/manager/issues 解环拆分）│
@@ -293,15 +301,16 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
 - **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体与 2~8 武将两两配对。生成失败时弹窗详情列出失败武将/相性对清单。
 - **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 RapidOCR/ONNX 双套件（v6 主 + v4 复核，未决槽位候选闭包内确认）；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
-- **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/keywords/related）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
+- **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/target/special_rules）、检索诊断只读抽屉（候选去向表：得分/RRF/剔除原因中文映射）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
 - **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+复核引擎候选闭包兜底，未确认写入待复核。
 - **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`），主窗口提供「百科忽略名单管理」入口。
-- **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + 会话世代校验，候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。人工确认残留修复：图片导入前按当前牌面校验旧确认（可定位则迁移槽位，不可定位则丢弃），停止识别/牌面退出后清空确认表与禁将基线，牌面在位守卫防止跨板污染，同名槽位显性告警。
+- **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + SessionGuard 会话世代校验，候选期卡数回升拍扣住一拍复核（拦截场景切换期过场坏帧致面板跳变），候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。人工确认残留修复：图片导入前按当前牌面校验旧确认（可定位则迁移槽位，不可定位则丢弃），停止识别/牌面退出后经 `_clear_session_state` 清空确认表与禁将基线，牌面在位守卫防止跨板污染，同名槽位显性告警。
 - **实战配队**：外部导出 JSON 或 UI 手工维护 1570 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
 - **卡牌百科变更捕获**：`CardSyncService` 手动检查官网手牌库更新（60 秒冷却防密集请求），快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，支持差异条目级忽略名单（`baike_ignore.json`），audit_service 复核时效。
 - **白名单配置**：未决错法观察清单（A+/A/B/C 分类排序）+ 用户层白名单维护（`ocr_confusion_overrides.json`），静态冲突检查与即时生效（`reset_ocr_recognizer_cache()`）。
 - **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。
+- **数据新鲜度芯片**：状态栏常驻胶囊按 7/14 天档位判定武将/攻略/相性/榜单四项数据年龄（武将项逐事件逐武将核对，杜绝"指定获取洗绿"与"混合批次只推增量"漏报）；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口；刷新由服务信号 + data/ 目录监听驱动，无轮询定时器。
 - **合规化改造**：免责声明弹窗（版本感知，仅条款更新时重新确认）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（逐次记录善意访问）+ 架构防火墙声明（代码不含 ADB 输入能力）。
 
 ---
@@ -340,7 +349,12 @@ MUMU_MATCH_GUIDE_THRESHOLD=0.6
 RAG_ENABLED=true
 RAG_TOP_K=12
 RAG_PROMPT_CHARS=6000
+RAG_EMBEDDING_BACKEND=onnx
+RAG_EMBED_THREADS=4
 RAG_MODEL_DIR=
+
+# 数据新鲜度（状态栏芯片）
+DATA_FRESHNESS_TIMELINE_STALE_DAYS=14
 ```
 
 **多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。生成链路经 `resolve_api_config()` 解析（启用档案优先，否则回退 `config.env` → 环境变量 → 默认值）。价格参考来自 `config/model_pricing.json`，势力配色经「配置 → 势力配色」可视化编辑（`faction_colors.json` 为数组结构 `[{faction, color}, ...]`，数组位置即筛选界面展示顺序）。
@@ -393,9 +407,8 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（16 章，基线 2026-10-06） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（18 章，基线 2026-10-11） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
-| [docs/call_graph/](docs/call_graph/) | 各核心功能函数调用链路（9 个调用图） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/design/](docs/design/) | 设计决策记录 |
 | [docs/prompts/](docs/prompts/) | AI 攻略/相性生成 Prompt 模板 |
@@ -445,8 +458,11 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 三十五 | 数据出库与私有数据仓同步（pull_data 守卫链 + 原子落位 + SOURCES.md 来源登记） | ✅ 已完成 |
 | 三十六 | 运维工具链（doctor 自检 + ops 周更编排 + 任务台账 + 版本单一来源 + QProcess 看门狗） | ✅ 已完成 |
 | 三十七 | 数据健壮性与 prompt 强化（原子写收敛 + 写前快照 + 采集守卫 + 四层决策门/锚例校准/JSON 纪律） | ✅ 已完成 |
+| 三十八 | 竞态守卫原语定稿与连接域出仓（SessionGuard/BusyGate/OneShotToken + CaptureConnectionManager + 巅峰赛坏帧拦截） | ✅ 已完成 |
+| 三十九 | 数据新鲜度芯片（逐武将核对判定核心 + 状态栏胶囊 + 建议动作直达采集入口） | ✅ 已完成 |
+| 四十 | RAG 编码器 ONNX 化（embedder 抽象层 + 导出链 + 检索诊断 + 精简包自带 RAG + 发版四连门禁） | ✅ 已完成 |
 
-> 文档基线：2026-10-06（`0ffed36`）。测试 129 个测试模块 / 1481 个测试函数（grep 统计），Ruff 0.12.0 全通过。
+> 文档基线：2026-10-11（`2081b5b`）。测试 145 个测试模块 / 1626 个测试函数（grep 统计），Ruff 0.12.0 全通过。
 
 ---
 
