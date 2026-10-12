@@ -161,7 +161,7 @@ derive_name_rois(cards)
 Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
   ├─ CaptureService.capture_for_poll(capture)
   ├─ detect_selection_cards(frame) → None → _handle_board_absent()
-  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _restore_standard_tasks()
+  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True) 并发 board_exited（不写任务状态，衔接激活归 PollCoordinator）
   ├─ board_signature(cards) 量化坐标/尺寸
   │   └─ == 上次 → 牌面未变化，沿用结果
   ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide 轮询

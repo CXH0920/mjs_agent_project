@@ -388,7 +388,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 Tick（每 1.5s）→ _thread_lock 非阻塞 → _do_work() 后台线程（session = SessionGuard.current() 快照，过期旧拍在写入点前放弃）
   ├─ CaptureService.capture_for_poll() 截图
   ├─ detect_selection_cards() → None → _handle_board_absent()
-  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True)，仅恢复 match_guide 并发 board_exited
+  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True)，match_guide 保持挂起并发 board_exited（衔接激活归 PollCoordinator.handle_peak_exit）
   ├─ 检出牌面 → miss_ticks 归零 + _suspend_standard_tasks() 挂起 hero_selection/match_guide（幂等重挂）
   ├─ board_signature(cards) 生成原始 bbox 元组签名
   │   └─ board_signature_equal() 逐卡容差判等 → 牌面未变化，沿用结果；扣住牌面在此复现即补发布

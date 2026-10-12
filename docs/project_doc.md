@@ -2875,7 +2875,7 @@ detect_selection_cards(image)
 
 ### 15.3 巅峰赛识别循环（PeakSelectWatcher）
 
-识别会话以 `start()` / `stop()` 为边界，会话内对标准轮询的挂起是**会话级**而非"牌面进出"级：`hero_selection` 在整个会话保持挂起（停止识别才恢复），`match_guide` 仅牌面自动退出时按原状态恢复，其余拍次维持挂起。`start()` 时 `set_task_hold("hero_selection", True)` 持有锁，拒绝外部（如 ADB 重连）重新激活。`stop()` 和牌面退出时清空确认表、原始指纹、宽限轮次、禁将基线与牌面引用——槽位号是跨牌面不稳定键，残留确认会被图片导入按槽位号盲目套用。常量：`POLL_INTERVAL_MS=1500`、`OCR_WAIT_TIMEOUT_SECONDS=15`、`BOARD_EXIT_TICKS=2`、`SIGNATURE_POSITION_QUANTUM_PX=8`、`SIGNATURE_SIZE_QUANTUM_PX=16`、`_BAN_PHASE_MIN_CARDS=12`。
+识别会话以 `start()` / `stop()` 为边界，会话内对标准轮询的挂起是**会话级**而非"牌面进出"级：`hero_selection` 在整个会话保持挂起（停止识别才恢复），`match_guide` 牌面出现期间挂起、自动退出时保持挂起，衔接激活由 `PollCoordinator.handle_peak_exit` 按轮询状态统一负责（任务状态的写者收敛一处）。`start()` 时 `set_task_hold("hero_selection", True)` 持有锁，拒绝外部（如 ADB 重连）重新激活。`stop()` 和牌面退出时清空确认表、原始指纹、宽限轮次、禁将基线与牌面引用——槽位号是跨牌面不稳定键，残留确认会被图片导入按槽位号盲目套用。常量：`POLL_INTERVAL_MS=1500`、`OCR_WAIT_TIMEOUT_SECONDS=15`、`BOARD_EXIT_TICKS=2`、`SIGNATURE_POSITION_QUANTUM_PX=8`、`SIGNATURE_SIZE_QUANTUM_PX=16`、`_BAN_PHASE_MIN_CARDS=12`。
 
 **会话世代校验（4542244 收口为 SessionGuard）**：世代语义由 `session_guard.SessionGuard` 承载（字段 `self._session_guard = SessionGuard()`，替代裸 `_session` int 自增/比对）——`start()` 与 `stop()` 各 `begin()` 一次作废旧世代；在途识别拍开始时 `current()` 取快照，在四处关键写入点前 `is_current(session)` 校验（截图后、检测/缺席前、写签名前、发布前），不符即整拍放弃，防止停止或重启后的旧拍反向挂起标准任务、把旧签名与旧快照写回新会话。三处手抄的字段重置统一收敛为 `_clear_session_state(keep_signature=False, keep_miss_ticks=False)`：清空 `_signature`（除非 keep_signature）/ `_ban_names` / `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_last_board` / `_deferred_board` / `_miss_ticks`（除非 keep_miss_ticks）。边界豁免语义逐一保真——`start()` 全清；`stop()` 保留 `_signature` 与 `_miss_ticks`（停止后无拍运行）；牌面退出只保留 `_miss_ticks`（缺席计数须继续累加到 `BOARD_EXIT_TICKS` 才判退出）。start 的 `_miss_ticks` 复位同步并入状态锁内，消除状态锁外的会话字段写点。
 
@@ -2904,8 +2904,8 @@ _tick 每 1.5s → _thread_lock 非阻塞（上一拍未完则跳过）→ 后�
   │   └─ None → _handle_board_absent(session)
   │       ├─ 世代校验②（锁内）→ _miss_ticks += 1；每拍清签名；_deferred_board = None（作废扣住）
   │       └─ == BOARD_EXIT_TICKS=2 → _clear_session_state(keep_miss_ticks=True)
-  │           → _restore_match_guide()（只恢复 match_guide，hero_selection 仍挂起）
-  │           → board_exited 信号 → 主窗口按轮询状态衔接激活对局攻略页
+  │           → board_exited 信号 → 主窗口转交 PollCoordinator.handle_peak_exit
+  │             （轮询运行中即激活 match_guide；watcher 退出路径不写任务状态）
   ├─ board_signature(cards)  ← 坐标全量量化（8px / 尺寸 16px 步长）
   ├─ 锁内：世代校验③ → _miss_ticks=0 → 每拍幂等挂起（置于 unchanged 短路之前）
   │   → 卡数回升坏帧判定（card_count > 上发布拍卡数）→ 扣入 _deferred_board，本拍不发布

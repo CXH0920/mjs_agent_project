@@ -122,6 +122,20 @@ def test_peak_board_exited_activates_match_guide(window, monkeypatch) -> None:
     assert window._poll_coordinator._match_guide_activated_at is not None
 
 
+def test_peak_board_exit_chain_hands_off_to_coordinator(window) -> None:
+    """牌面退出全链路：watcher 退出分支只发信号，match_guide 激活唯一来自 PollCoordinator 衔接。"""
+    window._ocr_service._poll_state = "running"
+    window._ocr_service.get_task_state("match_guide").active = False
+
+    watcher = window._peak_select._watcher
+    session = watcher._session_guard.current()
+    watcher._handle_board_absent(session)
+    watcher._handle_board_absent(session)  # 第 2 拍缺席 → 退出
+
+    assert window._ocr_service.get_task_state("match_guide").active is True
+    assert window._poll_coordinator._match_guide_activated_at is not None
+
+
 def test_peak_board_exited_skips_activation_when_polling_stopped(window, monkeypatch) -> None:
     """轮询未启用时巅峰赛退出只复位标志，不写入轮询任务状态。"""
     activated: list[str] = []

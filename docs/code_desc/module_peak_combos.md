@@ -11,7 +11,7 @@
 
 巅峰赛（2v2 模式）与标准选将页共用同一套截图 OCR 基础设施，但牌面布局截然不同：标准选将是固定 8 个 ROI，而 2v2 牌面先发 14 张 → 双方同时禁选 3 名（可撞车）后剩余 8~11 张 → 卡牌按行重排（7+7 / 5+5 / 4+5 等），不能沿用固定 ROI。因此本模块在 `src/ocr/card_grid_detector.py` 中引入**内容驱动**的卡位检测：从整页截图定位剩余候选武将卡牌 bbox，再派生名条 ROI 交给通用 OcrWorker。
 
-巅峰赛选将完整链路：`card_grid_detector`（卡位检测）→ `PeakSelectWatcher`（识别循环）→ `peak_ban_advice`（象限判定）→ `PeakHeroCard`（卡片渲染）→ `ComboManager`/`combo_seats`（配队匹配与座次）。识别循环与标准轮询并存但互斥，采用**会话制挂起**：点击「开始识别」即挂起 `hero_selection` / `match_guide` 两个标准任务（并清除二者冷却、作废在途轮询），牌面出现期间每拍幂等重挂；`hero_selection` 整个识别会话保持挂起（手动停止识别才恢复原状态），`match_guide` 牌面出现期间挂起、牌面自动退出时恢复原状态并另发 `board_exited` 信号供主窗口衔接激活对局攻略轮询。
+巅峰赛选将完整链路：`card_grid_detector`（卡位检测）→ `PeakSelectWatcher`（识别循环）→ `peak_ban_advice`（象限判定）→ `PeakHeroCard`（卡片渲染）→ `ComboManager`/`combo_seats`（配队匹配与座次）。识别循环与标准轮询并存但互斥，采用**会话制挂起**：点击「开始识别」即挂起 `hero_selection` / `match_guide` 两个标准任务（并清除二者冷却、作废在途轮询），牌面出现期间每拍幂等重挂；`hero_selection` 整个识别会话保持挂起（手动停止识别才恢复原状态），`match_guide` 牌面出现期间挂起、牌面自动退出时保持挂起并另发 `board_exited` 信号，衔接激活对局攻略轮询由主窗口转交 `PollCoordinator.handle_peak_exit` 统一负责（任务状态的写者收敛一处）。
 
 候选面板持续刷新受三处机制治理：**牌面签名**量化步长取位置 8px / 尺寸 16px，覆盖候选阶段卡面 idle 浮动动画实测漂移（纵向 ±3~4px、剪影尺寸 ±5px）的 2 倍，避免逐拍误判新牌面；真实换牌表现为卡数变化或整排重排（位移 ≥ 一个卡位宽），远超步长不会漏。**人工确认**逐拍做内容验证（`refresh_resolutions`）而非清空：确认跟着武将走而不是槽位走，单拍闭包缺名进宽限不丢确认，读数原文指纹兜底稳定错读的牌，连续多拍验证不到才淘汰。**过场坏帧拦截**（036d0ae）：选将/禁选期真实池子单调不增，新拍卡数严格高于上一发布拍即判疑似过场坏帧（2026-10-09 场景切换期 raw 截图返回旧 9 张帧致面板候选 8→9→8 跳变），扣住待复核不发布，紧邻下一拍签名原样复现才补发布。**确认残留治理**（48b0f99）：停止识别与牌面自动退出时同步清空确认表/读数指纹/失验计数/禁将基线/牌面板引用（P0-1 起三处会话边界统一走 `_clear_session_state()`），杜绝跨牌面槽位号污染；图片导入前经 `verified_resolutions_for_import()` 校验旧确认（同一套定位语义但一次性快照不宽限，无法定位的旧确认立即丢弃）；`confirm_pending()` 增加牌面在位守卫，无在识别中的牌面时拒绝确认；面板侧同名槽位显性告警（不再静默去重），会话结束摘除待确认行防误点。
 
@@ -91,7 +91,7 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
       ├─ CaptureService.capture_for_poll() 截图
       ├─ [_state_lock] 世代过期（SessionGuard.is_current 为假）→ 停止/重启后的旧拍直接放弃（不检测、不清理、不发布）
       ├─ detect_selection_cards(frame) 卡位检测
-      │   └─ None → _handle_board_absent(session) → miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True)（缺席同时作废扣住的 _deferred_board），仅恢复 match_guide 并发 board_exited
+      │   └─ None → _handle_board_absent(session) → miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True)（缺席同时作废扣住的 _deferred_board），match_guide 保持挂起并发 board_exited（衔接激活归 PollCoordinator.handle_peak_exit）
       ├─ 检出牌面 → [_state_lock] miss_ticks 归零 + _suspend_standard_tasks()（幂等重挂）
       │   └─ 重挂发生在签名 unchanged 短路之前：签名未变的拍也会重新挂起，
       │      覆盖 ADB 重连 start_poll 等外部重新激活标准任务的场景
@@ -106,7 +106,7 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
       └─ 发布决策（_state_lock 内，与写签名同临界区）→ card_count > 上一发布拍卡数 → 扣进 _deferred_board 不发布（疑似过场坏帧）；否则 _publish_pool() → parse_pool() → PoolSnapshot → pool_updated 信号
 ```
 
-**会话持有加固**（93b54ad）：`start()` 对 `hero_selection` 调用 `ocr_service.set_task_hold(True)`，会话期间任务不得被任何入口激活（ADB 重连 start_poll、手动激活等在源头即被拒）；`stop()` 先解除持有再恢复任务（顺序反了恢复激活会被自己的持有拒绝）。`match_guide` 不加持有，仅牌面出现期间挂起、自动退出时恢复原状态。消费端守卫：`PeakSelectPanel.is_recognizing()` 供主窗口丢弃会话期间泄漏的选将轮询结果。
+**会话持有加固**（93b54ad）：`start()` 对 `hero_selection` 调用 `ocr_service.set_task_hold(True)`，会话期间任务不得被任何入口激活（ADB 重连 start_poll、手动激活等在源头即被拒）；`stop()` 先解除持有再恢复任务（顺序反了恢复激活会被自己的持有拒绝）。`match_guide` 不加持有，仅牌面出现期间挂起、自动退出时保持挂起（衔接激活归 PollCoordinator）。消费端守卫：`PeakSelectPanel.is_recognizing()` 供主窗口丢弃会话期间泄漏的选将轮询结果。
 
 **会话世代校验**：`SessionGuard`（`src/business/recognition/session_guard.py`，P0-1 收口）在 `start()` / `stop()` 各于状态锁内 `begin()` 开新世代一次；在途识别拍在截图完成后、挂起前、OCR 失败清签名前、写签名/验证确认/发布前四处校验世代，过期旧拍直接放弃。这消除了「停止识别瞬间在途旧拍反向重新挂起标准任务」「旧签名写回新会话」「停止后面板仍被旧快照刷新」三类竞态；缺席计数自增同步移入锁内，消除非原子更新。三处会话边界（`start()` / `stop()` / 牌面退出）统一走 `_clear_session_state(*, keep_signature=False, keep_miss_ticks=False)` 清空牌面上下文（`_signature` / `_ban_names` / `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_last_board` / `_deferred_board` / `_miss_ticks`），新增会话字段只改一处；keep_* 为各边界既有豁免——stop 保留签名与缺席计数（停止后无拍运行，保留无差异），牌面退出保缺席计数连续（keep_miss_ticks=True，缺席计数需继续累加以精确等于判定退出）。
 
@@ -134,7 +134,7 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
 - `start()` 挂起即时生效而非等首拍检测到牌面——首拍之前标准轮询用固定 ROI 在巅峰页只会跑出垃圾结果，还可能误触冷却与自动跳页。挂起后依次对 `hero_selection` 调用 `set_task_hold(True)`（持有期间该任务不得被任何入口激活，保证「持有 ⇒ 不活跃」在调用返回后即成立）、清除 `hero_selection` / `match_guide` 双任务冷却、调用 `invalidate_inflight_poll()` 作废点击开始前已发出的在途轮询（其冷却/激活/跳转副作用会对抗刚建立的挂起状态），最后启动定时器。
 - `_suspend_standard_tasks()` 幂等：仅首次调用记录原状态快照（`_saved_task_states`），随后只挂起当前活跃任务，可随每拍重复调用。
 - `stop()` 先 `SessionGuard.begin()` 作废在途旧拍，再于状态锁内 `_clear_session_state(keep_signature=True, keep_miss_ticks=True)` 清空会话上下文（确认表/读数指纹/失验计数/禁将基线/牌面板引用/扣住牌面；48b0f99：槽位号跨牌面不稳定，残留确认会被后续图片导入按槽位号盲目套用。P0-1 起与 `start()`、牌面退出共用同一清空方法，新增会话字段只改一处；keep_* 为本边界既有豁免——停止后无拍运行，保留签名与缺席计数无差异），再解除持有 `set_task_hold(False)`，再 `_restore_standard_tasks()` 恢复全部标准任务原状态（活跃→activate、非活跃→deactivate），并清空快照。
-- 牌面自动退出（连续 `BOARD_EXIT_TICKS=2` 拍未检出）只调 `_restore_match_guide()` 恢复 match_guide 原状态，`hero_selection` 留待停止识别恢复；同时发 `board_exited` 信号交由主窗口决定对局攻略轮询的激活与跳页。
+- 牌面自动退出（连续 `BOARD_EXIT_TICKS=2` 拍未检出）不写任务状态——`hero_selection` 留待停止识别恢复，`match_guide` 保持挂起；同时发 `board_exited` 信号，对局攻略轮询的激活与跳页由主窗口转交 `PollCoordinator.handle_peak_exit` 统一衔接（轮询运行中即激活 match_guide 并记 90 秒空闲守护起点，写者唯一）。
 
 ### 3.3 禁选建议（peak_ban_advice.py）
 
@@ -531,7 +531,7 @@ class _ImportWorker(QThread):
 | 依赖 | `src/business/maintenance/corpus_services` | ComboService 供 ComboManagementDialog 使用 |
 | 依赖 | `src/business/maintenance/combo_import_service` | 异步导入 Worker 调用 run_import |
 | 依赖 | `src/ui/library/combo_management_dialog` | 实战配队全量管理对话框 |
-| 协作方 | `src/ui/match/match_guide_panel` | match_guide 轮询结果宿主；与巅峰赛识别会话互斥（牌面出现期间挂起、自动退出时恢复） |
+| 协作方 | `src/ui/match/match_guide_panel` | match_guide 轮询结果宿主；与巅峰赛识别会话互斥（牌面出现期间挂起、自动退出时保持挂起，衔接激活归 PollCoordinator） |
 | 被调用方 | `src/ui/app/main_window` | 侧导航第 4 页 + 实战配队导入菜单项；board_exited → `_on_peak_board_exited` 切换胜率榜模式（WIN_RATE_MODE_PEAK）并衔接激活 match_guide，另设 MATCH_GUIDE_IDLE_TIMEOUT_SECONDS=90 空闲守护停止非对局页空转 |
 | 被调用方 | `src/ui/match/peak_select_panel` | 巅峰赛选将页面入口 |
 | 被调用方 | `src/scripts/import_combos.py` | CLI 入口共用 run_import |
@@ -557,5 +557,5 @@ class _ImportWorker(QThread):
 
 - **会话世代守卫收口 SessionGuard（4542244，P0-1，纯重构）**：`peak_select_watcher.py` 字段 `self._session = 0` → `self._session_guard = SessionGuard()`（`src/business/recognition/session_guard.py`），9 处裸 `_session` 自增与比对全部改接守卫（`begin()` / `current()` 快照 / `is_current(token)` 校验）；`start()` / `stop()` / 牌面退出三处手抄重置清单统一为 `_clear_session_state(keep_signature=False, keep_miss_ticks=False)`（清空 `_signature` / `_ban_names` / `_resolutions` / `_resolution_raws` / `_stale_rounds` / `_last_board`；stop 保留签名与 miss_ticks，牌面退出 keep_miss_ticks=True 保缺席计数连续，逐一保真各边界既有豁免语义），`start()` 的 miss_ticks 复位并入状态锁内（消除锁外写点）；4 处写入点校验 `not is_current(session)`。背景：槽位号是跨牌面不稳定键，残留确认会被后续拍或图片导入按槽位号盲目套用（2026-09-30 卓文君被顶成孙尚香事故）。补世代校验对称缺口回归两条（start 重启作废上一会话在途旧拍、重启后过期缺席拍不得累计缺席/清空新会话确认/反向恢复 match_guide/补发 board_exited）。§3.2 会话世代校验与并发安全字段清单当时已同步；本轮补齐该提交未同步的 §4.3 `stop()` / `_do_work()` 示例代码
 - **过场坏帧扣住一拍复核（036d0ae，行为修复）**：`peak_select_watcher.py` 新增 `_deferred_board` 会话字段（元组 `(签名, OCR 结果, 卡数)`）。规则：选将/禁选期真实池子单调不增前提下，新拍卡数严格高于上一发布拍（`card_count > last_count`）即判疑似过场坏帧（事故：2026-10-09 16:35 巅峰赛桑弘羊已被选走后，场景切换期 raw 截图返回旧 9 张帧使面板候选 8→9→8 跳变），扣住待复核不发布；紧邻下一拍签名原样复现（unchanged 短路）→ 补发布；下一拍签名不同（真实牌面回归）→ 扣住牌面按坏帧丢弃并记 INFO；隔拍再现因回升规则仍在会重新扣住（复核窗口只认紧邻下一拍，无法借过场闪烁获得确认）；牌面缺席拍作废扣住状态；`_clear_session_state()` 同步清 `_deferred_board` 不跨会话；卡数下降（禁转选 14→9）与同数重排不受影响照常立即发布。测试 3 用例（回升拍扣住且下一拍复现后补发布并断言 14→9 禁转选立即发布不受影响、坏帧未复现被丢弃面板不跳变的事故场景直测、缺席作废复核窗口后坏帧隔拍重现重新扣住），扩展停止清理回归锁住 `_deferred_board` 随会话清空
-- 文件规模：`peak_select_watcher.py` 现 593 行（行数棘轮 566 → 593，036d0ae 登记放宽理由为桑弘羊跳变事故修复）；§3.2 / §4.3 中 `_session` 字段表述已全部改接 SessionGuard 用法
+- 文件规模：`peak_select_watcher.py` 现 585 行（行数棘轮 566 → 593 → 585；036d0ae 放宽理由为桑弘羊跳变事故修复；后删除 `_restore_match_guide` 退出恢复双头、match_guide 衔接激活收敛至 PollCoordinator，降至 585）；§3.2 / §4.3 中 `_session` 字段表述已全部改接 SessionGuard 用法
 - 测试规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）

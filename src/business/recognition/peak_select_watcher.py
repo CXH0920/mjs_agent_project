@@ -3,8 +3,8 @@
 与标准轮询并存：巅峰赛页与标准选将页共用"武将选择"标题模板，启动识别循环
 即挂起标准轮询任务避免互触——hero_selection 整个会话保持挂起并加持有锁
 （ADB 重连 start_poll、手动激活等外部入口在会话期间一律被拒，停止识别才
-释放），match_guide 牌面出现期间挂起、自动退出时恢复原状态并由主窗口衔接
-激活；自动退出另发 board_exited 供主窗口使用。
+释放），match_guide 牌面出现期间挂起、自动退出时保持挂起，衔接激活由主窗口
+经 board_exited 转交 PollCoordinator 负责（任务状态的写者收敛一处）。
 """
 
 from __future__ import annotations
@@ -543,7 +543,8 @@ class PeakSelectWatcher(QObject):
 
         hero_selection 整个识别会话保持挂起（巅峰模式内标准选将推荐不参与，
         杜绝每局重进空窗期的垃圾轮询），仅停止识别时恢复；match_guide 牌面
-        出现期间挂起，自动退出时恢复原状态并由主窗口按轮询状态衔接激活。
+        出现期间挂起，自动退出时保持挂起，衔接激活由 PollCoordinator 按轮询
+        状态统一负责。
         """
         if self._saved_task_states is None:
             self._saved_task_states = {
@@ -554,15 +555,6 @@ class PeakSelectWatcher(QObject):
             if self._ocr_service.get_task_state(name).active:
                 self._ocr_service.deactivate_task(name)
                 logger.debug("巅峰赛识别期间挂起轮询任务: %s", name)
-
-    def _restore_match_guide(self) -> None:
-        """牌面自动退出时仅恢复 match_guide 原状态；hero_selection 留待停止识别恢复。"""
-        if self._saved_task_states is None:
-            return
-        if self._saved_task_states["match_guide"]:
-            self._ocr_service.activate_task("match_guide")
-        else:
-            self._ocr_service.deactivate_task("match_guide")
 
     def _restore_standard_tasks(self) -> None:
         """停止识别时恢复全部标准任务原状态。"""
@@ -587,7 +579,7 @@ class PeakSelectWatcher(QObject):
             if exiting:
                 self._clear_session_state(keep_miss_ticks=True)
         if exiting:
-            self._restore_match_guide()
-            # match_guide 的激活与跳转属界面策略，由主窗口的 board_exited 处理器完成
+            # match_guide 的退出衔接（激活对局轮询）归 PollCoordinator.handle_peak_exit，
+            # 经 board_exited 到达；watcher 退出路径不写任务状态
             self.board_exited.emit()
             self.status_changed.emit("未检测到巅峰赛选将页牌面")

@@ -850,8 +850,9 @@ def test_watcher_stop_releases_hold_before_restoring_tasks(qapp):
     assert ocr_service.get_task_state("hero_selection").active is True  # 释放后恢复成功
 
 
-def test_watcher_board_absent_restores_match_guide_only(qapp):
-    """自动退出仅恢复 match_guide 原状态；hero_selection 整个会话保持挂起，停止才全量恢复。"""
+def test_watcher_board_absent_keeps_match_guide_suspended(qapp):
+    """自动退出仅发 board_exited，watcher 不写任务状态（衔接激活归 PollCoordinator）；
+    hero_selection 整个会话保持挂起，停止才全量恢复。"""
     ocr_service = _FakeOcrService(active_states={"match_guide": True})
     watcher, _, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=None))
     watcher._ocr_service = ocr_service
@@ -868,7 +869,7 @@ def test_watcher_board_absent_restores_match_guide_only(qapp):
     watcher._handle_board_absent(watcher._session_guard.current())
     assert exited == [True]
     assert ocr_service.get_task_state("hero_selection").active is False  # 方案一：保持挂起
-    assert ocr_service.get_task_state("match_guide").active is True      # 恢复原状态
+    assert ocr_service.get_task_state("match_guide").active is False     # 退出路径不写任务状态
     assert statuses[-1] == "未检测到巅峰赛选将页牌面"
 
     watcher.stop()
