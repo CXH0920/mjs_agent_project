@@ -11,9 +11,6 @@ __pycache__/
 
 
 # Project documentation
-project_problem.md
-review-report.md
-refactor-plan.md
 data/synergies.json
 data/guides.json
 data/*.corrupt-*.json
@@ -45,7 +42,6 @@ data/card_changes.json
 data/baike_ignore.json
 data/backups/
 data/edge_profile/
-PLANS.md
 retrospective.md
 
 # Environment files
@@ -65,6 +61,7 @@ Thumbs.db
 screenshots/
 screenshot_data/
 logs/
+
 # 本地真实截图回归样本(不入库;缺失时对应测试自动跳过)
 tests/fixtures_local/
 
@@ -83,6 +80,7 @@ scripts/.rule_doc_snapshot.json
 scripts/.sync_*.json
 # pytest 临时目录（测试运行产物）
 .tmp_test/
+.tmp_eval/
 # OCR 模型 %TEMP% 缓存的意外落位副本（engine_loader 固定目录名，发版/测试运行残留）
 mjs_rapidocr_models/
 # 根目录意外落位的日志（正常应落 logs/，logs/ 已整目录忽略）

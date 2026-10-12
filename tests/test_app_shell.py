@@ -10,6 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QMenu
+from src.business.recognition.peak_select_watcher import BOARD_EXIT_TICKS
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero
@@ -129,8 +130,8 @@ def test_peak_board_exit_chain_hands_off_to_coordinator(window) -> None:
 
     watcher = window._peak_select._watcher
     session = watcher._session_guard.current()
-    watcher._handle_board_absent(session)
-    watcher._handle_board_absent(session)  # 第 2 拍缺席 → 退出
+    for _ in range(BOARD_EXIT_TICKS):  # 达缺席阈值 → 退出
+        watcher._handle_board_absent(session)
 
     assert window._ocr_service.get_task_state("match_guide").active is True
     assert window._poll_coordinator._match_guide_activated_at is not None

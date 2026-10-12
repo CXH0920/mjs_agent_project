@@ -19,7 +19,12 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from src.business.recognition.pending_stats import record_confirmation
 from src.business.recognition.session_guard import SessionGuard
 from src.capture.image_validation import load_local_image
-from src.ocr.card_grid_detector import derive_name_rois, detect_selection_cards
+from src.ocr.card_grid_detector import (
+    board_row_sizes,
+    derive_name_rois,
+    detect_selection_cards,
+    layout_is_plausible,
+)
 from src.ocr.name_resolution import UNRESOLVED_RESOLUTIONS
 from src.ocr.roi_config import Roi
 
@@ -27,8 +32,11 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_MS = 1500
 OCR_WAIT_TIMEOUT_SECONDS = 15
-# 连续多拍未检出牌面才判定离开巅峰赛页，避免翻页动画误恢复标准任务
-BOARD_EXIT_TICKS = 2
+# 连续多拍未检出牌面才判定离开巅峰赛页：禁将揭晓/转场会让牌面整块不可见
+# （2026-10-12 实测转场连续 2 拍无卡状组件），2 拍阈值在该局误退出 3 次
+# （20:46/20:50/20:57），每次都要手动重开识别；真实离开页面会持续无牌面，
+# 放宽到 4 拍（约 6 秒）只让后续衔接晚约 3 秒
+BOARD_EXIT_TICKS = 4
 # 牌面签名容差：候选阶段卡面带 idle 浮动动画，实测剪影 bbox 逐拍漂移
 # y ±3~4px、尺寸 ±5px（2026-09-06 日志实测），容差取 2 倍幅度。不用分桶
 # 量化：基点贴近量化边界时签名逐拍翻转误判"新牌面"（2026-09-21 实测
@@ -206,6 +214,25 @@ def board_signature_equal(left: tuple | None, right: tuple | None) -> bool:
     )
 
 
+def _is_subset_in_place(current: list[Roi], previous: list[Roi]) -> bool:
+    """current 是否逐张能在 previous 里按顺序找到原位对应卡（位置容差同签名比对）。
+
+    两张表都是行优先排序，"漏检"只是表里少了条目、其余条目的相对顺序不变，
+    因此用子序列贪心匹配即可，不需要做全局最近邻。
+    """
+    remaining = iter(previous)
+    for card in current:
+        for candidate in remaining:
+            if (
+                abs(card[0] - candidate[0]) <= SIGNATURE_POSITION_TOLERANCE_PX
+                and abs(card[1] - candidate[1]) <= SIGNATURE_POSITION_TOLERANCE_PX
+            ):
+                break
+        else:
+            return False
+    return True
+
+
 class PeakSelectWatcher(QObject):
     """巅峰赛选将识别循环；识别结果通过 pool_updated 推送面板。"""
 
@@ -239,12 +266,15 @@ class PeakSelectWatcher(QObject):
         # 连续未通过内容验证的拍数（槽位 → 拍数），达到上限丢弃确认
         self._stale_rounds: dict[int, int] = {}
         self._last_board: tuple[list[dict], int] | None = None
-        # 推迟发布的牌面（签名, OCR 结果, 卡数）：卡数较上拍变化的拍扣住一拍，
+        # 最近一次已发布牌面的卡位：本拍少卡且存活卡逐张原位时按它补齐（见
+        # _restore_missing_cards）。禁将揭晓动画把相邻两卡焊成一块会让本拍
+        # 只认回部分卡（2026-10-12 11 张盘面检出 9 张，面板跳变）
+        self._last_cards: list[Roi] | None = None
+        # 推迟发布的牌面（签名, OCR 结果, 卡数, 卡位）：只对卡数回升的拍扣一拍，
         # 签名复现才发布、未复现即丢弃。回升只可能是过场坏帧（模拟器旧帧/
-        # 撕裂帧，2026-10-09 桑弘羊跳变事故）；回落可能是真实选走，也可能是
-        # 检测中间态（禁将揭晓动画多列焊接、恢复拍仅救回部分卡，2026-10-12
-        # 11→9→11 面板跳变事故）——真实选走会在下一拍原样复现，延迟一拍发布
-        self._deferred_board: tuple[tuple, list[dict], int] | None = None
+        # 撕裂帧，2026-10-09 桑弘羊跳变事故）；回落是真实禁将/选走（游戏实测
+        # 排布必然整排重排），照常立即发布，不再延迟一拍
+        self._deferred_board: tuple[tuple, list[dict], int, list[Roi]] | None = None
         self._miss_ticks = 0
         self._saved_task_states: dict[str, bool] | None = None
 
@@ -295,6 +325,7 @@ class PeakSelectWatcher(QObject):
         self._resolution_raws = {}
         self._stale_rounds = {}
         self._last_board = None
+        self._last_cards = None
         self._deferred_board = None
         if not keep_miss_ticks:
             self._miss_ticks = 0
@@ -325,6 +356,16 @@ class PeakSelectWatcher(QObject):
             if cards is None:
                 self._handle_board_absent(session)
                 return
+            cards = self._restore_missing_cards(cards)
+            if not layout_is_plausible(cards):
+                row_sizes = board_row_sizes(cards) or (0, 0)
+                # 排布不是游戏可能出现的形状（如 9 张成 5+4）：本拍漏检/拼接错误，
+                # 既不发布也不计入缺席——面板保持上一拍内容，日志留痕便于回溯
+                logger.info(
+                    "巅峰赛牌面 %d 张排布不可信（上%d下%d，应为上%d下%d），本拍跳过不发",
+                    len(cards), row_sizes[0], row_sizes[1], len(cards) // 2, len(cards) - len(cards) // 2,
+                )
+                return
 
             signature = board_signature(cards)
             with self._state_lock:
@@ -341,8 +382,8 @@ class PeakSelectWatcher(QObject):
                     confirmed = self._deferred_board
                     self._deferred_board = None
                 if confirmed is not None:
-                    # 变化牌面在紧邻下一拍原样复现：真实换牌（选走/禁将推进），补发布
-                    self._publish_pool(confirmed[1], confirmed[2])
+                    # 回升牌面在紧邻下一拍原样复现：非单拍坏帧，补发布
+                    self._publish_pool(confirmed[1], confirmed[2], confirmed[3])
                 return  # 牌面未变化，沿用上一次结果
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
@@ -362,18 +403,20 @@ class PeakSelectWatcher(QObject):
                 unconfirmed = self._deferred_board
                 self._deferred_board = None
                 last_count = self._last_board[1] if self._last_board else None
-                held = last_count is not None and card_count != last_count
+                # 只扣回升：牌池不会凭空变多，回升必是过场坏帧；回落（禁将/选走
+                # 推进）由 _restore_missing_cards 与排布校验判真伪后立即发布
+                held = last_count is not None and card_count > last_count
                 if held:
-                    self._deferred_board = (signature, ocr_results, card_count)
+                    self._deferred_board = (signature, ocr_results, card_count, cards)
             if unconfirmed is not None:
                 logger.info("巅峰赛扣住复核的 %d 张牌面未复现，按过场坏帧丢弃", unconfirmed[2])
             if held:
                 logger.info(
-                    "巅峰赛牌面 %d 张较上拍 %d 张变化，扣住待下一拍复核（复现即发布）",
+                    "巅峰赛牌面 %d 张较已发布 %d 张回升，疑似过场坏帧，扣住待下一拍复核（复现即发布）",
                     card_count, last_count,
                 )
                 return
-            self._publish_pool(ocr_results, card_count)
+            self._publish_pool(ocr_results, card_count, cards)
         except Exception:
             logger.exception("巅峰赛识别循环异常")
             self.status_changed.emit("识别异常，详见运行日志")
@@ -428,14 +471,39 @@ class PeakSelectWatcher(QObject):
         self._resolutions = carried
         self._resolution_raws = carried_raws
 
-    def _publish_pool(self, ocr_results: list[dict], card_count: int) -> None:
+    def _restore_missing_cards(self, cards: list[Roi]) -> list[Roi]:
+        """本拍少卡且存活卡逐张原位时，按上一拍已发布卡位补齐后返回。
+
+        真实禁将/选走会让剩余卡整排重排（位移 ≥ 半个卡距 276/2），所以"存活卡
+        原位对应"可判定为本拍漏检而非真变少；补齐后本拍签名与上一拍一致，走
+        unchanged 短路，面板既不掉张也不多跑一次 OCR（2026-10-12 11→9 事故）。
+        无重排的"真消失"与漏检在几何上不可区分，此处按漏检处理并留日志：
+        游戏实测排布总会重排（8/9/10/11 卡局实测排布分别为 4+4/4+5/5+5/5+6）。
+        """
+        with self._state_lock:
+            previous = self._last_cards
+        if previous is None or len(cards) >= len(previous):
+            return cards
+        if not _is_subset_in_place(cards, previous):
+            return cards
+        logger.info(
+            "巅峰赛牌面 %d 张较已发布 %d 张少且存活卡原位一致，按上一拍卡位补齐",
+            len(cards), len(previous),
+        )
+        return list(previous)
+
+    def _publish_pool(self, ocr_results: list[dict], card_count: int, cards: list[Roi] | None = None) -> None:
         """整理候选池快照并推送面板；禁选阶段快照留作已禁差集基准。
 
         组装全程持锁：本方法可由识别线程、导入线程与 GUI 确认并发进入，
         无锁时两个发布可能把 _last_board/_ban_names 交错成跨牌面组合。
+        cards 为本次发布牌面的卡位，供下一拍漏检补齐；重发同一牌面（人工确认）
+        与离线图片导入传 None，表示沿用既有实时卡位。
         """
         with self._state_lock:
             self._last_board = (ocr_results, card_count)
+            if cards is not None:
+                self._last_cards = list(cards)
             # 宽限期内内容存疑的确认不参与展示，回退为该槽识别结果
             display = {
                 slot: name

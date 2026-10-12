@@ -12,7 +12,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-from src.ocr.card_grid_detector import _split_stacked_component, derive_name_rois, detect_selection_cards
+from src.ocr.card_grid_detector import (
+    _split_stacked_component,
+    board_row_sizes,
+    derive_name_rois,
+    detect_selection_cards,
+    layout_is_plausible,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "2v2"
 CANVAS_W, CANVAS_H = 2560, 1440
@@ -357,6 +363,42 @@ def _build_pool_9(overlay_x: int | None = None) -> np.ndarray:
     if overlay_x is not None:
         cv2.rectangle(canvas, (overlay_x - 30, 579 + 70), (overlay_x - 1, 579 + 250), (60, 60, 230), -1)
     return canvas
+
+
+@pytest.mark.parametrize(
+    "row_sizes,plausible",
+    [
+        ((7, 7), True),   # 14 张：禁选期
+        ((6, 6), True),   # 12 张
+        ((5, 6), True),   # 11 张：候选期实测
+        ((5, 5), True),   # 10 张：候选期实测
+        ((4, 5), True),   # 9 张：候选期实测
+        ((4, 4), True),   # 8 张：候选期实测
+        ((5, 4), False),  # 11 张盘面漏检 2 张（2026-10-12 事故排布）
+        ((6, 5), False),
+        ((7, 6), False),
+    ],
+)
+def test_layout_rule_requires_top_row_half(row_sizes, plausible):
+    """排布规则：上排 = 卡数//2（游戏奇数张时上排少一张，面板渲染同此规则）。
+
+    上排多于下排只可能是漏检——5+4 那类排布若放行，面板会把漏检当成合法 9 张。
+    """
+    cards = (
+        [(752 + i * PITCH_X, 247, CARD_W, CARD_H) for i in range(row_sizes[0])]
+        + [(609 + i * PITCH_X, 579, CARD_W, CARD_H) for i in range(row_sizes[1])]
+    )
+
+    assert board_row_sizes(cards) == row_sizes
+    assert layout_is_plausible(cards) is plausible
+
+
+def test_layout_rule_skips_single_row_board():
+    """分不出上下两排（单排/低分辨率）时不据此判负，交调用方按原语义处理。"""
+    cards = [(100 + i * PITCH_X, 247, CARD_W, CARD_H) for i in range(9)]
+
+    assert board_row_sizes(cards) is None
+    assert layout_is_plausible(cards)
 
 
 def test_real_pool_9_widened_card_keeps_frame_geometry():

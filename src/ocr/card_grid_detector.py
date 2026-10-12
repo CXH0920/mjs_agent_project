@@ -119,7 +119,11 @@ def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
         for box, reason in suspicious:
             _, _, w, h = box
             if h <= h_high:
-                remaining.append((box, reason))  # 高度在窗内的其他越界（如龙饰横翼）无从修复
+                # 宽度越窗而高度在窗内的块无从修复（龙饰横翼；相邻同排两卡被动画
+                # 填缝焊成的 514×326 块也落这一支）。此前静默丢弃，卡数诈降后
+                # 仍落在合法区间，面板少了卡却无迹可查（2026-10-12 11→9 事故）
+                remaining.append((box, reason))
+                logger.debug("卡位宽度越窗组件维持拒绝: %s (%s，高度 %d 在窗内)", box, reason, h)
                 continue
             if w_low <= w <= w_high and h <= ref_h * SINGLE_OVERGROWTH_MAX_RATIO:
                 cards.append(box)
@@ -179,6 +183,30 @@ def _split_rows_by_gap(cards: list[Roi]) -> list[list[Roi]] | None:
     if max(gaps) < 100:
         return None
     return [ordered[:cut], ordered[cut:]]
+
+
+def board_row_sizes(cards: list[Roi]) -> tuple[int, int] | None:
+    """返回牌面的（上排张数, 下排张数）；分不出两排时返回 None。"""
+    if len(cards) < 2:  # 单张没有"两排"可言，也避开间隙数组为空
+        return None
+    rows = _split_rows_by_gap(cards)
+    if rows is None:
+        return None
+    return len(rows[0]), len(rows[1])
+
+
+def layout_is_plausible(cards: list[Roi]) -> bool:
+    """卡数 n 的排布是否为游戏可能出现的形状：上排 n//2、下排 n-n//2。
+
+    游戏奇数张时上排少一张（面板渲染同此规则），故 9 张必为 4+5、11 张必为
+    5+6；上排多于下排说明本拍漏检——2026-10-12 实测 11 张盘面被动画填缝焊掉
+    底排相邻两卡后成 5+4，仍落在 8~14 合法区间而被当作正常 9 张发布。
+    分不出两排（低分辨率、单排）时不据此判负，交由调用方按原语义处理。
+    """
+    sizes = board_row_sizes(cards)
+    if sizes is None:
+        return True
+    return sizes[0] == len(cards) // 2
 
 
 def _normalize_card(mask: np.ndarray, box: Roi, ref_w: int, rows: list[list[Roi]] | None) -> Roi:
