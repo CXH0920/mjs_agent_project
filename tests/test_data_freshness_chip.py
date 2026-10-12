@@ -241,20 +241,24 @@ def test_service_signals_trigger_refresh(qapp, monkeypatch, tmp_path) -> None:
 
 
 def test_watched_file_change_refreshes_after_debounce(qapp, monkeypatch, tmp_path) -> None:
-    counts = {"n": 0}
-    _make_chip(monkeypatch, tmp_path, _report(), counts)
-    assert counts["n"] == 1
+    # 断言锚在芯片自身 _report 换新而非模块级计数替身：qWait 泵事件期间，
+    # 泄漏的历史芯片实例会经同一替身虚增全局计数（CI gw1 实证 3==2），与本
+    # 芯片无关；去抖降到 100ms，给 CI 慢事件投递留足触发裕量。
+    monkeypatch.setattr(data_freshness_chip, "_WATCH_DEBOUNCE_MS", 100)
+    chip, _ = _make_chip(monkeypatch, tmp_path, None, {"n": 0})
+    report_before = chip._report
     (tmp_path / "heroes.json").write_text("[]", encoding="utf-8")
     QTest.qWait(900)
-    assert counts["n"] == 2
+    assert chip._report is not report_before
 
 
 def test_unrelated_file_change_does_not_refresh(qapp, monkeypatch, tmp_path) -> None:
-    counts = {"n": 0}
-    _make_chip(monkeypatch, tmp_path, _report(), counts)
+    monkeypatch.setattr(data_freshness_chip, "_WATCH_DEBOUNCE_MS", 100)
+    chip, _ = _make_chip(monkeypatch, tmp_path, None, {"n": 0})
+    report_before = chip._report
     (tmp_path / "cards.json").write_text("[]", encoding="utf-8")
     QTest.qWait(900)
-    assert counts["n"] == 1
+    assert chip._report is report_before
 
 
 # ============================================================

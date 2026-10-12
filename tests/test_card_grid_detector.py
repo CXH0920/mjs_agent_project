@@ -205,9 +205,9 @@ def test_real_screenshot_detection(filename, expected_count, expected_rows):
     assert _row_sizes(cards) == expected_rows
 
 
-def _draw_bridge(canvas: np.ndarray, x_left: int) -> None:
-    """在行间缝隙带（y 573~579）补 40px 宽饱和连接片，模拟探底立绘填缝。"""
-    cv2.rectangle(canvas, (x_left, 573 - 8), (x_left + 40, 579 + 6), (60, 60, 230), -1)
+def _draw_bridge(canvas: np.ndarray, x_left: int, y_gap: int = 573) -> None:
+    """在行间缝隙带补 40px 宽饱和连接片，模拟探底立绘填缝；y_gap 控制填缝位置。"""
+    cv2.rectangle(canvas, (x_left, y_gap - 8), (x_left + 40, y_gap + 6), (60, 60, 230), -1)
 
 
 def test_fused_column_split_recovers_full_pool_10():
@@ -245,6 +245,7 @@ def test_overheight_single_card_is_kept():
     """选中光效/抬升致单卡高度越窗（370 ≤ 1.35×参考卡高）应收纳而非闪烁缺卡。
 
     回归 2026-09-22 17:29 实测：9 卡牌面在 9↔8 间逐拍交替（OCR 完成 9/8/9）。
+    收纳产出 y/h 锚定同行中位：外扩幅度逐拍变化不改变卡位。
     """
     canvas = _parchment_canvas()
     _draw_row(canvas, 752, 247, 4, seed=300)
@@ -256,6 +257,8 @@ def test_overheight_single_card_is_kept():
 
     assert cards is not None
     assert len(cards) == 9
+    overheight = next(card for card in cards if card[0] == last_x)
+    assert overheight[1] == 579 and overheight[3] == CARD_H  # 锚定后不再是 (579, 370)
 
 
 def test_split_helper_recovers_two_bridged_cards():
@@ -297,3 +300,79 @@ def test_user_board_screenshot_detection(filename, expected):
     assert cards is not None, f"{filename}: 检测失败"
     assert len(cards) == expected_count, f"{filename}: 检出 {len(cards)}，期望 {expected_count}"
     assert _row_sizes(cards) == expected_rows
+
+
+def test_fused_split_anchors_seam_drift_to_row_median():
+    """拆分产出锚定同行中位：填缝位置（腰线）漂移不改变产出卡位。
+
+    回归 2026-10-12 候选期选将闪烁：探底立绘动画让行间掩码腰逐拍漂移，
+    seam 切分值跟着变，同一张卡在"焊接拆分"与"独立检出"两态间超出签名
+    容差（±8px），反复触发全量重识别且名条 ROI 偏移读不出字。锚定后
+    两种填缝位置的产出与无焊接基准完全一致。
+    """
+    baseline = detect_selection_cards(_build_welded_board(y_gap=None))
+    assert baseline is not None and len(baseline) == 10
+
+    for y_gap in (565, 573, 578):
+        cards = detect_selection_cards(_build_welded_board(y_gap=y_gap))
+        assert cards == baseline, f"填缝位置 y={y_gap} 时产出卡位漂移"
+
+
+def _build_welded_board(y_gap: int | None) -> np.ndarray:
+    """5+5 牌面，第 2 列行间按 y_gap 填饱和连接片焊接；None 为无焊接基准。"""
+    canvas = _parchment_canvas()
+    _draw_row(canvas, 614, 247, 5, seed=500)
+    _draw_row(canvas, 614, 579, 5, seed=600)
+    if y_gap is not None:
+        _draw_bridge(canvas, 694, y_gap=y_gap)
+    return canvas
+
+
+def test_attached_overlay_does_not_shift_card_box():
+    """回归（2026-10-12 17:06 候选期选将闪烁）：卡框左缘贴一块饱和叠层（揭晓
+    动画/出画立绘）时，连通域被撑宽（实测 237→254~270）且左缘左移 17~21px，
+    仍落在尺寸窗内被主路径静默收下。卡位若直接采用该原始 bbox，名条 ROI 会
+    跟着偏移导致读不出字（面板确认 9↔8 闪烁），牌面签名也超容差逐拍全量重识别。
+    卡位必须归一回本板卡体几何：贴层有无不改变产出。
+    """
+    baseline = detect_selection_cards(_build_pool_9())
+    assert baseline is not None and len(baseline) == 9
+
+    cards = detect_selection_cards(_build_pool_9(overlay_x=609 + 2 * PITCH_X))
+
+    assert cards is not None
+    assert _row_sizes(cards) == (4, 5)
+    assert cards == baseline  # 贴层那一拍与无贴层基准逐张一致
+    assert derive_name_rois(cards) == derive_name_rois(baseline)
+
+
+def _build_pool_9(overlay_x: int | None = None) -> np.ndarray:
+    """候选期 4+5 牌面；overlay_x 指定在其卡框左缘贴 30px 饱和叠层的卡。
+
+    叠层只覆盖卡高中段（纵向跨度 <60% 卡高），模拟只扩宽不增高的光效/立绘外扩。
+    """
+    canvas = _parchment_canvas()
+    _draw_row(canvas, 752, 247, 4, seed=300)
+    _draw_row(canvas, 609, 579, 5, seed=400)
+    if overlay_x is not None:
+        cv2.rectangle(canvas, (overlay_x - 30, 579 + 70), (overlay_x - 1, 579 + 250), (60, 60, 230), -1)
+    return canvas
+
+
+def test_real_pool_9_widened_card_keeps_frame_geometry():
+    """真图回归：pool_9 第 7 槽实测就是被出画立绘撑宽的卡（254px，左缘左移 17px）。
+
+    卡位须归一到卡框几何（下行栅格 614+2×276=1166），偏差留在签名容差（±8px）
+    内，名条 ROI 才不会落到名条外。
+    """
+    path = FIXTURE_DIR / "pool_9.png"
+    if not path.exists():
+        pytest.skip(f"缺少本地真图样本: {path}")
+    image = cv2.imread(str(path))
+
+    cards = detect_selection_cards(image)
+
+    assert cards is not None
+    widened = min(cards, key=lambda card: abs(card[0] - 1166))
+    assert abs(widened[0] - 1166) <= 8, f"第 7 槽卡位左缘 {widened[0]} 偏离卡框 1166"
+    assert widened[2] == CARD_W

@@ -1159,14 +1159,15 @@ def test_unchanged_still_resuspends_externally_reactivated_tasks(qapp, monkeypat
 
 
 def test_watcher_holds_rising_board_until_next_tick_confirms(qapp, monkeypatch):
-    """回归（2026-10-09 桑弘羊跳变）：候选期卡数回升的拍只可能是过场坏帧
-    （模拟器旧帧），扣住等下一拍签名复现才发布；首拍与禁选→候选的下降
-    照常立即发布，不受防抖影响。"""
+    """回归（2026-10-09 桑弘羊跳变 + 2026-10-12 扣住扩展）：卡数较上拍变化的
+    拍扣住等下一拍签名复现才发布——回升是过场坏帧（模拟器旧帧），回落（含
+    禁选→候选推进、真实选走）延迟一拍发布，杜绝中间态上面板。"""
     watcher, pools = _make_loop_watcher(
         monkeypatch,
         boards=[
             [(100 + i * 276, 247, 238, 326) for i in range(14)],  # 禁选 14 张
             [(100 + i * 276, 247, 238, 326) for i in range(9)],   # 禁选结束 → 候选 9 张
+            [(100 + i * 276, 247, 238, 326) for i in range(9)],   # 9 张原样复现
             [(100 + i * 276, 247, 238, 326) for i in range(10)],  # 坏帧：候选回升 10 张
             [(100 + i * 276, 247, 238, 326) for i in range(10)],  # 下一拍原样复现
         ],
@@ -1178,13 +1179,17 @@ def test_watcher_holds_rising_board_until_next_tick_confirms(qapp, monkeypatch):
     )
 
     _run_live_ticks(watcher, 2)
+    assert [snapshot.card_count for snapshot in pools] == [14]  # 首拍发布；9 张扣住
+
+    _run_live_ticks(watcher, 1)  # 9 张复现拍走 unchanged 短路：确认并补发布
     assert [snapshot.card_count for snapshot in pools] == [14, 9]
+    assert watcher._deferred_board is None
 
     _run_live_ticks(watcher, 1)
     assert len(pools) == 2  # 回升拍扣住，不推送面板
     assert watcher._deferred_board is not None and watcher._deferred_board[2] == 10
 
-    _run_live_ticks(watcher, 1)  # 复现拍走 unchanged 短路：确认并补发布扣住的牌面
+    _run_live_ticks(watcher, 1)  # 复现拍确认并补发布扣住的牌面
     assert [snapshot.card_count for snapshot in pools] == [14, 9, 10]
     assert watcher._deferred_board is None
 
@@ -1196,6 +1201,7 @@ def test_watcher_discards_rising_board_not_confirmed_next_tick(qapp, monkeypatch
         boards=[
             [(100 + i * 276, 247, 238, 326) for i in range(9)],  # 候选 9 张
             [(100 + i * 276, 247, 238, 326) for i in range(8)],  # 桑弘羊被选走 → 8 张
+            [(100 + i * 276, 247, 238, 326) for i in range(8)],  # 8 张复现
             [(100 + i * 276, 247, 238, 326) for i in range(9)],  # 坏帧：旧 9 张画面
             [(100 + i * 276, 247, 238, 326) for i in range(8)],  # 真实牌面：仍是 8 张
         ],
@@ -1207,14 +1213,40 @@ def test_watcher_discards_rising_board_not_confirmed_next_tick(qapp, monkeypatch
         ],
     )
 
-    _run_live_ticks(watcher, 2)
-    assert [snapshot.card_count for snapshot in pools] == [9, 8]
+    _run_live_ticks(watcher, 3)
+    assert [snapshot.card_count for snapshot in pools] == [9, 8]  # 8 张延迟一拍发布
 
     _run_live_ticks(watcher, 1)
     assert len(pools) == 2  # 坏帧扣住
 
     _run_live_ticks(watcher, 1)
-    assert [snapshot.card_count for snapshot in pools] == [9, 8, 8]
+    assert [snapshot.card_count for snapshot in pools] == [9, 8, 8]  # 坏帧 9 未复现被丢弃
+    assert watcher._deferred_board is None
+
+
+def test_watcher_discards_falling_intermediate_board_not_confirmed(qapp, monkeypatch):
+    """回归（2026-10-12 11→9→11 面板跳变）：禁将揭晓动画多列焊接，恢复拍仅
+    救回部分卡（11 张检出 9）的中间态是回落拍，扣住复核；下一拍 11 张回归
+    （签名不同、走新板 OCR），扣住的 9 张未复现即丢弃——面板全程不出现 9。"""
+    watcher, pools = _make_loop_watcher(
+        monkeypatch,
+        boards=[
+            [(100 + i * 276, 247, 238, 326) for i in range(11)],  # 候选 11 张
+            [(100 + i * 276, 247, 238, 326) for i in range(11)],  # unchanged 拍
+            [(100 + i * 276, 247, 238, 326) for i in range(9)],   # 漏检中间态：检出 9
+            [(100 + i * 276, 247, 238, 326) for i in range(11)],  # 真实牌面回归 11
+        ],
+        ocr_boards=[
+            [{"name": f"候选{i}", "resolution": "exact"} for i in range(11)],
+            [{"name": f"中间态{i}", "resolution": "exact"} for i in range(9)],
+            [{"name": f"候选{i}", "resolution": "exact"} for i in range(11)],
+        ],
+    )
+
+    _run_live_ticks(watcher, 4)
+
+    counts = [snapshot.card_count for snapshot in pools]
+    assert counts == [11, 11]  # 9 张中间态从未上面板
     assert watcher._deferred_board is None
 
 

@@ -43,6 +43,8 @@ AREA_MIN_RATIO = 0.0055  # 连通域最小面积（占全图像素），滤除�
 SINGLE_OVERGROWTH_MAX_RATIO = 1.35  # 近界单卡收纳上限：选中光效/抬升的掩码外扩幅度
 STACKED_SPLIT_MAX_RATIO = 2.4       # 竖向融合块拆分上限：实测两卡焊接 651~652 ≈ 2.0 倍
 REFIT_SPAN_RATIO = 0.6              # 拆分后半段卡体列跨度阈值：列掩码纵向跨度占段高比例
+REFIT_TRUSTED_MIN_RATIO = 0.8       # 卡体段可信下限（占参考卡宽）：淡色立绘会把卡体列截短
+                                    # （ban_phase 实测 144/238），此时按段中心对齐反被带偏 +29px
 REPAIR_ARMED_MIN_CARDS = 6          # 修复武装门槛：合法牌面 ≥8 张、焊接后最少剩 6 张，防非牌面屏幕误播种
 
 # 名条在卡内相对位置：以卡 bbox 左缘锚定，不受右侧立绘出画影响。
@@ -105,10 +107,14 @@ def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
         else:
             suspicious.append((box, "尺寸窗"))
 
-    # 修复路径：确信卡足够时，对尺寸窗拒绝的可疑组件按参考卡高收纳或拆分
-    if len(cards) >= REPAIR_ARMED_MIN_CARDS and suspicious:
+    # 参考几何（本板确信卡的中位尺寸与行划分）：修复路径与主路径归一共用，
+    # 确信卡不足时整体不武装，防非牌面屏幕误播种
+    if len(cards) >= REPAIR_ARMED_MIN_CARDS:
         ref_h = int(np.median([h for _, _, _, h in cards]))
         ref_w = int(np.median([w for _, _, w, _ in cards]))
+        rows = _split_rows_by_gap(cards)
+
+        # 修复路径：对尺寸窗拒绝的可疑组件按参考卡高收纳或拆分
         remaining: list[tuple[Roi, str]] = []
         for box, reason in suspicious:
             _, _, w, h = box
@@ -141,6 +147,12 @@ def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
                 )
         suspicious = remaining
 
+        # 主路径产出同样归一到参考几何：贴边动画叠层/出画立绘会把连通域撑得
+        # 比卡框更宽并向左撑出，仍落在尺寸窗内被静默收下（2026-10-12 实测
+        # 237→254~270、左缘左移 17~21px），逐拍跳变的卡位会同时带偏名条 ROI
+        # （读不出字，面板确认数 9↔8 闪烁）与牌面签名（每拍全量重 OCR）
+        cards = [_normalize_card(mask, card, ref_w, rows) for card in cards]
+
     low, high = CARD_COUNT_RANGE
     if not low <= len(cards) <= high:
         if _LAST_DETECTION_PASSED is not False:
@@ -155,6 +167,41 @@ def detect_selection_cards(image: np.ndarray) -> list[Roi] | None:
         logger.debug("2v2 卡位检测恢复：检出 %d 张（合法区间 %d~%d）", len(cards), low, high)
     _LAST_DETECTION_PASSED = True
     return _sort_row_major(cards)
+
+
+def _split_rows_by_gap(cards: list[Roi]) -> list[list[Roi]] | None:
+    """把确信卡按 y 最大间隙分成上下两行；间隙不足视为非两行布局返回 None。"""
+    ordered = sorted(cards, key=lambda card: card[1])
+    ys = [card[1] for card in ordered]
+    gaps = [ys[i + 1] - ys[i] for i in range(len(ys) - 1)]
+    cut = int(np.argmax(gaps)) + 1
+    # 上下行 y 距实测 >300px、同行内抖动 ≤10px，取 100 判两行布局
+    if max(gaps) < 100:
+        return None
+    return [ordered[:cut], ordered[cut:]]
+
+
+def _normalize_card(mask: np.ndarray, box: Roi, ref_w: int, rows: list[list[Roi]] | None) -> Roi:
+    """把卡位归一到本板参考几何：宽度取参考卡宽按卡体段对齐，y/h 取同行中位。
+
+    贴边动画叠层与出画立绘会与卡框连成更宽的连通域并向左撑出，直接采用原始
+    bbox 会让同一张卡在"叠层附着"与"独立检出"两态间逐拍跳变：名条 ROI 跟着
+    偏移读不出字、牌面签名超容差反复全量重识别（2026-10-12 候选期闪烁）。
+    卡体段（纵向跨度 ≥REFIT_SPAN_RATIO×卡高的列）只含卡框与卡内立绘，拆分
+    腰线随探底立绘动画漂移、光效外扩幅度逐拍变化都不改变它，故两态产出一致。
+    """
+    refit = _refit_card_width(mask, *box, ref_w, min_run_ratio=REFIT_TRUSTED_MIN_RATIO)
+    if refit is None:
+        return box
+    if not rows:
+        return refit
+    row = min(rows, key=lambda item: abs(np.median([card[1] for card in item]) - refit[1]))
+    return (
+        refit[0],
+        int(np.median([card[1] for card in row])),
+        refit[2],
+        int(np.median([card[3] for card in row])),
+    )
 
 
 def _split_stacked_component(mask: np.ndarray, box: Roi, ref_h: int, ref_w: int) -> list[Roi]:
@@ -180,14 +227,17 @@ def _split_stacked_component(mask: np.ndarray, box: Roi, ref_h: int, ref_w: int)
 
 
 def _refit_card_width(
-    mask: np.ndarray, x: int, y: int, w: int, h: int, card_w: int,
+    mask: np.ndarray, x: int, y: int, w: int, h: int, card_w: int, *, min_run_ratio: float = 0.0,
 ) -> Roi | None:
     """按列纵向跨度定位卡体中心，并以参考卡宽重拟合卡体水平范围。
 
     卡体列的掩码纵向跨度贯穿整段高度（上下卡框边都在掩码内，淡色立绘卡
-    也成立），而龙饰翼展只覆盖局部高度——以跨度 ≥ REFIT_SPAN_RATIO×段高
-    判定卡体列。卡框边缘的斜切角会让跨度连续段略窄于真实卡宽，故宽度取
-    参考卡宽、以连续段中心对齐。
+    也成立），而龙饰翼展、贴边叠层只覆盖局部高度——以跨度 ≥ REFIT_SPAN_RATIO×
+    段高判定卡体列。卡框边缘的斜切角会让跨度连续段略窄于真实卡宽，故宽度取
+    参考卡宽、以连续段中心对齐——对齐只认跨度段，产出与该段所在连通域多宽
+    无关：贴边叠层把 bbox 撑宽不会带偏卡位，重复归一等价。min_run_ratio 用于
+    要求跨度段足够长（调用方按卡体可信度传入），段过短说明卡体列被淡色立绘
+    截断，此时中心对齐会把卡位带偏，返回 None 交由调用方维持原状。
     """
     strip = mask[y:y + h, x:x + w]
     min_span = h * REFIT_SPAN_RATIO
@@ -205,14 +255,9 @@ def _refit_card_width(
                 best_len = cur_len
         else:
             cur_len = 0
-    if best_len == 0:
+    if best_len < max(1, card_w * min_run_ratio):
         return None
-    if best_len >= card_w:
-        trim = (best_len - card_w) // 2
-        return (x + best_start + trim, y, card_w, h)
-    center = best_start + best_len // 2
-    left = max(0, min(center - card_w // 2, w - card_w))
-    return (x + left, y, card_w, h)
+    return (x + best_start + (best_len - card_w) // 2, y, card_w, h)
 
 
 def derive_name_rois(cards: list[Roi]) -> list[Roi]:

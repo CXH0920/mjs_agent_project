@@ -239,9 +239,11 @@ class PeakSelectWatcher(QObject):
         # 连续未通过内容验证的拍数（槽位 → 拍数），达到上限丢弃确认
         self._stale_rounds: dict[int, int] = {}
         self._last_board: tuple[list[dict], int] | None = None
-        # 推迟发布的牌面（签名, OCR 结果, 卡数）：选将/禁选期真实池子单调不增，
-        # 卡数回升的拍只可能是过场坏帧（模拟器旧帧/撕裂帧，2026-10-09 桑弘羊
-        # 跳变事故），扣住一拍等签名复现再发布，未复现即丢弃
+        # 推迟发布的牌面（签名, OCR 结果, 卡数）：卡数较上拍变化的拍扣住一拍，
+        # 签名复现才发布、未复现即丢弃。回升只可能是过场坏帧（模拟器旧帧/
+        # 撕裂帧，2026-10-09 桑弘羊跳变事故）；回落可能是真实选走，也可能是
+        # 检测中间态（禁将揭晓动画多列焊接、恢复拍仅救回部分卡，2026-10-12
+        # 11→9→11 面板跳变事故）——真实选走会在下一拍原样复现，延迟一拍发布
         self._deferred_board: tuple[tuple, list[dict], int] | None = None
         self._miss_ticks = 0
         self._saved_task_states: dict[str, bool] | None = None
@@ -339,7 +341,7 @@ class PeakSelectWatcher(QObject):
                     confirmed = self._deferred_board
                     self._deferred_board = None
                 if confirmed is not None:
-                    # 回升牌面在紧邻下一拍原样复现：非单拍坏帧，补发布
+                    # 变化牌面在紧邻下一拍原样复现：真实换牌（选走/禁将推进），补发布
                     self._publish_pool(confirmed[1], confirmed[2])
                 return  # 牌面未变化，沿用上一次结果
             ocr_results = self._recognize_board(result, cards)
@@ -360,14 +362,14 @@ class PeakSelectWatcher(QObject):
                 unconfirmed = self._deferred_board
                 self._deferred_board = None
                 last_count = self._last_board[1] if self._last_board else None
-                held = last_count is not None and card_count > last_count
+                held = last_count is not None and card_count != last_count
                 if held:
                     self._deferred_board = (signature, ocr_results, card_count)
             if unconfirmed is not None:
                 logger.info("巅峰赛扣住复核的 %d 张牌面未复现，按过场坏帧丢弃", unconfirmed[2])
             if held:
                 logger.info(
-                    "巅峰赛牌面 %d 张较上拍 %d 张回升，疑似过场坏帧，扣住待下一拍复核",
+                    "巅峰赛牌面 %d 张较上拍 %d 张变化，扣住待下一拍复核（复现即发布）",
                     card_count, last_count,
                 )
                 return
