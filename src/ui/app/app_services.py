@@ -85,6 +85,9 @@ class AppServices:
         )
 
         self.announcement_manager = AnnouncementManager()
+        # 启动即加载：漏加载会让磁盘上的已处理状态不可见，已 applied 的
+        # 公告每次检查都被当新公告重新入库、反复提示待更新
+        self.announcement_manager.load()
         self.announcement_service = AnnouncementService(
             self.announcement_manager, self.data.heroes,
         )

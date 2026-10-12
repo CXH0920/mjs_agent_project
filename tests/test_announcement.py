@@ -379,6 +379,29 @@ def test_announcement_manager_mark_applied_keeps_pending(tmp_path) -> None:
     assert manager.list_all()[0].status is AnnouncementStatus.PENDING
 
 
+def test_announcement_manager_reload_keeps_applied_status(tmp_path) -> None:
+    """重启后新实例须 load 磁盘公告：已 applied 状态保留，同 URL 不再当新公告。
+
+    组合根（app_services）曾漏调用 load()，导致每次启动公告库为空、
+    已处理公告被重新入库为 pending 并反复提示待更新。
+    """
+    path = tmp_path / "announcements.json"
+    first = AnnouncementManager(path)
+    first.merge_new([_hero_related_raw()])
+    first.mark_ready_if_updated({"modified": [{"name": "贾诩", "id": 1}]})
+    first.mark_applied()
+
+    restarted = AnnouncementManager(path)
+    restarted.load()
+    announcements = restarted.list_all()
+    assert len(announcements) == 1
+    assert announcements[0].status is AnnouncementStatus.APPLIED
+    assert announcements[0].first_seen_at == first.list_all()[0].first_seen_at
+    # 同 URL 重新检查不得重复入库或重置状态
+    assert restarted.merge_new([_hero_related_raw()]) == []
+    assert restarted.list_all()[0].status is AnnouncementStatus.APPLIED
+
+
 def test_announcement_manager_mark_ready_when_new_heroes_landed(tmp_path) -> None:
     """公告的新增武将已全部出现在百科现状中时，即使 diff 为空也提升 ready。
 
@@ -928,6 +951,8 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
                 HeroChange(name="贾诩", change="增强", known=True),
             ],
         )
+        # 隔离本机默认 data/announcements.json（AppServices 启动即加载）
+        window._announcement_coordinator._manager._items.clear()
         window._announcement_coordinator._manager._items[announcement.url] = announcement
 
         jia_id = window._data.heroes.get_hero_by_name("贾诩").id
