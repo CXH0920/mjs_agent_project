@@ -80,6 +80,7 @@ class _SynergyService(QObject):
         super().__init__()
         self.calls: list[tuple[dict, list[dict], str]] = []
         self.pair_calls: list[tuple[list[dict], str, bool]] = []
+        self.pair_list_calls: list[tuple[list[dict], str, bool]] = []
         self.cancel_calls = 0
         self.reload_requests = 0
         self._busy = False
@@ -97,6 +98,11 @@ class _SynergyService(QObject):
 
     def fetch_pair(self, heroes: list[dict], backend: str, overwrite: bool = False, use_rag: bool = True) -> bool:
         self.pair_calls.append((heroes, backend, overwrite, use_rag))
+        _emit_completed_later(self.fetch_completed, True, "完成")
+        return True
+
+    def fetch_pairs_list(self, pairs: list[dict], backend: str, overwrite: bool = False, use_rag: bool = True) -> bool:
+        self.pair_list_calls.append((pairs, backend, overwrite, use_rag))
         _emit_completed_later(self.fetch_completed, True, "完成")
         return True
 
@@ -173,11 +179,10 @@ class _SingleHeroDialog:
 
 class _PairHeroDialog:
     def __init__(self, _hero_manager, _synergy_manager, parent=None) -> None:
-        self.selected_heroes = [
-            {"id": 1, "name": "曹操"},
-            {"id": 2, "name": "刘备"},
+        self.selected_pairs = [
+            {"hero_a_id": 1, "hero_b_id": 2},
+            {"hero_a_id": 1, "hero_b_id": 3},
         ]
-        self.overwrite_existing = True
 
     def exec(self) -> QDialog.DialogCode:
         return QDialog.DialogCode.Accepted
@@ -285,7 +290,8 @@ def test_single_synergy_workflow_refreshes_after_completion(tmp_path: Path, monk
     assert changed == [True]
 
 
-def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypatch) -> None:
+def test_pair_synergy_workflow_submits_precise_pairs(tmp_path: Path, monkeypatch) -> None:
+    """指定获取应把对话框组装的精确配对清单经 --synergy-list 通道提交并带覆盖开关。"""
     workflow, _, synergy_service = _workflow(tmp_path)
     monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
     monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
@@ -297,12 +303,12 @@ def test_pair_synergy_workflow_passes_overwrite_choice(tmp_path: Path, monkeypat
 
     workflow.request_synergy_pair()
 
-    assert synergy_service.pair_calls == [
-        ([{"id": 1, "name": "曹操"}, {"id": 2, "name": "刘备"}], "browser", True, True),
+    assert synergy_service.pair_list_calls == [
+        ([{"hero_a_id": 1, "hero_b_id": 2}, {"hero_a_id": 1, "hero_b_id": 3}], "browser", True, True),
     ]
-    assert _ProgressDialog.instances[-1].item_count == 1
+    assert _ProgressDialog.instances[-1].item_count == 2
     assert _BackendDialog.instances[-1].estimation == {
-        "items": 1, "model": "test-model", "estimate_kind": "synergy",
+        "items": 2, "model": "test-model", "estimate_kind": "synergy",
     }
 
 

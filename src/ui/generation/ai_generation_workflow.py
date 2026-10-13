@@ -120,24 +120,24 @@ class AiGenerationWorkflow(QObject):
             self._synergy_manager,
             parent=self._window,
         )
-        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_heroes:
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_pairs:
             return
 
-        selected = dialog.selected_heroes
-        pair_count = len(selected) * (len(selected) - 1) // 2
-        estimation = estimate_generation_cost(pair_count, "synergy")
+        pairs = dialog.selected_pairs
+        estimation = estimate_generation_cost(len(pairs), "synergy")
         estimation["estimate_kind"] = "synergy"
         choice = self._choose_backend("相性配对生成", estimation)
         if choice is None:
             return
         backend, use_rag = choice
         self._start_synergy_generation(
-            pair_count,
+            len(pairs),
             "相性配对生成进度",
-            lambda: self._synergy_service.fetch_pair(
-                selected,
+            lambda: self._synergy_service.fetch_pairs_list(
+                pairs,
                 backend=backend,
-                overwrite=dialog.overwrite_existing,
+                # 清单已按生成策略筛过且含已存在的落后对，必须 --update 才不会被跳过
+                overwrite=True,
                 use_rag=use_rag,
             ),
         )

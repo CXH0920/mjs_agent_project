@@ -28,7 +28,7 @@ from src.data.hero_manager import HeroManager
 from src.data.models import Combo, Hero, HeroGuide, Skill, SynergyScore
 from src.data.synergy_manager import SynergyManager
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
-from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
+from src.ui.generation.synergy_pair_dialog import PairPolicy, SynergyPairDialog
 from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.library.guide_edit_dialog import GuideEditDialog
 from src.ui.library.hero_browser import HeroBrowser, HeroDetailPanel, HeroListPanel
@@ -255,18 +255,82 @@ def test_synergy_pair_shows_pair_counts_and_existing_policy(tmp_path: Path) -> N
     hero_manager = HeroManager(tmp_path / "heroes.json")
     synergy_manager = SynergyManager(tmp_path / "synergies.json")
     for hero_id, name in enumerate(("曹操", "刘备", "孙权"), 1):
-        hero_manager.add_hero(Hero(id=hero_id, name=name, faction="魏"))
-    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=5))
+        hero_manager.add_hero(Hero(id=hero_id, name=name, faction="魏", last_updated="2026-07-26"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=5, last_updated="2026-07-18"))
     dialog = SynergyPairDialog(hero_manager, synergy_manager)
 
+    dialog._status_combo.setCurrentIndex(3)
     dialog._select_all_current()
 
-    assert "共 3 组，已有 1 组，将生成 2 组" in dialog._selection_label.text()
-    assert dialog._ok_btn.text() == "下一步：生成 2 组相性"
-    dialog._overwrite_existing_radio.click()
-    assert dialog.overwrite_existing is True
+    assert "共 3 组，缺 2 组，落后 1 组，将生成 3 组" in dialog._selection_label.text()
+    assert dialog._ok_btn.text() == "下一步：生成 3 组相性"
+    dialog._outdated_only_radio.click()
+    assert "共 3 组，落后 1 组，将刷新 1 组" in dialog._selection_label.text()
+    assert dialog._ok_btn.text() == "下一步：刷新 1 组相性"
+    dialog._refresh_radio.click()
+    dialog._overwrite_radio.click()
+    assert dialog.pair_policy is PairPolicy.OVERWRITE
     assert "覆盖生成 3 组" in dialog._selection_label.text()
     assert dialog._ok_btn.text() == "下一步：覆盖生成 3 组相性"
+
+
+def test_synergy_pair_filters_statuses_and_builds_precise_pairs(tmp_path: Path) -> None:
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏", last_updated="2026-07-26"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀", last_updated="2026-07-26"))
+    hero_manager.add_hero(Hero(id=3, name="孙权", faction="吴", last_updated="日期未知"))
+    hero_manager.add_hero(Hero(id=4, name="诸葛亮", faction="蜀", last_updated="2026-07-26"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=5, last_updated="2026-07-26"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=3, score=4, last_updated="2026-07-18"))
+
+    dialog = SynergyPairDialog(hero_manager, synergy_manager)
+
+    # 默认筛「待更新」：1-3 记录落后于基准（孙权日期无法解析按保守落后处理）
+    assert dialog._status_combo.currentText() == "待更新 (2)"
+    assert dialog._list_widget.count() == 2
+    assert dialog._list_widget.item(0).text() == "曹操  [魏]  【待更新】"
+    assert dialog._list_widget.item(1).text() == "孙权  [吴]  【待更新】"
+
+    dialog._list_widget.item(0).setCheckState(Qt.CheckState.Checked)
+    dialog._status_combo.setCurrentIndex(0)
+    assert dialog._list_widget.count() == 1
+    assert dialog._list_widget.item(0).text() == "诸葛亮  [蜀]  【未生成】"
+    assert dialog._selected_id_set == {1}
+
+    dialog._status_combo.setCurrentIndex(3)
+    dialog._list_widget.item(1).setCheckState(Qt.CheckState.Checked)
+    dialog._list_widget.item(2).setCheckState(Qt.CheckState.Checked)
+
+    # 共 3 组：1-2 已最新、1-3 落后、2-3 缺失
+    assert "共 3 组，缺 1 组，落后 1 组，将生成 2 组" in dialog._selection_label.text()
+    assert dialog._ok_btn.text() == "下一步：生成 2 组相性"
+
+    dialog._on_accept()
+    assert dialog.selected_pairs == [
+        {"hero_a_id": 1, "hero_b_id": 3},
+        {"hero_a_id": 2, "hero_b_id": 3},
+    ]
+
+    dialog._outdated_only_radio.click()
+    assert dialog.pair_policy is PairPolicy.OUTDATED_ONLY
+    assert "共 3 组，落后 1 组，将刷新 1 组" in dialog._selection_label.text()
+    assert dialog._ok_btn.text() == "下一步：刷新 1 组相性"
+    dialog._on_accept()
+    assert dialog.selected_pairs == [{"hero_a_id": 1, "hero_b_id": 3}]
+
+    dialog._missing_only_radio.click()
+    dialog._on_accept()
+    assert dialog.selected_pairs == [{"hero_a_id": 2, "hero_b_id": 3}]
+
+    dialog._overwrite_radio.click()
+    dialog._on_accept()
+    assert dialog.selected_pairs == [
+        {"hero_a_id": 1, "hero_b_id": 2},
+        {"hero_a_id": 1, "hero_b_id": 3},
+        {"hero_a_id": 2, "hero_b_id": 3},
+    ]
 
 
 def test_extracted_edit_dialogs_construct_independently(tmp_path: Path) -> None:
