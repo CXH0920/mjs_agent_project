@@ -327,9 +327,27 @@ def test_check_runtime_env_flags_missing_dependency(monkeypatch):
     assert "environment.yml" in imports["onnxruntime 可导入"].fix
 
 
-def test_check_runtime_env_flags_missing_models(monkeypatch):
+def test_check_runtime_env_flags_missing_models(monkeypatch, tmp_path):
+    """v4 预取模型缺失时 OCR 模型项报 WARN。
+
+    模型检查分支在 rapidocr 可导入时才进入（CI Linux 精简环境无 rapidocr，
+    本地有——直接跑会环境分叉），注入假模块与 spec 使任意环境确定性进入。
+    """
+    import importlib.machinery
+    import importlib.util
+    import sys
+    import types
+
     from src.scripts import fetch_recheck_models
 
+    fake_rapidocr = types.ModuleType("rapidocr")
+    fake_rapidocr.__file__ = str(tmp_path / "rapidocr" / "__init__.py")
+    monkeypatch.setitem(sys.modules, "rapidocr", fake_rapidocr)
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec",
+        lambda name: (importlib.machinery.ModuleSpec("rapidocr", None)
+                      if name == "rapidocr" else real_find_spec(name)))
     monkeypatch.setattr(fetch_recheck_models, "verify_v4_models",
                         lambda: ["v4 rec 模型缺失"])
 
