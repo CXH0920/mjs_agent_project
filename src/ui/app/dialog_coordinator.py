@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtWidgets import QDialog, QMessageBox
 from src.config.version import app_version
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
@@ -19,6 +21,8 @@ from src.ui.data_admin.data_management_dialog import DataManagementDialog
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.library.fetch_dialog import HeroFetchDialog
 from src.ui.shared.widgets import show_toast
+
+logger = logging.getLogger(__name__)
 
 
 class DialogCoordinator:
@@ -188,10 +192,20 @@ class DialogCoordinator:
         )
 
     def open_onboarding(self) -> None:
-        """打开首启向导；关闭后按连接状态恢复轮询（同 open_mumu_config 收尾）。"""
+        """打开首启向导；关闭后按连接状态恢复轮询（同 open_mumu_config 收尾）。
+
+        外层保护（spec_onboarding R1）：向导自身异常不得演变为应用启动失败
+        （主入口 try 会直接退出）或菜单回调崩溃——记日志 + 告警后照常收尾。
+        """
         from src.ui.app.onboarding_dialog import OnboardingDialog
 
-        OnboardingDialog(self._window).exec()
+        try:
+            OnboardingDialog(self._window).exec()
+        except Exception:
+            logger.exception("首启向导异常，已跳过引导")
+            QMessageBox.warning(
+                self._window, "首启引导",
+                "首启引导出现问题，已跳过。可稍后从 帮助 → 重看首启引导 重新打开。")
         self._window._poll_coordinator.sync_with_connection()
 
     def note_load_failed(self, message: str) -> None:

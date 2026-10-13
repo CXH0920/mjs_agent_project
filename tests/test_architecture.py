@@ -642,10 +642,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # data_freshness_chip.py 自足，此处仅构造与两条信号回接）
     "ui/app/main_window.py": 575,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
-    # 541 为闪退修复后实测值（EnvCheckWorker 引用改 __init__ 即入 LIVE_WORKERS，
-    # 消 start/run 间 GC 窗口）；三段渲染/协调器/预热接线为单一对话框内聚职责，
+    # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
+    # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，
     # 拆分只会制造参数众多的小模块，登记预算限制继续膨胀
-    "ui/app/onboarding_dialog.py": 542,
+    "ui/app/onboarding_dialog.py": 547,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,

@@ -254,6 +254,8 @@ def main() -> None:
         # exec() 阻塞主线程，预热等向导关闭后才提交，两者天然不并发抢 GIL；
         # 正常路径向导最早 90–120 秒后才构造，22 秒 smoke 窗口看不到它
         if os.environ.get("MJS_ONBOARDING_FORCE") == "1":
+            # splash 置顶（StaysOnTop）且未 finish，留着会遮挡向导
+            splash.close()
             window._dialogs.open_onboarding()
         window.start_ocr_warmup()
         # 在启动画面阶段完成 OCR 预热：OCR 引擎初始化会长时间持有 Python GIL，

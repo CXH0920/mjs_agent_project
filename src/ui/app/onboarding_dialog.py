@@ -111,7 +111,6 @@ class OnboardingDialog(QDialog):
         self._window = window
         self._closing = False
         self._coordinator: MumuConfigCoordinator | None = None
-        self._devices: tuple = ()
         self._recognize_pending = False
         self._warmup_timed_out = False
         self._device_action_kind = ""
@@ -297,6 +296,12 @@ class OnboardingDialog(QDialog):
     # ── 段 2：模拟器与画面（协调器接线 + 分辨率体检）
 
     def _ensure_coordinator(self) -> MumuConfigCoordinator:
+        """懒构造段 2 协调器（草稿 = 构造时的 get_mumu_config() 快照）。
+
+        深链返回后配置可能已保存变更（含端口），由 _open_mumu_config 整只
+        重建——update_adb_path 式半刷新只同步路径键，残留的旧端口草稿会把
+        共享会话倒退回旧端口（多实例换端口场景）。
+        """
         if self._coordinator is None:
             self._coordinator = MumuConfigCoordinator(
                 config=get_mumu_config(),
@@ -312,9 +317,6 @@ class OnboardingDialog(QDialog):
             coordinator.connection_finished.connect(self._on_connection_finished)
             coordinator.roi_layout_screenshot_ready.connect(self._on_roi_screenshot_ready)
             coordinator.roi_layout_screenshot_failed.connect(self._on_roi_screenshot_failed)
-        else:
-            # 深链返回后配置可能已保存变更，重读同步协调器草稿
-            self._coordinator.update_adb_path(get_mumu_config().get("mumu_adb_path", ""))
         return self._coordinator
 
     def _start_device_check(self) -> None:
@@ -336,8 +338,7 @@ class OnboardingDialog(QDialog):
             self._set_device_status("fail", f"未找到 ADB：{message}", "retry")
 
     def _on_devices_changed(self, devices) -> None:
-        self._devices = tuple(devices)
-        running = [d for d in self._devices if d.is_running and d.adb_port]
+        running = [d for d in devices if d.is_running and d.adb_port]
         if len(running) == 1:
             self._connect_device(running[0])
             return
@@ -411,13 +412,17 @@ class OnboardingDialog(QDialog):
             self._open_mumu_config()
 
     def _open_mumu_config(self) -> None:
-        """深链模拟器配置（嵌套 exec，以主窗为父）；返回后重读配置并整段重跑段 2。"""
+        """深链模拟器配置（嵌套 exec，以主窗为父）；返回后重建协调器并整段重跑段 2。"""
         self.hide()
         try:
             self._window._dialogs.open_mumu_config()
         finally:
             if not self._closing:
                 self.show()
+        # 配置可能已保存变更（含端口）：旧草稿已过期，整只重建防共享会话倒退
+        if self._coordinator is not None:
+            self._coordinator.shutdown()
+            self._coordinator = None
         self._start_device_check()
 
     # ── 段 3：试识别（预热门禁 + 悬挂复位 + 结果分派）

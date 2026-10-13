@@ -1,6 +1,6 @@
 # 首启向导规格（Onboarding）
 
-> 状态：待实施（方案定稿，已依代码复核修订）
+> 状态：**已实施**（2026-10-13，T1–T10 全部落地；实施偏差与登记见文末「实施记录」）
 > 范围：首次启动引导——运行环境自检 / 模拟器连接与分辨率体检 / 试识别，三段一页式对话框。
 > 基线：v1.2.1（提交 `2081b5b`，ONNX 编码器迁移与检索诊断已落地）
 > 相关：[spec_capture_ocr.md](spec_capture_ocr.md)（采集与 OCR 边界）、[spec_ui_navigation.md](spec_ui_navigation.md)（导航结构）、[spec_config.md](spec_config.md)（配置持久化）
@@ -430,3 +430,17 @@ def open_onboarding(self) -> None:
 | 17 | 段 2 失败是否悬挂 | 已核实失败信号成对（`roi_layout_screenshot_failed` / `roi_layout_capture_finished`，`:44-45`、`:279-283`），不悬挂；补进 §六 | §六 |
 | 18 | `onboarding_version` 升版影响 | 补预期管理：老用户（含已跳过）会重新看到向导 | §3.6、§九.2 |
 | 19 | UI → `src.scripts` 依赖边 | 已核实合规（importlinter 与 UI 数据白名单均不管），且导入无副作用；登记为有意引入的新边 | §2.3 |
+
+## 十四、实施记录（2026-10-13）
+
+T1–T10 已全部落地，测试 1747+ 全绿、importlinter 三契约 KEPT、doctor CLI 输出与改前逐字节一致。与规格的实施偏差登记如下：
+
+| # | 偏差 | 说明 |
+|---|---|---|
+| 1 | 段 3 分派"引擎不可用"的判定 | `capture_completed` payload 实际不含 `outcome` 键（`capture_service.py` 既有契约，且该文件预算 479/479 禁改），改用 `ocr_warmup_state == "failed"` 判定。局限：warmup ready 后的瞬态任务异常会落入"未命中"WARN——有重试自愈，待 capture_service 有净减空间时补 outcome 键 |
+| 2 | `_data_error` 标记落点 | 原计划放 `MainWindow`，因类字段数棘轮（36>35）落 `DialogCoordinator`，与失败弹窗同源 |
+| 3 | `onboarding_dialog.py` 行数 | 528→541（T9 一键修复接线 + EnvCheckWorker 闪退修复），超 500 tripwire，登记预算 542 |
+| 4 | 深链返回的协调器刷新 | 实施后复核发现 `update_adb_path` 半刷新残留旧端口草稿会把共享会话倒退（多实例换端口场景），改为整只重建 |
+| 5 | `devices_changed` 测试载荷 | 规格修订 #11 所述 tuple 载荷确认无误 |
+
+M1/M2（≤180 秒录屏计时）、段 2 零落盘抽查、深链真实 z-order、打包版 smoke 实测为人工验收项，见交付报告。

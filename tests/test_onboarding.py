@@ -441,8 +441,25 @@ def test_deep_link_reruns_section2(wizard):
     coordinator = d._ensure_coordinator()
     d._open_mumu_config()
     assert wizard.window.open_calls == ["opened"]
-    assert ("update_adb_path", "C:/adb.exe") in coordinator.calls  # 返回后重读配置
-    assert coordinator.calls[-1] == ("refresh_devices",)  # 自动重跑段 2
+    # 旧协调器整只退役（半刷新会残留旧端口草稿，把共享会话倒退）
+    assert ("shutdown",) in coordinator.calls
+    assert d._coordinator is not coordinator
+    # 新协调器以新配置快照重建并自动重跑段 2
+    assert d._coordinator.calls == [("refresh_devices",)]
+
+
+def test_deep_link_after_port_change_uses_fresh_config(wizard, monkeypatch):
+    """多实例换端口场景（P1 回归）：深链保存新端口后，重建的协调器草稿必须是新值。"""
+    d = wizard.dialog
+    d._ensure_coordinator()
+    # 深链期间配置对话框保存了新端口（open_mumu_config 推共享会话 + persist）
+    monkeypatch.setattr(onboarding_dialog, "get_mumu_config",
+                        lambda: {"mumu_adb_path": "C:/adb.exe", "mumu_adb_port": 16416})
+    d._open_mumu_config()
+
+    fresh = d._coordinator
+    assert fresh is not None
+    assert fresh.config.get("mumu_adb_port") == 16416  # 不再是构造时的旧端口
 
 
 def test_close_event_marks_closing_before_shutdown(wizard):
@@ -571,6 +588,28 @@ def test_open_onboarding_execs_and_syncs_poll(monkeypatch):
     dc_module.DialogCoordinator(window).open_onboarding()
 
     assert calls == [("construct", window), ("exec",), ("sync",)]
+
+
+def test_open_onboarding_protects_against_dialog_errors(monkeypatch):
+    """向导异常不得向外传播（spec R1）：主入口 try 内异常会演变为启动失败。"""
+    from src.ui.app import dialog_coordinator as dc_module
+
+    class _BoomDialog:
+        def __init__(self, parent):
+            raise RuntimeError("向导构造炸了")
+
+    monkeypatch.setattr("src.ui.app.onboarding_dialog.OnboardingDialog", _BoomDialog)
+    warned: list = []
+    monkeypatch.setattr(dc_module.QMessageBox, "warning",
+                        lambda *args, **kwargs: warned.append(args))
+    synced: list = []
+    window = SimpleNamespace(_poll_coordinator=SimpleNamespace(
+        sync_with_connection=lambda: synced.append(True)))
+
+    dc_module.DialogCoordinator(window).open_onboarding()  # 不抛
+
+    assert warned  # 用户得到一次告警而非崩溃/退出
+    assert synced == [True]  # 轮询收尾照常执行
 
 
 # ---------------------------------------------------------------------------
