@@ -76,6 +76,10 @@ def _env_keys(path: Path) -> dict[str, str]:
 # ── 环境 ──────────────────────────────────────────────────────────────
 
 def check_environment() -> list[Finding]:
+    return check_dev_toolchain() + check_runtime_env()
+
+
+def check_dev_toolchain() -> list[Finding]:
     findings = []
     versions = {}
     for label, path, pattern in (
@@ -92,7 +96,11 @@ def check_environment() -> list[Finding]:
         findings.append(Finding(
             "环境", "ruff 版本三处一致", FAIL, f"各处={versions}",
             fix="同步 .pre-commit-config.yaml / environment.yml / environment-ci.yml 的 ruff 版本，否则钩子与 CI 判定分叉"))
+    return findings
 
+
+def check_runtime_env() -> list[Finding]:
+    findings = []
     # B1 起唯一 OCR 栈：onnxruntime + rapidocr（v6 主引擎内置 + v4 复核预取模型）
     rapidocr_spec = importlib.util.find_spec("rapidocr")
     for pkg, pin, spec in (
@@ -615,9 +623,12 @@ CHECK_GROUPS = [
 ]
 
 
-def run_checks(offline: bool = False) -> list[Finding]:
+def run_checks(offline: bool = False, checks=None) -> list[Finding]:
+    # checks 默认值必须在函数体内读模块级 CHECK_GROUPS：形参默认值会在定义时
+    # 绑定旧列表引用，monkeypatch.setattr(doctor, "CHECK_GROUPS", …) 将静默失效
+    selected = checks if checks is not None else CHECK_GROUPS
     findings: list[Finding] = []
-    for group, checker in CHECK_GROUPS:
+    for group, checker in selected:
         if offline and group == "合规":
             findings.append(Finding(group, "GitHub 触发器", SKIP, "--offline 跳过"))
             continue

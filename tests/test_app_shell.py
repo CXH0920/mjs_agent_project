@@ -273,17 +273,18 @@ def test_shell_exposes_all_compatible_actions_and_shortcuts(window) -> None:
         "announcement_log",
         "card_sync_check",
         "baike_ignore_manager",
+        "onboarding",
         "about",
     }
 
     assert set(window._actions) == expected_keys
-    assert len(window._actions) == 23
+    assert len(window._actions) == 24
     assert window._actions["reload"].shortcut().toString() == "F5"
     assert window._actions["exit"].shortcut().toString() == "Ctrl+Q"
 
 
 def test_menubar_mounts_all_actions(window) -> None:
-    """壳式入口移除后，菜单栏是唯一常驻入口，应挂载全部 23 个 QAction。"""
+    """壳式入口移除后，菜单栏是唯一常驻入口，应挂载全部 24 个 QAction。"""
     all_action_ids = {id(action) for action in window._actions.values()}
     menubar_actions = []
     for menu_action in window.menuBar().actions():
@@ -291,7 +292,7 @@ def test_menubar_mounts_all_actions(window) -> None:
         if menu is not None:
             menubar_actions.extend(_leaf_actions(menu))
 
-    assert len(menubar_actions) == 23
+    assert len(menubar_actions) == 24
     assert {id(action) for action in menubar_actions} == all_action_ids
 
 

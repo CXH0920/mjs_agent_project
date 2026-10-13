@@ -42,6 +42,7 @@ def build_actions(
         "announcement_log": QAction("公告记录", owner),
         "card_sync_check": QAction("检查卡牌百科更新", owner),
         "baike_ignore_manager": QAction("百科忽略名单管理", owner),
+        "onboarding": QAction("重看首启引导", owner),
         "about": QAction("关于", owner),
     }
     actions["exit"].setShortcut("Ctrl+Q")
@@ -78,6 +79,7 @@ def build_menu_bar(bar: QMenuBar, actions: dict[str, QAction]) -> None:
     data_menu.addAction(actions["data_management"])
 
     help_menu = bar.addMenu("帮助")
+    help_menu.addAction(actions["onboarding"])
     help_menu.addAction(actions["about"])
 
 

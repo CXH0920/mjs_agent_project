@@ -47,6 +47,10 @@ def _corpus_with_broken_reference(tmp_path: Path) -> DataFacade:
 def _window_with(facade: DataFacade) -> MainWindow:
     window = MainWindow.__new__(MainWindow)
     window._data = facade
+    # _load_data 的失败弹窗/标记已外移 DialogCoordinator（首启向导 T10），注入真实例
+    from src.ui.app.dialog_coordinator import DialogCoordinator
+
+    window._dialogs = DialogCoordinator(window)
     return window
 
 
@@ -155,3 +159,4 @@ def test_load_data_failure_shows_warning(tmp_path: Path, monkeypatch) -> None:
     window._load_data()
 
     assert any("数据加载失败" in text and "磁盘错误" in text for text in recorded["warning"])
+    assert window._dialogs._data_error == "磁盘错误"  # 失败标记留痕（首启向导段 1 读）

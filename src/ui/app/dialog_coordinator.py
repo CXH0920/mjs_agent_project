@@ -26,6 +26,7 @@ class DialogCoordinator:
 
     def __init__(self, window) -> None:
         self._window = window
+        self._data_error: str | None = None
 
     # ────────────────────────────────────────────────
     # 对话框
@@ -185,6 +186,27 @@ class DialogCoordinator:
             "技术栈: PySide6 + Pydantic + httpx\n"
             "数据来源: 游戏官网 + DeepSeek API"
         )
+
+    def open_onboarding(self) -> None:
+        """打开首启向导；关闭后按连接状态恢复轮询（同 open_mumu_config 收尾）。"""
+        from src.ui.app.onboarding_dialog import OnboardingDialog
+
+        OnboardingDialog(self._window).exec()
+        self._window._poll_coordinator.sync_with_connection()
+
+    def note_load_failed(self, message: str) -> None:
+        """数据加载失败：留 _data_error 标记并弹告警（自 MainWindow._load_data 外移，
+        弹窗与标记同源；首启向导段 1 读该标记作数据行"加载失败"态）。"""
+        self._data_error = message
+        QMessageBox.warning(
+            self._window, "数据加载失败",
+            f"无法加载数据文件:\n{message}"
+            "\n\n请确保 data/ 目录下存在 heroes.json 文件。"
+        )
+
+    def clear_data_error(self) -> None:
+        """数据重新加载前清除旧失败标记。"""
+        self._data_error = None
 
     # ────────────────────────────────────────────────
     # 采集入口（委托给 HeroFetchService）

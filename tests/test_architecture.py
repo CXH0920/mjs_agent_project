@@ -641,6 +641,11 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 561 → 575：状态栏第三枚数据新鲜度芯片挂载接线（芯片本体在
     # data_freshness_chip.py 自足，此处仅构造与两条信号回接）
     "ui/app/main_window.py": 575,
+    # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
+    # 541 为闪退修复后实测值（EnvCheckWorker 引用改 __init__ 即入 LIVE_WORKERS，
+    # 消 start/run 间 GC 窗口）；三段渲染/协调器/预热接线为单一对话框内聚职责，
+    # 拆分只会制造参数众多的小模块，登记预算限制继续膨胀
+    "ui/app/onboarding_dialog.py": 542,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
@@ -664,7 +669,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 版本+模型就位检查，新增「白名单」冲突重检组（570 → 610，设计文档 §十四）
     # 2026-10-11 ONNX 迁移 S4：新增「RAG索引」检查组（体积/孤立段/编码器三件套，
     # embedding_onnx_migration.md §S4）
-    "scripts/doctor.py": 675,
+    # 2026-10-13 首启向导 T1：check_environment 拆分 check_dev_toolchain/check_runtime_env
+    # （向导只跑运行时子集）+ run_checks 增 checks 形参（spec_onboarding §3.3），675 → 682
+    "scripts/doctor.py": 682,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
     # hero_classification_panel.py（原 827）出表：三页签拆入

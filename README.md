@@ -40,7 +40,15 @@
 
 ## 快速开始
 
-### 1. 环境准备
+### 打包版用户
+
+双击 `mjs_agent.exe`，同意使用须知后**跟着首启向导走**即可：① 运行环境自检 → ② 连接 MuMu 模拟器并体检分辨率 → ③ 在游戏里打开【选将】页面试识别。任一步失败时界面会指出哪一环断了并给出可点的修复按钮；不想引导可随时「跳过」（之后可从 帮助 → 重看首启引导 找回）。
+
+向导只读屏幕、不操作游戏；模拟器分辨率建议设为 **2560×1440 或其等比（如 1920×1080）**。
+
+### 开发者说明
+
+#### 1. 环境准备
 
 ```bash
 conda env create -f environment.yml
@@ -53,7 +61,7 @@ playwright install msedge
 python -m src.scripts.fetch_recheck_models
 ```
 
-### 2. 运行测试
+#### 2. 运行测试
 
 ```bash
 python -m ruff check src tests          # Ruff 0.12.0，规则 F / T201 / I / B905
@@ -64,7 +72,7 @@ python -m pytest tests/ -v
 > `--basetemp=.tmp_test/pytest-tmp` 已写入 `pyproject.toml` 默认参数（conftest 兜底创建父目录）。
 > CI 执行 `pytest -q -n auto --timeout=60 --timeout-method=thread`，超时转储收集 `.tmp_test/timeout_dumps/pytest-timeout-*.log`（本地保留 7 天自动清理）。
 
-### 3. 启动桌面应用
+#### 3. 启动桌面应用
 
 ```bash
 python -m src.main
@@ -72,7 +80,9 @@ python -m src.main
 
 首次启动或免责声明条款更新后会先展示使用须知，确认后进入；启动画面期间阻塞预热 OCR 模型（上限 120 秒），预热完成后才显示主窗口。
 
-### 4. 数据采集
+主窗口显示后，首启向导会在状态文件缺失或引导版本升版时自动弹出（跳过/完成后不再打扰）；环境变量 `MJS_ONBOARDING_FORCE=1` 可强制在预热前弹出（发版 smoke 用）。
+
+#### 4. 数据采集
 
 ```bash
 python -m src.scraper.official              # 全量采集（自动下载头像）
@@ -84,7 +94,7 @@ python -m src.scraper.incremental --hero-id 52,114          # 按 ID 采集
 
 > 公告更新检查无 CLI，在应用内「数据 > 检查公告更新」手动触发。
 
-### 5. AI 批量生成
+#### 5. AI 批量生成
 
 ```bash
 # API 模式（需配置 API Key）
@@ -106,7 +116,7 @@ python -m src.scraper.ai_batch --dry-run --guide
 python -m src.scraper.ai_batch --synergy --score-threshold 60
 ```
 
-### 6. RAG 语料维护
+#### 6. RAG 语料维护
 
 ```bash
 python -m src.scraper.ai_batch --guide --no-rag             # 禁用 RAG 增强
@@ -118,7 +128,7 @@ python -m src.scripts.import_hero_adjustments --input <json>  # 首次注入武�
 
 维护脚本（`maintain_rag.py` / `rag_audit.py` / `build_*_corpus.py`）已收编到 `src/scripts/`，以 `python -m src.scripts.<脚本名>` 运行，全部本地执行。语料与维护脚本统一接入 `install_crash_logger` / `get_script_logger`，日志落 `logs/rag/<脚本名>.log`。元规则 T0 文档维护脚本：`audit_rule_doc.py` / `sync_rule_stats.py` / `propose_rule_changes.py` / `apply_rule_proposal.py` / `eval_rule_faqs.py`，均可在应用内「知识库维护 → 元规则母本」可视化操作。
 
-### 7. 周更运维入口
+#### 7. 周更运维入口
 
 ```bash
 python -m src.scripts.ops weekly            # 一条命令串完周更（pull → diff → 语料维护 → pytest → push）

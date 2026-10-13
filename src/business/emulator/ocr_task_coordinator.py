@@ -115,6 +115,19 @@ class OcrTaskCoordinator(QObject):
         self._warmup_task = None
         return bool(task.result and task.result.get("outcome") == "warmed")
 
+    def reset_warmup(self) -> None:
+        """预热悬挂出口：丢弃在途预热任务并把状态机拨回 idle。
+
+        wait_warmup 超时不动状态机，状态会永久停在 warming，而宿主的
+        warmup_ocr_model 对 warming 是 no-op（重试无效）——首启向导的
+        「重新初始化」经本接口复位后再重新入队。调用方须在 GUI 线程
+        （状态机变更点全部经 Qt 信号排队落回主线程，无锁）。
+        """
+        if self._warmup_task is None and self._warmup_state != "warming":
+            return
+        self._warmup_task = None
+        self._set_warmup_state("idle")
+
     def build_task(
         self,
         image,

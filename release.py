@@ -418,22 +418,26 @@ def clean_runtime_artifacts() -> None:
 
 # ── 烟雾启动测试 ───────────────────────────────────────────────
 def smoke_test() -> None:
-    """双击式启动 exe，确认不崩溃、无致命错误，随后清理运行时文件。
+    """双击式启动 exe，确认不崩溃、无致命错误、首启向导可构造，随后清理运行时文件。
 
-    用 os.startfile 模拟真实双击（explorer 启动，windowed exe 无控制台 → sys.stdout=None），
-    暴露 Popen(PIPE) 启动会掩盖的 stdout=None 类崩溃（如 sys.stdout.reconfigure NoneType）。
-    进程存活 + 日志无致命错误即通过。
+    DETACHED_PROCESS 启动等价双击语义：新进程不继承父控制台 → windowed exe 的
+    sys.stdout=None（踩坑 7 的保护不变，Popen(PIPE) 会掩盖 stdout=None 类崩溃）；
+    同时注入 MJS_ONBOARDING_FORCE=1 使首启向导在 OCR 预热之前构造——正常路径
+    向导最早 90–120 秒（预热完成）后才出现，22 秒窗口断言不到它。
+    进程存活 + 日志无致命错误 + 向导构造埋点即通过。
     """
     import os
     import tempfile
-    _info(f"烟雾启动测试（{SMOKE_TIMEOUT_S}s，双击模式，覆盖 OCR 模型加载）…")
+    _info(f"烟雾启动测试（{SMOKE_TIMEOUT_S}s，双击模式，含首启向导构造）…")
     # 清掉 %TEMP% 的 OCR 模型缓存，强制重新从本次构建的包内复制，确保验证的是新模型
     for _temp_ocr in (Path(tempfile.gettempdir()) / "mjs_rapidocr_models",
                       Path(tempfile.gettempdir()) / "mjs_ocr_models"):
         if _temp_ocr.is_dir():
             shutil.rmtree(_temp_ocr, ignore_errors=True)
+    env = {**os.environ, "MJS_ONBOARDING_FORCE": "1"}
     try:
-        os.startfile(str(EXE))
+        subprocess.Popen([str(EXE)], cwd=str(EXE.parent), env=env,
+                         creationflags=subprocess.DETACHED_PROCESS)
     except OSError as e:
         _die(f"无法启动 exe：{e}")
     time.sleep(SMOKE_TIMEOUT_S)
@@ -472,7 +476,9 @@ def smoke_test() -> None:
             if any(k in line for k in ("No module", "ModuleNotFound", "Traceback", "模型加载失败")):
                 print("  " + line)
         _die("烟雾测试失败：存在致命导入/加载错误")
-    _ok("烟雾测试通过：GUI 保持运行，无致命错误")
+    if "首启向导构造" not in log_text:
+        _die("烟雾测试失败：首启向导构造埋点未出现（MJS_ONBOARDING_FORCE 通道未生效）")
+    _ok("烟雾启动通过：GUI 保持运行，无致命错误，首启向导已构造")
 
     # 烟雾测试会产生 config.env/logs 等运行时文件，清理以保持交付物纯净
     _info("清理烟雾测试产生的运行时文件…")

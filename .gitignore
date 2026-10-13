@@ -51,6 +51,8 @@ config/ocr_rois.json
 config/api_profiles.json
 # 免责声明接受状态（用户本机运行时状态，见 src/config/disclaimer_state.py）
 config/.disclaimer_state.json
+# 首启向导完成/跳过状态（用户本机运行时状态，见 src/config/onboarding_state.py）
+config/.onboarding_state.json
 
 # Edge browser profile (Playwright browser mode)
 data/edge_profile/

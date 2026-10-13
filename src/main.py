@@ -250,6 +250,11 @@ def main() -> None:
 
     try:
         window = MainWindow()
+        # 发版 smoke 通道（MJS_ONBOARDING_FORCE=1）：向导在预热之前构造——
+        # exec() 阻塞主线程，预热等向导关闭后才提交，两者天然不并发抢 GIL；
+        # 正常路径向导最早 90–120 秒后才构造，22 秒 smoke 窗口看不到它
+        if os.environ.get("MJS_ONBOARDING_FORCE") == "1":
+            window._dialogs.open_onboarding()
         window.start_ocr_warmup()
         # 在启动画面阶段完成 OCR 预热：OCR 引擎初始化会长时间持有 Python GIL，
         # 若预热与主窗口事件循环同时运行会导致界面卡住，故先预热后显示。
@@ -260,6 +265,11 @@ def main() -> None:
         window.wait_ocr_warmup(timeout_ms=120_000)
         window.show()
         splash.finish(window)
+        # 首启向导：必须在 show() 之后（预热已返回、事件循环尚未接管）；
+        # 状态文件缺失/版本不符时弹一次，跳过或完成后不再打扰
+        from src.config.onboarding_state import should_show_state
+        if should_show_state():
+            window._dialogs.open_onboarding()
         sys.exit(app.exec())
     except Exception as e:
         splash.close()

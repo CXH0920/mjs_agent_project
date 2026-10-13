@@ -291,3 +291,76 @@ def test_check_rag_index_skips_onnx_when_st_backend(tmp_path, monkeypatch):
     onnx = next(f for f in findings if f.name == "ONNX 编码器")
     assert onnx.status == doctor.SKIP
     assert "st" in onnx.detail
+
+
+# ---------------------------------------------------------------------------
+# 首启向导 T1：check_environment 拆分与 run_checks(checks=…) 子集（spec_onboarding §3.3）
+# ---------------------------------------------------------------------------
+
+def test_check_environment_is_concat_of_split_parts():
+    """拆分等价性：环境组输出 = 工具链 + 运行时（顺序与条目逐项一致，CLI 不变）。"""
+    assert doctor.check_environment() == (
+        doctor.check_dev_toolchain() + doctor.check_runtime_env())
+
+
+def test_check_dev_toolchain_only_reports_ruff(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "ROOT", tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "- repo: ruff\n  hooks:\n    - id: ruff\n      args: [check, src, tests, (1.1.1)]\n",
+        encoding="utf-8")
+
+    findings = doctor.check_dev_toolchain()
+
+    assert [f.name for f in findings] == ["ruff 版本三处一致"]
+    assert findings[0].status == doctor.FAIL  # environment.yml 两处缺失 → None
+
+
+def test_check_runtime_env_flags_missing_dependency(monkeypatch):
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+
+    findings = doctor.check_runtime_env()
+
+    imports = {f.name: f for f in findings if f.name.endswith("可导入")}
+    assert imports["onnxruntime 可导入"].status == doctor.FAIL
+    assert "environment.yml" in imports["onnxruntime 可导入"].fix
+
+
+def test_check_runtime_env_flags_missing_models(monkeypatch):
+    from src.scripts import fetch_recheck_models
+
+    monkeypatch.setattr(fetch_recheck_models, "verify_v4_models",
+                        lambda: ["v4 rec 模型缺失"])
+
+    findings = doctor.check_runtime_env()
+
+    models = next(f for f in findings if f.name == "OCR 模型（v6 内置 + v4 预取）")
+    assert models.status == doctor.WARN
+    assert "v4 rec 模型缺失" in models.detail
+    assert "fetch_recheck_models" in models.fix
+
+
+def test_run_checks_accepts_check_subset():
+    def only_one():
+        return [doctor.Finding("子集", "单项", doctor.PASS, "ok")]
+
+    findings = doctor.run_checks(offline=True, checks=[("子集", only_one)])
+
+    assert len(findings) == 1
+    assert findings[0].group == "子集"
+
+
+def test_run_checks_default_reads_patched_groups(monkeypatch):
+    """守护默认值语义：不传 checks 时必须读运行时模块属性（形参默认值绑定旧引用
+    会让 monkeypatch 静默失效，spec_onboarding §3.3 实现注意）。"""
+    def boom():
+        raise RuntimeError("子集检查器崩溃")
+
+    monkeypatch.setattr(doctor, "CHECK_GROUPS", [("守护组", boom)])
+
+    findings = doctor.run_checks(offline=True)
+
+    assert len(findings) == 1
+    assert findings[0].group == "守护组"
+    assert findings[0].status == doctor.FAIL

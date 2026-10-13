@@ -259,6 +259,7 @@ class MainWindow(QMainWindow):
             "announcement_log": self._announcement_coordinator.open_announcement_dialog,
             "card_sync_check": self._dialogs.open_card_sync,
             "baike_ignore_manager": self._dialogs.open_baike_ignore_manager,
+            "onboarding": self._dialogs.open_onboarding,
             "about": self._dialogs.show_about,
         })
 
@@ -506,6 +507,8 @@ class MainWindow(QMainWindow):
 
     def _load_data(self) -> None:
         """加载所有数据"""
+        # 失败标记落 _dialogs（向导段 1 读三态）；last_load_report 异常时不覆盖有假阴性
+        self._dialogs.clear_data_error()
         try:
             report = self._data.load_all()
             missing_references = [issue for issue in report.issues if issue.kind == "missing_reference"]
@@ -542,11 +545,7 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             logger.exception("数据加载失败")
-            QMessageBox.warning(
-                self, "数据加载失败",
-                f"无法加载数据文件:\n{e}"
-                "\n\n请确保 data/ 目录下存在 heroes.json 文件。"
-            )
+            self._dialogs.note_load_failed(str(e))
 
     def _reload_data(self) -> None:
         """重新加载数据"""
