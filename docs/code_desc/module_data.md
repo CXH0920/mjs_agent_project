@@ -507,11 +507,14 @@ class SpecialCardRepository(JsonRepository):
 | `get_synergy(a, b)` | int, int | `SynergyScore \| None` | 双向归一查找 |
 | `list_synergies_for_hero(id)` | int | `list[SynergyScore]` | 武将涉及的所有相性 |
 | `list_synergies()` | — | `list[SynergyScore]` | 全部相性 |
+| `list_outdated_synergies(hero_lookup)` | Mapping[int, Hero] | `list[SynergyScore]` | 已有但落后于武将资料的相性；跳过任一侧武将缺失的孤儿记录 |
 | `add_synergy(score)` | SynergyScore | `None` | 重复抛 ValueError |
 | `update_synergy(score)` | SynergyScore | `None` | 覆盖 |
 | `delete_synergy(a, b)` | int, int | `None` | 双向归一删除 |
 | `delete_synergies_for_hero(id)` | int | `int` | 删除某武将关联所有相性，返回条数 |
 | `replace_loaded_data(synergies, issues)` | list, list | `None` | 主线程原子替换后台校验结果 |
+
+模块级函数 `is_synergy_outdated(pair, hero_a, hero_b)`：判定相性是否落后于两侧武将资料中较新的一方（`pair.last_updated < max(两侧 hero.last_updated)`，日期无法解析时保守视为落后）；`list_outdated_synergies()` 与相性指定配对计算对话框的武将状态标注共用该单一判定事实源。
 
 ### GuideManager
 

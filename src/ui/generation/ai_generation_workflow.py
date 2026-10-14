@@ -16,6 +16,7 @@ from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
 from src.ui.generation.synergy_combos_dialog import SynergyCombosDialog
 from src.ui.generation.synergy_pair_dialog import SynergyPairDialog
+from src.ui.generation.synergy_refresh_dialog import SynergyRefreshDialog
 from src.ui.generation.synergy_single_dialog import SynergySingleDialog
 
 if TYPE_CHECKING:
@@ -136,7 +137,38 @@ class AiGenerationWorkflow(QObject):
             lambda: self._synergy_service.fetch_pairs_list(
                 pairs,
                 backend=backend,
-                # 清单已按生成策略筛过且含已存在的落后对，必须 --update 才不会被跳过
+                # 清单含已存在的落后对，必须 --update 才不会被跳过
+                overwrite=True,
+                use_rag=use_rag,
+            ),
+        )
+
+    def request_synergy_refresh(self) -> None:
+        """落后相性刷新：勾选已有但落后于武将资料的配对，批量重新生成。"""
+        if not self._require_heroes():
+            return
+        dialog = SynergyRefreshDialog(
+            self._hero_manager,
+            self._synergy_manager,
+            parent=self._window,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_pairs:
+            return
+
+        pairs = dialog.selected_pairs
+        estimation = estimate_generation_cost(len(pairs), "synergy")
+        estimation["estimate_kind"] = "synergy"
+        choice = self._choose_backend("落后相性刷新", estimation)
+        if choice is None:
+            return
+        backend, use_rag = choice
+        self._start_synergy_generation(
+            len(pairs),
+            "落后相性刷新进度",
+            lambda: self._synergy_service.fetch_pairs_list(
+                pairs,
+                backend=backend,
+                # 刷新对象均为已存在记录，必须 --update 才会被重新生成
                 overwrite=True,
                 use_rag=use_rag,
             ),

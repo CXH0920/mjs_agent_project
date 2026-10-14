@@ -253,6 +253,7 @@ class MainWindow(QMainWindow):
             "guide_specific": self._ai_workflow.request_guide_specific,
             "synergy_single": self._ai_workflow.request_synergy_single,
             "synergy_pair": self._ai_workflow.request_synergy_pair,
+            "synergy_refresh": self._ai_workflow.request_synergy_refresh,
             "synergy_combos": self._ai_workflow.request_synergy_combos,
             "combos_import": self._dialogs.open_combos_import,
             "announcement_check": self._announcement_coordinator.check_announcements,

@@ -188,6 +188,14 @@ class _PairHeroDialog:
         return QDialog.DialogCode.Accepted
 
 
+class _RefreshDialog:
+    def __init__(self, _hero_manager, _synergy_manager, parent=None) -> None:
+        self.selected_pairs = [{"hero_a_id": 1, "hero_b_id": 2}]
+
+    def exec(self) -> QDialog.DialogCode:
+        return QDialog.DialogCode.Accepted
+
+
 class _GuideHeroDialog:
     guide_manager: GuideManager | None = None
 
@@ -309,6 +317,29 @@ def test_pair_synergy_workflow_submits_precise_pairs(tmp_path: Path, monkeypatch
     assert _ProgressDialog.instances[-1].item_count == 2
     assert _BackendDialog.instances[-1].estimation == {
         "items": 2, "model": "test-model", "estimate_kind": "synergy",
+    }
+
+
+def test_refresh_synergy_workflow_submits_pairs_with_overwrite(tmp_path: Path, monkeypatch) -> None:
+    """落后相性刷新应把勾选配对经 --synergy-list 通道提交并恒定带覆盖开关。"""
+    workflow, _, synergy_service = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr(workflow_module, "SynergyRefreshDialog", _RefreshDialog)
+    monkeypatch.setattr(
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "model": "test-model"},
+    )
+
+    workflow.request_synergy_refresh()
+
+    assert synergy_service.pair_list_calls == [
+        ([{"hero_a_id": 1, "hero_b_id": 2}], "browser", True, True),
+    ]
+    assert _ProgressDialog.instances[-1].item_count == 1
+    assert _ProgressDialog.instances[-1].title == "落后相性刷新进度"
+    assert _BackendDialog.instances[-1].estimation == {
+        "items": 1, "model": "test-model", "estimate_kind": "synergy",
     }
 
 

@@ -7,17 +7,34 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Mapping, Optional
 
 from src.data.issues import DataIssue
 from src.data.manager import DEFAULT_DATA_DIR, DataManager
 from src.data.models import SynergyScore
 
+if TYPE_CHECKING:
+    from src.data.models import Hero
+
 logger = logging.getLogger(__name__)
 
 # 默认数据路径
 DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
+
+
+def is_synergy_outdated(pair: SynergyScore, hero_a: Hero, hero_b: Hero) -> bool:
+    """相性是否落后于两侧武将资料中较新的一方；日期无法解析时保守视为落后。"""
+    try:
+        pair_updated = date.fromisoformat(pair.last_updated)
+        baseline = max(
+            date.fromisoformat(hero_a.last_updated),
+            date.fromisoformat(hero_b.last_updated),
+        )
+    except (TypeError, ValueError):
+        return True
+    return pair_updated < baseline
 
 
 class SynergyManager(DataManager[SynergyScore]):
@@ -62,6 +79,18 @@ class SynergyManager(DataManager[SynergyScore]):
     def list_synergies(self) -> list[SynergyScore]:
         """获取所有相性数据"""
         return self.list_all()
+
+    def list_outdated_synergies(self, hero_lookup: Mapping[int, Hero]) -> list[SynergyScore]:
+        """列出已有但落后于武将资料的相性；任一侧武将缺失的孤儿记录不属于落后，跳过。"""
+        outdated = []
+        for pair in self.list_synergies():
+            hero_a = hero_lookup.get(pair.hero_a_id)
+            hero_b = hero_lookup.get(pair.hero_b_id)
+            if hero_a is None or hero_b is None:
+                continue
+            if is_synergy_outdated(pair, hero_a, hero_b):
+                outdated.append(pair)
+        return outdated
 
     def replace_loaded_data(
         self,

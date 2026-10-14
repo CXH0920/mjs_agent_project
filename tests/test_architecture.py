@@ -486,6 +486,10 @@ ALLOWED_DATA_FUNCTIONS = {
     # 评分→相性评级映射：SynergyScore 模型校验器同源（data/models.py），
     # 搬出 data 会制造反向依赖，故白名单放行 UI 展示共用。
     "synergy_rating_for_score",
+    # 相性落后判定（synergy_manager.py）：无状态纯函数，与 SynergyScore/
+    # Hero 时间戳语义内聚，SynergyManager.list_outdated_synergies 与相性
+    # 指定配对计算对话框共用同一判定事实源，搬出 data 会造成 manager 反向依赖。
+    "is_synergy_outdated",
     # 原子写盘基元（json_repository.py）：无状态底层 IO 工具、非仓储/读函数，
     # 值对象同地位；UI 写配置文件（白名单覆盖等）直接使用，注入反而造转发壳。
     "atomic_write_json",

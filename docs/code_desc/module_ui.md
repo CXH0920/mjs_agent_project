@@ -71,6 +71,7 @@ src/ui/
 │   ├── guide_fetch_dialog.py
 │   ├── guide_progress_dialog.py
 │   ├── synergy_pair_dialog.py
+│   ├── synergy_refresh_dialog.py    # 落后相性刷新配对清单勾选
 │   ├── synergy_single_dialog.py
 │   └── synergy_combos_dialog.py    # 实战配队批量生成配对清单筛选
 ├── configuration/              # 应用、势力与模拟器配置
@@ -232,7 +233,7 @@ MainWindow
 
 底部状态栏按职责分为三部分：`ProgressReporter` 承载普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度，以及 `QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击默认经 `mumu_config_requested` 打开模拟器配置（唯一例外：轮询闲置暂停态点击发出 `poll_resume_requested` 恢复轮询）；`DataFreshnessChip` 常驻显示四类数据的新鲜度聚合档位，点击弹出详情与建议操作菜单（详见 3.14 节）。任务消息不会覆盖后两类连接状态与数据新鲜度胶囊。
 
-攻略全量、增量、指定与相性配对、选定武将、实战配队批量共六个菜单入口保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
+攻略全量、增量、指定与相性指定配对计算、落后相性刷新、选定武将、实战配队批量共七个菜单入口保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
 ### 3.2 对话框基类体系
 
@@ -252,7 +253,9 @@ BaseHeroSelectDialog
 
 所有多选对话框使用独立的已选 ID 集合，因此搜索或切换势力只会刷新可见列表，不会丢失已勾选的武将。多选界面提供“全选当前筛选”“清空已选”、可删除的已选标签和随选择数量变化的任务确认按钮。`GuideFetchDialog` 注入 `GuideManager`，按攻略记录与武将资料更新时间判定“未生成”“待更新”“已有攻略”；默认筛选未生成，列表显示状态标签。只选已有或待更新攻略时确认按钮显示“重新生成 N 篇攻略”，混选时明确其中的重新生成数量。
 
-`SynergyPairDialog` 允许选择 2~8 个武将，并实时显示总组合数、已有相性数和本次待生成数。默认跳过已有相性，用户可选“重新生成并覆盖”；工作流将该选择传递给相性服务，服务以 CLI `--update` 参数执行覆盖生成。
+`SynergyPairDialog` 允许选择 2~8 个武将，列表项标注相性状态（未生成/待更新/已有相性，纯信息展示不可筛选），并实时显示总组合数和本次待生成数；无状态筛选下拉与策略面板，固定按"缺啥补啥"（缺失的补、落后的刷、最新的不动）组装精确配对清单。工作流将清单交相性服务以 CLI `--update` 参数执行覆盖生成（清单含已存在的落后对，不带 `--update` 会被跳过）。
+
+`SynergyRefreshDialog`（菜单"数据 → 武将相性 → 落后相性刷新"）是独立 `QDialog`（不继承 `BaseHeroSelectDialog`，列表项是配对而非武将）：构造时经 `SynergyManager.list_outdated_synergies()` 预计算所有已有但落后于武将资料的配对（跳过引用武将已删除的孤儿记录），按最后生成日期升序展示（日期无法解析的视为最旧排最前）；支持按武将名搜索（命中任一侧即显示）、全选/清空、逐行勾选。确认后 `AiGenerationWorkflow.request_synergy_refresh()` 把勾选清单经 `SynergyFetchService.fetch_pairs_list()` 恒定 `overwrite=True` 提交。落后判定与入口一共用 `synergy_manager.is_synergy_outdated()`。
 
 四类选择界面统一使用 `CheckableComboBox` 作为势力筛选控件：输入区显示彩色可删除标签，超过 5 个势力显示剩余数量；右侧按钮用向下/向上箭头表示筛选浮动层的收起/展开状态，同一按钮再次点击会显式收起；展开后提供势力搜索、浅蓝色复选列表、全选、反选和确定操作，点击筛选区域外也会收起。
 

@@ -1021,11 +1021,12 @@ def apply_incremental_update(data_dir, update)
 | app/disclaimer_dialog.py | 68 | QDialog（免责声明对话框） |
 | app/chinese_translator.py | 96 | Qt 标准控件中文翻译安装 |
 | app/app_icon.py | 59 | 应用图标（多目录回退定位） |
-| generation/ai_generation_workflow.py | 364 | QObject（攻略与相性 UI 工作流） |
+| generation/ai_generation_workflow.py | 400 | QObject（攻略与相性 UI 工作流） |
 | generation/backend_choose_dialog.py | 207 | QDialog（后端选择 + RAG 增强/经典模式） |
 | generation/guide_progress_dialog.py | 194 | QDialog（生成进度，OK/FAIL/重试分开匹配） |
 | generation/guide_fetch_dialog.py | 98 | QDialog（攻略范围选择） |
-| generation/synergy_pair_dialog.py | 102 | QDialog（2~8 武将两两配对） |
+| generation/synergy_pair_dialog.py | 155 | QDialog（2~8 武将两两配对，固定补缺失并刷新落后） |
+| generation/synergy_refresh_dialog.py | 200 | QDialog（落后相性配对勾选刷新） |
 | generation/synergy_single_dialog.py | 30 | QDialog（选定武将 × 全体） |
 | library/hero_browser.py | 607 | QWidget（资料左栏、身份头部、上下文操作和详情协调） |
 | library/hero_detail_views.py | 534 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
@@ -1102,7 +1103,7 @@ def apply_incremental_update(data_dir, update)
 
 - **文件**：重新加载数据 / 退出
 - **配置**：API 配置 / 模拟器配置 / 势力配色 / 白名单配置
-- **数据**：公告更新检查 / 公告日志 / 卡牌百科更新检查 / 百科忽略名单管理 / 武将获取(全量/增量/指定) / 攻略生成(全量/增量/指定) / 武将相性(全量/指定/清单) / 官方数据导入 / 实战配队导入 / 清空攻略/相性数据
+- **数据**：公告更新检查 / 公告日志 / 卡牌百科更新检查 / 百科忽略名单管理 / 武将获取(全量/增量/指定) / 攻略生成(全量/增量/指定) / 武将相性(选定武将/指定配对计算/落后相性刷新/实战配队生成) / 官方数据导入 / 实战配队导入 / 清空攻略/相性数据
 - **帮助**：关于
 
 测试 `test_menubar_top_level_titles` 锁定顶层标题为 `["文件", "配置", "数据", "帮助"]`。
@@ -1334,7 +1335,7 @@ HeroDetailPanel._on_synergy_edit()
 - 编辑保存后触发 `data_changed` 信号刷新左侧列表，选中项保持为当前武将并显示 Toast；写入失败时保留输入，删除完成使用模态结果反馈
 - `GuideEditDialog` 中的劣势/优势对局类型和对抗建议通过文本输入编辑；“搭配推荐”通过 `HeroRelationSelectDialog` 选择，支持搜索、势力筛选、预选回填、全选当前筛选和清空选择；确认时按英雄 ID 的稳定顺序写回 `HeroGuide`
 - 关系展示标签采用自适应流式可跳转布局；势力筛选改为复用选将推荐配色、带可删除标签、搜索、全选和反选的多选下拉框，超过 5 个势力时显示前 5 个及剩余数量
-- 数据栏的武将获取、攻略生成、武将相性三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
+- 数据栏的武将获取、攻略生成、武将相性指定配对计算三个指定获取对话框统一复用 `CheckableComboBox`，保持相同的势力标签和浅蓝色复选列表交互；右侧上下箭头会明确显示筛选下拉框当前是展开还是收起
 
 **Markdown 渲染**：统一通过 `src.ui.shared.markdown_renderer.render_markdown()` 调用 Mistune，并转义原始 HTML；攻略正文超过 20,000 字时不进入解析。`Skill`、`SynergyScore` 与 `HeroGuide` 的 AI 文本和列表字段均由 Pydantic 限制长度及项目数。
 

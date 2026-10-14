@@ -35,7 +35,8 @@ def build_actions(
         "guide_incremental": QAction("增量获取", owner),
         "guide_specific": QAction("指定获取", owner),
         "synergy_single": QAction("选定武将", owner),
-        "synergy_pair": QAction("指定获取", owner),
+        "synergy_pair": QAction("指定配对计算", owner),
+        "synergy_refresh": QAction("落后相性刷新", owner),
         "synergy_combos": QAction("实战配队生成", owner),
         "combos_import": QAction("实战配队导入", owner),
         "announcement_check": QAction("检查公告更新", owner),
@@ -101,5 +102,6 @@ def _add_generation_submenus(parent_menu, actions: dict[str, QAction]) -> None:
     synergy_menu.addActions([
         actions["synergy_single"],
         actions["synergy_pair"],
+        actions["synergy_refresh"],
         actions["synergy_combos"],
     ])
