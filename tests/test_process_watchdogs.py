@@ -100,6 +100,67 @@ def test_base_fetch_cancel_flags_cleanup_window(qapp, monkeypatch) -> None:
     assert service.is_busy is True
 
 
+def test_base_fetch_watchdog_resets_on_progress_line(qapp) -> None:
+    """进度行（START/OK/FAIL/SKIP/重试/休息）重置看门狗计时。
+
+    回归场景：browser 模式 14 对清单 × 反风控休息全程约 31 分钟，
+    总时长上限会在第 12 对误杀健康任务；改为"无进度上限"后必须放行。
+    信号驱动验证（remainingTime 在 Qt6 下读数粗粒度不可判）。
+    """
+    import time
+
+    from src.business.fetching.base_fetch_service import BaseFetchService
+
+    service = BaseFetchService()
+    service._WATCHDOG_TIMEOUT_MS = 200
+    service._process = _FakeProc()
+    service._start_watchdog()
+
+    time.sleep(0.25)  # 原始 200ms 截止已过：无修复时首次 processEvents 必杀
+    service._dispatch_stdout_line(b"  [12/14] \xe7\x8e\x8b\xe5\xbc\x82 <-> \xe7\x99\xbd\xe8\xb5\xb7 START")
+    qapp.processEvents()
+    assert service._process.killed is False  # 进度行把截止时间推后了
+
+    time.sleep(0.25)  # 距重置 250ms > 200ms：无进度后仍要能杀
+    qapp.processEvents()
+    assert service._process.killed is True
+    service._stop_watchdog()
+
+
+def test_base_fetch_watchdog_ignores_non_progress_line(qapp) -> None:
+    """非协议行（模型闲聊/统计输出）不重置看门狗，超时照常触发。"""
+    import time
+
+    from src.business.fetching.base_fetch_service import BaseFetchService
+
+    service = BaseFetchService()
+    service._WATCHDOG_TIMEOUT_MS = 200
+    service._process = _FakeProc()
+    service._start_watchdog()
+
+    time.sleep(0.25)
+    service._dispatch_stdout_line(b"  =======================")
+    qapp.processEvents()
+    assert service._process.killed is True
+    service._stop_watchdog()
+
+
+def test_base_fetch_watchdog_feed_after_stop_is_noop(qapp) -> None:
+    """进程已结束（_stop_watchdog 后 timer 为 None）再分发进度行不得报错。
+
+    _on_finished/_on_error 会以 flush=True 补分发缓冲行，此时看门狗已停。
+    """
+    from src.business.fetching.base_fetch_service import BaseFetchService
+
+    service = BaseFetchService()
+    service._start_watchdog()
+    service._stop_watchdog()
+
+    service._dispatch_stdout_line(b"  [1/2] a <-> b OK")
+
+    assert service._watchdog_timer is None
+
+
 def test_base_fetch_finish_cancellation_resets_state(qapp) -> None:
     """进程树清理结束后 _finish_cancellation 复位取消标记并广播 cancelled。"""
     import src.business.fetching.base_fetch_service as bfs

@@ -22,6 +22,7 @@ from src.business.common.task_ledger import record_task
 from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,
+    is_generation_progress_line,
     is_process_busy,
     log_process_error,
 )
@@ -164,7 +165,9 @@ class BaseFetchService(QObject):
         self._task_started = time.monotonic()
         self._start_watchdog()
 
-    # 卡死看门狗：AI 生成单条 1~3 分钟属正常，30 分钟上限只拦"黑洞化永不结束"——
+    # 卡死看门狗：每条进度行（START/OK/FAIL/SKIP/重试/休息）都会重置计时，
+    # 30 分钟上限只拦"无任何进度的黑洞化"——正常任务单条 1~3 分钟属正常，
+    # browser 模式配对间还有反风控随机休息，长清单全程超 30 分钟也必须放行；
     # 否则 _is_busy 永久 True，只有用户手点取消才能恢复
     _WATCHDOG_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -173,6 +176,16 @@ class BaseFetchService(QObject):
         self._watchdog_timer.setSingleShot(True)
         self._watchdog_timer.timeout.connect(self._on_watchdog_timeout)
         self._watchdog_timer.start(self._WATCHDOG_TIMEOUT_MS)
+
+    def _feed_watchdog(self) -> None:
+        """有进度时重置计时：把"总时长上限"收敛为"无进度上限"。
+
+        Qt 6 对已激活的同间隔定时器 start() 是 no-op，必须 stop 后重启。
+        """
+        timer = getattr(self, "_watchdog_timer", None)
+        if timer is not None:
+            timer.stop()
+            timer.start(self._WATCHDOG_TIMEOUT_MS)
 
     def _stop_watchdog(self) -> None:
         timer = getattr(self, "_watchdog_timer", None)
@@ -186,7 +199,7 @@ class BaseFetchService(QObject):
         if process is None or process.state() == QProcess.ProcessState.NotRunning:
             return
         logger.error(
-            "%s 子进程超过 %d 分钟未结束，看门狗强制终止",
+            "%s 子进程超过 %d 分钟无进度，看门狗强制终止",
             self._service_name, self._WATCHDOG_TIMEOUT_MS // 60000,
         )
         process.kill()
@@ -225,6 +238,9 @@ class BaseFetchService(QObject):
         if not line:
             return
         self._log_stdout.info("%s", line)
+        # 进度行说明任务在推进，喂看门狗推迟无进度超时
+        if is_generation_progress_line(line):
+            self._feed_watchdog()
         # 收集失败项（攻略/相性统一 FAIL 行：[i/total] 名字 FAIL）
         m = re.search(r"\[(\d+)/(\d+)\]\s+(.+?)\s+FAIL(?:\s|$)", line)
         if m:
