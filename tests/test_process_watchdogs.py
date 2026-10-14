@@ -10,7 +10,9 @@ _finish_cancellation 复位并广播 cancelled。
 from __future__ import annotations
 
 import logging
+import sys
 
+from PySide6.QtCore import QEventLoop, QTimer
 from src.business.common.script_runner import ScriptRunner
 
 
@@ -185,3 +187,82 @@ def test_base_fetch_finish_cancellation_resets_state(qapp) -> None:
     assert service._cancel_cleanup_process is None
     assert events == ["cancelled"]
     assert statuses[-1] == "子进程已中止"
+
+
+# ---------------------------------------------------------------
+# 真实进程全链路回归（run → output → finished）
+# ---------------------------------------------------------------
+def _run_and_collect(runner: ScriptRunner, python: str, args: list[str],
+                     working_dir, timeout_ms: int = 15000) -> tuple:
+    """连接 output/finished 收集器后 run()，泵事件循环直到终态或超时。
+
+    返回 (code, output)；code 为 None 表示超时未收到 finished——
+    正是 FailedToStart 挂死场景的可观测症状。
+    """
+    state = {"code": None, "output": bytearray()}
+    loop = QEventLoop()
+
+    def _on_finished(code: int) -> None:
+        state["code"] = code
+        loop.quit()
+
+    def _on_output(data: bytes) -> None:
+        state["output"].extend(bytes(data))
+
+    runner.finished.connect(_on_finished)
+    runner.output.connect(_on_output)
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(loop.quit)
+    timer.start(timeout_ms)
+    assert runner.run(python, None, args, working_dir) is True
+    loop.exec()
+    timer.stop()
+    runner.finished.disconnect(_on_finished)
+    runner.output.disconnect(_on_output)
+    return state["code"], bytes(state["output"])
+
+
+def test_script_runner_runs_real_process_to_completion(qapp, tmp_path) -> None:
+    """run() 全链路（特征测试，固化现有行为）：真实子进程跑 print →
+    output 逐段转发、finished(0) 必达、is_running 复位。
+
+    runner 挂 qapp（与产品挂面板一致）：deleteLater 的销毁事件需要事件循环
+    处理，无 parent 时测试函数返回即触发 GC 与悬置 DeferredDelete 冲突的
+    Qt 原生 abort（本文件实证）。
+    """
+    runner = ScriptRunner(qapp)
+    code, output = _run_and_collect(
+        runner, sys.executable, ["-c", "print('script_runner_e2e_ok')"], tmp_path)
+
+    assert code == 0
+    assert b"script_runner_e2e_ok" in output
+    assert runner.is_running() is False
+
+
+def test_script_runner_run_rejects_while_busy(tmp_path) -> None:
+    """运行中再 run() 返回 False（单任务互斥），不产生第二个子进程。
+
+    用 Running 替身而非真实长进程：kill 一个尚处 Starting 的真实 QProcess
+    会在事件循环内触发 Qt 原生 abort（本文件实证），替身无此风险。
+    """
+    runner = ScriptRunner()
+    runner._proc = _FakeProc()
+
+    assert runner.is_running() is True
+    assert runner.run(sys.executable, None, ["-c", "print(1)"], tmp_path) is False
+    assert isinstance(runner._proc, _FakeProc)  # 未创建第二个子进程
+
+
+def test_script_runner_finished_guaranteed_on_failed_start(qapp, tmp_path) -> None:
+    """回归（VUL-B2-001）：FailedToStart 时 Qt 不发 finished（Qt6 实证）、
+    看门狗对 NotRunning 直接返回——runner 必须自行补发终态，
+    否则调用方面板永久忙死、无日志无收尾。"""
+    runner = ScriptRunner(qapp)
+    code, _output = _run_and_collect(
+        runner, "script_runner_nonexistent_binary_xyz", ["arg"], tmp_path,
+        timeout_ms=5000)
+
+    assert code is not None, "启动失败必须补发 finished，否则调用方永久等待"
+    assert code != 0
+    assert runner.is_running() is False
