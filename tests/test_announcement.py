@@ -345,6 +345,26 @@ def test_announcement_manager_merge_dedup_and_status(tmp_path) -> None:
     assert statuses[other["url"]] is AnnouncementStatus.APPLIED
 
 
+def test_announcement_manager_merge_skips_invalid_records(tmp_path) -> None:
+    """单条坏记录（外部爬虫产出）不得中断整批合并，也不得滞留半批数据。"""
+    manager = AnnouncementManager(tmp_path / "announcements.json")
+    bad = dict(_hero_related_raw())
+    bad.pop("title")  # title 必填，缺失 → ValidationError
+
+    good1 = _hero_related_raw()
+    good2 = _hero_related_raw("https://mjs.ztgame.com/news/010.html")
+    new = manager.merge_new([good1, bad, good2])
+
+    assert [announcement.url for announcement in new] == [good1["url"], good2["url"]]
+    assert [announcement.url for announcement in manager.list_all()] == [good1["url"], good2["url"]]
+    assert any(issue.kind == "invalid_record" for issue in manager.load_issues)
+    # 落盘：两条好记录持久化，坏记录不写入
+    manager.save()
+    reloaded = AnnouncementManager(tmp_path / "announcements.json")
+    reloaded.load()
+    assert len(reloaded.list_all()) == 2
+
+
 def test_announcement_manager_baseline_first_run(tmp_path) -> None:
     manager = AnnouncementManager(tmp_path / "announcements.json")
     new = manager.merge_new([_hero_related_raw()], baseline=True)

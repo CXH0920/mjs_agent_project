@@ -68,6 +68,21 @@ def test_filter_ignored_matrix() -> None:
     assert count == 2
 
 
+def test_ignore_entry_corrupt_file_backed_up_before_overwrite(tmp_path) -> None:
+    """损坏的忽略名单被覆盖写之前须按原字节留底（用户压制记录不可重建）。"""
+    path = tmp_path / "ignore.json"
+    corrupt = "{broken json"
+    path.write_text(corrupt, encoding="utf-8")
+
+    ignore_entry("cards", "5", "火杀", "modified", "abc", path)
+
+    backups = list((tmp_path / "backups").glob("ignore-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == corrupt
+    # 降级后文件仅含新条目（既有行为保持）
+    assert "5" in load_baike_ignores(path).cards
+
+
 def test_filter_ignored_empty_entries_keeps_all() -> None:
     diff = {"added": [{"id": 1, "name": "甲"}], "modified": [], "removed": []}
 

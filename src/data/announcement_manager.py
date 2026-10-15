@@ -97,8 +97,14 @@ class AnnouncementManager(DataManager[Announcement]):
         new_announcements = []
         added = False
         with self._lock:
-            for raw in items:
-                announcement = Announcement.model_validate(raw)
+            for index, raw in enumerate(items):
+                try:
+                    announcement = Announcement.model_validate(raw)
+                except Exception as error:
+                    # 外部爬虫产出不可信：单条坏记录跳过并记 issue，不中断整批
+                    # （与 DataManager._parse_models 的逐条容错约定一致）
+                    self._record_issue("error", "invalid_record", str(error), index)
+                    continue
                 if baseline or not announcement.hero_related:
                     announcement.status = AnnouncementStatus.APPLIED
                 key = Announcement.stable_key(announcement)

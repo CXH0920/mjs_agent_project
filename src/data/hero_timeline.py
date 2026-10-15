@@ -20,7 +20,7 @@ import json
 import logging
 from pathlib import Path
 
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, preserve_corrupt_file
 from src.data.manager import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -72,9 +72,11 @@ def load_timeline(path: str | Path | None = None) -> dict:
             data = json.load(stream)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         logger.warning("时间轴文件解析失败，按空时间轴处理 %s: %s", file_path, exc)
+        preserve_corrupt_file(file_path)
         return {"events": []}
     if not isinstance(data, dict) or not isinstance(data.get("events"), list):
         logger.warning("时间轴文件结构异常，按空时间轴处理: %s", file_path)
+        preserve_corrupt_file(file_path)
         return {"events": []}
     return data
 

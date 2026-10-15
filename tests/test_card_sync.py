@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from src.business.card_sync import (
     CardSyncService,
     card_field_diff_summary,
@@ -184,6 +185,21 @@ def test_append_card_change_is_idempotent(tmp_path) -> None:
     assert len(records) == 1 and records[0].applied_ids == ["4", "1"]
 
 
+def test_append_card_change_corrupt_file_backed_up(tmp_path) -> None:
+    """损坏的变更记录被覆盖写之前须按原字节留底（官网同步历史不可重建）。"""
+    path = tmp_path / "card_changes.json"
+    corrupt = '{"date": "2026-09-14", "applied_ids": ["4"'  # 截断 JSON
+    path.write_text(corrupt, encoding="utf-8")
+
+    record = CardChangeRecord(date="2026-09-15", applied_ids=["1"], added_ids=[])
+    assert append_card_change(record, path) is True
+
+    backups = list((tmp_path / "backups").glob("card_changes-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == corrupt
+    assert [r.date for r in load_card_changes(path)] == ["2026-09-15"]
+
+
 # ---------------------------------------------------------------------------
 # 写回通道：CardRepository.apply_official_updates
 # ---------------------------------------------------------------------------
@@ -214,6 +230,27 @@ def test_apply_official_updates_skips_unknown_modified_id(tmp_path) -> None:
 
     assert applied == []
     assert repo.get_card("4").card_desc == "旧描述"
+
+
+def test_apply_official_updates_atomic_on_invalid_record(tmp_path) -> None:
+    """官网数据畸形抛错时不得留下半更新状态：内存与磁盘都保持原样（先验后写）。"""
+    repo = _make_repo(tmp_path, [_make_card("4", "闪"), _make_card("5", "桃")])
+
+    with pytest.raises(ValidationError):
+        repo.apply_official_updates(
+            {
+                "4": {"name": "闪", "card_desc": "抵消一次杀", "card_detail": "新详解"},
+                "5": {"name": "   "},  # 卡名空白 → Card.name_not_empty 拒绝
+            },
+            [],
+        )
+
+    flash = repo.get_card("4")
+    peach = repo.get_card("5")
+    assert flash is not None and flash.card_desc == "旧描述"  # 好卡不得被应用
+    assert peach is not None and peach.name == "桃"
+    disk = json.loads((tmp_path / "cards.json").read_text(encoding="utf-8"))
+    assert [card["card_detail"] for card in disk] == ["详解", "详解"]  # 磁盘未被半更新
 
 
 # ---------------------------------------------------------------------------

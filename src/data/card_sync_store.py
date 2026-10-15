@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, preserve_corrupt_file
 from src.data.manager import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ def load_card_changes(path: str | Path | None = None) -> list[CardChangeRecord]:
         payload = json.loads(changes_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         logger.warning("卡牌变更记录解析失败: %s — %s", changes_path, error)
+        preserve_corrupt_file(changes_path)
         return []
     records: list[CardChangeRecord] = []
     if isinstance(payload, list):

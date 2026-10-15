@@ -108,6 +108,35 @@ def test_append_same_ref_multiple_events_in_one_batch(tmp_path):
     assert append_announcement_events(batch, path) == 0
 
 
+def test_append_corrupt_timeline_backed_up_before_overwrite(tmp_path):
+    """损坏的时间轴被覆盖写之前须按原字节留底（公告历史不可重建，无副本即灭失）。"""
+    path = tmp_path / "timeline.json"
+    corrupt = '{"events": [{"date": "2026-01-08", "hero": "法正"'  # 截断 JSON
+    path.write_text(corrupt, encoding="utf-8")
+    event = {"date": "2026-09-01", "hero": "贾诩", "change_type": "增强", "source": "announcement"}
+
+    assert append_announcement_events([event], path) == 1
+
+    backups = list((tmp_path / "backups").glob("timeline-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == corrupt
+    assert load_timeline(path)["events"][0]["hero"] == "贾诩"
+
+
+def test_append_structurally_invalid_timeline_backed_up(tmp_path):
+    """结构异常（events 非列表）同样会被随后的保存覆盖，也须留底。"""
+    path = tmp_path / "timeline.json"
+    corrupt = '{"events": "not-a-list"}'
+    path.write_text(corrupt, encoding="utf-8")
+    event = {"date": "2026-09-01", "hero": "贾诩", "change_type": "增强", "source": "announcement"}
+
+    assert append_announcement_events([event], path) == 1
+
+    backups = list((tmp_path / "backups").glob("timeline-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == corrupt
+
+
 # ---------------------------------------------------------------
 # 查询
 # ---------------------------------------------------------------

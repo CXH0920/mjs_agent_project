@@ -254,8 +254,11 @@ class CardRepository(_JsonRepository):
 
         modified 为 {card_id: 清洗后的官网文本字段}，added 为同结构记录列表
         （含 id），清洗口径见 CardSyncService。既有卡牌保持原文件顺序，新增追加尾部。
+        先验证全部输入再改动内存：任一条畸形数据在写盘前抛出，避免留下
+        "看似失败、实际部分已变"的半更新状态。
         """
         applied: list[str] = []
+        updated: dict[str, Card] = {}
         for card_id, official in modified.items():
             card = self._cards.get(str(card_id))
             if card is None:
@@ -264,15 +267,23 @@ class CardRepository(_JsonRepository):
             payload = card.model_dump(mode="json")
             payload.update(official)
             payload["card_amount"] = card.card_amount
-            self._cards[str(card_id)] = Card.model_validate(payload)
+            updated[str(card_id)] = Card.model_validate(payload)
             applied.append(str(card_id))
+        new_cards: list[Card] = []
+        seen_new_ids: set[str] = set()
         for official in added:
             card = Card.model_validate(official)
-            if str(card.id) in self._cards:
+            card_id = str(card.id)
+            if card_id in self._cards or card_id in seen_new_ids:
                 logger.warning("官网同步新增卡已存在，跳过: %s", card.id)
                 continue
+            seen_new_ids.add(card_id)
+            new_cards.append(card)
+            applied.append(card_id)
+        for card_id, card in updated.items():
+            self._cards[card_id] = card
+        for card in new_cards:
             self._cards[str(card.id)] = card
-            applied.append(str(card.id))
         if applied:
             self._save()
         return applied

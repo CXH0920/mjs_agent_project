@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, preserve_corrupt_file
 from src.data.manager import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ def load_baike_ignores(path: str | Path | None = None) -> BaikeIgnoreStore:
         return BaikeIgnoreStore.model_validate_json(ignore_path.read_text(encoding="utf-8"))
     except Exception:
         logger.warning("百科忽略名单解析失败，按空名单处理: %s", ignore_path)
+        preserve_corrupt_file(ignore_path)
         return BaikeIgnoreStore()
 
 

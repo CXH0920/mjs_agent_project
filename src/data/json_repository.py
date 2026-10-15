@@ -101,6 +101,23 @@ def snapshot_to_backups(source: Path | str, *, keep: int = 10) -> Path | None:
     return backup_path
 
 
+def preserve_corrupt_file(path: Path | str) -> None:
+    """解析失败时把坏文件按原字节留底到 backups/。
+
+    模块级容错读函数（hero_timeline / baike_ignore_store / card_sync_store）
+    的公共保底：这些函数损坏时降级返回空数据，随后的覆盖式保存会把降级
+    数据原子写回，没有这份副本"读不出来的数据"就升级成"不可逆丢失"
+    （语义同 JsonRepository._read_root 内的坏文件保底）。
+    """
+    try:
+        backup_path = snapshot_to_backups(path)
+    except OSError as error:
+        logger.error("坏文件保底副本失败 %s: %s", path, error)
+        return
+    if backup_path is not None:
+        logger.warning("已留存坏文件副本: %s", backup_path)
+
+
 class JsonRepository:
     """JSON 文件可写仓库基类。
 
