@@ -350,6 +350,62 @@ def test_fetch_archives_robots_before_first_request(monkeypatch, tmp_path: Path)
     assert (tmp_path / "rc" / "robots.txt").exists()
 
 
+class TestSplitSkillDesc:
+    """技能描述拆分：官网标题格式不统一的真实样本回归"""
+
+    def test_bare_title_without_strong(self) -> None:
+        """官网样本（周处·有进无退）：首个标题漏包 <strong>，描述不得丢失"""
+        raw = (
+            "<p>技能描述</p>\n\n"
+            "<p>你的摸牌阶段和弃牌阶段改为出牌阶段。</p>\n\n"
+            "<p>&nbsp;</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>1.&ldquo;出牌阶段限1次&rdquo;的技能在各出牌阶段分别计算。</p>\n\n"
+            "<p>2.若摸牌阶段被跳过，则由该阶段改为的出牌阶段也被跳过。</p>\n\n"
+            "<p><strong>技能典故</strong></p>\n\n"
+            "<p>处按剑曰:&ldquo;此是吾效节授命之日。&rdquo;</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "你的摸牌阶段和弃牌阶段改为出牌阶段。"
+        assert parts["settlement"] == (
+            "1.“出牌阶段限1次”的技能在各出牌阶段分别计算。 "
+            "2.若摸牌阶段被跳过，则由该阶段改为的出牌阶段也被跳过。"
+        )
+
+    def test_detail_title_used_as_description(self) -> None:
+        """官网样本（王戎·道旁苦李）：标题为“技能详情”，按描述认领而非落空"""
+        raw = (
+            "<p><strong>技能详情</strong></p>\n\n"
+            "<p>当有&clubs;牌因弃置进入弃牌堆时，你可以获得这些牌，并交给一名其他角色。"
+            "这些牌无法被打出或主动弃置，直到下一轮结束。</p>\n\n"
+            "<p>&nbsp;</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>1.无法被主动弃置的牌在弃牌阶段即使大于手牌上限也无法被弃置。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == (
+            "当有♣牌因弃置进入弃牌堆时，你可以获得这些牌，并交给一名其他角色。"
+            "这些牌无法被打出或主动弃置，直到下一轮结束。"
+        )
+        assert parts["settlement"] == "1.无法被主动弃置的牌在弃牌阶段即使大于手牌上限也无法被弃置。"
+
+    def test_standard_sections_unchanged(self) -> None:
+        """标准格式回归：描述/结算取值不变，典故与设计思路仍被丢弃"""
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>锁定技，你不能使用锦囊牌。</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>1.装备牌不受限制。</p>\n\n"
+            "<p><strong>技能典故</strong></p>\n\n"
+            "<p>典故内容。</p>\n\n"
+            "<p><strong>设计思路</strong></p>\n\n"
+            "<p>思路内容。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "锁定技，你不能使用锦囊牌。"
+        assert parts["settlement"] == "1.装备牌不受限制。"
+
+
 def _hero_dict(hero_id: int, skills: list[dict]) -> dict:
     return {"id": hero_id, "faction": "魏", "skills": skills}
 
@@ -390,6 +446,21 @@ class TestFullWriteGuard:
 
     def test_missing_old_file_allowed(self, tmp_path: Path) -> None:
         assert official.refuse_write_reason([_hero_dict(1, [{"name": "s", "description": "d"}])], tmp_path / "heroes.json") is None
+
+    def test_parse_dropped_local_hero_rejected(self, tmp_path: Path) -> None:
+        """本地已有、官网也存在、但校验未通过的武将 → 疑似解析丢失，拒绝覆盖"""
+        output_path = tmp_path / "heroes.json"
+        output_path.write_text(json.dumps([_hero_dict(i, [{"name": "s", "description": "d"}]) for i in range(1, 11)]), encoding="utf-8")
+        validated = [_hero_dict(i, [{"name": "s", "description": "d"}]) for i in range(1, 10)]
+        reason = official.refuse_write_reason(validated, output_path, raw_ids=set(range(1, 11)))
+        assert reason is not None and "疑似解析丢失" in reason and "10" in reason
+
+    def test_hero_absent_from_official_allowed(self, tmp_path: Path) -> None:
+        """官网真下架（原始数据已无该 ID）→ 不按解析丢失拦截"""
+        output_path = tmp_path / "heroes.json"
+        output_path.write_text(json.dumps([_hero_dict(i, [{"name": "s", "description": "d"}]) for i in range(1, 11)]), encoding="utf-8")
+        validated = [_hero_dict(i, [{"name": "s", "description": "d"}]) for i in range(1, 10)]
+        assert official.refuse_write_reason(validated, output_path, raw_ids=set(range(1, 10))) is None
 
     def test_crawl_blocked_when_desc_all_empty(self, monkeypatch, tmp_path: Path) -> None:
         """集成：官网改版导致描述全空 → 守卫拦截，旧文件字节不变"""

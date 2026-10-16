@@ -189,7 +189,8 @@ def clean_html(html_text: str | None) -> str:
 def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     """
     先按 HTML 段落结构拆分原始 HTML，再逐段清洗。
-    只保留：技能描述 -> description，结算详情/结算详解 -> settlement
+    描述取值按 技能描述 -> 技能详情 -> 技能详解 顺序认领首个命中
+    （官网人工编辑，标题措辞不统一）；结算详情/结算详解 -> settlement
     丢弃：技能典故、设计思路
     """
     if not raw_desc:
@@ -199,10 +200,10 @@ def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     # 预处理：合并相邻的 <strong> 标签
     text = re.sub(r"</strong>\s*<strong>", "", text)
 
-    # 构建段落标题正则
+    # 构建段落标题正则；<strong> 按可选处理——官网标题偶尔漏包加粗（裸 <p>标题</p>）
     titles = "|".join(re.escape(t) for t in SKILL_SECTION_TITLES)
     section_pattern = re.compile(
-        rf"<p>(?:<[^>]+>)*\s*<strong>\s*({titles})\s*</strong>(?:<[^>]+>)*\s*</p>",
+        rf"<p>(?:<[^>]+>)*\s*(?:<strong>\s*)?({titles})(?:\s*</strong>)?(?:<[^>]+>)*\s*</p>",
         re.IGNORECASE,
     )
 
@@ -242,12 +243,18 @@ def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
         full = clean_html(text)
         return {"description": full, "settlement": ""}
 
-    # 获取描述和结算
-    description = sections.get("技能描述", "")
-    settlement = ""
-
-    for key in ["结算详情", "结算详解", "技能详解", "技能详情"]:
+    # 获取描述和结算；结算跳过已被描述认领的段落，避免同一段文字两处重复
+    description = ""
+    desc_key = None
+    for key in ["技能描述", "技能详情", "技能详解"]:
         if key in sections:
+            desc_key = key
+            description = sections[key]
+            break
+
+    settlement = ""
+    for key in ["结算详情", "结算详解", "技能详解", "技能详情"]:
+        if key != desc_key and key in sections:
             settlement = sections[key]
             break
 

@@ -46,8 +46,15 @@ MAX_EMPTY_DESC_RATIO = 0.2   # 空技能描述占比上限
 MAX_COUNT_DROP_RATIO = 0.3   # 相对现存文件的最大条数跌幅
 
 
-def refuse_write_reason(validated: list[dict], out_path: Path) -> str | None:
-    """写入前守卫；返回拒绝原因，None 表示允许写入。"""
+def refuse_write_reason(
+    validated: list[dict], out_path: Path, raw_ids: set | None = None
+) -> str | None:
+    """写入前守卫；返回拒绝原因，None 表示允许写入。
+
+    raw_ids 为本次官网原始数据的 ID 集合：本地已有、官网也有、但没进校验
+    结果的武将，是被解析/校验环节丢掉的，拒绝整库覆盖，防止单点解析失败
+    静默删库；官网原始数据里本就没有的（真下架）不拦。
+    """
     if not validated:
         return "校验通过条数为 0"
     total = sum(len(h.get("skills", [])) for h in validated)
@@ -65,8 +72,23 @@ def refuse_write_reason(validated: list[dict], out_path: Path) -> str | None:
         except (OSError, json.JSONDecodeError):
             # 旧文件已损坏时不拦：全量重爬正是恢复手段
             return None
-        if isinstance(old, list) and old and len(validated) < len(old) * (1 - MAX_COUNT_DROP_RATIO):
-            return f"条数 {len(validated)} 较现存 {len(old)} 跌幅超过 {MAX_COUNT_DROP_RATIO:.0%}"
+        if isinstance(old, list) and old:
+            if raw_ids is not None:
+                validated_ids = {h.get("id") for h in validated}
+                dropped = sorted(
+                    hid
+                    for hid in (h.get("id") for h in old if isinstance(h, dict))
+                    if hid is not None and hid in raw_ids and hid not in validated_ids
+                )
+                if dropped:
+                    preview = ", ".join(str(d) for d in dropped[:10])
+                    suffix = " 等" if len(dropped) > 10 else ""
+                    return (
+                        f"本地 {len(dropped)} 个武将在官网存在但校验未通过"
+                        f"（{preview}{suffix}），疑似解析丢失"
+                    )
+            if len(validated) < len(old) * (1 - MAX_COUNT_DROP_RATIO):
+                return f"条数 {len(validated)} 较现存 {len(old)} 跌幅超过 {MAX_COUNT_DROP_RATIO:.0%}"
     return None
 
 
@@ -133,7 +155,9 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
                 print(f"    ID={h['id']:>3}  {h['name']}  [{h['faction']}]  {sk}", flush=True)
             print("\n  (使用 --output 或去除 --dry-run 写入文件)", flush=True)
         else:
-            reason = refuse_write_reason(validated, out_path)
+            reason = refuse_write_reason(
+                validated, out_path, raw_ids={r.get("id") for r in raw_list}
+            )
             if reason:
                 print(f"\n[中止] 写入守卫触发: {reason}（旧文件未修改）", flush=True)
                 logger.error("写入守卫触发: %s", reason)
