@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from types import SimpleNamespace
 
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult, PollTaskResult
@@ -253,3 +255,44 @@ def test_route_guide_template_missing_deactivates_and_resets_activation() -> Non
     assert switched == []
     assert loaded == []
     assert guide_matched == []
+
+
+def test_poll_worker_exception_completes_poll_and_releases_gate() -> None:
+    """后台轮询线程未预期异常时必须回写 complete_poll：否则 OcrService 的在途
+    忙碌闸永久占用、begin_poll 永远被拒，轮询静默卡死且无任何状态变化。"""
+    capture = SimpleNamespace(connected=True)
+
+    class _PollOcrService(_OcrService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.poll_cancel_event = threading.Event()
+
+        def begin_poll(self) -> int:
+            return 7
+
+        def due_poll_tasks(self) -> list[str]:
+            return ["hero_selection"]
+
+    class _RaisingCaptureService(_CaptureService):
+        def start_ocr_worker(self) -> None:
+            pass
+
+        def capture_for_poll(self, capture):
+            raise RuntimeError("模拟采集内部异常")
+
+    ocr_service = _PollOcrService()
+    coordinator = PollCoordinator(
+        _RaisingCaptureService(capture), ocr_service, lambda: [],
+    )
+    coordinator._idle_unchanged_count = 3
+
+    coordinator._on_poll_tick()
+
+    deadline = time.monotonic() + 2.0
+    while not ocr_service.completed and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert ocr_service.completed == [(7, "retryable_capture", "轮询内部异常，详见运行日志")]
+    assert coordinator._idle_unchanged_count == 0  # 异常后闲置观察回到干净状态
+    assert coordinator._poll_thread_lock.acquire(blocking=False)
+    coordinator._poll_thread_lock.release()

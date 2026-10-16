@@ -491,12 +491,14 @@ class OcrWorker(QThread):
         )
 
     def reset_recognizer_cache(self) -> None:
-        """丢弃缓存的 recognizer，使下一次识别重建 service 并读到新白名单文件。
+        """丢弃缓存的 recognizer 与页面结果缓存，使下一次识别重建 service 并读到新白名单文件。
 
-        供"白名单配置"界面写入用户层对后调用，避免重启应用。
+        供"白名单配置"界面写入用户层对后调用，避免重启应用。页面缓存里的
+        结果同样是旧白名单下的纠错结论，不清会让同指纹页面继续复用旧结果。
         """
         self._recognizer = None
         self._recognizer_signature = None
+        self._page_cache.clear()
         logger.info("OCR 识别器缓存已重置，用户层白名单将在下次识别生效")
 
     def _get_recognizer(

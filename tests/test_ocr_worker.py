@@ -869,6 +869,34 @@ def test_result_reuse_invalidated_by_hero_names_change(monkeypatch) -> None:
 
 
 
+def test_result_reuse_invalidated_by_recognizer_cache_reset(monkeypatch) -> None:
+    """白名单变更（reset_recognizer_cache）后即使页面未变也重新 OCR：
+    缓存结果是旧白名单下的纠错结论，同样不可复用。"""
+    from PIL import Image
+
+    recognized: list = []
+    FakeTemplateManager, FakeRecognizer = _make_reuse_fakes(recognized)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def make_task() -> OcrTask:
+        return OcrTask(
+            image=Image.new("L", (2560, 1440), 200), hero_names=("曹操",), rois=None,
+            template_name="hero_selection", threshold=0.8,
+            roi_layout=_reuse_layout(), allow_result_reuse=True,
+        )
+
+    worker = OcrWorker()
+    worker._execute(make_task())
+    worker._execute(make_task())  # 同页面正常复用（对照组，证明复用路径本身未被破坏）
+    worker.reset_recognizer_cache()
+    third = worker._execute(make_task())
+
+    assert len(recognized) == 2
+    assert "skipped_ocr" not in third
+
+
+
 def test_drain_retired_workers_forced_exit_uses_zero_code(monkeypatch) -> None:
     """退役 worker 15 秒未退出的兜底：慢退出非故障，退出码 0（原 1 把正常关闭伪装成失败）"""
 

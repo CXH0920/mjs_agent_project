@@ -715,8 +715,13 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/match/peak_select_panel.py": 565,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
     # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
-    "business/recognition/ocr_worker.py": 518,
-    "scraper/official_source/crawler.py": 541,
+    # 518 → 520：reset_recognizer_cache 同步清 _page_cache——白名单变更后同指纹
+    # 页面不再复用旧纠错结果（TD-A8-001，2026-10-14）
+    "business/recognition/ocr_worker.py": 520,
+    # 首次入册（498 → 508 越过 500 绊线）：do_poll_work 补 except 兜底，未预期
+    # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
+    "ui/app/poll_coordinator.py": 508,
+    "scraper/official_source/crawler.py": 545,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     "data/recommendation_index_repository.py": 526,

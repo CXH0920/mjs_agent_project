@@ -265,6 +265,16 @@ class PollCoordinator(QObject):
                     generation, outcome, capture=capture, task_results=task_results,
                     frame_unchanged=frame_unchanged,
                 ))
+            except Exception:
+                # 未预期异常也必须回写 complete_poll：否则 OcrService 的在途
+                # 忙碌闸永久占用，begin_poll 永远被拒，轮询静默卡死
+                logger.exception("轮询后台任务异常")
+                self._reset_idle_watch()
+                self._ocr_service.complete_poll(
+                    generation,
+                    PollOutcome.RETRYABLE_CAPTURE.value,
+                    "轮询内部异常，详见运行日志",
+                )
             finally:
                 self._poll_thread_lock.release()
 
