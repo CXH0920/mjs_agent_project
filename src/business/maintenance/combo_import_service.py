@@ -6,6 +6,8 @@
   解析失败的条目照常导入（座次留空）并列入报告供人工复核；
   单边座次（partial）视为正常结果直接入库；
 - 解析结果与 position 字段交叉校验（以 note 为准），不一致清单进报告；
+- 源文件顶层须为对象（含 combos 数组）或数组本身，结构非法直接抛
+  ValueError（带路径），不进入报告；
 - 合并语义：源导出记录 upsert；manual 手工记录保留（同 key 冲突时手工优先）；
   逻辑删除记录无条件保留并跳过同 key 源记录（含源内容更新的情况）；
   非手工活跃记录若源中已不存在则移除并计数；重复执行输出稳定（幂等）。
@@ -24,6 +26,7 @@ from src.data.combo_seats import (
     STATUS_UNPARSED,
     parse_seats,
 )
+from src.data.json_repository import snapshot_to_backups
 from src.data.models import Combo
 
 DEFAULT_HEROES = PROJECT_ROOT / "data" / "heroes.json"
@@ -46,6 +49,20 @@ def _load_hero_name_map(heroes_path: Path) -> dict[str, int]:
     }
 
 
+def _load_source_combos(source_path: Path) -> list:
+    """读源导出并取 combos 列表；顶层/combos 字段结构非法时抛带路径的 ValueError。"""
+    source = json.loads(Path(source_path).read_text(encoding="utf-8"))
+    if isinstance(source, dict):
+        combos_raw = source.get("combos", [])
+    elif isinstance(source, list):
+        combos_raw = source
+    else:
+        raise ValueError(f"源文件顶层必须是 JSON 对象或数组: {source_path}")
+    if not isinstance(combos_raw, list):
+        raise ValueError(f"源文件的 combos 字段必须是数组: {source_path}")
+    return combos_raw
+
+
 def _check_position_mismatch(combo: Combo, seats1: list[int], seats2: list[int]) -> bool:
     """parsed 座次与 position 摘要是否矛盾（seat 全座 vs 单一 14/23）；both 不校验。"""
     if combo.position == "both":
@@ -58,8 +75,7 @@ def _check_position_mismatch(combo: Combo, seats1: list[int], seats2: list[int])
 
 def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
     """执行合并导入，返回报告 dict。重复执行输出稳定（幂等）。"""
-    source = json.loads(Path(source_path).read_text(encoding="utf-8"))
-    combos_raw = source.get("combos", []) if isinstance(source, dict) else source
+    combos_raw = _load_source_combos(source_path)
     name2id = _load_hero_name_map(heroes_path)
 
     manager = ComboManager(output_path)
@@ -169,5 +185,7 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
     manager.clear_all()
     for key, combo in merged.items():
         manager.update(combo, key)
+    # 覆盖前快照：combos.json 已出库无版本历史，误选源文件/合并缺陷凭 backups/ 回退
+    snapshot_to_backups(output_path)
     manager.save()
     return report

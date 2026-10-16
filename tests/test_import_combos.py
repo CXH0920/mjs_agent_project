@@ -4,6 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
 from src.data.combo_manager import ComboManager
 from src.scripts.import_combos import run_import
 
@@ -341,3 +342,66 @@ def test_hero_name_alias_mapping(tmp_path: Path) -> None:
     mgr.load()
     assert mgr.get_combo(1, 5).hero1_name == "临海公主"
     assert mgr.get_combo(2, 6).hero2_name == "平阳公主"
+
+
+@pytest.mark.parametrize("bad_source", ['"一段文本"', "123", "null", "true"])
+def test_rejects_scalar_source_with_path_in_error(tmp_path: Path, bad_source: str) -> None:
+    """源 JSON 顶层非对象/数组（误选纯值 JSON）时抛带路径的 ValueError，不写输出。"""
+    source = tmp_path / "source.json"
+    source.write_text(bad_source, encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+    output = tmp_path / "combos.json"
+
+    with pytest.raises(ValueError, match="source.json"):
+        run_import(source, heroes, output)
+    assert not output.exists()
+
+
+def test_rejects_non_list_combos_field(tmp_path: Path) -> None:
+    """combos 字段非数组（如字符串）时抛带路径的 ValueError，不写输出。"""
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": "abc"}), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+    output = tmp_path / "combos.json"
+
+    with pytest.raises(ValueError, match="source.json"):
+        run_import(source, heroes, output)
+    assert not output.exists()
+
+
+def test_import_snapshots_existing_output_before_overwrite(tmp_path: Path) -> None:
+    """覆盖已有 combos.json 前先快照到同目录 backups/（误选源文件可回退）。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧记录"},
+    ])
+    before = output.read_text(encoding="utf-8")
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "吕布", "hero2": "张辽", "rating": 6, "position": "both", "note": "12 34"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    run_import(source, heroes, output)
+
+    backups = list((tmp_path / "backups").glob("combos-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == before
+
+
+def test_first_import_creates_no_backup(tmp_path: Path) -> None:
+    """输出文件不存在（首次导入）时不产生备份。"""
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": []}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+    output = tmp_path / "combos.json"
+
+    run_import(source, heroes, output)
+
+    assert output.exists()
+    assert not (tmp_path / "backups").exists()
