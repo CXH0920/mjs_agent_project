@@ -151,3 +151,71 @@ def test_reload_from_disk_skips_when_already_running(monkeypatch) -> None:
     assert service.reload_from_disk() is True
     assert service.reload_from_disk() is False
     assert _ReloadWorker.instance is not None
+
+
+class _DanglingReloadWorker:
+    """失败路径替身：模拟 PySide6 在 deleteLater 销毁 C++ 对象后的行为。
+
+    failed → finished → deleteLater 之后 Python 引用仍在，但任何方法调用
+    抛 RuntimeError（Internal C++ object already deleted）——正是
+    reload_from_disk 残留悬挂引用后重试的触发条件。
+    """
+
+    instance = None
+
+    def __init__(self, _file_path, _parent=None) -> None:
+        self.loaded = _CallbackSignal()
+        self.failed = _CallbackSignal()
+        self.finished = _CallbackSignal()
+        self._cpp_alive = True
+        _DanglingReloadWorker.instance = self
+
+    def isRunning(self) -> bool:
+        if not self._cpp_alive:
+            raise RuntimeError("Internal C++ object (SynergyReloadWorker) already deleted")
+        return False
+
+    def start(self) -> None:
+        pass
+
+    def deleteLater(self) -> None:
+        self._cpp_alive = False
+
+
+def test_reload_failure_then_retry_starts_new_worker(monkeypatch) -> None:
+    """重载失败释放 worker 引用后，重试可正常启动新 worker 而不抛 RuntimeError。
+
+    回归（TD-A8-002）：failed 只转发不清引用时，worker 经 deleteLater 销毁
+    C++ 对象后，重试的 isRunning() 必抛 RuntimeError。
+    """
+    service = SynergyFetchService(SimpleNamespace(file_path="synergies.json"))
+    monkeypatch.setattr(
+        "src.business.fetching.synergy_fetch_service.SynergyReloadWorker", _DanglingReloadWorker
+    )
+    failures: list[str] = []
+    service.reload_failed.connect(failures.append)
+
+    assert service.reload_from_disk() is True
+    first_worker = _DanglingReloadWorker.instance
+    first_worker.failed.emit("文件损坏")
+    first_worker.finished.emit()  # → deleteLater（C++ 对象销毁）
+
+    assert failures == ["文件损坏"]
+    assert service._reload_worker is None
+    assert service.reload_from_disk() is True  # 不抛 RuntimeError，启动新 worker
+    assert _DanglingReloadWorker.instance is not first_worker
+
+
+def test_reload_from_disk_rejects_while_fetch_running(monkeypatch) -> None:
+    """抓取子进程运行中拒绝重载：避免旧文件快照覆盖内存态（VUL-B3-001）。"""
+    from PySide6.QtCore import QProcess
+
+    service = SynergyFetchService(SimpleNamespace(file_path="synergies.json"))
+    monkeypatch.setattr(
+        "src.business.fetching.synergy_fetch_service.SynergyReloadWorker", _DanglingReloadWorker
+    )
+    _DanglingReloadWorker.instance = None  # 类变量跨测试残留，先复位
+    service._process = SimpleNamespace(state=lambda: QProcess.ProcessState.Running)
+
+    assert service.reload_from_disk() is False
+    assert _DanglingReloadWorker.instance is None  # 未创建 worker，未覆盖内存数据

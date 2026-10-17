@@ -202,7 +202,9 @@ class BaseFetchService(QObject):
             "%s 子进程超过 %d 分钟无进度，看门狗强制终止",
             self._service_name, self._WATCHDOG_TIMEOUT_MS // 60000,
         )
-        process.kill()
+        # 走树杀而非 self.cancel()：browser 模式的 Playwright 子进程树只杀主进程
+        # 会孤儿化；且 cancel() 会置 _cancel_requested，把"超时失败"记成"用户取消"
+        cancel_process(process)
 
     # ---------------------------------------------------------------
     # stdout / stderr 读取
@@ -340,6 +342,14 @@ class BaseFetchService(QObject):
         self._stderr_buffer.clear()
         error_name = get_qprocess_error_name(error)
         full_msg = log_process_error(error_name, self._process)
+        # FailedToStart 等错误 Qt 不发 finished，此处不记则台账缺失该类失败
+        record_task(
+            self._service_name,
+            ok=False,
+            failed=len(self._failed_items),
+            duration_s=time.monotonic() - getattr(self, "_task_started", time.monotonic()),
+            reason=full_msg,
+        )
         self.status_changed.emit(f"{self._service_name}出错")
         self.error_occurred.emit(full_msg)
         self._on_process_error(error_name, full_msg)

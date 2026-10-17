@@ -87,13 +87,16 @@ class SynergyFetchService(BaseFetchService):
     def reload_from_disk(self) -> bool:
         """后台重载相性文件并写回数据层（取消生成后保住已分批提交的数据）。
 
-        返回是否成功启动；已有重载进行中时不重复启动，不发完成信号。
+        返回是否成功启动；抓取子进程运行中或已有重载进行中时不重复启动，
+        不发完成信号（抓取中重载会用启动前的旧快照覆盖内存态）。
         """
+        if self._is_busy():
+            return False
         if self._reload_worker and self._reload_worker.isRunning():
             return False
         worker = SynergyReloadWorker(self._synergy_manager.file_path, self)
         worker.loaded.connect(self._on_reload_loaded)
-        worker.failed.connect(self.reload_failed)
+        worker.failed.connect(self._on_reload_failed)
         worker.finished.connect(worker.deleteLater)
         self._reload_worker = worker
         worker.start()
@@ -143,6 +146,15 @@ class SynergyFetchService(BaseFetchService):
         self._synergy_manager.replace_loaded_data(synergies, load_issues)
         self._reload_worker = None
         self.reload_finished.emit()
+
+    def _on_reload_failed(self, error_msg: str) -> None:
+        """重载失败同样要释放 worker 引用（与 _on_reload_loaded 对称）。
+
+        worker 经 finished→deleteLater 销毁 C++ 对象后，残留引用会让
+        下次 reload_from_disk 的 isRunning() 抛 RuntimeError。
+        """
+        self._reload_worker = None
+        self.reload_failed.emit(error_msg)
 
     def _on_stdout_line(self, line: str) -> None:
         """解析子进程进度行。"""

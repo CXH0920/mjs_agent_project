@@ -33,6 +33,15 @@ class _FakeProc:
     def kill(self):
         self.killed = True
 
+    def readAllStandardOutput(self):
+        return b""
+
+    def readAllStandardError(self):
+        return b""
+
+    def errorString(self) -> str:
+        return "模拟错误描述"
+
 
 def test_script_runner_watchdog_kills_stuck_process(caplog) -> None:
     runner = ScriptRunner()
@@ -69,6 +78,29 @@ def test_base_fetch_watchdog_kills_stuck_process(qapp, caplog) -> None:
 
     assert service._process.killed is True
     assert any("看门狗强制终止" in r.message for r in caplog.records)
+
+
+def test_base_fetch_watchdog_terminates_process_tree(qapp, monkeypatch) -> None:
+    """看门狗超时必须委托 cancel_process 走进程树终止（VUL-B2-001）。
+
+    browser 模式下 Playwright 的 node/chrome 是主进程的子进程树，仅杀主进程
+    会孤儿化浏览器进程；替身无 processId，cancel_process 会降级为 kill，
+    故用 monkeypatch 验证委托关系本身。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+
+    delegated = []
+    monkeypatch.setattr(bfs, "cancel_process", lambda process: delegated.append(process))
+    service = bfs.BaseFetchService()
+    fake = _FakeProc()
+
+    service._cancel_requested = False
+    service._process = fake
+    service._on_watchdog_timeout()
+
+    assert delegated == [fake]  # 树杀委托，而非直接 kill 主进程
+    assert fake.killed is False
+    assert service._cancel_requested is False  # 超时不得伪装成用户取消
 
 
 def test_base_fetch_cancel_ignores_idle_service(qapp) -> None:
@@ -187,6 +219,73 @@ def test_base_fetch_finish_cancellation_resets_state(qapp) -> None:
     assert service._cancel_cleanup_process is None
     assert events == ["cancelled"]
     assert statuses[-1] == "子进程已中止"
+
+
+def test_base_fetch_on_error_emits_signals_and_records_ledger(qapp, monkeypatch) -> None:
+    """_on_error 发终态信号并记任务台账。
+
+    FailedToStart 时 Qt 不发 finished，record_task 只挂在 _on_finished 会漏记
+    该类失败（TD-A5-001）；取消链路的 Crashed 提前 return 仍由 finished 记账。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+    from PySide6.QtCore import QProcess
+
+    recorded = []
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: recorded.append((a, kw)))
+    service = bfs.BaseFetchService()
+    service._process = _FakeProc()
+    statuses, errors = [], []
+    service.status_changed.connect(statuses.append)
+    service.error_occurred.connect(errors.append)
+
+    service._on_error(QProcess.ProcessError.FailedToStart)
+
+    assert statuses == ["子进程出错"]
+    assert errors == ["子进程启动失败: 模拟错误描述"]
+    assert len(recorded) == 1
+    args, kwargs = recorded[0]
+    assert args[0] == "子进程"
+    assert kwargs["ok"] is False
+    assert "子进程启动失败" in kwargs["reason"]
+
+
+def test_base_fetch_on_error_crashed_during_cancel_skips_ledger(qapp, monkeypatch) -> None:
+    """取消链路上的 Crashed 提前返回：不重复记台账，记账交给随后的 _on_finished。"""
+    import src.business.fetching.base_fetch_service as bfs
+    from PySide6.QtCore import QProcess
+
+    recorded = []
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: recorded.append((a, kw)))
+    service = bfs.BaseFetchService()
+    service._process = _FakeProc()
+    service._cancel_requested = True
+    errors = []
+    service.error_occurred.connect(errors.append)
+
+    service._on_error(QProcess.ProcessError.Crashed)
+
+    assert recorded == []  # 收尾统一走 _on_finished，此处记账会双记
+    assert errors == []
+
+
+def test_base_fetch_cleanup_tmp_file_swallows_unlink_oserror(qapp, monkeypatch, caplog, tmp_path) -> None:
+    """特征测试：unlink 失败仅告警不抛出——清理不得中断收尾流程。"""
+    import src.business.fetching.base_fetch_service as bfs
+
+    tmp_file = tmp_path / "heroes.json"
+    tmp_file.write_text("[]", encoding="utf-8")
+    service = bfs.BaseFetchService()
+    service._context = {"tmp_path": str(tmp_file)}
+
+    def _raise(path):
+        raise OSError("being used by another process")
+
+    monkeypatch.setattr(bfs.os, "unlink", _raise)
+
+    with caplog.at_level(logging.WARNING, logger="src.business.fetching.base_fetch_service"):
+        service._cleanup_tmp_file()
+
+    assert any("清理临时文件失败" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------
