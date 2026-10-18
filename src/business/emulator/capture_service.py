@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 # 截图默认保存目录（与 match 面板共用 env.SCREENSHOTS_DIR，#E8）
 DEFAULT_SCREENSHOTS_DIR = SCREENSHOTS_DIR
 
+# 轮询单帧等待上界：可容纳执行器中一个最坏在途任务（连接约 45s +
+# 截图重试 3×15s，见 adb_screen 超时常量）再加余量；超过即按可重试
+# 失败放弃本轮，避免执行器积压时轮询线程无限期静默（VUL-B3-002）
+_POLL_CAPTURE_TIMEOUT_S = 120.0
+
 
 class CaptureService(QObject):
     """截图业务服务"""
@@ -411,6 +416,21 @@ class CaptureService(QObject):
         """断开模拟器。"""
         return self._connection.disconnect_emulator()
 
+    def _reconnect_if_needed(self, capture: AdbCapture) -> tuple[bool, str]:
+        """按需重连共享会话：手动/轮询截图入口共用（TD-A2-001 修复统一）。
+
+        经 connect_capture 完成状态同步；连接期间配置热更会重建 AdbCapture，
+        连接后校验 is_current，过期引用不得继续截图。
+        """
+        if capture.connected:
+            return True, ""
+        ok, message = self._connection.connect_capture(capture)
+        if not ok:
+            return False, message
+        if not self._connection.is_current(capture):
+            return False, "ADB 配置已变更，请重试"
+        return True, ""
+
     def capture_screenshot(self) -> tuple[bool, object]:
         """使用共享 ADB 会话获取一张截图，不保存文件也不触发 OCR。"""
         connection = self._connection
@@ -419,15 +439,10 @@ class CaptureService(QObject):
             if capture is None:
                 connection.set_connection_state("unconfigured")
                 return False, "ADB 未配置，请在 配置 → 模拟器配置 中设置"
-            need_connect = not capture.connected
 
-        if need_connect:
-            ok, message = connection.connect_capture(capture)
-            if not ok:
-                return False, f"ADB 连接失败: {message}"
-            # 连接期间配置可能已变更并重建 AdbCapture，旧引用不再可信
-            if not connection.is_current(capture):
-                return False, "ADB 配置已变更，请重试"
+        ok, message = self._reconnect_if_needed(capture)
+        if not ok:
+            return False, f"ADB 连接失败: {message}"
 
         self.status_changed.emit("正在截图...")
         with connection.adb_io_lock:
@@ -440,12 +455,18 @@ class CaptureService(QObject):
         return True, result
 
     def capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
-        """经同一后台执行器完成轮询截图，避免与手动截图并发访问 ADB。"""
+        """经同一后台执行器完成轮询截图；等待有上界（VUL-B3-002 修复）。
+
+        超时按可重试失败返回，执行器积压时轮询线程不再无限期静默阻塞。
+        """
         if self._shutdown_token.spent:
             return False, "截图服务已关闭", "capture"
         future = self._adb_executor.submit(self._capture_for_poll, capture)
         try:
-            return future.result()
+            return future.result(timeout=_POLL_CAPTURE_TIMEOUT_S)
+        except TimeoutError:
+            logger.warning("轮询截图等待超时（%.0f 秒），本轮放弃", _POLL_CAPTURE_TIMEOUT_S)
+            return False, "轮询截图等待超时，本轮已放弃", "capture"
         except Exception as error:
             logger.exception("轮询截图异常")
             return False, str(error), "capture"
@@ -455,12 +476,11 @@ class CaptureService(QObject):
         with connection.session_lock:
             if capture is not connection.capture:
                 return False, "ADB 配置已变更", "connection"
-            need_connect = not capture.connected
-        if need_connect:
-            with connection.adb_io_lock:
-                ok, message = capture.connect()
-            if not ok:
-                return False, message, "connection"
+        # 重连走共享 _reconnect_if_needed（TD-A2-001 对齐手动路径）；截图失败的
+        # 状态同步由 poll_coordinator 经 sync_poll_connection_state 处理
+        ok, message = self._reconnect_if_needed(capture)
+        if not ok:
+            return False, message, "connection"
         with connection.adb_io_lock:
             ok, result = capture.screencap_full(log_success=False)
         return ok, result, "" if ok else "capture"

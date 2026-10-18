@@ -131,6 +131,33 @@ def test_connect_and_save_require_explicit_multi_instance_selection(tmp_path: Pa
     assert config["mumu_adb_port"] == 16416
 
 
+def test_save_config_port_merge_rules(tmp_path: Path) -> None:
+    """特征测试：锚定 7e88f63「多实例明确选择策略」的端口保存规则。
+
+    ① 显式选择 → 用所选设备端口；② 自动模式（配置端口 0）→ 保持 0；
+    ③ 固定端口 + 设备下拉框现存设备 → 跟随该设备端口。UI 刷新下拉框时
+    优先高亮端口匹配项，③ 仅在配置端口对应设备已消失时才实际改写值，
+    属有意设计而非缺陷（考古见 7e88f63 提交说明"保存规则"）。
+    """
+    coordinator, _capture, _ocr, _operation = _coordinator(tmp_path)
+    device = MuMuDeviceInfo("2", "实例 B", 16416, True)
+
+    # ① 显式选择：端口取所选设备
+    config, error = coordinator.save_config({"mumu_adb_path": "adb.exe"}, device, True)
+    assert error == ""
+    assert config["mumu_adb_port"] == 16416
+
+    # ② 自动模式（端口 0）：保持自动探测，不被传入设备覆盖
+    coordinator._config["mumu_adb_port"] = 0
+    config, _error = coordinator.save_config({"mumu_adb_path": "adb.exe"}, device, False)
+    assert config["mumu_adb_port"] == 0
+
+    # ③ 固定端口 + 未显式选择：跟随现存设备端口
+    coordinator._config["mumu_adb_port"] = 16384
+    config, _error = coordinator.save_config({"mumu_adb_path": "adb.exe"}, device, False)
+    assert config["mumu_adb_port"] == 16416
+
+
 def test_template_lifecycle_and_service_delegation(tmp_path: Path) -> None:
     coordinator, _capture, ocr, operation = _coordinator(tmp_path)
     finished: list[str] = []

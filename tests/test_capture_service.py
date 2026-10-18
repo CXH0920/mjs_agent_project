@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import threading
+import time
 from types import SimpleNamespace
 
 from PIL import Image
 from PySide6.QtCore import QObject, Signal
+from src.business.emulator import capture_service as capture_service_module
 from src.business.emulator import ocr_task_coordinator
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_worker import OfficialImportTask
@@ -324,6 +326,48 @@ def test_file_import_rejects_invalid_image_without_submitting_ocr(tmp_path) -> N
     assert submitted == []
 
 
+def test_shutdown_prevents_worker_revival(monkeypatch) -> None:
+    """回归 VUL-B2-001：shutdown 后迟到的 OCR 入口不得复活新 QThread。
+
+    原缺陷：shutdown 把 _worker 置 None 后，退出阶段迟到的
+    warmup/submit/reset 调用经 ensure_worker 重新创建并启动一个无人
+    retire 的 QThread，进程退出时触发 "Destroyed while thread is
+    still running" 崩溃。
+    """
+    created: list[object] = []
+
+    class _StubWorker:
+        def __init__(self) -> None:
+            created.append(self)
+
+        def start(self) -> None:
+            pass
+
+        def retire(self) -> None:
+            pass
+
+    monkeypatch.setattr(ocr_task_coordinator, "OcrWorker", _StubWorker)
+    coordinator = ocr_task_coordinator.OcrTaskCoordinator(on_worker_created=lambda worker: None)
+    first = coordinator.ensure_worker()
+
+    coordinator.shutdown()
+    revived = coordinator.ensure_worker()
+
+    assert revived is first
+    assert len(created) == 1
+
+
+def test_shutdown_before_worker_creation_rejects_late_ocr_calls() -> None:
+    """VUL-B2-001 边界：关闭后才出现的首次 OCR 需求明确拒绝，不复活线程。"""
+    import pytest
+
+    coordinator = ocr_task_coordinator.OcrTaskCoordinator(on_worker_created=lambda worker: None)
+    coordinator.shutdown()
+
+    with pytest.raises(RuntimeError, match="已关闭"):
+        coordinator.ensure_worker()
+
+
 def test_capture_screenshot_reuses_and_connects_shared_session() -> None:
     class FakeCapture:
         connected = False
@@ -338,7 +382,7 @@ def test_capture_screenshot_reuses_and_connects_shared_session() -> None:
             return True, "连接成功"
 
         @staticmethod
-        def screencap_full():
+        def screencap_full(log_success: bool = True):
             return True, Image.new("RGB", (10, 20))
 
     service = CaptureService()
@@ -351,3 +395,128 @@ def test_capture_screenshot_reuses_and_connects_shared_session() -> None:
     assert image.size == (10, 20)
     assert capture.connect_calls == 1
     assert service.connection_state == ("connected", "127.0.0.1:16448")
+
+
+def test_capture_screenshot_connect_failure_keeps_message_format() -> None:
+    """锚定手动路径连接失败的消息格式（公共可观察行为，重构不得改变）。"""
+    class FailingCapture:
+        connected = False
+        device_serial = ""
+
+        def connect(self):
+            return False, "超时"
+
+    service = CaptureService()
+    service.capture = FailingCapture()
+
+    ok, message = service.capture_screenshot()
+
+    assert not ok
+    assert message == "ADB 连接失败: 超时"
+
+
+def test_poll_capture_rejects_foreign_capture_upfront() -> None:
+    """锚定轮询入口的时效检查：提交时已过期的 capture 直接拒绝，不碰 ADB。"""
+    class ForeignCapture:
+        connected = True
+        device_serial = "127.0.0.1:9999"
+
+        def screencap_full(self, log_success: bool = True):
+            raise AssertionError("过期 capture 不得执行截图")
+
+    service = CaptureService()
+    service.update_config({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448})
+
+    ok, _message, kind = service._capture_for_poll(ForeignCapture())
+
+    assert not ok
+    assert kind == "connection"
+
+
+def test_poll_capture_connect_updates_connection_state() -> None:
+    """回归 TD-A2-001a：轮询自愈连接成功后，会话状态须同步为 connected。
+
+    原缺陷：轮询路径用裸 capture.connect() 重连，截图恢复正常但状态
+    长期停留在 offline，用户被误导以为连接断开。
+    """
+    class FakeCapture:
+        connected = False
+        device_serial = "127.0.0.1:16448"
+
+        def connect(self):
+            self.connected = True
+            return True, "连接成功"
+
+        @staticmethod
+        def screencap_full(log_success: bool = True):
+            return True, Image.new("RGB", (10, 20))
+
+    service = CaptureService()
+    service.update_config({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448})
+    capture = FakeCapture()
+    service.capture = capture
+
+    ok, _image, kind = service._capture_for_poll(capture)
+
+    assert ok
+    assert kind == ""
+    assert service.connection_state == ("connected", "127.0.0.1:16448")
+
+
+def test_poll_capture_rejects_stale_capture_after_reconnect(monkeypatch) -> None:
+    """回归 TD-A2-001b：连接期间配置热更重建会话后，旧 capture 不得继续截图。
+
+    原缺陷：轮询路径连接后没有 is_current 校验，热更竞态窗口内会拿
+    旧设备画面送 OCR，识别结果静默错乱。
+    """
+    class FakeCapture:
+        connected = False
+        device_serial = ""
+
+        def __init__(self) -> None:
+            self.screencap_calls = 0
+
+        def connect(self):
+            self.connected = True
+            return True, "连接成功"
+
+        def screencap_full(self, log_success: bool = True):
+            self.screencap_calls += 1
+            return True, Image.new("RGB", (10, 20))
+
+    service = CaptureService()
+    service.update_config({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448})
+    capture = FakeCapture()
+    service.capture = capture
+    monkeypatch.setattr(service._connection, "is_current", lambda _capture: False)
+
+    ok, _message, kind = service._capture_for_poll(capture)
+
+    assert not ok
+    assert kind == "connection"
+    assert capture.screencap_calls == 0
+
+
+def test_capture_for_poll_times_out_when_executor_stuck(monkeypatch) -> None:
+    """回归 VUL-B3-002：轮询截图等待有上界，执行器被占住时按可重试失败返回。
+
+    原缺陷：future.result() 无超时，执行器积压（手动截图连续卡 45 秒级
+    超时）时轮询线程无限期静默，心跳停摆无自愈。
+    """
+    monkeypatch.setattr(capture_service_module, "_POLL_CAPTURE_TIMEOUT_S", 0.2)
+    service = CaptureService()
+    release = threading.Event()
+    # 占住单线程执行器：不 release 则第一个任务永不完成
+    service._adb_executor.submit(lambda: release.wait(timeout=5))
+
+    try:
+        started = time.monotonic()
+        ok, message, kind = service.capture_for_poll(None)
+
+        assert not ok
+        assert kind == "capture"
+        assert "超时" in message
+        assert time.monotonic() - started < 5  # 没有跟着占位任务等满
+    finally:
+        release.set()
+    service.shutdown()

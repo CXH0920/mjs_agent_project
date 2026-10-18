@@ -243,6 +243,11 @@ class MumuConfigCoordinator(QObject):
 
         config = dict(self._config)
         config.update(form_values)
+        # 端口保存规则（7e88f63「多实例明确选择策略」，特征测试锚定）：
+        # ① 显式选择 → 所选设备端口；② 自动模式（0）→ 保持自动探测；
+        # ③ 固定端口未显式选择 → 跟随下拉框现存设备。UI 刷新下拉框时优先
+        # 高亮端口匹配项，③ 仅当配置端口对应设备已消失时才实际改写值
+        #（原配置实例关闭后的跟随兜底，非缺陷）
         configured_port = self._config.get("mumu_adb_port", 0)
         if selected_explicitly and device and device.adb_port:
             config["mumu_adb_port"] = device.adb_port

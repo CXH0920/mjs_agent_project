@@ -47,6 +47,7 @@ class OcrTaskCoordinator(QObject):
         self._config_provider = config_provider
         self._roi_config = roi_config or OcrRoiConfig()
         self._worker: OcrWorker | None = None
+        self._worker_retired = False  # shutdown 已执行：此后不再创建新 worker
         self._worker_lock = threading.Lock()
         self._on_worker_created = on_worker_created
         self._warmup_state = "idle"
@@ -72,15 +73,26 @@ class OcrTaskCoordinator(QObject):
         持有期间执行，Lock 不可重入——回调内禁止重入 ensure_worker 或
         调用 reset_recognizer_cache 等任何触发 worker 创建的接口，否则
         同线程重入会永久死锁且无任何日志。
+
+        shutdown 之后不再创建新实例：迟到的调用拿到的是已退役 worker
+        （任务入队后不被消费，随进程退出回收）。修复退出阶段复活无人
+        retire 的 QThread 导致的 "Destroyed while thread is still
+        running" 崩溃。
         """
-        if self._worker is None:
+        if self._worker is None and not self._worker_retired:
             with self._worker_lock:
                 if self._worker is None:
                     worker = OcrWorker()
                     self._on_worker_created(worker)
                     worker.start()
                     self._worker = worker
-        return self._worker
+        worker = self._worker
+        if worker is not None:
+            return worker
+        # 仅剩"已关闭且从未创建"的组合（罕见：退出前从未触发过任何 OCR
+        # 路径却有迟到调用）。复活 QThread 正是 VUL-B2-001 要消除的崩溃
+        # 源，明确拒绝优于静默复活线程
+        raise RuntimeError("OCR 协调器已关闭，拒绝创建新 worker")
 
     def reset_recognizer_cache(self) -> None:
         """丢弃 OCR recognizer 缓存，使下次识别读到新的用户层白名单。"""
@@ -174,7 +186,11 @@ class OcrTaskCoordinator(QObject):
 
     def shutdown(self) -> None:
         """退役 OCR worker：仅通知停止并立即返回（不在 GUI 线程同步等待），
-        线程由 OcrWorker 的退役列表持有并在进程退出前收尾，避免窗口卡死。"""
-        if self._worker is not None:
-            self._worker.retire()
-            self._worker = None
+        线程由 OcrWorker 的退役列表持有并在进程退出前收尾，避免窗口卡死。
+
+        引用保留不置空：确保关闭后迟到的 OCR 调用拿到退役实例而非复活
+        新 QThread；worker 从未创建过的迟到调用由 ensure_worker 明确拒绝。"""
+        with self._worker_lock:
+            self._worker_retired = True
+            if self._worker is not None:
+                self._worker.retire()
