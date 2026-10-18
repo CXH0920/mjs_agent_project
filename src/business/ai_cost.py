@@ -18,11 +18,17 @@ def estimate_generation_cost(
     """按条目数与生成类型（guide/synergy）估算成本，返回 estimation dict。
 
     model 缺省取当前生效 API 档案的模型；use_rag 传入时计入 RAG 预算影响
-    （后端选择对话框重算用），不传时按默认口径。
+    （后端选择对话框重算用），不传时按默认口径（RAG 语料注入，与对话框
+    默认勾选一致）——不可把 None 直接透传，底层 `if use_rag` 会将其按
+    False 结算成经典口径。未知 kind 显式报错，不静默降级。
     """
     from src.scraper.ai.prompt_utils import estimate_cost, estimate_item_cost
 
     model = model or get_api_config()["model"]
+    if kind not in ("guide", "synergy"):
+        raise ValueError(f"未知生成类型: {kind}")
+    if use_rag is None:
+        use_rag = True
     if kind == "guide":
-        return estimate_cost(items, "guide", model)
+        return estimate_cost(items, "guide", model, use_rag=use_rag)
     return estimate_item_cost(items, "synergy", model, use_rag=use_rag)

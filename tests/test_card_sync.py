@@ -353,6 +353,56 @@ def test_service_apply_rejects_while_check_in_flight(monkeypatch, tmp_path) -> N
     service._thread.join(2)
 
 
+def test_service_apply_rejects_when_cards_repo_has_load_errors(tmp_path) -> None:
+    """cards.json 加载有 error（损坏/坏记录）时拒绝应用：防空库被官网 added 覆盖（VUL-B4-002）。"""
+    cards_path = tmp_path / "cards.json"
+    corrupt = '[{"id": "1", "name": "卡1"'  # 截断 JSON
+    cards_path.write_text(corrupt, encoding="utf-8")
+    repo = CardRepository(cards_path)
+    repo.load()
+    assert any(issue.severity == "error" for issue in repo.load_issues)
+
+    service = CardSyncService(repo, snapshot_path=tmp_path / "snap.json",
+                              changes_path=tmp_path / "changes.json")
+    service._last_official_cards = [_official_record(1, "旧描述"), _official_record(50, "全新描述")]
+
+    with pytest.raises(RuntimeError, match="加载异常"):
+        service.apply_updates([], ["50"])
+
+    # 坏文件保持原字节（data 层已另存保底副本），不得被残缺库覆盖
+    assert cards_path.read_text(encoding="utf-8") == corrupt
+
+
+def test_service_apply_change_record_failure_keeps_diff_revisible(monkeypatch, tmp_path) -> None:
+    """变更记录写入失败时基线不得推进：diff 仍在，重新应用可幂等补齐（VUL-B4-001）。"""
+    repo = _make_repo(tmp_path, [_make_card("1", "卡1")])
+    snap_path, changes_path = tmp_path / "snap.json", tmp_path / "changes.json"
+    service = CardSyncService(repo, snapshot_path=snap_path, changes_path=changes_path)
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "旧描述")])
+    service._finalize_check(service._do_check())  # 首跑：本地卡初始化基线，diff 为空
+
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "新描述")])
+    service._finalize_check(service._do_check())  # 检出卡 1 差异
+
+    def broken_append(record, path=None):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr("src.business.card_sync.append_card_change", broken_append)
+    with pytest.raises(RuntimeError, match="变更记录"):
+        service.apply_updates(["1"], [])
+
+    # 卡牌已写回；基线未推进（hash 仍是旧描述口径）、变更记录未落盘——
+    # 下次检查差异仍在，重新应用即可补齐（应用链路幂等）
+    updated = repo.get_card("1")
+    assert updated is not None and updated.card_desc == "新描述"
+    entry = load_card_snapshot(snap_path).cards.get("1")
+    assert entry is not None
+    assert entry.hash == card_content_hash(_official_record(1, "旧描述"))
+    assert not changes_path.exists()
+
+
 # ---------------------------------------------------------------------------
 # 精化时效：collect_stale_card_curated
 # ---------------------------------------------------------------------------

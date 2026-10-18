@@ -147,11 +147,16 @@ class CardSyncService(QObject):
 
         未勾选的卡保留本地内容且基线条目不动，下次检查继续提示。
         检查进行中拒绝应用：避免 GUI 线程写 cards 内存数据与 worker 线程检查并发。
+        基础库加载异常（文件损坏/坏记录）同样拒绝：防空库被官网数据覆盖。
         """
         if self.is_busy:
             raise RuntimeError("卡牌检查正在进行，请等待检查完成后再应用")
         if not self._last_official_cards:
             raise RuntimeError("尚未检查或官网数据不可用，无法应用卡牌更新")
+        if any(issue.severity == "error" for issue in self._cards.load_issues):
+            # 加载 error 时内存库可能残缺（甚至为空），继续应用会用残缺库
+            # 覆盖 cards.json——data 层虽有坏文件保底副本，恢复依赖人工
+            raise RuntimeError("基础卡牌库加载异常（文件损坏或坏记录），请先修复后再应用卡牌更新")
         official_by_id = {str(card.get("id")): card for card in self._last_official_cards}
         cleaned_modified: dict[str, dict] = {}
         for card_id in modified_ids:
@@ -178,17 +183,26 @@ class CardSyncService(QObject):
                 entry = self._last_snapshot.cards.get(card_id)
                 if entry is not None:
                     baseline.cards[card_id] = entry
-        save_card_snapshot(baseline, self._snapshot_path)
 
+        # 先记变更（幂等、可重放）再落基线：基线一旦推进 diff 即消失，变更记录
+        # 若后写失败将永久缺失（精化时效检查失真）；此序下任一步失败都只是
+        # 下次检查重复提示，重新应用即可补齐
         if modified_applied or added_applied:
-            append_card_change(
-                CardChangeRecord(
-                    date=date.today().isoformat(),
-                    applied_ids=modified_applied,
-                    added_ids=added_applied,
-                ),
-                self._changes_path,
-            )
+            try:
+                append_card_change(
+                    CardChangeRecord(
+                        date=date.today().isoformat(),
+                        applied_ids=modified_applied,
+                        added_ids=added_applied,
+                    ),
+                    self._changes_path,
+                )
+            except OSError as error:
+                logger.exception("卡牌变更记录写入失败，基线未推进")
+                raise RuntimeError(
+                    "卡牌已写回，但变更记录写入失败；下次检查将重复提示该差异，重新应用即可补齐"
+                ) from error
+        save_card_snapshot(baseline, self._snapshot_path)
         return {"applied": len(applied_ids), "modified": len(modified_applied), "added": len(added_applied)}
 
     # ---------------------------------------------------------------
