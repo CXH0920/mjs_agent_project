@@ -698,6 +698,217 @@ def test_service_check_now_cooldown(tmp_path, monkeypatch) -> None:
     assert calls == [1]
 
 
+def test_service_run_prepare_official_ok(tmp_path, monkeypatch) -> None:
+    """_run_prepare 正常路径：官网数据可用时 payload 携带候选与 official_ok=True。"""
+    service, _manager = _make_service(tmp_path)
+    payloads = []
+    service.update_candidates_prepared.connect(payloads.append)
+    monkeypatch.setattr(
+        service_module, "fetch_baike_heroes", lambda: [_hero(id=99, name="东方朔")]
+    )
+    diff = {"added": [{"name": "东方朔", "id": 99}], "modified": [], "removed": []}
+    service._run_prepare([{"id": 1, "name": "贾诩"}], [], diff)
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["official_ok"] is True
+    assert "error" not in payload
+    assert [candidate["name"] for candidate in payload["candidates"]] == ["东方朔"]
+    # 官网数据可用时，候选携带官网内容哈希（忽略名单写入时同源）
+    assert payload["candidates"][0]["content_hash"]
+
+
+def test_service_run_prepare_official_unavailable(tmp_path, monkeypatch) -> None:
+    """官网获取失败（返回 None）不中断：候选仍产出、official_ok=False。"""
+    service, _manager = _make_service(tmp_path)
+    payloads = []
+    service.update_candidates_prepared.connect(payloads.append)
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: None)
+    diff = {"added": [{"name": "东方朔", "id": 99}], "modified": [], "removed": []}
+    service._run_prepare([{"id": 1, "name": "贾诩"}], [], diff)
+    payload = payloads[0]
+    assert payload["official_ok"] is False
+    assert "error" not in payload
+    assert [candidate["name"] for candidate in payload["candidates"]] == ["东方朔"]
+
+
+def test_service_run_prepare_exception_produces_error_payload(tmp_path, monkeypatch) -> None:
+    """_run_prepare 异常兜底：产出空候选 + error 文案，信号仍发射（UI 进度条可收尾）。"""
+    service, _manager = _make_service(tmp_path)
+    payloads = []
+    service.update_candidates_prepared.connect(payloads.append)
+
+    def _raise():
+        raise RuntimeError("官网崩了")
+
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", _raise)
+    service._run_prepare([{"id": 1, "name": "贾诩"}], [], {"added": [], "modified": [], "removed": []})
+    assert len(payloads) == 1
+    assert payloads[0]["candidates"] == []
+    assert payloads[0]["official_ok"] is False
+    assert payloads[0]["error"]
+
+
+def test_service_finalize_check_updates_snapshot_and_saves(tmp_path, monkeypatch) -> None:
+    """_finalize_check 收尾契约：写 _last_snapshot、落盘 pending_saves、再广播结果。"""
+    service, _manager = _make_service(tmp_path)
+    saved = []
+    monkeypatch.setattr(service_module, "save_baike_snapshot", lambda s, p: saved.append(s))
+    finished = []
+    service.check_finished.connect(finished.append)
+
+    snapshot = BaikeSnapshot(heroes={"1": {"name": "贾诩", "hash": "h1"}})
+    pending = BaikeSnapshot(heroes={"2": {"name": "马钧", "hash": "h2"}})
+    result = service_module.AnnouncementCheckResult(snapshot=snapshot, pending_saves=[pending])
+    service._finalize_check(result)
+
+    assert service._last_snapshot is snapshot
+    assert saved == [pending]
+    assert finished == [result]
+
+
+def test_service_finalize_check_save_failure_still_emits(tmp_path, monkeypatch) -> None:
+    """落盘 OSError 只记录不中断：_last_snapshot 仍更新、check_finished 仍发射。"""
+    service, _manager = _make_service(tmp_path)
+
+    def _boom(snapshot, path):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service_module, "save_baike_snapshot", _boom)
+    finished = []
+    service.check_finished.connect(finished.append)
+
+    snapshot = BaikeSnapshot(heroes={"1": {"name": "贾诩", "hash": "h1"}})
+    result = service_module.AnnouncementCheckResult(
+        snapshot=snapshot, pending_saves=[BaikeSnapshot()]
+    )
+    service._finalize_check(result)
+
+    assert service._last_snapshot is snapshot
+    assert finished == [result]
+
+
+def test_service_prepare_update_candidates_cooldown(tmp_path, monkeypatch) -> None:
+    """冷却期内 prepare 被拦截：返回 False 且不启动线程（TD-A6-001 回归）。"""
+    service, _manager = _make_service(tmp_path)
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target, args=(), daemon=True, name=None):
+            pass
+
+        def is_alive(self) -> bool:
+            return False
+
+        def start(self) -> None:
+            started.append(1)
+
+    monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
+    service._last_check_started_at = time.monotonic()
+    diff = {"added": [], "modified": [], "removed": []}
+    assert service.prepare_update_candidates([], [], diff) is False
+    assert started == []
+
+
+def test_service_prepare_update_candidates_records_cooldown(tmp_path, monkeypatch) -> None:
+    """prepare 成功启动后同样记录冷却起点：两次官网访问共用同一间隔约束。"""
+    service, _manager = _make_service(tmp_path)
+
+    class _FakeThread:
+        def __init__(self, target, args=(), daemon=True, name=None):
+            pass
+
+        def is_alive(self) -> bool:
+            return False
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
+    assert service._last_check_started_at is None
+    diff = {"added": [], "modified": [], "removed": []}
+    assert service.prepare_update_candidates([], [], diff) is True
+    assert service._last_check_started_at is not None
+    assert service.cooldown_remaining > 0
+    # 冷却生效后，公告检查同样被拦（check 与 prepare 共用冷却）
+    assert service.check_now() is False
+
+
+def test_update_cooldown_shows_dialog(monkeypatch) -> None:
+    """冷却期内点「更新武将数据」给出剩余秒数提示，而非误导性的忙碌提示。"""
+    from PySide6.QtWidgets import QMessageBox
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    messages = []
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda parent, title, text: messages.append((title, text))
+    )
+    fake = SimpleNamespace(
+        _fetch_service=SimpleNamespace(is_busy=False),
+        _service=SimpleNamespace(
+            collect_base_candidates=lambda local, announcements, diff: [
+                {"name": "东方朔", "change": "新增"}
+            ],
+            cooldown_remaining=30,
+        ),
+        _manager=SimpleNamespace(list_announcements=lambda: []),
+        _last_diff={"added": [], "modified": [], "removed": []},
+        _heroes_provider=lambda: [],
+        _window=None,
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+    )
+    coordinator_module.AnnouncementUpdateCoordinator.update_hero_data_from_announcements(fake)
+    assert len(messages) == 1
+    assert messages[0][0] == "更新武将数据"
+    assert "秒后再试" in messages[0][1]
+
+
+def test_service_mark_applied_skipped_when_busy(tmp_path, monkeypatch) -> None:
+    """检查/候选准备在途时 mark_applied 被跳过：不推进状态、不写快照（VUL-B3-001 回归）。"""
+    service, manager = _make_service(tmp_path)
+    announcement = Announcement(
+        id=209,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/new.html",
+        hero_related=True,
+        status=AnnouncementStatus.READY,
+        matched_heroes=[HeroChange(name="山涛", change="调整", known=True)],
+    )
+    manager.merge_new([announcement.model_dump()])
+    service._last_snapshot = BaikeSnapshot(heroes={"1": {"name": "贾诩", "hash": "h1"}})
+    saved = []
+    monkeypatch.setattr(service_module, "save_baike_snapshot", lambda snapshot, path: saved.append(snapshot))
+
+    class _AliveThread:
+        def is_alive(self) -> bool:
+            return True
+
+    service._thread = _AliveThread()
+    service.mark_applied()
+    assert manager.ready_count() == 1  # 状态未推进
+    assert saved == []  # 快照未写
+
+
+def test_announcement_dialog_check_routes_through_coordinator(tmp_path, monkeypatch, qapp) -> None:
+    """对话框「检查更新」经协调器入口：冷却/忙碌有提示，不再静默（TD-A4-002 回归）。"""
+    from PySide6.QtCore import QObject, Signal
+    from src.ui.app.progress_reporter import ProgressReporter
+
+    class _FakeFetchService(QObject):
+        fetch_completed = Signal(bool)
+        is_busy = False
+
+    service, manager = _make_service(tmp_path)
+    reporter = ProgressReporter()
+    coordinator = AnnouncementUpdateCoordinator(service, manager, _FakeFetchService(), reporter)
+    called = []
+    monkeypatch.setattr(
+        AnnouncementUpdateCoordinator, "check_announcements", lambda self: called.append(1)
+    )
+    coordinator.open_announcement_dialog()
+    coordinator._dialog.check_requested.emit()
+    assert called == [1]
+
+
 def test_main_window_check_announcements_shows_dialogs(monkeypatch) -> None:
     from PySide6.QtWidgets import QMessageBox
 

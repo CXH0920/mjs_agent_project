@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 
 EMPTY_DIFF = {"added": [], "modified": [], "removed": []}
 
-# 两次手动检查的最小间隔（秒），避免短时间密集请求触发官网风控
+# 两次官网访问（公告检查 / 更新候选准备均全量拉百科）的最小间隔（秒），
+# 避免短时间密集请求触发官网风控
 CHECK_COOLDOWN_SECONDS = 60
 
 
@@ -150,7 +151,14 @@ class AnnouncementService(QObject):
         return True
 
     def mark_applied(self) -> None:
-        """武将数据更新完成后调用：公告置已处理并刷新百科快照。"""
+        """武将数据更新完成后调用：公告置已处理并刷新百科快照。
+
+        检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态
+        推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
+        """
+        if self.is_busy:
+            logger.warning("公告检查/候选准备进行中，跳过 mark_applied")
+            return
         self._announcements.mark_applied()
         if self._last_snapshot is not None:
             save_baike_snapshot(self._last_snapshot, self._snapshot_path)
@@ -202,12 +210,18 @@ class AnnouncementService(QObject):
     ) -> bool:
         """后台拉取官网百科并计算字段级差异候选，完成后发 update_candidates_prepared。
 
-        返回是否成功启动（忙碌时 False，由调用方提示用户）。diff 必须由调用方
+        返回是否成功启动（忙碌或冷却中返回 False，由调用方提示用户）。diff 必须由调用方
         在 GUI 线程传入只读快照，后台线程不再访问主窗口可变状态。
         """
         if self.is_busy:
             logger.warning("公告服务忙碌，忽略更新候选准备请求")
             return False
+        if self.cooldown_remaining > 0:
+            logger.warning(
+                "更新候选准备冷却中，剩余 %.1f 秒", self.cooldown_remaining
+            )
+            return False
+        self._last_check_started_at = time.monotonic()
         self._prepare_thread = threading.Thread(
             target=self._run_prepare,
             args=(local_heroes_plain, announcements, diff),

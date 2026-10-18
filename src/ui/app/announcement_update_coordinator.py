@@ -121,7 +121,8 @@ class AnnouncementUpdateCoordinator(QObject):
         """打开公告更新对话框（非模态，可边看边操作）。"""
         if self._dialog is None:
             self._dialog = AnnouncementDialog(self._manager, self._window)
-            self._dialog.check_requested.connect(self._service.check_now)
+            # 经 check_announcements 走忙碌/冷却提示；直连 check_now 会在冷却期静默无反馈
+            self._dialog.check_requested.connect(self.check_announcements)
             self._dialog.update_requested.connect(self.update_hero_data_from_announcements)
         self._dialog.reload()
         self._dialog.set_diff(self._last_diff)
@@ -149,6 +150,15 @@ class AnnouncementUpdateCoordinator(QObject):
                 "当前没有需要更新的武将数据（公告可能仍在等待百科数据更新）",
                 tone=TONE_INFO,
                 duration=3000,
+            )
+            return
+        remaining = self._service.cooldown_remaining
+        if remaining > 0:
+            self._reporter.show_message("检查过于频繁，请稍后再试")
+            QMessageBox.information(
+                self._window,
+                "更新武将数据",
+                f"检查过于频繁，请 {int(remaining) + 1} 秒后再试。",
             )
             return
         self._reporter.show_message("正在获取官网数据以核对差异...")
