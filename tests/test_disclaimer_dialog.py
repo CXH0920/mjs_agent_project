@@ -28,14 +28,15 @@ def test_confirm_disabled_until_checkbox_checked() -> None:
         dialog.deleteLater()
 
 
-def test_dialog_shows_seven_items_with_version() -> None:
+def test_dialog_shows_eight_items_with_version() -> None:
     _app()
     dialog = DisclaimerDialog()
     try:
         items_text = dialog._items_label.text()
-        assert items_text.count("\n") == 6  # 精简版 7 条
+        assert items_text.count("\n") == 7  # 精简版 8 条
         assert "仅供参考" in items_text
         assert "自动" in items_text
+        assert "程序化自动访问" in items_text  # 1.2 版新增自动化访问披露条目
         assert f"v{DISCLAIMER_VERSION}" in dialog._version_label.text()
     finally:
         dialog.deleteLater()

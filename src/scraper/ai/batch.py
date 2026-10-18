@@ -35,6 +35,7 @@ from src.data.guide_manager import GuideManager
 from src.data.json_repository import snapshot_to_backups
 from src.data.synergy_manager import SynergyManager
 from src.scraper.ai.api_generator import AIBatchGenerator
+from src.scraper.ai.generation_lock import acquire_generation_lock
 from src.scraper.ai.prompt_utils import estimate_cost, estimate_cost_by_tokens
 from src.scraper.ai.utils import (
     load_heroes,
@@ -56,6 +57,9 @@ DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 # 上次失败项清单：全量生成 6~8 小时、失败只能全量重跑是最大的流程损耗，
 # 落盘清单让 --retry-failed 只重跑失败项（成功项字节不变）
 LAST_FAILURES_PATH = PROJECT_ROOT / "logs" / "ai_last_failures.json"
+# 生成任务互斥锁：与失败清单同放 logs/（运行时状态，已 gitignore）；
+# 分批提交按"启动快照全量覆盖"写盘，并发任务会互相抹掉对方成果
+GENERATION_LOCK_PATH = PROJECT_ROOT / "logs" / "ai_generation.lock"
 
 
 def _preserve_invalid_data_file(path: Path, manager) -> Path:
@@ -328,6 +332,13 @@ def main():
 
     guide_path = Path(args.guides_file)
     synergy_path = Path(args.synergies_file)
+    # 生成任务互斥（VUL-B4-001）：第二个生成任务会以旧快照覆盖前一个任务
+    # 已提交的成果，入口处直接拒绝；--dry-run 已在上文提前返回、不受影响
+    lock = acquire_generation_lock(GENERATION_LOCK_PATH)
+    if lock is None:
+        print("  [错误] 已有另一个生成任务正在运行，为避免数据互相覆盖，本次启动被拒绝", flush=True)
+        print("  （持有方信息见 logs/ai_generation.lock.holder 与运行日志）", flush=True)
+        sys.exit(1)
     # 写前快照（每次运行一次，而非每 10 条批量提交一次）：生成期间旧数据
     # 可从 data/backups 找回，避免新一轮生成覆盖后无基线可回滚
     if args.guide:
@@ -389,6 +400,7 @@ def main():
             ))
     finally:
         generator.close()
+        lock.release()
 
     total_prompt_tokens = sum(result.prompt_tokens for result in task_results)
     total_completion_tokens = sum(result.completion_tokens for result in task_results)

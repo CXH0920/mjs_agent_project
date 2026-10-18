@@ -350,6 +350,100 @@ def test_fetch_archives_robots_before_first_request(monkeypatch, tmp_path: Path)
     assert (tmp_path / "rc" / "robots.txt").exists()
 
 
+def _archive_robots(cache_dir: Path, content: str) -> None:
+    """预置一份新鲜存档（等价 cache_robots_txt 刚成功抓取后的磁盘状态）。"""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    meta = {"fetched_at": datetime.now().isoformat(timespec="seconds")}
+    (cache_dir / "robots.txt").write_text(content, encoding="utf-8")
+    (cache_dir / "robots_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def test_fetch_rejects_disallowed_url(monkeypatch, tmp_path: Path) -> None:
+    """存档规则 Disallow 目标路径时，fetch 在发起请求前拒绝并抛 RobotsDisallowedError。"""
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+    _archive_robots(tmp_path / "rc", "User-agent: *\nDisallow: /baike/\n")
+
+    def refuse_network(*_args, **_kwargs):
+        raise AssertionError("被 Disallow 的 URL 不应发起任何网络请求")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", refuse_network)
+
+    with pytest.raises(crawler.RobotsDisallowedError) as excinfo:
+        crawler.fetch("https://mjs.ztgame.com/baike/")
+    assert "/baike/" in str(excinfo.value)
+
+
+def test_fetch_allows_url_permitted_by_archive(monkeypatch, tmp_path: Path) -> None:
+    """存档规则允许目标路径时，fetch 行为与无校验版本一致（正常返回内容）。"""
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+    _archive_robots(tmp_path / "rc", "User-agent: *\nAllow: /\n")
+
+    monkeypatch.setattr(
+        crawler.urllib.request, "urlopen",
+        lambda req, timeout=0: _FakeResponse(b"<html></html>", content_type="text/html"),
+    )
+    assert crawler.fetch("https://mjs.ztgame.com/baike/") == "<html></html>"
+
+
+def test_fetch_checks_secondary_host_robots_once(monkeypatch, tmp_path: Path) -> None:
+    """非主站主机（如公告 API）首次访问时抓取该站 robots 并进程内缓存；Disallow 则拒绝。"""
+    # 主站存档必须一并隔离：否则 _ensure_robots_txt_cached 会读写真实
+    # logs/robots_cache，把本测试的 mock 规则泄漏进真实存档（曾致污染）
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    _archive_robots(tmp_path / "rc", "Allow: /\n")
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+    robots_calls: list[str] = []
+
+    def fake_urlopen(req, timeout=0):
+        if req.full_url.endswith("/robots.txt"):
+            robots_calls.append(req.full_url)
+            return _FakeResponse(b"User-agent: *\nDisallow: /api/\n", content_type="text/plain")
+        raise AssertionError("被 Disallow 的 URL 不应请求目标地址")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(crawler.RobotsDisallowedError):
+        crawler.fetch("https://ucmsv2api.ztgame.com/api/news/list?site=mjs")
+    # 主站存档新鲜未重抓，robots 请求只发生在次级主机上
+    assert robots_calls == ["https://ucmsv2api.ztgame.com/robots.txt"]
+
+
+def test_fetch_allows_when_secondary_robots_missing(monkeypatch, tmp_path: Path) -> None:
+    """次级主机 robots.txt 不可得（如 404）时按允许处理，不阻断采集（降级语义与主站一致）。"""
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    _archive_robots(tmp_path / "rc", "Allow: /\n")
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+
+    def fake_urlopen(req, timeout=0):
+        if req.full_url.endswith("/robots.txt"):
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, None)
+        return _FakeResponse(b"payload", content_type="application/json")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+
+    assert crawler.fetch("https://ucmsv2api.ztgame.com/api/news/list") == "payload"
+    # 再次访问同主机：失败的规则获取也已缓存，不重复请求 robots.txt
+    assert crawler.fetch("https://ucmsv2api.ztgame.com/api/other") == "payload"
+
+
+def test_download_hero_image_blocked_by_robots(monkeypatch, tmp_path: Path) -> None:
+    """图片域 robots 全站 Disallow 时，头像下载在请求图片前被拒绝。"""
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+
+    def fake_urlopen(req, timeout=0):
+        if req.full_url.endswith("/robots.txt"):
+            return _FakeResponse(b"User-agent: *\nDisallow: /\n", content_type="text/plain")
+        raise AssertionError("被 Disallow 的图片 URL 不应发起下载")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(crawler.RobotsDisallowedError):
+        crawler._download_hero_image("https://siteres.ztgame.com/a.png", tmp_path / "a.png")
+    assert not list(tmp_path.iterdir())  # 未留下任何临时文件
+
+
 class TestSplitSkillDesc:
     """技能描述拆分：官网标题格式不统一的真实样本回归"""
 

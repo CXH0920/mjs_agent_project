@@ -724,7 +724,11 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 首次入册（498 → 508 越过 500 绊线）：do_poll_work 补 except 兜底，未预期
     # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
     "ui/app/poll_coordinator.py": 508,
-    "scraper/official_source/crawler.py": 545,
+    # 545 → 640：新增 robots.txt 解析与抓取前校验（VUL-B6-001 合规修复，
+    # 2026-10-18）。不拆独立模块：6 个测试 monkeypatch 锚点（ROBOTS_CACHE_DIR /
+    # _robots_rules_by_host / crawler.urllib.request）均在 crawler 命名空间，
+    # 拆分需参数化薄包装层且拆后仍约 576 行，净收益为负。
+    "scraper/official_source/crawler.py": 640,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     "data/recommendation_index_repository.py": 526,

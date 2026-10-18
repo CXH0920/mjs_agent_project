@@ -220,7 +220,10 @@ class PlaywrightGenerator:
         return result, None
 
     def _random_rest(self) -> None:
-        """随机休息 60-180 秒，避免触发风控"""
+        """相邻两次生成之间随机休息 60-180 秒，拉开请求间隔、降低访问密度。
+
+        自动化访问与频率控制的完整披露见 TERMS.md「自动化访问与访问频率」。
+        """
         rest = random.randint(60, 180)
         # 进度窗口靠解析 stdout 的 [休息] 行展示冷却倒计时；
         # 子进程 root 日志级别为 WARNING，logger.info 到不了 stdout，必须 print

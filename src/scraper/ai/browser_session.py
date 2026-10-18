@@ -14,6 +14,8 @@ from src.scraper.ai.utils import safe_url_origin
 
 logger = logging.getLogger(__name__)
 
+# 浏览器自动化访问 chat.deepseek.com（含隐藏自动化标记的启动参数）的披露
+# 见 TERMS.md「自动化访问与访问频率」
 DEFAULT_BROWSER_CONFIG: dict[str, Any] = {
     "channel": "msedge",
     "user_data_dir": str(PROJECT_ROOT / "data" / "edge_profile"),

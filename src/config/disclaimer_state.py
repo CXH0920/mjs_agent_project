@@ -3,7 +3,7 @@
 
 记录用户对免责声明文本版本的接受情况，持久化到 config/.disclaimer_state.json。
 仅在免责声明文本版本变化时要求重新确认——跟随应用版本每次发版都弹，
-会退化为用户盲点的无效弹窗；故文本本身未修订（TERMS.md 第 9 节版本号不变）
+会退化为用户盲点的无效弹窗；故文本本身未修订（TERMS.md 第 10 节版本号不变）
 时不打扰用户。
 """
 
@@ -19,7 +19,7 @@ from src.config.env import PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 # 免责声明文本版本：TERMS.md / LICENSE 附加条款实质修订时递增，驱动启动弹窗重新展示
-DISCLAIMER_VERSION = "1.1"
+DISCLAIMER_VERSION = "1.2"
 
 _STATE_FILE = PROJECT_ROOT / "config" / ".disclaimer_state.json"
 

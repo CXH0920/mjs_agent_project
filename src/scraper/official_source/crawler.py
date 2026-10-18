@@ -17,6 +17,7 @@ import time
 import unicodedata
 import urllib.error
 import urllib.request
+import urllib.robotparser
 import warnings
 from datetime import date, datetime
 from pathlib import Path
@@ -43,8 +44,10 @@ BAIKE_URL = "https://mjs.ztgame.com/baike/"
 SHOUPAIKU_URL = "https://mjs.ztgame.com/shoupaiku/"
 BASE_URL = "https://mjs.ztgame.com"
 
-# robots.txt 存档：作为遵守站点爬取规则的善意访问证据留存本地（logs/ 已 gitignore），
-# 24 小时内不重复请求；存档失败仅告警不阻断采集（见 _ensure_robots_txt_cached）
+# robots.txt：抓取后存档本地（logs/ 已 gitignore，24 小时内不重复请求）并
+# 解析执行——每次抓取前按规则校验目标 URL，被 Disallow 的路径拒绝请求；
+# robots 本身获取失败时降级放行并告警（见 _ensure_robots_txt_cached /
+# _ensure_robots_allowed）。访问行为披露见 TERMS.md「自动化访问与访问频率」。
 ROBOTS_URL = f"{BASE_URL}/robots.txt"
 ROBOTS_CACHE_TTL_HOURS = 24
 ROBOTS_CACHE_DIR = PROJECT_ROOT / "logs" / "robots_cache"
@@ -71,6 +74,8 @@ WINDOWS_RESERVED_FILENAMES = {
     *(f"LPT{i}" for i in range(1, 10)),
 }
 
+# 官网采集请求以主流浏览器 User-Agent 标识；自动化访问与频率控制的完整
+# 披露见 TERMS.md「自动化访问与访问频率」
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0 Safari/537.36"
 }
@@ -85,6 +90,77 @@ SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能�
 # ============================================================
 # 网络请求
 # ============================================================
+
+
+class RobotsDisallowedError(RuntimeError):
+    """目标 URL 被站点 robots.txt 规则禁止抓取。"""
+
+
+# robots 规则进程内缓存：源（scheme://host[:port]）→ 解析后的规则；
+# None 表示规则不可得（robots 获取失败/无存档），按允许处理降级
+_robots_rules_by_host: dict[str, urllib.robotparser.RobotFileParser | None] = {}
+
+
+def _robots_origin(url: str) -> str | None:
+    """返回 URL 的源（scheme://host[:port]，非默认端口才带端口）；非 http(s) 为 None。"""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    host = parsed.hostname.lower()
+    port = f":{parsed.port}" if parsed.port not in (None, 80, 443) else ""
+    return f"{parsed.scheme}://{host}{port}"
+
+
+def _parse_robots_rules(content: str) -> urllib.robotparser.RobotFileParser:
+    parser = urllib.robotparser.RobotFileParser()
+    parser.parse(content.splitlines())
+    return parser
+
+
+def _load_archived_rules() -> urllib.robotparser.RobotFileParser | None:
+    """主站规则直接读本地存档（fetch 入口已先刷新存档，不重复请求网络）。"""
+    try:
+        content = (ROBOTS_CACHE_DIR / "robots.txt").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return _parse_robots_rules(content)
+
+
+def _fetch_host_rules(origin: str) -> urllib.robotparser.RobotFileParser | None:
+    """次级主机（公告 API / 图片域等）：独立请求一次该站 robots.txt 并缓存。
+
+    自带请求而不复用 fetch()：fetch 每次调用都会触发本校验，复用会递归。
+    获取失败（含 404）按 RFC 9309 不可得语义降级为允许并缓存，进程内不重试。
+    """
+    try:
+        req = urllib.request.Request(f"{origin}/robots.txt", headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return _parse_robots_rules(resp.read().decode("utf-8", errors="replace"))
+    except Exception as e:
+        logger.warning("robots.txt 获取失败（按允许处理） %s: %s", origin, e)
+        return None
+
+
+def _rules_for_url(url: str) -> urllib.robotparser.RobotFileParser | None:
+    """取 URL 所属站点的 robots 规则；主站读存档，其他主机抓取一次并缓存。"""
+    origin = _robots_origin(url)
+    if origin is None:
+        return None
+    if origin not in _robots_rules_by_host:
+        if origin == _robots_origin(ROBOTS_URL):
+            _robots_rules_by_host[origin] = _load_archived_rules()
+        else:
+            _robots_rules_by_host[origin] = _fetch_host_rules(origin)
+    return _robots_rules_by_host[origin]
+
+
+def _ensure_robots_allowed(url: str) -> None:
+    """抓取前校验 robots 规则：明确 Disallow 则拒绝；规则不可得时降级放行。"""
+    rules = _rules_for_url(url)
+    if rules is None:
+        return
+    if not rules.can_fetch(HEADERS["User-Agent"], url):
+        raise RobotsDisallowedError(f"目标 URL 被站点 robots.txt 禁止抓取: {url}")
 
 
 def _robots_cache_fresh(meta_path: Path) -> bool:
@@ -121,6 +197,10 @@ def cache_robots_txt(cache_dir: Path | None = None) -> bool:
     (cache_dir / "robots_meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    # 新存档落地后失效主站规则缓存，长进程下一次校验读新规则
+    robots_origin = _robots_origin(ROBOTS_URL)
+    if robots_origin is not None:
+        _robots_rules_by_host.pop(robots_origin, None)
     logger.info("robots.txt 已存档: %s", cache_dir / "robots.txt")
     return True
 
@@ -138,9 +218,12 @@ def fetch(url: str, binary: bool = False) -> str | bytes:
 
     binary=True 时返回原始 bytes（用于下载图片等二进制资源），
     否则解码为 utf-8 字符串返回。
-    每次调用前先确保站点 robots.txt 已存档（24 小时缓存，失败不阻断）。
+    每次调用前先确保站点 robots.txt 已存档（24 小时缓存，失败不阻断），
+    并按已解析的 robots 规则校验目标 URL（被 Disallow 时抛
+    RobotsDisallowedError，规则不可得时放行）。
     """
     _ensure_robots_txt_cached()
+    _ensure_robots_allowed(url)
     req = urllib.request.Request(url, headers=HEADERS)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -414,6 +497,9 @@ def _validate_image_url(url: str) -> None:
 
 def _open_image_response(url: str):
     """打开图片响应，并在每次重定向后重新验证目标 URL。"""
+    # 图片域与主站不同源，robots 规则经 _rules_for_url 按主机分别获取；
+    # 现有图片下载测试整体 mock 本函数，此校验不进入其测试路径
+    _ensure_robots_allowed(url)
     opener = urllib.request.build_opener(_NoRedirectHandler())
     current_url = url
     for _ in range(MAX_IMAGE_REDIRECTS + 1):
