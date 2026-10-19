@@ -694,3 +694,72 @@ class TestLocalExtensionFieldsPreserved:
         # 官网字段照常更新
         assert saved["skills"][0]["description"] == "新"
         assert saved["last_updated"] == "2026-10-19"
+
+
+class TestCleanHtmlTagStripping:
+    """clean_html 必须剥除解码后显形的标签，但不得吞掉正文里的比较符（VUL-B1-001）。
+
+    官网正文存在 `&lt;` 实体（如「手牌上限&lt;5」），解码后是字面 `<`；同时技能
+    描述里有大量 `->`、`>0` 等比较符。实现必须区分「像标签的序列」与正文符号。
+    """
+
+    def test_strips_tag_revealed_by_entity_decoding(self) -> None:
+        assert crawler.clean_html("<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>") == "alert(1)"
+
+    def test_strips_nested_entity_encoded_tag(self) -> None:
+        """多层编码（&amp;lt;）需要解码与剥离交替多轮。"""
+        assert crawler.clean_html("&amp;lt;script&amp;gt;x&amp;lt;/script&amp;gt;") == "x"
+
+    def test_strips_entity_encoded_img_onerror(self) -> None:
+        assert crawler.clean_html("&lt;img src=x onerror=alert(1)&gt;") == ""
+
+    def test_keeps_less_than_comparison(self) -> None:
+        """真实数据用例：手牌上限&lt;5 必须保留为 <5，不能被当标签吞掉。"""
+        assert crawler.clean_html("<p>手牌上限&lt;5，则失去效果。</p>") == "手牌上限<5，则失去效果。"
+
+    def test_keeps_arrow_sequence(self) -> None:
+        """真实数据用例：阶段顺序 开始-&gt;摸牌-&gt;出牌 必须保留。"""
+        assert crawler.clean_html("阶段顺序：开始-&gt;摸牌-&gt;出牌") == "阶段顺序：开始->摸牌->出牌"
+
+    def test_keeps_plain_comparison_between_text(self) -> None:
+        assert crawler.clean_html("a &lt; b 且 c &gt; d") == "a < b 且 c > d"
+
+    def test_plain_tags_still_stripped(self) -> None:
+        assert crawler.clean_html("<b>加粗</b>正文") == "加粗正文"
+
+
+class TestInvalidHeroIdHandling:
+    """本地数据缺有效 id 时按损坏语义中止，不得在抓取完成后抛 KeyError（VUL-B4-002）。"""
+
+    @pytest.mark.parametrize("bad_id", [0, -1, "abc", None])
+    def test_load_existing_ids_treats_bad_id_as_corrupt(self, tmp_path: Path, bad_id) -> None:
+        path = tmp_path / "heroes.json"
+        path.write_text(json.dumps([{"id": 1}, {"id": bad_id}]), encoding="utf-8")
+
+        assert incremental.load_existing_ids(path) is None
+        assert len(list(tmp_path.glob("heroes.corrupt-*.json"))) == 1
+        assert not path.exists()
+
+    def test_load_existing_ids_accepts_valid_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "heroes.json"
+        path.write_text(json.dumps([{"id": 1}, {"id": 2}]), encoding="utf-8")
+
+        assert incremental.load_existing_ids(path) == {1, 2}
+        assert not list(tmp_path.glob("heroes.corrupt-*.json"))
+
+    def test_replace_mode_aborts_instead_of_keyerror(self, tmp_path: Path, monkeypatch) -> None:
+        """替换模式遇缺 id 记录：应 SystemExit(1)，而不是 KeyError 裸崩。"""
+        path = tmp_path / "heroes.json"
+        path.write_text(json.dumps([{"id": 1, "name": "甲"}, {"name": "缺id"}],
+                                   ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(
+            incremental, "transform",
+            lambda raw: {"id": raw["id"], "name": "x", "faction": "", "skills": []},
+        )
+        monkeypatch.setattr(incremental, "validate_heroes", lambda heroes: heroes)
+
+        with pytest.raises(SystemExit) as excinfo:
+            incremental.run([{"id": 1}], path, dry_run=False, replace_ids={1}, skip_images=True)
+
+        assert excinfo.value.code == 1
+        assert list(tmp_path.glob("heroes.corrupt-*.json"))

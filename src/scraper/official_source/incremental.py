@@ -37,10 +37,15 @@ DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
 
 
 def _load_heroes_file(path: Path) -> list | None:
-    """读取本地武将 JSON；内容损坏或顶层结构非数组时备份原文件（corrupt-*）后返回 None。
+    """读取本地武将 JSON；内容损坏、顶层结构非数组或存在无法识别的条目时，
+    备份原文件（corrupt-*）后返回 None。
 
     与 batch._preserve_invalid_data_file 同一健壮性标准：调用方以空列表继续，
     旧数据可从备份找回，而不是解析异常裸崩或静默覆盖丢失。
+
+    逐条校验 id 而非只在遍历时下标访问：文件是合法 JSON 数组但某条缺 id
+    （手工编辑/外部工具写入/旧版本残留）时，替换与追加模式会在**已完成全量
+    抓取之后**抛 KeyError，用户看到的是堆栈而非"数据文件已损坏"的结论。
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -52,7 +57,30 @@ def _load_heroes_file(path: Path) -> list | None:
         # 合法 JSON 但顶层是 dict 等：照常遍历会 AttributeError 裸崩，按损坏同语义处理
         _backup_corrupt_file(path, TypeError(f"顶层结构为 {type(data).__name__}，期望 list"))
         return None
+
+    invalid_indexes = []
+    for index, hero in enumerate(data):
+        if not isinstance(hero, dict) or not _hero_id_is_valid(hero.get("id")):
+            invalid_indexes.append(index)
+    if invalid_indexes:
+        preview = ", ".join(str(i) for i in invalid_indexes[:10])
+        suffix = " 等" if len(invalid_indexes) > 10 else ""
+        _backup_corrupt_file(
+            path,
+            ValueError(
+                f"{len(invalid_indexes)} 条记录缺少有效 id（下标 {preview}{suffix}）"
+            ),
+        )
+        return None
     return data
+
+
+def _hero_id_is_valid(value: object) -> bool:
+    """武将条目 id 是否可用：必须能转成正整数，后续按 id 合并依赖这一点。"""
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _backup_corrupt_file(path: Path, exc: Exception) -> None:

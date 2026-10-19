@@ -735,7 +735,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 2026-10-18）。不拆独立模块：6 个测试 monkeypatch 锚点（ROBOTS_CACHE_DIR /
     # _robots_rules_by_host / crawler.urllib.request）均在 crawler 命名空间，
     # 拆分需参数化薄包装层且拆后仍约 576 行，净收益为负。
-    "scraper/official_source/crawler.py": 640,
+    # 660 → 636：clean_html 的实体解码剥离与 carry_over_local_fields 迁出到
+    # hero_fields.py（64 行纯函数无 IO，便于单测），本文件只保留重新导出。
+    "scraper/official_source/crawler.py": 636,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     "data/recommendation_index_repository.py": 526,

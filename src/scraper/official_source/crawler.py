@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import hashlib
-import html as html_module
 import json
 import logging
 import re
@@ -33,6 +32,25 @@ from src.scraper.official_source.adapter import (
     parse_cards_chunk,
     parse_heroes_chunk,
 )
+from src.scraper.official_source.hero_fields import (
+    LOCAL_EXTENSION_FIELDS,
+    carry_over_local_fields,
+    clean_html,
+)
+
+# 重新导出：caller 长期经 crawler.clean_html / carry_over_local_fields 调用
+__all__ = [
+    "LOCAL_EXTENSION_FIELDS",
+    "carry_over_local_fields",
+    "clean_html",
+    "fetch",
+    "fetch_all_cards_raw",
+    "fetch_all_raw",
+    "save_json_atomic",
+    "split_skill_desc",
+    "transform",
+    "validate_heroes",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -259,17 +277,6 @@ def save_json_atomic(path: Path, data: list[dict]) -> None:
 # ============================================================
 
 
-def clean_html(html_text: str | None) -> str:
-    """剥离 HTML 标签，unescape，归一化空白"""
-    if not html_text:
-        return ""
-    text = str(html_text)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = html_module.unescape(text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
 def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     """
     先按 HTML 段落结构拆分原始 HTML，再逐段清洗。
@@ -410,35 +417,6 @@ def transform(raw: dict) -> dict | None:
 # ============================================================
 # Pydantic 校验
 # ============================================================
-
-
-# 本地扩展字段：官网不提供、由用户手工维护，采集时不得覆盖。
-# hero_content_hash 同样排除这三项（见 announcement.py），二者口径必须一致。
-LOCAL_EXTENSION_FIELDS = ("title", "difficulty", "mode_viability")
-
-
-def carry_over_local_fields(new_heroes: list[dict], existing: list[dict] | None) -> list[dict]:
-    """把旧数据里的本地扩展字段按 id 回填到本次采集结果上。
-
-    官网只提供基础资料，title/difficulty/mode_viability 是用户在界面上手工
-    维护的本地数据。旧数据缺失或字段不存在时保留模型默认值。
-    """
-    if not existing:
-        return new_heroes
-
-    previous_by_id = {
-        int(hero["id"]): hero
-        for hero in existing
-        if isinstance(hero, dict) and hero.get("id") is not None
-    }
-    for hero in new_heroes:
-        previous = previous_by_id.get(int(hero["id"]))
-        if previous is None:
-            continue
-        for field in LOCAL_EXTENSION_FIELDS:
-            if field in previous:
-                hero[field] = previous[field]
-    return new_heroes
 
 
 def validate_heroes(heroes: list[dict]) -> list[dict]:

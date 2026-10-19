@@ -91,6 +91,7 @@ class DeepSeekBrowserSession:
         except Exception as exc:
             logger.error("[发送] 填入 prompt 失败: %s", exc)
             logger.debug(traceback.format_exc())
+            self._invalidate_page("填入 prompt 失败")
             return None
 
         logger.info("[发送] 按 Enter 发送...")
@@ -100,13 +101,13 @@ class DeepSeekBrowserSession:
         except Exception as exc:
             logger.error("[发送] Enter 键操作失败: %s", exc)
             logger.debug(traceback.format_exc())
+            self._invalidate_page("Enter 键操作失败")
             return None
 
         assistant_selector = self._chat_cfg.get(
             "assistant_selector", "div.ds-assistant-message-main-content",
         )
         timeout = self._chat_cfg.get("response_timeout", 180000)
-        deadline = time.time() + timeout / 1000
         logger.info("[等待] 等待 AI 开始回复（超时 %d ms）...", timeout)
 
         before_count = 0
@@ -116,20 +117,41 @@ class DeepSeekBrowserSession:
         except Exception as exc:
             logger.warning("[等待] 获取初始消息数失败: %s", exc)
 
+        if not self._wait_for_new_message(page, assistant_selector, before_count, timeout):
+            return None
+
+        if not self._wait_until_stable(page, assistant_selector, timeout):
+            return None
+
+        logger.info("[提取] 开始提取最后一条回复...")
+        return self._extract_last_reply(page, assistant_selector)
+
+    def _wait_for_new_message(
+        self, page: Page, assistant_selector: str, before_count: int, timeout: int,
+    ) -> bool:
+        """等待出现新回复气泡；超时则标记页面需重建并返回 False。
+
+        与内容稳定阶段各用独立超时预算：共用同一 deadline 时，首段耗时接近
+        上限会让次段几乎没有剩余时间，直接判超时。
+        """
+        deadline = time.time() + timeout / 1000
         while time.time() < deadline:
             try:
                 current = page.locator(assistant_selector).count()
                 if current > before_count:
                     logger.info("[等待] 检测到新回复开始（%d → %d）", before_count, current)
-                    break
+                    return True
             except Exception as exc:
                 logger.warning("[等待] 检测消息数异常: %s", exc)
             page.wait_for_timeout(500)
-        else:
-            logger.error("[等待] 回复超时（%d ms），未检测到新消息", timeout)
-            self._page_diagnostics()
-            return None
+        logger.error("[等待] 回复超时（%d ms），未检测到新消息", timeout)
+        self._page_diagnostics()
+        self._invalidate_page("未检测到新回复")
+        return False
 
+    def _wait_until_stable(self, page: Page, assistant_selector: str, timeout: int) -> bool:
+        """等待回复内容停止增长（连续 3 轮长度不变）；超时返回 False。"""
+        deadline = time.time() + timeout / 1000
         last_len = -1
         stable_rounds = 0
         logger.info("[等待] 等待内容生成完毕...")
@@ -147,7 +169,7 @@ class DeepSeekBrowserSession:
                     if stable_rounds >= 3:
                         logger.info("[等待] 回复生成完毕（共 %d 字符）", text_len)
                         page.wait_for_timeout(1000)
-                        break
+                        return True
                 elif text_len > last_len:
                     stable_rounds = 0
                     last_len = text_len
@@ -159,17 +181,19 @@ class DeepSeekBrowserSession:
                 logger.warning("[等待] 轮询内容异常: %s", exc)
                 logger.debug(traceback.format_exc())
             page.wait_for_timeout(2000)
-        else:
-            logger.error("[等待] 回复内容稳定超时")
-            return None
+        logger.error("[等待] 回复内容稳定超时")
+        self._invalidate_page("回复内容未稳定")
+        return False
 
-        logger.info("[提取] 开始提取最后一条回复...")
+    def _extract_last_reply(self, page: Page, assistant_selector: str) -> str | None:
+        """提取最后一条 assistant 消息文本；失败时标记页面需重建。"""
         try:
             messages = page.locator(assistant_selector)
             count = messages.count()
             logger.debug("[提取] 共有 %d 条 assistant 消息", count)
             if count == 0:
                 logger.error("[提取] 未找到任何 AI 回复消息（选择器: %s）", assistant_selector)
+                self._invalidate_page("未找到回复消息")
                 return None
 
             last_message = messages.nth(count - 1)
@@ -186,13 +210,32 @@ class DeepSeekBrowserSession:
         except Exception as exc:
             logger.error("[提取] 提取回复时出错: %s", exc)
             logger.debug(traceback.format_exc())
+            self._invalidate_page("提取回复出错")
             return None
+
+    def _invalidate_page(self, reason: str) -> None:
+        """标记当前页面不可再用，下次 send_and_wait 会重建浏览器上下文。
+
+        超时或选择器失效后页面可能停在验证码/登录失效页，复用会让后续每个
+        请求都等满超时并级联失败。不在此处立即 close（会连带关闭用户正在
+        观看的窗口），只置标志，由 _ensure_browser 在下一次调用时重建。
+        """
+        if not self._started:
+            return
+        logger.warning("[恢复] 页面状态异常（%s），下次请求将重建浏览器上下文", reason)
+        self._started = False
 
     def _ensure_browser(self) -> None:
         """惰性启动 Edge 并等待 DeepSeek 输入框可用。"""
         if self._started and self._page:
             logger.debug("浏览器已就绪，复用现有页面")
             return
+
+        # 上一轮被 _invalidate_page 标记失效（超时/选择器失效）：先释放旧上下文，
+        # 否则覆盖 _playwright/_context 会泄漏 Edge 进程并继续占用 user_data_dir 锁。
+        if self._playwright or self._context:
+            logger.info("[恢复] 释放失效的浏览器上下文后重建...")
+            self.close()
 
         logger.info("[浏览器] 正在启动 Edge...")
         logger.info("[浏览器] 用户数据目录已配置")

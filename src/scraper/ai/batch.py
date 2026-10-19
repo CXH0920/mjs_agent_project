@@ -180,6 +180,29 @@ def _save_last_failures(args, failed_items: list[str]) -> None:
         logger.warning("失败清单写入失败: %s", exc)
 
 
+def _save_interrupted_state(args, error: BaseException) -> None:
+    """记录本次运行被中断（而非"跑完但有失败项"）。
+
+    与失败清单同文件不同语义：interrupted=True 表示循环未跑完，失败项未知，
+    --retry-failed 必须拒绝执行而不是按残留的 failed_items 重跑。
+    """
+    state = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "guide": bool(args.guide),
+        "synergy_full": bool(args.synergy),
+        "interrupted": True,
+        "error": f"{type(error).__name__}: {error}",
+        "failed_items": [],
+    }
+    try:
+        LAST_FAILURES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LAST_FAILURES_PATH.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  中断状态已记录: {LAST_FAILURES_PATH}", flush=True)
+    except OSError as exc:
+        logger.warning("中断状态写入失败: %s", exc)
+
+
 def _load_retry_items() -> list[str]:
     """--retry-failed 时读取上次失败清单；无记录则直接结束。"""
     try:
@@ -187,6 +210,11 @@ def _load_retry_items() -> list[str]:
         items = state.get("failed_items") or []
     except (OSError, json.JSONDecodeError) as exc:
         print(f"  [错误] 无法读取失败清单 {LAST_FAILURES_PATH}: {exc}", flush=True)
+        sys.exit(1)
+    if state.get("interrupted"):
+        # 中断时循环未跑完，failed_items 不可信：明确拒绝，避免重跑错项。
+        print(f"  [错误] 上次运行被中断（{state.get('error', '未知原因')}），失败项未知，"
+              f"无法定向重试。请直接重跑完整任务。", flush=True)
         sys.exit(1)
     if not items:
         print("  上次运行无失败记录，无事可做。", flush=True)
@@ -352,6 +380,7 @@ def main():
     )
 
     task_results = []
+    fatal_error: BaseException | None = None
     try:
         if args.guide:
             from src.scraper.ai.generation import run_guide_generation
@@ -398,6 +427,12 @@ def main():
                 existing_synergy_keys=existing_synergy_keys,
                 update_mode=args.update,
             ))
+    except Exception as exc:
+        # 不可重试状态（401/403 等）直接冒泡到此处：记录后走统一收尾，
+        # 否则失败清单停留在上一次内容、本次 token 费用完全不可见。
+        fatal_error = exc
+        logger.error("生成中断: %s: %s", type(exc).__name__, exc)
+        print(f"\n  [中断] {type(exc).__name__}: {exc}", flush=True)
     finally:
         generator.close()
         lock.release()
@@ -416,6 +451,15 @@ def main():
         failed_items = [item for result in failed_results for item in result.failed_items]
         _save_last_failures(args, failed_items)
         print(f"\n  [错误] 生成失败：{len(failed_items)} 项；成功项已提交，失败项保留旧数据", flush=True)
+        sys.exit(1)
+
+    if fatal_error is not None:
+        # 中断时失败清单无从得知（循环未跑完）：既不能保留旧清单（--retry-failed
+        # 会重跑过期项），也不能静默清除（丢失线索）。写入中断标记让下次
+        # --retry-failed 明确拒绝，并保留已提交成果。
+        _save_interrupted_state(args, fatal_error)
+        print(f"\n  [错误] 任务因 {type(fatal_error).__name__} 中断，"
+              f"已提交的成果保留；未完成项需重新运行", flush=True)
         sys.exit(1)
 
     LAST_FAILURES_PATH.unlink(missing_ok=True)  # 全部成功，清除旧失败清单
