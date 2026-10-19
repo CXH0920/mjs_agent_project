@@ -649,7 +649,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，
     # 拆分只会制造参数众多的小模块，登记预算限制继续膨胀
-    "ui/app/onboarding_dialog.py": 547,
+    # 547 → 551：段 2 分辨率体检的 ROI 截图回调补 finish 收尾（VUL-B4-004）——
+    # 向导不进入 ROI 编辑态，不释放槽位会让"连接并体检"第二次起静默失效
+    "ui/app/onboarding_dialog.py": 551,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
@@ -689,7 +691,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 479 → 499：emulator 域修复批——_reconnect_if_needed 统一手动/轮询
     # 重连编排（TD-A2-001：轮询自愈重连同步状态+热更 is_current 校验）与
     # capture_for_poll 等待上界 _POLL_CAPTURE_TIMEOUT_S（VUL-B3-002）
-    "business/emulator/capture_service.py": 499,
+    # 499 → 506：_handle_capture_result 补终止信号保证（TD-A5-001）——目录
+    # 不可写/执行器已关停/协调器已退役时改走 capture_failed，避免在途锁
+    # 永不释放导致界面永久停在"正在截图"
+    "business/emulator/capture_service.py": 506,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）

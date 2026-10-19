@@ -81,7 +81,9 @@ class OcrTaskCoordinator(QObject):
         """
         if self._worker is None and not self._worker_retired:
             with self._worker_lock:
-                if self._worker is None:
+                # 退役标记必须在锁内复检：shutdown 可能恰在"锁外检查"与"取锁"
+                # 之间完成，只复检 _worker 会复活一个无人 retire 的 QThread
+                if self._worker is None and not self._worker_retired:
                     worker = OcrWorker()
                     self._on_worker_created(worker)
                     worker.start()

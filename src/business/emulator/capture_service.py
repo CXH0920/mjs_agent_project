@@ -240,43 +240,50 @@ class CaptureService(QObject):
             self.capture_failed.emit(str(result))
             return
 
-        image = result
-        self.event_status_changed.emit(f"截图成功 ({image.width}x{image.height})")
+        # 终止信号保证：截图请求必须且只能以 capture_completed / capture_failed
+        # 之一收尾。目录不可写、执行器已关停、OCR 协调器已退役都在此抛出，
+        # 漏接会让调用方的在途锁永不释放（界面永久停在"正在截图"）。
+        try:
+            image = result
+            self.event_status_changed.emit(f"截图成功 ({image.width}x{image.height})")
 
-        # 2. OCR 和 PNG 保存进入不同后台执行器，互不等待。
-        should_ocr = perform_ocr and (
-            force_ocr or self.config.get("mumu_ocr_enabled", False)
-        )
-        ocr_task = None
-        if should_ocr:
-            ocr_task = self._queue_capture_ocr(
-                image=image.copy(),
-                save_path=None,
-                hero_names=hero_names,
-                template_name=template_name,
-                match_template=not force_ocr,
+            # 2. OCR 和 PNG 保存进入不同后台执行器，互不等待。
+            should_ocr = perform_ocr and (
+                force_ocr or self.config.get("mumu_ocr_enabled", False)
             )
+            ocr_task = None
+            if should_ocr:
+                ocr_task = self._queue_capture_ocr(
+                    image=image.copy(),
+                    save_path=None,
+                    hero_names=hero_names,
+                    template_name=template_name,
+                    match_template=not force_ocr,
+                )
 
-        save_dir = DEFAULT_SCREENSHOTS_DIR
-        save_dir.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = save_dir / f"screenshot_{timestamp}.png"
-        save_future = self._save_scheduler.schedule(image, save_path)
+            save_dir = DEFAULT_SCREENSHOTS_DIR
+            save_dir.mkdir(parents=True, exist_ok=True)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = save_dir / f"screenshot_{timestamp}.png"
+            save_future = self._save_scheduler.schedule(image, save_path)
 
-        if ocr_task is not None:
-            pending = self._pending_ocr_captures.get(ocr_task.task_id)
-            if pending is not None:
-                pending["save_future"] = save_future
-            return
+            if ocr_task is not None:
+                pending = self._pending_ocr_captures.get(ocr_task.task_id)
+                if pending is not None:
+                    pending["save_future"] = save_future
+                return
 
-        # 3. OCR 未启用时，直接返回保存结果。
-        self.capture_completed.emit({
-            "image": image,
-            "save_path": self._completed_save_path(save_future, save_path),
-            "ocr_results": None,
-            "ocr_matched": False,
-        })
+            # 3. OCR 未启用时，直接返回保存结果。
+            self.capture_completed.emit({
+                "image": image,
+                "save_path": self._completed_save_path(save_future, save_path),
+                "ocr_results": None,
+                "ocr_matched": False,
+            })
+        except Exception as error:
+            logger.exception("截图结果处理失败")
+            self.capture_failed.emit(f"截图处理失败: {error}")
 
     # ── OCR ───────────────────────────────────────────────────────────
 

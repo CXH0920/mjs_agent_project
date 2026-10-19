@@ -58,6 +58,51 @@ def test_capture_can_skip_ocr_and_return_saved_image(monkeypatch, tmp_path) -> N
     service.shutdown()
 
 
+def test_capture_result_emits_failed_when_screenshot_dir_unwritable(monkeypatch, tmp_path) -> None:
+    """回归 TD-A5-001：结果处理抛异常时必须发 capture_failed 收尾。
+
+    原缺陷：mkdir/schedule 在异常保护之外，目录不可写（如程序装在
+    Program Files 下）时异常逃逸进 Qt 槽，completed/failed 都不发射，
+    调用方的在途锁永不释放，界面永久停在"正在截图…"。
+    """
+    service = CaptureService()
+    completed: list[dict] = []
+    failures: list[str] = []
+    service.capture_completed.connect(completed.append)
+    service.capture_failed.connect(failures.append)
+
+    def boom(*_args, **_kwargs):
+        raise PermissionError("screenshots 目录不可写")
+
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    monkeypatch.setattr(service._save_scheduler, "schedule", boom)
+
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=False, perform_ocr=False,
+    )
+
+    assert completed == []
+    assert len(failures) == 1
+    assert "截图处理失败" in failures[0]
+    service.shutdown()
+
+
+def test_capture_result_emits_failed_when_ocr_coordinator_retired(monkeypatch, tmp_path) -> None:
+    """OCR 协调器已退役（ensure_worker 拒绝）同样要走 capture_failed 收尾。"""
+    service = CaptureService()
+    failures: list[str] = []
+    service.capture_failed.connect(failures.append)
+    monkeypatch.setattr("src.business.emulator.capture_service.DEFAULT_SCREENSHOTS_DIR", tmp_path)
+    service._ocr_coordinator.shutdown()  # 退役后首次创建会被拒绝
+
+    service._handle_capture_result(
+        True, Image.new("RGB", (10, 20)), None, "hero_selection", force_ocr=True, perform_ocr=True,
+    )
+
+    assert len(failures) == 1 and "截图处理失败" in failures[0]
+    service.shutdown()
+
+
 def test_manual_ocr_skips_template_matching(monkeypatch, tmp_path) -> None:
     service = CaptureService()
     submitted: list[dict] = []
@@ -366,6 +411,52 @@ def test_shutdown_before_worker_creation_rejects_late_ocr_calls() -> None:
 
     with pytest.raises(RuntimeError, match="已关闭"):
         coordinator.ensure_worker()
+
+
+def test_shutdown_during_ensure_worker_does_not_revive_thread(monkeypatch) -> None:
+    """回归 VUL-B3-001：shutdown 落在"锁外检查"与"取锁"之间时不得创建 worker。
+
+    原缺陷：锁内只复检 _worker，不复检 _worker_retired，于是 shutdown 完成后
+    仍会 OcrWorker() + start()，产生一个不在 _RETIRED_WORKERS 里、atexit
+    也等不到的 QThread —— 正是 VUL-B2-001 "Destroyed while thread is still
+    running" 崩溃的复发路径。
+
+    用可注入的锁钩子在"取锁瞬间"完成 shutdown，确定性复现该窗口。
+    """
+    import pytest
+
+    created: list[object] = []
+
+    class _StubWorker:
+        def __init__(self) -> None:
+            created.append(self)
+
+        def start(self) -> None:
+            pass
+
+        def retire(self) -> None:
+            pass
+
+    monkeypatch.setattr(ocr_task_coordinator, "OcrWorker", _StubWorker)
+    coordinator = ocr_task_coordinator.OcrTaskCoordinator(on_worker_created=lambda worker: None)
+
+    real_lock = coordinator._worker_lock
+
+    class _ShutdownOnAcquire:
+        """模拟并发：进入临界区之前，另一线程已完成 shutdown。"""
+
+        def __enter__(self):
+            coordinator._worker_retired = True
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc_info):
+            return real_lock.__exit__(*exc_info)
+
+    coordinator._worker_lock = _ShutdownOnAcquire()
+
+    with pytest.raises(RuntimeError, match="已关闭"):
+        coordinator.ensure_worker()
+    assert created == []  # 未创建任何 QThread
 
 
 def test_capture_screenshot_reuses_and_connects_shared_session() -> None:

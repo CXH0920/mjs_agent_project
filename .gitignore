@@ -83,6 +83,9 @@ scripts/.sync_*.json
 # pytest 临时目录（测试运行产物）
 .tmp_test/
 .tmp_eval/
+# 契约对拍验证工作区（BASE/HEAD 检出树 + 探针 + 结果；检出树可由 git archive 重建，
+# 仅 probe/ 与 out/*.json 是证据本体，见本轮 2026-10-18 契约判定记录）
+.tmp_verify/
 # OCR 模型 %TEMP% 缓存的意外落位副本（engine_loader 固定目录名，发版/测试运行残留）
 mjs_rapidocr_models/
 # 根目录意外落位的日志（正常应落 logs/，logs/ 已整目录忽略）

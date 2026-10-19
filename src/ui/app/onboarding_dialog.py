@@ -376,12 +376,17 @@ class OnboardingDialog(QDialog):
     def _on_roi_screenshot_ready(self, page_type: str, image) -> None:
         if page_type != "hero_selection" or self._closing:
             return
-        reference = self._coordinator.roi_layout("hero_selection").reference_size
-        verdict = compare_resolution(
-            (int(image.width), int(image.height)), (int(reference[0]), int(reference[1])))
-        self._set_device_status(verdict["status"], verdict["detail"],
-                                "mumu_config" if verdict["hint"] else "",
-                                verdict["hint"])
+        try:
+            reference = self._coordinator.roi_layout("hero_selection").reference_size
+            verdict = compare_resolution(
+                (int(image.width), int(image.height)), (int(reference[0]), int(reference[1])))
+            self._set_device_status(verdict["status"], verdict["detail"],
+                                    "mumu_config" if verdict["hint"] else "",
+                                    verdict["hint"])
+        finally:
+            # 向导不进入 ROI 编辑态，截图即用即弃：不释放槽位会让该页永久留在
+            # in-progress 集合，之后每次"连接并体检"都静默失效、界面停在体检中
+            self._coordinator.finish_roi_layout_capture(page_type)
 
     def _on_roi_screenshot_failed(self, page_type: str, message: str) -> None:
         if page_type != "hero_selection":

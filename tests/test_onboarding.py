@@ -253,6 +253,9 @@ class _FakeCoordinator(QObject):
         self.calls.append(("roi_capture", page_type))
         return True
 
+    def finish_roi_layout_capture(self, page_type: str) -> None:
+        self.calls.append(("finish_roi", page_type))
+
     def roi_layout(self, page_type: str):
         return SimpleNamespace(reference_size=[2560, 1440])
 
@@ -426,6 +429,47 @@ def test_resolution_portrait_fail(wizard):
         "hero_selection", SimpleNamespace(width=1080, height=1920))
     assert d._device_badge.text() == "未通过"
     assert "竖屏" in d._device_summary.text()
+
+
+def test_roi_screenshot_ready_releases_capture_slot(wizard):
+    """回归 VUL-B4-004：体检截图后必须释放 in-progress 槽位。
+
+    协调器只负责发信号，收尾由消费方调用；向导不进入 ROI 编辑态，漏掉
+    finish 会让 "hero_selection" 永久留在集合里，此后每次「连接并体检」
+    都被 start_roi_layout_capture 拒绝，界面静默停在"正在体检"。
+    """
+    d = wizard.dialog
+    coordinator = d._ensure_coordinator()
+    d._on_connection_finished(True, "已连接")
+    assert ("roi_capture", "hero_selection") in coordinator.calls
+
+    coordinator.roi_layout_screenshot_ready.emit(
+        "hero_selection", SimpleNamespace(width=2560, height=1440))
+    assert ("finish_roi", "hero_selection") in coordinator.calls
+
+    # 槽位已释放：第二次体检能再次发起截图
+    calls_before = len([c for c in coordinator.calls if c[0] == "roi_capture"])
+    d._on_connection_finished(True, "已连接")
+    calls_after = len([c for c in coordinator.calls if c[0] == "roi_capture"])
+    assert calls_after == calls_before + 1
+
+
+def test_roi_screenshot_ready_releases_slot_even_on_verdict_error(wizard):
+    """判定过程抛异常也必须释放槽位，否则一次坏帧就锁死后续体检。
+
+    直接调用槽函数而非 emit 信号：PySide6 在信号发射期间调用 Python 槽时，
+    槽内异常经 sys.excepthook 打印后被吞掉，emit() 正常返回，pytest.raises
+    捕获不到（生产环境同样如此，故异常只能靠 finally 兜住收尾）。
+    """
+    d = wizard.dialog
+    coordinator = d._ensure_coordinator()
+    coordinator.roi_layout = lambda _page: (_ for _ in ()).throw(RuntimeError("ROI 读取失败"))
+
+    with pytest.raises(RuntimeError):
+        d._on_roi_screenshot_ready(
+            "hero_selection", SimpleNamespace(width=2560, height=1440))
+
+    assert ("finish_roi", "hero_selection") in coordinator.calls
 
 
 def test_roi_screenshot_failed_shows_retry(wizard):
