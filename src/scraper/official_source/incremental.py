@@ -22,6 +22,7 @@ from pathlib import Path
 from src.config.env import PROJECT_ROOT
 from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.crawler import (
+    carry_over_local_fields,
     fetch_all_raw,
     save_json_atomic,
     transform,
@@ -164,6 +165,7 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
         if existing is None:
             print(f"  [中止] {output_path} 解析失败（已备份 corrupt-*），中止替换写入。", flush=True)
             sys.exit(1)
+        validated = carry_over_local_fields(validated, existing)
         before = len(existing)
         existing = [h for h in existing if h["id"] not in replace_ids]
         removed = before - len(existing)
@@ -174,6 +176,7 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
         if existing is None:
             print(f"  [中止] {output_path} 解析失败（已备份 corrupt-*），中止追加写入。", flush=True)
             sys.exit(1)
+        validated = carry_over_local_fields(validated, existing)
         existing_ids = {h["id"] for h in existing}
         merged = existing + [h for h in validated if h["id"] not in existing_ids]
         print(f"  -> 追加写入: 原有 {len(existing)} + 新增 {len(validated) - (len(merged) - len(existing))}", flush=True)

@@ -616,3 +616,81 @@ class TestFullWriteGuard:
         assert json.loads(backups[0].read_text(encoding="utf-8")) == [
             _hero_dict(9, [{"name": "旧", "description": "旧"}])
         ]
+
+
+class TestLocalExtensionFieldsPreserved:
+    """本地扩展字段（称号/难度/模式梯队）不得被采集覆盖（VUL-B4-001）。
+
+    title/difficulty/mode_viability 官网不提供、由用户手工维护，且
+    hero_content_hash 刻意排除它们；采集若重新赋值，全量或指定采集会把
+    用户编辑静默打回默认值。
+    """
+
+    def test_transform_does_not_emit_local_extension_fields(self) -> None:
+        hero = crawler.transform({"id": 1, "name": "祖逖", "dynasty": "东晋"})
+
+        assert hero is not None
+        for field in crawler.LOCAL_EXTENSION_FIELDS:
+            assert field not in hero
+
+    def test_carry_over_restores_fields_from_previous_data(self) -> None:
+        previous = [
+            {"id": 1, "title": "闻鸡起舞者", "difficulty": 3, "mode_viability": {"2v2": "T1"}},
+            {"id": 2, "title": "", "difficulty": 2, "mode_viability": {}},
+        ]
+        new_heroes = [{"id": 1, "name": "祖逖"}, {"id": 2, "name": "甲"}]
+
+        carried = crawler.carry_over_local_fields(new_heroes, previous)
+
+        assert carried[0]["title"] == "闻鸡起舞者"
+        assert carried[0]["difficulty"] == 3
+        assert carried[0]["mode_viability"] == {"2v2": "T1"}
+        assert carried[1]["difficulty"] == 2
+
+    def test_carry_over_ignores_missing_previous_file(self) -> None:
+        new_heroes = [{"id": 1, "name": "祖逖"}]
+
+        assert crawler.carry_over_local_fields(new_heroes, None) == new_heroes
+        assert "title" not in new_heroes[0]
+
+    def test_carry_over_leaves_new_heroes_untouched(self) -> None:
+        """官网新增武将无旧记录，保留模型默认值。"""
+        carried = crawler.carry_over_local_fields(
+            [{"id": 99, "name": "新武将"}], [{"id": 1, "title": "旧称号", "difficulty": 5}],
+        )
+
+        assert "title" not in carried[0]
+        assert "difficulty" not in carried[0]
+
+    def test_incremental_replace_preserves_local_fields(self, monkeypatch, tmp_path: Path) -> None:
+        """指定武将采集（replace 模式）不得把用户改过的难度打回默认值。"""
+        output_path = tmp_path / "heroes.json"
+        output_path.write_text(json.dumps([{
+            "id": 1, "name": "祖逖", "title": "闻鸡起舞者", "faction": "东晋",
+            "position": "攻击", "max_hp": 6, "max_hand": 3, "gender": "男",
+            "skills": [{"name": "孤军自募", "description": "旧", "settlement": ""}],
+            "difficulty": 3, "mode_viability": {"2v2": "T1"},
+            "last_updated": "2026-10-01", "icon_url": "",
+        }], ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(
+            incremental,
+            "transform",
+            lambda raw: {
+                "id": raw["id"], "name": raw["name"], "faction": "东晋",
+                "position": "攻击", "max_hp": 6, "max_hand": 3, "gender": "男",
+                "skills": [{"name": "孤军自募", "description": "新", "settlement": ""}],
+                "icon_url": "", "last_updated": "2026-10-19",
+            },
+        )
+        monkeypatch.setattr(incremental, "validate_heroes", lambda heroes: heroes)
+
+        incremental.run([{"id": 1, "name": "祖逖"}], output_path,
+                        dry_run=False, replace_ids={1}, skip_images=True)
+
+        saved = json.loads(output_path.read_text(encoding="utf-8"))[0]
+        assert saved["title"] == "闻鸡起舞者"
+        assert saved["difficulty"] == 3
+        assert saved["mode_viability"] == {"2v2": "T1"}
+        # 官网字段照常更新
+        assert saved["skills"][0]["description"] == "新"
+        assert saved["last_updated"] == "2026-10-19"

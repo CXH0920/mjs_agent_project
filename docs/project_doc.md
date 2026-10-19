@@ -120,7 +120,7 @@ src/scraper/official_source/card_baike.py  ← 官网手牌库抓取与 diff（�
 | `TIMEOUT` | `30` (秒) | HTTP 请求超时 |
 | `MAX_RETRIES` | `3` | 请求失败重试次数 |
 | `RETRY_DELAY` | `2` (秒) | 重试间隔 |
-| `HEADERS` | Chrome 131 User-Agent | 反爬伪装 |
+| `HEADERS` | `mjs-agent/1.0 (+项目地址)` | 可识别爬虫标识（不伪装浏览器） |
 | `GENDER_MAP` | `{1: "男", 2: "女"}` | 性别编码映射 |
 | `SKILL_SECTION_TITLES` | 7 个中文标题 | 技能描述段落拆分依据 |
 

@@ -74,10 +74,11 @@ WINDOWS_RESERVED_FILENAMES = {
     *(f"LPT{i}" for i in range(1, 10)),
 }
 
-# 官网采集请求以主流浏览器 User-Agent 标识；自动化访问与频率控制的完整
-# 披露见 TERMS.md「自动化访问与访问频率」
+# 官网采集以可识别的爬虫标识发起请求，不伪装成浏览器：站点 robots.txt 为
+# 「User-agent: * / Allow: /」全站放行，如实标识既满足许可前提，也让运营方
+# 在日志里能定位到本项目。自动化访问与频率控制的完整披露见 TERMS.md 第 7 节。
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0 Safari/537.36"
+    "User-Agent": "mjs-agent/1.0 (+https://github.com/CXH0920/mjs_agent_project)"
 }
 
 # Gender 映射表
@@ -394,7 +395,6 @@ def transform(raw: dict) -> dict | None:
     hero = {
         "id": hero_id,
         "name": name,
-        "title": "",
         "faction": clean_html(raw.get("dynasty", "")),
         "position": clean_html(raw.get("p_positioning", "")),
         "max_hp": max_hp,
@@ -402,8 +402,6 @@ def transform(raw: dict) -> dict | None:
         "gender": gender,
         "skills": skills,
         "icon_url": str(raw.get("icon_url", "")),
-        "difficulty": 2,
-        "mode_viability": {},
         "last_updated": date.today().isoformat(),
     }
     return hero
@@ -412,6 +410,35 @@ def transform(raw: dict) -> dict | None:
 # ============================================================
 # Pydantic 校验
 # ============================================================
+
+
+# 本地扩展字段：官网不提供、由用户手工维护，采集时不得覆盖。
+# hero_content_hash 同样排除这三项（见 announcement.py），二者口径必须一致。
+LOCAL_EXTENSION_FIELDS = ("title", "difficulty", "mode_viability")
+
+
+def carry_over_local_fields(new_heroes: list[dict], existing: list[dict] | None) -> list[dict]:
+    """把旧数据里的本地扩展字段按 id 回填到本次采集结果上。
+
+    官网只提供基础资料，title/difficulty/mode_viability 是用户在界面上手工
+    维护的本地数据。旧数据缺失或字段不存在时保留模型默认值。
+    """
+    if not existing:
+        return new_heroes
+
+    previous_by_id = {
+        int(hero["id"]): hero
+        for hero in existing
+        if isinstance(hero, dict) and hero.get("id") is not None
+    }
+    for hero in new_heroes:
+        previous = previous_by_id.get(int(hero["id"]))
+        if previous is None:
+            continue
+        for field in LOCAL_EXTENSION_FIELDS:
+            if field in previous:
+                hero[field] = previous[field]
+    return new_heroes
 
 
 def validate_heroes(heroes: list[dict]) -> list[dict]:

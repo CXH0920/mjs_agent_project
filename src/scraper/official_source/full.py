@@ -28,6 +28,7 @@ from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 from src.scraper.official_source.crawler import (
     BAIKE_URL,
+    carry_over_local_fields,
     fetch,
     save_json_atomic,
     transform,
@@ -39,6 +40,17 @@ logger = logging.getLogger(__name__)
 # 默认输出路径：写运行时可写根——UI/芯片/数据仓库均读 PROJECT_ROOT/data
 # （frozen 下首启部署基线副本），写 BUNDLE_ROOT 会落只读 _internal 且不可见
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "heroes.json"
+
+
+def _load_previous_heroes(path: Path) -> list[dict] | None:
+    """读取旧武将数据用于回填本地扩展字段；缺失或损坏时返回 None（按首次采集处理）。"""
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        logger.warning("旧武将数据不可读，本次不回填本地字段: %s", error)
+        return None
+    return previous if isinstance(previous, list) else None
+
 
 # 写入守卫阈值：官网改版会让 transform 产出大量空描述甚至全部失败，
 # 覆盖 heroes.json 前按规模与非空占比拦截，避免整库被一次采集静默清空
@@ -142,7 +154,6 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
         print("\n[5/5] Pydantic 模型校验...", flush=True)
         validated = validate_heroes(transformed)
         print(f"  校验通过: {len(validated)} 条", flush=True)
-
         skipped = len(transformed) - len(validated)
         if skipped:
             print(f"  校验失败: {skipped} 条（详见日志）", flush=True)
@@ -162,6 +173,7 @@ def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bo
                 print(f"\n[中止] 写入守卫触发: {reason}（旧文件未修改）", flush=True)
                 logger.error("写入守卫触发: %s", reason)
                 sys.exit(1)
+            validated = carry_over_local_fields(validated, _load_previous_heroes(out_path))
             snapshot_to_backups(out_path)
             save_json_atomic(out_path, validated)
             print(f"\n  已保存: {out_path}", flush=True)
