@@ -365,3 +365,162 @@ def test_script_runner_finished_guaranteed_on_failed_start(qapp, tmp_path) -> No
     assert code is not None, "启动失败必须补发 finished，否则调用方永久等待"
     assert code != 0
     assert runner.is_running() is False
+
+
+# ---------------------------------------------------------------
+# 批次 1 回归：取消锁死（TD-A5-001）、Starting 状态终止（VUL-B2-001）、
+# 清理轮询无上限（TD-A8-004）
+# ---------------------------------------------------------------
+class _CallbackSignal:
+    """最小信号替身：只支持 connect/emit，供 Starting 状态的 started 使用。"""
+
+    def __init__(self) -> None:
+        self._callbacks = []
+
+    def connect(self, callback) -> None:
+        self._callbacks.append(callback)
+
+    def disconnect(self, callback) -> None:
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+
+    def emit(self, *args) -> None:
+        for callback in list(self._callbacks):
+            callback(*args)
+
+
+def test_base_fetch_cancel_then_failed_start_releases_busy(qapp, monkeypatch) -> None:
+    """回归（TD-A5-001）：取消期间发生 FailedToStart 时取消标记必须复位。
+
+    Qt6 对 FailedToStart 不发 finished，_finish_cancellation 只能由 _on_error
+    触发；不复位则 _cancel_requested 恒为 True，_is_busy 永久 True，
+    该服务此后所有抓取请求都被拒，只有重启应用才能恢复。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+    from PySide6.QtCore import QProcess
+
+    recorded = []
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: recorded.append((a, kw)))
+    service = bfs.BaseFetchService()
+    # FailedToStart 后 Qt 的真实状态是 NotRunning，替身必须一致，
+    # 否则 is_process_busy 会把「已复位但仍报 Running」误判成忙。
+    service._process = _FakeProc(running=False)
+    service._cancel_requested = True
+    cancelled = []
+    service.cancelled.connect(lambda: cancelled.append(True))
+
+    service._on_error(QProcess.ProcessError.FailedToStart)
+
+    assert service._cancel_requested is False
+    assert service.is_busy is False
+    assert cancelled == [True]
+
+
+def test_base_fetch_cancel_on_starting_defers_kill(qapp, monkeypatch) -> None:
+    """回归（VUL-B2-001）：Starting 状态取消不得立即 kill，改等 started 后再终止。
+
+    Qt6 对尚处 Starting 的真实 QProcess 调 kill() 会在事件循环内原生 abort
+    （本文件 345 行测试注释实证），该崩溃无法被 Python 捕获。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+    from PySide6.QtCore import QProcess
+
+    class _StartingProc(_FakeProc):
+        def __init__(self):
+            super().__init__()
+            self.started = _CallbackSignal()
+
+        def state(self):
+            return QProcess.ProcessState.Starting
+
+    delegated = []
+    monkeypatch.setattr(bfs, "cancel_process", lambda p: delegated.append(p))
+    service = bfs.BaseFetchService()
+    fake = _StartingProc()
+    service._process = fake
+
+    service.cancel()
+
+    assert service._cancel_requested is True
+    assert delegated == []  # 未在 Starting 阶段终止
+    assert fake.killed is False
+
+    # started 到达后才真正委托终止
+    fake._running = True
+    fake.started.emit()
+    assert delegated == [fake]
+
+
+def test_base_fetch_finish_cancellation_caps_polling(qapp, monkeypatch, caplog) -> None:
+    """回归（TD-A8-004）：进程树清理永不结束时，轮询必须在轮次上限后强制收尾。
+
+    无上限时 taskkill 被安全软件拦截会让 _cancel_requested 永不复位，
+    服务进入与 TD-A5-001 相同的永久忙碌态。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+
+    class _StuckCleanup:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(bfs.QTimer, "singleShot", lambda _ms, _fn: None)
+    service = bfs.BaseFetchService()
+    service._cancel_requested = True
+    service._cancel_cleanup_process = _StuckCleanup()
+    service._CANCEL_CLEANUP_MAX_POLLS = 3
+    cancelled = []
+    service.cancelled.connect(lambda: cancelled.append(True))
+
+    with caplog.at_level(logging.WARNING, logger="src.business.fetching.base_fetch_service"):
+        for _ in range(5):
+            service._finish_cancellation()
+
+    assert service._cancel_requested is False
+    assert service._cancel_cleanup_process is None
+    assert cancelled == [True]
+    assert any("仍未结束，强制收尾" in r.message for r in caplog.records)
+
+
+def test_cancel_process_refuses_starting_state(monkeypatch) -> None:
+    """回归（VUL-B2-001）：cancel_process 对 Starting 进程直接返回，不 kill。
+
+    作为公共函数，它也可能被基类之外的调用方传入 Starting 进程，
+    此处是第二道防线。
+    """
+    from PySide6.QtCore import QProcess
+    from src.business.fetching.fetch_utils import cancel_process
+
+    class _StartingProc:
+        killed = False
+
+        def state(self):
+            return QProcess.ProcessState.Starting
+
+        def kill(self):
+            self.killed = True
+
+    process = _StartingProc()
+    assert cancel_process(process) is None
+    assert process.killed is False
+
+
+def test_finish_cancellation_is_idempotent(qapp) -> None:
+    """回归（TD-A8-004）：收尾完成后再调用 _finish_cancellation 不得重复广播。
+
+    超时路径与 _on_finished 可能先后到达；无幂等守卫时 cancelled 会被
+    重复发射，UI 侧（如取消后重载相性）会重复触发一次数据重载。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+
+    service = bfs.BaseFetchService()
+    service._cancel_requested = True
+    cancelled = []
+    service.cancelled.connect(lambda: cancelled.append(True))
+
+    service._finish_cancellation()
+    service._finish_cancellation()
+    service._finish_cancellation()
+
+    assert cancelled == [True]

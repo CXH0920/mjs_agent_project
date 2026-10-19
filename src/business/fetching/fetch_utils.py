@@ -92,7 +92,15 @@ def is_process_busy(process: QProcess | None, service_name: str) -> bool:
 
 
 def cancel_process(process: QProcess | None) -> subprocess.Popen | None:
-    """请求终止当前 QProcess，并在 Windows 上异步清理整棵进程树。"""
+    """请求终止当前 QProcess，并在 Windows 上异步清理整棵进程树。
+
+    尚处 Starting 的进程不在此处理：此时 processId() 为 0、树杀会退化为
+    kill()，而 Qt6 对 Starting 状态的 kill() 会在事件循环内原生 abort。
+    调用方须等 started 信号后再调用本函数（见 BaseFetchService.cancel）。
+    """
+    if process and process.state() == QProcess.ProcessState.Starting:
+        logger.warning("进程仍在启动中，跳过终止请求，等待 started 后重试")
+        return None
     if process and process.state() != QProcess.ProcessState.NotRunning:
         process_id = process.processId() if hasattr(process, "processId") else 0
         if os.name == "nt" and process_id:

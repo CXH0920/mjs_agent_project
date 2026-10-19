@@ -69,6 +69,7 @@ class BaseFetchService(QObject):
         self._failed_items: list[str] = []
         self._cancel_requested = False
         self._cancel_cleanup_process: Popen | None = None
+        self._cancel_cleanup_polls = 0
 
     # ---------------------------------------------------------------
     # 钩子：子类覆写
@@ -125,6 +126,25 @@ class BaseFetchService(QObject):
             return
         self._cancel_requested = True
         self.status_changed.emit(f"正在中止{self._service_name}...")
+        # Starting 状态下 processId() 为 0，树杀会退化为 kill()，而 Qt6 对尚处
+        # Starting 的进程 kill() 会在事件循环内原生 abort（VUL-B2-001）。此时只
+        # 置标记，等 started 信号到达后再真正终止。
+        if self._process.state() == QProcess.ProcessState.Starting:
+            self._process.started.connect(self._on_started_after_cancel)
+            return
+        self._cancel_cleanup_process = cancel_process(self._process)
+
+    def _on_started_after_cancel(self) -> None:
+        """取消请求在 Starting 期间到达：进程真正起来后再补一次树杀。"""
+        if self._process:
+            try:
+                self._process.started.disconnect(self._on_started_after_cancel)
+            except (RuntimeError, TypeError):
+                pass
+        if not self._cancel_requested or not self._process:
+            return
+        if self._process.state() == QProcess.ProcessState.NotRunning:
+            return
         self._cancel_cleanup_process = cancel_process(self._process)
 
     def _is_busy(self) -> bool:
@@ -147,6 +167,7 @@ class BaseFetchService(QObject):
         """启动子进程并连接信号"""
         self._cancel_requested = False
         self._cancel_cleanup_process = None
+        self._cancel_cleanup_polls = 0
         self._stdout_buffer.clear()
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
@@ -313,16 +334,36 @@ class BaseFetchService(QObject):
         self._on_process_finished(exit_code)
         self._context = None
 
+    # 进程树清理最多等待轮次（50ms/轮 ≈ 5 秒）：taskkill 被安全软件拦截或
+    # PID 已复用时可能永不返回，无上限轮询会让 _cancel_requested 永不复位，
+    # 服务进入只有重启才能解除的永久忙碌态（与 TD-A5-001 同症状）。
+    _CANCEL_CLEANUP_MAX_POLLS = 100
+
     def _finish_cancellation(self) -> None:
-        """等待 Windows 进程树清理结束后，再通知 UI 可安全继续操作。"""
+        """等待 Windows 进程树清理结束后，再通知 UI 可安全继续操作。
+
+        幂等：收尾后 _cancel_requested 已复位，重复调用（如超时路径与
+        _on_finished 先后到达）不得重复广播 cancelled。
+        """
+        if not self._cancel_requested and self._cancel_cleanup_process is None:
+            return
+
         cleanup_process = self._cancel_cleanup_process
         if cleanup_process and cleanup_process.poll() is None:
-            QTimer.singleShot(50, self._finish_cancellation)
-            return
+            self._cancel_cleanup_polls += 1
+            if self._cancel_cleanup_polls < self._CANCEL_CLEANUP_MAX_POLLS:
+                QTimer.singleShot(50, self._finish_cancellation)
+                return
+            logger.warning(
+                "%s 进程树清理超过 %d 秒仍未结束，强制收尾",
+                self._service_name,
+                self._CANCEL_CLEANUP_MAX_POLLS * 50 // 1000,
+            )
 
         if cleanup_process and cleanup_process.returncode not in (0, None):
             logger.warning("%s 进程树清理退出码: %s", self._service_name, cleanup_process.returncode)
         self._cancel_cleanup_process = None
+        self._cancel_cleanup_polls = 0
         self._cancel_requested = False
         self.status_changed.emit(f"{self._service_name}已中止")
         self.cancelled.emit()
@@ -350,6 +391,13 @@ class BaseFetchService(QObject):
             duration_s=time.monotonic() - getattr(self, "_task_started", time.monotonic()),
             reason=full_msg,
         )
+        # 取消期间的非 Crashed 错误（典型是 Starting 阶段的 FailedToStart）
+        # 同样不会再有 finished 收尾：不在此复位取消标记，_is_busy 会因
+        # _cancel_requested 恒为 True 而永久拒绝后续请求（TD-A5-001）。
+        if self._cancel_requested:
+            logger.warning("%s 中止期间出错: %s", self._service_name, full_msg)
+            self._finish_cancellation()
+            return
         self.status_changed.emit(f"{self._service_name}出错")
         self.error_occurred.emit(full_msg)
         self._on_process_error(error_name, full_msg)
