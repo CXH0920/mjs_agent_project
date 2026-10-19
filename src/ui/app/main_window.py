@@ -218,10 +218,15 @@ class MainWindow(QMainWindow):
         return panel is not None and panel.is_recognizing()
 
     def closeEvent(self, event) -> None:
-        """在窗口销毁前结束轮询与 OCR worker。"""
+        """在窗口销毁前结束轮询与 OCR worker，并中止抓取子进程。
+
+        QProcess 随父对象析构不杀子进程树：browser 模式会孤儿化 Edge/node
+        并锁住 data/edge_profile，下次启动报 locked（VUL-B2-002）。
+        """
         self._poll_coordinator.shutdown()
         self._peak_select.shutdown()
         self._capture_service.shutdown()
+        self._services.shutdown_fetch_services()
         super().closeEvent(event)
 
     def changeEvent(self, event) -> None:
@@ -344,7 +349,10 @@ class MainWindow(QMainWindow):
             # AI 子进程全量覆盖写 guides/synergies.json，编辑入口前置拦截防人工修改被冲掉
             busy_check=lambda: (
                 "攻略生成" if self._guide_service.is_busy
-                else ("相性生成" if self._synergy_service.is_busy else None)
+                else (
+                    "相性数据重载" if self._synergy_service.reloading
+                    else ("相性生成" if self._synergy_service.is_busy else None)
+                )
             ),
         )
         self._hero_browser.synergies_changed.connect(self._on_synergies_changed)

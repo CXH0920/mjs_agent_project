@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
 
 from PySide6.QtCore import Signal
@@ -32,6 +33,7 @@ class SynergyFetchService(BaseFetchService):
         super().__init__(parent)
         self._synergy_manager = synergy_manager
         self._reload_worker = None
+        self._reload_mtime: float | None = None
 
     @property
     def _service_name(self) -> str:
@@ -92,8 +94,10 @@ class SynergyFetchService(BaseFetchService):
         """
         if self._is_busy():
             return False
-        if self._reload_worker and self._reload_worker.isRunning():
-            return False
+        try:
+            self._reload_mtime = os.path.getmtime(self._synergy_manager.file_path)
+        except OSError:
+            self._reload_mtime = None
         worker = SynergyReloadWorker(self._synergy_manager.file_path, self)
         worker.loaded.connect(self._on_reload_loaded)
         worker.failed.connect(self._on_reload_failed)
@@ -101,6 +105,34 @@ class SynergyFetchService(BaseFetchService):
         self._reload_worker = worker
         worker.start()
         return True
+
+    @property
+    def reloading(self) -> bool:
+        """后台重载是否进行中（供 UI 区分拦截文案，不改变忙碌语义）。"""
+        return self._is_reload_running()
+
+    def _is_reload_running(self) -> bool:
+        """重载线程是否仍在运行；worker 已被 deleteLater 销毁时视为未运行。"""
+        worker = self._reload_worker
+        if worker is None:
+            return False
+        try:
+            return worker.isRunning()
+        except RuntimeError:
+            # C++ 对象已销毁：引用失效，按未运行处理并清空，避免下次 isRunning 再抛
+            self._reload_worker = None
+            return False
+
+    def _is_busy(self) -> bool:
+        """抓取子进程与后台重载共用同一把互斥。
+
+        只拦「抓取中重载」是不够的：重载线程读的是启动前的旧快照，期间若
+        启动生成子进程并分批提交，重载完成会用旧快照覆盖新数据（VUL-B3-002）。
+        """
+        if self._is_reload_running():
+            logger.warning("相性数据重载进行中，忽略请求")
+            return True
+        return super()._is_busy()
 
     def _submit(
         self,
@@ -142,10 +174,28 @@ class SynergyFetchService(BaseFetchService):
     # ---------------------------------------------------------------
 
     def _on_reload_loaded(self, synergies, load_issues) -> None:
-        """重载完成后把结果原子写回共享 manager，再广播完成信号。"""
+        """重载完成后把结果原子写回共享 manager，再广播完成信号。
+
+        写回前比对文件 mtime：worker 读的是启动时快照，若期间子进程又提交了
+        新批次，直接写回会把新数据覆盖成旧快照。此时放弃写回，让调用方按
+        需要重新触发一次重载。
+        """
+        if self._reload_stale():
+            logger.warning("相性文件在重载期间已变化，放弃写回旧快照")
+            self._reload_worker = None
+            self.reload_finished.emit()
+            return
         self._synergy_manager.replace_loaded_data(synergies, load_issues)
         self._reload_worker = None
         self.reload_finished.emit()
+
+    def _reload_stale(self) -> bool:
+        """重载期间相性文件是否被改动过。"""
+        try:
+            mtime = os.path.getmtime(self._synergy_manager.file_path)
+        except OSError:
+            return False
+        return mtime != self._reload_mtime
 
     def _on_reload_failed(self, error_msg: str) -> None:
         """重载失败同样要释放 worker 引用（与 _on_reload_loaded 对称）。

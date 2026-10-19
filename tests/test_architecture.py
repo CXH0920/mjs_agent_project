@@ -644,7 +644,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 557 → 561：启动 2 分钟后自动公告检查接线（P1-4，2026-10）；
     # 561 → 575：状态栏第三枚数据新鲜度芯片挂载接线（芯片本体在
     # data_freshness_chip.py 自足，此处仅构造与两条信号回接）
-    "ui/app/main_window.py": 575,
+    # 575 → 584：closeEvent 中止三个抓取子进程（VUL-B2-002）——QProcess 随父
+    # 对象析构不杀子进程树，browser 模式会孤儿化 Edge/node 并锁住 edge_profile
+    "ui/app/main_window.py": 584,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，

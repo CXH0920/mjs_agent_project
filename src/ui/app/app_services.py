@@ -10,6 +10,10 @@ MainWindow 持有本对象后调用 attach(parent) 统一挂载，再解包到�
 """
 from __future__ import annotations
 
+import logging
+import time
+
+from PySide6.QtCore import QCoreApplication
 from src.business.announcement.announcement_service import AnnouncementService
 from src.business.card_sync import CardSyncService
 from src.business.emulator.capture_service import CaptureService
@@ -34,6 +38,8 @@ from src.data.synergy_manager import SynergyManager
 from src.data.win_rate_repository import load_win_rates
 from src.ui.app.poll_coordinator import PollCoordinator
 from src.ui.generation.ai_generation_workflow import AiGenerationWorkflow
+
+logger = logging.getLogger(__name__)
 
 
 class AppServices:
@@ -121,3 +127,29 @@ class AppServices:
             qobject.setParent(parent)
         # AiGenerationWorkflow 缓存窗口引用作弹窗归属（组合根无头构造时为 None）
         self.ai_workflow.set_window(parent)
+
+    def shutdown_fetch_services(self, timeout_ms: int = 2000) -> None:
+        """中止三个抓取子进程，并最多等待 timeout_ms 让进程树真正退出。
+
+        QProcess 随父对象析构不杀子进程树：browser 模式下 Playwright 的
+        Edge/node 会孤儿化并锁住 data/edge_profile，下次浏览器模式启动报
+        locked（VUL-B2-002）。先发终止请求，再用事件循环泵等待，避免直接
+        sleep 卡住 GUI；超时后不再等待，保证退出不被阻塞。
+        """
+        services = (self.hero_fetch, self.guide_fetch, self.synergy_fetch)
+        for service in services:
+            try:
+                service.cancel()
+            except RuntimeError:
+                pass  # 对象已随窗口销毁，退出路径无需再处理
+        if not any(service.is_busy for service in services):
+            return
+        app = QCoreApplication.instance()
+        deadline = time.monotonic() + timeout_ms / 1000
+        while time.monotonic() < deadline:
+            if not any(service.is_busy for service in services):
+                return
+            if app is not None:
+                app.processEvents()
+            time.sleep(0.02)
+        logger.warning("退出时抓取子进程未在 %d ms 内结束，不再等待", timeout_ms)

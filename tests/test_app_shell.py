@@ -52,6 +52,61 @@ def shared_window():
     app.processEvents()
 
 
+def test_close_cancels_fetch_services(qapp, monkeypatch) -> None:
+    """回归（VUL-B2-002）：窗口关闭必须委托组合根中止抓取子进程。
+
+    QProcess 随父对象析构不会杀子进程树：browser 模式下 Playwright 的
+    Edge/node 会孤儿化并锁住 data/edge_profile，下次浏览器模式启动报 locked。
+
+    自建独立窗口而非复用 shared_window：close() 会让 module 级 fixture 的
+    窗口失效，后续依赖它的用例（导航宽度等）会静默失真。必须先 show()，
+    否则 close() 不会触发 closeEvent，用例会空过。
+    """
+    window = MainWindow(_hero_manager(), SynergyManager(), GuideManager())
+    window.show()
+    qapp.processEvents()
+    called: list[int] = []
+    monkeypatch.setattr(
+        window._services, "shutdown_fetch_services",
+        lambda *a, **kw: called.append(1), raising=False,
+    )
+
+    window.close()
+    qapp.processEvents()
+
+    assert called == [1]
+    window.deleteLater()
+
+
+def test_shutdown_fetch_services_waits_then_gives_up(qapp) -> None:
+    """退出等待：进程一直不结束时必须按超时返回，不得阻塞退出。
+
+    只有"发终止请求后短暂等待"才既能让 Playwright 树退出，又不会让窗口
+    关不掉；超时后仅告警，不无限等待。
+    """
+    from src.ui.app.app_services import AppServices
+
+    services = AppServices.__new__(AppServices)  # 免构造依赖，只测该方法
+    cancelled: list[str] = []
+
+    class _Stuck:
+        def __init__(self, name): self._name = name
+        @property
+        def is_busy(self): return True  # 永不结束
+        def cancel(self): cancelled.append(self._name)
+
+    services.hero_fetch = _Stuck("hero")
+    services.guide_fetch = _Stuck("guide")
+    services.synergy_fetch = _Stuck("synergy")
+
+    started = time.monotonic()
+    services.shutdown_fetch_services(timeout_ms=100)
+    elapsed = time.monotonic() - started
+
+    assert cancelled == ["hero", "guide", "synergy"]
+    assert elapsed < 1.0  # 100ms 超时后立即返回，未无限等待
+
+
 @pytest.fixture
 def window(shared_window):
     shared_window._user_nav_collapsed = None

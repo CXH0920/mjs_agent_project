@@ -58,7 +58,16 @@ class HeroFetchService(BaseFetchService):
         return True
 
     def fetch_specific(self, hero_ids: list[int]) -> bool:
-        """指定获取：执行 src.scraper.incremental --hero-id id1,id2,..."""
+        """指定获取：执行 src.scraper.incremental --hero-id id1,id2,...
+
+        空列表直接拒绝：子进程对空目标会打印「无目标武将」并以 0 退出，
+        父进程据此上报成功，公告更新流程会把未采集的批次当成已完成并
+        mark_applied（VUL-B4-002）。宁可不发信号，也不发假的成功信号。
+        """
+        if not hero_ids:
+            logger.warning("指定采集未提供武将 ID，忽略本次请求")
+            self.status_changed.emit("未选择任何武将，无需采集")
+            return False
         if self._is_busy():
             return False
         ids_str = ",".join(str(hid) for hid in hero_ids)

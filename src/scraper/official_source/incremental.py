@@ -271,8 +271,10 @@ def main() -> None:
         target_raw = filtered
 
     if not target_raw:
-        print("\n  无目标武将，退出。", flush=True)
-        return
+        # 非零退出：父进程（QProcess）以退出码判定成败，0 会让「一条都没采」
+        # 显示成成功，公告更新随后 mark_applied 把待更新武将静默丢弃。
+        print("\n  [错误] 无目标武将（所选武将可能已下架或 ID 无效），未写入任何数据。", flush=True)
+        sys.exit(1)
 
     # 3. 清洗 + 校验 + 输出
     print("\n[3/3] 清洗与写入...", flush=True)

@@ -80,3 +80,23 @@ def test_fetch_methods_start_process_when_idle() -> None:
         ["-m", "src.scraper.official"],
         ["-m", "src.scraper.incremental", "--hero-id", "7,9"],
     ]
+
+
+def test_fetch_specific_rejects_empty_ids() -> None:
+    """回归（VUL-B4-002）：空 ID 列表不得启动子进程。
+
+    子进程对空目标会打印「无目标武将」并以 0 退出，父进程据此上报成功，
+    公告更新流程会把未采集的批次当成已完成并 mark_applied，待更新武将被
+    静默丢弃。
+    """
+    _app()
+    service = HeroFetchService()
+    started: list[list[str]] = []
+    service._is_busy = lambda: False
+    service._start_process = lambda args: started.append(args)
+    statuses: list[str] = []
+    service.status_changed.connect(statuses.append)
+
+    assert service.fetch_specific([]) is False
+    assert started == []
+    assert statuses == ["未选择任何武将，无需采集"]

@@ -219,3 +219,22 @@ def test_reload_from_disk_rejects_while_fetch_running(monkeypatch) -> None:
 
     assert service.reload_from_disk() is False
     assert _DanglingReloadWorker.instance is None  # 未创建 worker，未覆盖内存数据
+
+
+def test_submit_rejected_while_reload_running(monkeypatch) -> None:
+    """回归（VUL-B3-002）：重载进行中不得启动生成子进程。
+
+    只拦「抓取中重载」是单向的：重载线程读的是启动前快照，期间若启动生成
+    并分批提交，重载完成会用旧快照覆盖新数据。
+    """
+    service = SynergyFetchService(SimpleNamespace(file_path="synergies.json"))
+    monkeypatch.setattr(
+        "src.business.fetching.synergy_fetch_service.SynergyReloadWorker", _ReloadWorker
+    )
+    started: list[list[str]] = []
+    monkeypatch.setattr(service, "_start_process", lambda args: started.append(args))
+
+    assert service.reload_from_disk() is True
+    assert service.is_busy is True
+    assert service.fetch_pairs_list([{"hero_a_id": 1, "hero_b_id": 2}]) is False
+    assert started == []
