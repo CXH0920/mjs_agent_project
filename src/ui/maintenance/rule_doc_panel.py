@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from src.business.common.script_runner import FAILED_TO_START_EXIT_CODE
 from src.business.maintenance.rule_doc_ops_service import save_confirmed_diffs, validate_confirmed_row
 from src.business.rag import rule_doc_service as rds
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
@@ -692,7 +693,14 @@ class RuleDocPanel(QWidget):
         self.script_started.emit()
         self._emit_output("$ python -m " + module + " " + " ".join(args[1:]))
         self._pending_finished = (on_finished, sentinel_codes, sentinel_note, failure_codes)
-        self._runner.run(PYTHON, None, ['-m', module] + args[1:], self._root)
+        if self._runner.run(PYTHON, None, ['-m', module] + args[1:], self._root) is False:
+            # 启动失败不再走 finished（避免与 run() 返回值抢语义），
+            # 这里直接按失败收尾，否则面板永久停在"执行中"
+            self._on_finished(
+                FAILED_TO_START_EXIT_CODE, None,
+                on_finished, sentinel_codes, sentinel_note, failure_codes,
+            )
+            self.script_finished.emit(FAILED_TO_START_EXIT_CODE)
 
     def _on_runner_finished(self, code: int) -> None:
         """ScriptRunner 完成回调：转发到原 _on_finished（保留签名供测试直接调用）。"""

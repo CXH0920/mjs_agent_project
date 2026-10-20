@@ -462,7 +462,13 @@ class CardPointsPanel(QWidget):
         self._import_button.setEnabled(False)
         self._import_button.setText("导入中…")
         self._import_output = []
-        self._runner.run(sys.executable, None, ['-m', 'src.scripts.migrate_excel_to_json', '--only', 'points'], self._root)
+        started = self._runner.run(sys.executable, None, ['-m', 'src.scripts.migrate_excel_to_json', '--only', 'points'], self._root)
+        if started is False:
+            # 启动失败不再走 finished（避免与 run() 返回值抢语义），
+            # 忙状态必须在此复位，否则按钮永久停在"导入中…"
+            self._import_button.setEnabled(True)
+            self._import_button.setText("从 xlsx 导入")
+            show_toast(self, "导入任务启动失败，请查看日志")
 
     def _collect_import_output(self, data: bytes) -> None:
         self._import_output.append(bytes(data).decode("utf-8", errors="replace"))

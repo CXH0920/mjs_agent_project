@@ -441,7 +441,12 @@ class RagMaintenancePanel(QWidget):
         self._log.clear()
         self._log.appendPlainText("$ python -m src.scripts.maintain_rag " + " ".join(args))
         self._run_started = time.monotonic()
-        self._runner.run(PYTHON, None, ['-m', 'src.scripts.maintain_rag'] + args, self._root)
+        if self._runner.run(PYTHON, None, ['-m', 'src.scripts.maintain_rag'] + args, self._root) is False:
+            # 启动失败不再走 finished（避免与 run() 返回值抢语义），
+            # 忙状态必须在此复位，否则整页按钮永久禁用
+            self._set_busy(False)
+            self._workspace.set_log_meta("启动失败")
+            self._log.appendPlainText("\n✘ 任务启动失败，请查看日志")
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")

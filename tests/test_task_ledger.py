@@ -49,3 +49,61 @@ def test_read_tolerates_corrupt_line(tmp_path):
 
     assert len(entries) == 1
     assert entries[0]["task"] == "a"
+
+
+def test_read_skips_non_dict_json_line(tmp_path):
+    """回归（VUL-B4-001）：合法 JSON 但不是对象时不得整体崩溃。
+
+    台账是长期追加的审计资产，一旦被外部工具追加了 123 / ["x"] 这类行，
+    旧实现 entry.get 会抛 AttributeError，让整份台账读不出来——
+    恰好摧毁"任何时候可查"这个唯一存在理由。
+    """
+    ledger = tmp_path / "task_results.jsonl"
+    ledger.write_text(
+        '{"task": "a", "ok": true}\n123\n["x"]\n"str"\nnull\n',
+        encoding="utf-8",
+    )
+
+    entries = read_entries(ledger)
+
+    assert len(entries) == 1
+    assert entries[0]["task"] == "a"
+
+
+def test_record_task_tolerates_bad_field_types(tmp_path):
+    """回归（TD-A5-002）：字段类型脏值只降级告警，不得逃逸到调用方。
+
+    归一化原先在 try 之外，int("bad") 会直接抛 ValueError 打断任务收尾，
+    与"台账不得影响任务本身"的设计承诺相反。
+    """
+    ledger = tmp_path / "task_results.jsonl"
+
+    record_task("x", ok=True, exit_code="not-an-int", total=None,
+                failed="bad", duration_s="bad", path=ledger)  # 不应抛出
+
+    assert read_entries(ledger) == []
+
+
+def test_record_task_serialises_concurrent_writers(tmp_path):
+    """回归（VUL-B3-001）：多进程并发追加不得丢记录。
+
+    实测四个进程各写 400 条（NTFS）时，仅靠 O_APPEND 会静默丢 2%~12%，
+    且不抛任何异常——台账出现无声空洞。这里用线程模拟并发写入，
+    断言条数完全一致。
+    """
+    import threading
+
+    ledger = tmp_path / "task_results.jsonl"
+    per_writer, writers = 40, 4
+
+    def _write(tag: str) -> None:
+        for i in range(per_writer):
+            record_task(f"{tag}-{i}", ok=True, total=1, path=ledger)
+
+    threads = [threading.Thread(target=_write, args=(f"w{n}",)) for n in range(writers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(read_entries(ledger)) == per_writer * writers

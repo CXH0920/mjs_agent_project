@@ -66,6 +66,131 @@ def test_script_runner_watchdog_ignores_finished_process() -> None:
     assert fake.killed is False
 
 
+def test_script_runner_watchdog_kills_process_tree(qapp, monkeypatch) -> None:
+    """回归（VUL-B2-003）：看门狗超时必须终止整棵进程树。
+
+    子脚本会再拉起子进程（浏览器/同步脚本），只杀主进程会把它们孤儿化，
+    继续占用网络与文件句柄。替身无 processId 时降级 kill，故用 monkeypatch
+    验证委托关系本身。
+    """
+    import src.business.common.script_runner as sr
+
+    launched = []
+    monkeypatch.setattr(sr.os, "name", "nt")
+    monkeypatch.setattr(sr.subprocess, "Popen", lambda *a, **kw: launched.append((a, kw)))
+
+    class _PidProc(_FakeProc):
+        def processId(self):
+            return 4321
+
+    runner = ScriptRunner()
+    runner._proc = _PidProc()
+
+    runner._on_watchdog_timeout()
+
+    assert launched, "看门狗必须走树杀，而不是只杀主进程"
+    argv = launched[0][0][0]
+    assert "taskkill" in argv[0]
+    assert "4321" in argv and "/T" in argv and "/F" in argv
+
+
+def test_script_runner_watchdog_defers_kill_while_starting(qapp, monkeypatch) -> None:
+    """回归（VUL-B2-003）：Starting 状态不得直接 kill（Qt6 会原生 abort），
+    改为挂到 started 信号后再补树杀，避免兜底本身打死进程。"""
+    import src.business.common.script_runner as sr
+
+    launched = []
+    monkeypatch.setattr(sr.os, "name", "nt")
+    monkeypatch.setattr(sr.subprocess, "Popen", lambda *a, **kw: launched.append(a))
+
+    from PySide6.QtCore import QProcess
+
+    class _Signal:
+        """替身 started 信号：只记录 connect 进来的槽。"""
+
+        def __init__(self):
+            self.handlers = []
+
+        def connect(self, handler):
+            self.handlers.append(handler)
+
+        def disconnect(self, handler):
+            self.handlers.remove(handler)
+
+    class _StartingProc(_FakeProc):
+        def __init__(self):
+            super().__init__()
+            self.started = _Signal()
+
+        def state(self):
+            return QProcess.ProcessState.Starting
+
+        def processId(self):
+            return 99
+
+    runner = ScriptRunner()
+    fake = _StartingProc()
+    runner._proc = fake
+
+    runner._on_watchdog_timeout()
+
+    assert launched == [], "Starting 阶段不得发起树杀"
+    assert fake.killed is False
+    assert fake.started.handlers, "必须挂到 started 信号上等待补杀"
+
+
+def test_script_runner_recheck_does_not_kill_new_task(qapp) -> None:
+    """回归（VUL-B2-003 衍生）：树杀复查必须绑定被超时的那一个进程。
+
+    复查原先在延迟回调里重新读 self._proc：超时进程若在延迟窗口内结束、
+    调用方紧接着启动下一个任务，就会拿错对象并误杀新进程——与 B2-001
+    "陈旧看门狗杀健康任务"是同一类错误，只是窗口更短。
+    """
+
+    class _PidProc(_FakeProc):
+        def __init__(self, pid: int):
+            super().__init__()
+            self._pid = pid
+
+        def processId(self):
+            return self._pid
+
+        def deleteLater(self):
+            pass
+
+    runner = ScriptRunner()
+    old = _PidProc(111)
+    runner._proc = old
+
+    # 模拟：旧进程已被树杀并结束，调用方立刻启动了新任务
+    new = _PidProc(222)
+    runner._proc = new
+
+    runner._recheck_after_kill(old)
+
+    assert new.killed is False, "复查误杀了刚启动的新任务"
+    assert old.killed is False, "已不是当前进程，不应再对它动手"
+
+
+def test_script_runner_recheck_kills_same_stuck_process(qapp) -> None:
+    """同一进程树杀后仍在跑：复查必须补 kill()，否则兜底形同虚设。"""
+
+    class _PidProc(_FakeProc):
+        def processId(self):
+            return 333
+
+        def deleteLater(self):
+            pass
+
+    runner = ScriptRunner()
+    stuck = _PidProc()
+    runner._proc = stuck
+
+    runner._recheck_after_kill(stuck)
+
+    assert stuck.killed is True
+
+
 def test_base_fetch_watchdog_kills_stuck_process(qapp, caplog) -> None:
     """AI 生成子进程卡网络永不结束 → 看门狗终止，_is_busy 不得永久 True"""
     from src.business.fetching.base_fetch_service import BaseFetchService
@@ -353,18 +478,42 @@ def test_script_runner_run_rejects_while_busy(tmp_path) -> None:
     assert isinstance(runner._proc, _FakeProc)  # 未创建第二个子进程
 
 
-def test_script_runner_finished_guaranteed_on_failed_start(qapp, tmp_path) -> None:
-    """回归（VUL-B2-001）：FailedToStart 时 Qt 不发 finished（Qt6 实证）、
-    看门狗对 NotRunning 直接返回——runner 必须自行补发终态，
-    否则调用方面板永久忙死、无日志无收尾。"""
-    runner = ScriptRunner(qapp)
-    code, _output = _run_and_collect(
-        runner, "script_runner_nonexistent_binary_xyz", ["arg"], tmp_path,
-        timeout_ms=5000)
+def test_script_runner_failed_start_returns_false_and_cleans_up(qapp, tmp_path) -> None:
+    """回归（VUL-B2-001/B2-002）：FailedToStart 在 start() 内同步触发。
 
-    assert code is not None, "启动失败必须补发 finished，否则调用方永久等待"
-    assert code != 0
+    旧实现把 _proc/_watchdog 的提交放在 start() 之后，同步失败时收尾全部
+    落空：僵尸 QProcess + 一个永不停止的 30 分钟看门狗残留，后者到期会
+    kill 掉当时正在跑的另一个健康进程。此处断言状态被清理干净，且失败
+    由返回值表达（不再发 finished，避免调用方收到自相矛盾的终态）。
+    """
+    runner = ScriptRunner(qapp)
+    events = []
+    runner.finished.connect(lambda code: events.append(code))
+
+    assert runner.run("script_runner_nonexistent_binary_xyz", None, ["arg"], tmp_path) is False
+
+    assert events == [], "启动失败不应发 finished：run() 尚未返回，顺序无意义"
+    assert runner._proc is None, "僵尸 QProcess 必须被释放"
+    assert runner._watchdog is None, "看门狗必须被停止，否则会误杀后续任务"
     assert runner.is_running() is False
+
+
+def test_script_runner_failed_start_does_not_leak_watchdog(qapp, tmp_path) -> None:
+    """连续三次启动失败不得累积**活跃**看门狗定时器。
+
+    旧实现每次失败都留下一个仍在计时的 30 分钟看门狗，到期会误杀当时
+    正在跑的健康进程。这里断言没有活跃定时器；已停止的 QTimer 由
+    deleteLater 在事件循环中回收，不属泄漏。
+    """
+    from PySide6.QtCore import QTimer
+
+    runner = ScriptRunner(qapp)
+    for _ in range(3):
+        assert runner.run("script_runner_nonexistent_binary_xyz", None, [], tmp_path) is False
+
+    active = [child for child in runner.children() if isinstance(child, QTimer) and child.isActive()]
+    assert active == [], f"有 {len(active)} 个看门狗仍在计时，会误杀后续任务"
+    assert runner._watchdog is None
 
 
 # ---------------------------------------------------------------
