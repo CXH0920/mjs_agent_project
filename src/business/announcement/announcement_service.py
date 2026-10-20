@@ -161,8 +161,14 @@ class AnnouncementService(QObject):
             return
         self._announcements.mark_applied()
         if self._last_snapshot is not None:
-            save_baike_snapshot(self._last_snapshot, self._snapshot_path)
-            logger.info("已刷新百科快照")
+            # 与 _finalize_check 同款兜底：此处抛错会冒泡到 Qt 槽，其后的
+            # 横幅刷新/对话框刷新/成功提示全部被跳过，用户只看到"没反应"
+            try:
+                save_baike_snapshot(self._last_snapshot, self._snapshot_path)
+            except Exception as error:
+                logger.error("百科快照保存失败（公告已置已处理）: %s", error)
+            else:
+                logger.info("已刷新百科快照")
 
     # ---------------------------------------------------------------
     # 忽略名单（UI 经服务操作不触数据层）
@@ -280,16 +286,45 @@ class AnnouncementService(QObject):
         if getattr(result, "snapshot", None) is not None:
             self._last_snapshot = result.snapshot
         if result.pending_saves:
+            saved = 0
             for snapshot in result.pending_saves:
                 try:
                     save_baike_snapshot(snapshot, self._snapshot_path)
-                except OSError as error:
+                except Exception as error:
+                    # 逐条兜底而非只捕 OSError：收尾一旦中断，check_finished
+                    # 不会发射，进度条与"正在检查"状态将永久停留
                     logger.error("百科快照保存失败: %s", error)
-            logger.info("已刷新百科快照")
+                else:
+                    saved += 1
+            if saved == len(result.pending_saves):
+                logger.info("已刷新百科快照")
+            else:
+                logger.error(
+                    "百科快照保存失败 %d/%d，下次检查将重新提示",
+                    len(result.pending_saves) - saved, len(result.pending_saves),
+                )
         self.check_finished.emit(result)
 
+    def _is_first_run(self) -> bool:
+        """本次检查是否按「历史基线」处理（只记录、不提醒）。
+
+        文件不存在 = 全新安装；文件存在但加载报错且内存为空 = 内容不可用
+        （如损坏后留底），此时若按非首跑处理，全部历史公告会被当作新公告
+        重新入库并覆盖写回，用户此前"已处理"的进度与历史记录一并丢失。
+
+        「内存为空」不可省：load_issues 只在 load() 时清空而 load() 仅启动
+        调一次，merge_new 跳过坏爬虫记录记的 error 与损坏恢复重建后的过期
+        error 都会残留在列表里——只看 error 会把同会话后续检查全部误判为
+        首跑，新公告被静默吞掉。
+        """
+        if not self._announcements.file_path.exists():
+            return True
+        return not self._announcements.list_all() and any(
+            issue.severity == "error" for issue in self._announcements.load_issues
+        )
+
     def _do_check(self, hero_names: list[str] | None = None) -> AnnouncementCheckResult:
-        first_run = not self._announcements.file_path.exists()
+        first_run = self._is_first_run()
         if hero_names is None:
             hero_names = [hero.name for hero in self._heroes.list_heroes()]
         hero_names = set(hero_names)

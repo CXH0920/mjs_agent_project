@@ -1620,3 +1620,168 @@ def test_build_update_candidates_suppresses_announcement_source_by_ignore() -> N
     )
     assert [candidate["name"] for candidate in candidates] == ["马钧"]
     assert candidates[0]["content_hash"] == hero_content_hash(changed_official)
+
+
+def test_service_do_check_suppresses_ignored_by_name_key(tmp_path, monkeypatch) -> None:
+    """以武将名作键的忽略条目在检查链路同样生效（VUL-B4-102 回归）。
+
+    忽略本地未收录的新增武将时没有本地 id，UI 以武将名作 entry_id 写入；
+    检查链路若只认 id，会出现「横幅提示有变化、点更新却没有候选」。
+    """
+    service, _manager = _make_service(tmp_path, with_ignore=True)
+    announcements = [
+        _raw_announcement(208, "https://mjs.ztgame.com/news/old.html", title="8月10日在线更新"),
+    ]
+    baike = [_hero(id=1, name="贾诩")]
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: announcements)
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: baike)
+    _run_check(service)
+
+    # 官网新增东方朔，本地未收录 → 以武将名为键忽略
+    new_hero = _hero(id=188, name="东方朔")
+    baike.append(new_hero)
+    ignore_entry(
+        "heroes", "东方朔", "东方朔", "added",
+        hero_content_hash(new_hero), tmp_path / "baike_ignore.json",
+    )
+
+    result = _run_check(service)
+
+    assert result.diff["added"] == []
+    assert result.ignored_count == 1
+
+
+def test_service_mark_applied_save_failure_does_not_raise(tmp_path, monkeypatch) -> None:
+    """mark_applied 快照写盘失败不得抛错（TD-A5-101 回归）。
+
+    异常冒泡进 Qt 槽会跳过其后的横幅/对话框刷新与成功提示，用户只看到
+    「没反应」；公告已置 applied 而快照没推进，下次检查仍提示可更新。
+    """
+    service, manager = _make_service(tmp_path)
+    announcement = Announcement(
+        id=209,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/new.html",
+        hero_related=True,
+        status=AnnouncementStatus.READY,
+        matched_heroes=[HeroChange(name="山涛", change="调整", known=True)],
+    )
+    manager.merge_new([announcement.model_dump()])
+    service._last_snapshot = BaikeSnapshot(heroes={"1": {"name": "贾诩", "hash": "h1"}})
+
+    def _boom(snapshot, path):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service_module, "save_baike_snapshot", _boom)
+
+    service.mark_applied()  # 不抛错
+
+    assert manager.ready_count() == 0  # 公告状态照常推进
+
+
+def test_service_finalize_check_survives_non_oserror_save(tmp_path, monkeypatch) -> None:
+    """收尾阶段非 OSError 异常不得中断 check_finished 发射（TD-A5-103 回归）。
+
+    收尾中断会让进度条与「正在检查」状态永久停留。
+    """
+    service, _manager = _make_service(tmp_path)
+
+    def _boom(snapshot, path):
+        raise ValueError("序列化失败")
+
+    monkeypatch.setattr(service_module, "save_baike_snapshot", _boom)
+    finished = []
+    service.check_finished.connect(finished.append)
+
+    result = service_module.AnnouncementCheckResult(
+        snapshot=BaikeSnapshot(), pending_saves=[BaikeSnapshot()],
+    )
+    service._finalize_check(result)
+
+    assert finished == [result]
+
+
+def test_service_do_check_treats_corrupt_announcements_as_first_run(tmp_path, monkeypatch) -> None:
+    """公告文件存在但加载报错时按首跑处理（TD-A5-102 回归）。
+
+    否则损坏留底后内存为空、exists() 仍为真，全部历史公告会被当新公告
+    重新入库并覆盖写回，用户此前「已处理」的进度与历史记录一并丢失。
+    """
+    announcements_path = tmp_path / "announcements.json"
+    announcements_path.write_text("{broken", encoding="utf-8")
+    manager = AnnouncementManager(announcements_path)
+    manager.load()  # 触发解析失败 → load_issues 记录 error
+    assert any(issue.severity == "error" for issue in manager.load_issues)
+
+    service = AnnouncementService(
+        manager,
+        HeroManager(),
+        snapshot_path=tmp_path / "baike_snapshot.json",
+    )
+    monkeypatch.setattr(
+        service_module,
+        "fetch_latest_announcements",
+        lambda: [_raw_announcement(209, "https://mjs.ztgame.com/news/new.html")],
+    )
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
+
+    result = _run_check(service)
+
+    # 首跑语义：只记录、不提醒
+    assert result.new_announcements == []
+    assert result.hero_related == []
+
+
+def test_service_first_run_does_not_stick_after_corrupt_recovery(tmp_path, monkeypatch) -> None:
+    """损坏恢复重建历史后，同会话的下一次检查应恢复正常提醒。
+
+    load_issues 只在 load() 时清空而 load() 仅启动调一次；恢复检查已把
+    文件重写为合法内容，残留的过期 error 若仍触发首跑，恢复后的新公告
+    会被静默吞掉。
+    """
+    announcements_path = tmp_path / "announcements.json"
+    announcements_path.write_text("{broken", encoding="utf-8")
+    manager = AnnouncementManager(announcements_path)
+    manager.load()  # 触发解析失败 → load_issues 记录 error
+
+    service = AnnouncementService(
+        manager,
+        HeroManager(tmp_path / "heroes.json"),
+        snapshot_path=tmp_path / "baike_snapshot.json",
+    )
+    old = _raw_announcement(208, "https://mjs.ztgame.com/news/old.html")
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [old])
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
+    first = _run_check(service)
+    assert first.new_announcements == []  # 损坏后首跑：只记录、不提醒
+
+    fresh = _raw_announcement(209, "https://mjs.ztgame.com/news/new.html")
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [old, fresh])
+    second = _run_check(service)
+    assert [ann.id for ann in second.new_announcements] == [209]
+
+
+def test_service_runtime_bad_record_does_not_poison_first_run(tmp_path, monkeypatch) -> None:
+    """merge_new 跳过坏爬虫记录记的 error 不得让下次检查误判为首跑。
+
+    该 error（from_disk=False）同样永驻 load_issues；首跑判定若只看 error，
+    一条坏记录会把同会话后续检查全部变成「只记录、不提醒」。
+    """
+    service, manager = _make_service(tmp_path)
+    manager.load()
+    manager.save()  # 建立合法的空历史文件，消除「文件不存在」首跑因素
+    manager.load()
+    assert not [i for i in manager.load_issues if i.severity == "error"]
+
+    good = _raw_announcement(208, "https://mjs.ztgame.com/news/old.html")
+    bad = {"id": 999, "url": "https://mjs.ztgame.com/news/bad.html"}  # 缺 title → 校验失败
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [good, bad])
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [])
+    first = _run_check(service)
+    assert [ann.id for ann in first.new_announcements] == [208]  # 好记录正常提醒
+    assert any(i.severity == "error" for i in manager.load_issues)  # 坏记录记了 error
+
+    fresh = _raw_announcement(209, "https://mjs.ztgame.com/news/new.html")
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [good, fresh])
+    second = _run_check(service)
+    assert [ann.id for ann in second.new_announcements] == [209]

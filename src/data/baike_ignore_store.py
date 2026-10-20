@@ -99,6 +99,26 @@ def _matches(entry: IgnoreEntry, state: str, current_hash: str | None) -> bool:
     return current_hash is not None and entry.hash == current_hash
 
 
+def _entry_for(item: dict, entries: dict[str, IgnoreEntry]) -> IgnoreEntry | None:
+    """按 id 取忽略条目；取不到时按名兜底。
+
+    UI 忽略「本地未收录」的新增武将时没有本地 id，只能以武将名作 entry_id
+    写入（见 hero_update_confirm_dialog._ignore_candidate）。若这里只认 id，
+    这类条目在 diff 过滤中永不命中，而候选侧 _hero_is_ignored 有按名兜底，
+    两处判定分叉会表现为「横幅提示有变化、点更新却没有候选」。
+    """
+    entry = entries.get(str(item.get("id")))
+    if entry is not None:
+        return entry
+    name = item.get("name")
+    if not name:
+        return None
+    for candidate in entries.values():
+        if candidate.name == name:
+            return candidate
+    return None
+
+
 def filter_ignored(
     diff: dict,
     official_hashes: dict[str, str],
@@ -107,16 +127,17 @@ def filter_ignored(
     """过滤 diff 三态中被忽略的条目，返回 (过滤后 diff, 被过滤条数)。
 
     modified/added 需 state 匹配且 hash 等于当前官网哈希——官网内容再变即重现；
-    removed 按 state 匹配（同上）。
+    removed 按 state 匹配（同上）。id 查不到时按名兜底，与候选侧同口径。
     """
     filtered: dict = {}
     ignored_count = 0
     for state, items in diff.items():
         kept = []
         for item in items or []:
-            entry_id = str(item.get("id"))
-            entry = entries.get(entry_id)
-            if entry is not None and _matches(entry, state, official_hashes.get(entry_id)):
+            # 官网哈希始终按 diff 条目的真实 id 取，与名单条目用哪个键命中无关
+            current_hash = official_hashes.get(str(item.get("id")))
+            entry = _entry_for(item, entries)
+            if entry is not None and _matches(entry, state, current_hash):
                 ignored_count += 1
             else:
                 kept.append(item)
