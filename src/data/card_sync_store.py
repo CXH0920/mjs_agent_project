@@ -42,6 +42,9 @@ def load_card_snapshot(path: str | Path | None = None) -> CardSnapshot:
     try:
         return CardSnapshot.model_validate_json(snapshot_path.read_text(encoding="utf-8"))
     except Exception:
+        # 损坏时按原字节留底：调用方会把空快照当"首次启用"重建基线并覆盖写回，
+        # 没有这份副本损坏前的官网基线就不可逆丢失（hero_timeline 等同模式）
+        preserve_corrupt_file(snapshot_path)
         logger.warning("卡牌快照解析失败，将重建基线: %s", snapshot_path)
         return CardSnapshot()
 

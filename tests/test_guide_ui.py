@@ -420,6 +420,42 @@ def test_hero_detail_delete_actions_report_modal_results(tmp_path: Path, monkeyp
     assert "关联攻略和相性已删除" in results[2][1]
 
 
+def test_hero_info_edit_and_delete_blocked_while_generation_busy(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """回归（VUL-B3-001）：AI 生成中编辑/删除武将前置拦截——删除武将级联写
+    heroes/guides/synergies 三个文件，会被子进程按启动快照的下一批全量提交
+    静默冲掉（相性/攻略入口此前已有拦截，武将入口缺失）。"""
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    guide_manager = GuideManager(tmp_path / "guides.json")
+    synergy_manager = SynergyManager(tmp_path / "synergies.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操"))
+    hero_manager.add_hero(Hero(id=2, name="刘备"))
+    guide_manager.add_guide(HeroGuide(hero_id=1, description="攻略"))
+    synergy_manager.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=3))
+    panel = HeroDetailPanel(
+        hero_manager, guide_manager, synergy_manager, busy_check=lambda: "攻略生成"
+    )
+    panel.show_hero(1)
+    warnings: list[tuple[str, str]] = []
+    questions: list[object] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda _parent, title, text: warnings.append((title, text))
+    )
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args: questions.append(_args) or QMessageBox.StandardButton.Yes)
+
+    panel._on_info_edit()
+    panel._on_info_delete()
+
+    assert [title for title, _text in warnings] == ["AI 生成进行中", "AI 生成进行中"]
+    assert questions == []  # 删除确认框未弹出：入口在确认前即被拦截
+    assert hero_manager.get_hero(1) is not None
+    assert guide_manager.get_guide(1) is not None
+    assert panel._current_hero is not None
+    assert not (tmp_path / "heroes.json").exists()  # 从未落盘
+
+
 def test_hero_list_exposes_initial_selection(tmp_path: Path) -> None:
     _app()
     hero_manager = HeroManager(tmp_path / "heroes.json")

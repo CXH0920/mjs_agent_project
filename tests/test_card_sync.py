@@ -171,6 +171,20 @@ def test_load_card_snapshot_missing_or_corrupted_returns_empty(tmp_path) -> None
     assert load_card_snapshot(tmp_path / "bad.json").cards == {}
 
 
+def test_load_card_snapshot_corrupted_preserves_backup(tmp_path) -> None:
+    """回归（TD-A5-002）：快照损坏时按原字节留底——调用方把空快照当首次
+    启用重建基线并覆盖写回，没有副本损坏前的官网基线不可逆丢失。"""
+    path = tmp_path / "card_snapshot.json"
+    path.write_text("{invalid", encoding="utf-8")
+
+    snapshot = load_card_snapshot(path)
+
+    assert snapshot.cards == {}
+    backups = sorted((tmp_path / "backups").glob("card_snapshot-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "{invalid"
+
+
 def test_append_card_change_is_idempotent(tmp_path) -> None:
     path = tmp_path / "card_changes.json"
     record = CardChangeRecord(date="2026-09-14", applied_ids=["4", "1"], added_ids=[])

@@ -350,7 +350,7 @@ def test_class_field_count_within_budget() -> None:
 # dataclass）与模块级函数天然不在列。守卫落地前 UI 命中 7 处，落地后应为 0。
 # ---------------------------------------------------------------------------
 COMPOSITION_ROOTS = {"src/ui/app/app_services.py"}
-PERSISTENCE_ROOTS = {"DataManager", "JsonRepository", "DataFacade", "_JsonRepository"}
+PERSISTENCE_ROOTS = {"DataManager", "JsonRepository", "DataFacade"}
 
 
 def _base_names(node: ast.ClassDef) -> list[str]:
@@ -709,7 +709,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 降级期间经 status_callback 明示
     "business/recognition/official_data_import_service.py": 642,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
-    "ui/library/hero_browser.py": 639,
+    # 639 → 643：编辑/删除武将两个入口补齐同款守卫（VUL-B3-001——删除级联
+    # 写 3 文件，会被生成子进程下一批全量提交静默冲掉，2026-10）
+    "ui/library/hero_browser.py": 643,
     # 601 → 605：基线置空/缺源显式报错 + 终局"基线不完整"标注（P1-5，2026-10）
     "scripts/sync_rule_stats.py": 605,
     # 2026-10 tripwire 落地补种（种子 = 当前实测值，只许收紧）。此前名单靠

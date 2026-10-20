@@ -123,6 +123,33 @@ def test_load_reports_invalid_records(tmp_path: Path) -> None:
     assert len(repo.list_rules()) == 1
 
 
+def test_invalid_record_preserved_and_save_guarded(tmp_path: Path) -> None:
+    """回归（VUL-B4-001）：坏牌行加载时按原字节留底 backups/，此后任何
+    保存被加载完整性守卫拒绝并回滚内存——静默覆盖会永久丢弃坏行。"""
+    path = tmp_path / "card_points.json"
+    payload = {
+        "cards": [
+            {"name": "火杀", "suit": "♥", "point": "1"},
+            {"name": "坏行", "suit": "星", "point": "1"},
+        ],
+        "judge_rules": [],
+    }
+    _write(path, payload)
+    repo = CardPointsRepository(path)
+    issues = repo.load()
+    assert any(issue.kind == "invalid_record" and issue.severity == "error" for issue in issues)
+
+    backups = sorted((tmp_path / "backups").glob("card_points-*.json"))
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text(encoding="utf-8")) == payload
+
+    with pytest.raises(RuntimeError, match="禁止覆盖保存"):
+        repo.replace_card("火杀", "♥", "1", CardPointItem(name="火杀", suit="♥", point="2"))
+    # _save_or_rollback 已回滚内存：编辑未生效、磁盘保持原状
+    assert [(c.name, c.suit, c.point) for c in repo.list_cards()] == [("火杀", "♥", "1")]
+    assert json.loads(path.read_text(encoding="utf-8")) == payload
+
+
 def test_replace_card_updates_key(tmp_path: Path) -> None:
     """编辑牌行：单步替换且键可变化（#20）。"""
     repo = _repo(tmp_path)

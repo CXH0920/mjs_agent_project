@@ -120,6 +120,23 @@ class TestHeroManager:
             assert [issue.kind for issue in issues] == ["invalid_record"]
             assert filepath.read_text(encoding="utf-8") == source
 
+    def test_load_invalid_record_preserves_source_to_backups(self):
+        """回归（VUL-B4-001）：逐条坏记录加载时按原字节留底——否则此后任意
+        一次 save()（其调用方虽各有备份，留底是数据层自己的最后防线）会把
+        坏记录永久覆盖掉。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "heroes.json"
+            data = [self._make_hero(1).model_dump(mode="json"), {"id": "bad"}]
+            source = json.dumps(data, ensure_ascii=False)
+            filepath.write_text(source, encoding="utf-8")
+
+            mgr = HeroManager(heroes_file=filepath)
+            mgr.load()
+
+            backups = sorted((Path(tmpdir) / "backups").glob("heroes-*.json"))
+            assert len(backups) == 1
+            assert backups[0].read_text(encoding="utf-8") == source
+
     def test_load_skips_duplicate_key(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "heroes.json"

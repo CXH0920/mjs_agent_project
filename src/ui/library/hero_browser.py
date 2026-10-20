@@ -468,6 +468,8 @@ class HeroDetailPanel(QWidget):
 
     def _on_info_edit(self) -> None:
         """打开编辑对话框修改武将信息。"""
+        if self._notify_generation_busy():
+            return
         if not self._current_hero:
             return
         dialog = HeroEditDialog(self._current_hero, parent=self)
@@ -488,6 +490,8 @@ class HeroDetailPanel(QWidget):
 
     def _on_info_delete(self) -> None:
         """删除当前武将（含确认）"""
+        if self._notify_generation_busy():
+            return
         if not self._current_hero:
             return
         synergy_count = len(self._synergy_mgr.list_synergies_for_hero(self._current_hero.id))

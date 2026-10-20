@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -13,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from src.config.env import PROJECT_ROOT
 from src.data.issues import DataIssue
-from src.data.json_repository import atomic_write_json, snapshot_to_backups
+from src.data.json_repository import JsonRepository
 from src.data.models import Card
 
 logger = logging.getLogger(__name__)
@@ -176,55 +175,23 @@ class CardViewModel:
         return []
 
 
-def _atomic_json_write(path: Path, payload: dict[str, Any] | list[Any]) -> None:
-    """以 UTF-8、LF 和同目录临时文件原子保存 JSON（委托公共实现，含 fsync）。"""
-    atomic_write_json(path, payload, indent=2)
+class CardRepository(JsonRepository):
+    """官方基础卡牌仓储：常规维护只读，唯一写入接口为官网同步 apply_official_updates。
 
-
-class _JsonRepository:
-    def __init__(self, file_path: str | Path):
-        self.file_path = Path(file_path)
-        self.load_issues: list[DataIssue] = []
-
-    def _issue(self, severity: str, kind: str, message: str, index: int | None = None,
-               key: object | None = None) -> None:
-        self.load_issues.append(DataIssue(severity, kind, self.file_path, message, index, key))
-        (logger.warning if severity == "warning" else logger.error)("卡牌数据问题 [%s] %s", kind, message)
-
-    def _read_root(self) -> object | None:
-        self.load_issues = []
-        try:
-            with self.file_path.open("r", encoding="utf-8") as stream:
-                return json.load(stream)
-        except FileNotFoundError:
-            self._issue("warning", "file_missing", "文件不存在")
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
-            self._issue("error", "file_read_error", str(error))
-            # 坏文件保底副本：apply_official_updates 不校验加载结果，损坏后的
-            # 一次官网同步会把空库全量覆盖上去——先按原字节留底才可恢复
-            try:
-                backup_path = snapshot_to_backups(self.file_path)
-            except OSError as backup_error:
-                logger.error("坏文件保底副本失败 %s: %s", self.file_path, backup_error)
-            else:
-                if backup_path:
-                    logger.warning("已留存坏文件副本: %s", backup_path)
-        return None
-
-
-class CardRepository(_JsonRepository):
-    """官方基础卡牌仓储：常规维护只读，唯一写入接口为官网同步 apply_official_updates。"""
+    直接继承 JsonRepository（锁、坏文件留底、加载完整性守卫统一由基类提供；
+    原独立 _JsonRepository 副本无锁且与守卫逻辑双份维护，TD-A2-002）。"""
 
     def __init__(self, file_path: str | Path = DEFAULT_CARDS_FILE):
         super().__init__(file_path)
         self._cards: dict[str, Card] = {}
 
     def load(self) -> list[DataIssue]:
-        root = self._read_root()
+        root, ok = self._read_root()
         self._cards = {}
+        if not ok:
+            return self.load_issues
         if not isinstance(root, list):
-            if root is not None:
-                self._issue("error", "invalid_root", "基础卡牌文件必须是 JSON 列表")
+            self._issue("error", "invalid_root", "基础卡牌文件必须是 JSON 列表")
             return self.load_issues
         for index, raw in enumerate(root):
             try:
@@ -289,26 +256,24 @@ class CardRepository(_JsonRepository):
         return applied
 
     def _save(self) -> None:
-        """以 JSON 列表覆盖保存（原子写）。"""
-        _atomic_json_write(
-            self.file_path,
+        """以 JSON 列表覆盖保存（守卫与原子写统一走 save_payload）。"""
+        self.save_payload(
             [card.model_dump(mode="json") for card in self._cards.values()],
         )
 
 
-class CardFieldSchemaRepository(_JsonRepository):
+class CardFieldSchemaRepository(JsonRepository):
     def __init__(self, file_path: str | Path = DEFAULT_CARD_FIELD_SCHEMA_FILE):
         super().__init__(file_path)
         self._fields: dict[str, CardFieldDefinition] = {}
-        self.available = False
 
     def load(self) -> list[DataIssue]:
-        root = self._read_root()
+        root, ok = self._read_root()
         self._fields = {}
-        self.available = False
+        if not ok:
+            return self.load_issues
         if not isinstance(root, dict) or root.get("schema_version") != 1 or not isinstance(root.get("fields"), list):
-            if root is not None:
-                self._issue("error", "invalid_root", "字段定义必须包含 schema_version=1 与 fields 列表")
+            self._issue("error", "invalid_root", "字段定义必须包含 schema_version=1 与 fields 列表")
             return self.load_issues
         self.available = True
         for index, raw in enumerate(root["fields"]):
@@ -333,7 +298,7 @@ class CardFieldSchemaRepository(_JsonRepository):
         return self._fields.get(key)
 
     def save(self) -> None:
-        _atomic_json_write(self.file_path, {
+        self.save_payload({
             "schema_version": 1,
             "fields": [item.model_dump(mode="json", exclude_defaults=True) for item in self.list_fields()],
         })
@@ -352,19 +317,18 @@ class CardFieldSchemaRepository(_JsonRepository):
         self._fields[definition.key] = definition
 
 
-class CardAnnotationRepository(_JsonRepository):
+class CardAnnotationRepository(JsonRepository):
     def __init__(self, file_path: str | Path = DEFAULT_CARD_ANNOTATIONS_FILE):
         super().__init__(file_path)
         self._annotations: dict[str, CardAnnotation] = {}
-        self.available = False
 
     def load(self) -> list[DataIssue]:
-        root = self._read_root()
+        root, ok = self._read_root()
         self._annotations = {}
-        self.available = False
+        if not ok:
+            return self.load_issues
         if not isinstance(root, dict) or root.get("schema_version") != 1 or not isinstance(root.get("annotations"), list):
-            if root is not None:
-                self._issue("error", "invalid_root", "追加内容必须包含 schema_version=1 与 annotations 列表")
+            self._issue("error", "invalid_root", "追加内容必须包含 schema_version=1 与 annotations 列表")
             return self.load_issues
         self.available = True
         for index, raw in enumerate(root["annotations"]):
@@ -389,7 +353,7 @@ class CardAnnotationRepository(_JsonRepository):
         self._annotations[annotation.card_id] = annotation
 
     def save(self) -> None:
-        _atomic_json_write(self.file_path, {
+        self.save_payload({
             "schema_version": 1,
             "annotations": [item.model_dump(mode="json") for item in self._annotations.values()],
         })

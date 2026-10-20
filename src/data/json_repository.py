@@ -101,8 +101,8 @@ def snapshot_to_backups(source: Path | str, *, keep: int = 10) -> Path | None:
     return backup_path
 
 
-def preserve_corrupt_file(path: Path | str) -> None:
-    """解析失败时把坏文件按原字节留底到 backups/。
+def preserve_corrupt_file(path: Path | str) -> bool:
+    """解析失败时把坏文件按原字节留底到 backups/；返回是否留底成功。
 
     模块级容错读函数（hero_timeline / baike_ignore_store / card_sync_store）
     的公共保底：这些函数损坏时降级返回空数据，随后的覆盖式保存会把降级
@@ -113,9 +113,11 @@ def preserve_corrupt_file(path: Path | str) -> None:
         backup_path = snapshot_to_backups(path)
     except OSError as error:
         logger.error("坏文件保底副本失败 %s: %s", path, error)
-        return
+        return False
     if backup_path is not None:
         logger.warning("已留存坏文件副本: %s", backup_path)
+        return True
+    return False
 
 
 class JsonRepository:
@@ -132,6 +134,7 @@ class JsonRepository:
         self.file_path = Path(file_path)
         self.load_issues: list[DataIssue] = []
         self.available = False
+        self._corrupt_preserved = False
         self._lock = threading.RLock()
 
     # ---------------------------------------------------------------
@@ -143,6 +146,11 @@ class JsonRepository:
         issue_logger = logging.getLogger(self.__class__.__module__)
         (issue_logger.warning if severity == "warning" else issue_logger.error)(
             "%s 数据问题 [%s] %s", self.__class__.__name__, kind, message)
+        # 坏文件保底副本收敛点：逐条 ValidationError 与整体读失败同构——
+        # 坏记录被跳过后任意一次保存都会把它永久覆盖掉，先按原字节留底；
+        # 仅成功留底才置位，失败保持可重试
+        if severity == "error" and not self._corrupt_preserved:
+            self._corrupt_preserved = preserve_corrupt_file(self.file_path)
 
     # ---------------------------------------------------------------
     # 读盘骨架（加锁，防止与写盘并发）
@@ -155,6 +163,7 @@ class JsonRepository:
         with self._lock:
             self.load_issues = []
             self.available = False
+            self._corrupt_preserved = False
             try:
                 with self.file_path.open("r", encoding="utf-8") as stream:
                     return json.load(stream), True
@@ -163,15 +172,6 @@ class JsonRepository:
                 return None, False
             except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
                 self._issue("error", "file_read_error", str(error))
-                # 坏文件保底副本：save() 不校验 available，加载失败后的任意一次
-                # 保存会把空数据原子覆盖上去——先按原字节留底才可恢复
-                try:
-                    backup_path = snapshot_to_backups(self.file_path)
-                except OSError as backup_error:
-                    logger.error("坏文件保底副本失败 %s: %s", self.file_path, backup_error)
-                else:
-                    if backup_path:
-                        logger.warning("已留存坏文件副本: %s", backup_path)
                 return None, False
 
     # ---------------------------------------------------------------
@@ -179,6 +179,15 @@ class JsonRepository:
     # ---------------------------------------------------------------
     def save_payload(self, payload: Any, indent: int = 2) -> None:
         with self._lock:
+            # 加载完整性守卫：加载存在 error 说明内存库是残缺子集（坏记录已被
+            # 跳过、原始字节已留底 backups/），继续覆盖保存会静默丢弃坏记录
+            errors = [issue for issue in self.load_issues if issue.severity == "error"]
+            if errors:
+                raise RuntimeError(
+                    f"数据文件 {self.file_path} 加载异常（{len(errors)} 条 error），"
+                    "已禁止覆盖保存；请修复该文件、或用 backups/ 目录中的最近快照"
+                    "复原后重启应用"
+                )
             atomic_write_json(self.file_path, payload, indent=indent)
 
     # ---------------------------------------------------------------

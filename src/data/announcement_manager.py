@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-from src.data.json_repository import atomic_write_text
+from src.data.json_repository import atomic_write_text, preserve_corrupt_file
 from src.data.manager import DEFAULT_DATA_DIR, DataManager
 
 logger = logging.getLogger(__name__)
@@ -102,8 +102,9 @@ class AnnouncementManager(DataManager[Announcement]):
                     announcement = Announcement.model_validate(raw)
                 except Exception as error:
                     # 外部爬虫产出不可信：单条坏记录跳过并记 issue，不中断整批
-                    # （与 DataManager._parse_models 的逐条容错约定一致）
-                    self._record_issue("error", "invalid_record", str(error), index)
+                    # （与 DataManager._parse_models 的逐条容错约定一致）。
+                    # from_disk=False：坏的是外部输入而非磁盘文件，不触发留底
+                    self._record_issue("error", "invalid_record", str(error), index, from_disk=False)
                     continue
                 if baseline or not announcement.hero_related:
                     announcement.status = AnnouncementStatus.APPLIED
@@ -193,6 +194,9 @@ def load_baike_snapshot(path: str | Path | None = None) -> BaikeSnapshot:
     try:
         return BaikeSnapshot.model_validate_json(snapshot_path.read_text(encoding="utf-8"))
     except Exception:
+        # 损坏时按原字节留底：调用方会把空快照当"首次启用"重建基线并覆盖写回，
+        # 没有这份副本损坏前的官网基线就不可逆丢失（card_sync_store 同模式）
+        preserve_corrupt_file(snapshot_path)
         logger.warning("百科快照解析失败，将重建基线: %s", snapshot_path)
         return BaikeSnapshot()
 

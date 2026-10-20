@@ -74,7 +74,6 @@ class HeroClassificationRepository(JsonRepository):
         if not isinstance(root, dict):
             self._issue("error", "invalid_root", "武将分类文件必须是 JSON 对象")
             return self.load_issues
-        self.available = True
         self._categories = []
         self._counter_chain = {}
         self._hero_categories = {}
@@ -123,6 +122,9 @@ class HeroClassificationRepository(JsonRepository):
                     self._issue("warning", "chain_list_legacy",
                                 f"克制链 {cat} 的字符列表已自动还原为文本", key=cat)
         self._saved_snapshot = self._snapshot()
+        # 结构校验全部通过才置可用：categories 等结构损坏时保持 False，
+        # 面板 _ensure_writable 与 save_payload 守卫据此拒绝覆盖保存
+        self.available = True
         return self.load_issues
 
     # ---------------------------------------------------------------

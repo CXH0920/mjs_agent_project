@@ -176,3 +176,46 @@ def test_read_root_missing_file_creates_no_backup(tmp_path) -> None:
 
     assert ok is False and root is None
     assert not (tmp_path / "backups").exists()
+
+
+def test_issue_error_preserves_bad_file_once_per_load_cycle(tmp_path) -> None:
+    """回归（VUL-B4-001）：逐条 ValidationError 与整体读失败同构——坏记录
+    被跳过后任意一次保存会把它永久覆盖掉，error 首次出现时按原字节留底，
+    同一加载周期内不重复备份。"""
+    from src.data.json_repository import JsonRepository
+
+    path = tmp_path / "schema.json"
+    path.write_text('{"broken": ', encoding="utf-8")
+    repo = JsonRepository(path)
+
+    repo._issue("error", "invalid_record", "坏记录")
+    repo._issue("error", "duplicate_key", "重复键")
+
+    backups = sorted((tmp_path / "backups").glob("schema-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == '{"broken": '
+
+    # 下一加载周期重置标志后可再次留底（文件内容可能已变化）
+    repo._corrupt_preserved = False
+    repo._issue("error", "invalid_record", "又坏了一条")
+    assert len(sorted((tmp_path / "backups").glob("schema-*.json"))) == 2
+
+
+def test_save_payload_guard_rejects_overwrite_after_load_error(tmp_path) -> None:
+    """回归（VUL-B4-001）：加载存在 error 时拒绝覆盖保存——内存库是残缺
+    子集，继续保存会静默丢弃坏记录；重新加载干净数据后恢复可保存。"""
+    from src.data.json_repository import JsonRepository
+
+    path = tmp_path / "cards.json"
+    path.write_text('{"broken": ', encoding="utf-8")
+    repo = JsonRepository(path)
+    repo._read_root()
+
+    with pytest.raises(RuntimeError, match="禁止覆盖保存"):
+        repo.save_payload({"cards": []})
+    assert path.read_text(encoding="utf-8") == '{"broken": '
+
+    path.write_text('{"cards": []}', encoding="utf-8")
+    assert repo._read_root() == ({"cards": []}, True)
+    repo.save_payload({"cards": [], "extra": True})
+    assert json.loads(path.read_text(encoding="utf-8")) == {"cards": [], "extra": True}

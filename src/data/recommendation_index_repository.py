@@ -80,9 +80,10 @@ def is_recommendation_index_stale(
     """返回推荐指数快照是否已被新的官方榜单数据标记为过期。
 
     自愈校验：即使状态文件被外部误标记为 stale=true，只要三份官方榜单
-    CSV 的修改时间均不晚于推荐指数快照，说明没有新榜单数据需要反映，
-    忽略 stale 标记并自动写回 false，避免误弹"推荐指数待重建"横幅
-    （状态文件曾被 git 历史/命令行操作意外置为 true 的兜底）。
+    CSV 的修改时间均严格早于推荐指数快照，说明没有新榜单数据需要反映，
+    忽略 stale 标记返回 False，避免误弹"推荐指数待重建"横幅（状态文件
+    曾被 git 历史/命令行操作意外置为 true 的兜底）。查询是纯读路径，
+    不回写状态文件——stale=true 留待下次有新数据时自然翻转。
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -99,9 +100,8 @@ def is_recommendation_index_stale(
     if _has_newer_source_file(sources, index_path):
         return True
     logger.warning(
-        "推荐指数状态被标记 stale=true，但官方榜单数据并未更新（快照不早于榜单），自愈写回 false"
+        "推荐指数状态被标记 stale=true，但官方榜单数据并未更新（快照新于榜单），忽略标记不回写"
     )
-    mark_recommendation_index_stale(False, path)
     return False
 
 
@@ -109,14 +109,19 @@ def _has_newer_source_file(
     source_paths: tuple[Path, ...],
     index_path: Path,
 ) -> bool:
-    """任一榜单源文件比推荐指数快照新，说明存在尚未反映的新数据。"""
+    """任一榜单源文件不早于推荐指数快照，说明可能存在尚未反映的新数据。
+
+    用 >= 而非 >：文件系统时间戳粒度（FAT 2 秒）或亚秒级连续写入会让
+    "刚导入的榜单"与快照 mtime 相等，严格大于会把"有新数据"判成"无"。
+    宁可多提示一次重建（重建后快照严格新于源，横幅自消），不可漏报。
+    """
     try:
         index_mtime = index_path.stat().st_mtime
     except OSError:
         return True  # 快照缺失：需要重建
     for source in source_paths:
         try:
-            if source.stat().st_mtime > index_mtime:
+            if source.stat().st_mtime >= index_mtime:
                 return True
         except OSError:
             continue  # 榜单文件缺失时不参与判断，避免误报

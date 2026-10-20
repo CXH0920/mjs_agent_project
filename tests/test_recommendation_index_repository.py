@@ -216,7 +216,10 @@ def test_recommendation_index_stale_state_is_persistent(tmp_path: Path) -> None:
 
 
 def test_stale_self_heals_when_no_newer_source_file(tmp_path: Path) -> None:
-    """榜单未更新但状态被误标 stale=true 时，忽略标记并写回 false。"""
+    """榜单未更新但状态被误标 stale=true 时，忽略标记返回 False。
+
+    查询是纯读路径，不回写状态文件（读路径写盘会把磁盘写失败冒进页面加载），
+    stale=true 留待下次有新数据时自然翻转。"""
     import os
 
     state_path = tmp_path / "recommendation_state.json"
@@ -234,6 +237,58 @@ def test_stale_self_heals_when_no_newer_source_file(tmp_path: Path) -> None:
     assert is_recommendation_index_stale(
         state_path, index_path=index_path, source_paths=source_paths,
     ) is False
+    assert json.loads(state_path.read_text(encoding="utf-8")) == {"stale": True}
+
+
+def test_stale_detected_when_source_mtime_equals_snapshot(tmp_path: Path) -> None:
+    """源与快照 mtime 相等（时间戳粒度内连续写入）时判为有待反映的新数据。
+
+    严格大于会把同刻度导入判成"无新数据"，漏报"待重建"提示。"""
+    import os
+
+    state_path = tmp_path / "recommendation_state.json"
+    index_path = tmp_path / "recommendation.csv"
+    source_paths = (tmp_path / "win.csv", tmp_path / "pick.csv", tmp_path / "ban.csv")
+    index_path.write_text("武将\n", encoding="utf-8")
+    for source in source_paths:
+        source.write_text("武将\n", encoding="utf-8")
+    os.utime(index_path, (2_000.0, 2_000.0))
+    for source in source_paths:
+        os.utime(source, (2_000.0, 2_000.0))
+
+    mark_recommendation_index_stale(True, state_path)
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is True
+
+
+def test_stale_stays_false_after_rebuild_within_same_timestamp_tick(tmp_path: Path) -> None:
+    """同刻度"导入→重建"的稳态收敛：重建收尾的 mark_stale(False) 是横幅的
+    关闭开关——stale=false 时查询在比较 mtime 之前短路返回 False，源与快照
+    mtime 相等（重建最坏落在导入同一时间刻度）不会让横幅回弹成"永久常驻"。"""
+    import os
+
+    state_path = tmp_path / "recommendation_state.json"
+    index_path = tmp_path / "recommendation.csv"
+    source_paths = (tmp_path / "win.csv", tmp_path / "pick.csv", tmp_path / "ban.csv")
+    index_path.write_text("武将\n", encoding="utf-8")
+    for source in source_paths:
+        source.write_text("武将\n", encoding="utf-8")
+    # 全部钉在同一刻度：导入与重建都落在 t=2_000
+    os.utime(index_path, (2_000.0, 2_000.0))
+    for source in source_paths:
+        os.utime(source, (2_000.0, 2_000.0))
+
+    mark_recommendation_index_stale(True, state_path)
+    assert is_recommendation_index_stale(
+        state_path, index_path=index_path, source_paths=source_paths,
+    ) is True
+    # 重建完成（mark False；快照 mtime 最坏仍与源同刻度）
+    mark_recommendation_index_stale(False, state_path)
+    for _ in range(3):
+        assert is_recommendation_index_stale(
+            state_path, index_path=index_path, source_paths=source_paths,
+        ) is False
     assert json.loads(state_path.read_text(encoding="utf-8")) == {"stale": False}
 
 

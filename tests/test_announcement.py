@@ -358,11 +358,15 @@ def test_announcement_manager_merge_skips_invalid_records(tmp_path) -> None:
     assert [announcement.url for announcement in new] == [good1["url"], good2["url"]]
     assert [announcement.url for announcement in manager.list_all()] == [good1["url"], good2["url"]]
     assert any(issue.kind == "invalid_record" for issue in manager.load_issues)
+    # 外部输入坏记录（from_disk=False）不得触发坏文件留底——磁盘文件完好，
+    # 无意义快照会挤占 backups/ 轮转配额
+    assert not (tmp_path / "backups").exists()
     # 落盘：两条好记录持久化，坏记录不写入
     manager.save()
     reloaded = AnnouncementManager(tmp_path / "announcements.json")
     reloaded.load()
     assert len(reloaded.list_all()) == 2
+    assert not (tmp_path / "backups").exists()
 
 
 def test_announcement_manager_baseline_first_run(tmp_path) -> None:
@@ -474,6 +478,20 @@ def test_baike_snapshot_roundtrip(tmp_path) -> None:
     assert loaded.heroes["1"].name == "贾诩"
     assert loaded.heroes["1"].hash == "abc"
     assert load_baike_snapshot(tmp_path / "missing.json").heroes == {}
+
+
+def test_baike_snapshot_corrupted_preserves_backup(tmp_path) -> None:
+    """回归（TD-A5-002）：快照损坏时按原字节留底——调用方把空快照当首次
+    启用重建基线并覆盖写回，没有副本损坏前的官网基线不可逆丢失。"""
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text("{invalid", encoding="utf-8")
+
+    loaded = load_baike_snapshot(snapshot_path)
+
+    assert loaded.heroes == {}
+    backups = sorted((tmp_path / "backups").glob("snapshot-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "{invalid"
 
 
 # ============================================================

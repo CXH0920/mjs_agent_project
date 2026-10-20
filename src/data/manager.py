@@ -51,6 +51,7 @@ class DataManager(Generic[V_co]):
         self._lock = threading.RLock()
         self._items: dict = {}
         self.load_issues: list[DataIssue] = []
+        self._corrupt_preserved = False
 
     # ============================================================
     # 加载 / 保存
@@ -64,6 +65,7 @@ class DataManager(Generic[V_co]):
     def _load_unlocked(self) -> list[DataIssue]:
         """实际加载实现；调用方须已持有 _lock。"""
         self.load_issues = []
+        self._corrupt_preserved = False
         if not self.file_path.exists():
             logger.warning("文件不存在: %s", self.file_path)
             self._items = {}
@@ -74,7 +76,6 @@ class DataManager(Generic[V_co]):
                 data = json.load(f)
         except (json.JSONDecodeError, EOFError, UnicodeDecodeError) as error:
             logger.warning("文件解析失败: %s", self.file_path)
-            self._preserve_corrupt_file()
             self._items = {}
             self._record_issue("error", "invalid_json", str(error))
             return self.load_issues
@@ -86,19 +87,23 @@ class DataManager(Generic[V_co]):
         self._items = self._parse_items(data)
         return self.load_issues
 
-    def _preserve_corrupt_file(self) -> None:
-        """解析失败/结构非法时把坏文件快照到 backups/。
+    def _preserve_corrupt_file(self) -> bool:
+        """加载发现 error（解析失败/结构非法/坏记录）时把坏文件快照到 backups/。
 
-        置空后用户任意一次 save() 会把空数据原子写回，没有这份保底副本
-        就等于把"读不出来的数据"升级成"不可逆丢失"。
+        由 _record_issue 的 error 分支触发；返回是否留底成功，失败时保持
+        可重试（磁盘满/权限异常不应让本周期后续 error 的留底机会一并失效）。
+        置空或跳过坏记录后用户任意一次 save() 会把降级数据原子写回，没有这份
+        保底副本就等于把"读不出来的数据"升级成"不可逆丢失"。
         """
         try:
             backup_path = snapshot_to_backups(self.file_path)
         except OSError as error:
             logger.error("坏文件保底副本失败 %s: %s", self.file_path, error)
-            return
+            return False
         if backup_path is not None:
             logger.warning("已留存坏文件副本: %s", backup_path)
+            return True
+        return False
 
     def _parse_items(self, data: object) -> dict:
         """子类重写：从 JSON 列表构建 _items dict"""
@@ -107,7 +112,6 @@ class DataManager(Generic[V_co]):
     def _parse_models(self, data: object, key_of: Callable[[V_co], object]) -> dict:
         """逐条校验 JSON 列表，跳过坏记录和重复键。"""
         if not isinstance(data, list):
-            self._preserve_corrupt_file()
             self._record_issue("error", "invalid_root", "文件内容必须是 JSON 列表")
             return {}
 
@@ -137,7 +141,11 @@ class DataManager(Generic[V_co]):
         record_index: int | None = None,
         entity_key: object | None = None,
         field_name: str | None = None,
+        from_disk: bool = True,
     ) -> None:
+        """记录数据问题；from_disk=False 表示 error 源自外部输入而非磁盘文件
+        （如 merge_new 对爬虫产出的逐条容错），不触发坏文件留底——否则会把
+        磁盘上完好的数据文件无意义快照进 backups/，挤占轮转配额。"""
         issue = DataIssue(
             severity=severity,
             kind=kind,
@@ -150,6 +158,11 @@ class DataManager(Generic[V_co]):
         self.load_issues.append(issue)
         log = logger.warning if severity == "warning" else logger.error
         log("数据问题 [%s] %s: %s", kind, self.file_path, message)
+        # 坏文件保底副本收敛点：逐条 ValidationError 与整体解析失败同构——
+        # 坏记录被跳过后任意一次 save() 都会把它永久覆盖掉，先按原字节留底；
+        # 仅成功留底才置位，失败保持可重试
+        if severity == "error" and from_disk and not self._corrupt_preserved:
+            self._corrupt_preserved = self._preserve_corrupt_file()
 
     def save(self) -> None:
         """将所有数据原子写入 JSON 文件"""

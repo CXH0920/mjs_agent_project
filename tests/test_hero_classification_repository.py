@@ -155,3 +155,14 @@ def test_load_failure_keeps_available_false(tmp_path: Path) -> None:
     issues = repo.load()
     assert any(issue.severity == "error" for issue in issues)
     assert repo.available is False
+
+
+def test_load_invalid_categories_keeps_available_false(tmp_path: Path) -> None:
+    """回归（TD-A5-001）：categories 结构损坏时 available 必须保持 False——
+    此前置位会让面板在结构损坏时仍可保存，save() 用空分类覆盖原文件。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {"version": "1.0", "categories": "不是数组"})
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    issues = repo.load()
+    assert any(issue.kind == "invalid_categories" for issue in issues)
+    assert repo.available is False
