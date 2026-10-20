@@ -157,7 +157,7 @@ def main() -> int:
         {"index": 5, "name": match_names[0], "team": "汉军"},
     ])
     window._match_guide._win_rates = {
-        name: recommendation_data.win_rates[name] for name in match_names
+        name: recommendation_data.win_rate_percent[name] for name in match_names
     }
     window._match_guide._render_cards()
     window._match_guide._confirm_lineup()

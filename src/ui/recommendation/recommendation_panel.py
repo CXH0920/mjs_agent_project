@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.analysis.recommendation_service import RecommendationData, RecommendationService
+from src.business.analysis.win_rate_ranking import derive_win_rate_ranks
 from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
 from src.ui.recommendation.combo_strip import ComboStrip
@@ -60,6 +61,9 @@ if TYPE_CHECKING:
     from src.data.synergy_manager import SynergyManager
 
 logger = logging.getLogger(__name__)
+
+# 金/银/铜牌位次：只在本局已识别的武将之间比较（非全服榜名次）。
+MEDAL_LIMIT = 3
 
 
 class RecommendationPanel(QWidget):
@@ -98,6 +102,7 @@ class RecommendationPanel(QWidget):
         self._connect_capture_signals()
         self._recommendation_data = self._load_recommendation_data()
         self._set_index_stale_notice(self._recommendation_data.indexes_stale)
+        self._report_load_error(self._recommendation_data)
         self._show_empty_state()
 
     def _connect_capture_signals(self) -> None:
@@ -397,15 +402,22 @@ class RecommendationPanel(QWidget):
             return self._recommendation_service.load()
         except Exception as exc:
             logger.warning("读取推荐数据失败: %s", exc)
-            return RecommendationData({}, {})
+            return RecommendationData({}, {}, load_error=str(exc))
+
+    def _report_load_error(self, data: RecommendationData) -> None:
+        """索引快照读取失败时提示并给出重建入口，避免与"确实没数据"混淆。"""
+        if not data.load_error:
+            return
+        self._show_error_notice("推荐指数读取失败", data.load_error, "rebuild")
 
     def mark_recommendation_indexes_stale(self) -> None:
         """在官方榜单导入后提示当前推荐指数需要人工确认并重建。"""
         self._recommendation_service.mark_indexes_stale()
         self._recommendation_data = RecommendationData(
-            self._recommendation_data.win_rates,
+            self._recommendation_data.win_rate_percent,
             self._recommendation_data.indexes,
             True,
+            self._recommendation_data.load_error,
         )
         self._set_index_stale_notice(True)
         for card in self._cards:
@@ -430,11 +442,12 @@ class RecommendationPanel(QWidget):
             self._show_error_notice("推荐指数重建失败", str(exc), "rebuild")
             return
         self._recommendation_data = recommendation_data
-        self._set_index_stale_notice(False)
+        # 以重建后回读的真实状态为准：数据层只在写入规范快照路径时才清标记。
+        self._set_index_stale_notice(recommendation_data.indexes_stale)
         for card in self._cards:
-            card.set_recommendation_stale(False)
+            card.set_recommendation_stale(recommendation_data.indexes_stale)
             if card.hero_name:
-                card.set_win_rate(recommendation_data.win_rates.get(card.hero_name))
+                card.set_win_rate(recommendation_data.win_rate_percent.get(card.hero_name))
                 card.set_recommendation_index(recommendation_data.indexes.get(card.hero_name))
         self._apply_medal_rankings()
         valid_count = sum(index.is_valid for index in recommendation_data.indexes.values())
@@ -450,7 +463,7 @@ class RecommendationPanel(QWidget):
     ) -> None:
         if card_idx < len(self._cards):
             card = self._cards[card_idx]
-            card.set_win_rate(recommendation_data.win_rates.get(hero_name))
+            card.set_win_rate(recommendation_data.win_rate_percent.get(hero_name))
             card.set_recommendation_index(recommendation_data.indexes.get(hero_name))
 
     def _load_card_guide_state(self, card_idx: int, hero_id: int) -> None:
@@ -485,6 +498,7 @@ class RecommendationPanel(QWidget):
         recommendation_data = self._load_recommendation_data()
         self._recommendation_data = recommendation_data
         self._set_index_stale_notice(recommendation_data.indexes_stale)
+        self._report_load_error(recommendation_data)
 
         for card in self._cards:
             card.set_hero(None)
@@ -544,14 +558,19 @@ class RecommendationPanel(QWidget):
         self._apply_medal_rankings()
 
     def _apply_medal_rankings(self) -> None:
-        """根据各卡片的胜率，取前三标记金/银/铜牌。"""
-        # 先清除所有奖牌
+        """根据各卡片的胜率，取本局前三标记金/银/铜牌。
+
+        名次只在当前已识别的武将之间比较；同分按武将名排序（不随 OCR 槽位序漂移）。
+        """
         for card in self._cards:
             card.set_medal(0)
 
-        rankings = self._recommendation_data.rank_win_rates([card.hero_name for card in self._cards])
-        for idx, rank in rankings.items():
-            self._cards[idx].set_medal(rank)
+        names = [card.hero_name for card in self._cards if card.hero_name]
+        ranks = derive_win_rate_ranks(self._recommendation_data.win_rate_percent, names)
+        for card in self._cards:
+            rank = ranks.get(card.hero_name)
+            if rank is not None and rank <= MEDAL_LIMIT:
+                card.set_medal(rank)
 
     # ---------------------------------------------------------------
     # 攻略弹窗

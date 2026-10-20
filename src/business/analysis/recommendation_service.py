@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable
 
@@ -14,23 +15,20 @@ from src.data.recommendation_index_repository import (
 )
 from src.data.win_rate_repository import load_win_rates
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class RecommendationData:
     """一次页面刷新所需的胜率与推荐指数快照。"""
 
-    win_rates: dict[str, float]
+    # 0–100 百分数（如 52.3 表示 52.3%），与 RecommendationIndex.win_rate
+    # 的 0–1 比率量纲不同，勿混用。
+    win_rate_percent: dict[str, float]
     indexes: dict[str, RecommendationIndex]
     indexes_stale: bool = False
-
-    def rank_win_rates(self, names: list[str]) -> dict[int, int]:
-        """按输入槽位返回有效胜率的前三排名。"""
-        ranked = sorted(
-            ((rate, index) for index, name in enumerate(names) if (rate := self.win_rates.get(name)) is not None),
-            key=lambda item: item[0],
-            reverse=True,
-        )
-        return {index: rank for rank, (_, index) in enumerate(ranked[:3], start=1)}
+    # 索引快照读取失败的原因；None 表示读取成功（空字典即"确实没有数据"）。
+    load_error: str | None = None
 
 
 class RecommendationService:
@@ -51,12 +49,29 @@ class RecommendationService:
         self._mark_stale = mark_stale_fn
 
     def load(self) -> RecommendationData:
-        return RecommendationData(self._load_win_rates(), self._load_indexes(), self._is_stale())
+        """读取快照；索引读取失败记录在 load_error，不向调用方抛出。
+
+        数据层对"文件不存在"返回空字典（合法的首启空态），对真正的读取失败
+        上抛 OSError——两者必须在界面层区分，否则用户会把"读不到"当成
+        "还没导入数据"，从而失去重建入口。
+        """
+        win_rates = self._load_win_rates()
+        try:
+            indexes = self._load_indexes()
+        except OSError as exc:
+            logger.warning("读取推荐指数快照失败: %s", exc)
+            return RecommendationData(win_rates, {}, self._is_stale(), str(exc))
+        return RecommendationData(win_rates, indexes, self._is_stale())
 
     def rebuild_indexes(self) -> RecommendationData:
+        """重建推荐指数快照，并回读真实的过期状态。
+
+        过期标记的清除由数据层 refresh_recommendation_indexes 负责（仅当写入
+        规范快照路径时）。此处不再重复写盘：二次原子写失败会被上层误报成
+        "重建失败"，而对非规范输出路径补写标记又会把未重建的旧快照伪装成新鲜。
+        """
         indexes = self._refresh_indexes()
-        self._mark_stale(False)
-        return RecommendationData(self._load_win_rates(), indexes, False)
+        return RecommendationData(self._load_win_rates(), indexes, self._is_stale())
 
     def mark_indexes_stale(self) -> None:
         self._mark_stale(True)

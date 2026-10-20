@@ -159,7 +159,7 @@ def notify_official_outputs_written(output_names: Iterable[str]) -> None:
 def load_recommendation_indexes(
     path: Path = RECOMMENDATION_INDEX_CSV,
 ) -> dict[str, RecommendationIndex]:
-    """读取已人工确认后生成的推荐指数快照。"""
+    """读取推荐指数快照；不存在返回空字典（首启合法空态），其余读取失败上抛。"""
     try:
         with path.open("r", encoding="utf-8", newline="") as file:
             rows = list(csv.DictReader(file))
@@ -168,7 +168,7 @@ def load_recommendation_indexes(
         return {}
     except OSError as exc:
         logger.warning("无法读取推荐指数快照 %s: %s", path, exc)
-        return {}
+        raise
 
     results = {}
     for row in rows:

@@ -6,6 +6,13 @@ from dataclasses import dataclass
 
 from src.data.models import Hero, HeroGuide
 
+# 抽取深度上限。敌我不对称是刻意的：敌方要点是行动依据，我方速览只需一条
+# 代表项；版本调整只改此处，勿在循环里写字面量。
+MAX_ENEMY_THREATS = 2
+MAX_ALLY_KEY_POINTS = 1
+# 2v2 下敌方至多 2 名，此上限为未来复用（如 3v3）兜底，当前恒不触发。
+MAX_PRIORITIES = 3
+
 
 @dataclass(frozen=True)
 class HeroSummary:
@@ -84,7 +91,11 @@ class MatchAnalysisService:
                     f"优先应对：{summary.hero.name}。{guide.counter_strategy.strip()}",
                     "counter_strategy",
                 ))
-            for index, point in enumerate(guide.key_points[:2]):
+            enemy_points = guide.key_points[:MAX_ENEMY_THREATS]
+            _record_truncation(
+                missing_data, summary.hero, "敌方要点", MAX_ENEMY_THREATS, len(guide.key_points),
+            )
+            for index, point in enumerate(enemy_points):
                 if point.strip():
                     threats.append(ThreatItem(
                         summary.hero, point.strip(), f"key_points[{index}]"
@@ -94,10 +105,15 @@ class MatchAnalysisService:
             guide = summary.guide
             if not guide:
                 continue
-            if guide.key_points and guide.key_points[0].strip():
-                ally_tips.append(GuideTip(
-                    summary.hero, guide.key_points[0].strip(), "key_points[0]"
-                ))
+            ally_points = guide.key_points[:MAX_ALLY_KEY_POINTS]
+            _record_truncation(
+                missing_data, summary.hero, "我方要点", MAX_ALLY_KEY_POINTS, len(guide.key_points),
+            )
+            for index, point in enumerate(ally_points):
+                if point.strip():
+                    ally_tips.append(GuideTip(
+                        summary.hero, point.strip(), f"key_points[{index}]"
+                    ))
             if guide.tips_for_beginners.strip():
                 ally_tips.append(GuideTip(
                     summary.hero, guide.tips_for_beginners.strip(), "tips_for_beginners"
@@ -106,7 +122,7 @@ class MatchAnalysisService:
         return MatchAnalysis(
             allies=ally_summaries,
             enemies=enemy_summaries,
-            priorities=priorities[:3],
+            priorities=priorities[:MAX_PRIORITIES],
             threats=threats,
             ally_tips=ally_tips,
             missing_data=missing_data,
@@ -120,3 +136,15 @@ class MatchAnalysisService:
         if rate is None:
             missing_data.append(f"{hero.name}：暂无历史单将胜率")
         return HeroSummary(hero, rate, guide)
+
+
+def _record_truncation(
+    missing_data: list[str],
+    hero: Hero,
+    label: str,
+    limit: int,
+    total: int,
+) -> None:
+    """攻略要点被截断时留痕，避免用户以为攻略本就只有这几条。"""
+    if total > limit:
+        missing_data.append(f"{hero.name}：{label}仅展示前 {limit} 条（共 {total} 条）")

@@ -494,20 +494,22 @@ class ScriptRunner(QObject):
 
 两个纯数据服务，不依赖 Qt，供选将推荐页与对局攻略页读取快照。
 
-`RecommendationService` 把胜率和推荐指数两条持久化数据聚合为一次刷新所需的 `RecommendationData(win_rates, indexes, indexes_stale)`，构造参数全部可注入（`load_win_rates` / `load_recommendation_indexes` / `refresh_recommendation_indexes` / `is_recommendation_index_stale` / `mark_recommendation_index_stale`）。三个方法：
+`RecommendationService` 把胜率和推荐指数两条持久化数据聚合为一次刷新所需的 `RecommendationData(win_rate_percent, indexes, indexes_stale, load_error)`，构造参数全部可注入（`load_win_rates` / `load_recommendation_indexes` / `refresh_recommendation_indexes` / `is_recommendation_index_stale` / `mark_recommendation_index_stale`）。三个方法：
 
-- `load()` — 只读快照，附带指数是否过期标记；
-- `rebuild_indexes()` — 重建推荐指数、清除过期标记，返回新鲜快照；
+- `load()` — 只读快照，附带指数是否过期标记；索引读取失败（`OSError`）记入 `load_error` 而不上抛，使界面能区分"读不到"与"确实没数据"；
+- `rebuild_indexes()` — 重建推荐指数后**回读**真实过期状态，不自行清标记（标记的清除归数据层 `refresh_recommendation_indexes`，仅在其写入规范快照路径时执行）；
 - `mark_indexes_stale()` — 官方榜单导入后标记指数待重建（不经此服务也能由 `mark_recommendation_index_stale(True)` 直接触发）。
 
-`RecommendationData.rank_win_rates(names)` 按输入槽位返回**有效胜率的前三排名** `{槽位下标: 名次}`，只统计胜率非空的槽位，供卡片显示"当前选将中第 N 高胜率"。
+**量纲**：`win_rate_percent` 为 0–100 百分数，与 `RecommendationIndex.win_rate` 的 0–1 比率量纲不同，勿混用（混用会静默差 100 倍）。
+
+**胜率名次**统一由 `win_rate_ranking.derive_win_rate_ranks(win_rates, names=None)` 推导：`names` 为 None 时全表排名，给定候选集时只在集内排名（选将推荐页的奖牌只比较本局已识别的武将），同分按武将名稳定排序。推荐页的金/银/铜牌（`MEDAL_LIMIT = 3`）由 UI 侧据此组装，业务值对象不再承载槽位语义。
 
 `MatchAnalysisService(guide_manager, win_rates)` 基于本地攻略与单将胜率生成已确认 2v2 阵容的离线摘要 `MatchAnalysis`，无网络、无 LLM：
 
-- `priorities` — 敌方按胜率降序取攻略中的 `counter_strategy`，上限 3 条；
-- `threats` — 敌方每人的 `key_points` 前 2 条；
-- `ally_tips` — 我方每人的 `key_points[0]` 与 `tips_for_beginners`；
-- `missing_data` — 收集"暂无攻略"与"暂无历史单将胜率"的武将，逐条列出；
+- `priorities` — 敌方按胜率降序取攻略中的 `counter_strategy`，上限 `MAX_PRIORITIES`（2v2 下恒不触发）；
+- `threats` — 敌方每人的 `key_points` 前 `MAX_ENEMY_THREATS`（2）条；
+- `ally_tips` — 我方每人的 `key_points` 前 `MAX_ALLY_KEY_POINTS`（1）条与 `tips_for_beginners`（敌我深度不对称是刻意的）；
+- `missing_data` — 收集"暂无攻略"、"暂无历史单将胜率"，以及要点被截断时的"仅展示前 N 条（共 M 条）"，逐条列出；
 - 每条提示都带 `source_field`（`counter_strategy` / `key_points[i]` / `tips_for_beginners`）供界面标注来源。
 
 ### 3.14 CardSyncService（卡牌百科同步）

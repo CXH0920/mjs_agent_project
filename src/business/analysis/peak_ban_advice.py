@@ -11,6 +11,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.business.analysis.win_rate_ranking import derive_win_rate_ranks
+
+__all__ = [
+    "HOT_PICK_RANK_MAX",
+    "PeakBanAdvice",
+    "STRONG_WIN_RATE_MIN",
+    "derive_win_rate_ranks",
+    "evaluate_peak_ban_advice",
+]
+
 HOT_PICK_RANK_MAX = 50
 STRONG_WIN_RATE_MIN = 50.0
 
@@ -29,18 +39,16 @@ class PeakBanAdvice:
     bpi: int  # BPI = 权重 + (出场排名 − 胜率排名)
 
 
-def derive_win_rate_ranks(win_rates: dict[str, float]) -> dict[str, int]:
-    """按胜率降序推导 1-based 胜率排名（同分按名称稳定排序）。"""
-    ordered = sorted(win_rates.items(), key=lambda item: (-item[1], item[0]))
-    return {name: rank for rank, (name, _rate) in enumerate(ordered, start=1)}
-
-
 def evaluate_peak_ban_advice(
     win_rate: float | None,
     pick_rank: int | None,
     win_rate_rank: int | None,
 ) -> PeakBanAdvice | None:
-    """判定禁选建议；胜率不足强势线或任一维度缺失时返回 None。"""
+    """判定禁选建议；胜率不足强势线或任一维度缺失时返回 None。
+
+    win_rate 为 0–100 百分数（与 load_peak_win_rates 同量纲）；不要传
+    RecommendationIndex.win_rate（0–1 比率），否则会恒判弱势、永不输出标签。
+    """
     if win_rate is None or pick_rank is None or win_rate_rank is None:
         return None
     if win_rate < STRONG_WIN_RATE_MIN:

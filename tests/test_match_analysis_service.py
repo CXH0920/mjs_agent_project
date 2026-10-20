@@ -49,3 +49,40 @@ def test_analysis_keeps_missing_win_rate_enemy_strategy_after_ranked_entries() -
     analysis = MatchAnalysisService(_GuideManager(guides), {"乙": 55.0}).analyze([], [enemy_one, enemy_two])
 
     assert [item.target.name for item in analysis.priorities] == ["乙", "甲"]
+
+
+def test_truncated_key_points_are_recorded_in_missing_data() -> None:
+    """回归 TD-A6-001：要点被截断时必须留痕，避免用户以为攻略本就这几条。"""
+    enemy = _hero(1, "甲")
+    guides = [
+        HeroGuide(
+            hero_id=1,
+            key_points=["要点一", "要点二", "要点三", "要点四", "要点五"],
+        ),
+    ]
+
+    analysis = MatchAnalysisService(_GuideManager(guides), {}).analyze([], [enemy])
+
+    assert [item.text for item in analysis.threats] == ["要点一", "要点二"]
+    assert "甲：敌方要点仅展示前 2 条（共 5 条）" in analysis.missing_data
+
+
+def test_key_points_within_limit_add_no_truncation_notice() -> None:
+    """未超上限时不产生截断提示，避免数据提示区被无意义条目占满。"""
+    enemy = _hero(1, "甲")
+    guides = [HeroGuide(hero_id=1, key_points=["要点一", "要点二"])]
+
+    analysis = MatchAnalysisService(_GuideManager(guides), {}).analyze([], [enemy])
+
+    assert not any("仅展示前" in item for item in analysis.missing_data)
+
+
+def test_ally_key_points_are_truncated_to_single_tip_with_notice() -> None:
+    """我方速览只取首条，超出同样留痕（敌我深度不对称是刻意的）。"""
+    ally = _hero(1, "甲")
+    guides = [HeroGuide(hero_id=1, key_points=["我方一", "我方二"])]
+
+    analysis = MatchAnalysisService(_GuideManager(guides), {}).analyze([ally], [])
+
+    assert [item.text for item in analysis.ally_tips] == ["我方一"]
+    assert "甲：我方要点仅展示前 1 条（共 2 条）" in analysis.missing_data

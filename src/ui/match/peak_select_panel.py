@@ -22,10 +22,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.business.analysis.peak_ban_advice import (
-    derive_win_rate_ranks,
-    evaluate_peak_ban_advice,
-)
+from src.business.analysis.peak_ban_advice import evaluate_peak_ban_advice
+from src.business.analysis.win_rate_ranking import derive_win_rate_ranks
 from src.business.maintenance.corpus_services import ComboService
 from src.business.recognition.peak_select_watcher import PeakSelectWatcher, PoolSnapshot
 from src.config.env import SCREENSHOTS_DIR
