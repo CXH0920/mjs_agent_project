@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import types
 
@@ -736,6 +737,121 @@ def test_template_hit_result_records_pending_names(tmp_path, monkeypatch) -> Non
     entries = _pending_entries(stats_path)
     assert list(entries.keys()) == ["西汉陈"]
     assert entries["西汉陈"]["scenes"] == ["match_guide"]
+
+
+def test_cancelled_task_short_circuits_worker(monkeypatch) -> None:
+    """回归（VUL-B3-002）：等待方超时置位的任务出队后直接作废，不执行 _execute。
+
+    超时放弃的任务原本滞留无界队列并持有整帧图像，排空时还会执行过期
+    OCR、写 latest.json 与错法频次；置位 cancelled 后随出队短路释放。
+    """
+    executed: list[OcrTask] = []
+    worker = OcrWorker()
+
+    def fake_execute(task: OcrTask) -> dict:
+        executed.append(task)
+        return {"outcome": "matched"}
+
+    monkeypatch.setattr(worker, "_execute", fake_execute)
+    cancelled_task = OcrTask(
+        image="stale-frame", hero_names=(), rois=None,
+        template_name="peak_board", threshold=0.0,
+    )
+    cancelled_task.abandon()
+    assert cancelled_task.image is None  # 弃单即释放整帧引用（不等 worker 取出）
+    fresh_task = OcrTask(
+        image="fresh-frame", hero_names=(), rois=None,
+        template_name="peak_board", threshold=0.0,
+    )
+    worker._tasks.put(cancelled_task)
+    worker._tasks.put(fresh_task)
+    worker._tasks.put(None)  # 哨兵：run() 取到即排空退出
+
+    worker.run()
+
+    assert cancelled_task.result == {"outcome": "cancelled"}
+    assert cancelled_task.completed.is_set()
+    assert executed == [fresh_task]
+    assert fresh_task.result == {"outcome": "matched"}
+
+
+def test_abandon_during_execution_keeps_local_image_reference(tmp_path, monkeypatch) -> None:
+    """回归（VUL-B3-002 审查缺口 1）：弃单与执行并发的确定性交错。
+
+    等待方超时即置 task.image = None 释放整帧引用；恰已开始的 _execute
+    依赖开头局部快照持引用跑完，不得因引用被清而中途 AttributeError。
+    """
+    stats_path = tmp_path / "ocr_name_pending_stats.json"
+    monkeypatch.setattr(pending_stats, "STATS_PATH", stats_path)
+    original_image = object()
+    task = OcrTask(
+        image=original_image, hero_names=(), rois=None,
+        template_name="match_guide", threshold=0.8, fallback_on_template_miss=True,
+    )
+    received: list[object] = []
+    matching = threading.Event()
+    release = threading.Event()
+
+    class SlowMatchTemplateManager:
+        is_loaded = True
+        last_match_scale = 1.0
+        last_match_strategy = "base_local"
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            received.append(image)
+            matching.set()
+            assert release.wait(1), "测试编排：等待主线程弃单后放行"
+            return (True, threshold)
+
+    _install_pending_fakes(monkeypatch, template_hits=True)
+    monkeypatch.setattr(
+        "src.business.recognition.ocr_worker.TemplateManager", SlowMatchTemplateManager
+    )
+    worker = OcrWorker()
+    result_box: dict[str, dict] = {}
+    execution = threading.Thread(
+        target=lambda: result_box.__setitem__("result", worker._execute(task)), daemon=True
+    )
+    execution.start()
+    assert matching.wait(1)
+
+    task.abandon()  # 执行中途弃单：释放引用并置取消
+    release.set()
+    execution.join(2)
+
+    assert task.image is None
+    assert received == [original_image]  # 模板匹配拿到的是快照引用，未被弃单打断
+    assert result_box["result"]["outcome"] == "matched"
+
+
+def test_screenshot_dir_failure_preserves_ocr_results(tmp_path, monkeypatch) -> None:
+    """回归（VUL-B4-001）：调试产物写盘失败只降级告警，不连坐识别结果。
+
+    磁盘满/目录不可写原本把已完成的识别整体丢弃成 retryable_ocr，
+    连续 5 次即触发轮询暂停；降级后识别可用性与磁盘解耦。
+    """
+    stats_path = tmp_path / "ocr_name_pending_stats.json"
+    monkeypatch.setattr(pending_stats, "STATS_PATH", stats_path)
+    _install_pending_fakes(monkeypatch, template_hits=True)
+    # 目录占位成普通文件：mkdir(parents=True) 抛 FileExistsError（OSError 子类）
+    blocked_dir = tmp_path / "blocked_screenshot_data"
+    blocked_dir.write_text("occupied", encoding="utf-8")
+    monkeypatch.setattr(
+        "src.business.recognition.ocr_worker.DEFAULT_SCREENSHOT_DATA_DIR", blocked_dir
+    )
+
+    result = OcrWorker()._execute(OcrTask(
+        image="image", hero_names=("曹操",), rois=None,
+        template_name="match_guide", threshold=0.8, fallback_on_template_miss=True,
+    ))
+
+    assert result["outcome"] == "matched"
+    assert result["template_matched"] is True
+    assert [item["raw_name"] for item in result["ocr_results"]] == ["西汉陈"]
+    assert not stats_path.exists()  # 落盘链路整体跳过，不再写入频次
 
 
 def test_result_reuse_reruns_ocr_when_page_changes(monkeypatch) -> None:

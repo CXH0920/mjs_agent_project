@@ -290,6 +290,9 @@ class PollCoordinator(QObject):
         if cancel_event.is_set():
             return None
         if not ocr_task.completed.wait(cls.POLL_OCR_WAIT_TIMEOUT_SECONDS):
+            # 弃单（VUL-B3-002 配套）：置取消并释放整帧引用，滞留队列的任务
+            # 不再执行过期识别，也不写 latest.json/错法频次
+            ocr_task.abandon()
             return PollTaskResult(
                 PollOutcome.RETRYABLE_OCR,
                 f"OCR 任务超时（{cls.POLL_OCR_WAIT_TIMEOUT_SECONDS} 秒）",

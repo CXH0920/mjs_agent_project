@@ -72,6 +72,19 @@ class OcrTask:
     task_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     completed: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     result: dict | None = field(default=None, init=False)
+    # 等待方超时放弃后置位（GIL 原子赋值，同 SessionGuard 约定）：
+    # worker 取出时直接作废，不再执行过期 OCR 与 latest.json/错法频次副作用
+    cancelled: bool = field(default=False, init=False, repr=False)
+
+    def abandon(self) -> None:
+        """等待方超时弃单：置取消标志并立即释放整帧图像引用。
+
+        引用必须在弃单时刻释放——worker 被长任务（官方导入）占住期间，
+        队列滞留任务到取出才释放的话峰值仍是 O(占用时长)。若弃单时任务
+        恰已开始执行，_execute 开头的局部快照保证识别持引用跑完不中断。
+        """
+        self.cancelled = True
+        self.image = None
 
 
 @dataclass
@@ -163,6 +176,8 @@ class OcrWorker(QThread):
             try:
                 if isinstance(task, OfficialImportTask):
                     task.result = self._execute_official_import(task)
+                elif task.cancelled:
+                    task.result = {"outcome": "cancelled"}
                 else:
                     task.result = self._execute(task)
                     if task.warmup and task.result.get("outcome") == "warmup_failed":
@@ -245,6 +260,9 @@ class OcrWorker(QThread):
         if task.warmup:
             return self._warmup_model(task)
 
+        # image 局部快照：等待方超时弃单（abandon）会置 task.image = None 释放
+        # 整帧引用，已开始的执行继续用局部引用跑完（结果作废但不得中途崩）
+        image = task.image
         task_started = time.perf_counter()
         # 各阶段耗时逐段累积进同一 dict，5 个 _log_timing 调用点统一 ** 展开；
         # 初值与 _log_timing 形参默认值一致，未走到的阶段日志显示 0.0/not_run
@@ -268,7 +286,7 @@ class OcrWorker(QThread):
                     self._log_timing(task, task_started, outcome="template_missing", **stage_timing)
                     return {"outcome": "template_missing"}
                 template_match_started = time.perf_counter()
-                matched, confidence = template_manager.match(task.image, task.threshold)
+                matched, confidence = template_manager.match(image, task.threshold)
                 stage_timing["template_match_ms"] = (time.perf_counter() - template_match_started) * 1000
                 stage_timing["template_confidence"] = confidence
                 stage_timing["template_scale"] = getattr(template_manager, "last_match_scale", 0.0)
@@ -308,7 +326,7 @@ class OcrWorker(QThread):
                 )
             fingerprint = None
             if task.recognize and task.allow_result_reuse:
-                fingerprint = self._page_fingerprint(task.image, layout)
+                fingerprint = self._page_fingerprint(image, layout)
                 cached = self._page_cache.get(task.template_name)
                 if (cached is not None
                         and cached[1] == task.hero_names
@@ -322,19 +340,23 @@ class OcrWorker(QThread):
                     }
             recognizer = self._get_recognizer(layout, task.hero_names, task.template_name)
             recognition_started = time.perf_counter()
-            results = recognizer.recognize(task.image)
+            results = recognizer.recognize(image)
             self._ocr_engine = recognizer.shared_engine()
             stage_timing["recognition_ms"] = (time.perf_counter() - recognition_started) * 1000
+            # 先挂结果再落盘：磁盘满/目录不可写只损失调试产物，不得连坐识别结果
+            result["ocr_results"] = results
             recognizer_timing = getattr(recognizer, "timing_ms", {})
             result_save_started = time.perf_counter()
-            DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json", page_type=task.template_name)
-            # 模板未命中的兜底读数来自错位 ROI（巅峰页等非本页画面），
-            # 是跨页噪声而非本页错法，不进白名单治理数据
-            if result.get("template_matched", True):
-                self._record_pending_names(results, task.template_name)
+            try:
+                DEFAULT_SCREENSHOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+                GeneralRecognizer.save_results(results, DEFAULT_SCREENSHOT_DATA_DIR / "latest.json", page_type=task.template_name)
+                # 模板未命中的兜底读数来自错位 ROI（巅峰页等非本页画面），
+                # 是跨页噪声而非本页错法，不进白名单治理数据
+                if result.get("template_matched", True):
+                    self._record_pending_names(results, task.template_name)
+            except Exception as exc:
+                logger.warning("OCR 调试产物写入失败，识别结果不受影响: %s", exc)
             stage_timing["result_save_ms"] = (time.perf_counter() - result_save_started) * 1000
-            result["ocr_results"] = results
             if fingerprint is not None:
                 self._page_cache[task.template_name] = (fingerprint, task.hero_names, list(results))
             self._log_timing(

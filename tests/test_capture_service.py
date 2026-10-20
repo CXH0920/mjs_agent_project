@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, Signal
 from src.business.emulator import capture_service as capture_service_module
 from src.business.emulator import ocr_task_coordinator
 from src.business.emulator.capture_service import CaptureService
-from src.business.recognition.ocr_worker import OfficialImportTask
+from src.business.recognition.ocr_worker import OcrTask, OfficialImportTask
 
 
 def test_config_change_discards_previous_connection() -> None:
@@ -241,6 +241,49 @@ def test_capture_service_routes_official_import_through_shared_worker(monkeypatc
     assert progress == [("正在等待 OCR 队列...", 0, 0), ("正在识别", 2, 10)]
     assert completed == [[{"name": "武将放逐数据", "records": 100}]]
     assert failures == []
+
+
+def test_cancelled_official_import_completes_silently(monkeypatch) -> None:
+    """回归（TD-A8-001）：应用关闭排空队列时被取消的导入不报"未知错误"。
+
+    取消不是失败：静默清掉排他集合即可，误导性错误弹窗会让用户误以为
+    数据损坏而重试。
+    """
+    service = CaptureService()
+    completed: list[list[dict]] = []
+    failures: list[str] = []
+    service.official_import_completed.connect(completed.append)
+    service.official_import_failed.connect(failures.append)
+    monkeypatch.setattr(
+        service, "_ensure_ocr_worker", lambda: SimpleNamespace(submit=lambda task: None)
+    )
+
+    task = service.submit_official_import({"2v2": ["page1.png"]})
+    task.result = {"outcome": "cancelled"}  # worker 停止时 _drain_pending_tasks 的产物
+    service._official_gateway.on_task_completed(task)
+
+    assert completed == []
+    assert failures == []
+    assert service._official_gateway._pending == set()
+
+
+def test_wait_warmup_abandons_task_on_timeout() -> None:
+    """回归（VUL-B3-002 审查缺口 2）：启动等待超时即弃单滞留的预热任务。
+
+    弃单后 worker 取出时短路，不再在启动后补跑过期预热挤占首次识别。
+    """
+    coordinator = ocr_task_coordinator.OcrTaskCoordinator(on_worker_created=lambda worker: None)
+    task = OcrTask(
+        image=None, hero_names=(), rois=None,
+        template_name="hero_selection", threshold=0.0, match_template=False, warmup=True,
+    )
+    coordinator._warmup_task = task
+
+    assert coordinator.wait_warmup(timeout_ms=10) is False
+
+    assert task.cancelled is True
+    assert task.image is None
+    assert coordinator._warmup_task is task  # 语义不变：超时不清引用，复位归 reset_warmup
 
 
 def test_capture_service_rejects_overlapping_official_import(monkeypatch) -> None:

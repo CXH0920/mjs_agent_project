@@ -125,6 +125,9 @@ class OcrTaskCoordinator(QObject):
             return False
         if not task.completed.wait(timeout_ms / 1000):
             logger.warning("OCR 预热等待超时，主窗口将继续显示")
+            # 弃单（VUL-B3-002 配套）：滞留队列的预热任务被 worker 短路，
+            # 不再在启动后补跑过期预热挤占首次识别
+            task.abandon()
             return False
         self._warmup_task = None
         return bool(task.result and task.result.get("outcome") == "warmed")

@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PIL import Image
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from src.business.analysis.peak_ban_advice import PeakBanAdvice
+from src.business.recognition.ocr_worker import OcrTask
 from src.business.recognition.peak_select_watcher import (
     BOARD_EXIT_TICKS,
     PeakSelectWatcher,
@@ -648,7 +649,7 @@ def test_watcher_confirm_pending_republishes_snapshot(qapp):
         {"name": "", "raw_name": "卓文君", "candidates": ["卓文君", "君王后"], "resolution": "conflict"},
     ]
 
-    watcher._publish_pool(results, 14)
+    watcher._publish_pool(results, 14, session=watcher._session_guard.current())
     assert pools[0].names == ("荆轲",)
     assert len(pools[0].pending) == 1
 
@@ -679,7 +680,7 @@ def test_confirm_pending_waits_for_ongoing_publish(qapp, monkeypatch):
     published = threading.Event()
 
     def publish():
-        watcher._publish_pool([], 9)
+        watcher._publish_pool([], 9, session=watcher._session_guard.current())
         published.set()
 
     worker = threading.Thread(target=publish, daemon=True)
@@ -715,7 +716,9 @@ def test_pool_updated_emitted_outside_state_lock(qapp):
     watcher.pool_updated.connect(
         lambda _snapshot: lock_states.append(watcher._state_lock.locked())
     )
-    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+    watcher._publish_pool(
+        [{"name": "荆轲", "resolution": "exact"}], 9, session=watcher._session_guard.current()
+    )
 
     assert lock_states == [False]
 
@@ -772,7 +775,7 @@ def test_watcher_file_recognition_timeout_keeps_live_signature(qapp, monkeypatch
     )
 
     def timeout_submit(image, **kwargs):
-        return SimpleNamespace(completed=_NeverSetEvent(), result=None)
+        return SimpleNamespace(completed=_NeverSetEvent(), result=None, abandon=lambda: None)
 
     watcher, pools, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=timeout_submit))
     watcher._signature = ((10, 20, 30, 40),)
@@ -798,7 +801,7 @@ def test_watcher_live_loop_timeout_resets_signature(qapp, monkeypatch):
         capture=SimpleNamespace(connected=True),
         capture_for_poll=lambda _capture: (True, Image.new("RGB", (2560, 1440)), ""),
         submit_ocr_task=lambda image, **kwargs: SimpleNamespace(
-            completed=_NeverSetEvent(), result=None
+            completed=_NeverSetEvent(), result=None, abandon=lambda: None
         ),
     )
     ocr_service = SimpleNamespace(
@@ -1115,7 +1118,9 @@ def test_stale_board_absent_tick_after_restart_is_ignored(qapp):
     stale = watcher._session_guard.current()
     watcher.stop()
     watcher.start()  # 世代推进：stale 已过期
-    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+    watcher._publish_pool(
+        [{"name": "荆轲", "resolution": "exact"}], 9, session=watcher._session_guard.current()
+    )
     watcher.confirm_pending(0, "荆轲")  # 新会话写入确认
     assert watcher._resolutions == {0: "荆轲"}
 
@@ -1366,7 +1371,7 @@ def test_watcher_stop_clears_session_state(qapp):
     watcher, _, _ = _make_watcher(
         SimpleNamespace(submit_ocr_task=None), ocr_service=_FakeOcrService()
     )
-    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 14)
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 14, session=watcher._session_guard.current())
     watcher.confirm_pending(0, "荆轲")
     assert watcher._resolutions == {0: "荆轲"}  # 前置：确认已写入
     watcher._deferred_board = (((1, 2, 3, 4),), [], 9, [])  # 扣住复核中的牌面
@@ -1384,7 +1389,9 @@ def test_watcher_stop_clears_session_state(qapp):
 def test_watcher_confirm_rejected_after_board_exit(qapp):
     """牌面退出（连续 BOARD_EXIT_TICKS 拍缺席）后人工确认被拒：无在识别牌面时不得写入。"""
     watcher, _, statuses = _make_watcher(SimpleNamespace(submit_ocr_task=None))
-    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+    watcher._publish_pool(
+        [{"name": "荆轲", "resolution": "exact"}], 9, session=watcher._session_guard.current()
+    )
 
     for _ in range(BOARD_EXIT_TICKS):
         watcher._handle_board_absent(watcher._session_guard.current())  # 达阈值 → exiting 清空
@@ -1401,7 +1408,9 @@ def test_watcher_confirm_rejected_after_stop(qapp):
     watcher, _, statuses = _make_watcher(
         SimpleNamespace(submit_ocr_task=None), ocr_service=_FakeOcrService()
     )
-    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9)
+    watcher._publish_pool(
+        [{"name": "荆轲", "resolution": "exact"}], 9, session=watcher._session_guard.current()
+    )
     watcher.stop()
 
     watcher.confirm_pending(0, "荆轲")
@@ -1409,6 +1418,50 @@ def test_watcher_confirm_rejected_after_stop(qapp):
     assert watcher._resolutions == {}
     assert watcher._last_board is None
     assert any("确认未生效" in text for text in statuses)
+
+
+def test_publish_pool_rejects_stale_session(qapp):
+    """回归（VUL-B3-001）：停止后的旧世代发布不写状态、不推送。
+
+    否则旧拍会把 stop 已清空的 _last_board 复活，待确认行重现，
+    幽灵确认写入错法频次文件（2026-09-30 卓文君事故同类风险）。
+    """
+    watcher, pools, _ = _make_watcher(
+        SimpleNamespace(submit_ocr_task=None), ocr_service=_FakeOcrService()
+    )
+    stale = watcher._session_guard.current()
+    watcher.stop()
+
+    watcher._publish_pool([{"name": "荆轲", "resolution": "exact"}], 9, session=stale)
+
+    assert pools == []
+    assert watcher._last_board is None
+    assert watcher._last_cards is None
+
+
+def test_recognize_board_timeout_cancels_task(qapp, monkeypatch):
+    """回归（VUL-B3-002）：OCR 等待超时后置位任务取消，worker 取出时短路。
+
+    超时放弃的任务留在无界队列并持有整帧图像，排空时还会执行过期 OCR、
+    污染 latest.json 与错法频次；置位 cancelled 后随出队直接作废。
+    """
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.OCR_WAIT_TIMEOUT_SECONDS", 0.05
+    )
+    task = OcrTask(
+        image="stale-frame", hero_names=(), rois=None,
+        template_name="peak_board", threshold=0.0, match_template=False,
+    )
+    watcher, _, statuses = _make_watcher(
+        SimpleNamespace(submit_ocr_task=lambda *_args, **_kwargs: task)
+    )
+
+    result = watcher._recognize_board(Image.new("RGB", (64, 64)), [(0, 0, 238, 326)])
+
+    assert result is None
+    assert task.cancelled is True
+    assert task.image is None  # 超时弃单即释放整帧引用，不等 worker 取出
+    assert any("识别超时" in text for text in statuses)
 
 
 def _ban_board_results() -> list[dict]:

@@ -771,15 +771,22 @@ def test_poll_ocr_wait_times_out_without_blocking() -> None:
             self.timeout = timeout
             return False
 
+    abandoned: list[bool] = []
+
     class Task:
         completed = Completed()
         result = None
+
+        def abandon(self) -> None:
+            abandoned.append(True)
 
     result = PollCoordinator.wait_for_ocr_task(Task(), threading.Event())
 
     assert Task.completed.timeout == PollCoordinator.POLL_OCR_WAIT_TIMEOUT_SECONDS
     assert result.outcome is PollOutcome.RETRYABLE_OCR
     assert "超时" in result.detail
+    # 回归（VUL-B3-002 审查缺口 2）：超时即弃单——滞留任务被 worker 短路并释放整帧引用
+    assert abandoned == [True]
 
 
 def test_poll_ocr_wait_drops_cancelled_result() -> None:

@@ -443,19 +443,23 @@ class OfficialDataImportService:
         allowed_names = tuple(ambiguous_candidates or prefix_matches)
         if not allowed_names:
             return text, confidence
-        if status_callback:
-            status_callback("正在执行罕见字兜底识别")
         rare_char_engine = self._rare_char_engine
+        if rare_char_engine is not None and status_callback:
+            status_callback("正在执行罕见字兜底识别")
         if rare_char_engine is not None:
             try:
                 rare_name, rare_confidence = self._recognize_name_with_engine(
                     cell, rare_char_engine, allowed_names,
                 )
+                self._engines.note_rare_char_success()
                 if rare_name:
                     return rare_name, rare_confidence
             except Exception as exc:
+                # 计数熔断：单次瞬时异常只损失本格兜底，不连坐整批的罕见字识别
                 logger.warning("罕见字 OCR 识别失败，将保留原结果待复核: %s", exc)
-                self._engines.rare_char_failed = True
+                self._engines.note_rare_char_failure()
+        elif self._engines.rare_char_failed and status_callback:
+            status_callback("罕见字兜底已降级，名称保留原结果待复核")
         return text, confidence
 
     def _recognize_name_glyphs(self, cell: np.ndarray, engine=None) -> tuple[str, float]:

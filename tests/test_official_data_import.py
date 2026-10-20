@@ -228,7 +228,8 @@ def test_name_cell_keeps_conflicting_exact_candidates_unresolved(monkeypatch) ->
     text, confidence = service._recognize_name_cell(cell, statuses.append)
 
     assert (text, confidence) == ("夏侯", 0.92)
-    assert statuses == ["正在执行罕见字兜底识别"]
+    # 引擎不可用且未熔断（如复核开关关闭）：不谎报"正在执行"，亦无降级提示
+    assert statuses == []
 
 
 def test_name_cell_uses_rare_engine_for_ambiguous_compound_prefix(monkeypatch) -> None:
@@ -354,7 +355,25 @@ def test_name_cell_keeps_single_character_for_review_when_rare_engine_fails(monk
 
     assert (text, confidence) == ("荀", 0.99)
     assert reasons == ["武将名称疑似缺字"]
-    assert service._rare_char_engine_failed is True
+    # 回归（TD-A5-001）：单次瞬时失败只损失本格兜底，不再整批熔断
+    assert service._rare_char_engine_failed is False
+
+
+def test_name_cell_reports_degraded_status_when_circuit_tripped(monkeypatch) -> None:
+    """罕见字熔断生效后，status_callback 明示降级而不是谎报"正在执行"。"""
+    service = OfficialDataImportService(hero_names=["荀彧", "荀勖"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(service, "_recognize_cell_candidates", lambda _: [("荀", 0.99)])
+    monkeypatch.setattr(service, "_recognize_name_glyphs", lambda *_: ("", 0.0))
+    monkeypatch.setattr(OfficialDataImportService, "_rare_char_engine", property(lambda _: None))
+    for _ in range(3):
+        service._engines.note_rare_char_failure()
+    statuses: list[str] = []
+
+    text, confidence = service._recognize_name_cell(cell, statuses.append)
+
+    assert (text, confidence) == ("荀", 0.99)
+    assert statuses == ["罕见字兜底已降级，名称保留原结果待复核"]
 
 
 def test_single_character_name_is_marked_for_review() -> None:

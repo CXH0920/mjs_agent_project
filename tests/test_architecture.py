@@ -704,7 +704,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 清单/两个 getter 默认值四处登记收口为 _ENV_KEY_SPECS 单表；
     # 364 → 366：数据新鲜度透传键 DATA_FRESHNESS_TIMELINE_STALE_DAYS（2026-10）
     "config/env.py": 366,
-    "business/recognition/official_data_import_service.py": 638,
+    # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
+    # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
+    # 降级期间经 status_callback 明示
+    "business/recognition/official_data_import_service.py": 642,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
     "ui/library/hero_browser.py": 639,
     # 601 → 605：基线置空/缺源显式报错 + 终局"基线不完整"标注（P1-5，2026-10）
@@ -720,17 +723,30 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 593 → 655：扣住只留回升方向（回落立即发布，禁将 14→11→9 不再各延迟一拍）；
     # 新增漏检补齐（存活卡原位一致时按上一拍卡位补齐，2026-10-12 11→9 面板跳变）
     # 与排布校验（5+4 非法排布不发）；退出阈值 2→4 拍（该局转场误退出 3 次）
-    "business/recognition/peak_select_watcher.py": 655,
+    # 655 → 667：_publish_pool 锁内会话世代校验（VUL-B3-001）——旧拍/GUI 确认/
+    # 图片导入在 stop 后不再回写牌面，堵住待确认复活与幽灵确认污染频次文件；
+    # OCR 超时任务置位 cancelled（VUL-B3-002 配套），worker 取出时短路
+    # 667 → 669：超时弃单改调 task.abandon() 同步释放整帧引用（审查缺口 1）；
+    # 世代失配拦截补 debug 留痕（审查问题 4）
+    "business/recognition/peak_select_watcher.py": 669,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     "ui/match/peak_select_panel.py": 565,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
     # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
     # 518 → 520：reset_recognizer_cache 同步清 _page_cache——白名单变更后同指纹
     # 页面不再复用旧纠错结果（TD-A8-001，2026-10-14）
-    "business/recognition/ocr_worker.py": 520,
+    # 520 → 529：OcrTask.cancelled 标志 + run() 取出短路（VUL-B3-002）——等待方
+    # 超时放弃的任务不再执行过期 OCR/写 latest.json/记错法频次，队列与图像引用
+    # 随出队释放；_execute 中 ocr_results 前移 + 调试产物落盘降级 try（VUL-B4-001）
+    # 529 → 542：OcrTask.abandon()（置取消并即时释放整帧引用，等待方超时调用）
+    # 与 _execute 开头 image 局部快照（审查缺口 1/2）——释放必须发生在弃单时刻，
+    # worker 被官方导入占住期间滞留队列的任务到取出才释放的话峰值仍是 O(占用时长)
+    "business/recognition/ocr_worker.py": 542,
     # 首次入册（498 → 508 越过 500 绊线）：do_poll_work 补 except 兜底，未预期
     # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
-    "ui/app/poll_coordinator.py": 508,
+    # 508 → 511：wait_for_ocr_task 超时即弃单（VUL-B3-002 审查缺口 2）——置取消
+    # 并释放整帧引用，滞留队列的任务被 worker 短路，不再执行过期识别
+    "ui/app/poll_coordinator.py": 511,
     # 545 → 640：新增 robots.txt 解析与抓取前校验（VUL-B6-001 合规修复，
     # 2026-10-18）。不拆独立模块：6 个测试 monkeypatch 锚点（ROBOTS_CACHE_DIR /
     # _robots_rules_by_host / crawler.urllib.request）均在 crawler 命名空间，

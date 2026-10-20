@@ -565,6 +565,50 @@ def test_rare_char_engine_returns_none_when_recheck_disabled(monkeypatch) -> Non
     assert engines.rare_char_failed is False  # 未熔断：开启开关后即可生效
 
 
+def test_rare_char_circuit_requires_consecutive_failures(monkeypatch) -> None:
+    """回归（TD-A5-001）：单次瞬时失败不熔断，连续达阈值才进入冷却降级。
+
+    原实现任意一次识别异常即整批熔断，剩余格全部跳过兜底，名称大概率
+    不在词表触发整批校验失败、全量转待复核。
+    """
+    monkeypatch.setattr(
+        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+    )
+    engines = _make_engines()
+
+    engines.note_rare_char_failure()
+    engines.note_rare_char_failure()
+    assert engines.rare_char_failed is False  # 连续 2 次：尚未达阈值
+
+    engines.note_rare_char_success()
+    engines.note_rare_char_failure()
+    assert engines.rare_char_failed is False  # 成功清零计数，重新累计
+
+    engines.note_rare_char_failure()
+    engines.note_rare_char_failure()
+    assert engines.rare_char_failed is True  # 连续达阈值：熔断生效
+    assert engines.rare_char is None
+
+
+def test_rare_char_circuit_recovers_after_cooldown(monkeypatch) -> None:
+    """熔断带冷却窗口：期满后下一次访问自动解除并恢复重试。"""
+    monkeypatch.setattr(
+        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+    )
+    monkeypatch.setattr(
+        "src.ocr.engine_loader.get_recheck_ocr_engine", lambda: "recheck-engine",
+    )
+    monkeypatch.setattr(engines_mod, "_RARE_CHAR_COOLDOWN_SECONDS", 0.0)
+    engines = _make_engines()
+    for _ in range(engines_mod._RARE_CHAR_FAIL_LIMIT):
+        engines.note_rare_char_failure()
+
+    assert engines.rare_char_failed is True
+
+    assert engines.rare_char == "recheck-engine"  # 冷却期满：解除并重新加载
+    assert engines.rare_char_failed is False
+
+
 # ── 配置解析 ─────────────────────────────────────────────────────────────
 
 

@@ -7,8 +7,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QObject, Signal
 from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImportTask
+
+logger = logging.getLogger(__name__)
 
 
 class OfficialImportGateway(QObject):
@@ -50,7 +54,11 @@ class OfficialImportGateway(QObject):
             return
         self._pending.remove(task.task_id)
         result = task.result or {"outcome": "official_import_failed"}
-        if result.get("outcome") == "official_imported":
+        outcome = result.get("outcome")
+        if outcome == "official_imported":
             self.completed.emit(result.get("summaries", []))
+        elif outcome == "cancelled":
+            # 应用关闭排空队列时被取消：不是失败，静默收尾避免误导性错误弹窗
+            logger.info("官方榜单导入已取消（worker 停止排空队列）")
         else:
             self.failed.emit(result.get("detail", "未知错误"))

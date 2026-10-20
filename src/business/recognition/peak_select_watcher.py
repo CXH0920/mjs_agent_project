@@ -383,7 +383,7 @@ class PeakSelectWatcher(QObject):
                     self._deferred_board = None
                 if confirmed is not None:
                     # 回升牌面在紧邻下一拍原样复现：非单拍坏帧，补发布
-                    self._publish_pool(confirmed[1], confirmed[2], confirmed[3])
+                    self._publish_pool(confirmed[1], confirmed[2], confirmed[3], session=session)
                 return  # 牌面未变化，沿用上一次结果
             ocr_results = self._recognize_board(result, cards)
             if ocr_results is None:
@@ -416,7 +416,7 @@ class PeakSelectWatcher(QObject):
                     card_count, last_count,
                 )
                 return
-            self._publish_pool(ocr_results, card_count, cards)
+            self._publish_pool(ocr_results, card_count, cards, session=session)
         except Exception:
             logger.exception("巅峰赛识别循环异常")
             self.status_changed.emit("识别异常，详见运行日志")
@@ -437,7 +437,10 @@ class PeakSelectWatcher(QObject):
             match_template=False,
         )
         if not task.completed.wait(OCR_WAIT_TIMEOUT_SECONDS):
-            logger.warning("巅峰赛 OCR 超时（%s 秒）", OCR_WAIT_TIMEOUT_SECONDS)
+            logger.warning("巅峰赛 OCR 超时（%s 秒），作废该任务", OCR_WAIT_TIMEOUT_SECONDS)
+            # 弃单：置取消标志并释放整帧引用——worker 被官方导入占住期间，
+            # 队列滞留任务到取出才释放的话内存峰值仍是 O(占用时长)
+            task.abandon()
             self.status_changed.emit("识别超时，下一拍重试")
             return None
         outcome = (task.result or {}).get("outcome")
@@ -492,15 +495,23 @@ class PeakSelectWatcher(QObject):
         )
         return list(previous)
 
-    def _publish_pool(self, ocr_results: list[dict], card_count: int, cards: list[Roi] | None = None) -> None:
+    def _publish_pool(
+        self, ocr_results: list[dict], card_count: int, cards: list[Roi] | None = None, *, session: int,
+    ) -> None:
         """整理候选池快照并推送面板；禁选阶段快照留作已禁差集基准。
 
         组装全程持锁：本方法可由识别线程、导入线程与 GUI 确认并发进入，
         无锁时两个发布可能把 _last_board/_ban_names 交错成跨牌面组合。
         cards 为本次发布牌面的卡位，供下一拍漏检补齐；重发同一牌面（人工确认）
         与离线图片导入传 None，表示沿用既有实时卡位。
+        session 为发起方取的世代快照：锁内校验，停止/重启后的旧发布不写
+        状态、不推送（否则旧拍会把 _last_board 复活，待确认与人工确认随之污染）。
         """
         with self._state_lock:
+            if not self._session_guard.is_current(session):
+                # 本应绝迹的竞态（旧拍/停止交错）：debug 留痕便于复现排查，不刷正常停止路径
+                logger.debug("发布被会话世代守卫拦截（session=%s），不写状态不推送", session)
+                return
             self._last_board = (ocr_results, card_count)
             if cards is not None:
                 self._last_cards = list(cards)
@@ -527,6 +538,7 @@ class PeakSelectWatcher(QObject):
             last_board = self._last_board
             accepted = last_board is not None
             if accepted:
+                session = self._session_guard.current()
                 self._resolutions[slot] = name
                 self._stale_rounds.pop(slot, None)
                 raw_name = ""
@@ -544,7 +556,7 @@ class PeakSelectWatcher(QObject):
             self.status_changed.emit("牌面已不在识别中，确认未生效")
             return
         record_confirmation(raw_name, name, slot_candidates)
-        self._publish_pool(*last_board)
+        self._publish_pool(*last_board, session=session)
 
     # ── 手动图片导入 ──────────────────────────────────────────────────
 
@@ -561,6 +573,8 @@ class PeakSelectWatcher(QObject):
         if not self._import_lock.acquire(blocking=False):
             self.status_changed.emit("已有图片识别进行中，请稍候")
             return
+        # 绑定导入发起时的世代：识别耗时数十秒，期间停止识别则不回写旧牌面
+        session = self._session_guard.current()
         try:
             try:
                 image = load_local_image(file_path)
@@ -599,7 +613,7 @@ class PeakSelectWatcher(QObject):
                 )
             else:
                 self.status_changed.emit("图片识别完成")
-            self._publish_pool(ocr_results, len(cards))
+            self._publish_pool(ocr_results, len(cards), session=session)
         except Exception:
             logger.exception("巅峰赛图片导入识别异常")
             self.status_changed.emit("图片识别异常，详见运行日志")
