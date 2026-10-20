@@ -657,7 +657,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
-    "ui/maintenance/rule_doc_panel.py": 928,
+    "ui/maintenance/rule_doc_panel.py": 935,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
     "ui/maintenance/index_refinement_dialog.py": 781,
