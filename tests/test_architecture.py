@@ -703,7 +703,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 368 → 364：键元表单源化（P1-4/P1-7，2026-10）——key_mapping/三张类型
     # 清单/两个 getter 默认值四处登记收口为 _ENV_KEY_SPECS 单表；
     # 364 → 366：数据新鲜度透传键 DATA_FRESHNESS_TIMELINE_STALE_DAYS（2026-10）
-    "config/env.py": 366,
+    # 366 → 370：档位阈值可配置（TD-A6-001）——新增 DATA_FRESHNESS_STALE_GREEN_DAYS
+    # / DATA_FRESHNESS_STALE_RED_DAYS 两键 + 说明注释；官方榜单约每半月更新，
+    # 7/14 写死会让榜单长期停在黄/红并盖掉武将信号
+    "config/env.py": 370,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示

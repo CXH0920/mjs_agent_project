@@ -189,6 +189,10 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     "RECOMMENDATION_LOW_WIN_RATE_GAP": _EnvKeySpec("recommendation_low_win_rate_gap", float, None),
     # 数据新鲜度芯片：时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄判定
     "DATA_FRESHNESS_TIMELINE_STALE_DAYS": _EnvKeySpec("data_freshness_timeline_stale_days", int, None),
+    # 数据新鲜度档位：[0,绿) 绿 / [绿,红) 黄 / ≥红 红（默认 7/14）。官方榜单
+    # 约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001）
+    "DATA_FRESHNESS_STALE_GREEN_DAYS": _EnvKeySpec("data_freshness_stale_green_days", int, None),
+    "DATA_FRESHNESS_STALE_RED_DAYS": _EnvKeySpec("data_freshness_stale_red_days", int, None),
 }
 
 

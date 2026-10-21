@@ -39,6 +39,7 @@ from pathlib import Path
 
 from src.config.env import is_full_build, load_env_config
 from src.data.hero_timeline import DEFAULT_TIMELINE_FILE, load_timeline
+from src.data.json_repository import preserve_corrupt_file
 from src.data.manager import (
     DEFAULT_DATA_DIR,
     DEFAULT_GUIDES_FILE,
@@ -82,8 +83,11 @@ WATCHED_FILE_NAMES = (
     "巅峰赛出场排行.csv", "武将放逐.csv", "武将推荐指数.csv",
 )
 
-# 落后/年龄档位统一按 7 天一个周期（最终共识，写死不进配置）：
-# [0,7) 绿 / [7,14) 黄 / ≥14 红
+# 落后/年龄档位：[0,绿) 绿 / [绿,红) 黄 / ≥红 红。
+# 默认 7/14（历史共识），可经 config.env 的 DATA_FRESHNESS_STALE_GREEN_DAYS /
+# DATA_FRESHNESS_STALE_RED_DAYS 覆盖：官方榜单约每半月更新，写死 14 天会让榜单
+# 在多数时间停在黄/红并盖掉武将信号（TD-A6-001）。模块级常量保留作默认值，
+# 运行时一律经 _stale_thresholds() 取生效值。
 STALE_GREEN_DAYS = 7
 STALE_RED_DAYS = 14
 DEFAULT_TIMELINE_STALE_DAYS = 14
@@ -116,21 +120,54 @@ class FreshnessReport:
     suggested_actions: tuple[str, ...] # SUGGEST_INCREMENTAL / SUGGEST_SPECIFIC 子集
 
 
-def _timeline_stale_days() -> int:
-    """时间轴不健康阈值：config.env 透传键，非正整数回退默认 14。"""
-    value = load_env_config().get("data_freshness_timeline_stale_days")
+def _positive_int(key: str, default: int) -> int:
+    """读正整数配置项；缺失/非整数/非正数一律回退默认值。"""
+    value = load_env_config().get(key)
     if isinstance(value, int) and value > 0:
         return value
-    return DEFAULT_TIMELINE_STALE_DAYS
+    return default
+
+
+def _timeline_stale_days() -> int:
+    """时间轴不健康阈值：config.env 透传键，非正整数回退默认 14。"""
+    return _positive_int("data_freshness_timeline_stale_days", DEFAULT_TIMELINE_STALE_DAYS)
+
+
+def _stale_thresholds() -> tuple[int, int]:
+    """生效的 (绿档上限, 红档下限)；非法组合回退默认 7/14。
+
+    红档必须大于绿档，否则 [绿,红) 为空区间、黄档永不出现；配置写反时
+    整体回退默认值而非夹逼，避免产生"看着生效实则半套"的混合阈值。
+    """
+    green = _positive_int("data_freshness_stale_green_days", STALE_GREEN_DAYS)
+    red = _positive_int("data_freshness_stale_red_days", STALE_RED_DAYS)
+    if red <= green:
+        logger.warning(
+            "新鲜度阈值配置非法（绿 %s ≥ 红 %s），回退默认 %s/%s",
+            green, red, STALE_GREEN_DAYS, STALE_RED_DAYS,
+        )
+        return STALE_GREEN_DAYS, STALE_RED_DAYS
+    return green, red
 
 
 def _load_records(path: Path) -> list | None:
-    """JSON 记录数组；缺失/损坏/非数组/空返回 None。"""
+    """JSON 记录数组；缺失/损坏/非数组/空返回 None。
+
+    解析失败先按原字节留底 backups/（与 hero_timeline / baike_ignore_store /
+    card_sync_store 同款保底）：本函数只降级返回 None，若用户随后重新生成或
+    重新抓取，损坏文件会被直接覆盖，没有副本即"读不出来的数据"升级为
+    "不可逆丢失"。
+    """
     try:
         with open(path, encoding="utf-8-sig") as stream:
             records = json.load(stream)
+    except FileNotFoundError:
+        # 从未生成属正常状态，不留底（留底只会产生空 backups 目录噪声）
+        logger.warning("新鲜度数据文件不存在 %s", path)
+        return None
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         logger.warning("新鲜度读取数据文件失败 %s: %s", path, exc)
+        preserve_corrupt_file(path)
         return None
     if not isinstance(records, list) or not records:
         return None
@@ -174,10 +211,11 @@ def _timeline_health(timeline: dict, today: date, stale_days: int) -> str | None
     return None
 
 
-def _heroes_fallback_state(age: int) -> str:
-    if age < STALE_GREEN_DAYS:
+def _heroes_fallback_state(age: int, thresholds: tuple[int, int]) -> str:
+    green, red = thresholds
+    if age < green:
         return GREEN
-    if age < STALE_RED_DAYS:
+    if age < red:
         return YELLOW
     return RED
 
@@ -187,6 +225,7 @@ def _judge_heroes(
     timeline: dict,
     today: date,
     stale_days: int,
+    thresholds: tuple[int, int],
 ) -> tuple[FreshnessItem, str | None, tuple[str, ...]]:
     """武将项：逐事件按武将核对落后批次；时间轴不健康时按全局 max 纯年龄兜底。"""
     warning = _timeline_health(timeline, today, stale_days)
@@ -202,7 +241,7 @@ def _judge_heroes(
     latest = max(lu for _id, _name, lu in hero_entries)
     age = max((today - latest).days, 0)
     if warning is not None:
-        state = _heroes_fallback_state(age)
+        state = _heroes_fallback_state(age, thresholds)
         return (
             FreshnessItem("heroes", state, f"{age}天前",
                           f"武将：最新 {latest.isoformat()}（{age}天前）", age),
@@ -284,6 +323,7 @@ def _baseline_missing_item(key: str, label: str, values, today: date) -> Freshne
 
 def _judge_guides(
     path: Path, hero_entries: list[tuple[int, str, date]] | None, today: date,
+    thresholds: tuple[int, int],
 ) -> FreshnessItem:
     """攻略项：逐武将（hero_id）对齐武将数据；全覆盖预期，无攻略=未生成缺口（黄）。"""
     records = _load_records(path)
@@ -309,9 +349,10 @@ def _judge_guides(
         for hero_id, _name, hero_lu in hero_entries
         if hero_id in guide_lu
     ]
-    # 7 天周期内的小幅落后计绿（周期容差），仅 ≥7 天的显著落后参与档位
-    minor = [behind for behind in behinds if 0 < behind < STALE_GREEN_DAYS]
-    significant = [behind for behind in behinds if behind >= STALE_GREEN_DAYS]
+    # 绿档周期内的小幅落后计绿（周期容差），仅 ≥绿档的显著落后参与档位
+    green, red = thresholds
+    minor = [behind for behind in behinds if 0 < behind < green]
+    significant = [behind for behind in behinds if behind >= green]
     parts = []
     if significant:
         parts.append(f"{len(significant)}将落后（最旧落后{max(significant)}天）")
@@ -324,13 +365,14 @@ def _judge_guides(
         if minor:
             detail += f" · {len(minor)}将小幅落后（最旧{max(minor)}天，周期内）"
         return FreshnessItem("guides", GREEN, f"{age}天前", detail, age)
-    state = YELLOW if (not significant or max(significant) < STALE_RED_DAYS) else RED
+    state = YELLOW if (not significant or max(significant) < red) else RED
     headline = f"攻略落后{max(significant)}天" if significant else f"攻略{len(missing)}将未生成"
     return FreshnessItem("guides", state, headline, "攻略：" + " · ".join(parts), None)
 
 
 def _judge_synergies(
     path: Path, hero_entries: list[tuple[int, str, date]] | None, today: date,
+    thresholds: tuple[int, int],
 ) -> FreshnessItem:
     """相性项：逐对对齐两侧武将数据；精选生成无覆盖预期，无 pair 武将不计数。"""
     records = _load_records(path)
@@ -359,9 +401,10 @@ def _judge_synergies(
         behind = max((max(lu_a, lu_b) - pair_date).days, 0)
         if behind > 0:
             behinds.append(behind)
-    # 7 天周期内的小幅落后计绿（周期容差），仅 ≥7 天的显著落后参与档位
-    minor = [behind for behind in behinds if behind < STALE_GREEN_DAYS]
-    significant = [behind for behind in behinds if behind >= STALE_GREEN_DAYS]
+    # 绿档周期内的小幅落后计绿（周期容差），仅 ≥绿档的显著落后参与档位
+    green, red = thresholds
+    minor = [behind for behind in behinds if behind < green]
+    significant = [behind for behind in behinds if behind >= green]
     if not significant:
         latest = max(pair_lu.values()) if pair_lu else None
         age = max((today - latest).days, 0) if latest else 0
@@ -373,14 +416,14 @@ def _judge_synergies(
             detail, age if latest else None,
         )
     worst = max(significant)
-    state = YELLOW if worst < STALE_RED_DAYS else RED
+    state = YELLOW if worst < red else RED
     return FreshnessItem(
         "synergies", state, f"相性落后{worst}天",
         f"相性：{len(significant)}对落后（最旧落后{worst}天）", None,
     )
 
 
-def _judge_rankings(paths: tuple[Path, ...]) -> FreshnessItem:
+def _judge_rankings(paths: tuple[Path, ...], thresholds: tuple[int, int]) -> FreshnessItem:
     """榜单项判定：6 CSV 纯 mtime 年龄取最旧；任一缺失整项红。"""
     now = datetime.now().timestamp()
     oldest_age, oldest_name = -1, ""
@@ -398,9 +441,10 @@ def _judge_rankings(paths: tuple[Path, ...]) -> FreshnessItem:
             "rankings", RED, "榜单文件缺失",
             f"榜单：缺失 {'、'.join(missing)}", None,
         )
-    if oldest_age < STALE_GREEN_DAYS:
+    green, red = thresholds
+    if oldest_age < green:
         state = GREEN
-    elif oldest_age < STALE_RED_DAYS:
+    elif oldest_age < red:
         state = YELLOW
     else:
         state = RED
@@ -434,16 +478,22 @@ def compute_freshness_report(
     ranking_paths: tuple[Path, ...] = RANKING_CSV_PATHS,
     full_build: bool = is_full_build(),
     today: date | None = None,
+    thresholds: tuple[int, int] | None = None,
 ) -> FreshnessReport:
-    """汇总四类数据的新鲜度判定；路径与日期显式注入供测试。"""
+    """汇总四类数据的新鲜度判定；路径/日期/档位阈值显式注入供测试。
+
+    thresholds 为 (绿档上限, 红档下限)，None 时读 config.env（默认 7/14）。
+    """
     today = today or date.today()
+    thresholds = thresholds or _stale_thresholds()
     hero_entries = _load_hero_entries(heroes_path)
     heroes, timeline_warning, suggestions = _judge_heroes(
         hero_entries, load_timeline(timeline_path), today, _timeline_stale_days(),
+        thresholds,
     )
     items = [heroes]
     if full_build:
-        items.append(_judge_guides(guides_path, hero_entries, today))
-        items.append(_judge_synergies(synergies_path, hero_entries, today))
-    items.append(_judge_rankings(ranking_paths))
+        items.append(_judge_guides(guides_path, hero_entries, today, thresholds))
+        items.append(_judge_synergies(synergies_path, hero_entries, today, thresholds))
+    items.append(_judge_rankings(ranking_paths, thresholds))
     return _aggregate(items, timeline_warning, suggestions)

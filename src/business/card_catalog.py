@@ -143,8 +143,11 @@ class CardCatalogService:
         for definition in self.schema.list_fields(include_archived=False):
             if definition.enabled and definition.required and not self._has_value(merged.get(definition.key)):
                 raise ValueError(f"{definition.label} 为必填字段")
+        # 先快照再改内存，写盘失败回滚：否则 UI 弹"保存失败"后，切走再切回
+        # 会从内存读到"已保存"的幻影内容，用户无法判断哪份是真相
+        snapshot = self.annotations._snapshot()
         self.annotations.update_annotation(CardAnnotation(card_id=str(card_id), fields=merged))
-        self.annotations.save()
+        self.annotations._save_or_rollback(snapshot)
 
     @staticmethod
     def _has_value(value: Any) -> bool:

@@ -352,6 +352,13 @@ class CardAnnotationRepository(JsonRepository):
     def update_annotation(self, annotation: CardAnnotation) -> None:
         self._annotations[annotation.card_id] = annotation
 
+    def _snapshot(self) -> dict[str, CardAnnotation]:
+        """写前内存快照：注解是不可变值对象，浅拷贝字典即足够。"""
+        return dict(self._annotations)
+
+    def _restore(self, snapshot: dict[str, CardAnnotation]) -> None:
+        self._annotations = dict(snapshot)
+
     def save(self) -> None:
         self.save_payload({
             "schema_version": 1,

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 from src.business.card_sync import (
+    CHECK_COOLDOWN_SECONDS,
     CardSyncService,
     card_field_diff_summary,
     format_card_full_text,
@@ -415,6 +416,177 @@ def test_service_apply_change_record_failure_keeps_diff_revisible(monkeypatch, t
     assert entry is not None
     assert entry.hash == card_content_hash(_official_record(1, "旧描述"))
     assert not changes_path.exists()
+
+
+def test_service_finalize_check_reports_baseline_save_failure(monkeypatch, tmp_path) -> None:
+    """基线落盘失败不得静默：须写入 result.warning 并在 check_finished 之前可见。
+
+    否则磁盘基线恒空 → 每次检查都重走首跑初始化、用当时本地库重建基线 →
+    diff 恒空，官网真实变更被逐次就地吸收（TD-A5-003）。
+    """
+    repo = _make_repo(tmp_path, [_make_card("1", "卡1")])
+    service = CardSyncService(repo, snapshot_path=tmp_path / "snap.json",
+                              changes_path=tmp_path / "changes.json")
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "旧描述")])
+
+    def broken_save(snapshot, path=None):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr("src.business.card_sync.save_card_snapshot", broken_save)
+    finished = []
+    service.check_finished.connect(finished.append)
+
+    result = service._do_check()
+    assert result.pending_saves  # 首跑确有基线要落盘
+    service._finalize_check(result)
+
+    assert result.warning is not None and "基线保存失败" in result.warning
+    # 结果仍然广播（不能因收尾失败让进度条永久停留）
+    assert finished == [result]
+    # 内存基线已更新，磁盘没有
+    assert service._last_snapshot is result.snapshot
+    assert not (tmp_path / "snap.json").exists()
+
+
+def test_service_finalize_check_no_warning_when_save_succeeds(monkeypatch, tmp_path) -> None:
+    """正常路径不得产生 warning，避免对话框常态显示警示行。"""
+    repo = _make_repo(tmp_path, [_make_card("1", "卡1")])
+    service = CardSyncService(repo, snapshot_path=tmp_path / "snap.json",
+                              changes_path=tmp_path / "changes.json")
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "旧描述")])
+
+    result = service._do_check()
+    service._finalize_check(result)
+
+    assert result.warning is None
+    assert (tmp_path / "snap.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# 忙碌 / 冷却 / 忽略名单（TD-A7-001：此前七个公开方法零覆盖）
+# ---------------------------------------------------------------------------
+
+
+def _fake_thread(monkeypatch, *, alive: bool) -> dict:
+    """把 card_sync 的 threading.Thread 换成可控替身，记录是否真的 start。"""
+    record: dict = {"started": 0, "target": None}
+
+    class _Thread:
+        def __init__(self, target=None, daemon=None):
+            record["target"] = target
+            record["daemon"] = daemon
+
+        def is_alive(self) -> bool:
+            return alive
+
+        def start(self) -> None:
+            record["started"] += 1
+
+    monkeypatch.setattr("src.business.card_sync.threading.Thread", _Thread)
+    return record
+
+
+def _service(tmp_path, **kwargs) -> CardSyncService:
+    repo = _make_repo(tmp_path, [_make_card("1", "卡1")])
+    return CardSyncService(
+        repo,
+        snapshot_path=kwargs.get("snapshot_path", tmp_path / "snap.json"),
+        changes_path=kwargs.get("changes_path", tmp_path / "changes.json"),
+        ignore_path=kwargs.get("ignore_path", tmp_path / "ignore.json"),
+    )
+
+
+def test_check_now_blocked_while_busy(monkeypatch, tmp_path) -> None:
+    """检查在途时拒绝重复启动，且不发 check_started。"""
+    service = _service(tmp_path)
+    record = _fake_thread(monkeypatch, alive=True)
+    started = []
+    service.check_started.connect(lambda: started.append(1))
+    service._thread = threading.Thread(target=lambda: None)
+
+    assert service.is_busy is True
+    assert service.check_now() is False
+    assert started == []
+    assert record["started"] == 0
+
+
+def test_check_now_blocked_during_cooldown(monkeypatch, tmp_path) -> None:
+    """冷却期内拒绝启动；冷却到期后放行（CHECK_COOLDOWN_SECONDS 边界）。"""
+    service = _service(tmp_path)
+    record = _fake_thread(monkeypatch, alive=False)
+    started = []
+    service.check_started.connect(lambda: started.append(1))
+
+    service._gate.try_acquire()
+    assert service.cooldown_remaining > 0
+    assert service.check_now() is False
+    assert started == []
+    assert record["started"] == 0
+
+    service._gate.backdate(CHECK_COOLDOWN_SECONDS + 1)
+    assert service.cooldown_remaining == 0
+    assert service.check_now() is True
+    assert started == [1]
+    assert record["started"] == 1
+
+
+def test_cooldown_remaining_never_negative(tmp_path) -> None:
+    """冷却剩余量下限为 0，不会把负值传给 UI（UI 用 int(remaining)+1 拼文案）。"""
+    service = _service(tmp_path)
+    assert service.cooldown_remaining == 0.0  # 从未检查
+    service._gate.try_acquire()
+    service._gate.backdate(10_000)
+    assert service.cooldown_remaining == 0.0
+
+
+def test_ignore_card_restore_and_count_round_trip(tmp_path) -> None:
+    """忽略→计数/列出→按 id 恢复→全部恢复，忽略名单增删改闭环。"""
+    service = _service(tmp_path)
+    service._last_official_cards = [_official_record(2, "新描述"), _official_record(3, "另一张")]
+
+    service.ignore_card("2", "卡2", "modified")
+    service.ignore_card("3", "卡3", "added")
+
+    assert service.ignored_card_count() == 2
+    entries = service.list_ignored_cards()
+    assert set(entries) == {"2", "3"}
+    assert entries["2"].state == "modified"
+    # 哈希取最近一次检查的官网数据（与快照同源）
+    assert entries["2"].hash == card_content_hash(_official_record(2, "新描述"))
+
+    service.restore_cards(["2"])
+    assert service.ignored_card_count() == 1
+    assert set(service.list_ignored_cards()) == {"3"}
+
+    service.restore_cards()
+    assert service.ignored_card_count() == 0
+    assert service.list_ignored_cards() == {}
+
+
+def test_ignore_card_without_official_cache_uses_empty_hash(tmp_path) -> None:
+    """未检查过（无官网缓存）时忽略：不抛错，哈希退化为空卡内容哈希。
+
+    注意：这是现状语义而非理想语义——空卡哈希是常量，且 removed 态在
+    _matches 里根本不比对哈希，故该忽略会对"任意内容的同 id 卡"永久生效。
+    本轮不改行为，只以用例锁定现状。
+    """
+    service = _service(tmp_path)
+    assert service._last_official_cards == []
+
+    service.ignore_card("9", "卡9", "removed")
+
+    entry = service.list_ignored_cards()["9"]
+    assert entry.hash == card_content_hash({})
+    assert entry.state == "removed"
+
+
+def test_restore_cards_unknown_id_is_noop(tmp_path) -> None:
+    """恢复不存在的条目不得抛错（管理对话框可能持有过期 id）。"""
+    service = _service(tmp_path)
+    service.restore_cards(["999"])
+    assert service.ignored_card_count() == 0
 
 
 # ---------------------------------------------------------------------------

@@ -155,6 +155,7 @@ class CardSyncDialog(IgnoreableDiffListMixin, QDialog):
             else:
                 self._diff_label.setText("上次检查：官网手牌库与本地卡牌一致，无变化。")
             self._apply_button.setEnabled(False)
+            self._append_warning(result)
             return
         parts = []
         for group in ("added", "modified", "removed"):
@@ -165,6 +166,12 @@ class CardSyncDialog(IgnoreableDiffListMixin, QDialog):
         if result.ignored_count:
             text += f"（已忽略 {result.ignored_count} 条）"
         self._diff_label.setText(text)
+        self._append_warning(result)
+
+    def _append_warning(self, result: CardSyncCheckResult) -> None:
+        """收尾阶段的非致命问题（如基线落盘失败）追加到结果行，不覆盖 diff 文案。"""
+        if result.warning:
+            self._diff_label.setText(f"{self._diff_label.text()}\n⚠ {result.warning}")
 
     def _build_candidates(self, result: CardSyncCheckResult) -> list[dict]:
         """diff 三态 → 候选列表（含字段级摘要、全文与点数提醒）。"""

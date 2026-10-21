@@ -704,13 +704,13 @@ def test_service_check_now_cooldown(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
 
     # 冷却期内：拒绝且不发信号
-    service._last_check_started_at = time.monotonic()
+    service._gate.try_acquire()
     assert service.cooldown_remaining > 0
     assert service.check_now() is False
     assert calls == []
 
     # 冷却结束后：允许启动
-    service._last_check_started_at = time.monotonic() - (service_module.CHECK_COOLDOWN_SECONDS + 1)
+    service._gate.backdate(service_module.CHECK_COOLDOWN_SECONDS + 1)
     assert service.cooldown_remaining == 0
     assert service.check_now() is True
     assert calls == [1]
@@ -821,7 +821,7 @@ def test_service_prepare_update_candidates_cooldown(tmp_path, monkeypatch) -> No
             started.append(1)
 
     monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
-    service._last_check_started_at = time.monotonic()
+    service._gate.try_acquire()
     diff = {"added": [], "modified": [], "removed": []}
     assert service.prepare_update_candidates([], [], diff) is False
     assert started == []
@@ -842,10 +842,10 @@ def test_service_prepare_update_candidates_records_cooldown(tmp_path, monkeypatc
             pass
 
     monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
-    assert service._last_check_started_at is None
+    assert service._gate.last_started_at is None
     diff = {"added": [], "modified": [], "removed": []}
     assert service.prepare_update_candidates([], [], diff) is True
-    assert service._last_check_started_at is not None
+    assert service._gate.last_started_at is not None
     assert service.cooldown_remaining > 0
     # 冷却生效后，公告检查同样被拦（check 与 prepare 共用冷却）
     assert service.check_now() is False

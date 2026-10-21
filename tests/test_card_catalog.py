@@ -147,3 +147,50 @@ def test_repository_read_root_preserves_corrupt_file(tmp_path: Path) -> None:
     backups = sorted((tmp_path / "backups").glob("cards-*.json"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == '{"broken": '
+
+
+# ============================================================
+# 写盘失败回滚（VUL-B4-003）
+# ============================================================
+
+
+def test_save_failure_rolls_back_memory_annotation(tmp_path: Path, monkeypatch) -> None:
+    """写盘失败后内存必须回到写前状态：否则 UI 弹"保存失败"，
+    用户切走再切回却从内存读到"已保存"的幻影内容，无法判断哪份是真相。"""
+    service = _service(tmp_path)
+    service.save_annotation_fields("8", {"mode": "2v2"})
+    before = service.annotations.get_annotation("8")
+    assert before is not None and before.fields == {"mode": "2v2"}
+
+    def _boom(payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.annotations, "save_payload", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        service.save_annotation_fields("8", {"strengthen_effect": [
+            EffectEntry(content="加强", status="active").model_dump(mode="json"),
+        ]})
+
+    after = service.annotations.get_annotation("8")
+    assert after is not None
+    assert after.fields == {"mode": "2v2"}
+    # 磁盘同样未被改动
+    on_disk = json.loads((tmp_path / "card_annotations.json").read_text(encoding="utf-8"))
+    assert on_disk["annotations"][0]["fields"] == {"mode": "2v2"}
+
+
+def test_save_failure_on_first_annotation_removes_memory_entry(tmp_path: Path, monkeypatch) -> None:
+    """首次保存该卡失败时内存不得留下空壳注解（回滚需覆盖"新增"语义）。"""
+    service = _service(tmp_path)
+    assert service.annotations.get_annotation("8") is None
+
+    def _boom(payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.annotations, "save_payload", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        service.save_annotation_fields("8", {"mode": "2v2"})
+
+    assert service.annotations.get_annotation("8") is None
+    assert "2v2" not in (tmp_path / "card_annotations.json").read_text(encoding="utf-8")
+

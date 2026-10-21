@@ -492,3 +492,115 @@ def test_missing_partial_guides_is_yellow(tmp_path: Path) -> None:
     guides = _item(compute_freshness_report(**kwargs), "guides")
     assert guides.state == YELLOW
     assert "1将未生成" in guides.detail
+
+
+# ============================================================
+# 损坏文件留底（TD-A5-001）
+# ============================================================
+
+
+def test_corrupt_heroes_file_is_preserved_before_degrade(tmp_path: Path) -> None:
+    """heroes.json 解析失败须先按原字节留底 backups/，再降级判定。
+
+    与 hero_timeline / baike_ignore_store / card_sync_store 同款保底：
+    本模块只降级返回 None，用户随后重新抓取会覆盖该文件，无副本即不可逆丢失。
+    """
+    broken = '[{"id": 1, "name": "武将甲"'
+    (tmp_path / "heroes.json").write_text(broken, encoding="utf-8")
+    kwargs = _prepare(tmp_path, heroes=None, guides=None, synergies=None)
+
+    report = compute_freshness_report(**kwargs)
+
+    assert _item(report, "heroes").state == RED
+    backups = sorted((tmp_path / "backups").glob("heroes-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == broken
+
+
+def test_corrupt_guides_file_is_preserved(tmp_path: Path) -> None:
+    """guides.json 损坏同样留底：攻略是 AI 生成产物，损坏后重新生成会直接覆盖。"""
+    broken = '{"guides": '
+    (tmp_path / "guides.json").write_text(broken, encoding="utf-8")
+    kwargs = _prepare(tmp_path, guides=None, synergies=None,
+                      timeline=[_event("2026-10-08", ref="r0")])
+
+    compute_freshness_report(**kwargs)
+
+    backups = sorted((tmp_path / "backups").glob("guides-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == broken
+
+
+def test_missing_data_file_produces_no_backup(tmp_path: Path) -> None:
+    """文件从未生成属正常状态，不得留底（否则 backups/ 只有噪声副本）。"""
+    kwargs = _prepare(tmp_path, heroes=None, guides=None, synergies=None)
+
+    compute_freshness_report(**kwargs)
+
+    assert not (tmp_path / "backups").exists()
+
+
+# ============================================================
+# 档位阈值可配置（TD-A6-001）
+# ============================================================
+
+
+def test_thresholds_default_to_7_and_14(monkeypatch) -> None:
+    """未配置时保持历史默认 7/14（向后兼容）。"""
+    monkeypatch.setattr(freshness, "load_env_config", lambda: {})
+    assert freshness._stale_thresholds() == (7, 14)
+
+
+def test_thresholds_read_from_env(monkeypatch) -> None:
+    """config.env 的绿/红档键生效：官方榜单约半月更新，可放宽到 10/20。"""
+    monkeypatch.setattr(freshness, "load_env_config", lambda: {
+        "data_freshness_stale_green_days": 10,
+        "data_freshness_stale_red_days": 20,
+    })
+    assert freshness._stale_thresholds() == (10, 20)
+
+
+def test_inverted_thresholds_fall_back_to_default(monkeypatch) -> None:
+    """红档不大于绿档时整体回退默认值（否则黄档区间为空、永不出现）。"""
+    monkeypatch.setattr(freshness, "load_env_config", lambda: {
+        "data_freshness_stale_green_days": 20,
+        "data_freshness_stale_red_days": 20,
+    })
+    assert freshness._stale_thresholds() == (7, 14)
+
+
+def test_invalid_threshold_values_fall_back(monkeypatch) -> None:
+    """非正整数（0/负数/非整数）逐键回退默认值。"""
+    for bad in (0, -3, "abc", None):
+        monkeypatch.setattr(freshness, "load_env_config", lambda bad=bad: {
+            "data_freshness_stale_green_days": bad,
+            "data_freshness_stale_red_days": bad,
+        })
+        assert freshness._stale_thresholds() == (7, 14)
+
+
+def test_rankings_tier_follows_configured_thresholds(tmp_path: Path) -> None:
+    """榜单 15 天：默认阈值下红，放宽到 20 后转黄——周期性误报得以消除。"""
+    kwargs = _prepare(tmp_path, timeline=[_event("2026-10-08", ref="r0")],
+                      rankings_days=15.0)
+
+    default_report = compute_freshness_report(**kwargs)
+    assert _item(default_report, "rankings").state == RED
+
+    relaxed = compute_freshness_report(**{**kwargs, "thresholds": (10, 20)})
+    assert _item(relaxed, "rankings").state == YELLOW
+
+
+def test_guides_minor_band_follows_green_threshold(tmp_path: Path) -> None:
+    """攻略落后 7 天：默认绿档 7 → 显著落后（黄）；绿档放宽到 10 → 计入小幅落后（绿）。"""
+    kwargs = _prepare(tmp_path, timeline=[_event("2026-10-08", ref="r0")],
+                      guides="2026-10-01")
+
+    default_report = compute_freshness_report(**kwargs)
+    assert _item(default_report, "guides").state == YELLOW
+
+    relaxed = compute_freshness_report(**{**kwargs, "thresholds": (10, 20)})
+    guides = _item(relaxed, "guides")
+    assert guides.state == GREEN
+    assert "小幅落后" in guides.detail
+

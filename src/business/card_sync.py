@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from PySide6.QtCore import QObject, Signal
+from src.business.common.check_cooldown import DEFAULT_COOLDOWN_SECONDS, CheckCooldown
 from src.data.baike_ignore_store import (
     IgnoreEntry,
     filter_ignored,
@@ -44,8 +44,8 @@ logger = logging.getLogger(__name__)
 
 EMPTY_DIFF = {"added": [], "modified": [], "removed": []}
 
-# 两次手动检查的最小间隔（秒），与公告检查同款防密集请求
-CHECK_COOLDOWN_SECONDS = 60
+# 两次手动检查的最小间隔（秒），与公告检查共用同一闸门默认值（TD-A2-001）
+CHECK_COOLDOWN_SECONDS = DEFAULT_COOLDOWN_SECONDS
 
 
 @dataclass
@@ -61,6 +61,9 @@ class CardSyncCheckResult:
     ignored_count: int = 0
     # 首跑基线初始化产物，由 GUI 线程统一落盘（镜像公告检查的 pending_saves）
     pending_saves: list[CardSnapshot] = field(default_factory=list)
+    # 收尾阶段非致命问题（如基线落盘失败）：检查结果本身可用，但须让用户
+    # 知道判定前提已失效，不能静默当作"一切正常"
+    warning: str | None = None
 
 
 def _clean_official_card(official: dict) -> dict:
@@ -105,7 +108,13 @@ class CardSyncService(QObject):
         self._changes_path = changes_path
         self._ignore_path = ignore_path
         self._thread: threading.Thread | None = None
-        self._last_check_started_at: float | None = None
+        # 忙碌/冷却收口到共享闸门（TD-A2-001），闸门内部加锁使
+        # "忙碌→冷却→置位"成为原子操作（VUL-B3-001）
+        self._gate = CheckCooldown(
+            lambda: self._thread is not None and self._thread.is_alive(),
+            CHECK_COOLDOWN_SECONDS,
+            label="卡牌检查",
+        )
         # 最近一次检查的官网数据与快照（GUI 线程持有，供应用流程使用）
         self._last_official_cards: list[dict] = []
         self._last_snapshot: CardSnapshot | None = None
@@ -117,25 +126,17 @@ class CardSyncService(QObject):
 
     @property
     def is_busy(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return self._gate.is_busy
 
     @property
     def cooldown_remaining(self) -> float:
         """距离下次允许检查的剩余秒数；0 表示可立即检查。"""
-        if self._last_check_started_at is None:
-            return 0.0
-        remaining = CHECK_COOLDOWN_SECONDS - (time.monotonic() - self._last_check_started_at)
-        return max(0.0, remaining)
+        return self._gate.cooldown_remaining
 
     def check_now(self) -> bool:
         """后台执行一次卡牌百科检查；返回是否成功启动（忙碌/冷却时 False）。"""
-        if self.is_busy:
-            logger.warning("卡牌检查正在进行，忽略重复请求")
+        if not self._gate.try_acquire():
             return False
-        if self.cooldown_remaining > 0:
-            logger.warning("卡牌检查冷却中，剩余 %.1f 秒", self.cooldown_remaining)
-            return False
-        self._last_check_started_at = time.monotonic()
         self.check_started.emit()
         self.status_changed.emit("正在检查卡牌百科更新...")
         self._thread = threading.Thread(target=self._run_check, daemon=True)
@@ -244,15 +245,28 @@ class CardSyncService(QObject):
         self._check_done.emit(result)
 
     def _finalize_check(self, result: CardSyncCheckResult) -> None:
-        """GUI 线程收尾：缓存官网数据、持久化首跑基线，再对外广播结果。"""
+        """GUI 线程收尾：缓存官网数据、持久化首跑基线，再对外广播结果。
+
+        基线落盘失败不能静默：磁盘上基线始终为空时，每次检查都会重走
+        "首跑初始化"分支用当时的本地 cards.json 重建基线，diff 恒空——
+        官网真实变更被逐次就地吸收，用户只会觉得"官网好久没更新"。
+        故失败要写进 result.warning 让对话框显式提示。
+        """
         if result.snapshot is not None:
             self._last_snapshot = result.snapshot
             self._last_official_cards = result.official_cards
+        failed = 0
         for snapshot in result.pending_saves:
             try:
                 save_card_snapshot(snapshot, self._snapshot_path)
             except OSError as error:
                 logger.error("卡牌快照保存失败: %s", error)
+                failed += 1
+        if failed:
+            result.warning = (
+                f"卡牌基线保存失败（{failed}/{len(result.pending_saves)}），"
+                "下次检查可能重复提示同一批差异，请确认 data/ 目录可写"
+            )
         self.check_finished.emit(result)
 
     def _do_check(self) -> CardSyncCheckResult:

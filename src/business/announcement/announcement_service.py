@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
+from src.business.common.check_cooldown import DEFAULT_COOLDOWN_SECONDS, CheckCooldown
 from src.data.announcement_manager import (
     Announcement,
     AnnouncementManager,
@@ -44,8 +44,8 @@ logger = logging.getLogger(__name__)
 EMPTY_DIFF = {"added": [], "modified": [], "removed": []}
 
 # 两次官网访问（公告检查 / 更新候选准备均全量拉百科）的最小间隔（秒），
-# 避免短时间密集请求触发官网风控
-CHECK_COOLDOWN_SECONDS = 60
+# 避免短时间密集请求触发官网风控。与卡牌检查共用同一默认值（TD-A2-001）
+CHECK_COOLDOWN_SECONDS = DEFAULT_COOLDOWN_SECONDS
 
 
 @dataclass
@@ -105,8 +105,18 @@ class AnnouncementService(QObject):
         self._thread: threading.Thread | None = None
         self._prepare_thread: threading.Thread | None = None
         self._last_snapshot: BaikeSnapshot | None = None
-        self._last_check_started_at: float | None = None
+        # 忙碌/冷却收口到共享闸门（TD-A2-001）：检查与候选准备共用同一冷却窗口，
+        # 闸门内部加锁使"忙碌→冷却→置位"原子化（VUL-B3-001）
+        self._gate = CheckCooldown(
+            self._compute_busy, CHECK_COOLDOWN_SECONDS, label="公告检查",
+        )
         self._check_done.connect(self._finalize_check)
+
+    def _compute_busy(self) -> bool:
+        """公告检查或更新候选准备任一在途即视为忙碌（两者都会访问官网百科）。"""
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        return self._prepare_thread is not None and self._prepare_thread.is_alive()
 
     # ---------------------------------------------------------------
     # 公共接口
@@ -114,31 +124,20 @@ class AnnouncementService(QObject):
 
     @property
     def is_busy(self) -> bool:
-        """公告检查或更新候选准备任一在途即视为忙碌（两者都会访问官网百科）。"""
-        if self._thread is not None and self._thread.is_alive():
-            return True
-        return self._prepare_thread is not None and self._prepare_thread.is_alive()
+        return self._gate.is_busy
 
     @property
     def cooldown_remaining(self) -> float:
         """距离下次允许检查的剩余秒数；0 表示可立即检查。"""
-        if self._last_check_started_at is None:
-            return 0.0
-        remaining = CHECK_COOLDOWN_SECONDS - (time.monotonic() - self._last_check_started_at)
-        return max(0.0, remaining)
+        return self._gate.cooldown_remaining
 
     def check_now(self) -> bool:
         """后台执行一次公告检查。
 
         返回 True 表示已启动；False 表示被忙碌或冷却拦截（由调用方提示用户）。
         """
-        if self.is_busy:
-            logger.warning("公告检查正在进行，忽略重复请求")
+        if not self._gate.try_acquire():
             return False
-        if self.cooldown_remaining > 0:
-            logger.warning("公告检查冷却中，剩余 %.1f 秒", self.cooldown_remaining)
-            return False
-        self._last_check_started_at = time.monotonic()
         hero_names = [hero.name for hero in self._heroes.list_heroes()]
         self.check_started.emit()
         self.status_changed.emit("正在检查公告更新...")
@@ -219,15 +218,8 @@ class AnnouncementService(QObject):
         返回是否成功启动（忙碌或冷却中返回 False，由调用方提示用户）。diff 必须由调用方
         在 GUI 线程传入只读快照，后台线程不再访问主窗口可变状态。
         """
-        if self.is_busy:
-            logger.warning("公告服务忙碌，忽略更新候选准备请求")
+        if not self._gate.try_acquire():
             return False
-        if self.cooldown_remaining > 0:
-            logger.warning(
-                "更新候选准备冷却中，剩余 %.1f 秒", self.cooldown_remaining
-            )
-            return False
-        self._last_check_started_at = time.monotonic()
         self._prepare_thread = threading.Thread(
             target=self._run_prepare,
             args=(local_heroes_plain, announcements, diff),
