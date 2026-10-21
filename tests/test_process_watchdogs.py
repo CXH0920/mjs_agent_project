@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import QEventLoop, QTimer
-from src.business.common.script_runner import ScriptRunner
+from PySide6.QtCore import QEventLoop, QProcess, QTimer
+from src.business.common.script_runner import FAILED_TO_START_EXIT_CODE, ScriptRunner
 
 
 class _FakeProc:
@@ -32,6 +32,9 @@ class _FakeProc:
 
     def kill(self):
         self.killed = True
+
+    def deleteLater(self):
+        pass
 
     def readAllStandardOutput(self):
         return b""
@@ -478,21 +481,48 @@ def test_script_runner_run_rejects_while_busy(tmp_path) -> None:
     assert isinstance(runner._proc, _FakeProc)  # 未创建第二个子进程
 
 
-def test_script_runner_failed_start_returns_false_and_cleans_up(qapp, tmp_path) -> None:
-    """回归（VUL-B2-001/B2-002）：FailedToStart 在 start() 内同步触发。
+def _spin_until_finished(runner: ScriptRunner, events: list, timeout_ms: int = 5000) -> None:
+    """泵事件循环直到 finished 到达或超时（复用 _run_and_collect 的模式）。
 
-    旧实现把 _proc/_watchdog 的提交放在 start() 之后，同步失败时收尾全部
-    落空：僵尸 QProcess + 一个永不停止的 30 分钟看门狗残留，后者到期会
-    kill 掉当时正在跑的另一个健康进程。此处断言状态被清理干净，且失败
-    由返回值表达（不再发 finished，避免调用方收到自相矛盾的终态）。
+    Linux 的 FailedToStart 由事件循环异步回报（fork 先成功、exec 失败经
+    启动管道回传），不泵循环就永远等不到收尾，测试会停在 Starting 状态。
+    """
+    loop = QEventLoop()
+    runner.finished.connect(lambda _code: loop.quit())
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(loop.quit)
+    timer.start(timeout_ms)
+    loop.exec()
+    timer.stop()
+
+
+def test_script_runner_failed_start_cleans_up(qapp, tmp_path) -> None:
+    """回归（VUL-B2-001/B2-002）：启动失败必须收尾干净，不留僵尸与看门狗。
+
+    旧实现把 _proc/_watchdog 的提交放在 start() 之后，失败时收尾全部落空：
+    僵尸 QProcess + 一个永不停止的 30 分钟看门狗残留，后者到期会 kill 掉
+    当时正在跑的另一个健康进程。此处断言状态被清理干净。
+
+    平台时序差异：Windows 的 FailedToStart 在 start() 内同步触发，失败由
+    返回值 False 表达且不发 finished；Linux 上 fork 先成功（返回 True）、
+    exec 失败由事件循环异步回报，此时必须补发一次 finished(-1) 兑现
+    "返回 True 必收到一次 finished"的契约，否则调用方忙碌状态无法复位。
     """
     runner = ScriptRunner(qapp)
-    events = []
+    events: list[int] = []
     runner.finished.connect(lambda code: events.append(code))
 
-    assert runner.run("script_runner_nonexistent_binary_xyz", None, ["arg"], tmp_path) is False
+    accepted = runner.run("script_runner_nonexistent_binary_xyz", None, ["arg"], tmp_path)
 
-    assert events == [], "启动失败不应发 finished：run() 尚未返回，顺序无意义"
+    if sys.platform == "win32":
+        assert accepted is False
+        assert events == [], "同步启动失败不应发 finished：run() 尚未返回，顺序无意义"
+    else:
+        assert accepted is True
+        _spin_until_finished(runner, events)
+        assert events == [FAILED_TO_START_EXIT_CODE]
+
     assert runner._proc is None, "僵尸 QProcess 必须被释放"
     assert runner._watchdog is None, "看门狗必须被停止，否则会误杀后续任务"
     assert runner.is_running() is False
@@ -503,17 +533,47 @@ def test_script_runner_failed_start_does_not_leak_watchdog(qapp, tmp_path) -> No
 
     旧实现每次失败都留下一个仍在计时的 30 分钟看门狗，到期会误杀当时
     正在跑的健康进程。这里断言没有活跃定时器；已停止的 QTimer 由
-    deleteLater 在事件循环中回收，不属泄漏。
+    deleteLater 在事件循环中回收，不属泄漏。Linux 上失败是异步判定的，
+    每轮须泵事件循环等收尾完成后再启动下一次。
     """
-    from PySide6.QtCore import QTimer
-
     runner = ScriptRunner(qapp)
+    events: list[int] = []
+    runner.finished.connect(lambda code: events.append(code))
     for _ in range(3):
-        assert runner.run("script_runner_nonexistent_binary_xyz", None, [], tmp_path) is False
+        accepted = runner.run("script_runner_nonexistent_binary_xyz", None, [], tmp_path)
+        if sys.platform == "win32":
+            assert accepted is False
+        else:
+            assert accepted is True
+            _spin_until_finished(runner, events)
+            assert events[-1] == FAILED_TO_START_EXIT_CODE
+        assert runner._watchdog is None, "每轮看门狗必须随即停止"
 
     active = [child for child in runner.children() if isinstance(child, QTimer) and child.isActive()]
     assert active == [], f"有 {len(active)} 个看门狗仍在计时，会误杀后续任务"
     assert runner._watchdog is None
+
+
+def test_script_runner_async_failed_start_emits_terminal_finished(qapp) -> None:
+    """异步时序的 FailedToStart 必须补发 finished(-1)。
+
+    Linux 实路径：错误在 run() 返回 True 之后才由事件循环送达，调用方
+    只能靠 finished 复位忙碌状态。Windows 无法真实复现该时序（失败总是
+    同步的），用替身直接触发 _on_error_occurred 验证同一分支，保证该
+    分支在本地也有确定性覆盖。
+    """
+    runner = ScriptRunner(qapp)
+    runner._proc = _FakeProc(running=False)
+    runner._start_pending = False  # 模拟 run() 已返回（异步时序）
+    events: list[int] = []
+    runner.finished.connect(lambda code: events.append(code))
+
+    runner._on_error_occurred(QProcess.ProcessError.FailedToStart)
+
+    assert events == [FAILED_TO_START_EXIT_CODE]
+    assert runner._proc is None
+    assert runner._watchdog is None
+    assert runner.is_running() is False
 
 
 # ---------------------------------------------------------------

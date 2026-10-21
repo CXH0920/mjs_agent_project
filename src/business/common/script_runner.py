@@ -46,6 +46,7 @@ class ScriptRunner(QObject):
         self._proc: QProcess | None = None
         self._watchdog_ms = watchdog_ms
         self._watchdog: QTimer | None = None
+        self._start_pending = False
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning
@@ -55,6 +56,8 @@ class ScriptRunner(QObject):
 
         script 为 None 时 args 需自带入口参数（如 ["-m", 模块名]）。
         返回 True 表示已受理并启动成功，此后进程结束时必收到一次 finished(code)。
+        （Linux 上启动失败是异步判定的：先返回 True，随后收到一次
+        finished(FAILED_TO_START_EXIT_CODE)，同样兑现"必收到一次 finished"。）
         返回 False 表示本次未启动（已有任务在跑，或启动失败），此时**不会**
         发 finished——调用方应据此自行复位自己的忙碌状态。
         """
@@ -67,7 +70,8 @@ class ScriptRunner(QObject):
         proc.finished.connect(lambda code, _status: self._on_finished(code))
         proc.errorOccurred.connect(self._on_error_occurred)
 
-        # 状态必须先于 start() 提交：FailedToStart 在 start() 内部同步发出，
+        # 状态必须先于 start() 提交：FailedToStart 在 Windows 上于 start() 内部
+        # 同步发出（Linux 上由事件循环异步回报，但同样早于业务意义上的启动完成），
         # 若此时 _proc/_watchdog 尚未就位，_on_finished 的清理会全部落空，
         # 留下僵尸 QProcess 和一个永不停止的看门狗——后者到期时会 kill 掉
         # 当前正在跑的另一个健康进程，且日志会谎称它"超过 30 分钟未结束"。
@@ -78,7 +82,12 @@ class ScriptRunner(QObject):
             self._watchdog.timeout.connect(self._on_watchdog_timeout)
             self._watchdog.start(self._watchdog_ms)
 
+        # _start_pending 供 _on_error_occurred 区分同步/异步 FailedToStart：
+        # Windows 的 CreateProcess 同步失败，错误在 start() 未返回时到达；
+        # Linux 的 fork 先成功、exec 失败经启动管道由事件循环异步回报。
+        self._start_pending = True
         proc.start(python, ([str(script)] if script else []) + args)
+        self._start_pending = False
         if self._proc is None:
             # 同步 FailedToStart：_on_finished 已在 start() 内部收尾并清理干净。
             # 此时不再发 finished——调用方还没拿到返回值，发信号会在它设置
@@ -107,8 +116,12 @@ class ScriptRunner(QObject):
         否则僵尸进程与看门狗会残留（看门狗到期会误杀后续健康任务）。
         其余错误（Crashed 等）仍由 finished 通道收尾，此处不得重复通知。
 
-        这里不发 finished：该信号在 start() 内同步触发，此刻 run() 尚未返回，
-        调用方拿不到正确的前后顺序；启动失败由 run() 返回 False 表达。
+        是否补发 finished 取决于时序：Windows 的 FailedToStart 在 start() 内
+        同步触发，此刻 run() 尚未返回，调用方拿不到正确的前后顺序，启动失败
+        由返回值 False 表达、不发 finished；Linux 上错误由事件循环异步回报，
+        run() 已返回 True，必须补发 finished(FAILED_TO_START_EXIT_CODE)
+        兑现"返回 True 必收到一次 finished"的契约，否则调用方的忙碌状态
+        永远无法复位。
         """
         if error != QProcess.ProcessError.FailedToStart:
             return
@@ -118,7 +131,7 @@ class ScriptRunner(QObject):
             "脚本子进程启动失败（%s），不启动本次任务",
             argv or "?",
         )
-        self._on_finished(FAILED_TO_START_EXIT_CODE, notify=False)
+        self._on_finished(FAILED_TO_START_EXIT_CODE, notify=not self._start_pending)
 
     def _stop_watchdog(self) -> None:
         if self._watchdog is not None:
