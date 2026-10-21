@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -17,7 +19,7 @@ from pathlib import Path
 from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS
 from src.config.profiles import resolve_api_config
 from src.data.corpus_fields import CARD_FIELDS, HERO_FIELDS, fields_for
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, snapshot_to_backups
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.json_extract import extract_json
 
@@ -25,6 +27,26 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CORPUS_DIR = PROJECT_ROOT / "data" / "rag_corpus"
 REFINABLE_FILES = ("卡牌RAG语料.json", "武将RAG语料.json")
+
+# 语料读-改-写进程内互斥（Windows 下 os.replace 与并发读同文件会 PermissionError）；
+# 跨进程的 build 脚本不受此锁保护，写前快照才是跨进程保险
+_CORPUS_LOCK = threading.RLock()
+
+# LLM 建议单条清洗上限：现有 496 块 curated 实测单条最长 88 字符（p95≤45），
+# 超限的只会是模型异常输出——截断防超长文本污染 embedding 与检索排序
+MAX_ITEM_CHARS = 100
+# 控制字符与零宽字符（换行/制表由空白归一折叠）：换行破坏"一行一条"契约，
+# 零宽字符是提示注入的惯用藏身处
+_INVISIBLE_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff\x00-\x1f\x7f]")
+
+
+def _clean_item(text: str) -> str:
+    """LLM 建议单条清洗：空白折叠为单空格、剔控制/零宽字符、限长。
+
+    只在 LLM 输出入口（_to_update）施加；人工编辑保存不经此路径，不受截断。
+    """
+    cleaned = _INVISIBLE_RE.sub("", re.sub(r"\s+", " ", text))
+    return cleaned.strip()[:MAX_ITEM_CHARS]
 
 # 待精化判定字段：与块类型可精化字段集一致（special_rules 已于批次 3 纳入判定）
 PENDING_FIELDS: dict[str, tuple[str, ...]] = {
@@ -98,7 +120,8 @@ def scan_blocks(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> dict[str, list[Pending
         if not path.exists():
             continue
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            with _CORPUS_LOCK:
+                data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             logger.error("精化清单读取失败 %s: %s", fname, error)
             continue
@@ -188,7 +211,7 @@ def suggest_one(block: PendingBlock, generator) -> RefinementUpdate | None:
         {"role": "user", "content": f"语料类型：{kind_text}\n名称：{block.name}\n原文：\n{block.text}"},
     ]
     try:
-        response = generator.complete(messages, temperature=0.2)
+        response = generator.complete(messages, temperature=0.2, label=block.block_id)
     except Exception as error:
         logger.warning("精化建议请求异常 %s: %s", block.block_id, error)
         return None
@@ -213,7 +236,10 @@ def _to_update(data: dict, method: str) -> RefinementUpdate:
             value = [value]
         if not isinstance(value, list):
             return []
-        return [str(item).strip() for item in value if str(item).strip()][:limit]
+        # LLM 输出清洗（VUL-B1-001）：模型文本直写语料后会再被拼进其他 AI 任务的
+        # prompt，换行/控制字符/超长条目在此统一拦截，清洗后为空的条目丢弃
+        cleaned = (_clean_item(str(item)) for item in value)
+        return [item for item in cleaned if item][:limit]
 
     return RefinementUpdate(
         timing=norm("timing", 8),
@@ -230,30 +256,34 @@ def apply_curated(corpus_dir: Path, updates: dict[str, RefinementUpdate], fname:
 
     curated 字典整体替换为块类型字段集 + 来源标记——keywords/related 已退出
     精化模型（自动只读字段），不再写入 curated。
+    读-改-写全程持锁；写前快照到同目录 backups/（语料出 git 后的唯一本地
+    回滚点，快照失败宁可让本次保存失败也不无备份覆写）。
     """
     path = corpus_dir / fname
     if not path.exists():
         raise FileNotFoundError(f"语料文件不存在: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, list):
-        raise ValueError(f"语料格式异常（非数组）: {fname}")
-    kind = "card" if fname.startswith("卡牌") else "skill"
-    fields = fields_for(kind)
-    by_id = {str(block.get("block_id")): block for block in data if isinstance(block, dict)}
-    applied = 0
-    for block_id, update in updates.items():
-        block = by_id.get(block_id)
-        if block is None:
-            raise ValueError(f"block_id 不存在: {block_id}（{fname}）")
-        for f in fields:
-            block[f] = list(getattr(update, f))
-        block["curated"] = {
-            **{f: list(getattr(update, f)) for f in fields},
-            "method": update.method,
-            "updated_at": update.updated_at or date.today().isoformat(),
-        }
-        applied += 1
-    _atomic_json_write(path, data)
+    with _CORPUS_LOCK:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"语料格式异常（非数组）: {fname}")
+        kind = "card" if fname.startswith("卡牌") else "skill"
+        fields = fields_for(kind)
+        by_id = {str(block.get("block_id")): block for block in data if isinstance(block, dict)}
+        applied = 0
+        for block_id, update in updates.items():
+            block = by_id.get(block_id)
+            if block is None:
+                raise ValueError(f"block_id 不存在: {block_id}（{fname}）")
+            for f in fields:
+                block[f] = list(getattr(update, f))
+            block["curated"] = {
+                **{f: list(getattr(update, f)) for f in fields},
+                "method": update.method,
+                "updated_at": update.updated_at or date.today().isoformat(),
+            }
+            applied += 1
+        snapshot_to_backups(path)
+        _atomic_json_write(path, data)
     return applied
 
 
@@ -261,21 +291,24 @@ def clear_curated(corpus_dir: Path, block_id: str, fname: str) -> bool:
     """删除块的 curated 字段（取消精化），原子保存。
 
     返回 False 表示该块本就没有 curated（无需处理）；块不存在抛 ValueError。
+    读-改-写全程持锁，写前快照（与 apply_curated 同一回滚语义）。
     """
     path = corpus_dir / fname
     if not path.exists():
         raise FileNotFoundError(f"语料文件不存在: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, list):
-        raise ValueError(f"语料格式异常（非数组）: {fname}")
-    by_id = {str(block.get("block_id")): block for block in data if isinstance(block, dict)}
-    block = by_id.get(block_id)
-    if block is None:
-        raise ValueError(f"block_id 不存在: {block_id}（{fname}）")
-    if "curated" not in block:
-        return False
-    del block["curated"]
-    _atomic_json_write(path, data)
+    with _CORPUS_LOCK:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"语料格式异常（非数组）: {fname}")
+        by_id = {str(block.get("block_id")): block for block in data if isinstance(block, dict)}
+        block = by_id.get(block_id)
+        if block is None:
+            raise ValueError(f"block_id 不存在: {block_id}（{fname}）")
+        if "curated" not in block:
+            return False
+        del block["curated"]
+        snapshot_to_backups(path)
+        _atomic_json_write(path, data)
     return True
 
 

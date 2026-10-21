@@ -131,3 +131,52 @@ def test_client_rebuilt_after_connection_error_keeps_layered_timeout(monkeypatch
         assert timeout.read == 300.0
         assert timeout.write == 30.0
         assert timeout.pool == 5.0
+
+
+def _make_success_generator(usage: dict) -> AIBatchGenerator:
+    """构造 client 被 MockTransport 替换的生成器：成功响应（带 usage）。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+            "usage": usage,
+        })
+
+    generator = AIBatchGenerator(api_key="sk-test", max_retries=3, requests_per_minute=1000)
+    generator._client = httpx.Client(transport=httpx.MockTransport(handler))
+    return generator
+
+
+def test_complete_logs_token_usage_with_label(caplog) -> None:
+    """VUL-B6-001：complete 不经 _request_content，成功分支须补记 token 日志。"""
+    import logging
+
+    generator = _make_success_generator({
+        "prompt_tokens": 120, "completion_tokens": 30,
+        "completion_tokens_details": {"reasoning_tokens": 10},
+    })
+
+    with caplog.at_level(logging.INFO, logger="src.scraper.ai.api_generator"):
+        result = generator.complete(
+            [{"role": "user", "content": "hi"}], label="hero_1_skill_测试")
+
+    assert result is not None
+    token_logs = [r.message for r in caplog.records if "token:" in r.message]
+    # 格式与 _request_content 链路一致（doctor 按此格式解析）
+    assert token_logs == [
+        "[hero_1_skill_测试] token: prompt=120 completion=30 (reasoning=10, content=20)"
+    ]
+
+
+def test_complete_failure_logs_no_token_usage(caplog) -> None:
+    """重试耗尽返回 None：无成功响应即无 token 记录。"""
+    import logging
+
+    calls: list[int] = []
+    generator = _make_generator(500, calls)
+    generator._min_interval = 0.0  # 测试不等限速
+
+    with caplog.at_level(logging.INFO, logger="src.scraper.ai.api_generator"):
+        assert generator.complete([{"role": "user", "content": "hi"}]) is None
+
+    assert not any("token:" in r.message for r in caplog.records)

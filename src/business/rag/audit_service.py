@@ -61,19 +61,40 @@ class AuditIssue:
 # ---------------------------------------------------------------------------
 
 
+def _maybe_int(value: object) -> int | None:
+    """容错 int()：解析失败返回 None——审计对坏计数降级提示，不自身抛异常。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def collect_card_points(payload: object) -> list[dict]:
     """卡牌点数源校验，返回 [{kind, message}]。
 
     kind: structure=缺 cards 数组 / total=总张数不符 / bad_suit=异常花色
-    / bad_point=异常点数。
+    / bad_point=异常点数 / bad_row=记录非对象或计数非数值（跳过并提示）。
     """
     cards = payload.get("cards") if isinstance(payload, dict) else None
     if not isinstance(cards, list):
         return [{"kind": "structure", "message": "data/card_points.json 结构异常（缺少 cards 数组）"}]
     issues = []
-    bad_suits = sorted({c.get("name", "?") for c in cards if c.get("suit") not in VALID_SUITS})
-    bad_points = sorted({c.get("name", "?") for c in cards if c.get("point") not in VALID_POINTS})
-    total = sum(int(c.get("count", 1) or 1) for c in cards)
+    rows = [c for c in cards if isinstance(c, dict)]
+    bad_row_count = len(cards) - len(rows)
+    total = 0
+    for c in rows:
+        count = _maybe_int(c.get("count", 1) or 1)
+        if count is None:
+            count = 1
+            bad_row_count += 1
+        total += count
+    bad_suits = sorted({c.get("name", "?") for c in rows if c.get("suit") not in VALID_SUITS})
+    bad_points = sorted({c.get("name", "?") for c in rows if c.get("point") not in VALID_POINTS})
+    if bad_row_count:
+        issues.append({
+            "kind": "bad_row",
+            "message": f"卡牌点数 {bad_row_count} 条记录结构异常（非对象或计数非数值，已跳过）",
+        })
     if total != EXPECTED_TOTAL_CARDS:
         issues.append({
             "kind": "total",
@@ -96,7 +117,7 @@ def collect_equip_attrs(equips: object) -> list[dict]:
     """装备属性源校验，返回 [{kind, message}]。
 
     kind: structure=非数组 / count=件数不符 / bad_subtype=细分类型异常
-    / bad_distance=距离修正异常。
+    / bad_distance=距离修正异常 / bad_row=记录非对象（跳过并提示）。
     """
     if not isinstance(equips, list):
         return [{"kind": "structure", "message": "data/equip_attrs.json 结构异常（应为数组）"}]
@@ -106,7 +127,15 @@ def collect_equip_attrs(equips: object) -> list[dict]:
             "kind": "count",
             "message": f"装备属性件数 {len(equips)} != 期望 {EXPECTED_EQUIP_COUNT}",
         })
+    bad_rows = [item for item in equips if not isinstance(item, dict)]
+    if bad_rows:
+        issues.append({
+            "kind": "bad_row",
+            "message": f"装备属性 {len(bad_rows)} 条记录结构异常（非对象，已跳过）",
+        })
     for item in equips:
+        if not isinstance(item, dict):
+            continue
         if item.get("subtype") not in VALID_SUBTYPES:
             issues.append({
                 "kind": "bad_subtype",
@@ -124,15 +153,20 @@ def collect_missing_settlements(specials: list) -> list[dict]:
     """专属牌/战法牌缺结算详情的条目（死士为非实体牌标记，豁免）。"""
     return [
         item for item in specials
-        if item.get("category") in ("专属牌", "专属战法牌")
+        if isinstance(item, dict)
+        and item.get("category") in ("专属牌", "专属战法牌")
         and not item.get("settlement") and item.get("name") not in ("死士",)
     ]
 
 
 def collect_unclassified(hero_names: set, classification: object) -> list[str]:
-    """heroes.json 中未在 hero_categories 归类的武将名（升序）。"""
+    """heroes.json 中未在 hero_categories 归类的武将名（升序）。
+
+    无名条目（None，heroes.json 漏 name 字段）不参与排序与未归类判定——
+    混入 sorted 会因 None 与 str 比较直接抛 TypeError。
+    """
     classified = set(classification.get("hero_categories", {})) if isinstance(classification, dict) else set()
-    return sorted(hero_names - classified)
+    return sorted(name for name in hero_names - classified if isinstance(name, str))
 
 
 def collect_orphan_category_keys(hero_names: set, classification: object) -> list[str]:
@@ -150,6 +184,8 @@ def collect_unknown_heroes(specials: list, hero_names: set) -> list[str]:
     """专属牌 hero 字段拆分出的未知武将名（泛指/括号注释跳过），升序返回。"""
     unknown = set()
     for item in specials:
+        if not isinstance(item, dict):
+            continue
         hero = item.get("hero", "")
         if not hero:
             continue
@@ -287,7 +323,22 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
 
     pending_refinement: 调用方已计算好的待精化清单；为 None 时内部读取语料
     （UI 工作台同一轮刷新已算过，传入可避免重复读文件）。
+
+    审计自身异常（收集函数对畸形数据的未预见缺陷）降级为单条
+    audit_self_failed 提示：审计功能最该发挥作用的时刻恰是数据变坏时，
+    不能让坏数据把整个「知识库维护」页刷成崩溃。
     """
+    try:
+        return _audit_summary(root, pending_refinement)
+    except Exception as error:  # noqa: BLE001
+        logger.error("语料审计自身失败", exc_info=True)
+        return [AuditIssue(
+            kind="audit_self_failed",
+            message=f"语料审计自身失败（{type(error).__name__}: {error}），请检查各数据文件结构",
+        )]
+
+
+def _audit_summary(root: Path, pending_refinement: list | None = None) -> list[AuditIssue]:
     issues: list[AuditIssue] = []
     heroes_path = root / "data" / "heroes.json"
     classification_path = root / "data" / "hero_classification.json"
@@ -295,8 +346,10 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
     heroes_load_failed = False
     try:
         heroes = json.loads(heroes_path.read_text(encoding="utf-8"))
-        hero_names = {item.get("name") for item in heroes}
-    except (OSError, json.JSONDecodeError) as error:
+        if not isinstance(heroes, list):
+            raise ValueError(f"根结构异常（非数组）: {type(heroes).__name__}")
+        hero_names = {item.get("name") for item in heroes if isinstance(item, dict)}
+    except (OSError, json.JSONDecodeError, ValueError) as error:
         # 读失败 ≠ 没有武将：拿空集合继续会把全部已归类武将误报为 orphan
         hero_names = set()
         heroes_load_failed = True
@@ -334,11 +387,14 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
         ))
     try:
         specials = json.loads(special_path.read_text(encoding="utf-8"))
+        if not isinstance(specials, list):
+            raise ValueError(f"根结构异常（非数组）: {type(specials).__name__}")
         unknown = collect_unknown_heroes(specials, hero_names)
         if unknown:
             target = next(
                 ((str(it.get("category", "")), str(it.get("name", ""))) for it in specials
-                 if it.get("hero") and any(n in it["hero"] for n in unknown)),
+                 if isinstance(it, dict) and it.get("hero")
+                 and any(n in it["hero"] for n in unknown)),
                 None,
             )
             issues.append(AuditIssue(
@@ -357,7 +413,7 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
                 target_tab="专属牌维护",
                 target=(str(first.get("category", "")), str(first.get("name", ""))),
             ))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, ValueError):
         issues.append(AuditIssue(
             kind="specials_unreadable",
             message="data/special_cards.json 缺失或无法解析",
@@ -388,6 +444,11 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
                     kind="bad_card_point", message=item["message"],
                     target_tab="卡牌点数维护",
                 ))
+            elif item["kind"] == "bad_row":
+                issues.append(AuditIssue(
+                    kind="card_points_bad_row", message=item["message"],
+                    target_tab="卡牌点数维护",
+                ))
     except (OSError, json.JSONDecodeError):
         issues.append(AuditIssue(
             kind="card_points_unreadable",
@@ -407,6 +468,11 @@ def audit_summary(root: Path, pending_refinement: list | None = None) -> list[Au
             elif item["kind"] == "count":
                 issues.append(AuditIssue(
                     kind="equip_attrs_count", message=item["message"],
+                    target_tab="装备属性维护",
+                ))
+            elif item["kind"] == "bad_row":
+                issues.append(AuditIssue(
+                    kind="equip_attrs_bad_row", message=item["message"],
                     target_tab="装备属性维护",
                 ))
             else:

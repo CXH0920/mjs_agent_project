@@ -109,9 +109,17 @@ class AIBatchGenerator:
         """
         self._cancelled = True
 
-    def complete(self, messages: list[dict], temperature: float = 0.7) -> dict | None:
-        """公开的对话补全接口（供业务层调用，内部复用 _call_api）。"""
-        return self._call_api(messages, temperature=temperature)
+    def complete(self, messages: list[dict], temperature: float = 0.7,
+                 label: str = "chat") -> dict | None:
+        """公开的对话补全接口（供业务层调用，内部复用 _call_api）。
+
+        label 为业务方标识（如语料块 block_id），进 token 用量日志——complete
+        不经 _request_content，须在此补记，否则该链路消耗在日志中不可见。
+        """
+        response = self._call_api(messages, temperature=temperature)
+        if response:
+            self._log_usage(label, response.get("usage") or {})
+        return response
 
     def _request_content(
         self, messages: list[dict], temperature: float, label: str,

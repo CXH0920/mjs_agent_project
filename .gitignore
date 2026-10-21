@@ -116,6 +116,8 @@ docs/ui_baseline/*.png
 # 归档提案（历史记录，按需保留本地）
 docs/archive/proposals/CP-*.json
 docs/archive/proposals/CP-*.json.merged
+# 疑难登记待办（rule_doc_panel 本地维护，含实战/测试记录，按需保留本地）
+docs/rule_doc_pending.json
 # 函数调用链文档（个人人工 review 参考，不入版本库；历史提交中保留旧版）
 docs/call_graph/
 

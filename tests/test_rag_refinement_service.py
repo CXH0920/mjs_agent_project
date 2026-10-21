@@ -31,7 +31,7 @@ class FakeGenerator:
         self._payload = payload
         self.calls = []
 
-    def complete(self, messages, temperature=0.7):
+    def complete(self, messages, temperature=0.7, label=None):
         self.calls.append(messages)
         if self._payload is None:
             return None
@@ -226,6 +226,47 @@ def test_apply_curated_rejects_unknown_block(tmp_path: Path) -> None:
     update = RefinementUpdate(timing=["x"])
     with pytest.raises(ValueError):
         apply_curated(root, {"unknown_id": update}, "卡牌RAG语料.json")
+
+
+def test_apply_curated_snapshots_before_write(tmp_path: Path) -> None:
+    """VUL-B4-001：写前快照留回滚点——语料出 git 后的唯一本地备份。"""
+    root = _corpus(tmp_path)
+    original = (root / "卡牌RAG语料.json").read_text(encoding="utf-8")
+    update = RefinementUpdate(timing=["出牌阶段"], trigger_condition=["打出时"])
+    apply_curated(root, {"card_1_测试牌": update}, "卡牌RAG语料.json")
+
+    backups = sorted((root / "backups").glob("卡牌RAG语料-*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == original  # 快照是写前内容
+
+
+def test_clear_curated_snapshots_before_write(tmp_path: Path) -> None:
+    root = _corpus(tmp_path)
+    original = (root / "卡牌RAG语料.json").read_text(encoding="utf-8")
+
+    assert clear_curated(root, "card_3_已精化", "卡牌RAG语料.json") is True
+
+    backups = sorted((root / "backups").glob("卡牌RAG语料-*.json"))
+    assert backups and backups[-1].read_text(encoding="utf-8") == original
+
+
+def test_suggest_one_cleans_llm_output(tmp_path: Path) -> None:
+    """VUL-B1-001：换行折叠、控制/零宽字符剔除、超限截断、清洗后为空丢弃。"""
+    root = _corpus(tmp_path)
+    fake = FakeGenerator({
+        "timing": ["回合开始时\n后半段"],
+        "trigger_condition": ["出牌阶段\u200b使用牌"],
+        "target": ["\x00\x01"],
+        "special_rules": ["长" * 150],
+    })
+
+    block = list_pending(root)[0]
+    update = suggest_one(block, fake)
+
+    assert update.timing == ["回合开始时 后半段"]
+    assert update.trigger_condition == ["出牌阶段使用牌"]
+    assert update.target == []  # 清洗后为空的条目被丢弃
+    assert len(update.special_rules[0]) == refinement_service.MAX_ITEM_CHARS
 
 
 def test_merge_curated_preserves_refinement(tmp_path: Path) -> None:

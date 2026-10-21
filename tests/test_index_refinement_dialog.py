@@ -534,7 +534,99 @@ def test_reject_cancels_running_suggest_and_releases_generator(tmp_path: Path) -
     assert controller.is_running is False
     assert controller._generator is None
     assert controller._zombies == []  # 线程未启动，wait 立即返回，无僵线程转入持有列表
+    # VUL-B2-002 契约：构造即入 LIVE_WORKERS（消除 start→run 窗口内被 GC
+    # 析构 running QThread 的可能），finished 后退场
+    assert worker in sc_module.LIVE_WORKERS
+    worker.finished.emit()
     assert worker not in sc_module.LIVE_WORKERS
+
+
+def test_zombie_finish_does_not_clobber_new_round(tmp_path: Path) -> None:
+    """VUL-B3-001 回归：取消后僵尸 worker 迟到 finished 不得污染新一轮建议。
+
+    时序：取消（僵尸转入持有）→ 立即启动新一轮 → 僵尸此刻才结束。
+    原实现 _on_worker_finished 不区分来者，会清空新 worker 引用、关闭新生成器
+    并以 _cancelled=False 误发 finished（新一轮被"提前宣告完成"）。
+    用可编程 isRunning 的 QObject 假 worker 复刻时序（本文件约定不启真线程）。
+    """
+
+    class _FakeGenerator:
+        def __init__(self) -> None:
+            self.cancelled = False
+            self.closed = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _FakeWorker(QObject):
+        finished = Signal()
+
+        def __init__(self, generator: _FakeGenerator) -> None:
+            super().__init__()
+            self._generator = generator
+            self._cancelled = False
+            self.running = True
+
+        def isRunning(self) -> bool:
+            return self.running
+
+        def wait(self, msecs: int) -> bool:
+            return not self.running
+
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    controller = dialog._controller
+
+    old_gen, new_gen = _FakeGenerator(), _FakeGenerator()
+    zombie = _FakeWorker(old_gen)
+    controller._worker = zombie
+    controller._generator = old_gen
+    controller._running = True
+    zombie.finished.connect(controller._on_worker_finished)  # 复刻 start() 的接线
+
+    controller.cancel_and_shutdown()
+
+    assert zombie._cancelled is True
+    assert old_gen.cancelled
+    assert not old_gen.closed  # VUL-B2-001：线程未退出前不关闭生成器
+    assert controller._zombies == [zombie]
+
+    # 新一轮建议启动后，僵尸才真正结束
+    new_worker = _FakeWorker(new_gen)
+    controller._worker = new_worker
+    controller._generator = new_gen
+    controller._running = True
+    controller._cancelled = False
+    finished_signals: list[bool] = []
+    controller.finished.connect(finished_signals.append)
+
+    zombie.running = False
+    zombie.finished.emit()
+
+    assert old_gen.closed                     # 旧生成器此刻延迟释放
+    assert not new_gen.closed                 # 新生成器不受牵连
+    assert controller._worker is new_worker   # 新 worker 引用不被清空
+    assert controller.is_running              # 运行状态不被复位
+    assert controller._zombies == []
+    assert finished_signals == []             # 不误发"提前完成"
+
+
+def test_release_generator_close_failure_logged(caplog) -> None:
+    """TD-A5-003 回归：generator.close() 异常记录 warning，不再静默吞掉。"""
+    import logging
+
+    class _BoomGenerator:
+        def close(self) -> None:
+            raise RuntimeError("连接池已损坏")
+
+    with caplog.at_level(logging.WARNING, logger="index_refinement"):
+        sc_module.SuggestController._release_generator(_BoomGenerator())
+
+    assert any("释放生成器失败" in r.message for r in caplog.records)
 
 
 def test_collect_update_method_llm_manual_and_no_baseline(tmp_path: Path) -> None:

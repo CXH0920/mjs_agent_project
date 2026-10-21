@@ -764,7 +764,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "data/recommendation_index_repository.py": 526,
     "ui/library/special_cards_panel.py": 517,
     "scraper/ai/generation.py": 514,
-    "business/rag/audit_service.py": 502,
+    # 502 → 568：审计收集函数行级结构守卫 + audit_summary 自身失败兜底
+    # （TD-A5-001 修复，2026-10-21：坏数据降级为提示条目而非穿透崩溃）
+    "business/rag/audit_service.py": 568,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

@@ -23,8 +23,9 @@ class SuggestWorker(QThread):
 
     测试通过注入同步替身替换本类：替身 start() 内联产出结果并直接发信号，
     与生产共用同一条 result_ready/finished 状态链。
-    parent=None + LIVE_WORKERS 持有 + finished→deleteLater：生命周期与 dialog 解耦，
-    dialog 销毁不连带析构运行中的线程。
+    引用必须在 __init__ 即进 LIVE_WORKERS：若等 run() 内才 add，start() 与
+    run() 执行之间的窗口里 GC 会析构 running QThread（Qt6 qFatal，同
+    onboarding_dialog.EnvCheckWorker 的修正）；finished 后经 _retire 安全退场。
     """
 
     result_ready = Signal(object, object)  # (PendingBlock, RefinementUpdate | None)
@@ -35,17 +36,20 @@ class SuggestWorker(QThread):
         self._generator = generator
         self._cancelled = False
         self._single = False  # 单块建议：结果需回填编辑器
+        LIVE_WORKERS.add(self)
+        self.finished.connect(self._retire)
 
     def run(self) -> None:
-        LIVE_WORKERS.add(self)
-        try:
-            for block in self._blocks:
-                if self._cancelled:
-                    break
-                update = suggest_one(block, self._generator)
-                self.result_ready.emit(block, update)
-        finally:
-            LIVE_WORKERS.discard(self)
+        for block in self._blocks:
+            if self._cancelled:
+                break
+            update = suggest_one(block, self._generator)
+            self.result_ready.emit(block, update)
+
+    def _retire(self) -> None:
+        """线程已结束（finished 语义），此时回收引用与 C++ 对象才安全。"""
+        LIVE_WORKERS.discard(self)
+        self.deleteLater()
 
 
 class SuggestController(QObject):
@@ -111,35 +115,42 @@ class SuggestController(QObject):
         worker._single = single
         worker.result_ready.connect(self._on_result_ready)
         worker.finished.connect(self._on_worker_finished)
-        worker.finished.connect(worker.deleteLater)  # 自回收（dialog 已销毁时也能释放）
         self._worker = worker
         worker.start()
 
     def cancel_and_shutdown(self) -> None:
-        """中止在途建议：worker 置取消、generator 先 cancel 再 close（#61），
-        短时等待收尾，仍在运行则转僵尸列表持有（#60）。"""
+        """中止在途建议：置取消标志并等线程收尾，线程确认退出后才释放
+        generator（#61），仍在运行（如 HTTP 挂起）则转僵尸列表持有（#60），
+        生成器释放挂到该 worker 自身的 finished 上延迟执行。"""
         self._cancelled = True
         worker = self._worker
         generator = self._generator
         self._running = False
+        self._worker = None
         self._generator = None
-        if worker is not None:
-            worker._cancelled = True
-            worker_generator = getattr(worker, "_generator", None) or generator
-            if worker_generator is not None:
-                cancel = getattr(worker_generator, "cancel", None)
-                if callable(cancel):
-                    cancel()
-                self._release_generator(worker_generator)
-            # 等待线程短时收尾；仍在运行（如 HTTP 挂起）则转入僵尸列表持有引用，
-            # 防止 QThread 在 run 未结束时析构导致整个应用崩溃（#60）
-            worker.wait(1000)
-            if worker.isRunning():
-                self._zombies.append(worker)
-                worker.finished.connect(worker.deleteLater)
-                worker.finished.connect(self._on_zombie_finished)
-        elif generator is not None:
-            self._release_generator(generator)
+        if worker is None:
+            if generator is not None:
+                self._release_generator(generator)
+            return
+        worker._cancelled = True
+        worker_generator = getattr(worker, "_generator", None) or generator
+        if worker_generator is not None:
+            cancel = getattr(worker_generator, "cancel", None)
+            if callable(cancel):
+                cancel()
+        # 不立即 close：worker 可能正处于 httpx 请求中，另一线程关闭 client 会
+        # 破坏连接池（RuntimeError: client has been closed）——等线程退出后再释放
+        worker.wait(1000)
+        if not worker.isRunning():
+            self._release_generator(worker_generator)
+            return
+        # 僵尸路径：持有引用防 QThread 在 run 未结束时析构导致整个应用崩溃（#60）；
+        # 生成器释放闭包捕获本轮实例，不触碰此后新一轮的 self._generator
+        self._zombies.append(worker)
+        worker.finished.connect(self._on_zombie_finished)
+        if worker_generator is not None:
+            worker.finished.connect(
+                lambda gen=worker_generator: self._release_generator(gen))
 
     def _on_result_ready(self, block: PendingBlock, update) -> None:
         self._done += 1
@@ -148,6 +159,10 @@ class SuggestController(QObject):
         self.result_ready.emit(block, update, self._single)
 
     def _on_worker_finished(self) -> None:
+        # 只收尾当前轮 worker：取消后僵尸线程的迟到 finished 若不拦截，会清空
+        # 新一轮的 worker 引用、关闭新生成器并误发 finished（提前"宣告完成"）
+        if self.sender() is not self._worker:
+            return
         self._worker = None
         generator = self._generator
         self._generator = None
@@ -169,8 +184,8 @@ class SuggestController(QObject):
         if callable(close):
             try:
                 close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as error:  # noqa: BLE001
+                logger.warning("释放生成器失败: %s", error)
 
     def _on_zombie_finished(self) -> None:
         """僵尸 worker 线程结束后移出持有列表（释放引用链，允许对象回收）。"""
