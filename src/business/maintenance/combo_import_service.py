@@ -2,15 +2,20 @@
 """导入实战配队（业务逻辑）：外部工具导出 JSON → data/combos.json
 
 - 武将名 → 角色 ID 映射（heroes.json，含 hero 字段手录简称），未匹配项进报告，不静默丢弃；
+  heroes.json 结构无法识别或映射为空时直接抛 ValueError（带路径）中止，
+  防止空映射把既有导入记录全判 stale 而清空；
 - note 座次解析（src.data.combo_seats，含别名表、去首尾简称片段与座次词句式），
   解析失败的条目照常导入（座次留空）并列入报告供人工复核；
   单边座次（partial）视为正常结果直接入库；
 - 解析结果与 position 字段交叉校验（以 note 为准），不一致清单进报告；
 - 源文件顶层须为对象（含 combos 数组）或数组本身，结构非法直接抛
   ValueError（带路径），不进入报告；
+- 输出文件加载存在 error（--output 误指其他数据文件、或混有坏记录）时
+  同样直接抛 ValueError 中止，禁止在残缺集合上覆盖保存；
 - 合并语义：源导出记录 upsert；manual 手工记录保留（同 key 冲突时手工优先）；
   逻辑删除记录无条件保留并跳过同 key 源记录（含源内容更新的情况）；
-  非手工活跃记录若源中已不存在则移除并计数；重复执行输出稳定（幂等）。
+  非手工活跃记录若源中已不存在则移除并计数；字段校验失败的源记录视同
+  源中存在（保留同 key 既有记录，仅进报告）；重复执行输出稳定（幂等）。
 
 CLI 入口（src/scripts/import_combos.py）与 UI 导入对话框共用本模块。
 """
@@ -40,13 +45,28 @@ HERO_NAME_ALIAS: dict[str, str] = {
 
 
 def _load_hero_name_map(heroes_path: Path) -> dict[str, int]:
+    """读武将名 → ID 映射；结构无法识别或映射为空时抛带路径的 ValueError。
+
+    空映射若放行，全部源记录会落 unmatched、既有导入记录全判 stale
+    而被清空，且界面仍显示"导入完成"，必须在此中止。
+    """
     heroes_raw = json.loads(Path(heroes_path).read_text(encoding="utf-8"))
-    hero_list = heroes_raw["heroes"] if isinstance(heroes_raw, dict) and "heroes" in heroes_raw else heroes_raw
-    return {
+    if isinstance(heroes_raw, dict):
+        if not isinstance(heroes_raw.get("heroes"), list):
+            raise ValueError(f"武将文件顶层对象缺少 heroes 数组: {heroes_path}")
+        hero_list = heroes_raw["heroes"]
+    elif isinstance(heroes_raw, list):
+        hero_list = heroes_raw
+    else:
+        raise ValueError(f"武将文件顶层必须是 JSON 对象或数组: {heroes_path}")
+    name2id = {
         hero["name"]: hero["id"]
         for hero in hero_list
         if isinstance(hero, dict) and "name" in hero and "id" in hero
     }
+    if not name2id:
+        raise ValueError(f"武将名称映射为空，已中止导入: {heroes_path}")
+    return name2id
 
 
 def _load_source_combos(source_path: Path) -> list:
@@ -80,6 +100,15 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
 
     manager = ComboManager(output_path)
     manager.load()
+    # 输出目标误指其他数据文件（如 CLI --output 补全路径时选错）时，逐条 Combo
+    # 校验会失败、内存降级为空/残缺集，照常导入会把目标文件原内容整体覆盖；
+    # 与 JsonRepository.save_payload 的完整性守卫同语义：加载存在 error 即禁止覆盖
+    output_errors = [issue for issue in manager.load_issues if issue.severity == "error"]
+    if output_errors:
+        raise ValueError(
+            f"输出文件加载存在 {len(output_errors)} 条错误，已中止导入"
+            f"（请检查输出路径是否指错文件，或先修复该文件）: {output_path}"
+        )
     manual_by_key: dict[tuple[int, int], Combo] = {}
     deleted_by_key: dict[tuple[int, int], Combo] = {}
     imported_keys: set[tuple[int, int]] = set()
@@ -109,6 +138,8 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
 
     merged: dict[tuple[int, int], Combo] = {}
     seen_keys: set[tuple[int, int]] = set()
+    # 字段校验失败的源记录视同"源中仍存在"：保留同 key 既有记录，不判为 stale
+    kept_invalid_keys: set[tuple[int, int]] = set()
     for index, raw in enumerate(combos_raw):
         name1, name2 = str(raw.get("hero1", "")).strip(), str(raw.get("hero2", "")).strip()
         name1, name2 = HERO_NAME_ALIAS.get(name1, name1), HERO_NAME_ALIAS.get(name2, name2)
@@ -154,6 +185,13 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
             )
         except Exception as error:
             report["invalid"].append({"index": index, "hero1": name1, "hero2": name2, "error": str(error)})
+            # 源记录字段非法不代表配对已从源中消失：保留同 key 既有记录，
+            # 否则会被 imported_keys - seen_keys 判成 stale 而移除
+            if key not in merged:
+                existing = manager.get_combo(*key)
+                if existing is not None:
+                    merged[key] = existing
+                    kept_invalid_keys.add(key)
             continue
 
         if status == STATUS_PARSED and _check_position_mismatch(combo, seats1, seats2):
@@ -175,8 +213,8 @@ def run_import(source_path: Path, heroes_path: Path, output_path: Path) -> dict:
     # 逻辑删除记录无条件保留（源中是否存在均不影响，直至界面恢复）
     for key, combo in deleted_by_key.items():
         merged[key] = combo
-    # 非手工旧记录若源中已不存在 → 移除
-    for key in imported_keys - seen_keys:
+    # 非手工旧记录若源中已不存在 → 移除（kept_invalid_keys 已视同源中存在）
+    for key in imported_keys - seen_keys - kept_invalid_keys:
         combo = manager.get_combo(*key)
         report["removed_stale"].append(
             {"hero1": combo.hero1_name, "hero2": combo.hero2_name}

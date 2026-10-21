@@ -405,3 +405,128 @@ def test_first_import_creates_no_backup(tmp_path: Path) -> None:
 
     assert output.exists()
     assert not (tmp_path / "backups").exists()
+
+
+# ---------------------------------------------------------------
+# 回归：审查修复批（VUL-B4-002 / VUL-B4-003）
+# ---------------------------------------------------------------
+
+@pytest.mark.parametrize("bad_heroes", [
+    {"data": HEROES},          # 顶层对象缺 heroes 数组（同步工具改格式的典型形态）
+    {"heroes": {"1": "刘备"}},  # heroes 字段非数组
+    [],                        # 空列表 → 空映射
+])
+def test_rejects_bad_heroes_map_without_touching_output(tmp_path: Path, bad_heroes) -> None:
+    """回归（VUL-B4-002）：武将映射无法识别/为空时中止导入，既有 combos.json 字节不变。
+
+    空映射放行会让全部源记录落 unmatched、既有导入记录全判 stale 而被清空，
+    且界面仍显示"导入完成"。
+    """
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧记录"},
+    ])
+    before = output.read_text(encoding="utf-8")
+    source = tmp_path / "source.json"
+    _write_json(source, {"combos": SOURCE_COMBOS})
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, bad_heroes)
+
+    with pytest.raises(ValueError, match="heroes.json"):
+        run_import(source, heroes, output)
+
+    assert output.read_text(encoding="utf-8") == before
+
+
+def test_invalid_source_record_keeps_existing_combo(tmp_path: Path) -> None:
+    """回归（VUL-B4-003）：源记录字段校验失败时保留同 key 既有记录，不判为 stale 移除。"""
+    output = tmp_path / "combos.json"
+    _seed_output(output, [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧记录"},
+    ])
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"combos": [
+        {"hero1": "刘备", "hero2": "孙权", "rating": 99, "position": "both",
+         "note": "0", "video_url": "", "updated": "2026-08-19"},
+        {"hero1": "吕布", "hero2": "张辽", "rating": 6, "position": "both", "note": "12 34"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    report = run_import(source, heroes, output)
+
+    assert len(report["invalid"]) == 1
+    assert report["removed_stale"] == []  # 同 key 既有记录未被移除
+    mgr = ComboManager(output)
+    mgr.load()
+    assert mgr.get_combo(1, 2).rating == 8
+    assert mgr.get_combo(3, 4).rating == 6  # 正常源记录照常导入
+
+    # 幂等：源中坏记录仍在时重复导入输出稳定
+    run_import(source, heroes, output)
+    first = output.read_text(encoding="utf-8")
+    run_import(source, heroes, output)
+    assert output.read_text(encoding="utf-8") == first
+
+
+# ---------------------------------------------------------------
+# 回归：审查修复批（VUL-B1-002）
+# ---------------------------------------------------------------
+
+def test_rejects_output_pointing_at_other_data_file(tmp_path: Path) -> None:
+    """回归（VUL-B1-002）：--output 误指其他数据文件时中止导入，目标文件字节不变。
+
+    武将形列表逐条 Combo 校验全败、内存降级空集，旧逻辑照常导入会把
+    目标文件原内容整体覆盖（如 heroes.json 被写成配队数据/空数组）。
+    """
+    output = tmp_path / "output.json"
+    _write_json(output, HEROES)
+    before = output.read_text(encoding="utf-8")
+    source = tmp_path / "source.json"
+    _write_json(source, {"combos": SOURCE_COMBOS})
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    with pytest.raises(ValueError, match="已中止导入"):
+        run_import(source, heroes, output)
+
+    assert output.read_text(encoding="utf-8") == before
+
+
+def test_rejects_dict_shaped_output(tmp_path: Path) -> None:
+    """回归（VUL-B1-002）：输出文件顶层为对象（invalid_root）时中止导入。"""
+    output = tmp_path / "output.json"
+    _write_json(output, {"combos": SOURCE_COMBOS})
+    before = output.read_text(encoding="utf-8")
+    source = tmp_path / "source.json"
+    _write_json(source, {"combos": SOURCE_COMBOS})
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    with pytest.raises(ValueError, match="output.json"):
+        run_import(source, heroes, output)
+
+    assert output.read_text(encoding="utf-8") == before
+
+
+def test_rejects_output_with_corrupt_records(tmp_path: Path) -> None:
+    """输出文件混有坏记录时同样拒绝（行为收口）：静默丢弃坏记录再覆盖保存，
+    会让"读不出来的记录"经一次看似成功的导入被静默固化清除。"""
+    output = tmp_path / "combos.json"
+    records = [
+        {"hero1_name": "刘备", "hero2_name": "孙权", "hero1_id": 1, "hero2_id": 2,
+         "rating": 8, "position": "both", "note": "旧记录"},
+        {"hero1_name": "残缺记录"},
+    ]
+    output.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+    source = tmp_path / "source.json"
+    _write_json(source, {"combos": SOURCE_COMBOS})
+    heroes = tmp_path / "heroes.json"
+    _write_json(heroes, HEROES)
+
+    with pytest.raises(ValueError, match="1 条错误"):
+        run_import(source, heroes, output)
+
+    assert json.loads(output.read_text(encoding="utf-8")) == records

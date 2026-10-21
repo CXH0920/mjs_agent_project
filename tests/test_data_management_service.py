@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import shutil
+import threading
 
 import pytest
-from src.business.maintenance.data_management_service import DataManagementService, DataMutationService
+from src.business.maintenance.data_management_service import (
+    DataManagementService,
+    DataMutationService,
+    RollbackError,
+)
 from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide, SynergyScore
@@ -196,3 +202,151 @@ def test_detail_mutation_restores_memory_and_file_when_save_fails(tmp_path, monk
 
     assert heroes.get_hero(1).name == "曹操"
     assert heroes.file_path.read_text(encoding="utf-8") == source
+
+
+# ---------------------------------------------------------------
+# 回归：审查修复批（VUL-B4-001 / TD-A5 / VUL-B3）
+# ---------------------------------------------------------------
+
+def _broken_heroes_managers(tmp_path, heroes_content: str):
+    """构造 heroes 加载异常 + 含关联数据的 guides/synergies 场景。"""
+    (tmp_path / "heroes.json").write_text(heroes_content, encoding="utf-8")
+    heroes = HeroManager(tmp_path / "heroes.json")
+    heroes.load()
+    guides = GuideManager(tmp_path / "guides.json")
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    guides.add_guide(HeroGuide(hero_id=1, description="旧攻略"))
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=6))
+    guides.save()
+    synergies.save()
+    return heroes, guides, synergies
+
+
+def test_repair_refused_when_hero_file_corrupt(tmp_path) -> None:
+    """回归（VUL-B4-001）：heroes 解析失败时修复必须拒绝，guides/synergies 字节不变。
+
+    静默降级为空集合后，修复会把全部相性与攻略判成失效关联而清空。
+    """
+    heroes, guides, synergies = _broken_heroes_managers(tmp_path, "{截断的 JSON")
+    guide_source = guides.file_path.read_text(encoding="utf-8")
+    synergy_source = synergies.file_path.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="武将数据未加载成功"):
+        DataMutationService(heroes, guides, synergies).repair_missing_references()
+
+    assert guides.file_path.read_text(encoding="utf-8") == guide_source
+    assert synergies.file_path.read_text(encoding="utf-8") == synergy_source
+    assert len(guides.list_guides()) == 1
+    assert len(synergies.list_synergies()) == 1
+
+
+def test_repair_refused_when_hero_list_empty(tmp_path) -> None:
+    """回归（VUL-B4-001）：heroes 合法但为空时同样拒绝——以空基准修复必然清空关联数据。"""
+    heroes, guides, synergies = _broken_heroes_managers(tmp_path, "[]")
+
+    with pytest.raises(ValueError, match="武将数据未加载成功"):
+        DataMutationService(heroes, guides, synergies).repair_missing_references()
+
+    assert len(guides.list_guides()) == 1
+    assert len(synergies.list_synergies()) == 1
+
+
+def test_rollback_failure_raises_rollback_error(tmp_path, monkeypatch) -> None:
+    """回归（TD-A5-001）：保存失败且备份恢复也失败时抛 RollbackError 而非吞掉。
+
+    吞掉会让 UI 误报"保存失败、数据未改动"，实际磁盘已是新内容。
+    """
+    heroes = HeroManager(tmp_path / "heroes.json")
+    heroes.add_hero(Hero(id=1, name="曹操"))
+    heroes.save()
+    monkeypatch.setattr(heroes, "save", lambda: (_ for _ in ()).throw(OSError("写入失败")))
+
+    real_copy2 = shutil.copy2
+    calls = {"n": 0}
+
+    def flaky_copy2(src, dst, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 1:  # 第一次是事务备份，之后的是回滚恢复
+            raise OSError("恢复失败")
+        return real_copy2(src, dst, **kwargs)
+
+    monkeypatch.setattr(
+        "src.business.maintenance.data_management_service.shutil.copy2", flaky_copy2
+    )
+
+    with pytest.raises(RollbackError, match="手工回退"):
+        DataMutationService(
+            heroes,
+            GuideManager(tmp_path / "guides.json"),
+            SynergyManager(tmp_path / "synergies.json"),
+        ).update_hero(Hero(id=1, name="新曹操"))
+
+
+def test_clear_data_rolls_back_when_clear_fails_midway(tmp_path, monkeypatch) -> None:
+    """回归（TD-A5-002）：第一个 clear_all 成功、第二个抛异常时须整体回滚。
+
+    否则"guides 已清空、synergies 未清空"的半状态会被后续 save() 固化。
+    """
+    guide_manager, synergy_manager = _managers(tmp_path)
+    guide_source = guide_manager.file_path.read_text(encoding="utf-8")
+    synergy_source = synergy_manager.file_path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(
+        synergy_manager, "clear_all",
+        lambda: (_ for _ in ()).throw(OSError("清空中断")),
+    )
+
+    with pytest.raises(OSError, match="清空中断"):
+        DataManagementService(guide_manager, synergy_manager).clear_data(
+            guides=True, synergies=True,
+        )
+
+    assert len(guide_manager.list_guides()) == 1
+    assert len(synergy_manager.list_synergies()) == 1
+    assert guide_manager.file_path.read_text(encoding="utf-8") == guide_source
+    assert synergy_manager.file_path.read_text(encoding="utf-8") == synergy_source
+
+
+def test_clear_data_rechecks_busy_callback(tmp_path) -> None:
+    """回归（VUL-B3-002/B4-004）：busy 判定在服务层复查，收口确认弹窗期间的 TOCTOU 窗口。"""
+    guide_manager, synergy_manager = _managers(tmp_path)
+    busy = {"flag": False}
+    service = DataManagementService(
+        guide_manager, synergy_manager, is_busy=lambda: busy["flag"]
+    )
+
+    busy["flag"] = True
+    with pytest.raises(ValueError, match="生成任务正在运行"):
+        service.clear_data(guides=True, synergies=True)
+
+    assert len(guide_manager.list_guides()) == 1
+    assert len(synergy_manager.list_synergies()) == 1
+
+    busy["flag"] = False
+    assert service.clear_data(guides=True, synergies=False).cleared_guides == 1
+
+
+def test_transaction_rejects_off_main_thread(tmp_path) -> None:
+    """回归（VUL-B3-001）：事务窗口不持跨线程锁，非主线程调用必须显式失败。"""
+    synergies = SynergyManager(tmp_path / "synergies.json")
+    synergies.add_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=6))
+    synergies.save()
+    captured: list[BaseException] = []
+
+    def mutate() -> None:
+        try:
+            DataMutationService(
+                HeroManager(tmp_path / "heroes.json"),
+                GuideManager(tmp_path / "guides.json"),
+                synergies,
+            ).update_synergy(SynergyScore(hero_a_id=1, hero_b_id=2, score=9))
+        except BaseException as error:  # noqa: BLE001
+            captured.append(error)
+
+    thread = threading.Thread(target=mutate)
+    thread.start()
+    thread.join()
+
+    assert any(isinstance(error, RuntimeError) for error in captured)
+    assert synergies.get_synergy(1, 2).score == 6
+    assert len(synergies.list_synergies()) == 1

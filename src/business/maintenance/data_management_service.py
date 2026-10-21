@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,10 +37,29 @@ class DataRepairResult:
     backup_paths: tuple[Path, ...] = ()
 
 
+class RollbackError(OSError):
+    """事务回滚未完成：磁盘上部分数据文件可能仍是新内容，需人工从 backups/ 回退。
+
+    继承 OSError 使 run_edit_dialog 的可重试分支能展示完整提示，
+    而不是落入"非预期异常"分支丢失手工回退指引。
+    """
+
+    def __init__(self, failures: list[tuple[Path, OSError]]):
+        detail = "；".join(f"{path}: {error}" for path, error in failures)
+        super().__init__(
+            f"数据文件恢复失败（{detail}），磁盘内容可能与内存不一致，"
+            "请从 data/backups 目录手工回退后再继续操作"
+        )
+
+
 class _ManagerTransaction:
     """为同一次跨文件变更创建备份，并在写入失败时恢复。"""
 
     def __init__(self, managers: tuple) -> None:
+        # 快照→变更→落盘窗口不持跨管理器锁，跨线程调用会与其他写入口
+        # （如相性后台重载）静默交错；绕过 UI busy 拦截的调用在此显式失败
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("数据事务必须在主线程执行：快照与回滚窗口不持跨线程锁")
         self._managers = managers
         self._snapshots = {manager: manager.snapshot_items() for manager in managers}
         self._existed = {manager: manager.file_path.exists() for manager in managers}
@@ -63,6 +83,12 @@ class _ManagerTransaction:
             raise
 
     def rollback(self) -> None:
+        """恢复内存快照与数据文件；任一文件恢复失败时抛 RollbackError 汇总。
+
+        先尝试恢复全部 manager 再抛出，避免"第一个失败就中断"让其余
+        文件停留在已变更状态。
+        """
+        failures: list[tuple[Path, OSError]] = []
         for manager, snapshot in self._snapshots.items():
             manager.restore_items(snapshot)
         for manager in self._managers:
@@ -74,19 +100,32 @@ class _ManagerTransaction:
                     manager.file_path.unlink(missing_ok=True)
             except OSError as error:
                 logger.error("恢复数据文件失败 %s: %s", manager.file_path, error)
+                failures.append((manager.file_path, error))
+        if failures:
+            raise RollbackError(failures)
 
 
 class DataManagementService:
     """在清空攻略或相性前创建备份，并在跨文件写入失败时恢复。"""
 
-    def __init__(self, guide_manager: GuideManager, synergy_manager: SynergyManager) -> None:
+    def __init__(
+        self,
+        guide_manager: GuideManager,
+        synergy_manager: SynergyManager,
+        *,
+        is_busy: Callable[[], bool] | None = None,
+    ) -> None:
         self._guide_manager = guide_manager
         self._synergy_manager = synergy_manager
+        # busy 判定下沉到服务层复查：UI 确认弹窗停留期间任务可能已启动
+        self._is_busy = is_busy
 
     def clear_data(self, *, guides: bool, synergies: bool) -> DataClearResult:
-        """备份所选数据后清空；任一写入失败则恢复全部选中数据。"""
+        """备份所选数据后清空；任一步失败则恢复全部选中数据。"""
         if not guides and not synergies:
             raise ValueError("请至少选择一种数据")
+        if self._is_busy is not None and self._is_busy():
+            raise ValueError("攻略或相性生成任务正在运行，请等待任务结束后再操作")
 
         managers = []
         if guides:
@@ -95,8 +134,14 @@ class DataManagementService:
             managers.append(self._synergy_manager)
         transaction = _ManagerTransaction(tuple(managers))
 
-        cleared_guides = self._guide_manager.clear_all() if guides else 0
-        cleared_synergies = self._synergy_manager.clear_all() if synergies else 0
+        try:
+            cleared_guides = self._guide_manager.clear_all() if guides else 0
+            cleared_synergies = self._synergy_manager.clear_all() if synergies else 0
+        except Exception:
+            # 与 _commit_mutation 同一语义：中途异常须回滚内存与文件，
+            # 否则"第一个已清空、第二个未清空"的半状态会被后续 save() 固化
+            transaction.rollback()
+            raise
         transaction.commit()
         return DataClearResult(cleared_guides, cleared_synergies, transaction.backup_paths)
 
@@ -167,6 +212,16 @@ class DataMutationService:
     def repair_missing_references(self) -> DataRepairResult:
         """删除失效实体并清理攻略关系；必须由 UI 在用户确认后调用。"""
         hero_ids = {hero.id for hero in self._hero_manager.list_heroes()}
+        # 武将加载失败（文件损坏/坏记录被跳过）时 hero 集合并不可信，以它为
+        # 基准修复会把全部攻略与相性判成失效关联而清空，必须先拒绝并保持文件原样
+        load_failed = any(
+            issue.severity == "error" for issue in self._hero_manager.load_issues
+        )
+        if load_failed or not hero_ids:
+            raise ValueError(
+                "武将数据未加载成功或为空，已中止修复；请先检查 heroes.json "
+                "（或从 backups/ 回退）后重启应用再执行修复"
+            )
         transaction = _ManagerTransaction((self._guide_manager, self._synergy_manager))
         removed_synergies = 0
         removed_guides = 0

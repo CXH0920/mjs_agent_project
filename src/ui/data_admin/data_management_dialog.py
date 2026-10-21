@@ -43,7 +43,9 @@ class DataManagementDialog(QDialog):
         self._guide_manager = guide_manager
         self._synergy_manager = synergy_manager
         self._is_generation_busy = is_generation_busy
-        self._service = DataManagementService(guide_manager, synergy_manager)
+        self._service = DataManagementService(
+            guide_manager, synergy_manager, is_busy=is_generation_busy
+        )
         self._guide_checkbox: QCheckBox
         self._synergy_checkbox: QCheckBox
         self._count_label: QLabel
