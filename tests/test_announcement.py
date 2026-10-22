@@ -369,6 +369,36 @@ def test_announcement_manager_merge_skips_invalid_records(tmp_path) -> None:
     assert not (tmp_path / "backups").exists()
 
 
+def test_announcement_manager_merge_rolls_back_memory_when_save_fails(tmp_path, monkeypatch) -> None:
+    """回归（数据域 VUL-B4-002）：合并写盘失败必须回滚内存。
+
+    磁盘满/文件被占用时 UI 报"失败"而内存已变，下次任意保存会把
+    未经确认的合并固化；回滚后重试仍然干净（幂等）。
+    """
+    manager = AnnouncementManager(tmp_path / "announcements.json")
+    original_save = manager.save
+    save_calls = {"count": 0}
+
+    def flaky_save() -> None:
+        save_calls["count"] += 1
+        if save_calls["count"] == 1:
+            raise OSError("磁盘已满")
+        original_save()
+
+    monkeypatch.setattr(manager, "save", flaky_save)
+
+    with pytest.raises(OSError):
+        manager.merge_new([_hero_related_raw()])
+
+    assert manager.list_all() == []  # 内存已回滚，未固化半状态
+    assert manager.get("https://mjs.ztgame.com/news/008.html") is None
+
+    # 重试（磁盘恢复后）成功且不残留首次的影子记录
+    merged = manager.merge_new([_hero_related_raw()])
+    assert len(merged) == 1
+    assert len(manager.list_all()) == 1
+
+
 def test_announcement_manager_baseline_first_run(tmp_path) -> None:
     manager = AnnouncementManager(tmp_path / "announcements.json")
     new = manager.merge_new([_hero_related_raw()], baseline=True)

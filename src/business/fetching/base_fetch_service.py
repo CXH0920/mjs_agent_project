@@ -26,6 +26,7 @@ from src.business.fetching.fetch_utils import (
     is_process_busy,
     log_process_error,
 )
+from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 _OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"
@@ -163,6 +164,17 @@ class BaseFetchService(QObject):
     # 子进程管理
     # ---------------------------------------------------------------
 
+    def _release_process(self) -> None:
+        """置空引用并释放已结束的 QProcess 对象（ScriptRunner 同款收尾）。
+
+        QProcess 挂在 service 父对象下不会随任务结束自动回收，不释放则
+        对象与信号连接随任务轮次持续累积（TD-A8-001）。仅在进程确定
+        终结后调用：finished 收尾，或 FailedToStart（Qt 不发 finished）。
+        """
+        process, self._process = self._process, None
+        if process is not None:
+            process.deleteLater()
+
     def _start_process(self, args: list[str]) -> None:
         """启动子进程并连接信号"""
         self._cancel_requested = False
@@ -172,8 +184,12 @@ class BaseFetchService(QObject):
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
         self._failed_items.clear()
+        self._release_process()
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
+        # 子进程以 -m 相对模块名启动，cwd 必须锚定项目根：快捷方式/打包态从
+        # 其他目录启动时，按当前目录解析模块会直接报"找不到模块"（TD-A6-001）
+        self._process.setWorkingDirectory(str(PROJECT_ROOT))
         self._process.readyReadStandardOutput.connect(self._on_stdout_ready)
         self._process.readyReadStandardError.connect(self._on_stderr_ready)
         self._process.finished.connect(self._on_finished)
@@ -333,6 +349,7 @@ class BaseFetchService(QObject):
 
         self._on_process_finished(exit_code)
         self._context = None
+        self._release_process()
 
     # 进程树清理最多等待轮次（50ms/轮 ≈ 5 秒）：taskkill 被安全软件拦截或
     # PID 已复用时可能永不返回，无上限轮询会让 _cancel_requested 永不复位，
@@ -396,9 +413,13 @@ class BaseFetchService(QObject):
         # _cancel_requested 恒为 True 而永久拒绝后续请求（TD-A5-001）。
         if self._cancel_requested:
             logger.warning("%s 中止期间出错: %s", self._service_name, full_msg)
+            if error == QProcess.ProcessError.FailedToStart:
+                self._release_process()  # FailedToStart 无 finished 跟随，不等收尾信号
             self._finish_cancellation()
             return
         self.status_changed.emit(f"{self._service_name}出错")
         self.error_occurred.emit(full_msg)
         self._on_process_error(error_name, full_msg)
         self._context = None
+        if error == QProcess.ProcessError.FailedToStart:
+            self._release_process()

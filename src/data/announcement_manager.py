@@ -97,6 +97,7 @@ class AnnouncementManager(DataManager[Announcement]):
         new_announcements = []
         added = False
         with self._lock:
+            snapshot = self.snapshot_items()
             for index, raw in enumerate(items):
                 try:
                     announcement = Announcement.model_validate(raw)
@@ -116,7 +117,13 @@ class AnnouncementManager(DataManager[Announcement]):
                 if not baseline:
                     new_announcements.append(announcement)
             if added:
-                self.save()
+                try:
+                    self.save()
+                except Exception:
+                    # 写盘失败回滚内存（VUL-B4-002）：UI 报"失败"后内存必须与
+                    # 磁盘一致，否则下次任意保存会把未经确认的合并固化
+                    self.restore_items(snapshot)
+                    raise
         return new_announcements
 
     def mark_ready_if_updated(self, diff: dict, current_names: set[str] | None = None) -> bool:

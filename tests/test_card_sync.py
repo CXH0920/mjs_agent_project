@@ -268,6 +268,41 @@ def test_apply_official_updates_atomic_on_invalid_record(tmp_path) -> None:
     assert [card["card_detail"] for card in disk] == ["详解", "详解"]  # 磁盘未被半更新
 
 
+def test_apply_official_updates_rolls_back_memory_when_save_fails(tmp_path, monkeypatch) -> None:
+    """回归（数据域 VUL-B4-002）：写盘失败必须回滚内存。
+
+    磁盘满/文件被占用时调用方报"应用失败"而内存已变，下次任意保存
+    会固化未经确认的半更新；回滚后重试仍然干净（幂等）。
+    """
+    repo = _make_repo(tmp_path, [_make_card("4", "闪")])
+    original_save = repo._save
+    save_calls = {"count": 0}
+
+    def flaky_save() -> None:
+        save_calls["count"] += 1
+        if save_calls["count"] == 1:
+            raise OSError("文件被另一进程占用")
+        original_save()
+
+    monkeypatch.setattr(repo, "_save", flaky_save)
+
+    with pytest.raises(OSError):
+        repo.apply_official_updates(
+            {"4": {"name": "闪", "card_desc": "抵消一次杀", "card_detail": "新详解"}}, [],
+        )
+
+    assert repo.get_card("4").card_desc == "旧描述"  # 内存已回滚
+    disk = json.loads((tmp_path / "cards.json").read_text(encoding="utf-8"))
+    assert disk[0]["card_desc"] == "旧描述"  # 磁盘未被写入
+
+    # 重试（占用解除后）成功，不残留首次的半更新
+    applied = repo.apply_official_updates(
+        {"4": {"name": "闪", "card_desc": "抵消一次杀", "card_detail": "新详解"}}, [],
+    )
+    assert applied == ["4"]
+    assert repo.get_card("4").card_desc == "抵消一次杀"
+
+
 # ---------------------------------------------------------------------------
 # 业务层：CardSyncService 检查编排与增量基线
 # ---------------------------------------------------------------------------

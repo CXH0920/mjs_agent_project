@@ -193,7 +193,7 @@ class OcrService(QObject):
         """启动或重新启动轮询（重复定时器，周期 = max(间隔, 单拍处理)）。"""
         self._poll_interval_ms = max(interval_ms, 1_000)
         self._consecutive_poll_failures = 0
-        self._poll_gate.release()
+        self._poll_gate.reset()  # 重启作废上一轮在途占用，非持有者释放
         self._replace_poll_session()
         self._poll_tasks["hero_selection"] = PollTaskState(
             active="hero_selection" not in self._held_tasks,
@@ -224,7 +224,7 @@ class OcrService(QObject):
             task.active = False
             task.cooldown_until = None
         self._consecutive_poll_failures = 0
-        self._poll_gate.release()
+        self._poll_gate.reset()  # 停止作废在途一轮，非持有者释放
         self._replace_poll_session()
         self._set_poll_state(state, detail)
 
@@ -240,7 +240,7 @@ class OcrService(QObject):
         旧结果由消费端代数检查丢弃。
         """
         self._replace_poll_session()
-        self._poll_gate.release()
+        self._poll_gate.reset()  # 作废在途占用，非持有者释放
 
     def resume_poll(self) -> None:
         """用户主动恢复已暂停的轮询。"""

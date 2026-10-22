@@ -41,6 +41,23 @@ def test_busy_gate_release_is_idempotent() -> None:
     assert not gate.is_busy
 
 
+def test_busy_gate_reset_invalidates_occupancy_for_non_owner() -> None:
+    """回归（TD-A9-001）：reset 是"外部作废"的显式语义入口。
+
+    生命周期边界（停止/重启/作废在途）经 reset 复位占用，与持有者的
+    release 分立，使"谁在释放"可被逐一审计；两入口行为等价且幂等。
+    """
+    gate = BusyGate()
+    gate.acquire()
+
+    gate.reset()
+    assert not gate.is_busy
+
+    gate.reset()  # 幂等
+    assert not gate.is_busy
+    assert gate.acquire() is True  # 作废后可重新占用
+
+
 def test_busy_gate_single_winner_under_contention() -> None:
     gate = BusyGate()
     wins = []

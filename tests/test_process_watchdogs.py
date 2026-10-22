@@ -733,3 +733,96 @@ def test_finish_cancellation_is_idempotent(qapp) -> None:
     service._finish_cancellation()
 
     assert cancelled == [True]
+
+
+# ---------------------------------------------------------------
+# 第二梯队回归：子进程 cwd 锚定（TD-A6-001）与 QProcess 收尾释放（TD-A8-001）
+# ---------------------------------------------------------------
+
+def test_start_process_anchors_working_directory_to_project_root(qapp, monkeypatch) -> None:
+    """回归（TD-A6-001）：子进程以 -m 相对模块名启动，cwd 必须锚定项目根。
+
+    快捷方式/打包态从其他目录启动时，按当前目录解析模块会直接失败且
+    报错难懂（"找不到模块"）。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+    from src.config.env import PROJECT_ROOT
+
+    recorded: dict[str, str] = {}
+
+    class _RecordingProc(_FakeProc):
+        class ProcessChannelMode:
+            SeparateChannels = "separate"
+
+        def __init__(self, parent=None):
+            super().__init__()
+
+        def setProcessChannelMode(self, _mode) -> None:
+            pass
+
+        def setWorkingDirectory(self, directory: str) -> None:
+            recorded["cwd"] = directory
+
+        def setProcessEnvironment(self, _env) -> None:
+            pass
+
+        def start(self, *_args) -> None:
+            pass
+
+    for attr in ("readyReadStandardOutput", "readyReadStandardError", "finished", "errorOccurred"):
+        monkeypatch.setattr(
+            _RecordingProc, attr, _CallbackSignal(), raising=False,
+        )
+    monkeypatch.setattr(bfs, "QProcess", _RecordingProc)
+    service = bfs.BaseFetchService()
+    try:
+        service._start_process(["-m", "src.scraper.official"])
+    finally:
+        service._stop_watchdog()
+
+    assert recorded["cwd"] == str(PROJECT_ROOT)
+
+
+def test_on_finished_releases_process_object(qapp, monkeypatch) -> None:
+    """回归（TD-A8-001）：finished 收尾必须释放 QProcess 对象。
+
+    QProcess 挂在 service 父对象下不会随任务结束自动回收，不置空并
+    deleteLater 则对象与信号连接随任务轮次持续累积。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: None)
+    service = bfs.BaseFetchService()
+    service._process = _FakeProc(running=False)
+
+    service._on_finished(0)
+
+    assert service._process is None
+
+
+def test_on_error_failed_to_start_releases_process_object(qapp, monkeypatch) -> None:
+    """回归（TD-A8-001）：FailedToStart 无 finished 跟随，必须就地释放。"""
+    import src.business.fetching.base_fetch_service as bfs
+    from PySide6.QtCore import QProcess
+
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: None)
+    service = bfs.BaseFetchService()
+    service._process = _FakeProc(running=False)
+
+    service._on_error(QProcess.ProcessError.FailedToStart)
+
+    assert service._process is None
+
+
+def test_on_error_crashed_keeps_process_until_finished(qapp, monkeypatch) -> None:
+    """Crashed 等错误仍有 finished 收尾跟随：不得提前释放（收尾读 stdout 依赖进程对象）。"""
+    import src.business.fetching.base_fetch_service as bfs
+    from PySide6.QtCore import QProcess
+
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: None)
+    service = bfs.BaseFetchService()
+    service._process = _FakeProc()  # running
+
+    service._on_error(QProcess.ProcessError.Crashed)
+
+    assert service._process is not None

@@ -247,12 +247,20 @@ class CardRepository(JsonRepository):
             seen_new_ids.add(card_id)
             new_cards.append(card)
             applied.append(card_id)
+        # 写前内存快照：Card 是不可变值对象，浅拷贝字典即足够（同注解仓储约定）
+        snapshot = dict(self._cards)
         for card_id, card in updated.items():
             self._cards[card_id] = card
         for card in new_cards:
             self._cards[str(card.id)] = card
         if applied:
-            self._save()
+            try:
+                self._save()
+            except Exception:
+                # 写盘失败回滚内存（VUL-B4-002）：调用方报"应用失败"后内存
+                # 必须与磁盘一致，否则下次任意保存会固化未经确认的半更新
+                self._cards = dict(snapshot)
+                raise
         return applied
 
     def _save(self) -> None:

@@ -359,7 +359,7 @@ class AnnouncementUpdateCoordinator(QObject):
     def _abort_pending_phases(self) -> None:
         """作废整条公告更新流：清队列与令牌，不 mark_applied（横幅保留可重试）。"""
         self._pending_phases = None
-        self._phase_gate.release()
+        self._phase_gate.reset()  # 作废在途阶段的占用，非持有者释放
         self._reporter.hide_progress()
         self._reporter.show_message("公告更新已取消：武将采集正在进行")
         QMessageBox.warning(self._window, "采集进行中", "公告更新与当前采集冲突，已取消。请稍后重新检查公告并更新。")

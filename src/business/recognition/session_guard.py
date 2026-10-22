@@ -56,8 +56,23 @@ class BusyGate:
             return True
 
     def release(self) -> None:
-        """解除占用（幂等；未占用时调用无效果）。"""
-        self._busy = False
+        """持有者解除占用（幂等；未占用时调用无效果）。
+
+        仅限 acquire 成功方在自己的完成路径调用；生命周期边界（停止/
+        重启/作废在途）须用 reset，两者分立使"谁在释放"可被逐一审计
+        （TD-A9-001：此前任何线程可无差别 release，语义混同）。
+        """
+        with self._lock:
+            self._busy = False
+
+    def reset(self) -> None:
+        """外部作废占用（幂等）：调用方声明"占用者不是我"。
+
+        供停止/重启/作废在途等生命周期边界复位闸门——在途持有者不会
+        走到自己的完成路径，不 reset 会把后续请求永久挡在忙态。
+        """
+        with self._lock:
+            self._busy = False
 
     @property
     def is_busy(self) -> bool:

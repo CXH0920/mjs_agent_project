@@ -54,6 +54,9 @@ class _FakeProcess:
     def readAllStandardError(self) -> bytes:
         return self._stderr_chunks.pop(0) if self._stderr_chunks else b""
 
+    def deleteLater(self) -> None:
+        pass  # _on_finished 收尾释放进程对象（TD-A8-001），替身对齐该契约
+
 
 class _LineRecordingService(BaseFetchService):
     def __init__(self):
