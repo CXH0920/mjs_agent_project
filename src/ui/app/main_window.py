@@ -248,6 +248,7 @@ class MainWindow(QMainWindow):
             "faction_colors": self._dialogs.open_faction_colors,
             "whitelist_config": self._dialogs.open_whitelist_config,
             "data_management": self._dialogs.open_data_management,
+            "backup_restore": self._dialogs.open_backup_restore,
             "reload": self._reload_data,
             "official_import": self._dialogs.open_official_data_import,
             "fetch_all": self._dialogs.request_fetch_all,

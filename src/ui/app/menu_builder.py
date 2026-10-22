@@ -26,6 +26,7 @@ def build_actions(
         "faction_colors": QAction("势力配色", owner),
         "whitelist_config": QAction("白名单配置", owner),
         "data_management": QAction("清空攻略/相性数据", owner),
+        "backup_restore": QAction("从备份恢复", owner),
         "reload": QAction("重新加载数据", owner),
         "official_import": QAction("官方数据导入", owner),
         "fetch_all": QAction("全量获取", owner),
@@ -78,6 +79,7 @@ def build_menu_bar(bar: QMenuBar, actions: dict[str, QAction]) -> None:
     data_menu.addAction(actions["official_import"])
     data_menu.addAction(actions["combos_import"])
     data_menu.addAction(actions["data_management"])
+    data_menu.addAction(actions["backup_restore"])
 
     help_menu = bar.addMenu("帮助")
     help_menu.addAction(actions["onboarding"])

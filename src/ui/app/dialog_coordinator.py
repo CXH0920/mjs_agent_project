@@ -110,6 +110,30 @@ class DialogCoordinator:
         dialog.data_cleared.connect(self._on_data_cleared)
         dialog.exec()
 
+    def open_backup_restore(self) -> None:
+        """打开备份恢复入口（此前 data/backups/ 只有产生方、无任何消费界面）。"""
+        w = self._window
+        from src.ui.data_admin.backup_restore_dialog import BackupRestoreDialog
+
+        dialog = BackupRestoreDialog(
+            lambda: w._guide_service.is_busy or w._synergy_service.is_busy,
+            w,
+        )
+        dialog.restored.connect(self._on_backup_restored)
+        dialog.exec()
+
+    def _on_backup_restored(self, target_key: str) -> None:
+        """恢复落盘后按数据类型走与导入/清空一致的刷新链。"""
+        w = self._window
+        if target_key == "combos":
+            w._combo_manager.load()
+            w._hero_browser.refresh_synergies()
+        else:
+            # heroes/guides/synergies：全量重载会顺带重新校验失效关联
+            w._reload_data()
+            w._update_status()
+        w._reporter.show_message("已从备份恢复数据")
+
     def _on_data_cleared(self, guides_cleared: bool, synergies_cleared: bool) -> None:
         """刷新清空数据后受影响的页面与统计。"""
         w = self._window
