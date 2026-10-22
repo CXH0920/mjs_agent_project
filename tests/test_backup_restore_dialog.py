@@ -10,9 +10,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
-
-from src.ui.data_admin.backup_restore_dialog import BackupRestoreDialog
 from src.business.maintenance.backup_restore_service import select_group_entries
+from src.ui.data_admin.backup_restore_dialog import BackupRestoreDialog
 
 
 def _app() -> QApplication:
