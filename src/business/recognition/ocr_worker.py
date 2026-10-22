@@ -137,6 +137,15 @@ class OcrWorker(QThread):
         self.submit(task)
         return task
 
+    def reset_warmup_state(self) -> None:
+        """跨线程放下"预热已入队"标志，允许重新排队预热。
+
+        滞留队列或被弃单的预热任务不会自行复位标志；首启向导
+        "重新初始化"经协调器 reset_warmup 调到这里。GIL 原子 bool
+        赋值，与 OcrTask.cancelled 同约定。
+        """
+        self._warmup_queued = False
+
     def request_stop(self) -> None:
         """请求停止：置取消标记并投递哨兵任务，不阻塞调用方。"""
         self._cancel_event.set()
@@ -178,6 +187,11 @@ class OcrWorker(QThread):
                     task.result = self._execute_official_import(task)
                 elif task.cancelled:
                     task.result = {"outcome": "cancelled"}
+                    # 弃单的预热任务被短路，走不到下方 warmup_failed 复位点：
+                    # 不在此放下标志，wait_warmup 超时弃单后 warmup_model 会
+                    # 恒返回 None，重新预热永久无效（VUL-B4-002）
+                    if task.warmup:
+                        self._warmup_queued = False
                 else:
                     task.result = self._execute(task)
                     if task.warmup and task.result.get("outcome") == "warmup_failed":

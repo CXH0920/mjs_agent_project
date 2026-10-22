@@ -775,6 +775,31 @@ def test_cancelled_task_short_circuits_worker(monkeypatch) -> None:
     assert fresh_task.result == {"outcome": "matched"}
 
 
+def test_abandoned_warmup_releases_queue_flag(monkeypatch) -> None:
+    """回归（VUL-B4-002）：弃单的预热任务出队后必须放下 _warmup_queued。
+
+    wait_warmup 超时弃单走 cancelled 短路分支，到不了 warmup_failed
+    复位点；标志悬挂会让 warmup_model 恒返回 None，重新预热永久无效。
+    """
+    worker = OcrWorker()
+    worker._warmup_queued = True  # 模拟 warmup_model 已入队
+    task = OcrTask(
+        image=None, hero_names=(), rois=None,
+        template_name="hero_selection", threshold=0.0,
+        match_template=False, warmup=True,
+    )
+    task.abandon()
+    worker._tasks.put(task)
+    worker._tasks.put(None)  # 哨兵：run() 取到即排空退出
+
+    worker.run()
+
+    assert task.result == {"outcome": "cancelled"}
+    assert worker._warmup_queued is False
+    # 标志已放下：预热可重新入队（悬挂时恒返回 None，重试永久无效）
+    assert worker.warmup_model(["曹操"]) is not None
+
+
 def test_abandon_during_execution_keeps_local_image_reference(tmp_path, monkeypatch) -> None:
     """回归（VUL-B3-002 审查缺口 1）：弃单与执行并发的确定性交错。
 

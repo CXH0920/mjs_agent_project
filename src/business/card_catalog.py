@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from src.data.card_catalog import (
@@ -20,6 +21,8 @@ from src.data.card_catalog import (
     EffectEntry,
 )
 from src.data.issues import DataIssue
+
+logger = logging.getLogger(__name__)
 
 
 class CardCatalogService:
@@ -92,10 +95,10 @@ class CardCatalogService:
                 try:
                     self._validate_value(definition, value)
                 except ValueError as error:
-                    self.load_issues.append(DataIssue(
-                        "warning", "invalid_field_value", self.annotations.file_path, str(error), entity_key=card.id,
-                        field_name=key,
-                    ))
+                    # 读路径不得写 load_issues（VUL-B4-002）：list_views 每次
+                    # 刷新都逐卡调用 get_view，追加会让告警无界增长；无效
+                    # 字段的处理是跳过展示，留 debug 日志即可排障
+                    logger.debug("卡牌 %s 字段 %s 值无效，已跳过展示: %s", card.id, key, error)
                     continue
                 values.append(CardFieldValue(definition, key, value, definition.archived))
         values.sort(key=lambda item: ((item.definition.display_order if item.definition else 10 ** 9), item.key))

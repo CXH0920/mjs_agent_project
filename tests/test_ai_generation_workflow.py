@@ -41,6 +41,7 @@ class _GuideService(QObject):
         super().__init__()
         self.calls: list[tuple[str, list[dict], str]] = []
         self.cancel_calls = 0
+        self.failed_items: list[str] = []
         self._busy = False
 
     @property
@@ -83,6 +84,7 @@ class _SynergyService(QObject):
         self.pair_list_calls: list[tuple[list[dict], str, bool]] = []
         self.cancel_calls = 0
         self.reload_requests = 0
+        self.failed_items: list[str] = []
         self._busy = False
 
     @property
@@ -414,6 +416,69 @@ def test_synergy_cancel_reloads_data_in_background(tmp_path: Path) -> None:
 
     synergy_service.reload_finished.emit()
 
+    assert changed == [True]
+
+
+class _StubErrorBox:
+    """替身：错误弹框不阻塞测试（QMessageBox.exec 会卡死无事件循环的用例）。"""
+
+    class Icon:
+        Critical = "critical"
+
+    def __init__(self, parent=None) -> None:
+        pass
+
+    def setIcon(self, _icon) -> None:
+        pass
+
+    def setWindowTitle(self, _title) -> None:
+        pass
+
+    def setText(self, _text) -> None:
+        pass
+
+    def setDetailedText(self, _text) -> None:
+        pass
+
+    def exec(self):
+        return 0
+
+
+def test_synergy_error_reloads_committed_batches(tmp_path: Path, monkeypatch) -> None:
+    """回归（抓取域 VUL-B4-001）：相性失败/看门狗超时后同样重载已落盘批次。
+
+    超时树杀走 error 路径，此前仅取消路径重载，磁盘上已分批提交的
+    相性不刷回内存，后续保存存在以旧盖新的窗口。
+    """
+    workflow, _, synergy_service = _workflow(tmp_path)
+    changed: list[bool] = []
+    monkeypatch.setattr(workflow_module, "QMessageBox", _StubErrorBox)
+    monkeypatch.setattr(workflow_module, "install_details_button_translator", lambda _box: None)
+    workflow.synergies_changed.connect(lambda: changed.append(True))
+
+    workflow._on_synergy_error("进程退出码: 1")
+
+    assert synergy_service.reload_requests == 1
+    assert changed == []  # 后台重载完成后才广播（与取消路径一致）
+
+    synergy_service.reload_finished.emit()
+
+    assert changed == [True]
+
+
+def test_guide_error_reloads_committed_batches(tmp_path: Path, monkeypatch) -> None:
+    """回归（抓取域 VUL-B4-001）：攻略生成失败同样重载已提交批次。"""
+    workflow, _, _ = _workflow(tmp_path)
+    reloads: list[bool] = []
+    changed: list[bool] = []
+    monkeypatch.setattr(workflow._guide_manager, "load", lambda: reloads.append(True))
+    monkeypatch.setattr(workflow_module, "QMessageBox", _StubErrorBox)
+    monkeypatch.setattr(workflow_module, "install_details_button_translator", lambda _box: None)
+    workflow.guides_changed.connect(lambda: changed.append(True))
+
+    workflow._on_guide_error("进程退出码: 1")
+
+    assert reloads == [True]
     assert changed == [True]
 
 

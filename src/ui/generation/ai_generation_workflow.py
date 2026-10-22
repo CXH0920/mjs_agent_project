@@ -306,6 +306,10 @@ class AiGenerationWorkflow(QObject):
     def _on_guide_error(self, error_message: str) -> None:
         if self._guide_progress_dialog:
             self._guide_progress_dialog.on_process_finished(False, error_message)
+        # 与取消路径对齐：失败或看门狗超时前可能已有分批提交的攻略落盘，
+        # 重载内存避免界面停留在旧数据、后续保存以旧盖新（VUL-B4-001）
+        self._guide_manager.load()
+        self.guides_changed.emit()
         failed = self._guide_service.failed_items
         detail = (
             f"失败武将（{len(failed)}）：\n" + "\n".join(failed)
@@ -345,6 +349,9 @@ class AiGenerationWorkflow(QObject):
     def _on_synergy_error(self, error_message: str) -> None:
         if self._synergy_progress_dialog:
             self._synergy_progress_dialog.on_process_finished(False, error_message)
+        # 与取消路径对齐：失败或看门狗超时前可能已有分批提交的相性落盘，
+        # 后台重载保持内存与磁盘一致（VUL-B4-001）
+        self._synergy_service.reload_from_disk()
         failed = self._synergy_service.failed_items
         detail = (
             f"失败项（{len(failed)}）：\n" + "\n".join(failed)

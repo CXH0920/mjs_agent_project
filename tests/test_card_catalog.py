@@ -117,6 +117,27 @@ def test_invalid_annotation_does_not_hide_other_cards(tmp_path: Path) -> None:
     assert service.get_view("8").fields == []
 
 
+def test_invalid_field_value_does_not_accumulate_load_issues(tmp_path: Path) -> None:
+    """回归（散落服务域 VUL-B4-002）：读路径不得向 load_issues 追加。
+
+    list_views 每次刷新逐卡调用 get_view，坏字段的告警若在读取时累积，
+    长期运行必然无界增长；无效字段的处理是跳过展示，不产生告警。
+    """
+    service = _service(tmp_path)
+    annotations_path = tmp_path / "card_annotations.json"
+    _write(annotations_path, {"schema_version": 1, "annotations": [
+        {"card_id": "8", "fields": {"mode": "不存在的选项"}},
+    ]})
+    service.load_all()
+    before = list(service.load_issues)
+
+    for _ in range(3):
+        assert service.get_view("8").fields == []
+        service.list_views()
+
+    assert service.load_issues == before
+
+
 def test_writable_json_uses_lf_without_bom(tmp_path: Path) -> None:
     service = _service(tmp_path)
     service.add_field(CardFieldDefinition(key="note", label="备注", value_type="markdown"))

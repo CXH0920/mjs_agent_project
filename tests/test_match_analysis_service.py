@@ -86,3 +86,33 @@ def test_ally_key_points_are_truncated_to_single_tip_with_notice() -> None:
 
     assert [item.text for item in analysis.ally_tips] == ["我方一"]
     assert "甲：我方要点仅展示前 1 条（共 2 条）" in analysis.missing_data
+
+
+class _BrokenGuideManager:
+    """指定武将的攻略读取抛异常，其余正常返回。"""
+
+    def __init__(self, broken_ids: set[int], guides: list[HeroGuide]) -> None:
+        self._broken_ids = broken_ids
+        self._guides = {guide.hero_id: guide for guide in guides}
+
+    def get_guide(self, hero_id: int):
+        if hero_id in self._broken_ids:
+            raise ValueError("guide 数据校验失败")
+        return self._guides.get(hero_id)
+
+
+def test_guide_read_failure_degrades_only_that_hero() -> None:
+    """回归（TD-A5-001）：单将攻略读取抛异常只降级该将，不阻断整页分析。
+
+    异常上抛会在 Qt 槽内被吞，界面滞留上一帧分析而无任何提示。
+    """
+    ally, enemy = _hero(1, "甲"), _hero(2, "乙")
+    manager = _BrokenGuideManager({1}, [HeroGuide(hero_id=2, counter_strategy="限制乙")])
+
+    analysis = MatchAnalysisService(manager, {"乙": 55.0}).analyze([ally], [enemy])
+
+    assert analysis.allies[0].guide is None
+    assert "甲：攻略读取失败" in analysis.missing_data
+    assert "甲：暂无攻略" not in analysis.missing_data  # 读取失败 ≠ 没有攻略
+    assert analysis.enemies[0].guide is not None
+    assert [item.target.name for item in analysis.priorities] == ["乙"]

@@ -746,7 +746,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 529 → 542：OcrTask.abandon()（置取消并即时释放整帧引用，等待方超时调用）
     # 与 _execute 开头 image 局部快照（审查缺口 1/2）——释放必须发生在弃单时刻，
     # worker 被官方导入占住期间滞留队列的任务到取出才释放的话峰值仍是 O(占用时长)
-    "business/recognition/ocr_worker.py": 542,
+    # 542 → 556：弃单的预热任务出队时复位 _warmup_queued + reset_warmup_state()
+    # 跨线程复位入口（VUL-B4-002，2026-10-22）——弃单走 cancelled 短路分支
+    # 到不了 warmup_failed 复位点，标志悬挂会让重新预热永久无效
+    "business/recognition/ocr_worker.py": 556,
     # 首次入册（498 → 508 越过 500 绊线）：do_poll_work 补 except 兜底，未预期
     # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
     # 508 → 511：wait_for_ocr_task 超时即弃单（VUL-B3-002 审查缺口 2）——置取消

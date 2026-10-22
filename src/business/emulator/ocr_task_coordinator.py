@@ -140,6 +140,11 @@ class OcrTaskCoordinator(QObject):
         「重新初始化」经本接口复位后再重新入队。调用方须在 GUI 线程
         （状态机变更点全部经 Qt 信号排队落回主线程，无锁）。
         """
+        # worker 的"预热已入队"标志独立于本状态机：被弃单或仍滞留队列的
+        # 预热任务不会复位它，只拨回 idle 的话 warmup_model 仍恒返回
+        # None、重试永久无效（VUL-B4-002），必须一并传递复位
+        if self._worker is not None:
+            self._worker.reset_warmup_state()
         if self._warmup_task is None and self._warmup_state != "warming":
             return
         self._warmup_task = None

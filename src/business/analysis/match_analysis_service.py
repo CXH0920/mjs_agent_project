@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from src.data.models import Hero, HeroGuide
+
+logger = logging.getLogger(__name__)
 
 # 抽取深度上限。敌我不对称是刻意的：敌方要点是行动依据，我方速览只需一条
 # 代表项；版本调整只改此处，勿在循环里写字面量。
@@ -129,10 +132,18 @@ class MatchAnalysisService:
         )
 
     def _summary(self, hero: Hero, missing_data: list[str]) -> HeroSummary:
-        guide = self._guide_manager.get_guide(hero.id)
+        try:
+            guide = self._guide_manager.get_guide(hero.id)
+        except Exception as error:
+            # 单将攻略不可用只降级该将（TD-A5-001）：异常上抛会在 Qt 槽内
+            # 被吞，界面滞留上一帧分析且无任何提示
+            logger.warning("%s 攻略读取失败，按无攻略降级: %s", hero.name, error)
+            missing_data.append(f"{hero.name}：攻略读取失败")
+            guide = None
+        else:
+            if guide is None:
+                missing_data.append(f"{hero.name}：暂无攻略")
         rate = self._win_rates.get(hero.name)
-        if guide is None:
-            missing_data.append(f"{hero.name}：暂无攻略")
         if rate is None:
             missing_data.append(f"{hero.name}：暂无历史单将胜率")
         return HeroSummary(hero, rate, guide)

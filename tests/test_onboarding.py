@@ -609,6 +609,25 @@ def test_ocr_task_coordinator_reset_warmup_allows_requeue():
     coordinator.reset_warmup()  # 幂等：已复位时不重复发状态信号
 
 
+def test_ocr_task_coordinator_reset_warmup_releases_worker_flag():
+    """回归（模拟器域 VUL-B4-002）：复位须传递到 worker 的预热入队标志。
+
+    协调器状态拨回 idle 但 worker 标志悬挂时，warmup_model 仍恒返回
+    None，重试永久无效——首启向导「重新初始化」经此出口恢复可预热。
+    """
+    from src.business.emulator.ocr_task_coordinator import OcrTaskCoordinator
+    from src.business.recognition.ocr_worker import OcrWorker
+
+    coordinator = OcrTaskCoordinator(on_worker_created=lambda worker: None)
+    worker = OcrWorker()
+    coordinator._worker = worker
+    worker._warmup_queued = True  # 模拟弃单/滞留队列的预热标志悬挂
+
+    coordinator.reset_warmup()
+
+    assert worker._warmup_queued is False
+
+
 # ---------------------------------------------------------------------------
 # T7：open_onboarding 接线
 # ---------------------------------------------------------------------------
