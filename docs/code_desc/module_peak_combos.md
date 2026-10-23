@@ -1,9 +1,9 @@
 # 模块：巅峰赛与实战配队
 
-> 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/ui/match/match_guide_panel.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
-> 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、容差签名去重、标准轮询互斥持有）、禁选建议象限判定、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染、胜率榜按对局链路区分（2v2 / 巅峰赛）
-> 代码基线：2026-10-11（基线 2081b5b）
-> 测试规模：145 个测试模块文件 / 1626 个 test_* 用例
+> 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/ui/match/match_guide_panel.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/analysis/win_rate_ranking.py` + `src/business/analysis/match_analysis_service.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
+> 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、容差签名去重、标准轮询互斥持有、参考几何漂移抑制与漏检扣帧）、禁选建议象限判定、胜率名次单一事实源、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染、胜率榜按对局链路区分（2v2 / 巅峰赛）
+> 代码基线：2026-10-23（基线 `a63bc3c`）
+> 测试规模：153 个含 `test_*` 函数的测试文件 / 1936 个 test_* 函数（2026-10-11 基线为 145 / 1626）
 
 ---
 
@@ -57,9 +57,9 @@ src/scripts/
   └── import_combos.py                  # main() — 实战配队导入 CLI 入口（共用 run_import）
 
 数据（data/，仅列本模块链路上读取的）：
-  ├── combos.json                       # 实战配队（ComboManager 读写，落盘稳定排序，1570 条）
-  ├── 巅峰赛胜率排行.csv                # 列头 排名,武将,胜率（183 条武将）→ load_peak_win_rates()
-  └── 巅峰赛出场排行.csv                # 列头 排名,武将（131 条武将）→ load_peak_pick_ranks()
+  ├── combos.json                       # 实战配队（ComboManager 读写，落盘稳定排序，本机同步快照 1827 条）
+  ├── 巅峰赛胜率排行.csv                # 列头 排名,武将,胜率（本机同步快照 187 条）→ load_peak_win_rates()
+  └── 巅峰赛出场排行.csv                # 列头 排名,武将（本机同步快照 187 条）→ load_peak_pick_ranks()
 ```
 
 ---
@@ -80,6 +80,17 @@ src/scripts/
 
 参数均为相对比例（基准 2560×1440 实测），分辨率变化时自适应。
 
+**参考几何与漂移抑制**（8020da8 新增）：上述五步产出的是逐拍独立检测的结果，而候选阶段卡面有 idle 浮动动画（纵向 ±3~4px、剪影尺寸 ±5px），逐拍像素抖动会被当作布局变化，直接导致面板跳变。2026-10-23 基线在检测链路中补入参考几何归一：
+
+- **参考几何**：以参考图为基准取中位 `ref_w` / `ref_h`，`_split_rows_by_gap()` 按垂直间距划分行（而非绝对桶边界），避免行划分受 y 方向数像素抖动影响。
+- **主路径归一 `_normalize_card(mask, box, ref_w, rows)`**：把每张候选框归一到同一参考系，抑制逐拍漂移。这是消除面板跳变的核心步骤。
+- **宽度修正 `_refit_card_width(min_run_ratio=0.8)`**：淡色立绘会把卡体列截短，`REFIT_TRUSTED_MIN_RATIO = 0.8` 是卡体段可信下限（占参考卡宽）；宽度越窗时仅 debug 留痕，不吞证据。
+- **排布合理性校验 `layout_is_plausible(cards)` / `board_row_sizes(cards)`**：校验行列排布是否符合预期（返回 None 表示排布不成立），不合规则不发布——防止漏检被伪装成合法的小卡数牌面。
+
+**漏检补齐**（62c5c23，`peak_select_watcher._restore_missing_cards(cards)`）：真实禁将/选走会让剩余卡整排重排（位移 ≥ 半个卡距 276/2），所以"存活卡原位对应"可判定为本拍漏检而非真变少——`_is_subset_in_place()` 成立时按上一拍已发布卡位 `self._last_cards` 补齐，补齐后本拍签名与上一拍一致，走 unchanged 短路，面板既不掉张也不多跑一次 OCR（2026-10-12 11→9 事故）。无重排的"真消失"与漏检在几何上不可区分，此处按漏检处理并留日志——游戏实测排布总会重排（8/9/10/11 卡局实测排布分别为 4+4 / 4+5 / 5+5 / 5+6）。
+
+**转场治理**（62c5c23）：`BOARD_EXIT_TICKS` 由 2 调整为 **4**——牌面退出需连续 4 拍缺席才判定退出，与过场坏帧扣住一拍复核配合，避免场景切换期把过场帧误判为对局结束。
+
 ### 3.2 巅峰赛识别循环（PeakSelectWatcher）
 
 `PeakSelectWatcher` 是独立 QObject，与标准轮询并存：
@@ -90,8 +101,10 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
   └─ _do_work() 后台线程（session = 会话世代快照 SessionGuard.current()）
       ├─ CaptureService.capture_for_poll() 截图
       ├─ [_state_lock] 世代过期（SessionGuard.is_current 为假）→ 停止/重启后的旧拍直接放弃（不检测、不清理、不发布）
-      ├─ detect_selection_cards(frame) 卡位检测
-      │   └─ None → _handle_board_absent(session) → miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True)（缺席同时作废扣住的 _deferred_board），match_guide 保持挂起并发 board_exited（衔接激活归 PollCoordinator.handle_peak_exit）
+      ├─ detect_selection_cards(frame) 卡位检测（内部经参考几何归一 + layout_is_plausible 排布校验）
+       │   └─ _restore_missing_cards(cards) 漏检补齐（存活卡原位一致时按上一拍卡位补全）
+       │   └─ layout_is_plausible(cards) 为假 → 按缺席处理
+      │   └─ None → _handle_board_absent(session) → miss_ticks++ → BOARD_EXIT_TICKS=4 后 _clear_session_state(keep_miss_ticks=True)（缺席同时作废扣住的 _deferred_board），match_guide 保持挂起并发 board_exited（衔接激活归 PollCoordinator.handle_peak_exit）
       ├─ 检出牌面 → [_state_lock] miss_ticks 归零 + _suspend_standard_tasks()（幂等重挂）
       │   └─ 重挂发生在签名 unchanged 短路之前：签名未变的拍也会重新挂起，
       │      覆盖 ADB 重连 start_poll 等外部重新激活标准任务的场景
@@ -134,7 +147,7 @@ Tick（每 1.5s，POLL_INTERVAL_MS=1500）
 - `start()` 挂起即时生效而非等首拍检测到牌面——首拍之前标准轮询用固定 ROI 在巅峰页只会跑出垃圾结果，还可能误触冷却与自动跳页。挂起后依次对 `hero_selection` 调用 `set_task_hold(True)`（持有期间该任务不得被任何入口激活，保证「持有 ⇒ 不活跃」在调用返回后即成立）、清除 `hero_selection` / `match_guide` 双任务冷却、调用 `invalidate_inflight_poll()` 作废点击开始前已发出的在途轮询（其冷却/激活/跳转副作用会对抗刚建立的挂起状态），最后启动定时器。
 - `_suspend_standard_tasks()` 幂等：仅首次调用记录原状态快照（`_saved_task_states`），随后只挂起当前活跃任务，可随每拍重复调用。
 - `stop()` 先 `SessionGuard.begin()` 作废在途旧拍，再于状态锁内 `_clear_session_state(keep_signature=True, keep_miss_ticks=True)` 清空会话上下文（确认表/读数指纹/失验计数/禁将基线/牌面板引用/扣住牌面；48b0f99：槽位号跨牌面不稳定，残留确认会被后续图片导入按槽位号盲目套用。P0-1 起与 `start()`、牌面退出共用同一清空方法，新增会话字段只改一处；keep_* 为本边界既有豁免——停止后无拍运行，保留签名与缺席计数无差异），再解除持有 `set_task_hold(False)`，再 `_restore_standard_tasks()` 恢复全部标准任务原状态（活跃→activate、非活跃→deactivate），并清空快照。
-- 牌面自动退出（连续 `BOARD_EXIT_TICKS=2` 拍未检出）不写任务状态——`hero_selection` 留待停止识别恢复，`match_guide` 保持挂起；同时发 `board_exited` 信号，对局攻略轮询的激活与跳页由主窗口转交 `PollCoordinator.handle_peak_exit` 统一衔接（轮询运行中即激活 match_guide 并记 90 秒空闲守护起点，写者唯一）。
+- 牌面自动退出（连续 `BOARD_EXIT_TICKS=4` 拍未检出）不写任务状态——`hero_selection` 留待停止识别恢复，`match_guide` 保持挂起；同时发 `board_exited` 信号，对局攻略轮询的激活与跳页由主窗口转交 `PollCoordinator.handle_peak_exit` 统一衔接（轮询运行中即激活 match_guide 并记 90 秒空闲守护起点，写者唯一）。
 
 ### 3.3 禁选建议（peak_ban_advice.py）
 
@@ -559,3 +572,17 @@ class _ImportWorker(QThread):
 - **过场坏帧扣住一拍复核（036d0ae，行为修复）**：`peak_select_watcher.py` 新增 `_deferred_board` 会话字段（元组 `(签名, OCR 结果, 卡数)`）。规则：选将/禁选期真实池子单调不增前提下，新拍卡数严格高于上一发布拍（`card_count > last_count`）即判疑似过场坏帧（事故：2026-10-09 16:35 巅峰赛桑弘羊已被选走后，场景切换期 raw 截图返回旧 9 张帧使面板候选 8→9→8 跳变），扣住待复核不发布；紧邻下一拍签名原样复现（unchanged 短路）→ 补发布；下一拍签名不同（真实牌面回归）→ 扣住牌面按坏帧丢弃并记 INFO；隔拍再现因回升规则仍在会重新扣住（复核窗口只认紧邻下一拍，无法借过场闪烁获得确认）；牌面缺席拍作废扣住状态；`_clear_session_state()` 同步清 `_deferred_board` 不跨会话；卡数下降（禁转选 14→9）与同数重排不受影响照常立即发布。测试 3 用例（回升拍扣住且下一拍复现后补发布并断言 14→9 禁转选立即发布不受影响、坏帧未复现被丢弃面板不跳变的事故场景直测、缺席作废复核窗口后坏帧隔拍重现重新扣住），扩展停止清理回归锁住 `_deferred_board` 随会话清空
 - 文件规模：`peak_select_watcher.py` 现 585 行（行数棘轮 566 → 593 → 585；036d0ae 放宽理由为桑弘羊跳变事故修复；后删除 `_restore_match_guide` 退出恢复双头、match_guide 衔接激活收敛至 PollCoordinator，降至 585）；§3.2 / §4.3 中 `_session` 字段表述已全部改接 SessionGuard 用法
 - 测试规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
+
+## 九、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更：
+
+- **卡位检测漂移抑制（8020da8，行为修复）**：`card_grid_detector.py` 新增参考几何归一路径，消除逐拍像素抖动被当作布局变化导致的面板跳变——见 §3.1「参考几何与漂移抑制」。核心是 `_normalize_card(mask, box, ref_w, rows)`（主路径归一）、`_refit_card_width(min_run_ratio=0.8)` 宽度修正与 `REFIT_TRUSTED_MIN_RATIO = 0.8` 卡体段可信下限（淡色立绘会把卡体列截短，宽度越窗仅 debug 留痕不吞证据）、`_split_rows_by_gap()` 按垂直间距划分行、`board_row_sizes(cards)` / `layout_is_plausible(cards)` 排布合理性校验
+- **牌面漏检扣帧与转场治理（62c5c23，行为修复）**：`peak_select_watcher._restore_missing_cards(cards)` 在"存活卡逐张原位"（`_is_subset_in_place()`，真实禁将/选走会让剩余卡整排重排、位移 ≥ 半个卡距 276/2）成立时按上一拍已发布卡位补齐，补齐后本拍签名与上一拍一致走 unchanged 短路，面板既不掉张也不多跑一次 OCR（2026-10-12 11→9 事故）；无重排的"真消失"与漏检几何上不可区分，按漏检处理并留日志（游戏实测排布总会重排，8/9/10/11 卡局实测排布分别为 4+4 / 4+5 / 5+5 / 5+6）。`BOARD_EXIT_TICKS` 由 **2 调整为 4**——牌面退出需连续 4 拍缺席才判定，与过场坏帧扣住一拍复核配合，避免场景切换期把过场帧误判为对局结束。§3.2 流程块与缺席阈值已同步
+- **胜率名次单一事实源（c4a8cf4，重构）**：`src/business/analysis/win_rate_ranking.py`（31 行，纯函数）`derive_win_rate_ranks(win_rates, names=None)` 从 `peak_ban_advice.py` 抽出，选将推荐与巅峰赛禁选建议共用同一名次推导，杜绝两处口径漂移；`peak_ban_advice.py` 相应收缩为象限判定（52 行）
+- **match_guide 退出衔接收敛（67a67ef，行为修复）**：巅峰赛牌面退出后对局攻略轮询的激活与跳页统一归 `PollCoordinator.handle_peak_exit`（写者唯一），删除 watcher 侧退出恢复双头——原先两处都可能激活 match_guide，会造成冷却与跳页副作用互相抵消
+- **对局攻略读取降级与截断（0fff5e2）**：`match_analysis_service.py` 单将攻略不可用时只降级该将、不整体失败（异常上抛会在 Qt 槽内被吞致界面滞留上一帧）；要点截断处理
+- **OCR worker 轮询异常兜底（4e0cafe）**：轮询拍异常不再中断后续调度
+- 文件规模：`peak_select_watcher.py` 现 **669 行**、`card_grid_detector.py` 现 **318 行**、`peak_ban_advice.py` **70 行**、`win_rate_ranking.py` **31 行**
+- 测试规模台账：**153 个含 `test_*` 函数的测试文件 / 1936 个 `test_*` 函数**（原 145 / 1626；`tests/` 下 py 文件共 157 个）
+- 本机私有数据仓同步快照（不入版本库，仅为当前工作区实测值）：`combos.json` **1827 条**（原 1570）、`巅峰赛胜率排行.csv` **187 条**（原 183）、`巅峰赛出场排行.csv` **187 条**（原 131）

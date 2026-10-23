@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-1626%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-1936%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
@@ -30,11 +30,14 @@
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-4. **测试与交付工程化** — 145 个测试模块 / 1626 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
+4. **测试与交付工程化** — 153 个测试模块 / 1936 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
 5. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
 6. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
 7. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
 8. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
+9. **首启向导三段体检** — 环境自检 → 模拟器连接与分辨率体检 → 试识别，一页式对话框；任一步失败给出唯一可点修复动作，界面明示「本工具只读屏幕，不操作游戏」；状态持久化到 `config/.onboarding_state.json` 且版本感知，跳过或完成不再打扰，可从「帮助 → 重看首启引导」找回。
+10. **数据可靠性与备份恢复** — 写前快照 + 原子写 + 坏文件留底 + 导入前备份与源结构校验构成完整写保护链；`data/backups/` 自动快照可在「数据 → 从备份恢复」按「当前文件 + 最近快照」对照预览键级差异并一键恢复，恢复前先快照当前状态（双向可回退），坏备份在预览与恢复两侧都拒绝。
+11. **合规执行与访问披露** — robots.txt 24 小时缓存 + 抓取前逐 URL 按已解析规则校验（Disallow 路径拒绝抓取，获取失败放行并告警）；官网采集改用如实爬虫标识 `mjs-agent/1.0`（不伪装浏览器 UA）；Playwright 生成附加 `--disable-blink-features=AutomationControlled` 且相邻两次生成间随机休息 60~180 秒，条款集中登记于 [TERMS.md](TERMS.md) 第 7 节。
 
 ---
 
@@ -45,6 +48,8 @@
 双击 `mjs_agent.exe`，同意使用须知后**跟着首启向导走**即可：① 运行环境自检 → ② 连接 MuMu 模拟器并体检分辨率 → ③ 在游戏里打开【选将】页面试识别。任一步失败时界面会指出哪一环断了并给出可点的修复按钮；不想引导可随时「跳过」（之后可从 帮助 → 重看首启引导 找回）。
 
 向导只读屏幕、不操作游戏；模拟器分辨率建议设为 **2560×1440 或其等比（如 1920×1080）**。
+
+日常使用中最容易误操作的两处都留了后路：**「数据 → 从备份恢复」**可浏览 `data/backups/` 里的自动快照、预览键级差异后一键恢复；**「帮助 → 重看首启引导」**可重新走一遍首启向导。
 
 ### 开发者说明
 
@@ -168,8 +173,16 @@ python -m src.scripts.pull_data push --dry-run   # 只打印将发生的动作
 
 - 来源与采集时间登记：[data/SOURCES.md](data/SOURCES.md)
 - 项目早期提交（2026-06-07 ~ 2026-10-02）中曾包含过此类内容，完整 git 历史按原样
-  保留以如实记录开发过程；处置说明见 LICENSE「第三方内容说明」与 [TERMS.md](TERMS.md) 第 10 节。
+  保留以如实记录开发过程；处置说明见 LICENSE「第三方内容说明」与 [TERMS.md](TERMS.md) 第 11 节。
 - `guides.json` / `synergies.json` 为 AI 生成内容，不入任何仓库，可随时重新生成。
+
+**合规执行（2026-10-19 起，TERMS.md 1.3）**：robots.txt 随抓取存档于
+`logs/robots_cache/` 且 **24 小时内不重复请求**，每次抓取前按已解析规则校验目标 URL，
+被 `Disallow` 的路径拒绝抓取（公告接口与图片域名按各自 robots.txt 校验；robots.txt
+获取失败时放行并告警）。官网采集改用**如实爬虫标识** `mjs-agent/1.0`（附项目地址，
+不再伪装浏览器 UA）；AI 网页模式（`--browser`）的自动化访问方式与 60~180 秒请求间隔
+披露见 [TERMS.md](TERMS.md) 第 7 节。免责声明版本 **1.3**，条款文本实质修订时递增版本，
+桌面应用将在下一次启动时重新展示并要求确认。
 
 ---
 
@@ -178,12 +191,15 @@ python -m src.scripts.pull_data push --dry-run   # 只打印将发生的动作
 ```
 test_project/
 ├── src/
-│   ├── main.py                 # 应用入口（免责声明 + 启动画面 + OCR 阻塞预热）
-│   ├── config/                 # 配置（env.py / logging_config.py / disclaimer_state.py / version.py 版本单一来源）
+│   ├── main.py                 # 应用入口（免责声明 + 启动画面 + OCR 阻塞预热 + 首启向导）
+│   ├── config/                 # 配置（env.py / logging_config.py / version.py 版本单一来源）
+│   │                           #   + disclaimer_state.py（免责声明状态，版本 1.3）
+│   │                           #   + onboarding_state.py（首启向导状态，版本感知）
 │   ├── data/                   # 数据模型 + DataFacade（facade/manager/issues 解环拆分）+ JSON 持久化
 │   │                           #   + hero_timeline（武将变更时间轴）+ card_sync_store（卡牌快照/变更记录）
 │   │                           #   + baike_ignore_store（百科差异忽略名单）
-│   ├── scraper/                # 官网爬虫（official_source/）+ AI 批量生成（ai/）
+│   ├── scraper/                # 官网爬虫（official_source/，含 hero_fields 技能描述解析）
+│   │                           #   + AI 批量生成（ai/，含 generation_lock 生成任务互斥锁）
 │   │                           #   + card_baike（官网手牌库抓取与 diff）
 │   ├── business/               # 业务服务（QProcess/ADB/OCR 编排 + 分析 + 维护 + RAG 业务）
 │   │                           #   + capture_connection（ADB 连接域：配置热更/会话状态/连接编排）
@@ -191,11 +207,14 @@ test_project/
 │   │                           #   + freshness（数据新鲜度判定核心，逐武将核对）
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
+│   │                           #   + maintenance/backup_restore_service（备份快照浏览/预览/恢复）
+│   │                           #   + common/check_cooldown（访问冷却与并发守卫）
+│   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking
 │   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施（embedder.py 双后端编码器抽象，onnx 默认）
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
-│   │                           #   + doctor（一键自检）/ ops（周更编排）/ pull_data（私有数据仓同步）
+│   │                           #   + doctor（一键自检，checks 可选子集）/ ops（周更编排）/ pull_data（私有数据仓同步）
 │   │                           #   + fetch_recheck_models（v4 模型预取）/ ocr_baseline / calibrate_idle_threshold
 │   │                           #   + export_embedding_onnx（ONNX 编码器导出）/ rag_eval_history（评估历史）
 │   └── ui/                     # PySide6 界面（app / configuration / data_admin / generation /
@@ -203,19 +222,21 @@ test_project/
 │                               #   + 主窗口协调器与自足组件（app_services / status_chips /
 │                               #     data_freshness_chip 数据新鲜度芯片 / progress_reporter /
 │                               #     poll_coordinator / announcement_update_coordinator）
-│                               #   + card_sync_dialog（更新确认对话框）
+│                               #   + onboarding_dialog（首启向导三段体检）+ onboarding_fixes
+│                               #   + backup_restore_dialog（备份恢复）/ card_sync_dialog（更新确认）
+│                               #   + synergy_refresh_dialog（落后相性刷新）
 │                               #   + whitelist_config_dialog（白名单配置界面）
 │                               #   + baike_ignore_manager_dialog（百科忽略名单）
-│                               #   + frame_fingerprint（闲置指纹）
-│                               #   + disclaimer_dialog（免责声明对话框）
+│                               #   + frame_fingerprint（闲置指纹）/ disclaimer_dialog（免责声明对话框）
 ├── data/                       # JSON 数据 + RAG 语料/索引 + 官方榜单 CSV
 │                               #   源数据自 2026-10-03 起不入版本库，经私有数据仓同步（SOURCES.md 登记来源）
+│                               #   + backups/（写前快照自动备份，扁平命名，keep=10 轮转）
 │                               #   + card_snapshot.json / card_changes.json（卡牌百科同步）
 │                               #   + baike_ignore.json（百科差异忽略名单）
 ├── images/                     # 武将头像（从官网下载，不入版本库）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（145 个测试模块 / 1626 个测试函数）
+├── tests/                      # 测试用例（153 个测试模块 / 1936 个测试函数）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -238,6 +259,7 @@ test_project/
 │  DataFreshnessChip 新鲜度芯片 + ProgressReporter /           │
 │  PollCoordinator / AnnouncementUpdateCoordinator 协调器）     │
 │  对话框、推荐面板、武将浏览器、巅峰赛选将、知识库维护工作台     │
+│  首启向导（onboarding_dialog 三段体检）/ 备份恢复对话框        │
 │  公共骨架 MasterDetailPane / run_edit_dialog / CaptureLock   │
 │  信号连接 → 业务服务 → 子进程 → 数据刷新                     │
 ├────────────────────────────────────────────────────────────┤
@@ -246,7 +268,8 @@ test_project/
 │  CaptureConnectionManager）、OCR 轮询控制                    │
 │  竞态守卫三原语 session_guard（SessionGuard/BusyGate/        │
 │  OneShotToken）；数据新鲜度判定核心 freshness.py             │
-│  分析（推荐/对局/巅峰赛禁选）、维护、RAG 业务编排             │
+│  分析（推荐/对局/巅峰赛禁选）、维护（含备份恢复服务）、        │
+│  RAG 业务编排；访问冷却与并发守卫 check_cooldown              │
 │  卡牌百科同步（CardSyncService：手动检查 + 应用更新）         │
 │  无 UI 引用，通过 Qt Signal 通信                             │
 ├────────────────────────────────────────────────────────────┤
@@ -279,9 +302,12 @@ AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校�
 - QProcess stdout 以字节缓冲保留未完成行，只对完整换行做 UTF-8 解码与进度解析；`_dispatch_stdout_line` 同步按 `[i/N] 名字 FAIL` 收集失败项到 `failed_items`，出错弹窗据此列出失败清单。
 - AI 子进程（`subprocess.ai`）同样只设 `MJS_QPROCESS_CHILD=1` 走 stdout/stderr 转发，不做子进程直写；失败原因由父进程 `scraper/ai_generation.log` handler 的 `keep_debug=True` 保留（级别固定 DEBUG、不跟随用户级别）——即使 root level≥WARNING 时 429/length/JSON 失败原因也不丢；API 限流退避时输出 `[重试]` 行，进度窗口显示"重试中"。
 - AI 生成每累计 10 条已校验成功结果原子提交正式 JSON，失败项保留对应旧数据。
+- AI 批量生成额外持有 OS 级文件互斥锁（`src/scraper/ai/generation_lock.py`，Windows `msvcrt` / POSIX `fcntl`）：两个生成进程并发"全量覆盖"会静默抹掉对方成果，故同一时刻只允许一个批量任务运行；持有进程退出（含崩溃断电）锁由 OS 自动释放，无残留锁需人工清理。锁文件不可用时降级为哑锁放行并告警，不因锁机制故障阻断生成。
 - OCR 全部任务（预热 / 常规识别 / 官方整批导入 / 巅峰赛识别）共享唯一 `OcrWorker` 的 FIFO 队列，互斥由 `OcrService._import_busy` 串行化；轮询全程内存处理不写磁盘。
 - 启动阶段 OCR 模型在启动画面期间阻塞预热（`wait_ocr_warmup(timeout_ms=120_000)`），避免 OCR 引擎初始化持有 GIL 时卡住事件循环。
-- QProcess 子进程统一带 30 分钟看门狗（`script_runner.DEFAULT_WATCHDOG_MS`），超时 `kill()` 并记 ERROR，消除生成卡网络时"忙碌"永久挂死；各任务成败写任务台账 `logs/task_results.jsonl`（跨日志轮转窗口可回溯）。
+- QProcess 子进程统一带 30 分钟看门狗（`script_runner.DEFAULT_WATCHDOG_MS`），超时**树杀**整棵进程树（Windows `taskkill /T /F`，子脚本拉起的浏览器/同步进程不会被孤儿化）并延迟 2 秒复查，仍在运行则直接终止主进程；Starting 状态下 `kill()` 会在事件循环内原生 abort，改由 `started` 信号到达后补杀。各任务成败写任务台账 `logs/task_results.jsonl`（跨日志轮转窗口可回溯）。
+- 启动失败有明确契约：Qt6 对 `FailedToStart` 只发 `errorOccurred` 不发 `finished`，`ScriptRunner` 统一在错误通道收尾（停看门狗、`deleteLater`），Linux 上异步失败补发 `finished(FAILED_TO_START_EXIT_CODE=-1)` 兑现"返回 True 必收到一次终态"，Windows 同步失败则以返回值 `False` 表达——调用方不会永久卡在忙碌态（VUL-B2-001）。
+- 主窗口关闭时 `shutdown_fetch_services()` 一并中止抓取子进程树：QProcess 随父对象析构不杀子进程，浏览器模式会孤儿化 Edge/node 并锁住 `data/edge_profile`，下次启动报 locked（VUL-B2-002）。
 
 ### 多模式 AI 生成
 
@@ -309,7 +335,7 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **选将推荐**：固定 2×4 卡片，支持识别模拟器画面或从本地图片导入；卡片展示头像、推荐指数、最佳搭档与相性摘要、历史单将胜率（前三 TOP 徽章）。OCR 待确认名称可在候选白名单内人工确认。轮询模式定时检测武将选择页自动填充。
 - **对局攻略**：42/58 分割的 2v2 阵容核对与临场攻略工作台；OCR 导入后按"我方/敌方/未定"分组，确认阵容后展示总览、我方打法、对抗敌方与单将详情；胜率榜按对局链路区分 2v2 / 巅峰赛（`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）。
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
-- **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体与 2~8 武将两两配对。生成失败时弹窗详情列出失败武将/相性对清单。
+- **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体，以及两个独立入口——「指定配对计算」（按状态筛选武将后按策略组装精确配对清单）与「落后相性刷新」（列出已有但落后于武将资料的配对，按最后生成日期升序，勾选后只刷这批）。生成失败时弹窗详情列出失败武将/相性对清单。
 - **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 RapidOCR/ONNX 双套件（v6 主 + v4 复核，未决槽位候选闭包内确认）；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
 - **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/target/special_rules）、检索诊断只读抽屉（候选去向表：得分/RRF/剔除原因中文映射）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
@@ -320,8 +346,10 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **卡牌百科变更捕获**：`CardSyncService` 手动检查官网手牌库更新（60 秒冷却防密集请求），快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，支持差异条目级忽略名单（`baike_ignore.json`），audit_service 复核时效。
 - **白名单配置**：未决错法观察清单（A+/A/B/C 分类排序）+ 用户层白名单维护（`ocr_confusion_overrides.json`），静态冲突检查与即时生效（`reset_ocr_recognizer_cache()`）。
 - **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。
-- **数据新鲜度芯片**：状态栏常驻胶囊按 7/14 天档位判定武将/攻略/相性/榜单四项数据年龄（武将项逐事件逐武将核对，杜绝"指定获取洗绿"与"混合批次只推增量"漏报）；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口；刷新由服务信号 + data/ 目录监听驱动，无轮询定时器。
-- **合规化改造**：免责声明弹窗（版本感知，仅条款更新时重新确认）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（逐次记录善意访问）+ 架构防火墙声明（代码不含 ADB 输入能力）。
+- **数据新鲜度芯片**：状态栏常驻胶囊按档位判定武将/攻略/相性/榜单四项数据年龄（默认 7/14 天，经 `DATA_FRESHNESS_STALE_GREEN_DAYS` / `DATA_FRESHNESS_STALE_RED_DAYS` 可配，榜单类数据周期较长时可调宽避免长期黄/红盖掉武将信号），武将项逐事件逐武将核对，杜绝"指定获取洗绿"与"混合批次只推增量"漏报；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口；刷新由服务信号 + data/ 目录监听驱动，无轮询定时器。
+- **首启向导三段体检**：双击启动后依次完成环境自检 → 模拟器连接与分辨率体检 → 试识别；任一步失败给出唯一的下一步动作文案，且该动作在当前构建形态下可执行；界面明示"本工具只读屏幕，不操作游戏"。状态落 `config/.onboarding_state.json`（版本感知，跳过或完成后不再自动弹出），可从「帮助 → 重看首启引导」重新打开。设计规格见 [docs/spec/spec_onboarding.md](docs/spec/spec_onboarding.md)。
+- **备份与恢复**：全部数据写入路径（编辑事务、配队导入覆盖、坏文件留底、AI 生成与官网采集覆盖前快照）都先写快照到 `data/backups/`（扁平命名，keep=10 轮转）；「数据 → 从备份恢复」按"当前文件 + 最近快照"对照预览键级差异，恢复前先快照当前状态（双向可回退），恢复用原子写替换、失败不留半截文件，坏备份在预览与恢复两侧都拒绝；武将/相性/攻略存在跨文件引用，确认时默认提供整组恢复到同一时间点。
+- **合规化改造**：免责声明弹窗（版本感知，当前 1.3，仅条款更新时重新确认）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档与逐 URL 规则执行（24 小时缓存、Disallow 拒绝抓取、获取失败放行告警）+ 如实爬虫标识 `mjs-agent/1.0` + 自动化访问方式披露（TERMS.md 第 7 节）+ 架构防火墙声明（代码不含 ADB 输入能力）。
 
 ---
 
@@ -365,6 +393,8 @@ RAG_MODEL_DIR=
 
 # 数据新鲜度（状态栏芯片）
 DATA_FRESHNESS_TIMELINE_STALE_DAYS=14
+DATA_FRESHNESS_STALE_GREEN_DAYS=7
+DATA_FRESHNESS_STALE_RED_DAYS=14
 ```
 
 **多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。生成链路经 `resolve_api_config()` 解析（启用档案优先，否则回退 `config.env` → 环境变量 → 默认值）。价格参考来自 `config/model_pricing.json`，势力配色经「配置 → 势力配色」可视化编辑（`faction_colors.json` 为数组结构 `[{faction, color}, ...]`，数组位置即筛选界面展示顺序）。
@@ -417,7 +447,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（18 章，基线 2026-10-11） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-10-23） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/design/](docs/design/) | 设计决策记录 |
@@ -471,14 +501,20 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 三十八 | 竞态守卫原语定稿与连接域出仓（SessionGuard/BusyGate/OneShotToken + CaptureConnectionManager + 巅峰赛坏帧拦截） | ✅ 已完成 |
 | 三十九 | 数据新鲜度芯片（逐武将核对判定核心 + 状态栏胶囊 + 建议动作直达采集入口） | ✅ 已完成 |
 | 四十 | RAG 编码器 ONNX 化（embedder 抽象层 + 导出链 + 检索诊断 + 精简包自带 RAG + 发版四连门禁） | ✅ 已完成 |
+| 四十一 | 首启向导三段体检（环境自检/模拟器连接/试识别 + 状态版本感知 + 帮助入口重看 + smoke 强制通道） | ✅ 已完成 |
+| 四十二 | 爬虫合规加固与访问披露（如实爬虫 UA + robots.txt 逐 URL 执行 + 生成任务互斥锁 + TERMS 1.3 自动化访问披露） | ✅ 已完成 |
+| 四十三 | 抓取链路健壮性（ScriptRunner 启动失败终态契约 + 看门狗树杀与延迟复查 + 退出杀进程树 + 取消 Starting 兜底） | ✅ 已完成 |
+| 四十四 | 数据安全与备份恢复（三条数据全灭路径封堵 + 备份恢复服务与对话框 + 导入前备份与源结构校验） | ✅ 已完成 |
+| 四十五 | 相性指定获取双入口拆分（指定配对计算 + 落后相性刷新，按状态筛选按策略组装配对清单） | ✅ 已完成 |
 
-> 文档基线：2026-10-11（`2081b5b`）。测试 145 个测试模块 / 1626 个测试函数（grep 统计），Ruff 0.12.0 全通过。
+> 文档基线：2026-10-23（`a63bc3c`）。测试 153 个测试模块 / 1936 个测试函数（grep 统计），Ruff 0.12.0 全通过。
 
 ---
 
 ## 合规说明
 
-- 本项目对官网的访问为只读采集，遵守该站 robots.txt 规则，并逐次将 robots.txt 连同抓取时间与内容哈希存档到 `logs/robots_cache/`，作为善意访问的本地记录；
+- 本项目对官网的访问为只读采集，遵守该站 robots.txt 规则：robots.txt 连同抓取时间与内容哈希存档到 `logs/robots_cache/`（24 小时内不重复请求），并在每次抓取前按已解析规则校验目标 URL，被 `Disallow` 的路径拒绝抓取（获取失败时放行并告警）；
+- 官网采集使用**如实爬虫标识** `mjs-agent/1.0`（附项目地址）而非伪装成浏览器 User-Agent，头像下载逐张限速并内置连续失败熔断；AI 网页模式（`--browser`）的自动化访问方式、请求间隔与风险承担见 [TERMS.md](TERMS.md) 第 7 节（当前条款版本 1.3）；
 - 代码**不包含**任何 ADB 输入、自动点击等自动操作能力（见 `src/capture/adb_screen.py` 与 `src/business/emulator/emulator_operation_service.py` 模块文档字符串，及 CLAUDE.md / AGENTS.md 的「法律红线」节），相关功能的 Issue / PR 一律拒绝；
 - 采集数据与头像仅限本地使用，禁止二次发布；AI 生成内容仅供参考。完整条款见 [LICENSE](LICENSE)（附加使用条款）与 [TERMS.md](TERMS.md)。
 

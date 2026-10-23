@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-10-11（基线 2081b5b）
+> 文档日期：2026-10-23（基线 a63bc3c）
 
 ---
 
@@ -38,7 +38,9 @@ src/ui/
 │   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器
 │   ├── disclaimer_dialog.py    # 免责声明对话框（637102b 合规化改造）
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
-│   └── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器
+│   ├── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器
+│   ├── onboarding_dialog.py    # 首启向导：三段一页式体检（环境自检 → 模拟器连接 → 试识别）
+│   └── onboarding_fixes.py     # doctor 修复文案 → 首启向导动作映射（frozen 语境改写）
 ├── library/                    # 资料库：武将浏览、编辑、卡牌与武将获取
 │   ├── hero_browser.py
 │   ├── hero_detail_views.py
@@ -93,7 +95,8 @@ src/ui/
 │   ├── ignoreable_diff_list.py         # 两对话框共用的忽略/详情/选中联动骨架（P0-2 收口，
 │   │                                      偏移语义为钩子：hero 忽略需 content_hash、无服务隐藏入口）
 │   ├── baike_ignore_manager_dialog.py  # 百科忽略名单管理对话框
-│   └── announcement_dialog.py
+│   ├── announcement_dialog.py
+│   └── backup_restore_dialog.py        # 备份恢复入口：data/backups 快照浏览、预览与一键恢复
 ├── shared/                     # 跨功能控件、展示与样式
 │   ├── master_detail.py        # MasterDetailPane 主从列表骨架（列表窗格 + 滚动详情区）
 │   ├── capture_lock.py         # CaptureRequestLock 截图/文件导入单飞锁 + CaptureSource 枚举
@@ -575,6 +578,59 @@ PeakSelectPanel
 - **建议动作路由与忙碌守卫** — 武将落后事件按模式能力路由：`SUGGEST_INCREMENTAL` → “增量获取武将数据（拉取新增武将）”、`SUGGEST_SPECIFIC` → “指定获取武将数据（替换模式，刷新过期武将）…”，混合批次两者并给。`_request_incremental()` / `_request_specific()` 先查 `hero_fetch_service.is_busy`，忙则 `show_toast` 拦截不发信号。
 - **接线** — 构造签名 `__init__(hero_fetch_service, guide_fetch_service, synergy_fetch_service, ai_workflow, announcement_service, parent=None)`；`main_window.py` 完成构造与两信号 `fetch_incremental_requested` / `fetch_specific_requested` 回接 `DialogCoordinator.request_fetch_incremental` / `request_fetch_specific`（L28 导入、L463-474 接线），动作不注册菜单栏。测试 `tests/test_data_freshness_chip.py`（279 行 13 用例）。
 
+### 3.15 首启向导（OnboardingDialog，6962151 / 12c7efb 新增）
+
+`OnboardingDialog`（`src/ui/app/onboarding_dialog.py`，551 行）是首启引导的单页体检式三段布局，每段独立可跳过。入口：菜单「帮助 → 重看首启引导」（`DialogCoordinator.open_onboarding()`），首次启动由 `main.py` 检查 `should_show_state()` 后自动弹出。
+
+**合规边界**（文档注释写死）：向导只做三件事——只读检查文件与依赖、通过 ADB 读屏、调用 OCR 识别；不做任何输入注入、点击游戏、进程访问、内存读取、hook 或反作弊相关动作。本工具只读屏幕，不操作游戏。
+
+**段 1 运行环境**（`_start_env_check`）：
+
+- `EnvCheckWorker(QThread)` 后台执行 `run_checks(offline=True, checks=ONBOARDING_CHECKS)` 四项（`check_runtime_env` / `check_config` / `check_whitelist` / `check_rag_index`，位于 `src/scripts/doctor.py`）；`result_ready = Signal(object)` 回传 `list[Finding]`，`failed = Signal(str)` 回传异常文本。
+- `LIVE_WORKERS: set` 全程引用集合：`__init__` 即入集合，`finished` 后 `deleteLater()` 安全退场——若等 `run()` 内才 add，`start()` 与 `run()` 之间的窗口期 GC 会析构 running `QThread`（Qt6 qFatal，实测闪退）。
+- 每项 Finding 渲染为 `StatusBadge` + `QLabel` + 可选修复按钮；`fix_action(fix, IS_FROZEN)`（`onboarding_fixes.py`）将 doctor 的开发者口吻 fix 文案映射为中文动作名 + `-m` 模块名：可一键执行的（`fetch_recheck_models` / `rag.indexer` / `export_embedding_onnx`）经 `ScriptRunner.run(sys.executable, None, ["-m", module], PROJECT_ROOT)` 走 exe 的 `-m` 分发通道异步执行；frozen 下无意义的安装类命令（含 `pip|conda|python -m`）不渲染修复按钮、原文仅作详情；开发态保留原文按钮。
+- 末尾追加数据三态行：优先读 `DialogCoordinator._data_error` 标记（`MainWindow._load_data` 失败时外移至 `note_load_failed()` 写入），有则 FAIL 态；其次读 `last_load_report.issues` 有则 WARN 态；无则 PASS 态。`last_load_report` 在 `load_all()` 抛异常时不会被覆盖（存在假阴性），故失败态以 `_data_error` 为准。
+
+**段 2 模拟器与画面**（`_start_device_check`）：
+
+- 懒构造 `MumuConfigCoordinator(config=get_mumu_config(), capture_service, ocr_service, parent=self)`，连接 `adb_detected` / `devices_changed` / `device_refresh_failed` / `connection_finished` / `roi_layout_screenshot_ready` / `roi_layout_screenshot_failed` 六个信号。
+- 未配置 ADB → `coordinator.detect_adb()`；已配置 → `coordinator.refresh_devices()`。单实例自动连接；多实例弹下拉选择（`_device_combo` + `_device_connect_button`）；无实例提示启动 MuMu。
+- 连接成功后 `mark_step("device")`（`src/config/onboarding_state.py`），再 `coordinator.start_roi_layout_capture("hero_selection")` 截取选将页截图，经 `compare_resolution()`（`src/business/emulator/layout_resolution.py`）体检分辨率并返回 `(status, detail, hint)` 三态。截图即用即弃：`finally` 块调 `coordinator.finish_roi_layout_capture(page_type)` 释放槽位——不释放会让该页永久留在 in-progress 集合、之后每次"连接并体检"都静默失效。
+- 深链模拟器配置（`_open_mumu_config`）：嵌套 `self._window._dialogs.open_mumu_config()` 返回后重建协调器——旧草稿已过期（含端口变更），`update_adb_path` 式半刷新只同步路径键、残留旧端口草稿会把共享会话倒退回旧端口。
+
+**段 3 试识别**（`_start_recognize`）：
+
+- 预热门禁：连接 `service.ocr_warmup_state_changed` 与初始状态到 `_update_engine_state()`，仅 `warming` 态禁用识别按钮（先例 `peak_select_panel`）；`failed` 态 `warmup_ocr_model()` 会重新入队、重试真实有效。
+- 悬挂复位：`WARMUP_HANG_MS = 150_000` 超时后 `_on_warmup_hang()` 置 `_warmup_timed_out=True`，按钮改「重新初始化」并重新使能；点击时经 `service._ocr_coordinator.reset_warmup()` 复位状态机再重新入队（warming 对 `warmup_ocr_model` 是 no-op，重试无效——必须先复位）。
+- 识别发起：`service.do_capture(hero_names=self._hero_names(), force_ocr=True)`；`_on_capture_completed` 按 `ocr_results` 有无 / 预热态分派 `pass|warn|fail`；`pass` 时 `mark_step("recognize")` + 状态栏 `show_event_message("首次识别成功")`。
+- `closeEvent` 顺序不可颠倒：先置 `_closing=True` 停止发起新请求，再 `coordinator.shutdown()`——shutdown 后 `_submit/_complete` 静默吞请求（OneShotToken 守卫），且 `connection_changed` 中继若不断开会撞 `Signal source has been deleted`。
+
+**收尾与保护**：`DialogCoordinator.open_onboarding()` 外层保护——向导自身异常记日志 + 告警后照常收尾（`sync_with_connection`），不演变为应用启动失败或菜单回调崩溃；`_on_skipped()` 调 `mark_skipped()` 持久化跳过状态。
+
+### 3.16 备份恢复对话框（BackupRestoreDialog，eead74c 新增）
+
+`BackupRestoreDialog`（`src/ui/data_admin/backup_restore_dialog.py`，410 行）是 `data/backups/` 自动快照的浏览、预览与一键恢复入口。入口：菜单「数据 → 从备份恢复」（`DialogCoordinator.open_backup_restore()`）。
+
+**恢复目标**（`restore_targets()` / `default_targets()`）：横跨四类核心数据文件——武将（`heroes.json`）、相性（`synergies.json`）、攻略（`guides.json`）、实战配队（`combos.json`），每文件对应 `RestoreTarget(key, label, file_path, backup_source, unit)`。顶部 `QComboBox` 切换目标文件。
+
+**列表与预览**（三步交互）：
+
+- 表格首列为「← 当前」伪行（仅供对照、不可恢复，`entry=None`），其后为快照（新→旧，`list_backups(target)` 默认 limit=10，`_relative_time()` 描述相对时间如"（9 天前）"）。
+- 选中当前伪行 → `inspect_current(target)` 返回 `(count, invalid)` 或 None；选中快照 → `preview_backup(target, entry)` 返回 `BackupPreview(valid, record_count, added, removed, changed, invalid_count)`。
+- 预览文案：无效时「⚠ 该备份含 N 条坏记录 / 文件已损坏，无法恢复」；有效且无差异时「与当前完全一致」；有差异时「与当前相比 +N / -M / 改 K 条」。仅有效备份使恢复按钮可用。
+
+**恢复**（`_on_restore`）：
+
+- 前置守卫：`is_generation_busy()` 为真时拦截（攻略/相性生成任务进行中）。
+- `_confirm_restore(target, entry)` 返回 `("group"|"single"|None, group_entries)`：
+  - `GROUP_KEYS = ("heroes", "synergies", "guides")` 内的文件（跨文件引用）→ 弹三按钮确认框：「整组恢复（推荐）」/「仅恢复该文件」/「取消」。整组恢复经 `select_group_entries()` 按锚点时间在各文件备份中取同一时间点的最近快照；仅恢复单文件时文案警示「引用关系失配，恢复后若按"失效关联修复"提示操作，将删除引用缺失武将的攻略与相性记录」。
+  - 非 GROUP_KEYS 文件（`combos`）→ 简单 Yes/No 确认。
+- 单文件恢复：`restore_backup(target, entry)` → 原子写入，失败不落盘 → `QMessageBox.information` 显示 `_summary_text()` 变更摘要（`_change_line`：`N → M 条（新增 / 移除 / 变更）` + 快照路径）。
+- 整组恢复（`_restore_group`）：逐文件恢复，每文件恢复前各自快照（双向可回退），单文件失败不回滚其余文件；部分失败时在摘要中如实列出成功与失败清单。
+- 恢复完成后发射 `restored = Signal(str)`（目标 key），`DialogCoordinator._on_backup_restored()` 按数据类型走与导入/清空一致的刷新链：`combos` → `ComboManager.load()` + `HeroBrowser.refresh_synergies()`；其余 → `_reload_data()`（全量重载会顺带重新校验失效关联）+ `_update_status()`。
+
+**备份服务依赖**：`src/business/maintenance/backup_restore_service.py` 提供 `BackupEntry` / `RestoreTarget` / `BackupPreview` / `RestoreResult` 数据模型与 `default_targets` / `restore_targets` / `list_backups` / `inspect_current` / `preview_backup` / `restore_backup` / `select_group_entries` 七个函数。
+
 ---
 
 ## 四、关键代码片段
@@ -651,7 +707,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 |------|------|
 | `reload_data()` | 重新加载所有数据并刷新 UI |
 
-`_load_data()` 由启动与「重载数据」触发：调用 `DataFacade.load_all()` 后检查返回报告中的 `missing_reference` 问题，有则弹「发现数据关联问题」Yes/No 确认；选 Yes 即经 `DataMutationService.repair_missing_references()` 修复失效相性/攻略关联并重载、最后弹信息汇总（删除相性/攻略数、清理攻略关联数），选 No 弹警告保留原始数据；加载异常统一兜底为「数据加载失败」警告弹窗并提示核对 `heroes.json`。
+`_load_data()` 由启动与「重载数据」触发：调用 `DataFacade.load_all()` 后检查返回报告中的 `missing_reference` 问题，有则弹「发现数据关联问题」Yes/No 确认；选 Yes 即经 `DataMutationService.repair_missing_references()` 修复失效相性/攻略关联并重载、最后弹信息汇总（删除相性/攻略数、清理攻略关联数），选 No 弹警告保留原始数据；加载异常统一兜底为 `DialogCoordinator.note_load_failed()`（写入 `_data_error` 标记 + 弹告警，弹窗与标记同源，首启向导段 1 读该标记作数据行"加载失败"态）。
 
 ### HeroBrowser 公共方法
 
@@ -714,6 +770,9 @@ def update_recommendations(self, data: list[dict]) -> None:
 | `BaikeIgnoreManagerDialog` | 百科忽略名单管理：查看/恢复被压制的武将与卡牌差异条目 |
 | `WhitelistConfigDialog` | 白名单配置：错法观察清单（A+/A/B/C 分类）+ 用户层白名单维护 |
 | `DisclaimerDialog` | 免责声明对话框（启动时检查版本并确认） |
+| `OnboardingDialog` | 首启向导：三段一页式体检（环境自检 → 模拟器连接 → 试识别），每段独立可跳过 |
+| `BackupRestoreDialog` | 备份恢复入口：data/backups 快照浏览、预览差异与一键恢复（整组/单文件），`restored` 信号通知刷新 |
+| `SynergyRefreshDialog` | 落后相性刷新：列出已有但落后于武将资料的配对，勾选后返回 `selected_pairs` |
 
 ---
 
@@ -733,6 +792,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.recognition.pending_stats` | OCR 未决错法频次记录与人工确认答案收集（白名单治理） |
 | 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
 | 依赖 | `src.business.maintenance.data_management_service` | 武将/攻略/相性变更的快照与备份写入 |
+| 依赖 | `src.business.maintenance.backup_restore_service` | 备份恢复服务（`BackupRestoreDialog` 消费 `default_targets` / `list_backups` / `preview_backup` / `restore_backup` / `select_group_entries` 等） |
 | 依赖 | `src.business.maintenance.corpus_services` | 实战配队/专属牌/分类写路径服务 |
 | 依赖 | `src.business.maintenance.classification_suggest` | 武将分类 LLM 建议（后台 worker 调用） |
 | 依赖 | `src.business.card_catalog` | 卡牌目录服务（`CardManagementPanel`） |
@@ -741,17 +801,18 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.freshness` | 数据新鲜度判定（`DataFreshnessChip` 消费 `compute_freshness_report()` / `FreshnessReport` / 档位与菜单常量） |
 | 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.config.disclaimer_state` | 免责声明状态管理（版本控制与确认记录） |
+| 依赖 | `src.config.onboarding_state` | 首启向导状态管理（`mark_step` / `mark_skipped` / `should_show_state`） |
 | 依赖 | `src.ocr.*` | 模板管理 + OCR 识别 + 卡位检测 |
 | 依赖 | `src.business.recognition.name_resolution` | 白名单静态冲突检查（`find_whitelist_conflicts()` 与 `SAFE_SUBSTITUTION_WHITELIST` 基线表） |
 | 依赖 | `src.ui.shared.persist.run_edit_dialog` | 模态编辑对话框的标准保存循环 |
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 
-## 七、代码规模（2026-10-11 基线）
+## 七、代码规模（2026-10-23 基线）
 
-- **测试模块数**：145 个测试文件
-- **测试用例数**：1626 个 `test_*` 函数
-- **`main_window.py` 行数预算**：575 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查与数据新鲜度芯片接线棘轮上调至 575）
+- **测试模块数**：153 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 157 个）
+- **测试用例数**：1936 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
+- **`main_window.py` 行数预算**：575 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口棘轮上调）
 
 ## 八、知识库维护界面（已迁出）
 
@@ -797,3 +858,37 @@ def update_recommendations(self, data: list[dict]) -> None:
 **数字口径**
 - 测试规模：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
 - `main_window.py` 预算 561 → 575（ae92c1d 芯片接线 +14 行；2026-10-06 校准误记 552，基线时实际已因忙碌守卫/自动公告检查接线升至 561）
+
+---
+
+## 十一、本轮文档校准（2026-10-23）
+
+自基线 `a63bc3c`（2026-10-11 校准）以来的变更：
+
+**新功能**
+- **首启向导三段体检**（6962151 / 12c7efb）：新文件 `src/ui/app/onboarding_dialog.py`（551 行）+ `onboarding_fixes.py`（45 行）。单页三段布局——① 运行环境（`EnvCheckWorker` 后台跑 doctor 四项离线检查 + 数据三态行，`LIVE_WORKERS` 防 GC 析构 running QThread，`fix_action()` 将开发者 fix 文案映射为中文一键修复按钮，frozen 下安装类命令降级为详情）；② 模拟器连接（懒构造 `MumuConfigCoordinator`，多实例下拉选择，`compare_resolution()` 体检分辨率，深链配置返回后整只重建协调器防端口倒退）；③ 试识别（预热门禁 + `WARMUP_HANG_MS=150s` 悬挂复位经 `reset_warmup()`，结果按 `ocr_results` 有无/预热态分派 pass/warn/fail）。`closeEvent` 顺序保护：先置 `_closing` 停新请求再 shutdown 协调器。`DialogCoordinator.open_onboarding()` 外层异常保护（记日志 + 告警后照常收尾，不演变为启动失败）；菜单「帮助 → 重看首启引导」入口（详见 3.15 节）。新测试 `test_onboarding_dialog.py`（664 行）
+- **备份恢复入口**（eead74c）：新文件 `src/ui/data_admin/backup_restore_dialog.py`（410 行）。`data/backups/` 自动快照的浏览、预览与一键恢复——顶部 `QComboBox` 切换四类核心数据文件（武将/相性/攻略/实战配队），表格首列「← 当前」伪行 + 其后快照（新→旧，`_relative_time()` 相对描述），选中即预览键级差异（`+N / -M / 改 K 条`）；恢复前自动快照当前状态（双向可回退），`GROUP_KEYS=("heroes","synergies","guides")` 内文件默认整组恢复到同一时间点（跨文件引用一致），非组文件简单单文件恢复；整组恢复逐文件恢复、单文件失败不回滚其余文件，部分失败如实列出成功与失败清单。恢复完成发射 `restored(Signal(str))` 经 `DialogCoordinator._on_backup_restored()` 按数据类型走与导入/清空一致的刷新链（详见 3.16 节）。新测试 `test_backup_restore_dialog.py`（190 行 10 用例）
+- **相性指定获取入口拆分**（c4d547a / 2f4a966）：`SynergyPairDialog` 移除策略面板（`_skip_existing_radio` / `_overwrite_existing_radio`）改为状态标注 + 自动组装——新增 `SynergyStatus(Enum)` 枚举（`MISSING`/`OUTDATED`/`CURRENT`），`_build_status_map()` 逐武将汇总名下相性记录状态（无记录=未生成、任一落后=待更新、否则最新），`_list_item_text()` 在列表项标注状态（纯信息展示不可筛选）；`_build_selected_pairs()` 按"缺啥补啥"策略组装精确配对清单（缺失的补、落后的刷、最新的不动），`selected_pairs` 取代 `selected_heroes` 作为输出；`_pair_breakdown()` 返回 `(总组数, 将生成数)` 实时统计。新增 `SynergyRefreshDialog`（200 行，独立 `QDialog` 不继承 `BaseHeroSelectDialog`，列表项是配对而非武将）：构造时经 `SynergyManager.list_outdated_synergies()` 预计算所有已有但落后于武将资料的配对（跳过引用武将已删除的孤儿记录），按最后生成日期升序展示（日期无法解析视为最旧排最前），支持按武将名搜索（命中任一侧即显示）、全选/清空、逐行勾选。`AiGenerationWorkflow.request_synergy_pair()` 改为消费 `selected_pairs` 经 `fetch_pairs_list()` 恒定 `overwrite=True` 提交；新增 `request_synergy_refresh()` 同链路。菜单文案：`synergy_pair` 由「指定获取」改「指定配对计算」，新增 `synergy_refresh`「落后相性刷新」（详见 3.2 / 3.10 节）
+- **公告管理器启动加载**（788e297）：`AppServices.__init__` 新增 `announcement_manager.load()`——此前漏加载让磁盘上的已处理状态不可见，已 applied 的公告每次检查都被当新公告重新入库、反复提示待更新
+- **公告检查忙碌/冷却提示**（0fff5e2 配套）：`AnnouncementUpdateCoordinator.check_announcements()` 新增 `is_busy` 拦截（"公告检查正在进行中"）与 `cooldown_remaining` 拦截（"检查过于频繁，请 N 秒后再试"）；`AnnouncementDialog.check_requested` 由直连 `service.check_now()` 改经 `check_announcements()`——直连会在冷却期静默无反馈
+- **公告更新作废阶段令牌修复**（0fff5e2 配套）：`_abort_pending_phases()` 中 `_phase_gate.release()` 改 `reset()`——作废的是在途阶段的占用、非持有者释放
+- **抓取子进程退出保护**（VUL-B2-002）：`AppServices` 新增 `shutdown_fetch_services(timeout_ms=2000)`——`cancel()` 三个抓取服务后，经 `QCoreApplication.instance().processEvents()` 事件循环泵最多等待 `timeout_ms` 让进程树真正退出（QProcess 随父对象析构不杀子进程树：browser 模式下 Playwright 的 Edge/node 会孤儿化并锁住 `data/edge_profile`，下次浏览器模式启动报 locked）；`MainWindow.closeEvent` 调用
+- **数据加载失败标记外移**（配套首启向导）：`DialogCoordinator` 新增 `_data_error` 属性 + `note_load_failed()` / `clear_data_error()`；`MainWindow._load_data()` 失败时经 `note_load_failed()` 写入标记并弹告警（弹窗与标记同源）；首启向导段 1 读该标记作数据行"加载失败"态（详见 3.15 节）
+- **武将编辑/删除忙碌守卫补全**（配套）：`HeroDetailPanel._on_info_edit()` / `_on_info_delete()` 新增 `_notify_generation_busy()` 前置调用——与攻略/相性编辑一致，生成中禁止编辑避免数据覆盖（原仅攻略/相性四个入口有守卫）
+- **相性忙碌态扩展**：`MainWindow` 构造 `HeroBrowser` 时 `busy_check` 回调新增 `synergy_service.reloading` 分支——相性数据重载期间同样拦截编辑，文案"相性数据重载"
+
+**修复（第一梯队，0fff5e2 配套）**
+- **攻略/相性失败后内存重载**（VUL-B4-001）：`_on_guide_error()` 新增 `guide_manager.load()` + `guides_changed.emit()`；`_on_synergy_error()` 新增 `synergy_service.reload_from_disk()`——失败或看门狗超时前可能已有分批提交的数据落盘，重载保持内存与磁盘一致、避免后续保存以旧盖新
+- **卡牌告警累积**：`CardSyncDialog._on_check_finished()` 新增 `_append_warning(result)` 方法——收尾阶段的非致命问题（如基线落盘失败）追加到结果行末尾（`⚠ {warning}`），不覆盖 diff 文案
+- **推荐指数读取降级**：`RecommendationData` 新增 `load_error` 字段；`RecommendationPanel._load_recommendation_data()` 失败时返回带 `load_error` 的快照而非空数据；`_report_load_error()` 在 `init` 与 `rebuild` 后调用 `_show_error_notice("推荐指数读取失败", load_error, "rebuild")`，避免与"确实没数据"混淆
+- **推荐指数重建后状态回读**：`_on_rebuild_completed()` 不再硬编码 `set_index_stale_notice(False)`，改以重建后回读的真实 `recommendation_data.indexes_stale` 为准（数据层只在写入规范快照路径时才清标记）；`mark_recommendation_indexes_stale()` 构造新 `RecommendationData` 时补传 `load_error`
+- **胜率字段名修正**：`recommendation_panel.py` 将 `recommendation_data.win_rates` 改 `recommendation_data.win_rate_percent`（字段名与业务层对齐）
+- **奖牌计算修正**：`_apply_medal_rankings()` 改为只在本局已识别武将之间比较（`derive_win_rate_ranks()` 按武将名排序），同分不随 OCR 槽位序漂移；新增 `MEDAL_LIMIT = 3` 常量
+- **轮询弃单（VUL-B3-002 配套）**：`PollCoordinator._wait_for_ocr_task()` 超时后调 `ocr_task.abandon()` 置取消并释放整帧引用，滞留队列的任务不再执行过期识别、不写 `latest.json`/错法频次
+- **轮询异常兜底**：`do_poll_work()` 新增 `except Exception` 分支——未预期异常必须回写 `complete_poll(generation, RETRYABLE_CAPTURE, "轮询内部异常，详见运行日志")`，否则 `OcrService` 的在途忙碌闸永久占用、`begin_poll` 永远被拒、轮询静默卡死
+- **免责声明补条**（637102b 配套）：`disclaimer_dialog.py` 新增第 8 条——程序化自动访问外部网站（AI 网页模式、官网采集）的合规风险说明；`_DISCLAIMER_ITEMS` 由 7 条增至 8 条
+- **DataManagementDialog 忙碌守卫传递**：`DataManagementService` 构造新增 `is_busy=is_generation_busy` 参数，与对话框层的 `is_generation_busy` 回调一致传递到服务层
+
+**数字口径**
+- 测试规模：153 个含 `test_*` 函数的测试文件 / 1936 个 `test_*` 函数（原 145 / 1626；`tests/` 下 py 文件共 157 个）
+- `main_window.py` 预算 575 → 575（本轮新增入口（备份恢复/首启向导/相性刷新）经 `DialogCoordinator` / `AiGenerationWorkflow` 委托，主窗口新增 3 个 `_actions` 键映射 + 1 行 busy_check 回调扩展，预算维持）

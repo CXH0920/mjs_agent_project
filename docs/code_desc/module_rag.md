@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：commit `624c8c5`（2026-09-15）→ 2026-10-11 增量更新（含 `885ea96` Phase 4 拆分、`af8cd06` 快照基线、`1694ab7` B1 切换与 `2081b5b` RAG 编码器 ONNX 化窗口）
+> 代码基线：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -35,8 +35,8 @@
 
 ### 代码规模
 
-- 测试模块：145 个测试文件
-- 测试用例：1626 个 `test_*` 函数
+- 测试模块：153 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 157 个）
+- 测试用例：1936 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
 
 ---
 
@@ -237,7 +237,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 `RefinementUpdate` dataclass：`timing` / `trigger_condition` / `target` / `special_rules`（四字段，按 `fields_for` 取子集）+ `method` + `updated_at`。
 
-`scan_blocks(corpus_dir)` 一次扫描 `REFINABLE_FILES`（`卡牌RAG语料.json` / `武将RAG语料.json`）并**三分类**：
+`scan_blocks(corpus_dir)` 一次扫描 `REFINABLE_FILES`（`卡牌RAG语料.json` / `武将RAG语料.json`）并**三分类**（读文件全程持 `_CORPUS_LOCK` 进程内互斥，Windows 下 `os.replace` 与并发读同文件会 `PermissionError`）：
 
 - `pending` 待精化 —— 无 `curated` 且任一精化字段为空
 - `curated` 已精化 —— 有 `curated`（此时 `fields` 以 `curated` 已有键为权威；缺键时回退读顶层，存量 curated 无 `target`/`special_rules` 键时不会静默清空）
@@ -245,7 +245,9 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 `list_pending()` / `list_curated()` / `list_normal()` 三方法供 UI 按分类读取。
 
-`suggest_one(block, generator)` 用 `REFINEMENT_SYSTEM_PROMPT` 提示 LLM 输出字段 JSON，经 `extract_json()` 解析；`_to_update()` 截断上限按字段集动态计算。`apply_curated()` / `clear_curated()` 原子读写语料文件。
+`suggest_one(block, generator)` 用 `REFINEMENT_SYSTEM_PROMPT` 提示 LLM 输出字段 JSON，经 `extract_json()` 解析；调用 `generator.complete()` 时传 `label=block.block_id`（供上游日志定位）；`_to_update()` 截断上限按字段集动态计算，同时对每条 LLM 输出条目做 `_clean_item()` 清洗（空白折叠为单空格、剔除控制/零宽字符、限长 `MAX_ITEM_CHARS=100`——防超长文本污染 embedding 与检索排序；清洗后为空的条目丢弃）。
+
+`apply_curated()` / `clear_curated()` 原子读写语料文件：读-改-写全程持 `_CORPUS_LOCK`，写前调 `snapshot_to_backups(path)` 把原文件快照到同目录 `backups/`（语料出 git 后的唯一本地回滚点；快照失败宁可让本次保存失败也不无备份覆写）。
 
 **② 会话状态层 `RefinementSession`（纯 Python，无 Qt 依赖）**
 
@@ -260,7 +262,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 **③ Qt 线程编排层 `SuggestController`**
 
-持有 worker 引用链与 generator 善后，dialog 销毁不连带析构运行中的线程。两个关键防护：模块级 `LIVE_WORKERS: set` 持有运行中的 `SuggestWorker`（防引用丢失被 GC 析构）；`cancel_and_shutdown()` 后仍在运行的 worker 转入 `_zombies` 列表持续持有，直到线程真正结束（QThread 在 `run()` 未结束时析构会导致整个进程崩溃）。
+持有 worker 引用链与 generator 善后，dialog 销毁不连带析构运行中的线程。三个关键防护：① `SuggestWorker` 的 `LIVE_WORKERS` 引用**在 `__init__` 即注入**（若等 `run()` 内才 add，`start()` 与 `run()` 执行之间的窗口里 GC 会析构 running QThread，Qt6 qFatal）；`finished` 信号经 `_retire()` 安全退场（`LIVE_WORKERS.discard` + `deleteLater`）；② `cancel_and_shutdown()` 不立即 close generator——worker 可能正处于 httpx 请求中，另一线程关闭 client 会破坏连接池（`RuntimeError: client has been closed`）——等 `worker.wait(1000)` 确认线程退出后才释放，仍在运行则转 `_zombies` 列表持续持有（防 QThread 在 `run()` 未结束时析构导致进程崩溃）；生成器释放挂到该 worker 自身的 `finished` 上延迟执行（闭包捕获本轮实例，不触碰此后新一轮的 `self._generator`）；③ `_on_worker_finished()` 用 `self.sender() is not self._worker` 拦截迟到 `finished`——取消后僵尸线程的迟到信号若不拦截，会清空新一轮的 worker 引用、关闭新生成器并误发 `finished`（提前"宣告完成"）。
 
 ### 3.6 元规则 T0 文档维护
 
@@ -303,7 +305,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 ### 3.8 审计与工作流
 
-`audit_service.audit_summary(root, pending_refinement=None)` 返回 `AuditIssue` 列表（frozen dataclass，含 `kind` / `message` / `severity` / `target_tab` / `target`），供 UI 渲染跳转按钮。`pending_refinement` 参数允许调用方传入已算好的待精化清单，避免同一轮刷新重复读语料文件。
+`audit_service.audit_summary(root, pending_refinement=None)` 返回 `AuditIssue` 列表（frozen dataclass，含 `kind` / `message` / `severity` / `target_tab` / `target`），供 UI 渲染跳转按钮。`pending_refinement` 参数允许调用方传入已算好的待精化清单，避免同一轮刷新重复读语料文件。**审计自身容错**：`audit_summary()` 整体包裹 `try/except`——收集函数对畸形数据的未预见缺陷降级为单条 `audit_self_failed` 提示（审计功能最该发挥作用的时刻恰是数据变坏时，不能让坏数据把整个"知识库维护"页刷成崩溃）；实际校验逻辑委托私有 `_audit_summary()`。此外 `heroes.json` / `special_cards.json` 根结构异常（非数组）抛 `ValueError` 走 `*_unreadable` 分支，不静默通过；`collect_card_points()` / `collect_equip_attrs()` 对非对象条目与计数非数值降级为 `bad_row` kind 跳过并提示，不抛异常；`collect_unclassified()` 过滤无名条目（`None`）防 `sorted` 因 `None` 与 `str` 比较抛 `TypeError`；`_maybe_int()` 容错 `int()` 解析失败返回 `None`。
 
 **校验清单**（校验规则的花色/点数/张数/件数/细分类型/距离修正常量全部取自 `src/data` 各仓储，单一事实源）：
 
@@ -314,8 +316,9 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `orphan_category_key` | 分类表引用了 `heroes.json` 中不存在的武将（反向校验） | 武将分类 |
 | `unknown_hero` | 专属牌 `hero` 字段引用未知武将 | 专属牌，`focus_item()` |
 | `missing_settlement` | 专属牌/战法牌缺结算详情（"死士"为非实体牌标记，豁免） | 专属牌，`focus_item()` |
-| `card_points_*` | 结构 / 总张数 162 / 异常花色 / 异常点数 | 卡牌点数 |
-| `equip_attrs_*` | 结构 / 件数 26 / 细分类型 / 距离修正 | 装备属性 |
+| `card_points_*` | 结构 / 总张数 162 / 异常花色 / 异常点数 / 记录非对象或计数非数值（`bad_row`，跳过并提示） | 卡牌点数 |
+| `equip_attrs_*` | 结构 / 件数 26 / 细分类型 / 距离修正 / 记录非对象（`bad_row`，跳过并提示） | 装备属性 |
+| `audit_self_failed` | 审计自身异常（收集函数对畸形数据的未预见缺陷） | 无跳转（提示检查各数据文件结构） |
 | `timeline_risk` | `heroes.json` 疑未同步 | 无跳转 |
 | `curated_stale` | 技能块精化早于该技能最近调整（时间轴点名技能，确证复核项） | 索引精化工作台 |
 | `curated_stale_possible` | 精化早于武将级调整记录（公告未注明技能，存疑兜底） | 索引精化工作台 |
@@ -331,7 +334,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 - `collect_stale_card_curated(root)` — 卡牌精化时效检查，数据源为 `data/card_changes.json`（官网同步应用记录）；`block_id` 形如 `card_{id}_{name}`，按前缀反解卡牌 id，生成 `card_curated_stale` 条目。
 - 两种时效提示均带"去复核"按钮，点击跳转索引精化工作台。
 
-**审计双消费方**：`collect_*()` 系列函数由 UI 侧 `audit_summary()` 与脚本侧 `scripts/rag_audit.py` 共用，避免两侧各维护一份校验逻辑。`rag_audit.py` 额外做两项 UI 不做的事：技能描述中疑似牌名/道具名的启发式提取（`_SUFFIX` 结尾字 + `_BLACKLIST` 通用术语黑名单 + 已知名称区间覆盖，仅作人工确认提示），以及语料目录 `is_current='false'` 过时块统计。
+**审计双消费方**：`collect_*()` 系列函数由 UI 侧 `audit_summary()` 与脚本侧 `scripts/rag_audit.py` 共用，避免两侧各维护一份校验逻辑。`rag_audit.py` 额外做两项 UI 不做的事：技能描述中疑似牌名/道具名的启发式提取（`_SUFFIX` 结尾字 + `_BLACKLIST` 通用术语黑名单 + 已知名称区间覆盖，仅作人工确认提示），以及语料目录 `is_current='false'` 过时块统计。`collect_card_points()` 新增 `bad_row` kind（记录非对象或计数非数值，跳过并提示）；`collect_equip_attrs()` 新增 `bad_row` kind（记录非对象，跳过并提示）；`_maybe_int()` 容错 `int()` 解析失败返回 `None`——审计对坏计数降级提示，不自身抛异常。
 
 **跳转实现**：`AuditIssue.target_tab` 仍存页签名（如"武将分类维护"），`removesuffix("维护")` 即左栏项 key，因此 `audit_service.py` 无需随布局重排改动。
 
@@ -428,14 +431,17 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 接口 | 说明 |
 |------|------|
 | `PendingBlock` / `RefinementUpdate` | 数据类：块视图（`corpus` / `block_id` / `name` / `kind` / `text` / `fields` / `missing` / `method` / `updated_at`）与精化结果（按 `fields_for` 取子集 + `method` + `updated_at`）；卡牌块无名称字段时从 `block_id` 取 `card_{id}_{name}` 的卡名段 |
-| `scan_blocks(corpus_dir)` | 一次扫描三分类，返回 `{"pending": [], "curated": [], "normal": []}` |
+| `scan_blocks(corpus_dir)` | 一次扫描三分类，返回 `{"pending": [], "curated": [], "normal": []}`；读文件全程持 `_CORPUS_LOCK` 进程内互斥 |
 | `list_pending()` / `list_curated()` / `list_normal()` | 三分类之一的薄封装 |
-| `suggest_one(block, generator)` | 单块 LLM 建议（公开接口），API/解析失败返回 `None` |
+| `suggest_one(block, generator)` | 单块 LLM 建议（公开接口），调用 `generator.complete(messages, temperature=0.2, label=block.block_id)`，API/解析失败返回 `None` |
 | `generate_suggestions(pending, generator)` | 逐块调用，返回 `{block_id: RefinementUpdate}`，单块失败跳过 |
-| `apply_curated(corpus_dir, updates, fname)` | 写回精化结果：更新顶层精化字段并新增 `curated` 字段（原子保存），返回写入块数 |
-| `clear_curated(corpus_dir, block_id, fname)` | 删除 `curated` 字段（取消精化）；块不存在抛 `ValueError`，本就没有 curated 返回 `False` |
+| `apply_curated(corpus_dir, updates, fname)` | 写回精化结果：更新顶层精化字段并新增 `curated` 字段；读-改-写全程持 `_CORPUS_LOCK`，写前 `snapshot_to_backups(path)` 快照到同目录 `backups/`（快照失败宁让本次保存失败也不无备份覆写），原子保存，返回写入块数 |
+| `clear_curated(corpus_dir, block_id, fname)` | 删除 `curated` 字段（取消精化）；读-改-写全程持锁，写前快照；块不存在抛 `ValueError`，本就没有 curated 返回 `False` |
 | `build_generator(profile_name=None)` | 按 API 档案构造 `AIBatchGenerator`；供应商语义缺 Key 返回 `None` |
 | `REFINABLE_FILES` / `DEFAULT_CORPUS_DIR` | 常量：两个可精化语料文件名 / 语料目录 |
+| `MAX_ITEM_CHARS` | 常量 `100`：LLM 建议单条清洗上限 |
+| `_CORPUS_LOCK` | 模块级 `threading.RLock`：语料读-改-写进程内互斥（Windows 下 `os.replace` 与并发读同文件会 `PermissionError`） |
+| `_clean_item(text)` | LLM 建议单条清洗：空白折叠为单空格、剔除控制/零宽字符、限长；只在 LLM 输出入口（`_to_update`）施加，人工编辑保存不经此路径 |
 
 **`refinement_session.py` — `RefinementSession(corpus_dir)`**
 
@@ -460,11 +466,11 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 接口 | 说明 |
 |------|------|
 | `start(blocks, generator, *, single=False)` | 启动批量/单块建议；`single=True` 时结果需回填编辑器 |
-| `cancel_and_shutdown()` | 中止在途建议：worker 置取消、generator 先 `cancel` 再 `close`、`worker.wait(1000)` 短时等待，仍在运行则转僵尸列表持有 |
+| `cancel_and_shutdown()` | 中止在途建议：置取消标志并等线程收尾，线程确认退出后才释放 generator（防 httpx 连接池被另一线程关闭破坏）；仍在运行则转僵尸列表持有，生成器释放挂到该 worker 自身 `finished` 延迟执行（闭包捕获本轮实例） |
 | `is_running` / `total` / `done` / `failed` / `current_worker` | 状态属性，供对话框渲染总览与按钮可用性 |
 | 信号 `result_ready(block, update, is_single)` | 逐块结果转发，进度计数已先行更新 |
 | 信号 `finished(is_single)` | worker 正常结束且 generator 已释放后发出（取消/关闭路径不发） |
-| `SuggestWorker` | `QThread`，`parent=None` + `LIVE_WORKERS` 持有 + `finished→deleteLater` 自回收 |
+| `SuggestWorker` | `QThread`，`parent=None` + `__init__` 即入 `LIVE_WORKERS`（防 `start()` 与 `run()` 窗口期 GC 析构 running QThread）+ `finished→_retire()` 安全退场（`discard` + `deleteLater`） |
 | `LIVE_WORKERS` | 模块级 `set`，持有运行中 worker 防 GC 析构 |
 
 **`rule_doc_service.py`**
@@ -484,18 +490,19 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 接口 | 说明 |
 |------|------|
 | `AuditIssue` | frozen dataclass：`kind` / `message` / `severity` / `target_tab` / `target` |
-| `audit_summary(root, pending_refinement=None)` | 汇总审计条目，空列表表示无问题 |
+| `audit_summary(root, pending_refinement=None)` | 汇总审计条目，空列表表示无问题；整体 `try/except` 包裹，异常降级为单条 `audit_self_failed` 提示（委托私有 `_audit_summary()` 执行实际校验） |
 | `format_audit_issues(issues)` | 结构化条目 → 纯文本列表（兼容旧消费方/测试） |
-| `collect_card_points(payload)` | 卡牌点数校验（`structure` / `total` / `bad_suit` / `bad_point`） |
-| `collect_equip_attrs(equips)` | 装备属性校验（`structure` / `count` / `bad_subtype` / `bad_distance`） |
+| `collect_card_points(payload)` | 卡牌点数校验（`structure` / `total` / `bad_suit` / `bad_point` / `bad_row`：记录非对象或计数非数值，跳过并提示） |
+| `collect_equip_attrs(equips)` | 装备属性校验（`structure` / `count` / `bad_subtype` / `bad_distance` / `bad_row`：记录非对象，跳过并提示） |
 | `collect_missing_settlements(specials)` | 专属牌/战法牌缺结算详情（死士豁免） |
-| `collect_unclassified(hero_names, classification)` | 未归类武将名（升序） |
+| `collect_unclassified(hero_names, classification)` | 未归类武将名（升序）；过滤无名条目（`None`）防 `sorted` 因 `None` 与 `str` 比较抛 `TypeError` |
 | `collect_orphan_category_keys(hero_names, classification)` | 分类表引用未知武将（反向校验，升序） |
 | `collect_unknown_heroes(specials, hero_names)` | 专属牌引用未知武将（泛指/括号注释跳过，升序） |
 | `collect_timeline_risk_messages(root)` | 时间轴风险摘要（UI 横幅用）。**2026-09 变更**：移除 override 风险段（TRIGGER_OVERRIDES 已删除） |
 | `collect_stale_curated(root)` | 精化时效复核（武将）：技能级确证 + 武将级存疑兜底，`"新增"` 事件不触发 |
 | `collect_stale_card_curated(root)` | 精化时效复核（卡牌）：数据源 `data/card_changes.json`，block_id 按 `card_{id}_{name}` 前缀反解卡牌 id |
 | `GENERIC_HERO_NAMES` | 泛指/占位武将名 `{"通用", "—", "众多武将"}`，校验与 UI 共用 |
+| `_maybe_int(value)` | 容错 `int()`：解析失败返回 `None`，审计对坏计数降级提示不自身抛异常 |
 
 **`hero_brief.py`**
 
@@ -536,6 +543,8 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `equip_attrs_panel.py` | `EquipAttrsPanel(repository)`，信号 `data_changed`；列 `("名称","细分类型","攻击范围","距离修正","备注")`，名称/备注只读 |
 
 > 另外两个维护对象面板位于 `src/ui/library/`：`hero_classification_panel.py`（`HeroClassificationPanel`，含 `focus_unclassified()`）、`special_cards_panel.py`（`SpecialCardsPanel`，含 `focus_item(category, name)`）。
+
+**启动失败统一处理（2f4a529）**：`ScriptRunner.run()` 返回 `False` 表示本次未启动（已有任务在跑或启动失败），此时**不会**发 `finished`——调用方须据此自行复位忙碌状态，否则面板按钮永久禁用。三个维护面板（`rule_doc_panel.py` / `rag_maintenance_panel.py` / `card_points_panel.py`）均按此模式处理：检查 `run()` 返回值，`False` 时复位 `_set_busy(False)` 或按钮状态，并输出"启动失败"日志。`rule_doc_panel.py` 额外引入 `FAILED_TO_START_EXIT_CODE`（`-1`），经 `_on_finished(FAILED_TO_START_EXIT_CODE, ...)` 走统一失败收尾链路。
 
 ### 4.5 CLI 脚本参数表
 
@@ -732,7 +741,7 @@ TASKS: list[dict] = [
 
 | 方向 | 模块 | 说明 |
 |------|------|------|
-| 依赖 | `src.data.json_repository` | `atomic_write_json()`：语料 JSON、curated 写回、提案/确认清单全部经此原子写盘 |
+| 依赖 | `src.data.json_repository` | `atomic_write_json()`：语料 JSON、curated 写回、提案/确认清单全部经此原子写盘；`snapshot_to_backups()`：语料写前快照到同目录 `backups/`（语料出 git 后的唯一本地回滚点，快照失败宁让本次保存失败也不无备份覆写） |
 | 依赖 | `src.data.card_points_repository` | `EXPECTED_TOTAL_CARDS=162` / `VALID_SUITS`（♥♣♠♦太极）/ `VALID_POINTS`（1~8）——卡牌点数校验常量单一事实源 |
 | 依赖 | `src.data.equip_attrs_repository` | `EXPECTED_EQUIP_COUNT=26` / `VALID_SUBTYPES`（武器/防具/坐骑）/ `VALID_DISTANCE_MODS` |
 | 依赖 | `src.data.hero_classification_repository` | 武将分类数据源仓储（UI 面板持有，审计读 JSON） |
@@ -825,3 +834,41 @@ TASKS: list[dict] = [
 **文档结构勘误**
 - 2.5 归属图：`corpus_fields.py` 实际位于 `src/data/`（2026-10-01 校准已迁移，本图漏改），本次修正并在 4.2 标注；`src/business/rag/` 补 `retrieval_diagnostic.py` 后为 8 文件
 - 代码规模：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
+
+---
+
+## 十、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更（主体为 `2f4a529` RAG 域审查修复批）：
+
+**审计容错加固**（`audit_service.py` +90）
+- `audit_summary()` 整体包裹 `try/except`：收集函数对畸形数据的未预见缺陷降级为单条 `audit_self_failed` 提示，委托私有 `_audit_summary()` 执行实际校验（3.8）
+- `_maybe_int(value)` 容错 `int()` 解析失败返回 `None`（4.2）
+- `collect_card_points()` 新增 `bad_row` kind（记录非对象或计数非数值，跳过并提示）
+- `collect_equip_attrs()` 新增 `bad_row` kind（记录非对象，跳过并提示）
+- `collect_unclassified()` 过滤无名条目（`None`）防 `sorted` 因 `None` 与 `str` 比较抛 `TypeError`
+- `collect_unknown_heroes()` / `collect_missing_settlements()` 增加 `isinstance` 守卫
+- `heroes.json` / `special_cards.json` 根结构异常（非数组）抛 `ValueError` 走 `*_unreadable` 分支
+
+**建议线程并发收口**（`suggest_controller.py` +81）
+- `SuggestWorker.__init__` 即入 `LIVE_WORKERS`（防 `start()` 与 `run()` 窗口期 GC 析构 running QThread，Qt6 qFatal）；`finished` 经 `_retire()` 安全退场（`discard` + `deleteLater`）；`run()` 不再管理 `LIVE_WORKERS`（3.5）
+- `cancel_and_shutdown()` 不立即 close generator（防 httpx 连接池被另一线程关闭破坏），`worker.wait(1000)` 确认退出后才释放；僵尸路径生成器释放挂到该 worker 自身 `finished` 延迟执行（闭包捕获本轮实例，不触碰此后新一轮的 `self._generator`）
+- `_on_worker_finished()` 用 `self.sender() is not self._worker` 拦截迟到 `finished`（防取消后僵尸线程清空新一轮引用、关闭新生成器并误发 `finished`）
+- `_release_generator()` 不再静默 `pass`，改 `logger.warning` 记录释放失败
+
+**语料写前快照与用量补记**（`refinement_service.py` +103）
+- `_CORPUS_LOCK = threading.RLock()`：语料读-改-写进程内互斥（Windows 下 `os.replace` 与并发读同文件会 `PermissionError`）；`scan_blocks()` / `apply_curated()` / `clear_curated()` 全程持锁（3.5）
+- `apply_curated()` / `clear_curated()` 写前调 `snapshot_to_backups(path)` 快照到同目录 `backups/`（语料出 git 后的唯一本地回滚点，快照失败宁让本次保存失败也不无备份覆写）
+- `_clean_item(text)`：LLM 建议单条清洗——空白折叠为单空格、剔除控制/零宽字符、限长 `MAX_ITEM_CHARS=100`；`_INVISIBLE_RE` 正则覆盖零宽/双向控制/控制字符范围（VUL-B1-001 防提示注入）；`_to_update()` 对每条 LLM 输出条目施加，人工编辑保存不经此路径
+- `suggest_one()` 调用 `generator.complete()` 新增 `label=block.block_id`（供上游日志定位）
+
+**导入前备份与源结构校验加固**（`3a8845f`）
+- `data/json_repository.py` 的 `snapshot_to_backups()` 从 `data/manager.py` 下沉，`refinement_service` 新增调用（语料写前快照）
+
+**UI 面板启动失败处理**（`2f4a529`）
+- `rule_doc_panel.py` / `rag_maintenance_panel.py` / `card_points_panel.py` 检查 `ScriptRunner.run()` 返回值，`False` 时复位忙碌状态并输出"启动失败"日志（4.4）
+- `rule_doc_panel.py` 引入 `FAILED_TO_START_EXIT_CODE` 经 `_on_finished()` 走统一失败收尾链路
+
+**其他**
+- `25606a8`：放宽 `rule_doc_panel.py` 行数预算至 935（配合测试）
+- `9ccc2fc`：第二梯队审查修复批（含数据回滚/子进程工作目录）

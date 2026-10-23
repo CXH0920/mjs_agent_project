@@ -1,8 +1,8 @@
 # 模块：爬虫与数据采集
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
-> 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量四道规模守卫 + 增量损坏硬停）**
-> 文档日期：2026-10-11（基线 2081b5b）
+> 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**
+> 文档日期：2026-10-23（基线 a63bc3c）
 
 ---
 
@@ -11,11 +11,13 @@
 本模块负责从[名将杀官网百科](https://mjs.ztgame.com/baike/)获取武将原始数据。官网不提供 REST API，数据通过 Nuxt.js 打包在 JS chunk 中。模块的核心工作是从 JS 文本中提取数据、清洗字段、映射到 Pydantic 模型并输出为 JSON。
 
 功能包括：
-- **全量采集** — 从官网下载全部武将数据（写入前四道规模守卫，拦截官网改版导致的空数据/截断数据覆盖）
+- **全量采集** — 从官网下载全部武将数据（写入前五道规模守卫，拦截官网改版导致的空数据/截断数据/解析丢失覆盖）
 - **增量采集** — 只采集本地没有的新武将（损坏本地文件硬停，堵死"损坏 → 空集 → 全量覆盖"静默销毁链）
 - **指定采集** — 按武将名或 ID 采集特定武将
 - **头像下载** — 从官网下载武将头像到 `images/` 目录
 - **公告监控** — 拉取官方公告 API，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将哈希 diff 确认"什么真的变了"
+- **爬虫合规** — 如实声明本项目 User-Agent、存档并执行站点 robots.txt 规则、按访问频率上限控制请求节奏（详见 3.10 节与 `TERMS.md`）
+- **本地扩展字段保护** — `title` / `difficulty` / `mode_viability` 为用户手工维护的本地数据，采集不覆盖（由 `carry_over_local_fields()` 回填）
 
 ---
 
@@ -29,14 +31,17 @@ src/scraper/
 └── official_source/
     ├── __init__.py          # 空
     ├── adapter.py           # 官网页面与 JS chunk 解析适配器（状态机核心）
-    ├── crawler.py           # 网络请求、数据清洗、校验与头像下载（robots.txt 存档 + save_json_atomic 委托 atomic_write_json）
-    ├── full.py              # 全量采集实现（CLI main + refuse_write_reason 四道写入守卫 + 写前快照）
-    ├── incremental.py       # 增量/指定采集实现（CLI main + 损坏硬停 + 空结果退出码失败 + 写前快照）
+    ├── crawler.py           # 网络请求（如实 User-Agent + robots.txt 存档与规则执行）、数据清洗委托、校验与头像下载（save_json_atomic 委托 atomic_write_json）
+    ├── hero_fields.py       # 字段清洗纯函数（clean_html 多层实体解码）+ 本地扩展字段保护（carry_over_local_fields）
+    ├── full.py              # 全量采集实现（CLI main + refuse_write_reason 五道写入守卫 + 本地字段回填 + 写前快照）
+    ├── incremental.py       # 增量/指定采集实现（CLI main + 损坏/缺 id 硬停 + 空目标退出码失败 + 本地字段回填 + 写前快照）
     ├── announcement.py      # 公告 API/回退解析、武将相关判定、百科逐武将 diff
     └── card_baike.py        # 官网手牌库卡牌抓取、diff 与快照
 ```
 
 根目录的 `official.py` 与 `incremental.py` 是薄薄的兼容入口（仅 6 行，导入子包 `main`），真正的业务逻辑都在 `official_source/` 下；`official_source/__init__.py` 为空文件。
+
+`crawler.py` 不再自持字段清洗实现，改为从 `hero_fields.py` 导入并 `__all__` 重新导出 `clean_html` / `carry_over_local_fields` / `LOCAL_EXTENSION_FIELDS`——既有 caller 继续经 `crawler.clean_html` 等路径调用，签名与语义不变。
 
 ---
 
@@ -58,7 +63,7 @@ src/scraper/
 
 **适配器边界：** `official_source/adapter.py` 集中承载官网页面与 chunk 的格式假设；官网改版时只需修改该文件。两个关键函数——`find_chunk_url`（从首页定位 `/_nuxt/mjbk.<hash>.js`）与 `extract_js_array`（定位 `const e=[...]` 变量）——在找不到预期模式时都会把现场信息（页面/JS 前 300 字符 + 已发现的其他 `_nuxt` 脚本列表）写入错误日志和异常消息，改版当天即可定位。
 
-**robots.txt 存档（637102b 合规化改造新增）**：`crawler.py` 在每次抓取前，先将目标站点的 robots.txt 存档到 `logs/robots_cache/<hostname>.txt`，作为合规审计证据。存档失败不影响抓取流程（仅记 warning）。
+**robots.txt 存档与规则执行（637102b 存档 / 9180cf0 规则执行）**：`crawler.py` 在每次抓取前先将目标站点的 robots.txt 存档到 `logs/robots_cache/robots.txt`（附带 `robots_meta.json` 记录抓取时间与 sha256，24 小时 TTL），并解析其规则在请求前校验目标 URL——被 `Disallow` 的路径抛 `RobotsDisallowedError` 拒绝请求；存档或规则不可得时降级放行并告警。存档失败不影响抓取流程。详见 3.10 节。
 
 **字符级状态机（`js_to_json`）：** JS 对象数组（无引号键、`undefined`、尾逗号）不是合法 JSON。旧实现使用三步正则预处理，会被技能描述里的 `效果{x:1}`、`,变化:无` 等内容误改写。当前改为**字符级状态机**，单遍扫描，仅在字符串字面量之外执行改写：
 
@@ -159,29 +164,28 @@ def extract_js_array(js_text: str) -> str:
 | `gender` | `hero.gender` | `GENDER_MAP = {1:"男", 2:"女"}`，默认男 |
 | `skill`（遍历） | `hero.skills[]` | `split_skill_desc()` 拆分 |
 | `icon_url` | `hero.icon_url` | 直接取 |
-| _(固定值)_ | `hero.title` | 空字符串 |
-| _(固定值)_ | `hero.difficulty` | 2 |
-| _(固定值)_ | `hero.mode_viability` | 空字典 |
 | _(固定值)_ | `hero.last_updated` | 当日 `date.today().isoformat()` |
+| _(回填)_ | `hero.title` / `hero.difficulty` / `hero.mode_viability` | 官网不提供，`transform()` 不再输出；由 `carry_over_local_fields()` 从旧 `heroes.json` 按 id 回填（详见 3.10 节） |
 
 **技能拆分逻辑（`split_skill_desc`）：**
-按 HTML 的 `<p><strong>段落标题</strong></p>` 结构拆分：
-- 保留「技能描述」→ `description`
-- 保留「结算详情/结算详解/技能详解/技能详情」→ `settlement`（取第一个命中）
+按 HTML 的 `<p>[<strong>]段落标题[/strong]</p>` 结构拆分——`<strong>` 按可选处理，兼容官网人工编辑偶尔漏包加粗（裸 `<p>标题</p>`）的异常标题格式（a78e801）：
+- 描述按「技能描述」→「技能详情」→「技能详解」顺序认领首个命中（官网标题措辞不统一）→ `description`
+- 保留「结算详情/结算详解/技能详解/技能详情」→ `settlement`（取第一个**未被描述认领**的命中，避免同一段文字两处重复）
 - 丢弃「技能典故」「设计思路」（lore 文本，对游戏策略无帮助）
 
-### 3.2.1 全量采集写入前守卫（full.py，1fbfce4 新增）
+### 3.2.1 全量采集写入前守卫（full.py，1fbfce4 新增 / a78e801 第五道）
 
-新增纯函数 `refuse_write_reason(validated: list[dict], out_path: Path) -> str | None`，四道规模守卫任一触发即返回拒绝原因，`crawl()` 写入分支据此打印 `[中止] 写入守卫触发` 并 `sys.exit(1)`（UI 经退出码显示失败而非"完成"）：
+纯函数 `refuse_write_reason(validated: list[dict], out_path: Path, raw_ids: set | None = None) -> str | None`，五道规模守卫任一触发即返回拒绝原因，`crawl()` 写入分支据此打印 `[中止] 写入守卫触发` 并 `sys.exit(1)`（UI 经退出码显示失败而非"完成"）：
 
 1. **校验通过 0 条**——官网改版产出空数据；
 2. **技能总数为 0**——全部武将 `skills` 之和为空；
 3. **空技能描述占比超 20%**（`MAX_EMPTY_DESC_RATIO = 0.2`）——按 `description.strip()` 为空计数，拦截"官网返回壳子数据"；
-4. **较现存条数跌幅超 30%**（`MAX_COUNT_DROP_RATIO = 0.3`）——仅当 `out_path` 存在且可解析为非空 list 时比较 `len(validated) < len(old) * 0.7`；**旧文件损坏时该检查跳过直接放行**——全量重爬正是恢复手段，保持"官网正常时重爬可修复损坏文件"的路径畅通。
+4. **本地已有但官网也存在、却没进校验结果的武将**（a78e801）——当 `raw_ids` 非空时，对旧文件中「id ∈ raw_ids 且 id ∉ validated」的条目计数并拒绝，报错如「本地 N 个武将在官网存在但校验未通过（id 预览，最多 10 个），疑似解析丢失」；官网原始数据里本就没有的（真下架）不拦；
+5. **较现存条数跌幅超 30%**（`MAX_COUNT_DROP_RATIO = 0.3`）——仅当 `out_path` 存在且可解析为非空 list 时比较 `len(validated) < len(old) * 0.7`；**旧文件损坏时第 4/5 道跳过直接放行**——全量重爬正是恢复手段，保持"官网正常时重爬可修复损坏文件"的路径畅通。
 
-通过守卫后先 `snapshot_to_backups(out_path)` 写前快照再 `save_json_atomic` 落盘。测试 `tests/test_crawler.py` 共 10 例（守卫纯函数 7 例 + crawl 集成 3 例）。
+通过守卫后先 `carry_over_local_fields(validated, _load_previous_heroes(out_path))` 回填本地扩展字段，再 `snapshot_to_backups(out_path)` 写前快照，最后 `save_json_atomic` 落盘。测试 `tests/test_crawler.py` 共 53 例。
 
-> **设计思路：** 与模型层 `Skill` 字段 `min_length=1` 约束互补——模型层拦截"显式空串"，守卫层拦截"字段整体缺失/占比异常"的整批坏数据；两层共同保证"官网改版不会静默覆盖本地好数据"。
+> **设计思路：** 与模型层 `Skill` 字段 `min_length=1` 约束互补——模型层拦截"显式空串"，守卫层拦截"字段整体缺失/占比异常"的整批坏数据；第 4 道进一步区分"官网真下架"与"解析/校验环节丢数据"，防止单点解析失败静默删库。三层共同保证"官网改版不会静默覆盖本地好数据"。
 
 ### 3.3 增量采集
 
@@ -200,11 +204,12 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
    - **增量（`append=True`）**：追加本地缺失的武将；
    - **指定（`replace_ids`）**：先按 ID 删除旧数据再写入新数据（精确替换，覆盖已采集武将的陈旧数据）；
    - **皆否**：全量覆盖。
+   替换与追加两种模式在合并前统一 `carry_over_local_fields(validated, existing)` 回填本地扩展字段（详见 3.10 节）。
 4. 写入模式最后统一 `snapshot_to_backups(output_path)` 写前快照再 `save_json_atomic`（b181e13）。
 
-**空结果退出码改失败（b181e13）**：`run()` 清洗后 0 条不再打印"无新数据需要处理"以退出码 0 结束（会被 UI 读作完成），改为打印 `[中止] 目标武将清洗后 0 条（疑似官网结构变更）` 并 `sys.exit(1)`；校验全部失败同样 `sys.exit(1)`。`main()` 中"真无更新"（目标原始列表为空）仍走正常分支退出 0，不受影响。
+**空结果退出码全部改失败（b181e13 / 1d8334a）**：`run()` 清洗后 0 条不再打印"无新数据需要处理"以退出码 0 结束（会被 UI 读作完成），改为打印 `[中止] 目标武将清洗后 0 条（疑似官网结构变更）` 并 `sys.exit(1)`；校验全部失败同样 `sys.exit(1)`。`main()` 中"空目标"（筛选后 `target_raw` 为空，如所选武将已下架或 ID 无效）自 1d8334a 起也从退出码 0 改为 `sys.exit(1)`——父进程 QProcess 以退出码判定成败，0 会让"一条都没采"显示成成功，公告更新随后 `mark_applied` 把待更新武将静默丢弃。
 
-**损坏本地文件硬停（b181e13 / 8a46a43）**：`_load_heroes_file()` 对解析失败**或顶层非数组**（如整个 dict）的文件先 `_backup_corrupt_file()` 改名 `heroes.corrupt-<时间戳>.json` 留存再返回 `None`；`load_existing_ids()` 损坏时返回 `None` 而非空集——增量入口与替换/追加两个写入分支收到 `None` 均打印中止信息并 `sys.exit(1)`，堵死"损坏改名 → 空集 → 把整个 heroes.json 覆盖成只剩指定 1~2 个武将"的静默销毁链路。
+**损坏/缺 id 本地文件硬停（b181e13 / 8a46a43 / 74ad9b9）**：`_load_heroes_file()` 对解析失败、**顶层非数组**（如整个 dict）、或**存在条目缺 id / id 非正整数**的文件（`_hero_id_is_valid()` 校验，报错列出下标前 10 个）先 `_backup_corrupt_file()` 改名 `heroes.corrupt-<时间戳>.json` 留存再返回 `None`。逐条校验 id 而非只在遍历时下标访问：合法 JSON 数组中某条缺 id（手工编辑/外部工具写入/旧版本残留）时，替换与追加模式会在**已完成全量抓取之后**抛 `KeyError`，用户看到的是堆栈而非"数据文件已损坏"的结论。`load_existing_ids()` 损坏时返回 `None` 而非空集——增量入口与替换/追加两个写入分支收到 `None` 均打印中止信息并 `sys.exit(1)`，堵死"损坏改名 → 空集 → 把整个 heroes.json 覆盖成只剩指定 1~2 个武将"的静默销毁链路。
 
 **默认数据路径归运行时可写根（6b21d75）**：`full.py DEFAULT_OUTPUT = PROJECT_ROOT/"data"/"heroes.json"`、`incremental.py DEFAULT_DATA_DIR = PROJECT_ROOT/"data"`（原均为 BUNDLE_ROOT）。背景：打包 frozen 下 BUNDLE_ROOT（`<exe>/_internal`）只读、PROJECT_ROOT（exe 同级）可写，原"写入可写根、读取钉死只读根"的分裂不暴露于开发态（两根相等），打包态则致抓取结果落只读 `_internal`、UI 与数据芯片不可见；归位运行时根后与首启部署的基线副本、UI 读取链路同根。同批治理另有 `ai/batch.py DEFAULT_DATA_DIR` 与 `rule_summary._CORE_RULES_FILE`（见 module_ai_batch.md），常量落点由 `tests/test_ranking_csv_runtime_root.py` 以双根分裂模拟锁死。
 
@@ -213,6 +218,7 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 `download_hero_images()` 遍历官网原始数据，取 `icon_url` 和 `name`：
 - 文件路径固定为 `images/{武将名}.png`；角色名经 NFC 规范化后仅允许中文、字母、数字、`_`、`-`（`SAFE_IMAGE_NAME_PATTERN`），并拒绝 Windows 保留名；
 - 仅允许从 `https://siteres.ztgame.com` 下载，通过自定义 `_NoRedirectHandler` 逐跳校验重定向目标（至多 3 次），非官方域名即时拒绝；
+- 图片域与主站不同源，`_open_image_response()` 入口先经 `_ensure_robots_allowed()` 按该主机独立获取的 robots 规则校验（获取一次并进程内缓存），被禁止则不发起请求；
 - 响应以 64 KiB 分块下载，最大 5 MiB；`content-type` 非 `image/png` 直接拒绝；
 - 临时文件经 Pillow 双重解码验证：格式必须是 PNG、像素数不超过 4,000,000、`verify()` 通过，`load()` 后再原子替换正式头像；失败临时文件由 `finally` 清理；
 - 逐张请求间隔 0.5 s；连续失败 5 张熔断中止本次下载，避免对源站瞬时连发触发限流；
@@ -314,6 +320,61 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 
 > **设计思路：** heroes.json 是官方榜单导入服务（词表消解）与知识库面板（归类/专属牌）的共同事实源。爬虫更新 heroes.json 后，各面板的 `reload_data` 入口统一调用 `load_hero_briefs` 刷新武将名单，确保新增武将可被归类或关联专属牌。
 
+### 3.10 爬虫合规与本地字段保护（9180cf0 / 29ae6d6，2026-10-23）
+
+本模块自 2026-10-11 基线起完成一次合规与完整性加固，涉及 `crawler.py` 与新增的 `hero_fields.py`。合规条款与访问频率控制的完整披露见 `TERMS.md`「自动化访问与访问频率」，抓取数据自 2026-10-03 起不入版本库（经 `src/scripts/pull_data.py` 从私有仓同步，`data/SOURCES.md` 登记来源）。
+
+**如实爬虫标识（29ae6d6）**：`HEADERS["User-Agent"]` 由伪装浏览器 UA（`Mozilla/5.0 ... Chrome/131.0.0.0`）改为如实声明的本项目标识：
+
+```python
+HEADERS = {
+    "User-Agent": "mjs-agent/1.0 (+https://github.com/CXH0920/mjs_agent_project)"
+}
+```
+
+站点 robots.txt 为「`User-agent: *` / `Allow: /`」全站放行，如实标识既满足许可前提，也让运营方能在访问日志里定位到本项目；同一 UA 字符串也被传入 `RobotFileParser.can_fetch()` 做规则匹配。
+
+**robots.txt 规则执行（9180cf0）**：在既有存档（合规证据）之外新增规则解析与执行链路，按 URL 源（`scheme://host[:port]`）进程内缓存规则：
+
+| 函数 | 职责 |
+|------|------|
+| `_robots_origin(url)` | 提取 URL 源；非 http(s) 或非默认端口才带端口；非 http(s) 返回 `None` |
+| `_parse_robots_rules(content)` | `urllib.robotparser.RobotFileParser.parse()` 解析规则文本 |
+| `_load_archived_rules()` | 主站规则直接读本地存档（`fetch` 入口已先刷新存档，不重复请求网络） |
+| `_fetch_host_rules(origin)` | 次级主机（公告 API / 图片域）独立请求该站 robots.txt 并缓存；自带请求而不复用 `fetch()`（复用会递归），获取失败（含 404）按 RFC 9309 不可得语义降级为允许且进程内不重试 |
+| `_rules_for_url(url)` | 按源取规则；未命中缓存时按主站/次级主机分流 |
+| `_ensure_robots_allowed(url)` | 规则不可得（`None`）放行；明确 `Disallow` 抛 `RobotsDisallowedError` |
+
+接入点：`fetch()` 在 `_ensure_robots_txt_cached()` 之后、发起 `urlopen` 之前调用 `_ensure_robots_allowed(url)`；`_open_image_response()` 入口同样先校验。`cache_robots_txt()` 新存档落地后会失效主站的规则缓存，保证长进程下一次校验读到新规则。
+
+> **降级语义：** robots 存档与规则获取失败只降级为"放行 + 告警"，不阻断采集——robots 是合规护栏而非功能依赖，网络不可达时不应让全量采集失败；只有站点**明确** `Disallow` 才硬拒绝。
+
+**本地扩展字段保护（29ae6d6）**：官网只提供基础资料，`title` / `difficulty` / `mode_viability` 是用户在界面上手工维护的本地数据。此前 `transform()` 会输出固定占位值（`title=""`、`difficulty=2`、`mode_viability={}`），全量重爬会把用户手工填写的内容覆盖回默认值。本次改为：
+
+- `transform()` 不再输出这三个字段（官网没有的字段不由爬虫发明默认值）；
+- 新增纯函数 `carry_over_local_fields(new_heroes, existing)` 按 id 从旧 `heroes.json` 回填这三个字段，字段在旧数据中不存在时保留模型默认值；
+- 调用点三处：`full.crawl()`（守卫通过后、快照前）、`incremental.run()` 的替换分支、`incremental.run()` 的追加分支；
+- 常量 `LOCAL_EXTENSION_FIELDS = ("title", "difficulty", "mode_viability")` 与 `announcement.py` 的 `hero_content_hash()` 排除口径必须一致——哈希只算官网字段，本地扩展字段不计入变更判定，否则本地手工编辑会被误报为官网变更。
+
+**官网异常标题与多层实体清洗（a78e801 / 74ad9b9）**：`clean_html()` 从 `crawler.py` 迁入 `hero_fields.py` 并改写为「多轮实体解码 + 像标签识别」：
+
+```python
+# 「像标签」序列：< 后必须是字母、/字母、!-- 或 !；`<5`、`->` 不匹配故保留为正文。
+_TAG_LIKE_RE = re.compile(r"<(?:/?[a-zA-Z][^>]*|!--.*?--|![^>]*)>", re.DOTALL)
+
+
+def _unescape_and_strip_tags(text: str, rounds: int = 3) -> str:
+    """解码实体并剥离随之显形的标签，交替多轮以覆盖 `&amp;lt;` 多层编码。"""
+    for _ in range(rounds):
+        previous = text
+        text = _TAG_LIKE_RE.sub("", html_module.unescape(text))
+        if text == previous:
+            break
+    return text
+```
+
+旧实现 `re.sub(r"<[^>]+>", "", text)` + `unescape()` 两步单向，`&lt;` 解码成字面 `<` 后再无机会剥离（`&amp;lt;img ...&amp;gt;` 双层编码同理）。新实现交替"解码 → 剥像标签"最多 3 轮直至收敛，且第二轮只认「像标签」的序列，因此 `手牌上限&lt;5`、`伤害->暴击` 这类正文比较符不会被当标签吞掉（实测 192 名武将有 11 条描述含此类符号）。`split_skill_desc()` 的标题正则将 `<strong>` 改为可选（`(?:<strong>\s*)?(...)(?:\s*</strong>)?`），兼容官网漏包加粗的裸 `<p>标题</p>` 段落标题。
+
 ---
 
 ## 四、字段清洗与默认值代码节选
@@ -331,29 +392,39 @@ def transform(raw: dict) -> dict | None:
         logger.warning("跳过 id=%s: 名称字段为空", hero_id)
         return None
 
-    gender = GENDER_MAP.get(raw.get("gender"), "男")
+    # 性别映射
+    gender_raw = raw.get("gender")
+    gender = GENDER_MAP.get(gender_raw, "男")
+
+    # 体力/手牌上限
     try:
         max_hp = int(raw.get("p_blood_max", 4))
     except (ValueError, TypeError):
         max_hp = 4
+
     try:
         max_hand = int(raw.get("p_card_max", 4))
     except (ValueError, TypeError):
         max_hand = 4
-    # ...技能清洗略...
+
+    # ...技能清洗略（遍历 raw["skill"]，clean_html + split_skill_desc）...
+
     hero = {
-        "id": hero_id, "name": name, "title": "",
+        "id": hero_id,
+        "name": name,
         "faction": clean_html(raw.get("dynasty", "")),
         "position": clean_html(raw.get("p_positioning", "")),
-        "max_hp": max_hp, "max_hand": max_hand, "gender": gender,
-        "skills": skills, "icon_url": str(raw.get("icon_url", "")),
-        "difficulty": 2, "mode_viability": {},
+        "max_hp": max_hp,
+        "max_hand": max_hand,
+        "gender": gender,
+        "skills": skills,
+        "icon_url": str(raw.get("icon_url", "")),
         "last_updated": date.today().isoformat(),
     }
     return hero
 ```
 
-> **设计思路：** `id` 和 `name` 缺失时拒绝整条数据（因为后续所有关联操作都依赖于它们）。`max_hp` / `max_hand` 转型失败使用默认值 4（绝大多数武将的体力和手牌就是 4），容忍偶发的格式不一致。
+> **设计思路：** `id` 和 `name` 缺失时拒绝整条数据（因为后续所有关联操作都依赖于它们）。`max_hp` / `max_hand` 转型失败使用默认值 4（绝大多数武将的体力和手牌就是 4），容忍偶发的格式不一致。`title` / `difficulty` / `mode_viability` 三个本地扩展字段**不再输出固定占位值**——它们只在 `carry_over_local_fields()` 回填出现，避免全量重爬把用户手工维护的数据覆盖回默认值（详见 3.10 节）。
 
 ---
 
@@ -370,14 +441,18 @@ def transform(raw: dict) -> dict | None:
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `fetch(url, binary=False)` | `crawler.py` | HTTP 请求，最多 3 次重试、`RETRY_DELAY=2s`；400/401/403/404 立即抛出 |
+| `fetch(url, binary=False)` | `crawler.py` | HTTP 请求，最多 3 次重试、`RETRY_DELAY=2s`；400/401/403/404 立即抛出；每次调用前先刷新 robots 存档并按规则校验，被 `Disallow` 抛 `RobotsDisallowedError` |
+| `RobotsDisallowedError` | `crawler.py` | `RuntimeError` 子类：目标 URL 被站点 robots.txt 规则禁止抓取（`_ensure_robots_allowed` 抛出，规则不可得时不抛） |
 | `save_json_atomic(path, data)` | `crawler.py` | 委托 `src.data.json_repository.atomic_write_json`（mkstemp 唯一临时名 + fsync + 原子替换） |
-| `clean_html(html_text)` | `crawler.py` | 去 HTML 标签、unescape、归一化空白 |
-| `split_skill_desc(raw_desc)` | `crawler.py` | 按段落标题拆分技能描述/结算 |
-| `transform(raw)` | `crawler.py` | 字段清洗与映射，返回 dict 或 None |
+| `clean_html(html_text)` | `hero_fields.py`（经 `crawler.py` 重导出） | 去 HTML 标签、多轮实体解码（`&amp;lt;` 覆盖）、归一化空白；只剥「像标签」序列，保留 `<5` / `->` 等正文比较符 |
+| `carry_over_local_fields(new_heroes, existing)` | `hero_fields.py`（经 `crawler.py` 重导出） | 按 id 把旧数据里的 `LOCAL_EXTENSION_FIELDS` 回填到本次采集结果，返回同一列表（原地修改）；`existing` 为 None/空时原样返回 |
+| `LOCAL_EXTENSION_FIELDS` | `hero_fields.py` | 常量 `("title", "difficulty", "mode_viability")`：官网不提供、用户手工维护、采集不得覆盖的字段；与 `hero_content_hash` 排除口径一致 |
+| `split_skill_desc(raw_desc)` | `crawler.py` | 按段落标题拆分技能描述/结算；`<strong>` 可选，描述按 技能描述→技能详情→技能详解 认领，结算跳过已认领标题 |
+| `transform(raw)` | `crawler.py` | 字段清洗与映射，返回 dict 或 None；不再输出本地扩展字段 |
 | `validate_heroes(heroes)` | `crawler.py` | Pydantic `Hero` 模型校验 |
 | `fetch_all_raw()` | `crawler.py` | 端到端：HTML → chunk → JS 文本 → 原始 list |
 | `download_hero_images(raw_list, image_dir=None, skip_existing=True)` | `crawler.py` | 头像下载，返回成功张数 |
+| `refuse_write_reason(validated, out_path, raw_ids=None)` | `full.py` | 全量写入前五道规模守卫纯函数，返回拒绝原因或 None（详见 3.2.1 节） |
 | `find_chunk_url(html)` | `adapter.py` | 从 HTML 定位 JS chunk URL，失败带现场诊断 |
 | `extract_js_array(js_text)` | `adapter.py` | 字符级状态机提取 `const e=[...]` 数组，忽略字符串内方括号 |
 | `js_to_json(text)` | `adapter.py` | JS → JSON 字符级状态机（补引号键 / undefined→null / 去尾逗号） |
@@ -407,8 +482,10 @@ def transform(raw: dict) -> dict | None:
 | 方向 | 模块 | 说明 |
 |------|------|------|
 | 依赖 | `src.data.models.Hero` | Pydantic 模型，用于 `validate_heroes` 校验 |
-| 依赖 | `src.config.env` | 读取 `PROJECT_ROOT` / `BUNDLE_ROOT` 与日志配置 |
+| 依赖 | `src.data.json_repository` | `atomic_write_json`（`save_json_atomic` 委托）、`snapshot_to_backups`（写前快照） |
+| 依赖 | `src.config.env` | 读取 `PROJECT_ROOT` / `BUNDLE_ROOT`、`IMAGES_OUTPUT_DIR` 与日志配置 |
 | 依赖 | `src.config.logging_config` | 设置日志级别与输出 |
+| 依赖 | `src.scraper.official_source.hero_fields` | 字段清洗纯函数（`clean_html`）与本地扩展字段保护（`carry_over_local_fields` / `LOCAL_EXTENSION_FIELDS`），经 `crawler.py` 重导出 |
 | 依赖 | `src.data.announcement_manager` | 公告持久化与 `AnnouncementStatus` 状态机 |
 | 依赖 | `src.data.hero_timeline` | 时间轴事件追加（`append_announcement_events`）、变更类型归一（`normalize_change_type`）与时间轴读取（`load_timeline`，用于 `build_timeline_events` 的 `cutoff_date` 缺省值） |
 | 被调用方 | `src.business.fetching.hero_fetch_service` | 通过 QProcess 启动爬虫 CLI |
@@ -418,10 +495,12 @@ def transform(raw: dict) -> dict | None:
 
 ---
 
-## 七、代码规模（2026-10-11）
+## 七、代码规模（2026-10-23）
 
-- 测试模块数：145 文件（`tests/test_*.py`）
-- 测试用例数：1626 个 `test_*` 函数
+- `src/scraper/official_source/` 共 8 文件 2248 行（`crawler.py` 635 / `announcement.py` 699 / `incremental.py` 328 / `full.py` 218 / `adapter.py` 194 / `card_baike.py` 109 / `hero_fields.py` 64 / `__init__.py` 1）
+- `tests/test_crawler.py` 共 53 个 `test_*` 函数（覆盖状态机解析、写入守卫、robots 规则执行、本地字段保护、HTML 清洗、增量健壮性）
+- 测试模块数：153 文件（`tests/test_*.py`）
+- 测试用例数：1936 个 `test_*` 函数
 
 ---
 
@@ -442,3 +521,18 @@ def transform(raw: dict) -> dict | None:
 
 - **抓取输出默认路径归运行时可写根**（6b21d75）：`official_source/full.py DEFAULT_OUTPUT = PROJECT_ROOT/"data"/"heroes.json"`、`incremental.py DEFAULT_DATA_DIR = PROJECT_ROOT/"data"`（原均为 BUNDLE_ROOT）——修复打包 frozen 下 BUNDLE_ROOT（`<exe>/_internal`）只读、PROJECT_ROOT（exe 同级）可写，原"写入可写根、读取钉死只读根"致抓取结果 UI 不可见；开发态两根相等无差异（详见 3.3 节末）。同批治理 `ai/batch.py DEFAULT_DATA_DIR` 与 `rule_summary._CORE_RULES_FILE`（AI 侧，见 module_ai_batch.md）；常量落点由 `tests/test_ranking_csv_runtime_root.py` 双根分裂模拟锁死
 - 测试规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
+
+---
+
+## 十、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更（HEAD `a63bc3c`）：
+
+- **如实爬虫标识**（29ae6d6）：`HEADERS["User-Agent"]` 由伪装浏览器 UA 改为 `mjs-agent/1.0 (+https://github.com/CXH0920/mjs_agent_project)`——满足 robots.txt 许可前提、让运营方可在日志中定位本项目；同一 UA 传入 `can_fetch()` 做规则匹配（详见 3.10 节）
+- **robots.txt 规则执行**（9180cf0）：在既有存档（合规证据）之外新增规则解析与执行链路——`_robots_origin` / `_parse_robots_rules` / `_load_archived_rules` / `_fetch_host_rules` / `_rules_for_url` / `_ensure_robots_allowed` 按源进程内缓存规则；`fetch()` 与 `_open_image_response()` 请求前校验，被 `Disallow` 抛 `RobotsDisallowedError`；规则/存档不可得时降级放行；次级主机（公告 API、图片域）独立请求该站 robots.txt；`cache_robots_txt()` 落地新存档后失效主站规则缓存
+- **本地扩展字段保护**（29ae6d6）：`transform()` 不再输出 `title` / `difficulty` / `mode_viability` 占位值；新增 `hero_fields.carry_over_local_fields()` 按 id 从旧数据回填（`full.crawl()` 守卫通过后、`incremental.run()` 替换/追加分支三处接入）；`LOCAL_EXTENSION_FIELDS` 与 `hero_content_hash` 排除口径对齐，本地手工编辑不被误报为官网变更
+- **技能描述解析兼容官网异常标题格式 + 写入守卫拦截解析丢失覆盖**（a78e801）：`split_skill_desc()` 标题正则 `<strong>` 改可选（兼容裸 `<p>标题</p>`），描述认领顺序改为 技能描述→技能详情→技能详解 且结算跳过已认领标题；`refuse_write_reason()` 新增第 4 道守卫（`raw_ids` 参数）——本地已有且官网也存在但校验未通过的武将拒绝整库覆盖
+- **官网清洗 / 缺 id 健壮性**（74ad9b9）：`clean_html()` 迁入 `hero_fields.py` 并改写为「多轮实体解码 + 像标签识别」（`_TAG_LIKE_RE` + `_unescape_and_strip_tags`，覆盖 `&amp;lt;` 双层编码，同时保留 `<5` / `->` 等正文比较符）；`_load_heroes_file()` 逐条校验 id（新增 `_hero_id_is_valid()`），缺 id 条目的本地文件按损坏语义备份并返回 `None`，避免替换/追加模式在全量抓取后抛 `KeyError`
+- **空目标伪成功丢数据修复**（1d8334a）：`incremental.main()` 筛选后 `target_raw` 为空时由 `return`（退出码 0）改为 `[错误] 无目标武将...` + `sys.exit(1)`——防 QProcess 读作成功、公告 `mark_applied` 静默吞掉待更新武将
+- **抓取素材清理**（29ae6d6）：`images/*.png` 抓取产物移出版本库（抓取数据自 2026-10-03 起经 `src/scripts/pull_data.py` 从私有仓同步，`data/SOURCES.md` 登记来源）；合规条款与访问频率控制披露同步更新至 `TERMS.md`
+- 测试规模台账：153 文件 / 1936 个 `test_*` 函数（原 145 / 1626）；`tests/test_crawler.py` 10 → 53 例

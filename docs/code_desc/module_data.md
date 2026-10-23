@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
-> 文档日期：2026-10-11（基线 2081b5b）
+> 文档日期：2026-10-23（基线 a63bc3c）
 
 ---
 
@@ -12,7 +12,7 @@
 
 1. **模型定义**（`models.py`）— 通过 Pydantic v2 定义 `Skill`、`Card`、`Hero`、`SynergyScore`、`Combo`、`HeroGuide`、`IncrementalUpdate` 等核心数据模型，作为项目唯一的 JSON 格式契约，确保官网爬虫与 AI 生成的输出格式一致
 2. **数据管理**（`manager.py` / `facade.py` / `issues.py` + `*_manager.py`）— `DataManager[V_co]` 泛型基类提供通用 CRUD、加载、保存与内存快照回滚；六个子类 Manager 继承基类并添加各自的查询与领域方法；`DataFacade` 门面（`facade.py`，审计 F3 自 manager.py 拆出）统一访问入口，并可通过 `from_managers()` 复用外部 Manager；`DataIssue` / `LoadReport` 问题值对象独立于 `issues.py`
-3. **JSON 仓库基类**（`json_repository.py`）— `JsonRepository` 统一维护仓库的原子写盘、加锁读盘与写盘失败内存回滚；模块级三基元 `atomic_write_json`（全库唯一 JSON 原子写入口，支持 `sort_keys`）/ `atomic_write_text`（配置与 env 文本写入）/ `snapshot_to_backups`（写前快照到 `backups/` 并按同 stem 轮转保留 10 份）是全库写盘与备份的统一入口；坏文件加载分支自动保底快照（80cc75b）
+3. **JSON 仓库基类**（`json_repository.py`）— `JsonRepository` 统一维护仓库的原子写盘、加锁读盘与写盘失败内存回滚；模块级四基元 `atomic_write_json`（全库唯一 JSON 原子写入口，支持 `sort_keys`）/ `atomic_write_text`（配置与 env 文本写入）/ `snapshot_to_backups`（写前快照到 `backups/` 并按同 stem 轮转保留 10 份）/ `preserve_corrupt_file`（坏文件按原字节留底，供模块级容错读函数与 JsonRepository._issue 共用）是全库写盘与备份的统一入口；坏文件加载分支由 `_issue()` 收敛触发留底，`save_payload()` 增设加载完整性守卫（存在 error 拒绝覆盖保存）
 4. **武将变更时间轴**（`hero_timeline.py`）— 维护 `data/mjs_adjustments.json` 的武将变更事件流，为 RAG 语料构建提供按版本打戳（`as_of` / `is_current`）与过时判定能力
 
 ---
@@ -57,7 +57,7 @@ src/data/
 
 武将变更时间轴 `hero_timeline.py` 维护 `data/mjs_adjustments.json`（顶层 `init_imported_at` / `init_source_last_updated` / `corpus_base_date` + `events` 列表），由 `import_hero_adjustments.py` 全量注入与 `AnnouncementService` 公告捕获增量追加；`build_rag_corpus.py` / `build_guide_corpus.py` 据此给语料块打 `as_of` / `is_current` 版本戳，`rag_audit.py` / `audit_service.py` 据此审计 `heroes.json` 疑未同步武将。
 
-2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `PROJECT_ROOT/data/2v2胜率排行.csv` 读取（结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。三仓常量均已锚定运行时可写根（6b21d75 读写根分裂治理）：`win_rate_repository.WIN_RATE_CSV`、`peak_win_rate_repository` 的 `PEAK_WIN_RATE_CSV` / `PEAK_PICK_RANK_CSV`、`recommendation_index_repository.DATA_DIR`（派生 `WIN_RATE_CSV` / `PICK_RANK_CSV`（2v2出场排行）/ `BAN_RANK_CSV`（武将放逐.csv）/ `HEROES_JSON` / `RECOMMENDATION_INDEX_CSV`（武将推荐指数.csv）五常量）全部由 `BUNDLE_ROOT/data` 换为 `PROJECT_ROOT/data`——修复 frozen 下"官方导入写可写根、算法读取钉死只读根"的分裂缺陷（用户 OCR 导入新榜单后推荐指数仍按旧基线计算）；开发态两根相等、行为不变。回归测试 `test_ranking_csv_runtime_root.py`（monkeypatch 双根 + `importlib.reload` 模拟分裂）。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入落盘后经 `notify_official_outputs_written(output_names)` 做跨仓储联动——本批未含巅峰赛胜率榜（即导入 2v2/放逐数据）时写 `stale=true` 标记并清理对应胜率缓存，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均不晚于快照，自动写回 `false` 避免误弹横幅。
+2v2 胜率数据由 `win_rate_repository.load_win_rates()` 从 `PROJECT_ROOT/data/2v2胜率排行.csv` 读取（结果默认缓存）；巅峰赛胜率/出场排行由 `peak_win_rate_repository` 读取 `data/巅峰赛胜率排行.csv` 与 `data/巅峰赛出场排行.csv`，数据源未落地时返回空 dict。三仓常量均已锚定运行时可写根（6b21d75 读写根分裂治理）：`win_rate_repository.WIN_RATE_CSV`、`peak_win_rate_repository` 的 `PEAK_WIN_RATE_CSV` / `PEAK_PICK_RANK_CSV`、`recommendation_index_repository.DATA_DIR`（派生 `WIN_RATE_CSV` / `PICK_RANK_CSV`（2v2出场排行）/ `BAN_RANK_CSV`（武将放逐.csv）/ `HEROES_JSON` / `RECOMMENDATION_INDEX_CSV`（武将推荐指数.csv）五常量）全部由 `BUNDLE_ROOT/data` 换为 `PROJECT_ROOT/data`——修复 frozen 下"官方导入写可写根、算法读取钉死只读根"的分裂缺陷（用户 OCR 导入新榜单后推荐指数仍按旧基线计算）；开发态两根相等、行为不变。回归测试 `test_ranking_csv_runtime_root.py`（monkeypatch 双根 + `importlib.reload` 模拟分裂）。`recommendation_index_repository` 基于 2v2 三份榜单（胜率/出场/放逐）及 `heroes.json` 计算推荐指数，输出 `武将推荐指数.csv`；官方榜单导入落盘后经 `notify_official_outputs_written(output_names)` 做跨仓储联动——本批未含巅峰赛胜率榜（即导入 2v2/放逐数据）时写 `stale=true` 标记并清理对应胜率缓存，用户确认后立即重建；`is_recommendation_index_stale()` 带**自愈校验**：即使状态文件被外部误置 `stale=true`，只要三份榜单 CSV 修改时间均严格早于快照，忽略标记返回 `False` 避免误弹横幅（纯读路径不回写，`stale=true` 留待下次有新数据时自然翻转）。
 
 ---
 
@@ -152,7 +152,7 @@ class DataManager(Generic[V_co]):
 
 `_parse_models()` 对 JSON 数组逐条执行 `model_class.model_validate()`，校验失败记为 `invalid_record`，重复键记为 `duplicate_key`，均不影响其他合法记录的加载。
 
-**坏文件保底副本**（b3327f1，`_preserve_corrupt_file`）：`load` 路径遇到解析失败/顶层非数组等坏文件时，置空前先 `snapshot_to_backups(file_path)` 快照到 `data/backups/`——杜绝"解析失败 → 内存置空 → 用户保存 → 空数据原子写回"的不可逆丢失链。80cc75b 将同一保底语义补齐到 `JsonRepository.load` 与 `card_catalog._JsonRepository._load` 两族。
+**坏文件保底副本**（b3327f1，`_preserve_corrupt_file`）：`load` 路径遇到解析失败/顶层非数组/坏记录等 error 时置空前先 `snapshot_to_backups(file_path)` 快照到 `data/backups/`——杜绝"解析失败 → 内存置空 → 用户保存 → 空数据原子写回"的不可逆丢失链。留底收敛点自 `cf923f4` 起统一在 `_record_issue()` 内（`severity == "error"` 且 `from_disk` 为真且未留底过），逐条 ValidationError 与整体解析失败走同一路径；`_corrupt_preserved` 标志位保证单次加载周期内仅成功留底一次（磁盘满/权限异常保持可重试，不会挤占后续留底机会）；`from_disk=False` 供外部输入容错路径使用（`merge_new` 对爬虫产出逐条校验），不触发留底——否则磁盘上完好的数据文件会被无意义快照进 backups/。80cc75b 将同语义补齐到 `JsonRepository.load` 与 `card_catalog._JsonRepository._load` 两族；`cf923f4` 进一步把 `card_catalog.py` 三个仓储收编到 `JsonRepository` 直接继承，废弃本地 `_JsonRepository` 副本。
 
 > **设计思路：** 子类仅需实现 `_parse_items()`（通过 `key_of` lambda 确定字典键）与领域查询方法，完全共享 CRUD 骨架。`Generic[V_co]` 协变使 `DataManager[Hero]` 可安全赋值给 `DataManager[BaseModel]` 类型变量。
 
@@ -214,10 +214,10 @@ def _save_unlocked(self) -> None:
 
 - `Announcement` 模型字段：`id/title/content/url/publishdate/hero_related/matched_heroes/content_missing/status/first_seen_at`；
 - `AnnouncementStatus` 枚举：`PENDING("pending"，待生效) → READY("ready"，可更新) → APPLIED("applied"，已处理)`；
-- 以 `url` 为主键去重（`stable_key()` 回退到 `f"id:{id}"`）；`merge_new(items, baseline=False)` 用于首次运行基线：只落盘、不返回、不提醒，非武将相关公告直接置 `APPLIED`；
+- 以 `url` 为主键去重（`stable_key()` 回退到 `f"id:{id}"`）；`merge_new(items, baseline=False)` 用于首次运行基线：只落盘、不返回、不提醒，非武将相关公告直接置 `APPLIED`。合并先 `snapshot_items()` 快照内存，逐条 `Announcement.model_validate` 失败仅记 error 并跳过（`from_disk=False`，坏的是爬虫产出而非磁盘文件），整批写盘失败则 `restore_items()` 回滚内存后重抛——避免 UI 报"失败"后内存已含未确认合并的脏状态。
 - 状态推进：`mark_ready_if_updated(diff, current_names)`（公告提及的武将名与百科 diff 变更集匹配 → READY，或新增武将已全部落地百科 → READY）；`mark_applied()`（仅将 READY 推进到 APPLIED，PENDING 因可能仍在百科滞后窗口内保留不动）。
 
-`BaikeSnapshot` / `BaikeHeroEntry` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，结构 `{checked_at, heroes:{id:{name, hash}}}`）。快照解析失败时返回空快照（由调用方重建基线）；`save_baike_snapshot()` 用 `mkstemp` 生成唯一中转名（固定 `.tmp` 名在并发时会互相覆盖）。
+`BaikeSnapshot` / `BaikeHeroEntry` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，结构 `{checked_at, heroes:{id:{name, hash}}}`）。快照解析失败时返回空快照（由调用方重建基线），失败前调 `preserve_corrupt_file()` 按原字节留底——否则调用方把空快照当"首次启用"重建基线并覆盖写回，损坏前的官网基线就不可逆丢失；`save_baike_snapshot()` 用 `mkstemp` 生成唯一中转名（固定 `.tmp` 名在并发时会互相覆盖）。
 
 ### 3.7 实战配队座次解析
 
@@ -269,7 +269,7 @@ def _save_unlocked(self) -> None:
 
 **读取 / 写入**：
 
-- `load_timeline(path=None) -> dict` — 缺失或损坏时返回 `{"events": []}`，构建链路退化为无时间轴，不中断；
+- `load_timeline(path=None) -> dict` — 缺失返回 `{"events": []}`；解析失败或结构异常时同样返回空结构，失败前调 `preserve_corrupt_file()` 按原字节留底（构建链路退化为无时间轴，不中断）；
 - `save_timeline(data, path=None) -> None` — 校验事件必填字段（`date/hero/change_type/source`）后按 `(date, hero)` 排序原子写（indent=1）；
 - `append_announcement_events(events, path=None) -> int` — 幂等追加；已存在 `ref`（跨公告引用）或 `(date, hero)` 键时跳过；无新增不写盘。
 
@@ -318,7 +318,7 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 4. 低胜率武将（低于中位数 - `low_win_rate_gap`）降序优先；
 5. 写 CSV 快照后调 `mark_recommendation_index_stale(False)`。
 
-`is_recommendation_index_stale()` 自愈校验：状态文件 `stale=true` 但三份榜单均未更新时，自动写回 `false`，避免状态文件被 git 历史或命令行操作意外置 true 后误弹横幅。
+`is_recommendation_index_stale()` 自愈校验：状态文件 `stale=true` 但三份榜单均未更新时忽略标记返回 `False`（不回写状态文件——纯读路径，`stale=true` 留待下次有新数据时自然翻转），避免状态文件被 git 历史或命令行操作意外置 true 后误弹横幅。`_has_newer_source_file()` 用 `>=` 而非严格 `>` 判定 mtime：文件系统时间戳粒度（FAT 2 秒）或亚秒级连续写入会让"刚导入的榜单"与快照 mtime 相等，严格大于会把"有新数据"判成"无"，宁可多提示一次重建（重建后快照严格新于源、横幅自消），不可漏报。
 
 ### 3.11 JsonRepository 基类
 
@@ -327,11 +327,13 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 - **`atomic_write_json(path, data, indent=2, sort_keys=False)`** — UTF-8/LF 原子写：`mkstemp` 生成同目录唯一临时文件 → 写入后 `flush + fsync` → `replace`；任一异常清理临时文件并重新抛出（原文件保持不变）。`path.parent.mkdir(parents=True, exist_ok=True)` 保证目标目录存在。**全库唯一 JSON 原子写入口**：2026-10 T1 收敛后 crawler `save_json_atomic`、AI `_save_json`、pending_stats、汉字特征缓存、env/profiles 配置写盘、白名单覆盖等原独立实现均委托于此（`src/config/env.py`、`profiles.py` 经函数内延迟导入以避免 config↔data 循环初始化）。
 - **`atomic_write_text(path, content)`** — 文本版原子写（同骨架），供 env 文件回写、ROI/价格配置等字符串写入使用。
 - **`snapshot_to_backups(source, keep=10)`** — 写前快照到同目录 `backups/`（命名 `{stem}-{时间戳}{suffix}`，与数据管理服务备份及 `diff_source_data` 基线 glob 约定一致），同 stem 自动轮转仅留最近 keep 份；`corrupt-*` 与手工抢救文件不匹配轮转模式永不清。接入点：官网全量/增量采集、AI 批量生成入口、`_ManagerTransaction._backup`。
+- **`preserve_corrupt_file(path)`** — 坏文件按原字节留底到 `backups/`（委托 `snapshot_to_backups`，无轮转配额挤占的顾虑——`corrupt-*` 命名件不匹配 `{stem}-[0-9]*` 轮转模式永不清），返回是否留底成功。供两类调用方共用：`JsonRepository._issue()`（磁盘侧 error 收敛点）与模块级容错读函数（`hero_timeline.load_timeline` / `baike_ignore_store.load_baike_ignores` / `card_sync_store.load_card_snapshot` / `load_card_changes` / `announcement_manager.load_baike_snapshot`）——这些函数损坏时降级返回空数据，随后的覆盖式保存会把降级数据原子写回，没有这份副本"读不出来的数据"就升级成"不可逆丢失"。
 - **`JsonRepository` 基类** — 子类职责：`__init__` 先 `super().__init__(file_path)`；`load()` 用 `_read_root()` 取 `(root, ok)` 后做根结构校验与逐条解析；`save()` 构造 payload 后调 `save_payload(payload)`；CRUD 用 `_snapshot()/_restore()/_save_or_rollback()` 实现"先改内存、写盘失败回滚"。
-  - `_read_root()` 加 `RLock`（防止与写盘并发），文件缺失记 warning、解析失败记 error（`DataIssue`）；坏文件分支先 `snapshot_to_backups(self.file_path)` 保底再返回失败（80cc75b）——`save()` 不校验加载结果，损坏后的任意一次保存会全量覆盖空数据，先按原字节留底；
+  - `_read_root()` 加 `RLock`（防止与写盘并发），重置 `load_issues` / `available` / `_corrupt_preserved` 三态；文件缺失记 warning、解析失败记 error（`DataIssue`），均经 `_issue()` 统一处理——`_issue()` 是坏文件保底副本的收敛点：`severity == "error"` 且尚未留底过时调 `preserve_corrupt_file(file_path)`，逐条 ValidationError 与整体读失败同构（坏记录跳过后任意一次保存都会把它永久覆盖掉）；仅成功留底才置位 `_corrupt_preserved`，失败保持可重试；
+  - `save_payload(payload)` 设有**加载完整性守卫**：`load_issues` 中若存在 `error` 级别问题（内存库是残缺子集，坏记录已被跳过、原始字节已留底 backups/），抛 `RuntimeError` 拒绝覆盖保存并提示修复文件或从 backups/ 恢复——避免静默丢弃坏记录；
   - 写盘失败时 `_save_or_rollback()` 恢复内存快照并重新抛出，避免"看似失败、实际已变"的脏状态。
 
-四个维护仓库已继承本基类（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）；`card_catalog.py` 的 `_JsonRepository`（卡牌基础/字段定义/追加内容三个仓储）与 `manager.py` 的 `DataManager._save_unlocked`、`hero_timeline.save_timeline()` 也改为委托 `atomic_write_json`（全库原子写收敛）。
+四个维护仓库已继承本基类（`CardPointsRepository` / `EquipAttrsRepository` / `HeroClassificationRepository` / `SpecialCardRepository`）；`card_catalog.py` 的 `CardRepository` / `CardFieldSchemaRepository` / `CardAnnotationRepository` 于 `cf923f4` 起直接继承本基类（原本地 `_JsonRepository` 副本无锁且与守卫逻辑双份维护已废弃，TD-A2-002），`manager.py` 的 `DataManager._save_unlocked`、`hero_timeline.save_timeline()` 与 `card_sync_store` / `baike_ignore_store` 的写盘也统一委托 `atomic_write_json` / `atomic_write_text`（全库原子写收敛）。
 
 另有社区侧 combo/guide 语料由 `src/scripts/build_combo_corpus.py`（组合 RAG 语料，509 块，combo 类，不贴单值 hero 但贴 heroes 列表）与 `build_guide_corpus.py`（武将攻略 RAG 语料，357 块，guide 类，贴 hero）从 `data/raw_guides/` 生成，进向量库供 RAG 检索，非 Pydantic 模型不入维护仓库。
 
@@ -361,7 +363,7 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 ```
 
 - `CardSnapshotEntry`：单卡快照 `{name, hash}`；
-- `load_card_snapshot(path=None)`：读取快照；文件缺失或损坏时返回空快照（由调用方重建基线）；
+- `load_card_snapshot(path=None)`：读取快照；文件缺失返回空快照（调用方重建基线），损坏时返回空快照前调 `preserve_corrupt_file()` 按原字节留底（否则空快照当"首次启用"重建基线并覆盖写回，损坏前的官网基线不可逆丢失）；
 - `save_card_snapshot(snapshot, path=None)`：原子写入快照。
 
 **CardChangeRecord**（`data/card_changes.json`，追加式保存）：每次同步应用的变更记录，驱动卡牌精化时效检查：
@@ -373,7 +375,7 @@ clear_peak_win_rate_cache()  # 清空胜率与出场排行
 ```
 
 - `CardChangeRecord`：`date`（应用日）+ `applied_ids`（修改的卡 ID）+ `added_ids`（新增的卡 ID）；
-- `load_card_changes(path=None)`：读取变更记录；文件缺失或损坏时返回空列表（单条损坏跳过）；
+- `load_card_changes(path=None)`：读取变更记录；文件缺失返回空列表，损坏时返回空列表前调 `preserve_corrupt_file()` 留底（单条坏记录跳过）；
 - `append_card_change(record, path=None)`：幂等追加（date + id 集合完全相同视为重复），返回是否真的写入。
 
 **首次启用策略**：`CardSyncService._do_check()` 在基线为空时用本地 `cards.json` 初始化快照，避免人工编辑被误判为官网变更；本地文件存在但为空时不写快照（避免用官网基线掩盖本地缺失）；本地文件不存在（全新安装）则以当前官网为基线。
@@ -409,9 +411,23 @@ class BaikeIgnoreStore(BaseModel):
 | `added` | `entry.state == "added"` 且 `entry.hash == 当前官网哈希` | 官网内容再变（哈希不等） |
 | `removed` | `entry.state == "removed"`（官网侧无哈希可比） | 官网再上线（以 `added` 出现，state 不匹配自然重现） |
 
-**降级策略**：`load_baike_ignores()` 在文件缺失或解析失败时返回空名单（无忽略），不中断检查流程。
+**按名兜底匹配**（801c9f1，`_entry_for`）：UI 忽略"本地未收录"的新增武将时无本地 id，只能以武将名作 `entry_id` 写入（`hero_update_confirm_dialog._ignore_candidate`）。`_entry_for(item, entries)` 先按 `str(item["id"])` 取条目，取不到时按 `item["name"]` 在名单 values 中线性匹配——与候选侧 `_hero_is_ignored` 的按名兜底同口径，避免两处判定分叉表现为"横幅提示有变化、点更新却没有候选"。官网哈希仍按 diff 条目的真实 id 取，与名单条目用哪个键命中无关。
+
+**降级策略**：`load_baike_ignores()` 在文件缺失或解析失败时返回空名单（无忽略），不中断检查流程；解析失败前调 `preserve_corrupt_file()` 按原字节留底。
 
 > **设计思路：** 忽略名单以 `state + hash` 定位"同一差异"而非仅凭 ID——同一武将/卡牌在忽略期间若官网再次变化，新差异不会被误压制。`removed` 状态因官网侧无内容可哈希，退化为仅按 state 匹配，安全性由"官网再上线必然以 added 出现"的 diff 语义保证。覆盖式保存（非追加）使文件恒定大小，与快照语义一致。
+
+### 3.15 卡牌基础与追加信息仓储（`card_catalog.py`）
+
+`card_catalog.py` 独立承担卡牌基础与追加信息仓储，含三个继承 `JsonRepository` 的仓储类与 `CardViewModel` 展示视图。`cf923f4` 起三个仓储直接继承本基类（原本地 `_JsonRepository` 副本无锁且与守卫逻辑双份维护已废弃，TD-A2-002）：锁、坏文件留底、加载完整性守卫、写盘失败内存回滚统一由基类提供。
+
+**`CardRepository`**（`data/cards.json`）：官方基础卡牌，常规维护只读，唯一写入接口为官网同步 `apply_official_updates(modified, added)`。该方法**先验证全部输入再改动内存**——`modified` 逐条 `Card.model_validate` 后立即收集到 `updated` dict、`added` 逐条校验后去重收集到 `new_cards` list，任一条畸形数据在写盘前抛出，避免留下"看似失败、实际部分已变"的半更新状态；写前 `dict(self._cards)` 快照内存（`Card` 是不可变值对象，浅拷贝字典即足够），`_save()` 走 `save_payload()`（内含加载完整性守卫与原子写），写盘失败则 `self._cards = dict(snapshot)` 回滚后重抛（VUL-B4-002）——调用方报"应用失败"后内存必须与磁盘一致。
+
+**`CardFieldSchemaRepository`**（`data/card_field_schema.json`）：字段定义维护，`schema_version=1` + `fields` 列表，`add_field` / `update_field` 中 key 创建后不可修改。
+
+**`CardAnnotationRepository`**（`data/card_annotations.json`）：追加内容维护。`cf923f4` 起补入 `_snapshot()` / `_restore()`（`dict(self._annotations)` 浅拷贝），配合 `_save_or_rollback()` 实现"先改内存、写盘失败回滚"（1dc08d5 注解保存回滚）；`_restore()` 直接 `self._annotations = dict(snapshot)`，与 `HeroClassificationRepository` 的多字段 tuple 快照同构但更简单（CardAnnotation 不可变）。
+
+**`CardViewModel`**：将基础卡牌与追加字段合并为可展示视图，`EffectEntry` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
 
 ---
 
@@ -551,11 +567,13 @@ class SpecialCardRepository(JsonRepository):
 
 ### CardRepository / CardFieldSchemaRepository / CardAnnotationRepository
 
+三个仓储均直接继承 `JsonRepository`（`cf923f4` 起，原本地 `_JsonRepository` 副本废弃），共享加锁、坏文件留底、加载完整性守卫、写盘失败内存回滚基建。
+
 | 仓储 | 方法 | 说明 |
 |------|------|------|
-| `CardRepository` | `load()` / `list_cards()` / `get_card(id)` | 只读，无保存入口 |
+| `CardRepository` | `load()` / `list_cards()` / `get_card(id)` / `apply_official_updates(modified, added)` | 只读加载；官网同步唯一写入口，先验证全部输入再改内存，写盘失败回滚（VUL-B4-002） |
 | `CardFieldSchemaRepository` | `load()` / `list_fields()` / `get_field(key)` / `add_field()` / `update_field()` / `save()` | 字段定义维护，key 不可修改 |
-| `CardAnnotationRepository` | `load()` / `list_annotations()` / `get_annotation(id)` / `update_annotation()` / `save()` | 追加内容维护 |
+| `CardAnnotationRepository` | `load()` / `list_annotations()` / `get_annotation(id)` / `update_annotation()` / `save()` | 追加内容维护；`_snapshot()` / `_restore()` 提供写盘失败回滚（1dc08d5） |
 
 ### 维护仓库（继承 JsonRepository）
 
@@ -635,6 +653,7 @@ class SpecialCardRepository(JsonRepository):
 | 被调用方 | `src/scripts/build_*_corpus.py` | RAG 语料构建脚本读取四个维护仓库（card_points/equip_attrs/hero_classification/special_cards）JSON 源生成向量库；`build_rag_corpus.py` / `build_guide_corpus.py` 通过 `hero_timeline` 的 `stamp_hero_block` / `stamp_guide_block` 给语料块打版本戳 |
 | 被调用方 | `src/scripts/import_hero_adjustments.py` | 从 A 类全量快照注入 `mjs_adjustments.json` 初始化 `hero_timeline`，并回填历史公告 |
 | 内部依赖 | `src/data/json_repository.atomic_write_json` | `DataManager` / `card_catalog` / 四个维护仓库 / `hero_timeline` / `card_sync_store` / `baike_ignore_store` 统一委托此函数原子写盘 |
+| 内部依赖 | `src/data/json_repository.preserve_corrupt_file` | 坏文件按原字节留底 `backups/` 的统一入口；由 `JsonRepository._issue()` 收敛触发（磁盘侧 error）与五个模块级容错读函数直接调用（`hero_timeline.load_timeline` / `baike_ignore_store.load_baike_ignores` / `card_sync_store.load_card_snapshot` / `load_card_changes` / `announcement_manager.load_baike_snapshot`） |
 | 内部依赖 | `src/data/issues.DataIssue` | `json_repository` 的 `_issue()` 与各仓储、`facade._add_reference_issue()` 统一使用 `DataIssue` 结构收集加载问题（审计 F3 自 `manager.py` 拆至 `issues.py`） |
 | 被调用方 | `src/data/combo_manager` | `src/scripts/import_combos.py` 调用 `save_manual_combo()` 持久化手工配队 |
 | 被调用方 | `src/scripts/pull_data.py` | 私有数据仓同步工具按 `PRIVATE_PATHS`（14 项）整体搬运 `data/` 下源数据文件与目录（见 3.14 节）；doctor「私有仓/数据」检查组复用 `pull_data.verify()` 与 Manager `load_issues` 做工作区巡检 |
@@ -676,3 +695,52 @@ class SpecialCardRepository(JsonRepository):
 
 **pull_data 编码修复**（2945f29）
 - `_git()` 显式 `encoding="utf-8", errors="replace"`：中文 Windows 控制台无 `PYTHONUTF8` 时 git 输出（恒 UTF-8）按 GBK 解码致读取线程 `UnicodeDecodeError`（git 本身已成功但输出丢失）；回归测试 `test_pull_data.py::test_git_output_decoded_as_utf8`（详见 3.14 节）
+
+---
+
+## 九、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更，覆盖 `f206eed` / `cf923f4` / `a78e801` / `801c9f1` / `1dc08d5` / `9ccc2fc` / `062071a` 等提交：
+
+**写盘与备份基建收敛**（`json_repository.py`，cf923f4 / f206eed）
+- 新增模块级基元 `preserve_corrupt_file(path) -> bool`：坏文件按原字节留底到 `backups/`，与 `JsonRepository._read_root` 内的坏文件保底语义同构，但独立成函数供模块级容错读函数共用（hero_timeline / baike_ignore_store / card_sync_store / announcement_manager）
+- `JsonRepository._issue()` 成为坏文件保底副本的**唯一收敛点**：`severity == "error"` 且尚未留底过时调 `preserve_corrupt_file()`，逐条 ValidationError 与整体读失败同构（坏记录跳过后任意一次保存都会把它永久覆盖掉）；`_corrupt_preserved` 标志位保证单次加载周期内仅成功留底一次，失败保持可重试
+- `JsonRepository._read_root()` 重置三态 `load_issues` / `available` / `_corrupt_preserved`
+- `JsonRepository.save_payload()` 新增**加载完整性守卫**：`load_issues` 存在 `error` 级别问题时抛 `RuntimeError` 拒绝覆盖保存——内存库是残缺子集（坏记录已跳过、原始字节已留底 backups/），继续覆盖会静默丢弃坏记录
+- `DataManager._record_issue()` 新增 `from_disk: bool = True` 参数：坏文件留底收敛点统一在此；`from_disk=False` 供外部输入容错路径（如 `merge_new` 对爬虫产出的逐条校验）使用，不触发留底——否则磁盘上完好的数据文件会被无意义快照进 backups/ 挤占轮转配额
+- `DataManager._preserve_corrupt_file()` 返回 bool（原返回 None），失败保持可重试
+
+**数据回滚与先验后写**（cf923f4 / 062071a / 9ccc2fc / 1dc08d5）
+- `AnnouncementManager.merge_new()`：合并前 `snapshot_items()` 快照内存，逐条 `Announcement.model_validate` 失败仅记 error 并跳过（`from_disk=False`），整批写盘失败 `restore_items()` 回滚内存后重抛——UI 报"失败"后内存必须与磁盘一致，否则下次任意保存会固化未经确认的合并
+- `CardRepository.apply_official_updates()`：先验证全部 `modified` / `added` 输入再改内存（`updated` dict + `new_cards` list + `seen_new_ids` 去重），写前 `dict(self._cards)` 快照，写盘失败回滚后重抛（VUL-B4-002）
+- `CardAnnotationRepository` 补 `_snapshot()` / `_restore()`，配合 `_save_or_rollback()` 实现写盘失败回滚
+
+**card_catalog 仓储统一**（cf923f4）
+- `CardRepository` / `CardFieldSchemaRepository` / `CardAnnotationRepository` 直接继承 `JsonRepository`，废弃本地 `_JsonRepository` 副本（原副本无锁且与守卫逻辑双份维护，TD-A2-002）
+- 三个仓储统一获得：锁、坏文件留底、加载完整性守卫、写盘失败内存回滚
+
+**外部输入防御**（f206eed / 801c9f1）
+- `hero_timeline.load_timeline()`：解析失败或结构异常时返回空结构前调 `preserve_corrupt_file()` 留底
+- `baike_ignore_store.load_baike_ignores()`：解析失败返回空名单前调 `preserve_corrupt_file()` 留底
+- `card_sync_store.load_card_snapshot()` / `load_card_changes()`：损坏返回空数据前调 `preserve_corrupt_file()` 留底
+- `announcement_manager.load_baike_snapshot()`：损坏返回空快照前调 `preserve_corrupt_file()` 留底
+
+**生成期入口拦截与数据回滚**（manager.py / synergy_manager.py）
+- `DataManager._load_unlocked()` 重置 `_corrupt_preserved`，加载完整性守卫生效
+- `SynergyManager` 新增模块级函数 `is_synergy_outdated(pair, hero_a, hero_b)`：判定相性是否落后于两侧武将资料中较新的一方（`pair.last_updated < max(hero.last_updated)`，日期无法解析时保守视为落后）
+- `SynergyManager.list_outdated_synergies(hero_lookup)`：列出已有但落后于武将资料的相性，跳过任一侧武将缺失的孤儿记录；与相性指定配对计算对话框的武将状态标注共用该单一判定事实源
+
+**推荐指数 stale 判定修正**（cf923f4）
+- `is_recommendation_index_stale()` 改为**纯读路径**：`stale=true` 但三份榜单均未更新时忽略标记返回 `False`，**不回写状态文件**（原自动写回 false 的自愈改为只读判定，`stale=true` 留待下次有新数据时自然翻转）
+- `_has_newer_source_file()` 用 `>=` 而非 `>` 判定 mtime：文件系统时间戳粒度（FAT 2 秒）或亚秒级连续写入会让"刚导入的榜单"与快照 mtime 相等，严格大于会把"有新数据"判成"无"
+- `load_recommendation_indexes()`：`OSError` 上抛（原静默返回空 dict）——首启空态用 `FileNotFoundError` 合法处理，其余读取失败不应被吞
+
+**忽略名单名字兜底**（801c9f1）
+- `baike_ignore_store._entry_for(item, entries)` 新增：先按 `str(item["id"])` 取条目，取不到时按 `item["name"]` 在名单 values 中线性匹配——UI 忽略"本地未收录"的新增武将时无本地 id，只能以武将名作 entry_id 写入，与候选侧 `_hero_is_ignored` 的按名兜底同口径，避免两处判定分叉
+- `filter_ignored()` 改用 `_entry_for`，官网哈希仍按 diff 条目的真实 id 取
+
+**公告合并容错**（f206eed）
+- `AnnouncementManager.merge_new()` 对爬虫产出逐条 `Announcement.model_validate` 容错，单条坏记录跳过并记 issue（`from_disk=False`），不中断整批
+
+**可用态延迟置位**（hero_classification_repository.py）
+- `HeroClassificationRepository.load()`：`self.available = True` 从"根结构校验通过后立即置位"改为"全部结构校验通过后才置位"——categories 等结构损坏时保持 `available=False`，面板 `_ensure_writable` 与 `save_payload` 守卫据此拒绝覆盖保存

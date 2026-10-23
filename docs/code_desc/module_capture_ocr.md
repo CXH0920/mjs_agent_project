@@ -2,7 +2,7 @@
 
 > 对应目录：`src/capture/` + `src/ocr/`
 > 职责：ADB 连接与截图（含 raw 帧提速）、MuMu 模拟器探测、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
-> 文档日期：2026-10-11（基线 2081b5b；B1 全量切换后口径延续）
+> 文档日期：2026-10-23（基线 a63bc3c；B1 全量切换后口径延续）
 
 ---
 
@@ -144,12 +144,40 @@ detect_selection_cards(image)
   -> 闭运算核 = max(3, round(h/1440*5))  # 5px 基准，避免上下两行粘连
   -> cv2.connectedComponentsWithStats(mask, 8)
   -> 过滤: 面积 > 0.0055 全图 / 尺寸 [0.086w, 0.115w] × [0.215h, 0.245h] / 宽高比 [0.60, 0.95] / 位置 [0.12w, 0.88w] × [0.16h, 0.67h]
-  -> 行聚类 + 行内 x 排序
-  -> 卡数 ∈ [8, 14] 返回 bbox；否则 None（语义对齐轮询 healthy_no_match）
+  -> 通过尺寸窗与宽高比 → cards[]；未通过 → suspicious[]（标 "尺寸窗" / "宽高比"）
+  -> [确信卡 ≥ REPAIR_ARMED_MIN_CARDS=6] 计算参考几何
+     ├── ref_h / ref_w = 确信卡中位高/宽
+     └── rows = _split_rows_by_gap(cards)  # 按 y 最大间隙（阈值 100px）分上下两行
+     ├── 修复路径：逐条处理 suspicious
+     │   ├── 高度在窗内而宽度越窗 → 维持拒绝并 debug 留痕（龙饰横翼；同排两卡被动画填缝焊成的
+     │   │     514×326 块也落此支；此前静默丢弃致卡数诈降仍落合法区间，2026-10-12 11→9 事故）
+     │   ├── 宽度在窗内且 h ≤ SINGLE_OVERGROWTH_MAX_RATIO=1.35 × ref_h → 近界单卡收纳
+     │   ├── 竖向融合块：h ≤ STACKED_SPLIT_MAX_RATIO=2.4 × ref_h 时 _split_stacked_component
+     │   │     沿最窄腰线拆两段，各段以 _refit_card_width 重拟合并逐段过尺寸窗
+     │   └── 其余 → 维持拒绝
+     └── 主路径归一（漂移抑制）：cards 逐张 _normalize_card(mask, box, ref_w, rows)
+         ├── _refit_card_width(min_run_ratio=REFIT_TRUSTED_MIN_RATIO=0.8)
+         │     按卡体列纵向跨度 ≥ REFIT_SPAN_RATIO=0.6 × 段高定位卡体，宽度取 ref_w、以段中心对齐；
+         │     段过短（< 0.8 × ref_w，淡色立绘截短）返回 None 维持原状，避免按段中心反被带偏
+         └── 行中位对齐：y/h 取最近行（中位 y 距最相近）的中位 y/h，产出与该连通域多宽无关
+  -> 卡数 ∈ CARD_COUNT_RANGE=[8, 14] 返回 _sort_row_major 行优先 bbox；否则 None（对齐 healthy_no_match）
 
 derive_name_rois(cards)
   -> 每张卡内相对位置 [x+0.06w, y+0.15h, 0.30w, 0.38h] 派生名条 ROI
+
+board_row_sizes(cards) -> (上排张数, 下排张数) | None
+  -> _split_rows_by_gap；分不出两行（<2 卡或最大间隙 < 100px）返回 None
+
+layout_is_plausible(cards) -> bool
+  -> 校验上排张数 == 总张数 // 2（游戏奇数张时上排少一张，故 9 张必 4+5、11 张必 5+6）
+  -> board_row_sizes 返回 None 时不据此判负，交由调用方按原语义处理
 ```
+
+**参考几何与漂移抑制**（8020da8 / 62c5c23）：确信卡的中位尺寸与行划分在修复路径与主路径归一共用，确信卡不足时整体不武装，防非牌面屏幕误播种。主路径产出同样经 `_normalize_card` 归一——贴边动画叠层与出画立绘会把连通域撑得比卡框更宽并向左撑出（2026-10-12 实测 237→254~270、左缘左移 17~21px），逐拍跳变的卡位会同时带偏名条 ROI（读不出字，面板确认数 9↔8 闪烁）与牌面签名（每拍全量重 OCR）。归一以卡体列纵向跨度判定卡体、宽度取 `ref_w`、以连续段中心对齐：对齐只认跨度段，产出与该段所在连通域多宽无关，贴边叠层把 bbox 撑宽不会带偏卡位，重复归一等价；段过短（淡色立绘把卡体列截短至 < 0.8 × `ref_w`，ban_phase 实测 144/238）返回 `None` 维持原状，避免按段中心对齐反被带偏 +29px。
+
+**排布合理性校验（漏检扣帧）**：`layout_is_plausible(cards)` 校验"上排张数 = 总张数 // 2"——游戏奇数张时上排少一张，故 9 张必为 4+5、11 张必为 5+6；上排多于下排说明本拍漏检（2026-10-12 实测 11 张盘面被动画填缝焊掉底排相邻两卡后成 5+4，仍落在 8~14 合法区间而被当作正常 9 张发布）。`PeakSelectWatcher._do_work()` 在 `_restore_missing_cards()` 之后、`board_signature()` 之前调用：不可信排布既不发布也不计入缺席，面板保持上一拍内容并留 info 日志；`board_row_sizes()` 供其日志打印实际排布。分不出两行（低分辨率、单排）时不据此判负。
+
+**宽度越窗静默丢弃修复**（62c5c23）：修复路径中"高度在窗内而宽度越窗"分支此前静默丢弃，卡数诈降后仍落在合法区间（8~14），面板少了卡却无迹可查；现维持拒绝但 `logger.debug` 留痕，方便回溯。
 
 参数均为相对比例（基准 2560×1440 实测），分辨率变化时自适应。仅当布局变化（`board_signature` 不同）时才触发 OCR，坐标/尺寸按 4/8px 量化过滤像素级抖动。
 
@@ -161,7 +189,9 @@ derive_name_rois(cards)
 Tick 每 1.5s → _thread_lock 非阻塞 → _do_work() 后台线程
   ├─ CaptureService.capture_for_poll(capture)
   ├─ detect_selection_cards(frame) → None → _handle_board_absent()
-  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=2 后 _clear_session_state(keep_miss_ticks=True) 并发 board_exited（不写任务状态，衔接激活归 PollCoordinator）
+  │   └─ miss_ticks++ → BOARD_EXIT_TICKS=4 后 _clear_session_state(keep_miss_ticks=True) 并发 board_exited（不写任务状态，衔接激活归 PollCoordinator）
+  ├─ _restore_missing_cards(cards)  # 本拍少卡且存活卡逐张原位 → 按上一拍卡位补齐（2026-10-12 11→9 事故）
+  ├─ layout_is_plausible(cards)  # 上排张数 != n//2 → 本拍漏检，既不发布也不计入缺席（详见 3.3 节）
   ├─ board_signature(cards) 量化坐标/尺寸
   │   └─ == 上次 → 牌面未变化，沿用结果
   ├─ _suspend_standard_tasks() 挂起 hero_selection/match_guide 轮询
@@ -425,6 +455,10 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `engine_loader.get_recheck_ocr_engine()` → `RapidOcrEngine\|None` | 复核引擎惰性单例（与主引擎套件互斥），受 `MUMU_OCR_RECHECK_ENABLED` 开关控制；失败熔断（`_FAILED_SUITES`） |
 | `engine_loader.RapidOcrEngine` | RapidOCR 包装层，`ocr(img, cls=False)` 契约，将结果翻译为 paddleocr 2.x 风格 `[[box, (text, conf)], ...]`（box 必须 tolist）；`reset_call_stats()` / `drain_call_stats()` det 调用与空检计数（读取即清零，6ea1866） |
 | `OcrRoiConfig.layout_for(page_type)` / `save_layout(...)` / `reset_layout(...)` / `reload()` | 布局读取、本地覆盖写盘（立即生效）、恢复默认、重新读盘 |
+| `card_grid_detector.detect_selection_cards(image)` → `list[Roi]\|None` | 2v2 巅峰赛牌面内容驱动卡位检测；非牌面或卡数不在 `[8,14]` 返回 `None`（对齐轮询 `healthy_no_match`）；确信卡 ≥6 时进入修复路径（近界单卡收纳 / 竖向融合块拆分）并把主路径产出归一到参考几何（漂移抑制） |
+| `card_grid_detector.derive_name_rois(cards)` → `list[Roi]` | 按卡内相对比例派生各卡竖排名条 ROI，顺序与输入卡位一致 |
+| `card_grid_detector.board_row_sizes(cards)` → `(int, int)\|None` | 返回牌面（上排张数, 下排张数）；分不出两排（<2 卡或 y 最大间隙 < 100px）返回 `None` |
+| `card_grid_detector.layout_is_plausible(cards)` → `bool` | 卡数 n 的排布是否为游戏可能出现的形状（上排 `n//2`、下排 `n-n//2`）；不可信排布说明本拍漏检，调用方应跳过不发布；分不出两排时不据此判负 |
 | `official_board_parser.detect_layout(image, key)` | 按纵横比与行数校验确认旧版/分页版式 |
 | `official_board_parser.extract_panels(image, layout)` | 按版式比例切出榜单面板 |
 | `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界（横线检测或排名列行投影） |
@@ -453,7 +487,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | 依赖 | 无外部系统依赖 | 仅依赖 ADB 可执行文件与 RapidOCR/ONNX 运行时（rapidocr 3.9.2 + onnxruntime 1.23.2，CPU 推理，见 environment.yml）：v6 三件套随 wheel 内置，v4 三件套经 `src/scripts/fetch_recheck_models.py` 官方清单预取（URL+SHA256 钉死，不入仓）；运行时离线纪律绝不联网下载模型 |
 | 被调用方 | `src.business.emulator.capture_service` | 持有 AdbCapture 实例，编排截图流程；轮询路径通过 raw 帧提速 |
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
-| 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 detect_selection_cards 与 derive_name_rois 做 2v2 牌面识别 |
+| 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 `detect_selection_cards` 与 `derive_name_rois` 做 2v2 牌面识别；`_restore_missing_cards()` 补齐漏检后以 `layout_is_plausible()` / `board_row_sizes()` 校验排布合理性，不可信排布既不发布也不计入缺席 |
 | 被调用方 | `src.business.recognition.ocr_worker` | 未决错法调 `pending_stats.record_pending()`；B2 复核引擎由 recognizer 内部调用 |
 | 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理、模板制作（ROI 框选） |
 | 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |
@@ -509,3 +543,21 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 - `char_info_cache.json` 424 → 437 字（6b21d75 运行时动态补齐条目回填）；`character_feature_repository.py` 登记随包只读基线写入根风险——`save()` frozen 下无触发链属理论债，将来维护页接入勿简单换 `PROJECT_ROOT`（详见 3.8 节）
 - 683fca6 清理代码内 paddle 时代引擎指代（recognizer / ocr_loader / ocr_service / ocr_worker / image_preprocessor 等 docstring 改 RapidOCR 口径），上一轮校准「陈旧文案说明」条目已落地清零；随文勘正本文档 3.6 证据族命名（`batch_enhanced` → 生产代码实际的 `batch_plain`，生产从未产生过 batch_enhanced source）与 4.2 日志示例（补 `name` 类别段，实际格式为 `武将 6 name OCR 原始结果`）
 - 本轮范围（0ffed36..2081b5b）内另有 P0-3 竞态守卫原语（BusyGate / OneShotToken）、CaptureConnectionManager 出仓、巅峰赛 SessionGuard、状态栏数据新鲜度芯片、RAG 编码器 ONNX 化等变更，分别归属 module_business / module_emulator / module_rag 等文档；本模块公共接口未受影响
+
+---
+
+## 九、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更（`src/capture/` 无代码变更；`src/ocr/` 仅 `card_grid_detector.py` 变更 +101/-14）：
+
+**2v2 巅峰赛卡位稳定性与漏检扣帧（8020da8 + 62c5c23）**
+- 主路径产出同样归一到参考几何：新增 `_normalize_card(mask, box, ref_w, rows)` 与参考几何计算（`ref_w` / `ref_h` = 确信卡中位、`rows = _split_rows_by_gap(cards)` 按 y 最大间隙分两行）——贴边动画叠层与出画立绘会把连通域撑得比卡框更宽并向左撑出（2026-10-12 实测 237→254~270、左缘左移 17~21px），逐拍跳变的卡位会同时带偏名条 ROI（面板确认数 9↔8 闪烁）与牌面签名（每拍全量重 OCR），归一后产出与该连通域多宽无关（详见 3.3 节）
+- 卡体宽度重拟合阈值收紧：`_refit_card_width` 新增 `min_run_ratio` 关键字参数（默认 0.0，`_normalize_card` 传入 `REFIT_TRUSTED_MIN_RATIO=0.8`），段过短（< 0.8 × `ref_w`，淡色立绘把卡体列截短至 ban_phase 实测 144/238）返回 `None` 维持原状，避免按段中心对齐反被带偏 +29px
+- 宽度越窗静默丢弃修复：修复路径中"高度在窗内而宽度越窗"分支（龙饰横翼；同排两卡被动画填缝焊成的 514×326 块）此前静默丢弃，卡数诈降后仍落合法区间（8~14），面板少了卡却无迹可查（2026-10-12 11→9 事故）；现维持拒绝但 `logger.debug` 留痕
+- 排布合理性校验：新增公共 API `board_row_sizes(cards) -> (int, int) | None` 与 `layout_is_plausible(cards) -> bool`——游戏奇数张时上排少一张（9 张必 4+5、11 张必 5+6），上排多于下排说明本拍漏检（2026-10-12 实测 11 张盘面被动画填缝焊掉底排相邻两卡后成 5+4，仍落合法区间而被当作正常 9 张发布）；`PeakSelectWatcher._do_work()` 在 `_restore_missing_cards()` 之后、`board_signature()` 之前调用，不可信排布既不发布也不计入缺席、留 info 日志（详见 3.3 与 3.4 节）
+- 配套测试：`tests/test_card_grid_detector.py` 加固漂移抑制、漏检扣帧与宽度越窗留痕的回归用例（本轮范围未列入 `src/capture/` / `src/ocr/` 之外的文件清单，此处仅登记调用方行为）
+
+**勘误**
+- §3.4 `BOARD_EXIT_TICKS` 2 → 4（peak_select_watcher.py 实际值，旧文档笔误；该常量属 `src/business/recognition/`，不在本模块代码范围，仅文档勘正）
+
+**cb2b47d 影响核对**：该提交主体在 `src/business/recognition/ocr_worker.py`（弃单释放、发布世代守卫、落盘降级、罕见字计数熔断、取消静默），经核对未触及 `src/ocr/` 或 `src/capture/`——本模块文档无需对应更新，仅在 `module_business.md` 记录。

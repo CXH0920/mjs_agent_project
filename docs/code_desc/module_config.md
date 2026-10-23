@@ -2,14 +2,14 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-10-11（基线 2081b5b）
+> 文档日期：2026-10-23（基线 a63bc3c）
 
 ---
 
 ## 一、模块职责
 
 本模块负责三件事：
-1. **应用启动** — 创建 `QApplication`，在 frozen 打包模式下补齐可写运行时骨架（`data/.deployed` 部署标记跳过重复扫描）、抑制子进程控制台弹窗，安装 Qt 中文翻译器、设置应用图标与全局样式；免责声明确认通过后，在启动页上构建 `MainWindow` 并等待 OCR 引擎冷加载完成，随后进入事件循环；另承担启动期轻运维：截图目录回收（14 天）与每日一次的自动公告检查
+1. **应用启动** — 创建 `QApplication`，在 frozen 打包模式下补齐可写运行时骨架（`data/.deployed` 部署标记跳过重复扫描）、抑制子进程控制台弹窗，安装 Qt 中文翻译器、设置应用图标与全局样式；免责声明确认通过后，在启动页上构建 `MainWindow` 并等待 OCR 引擎冷加载完成，随后进入事件循环；首启向导（环境自检→模拟器连接→试识别）在窗口显示后按状态文件判定弹一次，跳过或完成后不再打扰；另承担启动期轻运维：截图目录回收（14 天）与每日一次的自动公告检查
 2. **配置管理** — 以多 API 档案（`api_profiles.json`，启用互斥）为首选来源，回退 `config.env` 文件、环境变量与默认值多级加载配置；维护版本控制的模型价格表；旧 `DEEPSEEK_*` 三件套首启自动迁移为默认档案；版本号单一来源 `version.py::app_version()`（读根目录 `VERSION` 文件，当前 1.2.1）
 3. **统一日志** — 按模块分文件路由、10MB 轮转保留 5 份，并额外维护跨模块全量 `debug.log` 留底；注册 `threading.excepthook` 与链式 `sys.excepthook` 兜底记录线程/逃逸异常
 
@@ -22,11 +22,14 @@ src/
 ├── main.py                  # 应用入口（QApplication + MainWindow 构建）
 ├── ui/app/app_icon.py        # 应用图标加载、缓存与顶层窗口图标维护
 ├── ui/app/chinese_translator.py  # Qt 标准控件中文翻译 + QMessageBox 详情按钮事件过滤器
+├── ui/app/onboarding_dialog.py   # 首启向导：三段一页式体检（环境自检→模拟器连接→试识别）
+├── ui/app/onboarding_fixes.py    # doctor 修复文案→向导动作映射（一键修复按钮文案/模块名）
 ├── config/
 │   ├── __init__.py
 │   ├── env.py               # .env、模型价格配置解析/加载/保存（原子写入）
 │   ├── profiles.py          # API 档案域（api_profiles.json）：读取/归一化/写入/解析/迁移（自 env.py 拆出，审计 G7）
 │   ├── disclaimer_state.py  # 免责声明状态管理（DISCLAIMER_VERSION、config/.disclaimer_state.json）
+│   ├── onboarding_state.py  # 首启向导状态管理（ONBOARDING_VERSION、config/.onboarding_state.json）
 │   ├── version.py           # 版本单一来源 app_version()：VERSION 文件 → frozen BUNDLE_ROOT → 0.0.0-dev
 │   └── logging_config.py    # 统一日志配置（按模块拆分 + 文件轮转 + 全量留底 + 线程/逃逸异常钩子）
 ```
@@ -78,11 +81,17 @@ splash = _create_startup_splash()
 splash.show()
 app.processEvents()
 window = MainWindow()
+if os.environ.get("MJS_ONBOARDING_FORCE") == "1":      # 发版 smoke 通道：预热前构造向导
+    splash.close()                                      # splash 置顶且未 finish，留着会遮挡向导
+    window._dialogs.open_onboarding()
 window.start_ocr_warmup()
 splash.showMessage("正在加载 OCR 模型…")
-window.wait_ocr_warmup(timeout_ms=120_000)       # 覆盖 OCR 引擎冷加载（实测可达 90 秒+，占 GIL）
+window.wait_ocr_warmup(timeout_ms=120_000)            # 覆盖 OCR 引擎冷加载（实测可达 90 秒+，占 GIL）
 window.show()
 splash.finish(window)
+from src.config.onboarding_state import should_show_state
+if should_show_state():                                # 首启向导：状态文件缺失/版本不符时弹一次
+    window._dialogs.open_onboarding()
 sys.exit(app.exec())
 ```
 
@@ -95,6 +104,7 @@ sys.exit(app.exec())
 5. **frozen 重入走 runpy** — `__main__` 分支中，`IS_FROZEN` 且 `sys.argv[1]=="-m"`（带模块参数）时以 `runpy.run_module()` 模块模式运行（AI 攻略/相性/武将生成走 `src.scraper.ai_batch` 等 `-m` 子脚本），防止 exe 重入又拉起一个 GUI 实例。开发态 python 自带 `-m` 处理，不触发此分支。
 6. **首启资料部署标记**（b3327f1）— `data/.deployed` 记录源树签名"文件数:最新mtime秒"（`_bundle_data_signature`），签名一致则跳过约 280MB 的逐文件 rglob 部署扫描；签名变化（升级包带新数据）仍会补齐。范式同 `engine_loader` 的 `.synced`。
 7. **启动期轻运维**（c88bf63）— 日志初始化后调用 `_prune_old_screenshots(keep_days=14)` 回收 `screenshots/` 顶层 mtime 超 14 天的 `*.png`（子目录标注样本被 OCR 回归测试引用、不动；失败仅 warning 不阻断启动）；主窗口显示后 `QTimer.singleShot(120_000, coordinator.auto_check_if_due)` 触发每日一次的自动公告检查（忙碌/冷却期内静默跳过，标记先写、当日失败不重试）。
+8. **首启向导三段体检**（6962151 / 12c7efb）— 窗口显示后（预热已返回、事件循环尚未接管）以 `should_show_state()` 判定是否弹向导：状态文件缺失、损坏或 `ONBOARDING_VERSION` 不符时弹一次，跳过（`mark_skipped()`）或完成后不再打扰；向导三段（① 运行环境：doctor 子集离线检查 → ② 模拟器连接：ADB 探测/连接/分辨率体检 → ③ 试识别：预热门禁/悬挂复位/试识别），状态持久化 `config/.onboarding_state.json`（`mark_step()` 按段记录完成时间）。`MJS_ONBOARDING_FORCE=1` 提供发版 smoke 通道（预热前构造向导，splash 先 close 防遮挡）；`dialog_coordinator.open_onboarding()` 外层包异常保护（向导自身异常不演变为应用启动失败，记日志+告警后照常收尾）。
 
 ### 3.2 配置加载优先级
 
@@ -136,7 +146,7 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 30 键：runtime 6 + mumu 15 + 透传 9）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
+`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 32 键：runtime 6 + mumu 15 + 透传 11）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
 
 `get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(32768，cf9c927 由 16384 上调；P1-7 起单源于 `env.DEFAULT_MAX_OUTPUT_TOKENS`，`api_generator.MAX_OUTPUT_TOKENS` 仅引用) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
@@ -144,7 +154,7 @@ PROVIDER_LABELS: dict[str, str] = {
 
 闲置暂停阈值分钟数不走配置键：早先的 `MUMU_OCR_POLL_IDLE_MINUTES` 已移除，现为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5` 类常量（`src/ui/app/poll_coordinator.py`），配置面只保留 `MUMU_OCR_POLL_IDLE_PAUSE` 开关。
 
-元表其余 9 键为透传键（无 getter，调用方直接从 `load_env_config()` 取值，不进 UI 配置对话框）：`api_key` / `api_url` / `model`（旧 `DEEPSEEK_*` 三件套，profiles 域旧链兜底消费）、`mjs_data_repo`（pull_data 私有仓位置）、`recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`（推荐指数计算参数）、`data_freshness_timeline_stale_days`（ae92c1d 随数据新鲜度芯片新增：公告时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄估算，非正整数回退默认 14；`config.env.example` 文件尾新增「数据新鲜度（状态栏芯片）」段）。
+元表其余 11 键为透传键（无 getter，调用方直接从 `load_env_config()` 取值，不进 UI 配置对话框）：`api_key` / `api_url` / `model`（旧 `DEEPSEEK_*` 三件套，profiles 域旧链兜底消费）、`mjs_data_repo`（pull_data 私有仓位置）、`recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`（推荐指数计算参数）、`data_freshness_timeline_stale_days`（ae92c1d 随数据新鲜度芯片新增：公告时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄估算，非正整数回退默认 14；`config.env.example` 文件尾新增「数据新鲜度（状态栏芯片）」段）、`data_freshness_stale_green_days` / `data_freshness_stale_red_days`（数据新鲜度档位阈值：[0,绿) 绿 / [绿,红) 黄 / ≥红 红，默认 7/14；官方榜单约每半月更新，写死 14 天会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001），由 `business/freshness.py::_stale_thresholds()` 消费）。
 
 ### 3.4 日志系统
 
@@ -292,11 +302,29 @@ def _normalize_profiles(profiles) -> list[dict]:
 
 > **设计思路：** 启用互斥在数据层面保证（同时至多一个 enabled=true），打开配置即生效，避免历史文件多 enabled 导致界面显示多个启用的漂移。名称重复时自动追加 `-2/-3` 后缀。
 
+### 4.4 首启向导状态容错（缺失/损坏/版本不符一律重新弹出）
+
+```python
+def should_show_state(state_file: Path = _STATE_FILE) -> bool:
+    """首启向导是否需要展示：从未完成，或记录的引导版本已过期。"""
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        recorded = str(data["onboarding_version"])
+    except FileNotFoundError:
+        return True
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        logger.warning("首启向导状态文件读取失败，按未完成处理: %s", e)
+        return True
+    return recorded != ONBOARDING_VERSION
+```
+
+> **设计思路：** 与 `disclaimer_state` 完全同范式——文件缺失、JSON 损坏、字段非法一律按"未完成"处理（记日志后重新弹出），而非静默跳过。`onboarding_version` 升版意味着引导内容实质变化，所有老用户（含已跳过的）都会重新看到向导，这是有意的产品决策。`_read()` 辅助函数在不可用时返回全新状态（不覆盖，由下一次写入重建），避免状态文件被意外清空。
+
 ---
 
 ## 五、接口说明
 
-本模块不提供外部 API 接口，但提供以下公共函数/常量。多数经 `src.config.__init__.py` 统一导出；`IS_FROZEN` / `PROJECT_ROOT` / `BUNDLE_ROOT` / `IMAGES_DIR` / `IMAGES_OUTPUT_DIR` / `SCREENSHOTS_DIR` / `OCR_CONFUSION_OVERRIDES_PATH` / `is_full_build()` / `get_mumu_config()` / `has_available_api_profile()` 不经 `__init__.py`，调用方直接从 `src.config.env` 导入：
+本模块不提供外部 API 接口，但提供以下公共函数/常量。多数经 `src.config.__init__.py` 统一导出；`IS_FROZEN` / `PROJECT_ROOT` / `BUNDLE_ROOT` / `IMAGES_DIR` / `IMAGES_OUTPUT_DIR` / `SCREENSHOTS_DIR` / `OCR_CONFUSION_OVERRIDES_PATH` / `is_full_build()` / `get_mumu_config()` / `has_available_api_profile()` 不经 `__init__.py`，调用方直接从 `src.config.env` 导入；`disclaimer_state` / `onboarding_state` 各函数的调用方亦直接从对应子模块导入（不经 `__init__.py`）：
 
 | 函数 / 常量 | 文件 | 返回 | 说明 |
 |-------------|------|------|------|
@@ -326,9 +354,15 @@ def _normalize_profiles(profiles) -> list[dict]:
 | `migrate_legacy_api_config(env_path, profiles_path)` | `profiles.py` | `bool` | 旧 DEEPSEEK_* 三件套 → deepseek-main 档案（幂等） |
 | `setup_logging(...)` | `logging_config.py` | `None` | 初始化日志系统（幂等，只清理自身 Handler；同时注册 threading.excepthook 与链式 sys.excepthook） |
 | `app_version()` | `version.py` | `str` | 版本单一来源（lru_cache）：依次读 `PROJECT_ROOT/VERSION` → frozen `BUNDLE_ROOT/VERSION`，均失败回退 `"0.0.0-dev"`；消费方为 main.py 启动日志与 `setApplicationVersion`、关于对话框（80cc75b 起，原硬编码 v0.1.0）与 release.py 发版校验 |
-| `DISCLAIMER_VERSION` | `disclaimer_state.py` | `str` | 免责声明版本常量（当前 `"1.1"`），仅版本变化时要求重新确认；TERMS/LICENSE 实质修订时须与常量同批递增（735a2d2） |
+| `DISCLAIMER_VERSION` | `disclaimer_state.py` | `str` | 免责声明版本常量（当前 `"1.3"`），仅版本变化时要求重新确认；TERMS/LICENSE 实质修订时须与常量同批递增（735a2d2） |
 | `should_show(state_file)` | `disclaimer_state.py` | `bool` | 免责声明是否需要展示：从未接受或接受版本 ≠ `DISCLAIMER_VERSION` 时为 True；状态文件缺失/损坏/字段非法一律按"未接受"处理（记日志后重新弹窗） |
 | `accept(state_file, version)` | `disclaimer_state.py` | `None` | 记录用户接受的文本版本与时间（`config/.disclaimer_state.json`）；`main.py` 在 `should_show()` 为真时弹 `src/ui/app/disclaimer_dialog.py`，用户同意后调用，拒绝则退出应用 |
+| `ONBOARDING_VERSION` | `onboarding_state.py` | `str` | 首启向导版本常量（当前 `"1"`），引导内容实质变化时递增驱动重新展示；状态文件缺失/损坏/版本不符时重新弹出 |
+| `STEP_KEYS` | `onboarding_state.py` | `tuple[str, ...]` | 引导步骤合法键 `("env", "device", "recognize")`：段 1 环境自检 / 段 2 模拟器连接 / 段 3 试识别 |
+| `should_show_state(state_file)` | `onboarding_state.py` | `bool` | 首启向导是否需要展示：从未完成或记录的引导版本已过期；状态文件缺失/损坏/字段非法一律按"未完成"处理 |
+| `mark_step(step, state_file)` | `onboarding_state.py` | `None` | 记录单个引导步骤完成时间（step ∈ STEP_KEYS）；未知步骤抛 `ValueError` |
+| `mark_skipped(state_file)` | `onboarding_state.py` | `None` | 记录跳过引导，此后不再自动弹出（直至版本升版或 `reset()`） |
+| `reset(state_file)` | `onboarding_state.py` | `None` | 清除状态文件，供「帮助 → 重看首启引导」与自测复现使用 |
 | `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `ChineseQtTranslator` | 安装应用级 Qt 标准控件中文翻译器 |
 | `install_details_button_translator(msgbox)` | `ui/app/chinese_translator.py` | `_DetailsButtonFilter` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"），随对话框销毁；Qt 内部展开/收起时直接 setText 不走 QTranslator，需在 layout 变化时遍历子按钮翻译 |
 
@@ -353,6 +387,8 @@ def _normalize_profiles(profiles) -> list[dict]:
 | 被依赖 | 所有模块 | 共享同一日志系统；QProcess 子进程经 `MJS_QPROCESS_CHILD=1` 环境变量跳过文件 Handler、仅输出控制台，stdout/stderr 由父进程转发落盘 |
 | 依赖 | `src.ui.app.main_window` | 应用入口创建 MainWindow 并调用 `start_ocr_warmup()` / `wait_ocr_warmup(timeout_ms=120_000)` |
 | 依赖 | `src.config.disclaimer_state` | `main.py` 启动时以 `should_show()` 判定是否弹免责声明、`accept()` 落盘确认状态（仅文本版本变化时要求重新确认） |
+| 依赖 | `src.config.onboarding_state` | `main.py` 窗口显示后以 `should_show_state()` 判定是否弹首启向导；`onboarding_dialog` 各段经 `mark_step()` 记录完成、`mark_skipped()` 记录跳过（6962151） |
+| 依赖 | `src.ui.app.onboarding_dialog` / `src.ui.app.onboarding_fixes` | 首启向导三段体检（环境自检→模拟器连接→试识别）与 doctor 修复文案映射；`dialog_coordinator.open_onboarding()` 外层包异常保护（12c7efb） |
 | 依赖 | `src.ui.app.app_icon` / `src.ui.app.chinese_translator` / `src.ui.shared.style` | 启动阶段安装应用图标、Qt 标准控件中文翻译器与全局样式表 `GLOBAL_STYLE` |
 | 依赖（传递） | `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.engine_loader` | 启动页阶段完成 OCR 引擎冷加载（RapidOCR/ONNX 双套件），主入口仅触发、不直接引用 |
 | 依赖 | `runpy`（frozen 重入） | `-m` 子脚本以模块模式运行，避免 exe 重入拉起 GUI |
@@ -395,3 +431,18 @@ def _normalize_profiles(profiles) -> list[dict]:
 
 **测试**
 - `tests/test_env_config.py` 补 pricing 域（b5e8e4f，七函数十五用例）：文件缺失 / JSON 损坏 / 根非对象回退空表；负价格 / 非数字 / 布尔误判返回 `None`；未知模型 `None`（详见 3.5 节）
+
+---
+
+## 九、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更：
+
+**新增：首启向导三段体检**（6962151 / 12c7efb）
+- `src/config/onboarding_state.py`（96 行，新增文件）：首启向导状态管理，持久化 `config/.onboarding_state.json`，范式同 `disclaimer_state`（文件缺失/损坏/版本不符一律按"未完成"重新弹出）。核心常量 `ONBOARDING_VERSION = "1"`、`STEP_KEYS = ("env", "device", "recognize")`（段 1 环境自检 / 段 2 模拟器连接 / 段 3 试识别）；核心函数 `should_show_state()`（判定是否需要展示）、`mark_step(step)`（记录步骤完成时间）、`mark_skipped()`（记录跳过）、`reset()`（清除状态文件供重看）。详见 3.1 关键设计点 8 与五节接口表
+- `src/main.py` 接入（+12 行）：窗口显示后以 `should_show_state()` 判定弹首启向导；`MJS_ONBOARDING_FORCE=1` 提供发版 smoke 通道（预热前构造向导，splash 先 close 防遮挡）
+- `src/ui/app/dialog_coordinator.py::open_onboarding()` 外层包异常保护（12c7efb）：向导自身异常不演变为应用启动失败，记日志+告警后照常收尾
+
+**修正与配置**
+- `DISCLAIMER_VERSION` `"1.1"` → `"1.3"`（disclaimer_state.py），TERMS/LICENSE 附加条款实质修订；TERMS.md 节号同步由「第 9 节」→「第 10 节」
+- `env.py` 新增 2 个透传键（+4 行）：`DATA_FRESHNESS_STALE_GREEN_DAYS` / `DATA_FRESHNESS_STALE_RED_DAYS`（int、default=None，不进 getter 域与 UI 配置对话框）。语义：数据新鲜度档位阈值 [0,绿) 绿 / [绿,红) 黄 / ≥红 红，默认 7/14；官方榜单约每半月更新，写死 14 天会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001），由 `business/freshness.py::_stale_thresholds()` 消费。键元表现 32 键（详见 3.3 节）

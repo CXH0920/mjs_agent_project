@@ -1,8 +1,8 @@
 # 模块：AI 批量生成
 
 > 对应目录：`src/scraper/ai/`
-> 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律
-> 文档日期：2026-10-11（基线 2081b5b）
+> 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律、生成任务互斥锁
+> 文档日期：2026-10-23（基线 a63bc3c）
 
 ---
 
@@ -19,6 +19,9 @@
 - **两层重试机制** — HTTP 层指数退避（429 优先读 Retry-After 头退避）+ 输出额度层重试（思考过程耗尽正文额度时自动重试）
 - **连接恢复与取消** — 连接类异常（RemoteProtocolError/ReadError/ReadTimeout 等）先关闭并重建 httpx.Client，避免损坏连接池导致后续重试级联失败；`cancel()` 置 `_cancelled` 标志，重试循环在下次循环开头退出
 - **限流与失败提示** — RPM 前置限流（默认 30 req/min）；每次重试向 stdout 输出 `[重试]` 进度行（子进程管道转发到进度窗口，避免长时间静默）；Pydantic 校验前先做必填字段预检，拦截模板占位符正文与过短正文，命中即快速失败省一次校验开销
+- **生成任务互斥锁** — 入口 `acquire_generation_lock()` 用 OS 级文件锁（Windows `msvcrt` / POSIX `fcntl`）保证同一时刻只有一个批量生成任务运行（VUL-B4-001）：分批提交按"启动快照全量覆盖"写盘，并发任务会静默抹掉对方已提交的成果；持有者 PID + 时间写入旁路 `*.holder` 文件供占用提示；锁文件不可用时降级为哑锁放行，持锁进程退出或崩溃时锁由 OS 自动释放、无残留锁
+- **中断状态与取消链路健壮性** — 不可重试异常（401/403 等）不再直接冒泡丢失信息：写 `interrupted: true` 中断标记（`failed_items` 留空，循环未跑完无从得知），已提交成果保留、退出 1；`--retry-failed` 检测到中断标记明确拒绝，避免按残留的过期失败项重跑错项（TD-A5-004）；锁在 `finally` 中释放
+- **浏览器会话超时重建** — `DeepSeekBrowserSession` 等待/提取任一段失败（超时、选择器失效、填入选区失败）置 `_started=False` 标记页面失效，下次请求先在 `_ensure_browser` 中 `close()` 释放旧上下文再重建，避免复用停在验证码/登录失效页的页面导致后续每个请求都等满超时级联失败，也避免覆盖 `_playwright`/`_context` 造成 Edge 进程泄漏与 `user_data_dir` 锁残留（VUL-B2-001）；两段等待各用独立超时预算
 
 ---
 
@@ -34,6 +37,7 @@ src/scraper/
     ├── browser_generator.py # 浏览器模式生成器
     ├── browser_session.py   # DeepSeek 页面会话（Playwright 生命周期）
     ├── generation.py        # 五种生成编排函数
+    ├── generation_lock.py   # 生成任务互斥锁（OS 级文件锁，防并发覆盖）
     ├── prompt_utils.py      # Prompt 构建与成本估算
     ├── rag_prompt.py        # RAG 语料检索与注入（攻略/相性，含降级提示）
     ├── rule_summary.py      # 核心规则摘要/卡牌体系段加载（RAG 兜底注入）
@@ -45,6 +49,7 @@ src/scraper/
 
 ```
 ai_batch.py (兼容 CLI) -> ai/batch.py
+ ├── acquire_generation_lock()                     # 生成任务互斥：拒绝并发启动（VUL-B4-001）
  ├── 选择生成器: AIBatchGenerator (api) / PlaywrightGenerator (browser)
  └── generation.py → 根据参数分发到:
       ├── run_guide_generation()
@@ -79,6 +84,7 @@ close()                 → None
 | 成本估算 | 支持 dry-run | 不支持 |
 | 必备条件 | API Key（`requires_key=False` 的 ollama 本地服务可空；构造期按 `PROVIDER_PRESETS` 校验，不满足抛 `ValueError`） | 已登录的 Edge 浏览器 |
 | 取消支持 | `cancel()` 方法（置 `_cancelled` 标志，重试循环下次循环开头退出；不打断 in-flight 请求，靠超时退出） | 无 |
+| 会话/连接健壮性 | 连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client（分层超时在重建时保持） | 等待/提取失败置 `_started=False`，下次请求先释放旧上下文再重建浏览器（见 3.9） |
 | RAG 预算 | `RAG_PROMPT_CHARS`（默认 6000 字符）/ `RAG_SYNERGY_PROMPT_CHARS`（相性，默认 6000） | `RAG_BROWSER_PROMPT_CHARS`（默认 3000 字符） |
 
 浏览器模式按职责拆为两层：`PlaywrightGenerator` 负责提示词、JSON 提取、ID 转换和 Pydantic 校验；`DeepSeekBrowserSession` 负责 Edge/Playwright 生命周期、登录等待、页面诊断、消息发送和流式回复稳定检测。`PlaywrightGenerator._send_and_wait()` 保留为兼容委托入口，不再直接操作页面。
@@ -209,6 +215,43 @@ for idx, (ha, hb) in enumerate(pairs, start=1):
 - **双版本选择**：UI 层可选「RAG 语料增强 / 经典模式」，经典模式向子进程追加 `--no-rag`（等价于 `RAG_ENABLED=false`）。
 - **卡牌体系防串味兜底**：RAG 开启时，卡牌类语料块因向量召不回，`build_guide_prompt`/`build_synergy_prompt` 会在 RAG 段后兜底注入 `rule_summary.load_card_system()` 提取的「卡牌体系」段（行动/战法/装备/专属牌名清单），防止 AI 用三国杀牌名串味；RAG 关闭且无语料召回时仍注入完整 `load_core_rules()`。核心规则摘要 6b21d75 起读运行时可写根 `_CORE_RULES_FILE = PROJECT_ROOT/data/rag_corpus/核心规则摘要.md`（与检索链路 `src/rag/config` 及维护脚本同根——frozen 下用户对部署副本的修改在兜底中生效；开发态两根相等无差异）。
 - **配置**：`RAG_ENABLED` / `RAG_TOP_K`（12）/ `RAG_PROMPT_CHARS`（6000，攻略）/ `RAG_BROWSER_PROMPT_CHARS`（3000，浏览器模式）/ `RAG_SYNERGY_PROMPT_CHARS`（6000，相性注入预算）/ `RAG_MODEL_DIR`。
+
+### 3.7 生成任务互斥锁（9180cf0，VUL-B4-001）
+
+分批提交按"启动时读入旧快照 → 每 10 条校验成功即全量覆盖写盘"进行（3.5 节），两个生成进程并发写同一 `guides.json` / `synergies.json` 时，后提交者会静默抹掉对方已提交的成果。`ai/batch.py` 入口用 OS 级文件锁互斥：
+
+- **锁文件**：`GENERATION_LOCK_PATH = PROJECT_ROOT/"logs"/"ai_generation.lock"`（运行时状态，已 gitignore），旁路 `ai_generation.lock.holder` 记录持有者 `pid\tISO 时间`。持有信息写在旁路文件而非锁文件本体，因为 Windows 字节锁会拒绝其他句柄对锁文件的常规读取；进程崩溃后 holder 可能残留旧记录，故互斥判定一律以 OS 锁为准（文案用"最近持有记录"而非"持有者"）。
+- **实现**：Windows `msvcrt.locking(fd, LK_NBLCK, 1)` / POSIX `fcntl.flock(fd, LOCK_EX|LOCK_NB)` 对第 0 字节加非阻塞独占锁。持锁进程退出（含崩溃、断电、任务管理器结束）时锁由 OS 自动释放，不留下需要人工清理的残留锁。
+- **拒绝语义**：`acquire_generation_lock()` 被占用返回 `None`，`main()` 打印「已有另一个生成任务正在运行…」并 `sys.exit(1)`（子进程非零退出，进度窗口按失败上报）。锁文件本身不可创建或不可锁定时返回哑锁（`fd=-1`）降级放行——保持无锁旧行为，仅记警告，不因锁机制自身故障阻断生成。
+- **释放时机**：持锁跨越整个生成循环与提交阶段，`main()` 的 `finally` 中 `lock.release()`（在 `generator.close()` 之后）；`--dry-run` 在获取锁之前提前 `return`，不占用锁。
+
+### 3.8 中断状态与取消链路（74ad9b9 / f10b477 / f1b13f8）
+
+**中断状态（TD-A5-004）**：`_call_api()` 对 400/401/403/404/422 立即 `raise`（3.2 节），此前该异常直接冒泡出 `main()`，失败清单停留在上一次内容、本次已花掉的 token 费用完全不可见。现生成循环包在 `try/except Exception` 中：捕获后记 `fatal_error` 与 `[中断]` 行，`finally` 中照常 `generator.close()` + `lock.release()`，随后走统一收尾——打印 token 汇总、保留已提交批次、`_save_interrupted_state()` 写中断标记、`sys.exit(1)`。
+
+中断标记与失败清单同文件（`logs/ai_last_failures.json`）不同语义：`interrupted: true` + `error: "<ExcType>: <msg>"` + `failed_items: []`。循环未跑完失败项无从得知——既不能保留旧清单（`--retry-failed` 会重跑过期项），也不能静默清除（丢失线索）。`_load_retry_items()` 检测到 `interrupted` 明确拒绝并 `sys.exit(1)`，文案指出上次中断原因并要求直接重跑完整任务。收尾判定顺序：先查 `failed_results`（跑完但有失败项 → 写失败清单），再查 `fatal_error`（未跑完 → 写中断标记），全部成功才 `unlink(missing_ok=True)` 清除旧清单。
+
+**退出码协议**：`0` = 正常结束（全部成功、`--dry-run` 预览、`--retry-failed` 无失败记录或目标武将已下架、`--rebuild-rag-index` 建出索引）；`1` = 有失败项 / 任务中断 / 互斥锁拒绝 / 空武将数据 / 缺 API Key / 失败清单读取失败；`2` = argparse 参数错误（`parser.error`，如未指定任何生成模式）。
+
+**取消链路健壮性**（父进程侧，`src/business/fetching/`，非本模块）：子进程侧 `AIBatchGenerator.cancel()` 仍只在重试循环开头生效（3.1 节）。三处修复保证中止不会把服务锁死（f10b477）：`cancel()` 在 QProcess 尚处 Starting 状态时不立即树杀（此时 `processId()` 为 0、Qt6 对 Starting 状态 `kill()` 会在事件循环内原生 abort），改为连接 `started` 信号后补一次树杀；清理轮询加 `_CANCEL_CLEANUP_MAX_POLLS = 100`（50ms/轮 ≈ 5 秒）上限，taskkill 被安全软件拦截或 PID 被复用时强制收尾复位 `_cancel_requested`；取消期间的非 Crashed 错误（典型为 Starting 阶段 `FailedToStart`）也调用收尾复位，避免 `_is_busy` 永久 True。看门狗从"总时长上限"改为"无进度上限"（f1b13f8）：`_dispatch_stdout_line` 识别进度行（START/OK/FAIL/SKIP/重试/休息/RAG/开始）后 `_feed_watchdog` 用 `stop()+start()` 强制重启 30 分钟计时（Qt6 对已激活的同间隔定时器 `start()` 为 no-op），避免长清单浏览器模式任务被误杀。退出时 `AppServices.shutdown_fetch_services` 依次对三个抓取服务发 `cancel` 并限时泵事件循环等进程树真正退出（1d8334a），避免 QProcess 随父对象析构不杀子进程树、Edge/node 孤儿化并锁住 `data/edge_profile`。
+
+### 3.9 浏览器会话超时重建（74ad9b9，VUL-B2-001）
+
+`send_and_wait()` 原为单一函数内两段等待共用同一 `deadline`：首段（等新回复气泡）耗时接近上限时次段（内容稳定）几乎无剩余时间直接判超时；超时或选择器失效后页面可能停在验证码/登录失效页，复用会让后续每个请求都等满超时并级联失败。现拆为三段方法，各段独立超时预算：
+
+```
+send_and_wait(prompt)
+  ├── _ensure_browser()
+  ├── page.fill(input_selector, prompt)                    [失败 -> _invalidate_page]
+  ├── page.keyboard.press("Enter")                         [失败 -> _invalidate_page]
+  ├── _wait_for_new_message(page, selector, before_count, timeout)   [500ms 轮询，独立 deadline]
+  ├── _wait_until_stable(page, selector, timeout)                        [2000ms 轮询，独立 deadline，连续 3 轮长度不变]
+  └── _extract_last_reply(page, selector)                                  [提取最后一条消息文本]
+```
+
+`_invalidate_page(reason)` 在 fill 失败、Enter 失败、未检测到新回复、内容未稳定、未找到消息、提取出错六处调用：仅置 `_started = False`（不立即 `close()`，避免连带关闭用户正在观看的窗口），并输出 `[恢复] 页面状态异常（reason），下次请求将重建浏览器上下文`。`_ensure_browser()` 检测到 `_started=False` 但 `_playwright` / `_context` 仍存活时先 `close()` 释放旧上下文再重建——否则覆盖 `_playwright`/`_context` 会泄漏 Edge 进程并继续占用 `data/edge_profile` 的 `user_data_dir` 锁，下次浏览器模式启动报 `locked`。
+
+> 浏览器自动化访问 chat.deepseek.com 的外部行为（启动参数 `--disable-blink-features=AutomationControlled`、生成间随机休息 60-180 秒、User-Agent 标识）在 TERMS.md 第 7 节「自动化访问与访问频率披露」如实披露；`DEFAULT_BROWSER_CONFIG` 与 `_random_rest()` 处的代码注释均指向该章节（9180cf0，措辞由"避免触发风控"改为中性的"拉开请求间隔、降低访问密度"）。
 
 ---
 
@@ -352,6 +395,30 @@ for sk in skills or []:
 
 > **设计思路：** RAG 语料块里的技能描述比 heroes.json 更全（含时机/触发条件标签），已注入时再重复一遍完整描述纯浪费 token，改为指向块 id 让模型自己读；但"已注入"必须按技能逐一判定——预算挤掉某个块、检索未召回某个技能、或语料块 id 格式漂移时，该技能必须回退完整描述（含结算），否则模型连这个技能的基本规则都看不到。指针判定的失败方向是良性的（多带一遍完整描述），不会漏规则。结算说明是"技能触发后如何结算"的关键机制，仅存在于回退路径的完整描述里；因此上游构建 skills 字典时必须带 `settlement` 字段（UI 全量/增量链路与指定武将选择对话框曾漏传，导致攻略与相性两条链路的技能行都缺结算说明，已修复）。
 
+### 4.6 生成任务互斥锁（generation_lock.py，9180cf0）
+
+```python
+def acquire_generation_lock(path: str | Path) -> GenerationLock | None:
+    path = Path(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT)
+    except OSError as error:
+        logger.warning("生成锁文件创建失败，本次不加锁继续: %s: %s", path, error)
+        return GenerationLock(path, -1)      # 哑锁降级：锁机制故障不阻断生成
+    try:
+        _try_lock_byte(fd)                   # Windows msvcrt / POSIX fcntl 非阻塞独占锁
+    except OSError:
+        holder = _read_holder(_holder_path(path))
+        logger.warning("生成锁已被其他任务占用（最近持有记录: %s）", holder or "未知")
+        os.close(fd)
+        return None                          # 已被占用：调用方拒绝启动并 exit 1
+    _write_holder(path)                      # 旁路 *.holder 写 pid + 获取时间（仅占用提示）
+    return GenerationLock(path, fd)
+```
+
+> **设计思路：** 生成结果按"启动时快照 + 全量覆盖"分批提交，进程内互斥挡不住跨进程的文件写——OS 文件锁是唯一不需要守护进程、崩溃后也能自愈的方案：持锁进程退出（含崩溃、断电）时锁由系统自动释放，不留下需要人工清理的残留锁。持有者信息写在旁路 `*.holder` 文件而非锁文件本体，因为 Windows 字节锁会拒绝其他句柄对锁文件的常规读取；holder 仅为占用提示，进程崩溃后可能残留旧记录，因此互斥判定一律以 OS 锁为准（文案用"最近持有记录"而非"持有者"）。锁文件不可用时返回哑锁（`fd=-1`，`release()` 中 `os.close` 被跳过）降级放行，保持无锁旧行为，避免锁机制自身故障把生成入口变成永久拒绝。
+
 ---
 
 ## 五、接口说明
@@ -382,8 +449,8 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `--score-threshold` | 0 | 相性评分下限 |
 | `--verbose` / `-v` | False | 详细日志 |
 | `--no-rag` | False | 禁用 RAG 语料增强（默认启用） |
-| `--retry-failed` | False | 定向重试（c88bf63，仅 `--guide` 模式）：读取上次失败清单 `logs/ai_last_failures.json`，heroes 过滤到失败项（按 name 或 id 匹配）并强制 update 模式，成功项字节不动；全部成功后自动清除清单；结束打印 `[定向重试] 上次失败 N 项，本次恢复 M 项，仍失败 K 项` |
-| `--rebuild-rag-index` | False | 重建 RAG 向量索引后退出 |
+| `--retry-failed` | False | 定向重试（c88bf63，仅 `--guide` 模式）：读取上次失败清单 `logs/ai_last_failures.json`，heroes 过滤到失败项（按 name 或 id 匹配）并强制 update 模式，成功项字节不动；全部成功后自动清除清单；结束打印 `[定向重试] 上次失败 N 项，本次恢复 M 项，仍失败 K 项`。上次运行被中断（清单含 `interrupted: true`）时明确拒绝并 `exit 1`——循环未跑完失败项未知，避免按残留的过期项重跑错项（74ad9b9） |
+| `--rebuild-rag-index` | False | 重建 RAG 向量索引后退出（建出索引 `exit 0`，否则 `exit 1`） |
 
 ### AIBatchGenerator 公开方法
 
@@ -391,7 +458,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 |------|------|------|
 | `generate_guide` | `(hero: dict) -> tuple[dict\|None, dict\|None]` | 为单个武将生成攻略 |
 | `generate_synergy` | `(hero_a: dict, hero_b: dict) -> tuple[dict\|None, dict\|None]` | 为武将对生成相性评分 |
-| `complete` | `(messages: list[dict], temperature: float = 0.7) -> dict\|None` | 公开对话补全接口（供业务层调用） |
+| `complete` | `(messages: list[dict], temperature: float = 0.7, label: str = "chat") -> dict\|None` | 公开对话补全接口（供业务层调用）；`label` 为业务方标识（如语料块 block_id）并进 token 用量日志——complete 不经 `_request_content`，须在此补记，否则该链路消耗在日志中不可见（9ccc2fc） |
 | `cancel` | `() -> None` | 请求中断：重试循环将在下次循环开头退出 |
 | `close` | `() -> None` | 关闭 HTTP 客户端 |
 
@@ -417,6 +484,8 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `_format_rag_chunks(core_blocks, extra_blocks, budget, core_ratio)` | `rag_prompt.py` | 官方/社区两段独立预算池拼装（整块丢弃不截断，社区池内 combo 优先）；内部使用，供两条 RAG 上下文函数共用 |
 | `_skill_lines(skills, hero_id, rag, indent)` | `prompt_utils.py` | 技能段构建：语料块已注入的技能指针化省 token，其余回退完整描述并附结算后缀；攻略与相性两条 prompt 共用 |
 | `is_rag_enabled()` | `rag_prompt.py` | RAG 增强开关：环境变量 `RAG_ENABLED`（`--no-rag` 覆盖）优先，其次 config.env |
+| `acquire_generation_lock(path)` | `generation_lock.py` | 尝试获取生成任务互斥锁（OS 级文件锁，Windows `msvcrt` / POSIX `fcntl` 对第 0 字节非阻塞独占锁）：占用返回 `None`（调用方拒绝启动并 `exit 1`）；锁文件不可用返回哑锁（`fd=-1`）降级放行。旁路 `*.holder` 记录持有者 PID + 获取时间（9180cf0） |
+| `GenerationLock.release()` | `generation_lock.py` | 关闭句柄即解锁（哑锁跳过 `os.close`）；持锁进程退出/崩溃时锁由 OS 自动释放；`main()` 在 `finally` 中调用 |
 | `load_heroes(path)` | `utils.py` | 通过 `HeroManager` 完整校验武将 JSON；任一错误均拒绝部分加载 |
 | `_save_json(path, data)` | `utils.py` | 原子写入 JSON（9737d52 起委托 `json_repository.atomic_write_json`，mkstemp 唯一临时名——跨进程写同一路径不再共用固定临时名） |
 
@@ -432,8 +501,10 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | 依赖 | `src.config.env` | `resolve_api_config()` 是任务侧唯一 API 解析入口（多 API 档案 `config/api_profiles.json` 启用档案优先 → config.env 旧键 → 环境变量 → 默认值，同时只允许一个启用档案）；`PROVIDER_PRESETS` 决定供应商语义（`requires_key` 与默认端点，含 deepseek / openai / ollama / openai-compatible）；`get_runtime_params()` 提供 RPM / 最大重试 / HTTP 超时 / 输出 token 上限（`MAX_OUTPUT_TOKENS` 默认 32768，与 `api_generator.MAX_OUTPUT_TOKENS` 同源于 `DEFAULT_MAX_OUTPUT_TOKENS`，1bfd65b）；`get_model_pricing()` 提供价格表用于成本估算 |
 | 依赖 | `src.rag`（config/indexer/retriever） | ChromaDB 向量检索、bge-small-zh 嵌入与关键词 RRF 混合检索；`Retriever` 含武将/牌名倒排 `_hero_index` 与 KEYWORDS 关键词倒排 `_keyword_index`；`hero_blocks()`/`_keyword_hits()` 不再线性遍历全量块；检索默认只召当前版本块（`is_current`） |
 | 依赖 | `src.scraper.ai.prompt_utils` | 共享 prompt 构建函数（`load_prompt`/`build_guide_prompt`/`build_synergy_prompt`/`_skill_lines`），消除 API 与浏览器生成器之间的代码重复 |
+| 依赖 | 操作系统文件锁 | `acquire_generation_lock()`（`generation_lock.py`）对 `logs/ai_generation.lock` 第 0 字节加非阻塞独占锁（Windows `msvcrt.locking` / POSIX `fcntl.flock`）实现跨进程生成互斥；旁路 `logs/ai_generation.lock.holder` 记录持有者 PID + 获取时间；两文件均在运行时状态目录、已 gitignore（9180cf0） |
 | 被调用方 | `src.business.fetching.guide_fetch_service` | 通过 QProcess 启动 AI 攻略生成（`--guide` + 可选 `--heroes-file` / `--update` / `--browser` / `--no-rag`） |
-| 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成（`--synergy-pair` / `--synergy-single` / `--synergy-list` + 可选 `--update` / `--browser` / `--no-rag`） |
+| 被调用方 | `src.business.fetching.synergy_fetch_service` | 通过 QProcess 启动 AI 相性生成（`--synergy-pair` / `--synergy-single` / `--synergy-list` + 可选 `--update` / `--browser` / `--no-rag`）。指定配对入口自 2f4a966 起由 `src/ui/generation/synergy_pair_dialog.py` 按三态筛选（未生成 / 待更新 / 已有相性）+ 四策略（仅补缺失 / 补缺失并刷新落后 / 仅刷新落后 / 全部重新生成）组装精确配对清单，恒带覆盖开关经 `--synergy-list` 提交，成本估算与进度按精确对数计算 |
+| 被调用方 | `src.business.fetching.base_fetch_service`（父进程侧，非本模块） | 看门狗改为"无进度上限"：识别本模块 stdout 进度行（START/OK/FAIL/SKIP/重试/休息/RAG/开始）后 `_feed_watchdog` 用 `stop()+start()` 强制重启 30 分钟计时（f1b13f8）；取消链路在 Starting 阶段延后树杀、清理轮询 100 轮上限、取消期间出错复位（f10b477）；退出经 `AppServices.shutdown_fetch_services` 限时等进程树真正退出（1d8334a） |
 | 被调用方 | `src.ui.app.main_window` | 菜单「数据 → 攻略生成 / 武将相性」子菜单触发生成（经 `src.ui.generation.ai_generation_workflow`） |
 | 被调用方 | `src.business.rag.refinement_service` / `src.business.maintenance.classification_suggest` / `src.scripts.propose_rule_changes` / `src.scripts.run_synergy_drift` | 复用 `AIBatchGenerator.complete()` 做通用对话补全（语料精炼建议、武将分类建议、规则变更提案、相性漂移采样） |
 
@@ -461,3 +532,17 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 - **MAX_OUTPUT_TOKENS 单源**（1bfd65b）：`env.DEFAULT_MAX_OUTPUT_TOKENS = 32_768`（键元表 runtime 域登记），`api_generator.MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS`——此前 api_generator 常量与 `get_runtime_params` 默认值两处硬编码 32_768 靠注释同步；DeepSeek 请求 `max_tokens` 实际值不变
 - **默认数据路径归运行时可写根**（6b21d75）：`ai/batch.py DEFAULT_DATA_DIR = PROJECT_ROOT/"data"`（heroes / guides / synergies 默认文件与失败清单随之）——frozen 下 BUNDLE_ROOT（`<exe>/_internal`）只读，原落点致抓取与生成结果 UI 不可见；开发态两根相等无差异（抓取侧 full.py / incremental.py 同批治理，见 module_scraper.md）
 - **核心规则摘要兜底归根**（6b21d75）：`rule_summary._CORE_RULES_FILE = PROJECT_ROOT/"data"/"rag_corpus"/"核心规则摘要.md"`，与检索链路（`src/rag/config`）及维护脚本同根——用户对部署副本的修改在 AI 生成防串味兜底中生效（详见 3.6 节）
+
+---
+
+## 九、本轮文档校准（2026-10-23）
+
+自基线 `2081b5b`（2026-10-11 校准）以来的变更，代码基线更新至 `a63bc3c`：
+
+- **生成任务互斥锁**（9180cf0，VUL-B4-001）：新增 `ai/generation_lock.py`（104 行）——OS 级文件锁（Windows `msvcrt.locking` / POSIX `fcntl.flock`，第 0 字节非阻塞独占锁），持锁进程退出/崩溃时锁由 OS 自动释放、无残留锁；`GENERATION_LOCK_PATH = PROJECT_ROOT/"logs"/"ai_generation.lock"`，旁路 `.holder` 文件记录持有者 PID + 时间；`main()` 入口获取锁、被占用 `sys.exit(1)` 拒绝并发启动、`finally` 中 `lock.release()`；锁文件不可用返回哑锁（`fd=-1`）降级放行。见 3.7 节与 4.6 节
+- **AI 批次中断状态**（74ad9b9，TD-A5-004）：`main()` 生成循环包 `try/except Exception` 捕获不可重试异常（401/403 等）记 `fatal_error`，走统一收尾（token 汇总、保留已提交成果、`_save_interrupted_state()` 写 `interrupted: true` + `failed_items: []`、`exit 1`）；`_load_retry_items()` 检测到中断标记明确拒绝 `--retry-failed`，避免按残留过期项重跑错项。见 3.8 节
+- **浏览器会话超时重建**（74ad9b9，VUL-B2-001）：`DeepSeekBrowserSession.send_and_wait()` 拆为 `_wait_for_new_message` / `_wait_until_stable` / `_extract_last_reply` 三段，各段独立超时预算（原共用 deadline 致次段几乎无剩余时间）；新增 `_invalidate_page(reason)` 在六处失败点置 `_started=False`，`_ensure_browser()` 检测失效后先 `close()` 释放旧上下文再重建，避免 Edge 进程泄漏与 `user_data_dir` 锁残留。见 3.9 节
+- **complete() 补记 token 用量**（9ccc2fc）：`AIBatchGenerator.complete(messages, temperature=0.7, label="chat")` 新增 `label` 参数并在返回后调 `_log_usage()`——complete 不经 `_request_content`，此前语料精炼等通用对话补全链路的 token 消耗在日志中不可见。见 五 节接口表
+- **自动化访问披露措辞中性化**（9180cf0）：`_random_rest()` 注释由"避免触发风控"改为"拉开请求间隔、降低访问密度"，`DEFAULT_BROWSER_CONFIG` 与 `_random_rest()` 均指向 TERMS.md 第 7 节「自动化访问与访问频率披露」（外部行为不变）。见 3.9 节注
+- **父进程侧联动（非本模块）**：看门狗改"无进度上限"（f1b13f8）、取消链路 Starting 阶段/清理轮询/取消期间出错三处修复（f10b477）、退出经 `shutdown_fetch_services` 限时等进程树真正退出（1d8334a）、相性指定获取四策略 + 三态筛选组装精确配对清单经 `--synergy-list` 提交（2f4a966）。见 3.8 节与 六 节
+- **范围提示**：`f1b13f8` / `f10b477` / `1d8334a` / `2f4a966` 的主体改动在 `src/business/fetching/` 与 `src/ui/generation/`，不属本模块；本模块侧仅消费其经由 `--synergy-list` / 进度行协议 / 取消信号传入的行为，本文仅在 3.8 / 3.9 / 六 节做交叉引用，不复制实现细节
