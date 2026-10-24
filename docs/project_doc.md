@@ -723,7 +723,7 @@ class OcrService(QObject):
 
 ### 3.7 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出，并使用 worker 注入的 OCR 引擎（主引擎 v6 与识别管线同源；罕见字兜底只取复核引擎 v4，`chinese_cht` 兜底链已退役；策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个引擎线程池并发初始化或推理。
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；2026-10-22 起的**拼接长图**（整榜单张长图，纵横比 ≥ 4 时）先经 `split_stitched_image` 按全宽静默带切成补边虚拟分页再进入同一链路（variant 仍为 `paged`，头部大图/前三名立绘卡/图例区被行数门槛拒绝，不参与 OCR），旧版长图与分页截图流程不变；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出，并使用 worker 注入的 OCR 引擎（主引擎 v6 与识别管线同源；罕见字兜底只取复核引擎 v4，`chinese_cht` 兜底链已退役；策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个引擎线程池并发初始化或推理。
 
 ```
 OfficialDataImportDialog._start_import()
@@ -732,7 +732,8 @@ OfficialDataImportDialog._start_import()
     -> OcrWorker.submit(OfficialImportTask)
       -> emit official_progress(status, 0, 0)              # 排队、读取、版式识别与行检测阶段
       -> OfficialDataImportService.import_pages(key, paths, callback)
-      -> read_image() -> detect_layout() -> extract_panels()
+      -> read_image() -> [纵横比 >= 4 时 split_stitched_image() 切虚拟分页]
+         -> detect_layout() -> extract_panels()
       -> find_data_boundaries() -> 旧版横线/新版排名行锚点 -> restore_missing_boundaries()
       -> prepare_rate_templates()（仅 2v2 胜率表）
       -> _recognize_row() -> 名称/胜率识别（名称歧义按需受限繁体兜底） -> _review_reasons()

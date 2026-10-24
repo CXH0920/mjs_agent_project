@@ -710,7 +710,15 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示
-    "business/recognition/official_data_import_service.py": 642,
+    # 642 → 664：20261022 拼接长图切分接入——读图后纵横比 >= 4 先按静默带切
+    # 成补边虚拟分页（切分本体在 official_board_parser.split_stitched_image），
+    # 页单元展开、状态提示与段 y 偏移注入复核原图坐标
+    "business/recognition/official_data_import_service.py": 664,
+    # 首次入册（417 → 524 越过 500 绊线）：split_stitched_image 拼接长图切分
+    # （20261022 版式兼容：静默带定位 + 补边 + 分页结构校验）；固定版式解析
+    # 算法族（LAYOUTS/PAGED_LAYOUTS + 切行/切格/数字模板）高内聚且仅依赖
+    # cv2/numpy，拆分只会制造间接层
+    "ocr/official_board_parser.py": 524,
     # 610 → 639：四个编辑/删除入口补 AI 生成忙碌守卫（T1 运维加固，2026-10）
     # 639 → 643：编辑/删除武将两个入口补齐同款守卫（VUL-B3-001——删除级联
     # 写 3 文件，会被生成子进程下一批全量提交静默冲掉，2026-10）

@@ -133,6 +133,80 @@ def test_paged_layout_restores_missing_leading_rank_rows() -> None:
     assert boundaries[-1] == 358
 
 
+# ---------------------------------------------------------------
+# 20261022 拼接长图切分兼容
+# ---------------------------------------------------------------
+
+# 双栏排名列在整图坐标中的白色行块位置（左栏 ROI 约 x51-158，右栏约 x581-766）
+STITCHED_RANK_COLUMNS = ((60, 120), (600, 660))
+
+
+def _paint_paged_segment(image, first_row_y, left_rows, right_rows=None):
+    """在拼接图里画一段分页表格：表头行 + 双栏排名行，几何对齐真实页。"""
+    right_rows = left_rows if right_rows is None else right_rows
+    image[first_row_y - 45:first_row_y - 30, 150:900] = 255
+    for count, (x0, x1) in zip((left_rows, right_rows), STITCHED_RANK_COLUMNS, strict=True):
+        for index in range(count):
+            center = first_row_y + index * 48
+            image[center - 6:center + 7, x0:x1] = 255
+
+
+def _build_stitched_image():
+    image = np.full((6_500, 1080, 3), 25, dtype=np.uint8)
+    image[100:1100, 200:880] = 255
+    for index in range(14):  # 头部图例：左右各 14 行文字（20261022 实测），须被行数门槛拒绝
+        y = 1300 + index * 45
+        image[y:y + 13, 100:300] = 255
+        image[y:y + 13, 650:850] = 255
+    _paint_paged_segment(image, 2300, 35)
+    _paint_paged_segment(image, 4200, 35)
+    image[6100:6160, 480:600] = 255
+    return image
+
+
+def _build_legacy_long_image():
+    image = np.full((6_000, 1080, 3), 25, dtype=np.uint8)
+    image[100:600, 200:880] = 255
+    for index in range(100):
+        center = 800 + index * 53
+        for x0, x1 in STITCHED_RANK_COLUMNS:
+            image[center - 17:center + 18, x0:x1] = 255
+    return image
+
+
+def _build_single_paged_page():
+    # 首行中心放在页 y≈230（面板坐标 144），与真实分页页一致，避免分页
+    # 解析把顶部空隙外推成幻影行
+    image = np.full((2_000, 1080, 3), 25, dtype=np.uint8)
+    _paint_paged_segment(image, 230, 35)
+    return image
+
+
+def test_split_stitched_image_extracts_paged_segments_only() -> None:
+    segments = official_board_parser.split_stitched_image(_build_stitched_image(), "2v2")
+
+    # 大头部（偏移 100）、图例（偏移 1300）、logo 块均不得混入
+    assert [offset for _segment, offset in segments] == [2255, 4155]
+    for segment, _offset in segments:
+        layout = official_board_parser.detect_layout(segment, "2v2")
+        assert layout.variant == "paged"
+        for panel_index, (_x, _y, panel) in enumerate(
+            official_board_parser.extract_panels(segment, layout),
+        ):
+            boundaries = official_board_parser.find_data_boundaries(
+                panel, segment.shape[0], layout, panel_index,
+            )
+            assert len(boundaries) - 1 == 35
+
+
+def test_split_stitched_image_returns_empty_for_legacy_long_image() -> None:
+    assert official_board_parser.split_stitched_image(_build_legacy_long_image(), "2v2") == []
+
+
+def test_split_stitched_image_returns_empty_for_single_paged_page() -> None:
+    assert official_board_parser.split_stitched_image(_build_single_paged_page(), "2v2") == []
+
+
 def test_missing_rank_ocr_uses_table_row_rank_without_review() -> None:
     service = OfficialDataImportService(hero_names=["曹仁"])
     reasons = service._review_reasons(
@@ -534,6 +608,108 @@ def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatc
     assert summary["pages"] == 2
     assert [row["排名"] for row in win_rows] == ["1", "2", "3", "4", "5", "6"]
     assert [row["排名"] for row in attendance_rows] == ["1", "2", "3", "4", "5", "6"]
+
+
+def _numbered_hero_names(count):
+    """生成不带数字的纯中文武将名，避开词表对数字名的规约。"""
+    stems = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉"
+    digits = "一二三四五六七八九十"
+    return [f"{a}{b}" for a in stems for b in digits][:count]
+
+
+def _stub_stitched_recognizer(hero_names):
+    """按栏列集合连续编号的行识别桩，覆盖拼接切分后的多段合并。"""
+    counters = {}
+
+    def recognize_row(_row, columns, *_args):
+        counters[columns] = counters.get(columns, 0) + 1
+        rank = counters[columns]
+        fields = {"排名": (str(rank), 0.99), "武将": (hero_names[rank - 1], 0.99)}
+        if "胜率" in columns:
+            fields["胜率"] = ("50.00%", 0.99)
+        return fields
+
+    return recognize_row
+
+
+def test_import_pages_splits_stitched_image_into_virtual_pages(
+    tmp_path, monkeypatch, import_env,
+) -> None:
+    hero_names = _numbered_hero_names(70)
+    service = OfficialDataImportService(hero_names=hero_names)
+    statuses = []
+
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=_build_stitched_image(),
+        recognize_row=_stub_stitched_recognizer(hero_names),
+        prepare_rate_templates=({rank: ("50.00%", 0.99) for rank in range(1, 36)}, 35),
+        recognize_rate_with_templates=("50.00%", 0.99),
+    )
+
+    summary = service.import_pages(
+        "2v2", [tmp_path / "stitched.jpg"], None, statuses.append,
+    )
+
+    assert summary["pages"] == 2
+    assert summary["variant"] == "paged"
+    assert any("切分出 2 段" in status for status in statuses)
+    win_rows = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
+    attendance_rows = list(csv.DictReader((tmp_path / "2v2出场排行.csv").open(encoding="utf-8")))
+    assert [row["排名"] for row in win_rows] == [str(rank) for rank in range(1, 71)]
+    assert [row["排名"] for row in attendance_rows] == [str(rank) for rank in range(1, 71)]
+    assert [row["武将"] for row in win_rows] == hero_names
+
+
+def test_import_pages_mixes_stitched_and_paged_images_in_one_import(
+    tmp_path, monkeypatch, import_env,
+) -> None:
+    hero_names = _numbered_hero_names(105)
+    service = OfficialDataImportService(hero_names=hero_names)
+
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=lambda path: (
+            _build_stitched_image() if path.stem == "stitched" else _build_single_paged_page()
+        ),
+        recognize_row=_stub_stitched_recognizer(hero_names),
+        prepare_rate_templates=({rank: ("50.00%", 0.99) for rank in range(1, 36)}, 35),
+        recognize_rate_with_templates=("50.00%", 0.99),
+    )
+
+    summary = service.import_pages(
+        "2v2", [tmp_path / "stitched.jpg", tmp_path / "page3.png"],
+    )
+
+    assert summary["pages"] == 3
+    win_rows = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
+    assert [row["排名"] for row in win_rows] == [str(rank) for rank in range(1, 106)]
+
+
+def test_import_pages_merges_exile_stitched_short_right_panel(
+    tmp_path, monkeypatch, import_env,
+) -> None:
+    hero_names = _numbered_hero_names(136)
+    service = OfficialDataImportService(hero_names=hero_names)
+    image = np.full((6_500, 1080, 3), 25, dtype=np.uint8)
+    image[100:1100, 200:880] = 255
+    _paint_paged_segment(image, 2300, 35)
+    _paint_paged_segment(image, 4200, 35, 31)  # 末段右栏不满
+
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=image,
+        recognize_row=_stub_stitched_recognizer(hero_names),
+    )
+
+    summary = service.import_pages("exile", [tmp_path / "exile.jpg"])
+
+    rows = list(csv.DictReader((tmp_path / "武将放逐.csv").open(encoding="utf-8")))
+    assert summary["pages"] == 2
+    assert [row["排名"] for row in rows] == [str(rank) for rank in range(1, 137)]
 
 
 def test_out_of_order_pages_fail_before_writing_csv(tmp_path, monkeypatch, import_env) -> None:

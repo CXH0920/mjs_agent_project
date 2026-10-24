@@ -79,6 +79,24 @@ PAGED_LAYOUTS = {
 # 连续性校验、词表门禁与整榜唯一性兜底
 EXILE_FULL_PANEL_MIN_ROWS = 10
 
+# 拼接长图（20261022 版）切分参数，均按 2026-10-22 真实样本实测标定：
+# 页面背景静默带行灰度 std 0~5.5、带长 52~258px，而旧版长图表格行隙仅
+# 15~19px，40px 最小带长即可区分两种长图
+STITCHED_QUIET_ROW_STD = 8.0
+STITCHED_MIN_SEAM_HEIGHT = 40
+STITCHED_MIN_BLOCK_HEIGHT = 300
+# 头部图例区实测可达 14 行/栏、行距 44~46px（落在分页行高校准区间内），
+# 纯结构校验无法与其区分，只能靠行数门槛拦截；真实表格段每栏最少 41 行
+# （20261022 实测末段）。混入伪段会挤压全局名次导致整批导入失败，榜单
+# 正确性另由行号连续性校验、词表门禁与整榜唯一性兜底
+STITCHED_SEGMENT_MIN_ROWS = 30
+# 分页解析会滤掉面板顶部 25% 的活动带，且首行中心高于该线一个行高时会向上
+# 外推出幻影行。真实分页页的表体位于页起点+216px，实测内容块顶距表体约
+# 47px，补 170px 顶部背景后表体几何与真实页一致；底部补边距避免 0.995 的
+# 裁剪比例切到末行
+STITCHED_SEGMENT_TOP_PADDING = 170
+STITCHED_SEGMENT_BOTTOM_PADDING = 100
+
 
 def read_image(path: Path) -> np.ndarray:
     """读取包含非 ASCII 路径的本地图片。"""
@@ -252,6 +270,95 @@ def validate_exile_row_counts(row_counts: list[int]) -> None:
     left, right = row_counts
     if left < EXILE_FULL_PANEL_MIN_ROWS or right > left:
         raise ValueError(f"左右榜单行数异常: {row_counts}")
+
+
+def split_stitched_image(image: np.ndarray, key: str) -> list[tuple[np.ndarray, int]]:
+    """把 20261022 拼接长图切成可复用分页链路的虚拟页，段内附带原 y 偏移。
+
+    仅当静默带切出的内容块中至少两个通过分页结构校验时才认定为拼接图，
+    否则返回空列表交由调用方走原路径：旧版长图表格连续、行隙不足最小带长，
+    即便被头部页头带切开也只会产生一个有效段。
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    quiet = gray.std(axis=1) < STITCHED_QUIET_ROW_STD
+    bands = _quiet_bands(quiet, STITCHED_MIN_SEAM_HEIGHT)
+    segments = []
+    for top, bottom in _content_blocks(bands, image.shape[0]):
+        if bottom - top < STITCHED_MIN_BLOCK_HEIGHT:
+            continue
+        band_row = _adjacent_band_row(bands, top, bottom)
+        if band_row is None:
+            continue
+        padded = _pad_segment(image, top, bottom, band_row)
+        if _is_paged_segment(padded, key):
+            segments.append((padded, top))
+    return segments if len(segments) >= 2 else []
+
+
+def _quiet_bands(quiet: np.ndarray, min_height: int) -> list[tuple[int, int]]:
+    """返回长度达标的全宽静默带（含端点）。"""
+    bands = []
+    start = None
+    for y, is_quiet in enumerate(quiet):
+        if is_quiet and start is None:
+            start = y
+        elif not is_quiet and start is not None:
+            if y - start >= min_height:
+                bands.append((start, y - 1))
+            start = None
+    if start is not None and len(quiet) - start >= min_height:
+        bands.append((start, len(quiet) - 1))
+    return bands
+
+
+def _content_blocks(bands: list[tuple[int, int]], height: int) -> list[tuple[int, int]]:
+    """相邻静默带之间的内容块（半开区间）。"""
+    blocks = []
+    cursor = 0
+    for start, end in bands:
+        if start > cursor:
+            blocks.append((cursor, start))
+        cursor = end + 1
+    if height > cursor:
+        blocks.append((cursor, height))
+    return blocks
+
+
+def _adjacent_band_row(bands: list[tuple[int, int]], top: int, bottom: int) -> int | None:
+    """取内容块相邻静默带的中间行作为补边背景源。"""
+    for start, end in bands:
+        if end + 1 == top or start == bottom:
+            return (start + end) // 2
+    return None
+
+
+def _pad_segment(
+    image: np.ndarray, top: int, bottom: int, band_row: int,
+) -> np.ndarray:
+    background = image[band_row][np.newaxis, :, :]
+    top_pad = np.repeat(background, STITCHED_SEGMENT_TOP_PADDING, axis=0)
+    bottom_pad = np.repeat(background, STITCHED_SEGMENT_BOTTOM_PADDING, axis=0)
+    return np.concatenate([top_pad, image[top:bottom], bottom_pad], axis=0)
+
+
+def _is_paged_segment(padded: np.ndarray, key: str) -> bool:
+    """按分页版式的双栏结构校验补边后的内容块是否为合法表格段。"""
+    layout = PAGED_LAYOUTS[key]
+    try:
+        row_counts = [
+            len(find_data_boundaries(panel, padded.shape[0], layout, panel_index)) - 1
+            for panel_index, (_x, _y, panel) in enumerate(extract_panels(padded, layout))
+        ]
+        if any(count < STITCHED_SEGMENT_MIN_ROWS for count in row_counts):
+            return False
+        if key in ("2v2", "peak") and row_counts[0] != row_counts[1]:
+            return False
+        if key == "exile":
+            validate_exile_row_counts(row_counts)
+    except ValueError:
+        return False
+    return True
+
 
 def restore_missing_boundaries(boundaries: list[int]) -> tuple[list[int], set[int]]:
     """按常规行高补回 Hough 漏检的中间横线。"""

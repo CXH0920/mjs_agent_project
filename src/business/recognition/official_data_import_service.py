@@ -87,12 +87,33 @@ class OfficialDataImportService:
         panel_tasks = []
         total_steps = 0
         variants = set()
-        page_count = len(image_paths)
+        # 20261022 拼接长图先切成虚拟分页再进入统一解析；旧版长图与分页图
+        # 切不出多个有效段，仍按整图走原路径
+        page_units: list[tuple[Path, np.ndarray, int]] = []
+        for image_path in image_paths:
+            image = official_board_parser.read_image(image_path)
+            segments = (
+                official_board_parser.split_stitched_image(image, key)
+                if image.shape[0] / image.shape[1] >= 4 else []
+            )
+            if segments:
+                logger.info(
+                    "官方%s榜单拼接长图切分出 %d 段: %s", key, len(segments), image_path,
+                )
+                if status_callback:
+                    status_callback(
+                        f"{image_path.name} 为拼接长图，切分出 {len(segments)} 段",
+                    )
+                page_units.extend(
+                    (image_path, segment, offset) for segment, offset in segments
+                )
+            else:
+                page_units.append((image_path, image, 0))
+        page_count = len(page_units)
 
-        for page_index, image_path in enumerate(image_paths, start=1):
+        for page_index, (image_path, image, segment_offset) in enumerate(page_units, start=1):
             if status_callback:
                 status_callback(f"正在分析第 {page_index}/{page_count} 张图片")
-            image = official_board_parser.read_image(image_path)
             layout = official_board_parser.detect_layout(image, key)
             variants.add(layout.variant)
             page_tasks = []
@@ -104,7 +125,8 @@ class OfficialDataImportService:
                 )
                 boundaries, repaired_ranks = official_board_parser.restore_missing_boundaries(boundaries)
                 page_tasks.append((
-                    page_index, image_path, layout, panel_index, panel_x, panel_y,
+                    page_index, image_path, layout, panel_index, panel_x,
+                    panel_y + segment_offset,
                     panel, columns, boundaries, repaired_ranks,
                 ))
                 row_count = len(boundaries) - 1

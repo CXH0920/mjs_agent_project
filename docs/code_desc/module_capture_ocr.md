@@ -268,7 +268,7 @@ OCR 引擎 → 文字 + 置信度
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
-官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 OCR 引擎。`src.ocr.official_board_parser` 提供旧版长图和新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格逐格识别，负责识别编排、面板守卫与正式写入门禁；罕见字兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`——B1 起 `main` 与识别管线同源（`get_primary_ocr_engine()`，v6），`rare_char` 只取复核引擎（v4）在 `allowed_names` 候选闭包内复核，**chinese_cht 繁体引擎兜底链整体退役**（开关关闭或引擎不可用 → `rare_char_failed=True` 保留原结果走待复核，不再加载第二识别引擎）；整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 OCR 引擎。`src.ocr.official_board_parser` 提供旧版长图、新版分页版式识别、20261022 拼接长图切分（`split_stitched_image`）、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格逐格识别，负责识别编排、面板守卫与正式写入门禁；罕见字兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`——B1 起 `main` 与识别管线同源（`get_primary_ocr_engine()`，v6），`rare_char` 只取复核引擎（v4）在 `allowed_names` 候选闭包内复核，**chinese_cht 繁体引擎兜底链整体退役**（开关关闭或引擎不可用 → `rare_char_failed=True` 保留原结果走待复核，不再加载第二识别引擎）；整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
 ### 3.7 候选内单字字形评分
 
@@ -342,7 +342,7 @@ else:
 
 ### 3.10 官方榜单固定版式解析（official_board_parser.py）
 
-榜单图片按**固定版式常量**解析，不做通用表格识别。`LAYOUTS` 内置三种榜单：`2v2` 与 `peak` 为双栏（胜率榜 + 出场榜，列 `排名/武将/胜率` 与 `排名/武将`），`exile` 为放逐榜双栏（仅 `排名/武将`）。每个版式记录 `top/bottom` 纵向比例、`panel_ranges` 横向分栏比例、`columns`、`column_breaks` 列分界比例、`header_lines` 表头行数，以及输出与待复核 CSV 文件名。`PAGED_LAYOUTS` 是同一批版式的**新版分页变体**（`variant="paged"`，`top_reference="width"` 即以宽度为基准定位顶部，`separator_mode="between_rows"`）。
+榜单图片按**固定版式常量**解析，不做通用表格识别。`LAYOUTS` 内置三种榜单：`2v2` 与 `peak` 为双栏（胜率榜 + 出场榜，列 `排名/武将/胜率` 与 `排名/武将`），`exile` 为放逐榜双栏（仅 `排名/武将`）。每个版式记录 `top/bottom` 纵向比例、`panel_ranges` 横向分栏比例、`columns`、`column_breaks` 列分界比例、`header_lines` 表头行数，以及输出与待复核 CSV 文件名。`PAGED_LAYOUTS` 是同一批版式的**新版分页变体**（`variant="paged"`，`top_reference="width"` 即以宽度为基准定位顶部，`separator_mode="between_rows"`）。2026-10-22 起官方改为**拼接长图**（新版头部大图 + 前三名立绘卡 + 统计条 + 图例 + N 段分页表格整页首尾拼接）：导入服务在 `detect_layout` 之前先经 `split_stitched_image` 切成补边虚拟分页，逐段走分页链路，variant 仍为 `paged`，旧版长图与分页截图的既有流程不受影响。
 
 ```
 detect_layout(image, key)
@@ -362,6 +362,16 @@ find_data_boundaries(panel, image_height, layout, panel_index)
         → 按行高倍数插值恢复漏行并向前补齐 → 边界取相邻中心中点
 restore_missing_boundaries(boundaries) → 按中位行高补回 Hough 漏检横线
       → 返回 (完整边界, 被修复的排名集合)
+
+split_stitched_image(image, key) → 20261022 拼接长图切分为虚拟分页
+  ├─ 逐行灰度 std 找全宽静默带（std < 8 且 >= 40px；旧版行隙仅 15~19px
+  │  不会命中），带间内容块为候选段
+  ├─ 每段顶部/底部平铺相邻静默带行补边距（复现真实页"表体在页起点
+  │  +216px"的几何，偏移过大会被 top 25% 滤波丢行或外推出幻影行）
+  ├─ 按 PAGED_LAYOUTS 双栏结构 + 每栏 >= STITCHED_SEGMENT_MIN_ROWS(30)
+  │  校验（头部图例区实测 14 行/栏、行距 44~46px，与表格段同构，只能靠
+  │  行数门槛区分；真实表格段最少 41 行/栏）
+  └─ 有效段 >= 2 才判定为拼接图，返回 [(补边段图, 段 y 偏移)]，否则返回空
 ```
 
 `split_row_cells(row, columns, column_breaks)` 按列比例切单元格，胜率列左内缩取 `-4` 像素（首位数字紧贴分隔线，通用内缩会截断"4"的左半边）。胜率用**当前榜单自带字体**建立数字模板：`build_rank_digit_templates()` 以视觉行序已知的排名格取样，`prepare_rate_templates()` 再用胜率小数位补样本并预计算整列 OCR，`recognize_rate_with_templates()` 经 `segment_glyphs()`（亮列连通切分）→ `normalize_glyph()`（等比缩放居中到 40×28 画布）→ `match_digit()`（Dice 分数）逐位匹配，单字需 `>= 0.72`，拼成 `xx.xx%`。该模块只负责图像解析与数字模板，候选词表约束与写入门禁由官方导入服务另行负责。
@@ -460,6 +470,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `card_grid_detector.board_row_sizes(cards)` → `(int, int)\|None` | 返回牌面（上排张数, 下排张数）；分不出两排（<2 卡或 y 最大间隙 < 100px）返回 `None` |
 | `card_grid_detector.layout_is_plausible(cards)` → `bool` | 卡数 n 的排布是否为游戏可能出现的形状（上排 `n//2`、下排 `n-n//2`）；不可信排布说明本拍漏检，调用方应跳过不发布；分不出两排时不据此判负 |
 | `official_board_parser.detect_layout(image, key)` | 按纵横比与行数校验确认旧版/分页版式 |
+| `official_board_parser.split_stitched_image(image, key)` | 把 20261022 拼接长图按静默带切成补边虚拟分页（有效段 ≥2 才判定拼接图） |
 | `official_board_parser.extract_panels(image, layout)` | 按版式比例切出榜单面板 |
 | `official_board_parser.find_data_boundaries(...)` → `list[int]` | 检测官方榜单数据行边界（横线检测或排名列行投影） |
 | `official_board_parser.restore_missing_boundaries(...)` | 按中位行高补回漏检横线并返回被修复排名 |
