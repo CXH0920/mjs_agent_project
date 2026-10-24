@@ -11,6 +11,7 @@ import logging
 import socket
 from pathlib import Path
 
+from src.capture.probers.console_utils import find_process_dir
 from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,10 @@ _PORT_PROBE_TIMEOUT_S = 0.2
 
 
 def _find_root() -> Path | None:
-    """通过 Windows 注册表查找蓝叠 5 安装根目录（BlueStacks_nxt）。"""
+    """查找蓝叠 5 安装根目录：注册表（标准安装）→ 运行进程反查（自定义路径兜底）。"""
+    process_dir = find_process_dir(["HD-Player.exe"])
+    if process_dir is not None and (process_dir / "HD-Adb.exe").exists():
+        return process_dir
     try:
         import winreg
         for key_path in [

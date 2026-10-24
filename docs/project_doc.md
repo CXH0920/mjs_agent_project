@@ -2004,12 +2004,14 @@ class EmulatorDeviceInfo:
 |------|----------------|----------|------|
 | MuMu 12 | `MuMuManager.exe info --vmindex all`（JSON） | 动态上报 | 16384+32n 端口段扫描 |
 | 雷电 9 | `ldconsole list2` | 5555+2n（推导） | 5555+2n 端口段扫描 |
-| 夜神 | `NoxConsole list` | 62001+n（推导） | 62001+n 端口段扫描 |
+| 夜神 | `NoxConsole list`（七列：index,name,标题,句柄×2,PID,VM PID） | 62001+24n + netstat×VM PID 精确关联 | 62001+24n 端口段扫描 |
 | 逍遥 | `MEmuConsole/MEmuManager list` | 21503+10n（推导） | 21503+10n 端口段扫描 |
 | 蓝叠 5 | 注册表 `BlueStacks_nxt\Guests\*\BstAdbPort` | 动态 | 无（提示先开启 ADB） |
 
 端口兜底扫描只做 127.0.0.1 试连并按所选品牌标注，不凭端口猜品牌（蓝叠与
 雷电默认端口同为 5555）；console 输出解码统一 UTF-8 → GBK（console_utils）。
+除"console 不可用/失败"外，console 执行成功但枚举为零时也会做补充扫描
+（逍遥真机实测：部分版本 list 返回成功但输出为空，端口带内实例仍可发现）。
 
 #### adb 来源优先级（`probe_adb`）
 

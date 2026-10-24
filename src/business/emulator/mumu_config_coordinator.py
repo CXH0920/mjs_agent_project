@@ -149,7 +149,10 @@ class MumuConfigCoordinator(QObject):
         error = self._device_selection_error(selected_explicitly)
         if error:
             return error
-        if selected_explicitly and device and device.adb_port:
+        # 下拉框选中即用其端口（含唯一运行实例的自动高亮）：跨品牌切换时配置
+        # 草稿仍留着旧品牌端口，不采纳选中设备会连去旧端口；未选中任何设备
+        # （多实例占位）时沿用配置端口/自动探测，歧义已由上方守卫拦截
+        if device and device.adb_port:
             self._capture_service.set_target_port(device.adb_port)
         self._operation_service.connect()
         return ""

@@ -1,36 +1,47 @@
-"""夜神 Nox 实例探测（多品牌连接支持）。
+"""夜神 Nox 实例探测（多品牌连接支持；list 格式与端口按真机 Nox 7 校准）。
 
-注册表契约：probe_devices(retries) / find_adb()。NoxConsole list 不上报
-adb 端口，按官方默认端口段 62001+n 推导（用户自定义端口时以连接校验
-为准）；console 不可用/失败时回退端口段扫描（port_scan.py）。
+注册表契约：probe_devices(retries) / find_adb()。NoxConsole list 输出七列
+（index,name,窗口标题,top句柄,bind句柄,PID,VM PID），没有运行标志列也没有
+adb 端口列：运行状态由 PID/VM PID 非 0 推断；adb 端口优先用 netstat 把
+LISTENING 端口与 VM PID 精确关联（用户自定义端口也能命中），无法关联时按
+官方默认段 62001+24n 推导。console 不可用/失败时回退端口段扫描。
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import run_console_tool
+from src.capture.probers.console_utils import (
+    decode_console_bytes,
+    find_process_dir,
+    run_console_tool,
+)
 from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
 _LABEL = "夜神"
 _ADB_PORT_BASE = 62001
-_ADB_PORT_STEP = 1
+_ADB_PORT_STEP = 24
+# 夜神 adb 端口默认带（62001+24n）；netstat 关联时用于多端口过滤
+_NOX_PORT_BAND = range(_ADB_PORT_BASE, _ADB_PORT_BASE + _ADB_PORT_STEP * 16)
 
 
 def _probe_registry() -> str | None:
-    """通过 Windows 注册表查找夜神安装路径。"""
+    """通过 Windows 注册表查找夜神标准安装路径（便携/自定义安装不写注册表）。"""
     try:
         import winreg
         for key_path in [
             r"SOFTWARE\BigNox\Nox",
             r"SOFTWARE\WOW6432Node\BigNox\Nox",
-            r"SOFTWARE\Nox",
+            r"SOFTWARE\Bignox",
+            r"SOFTWARE\WOW6432Node\Bignox",
         ]:
             try:
                 with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
@@ -49,12 +60,18 @@ def _probe_registry() -> str | None:
 
 
 def _get_candidates() -> list[Path]:
-    """收集所有可能的夜神安装路径候选（console 与 adb 均在 bin 下）。"""
+    """收集夜神安装路径候选（console 与 adb 均在 bin 下）。"""
     candidates: list[Path] = []
 
     home = os.environ.get("NOX_HOME")
     if home:
         candidates.append(Path(home))
+
+    # 运行进程反查：自定义/便携安装（如 G:\xxx\Nox）无注册表无固定路径，
+    # 模拟器开着时由 Nox.exe 位置直接定位 bin 目录
+    process_dir = find_process_dir(["Nox.exe", "NoxPlayer.exe"])
+    if process_dir is not None and process_dir not in candidates:
+        candidates.append(process_dir)
 
     reg_path = _probe_registry()
     if reg_path:
@@ -96,21 +113,63 @@ def find_adb() -> str:
     return ""
 
 
-def _parse_console_output(text: str) -> list[EmulatorDeviceInfo]:
-    """解析 NoxConsole list 输出：index,name,top_handle,bind_handle,is_running,pid。"""
-    devices: list[EmulatorDeviceInfo] = []
+def _parse_entries(text: str) -> list[tuple[EmulatorDeviceInfo, int]]:
+    """解析 NoxConsole list：每行 -> (设备, VM PID)。"""
+    entries: list[tuple[EmulatorDeviceInfo, int]] = []
     for line in text.splitlines():
         fields = [field.strip() for field in line.replace("\t", ",").split(",")]
-        if len(fields) < 5 or not fields[0].isdigit():
+        if len(fields) < 7 or not fields[0].isdigit():
             continue
         index = int(fields[0])
-        devices.append(EmulatorDeviceInfo(
+        pid = int(fields[5]) if fields[5].isdigit() else 0
+        vm_pid = int(fields[6]) if fields[6].isdigit() else 0
+        entries.append((EmulatorDeviceInfo(
             index=str(index),
             name=fields[1] or f"{_LABEL} 实例 {index}",
             adb_port=_ADB_PORT_BASE + _ADB_PORT_STEP * index,
-            is_running=fields[4] == "1",
-        ))
-    return devices
+            is_running=pid > 0 or vm_pid > 0,
+        ), vm_pid))
+    return entries
+
+
+def _parse_console_output(text: str) -> list[EmulatorDeviceInfo]:
+    """解析 list 输出为设备列表（端口为规则推导值，运行实例会被 netstat 关联覆写）。"""
+    return [device for device, _vm_pid in _parse_entries(text)]
+
+
+def _listen_ports_by_pid() -> dict[int, list[int]]:
+    """netstat -ano 的 127.0.0.1 LISTENING 端口按属主 PID 归组。"""
+    try:
+        result = subprocess.run(["netstat", "-ano"], capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.debug("netstat 查询失败（夜神端口退回规则推导）：%s", exc)
+        return {}
+    ports: dict[int, list[int]] = {}
+    for match in re.finditer(
+            r"127\.0\.0\.1:(\d+)\s+\S+\s+LISTENING\s+(\d+)",
+            decode_console_bytes(result.stdout),
+    ):
+        ports.setdefault(int(match.group(2)), []).append(int(match.group(1)))
+    return ports
+
+
+def _attach_adb_ports(entries: list[tuple[EmulatorDeviceInfo, int]]) -> None:
+    """运行实例的端口精确关联：VM PID 名下的 LISTENING 端口优先取夜神带内的。"""
+    ports_by_pid = _listen_ports_by_pid()
+    if not ports_by_pid:
+        return
+    for device, vm_pid in entries:
+        if not device.is_running or vm_pid not in ports_by_pid:
+            continue
+        ports = ports_by_pid[vm_pid]
+        in_band = [port for port in ports if port in _NOX_PORT_BAND]
+        if in_band:
+            device.adb_port = in_band[0]
+        elif len(ports) == 1:
+            device.adb_port = ports[0]
+        else:
+            logger.warning("夜神实例 %s 的 VM 进程 %d 名下有多个监听端口 %s，保持规则推导端口 %d",
+                           device.name, vm_pid, ports, device.adb_port)
 
 
 def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
@@ -123,8 +182,11 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     if output is None:
         return _fallback(f"NoxConsole 查询失败：{error}")
 
-    devices = _parse_console_output(output)
-    logger.info("探测到 %d 个夜神实例", len(devices))
+    entries = _parse_entries(output)
+    _attach_adb_ports(entries)
+    devices = [device for device, _vm_pid in entries]
+    devices = port_scan.supplement_when_empty("nox", _LABEL, devices)
+    logger.info("探测到 %d 个实例（含端口扫描补充）", len(devices))
     return devices, ""
 
 

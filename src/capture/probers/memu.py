@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import run_console_tool
+from src.capture.probers.console_utils import find_process_dir, run_console_tool
 from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,11 @@ def _get_candidates() -> list[Path]:
     home = os.environ.get("MEMU_HOME")
     if home:
         candidates.append(Path(home))
+
+    # 运行进程反查安装根（自定义安装路径无注册表时的兜底）
+    process_dir = find_process_dir(["MEmu.exe"])
+    if process_dir is not None and process_dir not in candidates:
+        candidates.append(process_dir)
 
     reg_path = _probe_registry()
     if reg_path:
@@ -127,7 +132,8 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
         return _fallback(f"逍遥 console 查询失败：{error}")
 
     devices = _parse_console_output(output)
-    logger.info("探测到 %d 个逍遥实例", len(devices))
+    devices = port_scan.supplement_when_empty("memu", _LABEL, devices)
+    logger.info("探测到 %d 个实例（含端口扫描补充）", len(devices))
     return devices, ""
 
 

@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import src.capture.probers.port_scan as port_scan
+from src.capture.probers.console_utils import find_process_dir
 from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
@@ -49,14 +50,19 @@ def _get_mumu_candidates() -> list[Path]:
     if mumu_home:
         candidates.append(Path(mumu_home))
 
-    # 2. Windows 注册表
+    # 2. 运行进程反查安装根（自定义安装路径无注册表时的兜底；MuMuPlayer.exe 在 nx_main 下）
+    process_dir = find_process_dir(["MuMuPlayer.exe"])
+    if process_dir is not None and process_dir.parent not in candidates:
+        candidates.append(process_dir.parent)
+
+    # 3. Windows 注册表
     reg_path = _probe_mumu_registry()
     if reg_path:
         p = Path(reg_path)
         if p not in candidates:
             candidates.append(p)
 
-    # 3. 常见安装路径
+    # 4. 常见安装路径
     common_paths = [
         "D:/模拟器/MuMu Player 12",
         "D:/模拟器/MuMu 12",
@@ -166,7 +172,8 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
                         is_running=is_running,
                         is_main=bool(vm_info.get("is_main")),
                     ))
-                logger.info("探测到 %d 个 MuMu 实例", len(devices))
+                devices = port_scan.supplement_when_empty("mumu", "MuMu 12", devices)
+                logger.info("探测到 %d 个 MuMu 实例（含端口扫描补充）", len(devices))
                 return devices, ""
         except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError) as exc:
             error = f"MuMuManager 查询异常：{exc}"

@@ -274,3 +274,18 @@ def test_persist_mumu_env_config_writes_twelve_dialog_keys(monkeypatch) -> None:
         "MUMU_HERO_SELECTION_COOLDOWN": "120",
         "MUMU_MATCH_GUIDE_THRESHOLD": "0.85",
     }
+
+
+def test_connect_adopts_auto_highlighted_device_port_across_brands(tmp_path: Path) -> None:
+    """跨品牌连接：配置草稿仍是旧品牌端口时，自动高亮的唯一实例（非显式
+    选择）的端口必须生效——否则会连去旧品牌端口（夜神真机实测 2026-10-24）。
+    """
+    coordinator, capture, _ocr, operation = _coordinator(tmp_path)
+    coordinator._config["emulator_adb_port"] = 16448  # 旧品牌（MuMu）残留端口
+    device = EmulatorDeviceInfo("1", "Nox_1", 62025, True)
+    operation.devices_refreshed.emit([device])  # 唯一运行实例被自动高亮
+
+    assert coordinator.connect(device, selected_explicitly=False) == ""
+
+    assert capture.target_ports == [62025]
+    assert operation.connect_count == 1

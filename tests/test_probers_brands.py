@@ -12,6 +12,7 @@ from src.capture.probers import (
     bluestacks,
     ldplayer,
     memu,
+    mumu,
     normalize_emulator_type,
     nox,
     port_scan,
@@ -60,15 +61,24 @@ def test_ldplayer_parses_list2_output() -> None:
     ]
 
 
-def test_nox_parses_list_output() -> None:
-    text = "0,NoxPlayer,132604,131980,1,5584\n1,Nox_1,132600,131976,0,\n"
+def test_nox_parses_real_list_output() -> None:
+    """真机 Nox 7 实测格式：index,name,窗口标题,top句柄,bind句柄,PID,VM PID（无端口/运行列）。"""
+    text = "1,Nox_1,夜神模拟器,02E610CA,009B10B6,9764,26344\r\n"
 
     devices = nox._parse_console_output(text)
 
-    assert [(d.index, d.adb_port, d.is_running) for d in devices] == [
-        ("0", 62001, True),
-        ("1", 62002, False),
+    assert [(d.index, d.name, d.adb_port, d.is_running) for d in devices] == [
+        ("1", "Nox_1", 62025, True),  # 端口为规则推导值 62001+24*1
     ]
+
+
+def test_nox_stopped_instance_marks_not_running() -> None:
+    text = "0,Nox,夜神模拟器,0,0,0,0\n"
+
+    devices = nox._parse_console_output(text)
+
+    assert devices[0].is_running is False
+    assert devices[0].adb_port == 62001
 
 
 def test_memu_parses_list_output() -> None:
@@ -95,7 +105,7 @@ def test_console_parse_ignores_malformed_lines() -> None:
 def test_candidate_ports_follow_brand_rules() -> None:
     assert port_scan.candidate_ports("mumu")[:2] == [16384, 16416]
     assert port_scan.candidate_ports("ldplayer")[:3] == [5555, 5557, 5559]
-    assert port_scan.candidate_ports("nox")[:3] == [62001, 62002, 62003]
+    assert port_scan.candidate_ports("nox")[:3] == [62001, 62025, 62049]
     assert port_scan.candidate_ports("memu")[:2] == [21503, 21513]
     assert port_scan.candidate_ports("bluestacks") == []
 
@@ -218,3 +228,101 @@ def test_real_console_output_regression(brand: str, parser) -> None:
     devices = parser(path.read_text(encoding="utf-8"))
 
     assert devices, f"真机样本应至少解析出一个实例: {path}"
+
+
+# ── 夜神端口精确关联与进程定位（真机 Nox 7 校准，2026-10-24）─────────
+
+
+def test_nox_attach_ports_prefers_band_and_adopts_unique_custom(monkeypatch) -> None:
+    """VM PID 名下多个监听端口取夜神带内的；带外唯一端口（用户自定义）也采纳。"""
+    entries = [(EmulatorDeviceInfo("1", "Nox_1", 62025, True), 26344)]
+    monkeypatch.setattr(nox, "_listen_ports_by_pid", lambda: {26344: [58000, 62025]})
+    nox._attach_adb_ports(entries)
+    assert entries[0][0].adb_port == 62025
+
+    custom = [(EmulatorDeviceInfo("2", "Nox_2", 62049, True), 111)]
+    monkeypatch.setattr(nox, "_listen_ports_by_pid", lambda: {111: [59001]})
+    nox._attach_adb_ports(custom)
+    assert custom[0][0].adb_port == 59001
+
+
+def test_nox_probe_reports_netstat_matched_port(monkeypatch, tmp_path) -> None:
+    console = tmp_path / "NoxConsole.exe"
+    console.touch()
+    monkeypatch.setattr(nox, "_find_console", lambda: console)
+    monkeypatch.setattr(
+        nox, "run_console_tool",
+        lambda args, timeout=10: ("1,Nox_1,夜神模拟器,02E610CA,009B10B6,9764,26344\n", ""),
+    )
+    monkeypatch.setattr(nox, "_listen_ports_by_pid", lambda: {26344: [62025]})
+
+    devices, error = nox.probe_devices()
+
+    assert error == ""
+    assert devices[0].adb_port == 62025
+    assert devices[0].is_running
+
+
+def test_nox_discovers_console_via_running_process(monkeypatch, tmp_path) -> None:
+    """自定义/便携安装（无注册表）时由运行中的 Nox.exe 反查 bin 目录。"""
+    (tmp_path / "NoxConsole.exe").touch()
+    monkeypatch.setattr(nox, "find_process_dir", lambda names: tmp_path)
+
+    assert nox._find_console() == tmp_path / "NoxConsole.exe"
+
+
+# ── 进程定位兜底的接线完整性（防"调用加了、导入漏了"的 NameError 断线）──
+
+
+def test_discovery_wiring_calls_find_process_dir(monkeypatch) -> None:
+    """五品牌候选链都必须真正调用 find_process_dir；断链在此以 AttributeError 暴露。"""
+    seen: list[list[str]] = []
+
+    def fake_find_process_dir(process_names):
+        seen.append(process_names)
+        return None
+
+    for module in (mumu, ldplayer, nox, memu, bluestacks):
+        monkeypatch.setattr(module, "find_process_dir", fake_find_process_dir)
+
+    mumu._get_mumu_candidates()
+    ldplayer._get_candidates()
+    nox._get_candidates()
+    memu._get_candidates()
+    bluestacks._find_root()
+
+    assert len(seen) == 5
+
+
+# ── console 成功但零实例的补充扫描（逍遥真机实测 2026-10-24）─────────
+
+
+def test_console_success_with_empty_output_supplements_port_scan(monkeypatch, tmp_path) -> None:
+    """逍遥真机形态：console rc=0 但输出为空 → 端口带内开放端口补充进列表。"""
+    console = tmp_path / "MEmuConsole.exe"
+    console.touch()
+    monkeypatch.setattr(memu, "_find_console", lambda: console)
+    monkeypatch.setattr(memu, "run_console_tool", lambda args, timeout=10: ("", ""))
+    monkeypatch.setattr(
+        port_scan, "probe_devices_via_ports",
+        lambda emulator_type, label: [EmulatorDeviceInfo("1", "逍遥 实例 1（端口扫描）", 21503, True)],
+    )
+
+    devices, error = memu.probe_devices()
+
+    assert error == ""
+    assert devices[0].adb_port == 21503
+
+
+def test_console_empty_and_scan_empty_keeps_empty_result(monkeypatch, tmp_path) -> None:
+    """console 空输出且端口带内无开放端口 → 维持空结果（真没有实例）。"""
+    console = tmp_path / "MEmuConsole.exe"
+    console.touch()
+    monkeypatch.setattr(memu, "_find_console", lambda: console)
+    monkeypatch.setattr(memu, "run_console_tool", lambda args, timeout=10: ("", ""))
+    monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+
+    devices, error = memu.probe_devices()
+
+    assert devices == []
+    assert error == ""

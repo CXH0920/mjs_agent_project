@@ -15,11 +15,12 @@ from src.capture.probers.models import EmulatorDeviceInfo
 logger = logging.getLogger(__name__)
 
 # 各品牌公开文档的默认 adb 端口段：(基准端口, 步长, 实例数上限)。
+# 夜神实测为 62001+24n（真机 Nox 7 校准，2026-10-24）。
 # 蓝叠 adb 端口每实例动态分配（注册表 BstAdbPort），无固定端口段可扫描。
 PORT_RULES: dict[str, tuple[int, int, int] | None] = {
     "mumu": (16384, 32, 16),
     "ldplayer": (5555, 2, 16),
-    "nox": (62001, 1, 16),
+    "nox": (62001, 24, 16),
     "memu": (21503, 10, 16),
     "bluestacks": None,
 }
@@ -59,4 +60,20 @@ def probe_devices_via_ports(emulator_type: str, label: str) -> list[EmulatorDevi
     ]
     if devices:
         logger.info("端口段扫描发现 %d 个 %s 候选实例", len(devices), label)
+    return devices
+
+
+def supplement_when_empty(emulator_type: str, label: str, devices: list[EmulatorDeviceInfo]) -> list[EmulatorDeviceInfo]:
+    """console 枚举成功但零实例时的补充扫描（逍遥真机实测 2026-10-24）。
+
+    部分 console 在特定版本下 list 返回成功但输出为空（解析为零实例），
+    之前会静默报"未探测到设备"；此处品牌端口带内确有开放端口时以扫描
+    结果补充。console 已给出实例时不重复扫描，带内无开放端口时维持原空结果。
+    """
+    if devices:
+        return devices
+    scanned = probe_devices_via_ports(emulator_type, label)
+    if scanned:
+        logger.warning("%s console 枚举为空但端口带内有开放端口，已以端口扫描结果补充", label)
+        return scanned
     return devices
