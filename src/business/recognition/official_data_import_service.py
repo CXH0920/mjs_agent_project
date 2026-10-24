@@ -263,7 +263,7 @@ class OfficialDataImportService:
                         "页序号": page_index,
                         "原图坐标": f"{panel_x},{panel_y + top},{panel_x + panel.shape[1]},{panel_y + bottom}",
                         "行截图路径": "",
-                        "_row": row.copy(),
+                        "_name_cell": cells["武将"].copy(),
                     })
                 advance_progress()
             self._validate_panel_rank_sequence(
@@ -281,9 +281,9 @@ class OfficialDataImportService:
             if not records:
                 raise ValueError(f"{output_name} 未识别到任何数据行")
             for review in batch["reviews"]:
-                row = review.pop("_row")
+                name_cell = review.pop("_name_cell")
                 crop_path = self._save_review_crop(
-                    Path(output_name).stem, int(review["期望排名"]), row,
+                    Path(output_name).stem, int(review["期望排名"]), name_cell,
                 )
                 review["行截图路径"] = str(crop_path)
             self._write_csv(

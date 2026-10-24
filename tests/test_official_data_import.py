@@ -7,6 +7,7 @@ import csv
 import cv2
 import numpy as np
 import pytest
+from PIL import Image
 from src.business.recognition import official_data_import_service as import_module
 from src.business.recognition.name_resolution import HeroNameResolver
 from src.business.recognition.official_data_import_service import OfficialDataImportService
@@ -641,6 +642,46 @@ def test_import_keeps_formal_csv_when_a_name_cannot_be_confirmed(tmp_path, monke
     assert b"\r\n" not in output_path.read_bytes()
     assert progress == [(0, 6), (1, 6), (2, 6), (3, 6), (4, 6), (5, 6), (6, 6)]
     assert import_env.stale_calls == []
+
+
+def test_review_crop_captures_name_cell(tmp_path, monkeypatch, import_env) -> None:
+    """待复核行截图应只保留武将名称格，供复核界面聚焦待修正内容。"""
+    service = OfficialDataImportService(hero_names=["白起", "赵奢"])
+    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    panel = np.zeros((60, 100, 3), dtype=np.uint8)
+    row = panel[23:37]
+    cells = official_board_parser.split_row_cells(
+        row, LAYOUTS["2v2"].columns[0], LAYOUTS["2v2"].column_breaks[0],
+    )
+    cells["排名"][:] = 100
+    cells["武将"][:] = 200
+    cells["胜率"][:] = 50
+
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=image,
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=[0, 20, 40],
+        recognize_row=[
+            {"排名": ("1", 0.99), "武将": ("白起", 0.99), "胜率": ("70.34%", 0.99)},
+            {"排名": ("2", 0.99), "武将": ("", 0.0), "胜率": ("", 0.0)},
+            {"排名": ("1", 0.99), "武将": ("赵奢", 0.99)},
+            {"排名": ("2", 0.99), "武将": ("", 0.0)},
+        ],
+        prepare_rate_templates=({1: ("70.34%", 0.99), 2: ("70.11%", 0.99)}, 2),
+        recognize_rate_with_templates=[("70.34%", 0.99), ("70.11%", 0.99)],
+    )
+
+    with pytest.raises(ValueError, match="存在未确认武将"):
+        service.import_pages("2v2", [tmp_path / "official.png"])
+
+    review = list(csv.DictReader(
+        (tmp_path / "2v2胜率排行_待复核.csv").open(encoding="utf-8"),
+    ))[0]
+    crop = np.array(Image.open(review["行截图路径"]))[:, :, ::-1]
+
+    assert np.array_equal(crop, cells["武将"])
 
 
 def test_multiple_pages_merge_each_output_with_global_ranks(tmp_path, monkeypatch, import_env) -> None:
