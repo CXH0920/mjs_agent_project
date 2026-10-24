@@ -11,10 +11,17 @@ from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.business.recognition.ocr_service import OcrService
 
-# MuMuDeviceInfo 显式再导出：设备值对象经本协调器透出给 UI（类型注解用），
-# UI 不直连 src.capture.prober。
+# EmulatorDeviceInfo 显式再导出：设备值对象经本协调器透出给 UI（类型注解用），
+# UI 不直连 src.capture.probers。品牌常量同理经此转出口（EMULATOR_TYPES/
+# EMULATOR_LABELS 供 UI 下拉构建）。
 from src.capture.image_validation import load_local_image
-from src.capture.prober import MuMuDeviceInfo as MuMuDeviceInfo
+from src.capture.probers import (
+    EMULATOR_LABELS as EMULATOR_LABELS,
+)
+from src.capture.probers import (
+    EMULATOR_TYPES as EMULATOR_TYPES,
+)
+from src.capture.probers import EmulatorDeviceInfo as EmulatorDeviceInfo
 from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 
@@ -62,7 +69,7 @@ class MumuConfigCoordinator(QObject):
             capture_service,
             self,
         )
-        self._devices: list[MuMuDeviceInfo] = []
+        self._devices: list[EmulatorDeviceInfo] = []
         self._template_captures_in_progress: set[str] = set()
         self._roi_layout_captures_in_progress: set[str] = set()
         if roi_config is not None:
@@ -91,7 +98,7 @@ class MumuConfigCoordinator(QObject):
         return dict(self._config)
 
     @property
-    def devices(self) -> tuple[MuMuDeviceInfo, ...]:
+    def devices(self) -> tuple[EmulatorDeviceInfo, ...]:
         """返回最近一次成功探测到的设备。"""
         return tuple(self._devices)
 
@@ -114,18 +121,28 @@ class MumuConfigCoordinator(QObject):
 
     def update_adb_path(self, adb_path: str) -> None:
         """更新编辑中的 ADB 路径，并重建需要的共享会话。"""
-        self._config["mumu_adb_path"] = adb_path
+        self._config["emulator_adb_path"] = adb_path
         self.sync_capture_config()
 
+    def update_emulator_type(self, emulator_type: str) -> None:
+        """更新编辑中的模拟器品牌，并同步共享会话（连接目标随之重建）。"""
+        self._config["emulator_type"] = emulator_type
+        self.sync_capture_config()
+
+    @property
+    def emulator_type(self) -> str:
+        """当前草稿的模拟器品牌标识。"""
+        return self._config.get("emulator_type", "mumu")
+
     def detect_adb(self) -> None:
-        self._operation_service.detect_adb()
+        self._operation_service.detect_adb(self.emulator_type)
 
     def refresh_devices(self) -> None:
-        self._operation_service.refresh_devices()
+        self._operation_service.refresh_devices(self.emulator_type)
 
     def connect(
         self,
-        device: MuMuDeviceInfo | None,
+        device: EmulatorDeviceInfo | None,
         selected_explicitly: bool,
     ) -> str:
         """连接当前选择的设备，返回无法发起连接时的提示。"""
@@ -140,7 +157,7 @@ class MumuConfigCoordinator(QObject):
     def disconnect(self) -> None:
         self._operation_service.disconnect()
 
-    def test_device(self, adb_path: str, device: MuMuDeviceInfo | None) -> str:
+    def test_device(self, adb_path: str, device: EmulatorDeviceInfo | None) -> str:
         """测试指定设备，不修改共享会话；失败前置条件返回提示。"""
         if not adb_path:
             return "请先配置 ADB 路径。"
@@ -233,7 +250,7 @@ class MumuConfigCoordinator(QObject):
     def save_config(
         self,
         form_values: dict,
-        device: MuMuDeviceInfo | None,
+        device: EmulatorDeviceInfo | None,
         selected_explicitly: bool,
     ) -> tuple[dict | None, str]:
         """合并表单配置并校验多实例选择，成功时更新配置草稿。"""
@@ -248,13 +265,13 @@ class MumuConfigCoordinator(QObject):
         # ③ 固定端口未显式选择 → 跟随下拉框现存设备。UI 刷新下拉框时优先
         # 高亮端口匹配项，③ 仅当配置端口对应设备已消失时才实际改写值
         #（原配置实例关闭后的跟随兜底，非缺陷）
-        configured_port = self._config.get("mumu_adb_port", 0)
+        configured_port = self._config.get("emulator_adb_port", 0)
         if selected_explicitly and device and device.adb_port:
-            config["mumu_adb_port"] = device.adb_port
+            config["emulator_adb_port"] = device.adb_port
         elif configured_port == 0:
-            config["mumu_adb_port"] = 0
+            config["emulator_adb_port"] = 0
         elif device and device.adb_port:
-            config["mumu_adb_port"] = device.adb_port
+            config["emulator_adb_port"] = device.adb_port
         self._config = config
         return self.config, ""
 
@@ -271,7 +288,7 @@ class MumuConfigCoordinator(QObject):
             self.refresh_devices()
         self.adb_detected.emit(success, adb_path, message)
 
-    def _on_devices_refreshed(self, devices: list[MuMuDeviceInfo]) -> None:
+    def _on_devices_refreshed(self, devices: list[EmulatorDeviceInfo]) -> None:
         self._devices = list(devices)
         self.devices_changed.emit(self.devices)
 
@@ -302,8 +319,8 @@ class MumuConfigCoordinator(QObject):
 
     def _device_selection_error(self, selected_explicitly: bool) -> str:
         running_devices = [device for device in self._devices if device.is_running and device.adb_port]
-        if self._config.get("mumu_adb_port", 0) == 0 and len(running_devices) > 1 and not selected_explicitly:
-            return "检测到多个运行中的 MuMu 实例，请先选择要使用的实例。"
+        if self._config.get("emulator_adb_port", 0) == 0 and len(running_devices) > 1 and not selected_explicitly:
+            return "检测到多个运行中的模拟器实例，请先选择要使用的实例。"
         return ""
 
 
@@ -314,8 +331,9 @@ def persist_mumu_env_config(new_config: dict) -> None:
     只写对话框可编辑的运行键，mumu_ocr_recheck_enabled 等部署键不在此列。
     """
     save_env_file(DEFAULT_ENV_FILE, {
-        "MUMU_ADB_PATH": new_config["mumu_adb_path"],
-        "MUMU_ADB_PORT": str(new_config["mumu_adb_port"]),
+        "EMULATOR_TYPE": new_config.get("emulator_type", "mumu"),
+        "EMULATOR_ADB_PATH": new_config.get("emulator_adb_path", ""),
+        "EMULATOR_ADB_PORT": str(new_config.get("emulator_adb_port", 0)),
         "MUMU_OCR_ENABLED": "true" if new_config["mumu_ocr_enabled"] else "false",
         "MUMU_OCR_POLL_MODE": "true" if new_config["mumu_ocr_poll_mode"] else "false",
         "MUMU_OCR_POLL_IDLE_PAUSE": "true" if new_config["mumu_ocr_poll_idle_pause"] else "false",

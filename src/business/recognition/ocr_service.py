@@ -73,10 +73,13 @@ class OcrService(QObject):
 
     def update_config(self, config: dict) -> None:
         """更新配置。"""
-        target_changed = (
-            config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
-            or config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
-        )
+        # 连接键读取兼容 mumu_* 旧键（升级过渡期，语义同 capture_connection）
+        adb_path = config.get("emulator_adb_path") or config.get("mumu_adb_path")
+        adb_port = config.get("emulator_adb_port") if config.get("emulator_adb_port") is not None else config.get("mumu_adb_port")
+        old_path = self._config.get("emulator_adb_path") or self._config.get("mumu_adb_path")
+        old_port = (self._config.get("emulator_adb_port") if self._config.get("emulator_adb_port") is not None
+                    else self._config.get("mumu_adb_port"))
+        target_changed = adb_path != old_path or adb_port != old_port
         # 拷贝持有，避免调用方后续原地修改配置造成隐式联动（与 CaptureService 一致）
         self._config = dict(config)
         if target_changed and self._poll_state != "stopped":

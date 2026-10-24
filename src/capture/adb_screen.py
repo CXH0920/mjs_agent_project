@@ -1,7 +1,8 @@
 """
 ADB 连接与截图模块：仅提供屏幕读取能力。
 
-通过 ADB 连接 MuMu 模拟器，执行 screencap 命令获取屏幕截图。
+通过 ADB 连接安卓模拟器（品牌无关，探测与品牌选择见 probers 包），
+执行 screencap 命令获取屏幕截图。
 本模块**故意不实现**以下功能，遵守项目法律红线（见 CLAUDE.md 与 AGENTS.md）：
 - ADB 输入（tap、click、input）
 - 自动点击、自动选将、自动战斗
@@ -72,16 +73,20 @@ _MAX_RAW_DIMENSION = 8192
 class AdbCapture:
     """封装 ADB 连接与截图操作，支持多设备。"""
 
-    def __init__(self, adb_path: str, adb_port: int = 7555,
-                 screenshot_mode: str = "auto") -> None:
+    def __init__(self, adb_path: str, adb_port: int = 0,
+                 screenshot_mode: str = "auto",
+                 emulator_type: str = "mumu") -> None:
         """
         Args:
             adb_path: adb.exe 的完整路径。
-            adb_port: MuMu 模拟器的 ADB 端口。
+            adb_port: 模拟器的 ADB 端口；0 表示连接时自动探测唯一运行实例。
             screenshot_mode: auto=raw 优先失败回退 PNG / raw=仅 raw / png=仅 PNG。
+            emulator_type: 品牌标识（src.capture.probers.EMULATOR_TYPES），
+                仅用于端口为 0 时自动探测运行实例。
         """
         self._adb_path = adb_path
         self._adb_port = adb_port
+        self._emulator_type = emulator_type
         if screenshot_mode not in SCREENSHOT_MODES:
             logger.warning("未知截图模式 %r，回退 auto", screenshot_mode)
             screenshot_mode = "auto"
@@ -93,7 +98,7 @@ class AdbCapture:
 
     @property
     def device_serial(self) -> str:
-        """当前连接的设备序列号，如 127.0.0.1:16448。"""
+        """当前连接的设备序列号，如 127.0.0.1:16448 或 emulator-5554。"""
         return self._device_serial
 
     @device_serial.setter
@@ -111,8 +116,13 @@ class AdbCapture:
     def connected(self) -> bool:
         return self._connected
 
-    def connect(self) -> tuple[bool, str]:
-        """连接到 MuMu 模拟器的 ADB。
+    def connect(self, *, validate_capture: bool = False) -> tuple[bool, str]:
+        """连接到模拟器的 ADB。
+
+        Args:
+            validate_capture: 连通后再截一帧并解码成功才算连接成功，失败
+                回滚断开（用户触发的连接路径使用）；自动重连等高频路径保持
+                False，免为每次重连多付一帧截图（后续截图本身就是验证）。
 
         Returns:
             (是否成功, 消息)
@@ -138,6 +148,12 @@ class AdbCapture:
 
         # 验证请求的目标设备，不能误选其它在线设备
         dev_ok, dev_msg = self._get_device_state(target)
+        serial = target
+        if not dev_ok:
+            reconciled = self._reconcile_emulator_serial(target)
+            if reconciled:
+                dev_ok, dev_msg = True, "device"
+                serial = reconciled
         if not dev_ok:
             self._disconnect_safe()
             _report_transient_error(f"adb-device:{target}", "目标 ADB 设备不可用: %s", dev_msg)
@@ -148,9 +164,16 @@ class AdbCapture:
             return False, f"目标设备状态异常: {dev_msg}"
 
         self._connected = True
-        self._device_serial = target
+        self._device_serial = serial
+        if validate_capture:
+            ok, payload = self.screencap_full(log_success=False)
+            if not ok:
+                self._disconnect_safe()
+                _report_transient_error(
+                    f"adb-validate:{serial}", "连接后截图校验失败: %s", payload)
+                return False, f"连接成功但截图校验失败（模拟器可能未完全启动）: {payload}"
         logger.info("ADB 连接成功 (设备 %s)", self._device_serial)
-        return True, f"连接成功 (设备: {target})"
+        return True, f"连接成功 (设备: {self._device_serial})"
 
     def disconnect(self) -> tuple[bool, str]:
         """断开 ADB 连接。"""
@@ -164,14 +187,31 @@ class AdbCapture:
         if self._adb_port > 0:
             return f"127.0.0.1:{self._adb_port}", ""
 
-        from src.capture.prober import probe_running_devices
+        from src.capture.probers import probe_running_devices
 
-        devices = probe_running_devices()
+        devices = probe_running_devices(self._emulator_type)
         if len(devices) == 1:
             return f"127.0.0.1:{devices[0].adb_port}", ""
         if not devices:
-            return "", "未检测到运行中的 MuMu 实例，请先启动模拟器"
-        return "", "检测到多个运行中的 MuMu 实例，请在模拟器配置中选择设备"
+            return "", "未检测到运行中的模拟器实例，请先启动模拟器"
+        return "", "检测到多个运行中的模拟器实例，请在模拟器配置中选择设备"
+
+    def _reconcile_emulator_serial(self, target: str) -> str:
+        """目标序列号未注册时，尝试 adb 主动扫描区命名的 emulator 序列号。
+
+        雷电等 5555+2n 端口落在 adb server 主动扫描区（5555~5585），传输可能
+        注册为 emulator-<端口-1> 而非 127.0.0.1:<端口>；命中即采纳该序列号
+        （真机注册形态待验证，此处双查兜底；序列号不匹配仍按原语义报错）。
+        """
+        host, _, port = target.partition(":")
+        if host != "127.0.0.1" or not port.isdigit() or int(port) < 2:
+            return ""
+        emulator_serial = f"emulator-{int(port) - 1:04d}"
+        ok, state = self._get_device_state(emulator_serial)
+        if ok and state == "device":
+            logger.info("目标 %s 以 %s 序列号注册（adb 主动扫描区命名）", target, emulator_serial)
+            return emulator_serial
+        return ""
 
     def _disconnect_safe(self) -> None:
         """静默断开连接。"""

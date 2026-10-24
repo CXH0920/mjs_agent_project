@@ -13,7 +13,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_service import OcrService
-from src.capture.prober import MuMuDeviceInfo
+from src.capture.probers import EmulatorDeviceInfo
 from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
@@ -35,15 +35,17 @@ class _OperationService(QObject):
     screenshot_failed = Signal(str, str)
     operation_failed = Signal(str, str)
 
-    def __init__(self, devices: list[MuMuDeviceInfo]) -> None:
+    def __init__(self, devices: list[EmulatorDeviceInfo]) -> None:
         super().__init__()
         self._devices = devices
         self.template_capture_requests: list[str] = []
+        self.refresh_types: list[str] = []
 
-    def refresh_devices(self) -> None:
+    def refresh_devices(self, emulator_type: str = "mumu") -> None:
+        self.refresh_types.append(emulator_type)
         self.devices_refreshed.emit(self._devices)
 
-    def detect_adb(self) -> None:
+    def detect_adb(self, emulator_type: str = "mumu") -> None:
         raise AssertionError("已配置 ADB 时不应自动探测")
 
     def connect(self) -> None:
@@ -86,8 +88,9 @@ class _OcrService:
 
 # 生产路径对话框配置出自 get_mumu_config() 全键字典；测试基线喂同等全键，用例可覆盖个别键
 _FULL_MUMU_CONFIG = {
-    "mumu_adb_path": "",
-    "mumu_adb_port": 0,
+    "emulator_type": "mumu",
+    "emulator_adb_path": "",
+    "emulator_adb_port": 0,
     "mumu_ocr_enabled": False,
     "mumu_ocr_poll_mode": False,
     "mumu_ocr_auto_switch_tab": False,
@@ -101,7 +104,7 @@ _FULL_MUMU_CONFIG = {
 }
 
 
-def _dialog(config: dict, devices: list[MuMuDeviceInfo], ocr_service=None) -> MumuConfigDialog:
+def _dialog(config: dict, devices: list[EmulatorDeviceInfo], ocr_service=None) -> MumuConfigDialog:
     return MumuConfigDialog(
         {**_FULL_MUMU_CONFIG, **config},
         capture_service=CaptureService(),
@@ -112,17 +115,17 @@ def _dialog(config: dict, devices: list[MuMuDeviceInfo], ocr_service=None) -> Mu
 
 def test_unique_running_device_keeps_auto_port() -> None:
     _app()
-    unique = MuMuDeviceInfo("1", "唯一实例", 16448, True)
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [unique])
+    unique = EmulatorDeviceInfo("1", "唯一实例", 16448, True)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [unique])
 
     assert dialog._device_page.device_combo.currentData() == unique
-    assert dialog._config["mumu_adb_port"] == 0
+    assert dialog._config["emulator_adb_port"] == 0
 
 
 def test_auto_switch_tab_checkbox_loads_and_saves_config(monkeypatch) -> None:
     _app()
     dialog = _dialog(
-        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0, "mumu_ocr_poll_mode": True,
+        {"emulator_adb_path": "adb.exe", "emulator_adb_port": 0, "mumu_ocr_poll_mode": True,
          "mumu_ocr_auto_switch_tab": True},
         [],
     )
@@ -137,7 +140,7 @@ def test_auto_switch_tab_checkbox_loads_and_saves_config(monkeypatch) -> None:
 
 def test_ocr_roi_controls_keep_the_configuration_footer() -> None:
     _app()
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [])
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [])
     buttons = [button.text() for button in dialog.findChildren(QPushButton)]
 
     assert buttons.count("截图编辑") == 2
@@ -151,7 +154,7 @@ def test_ocr_roi_controls_keep_the_configuration_footer() -> None:
 
 def test_dialog_composes_dedicated_configuration_sections() -> None:
     _app()
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [])
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [])
 
     assert isinstance(dialog._device_page.section, MumuDeviceSection)
     assert isinstance(dialog._recognition_page.template_section, MumuTemplateSection)
@@ -167,10 +170,10 @@ def test_dialog_composes_dedicated_configuration_sections() -> None:
 def test_multiple_running_devices_require_explicit_selection() -> None:
     _app()
     devices = [
-        MuMuDeviceInfo("1", "实例 A", 16448, True),
-        MuMuDeviceInfo("2", "实例 B", 16416, True),
+        EmulatorDeviceInfo("1", "实例 A", 16448, True),
+        EmulatorDeviceInfo("2", "实例 B", 16416, True),
     ]
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, devices)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, devices)
 
     assert dialog._device_page.device_combo.currentData() is None
     assert "请选择运行中的实例" in dialog._device_page.device_combo.currentText()
@@ -179,19 +182,19 @@ def test_multiple_running_devices_require_explicit_selection() -> None:
 def test_saved_port_restores_matching_device() -> None:
     _app()
     devices = [
-        MuMuDeviceInfo("1", "实例 A", 16448, True),
-        MuMuDeviceInfo("2", "实例 B", 16416, True),
+        EmulatorDeviceInfo("1", "实例 A", 16448, True),
+        EmulatorDeviceInfo("2", "实例 B", 16416, True),
     ]
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16416}, devices)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16416}, devices)
 
     assert dialog._device_page.device_combo.currentData() == devices[1]
 
 
 def test_instance_status_color_follows_selected_device_state() -> None:
     _app()
-    running = MuMuDeviceInfo("1", "运行实例", 16448, True)
-    stopped = MuMuDeviceInfo("2", "停止实例", 16416, False)
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448}, [running, stopped])
+    running = EmulatorDeviceInfo("1", "运行实例", 16448, True)
+    stopped = EmulatorDeviceInfo("2", "停止实例", 16416, False)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448}, [running, stopped])
 
     assert "#27ae60" in dialog._device_page.instance_status_label.styleSheet()
     assert "运行中" in dialog._device_page.instance_status_label.text()
@@ -204,8 +207,8 @@ def test_instance_status_color_follows_selected_device_state() -> None:
 
 def test_refresh_failure_preserves_previous_device_selection() -> None:
     _app()
-    device = MuMuDeviceInfo("1", "实例", 16448, True)
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448}, [device])
+    device = EmulatorDeviceInfo("1", "实例", 16448, True)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448}, [device])
 
     dialog._operation_service.device_refresh_failed.emit("MuMuManager 查询失败")
 
@@ -216,8 +219,8 @@ def test_refresh_failure_preserves_previous_device_selection() -> None:
 
 def test_template_capture_remains_disabled_during_device_refresh() -> None:
     _app()
-    device = MuMuDeviceInfo("1", "实例", 16448, True)
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448}, [device])
+    device = EmulatorDeviceInfo("1", "实例", 16448, True)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448}, [device])
 
     dialog._recognition_page.start_template_capture("match_guide")
     dialog._operation_service.devices_refreshed.emit([device])
@@ -229,7 +232,7 @@ def test_template_capture_remains_disabled_during_device_refresh() -> None:
 def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> None:
     _app()
     ocr_service = _OcrService(tmp_path)
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [], ocr_service)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [], ocr_service)
 
     class _CancelDialog:
         def __init__(self, *_args, **_kwargs) -> None:
@@ -254,11 +257,11 @@ def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> 
 
 def test_recognition_page_reflows_without_horizontal_scroll(tmp_path: Path) -> None:
     app = _app()
-    device = MuMuDeviceInfo("1", "实例", 16448, True)
+    device = EmulatorDeviceInfo("1", "实例", 16448, True)
     # 必须注入假 OcrService：默认 ocr_service=None 会让对话框构造真实服务，
     # show+切识别页路径在 CI（Linux 无头 + xdist）上曾把 worker 阻塞至超时强杀
     dialog = _dialog(
-        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 16448, "mumu_ocr_poll_mode": True},
+        {"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448, "mumu_ocr_poll_mode": True},
         [device],
         ocr_service=_OcrService(tmp_path),
     )
@@ -284,7 +287,7 @@ def test_resume_poll_action_only_appears_while_paused(tmp_path: Path) -> None:
     ocr_service = _OcrService(tmp_path)
     ocr_service.poll_state = "paused"
     dialog = _dialog(
-        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0, "mumu_ocr_poll_mode": True},
+        {"emulator_adb_path": "adb.exe", "emulator_adb_port": 0, "mumu_ocr_poll_mode": True},
         [],
         ocr_service,
     )
@@ -300,7 +303,7 @@ def test_roi_layout_image_rejects_invalid_file(tmp_path: Path, monkeypatch) -> N
     _app()
     invalid_path = tmp_path / "invalid.png"
     invalid_path.write_bytes(b"not an image")
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [])
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [])
     warnings: list[str] = []
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_args: (str(invalid_path), ""))
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args: warnings.append(_args[-1]))
@@ -314,7 +317,7 @@ def test_roi_layout_image_rejects_invalid_file(tmp_path: Path, monkeypatch) -> N
 def test_two_template_types_are_saved_through_ocr_service(tmp_path: Path, monkeypatch) -> None:
     _app()
     ocr_service = _OcrService(tmp_path)
-    dialog = _dialog({"mumu_adb_path": "adb.exe", "mumu_adb_port": 0}, [], ocr_service)
+    dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [], ocr_service)
 
     class _AcceptDialog:
         def __init__(self, *_args, **_kwargs) -> None:
@@ -336,3 +339,23 @@ def test_two_template_types_are_saved_through_ocr_service(tmp_path: Path, monkey
         ("match_guide", (10, 10, 30, 20)),
     ]
     assert "模板已保存到" in dialog._shared_toast_overlay.text()
+
+
+def test_brand_combo_loads_configured_type_and_switch_triggers_refresh() -> None:
+    """品牌下拉：装载配置品牌；用户切换后更新草稿并按新品牌刷新设备。"""
+    _app()
+    dialog = _dialog({"emulator_type": "mumu", "emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [])
+    operation = dialog._operation_service
+    page = dialog._device_page
+
+    assert page.brand_combo.count() == 5  # 五家品牌
+    assert page.brand_combo.currentData() == "mumu"
+    assert operation.refresh_types == ["mumu"]  # 初载按 mumu 刷新
+
+    ld_index = page.brand_combo.findData("ldplayer")
+    assert page.brand_combo.itemText(ld_index) == "雷电 9"
+    page.brand_combo.setCurrentIndex(ld_index)
+    page.section.brand_activated.emit("ldplayer")  # 用户激活（非程序装载）
+
+    assert dialog._coordinator.emulator_type == "ldplayer"
+    assert operation.refresh_types[-1] == "ldplayer"

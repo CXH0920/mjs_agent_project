@@ -89,7 +89,7 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 
 **三板块共享一次截图（2026-09）**：选将推荐、巅峰赛选将、对局攻略三个板块的识别由同一次截图驱动——`OcrService.poll_tick` 触发 `PollCoordinator._on_poll_tick()`，后台线程一次截图后并发派生三条判定路径（固定 ROI 的 `hero_selection`、对局攻略页 `match_guide`、内容驱动的巅峰赛卡位检测），**不做三张截图**。`hero_selection` 在单拍内最多被消费一次，避免同一次识别结果既刷新推荐页又重复触发自动跳转。官方榜单导入的互斥不靠独占 worker，而是由 `OcrService._import_busy` 标志串行化，与常规轮询任务共享同一 FIFO 队列。
 
-**截图提速（2026-09）**：`adb_screen.py` 新增 `screencap_raw()` 方法，直接返回 PNG bytes 跳过 PIL 解码；`CaptureService.capture_for_poll()` 直接返回 numpy 数组，避免轮询路径的冗余 Image 转换。配置参数 `MUMU_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式，`auto` 为默认（raw 优先，失败自动回退 PNG），1440p 实测每拍省约 1.3 秒。
+**截图提速（2026-09）**：`adb_screen.py` 新增 `screencap_raw()` 方法，直接返回 PNG bytes 跳过 PIL 解码；`CaptureService.capture_for_poll()` 直接返回 numpy 数组，避免轮询路径的冗余 Image 转换。配置参数 `EMULATOR_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式（旧 `MUMU_SCREENSHOT_MODE` 回退读取），`auto` 为默认（raw 优先，失败自动回退 PNG），1440p 实测每拍省约 1.3 秒。
 
 **竞态守卫三原语（2026-10 定稿）**：`src/business/recognition/session_guard.py` 收口全仓手抄的令牌/世代/忙碌守卫——`SessionGuard`（世代计数器，`begin()` 作废旧世代、`current()` 快照、`is_current(token)` 校验）、`BusyGate`（忙碌闸，`acquire()` 锁内检查+置位原子、忙时拒绝、`release()` 幂等）、`OneShotToken`（一次性令牌，`mark()` 置位不可复位）。全仓五处裸旗标语义不变收口：OCR 在途轮询拍 `_poll_gate`、公告更新阶段 `_phase_gate`、模拟器操作与截图服务关停 `_shutdown_token`（两处）、巅峰赛会话世代 `_session_guard`。语义单测 `tests/test_session_guard.py`。
 
@@ -1954,69 +1954,89 @@ AI 链路只记录任务、长度、字段名、用量（`_log_usage` 拆分 rea
 ```
 src/capture/
  ├── __init__.py              # 空 init
- ├── adb_screen.py           # AdbCapture — ADB 连接与截图（265 行）
- ├── prober.py               # MuMu 设备探测（函数式，~180 行）
+ ├── adb_screen.py           # AdbCapture — ADB 连接与截图（品牌无关）
+ ├── probers/                # 多品牌设备探测包（MuMu/雷电/夜神/逍遥/蓝叠）
+ │   ├── __init__.py         # 统一入口：注册表分发 + PATH 优先的 adb 探测
+ │   ├── models.py           # EmulatorDeviceInfo 值对象
+ │   ├── mumu.py             # MuMu 12（MuMuManager console）
+ │   ├── ldplayer.py         # 雷电 9（ldconsole list2，端口 5555+2n）
+ │   ├── nox.py              # 夜神（NoxConsole list，端口 62001+n）
+ │   ├── memu.py             # 逍遥（MEmuConsole list，端口 21503+10n）
+ │   ├── bluestacks.py       # 蓝叠 5（注册表 BstAdbPort，动态端口）
+ │   ├── port_scan.py        # console 失败时的端口段兜底扫描
+ │   └── console_utils.py    # console 工具调用与 GBK/UTF-8 解码
  └── image_utils.py          # 图像工具函数（~70 行）
 ```
 
-### 11.2 ADB 设备探测（prober.py）
+### 11.2 模拟器设备探测（probers/ 包，多品牌）
 
-函数式设计，无内部状态。完全参考 mumu_screen 原项目实现。
+函数式注册表设计（`EMULATOR_PROBERS`），单选单连接、纯只读探测。自 2026-10
+起支持五家品牌：MuMu 12 / 雷电 LDPlayer 9 / 夜神 Nox / 逍遥 MEmu / 蓝叠
+BlueStacks 5；统一入口按 `emulator_type` 分发，品牌子模块实现
+`probe_devices(retries)` 与 `find_adb()` 两个函数。
 
-#### 核心函数
+#### 统一入口（probers/__init__.py）
 
 | 函数 | 返回 | 说明 |
 |------|------|------|
-| `probe_mumu_adb()` | `str` | 查找 adb.exe（PATH → 注册表 → 安装路径） |
-| `probe_all_devices()` | `list[MuMuDeviceInfo]` | 列出所有 MuMu 实例信息（`MuMuManager.exe info --vmindex all`） |
-| `probe_all_devices_with_status(retries=1)` | `(list[MuMuDeviceInfo], str)` | 列出实例；MuMuManager 失败时重试一次并返回错误原因 |
-| `probe_running_devices()` | `list[MuMuDeviceInfo]` | 过滤出 `is_running` 为真的实例（原 `probe_mumu_port()` 已废弃） |
+| `probe_adb(emulator_type)` | `str` | 查找 adb.exe（PATH 优先 → 所选品牌安装目录） |
+| `probe_all_devices(emulator_type)` | `list[EmulatorDeviceInfo]` | 列出所选品牌全部实例 |
+| `probe_all_devices_with_status(emulator_type, retries=1)` | `(list[EmulatorDeviceInfo], str)` | 列出实例并区分空结果与探测失败 |
+| `probe_running_devices(emulator_type)` | `list[EmulatorDeviceInfo]` | 过滤出运行中且端口有效的实例 |
 | `test_adb_path(path)` | `(bool, str)` | 验证 ADB 可执行文件是否有效 |
+| `normalize_emulator_type(value)` | `str` | 未知品牌值回退 mumu |
 
-#### 数据类
+#### 数据类（probers/models.py）
 
 ```python
 @dataclass
-class MuMuDeviceInfo:
-    index: str          # MuMuManager 中的索引
+class EmulatorDeviceInfo:
+    index: str          # 品牌工具中的实例索引
     name: str           # 实例名称
     adb_port: int       # ADB 端口
     is_running: bool    # 是否正在运行
     is_main: bool       # 是否为主实例
 ```
 
-#### 路径探测优先级
+#### 品牌探测策略
 
-`probe_mumu_adb()` 查找顺序：
-1. **系统 PATH** — `shutil.which("adb")`
-2. **MuMu 安装目录** — 注册表 `HKLM\SOFTWARE\Netease\MuMuPlayer12` 或 `MUMU_HOME` 环境变量
-3. **常见安装路径** — `D:/模拟器/MuMu Player 12` 等，在 `nx_main/adb.exe` 和 `emulator/nemu/EmulatorShell/adb.exe` 中查找
+| 品牌 | console 主路径 | 端口规则 | 兜底 |
+|------|----------------|----------|------|
+| MuMu 12 | `MuMuManager.exe info --vmindex all`（JSON） | 动态上报 | 16384+32n 端口段扫描 |
+| 雷电 9 | `ldconsole list2` | 5555+2n（推导） | 5555+2n 端口段扫描 |
+| 夜神 | `NoxConsole list` | 62001+n（推导） | 62001+n 端口段扫描 |
+| 逍遥 | `MEmuConsole/MEmuManager list` | 21503+10n（推导） | 21503+10n 端口段扫描 |
+| 蓝叠 5 | 注册表 `BlueStacks_nxt\Guests\*\BstAdbPort` | 动态 | 无（提示先开启 ADB） |
 
-#### 实例探测
+端口兜底扫描只做 127.0.0.1 试连并按所选品牌标注，不凭端口猜品牌（蓝叠与
+雷电默认端口同为 5555）；console 输出解码统一 UTF-8 → GBK（console_utils）。
 
-`probe_all_devices()` 流程：
-1. 定位 MuMu 安装根目录（含 `nx_main` 目录）
-2. 调用 `MuMuManager.exe info --vmindex all`
-3. 解析 JSON 返回（格式：`{index_str: {name, adb_port, is_android_started, is_main}}`）
-4. 配置页通过 `probe_all_devices_with_status()` 调用：异常退出或超时会重试一次；失败时保留当前设备选择而不将其误显示为“未探测到设备”
+#### adb 来源优先级（`probe_adb`）
+
+1. **系统 PATH** — `shutil.which("adb")`（对五家品牌一致，沿用旧版决策）
+2. **所选品牌安装目录** — 各品牌注册表/环境变量/常见路径下的自带 adb
 
 ### 11.3 ADB 连接与截图（adb_screen.py）
 
 ```python
 class AdbCapture:
-    def __init__(self, adb_path: str, adb_port: int = 7555)
+    def __init__(self, adb_path: str, adb_port: int = 0,
+                 screenshot_mode: str = "auto", emulator_type: str = "mumu")
 ```
+
+`adb_port=0` 表示连接时自动探测唯一运行实例；`emulator_type` 仅用于该自动
+探测路径（多品牌连接 2026-10，品牌无关的连接与截图）。
 
 **连接管理**：
 
 | 方法 | 返回 | 说明 |
 |------|------|------|
-| `connect()` | `(bool, str)` | ADB connect + 设备检测 |
+| `connect(*, validate_capture=False)` | `(bool, str)` | ADB connect + 设备检测；`validate_capture=True` 时连通后截一帧解码成功才算成功，失败回滚断开（用户触发的连接/测试路径启用；自动重连保持 False 免额外开销）。雷电等 5555+2n 端口在 adb 主动扫描区可能注册为 `emulator-<端口-1>` 序列号，直查失败时双查归并 |
 | `disconnect()` | `(bool, str)` | 断开 |
 | `reconnect()` | `(bool, str)` | 强制重连 |
 | `check_device()` | `(bool, str)` | 设备在线检查 |
 | `screencap_full()` | `(bool, Image|str)` | ADB exec-out screencap 全屏截图 |
-| `screencap_raw()` | `(bool, bytes|str)` | 直接返回 PNG bytes 跳过 PIL 解码（2026-09 新增）；配置参数 `MUMU_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式，`auto` 为默认（raw 优先，失败自动回退 PNG） |
+| `screencap_raw()` | `(bool, bytes|str)` | 直接返回 PNG bytes 跳过 PIL 解码（2026-09 新增）；配置参数 `EMULATOR_SCREENSHOT_MODE`（`auto`/`raw`/`png`）控制模式（旧 `MUMU_SCREENSHOT_MODE` 回退读取），`auto` 为默认（raw 优先，失败自动回退 PNG） |
 
 **属性**：
 - `device_serial`：可读写，切换目标设备（如 `127.0.0.1:16448`）

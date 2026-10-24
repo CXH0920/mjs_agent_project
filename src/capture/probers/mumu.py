@@ -1,8 +1,8 @@
-"""
-MuMu 模拟器实例探测模块
+"""MuMu 12 模拟器实例探测（自 prober.py 原样平移，多品牌连接支持）。
 
-负责自动探测 MuMu 模拟器的安装路径、adb.exe 位置和运行中的实例端口。
-函数式设计，无内部状态。
+负责自动探测 MuMu 安装路径、自带 adb.exe 位置和运行中的实例端口。
+注册表契约（EMULATOR_PROBERS）：probe_devices(retries) 与 find_adb()。
+console 主路径（MuMuManager）失败时回退默认端口段扫描（port_scan.py）。
 """
 
 from __future__ import annotations
@@ -12,21 +12,12 @@ import logging
 import os
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
+import src.capture.probers.port_scan as port_scan
+from src.capture.probers.models import EmulatorDeviceInfo
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class MuMuDeviceInfo:
-    """描述一个 MuMu 模拟器实例的信息。"""
-
-    index: str          # MuMuManager 中的索引
-    name: str           # 实例名称
-    adb_port: int       # ADB 端口
-    is_running: bool    # 是否正在运行
-    is_main: bool = False
 
 
 def _probe_mumu_registry() -> str | None:
@@ -109,33 +100,26 @@ def _find_mumu_root() -> Path | None:
     return None
 
 
-def probe_mumu_adb() -> str:
-    """自动探测 MuMu 模拟器的 adb.exe 路径。
+def find_adb() -> str:
+    """探测 MuMu 安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。
 
     查找顺序：
-      1. 系统 PATH 环境变量中的 adb
-      2. MuMu 安装目录（注册表/环境变量/常见路径）下的 adb
-      3. 旧版候选路径
+      1. MuMu 安装目录（注册表/环境变量/常见路径）下的 adb
+      2. 旧版候选路径
 
     Returns:
         adb.exe 完整路径，找不到则返回空字符串。
     """
     candidates = _get_mumu_candidates()
 
-    # 1. 先查 PATH 中的 adb
-    import shutil
-    path_adb = shutil.which("adb")
-    if path_adb:
-        return path_adb
-
-    # 2. 再查 MuMu 安装目录下的 adb
+    # 1. 先查 MuMu 安装目录下的 adb
     for root in candidates:
         for subpath in ["nx_main/adb.exe", "emulator/nemu/EmulatorShell/adb.exe"]:
             p = root / subpath
             if p.exists():
                 return str(p.resolve())
 
-    # 3. 最后查旧的候选路径（兼容）
+    # 2. 最后查旧的候选路径（兼容）
     for root in _get_legacy_candidates():
         for subpath in ["nx_main/adb.exe", "emulator/nemu/EmulatorShell/adb.exe"]:
             p = root / subpath
@@ -146,17 +130,17 @@ def probe_mumu_adb() -> str:
     return ""
 
 
-def probe_all_devices_with_status(retries: int = 1) -> tuple[list[MuMuDeviceInfo], str]:
-    """探测所有 MuMu 模拟器实例，并区分空结果与探测失败。"""
+def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
+    """探测所有 MuMu 模拟器实例；console 失败时回退端口段扫描。"""
     mumu_root = _find_mumu_root()
     if not mumu_root:
         logger.warning("未找到 MuMu 模拟器安装目录")
-        return [], "未找到 MuMu 模拟器安装目录"
+        return _fallback("未找到 MuMu 模拟器安装目录")
 
     manager_path = mumu_root / "nx_main" / "MuMuManager.exe"
     if not manager_path.exists():
         logger.warning("MuMuManager.exe 不存在")
-        return [], "MuMuManager.exe 不存在"
+        return _fallback("MuMuManager.exe 不存在")
 
     error = ""
     for attempt in range(retries + 1):
@@ -171,11 +155,11 @@ def probe_all_devices_with_status(retries: int = 1) -> tuple[list[MuMuDeviceInfo
             else:
                 output = result.stdout.decode("utf-8", errors="replace")
                 data = json.loads(output)
-                devices: list[MuMuDeviceInfo] = []
+                devices: list[EmulatorDeviceInfo] = []
                 for index_str, vm_info in data.items():
                     is_running = bool(vm_info.get("is_android_started"))
                     port = int(vm_info["adb_port"]) if vm_info.get("adb_port") else 0
-                    devices.append(MuMuDeviceInfo(
+                    devices.append(EmulatorDeviceInfo(
                         index=index_str,
                         name=vm_info.get("name", f"实例 {index_str}"),
                         adb_port=port,
@@ -192,41 +176,13 @@ def probe_all_devices_with_status(retries: int = 1) -> tuple[list[MuMuDeviceInfo
             time.sleep(0.2)
 
     logger.warning("%s", error)
-    return [], error
+    return _fallback(error)
 
 
-def probe_all_devices() -> list[MuMuDeviceInfo]:
-    """探测所有 MuMu 模拟器实例，返回列表。"""
-    devices, _ = probe_all_devices_with_status()
-    return devices
-
-
-def probe_running_devices() -> list[MuMuDeviceInfo]:
-    """返回具备有效 ADB 端口的运行中 MuMu 实例。"""
-    return [device for device in probe_all_devices() if device.is_running and device.adb_port > 0]
-
-
-def test_adb_path(adb_path: str) -> tuple[bool, str]:
-    """快速测试 ADB 路径是否可执行。"""
-    p = Path(adb_path)
-    if not p.exists():
-        return False, f"文件不存在: {adb_path}"
-    if not p.is_file():
-        return False, f"不是文件: {adb_path}"
-    try:
-        result = subprocess.run(
-            [str(p), "version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            version_line = result.stdout.strip().split("\n")[0]
-            return True, version_line
-        return False, f"adb 执行失败 (returncode={result.returncode}): {result.stderr.strip()}"
-    except FileNotFoundError:
-        return False, f"找不到 adb: {adb_path}"
-    except subprocess.TimeoutExpired:
-        return False, "adb 版本查询超时"
-    except OSError as e:
-        return False, f"adb 执行异常: {e}"
+def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
+    """console 路径失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
+    devices = port_scan.probe_devices_via_ports("mumu", "MuMu 12")
+    if devices:
+        logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
+        return devices, ""
+    return [], f"{error}（端口段扫描也未发现实例）"

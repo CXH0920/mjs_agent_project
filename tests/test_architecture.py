@@ -653,7 +653,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 拆分只会制造参数众多的小模块，登记预算限制继续膨胀
     # 547 → 551：段 2 分辨率体检的 ROI 截图回调补 finish 收尾（VUL-B4-004）——
     # 向导不进入 ROI 编辑态，不释放槽位会让"连接并体检"第二次起静默失效
-    "ui/app/onboarding_dialog.py": 551,
+    # 551 → 552：多品牌连接——零实例文案按所选品牌展示（EMULATOR_LABELS
+    # 经协调器转出口，UI 不直连 src.capture），单行替换
+    "ui/app/onboarding_dialog.py": 552,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
@@ -679,7 +681,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # embedding_onnx_migration.md §S4）
     # 2026-10-13 首启向导 T1：check_environment 拆分 check_dev_toolchain/check_runtime_env
     # （向导只跑运行时子集）+ run_checks 增 checks 形参（spec_onboarding §3.3），675 → 682
-    "scripts/doctor.py": 682,
+    # 2026-10-24 多品牌连接：check_devices 读 EMULATOR_* 键（双键回退）+ 序列号
+    # 正则纳入 emulator-<n> 形态 + 新增 check_adb_versions 版本一致性诊断
+    # （PATH adb 与配置 adb 混版是连接漂移高发根因），682 → 716
+    "scripts/doctor.py": 716,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     "ui/library/card_management_panel.py": 877,
     # hero_classification_panel.py（原 827）出表：三页签拆入
@@ -706,7 +711,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 366 → 370：档位阈值可配置（TD-A6-001）——新增 DATA_FRESHNESS_STALE_GREEN_DAYS
     # / DATA_FRESHNESS_STALE_RED_DAYS 两键 + 说明注释；官方榜单约每半月更新，
     # 7/14 写死会让榜单长期停在黄/红并盖掉武将信号
-    "config/env.py": 370,
+    # 370 → 379：多品牌连接（2026-10-24）——新增 EMULATOR_TYPE + 三连接键
+    # （default_from 回退旧 MUMU_* 实配值，老 config.env 平滑升级）
+    "config/env.py": 379,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示

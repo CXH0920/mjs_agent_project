@@ -1,10 +1,10 @@
-"""MuMu 设备探测的失败恢复测试。"""
+"""MuMu 设备探测的失败恢复测试（经统一入口按 mumu 分发）。"""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.capture.prober import probe_all_devices_with_status
+from src.capture.probers import probe_all_devices_with_status
 
 
 def test_device_probe_retries_after_manager_failure(tmp_path, monkeypatch) -> None:
@@ -19,11 +19,11 @@ def test_device_probe_retries_after_manager_failure(tmp_path, monkeypatch) -> No
         ),
     ]
 
-    monkeypatch.setattr("src.capture.prober._find_mumu_root", lambda: tmp_path)
-    monkeypatch.setattr("src.capture.prober.subprocess.run", lambda *_args, **_kwargs: responses.pop(0))
-    monkeypatch.setattr("src.capture.prober.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("src.capture.probers.mumu._find_mumu_root", lambda: tmp_path)
+    monkeypatch.setattr("src.capture.probers.mumu.subprocess.run", lambda *_args, **_kwargs: responses.pop(0))
+    monkeypatch.setattr("src.capture.probers.mumu.time.sleep", lambda _seconds: None)
 
-    devices, error = probe_all_devices_with_status()
+    devices, error = probe_all_devices_with_status("mumu")
 
     assert error == ""
     assert [(device.name, device.adb_port, device.is_running) for device in devices] == [

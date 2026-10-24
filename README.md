@@ -45,7 +45,7 @@
 
 ### 打包版用户
 
-双击 `mjs_agent.exe`，同意使用须知后**跟着首启向导走**即可：① 运行环境自检 → ② 连接 MuMu 模拟器并体检分辨率 → ③ 在游戏里打开【选将】页面试识别。任一步失败时界面会指出哪一环断了并给出可点的修复按钮；不想引导可随时「跳过」（之后可从 帮助 → 重看首启引导 找回）。
+双击 `mjs_agent.exe`，同意使用须知后**跟着首启向导走**即可：① 运行环境自检 → ② 连接模拟器并体检分辨率（默认 MuMu，支持雷电/夜神/逍遥/蓝叠，配置页可切换品牌） → ③ 在游戏里打开【选将】页面试识别。任一步失败时界面会指出哪一环断了并给出可点的修复按钮；不想引导可随时「跳过」（之后可从 帮助 → 重看首启引导 找回）。
 
 向导只读屏幕、不操作游戏；模拟器分辨率建议设为 **2560×1440 或其等比（如 1920×1080）**。
 
@@ -210,7 +210,7 @@ test_project/
 │   │                           #   + maintenance/backup_restore_service（备份快照浏览/预览/恢复）
 │   │                           #   + common/check_cooldown（访问冷却与并发守卫）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking
-│   ├── capture/                # ADB 截图与 MuMu 实例探测（仅屏幕读取，无输入能力）
+│   ├── capture/                # ADB 截图与多品牌模拟器实例探测（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施（embedder.py 双后端编码器抽象，onnx 默认）
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
@@ -366,10 +366,11 @@ MAX_OUTPUT_TOKENS=32768
 LOG_LEVEL=INFO
 LOG_TO_FILE=true
 
-# 模拟器 (MuMu)
-MUMU_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
-MUMU_ADB_PORT=16448
-MUMU_SCREENSHOT_MODE=auto
+# 模拟器（多品牌：mumu/ldplayer/nox/memu/bluestacks）
+EMULATOR_TYPE=mumu
+EMULATOR_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
+EMULATOR_ADB_PORT=16448
+EMULATOR_SCREENSHOT_MODE=auto
 MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=true
 MUMU_OCR_AUTO_SWITCH_TAB=true

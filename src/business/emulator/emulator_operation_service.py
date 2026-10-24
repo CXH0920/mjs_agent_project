@@ -1,4 +1,4 @@
-"""MuMu 模拟器操作服务：仅提供屏幕读取能力。
+"""模拟器后台操作服务（多品牌，品牌探测见 src/capture/probers）：仅提供屏幕读取能力。
 
 本模块**故意不实现**以下功能，遵守项目法律红线（见 CLAUDE.md 与 AGENTS.md）：
 - ADB 输入（tap、click、input）
@@ -20,7 +20,12 @@ from PySide6.QtCore import QObject, Signal
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.session_guard import OneShotToken
 from src.capture.adb_screen import AdbCapture
-from src.capture.prober import probe_all_devices_with_status, probe_mumu_adb, test_adb_path
+from src.capture.probers import (
+    DEFAULT_EMULATOR_TYPE,
+    probe_adb,
+    probe_all_devices_with_status,
+    test_adb_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,7 @@ class EmulatorOperationService(QObject):
     """串行执行 ADB 探测、连接、测试和模板截图等耗时操作。"""
 
     adb_detected = Signal(bool, str, str)  # (success, adb_path, message)
-    devices_refreshed = Signal(object)  # list[MuMuDeviceInfo]
+    devices_refreshed = Signal(object)  # list[EmulatorDeviceInfo]
     device_refresh_failed = Signal(str)
     connection_finished = Signal(bool, str)
     disconnection_finished = Signal(bool, str)
@@ -47,9 +52,9 @@ class EmulatorOperationService(QObject):
         self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emulator-adb")
         self._shutdown_token = OneShotToken()  # 关停一次性守卫（P0-3 收口）
 
-    def detect_adb(self) -> None:
+    def detect_adb(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
         def work() -> tuple[bool, str, str]:
-            adb_path = probe_mumu_adb()
+            adb_path = probe_adb(emulator_type)
             if not adb_path:
                 return False, "", "未找到 ADB，请手动设置路径"
             ok, message = test_adb_path(adb_path)
@@ -57,7 +62,7 @@ class EmulatorOperationService(QObject):
 
         self._submit(self._probe_executor, "detect_adb", work, lambda result: self.adb_detected.emit(*result))
 
-    def refresh_devices(self) -> None:
+    def refresh_devices(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
         def completed(result: tuple[list, str]) -> None:
             devices, error = result
             if error:
@@ -65,7 +70,12 @@ class EmulatorOperationService(QObject):
             else:
                 self.devices_refreshed.emit(devices)
 
-        self._submit(self._probe_executor, "refresh_devices", probe_all_devices_with_status, completed)
+        self._submit(
+            self._probe_executor,
+            "refresh_devices",
+            lambda: probe_all_devices_with_status(emulator_type),
+            completed,
+        )
 
     def connect(self) -> None:
         self._submit(
@@ -89,7 +99,7 @@ class EmulatorOperationService(QObject):
         def work() -> tuple[bool, str, str]:
             capture = AdbCapture(adb_path=adb_path, adb_port=port)
             try:
-                ok, message = capture.connect()
+                ok, message = capture.connect(validate_capture=True)
                 if not ok:
                     return False, target, message
                 ok, message = capture.check_device()

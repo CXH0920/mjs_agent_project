@@ -144,32 +144,67 @@ def check_devices() -> list[Finding]:
     findings = []
     from src.config.env import get_mumu_config
 
-    adb_path = get_mumu_config().get("mumu_adb_path")
+    config = get_mumu_config()
+    adb_path = config.get("emulator_adb_path") or config.get("mumu_adb_path")
     if not adb_path or not Path(adb_path).exists():
         findings.append(Finding(
             "设备", "ADB 路径", FAIL, f"配置的 ADB 不存在: {adb_path}",
-            fix="检查 config.env 的 MUMU_ADB_PATH，或运行模拟器后由 prober 自动探测"))
+            fix="检查 config.env 的 EMULATOR_ADB_PATH，或运行模拟器后自动探测"))
         return findings
     findings.append(Finding("设备", "ADB 路径", PASS, str(adb_path)))
 
     try:
         result = subprocess.run([str(adb_path), "devices"], capture_output=True,
                                 text=True, timeout=10)
-        serials = re.findall(r"^(127\.0\.0\.1:\d+)\s+device\b", result.stdout, re.M)
+        # 雷电等品牌可能注册为 emulator-<n> 序列号（adb 主动扫描区命名）
+        serials = re.findall(r"^(127\.0\.0\.1:\d+|emulator-\d+)\s+device\b", result.stdout, re.M)
     except (OSError, subprocess.SubprocessError) as error:
         findings.append(Finding("设备", "adb devices", WARN, f"执行失败: {error}",
                                 fix="确认模拟器已启动且 ADB 服务正常"))
         return findings
     if not serials:
-        findings.append(Finding("设备", "模拟器在线", WARN, "无 127.0.0.1:<port> 在线设备",
-                                fix="启动 MuMu 模拟器后重试"))
+        findings.append(Finding("设备", "模拟器在线", WARN, "无在线模拟器设备",
+                                fix="启动模拟器后重试（蓝叠需先在设置中开启 ADB）"))
     elif len(serials) > 1:
         findings.append(Finding(
             "设备", "模拟器在线", WARN, f"检测到 {len(serials)} 台设备 {serials}",
             fix="多设备冲突会触发 more-than-one-device 错误，只保留一个模拟器实例或在配置中固定端口"))
     else:
         findings.append(Finding("设备", "模拟器在线", PASS, serials[0]))
+
+    findings.extend(check_adb_versions(adb_path))
     return findings
+
+
+def check_adb_versions(configured_adb: str) -> list[Finding]:
+    """PATH adb 与已配置 adb 的版本一致性：混版会反复重启 adb server，
+    造成连接漂移/设备反复离线（多模拟器品牌共存时的高发根因）。"""
+    import shutil
+
+    path_adb = shutil.which("adb")
+    if not path_adb:
+        return [Finding("设备", "ADB 版本一致性", PASS, "PATH 无 adb，无混版风险")]
+
+    def _version(executable: str) -> str:
+        result = subprocess.run([executable, "version"], capture_output=True,
+                                text=True, timeout=10)
+        return (result.stdout or "").splitlines()[0].strip() if result.stdout else ""
+
+    try:
+        path_version = _version(path_adb)
+        same_file = str(Path(path_adb).resolve()) == str(Path(configured_adb).resolve())
+        if same_file:
+            return [Finding("设备", "ADB 版本一致性", PASS, f"PATH 与配置指向同一 adb: {path_version}")]
+        configured_version = _version(str(configured_adb))
+    except (OSError, subprocess.SubprocessError) as error:
+        return [Finding("设备", "ADB 版本一致性", WARN, f"版本查询失败: {error}")]
+
+    if path_version == configured_version:
+        return [Finding("设备", "ADB 版本一致性", PASS, f"版本一致: {path_version}")]
+    return [Finding(
+        "设备", "ADB 版本一致性", WARN,
+        f"PATH adb 与配置 adb 版本不同\n  PATH: {path_adb} → {path_version}\n  配置: {configured_adb} → {configured_version}",
+        fix="统一使用同一份 adb（建议保留较新版本并让配置指向它），避免 adb server 反复重启")]
 
 
 # ── 私有数据仓 ────────────────────────────────────────────────────────

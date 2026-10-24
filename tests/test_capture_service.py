@@ -510,7 +510,7 @@ def test_capture_screenshot_reuses_and_connects_shared_session() -> None:
         def __init__(self) -> None:
             self.connect_calls = 0
 
-        def connect(self):
+        def connect(self, *, validate_capture: bool = False):
             self.connect_calls += 1
             self.connected = True
             return True, "连接成功"
@@ -537,7 +537,7 @@ def test_capture_screenshot_connect_failure_keeps_message_format() -> None:
         connected = False
         device_serial = ""
 
-        def connect(self):
+        def connect(self, *, validate_capture: bool = False):
             return False, "超时"
 
     service = CaptureService()
@@ -577,7 +577,7 @@ def test_poll_capture_connect_updates_connection_state() -> None:
         connected = False
         device_serial = "127.0.0.1:16448"
 
-        def connect(self):
+        def connect(self, *, validate_capture: bool = False):
             self.connected = True
             return True, "连接成功"
 
@@ -610,7 +610,7 @@ def test_poll_capture_rejects_stale_capture_after_reconnect(monkeypatch) -> None
         def __init__(self) -> None:
             self.screencap_calls = 0
 
-        def connect(self):
+        def connect(self, *, validate_capture: bool = False):
             self.connected = True
             return True, "连接成功"
 

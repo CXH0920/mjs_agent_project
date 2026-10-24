@@ -140,7 +140,7 @@ class MumuConfigDialog(QDialog):
 
     def _load_config(self) -> None:
         """从配置加载当前值"""
-        should_auto_detect = not self._config.get("mumu_adb_path", "")
+        should_auto_detect = not (self._config.get("emulator_adb_path") or self._config.get("mumu_adb_path", ""))
 
         self._device_page.load_config(self._config)
         self._recognition_page.load_config(self._config)
@@ -200,7 +200,7 @@ class MumuConfigDialog(QDialog):
         self._footer.set_busy(True, "正在保存...")
         try:
             raw_path, device, selected_explicitly = self._device_page.collect_device_draft()
-            form_values = {"mumu_adb_path": raw_path}
+            form_values = {"emulator_adb_path": raw_path}
             form_values.update(self._recognition_page.collect_parameters())
             _, error = self._coordinator.save_config(form_values, device, selected_explicitly)
             if error:

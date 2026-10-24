@@ -42,6 +42,10 @@ _SENTINELS: dict[str, tuple[str, str, object]] = {
     "LOG_LEVEL": ("DEBUG", "log_level", "DEBUG"),
     "LOG_TO_FILE": ("yes", "log_to_file", True),
     "MJS_DATA_REPO": ("G:/mjs_data_private", "mjs_data_repo", "G:/mjs_data_private"),
+    "EMULATOR_TYPE": ("ldplayer", "emulator_type", "ldplayer"),
+    "EMULATOR_ADB_PATH": ("G:/adb.exe", "emulator_adb_path", "G:/adb.exe"),
+    "EMULATOR_ADB_PORT": ("5555", "emulator_adb_port", 5555),
+    "EMULATOR_SCREENSHOT_MODE": ("png", "emulator_screenshot_mode", "png"),
     "MUMU_ADB_PATH": ("G:/adb.exe", "mumu_adb_path", "G:/adb.exe"),
     "MUMU_ADB_PORT": ("16384", "mumu_adb_port", 16384),
     "MUMU_OCR_ENABLED": ("true", "mumu_ocr_enabled", True),
@@ -97,6 +101,10 @@ def test_mumu_config_defaults_snapshot(monkeypatch, tmp_path) -> None:
     """get_mumu_config 输出 schema 与默认值快照（键集缺一不可）。"""
     _use_absent_env_file(monkeypatch, tmp_path)
     assert env.get_mumu_config() == {
+        "emulator_type": "mumu",
+        "emulator_adb_path": "",
+        "emulator_adb_port": 0,
+        "emulator_screenshot_mode": "auto",
         "mumu_adb_path": "",
         "mumu_adb_port": 0,
         "mumu_screenshot_mode": "auto",
@@ -113,6 +121,31 @@ def test_mumu_config_defaults_snapshot(monkeypatch, tmp_path) -> None:
         "mumu_ocr_cpu_threads": 6,
         "mumu_ocr_recheck_enabled": False,
     }
+
+
+def test_emulator_connection_keys_fall_back_to_legacy_mumu_keys(monkeypatch, tmp_path) -> None:
+    """老 config.env 只写 MUMU_ADB_*：EMULATOR_* 三连接键经 default_from
+    回退读旧键实配值，升级当天行为不变（多品牌连接 2026-10）。"""
+    _use_env_file(
+        monkeypatch, tmp_path,
+        "MUMU_ADB_PATH=G:/mumu/adb.exe\nMUMU_ADB_PORT=16448\nMUMU_SCREENSHOT_MODE=raw\n",
+    )
+    config = env.get_mumu_config()
+    assert config["emulator_adb_path"] == "G:/mumu/adb.exe"
+    assert config["emulator_adb_port"] == 16448
+    assert config["emulator_screenshot_mode"] == "raw"
+    assert config["emulator_type"] == "mumu"
+
+
+def test_emulator_keys_take_precedence_over_legacy(monkeypatch, tmp_path) -> None:
+    """新键一旦写入即优先生效，旧 MUMU_ADB_* 残行为惰性数据。"""
+    _use_env_file(
+        monkeypatch, tmp_path,
+        "MUMU_ADB_PORT=16448\nEMULATOR_TYPE=ldplayer\nEMULATOR_ADB_PORT=5555\n",
+    )
+    config = env.get_mumu_config()
+    assert config["emulator_type"] == "ldplayer"
+    assert config["emulator_adb_port"] == 5555
 
 
 def test_hero_selection_threshold_cascades_from_match_threshold(monkeypatch, tmp_path) -> None:

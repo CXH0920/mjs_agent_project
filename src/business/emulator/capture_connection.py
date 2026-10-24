@@ -20,6 +20,24 @@ from src.capture.adb_screen import AdbCapture
 logger = logging.getLogger(__name__)
 
 
+_LEGACY_KEYS = {
+    "emulator_adb_path": "mumu_adb_path",
+    "emulator_adb_port": "mumu_adb_port",
+    "emulator_screenshot_mode": "mumu_screenshot_mode",
+}
+
+
+def _conn_key(config: dict, key: str, default: object = "") -> object:
+    """连接键读取：emulator_* 新键优先，mumu_* 旧键回退（升级过渡期）。"""
+    value = config.get(key)
+    if value in (None, ""):
+        legacy = _LEGACY_KEYS.get(key)
+        if legacy is not None:
+            return config.get(legacy, default)
+        return default
+    return value
+
+
 class CaptureConnectionManager:
     """ADB 连接会话管理；session_lock/adb_io_lock 只读暴露给宿主的截图域临界区。"""
 
@@ -59,42 +77,45 @@ class CaptureConnectionManager:
             return self._connection_state, self._connection_detail
 
     def update_config(self, config: dict) -> None:
-        """更新配置并重建 AdbCapture（仅路径/端口/截图模式变化时重建）。
+        """更新配置并重建 AdbCapture（仅路径/端口/品牌/截图模式变化时重建）。
 
         重建时如果旧的 AdbCapture 已连通同一设备，保留已有连接状态；
-        配置无变化时不重建实例。
+        配置无变化时不重建实例。读取兼容 mumu_* 旧键（升级过渡期）。
         """
         with self._session_lock:
-            path_changed = config.get("mumu_adb_path") != self._config.get("mumu_adb_path")
-            port_changed = config.get("mumu_adb_port") != self._config.get("mumu_adb_port")
-            mode_changed = config.get("mumu_screenshot_mode") != self._config.get("mumu_screenshot_mode")
+            path_changed = _conn_key(config, "emulator_adb_path") != _conn_key(self._config, "emulator_adb_path")
+            port_changed = _conn_key(config, "emulator_adb_port") != _conn_key(self._config, "emulator_adb_port")
+            mode_changed = _conn_key(config, "emulator_screenshot_mode") != _conn_key(self._config, "emulator_screenshot_mode")
+            type_changed = _conn_key(config, "emulator_type") != _conn_key(self._config, "emulator_type")
 
             self._config = dict(config)
 
-            if not config.get("mumu_adb_path"):
+            adb_path = _conn_key(config, "emulator_adb_path")
+            if not adb_path:
                 self._capture = None
                 self.set_connection_state("unconfigured")
                 return
 
-            if path_changed or port_changed or mode_changed or self._capture is None:
+            if path_changed or port_changed or mode_changed or type_changed or self._capture is None:
                 self._capture = AdbCapture(
-                    adb_path=config["mumu_adb_path"],
-                    adb_port=config.get("mumu_adb_port", 0),
-                    screenshot_mode=config.get("mumu_screenshot_mode", "auto"),
+                    adb_path=adb_path,
+                    adb_port=_conn_key(config, "emulator_adb_port", 0),
+                    screenshot_mode=_conn_key(config, "emulator_screenshot_mode", "auto"),
+                    emulator_type=_conn_key(config, "emulator_type", "mumu"),
                 )
                 self.set_connection_state("disconnected")
                 logger.info("CaptureService 配置已更新，ADB: %s:%s",
-                            config["mumu_adb_path"], config.get("mumu_adb_port", "auto"))
+                            adb_path, _conn_key(config, "emulator_adb_port", "auto"))
             else:
                 logger.debug("CaptureService 配置已更新（仅 OCR 参数）")
 
     def set_target_port(self, port: int) -> None:
         """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
-        if not self._config.get("mumu_adb_path"):
+        if not _conn_key(self._config, "emulator_adb_path"):
             self.set_connection_state("unconfigured")
             return
         config = dict(self._config)
-        config["mumu_adb_port"] = port
+        config["emulator_adb_port"] = port
         self.update_config(config)
 
     @property
@@ -149,21 +170,25 @@ class CaptureConnectionManager:
                 self.set_connection_state("offline", error_detail)
 
     def connect_emulator(self) -> tuple[bool, str]:
-        """连接模拟器。"""
+        """连接模拟器（用户触发路径：连通后截一帧校验成功才算连接成功）。"""
         with self._session_lock:
             capture = self._capture
             if capture is None:
                 self.set_connection_state("unconfigured")
                 return False, "ADB 未配置"
-        return self.connect_capture(capture)
+        return self.connect_capture(capture, validate_capture=True)
 
-    def connect_capture(self, capture: AdbCapture) -> tuple[bool, str]:
-        """连接给定 AdbCapture：阻塞 IO 在 _adb_io_lock 内，状态字段在 _session_lock 内更新。"""
+    def connect_capture(self, capture: AdbCapture, validate_capture: bool = False) -> tuple[bool, str]:
+        """连接给定 AdbCapture：阻塞 IO 在 _adb_io_lock 内，状态字段在 _session_lock 内更新。
+
+        validate_capture 透传给 AdbCapture.connect；自动重连等高频路径保持
+        False，免为每次重连多付一帧截图（后续截图本身就是验证）。
+        """
         with self._session_lock:
             self.set_connection_state("connecting")
         self._on_status("正在连接模拟器...")
         with self._adb_io_lock:
-            ok, message = capture.connect()
+            ok, message = capture.connect(validate_capture=validate_capture)
         with self._session_lock:
             if ok:
                 self.set_connection_state("connected", capture.device_serial)

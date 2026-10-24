@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 from src.business.common.script_runner import ScriptRunner
 from src.business.emulator.layout_resolution import compare_resolution
-from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
+from src.business.emulator.mumu_config_coordinator import EMULATOR_LABELS, MumuConfigCoordinator
 from src.config.env import IS_FROZEN, PROJECT_ROOT, get_mumu_config
 from src.config.onboarding_state import mark_skipped, mark_step
 from src.scripts.doctor import (
@@ -327,7 +327,7 @@ class OnboardingDialog(QDialog):
         self._device_connect_button.setVisible(False)
         self._device_action.setVisible(False)
         self._set_device_status("checking", "正在探测设备…", "")
-        if not coordinator.config.get("mumu_adb_path"):
+        if not (coordinator.config.get("emulator_adb_path") or coordinator.config.get("mumu_adb_path")):
             self._device_summary.setText("未配置 ADB，正在自动探测…")
             coordinator.detect_adb()
             return
@@ -343,7 +343,8 @@ class OnboardingDialog(QDialog):
             self._connect_device(running[0])
             return
         if not running:
-            self._set_device_status("fail", "未探测到运行中的模拟器，请先启动 MuMu 模拟器", "retry")
+            label = EMULATOR_LABELS.get(self._coordinator.emulator_type, "MuMu")
+            self._set_device_status("fail", f"未探测到运行中的模拟器，请先启动 {label} 模拟器", "retry")
             return
         # 多台不擅自选择（协调器 _device_selection_error 硬约束）：下拉 + 占位提示
         self._device_combo.clear()

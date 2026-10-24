@@ -382,3 +382,48 @@ def test_run_checks_default_reads_patched_groups(monkeypatch):
     assert len(findings) == 1
     assert findings[0].group == "守护组"
     assert findings[0].status == doctor.FAIL
+
+
+def test_check_adb_versions_warns_on_mixed_versions(monkeypatch):
+    """PATH adb 与配置 adb 版本不一致时 WARN（混版会反复重启 adb server）。"""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("shutil.which", lambda name: "C:/Tools/adb.exe")
+    versions = {
+        "C:/Tools/adb.exe": "Android Debug Bridge version 1.0.41",
+        "D:/mumu/nx_main/adb.exe": "Android Debug Bridge version 1.0.39",
+    }
+    monkeypatch.setattr(
+        doctor.subprocess, "run",
+        lambda args, **kwargs: SimpleNamespace(stdout=versions[args[0]]),
+    )
+
+    findings = doctor.check_adb_versions("D:/mumu/nx_main/adb.exe")
+
+    assert len(findings) == 1
+    assert findings[0].status == doctor.WARN
+    assert "版本不同" in findings[0].detail
+    assert "统一使用同一份 adb" in findings[0].fix
+
+
+def test_check_adb_versions_passes_when_versions_match(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("shutil.which", lambda name: "C:/Tools/adb.exe")
+    monkeypatch.setattr(
+        doctor.subprocess, "run",
+        lambda args, **kwargs: SimpleNamespace(stdout="Android Debug Bridge version 1.0.41"),
+    )
+
+    findings = doctor.check_adb_versions("D:/mumu/nx_main/adb.exe")
+
+    assert findings[0].status == doctor.PASS
+
+
+def test_check_adb_versions_passes_without_path_adb(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    findings = doctor.check_adb_versions("D:/mumu/nx_main/adb.exe")
+
+    assert findings[0].status == doctor.PASS
+    assert "无混版风险" in findings[0].detail

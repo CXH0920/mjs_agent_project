@@ -42,6 +42,7 @@ class MumuDeviceSection(QFrame):
     test_requested = Signal()
     device_changed = Signal(int)
     device_activated = Signal(int)
+    brand_activated = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -53,10 +54,17 @@ class MumuDeviceSection(QFrame):
 
         title = QLabel("设备与连接")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
-        helper = QLabel("选择正在运行的模拟器实例，并配置用于连接的 ADB。")
+        helper = QLabel("选择模拟器品牌与正在运行的实例，并配置用于连接的 ADB。")
         helper.setStyleSheet("color: #65758b; font-size: 12px;")
         layout.addWidget(title, 0, 0, 1, 4)
         layout.addWidget(helper, 1, 0, 1, 4)
+
+        # 品牌下拉：用户激活（非程序装载）时触发设备列表按新品牌刷新
+        self.brand_combo = QComboBox()
+        self.brand_combo.activated.connect(
+            lambda index: self.brand_activated.emit(self.brand_combo.itemData(index)))
+        layout.addWidget(QLabel("模拟器品牌"), 2, 0)
+        layout.addWidget(self.brand_combo, 2, 1, 1, 3)
 
         self.device_combo = QComboBox()
         self.device_combo.currentIndexChanged.connect(self.device_changed)
@@ -65,9 +73,9 @@ class MumuDeviceSection(QFrame):
         self.refresh_button.setFixedWidth(72)
         self.refresh_button.setStyleSheet(OUTLINE_BUTTON_STYLE)
         self.refresh_button.clicked.connect(self.refresh_requested)
-        layout.addWidget(QLabel("当前设备"), 2, 0)
-        layout.addWidget(self.device_combo, 2, 1, 1, 2)
-        layout.addWidget(self.refresh_button, 2, 3)
+        layout.addWidget(QLabel("当前设备"), 3, 0)
+        layout.addWidget(self.device_combo, 3, 1, 1, 2)
+        layout.addWidget(self.refresh_button, 3, 3)
 
         self.port_label = QLabel("(自动探测)")
         self.port_label.setStyleSheet("color: #4a6a8a;")
@@ -79,12 +87,12 @@ class MumuDeviceSection(QFrame):
         device_meta.addSpacing(16)
         device_meta.addWidget(self.instance_status_label)
         device_meta.addStretch()
-        layout.addLayout(device_meta, 3, 1, 1, 3)
+        layout.addLayout(device_meta, 4, 1, 1, 3)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
         divider.setStyleSheet("color: #dce3ea;")
-        layout.addWidget(divider, 4, 0, 1, 4)
+        layout.addWidget(divider, 5, 0, 1, 4)
 
         self.adb_path_edit = QLineEdit()
         self.adb_path_edit.setReadOnly(True)
@@ -101,10 +109,10 @@ class MumuDeviceSection(QFrame):
         self.detect_button.setFixedWidth(88)
         self.detect_button.setStyleSheet(OUTLINE_BUTTON_STYLE)
         self.detect_button.clicked.connect(self.detect_requested)
-        layout.addWidget(QLabel("ADB 路径"), 5, 0)
-        layout.addWidget(self.adb_path_edit, 5, 1)
-        layout.addWidget(browse_button, 5, 2)
-        layout.addWidget(self.detect_button, 5, 3)
+        layout.addWidget(QLabel("ADB 路径"), 6, 0)
+        layout.addWidget(self.adb_path_edit, 6, 1)
+        layout.addWidget(browse_button, 6, 2)
+        layout.addWidget(self.detect_button, 6, 3)
 
         action_row = QHBoxLayout()
         self.connect_button = QPushButton("连接")
@@ -118,9 +126,9 @@ class MumuDeviceSection(QFrame):
         action_row.addStretch()
         action_row.addWidget(self.connect_button)
         action_row.addWidget(self.test_button)
-        layout.addLayout(action_row, 6, 0, 1, 4)
+        layout.addLayout(action_row, 7, 0, 1, 4)
         layout.setColumnStretch(1, 1)
-        layout.setRowStretch(7, 1)
+        layout.setRowStretch(8, 1)
 
 
 class MumuTemplateSection(QFrame):

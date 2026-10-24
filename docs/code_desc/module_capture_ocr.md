@@ -25,7 +25,7 @@ src/capture/
 ├── __init__.py
 ├── adb_screen.py          # AdbCapture — ADB 连接与截图（含 raw 帧模式、架构防火墙声明）
 ├── image_validation.py    # 不可信图片输入校验（格式、体积、像素）
-├── prober.py              # MuMu 设备自动探测
+├── probers/               # 多品牌设备探测包（MuMu/雷电/夜神/逍遥/蓝叠）
 └── image_utils.py         # 图像工具（PIL ↔ QPixmap / 剪贴板 / 保存）
 
 src/ocr/
@@ -52,10 +52,12 @@ src/ocr/
 ### 3.1 ADB 截图链路
 
 ```
-AdbCapture(adb_path, adb_port=7555)
+AdbCapture(adb_path, adb_port=0, screenshot_mode="auto", emulator_type="mumu")
   ├── _resolve_target() → 精确 ADB 目标
-  │     └── device_serial > 127.0.0.1:port > probe_running_devices() 唯一实例
+  │     └── device_serial > 127.0.0.1:port > probe_running_devices(emulator_type) 唯一实例
   ├── connect() → adb connect <target> → adb -s <target> get-state == "device"
+  │     （validate_capture=True 时连通后截帧校验，失败回滚；5555 端口未注册时
+  │      双查 emulator-<端口-1> 序列号归并，雷电 adb 主动扫描区形态）
   ├── check_device() → 复用连接时确认目标设备仍在线，失效即清除会话缓存
   ├── disconnect() → adb disconnect
   ├── screencap_full(log_success=True) → adb exec-out screencap -p → PIL Image（最多 3 次尝试）
@@ -380,10 +382,15 @@ split_stitched_image(image, key) → 20261022 拼接长图切分为虚拟分页
 
 ## 四、关键代码片段
 
-### 4.1 设备探测（prober.py）
+### 4.1 设备探测（probers/ 包，多品牌 2026-10）
+
+统一入口 `probe_adb(emulator_type)`：PATH 优先，其次所选品牌安装目录自带 adb；
+`probe_all_devices_with_status(emulator_type)` 按注册表分发到品牌模块
+（MuMu 为 `probers/mumu.py`，下示其原 PATH/候选路径逻辑，另四家见
+`ldplayer/nox/memu/bluestacks.py`，console 失败时端口段兜底 `port_scan.py`）。
 
 ```python
-def probe_mumu_adb() -> str:
+def find_adb() -> str:
     # 1. 先查系统 PATH
     if shutil.which("adb"):
         return shutil.which("adb")
@@ -400,7 +407,7 @@ def probe_mumu_adb() -> str:
 
 > **设计思路：** 三个优先级覆盖了大多数场景：系统 PATH 最快，注册表/环境变量次之，常见安装路径兜底。函数式设计无内部状态，可被多处调用而不互相影响。注册表同时读取 `SOFTWARE\Netease\MuMuPlayer12` 与 `SOFTWARE\WOW6432Node\Netease\MuMuPlayer12`（兼容 64 位进程读 32 位安装）。
 
-`probe_all_devices_with_status()` 是配置页使用的状态化版本：它执行 `MuMuManager.exe info --vmindex all` 并解析 JSON，在 `MuMuManager.exe` 非零退出、JSON 解析失败或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。`probe_running_devices()` 在此基础上只保留 `is_running` 且 `adb_port > 0` 的实例，供 `AdbCapture.connect()` 在无显式目标时自动选定唯一实例。
+`mumu.probe_devices()`（配置页经统一入口 `probe_all_devices_with_status(emulator_type)` 调用）：它执行 `MuMuManager.exe info --vmindex all` 并解析 JSON，在 `MuMuManager.exe` 非零退出、JSON 解析失败或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。`probe_running_devices()` 在此基础上只保留 `is_running` 且 `adb_port > 0` 的实例，供 `AdbCapture.connect()` 在无显式目标时自动选定唯一实例（按 `emulator_type` 探测）。
 
 ### 4.2 图像预处理流水线
 
@@ -434,7 +441,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 
 | 类/函数 | 说明 |
 |---------|------|
-| `AdbCapture(adb_path, adb_port=7555, screenshot_mode="auto")` | 构造 ADB 截图器（`screenshot_mode`: auto/raw/png） |
+| `AdbCapture(adb_path, adb_port=0, screenshot_mode="auto", emulator_type="mumu")` | 构造 ADB 截图器（`adb_port=0` 自动探测唯一实例；`screenshot_mode`: auto/raw/png） |
 | `AdbCapture.connect()` → `(bool, str)` | 连接模拟器，并校验目标设备状态为 `device` |
 | `AdbCapture.check_device()` → `(bool, str)` | 复用连接前确认目标设备仍在线 |
 | `AdbCapture.disconnect()` → `(bool, str)` | 断开模拟器 |

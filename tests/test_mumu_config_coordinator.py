@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator, persist_mumu_env_config
-from src.capture.prober import MuMuDeviceInfo
+from src.capture.probers import EmulatorDeviceInfo
 from src.ocr.roi_config import DEFAULT_ROI_CONFIG_PATH, OcrRoiConfig
 
 
@@ -74,10 +74,10 @@ class _OperationService(QObject):
         self.test_requests: list[tuple[str, int]] = []
         self.closed = False
 
-    def detect_adb(self) -> None:
+    def detect_adb(self, emulator_type: str = "mumu") -> None:
         pass
 
-    def refresh_devices(self) -> None:
+    def refresh_devices(self, emulator_type: str = "mumu") -> None:
         self.refresh_count += 1
 
     def connect(self) -> None:
@@ -101,7 +101,7 @@ def _coordinator(tmp_path: Path) -> tuple[MumuConfigCoordinator, _CaptureService
     ocr = _OcrService(tmp_path)
     operation = _OperationService()
     coordinator = MumuConfigCoordinator(
-        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0},
+        {"emulator_adb_path": "adb.exe", "emulator_adb_port": 0},
         capture,
         ocr,
         operation,
@@ -112,15 +112,15 @@ def _coordinator(tmp_path: Path) -> tuple[MumuConfigCoordinator, _CaptureService
 def test_connect_and_save_require_explicit_multi_instance_selection(tmp_path: Path) -> None:
     coordinator, capture, _ocr, operation = _coordinator(tmp_path)
     devices = [
-        MuMuDeviceInfo("1", "实例 A", 16448, True),
-        MuMuDeviceInfo("2", "实例 B", 16416, True),
+        EmulatorDeviceInfo("1", "实例 A", 16448, True),
+        EmulatorDeviceInfo("2", "实例 B", 16416, True),
     ]
     operation.devices_refreshed.emit(devices)
 
-    assert "多个运行中的 MuMu 实例" in coordinator.connect(None, False)
+    assert "多个运行中的模拟器实例" in coordinator.connect(None, False)
     config, error = coordinator.save_config({}, None, False)
     assert config is None
-    assert "多个运行中的 MuMu 实例" in error
+    assert "多个运行中的模拟器实例" in error
 
     assert coordinator.connect(devices[1], True) == ""
     config, error = coordinator.save_config({}, devices[1], True)
@@ -128,7 +128,7 @@ def test_connect_and_save_require_explicit_multi_instance_selection(tmp_path: Pa
     assert error == ""
     assert capture.target_ports == [16416]
     assert operation.connect_count == 1
-    assert config["mumu_adb_port"] == 16416
+    assert config["emulator_adb_port"] == 16416
 
 
 def test_save_config_port_merge_rules(tmp_path: Path) -> None:
@@ -140,22 +140,22 @@ def test_save_config_port_merge_rules(tmp_path: Path) -> None:
     属有意设计而非缺陷（考古见 7e88f63 提交说明"保存规则"）。
     """
     coordinator, _capture, _ocr, _operation = _coordinator(tmp_path)
-    device = MuMuDeviceInfo("2", "实例 B", 16416, True)
+    device = EmulatorDeviceInfo("2", "实例 B", 16416, True)
 
     # ① 显式选择：端口取所选设备
-    config, error = coordinator.save_config({"mumu_adb_path": "adb.exe"}, device, True)
+    config, error = coordinator.save_config({"emulator_adb_path": "adb.exe"}, device, True)
     assert error == ""
-    assert config["mumu_adb_port"] == 16416
+    assert config["emulator_adb_port"] == 16416
 
     # ② 自动模式（端口 0）：保持自动探测，不被传入设备覆盖
-    coordinator._config["mumu_adb_port"] = 0
-    config, _error = coordinator.save_config({"mumu_adb_path": "adb.exe"}, device, False)
-    assert config["mumu_adb_port"] == 0
+    coordinator._config["emulator_adb_port"] = 0
+    config, _error = coordinator.save_config({"emulator_adb_path": "adb.exe"}, device, False)
+    assert config["emulator_adb_port"] == 0
 
     # ③ 固定端口 + 未显式选择：跟随现存设备端口
-    coordinator._config["mumu_adb_port"] = 16384
-    config, _error = coordinator.save_config({"mumu_adb_path": "adb.exe"}, device, False)
-    assert config["mumu_adb_port"] == 16416
+    coordinator._config["emulator_adb_port"] = 16384
+    config, _error = coordinator.save_config({"emulator_adb_path": "adb.exe"}, device, False)
+    assert config["emulator_adb_port"] == 16416
 
 
 def test_template_lifecycle_and_service_delegation(tmp_path: Path) -> None:
@@ -185,7 +185,7 @@ def test_roi_layout_capture_and_save_are_separate_from_template_lifecycle(tmp_pa
     operation = _OperationService()
     roi_config = OcrRoiConfig(DEFAULT_ROI_CONFIG_PATH, tmp_path / "ocr_rois.json")
     coordinator = MumuConfigCoordinator(
-        {"mumu_adb_path": "adb.exe", "mumu_adb_port": 0},
+        {"emulator_adb_path": "adb.exe", "emulator_adb_port": 0},
         capture,
         ocr,
         operation,
@@ -228,8 +228,12 @@ def test_shutdown_disconnects_connection_state_relay(tmp_path: Path) -> None:
     assert relayed == [("connected", "127.0.0.1:16448")]
 
 
-def test_persist_mumu_env_config_writes_eleven_dialog_keys(monkeypatch) -> None:
-    """env 持久化固定写对话框可编辑的 11 键，部署键（GPU/线程/复检）不落盘。"""
+def test_persist_mumu_env_config_writes_twelve_dialog_keys(monkeypatch) -> None:
+    """env 持久化固定写对话框可编辑的 12 键（3 连接键 + 9 OCR 键），部署键不落盘。
+
+    连接键自 2026-10 起写 EMULATOR_*（含品牌 EMULATOR_TYPE）；旧
+    MUMU_ADB_* 不再镜像写入，残留行为惰性数据（读取经 default_from 回退）。
+    """
     recorded: list[tuple[object, dict]] = []
     monkeypatch.setattr(
         "src.business.emulator.mumu_config_coordinator.save_env_file",
@@ -237,8 +241,9 @@ def test_persist_mumu_env_config_writes_eleven_dialog_keys(monkeypatch) -> None:
     )
 
     persist_mumu_env_config({
-        "mumu_adb_path": "adb.exe",
-        "mumu_adb_port": 16384,
+        "emulator_type": "ldplayer",
+        "emulator_adb_path": "adb.exe",
+        "emulator_adb_port": 16384,
         "mumu_ocr_enabled": True,
         "mumu_ocr_poll_mode": False,
         "mumu_ocr_poll_idle_pause": True,
@@ -256,8 +261,9 @@ def test_persist_mumu_env_config_writes_eleven_dialog_keys(monkeypatch) -> None:
     assert len(recorded) == 1
     path, data = recorded[0]
     assert data == {
-        "MUMU_ADB_PATH": "adb.exe",
-        "MUMU_ADB_PORT": "16384",
+        "EMULATOR_TYPE": "ldplayer",
+        "EMULATOR_ADB_PATH": "adb.exe",
+        "EMULATOR_ADB_PORT": "16384",
         "MUMU_OCR_ENABLED": "true",
         "MUMU_OCR_POLL_MODE": "false",
         "MUMU_OCR_POLL_IDLE_PAUSE": "true",

@@ -15,8 +15,10 @@ import logging
 from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout, QWidget
 from src.business.emulator.mumu_config_coordinator import (
+    EMULATOR_LABELS,
+    EMULATOR_TYPES,
+    EmulatorDeviceInfo,
     MumuConfigCoordinator,
-    MuMuDeviceInfo,
 )
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection
 from src.ui.shared.widgets import show_toast
@@ -46,6 +48,7 @@ class MumuDevicePage(QWidget):
         self.section.test_requested.connect(self._on_test_selected_device)
         self.section.device_changed.connect(self._on_device_changed)
         self.section.device_activated.connect(self._on_device_activated)
+        self.section.brand_activated.connect(self._on_brand_activated)
 
         coordinator.adb_detected.connect(self._on_adb_detected)
         coordinator.devices_changed.connect(self._on_devices_refreshed)
@@ -88,19 +91,41 @@ class MumuDevicePage(QWidget):
     def test_button(self):
         return self.section.test_button
 
+    @property
+    def brand_combo(self):
+        return self.section.brand_combo
+
     # ────────────────────────────────────────────────
     # 配置装载 / 状态渲染 / 草稿收集（对话框编排入口）
     # ────────────────────────────────────────────────
 
     def load_config(self, config: dict) -> None:
         """从配置加载 ADB 路径与端口显示。"""
-        adb_path = config.get("mumu_adb_path", "")
+        adb_path = config.get("emulator_adb_path") or config.get("mumu_adb_path", "")
         self.adb_path_edit.setText(adb_path or "(未设置，点击「自动探测」)")
         self.adb_path_edit.setProperty("raw_path", adb_path)
         self.adb_path_edit.setToolTip(adb_path)
 
-        adb_port = config.get("mumu_adb_port", 0)
+        adb_port = config.get("emulator_adb_port")
+        if adb_port is None:
+            adb_port = config.get("mumu_adb_port", 0)
         self.port_label.setText(str(adb_port) if adb_port else "(自动探测)")
+
+        # 品牌下拉装载（QSignalBlocker 防程序装载触发 activated/currentIndexChanged）
+        with QSignalBlocker(self.brand_combo):
+            self.brand_combo.clear()
+            for emulator_type in EMULATOR_TYPES:
+                self.brand_combo.addItem(EMULATOR_LABELS[emulator_type], userData=emulator_type)
+            current = config.get("emulator_type", "mumu")
+            index = self.brand_combo.findData(current)
+            self.brand_combo.setCurrentIndex(index if index >= 0 else 0)
+
+    def _on_brand_activated(self, emulator_type: str) -> None:
+        """用户切换品牌：更新草稿并按新品牌重新探测设备列表。"""
+        if not emulator_type or emulator_type == self._coordinator.emulator_type:
+            return
+        self._coordinator.update_emulator_type(emulator_type)
+        self._on_refresh_devices()
 
     def sync_capture_config(self) -> None:
         """将当前编辑中的 ADB 配置同步到共享截图服务。"""
@@ -120,7 +145,7 @@ class MumuDevicePage(QWidget):
         self.connect_button.setEnabled(state != "connecting")
         self.test_button.setEnabled(self.device_combo.currentData() is not None)
 
-    def collect_device_draft(self) -> tuple[str, MuMuDeviceInfo | None, bool]:
+    def collect_device_draft(self) -> tuple[str, EmulatorDeviceInfo | None, bool]:
         """收集保存所需的设备侧草稿：(raw_path, device, selected_explicitly)。"""
         raw_path = self.adb_path_edit.property("raw_path") or ""
         return raw_path, self.device_combo.currentData(), self._device_selected_explicitly
@@ -191,11 +216,11 @@ class MumuDevicePage(QWidget):
         self.refresh_button.setText("刷新中...")
         self._coordinator.refresh_devices()
 
-    def _on_devices_refreshed(self, devices: list[MuMuDeviceInfo]) -> None:
+    def _on_devices_refreshed(self, devices: list[EmulatorDeviceInfo]) -> None:
         """展示后台探测到的设备，并避免在多实例时擅自选择目标。"""
         self.refresh_button.setEnabled(True)
         self.refresh_button.setText("刷新")
-        configured_port = self._coordinator.config.get("mumu_adb_port", 0)
+        configured_port = self._coordinator.config.get("emulator_adb_port", 0)
         devices = self._coordinator.devices
         running_devices = [device for device in devices if device.is_running and device.adb_port]
         self._device_selected_explicitly = False

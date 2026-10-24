@@ -233,16 +233,17 @@ class _FakeCoordinator(QObject):
                  operation_service=None, parent=None, roi_config=None, **kwargs):
         super().__init__(parent)
         self.config = dict(config or {})
+        self.emulator_type = "mumu"
         self.calls: list = []
 
     def update_adb_path(self, path: str) -> None:
         self.config["mumu_adb_path"] = path
         self.calls.append(("update_adb_path", path))
 
-    def detect_adb(self) -> None:
+    def detect_adb(self, emulator_type: str = "mumu") -> None:
         self.calls.append(("detect_adb",))
 
-    def refresh_devices(self) -> None:
+    def refresh_devices(self, emulator_type: str = "mumu") -> None:
         self.calls.append(("refresh_devices",))
 
     def connect(self, device, selected_explicitly: bool) -> str:
@@ -384,7 +385,7 @@ def test_device_zero_running_shows_retry(wizard):
     coordinator = d._ensure_coordinator()
     coordinator.devices_changed.emit(())
     assert d._device_badge.text() == "未通过"
-    assert "请先启动 MuMu 模拟器" in d._device_summary.text()
+    assert "请先启动 MuMu 12 模拟器" in d._device_summary.text()
     assert d._device_action.text() == "重试"
     assert not d._device_action.isHidden()
 
