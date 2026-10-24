@@ -268,7 +268,7 @@ OCR 引擎 → 文字 + 置信度
 
 名称 ROI 内的卡框和底部定位字会污染像素行分割，边缘槽位也不稳定，因此当前不把视觉字符数作为硬门禁。势力关联可在后续作为附加证据，但只能过滤当前候选白名单，不能引入白名单外名称；本次未接入该逻辑。
 
-官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 OCR 引擎。`src.ocr.official_board_parser` 提供旧版长图、新版分页版式识别、20261022 拼接长图切分（`split_stitched_image`）、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格逐格识别，负责识别编排、面板守卫与正式写入门禁；罕见字兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`——B1 起 `main` 与识别管线同源（`get_primary_ocr_engine()`，v6），`rare_char` 只取复核引擎（v4）在 `allowed_names` 候选闭包内复核，**chinese_cht 繁体引擎兜底链整体退役**（开关关闭或引擎不可用 → `rare_char_failed=True` 保留原结果走待复核，不再加载第二识别引擎）；整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
+官方榜单导入不使用页面模板匹配或 `GeneralRecognizer` 的页面识别流程，但会以一个 `OfficialImportTask` 进入通用 `OcrWorker` 队列，并复用 worker 持有的 OCR 引擎。`src.ocr.official_board_parser` 提供旧版长图、新版分页版式识别、20261022 拼接长图切分（`split_stitched_image`）、面板切分、数据行恢复、单元格切分和胜率数字模板算法。`src.business.recognition.official_data_import_service` 在固定版式下对单元格逐格识别（引擎注入时数字/名称格先走 2× 单候选快通道，质量门未过的困难格回退 4× 双候选），负责识别编排、面板守卫与正式写入门禁；罕见字兜底的引擎策略在 `official_ocr_engines.OfficialOcrEngines`——B1 起 `main` 与识别管线同源（`get_primary_ocr_engine()`，v6），`rare_char` 只取复核引擎（v4）在 `allowed_names` 候选闭包内复核，**chinese_cht 繁体引擎兜底链整体退役**（开关关闭或引擎不可用 → `rare_char_failed=True` 保留原结果走待复核，不再加载第二识别引擎）；整榜唯一性补全与名称纠错规则在 `name_resolution.HeroNameResolver`；常规页面识别不复用整榜缺失集合。两条链路共享 OCR 串行资源，但候选规则暂不抽取为公共解析器。
 
 ### 3.7 候选内单字字形评分
 

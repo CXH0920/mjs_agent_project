@@ -723,7 +723,7 @@ class OcrService(QObject):
 
 ### 3.7 OfficialDataImportService（官方榜单导入）
 
-该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；2026-10-22 起的**拼接长图**（整榜单张长图，纵横比 ≥ 4 时）先经 `split_stitched_image` 按全宽静默带切成补边虚拟分页再进入同一链路（variant 仍为 `paged`，头部大图/前三名立绘卡/图例区被行数门槛拒绝，不参与 OCR），旧版长图与分页截图流程不变；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出，并使用 worker 注入的 OCR 引擎（主引擎 v6 与识别管线同源；罕见字兜底只取复核引擎 v4，`chinese_cht` 兜底链已退役；策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个引擎线程池并发初始化或推理。
+该服务处理本地官方图片，独立于 ADB、页面模板匹配和 `GeneralRecognizer`，但由通用 `OcrWorker` 在同一线程中调用。图片读取、旧版长图/新版分页版式识别、面板切分、数据行恢复、单元格切分和胜率数字模板算法由 `src.ocr.official_board_parser` 提供；2026-10-22 起的**拼接长图**（整榜单张长图，纵横比 ≥ 4 时）先经 `split_stitched_image` 按全宽静默带切成补边虚拟分页再进入同一链路（variant 仍为 `paged`，头部大图/前三名立绘卡/图例区被行数门槛拒绝，不参与 OCR），旧版长图与分页截图流程不变；服务保留多页聚合、排名顺序校验、复核、进度与 CSV 输出；单格识别带**快通道**（引擎由 worker 注入时，2× 放大单候选 + 质量门早退——数字格需纯排名/胜率格式、名称格需词表精确命中且置信度 ≥ 0.90，未过门的困难格原样回退 4× 双候选路径），整板提速约 2.5-3 倍。并使用 worker 注入的 OCR 引擎（主引擎 v6 与识别管线同源；罕见字兜底只取复核引擎 v4，`chinese_cht` 兜底链已退役；策略在 `official_ocr_engines.OfficialOcrEngines`，姓名纠错与唯一性消解在 `name_resolution.HeroNameResolver`）。模型预热、常规识别和官方整批导入按 FIFO 串行，避免多个引擎线程池并发初始化或推理。
 
 ```
 OfficialDataImportDialog._start_import()

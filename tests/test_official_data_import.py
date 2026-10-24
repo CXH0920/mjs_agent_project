@@ -207,6 +207,79 @@ def test_split_stitched_image_returns_empty_for_single_paged_page() -> None:
     assert official_board_parser.split_stitched_image(_build_single_paged_page(), "2v2") == []
 
 
+# ---------------------------------------------------------------
+# 单格识别快通道（2x 单候选，命中即免 4x 双候选）
+# ---------------------------------------------------------------
+
+def _fake_ocr_engine(lines):
+    """按 rapidocr 完整流程结构（[box, (text, conf)]）吐出指定行的假引擎。"""
+    box = [[0, 0], [1, 0], [1, 1], [0, 1]]
+
+    class _Engine:
+        def ocr(self, _image, cls=False):
+            return [[[box, (text, confidence)] for text, confidence in lines]]
+
+    return _Engine()
+
+
+def test_fast_path_accepts_numeric_cells_without_full_candidates(monkeypatch) -> None:
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    for text in ("7", "191", "71.24%", "100.00%"):
+        service = OfficialDataImportService(
+            hero_names=["曹仁"], ocr_engine=_fake_ocr_engine([(text, 0.99)]),
+        )
+        monkeypatch.setattr(
+            service, "_recognize_cell_candidates",
+            lambda *_args, **_kwargs: pytest.fail("快通道命中时不应回退双候选"),
+        )
+
+        assert service._recognize_cell(cell) == (text, 0.99)
+
+
+def test_fast_path_numeric_falls_back_on_non_numeric_or_low_confidence(monkeypatch) -> None:
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    for fast_lines in ([("7.", 0.99)], [("7", 0.85)], [("甲", 0.99)], [("7", 0.91), ("8", 0.90)]):
+        service = OfficialDataImportService(
+            hero_names=["曹仁"], ocr_engine=_fake_ocr_engine(fast_lines),
+        )
+        monkeypatch.setattr(service, "_recognize_cell_candidates", lambda *_args: [("7", 0.95)])
+
+        assert service._recognize_cell(cell) == ("7", 0.95)
+
+
+def test_fast_path_accepts_wordlist_exact_name(monkeypatch) -> None:
+    service = OfficialDataImportService(
+        hero_names=["曹仁", "曹丕"], ocr_engine=_fake_ocr_engine([("曹仁", 0.97)]),
+    )
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(
+        service, "_recognize_cell_candidates",
+        lambda *_args, **_kwargs: pytest.fail("快通道命中时不应回退双候选"),
+    )
+
+    assert service._recognize_name_cell(cell) == ("曹仁", 0.97)
+
+
+def test_fast_path_name_falls_back_when_not_in_wordlist(monkeypatch) -> None:
+    service = OfficialDataImportService(
+        hero_names=["曹仁"], ocr_engine=_fake_ocr_engine([("新武将", 0.99)]),
+    )
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+    monkeypatch.setattr(service, "_recognize_cell_candidates", lambda *_args: [("曹仁", 0.90)])
+
+    assert service._recognize_name_cell(cell) == ("曹仁", 0.90)
+
+
+def test_fast_path_skipped_without_injected_engine(monkeypatch) -> None:
+    # 单测/懒加载场景未注入引擎原始值，快通道不启用，行为与既有路径一致
+    service = OfficialDataImportService(hero_names=["曹仁"])
+    cell = np.zeros((20, 100, 3), dtype=np.uint8)
+
+    assert service._fast_path_cell(cell) == []
+    monkeypatch.setattr(service, "_recognize_cell_candidates", lambda *_args: [("7", 0.90)])
+    assert service._recognize_cell(cell) == ("7", 0.90)
+
+
 def test_missing_rank_ocr_uses_table_row_rank_without_review() -> None:
     service = OfficialDataImportService(hero_names=["曹仁"])
     reasons = service._review_reasons(
@@ -1008,7 +1081,7 @@ def test_detect_layout_accepts_exile_short_right_panel(monkeypatch) -> None:
     image = np.zeros((2657, 1080, 3), dtype=np.uint8)
     panel = np.zeros((100, 100, 3), dtype=np.uint8)
     monkeypatch.setattr(
-        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+        official_board_parser, "extract_panels", lambda *_args: [(0, 0, panel), (100, 0, panel)],
     )
 
     def fake_boundaries(_panel, _image_height, _layout, panel_index):
@@ -1026,7 +1099,7 @@ def test_detect_layout_rejects_2v2_uneven_panels(monkeypatch) -> None:
     image = np.zeros((2657, 1080, 3), dtype=np.uint8)
     panel = np.zeros((100, 100, 3), dtype=np.uint8)
     monkeypatch.setattr(
-        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+        official_board_parser, "extract_panels", lambda *_args: [(0, 0, panel), (100, 0, panel)],
     )
 
     def fake_boundaries(_panel, _image_height, _layout, panel_index):
@@ -1043,7 +1116,7 @@ def test_detect_layout_rejects_exile_right_heavier_panel(monkeypatch) -> None:
     image = np.zeros((2657, 1080, 3), dtype=np.uint8)
     panel = np.zeros((100, 100, 3), dtype=np.uint8)
     monkeypatch.setattr(
-        official_board_parser, "extract_panels", lambda *_: [(0, 0, panel), (100, 0, panel)],
+        official_board_parser, "extract_panels", lambda *_args: [(0, 0, panel), (100, 0, panel)],
     )
 
     def fake_boundaries(_panel, _image_height, _layout, panel_index):

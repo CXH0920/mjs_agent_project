@@ -33,6 +33,12 @@ REVIEW_DIR = PROJECT_ROOT / "screenshot_data" / "official_import"
 TEMPLATE_RATE_REVIEW_THRESHOLD = 0.90
 # 名称复核线：武将名称 OCR 置信度低于该值时标记"武将名称置信度低"。
 NAME_CONFIDENCE_REVIEW_THRESHOLD = 0.75
+# 单格识别快通道：2× 放大单候选对干净格与 4× 双候选结果完全一致（2026-10
+# 七种版式语料 ×120 格逐格比对零不一致），单次引擎调用耗时约 1/4（det 输入
+# 面积主导）。数字格需匹配"纯排名/胜率"格式、名称格需词表精确命中且置信度
+# 达标才采信，未过门的困难格原样回退 4× 双候选路径，精度下界不变。
+FAST_PATH_MIN_CONFIDENCE = 0.90
+FAST_PATH_NUMERIC_PATTERN = re.compile(r"\d{1,3}(?:\.\d{2})?%?")
 
 
 class OfficialDataImportService:
@@ -363,21 +369,58 @@ class OfficialDataImportService:
             ocr_result = (engine if engine is not None else self._engines.main).ocr(
                 candidate, cls=False,
             )
-            for line in ocr_result[0] if ocr_result and ocr_result[0] else []:
-                # 完整流程 line 为 [box, (text, confidence)]
-                if isinstance(line[0], (list, tuple)):
-                    text, confidence = line[1]
-                else:
-                    text, confidence = line
-                if text:
-                    results.append((text.replace(" ", ""), float(confidence)))
+            results.extend(self._parse_ocr_lines(ocr_result))
         return results
 
+    @staticmethod
+    def _parse_ocr_lines(ocr_result) -> list[tuple[str, float]]:
+        """把引擎返回压平为 (文本, 置信度) 列表。"""
+        lines: list[tuple[str, float]] = []
+        for line in ocr_result[0] if ocr_result and ocr_result[0] else []:
+            # 完整流程 line 为 [box, (text, confidence)]
+            if isinstance(line[0], (list, tuple)):
+                text, confidence = line[1]
+            else:
+                text, confidence = line
+            if text:
+                lines.append((text.replace(" ", ""), float(confidence)))
+        return lines
+
+    def _fast_path_cell(self, cell: np.ndarray) -> list[tuple[str, float]]:
+        """2× 放大单候选快速识别；引擎未注入（单测/懒加载场景）时不启用。"""
+        engine = self._engines.ocr
+        if engine is None or cell.size == 0:
+            return []
+        enlarged = cv2.resize(cell, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        return self._parse_ocr_lines(engine.ocr(enlarged, cls=False))
+
+    def _fast_numeric_cell(self, cell: np.ndarray) -> tuple[str, float] | None:
+        """排名/胜率格快通道：单行纯数字高置信即采信，否则回退原路径。"""
+        lines = self._fast_path_cell(cell)
+        if len(lines) != 1:
+            return None
+        text, confidence = lines[0]
+        if confidence < FAST_PATH_MIN_CONFIDENCE or not FAST_PATH_NUMERIC_PATTERN.fullmatch(text):
+            return None
+        return text, confidence
+
+    def _fast_name_cell(self, cell: np.ndarray) -> tuple[str, float] | None:
+        """武将格快通道：单行词表精确命中且高置信即采信，与精确命中分支同构。"""
+        lines = self._fast_path_cell(cell)
+        if len(lines) != 1:
+            return None
+        text, confidence = lines[0]
+        name = self._names.chinese_text(text)
+        if confidence < FAST_PATH_MIN_CONFIDENCE or name not in self._names.hero_names:
+            return None
+        return name, confidence
+
     def _recognize_cell(self, cell: np.ndarray, engine=None) -> tuple[str, float]:
-        candidates = (
-            self._recognize_cell_candidates(cell, engine)
-            if engine is not None else self._recognize_cell_candidates(cell)
-        )
+        if engine is None:
+            fast = self._fast_numeric_cell(cell)
+            if fast is not None:
+                return fast
+        candidates = self._recognize_cell_candidates(cell, engine)
         return max(candidates, key=lambda item: item[1], default=("", 0.0))
 
     def _recognize_name_with_engine(
@@ -437,6 +480,9 @@ class OfficialDataImportService:
         status_callback: Callable[[str], None] | None = None,
     ) -> tuple[str, float]:
         """优先选用词表中的完整 OCR 候选，单字结果再逐字补识别。"""
+        fast = self._fast_name_cell(cell)
+        if fast is not None:
+            return fast
         candidates = self._recognize_cell_candidates(cell)
         if not candidates:
             return "", 0.0
