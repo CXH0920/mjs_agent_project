@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 
 EMPTY_DIFF = {"added": [], "modified": [], "removed": []}
 
-# 两次官网访问（公告检查 / 更新候选准备均全量拉百科）的最小间隔（秒），
+# 官网访问冷却窗口长度（秒）：公告检查与更新候选准备各持独立窗口——
+# 公告检查后首次获取武将变更不受牵连，各自连续触发才限频，
 # 避免短时间密集请求触发官网风控。与卡牌检查共用同一默认值（TD-A2-001）
 CHECK_COOLDOWN_SECONDS = DEFAULT_COOLDOWN_SECONDS
 
@@ -105,10 +106,14 @@ class AnnouncementService(QObject):
         self._thread: threading.Thread | None = None
         self._prepare_thread: threading.Thread | None = None
         self._last_snapshot: BaikeSnapshot | None = None
-        # 忙碌/冷却收口到共享闸门（TD-A2-001）：检查与候选准备共用同一冷却窗口，
-        # 闸门内部加锁使"忙碌→冷却→置位"原子化（VUL-B3-001）
+        # 忙碌/冷却收口到闸门（TD-A2-001）：忙碌判定两闸门共用；冷却窗口各自
+        # 独立——公告检查保持 60 秒冷却，更新候选准备首次不受公告检查冷却牵连，
+        # 仅自身连续触发才限频。闸门内部加锁使"忙碌→冷却→置位"原子化（VUL-B3-001）
         self._gate = CheckCooldown(
             self._compute_busy, CHECK_COOLDOWN_SECONDS, label="公告检查",
+        )
+        self._prepare_gate = CheckCooldown(
+            self._compute_busy, CHECK_COOLDOWN_SECONDS, label="获取武将变更",
         )
         self._check_done.connect(self._finalize_check)
 
@@ -130,6 +135,11 @@ class AnnouncementService(QObject):
     def cooldown_remaining(self) -> float:
         """距离下次允许检查的剩余秒数；0 表示可立即检查。"""
         return self._gate.cooldown_remaining
+
+    @property
+    def prepare_cooldown_remaining(self) -> float:
+        """距离下次允许获取武将变更的剩余秒数；0 表示可立即获取。"""
+        return self._prepare_gate.cooldown_remaining
 
     def check_now(self) -> bool:
         """后台执行一次公告检查。
@@ -215,10 +225,10 @@ class AnnouncementService(QObject):
     ) -> bool:
         """后台拉取官网百科并计算字段级差异候选，完成后发 update_candidates_prepared。
 
-        返回是否成功启动（忙碌或冷却中返回 False，由调用方提示用户）。diff 必须由调用方
+        返回是否成功启动（忙碌或自身冷却中返回 False，由调用方提示用户）。diff 必须由调用方
         在 GUI 线程传入只读快照，后台线程不再访问主窗口可变状态。
         """
-        if not self._gate.try_acquire():
+        if not self._prepare_gate.try_acquire():
             return False
         self._prepare_thread = threading.Thread(
             target=self._run_prepare,

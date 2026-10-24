@@ -152,13 +152,13 @@ class AnnouncementUpdateCoordinator(QObject):
                 duration=3000,
             )
             return
-        remaining = self._service.cooldown_remaining
+        remaining = self._service.prepare_cooldown_remaining
         if remaining > 0:
-            self._reporter.show_message("检查过于频繁，请稍后再试")
+            self._reporter.show_message("获取过于频繁，请稍后再试")
             QMessageBox.information(
                 self._window,
                 "更新武将数据",
-                f"检查过于频繁，请 {int(remaining) + 1} 秒后再试。",
+                f"获取过于频繁，请 {int(remaining) + 1} 秒后再试。",
             )
             return
         self._reporter.show_message("正在获取官网数据以核对差异...")

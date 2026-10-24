@@ -836,7 +836,7 @@ def test_service_finalize_check_save_failure_still_emits(tmp_path, monkeypatch) 
 
 
 def test_service_prepare_update_candidates_cooldown(tmp_path, monkeypatch) -> None:
-    """冷却期内 prepare 被拦截：返回 False 且不启动线程（TD-A6-001 回归）。"""
+    """prepare 自身冷却期内被拦截：返回 False 且不启动线程（TD-A6-001 回归）。"""
     service, _manager = _make_service(tmp_path)
     started = []
 
@@ -851,14 +851,37 @@ def test_service_prepare_update_candidates_cooldown(tmp_path, monkeypatch) -> No
             started.append(1)
 
     monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
-    service._gate.try_acquire()
+    service._prepare_gate.try_acquire()
     diff = {"added": [], "modified": [], "removed": []}
     assert service.prepare_update_candidates([], [], diff) is False
     assert started == []
 
 
+def test_service_prepare_first_run_not_blocked_by_check_cooldown(tmp_path, monkeypatch) -> None:
+    """公告检查刚占用冷却窗口：首次获取武将变更仍可立即启动（独立窗口）。"""
+    service, _manager = _make_service(tmp_path)
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target, args=(), daemon=True, name=None):
+            pass
+
+        def is_alive(self) -> bool:
+            return False
+
+        def start(self) -> None:
+            started.append(1)
+
+    monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
+    service._gate.try_acquire()  # 模拟公告检查刚启动，处于 60 秒冷却窗口内
+    assert service.cooldown_remaining > 0
+    diff = {"added": [], "modified": [], "removed": []}
+    assert service.prepare_update_candidates([], [], diff) is True
+    assert started == [1]
+
+
 def test_service_prepare_update_candidates_records_cooldown(tmp_path, monkeypatch) -> None:
-    """prepare 成功启动后同样记录冷却起点：两次官网访问共用同一间隔约束。"""
+    """prepare 成功启动记录自身冷却起点：窗口内重复获取被拦，公告检查不受牵连。"""
     service, _manager = _make_service(tmp_path)
 
     class _FakeThread:
@@ -872,17 +895,19 @@ def test_service_prepare_update_candidates_records_cooldown(tmp_path, monkeypatc
             pass
 
     monkeypatch.setattr(service_module.threading, "Thread", _FakeThread)
-    assert service._gate.last_started_at is None
+    assert service._prepare_gate.last_started_at is None
     diff = {"added": [], "modified": [], "removed": []}
     assert service.prepare_update_candidates([], [], diff) is True
-    assert service._gate.last_started_at is not None
-    assert service.cooldown_remaining > 0
-    # 冷却生效后，公告检查同样被拦（check 与 prepare 共用冷却）
-    assert service.check_now() is False
+    assert service._prepare_gate.last_started_at is not None
+    assert service.prepare_cooldown_remaining > 0
+    # 获取窗口内重复点击被拦；公告检查是独立窗口，不被 prepare 占用牵连
+    assert service.prepare_update_candidates([], [], diff) is False
+    assert service.cooldown_remaining == 0
+    assert service.check_now() is True
 
 
 def test_update_cooldown_shows_dialog(monkeypatch) -> None:
-    """冷却期内点「更新武将数据」给出剩余秒数提示，而非误导性的忙碌提示。"""
+    """获取武将变更冷却期内点「更新武将数据」给出剩余秒数提示；公告检查冷却不拦更新入口。"""
     from PySide6.QtWidgets import QMessageBox
     from src.ui.app import announcement_update_coordinator as coordinator_module
 
@@ -896,7 +921,8 @@ def test_update_cooldown_shows_dialog(monkeypatch) -> None:
             collect_base_candidates=lambda local, announcements, diff: [
                 {"name": "东方朔", "change": "新增"}
             ],
-            cooldown_remaining=30,
+            cooldown_remaining=0,
+            prepare_cooldown_remaining=30,
         ),
         _manager=SimpleNamespace(list_announcements=lambda: []),
         _last_diff={"added": [], "modified": [], "removed": []},
