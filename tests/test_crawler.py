@@ -274,6 +274,50 @@ def test_js_to_json_parses_key_like_text_inside_strings() -> None:
 # ============================================================
 
 
+def test_fetch_host_rules_uses_short_timeout(monkeypatch) -> None:
+    """次级主机 robots 抓取用短超时：站点异常时快速失败降级，不拖慢采集。"""
+    timeouts: list[float] = []
+
+    def fake_urlopen(req, timeout=0):
+        timeouts.append(timeout)
+        raise OSError("boom")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    assert crawler._fetch_host_rules("https://siteres.ztgame.com") is None
+    assert timeouts == [crawler.ROBOTS_FETCH_TIMEOUT]
+
+
+def test_cache_robots_txt_uses_short_timeout(monkeypatch, tmp_path: Path) -> None:
+    """主站 robots 存档刷新同样用短超时（与主数据 30 秒解耦）。"""
+    timeouts: list[float] = []
+
+    def fake_urlopen(req, timeout=0):
+        timeouts.append(timeout)
+        return _FakeResponse(b"Allow: /", content_type="text/plain")
+
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    assert crawler.cache_robots_txt(tmp_path / "robots_cache") is True
+    assert timeouts == [crawler.ROBOTS_FETCH_TIMEOUT]
+
+
+def test_open_image_response_uses_short_image_timeout(monkeypatch) -> None:
+    """图片下载用短于主数据的超时：CDN 握手挂起时单张等待上限减半。"""
+    timeouts: list[float] = []
+
+    class _FakeOpener:
+        def open(self, request, timeout=0):
+            timeouts.append(timeout)
+            response = _FakeResponse(_png_bytes("red"))
+            response.geturl = lambda: request.full_url
+            return response
+
+    monkeypatch.setattr(crawler.urllib.request, "build_opener", lambda *_a, **_k: _FakeOpener())
+    monkeypatch.setattr(crawler, "_ensure_robots_allowed", lambda url: None)
+    with crawler._open_image_response("https://siteres.ztgame.com/a.png") as response:
+        response.read()
+    assert timeouts == [crawler.IMAGE_DOWNLOAD_TIMEOUT]
+
+
 def test_cache_robots_txt_writes_archive_and_meta(monkeypatch, tmp_path: Path) -> None:
     requests: list[str] = []
 

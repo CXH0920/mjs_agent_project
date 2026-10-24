@@ -71,6 +71,11 @@ ROBOTS_CACHE_TTL_HOURS = 24
 ROBOTS_CACHE_DIR = PROJECT_ROOT / "logs" / "robots_cache"
 
 TIMEOUT = 30
+# robots.txt 是百字节小文件，复用主数据 30 秒超时过于保守：站点异常时每个
+# 采集子进程都要等满额才降级放行，短超时快速失败即降级
+ROBOTS_FETCH_TIMEOUT = 5
+# 头像 PNG 仅数百 KB，短于主数据的超时使 CDN 握手挂起时单张等待上限减半
+IMAGE_DOWNLOAD_TIMEOUT = 15
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
@@ -153,7 +158,7 @@ def _fetch_host_rules(origin: str) -> urllib.robotparser.RobotFileParser | None:
     """
     try:
         req = urllib.request.Request(f"{origin}/robots.txt", headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=ROBOTS_FETCH_TIMEOUT) as resp:
             return _parse_robots_rules(resp.read().decode("utf-8", errors="replace"))
     except Exception as e:
         logger.warning("robots.txt 获取失败（按允许处理） %s: %s", origin, e)
@@ -204,7 +209,7 @@ def cache_robots_txt(cache_dir: Path | None = None) -> bool:
     if _robots_cache_fresh(cache_dir / "robots_meta.json"):
         return False
     req = urllib.request.Request(ROBOTS_URL, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=ROBOTS_FETCH_TIMEOUT) as resp:
         content = resp.read().decode("utf-8", errors="replace")
     cache_dir.mkdir(parents=True, exist_ok=True)
     (cache_dir / "robots.txt").write_text(content, encoding="utf-8", newline="\n")
@@ -511,7 +516,7 @@ def _open_image_response(url: str):
         _validate_image_url(current_url)
         request = urllib.request.Request(current_url, headers=HEADERS)
         try:
-            response = opener.open(request, timeout=TIMEOUT)
+            response = opener.open(request, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         except urllib.error.HTTPError as error:
             if error.code not in {301, 302, 303, 307, 308}:
                 raise

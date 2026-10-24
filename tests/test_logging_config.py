@@ -79,10 +79,54 @@ def test_setup_logging_reconfigures_only_project_handlers(tmp_path, monkeypatch)
     logging_config.setup_logging(log_level="WARNING", log_to_file=False)
     managed = _managed_handlers()
     assert len(managed) == 1
-    assert isinstance(managed[0], logging.StreamHandler)
+    assert isinstance(managed[0], logging.handlers.QueueHandler)
     assert root.level == logging.WARNING
 
     root.removeHandler(external)
+
+
+def test_console_log_does_not_block_caller_when_stream_hangs(monkeypatch) -> None:
+    """回归（2026-10-24 卡死）：控制台写入挂起（如 QuickEdit 选中）时，
+    日志调用线程只入队不等待，绝不跟随阻塞。"""
+    import threading
+
+    logging_config.setup_logging(log_level="INFO", log_to_file=False)
+    queue_handler = _managed_handlers()[0]
+    console = queue_handler.listener.handlers[0]
+    entered = threading.Event()
+    release = threading.Event()
+
+    class _HangingStream:
+        def write(self, _msg):
+            entered.set()
+            release.wait(timeout=10)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(console, "stream", _HangingStream())
+    try:
+        worker = threading.Thread(
+            target=lambda: logging.getLogger("src.block_probe").warning("probe")
+        )
+        worker.start()
+        worker.join(timeout=3)
+        assert not worker.is_alive()  # 调用线程未被控制台拖住
+        assert entered.wait(timeout=3)  # 写入确实发生在消费线程上
+    finally:
+        release.set()
+
+
+def test_reinit_stops_previous_console_listener() -> None:
+    """重复 setup_logging 停掉上一轮消费线程：线程与 handler 不随重入累积。"""
+    logging_config.setup_logging(log_to_file=False)
+    first_thread = _managed_handlers()[0].listener._thread
+    assert first_thread.is_alive()
+
+    logging_config.setup_logging(log_to_file=False)
+    assert len(_managed_handlers()) == 1
+    first_thread.join(timeout=3)
+    assert not first_thread.is_alive()
 
 
 def test_qprocess_child_does_not_create_shared_file_handlers(tmp_path, monkeypatch) -> None:

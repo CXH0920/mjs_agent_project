@@ -761,7 +761,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 拆分需参数化薄包装层且拆后仍约 576 行，净收益为负。
     # 660 → 636：clean_html 的实体解码剥离与 carry_over_local_fields 迁出到
     # hero_fields.py（64 行纯函数无 IO，便于单测），本文件只保留重新导出。
-    "scraper/official_source/crawler.py": 636,
+    # 636 → 640：robots 抓取与图片下载超时从主数据 TIMEOUT 拆出专用短常量
+    # （ROBOTS_FETCH_TIMEOUT / IMAGE_DOWNLOAD_TIMEOUT），CDN 或 robots 异常时
+    # 快速失败降级，不再每个子进程白等满额 30 秒。
+    "scraper/official_source/crawler.py": 640,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     "data/recommendation_index_repository.py": 526,

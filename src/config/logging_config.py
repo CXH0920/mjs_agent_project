@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import queue
 import sys
 import threading
 
@@ -98,6 +99,31 @@ class ModuleFilter(logging.Filter):
         return True
 
 
+class _QueuedConsoleHandler(logging.handlers.QueueHandler):
+    """控制台输出经后台消费线程写入，调用线程只做无界队列入队。
+
+    Windows 经典控制台的快速编辑选中会无限期阻塞 WriteConsoleW（2026-10-24
+    卡死事故：GUI 主线程在菜单槽的 logger.info 上悬死，Esc 才解冻）。把控制台
+    写移出调用线程后，控制台再被卡住最多丢/积压控制台日志，不再冻结 UI；
+    文件 handler 不经队列，仍同步落盘不受影响。
+    """
+
+    def __init__(self, console: logging.Handler) -> None:
+        super().__init__(queue.SimpleQueue())
+        self.listener = logging.handlers.QueueListener(
+            self.queue, console, respect_handler_level=True,
+        )
+        self.listener.start()
+
+    def close(self) -> None:
+        # close 被重复 setup 与 logging.shutdown 复用：顺带停消费线程并关掉
+        # 底层控制台 handler，避免线程与 handler 随重入轮次累积
+        self.listener.stop()
+        for handler in self.listener.handlers:
+            handler.close()
+        super().close()
+
+
 def setup_logging(
     log_level: str = DEFAULT_LEVEL,
     log_to_file: bool = True,
@@ -138,8 +164,10 @@ def setup_logging(
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
     console.setFormatter(formatter)
-    setattr(console, _MANAGED_HANDLER_ATTR, True)
-    root.addHandler(console)
+    console_queue = _QueuedConsoleHandler(console)
+    console_queue.setLevel(level)
+    setattr(console_queue, _MANAGED_HANDLER_ATTR, True)
+    root.addHandler(console_queue)
 
     # 后台线程异常兜底：须在 QProcess 子进程的提前 return 之前注册
     threading.excepthook = _thread_excepthook
