@@ -19,8 +19,8 @@
   负责编排，不改 spec 逻辑。
 - 构建产物本身不含任何用户资料（config.env/api_profiles/edge_profile/logs/api key），
   首次启动由 main._ensure_clean_runtime 生成。烟雾测试会在运行后清理它产生的运行时文件。
-- 烟雾测试用 os.startfile 模拟真实双击（windowed exe 无控制台 → sys.stdout=None），
-  暴露 Popen(PIPE) 启动会掩盖的双击场景崩溃。
+- 烟雾测试用 Popen(DETACHED_PROCESS) 模拟真实双击（不继承控制台 → windowed exe 的
+  sys.stdout=None），暴露 Popen(PIPE) 启动会掩盖的双击场景崩溃。
 - 中文路径支持：rapidocr 模型复制到 %TEMP%、cv2 用 imdecode/imencode 规避 ANSI fopen
   限制（详见指南"中文路径"一节）。
 """
@@ -166,7 +166,6 @@ def rebuild_rag_index_for_release() -> dict:
     一类的静默降级由本步骤根治。返回 manifest 字段素材。
     """
     from src.rag import config
-    from src.rag.indexer import load_all_blocks
 
     _info(f"发版前重建 RAG 索引（backend={config.EMBEDDING_BACKEND}）…")
     if config.EMBEDDING_BACKEND != "onnx":
@@ -194,7 +193,12 @@ def verify_rag_index_consistency() -> int:
     import chromadb
 
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
-    stored = client.get_collection("mjs_rag_v1").count()
+    try:
+        stored = client.get_collection("mjs_rag_v1").count()
+    finally:
+        # 释放 sqlite 句柄（chromadb 1.x 公开 close()）：Windows 下句柄滞留会
+        # 持有 data/rag_index 文件锁直到进程退出，构建期复制该目录前应已放手
+        client.close()
     if stored != corpus_blocks:
         _die(f"索引与语料不同源：索引 {stored} 块 != 语料 {corpus_blocks} 块"
              "（--skip-build 不重建索引，语料变动后请走完整发版流程）")
@@ -329,6 +333,8 @@ def eval_gate(skip: bool = False) -> None:
     finally:
         for staged in staged_roots:
             shutil.rmtree(staged, ignore_errors=True)
+            if staged.exists():
+                _warn(f"staged 数据清理失败，{staged} 残留（会污染后续 zip，请手动删除）")
             try:  # 撤掉因此变空的父目录（rag_models），避免残留空壳
                 staged.parent.rmdir()
             except OSError:
@@ -387,24 +393,34 @@ def _scan_apikey(root: Path) -> None:
     """递归扫描文本类文件内是否残留 api key 字面量（sk- 开头 20+ 位）。
 
     只扫源码/配置类文本文件；.dll/.pyd/.so 等二进制里的字节巧合命中不报。
+    目录级 OSError（长路径/权限）不静默吞掉——这是敏感内容的最后防线，
+    覆盖不完整即终止发版（完整版 playwright driver 层级深，未开长路径时
+    遍历易在中途抛 OSError，静默截断等于门禁失效）。
     """
     import re
 
     text_exts = {".py", ".json", ".txt", ".env", ".cfg", ".toml", ".ini",
                  ".yaml", ".yml", ".md", ".js", ".ts"}
     pat = re.compile(r"sk-[A-Za-z0-9]{20,}")
-    try:
-        for p in root.rglob("*"):
-            if not p.is_file() or p.suffix.lower() not in text_exts:
+    scan_errors: list[str] = []
+
+    def _on_walk_error(err: OSError) -> None:
+        scan_errors.append(f"{err.filename or root}：{err.strerror}")
+
+    for dirpath, _dirnames, filenames in os.walk(root, onerror=_on_walk_error):
+        for name in filenames:
+            if Path(name).suffix.lower() not in text_exts:
                 continue
+            p = Path(dirpath) / name
             try:
                 text = p.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
             if pat.search(text):
                 _die(f"在 {p} 内发现疑似 api key 残留，请检查")
-    except OSError:
-        pass
+    if scan_errors:
+        _die("api key 扫描未完整覆盖交付目录（目录级 OSError，发版终止）：\n  "
+             + "\n  ".join(scan_errors[:10]))
 
 
 def clean_runtime_artifacts() -> None:
@@ -426,7 +442,6 @@ def smoke_test() -> None:
     向导最早 90–120 秒（预热完成）后才出现，22 秒窗口断言不到它。
     进程存活 + 日志无致命错误 + 向导构造埋点即通过。
     """
-    import os
     import tempfile
     _info(f"烟雾启动测试（{SMOKE_TIMEOUT_S}s，双击模式，含首启向导构造）…")
     # 清掉 %TEMP% 的 OCR 模型缓存，强制重新从本次构建的包内复制，确保验证的是新模型
@@ -436,18 +451,15 @@ def smoke_test() -> None:
             shutil.rmtree(_temp_ocr, ignore_errors=True)
     env = {**os.environ, "MJS_ONBOARDING_FORCE": "1"}
     try:
-        subprocess.Popen([str(EXE)], cwd=str(EXE.parent), env=env,
-                         creationflags=subprocess.DETACHED_PROCESS)
+        proc = subprocess.Popen([str(EXE)], cwd=str(EXE.parent), env=env,
+                                creationflags=subprocess.DETACHED_PROCESS)
     except OSError as e:
         _die(f"无法启动 exe：{e}")
     time.sleep(SMOKE_TIMEOUT_S)
 
-    # startfile 不返回进程句柄，用 tasklist 查存活（中文 Windows 下 tasklist 输出为 GBK，
-    # UTF-8 模式按严格解码会崩掉读取线程导致存活误判，replace 兜底）
-    res = subprocess.run(
-        ["tasklist", "/FI", "IMAGENAME eq mjs_agent.exe", "/NH"],
-        capture_output=True, text=True, errors="replace")
-    alive = "mjs_agent.exe" in (res.stdout or "")
+    # 判活用 Popen 句柄精确判断：早期 os.startfile 方案无句柄，只能 tasklist 按
+    # 镜像名匹配，会被机器上无关同名进程顶替成假阳性
+    alive = proc.poll() is None
 
     # 双击模式无 stdout 捕获，改读 logs 判断致命错误
     log_text = ""
@@ -461,29 +473,32 @@ def smoke_test() -> None:
     fatal = any(k in log_text for k in ("No module named", "ModuleNotFoundError",
                                        "Traceback (most recent call last)",
                                        "模型加载失败"))
-    # 清理 exe 进程（无论是否存活）
-    subprocess.run(["taskkill", "/IM", "mjs_agent.exe", "/F"],
+    # 清理 exe 进程树（无论是否存活）：按 PID 定点 taskkill，/T 连带子进程
+    # （体检阶段可能拉起 adb 等）；不再 /IM 按镜像名全杀，避免误杀并行实例
+    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                    capture_output=True, text=True, errors="replace")
 
-    if not alive:
-        _warn("exe 未保持运行（疑似一闪而过）")
-        if log_text:
-            print(log_text[-500:])
-        _die("烟雾测试失败：exe 未保持运行")
-    if fatal:
-        _warn("烟雾测试发现致命错误：")
-        for line in log_text.splitlines():
-            if any(k in line for k in ("No module", "ModuleNotFound", "Traceback", "模型加载失败")):
-                print("  " + line)
-        _die("烟雾测试失败：存在致命导入/加载错误")
-    if "首启向导构造" not in log_text:
-        _die("烟雾测试失败：首启向导构造埋点未出现（MJS_ONBOARDING_FORCE 通道未生效）")
-    _ok("烟雾启动通过：GUI 保持运行，无致命错误，首启向导已构造")
-
-    # 烟雾测试会产生 config.env/logs 等运行时文件，清理以保持交付物纯净
-    _info("清理烟雾测试产生的运行时文件…")
-    clean_runtime_artifacts()
-    _ok("已恢复纯净交付物")
+    try:
+        if not alive:
+            _warn("exe 未保持运行（疑似一闪而过）")
+            if log_text:
+                print(log_text[-500:])
+            _die("烟雾测试失败：exe 未保持运行")
+        if fatal:
+            _warn("烟雾测试发现致命错误：")
+            for line in log_text.splitlines():
+                if any(k in line for k in ("No module", "ModuleNotFound", "Traceback", "模型加载失败")):
+                    print("  " + line)
+            _die("烟雾测试失败：存在致命导入/加载错误")
+        if "首启向导构造" not in log_text:
+            _die("烟雾测试失败：首启向导构造埋点未出现（MJS_ONBOARDING_FORCE 通道未生效）")
+        _ok("烟雾启动通过：GUI 保持运行，无致命错误，首启向导已构造")
+    finally:
+        # 烟雾测试会产生 config.env/logs 等运行时文件——成败路径都清理，
+        # 失败残留会被误当交付物打进手动 zip
+        _info("清理烟雾测试产生的运行时文件…")
+        clean_runtime_artifacts()
+        _ok("已恢复纯净交付物")
 
 
 # ── zip 分发包 ──────────────────────────────────────────────────
@@ -545,6 +560,8 @@ def report(version: str, zip_path: Path | None, full: bool = False) -> None:
     print(f"  总体积   : {total:.0f} MB")
     if zip_path:
         print(f"  zip 分发 : {zip_path.name}")
+        print("  - zip 内含中文文件名（UTF-8 标记）：Win10+ 自带解压正常，"
+              "老解压工具（如老版 WinRAR）可能乱码")
     print()
     print("  双击 mjs_agent.exe 运行，首次启动自动在 exe 同级生成")
     print("  config.env（填 API Key）/ data/edge_profile/ / logs/")

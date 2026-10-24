@@ -10,6 +10,7 @@
 """
 
 import fnmatch
+import importlib.metadata
 import importlib.util
 import os
 import sys
@@ -24,11 +25,17 @@ HERE = Path(SPECPATH).resolve()
 FULL = os.environ.get("MJS_FULL") == "1"
 
 # OCR 引擎（RapidOCR/onnxruntime，v6 主 + v4 复核双套件）依赖必须已装入打包环境
-# （缺失时明确报错，避免静默产出无引擎的包）
+# 且与 environment.yml 钉版一致（缺失/漂移都明确报错，避免静默产出行为漂移的包）
 for _pkg, _pin in (("onnxruntime", "1.23.2"), ("rapidocr", "3.9.2")):
     if importlib.util.find_spec(_pkg) is None:
         raise SystemExit(
             f"OCR 引擎依赖缺失：请先在打包环境安装 {_pkg}=={_pin}（见 environment.yml）"
+        )
+    _ver = importlib.metadata.version(_pkg)
+    if _ver != _pin:
+        raise SystemExit(
+            f"OCR 引擎依赖版本漂移：环境为 {_pkg}=={_ver}，environment.yml 钉的是 {_pin}；"
+            "OCR 行为随版本变化，请先对齐（更新环境或更新钉版）再打包"
         )
 
 # B1 复核引擎 v4 模型必须已在打包环境就位（collect_all("rapidocr") 才能带入包；

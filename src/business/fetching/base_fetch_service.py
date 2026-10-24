@@ -347,9 +347,14 @@ class BaseFetchService(QObject):
             self.status_changed.emit(f"{self._service_name}失败")
             self.error_occurred.emit(msg)
 
+        finished_process = self._process
         self._on_process_finished(exit_code)
         self._context = None
-        self._release_process()
+        # 钩子可能经直连信号同步发起下一阶段（公告多阶段更新链），此时
+        # _process 已是重入启动的新进程，不能当作本轮残留释放——否则新
+        # QProcess 析构时会强杀仍在运行的子进程（退出码 0xF291=62097）
+        if self._process is finished_process:
+            self._release_process()
 
     # 进程树清理最多等待轮次（50ms/轮 ≈ 5 秒）：taskkill 被安全软件拦截或
     # PID 已复用时可能永不返回，无上限轮询会让 _cancel_requested 永不复位，

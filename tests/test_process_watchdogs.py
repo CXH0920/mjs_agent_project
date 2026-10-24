@@ -800,6 +800,67 @@ def test_on_finished_releases_process_object(qapp, monkeypatch) -> None:
     assert service._process is None
 
 
+def test_on_finished_keeps_chained_next_phase_process(qapp, monkeypatch) -> None:
+    """回归（9ccc2fc 引入）：钩子内同步启动的下一阶段进程不得被尾部释放误杀。
+
+    公告多阶段更新在 fetch_completed（直连）槽里同步发起下一阶段采集：
+    _on_finished 尾部无条件 _release_process() 会取走重入启动的新 QProcess
+    并 deleteLater，事件循环析构仍在运行的进程（"QProcess: Destroyed while
+    process is still running"），下一阶段必以退出码 62097（0xF291，Qt 析构
+    强杀魔数）失败。本轮刚结束的旧进程仍须照常释放（TD-A8-001）。
+    """
+    import src.business.fetching.base_fetch_service as bfs
+
+    monkeypatch.setattr(bfs, "record_task", lambda *a, **kw: None)
+
+    class _ChainedProc(_FakeProc):
+        class ProcessChannelMode:
+            SeparateChannels = "separate"
+
+        def __init__(self, parent=None):
+            super().__init__()
+            self.released = False
+            for attr in ("readyReadStandardOutput", "readyReadStandardError",
+                         "finished", "errorOccurred"):
+                setattr(self, attr, _CallbackSignal())
+
+        def setProcessChannelMode(self, _mode) -> None:
+            pass
+
+        def setWorkingDirectory(self, _directory) -> None:
+            pass
+
+        def setProcessEnvironment(self, _env) -> None:
+            pass
+
+        def start(self, *_args) -> None:
+            pass
+
+        def deleteLater(self) -> None:
+            self.released = True
+
+    monkeypatch.setattr(bfs, "QProcess", _ChainedProc)
+
+    class _ChainedService(bfs.BaseFetchService):
+        def _on_process_finished(self, exit_code: int) -> None:
+            # 模拟公告协调器：fetch_completed 直连槽内同步发起下一阶段
+            self._start_process(["-m", "src.scraper.incremental", "--incremental"])
+
+    service = _ChainedService()
+    old = _ChainedProc()
+    old._running = False  # 上一阶段已结束
+    service._process = old
+    try:
+        service._on_finished(0)
+    finally:
+        service._stop_watchdog()
+
+    assert old.released, "本轮刚结束的进程仍应释放（TD-A8-001）"
+    assert service._process is not None, "下一阶段进程不得被尾部释放置空"
+    assert service._process is not old
+    assert not service._process.released, "下一阶段进程不得被 deleteLater（析构会强杀在跑进程）"
+
+
 def test_on_error_failed_to_start_releases_process_object(qapp, monkeypatch) -> None:
     """回归（TD-A8-001）：FailedToStart 无 finished 跟随，必须就地释放。"""
     import src.business.fetching.base_fetch_service as bfs
