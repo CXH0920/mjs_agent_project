@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from src.capture.probers import (
+    EMULATOR_HINTS,
     EMULATOR_LABELS,
     EMULATOR_PROBERS,
     EMULATOR_TYPES,
@@ -28,6 +29,23 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "probers"
 
 def test_registry_covers_all_advertised_types() -> None:
     assert set(EMULATOR_TYPES) == set(EMULATOR_PROBERS) == set(EMULATOR_LABELS)
+
+
+def test_emulator_labels_use_plain_brand_names() -> None:
+    """品牌展示名不带版本号（夜神/逍遥/MuMu/蓝叠/雷电，2026-10-25 定稿）。"""
+    assert EMULATOR_LABELS == {
+        "mumu": "MuMu",
+        "ldplayer": "雷电",
+        "nox": "夜神",
+        "memu": "逍遥",
+        "bluestacks": "蓝叠",
+    }
+
+
+def test_emulator_hints_cover_all_advertised_types() -> None:
+    """R6：品牌特性提示覆盖全部品牌且非空（设备页 ⓘ 悬停文案）。"""
+    assert set(EMULATOR_HINTS) == set(EMULATOR_TYPES)
+    assert all(EMULATOR_HINTS[emulator_type] for emulator_type in EMULATOR_TYPES)
 
 
 def test_normalize_unknown_type_falls_back_to_mumu() -> None:
@@ -138,6 +156,15 @@ def test_scan_open_ports_skips_closed_ports(monkeypatch) -> None:
     assert port_scan.scan_open_ports([5555, 62001]) == []
 
 
+def test_port_scan_candidates_marked_brand_unverified(monkeypatch) -> None:
+    """R5：端口扫描候选行名标注"品牌未验证"（5555 等共用端口归属歧义）。"""
+    monkeypatch.setattr(port_scan, "scan_open_ports", lambda ports, timeout=0.2: [5555])
+
+    devices = port_scan.probe_devices_via_ports("ldplayer", "雷电")
+
+    assert devices[0].name == "雷电 实例 1（端口扫描·品牌未验证）"
+
+
 def test_ldplayer_console_failure_falls_back_to_port_scan(monkeypatch) -> None:
     monkeypatch.setattr(ldplayer, "_find_console", lambda: None)
     monkeypatch.setattr(
@@ -166,7 +193,7 @@ def test_mumu_manager_failure_falls_back_to_port_scan(monkeypatch, tmp_path) -> 
     monkeypatch.setattr("src.capture.probers.mumu._find_mumu_root", lambda: None)
     monkeypatch.setattr(
         port_scan, "probe_devices_via_ports",
-        lambda emulator_type, label: [EmulatorDeviceInfo("1", "MuMu 12 实例 1（端口扫描）", 16384, True)],
+        lambda emulator_type, label: [EmulatorDeviceInfo("1", "MuMu 实例 1（端口扫描）", 16384, True)],
     )
 
     devices, error = probe_all_devices_with_status("mumu")
@@ -175,12 +202,75 @@ def test_mumu_manager_failure_falls_back_to_port_scan(monkeypatch, tmp_path) -> 
     assert devices[0].adb_port == 16384
 
 
-# ── 蓝叠注册表路径 ───────────────────────────────────────────────────
+# ── 蓝叠注册表与 bluestacks.conf（国内版实测驱动，2026-10-25）─────────
 
 
-def test_bluestacks_hints_adb_when_no_port_registered(monkeypatch, tmp_path) -> None:
+class _FakeRegistry:
+    """dict 支撑的 winreg 桩：{(蜂巢, 子键): {值名: 数据}}，缺键/缺值抛 OSError。"""
+
+    def __init__(self, keys: dict) -> None:
+        self._keys = keys
+
+    class _Handle:
+        def __init__(self, values: dict) -> None:
+            self.values = values
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> bool:
+            return False
+
+    def open_key(self, root, sub_key, *args, **kwargs):
+        if (root, sub_key) not in self._keys:
+            raise FileNotFoundError(sub_key)
+        return _FakeRegistry._Handle(self._keys[(root, sub_key)])
+
+    def query_value_ex(self, key, value_name):
+        if value_name not in key.values:
+            raise FileNotFoundError(value_name)
+        return key.values[value_name], 1
+
+
+def _install_fake_registry(monkeypatch, keys: dict) -> None:
+    winreg = pytest.importorskip("winreg")
+    fake = _FakeRegistry(keys)
+    monkeypatch.setattr(winreg, "OpenKey", fake.open_key)
+    monkeypatch.setattr(winreg, "QueryValueEx", fake.query_value_ex)
+
+
+def test_bluestacks_root_reads_cn_registry_key(monkeypatch, tmp_path) -> None:
+    """R1.1：国内版键 BlueStacks_nxt_cn（HKCU 同样存在）的 InstallDir 可识别。"""
+    winreg = pytest.importorskip("winreg")
+    _install_fake_registry(monkeypatch, {
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\BlueStacks_nxt_cn"): {"InstallDir": str(tmp_path)},
+    })
+    monkeypatch.setattr(bluestacks, "find_process_dir", lambda names: None)
+
+    assert bluestacks._find_root() == tmp_path
+
+
+def test_bluestacks_conf_located_via_registry_user_defined_dir(monkeypatch, tmp_path) -> None:
+    """R1.3：conf 定位优先取注册表 UserDefinedDir（国内版指向数据目录）。"""
+    winreg = pytest.importorskip("winreg")
+    data_dir = tmp_path / "UserData"
+    data_dir.mkdir()
+    conf = data_dir / "bluestacks.conf"
+    conf.touch()
+    _install_fake_registry(monkeypatch, {
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\BlueStacks_nxt_cn"): {"UserDefinedDir": str(data_dir)},
+    })
+
+    assert bluestacks._find_conf_path() == conf
+
+
+def test_bluestacks_conf_disabled_keeps_enable_adb_hint(monkeypatch, tmp_path) -> None:
+    """R1.2 门控：bst.enable_adb_access="0" 时维持"请先开启 ADB"提示语义。"""
+    conf = tmp_path / "bluestacks.conf"
+    conf.write_text('bst.enable_adb_access="0"\nbst.instance.Pie64.adb_port="5555"\n', encoding="utf-8")
     monkeypatch.setattr(bluestacks, "_find_root", lambda: tmp_path)
     monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
+    monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: conf)
 
     devices, error = bluestacks.probe_devices()
 
@@ -188,9 +278,60 @@ def test_bluestacks_hints_adb_when_no_port_registered(monkeypatch, tmp_path) -> 
     assert "Android 调试桥" in error
 
 
+def test_bluestacks_conf_parses_instances_with_status_port_priority(monkeypatch, tmp_path) -> None:
+    """R1.2：conf 实例枚举，status.adb_port（当前实际端口）优先于 adb_port。"""
+    conf = tmp_path / "bluestacks.conf"
+    conf.write_text(
+        'bst.enable_adb_access="1"\n'
+        'bst.instance.Pie64.adb_port="5556"\n'
+        'bst.instance.Pie64.status.adb_port="5555"\n'
+        'bst.instance.Nougat64.adb_port="5565"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bluestacks, "_find_root", lambda: None)
+    monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
+    monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: conf)
+    monkeypatch.setattr(bluestacks, "_port_open", lambda port: port == 5555)
+
+    devices, error = bluestacks.probe_devices()
+
+    assert error == ""
+    assert [(d.name, d.adb_port, d.is_running) for d in devices] == [
+        ("Nougat64", 5565, False),
+        ("Pie64", 5555, True),
+    ]
+
+
+def test_bluestacks_conf_enabled_but_no_ports_reports_honestly(monkeypatch, tmp_path) -> None:
+    """R1.4：ADB 已开启但读不到端口时，不得提示"请先开启 ADB"。"""
+    conf = tmp_path / "bluestacks.conf"
+    conf.write_text('bst.enable_adb_access="1"\n', encoding="utf-8")
+    monkeypatch.setattr(bluestacks, "_find_root", lambda: tmp_path)
+    monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
+    monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: conf)
+
+    devices, error = bluestacks.probe_devices()
+
+    assert devices == []
+    assert "未读到实例 ADB 端口" in error
+    assert "开启后重试" not in error
+
+
+def test_bluestacks_root_without_conf_reports_missing_conf(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(bluestacks, "_find_root", lambda: tmp_path)
+    monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
+    monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: None)
+
+    devices, error = bluestacks.probe_devices()
+
+    assert devices == []
+    assert "未找到蓝叠实例配置" in error
+
+
 def test_bluestacks_reports_missing_install(monkeypatch) -> None:
     monkeypatch.setattr(bluestacks, "_find_root", lambda: None)
     monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
+    monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: None)
 
     devices, error = bluestacks.probe_devices()
 
@@ -209,6 +350,33 @@ def test_bluestacks_returns_registry_instances(monkeypatch) -> None:
 
     assert error == ""
     assert devices[0].adb_port == 5565
+
+
+def test_parse_conf_ports_filters_invalid_values_and_tracks_gate() -> None:
+    text = (
+        'bst.enable_adb_access="1"\n'
+        'bst.instance.Pie64.adb_port="5555"\n'
+        'bst.instance.Bad.adb_port=""\n'
+        'bst.instance.Worse.adb_port="abc"\n'
+    )
+
+    ports, adb_enabled = bluestacks._parse_conf_ports(text)
+
+    assert ports == {"Pie64": 5555}
+    assert adb_enabled is True
+
+    _ports, adb_enabled = bluestacks._parse_conf_ports('bst.enable_adb_access="0"\n')
+    assert adb_enabled is False
+
+
+def test_ldplayer_registry_reads_ldplayer9_key(monkeypatch, tmp_path) -> None:
+    """R2：LDPlayer 9 实际写 SOFTWARE\\leidian\\ldplayer9（值 InstallDir）。"""
+    winreg = pytest.importorskip("winreg")
+    _install_fake_registry(monkeypatch, {
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\leidian\ldplayer9"): {"InstallDir": str(tmp_path)},
+    })
+
+    assert ldplayer._probe_registry() == str(tmp_path)
 
 
 # ── 真机 console 输出回归（本地样本缺失自动跳过）────────────────────

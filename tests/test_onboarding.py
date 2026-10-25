@@ -385,7 +385,7 @@ def test_device_zero_running_shows_retry(wizard):
     coordinator = d._ensure_coordinator()
     coordinator.devices_changed.emit(())
     assert d._device_badge.text() == "未通过"
-    assert "请先启动 MuMu 12 模拟器" in d._device_summary.text()
+    assert "请先启动 MuMu 模拟器" in d._device_summary.text()
     assert d._device_action.text() == "重试"
     assert not d._device_action.isHidden()
 

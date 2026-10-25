@@ -172,7 +172,7 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
                         is_running=is_running,
                         is_main=bool(vm_info.get("is_main")),
                     ))
-                devices = port_scan.supplement_when_empty("mumu", "MuMu 12", devices)
+                devices = port_scan.supplement_when_empty("mumu", "MuMu", devices)
                 logger.info("探测到 %d 个 MuMu 实例（含端口扫描补充）", len(devices))
                 return devices, ""
         except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError) as exc:
@@ -188,7 +188,7 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
 
 def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
     """console 路径失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
-    devices = port_scan.probe_devices_via_ports("mumu", "MuMu 12")
+    devices = port_scan.probe_devices_via_ports("mumu", "MuMu")
     if devices:
         logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
         return devices, ""

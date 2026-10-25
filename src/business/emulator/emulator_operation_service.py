@@ -36,6 +36,7 @@ class EmulatorOperationService(QObject):
     """串行执行 ADB 探测、连接、测试和模板截图等耗时操作。"""
 
     adb_detected = Signal(bool, str, str)  # (success, adb_path, message)
+    adb_reprobed = Signal(str)  # 品牌切换静默重探结果（空 = 未找到，沿用旧路径）
     devices_refreshed = Signal(object)  # list[EmulatorDeviceInfo]
     device_refresh_failed = Signal(str)
     connection_finished = Signal(bool, str)
@@ -61,6 +62,16 @@ class EmulatorOperationService(QObject):
             return ok, adb_path, message
 
         self._submit(self._probe_executor, "detect_adb", work, lambda result: self.adb_detected.emit(*result))
+
+    def reprobe_adb(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
+        """品牌切换后的静默 ADB 重探：只回传路径，不弹提示、不触发设备刷新。"""
+
+        self._submit(
+            self._probe_executor,
+            "reprobe_adb",
+            lambda: probe_adb(emulator_type),
+            self.adb_reprobed.emit,
+        )
 
     def refresh_devices(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
         def completed(result: tuple[list, str]) -> None:

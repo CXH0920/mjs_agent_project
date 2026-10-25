@@ -15,6 +15,7 @@ import logging
 from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout, QWidget
 from src.business.emulator.mumu_config_coordinator import (
+    EMULATOR_HINTS,
     EMULATOR_LABELS,
     EMULATOR_TYPES,
     EmulatorDeviceInfo,
@@ -35,6 +36,9 @@ class MumuDevicePage(QWidget):
         super().__init__(parent)
         self._coordinator = coordinator
         self._device_selected_explicitly = False
+        # 跨品牌切换后的首次探测未完成标志：失败分支据此改为清空 + 显性报错，
+        # 而非沿用"同品牌刷新失败保留上次结果"的既有策略（R4）
+        self._brand_switch_pending = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -49,8 +53,10 @@ class MumuDevicePage(QWidget):
         self.section.device_changed.connect(self._on_device_changed)
         self.section.device_activated.connect(self._on_device_activated)
         self.section.brand_activated.connect(self._on_brand_activated)
+        self.section.brand_combo.currentIndexChanged.connect(self._update_brand_hint)
 
         coordinator.adb_detected.connect(self._on_adb_detected)
+        coordinator.adb_path_reprobed.connect(self._on_adb_path_reprobed)
         coordinator.devices_changed.connect(self._on_devices_refreshed)
         coordinator.device_refresh_failed.connect(self._on_device_refresh_failed)
         coordinator.connection_finished.connect(self._on_connection_finished)
@@ -119,12 +125,23 @@ class MumuDevicePage(QWidget):
             current = config.get("emulator_type", "mumu")
             index = self.brand_combo.findData(current)
             self.brand_combo.setCurrentIndex(index if index >= 0 else 0)
+        # 宽度按装满品牌项后的内容基准扩大 1/3（短品牌名下拉过窄，观感局促）
+        self.brand_combo.setMinimumWidth(round(self.brand_combo.sizeHint().width() * 4 / 3))
+        self._update_brand_hint()
+
+    def _update_brand_hint(self, *_args) -> None:
+        """品牌行 ⓘ 悬停文案随下拉当前项联动（R6）。"""
+        self.section.set_brand_hint(
+            EMULATOR_HINTS.get(self.section.brand_combo.currentData() or "", ""))
 
     def _on_brand_activated(self, emulator_type: str) -> None:
-        """用户切换品牌：更新草稿并按新品牌重新探测设备列表。"""
+        """用户切换品牌：更换探测上下文——清空旧列表、静默重探 ADB、按新品牌刷新。"""
         if not emulator_type or emulator_type == self._coordinator.emulator_type:
             return
         self._coordinator.update_emulator_type(emulator_type)
+        self._brand_switch_pending = True
+        self._show_probe_pending()
+        self._coordinator.reprobe_adb()
         self._on_refresh_devices()
 
     def sync_capture_config(self) -> None:
@@ -194,6 +211,17 @@ class MumuDevicePage(QWidget):
         )
         show_toast(self.window(), f"已找到 ADB：{adb_path}\n{message}", duration=3000)
 
+    def _on_adb_path_reprobed(self, adb_path: str) -> None:
+        """品牌切换静默重探的回填：找到则更新路径显示，找不到保留旧值（R3）。"""
+        if not adb_path:
+            return
+        self.adb_path_edit.setText(adb_path)
+        self.adb_path_edit.setProperty("raw_path", adb_path)
+        self.adb_path_edit.setToolTip(adb_path)
+        self.adb_path_edit.setStyleSheet(
+            "border: 1px solid #27ae60; padding: 4px 8px; background-color: #f0faf0; border-radius: 3px;"
+        )
+
     def _browse_adb(self) -> None:
         """弹出文件选择对话框选择 adb.exe"""
         path, _ = QFileDialog.getOpenFileName(
@@ -220,6 +248,7 @@ class MumuDevicePage(QWidget):
         """展示后台探测到的设备，并避免在多实例时擅自选择目标。"""
         self.refresh_button.setEnabled(True)
         self.refresh_button.setText("刷新")
+        self._brand_switch_pending = False
         configured_port = self._coordinator.config.get("emulator_adb_port", 0)
         devices = self._coordinator.devices
         running_devices = [device for device in devices if device.is_running and device.adb_port]
@@ -268,11 +297,34 @@ class MumuDevicePage(QWidget):
         self._on_device_changed(self.device_combo.currentIndex())
         self.ui_refresh_requested.emit()
 
+    def _show_probe_pending(self) -> None:
+        """跨品牌切换的探测过渡态：清空旧品牌设备列表，显示探测中（R4）。"""
+        self._device_selected_explicitly = False
+        with QSignalBlocker(self.device_combo):
+            self.device_combo.clear()
+            self.device_combo.addItem("(探测中...)")
+            self.device_combo.setEnabled(False)
+        self.port_label.setText("(自动探测)")
+        self._set_instance_status("● 实例：探测中")
+        self.instance_status_label.setToolTip("")
+
     def _on_device_refresh_failed(self, message: str) -> None:
-        """探测失败时保留现有选择，避免瞬时错误抹掉设备状态。"""
+        """探测失败：跨品牌切换显性报未探测到 + 原因；同品牌刷新保留上次结果。"""
         self.refresh_button.setEnabled(True)
         self.refresh_button.setText("刷新")
         self.refresh_button.setToolTip(message)
+        if self._brand_switch_pending:
+            # 旧品牌结果对新品牌不适用（R4）：清空列表并显性报错，不保留旧结果
+            self._brand_switch_pending = False
+            with QSignalBlocker(self.device_combo):
+                self.device_combo.clear()
+                self.device_combo.addItem("(未探测到设备)")
+                self.device_combo.setEnabled(False)
+            self.port_label.setText("(自动探测)")
+            self._set_instance_status("● 实例：未探测到")
+            self.instance_status_label.setToolTip(message)
+            self.ui_refresh_requested.emit()
+            return
         if self._coordinator.devices:
             running = any(device.is_running for device in self._coordinator.devices)
             self._set_instance_status("● 实例：刷新失败（保留上次结果）", running=running)

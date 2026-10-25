@@ -19,14 +19,24 @@ from src.capture.probers.models import EmulatorDeviceInfo as EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
-# 品牌标识（config.env EMULATOR_TYPE 取值域）与展示名（UI 下拉用）
+# 品牌标识（config.env EMULATOR_TYPE 取值域）与展示名（UI 下拉用，不带版本号）
 EMULATOR_TYPES: tuple[str, ...] = ("mumu", "ldplayer", "nox", "memu", "bluestacks")
 EMULATOR_LABELS: dict[str, str] = {
-    "mumu": "MuMu 12",
-    "ldplayer": "雷电 9",
+    "mumu": "MuMu",
+    "ldplayer": "雷电",
     "nox": "夜神",
     "memu": "逍遥",
-    "bluestacks": "蓝叠 5",
+    "bluestacks": "蓝叠",
+}
+# 品牌特性提示：设备与连接页品牌行 ⓘ 悬停展示，随所选品牌联动
+#（2026-10-25 四品牌真机实测 + 官方资料定稿，见
+# docs/design/emulator_multi_brand_requirements.md 第五节）
+EMULATOR_HINTS: dict[str, str] = {
+    "mumu": "默认开启 ADB；端口默认 16384（多开 +32 递增），可在模拟器右上角菜单 → 问题诊断 中查看。",
+    "ldplayer": "推荐使用稳定版雷电 9；默认端口 5555（多开 +2 递增）。",
+    "nox": "默认开启 ADB；端口默认 62001，多开为 62025、62026…依次递增，可在夜神多开器中查看。",
+    "memu": "默认开启 ADB；端口默认 21503（多开 +10 递增），可在逍遥多开器中查看。",
+    "bluestacks": "使用前需在蓝叠 设置 → 高级 中开启 ADB（Android 调试桥）。",
 }
 DEFAULT_EMULATOR_TYPE = "mumu"
 

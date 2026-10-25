@@ -16,6 +16,9 @@ from src.business.recognition.ocr_service import OcrService
 # EMULATOR_LABELS 供 UI 下拉构建）。
 from src.capture.image_validation import load_local_image
 from src.capture.probers import (
+    EMULATOR_HINTS as EMULATOR_HINTS,
+)
+from src.capture.probers import (
     EMULATOR_LABELS as EMULATOR_LABELS,
 )
 from src.capture.probers import (
@@ -38,6 +41,7 @@ class MumuConfigCoordinator(QObject):
     """协调模拟器配置草稿、共享服务和后台操作，不依赖具体控件。"""
 
     adb_detected = Signal(bool, str, str)
+    adb_path_reprobed = Signal(str)
     devices_changed = Signal(object)
     device_refresh_failed = Signal(str)
     connection_finished = Signal(bool, str)
@@ -81,6 +85,7 @@ class MumuConfigCoordinator(QObject):
 
         self._capture_service.connection_changed.connect(self.connection_state_changed.emit)
         self._operation_service.adb_detected.connect(self._on_adb_detected)
+        self._operation_service.adb_reprobed.connect(self._on_adb_reprobed)
         self._operation_service.devices_refreshed.connect(self._on_devices_refreshed)
         self._operation_service.device_refresh_failed.connect(self.device_refresh_failed.emit)
         self._operation_service.connection_finished.connect(self.connection_finished.emit)
@@ -125,8 +130,13 @@ class MumuConfigCoordinator(QObject):
         self.sync_capture_config()
 
     def update_emulator_type(self, emulator_type: str) -> None:
-        """更新编辑中的模拟器品牌，并同步共享会话（连接目标随之重建）。"""
+        """更新编辑中的模拟器品牌，并同步共享会话（连接目标随之重建）。
+
+        品牌切换即更换探测上下文：旧品牌的设备列表随之作废、不带入新品牌
+        （跨品牌旧结果语义错误，R4），后续以新品牌探测结果为准。
+        """
         self._config["emulator_type"] = emulator_type
+        self._devices = []
         self.sync_capture_config()
 
     @property
@@ -136,6 +146,10 @@ class MumuConfigCoordinator(QObject):
 
     def detect_adb(self) -> None:
         self._operation_service.detect_adb(self.emulator_type)
+
+    def reprobe_adb(self) -> None:
+        """品牌切换后的后台 ADB 重探（R3）：成功则更新路径草稿，失败沿用旧路径。"""
+        self._operation_service.reprobe_adb(self.emulator_type)
 
     def refresh_devices(self) -> None:
         self._operation_service.refresh_devices(self.emulator_type)
@@ -290,6 +304,12 @@ class MumuConfigCoordinator(QObject):
             self.update_adb_path(adb_path)
             self.refresh_devices()
         self.adb_detected.emit(success, adb_path, message)
+
+    def _on_adb_reprobed(self, adb_path: str) -> None:
+        """品牌切换静默重探：找到且与当前不同才写草稿；结果透传 UI 刷新显示。"""
+        if adb_path and adb_path != self._config.get("emulator_adb_path"):
+            self.update_adb_path(adb_path)
+        self.adb_path_reprobed.emit(adb_path)
 
     def _on_devices_refreshed(self, devices: list[EmulatorDeviceInfo]) -> None:
         self._devices = list(devices)

@@ -57,6 +57,7 @@ class _OcrService:
 
 class _OperationService(QObject):
     adb_detected = Signal(bool, str, str)
+    adb_reprobed = Signal(str)
     devices_refreshed = Signal(object)
     device_refresh_failed = Signal(str)
     connection_finished = Signal(bool, str)
@@ -70,12 +71,16 @@ class _OperationService(QObject):
         super().__init__()
         self.connect_count = 0
         self.refresh_count = 0
+        self.reprobe_types: list[str] = []
         self.template_requests: list[str] = []
         self.test_requests: list[tuple[str, int]] = []
         self.closed = False
 
     def detect_adb(self, emulator_type: str = "mumu") -> None:
         pass
+
+    def reprobe_adb(self, emulator_type: str = "mumu") -> None:
+        self.reprobe_types.append(emulator_type)
 
     def refresh_devices(self, emulator_type: str = "mumu") -> None:
         self.refresh_count += 1
@@ -289,3 +294,32 @@ def test_connect_adopts_auto_highlighted_device_port_across_brands(tmp_path: Pat
 
     assert capture.target_ports == [62025]
     assert operation.connect_count == 1
+
+
+def test_update_emulator_type_invalidates_previous_devices(tmp_path: Path) -> None:
+    """R4：品牌切换即更换探测上下文，旧品牌设备列表随之作废。"""
+    coordinator, _capture, _ocr, operation = _coordinator(tmp_path)
+    operation.devices_refreshed.emit([EmulatorDeviceInfo("1", "MuMu 实例", 16448, True)])
+    assert coordinator.devices
+
+    coordinator.update_emulator_type("bluestacks")
+
+    assert coordinator.devices == ()
+
+
+def test_adb_reprobe_updates_path_silently_and_keeps_old_on_miss(tmp_path: Path) -> None:
+    """R3：品牌切换静默重探——找到则更新路径与会话；未找到保留旧路径。"""
+    coordinator, capture, _ocr, operation = _coordinator(tmp_path)
+    coordinator._config["emulator_adb_path"] = "old/adb.exe"
+
+    coordinator.reprobe_adb()
+    assert operation.reprobe_types == ["mumu"]
+
+    operation.adb_reprobed.emit("new/HD-Adb.exe")
+
+    assert coordinator.config["emulator_adb_path"] == "new/HD-Adb.exe"
+    assert capture.configs[-1]["emulator_adb_path"] == "new/HD-Adb.exe"
+
+    operation.adb_reprobed.emit("")  # 未找到：保留旧路径
+
+    assert coordinator.config["emulator_adb_path"] == "new/HD-Adb.exe"

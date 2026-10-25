@@ -58,6 +58,7 @@ class _MumuCaptureService(QObject):
 
 class _MumuOperationService(QObject):
     adb_detected = Signal(bool, str, str)
+    adb_reprobed = Signal(str)
     devices_refreshed = Signal(object)
     device_refresh_failed = Signal(str)
     connection_finished = Signal(bool, str)

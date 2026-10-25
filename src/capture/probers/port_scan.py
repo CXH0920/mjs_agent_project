@@ -48,11 +48,15 @@ def scan_open_ports(ports: list[int], timeout: float = 0.2) -> list[int]:
 
 
 def probe_devices_via_ports(emulator_type: str, label: str) -> list[EmulatorDeviceInfo]:
-    """把端口段内开放端口组装为候选实例（序号 1 起，名称标注端口扫描来源）。"""
+    """把端口段内开放端口组装为候选实例（序号 1 起）。
+
+    行名标注端口扫描来源与"品牌未验证"——5555 等雷电/蓝叠共用端口存在归属
+    歧义，候选不应被误认为已确认归属。
+    """
     devices = [
         EmulatorDeviceInfo(
             index=str(ordinal),
-            name=f"{label} 实例 {ordinal}（端口扫描）",
+            name=f"{label} 实例 {ordinal}（端口扫描·品牌未验证）",
             adb_port=port,
             is_running=True,
         )

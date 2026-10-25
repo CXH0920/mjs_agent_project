@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QToolTip,
     QVBoxLayout,
 )
 from src.ui.shared.style import PRIMARY, PRIMARY_HOVER
@@ -30,6 +32,32 @@ OUTLINE_BUTTON_STYLE = (
     "border: 1px solid #8bb8df; border-radius: 4px; padding: 5px 10px; }"
     "QPushButton:hover { background-color: #eaf4fd; }"
 )
+
+
+class _BrandHintIcon(QLabel):
+    """品牌特性提示图标：鼠标进入或点击立即显示说明，离开隐藏。
+
+    不依赖 Qt 悬停驻留计时器——真机实测原生悬停路径下 tooltip 不出现
+    （2026-10-25），改为 enter/click 主动 QToolTip.showText（与推荐卡片
+    信息图标同模式）。
+    """
+
+    def __init__(self) -> None:
+        super().__init__("ⓘ")
+
+    def enterEvent(self, event) -> None:
+        if self.toolTip():
+            QToolTip.showText(QCursor.pos(), self.toolTip(), self)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if self.toolTip():
+            QToolTip.showText(QCursor.pos(), self.toolTip(), self)
+        super().mousePressEvent(event)
 
 
 class MumuDeviceSection(QFrame):
@@ -59,12 +87,21 @@ class MumuDeviceSection(QFrame):
         layout.addWidget(title, 0, 0, 1, 4)
         layout.addWidget(helper, 1, 0, 1, 4)
 
-        # 品牌下拉：用户激活（非程序装载）时触发设备列表按新品牌刷新
+        # 品牌下拉：用户激活（非程序装载）时触发设备列表按新品牌刷新；
+        # 右侧 ⓘ 为品牌特性提示，鼠标悬停图标显示说明文案（随所选品牌
+        # 联动，由页面 set_brand_hint 更新）
         self.brand_combo = QComboBox()
         self.brand_combo.activated.connect(
             lambda index: self.brand_activated.emit(self.brand_combo.itemData(index)))
+        brand_row = QHBoxLayout()
+        brand_row.addWidget(self.brand_combo)
+        self.brand_hint_icon = _BrandHintIcon()
+        self.brand_hint_icon.setStyleSheet(f"color: {PRIMARY}; font-size: 15px;")
+        self.brand_hint_icon.setCursor(Qt.CursorShape.PointingHandCursor)
+        brand_row.addWidget(self.brand_hint_icon)
+        brand_row.addStretch()
         layout.addWidget(QLabel("模拟器品牌"), 2, 0)
-        layout.addWidget(self.brand_combo, 2, 1, 1, 3)
+        layout.addLayout(brand_row, 2, 1, 1, 3)
 
         self.device_combo = QComboBox()
         self.device_combo.currentIndexChanged.connect(self.device_changed)
@@ -129,6 +166,11 @@ class MumuDeviceSection(QFrame):
         layout.addLayout(action_row, 7, 0, 1, 4)
         layout.setColumnStretch(1, 1)
         layout.setRowStretch(8, 1)
+
+    def set_brand_hint(self, text: str) -> None:
+        """更新品牌特性提示：ⓘ 悬停显示完整说明文案，文案随所选品牌联动。"""
+        self.brand_hint_icon.setToolTip(text)
+        self.brand_hint_icon.setVisible(bool(text))
 
 
 class MumuTemplateSection(QFrame):

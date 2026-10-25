@@ -9,8 +9,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PIL import Image
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton, QToolTip
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_service import OcrService
 from src.capture.probers import EmulatorDeviceInfo
@@ -26,6 +27,7 @@ def _app() -> QApplication:
 
 class _OperationService(QObject):
     adb_detected = Signal(bool, str, str)
+    adb_reprobed = Signal(str)
     devices_refreshed = Signal(object)
     device_refresh_failed = Signal(str)
     connection_finished = Signal(bool, str)
@@ -40,10 +42,14 @@ class _OperationService(QObject):
         self._devices = devices
         self.template_capture_requests: list[str] = []
         self.refresh_types: list[str] = []
+        self.reprobe_types: list[str] = []
 
     def refresh_devices(self, emulator_type: str = "mumu") -> None:
         self.refresh_types.append(emulator_type)
         self.devices_refreshed.emit(self._devices)
+
+    def reprobe_adb(self, emulator_type: str = "mumu") -> None:
+        self.reprobe_types.append(emulator_type)
 
     def detect_adb(self, emulator_type: str = "mumu") -> None:
         raise AssertionError("已配置 ADB 时不应自动探测")
@@ -353,9 +359,92 @@ def test_brand_combo_loads_configured_type_and_switch_triggers_refresh() -> None
     assert operation.refresh_types == ["mumu"]  # 初载按 mumu 刷新
 
     ld_index = page.brand_combo.findData("ldplayer")
-    assert page.brand_combo.itemText(ld_index) == "雷电 9"
+    assert page.brand_combo.itemText(ld_index) == "雷电"
     page.brand_combo.setCurrentIndex(ld_index)
     page.section.brand_activated.emit("ldplayer")  # 用户激活（非程序装载）
 
     assert dialog._coordinator.emulator_type == "ldplayer"
     assert operation.refresh_types[-1] == "ldplayer"
+    assert operation.reprobe_types == ["ldplayer"]  # R3：切换品牌后台静默重探 ADB
+
+
+class _RefreshFailsAfterSwitchService(_OperationService):
+    """初始刷新正常回放设备；置 fail_after_switch=True 后探测必定失败。"""
+
+    def __init__(self, devices: list[EmulatorDeviceInfo]) -> None:
+        super().__init__(devices)
+        self.fail_after_switch = False
+
+    def refresh_devices(self, emulator_type: str = "mumu") -> None:
+        self.refresh_types.append(emulator_type)
+        if self.fail_after_switch:
+            self.device_refresh_failed.emit("未找到蓝叠安装目录（注册表 BlueStacks_nxt / BlueStacks_nxt_cn）")
+        else:
+            self.devices_refreshed.emit(self._devices)
+
+
+def test_brand_switch_clears_previous_brand_results_and_reports_failure() -> None:
+    """R4：跨品牌切换清空旧品牌列表，探测失败显性报未探测到 + 原因。"""
+    _app()
+    device = EmulatorDeviceInfo("1", "雷电 实例 1（端口扫描·品牌未验证）", 5555, True)
+    service = _RefreshFailsAfterSwitchService([device])
+    dialog = MumuConfigDialog(
+        {**_FULL_MUMU_CONFIG, "emulator_adb_path": "adb.exe", "emulator_adb_port": 0},
+        capture_service=CaptureService(),
+        ocr_service=OcrService(),
+        operation_service=service,
+    )
+    page = dialog._device_page
+    assert page.device_combo.currentData() == device  # 旧品牌（雷电）结果在场
+
+    service.fail_after_switch = True
+    bs_index = page.brand_combo.findData("bluestacks")
+    page.brand_combo.setCurrentIndex(bs_index)
+    page.section.brand_activated.emit("bluestacks")
+
+    assert dialog._coordinator.emulator_type == "bluestacks"
+    assert dialog._coordinator.devices == ()
+    assert page.device_combo.currentData() is None
+    assert "未探测到" in page.device_combo.currentText()
+    assert "未探测到" in page.instance_status_label.text()
+    assert "未找到蓝叠安装目录" in page.instance_status_label.toolTip()
+    assert page.port_label.text() == "(自动探测)"
+
+
+def test_adb_reprobe_result_updates_path_display_silently() -> None:
+    """R3：静默重探结果回填路径显示；未找到（空路径）保留旧值。"""
+    _app()
+    dialog = _dialog({"emulator_adb_path": "old/adb.exe", "emulator_adb_port": 0}, [])
+    page = dialog._device_page
+
+    dialog._coordinator.adb_path_reprobed.emit("D:/new/HD-Adb.exe")
+
+    assert page.adb_path_edit.property("raw_path") == "D:/new/HD-Adb.exe"
+    assert page.adb_path_edit.text() == "D:/new/HD-Adb.exe"
+
+    dialog._coordinator.adb_path_reprobed.emit("")
+
+    assert page.adb_path_edit.property("raw_path") == "D:/new/HD-Adb.exe"
+
+
+def test_brand_hint_icon_follows_selected_brand() -> None:
+    """R6：品牌特性提示随所选品牌联动——仅 ⓘ 图标，悬停/点击显示说明文案。"""
+    _app()
+    dialog = _dialog({"emulator_type": "bluestacks", "emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [])
+    section = dialog._device_page.section
+
+    assert not hasattr(section, "brand_hint_label")  # 无常显文案，仅悬停形态
+    assert "设置 → 高级" in section.brand_hint_icon.toolTip()
+    assert not section.brand_hint_icon.isHidden()
+
+    page = dialog._device_page
+    page.brand_combo.setCurrentIndex(page.brand_combo.findData("ldplayer"))
+
+    assert "稳定版雷电 9" in section.brand_hint_icon.toolTip()
+
+    # 悬停（进入）即显示说明，不依赖平台驻留计时器（真机实测该路径不出 tooltip）
+    QApplication.sendEvent(section.brand_hint_icon, QEvent(QEvent.Type.Enter))
+    assert "稳定版雷电 9" in QToolTip.text()
+    # 点击同样显示（离屏下 Leave 淡出需事件循环，隐藏行为不作离屏断言）
+    QTest.mouseClick(section.brand_hint_icon, Qt.MouseButton.LeftButton)
+    assert "稳定版雷电 9" in QToolTip.text()

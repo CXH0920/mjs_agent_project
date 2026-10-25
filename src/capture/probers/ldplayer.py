@@ -18,7 +18,7 @@ from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
-_LABEL = "雷电 9"
+_LABEL = "雷电"
 _ADB_PORT_BASE = 5555
 _ADB_PORT_STEP = 2
 
@@ -30,6 +30,8 @@ def _probe_registry() -> str | None:
         for key_path in [
             r"SOFTWARE\leidian\ldrun",
             r"SOFTWARE\WOW6432Node\leidian\ldrun",
+            r"SOFTWARE\leidian\ldplayer9",
+            r"SOFTWARE\WOW6432Node\leidian\ldplayer9",
             r"SOFTWARE\leidian",
             r"SOFTWARE\WOW6432Node\leidian",
         ]:

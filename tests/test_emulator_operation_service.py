@@ -71,6 +71,27 @@ def test_refresh_failure_is_reported_without_device_result(monkeypatch) -> None:
     service.shutdown()
 
 
+def test_reprobe_adb_reports_path_without_device_refresh(monkeypatch) -> None:
+    """R3：品牌切换静默重探只回传路径，不触发设备刷新。"""
+    monkeypatch.setattr(
+        "src.business.emulator.emulator_operation_service.probe_adb",
+        lambda emulator_type="mumu": "D:/tools/HD-Adb.exe",
+    )
+    service = EmulatorOperationService(_CaptureService())
+    completed = Event()
+    received: list[str] = []
+    refreshed: list[object] = []
+    service.adb_reprobed.connect(lambda path: (received.append(path), completed.set()))
+    service.devices_refreshed.connect(refreshed.append)
+
+    service.reprobe_adb("bluestacks")
+
+    assert _wait(completed)
+    assert received == ["D:/tools/HD-Adb.exe"]
+    assert refreshed == []
+    service.shutdown()
+
+
 def test_connection_failure_and_template_capture_are_reported() -> None:
     service = EmulatorOperationService(_CaptureService())
     connection_completed = Event()
