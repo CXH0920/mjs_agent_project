@@ -536,3 +536,12 @@ def transform(raw: dict) -> dict | None:
 - **空目标伪成功丢数据修复**（1d8334a）：`incremental.main()` 筛选后 `target_raw` 为空时由 `return`（退出码 0）改为 `[错误] 无目标武将...` + `sys.exit(1)`——防 QProcess 读作成功、公告 `mark_applied` 静默吞掉待更新武将
 - **抓取素材清理**（29ae6d6）：`images/*.png` 抓取产物移出版本库（抓取数据自 2026-10-03 起经 `src/scripts/pull_data.py` 从私有仓同步，`data/SOURCES.md` 登记来源）；合规条款与访问频率控制披露同步更新至 `TERMS.md`
 - 测试规模台账：153 文件 / 1936 个 `test_*` 函数（原 145 / 1626）；`tests/test_crawler.py` 10 → 53 例
+
+---
+
+## 十一、本轮文档校准（2026-10-25）
+
+自基线 `a63bc3c`（2026-10-23 校准）以来的变更（仅 79fc4a0 涉及本模块，+11 行）：
+
+- **robots 与头像下载超时解耦**（79fc4a0）：`crawler.py` 新增 `ROBOTS_FETCH_TIMEOUT = 5` 与 `IMAGE_DOWNLOAD_TIMEOUT = 15` 两个独立超时——robots.txt 是百字节小文件，复用主数据 `TIMEOUT = 30` 过于保守，站点异常时每个采集子进程都要等满额才降级放行，短超时快速失败即降级（`_fetch_host_rules()` / `cache_robots_txt()` 两处接入）；头像 PNG 仅数百 KB，短于主数据的超时使 CDN 握手挂起时单张等待上限减半（`_open_image_response()` 接入）。主数据 `TIMEOUT = 30` 不变
+- 本轮其余爬虫域文件无代码变更；`base_fetch_service` 的完成钩子重入进程保护（4bd9586）虽影响爬虫父进程侧，实现位于 `src/business/fetching/`，记录于 [`./module_business.md`](./module_business.md)

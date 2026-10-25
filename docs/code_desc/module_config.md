@@ -146,7 +146,7 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 32 键：runtime 6 + mumu 15 + 透传 11）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
+`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 38 键：runtime 6 + mumu 21 + 透传 11）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判），多品牌连接三键（`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`）未配置时回退旧 `MUMU_ADB_*` 实配值（老 config.env 不改字平滑升级，持久化始终写新键）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
 
 `get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(32768，cf9c927 由 16384 上调；P1-7 起单源于 `env.DEFAULT_MAX_OUTPUT_TOKENS`，`api_generator.MAX_OUTPUT_TOKENS` 仅引用) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
@@ -183,6 +183,8 @@ handler 分两类：
 - **其余 src 路由文件**跟随用户级别，由 handler 层裁剪。
 
 root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即使用户把 `LOG_LEVEL` 调到 DEBUG，root 仍不低于 WARNING）：第三方库（chromadb / transformers 等）作为 root 的直接子且级别 NOTSET，继承 root 后其 INFO/DEBUG 在 logger 层即被挡、不创建 LogRecord，实现零库名清单的高效压制。项目 `src` / `subprocess` 前缀单独设 `DEBUG` 全量创建，供 `debug.log` 留底与子进程输出转发。
+
+**控制台输出队列化（79fc4a0，防卡死）**：root 的控制台 handler 不再直接 `StreamHandler(sys.stdout)`，而是包一层 `_QueuedConsoleHandler`（继承 `logging.handlers.QueueHandler`，无界 `SimpleQueue` + 后台 `QueueListener` 消费线程）——调用线程只做入队，控制台写全部移出调用线程。背景：Windows 经典控制台的**快速编辑选中**会无限期阻塞 `WriteConsoleW`（2026-10-24 事故：GUI 主线程在菜单槽的 `logger.info` 上悬死，按 Esc 才解冻）；队列化后控制台再被卡住最多积压/延迟控制台日志，不再冻结 UI。文件 handler 不经队列，仍同步落盘不受影响。`close()` 顺带停消费线程并关掉底层控制台 handler，避免线程与 handler 随 `setup_logging` 重入轮次累积。
 
 **线程与逃逸异常钩子**：`setup_logging()` 同时注册两类兜底钩子——`threading.excepthook`（R2，`_thread_excepthook`）把后台线程未捕获异常记为带堆栈 ERROR（`SystemExit` 视为正常退出不记录）；链式 `sys.excepthook`（80cc75b，`_install_sys_excepthook`）——PySide6 6.11 实测 `QThread.run()` 异常走 `sys.excepthook` 而非 `threading.excepthook`，新钩子把逃逸异常记为带堆栈 ERROR（logger 名 `excepthook`）后回调前一 hook 保留控制台行为，`KeyboardInterrupt` 直接透传，`_MANAGED_EXCEPTHOOK_ATTR` 标记保证幂等不重复包裹。
 
@@ -446,3 +448,16 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 **修正与配置**
 - `DISCLAIMER_VERSION` `"1.1"` → `"1.3"`（disclaimer_state.py），TERMS/LICENSE 附加条款实质修订；TERMS.md 节号同步由「第 9 节」→「第 10 节」
 - `env.py` 新增 2 个透传键（+4 行）：`DATA_FRESHNESS_STALE_GREEN_DAYS` / `DATA_FRESHNESS_STALE_RED_DAYS`（int、default=None，不进 getter 域与 UI 配置对话框）。语义：数据新鲜度档位阈值 [0,绿) 绿 / [绿,红) 黄 / ≥红 红，默认 7/14；官方榜单约每半月更新，写死 14 天会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001），由 `business/freshness.py::_stale_thresholds()` 消费。键元表现 32 键（详见 3.3 节）
+
+---
+
+## 十、本轮文档校准（2026-10-25）
+
+自基线 `a63bc3c`（2026-10-23 校准）以来的变更（覆盖 8f2e70a / ed8b4ac / 79fc4a0 中涉及 config 域的部分）：
+
+- **env.py 多品牌连接键**（8f2e70a / ed8b4ac，+15 行）：新增 6 键——`EMULATOR_TYPE`（品牌/连接方式标识，取值域 `src.capture.probers.EMULATOR_TYPES`）、`EMULATOR_BRAND`（切 PC 客户端期间记住上次模拟器品牌）、`PC_WINDOW_TITLE`（PC 直连目标窗口标题，默认"名将杀"）、`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`（三键带 `default_from="mumu_*"` 级联回退，老 config.env 不改字平滑升级；持久化始终写 `EMULATOR_*`，写入后新键优先生效、旧 `MUMU_ADB_*` 残行为惰性数据）。键元表 32 → **38 键**（runtime 6 + mumu 21 + 透传 11），消费方为 `CaptureConnectionManager._conn_key()`（同语义兼容读取）与 `AdbCapture(emulator_type=)`。详见 §3.3
+- **logging_config.py 控制台队列化**（79fc4a0，+32 行）：新增 `_QueuedConsoleHandler`（QueueHandler + QueueListener 后台消费线程），控制台写移出调用线程——Windows 经典控制台快速编辑选中会无限期阻塞 `WriteConsoleW`（2026-10-24 事故：GUI 主线程在 `logger.info` 上悬死，Esc 才解冻）；文件 handler 不经队列仍同步落盘。详见 §3.4
+- **doctor.py 设备检查适配**（feee42b / ed8b4ac）：ADB 路径读取改 `emulator_adb_path`（旧键回退）；`adb devices` 在线序列号匹配放宽为 `127.0.0.1:<port>` 或 `emulator-<n>`（雷电等品牌可能注册为 adb 主动扫描区命名）；无在线设备时修复文案按形态分立（蓝叠提示先在设置中开启 ADB）
+- **environment.yml / environment-ci.yml**（ed8b4ac）：新增 `windows-capture==2.0.1`（PC 客户端 WGC 采集主路径，Win10 1903+，失败自动退 BitBlt）
+
+**本轮其余 config 域文件**（version.py / onboarding_state.py / disclaimer_state.py 等）无代码变更。

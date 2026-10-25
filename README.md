@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-1936%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-2042%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景。项目重点探索：
@@ -29,16 +29,17 @@
 ## 技术亮点
 
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
-2. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
-3. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-4. **测试与交付工程化** — 153 个测试模块 / 1936 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
-5. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
-6. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
-7. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
-8. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
-9. **首启向导三段体检** — 环境自检 → 模拟器连接与分辨率体检 → 试识别，一页式对话框；任一步失败给出唯一可点修复动作，界面明示「本工具只读屏幕，不操作游戏」；状态持久化到 `config/.onboarding_state.json` 且版本感知，跳过或完成不再打扰，可从「帮助 → 重看首启引导」找回。
-10. **数据可靠性与备份恢复** — 写前快照 + 原子写 + 坏文件留底 + 导入前备份与源结构校验构成完整写保护链；`data/backups/` 自动快照可在「数据 → 从备份恢复」按「当前文件 + 最近快照」对照预览键级差异并一键恢复，恢复前先快照当前状态（双向可回退），坏备份在预览与恢复两侧都拒绝。
-11. **合规执行与访问披露** — robots.txt 24 小时缓存 + 抓取前逐 URL 按已解析规则校验（Disallow 路径拒绝抓取，获取失败放行并告警）；官网采集改用如实爬虫标识 `mjs-agent/1.0`（不伪装浏览器 UA）；Playwright 生成附加 `--disable-blink-features=AutomationControlled` 且相邻两次生成间随机休息 60~180 秒，条款集中登记于 [TERMS.md](TERMS.md) 第 7 节。
+2. **双形态图像源** — 模拟器 ADB 截图（五品牌：MuMu/雷电/夜神/逍遥/蓝叠，`probers/` 函数式注册表探测 + 端口段兜底 + 进程反查，五品牌探测全部 <1s）或官方 PC 客户端窗口直连（`pc_client.py`：WGC 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测，全程只读窗口画面）；两种采集会话接口对齐，下游 OCR 管线无感复用。
+3. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
+4. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
+5. **测试与交付工程化** — 156 个测试模块 / 2042 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
+6. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
+7. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
+8. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
+9. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
+10. **首启向导三段体检** — 环境自检 → 模拟器连接与分辨率体检 → 试识别，一页式对话框；任一步失败给出唯一可点修复动作，界面明示「本工具只读屏幕，不操作游戏」；状态持久化到 `config/.onboarding_state.json` 且版本感知，跳过或完成不再打扰，可从「帮助 → 重看首启引导」找回。
+11. **数据可靠性与备份恢复** — 写前快照 + 原子写 + 坏文件留底 + 导入前备份与源结构校验构成完整写保护链；`data/backups/` 自动快照可在「数据 → 从备份恢复」按「当前文件 + 最近快照」对照预览键级差异并一键恢复，恢复前先快照当前状态（双向可回退），坏备份在预览与恢复两侧都拒绝。
+12. **合规执行与访问披露** — robots.txt 24 小时缓存 + 抓取前逐 URL 按已解析规则校验（Disallow 路径拒绝抓取，获取失败放行并告警）；官网采集改用如实爬虫标识 `mjs-agent/1.0`（不伪装浏览器 UA）；Playwright 生成附加 `--disable-blink-features=AutomationControlled` 且相邻两次生成间随机休息 60~180 秒，条款集中登记于 [TERMS.md](TERMS.md) 第 7 节。
 
 ---
 
@@ -211,7 +212,8 @@ test_project/
 │   │                           #   + maintenance/backup_restore_service（备份快照浏览/预览/恢复）
 │   │                           #   + common/check_cooldown（访问冷却与并发守卫）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking
-│   ├── capture/                # ADB 截图与多品牌模拟器实例探测（仅屏幕读取，无输入能力）
+│   ├── capture/                # 双形态图像源：ADB 截图（probers/ 五品牌探测）+ 官方 PC 客户端窗口直连
+│                               #   pc_client.py（WGC 主路径 + BitBlt 兜底）；仅屏幕读取，无输入能力
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施（embedder.py 双后端编码器抽象，onnx 默认）
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
@@ -275,7 +277,8 @@ test_project/
 │  无 UI 引用，通过 Qt Signal 通信                             │
 ├────────────────────────────────────────────────────────────┤
 │  采集层 (src/scraper/ + src/capture/ + src/ocr/)           │
-│  官网爬虫 / AI 生成 / ADB 截图 / 模板匹配 / 卡位检测 / OCR    │
+│  官网爬虫 / AI 生成 / ADB 截图（五品牌）+ PC 客户端直连 /      │
+│  模板匹配 / 卡位检测 / OCR                                  │
 │  RAG 检索基础设施 (src/rag/，embedder.py ONNX 编码器)        │
 │  + 语料与维护脚本 (src/scripts/)                             │
 ├────────────────────────────────────────────────────────────┤
@@ -291,7 +294,8 @@ test_project/
 ```
 武将采集   官网 JS chunk → 字符级状态机解析 → 清洗 → Pydantic 校验 → data/heroes.json + 头像
 AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校验 → data/guides.json / synergies.json
-屏幕识别   ADB 截图 → 模板匹配过滤 → RapidOCR → 名称纠错 → 推荐面板/对局攻略
+屏幕识别   ADB 截图（五品牌模拟器）或 PC 客户端窗口直连 → 模板匹配过滤 → RapidOCR →
+           名称纠错 → 推荐面板/对局攻略
 巅峰赛     ADB 截图 → 卡位检测 → 名条 OCR → 候选池/禁选建议/实战配队
 公告监控   官方公告 → 章节过滤 → 百科逐武将 diff → 确认 → 精准更新 + 时间轴追加
 卡牌百科   官网手牌库 → card_baike 抓取 diff → 快照 → 确认 → 应用更新 + 变更记录
@@ -337,7 +341,7 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **对局攻略**：42/58 分割的 2v2 阵容核对与临场攻略工作台；OCR 导入后按"我方/敌方/未定"分组，确认阵容后展示总览、我方打法、对抗敌方与单将详情；胜率榜按对局链路区分 2v2 / 巅峰赛（`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）。
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
 - **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体，以及两个独立入口——「指定配对计算」（按状态筛选武将后按策略组装精确配对清单）与「落后相性刷新」（列出已有但落后于武将资料的配对，按最后生成日期升序，勾选后只刷这批）。生成失败时弹窗详情列出失败武将/相性对清单。
-- **屏幕采集与 OCR**：模板匹配作前置过滤（<50ms），命中后执行 RapidOCR/ONNX 双套件（v6 主 + v4 复核，未决槽位候选闭包内确认）；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
+- **屏幕采集与 OCR**：双形态图像源——模拟器 ADB 截图（MuMu/雷电/夜神/逍遥/蓝叠五品牌，配置页品牌下拉切换）或官方 PC 客户端窗口直连（WGC 主路径 + BitBlt 兜底，仅支持窗口化模式，全程只读不发送输入）；模板匹配作前置过滤（<50ms），命中后执行 RapidOCR/ONNX 双套件（v6 主 + v4 复核，未决槽位候选闭包内确认）；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
 - **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/target/special_rules）、检索诊断只读抽屉（候选去向表：得分/RRF/剔除原因中文映射）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
 - **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+复核引擎候选闭包兜底，未确认写入待复核。
@@ -370,8 +374,9 @@ LOG_TO_FILE=true
 # 官方 PC 客户端直连（EMULATOR_TYPE=pc_client 时生效）
 PC_WINDOW_TITLE=名将杀
 
-# 模拟器（多品牌：mumu/ldplayer/nox/memu/bluestacks）
+# 模拟器（多品牌：mumu/ldplayer/nox/memu/bluestacks；官方 PC 客户端用 pc_client）
 EMULATOR_TYPE=mumu
+EMULATOR_BRAND=mumu
 EMULATOR_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
 EMULATOR_ADB_PORT=16448
 EMULATOR_SCREENSHOT_MODE=auto
@@ -420,6 +425,7 @@ DATA_FRESHNESS_STALE_RED_DAYS=14
 | rapidocr 3.9.2 / onnxruntime 1.23.2 | OCR 识别引擎（PP-OCRv6 主 + PP-OCRv4 复核，均 ONNX 形态；paddle 已退役） |
 | opencv-python 4.11.0.86 | 模板匹配 + 卡位检测 + 图像预处理 |
 | pillow 12.3.0 / numpy 1.26.4 | 图像处理 |
+| windows-capture 2.0.1 | 官方 PC 客户端 WGC 采集主路径（Win10 1903+，失败自动退 BitBlt） |
 | chromadb 1.5.9 / onnxruntime 1.23.2 / tokenizers 0.22.2 | RAG 向量检索（bge-small-zh-v1.5，ONNX 编码器运行期栈） |
 | sentence-transformers 5.7.0 | RAG 编码器回滚档（`RAG_EMBEDDING_BACKEND=st`）与 ONNX 导出源，非运行期依赖 |
 | unihan_etl / cnradical / pypinyin | 汉字特征库（OCR 名称纠错：四角号码、部首、笔画、拼音） |
@@ -452,7 +458,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-10-23） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-10-25） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/design/](docs/design/) | 设计决策记录 |
@@ -511,9 +517,10 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 四十三 | 抓取链路健壮性（ScriptRunner 启动失败终态契约 + 看门狗树杀与延迟复查 + 退出杀进程树 + 取消 Starting 兜底） | ✅ 已完成 |
 | 四十四 | 数据安全与备份恢复（三条数据全灭路径封堵 + 备份恢复服务与对话框 + 导入前备份与源结构校验） | ✅ 已完成 |
 | 四十五 | 相性指定获取双入口拆分（指定配对计算 + 落后相性刷新，按状态筛选按策略组装配对清单） | ✅ 已完成 |
-| 四十六 | 官方 PC 客户端直连（WGC 主路径 + BitBlt 兜底 + 黑帧检测引导 + 连接方式/设备页双形态；选型与真机取证见 docs/design/pc_official_client_capture_design.md） | ✅ 已完成 |
+| 四十六 | 多模拟器五品牌连接（MuMu/雷电/夜神/逍遥/蓝叠 probers 注册表探测 + 端口段兜底 + 进程反查 + EMULATOR_* 配置键平滑升级；五品牌探测全部 <1s，适配见 docs/design/emulator_multi_brand_requirements.md） | ✅ 已完成 |
+| 四十七 | 官方 PC 客户端直连（WGC 主路径 + BitBlt 兜底 + 黑帧检测引导 + 连接方式/设备页双形态；选型与真机取证见 docs/design/pc_official_client_capture_design.md） | ✅ 已完成 |
 
-> 文档基线：2026-10-23（`a63bc3c`）。测试 153 个测试模块 / 1936 个测试函数（grep 统计），Ruff 0.12.0 全通过。
+> 文档基线：2026-10-25（`ed8b4ac`）。测试 156 个测试模块 / 2042 个测试函数（grep 统计），Ruff 0.12.0 全通过。
 
 ---
 
@@ -521,7 +528,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 - 本项目对官网的访问为只读采集，遵守该站 robots.txt 规则：robots.txt 连同抓取时间与内容哈希存档到 `logs/robots_cache/`（24 小时内不重复请求），并在每次抓取前按已解析规则校验目标 URL，被 `Disallow` 的路径拒绝抓取（获取失败时放行并告警）；
 - 官网采集使用**如实爬虫标识** `mjs-agent/1.0`（附项目地址）而非伪装成浏览器 User-Agent，头像下载逐张限速并内置连续失败熔断；AI 网页模式（`--browser`）的自动化访问方式、请求间隔与风险承担见 [TERMS.md](TERMS.md) 第 7 节（当前条款版本 1.3）；
-- 代码**不包含**任何 ADB 输入、自动点击等自动操作能力（见 `src/capture/adb_screen.py` 与 `src/business/emulator/emulator_operation_service.py` 模块文档字符串，及 CLAUDE.md / AGENTS.md 的「法律红线」节），相关功能的 Issue / PR 一律拒绝；
+- 代码**不包含**任何 ADB 输入、自动点击等自动操作能力（见 `src/capture/adb_screen.py`、`src/capture/pc_client.py` 与 `src/business/emulator/emulator_operation_service.py` 模块文档字符串，及 CLAUDE.md / AGENTS.md 的「法律红线」节；PC 客户端采集同样全程只读窗口画面，不发送任何输入），相关功能的 Issue / PR 一律拒绝；
 - 采集数据与头像仅限本地使用，禁止二次发布；AI 生成内容仅供参考。完整条款见 [LICENSE](LICENSE)（附加使用条款）与 [TERMS.md](TERMS.md)。
 
 ## 项目历史说明

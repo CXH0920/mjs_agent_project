@@ -150,6 +150,8 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 
 **子进程工作目录与进程释放（9ccc2fc）**：`_start_process` 设 `setWorkingDirectory(PROJECT_ROOT)`——子进程以 `-m 相对模块名` 启动，快捷方式/打包态从其他目录启动时按当前目录解析会直接报"找不到模块"（TD-A6-001）；`_release_process()` 在 `_start_process` 开头与 `_on_finished` 结尾置空引用并 `deleteLater()` 释放已结束的 QProcess，避免对象与信号连接随任务轮次持续累积（TD-A8-001）。
 
+**完成钩子重入进程保护（4bd9586）**：`_on_finished` 在调用 `_on_process_finished()` 钩子**前**先记录 `finished_process = self._process`，钩子返回后仅当 `self._process is finished_process` 才执行 `_release_process()`——钩子可能经直连信号同步发起下一阶段（公告多阶段更新链：检查完成后直接触发武将变更获取），此刻 `_process` 已是重入启动的新进程，按旧逻辑释放会把新 QProcess `deleteLater`，其析构时强杀仍在运行的子进程（表现为随机退出码 0xF291=62097）。
+
 **错误路径台账**：`_on_error` 补 `record_task(ok=False, ...)`——`FailedToStart` 等错误 Qt 不发 `finished`，不在此记则台账缺失该类失败。
 
 **任务台账（c88bf63 → 2b73535 跨进程锁）**：`_on_finished` 调 `record_task(self._service_name, ok=exit_code==0 and not self._cancel_requested, exit_code=..., failed=len(self._failed_items), duration_s=..., reason=...)` 逐任务追加 JSONL 到 `logs/task_results.jsonl`——日志按 10MB×5 轮转（65~78 天窗口），失败痕迹会随轮转消失，台账是唯一能跨窗口留住"某天某任务是否失败"的记录。reason 优先取 CLI 失败摘要行，其次"思考过程耗尽输出额度"，否则退出码。**跨进程文件锁**：写者含 UI 父进程与维护脚本/索引构建脚本，彼此无先后约定，仅靠 `O_APPEND` 在 NTFS 上实测静默丢 2%~12% 记录——`record_task` 经 `_ledger_lock()` 对 `*.lock` 首字节加非阻塞独占锁（`msvcrt.LK_NBLCK` / `fcntl.LOCK_NB`，50 次×20 ms 有界等待），锁机制不可用时降级无锁写入（台账是辅助设施，不能因锁故障拖垮任务）。`read_entries()` 跳过空行与非对象 JSON 行（外部工具追加的 `123`、`["x"]`）并记 WARNING，不再因 `entry.get` 抛 `AttributeError` 让整份台账读不出。
@@ -177,7 +179,7 @@ AI 生成服务以子进程退出码作为成败来源：CLI 根据 `GenerationR
 | `OcrTaskCoordinator`（ocr_task_coordinator.py） | OCR worker 唯一创建点（`ensure_worker()`，经构造注入的 `on_worker_created` 回调同步接线后才 `start()`，跨线程首建同样成立；**shutdown 后拒绝复活 worker**）、模型预热状态机（idle/warming/ready/failed，`reset_warmup()` 悬挂出口）、识别任务的阈值/ROI 组装（`build_task()`） | 持有 `_worker`（创建由 `_worker_lock` 双检保护）/`_worker_retired`/`_on_worker_created`/`_warmup_task`/`_warmup_state`；配置经 `config_provider` 晚绑定读取（阈值改动实时生效），ROI 共享 `CaptureService._roi_config` |
 | `OfficialImportGateway`（official_import_gateway.py） | 官方榜单导入网关：整批任务提交、进行中排他集合、worker 进度转发、完成/失败分派 | 持有 `_pending` 排他集合；`progress/completed/failed` 三信号与 CaptureService 同名门面信号直连 |
 | `ImageSaveScheduler`（image_save_scheduler.py） | PNG 后台保存：单线程执行器（`image-save`）串行落盘，完成后广播 `image_saved` | 无锁、无挂起表；`save_future` 由 CaptureService 持有用于结果拼装 |
-| `CaptureConnectionManager`（capture_connection.py） | ADB 连接域：配置热更与 AdbCapture 重建、会话状态机（unconfigured/disconnected/connecting/connected/offline）、连接/断开编排、`is_current` 过期实例校验 | 持有 `_capture`/`_config`/会话状态与 `_session_lock`/`_adb_io_lock`（锁职责原样迁移）；状态与状态栏消息经回调回发，emit 留在 CaptureService |
+| `CaptureConnectionManager`（capture_connection.py） | 采集会话连接域（**模拟器 ADB / 官方 PC 客户端双形态**）：配置热更与采集会话重建（模拟器形态按路径/端口/品牌/截图模式重建 `AdbCapture`；PC 形态按 `emulator_type=pc_client` 构建 `PcClientCapture`，不要求 ADB 配置，窗口标题变更或跨形态切换时重建；连接键 `emulator_*` 新键优先、`mumu_*` 旧键回退）、会话状态机（unconfigured/disconnected/connecting/connected/offline）、连接/断开编排（事件文案按形态分立「ADB 已连接 / PC 客户端已连接」）、`is_current` 过期实例校验 | 持有 `_capture`（类型 `AdbCapture \| PcClientCapture`）/`_config`/会话状态与 `_session_lock`/`_adb_io_lock`（锁职责原样迁移）；状态与状态栏消息经回调回发，emit 留在 CaptureService |
 
 两把互不嵌套的锁随连接域迁入 `CaptureConnectionManager`：`_session_lock` 只保护会话对象与状态字段的快速读写（GUI 快速路径争用，锁内只做纯内存操作，不发 IO、不 emit），`_adb_io_lock` 单独串行化 `connect()` / `screencap_full()` 这类秒级阻塞 IO（超时重试最坏约 45 秒），经 `session_lock` / `adb_io_lock` 只读属性暴露给宿主的截图域临界区。CaptureService 自身保留 `_adb_executor`（`adb-capture`）单线程执行器串行执行 ADB 截图，与图像保存执行器（已迁入 `ImageSaveScheduler`）互不等待；截图请求与 OCR 结果的关联表（`_pending_ocr_captures`）与完成分派留在 CaptureService。关停守卫为 `_shutdown_token`（OneShotToken，P0-3 收口，原 `_closed` 裸 bool）：`do_capture()` / `_on_background_capture_ready()` / `capture_for_poll()` 在入口检查 `spent`，`shutdown()` 时 `mark()` 置位后拒绝新任务，语义不变。`_config` property 保留直通 `self._connection._config` 的测试兼容缝（生产代码走 `update_config()`）。
 
@@ -280,7 +282,7 @@ OcrService (QObject)
 
 ### 3.4 EmulatorOperationService（模拟器后台操作）
 
-`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与 MuMu 实例枚举，ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会在 MuMuManager 异常退出时重试一次，并把失败原因与"正常但没有实例"区分开。关停守卫为 `_shutdown_token`（OneShotToken，df019a5/P0-3 收口，原 `_closed` 裸 bool）：`shutdown()` 时 `mark()` 置位，此后探测与 ADB 会话任务在入口检查 `spent` 拒绝，语义不变。
+`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与所选品牌实例枚举（`probe_all_devices_with_status(emulator_type)` 经 `probers` 注册表分发五品牌；探测执行器**同键任务去重**——连点刷新不会累积排队多个相同探测任务），ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会把失败原因与"正常但没有实例"区分开。关停守卫为 `_shutdown_token`（OneShotToken，df019a5/P0-3 收口，原 `_closed` 裸 bool）：`shutdown()` 时 `mark()` 置位，此后探测与 ADB 会话任务在入口检查 `spent` 拒绝，语义不变。
 
 > **架构防火墙声明（637102b）**：模块文档字符串明确声明 `EmulatorOperationService` 不包含 ADB 输入能力（不提供 `input_tap` / `input_swipe` / `input_text` 等 ADB 输入方法），仅承担设备探测、连接管理与截图获取。此声明是合规化改造的一部分，确保业务层无法被调用方误用为自动化操作入口。
 
@@ -324,6 +326,12 @@ OfficialDataImportDialog
 | `exile` | 武将放逐 | 左 1-80 + 右 81-160 | `data/武将放逐.csv` | 排名、武将 |
 
 同一次导入不能混用旧版长图与新版分页图片（`variant` 唯一）；`2v2` / `peak` 必须检出左右两个榜单且左右行数一致，`exile` 走 `validate_exile_row_counts()` 校验；同一张图片被重复选择会直接报错。
+
+**拼接长图兼容（366303c，20261022 版式）**：官方 2026-10-22 起发布"新版头部大图 + N 段分页表格整页首尾拼接"的长图。`import_pages()` 在版式检测前先经 `official_board_parser.split_stitched_image()` 处理——纵横比 ≥4 的图片按静默带切分为补边虚拟分页（切段原理与参数标定见 `module_capture_ocr.md` §3.10），导入侧把 `(原图路径, 补边段图, 段 y 偏移)` 组装为 `page_units` 统一进入原分页链路；行截图的"原图坐标"经 `segment_offset` 还原回原图 y 坐标。切不出多个有效段的旧版长图与分页图仍按整图走原路径，行为不变。
+
+**单格识别快通道（28fa11b，整板导入提速约 4.6 倍）**：`_recognize_cell()` 与名称识别入口在引擎已注入时先经 `_fast_path_cell()` 尝试 **2× 放大单候选**识别（原路径为 4× 双候选，det 输入面积主导耗时，单次引擎调用约 1/4）。采信纪律严格，未过门一律回退原路径，精度下界不变（2026-10 七种版式语料 ×120 格逐格比对零不一致后才启用）：数字格（`_fast_numeric_cell`）要求单行结果、置信度 ≥ `FAST_PATH_MIN_CONFIDENCE = 0.90` 且匹配"纯排名/胜率"格式 `FAST_PATH_NUMERIC_PATTERN`（`\d{1,3}(?:\.\d{2})?%?`）；名称格（`_fast_name_cell`）要求单行结果、置信度达标且经 `chinese_text()` 归一后精确命中武将词表。OCR 结果解析同步收口为 `_parse_ocr_lines()` 静态方法。
+
+**待复核行截图（8c0f871）**：待复核条目的行截图从整行改为**仅保留武将名称格**（`_row` → `_name_cell`）——排名与胜率已有 OCR 值可对照，整行画面无复核价值，名称格截图聚焦人工比对目标。
 
 低置信度、排名 OCR 不一致、胜率模板异常或名称被词表校正仍写入正式 CSV，并写入对应 `*_待复核.csv`（含行截图路径、来源图片、页序号与原图坐标）。未确认名称、重复名称或同规模输出集合不一致属于阻断错误：服务保存复核记录和行截图，但**保留原正式 CSV** 并抛 `ValueError`，同时把整批结果持久化到 `data/official_import_pending.json` 供复核界面修正后直接落盘。
 
@@ -383,7 +391,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 `AnnouncementService(QObject)` 提供手动"检查公告更新"：`check_now()` 在 `threading.Thread`（`announcement-check`）中执行 `_do_check()`，结果通过内部信号 `_check_done(object)` 回到 GUI 线程，再由 `_finalize_check()` 统一写共享状态、持久化快照并对外广播 `check_finished(object)`（避免 worker 线程与 `mark_applied()` 跨线程竞争及快照文件并发写碰撞）；`is_busy` 防重复点击，`cooldown_remaining` 提供 `CHECK_COOLDOWN_SECONDS = 60` 秒最小检查间隔，主窗口对忙碌/冷却状态弹出提示。`check_now()` 与 `prepare_update_candidates()` 均返回 `bool`——`False` 表示被忙碌或冷却拦截，由调用方提示用户；后台阶段文字经 `progress_changed(str)` 广播。
 
-**冷却闸门收口（d5cceeb）**：忙碌判定与冷却计时收口到 `common/check_cooldown.CheckCooldown`（TD-A2-001）——公告检查与卡牌检查此前各自持有一份逐行同构的实现，两侧阈值一旦分叉用户看到的"60 秒冷却"会与实际行为不符。闸门内部加锁使"检查忙碌 → 检查冷却 → 置位时间戳"成为原子操作（原为无锁 check-then-act，安全性完全依赖"所有调用方都在 GUI 主线程"这一注释约定；一旦从 worker/定时器触发，双击即可起两个线程并发写同一份数据文件，VUL-B3-001）。`check_now()` 与 `prepare_update_candidates()` 均经 `_gate.try_acquire()` 判定。
+**冷却闸门收口（d5cceeb）与冷却窗口分立（39ec62b）**：忙碌判定与冷却计时收口到 `common/check_cooldown.CheckCooldown`（TD-A2-001）——公告检查与卡牌检查此前各自持有一份逐行同构的实现，两侧阈值一旦分叉用户看到的"60 秒冷却"会与实际行为不符。闸门内部加锁使"检查忙碌 → 检查冷却 → 置位时间戳"成为原子操作（原为无锁 check-then-act，安全性完全依赖"所有调用方都在 GUI 主线程"这一注释约定；一旦从 worker/定时器触发，双击即可起两个线程并发写同一份数据文件，VUL-B3-001）。`check_now()` 与 `prepare_update_candidates()` 均经 `_gate.try_acquire()` 判定。2026-10-24 起两个动作**各持独立冷却窗口**：公告检查走 `_gate`，获取武将变更走 `_prepare_gate`（同为 `CHECK_COOLDOWN_SECONDS = 60` 秒）——公告检查后首次获取武将变更不再被牵连拦截，各自连续触发才限频；忙碌判定两闸门共用（任一在途即忙），对外暴露 `cooldown_remaining` 与 `prepare_cooldown_remaining` 两个只读属性。
 
 **忽略名单名字兜底（801c9f1）**：`ignore_hero()` / `list_ignored_heroes()` 的条目键改为武将名（原 entry_id 在官网改版后可能漂移）。
 
@@ -1018,3 +1026,27 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 **修正（根域）**
 - `freshness.py`（1dc08d5）：损坏文件留底（`_load_records` 解析失败先 `preserve_corrupt_file` 留底 `backups/`——本函数只降级返回 None，若用户随后重新生成或重新抓取，损坏文件被直接覆盖即"读不出来的数据"升级为"不可逆丢失"；`FileNotFoundError` 属正常状态不留底）；阈值可配置（`_stale_thresholds()` 读 `DATA_FRESHNESS_STALE_GREEN_DAYS`/`DATA_FRESHNESS_STALE_RED_DAYS`，默认 7/14，非法组合回退默认而非夹逼，TD-A6-001）
 - `recognition/ocr_service.py`（9ccc2fc）：`_poll_gate.release()` → `reset()` 用于生命周期边界（`start_poll`/`stop_poll`/`invalidate_inflight_poll`，非持有者释放）
+
+---
+
+## 十、本轮文档校准（2026-10-25）
+
+自基线 `a63bc3c`（2026-10-23 校准）以来的变更（覆盖 366303c / 28fa11b / 8c0f871 / 8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b / 79fc4a0 / 39ec62b / 4bd9586 / ed8b4ac 共 12 个提交）：
+
+**连接域双形态（8f2e70a / ed8b4ac）**
+- `emulator/capture_connection.py`：`CaptureConnectionManager` 按 `emulator_type` 构建模拟器 `AdbCapture` 或 PC 客户端 `PcClientCapture`（PC 形态不要求 ADB 配置，窗口标题变更或跨形态切换时重建）；连接键读取统一 `_conn_key()` 兼容（`emulator_*` 新键优先、`mumu_*` 旧键回退）；`connect_capture(capture, validate_capture=)` 用户触发路径连通后截帧校验、自动重连等高频路径保持 False 免付一帧；连接/断开事件与失败前缀按形态分立（「ADB 已连接 / PC 客户端已连接」，PC 形态不再出现"ADB"字样，R3.2 显示诚实）；`AdbCapture | PcClientCapture` 类型注解统一放宽（capture_service 会话与轮询路径）
+- `emulator/mumu_config_coordinator.py`：设备持久化链路 12 键 → 14 键（新增 `emulator_brand` 品牌记忆与 `pc_window_title`）；重复切换到当前连接类别判为无操作，不触发设备列表作废重建
+- `emulator/emulator_operation_service.py`：探测执行器同键任务去重（连点刷新不累积排队）；探测调用透传 `emulator_type`
+
+**官方榜单导入提速（366303c / 28fa11b / 8c0f871）**
+- `recognition/official_data_import_service.py`：拼接长图切分归一化（`page_units` 虚拟分页 + `segment_offset` 坐标还原，复用分页链路）；单格识别 2× 快通道（`_fast_path_cell` / `_fast_numeric_cell` / `_fast_name_cell`，`FAST_PATH_MIN_CONFIDENCE = 0.90` 采信纪律，未过门回退 4× 双候选，整板提速约 4.6 倍）；OCR 结果解析收口 `_parse_ocr_lines()`；待复核行截图仅保留武将名称格（`_row` → `_name_cell`）
+- 详见 §3.5 新增的三个小节
+
+**抓取链路修复（4bd9586 / 79fc4a0）**
+- `fetching/base_fetch_service.py`：完成钩子重入进程保护（`_on_finished` 记录完成时进程引用，钩子内同步发起下一阶段时不误释放新 QProcess，消除 0xF291 强杀，见 §3.1）
+- `scraper/official_source/crawler.py`：robots.txt 获取超时 30s → 5s、头像下载 30s → 15s（与主数据超时解耦，站点异常时快速降级，归 `module_scraper.md` 记录）
+
+**公告域（39ec62b）**
+- `announcement/announcement_service.py`：公告检查与获取武将变更冷却窗口分立（`_gate` / `_prepare_gate` 各自独立 60 秒窗口，忙碌判定两闸门共用；新增 `prepare_cooldown_remaining` 属性），见 §3.6
+
+**本轮范围外**：`src/capture/`（pc_client.py / probers/ 包）与 `src/ocr/official_board_parser.py` 的变更记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)；设备配置 UI 变更记录于 [`./module_ui.md`](./module_ui.md)；配置键与日志队列化记录于 [`./module_config.md`](./module_config.md)。

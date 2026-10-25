@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-10-23（`a63bc3c`）
+> 代码基线：2026-10-25（`ed8b4ac`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-10-23
+> 文档日期：2026-10-25
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -29,16 +29,17 @@
 - [十七、开发状态表](#十七开发状态表)
 - [十八、运维工具链与数据出库](#十八运维工具链与数据出库)
 - [十九、首启向导、备份恢复与生成互斥](#十九首启向导备份恢复与生成互斥2026-10-23-基线新增)
+- [二十、多模拟器连接与官方 PC 客户端直连](#二十多模拟器连接与官方-pc-客户端直连2026-10-25-基线新增)
 
 ---
 
-## 当前代码基线与业务不变量（2026-10-23）
+## 当前代码基线与业务不变量（2026-10-25）
 
 > 本节的粗体小节按提交时间倒序追加；2026-10-11（`2081b5b`）之前的描述对应历史基线，
 > **子进程启动失败终态契约（14bffaf / 07606ce，VUL-B2-001）** 及其后各小节为
-> 2026-10-12 至 10-23 新增，与后续各章冲突时以本节为准。
+> 2026-10-12 至 10-25 新增，与后续各章冲突时以本节为准。
 
-本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，ADB 连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心。
+本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载，支持模拟器 ADB 与官方 PC 客户端双形态图像源），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心。
 
 ### 核心功能调用总览
 
@@ -51,7 +52,7 @@
 | 备份恢复 | 「数据」菜单 → `BackupRestoreDialog` | `backup_restore_service.list_snapshots()` -> 选择快照 -> `preview_diff()`（当前文件 + 最近快照键级差异）-> `restore()`（先 `snapshot_to_backups()` 自快照 -> 原子写替换） | 浏览 `data/backups/` 自动快照，预览键级差异后一键恢复；恢复前自快照实现双向可回退；坏备份在预览与恢复两侧都拒绝；跨文件引用组默认整组恢复到同一时间点 |
 | 首启向导 | `main.py` 启动流 / 「帮助」→ 重看首启引导 | `should_show_state()` -> `OnboardingDialog`（段 1 环境自检 -> 段 2 模拟器连接与分辨率体检 -> 段 3 试识别）-> 失败时 `onboarding_fixes` 提供唯一可点修复动作 -> `mark_step()` / `mark_skipped()` 落 `config/.onboarding_state.json` | 三段体检每步失败给出唯一可点修复动作；界面明示"本工具只读屏幕，不操作游戏"；跳过/完成后不再自动弹出，版本升版则重弹 |
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` 队列 -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 与常规 OCR 共享同一 `OcrWorker` 的 FIFO 队列（互斥由 `OcrService._import_busy` 串行化，并非独占 worker）；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
-| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` → `AdbCapture.screencap_full()`/`screencap_raw()` → `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复） |
+| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` →（`CaptureConnectionManager` 按连接形态）`AdbCapture.screencap_full()`/`screencap_raw()`（模拟器 ADB）或 `PcClientCapture.screencap_full()`（官方 PC 客户端 WGC+BitBlt）→ `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复）；双形态图像源对下游管线无感复用 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 | 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> SessionGuard 世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；候选期卡数回升拍扣住一拍复核（过场坏帧拦截）；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时经 `_clear_session_state` 清空确认表与牌面引用 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
@@ -120,6 +121,14 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 **数据新鲜度阈值可配置（1dc08d5，TD-A6-001）**：档位周期由写死 7/14 改为 `DATA_FRESHNESS_STALE_GREEN_DAYS`（默认 7）/ `DATA_FRESHNESS_STALE_RED_DAYS`（默认 14）——官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号。同批新增新鲜度损坏留底、注解保存回滚、冷却闸门收口。
 
 **访问冷却与并发守卫（d5cceeb）**：`src/business/common/check_cooldown.py`（106 行）统一公告域官网访问的冷却限频与并发守卫。
+
+**官方 PC 客户端直连（ed8b4ac，2026-10-25）**：新增 `src/capture/pc_client.py`（577 行）——不经 ADB 的第二条图像源，枚举官方 PC 客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件，标题仅展示；三态：未启动提示 / 单窗自动选定 / 多窗 UI 显式选择，不支持多开）并只读其画面。采集主路径 Windows.Graphics.Capture（`windows-capture==2.0.1`，Win10 1903+，遮挡可采集），WGC 会话**窗口句柄定向**（库的标题连接为子串匹配，"名将杀 Agent" 包含"名将杀"会命中工具自身窗口，真机事故后句柄定向根治）+ GDI BitBlt 客户区裁剪兜底（PrintWindow 真机取证稳定失败不采用）+ 黑帧双指标检测（均值 <8.0 且近黑占比 >98% 同时命中）与窗口化引导。`PcClientCapture` 接口对齐 `AdbCapture`，`CaptureConnectionManager` 按 `emulator_type=pc_client` 构建后下游 OCR 管线无感复用；设备页顶部「模拟器 / 官方 PC 客户端」单选双形态（PC 形态隐藏品牌与 ADB 区块、设备下拉复用为窗口候选列表、`EMULATOR_BRAND` 品牌记忆）。进程级 Per-Monitor-V2 DPI 声明硬前置（未声明进程在 >100% DPI 屏上坐标被系统谎报）。**模块全程只读窗口画面，不向客户端或系统发送任何输入（法律红线）**。设计文档：`docs/design/pc_official_client_capture_design.md` / `pc_official_client_requirements.md`。
+
+**多模拟器五品牌连接（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b，2026-10-24/25）**：`src/capture/prober.py` 拆包为 `src/capture/probers/`（函数式注册表 `EMULATOR_PROBERS`，每品牌统一契约 `probe_devices(retries)` / `find_adb()`）——MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat 按 VM PID 精确关联端口）/ 逍遥（`.memu` 配置直读，MEmuConsole 为 GUI 无 stdout 的死路径已移除）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）+ `port_scan.py` 端口段兜底（8 并发，结果标注"品牌未验证"防 5555 共用端口误标）+ `console_utils.py`（UTF-8→GBK 解码 + 进程反查）。`AdbCapture` 品牌参数化（`emulator_type` 构造参数；端口 0 时按品牌自动探测唯一实例）+ `connect(validate_capture=)` 连接后截帧校验 + `_reconcile_emulator_serial()`（雷电等 adb 主动扫描区端口双查 `emulator-<n>` 序列号）。配置键 `MUMU_*` → `EMULATOR_*` 平滑升级（`default_from` 回退旧键）+ `EMULATOR_BRAND`，env 键元表 32 → 38 键。探测提速（真机计时）：逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s，五品牌全部 <1s。
+
+**官方榜单导入提速（366303c / 28fa11b / 8c0f871，2026-10-24）**：①拼接长图兼容——`official_board_parser.split_stitched_image()` 把 20261022 拼接长图按静默带切分为补边虚拟分页（std<8、带长 ≥40px 区分旧版长图行隙 15~19px；每栏 ≥30 行结构校验拦截头部图例区伪段），导入服务切分归一化后复用既有分页链路，行截图坐标经段 y 偏移还原；②单格识别 2× 快通道——`_fast_numeric_cell`（纯排名/胜率格式）/ `_fast_name_cell`（词表精确命中）置信度 ≥0.90 才采信，未过门回退 4× 双候选原路径，精度下界不变，整板导入提速约 4.6 倍；③待复核行截图改为仅保留武将名称格（原整行画面无复核价值）。
+
+**控制台日志队列化与杂项修复（79fc4a0 / 39ec62b / 4bd9586，2026-10-24）**：①`logging_config._QueuedConsoleHandler` 把控制台写移出调用线程——Windows 经典控制台快速编辑选中会无限期阻塞 `WriteConsoleW`（GUI 主线程在 `logger.info` 上悬死的卡死事故根治），文件 handler 仍同步落盘；②`AnnouncementService` 公告检查与获取武将变更冷却窗口分立（`_gate` / `_prepare_gate` 各自 60 秒，公告检查后首次获取武将变更不再被牵连）；③`BaseFetchService._on_finished` 完成钩子重入进程保护（钩子经直连信号同步发起下一阶段时不误释放新 QProcess，消除 0xF291 强杀）；④爬虫 robots（5s）/头像（15s）下载超时与主数据（30s）解耦。
 
 ---
 
@@ -1749,12 +1758,12 @@ class _EnvKeySpec(NamedTuple):
     getter: str = ""    # 归属域："runtime" / "mumu" / 空（透传键）
     default_from: str = ""  # 缺省回退到另一键的实配值（级联默认）
 
-_ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 32 键
+_ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 38 键
 ```
 
 三个消费方：`load_env_config()` 按 `spec.type` 统一转换；`get_runtime_params()` / `get_mumu_config()` 经 `_config_with_defaults()` 按域补默认值。测试侧 `tests/test_env_config.py` 维护 `_SENTINELS` 全量键哨兵表（独立手抄期望值，防漏登记复发）。
 
-32 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 15 键**（`mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 11 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）。转型失败使用默认值并打 warning。
+38 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 21 键**（多品牌连接键 2026-10 新增 6 个：`emulator_type`（品牌/连接方式，取值域 `src.capture.probers.EMULATOR_TYPES` 五品牌 + `pc_client`）/ `emulator_brand`（切 PC 客户端期间记住上次模拟器品牌）/ `pc_window_title`（PC 直连目标窗口标题，默认"名将杀"）/ `emulator_adb_path` / `emulator_adb_port` / `emulator_screenshot_mode`（三键 `default_from` 回退旧 `mumu_*` 实配值，老 config.env 不改字平滑升级；持久化始终写新键）+ 既有 15 键 `mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 11 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -1775,8 +1784,10 @@ HTTP_TIMEOUT=300
 MAX_RETRIES=3
 LOG_LEVEL=INFO
 LOG_TO_FILE=true
-MUMU_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
-MUMU_ADB_PORT=16448
+EMULATOR_TYPE=mumu
+EMULATOR_ADB_PATH=D:\模拟器\MuMu Player 12\nx_main\adb.exe
+EMULATOR_ADB_PORT=16448
+PC_WINDOW_TITLE=名将杀
 MUMU_OCR_ENABLED=true
 MUMU_OCR_POLL_MODE=false
 MUMU_OCR_POLL_IDLE_PAUSE=true
@@ -1784,7 +1795,7 @@ MUMU_OCR_POLL_INTERVAL=2
 MUMU_OCR_MATCH_THRESHOLD=0.8
 MUMU_OCR_CPU_THREADS=6
 MUMU_OCR_RECHECK_ENABLED=true
-MUMU_SCREENSHOT_MODE=auto
+EMULATOR_SCREENSHOT_MODE=auto
 RAG_ENABLED=true
 RAG_TOP_K=12
 RAG_PROMPT_CHARS=6000
@@ -1955,16 +1966,19 @@ AI 链路只记录任务、长度、字段名、用量（`_log_usage` 拆分 rea
 src/capture/
  ├── __init__.py              # 空 init
  ├── adb_screen.py           # AdbCapture — ADB 连接与截图（品牌无关）
+ ├── pc_client.py            # PcClientCapture — 官方 PC 客户端窗口直连采集（2026-10-25 新增，577 行）
+ │                           #   WGC 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测；全程只读不发送输入
+ ├── image_validation.py     # 不可信图片输入校验（格式/体积/像素）
  ├── probers/                # 多品牌设备探测包（MuMu/雷电/夜神/逍遥/蓝叠）
- │   ├── __init__.py         # 统一入口：注册表分发 + PATH 优先的 adb 探测
+ │   ├── __init__.py         # 统一入口：注册表分发 + PATH 优先的 adb 探测 + CONNECTION_TYPE_PC
  │   ├── models.py           # EmulatorDeviceInfo 值对象
  │   ├── mumu.py             # MuMu 12（MuMuManager console）
  │   ├── ldplayer.py         # 雷电 9（ldconsole list2，端口 5555+2n）
- │   ├── nox.py              # 夜神（NoxConsole list，端口 62001+n）
- │   ├── memu.py             # 逍遥（MEmuConsole list，端口 21503+10n）
- │   ├── bluestacks.py       # 蓝叠 5（注册表 BstAdbPort，动态端口）
- │   ├── port_scan.py        # console 失败时的端口段兜底扫描
- │   └── console_utils.py    # console 工具调用与 GBK/UTF-8 解码
+ │   ├── nox.py              # 夜神（NoxConsole list，端口 62001+24n）
+ │   ├── memu.py             # 逍遥（.memu 配置直读，端口 21503+10n；console 为 GUI 无 stdout 死路径已移除）
+ │   ├── bluestacks.py       # 蓝叠 5（注册表 BstAdbPort → bluestacks.conf，动态端口）
+ │   ├── port_scan.py        # console 失败时的端口段兜底扫描（8 并发）
+ │   └── console_utils.py    # console 工具调用与 GBK/UTF-8 解码 + 进程反查安装目录
  └── image_utils.py          # 图像工具函数（~70 行）
 ```
 
@@ -2003,15 +2017,20 @@ class EmulatorDeviceInfo:
 | 品牌 | console 主路径 | 端口规则 | 兜底 |
 |------|----------------|----------|------|
 | MuMu 12 | `MuMuManager.exe info --vmindex all`（JSON） | 动态上报 | 16384+32n 端口段扫描 |
-| 雷电 9 | `ldconsole list2` | 5555+2n（推导） | 5555+2n 端口段扫描 |
-| 夜神 | `NoxConsole list`（七列：index,name,标题,句柄×2,PID,VM PID） | 62001+24n + netstat×VM PID 精确关联 | 62001+24n 端口段扫描 |
-| 逍遥 | `MEmuConsole/MEmuManager list` | 21503+10n（推导） | 21503+10n 端口段扫描 |
-| 蓝叠 5 | 注册表 `BlueStacks_nxt\Guests\*\BstAdbPort` | 动态 | 无（提示先开启 ADB） |
+| 雷电 9 | `ldconsole list2`（七列不含端口） | 5555+2n（推导） | 5555+2n 端口段扫描 |
+| 夜神 | `NoxConsole list`（七列：index,name,标题,句柄×2,PID,VM PID） | netstat LISTENING 按 VM PID 精确关联（自定义端口也命中），无法关联时 62001+24n 推导 | 62001+24n 端口段扫描 |
+| 逍遥 | **`.memu` 配置直读**（`MEmuHyperv VMs\<实例>\<实例>.memu` 的 ADB 转发 hostport；MEmuConsole 为 GUI 无 stdout，console 调用属永远超时的死路径已移除） | 配置文件真实端口 | 21503+10n 端口段扫描 |
+| 蓝叠 5 | 注册表 `BlueStacks_nxt(_cn/_x)\Guests\*\BstAdbPort`（国际版契约） | 动态 | `bluestacks.conf` 解析（国内版 5.22 注册表无 Guests 子键；`status.adb_port` 优先；ADB 未开启时给明确指引，读不到端口不再误导性提示"请先开启"） |
 
 端口兜底扫描只做 127.0.0.1 试连并按所选品牌标注，不凭端口猜品牌（蓝叠与
 雷电默认端口同为 5555）；console 输出解码统一 UTF-8 → GBK（console_utils）。
 除"console 不可用/失败"外，console 执行成功但枚举为零时也会做补充扫描
 （逍遥真机实测：部分版本 list 返回成功但输出为空，端口带内实例仍可发现）。
+各品牌安装路径定位统一三级：环境变量（`*_HOME`）→ **运行进程反查**
+（`find_process_dir()`，tasklist 门控 + PowerShell 合并查询两级实现，自定义/便携
+安装无注册表时的兜底）→ 注册表 → 常见安装路径。探测性能（真机计时）：
+逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s（进程反查重构 + 端口扫描 8 并发 +
+探测执行器同键任务去重），五品牌全部 <1s。
 
 #### adb 来源优先级（`probe_adb`）
 
@@ -2050,6 +2069,24 @@ class AdbCapture:
 - 超时保护：所有 `subprocess.run` 设置 `timeout`
 
 **架构防火墙声明（2026-09 新增）**：`adb_screen.py` 和 `emulator_operation_service.py` 的模块文档字符串明确声明不包含 ADB 输入能力（不实现 `adb shell input`、`input tap` 等命令），不通过 ADB 向设备发送触摸、按键或剪贴板操作。本工具仅提供屏幕截图与 OCR 识别能力，严禁用于自动操作、反作弊绕过等违规用途（参见 LICENSE 附加使用条款）。
+
+### 11.3b 官方 PC 客户端窗口直连（pc_client.py，2026-10-25 新增）
+
+不经 ADB 的第二条图像源：枚举并只读官方 PC 客户端窗口画面（Unity 客户端，真机取证定稿 `0.9.3002.144`），接口对齐 `AdbCapture`（`connected` / `device_serial` / `connect` / `disconnect` / `screencap_full`），由 `CaptureConnectionManager` 按 `emulator_type=pc_client` 构建，下游 OCR 管线无感复用。选型依据与真机取证见 `docs/design/pc_official_client_capture_design.md`。
+
+**窗口识别（双条件）**：进程名 `mjs.exe` + 窗口类 `UnityWndClass` 经 `EnumWindows` 枚举（`probe_pc_windows()`）；标题仅作展示与配置键（`PC_WINDOW_TITLE`，默认"名将杀"），不作为匹配键。三态语义：空列表 = 未启动、单窗自动选定、多窗要求 UI 显式选择（不支持多开）。进程级 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` 幂等声明为硬前置——未声明进程的窗口坐标在 >100% DPI 屏上被系统虚拟化谎报（真机取证 125% 副屏谎报 2048×1088，真实 2560×1361），坐标裁剪会全部失准。
+
+**采集主路径 WGC**（Windows.Graphics.Capture，经 `windows-capture==2.0.1`，要求 Win10 1903+）：`_WgcSession` 后台线程按**窗口句柄定向**连接，帧回调持续刷新最新 BGRA 帧。必须句柄而非标题连接——库的 `window_name` 是标题**子串匹配**，工具自身主窗口"名将杀 Agent"包含"名将杀"且连接时必在 Z 序顶端，实测会 attach 到工具自身窗口截出工具 UI（真机事故）；句柄定向是唯一根治。WGC 为合成器级取图，窗口被遮挡仍可采集；启动失败（依赖缺失/系统不支持/首帧 5 秒超时）静默降级 BitBlt。
+
+**WGC 帧后处理**：整窗 BGRA 帧（含标题栏）→ 红蓝通道反转（BGRA→RGB，否则暖色调整体偏蓝紫）→ 客户区裁剪（偏移每帧实算：DWM 可见边框查询成功时帧原点即边框左上；失败时按窗口阴影左右对称自校准扣除左阴影）→ **帧尺寸对账防线**（帧与 DWM 边框偏差超 32px 即丢帧走兜底，拦截任何未知错误 attach 把别的窗口画面当成功返回）。
+
+**兜底 BitBlt**：屏幕 DC 按客户区物理坐标直取（`SRCCOPY|CAPTUREBLT`），窗口须可见，被遮挡部分截不到。PrintWindow 经真机取证对该客户端稳定失败（调用返回 0）不采用；Pillow ImageGrab 在混合 DPI 多屏下坐标错位不采用（必须自写 GDI）。
+
+**黑帧双指标检测（`is_black_frame`）**：独占全屏黑帧判定需灰度均值 < 8.0 **且**近黑像素占比（<16）> 98% 同时命中——取证正常画面均值 90~111、近黑占比 ≤7%，双条件避免暗色调界面误杀；命中后返回人话引导（切窗口化：游戏内设置或 Alt+Enter，工具不代为切换）。
+
+**连接语义**：`connect(validate_capture=True)`（用户触发路径）解析目标 → 校验非最小化 → 启动 WGC → 截一帧过黑帧检测才算成功，失败回滚断开；自动重连等高频路径 `validate_capture=False` 免付一帧。客户端失焦停渲时 WGC 返回最后一帧，属画面停更而非采集缺陷，不做新鲜度特判。
+
+**合规边界**：模块 docstring 架构防火墙声明——全程只读窗口画面，不实现任何输入发送、自动点击、进程注入、hook、反作弊绕过（法律红线）。
 
 ### 11.4 图像工具（image_utils.py）
 
@@ -3470,3 +3507,45 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 | 随包字符特征缓存 | 437 字 | 437 字（不变） |
 
 当前私有数据仓同步快照：heroes 192 / combos 1827 / cards 49 / special_cards 85 / equip_attrs 26 / hero_classification（categories 16 + hero_categories 192）/ mjs_adjustments 150 事件。
+
+---
+
+## 二十、多模拟器连接与官方 PC 客户端直连（2026-10-25 基线新增）
+
+本节覆盖 2026-10-24 至 10-25（`a63bc3c` → `ed8b4ac`，12 个提交）的连接域两大改造与官方榜单导入提速。设计文档：`docs/design/emulator_multi_brand_requirements.md` / `pc_official_client_requirements.md` / `pc_official_client_capture_design.md`。
+
+### 20.1 多模拟器五品牌连接
+
+**需求边界**：项目分发给多人使用，每人偏好模拟器不同，工具需跑通主流五品牌（MuMu / 雷电 / 夜神 / 逍遥 / 蓝叠）。品牌为单选模型，不存在同时连接多台模拟器的场景；由此明确不做每品牌独立配置档案、多会话并行连接等"设备隔离"方案（按"简洁优先"判定为过度设计）。连接正确性由画面自证，风险收敛点在**显示诚实**。
+
+**架构**：`prober.py` 拆包为 `probers/`——函数式注册表 `EMULATOR_PROBERS`（每品牌统一契约 `probe_devices(retries) -> (list[EmulatorDeviceInfo], error)` 与 `find_adb()`，不引入 Protocol），`models.py` 品牌无关值对象、`port_scan.py` 端口段兜底（8 并发 socket 试连，`PORT_RULES` 品牌端口带，结果标注"品牌未验证"）、`console_utils.py`（console 工具 UTF-8→GBK 解码 + `find_process_dir()` 进程反查两级实现：tasklist 门控 ~0.25s → PowerShell 合并查询，退出码不作判据）。五品牌探测策略与端口规则见 11.2 节。
+
+**关键真机适配**（2026-10-24/25 实测）：逍遥 MEmuConsole 为 GUI 程序无 stdout（PE 子系统 2），console 调用属永远超时的死路径——改 `.memu` 配置直读（`MEmuHyperv VMs\<实例>\<实例>.memu` 的 ADB 转发 hostport）；蓝叠国内版 5.22 注册表无 Guests 子键——实例配置在 `bluestacks.conf`（`status.adb_port` 优先于配置值，`bst.enable_adb_access=0` 时给明确指引）；雷电注册表键实为 `leidian\ldplayer9`；夜神 list 七列无运行标志列，运行态由 PID/VM PID 推断、端口经 netstat 与 VM PID 精确关联；PowerShell 部分成功（部分请求进程不在场 → rc=1 但输出有效）不可按退出码丢弃。
+
+**性能**（真机计时）：逍遥 10.5s → 0.08s（console 死路径移除 + 探测执行器同键任务去重防连点累积）；雷电/夜神 3.8s → 0.6s（进程反查重构 + 端口扫描 8 并发，防御回环被防火墙静默丢弃的环境）；五品牌全部 <1s。
+
+### 20.2 官方 PC 客户端直连
+
+**需求边界**：官方 PC 客户端（Unity）与模拟器并存，部分用户无模拟器环境。支持**单一图像源**（客户端窗口）直连，全程只读（不发送任何输入，法律红线）、下游复用（`PcClientCapture` 接口对齐 `AdbCapture`，OCR 管线无感）、显示诚实（错误消息按形态分立，PC 形态不出现"ADB"字样）、不支持多开（多窗要求用户显式选择）。
+
+**技术选型（真机取证定稿）**：窗口识别 = 进程名 `mjs.exe` + 窗口类 `UnityWndClass` 双条件（标题仅展示——可被同名进程伪造）；采集 = WGC 主路径（`windows-capture==2.0.1`，Win10 1903+，合成器级取图遮挡可采集，会话按**窗口句柄**定向）+ GDI BitBlt 客户区裁剪兜底（窗口须可见）；PrintWindow 对该客户端稳定失败不采用；Pillow ImageGrab 混合 DPI 坐标错位不采用；进程级 Per-Monitor-V2 DPI 声明硬前置。黑帧（独占全屏）双指标检测（均值 <8.0 且近黑占比 >98% 同时命中）出人话引导；帧尺寸对账防线拦截错误 attach（帧与 DWM 边框偏差 >32px 丢帧走兜底）。
+
+**UI 双形态**：设备页顶部「模拟器 / 官方 PC 客户端」单选（用户点击才触发）；PC 形态隐藏品牌行与 ADB 区块、设备下拉复用为窗口候选列表（三态填充、唯一窗口自动选定、720p/900p 低分辨率档位放行附非阻断提示）；切到 PC 前品牌存 `emulator_brand`、切回恢复（无记录回退 mumu），重复切换判无操作。配置键集 12 → 14（新增 `emulator_brand` / `pc_window_title`）。
+
+### 20.3 官方榜单导入提速
+
+- **拼接长图**：官方 2026-10-22 起发布"头部大图 + N 段分页表格整页拼接"长图。`split_stitched_image()` 按静默带（std<8、带长 ≥40px，旧版长图行隙 15~19px 不命中）切内容块，补边（顶 170px / 底 100px，复现真实分页几何防幻影行）后按分页结构校验（每栏 ≥30 行，拦截头部图例区伪段），有效段 ≥2 才判定拼接图；导入服务组装 `page_units` 虚拟分页复用原链路，坐标经段偏移还原。
+- **单格快通道**：2× 放大单候选识别（原 4× 双候选，det 输入面积主导耗时，单次调用约 1/4）——数字格需单行 + 置信度 ≥0.90 + 纯排名/胜率格式；名称格需单行 + 置信度达标 + 词表精确命中；未过门回退原路径（七种版式语料 ×120 格逐格比对零不一致后启用），整板导入提速约 4.6 倍。
+- **待复核行截图**：从整行改为仅保留武将名称格（排名/胜率已有 OCR 值可对照，名称格聚焦人工比对目标）。
+
+### 20.4 本轮基线数字口径（2026-10-23 → 2026-10-25）
+
+| 项 | 2026-10-23 | 2026-10-25 |
+|---|---|---|
+| 提交数 | 基线 | +12 |
+| 新增文件 | — | `pc_client.py`（577 行）+ `probers/` 包（9 文件，`mumu.py` 自 `prober.py` 平移）+ 3 份设计/需求文档 |
+| 测试文件（含 `test_*`） | 153 | 156 |
+| `test_*` 函数 | 1936 | 2042 |
+| `_ENV_KEY_SPECS` 键 | 32 | 38（+`EMULATOR_TYPE` / `EMULATOR_BRAND` / `PC_WINDOW_TITLE` / `EMULATOR_ADB_*` ×3） |
+| 屏幕采集形态 | 模拟器 ADB 单形态 | 模拟器 ADB（五品牌）+ 官方 PC 客户端窗口直连 |
+| 环境依赖 | — | +`windows-capture==2.0.1`（PC 客户端 WGC） |

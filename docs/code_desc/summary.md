@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-10-23（基线 `a63bc3c`）
+> 文档日期：2026-10-25（基线 `ed8b4ac`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -12,6 +12,8 @@
 
 2026-10-12 至 10-23 完成四组改造：**首启向导三段体检**（`onboarding_dialog.py` 一页式环境自检→模拟器连接→试识别 + `onboarding_state.py` 版本感知状态 + `onboarding_fixes.py` 修复动作库，帮助菜单可重看，`MJS_ONBOARDING_FORCE=1` smoke 强制通道）、**爬虫合规加固与访问披露**（如实爬虫 UA `mjs-agent/1.0` 取代浏览器伪装 + robots.txt 24 小时缓存与逐 URL `Disallow` 校验 + 生成任务 OS 级互斥锁 `generation_lock.py` + 官网清洗守卫 `hero_fields.py`，TERMS.md 升至 1.3 增补自动化访问披露，免责声明版本 1.1→1.3）、**抓取链路健壮性**（`ScriptRunner` 启动失败终态契约补发 `finished` + 看门狗树杀与 2 秒复查 + 取消链路 Starting 兜底 + 主窗口关闭杀抓取进程树，封堵 VUL-B2-001/002）、**数据安全与备份恢复**（三条数据全灭路径封堵 + `backup_restore_service.py` / `backup_restore_dialog.py` 消费端补齐，恢复前自快照实现双向可回退 + 导入前备份与源结构校验）；另落地相性指定获取双入口拆分（「指定配对计算」+「落后相性刷新」）、巅峰赛面板防跳变（卡位漂移扣帧复核）、分析域重构（`win_rate_ranking.py` / stale 误清修复）、公告与卡牌访问冷却限频（`check_cooldown.py`）、新鲜度损坏留底与阈值可配置（`DATA_FRESHNESS_STALE_GREEN_DAYS` / `_RED_DAYS`）、公告管理器启动即加载，以及 RAG 域审计容错与语料写前快照。
 
+2026-10-24 至 10-25 完成连接域两大改造与导入提速：**多模拟器五品牌连接**（`prober.py` 拆包为 `probers/` 函数式注册表——MuMu/雷电/夜神/逍遥/蓝叠五品牌探测器 + 端口段兜底扫描 + 进程反查，`AdbCapture` 品牌参数化，配置键 `MUMU_*` → `EMULATOR_*` 平滑升级，探测提速五品牌全部 <1s）、**官方 PC 客户端直连**（`pc_client.py` 窗口枚举 + Windows.Graphics.Capture 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测引导，连接方式/设备页双形态，全程只读窗口画面）、**官方榜单导入提速**（20261022 拼接长图切分归一化复用分页链路 + 单格识别 2× 快通道整板提速约 4.6 倍 + 待复核行截图仅保留武将名称格）；另有控制台日志队列化防卡死（Windows 快速编辑选中不再冻结 UI）、公告检查与获取武将变更冷却窗口分立、爬虫 robots/头像下载超时解耦。
+
 ## 核心功能
 
 - **资料库浏览** — 在”武将资料”中查询武将详情、技能和攻略；在”卡牌图鉴”中只读浏览官方卡牌及维护独立的效果配置
@@ -19,7 +21,7 @@
 - **对局攻略** — 2×2 展示四名武将，支持 ADB/本地图片导入并加载胜率榜（按对局链路区分 2v2 / 巅峰赛，`WIN_RATE_MODE_2V2` / `WIN_RATE_MODE_PEAK`）
 - **AI 攻略生成** — 通过多供应商 API（DeepSeek / OpenAI / Ollama / OpenAI 兼容档案）或浏览器自动化批量生成武将攻略，默认 RAG 官方规则语料增强，可切换经典模式（无 RAG 注入）；API 模式支持扩展额度与思考重试
 - **AI 相性评分** — 全量/指定武将的相性评分；RAG 注入双方武将语料块与规则/FAQ/卡牌跨类块，支持 RAG 增强/经典双版本。指定获取自 2026-10-20 起拆为两个入口：「指定配对计算」（`SynergyPairDialog`，按状态筛选武将后按策略组装精确配对清单，支持 2~8 武将两两配对）与「落后相性刷新」（`SynergyRefreshDialog`，列出已有但落后于武将资料的配对、按最后生成日期升序，勾选后只刷这批）
-- **屏幕采集与 OCR** — 通过 ADB 连接模拟器截图，OpenCV 模板匹配 + RapidOCR/ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎）识别武将名；v4 三件套经 `fetch_recheck_models.py` 官方清单预取（URL+SHA256 钉死），运行时离线纪律绝不联网下载
+- **屏幕采集与 OCR** — 双形态图像源：ADB 连接五品牌模拟器截图，或官方 PC 客户端窗口直连（WGC 主路径 + BitBlt 兜底，全程只读不发送输入）；OpenCV 模板匹配 + RapidOCR/ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎）识别武将名；v4 三件套经 `fetch_recheck_models.py` 官方清单预取（URL+SHA256 钉死），运行时离线纪律绝不联网下载
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
 - **官方数据导入** — 可独立或同时导入 2v2/巅峰赛/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 - **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费
@@ -44,11 +46,11 @@
 | 数据模型 | Pydantic v2（数据校验与序列化） |
 | AI 生成 | httpx（多供应商 OpenAI 风格 API 同步请求）/ Playwright（浏览器自动化） |
 | RAG 检索 | ChromaDB + 编码器抽象层 `embedder.py`（默认 onnxruntime fp32 CLS 池化，`tokenizers` 直读 tokenizer.json；`RAG_EMBEDDING_BACKEND=st` 回滚 sentence-transformers；bge-small-zh-v1.5，三件套 sha256 侧车校验）+ 关键词 RRF 混合检索 |
-| 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图 |
+| 屏幕采集 | ADB（Android Debug Bridge）exec-out 截图（五品牌模拟器）+ `windows-capture==2.0.1`（官方 PC 客户端 WGC 主路径，Win10 1903+）+ ctypes GDI BitBlt 兜底 |
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | RapidOCR 3.9.2 / ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，`onnxruntime` 1.23.2，CPU 固定、线程可钉）+ 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，437 字特征缓存）；paddle 全栈已退役 |
 | 数据持久化 | JSON + CSV 文件（`json_repository` 原子写/写前快照基元，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（153 文件 / 1936 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
+| 测试与静态检查 | pytest 9.0.3（156 文件 / 2042 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -73,7 +75,7 @@ test_project/
 │   │                           #   + maintenance/backup_restore_service（备份快照列出/预览/恢复消费端）
 │   │                           #   + common/check_cooldown（访问冷却与并发守卫）/ common/script_runner（子进程看门狗与树杀）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking（排名/量纲收敛）
-│   ├── capture/                 # 屏幕采集层（ADB 连接、截图、MuMu 实例探测）
+│   ├── capture/                 # 屏幕采集层（ADB 连接与截图、多品牌模拟器探测 probers/、官方 PC 客户端直连 pc_client.py；仅屏幕读取，无输入能力）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + RapidOCR 双套件 + 卡位检测 + engine_loader 引擎装载）
 │   └── ui/                      # PySide6 用户界面层（app / configuration / data_admin / generation / library / match / maintenance / recommendation / shared）
 │                               #   + 主窗口协调器与自足组件（app_services / status_chips / data_freshness_chip 数据新鲜度芯片 / progress_reporter / poll_coordinator / announcement_update_coordinator）
@@ -142,14 +144,14 @@ test_project/
 
 | # | 模块 | 目录 | 主要职责 |
 |---|------|------|---------|
-| 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化、**版本单一来源 `version.py`**、**启动自动公告检查与截图回收**、**env 键元表 `_ENV_KEY_SPECS` 单源（32 键，新增 `DATA_FRESHNESS_STALE_GREEN_DAYS` / `DATA_FRESHNESS_STALE_RED_DAYS`）**、**首启部署配色/价格可改副本到运行时根**、**免责声明版本 1.3（TERMS.md 1.3）**、**首启向导状态 `onboarding_state`（版本感知三段体检）** |
+| 1 | [应用入口与配置](./module_config.md) | `src/main.py` + `src/config/` | 应用启动、环境配置、日志初始化（**控制台日志队列化 `_QueuedConsoleHandler`，Windows 快速编辑选中不再冻结 UI**）、**版本单一来源 `version.py`**、**启动自动公告检查与截图回收**、**env 键元表 `_ENV_KEY_SPECS` 单源（38 键，新增 `EMULATOR_TYPE` / `EMULATOR_BRAND` / `PC_WINDOW_TITLE` / `EMULATOR_ADB_*` 多品牌连接键，`default_from` 回退旧 `MUMU_*`）**、**首启部署配色/价格可改副本到运行时根**、**免责声明版本 1.3（TERMS.md 1.3）**、**首启向导状态 `onboarding_state`（版本感知三段体检）** |
 | 2 | [数据模型与数据管理](./module_data.md) | `src/data/` | Pydantic 模型定义、CRUD 操作、JSON 持久化（含 RAG 源数据仓储、ComboManager 稳定排序落盘与**逻辑删除**、**武将变更时间轴 `hero_timeline`**、**卡牌百科快照 `card_sync_store`**、**百科差异忽略名单 `baike_ignore_store`**，DataFacade/manager/issues 解环拆分）、**json_repository 四基元全库收敛（原子写 / 写前快照 / `preserve_corrupt_file` 坏文件留底 / `save_payload` 加载完整性守卫）**、**数据出库与私有数据仓同步（pull_data）**、**榜单/推荐指数 CSV 仓储读侧统一运行时可写根**、**推荐指数 stale 判定纯读化（`>=` 且不再写回状态）** |
 | 3 | [爬虫与数据采集](./module_scraper.md) | `src/scraper/official_source/` | 官网 JS chunk 字符级状态机解析、数据清洗（**新增 `hero_fields` 官网字段清洗与缺 id 健壮性**）、头像下载、公告采集与百科 diff、**卡牌百科抓取清洗与逐卡 diff 基元 `card_baike`**、**全量四道规模写入守卫 + 增量损坏硬停**、**抓取输出默认路径归运行时可写根**、**如实爬虫 UA `mjs-agent/1.0` + robots.txt 24 小时缓存与逐 URL `Disallow` 执行**、**抓取取消链路与空目标伪成功修复** |
 | 4 | [AI 批量生成](./module_ai_batch.md) | `src/scraper/ai/` | AI 攻略/相性生成、JSON 提取、双模式生成器、**httpx 超时分层 + 定向重试 `--retry-failed`**、**prompt 四层决策门/锚例校准/JSON 纪律**、**双生成器后处理共享管线 `normalize_and_validate_*`**、**MAX_OUTPUT_TOKENS 单源 env 键元表**、**生成任务 OS 级互斥锁 `generation_lock`（msvcrt/fcntl + holder 旁路文件）**、**批次中断状态与退出杀进程树**、**浏览器会话超时自动重建** |
-| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理（**`ScriptRunner` 启动失败终态契约 + 看门狗树杀与 2 秒复查**）、服务编排、官方榜单图片导入、公告更新检查、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）**、**任务台账 `task_ledger` 与子进程看门狗（30 分钟）**、**OCR worker 首建同步回调接线（消除官方导入锁死竞态）**、**竞态守卫三原语 `session_guard`（SessionGuard/BusyGate/OneShotToken）**、**连接域出仓 `CaptureConnectionManager`**、**数据新鲜度判定核心 `freshness.py`（逐武将核对 + 阈值可配 + 损坏留底）**、**备份恢复消费端 `backup_restore_service`**、**访问冷却与并发守卫 `check_cooldown`**、**胜率排名量纲收敛 `win_rate_ranking`** |
+| 5 | [业务服务层](./module_business.md) | `src/business/` | QProcess 子进程管理（**`ScriptRunner` 启动失败终态契约 + 看门狗树杀与 2 秒复查 + 完成钩子重入进程保护**）、服务编排、官方榜单图片导入（**20261022 拼接长图切分复用分页链路 + 单格识别 2× 快通道整板提速约 4.6 倍**）、公告更新检查（**公告检查与获取武将变更冷却窗口分立**）、**卡牌百科同步 `CardSyncService`**、**选将/巅峰赛/对局攻略三板块共享一次截图的轮询串联**、巅峰赛识别编排与禁选建议、**巅峰赛选将人工确认残留修复（导入前校验 + 停止清空 + 牌面在位守卫）**、**任务台账 `task_ledger` 与子进程看门狗（30 分钟）**、**OCR worker 首建同步回调接线（消除官方导入锁死竞态）**、**竞态守卫三原语 `session_guard`（SessionGuard/BusyGate/OneShotToken）**、**连接域出仓 `CaptureConnectionManager`（模拟器 ADB / PC 客户端双形态）**、**数据新鲜度判定核心 `freshness.py`（逐武将核对 + 阈值可配 + 损坏留底）**、**备份恢复消费端 `backup_restore_service`**、**访问冷却与并发守卫 `check_cooldown`**、**胜率排名量纲收敛 `win_rate_ranking`** |
 | 6 | [知识库（RAG）与元规则维护](./module_rag.md) | `src/rag/` + `src/business/rag/` + `src/ui/maintenance/` + `src/scripts/`（语料与维护脚本） | 语料构建与 ODS/DWD/mart 分层（10 任务 / 12 语料文件 / 2128 块）、向量索引与混合检索、**编码器抽象层 `embedder.py`（onnxruntime 默认 + st 回滚档，三件套 sha256 熔断）**、**检索 trace 可观测（五种丢弃原因 + `--explain`）**、**索引整目录重建（rmtree 清孤立段，80.9→14.8MB）**、**检索诊断抽屉**、RAG 注入 AI 生成、**武将变更时间轴驱动的语料块版本戳与默认只召当前版本**、**语料块数校验快照基线三态（int / snapshot / None）**、索引精化三层架构、元规则 T0 文档维护、数据源编辑与审计、**审计容错与语料写前快照（用量补记）**、**建议线程并发收口（SuggestController 串行化）** |
-| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | ADB 截图与 MuMu 实例探测（`probe_all_devices*` / `probe_running_devices`）、模板匹配、**RapidOCR 双套件识别（v6 主 + v4 复核，`engine_loader` 装载）**、官方榜单版式解析、437 字静态汉字特征缓存、**白名单 10 对基线与武将库冲突重检**、**`_recognize_page` 页型模板方法（`_PagePlan`）**、**兜底 OCR 批次零产出短路（det 调用 14→4）**、**识别状态词表单源三常量**、**卡位逐拍漂移抑制与面板跳变治理（`card_grid_detector`）** |
-| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + **DataFreshnessChip 数据新鲜度芯片** + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口、**资料库编辑 AI 生成忙碌守卫**、**ComboStrip 信号契约修复（Signal(object)）**、**设备离线计入闲置暂停**、**实战配队批量生成对话框按配队武将筛选**、**忽略差异列表 mixin `IgnoreableDiffListMixin` 收口**、**头像路径两级回退（运行时根 → 随包基线）**、**首启向导 `onboarding_dialog`（三段体检）+ `onboarding_fixes`**、**备份恢复对话框 `backup_restore_dialog`**、**落后相性刷新 `synergy_refresh_dialog`**、**公告管理器启动即加载**、**对局攻略退出衔接收敛至 PollCoordinator** |
+| 7 | [屏幕采集与 OCR](./module_capture_ocr.md) | `src/capture/` + `src/ocr/` | 双形态屏幕采集（ADB 截图 + **官方 PC 客户端直连 `pc_client.py`**：WGC 主路径 + BitBlt 兜底 + 黑帧检测）、**多品牌模拟器探测（`probers/` 注册表：MuMu/雷电/夜神/逍遥/蓝叠 + 端口段兜底 + 进程反查）**、模板匹配、**RapidOCR 双套件识别（v6 主 + v4 复核，`engine_loader` 装载）**、官方榜单版式解析（**含 20261022 拼接长图切分**）、437 字静态汉字特征缓存、**白名单 10 对基线与武将库冲突重检**、**`_recognize_page` 页型模板方法（`_PagePlan`）**、**兜底 OCR 批次零产出短路（det 调用 14→4）**、**识别状态词表单源三常量**、**卡位逐拍漂移抑制与面板跳变治理（`card_grid_detector`）** |
+| 8 | [UI 界面层](./module_ui.md) | `src/ui/` | 主窗口（AppServices 组合根 + StatusChips + **DataFreshnessChip 数据新鲜度芯片** + ProgressReporter / PollCoordinator / AnnouncementUpdateCoordinator 协调器）、对话框体系、推荐面板、武将浏览器、巅峰赛选将面板（**人工确认残留修复：同名槽位告警 + 会话结束清待确认**）、`MasterDetailPane` 主从列表骨架与实战配队三入口、**资料库编辑 AI 生成忙碌守卫**、**ComboStrip 信号契约修复（Signal(object)）**、**设备离线计入闲置暂停**、**实战配队批量生成对话框按配队武将筛选**、**忽略差异列表 mixin `IgnoreableDiffListMixin` 收口**、**头像路径两级回退（运行时根 → 随包基线）**、**首启向导 `onboarding_dialog`（三段体检）+ `onboarding_fixes`**、**备份恢复对话框 `backup_restore_dialog`**、**落后相性刷新 `synergy_refresh_dialog`**、**公告管理器启动即加载**、**对局攻略退出衔接收敛至 PollCoordinator**、**设备配置页双形态（「模拟器 / 官方 PC 客户端」单选 + 品牌下拉五家 + 特性 ⓘ 悬停提示 + PC 形态窗口候选列表 + 品牌切换记忆）** |
 | 9 | [巅峰赛与实战配队](./module_peak_combos.md) | `src/ui/match/peak_*` + `src/business/analysis/peak_ban_advice.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/ocr/card_grid_detector.py` | 巅峰赛（2v2）选将实时识别循环（**会话制互斥 + 会话世代校验 + 候选面板持续刷新治理 + 人工确认残留修复 + 过场坏帧扣住一拍复核**）、禁选建议象限判定、实战配队（combos）数据管理、座次解析与配队导入、**巅峰赛面板跳变与转场误退出治理（62c5c23）**、**排名量纲收敛与 stale 误清修复（c4a8cf4，`win_rate_ranking`）** |
 
 ## 本轮文档校准（2026-09-21）
@@ -390,3 +392,37 @@ test_project/
 
 **文档结构变化**
 - `docs/call_graph/` 自 50681fd 起**退出版本库**（`.gitignore` 第 122 行 `docs/call_graph/`，注释"函数调用链文档（个人人工 review 参考，不入版本库）"），仅保留在工作树供人工 review；本次仍按用户要求同步更新其内容
+
+## 本轮文档校准（2026-10-25）
+
+自基线 `a63bc3c`（2026-10-23）以来共 12 个提交（10-24 至 10-25，至 `ed8b4ac`），本轮校准覆盖其全部变更。新增 `src/capture/pc_client.py`（577 行）与 `src/capture/probers/` 包（9 文件，其中 `mumu.py` 自 `prober.py` 平移、其余 8 个为新文件），新增 3 份设计/需求文档（`docs/design/emulator_multi_brand_requirements.md` / `pc_official_client_capture_design.md` / `pc_official_client_requirements.md`）。
+
+**多模拟器五品牌连接**（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b）
+- `src/capture/prober.py` 拆包为 `src/capture/probers/`（10 文件）：函数式注册表 `EMULATOR_PROBERS`（每品牌统一契约 `probe_devices(retries)` / `find_adb()`，不引入 Protocol）+ `models.py` 品牌无关值对象 `EmulatorDeviceInfo` + `port_scan.py` 端口段兜底（8 并发 socket 试连，`PORT_RULES` 品牌端口带，结果标注"品牌未验证"防 5555 共用端口误标）+ `console_utils.py`（console 工具 UTF-8→GBK 解码 + `find_process_dir` 进程反查安装目录）
+- 五品牌探测器：MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat VM PID 精确关联 62001+24n）/ 逍遥（`.memu` 配置直读 ADB 转发 hostport，console 为 GUI 无 stdout 死路径已移除）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）
+- `AdbCapture` 品牌参数化（`emulator_type` 构造参数）+ `connect(validate_capture=)` 连接后截帧校验 + `_reconcile_emulator_serial()` 雷电 adb 主动扫描区 `emulator-<n>` 序列号双查
+- 探测提速（真机计时）：逍遥 10.5s → 0.08s（console 死路径移除 + 同键任务去重）、雷电/夜神 3.8s → 0.6s（进程反查 tasklist 门控 + PowerShell 合并查询；端口扫描并行化）；五品牌全部 <1s
+- 配置键 `MUMU_*` → `EMULATOR_*` 平滑升级（`default_from` 回退旧键，持久化始终写新键）+ `EMULATOR_BRAND` 品牌记忆 + `PC_WINDOW_TITLE`，env 键元表 32 → 38 键
+
+**官方 PC 客户端直连**（ed8b4ac）
+- 新增 `src/capture/pc_client.py`（577 行）：`mjs.exe` + `UnityWndClass` 双条件窗口枚举、三态解析（未启动 / 单窗自动选定 / 多窗显式选择，不支持多开）、Windows.Graphics.Capture 主路径（`windows-capture==2.0.1`，Win10 1903+，遮挡可采集）+ GDI BitBlt 兜底 + 黑帧双指标检测引导；WGC 会话窗口句柄定向（标题子串匹配命中工具自身窗口的事故根治）、帧尺寸对账防线、BGRA→RGB 通道反转、Per-Monitor-V2 DPI 声明硬前置；模块全程只读窗口画面不发送任何输入（法律红线）
+- 连接层双形态：`CaptureConnectionManager` 按 `emulator_type=pc_client` 构建 `PcClientCapture`（窗口标题变更或跨形态切换时重建，PC 形态不要求 ADB 配置），连接/断开事件文案按形态分立；`CaptureService` 采集会话类型注解统一放宽为 `AdbCapture | PcClientCapture`
+- UI：设备页顶部「模拟器 / 官方 PC 客户端」单选（程序装载不产生副作用），PC 形态隐藏品牌行与 ADB 区块、设备下拉复用为窗口候选列表（同步枚举三态填充、720p/900p 低分辨率档位放行附非阻断提示）；切到 PC 客户端前记忆模拟器品牌、切回恢复（`EMULATOR_BRAND`）
+- 环境依赖新增 `windows-capture==2.0.1`（environment.yml / environment-ci.yml）
+
+**官方榜单导入提速**（366303c / 28fa11b / 8c0f871）
+- 拼接长图兼容：`official_board_parser.split_stitched_image()` 把 20261022 拼接长图按静默带切分为补边虚拟分页（std<8、带长≥40px 区分旧版长图行隙 15~19px；段结构校验每栏 ≥30 行拦截头部图例区伪段），导入服务切分归一化后复用既有分页链路，坐标经段 y 偏移还原
+- 单格识别快通道：`official_data_import_service` 新增 2× 放大单候选先试路径（`_fast_numeric_cell` 数字格需纯排名/胜率格式、`_fast_name_cell` 名称格需词表精确命中且置信度 ≥0.90），未过门原样回退 4× 双候选路径，精度下界不变，整板导入提速约 4.6 倍
+- 待复核行截图改为仅保留武将名称格（`_row` → `_name_cell`），去掉无关整行画面
+
+**杂项修复**
+- **控制台日志队列化**（79fc4a0）：`logging_config._QueuedConsoleHandler` 把控制台写移出调用线程（Windows 经典控制台快速编辑选中会无限期阻塞 WriteConsoleW，2026-10-24 事故：GUI 主线程在 logger.info 上悬死）；文件 handler 仍同步落盘
+- **公告冷却窗口分立**（39ec62b）：`AnnouncementService` 公告检查与获取武将变更各持独立 `CheckCooldown`（公告检查后首次获取武将变更不再受牵连，各自连续触发才限频），新增 `prepare_cooldown_remaining` 属性
+- **抓取进程重入保护**（4bd9586）：`BaseFetchService._on_finished` 记录完成时进程引用，钩子经直连信号同步发起下一阶段（公告多阶段更新链）时不再误释放新 QProcess（消除退出码 0xF291 强杀）
+- **爬虫超时解耦**（79fc4a0）：robots.txt（5s）与头像下载（15s）从主数据 30s 超时中解耦，站点异常时快速降级
+- doctor 设备检查适配多品牌：读取 `emulator_adb_path` 新键、`adb devices` 序列号匹配放宽为 `127.0.0.1:<port>` 或 `emulator-<n>`、空结果修复文案按品牌分立（蓝叠提示开启 ADB）
+
+**修正的失效描述**
+- 代码规模台账：156 文件 / 2042 个 `test_*` 函数（原 153 / 1936）
+- 技术栈：屏幕采集新增 `windows-capture==2.0.1`（PC 客户端 WGC）；env 键元表 32 → 38 键
+- 设备探测为五品牌注册表 + PC 客户端窗口枚举（原"MuMu 实例探测"）；`AdbCapture` 接口对齐 `PcClientCapture` 双形态

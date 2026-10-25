@@ -80,9 +80,10 @@ src/ui/
 │   ├── settings_dialog.py
 │   ├── faction_color_dialog.py
 │   ├── mumu_config_dialog.py
-│   ├── mumu_device_page.py         # 模拟器配置·设备与连接页（信号接线与控件状态）
+│   ├── mumu_device_page.py         # 模拟器配置·设备与连接页（信号接线与控件状态；
+│   │                               #   2026-10-25 起连接类别单选「模拟器 / 官方 PC 客户端」双形态）
 │   ├── mumu_recognition_page.py    # 模拟器配置·识别与自动化页（模板/ROI/轮询参数）
-│   ├── mumu_config_sections.py
+│   ├── mumu_config_sections.py     # 配置区块组装（品牌行五家下拉 + 特性 ⓘ 悬停提示 + ADB 区块）
 │   ├── roi_selector.py
 │   └── whitelist_config_dialog.py     # 白名单配置对话框（错法观察清单 + 用户层白名单维护）
 ├── data_admin/                 # 数据维护、官方榜单导入与公告更新
@@ -631,6 +632,17 @@ PeakSelectPanel
 
 **备份服务依赖**：`src/business/maintenance/backup_restore_service.py` 提供 `BackupEntry` / `RestoreTarget` / `BackupPreview` / `RestoreResult` 数据模型与 `default_targets` / `restore_targets` / `list_backups` / `inspect_current` / `preview_backup` / `restore_backup` / `select_group_entries` 七个函数。
 
+### 3.17 设备配置页连接类别双形态（MumuDevicePage，8f2e70a → ed8b4ac）
+
+模拟器配置对话框的设备与连接页在 2026-10-24/25 两轮改造后支持**连接类别单选双形态**——「模拟器」（五品牌 ADB）与「官方 PC 客户端」（窗口直连）：
+
+- **顶层单选**：页顶新增「模拟器 / 官方 PC 客户端」单选组，**用户点击才触发**形态切换（程序装载配置时只同步选中态，不产生副作用）。切到 PC 客户端前把当前模拟器品牌存入 `emulator_brand`，切回模拟器时恢复记忆品牌（无记录回退 `mumu`）；重复切换到当前类别判为无操作，不触发设备列表作废重建。
+- **模拟器形态**：品牌下拉仅列五家（`probers.EMULATOR_BRANDS`，展示名不带版本号：MuMu/雷电/夜神/逍遥/蓝叠），品牌行 ⓘ 图标悬停展示该品牌连接特性提示（`EMULATOR_HINTS`，如"默认端口 16384（多开 +32 递增）"；原生悬停驻留路径在部分环境不出 tooltip，改为 enter/click 主动 `QToolTip.showText` 即时显示）；ADB 区块（路径/端口/探测/测试按钮）正常展示。
+- **PC 客户端形态**：隐藏品牌行与 ADB 区块并切换说明文案（仅支持窗口化模式，游戏内设置或 Alt+Enter 切换，工具不会代为切换）；跳过 ADB 自动探测；**设备下拉复用为窗口候选列表**——同步枚举 `probe_pc_windows()` 窗口三态填充（空列表提示未启动 / 唯一窗口自动选定 / 多窗列出候选供选择），候选 label 为"标题（客户区分辨率）"，720p/900p 低分辨率档位放行并附非阻断提示，状态行展示窗口分辨率。
+- **连接状态标签按形态展示**：「● ADB：…」或「● PC 客户端：…」，与连接层事件文案（`CaptureConnectionManager`）同口径。
+
+配置经 `MumuConfigCoordinator` 持久化，键集 12 → 14（新增 `emulator_brand` / `pc_window_title`）；连接方式取值域为 `probers.EMULATOR_TYPES`（五品牌 + `pc_client`），非法值由 `normalize_emulator_type()` 回退默认品牌。
+
 ---
 
 ## 四、关键代码片段
@@ -892,3 +904,18 @@ def update_recommendations(self, data: list[dict]) -> None:
 **数字口径**
 - 测试规模：153 个含 `test_*` 函数的测试文件 / 1936 个 `test_*` 函数（原 145 / 1626；`tests/` 下 py 文件共 157 个）
 - `main_window.py` 预算 575 → 575（本轮新增入口（备份恢复/首启向导/相性刷新）经 `DialogCoordinator` / `AiGenerationWorkflow` 委托，主窗口新增 3 个 `_actions` 键映射 + 1 行 busy_check 回调扩展，预算维持）
+
+---
+
+## 十二、本轮文档校准（2026-10-25）
+
+自基线 `a63bc3c`（2026-10-23 校准）以来的变更（覆盖 366303c / 8c0f871 / 8f2e70a / feee42b / 514b4f8 / 4eb3445 / ed8b4ac 中涉及 UI 的部分）：
+
+**设备配置页双形态（8f2e70a / feee42b / 514b4f8 / 4eb3445 / ed8b4ac）**——新增 §3.17
+- `ui/configuration/mumu_device_page.py`（+166 行）：页顶「模拟器 / 官方 PC 客户端」连接类别单选（用户点击才触发，程序装载不产生副作用）；PC 形态隐藏品牌行与 ADB 区块、跳过 ADB 自动探测、连接状态标签按形态展示；设备下拉复用为 PC 窗口候选列表（枚举三态填充、唯一窗口自动选定、720p/900p 档位放行附非阻断提示）；品牌切换记忆（`emulator_brand`）与重复切换判无操作
+- `ui/configuration/mumu_config_sections.py`（+129 行）：品牌行五家下拉（`EMULATOR_BRANDS`，展示名不带版本号）+ 特性 ⓘ 悬停提示（`EMULATOR_HINTS`，enter/click 主动 `QToolTip.showText`——原生悬停驻留在真机不出 tooltip）+ 按所选方式联动
+- `ui/configuration/mumu_config_dialog.py`：配置持久化链路 12 键 → 14 键（`emulator_brand` / `pc_window_title`）
+- `ui/app/onboarding_dialog.py`：首启向导第二步补充官方 PC 客户端直连说明（需先安装客户端并以窗口化模式运行）
+- 连接域业务侧变更（`CaptureConnectionManager` 双形态、事件文案分立）记录于 [`./module_business.md`](./module_business.md)；探测层与 `pc_client.py` 记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)
+
+**本轮其余 UI 文件**（主窗口、推荐面板、浏览器、巅峰赛面板等）无代码变更。
