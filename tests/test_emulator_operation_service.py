@@ -132,13 +132,22 @@ def test_refresh_submissions_with_different_brands_both_run(monkeypatch) -> None
     monkeypatch.setattr(
         "src.business.emulator.emulator_operation_service.probe_all_devices_with_status", probe)
     service = EmulatorOperationService(_CaptureService())
-    completed = Event()
-    service.devices_refreshed.connect(lambda _devices: completed.set())
+    # 等第二次回传再断言：单线程执行器串行执行两个任务，只等首次回传就断言
+    # 会与第二个任务的执行竞态（CI 慢机上曾输掉竞态误报失败）
+    refreshed_count: list[int] = []
+    both_completed = Event()
+
+    def _on_refreshed(_devices) -> None:
+        refreshed_count.append(1)
+        if len(refreshed_count) == 2:
+            both_completed.set()
+
+    service.devices_refreshed.connect(_on_refreshed)
 
     service.refresh_devices("mumu")
     service.refresh_devices("bluestacks")
 
-    assert _wait(completed)
+    assert _wait(both_completed)
     assert calls == ["mumu", "bluestacks"]
     service.shutdown()
 

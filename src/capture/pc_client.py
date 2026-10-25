@@ -21,6 +21,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wt
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -53,10 +54,31 @@ _BLACK_DARK_LEVEL = 16
 # WGC 首帧等待上界：连接自检时等首帧到达的时间
 _WGC_FIRST_FRAME_TIMEOUT_S = 5.0
 
-_USER32 = ctypes.WinDLL("user32", use_last_error=True)
-_KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_GDI32 = ctypes.WinDLL("gdi32", use_last_error=True)
-_DWMAPI = ctypes.WinDLL("dwmapi", use_last_error=True)
+# Win32 DLL 加载带平台守卫：ctypes.WinDLL 仅存在于 Windows，而本模块被
+# capture_connection 顶层 import，Linux（CI/跨平台开发）必须可导入。占位
+# 对象的任意属性解析为哑函数：下方签名声明块对哑函数赋 .argtypes/.restype
+# 同样成立（赋在临时函数对象上即丢弃），测试对 _USER32.xxx 打桩获得属性
+# 宿主；真实调用路径在非 Windows 上不会执行（测试全程打桩），误触达时
+# 抛 OSError 给出明确错误
+
+
+class _NullWinDLL:
+    """非 Windows 占位 DLL：属性访问返回抛 OSError 的哑函数。"""
+
+    def __getattr__(self, name: str):
+        def _unavailable(*_args, **_kwargs):
+            raise OSError(f"Win32 API {name} 在非 Windows 平台不可用")
+
+        return _unavailable
+
+
+if sys.platform == "win32":
+    _USER32 = ctypes.WinDLL("user32", use_last_error=True)
+    _KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _GDI32 = ctypes.WinDLL("gdi32", use_last_error=True)
+    _DWMAPI = ctypes.WinDLL("dwmapi", use_last_error=True)
+else:
+    _USER32 = _KERNEL32 = _GDI32 = _DWMAPI = _NullWinDLL()
 
 # 64 位句柄与指针参数必须显式声明，否则 ctypes 按 32 位 int 截断/溢出
 _USER32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
