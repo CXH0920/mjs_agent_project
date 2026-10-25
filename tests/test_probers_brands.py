@@ -409,10 +409,12 @@ def test_real_console_output_regression(brand: str, parser) -> None:
 
 
 def _install_fake_subprocess(monkeypatch, *, tasklist_names: list[str] | None,
-                             ps_lines: list[str], calls: list[str]) -> None:
+                             ps_lines: list[str], calls: list[str],
+                             ps_returncode: int = 0) -> None:
     """替身 subprocess.run：tasklist 返回进程名 CSV；PowerShell 返回 名|路径 行。
 
-    tasklist_names 传 None 模拟 tasklist 不可用（非零退出码）。
+    tasklist_names 传 None 模拟 tasklist 不可用（非零退出码）；
+    ps_returncode 默认 0，可置 1 模拟请求名部分不在场的部分成功形态。
     """
     class _Result:
         def __init__(self, returncode: int, stdout: bytes) -> None:
@@ -428,7 +430,7 @@ def _install_fake_subprocess(monkeypatch, *, tasklist_names: list[str] | None,
             csv_lines = "".join(f'"{name}","123","Console","1","1,000 K"\r\n' for name in tasklist_names)
             return _Result(0, csv_lines.encode("gbk"))
         if args[0] == "powershell":
-            return _Result(0, ("\r\n".join(ps_lines)).encode("gbk"))
+            return _Result(ps_returncode, ("\r\n".join(ps_lines)).encode("gbk"))
         raise AssertionError(f"不应调用其它命令: {args}")
 
     monkeypatch.setattr(console_utils.subprocess, "run", fake_run)
@@ -481,6 +483,23 @@ def test_find_process_dir_tasklist_failure_falls_back_to_query(monkeypatch, tmp_
 
     assert console_utils.find_process_dir(["Nox.exe"]) == nox_dir
     assert calls == ["tasklist", "powershell"]
+
+
+def test_find_process_dir_parses_partial_powershell_output(monkeypatch, tmp_path) -> None:
+    """回归：请求名部分不在场时 powershell 退出码为 1 但输出有效，不得按 rc 丢弃。"""
+    nox_dir = tmp_path / "Nox"
+    nox_dir.mkdir()
+    (nox_dir / "Nox.exe").touch()
+    calls: list[str] = []
+    _install_fake_subprocess(
+        monkeypatch,
+        tasklist_names=["Nox.exe"],
+        ps_lines=[f"Nox|{nox_dir / 'Nox.exe'}"],
+        calls=calls,
+        ps_returncode=1,  # NoxPlayer 不在场 → SilentlyContinue 仍置退出码 1
+    )
+
+    assert console_utils.find_process_dir(["Nox.exe", "NoxPlayer.exe"]) == nox_dir
 
 
 # ── 夜神端口精确关联与进程定位（真机 Nox 7 校准，2026-10-24）─────────

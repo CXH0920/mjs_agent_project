@@ -74,17 +74,17 @@ def _process_exe_dir_via_powershell(process_names: list[str]) -> Path | None:
     """一次 PowerShell 合并查询在场进程的可执行路径，返回首个存在文件的目录。
 
     输出行 "进程名|路径"（ProcessName 不带 .exe）；系统进程路径可能为空，
-    跳过即可。
+    跳过即可。退出码不作判据：请求名部分不在场时 SilentlyContinue 仍把
+    powershell 退出码置 1，但输出含在场进程行（2026-10-25 夜神实测：
+    Nox 在场、NoxPlayer 不在 → rc=1 且输出有效，按 rc 丢弃会漏定位）。
     """
     base_names = ",".join(name.rsplit(".", 1)[0] for name in process_names)
     args = ["powershell", "-NoProfile", "-Command",
             f"Get-Process -Name {base_names} -ErrorAction SilentlyContinue "
-            f"| ForEach-Object {{ \"$($_.ProcessName)|$($_.Path)\" }}"]
+            f'| ForEach-Object {{ "$($_.ProcessName)|$($_.Path)" }}']
     try:
         result = subprocess.run(args, capture_output=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
         return None
     paths_by_name = {
         base.lower(): line.split("|", 1)[1].strip().strip('"')
