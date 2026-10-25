@@ -94,7 +94,17 @@ class MumuDeviceSection(QFrame):
         # 连接类别单选：顶层切换模拟器 / 官方 PC 客户端（clicked 而非 toggled，
         # 程序 setChecked 装载不触发 mode_activated）
         self.emulator_radio = QRadioButton("模拟器")
+        # 官方 PC 客户端入口隐藏（2026-10-25 决策：软下架，非删除）——原因：
+        # PC 客户端与模拟器端同一页面的排版不同（界面元素位置平移，非分辨率
+        # 差异），模板与 ROI 均按模拟器排版标定，PC 画面下自动轮询每拍被模板
+        # 门拦下（置信度 0.79 < 0.80，持续 healthy_no_match，OCR 环节从未执行）；
+        # 完整适配需"同页多套模板+ROI 变体"改造（方案已评估，暂缓执行）。
+        # 采集层 PcClientCapture、set_pc_client_mode 与 config.env 直配
+        # EMULATOR_TYPE=pc_client 均保留，手动改配置仍可走 PC 连接与手动识别；
+        # 解冻时删除下面 setVisible 一行即可。另：未发布过含 PC 直连的版本，
+        # 不存在存量 pc_client 配置需要兼容。
         self.pc_client_radio = QRadioButton("官方 PC 客户端")
+        self.pc_client_radio.setVisible(False)
         self.emulator_radio.setChecked(True)
         self.emulator_radio.clicked.connect(lambda: self.mode_activated.emit("emulator"))
         self.pc_client_radio.clicked.connect(lambda: self.mode_activated.emit("pc_client"))
