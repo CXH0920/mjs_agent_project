@@ -1,26 +1,28 @@
 """逍遥 MEmu 实例探测（多品牌连接支持）。
 
-注册表契约：probe_devices(retries) / find_adb()。MEmuConsole/MEmuManager
-list 不上报 adb 端口，按官方默认端口段 21503+10n 推导（用户自定义端口时
-以连接校验为准）；console 不可用/失败时回退端口段扫描（port_scan.py）。
+注册表契约：probe_devices(retries) / find_adb()。实例真实 ADB 端口直读
+`MEmuHyperv VMs\\<实例名>\\<实例名>.memu` 配置（Forwarding name="ADB" 的
+hostport，2026-10-25 真机 9.5.8.0 实证）；MEmuConsole 为 GUI 程序无
+stdout（PE 子系统 2，真机取证 list 挂起不退出），console 调用属永远
+超时的死路径，已移除（原实现每次探测固定烧 10 秒超时后走端口扫描）。
+配置定位失败时回退端口段扫描（port_scan.py）。
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import shutil
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import find_process_dir, run_console_tool
+from src.capture.probers.console_utils import find_process_dir
 from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
 _LABEL = "逍遥"
-_ADB_PORT_BASE = 21503
-_ADB_PORT_STEP = 10
+_VMS_DIRNAME = "MEmuHyperv VMs"
 
 
 def _probe_registry() -> str | None:
@@ -78,20 +80,6 @@ def _get_candidates() -> list[Path]:
     return candidates
 
 
-def _find_console() -> Path | None:
-    """查找逍遥管理工具（MEmuConsole 主名；MEmuManager 为备用名）。"""
-    for name in ("MEmuConsole", "MEmuManager"):
-        which = shutil.which(name)
-        if which:
-            return Path(which)
-    for root in _get_candidates():
-        for name in ("MEmuConsole.exe", "MEmuManager.exe"):
-            p = root / name
-            if p.exists():
-                return p
-    return None
-
-
 def find_adb() -> str:
     """探测逍遥安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。"""
     for root in _get_candidates():
@@ -101,44 +89,105 @@ def find_adb() -> str:
     return ""
 
 
-def _parse_console_output(text: str) -> list[EmulatorDeviceInfo]:
-    """解析逍遥管理工具 list 输出：index,name,top_handle,bind_handle,is_running,pid。
+def _find_vms_dirs() -> list[Path]:
+    """收集已存在的 MEmuHyperv VMs 目录（实例 .memu 配置所在）。
 
-    首列为实例名的机型也按行序回退编号（真机样本入 fixtures_local 后校准）。
+    廉价候选（MEMU_HOME/注册表/常见路径，无子进程开销）先行短路；全部
+    落空才做进程反查，避免模拟器未运行时白付 wmic/PowerShell 查询。反查
+    含 MEmuHeadless（VM 运行而 GUI 关闭时唯一存活的进程，位于安装根同级
+    的 MEmuHyperv 目录，映射回安装根）。
     """
-    devices: list[EmulatorDeviceInfo] = []
-    for ordinal, line in enumerate(text.splitlines()):
-        fields = [field.strip() for field in line.replace("\t", ",").split(",")]
-        if len(fields) < 5 or not fields[4] in ("0", "1"):
+    roots: list[Path] = []
+    home = os.environ.get("MEMU_HOME")
+    if home:
+        roots.append(Path(home))
+    reg_path = _probe_registry()
+    if reg_path:
+        roots.append(Path(reg_path))
+    for cp in [
+        "C:/Program Files/Microvirt/MEmu",
+        "C:/Program Files (x86)/Microvirt/MEmu",
+        "D:/Program Files/Microvirt/MEmu",
+        "D:/Microvirt/MEmu",
+    ]:
+        roots.append(Path(cp))
+    dirs = [root / _VMS_DIRNAME for root in roots if (root / _VMS_DIRNAME).is_dir()]
+    if dirs:
+        return dirs
+    process_dir = find_process_dir(["MEmu.exe", "MEmuHeadless.exe", "MEmuConsole.exe"])
+    if process_dir is None:
+        return []
+    root = process_dir.parent / "MEmu" if process_dir.name == "MEmuHyperv" else process_dir
+    vms = root / _VMS_DIRNAME
+    return [vms] if vms.is_dir() else []
+
+
+def _parse_adb_hostport(config: Path) -> int:
+    """读取单个 .memu 配置中 ADB 转发的 hostport；读不到/异常返回 0。
+
+    标签按本地名匹配（真实配置带 xmlns 命名空间，真机 9.5.8.0 实证
+    root 为 {http://www.memuhyperv.org/}MemuHyperv）。
+    """
+    try:
+        tree = ET.parse(config)
+    except (ET.ParseError, OSError) as exc:
+        logger.debug("逍遥实例配置解析失败 %s：%s", config, exc)
+        return 0
+    for element in tree.getroot().iter():
+        if element.tag.rsplit("}", 1)[-1] != "Forwarding" or element.get("name") != "ADB":
             continue
-        index = int(fields[0]) if fields[0].isdigit() else ordinal
-        devices.append(EmulatorDeviceInfo(
-            index=str(index),
-            name=fields[1] or f"{_LABEL} 实例 {index}",
-            adb_port=_ADB_PORT_BASE + _ADB_PORT_STEP * index,
-            is_running=fields[4] == "1",
-        ))
+        try:
+            return int(element.get("hostport", ""))
+        except ValueError:
+            return 0
+    return 0
+
+
+def _read_adb_port(instance_dir: Path) -> int:
+    """读取实例的 ADB 端口：优先与目录同名的主配置，再扫其余 .memu。
+
+    done.memu 等衍生文件无 ADB 转发，天然被跳过。
+    """
+    primary = instance_dir / f"{instance_dir.name}.memu"
+    others = [p for p in sorted(instance_dir.glob("*.memu")) if p != primary]
+    for config in [primary, *others]:
+        port = _parse_adb_hostport(config)
+        if port:
+            return port
+    return 0
+
+
+def _list_config_instances(vms_dirs: list[Path]) -> list[EmulatorDeviceInfo]:
+    """解析各 VMs 目录下的实例目录，组装配真实端口与运行态的设备列表。"""
+    devices: list[EmulatorDeviceInfo] = []
+    for vms_dir in vms_dirs:
+        for instance_dir in sorted(p for p in vms_dir.iterdir() if p.is_dir()):
+            port = _read_adb_port(instance_dir)
+            if not port:
+                continue
+            devices.append(EmulatorDeviceInfo(
+                index=str(len(devices)),
+                name=instance_dir.name,
+                adb_port=port,
+                is_running=bool(port_scan.scan_open_ports([port])),
+            ))
     return devices
 
 
 def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
-    """探测所有逍遥实例；console 失败时回退端口段扫描。"""
-    console = _find_console()
-    if console is None:
-        return _fallback("未找到逍遥 console 工具（MEmuConsole/MEmuManager）")
-
-    output, error = run_console_tool([str(console), "list"])
-    if output is None:
-        return _fallback(f"逍遥 console 查询失败：{error}")
-
-    devices = _parse_console_output(output)
-    devices = port_scan.supplement_when_empty("memu", _LABEL, devices)
-    logger.info("探测到 %d 个实例（含端口扫描补充）", len(devices))
-    return devices, ""
+    """探测所有逍遥实例：直读 .memu 配置拿真实端口；定位失败回退端口段扫描。"""
+    vms_dirs = _find_vms_dirs()
+    if vms_dirs:
+        devices = _list_config_instances(vms_dirs)
+        if devices:
+            logger.info("探测到 %d 个逍遥实例（.memu 配置直读）", len(devices))
+            return devices, ""
+        return [], '逍遥配置中未读到实例 ADB 端口（MEmuHyperv VMs 下 .memu 的 ADB 转发）'
+    return _fallback("未找到逍遥实例配置目录（MEmuHyperv VMs）")
 
 
 def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
-    """console 路径失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
+    """配置定位失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
     devices = port_scan.probe_devices_via_ports("memu", _LABEL)
     if devices:
         logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))

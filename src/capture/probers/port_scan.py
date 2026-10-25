@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import logging
 import socket
+from concurrent.futures import ThreadPoolExecutor
 
 from src.capture.probers.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
+
+# 并行扫描并发数：16 候选端口 2 批完成。回环连接被防火墙/安全软件静默
+# 丢弃的环境下，关闭端口烧满 0.2s 超时（非立即拒绝），串行 16 端口实测
+# 3.2s，并行后 ~0.4s（2026-10-25 实测）
+_SCAN_CONCURRENCY = 8
 
 # 各品牌公开文档的默认 adb 端口段：(基准端口, 步长, 实例数上限)。
 # 夜神实测为 62001+24n（真机 Nox 7 校准，2026-10-24）。
@@ -35,16 +41,22 @@ def candidate_ports(emulator_type: str) -> list[int]:
     return [base + step * n for n in range(count)]
 
 
+def _port_open(port: int, timeout: float) -> bool:
+    """单端口 127.0.0.1 试连；关闭/丢弃/超时均视为未开放。"""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def scan_open_ports(ports: list[int], timeout: float = 0.2) -> list[int]:
-    """对 127.0.0.1 候选端口做 socket 试连，返回开放端口。"""
-    open_ports: list[int] = []
-    for port in ports:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=timeout):
-                open_ports.append(port)
-        except OSError:
-            continue
-    return open_ports
+    """并行探测候选端口，返回开放端口（保持输入顺序）。"""
+    if not ports:
+        return []
+    with ThreadPoolExecutor(max_workers=min(_SCAN_CONCURRENCY, len(ports))) as pool:
+        flags = list(pool.map(lambda port: _port_open(port, timeout), ports))
+    return [port for port, is_open in zip(ports, flags, strict=True) if is_open]
 
 
 def probe_devices_via_ports(emulator_type: str, label: str) -> list[EmulatorDeviceInfo]:

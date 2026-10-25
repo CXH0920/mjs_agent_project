@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, TypeVar
 
@@ -52,6 +53,10 @@ class EmulatorOperationService(QObject):
         self._probe_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emulator-probe")
         self._adb_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emulator-adb")
         self._shutdown_token = OneShotToken()  # 关停一次性守卫（P0-3 收口）
+        # 同键任务去重（键 = 操作名:参数）：探测执行器单线程串行，连点刷新/
+        # 品牌切换会把重复的慢任务排队累积（逍遥 console 时代实测 10 秒/个）
+        self._pending: set[str] = set()
+        self._pending_lock = threading.Lock()
 
     def detect_adb(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
         def work() -> tuple[bool, str, str]:
@@ -61,7 +66,11 @@ class EmulatorOperationService(QObject):
             ok, message = test_adb_path(adb_path)
             return ok, adb_path, message
 
-        self._submit(self._probe_executor, "detect_adb", work, lambda result: self.adb_detected.emit(*result))
+        self._submit(
+            self._probe_executor, "detect_adb", work,
+            lambda result: self.adb_detected.emit(*result),
+            dedup_key=f"detect_adb:{emulator_type}",
+        )
 
     def reprobe_adb(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
         """品牌切换后的静默 ADB 重探：只回传路径，不弹提示、不触发设备刷新。"""
@@ -71,6 +80,7 @@ class EmulatorOperationService(QObject):
             "reprobe_adb",
             lambda: probe_adb(emulator_type),
             self.adb_reprobed.emit,
+            dedup_key=f"reprobe_adb:{emulator_type}",
         )
 
     def refresh_devices(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
@@ -86,6 +96,7 @@ class EmulatorOperationService(QObject):
             "refresh_devices",
             lambda: probe_all_devices_with_status(emulator_type),
             completed,
+            dedup_key=f"refresh_devices:{emulator_type}",
         )
 
     def connect(self) -> None:
@@ -119,7 +130,11 @@ class EmulatorOperationService(QObject):
                 if capture.connected:
                     capture.disconnect()
 
-        self._submit(self._adb_executor, "test_device", work, lambda result: self.device_tested.emit(*result))
+        self._submit(
+            self._adb_executor, "test_device", work,
+            lambda result: self.device_tested.emit(*result),
+            dedup_key=f"test_device:{adb_path}:{port}",
+        )
 
     def capture_template_screenshot(self, template_name: str) -> None:
         def work() -> tuple[bool, object]:
@@ -146,11 +161,33 @@ class EmulatorOperationService(QObject):
         operation: str,
         work: Callable[[], _Result],
         completed: Callable[[_Result], None],
+        dedup_key: str | None = None,
     ) -> None:
+        """提交后台任务；同键任务执行/排队中时丢弃本次提交（连点防累积）。
+
+        键含操作参数（如 refresh_devices:品牌），同键即同参任务——丢弃新的
+        与替换排队中的等价。被丢弃的提交不回调 completed，排队中的同键任务
+        完成后会发出同类信号，UI 依赖的按钮恢复路径不受影响。
+        """
         if self._shutdown_token.spent:
             return
-        future = executor.submit(work)
+        key = dedup_key or operation
+        with self._pending_lock:
+            if key in self._pending:
+                logger.debug("后台任务 %s 已在执行/排队中，忽略重复提交", key)
+                return
+            self._pending.add(key)
+        try:
+            future = executor.submit(work)
+        except RuntimeError:
+            self._release_pending(key)
+            return
+        future.add_done_callback(lambda _item, key=key: self._release_pending(key))
         future.add_done_callback(lambda item: self._complete(operation, item, completed))
+
+    def _release_pending(self, key: str) -> None:
+        with self._pending_lock:
+            self._pending.discard(key)
 
     def _complete(
         self,

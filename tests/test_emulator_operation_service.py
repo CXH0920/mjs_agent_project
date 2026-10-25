@@ -92,6 +92,57 @@ def test_reprobe_adb_reports_path_without_device_refresh(monkeypatch) -> None:
     service.shutdown()
 
 
+def test_duplicate_refresh_submissions_are_coalesced(monkeypatch) -> None:
+    """同键（同品牌）重复提交在执行中直接丢弃，不排队累积（逍遥慢探测连点场景）。"""
+    started = Event()
+    release = Event()
+    calls: list[str] = []
+
+    def slow_probe(emulator_type: str = "mumu"):
+        calls.append(emulator_type)
+        started.set()
+        release.wait(2)
+        return [], ""
+
+    monkeypatch.setattr(
+        "src.business.emulator.emulator_operation_service.probe_all_devices_with_status", slow_probe)
+    service = EmulatorOperationService(_CaptureService())
+    completed = Event()
+    service.devices_refreshed.connect(lambda devices: completed.set())
+
+    service.refresh_devices("memu")
+    assert _wait(started)
+    service.refresh_devices("memu")  # 执行中 → 丢弃
+    service.refresh_devices("memu")  # 执行中 → 丢弃
+    release.set()
+
+    assert _wait(completed)
+    assert calls == ["memu"]
+    service.shutdown()
+
+
+def test_refresh_submissions_with_different_brands_both_run(monkeypatch) -> None:
+    """不同键（不同品牌）提交互不去重，各自执行并回传结果。"""
+    calls: list[str] = []
+
+    def probe(emulator_type: str = "mumu"):
+        calls.append(emulator_type)
+        return [], ""
+
+    monkeypatch.setattr(
+        "src.business.emulator.emulator_operation_service.probe_all_devices_with_status", probe)
+    service = EmulatorOperationService(_CaptureService())
+    completed = Event()
+    service.devices_refreshed.connect(lambda _devices: completed.set())
+
+    service.refresh_devices("mumu")
+    service.refresh_devices("bluestacks")
+
+    assert _wait(completed)
+    assert calls == ["mumu", "bluestacks"]
+    service.shutdown()
+
+
 def test_connection_failure_and_template_capture_are_reported() -> None:
     service = EmulatorOperationService(_CaptureService())
     connection_completed = Event()

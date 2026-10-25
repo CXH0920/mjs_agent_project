@@ -11,6 +11,7 @@ from src.capture.probers import (
     EMULATOR_PROBERS,
     EMULATOR_TYPES,
     bluestacks,
+    console_utils,
     ldplayer,
     memu,
     mumu,
@@ -99,23 +100,11 @@ def test_nox_stopped_instance_marks_not_running() -> None:
     assert devices[0].adb_port == 62001
 
 
-def test_memu_parses_list_output() -> None:
-    text = "0,MEmu,2306536,2306524,1,10988\n1,MEmu_1,2306530,2306520,0,\n"
-
-    devices = memu._parse_console_output(text)
-
-    assert [(d.index, d.adb_port, d.is_running) for d in devices] == [
-        ("0", 21503, True),
-        ("1", 21513, False),
-    ]
-
-
 def test_console_parse_ignores_malformed_lines() -> None:
-    for parse in (ldplayer._parse_console_output, nox._parse_console_output, memu._parse_console_output):
+    for parse in (ldplayer._parse_console_output, nox._parse_console_output):
         assert parse("header,name,a,b,c,d") == []
         assert parse("garbage line") == []
         assert parse("") == []
-
 
 # ── 端口扫描兜底 ─────────────────────────────────────────────────────
 
@@ -144,7 +133,26 @@ def test_scan_open_ports_probes_each_socket(monkeypatch) -> None:
     monkeypatch.setattr(port_scan.socket, "create_connection", _FakeConn)
 
     assert port_scan.scan_open_ports([5555, 62001]) == [5555, 62001]
-    assert calls == [("127.0.0.1", 5555), ("127.0.0.1", 62001)]
+    assert sorted(calls) == [("127.0.0.1", 5555), ("127.0.0.1", 62001)]  # 并行探测，顺序不作保证
+
+
+def test_scan_open_ports_preserves_input_order_in_result(monkeypatch) -> None:
+    """并行探测下结果仍按输入顺序返回。"""
+    class _Open:
+        def __enter__(self) -> "_Open":
+            return self
+
+        def __exit__(self, *args: object) -> bool:
+            return False
+
+    def selective(address: tuple[str, int], timeout: float | None = None) -> object:
+        if address[1] == 5555:
+            raise ConnectionRefusedError
+        return _Open()
+
+    monkeypatch.setattr(port_scan.socket, "create_connection", selective)
+
+    assert port_scan.scan_open_ports([5555, 62001, 21503]) == [62001, 21503]
 
 
 def test_scan_open_ports_skips_closed_ports(monkeypatch) -> None:
@@ -385,7 +393,6 @@ def test_ldplayer_registry_reads_ldplayer9_key(monkeypatch, tmp_path) -> None:
 @pytest.mark.parametrize("brand,parser", [
     ("ldplayer", ldplayer._parse_console_output),
     ("nox", nox._parse_console_output),
-    ("memu", memu._parse_console_output),
 ])
 def test_real_console_output_regression(brand: str, parser) -> None:
     """真机回归：真机 console 输出样本缺失时跳过；命中时至少解析出一个实例。"""
@@ -396,6 +403,84 @@ def test_real_console_output_regression(brand: str, parser) -> None:
     devices = parser(path.read_text(encoding="utf-8"))
 
     assert devices, f"真机样本应至少解析出一个实例: {path}"
+
+
+# ── 进程反查两级实现（tasklist 门控 + 合并 PowerShell，2026-10-25）────
+
+
+def _install_fake_subprocess(monkeypatch, *, tasklist_names: list[str] | None,
+                             ps_lines: list[str], calls: list[str]) -> None:
+    """替身 subprocess.run：tasklist 返回进程名 CSV；PowerShell 返回 名|路径 行。
+
+    tasklist_names 传 None 模拟 tasklist 不可用（非零退出码）。
+    """
+    class _Result:
+        def __init__(self, returncode: int, stdout: bytes) -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = b""
+
+    def fake_run(args, capture_output=True, timeout=10, **kwargs):
+        calls.append(args[0])
+        if args[0] == "tasklist":
+            if tasklist_names is None:
+                return _Result(1, b"")
+            csv_lines = "".join(f'"{name}","123","Console","1","1,000 K"\r\n' for name in tasklist_names)
+            return _Result(0, csv_lines.encode("gbk"))
+        if args[0] == "powershell":
+            return _Result(0, ("\r\n".join(ps_lines)).encode("gbk"))
+        raise AssertionError(f"不应调用其它命令: {args}")
+
+    monkeypatch.setattr(console_utils.subprocess, "run", fake_run)
+
+
+def test_find_process_dir_gate_skips_powershell_when_absent(monkeypatch, tmp_path) -> None:
+    """tasklist 门控：请求名全不在场时直接否决，不发起 PowerShell 查询。"""
+    calls: list[str] = []
+    _install_fake_subprocess(monkeypatch, tasklist_names=["notepad.exe"], ps_lines=[], calls=calls)
+
+    assert console_utils.find_process_dir(["dnplayer.exe", "Ld9Box.exe"]) is None
+    assert calls == ["tasklist"]
+
+
+def test_find_process_dir_merged_query_keeps_request_priority(monkeypatch, tmp_path) -> None:
+    """在场名合并为一次 PowerShell 查询；目录按请求顺序取首个（优先级语义）。"""
+    memu_dir = tmp_path / "MEmu"
+    console_dir = tmp_path / "MEmuConsole"
+    memu_dir.mkdir(); console_dir.mkdir()
+    (memu_dir / "MEmu.exe").touch(); (console_dir / "MEmuConsole.exe").touch()
+    calls: list[str] = []
+    # PS 返回顺序与请求顺序相反，且混入路径为空的行——均不应影响结果
+    _install_fake_subprocess(
+        monkeypatch,
+        tasklist_names=["MEmu.exe", "MEmuConsole.exe"],
+        ps_lines=[
+            f"MEmuConsole|{console_dir / 'MEmuConsole.exe'}",
+            "ProtectedProc|",
+            f"MEmu|{memu_dir / 'MEmu.exe'}",
+        ],
+        calls=calls,
+    )
+
+    result = console_utils.find_process_dir(["MEmu.exe", "MEmuConsole.exe"])
+
+    assert result == memu_dir
+    assert calls == ["tasklist", "powershell"]  # 单次合并查询
+
+
+def test_find_process_dir_tasklist_failure_falls_back_to_query(monkeypatch, tmp_path) -> None:
+    """tasklist 不可用（门控空集）时不否决，仍做 PowerShell 合并查询。"""
+    nox_dir = tmp_path / "Nox"
+    nox_dir.mkdir()
+    (nox_dir / "Nox.exe").touch()
+    calls: list[str] = []
+    _install_fake_subprocess(
+        monkeypatch, tasklist_names=None,
+        ps_lines=[f"Nox|{nox_dir / 'Nox.exe'}"], calls=calls,
+    )
+
+    assert console_utils.find_process_dir(["Nox.exe"]) == nox_dir
+    assert calls == ["tasklist", "powershell"]
 
 
 # ── 夜神端口精确关联与进程定位（真机 Nox 7 校准，2026-10-24）─────────
@@ -462,18 +547,69 @@ def test_discovery_wiring_calls_find_process_dir(monkeypatch) -> None:
     assert len(seen) == 5
 
 
-# ── console 成功但零实例的补充扫描（逍遥真机实测 2026-10-24）─────────
+# ── 逍遥 .memu 配置直读（真机 9.5.8.0 实测驱动，2026-10-25）────────────
 
 
-def test_console_success_with_empty_output_supplements_port_scan(monkeypatch, tmp_path) -> None:
-    """逍遥真机形态：console rc=0 但输出为空 → 端口带内开放端口补充进列表。"""
-    console = tmp_path / "MEmuConsole.exe"
-    console.touch()
-    monkeypatch.setattr(memu, "_find_console", lambda: console)
-    monkeypatch.setattr(memu, "run_console_tool", lambda args, timeout=10: ("", ""))
+_MEMU_CONF_HEAD = (
+    '<?xml version="1.0"?>\n'
+    '<MemuHyperv xmlns="http://www.memuhyperv.org/">\n'
+    "  <Network>\n"
+)
+_MEMU_CONF_FORWARDING = (
+    '    <Forwarding name="{name}" proto="1" hostip="127.0.0.1" hostport="{host}" '
+    'guestip="10.0.2.15" guestport="{guest}"/>\n'
+)
+_MEMU_CONF_TAIL = "  </Network>\n</MemuHyperv>\n"
+
+
+def _make_memu_instance(vms_dir: Path, name: str, adb_port: int, *, with_adb: bool = True) -> None:
+    lines = [_MEMU_CONF_HEAD, _MEMU_CONF_FORWARDING.format(name="MVD", host=21501, guest=21501)]
+    if with_adb:
+        lines.append(_MEMU_CONF_FORWARDING.format(name="ADB", host=adb_port, guest=5555))
+    lines.append(_MEMU_CONF_TAIL)
+    instance = vms_dir / name
+    instance.mkdir(parents=True)
+    (instance / f"{name}.memu").write_text("".join(lines), encoding="utf-8")
+
+
+def test_memu_config_reads_real_ports_and_running_state(monkeypatch, tmp_path) -> None:
+    """:.memu 直读真实端口（非端口带推导）与运行态；衍生配置不干扰。"""
+    vms_dir = tmp_path / "MEmuHyperv VMs"
+    _make_memu_instance(vms_dir, "MEmu", adb_port=21517)          # 自定义端口，证明非推导
+    _make_memu_instance(vms_dir, "MEmu_1", adb_port=21523)
+    (vms_dir / "MEmu" / "done.memu").write_text("", encoding="utf-8")  # 0B 衍生文件
+    monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
+    monkeypatch.setattr(
+        port_scan, "scan_open_ports",
+        lambda ports, timeout=0.2: [port for port in ports if port == 21517])
+
+    devices, error = memu.probe_devices()
+
+    assert error == ""
+    assert [(d.index, d.name, d.adb_port, d.is_running) for d in devices] == [
+        ("0", "MEmu", 21517, True),
+        ("1", "MEmu_1", 21523, False),
+    ]
+
+
+def test_memu_config_without_adb_forwarding_reports_config_error(monkeypatch, tmp_path) -> None:
+    """VMs 目录在但读不到 ADB 转发 → 显性报配置错误，不误报未安装。"""
+    vms_dir = tmp_path / "MEmuHyperv VMs"
+    _make_memu_instance(vms_dir, "MEmu", adb_port=21503, with_adb=False)
+    monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
+
+    devices, error = memu.probe_devices()
+
+    assert devices == []
+    assert "未读到实例 ADB 端口" in error
+
+
+def test_memu_missing_config_dir_falls_back_to_port_scan(monkeypatch) -> None:
+    """配置目录定位失败 → 端口段扫描兜底（有产出视为成功）；扫不到报错。"""
+    monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [])
     monkeypatch.setattr(
         port_scan, "probe_devices_via_ports",
-        lambda emulator_type, label: [EmulatorDeviceInfo("1", "逍遥 实例 1（端口扫描）", 21503, True)],
+        lambda emulator_type, label: [EmulatorDeviceInfo("1", "逍遥 实例 1（端口扫描·品牌未验证）", 21503, True)],
     )
 
     devices, error = memu.probe_devices()
@@ -481,16 +617,49 @@ def test_console_success_with_empty_output_supplements_port_scan(monkeypatch, tm
     assert error == ""
     assert devices[0].adb_port == 21503
 
-
-def test_console_empty_and_scan_empty_keeps_empty_result(monkeypatch, tmp_path) -> None:
-    """console 空输出且端口带内无开放端口 → 维持空结果（真没有实例）。"""
-    console = tmp_path / "MEmuConsole.exe"
-    console.touch()
-    monkeypatch.setattr(memu, "_find_console", lambda: console)
-    monkeypatch.setattr(memu, "run_console_tool", lambda args, timeout=10: ("", ""))
     monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
 
     devices, error = memu.probe_devices()
 
     assert devices == []
+    assert "MEmuHyperv VMs" in error
+
+
+def test_memu_vms_dir_mapped_from_headless_process(monkeypatch, tmp_path) -> None:
+    """VM 运行而 GUI 关闭时由 MEmuHeadless 进程目录映射回安装根。"""
+    vms = tmp_path / "MEmu" / "MEmuHyperv VMs"
+    vms.mkdir(parents=True)
+    monkeypatch.delenv("MEMU_HOME", raising=False)
+    monkeypatch.setattr(memu, "_probe_registry", lambda: None)
+    monkeypatch.setattr(memu, "find_process_dir", lambda names: tmp_path / "MEmuHyperv")
+
+    assert memu._find_vms_dirs() == [vms]
+
+
+def test_memu_vms_dir_cheap_candidates_skip_process_query(monkeypatch, tmp_path) -> None:
+    """MEMU_HOME 等廉价候选已命中时短路，不再付进程反查开销。"""
+    vms = tmp_path / "MEmuHyperv VMs"
+    vms.mkdir(parents=True)
+    monkeypatch.setenv("MEMU_HOME", str(tmp_path))
+    monkeypatch.setattr(memu, "_probe_registry", lambda: None)
+    monkeypatch.setattr(
+        memu, "find_process_dir",
+        lambda names: (_ for _ in ()).throw(AssertionError("不应触发进程反查")))
+
+    assert memu._find_vms_dirs() == [vms]
+
+
+def test_memu_parse_tolerates_broken_configs(monkeypatch, tmp_path) -> None:
+    """损坏/非 XML 的 .memu 被跳过，不中断整体探测。"""
+    vms_dir = tmp_path / "MEmuHyperv VMs"
+    _make_memu_instance(vms_dir, "MEmu", adb_port=21503)
+    broken = vms_dir / "MEmu_Broken"
+    broken.mkdir()
+    (broken / "MEmu_Broken.memu").write_text("not-xml <<<", encoding="utf-8")
+    monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
+    monkeypatch.setattr(port_scan, "scan_open_ports", lambda ports, timeout=0.2: [])
+
+    devices, error = memu.probe_devices()
+
     assert error == ""
+    assert [d.name for d in devices] == ["MEmu"]
