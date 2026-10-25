@@ -4,6 +4,9 @@
 # 精简依据：测试套件全程 fake 注入/monkeypatch，不加载真实 OCR 引擎（rapidocr/
 # onnxruntime 仅本地与打包环境安装）；汉字特征库（unihan/cnradical/pypinyin）
 # 均为 lazy import，测试收集不触发。仅保留 lint + 测试收集 + 断言真正需要的包。
+# windows-capture 同理不入册：PyPI 仅发布 win_amd64 wheel，Linux runner 无法安装
+#（2026-10-25 曾致 conda env update 退出码 1）；pc_client.py 为函数内懒加载，
+# ImportError 时自动退 BitBlt，测试全程 mock 不需要真包。
 name: myenv
 channels:
   - defaults
@@ -23,7 +26,6 @@ dependencies:
     - import-linter==2.15   # verify.yml 架构契约门禁（.importlinter）
     - vulture==2.16         # verify.yml 死代码 report-only（tests/vulture_whitelist.py）
     - pillow==12.3.0
-    - windows-capture==2.0.1  # PC 客户端 WGC 采集主路径（src/capture/pc_client.py，Win10 1903+；失败自动退 BitBlt）
     - numpy==1.26.4
     - playwright==1.60.0   # browser_session.py 顶层硬 import（仅需 pip 包，测试全程 mock 不需浏览器）
     - mistune==3.3.0       # markdown_renderer.py 顶层 import
