@@ -19,6 +19,7 @@ dependencies:
     # 死代码扫描（report-only；白名单见 tests/vulture_whitelist.py）
     - vulture==2.16
     - pillow==12.3.0
+    - windows-capture==2.0.1  # PC 客户端 WGC 采集主路径（src/capture/pc_client.py，Win10 1903+；失败自动退 BitBlt）
     - numpy==1.26.4
     # OCR 引擎（B1 起 RapidOCR/ONNX 唯一栈：v6 主引擎内置模型 + v4 复核引擎，
     # v4 三件套经 src/scripts/fetch_recheck_models.py 官方清单预取，paddle 已退役）

@@ -354,7 +354,7 @@ def test_brand_combo_loads_configured_type_and_switch_triggers_refresh() -> None
     operation = dialog._operation_service
     page = dialog._device_page
 
-    assert page.brand_combo.count() == 5  # 五家品牌
+    assert page.brand_combo.count() == 5  # 五家模拟器品牌（PC 客户端在顶层单选）
     assert page.brand_combo.currentData() == "mumu"
     assert operation.refresh_types == ["mumu"]  # 初载按 mumu 刷新
 

@@ -29,17 +29,22 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "probers"
 
 
 def test_registry_covers_all_advertised_types() -> None:
-    assert set(EMULATOR_TYPES) == set(EMULATOR_PROBERS) == set(EMULATOR_LABELS)
+    """连接方式全集 = 模拟器品牌注册表 + 官方 PC 客户端；标签全覆盖（PC 直连需求 R1）。"""
+    assert set(EMULATOR_PROBERS) < set(EMULATOR_TYPES)
+    assert set(EMULATOR_TYPES) == set(EMULATOR_LABELS)
+    assert set(EMULATOR_TYPES) - set(EMULATOR_PROBERS) == {"pc_client"}
 
 
 def test_emulator_labels_use_plain_brand_names() -> None:
-    """品牌展示名不带版本号（夜神/逍遥/MuMu/蓝叠/雷电，2026-10-25 定稿）。"""
+    """品牌展示名不带版本号（夜神/逍遥/MuMu/蓝叠/雷电，2026-10-25 定稿；
+    pc_client 为连接方式而非品牌，同样不带版本号）。"""
     assert EMULATOR_LABELS == {
         "mumu": "MuMu",
         "ldplayer": "雷电",
         "nox": "夜神",
         "memu": "逍遥",
         "bluestacks": "蓝叠",
+        "pc_client": "官方 PC 客户端",
     }
 
 
@@ -51,6 +56,7 @@ def test_emulator_hints_cover_all_advertised_types() -> None:
 
 def test_normalize_unknown_type_falls_back_to_mumu() -> None:
     assert normalize_emulator_type("ldplayer") == "ldplayer"
+    assert normalize_emulator_type("pc_client") == "pc_client"  # 连接方式合法值
     assert normalize_emulator_type("bogus") == "mumu"
     assert normalize_emulator_type(None) == "mumu"
 

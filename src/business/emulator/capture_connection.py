@@ -16,6 +16,7 @@ import threading
 from typing import Callable
 
 from src.capture.adb_screen import AdbCapture
+from src.capture.pc_client import PC_WINDOW_TITLE, PcClientCapture
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ def _conn_key(config: dict, key: str, default: object = "") -> object:
             return config.get(legacy, default)
         return default
     return value
+
+
+def _is_pc_client(config: dict) -> bool:
+    """当前配置是否为官方 PC 客户端连接方式。"""
+    return _conn_key(config, "emulator_type") == "pc_client"
 
 
 class CaptureConnectionManager:
@@ -77,9 +83,11 @@ class CaptureConnectionManager:
             return self._connection_state, self._connection_detail
 
     def update_config(self, config: dict) -> None:
-        """更新配置并重建 AdbCapture（仅路径/端口/品牌/截图模式变化时重建）。
+        """更新配置并按需重建采集会话（模拟器与 PC 客户端双形态）。
 
-        重建时如果旧的 AdbCapture 已连通同一设备，保留已有连接状态；
+        模拟器形态：路径/端口/品牌/截图模式变化时重建 AdbCapture；
+        PC 客户端形态：不要求 ADB 配置，窗口标题变化或跨形态切换时重建
+        PcClientCapture。重建时如果旧会话已连通同一目标，保留已有连接状态；
         配置无变化时不重建实例。读取兼容 mumu_* 旧键（升级过渡期）。
         """
         with self._session_lock:
@@ -87,8 +95,19 @@ class CaptureConnectionManager:
             port_changed = _conn_key(config, "emulator_adb_port") != _conn_key(self._config, "emulator_adb_port")
             mode_changed = _conn_key(config, "emulator_screenshot_mode") != _conn_key(self._config, "emulator_screenshot_mode")
             type_changed = _conn_key(config, "emulator_type") != _conn_key(self._config, "emulator_type")
+            title_changed = (_conn_key(config, "pc_window_title", PC_WINDOW_TITLE)
+                             != _conn_key(self._config, "pc_window_title", PC_WINDOW_TITLE))
 
             self._config = dict(config)
+
+            if _is_pc_client(config):
+                if (type_changed or title_changed
+                        or not isinstance(self._capture, PcClientCapture)):
+                    window_title = str(_conn_key(config, "pc_window_title", PC_WINDOW_TITLE))
+                    self._capture = PcClientCapture(window_title=window_title)
+                    self.set_connection_state("disconnected")
+                    logger.info("连接方式为官方 PC 客户端（窗口标题: %s）", window_title)
+                return
 
             adb_path = _conn_key(config, "emulator_adb_path")
             if not adb_path:
@@ -96,7 +115,9 @@ class CaptureConnectionManager:
                 self.set_connection_state("unconfigured")
                 return
 
-            if path_changed or port_changed or mode_changed or type_changed or self._capture is None:
+            if (path_changed or port_changed or mode_changed or type_changed
+                    or self._capture is None
+                    or isinstance(self._capture, PcClientCapture)):
                 self._capture = AdbCapture(
                     adb_path=adb_path,
                     adb_port=_conn_key(config, "emulator_adb_port", 0),
@@ -178,15 +199,17 @@ class CaptureConnectionManager:
                 return False, "ADB 未配置"
         return self.connect_capture(capture, validate_capture=True)
 
-    def connect_capture(self, capture: AdbCapture, validate_capture: bool = False) -> tuple[bool, str]:
-        """连接给定 AdbCapture：阻塞 IO 在 _adb_io_lock 内，状态字段在 _session_lock 内更新。
+    def connect_capture(self, capture: AdbCapture | PcClientCapture,
+                        validate_capture: bool = False) -> tuple[bool, str]:
+        """连接给定采集会话：阻塞 IO 在 _adb_io_lock 内，状态字段在 _session_lock 内更新。
 
-        validate_capture 透传给 AdbCapture.connect；自动重连等高频路径保持
+        validate_capture 透传给底层 capture；自动重连等高频路径保持
         False，免为每次重连多付一帧截图（后续截图本身就是验证）。
         """
+        is_pc = isinstance(capture, PcClientCapture)
         with self._session_lock:
             self.set_connection_state("connecting")
-        self._on_status("正在连接模拟器...")
+        self._on_status("正在连接 PC 客户端..." if is_pc else "正在连接模拟器...")
         with self._adb_io_lock:
             ok, message = capture.connect(validate_capture=validate_capture)
         with self._session_lock:
@@ -195,22 +218,25 @@ class CaptureConnectionManager:
             else:
                 self.set_connection_state("disconnected", message)
         if ok:
-            self._on_event_status(f"ADB 已连接：{capture.device_serial}")
+            self._on_event_status(
+                f"PC 客户端已连接：{capture.device_serial}" if is_pc
+                else f"ADB 已连接：{capture.device_serial}")
         else:
-            # 失败必须常驻，否则左下角残留"正在连接模拟器..."直到下一条消息
+            # 失败必须常驻，否则左下角残留"正在连接..."直到下一条消息
             self._on_status(f"连接失败：{message}")
         return ok, message
 
     def disconnect_emulator(self) -> tuple[bool, str]:
-        """断开模拟器。"""
+        """断开当前连接（模拟器 ADB 或 PC 客户端窗口会话）。"""
         with self._session_lock:
             capture = self._capture
             if capture is None:
                 self.set_connection_state("unconfigured")
                 return False, "ADB 未配置"
+        is_pc = isinstance(capture, PcClientCapture)
         with self._adb_io_lock:
             ok, message = capture.disconnect()
         with self._session_lock:
             self.set_connection_state("disconnected")
-        self._on_event_status("ADB 已断开")
+        self._on_event_status("PC 客户端已断开" if is_pc else "ADB 已断开")
         return ok, message

@@ -233,11 +233,12 @@ def test_shutdown_disconnects_connection_state_relay(tmp_path: Path) -> None:
     assert relayed == [("connected", "127.0.0.1:16448")]
 
 
-def test_persist_mumu_env_config_writes_twelve_dialog_keys(monkeypatch) -> None:
-    """env 持久化固定写对话框可编辑的 12 键（3 连接键 + 9 OCR 键），部署键不落盘。
+def test_persist_mumu_env_config_writes_fourteen_dialog_keys(monkeypatch) -> None:
+    """env 持久化固定写对话框可编辑的 14 键（5 连接键 + 9 OCR 键），部署键不落盘。
 
-    连接键自 2026-10 起写 EMULATOR_*（含品牌 EMULATOR_TYPE）；旧
-    MUMU_ADB_* 不再镜像写入，残留行为惰性数据（读取经 default_from 回退）。
+    连接键自 2026-10 起写 EMULATOR_*（含品牌 EMULATOR_TYPE）；PC 直连
+    （2026-10-25）补写 PC_WINDOW_TITLE；旧 MUMU_ADB_* 不再镜像写入，
+    残留行为惰性数据（读取经 default_from 回退）。
     """
     recorded: list[tuple[object, dict]] = []
     monkeypatch.setattr(
@@ -247,6 +248,8 @@ def test_persist_mumu_env_config_writes_twelve_dialog_keys(monkeypatch) -> None:
 
     persist_mumu_env_config({
         "emulator_type": "ldplayer",
+        "emulator_brand": "ldplayer",
+        "pc_window_title": "名将杀",
         "emulator_adb_path": "adb.exe",
         "emulator_adb_port": 16384,
         "mumu_ocr_enabled": True,
@@ -267,6 +270,8 @@ def test_persist_mumu_env_config_writes_twelve_dialog_keys(monkeypatch) -> None:
     path, data = recorded[0]
     assert data == {
         "EMULATOR_TYPE": "ldplayer",
+        "EMULATOR_BRAND": "ldplayer",
+        "PC_WINDOW_TITLE": "名将杀",
         "EMULATOR_ADB_PATH": "adb.exe",
         "EMULATOR_ADB_PORT": "16384",
         "MUMU_OCR_ENABLED": "true",
@@ -279,6 +284,33 @@ def test_persist_mumu_env_config_writes_twelve_dialog_keys(monkeypatch) -> None:
         "MUMU_HERO_SELECTION_COOLDOWN": "120",
         "MUMU_MATCH_GUIDE_THRESHOLD": "0.85",
     }
+
+
+def test_switch_connection_mode_remembers_emulator_brand(tmp_path: Path) -> None:
+    """连接类别单选切换：切 PC 前记住模拟器品牌，切回时恢复（无记录回退 mumu）。"""
+    coordinator, _capture, _ocr, _operation = _coordinator(tmp_path)
+    coordinator.update_emulator_type("nox")
+
+    coordinator.switch_connection_mode(is_pc=True)
+
+    assert coordinator.is_pc_client
+    assert coordinator._config["emulator_brand"] == "nox"  # 品牌已记忆
+
+    coordinator.switch_connection_mode(is_pc=False)
+
+    assert not coordinator.is_pc_client
+    assert coordinator.emulator_type == "nox"  # 恢复记忆品牌而非回退默认
+
+
+def test_switch_connection_mode_ignores_redundant_toggle(tmp_path: Path) -> None:
+    """重复切换到当前类别为无操作（不触发设备列表作废重建）。"""
+    coordinator, _capture, _ocr, _operation = _coordinator(tmp_path)
+    coordinator.update_emulator_type("pc_client")
+
+    coordinator.switch_connection_mode(is_pc=True)
+
+    assert coordinator.is_pc_client
+    assert "emulator_brand" not in coordinator._config  # 未污染记忆键
 
 
 def test_connect_adopts_auto_highlighted_device_port_across_brands(tmp_path: Path) -> None:

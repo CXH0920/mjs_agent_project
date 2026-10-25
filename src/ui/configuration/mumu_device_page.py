@@ -15,11 +15,13 @@ import logging
 from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout, QWidget
 from src.business.emulator.mumu_config_coordinator import (
+    CONNECTION_TYPE_PC,
+    EMULATOR_BRANDS,
     EMULATOR_HINTS,
     EMULATOR_LABELS,
-    EMULATOR_TYPES,
     EmulatorDeviceInfo,
     MumuConfigCoordinator,
+    PcWindowInfo,
 )
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection
 from src.ui.shared.widgets import show_toast
@@ -53,6 +55,7 @@ class MumuDevicePage(QWidget):
         self.section.device_changed.connect(self._on_device_changed)
         self.section.device_activated.connect(self._on_device_activated)
         self.section.brand_activated.connect(self._on_brand_activated)
+        self.section.mode_activated.connect(self._on_mode_activated)
         self.section.brand_combo.currentIndexChanged.connect(self._update_brand_hint)
 
         coordinator.adb_detected.connect(self._on_adb_detected)
@@ -117,17 +120,68 @@ class MumuDevicePage(QWidget):
             adb_port = config.get("mumu_adb_port", 0)
         self.port_label.setText(str(adb_port) if adb_port else "(自动探测)")
 
-        # 品牌下拉装载（QSignalBlocker 防程序装载触发 activated/currentIndexChanged）
+        # 品牌下拉装载（仅模拟器品牌；PC 客户端经顶层单选切换，QSignalBlocker
+        # 防程序装载触发 activated/currentIndexChanged）
         with QSignalBlocker(self.brand_combo):
             self.brand_combo.clear()
-            for emulator_type in EMULATOR_TYPES:
+            for emulator_type in EMULATOR_BRANDS:
                 self.brand_combo.addItem(EMULATOR_LABELS[emulator_type], userData=emulator_type)
-            current = config.get("emulator_type", "mumu")
+            # PC 客户端形态下品牌值恢复自 emulator_brand 记忆键（无记录回退 mumu）
+            current = (config.get("emulator_brand", "mumu")
+                       if config.get("emulator_type") == CONNECTION_TYPE_PC
+                       else config.get("emulator_type", "mumu"))
             index = self.brand_combo.findData(current)
             self.brand_combo.setCurrentIndex(index if index >= 0 else 0)
         # 宽度按装满品牌项后的内容基准扩大 1/3（短品牌名下拉过窄，观感局促）
         self.brand_combo.setMinimumWidth(round(self.brand_combo.sizeHint().width() * 4 / 3))
         self._update_brand_hint()
+        self._apply_connection_mode()
+
+    def _apply_connection_mode(self) -> None:
+        """按连接类别单选切换设备页形态：PC 客户端隐藏品牌行/ADB 区块并枚举窗口。
+
+        模拟器形态的设备列表不在此时填充——由对话框装载流程触发既有探测。
+        """
+        is_pc = self._coordinator.is_pc_client
+        self.section.set_pc_client_mode(is_pc)
+        if is_pc:
+            self._refresh_pc_windows()
+
+    def _on_mode_activated(self, mode: str) -> None:
+        """用户点击连接类别单选：切换草稿与页面形态，刷新对应设备列表。"""
+        is_pc = mode == "pc_client"
+        self._coordinator.switch_connection_mode(is_pc)
+        self._apply_connection_mode()
+        if not is_pc:
+            self._brand_switch_pending = True
+            self._show_probe_pending()
+            self._coordinator.reprobe_adb()
+            self._on_refresh_devices()
+
+    def _refresh_pc_windows(self) -> None:
+        """枚举客户端窗口并按三态填充下拉（R1.2：空提示/单窗自动选定/多窗选择）。"""
+        windows = self._coordinator.refresh_pc_windows()
+        self._device_selected_explicitly = False
+        with QSignalBlocker(self.device_combo):
+            self.device_combo.clear()
+            if not windows:
+                self.device_combo.addItem("未检测到名将杀客户端窗口，请先启动客户端")
+                self.device_combo.setEnabled(False)
+                self.ui_refresh_requested.emit()
+                return
+            self.device_combo.setEnabled(True)
+            for window in windows:
+                label = window.label
+                # R5：720p/900p 档位放行 + 非阻断提示（识别管线存在低分辨率
+                # 静默降级路径，不允许不告知）
+                if window.client_size[1] <= 950:
+                    label += "（低分辨率可能影响识别准确率）"
+                self.device_combo.addItem(label, userData=window)
+            if len(windows) == 1:
+                self.device_combo.setCurrentIndex(0)  # 唯一窗口自动选定
+            # 多窗口：默认停在第一项由用户显式选择（不支持多开，R1.3）
+        self._on_device_changed(self.device_combo.currentIndex())
+        self.ui_refresh_requested.emit()
 
     def _update_brand_hint(self, *_args) -> None:
         """品牌行 ⓘ 悬停文案随下拉当前项联动（R6）。"""
@@ -135,7 +189,7 @@ class MumuDevicePage(QWidget):
             EMULATOR_HINTS.get(self.section.brand_combo.currentData() or "", ""))
 
     def _on_brand_activated(self, emulator_type: str) -> None:
-        """用户切换品牌：更换探测上下文——清空旧列表、静默重探 ADB、按新品牌刷新。"""
+        """用户切换模拟器品牌：更换探测上下文——清空旧列表、静默重探 ADB、按新品牌刷新。"""
         if not emulator_type or emulator_type == self._coordinator.emulator_type:
             return
         self._coordinator.update_emulator_type(emulator_type)
@@ -145,7 +199,9 @@ class MumuDevicePage(QWidget):
         self._on_refresh_devices()
 
     def sync_capture_config(self) -> None:
-        """将当前编辑中的 ADB 配置同步到共享截图服务。"""
+        """将当前编辑中的连接配置同步到共享截图服务（PC 客户端形态无 ADB 键）。"""
+        if self._coordinator.is_pc_client:
+            return
         self._coordinator.update_adb_path(self.adb_path_edit.property("raw_path") or "")
 
     def start_detect(self) -> None:
@@ -162,7 +218,7 @@ class MumuDevicePage(QWidget):
         self.connect_button.setEnabled(state != "connecting")
         self.test_button.setEnabled(self.device_combo.currentData() is not None)
 
-    def collect_device_draft(self) -> tuple[str, EmulatorDeviceInfo | None, bool]:
+    def collect_device_draft(self) -> tuple[str, EmulatorDeviceInfo | PcWindowInfo | None, bool]:
         """收集保存所需的设备侧草稿：(raw_path, device, selected_explicitly)。"""
         raw_path = self.adb_path_edit.property("raw_path") or ""
         return raw_path, self.device_combo.currentData(), self._device_selected_explicitly
@@ -239,7 +295,10 @@ class MumuDevicePage(QWidget):
             self._on_refresh_devices()
 
     def _on_refresh_devices(self) -> None:
-        """请求后台刷新设备列表。"""
+        """请求刷新设备列表：PC 客户端为窗口枚举，模拟器为后台设备探测。"""
+        if self._coordinator.is_pc_client:
+            self._refresh_pc_windows()
+            return
         self.refresh_button.setEnabled(False)
         self.refresh_button.setText("刷新中...")
         self._coordinator.refresh_devices()
@@ -339,11 +398,17 @@ class MumuDevicePage(QWidget):
             self._device_selected_explicitly = True
 
     def _on_device_changed(self, index: int) -> None:
-        """设备下拉选择变化"""
-        if index < 0 or not self._coordinator.devices:
+        """设备下拉选择变化（模拟器实例或 PC 客户端窗口）。"""
+        device = self.device_combo.itemData(index)
+        if isinstance(device, PcWindowInfo):
+            # PC 窗口候选：展示分辨率即可（标题已在下拉项中），无端口语义
+            width, height = device.client_size
+            self._set_instance_status(f"● 窗口：{width}×{height}", running=True)
+            self.ui_refresh_requested.emit()
             return
 
-        device = self.device_combo.itemData(index)
+        if index < 0 or not self._coordinator.devices:
+            return
         if device and device.adb_port:
             self.port_label.setText(str(device.adb_port))
             state = "运行中" if device.is_running else "未运行"

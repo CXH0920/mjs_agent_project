@@ -19,29 +19,37 @@ from src.capture.probers.models import EmulatorDeviceInfo as EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
-# 品牌标识（config.env EMULATOR_TYPE 取值域）与展示名（UI 下拉用，不带版本号）
-EMULATOR_TYPES: tuple[str, ...] = ("mumu", "ldplayer", "nox", "memu", "bluestacks")
+# 连接方式标识（config.env EMULATOR_TYPE 取值域）与展示名（UI 下拉用，不带版本号）。
+# pc_client 为官方 PC 客户端直连（非模拟器，无 prober，采集见 src/capture/pc_client.py）
+CONNECTION_TYPE_PC = "pc_client"
+# 模拟器品牌子集（UI 品牌下拉数据源；PC 客户端经顶层单选切换，不进品牌下拉）
+EMULATOR_BRANDS: tuple[str, ...] = ("mumu", "ldplayer", "nox", "memu", "bluestacks")
+EMULATOR_TYPES: tuple[str, ...] = EMULATOR_BRANDS + ("pc_client",)
 EMULATOR_LABELS: dict[str, str] = {
     "mumu": "MuMu",
     "ldplayer": "雷电",
     "nox": "夜神",
     "memu": "逍遥",
     "bluestacks": "蓝叠",
+    "pc_client": "官方 PC 客户端",
 }
-# 品牌特性提示：设备与连接页品牌行 ⓘ 悬停展示，随所选品牌联动
+# 连接方式特性提示：设备与连接页品牌行 ⓘ 悬停展示，随所选方式联动
 #（2026-10-25 四品牌真机实测 + 官方资料定稿，见
-# docs/design/emulator_multi_brand_requirements.md 第五节）
+# docs/design/emulator_multi_brand_requirements.md 第五节；pc_client 文案为
+# PC 客户端需求 R3.3 定稿）
 EMULATOR_HINTS: dict[str, str] = {
     "mumu": "默认开启 ADB；端口默认 16384（多开 +32 递增），可在模拟器右上角菜单 → 问题诊断 中查看。",
     "ldplayer": "推荐使用稳定版雷电 9；默认端口 5555（多开 +2 递增）。",
     "nox": "默认开启 ADB；端口默认 62001，多开为 62025、62026…依次递增，可在夜神多开器中查看。",
     "memu": "默认开启 ADB；端口默认 21503（多开 +10 递增），可在逍遥多开器中查看。",
     "bluestacks": "使用前需在蓝叠 设置 → 高级 中开启 ADB（Android 调试桥）。",
+    "pc_client": "仅支持窗口化模式，请在游戏内设置或按 Alt+Enter 切换；工具不会代为切换。",
 }
 DEFAULT_EMULATOR_TYPE = "mumu"
 
 # 品牌注册表：模块需实现 probe_devices(retries=1) -> tuple[list[EmulatorDeviceInfo], str]
-# 与 find_adb() -> str（品牌自带 adb 路径，不含 PATH 分支）
+# 与 find_adb() -> str（品牌自带 adb 路径，不含 PATH 分支）。pc_client 非 ADB 模拟器，
+# 不在此注册
 EMULATOR_PROBERS: dict[str, ModuleType] = {
     "mumu": mumu,
     "ldplayer": ldplayer,
@@ -52,16 +60,21 @@ EMULATOR_PROBERS: dict[str, ModuleType] = {
 
 
 def normalize_emulator_type(value: object) -> str:
-    """未知/空品牌值回退默认品牌，杜绝 KeyError 扩散到配置与 UI。"""
-    return value if isinstance(value, str) and value in EMULATOR_PROBERS else DEFAULT_EMULATOR_TYPE
+    """未知/空品牌值回退默认品牌，杜绝 KeyError 扩散到配置与 UI。
+
+    pc_client 为合法连接方式但无 prober，probe_* 函数各自防御性短路。
+    """
+    return value if isinstance(value, str) and value in EMULATOR_TYPES else DEFAULT_EMULATOR_TYPE
 
 
 def probe_adb(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> str:
     """自动探测 adb.exe：PATH 优先，其次所选品牌安装目录自带 adb。
 
     Returns:
-        adb.exe 完整路径，找不到则返回空字符串。
+        adb.exe 完整路径，找不到则返回空字符串。PC 客户端方式无 ADB 语义，返回空串。
     """
+    if emulator_type == CONNECTION_TYPE_PC:
+        return ""
     path_adb = shutil.which("adb")
     if path_adb:
         return path_adb
@@ -73,6 +86,8 @@ def probe_all_devices_with_status(
     retries: int = 1,
 ) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所选品牌的全部实例，并区分空结果与探测失败。"""
+    if emulator_type == CONNECTION_TYPE_PC:
+        return [], "官方 PC 客户端无模拟器设备列表（窗口枚举见 src/capture/pc_client.py）"
     return EMULATOR_PROBERS[normalize_emulator_type(emulator_type)].probe_devices(retries=retries)
 
 

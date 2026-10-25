@@ -164,6 +164,12 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     # 读取旧 MUMU_* 键实配值，老 config.env 不改字即可平滑升级；持久化
     # 始终写 EMULATOR_*，写入后新键优先生效、旧 MUMU_ADB_* 残行为惰性数据
     "EMULATOR_TYPE": _EnvKeySpec("emulator_type", str, "mumu", "mumu"),
+    # 模拟器品牌记忆：EMULATOR_TYPE 切到 pc_client 期间记住上次模拟器品牌，
+    # 单选框切回模拟器时恢复（无记录回退 mumu）
+    "EMULATOR_BRAND": _EnvKeySpec("emulator_brand", str, "mumu", "mumu"),
+    # PC 客户端直连（emulator_type=pc_client）时的目标窗口标题
+    #（真机取证定稿默认"名将杀"；窗口识别主键为进程名+类名，标题变更走显式配置）
+    "PC_WINDOW_TITLE": _EnvKeySpec("pc_window_title", str, "名将杀", "mumu"),
     "EMULATOR_ADB_PATH": _EnvKeySpec("emulator_adb_path", str, "", "mumu", default_from="mumu_adb_path"),
     "EMULATOR_ADB_PORT": _EnvKeySpec("emulator_adb_port", int, 0, "mumu", default_from="mumu_adb_port"),
     "EMULATOR_SCREENSHOT_MODE": _EnvKeySpec(

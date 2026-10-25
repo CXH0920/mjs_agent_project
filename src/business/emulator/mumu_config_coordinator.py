@@ -15,6 +15,13 @@ from src.business.recognition.ocr_service import OcrService
 # UI 不直连 src.capture.probers。品牌常量同理经此转出口（EMULATOR_TYPES/
 # EMULATOR_LABELS 供 UI 下拉构建）。
 from src.capture.image_validation import load_local_image
+from src.capture.pc_client import PcClientCapture
+from src.capture.pc_client import PcWindowInfo as PcWindowInfo
+from src.capture.pc_client import probe_pc_windows as probe_pc_windows
+from src.capture.probers import CONNECTION_TYPE_PC
+from src.capture.probers import (
+    EMULATOR_BRANDS as EMULATOR_BRANDS,
+)
 from src.capture.probers import (
     EMULATOR_HINTS as EMULATOR_HINTS,
 )
@@ -141,8 +148,36 @@ class MumuConfigCoordinator(QObject):
 
     @property
     def emulator_type(self) -> str:
-        """当前草稿的模拟器品牌标识。"""
+        """当前草稿的连接方式标识。"""
         return self._config.get("emulator_type", "mumu")
+
+    @property
+    def is_pc_client(self) -> bool:
+        """当前草稿是否为官方 PC 客户端连接方式。"""
+        return self.emulator_type == CONNECTION_TYPE_PC
+
+    def switch_connection_mode(self, is_pc: bool) -> None:
+        """连接类别单选切换（设备页 mode_activated 入口）。
+
+        切到 PC 客户端前把当前模拟器品牌存入 emulator_brand（切回时恢复，
+        无记录回退 mumu）；只动草稿，持久化走既有保存链路。
+        """
+        if is_pc == self.is_pc_client:
+            return
+        if is_pc:
+            current_brand = self.emulator_type
+            if current_brand != CONNECTION_TYPE_PC:
+                self._config["emulator_brand"] = current_brand
+            self.update_emulator_type(CONNECTION_TYPE_PC)
+        else:
+            brand = self._config.get("emulator_brand", "mumu")
+            if brand == CONNECTION_TYPE_PC:
+                brand = "mumu"
+            self.update_emulator_type(brand)
+
+    def refresh_pc_windows(self) -> list[PcWindowInfo]:
+        """同步枚举官方 PC 客户端窗口（纯 Win32 调用，毫秒级，不走后台执行器）。"""
+        return probe_pc_windows()
 
     def detect_adb(self) -> None:
         self._operation_service.detect_adb(self.emulator_type)
@@ -156,10 +191,19 @@ class MumuConfigCoordinator(QObject):
 
     def connect(
         self,
-        device: EmulatorDeviceInfo | None,
+        device: EmulatorDeviceInfo | PcWindowInfo | None,
         selected_explicitly: bool,
     ) -> str:
-        """连接当前选择的设备，返回无法发起连接时的提示。"""
+        """连接当前选择的设备（模拟器实例或 PC 客户端窗口），返回无法发起连接时的提示。"""
+        if self.is_pc_client:
+            # 多窗口时把用户选择传入采集会话定向；单/零窗口由采集侧三态解析
+            capture = self._capture_service.capture
+            hwnd = getattr(device, "hwnd", 0)
+            if isinstance(capture, PcClientCapture) and hwnd:
+                capture.set_target_window(int(hwnd))
+            self._operation_service.connect()
+            return ""
+
         error = self._device_selection_error(selected_explicitly)
         if error:
             return error
@@ -267,10 +311,18 @@ class MumuConfigCoordinator(QObject):
     def save_config(
         self,
         form_values: dict,
-        device: EmulatorDeviceInfo | None,
+        device: EmulatorDeviceInfo | PcWindowInfo | None,
         selected_explicitly: bool,
     ) -> tuple[dict | None, str]:
         """合并表单配置并校验多实例选择，成功时更新配置草稿。"""
+        if self.is_pc_client:
+            # PC 客户端无端口/实例选择语义，窗口选择不持久化（句柄跨会话
+            # 无效，每次连接重新枚举解析）
+            config = dict(self._config)
+            config.update(form_values)
+            self._config = config
+            return self.config, ""
+
         error = self._device_selection_error(selected_explicitly)
         if error:
             return None, error
@@ -355,6 +407,8 @@ def persist_mumu_env_config(new_config: dict) -> None:
     """
     save_env_file(DEFAULT_ENV_FILE, {
         "EMULATOR_TYPE": new_config.get("emulator_type", "mumu"),
+        "EMULATOR_BRAND": new_config.get("emulator_brand", "mumu"),
+        "PC_WINDOW_TITLE": new_config.get("pc_window_title", "名将杀"),
         "EMULATOR_ADB_PATH": new_config.get("emulator_adb_path", ""),
         "EMULATOR_ADB_PORT": str(new_config.get("emulator_adb_port", 0)),
         "MUMU_OCR_ENABLED": "true" if new_config["mumu_ocr_enabled"] else "false",

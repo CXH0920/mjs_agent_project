@@ -149,7 +149,7 @@ class MumuConfigDialog(QDialog):
         self._device_page.refresh_devices()
 
         self._update_ui()
-        if should_auto_detect:
+        if should_auto_detect and not self._coordinator.is_pc_client:
             self._device_page.start_detect()
 
     # ────────────────────────────────────────────────
@@ -170,18 +170,29 @@ class MumuConfigDialog(QDialog):
     # ────────────────────────────────────────────────
 
     def _update_ui(self) -> None:
-        """根据实例运行状态与真实 ADB 会话状态更新控件。"""
+        """根据实例运行状态与真实连接会话状态更新控件（双形态文案，R3.2）。"""
         state, detail = self._coordinator.connection_state
 
-        states = {
-            "unconfigured": ("ADB 状态: 未配置", "#888"),
-            "disconnected": ("ADB 状态: 未连接", "#888"),
-            "connecting": ("ADB 状态: 连接中...", "#f39c12"),
-            "connected": (f"ADB 状态: 已连接 ({detail})", "#27ae60"),
-            "offline": ("ADB 状态: 设备离线", "#e74c3c"),
-        }
-        text, color = states.get(state, states["disconnected"])
-        self._status_label.setText(f"● ADB：{text.replace('ADB 状态: ', '')}")
+        if self._coordinator.is_pc_client:
+            states = {
+                "unconfigured": ("未配置", "#888"),
+                "disconnected": ("未连接", "#888"),
+                "connecting": ("连接中...", "#f39c12"),
+                "connected": (f"已连接 ({detail})", "#27ae60"),
+                "offline": ("窗口已离线", "#e74c3c"),
+            }
+            text, color = states.get(state, states["disconnected"])
+            self._status_label.setText(f"● PC 客户端：{text}")
+        else:
+            states = {
+                "unconfigured": ("ADB 状态: 未配置", "#888"),
+                "disconnected": ("ADB 状态: 未连接", "#888"),
+                "connecting": ("ADB 状态: 连接中...", "#f39c12"),
+                "connected": (f"ADB 状态: 已连接 ({detail})", "#27ae60"),
+                "offline": ("ADB 状态: 设备离线", "#e74c3c"),
+            }
+            text, color = states.get(state, states["disconnected"])
+            self._status_label.setText(f"● ADB：{text.replace('ADB 状态: ', '')}")
         self._status_label.setToolTip(detail)
         self._status_label.setStyleSheet(f"color: {color}; font-size: 12px; padding: 2px 0;")
         self._device_page.update_state(state)

@@ -253,6 +253,15 @@ CLASS_BUDGETS: dict[str, int] = {
     # property 读写 pane 控件。属机械膨胀非职责增加，后续测试锚点迁移后可回落。
     "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 62,
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,
+    # MumuConfigCoordinator 40 → 42：官方 PC 客户端直连（2026-10-25）——
+    # is_pc_client property 与 refresh_pc_windows 枚举封装两个薄方法，职责
+    # 仍为配置协调（UI 不直连 capture 层的架构转出口），无拆分必要
+    # 42 → 43：连接类别单选切换（2026-10-26）——switch_connection_mode
+    # 品牌记忆/恢复编排单方法
+    "business/emulator/mumu_config_coordinator.py:MumuConfigCoordinator": 43,
+    # MumuDevicePage 41：连接类别单选切换（2026-10-26）新增 _on_mode_activated
+    # 入册（40 基线 + 双形态/单选接线），页面装配职责内聚
+    "ui/configuration/mumu_device_page.py:MumuDevicePage": 41,
 }
 
 
@@ -701,7 +710,18 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 499 → 506：_handle_capture_result 补终止信号保证（TD-A5-001）——目录
     # 不可写/执行器已关停/协调器已退役时改走 capture_failed，避免在途锁
     # 永不释放导致界面永久停在"正在截图"
-    "business/emulator/capture_service.py": 506,
+    # 506 → 511：官方 PC 客户端直连（2026-10-25）——采集会话注解放宽为
+    # AdbCapture | PcClientCapture 双形态 + 连接失败前缀按形态分立（PC 无 ADB 字样）
+    "business/emulator/capture_service.py": 511,
+    # 官方 PC 客户端直连采集模块（2026-10-25 首次入册，544 行）：窗口枚举
+    # （EnumWindows ctypes 签名声明块）+ WGC 会话 + BitBlt 兜底 + 黑帧检测
+    # + 客户区裁剪单文件内聚——接口对齐 adb_screen.py（431 行）惯例，Win32
+    # 签名声明与降级链拆出去只会制造跨文件状态传递，登记预算限制膨胀
+    # 544 → 568：WGC 错误 attach 修复批（2026-10-26）——window_hwnd 定向
+    #（标题子串匹配命中"名将杀 Agent"工具自身窗口）+ 帧尺寸对账防线
+    # 568 → 577：颜色与裁剪修复（2026-10-26）——BGRA→RGB 通道反转（帧实为
+    # Direct3D B8G8R8A8，此前按 RGBA 读致红蓝互换）+ 回退路径左阴影自校准
+    "capture/pc_client.py": 577,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）
@@ -713,7 +733,11 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 7/14 写死会让榜单长期停在黄/红并盖掉武将信号
     # 370 → 379：多品牌连接（2026-10-24）——新增 EMULATOR_TYPE + 三连接键
     # （default_from 回退旧 MUMU_* 实配值，老 config.env 平滑升级）
-    "config/env.py": 379,
+    # 379 → 382：官方 PC 客户端直连（2026-10-25）——新增 PC_WINDOW_TITLE 键
+    #（真机取证定稿默认"名将杀"，窗口识别主键为进程名+类名）
+    # 382 → 385：连接类别单选改造（2026-10-26）——新增 EMULATOR_BRAND 品牌
+    # 记忆键（PC 客户端期间记住上次模拟器品牌，切回时恢复）
+    "config/env.py": 385,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示

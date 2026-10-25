@@ -22,6 +22,7 @@ from src.business.recognition.ocr_worker import OcrTask, OcrWorker, OfficialImpo
 from src.business.recognition.session_guard import OneShotToken
 from src.capture.adb_screen import AdbCapture
 from src.capture.image_validation import load_local_image
+from src.capture.pc_client import PcClientCapture
 from src.config.env import SCREENSHOTS_DIR
 from src.ocr.roi_config import OcrRoiConfig
 
@@ -122,11 +123,11 @@ class CaptureService(QObject):
         return self._roi_config
 
     @property
-    def capture(self) -> AdbCapture | None:
+    def capture(self) -> AdbCapture | PcClientCapture | None:
         return self._connection.capture
 
     @capture.setter
-    def capture(self, cap: AdbCapture | None) -> None:
+    def capture(self, cap: AdbCapture | PcClientCapture | None) -> None:
         self._connection.capture = cap
 
     # ── 截图 ──────────────────────────────────────────────────────────
@@ -411,7 +412,8 @@ class CaptureService(QObject):
         """根据底层会话状态同步 ADB 状态，供截图和轮询失败路径调用。"""
         self._connection.sync_connection_state(error_detail)
 
-    def sync_poll_connection_state(self, capture: AdbCapture, error_detail: str = "") -> None:
+    def sync_poll_connection_state(self, capture: AdbCapture | PcClientCapture,
+                                   error_detail: str = "") -> None:
         """仅同步当前轮询会话的连接状态，忽略过期 capture。"""
         self._connection.sync_poll_connection_state(capture, error_detail)
 
@@ -423,10 +425,10 @@ class CaptureService(QObject):
         """断开模拟器。"""
         return self._connection.disconnect_emulator()
 
-    def _reconnect_if_needed(self, capture: AdbCapture) -> tuple[bool, str]:
+    def _reconnect_if_needed(self, capture: AdbCapture | PcClientCapture) -> tuple[bool, str]:
         """按需重连共享会话：手动/轮询截图入口共用（TD-A2-001 修复统一）。
 
-        经 connect_capture 完成状态同步；连接期间配置热更会重建 AdbCapture，
+        经 connect_capture 完成状态同步；连接期间配置热更会重建采集会话，
         连接后校验 is_current，过期引用不得继续截图。
         """
         if capture.connected:
@@ -435,11 +437,11 @@ class CaptureService(QObject):
         if not ok:
             return False, message
         if not self._connection.is_current(capture):
-            return False, "ADB 配置已变更，请重试"
+            return False, "连接配置已变更，请重试"
         return True, ""
 
     def capture_screenshot(self) -> tuple[bool, object]:
-        """使用共享 ADB 会话获取一张截图，不保存文件也不触发 OCR。"""
+        """使用共享采集会话获取一张截图（模拟器 ADB 或 PC 客户端窗口）。"""
         connection = self._connection
         with connection.session_lock:
             capture = connection.capture
@@ -449,7 +451,10 @@ class CaptureService(QObject):
 
         ok, message = self._reconnect_if_needed(capture)
         if not ok:
-            return False, f"ADB 连接失败: {message}"
+            # 模拟器形态保留既有 "ADB 连接失败" 前缀（测试锚定的公共文案）；
+            # PC 客户端形态无 ADB 语义（R3.2 显示诚实）
+            prefix = "连接失败" if isinstance(capture, PcClientCapture) else "ADB 连接失败"
+            return False, f"{prefix}: {message}"
 
         self.status_changed.emit("正在截图...")
         with connection.adb_io_lock:
@@ -461,7 +466,7 @@ class CaptureService(QObject):
         self.event_status_changed.emit(f"截图成功 ({result.width}x{result.height})")
         return True, result
 
-    def capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
+    def capture_for_poll(self, capture: AdbCapture | PcClientCapture) -> tuple[bool, object, str]:
         """经同一后台执行器完成轮询截图；等待有上界（VUL-B3-002 修复）。
 
         超时按可重试失败返回，执行器积压时轮询线程不再无限期静默阻塞。
@@ -478,11 +483,11 @@ class CaptureService(QObject):
             logger.exception("轮询截图异常")
             return False, str(error), "capture"
 
-    def _capture_for_poll(self, capture: AdbCapture) -> tuple[bool, object, str]:
+    def _capture_for_poll(self, capture: AdbCapture | PcClientCapture) -> tuple[bool, object, str]:
         connection = self._connection
         with connection.session_lock:
             if capture is not connection.capture:
-                return False, "ADB 配置已变更", "connection"
+                return False, "连接配置已变更", "connection"
         # 重连走共享 _reconnect_if_needed（TD-A2-001 对齐手动路径）；截图失败的
         # 状态同步由 poll_coordinator 经 sync_poll_connection_state 处理
         ok, message = self._reconnect_if_needed(capture)

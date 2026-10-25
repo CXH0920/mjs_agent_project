@@ -102,6 +102,8 @@ def test_mumu_config_defaults_snapshot(monkeypatch, tmp_path) -> None:
     _use_absent_env_file(monkeypatch, tmp_path)
     assert env.get_mumu_config() == {
         "emulator_type": "mumu",
+        "emulator_brand": "mumu",
+        "pc_window_title": "名将杀",
         "emulator_adb_path": "",
         "emulator_adb_port": 0,
         "emulator_screenshot_mode": "auto",

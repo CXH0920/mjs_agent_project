@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -14,9 +14,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QToolTip,
     QVBoxLayout,
+    QWidget,
 )
 from src.ui.shared.style import PRIMARY, PRIMARY_HOVER
 
@@ -71,6 +73,8 @@ class MumuDeviceSection(QFrame):
     device_changed = Signal(int)
     device_activated = Signal(int)
     brand_activated = Signal(str)
+    # 用户点击连接类别单选（"emulator" | "pc_client"）；程序装载不触发
+    mode_activated = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -82,26 +86,44 @@ class MumuDeviceSection(QFrame):
 
         title = QLabel("设备与连接")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
-        helper = QLabel("选择模拟器品牌与正在运行的实例，并配置用于连接的 ADB。")
-        helper.setStyleSheet("color: #65758b; font-size: 12px;")
+        self.helper_label = QLabel("选择模拟器品牌与正在运行的实例，并配置用于连接的 ADB。")
+        self.helper_label.setStyleSheet("color: #65758b; font-size: 12px;")
         layout.addWidget(title, 0, 0, 1, 4)
-        layout.addWidget(helper, 1, 0, 1, 4)
+        layout.addWidget(self.helper_label, 1, 0, 1, 4)
 
-        # 品牌下拉：用户激活（非程序装载）时触发设备列表按新品牌刷新；
-        # 右侧 ⓘ 为品牌特性提示，鼠标悬停图标显示说明文案（随所选品牌
-        # 联动，由页面 set_brand_hint 更新）
+        # 连接类别单选：顶层切换模拟器 / 官方 PC 客户端（clicked 而非 toggled，
+        # 程序 setChecked 装载不触发 mode_activated）
+        self.emulator_radio = QRadioButton("模拟器")
+        self.pc_client_radio = QRadioButton("官方 PC 客户端")
+        self.emulator_radio.setChecked(True)
+        self.emulator_radio.clicked.connect(lambda: self.mode_activated.emit("emulator"))
+        self.pc_client_radio.clicked.connect(lambda: self.mode_activated.emit("pc_client"))
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("连接类别"))
+        mode_row.addWidget(self.emulator_radio)
+        mode_row.addWidget(self.pc_client_radio)
+        mode_row.addStretch()
+        layout.addLayout(mode_row, 2, 0, 1, 4)
+
+        # 品牌下拉（仅模拟器形态；整行容器化便于 PC 客户端形态隐藏）：
+        # 用户激活（非程序装载）时触发设备列表按新品牌刷新；右侧 ⓘ 为
+        # 特性提示，鼠标悬停图标显示说明文案（由页面 set_brand_hint 更新）
+        self.brand_row = QWidget()
+        brand_layout = QHBoxLayout(self.brand_row)
+        brand_layout.setContentsMargins(0, 0, 0, 0)
+        brand_layout.setSpacing(10)
+        self.brand_row_label = QLabel("模拟器品牌")
         self.brand_combo = QComboBox()
         self.brand_combo.activated.connect(
             lambda index: self.brand_activated.emit(self.brand_combo.itemData(index)))
-        brand_row = QHBoxLayout()
-        brand_row.addWidget(self.brand_combo)
         self.brand_hint_icon = _BrandHintIcon()
         self.brand_hint_icon.setStyleSheet(f"color: {PRIMARY}; font-size: 15px;")
         self.brand_hint_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        brand_row.addWidget(self.brand_hint_icon)
-        brand_row.addStretch()
-        layout.addWidget(QLabel("模拟器品牌"), 2, 0)
-        layout.addLayout(brand_row, 2, 1, 1, 3)
+        brand_layout.addWidget(self.brand_row_label)
+        brand_layout.addWidget(self.brand_combo)
+        brand_layout.addWidget(self.brand_hint_icon)
+        brand_layout.addStretch()
+        layout.addWidget(self.brand_row, 3, 0, 1, 4)
 
         self.device_combo = QComboBox()
         self.device_combo.currentIndexChanged.connect(self.device_changed)
@@ -110,9 +132,16 @@ class MumuDeviceSection(QFrame):
         self.refresh_button.setFixedWidth(72)
         self.refresh_button.setStyleSheet(OUTLINE_BUTTON_STYLE)
         self.refresh_button.clicked.connect(self.refresh_requested)
-        layout.addWidget(QLabel("当前设备"), 3, 0)
-        layout.addWidget(self.device_combo, 3, 1, 1, 2)
-        layout.addWidget(self.refresh_button, 3, 3)
+        layout.addWidget(QLabel("当前设备"), 4, 0)
+        layout.addWidget(self.device_combo, 4, 1, 1, 2)
+        layout.addWidget(self.refresh_button, 4, 3)
+
+        # ADB 区块（端口行 + 分隔线 + 路径行）整体容器化：官方 PC 客户端
+        # 连接方式下整体隐藏（R3.1），设备页不残留任何 ADB 元素（R3.2）
+        self.adb_group = QWidget()
+        adb_layout = QVBoxLayout(self.adb_group)
+        adb_layout.setContentsMargins(0, 0, 0, 0)
+        adb_layout.setSpacing(12)
 
         self.port_label = QLabel("(自动探测)")
         self.port_label.setStyleSheet("color: #4a6a8a;")
@@ -124,13 +153,15 @@ class MumuDeviceSection(QFrame):
         device_meta.addSpacing(16)
         device_meta.addWidget(self.instance_status_label)
         device_meta.addStretch()
-        layout.addLayout(device_meta, 4, 1, 1, 3)
+        adb_layout.addLayout(device_meta)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
         divider.setStyleSheet("color: #dce3ea;")
-        layout.addWidget(divider, 5, 0, 1, 4)
+        adb_layout.addWidget(divider)
 
+        adb_row = QHBoxLayout()
+        adb_row.addWidget(QLabel("ADB 路径"))
         self.adb_path_edit = QLineEdit()
         self.adb_path_edit.setReadOnly(True)
         self.adb_path_edit.setPlaceholderText("请选择 adb.exe")
@@ -146,10 +177,12 @@ class MumuDeviceSection(QFrame):
         self.detect_button.setFixedWidth(88)
         self.detect_button.setStyleSheet(OUTLINE_BUTTON_STYLE)
         self.detect_button.clicked.connect(self.detect_requested)
-        layout.addWidget(QLabel("ADB 路径"), 6, 0)
-        layout.addWidget(self.adb_path_edit, 6, 1)
-        layout.addWidget(browse_button, 6, 2)
-        layout.addWidget(self.detect_button, 6, 3)
+        adb_row.addWidget(self.adb_path_edit, 1)
+        adb_row.addWidget(browse_button)
+        adb_row.addWidget(self.detect_button)
+        adb_row.addStretch()
+        adb_layout.addLayout(adb_row)
+        layout.addWidget(self.adb_group, 5, 0, 1, 4)
 
         action_row = QHBoxLayout()
         self.connect_button = QPushButton("连接")
@@ -163,14 +196,34 @@ class MumuDeviceSection(QFrame):
         action_row.addStretch()
         action_row.addWidget(self.connect_button)
         action_row.addWidget(self.test_button)
-        layout.addLayout(action_row, 7, 0, 1, 4)
+        layout.addLayout(action_row, 6, 0, 1, 4)
         layout.setColumnStretch(1, 1)
-        layout.setRowStretch(8, 1)
+        layout.setRowStretch(7, 1)
 
     def set_brand_hint(self, text: str) -> None:
-        """更新品牌特性提示：ⓘ 悬停显示完整说明文案，文案随所选品牌联动。"""
+        """更新连接方式特性提示：ⓘ 悬停显示完整说明文案，文案随所选方式联动。"""
         self.brand_hint_icon.setToolTip(text)
         self.brand_hint_icon.setVisible(bool(text))
+
+    def set_pc_client_mode(self, enabled: bool) -> None:
+        """官方 PC 客户端形态切换：隐藏品牌行与 ADB 区块、测试按钮，更新说明文案。
+
+        PC 客户端无品牌/ADB 语义，品牌行与 ADB 区块（路径/端口/探测/测试）
+        整体隐藏（R3.1/R3.2）；设备下拉与刷新按钮两形态共用（PC 形态下
+        =窗口候选列表 + 重新枚举）。单选框状态同步由本方法一并完成，
+        装载与用户点击共用入口（用户点击路径下 setChecked 无副作用）。
+        """
+        self.brand_row.setVisible(not enabled)
+        self.adb_group.setVisible(not enabled)
+        self.test_button.setVisible(not enabled)
+        with QSignalBlocker(self.emulator_radio), QSignalBlocker(self.pc_client_radio):
+            self.emulator_radio.setChecked(not enabled)
+            self.pc_client_radio.setChecked(enabled)
+        self.helper_label.setText(
+            "选择官方 PC 客户端的运行窗口；仅支持窗口化模式，工具不会代为切换。"
+            if enabled
+            else "选择模拟器品牌与正在运行的实例，并配置用于连接的 ADB。"
+        )
 
 
 class MumuTemplateSection(QFrame):
