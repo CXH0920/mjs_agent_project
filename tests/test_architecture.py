@@ -721,7 +721,11 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     #（标题子串匹配命中"名将杀 Agent"工具自身窗口）+ 帧尺寸对账防线
     # 568 → 577：颜色与裁剪修复（2026-10-26）——BGRA→RGB 通道反转（帧实为
     # Direct3D B8G8R8A8，此前按 RGBA 读致红蓝互换）+ 回退路径左阴影自校准
-    "capture/pc_client.py": 577,
+    # 577 → 599：Linux CI 兼容（2026-10-25）——模块级 WinDLL 加载加
+    # sys.platform 守卫与 _NullWinDLL 占位（capture_connection 顶层 import
+    # 要求跨平台可导入；占位哑函数按 Win32 失败语义返回 0，调用方既有
+    # 容错分支照常生效）
+    "capture/pc_client.py": 599,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）

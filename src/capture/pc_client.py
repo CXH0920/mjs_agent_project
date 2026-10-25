@@ -58,18 +58,18 @@ _WGC_FIRST_FRAME_TIMEOUT_S = 5.0
 # capture_connection 顶层 import，Linux（CI/跨平台开发）必须可导入。占位
 # 对象的任意属性解析为哑函数：下方签名声明块对哑函数赋 .argtypes/.restype
 # 同样成立（赋在临时函数对象上即丢弃），测试对 _USER32.xxx 打桩获得属性
-# 宿主；真实调用路径在非 Windows 上不会执行（测试全程打桩），误触达时
-# 抛 OSError 给出明确错误
+# 宿主；未被桩掉的触达（如 connect 首行的 ensure_dpi_awareness）按 Win32
+# 调用失败语义返回 0，走调用方既有容错分支
 
 
 class _NullWinDLL:
-    """非 Windows 占位 DLL：属性访问返回抛 OSError 的哑函数。"""
+    """非 Windows 占位 DLL：属性访问返回报 0 的哑函数。"""
 
     def __getattr__(self, name: str):
-        def _unavailable(*_args, **_kwargs):
-            raise OSError(f"Win32 API {name} 在非 Windows 平台不可用")
+        def _null_call(*_args, **_kwargs) -> int:
+            return 0
 
-        return _unavailable
+        return _null_call
 
 
 if sys.platform == "win32":
