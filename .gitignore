@@ -88,6 +88,10 @@ scripts/.sync_*.json
 .tmp_verify/
 # OCR 模型 %TEMP% 缓存的意外落位副本（engine_loader 固定目录名，发版/测试运行残留）
 mjs_rapidocr_models/
+# OCR 真值基线整套本地留存（cases/ 截图属屏幕截图数据，红线禁止入库；
+# labels.json 真值离开图片即无意义，且基线回放依赖真实模型与私有仓词表，
+# 仅本机可跑——图片与真值一体，随 2026-10-03 数据出库决策整体不入版本库）
+tests/ocr_baseline_cases/
 # 根目录意外落位的日志（正常应落 logs/，logs/ 已整目录忽略）
 /debug.log
 # 攻略/相性质量评估临时产物（验收用，可删）

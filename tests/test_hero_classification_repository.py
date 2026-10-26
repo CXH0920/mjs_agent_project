@@ -166,3 +166,73 @@ def test_load_invalid_categories_keeps_available_false(tmp_path: Path) -> None:
     issues = repo.load()
     assert any(issue.kind == "invalid_categories" for issue in issues)
     assert repo.available is False
+
+
+def test_load_invalid_hero_categories_type_rejects_save(tmp_path: Path) -> None:
+    """hero_categories 类型损坏：记 error、available=False、保存被守卫拒绝且坏文件已留底。
+
+    此前静默跳过（无 issue），空归类随下次保存覆盖原文件，整段数据无声丢失。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {
+        "categories": [{"name": "高爆发型"}],
+        "hero_categories": [],
+        "counter_chain": {},
+    })
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    issues = repo.load()
+    assert any(issue.kind == "invalid_hero_categories" and issue.severity == "error" for issue in issues)
+    assert repo.available is False
+    with pytest.raises(RuntimeError):
+        repo.save()
+    assert list((tmp_path / "backups").glob("hero_classification-*.json"))
+
+
+def test_load_invalid_counter_chain_type_rejects_save(tmp_path: Path) -> None:
+    """counter_chain 类型损坏：与 categories/hero_categories 同构，整段拒载拒保存。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {
+        "categories": [{"name": "高爆发型"}],
+        "hero_categories": {"庞煖": ["高爆发型"]},
+        "counter_chain": "不是对象",
+    })
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    issues = repo.load()
+    assert any(issue.kind == "invalid_counter_chain" and issue.severity == "error" for issue in issues)
+    assert repo.available is False
+    with pytest.raises(RuntimeError):
+        repo.save()
+
+
+def test_load_invalid_single_hero_entry_rejects_save(tmp_path: Path) -> None:
+    """单武将归类坏：该条跳过记 error（原为 warning，保存即丢该条），
+    其余数据正常加载（available=True），但保存被守卫拒绝。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {
+        "categories": [{"name": "高爆发型"}],
+        "hero_categories": {"庞煖": "高爆发型"},
+        "counter_chain": {},
+    })
+    repo = HeroClassificationRepository(path, hero_names={"庞煖", "典韦"})
+    issues = repo.load()
+    assert any(issue.kind == "invalid_hero_categories" and issue.severity == "error" for issue in issues)
+    assert repo.available is True
+    assert repo.get_hero_categories("庞煖") == []
+    with pytest.raises(RuntimeError):
+        repo.save()
+
+
+def test_load_invalid_chain_desc_rejects_save(tmp_path: Path) -> None:
+    """克制链描述非 str/list（原静默丢弃该条）：记 error，保存被守卫拒绝。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {
+        "categories": [{"name": "高爆发型"}],
+        "hero_categories": {},
+        "counter_chain": {"高爆发型": 123},
+    })
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    issues = repo.load()
+    assert any(issue.kind == "invalid_counter_chain" and issue.severity == "error" for issue in issues)
+    assert repo.available is True
+    assert repo.get_chain_description("高爆发型") == ""
+    with pytest.raises(RuntimeError):
+        repo.save()

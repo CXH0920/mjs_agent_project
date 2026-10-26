@@ -99,28 +99,35 @@ class HeroClassificationRepository(JsonRepository):
             self._categories.append(cat)
 
         raw_hero_cats = root.get("hero_categories", {})
-        if isinstance(raw_hero_cats, dict):
-            for hero, cats in raw_hero_cats.items():
-                if not isinstance(cats, list):
-                    self._issue("warning", "invalid_hero_categories", f"武将 {hero} 归类格式错误", key=hero)
-                    continue
-                valid = [c for c in cats if c in cat_names]
-                if len(valid) != len(cats):
-                    self._issue("warning", "unknown_category_ref",
-                                f"武将 {hero} 引用了不存在的分类", key=hero)
-                self._hero_categories[hero] = valid
+        if not isinstance(raw_hero_cats, dict):
+            self._issue("error", "invalid_hero_categories", "武将归类必须是对象")
+            return self.load_issues
+        for hero, cats in raw_hero_cats.items():
+            if not isinstance(cats, list):
+                # 坏条跳过后任意一次保存即丢该武将归类，error 触发留底与保存守卫
+                self._issue("error", "invalid_hero_categories", f"武将 {hero} 归类格式错误", key=hero)
+                continue
+            valid = [c for c in cats if c in cat_names]
+            if len(valid) != len(cats):
+                self._issue("warning", "unknown_category_ref",
+                            f"武将 {hero} 引用了不存在的分类", key=hero)
+            self._hero_categories[hero] = valid
         raw_chain = root.get("counter_chain", {})
-        if isinstance(raw_chain, dict):
-            for cat, desc in raw_chain.items():
-                if cat not in cat_names:
-                    self._issue("warning", "unknown_category_ref", f"克制链键 {cat} 不在分类中", key=cat)
-                if isinstance(desc, str):
-                    self._counter_chain[cat] = desc
-                elif isinstance(desc, list):
-                    # 兼容历史坏数据：字符列表还原为文本
-                    self._counter_chain[cat] = "".join(str(c) for c in desc)
-                    self._issue("warning", "chain_list_legacy",
-                                f"克制链 {cat} 的字符列表已自动还原为文本", key=cat)
+        if not isinstance(raw_chain, dict):
+            self._issue("error", "invalid_counter_chain", "克制链必须是对象")
+            return self.load_issues
+        for cat, desc in raw_chain.items():
+            if cat not in cat_names:
+                self._issue("warning", "unknown_category_ref", f"克制链键 {cat} 不在分类中", key=cat)
+            if isinstance(desc, str):
+                self._counter_chain[cat] = desc
+            elif isinstance(desc, list):
+                # 兼容历史坏数据：字符列表还原为文本
+                self._counter_chain[cat] = "".join(str(c) for c in desc)
+                self._issue("warning", "chain_list_legacy",
+                            f"克制链 {cat} 的字符列表已自动还原为文本", key=cat)
+            else:
+                self._issue("error", "invalid_counter_chain", f"克制链 {cat} 的描述格式错误", key=cat)
         self._saved_snapshot = self._snapshot()
         # 结构校验全部通过才置可用：categories 等结构损坏时保持 False，
         # 面板 _ensure_writable 与 save_payload 守卫据此拒绝覆盖保存
