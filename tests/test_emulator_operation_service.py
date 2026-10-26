@@ -7,7 +7,7 @@ from time import monotonic
 
 from PySide6.QtWidgets import QApplication
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
-from src.capture.probers import EmulatorDeviceInfo
+from src.capture.emulator_discovery import EmulatorDeviceInfo
 
 
 class _CaptureService:
@@ -38,7 +38,7 @@ def _wait(event: Event) -> bool:
 
 def test_refresh_devices_runs_through_operation_service(monkeypatch) -> None:
     devices = [EmulatorDeviceInfo("1", "实例", 16448, True)]
-    monkeypatch.setattr("src.business.emulator.emulator_operation_service.probe_all_devices_with_status", lambda emulator_type="mumu": (devices, ""))
+    monkeypatch.setattr("src.business.emulator.emulator_operation_service.discover_devices_with_status", lambda emulator_type="mumu": (devices, ""))
     service = EmulatorOperationService(_CaptureService())
     completed = Event()
     received: list[list[EmulatorDeviceInfo]] = []
@@ -54,7 +54,7 @@ def test_refresh_devices_runs_through_operation_service(monkeypatch) -> None:
 
 def test_refresh_failure_is_reported_without_device_result(monkeypatch) -> None:
     monkeypatch.setattr(
-        "src.business.emulator.emulator_operation_service.probe_all_devices_with_status",
+        "src.business.emulator.emulator_operation_service.discover_devices_with_status",
         lambda emulator_type="mumu": ([], "MuMuManager 查询失败（退出码 3221226505）"),
     )
     service = EmulatorOperationService(_CaptureService())
@@ -76,7 +76,7 @@ def test_refresh_failure_is_reported_without_device_result(monkeypatch) -> None:
 def test_reprobe_adb_reports_path_without_device_refresh(monkeypatch) -> None:
     """R3：品牌切换静默重探只回传路径，不触发设备刷新。"""
     monkeypatch.setattr(
-        "src.business.emulator.emulator_operation_service.probe_adb",
+        "src.business.emulator.emulator_operation_service.resolve_adb_path",
         lambda emulator_type="mumu": "D:/tools/HD-Adb.exe",
     )
     service = EmulatorOperationService(_CaptureService())
@@ -107,7 +107,7 @@ def test_duplicate_refresh_submissions_are_coalesced(monkeypatch) -> None:
         return [], ""
 
     monkeypatch.setattr(
-        "src.business.emulator.emulator_operation_service.probe_all_devices_with_status", slow_probe)
+        "src.business.emulator.emulator_operation_service.discover_devices_with_status", slow_probe)
     service = EmulatorOperationService(_CaptureService())
     completed = Event()
     service.devices_refreshed.connect(lambda devices, _requested_type: completed.set())
@@ -132,7 +132,7 @@ def test_refresh_submissions_with_different_brands_both_run(monkeypatch) -> None
         return [], ""
 
     monkeypatch.setattr(
-        "src.business.emulator.emulator_operation_service.probe_all_devices_with_status", probe)
+        "src.business.emulator.emulator_operation_service.discover_devices_with_status", probe)
     service = EmulatorOperationService(_CaptureService())
     # 等第二次回传再断言：单线程执行器串行执行两个任务，只等首次回传就断言
     # 会与第二个任务的执行竞态（CI 慢机上曾输掉竞态误报失败）

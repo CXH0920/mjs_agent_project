@@ -124,7 +124,7 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 
 **官方 PC 客户端直连（ed8b4ac，2026-10-25）**：新增 `src/capture/pc_client.py`（577 行）——不经 ADB 的第二条图像源，枚举官方 PC 客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件，标题仅展示；三态：未启动提示 / 单窗自动选定 / 多窗 UI 显式选择，不支持多开）并只读其画面。采集主路径 Windows.Graphics.Capture（`windows-capture==2.0.1`，Win10 1903+，遮挡可采集），WGC 会话**窗口句柄定向**（库的标题连接为子串匹配，"名将杀 Agent" 包含"名将杀"会命中工具自身窗口，真机事故后句柄定向根治）+ GDI BitBlt 客户区裁剪兜底（PrintWindow 真机取证稳定失败不采用）+ 黑帧双指标检测（均值 <8.0 且近黑占比 >98% 同时命中）与窗口化引导。`PcClientCapture` 接口对齐 `AdbCapture`，`CaptureConnectionManager` 按 `emulator_type=pc_client` 构建后下游 OCR 管线无感复用；设备页顶部「模拟器 / 官方 PC 客户端」单选双形态（PC 形态隐藏品牌与 ADB 区块、设备下拉复用为窗口候选列表、`EMULATOR_BRAND` 品牌记忆）。进程级 Per-Monitor-V2 DPI 声明硬前置（未声明进程在 >100% DPI 屏上坐标被系统谎报）。**模块全程只读窗口画面，不向客户端或系统发送任何输入（法律红线）**。设计文档：`docs/design/pc_official_client_capture_design.md` / `pc_official_client_requirements.md`。
 
-**多模拟器五品牌连接（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b，2026-10-24/25）**：`src/capture/prober.py` 拆包为 `src/capture/probers/`（函数式注册表 `EMULATOR_PROBERS`，每品牌统一契约 `probe_devices(retries)` / `find_adb()`）——MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat 按 VM PID 精确关联端口）/ 逍遥（`.memu` 配置直读，MEmuConsole 为 GUI 无 stdout 的死路径已移除）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）+ `port_scan.py` 端口段兜底（8 并发，结果标注"品牌未验证"防 5555 共用端口误标）+ `console_utils.py`（UTF-8→GBK 解码 + 进程反查）。`AdbCapture` 品牌参数化（`emulator_type` 构造参数；端口 0 时按品牌自动探测唯一实例）+ `connect(validate_capture=)` 连接后截帧校验 + `_reconcile_emulator_serial()`（雷电等 adb 主动扫描区端口双查 `emulator-<n>` 序列号）。配置键 `MUMU_*` → `EMULATOR_*` 平滑升级（`default_from` 回退旧键）+ `EMULATOR_BRAND`，env 键元表 32 → 38 键。探测提速（真机计时）：逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s，五品牌全部 <1s。
+**多模拟器五品牌连接（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b，2026-10-24/25）**：`src/capture/` 原单文件探测模块拆包为 `src/capture/emulator_discovery/`（函数式注册表 `EMULATOR_DISCOVERY_MODULES`，每品牌统一契约 `discover_devices(retries)` / `find_adb()`）——MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat 按 VM PID 精确关联端口）/ 逍遥（`.memu` 配置直读，MEmuConsole 为 GUI 无 stdout 的死路径已移除）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）+ `port_scan.py` 端口段兜底（8 并发，结果标注"品牌未验证"防 5555 共用端口误标）+ `console_utils.py`（UTF-8→GBK 解码 + 进程反查）。`AdbCapture` 品牌参数化（`emulator_type` 构造参数；端口 0 时按品牌自动探测唯一实例）+ `connect(validate_capture=)` 连接后截帧校验 + `_reconcile_emulator_serial()`（雷电等 adb 主动扫描区端口双查 `emulator-<n>` 序列号）。配置键 `MUMU_*` → `EMULATOR_*` 平滑升级（`default_from` 回退旧键）+ `EMULATOR_BRAND`，env 键元表 32 → 38 键。探测提速（真机计时）：逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s，五品牌全部 <1s。
 
 **官方榜单导入提速（366303c / 28fa11b / 8c0f871，2026-10-24）**：①拼接长图兼容——`official_board_parser.split_stitched_image()` 把 20261022 拼接长图按静默带切分为补边虚拟分页（std<8、带长 ≥40px 区分旧版长图行隙 15~19px；每栏 ≥30 行结构校验拦截头部图例区伪段），导入服务切分归一化后复用既有分页链路，行截图坐标经段 y 偏移还原；②单格识别 2× 快通道——`_fast_numeric_cell`（纯排名/胜率格式）/ `_fast_name_cell`（词表精确命中）置信度 ≥0.90 才采信，未过门回退 4× 双候选原路径，精度下界不变，整板导入提速约 4.6 倍；③待复核行截图改为仅保留武将名称格（原整行画面无复核价值）。
 
@@ -1763,7 +1763,7 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 38 �
 
 三个消费方：`load_env_config()` 按 `spec.type` 统一转换；`get_runtime_params()` / `get_mumu_config()` 经 `_config_with_defaults()` 按域补默认值。测试侧 `tests/test_env_config.py` 维护 `_SENTINELS` 全量键哨兵表（独立手抄期望值，防漏登记复发）。
 
-38 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 21 键**（多品牌连接键 2026-10 新增 6 个：`emulator_type`（品牌/连接方式，取值域 `src.capture.probers.EMULATOR_TYPES` 五品牌 + `pc_client`）/ `emulator_brand`（切 PC 客户端期间记住上次模拟器品牌）/ `pc_window_title`（PC 直连目标窗口标题，默认"名将杀"）/ `emulator_adb_path` / `emulator_adb_port` / `emulator_screenshot_mode`（三键 `default_from` 回退旧 `mumu_*` 实配值，老 config.env 不改字平滑升级；持久化始终写新键）+ 既有 15 键 `mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 11 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）。转型失败使用默认值并打 warning。
+38 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 21 键**（多品牌连接键 2026-10 新增 6 个：`emulator_type`（品牌/连接方式，取值域 `src.capture.emulator_discovery.EMULATOR_TYPES` 五品牌 + `pc_client`）/ `emulator_brand`（切 PC 客户端期间记住上次模拟器品牌）/ `pc_window_title`（PC 直连目标窗口标题，默认"名将杀"）/ `emulator_adb_path` / `emulator_adb_port` / `emulator_screenshot_mode`（三键 `default_from` 回退旧 `mumu_*` 实配值，老 config.env 不改字平滑升级；持久化始终写新键）+ 既有 15 键 `mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 11 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -1969,7 +1969,7 @@ src/capture/
  ├── pc_client.py            # PcClientCapture — 官方 PC 客户端窗口直连采集（2026-10-25 新增，577 行）
  │                           #   WGC 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测；全程只读不发送输入
  ├── image_validation.py     # 不可信图片输入校验（格式/体积/像素）
- ├── probers/                # 多品牌设备探测包（MuMu/雷电/夜神/逍遥/蓝叠）
+ ├── emulator_discovery/                # 多品牌设备探测包（MuMu/雷电/夜神/逍遥/蓝叠）
  │   ├── __init__.py         # 统一入口：注册表分发 + PATH 优先的 adb 探测 + CONNECTION_TYPE_PC
  │   ├── models.py           # EmulatorDeviceInfo 值对象
  │   ├── mumu.py             # MuMu 12（MuMuManager console）
@@ -1982,25 +1982,25 @@ src/capture/
  └── image_utils.py          # 图像工具函数（~70 行）
 ```
 
-### 11.2 模拟器设备探测（probers/ 包，多品牌）
+### 11.2 模拟器设备探测（emulator_discovery/ 包，多品牌）
 
-函数式注册表设计（`EMULATOR_PROBERS`），单选单连接、纯只读探测。自 2026-10
+函数式注册表设计（`EMULATOR_DISCOVERY_MODULES`），单选单连接、纯只读探测。自 2026-10
 起支持五家品牌：MuMu 12 / 雷电 LDPlayer 9 / 夜神 Nox / 逍遥 MEmu / 蓝叠
 BlueStacks 5；统一入口按 `emulator_type` 分发，品牌子模块实现
-`probe_devices(retries)` 与 `find_adb()` 两个函数。
+`discover_devices(retries)` 与 `find_adb()` 两个函数。
 
-#### 统一入口（probers/__init__.py）
+#### 统一入口（emulator_discovery/__init__.py）
 
 | 函数 | 返回 | 说明 |
 |------|------|------|
-| `probe_adb(emulator_type)` | `str` | 查找 adb.exe（PATH 优先 → 所选品牌安装目录） |
-| `probe_all_devices(emulator_type)` | `list[EmulatorDeviceInfo]` | 列出所选品牌全部实例 |
-| `probe_all_devices_with_status(emulator_type, retries=1)` | `(list[EmulatorDeviceInfo], str)` | 列出实例并区分空结果与探测失败 |
-| `probe_running_devices(emulator_type)` | `list[EmulatorDeviceInfo]` | 过滤出运行中且端口有效的实例 |
+| `resolve_adb_path(emulator_type)` | `str` | 查找 adb.exe（PATH 优先 → 所选品牌安装目录） |
+| `discover_all_devices(emulator_type)` | `list[EmulatorDeviceInfo]` | 列出所选品牌全部实例 |
+| `discover_devices_with_status(emulator_type, retries=1)` | `(list[EmulatorDeviceInfo], str)` | 列出实例并区分空结果与探测失败 |
+| `discover_running_devices(emulator_type)` | `list[EmulatorDeviceInfo]` | 过滤出运行中且端口有效的实例 |
 | `test_adb_path(path)` | `(bool, str)` | 验证 ADB 可执行文件是否有效 |
 | `normalize_emulator_type(value)` | `str` | 未知品牌值回退 mumu |
 
-#### 数据类（probers/models.py）
+#### 数据类（emulator_discovery/models.py）
 
 ```python
 @dataclass
@@ -2032,7 +2032,7 @@ class EmulatorDeviceInfo:
 逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s（进程反查重构 + 端口扫描 8 并发 +
 探测执行器同键任务去重），五品牌全部 <1s。
 
-#### adb 来源优先级（`probe_adb`）
+#### adb 来源优先级（`resolve_adb_path`）
 
 1. **系统 PATH** — `shutil.which("adb")`（对五家品牌一致，沿用旧版决策）
 2. **所选品牌安装目录** — 各品牌注册表/环境变量/常见路径下的自带 adb
@@ -3518,7 +3518,7 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 
 **需求边界**：项目分发给多人使用，每人偏好模拟器不同，工具需跑通主流五品牌（MuMu / 雷电 / 夜神 / 逍遥 / 蓝叠）。品牌为单选模型，不存在同时连接多台模拟器的场景；由此明确不做每品牌独立配置档案、多会话并行连接等"设备隔离"方案（按"简洁优先"判定为过度设计）。连接正确性由画面自证，风险收敛点在**显示诚实**。
 
-**架构**：`prober.py` 拆包为 `probers/`——函数式注册表 `EMULATOR_PROBERS`（每品牌统一契约 `probe_devices(retries) -> (list[EmulatorDeviceInfo], error)` 与 `find_adb()`，不引入 Protocol），`models.py` 品牌无关值对象、`port_scan.py` 端口段兜底（8 并发 socket 试连，`PORT_RULES` 品牌端口带，结果标注"品牌未验证"）、`console_utils.py`（console 工具 UTF-8→GBK 解码 + `find_process_dir()` 进程反查两级实现：tasklist 门控 ~0.25s → PowerShell 合并查询，退出码不作判据）。五品牌探测策略与端口规则见 11.2 节。
+**架构**：原单文件探测模块拆包为 `emulator_discovery/`——函数式注册表 `EMULATOR_DISCOVERY_MODULES`（每品牌统一契约 `discover_devices(retries) -> (list[EmulatorDeviceInfo], error)` 与 `find_adb()`，不引入 Protocol），`models.py` 品牌无关值对象、`port_scan.py` 端口段兜底（8 并发 socket 试连，`PORT_RULES` 品牌端口带，结果标注"品牌未验证"）、`console_utils.py`（console 工具 UTF-8→GBK 解码 + `find_process_dir()` 进程反查两级实现：tasklist 门控 ~0.25s → PowerShell 合并查询，退出码不作判据）。五品牌探测策略与端口规则见 11.2 节。
 
 **关键真机适配**（2026-10-24/25 实测）：逍遥 MEmuConsole 为 GUI 程序无 stdout（PE 子系统 2），console 调用属永远超时的死路径——改 `.memu` 配置直读（`MEmuHyperv VMs\<实例>\<实例>.memu` 的 ADB 转发 hostport）；蓝叠国内版 5.22 注册表无 Guests 子键——实例配置在 `bluestacks.conf`（`status.adb_port` 优先于配置值，`bst.enable_adb_access=0` 时给明确指引）；雷电注册表键实为 `leidian\ldplayer9`；夜神 list 七列无运行标志列，运行态由 PID/VM PID 推断、端口经 netstat 与 VM PID 精确关联；PowerShell 部分成功（部分请求进程不在场 → rc=1 但输出有效）不可按退出码丢弃。
 
@@ -3543,7 +3543,7 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 | 项 | 2026-10-23 | 2026-10-25 |
 |---|---|---|
 | 提交数 | 基线 | +12 |
-| 新增文件 | — | `pc_client.py`（577 行）+ `probers/` 包（9 文件，`mumu.py` 自 `prober.py` 平移）+ 3 份设计/需求文档 |
+| 新增文件 | — | `pc_client.py`（577 行）+ `emulator_discovery/` 包（9 文件，`mumu.py` 自原单文件探测模块平移）+ 3 份设计/需求文档 |
 | 测试文件（含 `test_*`） | 153 | 156 |
 | `test_*` 函数 | 1936 | 2042 |
 | `_ENV_KEY_SPECS` 键 | 32 | 38（+`EMULATOR_TYPE` / `EMULATOR_BRAND` / `PC_WINDOW_TITLE` / `EMULATOR_ADB_*` ×3） |

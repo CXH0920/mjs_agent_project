@@ -5,24 +5,24 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from src.capture.probers import (
+from src.capture.emulator_discovery import (
+    EMULATOR_DISCOVERY_MODULES,
     EMULATOR_HINTS,
     EMULATOR_LABELS,
-    EMULATOR_PROBERS,
     EMULATOR_TYPES,
     bluestacks,
     console_utils,
+    discover_devices_with_status,
     ldplayer,
     memu,
     mumu,
     normalize_emulator_type,
     nox,
     port_scan,
-    probe_all_devices_with_status,
 )
-from src.capture.probers.models import EmulatorDeviceInfo
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
-FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "probers"
+FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "emulator_discovery"
 
 
 # ── 注册表与分发 ─────────────────────────────────────────────────────
@@ -30,9 +30,9 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures_local" / "probers"
 
 def test_registry_covers_all_advertised_types() -> None:
     """连接方式全集 = 模拟器品牌注册表 + 官方 PC 客户端；标签全覆盖（PC 直连需求 R1）。"""
-    assert set(EMULATOR_PROBERS) < set(EMULATOR_TYPES)
+    assert set(EMULATOR_DISCOVERY_MODULES) < set(EMULATOR_TYPES)
     assert set(EMULATOR_TYPES) == set(EMULATOR_LABELS)
-    assert set(EMULATOR_TYPES) - set(EMULATOR_PROBERS) == {"pc_client"}
+    assert set(EMULATOR_TYPES) - set(EMULATOR_DISCOVERY_MODULES) == {"pc_client"}
 
 
 def test_emulator_labels_use_plain_brand_names() -> None:
@@ -65,8 +65,8 @@ def test_dispatch_routes_to_selected_brand(monkeypatch) -> None:
     def fake_probe(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
         return [EmulatorDeviceInfo("0", "雷电", 5555, True)], ""
 
-    monkeypatch.setattr(ldplayer, "probe_devices", fake_probe)
-    devices, error = probe_all_devices_with_status("ldplayer")
+    monkeypatch.setattr(ldplayer, "discover_devices", fake_probe)
+    devices, error = discover_devices_with_status("ldplayer")
 
     assert error == ""
     assert devices[0].adb_port == 5555
@@ -174,7 +174,7 @@ def test_port_scan_candidates_marked_brand_unverified(monkeypatch) -> None:
     """R5：端口扫描候选行名标注"品牌未验证"（5555 等共用端口归属歧义）。"""
     monkeypatch.setattr(port_scan, "scan_open_ports", lambda ports, timeout=0.2: [5555])
 
-    devices = port_scan.probe_devices_via_ports("ldplayer", "雷电")
+    devices = port_scan.discover_devices_via_ports("ldplayer", "雷电")
 
     assert devices[0].name == "雷电 实例 1（端口扫描·品牌未验证）"
 
@@ -182,11 +182,11 @@ def test_port_scan_candidates_marked_brand_unverified(monkeypatch) -> None:
 def test_ldplayer_console_failure_falls_back_to_port_scan(monkeypatch) -> None:
     monkeypatch.setattr(ldplayer, "_find_console", lambda: None)
     monkeypatch.setattr(
-        port_scan, "probe_devices_via_ports",
+        port_scan, "discover_devices_via_ports",
         lambda emulator_type, label: [EmulatorDeviceInfo("1", "雷电 实例 1（端口扫描）", 5555, True)],
     )
 
-    devices, error = ldplayer.probe_devices()
+    devices, error = ldplayer.discover_devices()
 
     assert error == ""
     assert devices[0].adb_port == 5555
@@ -195,22 +195,22 @@ def test_ldplayer_console_failure_falls_back_to_port_scan(monkeypatch) -> None:
 
 def test_console_failure_reports_error_when_scan_finds_nothing(monkeypatch) -> None:
     monkeypatch.setattr(ldplayer, "_find_console", lambda: None)
-    monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+    monkeypatch.setattr(port_scan, "discover_devices_via_ports", lambda emulator_type, label: [])
 
-    devices, error = ldplayer.probe_devices()
+    devices, error = ldplayer.discover_devices()
 
     assert devices == []
     assert "端口段扫描也未发现实例" in error
 
 
 def test_mumu_manager_failure_falls_back_to_port_scan(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("src.capture.probers.mumu._find_mumu_root", lambda: None)
+    monkeypatch.setattr("src.capture.emulator_discovery.mumu._find_mumu_root", lambda: None)
     monkeypatch.setattr(
-        port_scan, "probe_devices_via_ports",
+        port_scan, "discover_devices_via_ports",
         lambda emulator_type, label: [EmulatorDeviceInfo("1", "MuMu 实例 1（端口扫描）", 16384, True)],
     )
 
-    devices, error = probe_all_devices_with_status("mumu")
+    devices, error = discover_devices_with_status("mumu")
 
     assert error == ""
     assert devices[0].adb_port == 16384
@@ -286,7 +286,7 @@ def test_bluestacks_conf_disabled_keeps_enable_adb_hint(monkeypatch, tmp_path) -
     monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
     monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: conf)
 
-    devices, error = bluestacks.probe_devices()
+    devices, error = bluestacks.discover_devices()
 
     assert devices == []
     assert "Android 调试桥" in error
@@ -307,7 +307,7 @@ def test_bluestacks_conf_parses_instances_with_status_port_priority(monkeypatch,
     monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: conf)
     monkeypatch.setattr(bluestacks, "_port_open", lambda port: port == 5555)
 
-    devices, error = bluestacks.probe_devices()
+    devices, error = bluestacks.discover_devices()
 
     assert error == ""
     assert [(d.name, d.adb_port, d.is_running) for d in devices] == [
@@ -324,7 +324,7 @@ def test_bluestacks_conf_enabled_but_no_ports_reports_honestly(monkeypatch, tmp_
     monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
     monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: conf)
 
-    devices, error = bluestacks.probe_devices()
+    devices, error = bluestacks.discover_devices()
 
     assert devices == []
     assert "未读到实例 ADB 端口" in error
@@ -336,7 +336,7 @@ def test_bluestacks_root_without_conf_reports_missing_conf(monkeypatch, tmp_path
     monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
     monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: None)
 
-    devices, error = bluestacks.probe_devices()
+    devices, error = bluestacks.discover_devices()
 
     assert devices == []
     assert "未找到蓝叠实例配置" in error
@@ -347,7 +347,7 @@ def test_bluestacks_reports_missing_install(monkeypatch) -> None:
     monkeypatch.setattr(bluestacks, "_list_registry_instances", lambda: [])
     monkeypatch.setattr(bluestacks, "_find_conf_path", lambda: None)
 
-    devices, error = bluestacks.probe_devices()
+    devices, error = bluestacks.discover_devices()
 
     assert devices == []
     assert "未找到蓝叠安装目录" in error
@@ -360,7 +360,7 @@ def test_bluestacks_returns_registry_instances(monkeypatch) -> None:
     )
     monkeypatch.setattr(bluestacks, "_find_root", lambda: None)
 
-    devices, error = bluestacks.probe_devices()
+    devices, error = bluestacks.discover_devices()
 
     assert error == ""
     assert devices[0].adb_port == 5565
@@ -534,7 +534,7 @@ def test_nox_probe_reports_netstat_matched_port(monkeypatch, tmp_path) -> None:
     )
     monkeypatch.setattr(nox, "_listen_ports_by_pid", lambda: {26344: [62025]})
 
-    devices, error = nox.probe_devices()
+    devices, error = nox.discover_devices()
 
     assert error == ""
     assert devices[0].adb_port == 62025
@@ -608,7 +608,7 @@ def test_memu_config_reads_real_ports_and_running_state(monkeypatch, tmp_path) -
         port_scan, "scan_open_ports",
         lambda ports, timeout=0.2: [port for port in ports if port == 21517])
 
-    devices, error = memu.probe_devices()
+    devices, error = memu.discover_devices()
 
     assert error == ""
     assert [(d.index, d.name, d.adb_port, d.is_running) for d in devices] == [
@@ -623,7 +623,7 @@ def test_memu_config_without_adb_forwarding_reports_config_error(monkeypatch, tm
     _make_memu_instance(vms_dir, "MEmu", adb_port=21503, with_adb=False)
     monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
 
-    devices, error = memu.probe_devices()
+    devices, error = memu.discover_devices()
 
     assert devices == []
     assert "未读到实例 ADB 端口" in error
@@ -633,18 +633,18 @@ def test_memu_missing_config_dir_falls_back_to_port_scan(monkeypatch) -> None:
     """配置目录定位失败 → 端口段扫描兜底（有产出视为成功）；扫不到报错。"""
     monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [])
     monkeypatch.setattr(
-        port_scan, "probe_devices_via_ports",
+        port_scan, "discover_devices_via_ports",
         lambda emulator_type, label: [EmulatorDeviceInfo("1", "逍遥 实例 1（端口扫描·品牌未验证）", 21503, True)],
     )
 
-    devices, error = memu.probe_devices()
+    devices, error = memu.discover_devices()
 
     assert error == ""
     assert devices[0].adb_port == 21503
 
-    monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+    monkeypatch.setattr(port_scan, "discover_devices_via_ports", lambda emulator_type, label: [])
 
-    devices, error = memu.probe_devices()
+    devices, error = memu.discover_devices()
 
     assert devices == []
     assert "MEmuHyperv VMs" in error
@@ -684,7 +684,7 @@ def test_memu_parse_tolerates_broken_configs(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
     monkeypatch.setattr(port_scan, "scan_open_ports", lambda ports, timeout=0.2: [])
 
-    devices, error = memu.probe_devices()
+    devices, error = memu.discover_devices()
 
     assert error == ""
     assert [d.name for d in devices] == ["MEmu"]
@@ -708,11 +708,11 @@ def test_console_brands_do_not_retry_retries_argument(monkeypatch) -> None:
 
         monkeypatch.setattr(brand_module, console_probe, lambda: None)  # console 缺失路径
         monkeypatch.setattr(brand_module, "run_console_tool", failing_console)
-        monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+        monkeypatch.setattr(port_scan, "discover_devices_via_ports", lambda emulator_type, label: [])
 
         # console 缺失直接走兜底；再走 run_console_tool 失败路径验证无重试
         monkeypatch.setattr(brand_module, console_probe, lambda: Path("fake-console.exe"))
-        _devices, error = brand_module.probe_devices(retries=3)
+        _devices, error = brand_module.discover_devices(retries=3)
 
         assert calls and len(calls) == 1, f"{brand_module.__name__} 应只调用一次 console（无重试）"
         assert "未发现实例" in error or "超时" in error
@@ -747,8 +747,8 @@ def test_mumu_retries_actually_retries(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(mumu, "_find_mumu_root", lambda: tmp_path)
     monkeypatch.setattr(mumu, "subprocess", __import__("types").SimpleNamespace(run=always_fail))
     monkeypatch.setattr(mumu, "time", __import__("types").SimpleNamespace(sleep=lambda _s: None))
-    monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+    monkeypatch.setattr(port_scan, "discover_devices_via_ports", lambda emulator_type, label: [])
 
-    _devices, _error = mumu.probe_devices(retries=2)
+    _devices, _error = mumu.discover_devices(retries=2)
 
     assert len(attempts) == 3  # 初次 + 2 次重试

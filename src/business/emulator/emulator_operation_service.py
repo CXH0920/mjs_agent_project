@@ -1,4 +1,4 @@
-"""模拟器后台操作服务（多品牌，品牌探测见 src/capture/probers）：仅提供屏幕读取能力。
+"""模拟器后台操作服务（多品牌，品牌探测见 src/capture/emulator_discovery）：仅提供屏幕读取能力。
 
 本模块**故意不实现**以下功能，遵守项目法律红线（见 CLAUDE.md 与 AGENTS.md）：
 - ADB 输入（tap、click、input）
@@ -21,10 +21,10 @@ from PySide6.QtCore import QObject, Signal
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.session_guard import OneShotToken
 from src.capture.adb_screen import AdbCapture
-from src.capture.probers import (
+from src.capture.emulator_discovery import (
     DEFAULT_EMULATOR_TYPE,
-    probe_adb,
-    probe_all_devices_with_status,
+    discover_devices_with_status,
+    resolve_adb_path,
     test_adb_path,
 )
 
@@ -62,7 +62,7 @@ class EmulatorOperationService(QObject):
 
     def detect_adb(self, emulator_type: str = DEFAULT_EMULATOR_TYPE) -> None:
         def work() -> tuple[bool, str, str]:
-            adb_path = probe_adb(emulator_type)
+            adb_path = resolve_adb_path(emulator_type)
             if not adb_path:
                 return False, "", "未找到 ADB，请手动设置路径"
             ok, message = test_adb_path(adb_path)
@@ -80,7 +80,7 @@ class EmulatorOperationService(QObject):
         self._submit(
             self._probe_executor,
             "reprobe_adb",
-            lambda: probe_adb(emulator_type),
+            lambda: resolve_adb_path(emulator_type),
             self.adb_reprobed.emit,
             dedup_key=f"reprobe_adb:{emulator_type}",
         )
@@ -96,7 +96,7 @@ class EmulatorOperationService(QObject):
         self._submit(
             self._probe_executor,
             "refresh_devices",
-            lambda: probe_all_devices_with_status(emulator_type),
+            lambda: discover_devices_with_status(emulator_type),
             completed,
             dedup_key=f"refresh_devices:{emulator_type}",
         )

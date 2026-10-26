@@ -160,7 +160,7 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     "LOG_TO_FILE": _EnvKeySpec("log_to_file", bool, True, "runtime"),
     # ── get_mumu_config 域（输出键序即本域登记序）──
     # 多品牌连接键（EMULATOR_*，2026-10）：TYPE 为品牌标识（取值域见
-    # src.capture.probers.EMULATOR_TYPES）；连接三键经 default_from 回退
+    # src.capture.emulator_discovery.EMULATOR_TYPES）；连接三键经 default_from 回退
     # 读取旧 MUMU_* 键实配值，老 config.env 不改字即可平滑升级；持久化
     # 始终写 EMULATOR_*，写入后新键优先生效、旧 MUMU_ADB_* 残行为惰性数据
     "EMULATOR_TYPE": _EnvKeySpec("emulator_type", str, "mumu", "mumu"),

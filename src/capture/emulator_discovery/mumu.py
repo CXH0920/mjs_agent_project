@@ -1,7 +1,7 @@
-"""MuMu 12 模拟器实例探测（自 prober.py 平移，多品牌连接支持）。
+"""MuMu 12 模拟器实例探测（自原单文件探测模块平移，多品牌连接支持）。
 
 负责自动探测 MuMu 安装路径、自带 adb.exe 位置和运行中的实例端口。
-注册表契约（EMULATOR_PROBERS）：probe_devices(retries) 与 find_adb()。
+注册表契约（EMULATOR_DISCOVERY_MODULES）：discover_devices(retries) 与 find_adb()。
 console 主路径（MuMuManager）失败时回退默认端口段扫描（port_scan.py）。
 """
 
@@ -14,9 +14,9 @@ import subprocess
 import time
 from pathlib import Path
 
-import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import find_process_dir
-from src.capture.probers.models import EmulatorDeviceInfo
+import src.capture.emulator_discovery.port_scan as port_scan
+from src.capture.emulator_discovery.console_utils import find_process_dir
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ def _find_mumu_root() -> Path | None:
 
 
 def find_adb() -> str:
-    """探测 MuMu 安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。
+    """探测 MuMu 安装目录自带的 adb.exe（PATH 分支在包统一入口 resolve_adb_path）。
 
     查找顺序：MuMu 安装目录（环境变量/进程反查/注册表/常见路径）下的 adb。
 
@@ -108,7 +108,7 @@ def find_adb() -> str:
     return ""
 
 
-def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
+def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有 MuMu 模拟器实例；console 失败时回退端口段扫描。"""
     mumu_root = _find_mumu_root()
     if not mumu_root:

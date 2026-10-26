@@ -14,7 +14,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton, QToolTip
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_service import OcrService
-from src.capture.probers import EmulatorDeviceInfo
+from src.capture.emulator_discovery import EmulatorDeviceInfo
 from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY

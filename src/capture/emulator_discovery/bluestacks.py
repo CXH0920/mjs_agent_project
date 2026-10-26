@@ -1,6 +1,6 @@
 """蓝叠 BlueStacks 5 实例探测（多品牌连接支持）。
 
-注册表契约：probe_devices(retries) / find_adb()。实例 adb 端口两级读取：
+注册表契约：discover_devices(retries) / find_adb()。实例 adb 端口两级读取：
 注册表 Guests\\<实例>\\BstAdbPort（国际版契约）→ bluestacks.conf 解析
 （国内版 5.22 注册表无 Guests 子键，实例配置在 conf，真机取证 2026-10-25）。
 端口每实例动态分配，无固定端口段可扫描，不设 port_scan 兜底。
@@ -13,8 +13,8 @@ import re
 import socket
 from pathlib import Path
 
-from src.capture.probers.console_utils import find_process_dir
-from src.capture.probers.models import EmulatorDeviceInfo
+from src.capture.emulator_discovery.console_utils import find_process_dir
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def _find_root() -> Path | None:
 
 
 def find_adb() -> str:
-    """探测蓝叠安装目录自带的 HD-Adb.exe（PATH 分支在包统一入口 probe_adb）。"""
+    """探测蓝叠安装目录自带的 HD-Adb.exe（PATH 分支在包统一入口 resolve_adb_path）。"""
     root = _find_root()
     if root is not None:
         p = root / "HD-Adb.exe"
@@ -191,7 +191,7 @@ def _port_open(port: int) -> bool:
         return False
 
 
-def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
+def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有蓝叠实例：注册表 Guests → bluestacks.conf → 按取证给失败原因。
 
     ADB 已开启但读不到端口时不再提示"请先开启 ADB"（R1.4，真机取证该提示误导）。

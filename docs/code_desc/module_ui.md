@@ -637,11 +637,11 @@ PeakSelectPanel
 模拟器配置对话框的设备与连接页在 2026-10-24/25 两轮改造后支持**连接类别单选双形态**——「模拟器」（五品牌 ADB）与「官方 PC 客户端」（窗口直连）：
 
 - **顶层单选**：页顶新增「模拟器 / 官方 PC 客户端」单选组，**用户点击才触发**形态切换（程序装载配置时只同步选中态，不产生副作用）。切到 PC 客户端前把当前模拟器品牌存入 `emulator_brand`，切回模拟器时恢复记忆品牌（无记录回退 `mumu`）；重复切换到当前类别判为无操作，不触发设备列表作废重建。
-- **模拟器形态**：品牌下拉仅列五家（`probers.EMULATOR_BRANDS`，展示名不带版本号：MuMu/雷电/夜神/逍遥/蓝叠），品牌行 ⓘ 图标悬停展示该品牌连接特性提示（`EMULATOR_HINTS`，如"默认端口 16384（多开 +32 递增）"；原生悬停驻留路径在部分环境不出 tooltip，改为 enter/click 主动 `QToolTip.showText` 即时显示）；ADB 区块（路径/端口/探测/测试按钮）正常展示。
+- **模拟器形态**：品牌下拉仅列五家（`emulator_discovery.EMULATOR_BRANDS`，展示名不带版本号：MuMu/雷电/夜神/逍遥/蓝叠），品牌行 ⓘ 图标悬停展示该品牌连接特性提示（`EMULATOR_HINTS`，如"默认端口 16384（多开 +32 递增）"；原生悬停驻留路径在部分环境不出 tooltip，改为 enter/click 主动 `QToolTip.showText` 即时显示）；ADB 区块（路径/端口/探测/测试按钮）正常展示。
 - **PC 客户端形态**：隐藏品牌行与 ADB 区块并切换说明文案（仅支持窗口化模式，游戏内设置或 Alt+Enter 切换，工具不会代为切换）；跳过 ADB 自动探测；**设备下拉复用为窗口候选列表**——同步枚举 `probe_pc_windows()` 窗口三态填充（空列表提示未启动 / 唯一窗口自动选定 / 多窗列出候选供选择），候选 label 为"标题（客户区分辨率）"，720p/900p 低分辨率档位放行并附非阻断提示，状态行展示窗口分辨率。
 - **连接状态标签按形态展示**：「● ADB：…」或「● PC 客户端：…」，与连接层事件文案（`CaptureConnectionManager`）同口径。
 
-配置经 `MumuConfigCoordinator` 持久化，键集 12 → 14（新增 `emulator_brand` / `pc_window_title`）；连接方式取值域为 `probers.EMULATOR_TYPES`（五品牌 + `pc_client`），非法值由 `normalize_emulator_type()` 回退默认品牌。
+配置经 `MumuConfigCoordinator` 持久化，键集 12 → 14（新增 `emulator_brand` / `pc_window_title`）；连接方式取值域为 `emulator_discovery.EMULATOR_TYPES`（五品牌 + `pc_client`），非法值由 `normalize_emulator_type()` 回退默认品牌。
 
 ---
 

@@ -455,7 +455,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 
 自基线 `a63bc3c`（2026-10-23 校准）以来的变更（覆盖 8f2e70a / ed8b4ac / 79fc4a0 中涉及 config 域的部分）：
 
-- **env.py 多品牌连接键**（8f2e70a / ed8b4ac，+15 行）：新增 6 键——`EMULATOR_TYPE`（品牌/连接方式标识，取值域 `src.capture.probers.EMULATOR_TYPES`）、`EMULATOR_BRAND`（切 PC 客户端期间记住上次模拟器品牌）、`PC_WINDOW_TITLE`（PC 直连目标窗口标题，默认"名将杀"）、`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`（三键带 `default_from="mumu_*"` 级联回退，老 config.env 不改字平滑升级；持久化始终写 `EMULATOR_*`，写入后新键优先生效、旧 `MUMU_ADB_*` 残行为惰性数据）。键元表 32 → **38 键**（runtime 6 + mumu 21 + 透传 11），消费方为 `CaptureConnectionManager._conn_key()`（同语义兼容读取）与 `AdbCapture(emulator_type=)`。详见 §3.3
+- **env.py 多品牌连接键**（8f2e70a / ed8b4ac，+15 行）：新增 6 键——`EMULATOR_TYPE`（品牌/连接方式标识，取值域 `src.capture.emulator_discovery.EMULATOR_TYPES`）、`EMULATOR_BRAND`（切 PC 客户端期间记住上次模拟器品牌）、`PC_WINDOW_TITLE`（PC 直连目标窗口标题，默认"名将杀"）、`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`（三键带 `default_from="mumu_*"` 级联回退，老 config.env 不改字平滑升级；持久化始终写 `EMULATOR_*`，写入后新键优先生效、旧 `MUMU_ADB_*` 残行为惰性数据）。键元表 32 → **38 键**（runtime 6 + mumu 21 + 透传 11），消费方为 `CaptureConnectionManager._conn_key()`（同语义兼容读取）与 `AdbCapture(emulator_type=)`。详见 §3.3
 - **logging_config.py 控制台队列化**（79fc4a0，+32 行）：新增 `_QueuedConsoleHandler`（QueueHandler + QueueListener 后台消费线程），控制台写移出调用线程——Windows 经典控制台快速编辑选中会无限期阻塞 `WriteConsoleW`（2026-10-24 事故：GUI 主线程在 `logger.info` 上悬死，Esc 才解冻）；文件 handler 不经队列仍同步落盘。详见 §3.4
 - **doctor.py 设备检查适配**（feee42b / ed8b4ac）：ADB 路径读取改 `emulator_adb_path`（旧键回退）；`adb devices` 在线序列号匹配放宽为 `127.0.0.1:<port>` 或 `emulator-<n>`（雷电等品牌可能注册为 adb 主动扫描区命名）；无在线设备时修复文案按形态分立（蓝叠提示先在设置中开启 ADB）
 - **environment.yml / environment-ci.yml**（ed8b4ac）：新增 `windows-capture==2.0.1`（PC 客户端 WGC 采集主路径，Win10 1903+，失败自动退 BitBlt）

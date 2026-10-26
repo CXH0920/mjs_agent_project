@@ -116,7 +116,7 @@
 
 ## 四、验收标准
 
-1. 单测：`tests/test_prober.py`、`tests/test_probers_brands.py` 全绿；新增用例覆盖
+1. 单测：`tests/test_emulator_discovery.py`、`tests/test_emulator_discovery_brands.py` 全绿；新增用例覆盖
    蓝叠 CN 键名识别、conf 解析（status.adb_port 优先、enable_adb_access=0 门控）、
    雷电 ldplayer9 键名、品牌切换清空旧列表；
 2. 真机（本机即蓝叠国内版测试环境）：选蓝叠 → 刷新 → 列出 Pie64:5555 且标注蓝叠 →

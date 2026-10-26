@@ -11,7 +11,7 @@ import logging
 import socket
 from concurrent.futures import ThreadPoolExecutor
 
-from src.capture.probers.models import EmulatorDeviceInfo
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def scan_open_ports(ports: list[int], timeout: float = 0.2) -> list[int]:
     return [port for port, is_open in zip(ports, flags, strict=True) if is_open]
 
 
-def probe_devices_via_ports(emulator_type: str, label: str) -> list[EmulatorDeviceInfo]:
+def discover_devices_via_ports(emulator_type: str, label: str) -> list[EmulatorDeviceInfo]:
     """把端口段内开放端口组装为候选实例（序号 1 起）。
 
     行名标注端口扫描来源与"品牌未验证"——5555 等雷电/蓝叠共用端口存在归属
@@ -88,7 +88,7 @@ def supplement_when_empty(emulator_type: str, label: str, devices: list[Emulator
     """
     if devices:
         return devices
-    scanned = probe_devices_via_ports(emulator_type, label)
+    scanned = discover_devices_via_ports(emulator_type, label)
     if scanned:
         logger.warning("%s console 枚举为空但端口带内有开放端口，已以端口扫描结果补充", label)
         return scanned
@@ -101,7 +101,7 @@ def fallback_result(emulator_type: str, label: str, error: str) -> tuple[list[Em
     兜底有产出视为成功刷新（降级记日志）；蓝叠端口每实例动态分配，无固定
     端口段可扫描，不走此路径。
     """
-    devices = probe_devices_via_ports(emulator_type, label)
+    devices = discover_devices_via_ports(emulator_type, label)
     if devices:
         logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
         return devices, ""

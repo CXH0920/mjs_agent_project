@@ -1,7 +1,7 @@
 """
 ADB 连接与截图模块：仅提供屏幕读取能力。
 
-通过 ADB 连接安卓模拟器（品牌无关，探测与品牌选择见 probers 包），
+通过 ADB 连接安卓模拟器（品牌无关，探测与品牌选择见 emulator_discovery 包），
 执行 screencap 命令获取屏幕截图。
 本模块**故意不实现**以下功能，遵守项目法律红线（见 CLAUDE.md 与 AGENTS.md）：
 - ADB 输入（tap、click、input）
@@ -81,7 +81,7 @@ class AdbCapture:
             adb_path: adb.exe 的完整路径。
             adb_port: 模拟器的 ADB 端口；0 表示连接时自动探测唯一运行实例。
             screenshot_mode: auto=raw 优先失败回退 PNG / raw=仅 raw / png=仅 PNG。
-            emulator_type: 品牌标识（src.capture.probers.EMULATOR_TYPES），
+            emulator_type: 品牌标识（src.capture.emulator_discovery.EMULATOR_TYPES），
                 仅用于端口为 0 时自动探测运行实例。
         """
         self._adb_path = adb_path
@@ -187,9 +187,9 @@ class AdbCapture:
         if self._adb_port > 0:
             return f"127.0.0.1:{self._adb_port}", ""
 
-        from src.capture.probers import probe_running_devices
+        from src.capture.emulator_discovery import discover_running_devices
 
-        devices = probe_running_devices(self._emulator_type)
+        devices = discover_running_devices(self._emulator_type)
         if len(devices) == 1:
             return f"127.0.0.1:{devices[0].adb_port}", ""
         if not devices:

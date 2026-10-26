@@ -1,6 +1,6 @@
 """逍遥 MEmu 实例探测（多品牌连接支持）。
 
-注册表契约：probe_devices(retries) / find_adb()。实例真实 ADB 端口直读
+注册表契约：discover_devices(retries) / find_adb()。实例真实 ADB 端口直读
 `MEmuHyperv VMs\\<实例名>\\<实例名>.memu` 配置（Forwarding name="ADB" 的
 hostport，2026-10-25 真机 9.5.8.0 实证）；MEmuConsole 为 GUI 程序无
 stdout（PE 子系统 2，真机取证 list 挂起不退出），console 调用属永远
@@ -15,9 +15,9 @@ import os
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import find_process_dir
-from src.capture.probers.models import EmulatorDeviceInfo
+import src.capture.emulator_discovery.port_scan as port_scan
+from src.capture.emulator_discovery.console_utils import find_process_dir
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def _get_candidates() -> list[Path]:
 
 
 def find_adb() -> str:
-    """探测逍遥安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。"""
+    """探测逍遥安装目录自带的 adb.exe（PATH 分支在包统一入口 resolve_adb_path）。"""
     for root in _get_candidates():
         p = root / "adb.exe"
         if p.exists():
@@ -174,7 +174,7 @@ def _list_config_instances(vms_dirs: list[Path]) -> list[EmulatorDeviceInfo]:
     return devices
 
 
-def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
+def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有逍遥实例：直读 .memu 配置拿真实端口；定位失败回退端口段扫描。"""
     vms_dirs = _find_vms_dirs()
     if vms_dirs:

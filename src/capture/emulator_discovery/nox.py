@@ -1,6 +1,6 @@
 """夜神 Nox 实例探测（多品牌连接支持；list 格式与端口按真机 Nox 7 校准）。
 
-注册表契约：probe_devices(retries) / find_adb()。NoxConsole list 输出七列
+注册表契约：discover_devices(retries) / find_adb()。NoxConsole list 输出七列
 （index,name,窗口标题,top句柄,bind句柄,PID,VM PID），没有运行标志列也没有
 adb 端口列：运行状态由 PID/VM PID 非 0 推断；adb 端口优先用 netstat 把
 LISTENING 端口与 VM PID 精确关联（用户自定义端口也能命中），无法关联时按
@@ -16,13 +16,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import (
+import src.capture.emulator_discovery.port_scan as port_scan
+from src.capture.emulator_discovery.console_utils import (
     decode_console_bytes,
     find_process_dir,
     run_console_tool,
 )
-from src.capture.probers.models import EmulatorDeviceInfo
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def _find_console() -> Path | None:
 
 
 def find_adb() -> str:
-    """探测夜神安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。"""
+    """探测夜神安装目录自带的 adb.exe（PATH 分支在包统一入口 resolve_adb_path）。"""
     for root in _get_candidates():
         p = root / "adb.exe"
         if p.exists():
@@ -172,7 +172,7 @@ def _attach_adb_ports(entries: list[tuple[EmulatorDeviceInfo, int]]) -> None:
                            device.name, vm_pid, ports, device.adb_port)
 
 
-def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
+def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有夜神实例；console 失败时回退端口段扫描。"""
     console = _find_console()
     if console is None:

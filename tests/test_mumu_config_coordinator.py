@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator, persist_mumu_env_config
-from src.capture.probers import EmulatorDeviceInfo
+from src.capture.emulator_discovery import EmulatorDeviceInfo
 from src.ocr.roi_config import DEFAULT_ROI_CONFIG_PATH, OcrRoiConfig
 
 

@@ -1,6 +1,6 @@
 """雷电 LDPlayer 9 实例探测（多品牌连接支持）。
 
-注册表契约：probe_devices(retries) / find_adb()。ldconsole list2 不上报
+注册表契约：discover_devices(retries) / find_adb()。ldconsole list2 不上报
 adb 端口，按官方默认端口段 5555+2n 推导（用户自定义端口时以连接校验
 为准）；console 不可用/失败时回退端口段扫描（port_scan.py）。
 """
@@ -12,9 +12,9 @@ import os
 import shutil
 from pathlib import Path
 
-import src.capture.probers.port_scan as port_scan
-from src.capture.probers.console_utils import find_process_dir, run_console_tool
-from src.capture.probers.models import EmulatorDeviceInfo
+import src.capture.emulator_discovery.port_scan as port_scan
+from src.capture.emulator_discovery.console_utils import find_process_dir, run_console_tool
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ def _find_console() -> Path | None:
 
 
 def find_adb() -> str:
-    """探测雷电安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。"""
+    """探测雷电安装目录自带的 adb.exe（PATH 分支在包统一入口 resolve_adb_path）。"""
     for root in _get_candidates():
         p = root / "adb.exe"
         if p.exists():
@@ -123,7 +123,7 @@ def _parse_console_output(text: str) -> list[EmulatorDeviceInfo]:
     return devices
 
 
-def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
+def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有雷电实例；console 失败时回退端口段扫描。"""
     console = _find_console()
     if console is None:

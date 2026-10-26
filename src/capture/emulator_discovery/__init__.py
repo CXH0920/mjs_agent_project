@@ -1,9 +1,9 @@
-"""模拟器品牌探测统一入口（prober.py 拆包，多品牌连接支持）。
+"""模拟器品牌探测统一入口（自原单文件探测模块拆包，多品牌连接支持）。
 
-函数式注册表：每品牌子模块实现统一签名——probe_devices(retries) 与
+函数式注册表：每品牌子模块实现统一签名——discover_devices(retries) 与
 find_adb()——本入口按 emulator_type 分发；不引入 Protocol，签名约束由
 注册表注释与单测锚定。adb 来源顺序统一为「PATH 的 adb 优先、品牌自带
-adb 兜底」（旧版 prober 既有决策，多品牌推广）。
+adb 兜底」（单文件探测时代既有决策，多品牌推广）。
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ import subprocess
 from pathlib import Path
 from types import ModuleType
 
-from src.capture.probers import bluestacks, ldplayer, memu, mumu, nox
-from src.capture.probers.models import EmulatorDeviceInfo as EmulatorDeviceInfo
+from src.capture.emulator_discovery import bluestacks, ldplayer, memu, mumu, nox
+from src.capture.emulator_discovery.models import EmulatorDeviceInfo as EmulatorDeviceInfo
 
 logger = logging.getLogger(__name__)
 
 # 连接方式标识（config.env EMULATOR_TYPE 取值域）与展示名（UI 下拉用，不带版本号）。
-# pc_client 为官方 PC 客户端直连（非模拟器，无 prober，采集见 src/capture/pc_client.py）
+# pc_client 为官方 PC 客户端直连（非模拟器，不注册发现模块，采集见 src/capture/pc_client.py）
 CONNECTION_TYPE_PC = "pc_client"
 # 模拟器品牌子集（UI 品牌下拉数据源；PC 客户端经顶层单选切换，不进品牌下拉）
 EMULATOR_BRANDS: tuple[str, ...] = ("mumu", "ldplayer", "nox", "memu", "bluestacks")
@@ -47,12 +47,12 @@ EMULATOR_HINTS: dict[str, str] = {
 }
 DEFAULT_EMULATOR_TYPE = "mumu"
 
-# 品牌注册表：模块需实现 probe_devices(retries=1) -> tuple[list[EmulatorDeviceInfo], str]
+# 品牌注册表：模块需实现 discover_devices(retries=1) -> tuple[list[EmulatorDeviceInfo], str]
 # 与 find_adb() -> str（品牌自带 adb 路径，不含 PATH 分支）。签名统一带 retries，
 # 但语义仅 MuMu 生效（MuMuManager 查询失败重试）；其余品牌接受而忽略——console
-# 失败直接落端口兜底，无重试必要（契约由 test_probers_brands 锚定）。pc_client
+# 失败直接落端口兜底，无重试必要（契约由 test_emulator_discovery_brands 锚定）。pc_client
 # 非 ADB 模拟器，不在此注册
-EMULATOR_PROBERS: dict[str, ModuleType] = {
+EMULATOR_DISCOVERY_MODULES: dict[str, ModuleType] = {
     "mumu": mumu,
     "ldplayer": ldplayer,
     "nox": nox,
@@ -64,12 +64,12 @@ EMULATOR_PROBERS: dict[str, ModuleType] = {
 def normalize_emulator_type(value: object) -> str:
     """未知/空品牌值回退默认品牌，杜绝 KeyError 扩散到配置与 UI。
 
-    pc_client 为合法连接方式但无 prober，probe_* 函数各自防御性短路。
+    pc_client 为合法连接方式但不注册发现模块，discover_* 函数各自防御性短路。
     """
     return value if isinstance(value, str) and value in EMULATOR_TYPES else DEFAULT_EMULATOR_TYPE
 
 
-def probe_adb(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> str:
+def resolve_adb_path(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> str:
     """自动探测 adb.exe：PATH 优先，其次所选品牌安装目录自带 adb。
 
     Returns:
@@ -80,28 +80,28 @@ def probe_adb(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> str:
     path_adb = shutil.which("adb")
     if path_adb:
         return path_adb
-    return EMULATOR_PROBERS[normalize_emulator_type(emulator_type)].find_adb()
+    return EMULATOR_DISCOVERY_MODULES[normalize_emulator_type(emulator_type)].find_adb()
 
 
-def probe_all_devices_with_status(
+def discover_devices_with_status(
     emulator_type: str = DEFAULT_EMULATOR_TYPE,
     retries: int = 1,
 ) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所选品牌的全部实例，并区分空结果与探测失败。"""
     if emulator_type == CONNECTION_TYPE_PC:
         return [], "官方 PC 客户端无模拟器设备列表（窗口枚举见 src/capture/pc_client.py）"
-    return EMULATOR_PROBERS[normalize_emulator_type(emulator_type)].probe_devices(retries=retries)
+    return EMULATOR_DISCOVERY_MODULES[normalize_emulator_type(emulator_type)].discover_devices(retries=retries)
 
 
-def probe_all_devices(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> list[EmulatorDeviceInfo]:
+def discover_all_devices(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> list[EmulatorDeviceInfo]:
     """探测所选品牌的全部实例，返回列表。"""
-    devices, _ = probe_all_devices_with_status(emulator_type)
+    devices, _ = discover_devices_with_status(emulator_type)
     return devices
 
 
-def probe_running_devices(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> list[EmulatorDeviceInfo]:
+def discover_running_devices(emulator_type: str = DEFAULT_EMULATOR_TYPE) -> list[EmulatorDeviceInfo]:
     """返回具备有效 ADB 端口的运行中实例。"""
-    return [device for device in probe_all_devices(emulator_type)
+    return [device for device in discover_all_devices(emulator_type)
             if device.is_running and device.adb_port > 0]
 
 

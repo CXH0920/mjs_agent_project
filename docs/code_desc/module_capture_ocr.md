@@ -1,7 +1,7 @@
 # 模块：屏幕采集与 OCR 识别
 
 > 对应目录：`src/capture/` + `src/ocr/`
-> 职责：屏幕采集双形态（ADB 连接模拟器截图含 raw 帧提速 / 官方 PC 客户端窗口直连 WGC+BitBlt）、多品牌模拟器探测（probers 包，五品牌）与 PC 客户端窗口枚举、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
+> 职责：屏幕采集双形态（ADB 连接模拟器截图含 raw 帧提速 / 官方 PC 客户端窗口直连 WGC+BitBlt）、多品牌模拟器探测（emulator_discovery 包，五品牌）与 PC 客户端窗口枚举、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
 > 文档日期：2026-10-25（基线 ed8b4ac）
 
 ---
@@ -13,7 +13,7 @@
 - **屏幕采集**（`src/capture/`）— 双形态图像源，下游管线无感复用：
   - **模拟器 ADB 截图**：通过 ADB 连接安卓模拟器（五品牌），执行 `exec-out screencap` 全屏截图，全程内存中处理；支持 raw 帧模式跳过 PNG 编解码提速
   - **官方 PC 客户端直连**（`pc_client.py`，2026-10-25）：枚举客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件），Windows.Graphics.Capture 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测；模块全程只读窗口画面，不发送任何输入（法律红线）
-- **设备探测**（`src/capture/probers/`）— 自动查找 ADB 路径和五品牌（MuMu/雷电/夜神/逍遥/蓝叠）实例的 ADB 端口，函数式注册表分发
+- **设备探测**（`src/capture/emulator_discovery/`）— 自动查找 ADB 路径和五品牌（MuMu/雷电/夜神/逍遥/蓝叠）实例的 ADB 端口，函数式注册表分发
 - **模板匹配**（`src/ocr/`）— OpenCV 模板匹配快速过滤非武将选择页画面，分层加速先粗筛后精匹配
 - **OCR 识别**（`src/ocr/`）— RapidOCR/ONNX 双套件批量识别名称区域（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，均 CPU），按字数门禁、候选闭包和候选内汉字特征评分确认名称；未决槽位由复核引擎做候选内确认
 - **白名单治理**（`src/ocr/`）— 名称纠错白名单的静态冲突检查与错法半自动补对闭环
@@ -28,8 +28,8 @@ src/capture/
 ├── adb_screen.py          # AdbCapture — ADB 连接与截图（品牌无关，含 raw 帧模式、架构防火墙声明）
 ├── pc_client.py           # PcClientCapture — 官方 PC 客户端窗口直连采集（WGC 主路径 + BitBlt 兜底，
 │                          #   窗口枚举三态解析、黑帧双指标检测；架构防火墙声明：不发送任何输入）
-├── probers/               # 多品牌设备探测包（2026-10 自 prober.py 拆包）
-│   ├── __init__.py        # 函数式注册表：EMULATOR_PROBERS 五品牌分发 + CONNECTION_TYPE_PC(pc_client)
+├── emulator_discovery/               # 多品牌设备探测包（2026-10 自原单文件探测模块拆包）
+│   ├── __init__.py        # 函数式注册表：EMULATOR_DISCOVERY_MODULES 五品牌分发 + CONNECTION_TYPE_PC(pc_client)
 │   │                      #   + EMULATOR_BRANDS/EMULATOR_TYPES/EMULATOR_LABELS/EMULATOR_HINTS + normalize_emulator_type
 │   ├── models.py          # EmulatorDeviceInfo 值对象（品牌无关，依赖最底层）
 │   ├── mumu.py            # MuMu 12：MuMuManager console 主路径 + 注册表/进程反查/常见路径
@@ -68,7 +68,7 @@ src/ocr/
 ```
 AdbCapture(adb_path, adb_port=0, screenshot_mode="auto", emulator_type="mumu")
   ├── _resolve_target() → 精确 ADB 目标
-  │     └── device_serial > 127.0.0.1:port > probe_running_devices(emulator_type) 唯一实例
+  │     └── device_serial > 127.0.0.1:port > discover_running_devices(emulator_type) 唯一实例
   ├── connect() → adb connect <target> → adb -s <target> get-state == "device"
   │     （validate_capture=True 时连通后截帧校验，失败回滚；5555 端口未注册时
   │      双查 emulator-<端口-1> 序列号归并，雷电 adb 主动扫描区形态）
@@ -419,10 +419,10 @@ split_stitched_image(image, key) → 20261022 拼接长图切分为虚拟分页
 
 ## 四、关键代码片段
 
-### 4.1 设备探测（probers/ 包，多品牌 2026-10）
+### 4.1 设备探测（emulator_discovery/ 包，多品牌 2026-10）
 
-统一入口 `probe_adb(emulator_type)`：PATH 优先，其次所选品牌安装目录自带 adb（`pc_client` 无 ADB 语义短路返回空串）；
-`probe_all_devices_with_status(emulator_type)` 按注册表 `EMULATOR_PROBERS` 分发到品牌模块，统一契约 `probe_devices(retries) -> (list[EmulatorDeviceInfo], error)` 与 `find_adb() -> str`（不引入 Protocol，签名约束由注册表注释与单测锚定）。`normalize_emulator_type()` 对未知/空值回退默认品牌 `mumu`，杜绝 KeyError 扩散到配置与 UI。五品牌探测策略（均为 2026-10-24/25 真机实测标定）：
+统一入口 `resolve_adb_path(emulator_type)`：PATH 优先，其次所选品牌安装目录自带 adb（`pc_client` 无 ADB 语义短路返回空串）；
+`discover_devices_with_status(emulator_type)` 按注册表 `EMULATOR_DISCOVERY_MODULES` 分发到品牌模块，统一契约 `discover_devices(retries) -> (list[EmulatorDeviceInfo], error)` 与 `find_adb() -> str`（不引入 Protocol，签名约束由注册表注释与单测锚定）。`normalize_emulator_type()` 对未知/空值回退默认品牌 `mumu`，杜绝 KeyError 扩散到配置与 UI。五品牌探测策略（均为 2026-10-24/25 真机实测标定）：
 
 | 品牌 | 主路径 | 端口来源 | 兜底 |
 |------|--------|---------|------|
@@ -432,7 +432,7 @@ split_stitched_image(image, key) → 20261022 拼接长图切分为虚拟分页
 | 逍遥 | `.memu` 配置直读（`MEmuHyperv VMs\<实例>\<实例>.memu` 的 `Forwarding name="ADB"` hostport，带 xmlns 命名空间按本地名匹配） | 配置文件真实端口 | 端口段扫描 21503+10n（console 为 GUI 无 stdout，调用属永远超时的死路径，已移除） |
 | 蓝叠 5 | 注册表 `Guests\<实例>\BstAdbPort`（国际版契约；产品键 nxt/nxt_cn/x 三者 × HKLM/HKCU × WOW6432Node 逐一尝试） | 注册表端口，socket 试连判定运行态 | `bluestacks.conf` 解析（国内版 5.22 注册表无 Guests 子键；`status.adb_port` 优先于配置 `adb_port`；`bst.enable_adb_access=0` 时给出开启 ADB 的明确指引）。端口动态分配，无固定段，**不设**端口扫描兜底 |
 
-各品牌安装路径定位统一三级：环境变量（`MUMU_HOME` 等）→ **运行进程反查**（`find_process_dir`，自定义/便携安装无注册表时的兜底）→ 注册表 → 常见安装路径。`port_scan.probe_devices_via_ports()` 只做 127.0.0.1 端口带 socket 试连并标注"品牌未验证"（雷电与蓝叠默认端口同为 5555，凭端口猜品牌必然误标）；`supplement_when_empty()` 在 console 枚举成功但零实例时以扫描结果补充（特定版本 console list 返回成功但输出为空，逍遥真机实测）。探测性能（真机计时）：逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s（进程反查重构为 tasklist 门控 ~0.25s + PowerShell 合并查询，未运行不再冷启动白付 ~3.7s；端口扫描 8 并发，防御回环被防火墙静默丢弃的环境），五品牌全部 <1s。
+各品牌安装路径定位统一三级：环境变量（`MUMU_HOME` 等）→ **运行进程反查**（`find_process_dir`，自定义/便携安装无注册表时的兜底）→ 注册表 → 常见安装路径。`port_scan.discover_devices_via_ports()` 只做 127.0.0.1 端口带 socket 试连并标注"品牌未验证"（雷电与蓝叠默认端口同为 5555，凭端口猜品牌必然误标）；`supplement_when_empty()` 在 console 枚举成功但零实例时以扫描结果补充（特定版本 console list 返回成功但输出为空，逍遥真机实测）。探测性能（真机计时）：逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s（进程反查重构为 tasklist 门控 ~0.25s + PowerShell 合并查询，未运行不再冷启动白付 ~3.7s；端口扫描 8 并发，防御回环被防火墙静默丢弃的环境），五品牌全部 <1s。
 
 ```python
 def find_adb() -> str:
@@ -452,7 +452,7 @@ def find_adb() -> str:
 
 > **设计思路：** 三个优先级覆盖了大多数场景：系统 PATH 最快，注册表/环境变量次之，常见安装路径兜底。函数式设计无内部状态，可被多处调用而不互相影响。注册表同时读取 `SOFTWARE\Netease\MuMuPlayer12` 与 `SOFTWARE\WOW6432Node\Netease\MuMuPlayer12`（兼容 64 位进程读 32 位安装）。
 
-`mumu.probe_devices()`（配置页经统一入口 `probe_all_devices_with_status(emulator_type)` 调用）：它执行 `MuMuManager.exe info --vmindex all` 并解析 JSON，在 `MuMuManager.exe` 非零退出、JSON 解析失败或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。`probe_running_devices()` 在此基础上只保留 `is_running` 且 `adb_port > 0` 的实例，供 `AdbCapture.connect()` 在无显式目标时自动选定唯一实例（按 `emulator_type` 探测）。
+`mumu.discover_devices()`（配置页经统一入口 `discover_devices_with_status(emulator_type)` 调用）：它执行 `MuMuManager.exe info --vmindex all` 并解析 JSON，在 `MuMuManager.exe` 非零退出、JSON 解析失败或超时时等待 0.2 秒重试一次，返回 `(devices, error)`。空设备列表且 `error` 为空表示正常枚举但没有实例；`error` 非空表示探测失败，UI 必须保留上次成功的列表而非清空当前选择。`discover_running_devices()` 在此基础上只保留 `is_running` 且 `adb_port > 0` 的实例，供 `AdbCapture.connect()` 在无显式目标时自动选定唯一实例（按 `emulator_type` 探测）。
 
 ### 4.2 图像预处理流水线
 
@@ -496,9 +496,9 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `probe_pc_windows()` → `list[PcWindowInfo]` | 枚举客户端窗口候选（mjs.exe + UnityWndClass 双条件）；`PcWindowInfo.label` 为设备下拉展示文案（标题+客户区分辨率） |
 | `is_black_frame(image)` → `bool` | 黑帧双指标判定（灰度均值 <8.0 且近黑占比 >98%） |
 | `ensure_dpi_awareness()` | 进程级 Per-Monitor-V2 DPI 感知幂等声明（坐标物理化的硬前置） |
-| `probe_adb(emulator_type)` → `str` | 探测 ADB 路径（PATH 优先，其次品牌自带 adb；pc_client 返回空串） |
-| `probe_all_devices(emulator_type)` / `probe_all_devices_with_status(emulator_type, retries)` | 列出所选品牌实例；状态化版本区分"无实例"与"探测失败" |
-| `probe_running_devices(emulator_type)` → `list[EmulatorDeviceInfo]` | 仅返回运行中且端口有效的实例 |
+| `resolve_adb_path(emulator_type)` → `str` | 探测 ADB 路径（PATH 优先，其次品牌自带 adb；pc_client 返回空串） |
+| `discover_all_devices(emulator_type)` / `discover_devices_with_status(emulator_type, retries)` | 列出所选品牌实例；状态化版本区分"无实例"与"探测失败" |
+| `discover_running_devices(emulator_type)` → `list[EmulatorDeviceInfo]` | 仅返回运行中且端口有效的实例 |
 | `EMULATOR_TYPES` / `EMULATOR_BRANDS` / `EMULATOR_LABELS` / `EMULATOR_HINTS` | 连接方式注册表：五品牌 + `pc_client` 全集、品牌子集、展示名与特性提示（设备/连接页 ⓘ 悬停展示） |
 | `normalize_emulator_type(value)` → `str` | 未知/空连接方式回退默认品牌，杜绝 KeyError 扩散 |
 | `test_adb_path(adb_path)` → `(bool, str)` | 校验 adb.exe 可执行并返回版本行 |
@@ -645,7 +645,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 - 详见新增 §3.1.1；环境依赖新增 `windows-capture==2.0.1`（environment.yml / environment-ci.yml）
 
 **模拟器连接层扩展为五品牌（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b）**
-- `src/capture/prober.py`（单文件）拆包为 `src/capture/probers/`：函数式注册表（`EMULATOR_PROBERS` 五品牌模块 + `CONNECTION_TYPE_PC`）+ `models.py`（`EmulatorDeviceInfo` 品牌无关值对象）+ 五品牌探测器 + `port_scan.py`（端口段兜底，8 并发）+ `console_utils.py`（console 工具调用 / GBK 解码 / 进程反查）
+- `src/capture/` 原单文件探测模块拆包为 `src/capture/emulator_discovery/`：函数式注册表（`EMULATOR_DISCOVERY_MODULES` 五品牌模块 + `CONNECTION_TYPE_PC`）+ `models.py`（`EmulatorDeviceInfo` 品牌无关值对象）+ 五品牌探测器 + `port_scan.py`（端口段兜底，8 并发）+ `console_utils.py`（console 工具调用 / GBK 解码 / 进程反查）
 - `AdbCapture` 品牌参数化：新增 `emulator_type` 构造参数（端口为 0 时按品牌探测唯一实例）；`connect(validate_capture=)` 连接后截帧校验；`_reconcile_emulator_serial()` 对雷电等 5555~5585 adb 主动扫描区端口双查 `emulator-<端口-1>` 序列号
 - 探测提速（真机计时）：逍遥 console 死路径移除改 `.memu` 配置直读（10.5s → 0.08s）；进程反查重构为 tasklist 门控 + PowerShell 合并查询（未运行不再白付 ~3.7s，282ed5b 修复 PowerShell 部分成功被 rc 判据误杀的问题）；端口扫描 8 并发（丢弃型回环最坏环境雷电/夜神 3.8s → 0.6s）；探测执行器同键任务去重防连点累积
 - 详见 §4.1 五品牌策略表

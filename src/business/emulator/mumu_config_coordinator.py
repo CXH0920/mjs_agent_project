@@ -11,28 +11,28 @@ from PySide6.QtCore import QObject, Signal
 from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.business.recognition.ocr_service import OcrService
+from src.capture.emulator_discovery import CONNECTION_TYPE_PC
+from src.capture.emulator_discovery import (
+    EMULATOR_BRANDS as EMULATOR_BRANDS,
+)
+from src.capture.emulator_discovery import (
+    EMULATOR_HINTS as EMULATOR_HINTS,
+)
+from src.capture.emulator_discovery import (
+    EMULATOR_LABELS as EMULATOR_LABELS,
+)
+from src.capture.emulator_discovery import (
+    EMULATOR_TYPES as EMULATOR_TYPES,
+)
+from src.capture.emulator_discovery import EmulatorDeviceInfo as EmulatorDeviceInfo
 
 # EmulatorDeviceInfo 显式再导出：设备值对象经本协调器透出给 UI（类型注解用），
-# UI 不直连 src.capture.probers。品牌常量同理经此转出口（EMULATOR_TYPES/
+# UI 不直连 src.capture.emulator_discovery。品牌常量同理经此转出口（EMULATOR_TYPES/
 # EMULATOR_LABELS 供 UI 下拉构建）。
 from src.capture.image_validation import load_local_image
 from src.capture.pc_client import PcClientCapture
 from src.capture.pc_client import PcWindowInfo as PcWindowInfo
 from src.capture.pc_client import probe_pc_windows as probe_pc_windows
-from src.capture.probers import CONNECTION_TYPE_PC
-from src.capture.probers import (
-    EMULATOR_BRANDS as EMULATOR_BRANDS,
-)
-from src.capture.probers import (
-    EMULATOR_HINTS as EMULATOR_HINTS,
-)
-from src.capture.probers import (
-    EMULATOR_LABELS as EMULATOR_LABELS,
-)
-from src.capture.probers import (
-    EMULATOR_TYPES as EMULATOR_TYPES,
-)
-from src.capture.probers import EmulatorDeviceInfo as EmulatorDeviceInfo
 from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 

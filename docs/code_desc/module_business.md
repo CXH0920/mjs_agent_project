@@ -282,7 +282,7 @@ OcrService (QObject)
 
 ### 3.4 EmulatorOperationService（模拟器后台操作）
 
-`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与所选品牌实例枚举（`probe_all_devices_with_status(emulator_type)` 经 `probers` 注册表分发五品牌；探测执行器**同键任务去重**——连点刷新不会累积排队多个相同探测任务），ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`probe_all_devices_with_status()` 会把失败原因与"正常但没有实例"区分开。关停守卫为 `_shutdown_token`（OneShotToken，df019a5/P0-3 收口，原 `_closed` 裸 bool）：`shutdown()` 时 `mark()` 置位，此后探测与 ADB 会话任务在入口检查 `spent` 拒绝，语义不变。
+`EmulatorOperationService` 只依赖 `CaptureService` 和底层探测模块，不持有 UI。它使用两个单线程执行器：探测线程负责 ADB 路径与所选品牌实例枚举（`discover_devices_with_status(emulator_type)` 经 `emulator_discovery` 注册表分发五品牌；探测执行器**同键任务去重**——连点刷新不会累积排队多个相同探测任务），ADB 会话线程负责连接、设备测试和模板截图；两类任务互不排队。`discover_devices_with_status()` 会把失败原因与"正常但没有实例"区分开。关停守卫为 `_shutdown_token`（OneShotToken，df019a5/P0-3 收口，原 `_closed` 裸 bool）：`shutdown()` 时 `mark()` 置位，此后探测与 ADB 会话任务在入口检查 `spent` 拒绝，语义不变。
 
 > **架构防火墙声明（637102b）**：模块文档字符串明确声明 `EmulatorOperationService` 不包含 ADB 输入能力（不提供 `input_tap` / `input_swipe` / `input_text` 等 ADB 输入方法），仅承担设备探测、连接管理与截图获取。此声明是合规化改造的一部分，确保业务层无法被调用方误用为自动化操作入口。
 
@@ -891,7 +891,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 | 依赖 | `src.data.manager` | `DataIssue` 模型（CardCatalogService 的仓储校验结果） |
 | 依赖 | `src.scraper.*` | 构建 CLI 参数调用爬虫/AI 脚本（`official` / `incremental` / `ai_batch`） |
 | 依赖 | `src.capture.adb_screen` | CaptureService / EmulatorOperationService 持有 AdbCapture 实例；`screencap_raw()` 直接返回 PNG bytes 跳过 PIL 解码 |
-| 依赖 | `src.capture.prober` | ADB 路径探测与 MuMu 实例枚举（`probe_mumu_adb` / `test_adb_path` / `probe_all_devices_with_status`） |
+| 依赖 | `src.capture.emulator_discovery` | ADB 路径探测与模拟器实例枚举（`resolve_adb_path` / `test_adb_path` / `discover_devices_with_status`） |
 | 依赖 | `src.capture.image_utils` / `image_validation` | 截图文件保存与本地图片加载 |
 | 依赖 | `src.ocr.*` | 模板管理器、识别器、ROI 布局配置 |
 | 依赖 | `src.ocr.engine_loader` | 官方榜单主引擎（`get_primary_ocr_engine()`，v6，与识别管线同源）与复核引擎（`get_recheck_ocr_engine()`，v4）经 `OfficialOcrEngines` 懒加载与跨任务移交；`chinese_cht` 兜底链已退役 |
@@ -1049,4 +1049,4 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 **公告域（39ec62b）**
 - `announcement/announcement_service.py`：公告检查与获取武将变更冷却窗口分立（`_gate` / `_prepare_gate` 各自独立 60 秒窗口，忙碌判定两闸门共用；新增 `prepare_cooldown_remaining` 属性），见 §3.6
 
-**本轮范围外**：`src/capture/`（pc_client.py / probers/ 包）与 `src/ocr/official_board_parser.py` 的变更记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)；设备配置 UI 变更记录于 [`./module_ui.md`](./module_ui.md)；配置键与日志队列化记录于 [`./module_config.md`](./module_config.md)。
+**本轮范围外**：`src/capture/`（pc_client.py / emulator_discovery/ 包）与 `src/ocr/official_board_parser.py` 的变更记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)；设备配置 UI 变更记录于 [`./module_ui.md`](./module_ui.md)；配置键与日志队列化记录于 [`./module_config.md`](./module_config.md)。

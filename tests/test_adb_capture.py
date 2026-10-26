@@ -251,7 +251,7 @@ def test_connect_with_auto_port_uses_unique_running_instance(monkeypatch) -> Non
 
     monkeypatch.setattr(cap, "_run_adb", fake_run)
     monkeypatch.setattr(
-        "src.capture.probers.probe_running_devices",
+        "src.capture.emulator_discovery.discover_running_devices",
         lambda emulator_type="mumu": [SimpleNamespace(adb_port=16448)],
     )
 
@@ -266,7 +266,7 @@ def test_connect_with_auto_port_uses_unique_running_instance(monkeypatch) -> Non
 def test_connect_with_auto_port_rejects_multiple_running_instances(monkeypatch) -> None:
     cap = AdbCapture("adb.exe", 0)
     monkeypatch.setattr(
-        "src.capture.probers.probe_running_devices",
+        "src.capture.emulator_discovery.discover_running_devices",
         lambda emulator_type="mumu": [SimpleNamespace(adb_port=16448), SimpleNamespace(adb_port=16416)],
     )
 
@@ -278,7 +278,7 @@ def test_connect_with_auto_port_rejects_multiple_running_instances(monkeypatch) 
 
 def test_connect_with_auto_port_rejects_no_running_instance(monkeypatch) -> None:
     cap = AdbCapture("adb.exe", 0)
-    monkeypatch.setattr("src.capture.probers.probe_running_devices", lambda emulator_type="mumu": [])
+    monkeypatch.setattr("src.capture.emulator_discovery.discover_running_devices", lambda emulator_type="mumu": [])
 
     ok, message = cap.connect()
 

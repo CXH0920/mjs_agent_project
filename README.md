@@ -30,7 +30,7 @@
 ## 技术亮点
 
 1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
-2. **双形态图像源** — 模拟器 ADB 截图（五品牌：MuMu/雷电/夜神/逍遥/蓝叠，`probers/` 函数式注册表探测 + 端口段兜底 + 进程反查，五品牌探测全部 <1s）或桌面窗口画面只读采集（面向窗口化运行的本地应用）；两种采集会话接口对齐，下游 OCR 管线无感复用。
+2. **双形态图像源** — 模拟器 ADB 截图（五品牌：MuMu/雷电/夜神/逍遥/蓝叠，`emulator_discovery/` 函数式注册表探测 + 端口段兜底 + 进程反查，五品牌探测全部 <1s）或桌面窗口画面只读采集（面向窗口化运行的本地应用）；两种采集会话接口对齐，下游 OCR 管线无感复用。
 3. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 4. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
 5. **测试与交付工程化** — 156 个测试模块 / 2042 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
@@ -213,7 +213,7 @@ test_project/
 │   │                           #   + maintenance/backup_restore_service（备份快照浏览/预览/恢复）
 │   │                           #   + common/check_cooldown（访问冷却与并发守卫）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking
-│   ├── capture/                # 双形态图像源：ADB 截图（probers/ 五品牌探测）+ 桌面窗口画面只读采集（仅屏幕读取，无输入能力）
+│   ├── capture/                # 双形态图像源：ADB 截图（emulator_discovery/ 五品牌探测）+ 桌面窗口画面只读采集（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader
 │   ├── rag/                    # 知识库：向量索引与混合检索基础设施（embedder.py 双后端编码器抽象，onnx 默认）
 │   ├── scripts/                # 语料构建与维护脚本（build_*_corpus / maintain_rag / 元规则 CLI）
@@ -517,7 +517,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 四十三 | 抓取链路健壮性（ScriptRunner 启动失败终态契约 + 看门狗树杀与延迟复查 + 退出杀进程树 + 取消 Starting 兜底） | ✅ 已完成 |
 | 四十四 | 数据安全与备份恢复（三条数据全灭路径封堵 + 备份恢复服务与对话框 + 导入前备份与源结构校验） | ✅ 已完成 |
 | 四十五 | 相性指定获取双入口拆分（指定配对计算 + 落后相性刷新，按状态筛选按策略组装配对清单） | ✅ 已完成 |
-| 四十六 | 多模拟器五品牌连接（MuMu/雷电/夜神/逍遥/蓝叠 probers 注册表探测 + 端口段兜底 + 进程反查 + EMULATOR_* 配置键平滑升级；五品牌探测全部 <1s，适配见 docs/design/emulator_multi_brand_requirements.md） | ✅ 已完成 |
+| 四十六 | 多模拟器五品牌连接（MuMu/雷电/夜神/逍遥/蓝叠 emulator_discovery 注册表探测 + 端口段兜底 + 进程反查 + EMULATOR_* 配置键平滑升级；五品牌探测全部 <1s，适配见 docs/design/emulator_multi_brand_requirements.md） | ✅ 已完成 |
 | 四十七 | 桌面窗口图像源接入（只读窗口画面采集 + 连接方式/设备页双形态） | ✅ 已完成 |
 
 > 文档基线：2026-10-25（`ed8b4ac`）。测试 156 个测试模块 / 2042 个测试函数（grep 统计），Ruff 0.12.0 全通过。

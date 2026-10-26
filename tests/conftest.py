@@ -2,6 +2,7 @@
 
 import atexit
 import faulthandler
+import logging
 import os
 import sys
 import time
@@ -132,6 +133,35 @@ def _reset_rag_degraded_reason() -> None:
     test_generation_loops 的 stdout 逐字符断言（时绿时红，取决于调度）。
     """
     rag_prompt.degraded_reason = None
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_root_logging_handlers():
+    """每个测试后移除测试期间新增的 root logger handler（只移除，不 close）。
+
+    走真实现的用例（如 test_browser_mode_does_not_require_api_key 调
+    ai_batch.main）会执行 setup_logging：往 root 挂绑定当时 sys.stdout 的
+    队列化控制台 handler 并启动后台消费线程，且用后不恢复。handler 留存
+    则后台线程持续消费后续用例日志、异步写已轮转的 stdout 流，撞坏
+    pytest fd 级捕获层（GBK 字节 UnicodeDecodeError），此后同进程全部
+    用例 setup/teardown 双 ERROR（2026-10-26 全量 4045 errors 事故；
+    队列化控制台 handler 自 79fc4a0 引入，此前同步 handler 无后台线程
+    故不显）。
+
+    只 removeHandler 不调 handler.close()：close（含 listener.stop 的
+    线程 join）在 2026-10-26 全量实证会令数十用例后的 UI 用例稳定
+    access violation（test_shared_ui_components 2/2 崩溃；remove-only
+    同日 2137 passed 全绿）。remove 后 handler 不再收到日志，队列线程
+    转入空闲等待、无 stdout 写入，级联源即消除；每处 setup_logging
+    泄漏一个空闲线程，测试进程内可忽略。快照对比而非按标记清理：
+    不依赖 src 私有常量，也能兜住任何未来测试新增的 root handler。
+    """
+    root = logging.getLogger()
+    saved = root.handlers[:]
+    yield
+    for handler in root.handlers[:]:
+        if handler not in saved:
+            root.removeHandler(handler)
 
 
 @pytest.fixture(autouse=True)
