@@ -34,6 +34,12 @@
 - 函数保持单一职责，注释解释“为什么”而非“是什么”
 - 禁止忽略异常，必须记录日志或明确处理
 
+## 命名规范
+- 包/脚本名用「对象 + 职责」名词式（如 emulator_discovery 而非 prober），仅凭名字须能答出「哪一层、管什么、做什么」。
+- 一词一义：新命名前全库 grep 同词根（detect 已专指图像识别，discover 专指设备枚举）；prober/manager/utils/core 等泛化词禁入新包名。
+- 测试文件与被测模块同名（test_x.py ↔ x.py），fixtures 目录随包名同步。
+- 改名走 git mv，同步 import、monkeypatch/spec 字符串路径与 docs；以全库 grep 无旧名 + 全量测试通过收尾。
+
 ## 提交规范
 - 不要自动 commit，先展示修改内容，等待用户确认
 - 使用 Conventional Commits（feat/fix/refactor/docs/test）
