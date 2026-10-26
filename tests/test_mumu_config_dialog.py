@@ -228,11 +228,11 @@ def test_template_capture_remains_disabled_during_device_refresh() -> None:
     device = EmulatorDeviceInfo("1", "实例", 16448, True)
     dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448}, [device])
 
-    dialog._recognition_page.start_template_capture("match_guide")
+    dialog._recognition_page.start_template_capture("hero_selection")
     dialog._operation_service.devices_refreshed.emit([device], "mumu")
 
-    assert dialog._recognition_page.match_guide_make_button.text() == "正在截图..."
-    assert not dialog._recognition_page.match_guide_make_button.isEnabled()
+    assert dialog._recognition_page.make_template_button.text() == "正在截图..."
+    assert not dialog._recognition_page.make_template_button.isEnabled()
 
 
 def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> None:
@@ -252,13 +252,10 @@ def test_canceling_roi_does_not_create_template(tmp_path: Path, monkeypatch) -> 
 
     monkeypatch.setattr("src.ui.configuration.roi_selector.RoiSelectorDialog", _CancelDialog)
     dialog._recognition_page._on_template_screenshot_ready("hero_selection", Image.new("RGB", (80, 60)))
-    dialog._recognition_page._on_template_screenshot_ready("match_guide", Image.new("RGB", (80, 60)))
 
     assert ocr_service.created == []
     assert dialog._recognition_page.make_template_button.isEnabled()
-    assert dialog._recognition_page.match_guide_make_button.isEnabled()
     assert dialog._recognition_page.make_template_button.text() == "制作模板"
-    assert dialog._recognition_page.match_guide_make_button.text() == "制作模板"
 
 
 def test_recognition_page_reflows_without_horizontal_scroll(tmp_path: Path) -> None:

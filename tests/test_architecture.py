@@ -684,6 +684,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 519 → 493：P1-6 模板方法合并——recognize/_recognize_match_guide 双路径
     # 收口为 _recognize_page(image, plan)，批次 0 借出的 21 行净偿还
     "ocr/recognizer.py": 493,
+    # 2026-10-26 对局攻略页锚点判定（437 → 700，超 500 行 tripwire 入册）：
+    # 双锚点 AND + 期望位置校验三层漏斗（缓存复验/基准+参考缩放局部/全图粗扫
+    # 兜底），动态背景漏检收口；锚点加载失败自动回退原有大模板漏斗
+    "ocr/template_manager.py": 700,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）

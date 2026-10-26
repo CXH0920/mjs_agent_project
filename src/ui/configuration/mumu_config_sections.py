@@ -241,8 +241,6 @@ class MumuTemplateSection(QFrame):
 
     hero_select_requested = Signal()
     hero_make_requested = Signal()
-    match_guide_select_requested = Signal()
-    match_guide_make_requested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -250,18 +248,14 @@ class MumuTemplateSection(QFrame):
         self._workflow_layout.setContentsMargins(0, 0, 0, 0)
         self._workflow_layout.setHorizontalSpacing(12)
         self._workflow_layout.setVerticalSpacing(12)
-        self._hero_box, hero_controls, self._hero_parameter_layout = self._template_box("武将选择识别", True)
-        self._match_box, match_controls, self._match_parameter_layout = self._template_box("对局攻略识别", False)
+        # 对局攻略页判定用随包双锚点（不可用户重制），不提供选择/制作模板入口
+        self._hero_box, hero_controls, self._hero_parameter_layout = self._template_box("武将选择识别")
+        self._match_box, match_controls, self._match_parameter_layout = self._template_box("对局攻略识别", editable=False)
         self._compact_layout: bool | None = None
         self._set_compact_layout(True)
 
         self.hero_status_icon, self.hero_status_label, self.hero_select_button, self.hero_make_button = hero_controls
-        (
-            self.match_guide_status_icon,
-            self.match_guide_status_label,
-            self.match_guide_select_button,
-            self.match_guide_make_button,
-        ) = match_controls
+        self.match_guide_status_icon, self.match_guide_status_label = match_controls
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -279,8 +273,8 @@ class MumuTemplateSection(QFrame):
         self._workflow_layout.setColumnStretch(1, 0 if compact else 1)
 
     def _template_box(
-        self, title: str, is_hero: bool,
-    ) -> tuple[QFrame, tuple[QLabel, QLabel, QPushButton, QPushButton], QGridLayout]:
+        self, title: str, *, editable: bool = True,
+    ) -> tuple[QFrame, tuple, QGridLayout]:
         box = QFrame()
         box.setObjectName("recognitionWorkflow")
         box.setStyleSheet(
@@ -301,22 +295,21 @@ class MumuTemplateSection(QFrame):
         status_row.addWidget(status_icon)
         status_row.addWidget(status_label, 1)
         box_layout.addLayout(status_row)
+        controls: tuple = (status_icon, status_label)
 
-        button_row = QHBoxLayout()
-        select_button = QPushButton("选择模板")
-        make_button = QPushButton("制作模板")
-        select_button.setStyleSheet(OUTLINE_BUTTON_STYLE)
-        make_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
-        if is_hero:
+        if editable:
+            button_row = QHBoxLayout()
+            select_button = QPushButton("选择模板")
+            make_button = QPushButton("制作模板")
+            select_button.setStyleSheet(OUTLINE_BUTTON_STYLE)
+            make_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
             select_button.clicked.connect(self.hero_select_requested)
             make_button.clicked.connect(self.hero_make_requested)
-        else:
-            select_button.clicked.connect(self.match_guide_select_requested)
-            make_button.clicked.connect(self.match_guide_make_requested)
-        button_row.addWidget(select_button)
-        button_row.addWidget(make_button)
-        button_row.addStretch()
-        box_layout.addLayout(button_row)
+            button_row.addWidget(select_button)
+            button_row.addWidget(make_button)
+            button_row.addStretch()
+            box_layout.addLayout(button_row)
+            controls = (status_icon, status_label, select_button, make_button)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
@@ -326,7 +319,7 @@ class MumuTemplateSection(QFrame):
         parameter_layout.setHorizontalSpacing(8)
         parameter_layout.setVerticalSpacing(8)
         box_layout.addLayout(parameter_layout)
-        return box, (status_icon, status_label, select_button, make_button), parameter_layout
+        return box, controls, parameter_layout
 
     def attach_parameters(
         self,
@@ -414,6 +407,10 @@ class MumuOcrPollingSection(QFrame):
 
         self.threshold_spin = self._make_threshold_spin()
         self.match_guide_threshold_spin = self._make_threshold_spin()
+        # 对局攻略页判定为随包双锚点，分数下限 0.85（TemplateManager 内控），
+        # 此处阈值仅在调高时生效（收紧判定），调低不放宽
+        self.match_guide_threshold_spin.setToolTip(
+            "对局攻略页采用锚点判定，阈值低于 0.85 时按 0.85 生效；调高可收紧判定")
         self.hero_cooldown_spin = self._make_cooldown_spin()
         hero_roi_row, hero_buttons = self._roi_button_row("hero_selection")
         match_roi_row, match_buttons = self._roi_button_row("match_guide")

@@ -1,0 +1,22 @@
+{
+  "reference_width": 2560,
+  "reference_height": 1440,
+  "anchors": [
+    {
+      "name": "gift",
+      "file": "anchor_gift.png",
+      "x": 65,
+      "y": 810,
+      "w": 70,
+      "h": 50
+    },
+    {
+      "name": "zhengli",
+      "file": "anchor_zhengli.png",
+      "x": 75,
+      "y": 1230,
+      "w": 70,
+      "h": 50
+    }
+  ]
+}

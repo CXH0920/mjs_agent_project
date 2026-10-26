@@ -4,6 +4,8 @@
 负责武将选择页面的模板截图的保存、加载、OpenCV 模板匹配。
 模板是用户框选的一个小区域图片（如页面标题或按钮），
 用于检测当前画面是否为武将选择页面。
+对局攻略页（match_guide）因动态背景漏检，改用随包双锚点 AND + 期望位置
+校验判定，锚点加载失败时回退本模块的大模板漏斗。
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -42,6 +45,34 @@ _LOGGED_LOADED_PATHS: set[str] = set()
 _COARSE_SCAN_RATIO = 0.25
 _COARSE_SCAN_MARGIN = 0.15
 
+# ── 对局攻略页（match_guide）锚点判定 ─────────────────────────────
+# 该页动态背景导致大模板漏检，改用双锚点 AND + 期望位置校验：
+# 两个固定 UI 小图（礼物图标 / 整理按钮）各自分数达标且峰位落在期望坐标容差内才判命中。
+# 锚点是随包游戏 UI 特征而非用户数据，不支持用户覆盖；清单/图片加载失败自动回退大模板漏斗。
+_MATCH_GUIDE_ANCHOR_MANIFEST = BUNDLED_TEMPLATE_DIR / "match_guide" / "anchors.json"
+_ANCHOR_LOCAL_PADDING_RATIO = 0.2
+# 参考系位置容差（1440p 实测，见 .tmp_test/verify_dual_anchor.py）；全图兜底用 2 倍宽容差
+# 吸收截图链路轻微平移与 1/4 粗扫量化误差（实测 11px 处假峰 0.837 < 分数下限，放宽安全）
+_ANCHOR_TOLERANCE_REF = 6
+_ANCHOR_FULL_TOLERANCE_REF = 12
+# 锚点分数下限：30 张截图实测最低命中 0.908、最近假峰 0.837；外部阈值只能向上收紧
+_ANCHOR_SCORE_FLOOR = 0.85
+_ANCHOR_STALE_WARN_ROUNDS = 50
+# 连续未命中轮数（跨实例累计：ocr_worker 每任务新建 TemplateManager，实例字段攒不到告警轮数）
+_ANCHOR_MISS_ROUNDS: dict[str, int] = {}
+
+
+@dataclass(frozen=True)
+class _Anchor:
+    """对局攻略页判定锚点：随包灰度小图与参考系（2560×1440）期望位置。"""
+
+    name: str
+    image: np.ndarray
+    x: int
+    y: int
+    w: int
+    h: int
+
 
 class TemplateManager:
     """模板管理器 — 保存/加载/匹配武将选择页面模板"""
@@ -51,6 +82,7 @@ class TemplateManager:
         template_path: str | Path | None = None,
         *,
         template_name: str = "hero_selection",
+        anchor_manifest_path: Path | None = None,
     ) -> None:
         if template_path is not None:
             self._template_path = Path(template_path)
@@ -66,7 +98,18 @@ class TemplateManager:
         self._last_match_scale = 1.0
         self._has_scale_history = False
         self._last_match_strategy = "unmatched"
+        # 锚点仅对 match_guide 生效（测试经 anchor_manifest_path 注入合成清单）
+        self._anchor_manifest_path = (
+            Path(anchor_manifest_path) if anchor_manifest_path is not None
+            else _MATCH_GUIDE_ANCHOR_MANIFEST
+        )
+        self._anchors: list[_Anchor] = []
+        self._anchor_reference_size = DEFAULT_REFERENCE_SIZE
+        self._anchor_history_scale: float | None = None
+        self._anchor_best_observed = 0.0
         self._load()
+        if template_name == "match_guide":
+            self._load_anchors(self._anchor_manifest_path)
 
     # ── 属性 ──────────────────────────────────────────────────────────
 
@@ -175,6 +218,58 @@ class TemplateManager:
         """从磁盘重新加载模板。"""
         self._load()
 
+    def _load_anchors(self, manifest_path: Path) -> None:
+        """加载对局攻略锚点清单；任一环节失败整体回退大模板判定（WARNING 可见）。"""
+        try:
+            with manifest_path.open("r", encoding="utf-8") as file:
+                manifest = json.load(file)
+            reference_width = int(manifest["reference_width"])
+            reference_height = int(manifest["reference_height"])
+            if reference_width <= 0 or reference_height <= 0:
+                raise ValueError("参考尺寸非法")
+            anchors: list[_Anchor] = []
+            for item in manifest["anchors"]:
+                anchor = _Anchor(
+                    name=str(item["name"]),
+                    image=self._read_anchor_image(manifest_path.parent / str(item["file"])),
+                    x=int(item["x"]), y=int(item["y"]),
+                    w=int(item["w"]), h=int(item["h"]),
+                )
+                if (anchor.w <= 0 or anchor.h <= 0 or anchor.x < 0 or anchor.y < 0
+                        or anchor.x + anchor.w > reference_width
+                        or anchor.y + anchor.h > reference_height):
+                    raise ValueError(f"锚点坐标越界: {anchor.name}")
+                if anchor.image.shape[:2] != (anchor.h, anchor.w):
+                    raise ValueError(f"锚点图片尺寸与清单不符: {anchor.name}")
+                anchors.append(anchor)
+            if len(anchors) < 2:
+                raise ValueError(f"锚点数量不足（双锚点 AND 判定至少 2 个）: {len(anchors)}")
+            self._anchors = anchors
+            self._anchor_reference_size = (reference_width, reference_height)
+            # 锚点清单更新（发版）后 mtime 变化，历史缩放自动失效，机制与大模板一致
+            try:
+                mtime = manifest_path.stat().st_mtime_ns
+            except OSError:
+                mtime = None
+            cached = _LAST_SCALE_CACHE.get(str(manifest_path))
+            if mtime is not None and cached and cached[0] == mtime:
+                self._anchor_history_scale = cached[1]
+            if str(manifest_path) not in _LOGGED_LOADED_PATHS:
+                _LOGGED_LOADED_PATHS.add(str(manifest_path))
+                logger.info("对局攻略锚点已加载: %s (%d 个)", manifest_path.name, len(anchors))
+        except Exception as e:
+            self._anchors = []
+            logger.warning("对局攻略锚点加载失败，回退大模板判定: %s", e)
+            logger.debug(traceback.format_exc())
+
+    @staticmethod
+    def _read_anchor_image(path: Path) -> np.ndarray:
+        with path.open("rb") as file:
+            image = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_GRAYSCALE)
+        if image is None or image.size == 0:
+            raise ValueError(f"锚点图片解码失败: {path.name}")
+        return image
+
     # ── 设置模板 ──────────────────────────────────────────────────────
 
     def set_template(self, image: np.ndarray | Image.Image, roi: tuple[int, int, int, int]) -> None:
@@ -246,6 +341,10 @@ class TemplateManager:
         Returns:
             (是否匹配, 置信度)
         """
+        # 锚点分支置于模板缺失早退之前：锚点判定不依赖大模板，大模板仅是加载失败的回退
+        if self._anchors:
+            return self._match_with_anchors(image, threshold)
+
         if self._template is None:
             logger.debug("模板未加载，跳过匹配")
             return False, 0.0
@@ -411,6 +510,171 @@ class TemplateManager:
                 _LAST_SCALE_CACHE[str(path)] = (path.stat().st_mtime_ns, scale)
             except OSError:
                 pass
+
+    # ── 对局攻略锚点匹配 ──────────────────────────────────────────────
+
+    def _match_with_anchors(self, image: np.ndarray | Image.Image, threshold: float) -> tuple[bool, float]:
+        """对局攻略页锚点判定：双锚点 AND + 期望位置校验，按三层漏斗推进。
+
+        外部阈值低于分数下限时按下限执行（锚点分数区间实测很窄，调低只会引入误报）。
+        """
+        effective_threshold = max(threshold, _ANCHOR_SCORE_FLOOR)
+        if isinstance(image, Image.Image):
+            image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        try:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        except Exception as e:
+            logger.error("图像转灰度失败: %s", e)
+            return False, 0.0
+
+        try:
+            reference_width, reference_height = self._anchor_reference_size
+            base_scale = min(gray.shape[1] / reference_width, gray.shape[0] / reference_height)
+            self._last_match_scale = 1.0
+            self._last_match_strategy = "anchors_miss"
+            self._anchor_best_observed = 0.0
+
+            # ① 时序复验：上一轮命中缩放即真实渲染比例（精度最高），先于基准缩放尝试
+            history_scale = self._anchor_history_scale
+            if history_scale is not None and history_scale != base_scale:
+                confidence = self._anchors_local_score(gray, effective_threshold, history_scale)
+                if confidence is not None:
+                    return self._anchor_hit(history_scale, "anchors_cached_local", confidence)
+
+            # ② 基准缩放 + 参考缩放局部（1.0 档兜高分屏上按参考原尺寸渲染的场景）。
+            # 不做相对多尺度档：y=1230 的锚点要通过 ±6px 位置校验，候选缩放与真实
+            # 缩放的偏差须 <0.5%，而常规 ±15% 档距全部超限，相对档实际无命中可能。
+            for scale, strategy in ((base_scale, "anchors_local"), (1.0, "anchors_ref_local")):
+                if strategy == "anchors_ref_local" and round(scale, 4) == round(base_scale, 4):
+                    continue
+                confidence = self._anchors_local_score(gray, effective_threshold, scale)
+                if confidence is not None:
+                    return self._anchor_hit(scale, strategy, confidence)
+
+            # ③ 全图粗扫兜底：仅基准缩放一个比例，宽容差吸收轻微平移；粗扫不过即免精扫
+            confidence = self._anchors_full_fallback(gray, effective_threshold, base_scale)
+            if confidence is not None:
+                return self._anchor_hit(base_scale, "anchors_full_fallback", confidence)
+
+            self._note_anchor_miss(gray.shape)
+            return False, float(self._anchor_best_observed)
+        except Exception as e:
+            logger.error("对局攻略锚点匹配异常: %s", e)
+            logger.debug(traceback.format_exc())
+            return False, 0.0
+
+    def _anchors_local_score(self, gray: np.ndarray, threshold: float, scale: float) -> float | None:
+        """两锚点全部在 scale 期望位置邻域命中（AND）；返回联合置信度（较小值）。"""
+        scores: list[float] = []
+        for anchor in self._anchors:
+            center_x = round(anchor.x * scale)
+            center_y = round(anchor.y * scale)
+            score = self._anchor_window_score(
+                gray, threshold, scale, anchor, center_x, center_y, _ANCHOR_TOLERANCE_REF)
+            if score is None:
+                return None  # 短路：前序锚点不过即不再试后续
+            scores.append(score)
+        return min(scores)
+
+    def _anchor_window_score(
+        self,
+        gray: np.ndarray,
+        threshold: float,
+        scale: float,
+        anchor: _Anchor,
+        center_x: int,
+        center_y: int,
+        tolerance_ref: float,
+    ) -> float | None:
+        """单锚点在 (center_x, center_y) 邻域窗口做原尺寸匹配，分数与峰位双校验。
+
+        峰位始终相对期望位置（参考坐标 × scale）校验；窗口中心在 ② 用期望位置、
+        在 ③ 粗扫兜底用粗扫峰位，复用同一套裁剪与校验逻辑。
+        """
+        expected_x = round(anchor.x * scale)
+        expected_y = round(anchor.y * scale)
+        width = max(1, round(anchor.w * scale))
+        height = max(1, round(anchor.h * scale))
+        padding = max(2, round(width * _ANCHOR_LOCAL_PADDING_RATIO))
+        left = max(0, center_x - padding)
+        top = max(0, center_y - padding)
+        right = min(gray.shape[1], center_x + width + padding)
+        bottom = min(gray.shape[0], center_y + height + padding)
+        region = gray[top:bottom, left:right]
+        if region.shape[0] < height or region.shape[1] < width:
+            return None  # 低分辨率/贴边时窗口容不下模板，matchTemplate 会抛错，直接判否
+        template = cv2.resize(anchor.image, (width, height), interpolation=cv2.INTER_AREA)
+        result = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
+        _, max_value, _, max_loc = cv2.minMaxLoc(result)
+        self._anchor_best_observed = max(self._anchor_best_observed, float(max_value))
+        if max_value < threshold:
+            return None
+        tolerance = max(2, round(tolerance_ref * scale))
+        if (abs(left + max_loc[0] - expected_x) > tolerance
+                or abs(top + max_loc[1] - expected_y) > tolerance):
+            return None
+        return float(max_value)
+
+    def _anchors_full_fallback(self, gray: np.ndarray, threshold: float, base_scale: float) -> float | None:
+        """全图兜底：1/4 降采样粗扫，粗扫逼近阈值的锚点才在峰位邻域做原尺寸精扫。
+
+        轮询常态是非目标页，小锚点粗扫即可判否（机制与大模板粗扫一致），位置校验
+        由精扫窗口复用 _anchor_window_score 的宽容差版本完成。
+        """
+        coarse_gray = cv2.resize(
+            gray, None, fx=_COARSE_SCAN_RATIO, fy=_COARSE_SCAN_RATIO,
+            interpolation=cv2.INTER_AREA,
+        )
+        coarse_threshold = max(0.0, threshold - _COARSE_SCAN_MARGIN)
+        scores: list[float] = []
+        for anchor in self._anchors:
+            width = max(1, round(anchor.w * base_scale))
+            height = max(1, round(anchor.h * base_scale))
+            coarse_width = max(1, round(width * _COARSE_SCAN_RATIO))
+            coarse_height = max(1, round(height * _COARSE_SCAN_RATIO))
+            if coarse_width > coarse_gray.shape[1] or coarse_height > coarse_gray.shape[0]:
+                return None
+            template = cv2.resize(anchor.image, (coarse_width, coarse_height), interpolation=cv2.INTER_AREA)
+            result = cv2.matchTemplate(coarse_gray, template, cv2.TM_CCOEFF_NORMED)
+            _, coarse_value, _, coarse_loc = cv2.minMaxLoc(result)
+            if coarse_value < coarse_threshold:
+                return None
+            peak_x = round(coarse_loc[0] / _COARSE_SCAN_RATIO)
+            peak_y = round(coarse_loc[1] / _COARSE_SCAN_RATIO)
+            score = self._anchor_window_score(
+                gray, threshold, base_scale, anchor, peak_x, peak_y, _ANCHOR_FULL_TOLERANCE_REF)
+            if score is None:
+                return None
+            scores.append(score)
+        return min(scores)
+
+    def _anchor_hit(self, scale: float, strategy: str, confidence: float) -> tuple[bool, float]:
+        """锚点命中收尾：记录策略、跨实例缓存缩放并清零未命中轮数。"""
+        self._last_match_scale = scale
+        self._last_match_strategy = strategy
+        self._anchor_history_scale = scale  # 同实例下一轮 ① 直接复验
+        manifest = self._anchor_manifest_path
+        _ANCHOR_MISS_ROUNDS[str(manifest)] = 0
+        try:
+            _LAST_SCALE_CACHE[str(manifest)] = (manifest.stat().st_mtime_ns, scale)
+        except OSError:
+            pass
+        return True, confidence
+
+    def _note_anchor_miss(self, frame_shape: tuple[int, ...]) -> None:
+        """连续未命中计数；达到阈值轮数打一条 WARNING（版本改版静默失效的唯一显式出口）。"""
+        key = str(self._anchor_manifest_path)
+        rounds = _ANCHOR_MISS_ROUNDS.get(key, 0) + 1
+        _ANCHOR_MISS_ROUNDS[key] = rounds
+        logger.debug("对局攻略锚点未命中: 观测最高分 %.4f", self._anchor_best_observed)
+        if rounds == _ANCHOR_STALE_WARN_ROUNDS:
+            reference_width, reference_height = self._anchor_reference_size
+            logger.warning(
+                "对局攻略锚点连续 %d 轮未命中，疑似游戏 UI 改版或截图分辨率异常 "
+                "(当前 %dx%d，参考 %dx%d)，请核对 %s",
+                rounds, frame_shape[1], frame_shape[0], reference_width, reference_height,
+                self._anchor_manifest_path,
+            )
 
     # ── 删除 ──────────────────────────────────────────────────────────
 

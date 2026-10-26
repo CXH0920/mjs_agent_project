@@ -47,8 +47,6 @@ class MumuRecognitionPage(QWidget):
 
         self.template_section.hero_select_requested.connect(self._on_select_template)
         self.template_section.hero_make_requested.connect(self._on_make_template)
-        self.template_section.match_guide_select_requested.connect(self._on_select_match_guide_template)
-        self.template_section.match_guide_make_requested.connect(self._on_make_match_guide_template)
 
         self.ocr_polling_section.poll_mode_changed.connect(self._update_parameter_controls)
         self.ocr_polling_section.resume_requested.connect(self._on_resume_poll)
@@ -67,10 +65,6 @@ class MumuRecognitionPage(QWidget):
     @property
     def make_template_button(self):
         return self.template_section.hero_make_button
-
-    @property
-    def match_guide_make_button(self):
-        return self.template_section.match_guide_make_button
 
     @property
     def resume_poll_button(self):
@@ -118,11 +112,7 @@ class MumuRecognitionPage(QWidget):
         template.hero_make_button.setEnabled(
             can_make_template and not self._coordinator.is_template_capture_in_progress("hero_selection")
         )
-        template.match_guide_make_button.setEnabled(
-            can_make_template and not self._coordinator.is_template_capture_in_progress("match_guide")
-        )
         template.hero_select_button.setEnabled(state != "connecting")
-        template.match_guide_select_button.setEnabled(state != "connecting")
         can_capture_roi = self._coordinator.capture is not None and state != "connecting"
         polling.hero_roi_capture_button.setEnabled(
             can_capture_roi and not self._coordinator.is_roi_layout_capture_in_progress("hero_selection")
@@ -198,10 +188,13 @@ class MumuRecognitionPage(QWidget):
     # ────────────────────────────────────────────────
 
     def start_template_capture(self, template_name: str) -> None:
-        """发起一次模板制作截图（对话框与测试共用的公开入口）。"""
+        """发起一次模板制作截图（对话框与测试共用的公开入口）。
+
+        对局攻略页为随包锚点判定，无模板制作入口，仅武将选择页可达。
+        """
         if not self._coordinator.start_template_capture(template_name):
             return
-        button = self._template_button(template_name)
+        button = self.template_section.hero_make_button
         button.setEnabled(False)
         button.setText("正在截图...")
 
@@ -222,31 +215,8 @@ class MumuRecognitionPage(QWidget):
         except Exception as exc:
             QMessageBox.warning(self.window(), "选择模板", f"加载模板时出错:\n{exc}")
 
-    def _on_make_match_guide_template(self) -> None:
-        self.start_template_capture("match_guide")
-
-    def _on_select_match_guide_template(self) -> None:
-        """选择并保存对局攻略模板文件。"""
-        path, _ = QFileDialog.getOpenFileName(
-            self.window(), "选择对局攻略模板图片", str(DEFAULT_TEMPLATE_DIR),
-            "图片 (*.png *.jpg *.jpeg)",
-        )
-        if not path:
-            return
-        try:
-            self._coordinator.select_template(path, "match_guide")
-            self._refresh_match_guide_template_status()
-        except Exception as exc:
-            QMessageBox.warning(self.window(), "选择对局攻略模板", f"加载模板时出错:\n{exc}")
-
-    def _template_button(self, template_name: str):
-        return (
-            self.template_section.match_guide_make_button
-            if template_name == "match_guide" else self.template_section.hero_make_button
-        )
-
     def _restore_template_button(self, template_name: str) -> None:
-        button = self._template_button(template_name)
+        button = self.template_section.hero_make_button
         button.setEnabled(True)
         button.setText("制作模板")
 
@@ -259,8 +229,7 @@ class MumuRecognitionPage(QWidget):
 
             from src.ui.configuration.roi_selector import RoiSelectorDialog
 
-            title = "框选对局攻略页面模板区域" if template_name == "match_guide" else "框选模板区域（如页面标题或按钮）"
-            dialog = RoiSelectorDialog(pixmap, title=title, parent=self.window())
+            dialog = RoiSelectorDialog(pixmap, title="框选模板区域（如页面标题或按钮）", parent=self.window())
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             roi = dialog.get_roi()
@@ -270,10 +239,11 @@ class MumuRecognitionPage(QWidget):
             self._coordinator.create_template(image, roi, template_name)
             self._refresh_template(template_name)
             template_path = self._coordinator.template_status(template_name).path
-            message = f"模板已保存到:\n{template_path}"
-            if template_name == "hero_selection":
-                message += f"\n\nROI: ({roi[0]}, {roi[1]})  {roi[2]}×{roi[3]}"
-            show_toast(self.window(), message, duration=3000)
+            show_toast(
+                self.window(),
+                f"模板已保存到:\n{template_path}\n\nROI: ({roi[0]}, {roi[1]})  {roi[2]}×{roi[3]}",
+                duration=3000,
+            )
         except Exception as exc:
             logger.exception("制作模板异常")
             QMessageBox.warning(self.window(), "制作模板", f"制作模板时出错:\n{exc}")
