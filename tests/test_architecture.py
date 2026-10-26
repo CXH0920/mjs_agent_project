@@ -258,7 +258,10 @@ CLASS_BUDGETS: dict[str, int] = {
     # 仍为配置协调（UI 不直连 capture 层的架构转出口），无拆分必要
     # 42 → 43：连接类别单选切换（2026-10-26）——switch_connection_mode
     # 品牌记忆/恢复编排单方法
-    "business/emulator/mumu_config_coordinator.py:MumuConfigCoordinator": 43,
+    # 43 → 45：探测结果品牌校验（2026-10-26）——_on_device_refresh_failed
+    # 槽与 _discard_stale_refresh 补发两方法堵跨品牌切换竞态（过期结果
+    # 覆盖当前品牌列表），接收后台结果的编排职责内聚
+    "business/emulator/mumu_config_coordinator.py:MumuConfigCoordinator": 45,
     # MumuDevicePage 41：连接类别单选切换（2026-10-26）新增 _on_mode_activated
     # 入册（40 基线 + 双形态/单选接线），页面装配职责内聚
     "ui/configuration/mumu_device_page.py:MumuDevicePage": 41,
@@ -741,7 +744,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     #（真机取证定稿默认"名将杀"，窗口识别主键为进程名+类名）
     # 382 → 385：连接类别单选改造（2026-10-26）——新增 EMULATOR_BRAND 品牌
     # 记忆键（PC 客户端期间记住上次模拟器品牌，切回时恢复）
-    "config/env.py": 385,
+    # 385 → 408：连接键回退收口（2026-10-26）——LEGACY_CONNECTION_KEYS 与
+    # connection_key 落位 config 层（连接域/OCR/doctor/UI 五处零散 or 回退
+    # 统一调用，"空值也回退"语义钉死），capture_connection 删除本地副本
+    "config/env.py": 408,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示

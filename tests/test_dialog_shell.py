@@ -59,8 +59,8 @@ class _MumuCaptureService(QObject):
 class _MumuOperationService(QObject):
     adb_detected = Signal(bool, str, str)
     adb_reprobed = Signal(str)
-    devices_refreshed = Signal(object)
-    device_refresh_failed = Signal(str)
+    devices_refreshed = Signal(object, str)
+    device_refresh_failed = Signal(str, str)
     connection_finished = Signal(bool, str)
     disconnection_finished = Signal(bool, str)
     device_tested = Signal(bool, str, str)
@@ -69,7 +69,7 @@ class _MumuOperationService(QObject):
     operation_failed = Signal(str, str)
 
     def refresh_devices(self, emulator_type: str = "mumu") -> None:
-        self.devices_refreshed.emit([])
+        self.devices_refreshed.emit([], emulator_type)
 
     def shutdown(self) -> None:
         pass

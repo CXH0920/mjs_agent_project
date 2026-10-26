@@ -58,8 +58,8 @@ class _OcrService:
 class _OperationService(QObject):
     adb_detected = Signal(bool, str, str)
     adb_reprobed = Signal(str)
-    devices_refreshed = Signal(object)
-    device_refresh_failed = Signal(str)
+    devices_refreshed = Signal(object, str)
+    device_refresh_failed = Signal(str, str)
     connection_finished = Signal(bool, str)
     disconnection_finished = Signal(bool, str)
     device_tested = Signal(bool, str, str)
@@ -120,7 +120,7 @@ def test_connect_and_save_require_explicit_multi_instance_selection(tmp_path: Pa
         EmulatorDeviceInfo("1", "实例 A", 16448, True),
         EmulatorDeviceInfo("2", "实例 B", 16416, True),
     ]
-    operation.devices_refreshed.emit(devices)
+    operation.devices_refreshed.emit(devices, "mumu")
 
     assert "多个运行中的模拟器实例" in coordinator.connect(None, False)
     config, error = coordinator.save_config({}, None, False)
@@ -320,7 +320,7 @@ def test_connect_adopts_auto_highlighted_device_port_across_brands(tmp_path: Pat
     coordinator, capture, _ocr, operation = _coordinator(tmp_path)
     coordinator._config["emulator_adb_port"] = 16448  # 旧品牌（MuMu）残留端口
     device = EmulatorDeviceInfo("1", "Nox_1", 62025, True)
-    operation.devices_refreshed.emit([device])  # 唯一运行实例被自动高亮
+    operation.devices_refreshed.emit([device], "mumu")  # 唯一运行实例被自动高亮
 
     assert coordinator.connect(device, selected_explicitly=False) == ""
 
@@ -331,7 +331,7 @@ def test_connect_adopts_auto_highlighted_device_port_across_brands(tmp_path: Pat
 def test_update_emulator_type_invalidates_previous_devices(tmp_path: Path) -> None:
     """R4：品牌切换即更换探测上下文，旧品牌设备列表随之作废。"""
     coordinator, _capture, _ocr, operation = _coordinator(tmp_path)
-    operation.devices_refreshed.emit([EmulatorDeviceInfo("1", "MuMu 实例", 16448, True)])
+    operation.devices_refreshed.emit([EmulatorDeviceInfo("1", "MuMu 实例", 16448, True)], "mumu")
     assert coordinator.devices
 
     coordinator.update_emulator_type("bluestacks")
@@ -355,3 +355,36 @@ def test_adb_reprobe_updates_path_silently_and_keeps_old_on_miss(tmp_path: Path)
     operation.adb_reprobed.emit("")  # 未找到：保留旧路径
 
     assert coordinator.config["emulator_adb_path"] == "new/HD-Adb.exe"
+
+
+def test_stale_brand_refresh_result_is_discarded_and_refetched(tmp_path: Path) -> None:
+    """跨品牌切换竞态：旧品牌结果后到即丢弃，并补发当前品牌刷新。
+
+    单线程队列里 B→A→B 快速切换时，被去重丢弃的当前品牌刷新无人回传，
+    过期 A 结果最后到达会覆盖 B 列表（连接可能选错品牌端口）；结果携带
+    发起品牌后按品牌丢弃，UI 停留探测中直到补发的当前品牌结果回传。
+    """
+    coordinator, _capture, _ocr, operation = _coordinator(tmp_path)
+    coordinator.update_emulator_type("bluestacks")  # 模拟探测期间用户已切品牌
+    refreshed: list[object] = []
+    coordinator.devices_changed.connect(refreshed.append)
+    stale = [EmulatorDeviceInfo("1", "雷电 实例", 5555, True)]
+
+    operation.devices_refreshed.emit(stale, "ldplayer")
+
+    assert coordinator.devices == ()  # 过期结果未写入（品牌切换时已清空）
+    assert refreshed == []            # 未向 UI 广播旧品牌列表
+    assert operation.refresh_count == 1  # 补发了当前品牌（bluestacks）刷新
+
+
+def test_stale_brand_refresh_failure_is_discarded_and_refetched(tmp_path: Path) -> None:
+    """失败路径同样按品牌校验：过期失败原因不得顶掉当前品牌的探测中状态。"""
+    coordinator, _capture, _ocr, operation = _coordinator(tmp_path)
+    coordinator.update_emulator_type("mumu")
+    failures: list[str] = []
+    coordinator.device_refresh_failed.connect(failures.append)
+
+    operation.device_refresh_failed.emit("未找到雷电 console 工具（ldconsole）", "ldplayer")
+
+    assert failures == []
+    assert operation.refresh_count == 1

@@ -1,4 +1,4 @@
-"""MuMu 12 模拟器实例探测（自 prober.py 原样平移，多品牌连接支持）。
+"""MuMu 12 模拟器实例探测（自 prober.py 平移，多品牌连接支持）。
 
 负责自动探测 MuMu 安装路径、自带 adb.exe 位置和运行中的实例端口。
 注册表契约（EMULATOR_PROBERS）：probe_devices(retries) 与 find_adb()。
@@ -81,26 +81,9 @@ def _get_mumu_candidates() -> list[Path]:
     return candidates
 
 
-def _get_legacy_candidates() -> list[Path]:
-    """兼容旧版的候选路径列表。"""
-    return [
-        Path("D:/模拟器/MuMu Player 12"),
-        Path("D:/模拟器/MuMu 12"),
-        Path("C:/Program Files/Netease/MuMu Player 12"),
-        Path("C:/Program Files (x86)/Netease/MuMu Player 12"),
-        Path("C:/Program Files/Netease/MuMuPlayer-12.0"),
-        Path("C:/Program Files (x86)/Netease/MuMuPlayer-12.0"),
-        Path("D:/Program Files/Netease/MuMu Player 12"),
-        Path("D:/Program Files (x86)/Netease/MuMu Player 12"),
-    ]
-
-
 def _find_mumu_root() -> Path | None:
     """查找 MuMu 模拟器安装根目录。"""
     for root in _get_mumu_candidates():
-        if root.exists() and (root / "nx_main").exists():
-            return root
-    for root in _get_legacy_candidates():
         if root.exists() and (root / "nx_main").exists():
             return root
     return None
@@ -109,24 +92,13 @@ def _find_mumu_root() -> Path | None:
 def find_adb() -> str:
     """探测 MuMu 安装目录自带的 adb.exe（PATH 分支在包统一入口 probe_adb）。
 
-    查找顺序：
-      1. MuMu 安装目录（注册表/环境变量/常见路径）下的 adb
-      2. 旧版候选路径
+    查找顺序：MuMu 安装目录（环境变量/进程反查/注册表/常见路径）下的 adb。
 
     Returns:
         adb.exe 完整路径，找不到则返回空字符串。
     """
     candidates = _get_mumu_candidates()
-
-    # 1. 先查 MuMu 安装目录下的 adb
     for root in candidates:
-        for subpath in ["nx_main/adb.exe", "emulator/nemu/EmulatorShell/adb.exe"]:
-            p = root / subpath
-            if p.exists():
-                return str(p.resolve())
-
-    # 2. 最后查旧的候选路径（兼容）
-    for root in _get_legacy_candidates():
         for subpath in ["nx_main/adb.exe", "emulator/nemu/EmulatorShell/adb.exe"]:
             p = root / subpath
             if p.exists():
@@ -141,12 +113,12 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     mumu_root = _find_mumu_root()
     if not mumu_root:
         logger.warning("未找到 MuMu 模拟器安装目录")
-        return _fallback("未找到 MuMu 模拟器安装目录")
+        return port_scan.fallback_result("mumu", "MuMu", "未找到 MuMu 模拟器安装目录")
 
     manager_path = mumu_root / "nx_main" / "MuMuManager.exe"
     if not manager_path.exists():
         logger.warning("MuMuManager.exe 不存在")
-        return _fallback("MuMuManager.exe 不存在")
+        return port_scan.fallback_result("mumu", "MuMu", "MuMuManager.exe 不存在")
 
     error = ""
     for attempt in range(retries + 1):
@@ -183,13 +155,4 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
             time.sleep(0.2)
 
     logger.warning("%s", error)
-    return _fallback(error)
-
-
-def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
-    """console 路径失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
-    devices = port_scan.probe_devices_via_ports("mumu", "MuMu")
-    if devices:
-        logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
-        return devices, ""
-    return [], f"{error}（端口段扫描也未发现实例）"
+    return port_scan.fallback_result("mumu", "MuMu", error)

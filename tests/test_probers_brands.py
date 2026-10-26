@@ -688,3 +688,67 @@ def test_memu_parse_tolerates_broken_configs(monkeypatch, tmp_path) -> None:
 
     assert error == ""
     assert [d.name for d in devices] == ["MEmu"]
+
+
+# ── retries 契约与端口规则单源 ───────────────────────────────────────
+
+
+def test_console_brands_do_not_retry_retries_argument(monkeypatch) -> None:
+    """特征测试：retries 仅 MuMu 语义生效，雷电/夜神 console 失败不重试。
+
+    注册表签名统一带 retries，但非 MuMu 品牌接受而忽略（console 失败直接
+    落端口兜底）；本用例锚定该契约，防止后续误以为 retries 全品牌生效。
+    """
+    for brand_module, console_probe in ((ldplayer, "_find_console"), (nox, "_find_console")):
+        calls: list[list[str]] = []
+
+        def failing_console(args, timeout=10):
+            calls.append(args)
+            return None, "命令执行超时"
+
+        monkeypatch.setattr(brand_module, console_probe, lambda: None)  # console 缺失路径
+        monkeypatch.setattr(brand_module, "run_console_tool", failing_console)
+        monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+
+        # console 缺失直接走兜底；再走 run_console_tool 失败路径验证无重试
+        monkeypatch.setattr(brand_module, console_probe, lambda: Path("fake-console.exe"))
+        _devices, error = brand_module.probe_devices(retries=3)
+
+        assert calls and len(calls) == 1, f"{brand_module.__name__} 应只调用一次 console（无重试）"
+        assert "未发现实例" in error or "超时" in error
+
+
+def test_port_rules_match_brand_module_constants() -> None:
+    """特征测试：品牌模块端口推导常量与 port_scan.PORT_RULES 同源同值。
+
+    nox/ldplayer 的 console 解析推导与兜底扫描共用同一份端口规则，
+    本用例锚定两处数值一致（收口为单源后改由 import 保证）。
+    """
+    nox_base, nox_step, nox_count = port_scan.PORT_RULES["nox"]
+    assert (nox._ADB_PORT_BASE, nox._ADB_PORT_STEP) == (nox_base, nox_step)
+    assert nox._NOX_PORT_BAND == range(nox_base, nox_base + nox_step * nox_count)
+
+    ld_base, ld_step, _count = port_scan.PORT_RULES["ldplayer"]
+    assert (ldplayer._ADB_PORT_BASE, ldplayer._ADB_PORT_STEP) == (ld_base, ld_step)
+
+
+def test_mumu_retries_actually_retries(monkeypatch, tmp_path) -> None:
+    """契约对照：MuMu 的 retries 语义真实生效（与上例非 MuMu 品牌对照）。"""
+    manager_path = tmp_path / "nx_main" / "MuMuManager.exe"
+    manager_path.parent.mkdir()
+    manager_path.touch()
+    attempts: list[int] = []
+
+    def always_fail(*_args, **_kwargs):
+        attempts.append(1)
+        from types import SimpleNamespace
+        return SimpleNamespace(returncode=1, stdout=b"")
+
+    monkeypatch.setattr(mumu, "_find_mumu_root", lambda: tmp_path)
+    monkeypatch.setattr(mumu, "subprocess", __import__("types").SimpleNamespace(run=always_fail))
+    monkeypatch.setattr(mumu, "time", __import__("types").SimpleNamespace(sleep=lambda _s: None))
+    monkeypatch.setattr(port_scan, "probe_devices_via_ports", lambda emulator_type, label: [])
+
+    _devices, _error = mumu.probe_devices(retries=2)
+
+    assert len(attempts) == 3  # 初次 + 2 次重试

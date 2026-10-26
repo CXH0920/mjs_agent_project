@@ -48,8 +48,10 @@ EMULATOR_HINTS: dict[str, str] = {
 DEFAULT_EMULATOR_TYPE = "mumu"
 
 # 品牌注册表：模块需实现 probe_devices(retries=1) -> tuple[list[EmulatorDeviceInfo], str]
-# 与 find_adb() -> str（品牌自带 adb 路径，不含 PATH 分支）。pc_client 非 ADB 模拟器，
-# 不在此注册
+# 与 find_adb() -> str（品牌自带 adb 路径，不含 PATH 分支）。签名统一带 retries，
+# 但语义仅 MuMu 生效（MuMuManager 查询失败重试）；其余品牌接受而忽略——console
+# 失败直接落端口兜底，无重试必要（契约由 test_probers_brands 锚定）。pc_client
+# 非 ADB 模拟器，不在此注册
 EMULATOR_PROBERS: dict[str, ModuleType] = {
     "mumu": mumu,
     "ldplayer": ldplayer,

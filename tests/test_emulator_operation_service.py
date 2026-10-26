@@ -42,7 +42,8 @@ def test_refresh_devices_runs_through_operation_service(monkeypatch) -> None:
     service = EmulatorOperationService(_CaptureService())
     completed = Event()
     received: list[list[EmulatorDeviceInfo]] = []
-    service.devices_refreshed.connect(lambda result: (received.append(result), completed.set()))
+    service.devices_refreshed.connect(
+        lambda devices, _requested_type: (received.append(devices), completed.set()))
 
     service.refresh_devices()
 
@@ -60,7 +61,8 @@ def test_refresh_failure_is_reported_without_device_result(monkeypatch) -> None:
     completed = Event()
     errors: list[str] = []
     results: list[object] = []
-    service.device_refresh_failed.connect(lambda message: (errors.append(message), completed.set()))
+    service.device_refresh_failed.connect(
+        lambda message, _requested_type: (errors.append(message), completed.set()))
     service.devices_refreshed.connect(results.append)
 
     service.refresh_devices()
@@ -108,7 +110,7 @@ def test_duplicate_refresh_submissions_are_coalesced(monkeypatch) -> None:
         "src.business.emulator.emulator_operation_service.probe_all_devices_with_status", slow_probe)
     service = EmulatorOperationService(_CaptureService())
     completed = Event()
-    service.devices_refreshed.connect(lambda devices: completed.set())
+    service.devices_refreshed.connect(lambda devices, _requested_type: completed.set())
 
     service.refresh_devices("memu")
     assert _wait(started)
@@ -137,7 +139,7 @@ def test_refresh_submissions_with_different_brands_both_run(monkeypatch) -> None
     refreshed_count: list[int] = []
     both_completed = Event()
 
-    def _on_refreshed(_devices) -> None:
+    def _on_refreshed(_devices, _requested_type) -> None:
         refreshed_count.append(1)
         if len(refreshed_count) == 2:
             both_completed.set()

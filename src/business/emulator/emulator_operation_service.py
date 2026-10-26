@@ -38,8 +38,10 @@ class EmulatorOperationService(QObject):
 
     adb_detected = Signal(bool, str, str)  # (success, adb_path, message)
     adb_reprobed = Signal(str)  # 品牌切换静默重探结果（空 = 未找到，沿用旧路径）
-    devices_refreshed = Signal(object)  # list[EmulatorDeviceInfo]
-    device_refresh_failed = Signal(str)
+    # 回传携带发起时品牌：coordinator 据此丢弃跨品牌切换后的过期结果
+    #（单线程队列里不同品牌的任务交错完成时，后到的旧品牌结果不得覆盖新品牌列表）
+    devices_refreshed = Signal(object, str)  # (list[EmulatorDeviceInfo], 发起时品牌)
+    device_refresh_failed = Signal(str, str)  # (错误消息, 发起时品牌)
     connection_finished = Signal(bool, str)
     disconnection_finished = Signal(bool, str)
     device_tested = Signal(bool, str, str)  # (success, target, message)
@@ -87,9 +89,9 @@ class EmulatorOperationService(QObject):
         def completed(result: tuple[list, str]) -> None:
             devices, error = result
             if error:
-                self.device_refresh_failed.emit(error)
+                self.device_refresh_failed.emit(error, emulator_type)
             else:
-                self.devices_refreshed.emit(devices)
+                self.devices_refreshed.emit(devices, emulator_type)
 
         self._submit(
             self._probe_executor,

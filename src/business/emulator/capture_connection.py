@@ -17,31 +17,14 @@ from typing import Callable
 
 from src.capture.adb_screen import AdbCapture
 from src.capture.pc_client import PC_WINDOW_TITLE, PcClientCapture
+from src.config.env import connection_key
 
 logger = logging.getLogger(__name__)
 
 
-_LEGACY_KEYS = {
-    "emulator_adb_path": "mumu_adb_path",
-    "emulator_adb_port": "mumu_adb_port",
-    "emulator_screenshot_mode": "mumu_screenshot_mode",
-}
-
-
-def _conn_key(config: dict, key: str, default: object = "") -> object:
-    """连接键读取：emulator_* 新键优先，mumu_* 旧键回退（升级过渡期）。"""
-    value = config.get(key)
-    if value in (None, ""):
-        legacy = _LEGACY_KEYS.get(key)
-        if legacy is not None:
-            return config.get(legacy, default)
-        return default
-    return value
-
-
 def _is_pc_client(config: dict) -> bool:
     """当前配置是否为官方 PC 客户端连接方式。"""
-    return _conn_key(config, "emulator_type") == "pc_client"
+    return connection_key(config, "emulator_type") == "pc_client"
 
 
 class CaptureConnectionManager:
@@ -56,7 +39,7 @@ class CaptureConnectionManager:
         self._on_state_change = on_state_change
         self._on_status = on_status
         self._on_event_status = on_event_status
-        self._capture: AdbCapture | None = None
+        self._capture: AdbCapture | PcClientCapture | None = None
         self._config: dict = {}  # 当前配置缓存
         self._connection_state = "unconfigured"
         self._connection_detail = ""
@@ -91,25 +74,25 @@ class CaptureConnectionManager:
         配置无变化时不重建实例。读取兼容 mumu_* 旧键（升级过渡期）。
         """
         with self._session_lock:
-            path_changed = _conn_key(config, "emulator_adb_path") != _conn_key(self._config, "emulator_adb_path")
-            port_changed = _conn_key(config, "emulator_adb_port") != _conn_key(self._config, "emulator_adb_port")
-            mode_changed = _conn_key(config, "emulator_screenshot_mode") != _conn_key(self._config, "emulator_screenshot_mode")
-            type_changed = _conn_key(config, "emulator_type") != _conn_key(self._config, "emulator_type")
-            title_changed = (_conn_key(config, "pc_window_title", PC_WINDOW_TITLE)
-                             != _conn_key(self._config, "pc_window_title", PC_WINDOW_TITLE))
+            path_changed = connection_key(config, "emulator_adb_path") != connection_key(self._config, "emulator_adb_path")
+            port_changed = connection_key(config, "emulator_adb_port") != connection_key(self._config, "emulator_adb_port")
+            mode_changed = connection_key(config, "emulator_screenshot_mode") != connection_key(self._config, "emulator_screenshot_mode")
+            type_changed = connection_key(config, "emulator_type") != connection_key(self._config, "emulator_type")
+            title_changed = (connection_key(config, "pc_window_title", PC_WINDOW_TITLE)
+                             != connection_key(self._config, "pc_window_title", PC_WINDOW_TITLE))
 
             self._config = dict(config)
 
             if _is_pc_client(config):
                 if (type_changed or title_changed
                         or not isinstance(self._capture, PcClientCapture)):
-                    window_title = str(_conn_key(config, "pc_window_title", PC_WINDOW_TITLE))
+                    window_title = str(connection_key(config, "pc_window_title", PC_WINDOW_TITLE))
                     self._capture = PcClientCapture(window_title=window_title)
                     self.set_connection_state("disconnected")
                     logger.info("连接方式为官方 PC 客户端（窗口标题: %s）", window_title)
                 return
 
-            adb_path = _conn_key(config, "emulator_adb_path")
+            adb_path = connection_key(config, "emulator_adb_path")
             if not adb_path:
                 self._capture = None
                 self.set_connection_state("unconfigured")
@@ -120,19 +103,19 @@ class CaptureConnectionManager:
                     or isinstance(self._capture, PcClientCapture)):
                 self._capture = AdbCapture(
                     adb_path=adb_path,
-                    adb_port=_conn_key(config, "emulator_adb_port", 0),
-                    screenshot_mode=_conn_key(config, "emulator_screenshot_mode", "auto"),
-                    emulator_type=_conn_key(config, "emulator_type", "mumu"),
+                    adb_port=connection_key(config, "emulator_adb_port", 0),
+                    screenshot_mode=connection_key(config, "emulator_screenshot_mode", "auto"),
+                    emulator_type=connection_key(config, "emulator_type", "mumu"),
                 )
                 self.set_connection_state("disconnected")
                 logger.info("CaptureService 配置已更新，ADB: %s:%s",
-                            adb_path, _conn_key(config, "emulator_adb_port", "auto"))
+                            adb_path, connection_key(config, "emulator_adb_port", "auto"))
             else:
                 logger.debug("CaptureService 配置已更新（仅 OCR 参数）")
 
     def set_target_port(self, port: int) -> None:
         """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
-        if not _conn_key(self._config, "emulator_adb_path"):
+        if not connection_key(self._config, "emulator_adb_path"):
             self.set_connection_state("unconfigured")
             return
         config = dict(self._config)
@@ -146,16 +129,16 @@ class CaptureConnectionManager:
             return dict(self._config)
 
     @property
-    def capture(self) -> AdbCapture | None:
+    def capture(self) -> AdbCapture | PcClientCapture | None:
         with self._session_lock:
             return self._capture
 
     @capture.setter
-    def capture(self, cap: AdbCapture | None) -> None:
+    def capture(self, cap: AdbCapture | PcClientCapture | None) -> None:
         with self._session_lock:
             self._capture = cap
 
-    def is_current(self, capture: AdbCapture) -> bool:
+    def is_current(self, capture: AdbCapture | PcClientCapture) -> bool:
         """capture 是否仍是当前会话实例（连接期间配置热更会重建实例）。"""
         with self._session_lock:
             return capture is self._capture

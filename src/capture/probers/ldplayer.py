@@ -19,8 +19,8 @@ from src.capture.probers.models import EmulatorDeviceInfo
 logger = logging.getLogger(__name__)
 
 _LABEL = "雷电"
-_ADB_PORT_BASE = 5555
-_ADB_PORT_STEP = 2
+# 端口规则单源于 port_scan.PORT_RULES：console 解析推导与兜底扫描共用同一份
+_ADB_PORT_BASE, _ADB_PORT_STEP, _ = port_scan.PORT_RULES["ldplayer"]
 
 
 def _probe_registry() -> str | None:
@@ -127,22 +127,13 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有雷电实例；console 失败时回退端口段扫描。"""
     console = _find_console()
     if console is None:
-        return _fallback("未找到雷电 console 工具（ldconsole）")
+        return port_scan.fallback_result("ldplayer", _LABEL, "未找到雷电 console 工具（ldconsole）")
 
     output, error = run_console_tool([str(console), "list2"])
     if output is None:
-        return _fallback(f"ldconsole 查询失败：{error}")
+        return port_scan.fallback_result("ldplayer", _LABEL, f"ldconsole 查询失败：{error}")
 
     devices = _parse_console_output(output)
     devices = port_scan.supplement_when_empty("ldplayer", _LABEL, devices)
     logger.info("探测到 %d 个实例（含端口扫描补充）", len(devices))
     return devices, ""
-
-
-def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
-    """console 路径失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
-    devices = port_scan.probe_devices_via_ports("ldplayer", _LABEL)
-    if devices:
-        logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
-        return devices, ""
-    return [], f"{error}（端口段扫描也未发现实例）"

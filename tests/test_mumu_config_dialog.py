@@ -28,8 +28,8 @@ def _app() -> QApplication:
 class _OperationService(QObject):
     adb_detected = Signal(bool, str, str)
     adb_reprobed = Signal(str)
-    devices_refreshed = Signal(object)
-    device_refresh_failed = Signal(str)
+    devices_refreshed = Signal(object, str)
+    device_refresh_failed = Signal(str, str)
     connection_finished = Signal(bool, str)
     disconnection_finished = Signal(bool, str)
     device_tested = Signal(bool, str, str)
@@ -46,7 +46,7 @@ class _OperationService(QObject):
 
     def refresh_devices(self, emulator_type: str = "mumu") -> None:
         self.refresh_types.append(emulator_type)
-        self.devices_refreshed.emit(self._devices)
+        self.devices_refreshed.emit(self._devices, emulator_type)
 
     def reprobe_adb(self, emulator_type: str = "mumu") -> None:
         self.reprobe_types.append(emulator_type)
@@ -216,7 +216,7 @@ def test_refresh_failure_preserves_previous_device_selection() -> None:
     device = EmulatorDeviceInfo("1", "实例", 16448, True)
     dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448}, [device])
 
-    dialog._operation_service.device_refresh_failed.emit("MuMuManager 查询失败")
+    dialog._operation_service.device_refresh_failed.emit("MuMuManager 查询失败", "mumu")
 
     assert dialog._device_page.device_combo.currentData() == device
     assert dialog._device_page.port_label.text() == "16448"
@@ -229,7 +229,7 @@ def test_template_capture_remains_disabled_during_device_refresh() -> None:
     dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 16448}, [device])
 
     dialog._recognition_page.start_template_capture("match_guide")
-    dialog._operation_service.devices_refreshed.emit([device])
+    dialog._operation_service.devices_refreshed.emit([device], "mumu")
 
     assert dialog._recognition_page.match_guide_make_button.text() == "正在截图..."
     assert not dialog._recognition_page.match_guide_make_button.isEnabled()
@@ -378,9 +378,10 @@ class _RefreshFailsAfterSwitchService(_OperationService):
     def refresh_devices(self, emulator_type: str = "mumu") -> None:
         self.refresh_types.append(emulator_type)
         if self.fail_after_switch:
-            self.device_refresh_failed.emit("未找到蓝叠安装目录（注册表 BlueStacks_nxt / BlueStacks_nxt_cn）")
+            self.device_refresh_failed.emit(
+                "未找到蓝叠安装目录（注册表 BlueStacks_nxt / BlueStacks_nxt_cn）", emulator_type)
         else:
-            self.devices_refreshed.emit(self._devices)
+            self.devices_refreshed.emit(self._devices, emulator_type)
 
 
 def test_brand_switch_clears_previous_brand_results_and_reports_failure() -> None:

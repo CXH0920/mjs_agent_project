@@ -325,6 +325,29 @@ def get_mumu_config():
     """从 config.env 获取模拟器配置（键集与默认值见 _ENV_KEY_SPECS 的 mumu 域）"""
     return _config_with_defaults(load_env_config(), "mumu")
 
+
+# 连接键升级过渡期的草稿读取规则：emulator_* 新键空/缺失时回退 mumu_* 旧键。
+# 权威语义——连接域/OCR/UI/doctor 统一经 connection_key 读取运行时配置字典，
+# 勿再手抄 or 回退。两级回退并存：键元表 default_from（仅键缺失回退）为第一道
+# 升级引导；本函数为第二道（新键空串同样视为未配置），过渡期语义以本函数为准。
+LEGACY_CONNECTION_KEYS = {
+    "emulator_adb_path": "mumu_adb_path",
+    "emulator_adb_port": "mumu_adb_port",
+    "emulator_screenshot_mode": "mumu_screenshot_mode",
+}
+
+
+def connection_key(config: dict, key: str, default: object = "") -> object:
+    """读取连接配置键：emulator_* 新键空/缺失时回退 mumu_* 旧键（升级过渡期）。"""
+    value = config.get(key)
+    if value in (None, ""):
+        legacy = LEGACY_CONNECTION_KEYS.get(key)
+        if legacy is not None:
+            return config.get(legacy, default)
+        return default
+    return value
+
+
 # ============================================================
 # 配置保存
 # ============================================================

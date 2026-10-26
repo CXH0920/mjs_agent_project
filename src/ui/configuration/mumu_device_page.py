@@ -23,6 +23,7 @@ from src.business.emulator.mumu_config_coordinator import (
     MumuConfigCoordinator,
     PcWindowInfo,
 )
+from src.config.env import connection_key
 from src.ui.configuration.mumu_config_sections import MumuDeviceSection
 from src.ui.shared.widgets import show_toast
 
@@ -110,14 +111,12 @@ class MumuDevicePage(QWidget):
 
     def load_config(self, config: dict) -> None:
         """从配置加载 ADB 路径与端口显示。"""
-        adb_path = config.get("emulator_adb_path") or config.get("mumu_adb_path", "")
+        adb_path = connection_key(config, "emulator_adb_path")
         self.adb_path_edit.setText(adb_path or "(未设置，点击「自动探测」)")
         self.adb_path_edit.setProperty("raw_path", adb_path)
         self.adb_path_edit.setToolTip(adb_path)
 
-        adb_port = config.get("emulator_adb_port")
-        if adb_port is None:
-            adb_port = config.get("mumu_adb_port", 0)
+        adb_port = connection_key(config, "emulator_adb_port", 0)
         self.port_label.setText(str(adb_port) if adb_port else "(自动探测)")
 
         # 品牌下拉装载（仅模拟器品牌；PC 客户端经顶层单选切换，QSignalBlocker

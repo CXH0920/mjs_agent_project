@@ -142,10 +142,10 @@ def check_runtime_env() -> list[Finding]:
 
 def check_devices() -> list[Finding]:
     findings = []
-    from src.config.env import get_mumu_config
+    from src.config.env import connection_key, get_mumu_config
 
     config = get_mumu_config()
-    adb_path = config.get("emulator_adb_path") or config.get("mumu_adb_path")
+    adb_path = connection_key(config, "emulator_adb_path")
     if not adb_path or not Path(adb_path).exists():
         findings.append(Finding(
             "设备", "ADB 路径", FAIL, f"配置的 ADB 不存在: {adb_path}",

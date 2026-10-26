@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from src.business.common.script_runner import ScriptRunner
 from src.business.emulator.layout_resolution import compare_resolution
 from src.business.emulator.mumu_config_coordinator import EMULATOR_LABELS, MumuConfigCoordinator
-from src.config.env import IS_FROZEN, PROJECT_ROOT, get_mumu_config
+from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_mumu_config
 from src.config.onboarding_state import mark_skipped, mark_step
 from src.scripts.doctor import (
     FAIL,
@@ -327,7 +327,7 @@ class OnboardingDialog(QDialog):
         self._device_connect_button.setVisible(False)
         self._device_action.setVisible(False)
         self._set_device_status("checking", "正在探测设备…", "")
-        if not (coordinator.config.get("emulator_adb_path") or coordinator.config.get("mumu_adb_path")):
+        if not connection_key(coordinator.config, "emulator_adb_path"):
             self._device_summary.setText("未配置 ADB，正在自动探测…")
             coordinator.detect_adb()
             return

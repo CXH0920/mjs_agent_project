@@ -27,10 +27,10 @@ from src.capture.probers.models import EmulatorDeviceInfo
 logger = logging.getLogger(__name__)
 
 _LABEL = "夜神"
-_ADB_PORT_BASE = 62001
-_ADB_PORT_STEP = 24
+# 端口规则单源于 port_scan.PORT_RULES：console 解析推导与兜底扫描带共用同一份
+_ADB_PORT_BASE, _ADB_PORT_STEP, _PORT_BAND_COUNT = port_scan.PORT_RULES["nox"]
 # 夜神 adb 端口默认带（62001+24n）；netstat 关联时用于多端口过滤
-_NOX_PORT_BAND = range(_ADB_PORT_BASE, _ADB_PORT_BASE + _ADB_PORT_STEP * 16)
+_NOX_PORT_BAND = range(_ADB_PORT_BASE, _ADB_PORT_BASE + _ADB_PORT_STEP * _PORT_BAND_COUNT)
 
 
 def _probe_registry() -> str | None:
@@ -176,11 +176,11 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有夜神实例；console 失败时回退端口段扫描。"""
     console = _find_console()
     if console is None:
-        return _fallback("未找到夜神 console 工具（NoxConsole）")
+        return port_scan.fallback_result("nox", _LABEL, "未找到夜神 console 工具（NoxConsole）")
 
     output, error = run_console_tool([str(console), "list"])
     if output is None:
-        return _fallback(f"NoxConsole 查询失败：{error}")
+        return port_scan.fallback_result("nox", _LABEL, f"NoxConsole 查询失败：{error}")
 
     entries = _parse_entries(output)
     _attach_adb_ports(entries)
@@ -188,12 +188,3 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     devices = port_scan.supplement_when_empty("nox", _LABEL, devices)
     logger.info("探测到 %d 个实例（含端口扫描补充）", len(devices))
     return devices, ""
-
-
-def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
-    """console 路径失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
-    devices = port_scan.probe_devices_via_ports("nox", _LABEL)
-    if devices:
-        logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
-        return devices, ""
-    return [], f"{error}（端口段扫描也未发现实例）"

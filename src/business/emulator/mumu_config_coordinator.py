@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +35,8 @@ from src.capture.probers import (
 from src.capture.probers import EmulatorDeviceInfo as EmulatorDeviceInfo
 from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -94,7 +97,7 @@ class MumuConfigCoordinator(QObject):
         self._operation_service.adb_detected.connect(self._on_adb_detected)
         self._operation_service.adb_reprobed.connect(self._on_adb_reprobed)
         self._operation_service.devices_refreshed.connect(self._on_devices_refreshed)
-        self._operation_service.device_refresh_failed.connect(self.device_refresh_failed.emit)
+        self._operation_service.device_refresh_failed.connect(self._on_device_refresh_failed)
         self._operation_service.connection_finished.connect(self.connection_finished.emit)
         self._operation_service.disconnection_finished.connect(self.disconnection_finished.emit)
         self._operation_service.device_tested.connect(self.device_tested.emit)
@@ -363,9 +366,31 @@ class MumuConfigCoordinator(QObject):
             self.update_adb_path(adb_path)
         self.adb_path_reprobed.emit(adb_path)
 
-    def _on_devices_refreshed(self, devices: list[EmulatorDeviceInfo]) -> None:
+    def _on_devices_refreshed(self, devices: list[EmulatorDeviceInfo], requested_type: str) -> None:
+        """设备结果回传：过期品牌结果（跨品牌切换竞态）丢弃并补发当前品牌。"""
+        if requested_type != self.emulator_type:
+            self._discard_stale_refresh(requested_type)
+            return
         self._devices = list(devices)
         self.devices_changed.emit(self.devices)
+
+    def _on_device_refresh_failed(self, message: str, requested_type: str) -> None:
+        """探测失败回传：与成功路径同品牌校验，过期失败不覆盖当前品牌的探测中状态。"""
+        if requested_type != self.emulator_type:
+            self._discard_stale_refresh(requested_type)
+            return
+        self.device_refresh_failed.emit(message)
+
+    def _discard_stale_refresh(self, requested_type: str) -> None:
+        """丢弃过期品牌结果并补发当前品牌刷新。
+
+        单线程队列里旧品牌任务后到即过期（UI 已随品牌切换进入探测中过渡态，
+        显示旧品牌列表属语义错误）；补发走既有提交链路——当前品牌已有在途
+        任务时被同键去重吞掉，天然防循环，最终必有一条结果回传恢复 UI。
+        """
+        logger.info("丢弃 %s 品牌的过期探测结果（当前品牌 %s），补发当前品牌刷新",
+                    requested_type, self.emulator_type)
+        self._operation_service.refresh_devices(self.emulator_type)
 
     def _on_screenshot_ready(self, request_name: str, image) -> None:
         if request_name.startswith("roi_layout:"):

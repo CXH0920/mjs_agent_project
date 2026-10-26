@@ -183,13 +183,4 @@ def probe_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
             logger.info("探测到 %d 个逍遥实例（.memu 配置直读）", len(devices))
             return devices, ""
         return [], '逍遥配置中未读到实例 ADB 端口（MEmuHyperv VMs 下 .memu 的 ADB 转发）'
-    return _fallback("未找到逍遥实例配置目录（MEmuHyperv VMs）")
-
-
-def _fallback(error: str) -> tuple[list[EmulatorDeviceInfo], str]:
-    """配置定位失败后的端口段兜底；兜底有产出视为成功刷新（降级记日志）。"""
-    devices = port_scan.probe_devices_via_ports("memu", _LABEL)
-    if devices:
-        logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
-        return devices, ""
-    return [], f"{error}（端口段扫描也未发现实例）"
+    return port_scan.fallback_result("memu", _LABEL, "未找到逍遥实例配置目录（MEmuHyperv VMs）")

@@ -654,3 +654,4 @@ def test_capture_for_poll_times_out_when_executor_stuck(monkeypatch) -> None:
     finally:
         release.set()
     service.shutdown()
+

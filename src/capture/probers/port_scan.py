@@ -93,3 +93,16 @@ def supplement_when_empty(emulator_type: str, label: str, devices: list[Emulator
         logger.warning("%s console 枚举为空但端口带内有开放端口，已以端口扫描结果补充", label)
         return scanned
     return devices
+
+
+def fallback_result(emulator_type: str, label: str, error: str) -> tuple[list[EmulatorDeviceInfo], str]:
+    """console 主路径失败后的端口段兜底（mumu/ldplayer/nox/memu 共用降级出口）。
+
+    兜底有产出视为成功刷新（降级记日志）；蓝叠端口每实例动态分配，无固定
+    端口段可扫描，不走此路径。
+    """
+    devices = probe_devices_via_ports(emulator_type, label)
+    if devices:
+        logger.warning("%s，已回退端口段扫描发现 %d 个候选实例", error, len(devices))
+        return devices, ""
+    return [], f"{error}（端口段扫描也未发现实例）"

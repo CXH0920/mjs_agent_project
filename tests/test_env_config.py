@@ -283,3 +283,28 @@ def test_get_model_pricing_rejects_invalid_prices(
 def test_get_model_pricing_unknown_model_returns_none(monkeypatch, tmp_path) -> None:
     _use_pricing_file(monkeypatch, tmp_path, json.dumps({"models": {}}))
     assert env.get_model_pricing("nope") is None
+
+
+def test_connection_key_falls_back_on_missing_or_empty_value() -> None:
+    """连接键「空值也回退」语义（emulator_* 新键空/缺失时读 mumu_* 旧键）。
+
+    权威语义在 config 层 connection_key（连接域/OCR/UI/doctor 统一调用）；
+    与键元表 default_from（仅键缺失回退）两级并存，过渡期以本函数为准。
+    """
+    from src.config.env import connection_key
+
+    # 新键有值：直接采用，不读旧键
+    assert connection_key({"emulator_adb_path": "new.exe", "mumu_adb_path": "old.exe"},
+                          "emulator_adb_path") == "new.exe"
+    # 新键空串：回退旧键实配值
+    assert connection_key({"emulator_adb_path": "", "mumu_adb_path": "old.exe"},
+                          "emulator_adb_path") == "old.exe"
+    # 新键缺失：回退旧键
+    assert connection_key({"mumu_adb_path": "old.exe"}, "emulator_adb_path") == "old.exe"
+    # 双双缺失：返回默认值
+    assert connection_key({}, "emulator_adb_path", "fallback") == "fallback"
+    # 无映射的键：新键空时给默认值（不回退）
+    assert connection_key({"emulator_adb_port": None}, "emulator_adb_port", 0) == 0
+    # 显式 0 是合法值（自动探测端口），不触发回退
+    assert connection_key({"emulator_adb_port": 0, "mumu_adb_port": 16448},
+                          "emulator_adb_port") == 0

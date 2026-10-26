@@ -31,6 +31,7 @@ from src.business.emulator.capture_service import CaptureService
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
 from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
 from src.business.recognition.ocr_service import OcrService
+from src.config.env import connection_key
 from src.ui.configuration.mumu_device_page import MumuDevicePage
 from src.ui.configuration.mumu_recognition_page import MumuRecognitionPage
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
@@ -140,7 +141,7 @@ class MumuConfigDialog(QDialog):
 
     def _load_config(self) -> None:
         """从配置加载当前值"""
-        should_auto_detect = not (self._config.get("emulator_adb_path") or self._config.get("mumu_adb_path", ""))
+        should_auto_detect = not connection_key(self._config, "emulator_adb_path")
 
         self._device_page.load_config(self._config)
         self._recognition_page.load_config(self._config)
