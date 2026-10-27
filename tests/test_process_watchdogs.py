@@ -194,6 +194,39 @@ def test_script_runner_recheck_kills_same_stuck_process(qapp) -> None:
     assert stuck.killed is True
 
 
+def test_script_runner_cancel_kills_running_process_tree(qapp, monkeypatch, caplog) -> None:
+    """退出协议（P2-2）：cancel 主动终止运行中的任务，走树杀而非裸 kill。"""
+    import src.business.common.script_runner as sr
+
+    launched = []
+    monkeypatch.setattr(sr.os, "name", "nt")
+    monkeypatch.setattr(sr.subprocess, "Popen", lambda *a, **kw: launched.append(a))
+
+    class _PidProc(_FakeProc):
+        def processId(self):
+            return 8642
+
+    runner = ScriptRunner()
+    runner._proc = _PidProc()
+
+    with caplog.at_level(logging.WARNING, logger="src.business.common.script_runner"):
+        runner.cancel()
+
+    assert launched, "cancel 必须走树杀"
+    argv = launched[0][0]
+    assert "taskkill" in argv[0] and "8642" in argv and "/T" in argv and "/F" in argv
+    assert any("主动终止" in r.message for r in caplog.records)
+
+
+def test_script_runner_cancel_is_noop_when_idle(qapp) -> None:
+    """退出协议（P2-2）：无任务时 cancel 不得抛异常、不得误发终止。"""
+    runner = ScriptRunner()
+
+    runner.cancel()
+
+    assert runner._proc is None
+
+
 def test_base_fetch_watchdog_kills_stuck_process(qapp, caplog) -> None:
     """AI 生成子进程卡网络永不结束 → 看门狗终止，_is_busy 不得永久 True"""
     from src.business.fetching.base_fetch_service import BaseFetchService

@@ -233,6 +233,8 @@ class MainWindow(QMainWindow):
         self._peak_select.shutdown()
         self._capture_service.shutdown()
         self._services.shutdown_fetch_services()
+        # 向导一键修复的子进程不在 fetch 协议内，退出时一并终止（P2-2）
+        self._dialogs.shutdown_onboarding_fixes()
         super().closeEvent(event)
 
     def changeEvent(self, event) -> None:

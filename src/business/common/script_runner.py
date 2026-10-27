@@ -96,6 +96,23 @@ class ScriptRunner(QObject):
             return False
         return True
 
+    def cancel(self) -> None:
+        """主动终止运行中的任务（应用退出收尾用；空闲时为 no-op）。
+
+        与看门狗共用树杀 + 延迟复查；kill 后 finished 信号照常发出，调用方
+        的忙碌状态经 finished 通道复位，契约与自然结束一致。
+        """
+        proc = self._proc
+        if proc is None or proc.state() == QProcess.ProcessState.NotRunning:
+            return
+        logger.warning("主动终止运行中的脚本子进程: %s", " ".join(proc.arguments()) or "?")
+        if proc.state() == QProcess.ProcessState.Starting:
+            # 与看门狗同因：Starting 阶段 kill() 会原生 abort，挂 started 后补杀
+            proc.started.connect(self._on_started_after_watchdog)
+            return
+        self._kill_process_tree(proc)
+        self._schedule_recheck(proc)
+
     def _on_finished(self, code: int, *, notify: bool = True) -> None:
         """统一收尾：停看门狗、释放进程、发出终态。
 

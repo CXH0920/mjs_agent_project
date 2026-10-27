@@ -801,3 +801,14 @@ def test_dialog_starts_real_worker_without_crash(monkeypatch):
         dialog.deleteLater()
         window.deleteLater()
         app.processEvents()
+
+
+def test_shutdown_fix_task_cancels_runner(qapp) -> None:
+    """回归（P2-2）：应用退出时向导须终止仍在运行的修复子进程。"""
+    cancelled: list[str] = []
+    dialog = OnboardingDialog.__new__(OnboardingDialog)
+    dialog._runner = SimpleNamespace(cancel=lambda: cancelled.append("cancel"))
+
+    dialog.shutdown_fix_task()
+
+    assert cancelled == ["cancel"]

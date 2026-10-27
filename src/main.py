@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from PySide6.QtCore import Qt, qVersion
@@ -97,7 +98,13 @@ def _ensure_clean_runtime() -> None:
     if bundle_data.is_dir():
         deploy_mark = PROJECT_ROOT / "data" / ".deployed"
         signature = _bundle_data_signature(bundle_data)
-        if deploy_mark.exists() and deploy_mark.read_text(encoding="utf-8").strip() == signature:
+        # 标记损坏（断电半截/坏编码）按签名不符处理，走全量补齐自愈，
+        # 不因 read_text 解码失败炸掉启动（该段先于日志与异常兜底，P2-1）
+        try:
+            deployed_signature = deploy_mark.read_text(encoding="utf-8").strip()
+        except (OSError, ValueError):
+            deployed_signature = ""
+        if deploy_mark.exists() and deployed_signature == signature:
             logger.debug("数据部署标记未变化，跳过资料部署")
         else:
             deployed = 0
@@ -168,18 +175,49 @@ def _create_startup_splash() -> QSplashScreen:
     return splash
 
 
+def _report_bootstrap_failure(error: BaseException) -> None:
+    """先于日志系统的引导段失败紧急出口：错误落文件 + 弹窗，再由调用方退出。
+
+    windowed 打包下 sys.stderr 为 None、链式 excepthook 随 setup_logging 才
+    安装；没有这个出口，首启部署失败（磁盘满/杀软锁文件/目录权限）就是
+    无日志、无提示的静默闪退（P2-1）。
+    """
+    detail = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    try:
+        log_path = PROJECT_ROOT / "logs" / "bootstrap_error.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(detail, encoding="utf-8")
+        log_note = f"错误详情已写入：{log_path}"
+    except OSError as log_error:
+        # 紧急留底也失败（logs 目录不可写）：弹窗是仅剩的输出口，不能因留底失败再吞掉
+        log_note = f"错误详情写入日志失败：{log_error}"
+    # QMessageBox 依赖 QApplication 实例；此刻 main() 里还没建，兜底内自建
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+    QMessageBox.critical(
+        None, "启动失败",
+        f"应用初始化运行环境失败，无法启动：\n\n{error}\n\n{log_note}",
+    )
+
+
 def main() -> None:
     """应用主函数"""
-    _ensure_clean_runtime()
-    _install_no_window_patch()
-    # 提前初始化日志（在 QApplication 创建之前）
-    from src.config.env import get_runtime_params
-    from src.config.logging_config import setup_logging
-    runtime_params = get_runtime_params()
-    setup_logging(
-        log_level=runtime_params["log_level"],
-        log_to_file=runtime_params["log_to_file"],
-    )
+    # 引导段（运行时骨架 + 日志装配）整体兜底：该段先于日志与 excepthook，
+    # 任何失败都必须留下文件与弹窗线索再退出，不能静默闪退
+    try:
+        _ensure_clean_runtime()
+        _install_no_window_patch()
+        # 提前初始化日志（在 QApplication 创建之前）
+        from src.config.env import get_runtime_params
+        from src.config.logging_config import setup_logging
+        runtime_params = get_runtime_params()
+        setup_logging(
+            log_level=runtime_params["log_level"],
+            log_to_file=runtime_params["log_to_file"],
+        )
+    except Exception as error:
+        _report_bootstrap_failure(error)
+        sys.exit(1)
     # 版本与环境入日志：此前版本号只进 setApplicationVersion 从不落日志，
     # 历史日志无法归属代码版本，排障时无从判断行为差异
     logger.info(

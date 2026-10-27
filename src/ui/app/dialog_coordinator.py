@@ -31,6 +31,9 @@ class DialogCoordinator:
     def __init__(self, window) -> None:
         self._window = window
         self._data_error: str | None = None
+        # 历次向导实例都登记（向导关闭不销毁对象，修复任务后台跑完是既有语义）；
+        # 应用退出时逐个终止其修复子进程，防孤儿进程继续写 data/
+        self._onboarding_dialogs: list = []
 
     # ────────────────────────────────────────────────
     # 对话框
@@ -224,13 +227,24 @@ class DialogCoordinator:
         from src.ui.app.onboarding_dialog import OnboardingDialog
 
         try:
-            OnboardingDialog(self._window).exec()
+            dialog = OnboardingDialog(self._window)
+            self._onboarding_dialogs.append(dialog)
+            dialog.exec()
         except Exception:
             logger.exception("首启向导异常，已跳过引导")
             QMessageBox.warning(
                 self._window, "首启引导",
                 "首启引导出现问题，已跳过。可稍后从 帮助 → 重看首启引导 重新打开。")
         self._window._poll_coordinator.sync_with_connection()
+
+    def shutdown_onboarding_fixes(self) -> None:
+        """应用退出收尾：终止首启向导仍在运行的一键修复子进程。
+
+        修复子进程由向导私有的 ScriptRunner 持有，不在 shutdown_fetch_services
+        协议内；不终止会在应用退出后孤儿化并继续写 data/（P2-2）。
+        """
+        for dialog in self._onboarding_dialogs:
+            dialog.shutdown_fix_task()
 
     def note_load_failed(self, message: str) -> None:
         """数据加载失败：留 _data_error 标记并弹告警（自 MainWindow._load_data 外移，

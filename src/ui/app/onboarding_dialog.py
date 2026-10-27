@@ -542,6 +542,14 @@ class OnboardingDialog(QDialog):
         logger.info("首启向导已跳过")
         self.reject()
 
+    def shutdown_fix_task(self) -> None:
+        """应用退出时终止仍在运行的修复子进程。
+
+        关闭向导不杀修复任务（后台跑完是既有语义），仅应用退出时终止——
+        修复子进程原本游离于 shutdown_fetch_services 退出协议之外（P2-2）。
+        """
+        self._runner.cancel()
+
     def closeEvent(self, event) -> None:
         # 顺序不可颠倒：先置关闭标记停止发起新请求，再 shutdown——
         # shutdown 后 _submit/_complete 静默吞请求（OneShotToken 守卫），且

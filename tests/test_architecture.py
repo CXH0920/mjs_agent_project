@@ -658,7 +658,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # data_freshness_chip.py 自足，此处仅构造与两条信号回接）
     # 575 → 584：closeEvent 中止三个抓取子进程（VUL-B2-002）——QProcess 随父
     # 对象析构不杀子进程树，browser 模式会孤儿化 Edge/node 并锁住 edge_profile
-    "ui/app/main_window.py": 584,
+    # 590 → 592：closeEvent 末尾补挂向导修复子进程终止（P2-2，第 12 批审查
+    # 修复——修复子进程游离于 fetch 退出协议外，退出后会孤儿化继续写 data/）
+    "ui/app/main_window.py": 592,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，
@@ -667,7 +669,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 向导不进入 ROI 编辑态，不释放槽位会让"连接并体检"第二次起静默失效
     # 551 → 552：多品牌连接——零实例文案按所选品牌展示（EMULATOR_LABELS
     # 经协调器转出口，UI 不直连 src.capture），单行替换
-    "ui/app/onboarding_dialog.py": 552,
+    # 552 → 560：shutdown_fix_task——应用退出时终止仍在运行的一键修复子进程
+    # （P2-2，第 12 批审查修复；关向导不杀任务、退出才杀，语义与维护面板一致）
+    "ui/app/onboarding_dialog.py": 560,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,

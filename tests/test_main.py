@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMainWindow
 from src.main import _create_startup_splash
 from src.ui.app.dialog_coordinator import DialogCoordinator
 from src.ui.app.main_window import MainWindow
@@ -119,3 +121,98 @@ def test_official_import_preserves_paused_poll_state(monkeypatch) -> None:
     window._dialogs.open_official_data_import()
 
     assert calls == ["exec"]
+
+
+def test_bootstrap_failure_writes_emergency_log_and_exits(monkeypatch, tmp_path) -> None:
+    """回归（P2-1）：先于日志系统的引导段失败必须留下文件与弹窗线索，不静默闪退。"""
+    import src.main as main_module
+
+    _app()
+
+    def _boom() -> None:
+        raise OSError("磁盘已满")
+
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(main_module, "_ensure_clean_runtime", _boom)
+    monkeypatch.setattr(main_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        main_module, "QMessageBox",
+        SimpleNamespace(critical=lambda parent, title, text: shown.append((title, text))),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.main()
+
+    assert exc_info.value.code == 1
+    detail = (tmp_path / "logs" / "bootstrap_error.log").read_text(encoding="utf-8")
+    assert "磁盘已满" in detail and "Traceback" in detail
+    assert shown and shown[0][0] == "启动失败"
+
+
+def test_deploy_marker_corrupt_triggers_full_redeploy(monkeypatch, tmp_path) -> None:
+    """回归（P2-1 附带）：部署标记损坏按签名不符自愈，不因解码失败阻断启动。"""
+    import src.main as main_module
+
+    bundle = tmp_path / "bundle"
+    (bundle / "data").mkdir(parents=True)
+    (bundle / "data" / "heroes.json").write_text("[]", encoding="utf-8")
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setattr(main_module, "IS_FROZEN", True)
+    monkeypatch.setattr(main_module, "BUNDLE_ROOT", bundle)
+    monkeypatch.setattr(main_module, "PROJECT_ROOT", runtime)
+
+    main_module._ensure_clean_runtime()
+    assert (runtime / "data" / "heroes.json").exists()
+
+    (runtime / "data" / ".deployed").write_bytes(b"\xff\xfe\x00bad")  # 模拟断电半截
+
+    main_module._ensure_clean_runtime()  # 不得抛 UnicodeDecodeError
+
+    signature = main_module._bundle_data_signature(bundle / "data")
+    assert (runtime / "data" / ".deployed").read_text(encoding="utf-8").strip() == signature
+
+
+def test_open_onboarding_tracks_dialog_for_exit_cleanup(monkeypatch) -> None:
+    """回归（P2-2）：打开的向导实例须登记，退出时才能终止其修复子进程。"""
+    calls: list[str] = []
+
+    class _Dialog:
+        def __init__(self, window) -> None:
+            calls.append("construct")
+
+        def exec(self) -> None:
+            calls.append("exec")
+
+        def shutdown_fix_task(self) -> None:
+            calls.append("shutdown_fix")
+
+    monkeypatch.setattr("src.ui.app.onboarding_dialog.OnboardingDialog", _Dialog)
+    window = SimpleNamespace(
+        _poll_coordinator=SimpleNamespace(sync_with_connection=lambda: calls.append("sync")),
+    )
+    coordinator = DialogCoordinator(window)
+
+    coordinator.open_onboarding()
+    coordinator.shutdown_onboarding_fixes()
+
+    assert calls == ["construct", "exec", "sync", "shutdown_fix"]
+    assert len(coordinator._onboarding_dialogs) == 1
+
+
+def test_close_event_runs_exit_protocol_including_onboarding_fix(monkeypatch) -> None:
+    """回归（P2-2）：主窗关闭链末尾须终止向导修复子进程。"""
+    _app()
+
+    calls: list[str] = []
+    window = MainWindow.__new__(MainWindow)
+    window._poll_coordinator = SimpleNamespace(shutdown=lambda: calls.append("poll"))
+    window._peak_select = SimpleNamespace(shutdown=lambda: calls.append("peak"))
+    window._capture_service = SimpleNamespace(shutdown=lambda: calls.append("capture"))
+    window._services = SimpleNamespace(shutdown_fetch_services=lambda: calls.append("fetch"))
+    window._dialogs = SimpleNamespace(shutdown_onboarding_fixes=lambda: calls.append("onboarding"))
+    monkeypatch.setattr(QMainWindow, "closeEvent", lambda self, event: None)
+
+    window.closeEvent(SimpleNamespace())
+
+    assert calls == ["poll", "peak", "capture", "fetch", "onboarding"]
