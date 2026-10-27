@@ -20,7 +20,7 @@ from src.ui.app.main_window import MainWindow
 from src.ui.app.poll_coordinator import PollCoordinator, PollOutcome, PollResult, PollTaskResult
 from src.ui.match.match_guide_panel import MatchGuidePanel
 from src.ui.recommendation.recommendation_panel import HeroCardWidget, RecommendationPanel
-from src.ui.shared.capture_lock import CaptureSource
+from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 
@@ -226,6 +226,66 @@ def test_match_guide_capture_result_does_not_refresh_recommendation(monkeypatch)
 
     assert recommendation_loaded == []
     assert match_guide_loaded == [[{"name": "曹操"}]]
+
+
+def test_shared_capture_lock_prevents_cross_panel_result_mismatch() -> None:
+    """第 13 批审查 P1-1 回归：跨面板在途请求重叠时，广播回调不得错配消费。
+
+    事故链：推荐页发起保存截图（无 OCR 的空结果）期间，对局页点识别——
+    修复前对局页私有锁会把保存回调当识别结果消费，load_from_ocr([]) 清空
+    已确认阵容，真正的识别结果反被丢弃。共享单飞锁 + owner 校验封住该路径。
+    """
+    _app()
+    service = CaptureService()
+    shared = CaptureRequestLock()
+    heroes = HeroManager()
+    heroes._items = {
+        index: Hero(id=index, name=name, faction="魏")
+        for index, name in enumerate(("甲", "乙", "丙", "丁"), 1)
+    }
+    recommendation = RecommendationPanel(
+        heroes, SynergyManager(), GuideManager(),
+        capture_service=service, capture_lock=shared,
+    )
+    match_guide = MatchGuidePanel(
+        heroes, guide_manager=GuideManager(), capture_service=service,
+        win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {},
+        capture_lock=shared,
+    )
+    match_guide.load_from_ocr([
+        {"index": index, "name": name, "resolution": "exact"}
+        for index, name in zip((1, 2, 4, 5), ("甲", "乙", "丙", "丁"), strict=True)
+    ])
+    assert match_guide._lineup.valid_count == 4
+
+    # 推荐页先发起保存截图；对局页在途重叠期点识别被共享锁拒绝并给出提示
+    assert recommendation._begin_capture_request("adb_save")
+    assert not match_guide._begin_capture("adb_recognize", "正在截图并识别阵容...")
+    assert "进行中" in match_guide._action_bar.status_label.text()
+
+    # 保存请求完成广播（ocr_results=None）：对局页不得当作识别结果清空阵容
+    service.capture_completed.emit(
+        {"save_path": "x.png", "ocr_results": None, "ocr_matched": False}
+    )
+
+    assert match_guide._lineup.valid_count == 4
+    assert shared.current is None
+
+
+def test_capture_busy_hint_on_recommendation_when_shared_lock_held() -> None:
+    _app()
+    service = CaptureService()
+    shared = CaptureRequestLock()
+    panel = RecommendationPanel(
+        _hero_manager(), SynergyManager(), GuideManager(),
+        capture_service=service, capture_lock=shared,
+    )
+    assert shared.begin(CaptureSource.ADB_SAVE, owner=object())
+
+    panel._on_recognize_current()
+
+    assert "进行中" in panel._action_bar.status_label.text()
+    assert shared.current == CaptureSource.ADB_SAVE
 
 
 def test_match_guide_portrait_uses_overlay_and_skill_popup_signal(monkeypatch) -> None:

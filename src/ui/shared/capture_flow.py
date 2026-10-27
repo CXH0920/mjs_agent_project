@@ -26,8 +26,9 @@ _BEGIN_STATUS = {
 class CaptureRequestFlow:
     """一次捕获请求的单飞锁、忙碌使能与状态文案记忆。"""
 
-    def __init__(self, default_status: str = "") -> None:
-        self._lock = CaptureRequestLock()
+    def __init__(self, default_status: str = "", capture_lock: CaptureRequestLock | None = None) -> None:
+        # 共享锁由宿主面板传入（多面板共用同一把，owner 用本 flow 实例区分发起方）
+        self._lock = capture_lock if capture_lock is not None else CaptureRequestLock()
         self._controls: list[QWidget] = []
         self._actions: list[QAction] = []
         self._status_text = default_status
@@ -60,7 +61,7 @@ class CaptureRequestFlow:
 
     def begin(self, source: str) -> bool:
         """锁定新请求并禁用忙碌控件；已有在途请求时返回 False。"""
-        if not self._lock.begin(CaptureSource(source)):
+        if not self._lock.begin(CaptureSource(source), owner=self):
             return False
         self._set_enabled(False)
         return True
@@ -71,7 +72,7 @@ class CaptureRequestFlow:
 
     def finish(self) -> str | None:
         """结束在途请求：恢复忙碌控件并返回来源；无在途请求返回 None。"""
-        source = self._lock.finish()
+        source = self._lock.finish(owner=self)
         if source is None:
             return None
         self._set_enabled(True)

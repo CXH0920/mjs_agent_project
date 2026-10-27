@@ -78,6 +78,7 @@ class PeakSelectPanel(QWidget):
         pick_ranks_provider=None,
         combo_manager=None,
         parent=None,
+        capture_lock: CaptureRequestLock | None = None,
     ) -> None:
         super().__init__(parent)
         self._capture_service = capture_service
@@ -93,7 +94,8 @@ class PeakSelectPanel(QWidget):
         self._watcher.pool_updated.connect(self._on_pool_updated)
         self._watcher.status_changed.connect(self._on_status_changed)
         self._watcher.board_exited.connect(self._on_watcher_board_exited)
-        self._capture_lock = CaptureRequestLock()
+        # 与推荐/对局面板共享主窗口传入的单飞锁；不传时自建（测试/独立使用）
+        self._capture_lock = capture_lock if capture_lock is not None else CaptureRequestLock()
         capture_completed = getattr(capture_service, "capture_completed", None)
         if capture_completed is not None:
             capture_completed.connect(self._on_capture_result)
@@ -327,13 +329,15 @@ class PeakSelectPanel(QWidget):
             self._action_bar.set_status("未连接模拟器，请先完成 ADB 连接配置", TONE_WARNING)
             self.request_mumu_config.emit()
             return
-        if not self._capture_lock.begin(CaptureSource.ADB_SAVE):
+        if not self._capture_lock.begin(CaptureSource.ADB_SAVE, owner=self):
+            # 共享锁被其他页面在途请求占用（识别/导入），避免广播回调错配消费
+            self._action_bar.set_status("已有识别或截图任务进行中，请稍候", TONE_WARNING)
             return
         self._action_bar.set_status("正在保存截图...", TONE_INFO)
         self._capture_service.do_capture(perform_ocr=False)
 
     def _on_capture_result(self, result: dict) -> None:
-        if self._capture_lock.finish() != CaptureSource.ADB_SAVE:
+        if self._capture_lock.finish(owner=self) != CaptureSource.ADB_SAVE:
             return
         save_path = result.get("save_path")
         if save_path:
@@ -343,7 +347,7 @@ class PeakSelectPanel(QWidget):
             self._action_bar.set_status("截图未落盘（保存中或失败，详见日志）", TONE_WARNING)
 
     def _on_capture_failed(self, message: str) -> None:
-        if self._capture_lock.finish() != CaptureSource.ADB_SAVE:
+        if self._capture_lock.finish(owner=self) != CaptureSource.ADB_SAVE:
             return
         self._action_bar.set_status(f"截图保存失败：{message}", TONE_WARNING)
 

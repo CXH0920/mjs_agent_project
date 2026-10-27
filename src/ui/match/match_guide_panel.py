@@ -311,6 +311,7 @@ class MatchGuidePanel(QWidget):
         *,
         win_rates_provider: Callable[[], dict[str, float]],
         peak_win_rates_provider: Callable[[], dict[str, float]],
+        capture_lock: CaptureRequestLock | None = None,
     ) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_manager
@@ -319,7 +320,8 @@ class MatchGuidePanel(QWidget):
         self._win_rates_provider = win_rates_provider
         self._peak_win_rates_provider = peak_win_rates_provider
         self._win_rate_mode = WIN_RATE_MODE_2V2
-        self._capture_lock = CaptureRequestLock()
+        # 与推荐/巅峰面板共享主窗口传入的单飞锁；不传时自建（测试/独立使用）
+        self._capture_lock = capture_lock if capture_lock is not None else CaptureRequestLock()
         self._cards: list[MatchHeroCard] = []
         self._lineup = LineupState()
         self._win_rates: dict[str, float] = {}
@@ -746,6 +748,7 @@ class MatchGuidePanel(QWidget):
 
     def _on_import_from_file(self) -> None:
         if self._capture_lock.current is not None:
+            self._notify_capture_busy()
             return
         SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "选择游戏截图", str(SCREENSHOTS_DIR), "图片文件 (*.png *.jpg *.jpeg *.bmp)")
@@ -778,17 +781,22 @@ class MatchGuidePanel(QWidget):
         QMessageBox.warning(self, "截图失败", f"无法从模拟器截图：\n{message}")
 
     def _begin_capture(self, source: str, status: str) -> bool:
-        if not self._capture_lock.begin(CaptureSource(source)):
+        if not self._capture_lock.begin(CaptureSource(source), owner=self):
+            self._notify_capture_busy()
             return False
         self._set_importing(True, status)
         return True
 
     def _finish_capture(self) -> str | None:
-        source = self._capture_lock.finish()
+        source = self._capture_lock.finish(owner=self)
         if source is None:
             return None
         self._set_importing(False)
         return source
+
+    def _notify_capture_busy(self) -> None:
+        """共享捕获锁被占用（本页或他页有在途请求）时的状态提示。"""
+        self._action_bar.set_status("已有识别或截图任务进行中，请稍候", TONE_WARNING)
 
     def _set_importing(self, importing: bool, text: str = "") -> None:
         self._recognize_btn.setEnabled(not importing)

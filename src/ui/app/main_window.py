@@ -44,6 +44,7 @@ from src.ui.match.match_guide_panel import (
 )
 from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
+from src.ui.shared.capture_lock import CaptureRequestLock
 from src.ui.shared.portrait import load_portrait
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO
 from src.ui.shared.widgets import NoticeBanner, show_toast
@@ -373,12 +374,16 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._library, "资料库")
 
         # Tab 2: 选将推荐
+        # 三面板共用一把捕获单飞锁：共享服务的完成回调是广播，跨面板重叠请求
+        # 曾因回调错配清空对局阵容（第 13 批审查 P1-1），owner 区分发起方
+        shared_capture_lock = CaptureRequestLock()
         self._recommendation = RecommendationPanel(
             self._data.heroes, self._data.synergies,
             guide_manager=self._data.guides,
             capture_service=self._capture_service,
             ocr_service=self._ocr_service,
             combo_manager=self._combo_manager,
+            capture_lock=shared_capture_lock,
         )
         self._recommendation.request_mumu_config.connect(self._dialogs.open_mumu_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
@@ -392,6 +397,7 @@ class MainWindow(QMainWindow):
             win_rates_provider=self._peak_win_rates_provider,
             pick_ranks_provider=self._peak_pick_ranks_provider,
             combo_manager=self._combo_manager,
+            capture_lock=shared_capture_lock,
         )
         self._peak_select.request_mumu_config.connect(self._dialogs.open_mumu_config)
         # 巅峰赛牌面退出 → 后续对局轮询命中的是巅峰赛对局，攻略胜率切巅峰榜
@@ -407,6 +413,7 @@ class MainWindow(QMainWindow):
             capture_service=self._capture_service,
             win_rates_provider=self._win_rates_provider,
             peak_win_rates_provider=self._peak_win_rates_provider,
+            capture_lock=shared_capture_lock,
         )
         self._match_guide.request_mumu_config.connect(self._dialogs.open_mumu_config)
         self._tabs.addTab(self._match_guide, "对局攻略")

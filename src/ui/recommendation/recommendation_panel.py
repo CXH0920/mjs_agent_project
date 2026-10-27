@@ -77,7 +77,8 @@ class RecommendationPanel(QWidget):
     def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
                  guide_manager: GuideManager,
                  capture_service=None, ocr_service=None, parent=None,
-                 combo_manager: ComboManager | None = None):
+                 combo_manager: ComboManager | None = None,
+                 capture_lock: CaptureRequestLock | None = None):
         super().__init__(parent)
         self._hero_mgr = hero_manager
         self._synergy_mgr = synergy_manager
@@ -89,8 +90,11 @@ class RecommendationPanel(QWidget):
         self._current_hero_ids: set[int] = set()
         self._ocr_mode: bool = False
         self._last_failed_source: str | None = None
-        # 截图/导入请求单飞 + 忙碌控件清单 + 状态文案记忆（G5 切片 4.4b 抽出）
-        self._capture_flow = CaptureRequestFlow(default_status="尚未识别阵容")
+        # 截图/导入请求单飞 + 忙碌控件清单 + 状态文案记忆（G5 切片 4.4b 抽出）；
+        # 锁与其他面板共享（主窗口注入），owner 由 flow 实例区分发起方
+        self._capture_flow = CaptureRequestFlow(
+            default_status="尚未识别阵容", capture_lock=capture_lock,
+        )
         self._recommendation_service = RecommendationService()
         self._recommendation_data = RecommendationData({}, {})
         self._ocr_results_by_slot: dict[int, dict] = {}
@@ -288,6 +292,7 @@ class RecommendationPanel(QWidget):
     def _begin_capture_request(self, source: str) -> bool:
         """锁定本页捕获来源，避免共享服务回调覆盖另一项请求。"""
         if not self._capture_flow.begin(source):
+            self._notify_capture_busy()
             return False
         self._clear_error_notice()
         self._set_page_status(self._capture_flow.begin_status(source), TONE_INFO, remember=False)
@@ -300,6 +305,10 @@ class RecommendationPanel(QWidget):
         text, tone = self._capture_flow.last_status
         self._set_page_status(text, tone, remember=False)
         return source
+
+    def _notify_capture_busy(self) -> None:
+        """共享捕获锁被占用（本页或他页有在途请求）时的状态提示。"""
+        self._set_page_status("已有识别或截图任务进行中，请稍候", TONE_WARNING, remember=False)
 
     def _show_error_notice(self, title: str, message: str, source: str | None) -> None:
         self._last_failed_source = source
@@ -678,6 +687,7 @@ class RecommendationPanel(QWidget):
     def _on_recognize_current(self) -> None:
         """识别当前模拟器画面中的选将阵容。"""
         if self._capture_lock.current is not None:
+            self._notify_capture_busy()
             return
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
@@ -695,6 +705,7 @@ class RecommendationPanel(QWidget):
     def _on_save_screenshot(self) -> None:
         """保存当前模拟器画面，不触发 OCR。"""
         if self._capture_lock.current is not None:
+            self._notify_capture_busy()
             return
         if not self._capture_service or not self._capture_service.capture:
             self.request_mumu_config.emit()
@@ -749,6 +760,7 @@ class RecommendationPanel(QWidget):
         不依赖 ADB 连接。
         """
         if self._capture_lock.current is not None:
+            self._notify_capture_busy()
             return
         if not self._capture_service:
             self._show_error_notice(

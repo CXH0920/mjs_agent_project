@@ -660,7 +660,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 对象析构不杀子进程树，browser 模式会孤儿化 Edge/node 并锁住 edge_profile
     # 590 → 592：closeEvent 末尾补挂向导修复子进程终止（P2-2，第 12 批审查
     # 修复——修复子进程游离于 fetch 退出协议外，退出后会孤儿化继续写 data/）
-    "ui/app/main_window.py": 592,
+    # 592 → 599：三面板装配共享捕获单飞锁（第 13 批审查 P1-1）——跨面板重叠
+    # 请求曾因广播回调错配清空对局阵容，共享锁 + owner 校验封住该路径
+    "ui/app/main_window.py": 599,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，
@@ -781,7 +783,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "scripts/sync_rule_stats.py": 605,
     # 2026-10 tripwire 落地补种（种子 = 当前实测值，只许收紧）。此前名单靠
     # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）
-    "ui/match/match_guide_panel.py": 840,
+    # 840 → 848：接入共享捕获单飞锁与忙提示（第 13 批审查 P1-1）——构造参数
+    # 注入共享锁、begin/finish 携带 owner、被占时状态栏提示
+    "ui/match/match_guide_panel.py": 848,
     # 584 → 593：跨供应商空 model 保存硬校验（2026-10-27）——无预设默认模型
     # 的供应商（openai/ollama/openai-compatible）model 必填拦截 + 占位文案按供应商同步
     "ui/configuration/settings_dialog.py": 593,
@@ -802,7 +806,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 人工确认，与 _publish_pool 同一守卫口径
     "business/recognition/peak_select_watcher.py": 677,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
-    "ui/match/peak_select_panel.py": 565,
+    # 565 → 567：接入共享捕获单飞锁（第 13 批审查 P1-1）——构造注入共享锁、
+    # begin/finish 携带 owner，被占时状态栏提示
+    "ui/match/peak_select_panel.py": 567,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
     # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
     # 518 → 520：reset_recognizer_cache 同步清 _page_cache——白名单变更后同指纹
