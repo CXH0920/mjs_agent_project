@@ -189,12 +189,17 @@ def test_auto_chain_subprocess_uses_dash_m(monkeypatch, tmp_path):
 
 
 def test_run_audit_strict_spawns_real_module(tmp_path):
-    """audit 子进程端到端必须能真实调起模块（输出不得是"打不开脚本"）。"""
+    """audit 子进程端到端必须真实调起模块并跑到报告输出，而非执行不存在的脚本。
+
+    负向断言只认 "can't open file"：No such file or directory 会出现在
+    CI 无数据源时交叉引用降级的合法告警文本里（data/*.json 经私有仓同步，
+    CI 不存在），不能作"脚本不存在"的判据。
+    """
     doc = tmp_path / "mini.md"
     doc.write_text("# 最小文档\n\n## 1. 测试\n\n内容\n", encoding="utf-8")
     _ok, out = arp.run_audit_strict(str(doc))
     assert "can't open file" not in out
-    assert "No such file or directory" not in out
+    assert "元规则文档校验" in out  # audit 报告固定标题：子进程真实跑到了报告输出
 
 
 def _spy_atomic_write(monkeypatch):
