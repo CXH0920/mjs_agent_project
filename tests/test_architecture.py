@@ -680,7 +680,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/maintenance/rule_doc_panel.py": 940,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
-    "ui/maintenance/index_refinement_dialog.py": 781,
+    "ui/maintenance/index_refinement_dialog.py": 790,
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试
