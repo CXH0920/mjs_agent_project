@@ -71,6 +71,7 @@ class BaseFetchService(QObject):
         self._cancel_requested = False
         self._cancel_cleanup_process: Popen | None = None
         self._cancel_cleanup_polls = 0
+        self._pending_error_msg: str | None = None
 
     # ---------------------------------------------------------------
     # 钩子：子类覆写
@@ -180,6 +181,7 @@ class BaseFetchService(QObject):
         self._cancel_requested = False
         self._cancel_cleanup_process = None
         self._cancel_cleanup_polls = 0
+        self._pending_error_msg = None
         self._stdout_buffer.clear()
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
@@ -326,6 +328,11 @@ class BaseFetchService(QObject):
         self._stderr_buffer.clear()
 
         msg = _process_failure_message(exit_code, full_stdout, full_stderr)
+        if self._pending_error_msg:
+            # 错误通道已定位的原因（如子进程崩溃）优先于裸退出码，
+            # 保留台账的诊断价值
+            msg = self._pending_error_msg
+            self._pending_error_msg = None
         logger.info("%s 子进程结束，%s", self._service_name, msg)
         record_task(
             self._service_name,
@@ -392,9 +399,19 @@ class BaseFetchService(QObject):
         self._context = None
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
-        """子进程出错回调"""
+        """子进程出错回调。
+
+        错误通道只对 FailedToStart 做完整收尾——Qt 不为它发 finished；
+        Crashed 等其余错误必有 finished 跟随，此处只记日志并暂存原因，
+        广播与台账统一交给 _on_finished，避免同一事件双通道重复通知
+        （UI 连弹两个错误框、台账双记账）——与 ScriptRunner 的收尾契约对齐。
+        """
         self._stop_watchdog()
+        error_name = get_qprocess_error_name(error)
         if self._cancel_requested and error == QProcess.ProcessError.Crashed:
+            return
+        if error != QProcess.ProcessError.FailedToStart:
+            self._pending_error_msg = log_process_error(error_name, self._process)
             return
         self._read_stdout()
         self._read_stderr()
@@ -403,9 +420,8 @@ class BaseFetchService(QObject):
         self._stdout_buffer.clear()
         self._stdout_line_buffer.clear()
         self._stderr_buffer.clear()
-        error_name = get_qprocess_error_name(error)
         full_msg = log_process_error(error_name, self._process)
-        # FailedToStart 等错误 Qt 不发 finished，此处不记则台账缺失该类失败
+        # FailedToStart 无 finished 跟随，此处不记则台账缺失该类失败
         record_task(
             self._service_name,
             ok=False,
@@ -418,13 +434,11 @@ class BaseFetchService(QObject):
         # _cancel_requested 恒为 True 而永久拒绝后续请求（TD-A5-001）。
         if self._cancel_requested:
             logger.warning("%s 中止期间出错: %s", self._service_name, full_msg)
-            if error == QProcess.ProcessError.FailedToStart:
-                self._release_process()  # FailedToStart 无 finished 跟随，不等收尾信号
+            self._release_process()  # FailedToStart 无 finished 跟随，不等收尾信号
             self._finish_cancellation()
             return
         self.status_changed.emit(f"{self._service_name}出错")
         self.error_occurred.emit(full_msg)
         self._on_process_error(error_name, full_msg)
         self._context = None
-        if error == QProcess.ProcessError.FailedToStart:
-            self._release_process()
+        self._release_process()
