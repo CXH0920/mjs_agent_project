@@ -336,6 +336,28 @@ def test_cache_robots_txt_writes_archive_and_meta(monkeypatch, tmp_path: Path) -
     assert len(meta["sha256"]) == 64
 
 
+def test_cache_robots_txt_atomic_write_replaces_without_temp_residue(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    """存档写走临时文件 + 原子替换：旧存档被整体替换，完成后不留 .tmp。
+
+    回归背景：直写在 TTL 边界多进程并发刷新时会留下半截文件，并发读者按
+    缺失 Disallow 的规则放行（合规链 fail-open）。
+    """
+    monkeypatch.setattr(
+        crawler.urllib.request, "urlopen",
+        lambda req, timeout=0: _FakeResponse(b"User-agent: *\nAllow: /", content_type="text/plain"),
+    )
+    cache_dir = tmp_path / "robots_cache"
+    cache_dir.mkdir()
+    (cache_dir / "robots.txt").write_text("旧规则", encoding="utf-8")
+
+    assert crawler.cache_robots_txt(cache_dir) is True
+
+    assert (cache_dir / "robots.txt").read_text(encoding="utf-8") == "User-agent: *\nAllow: /"
+    assert list(cache_dir.glob("*.tmp")) == []
+
+
 def test_cache_robots_txt_skips_request_when_fresh(monkeypatch, tmp_path: Path) -> None:
     cache_dir = tmp_path / "robots_cache"
     cache_dir.mkdir()

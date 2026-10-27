@@ -25,7 +25,7 @@ from urllib.parse import urljoin, urlparse
 
 from PIL import Image
 from src.config.env import IMAGES_OUTPUT_DIR, PROJECT_ROOT
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, atomic_write_text
 from src.scraper.official_source.adapter import (
     find_card_chunk_url,
     find_chunk_url,
@@ -211,16 +211,16 @@ def cache_robots_txt(cache_dir: Path | None = None) -> bool:
     req = urllib.request.Request(ROBOTS_URL, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=ROBOTS_FETCH_TIMEOUT) as resp:
         content = resp.read().decode("utf-8", errors="replace")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / "robots.txt").write_text(content, encoding="utf-8", newline="\n")
+    # 原子替换而非直写：TTL 边界多进程并发刷新时，write_text 的截断-写入
+    # 窗口会让并发读者解析到半截规则（Disallow 缺失即静默放行）；写序保持
+    # robots.txt 先就位、meta 后提交新鲜度，读者只能看到完整提交
+    atomic_write_text(cache_dir / "robots.txt", content)
     meta = {
         "fetched_at": datetime.now().isoformat(timespec="seconds"),
         "url": ROBOTS_URL,
         "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
     }
-    (cache_dir / "robots_meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    atomic_write_json(cache_dir / "robots_meta.json", meta)
     # 新存档落地后失效主站规则缓存，长进程下一次校验读新规则
     robots_origin = _robots_origin(ROBOTS_URL)
     if robots_origin is not None:

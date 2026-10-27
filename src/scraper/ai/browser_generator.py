@@ -87,7 +87,7 @@ class PlaywrightGenerator:
         chat_config: dict | None = None,
     ):
         self._session = DeepSeekBrowserSession(browser_config, chat_config)
-        # 控制 system prompt 只发一次
+        # 相邻生成的休息标志：上次已向站点发出请求即置位（见 _random_rest）
         self._guide_rest_required = False
         self._synergy_rest_required = False
 
@@ -102,7 +102,7 @@ class PlaywrightGenerator:
 
         每个武将都发送完整 system prompt + 武将数据（与 API 模式对齐），
         避免网页版会话中格式指令衰减。
-        每次成功生成后，在下一次请求前随机休息 60-180 秒。
+        每次向站点发出请求后（无论成败），在下一次生成前随机休息 60-180 秒。
         """
         hero_name = hero.get("name", "?")
         hero_id = hero.get("id", 0)
@@ -123,6 +123,9 @@ class PlaywrightGenerator:
         full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}\n\n{GUIDE_FORMAT_REMINDER}"
         logger.info("[攻略] 发送 system prompt + %s 数据（%d 字符）", hero_name, len(full_prompt))
 
+        # 失败的生成同样消耗站点访问配额：置位以「已发出请求」为准而非成功，
+        # 否则连续失败批次会退化为零间隔连发（TERMS 第 7 节披露的间隔与成败无关）
+        self._guide_rest_required = True
         reply = self._send_and_wait(full_prompt)
         if not reply:
             logger.warning("[攻略] %s: 获取回复为空", hero_name)
@@ -154,8 +157,6 @@ class PlaywrightGenerator:
 
         logger.info("[攻略] %s: 校验通过, 结果字段: %s", hero_name, list(result.keys()))
 
-        self._guide_rest_required = True
-
         return result, None
 
     def generate_synergy(self, hero_a: dict, hero_b: dict) -> tuple[dict | None, dict | None]:
@@ -182,6 +183,8 @@ class PlaywrightGenerator:
         full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}\n\n{SYNERGY_FORMAT_REMINDER}"
         logger.info("[相性] 发送 system prompt + %s <-> %s 数据（%d 字符）", name_a, name_b, len(full_prompt))
 
+        # 同 generate_guide：以「已发出请求」为准置位，失败链路不豁免休息
+        self._synergy_rest_required = True
         reply = self._send_and_wait(full_prompt)
         if not reply:
             logger.warning("[相性] %s <-> %s: 获取回复为空", name_a, name_b)
@@ -214,8 +217,6 @@ class PlaywrightGenerator:
 
         logger.info("[相性] %s <-> %s: 校验通过, 评分 %s",
                     name_a, name_b, result.get("score", "?"))
-
-        self._synergy_rest_required = True
 
         return result, None
 

@@ -112,3 +112,21 @@ def test_run_replace_aborts_when_local_file_is_non_list_json(monkeypatch, tmp_pa
     assert excinfo.value.code == 1
     assert not output_path.exists()
     assert list(tmp_path.glob("heroes.corrupt-*.json"))
+
+
+def test_filter_by_names_skips_null_and_empty_name_records() -> None:
+    """name 为 null（官网 undefined）/ 空串 / 键缺失的记录：不崩、不过匹配。
+
+    回归背景：name=null 曾让 `in` 抛 TypeError 崩掉整个采集；name="" 则
+    `"" in 任意查询` 恒真，命中所有按名查询。
+    """
+    raw_list = [
+        {"id": 1, "name": None},
+        {"id": 2, "name": ""},
+        {"id": 3, "name": "关羽"},
+        {"id": 4},
+    ]
+
+    results = incremental.filter_by_names(raw_list, ["关羽", "诸葛亮"])
+
+    assert [r["id"] for r in results] == [3]

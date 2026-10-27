@@ -121,12 +121,19 @@ def filter_by_ids(raw_list: list[dict], target_ids: set[int]) -> list[dict]:
 
 
 def filter_by_names(raw_list: list[dict], target_names: list[str]) -> list[dict]:
-    """按名称筛选（支持模糊匹配，只要有包含关系就算）"""
+    """按名称筛选（支持模糊匹配，只要有包含关系就算）。
+
+    官网 JS 的 name 字段可能为 undefined（adapter 转 null）或空串：null 会让
+    `in` 抛 TypeError 崩掉整个采集，空串则 `"" in name` 恒真命中任意查询，
+    两者都直接跳过该记录（transform 对无名武将本就会跳过）。
+    """
     results = []
     matched = set()
     for name in target_names:
         for r in raw_list:
-            rn = r.get("name", "")
+            rn = r.get("name")
+            if not isinstance(rn, str) or not rn:
+                continue
             if name in rn or rn in name:
                 if r.get("id") not in matched:
                     results.append(r)

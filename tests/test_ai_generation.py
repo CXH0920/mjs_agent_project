@@ -590,6 +590,45 @@ def test_browser_generator_rests_before_next_successful_request(
     assert events == ["send", "rest", "send", "rest", "send"]
 
 
+@pytest.mark.parametrize(
+    ("method_name", "rest_required_attr", "args"),
+    [
+        ("generate_guide", "_guide_rest_required", ({"id": 1, "name": "甲"},)),
+        (
+            "generate_synergy",
+            "_synergy_rest_required",
+            ({"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}),
+        ),
+    ],
+)
+def test_browser_generator_rests_after_failed_request(
+    monkeypatch, method_name, rest_required_attr, args,
+) -> None:
+    """失败链路同样消耗站点访问配额：休息以「已发出请求」为准，而非成功。
+
+    回归背景：旧实现只在校验通过后置位，批量失败时相邻生成零间隔连发，
+    违背 TERMS 第 7 节「相邻两次生成之间随机休息 60~180 秒」的披露。
+    """
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    events: list[str] = []
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    setattr(generator, rest_required_attr, False)
+    # 回复为空 → 走失败返回路径，不触碰 JSON 提取与校验
+    generator._send_and_wait = lambda _prompt: events.append("send") or None
+    generator._random_rest = lambda: events.append("rest")
+    monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
+    monkeypatch.setattr(ai_playwright, "build_synergy_prompt", lambda *a, **k: "synergy")
+
+    method = getattr(generator, method_name)
+    assert method(*args) == (None, None)
+    assert getattr(generator, rest_required_attr) is True
+
+    method(*args)
+    assert events == ["send", "rest", "send"]
+
+
 def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> None:
     """浏览器后端应跳过 API Key 校验，并以结构化结果结束任务。"""
     import src.scraper.ai.batch as ai_batch
