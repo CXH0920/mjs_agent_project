@@ -244,3 +244,34 @@ def test_anchor_regression_on_real_screenshots() -> None:
         else:
             assert matched, path.name
     assert checked >= 30
+
+
+def test_corrupt_user_template_falls_back_to_bundled(tmp_path):
+    """半截 PNG（写入中断遗留）与缺失同待遇回退随包模板，不再 match() 恒 False。"""
+    user = tmp_path / "user_template.png"
+    user.write_bytes(b"\x89PNG\r\n\x1a\n")  # 只有签名头，imdecode 必失败
+    manager = TemplateManager(template_path=user, template_name="hero_selection")
+    assert manager.is_loaded
+    assert manager._loaded_template_path.name == "wujiang_select.png"
+
+
+def test_set_template_write_failure_keeps_original(tmp_path, monkeypatch):
+    """写盘失败（磁盘满/文件被锁）时原模板保持完整，且不残留 .tmp。"""
+    import os
+
+    user = tmp_path / "user_template.png"
+    ok, buf = cv2.imencode(".png", np.zeros((60, 60), dtype=np.uint8))
+    assert ok
+    user.write_bytes(buf.tobytes())
+    original = user.read_bytes()
+    manager = TemplateManager(template_path=user, template_name="hero_selection")
+
+    def _disk_full(fd):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "fsync", _disk_full)
+    with pytest.raises(OSError):
+        manager.set_template(
+            np.zeros((200, 200, 3), dtype=np.uint8), (10, 10, 50, 50))
+    assert user.read_bytes() == original
+    assert list(tmp_path.glob(".*.tmp")) == []

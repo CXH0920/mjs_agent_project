@@ -447,3 +447,47 @@ def test_on_finished_writes_ops_log(tmp_path):
     assert log_path.exists()
     text = log_path.read_text(encoding="utf-8")
     assert "audit_rule_doc.py → exit=0 ✔ 执行完成" in text
+
+def test_audit_crash_not_rendered_as_pass(tmp_path):
+    """脚本崩溃/启动失败时 audit 不得把空输出渲染成「文档校验通过」（第 15 批 P2-1）。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RuleDocPanel(root)
+    from src.business.common.script_runner import FAILED_TO_START_EXIT_CODE
+    for code in (3, FAILED_TO_START_EXIT_CODE):
+        panel._clear_script_output()
+        panel._on_finished(code, None, panel._on_audit_finished)
+        banner = panel._audit_banner.message_label.text()
+        assert "未完成" in banner
+        assert "通过" not in banner
+    # 成功路径不受影响：正常解析汇总行并显示通过
+    panel._clear_script_output()
+    panel._append_log("汇总：ERROR 0 / WARN 0 / INFO 0".encode("utf-8"))
+    panel._on_finished(0, None, panel._on_audit_finished)
+    assert "文档校验通过" in panel._audit_banner.message_label.text()
+
+
+def test_sync_crash_keeps_previous_diff_state(tmp_path):
+    """sync 崩溃（非哨兵码）时不解析上一轮旧 json、不误置已检查。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RuleDocPanel(root)
+    panel._diff_table.setRowCount(2)  # 模拟上次差异表仍有内容
+    panel._on_finished(2, None, panel._on_sync_finished)
+    assert panel._checked is False
+    assert panel._diff_table.rowCount() == 2
+    # 哨兵码（检测到差异）仍正常走回调
+    panel._on_finished(1, None, panel._on_sync_finished,
+                       sentinel_codes={1}, sentinel_note="检测到差异")
+    assert panel._checked is True
+
+
+def test_failure_codes_still_invoke_callback(tmp_path):
+    """业务失败码（--apply-json 的 1/2）回调仍执行：失败后需刷新差异表真实状态。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RuleDocPanel(root)
+    called = []
+    panel._on_finished(1, None, lambda: called.append(True),
+                       failure_codes={1: "应用失败"})
+    assert called == [True]

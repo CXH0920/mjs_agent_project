@@ -197,3 +197,17 @@ def test_missing_face_rejected() -> None:
     """缺省花色字段（默认空串）也被拦截（#17）。"""
     with pytest.raises(ValueError):
         CardPointItem(name="x", point="1")
+
+
+def test_load_judge_rules_null_records_issue_without_crash(tmp_path: Path) -> None:
+    """judge_rules 键存在但值为 null：记 error（触发留底/保存守卫），牌行仍加载。"""
+    path = tmp_path / "card_points.json"
+    _write(path, {
+        "cards": [{"name": "火杀", "suit": "♥", "point": "1"}],
+        "judge_rules": None,
+    })
+    repo = CardPointsRepository(path)
+    issues = repo.load()
+    assert any(i.kind == "invalid_judge_rules" and i.severity == "error" for i in issues)
+    assert [c.name for c in repo.list_cards()] == ["火杀"]
+    assert repo.list_rules() == []

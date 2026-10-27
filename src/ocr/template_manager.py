@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +22,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from src.config.env import BUNDLE_ROOT, PROJECT_ROOT
+from src.data.json_repository import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -143,13 +146,17 @@ class TemplateManager:
         return BUNDLED_TEMPLATE_DIR / "wujiang_select.png"
 
     def _load(self) -> None:
-        """内部加载逻辑：用户模板缺失时回退随包默认模板（打包态只读资源）。"""
+        """内部加载逻辑：用户模板缺失或损坏时回退随包默认模板（打包态只读资源）。"""
         if self._template_path.exists():
             self._load_internal(self._template_path)
-            return
+            if self._template is not None:
+                return
+            # 半截 PNG（写入中断遗留）等损坏与缺失同待遇回退随包模板；
+            # 否则 _template=None 使 match() 恒 False，页面判定持续失效
+            logger.warning("用户模板损坏，回退随包默认模板: %s", self._template_path)
         bundled = self._bundled_template_path()
         if bundled.exists():
-            logger.info("用户模板不存在，使用随包默认模板: %s", bundled)
+            logger.info("用户模板不存在或损坏，使用随包默认模板: %s", bundled)
             self._load_internal(bundled)
         else:
             logger.info("模板文件不存在: %s", self._template_path)
@@ -299,15 +306,26 @@ class TemplateManager:
         # 转灰度
         gray = cv2.cvtColor(roi_crop, cv2.COLOR_BGR2GRAY)
 
-        # 保存到文件
+        # 保存到文件（原子写：写入中断不留半截 PNG，半截文件解码失败会让
+        # 页面判定失效；与 json_repository 原子写同骨架，PNG 是二进制故内联）
         self._template_path.parent.mkdir(parents=True, exist_ok=True)
-        # cv2.imwrite 用 ANSI fopen 不支持中文路径，改 imencode + open(wb) 规避
+        # cv2.imwrite 用 ANSI fopen 不支持中文路径，改 imencode + 临时文件规避
         _ext = self._template_path.suffix or ".png"
         _ok, buf = cv2.imencode(_ext, gray)
         if not _ok:
             raise IOError(f"模板保存失败: {self._template_path}")
-        with self._template_path.open("wb") as _f:
-            _f.write(buf.tobytes())
+        fd, _tmp = tempfile.mkstemp(
+            prefix=f".{self._template_path.stem}.", suffix=".tmp",
+            dir=self._template_path.parent)
+        try:
+            with os.fdopen(fd, "wb") as _f:
+                _f.write(buf.tobytes())
+                _f.flush()
+                os.fsync(_f.fileno())
+            Path(_tmp).replace(self._template_path)
+        except Exception:
+            Path(_tmp).unlink(missing_ok=True)
+            raise
 
         # 加载到内存
         self._template = gray
@@ -315,16 +333,14 @@ class TemplateManager:
         self._reference_size = (img_w, img_h)
         self._template_roi = (x, y, w, h)
         try:
-            with self._metadata_path.open("w", encoding="utf-8", newline="\n") as file:
-                json.dump({
-                    "reference_width": img_w,
-                    "reference_height": img_h,
-                    "x": x,
-                    "y": y,
-                    "w": w,
-                    "h": h,
-                }, file, ensure_ascii=False, indent=2)
-                file.write("\n")
+            atomic_write_json(self._metadata_path, {
+                "reference_width": img_w,
+                "reference_height": img_h,
+                "x": x,
+                "y": y,
+                "w": w,
+                "h": h,
+            })
         except OSError as exc:
             logger.warning("模板元数据保存失败: %s", exc)
         logger.info("模板已保存: %s (%sx%s)", self._template_path.name, w, h)

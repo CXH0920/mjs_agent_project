@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from src.data.json_repository import atomic_write_text
 from src.ui.shared.faction_colors import FACTION_COLORS_FILE as COLORS_FILE
 from src.ui.shared.faction_colors import load_faction_colors
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
@@ -38,11 +39,11 @@ def save_faction_colors(colors: dict[str, str], path: Path = COLORS_FILE) -> Non
             raise ValueError(f"势力“{name}”的颜色不是有效 Hex 颜色：{value}")
         normalized[name] = value.upper()
     payload = [{"faction": name, "color": color} for name, color in normalized.items()]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    # 原子写：写盘中断不留半截 JSON（config/ 无备份链，半截文件会被
+    # load 侧按空字典降级，用户配色静默丢失）
+    atomic_write_text(
+        path,
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
     )
 
 

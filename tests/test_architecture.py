@@ -308,7 +308,9 @@ CLASS_FIELD_BUDGETS: dict[str, int] = {
     # shared/capture_flow.py（审计 G5 切片 4.4a/4.4b）
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 35,
     "ui/match/peak_select_panel.py:PeakSelectPanel": 41,
-    "ui/maintenance/rule_doc_panel.py:RuleDocPanel": 35,
+    # 35 → 36：_last_run_ok 标志封堵脚本崩溃时业务回调把空输出渲染成
+    # 假结论（audit 崩溃显示「文档校验通过」，第 15 批审查 P2-1）
+    "ui/maintenance/rule_doc_panel.py:RuleDocPanel": 36,
     "ui/match/match_guide_panel.py:MatchGuidePanel": 34,
     # index_refinement_dialog 34 → 12：清单/编辑控件拆入两个 pane（审计 G4 切片 4.3），
     # 12 低于默认预算 30，条目出表
@@ -503,8 +505,11 @@ ALLOWED_DATA_FUNCTIONS = {
     # 指定配对计算对话框共用同一判定事实源，搬出 data 会造成 manager 反向依赖。
     "is_synergy_outdated",
     # 原子写盘基元（json_repository.py）：无状态底层 IO 工具、非仓储/读函数，
-    # 值对象同地位；UI 写配置文件（白名单覆盖等）直接使用，注入反而造转发壳。
+    # 值对象同地位；UI 写配置文件（白名单覆盖、势力配色等）直接使用，
+    # 注入反而造转发壳。atomic_write_text：faction_color_dialog 配色文件
+    # 原子化接入（config/ 无备份链，半截 JSON 会静默丢用户配色）。
     "atomic_write_json",
+    "atomic_write_text",
 }
 
 
@@ -677,7 +682,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
-    "ui/maintenance/rule_doc_panel.py": 940,
+    # 940 → 955：崩溃/启动失败码不再进业务回调——_on_finished 标记
+    # _last_run_ok，audit/sync 回调侧短路（第 15 批审查 P2-1 修复）
+    "ui/maintenance/rule_doc_panel.py": 956,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
     "ui/maintenance/index_refinement_dialog.py": 790,
@@ -693,7 +700,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 2026-10-26 对局攻略页锚点判定（437 → 700，超 500 行 tripwire 入册）：
     # 双锚点 AND + 期望位置校验三层漏斗（缓存复验/基准+参考缩放局部/全图粗扫
     # 兜底），动态背景漏检收口；锚点加载失败自动回退原有大模板漏斗
-    "ocr/template_manager.py": 700,
+    # 700 → 716：模板写盘原子化（mkstemp+fsync+replace）+ 用户模板损坏
+    # 回退随包模板（第 2 批审查 P2-1 修复，封堵写入中断致页面判定持续失效）
+    "ocr/template_manager.py": 716,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）

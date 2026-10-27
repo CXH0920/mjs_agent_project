@@ -333,6 +333,9 @@ class RuleDocPanel(QWidget):
         self._runner.output.connect(self._append_log)
         self._runner.finished.connect(self._on_runner_finished)
         self._pending_finished: tuple = ()  # (on_finished, sentinel_codes, sentinel_note, failure_codes)
+        # 最近一次脚本运行是否有业务产物可解析（0/哨兵码/业务失败码为 True）；
+        # 崩溃/启动失败时回调不得把空输出解析成结论（见 _on_audit_finished）
+        self._last_run_ok = True
         self._pending_sync = False
         # 尚未完成 audit+sync 检查（A2 未检查引导）
         self._checked = False
@@ -742,6 +745,13 @@ class RuleDocPanel(QWidget):
         self._append_marked(conclusion, kind)
         # 执行记录持久化（rule_doc_ops.log）：用户操作轨迹
         _OPS_LOGGER.info("%s → exit=%d %s", self._last_command, code, conclusion)
+        # 非 0 且非哨兵/业务失败码 = 崩溃或启动失败，输出无业务产物；
+        # 业务失败码（如 --apply-json 的 1/2）有定制文案且回调仍需刷新状态
+        self._last_run_ok = (
+            code == 0
+            or bool(sentinel_codes and code in sentinel_codes)
+            or bool(failure_codes and code in failure_codes)
+        )
         try:
             on_finished()
         except Exception as exc:
@@ -753,6 +763,13 @@ class RuleDocPanel(QWidget):
     # 各命令完成回调
     # ---------------------------------------------------------------
     def _on_audit_finished(self) -> None:
+        if not self._last_run_ok:
+            # 脚本崩溃/启动失败时无汇总行可解析，空清单会被渲染成
+            # 「文档校验通过」+ 角标清零；显式标注未完成，表格保持上次结果
+            self._audit_banner.set_tone(TONE_WARNING)
+            self._audit_banner.message_label.setText("文档校验未完成（脚本异常退出，见日志）")
+            self._audit_banner.message_label.setVisible(True)
+            return
         # 输出已在日志中；audit 汇总行解析展示
         summary = self._last_output()
         issues = rds.parse_audit_output(summary)
@@ -792,6 +809,9 @@ class RuleDocPanel(QWidget):
             self.refresh_diffs()
 
     def _on_sync_finished(self) -> None:
+        if not self._last_run_ok:
+            # sync 崩溃时磁盘上的 json 是上一轮旧产物，解析会展示过期差异
+            return
         self._checked = True
         self._diffs = rds.parse_sync_diff(rds.sync_json_path(self._root))
         self._diff_table.setRowCount(len(self._diffs))

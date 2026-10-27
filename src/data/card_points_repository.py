@@ -130,7 +130,13 @@ class CardPointsRepository(JsonRepository):
             seen.add(key)
             self._cards.append(item)
         seen_rules: set[str] = set()
-        for index, raw in enumerate(root.get("judge_rules", [])):
+        rules_root = root.get("judge_rules", [])
+        if not isinstance(rules_root, list):
+            # 键存在但值为 null 时 get 默认值不生效，enumerate(None) 直接崩溃；
+            # error 触发留底与保存守卫，牌行仍正常加载展示
+            self._issue("error", "invalid_judge_rules", "判定规则（judge_rules）必须是数组")
+            rules_root = []
+        for index, raw in enumerate(rules_root):
             try:
                 rule = JudgeRuleItem.model_validate(raw)
             except ValidationError as error:

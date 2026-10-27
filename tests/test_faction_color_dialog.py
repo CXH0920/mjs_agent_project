@@ -139,3 +139,21 @@ def test_dialog_rejects_blank_or_duplicate_faction(tmp_path, monkeypatch) -> Non
 
     assert warnings == ["请输入势力名称。", "势力“东汉”已存在。"]
     assert set(dialog._pickers) == {"东汉"}
+
+
+def test_save_faction_colors_uses_atomic_write(tmp_path, monkeypatch) -> None:
+    """保存走原子写入口：写盘中断不留半截 JSON（config/ 无备份链）。"""
+    import src.ui.configuration.faction_color_dialog as dialog_module
+
+    calls: list = []
+    real = dialog_module.atomic_write_text
+
+    def _spy(path, content):
+        calls.append(path)
+        real(path, content)
+
+    monkeypatch.setattr(dialog_module, "atomic_write_text", _spy)
+    path = tmp_path / "faction_colors.json"
+    save_faction_colors({"东汉": "#ABCDEF"}, path)
+    assert calls == [path]
+    assert load_faction_colors(path) == {"东汉": "#ABCDEF"}
