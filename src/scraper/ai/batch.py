@@ -427,9 +427,10 @@ def main():
                 existing_synergy_keys=existing_synergy_keys,
                 update_mode=args.update,
             ))
-    except Exception as exc:
-        # 不可重试状态（401/403 等）直接冒泡到此处：记录后走统一收尾，
-        # 否则失败清单停留在上一次内容、本次 token 费用完全不可见。
+    except (Exception, KeyboardInterrupt) as exc:
+        # 不可重试状态（401/403 等）与 Ctrl+C 中断都直接冒泡到此处：记录后走统一
+        # 收尾，否则失败清单停留在上一次内容、本次 token 费用完全不可见（Ctrl+C
+        # 不落中断标记时，--retry-failed 会按过期清单重跑已成功项）。
         fatal_error = exc
         logger.error("生成中断: %s: %s", type(exc).__name__, exc)
         print(f"\n  [中断] {type(exc).__name__}: {exc}", flush=True)
