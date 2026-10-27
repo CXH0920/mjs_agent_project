@@ -2,10 +2,13 @@
 """提案工作流测试：合入器（apply_rule_proposal）+ 起草器（propose_rule_changes）。
 
 覆盖：FAQ 新增编号接续、FAQ 修订、术语追加、行替换、新小节、驳回跳过、
-LLM 输出解析与占位降级、提案编号递增。
+LLM 输出解析与占位降级、提案编号递增；main 自动链的 -m 子进程形态与
+母本原子写（scripts→src/scripts 整合后路径式子进程调用已失效）。
 """
 import json
+from types import SimpleNamespace
 
+import pytest
 from src.scripts import apply_rule_proposal as arp  # noqa: E402
 from src.scripts import propose_rule_changes as prc  # noqa: E402
 
@@ -148,3 +151,116 @@ def test_generate_items_parses_llm_output():
     assert items[0]["type"] == "faq_new"
     assert items[0]["target"] == "5.2"
     assert items[0]["status"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# main 自动链：子进程形态（P1-1）与母本原子写（P1-2）
+# ---------------------------------------------------------------------------
+
+def _approved_proposal(tmp_path):
+    proposal = tmp_path / "CP-test.json"
+    proposal.write_text(json.dumps({"proposal_id": "CP-test", "items": [
+        {"id": "P-01", "type": "faq_new", "target": "5.2", "status": "approved",
+         "suggested_text": "自动链测试条目", "source": "人工确认"}
+    ]}, ensure_ascii=False), encoding="utf-8")
+    return proposal
+
+
+def test_auto_chain_subprocess_uses_dash_m(monkeypatch, tmp_path):
+    """自动链子进程必须为 `-m src.scripts.*` 模块形态。
+
+    根级 scripts/ 已随 scripts→src/scripts 整合（1586377）移除，路径式调用
+    会静默执行不存在的脚本（returncode=2）→ audit 永远"失败"→ 合入被回滚。
+    """
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = list(cmd)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(arp.subprocess, "run", fake_run)
+    ok, _ = arp.run_audit_strict(str(tmp_path / "doc.md"))
+    assert ok is True
+    assert captured["cmd"][1:3] == ["-m", "src.scripts.audit_rule_doc"]
+
+    ok, _ = arp.run_maintain_rules()
+    assert ok is True
+    assert captured["cmd"][1:3] == ["-m", "src.scripts.maintain_rag"]
+
+
+def test_run_audit_strict_spawns_real_module(tmp_path):
+    """audit 子进程端到端必须能真实调起模块（输出不得是"打不开脚本"）。"""
+    doc = tmp_path / "mini.md"
+    doc.write_text("# 最小文档\n\n## 1. 测试\n\n内容\n", encoding="utf-8")
+    _ok, out = arp.run_audit_strict(str(doc))
+    assert "can't open file" not in out
+    assert "No such file or directory" not in out
+
+
+def _spy_atomic_write(monkeypatch):
+    """包装 atomic_write_text 记录调用路径（修复前该函数不存在于 arp，落回 no-op
+    使 spy 断言失败复现，同时不阻断裸写路径的行为断言）。"""
+    calls = []
+    real = getattr(arp, "atomic_write_text", None)
+
+    def spy(path, content):
+        if real is not None:
+            real(path, content)
+        calls.append(str(path))
+
+    monkeypatch.setattr(arp, "atomic_write_text", spy, raising=False)
+    return calls
+
+
+def test_main_merge_writes_doc_via_atomic_write(monkeypatch, tmp_path):
+    """main 写回母本必须走 atomic_write_text（母本写保护约束，见 sync_rule_stats）。"""
+    doc = tmp_path / "doc.md"
+    doc.write_text(DOC, encoding="utf-8")
+    monkeypatch.setattr(arp.subprocess, "run",
+                        lambda *a, **k: SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(arp, "append_changelog", lambda *a, **k: True)
+    monkeypatch.setattr(arp, "archive_proposal", lambda *a: None)
+    calls = _spy_atomic_write(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["apply_rule_proposal", "--proposal",
+                                     str(_approved_proposal(tmp_path)),
+                                     "--doc", str(doc), "--skip-maintain"])
+    arp.main()
+
+    assert "| 19 | 自动链测试条目 | 人工确认 |" in doc.read_text(encoding="utf-8")
+    assert str(doc) in calls
+
+
+def test_main_rolls_back_doc_atomically_when_audit_fails(monkeypatch, tmp_path):
+    """audit 失败必须回滚母本原文，且回滚同样走原子写。"""
+    doc = tmp_path / "doc.md"
+    doc.write_text(DOC, encoding="utf-8")
+    monkeypatch.setattr(arp, "run_audit_strict", lambda _p: (False, "模拟校验失败"))
+    monkeypatch.setattr(arp, "append_changelog", lambda *a, **k: True)
+    monkeypatch.setattr(arp, "archive_proposal", lambda *a: None)
+    calls = _spy_atomic_write(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["apply_rule_proposal", "--proposal",
+                                     str(_approved_proposal(tmp_path)),
+                                     "--doc", str(doc), "--skip-maintain"])
+    with pytest.raises(SystemExit) as exc:
+        arp.main()
+
+    assert exc.value.code == 1
+    assert doc.read_text(encoding="utf-8") == DOC
+    assert str(doc) in calls
+
+
+def test_append_changelog_writes_atomically_and_appends(monkeypatch, tmp_path):
+    """changelog 追加只增不删且必须原子写（对齐 sync_rule_stats.append_changelog）。"""
+    changelog = tmp_path / "changelog.md"
+    changelog.write_text(
+        "| 日期 | 段 | 动作 | 摘要 | 来源 | 状态 |\n|---|---|---|---|---|---|\n",
+        encoding="utf-8")
+    calls = _spy_atomic_write(monkeypatch)
+
+    merged = arp.append_changelog({"proposal_id": "CP-test"}, ["P-01"], [],
+                                  changelog_path=str(changelog))
+
+    assert merged is not False  # applied 非空即走过追加路径（返回值本身无人消费）
+    text = changelog.read_text(encoding="utf-8")
+    assert "| 日期 |" in text and "CP-test" in text and "P-01" in text
+    assert calls == [str(changelog)]

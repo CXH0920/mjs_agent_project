@@ -74,8 +74,11 @@ def load_json(path):
         return None
 
 
-def newest_backup(stem):
-    pat = os.path.join(BACKUP_DIR, stem + '-*.json')
+def newest_backup(stem, backup_dir=None):
+    # backup_dir 运行时取 BACKUP_DIR：默认参数会在定义时绑定旧值，
+    # monkeypatch BACKUP_DIR 的隔离测试（tests/test_diff_source_data.py）将静默失效
+    pat = os.path.join(backup_dir if backup_dir is not None else BACKUP_DIR,
+                       stem + '-*.json')
     hits = sorted(glob.glob(pat))
     return hits[-1] if hits else None
 
@@ -260,7 +263,8 @@ HANDLERS = {
 
 def find_old(fname, old_arg):
     if os.path.isdir(old_arg):
-        return newest_backup(os.path.splitext(fname)[0])
+        # --old 传目录：基线取自该目录，不能回落到默认 data/backups
+        return newest_backup(os.path.splitext(fname)[0], old_arg)
     if os.path.isfile(old_arg):
         return old_arg
     return None

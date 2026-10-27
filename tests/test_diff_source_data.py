@@ -54,3 +54,25 @@ def test_identical_with_baseline_reports_plain_no_change(isolated_dirs, capsys) 
 
     assert out.endswith('未发现变更。\n')
     assert '无旧基线' not in out
+
+
+def test_find_old_honours_directory_argument(isolated_dirs, tmp_path) -> None:
+    """--old 传目录时必须在该目录内找基线，不得静默回落到默认 data/backups。"""
+    _data_dir, backup_dir = isolated_dirs  # 默认备份目录保持为空
+    old_dir = tmp_path / "old_baseline"
+    old_dir.mkdir()
+    baseline = old_dir / "heroes-20260101-000000-000000.json"
+    baseline.write_text(json.dumps([{"id": 1, "name": "曹操"}]), encoding="utf-8")
+
+    found = dsd.find_old("heroes.json", str(old_dir))
+
+    assert found == str(baseline)
+
+
+def test_find_old_file_argument_still_direct(isolated_dirs, tmp_path) -> None:
+    """--old 传文件时直接用该文件（既有行为防回归）。"""
+    _data_dir, _backup_dir = isolated_dirs
+    baseline = tmp_path / "heroes-older.json"
+    baseline.write_text("[]", encoding="utf-8")
+
+    assert dsd.find_old("heroes.json", str(baseline)) == str(baseline)

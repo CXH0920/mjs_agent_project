@@ -25,6 +25,7 @@ import sys
 
 from src.business.rag.rule_doc_service import build_faq_revise_row
 from src.config.env import PROJECT_ROOT as ROOT
+from src.data.json_repository import atomic_write_text
 from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE, install_crash_logger, setup_stdout
 
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
@@ -227,18 +228,23 @@ def apply_proposal(doc_text, proposal):
 # ---------------------------------------------------------------------------
 
 def run_audit_strict(doc_path):
-    """合入后机器校验；失败返回 False。"""
-    script = os.path.join(ROOT, 'scripts', 'audit_rule_doc.py')
-    proc = subprocess.run([sys.executable, script, '--strict', '--doc', doc_path],
-                          cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    """合入后机器校验；失败返回 False。
+
+    子进程必须用 `-m src.scripts.audit_rule_doc` 模块形态调用：根级 scripts/
+    目录已在 scripts→src/scripts 整合（1586377）后移除，路径式调用会静默执行
+    不存在的脚本（returncode=2 被当作校验失败），合入永远被回滚。
+    """
+    proc = subprocess.run(
+        [sys.executable, '-m', 'src.scripts.audit_rule_doc', '--strict', '--doc', doc_path],
+        cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     return proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def run_maintain_rules():
-    """重跑元规则/术语/FAQ 语料。"""
-    script = os.path.join(ROOT, 'scripts', 'maintain_rag.py')
-    proc = subprocess.run([sys.executable, script, '--only', '元规则'],
-                          cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    """重跑元规则/术语/FAQ 语料（-m 模块调用，理由见 run_audit_strict）。"""
+    proc = subprocess.run(
+        [sys.executable, '-m', 'src.scripts.maintain_rag', '--only', '元规则'],
+        cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     return proc.returncode == 0, proc.stdout + proc.stderr
 
 
@@ -261,8 +267,7 @@ def append_changelog(proposal, applied, errors, changelog_path=DEFAULT_CHANGELOG
         lines.append(line)
     else:
         lines.insert(insert_at, line)
-    with open(changelog_path, 'w', encoding='utf-8', newline='\n') as f:
-        f.write('\n'.join(lines) + '\n')
+    atomic_write_text(changelog_path, '\n'.join(lines) + '\n')
 
 
 def archive_proposal(proposal_path):
@@ -302,15 +307,21 @@ def main():
         print('无可合入的提案项（需 status=approved/revised）。')
         sys.exit(0)
 
-    with open(args.doc, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(new_text)
+    # 母本与 changelog 一律原子写：sync_rule_stats 对同一文档已约定
+    # 「唯一权威文档且无备份兜底，必须原子写」，本链不得例外
+    atomic_write_text(args.doc, new_text)
 
     ok, out = run_audit_strict(args.doc)
     if not ok and not args.skip_audit:
-        print('audit --strict 未通过，文档已回滚。')
         print(out[-2000:])
-        with open(args.doc, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(doc_text)
+        try:
+            atomic_write_text(args.doc, doc_text)
+        except OSError as error:
+            # 回滚写失败（如 Windows 下文档被编辑器/杀软短暂锁定）时文档停留在
+            # 合入态：留痕退出由人工核对，不能带着 traceback 崩掉留下无声半状态
+            print(f'❌ 回滚写入失败，文档当前为已合入状态，请人工核对：{error}')
+            sys.exit(1)
+        print('audit --strict 未通过，文档已回滚。')
         sys.exit(1)
 
     if not args.skip_maintain:
