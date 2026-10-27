@@ -182,9 +182,15 @@ class RefinementListPane(QFrame):
             self.table.setItem(row, 2, detail_item)
             self.table.setItem(row, 3, state_item)
         if self._visible:
-            row = next((i for i, block in enumerate(self._visible)
-                        if block.block_id == selected_id), 0)
-            self.table.selectRow(row)
+            matched = next((i for i, block in enumerate(self._visible)
+                            if block.block_id == selected_id), None)
+            if matched is None:
+                # 当前块不在可见列表（初始加载 / 被筛选挤出）：先清空选择再选
+                # 第 0 行，否则行索引恰好未变时 selectRow 不发 currentCellChanged，
+                # 高亮会落到别的块上而编辑器仍停在原块（错位）
+                self.table.setCurrentCell(-1, -1)
+                matched = 0
+            self.table.selectRow(matched)
 
     def refresh_row_state(self, block: PendingBlock, row_states: dict[str, str]) -> None:
         """单块行状态原位刷新（建议返回/编辑后调用）。"""

@@ -292,6 +292,61 @@ def test_dirty_guard_on_switch(tmp_path: Path, monkeypatch) -> None:
     dialog.close()
 
 
+def test_filter_excludes_current_dirty_block_keeps_editor_when_refused(
+        tmp_path: Path, monkeypatch) -> None:
+    # 筛选把正在编辑（dirty）的块挤出可见列表且拒绝放弃时：清空高亮而非
+    # 落到新行，编辑器内容与 _current 保持原块（修复前高亮指向别的块、
+    # 且点击该行属同一格永不触发加载）
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)
+    dialog._field_editors["timing"].setPlainText("人工填写")
+    assert dialog._dirty
+    monkeypatch.setattr(
+        dialog_module.QMessageBox, "question",
+        lambda *a, **k: dialog_module.QMessageBox.StandardButton.No)
+    dialog._search_edit.setText("半空")
+    dialog._apply_filter()  # card_1 被挤出，可见列表只剩 card_2
+    assert dialog._current.block_id == "card_1_测试牌"
+    assert dialog._field_editors["timing"].toPlainText() == "人工填写"
+    assert dialog._table.currentRow() == -1  # 高亮不得指向 card_2 所在行
+    dialog.close()
+
+
+def test_filter_excludes_current_dirty_block_loads_match_when_confirmed(
+        tmp_path: Path, monkeypatch) -> None:
+    # 同场景选择放弃修改：加载第一个匹配块（用户搜索即为了找它）
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)
+    dialog._field_editors["timing"].setPlainText("人工填写")
+    _answer_yes(monkeypatch)
+    dialog._search_edit.setText("半空")
+    dialog._apply_filter()
+    assert dialog._current.block_id == "card_2_半空牌"
+    assert dialog._field_editors["timing"].toPlainText() == "回合开始"  # card_2 磁盘基线
+    dialog.close()
+
+
+def test_filter_row_shift_preserves_same_block_edits(tmp_path: Path) -> None:
+    # 筛选后当前块仍可见但行号变化：同块重选不得重新 _load_current，
+    # 否则未保存编辑被静默重置回基线
+    _app()
+    root = _curated_corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _click_scope(dialog, "全部")  # 行序：card_1(pending) card_3(curated) card_4(normal)
+    dialog._table.selectRow(1)
+    dialog._field_editors["timing"].setPlainText("人工补充时机")
+    assert dialog._dirty
+    dialog._search_edit.setText("已精化")
+    dialog._apply_filter()  # card_3 仍可见，行号 1 → 0
+    assert dialog._current.block_id == "card_3_已精化"
+    assert dialog._field_editors["timing"].toPlainText() == "人工补充时机"
+    dialog.close()
+
+
 def test_suggest_all_finishes_and_empty_state(tmp_path: Path, monkeypatch) -> None:
     _app()
     root = _corpus(tmp_path)

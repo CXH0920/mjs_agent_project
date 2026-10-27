@@ -331,15 +331,23 @@ class IndexRefinementDialog(QDialog):
         if row < 0 or row >= len(self._visible):
             return
         block = self._visible[row]
+        if self._current is not None and self._current.block_id == block.block_id:
+            # 筛选/范围刷新导致的同块重选（行号变化）：编辑器已是该块内容，
+            # 重新 _load_current 会把未保存编辑重置回基线
+            return
         if self._current is not None and self._current.block_id != block.block_id and self._dirty:
             if not self._confirm_discard():
-                # 拒绝放弃：恢复原选中行
+                # 拒绝放弃：恢复原选中行；原块已被筛选挤出可见列表时清空高亮
+                # （不能兜底落在新行——高亮会指向别的块而编辑器仍是原块）
                 previous = self._current
                 previous_row = next(
                     (i for i, visible in enumerate(self._visible)
-                     if visible.block_id == previous.block_id), row)
+                     if visible.block_id == previous.block_id), None)
                 self._table.blockSignals(True)
-                self._table.setCurrentCell(previous_row, 0)
+                if previous_row is not None:
+                    self._table.setCurrentCell(previous_row, 0)
+                else:
+                    self._table.setCurrentCell(-1, -1)
                 self._table.blockSignals(False)
                 return
         self._current = block
