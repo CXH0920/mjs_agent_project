@@ -308,3 +308,25 @@ def test_connection_key_falls_back_on_missing_or_empty_value() -> None:
     # 显式 0 是合法值（自动探测端口），不触发回退
     assert connection_key({"emulator_adb_port": 0, "mumu_adb_port": 16448},
                           "emulator_adb_port") == 0
+
+
+# ---------------------------------------------------------------------------
+# BOM 容错（Windows 记事本「带 BOM 的 UTF-8」保存 config.env，BOM 会污染首键）
+# ---------------------------------------------------------------------------
+
+def test_parse_env_file_strips_utf8_bom(tmp_path: Path) -> None:
+    """带 BOM 的 config.env 解析出干净键名，首键不因 BOM 前缀被静默丢弃。"""
+    env_file = tmp_path / "config.env"
+    env_file.write_bytes(b"\xef\xbb\xbfDEEPSEEK_API_KEY=abc\nMAX_RETRIES=5\n")
+    assert env.parse_env_file(env_file) == {"DEEPSEEK_API_KEY": "abc", "MAX_RETRIES": "5"}
+
+
+def test_save_env_file_heals_existing_bom(tmp_path: Path) -> None:
+    """带 BOM 的旧文件经 save_env_file 再保存后自动修复为无 BOM，原键与新键均保留。"""
+    env_file = tmp_path / "config.env"
+    env_file.write_bytes(b"\xef\xbb\xbfMAX_RETRIES=5\n")
+    env.save_env_file(env_file, {"HTTP_TIMEOUT": "300"})
+    assert not env_file.read_bytes().startswith(b"\xef\xbb\xbf")
+    parsed = env.parse_env_file(env_file)
+    assert parsed["MAX_RETRIES"] == "5"
+    assert parsed["HTTP_TIMEOUT"] == "300"

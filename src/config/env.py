@@ -110,7 +110,8 @@ def parse_env_file(env_path=None):
 
     result = {}
     try:
-        content = path.read_text(encoding="utf-8")
+        # utf-8-sig：剥可选 BOM（Windows 记事本「带 BOM 的 UTF-8」保存时 BOM 会污染首键）
+        content = path.read_text(encoding="utf-8-sig")
     except OSError as e:
         logger.warning(".env 文件读取失败 %s: %s", path, e)
         return {}
@@ -366,7 +367,8 @@ def save_env_file(env_path, data):
     lines = []
     if env_path.exists():
         try:
-            content = env_path.read_text(encoding="utf-8")
+            # 读侧同样剥 BOM：带 BOM 的旧文件下次保存时自动修复为无 BOM
+            content = env_path.read_text(encoding="utf-8-sig")
         except OSError as error:
             # 读不出旧内容就无法保留注释与无关键——直接覆盖会丢用户手写配置，
             # 因此记日志后失败退出（config.env 被占用/权限异常时保存中止）

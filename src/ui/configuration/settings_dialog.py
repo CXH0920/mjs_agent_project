@@ -203,7 +203,7 @@ class SettingsDialog(QDialog):
         form.addRow("API URL:", self._api_url_widget)
 
         self._model_widget = QLineEdit()
-        self._model_widget.setPlaceholderText("留空使用服务默认模型")
+        self._model_widget.setPlaceholderText("deepseek 可留空用默认模型；其余供应商必填")
         form.addRow("模型:", self._model_widget)
 
         self._enabled_widget = QCheckBox("启用（同时只允许一个启用=当前使用 API）")
@@ -344,7 +344,7 @@ class SettingsDialog(QDialog):
         profile["note"] = self._note_widget.text().strip()
 
     def _on_provider_changed(self) -> None:
-        """切换供应商时按预设表预填 URL/模型（字段为空或仍为某预设值时才覆盖，保留自定义）。"""
+        """切换供应商时按预设表预填 URL/模型并同步模型占位文案（保留用户自定义）。"""
         if self._loading:
             return
         provider = self._provider_widget.currentData()
@@ -357,6 +357,10 @@ class SettingsDialog(QDialog):
         model = self._model_widget.text().strip()
         if not model or model in preset_models:
             self._model_widget.setText(preset.get("model", ""))
+        if preset.get("model"):
+            self._model_widget.setPlaceholderText(f"留空使用默认模型 {preset['model']}")
+        else:
+            self._model_widget.setPlaceholderText("必填（该供应商接口要求指定模型）")
 
     def _on_add_profile(self) -> None:
         """新增档案：追加并选中编辑。同时只允许一个启用——当前已有启用档案则新增默认停用。"""
@@ -429,7 +433,7 @@ class SettingsDialog(QDialog):
             self._profile_table.selectRow(self._edit_index)
 
     def _collect_profiles(self) -> dict:
-        """读取并校验档案页数据：名称唯一非空、URL 合法、供应商语义 Key 必填。"""
+        """读取并校验档案页数据：名称唯一非空、URL 合法、无默认模型供应商的 model 必填、供应商语义 Key 必填。"""
         self._commit_panel()
         profiles = self._profiles_data.get("profiles", [])
         seen: set[str] = set()
@@ -448,6 +452,11 @@ class SettingsDialog(QDialog):
                 raise ValueError(f"档案 {name} 的 API URL 不能为空")
             if not (url.startswith("http://") or url.startswith("https://")):
                 raise ValueError(f"档案 {name} 的 URL 必须以 http:// 或 https:// 开头")
+            # 无预设默认模型的供应商（openai/ollama/openai-compatible）接口要求显式
+            # model，留空状态永远不可能工作，保存时硬校验拦截
+            if not p.get("model", "").strip() and not PROVIDER_PRESETS[provider]["model"]:
+                raise ValueError(
+                    f"档案 {name} 的供应商 {PROVIDER_LABELS[provider]} 必须填写模型（仅 deepseek 可留空用默认）")
             if p.get("enabled", True) and PROVIDER_PRESETS[provider]["requires_key"] and not p.get("api_key", "").strip():
                 raise ValueError(f"档案 {name} 的供应商 {PROVIDER_LABELS[provider]} 启用时必须填写 API Key（停用可留空）")
         return self._profiles_data

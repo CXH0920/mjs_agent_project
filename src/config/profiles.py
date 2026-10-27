@@ -35,6 +35,8 @@ def _usable_profile_config(profile: dict) -> dict | None:
 
     空 URL 不回退 DeepSeek 默认（BUG-5：跨供应商场景会把请求发错端点），视为无效跳过。
     空 Key 仅对 requires_key=False 的供应商（如 ollama）允许。
+    空 model 只回退预设表登记的该供应商默认（现仅 deepseek 有），其余透传空串——
+    注入 deepseek 模型名会把请求发成错模型（跨供应商错配）。
     """
     if not profile.get("enabled", True) or not profile.get("api_url"):
         return None
@@ -45,7 +47,7 @@ def _usable_profile_config(profile: dict) -> dict | None:
         "provider": provider,
         "api_key": profile.get("api_key", ""),
         "api_url": profile.get("api_url", ""),
-        "model": profile.get("model", "") or DEFAULT_MODEL,
+        "model": profile.get("model", "") or PROVIDER_PRESETS.get(provider, {}).get("model", ""),
     }
 
 
@@ -255,12 +257,20 @@ def get_api_profile(name: str) -> dict | None:
     return None
 
 
+def _warn_empty_model(config: dict, profile_name: str | None) -> None:
+    """空 model 档案多为手工编辑绕过 UI 必填校验：透传会让供应商明确报错，这里补一次告警。"""
+    if not config.get("model"):
+        label = f"API 档案 {profile_name}" if profile_name else "当前启用的 API 档案"
+        logger.warning("%s 未指定模型，该供应商接口将拒绝请求，请在「配置」中补填模型名", label)
+
+
 def resolve_api_config(name: str | None = None) -> dict:
     """任务侧唯一 API 解析入口。
 
     - name 指定且启用：取该档案三件套。
     - name 指定但不存在/停用：warning 并回退默认解析。
     - name 为空：走 get_api_config()（默认档案 → 旧链兜底）。
+    - 解析结果 model 为空：warning（非 deepseek 供应商接口要求显式模型名）。
 
     Returns:
         {"api_key": str, "api_url": str, "model": str}
@@ -269,9 +279,12 @@ def resolve_api_config(name: str | None = None) -> dict:
         profile = get_api_profile(name)
         config = _usable_profile_config(profile) if profile else None
         if config:
+            _warn_empty_model(config, name)
             return config
         logger.warning("API 档案不存在或已停用: %s，回退默认配置", name)
-    return get_api_config()
+    config = get_api_config()
+    _warn_empty_model(config, None)
+    return config
 
 
 def migrate_legacy_api_config(env_path=None, profiles_path=None) -> bool:

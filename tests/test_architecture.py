@@ -751,7 +751,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 385 → 408：连接键回退收口（2026-10-26）——LEGACY_CONNECTION_KEYS 与
     # connection_key 落位 config 层（连接域/OCR/doctor/UI 五处零散 or 回退
     # 统一调用，"空值也回退"语义钉死），capture_connection 删除本地副本
-    "config/env.py": 408,
+    # 408 → 410：BOM 容错（2026-10-27）——两处读侧 utf-8-sig 剥可选 BOM，
+    # 防记事本「带 BOM 的 UTF-8」保存污染首键
+    "config/env.py": 410,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示
@@ -776,7 +778,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 2026-10 tripwire 落地补种（种子 = 当前实测值，只许收紧）。此前名单靠
     # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）
     "ui/match/match_guide_panel.py": 840,
-    "ui/configuration/settings_dialog.py": 584,
+    # 584 → 593：跨供应商空 model 保存硬校验（2026-10-27）——无预设默认模型
+    # 的供应商（openai/ollama/openai-compatible）model 必填拦截 + 占位文案按供应商同步
+    "ui/configuration/settings_dialog.py": 593,
     # P0-1 会话状态收口（2026-10）：SessionGuard 替换裸 _session 比对，
     # _clear_session_state 统一 start/stop/牌面退出三处手抄重置清单（567 → 566）
     # 566 → 593：候选期卡数回升防抖——过场坏帧（模拟器旧帧/撕裂帧）扣住一拍

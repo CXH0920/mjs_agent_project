@@ -10,7 +10,7 @@ import logging
 import time
 
 import httpx
-from src.config.env import BUNDLE_ROOT, DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MODEL, PROVIDER_PRESETS
+from src.config.env import BUNDLE_ROOT, DEFAULT_MAX_OUTPUT_TOKENS, PROVIDER_PRESETS
 from src.scraper.ai.json_extract import extract_json
 from src.scraper.ai.prompt_utils import (
     build_guide_prompt,
@@ -81,7 +81,9 @@ class AIBatchGenerator:
         self.api_key = api_key
         self.provider = provider
         self.api_url = api_url or "https://api.deepseek.com/v1/chat/completions"
-        self.model = model or DEFAULT_MODEL
+        # 空 model 回退该供应商预设默认（仅 deepseek 有）；其余供应商接口要求
+        # 显式模型名，注入 deepseek 模型名会发成错模型（与 profiles.py 同口径）
+        self.model = model or PROVIDER_PRESETS.get(provider, {}).get("model", "")
         self.max_retries = max_retries
         self.http_timeout = http_timeout
         # 思考+正文共享的输出额度；思考型模型经 config.env MAX_OUTPUT_TOKENS 按供应商上限调大

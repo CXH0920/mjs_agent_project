@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from src.config import env as config_env
@@ -381,3 +382,36 @@ class TestMigration:
         profiles_path = tmp_path / "api_profiles.json"
         assert migrate_legacy_api_config(env_path, profiles_path) is False
         assert not profiles_path.exists()
+
+
+# ---------------------------------------------------------------
+# 跨供应商空 model 语义（非 deepseek 档案不再被注入默认模型名）
+# ---------------------------------------------------------------
+
+class TestEmptyModelSemantics:
+    def test_openai_compatible_empty_model_not_substituted(self):
+        """空 model 的 openai-compatible 档案透传空串，不注入 deepseek 默认模型名。"""
+        config = config_profiles._usable_profile_config(_profile(
+            "gw", provider="openai-compatible",
+            api_url="https://gw.example.com/v1/chat/completions", model=""))
+        assert config is not None
+        assert config["model"] == ""
+
+    def test_deepseek_empty_model_falls_back_to_preset_default(self):
+        """deepseek 档案 model 留空回退预设默认（deepseek-v4-flash），现状保持。"""
+        config = config_profiles._usable_profile_config(_profile("main", model=""))
+        assert config is not None
+        assert config["model"] == config_env.DEFAULT_MODEL
+
+    def test_resolve_api_config_warns_on_empty_model(self, tmp_path: Path, monkeypatch, caplog):
+        """手工编辑绕过 UI 必填校验的空 model 档案：resolve 出口告警（供应商将拒绝请求）。"""
+        profiles_path = tmp_path / "api_profiles.json"
+        _write(profiles_path, {"version": 1, "profiles": [
+            _profile("gw", provider="openai-compatible",
+                     api_url="https://gw.example.com/v1/chat/completions", model=""),
+        ]})
+        monkeypatch.setattr(config_profiles, "DEFAULT_PROFILES_FILE", profiles_path)
+        with caplog.at_level(logging.WARNING):
+            config = resolve_api_config()
+        assert config["model"] == ""
+        assert any("未指定模型" in record.getMessage() for record in caplog.records)
