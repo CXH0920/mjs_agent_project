@@ -44,6 +44,7 @@ from src.ui.match.match_guide_panel import (
 )
 from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
+from src.ui.shared.portrait import load_portrait
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO
 from src.ui.shared.widgets import NoticeBanner, show_toast
 
@@ -152,10 +153,15 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------
 
     def _connect_fetch_signals(self) -> None:
-        """连接采集服务的信号到状态栏（fetch_completed 由公告协调器消费）"""
+        """连接采集服务的信号到状态栏（fetch_completed 另由公告协调器消费）"""
         self._fetch_service.status_changed.connect(self._reporter.show_message)
         self._fetch_service.progress_updated.connect(self._reporter.show_progress)
         self._fetch_service.error_occurred.connect(self._on_fetch_error)
+        # 采集子进程会下载/覆盖武将头像，portrait 缓存连 None 结果一起缓存，
+        # 不清空则本次进程内新头像永不生效（须重启恢复），失败批次清空亦无害
+        self._fetch_service.fetch_completed.connect(
+            lambda _ok: load_portrait.cache_clear()
+        )
 
     def _on_fetch_error(self, error_msg: str) -> None:
         """采集错误处理"""
