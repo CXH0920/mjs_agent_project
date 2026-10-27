@@ -793,7 +793,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # OCR 超时任务置位 cancelled（VUL-B3-002 配套），worker 取出时短路
     # 667 → 669：超时弃单改调 task.abandon() 同步释放整帧引用（审查缺口 1）；
     # 世代失配拦截补 debug 留痕（审查问题 4）
-    "business/recognition/peak_select_watcher.py": 669,
+    # 669 → 677：图片导入回写确认表前加会话世代守卫（44837e3）——导入在途
+    # 停止/重启换代后旧图校验结果直接丢弃，不再删除或错位新会话刚做的
+    # 人工确认，与 _publish_pool 同一守卫口径
+    "business/recognition/peak_select_watcher.py": 677,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     "ui/match/peak_select_panel.py": 565,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
@@ -832,7 +835,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "scraper/ai/generation.py": 514,
     # 502 → 568：审计收集函数行级结构守卫 + audit_summary 自身失败兜底
     # （TD-A5-001 修复，2026-10-21：坏数据降级为提示条目而非穿透崩溃）
-    "business/rag/audit_service.py": 568,
+    # 568 → 571：collect_timeline_risk_messages 显式传 root 下时间轴路径给
+    # load_timeline（44837e3）——修复 root != PROJECT_ROOT（测试 tmp_path）时
+    # 存在性检查与实际加载文件不一致导致的审计误报
+    "business/rag/audit_service.py": 571,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }
