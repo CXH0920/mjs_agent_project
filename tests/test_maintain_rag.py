@@ -332,3 +332,22 @@ class TestRecordCorpusBaseline:
         assert '基线更新失败' in capsys.readouterr().out
         snap = maintain_rag.audit_rule_doc.load_snapshot(str(snap_path))
         assert 'corpus_counts' not in snap  # 部分失败不写基线
+
+
+def test_corpus_files_match_task_defs_outputs():
+    """索引收录清单与 task_defs.outputs 严格相等（单一事实源守护）。
+
+    失配任一侧都是静默失败：outputs 多出文件 → 语料构建成功、维护页绿灯，
+    但不进向量索引（检索覆盖丢失且无报错，load_all_blocks 只遍历清单）；
+    CORPUS_FILES 多出文件 → 维护页与调度对该语料不可见。新增「有意不进
+    索引」的输出时，应改为显式登记排除集合，而非放松断言。
+    """
+    from src.business.rag.task_defs import TASKS
+    from src.rag.indexer import CORPUS_FILES
+
+    outputs = {out for task in TASKS for out in task['outputs']}
+    indexed = {name for name, _ in CORPUS_FILES}
+    assert indexed == outputs, (
+        f"索引清单与任务 outputs 失配——仅索引: {sorted(indexed - outputs)}，"
+        f"仅任务: {sorted(outputs - indexed)}"
+    )

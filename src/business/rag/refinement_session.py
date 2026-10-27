@@ -185,11 +185,21 @@ class RefinementSession:
         """按语料文件分组批量写回并同步内存。
 
         Returns:
-            (成功保存块数, {文件名: 错误信息})——出错的文件不迁移其任何块。
+            (成功保存块数, {文件名: 错误信息})——出错的文件（含 block_id 不在
+            会话三池，如已被跳过）不写盘、不迁移其任何块。
         """
         saved = 0
         errors: dict[str, str] = {}
         for fname, updates in updates_by_file.items():
+            # 先校验后写盘：block_id 不在三池时整批拒绝，避免写盘成功后
+            # next() 落空抛 StopIteration，留下磁盘已改、内存未同步的半状态
+            pools = (*self._pending, *self._curated, *self._normal)
+            missing = [bid for bid in updates if not any(b.block_id == bid for b in pools)]
+            if missing:
+                message = f"会话清单中不存在: {'、'.join(missing)}"
+                logger.error("保存精化失败 %s: %s", fname, message)
+                errors[fname] = message
+                continue
             try:
                 apply_curated(self._corpus_dir, updates, fname)
             except (OSError, ValueError) as error:
@@ -198,8 +208,7 @@ class RefinementSession:
                 continue
             for block_id, update in updates.items():
                 # 待精化/普通块保存后迁移 curated；curated 块原地保留（sync_saved 内判定）
-                block = next(b for b in (*self._pending, *self._curated, *self._normal)
-                             if b.block_id == block_id)
+                block = next(b for b in pools if b.block_id == block_id)
                 self.sync_saved(block, update)
                 saved += 1
         return saved, errors

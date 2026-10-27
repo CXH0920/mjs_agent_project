@@ -549,9 +549,12 @@ def collect_timeline_risk_messages(root: Path) -> list[str]:
         load_timeline,
     )
 
-    if not (root / "data" / "mjs_adjustments.json").exists():
+    timeline_path = root / "data" / "mjs_adjustments.json"
+    if not timeline_path.exists():
         return ["时间轴未初始化（缺少 data/mjs_adjustments.json）"]
-    timeline = load_timeline()
+    # 显式传 root 路径：无参 load_timeline() 固定读 PROJECT_ROOT 默认文件，
+    # root != PROJECT_ROOT（测试 tmp_path）时会读到与存在性检查不同的文件
+    timeline = load_timeline(timeline_path)
     messages = []
     try:
         heroes = json.loads((root / "data" / "heroes.json").read_text(encoding="utf-8"))

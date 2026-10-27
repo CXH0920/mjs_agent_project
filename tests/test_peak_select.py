@@ -595,6 +595,53 @@ def test_watcher_file_recognition_rejects_non_board_image(qapp, monkeypatch, tmp
     assert statuses == ["未在图片中检测到巅峰赛牌面（需 8~14 张卡）"]
 
 
+def test_watcher_file_recognition_stale_session_keeps_new_confirmations(qapp, monkeypatch, tmp_path):
+    """导入在途期间识别停止并重启换代：过期导入不得回写新会话的确认表。"""
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.load_local_image",
+        lambda path: Image.new("RGB", (2560, 1440)),
+    )
+    monkeypatch.setattr(
+        "src.business.recognition.peak_select_watcher.detect_selection_cards",
+        lambda frame: [(100 + i * 276, 247, 238, 326) for i in range(9)],
+    )
+    ocr_entered = threading.Event()
+    proceed = threading.Event()
+
+    def blocked_recognize(image, cards):
+        ocr_entered.set()
+        assert proceed.wait(5), "主线程未放行导入 OCR"
+        # 旧图识别结果：全量已确认、无待确认槽位，"典韦"确认在其中定位不到
+        return [{"name": "荆轲", "resolution": "exact"} for _ in range(9)]
+
+    watcher, pools, statuses = _make_watcher(
+        SimpleNamespace(submit_ocr_task=_fake_ocr_task([])),
+    )
+    watcher._ocr_service = _FakeOcrService()
+    monkeypatch.setattr(watcher, "_recognize_board", blocked_recognize)
+
+    watcher.start()  # G1：导入发起时的会话世代
+    import_thread = threading.Thread(
+        target=watcher._do_file_recognition, args=(str(tmp_path / "sample.png"),),
+    )
+    import_thread.start()
+    assert ocr_entered.wait(5)
+    watcher.stop()   # G2：换代并清空上一会话确认表
+    watcher.start()  # G3：新识别会话
+    # 新会话已出牌面并有人工确认（模拟用户点选第 3 槽）
+    with watcher._state_lock:
+        watcher._last_board = ([{"name": "荆轲", "resolution": "exact"}], 8)
+    watcher.confirm_pending(2, "典韦")
+    proceed.set()
+    import_thread.join(5)
+    assert not import_thread.is_alive()
+
+    assert watcher._resolutions == {2: "典韦"}  # 新确认未被旧图校验删除/改写
+    assert len(pools) == 1  # 仅确认重发的快照，过期导入不发布
+    assert pools[0].card_count == 8
+    assert not any("图片识别完成" in text for text in statuses)
+
+
 def test_panel_import_button_passes_file_to_watcher(qapp, monkeypatch, tmp_path):
     """导入按钮打开文件对话框并把选中路径交给 watcher。"""
     panel = _make_panel(capture=SimpleNamespace(connected=False))

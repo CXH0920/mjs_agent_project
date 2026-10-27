@@ -188,6 +188,8 @@ class CaptureConnectionManager:
 
         validate_capture 透传给底层 capture；自动重连等高频路径保持
         False，免为每次重连多付一帧截图（后续截图本身就是验证）。
+        连接期间配置热更重建实例时本次结果过期：不回写状态、返回
+        (False, "连接配置已变更，请重试")（与 _reconnect_if_needed 同口径）。
         """
         is_pc = isinstance(capture, PcClientCapture)
         with self._session_lock:
@@ -196,10 +198,19 @@ class CaptureConnectionManager:
         with self._adb_io_lock:
             ok, message = capture.connect(validate_capture=validate_capture)
         with self._session_lock:
-            if ok:
-                self.set_connection_state("connected", capture.device_serial)
-            else:
-                self.set_connection_state("disconnected", message)
+            # 连接在途时 update_config 可能已重建实例并置 disconnected；
+            # 过期引用的结果不得回写状态，否则未连接的新会话被标成 connected
+            stale = capture is not self._capture
+            if not stale:
+                if ok:
+                    self.set_connection_state("connected", capture.device_serial)
+                else:
+                    self.set_connection_state("disconnected", message)
+        if stale:
+            # 状态保持 update_config 置的 disconnected；常驻消息清掉左下角
+            # "正在连接..."，文案与 _reconnect_if_needed 的过期拒绝一致
+            self._on_status("连接失败：连接配置已变更，请重试")
+            return False, "连接配置已变更，请重试"
         if ok:
             self._on_event_status(
                 f"PC 客户端已连接：{capture.device_serial}" if is_pc

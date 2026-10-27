@@ -593,6 +593,14 @@ class PeakSelectWatcher(QObject):
                 self.status_changed.emit("图片识别未完成，请重试")
                 return
             with self._state_lock:
+                if not self._session_guard.is_current(session):
+                    # 导入在途期间停止/重启换代：确认表已归新会话所有，旧图
+                    # 校验回写会删除或错位新会话刚做的确认（与 _publish_pool
+                    # 同一守卫口径，debug 留痕不刷正常路径）
+                    logger.debug(
+                        "图片导入回写被会话世代守卫拦截（session=%s），不写确认表", session,
+                    )
+                    return
                 old_slots = set(self._resolutions)
                 self._stale_rounds = {}
                 (
