@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 from src.data.models import HeroGuide
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
-from src.ui.shared.widgets import DialogFooter, PageHeader
+from src.ui.shared.widgets import DialogFooter, PageHeader, confirm_discard_edits
 
 if TYPE_CHECKING:
     from src.data.hero_manager import HeroManager
@@ -33,6 +33,25 @@ class GuideEditDialog(QDialog):
         self._guide = guide
         self._hero_mgr = hero_mgr
         self._setup_ui()
+        # 未保存关闭确认的比对基线（Esc/X/取消都会汇入 reject）
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self) -> dict:
+        """收集可编辑字段的原始值，供 dirty 比对。"""
+        return {
+            "key_points": self._key_points_edit.toPlainText(),
+            "tips": self._tips_edit.toPlainText(),
+            "weak": self._weak_against_type_edit.toPlainText(),
+            "strong": self._strong_against_type_edit.toPlainText(),
+            "synergizes": tuple(self._synergy_ids),
+            "counter": self._counter_strategy_edit.toPlainText(),
+            "desc": self._desc_edit.toPlainText(),
+        }
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)

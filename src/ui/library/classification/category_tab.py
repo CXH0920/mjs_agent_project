@@ -32,7 +32,7 @@ from src.data.hero_classification_repository import ClassificationCategory
 from src.ui.shared.master_detail import MasterDetailPane
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_DANGER, ROLE_SECONDARY, TONE_INFO, set_tone, set_ui_role
-from src.ui.shared.widgets import DialogFooter, clear_layout
+from src.ui.shared.widgets import DialogFooter, clear_layout, confirm_discard_edits
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,21 @@ class CategoryEditDialog(QDialog):
         self.setWindowTitle("编辑分类" if category else "新增分类")
         self.setMinimumWidth(520)
         self._setup_ui()
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self) -> dict:
+        """收集可编辑字段的原始值，供 dirty 比对。"""
+        return {
+            "name": self._name_edit.text() if not self._category else None,
+            "features": self._features_edit.toPlainText(),
+            "heroes": self._heroes_edit.toPlainText(),
+            "ratio": self._ratio_edit.text(),
+        }
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)

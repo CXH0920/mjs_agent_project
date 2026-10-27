@@ -456,3 +456,52 @@ def test_management_dialog_edit_requires_selection(qapp, tmp_path, monkeypatch):
     dialog._on_edit_selected()
     dialog._on_delete_selected()
     assert manager.get_combo(1, 2) is not None  # 未误删
+
+
+def test_edit_dialog_save_failure_alerts_and_stays_open(qapp, tmp_path, monkeypatch):
+    """保存写盘失败：弹窗报错、对话框停留原处，不再异常穿透 slot 静默失败。"""
+    _app()
+    hero_mgr, heroes = _make_hero_mgr()
+    manager = ComboManager(tmp_path / "combos.json")
+    manager.load()
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
+    dialog._hero1 = heroes[1]
+    dialog._hero2 = heroes[2]
+    monkeypatch.setattr(
+        "src.ui.library.combo_edit_dialog.QMessageBox.critical",
+        lambda _parent, _title, message: criticals.append(message),
+    )
+    monkeypatch.setattr(
+        "src.ui.library.combo_edit_dialog.QMessageBox.question",
+        lambda *a, **k: QMessageBox.StandardButton.Yes,  # 座次未选确认按继续保存
+    )
+
+    def _boom(combo, previous=None):
+        raise OSError("磁盘已满")
+
+    criticals: list[str] = []
+    monkeypatch.setattr(dialog._service, "save_manual_combo", _boom)
+    dialog._on_save()
+
+    assert criticals and "无法保存实战配队" in criticals[0]
+    assert dialog.result() != QDialog.DialogCode.Accepted  # 未关闭，草稿保留
+
+
+def test_edit_dialog_reject_confirms_when_dirty(qapp, tmp_path, monkeypatch):
+    """配队表单有修改时 Esc/取消先确认，未修改直接关闭。"""
+    _app()
+    hero_mgr, heroes = _make_hero_mgr()
+    manager = ComboManager(tmp_path / "combos.json")
+    manager.load()
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
+    dialog.reject()  # 空表单未修改：直接关闭
+    assert dialog.result() == QDialog.DialogCode.Rejected
+
+    dialog = ComboEditDialog(hero_mgr, ComboService(manager))
+    dialog._hero1 = heroes[1]
+    dialog._rating_spin.setValue(9)
+    monkeypatch.setattr(
+        "src.ui.library.combo_edit_dialog.confirm_discard_edits", lambda parent: False,
+    )
+    dialog.reject()
+    assert dialog.result() == 0  # 用户不放弃：不关闭

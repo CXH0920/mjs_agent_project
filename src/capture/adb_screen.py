@@ -249,8 +249,8 @@ class AdbCapture:
             return False, "尚未连接，请先连接模拟器"
 
         for attempt in range(1, _SCREENSHOT_RETRIES + 1):
-            # 命令级失败（超时/设备离线）直接终止；数据级失败（空数据/解析失败）重试
-            image, error, command_ms, decode_ms, mode = self._capture_and_decode()
+            # 命令级失败（超时/设备离线/adb 缺失）直接终止；数据级失败（空数据/解析失败）重试
+            image, error, command_ms, decode_ms, mode, command_failed = self._capture_and_decode()
             if image is not None:
                 if log_success:
                     logger.info(
@@ -258,6 +258,12 @@ class AdbCapture:
                         image.width, image.height, command_ms, decode_ms, mode,
                     )
                 return True, image
+
+            if command_failed:
+                # 超时/设备不可达不由重试恢复：重试只会在同一处再等满 _ADB_TIMEOUT，
+                # 轮询线程被占约 45 秒（3×15s）；失败原因已有 _report_transient_error 留痕
+                logger.error("截图命令级失败，不重试: %s", error)
+                return False, error
 
             if attempt < _SCREENSHOT_RETRIES:
                 logger.warning(
@@ -271,43 +277,45 @@ class AdbCapture:
 
         return False, "截图失败"
 
-    def _capture_and_decode(self) -> tuple[Image.Image | None, str, float, float, str]:
+    def _capture_and_decode(self) -> tuple[Image.Image | None, str, float, float, str, bool]:
         """单轮截图尝试：按模式执行 raw/PNG 截图并解码。
 
         Returns:
-            (图像或 None, 错误消息, ADB命令耗时ms, 解码耗时ms, 实际生效模式)。
+            (图像或 None, 错误消息, ADB命令耗时ms, 解码耗时ms, 实际生效模式,
+             是否命令级失败——超时/adb 缺失/执行异常/非零返回码，重试不可恢复).
         """
         if self._screenshot_mode in ("auto", "raw"):
-            ok, payload, command_ms = self._run_screencap([])
+            ok, payload, command_ms, command_failed = self._run_screencap([])
             if not ok:
-                return None, str(payload), command_ms, 0.0, "raw"
+                return None, str(payload), command_ms, 0.0, "raw", command_failed
             decode_started = time.perf_counter()
             image = self._decode_raw_screencap(payload)
             decode_ms = (time.perf_counter() - decode_started) * 1000
             if image is not None:
-                return image, "", command_ms, decode_ms, "raw"
+                return image, "", command_ms, decode_ms, "raw", False
             if self._screenshot_mode == "raw":
-                return None, "raw 帧解析失败", command_ms, decode_ms, "raw"
+                return None, "raw 帧解析失败", command_ms, decode_ms, "raw", False
             logger.debug("raw 帧解析失败（%s 字节），本轮回退 PNG 模式", len(payload))
 
-        ok, payload, command_ms = self._run_screencap(["-p"])
+        ok, payload, command_ms, command_failed = self._run_screencap(["-p"])
         if not ok:
-            return None, str(payload), command_ms, 0.0, "png"
+            return None, str(payload), command_ms, 0.0, "png", command_failed
         if not payload:
-            return None, "截图返回空数据", command_ms, 0.0, "png"
+            return None, "截图返回空数据", command_ms, 0.0, "png", False
         try:
             decode_started = time.perf_counter()
             image = load_png_image_bytes(payload)
             decode_ms = (time.perf_counter() - decode_started) * 1000
-            return image, "", command_ms, decode_ms, "png"
+            return image, "", command_ms, decode_ms, "png", False
         except Exception as e:
-            return None, f"解析截图图像失败: {e}", command_ms, 0.0, "png"
+            return None, f"解析截图图像失败: {e}", command_ms, 0.0, "png", False
 
-    def _run_screencap(self, extra_args: list[str]) -> tuple[bool, bytes | str, float]:
+    def _run_screencap(self, extra_args: list[str]) -> tuple[bool, bytes | str, float, bool]:
         """执行一条 screencap 命令。
 
         Returns:
-            (是否成功, 字节数据或错误消息, 命令耗时ms)。
+            (是否成功, 字节数据或错误消息, 命令耗时ms, 是否命令级失败)。
+            命令级失败（超时/adb 缺失/执行异常/非零返回码）重试不可恢复。
             设备不可达时清除失效会话。
         """
         try:
@@ -319,15 +327,15 @@ class AdbCapture:
             )
             command_elapsed_ms = (time.perf_counter() - started) * 1000
         except FileNotFoundError:
-            return False, f"找不到 adb: {self._adb_path}", 0.0
+            return False, f"找不到 adb: {self._adb_path}", 0.0, True
         except subprocess.TimeoutExpired:
             _report_transient_error(
                 f"screencap-timeout:{self._device_serial}", "截图命令执行超时")
-            return False, "截图命令执行超时", _ADB_TIMEOUT * 1000.0
+            return False, "截图命令执行超时", _ADB_TIMEOUT * 1000.0, True
         except OSError as e:
             _report_transient_error(
                 f"screencap-oserror:{self._device_serial}", "截图命令执行异常: %s", e)
-            return False, f"截图命令执行异常: {e}", 0.0
+            return False, f"截图命令执行异常: {e}", 0.0, True
 
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace").strip()
@@ -336,8 +344,8 @@ class AdbCapture:
                 result.returncode, err)
             if self._is_device_unavailable(err):
                 self._invalidate_connection()
-            return False, f"screencap 失败: {err}", command_elapsed_ms
-        return True, result.stdout, command_elapsed_ms
+            return False, f"screencap 失败: {err}", command_elapsed_ms, True
+        return True, result.stdout, command_elapsed_ms, False
 
     @staticmethod
     def _decode_raw_screencap(data: bytes) -> Image.Image | None:

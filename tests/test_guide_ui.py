@@ -880,3 +880,36 @@ def test_deletes_proceed_when_not_busy(tmp_path: Path, monkeypatch) -> None:
 
     assert results == ["删除完成", "删除完成"]
     assert panel._guide_mgr.get_guide(1) is None
+
+
+def test_guide_edit_reject_confirms_when_dirty(tmp_path: Path, monkeypatch) -> None:
+    """攻略草稿有修改时 Esc/取消先确认，不再静默丢弃整篇输入。"""
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏"))
+    dialog = GuideEditDialog(HeroGuide(hero_id=1), hero_manager)
+
+    # 未修改：reject 直接关闭不弹确认
+    dialog.reject()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+
+    dialog = GuideEditDialog(HeroGuide(hero_id=1, description="原文"), hero_manager)
+    dialog._desc_edit.setPlainText("改到一半的长文草稿")
+    answers: list[bool] = []
+    monkeypatch.setattr(
+        "src.ui.library.guide_edit_dialog.confirm_discard_edits",
+        lambda parent: answers.append(True) or True,
+    )
+    dialog.reject()
+    assert answers == [True]  # 有 dirty 时必须先过确认
+    assert dialog.result() == QDialog.DialogCode.Rejected
+
+    # 用户选择「不放弃」：不关闭，草稿仍在
+    dialog = GuideEditDialog(HeroGuide(hero_id=1, description="原文"), hero_manager)
+    dialog._desc_edit.setPlainText("第二稿")
+    monkeypatch.setattr(
+        "src.ui.library.guide_edit_dialog.confirm_discard_edits", lambda parent: False,
+    )
+    dialog.reject()
+    assert dialog.result() == 0  # 未关闭
+    assert dialog._desc_edit.toPlainText() == "第二稿"

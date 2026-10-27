@@ -43,6 +43,11 @@ _LAST_SCALE_CACHE: dict[str, tuple[int, float]] = {}
 # 已打过"模板已加载"日志的模板路径：轮询每轮新建实例并重新 imread，同一模板
 # 路径只在进程内首次加载时打一次 DEBUG。模板重制走 set_template 的 INFO 可见。
 _LOGGED_LOADED_PATHS: set[str] = set()
+# 已告警过加载失败的锚点清单（path → 告警时 mtime_ns，None=文件缺失）：
+# 轮询每任务新建实例并重跑 _load_anchors，清单缺失/损坏的回退态下每拍（约 2 秒）
+# 重打一条 WARNING（约 1800 条/小时）会挤爆 10MB×5 日志轮转；同一 mtime 只告警
+# 一次，清单更新（mtime 变化）后重新告警
+_ANCHOR_FAIL_WARNED: dict[str, int | None] = {}
 # 全图兜底的粗扫降采样比例与甄别余量：非目标页全尺度得分实测 ~0.43（阈值 0.8），
 # 1/4 降采样的得分损失远小于该差距，粗扫可可靠区分"布局偏移"与"完全非目标页"
 _COARSE_SCAN_RATIO = 0.25
@@ -266,8 +271,21 @@ class TemplateManager:
                 logger.info("对局攻略锚点已加载: %s (%d 个)", manifest_path.name, len(anchors))
         except Exception as e:
             self._anchors = []
-            logger.warning("对局攻略锚点加载失败，回退大模板判定: %s", e)
+            self._warn_anchor_failure_once(manifest_path, e)
             logger.debug(traceback.format_exc())
+
+    @staticmethod
+    def _warn_anchor_failure_once(manifest_path: Path, error: Exception) -> None:
+        """同一清单版本（mtime）的加载失败只告警一次，防回退态轮询刷屏。"""
+        try:
+            mtime: int | None = manifest_path.stat().st_mtime_ns
+        except OSError:
+            mtime = None
+        key = str(manifest_path)
+        if _ANCHOR_FAIL_WARNED.get(key) == mtime:
+            return
+        _ANCHOR_FAIL_WARNED[key] = mtime
+        logger.warning("对局攻略锚点加载失败，回退大模板判定: %s", error)
 
     @staticmethod
     def _read_anchor_image(path: Path) -> np.ndarray:

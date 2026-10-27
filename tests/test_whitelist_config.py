@@ -228,3 +228,27 @@ def test_dialog_rejects_pair_conflicting_with_vocabulary(qapp, tmp_path, monkeyp
 
     assert warnings == ["无法加入"]
     assert wcd.load_overrides(tmp_path / "overrides.json") == {}
+
+
+def test_add_pair_write_failure_alerts_and_realigned_to_file(qapp, tmp_path, monkeypatch) -> None:
+    """写盘失败（磁盘满/占用）：弹窗报错并按文件真实状态回读，不再点击无响应+内存分叉。"""
+    monkeypatch.setattr(wcd, "STATS_PATH", tmp_path / "missing.json")
+    monkeypatch.setattr(wcd, "_OVERRIDES_PATH", tmp_path / "overrides.json")
+    dialog = WhitelistConfigDialog(
+        ["荀勖", "荀彧"], reset_ocr_cache=lambda: None,
+    )
+    criticals: list[str] = []
+    monkeypatch.setattr(wcd.QMessageBox, "critical", lambda *a, **k: criticals.append(a[2]))
+    monkeypatch.setattr(wcd.QMessageBox, "information", lambda *a, **k: None)
+
+    def _boom(pairs, path=None):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr(wcd, "save_overrides", _boom)
+    dialog._source_edit.setText("怀")
+    dialog._target_edit.setText("惇")
+    dialog._add_pair()
+
+    assert criticals and "无法保存白名单" in criticals[0]
+    # 失败后内存 _overrides 回到文件真实状态：新增对不残留
+    assert "怀" not in dialog._overrides

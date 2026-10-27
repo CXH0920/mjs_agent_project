@@ -388,3 +388,24 @@ def test_connect_without_validate_capture_skips_screencap(monkeypatch) -> None:
 def test_default_port_is_auto_detect() -> None:
     """默认端口 0 表示自动探测唯一运行实例（原 7555 默认已退役）。"""
     assert AdbCapture("adb.exe")._adb_port == 0
+
+
+def test_screencap_timeout_is_command_level_and_skips_retry(monkeypatch) -> None:
+    """超时属命令级失败：单次即返回不进重试循环（原满 3 次重试占线程约 45 秒）。"""
+    import subprocess as subprocess_module
+
+    cap = AdbCapture("adb.exe", 16448)
+    cap._connected = True
+    cap._device_serial = "127.0.0.1:16448"
+    calls: list[int] = []
+
+    def _hang(*args, **kwargs):
+        calls.append(1)
+        raise subprocess_module.TimeoutExpired(cmd="adb", timeout=15)
+
+    monkeypatch.setattr("src.capture.adb_screen.subprocess.run", _hang)
+    ok, message = cap.screencap_full()
+
+    assert not ok
+    assert "超时" in message
+    assert len(calls) == 1

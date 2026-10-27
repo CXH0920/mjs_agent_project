@@ -1056,3 +1056,38 @@ def test_drain_retired_workers_forced_exit_uses_zero_code(monkeypatch) -> None:
     ocr_worker_module._drain_retired_workers()
 
     assert exit_codes == [0]
+
+
+def test_official_partial_failure_detail_lists_completed_groups(monkeypatch, tmp_path) -> None:
+    """整批导入部分组失败：detail 明示已生效组，不再把半生效状态报成单纯失败。"""
+    from src.business.recognition.ocr_worker import OcrWorker, OfficialImportTask
+
+    class FakeService:
+        def __init__(self, ocr_engine=None, rare_char_ocr_engine=None) -> None:
+            pass
+
+        @property
+        def ocr_engine(self):
+            return None
+
+        @property
+        def rare_char_ocr_engine(self):
+            return None
+
+        def import_pages(self, key, paths, progress_callback, status_callback):
+            if key == "peak":
+                raise RuntimeError("版式校验失败")
+            return {"name": key, "records": 1, "reviews": 0, "pages": len(paths)}
+
+    monkeypatch.setattr(
+        "src.business.recognition.official_data_import_service.OfficialDataImportService",
+        FakeService,
+    )
+    worker = OcrWorker()
+    task = OfficialImportTask({"2v2": ("a.png",), "peak": ("b.png",)})
+    result = worker._execute_official_import(task)
+
+    assert result["outcome"] == "official_import_failed"
+    assert "版式校验失败" in result["detail"]
+    assert "2v2数据 已导入生效" in result["detail"]
+    assert "失败组可单独重试" in result["detail"]

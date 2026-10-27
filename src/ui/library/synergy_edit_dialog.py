@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.data.models import SynergyScore, synergy_rating_for_score
-from src.ui.shared.widgets import DialogFooter, PageHeader
+from src.ui.shared.widgets import DialogFooter, PageHeader, confirm_discard_edits
 
 if TYPE_CHECKING:
     from src.data.hero_manager import HeroManager
@@ -75,6 +75,22 @@ class SynergyEditDialog(QDialog):
         footer.accepted.connect(self.accept)
         footer.rejected.connect(self.reject)
         layout.addWidget(footer)
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self) -> dict:
+        """收集可编辑字段的原始值，供 dirty 比对。"""
+        return {
+            "score": self._score_spin.value(),
+            "ceiling": self._ceiling_spin.value(),
+            "stability": self._stability_spin.value(),
+            "adaptability": self._adaptability_spin.value(),
+            "description": self._description_edit.toPlainText(),
+        }
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def _update_rating_label(self, score: int) -> None:
         self._rating_label.setText(synergy_rating_for_score(score))

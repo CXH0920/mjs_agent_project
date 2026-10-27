@@ -66,6 +66,33 @@ def _with_synergy_updated_date(generated: dict) -> dict:
     return {**generated, "last_updated": date.today().isoformat()}
 
 
+def _validated_hero_entries(
+    heroes: list, *, context: str, result_summary: "GenerationResult",
+) -> list[dict]:
+    """过滤指定模式用户 JSON 中的坏武将条目，避免裸下标 KeyError 中断整任务。
+
+    指定模式的武将列表来自用户提供的 JSON 文件（不经 HeroManager 校验），
+    缺 id/name 或非对象时裸 ``hero["id"]`` 冒泡到 batch 兜底按中断收场且
+    死因只有一个键名；此处坏条目逐条记 failed_items 跳过，同 id 重复仅
+    保留首个（防止两两配对组合出同武将自配对）。
+    """
+    valid: list[dict] = []
+    seen_ids: set = set()
+    for index, hero in enumerate(heroes, start=1):
+        name = hero.get("name") if isinstance(hero, dict) else None
+        if not isinstance(hero, dict) or "id" not in hero or not name:
+            result_summary.failed_items.append(
+                f"{context}第 {index} 条缺少 id/name 字段，已跳过")
+            continue
+        if hero["id"] in seen_ids:
+            result_summary.failed_items.append(
+                f"{context}第 {index} 条 id={hero['id']}（{name}）重复，已跳过")
+            continue
+        seen_ids.add(hero["id"])
+        valid.append(hero)
+    return valid
+
+
 def _pair_label(ha: dict, hb: dict) -> str:
     """配对在协议行中的展示名。"""
     return f"{ha['name']} <-> {hb['name']}"
@@ -338,6 +365,8 @@ def run_synergy_pair_generation(
     print("\n  相性配对生成 (指定武将)...", flush=True)
     with open(pair_file, "r", encoding="utf-8") as f:
         pair_heroes = json.load(f)
+    pair_heroes = _validated_hero_entries(
+        pair_heroes, context="指定武将", result_summary=result_summary)
 
     count = len(pair_heroes)
     total_pairs = count * (count - 1) // 2
@@ -364,6 +393,7 @@ def run_synergy_pair_generation(
         label_of=_pair_label,
         fail_label_of=_pair_fail_label,
         missing_score_text="?",
+        result_summary=result_summary,
     )
     print(
         f"  相性完成: 新增 {result_summary.completed} 对，跳过 {result_summary.skipped} 对，"
@@ -406,6 +436,8 @@ def run_synergy_single_generation(
     print("\n  相性配对生成 (选定武将 x 全体)...", flush=True)
     with open(single_file, "r", encoding="utf-8") as f:
         single_heroes = json.load(f)
+    single_heroes = _validated_hero_entries(
+        single_heroes, context="选定武将", result_summary=result_summary)
 
     if len(single_heroes) != 1:
         logger.error("synergy-single 需要恰好 1 个武将，实际 %d 个", len(single_heroes))
@@ -429,6 +461,7 @@ def run_synergy_single_generation(
         label_of=lambda _ha, hb: hb["name"],
         fail_label_of=lambda _ha, hb: hb["name"],
         missing_score_text="?",
+        result_summary=result_summary,
     )
     print(
         f"  相性完成: 新增 {result_summary.completed} 对，跳过 {result_summary.skipped} 对，"

@@ -186,3 +186,27 @@ def test_dialog_hides_ignore_entry_without_service() -> None:
     dialog = HeroUpdateConfirmDialog([_candidate()])
     assert not hasattr(dialog, "_ignore_button")
     assert not hasattr(dialog, "_ignore_manager_button")
+
+
+def test_ignore_write_failure_keeps_entry_and_alerts(tmp_path, monkeypatch) -> None:
+    """忽略写盘失败：列表项保留、弹窗报错，不再异常穿透 slot 表现为点击无响应。"""
+    _app()
+    service = _IgnoreServiceStub(tmp_path / "ignore.json")
+    dialog = HeroUpdateConfirmDialog(
+        [_candidate(content_hash="hash-jiaxu")], ignore_service=service,
+    )
+    criticals: list[str] = []
+    monkeypatch.setattr(
+        "src.ui.data_admin.ignoreable_diff_list.QMessageBox",
+        type("_M", (), {"critical": staticmethod(lambda *a, **k: criticals.append(a[2]))}),
+    )
+
+    def _boom(entry_id, name, state, content_hash=""):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr(service, "ignore_hero", _boom)
+    dialog._list.setCurrentRow(0)
+    dialog._ignore_current()
+
+    assert criticals and "无法写入忽略名单" in criticals[0]
+    assert dialog._list.count() == 1  # 条目保留在列表中

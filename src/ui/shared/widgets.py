@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLayout,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -27,6 +28,23 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
+
+
+def confirm_discard_edits(dialog: QWidget) -> bool:
+    """编辑对话框 reject 前的丢弃确认；返回 True 表示用户确认放弃。
+
+    各编辑对话框的 Esc/取消/X 三条退出路径都汇入 reject，未保存的草稿
+    （尤其攻略长正文）会静默丢失；宿主在覆写的 reject 中先做 dirty 比对，
+    有修改时经本函数确认。
+    """
+    answer = QMessageBox.question(
+        dialog,
+        "放弃修改",
+        "当前修改尚未保存，关闭将丢弃这些修改。确定放弃？",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return answer == QMessageBox.StandardButton.Yes
 
 
 def clear_layout(layout: QLayout) -> None:

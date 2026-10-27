@@ -55,7 +55,7 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import DialogFooter, PageHeader, show_toast
+from src.ui.shared.widgets import DialogFooter, PageHeader, confirm_discard_edits, show_toast
 
 EFFECT_STATUS_LABELS = {
     "active": "生效中",
@@ -494,6 +494,29 @@ class CardAnnotationEditDialog(QDialog):
         self.setWindowTitle(f"{card.name if card else card_id} - 编辑版本调整")
         self.resize(700, 620)
         self._setup_ui()
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self):
+        """收集编辑中内容的当前值，供未保存关闭确认的 dirty 比对。
+
+        覆盖三类编辑面：字段编辑器文本（经保存同款 _value_from_editor 取值）、
+        效果记录的即时修改（_values 深拷贝，标记失效/编辑记录都写回这里）、
+        效果表单的未提交填写（_effect_editors 三元组与编辑位 _editing_effects）。
+        """
+        fields = {}
+        for key, editor in self._editors.items():
+            definition = self._service.schema.get_field(key)
+            fields[key] = self._value_from_editor(definition, editor)
+        pending_forms = {
+            key: (content.toPlainText(), status.currentData(), rules.toPlainText())
+            for key, (content, status, rules) in self._effect_editors.items()
+        }
+        return (deepcopy(self._values), fields, pending_forms, dict(self._editing_effects))
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def _setup_ui(self) -> None:
         layout = self._dialog_layout

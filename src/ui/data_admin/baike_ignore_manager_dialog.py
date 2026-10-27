@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -14,11 +16,14 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
 from src.ui.shared.style import ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, PageHeader, set_ui_role
+
+logger = logging.getLogger(__name__)
 
 KIND_LABELS = {"heroes": "武将", "cards": "卡牌"}
 STATE_LABELS = {"added": "新增", "modified": "修改", "removed": "官网已删除"}
@@ -95,16 +100,30 @@ class BaikeIgnoreManagerDialog(QDialog):
         for item in self._list.selectedItems():
             kind, entry_id = item.data(Qt.ItemDataRole.UserRole)
             (hero_ids if kind == "heroes" else card_ids).append(entry_id)
-        if hero_ids:
-            self._announcement_service.restore_heroes(hero_ids)
-        if card_ids:
-            self._card_sync_service.restore_cards(card_ids)
+        try:
+            if hero_ids:
+                self._announcement_service.restore_heroes(hero_ids)
+            if card_ids:
+                self._card_sync_service.restore_cards(card_ids)
+        except OSError as exc:
+            # restore 逐条 load-modify-save：中途失败时前几条已落盘，
+            # 弹窗后仍 refresh 按文件真实状态展示，界面不与磁盘分叉
+            logger.exception("恢复忽略名单失败")
+            QMessageBox.critical(
+                self, "恢复失败", f"部分名单可能未恢复，列表已按实际状态刷新：\n{exc}")
+            self._refresh()
+            return
         if hero_ids or card_ids:
             self._refresh()
 
     def _restore_all(self) -> None:
-        if self._announcement_service is not None:
-            self._announcement_service.restore_heroes()
-        if self._card_sync_service is not None:
-            self._card_sync_service.restore_cards()
+        try:
+            if self._announcement_service is not None:
+                self._announcement_service.restore_heroes()
+            if self._card_sync_service is not None:
+                self._card_sync_service.restore_cards()
+        except OSError as exc:
+            logger.exception("恢复忽略名单失败")
+            QMessageBox.critical(
+                self, "恢复失败", f"部分名单可能未恢复，列表已按实际状态刷新：\n{exc}")
         self._refresh()

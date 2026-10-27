@@ -246,8 +246,16 @@ class WhitelistConfigDialog(QDialog):
                 f"该错字对会与词表中以下武将名构成确定性混淆，已被拒绝：\n{detail}",
             )
             return
-        self._overrides[source] = target
-        save_overrides(self._overrides)
+        try:
+            self._overrides[source] = target
+            save_overrides(self._overrides)
+        except OSError as exc:
+            # 写盘失败（磁盘满/文件被占用）时异常穿透 slot 只剩 stderr 痕迹：
+            # 弹窗告知并 refresh 回到文件真实状态，消除「点击无响应+内存分叉」
+            logger.exception("白名单保存失败")
+            QMessageBox.critical(self, "保存失败", f"无法保存白名单：\n{exc}")
+            self.refresh()
+            return
         self._reset_ocr_cache()
         self.refresh()
         QMessageBox.information(self, "白名单配置", f"已加入 {source}→{target}，对后续识别立即生效。")
@@ -267,6 +275,12 @@ class WhitelistConfigDialog(QDialog):
         if confirm != QMessageBox.StandardButton.Yes:
             return
         self._overrides.pop(source, None)
-        save_overrides(self._overrides)
+        try:
+            save_overrides(self._overrides)
+        except OSError as exc:
+            logger.exception("白名单保存失败")
+            QMessageBox.critical(self, "保存失败", f"无法保存白名单：\n{exc}")
+            self.refresh()
+            return
         self._reset_ocr_cache()
         self.refresh()

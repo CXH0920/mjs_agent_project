@@ -238,13 +238,13 @@ class OcrWorker(QThread):
             rare_char_ocr_engine=self._rare_char_ocr_engine,
         )
         selected_paths = [(key, paths) for key, paths in task.paths.items() if paths]
-        summaries = []
+        summaries: list[dict] = []
+        display_names = {"2v2": "2v2数据", "peak": "巅峰赛数据", "exile": "武将放逐数据"}
         try:
             if not selected_paths:
                 raise ValueError("未选择官方榜单图片")
             for index, (key, paths) in enumerate(selected_paths, start=1):
-                display_names = {"2v2": "2v2数据", "peak": "巅峰赛数据"}
-                name = display_names.get(key, "武将放逐数据")
+                name = display_names.get(key, key)
                 status = f"正在导入{name}（{index}/{len(selected_paths)}）"
                 self.official_progress.emit(task.task_id, status, 0, 0)
                 summaries.append(service.import_pages(
@@ -265,7 +265,15 @@ class OcrWorker(QThread):
             return {"outcome": "official_imported", "summaries": summaries}
         except Exception as exc:
             logger.exception("官方榜单导入失败")
-            return {"outcome": "official_import_failed", "detail": str(exc)}
+            detail = str(exc)
+            if summaries:
+                # 各组导入即落盘：报全败会掩盖「数据已半生效」的真实状态，
+                # 明示已生效组，失败组可单独重跑（同图导入幂等）
+                done = "、".join(
+                    display_names.get(item["name"], item["name"]) for item in summaries
+                )
+                detail += f"\n\n注意：{done} 已导入生效；失败组可单独重试，已生效组无需重跑。"
+            return {"outcome": "official_import_failed", "detail": detail}
         finally:
             self._ocr_engine = service.ocr_engine
             self._rare_char_ocr_engine = service.rare_char_ocr_engine

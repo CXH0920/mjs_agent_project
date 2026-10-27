@@ -42,7 +42,14 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import DialogFooter, PageActionBar, PageHeader, clear_layout, show_toast
+from src.ui.shared.widgets import (
+    DialogFooter,
+    PageActionBar,
+    PageHeader,
+    clear_layout,
+    confirm_discard_edits,
+    show_toast,
+)
 
 if TYPE_CHECKING:
     from src.data.special_cards_repository import SpecialCardRepository
@@ -164,6 +171,24 @@ class SpecialCardEditDialog(QDialog):
         footer.rejected.connect(self.reject)
         layout.addWidget(footer)
         self._rebuild_fields()
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self) -> dict:
+        """收集可编辑字段的原始值，供 dirty 比对（name/category 编辑态不可改）。"""
+        editors = {}
+        for key, editor in self._editors.items():
+            text = editor.toPlainText() if isinstance(editor, QTextEdit) else editor.text()
+            editors[key] = text
+        return {
+            "category": None if self._item else self._category_combo.currentText(),
+            "name": None if self._item else self._name_edit.text(),
+            "fields": editors,
+        }
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def _rebuild_fields(self) -> None:
         while self._fields_form.rowCount():

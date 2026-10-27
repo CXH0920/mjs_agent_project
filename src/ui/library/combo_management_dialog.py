@@ -207,7 +207,12 @@ class ComboManagementDialog(QDialog):
         if combo is None:
             return
         if combo.deleted:
-            self._service.restore_combo(combo)
+            try:
+                self._service.restore_combo(combo)
+            except OSError as exc:
+                logger.exception("恢复实战配队失败")
+                QMessageBox.critical(self, "恢复失败", f"无法恢复实战配队：\n{exc}")
+                return
             if not combo.manual:
                 QMessageBox.information(
                     self,
@@ -228,6 +233,11 @@ class ComboManagementDialog(QDialog):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self._service.delete_combo(combo)
+        try:
+            self._service.delete_combo(combo)
+        except OSError as exc:
+            logger.exception("删除实战配队失败")
+            QMessageBox.critical(self, "删除失败", f"无法删除实战配队：\n{exc}")
+            return
         self.combos_changed.emit()
         self._refresh_list()

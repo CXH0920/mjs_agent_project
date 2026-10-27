@@ -22,7 +22,7 @@ from src.data.models import Combo
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.style import TONE_NEUTRAL, set_tone
-from src.ui.shared.widgets import DialogFooter, PageHeader
+from src.ui.shared.widgets import DialogFooter, PageHeader, confirm_discard_edits
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,25 @@ class ComboEditDialog(QDialog):
         self._setup_ui()
         if combo is not None:
             self._prefill(combo)
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self) -> dict:
+        """收集可编辑字段的原始值，供 dirty 比对。"""
+        return {
+            "hero1": self._hero1.id if self._hero1 else None,
+            "hero2": self._hero2.id if self._hero2 else None,
+            "rating": self._rating_spin.value(),
+            "seats1": tuple(
+                seat for seat, check in zip(SEAT_OPTIONS, self._hero1_seat_checks, strict=True) if check.isChecked()),
+            "seats2": tuple(
+                seat for seat, check in zip(SEAT_OPTIONS, self._hero2_seat_checks, strict=True) if check.isChecked()),
+            "note": self._note_edit.toPlainText(),
+        }
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -228,5 +247,12 @@ class ComboEditDialog(QDialog):
             hero2_seats=seats2,
             manual=True,
         )
-        self._service.save_manual_combo(combo, previous=self._original)
+        try:
+            self._service.save_manual_combo(combo, previous=self._original)
+        except OSError as exc:
+            # 写盘失败异常穿透 slot 只剩 stderr 痕迹（打包 windowed 下不可见），
+            # 用户无感知、对话框停留原处再点保存再静默失败
+            logger.exception("保存实战配队失败")
+            QMessageBox.critical(self, "保存失败", f"无法保存实战配队：\n{exc}")
+            return
         self.accept()

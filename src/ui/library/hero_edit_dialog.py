@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.data.models import Difficulty, Gender, Hero
-from src.ui.shared.widgets import DialogFooter, PageHeader
+from src.ui.shared.widgets import DialogFooter, PageHeader, confirm_discard_edits
 
 
 class HeroEditDialog(QDialog):
@@ -65,6 +65,25 @@ class HeroEditDialog(QDialog):
         footer.accepted.connect(self.accept)
         footer.rejected.connect(self.reject)
         layout.addWidget(footer)
+        self._edit_baseline = self._edit_values()
+
+    def _edit_values(self) -> dict:
+        """收集可编辑字段的原始值，供 dirty 比对。"""
+        return {
+            "name": self._name_edit.text(),
+            "title": self._title_edit.text(),
+            "faction": self._faction_edit.text(),
+            "position": self._position_edit.text(),
+            "max_hp": self._hp_spin.value(),
+            "max_hand": self._hand_spin.value(),
+            "gender": self._gender_combo.currentText(),
+            "difficulty": self._diff_spin.value(),
+        }
+
+    def reject(self) -> None:
+        if self._edit_values() != self._edit_baseline and not confirm_discard_edits(self):
+            return
+        super().reject()
 
     def get_hero(self) -> Hero:
         """返回编辑后的 Hero 对象。"""

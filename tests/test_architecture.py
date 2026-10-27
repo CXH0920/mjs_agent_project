@@ -702,7 +702,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 兜底），动态背景漏检收口；锚点加载失败自动回退原有大模板漏斗
     # 700 → 716：模板写盘原子化（mkstemp+fsync+replace）+ 用户模板损坏
     # 回退随包模板（第 2 批审查 P2-1 修复，封堵写入中断致页面判定持续失效）
-    "ocr/template_manager.py": 716,
+    # 716 → 734：锚点加载失败告警负面缓存（同一清单版本只告警一次，
+    # 防回退态轮询每拍刷 WARNING 挤爆日志轮转，第 13 批审查 P2-1）
+    "ocr/template_manager.py": 734,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）
@@ -717,7 +719,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # （PATH adb 与配置 adb 混版是连接漂移高发根因），682 → 716
     "scripts/doctor.py": 716,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
-    "ui/library/card_management_panel.py": 877,
+    # 877 → 900：版本调整编辑对话框补未保存关闭确认（快照比对 + reject
+    # 拦截，第 14 批审查 P2-1），长文本效果草稿不再被 Esc 静默丢弃
+    "ui/library/card_management_panel.py": 900,
     # hero_classification_panel.py（原 827）出表：三页签拆入
     # library/classification/ 后仅余 181 行装配壳（审计 G6 切片 4.5）
     "scraper/official_source/announcement.py": 699,
@@ -831,7 +835,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 542 → 556：弃单的预热任务出队时复位 _warmup_queued + reset_warmup_state()
     # 跨线程复位入口（VUL-B4-002，2026-10-22）——弃单走 cancelled 短路分支
     # 到不了 warmup_failed 复位点，标志悬挂会让重新预热永久无效
-    "business/recognition/ocr_worker.py": 556,
+    # 556 → 564：整批官方导入部分失败时 detail 明示已生效组（第 8 批
+    # 审查 P2-1），消除「弹窗报失败、数据已半生效」的认知矛盾
+    "business/recognition/ocr_worker.py": 564,
     # 首次入册（498 → 508 越过 500 绊线）：do_poll_work 补 except 兜底，未预期
     # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
     # 508 → 511：wait_for_ocr_task 超时即弃单（VUL-B3-002 审查缺口 2）——置取消
@@ -850,8 +856,12 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     "data/recommendation_index_repository.py": 526,
-    "ui/library/special_cards_panel.py": 517,
-    "scraper/ai/generation.py": 514,
+    # 517 → 542：专属牌编辑对话框补未保存关闭确认（第 14 批审查 P2-1）
+    "ui/library/special_cards_panel.py": 542,
+    # 514 → 547：指定模式（pair/single）武将条目字段校验——坏条目记
+    # 失败项跳过不再裸 KeyError 中断整任务，同 id 去重防自配对（第 6 批
+    # 审查 P2-3）
+    "scraper/ai/generation.py": 547,
     # 502 → 568：审计收集函数行级结构守卫 + audit_summary 自身失败兜底
     # （TD-A5-001 修复，2026-10-21：坏数据降级为提示条目而非穿透崩溃）
     # 568 → 571：collect_timeline_risk_messages 显式传 root 下时间轴路径给

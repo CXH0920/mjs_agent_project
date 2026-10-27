@@ -230,3 +230,48 @@ def test_list_mode_empty_pairs_fails_fast(tmp_path: Path, capsys) -> None:
     assert capsys.readouterr().out == "\n  相性配对生成 (实战配队清单)...\n"
     assert result.failed_items == ["#1<->#1（配对无效）", "配对清单为空或全部无效"]
     assert not result.committed
+
+
+def test_pair_mode_skips_invalid_and_duplicate_entries(
+    tmp_path: Path, record_commits,
+) -> None:
+    """指定武将文件缺 id/name 或同 id 重复：记失败项跳过，不再裸 KeyError 中断。"""
+    synergy_path = tmp_path / "synergies.json"
+    pair_file = tmp_path / "pairs.json"
+    pair_file.write_text(json.dumps([
+        {"id": 1, "name": "甲"},
+        {"name": "缺id"},
+        {"id": 3},
+        "不是对象",
+        {"id": 1, "name": "甲替身"},
+        {"id": 2, "name": "乙"},
+    ], ensure_ascii=False), encoding="utf-8")
+    generator = FakeGenerator([{"score": 5, "reason": "ok"}] * 10)
+
+    summary = run_synergy_pair_generation(
+        str(pair_file), [], generator, str(synergy_path), {}, set(),
+        update_mode=False,
+    )
+
+    # 坏条目全部进 failed_items（含可定位的条目序号），好坏条目去重后 2 人 1 对正常生成
+    joined = "\n".join(summary.failed_items)
+    assert "第 2 条缺少 id/name" in joined
+    assert "第 3 条缺少 id/name" in joined
+    assert "第 4 条缺少 id/name" in joined
+    assert "第 5 条 id=1（甲替身）重复" in joined
+    assert [(a["id"], b["id"]) for a, b in generator.calls] == [(1, 2)]
+
+
+def test_single_mode_rejects_entry_missing_fields(tmp_path: Path) -> None:
+    """选定武将缺 id/name：记失败项返回，不再 target["id"] 裸下标崩溃。"""
+    synergy_path = tmp_path / "synergies.json"
+    single_file = tmp_path / "single.json"
+    single_file.write_text(json.dumps([{"name": "只有名字"}]), encoding="utf-8")
+
+    summary = run_synergy_single_generation(
+        str(single_file), [], FakeGenerator([]), str(synergy_path), {}, set(),
+    )
+
+    assert "选定武将第 1 条缺少 id/name 字段，已跳过" in summary.failed_items
+    # 坏条目被跳过后数量不足 1，随后按既有数量校验收尾
+    assert "指定武将数量无效" in summary.failed_items

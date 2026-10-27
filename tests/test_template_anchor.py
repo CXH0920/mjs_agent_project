@@ -275,3 +275,29 @@ def test_set_template_write_failure_keeps_original(tmp_path, monkeypatch):
             np.zeros((200, 200, 3), dtype=np.uint8), (10, 10, 50, 50))
     assert user.read_bytes() == original
     assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_anchor_failure_warning_deduped_per_manifest_version(tmp_path, caplog) -> None:
+    """锚点清单损坏的回退态：轮询每任务新建实例只告警一次，清单更新后再告警。"""
+    import logging as logging_module
+
+    tm_module._ANCHOR_FAIL_WARNED.clear()
+    assets = tmp_path / "match_guide"
+    assets.mkdir()
+    manifest = {"reference_width": 2560, "reference_height": 1440, "anchors": "not-a-list"}
+    manifest_path = assets / "anchors.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with caplog.at_level(logging_module.WARNING, logger="src.ocr.template_manager"):
+        for _ in range(5):  # 模拟 ocr_worker 每任务新建实例（每拍重跑 _load_anchors）
+            TemplateManager(template_name="match_guide", anchor_manifest_path=manifest_path)
+        warnings = [r for r in caplog.records if "锚点加载失败" in r.message]
+        assert len(warnings) == 1  # 同一清单版本只告警一次，不再每拍刷屏
+
+        manifest_path.write_text(json.dumps({
+            "reference_width": 2560, "reference_height": 1440,
+            "anchors": {"still": "broken"},
+        }), encoding="utf-8")
+        TemplateManager(template_name="match_guide", anchor_manifest_path=manifest_path)
+        warnings = [r for r in caplog.records if "锚点加载失败" in r.message]
+        assert len(warnings) == 2  # 清单变化（mtime）后重新告警，信号不失活

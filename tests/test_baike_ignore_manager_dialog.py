@@ -69,3 +69,33 @@ class _CardServiceStub:
             entry_ids = list(self.list_ignored_cards())
         for entry_id in entry_ids:
             remove_entry("cards", entry_id, self._path)
+
+
+def test_restore_failure_alerts_and_refreshes_to_file_state(tmp_path, monkeypatch) -> None:
+    """恢复写盘失败：弹窗报错且列表按文件实际状态刷新（部分落盘不与磁盘分叉）。"""
+    _app()
+    ignore_path = tmp_path / "ignore.json"
+    ignore_entry("heroes", "161", "贾诩", "modified", "h1", ignore_path)
+    hero_service = _HeroServiceStub(ignore_path)
+    card_service = _CardServiceStub(ignore_path)
+    dialog = BaikeIgnoreManagerDialog(
+        parent=None, announcement_service=hero_service, card_sync_service=card_service,
+    )
+    assert dialog._list.count() == 1
+
+    criticals: list[str] = []
+    monkeypatch.setattr(
+        "src.ui.data_admin.baike_ignore_manager_dialog.QMessageBox",
+        type("_M", (), {"critical": staticmethod(lambda *a, **k: criticals.append(a[2]))}),
+    )
+
+    def _boom(entry_ids=None):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr(hero_service, "restore_heroes", _boom)
+    dialog._list.item(0).setSelected(True)
+    dialog._restore_selected()
+
+    assert criticals and "部分名单可能未恢复" in criticals[0]
+    # 文件里名单仍在（写失败未被部分覆盖），列表按文件真实状态展示
+    assert dialog._list.count() == 1

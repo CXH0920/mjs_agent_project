@@ -13,12 +13,16 @@ CardSyncDialog 与 HeroUpdateConfirmDialog 的忽略入口/详情对比/选中�
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QListWidgetItem, QPushButton
+from PySide6.QtWidgets import QHBoxLayout, QListWidgetItem, QMessageBox, QPushButton
 from src.ui.shared.style import ROLE_SECONDARY
 from src.ui.shared.widgets import set_ui_role
 
 IGNORE_DIFF_TOOLTIP = "选中条目后可忽略：该差异不再提示，官网内容再变化时自动重现。"
+
+logger = logging.getLogger(__name__)
 
 
 class IgnoreableDiffListMixin:
@@ -84,7 +88,13 @@ class IgnoreableDiffListMixin:
         if current is None:
             return
         candidate = current.data(Qt.ItemDataRole.UserRole)
-        self._ignore_candidate(candidate)
+        try:
+            self._ignore_candidate(candidate)
+        except OSError as exc:
+            # 写名单失败（磁盘满/文件被占用）保留列表项，弹窗告知而非静默无响应
+            logger.exception("写入忽略名单失败")
+            QMessageBox.critical(self, "忽略失败", f"无法写入忽略名单：\n{exc}")
+            return
         self._list.takeItem(self._list.row(current))
         self._after_ignore_removed(candidate)
 
