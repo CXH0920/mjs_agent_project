@@ -29,7 +29,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from src.ocr.batch_canvas import build_batch_canvas, join_name_fragments, split_canvas_groups
-from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
+from src.ocr.character_similarity import CharacterSimilarityService
 from src.ocr.image_preprocessor import ImagePreprocessor
 from src.ocr.name_resolution import ACTIONABLE_UNRESOLVED_RESOLUTIONS, NameResolver
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout, OcrRoiSlot
@@ -432,15 +432,14 @@ class GeneralRecognizer:
         return recognized
 
     def _requires_name_batch_fallback(self, text: str) -> bool:
-        """避免截断文本被多候选纠错静默绑定到错误武将。"""
+        """避免截断文本被多候选纠错静默绑定到错误武将。
+
+        候选口径来自 NameResolver.nearby_hero_candidates 单源（与证据
+        消解的候选闭包同源），此处只保留词表空/词表内名字的前置短路。
+        """
         if not self._hero_names or text in self._hero_names:
             return False
-        candidates = [
-            hero for hero in self._hero_names
-            if levenshtein_distance(text, hero)
-            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
-        ]
-        return len(candidates) != 1
+        return len(self._resolver.nearby_hero_candidates(text)) != 1
 
     def _add_timing(self, key: str, started: float) -> None:
         self._timing_ms[key] = self._timing_ms.get(key, 0.0) + (time.perf_counter() - started) * 1000

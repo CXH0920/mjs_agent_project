@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from PySide6.QtCore import QObject, QTimer, Signal
 from src.business.recognition.session_guard import BusyGate
 from src.config.env import connection_key
-from src.ocr.ocr_loader import get_template_manager
+from src.ocr.template_registry import get_template_manager
 
 logger = logging.getLogger(__name__)
 

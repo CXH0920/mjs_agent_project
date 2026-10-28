@@ -87,6 +87,19 @@ class NameResolver:
             or result["resolution"] in UNRESOLVED_RESOLUTIONS
         )
 
+    def nearby_hero_candidates(self, text: str) -> list[str]:
+        """词表内与 text 编辑距离 ≤ 阈值的候选（不限等长）。
+
+        词表编辑距离筛选的单一来源：批次回退守卫（GeneralRecognizer.
+        _requires_name_batch_fallback）与 parse_name_evidence 的候选闭包
+        共用此口径，候选规则演进只改一处，防两处静默分叉。
+        """
+        return [
+            hero for hero in self._hero_names
+            if levenshtein_distance(text, hero)
+            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
+        ]
+
     # ── 证据确认 ──────────────────────────────────────────────────────
 
     def resolve_name_evidence(self, index: int, evidence: list[dict]) -> dict:
@@ -246,11 +259,7 @@ class NameResolver:
                 "resolution": "unresolved",
                 "length_mode": "complete",
             }
-        length_mismatch_candidates = [
-            hero for hero in self._hero_names
-            if levenshtein_distance(text, hero)
-            <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
-        ]
+        length_mismatch_candidates = self.nearby_hero_candidates(text)
         return {
             "name": "",
             "candidates": length_mismatch_candidates,

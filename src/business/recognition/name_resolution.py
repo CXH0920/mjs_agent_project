@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 HEROES_PATH = PROJECT_ROOT / "data" / "heroes.json"
 
+# 与 src/ocr/character_similarity.py 的 SAFE_SUBSTITUTION_WHITELIST 同属
+# 「OCR 混淆字对」治理面（本表供官方导入的变体推演，白名单供识别管线的
+# 确定性矫正）：换 OCR 引擎或武将库扩充时两张表需一并重检存量对。
+# 白名单侧有 doctor 检查与静态冲突检查兜底，本表目前仅靠此注释提醒。
 OCR_NAME_CONFUSION_PAIRS: tuple[tuple[str, str], ...] = (
     ("候", "侯"),
     ("侯", "候"),

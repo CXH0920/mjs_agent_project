@@ -2122,7 +2122,7 @@ src/ocr/
  ├── character_similarity.py  # CharacterSimilarityService — 名称纠错（含拼图画布按检测器工作尺度分块）
  ├── recognizer.py            # GeneralRecognizer — ROI、OCR 引擎与组件编排（含未决槽位复核、unknown_new_hero、4字拆框修复）
  ├── engine_loader.py          # OCR 引擎装载层（RapidOCR/ONNX：v6 主 + v4 复核双套件、%TEMP% 同步、指纹哨兵）
- └── ocr_loader.py            # 模板管理器单例
+ └── template_registry.py    # 模板管理器单例
 ```
 
 ### 12.2 模板管理器（template_manager.py）
@@ -2418,9 +2418,9 @@ def _engine(self):
   剪 vs 异: 四角0×0.4 + 仓颉0×0.4 + 部首0×0.2 = 0
 ```
 
-### 12.4 单例加载器（ocr_loader.py）
+### 12.4 模板管理器单例（template_registry.py）
 
-`ocr_loader.py` 仅延迟管理配置页所需的模板管理器；识别器（`GeneralRecognizer` / RapidOCR 引擎）由 `OcrWorker` 在 worker 线程内独占创建，不再经过本模块。
+`template_registry.py` 仅延迟管理配置页所需的模板管理器；识别器（`GeneralRecognizer` / RapidOCR 引擎）由 `OcrWorker` 在 worker 线程内独占创建，不再经过本模块。
 
 - `get_template_manager()` → `TemplateManager` 单例
 - `OcrWorker` 在专用线程中按 ROI、武将列表和参考尺寸缓存 `GeneralRecognizer`

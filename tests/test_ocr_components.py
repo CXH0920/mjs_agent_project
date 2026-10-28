@@ -459,6 +459,29 @@ def test_general_recognizer_rejects_truncated_name_with_multiple_corrections() -
     assert recognizer._recognize_prepared_batch({1: np.zeros((10, 10), dtype=np.uint8)}, "name") == {}
 
 
+def test_name_resolver_nearby_hero_candidates_uses_edit_distance_threshold() -> None:
+    resolver = GeneralRecognizer(hero_names=["张郃", "王翦", "夏侯惇"])._resolver
+
+    assert resolver.nearby_hero_candidates("张邻") == ["张郃"]      # 等长差一字
+    assert resolver.nearby_hero_candidates("王翡") == ["王翦"]
+    assert resolver.nearby_hero_candidates("夏侯") == ["夏侯惇"]    # 不等长差一字
+    assert resolver.nearby_hero_candidates("张郃") == ["张郃"]      # 词表内名字自身即唯一近邻
+    assert resolver.nearby_hero_candidates("张飞飞") == []          # 差二字超出阈值
+
+
+def test_batch_fallback_guard_matches_resolver_candidate_closure() -> None:
+    """批次回退守卫必须与 NameResolver 候选闭包同口径（单源委托，防静默分叉）。"""
+    recognizer = GeneralRecognizer(hero_names=["张郃", "王翦", "夏侯惇"])
+
+    for text in ("张邻", "王翡", "夏侯", "夏侯惇惇", "张飞飞", "毫不相干"):
+        expected = len(recognizer._resolver.nearby_hero_candidates(text)) != 1
+        assert recognizer._requires_name_batch_fallback(text) is expected, text
+
+    # 词表内名字与空词表恒放行（前置短路语义不经过候选筛选）
+    assert recognizer._requires_name_batch_fallback("张郃") is False
+    assert GeneralRecognizer(hero_names=None)._requires_name_batch_fallback("张郃") is False
+
+
 def test_general_recognizer_keeps_ambiguous_prefix_unresolved() -> None:
     recognizer = GeneralRecognizer(hero_names=["夏侯惇", "夏侯渊", "夏侯婴", "夏侯霸"])
 

@@ -56,7 +56,7 @@ src/ocr/
 ├── batch_canvas.py             # 名称拼图批量画布（分块/拼接/碎片重排，审计 G3 4.6b）
 ├── engine_loader.py       # OCR 引擎装载层（RapidOCR/ONNX：PP-OCRv6 主引擎 + PP-OCRv4 复核引擎，
 │                          #   套件级惰性单例 + 熔断 + RapidOcrEngine 包装类；1694ab7 替代 paddle_loader）
-└── ocr_loader.py          # 模板管理器单例
+└── template_registry.py  # 模板管理器单例
 ```
 
 ---
