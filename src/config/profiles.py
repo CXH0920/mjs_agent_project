@@ -14,6 +14,7 @@ import logging
 import os
 from pathlib import Path
 
+from src.config.atomic_write import atomic_write_text
 from src.config.env import (
     DEFAULT_API_URL,
     DEFAULT_MODEL,
@@ -223,10 +224,6 @@ def save_api_profiles(data: dict, profiles_path=None) -> None:
         "version": int(data.get("version", 1)),
         "profiles": profiles,
     }
-    # 函数内导入：config 是被 src.data 各仓库依赖的底层包，
-    # 模块级导入 src.data.json_repository 会触发 src.data.__init__ 循环初始化
-    from src.data.json_repository import atomic_write_text
-
     content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     atomic_write_text(path, content)
 

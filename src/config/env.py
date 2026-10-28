@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
+from src.config.atomic_write import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -273,10 +275,6 @@ def load_pricing_config(pricing_path=None) -> dict:
 
 def save_pricing_config(pricing_path, data: dict) -> None:
     """以 UTF-8 无 BOM、LF 换行原子写入模型价格配置。"""
-    # 函数内导入：config 是被 src.data 各仓库依赖的底层包，
-    # 模块级导入 src.data.json_repository 会触发 src.data.__init__ 循环初始化
-    from src.data.json_repository import atomic_write_text
-
     path = Path(pricing_path)
     content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     atomic_write_text(path, content)
@@ -402,9 +400,6 @@ def save_env_file(env_path, data):
 
     for key, value in data_copy.items():
         result_lines.append(f"{key}={value}")
-
-    # 函数内导入原因同 save_pricing_config（避免 config↔data 循环初始化）
-    from src.data.json_repository import atomic_write_text
 
     atomic_write_text(env_path, "\n".join(result_lines) + "\n")
 

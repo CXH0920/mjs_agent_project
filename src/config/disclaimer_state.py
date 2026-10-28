@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from src.config.atomic_write import atomic_write_json
 from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,5 @@ def accept(state_file: Path = _STATE_FILE, version: str = DISCLAIMER_VERSION) ->
         "disclaimer_version": version,
         "accepted_at": datetime.now().isoformat(timespec="seconds"),
     }
-    state_file.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    atomic_write_json(state_file, payload)
     logger.info("免责声明已确认: 文本版本 v%s", version)

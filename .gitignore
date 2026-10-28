@@ -53,6 +53,9 @@ config/api_profiles.json
 config/.disclaimer_state.json
 # 首启向导完成/跳过状态（用户本机运行时状态，见 src/config/onboarding_state.py）
 config/.onboarding_state.json
+# 原子写盘 mkstemp 临时文件（进程中断可能残留）：config 域配置/状态文件与根目录 config.env
+config/*.tmp
+/.config.*.tmp
 
 # Edge browser profile (Playwright browser mode)
 data/edge_profile/

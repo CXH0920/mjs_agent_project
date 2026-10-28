@@ -16,6 +16,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from src.config.atomic_write import atomic_write_json
 from src.config.env import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
@@ -48,9 +49,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 
 def _write(state_file: Path, payload: dict) -> None:
     state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    atomic_write_json(state_file, payload)
 
 
 def _read(state_file: Path) -> dict:

@@ -76,7 +76,15 @@ def test_no_upward_layer_dependency() -> None:
         for dst in _internal_imports(py):
             if dst == "ui":
                 offenders.append(f"{py.relative_to(ROOT)} -> src.ui")
-    assert not offenders, "底层包不得 import ui（唯一入口是 main.py）：\n" + "\n".join(offenders)
+            elif top == "config" and dst != "config":
+                # config 为最底层：除 stdlib 外只准 import 本包（原子写盘等
+                # 公用工具住 src.config.atomic_write；曾以函数内导入反向依赖
+                # data.json_repository，本遍历含函数体内 import，后门同样拦截）
+                offenders.append(f"{py.relative_to(ROOT)} -> src.{dst}")
+    assert not offenders, (
+        "底层包不得 import ui（唯一入口是 main.py）；"
+        "config 为最底层，不得 import 其他项目包：\n" + "\n".join(offenders)
+    )
 
 
 # ---------------------------------------------------------------------------

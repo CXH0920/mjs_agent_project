@@ -2,75 +2,30 @@
 """知识库维护 JSON 仓库公共基类与原子写工具。
 
 统一四个维护仓库（专属牌/武将分类/装备属性/卡牌点数）的：
-- 原子写盘（mkstemp + fsync + replace，失败清理临时文件，写读互斥锁）；
+- 原子写盘（mkstemp + fsync + replace，失败清理临时文件）——工具本体已
+  下沉 src/config/atomic_write.py（config 为最底层），此处保留同名转出口，
+  存量调用方 import 路径不变；
 - load 读取骨架（状态重置、异常分级、根结构校验由子类负责）；
 - 写盘失败内存回滚（_snapshot/_restore/_save_or_rollback）。
 
 此前各仓库各持一份 _atomic_json_write / _issue 副本（全库最多 7 份），
-后续写盘改进只需改本文件。
+后续写盘改进只需改原子写工具模块。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
-import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.config.atomic_write import atomic_write_json, atomic_write_text  # noqa: F401 -- 转出口
 from src.data.issues import DataIssue
 
 logger = logging.getLogger(__name__)
-
-
-def atomic_write_json(path: Path | str, data: Any, indent: int = 2,
-                      sort_keys: bool = False) -> None:
-    """以 UTF-8、LF、同目录临时文件原子保存 JSON。
-
-    - mkstemp 保证临时文件唯一且不覆盖既有文件（并发生成与人工编辑
-      写同一路径时不再互相踩同名 .tmp）；
-    - 写入后 flush + fsync 再 replace，避免断电/崩溃留下空或半截文件；
-    - 任一异常清理临时文件后重新抛出（原文件保持不变）。
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=indent, sort_keys=sort_keys)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-
-
-def atomic_write_text(path: Path | str, content: str) -> None:
-    """以 UTF-8、LF、同目录唯一临时文件原子保存文本（与 atomic_write_json 同骨架）。"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        Path(temporary).replace(path)
-    except Exception:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
 
 
 def snapshot_to_backups(source: Path | str, *, keep: int = 10) -> Path | None:
