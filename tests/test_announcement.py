@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import time
 from types import SimpleNamespace
 
@@ -206,6 +208,105 @@ def test_parse_notice_page_html_fallback() -> None:
     assert items[0]["url"] == "https://mjs.ztgame.com/news/008-1786-000d1-530470.html"
     assert items[0]["content"] == ""
     assert items[0]["content_missing"] is True
+
+
+# ============================================================
+# 公告翻页（两次检查间新增超过单页条数时补拉）
+# ============================================================
+
+
+def _api_page(items: list[dict]) -> str:
+    return json.dumps({"code": 0, "data": {"list": items}})
+
+
+def _api_item(item_id: int, filename: str) -> dict:
+    return {
+        "id": item_id,
+        "title": f"公告{item_id}",
+        "content": "<p>正文</p>",
+        "publishdate": "2026-08-12 18:27:50",
+        "defaulturl": filename,
+    }
+
+
+def _page_fetch_spy(pages: dict[int, list[dict]], requested: list[int]):
+    """按 URL 中的 page 参数返回对应页响应，并记录请求过的页码。"""
+    def fake_fetch(url: str, binary: bool = False) -> str:
+        page = int(re.search(r"page=(\d+)", url).group(1))
+        requested.append(page)
+        return _api_page(pages[page])
+    return fake_fetch
+
+
+def test_fetch_latest_announcements_stops_first_page_when_all_known(monkeypatch) -> None:
+    pages = {1: [_api_item(210, "a.html"), _api_item(209, "b.html")]}
+    requested: list[int] = []
+    monkeypatch.setattr(announcement_module, "fetch", _page_fetch_spy(pages, requested))
+    known = {"https://mjs.ztgame.com/news/a.html", "https://mjs.ztgame.com/news/b.html"}
+
+    items = announcement_module.fetch_latest_announcements(known_keys=known)
+
+    assert requested == [1]
+    assert [item["id"] for item in items] == [210, 209]
+
+
+def test_fetch_latest_announcements_paginates_until_known_page(monkeypatch) -> None:
+    # 修复场景：两次检查之间新公告挤满首页，更早的公告被挤到第 2 页——
+    # 旧单页实现拿不到它，翻页后第 2 页整页已知即停
+    pages = {
+        1: [_api_item(212, "new1.html"), _api_item(211, "new2.html")],
+        2: [_api_item(210, "old1.html"), _api_item(209, "old2.html")],
+    }
+    requested: list[int] = []
+    monkeypatch.setattr(announcement_module, "fetch", _page_fetch_spy(pages, requested))
+    known = {
+        "https://mjs.ztgame.com/news/old1.html",
+        "https://mjs.ztgame.com/news/old2.html",
+    }
+
+    items = announcement_module.fetch_latest_announcements(known_keys=known)
+
+    assert requested == [1, 2]
+    assert [item["id"] for item in items] == [212, 211, 210, 209]
+
+
+def test_fetch_latest_announcements_stops_on_empty_page(monkeypatch) -> None:
+    pages = {1: [_api_item(212, "new1.html")], 2: [_api_item(211, "new2.html")], 3: []}
+    requested: list[int] = []
+    monkeypatch.setattr(announcement_module, "fetch", _page_fetch_spy(pages, requested))
+
+    items = announcement_module.fetch_latest_announcements(
+        known_keys={"https://mjs.ztgame.com/news/none.html"}
+    )
+
+    assert requested == [1, 2, 3]
+    assert [item["id"] for item in items] == [212, 211]
+
+
+def test_fetch_latest_announcements_empty_known_fetches_max_pages(monkeypatch, caplog) -> None:
+    # 空已知集合（首次运行）：翻满上限补时间轴历史，并留告警供人工关注
+    pages = {page: [_api_item(900 + page, f"p{page}.html")] for page in range(1, 5)}
+    requested: list[int] = []
+    monkeypatch.setattr(announcement_module, "fetch", _page_fetch_spy(pages, requested))
+
+    with caplog.at_level("WARNING", logger=announcement_module.logger.name):
+        items = announcement_module.fetch_latest_announcements(known_keys=set())
+
+    assert requested == [1, 2, 3, 4]
+    assert len(items) == 4
+    assert "上限" in caplog.text
+
+
+def test_fetch_latest_announcements_default_call_fetches_max_pages(monkeypatch) -> None:
+    # 无参调用（外部调用方兼容）：与空集合同行为但不告警
+    pages = {page: [_api_item(900 + page, f"p{page}.html")] for page in range(1, 5)}
+    requested: list[int] = []
+    monkeypatch.setattr(announcement_module, "fetch", _page_fetch_spy(pages, requested))
+
+    items = announcement_module.fetch_latest_announcements()
+
+    assert requested == [1, 2, 3, 4]
+    assert len(items) == 4
 
 
 # ============================================================
@@ -542,7 +643,7 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
         _raw_announcement(208, "https://mjs.ztgame.com/news/old.html", title="8月10日在线更新"),
     ]
     baike = [_hero(id=1, name="贾诩"), _hero(id=2, name="马钧")]
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: announcements)
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: announcements)
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: baike)
 
     # 首次检查：全部为基线，不提醒，并用本地 heroes.json 初始化百科基线
@@ -591,7 +692,7 @@ def test_service_do_check_promotes_pending_when_heroes_landed(tmp_path, monkeypa
         matched_heroes=[HeroChange(name="东方朔", change="新增", known=False)],
     )
     manager.merge_new([announcement.model_dump()])
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [])
     monkeypatch.setattr(
         service_module,
         "fetch_baike_heroes",
@@ -608,7 +709,7 @@ def test_service_do_check_promotes_pending_when_heroes_landed(tmp_path, monkeypa
 def test_service_do_check_announcement_failure(tmp_path, monkeypatch) -> None:
     service, _manager = _make_service(tmp_path)
 
-    def _raise():
+    def _raise(**_kwargs):
         raise RuntimeError("网络失败")
 
     monkeypatch.setattr(service_module, "fetch_latest_announcements", _raise)
@@ -618,6 +719,29 @@ def test_service_do_check_announcement_failure(tmp_path, monkeypatch) -> None:
     assert result.diff == {"added": [], "modified": [], "removed": []}
 
 
+def test_service_do_check_feeds_known_keys(tmp_path, monkeypatch) -> None:
+    """服务层把已入库公告的去重键作为翻页停止游标传入。"""
+    service, manager = _make_service(tmp_path)
+    captured: dict = {}
+
+    def fake_fetch(**kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", fake_fetch)
+    monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: None)
+
+    # 首次运行：无已入库公告 → 空集合（翻满上限补历史）
+    _run_check(service)
+    assert captured["known_keys"] == set()
+
+    # 入库一条后再查：键集合包含该公告的 stable_key
+    manager.merge_new([_raw_announcement(1, "https://mjs.ztgame.com/news/x.html")])
+    _run_check(service)
+    assert captured["known_keys"] == {"https://mjs.ztgame.com/news/x.html"}
+
+
 def test_service_do_check_baike_failure_keeps_snapshot(tmp_path, monkeypatch) -> None:
     service, _manager = _make_service(tmp_path)
     snapshot_path = tmp_path / "baike_snapshot.json"
@@ -625,7 +749,7 @@ def test_service_do_check_baike_failure_keeps_snapshot(tmp_path, monkeypatch) ->
         BaikeSnapshot(checked_at="x", heroes={"1": {"name": "贾诩", "hash": "old"}}),
         snapshot_path,
     )
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: None)
     result = _run_check(service)
     assert result.error is None
@@ -644,7 +768,7 @@ def test_service_do_check_skips_baseline_when_local_unavailable(tmp_path, monkey
         heroes,
         snapshot_path=tmp_path / "baike_snapshot.json",
     )
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
     result = _run_check(service)
     assert result.error is None
@@ -660,7 +784,7 @@ def test_service_do_check_uses_baike_baseline_when_no_local_file(tmp_path, monke
         heroes,
         snapshot_path=tmp_path / "baike_snapshot.json",
     )
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
     result = _run_check(service)
     assert result.error is None
@@ -1621,7 +1745,7 @@ def test_service_do_check_suppresses_ignored_heroes(tmp_path, monkeypatch) -> No
         _raw_announcement(208, "https://mjs.ztgame.com/news/old.html", title="8月10日在线更新"),
     ]
     baike = [_hero(id=1, name="贾诩"), _hero(id=2, name="马钧")]
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: announcements)
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: announcements)
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: baike)
     _run_check(service)
 
@@ -1689,7 +1813,7 @@ def test_service_do_check_suppresses_ignored_by_name_key(tmp_path, monkeypatch) 
         _raw_announcement(208, "https://mjs.ztgame.com/news/old.html", title="8月10日在线更新"),
     ]
     baike = [_hero(id=1, name="贾诩")]
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: announcements)
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: announcements)
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: baike)
     _run_check(service)
 
@@ -1777,7 +1901,7 @@ def test_service_do_check_treats_corrupt_announcements_as_first_run(tmp_path, mo
     monkeypatch.setattr(
         service_module,
         "fetch_latest_announcements",
-        lambda: [_raw_announcement(209, "https://mjs.ztgame.com/news/new.html")],
+        lambda **_: [_raw_announcement(209, "https://mjs.ztgame.com/news/new.html")],
     )
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
 
@@ -1806,13 +1930,13 @@ def test_service_first_run_does_not_stick_after_corrupt_recovery(tmp_path, monke
         snapshot_path=tmp_path / "baike_snapshot.json",
     )
     old = _raw_announcement(208, "https://mjs.ztgame.com/news/old.html")
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [old])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [old])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [_hero(id=1, name="贾诩")])
     first = _run_check(service)
     assert first.new_announcements == []  # 损坏后首跑：只记录、不提醒
 
     fresh = _raw_announcement(209, "https://mjs.ztgame.com/news/new.html")
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [old, fresh])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [old, fresh])
     second = _run_check(service)
     assert [ann.id for ann in second.new_announcements] == [209]
 
@@ -1831,13 +1955,13 @@ def test_service_runtime_bad_record_does_not_poison_first_run(tmp_path, monkeypa
 
     good = _raw_announcement(208, "https://mjs.ztgame.com/news/old.html")
     bad = {"id": 999, "url": "https://mjs.ztgame.com/news/bad.html"}  # 缺 title → 校验失败
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [good, bad])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [good, bad])
     monkeypatch.setattr(service_module, "fetch_baike_heroes", lambda: [])
     first = _run_check(service)
     assert [ann.id for ann in first.new_announcements] == [208]  # 好记录正常提醒
     assert any(i.severity == "error" for i in manager.load_issues)  # 坏记录记了 error
 
     fresh = _raw_announcement(209, "https://mjs.ztgame.com/news/new.html")
-    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda: [good, fresh])
+    monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [good, fresh])
     second = _run_check(service)
     assert [ann.id for ann in second.new_announcements] == [209]

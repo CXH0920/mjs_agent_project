@@ -331,8 +331,13 @@ class AnnouncementService(QObject):
             hero_names = [hero.name for hero in self._heroes.list_heroes()]
         hero_names = set(hero_names)
         self.progress_changed.emit("正在拉取公告...")
+        # 翻页停止游标：已入库公告的去重键（与 Announcement.stable_key 同构）；
+        # 首次运行为空集合，fetch 侧翻满上限以补全时间轴历史
+        known_keys = {
+            Announcement.stable_key(ann) for ann in self._announcements.list_all()
+        }
         try:
-            items = fetch_latest_announcements()
+            items = fetch_latest_announcements(known_keys=known_keys)
         except Exception as error:
             logger.warning("公告获取失败: %s", error)
             return AnnouncementCheckResult(error=str(error))

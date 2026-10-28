@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 ANNOUNCEMENT_API_URL = "https://ucmsv2api.ztgame.com/api/news/list"
 ANNOUNCEMENT_PAGE_URL = f"{BASE_URL}/news/notice-1.html"
 ANNOUNCEMENT_PER_PAGE = 5
+# 翻页上限：官网列表按时间倒序，正常检查节奏翻 1~2 页即遇到整页已入库的
+# 公告；上限防御接口异常（如每页返回不同脏数据）导致的无尽翻页
+ANNOUNCEMENT_MAX_PAGES = 4
 
 # 章节标题判定：只有这些章节内的武将才属于“武将相关”
 NEW_SECTION_NAMES = ("新增武将",)
@@ -155,17 +158,57 @@ def _parse_notice_page_html(html_text: str) -> list[dict]:
     return items
 
 
-def fetch_latest_announcements() -> list[dict]:
-    """获取最近公告；API 失败时回退解析公告列表页 HTML。"""
+def _announcement_key(item: dict) -> str:
+    """公告去重键，与 Announcement.stable_key 同构（url 优先，缺省回退 id:N）。"""
+    url = str(item.get("url") or "")
+    return url or f"id:{item.get('id')}"
+
+
+def fetch_latest_announcements(
+    known_keys: set[str] | None = None,
+    max_pages: int = ANNOUNCEMENT_MAX_PAGES,
+) -> list[dict]:
+    """获取最近公告（按需翻页）；API 失败时回退解析公告列表页 HTML（单页）。
+
+    官网列表按时间倒序、单页 ANNOUNCEMENT_PER_PAGE 条：两次检查之间新增
+    超过单页条数时，被挤出首页的公告靠翻页补拉，否则将永久漏掉。停止条件
+    是某页条目全部已在 known_keys（已入库公告的去重键集合）中——更早的页
+    必然更旧；known_keys 为 None 或空集合（首次运行/全新安装）时翻满上限，
+    尽量补全时间轴历史。HTML 回退无正文仅够标题级提醒，保持单页。
+    """
     try:
-        query = urlencode({
-            "site": "mjs",
-            "type": "notice",
-            "page": "1",
-            "per_page": str(ANNOUNCEMENT_PER_PAGE),
-        })
-        text = fetch(f"{ANNOUNCEMENT_API_URL}?{query}")
-        return parse_announcement_list(json.loads(text))
+        collected: list[dict] = []
+        seen: set[str] = set()
+        for page in range(1, max_pages + 1):
+            query = urlencode({
+                "site": "mjs",
+                "type": "notice",
+                "page": str(page),
+                "per_page": str(ANNOUNCEMENT_PER_PAGE),
+            })
+            text = fetch(f"{ANNOUNCEMENT_API_URL}?{query}")
+            items = parse_announcement_list(json.loads(text))
+            if not items:
+                break  # 越界页返回空列表：已到列表末尾
+            page_known = True
+            for item in items:
+                key = _announcement_key(item)
+                if key in seen:
+                    continue
+                seen.add(key)
+                collected.append(item)
+                if known_keys is None or key not in known_keys:
+                    page_known = False
+            if known_keys is not None and page_known:
+                logger.info("公告翻页至第 %d 页已全部入库，停止翻页", page)
+                break
+            if page == max_pages and known_keys is not None:
+                # 已知非空仍翻满上限：两次检查间新增公告可能超过翻页窗口
+                logger.warning(
+                    "公告翻页达上限 %d 页仍未遇到已入库页，更早公告留待下次检查",
+                    max_pages,
+                )
+        return collected
     except Exception as api_error:
         logger.warning("公告 API 请求失败，尝试回退 HTML 解析: %s", api_error)
         try:
