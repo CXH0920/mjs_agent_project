@@ -12,16 +12,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Mapping, Optional
 
 from src.data.issues import DataIssue
-from src.data.manager import DEFAULT_DATA_DIR, DataManager
+from src.data.manager import DEFAULT_SYNERGIES_FILE, DataManager
 from src.data.models import SynergyScore
 
 if TYPE_CHECKING:
     from src.data.models import Hero
 
 logger = logging.getLogger(__name__)
-
-# 默认数据路径
-DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
 
 
 def is_synergy_outdated(pair: SynergyScore, hero_a: Hero, hero_b: Hero) -> bool:

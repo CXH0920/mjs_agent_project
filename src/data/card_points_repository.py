@@ -13,14 +13,12 @@ import logging
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-from src.config.env import PROJECT_ROOT
 from src.data.issues import DataIssue
 from src.data.json_repository import JsonRepository
+from src.data.manager import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-# 打包态 __file__ 落在只读 _internal，须写 exe 级可写运行时根（见 src/config/env.py）
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_CARD_POINTS_FILE = DEFAULT_DATA_DIR / "card_points.json"
 
 VALID_SUITS = ("♥", "♣", "♠", "♦", "太极")

@@ -10,15 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-from src.config.env import PROJECT_ROOT
 from src.data.issues import DataIssue
 from src.data.json_repository import JsonRepository
+from src.data.manager import DEFAULT_DATA_DIR
 from src.data.models import Card
 
 logger = logging.getLogger(__name__)
 
-# 打包态 __file__ 落在只读 _internal，须写 exe 级可写运行时根（见 src/config/env.py）
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_CARDS_FILE = DEFAULT_DATA_DIR / "cards.json"
 DEFAULT_CARD_FIELD_SCHEMA_FILE = DEFAULT_DATA_DIR / "card_field_schema.json"
 DEFAULT_CARD_ANNOTATIONS_FILE = DEFAULT_DATA_DIR / "card_annotations.json"

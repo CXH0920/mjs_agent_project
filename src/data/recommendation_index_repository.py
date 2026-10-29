@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 # PROJECT_ROOT/data，用户导入/抓取的新数据写同处即被读取与重建（开发态
 # 与 BUNDLE_ROOT 相等，行为不变）
 DATA_DIR = PROJECT_ROOT / "data"
-WIN_RATE_CSV = DATA_DIR / "2v2胜率排行.csv"
+# 单一来源：与胜率读取共用同一路径常量（reload 依赖序见 test_ranking_csv_runtime_root）
+WIN_RATE_CSV = win_rate_repository.WIN_RATE_CSV
 PICK_RANK_CSV = DATA_DIR / "2v2出场排行.csv"
 BAN_RANK_CSV = DATA_DIR / "武将放逐.csv"
 HEROES_JSON = DATA_DIR / "heroes.json"

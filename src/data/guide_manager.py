@@ -10,13 +10,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from src.data.manager import DEFAULT_DATA_DIR, DataManager
+from src.data.manager import DEFAULT_GUIDES_FILE, DataManager
 from src.data.models import HeroGuide
 
 logger = logging.getLogger(__name__)
-
-# 默认数据路径
-DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
 
 
 class GuideManager(DataManager[HeroGuide]):
