@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 import math
-import tempfile
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from src.config.env import PROJECT_ROOT, load_env_config
 from src.data import peak_win_rate_repository, win_rate_repository
-from src.data.json_repository import atomic_write_json
+from src.data.json_repository import atomic_write_json, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -482,22 +482,14 @@ def _write_snapshot(path: Path, results) -> None:
             "推荐分": result.score if result.score is not None else "", "评级": result.rating or "",
             "推荐排序": result.order or "", "状态": result.status, "异常原因": result.reason,
         })
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", newline="", dir=path.parent,
-        prefix=f".{path.name}.", suffix=".tmp", delete=False,
-    ) as file:
-        temp_path = Path(file.name)
-        writer = csv.DictWriter(file, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+    # 先整体序列化再走原子写：fsync 与失败清理临时文件由工具层统一保证
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
     try:
-        temp_path.replace(path)
+        atomic_write_text(path, buffer.getvalue())
     except PermissionError as exc:
-        try:
-            temp_path.unlink(missing_ok=True)
-        except OSError as cleanup_exc:
-            logger.warning("无法清理推荐指数临时文件 %s: %s", temp_path, cleanup_exc)
         raise PermissionError(
             f"无法覆盖推荐指数文件 {path.name}，请关闭正在打开该文件的 Excel、编辑器或预览窗口后重试。"
         ) from exc

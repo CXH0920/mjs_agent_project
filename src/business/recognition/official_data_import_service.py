@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 import re
-import tempfile
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image
 from src.business.recognition.name_resolution import HeroNameResolver
 from src.business.recognition.official_ocr_engines import OfficialOcrEngines
+from src.config.atomic_write import atomic_write_json, atomic_write_text
 from src.config.env import PROJECT_ROOT
 from src.data.recommendation_index_repository import notify_official_outputs_written
 from src.ocr import official_board_parser
@@ -600,13 +601,12 @@ class OfficialDataImportService:
 
     @staticmethod
     def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as file:
-            temp_path = Path(file.name)
-            writer = csv.DictWriter(file, fieldnames=fieldnames, lineterminator="\n")
-            writer.writeheader()
-            writer.writerows(rows)
-        temp_path.replace(path)
+        # 先整体序列化再走原子写：fsync 与失败清理临时文件由工具层统一保证
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        atomic_write_text(path, buffer.getvalue())
     def _save_pending_session(
         self,
         key: str,
@@ -636,15 +636,7 @@ class OfficialDataImportService:
                 for name, batch in outputs.items()
             },
         }
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", newline="", dir=session_path.parent,
-            prefix=f".{session_path.name}.", suffix=".tmp", delete=False,
-        ) as file:
-            temp_path = Path(file.name)
-            json.dump(payload, file, ensure_ascii=False, indent=2)
-            file.write("\n")
-        temp_path.replace(session_path)
+        atomic_write_json(session_path, payload, indent=2)
         return session_path
 
     def apply_reviewed_records(

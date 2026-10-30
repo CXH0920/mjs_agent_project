@@ -13,6 +13,7 @@ from src.data.recommendation_index_repository import (
     RecommendationIndexConfig,
     _rank_to_score,
     _score_valid_results,
+    _write_snapshot,
     is_recommendation_index_stale,
     load_recommendation_indexes,
     mark_recommendation_index_stale,
@@ -185,6 +186,19 @@ def test_rebuild_reports_locked_snapshot_file_and_cleans_temporary_file(tmp_path
             [{"排名": 1, "武将": "单将"}],
         )
     assert not list(tmp_path.glob(".recommendation.csv.*.tmp"))
+
+
+def test_write_snapshot_serialization_failure_leaves_no_temp_file(tmp_path: Path, monkeypatch) -> None:
+    """写盘序列化中途失败（磁盘满/编码异常路径）不得遗留半截临时文件。"""
+    result = RecommendationIndex(1, "武将", 0.5, 1, 1, None, None, None, None, None, 50, "B", 1, "有效")
+
+    def reject_writerows(self, rows):
+        raise RuntimeError("写盘中断模拟")
+
+    monkeypatch.setattr(csv.DictWriter, "writerows", reject_writerows)
+    with pytest.raises(RuntimeError, match="写盘中断模拟"):
+        _write_snapshot(tmp_path / "recommendation.csv", [result])
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_recommendation_index_stale_state_is_persistent(tmp_path: Path) -> None:

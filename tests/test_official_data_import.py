@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 
 import cv2
 import numpy as np
@@ -980,6 +981,32 @@ def test_save_pending_session_roundtrip(tmp_path) -> None:
 
     assert payload is not None
     assert payload["outputs"]["2v2胜率排行.csv"]["records"][0]["武将"] == "夏候"
+
+
+def test_save_pending_session_write_failure_leaves_no_temp_file(tmp_path, monkeypatch) -> None:
+    """会话文件写盘中途失败不得遗留半截临时文件。"""
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+
+    def reject_dump(*args, **kwargs):
+        raise RuntimeError("写盘中断模拟")
+
+    monkeypatch.setattr(json, "dump", reject_dump)
+    with pytest.raises(RuntimeError, match="写盘中断模拟"):
+        service._save_pending_session(
+            "2v2", ["a.png"], 1, ["paged"], ["校验失败"], {}, tmp_path / "pending.json",
+        )
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_write_csv_serialization_failure_leaves_no_temp_file(tmp_path, monkeypatch) -> None:
+    """正式榜单 CSV 写盘中途失败不得遗留半截临时文件。"""
+    def reject_writerows(self, rows):
+        raise RuntimeError("写盘中断模拟")
+
+    monkeypatch.setattr(csv.DictWriter, "writerows", reject_writerows)
+    with pytest.raises(RuntimeError, match="写盘中断模拟"):
+        OfficialDataImportService._write_csv(tmp_path / "out.csv", ["武将"], [{"武将": "测试"}])
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_load_pending_session_returns_none_when_missing(tmp_path) -> None:
