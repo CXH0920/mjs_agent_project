@@ -121,7 +121,7 @@ src/ui/
 
 `src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。资料库二级页签（librarySectionTabs）与页面内分区页签（sectionTabs）共用的四条下划线页签 QSS 规则（pane / tab / :hover:!selected / :selected）由 `_section_tabs_qss(object_name)` 参数化生成（b5e8e4f），等价性由 `tests/test_style_qss.py` 锁定。
 
-`src.ui.shared.widgets` 提供 `PageHeader`、`PageActionBar`、`EmptyState`、`StatusBadge`、`NoticeBanner`、`DialogFooter`、`ToastOverlay` 和 `show_toast()`；`ScriptRunner` 经 `src.business.common.script_runner` 重新导出供 UI 层使用。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。`DialogFooter.set_busy()` 统一提交中的按钮禁用与文案恢复；同一父窗口复用一个 Toast 并重置隐藏计时器。`PageActionBar` 已用于选将推荐和对局攻略，避免在应用外壳标题下重复页面标题。`close_after_toast()` 用于三个配置对话框（模拟器 / API / 数据管理）的保存成功路径，先弹 Toast 再延迟关闭，避免立即关闭丢失提示。
+`src.ui.shared.widgets` 提供 `PageHeader`、`PageActionBar`、`EmptyState`、`StatusBadge`、`NoticeBanner`、`DialogFooter`、`ToastOverlay` 和 `show_toast()`；`ScriptRunner` 由 UI 层直连 `src.business.execution.script_runner` 使用（原 #A3 迁移期的 widgets 再导出已移除）。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。`DialogFooter.set_busy()` 统一提交中的按钮禁用与文案恢复；同一父窗口复用一个 Toast 并重置隐藏计时器。`PageActionBar` 已用于选将推荐和对局攻略，避免在应用外壳标题下重复页面标题。`close_after_toast()` 用于三个配置对话框（模拟器 / API / 数据管理）的保存成功路径，先弹 Toast 再延迟关闭，避免立即关闭丢失提示。
 
 跨功能骨架与业务循环也已收敛到 `src.ui.shared`：
 

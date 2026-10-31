@@ -453,7 +453,7 @@ def test_audit_crash_not_rendered_as_pass(tmp_path):
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    from src.business.common.script_runner import FAILED_TO_START_EXIT_CODE
+    from src.business.execution.script_runner import FAILED_TO_START_EXIT_CODE
     for code in (3, FAILED_TO_START_EXIT_CODE):
         panel._clear_script_output()
         panel._on_finished(code, None, panel._on_audit_finished)

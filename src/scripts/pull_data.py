@@ -261,7 +261,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="只打印将发生的动作，不执行")
     args = parser.parse_args()
 
-    from src.business.common.task_ledger import record_task
+    from src.business.execution.task_ledger import record_task
     started = time.monotonic()
     if args.command == "verify":
         code = verify()

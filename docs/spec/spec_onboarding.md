@@ -69,7 +69,7 @@
 | 协调器清理（只关自己的线程池，不动共享 ADB 会话） | `shutdown()` | 同上 `:256-261`；`src/business/emulator/emulator_operation_service.py:116-120` |
 | OCR 预热状态机 | `capture_service.ocr_warmup_state ∈ {idle,warming,ready,failed}`、`ocr_warmup_state_changed(state, detail)` | `src/business/emulator/capture_service.py:88-90` |
 | 试识别（与推荐页同一个底层入口） | `do_capture(hero_names=…, template_name="hero_selection", force_ocr=False, perform_ocr=True)` → `capture_completed(dict)`，payload 键 **恰为** `{image, save_path, ocr_results, ocr_matched}` | 同上 `:129-154`、`:386-393` |
-| 一键执行脚本（脚本/QProcess 编排） | `ScriptRunner(QObject)`（三个维护面板在用） | `src/business/common/script_runner.py:21` |
+| 一键执行脚本（脚本/QProcess 编排） | `ScriptRunner(QObject)`（三个维护面板在用） | `src/business/execution/script_runner.py:21` |
 | frozen 下跑模块（`-m` 分发，配合 spec `collect_submodules("src.scripts")`） | `mjs_agent.exe -m <module>` | `src/main.py:279-285`；`打包发版指南.md`「踩坑 11」 |
 | 首启状态文件范式 | `should_show()` / `accept()`，版本感知，损坏即按未接受 | `src/config/disclaimer_state.py:27-53` |
 | 数据加载报告 | `DataFacade.last_load_report`（**仅 `issues`，无计数/时间戳**） | `src/data/facade.py:47`、`:59-66`；`src/data/issues.py:30-33` |

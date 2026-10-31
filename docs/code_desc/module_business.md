@@ -23,7 +23,7 @@
 10. **忽略名单基础设施** — `baike_ignore_store` 统一管理卡牌与武将百科差异的忽略/恢复/查询，CardSyncService 与 AnnouncementService 共享
 11. **数据新鲜度判定** — `freshness.py` 无 Qt 依赖纯业务层：武将/攻略/相性/官方榜单四项健康判定与建议操作路由，供状态栏数据新鲜度芯片（`src/ui/app/data_freshness_chip.py`）消费；损坏文件留底与档位阈值可配置
 12. **备份恢复** — `backup_restore_service.py` 消费 `data/backups/` 自动快照：列出、键级 diff 预览与原子恢复（恢复前先快照当前状态保证双向可回退、坏备份两侧拒绝）
-13. **官网访问冷却闸门** — `common/check_cooldown.py` 的 `CheckCooldown`：公告检查与卡牌检查共用的忙碌判定 + 最小间隔原子闸门（`try_acquire` 加锁使"忙碌→冷却→置位"不可分割）
+13. **官网访问冷却闸门** — `access_cooldown/check_cooldown.py` 的 `CheckCooldown`：公告检查与卡牌检查共用的忙碌判定 + 最小间隔原子闸门（`try_acquire` 加锁使"忙碌→冷却→置位"不可分割）
 14. **首启向导分辨率体检** — `emulator/layout_resolution.py` 的 `compare_resolution`：纯函数判定模拟器画面与 ROI 参考尺寸的 pass/warn/fail（等比缩放判 WARN、竖屏/非等比/过低判 FAIL）
 
 元规则文档维护纯函数与 RAG 索引精化三层架构已整体迁至 [`./module_rag.md`](./module_rag.md)，本层不再承担其职责描述。
@@ -77,9 +77,10 @@ src/business/
 │   └── combo_import_service.py        # 实战配队导入合并（幂等；源结构校验 + 覆盖前快照）
 ├── announcement/
 │   └── announcement_service.py        # 公告检查与百科 diff 服务（线程 + Qt 信号；共享冷却闸门）
-└── common/
-    ├── script_runner.py               # QProcess 异步执行 Python 脚本公共封装（含 30 分钟看门狗 + 树杀 + 启动失败终态通知）
-    ├── task_ledger.py                 # 任务结果台账（JSONL 追加 logs/task_results.jsonl，跨进程文件锁串行化）
+├── execution/
+│   ├── script_runner.py               # QProcess 异步执行 Python 脚本公共封装（含 30 分钟看门狗 + 树杀 + 启动失败终态通知）
+│   └── task_ledger.py                 # 任务结果台账（JSONL 追加 logs/task_results.jsonl，跨进程文件锁串行化）
+└── access_cooldown/
     └── check_cooldown.py              # 手动检查的冷却闸门（CheckCooldown，忙碌判定 + 最小间隔原子操作）
 ```
 
@@ -391,7 +392,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 `AnnouncementService(QObject)` 提供手动"检查公告更新"：`check_now()` 在 `threading.Thread`（`announcement-check`）中执行 `_do_check()`，结果通过内部信号 `_check_done(object)` 回到 GUI 线程，再由 `_finalize_check()` 统一写共享状态、持久化快照并对外广播 `check_finished(object)`（避免 worker 线程与 `mark_applied()` 跨线程竞争及快照文件并发写碰撞）；`is_busy` 防重复点击，`cooldown_remaining` 提供 `CHECK_COOLDOWN_SECONDS = 60` 秒最小检查间隔，主窗口对忙碌/冷却状态弹出提示。`check_now()` 与 `prepare_update_candidates()` 均返回 `bool`——`False` 表示被忙碌或冷却拦截，由调用方提示用户；后台阶段文字经 `progress_changed(str)` 广播。
 
-**冷却闸门收口（d5cceeb）与冷却窗口分立（39ec62b）**：忙碌判定与冷却计时收口到 `common/check_cooldown.CheckCooldown`（TD-A2-001）——公告检查与卡牌检查此前各自持有一份逐行同构的实现，两侧阈值一旦分叉用户看到的"60 秒冷却"会与实际行为不符。闸门内部加锁使"检查忙碌 → 检查冷却 → 置位时间戳"成为原子操作（原为无锁 check-then-act，安全性完全依赖"所有调用方都在 GUI 主线程"这一注释约定；一旦从 worker/定时器触发，双击即可起两个线程并发写同一份数据文件，VUL-B3-001）。`check_now()` 与 `prepare_update_candidates()` 均经 `_gate.try_acquire()` 判定。2026-10-24 起两个动作**各持独立冷却窗口**：公告检查走 `_gate`，获取武将变更走 `_prepare_gate`（同为 `CHECK_COOLDOWN_SECONDS = 60` 秒）——公告检查后首次获取武将变更不再被牵连拦截，各自连续触发才限频；忙碌判定两闸门共用（任一在途即忙），对外暴露 `cooldown_remaining` 与 `prepare_cooldown_remaining` 两个只读属性。
+**冷却闸门收口（d5cceeb）与冷却窗口分立（39ec62b）**：忙碌判定与冷却计时收口到 `access_cooldown/check_cooldown.CheckCooldown`（TD-A2-001）——公告检查与卡牌检查此前各自持有一份逐行同构的实现，两侧阈值一旦分叉用户看到的"60 秒冷却"会与实际行为不符。闸门内部加锁使"检查忙碌 → 检查冷却 → 置位时间戳"成为原子操作（原为无锁 check-then-act，安全性完全依赖"所有调用方都在 GUI 主线程"这一注释约定；一旦从 worker/定时器触发，双击即可起两个线程并发写同一份数据文件，VUL-B3-001）。`check_now()` 与 `prepare_update_candidates()` 均经 `_gate.try_acquire()` 判定。2026-10-24 起两个动作**各持独立冷却窗口**：公告检查走 `_gate`，获取武将变更走 `_prepare_gate`（同为 `CHECK_COOLDOWN_SECONDS = 60` 秒）——公告检查后首次获取武将变更不再被牵连拦截，各自连续触发才限频；忙碌判定两闸门共用（任一在途即忙），对外暴露 `cooldown_remaining` 与 `prepare_cooldown_remaining` 两个只读属性。
 
 **忽略名单名字兜底（801c9f1）**：`ignore_hero()` / `list_ignored_heroes()` 的条目键改为武将名（原 entry_id 在官网改版后可能漂移）。
 
@@ -568,7 +569,7 @@ class ScriptRunner(QObject):
 
 `CardSyncService(QObject)` 提供手动"检查卡牌更新"，与 `AnnouncementService` 共享同一设计模式（`_run_check` → `_check_done` → `_finalize_check` 三段式跨线程收尾）：`check_now()` 在后台线程执行检查，受 `CHECK_COOLDOWN_SECONDS=60` 秒最小间隔限制。与公告检查零耦合：不依赖公告时间轴，变更记录独立存储在 `data/card_changes.json`，驱动卡牌 curated 精化时效检查（见 [`./module_rag.md`](./module_rag.md)）。
 
-**冷却闸门收口（d5cceeb）**：忙碌判定与冷却计时收口到 `common/check_cooldown.CheckCooldown`（TD-A2-001），与公告检查共用同一默认值；`check_now()` 经 `_gate.try_acquire()` 原子判定。
+**冷却闸门收口（d5cceeb）**：忙碌判定与冷却计时收口到 `access_cooldown/check_cooldown.CheckCooldown`（TD-A2-001），与公告检查共用同一默认值；`check_now()` 经 `_gate.try_acquire()` 原子判定。
 
 **信号**：
 
@@ -907,7 +908,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 | 依赖 | `src.data.manager` | `DEFAULT_DATA_DIR`（备份恢复目标路径）；`DataIssue` 模型（CardCatalogService 的仓储校验结果） |
 | 依赖 | `src.data.models` | 备份恢复服务逐条解析 JSON 列表（`Hero` / `SynergyScore` / `HeroGuide` / `Combo`） |
 | 依赖 | `src.ocr.card_grid_detector` | 巅峰赛牌面检测（`detect_selection_cards` / `board_row_sizes` / `layout_is_plausible` / `derive_name_rois`） |
-| 被调用方 | `src.business.common.task_ledger` | `base_fetch_service._on_finished` 逐任务写台账（`logs/task_results.jsonl`）；`pull_data` / `maintain_rag` / `indexer` / `ops` 各写入点见 `module_rag.md` / `module_data.md` |
+| 被调用方 | `src.business.execution.task_ledger` | `base_fetch_service._on_finished` 逐任务写台账（`logs/task_results.jsonl`）；`pull_data` / `maintain_rag` / `indexer` / `ops` 各写入点见 `module_rag.md` / `module_data.md` |
 | 依赖 | `src.data.announcement_manager` | AnnouncementService 的公告合并去重与百科快照持久化 |
 | 依赖 | `src.data.hero_timeline` | 武将变更时间轴（announcement 同步） |
 | 依赖 | `src.scraper.official_source.announcement` | 公告 / 百科拉取、武将快照与更新候选计算 |
@@ -940,7 +941,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 自基线 `885ea96`（2026-10-02 校准）以来的变更：
 
 **新增**
-- `common/task_ledger.py`（c88bf63，67 行）：任务结果台账，`record_task()` / `read_entries()` API，JSONL 追加 `logs/task_results.jsonl`（跨日志轮转窗口留痕）；写入点五处（base_fetch_service / indexer / maintain_rag / pull_data / ops）
+- `execution/task_ledger.py`（c88bf63，67 行）：任务结果台账，`record_task()` / `read_entries()` API，JSONL 追加 `logs/task_results.jsonl`（跨日志轮转窗口留痕）；写入点五处（base_fetch_service / indexer / maintain_rag / pull_data / ops）
 - QProcess 看门狗（b3327f1）：`script_runner.DEFAULT_WATCHDOG_MS = 30min`（QTimer 单发 kill + ERROR）与 `base_fetch_service._WATCHDOG_TIMEOUT_MS` 同规格接线——消除 AI 生成卡网络时 `_is_busy` 永久 True 的挂死
 - stderr tqdm 降噪（1426686）：base_fetch stderr 含 `%|` 降 DEBUG，原占 ai_generation.log 89% 的 WARNING 噪声
 
@@ -983,13 +984,13 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 
 **新增文件**
 - `maintenance/backup_restore_service.py`（eead74c，247 行，无 Qt 依赖）：备份恢复服务——`data/backups/` 自动快照的列出（`list_backups`，只认时间戳命名的自动快照、新→旧至多 10 份、手工抢救件不进列表）、键级 diff 预览（`preview_backup`，新增/移除/变更条数）、原子恢复（`restore_backup`，恢复前先快照当前状态保证双向可回退、`atomic_write_text` 原子写替换、坏备份两侧拒绝）；`select_group_entries` 提供按时间点整组选择（`GROUP_KEYS = ("heroes", "synergies", "guides")` 三者必须同时间点恢复才不失配）。刻意不用 `DataManager.load` 做预览/校验（加载失败会触发坏文件留底副作用，把备份文件再快照进 `backups/backups/`）
-- `common/check_cooldown.py`（d5cceeb，106 行，无 Qt 依赖）：`CheckCooldown` 手动检查的冷却闸门——`try_acquire()` 加锁使"检查忙碌→检查冷却→置位时间戳"成为原子操作（TD-A2-001，原为无锁 check-then-act，双击可起两个线程并发写同一份数据文件，VUL-B3-001）。公告检查与卡牌检查共用同一默认值 `DEFAULT_COOLDOWN_SECONDS = 60`
+- `access_cooldown/check_cooldown.py`（d5cceeb，106 行，无 Qt 依赖）：`CheckCooldown` 手动检查的冷却闸门——`try_acquire()` 加锁使"检查忙碌→检查冷却→置位时间戳"成为原子操作（TD-A2-001，原为无锁 check-then-act，双击可起两个线程并发写同一份数据文件，VUL-B3-001）。公告检查与卡牌检查共用同一默认值 `DEFAULT_COOLDOWN_SECONDS = 60`
 - `emulator/layout_resolution.py`（52 行，纯函数）：`compare_resolution(actual, reference)` 模拟器画面与 ROI 参考尺寸体检判定（pass/warn/fail，等比缩放判 WARN、竖屏/非等比/过低判 FAIL），首启向导段 2
 - `analysis/win_rate_ranking.py`（c4a8cf4，31 行，纯函数）：`derive_win_rate_ranks(win_rates, names=None)` 胜率名次单一事实源——同分统一按武将名排序（确定性优先于槽位序），选将推荐页奖牌只在"本局已识别的武将之间"比较。巅峰赛禁选建议与推荐服务均从本模块导入
 
 **修正（ScriptRunner / TaskLedger / BaseFetchService）**
-- `common/script_runner.py`（14bffaf / 07606ce / 2b73535）：启动失败终态通知（`FAILED_TO_START_EXIT_CODE = -1`，Qt6 对 `FailedToStart` 只发 `errorOccurred` 不发 `finished`，须补发终态通知否则面板永久忙死，VUL-B2-001）；跨平台时序修复（Windows 同步 `FailedToStart` 在 `start()` 内触发用返回值表达、Linux 异步回报须补发 `finished`）；状态机加固（`_proc`/`_watchdog` 必须先于 `start()` 提交，`_release_process()` 置空并 `deleteLater()` 释放已结束的 QProcess，`_start_pending` 区分同步/异步启动失败）；树杀与复查（`_kill_process_tree()` Windows `taskkill /PID /T /F` 终止整棵进程树，`WATCHDOG_RECHECK_MS = 2000` 延迟复查绑定具体 proc 防误杀新进程）；看门狗 `Starting` 阶段挂 `started` 等进程起来后补树杀（Qt6 对 `Starting` 状态 `kill()` 原生 abort）
-- `common/task_ledger.py`（2b73535）：跨进程文件锁串行化（`_ledger_lock()` 对 `*.lock` 首字节加非阻塞独占锁 `msvcrt.LK_NBLCK`/`fcntl.LOCK_NB`，50 次×20 ms 有界等待，锁机制不可用时降级无锁写入）；`read_entries()` 跳过空行与非对象 JSON 行（外部工具追加的 `123`/`["x"]`），不再因 `entry.get` 抛 `AttributeError` 让整份台账读不出；`record_task()` 入参归一化放 try 内（`None`/字符串等脏值不中断收尾流程）
+- `execution/script_runner.py`（14bffaf / 07606ce / 2b73535）：启动失败终态通知（`FAILED_TO_START_EXIT_CODE = -1`，Qt6 对 `FailedToStart` 只发 `errorOccurred` 不发 `finished`，须补发终态通知否则面板永久忙死，VUL-B2-001）；跨平台时序修复（Windows 同步 `FailedToStart` 在 `start()` 内触发用返回值表达、Linux 异步回报须补发 `finished`）；状态机加固（`_proc`/`_watchdog` 必须先于 `start()` 提交，`_release_process()` 置空并 `deleteLater()` 释放已结束的 QProcess，`_start_pending` 区分同步/异步启动失败）；树杀与复查（`_kill_process_tree()` Windows `taskkill /PID /T /F` 终止整棵进程树，`WATCHDOG_RECHECK_MS = 2000` 延迟复查绑定具体 proc 防误杀新进程）；看门狗 `Starting` 阶段挂 `started` 等进程起来后补树杀（Qt6 对 `Starting` 状态 `kill()` 原生 abort）
+- `execution/task_ledger.py`（2b73535）：跨进程文件锁串行化（`_ledger_lock()` 对 `*.lock` 首字节加非阻塞独占锁 `msvcrt.LK_NBLCK`/`fcntl.LOCK_NB`，50 次×20 ms 有界等待，锁机制不可用时降级无锁写入）；`read_entries()` 跳过空行与非对象 JSON 行（外部工具追加的 `123`/`["x"]`），不再因 `entry.get` 抛 `AttributeError` 让整份台账读不出；`record_task()` 入参归一化放 try 内（`None`/字符串等脏值不中断收尾流程）
 - `fetching/base_fetch_service.py`（f1b13f8 / f10b477 / 9ccc2fc / 1d8334a）：看门狗改"无进度上限"（`_feed_watchdog()` 在每条进度行重置计时，browser 模式长清单全程超 30 分钟也放行）；超时走树杀而非 `cancel()`（不把"超时失败"记成"用户取消"）；取消 `Starting` 阶段崩溃修复（`cancel()` 在 `Starting` 时只置标记挂 `started`→`_on_started_after_cancel`，`cancel_process` 对 `Starting` 跳过并告警，VUL-B2-001）；取消清理轮询有界（`_CANCEL_CLEANUP_MAX_POLLS = 100`，约 5 秒，超限强制收尾）；子进程工作目录锚定 `PROJECT_ROOT`（`-m` 相对模块名，TD-A6-001）；进程释放（`_release_process()` 置空并 `deleteLater()`，TD-A8-001）；错误路径补台账（`_on_error` 补 `record_task(ok=False)`，`FailedToStart` 不发 `finished` 不在此记则台账缺失该类失败）；取消期间出错锁死修复（`FailedToStart` 先 `_release_process()` 再 `_finish_cancellation()`，TD-A5-001）
 - `fetching/fetch_utils.py`：`cancel_process` 对 `Starting` 进程跳过并告警（不调用 kill）
 - `fetching/hero_fetch_service.py`（1d8334a）：`fetch_specific()` 空列表直接拒绝（子进程对空目标打印"无目标武将"并以 0 退出，父进程上报成功会致公告更新流程把未采集批次当已完成并 `mark_applied`，VUL-B4-002）

@@ -13,7 +13,7 @@ import logging
 import sys
 
 from PySide6.QtCore import QEventLoop, QProcess, QTimer
-from src.business.common.script_runner import FAILED_TO_START_EXIT_CODE, ScriptRunner
+from src.business.execution.script_runner import FAILED_TO_START_EXIT_CODE, ScriptRunner
 
 
 class _FakeProc:
@@ -51,7 +51,7 @@ def test_script_runner_watchdog_kills_stuck_process(caplog) -> None:
     fake = _FakeProc()
     runner._proc = fake
 
-    with caplog.at_level(logging.ERROR, logger="src.business.common.script_runner"):
+    with caplog.at_level(logging.ERROR, logger="src.business.execution.script_runner"):
         runner._on_watchdog_timeout()
 
     assert fake.killed is True
@@ -76,7 +76,7 @@ def test_script_runner_watchdog_kills_process_tree(qapp, monkeypatch) -> None:
     继续占用网络与文件句柄。替身无 processId 时降级 kill，故用 monkeypatch
     验证委托关系本身。
     """
-    import src.business.common.script_runner as sr
+    import src.business.execution.script_runner as sr
 
     launched = []
     monkeypatch.setattr(sr.os, "name", "nt")
@@ -100,7 +100,7 @@ def test_script_runner_watchdog_kills_process_tree(qapp, monkeypatch) -> None:
 def test_script_runner_watchdog_defers_kill_while_starting(qapp, monkeypatch) -> None:
     """回归（VUL-B2-003）：Starting 状态不得直接 kill（Qt6 会原生 abort），
     改为挂到 started 信号后再补树杀，避免兜底本身打死进程。"""
-    import src.business.common.script_runner as sr
+    import src.business.execution.script_runner as sr
 
     launched = []
     monkeypatch.setattr(sr.os, "name", "nt")
@@ -196,7 +196,7 @@ def test_script_runner_recheck_kills_same_stuck_process(qapp) -> None:
 
 def test_script_runner_cancel_kills_running_process_tree(qapp, monkeypatch, caplog) -> None:
     """退出协议（P2-2）：cancel 主动终止运行中的任务，走树杀而非裸 kill。"""
-    import src.business.common.script_runner as sr
+    import src.business.execution.script_runner as sr
 
     launched = []
     monkeypatch.setattr(sr.os, "name", "nt")
@@ -209,7 +209,7 @@ def test_script_runner_cancel_kills_running_process_tree(qapp, monkeypatch, capl
     runner = ScriptRunner()
     runner._proc = _PidProc()
 
-    with caplog.at_level(logging.WARNING, logger="src.business.common.script_runner"):
+    with caplog.at_level(logging.WARNING, logger="src.business.execution.script_runner"):
         runner.cancel()
 
     assert launched, "cancel 必须走树杀"

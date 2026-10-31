@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 
-from src.business.common.check_cooldown import DEFAULT_COOLDOWN_SECONDS, CheckCooldown
+from src.business.access_cooldown.check_cooldown import DEFAULT_COOLDOWN_SECONDS, CheckCooldown
 
 
 def test_default_cooldown_is_shared_constant() -> None:

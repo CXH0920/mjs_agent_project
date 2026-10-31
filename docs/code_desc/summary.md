@@ -73,7 +73,7 @@ test_project/
 │   │                           #   + recognition/session_guard（SessionGuard / BusyGate / OneShotToken 竞态守卫三原语）
 │   │                           #   + freshness.py（数据新鲜度判定核心，逐武将核对）+ pending_stats（OCR 未决错法频次与人工确认记录）
 │   │                           #   + maintenance/backup_restore_service（备份快照列出/预览/恢复消费端）
-│   │                           #   + common/check_cooldown（访问冷却与并发守卫）/ common/script_runner（子进程看门狗与树杀）
+│   │                           #   + access_cooldown/check_cooldown（访问冷却与并发守卫）/ execution/（script_runner 子进程看门狗与树杀 + task_ledger 任务台账）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking（排名/量纲收敛）
 │   ├── capture/                 # 屏幕采集层（ADB 连接与截图、多品牌模拟器探测 emulator_discovery/、官方 PC 客户端直连 pc_client.py；仅屏幕读取，无输入能力）
 │   ├── ocr/                     # OCR 识别层（模板匹配 + RapidOCR 双套件 + 卡位检测 + engine_loader 引擎装载）
@@ -245,7 +245,7 @@ test_project/
 **运维工具链**（b3327f1 / 1426686 / c88bf63 / 31f59be）
 - `src/scripts/doctor.py`（新增 609 行）：11 组只读体检 + `--offline` / `--json`，FAIL 退出码 1；401 匹配收紧为 "HTTP 401"（af8cd06，消除 token 统计行误计）
 - `src/scripts/ops.py`（新增 149 行）：weekly（pull→diff→maintain_rag→pytest→push，前置失败不 push）/ health / retry-failed / clean 四子命令
-- `src/business/common/task_ledger.py`（新增）：任务台账 JSONL 落 `logs/task_results.jsonl`，五个写入点（base_fetch_service / indexer / maintain_rag / pull_data / ops）
+- `src/business/execution/task_ledger.py`（新增）：任务台账 JSONL 落 `logs/task_results.jsonl`，五个写入点（base_fetch_service / indexer / maintain_rag / pull_data / ops）
 - `src/config/version.py`（新增）：版本单一来源 `app_version()`；release.py 发版校验与发版清单 `logs/release-{version}.json` 终结三源并存的局面
 - R2 十项：维护脚本 crash logger 补装、manager 坏文件保底副本、RAG 索引写后条数一致性校验、OCR 退役 worker 强杀兜底（先 `logging.shutdown()`）、threading.excepthook、首启资料部署标记 `data/.deployed`、QProcess 看门狗 30 分钟、缓存畸形行显式告警、sync_rule_stats 缺源升级 error、pytest basetemp 收口 `.tmp_test/pytest-tmp`
 - 启动自动公告检查（每日一次、启动 2 分钟后、忙碌/冷却静默跳过）与启动截图回收（14 天）
@@ -375,7 +375,7 @@ test_project/
 **其他修复**
 - **模拟器域**（a2f6ecb / e790a9f）：OCR 关停复活竞态、轮询重连漂移、等待上界、截图异常静默卡死、首启体检槽位泄漏；`src/business/emulator/layout_resolution.py`（新增 52 行）
 - **识别域**（4e0cafe / cb2b47d）：白名单缓存失效、轮询异常兜底、超时任务弃单释放引用、发布世代守卫、落盘降级、罕见字计数熔断、取消静默
-- **公告域**（788e297 / d5cceeb）：启动即加载公告管理器（已处理公告重启后不再反复提示待更新）、官网访问冷却限频与并发守卫；`src/business/common/check_cooldown.py`（新增 106 行）
+- **公告域**（788e297 / d5cceeb）：启动即加载公告管理器（已处理公告重启后不再反复提示待更新）、官网访问冷却限频与并发守卫；`src/business/access_cooldown/check_cooldown.py`（新增 106 行）
 - **业务根域**（1dc08d5）：新鲜度损坏留底与阈值可配置、注解保存回滚、冷却闸门收口
 - **RAG 域**（2f4a529）：审计容错、建议线程并发收口、语料写前快照与用量补记
 - **成本与卡牌**（87eac8d）：ai_cost 估算口径修正、card_sync 应用链路数据完整性

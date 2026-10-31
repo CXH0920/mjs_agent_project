@@ -346,7 +346,7 @@ if __name__ == '__main__':
     args = p.parse_args()
     from src.config.logging_config import setup_logging
     setup_logging()
-    from src.business.common.task_ledger import record_task
+    from src.business.execution.task_ledger import record_task
     started = time.monotonic()
     try:
         n, name = build_index(rebuild=not args.no_rebuild)

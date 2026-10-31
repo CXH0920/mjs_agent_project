@@ -22,9 +22,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.business.common.script_runner import ScriptRunner
 from src.business.emulator.layout_resolution import compare_resolution
 from src.business.emulator.mumu_config_coordinator import EMULATOR_LABELS, MumuConfigCoordinator
+from src.business.execution.script_runner import ScriptRunner
 from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_mumu_config
 from src.config.onboarding_state import mark_skipped, mark_step
 from src.scripts.doctor import (

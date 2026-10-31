@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from src.business.execution.script_runner import ScriptRunner
 from src.business.maintenance.maintenance_repositories import MaintenanceRepositories
 from src.business.rag.audit_service import CORPUS_DIR, AuditIssue, audit_summary
 from src.business.rag.hero_brief import load_hero_briefs
@@ -47,7 +48,7 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import PageActionBar, ScriptRunner
+from src.ui.shared.widgets import PageActionBar
 
 # 语料任务：名称 -> (源文件, 输出语料文件)；定义与 scripts/maintain_rag.py 共用
 # （单一事实源见 src/business/rag/task_defs.py，改动请同步维护该处）

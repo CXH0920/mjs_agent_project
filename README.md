@@ -211,7 +211,8 @@ test_project/
 │   │                           #   + card_sync（CardSyncService：后台检查 + 应用更新）
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   │                           #   + maintenance/backup_restore_service（备份快照浏览/预览/恢复）
-│   │                           #   + common/check_cooldown（访问冷却与并发守卫）
+│   │                           #   + access_cooldown/check_cooldown（访问冷却与并发守卫）
+│   │                           #   + execution/（script_runner 脚本执行 + task_ledger 任务台账）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking
 │   ├── capture/                # 双形态图像源：ADB 截图（emulator_discovery/ 五品牌探测）+ 桌面窗口画面只读采集（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader

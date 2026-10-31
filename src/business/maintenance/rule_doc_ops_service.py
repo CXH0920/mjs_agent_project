@@ -1,7 +1,7 @@
 """元规则维护业务操作服务（#A3）。
 
 把此前压在 RuleDocPanel 的业务规则收进 business 层：
-确认行校验规则、确认清单落盘。脚本编排在 UI 侧经 ScriptRunner（business/common）
+确认行校验规则、确认清单落盘。脚本编排在 UI 侧经 ScriptRunner（business/execution）
 执行，参数拼装语义由本服务的常量与函数约定。
 """
 

@@ -35,12 +35,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from src.business.execution.script_runner import ScriptRunner
 from src.business.maintenance.corpus_services import CardPointsService
 from src.config.env import PROJECT_ROOT
 from src.data.card_points_repository import VALID_POINTS, VALID_SUITS, CardPointItem, JudgeRuleItem
 from src.ui.shared.persist import run_edit_dialog
 from src.ui.shared.style import ROLE_SECONDARY, TONE_WARNING, set_ui_role
-from src.ui.shared.widgets import DialogFooter, PageActionBar, ScriptRunner, show_toast
+from src.ui.shared.widgets import DialogFooter, PageActionBar, show_toast
 
 if TYPE_CHECKING:
     from src.data.card_points_repository import CardPointsRepository

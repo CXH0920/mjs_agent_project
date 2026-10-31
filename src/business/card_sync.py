@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from PySide6.QtCore import QObject, Signal
-from src.business.common.check_cooldown import DEFAULT_COOLDOWN_SECONDS, CheckCooldown
+from src.business.access_cooldown.check_cooldown import DEFAULT_COOLDOWN_SECONDS, CheckCooldown
 from src.data.baike_ignore_store import (
     IgnoreEntry,
     filter_ignored,

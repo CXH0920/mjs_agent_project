@@ -43,7 +43,7 @@ def _run(cmd: list[str], *, timeout: int | None = None) -> int:
 
 def cmd_weekly(args) -> int:
     """手册步骤 0→2→3→7→8 自动化；步骤 1/4/5/6 为人工动作，开头末尾均提示。"""
-    from src.business.common.task_ledger import record_task
+    from src.business.execution.task_ledger import record_task
 
     started = time.monotonic()
     print(f"══ 周更开始 {date.today().isoformat()} ══")

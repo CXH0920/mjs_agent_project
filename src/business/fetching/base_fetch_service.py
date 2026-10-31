@@ -18,7 +18,7 @@ import time
 from subprocess import Popen
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
-from src.business.common.task_ledger import record_task
+from src.business.execution.task_ledger import record_task
 from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,

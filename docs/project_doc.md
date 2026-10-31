@@ -120,7 +120,7 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 
 **数据新鲜度阈值可配置（1dc08d5，TD-A6-001）**：档位周期由写死 7/14 改为 `DATA_FRESHNESS_STALE_GREEN_DAYS`（默认 7）/ `DATA_FRESHNESS_STALE_RED_DAYS`（默认 14）——官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号。同批新增新鲜度损坏留底、注解保存回滚、冷却闸门收口。
 
-**访问冷却与并发守卫（d5cceeb）**：`src/business/common/check_cooldown.py`（106 行）统一公告域官网访问的冷却限频与并发守卫。
+**访问冷却与并发守卫（d5cceeb）**：`src/business/access_cooldown/check_cooldown.py`（106 行）统一公告域官网访问的冷却限频与并发守卫。
 
 **官方 PC 客户端直连（ed8b4ac，2026-10-25）**：新增 `src/capture/pc_client.py`（577 行）——不经 ADB 的第二条图像源，枚举官方 PC 客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件，标题仅展示；三态：未启动提示 / 单窗自动选定 / 多窗 UI 显式选择，不支持多开）并只读其画面。采集主路径 Windows.Graphics.Capture（`windows-capture==2.0.1`，Win10 1903+，遮挡可采集），WGC 会话**窗口句柄定向**（库的标题连接为子串匹配，"名将杀 Agent" 包含"名将杀"会命中工具自身窗口，真机事故后句柄定向根治）+ GDI BitBlt 客户区裁剪兜底（PrintWindow 真机取证稳定失败不采用）+ 黑帧双指标检测（均值 <8.0 且近黑占比 >98% 同时命中）与窗口化引导。`PcClientCapture` 接口对齐 `AdbCapture`，`CaptureConnectionManager` 按 `emulator_type=pc_client` 构建后下游 OCR 管线无感复用；设备页顶部「模拟器 / 官方 PC 客户端」单选双形态（PC 形态隐藏品牌与 ADB 区块、设备下拉复用为窗口候选列表、`EMULATOR_BRAND` 品牌记忆）。进程级 Per-Monitor-V2 DPI 声明硬前置（未声明进程在 >100% DPI 屏上坐标被系统谎报）。**模块全程只读窗口画面，不向客户端或系统发送任何输入（法律红线）**。设计文档：`docs/design/pc_official_client_capture_design.md` / `pc_official_client_requirements.md`。
 
@@ -3337,7 +3337,7 @@ CardSyncDialog
 
 argparse 子命令编排，只做转发：**weekly**（`--skip-tests` 可选）按序执行 pull（300s 超时）→ diff_source_data → maintain_rag（3600s）→ `pytest -q`（900s，可跳）→ push（600s）；**前置失败不 push**（数据不固化到私有仓）；人工步骤（获取新数据/LLM 精化/人工审阅/changelog）打印提醒；终局写 `ops_weekly` 台账并输出失败摘要与耗时。**health** 转调 doctor；**retry-failed** 转调 `ai_batch --retry-failed --guide`；**clean** 清理 `.tmp_test/` 下 mtime 超 7 天条目（`--dry` 预览）。release/backup 不在此收口（备份轮转由 `snapshot_to_backups` 内建，发布仍直接用 release.py）。
 
-### 18.3 任务台账（`src/business/common/task_ledger.py`）
+### 18.3 任务台账（`src/business/execution/task_ledger.py`）
 
 JSONL 逐行追加 `logs/task_results.jsonl`：`record_task(task, *, ok, exit_code, total, failed, duration_s, reason, path)` 每条 `{ts, task, ok, exit_code, total, failed, duration_s(1位), reason(截断200字)}`，写后 `fsync`；`read_entries(task=, only_failures=)` 供排查。设计动机：日志按 10MB×5 轮转（65~78 天窗口），失败痕迹会随轮转消失，台账是唯一跨窗口留痕。写入点：`base_fetch_service._on_finished`、`rag_indexer`、`maintain_rag`（逐任务+总控）、`pull_data`（三子命令）、`ops weekly`。写失败仅 warning 不抛出（台账不得影响任务本身）。
 

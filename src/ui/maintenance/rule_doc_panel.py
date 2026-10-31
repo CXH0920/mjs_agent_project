@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.business.common.script_runner import FAILED_TO_START_EXIT_CODE
+from src.business.execution.script_runner import FAILED_TO_START_EXIT_CODE, ScriptRunner
 from src.business.maintenance.rule_doc_ops_service import save_confirmed_diffs, validate_confirmed_row
 from src.business.rag import rule_doc_service as rds
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
@@ -52,7 +52,7 @@ from src.ui.shared.style import (
     TONE_WARNING,
     set_ui_role,
 )
-from src.ui.shared.widgets import DialogFooter, EmptyState, NoticeBanner, PageActionBar, ScriptRunner, show_toast
+from src.ui.shared.widgets import DialogFooter, EmptyState, NoticeBanner, PageActionBar, show_toast
 
 PYTHON = sys.executable
 
