@@ -101,6 +101,11 @@ def js_to_json(text: str) -> list[dict]:
     JS→JSON 的三类差异（标识符键补引号、:undefined 改 null、尾逗号删除）由
     字符级状态机完成，且只在字符串字面量之外执行——旧正则版会把技能描述里
     的 "效果{x:1}"、",变化:无" 等内容误改写，导致整批解析失败。
+
+    字符串边界认知与 _extract_balanced_array 保持一致：双引号、单引号、
+    反引号三种字面量内的内容一律不改写。反引号/单引号字符串不是合法 JSON，
+    官网真使用时 json.loads 会明确失败并报「可能已改版」（fail-loud），
+    不会静默产出被键补引号逻辑污染的内容。
     """
     return json.loads(_to_json_text(text))
 
@@ -122,7 +127,9 @@ def _to_json_text(text: str) -> str:
                 quote = ""
             i += 1
             continue
-        if ch == '"' or ch == "'":
+        # 三种引号与 _extract_balanced_array 同认知：进入字符串状态，
+        # 其内的 { , : 不参与键补引号等改写（内容原样保留）
+        if ch in ('"', "'", "`"):
             quote = ch
             out.append(ch)
             i += 1

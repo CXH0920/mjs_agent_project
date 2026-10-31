@@ -49,11 +49,13 @@ def test_crawler_404_not_retried(monkeypatch) -> None:
     """404 重试只会重复打同一请求：立即抛出，仅请求一次。"""
     calls: list[int] = []
 
-    def fake_urlopen(req, timeout=None):
-        calls.append(1)
-        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, None)
+    class _Opener:
+        def open(self, request, timeout=0):
+            calls.append(1)
+            raise urllib.error.HTTPError(request.full_url, 404, "Not Found", None, None)
 
-    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    # fetch 目标请求经 build_opener 发出（robots 存档与规则获取走 urlopen）
+    monkeypatch.setattr(crawler.urllib.request, "build_opener", lambda *_a, **_k: _Opener())
     # 本测试只关注 fetch 重试语义，屏蔽 fetch 前置的 robots 存档与规则校验请求
     monkeypatch.setattr(crawler, "_ensure_robots_txt_cached", lambda: None)
     monkeypatch.setattr(crawler, "_ensure_robots_allowed", lambda _url: None)
@@ -68,11 +70,12 @@ def test_crawler_transient_error_still_retries(monkeypatch) -> None:
     """连接类瞬时异常维持原有重试轮次。"""
     calls: list[int] = []
 
-    def fake_urlopen(req, timeout=None):
-        calls.append(1)
-        raise OSError("connection reset")
+    class _Opener:
+        def open(self, request, timeout=0):
+            calls.append(1)
+            raise OSError("connection reset")
 
-    monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(crawler.urllib.request, "build_opener", lambda *_a, **_k: _Opener())
     monkeypatch.setattr(crawler.time, "sleep", lambda _s: None)
     # 本测试只关注 fetch 重试语义，屏蔽 fetch 前置的 robots 存档与规则校验请求
     monkeypatch.setattr(crawler, "_ensure_robots_txt_cached", lambda: None)

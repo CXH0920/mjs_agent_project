@@ -1,8 +1,9 @@
 """
 名将杀 Agent - 爬虫核心模块
 
-提供官网数据采集、数据清洗和校验的公共 API。
-被 official.py 和 incremental.py 共同使用。
+官网数据采集的出站链路：HTTP 抓取（重试 + robots 逐 URL 合规校验）、
+全量数据获取编排与头像下载。字段清洗/映射/校验在 hero_fields.py，
+本文件保留其兼容 re-export。被 official.py 和 incremental.py 共同使用。
 """
 
 from __future__ import annotations
@@ -18,9 +19,8 @@ import urllib.error
 import urllib.request
 import urllib.robotparser
 import warnings
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
-from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from PIL import Image
@@ -36,9 +36,13 @@ from src.scraper.official_source.hero_fields import (
     LOCAL_EXTENSION_FIELDS,
     carry_over_local_fields,
     clean_html,
+    split_skill_desc,
+    transform,
+    validate_heroes,
 )
 
-# 重新导出：caller 长期经 crawler.clean_html / carry_over_local_fields 调用
+# 重新导出：caller 长期经 crawler.* 调用（clean_html / carry_over_local_fields /
+# split_skill_desc / transform / validate_heroes 实现均已拆至 hero_fields.py）
 __all__ = [
     "LOCAL_EXTENSION_FIELDS",
     "carry_over_local_fields",
@@ -82,6 +86,12 @@ RETRY_DELAY = 2
 # 不可重试的 HTTP 状态：404/权限类失败重试只会重复打同一请求
 _NON_RETRYABLE_HTTP_CODES = frozenset({400, 401, 403, 404})
 
+# 重定向状态码与跟随上限：自动重定向已禁用，每一跳的目标 URL 都重新过
+# robots 校验后再手动跟随（站点 30x 到带 Disallow 规则的其他主机时不会
+# 被静默抓取）
+_REDIRECT_HTTP_CODES = frozenset({301, 302, 303, 307, 308})
+MAX_FETCH_REDIRECTS = 3
+
 ALLOWED_IMAGE_HOSTS = {"siteres.ztgame.com"}
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 4_000_000
@@ -103,12 +113,6 @@ WINDOWS_RESERVED_FILENAMES = {
 HEADERS = {
     "User-Agent": "mjs-agent/1.0 (+https://github.com/CXH0920/mjs_agent_project)"
 }
-
-# Gender 映射表
-GENDER_MAP = {1: "男", 2: "女"}
-
-# 技能描述段落标题
-SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能详解", "技能详情", "技能典故", "设计思路"]
 
 
 # ============================================================
@@ -135,9 +139,33 @@ def _robots_origin(url: str) -> str | None:
     return f"{parsed.scheme}://{host}{port}"
 
 
+def _warn_unsupported_rule_syntax(content: str) -> None:
+    """检测 stdlib robotparser 不支持的规则语法并告警。
+
+    robotparser 只做字面前缀匹配（首条命中即返回，非 RFC 9309 最长匹配）：
+    通配符（整段 ``*`` 除外，其按「匹配全部」特判）与 ``$`` 行尾锚点都被当
+    普通字符——站点一旦使用这些写法，校验会静默放行站点意图禁止的路径。
+    命中即打 warning 请人工核对存档，方向是过放行时宁可提醒不可静默。
+    """
+    for line in content.splitlines():
+        stripped = line.split("#", 1)[0].strip()
+        if not stripped:
+            continue
+        field, sep, value = stripped.partition(":")
+        if not sep or field.strip().lower() not in ("disallow", "allow"):
+            continue
+        path = value.strip()
+        if ("*" in path and path != "*") or "$" in path:
+            logger.warning(
+                "robots.txt 规则 %r 含通配符/$ 锚点，标准库解析器按字面前缀匹配，"
+                "可能放行站点意图禁止的路径，请人工核对存档规则", stripped,
+            )
+
+
 def _parse_robots_rules(content: str) -> urllib.robotparser.RobotFileParser:
     parser = urllib.robotparser.RobotFileParser()
     parser.parse(content.splitlines())
+    _warn_unsupported_rule_syntax(content)
     return parser
 
 
@@ -237,23 +265,56 @@ def _ensure_robots_txt_cached() -> None:
         logger.warning("robots.txt 存档失败（不阻断采集）: %s", e)
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """禁用自动重定向：每一跳由 fetch / 图片下载逻辑校验后再手动跟随。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, _newurl):
+        return None
+
+
+def _open_response_no_redirect(url: str, timeout: float):
+    """打开单跳响应：30x 不自动跟随（由调用方取 Location 校验后重进）。"""
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    return opener.open(urllib.request.Request(url, headers=HEADERS), timeout=timeout)
+
+
 def fetch(url: str, binary: bool = False) -> str | bytes:
-    """带重试机制的 HTTP GET 请求
+    """带重试机制的 HTTP GET 请求（重定向逐跳过 robots 校验后再跟随）
 
     binary=True 时返回原始 bytes（用于下载图片等二进制资源），
     否则解码为 utf-8 字符串返回。
     每次调用前先确保站点 robots.txt 已存档（24 小时缓存，失败不阻断），
     并按已解析的 robots 规则校验目标 URL（被 Disallow 时抛
-    RobotsDisallowedError，规则不可得时放行）。
+    RobotsDisallowedError，规则不可得时放行）。自动重定向已禁用：
+    站点把数据 URL 30x 到带 Disallow 规则的其他主机/路径时，每一跳
+    的目标 URL 都会重新校验，不会被静默抓取。
     """
     _ensure_robots_txt_cached()
     _ensure_robots_allowed(url)
-    req = urllib.request.Request(url, headers=HEADERS)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = resp.read()
-                return data if binary else data.decode("utf-8")
+            current_url = url
+            for _ in range(MAX_FETCH_REDIRECTS + 1):
+                try:
+                    with _open_response_no_redirect(current_url, TIMEOUT) as resp:
+                        data = resp.read()
+                        return data if binary else data.decode("utf-8")
+                except urllib.error.HTTPError as error:
+                    if error.code not in _REDIRECT_HTTP_CODES:
+                        raise
+                    location = error.headers.get("Location")
+                    error.close()
+                    if not location:
+                        raise ValueError(
+                            f"重定向缺少 Location 响应头: {current_url}"
+                        ) from error
+                    current_url = urljoin(current_url, location)
+                    _ensure_robots_allowed(current_url)
+            raise ValueError(f"重定向次数超过上限 {MAX_FETCH_REDIRECTS}: {url}")
+        except RobotsDisallowedError:
+            # robots 拒绝是确定性结果（规则不变重试必然同拒），立即上抛，
+            # 不消耗重试轮次——重试只会重复访问初始 URL 与重定向链
+            raise
         except urllib.error.HTTPError as e:
             if e.code in _NON_RETRYABLE_HTTP_CODES:
                 # 404/权限类失败重试无意义，立即抛出让调用方记录该条并继续
@@ -275,168 +336,6 @@ def fetch(url: str, binary: bool = False) -> str | bytes:
 def save_json_atomic(path: Path, data: list[dict]) -> None:
     """将 JSON 数据写入唯一临时文件后原子替换目标文件（统一委托 json_repository）。"""
     atomic_write_json(path, data)
-
-
-# ============================================================
-# 数据清洗
-# ============================================================
-
-
-def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
-    """
-    先按 HTML 段落结构拆分原始 HTML，再逐段清洗。
-    描述取值按 技能描述 -> 技能详情 -> 技能详解 顺序认领首个命中
-    （官网人工编辑，标题措辞不统一）；结算详情/结算详解 -> settlement
-    丢弃：技能典故、设计思路
-    """
-    if not raw_desc:
-        return {"description": "", "settlement": ""}
-
-    text = str(raw_desc)
-    # 预处理：合并相邻的 <strong> 标签
-    text = re.sub(r"</strong>\s*<strong>", "", text)
-
-    # 构建段落标题正则；<strong> 按可选处理——官网标题偶尔漏包加粗（裸 <p>标题</p>）
-    titles = "|".join(re.escape(t) for t in SKILL_SECTION_TITLES)
-    section_pattern = re.compile(
-        rf"<p>(?:<[^>]+>)*\s*(?:<strong>\s*)?({titles})(?:\s*</strong>)?(?:<[^>]+>)*\s*</p>",
-        re.IGNORECASE,
-    )
-
-    sections = {}
-    current_title = None
-    current_parts = []
-
-    for line in text.split("</p>"):
-        line = line.strip()
-        if not line:
-            continue
-        # 检查是否为段落标题
-        m = section_pattern.search(line + "</p>")
-        if m:
-            # 保存上一段
-            if current_title and current_parts:
-                sections[current_title] = " ".join(current_parts)
-            current_title = m.group(1)
-            current_parts = []
-            # 标题后的内容
-            rest = section_pattern.split(line + "</p>")[-1]
-            if rest and rest != "</p>":
-                cleaned = clean_html(rest)
-                if cleaned:
-                    current_parts.append(cleaned)
-        else:
-            cleaned = clean_html(line)
-            if cleaned:
-                current_parts.append(cleaned)
-
-    # 保存最后一段
-    if current_title and current_parts:
-        sections[current_title] = " ".join(current_parts)
-
-    # 没有标题的情况：整段作为描述
-    if not sections:
-        full = clean_html(text)
-        return {"description": full, "settlement": ""}
-
-    # 获取描述和结算；结算跳过已被描述认领的段落，避免同一段文字两处重复
-    description = ""
-    desc_key = None
-    for key in ["技能描述", "技能详情", "技能详解"]:
-        if key in sections:
-            desc_key = key
-            description = sections[key]
-            break
-
-    settlement = ""
-    for key in ["结算详情", "结算详解", "技能详解", "技能详情"]:
-        if key != desc_key and key in sections:
-            settlement = sections[key]
-            break
-
-    return {"description": description, "settlement": settlement}
-
-
-def transform(raw: dict) -> dict | None:
-    """
-    将原始数据映射为模型字段格式。
-    返回 dict 或 None（关键字段缺失时跳过）。
-    """
-    hero_id = raw.get("id")
-    if hero_id is None:
-        logger.warning("跳过: 缺少 id 字段 — %s", raw.get("name", "?"))
-        return None
-
-    name = clean_html(raw.get("name", ""))
-    if not name:
-        logger.warning("跳过 id=%s: 名称字段为空", hero_id)
-        return None
-
-    # 性别映射
-    gender_raw = raw.get("gender")
-    gender = GENDER_MAP.get(gender_raw, "男")
-
-    # 体力/手牌上限
-    try:
-        max_hp = int(raw.get("p_blood_max", 4))
-    except (ValueError, TypeError):
-        max_hp = 4
-
-    try:
-        max_hand = int(raw.get("p_card_max", 4))
-    except (ValueError, TypeError):
-        max_hand = 4
-
-    # 技能清洗
-    skills: list[dict[str, Any]] = []
-    raw_skills = raw.get("skill", [])
-    if isinstance(raw_skills, list):
-        for sk in raw_skills:
-            if not isinstance(sk, dict):
-                continue
-            sk_name = clean_html(sk.get("skill_name", ""))
-            if not sk_name:
-                continue
-            sk_parts = split_skill_desc(sk.get("skill_desc", ""))
-            skills.append({
-                "name": sk_name,
-                "description": sk_parts["description"],
-                "settlement": sk_parts["settlement"],
-            })
-
-    hero = {
-        "id": hero_id,
-        "name": name,
-        "faction": clean_html(raw.get("dynasty", "")),
-        "position": clean_html(raw.get("p_positioning", "")),
-        "max_hp": max_hp,
-        "max_hand": max_hand,
-        "gender": gender,
-        "skills": skills,
-        "icon_url": str(raw.get("icon_url", "")),
-        "last_updated": date.today().isoformat(),
-    }
-    return hero
-
-
-# ============================================================
-# Pydantic 校验
-# ============================================================
-
-
-def validate_heroes(heroes: list[dict]) -> list[dict]:
-    """通过 Pydantic Hero 模型校验，返回校验后的 dict 列表"""
-    from src.data.models import Hero
-
-    validated: list[dict] = []
-    for h in heroes:
-        try:
-            obj = Hero.model_validate(h)
-            validated.append(obj.model_dump(mode="json"))
-        except Exception as e:
-            logger.error("Pydantic 校验失败 id=%s (%s): %s", h.get("id"), h.get("name"), e)
-            logger.info("异常数据: %s", json.dumps(h, ensure_ascii=False))
-    return validated
 
 
 # ============================================================
@@ -473,13 +372,6 @@ def fetch_all_cards_raw() -> list[dict]:
 # ============================================================
 
 IMAGES_DIR = IMAGES_OUTPUT_DIR
-
-
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """将重定向交由图片下载逻辑逐跳校验。"""
-
-    def redirect_request(self, req, fp, code, msg, headers, _newurl):
-        return None
 
 
 def _safe_image_name(raw_name: str) -> str:

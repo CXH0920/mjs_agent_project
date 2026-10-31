@@ -39,6 +39,28 @@ def _png_bytes(color: str) -> bytes:
     return output.getvalue()
 
 
+def _patch_target_opener(monkeypatch, respond) -> None:
+    """mock fetch 的目标请求通道。
+
+    fetch 经 build_opener(_NoRedirectHandler()) 发目标请求（robots 存档与
+    次级主机规则获取仍走 urlopen，由各测试自行 mock）；respond(request)
+    返回响应对象或抛异常。
+    """
+
+    class _Opener:
+        def open(self, request, timeout=0):
+            return respond(request)
+
+    monkeypatch.setattr(crawler.urllib.request, "build_opener", lambda *_a, **_k: _Opener())
+
+
+def _http_redirect(url: str, location: str) -> urllib.error.HTTPError:
+    """构造带 Location 头的 30x 响应异常（_NoRedirectHandler 禁跟随后由 fetch 手动消费）。"""
+    headers = Message()
+    headers["Location"] = location
+    return urllib.error.HTTPError(url, 302, "Found", headers, BytesIO())
+
+
 def test_download_hero_images_uses_validated_name_and_png(monkeypatch, tmp_path: Path) -> None:
     image_data = _png_bytes("red")
     monkeypatch.setattr(crawler, "_open_image_response", lambda url: _FakeResponse(image_data))
@@ -392,11 +414,12 @@ def test_fetch_tolerates_robots_archive_failure(monkeypatch, tmp_path: Path) -> 
 
     def fake_urlopen(req, timeout=0):
         seen.append(req.full_url)
-        if req.full_url == crawler.ROBOTS_URL:
-            raise urllib.error.URLError("robots 不可达")
-        return _FakeResponse(b"<html></html>", content_type="text/html")
+        raise urllib.error.URLError("robots 不可达")
 
     monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    _patch_target_opener(
+        monkeypatch, lambda _req: _FakeResponse(b"<html></html>", content_type="text/html"),
+    )
     assert crawler.fetch("https://mjs.ztgame.com/baike/") == "<html></html>"
     assert crawler.ROBOTS_URL in seen
     assert not (tmp_path / "rc" / "robots.txt").exists()
@@ -411,6 +434,9 @@ def test_fetch_archives_robots_before_first_request(monkeypatch, tmp_path: Path)
         return _FakeResponse(b"<html></html>", content_type="text/html")
 
     monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    _patch_target_opener(
+        monkeypatch, lambda _req: _FakeResponse(b"<html></html>", content_type="text/html"),
+    )
     crawler.fetch("https://mjs.ztgame.com/baike/")
     assert seen[0] == crawler.ROBOTS_URL
     assert (tmp_path / "rc" / "robots.txt").exists()
@@ -430,10 +456,12 @@ def test_fetch_rejects_disallowed_url(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
     _archive_robots(tmp_path / "rc", "User-agent: *\nDisallow: /baike/\n")
 
-    def refuse_network(*_args, **_kwargs):
+    def refuse_urlopen(*_args, **_kwargs):
         raise AssertionError("被 Disallow 的 URL 不应发起任何网络请求")
 
-    monkeypatch.setattr(crawler.urllib.request, "urlopen", refuse_network)
+    monkeypatch.setattr(crawler.urllib.request, "urlopen", refuse_urlopen)
+    _patch_target_opener(monkeypatch, lambda _req: (_ for _ in ()).throw(
+        AssertionError("被 Disallow 的 URL 不应发起任何网络请求")))
 
     with pytest.raises(crawler.RobotsDisallowedError) as excinfo:
         crawler.fetch("https://mjs.ztgame.com/baike/")
@@ -446,9 +474,8 @@ def test_fetch_allows_url_permitted_by_archive(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
     _archive_robots(tmp_path / "rc", "User-agent: *\nAllow: /\n")
 
-    monkeypatch.setattr(
-        crawler.urllib.request, "urlopen",
-        lambda req, timeout=0: _FakeResponse(b"<html></html>", content_type="text/html"),
+    _patch_target_opener(
+        monkeypatch, lambda _req: _FakeResponse(b"<html></html>", content_type="text/html"),
     )
     assert crawler.fetch("https://mjs.ztgame.com/baike/") == "<html></html>"
 
@@ -483,11 +510,12 @@ def test_fetch_allows_when_secondary_robots_missing(monkeypatch, tmp_path: Path)
     monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
 
     def fake_urlopen(req, timeout=0):
-        if req.full_url.endswith("/robots.txt"):
-            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, None)
-        return _FakeResponse(b"payload", content_type="application/json")
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", None, None)
 
     monkeypatch.setattr(crawler.urllib.request, "urlopen", fake_urlopen)
+    _patch_target_opener(
+        monkeypatch, lambda _req: _FakeResponse(b"payload", content_type="application/json"),
+    )
 
     assert crawler.fetch("https://ucmsv2api.ztgame.com/api/news/list") == "payload"
     # 再次访问同主机：失败的规则获取也已缓存，不重复请求 robots.txt
@@ -829,3 +857,141 @@ class TestInvalidHeroIdHandling:
 
         assert excinfo.value.code == 1
         assert list(tmp_path.glob("heroes.corrupt-*.json"))
+
+
+# ============================================================
+# robots 规则语法检测（stdlib robotparser 不支持通配符/$ 的潜伏缺口）
+# ============================================================
+
+
+def test_parse_robots_rules_warns_on_wildcard_or_anchor_syntax(caplog) -> None:
+    """规则含通配符（非整段 *）或 $ 锚点时必须告警：robotparser 按字面前缀
+    匹配，站点改用这些写法后校验会静默放行意图禁止的路径。"""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="src.scraper.official_source.crawler"):
+        crawler._parse_robots_rules(
+            "User-agent: *\nDisallow: /xxx*\nDisallow: /*.php$\nAllow: *\n"
+        )
+
+    messages = [record.message for record in caplog.records]
+    assert any("/xxx*" in message for message in messages)
+    assert any("$" in message for message in messages)
+    # 整段 * 是 robotparser 特判（匹配全部）的合法写法，不告警
+    assert not any("Allow: *" in message for message in messages)
+
+
+def test_parse_robots_rules_no_warning_on_plain_rules(caplog) -> None:
+    """普通前缀规则不触发语法告警（避免告警刷屏淹没真实信号）。"""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="src.scraper.official_source.crawler"):
+        crawler._parse_robots_rules(
+            "User-agent: *\nDisallow: /private/\nAllow: /\nCrawl-delay: 10\n"
+        )
+
+    assert not [r for r in caplog.records if "通配符" in r.message]
+
+
+# ============================================================
+# fetch 重定向逐跳 robots 校验（站点 30x 到 Disallow 目标时不被静默抓取）
+# ============================================================
+
+
+def test_fetch_follows_redirect_after_per_hop_robots_check(monkeypatch, tmp_path: Path) -> None:
+    """目标路径允许时，重定向经逐跳校验后正常跟随并返回最终内容。"""
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+    _archive_robots(tmp_path / "rc", "User-agent: *\nAllow: /\n")
+    hops: list[str] = []
+
+    def respond(req):
+        hops.append(req.full_url)
+        if req.full_url.endswith("/moved"):
+            raise _http_redirect(req.full_url, "https://mjs.ztgame.com/baike/real")
+        return _FakeResponse(b"payload", content_type="text/html")
+
+    _patch_target_opener(monkeypatch, respond)
+
+    assert crawler.fetch("https://mjs.ztgame.com/baike/moved") == "payload"
+    assert hops == ["https://mjs.ztgame.com/baike/moved", "https://mjs.ztgame.com/baike/real"]
+
+
+def test_fetch_rejects_redirect_to_disallowed_target(monkeypatch, tmp_path: Path) -> None:
+    """重定向目标被 Disallow 时拒绝跟随，且目标 URL 不被请求。"""
+    monkeypatch.setattr(crawler, "ROBOTS_CACHE_DIR", tmp_path / "rc")
+    monkeypatch.setattr(crawler, "_robots_rules_by_host", {})
+    _archive_robots(tmp_path / "rc", "User-agent: *\nAllow: /baike/\nDisallow: /secret/\n")
+    hops: list[str] = []
+
+    def respond(req):
+        hops.append(req.full_url)
+        raise _http_redirect(req.full_url, "https://mjs.ztgame.com/secret/data")
+
+    _patch_target_opener(monkeypatch, respond)
+
+    with pytest.raises(crawler.RobotsDisallowedError):
+        crawler.fetch("https://mjs.ztgame.com/baike/moved")
+    assert hops == ["https://mjs.ztgame.com/baike/moved"]
+
+
+def test_fetch_enforces_redirect_limit(monkeypatch, tmp_path: Path) -> None:
+    """每一跳都 30x 时按上限收场，不无限跟随。"""
+    monkeypatch.setattr(crawler, "_ensure_robots_txt_cached", lambda: None)
+    monkeypatch.setattr(crawler, "_ensure_robots_allowed", lambda _url: None)
+    monkeypatch.setattr(crawler.time, "sleep", lambda _s: None)
+    hops: list[int] = []
+
+    def respond(req):
+        hops.append(1)
+        raise _http_redirect(req.full_url, f"https://mjs.ztgame.com/hop{len(hops)}")
+
+    _patch_target_opener(monkeypatch, respond)
+
+    with pytest.raises(ValueError):
+        crawler.fetch("https://mjs.ztgame.com/start")
+    # 超上限按网络类异常走通用重试：MAX_RETRIES 轮 × 每轮 (上限+1) 跳
+    assert len(hops) == crawler.MAX_RETRIES * (crawler.MAX_FETCH_REDIRECTS + 1)
+
+
+# ============================================================
+# adapter 反引号认知对齐（_extract_balanced_array 与 _to_json_text 一致）
+# ============================================================
+
+
+def test_to_json_text_treats_backtick_as_string_boundary() -> None:
+    """反引号进入字符串状态：模板串内的 { , : 不被键补引号/尾逗号逻辑改写
+    （旧实现会把串内 x: 之类内容当对象键污染）。"""
+    out = official_adapter._to_json_text("[{a:`效果{x:1},稳定`,}]")
+
+    assert '"a"' in out                       # 串外的键补引号照常
+    assert "`效果{x:1},稳定`" in out          # 串内容原样保留
+    assert '"x"' not in out                   # 串内的键不被补引号
+
+
+def test_js_to_json_fails_loud_on_backtick_string() -> None:
+    """反引号字符串不是合法 JSON：官网真使用时 json.loads 明确失败报
+    「可能已改版」路径，而非静默产出坏数据。"""
+    with pytest.raises(ValueError):
+        official_adapter.js_to_json('[{a:`模板`}]')
+
+
+def test_extract_balanced_array_ignores_brackets_in_backtick_string() -> None:
+    """平衡提取与转 JSON 对反引号认知一致：串内 ] 不截断数组提取。"""
+    assert official_adapter.extract_js_array("const e=[{a:`x]y`}]") == "[{a:`x]y`}]"
+
+
+# ============================================================
+# hero_fields 搬家后的 crawler 兼容 re-export
+# ============================================================
+
+
+def test_crawler_reexports_hero_fields_helpers() -> None:
+    """crawler 对 hero_fields 清洗函数的 re-export 指向同一实现（兼容层不引副本）。"""
+    from src.scraper.official_source import hero_fields
+
+    assert crawler.clean_html is hero_fields.clean_html
+    assert crawler.carry_over_local_fields is hero_fields.carry_over_local_fields
+    assert crawler.split_skill_desc is hero_fields.split_skill_desc
+    assert crawler.transform is hero_fields.transform
+    assert crawler.validate_heroes is hero_fields.validate_heroes

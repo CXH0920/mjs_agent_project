@@ -864,7 +864,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 636 → 640：robots 抓取与图片下载超时从主数据 TIMEOUT 拆出专用短常量
     # （ROBOTS_FETCH_TIMEOUT / IMAGE_DOWNLOAD_TIMEOUT），CDN 或 robots 异常时
     # 快速失败降级，不再每个子进程白等满额 30 秒。
-    "scraper/official_source/crawler.py": 640,
+    # 640 → 532：清洗三函数 split_skill_desc/transform/validate_heroes 补齐
+    # 迁往 hero_fields.py（兑现「专注抓取链路」承诺）+ fetch 重定向逐跳
+    # robots 校验与 robots 通配符/$ 语法告警（第 5 批审查遗留 P2 修复）
+    "scraper/official_source/crawler.py": 532,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
     # 首次入册（实测 503 越过 500 绊线）：榜单路径聚合 RANKING_CSV_PATHS 与
