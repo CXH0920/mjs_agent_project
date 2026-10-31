@@ -163,7 +163,8 @@ class CaptureConnectionManager:
             elif not self._capture.connected:
                 self.set_connection_state("offline", error_detail)
 
-    def sync_poll_connection_state(self, capture: AdbCapture, error_detail: str = "") -> None:
+    def sync_poll_connection_state(self, capture: AdbCapture | PcClientCapture,
+                                   error_detail: str = "") -> None:
         """仅同步当前轮询会话的连接状态，忽略过期 capture。"""
         with self._session_lock:
             if capture is not self._capture:
