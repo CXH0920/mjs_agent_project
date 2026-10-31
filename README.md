@@ -198,6 +198,7 @@ test_project/
 │   ├── config/                 # 配置（env.py / logging_config.py / version.py 版本单一来源）
 │   │                           #   + disclaimer_state.py（免责声明状态，版本 1.3）
 │   │                           #   + onboarding_state.py（首启向导状态，版本感知）
+│   │                           #   + task_ledger.py（任务结果台账，底层横切设施，business/rag/scripts 共用）
 │   ├── data/                   # 数据模型 + DataFacade（facade/manager/issues 解环拆分）+ JSON 持久化
 │   │                           #   + hero_timeline（武将变更时间轴）+ card_sync_store（卡牌快照/变更记录）
 │   │                           #   + baike_ignore_store（百科差异忽略名单）
@@ -212,7 +213,7 @@ test_project/
 │   │                           #   + pending_stats（OCR 未决错法频次与人工确认记录）
 │   │                           #   + maintenance/backup_restore_service（备份快照浏览/预览/恢复）
 │   │                           #   + access_cooldown/check_cooldown（访问冷却与并发守卫）
-│   │                           #   + execution/（script_runner 脚本执行 + task_ledger 任务台账）
+│   │                           #   + execution/script_runner（QProcess 脚本执行，含看门狗树杀）
 │   │                           #   + emulator/layout_resolution + analysis/win_rate_ranking
 │   ├── capture/                # 双形态图像源：ADB 截图（emulator_discovery/ 五品牌探测）+ 桌面窗口画面只读采集（仅屏幕读取，无输入能力）
 │   ├── ocr/                    # 模板匹配 + RapidOCR 双套件（v6 主 + v4 复核）+ 名称纠错 + 卡位检测 + engine_loader

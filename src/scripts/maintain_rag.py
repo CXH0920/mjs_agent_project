@@ -306,7 +306,7 @@ def main():
         return
 
     failed = []
-    from src.business.execution.task_ledger import record_task
+    from src.config.task_ledger import record_task
     for task, reason in plan:
         print('\n' + '-' * 64)
         print(f'[执行] {task["name"]}  <-  {task["script"]}')

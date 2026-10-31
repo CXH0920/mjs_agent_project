@@ -78,8 +78,7 @@ src/business/
 ├── announcement/
 │   └── announcement_service.py        # 公告检查与百科 diff 服务（线程 + Qt 信号；共享冷却闸门）
 ├── execution/
-│   ├── script_runner.py               # QProcess 异步执行 Python 脚本公共封装（含 30 分钟看门狗 + 树杀 + 启动失败终态通知）
-│   └── task_ledger.py                 # 任务结果台账（JSONL 追加 logs/task_results.jsonl，跨进程文件锁串行化）
+│   └── script_runner.py               # QProcess 异步执行 Python 脚本公共封装（含 30 分钟看门狗 + 树杀 + 启动失败终态通知）
 └── access_cooldown/
     └── check_cooldown.py              # 手动检查的冷却闸门（CheckCooldown，忙碌判定 + 最小间隔原子操作）
 ```
@@ -908,7 +907,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 | 依赖 | `src.data.manager` | `DEFAULT_DATA_DIR`（备份恢复目标路径）；`DataIssue` 模型（CardCatalogService 的仓储校验结果） |
 | 依赖 | `src.data.models` | 备份恢复服务逐条解析 JSON 列表（`Hero` / `SynergyScore` / `HeroGuide` / `Combo`） |
 | 依赖 | `src.ocr.card_grid_detector` | 巅峰赛牌面检测（`detect_selection_cards` / `board_row_sizes` / `layout_is_plausible` / `derive_name_rois`） |
-| 被调用方 | `src.business.execution.task_ledger` | `base_fetch_service._on_finished` 逐任务写台账（`logs/task_results.jsonl`）；`pull_data` / `maintain_rag` / `indexer` / `ops` 各写入点见 `module_rag.md` / `module_data.md` |
+| 被调用方 | `src.config.task_ledger` | `base_fetch_service._on_finished` 逐任务写台账（`logs/task_results.jsonl`）；`pull_data` / `maintain_rag` / `indexer` / `ops` 各写入点见 `module_rag.md` / `module_data.md` |
 | 依赖 | `src.data.announcement_manager` | AnnouncementService 的公告合并去重与百科快照持久化 |
 | 依赖 | `src.data.hero_timeline` | 武将变更时间轴（announcement 同步） |
 | 依赖 | `src.scraper.official_source.announcement` | 公告 / 百科拉取、武将快照与更新候选计算 |
@@ -941,7 +940,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 自基线 `885ea96`（2026-10-02 校准）以来的变更：
 
 **新增**
-- `execution/task_ledger.py`（c88bf63，67 行）：任务结果台账，`record_task()` / `read_entries()` API，JSONL 追加 `logs/task_results.jsonl`（跨日志轮转窗口留痕）；写入点五处（base_fetch_service / indexer / maintain_rag / pull_data / ops）
+- `src/config/task_ledger.py`（c88bf63，67 行）：任务结果台账，`record_task()` / `read_entries()` API，JSONL 追加 `logs/task_results.jsonl`（跨日志轮转窗口留痕）；写入点五处（base_fetch_service / indexer / maintain_rag / pull_data / ops）
 - QProcess 看门狗（b3327f1）：`script_runner.DEFAULT_WATCHDOG_MS = 30min`（QTimer 单发 kill + ERROR）与 `base_fetch_service._WATCHDOG_TIMEOUT_MS` 同规格接线——消除 AI 生成卡网络时 `_is_busy` 永久 True 的挂死
 - stderr tqdm 降噪（1426686）：base_fetch stderr 含 `%|` 降 DEBUG，原占 ai_generation.log 89% 的 WARNING 噪声
 
@@ -990,7 +989,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 
 **修正（ScriptRunner / TaskLedger / BaseFetchService）**
 - `execution/script_runner.py`（14bffaf / 07606ce / 2b73535）：启动失败终态通知（`FAILED_TO_START_EXIT_CODE = -1`，Qt6 对 `FailedToStart` 只发 `errorOccurred` 不发 `finished`，须补发终态通知否则面板永久忙死，VUL-B2-001）；跨平台时序修复（Windows 同步 `FailedToStart` 在 `start()` 内触发用返回值表达、Linux 异步回报须补发 `finished`）；状态机加固（`_proc`/`_watchdog` 必须先于 `start()` 提交，`_release_process()` 置空并 `deleteLater()` 释放已结束的 QProcess，`_start_pending` 区分同步/异步启动失败）；树杀与复查（`_kill_process_tree()` Windows `taskkill /PID /T /F` 终止整棵进程树，`WATCHDOG_RECHECK_MS = 2000` 延迟复查绑定具体 proc 防误杀新进程）；看门狗 `Starting` 阶段挂 `started` 等进程起来后补树杀（Qt6 对 `Starting` 状态 `kill()` 原生 abort）
-- `execution/task_ledger.py`（2b73535）：跨进程文件锁串行化（`_ledger_lock()` 对 `*.lock` 首字节加非阻塞独占锁 `msvcrt.LK_NBLCK`/`fcntl.LOCK_NB`，50 次×20 ms 有界等待，锁机制不可用时降级无锁写入）；`read_entries()` 跳过空行与非对象 JSON 行（外部工具追加的 `123`/`["x"]`），不再因 `entry.get` 抛 `AttributeError` 让整份台账读不出；`record_task()` 入参归一化放 try 内（`None`/字符串等脏值不中断收尾流程）
+- `src/config/task_ledger.py`（2b73535）：跨进程文件锁串行化（`_ledger_lock()` 对 `*.lock` 首字节加非阻塞独占锁 `msvcrt.LK_NBLCK`/`fcntl.LOCK_NB`，50 次×20 ms 有界等待，锁机制不可用时降级无锁写入）；`read_entries()` 跳过空行与非对象 JSON 行（外部工具追加的 `123`/`["x"]`），不再因 `entry.get` 抛 `AttributeError` 让整份台账读不出；`record_task()` 入参归一化放 try 内（`None`/字符串等脏值不中断收尾流程）
 - `fetching/base_fetch_service.py`（f1b13f8 / f10b477 / 9ccc2fc / 1d8334a）：看门狗改"无进度上限"（`_feed_watchdog()` 在每条进度行重置计时，browser 模式长清单全程超 30 分钟也放行）；超时走树杀而非 `cancel()`（不把"超时失败"记成"用户取消"）；取消 `Starting` 阶段崩溃修复（`cancel()` 在 `Starting` 时只置标记挂 `started`→`_on_started_after_cancel`，`cancel_process` 对 `Starting` 跳过并告警，VUL-B2-001）；取消清理轮询有界（`_CANCEL_CLEANUP_MAX_POLLS = 100`，约 5 秒，超限强制收尾）；子进程工作目录锚定 `PROJECT_ROOT`（`-m` 相对模块名，TD-A6-001）；进程释放（`_release_process()` 置空并 `deleteLater()`，TD-A8-001）；错误路径补台账（`_on_error` 补 `record_task(ok=False)`，`FailedToStart` 不发 `finished` 不在此记则台账缺失该类失败）；取消期间出错锁死修复（`FailedToStart` 先 `_release_process()` 再 `_finish_cancellation()`，TD-A5-001）
 - `fetching/fetch_utils.py`：`cancel_process` 对 `Starting` 进程跳过并告警（不调用 kill）
 - `fetching/hero_fetch_service.py`（1d8334a）：`fetch_specific()` 空列表直接拒绝（子进程对空目标打印"无目标武将"并以 0 退出，父进程上报成功会致公告更新流程把未采集批次当已完成并 `mark_applied`，VUL-B4-002）

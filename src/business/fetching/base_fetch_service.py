@@ -18,7 +18,6 @@ import time
 from subprocess import Popen
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
-from src.business.execution.task_ledger import record_task
 from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,
@@ -27,6 +26,7 @@ from src.business.fetching.fetch_utils import (
     log_process_error,
 )
 from src.config.env import PROJECT_ROOT
+from src.config.task_ledger import record_task
 
 logger = logging.getLogger(__name__)
 _OUTPUT_BUDGET_EXHAUSTED_MESSAGE = "思考过程耗尽输出额度"

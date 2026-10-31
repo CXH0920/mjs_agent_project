@@ -214,7 +214,7 @@ class TestMainLoop:
         # 必须打在源模块上才会被拿到
         calls: list = []
         monkeypatch.setattr(
-            'src.business.execution.task_ledger.record_task',
+            'src.config.task_ledger.record_task',
             lambda task, **kw: calls.append((task, kw)),
         )
         return calls

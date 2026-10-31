@@ -3337,7 +3337,7 @@ CardSyncDialog
 
 argparse 子命令编排，只做转发：**weekly**（`--skip-tests` 可选）按序执行 pull（300s 超时）→ diff_source_data → maintain_rag（3600s）→ `pytest -q`（900s，可跳）→ push（600s）；**前置失败不 push**（数据不固化到私有仓）；人工步骤（获取新数据/LLM 精化/人工审阅/changelog）打印提醒；终局写 `ops_weekly` 台账并输出失败摘要与耗时。**health** 转调 doctor；**retry-failed** 转调 `ai_batch --retry-failed --guide`；**clean** 清理 `.tmp_test/` 下 mtime 超 7 天条目（`--dry` 预览）。release/backup 不在此收口（备份轮转由 `snapshot_to_backups` 内建，发布仍直接用 release.py）。
 
-### 18.3 任务台账（`src/business/execution/task_ledger.py`）
+### 18.3 任务台账（`src/business/src/config/task_ledger.py`）
 
 JSONL 逐行追加 `logs/task_results.jsonl`：`record_task(task, *, ok, exit_code, total, failed, duration_s, reason, path)` 每条 `{ts, task, ok, exit_code, total, failed, duration_s(1位), reason(截断200字)}`，写后 `fsync`；`read_entries(task=, only_failures=)` 供排查。设计动机：日志按 10MB×5 轮转（65~78 天窗口），失败痕迹会随轮转消失，台账是唯一跨窗口留痕。写入点：`base_fetch_service._on_finished`、`rag_indexer`、`maintain_rag`（逐任务+总控）、`pull_data`（三子命令）、`ops weekly`。写失败仅 warning 不抛出（台账不得影响任务本身）。
 
