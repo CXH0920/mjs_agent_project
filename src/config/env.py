@@ -51,6 +51,22 @@ IMAGES_OUTPUT_DIR = PROJECT_ROOT / "images"
 OCR_CONFUSION_OVERRIDES_PATH = PROJECT_ROOT / "data" / "ocr_confusion_overrides.json"
 
 
+def runtime_root() -> Path:
+    """可写运行时根（frozen 为 exe 同级；开发态即项目根）。
+
+    路径消费一律经本函数调用时求值，而非模块级常量快照：monkeypatch 本模块
+    PROJECT_ROOT 后调用即得补丁值，守护测试（test_ranking_csv_runtime_root）
+    无需 importlib.reload 重拍模块快照。双根在进程生命周期内不变，函数体读
+    模块全局即可，无需每次重探 exe 位置。
+    """
+    return PROJECT_ROOT
+
+
+def runtime_data_dir() -> Path:
+    """运行时可写数据目录（data/）。"""
+    return runtime_root() / "data"
+
+
 def is_full_build() -> bool:
     """是否完整版构建（含 RAG 维护页 + Playwright 抓取）。
 

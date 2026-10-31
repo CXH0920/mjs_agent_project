@@ -81,7 +81,7 @@ def _make_chip(monkeypatch, tmp_path, report: FreshnessReport | None, counts: di
         data_freshness_chip, "compute_freshness_report",
         lambda: (counts.__setitem__("n", counts["n"] + 1), report or _report())[1],
     )
-    monkeypatch.setattr(data_freshness_chip, "WATCH_DIR", tmp_path)
+    monkeypatch.setattr(data_freshness_chip, "watch_dir", lambda: tmp_path)
     fakes = _Fakes()
     chip = DataFreshnessChip(
         hero_fetch_service=fakes.hero,

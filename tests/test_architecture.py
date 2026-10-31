@@ -782,7 +782,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 统一调用，"空值也回退"语义钉死），capture_connection 删除本地副本
     # 408 → 410：BOM 容错（2026-10-27）——两处读侧 utf-8-sig 剥可选 BOM，
     # 防记事本「带 BOM 的 UTF-8」保存污染首键
-    "config/env.py": 410,
+    # 410 → 421：新增 runtime_root/runtime_data_dir 调用时求值函数——
+    # 路径快照常量的根治出口，守护测试不再依赖 importlib.reload
+    "config/env.py": 421,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示
@@ -865,7 +867,13 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "scraper/official_source/crawler.py": 640,
     "ui/library/hero_detail_views.py": 538,
     "ui/recommendation/hero_card_widget.py": 531,
-    "data/recommendation_index_repository.py": 526,
+    # 首次入册（实测 503 越过 500 绊线）：榜单路径聚合 RANKING_CSV_PATHS 与
+    # WATCH_DIR 改 ranking_csv_paths()/watch_dir() 调用时求值（reload 根治
+    # 工单），判定逻辑未变
+    "business/freshness.py": 503,
+    # 526 → 544：七路径常量函数化（调用时求值）+ 公开函数默认参数哨兵化
+    # （reload 根治工单：榜单路径不再依赖 import 时快照）
+    "data/recommendation_index_repository.py": 544,
     # 517 → 542：专属牌编辑对话框补未保存关闭确认（第 14 批审查 P2-1）
     "ui/library/special_cards_panel.py": 542,
     # 514 → 547：指定模式（pair/single）武将条目字段校验——坏条目记

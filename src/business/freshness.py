@@ -37,22 +37,19 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from src.config.env import is_full_build, load_env_config
+from src.config.env import is_full_build, load_env_config, runtime_data_dir
+from src.data import (
+    peak_win_rate_repository,
+    recommendation_index_repository,
+    win_rate_repository,
+)
 from src.data.hero_timeline import DEFAULT_TIMELINE_FILE, load_timeline
 from src.data.json_repository import preserve_corrupt_file
 from src.data.manager import (
-    DEFAULT_DATA_DIR,
     DEFAULT_GUIDES_FILE,
     DEFAULT_HEROES_FILE,
     DEFAULT_SYNERGIES_FILE,
 )
-from src.data.peak_win_rate_repository import PEAK_PICK_RANK_CSV, PEAK_WIN_RATE_CSV
-from src.data.recommendation_index_repository import (
-    BAN_RANK_CSV,
-    PICK_RANK_CSV,
-    RECOMMENDATION_INDEX_CSV,
-)
-from src.data.win_rate_repository import WIN_RATE_CSV as TWO_V2_WIN_RATE_CSV
 
 logger = logging.getLogger(__name__)
 
@@ -64,19 +61,25 @@ _SEVERITY = {GREEN: 0, YELLOW: 1, RED: 2}
 SUGGEST_INCREMENTAL = "incremental"
 SUGGEST_SPECIFIC = "specific"
 
-# 榜单读侧路径单一事实源：三个 repository 的常量（顺序即菜单展示序）
-RANKING_CSV_PATHS = (
-    TWO_V2_WIN_RATE_CSV,
-    PICK_RANK_CSV,
-    PEAK_WIN_RATE_CSV,
-    PEAK_PICK_RANK_CSV,
-    BAN_RANK_CSV,
-    RECOMMENDATION_INDEX_CSV,
-)
 
-# UI 芯片 QFileSystemWatcher 的监听目录与目标文件名（mtime 快照过滤词汇，
-# 与上面监测路径同源维护；榜单读取已统一运行时可写根，监听与判定同处）
-WATCH_DIR = DEFAULT_DATA_DIR
+def ranking_csv_paths() -> tuple[Path, ...]:
+    """榜单读侧路径单一事实源：三个 repository 的路径函数（顺序即菜单展示序）。"""
+    return (
+        win_rate_repository.win_rate_csv(),
+        recommendation_index_repository.pick_rank_csv(),
+        peak_win_rate_repository.peak_win_rate_csv(),
+        peak_win_rate_repository.peak_pick_rank_csv(),
+        recommendation_index_repository.ban_rank_csv(),
+        recommendation_index_repository.recommendation_index_csv(),
+    )
+
+
+def watch_dir() -> Path:
+    """UI 芯片 QFileSystemWatcher 的监听目录（与榜单读取同处运行时可写根）。"""
+    return runtime_data_dir()
+
+
+# mtime 快照过滤词汇（文件名无根依赖，与 ranking_csv_paths 同源维护）
 WATCHED_FILE_NAMES = (
     "heroes.json", "guides.json", "synergies.json", "mjs_adjustments.json",
     "2v2胜率排行.csv", "2v2出场排行.csv", "巅峰赛胜率排行.csv",
@@ -475,7 +478,7 @@ def compute_freshness_report(
     guides_path: Path = DEFAULT_GUIDES_FILE,
     synergies_path: Path = DEFAULT_SYNERGIES_FILE,
     timeline_path: Path = DEFAULT_TIMELINE_FILE,
-    ranking_paths: tuple[Path, ...] = RANKING_CSV_PATHS,
+    ranking_paths: tuple[Path, ...] | None = None,
     full_build: bool = is_full_build(),
     today: date | None = None,
     thresholds: tuple[int, int] | None = None,
@@ -484,6 +487,7 @@ def compute_freshness_report(
 
     thresholds 为 (绿档上限, 红档下限)，None 时读 config.env（默认 7/14）。
     """
+    ranking_paths = ranking_paths or ranking_csv_paths()
     today = today or date.today()
     thresholds = thresholds or _stale_thresholds()
     hero_entries = _load_hero_entries(heroes_path)

@@ -7,24 +7,29 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import runtime_data_dir
 
 logger = logging.getLogger(__name__)
 
-# 读运行时可写根：rag_corpus 首启由 _ensure_clean_runtime 部署副本，检索链路
-# （src/rag/config）与维护脚本（rag_common）均读该处，此处同根才能让用户对
-# 部署副本的修改在 AI 生成兜底中生效
-_CORE_RULES_FILE = PROJECT_ROOT / "data" / "rag_corpus" / "核心规则摘要.md"
+
+def _core_rules_file() -> Path:
+    """核心规则摘要路径（调用时求值）：读运行时可写根——rag_corpus 首启由
+    _ensure_clean_runtime 部署副本，检索链路（src/rag/config）与维护脚本
+    （rag_common）均读该处，此处同根才能让用户对部署副本的修改在 AI
+    生成兜底中生效。"""
+    return runtime_data_dir() / "rag_corpus" / "核心规则摘要.md"
 _CARD_SYSTEM_BODY = re.compile(r"## 卡牌体系\n(.*?)(?=\n## |\Z)", re.DOTALL)
 
 
 def load_core_rules() -> str:
     """加载核心规则摘要；缺失或异常返回空串（降级）。"""
+    core_rules = _core_rules_file()
     try:
-        if not _CORE_RULES_FILE.exists():
+        if not core_rules.exists():
             return ""
-        text = _CORE_RULES_FILE.read_text(encoding="utf-8").strip()
+        text = core_rules.read_text(encoding="utf-8").strip()
         if not text:
             return ""
         return f"## 基础规则参考\n{text}"
@@ -39,10 +44,11 @@ def load_card_system() -> str:
     只取卡牌体系段（行动/战法/装备/专属牌名清单），比全文 core_rules 精准省 token；
     缺失或异常返回空串，不阻断生成。
     """
+    core_rules = _core_rules_file()
     try:
-        if not _CORE_RULES_FILE.exists():
+        if not core_rules.exists():
             return ""
-        text = _CORE_RULES_FILE.read_text(encoding="utf-8").strip()
+        text = core_rules.read_text(encoding="utf-8").strip()
         m = _CARD_SYSTEM_BODY.search(text)
         if not m:
             return ""

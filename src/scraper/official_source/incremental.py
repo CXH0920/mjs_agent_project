@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 # 复用爬虫核心模块的公开 API
-from src.config.env import PROJECT_ROOT
+from src.config.env import runtime_data_dir
 from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.crawler import (
     carry_over_local_fields,
@@ -31,9 +31,14 @@ from src.scraper.official_source.crawler import (
 
 logger = logging.getLogger(__name__)
 
-# 默认数据路径：读写作运行时可写根（理由同 full.py 的 DEFAULT_OUTPUT）
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
+def default_data_dir() -> Path:
+    """默认数据目录（调用时求值）：读写作运行时可写根（理由同 full.default_output）。"""
+    return runtime_data_dir()
+
+
+def default_heroes_file() -> Path:
+    """默认武将输出路径（调用时求值）。"""
+    return default_data_dir() / "heroes.json"
 
 
 def _load_heroes_file(path: Path) -> list | None:
@@ -259,7 +264,7 @@ def main() -> None:
     if not any([args.incremental, args.hero, args.hero_id]):
         parser.error("请指定 --incremental 和/或 --hero / --hero-id")
 
-    output_path = Path(args.output) if args.output else DEFAULT_HEROES_FILE
+    output_path = Path(args.output) if args.output else default_heroes_file()
 
     print("=" * 60, flush=True)
     print("  名将杀 Agent - 增量爬虫", flush=True)

@@ -19,11 +19,11 @@ from src.business.freshness import (
     SOURCE_CYCLE_ROWS,
     SUGGEST_INCREMENTAL,
     SUGGEST_SPECIFIC,
-    WATCH_DIR,
     WATCHED_FILE_NAMES,
     YELLOW,
     FreshnessReport,
     compute_freshness_report,
+    watch_dir,
 )
 from src.ui.shared.style import TONE_WARNING
 from src.ui.shared.widgets import show_toast
@@ -81,8 +81,9 @@ class DataFreshnessChip(QLabel):
         announcement_service.check_finished.connect(lambda _result: self._refresh())
 
         self._watcher = QFileSystemWatcher(self)
-        if not self._watcher.addPath(str(WATCH_DIR)):
-            logger.warning("数据新鲜度目录监听失败: %s", WATCH_DIR)
+        watch_path = watch_dir()
+        if not self._watcher.addPath(str(watch_path)):
+            logger.warning("数据新鲜度目录监听失败: %s", watch_path)
         self._watcher.directoryChanged.connect(lambda _path: self._debounce.start())
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -105,9 +106,10 @@ class DataFreshnessChip(QLabel):
     @staticmethod
     def _snapshot_mtimes() -> dict[str, float]:
         snapshot: dict[str, float] = {}
+        watch_path = watch_dir()
         for name in WATCHED_FILE_NAMES:
             try:
-                snapshot[name] = (WATCH_DIR / name).stat().st_mtime
+                snapshot[name] = (watch_path / name).stat().st_mtime
             except OSError:
                 continue
         return snapshot

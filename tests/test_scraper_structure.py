@@ -8,10 +8,10 @@ from src.scraper.official_source import crawler, full, incremental
 
 
 def test_scraper_resources_resolve_from_project_root() -> None:
-    assert full.DEFAULT_OUTPUT == PROJECT_ROOT / "data" / "heroes.json"
-    assert incremental.DEFAULT_DATA_DIR == PROJECT_ROOT / "data"
+    assert full.default_output() == PROJECT_ROOT / "data" / "heroes.json"
+    assert incremental.default_data_dir() == PROJECT_ROOT / "data"
     assert crawler.IMAGES_DIR == PROJECT_ROOT / "images"
-    assert batch.DEFAULT_DATA_DIR == PROJECT_ROOT / "data"
+    assert batch.default_data_dir() == PROJECT_ROOT / "data"
     assert api_generator.PROMPT_DIR == PROJECT_ROOT / "docs" / "prompts"
     assert browser_generator.PROMPT_DIR == PROJECT_ROOT / "docs" / "prompts"
     assert Path(browser_session.DEFAULT_BROWSER_CONFIG["user_data_dir"]) == PROJECT_ROOT / "data" / "edge_profile"

@@ -6,15 +6,21 @@ import csv
 import logging
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import runtime_data_dir
 
 logger = logging.getLogger(__name__)
 
-# 巅峰赛专属榜单 csv（胜率列：排名,武将,胜率；出场列：排名,武将），与官方榜单
-# 导出格式一致；读运行时可写根（部署基线 + 用户导入），数据源尚未落地时返回
-# 空 dict，UI 显示"暂无数据"
-PEAK_WIN_RATE_CSV = PROJECT_ROOT / "data" / "巅峰赛胜率排行.csv"
-PEAK_PICK_RANK_CSV = PROJECT_ROOT / "data" / "巅峰赛出场排行.csv"
+
+def peak_win_rate_csv() -> Path:
+    """巅峰赛胜率榜单路径（调用时求值）。"""
+    return runtime_data_dir() / "巅峰赛胜率排行.csv"
+
+
+def peak_pick_rank_csv() -> Path:
+    """巅峰赛出场榜单路径（调用时求值）。"""
+    return runtime_data_dir() / "巅峰赛出场排行.csv"
+
+
 _peak_win_rate_cache: dict[str, float] | None = None
 _peak_pick_rank_cache: dict[str, int] | None = None
 
@@ -26,10 +32,12 @@ def clear_peak_win_rate_cache() -> None:
     _peak_pick_rank_cache = None
 
 
-def load_peak_win_rates(path: Path = PEAK_WIN_RATE_CSV) -> dict[str, float]:
-    """从 CSV 加载 {武将名: 百分比}，默认结果缓存以避免重复读盘。"""
+def load_peak_win_rates(path: Path | None = None) -> dict[str, float]:
+    """从 CSV 加载 {武将名: 百分比}；未指定路径时用默认路径并缓存结果。"""
     global _peak_win_rate_cache
-    if path == PEAK_WIN_RATE_CSV and _peak_win_rate_cache is not None:
+    use_cache = path is None
+    path = path or peak_win_rate_csv()
+    if use_cache and _peak_win_rate_cache is not None:
         return _peak_win_rate_cache
 
     rates: dict[str, float] = {}
@@ -51,15 +59,17 @@ def load_peak_win_rates(path: Path = PEAK_WIN_RATE_CSV) -> dict[str, float]:
         except OSError as exc:
             logger.warning("巅峰赛胜率文件加载失败: %s", exc)
 
-    if path == PEAK_WIN_RATE_CSV:
+    if use_cache:
         _peak_win_rate_cache = rates
     return rates
 
 
-def load_peak_pick_ranks(path: Path = PEAK_PICK_RANK_CSV) -> dict[str, int]:
-    """从出场排行 CSV 加载 {武将名: 出场排名}，默认结果缓存以避免重复读盘。"""
+def load_peak_pick_ranks(path: Path | None = None) -> dict[str, int]:
+    """从出场排行 CSV 加载 {武将名: 出场排名}；未指定路径时用默认路径并缓存结果。"""
     global _peak_pick_rank_cache
-    if path == PEAK_PICK_RANK_CSV and _peak_pick_rank_cache is not None:
+    use_cache = path is None
+    path = path or peak_pick_rank_csv()
+    if use_cache and _peak_pick_rank_cache is not None:
         return _peak_pick_rank_cache
 
     ranks: dict[str, int] = {}
@@ -81,6 +91,6 @@ def load_peak_pick_ranks(path: Path = PEAK_PICK_RANK_CSV) -> dict[str, int]:
         except OSError as exc:
             logger.warning("巅峰赛出场排行文件加载失败: %s", exc)
 
-    if path == PEAK_PICK_RANK_CSV:
+    if use_cache:
         _peak_pick_rank_cache = ranks
     return ranks

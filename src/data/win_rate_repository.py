@@ -6,13 +6,20 @@ import csv
 import logging
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import runtime_data_dir
 
 logger = logging.getLogger(__name__)
 
-# 胜率 csv 读运行时可写根：frozen 下首启由 _ensure_clean_runtime 部署基线副本，
-# 用户官方导入的新榜单写同处即被读取（开发态两根相等，行为不变）
-WIN_RATE_CSV = PROJECT_ROOT / "data" / "2v2胜率排行.csv"
+
+def win_rate_csv() -> Path:
+    """2v2 胜率榜单路径（调用时求值）。
+
+    读运行时可写根：frozen 下首启由 _ensure_clean_runtime 部署基线副本，
+    用户官方导入的新榜单写同处即被读取（开发态两根相等，行为不变）。
+    """
+    return runtime_data_dir() / "2v2胜率排行.csv"
+
+
 _win_rate_cache: dict[str, float] | None = None
 
 
@@ -22,10 +29,12 @@ def clear_win_rate_cache() -> None:
     _win_rate_cache = None
 
 
-def load_win_rates(path: Path = WIN_RATE_CSV) -> dict[str, float]:
-    """从胜率 CSV 加载 {武将名: 百分比}，默认结果缓存以避免重复读盘。"""
+def load_win_rates(path: Path | None = None) -> dict[str, float]:
+    """从胜率 CSV 加载 {武将名: 百分比}；未指定路径时用默认路径并缓存结果。"""
     global _win_rate_cache
-    if path == WIN_RATE_CSV and _win_rate_cache is not None:
+    use_cache = path is None
+    path = path or win_rate_csv()
+    if use_cache and _win_rate_cache is not None:
         return _win_rate_cache
 
     rates: dict[str, float] = {}
@@ -47,6 +56,6 @@ def load_win_rates(path: Path = WIN_RATE_CSV) -> dict[str, float]:
         except OSError as exc:
             logger.warning("胜率文件加载失败: %s", exc)
 
-    if path == WIN_RATE_CSV:
+    if use_cache:
         _win_rate_cache = rates
     return rates

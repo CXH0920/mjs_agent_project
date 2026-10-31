@@ -12,24 +12,41 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT, load_env_config
+from src.config.env import load_env_config, runtime_data_dir, runtime_root
 from src.data import peak_win_rate_repository, win_rate_repository
 from src.data.json_repository import atomic_write_json, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
-# 读运行时可写根：frozen 下首启由 _ensure_clean_runtime 部署基线副本到
-# PROJECT_ROOT/data，用户导入/抓取的新数据写同处即被读取与重建（开发态
-# 与 BUNDLE_ROOT 相等，行为不变）
-DATA_DIR = PROJECT_ROOT / "data"
-# 单一来源：与胜率读取共用同一路径常量（reload 依赖序见 test_ranking_csv_runtime_root）
-WIN_RATE_CSV = win_rate_repository.WIN_RATE_CSV
-PICK_RANK_CSV = DATA_DIR / "2v2出场排行.csv"
-BAN_RANK_CSV = DATA_DIR / "武将放逐.csv"
-HEROES_JSON = DATA_DIR / "heroes.json"
-RECOMMENDATION_INDEX_CSV = DATA_DIR / "武将推荐指数.csv"
-# stale 状态与快照同落运行时可写根（打包不含此文件，属首启/导入后的运行时产物）
-RECOMMENDATION_INDEX_STATE_FILE = PROJECT_ROOT / "data" / "武将推荐指数状态.json"
+
+def win_rate_csv() -> Path:
+    """2v2 胜率榜单路径；与胜率读取共用单一来源。"""
+    return win_rate_repository.win_rate_csv()
+
+
+def pick_rank_csv() -> Path:
+    """2v2 出场榜单路径（调用时求值）。"""
+    return runtime_data_dir() / "2v2出场排行.csv"
+
+
+def ban_rank_csv() -> Path:
+    """武将放逐榜单路径（调用时求值）。"""
+    return runtime_data_dir() / "武将放逐.csv"
+
+
+def heroes_json() -> Path:
+    """武将数据路径（调用时求值）。"""
+    return runtime_data_dir() / "heroes.json"
+
+
+def recommendation_index_csv() -> Path:
+    """推荐指数快照路径（调用时求值）。"""
+    return runtime_data_dir() / "武将推荐指数.csv"
+
+
+def recommendation_index_state_file() -> Path:
+    """stale 状态与快照同落运行时可写根（打包不含此文件，属首启/导入后的运行时产物）。"""
+    return runtime_root() / "data" / "武将推荐指数状态.json"
 
 DEFAULT_P_FLOOR = 0.2
 DEFAULT_BAN_WEIGHT = 0.5
@@ -73,9 +90,9 @@ class RecommendationIndex:
 
 
 def is_recommendation_index_stale(
-    path: Path = RECOMMENDATION_INDEX_STATE_FILE,
+    path: Path | None = None,
     *,
-    index_path: Path = RECOMMENDATION_INDEX_CSV,
+    index_path: Path | None = None,
     source_paths: tuple[Path, ...] | None = None,
 ) -> bool:
     """返回推荐指数快照是否已被新的官方榜单数据标记为过期。
@@ -86,6 +103,8 @@ def is_recommendation_index_stale(
     曾被 git 历史/命令行操作意外置为 true 的兜底）。查询是纯读路径，
     不回写状态文件——stale=true 留待下次有新数据时自然翻转。
     """
+    path = path or recommendation_index_state_file()
+    index_path = index_path or recommendation_index_csv()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -96,7 +115,7 @@ def is_recommendation_index_stale(
     if not bool(data.get("stale", False)):
         return False
     sources = source_paths if source_paths is not None else (
-        WIN_RATE_CSV, PICK_RANK_CSV, BAN_RANK_CSV,
+        win_rate_csv(), pick_rank_csv(), ban_rank_csv(),
     )
     if _has_newer_source_file(sources, index_path):
         return True
@@ -131,9 +150,10 @@ def _has_newer_source_file(
 
 def mark_recommendation_index_stale(
     stale: bool,
-    path: Path = RECOMMENDATION_INDEX_STATE_FILE,
+    path: Path | None = None,
 ) -> None:
     """原子保存推荐指数快照是否待重建的状态。"""
+    path = path or recommendation_index_state_file()
     # stale 属于正常业务状态流转（每次官方导入后触发），debug 级即可；
     # 此前曾遗留 10 层调用栈 WARNING 输出（每次导入刷屏淹没真实告警），已移除
     logger.debug("推荐指数状态标记 stale=%s", stale)
@@ -149,18 +169,19 @@ def notify_official_outputs_written(output_names: Iterable[str]) -> None:
     - 2v2/巅峰胜率更新后清空对应读取缓存，避免推荐页与对局攻略读到旧快照。
     """
     names = set(output_names)
-    if peak_win_rate_repository.PEAK_WIN_RATE_CSV.name not in names:
+    if peak_win_rate_repository.peak_win_rate_csv().name not in names:
         mark_recommendation_index_stale(True)
-    if WIN_RATE_CSV.name in names:
+    if win_rate_csv().name in names:
         win_rate_repository.clear_win_rate_cache()
-    if peak_win_rate_repository.PEAK_WIN_RATE_CSV.name in names:
+    if peak_win_rate_repository.peak_win_rate_csv().name in names:
         peak_win_rate_repository.clear_peak_win_rate_cache()
 
 
 def load_recommendation_indexes(
-    path: Path = RECOMMENDATION_INDEX_CSV,
+    path: Path | None = None,
 ) -> dict[str, RecommendationIndex]:
     """读取推荐指数快照；不存在返回空字典（首启合法空态），其余读取失败上抛。"""
+    path = path or recommendation_index_csv()
     try:
         with path.open("r", encoding="utf-8", newline="") as file:
             rows = list(csv.DictReader(file))
@@ -194,13 +215,19 @@ def load_recommendation_indexes(
 def refresh_recommendation_indexes(
     config: RecommendationIndexConfig | None = None,
     *,
-    win_rate_path: Path = WIN_RATE_CSV,
-    pick_rank_path: Path = PICK_RANK_CSV,
-    ban_rank_path: Path = BAN_RANK_CSV,
-    heroes_path: Path = HEROES_JSON,
-    output_path: Path = RECOMMENDATION_INDEX_CSV,
+    win_rate_path: Path | None = None,
+    pick_rank_path: Path | None = None,
+    ban_rank_path: Path | None = None,
+    heroes_path: Path | None = None,
+    output_path: Path | None = None,
 ) -> dict[str, RecommendationIndex]:
     """按当前三份榜单重建推荐指数 CSV，并返回名称索引。"""
+    is_default_output = output_path is None
+    win_rate_path = win_rate_path or win_rate_csv()
+    pick_rank_path = pick_rank_path or pick_rank_csv()
+    ban_rank_path = ban_rank_path or ban_rank_csv()
+    heroes_path = heroes_path or heroes_json()
+    output_path = output_path or recommendation_index_csv()
     config = _validate_config(config or _load_runtime_config())
     hero_ids = _load_hero_ids(heroes_path)
     win_rates, win_issues, win_names, win_row_count = _read_win_rates(win_rate_path)
@@ -254,7 +281,7 @@ def refresh_recommendation_indexes(
     if n > 1 and valid:
         results.update(_score_valid_results(valid, config))
     _write_snapshot(output_path, results.values())
-    if output_path == RECOMMENDATION_INDEX_CSV:
+    if is_default_output:
         mark_recommendation_index_stale(False)
     logger.info(
         "推荐指数快照已生成：有效 %d 条，数据不足 %d 条",

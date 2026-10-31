@@ -29,7 +29,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS, get_runtime_params
+from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS, get_runtime_params, runtime_data_dir
 from src.config.profiles import resolve_api_config
 from src.data.guide_manager import GuideManager
 from src.data.json_repository import snapshot_to_backups
@@ -48,12 +48,25 @@ logger = logging.getLogger(__name__)
 # 路径常量
 # ============================================================
 
-# 读写作运行时可写根：UI 与数据仓库均读 PROJECT_ROOT/data，写 BUNDLE_ROOT
-# 会落只读 _internal 且生成结果不可见（理由同 official_source/full.py）
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_HEROES_FILE = DEFAULT_DATA_DIR / "heroes.json"
-DEFAULT_GUIDES_FILE = DEFAULT_DATA_DIR / "guides.json"
-DEFAULT_SYNERGIES_FILE = DEFAULT_DATA_DIR / "synergies.json"
+def default_data_dir() -> Path:
+    """默认数据目录（调用时求值）：读写作运行时可写根——UI 与数据仓库均读
+    PROJECT_ROOT/data，写 BUNDLE_ROOT 会落只读 _internal 且生成结果不可见
+    （理由同 official_source/full.default_output）。"""
+    return runtime_data_dir()
+
+
+def default_heroes_file() -> Path:
+    return default_data_dir() / "heroes.json"
+
+
+def default_guides_file() -> Path:
+    return default_data_dir() / "guides.json"
+
+
+def default_synergies_file() -> Path:
+    return default_data_dir() / "synergies.json"
+
+
 # 上次失败项清单：全量生成 6~8 小时、失败只能全量重跑是最大的流程损耗，
 # 落盘清单让 --retry-failed 只重跑失败项（成功项字节不变）
 LAST_FAILURES_PATH = PROJECT_ROOT / "logs" / "ai_last_failures.json"
@@ -262,11 +275,11 @@ def main():
     parser = argparse.ArgumentParser(description="名将杀 Agent - AI 批量生成工具")
     parser.add_argument("--guide", action="store_true", help="生成攻略")
     parser.add_argument("--synergy", action="store_true", help="生成相性评分")
-    parser.add_argument("--heroes-file", type=str, default=str(DEFAULT_HEROES_FILE),
+    parser.add_argument("--heroes-file", type=str, default=str(default_heroes_file()),
                          help="武将数据文件路径")
-    parser.add_argument("--guides-file", type=str, default=str(DEFAULT_GUIDES_FILE),
+    parser.add_argument("--guides-file", type=str, default=str(default_guides_file()),
                          help="攻略输出路径")
-    parser.add_argument("--synergies-file", type=str, default=str(DEFAULT_SYNERGIES_FILE),
+    parser.add_argument("--synergies-file", type=str, default=str(default_synergies_file()),
                          help="相性输出路径")
     parser.add_argument("--dry-run", action="store_true",
                          help="预览模式：仅估算 Token 和费用，不调用 API")

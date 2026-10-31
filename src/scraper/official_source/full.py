@@ -23,7 +23,7 @@ import logging
 import sys
 from pathlib import Path
 
-from src.config.env import PROJECT_ROOT
+from src.config.env import runtime_data_dir
 from src.data.json_repository import snapshot_to_backups
 from src.scraper.official_source.adapter import find_chunk_url, parse_heroes_chunk
 from src.scraper.official_source.crawler import (
@@ -37,9 +37,11 @@ from src.scraper.official_source.crawler import (
 
 logger = logging.getLogger(__name__)
 
-# 默认输出路径：写运行时可写根——UI/芯片/数据仓库均读 PROJECT_ROOT/data
-# （frozen 下首启部署基线副本），写 BUNDLE_ROOT 会落只读 _internal 且不可见
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "heroes.json"
+def default_output() -> Path:
+    """默认输出路径（调用时求值）：写运行时可写根——UI/芯片/数据仓库均读
+    PROJECT_ROOT/data（frozen 下首启部署基线副本），写 BUNDLE_ROOT 会落
+    只读 _internal 且不可见。"""
+    return runtime_data_dir() / "heroes.json"
 
 
 def _load_previous_heroes(path: Path) -> list[dict] | None:
@@ -106,7 +108,7 @@ def refuse_write_reason(
 
 def crawl(dry_run: bool = False, output_path: str | None = None, skip_images: bool = False) -> None:
     """执行官网爬虫完整流程"""
-    out_path = Path(output_path) if output_path else DEFAULT_OUTPUT
+    out_path = Path(output_path) if output_path else default_output()
 
     print("=" * 60, flush=True)
     print("  名将杀 Agent - 官网武将采集", flush=True)
