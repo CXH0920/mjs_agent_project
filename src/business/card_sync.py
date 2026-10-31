@@ -203,7 +203,15 @@ class CardSyncService(QObject):
                 raise RuntimeError(
                     "卡牌已写回，但变更记录写入失败；下次检查将重复提示该差异，重新应用即可补齐"
                 ) from error
-        save_card_snapshot(baseline, self._snapshot_path)
+        try:
+            save_card_snapshot(baseline, self._snapshot_path)
+        except OSError as error:
+            # 与第二步同款包装：裸 OSError 甩给 UI 无法指引补救
+            logger.exception("卡牌基线落盘失败")
+            raise RuntimeError(
+                "卡牌已写回、变更记录已写入，但基线保存失败；"
+                "下次检查将重复提示该差异，重新应用即可补齐"
+            ) from error
         return {"applied": len(applied_ids), "modified": len(modified_applied), "added": len(added_applied)}
 
     # ---------------------------------------------------------------

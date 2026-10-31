@@ -322,6 +322,13 @@ class CardFieldSchemaRepository(JsonRepository):
             raise ValueError("字段 key 创建后不可修改")
         self._fields[definition.key] = definition
 
+    def _snapshot(self) -> dict[str, CardFieldDefinition]:
+        """写前内存快照：字段定义是不可变值对象，浅拷贝字典即足够。"""
+        return dict(self._fields)
+
+    def _restore(self, snapshot: dict[str, CardFieldDefinition]) -> None:
+        self._fields = dict(snapshot)
+
 
 class CardAnnotationRepository(JsonRepository):
     def __init__(self, file_path: str | Path = DEFAULT_CARD_ANNOTATIONS_FILE):

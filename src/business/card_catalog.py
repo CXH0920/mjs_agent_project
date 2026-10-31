@@ -159,8 +159,11 @@ class CardCatalogService:
     def add_field(self, definition: CardFieldDefinition) -> None:
         if not self.schema.available:
             raise ValueError("字段定义不可用")
+        # 先快照再改内存，写盘失败回滚（与 save_annotation_fields 同款）：
+        # 否则 UI 弹"保存失败"后字段列表仍显示"已添加"，重启后消失（幻影字段）
+        snapshot = self.schema._snapshot()
         self.schema.add_field(definition)
-        self.schema.save()
+        self.schema._save_or_rollback(snapshot)
 
     def update_field(self, definition: CardFieldDefinition) -> None:
         current = self.schema.get_field(definition.key)
@@ -168,15 +171,17 @@ class CardCatalogService:
             raise ValueError("字段不存在")
         if current.value_type != definition.value_type and self._field_has_values(definition.key):
             raise ValueError("已有数据的字段不能修改类型，请新建迁移字段")
+        snapshot = self.schema._snapshot()
         self.schema.update_field(definition)
-        self.schema.save()
+        self.schema._save_or_rollback(snapshot)
 
     def archive_field(self, key: str) -> None:
         definition = self.schema.get_field(key)
         if definition is None:
             raise ValueError("字段不存在")
+        snapshot = self.schema._snapshot()
         self.schema.update_field(definition.model_copy(update={"archived": True, "enabled": False}))
-        self.schema.save()
+        self.schema._save_or_rollback(snapshot)
 
     def _field_has_values(self, key: str) -> bool:
         return any(key in annotation.fields for annotation in self.annotations.list_annotations())

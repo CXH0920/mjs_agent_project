@@ -215,3 +215,59 @@ def test_save_failure_on_first_annotation_removes_memory_entry(tmp_path: Path, m
     assert service.annotations.get_annotation("8") is None
     assert "2v2" not in (tmp_path / "card_annotations.json").read_text(encoding="utf-8")
 
+
+def test_save_failure_rolls_back_memory_field_add(tmp_path: Path, monkeypatch) -> None:
+    """字段定义写盘失败后内存必须回到写前状态（与注解路径同款保护）。
+
+    否则 UI 弹"保存失败"后字段列表仍显示"已添加"，重启后消失——幻影字段。
+    """
+    service = _service(tmp_path)
+
+    def _boom(payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.schema, "save_payload", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        service.add_field(CardFieldDefinition(key="note", label="备注", value_type="markdown"))
+
+    assert service.schema.get_field("note") is None
+    on_disk = json.loads((tmp_path / "card_field_schema.json").read_text(encoding="utf-8"))
+    assert [item["key"] for item in on_disk["fields"]] == ["strengthen_effect", "mode"]
+
+
+def test_save_failure_rolls_back_memory_field_update(tmp_path: Path, monkeypatch) -> None:
+    """修改字段定义写盘失败后内存不得残留新定义（回滚需覆盖"替换"语义）。"""
+    service = _service(tmp_path)
+
+    def _boom(payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.schema, "save_payload", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        service.update_field(CardFieldDefinition(
+            key="mode", label="适用模式v2", value_type="select", options=["2v2", "3v3"],
+        ))
+
+    updated = service.schema.get_field("mode")
+    assert updated is not None and updated.label == "适用模式"
+    on_disk = json.loads((tmp_path / "card_field_schema.json").read_text(encoding="utf-8"))
+    assert [item["label"] for item in on_disk["fields"] if item["key"] == "mode"] == ["适用模式"]
+
+
+def test_save_failure_rolls_back_memory_field_archive(tmp_path: Path, monkeypatch) -> None:
+    """归档字段写盘失败后内存不得残留归档态（归档经 update_field，同款回滚）。"""
+    service = _service(tmp_path)
+
+    def _boom(payload, indent=2):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service.schema, "save_payload", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        service.archive_field("mode")
+
+    kept = service.schema.get_field("mode")
+    assert kept is not None and kept.archived is False and kept.enabled is True
+    on_disk = json.loads((tmp_path / "card_field_schema.json").read_text(encoding="utf-8"))
+    mode = next(item for item in on_disk["fields"] if item["key"] == "mode")
+    assert "archived" not in mode  # exclude_defaults 序列化下无此键 = 未归档
+

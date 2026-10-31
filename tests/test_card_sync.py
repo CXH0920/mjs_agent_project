@@ -453,6 +453,33 @@ def test_service_apply_change_record_failure_keeps_diff_revisible(monkeypatch, t
     assert not changes_path.exists()
 
 
+def test_service_apply_baseline_save_failure_raises_friendly_error(monkeypatch, tmp_path) -> None:
+    """第三步基线落盘失败的异常呈现与第二步同款：RuntimeError + 补救指引，
+    不得把裸 OSError 甩给 UI（事务后退路径本身成立，仅异常呈现须一致）。"""
+    repo = _make_repo(tmp_path, [_make_card("1", "卡1")])
+    snap_path, changes_path = tmp_path / "snap.json", tmp_path / "changes.json"
+    service = CardSyncService(repo, snapshot_path=snap_path, changes_path=changes_path)
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "旧描述")])
+    service._finalize_check(service._do_check())  # 首跑建基线
+
+    monkeypatch.setattr("src.business.card_sync.fetch_official_cards",
+                        lambda: [_official_record(1, "新描述")])
+    service._finalize_check(service._do_check())  # 检出卡 1 差异
+
+    def broken_save(snapshot, path=None):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr("src.business.card_sync.save_card_snapshot", broken_save)
+    with pytest.raises(RuntimeError, match="基线保存失败"):
+        service.apply_updates(["1"], [])
+
+    # 卡牌与变更记录均已落盘，仅基线未推进：下次检查重复提示，重新应用幂等补齐
+    updated = repo.get_card("1")
+    assert updated is not None and updated.card_desc == "新描述"
+    assert len(load_card_changes(changes_path)) == 1
+
+
 def test_service_finalize_check_reports_baseline_save_failure(monkeypatch, tmp_path) -> None:
     """基线落盘失败不得静默：须写入 result.warning 并在 check_finished 之前可见。
 
