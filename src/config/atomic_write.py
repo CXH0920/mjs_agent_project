@@ -59,3 +59,22 @@ def atomic_write_text(path: Path | str, content: str) -> None:
         except OSError:
             pass
         raise
+
+
+def atomic_write_bytes(path: Path | str, data: bytes) -> None:
+    """以同目录唯一临时文件原子保存字节（与 atomic_write_text 同骨架，供图片等二进制落盘）。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        Path(temporary).replace(path)
+    except Exception:
+        try:
+            Path(temporary).unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise

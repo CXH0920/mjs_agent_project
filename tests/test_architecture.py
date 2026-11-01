@@ -794,7 +794,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 664 → 710：单格识别快通道（2x 单候选 + 质量门早退，未过门回退 4x 双
     # 候选原路径）——det 输入面积主导单次调用耗时，快通道对七种版式语料
     # 逐格结果零差异、整板约 2.5-3x 提速
-    "business/recognition/official_data_import_service.py": 710,
+    # 710 → 714：写盘卫生修复——复核行截图改走 atomic_write_bytes 原子写
+    # （覆盖中断不留半截图片），待复核会话覆盖前补告警日志（旧复核现场
+    # 不再静默丢失）；净增 4 行为告警与序列化步骤
+    "business/recognition/official_data_import_service.py": 714,
     # 首次入册（417 → 524 越过 500 绊线）：split_stitched_image 拼接长图切分
     # （20261022 版式兼容：静默带定位 + 补边 + 分页结构校验）；固定版式解析
     # 算法族（LAYOUTS/PAGED_LAYOUTS + 切行/切格/数字模板）高内聚且仅依赖

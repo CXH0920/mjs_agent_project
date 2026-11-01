@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 
 import cv2
 import numpy as np
@@ -1007,6 +1008,44 @@ def test_write_csv_serialization_failure_leaves_no_temp_file(tmp_path, monkeypat
     with pytest.raises(RuntimeError, match="写盘中断模拟"):
         OfficialDataImportService._write_csv(tmp_path / "out.csv", ["武将"], [{"武将": "测试"}])
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_save_review_crop_write_failure_leaves_no_temp_file(tmp_path, monkeypatch) -> None:
+    """复核行截图序列化中途失败不得遗留 .tmp，也不得留半截目标图片。"""
+    monkeypatch.setattr(import_module, "REVIEW_DIR", tmp_path / "review")
+
+    def reject_save(*args, **kwargs):
+        raise RuntimeError("写盘中断模拟")
+
+    monkeypatch.setattr(Image.Image, "save", reject_save)
+    row = np.full((10, 30, 3), 210, dtype=np.uint8)
+    with pytest.raises(RuntimeError, match="写盘中断模拟"):
+        OfficialDataImportService._save_review_crop("2v2胜率排行", 2, row)
+    review_dir = tmp_path / "review"
+    assert not list(review_dir.rglob("*.tmp"))
+    assert not list(review_dir.rglob("*.png"))
+
+
+def test_save_pending_session_overwrite_existing_logs_warning(tmp_path, caplog) -> None:
+    """旧待复核会话未复核完又产生新失败批次时，覆盖前必须日志明示。"""
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+    outputs = {
+        "2v2胜率排行.csv": {
+            "review_name": "2v2胜率排行_待复核.csv",
+            "columns": ("排名", "武将"),
+            "records": [{"排名": 1, "武将": "夏候"}],
+            "reviews": [],
+        },
+    }
+    session_path = tmp_path / "pending.json"
+    service._save_pending_session("2v2", ["a.png"], 1, ["paged"], ["校验失败"], outputs, session_path)
+
+    with caplog.at_level(logging.WARNING, logger=import_module.logger.name):
+        service._save_pending_session("peak", ["b.png"], 1, ["paged"], ["再失败"], outputs, session_path)
+
+    overwrites = [r for r in caplog.records if "覆盖" in r.getMessage()]
+    assert len(overwrites) == 1
+    assert import_module.load_pending_session(session_path)["key"] == "peak"
 
 
 def test_load_pending_session_returns_none_when_missing(tmp_path) -> None:

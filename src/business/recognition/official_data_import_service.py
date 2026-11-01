@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image
 from src.business.recognition.name_resolution import HeroNameResolver
 from src.business.recognition.official_ocr_engines import OfficialOcrEngines
-from src.config.atomic_write import atomic_write_json, atomic_write_text
+from src.config.atomic_write import atomic_write_bytes, atomic_write_json, atomic_write_text
 from src.config.env import PROJECT_ROOT
 from src.data.recommendation_index_repository import notify_official_outputs_written
 from src.ocr import official_board_parser
@@ -596,7 +596,11 @@ class OfficialDataImportService:
         directory = REVIEW_DIR / kind
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{rank:03d}.png"
-        Image.fromarray(cv2.cvtColor(row, cv2.COLOR_BGR2RGB)).save(path)
+        # 行截图是复核界面的正式展示内容，与数据写盘同纪律：先序列化再原子写，
+        # 覆盖中断不留半截图片
+        buffer = io.BytesIO()
+        Image.fromarray(cv2.cvtColor(row, cv2.COLOR_BGR2RGB)).save(buffer, format="PNG")
+        atomic_write_bytes(path, buffer.getvalue())
         return path
 
     @staticmethod
@@ -636,6 +640,14 @@ class OfficialDataImportService:
                 for name, batch in outputs.items()
             },
         }
+        if session_path.exists():
+            # 旧会话还没复核完又来一批失败导入：静默覆盖等于无声丢掉用户的
+            # 复核现场，留日志供事后追溯（图片仍在用户手里，可重新导入恢复）
+            logger.warning(
+                "存在未复核完成的官方榜单待复核会话，本次导入失败将覆盖: %s"
+                "（旧复核数据丢失，可用原图片重新导入恢复）",
+                session_path,
+            )
         atomic_write_json(session_path, payload, indent=2)
         return session_path
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from src.config.atomic_write import atomic_write_bytes
 from src.data.json_repository import atomic_write_json, atomic_write_text, snapshot_to_backups
 
 
@@ -61,6 +62,28 @@ def test_atomic_write_text_failure_keeps_old_file(tmp_path) -> None:
         atomic_write_text(path, {"not": "str"})
 
     assert path.read_text(encoding="utf-8") == "OLD=1\n"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_atomic_write_bytes_roundtrip(tmp_path) -> None:
+    path = tmp_path / "img.png"
+    payload = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
+
+    atomic_write_bytes(path, payload)
+
+    assert path.read_bytes() == payload
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_atomic_write_bytes_failure_keeps_old_file_and_cleans_tmp(tmp_path) -> None:
+    """字节写盘中途失败时原文件不动、临时文件被清理（与 json/text 变体同纪律）"""
+    path = tmp_path / "img.png"
+    path.write_bytes(b"OLD")
+
+    with pytest.raises(TypeError):
+        atomic_write_bytes(path, {"not": "bytes"})
+
+    assert path.read_bytes() == b"OLD"
     assert not list(tmp_path.glob("*.tmp"))
 
 
