@@ -190,11 +190,13 @@ class SynergyFetchService(BaseFetchService):
         self.reload_finished.emit()
 
     def _reload_stale(self) -> bool:
-        """重载期间相性文件是否被改动过。"""
+        """重载期间相性文件是否被改动过（含被删除：视同已变化，放弃写回）。"""
         try:
             mtime = os.path.getmtime(self._synergy_manager.file_path)
         except OSError:
-            return False
+            # 文件消失若判"未变化"，启动时旧快照会被写回内存，后续 UI
+            # 保存会把已删除的文件复活（第一轮审查 P3-1）
+            return True
         return mtime != self._reload_mtime
 
     def _on_reload_failed(self, error_msg: str) -> None:

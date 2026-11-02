@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QTimer, Signal
+from src.business.execution.process_termination import (
+    DEFAULT_WATCHDOG_MS,
+    terminate_process_tree,
+)
 
 logger = logging.getLogger(__name__)
 
-# 卡死看门狗默认 30 分钟：维护脚本正常数十秒～数分钟，上限只拦"永不结束"；
+# 卡死看门狗默认 30 分钟：维护脚本正常数十秒～几分钟，上限只拦"永不结束"；
 # 面板 close 只是隐藏不销毁、应用退出也不等子进程，无此兜底就是无限挂
-DEFAULT_WATCHDOG_MS = 30 * 60 * 1000
+# （时限单源定义在 process_termination，语义注释见该模块）
 
 # FailedToStart 时补发 finished 的约定退出码：Qt 对启动失败只发 errorOccurred
 # 不发 finished（Qt6 实证），且看门狗对 NotRunning 进程直接返回、无法兜底。
@@ -164,7 +167,8 @@ class ScriptRunner(QObject):
             "脚本子进程超过 %d 秒未结束（%s），看门狗强制终止",
             self._watchdog_ms // 1000, " ".join(proc.arguments()) or "?",
         )
-        # Qt6 对 Starting 状态 kill() 会在事件循环内原生 abort（fetch_utils 实证），
+        # Qt6 对 Starting 状态 kill() 会在事件循环内原生 abort
+        # （行为锚见 process_termination 模块 docstring），
         # 此时只能等 started 到达后再终止，否则兜底本身会把进程打死
         if proc.state() == QProcess.ProcessState.Starting:
             proc.started.connect(self._on_started_after_watchdog)
@@ -210,12 +214,7 @@ class ScriptRunner(QObject):
         process_id = proc.processId() if hasattr(proc, "processId") else 0
         if os.name == "nt" and process_id:
             try:
-                subprocess.Popen(
-                    ["taskkill", "/PID", str(process_id), "/T", "/F"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
+                terminate_process_tree(process_id)
                 return
             except OSError as error:
                 logger.warning("进程树清理启动失败，改为终止主进程: %s", error)

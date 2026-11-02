@@ -312,7 +312,7 @@ AI 生成    武将数据 + Prompt(+RAG语料) → LLM → JSON 提取 → 校�
 - AI 批量生成额外持有 OS 级文件互斥锁（`src/scraper/ai/generation_lock.py`，Windows `msvcrt` / POSIX `fcntl`）：两个生成进程并发"全量覆盖"会静默抹掉对方成果，故同一时刻只允许一个批量任务运行；持有进程退出（含崩溃断电）锁由 OS 自动释放，无残留锁需人工清理。锁文件不可用时降级为哑锁放行并告警，不因锁机制故障阻断生成。
 - OCR 全部任务（预热 / 常规识别 / 官方整批导入 / 巅峰赛识别）共享唯一 `OcrWorker` 的 FIFO 队列，互斥由 `OcrService._import_busy` 串行化；轮询全程内存处理不写磁盘。
 - 启动阶段 OCR 模型在启动画面期间阻塞预热（`wait_ocr_warmup(timeout_ms=120_000)`），避免 OCR 引擎初始化持有 GIL 时卡住事件循环。
-- QProcess 子进程统一带 30 分钟看门狗（`script_runner.DEFAULT_WATCHDOG_MS`），超时**树杀**整棵进程树（Windows `taskkill /T /F`，子脚本拉起的浏览器/同步进程不会被孤儿化）并延迟 2 秒复查，仍在运行则直接终止主进程；Starting 状态下 `kill()` 会在事件循环内原生 abort，改由 `started` 信号到达后补杀。各任务成败写任务台账 `logs/task_results.jsonl`（跨日志轮转窗口可回溯）。
+- QProcess 子进程统一带 30 分钟看门狗（时限单源：`business/execution/process_termination.DEFAULT_WATCHDOG_MS`，两套编排共用；fetch 侧为"无进度窗口"语义——进度行持续喂狗，正常任务超 30 分钟也放行），超时**树杀**整棵进程树（Windows `taskkill /T /F`，子脚本拉起的浏览器/同步进程不会被孤儿化）并延迟 2 秒复查，仍在运行则直接终止主进程；Starting 状态下 `kill()` 会在事件循环内原生 abort，改由 `started` 信号到达后补杀。各任务成败写任务台账 `logs/task_results.jsonl`（跨日志轮转窗口可回溯）。
 - 启动失败有明确契约：Qt6 对 `FailedToStart` 只发 `errorOccurred` 不发 `finished`，`ScriptRunner` 统一在错误通道收尾（停看门狗、`deleteLater`），Linux 上异步失败补发 `finished(FAILED_TO_START_EXIT_CODE=-1)` 兑现"返回 True 必收到一次终态"，Windows 同步失败则以返回值 `False` 表达——调用方不会永久卡在忙碌态（VUL-B2-001）。
 - 主窗口关闭时 `shutdown_fetch_services()` 一并中止抓取子进程树：QProcess 随父对象析构不杀子进程，浏览器模式会孤儿化 Edge/node 并锁住 `data/edge_profile`，下次启动报 locked（VUL-B2-002）。
 

@@ -76,11 +76,12 @@ def test_script_runner_watchdog_kills_process_tree(qapp, monkeypatch) -> None:
     继续占用网络与文件句柄。替身无 processId 时降级 kill，故用 monkeypatch
     验证委托关系本身。
     """
+    import src.business.execution.process_termination as pt
     import src.business.execution.script_runner as sr
 
     launched = []
     monkeypatch.setattr(sr.os, "name", "nt")
-    monkeypatch.setattr(sr.subprocess, "Popen", lambda *a, **kw: launched.append((a, kw)))
+    monkeypatch.setattr(pt.subprocess, "Popen", lambda *a, **kw: launched.append((a, kw)))
 
     class _PidProc(_FakeProc):
         def processId(self):
@@ -100,11 +101,12 @@ def test_script_runner_watchdog_kills_process_tree(qapp, monkeypatch) -> None:
 def test_script_runner_watchdog_defers_kill_while_starting(qapp, monkeypatch) -> None:
     """回归（VUL-B2-003）：Starting 状态不得直接 kill（Qt6 会原生 abort），
     改为挂到 started 信号后再补树杀，避免兜底本身打死进程。"""
+    import src.business.execution.process_termination as pt
     import src.business.execution.script_runner as sr
 
     launched = []
     monkeypatch.setattr(sr.os, "name", "nt")
-    monkeypatch.setattr(sr.subprocess, "Popen", lambda *a, **kw: launched.append(a))
+    monkeypatch.setattr(pt.subprocess, "Popen", lambda *a, **kw: launched.append(a))
 
     from PySide6.QtCore import QProcess
 
@@ -196,11 +198,12 @@ def test_script_runner_recheck_kills_same_stuck_process(qapp) -> None:
 
 def test_script_runner_cancel_kills_running_process_tree(qapp, monkeypatch, caplog) -> None:
     """退出协议（P2-2）：cancel 主动终止运行中的任务，走树杀而非裸 kill。"""
+    import src.business.execution.process_termination as pt
     import src.business.execution.script_runner as sr
 
     launched = []
     monkeypatch.setattr(sr.os, "name", "nt")
-    monkeypatch.setattr(sr.subprocess, "Popen", lambda *a, **kw: launched.append(a))
+    monkeypatch.setattr(pt.subprocess, "Popen", lambda *a, **kw: launched.append(a))
 
     class _PidProc(_FakeProc):
         def processId(self):

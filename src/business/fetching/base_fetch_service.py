@@ -18,6 +18,7 @@ import time
 from subprocess import Popen
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+from src.business.execution.process_termination import DEFAULT_WATCHDOG_MS
 from src.business.fetching.fetch_utils import (
     cancel_process,
     get_qprocess_error_name,
@@ -207,8 +208,9 @@ class BaseFetchService(QObject):
     # 卡死看门狗：每条进度行（START/OK/FAIL/SKIP/重试/休息）都会重置计时，
     # 30 分钟上限只拦"无任何进度的黑洞化"——正常任务单条 1~3 分钟属正常，
     # browser 模式配对间还有反风控随机休息，长清单全程超 30 分钟也必须放行；
-    # 否则 _is_busy 永久 True，只有用户手点取消才能恢复
-    _WATCHDOG_TIMEOUT_MS = 30 * 60 * 1000
+    # 否则 _is_busy 永久 True，只有用户手点取消才能恢复。
+    # 时限单源见 process_termination.DEFAULT_WATCHDOG_MS（fetch 侧语义=无进度窗口）
+    _WATCHDOG_TIMEOUT_MS = DEFAULT_WATCHDOG_MS
 
     def _start_watchdog(self) -> None:
         self._watchdog_timer = QTimer(self)

@@ -516,9 +516,9 @@ class ScriptRunner(QObject):
 - `is_running()` 防并发（同一时刻只允许一个任务）
 - `output(bytes)` / `finished(int)` 信号
 - `run(python, script, args, working_dir)` 启动；已有任务返回 False；`script=None` 时 `args` 需自带入口参数（如 `["-m", 模块名]`）
-- **看门狗（b3327f1 → f1b13f8）**：`DEFAULT_WATCHDOG_MS = 30*60*1000`，`__init__` 接受 `watchdog_ms` 参数；`run()` 启动子进程后开启 QTimer 单发定时器；超时回调记 ERROR（含超时秒数与命令行参数）后 `_kill_process_tree(proc)` + `_schedule_recheck(proc)`（`WATCHDOG_RECHECK_MS = 2000` 延迟复查）；`_on_finished`/`_stop_watchdog` 停表清理。`_stop_watchdog` 对尚处 `Starting` 的进程挂 `started` → `_on_started_after_watchdog`，等进程真正起来后补树杀——Qt6 对 `Starting` 状态 `kill()` 会在事件循环内原生 abort。
+- **看门狗（b3327f1 → f1b13f8）**：`DEFAULT_WATCHDOG_MS = 30*60*1000`（时限单源定义在 `business/execution/process_termination.py`，与 `base_fetch_service._WATCHDOG_TIMEOUT_MS` 共用；fetch 侧为"无进度窗口"语义，见该模块注释），`__init__` 接受 `watchdog_ms` 参数；`run()` 启动子进程后开启 QTimer 单发定时器；超时回调记 ERROR（含超时秒数与命令行参数）后 `_kill_process_tree(proc)` + `_schedule_recheck(proc)`（`WATCHDOG_RECHECK_MS = 2000` 延迟复查）；`_on_finished`/`_stop_watchdog` 停表清理。`_stop_watchdog` 对尚处 `Starting` 的进程挂 `started` → `_on_started_after_watchdog`，等进程真正起来后补树杀——Qt6 对 `Starting` 状态 `kill()` 会在事件循环内原生 abort。
 - **启动失败终态通知（14bffaf / 07606ce，VUL-B2-001）**：`errorOccurred` 连接 `_on_error_occurred`，`FailedToStart` 时 Qt 不发 `finished`（Qt6 实证），必须在此清理状态，否则僵尸 QProcess 与看门狗会残留（看门狗到期会误杀后续健康任务）。是否补发 `finished` 取决于时序：Windows 的 `FailedToStart` 在 `start()` 内同步触发，此时 `run()` 尚未返回，用返回值 False 表达失败、不发 `finished`；Linux 上错误由事件循环异步回报，`run()` 已返回 True，必须补发 `finished(FAILED_TO_START_EXIT_CODE = -1)` 兑现"返回 True 必收到一次 finished"的契约，否则调用方的忙碌状态永远无法复位。
-- **树杀与复查（2b73535）**：`_kill_process_tree()` 在 Windows 上用 `taskkill /PID <pid> /T /F` 终止整棵进程树（子脚本会再拉起浏览器/同步脚本，只杀主进程会把它们孤儿化）；`_schedule_recheck()` 延迟复查绑定具体 proc（超时进程若在延迟窗口内结束、调用方紧接着启动下一个任务，读 `self._proc` 会拿错对象并误杀新进程）。
+- **树杀与复查（2b73535）**：`_kill_process_tree()` 在 Windows 上经 `process_termination.terminate_process_tree()`（`taskkill /PID <pid> /T /F` 执行体单源，fetch_utils.cancel_process 共用）终止整棵进程树（子脚本会再拉起浏览器/同步脚本，只杀主进程会把它们孤儿化）；`_schedule_recheck()` 延迟复查绑定具体 proc（超时进程若在延迟窗口内结束、调用方紧接着启动下一个任务，读 `self._proc` 会拿错对象并误杀新进程）。
 - **状态提交时序**：`_proc` / `_watchdog` 必须先于 `start()` 提交——`FailedToStart` 在 Windows 上于 `start()` 内部同步发出，若此时状态尚未就位，`_on_finished` 的清理会全部落空，留下僵尸 QProcess 和一个永不停止的看门狗（后者到期时会 kill 掉当前正在跑的另一个健康进程）。
 - `_on_finished(code, notify=True)`：置 `_proc = None` 并 `proc.deleteLater()` 后发 `finished(code)`——先清引用再广播，保证 `finished` 回调里再次 `run()` 不会被 `is_running()` 误拦；`notify=False` 用于启动失败路径（那一次 `run()` 尚未返回，用返回值表达失败即可）。
 
@@ -941,7 +941,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 
 **新增**
 - `src/config/task_ledger.py`（c88bf63，67 行）：任务结果台账，`record_task()` / `read_entries()` API，JSONL 追加 `logs/task_results.jsonl`（跨日志轮转窗口留痕）；写入点五处（base_fetch_service / indexer / maintain_rag / pull_data / ops）
-- QProcess 看门狗（b3327f1）：`script_runner.DEFAULT_WATCHDOG_MS = 30min`（QTimer 单发 kill + ERROR）与 `base_fetch_service._WATCHDOG_TIMEOUT_MS` 同规格接线——消除 AI 生成卡网络时 `_is_busy` 永久 True 的挂死
+- QProcess 看门狗（b3327f1）：`script_runner.DEFAULT_WATCHDOG_MS = 30min`（QTimer 单发 kill + ERROR）与 `base_fetch_service._WATCHDOG_TIMEOUT_MS` 同规格接线——消除 AI 生成卡网络时 `_is_busy` 永久 True 的挂死（两常量现已收敛为 `business/execution/process_termination.py` 单源定义）
 - stderr tqdm 降噪（1426686）：base_fetch stderr 含 `%|` 降 DEBUG，原占 ai_generation.log 89% 的 WARNING 噪声
 
 **修正**

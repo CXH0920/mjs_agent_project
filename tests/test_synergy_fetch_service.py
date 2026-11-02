@@ -119,6 +119,9 @@ class _ReloadWorker:
 def test_reload_from_disk_writes_manager_and_emits_finished(monkeypatch, tmp_path) -> None:
     """重载完成把结果原子写回共享 manager，并广播完成/失败信号（取消生成后保住分批数据）。"""
     manager = SimpleNamespace(file_path=tmp_path / "synergies.json")
+    # 正常写回路径的前提是文件在盘上（mtime 前后一致）；文件不存在属
+    # "放弃写回"场景，由 test_reload_aborts_when_file_deleted_during_reload 锁定
+    manager.file_path.write_text("[]", encoding="utf-8")
     writes: list = []
     manager.replace_loaded_data = lambda synergies, issues: writes.append((synergies, issues))
     service = SynergyFetchService(manager)
@@ -140,6 +143,43 @@ def test_reload_from_disk_writes_manager_and_emits_finished(monkeypatch, tmp_pat
 
     _ReloadWorker.instance.failed.emit("boom")
     assert failures == ["boom"]
+
+
+def test_reload_aborts_when_file_deleted_during_reload(monkeypatch, tmp_path) -> None:
+    """重载期间相性文件被删除时放弃写回，旧快照不得复活成新数据。
+
+    回归（第一轮审查 P3-1）：_reload_stale 曾把"文件已消失"（getmtime 抛
+    OSError）当作"未变化"返回 False，启动时读到的旧快照会被
+    replace_loaded_data 写回内存，后续 UI 保存会把已删除的文件复活。
+    """
+    manager = SimpleNamespace(file_path=tmp_path / "synergies.json")
+    writes: list = []
+    manager.replace_loaded_data = lambda synergies, issues: writes.append((synergies, issues))
+    service = SynergyFetchService(manager)
+    finished: list[bool] = []
+    service.reload_finished.connect(lambda: finished.append(True))
+    monkeypatch.setattr(
+        "src.business.fetching.synergy_fetch_service.SynergyReloadWorker", _ReloadWorker
+    )
+    # 第 1 次 getmtime（reload_from_disk 启动时）：文件还在；第 2 次
+    # （_reload_stale 复核时）：文件已被外部删除
+    outcomes: list = [1730000000.0, FileNotFoundError("文件已删除")]
+    monkeypatch.setattr(
+        "src.business.fetching.synergy_fetch_service.os.path.getmtime",
+        lambda _path: (_raise_if_exc(outcomes.pop(0))),
+    )
+
+    assert service.reload_from_disk() is True
+    _ReloadWorker.instance.loaded.emit([{"pair": (1, 2)}], [])
+
+    assert writes == []  # 放弃写回：不得把旧快照写回内存
+    assert finished == [True]  # 完成信号照常广播，UI 状态正常复位
+
+
+def _raise_if_exc(outcome):
+    if isinstance(outcome, Exception):
+        raise outcome
+    return outcome
 
 
 def test_reload_from_disk_skips_when_already_running(monkeypatch) -> None:

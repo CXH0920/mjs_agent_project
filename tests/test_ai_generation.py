@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QProcess
-from src.business.fetching import fetch_utils
 from src.business.fetching.base_fetch_service import BaseFetchService
 from src.business.fetching.fetch_utils import cancel_process
 from src.scraper.ai.api_generator import (
@@ -320,6 +319,8 @@ def test_cancel_process_does_not_block_event_loop() -> None:
 
 
 def test_terminate_process_tree_uses_taskkill_for_all_descendants(monkeypatch) -> None:
+    from src.business.execution import process_termination
+
     calls: list[tuple[list[str], dict]] = []
     launched = object()
 
@@ -327,18 +328,18 @@ def test_terminate_process_tree_uses_taskkill_for_all_descendants(monkeypatch) -
         calls.append((args, kwargs))
         return launched
 
-    monkeypatch.setattr(fetch_utils.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(process_termination.subprocess, "Popen", fake_popen)
 
-    assert fetch_utils._terminate_process_tree(2468) is launched
+    assert process_termination.terminate_process_tree(2468) is launched
     assert calls == [
         (
             ["taskkill", "/PID", "2468", "/T", "/F"],
             {
-                "stdout": fetch_utils.subprocess.DEVNULL,
-                "stderr": fetch_utils.subprocess.DEVNULL,
-                "creationflags": getattr(fetch_utils.subprocess, "CREATE_NO_WINDOW", 0),
+                "stdout": process_termination.subprocess.DEVNULL,
+                "stderr": process_termination.subprocess.DEVNULL,
+                "creationflags": getattr(process_termination.subprocess, "CREATE_NO_WINDOW", 0),
             },
-        ),
+        )
     ]
 
 

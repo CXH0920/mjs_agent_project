@@ -14,6 +14,7 @@ import subprocess
 from dataclasses import dataclass
 
 from PySide6.QtCore import QProcess
+from src.business.execution.process_termination import terminate_process_tree
 
 logger = logging.getLogger(__name__)
 _GENERATION_PROGRESS_PATTERN = re.compile(
@@ -95,7 +96,8 @@ def cancel_process(process: QProcess | None) -> subprocess.Popen | None:
     """请求终止当前 QProcess，并在 Windows 上异步清理整棵进程树。
 
     尚处 Starting 的进程不在此处理：此时 processId() 为 0、树杀会退化为
-    kill()，而 Qt6 对 Starting 状态的 kill() 会在事件循环内原生 abort。
+    kill()，而 Qt6 对 Starting 状态的 kill() 会在事件循环内原生 abort
+    （行为锚见 process_termination 模块 docstring）。
     调用方须等 started 信号后再调用本函数（见 BaseFetchService.cancel）。
     """
     if process and process.state() == QProcess.ProcessState.Starting:
@@ -105,21 +107,11 @@ def cancel_process(process: QProcess | None) -> subprocess.Popen | None:
         process_id = process.processId() if hasattr(process, "processId") else 0
         if os.name == "nt" and process_id:
             try:
-                return _terminate_process_tree(process_id)
+                return terminate_process_tree(process_id)
             except OSError as exc:
                 logger.warning("无法启动进程树清理，改为终止主进程: %s", exc)
         process.kill()
     return None
-
-
-def _terminate_process_tree(process_id: int) -> subprocess.Popen:
-    """异步结束指定 PID 及其全部子进程，避免阻塞 Qt 主线程。"""
-    return subprocess.Popen(
-        ["taskkill", "/PID", str(process_id), "/T", "/F"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
 
 
 def get_qprocess_error_name(error: QProcess.ProcessError) -> str:
