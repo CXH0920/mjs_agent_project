@@ -19,8 +19,8 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSplashScreen
 from src.config.env import BUNDLE_ROOT, IS_FROZEN, PROJECT_ROOT
 from src.config.version import app_version
-from src.ui.app.chinese_translator import install_chinese_qt_translator
 from src.ui.app.main_window import MainWindow
+from src.ui.shared.chinese_translator import install_chinese_qt_translator
 from src.ui.shared.style import GLOBAL_STYLE
 
 logger = logging.getLogger(__name__)

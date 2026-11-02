@@ -1060,7 +1060,6 @@ def apply_incremental_update(data_dir, update)
 | app/frame_fingerprint.py | 33 | 整帧降采样指纹（32×18 灰度，MAD 阈值 3.0） |
 | app/status_chips.py | 75 | 状态栏胶囊（常驻状态展示与点击打开配置） |
 | app/disclaimer_dialog.py | 68 | QDialog（免责声明对话框） |
-| app/chinese_translator.py | 96 | Qt 标准控件中文翻译安装 |
 | app/app_icon.py | 59 | 应用图标（多目录回退定位） |
 | generation/ai_generation_workflow.py | 400 | QObject（攻略与相性 UI 工作流） |
 | generation/backend_choose_dialog.py | 207 | QDialog（后端选择 + RAG 增强/经典模式） |
@@ -1121,6 +1120,7 @@ def apply_incremental_update(data_dir, update)
 | shared/persist.py | 67 | UI 尺寸/几何持久化 |
 | shared/faction_colors.py | 55 | 势力配色读取（`sort_factions_by_config()` 按配置数组位置排序） |
 | shared/markdown_renderer.py | 17 | Markdown → HTML |
+| shared/chinese_translator.py | 96 | Qt 标准控件中文翻译安装（自 ui/app 下沉） |
 
 > 合计 79 个 UI 模块文件。行数随迭代变动，以仓库实际为准。
 

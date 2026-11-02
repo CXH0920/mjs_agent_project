@@ -38,7 +38,6 @@ src/ui/
 │   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器
 │   ├── disclaimer_dialog.py    # 免责声明对话框（637102b 合规化改造）
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
-│   ├── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器
 │   ├── onboarding_dialog.py    # 首启向导：三段一页式体检（环境自检 → 模拟器连接 → 试识别）
 │   └── onboarding_fixes.py     # doctor 修复文案 → 首启向导动作映射（frozen 语境改写）
 ├── library/                    # 资料库：武将浏览、编辑、卡牌与武将获取
@@ -106,6 +105,7 @@ src/ui/
 │   ├── widgets.py              # DoubleClickLabel、PageHeader、PageActionBar、EmptyState 等共享控件
 │   ├── persist.py              # run_edit_dialog 模态编辑对话框标准保存循环
 │   ├── hero_dialogs.py         # HeroSkillDialog
+│   ├── chinese_translator.py   # Qt 标准控件中文翻译 + QMessageBox 详情按钮过滤器（自 ui/app 下沉，破包级环）
 │   ├── faction_colors.py       # 势力配色读取、兜底和缓存
 │   ├── portrait.py             # 头像路径两级回退 find_portrait_path + load_portrait LRU 缓存
 │   ├── hero_select_dialog.py   # 武将选择对话框基类

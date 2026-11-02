@@ -21,7 +21,7 @@
 src/
 ├── main.py                  # 应用入口（QApplication + MainWindow 构建）
 ├── ui/app/app_icon.py        # 应用图标加载、缓存与顶层窗口图标维护
-├── ui/app/chinese_translator.py  # Qt 标准控件中文翻译 + QMessageBox 详情按钮事件过滤器
+├── ui/shared/chinese_translator.py  # Qt 标准控件中文翻译 + QMessageBox 详情按钮事件过滤器（自 ui/app 下沉）
 ├── ui/app/onboarding_dialog.py   # 首启向导：三段一页式体检（环境自检→模拟器连接→试识别）
 ├── ui/app/onboarding_fixes.py    # doctor 修复文案→向导动作映射（一键修复按钮文案/模块名）
 ├── config/
@@ -365,8 +365,8 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 | `mark_step(step, state_file)` | `onboarding_state.py` | `None` | 记录单个引导步骤完成时间（step ∈ STEP_KEYS）；未知步骤抛 `ValueError` |
 | `mark_skipped(state_file)` | `onboarding_state.py` | `None` | 记录跳过引导，此后不再自动弹出（直至版本升版或 `reset()`） |
 | `reset(state_file)` | `onboarding_state.py` | `None` | 清除状态文件，供「帮助 → 重看首启引导」与自测复现使用 |
-| `install_chinese_qt_translator(app)` | `ui/app/chinese_translator.py` | `ChineseQtTranslator` | 安装应用级 Qt 标准控件中文翻译器 |
-| `install_details_button_translator(msgbox)` | `ui/app/chinese_translator.py` | `_DetailsButtonFilter` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"），随对话框销毁；Qt 内部展开/收起时直接 setText 不走 QTranslator，需在 layout 变化时遍历子按钮翻译 |
+| `install_chinese_qt_translator(app)` | `ui/shared/chinese_translator.py` | `ChineseQtTranslator` | 安装应用级 Qt 标准控件中文翻译器 |
+| `install_details_button_translator(msgbox)` | `ui/shared/chinese_translator.py` | `_DetailsButtonFilter` | 为 QMessageBox 安装详情按钮翻译过滤器（"查看详情/隐藏详情"），随对话框销毁；Qt 内部展开/收起时直接 setText 不走 QTranslator，需在 layout 变化时遍历子按钮翻译 |
 
 ---
 
@@ -391,7 +391,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 | 依赖 | `src.config.disclaimer_state` | `main.py` 启动时以 `should_show()` 判定是否弹免责声明、`accept()` 落盘确认状态（仅文本版本变化时要求重新确认） |
 | 依赖 | `src.config.onboarding_state` | `main.py` 窗口显示后以 `should_show_state()` 判定是否弹首启向导；`onboarding_dialog` 各段经 `mark_step()` 记录完成、`mark_skipped()` 记录跳过（6962151） |
 | 依赖 | `src.ui.app.onboarding_dialog` / `src.ui.app.onboarding_fixes` | 首启向导三段体检（环境自检→模拟器连接→试识别）与 doctor 修复文案映射；`dialog_coordinator.open_onboarding()` 外层包异常保护（12c7efb） |
-| 依赖 | `src.ui.app.app_icon` / `src.ui.app.chinese_translator` / `src.ui.shared.style` | 启动阶段安装应用图标、Qt 标准控件中文翻译器与全局样式表 `GLOBAL_STYLE` |
+| 依赖 | `src.ui.app.app_icon` / `src.ui.shared.chinese_translator` / `src.ui.shared.style` | 启动阶段安装应用图标、Qt 标准控件中文翻译器与全局样式表 `GLOBAL_STYLE` |
 | 依赖（传递） | `src.business.emulator.capture_service` → `src.business.recognition.ocr_worker` → `src.ocr.engine_loader` | 启动页阶段完成 OCR 引擎冷加载（RapidOCR/ONNX 双套件），主入口仅触发、不直接引用 |
 | 依赖 | `runpy`（frozen 重入） | `-m` 子脚本以模块模式运行，避免 exe 重入拉起 GUI |
 ---

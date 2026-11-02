@@ -130,7 +130,11 @@ class CheckableComboBox(QWidget):
     def closePopup(self) -> None:
         """关闭并释放弹出的选择面板（组件销毁前调用，避免回调访问已删除对象）。"""
         if self._popup is not None:
+            # close() 先走 Hide 事件序列（移除 app 级过滤器、箭头复位），
+            # deleteLater() 补真正的对象释放——弹层挂 window() 不随组件连坐，
+            # 仅 close 会残留隐藏实例（#30 已发生过可见浮层残留）
             self._popup.close()
+            self._popup.deleteLater()
             self._popup = None
 
     def _update_display(self) -> None:
