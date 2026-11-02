@@ -675,7 +675,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 修复——修复子进程游离于 fetch 退出协议外，退出后会孤儿化继续写 data/）
     # 592 → 599：三面板装配共享捕获单飞锁（第 13 批审查 P1-1）——跨面板重叠
     # 请求曾因广播回调错配清空对局阵容，共享锁 + owner 校验封住该路径
-    "ui/app/main_window.py": 599,
+    # 599 → 620：构造期模态框挂起机制（第一轮 P2-3 / 第 12 批 [P3-2]）——置顶
+    # splash 会盖住 _load_data 构造期弹出的确认框，表现为启动假死；拆出
+    # _handle_missing_references + showEvent 延迟补弹，窗口显示前零模态交互
+    "ui/app/main_window.py": 620,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，

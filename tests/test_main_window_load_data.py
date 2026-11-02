@@ -3,6 +3,8 @@
 
 该弹窗链是"传小数据构造 MainWindow 会卡死"的根源（J3），也是组合根改造的
 护栏：拆分后"失效关联 → 确认 → 修复落盘 → 完成提示"的行为必须逐项不变。
+第一轮 P2-3 起，窗口未显示（启动画面仍置顶）时弹窗挂起、显示后补弹——
+本文件同时锚定"已显示立即弹（F5 重载路径）"与"未显示挂起 + 补弹"两侧。
 """
 
 from __future__ import annotations
@@ -44,13 +46,16 @@ def _corpus_with_broken_reference(tmp_path: Path) -> DataFacade:
     return DataFacade(heroes, synergies, guides)
 
 
-def _window_with(facade: DataFacade) -> MainWindow:
+def _window_with(facade: DataFacade, visible: bool = True) -> MainWindow:
     window = MainWindow.__new__(MainWindow)
     window._data = facade
     # _load_data 的失败弹窗/标记已外移 DialogCoordinator（首启向导 T10），注入真实例
     from src.ui.app.dialog_coordinator import DialogCoordinator
 
     window._dialogs = DialogCoordinator(window)
+    # 骨架无 C++ 对象，isVisible 需显式注入：True = 已显示窗口（F5 重载路径，
+    # 弹窗立即弹）；False = 构造期（启动画面期间，弹窗挂起等补弹）
+    window.isVisible = lambda: visible
     return window
 
 
@@ -147,7 +152,7 @@ def test_load_data_with_consistent_corpus_shows_no_dialog(tmp_path: Path, monkey
 
 
 def test_load_data_failure_shows_warning(tmp_path: Path, monkeypatch) -> None:
-    """加载抛异常时弹"数据加载失败"告警而非崩溃。"""
+    """加载抛异常时（窗口已显示）弹"数据加载失败"告警而非崩溃。"""
     facade = _corpus_with_broken_reference(tmp_path)
     window = _window_with(facade)
     recorded = _patch_boxes(monkeypatch, main_window_module.QMessageBox.StandardButton.Yes)
@@ -160,3 +165,81 @@ def test_load_data_failure_shows_warning(tmp_path: Path, monkeypatch) -> None:
 
     assert any("数据加载失败" in text and "磁盘错误" in text for text in recorded["warning"])
     assert window._dialogs._data_error == "磁盘错误"  # 失败标记留痕（首启向导段 1 读）
+
+
+# ---------------------------------------------------------------------------
+# 第一轮 P2-3：窗口未显示（启动画面期间）弹窗挂起，显示后补弹
+# ---------------------------------------------------------------------------
+
+def test_load_data_defers_prompts_while_not_visible(tmp_path: Path, monkeypatch) -> None:
+    """构造期（未显示）发现失效关联：不弹任何模态框，挂起等窗口显示。"""
+    facade = _corpus_with_broken_reference(tmp_path)
+    window = _window_with(facade, visible=False)
+    recorded = _patch_boxes(monkeypatch, main_window_module.QMessageBox.StandardButton.Yes)
+
+    window._load_data()
+
+    assert recorded == {"question": [], "warning": [], "information": []}
+    assert window._dialogs._pending_missing_references, "失效关联应挂起到 _dialogs 待补弹"
+
+
+def test_load_data_failure_defers_warning_while_not_visible(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """构造期加载失败：标记立即留痕（向导段 1 三态依赖），告警挂起不弹。"""
+    facade = _corpus_with_broken_reference(tmp_path)
+    window = _window_with(facade, visible=False)
+    recorded = _patch_boxes(monkeypatch, main_window_module.QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        facade, "load_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("磁盘错误")),
+    )
+
+    window._load_data()
+
+    assert recorded["warning"] == []
+    assert window._dialogs._data_error == "磁盘错误"  # 标记不受挂起影响
+    assert window._dialogs._load_failed_warning_pending
+
+
+def test_flush_pending_prompts_after_show(tmp_path: Path, monkeypatch) -> None:
+    """窗口显示后补弹：挂起的失效关联经 flush 走完整修复链，且幂等不重弹。"""
+    facade = _corpus_with_broken_reference(tmp_path)
+    window = _window_with(facade, visible=False)
+    recorded = _patch_boxes(monkeypatch, main_window_module.QMessageBox.StandardButton.Yes)
+
+    window._load_data()
+    assert recorded["question"] == []
+
+    window._flush_pending_data_prompts()  # showEvent → singleShot(0) 的回调体
+
+    assert any("发现数据关联问题" in text for text in recorded["question"])
+    assert recorded["information"], "确认修复后应弹完成提示"
+    data = json.loads((tmp_path / "synergies.json").read_text(encoding="utf-8"))
+    assert [item["hero_b_id"] for item in data] == [2]  # 失效相性已修复删除
+    assert window._dialogs._pending_missing_references is None
+
+    question_count = len(recorded["question"])
+    window._flush_pending_data_prompts()  # 幂等：无挂起时无操作
+    assert len(recorded["question"]) == question_count
+
+
+def test_flush_pending_load_failed_warning(tmp_path: Path, monkeypatch) -> None:
+    """挂起的加载失败告警经 show_pending_load_failed 补弹一次，不重弹。"""
+    facade = _corpus_with_broken_reference(tmp_path)
+    window = _window_with(facade, visible=False)
+    recorded = _patch_boxes(monkeypatch, main_window_module.QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        facade, "load_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("磁盘错误")),
+    )
+    window._load_data()
+
+    window._dialogs.show_pending_load_failed()
+
+    assert any("数据加载失败" in text and "磁盘错误" in text for text in recorded["warning"])
+    assert not window._dialogs._load_failed_warning_pending
+
+    warning_count = len(recorded["warning"])
+    window._dialogs.show_pending_load_failed()  # 幂等
+    assert len(recorded["warning"]) == warning_count

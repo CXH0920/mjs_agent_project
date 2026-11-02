@@ -129,7 +129,9 @@ def test_compare_resolution_status(actual, expected_status):
 # ---------------------------------------------------------------------------
 
 def test_load_data_sets_and_clears_error_marker(monkeypatch):
-    """load_all 抛异常时 _dialogs._data_error 留痕并弹告警；重载成功后清空标记。"""
+    """load_all 抛异常时 _dialogs._data_error 立即留痕（向导段 1 三态依赖）；
+    窗口未显示期间告警挂起不弹，显示后经 show_pending_load_failed 补弹
+    （第一轮 P2-3：置顶启动画面会盖住构造期模态框）；重载成功后清空标记。"""
     from PySide6.QtWidgets import QApplication
     from src.data.guide_manager import GuideManager
     from src.data.hero_manager import HeroManager
@@ -158,7 +160,10 @@ def test_load_data_sets_and_clears_error_marker(monkeypatch):
 
         monkeypatch.setattr(window._data, "load_all", boom)
         window._load_data()
-        assert window._dialogs._data_error == "heroes.json 缺失"
+        assert window._dialogs._data_error == "heroes.json 缺失"  # 标记立即留痕
+        assert shown == []  # 窗口未显示：告警挂起，不被启动画面盖住
+
+        window._dialogs.show_pending_load_failed()  # 窗口显示后补弹
         assert any("数据加载失败" in text and "heroes.json 缺失" in text for text in shown)
 
         monkeypatch.setattr(window._data, "load_all", lambda: LoadReport())

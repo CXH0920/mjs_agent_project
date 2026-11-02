@@ -31,6 +31,10 @@ class DialogCoordinator:
     def __init__(self, window) -> None:
         self._window = window
         self._data_error: str | None = None
+        # 窗口未显示（启动画面仍置顶）时挂起的加载失败告警，由主窗显示后补弹
+        self._load_failed_warning_pending = False
+        # 同场景挂起的失效关联确认（数据加载侧的问题提示统一收本类，主窗字段不膨胀）
+        self._pending_missing_references: list | None = None
         # 历次向导实例都登记（向导关闭不销毁对象，修复任务后台跑完是既有语义）；
         # 应用退出时逐个终止其修复子进程，防孤儿进程继续写 data/
         self._onboarding_dialogs: list = []
@@ -247,18 +251,44 @@ class DialogCoordinator:
             dialog.shutdown_fix_task()
 
     def note_load_failed(self, message: str) -> None:
-        """数据加载失败：留 _data_error 标记并弹告警（自 MainWindow._load_data 外移，
-        弹窗与标记同源；首启向导段 1 读该标记作数据行"加载失败"态）。"""
+        """数据加载失败：留 _data_error 标记并按需弹告警（自 MainWindow._load_data 外移，
+        弹窗与标记同源；首启向导段 1 读该标记作数据行"加载失败"态）。
+
+        窗口未显示（置顶启动画面未撤）时只标记不弹——模态框会被盖住表现为
+        启动假死（第一轮 P2-3），由主窗显示后经 show_pending_load_failed 补弹；
+        标记始终立即写入，向导段 1 三态判定不受挂起影响。
+        """
         self._data_error = message
+        self._load_failed_warning_pending = not self._window.isVisible()
+        if not self._load_failed_warning_pending:
+            self._show_load_failed_warning(message)
+
+    def _show_load_failed_warning(self, message: str) -> None:
         QMessageBox.warning(
             self._window, "数据加载失败",
             f"无法加载数据文件:\n{message}"
             "\n\n请确保 data/ 目录下存在 heroes.json 文件。"
         )
 
+    def show_pending_load_failed(self) -> None:
+        """主窗显示后补弹挂起的加载失败告警；无挂起则无操作（幂等可重入）。"""
+        if self._load_failed_warning_pending:
+            self._load_failed_warning_pending = False
+            self._show_load_failed_warning(self._data_error or "")
+
+    def note_missing_references_pending(self, missing: list) -> None:
+        """记录窗口显示前发现的失效关联，等主窗显示后补弹确认。"""
+        self._pending_missing_references = missing
+
+    def take_missing_references_pending(self) -> list | None:
+        """取走挂起的失效关联（取后清空，供幂等补弹）。"""
+        pending, self._pending_missing_references = self._pending_missing_references, None
+        return pending
+
     def clear_data_error(self) -> None:
-        """数据重新加载前清除旧失败标记。"""
+        """数据重新加载前清除旧失败标记与挂起的告警。"""
         self._data_error = None
+        self._load_failed_warning_pending = False
 
     # ────────────────────────────────────────────────
     # 采集入口（委托给 HeroFetchService）

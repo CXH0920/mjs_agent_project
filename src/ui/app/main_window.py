@@ -244,6 +244,18 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
             self._poll_coordinator.resume_from_idle_pause()
 
+    def showEvent(self, event) -> None:
+        """窗口显示后补弹构造期挂起的数据问题（延迟一拍，确保启动画面已撤场）。"""
+        super().showEvent(event)
+        QTimer.singleShot(0, self._flush_pending_data_prompts)
+
+    def _flush_pending_data_prompts(self) -> None:
+        """补弹窗口显示前挂起的数据加载问题；无挂起则无操作（幂等可重入）。"""
+        self._dialogs.show_pending_load_failed()
+        pending = self._dialogs.take_missing_references_pending()
+        if pending:
+            self._handle_missing_references(pending)
+
     # ---------------------------------------------------------------
     # 菜单栏
     # ---------------------------------------------------------------
@@ -531,7 +543,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------
 
     def _load_data(self) -> None:
-        """加载所有数据"""
+        """加载所有数据；窗口未显示时关联问题挂起，显示后补弹（不做构造期模态交互）"""
         # 失败标记落 _dialogs（向导段 1 读三态）；last_load_report 异常时不覆盖有假阴性
         self._dialogs.clear_data_error()
         try:
@@ -539,38 +551,47 @@ class MainWindow(QMainWindow):
             missing_references = [issue for issue in report.issues if issue.kind == "missing_reference"]
             if not missing_references:
                 return
-            reply = QMessageBox.question(
-                self,
-                "发现数据关联问题",
-                f"检测到 {len(missing_references)} 项失效关联。\n\n"
-                "是否修复并保存？修复前会自动创建备份。",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                QMessageBox.warning(
-                    self,
-                    "数据未修改",
-                    "已保留原始数据。请在修复前避免保存相关数据，以便后续人工检查。",
-                )
-                return
-            from src.business.maintenance.data_management_service import repair_missing_references
-
-            result = repair_missing_references(
-                self._data.heroes, self._data.guides, self._data.synergies
-            )
-            self._data.load_all()
-            QMessageBox.information(
-                self,
-                "数据修复完成",
-                "已修复失效关联："
-                f"删除相性 {result.removed_synergies} 条，"
-                f"删除攻略 {result.removed_guides} 条，"
-                f"清理攻略关联 {result.cleaned_guide_references} 项。",
-            )
+            if self.isVisible():
+                self._handle_missing_references(missing_references)
+            else:
+                # 构造期（置顶 splash 未撤、窗口未 show）弹模态框会被盖住，
+                # 表现为停在启动画面的假死：挂起等 _flush_pending_data_prompts 补弹
+                self._dialogs.note_missing_references_pending(missing_references)
         except Exception as e:
             logger.exception("数据加载失败")
             self._dialogs.note_load_failed(str(e))
+
+    def _handle_missing_references(self, missing_references) -> None:
+        """失效关联确认 → 修复落盘 → 完成提示（窗口已显示时同步执行）。"""
+        reply = QMessageBox.question(
+            self,
+            "发现数据关联问题",
+            f"检测到 {len(missing_references)} 项失效关联。\n\n"
+            "是否修复并保存？修复前会自动创建备份。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            QMessageBox.warning(
+                self,
+                "数据未修改",
+                "已保留原始数据。请在修复前避免保存相关数据，以便后续人工检查。",
+            )
+            return
+        from src.business.maintenance.data_management_service import repair_missing_references
+
+        result = repair_missing_references(
+            self._data.heroes, self._data.guides, self._data.synergies
+        )
+        self._data.load_all()
+        QMessageBox.information(
+            self,
+            "数据修复完成",
+            "已修复失效关联："
+            f"删除相性 {result.removed_synergies} 条，"
+            f"删除攻略 {result.removed_guides} 条，"
+            f"清理攻略关联 {result.cleaned_guide_references} 项。",
+        )
 
     def _reload_data(self) -> None:
         """重新加载数据"""
