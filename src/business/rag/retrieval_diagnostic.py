@@ -61,6 +61,9 @@ class DiagnosticWorker(QThread):
 
     parent=None + LIVE_WORKERS 持有：对话框关闭不连带析构运行中的线程
     （Qt6 对 running QThread 析构是 qFatal，同 suggest_controller #60/#61）。
+    引用必须在 __init__ 即进 LIVE_WORKERS：若等 run() 内才 add，start() 与
+    run() 执行之间的窗口里 GC 会析构 running QThread；创建后必须 start，
+    未启动的 worker 不会触发 finished、将一直留在集合中。
     """
 
     result_ready = Signal(object)  # dict（diagnose 输出）
@@ -72,14 +75,18 @@ class DiagnosticWorker(QThread):
         self._query = query
         self._top_k = top_k
         self._heroes = list(heroes or [])
+        LIVE_WORKERS.add(self)
+        self.finished.connect(self._retire)
 
     def run(self) -> None:
-        LIVE_WORKERS.add(self)
         try:
             self.result_ready.emit(
                 diagnose(self._query, self._top_k, self._heroes))
         except Exception as error:  # noqa: BLE001 — 失败原因需回 GUI 呈现
             logger.error("检索诊断失败", exc_info=True)
             self.failed.emit(str(error))
-        finally:
-            LIVE_WORKERS.discard(self)
+
+    def _retire(self) -> None:
+        """线程已结束（finished 语义），此时回收引用与 C++ 对象才安全。"""
+        LIVE_WORKERS.discard(self)
+        self.deleteLater()

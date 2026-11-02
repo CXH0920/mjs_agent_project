@@ -159,6 +159,31 @@ def test_apply_updates_groups_by_file_and_reports_errors(tmp_path: Path, monkeyp
     assert [b.block_id for b in session.pending] == ["hero_1_甲"]
 
 
+def test_apply_updates_rejects_blocks_missing_from_session(tmp_path: Path, monkeypatch) -> None:
+    """skip 后的 block_id 再纳入保存集合：先校验后写盘，整批拒绝且不触碰磁盘。"""
+    session = RefinementSession(_corpus(tmp_path))
+    skipped = session.pending[0]
+    session.skip_block(skipped)
+
+    calls: list[str] = []
+
+    def fake_apply(corpus_dir, ups, fname):
+        calls.append(fname)
+        return len(ups)
+
+    monkeypatch.setattr(session_module, "apply_curated", fake_apply)
+
+    saved, errors = session.apply_updates(
+        {"卡牌RAG语料.json": {skipped.block_id: _update()}})
+
+    assert saved == 0
+    assert list(errors) == ["卡牌RAG语料.json"]
+    assert "会话清单中不存在" in errors["卡牌RAG语料.json"]
+    assert calls == []  # 拒绝分支在 apply_curated 之前 continue，磁盘未被触碰
+    assert [b.block_id for b in session.curated] == []  # 内存不迁移
+    assert skipped.block_id not in session.row_states
+
+
 def test_skip_block_drops_state_and_counts(tmp_path: Path) -> None:
     session = RefinementSession(_corpus(tmp_path))
     block = session.pending[0]

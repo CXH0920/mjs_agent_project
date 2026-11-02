@@ -192,4 +192,7 @@ def test_dialog_close_with_running_worker_does_not_crash(monkeypatch):
     # dialog 侧已摘引用；线程由 LIVE_WORKERS 持有，等待自然结束（进程不崩即过）
     assert dialog._worker is None
     assert worker.wait(5000)
+    # 销号挂接在 finished→_retire（排队投递到主线程事件循环），
+    # 生产主线程常驻泵事件；测试侧泵一次兑现同一时序
+    _app().processEvents()
     assert worker not in diag_module.LIVE_WORKERS

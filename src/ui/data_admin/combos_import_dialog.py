@@ -35,12 +35,17 @@ logger = logging.getLogger(__name__)
 
 _NOTE_PREVIEW_LIMIT = 50
 
-# 持有运行中的 worker，防止对话框销毁后 QThread 运行中被 GC 析构（同分类面板 #61）
+# 持有运行中的 worker，防止对话框销毁后 QThread 运行中被 GC 析构（同分类面板 #61）；
+# 引用在 __init__ 即登记（同 suggest_controller 的修正），start~run 空窗不可裸奔
 _LIVE_WORKERS: set = set()
 
 
 class _ImportWorker(QThread):
-    """后台执行组合导入：数据量大时避免主线程冻结。"""
+    """后台执行组合导入：数据量大时避免主线程冻结。
+
+    __init__ 即进 _LIVE_WORKERS、finished 后经 _retire 销号：创建后必须
+    start，未启动的 worker 不会触发 finished、将一直留在集合中。
+    """
 
     finished_ok = Signal(dict)
     failed = Signal(str)
@@ -50,9 +55,10 @@ class _ImportWorker(QThread):
         self._source = source
         self._heroes_path = heroes_path
         self._output_path = output_path
+        _LIVE_WORKERS.add(self)
+        self.finished.connect(self._retire)
 
     def run(self) -> None:
-        _LIVE_WORKERS.add(self)
         try:
             report = run_import(self._source, self._heroes_path, self._output_path)
         except Exception as error:
@@ -60,8 +66,11 @@ class _ImportWorker(QThread):
             self.failed.emit(str(error))
         else:
             self.finished_ok.emit(report)
-        finally:
-            _LIVE_WORKERS.discard(self)
+
+    def _retire(self) -> None:
+        """线程已结束（finished 语义），此时回收引用与 C++ 对象才安全。"""
+        _LIVE_WORKERS.discard(self)
+        self.deleteLater()
 
 
 def _default_source_dir() -> Path:

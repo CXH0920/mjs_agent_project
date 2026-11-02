@@ -37,15 +37,17 @@ logger = logging.getLogger(__name__)
 _CLASSIFICATION_FILTERS = ("全部", "未归类", "已归类")
 
 
-# 持有运行中的 worker，防止页签销毁后 Python 引用丢失导致 QThread 运行中被 GC 析构（#61）
+# 持有运行中的 worker，防止页签销毁后 Python 引用丢失导致 QThread 运行中被 GC 析构（#61）；
+# 引用在 __init__ 即登记（同 suggest_controller 的修正），start~run 空窗不可裸奔
 _LIVE_WORKERS: set = set()
 
 
 class _HeroCategoryWorker(QThread):
     """武将分类 LLM 建议后台线程，避免阻塞 UI。
 
-    parent=None + _LIVE_WORKERS 持有 + finished→deleteLater：生命周期与页签解耦，
-    页签销毁不连带析构运行中的线程。run 结束时释放 generator。
+    parent=None + _LIVE_WORKERS 持有 + finished→_retire 销号自回收：生命周期与
+    页签解耦，页签销毁不连带析构运行中的线程。run 结束时释放 generator。
+    创建后必须 start，未启动的 worker 不会触发 finished、将一直留在集合中。
     """
 
     result_ready = Signal(str, object)  # (hero_name, list[str] | None)
@@ -59,6 +61,8 @@ class _HeroCategoryWorker(QThread):
         self._categories = categories
         self._generator = generator
         self._cancelled = False
+        _LIVE_WORKERS.add(self)
+        self.finished.connect(self._retire)
 
     def cancel(self) -> None:
         """中断：generator.cancel() 让 _call_api 重试循环退出。"""
@@ -68,7 +72,6 @@ class _HeroCategoryWorker(QThread):
             cancel()
 
     def run(self) -> None:
-        _LIVE_WORKERS.add(self)
         try:
             result = suggest_hero_categories(
                 self._hero, self._skills_text, self._position,
@@ -81,9 +84,13 @@ class _HeroCategoryWorker(QThread):
                     close()
                 except Exception as error:
                     logger.warning("分类建议 worker 关闭 generator 失败: %s", error)
-            _LIVE_WORKERS.discard(self)
         if not self._cancelled:
             self.result_ready.emit(self._hero, result)
+
+    def _retire(self) -> None:
+        """线程已结束（finished 语义），此时回收引用与 C++ 对象才安全。"""
+        _LIVE_WORKERS.discard(self)
+        self.deleteLater()
 
 
 class HeroTab(QWidget):
