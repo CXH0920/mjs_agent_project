@@ -85,6 +85,19 @@ def mark_skipped(state_file: Path = _STATE_FILE) -> None:
     logger.info("首启向导已跳过")
 
 
+def mark_completed(state_file: Path = _STATE_FILE) -> None:
+    """记录完成引导，此后不再自动弹出（直至版本升级或 reset）。
+
+    点「完成引导」即视为引导结束（README 承诺"跳过或完成不再打扰"），
+    零步骤完成同样落标记——否则下次启动重弹与承诺冲突（第 12 批 [P3-3]）。
+    """
+    data = _read(state_file)
+    data["completed"] = True
+    data["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    _write(state_file, data)
+    logger.info("首启向导已完成")
+
+
 def reset(state_file: Path = _STATE_FILE) -> None:
     """清除状态文件，供「帮助 → 重看首启引导」与自测复现使用。"""
     try:

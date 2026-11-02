@@ -26,7 +26,7 @@ from src.business.emulator.layout_resolution import compare_resolution
 from src.business.emulator.mumu_config_coordinator import EMULATOR_LABELS, MumuConfigCoordinator
 from src.business.execution.script_runner import ScriptRunner
 from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_mumu_config
-from src.config.onboarding_state import mark_skipped, mark_step
+from src.config.onboarding_state import mark_completed, mark_skipped, mark_step
 from src.scripts.doctor import (
     FAIL,
     PASS,
@@ -534,6 +534,9 @@ class OnboardingDialog(QDialog):
     # ── 收尾
 
     def _on_accepted(self) -> None:
+        # 完成即落 completed：零步骤完成也兑现"完成后不再打扰"（README），
+        # 不落标记会让下次启动重弹（第 12 批 [P3-3]）
+        mark_completed()
         logger.info("首启向导完成")
         self.accept()
 

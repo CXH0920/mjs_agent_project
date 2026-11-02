@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.config.onboarding_state import (
     ONBOARDING_VERSION,
+    mark_completed,
     mark_skipped,
     mark_step,
     reset,
@@ -58,6 +59,19 @@ def test_mark_step_records_and_preserves_other_steps(tmp_path):
     assert data["onboarding_version"] == ONBOARDING_VERSION
     assert set(data["steps"]) == {"env", "device"}
     assert data["skipped"] is False
+    assert should_show_state(state_file) is False
+
+
+def test_mark_completed_writes_state_and_stops_reshow(tmp_path):
+    """零步骤点「完成引导」也落 completed（README"跳过或完成不再打扰"，
+    第 12 批 [P3-3]）；已完成步骤不丢失，下次启动不再弹。"""
+    state_file = tmp_path / ".onboarding_state.json"
+    mark_step("env", state_file)
+    mark_completed(state_file)
+
+    data = json.loads(state_file.read_text(encoding="utf-8"))
+    assert data["completed"] is True
+    assert "env" in data["steps"]  # 已完成步骤保留，不被完成标记清掉
     assert should_show_state(state_file) is False
 
 
@@ -317,12 +331,15 @@ def wizard(monkeypatch, tmp_path):
                         lambda: {"mumu_adb_path": "C:/adb.exe"})
     steps: list[str] = []
     skips: list[bool] = []
+    completions: list[bool] = []
     monkeypatch.setattr(onboarding_dialog, "mark_step", lambda s: steps.append(s))
     monkeypatch.setattr(onboarding_dialog, "mark_skipped", lambda: skips.append(True))
+    monkeypatch.setattr(onboarding_dialog, "mark_completed",
+                        lambda: completions.append(True))
     dialog = OnboardingDialog(window)
     try:
         yield SimpleNamespace(dialog=dialog, capture=capture, window=window,
-                              steps=steps, skips=skips)
+                              steps=steps, skips=skips, completions=completions)
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -381,6 +398,14 @@ def test_skip_writes_state_and_rejects(wizard):
     assert wizard.skips == [True]
     from PySide6.QtWidgets import QDialog as _QDialog
     assert wizard.dialog.result() == _QDialog.DialogCode.Rejected
+
+
+def test_accept_writes_completed_state_and_accepts(wizard):
+    """点「完成引导」：落 completed 标记（零步骤也不例外）并以 Accepted 收场。"""
+    wizard.dialog._on_accepted()
+    assert wizard.completions == [True]
+    from PySide6.QtWidgets import QDialog as _QDialog
+    assert wizard.dialog.result() == _QDialog.DialogCode.Accepted
 
 
 # ── T5：段 2 连接与分辨率体检 ────────────────────────────────────────

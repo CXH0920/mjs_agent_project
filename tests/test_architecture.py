@@ -689,7 +689,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 经协调器转出口，UI 不直连 src.capture），单行替换
     # 552 → 560：shutdown_fix_task——应用退出时终止仍在运行的一键修复子进程
     # （P2-2，第 12 批审查修复；关向导不杀任务、退出才杀，语义与维护面板一致）
-    "ui/app/onboarding_dialog.py": 560,
+    # 560 → 563：_on_accepted 落 completed 标记（第 12 批 [P3-3]）——零步骤
+    # 完成也兑现"完成后不再打扰"，否则下次启动重弹
+    "ui/app/onboarding_dialog.py": 563,
     # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
     # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,

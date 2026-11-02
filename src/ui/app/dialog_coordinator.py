@@ -219,7 +219,7 @@ class DialogCoordinator:
             "名将杀桌面辅助工具\n"
             "面向名将杀手游的轻度玩家\n\n"
             "技术栈: PySide6 + Pydantic + httpx\n"
-            "数据来源: 游戏官网 + DeepSeek API"
+            "数据来源: 游戏官网 + 多供应商 LLM（API 档案可配置）"
         )
 
     def open_onboarding(self) -> None:
