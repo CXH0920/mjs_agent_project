@@ -89,6 +89,17 @@ class BaseHeroSelectDialog(QDialog):
         """构建对话框界面"""
         self._all_heroes = sorted(self._hero_mgr.list_heroes(), key=lambda h: h.id)
         if not self._all_heroes:
+            # 空态无筛选/列表控件，占位 None 让状态方法可安全判空退出，
+            # 不再依赖"信号未连接所以无人调用"的巧合
+            self._search_input = None
+            self._faction_combo = None
+            self._count_label = None
+            self._list_widget = None
+            self._selection_label = None
+            self._selected_tags_label = None
+            self._selected_tags_scroll = None
+            self._selected_tags_layout = None
+            self._ok_btn = None
             layout = QVBoxLayout(self)
             layout.addWidget(PageHeader(self.windowTitle(), tip_text))
             layout.addWidget(EmptyState("暂无武将数据", "请先导入或重新加载武将资料。"), 1)
@@ -197,6 +208,8 @@ class BaseHeroSelectDialog(QDialog):
 
     def _apply_filter(self) -> None:
         """应用筛选，同时保留已选武将。"""
+        if self._search_input is None:
+            return
         search_text = self._search_input.text().strip()
         selected_factions = self._faction_combo.checked_values()
         self._filtered_heroes = [
@@ -265,6 +278,8 @@ class BaseHeroSelectDialog(QDialog):
         self._apply_filter()
 
     def _selected_ids_for_current_mode(self) -> list[int]:
+        if self._list_widget is None:
+            return []
         if self._selection_mode in (SelectionMode.MULTI, SelectionMode.MULTI_LIMIT):
             return [hero.id for hero in self._all_heroes if hero.id in self._selected_id_set]
         selected_items = self._list_widget.selectedItems()
@@ -291,7 +306,7 @@ class BaseHeroSelectDialog(QDialog):
             self._selection_label.setText(self._selection_summary_text(count))
         if self._selected_tags_layout is not None:
             self._refresh_selected_tags(selected_ids)
-        if hasattr(self, "_ok_btn"):
+        if self._ok_btn is not None:
             self._ok_btn.setText(self._accept_button_text(count))
             self._ok_btn.setEnabled(self._can_accept_selection(count))
 
