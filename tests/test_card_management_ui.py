@@ -340,6 +340,50 @@ def test_save_collects_filled_effect_forms_without_clicking_add(tmp_path) -> Non
     assert fields["weaken_effect"][0]["content"] == "伤害降低"
 
 
+def test_effect_area_actions_preserve_unsaved_field_editor_text(tmp_path) -> None:
+    (tmp_path / "cards.json").write_text(json.dumps([
+        {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},
+    ], ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_field_schema.json").write_text(json.dumps({
+        "schema_version": 1,
+        "fields": [
+            {"key": "strengthen_effect", "label": "加强效果", "value_type": "effect_entries"},
+            {"key": "note", "label": "备注", "value_type": "markdown"},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "card_annotations.json").write_text(json.dumps({
+        "schema_version": 1,
+        "annotations": [{"card_id": "8", "fields": {"strengthen_effect": [{
+            "content": "伤害提高", "status": "active",
+            "created_at": "2026-07-26T00:00:00", "updated_at": "2026-07-26T00:00:00",
+        }]}}],
+    }, ensure_ascii=False), encoding="utf-8")
+    service = CardCatalogService(
+        CardRepository(tmp_path / "cards.json"),
+        CardFieldSchemaRepository(tmp_path / "card_field_schema.json"),
+        CardAnnotationRepository(tmp_path / "card_annotations.json"),
+    )
+    service.load_all()
+    _app()
+    dialog = CardAnnotationEditDialog(service, "8")
+
+    # 场景一：普通字段输入未保存时点「标记失效」（触发 _rebuild 全量重建）
+    dialog._editors["note"].setPlainText("手打的备注")
+    dialog._expire_entry("strengthen_effect", 0)
+    assert dialog._editors["note"].toPlainText() == "手打的备注"
+    assert dialog._values["strengthen_effect"][0]["status"] == "expired"
+    # 未保存输入仍在编辑面，dirty 比对应能发现（关闭时会弹丢弃确认）
+    assert dialog._edit_values() != dialog._edit_baseline
+
+    # 场景二：再次输入后点「新增效果记录」触发同一条重建路径
+    dialog._editors["note"].setPlainText("第二段备注")
+    editor, status, _rules = dialog._effect_editors["strengthen_effect"]
+    editor.setPlainText("新增的效果")
+    dialog._save_effect_form("strengthen_effect", editor, status)
+    assert dialog._editors["note"].toPlainText() == "第二段备注"
+    assert dialog._values["strengthen_effect"][1]["content"] == "新增的效果"
+
+
 def test_effect_entry_edit_preserves_creation_time_and_updates_modified_time(tmp_path) -> None:
     (tmp_path / "cards.json").write_text(json.dumps([
         {"id": "8", "name": "冲杀", "card_type": "行动牌", "card_desc": "伤害", "card_detail": "规则", "card_amount": "14"},

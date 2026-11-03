@@ -692,6 +692,12 @@ class CardAnnotationEditDialog(QDialog):
         return editor.currentText()  # type: ignore[union-attr]
 
     def _rebuild(self) -> None:
+        # 效果区即时操作（新增/编辑记录、标记失效）触发全量重建，编辑器会按
+        # _values 旧值重建；先把普通字段编辑器的当前值收进草稿，否则未保存
+        # 输入被静默丢弃，且 dirty 比对同样取自编辑器、丢失后关闭确认不会弹
+        for key, editor in self._editors.items():
+            definition = self._service.schema.get_field(key)
+            self._values[key] = self._value_from_editor(definition, editor)
         self._editors.clear()
         self._effect_editors.clear()
         self._effect_edit_buttons.clear()

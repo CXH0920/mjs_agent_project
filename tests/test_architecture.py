@@ -734,7 +734,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     # 877 → 900：版本调整编辑对话框补未保存关闭确认（快照比对 + reject
     # 拦截，第 14 批审查 P2-1），长文本效果草稿不再被 Esc 静默丢弃
-    "ui/library/card_management_panel.py": 900,
+    # 900 → 906：效果区即时操作触发 _rebuild 重建前先收集普通字段编辑器
+    # 当前值（第 14 批二轮审查移交 P2）——修复标记失效/新增记录静默丢弃
+    # 未保存输入，且丢失对 dirty 关闭确认不可见
+    "ui/library/card_management_panel.py": 906,
     # hero_classification_panel.py（原 827）出表：三页签拆入
     # library/classification/ 后仅余 181 行装配壳（审计 G6 切片 4.5）
     # 699 → 742：公告翻页补拉（第一轮审查 P2-5 修复）——两次检查间新增
