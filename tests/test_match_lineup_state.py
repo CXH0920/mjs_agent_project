@@ -219,3 +219,44 @@ def test_unresolved_name_is_preserved_but_cannot_confirm_lineup() -> None:
 
     assert lineup.slots[0].resolution == "manual"
     assert lineup.slots[0].hero == heroes["甲"]
+
+
+def test_load_from_ocr_bad_index_items_sort_last_not_displacing_valid_slots() -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+
+    loaded = lineup.load_from_ocr([
+        {"name": "己"},                       # 缺 index
+        {"index": "x", "name": "庚"},         # 非数值 index
+        {"index": 1, "name": "甲"},
+        {"index": 2, "name": "乙"},
+        {"index": 4, "name": "丙"},
+        {"index": 5, "name": "丁"},
+    ], heroes.get, "12:30")
+
+    assert loaded
+    # 坏 index 条目排至队尾落选：前 4 槽位仍是真实座次的四将，敌我推导不受污染
+    assert [slot.recognized_name for slot in lineup.slots] == ["甲", "乙", "丙", "丁"]
+    assert lineup.sides == [SIDE_ENEMY, SIDE_ENEMY, SIDE_ALLY, SIDE_ALLY]
+    assert lineup.ally_leader_slot == 3
+
+
+def test_load_from_ocr_bad_index_logs_warning(caplog) -> None:
+    heroes = _heroes()
+    lineup = LineupState()
+
+    lineup.load_from_ocr([
+        {"name": "己"},
+        {"index": None, "name": "庚"},
+        {"index": 1, "name": "甲"},
+        {"index": 2, "name": "乙"},
+        {"index": 3, "name": "丙"},
+        {"index": 5, "name": "丁"},
+    ], heroes.get, "12:30")
+
+    warnings = [
+        record for record in caplog.records
+        if record.levelname == "WARNING" and "槽位号" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "2" in warnings[0].getMessage()

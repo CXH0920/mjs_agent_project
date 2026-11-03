@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from src.data.models import Hero
 
+logger = logging.getLogger(__name__)
+
 SIDE_ALLY = "ally"
 SIDE_ENEMY = "enemy"
 _TEAMS = frozenset({"楚军", "汉军"})
+# 槽位号缺失/非法条目的排序哨兵：远大于最大合法座次（5），排至队尾不参与
+# 前 4 槽位竞争。归 0 会让坏数据伪装成 0 号位挤掉真实槽位，故不可用 0 兜底。
+_BAD_INDEX_SENTINEL = 10**6
 
 
 @dataclass(frozen=True)
@@ -111,6 +117,14 @@ class LineupState:
         recognized_at: str,
     ) -> bool:
         """按 OCR 槽位导入新阵容，并清除旧的确认状态。"""
+        bad_index_items = [
+            item for item in ocr_results if self._ocr_sort_key(item) == _BAD_INDEX_SENTINEL
+        ]
+        if bad_index_items:
+            logger.warning(
+                "对局攻略 OCR 有 %d 条槽位号缺失/非法，已排至队尾不参与槽位竞争: %r",
+                len(bad_index_items), bad_index_items,
+            )
         recognized_items = [
             item for item in sorted(ocr_results, key=self._ocr_sort_key)
             if self._has_name_identity(item)
@@ -334,10 +348,12 @@ class LineupState:
 
     @staticmethod
     def _ocr_sort_key(item: dict) -> int:
+        # index 缺失（None）或非数值时排至队尾，不参与槽位竞争；
+        # 数字字符串（如 "1"）与浮点保持宽容解析。告警在 load_from_ocr 入口集中记一次。
         try:
-            return int(item.get("index", 0))
+            return int(item.get("index"))
         except (TypeError, ValueError):
-            return 0
+            return _BAD_INDEX_SENTINEL
 
     @staticmethod
     def _read_confidence(value: object) -> float:

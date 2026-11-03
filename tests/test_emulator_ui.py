@@ -109,6 +109,19 @@ def test_recommendation_capture_guard_and_empty_result_notice() -> None:
     assert panel._error_notice.title_label.text() == "未识别到选将阵容"
 
 
+def test_recommendation_matched_but_empty_result_shows_notice() -> None:
+    _app()
+    panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())
+
+    assert panel._begin_capture_request("adb_recognize")
+    panel._on_capture_result({"ocr_results": [], "ocr_matched": True})
+
+    # 已匹配到选将页但一个武将名都没读出：必须显性提示，不能静默恢复按钮
+    assert not panel._error_notice.isHidden()
+    assert panel._error_notice.title_label.text() == "未识别出武将名称"
+    assert panel._error_retry_btn.isVisibleTo(panel._error_notice)
+
+
 def test_rebuild_refreshes_visible_win_rates_and_rankings(monkeypatch) -> None:
     _app()
     panel = RecommendationPanel(_hero_manager(), SynergyManager(), GuideManager())

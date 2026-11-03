@@ -740,6 +740,13 @@ class RecommendationPanel(QWidget):
                 "请确认模拟器当前显示选将页面，然后重试。",
                 source,
             )
+        else:
+            logger.info("已匹配到选将页面但未识别出任何武将名称")
+            self._show_error_notice(
+                "未识别出武将名称",
+                "已匹配到选将页面，但未识别出任何武将名称，请确认画面清晰后重试。",
+                source,
+            )
 
     def _on_capture_failed(self, message: str) -> None:
         """恢复识别按钮，并为用户发起的 ADB 识别提供可操作错误反馈。"""
