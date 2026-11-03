@@ -271,3 +271,12 @@ def test_save_failure_rolls_back_memory_field_archive(tmp_path: Path, monkeypatc
     mode = next(item for item in on_disk["fields"] if item["key"] == "mode")
     assert "archived" not in mode  # exclude_defaults 序列化下无此键 = 未归档
 
+
+
+def test_card_repository_load_sets_available(tmp_path: Path) -> None:
+    """加载成功必须置位 available——与全部兄弟仓储一致（写入门禁依赖该标志）。"""
+    cards = tmp_path / "cards.json"
+    _write(cards, [{"id": "8", "name": "冲杀", "card_type": "行动牌"}])
+    repo = CardRepository(cards)
+    repo.load()
+    assert repo.available is True

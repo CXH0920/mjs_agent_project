@@ -149,3 +149,37 @@ class TestHeroManager:
 
             assert mgr.get_hero(1).name == "曹操"
             assert [issue.kind for issue in issues] == ["duplicate_key"]
+
+    def test_save_rejected_when_disk_errors(self):
+        """守卫：加载存在磁盘来源 error（坏记录）时拒绝覆盖保存，原文件字节不动。
+
+        坏记录已在加载时按原字节留底 backups/（VUL-B4-001）；此前任意一次
+        save() 会静默把坏记录覆盖掉，现在改为显式拒绝并指引备份恢复。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "heroes.json"
+            data = [self._make_hero(1).model_dump(mode="json"), {"id": "bad"}]
+            source = json.dumps(data, ensure_ascii=False)
+            filepath.write_text(source, encoding="utf-8")
+
+            mgr = HeroManager(heroes_file=filepath)
+            mgr.load()
+            with pytest.raises(RuntimeError, match="禁止覆盖保存"):
+                mgr.save()
+            assert filepath.read_text(encoding="utf-8") == source
+
+    def test_save_allows_rebuild_after_whole_file_corrupt(self):
+        """守卫豁免：整体不可用（invalid_json，内存为空）不拦——此时保存必是
+        有意重建（公告损坏按首跑重建同口径），原文件已整份留底。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "heroes.json"
+            filepath.write_text("{broken", encoding="utf-8")
+
+            mgr = HeroManager(heroes_file=filepath)
+            mgr.load()
+            assert mgr.list_heroes() == []
+            mgr.add_hero(self._make_hero(1))
+            mgr.save()  # 不抛：空库重建放行
+
+            reloaded = HeroManager(heroes_file=filepath)
+            reloaded.load()
+            assert reloaded.get_hero(1) is not None

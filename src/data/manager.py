@@ -154,6 +154,7 @@ class DataManager(Generic[V_co]):
             record_index=record_index,
             entity_key=entity_key,
             field_name=field_name,
+            from_disk=from_disk,
         )
         self.load_issues.append(issue)
         log = logger.warning if severity == "warning" else logger.error
@@ -165,9 +166,31 @@ class DataManager(Generic[V_co]):
             self._corrupt_preserved = self._preserve_corrupt_file()
 
     def save(self) -> None:
-        """将所有数据原子写入 JSON 文件"""
+        """将所有数据原子写入 JSON 文件（加载存在磁盘来源 error 时拒绝覆盖）"""
         with self._lock:
+            self._check_save_allowed()
             self._save_unlocked()
+
+    def _check_save_allowed(self) -> None:
+        """保存守卫：加载存在「残缺子集」类磁盘 error 时拒绝覆盖保存。
+
+        invalid_record/duplicate_key/invalid_root 说明内存是文件的部分内容
+        （坏记录已被跳过、原始字节已留底 backups/），继续覆盖保存会静默丢弃
+        坏记录。invalid_json/file_read_error（整体不可用，内存为空）豁免——
+        此时的保存必是有意重建（如公告损坏按首跑重建、TD-A5-102），原文件
+        已整份留底，无"静默丢记录"可言。外部输入/校验的 error（from_disk=False）
+        同样不拦——公告合并靠跳过坏爬虫记录继续工作。"""
+        errors = [
+            issue for issue in self.load_issues
+            if issue.severity == "error" and issue.from_disk
+            and issue.kind not in ("invalid_json", "file_read_error")
+        ]
+        if errors:
+            raise RuntimeError(
+                f"数据文件 {self.file_path} 加载异常（{len(errors)} 条 error），"
+                "已禁止覆盖保存；请修复该文件、或用 backups/ 目录中的最近快照"
+                "复原后重启应用"
+            )
 
     def _save_unlocked(self) -> None:
         """实际保存实现；调用方须已持有 _lock。"""

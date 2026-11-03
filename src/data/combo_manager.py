@@ -98,6 +98,7 @@ class ComboManager(DataManager[Combo]):
         手工记录固定 manual=True，导入合并时同 key 冲突优先保留。
         """
         with self._lock:
+            self._check_save_allowed()
             if previous is not None:
                 old_key = self._combo_key(previous.hero1_id, previous.hero2_id)
                 new_key = self._combo_key(combo.hero1_id, combo.hero2_id)
@@ -113,6 +114,7 @@ class ComboManager(DataManager[Combo]):
         删除后展示查询不可见，且导入合并时屏蔽同 key 源记录（永久，直至恢复）。
         """
         with self._lock:
+            self._check_save_allowed()
             stored = self._items.get(self._combo_key(combo.hero1_id, combo.hero2_id))
             if stored is None:
                 return
@@ -123,6 +125,7 @@ class ComboManager(DataManager[Combo]):
     def restore_combo(self, combo: Combo) -> None:
         """恢复一条逻辑删除的配队并原子落盘。"""
         with self._lock:
+            self._check_save_allowed()
             stored = self._items.get(self._combo_key(combo.hero1_id, combo.hero2_id))
             if stored is None:
                 return

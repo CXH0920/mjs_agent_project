@@ -83,6 +83,11 @@ class JsonRepository:
     - load() 用 _read_root() 取 (root, ok)，随后做根结构校验与逐条解析；
     - save() 构造 payload 后调 save_payload(payload)；
     - 需要"先改内存后写盘、失败回滚"的 CRUD 用 _snapshot/_restore/_save_or_rollback。
+
+    锁纪律：_lock 仅保证单次 _read_root / save_payload 的 IO 互斥；CRUD
+    序列（check-改内存-写盘）不默认持锁。调用方须保证仓储实例单线程访问；
+    存在跨线程读者的仓储（如 CardRepository 被 CardSyncService 检查线程
+    读）须在子类自行对读写方法包锁（RLock 可重入，嵌套 save_payload 无死锁）。
     """
 
     def __init__(self, file_path: str | Path) -> None:

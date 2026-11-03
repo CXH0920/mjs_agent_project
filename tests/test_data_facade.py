@@ -126,3 +126,28 @@ def test_data_manager_thread_safe_concurrent_read_write() -> None:
         assert errors == []
         assert manager.get(1) is not None
         assert len(manager.list_heroes()) == 10
+
+
+def test_missing_reference_errors_do_not_block_entity_save() -> None:
+    """豁免钉子：facade 跨实体引用校验的 error 进报告不进实体 load_issues，
+    不得阻断实体保存（引用缺失是校验问题而非文件损坏）。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        heroes_path = tmp_path / "heroes.json"
+        synergies_path = tmp_path / "synergies.json"
+        guides_path = tmp_path / "guides.json"
+        _write_json(heroes_path, [Hero(id=1, name="曹操").model_dump(mode="json")])
+        _write_json(
+            synergies_path,
+            [SynergyScore(hero_a_id=1, hero_b_id=99, score=6).model_dump(mode="json")],
+        )
+        _write_json(guides_path, [])
+
+        facade = DataFacade(heroes_path, synergies_path, guides_path)
+        report = facade.load_all()
+        assert any(issue.kind == "missing_reference" for issue in report.issues)
+
+        facade.heroes.save()  # 不抛即通过：引用 error 不触发实体保存守卫
+        reloaded = HeroManager(heroes_path)
+        reloaded.load()
+        assert reloaded.get_hero(1) is not None

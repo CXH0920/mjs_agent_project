@@ -744,3 +744,18 @@ class SpecialCardRepository(JsonRepository):
 
 **可用态延迟置位**（hero_classification_repository.py）
 - `HeroClassificationRepository.load()`：`self.available = True` 从"根结构校验通过后立即置位"改为"全部结构校验通过后才置位"——categories 等结构损坏时保持 `available=False`，面板 `_ensure_writable` 与 `save_payload` 守卫据此拒绝覆盖保存
+
+### 3.15 仓储写盘模式与锁纪律对照（新增仓储对号入座用）
+
+数据域并存四种写盘模式，各有其面板交互形态支撑，**不是缺陷而是有意分歧**；新写仓储按下表对号入座，不要发明第五种：
+
+| 模式 | 代表 | 写盘时机 | 适用交互形态 |
+|---|---|---|---|
+| 内存编辑 + 显式 save | `DataManager` 系（heroes/synergies/guides/combos/announcements） | 调用方编辑完批量 `save()` | 资料库编辑、AI 批量生成 |
+| 单条 CRUD 即写盘 | `card_points` / `equip_attrs` / `special_cards` 仓储 | `add_*/update_*/delete_*` 内 `_save_or_rollback` | 知识库维护的单条增删改 |
+| 显式 save + 回滚快照 | `hero_classification_repository` | CRUD 只改内存，面板保存时 `save()`（失败回滚 `_saved_snapshot`） | 分类/克制链批量编辑后一次保存 |
+| 只读 + 唯一写入口 | `CardRepository` | 仅 `apply_official_updates`（官网同步） | 官方数据，用户不手编 |
+
+**保存守卫（两种基类同口径）**：`JsonRepository.save_payload` 与 `DataManager._check_save_allowed` 都在「加载存在磁盘来源 error」时拒绝覆盖保存（坏记录已留底 backups/，覆盖即静默丢弃）。两处细化：`DataIssue.from_disk=False` 的 error（爬虫坏记录、跨实体引用缺失）不拦——公告合并靠跳过坏记录继续工作；DataManager 侧 `invalid_json`/`file_read_error`（整体不可用、内存为空）不拦——此时的保存必是有意重建（公告损坏按首跑重建，TD-A5-102），原文件已整份留底，无「静默丢记录」可言。
+
+**锁纪律（两种基类一致声明）**：`DataManager` 的 CRUD 全程持 RLock；`JsonRepository._lock` 仅保单次 IO 互斥，CRUD 序列不默认持锁，**调用方须保证仓储实例单线程访问**。唯一例外：存在跨线程读者的仓储（`CardRepository` 被 CardSyncService 检查线程读内存做 diff）须在子类对读写方法自行包锁（RLock 可重入）。新增后台读者时必须回头补锁。

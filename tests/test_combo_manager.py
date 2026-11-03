@@ -124,3 +124,20 @@ class TestComboModel:
         import pytest
         with pytest.raises(ValueError):
             Combo(hero1_name="甲", hero2_name="乙", hero1_id=1, hero2_id=2, rating=11)
+
+
+def test_manual_save_rejected_when_disk_errors(tmp_path: Path) -> None:
+    """守卫：坏记录加载后手工配队保存同样拒绝（改内存前拦截），原文件不动。"""
+    import pytest
+
+    filepath = tmp_path / "combos.json"
+    source = json.dumps(
+        [_make_combo(1, 2).model_dump(mode="json"), {"bad": 1}], ensure_ascii=False,
+    )
+    filepath.write_text(source, encoding="utf-8")
+
+    mgr = ComboManager(filepath)
+    mgr.load()
+    with pytest.raises(RuntimeError, match="禁止覆盖保存"):
+        mgr.save_manual_combo(_make_combo(3, 4))
+    assert filepath.read_text(encoding="utf-8") == source

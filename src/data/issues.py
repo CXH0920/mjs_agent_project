@@ -24,6 +24,9 @@ class DataIssue:
     record_index: int | None = None
     entity_key: object | None = None
     field_name: str | None = None
+    # True=源自磁盘文件损坏（保存守卫据此拒绝覆盖）；False=外部输入/校验产物
+    # （如爬虫坏记录、跨实体引用缺失），不触发守卫也不触发坏文件留底
+    from_disk: bool = True
 
 
 @dataclass

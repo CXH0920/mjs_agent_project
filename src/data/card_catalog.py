@@ -184,30 +184,37 @@ class CardRepository(JsonRepository):
         self._cards: dict[str, Card] = {}
 
     def load(self) -> list[DataIssue]:
-        root, ok = self._read_root()
-        self._cards = {}
-        if not ok:
+        # 持锁覆盖加载全程：CardSyncService 检查线程会读内存做 diff，
+        # 解析中途换 _cards 引用对读者是撕裂视图
+        with self._lock:
+            root, ok = self._read_root()
+            self._cards = {}
+            if not ok:
+                return self.load_issues
+            if not isinstance(root, list):
+                self._issue("error", "invalid_root", "基础卡牌文件必须是 JSON 列表")
+                return self.load_issues
+            # 结构校验通过即置可用（口径同兄弟仓储；坏记录由 save_payload 守卫拦截）
+            self.available = True
+            for index, raw in enumerate(root):
+                try:
+                    card = Card.model_validate(raw)
+                except ValidationError as error:
+                    self._issue("error", "invalid_record", str(error), index)
+                    continue
+                if card.id in self._cards:
+                    self._issue("error", "duplicate_key", f"重复卡牌 ID: {card.id}", index, card.id)
+                    continue
+                self._cards[card.id] = card
             return self.load_issues
-        if not isinstance(root, list):
-            self._issue("error", "invalid_root", "基础卡牌文件必须是 JSON 列表")
-            return self.load_issues
-        for index, raw in enumerate(root):
-            try:
-                card = Card.model_validate(raw)
-            except ValidationError as error:
-                self._issue("error", "invalid_record", str(error), index)
-                continue
-            if card.id in self._cards:
-                self._issue("error", "duplicate_key", f"重复卡牌 ID: {card.id}", index, card.id)
-                continue
-            self._cards[card.id] = card
-        return self.load_issues
 
     def list_cards(self) -> list[Card]:
-        return list(self._cards.values())
+        with self._lock:
+            return list(self._cards.values())
 
     def get_card(self, card_id: str) -> Card | None:
-        return self._cards.get(str(card_id))
+        with self._lock:
+            return self._cards.get(str(card_id))
 
     def apply_official_updates(
         self,
@@ -222,44 +229,47 @@ class CardRepository(JsonRepository):
         先验证全部输入再改动内存：任一条畸形数据在写盘前抛出，避免留下
         "看似失败、实际部分已变"的半更新状态。
         """
-        applied: list[str] = []
-        updated: dict[str, Card] = {}
-        for card_id, official in modified.items():
-            card = self._cards.get(str(card_id))
-            if card is None:
-                logger.warning("官网同步跳过本地不存在的卡牌 id: %s", card_id)
-                continue
-            payload = card.model_dump(mode="json")
-            payload.update(official)
-            payload["card_amount"] = card.card_amount
-            updated[str(card_id)] = Card.model_validate(payload)
-            applied.append(str(card_id))
-        new_cards: list[Card] = []
-        seen_new_ids: set[str] = set()
-        for official in added:
-            card = Card.model_validate(official)
-            card_id = str(card.id)
-            if card_id in self._cards or card_id in seen_new_ids:
-                logger.warning("官网同步新增卡已存在，跳过: %s", card.id)
-                continue
-            seen_new_ids.add(card_id)
-            new_cards.append(card)
-            applied.append(card_id)
-        # 写前内存快照：Card 是不可变值对象，浅拷贝字典即足够（同注解仓储约定）
-        snapshot = dict(self._cards)
-        for card_id, card in updated.items():
-            self._cards[card_id] = card
-        for card in new_cards:
-            self._cards[str(card.id)] = card
-        if applied:
-            try:
-                self._save()
-            except Exception:
-                # 写盘失败回滚内存（VUL-B4-002）：调用方报"应用失败"后内存
-                # 必须与磁盘一致，否则下次任意保存会固化未经确认的半更新
-                self._cards = dict(snapshot)
-                raise
-        return applied
+        # 持锁覆盖读改写全程：与 CardSyncService 检查线程的内存读互斥
+        # （服务层 is_busy 闸门是约定隔离，锁是机制隔离）
+        with self._lock:
+            applied: list[str] = []
+            updated: dict[str, Card] = {}
+            for card_id, official in modified.items():
+                card = self._cards.get(str(card_id))
+                if card is None:
+                    logger.warning("官网同步跳过本地不存在的卡牌 id: %s", card_id)
+                    continue
+                payload = card.model_dump(mode="json")
+                payload.update(official)
+                payload["card_amount"] = card.card_amount
+                updated[str(card_id)] = Card.model_validate(payload)
+                applied.append(str(card_id))
+            new_cards: list[Card] = []
+            seen_new_ids: set[str] = set()
+            for official in added:
+                card = Card.model_validate(official)
+                card_id = str(card.id)
+                if card_id in self._cards or card_id in seen_new_ids:
+                    logger.warning("官网同步新增卡已存在，跳过: %s", card.id)
+                    continue
+                seen_new_ids.add(card_id)
+                new_cards.append(card)
+                applied.append(card_id)
+            # 写前内存快照：Card 是不可变值对象，浅拷贝字典即足够（同注解仓储约定）
+            snapshot = dict(self._cards)
+            for card_id, card in updated.items():
+                self._cards[card_id] = card
+            for card in new_cards:
+                self._cards[str(card.id)] = card
+            if applied:
+                try:
+                    self._save()
+                except Exception:
+                    # 写盘失败回滚内存（VUL-B4-002）：调用方报"应用失败"后内存
+                    # 必须与磁盘一致，否则下次任意保存会固化未经确认的半更新
+                    self._cards = dict(snapshot)
+                    raise
+            return applied
 
     def _save(self) -> None:
         """以 JSON 列表覆盖保存（守卫与原子写统一走 save_payload）。"""
