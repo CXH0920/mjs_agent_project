@@ -150,6 +150,31 @@ def test_save_screenshot_failure_is_reported(monkeypatch) -> None:
     assert "有效 1 名" in panel._action_bar.status_label.text()
 
 
+def test_capture_flow_disables_controls_and_drives_page_linkage() -> None:
+    """捕获进行期间忙碌控件由 flow 统一禁用/恢复；按钮文字与空态描述保持联动。"""
+    _app()
+    panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})
+
+    assert panel._begin_capture("adb_recognize", "正在截图并识别阵容...")
+    assert not panel._recognize_btn.isEnabled()
+    assert not panel._more_btn.isEnabled()
+    assert not panel._empty_recognize_btn.isEnabled()
+    assert not panel._import_action.isEnabled()
+    assert panel._save_action.text() == "保存截图"
+    assert panel._empty_state.description_label.text() == "正在截图并识别阵容..."
+    assert panel._capture_lock.current == CaptureSource.ADB_RECOGNIZE
+
+    assert panel._finish_capture() == "adb_recognize"
+    assert panel._recognize_btn.isEnabled()
+    assert panel._empty_state.description_label.text() == "连接模拟器后识别当前阵容，或从本地图片导入。"
+
+    # adb_save 进行中：保存截图入口文字联动为「正在截图...」
+    assert panel._begin_capture("adb_save", "正在保存截图...")
+    assert panel._save_action.text() == "正在截图..."
+    panel._finish_capture()
+    assert panel._save_action.text() == "保存截图"
+
+
 def test_result_action_menu_contains_import_save_and_clear() -> None:
     _app()
     panel = MatchGuidePanel(_heroes(), guide_manager=GuideManager(), win_rates_provider=lambda: {}, peak_win_rates_provider=lambda: {})

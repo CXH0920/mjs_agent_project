@@ -30,7 +30,8 @@ from src.business.recognition.pending_stats import record_confirmation
 from src.config.env import SCREENSHOTS_DIR
 from src.ui.match.match_analysis_view import MatchAnalysisView
 from src.ui.match.match_lineup_state import SIDE_ALLY, SIDE_ENEMY, LineupState
-from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
+from src.ui.shared.capture_flow import CaptureRequestFlow
+from src.ui.shared.capture_lock import CaptureRequestLock
 from src.ui.shared.faction_colors import get_faction_colors
 from src.ui.shared.hero_dialogs import HeroSkillDialog
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
@@ -320,8 +321,11 @@ class MatchGuidePanel(QWidget):
         self._win_rates_provider = win_rates_provider
         self._peak_win_rates_provider = peak_win_rates_provider
         self._win_rate_mode = WIN_RATE_MODE_2V2
-        # 与推荐/巅峰面板共享主窗口传入的单飞锁；不传时自建（测试/独立使用）
-        self._capture_lock = capture_lock if capture_lock is not None else CaptureRequestLock()
+        # 捕获请求生命周期（单飞锁/忙碌控件/过程状态）归 CaptureRequestFlow；
+        # 锁与其他面板共享（主窗口注入），owner 由 flow 实例区分发起方
+        self._capture_flow = CaptureRequestFlow(
+            default_status="尚未识别阵容", capture_lock=capture_lock,
+        )
         self._cards: list[MatchHeroCard] = []
         self._lineup = LineupState()
         self._win_rates: dict[str, float] = {}
@@ -482,6 +486,16 @@ class MatchGuidePanel(QWidget):
         self._content_widget.setStretchFactor(1, 58)
         self._content_widget.setSizes([420, 580])
         layout.addWidget(self._content_widget, 1)
+        # 捕获请求进行期间需禁用的控件与菜单项（锁/恢复归 CaptureRequestFlow）
+        self._capture_flow.bind_controls(
+            [
+                self._recognize_btn,
+                self._more_btn,
+                self._empty_recognize_btn,
+                self._empty_import_btn,
+            ],
+            [self._import_action, self._save_action, self._clear_action],
+        )
 
     @staticmethod
     def _section_label(text: str) -> QLabel:
@@ -780,42 +794,36 @@ class MatchGuidePanel(QWidget):
             return
         QMessageBox.warning(self, "截图失败", f"无法从模拟器截图：\n{message}")
 
+    @property
+    def _capture_lock(self) -> CaptureRequestLock:
+        """在途请求锁（既有测试锚点；语义归 CaptureRequestFlow）。"""
+        return self._capture_flow.lock
+
     def _begin_capture(self, source: str, status: str) -> bool:
-        if not self._capture_lock.begin(CaptureSource(source), owner=self):
+        if not self._capture_flow.begin(source):
             self._notify_capture_busy()
             return False
-        self._set_importing(True, status)
+        # 页面特有联动：保存截图入口文字与空态描述随进行中状态变化
+        self._save_action.setText("正在截图..." if source == "adb_save" else "保存截图")
+        self._empty_state.set_description(status)
+        self._action_bar.set_status(status, TONE_INFO)
         return True
 
     def _finish_capture(self) -> str | None:
-        source = self._capture_lock.finish(owner=self)
+        source = self._capture_flow.finish()
         if source is None:
             return None
-        self._set_importing(False)
+        self._save_action.setText("保存截图")
+        self._empty_state.set_description("连接模拟器后识别当前阵容，或从本地图片导入。")
+        if self._lineup.valid_count:
+            self._update_recognition_status()
+        else:
+            self._action_bar.set_status("尚未识别阵容", TONE_NEUTRAL)
         return source
 
     def _notify_capture_busy(self) -> None:
         """共享捕获锁被占用（本页或他页有在途请求）时的状态提示。"""
         self._action_bar.set_status("已有识别或截图任务进行中，请稍候", TONE_WARNING)
-
-    def _set_importing(self, importing: bool, text: str = "") -> None:
-        self._recognize_btn.setEnabled(not importing)
-        self._more_btn.setEnabled(not importing)
-        self._import_action.setEnabled(not importing)
-        self._save_action.setEnabled(not importing)
-        self._clear_action.setEnabled(not importing)
-        self._empty_recognize_btn.setEnabled(not importing)
-        self._empty_import_btn.setEnabled(not importing)
-        self._save_action.setText("正在截图..." if importing and self._capture_lock.current == CaptureSource.ADB_SAVE else "保存截图")
-        self._empty_state.set_description(
-            text if importing else "连接模拟器后识别当前阵容，或从本地图片导入。"
-        )
-        if importing:
-            self._action_bar.set_status(text, TONE_INFO)
-        elif self._lineup.valid_count:
-            self._update_recognition_status()
-        else:
-            self._action_bar.set_status("尚未识别阵容", TONE_NEUTRAL)
 
     def _show_skill_popup(self, hero_id: int) -> None:
         hero = self._hero_mgr.get_hero(hero_id)

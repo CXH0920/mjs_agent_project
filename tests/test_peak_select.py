@@ -375,13 +375,38 @@ def test_panel_combo_strip_matches_and_badges(qapp):
     ]
     panel._on_pool_updated(parse_pool(results, 9))
 
-    assert "命中 1" in panel._combo_title.text()
+    assert panel._combo_strip._combo_title.text() == "⚔ 实战配队"
     assert not panel._combo_strip.isHidden()
     card_badges = [card._combo_badge.text() for card in panel._cards]
     assert "实战 ★9" in card_badges
     assert "实战 ★9" not in [card._combo_badge.text() for card in panel._cards if card._name_overlay.text() == "蒙恬"]
-    chips = [widget.text() for widget in panel._combo_chips_container.findChildren(QPushButton)]
+    chips = [widget.text() for widget in panel._combo_strip._combo_chips_container.findChildren(QPushButton)]
     assert any("荆轲[1/2] + 君王后[3]" in text for text in chips)
+
+
+def test_panel_combo_badges_refresh_on_ratings_signal(qapp):
+    """管理对话框改动配队后，ComboStrip 重算并广播评级，卡片角标经信号即时刷新。"""
+    heroes = {
+        "荆轲": SimpleNamespace(id=1, name="荆轲", faction="燕"),
+        "君王后": SimpleNamespace(id=3, name="君王后", faction="齐"),
+    }
+    panel = _make_panel(
+        hero_manager=SimpleNamespace(get_hero_by_name=heroes.get),
+        combo_manager=SimpleNamespace(list_combos=lambda: []),
+    )
+    panel._on_pool_updated(parse_pool(
+        [
+            {"name": "荆轲", "resolution": "exact"},
+            {"name": "君王后", "resolution": "exact"},
+        ],
+        9,
+    ))
+
+    panel._combo_strip.ratings_computed.emit({1: 7})
+
+    badges = {card._name_overlay.text(): card._combo_badge.text() for card in panel._cards}
+    assert badges["荆轲"] == "实战 ★7"
+    assert badges["君王后"] == ""
 
 
 def test_peak_hero_card_states(qapp):

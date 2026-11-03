@@ -315,7 +315,10 @@ CLASS_FIELD_BUDGETS: dict[str, int] = {
     # RecommendationPanel 44 → 35：配队横条拆 combo_strip.py、捕获流抽
     # shared/capture_flow.py（审计 G5 切片 4.4a/4.4b）
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 35,
-    "ui/match/peak_select_panel.py:PeakSelectPanel": 41,
+    # 41 → 34：实战配队条收敛复用 ComboStrip（第 13 批二轮 P3-3）——删
+    # _matched_combos/_combo_title/_combo_manage_btn/_combo_toggle_btn/
+    # _combo_chips_container/_combo_chip_flow/_combo_chips_collapsed 七字段
+    "ui/match/peak_select_panel.py:PeakSelectPanel": 34,
     # 35 → 36：_last_run_ok 标志封堵脚本崩溃时业务回调把空输出渲染成
     # 假结论（audit 崩溃显示「文档校验通过」，第 15 批审查 P2-1）
     "ui/maintenance/rule_doc_panel.py:RuleDocPanel": 36,
@@ -821,7 +824,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 人工抄录，match_guide_panel 在名单外由 778 涨至 840 无拦截（0007fc4）
     # 840 → 848：接入共享捕获单飞锁与忙提示（第 13 批审查 P1-1）——构造参数
     # 注入共享锁、begin/finish 携带 owner、被占时状态栏提示
-    "ui/match/match_guide_panel.py": 848,
+    # 848 → 856：捕获编排收敛接入 CaptureRequestFlow（第 13 批二轮 P3-4）——
+    # 删手写 _set_importing 36 行换 flow 委托，新增 property 测试锚点与
+    # bind_controls 登记；行为等价，净 +8 属结构性放宽
+    "ui/match/match_guide_panel.py": 856,
     # 584 → 593：跨供应商空 model 保存硬校验（2026-10-27）——无预设默认模型
     # 的供应商（openai/ollama/openai-compatible）model 必填拦截 + 占位文案按供应商同步
     "ui/configuration/settings_dialog.py": 593,
@@ -844,7 +850,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     # 565 → 567：接入共享捕获单飞锁（第 13 批审查 P1-1）——构造注入共享锁、
     # begin/finish 携带 owner，被占时状态栏提示
-    "ui/match/peak_select_panel.py": 567,
+    # 567 → 504：实战配队条收敛复用 ComboStrip（第 13 批二轮 P3-3）——删本地
+    # tooltip/排序/chip/管理入口四组重复实现，角标经 refresh 返回值 + 信号联动
+    "ui/match/peak_select_panel.py": 504,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
     # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
     # 518 → 520：reset_recognizer_cache 同步清 _page_cache——白名单变更后同指纹

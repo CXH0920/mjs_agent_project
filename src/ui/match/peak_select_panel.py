@@ -24,14 +24,11 @@ from PySide6.QtWidgets import (
 )
 from src.business.analysis.peak_ban_advice import evaluate_peak_ban_advice
 from src.business.analysis.win_rate_ranking import derive_win_rate_ranks
-from src.business.maintenance.corpus_services import ComboService
 from src.business.recognition.peak_select_watcher import PeakSelectWatcher, PoolSnapshot
 from src.config.env import SCREENSHOTS_DIR
-from src.ui.library.combo_management_dialog import ComboManagementDialog
 from src.ui.match.peak_hero_card import PeakHeroCard
+from src.ui.recommendation.combo_strip import ComboStrip
 from src.ui.shared.capture_lock import CaptureRequestLock, CaptureSource
-from src.ui.shared.combo_detail import show_combo_detail
-from src.ui.shared.combo_format import format_seats
 from src.ui.shared.style import (
     FONT_SIZE_LG,
     ROLE_DANGER,
@@ -44,7 +41,7 @@ from src.ui.shared.style import (
     set_tone,
     set_ui_role,
 )
-from src.ui.shared.widgets import EmptyState, FlowLayout, PageActionBar, StatusBadge
+from src.ui.shared.widgets import EmptyState, PageActionBar, StatusBadge
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +50,6 @@ _POOL_TEXT_STYLE = f"font-size: {FONT_SIZE_LG}px; font-weight: bold; line-height
 _BANNED_CHIP_STYLE = (
     "background-color: #e2e8f0; color: #64748b; border-radius: 4px;padding: 2px 8px; text-decoration: line-through;"
 )
-
-
-def _combo_tooltip(combo) -> str:
-    seats = (
-        f"{combo.hero1_name}[{format_seats(combo.hero1_seats)}] + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
-    )
-    return f"{seats}\n{combo.note}" if combo.note else seats
 
 
 class PeakSelectPanel(QWidget):
@@ -86,7 +76,6 @@ class PeakSelectPanel(QWidget):
         self._win_rates_provider = win_rates_provider
         self._pick_ranks_provider = pick_ranks_provider
         self._combo_manager = combo_manager
-        self._matched_combos: list = []
         self._sort_by_win_rate = False
         self._last_snapshot: PoolSnapshot | None = None
         self._cards: list[PeakHeroCard] = []
@@ -212,30 +201,11 @@ class PeakSelectPanel(QWidget):
         self._banned_area.hide()
         layout.addWidget(self._banned_area)
 
-        # ── 实战配队条 ─────────────────────────────────────────────────
-        self._combo_strip = QWidget()
-        strip_layout = QVBoxLayout(self._combo_strip)
-        strip_layout.setContentsMargins(0, 0, 0, 0)
-        strip_layout.setSpacing(4)
-        strip_header = QHBoxLayout()
-        self._combo_title = QLabel("⚔ 实战配队 · 命中 0")
-        strip_header.addWidget(self._combo_title)
-        strip_header.addStretch()
-        self._combo_manage_btn = QPushButton("管理")
-        self._combo_manage_btn.setToolTip("新增、编辑或删除实战配队")
-        self._combo_manage_btn.clicked.connect(self._open_combo_management)
-        strip_header.addWidget(self._combo_manage_btn)
-        self._combo_toggle_btn = QToolButton()
-        self._combo_toggle_btn.setText("收起")
-        self._combo_toggle_btn.clicked.connect(self._toggle_combo_chips)
-        strip_header.addWidget(self._combo_toggle_btn)
-        strip_layout.addLayout(strip_header)
-
-        self._combo_chips_container = QWidget()
-        self._combo_chip_flow = FlowLayout(self._combo_chips_container, spacing=6)
-        strip_layout.addWidget(self._combo_chips_container)
-        self._combo_chips_collapsed = False
-        self._combo_strip.hide()
+        # ── 实战配队条（收敛复用推荐页 ComboStrip；命中/排序/管理入口单一实现）──
+        # 角标主路径走 refresh 返回值（_render_cards 同步贴卡）；管理对话框改动
+        # 配队后由 strip 内建重算并广播 ratings_computed，经信号槽联动刷新角标
+        self._combo_strip = ComboStrip(self._hero_manager, self._combo_manager, self)
+        self._combo_strip.ratings_computed.connect(self._apply_combo_badges)
         layout.addWidget(self._combo_strip)
 
         self._log_view = QPlainTextEdit()
@@ -276,15 +246,13 @@ class PeakSelectPanel(QWidget):
     def _reset_view(self) -> None:
         """开始新识别会话时清空上一局残影：卡片/待确认/已禁/配队一并复位。"""
         self._last_snapshot = None
-        self._matched_combos = []
         self._clear_card_row()
         self._cards_section.hide()
         self._clear_pending_rows()
         self._pending_area.hide()
         self._clear_banned_chips()
         self._banned_area.hide()
-        self._combo_title.setText("⚔ 实战配队 · 命中 0")
-        self._render_combo_chips()
+        self._combo_strip.refresh(set())
         self._stage_badge.setText("阶段：未开始")
         set_tone(self._stage_badge, TONE_NEUTRAL)
         self._summary_label.setText("剩余候选：—")
@@ -452,54 +420,23 @@ class PeakSelectPanel(QWidget):
         self._sort_by_win_rate = checked
         self._render_cards()
 
-    # ── 实战配队条 ────────────────────────────────────────────────────
+    # ── 实战配队条（控件见 combo_strip.py）──────────────────────────
 
     def _refresh_combo_strip(self, entries: list) -> dict[int, int]:
         """按当前池子匹配实战配队，返回 {hero_id: 最高评级} 供卡片角标。"""
-        self._matched_combos = []
         hero_ids = {hero.id for _, hero, _ in entries if hero}
-        if self._combo_manager is not None and len(hero_ids) >= 2:
-            for combo in self._combo_manager.list_combos():
-                if combo.hero1_id in hero_ids and combo.hero2_id in hero_ids:
-                    self._matched_combos.append(combo)
-            self._matched_combos.sort(key=lambda combo: (-combo.rating, combo.hero1_name, combo.hero2_name))
-        self._combo_title.setText(f"⚔ 实战配队 · 命中 {len(self._matched_combos)}")
-        best: dict[int, int] = {}
-        for combo in self._matched_combos:
-            for hero_id in (combo.hero1_id, combo.hero2_id):
-                best[hero_id] = max(best.get(hero_id, 0), combo.rating)
-        self._render_combo_chips()
-        return best
+        return self._combo_strip.refresh(hero_ids)
 
-    def _render_combo_chips(self) -> None:
-        while self._combo_chip_flow.count():
-            item = self._combo_chip_flow.takeAt(0)
-            widget = item.widget() if item else None
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
-
-        for combo in self._matched_combos:
-            chip = QPushButton(
-                f"★{combo.rating} {combo.hero1_name}[{format_seats(combo.hero1_seats)}]"
-                f" + {combo.hero2_name}[{format_seats(combo.hero2_seats)}]"
-            )
-            chip.setToolTip(_combo_tooltip(combo))
-            chip.clicked.connect(lambda checked=False, target=combo: show_combo_detail(self, target))
-            self._combo_chip_flow.addWidget(chip)
-        self._combo_strip.setVisible(bool(self._matched_combos))
-
-    def _open_combo_management(self) -> None:
-        """打开实战配队全量管理对话框；增删改后即时刷新角标与命中条。"""
-        dialog = ComboManagementDialog(
-            self._hero_manager, ComboService(self._combo_manager), self)
-        dialog.combos_changed.connect(self._render_cards)
-        dialog.exec()
-
-    def _toggle_combo_chips(self) -> None:
-        self._combo_chips_collapsed = not self._combo_chips_collapsed
-        self._combo_chips_container.setVisible(not self._combo_chips_collapsed)
-        self._combo_toggle_btn.setText("展开" if self._combo_chips_collapsed else "收起")
+    def _apply_combo_badges(self, best_rating: dict[int, int]) -> None:
+        """配队评级变化时刷新卡片角标（含管理对话框改动后的即时联动）。"""
+        if self._last_snapshot is None:
+            return
+        names = list(dict.fromkeys(self._last_snapshot.names))
+        # strict=False：信号时序下旧一轮卡片数与本轮名单可能短暂不等（短侧即止）
+        for card, name in zip(self._cards, names, strict=False):
+            hero = self._hero_manager.get_hero_by_name(name) if self._hero_manager else None
+            rating = best_rating.get(hero.id) if hero else None
+            card.set_combo_badge(f"实战 ★{rating}" if rating else None)
 
     # ── 待确认 / 已禁区 ───────────────────────────────────────────────
 
