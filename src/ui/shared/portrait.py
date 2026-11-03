@@ -32,8 +32,18 @@ def find_portrait_path(hero_name: str) -> Path | None:
 
 
 @lru_cache(maxsize=128)
-def load_portrait(hero_name: str, width: int, height: int) -> QPixmap | None:
-    """按名字加载头像并平滑缩放；缺失或解码失败返回 None。"""
+def load_portrait(
+    hero_name: str,
+    width: int,
+    height: int,
+    aspect: Qt.AspectRatioMode = Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+) -> QPixmap | None:
+    """按名字加载头像并平滑缩放；缺失或解码失败返回 None。
+
+    aspect 选择缩放风格并参与缓存键（同图两模式各自缓存互不串台）：
+    ByExpanding 裁剪式（撑满目标框、超出裁掉，对局/巅峰小卡用，默认）；
+    KeepAspectRatio 留白式（完整入框、比例不齐留白，推荐资料卡用）。
+    """
     path = find_portrait_path(hero_name)
     if path is None:
         return None
@@ -41,7 +51,7 @@ def load_portrait(hero_name: str, width: int, height: int) -> QPixmap | None:
     if not pixmap.isNull():
         return pixmap.scaled(
             width, height,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            aspect,
             Qt.TransformationMode.SmoothTransformation,
         )
     return None

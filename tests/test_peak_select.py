@@ -1,4 +1,10 @@
-"""巅峰赛选将 watcher 纯逻辑与面板冒烟测试。"""
+"""巅峰赛选将 watcher 纯逻辑与面板冒烟测试。
+
+按域命名（豁免 test_x.py ↔ x.py 条款）：本文件一体覆盖巅峰选将域的
+peak_select_watcher / peak_select_panel / peak_hero_card 三模块，panel
+与 watcher 用例共享 _make_panel 构造 fixture，拆分只会制造碎片
+（第 13 批二轮 P3-5 登记口径）。
+"""
 
 from __future__ import annotations
 

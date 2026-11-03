@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QCursor, QPixmap
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from src.data.models import Hero
 from src.data.recommendation_index_repository import RecommendationIndex
 from src.ui.shared.faction_colors import get_faction_colors
-from src.ui.shared.portrait import find_portrait_path
+from src.ui.shared.portrait import load_portrait
 from src.ui.shared.style import (
     ROLE_GHOST,
     ROLE_SECONDARY,
@@ -339,7 +339,14 @@ class HeroCardWidget(QFrame):
         self._confirm_name_btn.setVisible(False)
         color = get_faction_colors().get(hero.faction, "#888")
 
-        pixmap = self._load_portrait(hero.name)
+        # 留白式缩放（完整人像入框不裁边）经共享 load_portrait 的 aspect
+        # 参数走统一 LRU 缓存，路径两级回退与缓存失效接线一并复用
+        pixmap = load_portrait(
+            hero.name,
+            self.PORTRAIT_IMAGE_SIZE.width(),
+            self.PORTRAIT_IMAGE_SIZE.height(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+        )
         if pixmap and not pixmap.isNull():
             self._portrait_missing = False
             self._img_label.setPixmap(pixmap)
@@ -354,23 +361,6 @@ class HeroCardWidget(QFrame):
         self._position_label.setText(hero.position or "暂无定位")
         self._update_confidence_display()
         self._update_card_state()
-
-    @staticmethod
-    def _load_portrait(hero_name: str) -> QPixmap | None:
-        # 不用 shared/portrait.load_portrait：卡片是 KeepAspectRatio 留白式缩放，
-        # 共享实现是 ByExpanding 裁剪式（刻意差异）；路径解析复用其两级回退
-        path = find_portrait_path(hero_name)
-        if path is None:
-            return None
-        pixmap = QPixmap(str(path))
-        if not pixmap.isNull():
-            return pixmap.scaled(
-                HeroCardWidget.PORTRAIT_IMAGE_SIZE.width(),
-                HeroCardWidget.PORTRAIT_IMAGE_SIZE.height(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        return None
 
     def _update_confidence_display(self) -> None:
         if self._recommendation_loaded:

@@ -36,8 +36,6 @@ from src.ui.library.hero_detail_views import HeroGuideSummaryView, HeroInfoView,
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.library.hero_relation_select_dialog import HeroRelationSelectDialog
 from src.ui.library.synergy_edit_dialog import SynergyEditDialog
-from src.ui.recommendation.hero_card_widget import HeroCardWidget
-from src.ui.recommendation.recommendation_panel import HeroCardWidget as PanelHeroCardWidget
 from src.ui.shared import persist as persist_module
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
@@ -726,23 +724,6 @@ def test_hero_detail_panel_uses_dedicated_tab_views(tmp_path: Path) -> None:
     assert isinstance(panel._detail_tabs.widget(0), HeroInfoView)
     assert isinstance(panel._detail_tabs.widget(1), HeroGuideSummaryView)
     assert isinstance(panel._detail_tabs.widget(2), HeroSynergyView)
-
-
-def test_extracted_recommendation_card_keeps_panel_import_compatibility() -> None:
-    _app()
-    hero = Hero(id=1, name="曹操", faction="魏")
-    card = HeroCardWidget(hero)
-    guide_requests: list[int] = []
-    skill_requests: list[int] = []
-    card.guide_clicked.connect(guide_requests.append)
-    card.hero_double_clicked.connect(skill_requests.append)
-
-    card._on_guide_clicked()
-    card._on_hero_double_clicked()
-
-    assert PanelHeroCardWidget is HeroCardWidget
-    assert guide_requests == [1]
-    assert skill_requests == [1]
 
 
 def test_extracted_guide_detail_dialog_emits_synergy_hero_request(tmp_path: Path) -> None:

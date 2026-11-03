@@ -22,8 +22,8 @@ def test_ui_resources_resolve_from_project_root() -> None:
     assert SCREENSHOTS_DIR == PROJECT_ROOT / "screenshots"
     assert IMAGES_OUTPUT_DIR == PROJECT_ROOT / "images"  # crawler 下载写盘目录，必须是可写根
     assert CRAWLER_IMAGES_DIR == IMAGES_OUTPUT_DIR  # crawler 接入点锁定
-    # 推荐卡片头像路径解析接共享两级回退（不再各自持 IMAGES_DIR 推导）
-    assert "find_portrait_path" in inspect.getsource(hero_card_widget)
+    # 推荐卡片头像加载整体接共享实现（两级回退 + LRU 缓存，留白式经 aspect 入参）
+    assert "load_portrait" in inspect.getsource(hero_card_widget)
     assert RECOMMENDATION_SCREENSHOTS_DIR == SCREENSHOTS_DIR
     assert DEFAULT_TEMPLATE_DIR == PROJECT_ROOT / "templates"
     assert DEFAULT_SCREENSHOTS_DIR == SCREENSHOTS_DIR

@@ -90,3 +90,39 @@ def test_portrait_prefers_runtime_root_over_bundle(
     assert portrait.load_portrait("旧武将", 96, 129) is not None
 
     portrait.load_portrait.cache_clear()
+
+
+def test_portrait_aspect_modes_cache_separately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp
+) -> None:
+    """留白式与裁剪式两模式按 aspect 独立缓存互不串台；默认参数保持裁剪式。
+
+    推荐资料卡（KeepAspectRatio 完整入框）与对局/巅峰小卡（ByExpanding
+    撑满裁边）共用同一 LRU（第 13 批二轮 P3-1 收敛）；1×1 方图入 96×129
+    竖框，两模式的合法边界方向恰好相反，可同时验证模式生效与缓存分离。
+    """
+    from PySide6.QtCore import Qt
+    from src.ui.shared import portrait
+
+    runtime = tmp_path / "runtime_images"
+    runtime.mkdir()
+    monkeypatch.setattr(portrait, "IMAGES_DIR", tmp_path / "bundle_images", raising=False)
+    monkeypatch.setattr(portrait, "IMAGES_OUTPUT_DIR", runtime, raising=False)
+    portrait.load_portrait.cache_clear()
+    (runtime / "方图.png").write_bytes(_ONE_PIXEL_PNG)
+
+    keep = portrait.load_portrait(
+        "方图", 96, 129, Qt.AspectRatioMode.KeepAspectRatio)
+    expand_default = portrait.load_portrait("方图", 96, 129)
+    expand = portrait.load_portrait(
+        "方图", 96, 129, Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+
+    assert keep is not None and keep.width() <= 96 and keep.height() <= 129
+    assert expand is not None and expand.width() >= 96 and expand.height() >= 129
+    # 默认参数即裁剪式；同参命中缓存返回同一实例，跨模式各自独立
+    assert expand_default.size() == expand.size()
+    assert portrait.load_portrait("方图", 96, 129) is expand_default
+    assert portrait.load_portrait(
+        "方图", 96, 129, Qt.AspectRatioMode.KeepAspectRatio) is keep
+
+    portrait.load_portrait.cache_clear()
