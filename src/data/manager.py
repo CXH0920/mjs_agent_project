@@ -165,10 +165,16 @@ class DataManager(Generic[V_co]):
         if severity == "error" and from_disk and not self._corrupt_preserved:
             self._corrupt_preserved = self._preserve_corrupt_file()
 
-    def save(self) -> None:
-        """将所有数据原子写入 JSON 文件（加载存在磁盘来源 error 时拒绝覆盖）"""
+    def save(self, *, force: bool = False) -> None:
+        """将所有数据原子写入 JSON 文件（默认拒绝覆盖残缺子集，见 _check_save_allowed）。
+
+        force=True 为显式豁免口：调用方已自行完成原文件留底、有意覆盖时使用
+        （如 AI 批量生成的 _preserve_invalid_data_file：坏文件改名 .corrupt-*
+        留底后把校验通过的子集写回原路径）。
+        """
         with self._lock:
-            self._check_save_allowed()
+            if not force:
+                self._check_save_allowed()
             self._save_unlocked()
 
     def _check_save_allowed(self) -> None:

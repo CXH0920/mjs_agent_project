@@ -756,6 +756,6 @@ class SpecialCardRepository(JsonRepository):
 | 显式 save + 回滚快照 | `hero_classification_repository` | CRUD 只改内存，面板保存时 `save()`（失败回滚 `_saved_snapshot`） | 分类/克制链批量编辑后一次保存 |
 | 只读 + 唯一写入口 | `CardRepository` | 仅 `apply_official_updates`（官网同步） | 官方数据，用户不手编 |
 
-**保存守卫（两种基类同口径）**：`JsonRepository.save_payload` 与 `DataManager._check_save_allowed` 都在「加载存在磁盘来源 error」时拒绝覆盖保存（坏记录已留底 backups/，覆盖即静默丢弃）。两处细化：`DataIssue.from_disk=False` 的 error（爬虫坏记录、跨实体引用缺失）不拦——公告合并靠跳过坏记录继续工作；DataManager 侧 `invalid_json`/`file_read_error`（整体不可用、内存为空）不拦——此时的保存必是有意重建（公告损坏按首跑重建，TD-A5-102），原文件已整份留底，无「静默丢记录」可言。
+**保存守卫（两种基类同口径）**：`JsonRepository.save_payload` 与 `DataManager._check_save_allowed` 都在「加载存在磁盘来源 error」时拒绝覆盖保存（坏记录已留底 backups/，覆盖即静默丢弃）。三处细化：`DataIssue.from_disk=False` 的 error（爬虫坏记录、跨实体引用缺失）不拦——公告合并靠跳过坏记录继续工作；DataManager 侧 `invalid_json`/`file_read_error`（整体不可用、内存为空）不拦——此时的保存必是有意重建（公告损坏按首跑重建，TD-A5-102），原文件已整份留底，无「静默丢记录」可言；调用方已自行留底、有意覆盖时用显式豁免口 `save(force=True)`（AI 批量生成的 `_preserve_invalid_data_file`：坏文件改名 `.corrupt-*` 后把校验通过的子集写回原路径）。
 
 **锁纪律（两种基类一致声明）**：`DataManager` 的 CRUD 全程持 RLock；`JsonRepository._lock` 仅保单次 IO 互斥，CRUD 序列不默认持锁，**调用方须保证仓储实例单线程访问**。唯一例外：存在跨线程读者的仓储（`CardRepository` 被 CardSyncService 检查线程读内存做 diff）须在子类对读写方法自行包锁（RLock 可重入）。新增后台读者时必须回头补锁。

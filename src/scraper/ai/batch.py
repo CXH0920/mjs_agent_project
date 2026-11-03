@@ -90,7 +90,9 @@ def _preserve_invalid_data_file(path: Path, manager) -> Path:
         logger.error("无法备份损坏文件 %s: %s", path, exc)
         raise RuntimeError(f"无法备份损坏文件: {path}") from exc
 
-    manager.save()
+    # 原文件已整体改名 .corrupt-* 留底，此处为有意覆盖：把校验通过的子集
+    # 写回原路径供断点续传（force 豁免 DataManager 的残缺子集保存守卫）
+    manager.save(force=True)
     logger.warning(
         "数据文件包含无效内容，原文件已备份为 %s，当前文件保留 %d 条有效记录",
         backup_path,
