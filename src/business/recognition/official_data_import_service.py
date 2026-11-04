@@ -11,18 +11,19 @@ from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import cv2
 import numpy as np
 from PIL import Image
 from src.business.recognition.name_resolution import HeroNameResolver
+from src.business.recognition.official_cell_recognition import OfficialCellRecognizer
 from src.business.recognition.official_ocr_engines import OfficialOcrEngines
 from src.config.atomic_write import atomic_write_bytes, atomic_write_json, atomic_write_text
 from src.config.env import PROJECT_ROOT
 from src.data.recommendation_index_repository import notify_official_outputs_written
 from src.ocr import official_board_parser
-from src.ocr.character_similarity import CharacterSimilarityService, levenshtein_distance
-from src.ocr.official_board_parser import LAYOUTS
+from src.ocr.official_board_parser import LAYOUTS, OfficialBoardLayout
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,21 @@ REVIEW_DIR = PROJECT_ROOT / "screenshot_data" / "official_import"
 TEMPLATE_RATE_REVIEW_THRESHOLD = 0.90
 # 名称复核线：武将名称 OCR 置信度低于该值时标记"武将名称置信度低"。
 NAME_CONFIDENCE_REVIEW_THRESHOLD = 0.75
-# 单格识别快通道：2× 放大单候选对干净格与 4× 双候选结果完全一致（2026-10
-# 七种版式语料 ×120 格逐格比对零不一致），单次引擎调用耗时约 1/4（det 输入
-# 面积主导）。数字格需匹配"纯排名/胜率"格式、名称格需词表精确命中且置信度
-# 达标才采信，未过门的困难格原样回退 4× 双候选路径，精度下界不变。
-FAST_PATH_MIN_CONFIDENCE = 0.90
-FAST_PATH_NUMERIC_PATTERN = re.compile(r"\d{1,3}(?:\.\d{2})?%?")
+
+
+class _PanelTask(NamedTuple):
+    """单个榜单面板的识别任务参数（import_pages 页解析产出、行循环消费）。"""
+
+    page_index: int
+    image_path: Path
+    layout: OfficialBoardLayout
+    panel_index: int
+    panel_x: int
+    panel_y: int
+    panel: np.ndarray
+    columns: tuple[str, ...]
+    boundaries: list[int]
+    repaired_ranks: set[int]
 
 
 class OfficialDataImportService:
@@ -54,6 +64,7 @@ class OfficialDataImportService:
     ) -> None:
         self._names = name_resolver or HeroNameResolver(hero_names)
         self._engines = OfficialOcrEngines(ocr_engine, rare_char_ocr_engine)
+        self._cells = OfficialCellRecognizer(self._engines, self._names)
 
     @property
     def ocr_engine(self):
@@ -64,16 +75,6 @@ class OfficialDataImportService:
     def rare_char_ocr_engine(self):
         """已加载/注入的罕见字 OCR 引擎，供 ocr_worker 回收复用。"""
         return self._engines.rare_char_ocr
-
-    @property
-    def _rare_char_engine(self):
-        # 委托到 OfficialOcrEngines.rare_char；保留 property 使既有调用点与
-        # 测试的类级 patch（monkeypatch.setattr(类, "_rare_char_engine", ...）继续生效
-        return self._engines.rare_char
-
-    @property
-    def _rare_char_engine_failed(self) -> bool:
-        return self._engines.rare_char_failed
 
     def import_pages(
         self,
@@ -91,31 +92,10 @@ class OfficialDataImportService:
             raise ValueError("同一张官方榜单图片被重复选择")
 
         outputs: dict[str, dict] = {}
-        panel_tasks = []
+        panel_tasks: list[_PanelTask] = []
         total_steps = 0
         variants = set()
-        # 20261022 拼接长图先切成虚拟分页再进入统一解析；旧版长图与分页图
-        # 切不出多个有效段，仍按整图走原路径
-        page_units: list[tuple[Path, np.ndarray, int]] = []
-        for image_path in image_paths:
-            image = official_board_parser.read_image(image_path)
-            segments = (
-                official_board_parser.split_stitched_image(image, key)
-                if image.shape[0] / image.shape[1] >= 4 else []
-            )
-            if segments:
-                logger.info(
-                    "官方%s榜单拼接长图切分出 %d 段: %s", key, len(segments), image_path,
-                )
-                if status_callback:
-                    status_callback(
-                        f"{image_path.name} 为拼接长图，切分出 {len(segments)} 段",
-                    )
-                page_units.extend(
-                    (image_path, segment, offset) for segment, offset in segments
-                )
-            else:
-                page_units.append((image_path, image, 0))
+        page_units = self._build_page_units(image_paths, key, status_callback)
         page_count = len(page_units)
 
         for page_index, (image_path, image, segment_offset) in enumerate(page_units, start=1):
@@ -131,36 +111,15 @@ class OfficialDataImportService:
                     panel, image.shape[0], layout, panel_index,
                 )
                 boundaries, repaired_ranks = official_board_parser.restore_missing_boundaries(boundaries)
-                page_tasks.append((
+                page_tasks.append(_PanelTask(
                     page_index, image_path, layout, panel_index, panel_x,
                     panel_y + segment_offset,
                     panel, columns, boundaries, repaired_ranks,
                 ))
                 row_count = len(boundaries) - 1
                 total_steps += row_count * (2 if "胜率" in columns else 1)
-            row_counts = [len(task[8]) - 1 for task in page_tasks]
-            if not row_counts:
-                raise ValueError(
-                    f"第 {page_index} 张图片未检出任何榜单面板，请确认图片清晰完整"
-                )
-            if key in ("2v2", "peak") and len(row_counts) != 2:
-                label = "巅峰赛" if key == "peak" else "2v2"
-                raise ValueError(
-                    f"第 {page_index} 张 {label} 图片未检出左右两个榜单"
-                    f"（实际 {len(row_counts)} 个），请确认图片完整"
-                )
-            if key in ("2v2", "peak") and row_counts[0] != row_counts[1]:
-                label = "巅峰赛" if key == "peak" else "2v2"
-                raise ValueError(
-                    f"第 {page_index} 张 {label} 图片左右榜单行数不一致: {row_counts}"
-                )
-            if key == "exile":
-                try:
-                    official_board_parser.validate_exile_row_counts(row_counts)
-                except ValueError as exc:
-                    raise ValueError(
-                        f"第 {page_index} 张武将放逐图片{exc}"
-                    ) from exc
+            row_counts = [len(task.boundaries) - 1 for task in page_tasks]
+            self._validate_page_panels(key, page_index, row_counts)
             panel_tasks.extend(page_tasks)
 
         if len(variants) > 1:
@@ -200,7 +159,7 @@ class OfficialDataImportService:
             rank_offsets = []
             rate_ocr_results, digit_templates = (
                 official_board_parser.prepare_rate_templates(
-                    panel, boundaries, columns, column_breaks, self._recognize_cell,
+                    panel, boundaries, columns, column_breaks, self._cells.recognize_cell,
                     advance_progress, panel_expected_start,
                 )
                 if "胜率" in columns else ({}, None)
@@ -214,7 +173,7 @@ class OfficialDataImportService:
                     continue
                 expected_rank = len(batch["records"]) + 1
                 cells = official_board_parser.split_row_cells(row, columns, column_breaks)
-                fields = self._recognize_row(
+                fields = self._cells.recognize_row(
                     row, columns, column_breaks,
                     {"胜率": rate_ocr_results[local_rank]} if "胜率" in columns else None,
                     (
@@ -318,6 +277,65 @@ class OfficialDataImportService:
             "outputs": [DATA_DIR / name for name in outputs],
         }
 
+    def _build_page_units(
+        self,
+        image_paths: list[Path],
+        key: str,
+        status_callback: Callable[[str], None] | None,
+    ) -> list[tuple[Path, np.ndarray, int]]:
+        """读图并把拼接长图切分成虚拟分页，返回 (图片, 图像, 段 y 偏移) 页单元。
+
+        20261022 拼接长图先切成虚拟分页再进入统一解析；旧版长图与分页图
+        切不出多个有效段，仍按整图走原路径。
+        """
+        page_units: list[tuple[Path, np.ndarray, int]] = []
+        for image_path in image_paths:
+            image = official_board_parser.read_image(image_path)
+            segments = (
+                official_board_parser.split_stitched_image(image, key)
+                if image.shape[0] / image.shape[1] >= 4 else []
+            )
+            if segments:
+                logger.info(
+                    "官方%s榜单拼接长图切分出 %d 段: %s", key, len(segments), image_path,
+                )
+                if status_callback:
+                    status_callback(
+                        f"{image_path.name} 为拼接长图，切分出 {len(segments)} 段",
+                    )
+                page_units.extend(
+                    (image_path, segment, offset) for segment, offset in segments
+                )
+            else:
+                page_units.append((image_path, image, 0))
+        return page_units
+
+    @staticmethod
+    def _validate_page_panels(key: str, page_index: int, row_counts: list[int]) -> None:
+        """逐版式行数校验：面板数量、左右等行与放逐榜行数约束。"""
+        if not row_counts:
+            raise ValueError(
+                f"第 {page_index} 张图片未检出任何榜单面板，请确认图片清晰完整"
+            )
+        if key in ("2v2", "peak"):
+            label = "巅峰赛" if key == "peak" else "2v2"
+            if len(row_counts) != 2:
+                raise ValueError(
+                    f"第 {page_index} 张 {label} 图片未检出左右两个榜单"
+                    f"（实际 {len(row_counts)} 个），请确认图片完整"
+                )
+            if row_counts[0] != row_counts[1]:
+                raise ValueError(
+                    f"第 {page_index} 张 {label} 图片左右榜单行数不一致: {row_counts}"
+                )
+        if key == "exile":
+            try:
+                official_board_parser.validate_exile_row_counts(row_counts)
+            except ValueError as exc:
+                raise ValueError(
+                    f"第 {page_index} 张武将放逐图片{exc}"
+                ) from exc
+
     @staticmethod
     def _validate_panel_rank_sequence(
         image_path: Path,
@@ -336,234 +354,6 @@ class OfficialDataImportService:
                 f"图片 {image_path.name} 排名顺序异常："
                 f"期望从 {expected_start} 开始，识别为从 {observed_start} 开始"
             )
-
-    def _recognize_row(
-        self,
-        row: np.ndarray,
-        columns: tuple[str, ...],
-        column_breaks: tuple[float, ...],
-        precomputed: dict[str, tuple[str, float]] | None = None,
-        status_callback: Callable[[str], None] | None = None,
-    ) -> dict[str, tuple[str, float]]:
-        return {
-            column: precomputed[column] if precomputed and column in precomputed else (
-                self._recognize_name_cell(cell, status_callback) if column == "武将" else self._recognize_cell(cell)
-            )
-            for column, cell in official_board_parser.split_row_cells(
-                row, columns, column_breaks,
-            ).items()
-        }
-
-    def _recognize_cell_candidates(self, cell: np.ndarray, engine=None) -> list[tuple[str, float]]:
-        if cell.size == 0:
-            return []
-        enlarged = cv2.resize(cell, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-        candidates = [enlarged]
-        lab = cv2.cvtColor(enlarged, cv2.COLOR_BGR2LAB)
-        lightness, a_channel, b_channel = cv2.split(lab)
-        lightness = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lightness)
-        enhanced = cv2.cvtColor(cv2.merge([lightness, a_channel, b_channel]), cv2.COLOR_LAB2BGR)
-        candidates.append(cv2.filter2D(enhanced, -1, np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])))
-        results: list[tuple[str, float]] = []
-        for candidate in candidates:
-            # 恢复完整检测+识别流程：det 网络先框出文字区域，避免整格输入产生的边缘幻觉
-            ocr_result = (engine if engine is not None else self._engines.main).ocr(
-                candidate, cls=False,
-            )
-            results.extend(self._parse_ocr_lines(ocr_result))
-        return results
-
-    @staticmethod
-    def _parse_ocr_lines(ocr_result) -> list[tuple[str, float]]:
-        """把引擎返回压平为 (文本, 置信度) 列表。"""
-        lines: list[tuple[str, float]] = []
-        for line in ocr_result[0] if ocr_result and ocr_result[0] else []:
-            # 完整流程 line 为 [box, (text, confidence)]
-            if isinstance(line[0], (list, tuple)):
-                text, confidence = line[1]
-            else:
-                text, confidence = line
-            if text:
-                lines.append((text.replace(" ", ""), float(confidence)))
-        return lines
-
-    def _fast_path_cell(self, cell: np.ndarray) -> list[tuple[str, float]]:
-        """2× 放大单候选快速识别；引擎未注入（单测/懒加载场景）时不启用。"""
-        engine = self._engines.ocr
-        if engine is None or cell.size == 0:
-            return []
-        enlarged = cv2.resize(cell, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        return self._parse_ocr_lines(engine.ocr(enlarged, cls=False))
-
-    def _fast_numeric_cell(self, cell: np.ndarray) -> tuple[str, float] | None:
-        """排名/胜率格快通道：单行纯数字高置信即采信，否则回退原路径。"""
-        lines = self._fast_path_cell(cell)
-        if len(lines) != 1:
-            return None
-        text, confidence = lines[0]
-        if confidence < FAST_PATH_MIN_CONFIDENCE or not FAST_PATH_NUMERIC_PATTERN.fullmatch(text):
-            return None
-        return text, confidence
-
-    def _fast_name_cell(self, cell: np.ndarray) -> tuple[str, float] | None:
-        """武将格快通道：单行词表精确命中且高置信即采信，与精确命中分支同构。"""
-        lines = self._fast_path_cell(cell)
-        if len(lines) != 1:
-            return None
-        text, confidence = lines[0]
-        name = self._names.chinese_text(text)
-        if confidence < FAST_PATH_MIN_CONFIDENCE or name not in self._names.hero_names:
-            return None
-        return name, confidence
-
-    def _recognize_cell(self, cell: np.ndarray, engine=None) -> tuple[str, float]:
-        if engine is None:
-            fast = self._fast_numeric_cell(cell)
-            if fast is not None:
-                return fast
-        candidates = self._recognize_cell_candidates(cell, engine)
-        return max(candidates, key=lambda item: item[1], default=("", 0.0))
-
-    def _recognize_name_with_engine(
-        self,
-        cell: np.ndarray,
-        engine,
-        allowed_names: tuple[str, ...] | list[str],
-    ) -> tuple[str, float]:
-        """使用指定引擎识别名称，仅接受词表中可确认的完整结果。"""
-        allowed_names = tuple(dict.fromkeys(allowed_names))
-        allowed_set = set(allowed_names)
-        candidates = self._recognize_cell_candidates(cell, engine)
-        exact_matches = [
-            match for match in self._names.exact_hero_matches(candidates)
-            if match[0] in allowed_set
-        ]
-        exact_match, exact_conflicts = self._names.select_unique_name_match(exact_matches)
-        if exact_match:
-            return exact_match
-        if exact_conflicts:
-            logger.warning("官方榜单武将精确候选冲突: %s", exact_conflicts)
-            return self._names.common_prefix(exact_conflicts), max(confidence for _text, confidence in candidates)
-        corrected_matches = []
-        for text, confidence in candidates:
-            candidate_name = self._names.chinese_text(text)
-            if len(candidate_name) < 2:
-                continue
-            nearby_names = [
-                hero for hero in allowed_names
-                if levenshtein_distance(candidate_name, hero)
-                <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
-            ]
-            corrected = nearby_names[0] if len(nearby_names) == 1 else candidate_name
-            if corrected in allowed_set:
-                corrected_matches.append((corrected, confidence))
-        corrected_match, corrected_conflicts = self._names.select_unique_name_match(corrected_matches)
-        if corrected_match:
-            return corrected_match
-        if corrected_conflicts:
-            logger.warning("官方榜单武将校正候选冲突: %s", corrected_conflicts)
-            return self._names.common_prefix(corrected_conflicts), max(confidence for _text, confidence in candidates)
-        glyph_name, glyph_confidence = self._recognize_name_glyphs(cell, engine)
-        if glyph_name:
-            nearby_names = [
-                hero for hero in allowed_names
-                if levenshtein_distance(glyph_name, hero)
-                <= CharacterSimilarityService.EDIT_DISTANCE_THRESHOLD
-            ]
-            corrected = nearby_names[0] if len(nearby_names) == 1 else glyph_name
-            if corrected in allowed_set:
-                return corrected, glyph_confidence
-        return "", 0.0
-
-    def _recognize_name_cell(
-        self,
-        cell: np.ndarray,
-        status_callback: Callable[[str], None] | None = None,
-    ) -> tuple[str, float]:
-        """优先选用词表中的完整 OCR 候选，单字结果再逐字补识别。"""
-        fast = self._fast_name_cell(cell)
-        if fast is not None:
-            return fast
-        candidates = self._recognize_cell_candidates(cell)
-        if not candidates:
-            return "", 0.0
-        exact_match, exact_conflicts = self._names.select_unique_name_match(self._names.exact_hero_matches(candidates))
-        if exact_match:
-            return exact_match
-        if exact_conflicts:
-            logger.warning("官方榜单武将精确候选冲突: %s", exact_conflicts)
-            text = self._names.common_prefix(exact_conflicts)
-            confidence = max(confidence for _text, confidence in candidates)
-        else:
-            text, confidence = max(candidates, key=lambda item: item[1])
-        name = self._names.chinese_text(text)
-        if name in self._names.hero_names:
-            return text, confidence
-        ambiguous_candidates = self._names.ambiguous_name_candidates(name)
-
-        glyph_name, glyph_confidence = self._recognize_name_glyphs(cell)
-        if glyph_name:
-            corrected = self._names.correct_official_name(glyph_name)
-            if corrected in self._names.hero_names:
-                return corrected, glyph_confidence
-        prefix_matches = [hero for hero in self._names.hero_names if hero.startswith(name)]
-        if len(prefix_matches) == 1:
-            return prefix_matches[0], confidence
-        allowed_names = tuple(ambiguous_candidates or prefix_matches)
-        if not allowed_names:
-            return text, confidence
-        rare_char_engine = self._rare_char_engine
-        if rare_char_engine is not None and status_callback:
-            status_callback("正在执行罕见字兜底识别")
-        if rare_char_engine is not None:
-            try:
-                rare_name, rare_confidence = self._recognize_name_with_engine(
-                    cell, rare_char_engine, allowed_names,
-                )
-                self._engines.note_rare_char_success()
-                if rare_name:
-                    return rare_name, rare_confidence
-            except Exception as exc:
-                # 计数熔断：单次瞬时异常只损失本格兜底，不连坐整批的罕见字识别
-                logger.warning("罕见字 OCR 识别失败，将保留原结果待复核: %s", exc)
-                self._engines.note_rare_char_failure()
-        elif self._engines.rare_char_failed and status_callback:
-            status_callback("罕见字兜底已降级，名称保留原结果待复核")
-        return text, confidence
-
-    def _recognize_name_glyphs(self, cell: np.ndarray, engine=None) -> tuple[str, float]:
-        """按亮色字形切分名称格，并在保留背景留白后逐字识别。"""
-        gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
-        columns = (gray > 180).any(axis=0)
-        groups: list[tuple[int, int]] = []
-        start = None
-        for x, has_foreground in enumerate(columns):
-            if has_foreground and start is None:
-                start = x
-            elif not has_foreground and start is not None:
-                groups.append((start, x - 1))
-                start = None
-        if start is not None:
-            groups.append((start, len(columns) - 1))
-        if not 2 <= len(groups) <= 4:
-            return "", 0.0
-
-        background = tuple(int(value) for value in np.median(cell.reshape(-1, 3), axis=0))
-        characters: list[str] = []
-        confidences: list[float] = []
-        for left, right in groups:
-            glyph = cell[:, max(0, left - 5):min(cell.shape[1], right + 6)]
-            glyph = cv2.copyMakeBorder(glyph, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=background)
-            text, confidence = (
-                self._recognize_cell(glyph, engine)
-                if engine is not None else self._recognize_cell(glyph)
-            )
-            character = self._names.chinese_text(text)
-            if len(character) != 1:
-                return "", 0.0
-            characters.append(character)
-            confidences.append(confidence)
-        return "".join(characters), min(confidences)
 
     @staticmethod
     def _normalize_rate(text: str) -> str:

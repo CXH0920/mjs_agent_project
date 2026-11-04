@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (
 )
 from src.business.analysis.peak_ban_advice import evaluate_peak_ban_advice
 from src.business.analysis.win_rate_ranking import derive_win_rate_ranks
-from src.business.recognition.peak_select_watcher import PeakSelectWatcher, PoolSnapshot
+from src.business.recognition.peak_board_rules import PoolSnapshot
+from src.business.recognition.peak_select_watcher import PeakSelectWatcher
 from src.config.env import SCREENSHOTS_DIR
 from src.ui.match.peak_hero_card import PeakHeroCard
 from src.ui.recommendation.combo_strip import ComboStrip

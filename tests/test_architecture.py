@@ -813,7 +813,12 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 710 → 714：写盘卫生修复——复核行截图改走 atomic_write_bytes 原子写
     # （覆盖中断不留半截图片），待复核会话覆盖前补告警日志（旧复核现场
     # 不再静默丢失）；净增 4 行为告警与序列化步骤
-    "business/recognition/official_data_import_service.py": 714,
+    # 714 → 504：单格识别策略域出仓 official_cell_recognition.py（第 8 批
+    # 二轮 P2-1）——9 方法 + FAST_PATH 常量（约 227 行）迁出为
+    # OfficialCellRecognizer（独立变更原因：OCR 质量调优 vs 导入编排）；
+    # 同步长图切分/逐版式行数校验抽私有方法、panel 任务元组改 _PanelTask
+    # 消除魔法下标；本文件只留导入编排、校验复核与持久化会话
+    "business/recognition/official_data_import_service.py": 504,
     # 首次入册（417 → 524 越过 500 绊线）：split_stitched_image 拼接长图切分
     # （20261022 版式兼容：静默带定位 + 补边 + 分页结构校验）；固定版式解析
     # 算法族（LAYOUTS/PAGED_LAYOUTS + 切行/切格/数字模板）高内聚且仅依赖
@@ -851,7 +856,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 669 → 677：图片导入回写确认表前加会话世代守卫（44837e3）——导入在途
     # 停止/重启换代后旧图校验结果直接丢弃，不再删除或错位新会话刚做的
     # 人工确认，与 _publish_pool 同一守卫口径
-    "business/recognition/peak_select_watcher.py": 677,
+    # 677 → 498：牌面纯规则出仓 peak_board_rules.py（第 8 批二轮 P2-2）——
+    # 候选池快照/确认存续验证/签名判等六纯函数 + 常量（约 165 行）迁出；
+    # 本文件保留识别循环状态机（锁与世代守卫），4 职责基线见代码规模台账
+    "business/recognition/peak_select_watcher.py": 498,
     # 561 → 565：截图未落盘时状态栏改真实提示（修复批 2026-10-05）
     # 565 → 567：接入共享捕获单飞锁（第 13 批审查 P1-1）——构造注入共享锁、
     # begin/finish 携带 owner，被占时状态栏提示
@@ -859,7 +867,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # tooltip/排序/chip/管理入口四组重复实现，角标经 refresh 返回值 + 信号联动
     # 504 → 509：共享配队条的 combos_edited 透传上行（相性表刷新桥接的
     # 面板侧半边，主窗口侧见 main_window 预算注释）
-    "ui/match/peak_select_panel.py": 509,
+    # 509 → 510：PoolSnapshot 改自 peak_board_rules 导入（第 8 批二轮 P2-2
+    # 牌面纯规则出仓同步），import 拆两行
+    "ui/match/peak_select_panel.py": 510,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
     # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
     # 518 → 520：reset_recognizer_cache 同步清 _page_cache——白名单变更后同指纹
