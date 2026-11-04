@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import sys
 
+import pytest
 from PySide6.QtCore import QEventLoop, QProcess, QTimer
 from src.business.execution.script_runner import FAILED_TO_START_EXIT_CODE, ScriptRunner
 
@@ -454,6 +455,12 @@ def test_base_fetch_cleanup_tmp_file_swallows_unlink_oserror(qapp, monkeypatch, 
 
 # ---------------------------------------------------------------
 # 真实进程全链路回归（run → output → finished）
+#
+# 本节经 QProcess 真实 fork 子进程的用例标记 real_process：CI 中移出 xdist
+# 池、另起单进程运行。多线程 worker（execnet I/O + 前序用例泄漏线程）内
+# fork 的 Qt 原生竞态会间歇性 SIGSEGV 杀死 worker（Actions 实证，重跑即绿；
+# Windows 走 CreateProcess 无此路径）。failed_start 两例在 Linux 上同样
+# 真实 fork（exec 失败），一并隔离。
 # ---------------------------------------------------------------
 def _run_and_collect(runner: ScriptRunner, python: str, args: list[str],
                      working_dir, timeout_ms: int = 15000) -> tuple:
@@ -486,6 +493,7 @@ def _run_and_collect(runner: ScriptRunner, python: str, args: list[str],
     return state["code"], bytes(state["output"])
 
 
+@pytest.mark.real_process
 def test_script_runner_runs_real_process_to_completion(qapp, tmp_path) -> None:
     """run() 全链路（特征测试，固化现有行为）：真实子进程跑 print →
     output 逐段转发、finished(0) 必达、is_running 复位。
@@ -533,6 +541,7 @@ def _spin_until_finished(runner: ScriptRunner, events: list, timeout_ms: int = 5
     timer.stop()
 
 
+@pytest.mark.real_process
 def test_script_runner_failed_start_cleans_up(qapp, tmp_path) -> None:
     """回归（VUL-B2-001/B2-002）：启动失败必须收尾干净，不留僵尸与看门狗。
 
@@ -564,6 +573,7 @@ def test_script_runner_failed_start_cleans_up(qapp, tmp_path) -> None:
     assert runner.is_running() is False
 
 
+@pytest.mark.real_process
 def test_script_runner_failed_start_does_not_leak_watchdog(qapp, tmp_path) -> None:
     """连续三次启动失败不得累积**活跃**看门狗定时器。
 

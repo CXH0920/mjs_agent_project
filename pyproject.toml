@@ -2,6 +2,11 @@
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra --basetemp=.tmp_test/pytest-tmp"
+markers = [
+    # 经 QProcess 真实 fork 子进程的用例：CI 中移出 xdist 池单独单进程运行
+    #（多线程 worker 内 fork 存在 Qt 原生竞态，间歇性 SIGSEGV，见 verify.yml）
+    "real_process: 经 QProcess 启动真实子进程，CI 隔离运行",
+]
 
 [tool.ruff]
 target-version = "py311"
