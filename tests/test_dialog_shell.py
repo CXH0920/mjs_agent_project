@@ -66,6 +66,8 @@ class _MumuOperationService(QObject):
     device_tested = Signal(bool, str, str)
     screenshot_ready = Signal(str, object)
     screenshot_failed = Signal(str, str)
+    roi_screenshot_ready = Signal(str, object)
+    roi_screenshot_failed = Signal(str, str)
     operation_failed = Signal(str, str)
 
     def refresh_devices(self, emulator_type: str = "mumu") -> None:

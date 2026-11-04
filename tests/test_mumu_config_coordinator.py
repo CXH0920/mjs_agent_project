@@ -65,6 +65,8 @@ class _OperationService(QObject):
     device_tested = Signal(bool, str, str)
     screenshot_ready = Signal(str, object)
     screenshot_failed = Signal(str, str)
+    roi_screenshot_ready = Signal(str, object)
+    roi_screenshot_failed = Signal(str, str)
     operation_failed = Signal(str, str)
 
     def __init__(self) -> None:
@@ -73,6 +75,7 @@ class _OperationService(QObject):
         self.refresh_count = 0
         self.reprobe_types: list[str] = []
         self.template_requests: list[str] = []
+        self.roi_requests: list[str] = []
         self.test_requests: list[tuple[str, int]] = []
         self.closed = False
 
@@ -96,6 +99,9 @@ class _OperationService(QObject):
 
     def capture_template_screenshot(self, template_name: str) -> None:
         self.template_requests.append(template_name)
+
+    def capture_roi_layout_screenshot(self, page_type: str) -> None:
+        self.roi_requests.append(page_type)
 
     def shutdown(self) -> None:
         self.closed = True
@@ -201,8 +207,8 @@ def test_roi_layout_capture_and_save_are_separate_from_template_lifecycle(tmp_pa
 
     assert coordinator.start_roi_layout_capture("hero_selection")
     assert not coordinator.start_roi_layout_capture("hero_selection")
-    assert operation.template_requests == ["roi_layout:hero_selection"]
-    operation.screenshot_ready.emit("roi_layout:hero_selection", "image")
+    assert operation.roi_requests == ["hero_selection"]
+    operation.roi_screenshot_ready.emit("hero_selection", "image")
     coordinator.finish_roi_layout_capture("hero_selection")
 
     layout = coordinator.roi_layout("hero_selection")

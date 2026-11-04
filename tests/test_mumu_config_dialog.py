@@ -35,12 +35,15 @@ class _OperationService(QObject):
     device_tested = Signal(bool, str, str)
     screenshot_ready = Signal(str, object)
     screenshot_failed = Signal(str, str)
+    roi_screenshot_ready = Signal(str, object)
+    roi_screenshot_failed = Signal(str, str)
     operation_failed = Signal(str, str)
 
     def __init__(self, devices: list[EmulatorDeviceInfo]) -> None:
         super().__init__()
         self._devices = devices
         self.template_capture_requests: list[str] = []
+        self.roi_capture_requests: list[str] = []
         self.refresh_types: list[str] = []
         self.reprobe_types: list[str] = []
 
@@ -65,6 +68,9 @@ class _OperationService(QObject):
 
     def capture_template_screenshot(self, template_name: str) -> None:
         self.template_capture_requests.append(template_name)
+
+    def capture_roi_layout_screenshot(self, page_type: str) -> None:
+        self.roi_capture_requests.append(page_type)
 
     def shutdown(self) -> None:
         pass

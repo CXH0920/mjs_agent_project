@@ -101,11 +101,15 @@ class MumuConfigCoordinator(QObject):
         self._operation_service.connection_finished.connect(self.connection_finished.emit)
         self._operation_service.disconnection_finished.connect(self.disconnection_finished.emit)
         self._operation_service.device_tested.connect(self.device_tested.emit)
-        self._operation_service.screenshot_ready.connect(self._on_screenshot_ready)
+        # 截图结果双通道：模板截图成功结果纯转发（直连中继，与 connection_finished
+        # 同模式）；两类失败均需先结束在途守卫再转发，保留槽方法
+        self._operation_service.screenshot_ready.connect(self.template_screenshot_ready.emit)
         self._operation_service.screenshot_failed.connect(self._on_screenshot_failed)
+        self._operation_service.roi_screenshot_ready.connect(self.roi_layout_screenshot_ready.emit)
+        self._operation_service.roi_screenshot_failed.connect(self._on_roi_screenshot_failed)
         self._operation_service.operation_failed.connect(self._on_operation_failed)
 
-        self.sync_capture_config()
+        self._sync_capture_config()
 
     @property
     def config(self) -> dict:
@@ -130,14 +134,14 @@ class MumuConfigCoordinator(QObject):
     def capture(self):
         return self._capture_service.capture
 
-    def sync_capture_config(self) -> None:
-        """将当前草稿的 ADB 配置应用到共享截图会话。"""
+    def _sync_capture_config(self) -> None:
+        """将当前草稿的 ADB 配置应用到共享截图会话（仅类内调用）。"""
         self._capture_service.update_config(self._config)
 
     def update_adb_path(self, adb_path: str) -> None:
         """更新编辑中的 ADB 路径，并重建需要的共享会话。"""
         self._config["emulator_adb_path"] = adb_path
-        self.sync_capture_config()
+        self._sync_capture_config()
 
     def update_emulator_type(self, emulator_type: str) -> None:
         """更新编辑中的模拟器品牌，并同步共享会话（连接目标随之重建）。
@@ -147,7 +151,7 @@ class MumuConfigCoordinator(QObject):
         """
         self._config["emulator_type"] = emulator_type
         self._devices = []
-        self.sync_capture_config()
+        self._sync_capture_config()
 
     @property
     def emulator_type(self) -> str:
@@ -258,7 +262,7 @@ class MumuConfigCoordinator(QObject):
             return False
         self._roi_layout_captures_in_progress.add(page_type)
         try:
-            self._operation_service.capture_template_screenshot(f"roi_layout:{page_type}")
+            self._operation_service.capture_roi_layout_screenshot(page_type)
         except Exception:
             self.finish_roi_layout_capture(page_type)
             raise
@@ -392,29 +396,19 @@ class MumuConfigCoordinator(QObject):
                     requested_type, self.emulator_type)
         self._operation_service.refresh_devices(self.emulator_type)
 
-    def _on_screenshot_ready(self, request_name: str, image) -> None:
-        if request_name.startswith("roi_layout:"):
-            self.roi_layout_screenshot_ready.emit(request_name.split(":", 1)[1], image)
-            return
-        self.template_screenshot_ready.emit(request_name, image)
-
-    def _on_screenshot_failed(self, request_name: str, message: str) -> None:
-        if request_name.startswith("roi_layout:"):
-            page_type = request_name.split(":", 1)[1]
-            self.finish_roi_layout_capture(page_type)
-            self.roi_layout_screenshot_failed.emit(page_type, message)
-            return
-        template_name = request_name
+    def _on_screenshot_failed(self, template_name: str, message: str) -> None:
         self.finish_template_capture(template_name)
         self.template_screenshot_failed.emit(template_name, message)
 
+    def _on_roi_screenshot_failed(self, page_type: str, message: str) -> None:
+        self.finish_roi_layout_capture(page_type)
+        self.roi_layout_screenshot_failed.emit(page_type, message)
+
     def _on_operation_failed(self, operation: str, message: str) -> None:
         if operation.startswith("capture_template:"):
-            request_name = operation.split(":", 1)[1]
-            if request_name.startswith("roi_layout:"):
-                self.finish_roi_layout_capture(request_name.split(":", 1)[1])
-            else:
-                self.finish_template_capture(request_name)
+            self.finish_template_capture(operation.split(":", 1)[1])
+        elif operation.startswith("capture_roi_layout:"):
+            self.finish_roi_layout_capture(operation.split(":", 1)[1])
         self.operation_failed.emit(operation, message)
 
     def _device_selection_error(self, selected_explicitly: bool) -> str:

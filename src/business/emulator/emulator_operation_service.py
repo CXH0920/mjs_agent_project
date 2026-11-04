@@ -34,7 +34,7 @@ _Result = TypeVar("_Result")
 
 
 class EmulatorOperationService(QObject):
-    """串行执行 ADB 探测、连接、测试和模板截图等耗时操作。"""
+    """串行执行 ADB 探测、连接、测试和模板/ROI 布局截图等耗时操作。"""
 
     adb_detected = Signal(bool, str, str)  # (success, adb_path, message)
     adb_reprobed = Signal(str)  # 品牌切换静默重探结果（空 = 未找到，沿用旧路径）
@@ -47,6 +47,10 @@ class EmulatorOperationService(QObject):
     device_tested = Signal(bool, str, str)  # (success, target, message)
     screenshot_ready = Signal(str, object)  # (template_name, PIL.Image)
     screenshot_failed = Signal(str, str)  # (template_name, message)
+    # ROI 布局编辑截图走独立通道（page_type 直传），与模板截图互不复用
+    # 请求名编码——coordinator 无需解析字符串前缀区分两类结果
+    roi_screenshot_ready = Signal(str, object)  # (page_type, PIL.Image)
+    roi_screenshot_failed = Signal(str, str)  # (page_type, message)
     operation_failed = Signal(str, str)  # (operation, message)
 
     def __init__(self, capture_service: CaptureService, parent=None) -> None:
@@ -139,17 +143,38 @@ class EmulatorOperationService(QObject):
         )
 
     def capture_template_screenshot(self, template_name: str) -> None:
+        self._submit_screenshot(
+            f"capture_template:{template_name}",
+            self.screenshot_ready, self.screenshot_failed,
+            template_name,
+        )
+
+    def capture_roi_layout_screenshot(self, page_type: str) -> None:
+        """截取页面现状图供 ROI 布局编辑（与模板截图共用截图管线，独立回传通道）。"""
+        self._submit_screenshot(
+            f"capture_roi_layout:{page_type}",
+            self.roi_screenshot_ready, self.roi_screenshot_failed,
+            page_type,
+        )
+
+    def _submit_screenshot(
+        self,
+        operation: str,
+        ready: Signal,
+        failed: Signal,
+        request_name: str,
+    ) -> None:
         def work() -> tuple[bool, object]:
             return self._capture_service.capture_screenshot()
 
         def completed(result: tuple[bool, object]) -> None:
             ok, payload = result
             if ok:
-                self.screenshot_ready.emit(template_name, payload)
+                ready.emit(request_name, payload)
             else:
-                self.screenshot_failed.emit(template_name, str(payload))
+                failed.emit(request_name, str(payload))
 
-        self._submit(self._adb_executor, f"capture_template:{template_name}", work, completed)
+        self._submit(self._adb_executor, operation, work, completed)
 
     def shutdown(self) -> None:
         """停止接收新任务，应用退出时不再向已销毁的 UI 发射结果。"""

@@ -174,3 +174,23 @@ def test_connection_failure_and_template_capture_are_reported() -> None:
     assert screenshots == [("match_guide", "image")]
     assert errors == []
     service.shutdown()
+
+
+def test_roi_layout_capture_reports_on_dedicated_channel() -> None:
+    """ROI 布局截图走独立通道：成功回传 roi_screenshot_ready 且 page_type 直传，
+    不与模板截图的 screenshot_ready 复用信号或请求名编码。
+    """
+    service = EmulatorOperationService(_CaptureService())
+    roi_completed = Event()
+    roi_results: list[tuple[str, object]] = []
+    template_results: list[tuple[str, object]] = []
+    service.roi_screenshot_ready.connect(
+        lambda page, image: (roi_results.append((page, image)), roi_completed.set()))
+    service.screenshot_ready.connect(lambda name, image: template_results.append((name, image)))
+
+    service.capture_roi_layout_screenshot("hero_selection")
+
+    assert _wait(roi_completed)
+    assert roi_results == [("hero_selection", "image")]
+    assert template_results == []  # 双通道隔离：模板信号不收 ROI 结果
+    service.shutdown()
