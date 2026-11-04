@@ -39,6 +39,7 @@ from src.ui.library.synergy_edit_dialog import SynergyEditDialog
 from src.ui.shared import persist as persist_module
 from src.ui.shared.checkable_combo import CheckableComboBox
 from src.ui.shared.guide_detail_dialog import DoubleClickTextBrowser, GuideDetailDialog, GuideMarkdownDialog
+from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog, SelectionMode
 from src.ui.shared.widgets import DialogFooter, FlowLayout, PageHeader
 
 
@@ -137,9 +138,15 @@ def test_guide_edit_uses_type_inputs_and_multi_select_synergy_dialog(tmp_path: P
     assert edit_dialog._weak_against_type_edit.toPlainText() == "高爆发型"
 
     picker = HeroRelationSelectDialog(hero_manager, [2], "选择搭配推荐武将")
-    assert picker._selected_ids == {2}
+    assert picker._selected_id_set == {2}
+    checked_ids = {
+        picker._list_widget.item(row).data(Qt.ItemDataRole.UserRole)
+        for row in range(picker._list_widget.count())
+        if picker._list_widget.item(row).checkState() == Qt.CheckState.Checked
+    }
+    assert checked_ids == {2}
     picker._clear_selection()
-    picker._accept_selection()
+    picker._on_accept()
     assert picker.selected_ids == []
 
 
@@ -155,6 +162,24 @@ def test_relation_picker_uses_checkable_faction_combo(tmp_path: Path) -> None:
 
     picker._faction_combo._remove_tag("魏")
     assert picker._faction_combo.checked_values() == {"蜀"}
+
+
+def test_relation_picker_search_matches_faction_and_title_base_does_not(tmp_path: Path) -> None:
+    """关系选择器搜索扩展到称号/势力；基类默认仅匹配名字（其余选将场景行为不变）。"""
+    _app()
+    hero_manager = HeroManager(tmp_path / "heroes.json")
+    hero_manager.add_hero(Hero(id=1, name="曹操", faction="魏", title="魏武帝"))
+    hero_manager.add_hero(Hero(id=2, name="刘备", faction="蜀"))
+
+    relation = HeroRelationSelectDialog(hero_manager, [], "选择关系武将")
+    relation._search_input.setText("蜀")
+    assert [hero.name for hero in relation._filtered_heroes] == ["刘备"]
+    relation._search_input.setText("帝")
+    assert [hero.name for hero in relation._filtered_heroes] == ["曹操"]
+
+    base = BaseHeroSelectDialog(hero_manager, title="选将", selection_mode=SelectionMode.MULTI)
+    base._search_input.setText("蜀")
+    assert base._filtered_heroes == []
 
 
 def test_specific_fetch_dialog_uses_shared_faction_combo(tmp_path: Path) -> None:

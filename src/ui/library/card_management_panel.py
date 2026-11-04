@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from copy import deepcopy
 from datetime import datetime
@@ -56,6 +57,8 @@ from src.ui.shared.style import (
     set_ui_role,
 )
 from src.ui.shared.widgets import DialogFooter, PageHeader, confirm_discard_edits, show_toast
+
+logger = logging.getLogger(__name__)
 
 EFFECT_STATUS_LABELS = {
     "active": "生效中",
@@ -741,6 +744,7 @@ class CardAnnotationEditDialog(QDialog):
                 fields[key] = self._value_from_editor(definition, editor)
             self._service.save_annotation_fields(self._card_id, fields)
         except (OSError, ValueError) as error:
+            logger.warning("保存卡牌追加内容失败（card_id=%s）: %s", self._card_id, error)
             self._footer.set_busy(False)
             QMessageBox.critical(self, "保存失败", f"追加内容未保存，草稿仍保留：\n{error}")
             return
@@ -871,6 +875,7 @@ class CardFieldSchemaDialog(QDialog):
         try:
             self._service.add_field(dialog.definition())
         except (OSError, ValueError) as error:
+            logger.warning("新增卡牌字段失败: %s", error)
             QMessageBox.critical(self, "保存失败", str(error))
             return
         self._refresh()
@@ -886,6 +891,7 @@ class CardFieldSchemaDialog(QDialog):
         try:
             self._service.update_field(dialog.definition())
         except (OSError, ValueError) as error:
+            logger.warning("修改卡牌字段失败（key=%s）: %s", definition.key, error)
             QMessageBox.critical(self, "无法修改字段", str(error))
             return
         self._refresh()
@@ -900,6 +906,7 @@ class CardFieldSchemaDialog(QDialog):
         try:
             self._service.archive_field(definition.key)
         except (OSError, ValueError) as error:
+            logger.warning("归档卡牌字段失败（key=%s）: %s", definition.key, error)
             QMessageBox.critical(self, "归档失败", str(error))
             return
         self._refresh()

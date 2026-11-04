@@ -59,6 +59,7 @@ class BaseHeroSelectDialog(QDialog):
         max_selection: int = 0,
         min_selection: int = 1,
         allowed_names: set[str] | None = None,
+        initial_selected_ids: list[int] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -69,7 +70,8 @@ class BaseHeroSelectDialog(QDialog):
         self._allowed_names = allowed_names
         self._all_heroes: list[Hero] = []
         self._filtered_heroes: list[Hero] = []
-        self._selected_id_set: set[int] = set()
+        # 初始已选（编辑场景回显，如攻略搭配推荐）；从零选择的使用方不传即可
+        self._selected_id_set: set[int] = set(initial_selected_ids or [])
         self._selection_change_in_progress = False
 
         # === 返回值（子类/调用方读取） ===
@@ -196,6 +198,10 @@ class BaseHeroSelectDialog(QDialog):
         """返回武将是否满足子类定义的附加筛选条件。"""
         return True
 
+    def _matches_search(self, hero: Hero, search_text: str) -> bool:
+        """搜索词匹配钩子：默认仅匹配名字，子类可扩展称号/势力等字段。"""
+        return search_text in hero.name
+
     def _list_item_text(self, hero: Hero) -> str:
         """返回列表项显示文本。"""
         return f"{hero.name}  [{hero.faction}]"
@@ -216,7 +222,7 @@ class BaseHeroSelectDialog(QDialog):
             hero for hero in self._all_heroes
             if hero.faction in selected_factions
             and (self._allowed_names is None or hero.name in self._allowed_names)
-            and (not search_text or search_text in hero.name)
+            and (not search_text or self._matches_search(hero, search_text))
             and self._matches_extra_filter(hero)
         ]
 
@@ -291,7 +297,7 @@ class BaseHeroSelectDialog(QDialog):
         return f"已选择: {count} 个武将"
 
     def _accept_button_text(self, count: int) -> str:
-        return "确定" if count else "请选择武将"
+        return "确定" if count or self._min_selection == 0 else "请选择武将"
 
     def _can_accept_selection(self, count: int) -> bool:
         return self._min_selection <= count and (

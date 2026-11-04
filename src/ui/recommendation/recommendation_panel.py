@@ -74,6 +74,10 @@ class RecommendationPanel(QWidget):
 
     request_mumu_config = Signal()
 
+    # 横条内配队管理对话框的增删改经此透传上行（combo_strip.combos_edited），
+    # 主窗口分发到共享数据视图（武将资料库相性表）
+    combos_edited = Signal()
+
     def __init__(self, hero_manager: HeroManager, synergy_manager: SynergyManager,
                  guide_manager: GuideManager,
                  capture_service=None, ocr_service=None, parent=None,
@@ -187,6 +191,7 @@ class RecommendationPanel(QWidget):
         # （审计 G5 切片 4.4a 拆出；评级结果经信号回传刷卡片角标）
         self._combo_strip = ComboStrip(self._hero_mgr, self._combo_mgr, self)
         self._combo_strip.ratings_computed.connect(self._apply_combo_badges)
+        self._combo_strip.combos_edited.connect(self.combos_edited)
         layout.addWidget(self._combo_strip)
 
         self._cards_container = QWidget()

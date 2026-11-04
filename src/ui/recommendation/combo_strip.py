@@ -37,6 +37,10 @@ class ComboStrip(QWidget):
     # int 键转换失败后槽只收到空 dict（角标静默失效），须走 object 保原样送达
     ratings_computed = Signal(object)
 
+    # 配队管理对话框的增删改经本信号上行，主窗口分发到共享数据视图
+    # （武将资料库相性表）；横条自身刷新仍在 _open_combo_management 内直连
+    combos_edited = Signal()
+
     def __init__(self, hero_mgr, combo_mgr, parent=None) -> None:
         super().__init__(parent)
         self._hero_mgr = hero_mgr
@@ -134,10 +138,11 @@ class ComboStrip(QWidget):
         self._combo_toggle_btn.setText("展开" if self._combo_chips_collapsed else "收起")
 
     def _open_combo_management(self) -> None:
-        """打开实战配队全量管理对话框；增删改后即时刷新命中条。"""
+        """打开实战配队全量管理对话框；增删改后即时刷新命中条并上行通知。"""
         dialog = ComboManagementDialog(
             self._hero_mgr, ComboService(self._combo_mgr), self)
         dialog.combos_changed.connect(lambda: self.refresh(self._last_hero_ids))
+        dialog.combos_changed.connect(self.combos_edited)
         dialog.exec()
 
     def _show_combo_detail(self, combo) -> None:

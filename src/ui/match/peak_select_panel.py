@@ -58,6 +58,10 @@ class PeakSelectPanel(QWidget):
     request_mumu_config = Signal()
     board_exited = Signal()
 
+    # 共享配队条（ComboStrip）内管理对话框的增删改经此透传上行，
+    # 主窗口分发到共享数据视图（武将资料库相性表）
+    combos_edited = Signal()
+
     def __init__(
         self,
         capture_service,
@@ -206,6 +210,7 @@ class PeakSelectPanel(QWidget):
         # 配队后由 strip 内建重算并广播 ratings_computed，经信号槽联动刷新角标
         self._combo_strip = ComboStrip(self._hero_manager, self._combo_manager, self)
         self._combo_strip.ratings_computed.connect(self._apply_combo_badges)
+        self._combo_strip.combos_edited.connect(self.combos_edited)
         layout.addWidget(self._combo_strip)
 
         self._log_view = QPlainTextEdit()

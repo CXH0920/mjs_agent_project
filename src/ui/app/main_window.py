@@ -418,6 +418,12 @@ class MainWindow(QMainWindow):
         self._poll_coordinator.set_peak_recognizing_provider(self._peak_select_recognizing)
         self._tabs.addTab(self._peak_select, "巅峰赛选将")
 
+        # 配队管理对话框的增删改经面板信号上行到主窗口，统一分发共享数据视图：
+        # 推荐/巅峰页自身刷新已在打开点直连；武将资料库相性表深埋 library
+        # 页签无法自达，由组合根在此桥接，与 synergies_changed 分发同模式
+        self._recommendation.combos_edited.connect(self._hero_browser.refresh_synergies)
+        self._peak_select.combos_edited.connect(self._hero_browser.refresh_synergies)
+
         # Tab 4: 对局攻略（42/58 阵容与攻略工作台）
         self._match_guide = MatchGuidePanel(
             self._data.heroes,

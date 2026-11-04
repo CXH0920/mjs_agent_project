@@ -681,7 +681,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 599 → 620：构造期模态框挂起机制（第一轮 P2-3 / 第 12 批 [P3-2]）——置顶
     # splash 会盖住 _load_data 构造期弹出的确认框，表现为启动假死；拆出
     # _handle_missing_references + showEvent 延迟补弹，窗口显示前零模态交互
-    "ui/app/main_window.py": 620,
+    # 620 → 626：配队管理对话框增删改经面板 combos_edited 信号上行，主窗口
+    # 桥接到 hero_browser.refresh_synergies（相性表此前无刷新钩子，改配队后
+    # 要等切换武将才自愈；与 synergies_changed 分发同模式）
+    "ui/app/main_window.py": 626,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，
@@ -740,7 +743,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 900 → 906：效果区即时操作触发 _rebuild 重建前先收集普通字段编辑器
     # 当前值（第 14 批二轮审查移交 P2）——修复标记失效/新增记录静默丢弃
     # 未保存输入，且丢失对 dirty 关闭确认不可见
-    "ui/library/card_management_panel.py": 906,
+    # 906 → 913：四处写路径失败补 logger.warning（对齐 run_edit_dialog
+    # 分级），保存/新增/修改/归档失败不再是无日志留痕的哑失败
+    "ui/library/card_management_panel.py": 913,
     # hero_classification_panel.py（原 827）出表：三页签拆入
     # library/classification/ 后仅余 181 行装配壳（审计 G6 切片 4.5）
     # 699 → 742：公告翻页补拉（第一轮审查 P2-5 修复）——两次检查间新增
@@ -852,7 +857,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # begin/finish 携带 owner，被占时状态栏提示
     # 567 → 504：实战配队条收敛复用 ComboStrip（第 13 批二轮 P3-3）——删本地
     # tooltip/排序/chip/管理入口四组重复实现，角标经 refresh 返回值 + 信号联动
-    "ui/match/peak_select_panel.py": 504,
+    # 504 → 509：共享配队条的 combos_edited 透传上行（相性表刷新桥接的
+    # 面板侧半边，主窗口侧见 main_window 预算注释）
+    "ui/match/peak_select_panel.py": 509,
     # 546 → 551：6ea1866（兜底批次零产出短路）+5 行未同步预算，补登记恢复绿灯
     # 551 → 518：P2-13a 五处 _log_timing 手抄 kwargs 收口为 stage_timing 字典展开
     # 518 → 520：reset_recognizer_cache 同步清 _page_cache——白名单变更后同指纹
