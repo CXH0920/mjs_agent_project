@@ -62,7 +62,7 @@ class _BrandHintIcon(QLabel):
         super().mousePressEvent(event)
 
 
-class MumuDeviceSection(QFrame):
+class EmulatorDeviceSection(QFrame):
     """设备连接视图，只负责控件和用户操作信号。"""
 
     browse_requested = Signal()
@@ -236,7 +236,7 @@ class MumuDeviceSection(QFrame):
         )
 
 
-class MumuTemplateSection(QFrame):
+class EmulatorTemplateSection(QFrame):
     """OCR 模板状态和即时操作视图。"""
 
     hero_select_requested = Signal()
@@ -345,7 +345,7 @@ class MumuTemplateSection(QFrame):
         self._match_parameter_layout.setColumnStretch(1, 1)
 
 
-class MumuOcrPollingSection(QFrame):
+class EmulatorOcrPollingSection(QFrame):
     """OCR 开关、轮询参数和识别区域视图。"""
 
     poll_mode_changed = Signal(bool)
@@ -354,7 +354,7 @@ class MumuOcrPollingSection(QFrame):
     roi_image_requested = Signal(str)
     roi_reset_requested = Signal(str)
 
-    def __init__(self, template_section: MumuTemplateSection, parent=None) -> None:
+    def __init__(self, template_section: EmulatorTemplateSection, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("mumuRecognitionPage")
         layout = QVBoxLayout(self)
@@ -455,7 +455,7 @@ class MumuOcrPollingSection(QFrame):
         spin.setDecimals(2)
         spin.setFixedWidth(100)
         spin.setAlignment(Qt.AlignmentFlag.AlignRight)
-        MumuOcrPollingSection._style_parameter_spin(spin)
+        EmulatorOcrPollingSection._style_parameter_spin(spin)
         return spin
 
     @staticmethod
@@ -465,7 +465,7 @@ class MumuOcrPollingSection(QFrame):
         spin.setSuffix(" 秒")
         spin.setFixedWidth(100)
         spin.setAlignment(Qt.AlignmentFlag.AlignRight)
-        MumuOcrPollingSection._style_parameter_spin(spin)
+        EmulatorOcrPollingSection._style_parameter_spin(spin)
         return spin
 
     @staticmethod

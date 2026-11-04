@@ -133,7 +133,7 @@ PrintWindow 对本客户端稳定失败，主路径变更为 WGC，原兜底（B
 |---|---|
 | `src/capture/pc_client.py` | 窗口枚举（三态）、WGC 会话、BitBlt 兜底、黑帧检测、客户区裁剪、DPI 声明 |
 | `src/business/emulator/`（连接域适配） | 连接方式单选扩展（官方 PC 客户端项）、会话状态复用既有语义 |
-| `src/ui/configuration/mumu_device_page.py` | 设备页双形态（PC 形态：窗口候选下拉 + 进程/标题/分辨率展示，ADB 区块隐藏） |
+| `src/ui/configuration/emulator_device_page.py` | 设备页双形态（PC 形态：窗口候选下拉 + 进程/标题/分辨率展示，ADB 区块隐藏） |
 | `tests/` | 三态语义、黑帧判定、切换语义用例（扩展既有品牌连接用例惯例） |
 
 法律红线：新模块 docstring 与 `adb_screen.py` 同格式声明（需求文档第六节第 2 条）。

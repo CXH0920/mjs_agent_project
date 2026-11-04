@@ -142,9 +142,9 @@ def check_runtime_env() -> list[Finding]:
 
 def check_devices() -> list[Finding]:
     findings = []
-    from src.config.env import connection_key, get_mumu_config
+    from src.config.env import connection_key, get_emulator_config
 
-    config = get_mumu_config()
+    config = get_emulator_config()
     adb_path = connection_key(config, "emulator_adb_path")
     if not adb_path or not Path(adb_path).exists():
         findings.append(Finding(

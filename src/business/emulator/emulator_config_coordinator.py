@@ -47,7 +47,7 @@ class TemplateStatus:
     path: Path | None = None
 
 
-class MumuConfigCoordinator(QObject):
+class EmulatorConfigCoordinator(QObject):
     """协调模拟器配置草稿、共享服务和后台操作，不依赖具体控件。"""
 
     adb_detected = Signal(bool, str, str)
@@ -418,10 +418,10 @@ class MumuConfigCoordinator(QObject):
         return ""
 
 
-def persist_mumu_env_config(new_config: dict) -> None:
+def persist_emulator_env_config(new_config: dict) -> None:
     """把对话框确认后的配置写入 config.env（原子替换既有键，保留其它键与注释）。
 
-    new_config 出自 get_mumu_config() 全键字典（对话框经协调器持有），直接取键；
+    new_config 出自 get_emulator_config() 全键字典（对话框经协调器持有），直接取键；
     只写对话框可编辑的运行键，mumu_ocr_recheck_enabled 等部署键不在此列。
     """
     save_env_file(DEFAULT_ENV_FILE, {

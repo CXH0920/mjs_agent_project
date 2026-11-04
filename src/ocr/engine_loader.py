@@ -109,9 +109,9 @@ class RapidOcrEngine:
 
 def primary_suite() -> str:
     """主引擎套件名：config 的 ``MUMU_OCR_PRIMARY_ENGINE``（默认 v6，非法值回退 v6）。"""
-    from src.config.env import get_mumu_config
+    from src.config.env import get_emulator_config
 
-    value = str(get_mumu_config().get("mumu_ocr_primary_engine", "v6")).strip().lower()
+    value = str(get_emulator_config().get("mumu_ocr_primary_engine", "v6")).strip().lower()
     if value not in _SUITES:
         if value and value != "v6":
             logger.warning("MUMU_OCR_PRIMARY_ENGINE=%r 非法，回退 v6", value)
@@ -176,9 +176,9 @@ def _sha256(path: Path) -> str:
 
 
 def _cpu_threads() -> int:
-    from src.config.env import get_mumu_config
+    from src.config.env import get_emulator_config
 
-    return int(get_mumu_config().get("mumu_ocr_cpu_threads", 6))
+    return int(get_emulator_config().get("mumu_ocr_cpu_threads", 6))
 
 
 def _rapidocr_version() -> str:

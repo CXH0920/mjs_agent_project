@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """状态栏服务状态 chips：模拟器 ADB 与 OCR 轮询的常驻状态胶囊（批次6步骤3，自 MainWindow 抽取）。
 
-点击 chip 默认发出 mumu_config_requested，由主窗口连接到打开模拟器配置的动作；
+点击 chip 默认发出 emulator_config_requested，由主窗口连接到打开模拟器配置的动作；
 唯一例外是轮询处于闲置暂停态时点击发出 poll_resume_requested（点击即恢复轮询）。
 全局消息文本与业务进度条在 progress_reporter.ProgressReporter，与本部件互不覆盖。
 """
@@ -32,7 +32,7 @@ _POLL_STYLES = {
 class StatusChips(QWidget):
     """模拟器 ADB / OCR 轮询两个常驻状态胶囊（点击请求打开模拟器配置）。"""
 
-    mumu_config_requested = Signal()
+    emulator_config_requested = Signal()
     poll_resume_requested = Signal()
 
     def __init__(self, parent=None):
@@ -40,7 +40,7 @@ class StatusChips(QWidget):
         self._poll_state = "stopped"
         self._emulator_label = QLabel()
         self._emulator_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._emulator_label.mousePressEvent = lambda _: self.mumu_config_requested.emit()
+        self._emulator_label.mousePressEvent = lambda _: self.emulator_config_requested.emit()
         self._poll_label = QLabel()
         self._poll_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._poll_label.mousePressEvent = lambda _: self._on_poll_clicked()
@@ -55,7 +55,7 @@ class StatusChips(QWidget):
         if self._poll_state == "idle_paused":
             self.poll_resume_requested.emit()
         else:
-            self.mumu_config_requested.emit()
+            self.emulator_config_requested.emit()
 
     @property
     def emulator_label(self) -> QLabel:

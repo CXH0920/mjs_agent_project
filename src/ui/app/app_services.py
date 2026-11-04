@@ -21,7 +21,7 @@ from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.hero_fetch_service import HeroFetchService
 from src.business.fetching.synergy_fetch_service import SynergyFetchService
 from src.business.recognition.ocr_service import OcrService
-from src.config.env import get_mumu_config
+from src.config.env import get_emulator_config
 from src.data.announcement_manager import AnnouncementManager
 from src.data.card_catalog import CardRepository
 from src.data.card_points_repository import CardPointsRepository
@@ -81,8 +81,8 @@ class AppServices:
         # 屏幕采集服务
         self.capture = CaptureService()
         self.ocr = OcrService()
-        self.capture.update_config(get_mumu_config())
-        self.ocr.update_config(get_mumu_config())
+        self.capture.update_config(get_emulator_config())
+        self.ocr.update_config(get_emulator_config())
         self.ocr.set_hero_names([h.name for h in self.data.heroes.list_heroes()])
         self.poll = PollCoordinator(
             self.capture,

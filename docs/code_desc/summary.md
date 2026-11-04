@@ -295,7 +295,7 @@ test_project/
 **CaptureService 连接域出仓**（118f59c，纯内部等价重构）
 - 新文件 `src/business/emulator/capture_connection.py`（191 行）：`CaptureConnectionManager` 承接配置热更（update_config 三键比对重建 AdbCapture / set_target_port）、会话状态（set/sync/sync_poll，过期实例忽略）、连接编排（connect/disconnect，阻塞 IO 全在 `_adb_io_lock`）四大职责；两把锁（`_session_lock` 护内存态 / `_adb_io_lock` 串行 ADB IO）不嵌套持有；状态与消息经构造注入回调广播（emit 留在 QObject 宿主）
 - `capture_service.py` 575→479 行，连接域全部变一行转发，关停旗标同步 `OneShotToken`；信号与对外 API 零改动
-- 连带修复（6ea1866）：`mumu_config_coordinator.shutdown()` 显式断开 `connection_changed` 中继连接（emit 形式中继无 receiver 不随销毁解除，残留连接对已销毁对话框抛 "Signal source has been deleted"）
+- 连带修复（6ea1866）：`emulator_config_coordinator.shutdown()` 显式断开 `connection_changed` 中继连接（emit 形式中继无 receiver 不随销毁解除，残留连接对已销毁对话框抛 "Signal source has been deleted"）
 
 **OCR 识别链重构**（2646fd4 / b5e8e4f / 6ea1866）
 - `_recognize_page` 页型模板方法：`_PagePlan` 冻结数据类四开关（has_team / short_circuit_name_recheck / emit_empty_results / log_details）+ 两模块级单例（`_WUJIANG_SELECT_PLAN` / `_MATCH_GUIDE_PLAN`），recognize 双页型 90 行平行路径合一（519→493 行，纯等价重构）

@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
         self._actions = build_actions(self, {
             "exit": self.close,
             "api_settings": self._dialogs.open_settings,
-            "emulator_settings": self._dialogs.open_mumu_config,
+            "emulator_settings": self._dialogs.open_emulator_config,
             "faction_colors": self._dialogs.open_faction_colors,
             "whitelist_config": self._dialogs.open_whitelist_config,
             "data_management": self._dialogs.open_data_management,
@@ -397,7 +397,7 @@ class MainWindow(QMainWindow):
             combo_manager=self._combo_manager,
             capture_lock=shared_capture_lock,
         )
-        self._recommendation.request_mumu_config.connect(self._dialogs.open_mumu_config)
+        self._recommendation.request_emulator_config.connect(self._dialogs.open_emulator_config)
         self._tabs.addTab(self._recommendation, "选将推荐")
 
         # Tab 3: 巅峰赛选将（2v2 禁选后剩余候选池实时识别）
@@ -411,7 +411,7 @@ class MainWindow(QMainWindow):
             combo_manager=self._combo_manager,
             capture_lock=shared_capture_lock,
         )
-        self._peak_select.request_mumu_config.connect(self._dialogs.open_mumu_config)
+        self._peak_select.request_emulator_config.connect(self._dialogs.open_emulator_config)
         # 巅峰赛牌面退出 → 后续对局轮询命中的是巅峰赛对局，攻略胜率切巅峰榜
         self._peak_select.board_exited.connect(self._on_peak_board_exited)
         # 面板就绪后回填巅峰识别会话查询，供轮询路由丢弃会话中的泄漏结果
@@ -433,7 +433,7 @@ class MainWindow(QMainWindow):
             peak_win_rates_provider=self._peak_win_rates_provider,
             capture_lock=shared_capture_lock,
         )
-        self._match_guide.request_mumu_config.connect(self._dialogs.open_mumu_config)
+        self._match_guide.request_emulator_config.connect(self._dialogs.open_emulator_config)
         self._tabs.addTab(self._match_guide, "对局攻略")
 
         # Tab 5: 知识库维护（RAG 语料/索引本地维护工作台，仅完整版）
@@ -498,9 +498,9 @@ class MainWindow(QMainWindow):
         bar = QStatusBar()
         # reporter 已在 __init__ 信号接线前创建，此处仅挂载（addWidget 会重设父级）
         bar.addWidget(self._reporter)
-        # 服务状态 chips 自足小部件（批次6步骤3）：点击经信号回到 _open_mumu_config
+        # 服务状态 chips 自足小部件（批次6步骤3）：点击经信号回到 _open_emulator_config
         self._status_chips = StatusChips()
-        self._status_chips.mumu_config_requested.connect(self._dialogs.open_mumu_config)
+        self._status_chips.emulator_config_requested.connect(self._dialogs.open_emulator_config)
         self._status_chips.poll_resume_requested.connect(self._poll_coordinator.resume_from_idle_pause)
         bar.addPermanentWidget(self._status_chips)
         # 数据新鲜度芯片：自足小部件（服务注入订阅刷新），动作经信号回采集入口

@@ -15,8 +15,12 @@ from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, Q
 from src.business.emulator.capture_service import CaptureService
 from src.business.recognition.ocr_service import OcrService
 from src.capture.emulator_discovery import EmulatorDeviceInfo
-from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
-from src.ui.configuration.mumu_config_sections import MumuDeviceSection, MumuOcrPollingSection, MumuTemplateSection
+from src.ui.configuration.emulator_config_dialog import EmulatorConfigDialog
+from src.ui.configuration.emulator_config_sections import (
+    EmulatorDeviceSection,
+    EmulatorOcrPollingSection,
+    EmulatorTemplateSection,
+)
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter
 
@@ -98,7 +102,7 @@ class _OcrService:
         self.loaded.add(template_name)
 
 
-# 生产路径对话框配置出自 get_mumu_config() 全键字典；测试基线喂同等全键，用例可覆盖个别键
+# 生产路径对话框配置出自 get_emulator_config() 全键字典；测试基线喂同等全键，用例可覆盖个别键
 _FULL_MUMU_CONFIG = {
     "emulator_type": "mumu",
     "emulator_adb_path": "",
@@ -116,8 +120,8 @@ _FULL_MUMU_CONFIG = {
 }
 
 
-def _dialog(config: dict, devices: list[EmulatorDeviceInfo], ocr_service=None) -> MumuConfigDialog:
-    return MumuConfigDialog(
+def _dialog(config: dict, devices: list[EmulatorDeviceInfo], ocr_service=None) -> EmulatorConfigDialog:
+    return EmulatorConfigDialog(
         {**_FULL_MUMU_CONFIG, **config},
         capture_service=CaptureService(),
         ocr_service=ocr_service or OcrService(),
@@ -168,9 +172,9 @@ def test_dialog_composes_dedicated_configuration_sections() -> None:
     _app()
     dialog = _dialog({"emulator_adb_path": "adb.exe", "emulator_adb_port": 0}, [])
 
-    assert isinstance(dialog._device_page.section, MumuDeviceSection)
-    assert isinstance(dialog._recognition_page.template_section, MumuTemplateSection)
-    assert isinstance(dialog._recognition_page.ocr_polling_section, MumuOcrPollingSection)
+    assert isinstance(dialog._device_page.section, EmulatorDeviceSection)
+    assert isinstance(dialog._recognition_page.template_section, EmulatorTemplateSection)
+    assert isinstance(dialog._recognition_page.ocr_polling_section, EmulatorOcrPollingSection)
     assert [dialog._page_nav.item(index).text() for index in range(dialog._page_nav.count())] == [
         "设备与连接", "识别与自动化",
     ]
@@ -392,7 +396,7 @@ def test_brand_switch_clears_previous_brand_results_and_reports_failure() -> Non
     _app()
     device = EmulatorDeviceInfo("1", "雷电 实例 1（端口扫描·品牌未验证）", 5555, True)
     service = _RefreshFailsAfterSwitchService([device])
-    dialog = MumuConfigDialog(
+    dialog = EmulatorConfigDialog(
         {**_FULL_MUMU_CONFIG, "emulator_adb_path": "adb.exe", "emulator_adb_port": 0},
         capture_service=CaptureService(),
         ocr_service=OcrService(),

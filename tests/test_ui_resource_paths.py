@@ -9,8 +9,8 @@ import inspect
 from src.config.env import IMAGES_DIR, IMAGES_OUTPUT_DIR, PROJECT_ROOT, SCREENSHOTS_DIR
 from src.scraper.official_source.crawler import IMAGES_DIR as CRAWLER_IMAGES_DIR
 from src.ui.app.app_icon import APP_ICON_PATH
+from src.ui.configuration.emulator_recognition_page import DEFAULT_SCREENSHOTS_DIR, DEFAULT_TEMPLATE_DIR
 from src.ui.configuration.faction_color_dialog import COLORS_FILE
-from src.ui.configuration.mumu_recognition_page import DEFAULT_SCREENSHOTS_DIR, DEFAULT_TEMPLATE_DIR
 from src.ui.recommendation import hero_card_widget
 from src.ui.recommendation.recommendation_panel import SCREENSHOTS_DIR as RECOMMENDATION_SCREENSHOTS_DIR
 from src.ui.shared.faction_colors import FACTION_COLORS_FILE

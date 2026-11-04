@@ -47,15 +47,15 @@ class DialogCoordinator:
         """打开 API 配置对话框"""
         SettingsDialog(parent=self._window).exec()
 
-    def open_mumu_config(self) -> None:
+    def open_emulator_config(self) -> None:
         """打开模拟器配置对话框"""
-        from src.business.emulator.mumu_config_coordinator import persist_mumu_env_config
-        from src.config.env import get_mumu_config
-        from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
+        from src.business.emulator.emulator_config_coordinator import persist_emulator_env_config
+        from src.config.env import get_emulator_config
+        from src.ui.configuration.emulator_config_dialog import EmulatorConfigDialog
 
         w = self._window
-        config = get_mumu_config()
-        dialog = MumuConfigDialog(
+        config = get_emulator_config()
+        dialog = EmulatorConfigDialog(
             config,
             capture_service=w._capture_service,
             ocr_service=w._ocr_service,
@@ -67,7 +67,7 @@ class DialogCoordinator:
         new_config = dialog.get_config()
 
         # 保存到 config.env（键集与序列化细节在协调器模块）
-        persist_mumu_env_config(new_config)
+        persist_emulator_env_config(new_config)
 
         # 更新服务配置
         w._capture_service.update_config(new_config)
@@ -223,7 +223,7 @@ class DialogCoordinator:
         )
 
     def open_onboarding(self) -> None:
-        """打开首启向导；关闭后按连接状态恢复轮询（同 open_mumu_config 收尾）。
+        """打开首启向导；关闭后按连接状态恢复轮询（同 open_emulator_config 收尾）。
 
         外层保护（spec_onboarding R1）：向导自身异常不得演变为应用启动失败
         （主入口 try 会直接退出）或菜单回调崩溃——记日志 + 告警后照常收尾。

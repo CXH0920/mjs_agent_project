@@ -261,7 +261,7 @@ CLASS_BUDGETS: dict[str, int] = {
     # property 读写 pane 控件。属机械膨胀非职责增加，后续测试锚点迁移后可回落。
     "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 62,
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,
-    # MumuConfigCoordinator 40 → 42：官方 PC 客户端直连（2026-10-25）——
+    # EmulatorConfigCoordinator 40 → 42：官方 PC 客户端直连（2026-10-25）——
     # is_pc_client property 与 refresh_pc_windows 枚举封装两个薄方法，职责
     # 仍为配置协调（UI 不直连 capture 层的架构转出口），无拆分必要
     # 42 → 43：连接类别单选切换（2026-10-26）——switch_connection_mode
@@ -269,10 +269,10 @@ CLASS_BUDGETS: dict[str, int] = {
     # 43 → 45：探测结果品牌校验（2026-10-26）——_on_device_refresh_failed
     # 槽与 _discard_stale_refresh 补发两方法堵跨品牌切换竞态（过期结果
     # 覆盖当前品牌列表），接收后台结果的编排职责内聚
-    "business/emulator/mumu_config_coordinator.py:MumuConfigCoordinator": 45,
-    # MumuDevicePage 41：连接类别单选切换（2026-10-26）新增 _on_mode_activated
+    "business/emulator/emulator_config_coordinator.py:EmulatorConfigCoordinator": 45,
+    # EmulatorDevicePage 41：连接类别单选切换（2026-10-26）新增 _on_mode_activated
     # 入册（40 基线 + 双形态/单选接线），页面装配职责内聚
-    "ui/configuration/mumu_device_page.py:MumuDevicePage": 41,
+    "ui/configuration/emulator_device_page.py:EmulatorDevicePage": 41,
 }
 
 
@@ -698,8 +698,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 560 → 563：_on_accepted 落 completed 标记（第 12 批 [P3-3]）——零步骤
     # 完成也兑现"完成后不再打扰"，否则下次启动重弹
     "ui/app/onboarding_dialog.py": 563,
-    # mumu_config_dialog.py（原 771）出表：拆出 mumu_device_page.py 与
-    # mumu_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
+    # emulator_config_dialog.py（原 771）出表：拆出 emulator_device_page.py 与
+    # emulator_recognition_page.py 后仅余 224 行页装配（审计 G2 切片 4.1a/4.1b）
     "ui/recommendation/recommendation_panel.py": 860,
     # 940 → 955：崩溃/启动失败码不再进业务回调——_on_finished 标记
     # _last_run_ok，audit/sync 回调侧短路（第 15 批审查 P2-1 修复）
@@ -779,7 +779,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 容错分支照常生效）
     "capture/pc_client.py": 599,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
-    # 363 → 366：get_mumu_config 补回截图模式键（T1 运维加固，2026-10）；
+    # 363 → 366：get_emulator_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）
     # 368 → 364：键元表单源化（P1-4/P1-7，2026-10）——key_mapping/三张类型
     # 清单/两个 getter 默认值四处登记收口为 _ENV_KEY_SPECS 单表；

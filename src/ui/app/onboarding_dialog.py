@@ -22,10 +22,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from src.business.emulator.emulator_config_coordinator import EMULATOR_LABELS, EmulatorConfigCoordinator
 from src.business.emulator.layout_resolution import compare_resolution
-from src.business.emulator.mumu_config_coordinator import EMULATOR_LABELS, MumuConfigCoordinator
 from src.business.execution.script_runner import ScriptRunner
-from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_mumu_config
+from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_emulator_config
 from src.config.onboarding_state import mark_completed, mark_skipped, mark_step
 from src.scripts.doctor import (
     FAIL,
@@ -110,7 +110,7 @@ class OnboardingDialog(QDialog):
         super().__init__(window)
         self._window = window
         self._closing = False
-        self._coordinator: MumuConfigCoordinator | None = None
+        self._coordinator: EmulatorConfigCoordinator | None = None
         self._recognize_pending = False
         self._warmup_timed_out = False
         self._device_action_kind = ""
@@ -295,16 +295,16 @@ class OnboardingDialog(QDialog):
 
     # ── 段 2：模拟器与画面（协调器接线 + 分辨率体检）
 
-    def _ensure_coordinator(self) -> MumuConfigCoordinator:
-        """懒构造段 2 协调器（草稿 = 构造时的 get_mumu_config() 快照）。
+    def _ensure_coordinator(self) -> EmulatorConfigCoordinator:
+        """懒构造段 2 协调器（草稿 = 构造时的 get_emulator_config() 快照）。
 
-        深链返回后配置可能已保存变更（含端口），由 _open_mumu_config 整只
+        深链返回后配置可能已保存变更（含端口），由 _open_emulator_config 整只
         重建——update_adb_path 式半刷新只同步路径键，残留的旧端口草稿会把
         共享会话倒退回旧端口（多实例换端口场景）。
         """
         if self._coordinator is None:
-            self._coordinator = MumuConfigCoordinator(
-                config=get_mumu_config(),
+            self._coordinator = EmulatorConfigCoordinator(
+                config=get_emulator_config(),
                 capture_service=self._window._capture_service,
                 ocr_service=self._window._ocr_service,
                 parent=self,
@@ -382,7 +382,7 @@ class OnboardingDialog(QDialog):
             verdict = compare_resolution(
                 (int(image.width), int(image.height)), (int(reference[0]), int(reference[1])))
             self._set_device_status(verdict["status"], verdict["detail"],
-                                    "mumu_config" if verdict["hint"] else "",
+                                    "emulator_config" if verdict["hint"] else "",
                                     verdict["hint"])
         finally:
             # 向导不进入 ROI 编辑态，截图即用即弃：不释放槽位会让该页永久留在
@@ -406,22 +406,22 @@ class OnboardingDialog(QDialog):
             self._device_action_kind = "retry"
             self._device_action.setText("重试")
             self._device_action.setVisible(True)
-        elif action == "mumu_config":
-            self._device_action_kind = "mumu_config"
+        elif action == "emulator_config":
+            self._device_action_kind = "emulator_config"
             self._device_action.setText(action_text or "打开模拟器配置")
             self._device_action.setVisible(True)
 
     def _on_device_action(self) -> None:
         if self._device_action_kind == "retry":
             self._start_device_check()
-        elif self._device_action_kind == "mumu_config":
-            self._open_mumu_config()
+        elif self._device_action_kind == "emulator_config":
+            self._open_emulator_config()
 
-    def _open_mumu_config(self) -> None:
+    def _open_emulator_config(self) -> None:
         """深链模拟器配置（嵌套 exec，以主窗为父）；返回后重建协调器并整段重跑段 2。"""
         self.hide()
         try:
-            self._window._dialogs.open_mumu_config()
+            self._window._dialogs.open_emulator_config()
         finally:
             if not self._closing:
                 self.show()

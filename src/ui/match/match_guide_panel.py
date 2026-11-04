@@ -301,7 +301,7 @@ class MatchHeroCard(QFrame):
 class MatchGuidePanel(QWidget):
     """对局攻略页面：确认阵营后展示本地规则化摘要。"""
 
-    request_mumu_config = Signal()
+    request_emulator_config = Signal()
 
     def __init__(
         self,
@@ -743,7 +743,7 @@ class MatchGuidePanel(QWidget):
 
     def _on_recognize_current(self) -> None:
         if not self._capture_service or not self._capture_service.capture:
-            self.request_mumu_config.emit()
+            self.request_emulator_config.emit()
             return
         if not self._begin_capture("adb_recognize", "正在截图并识别阵容..."):
             return
@@ -754,7 +754,7 @@ class MatchGuidePanel(QWidget):
 
     def _on_save_screenshot(self) -> None:
         if not self._capture_service or not self._capture_service.capture:
-            self.request_mumu_config.emit()
+            self.request_emulator_config.emit()
             return
         if not self._begin_capture("adb_save", "正在保存截图..."):
             return

@@ -560,7 +560,7 @@ def run_guide_generation(heroes, generator, guide_path, existing_guides, api_con
 | OfficialImportGateway | `official_import_gateway.py` | ~57 | QObject | 3（progress / completed / failed；审计 G8 出仓） |
 | ImageSaveScheduler | `image_save_scheduler.py` | ~57 | QObject | 2（image_saved / _save_ready；审计 G8 出仓） |
 | EmulatorOperationService | `emulator_operation_service.py` | ~145 | QObject | 9 |
-| MumuConfigCoordinator | `mumu_config_coordinator.py` | ~319 | QObject | 14 |
+| EmulatorConfigCoordinator | `emulator_config_coordinator.py` | ~319 | QObject | 14 |
 | OcrService | `ocr_service.py` | ~407 | QObject | 4（status_changed / template_changed / poll_tick / poll_state_changed） |
 | OfficialDataImportService | `official_data_import_service.py` | ~640 | 普通类（无 Qt 信号，进度经 OcrWorker 回调转发） | —；配套 `OcrWorker(QThread)` 在 `ocr_worker.py`（task_completed / official_progress 2 个信号）；版式解析委托 `official_board_parser.py`，纠错规则在 `name_resolution.py`、引擎策略在 `official_ocr_engines.py` |
 | CardSyncService | `card_sync.py` | ~322 | QObject | 5（check_started / check_finished / status_changed / progress_changed / _check_done） |
@@ -1087,8 +1087,8 @@ def apply_incremental_update(data_dir, update)
 | match/peak_hero_card.py | 164 | QWidget（巅峰赛武将卡片 + 禁选建议/实战配队角标） |
 | recommendation/recommendation_panel.py | 862 | QWidget（2×4 卡片 + 实战配队横条） |
 | recommendation/hero_card_widget.py | — | 推荐卡片 |
-| configuration/mumu_config_dialog.py | 773 | QDialog（模拟器配置状态与操作协调） |
-| configuration/mumu_config_sections.py | 365 | QGroupBox（设备、模板和 OCR 参数视图） |
+| configuration/emulator_config_dialog.py | 773 | QDialog（模拟器配置状态与操作协调） |
+| configuration/emulator_config_sections.py | 365 | QGroupBox（设备、模板和 OCR 参数视图） |
 | configuration/whitelist_config_dialog.py | 273 | QDialog（白名单配置：错法观察清单 A+/A/B/C 分类 + 用户层白名单维护） |
 | configuration/settings_dialog.py | 582 | QDialog（多 API 档案 + 运行参数 + 价格） |
 | configuration/faction_color_dialog.py | — | QDialog（势力配色，数组结构 `[{faction, color}]`，位置即展示顺序） |
@@ -1195,11 +1195,11 @@ MainWindow.__init__
 
 **名字未决时按座次划分敌我（2026-09 修复）**：当 OCR 识别的武将名字未决（未确认）时，仍按座次位置划分敌我阵营——候选内纠错不再清空重划。`LineupState`（`match_lineup_state.py`）的敌我划分逻辑修复为按座次而非按名字确认状态，确保未决槽位也能正确显示阵营归属。
 
-### 5.4 模拟器配置对话框（MumuConfigDialog）
+### 5.4 模拟器配置对话框（EmulatorConfigDialog）
 
 位于 配置 → 模拟器配置，与 SettingsDialog 同级菜单入口。
 
-`MumuConfigCoordinator` 持有配置草稿、设备列表、共享会话状态，以及模板和 ROI 布局截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 分别构建设备页、识别任务面板和自动化控件并发出操作信号；`MumuConfigDialog` 负责双页导航组装、状态协调、文件选择、ROI 框选及用户提示。关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
+`EmulatorConfigCoordinator` 持有配置草稿、设备列表、共享会话状态，以及模板和 ROI 布局截图生命周期，集中调用 `CaptureService`、`EmulatorOperationService` 与 `OcrService`。`EmulatorDeviceSection`、`EmulatorTemplateSection` 和 `EmulatorOcrPollingSection` 分别构建设备页、识别任务面板和自动化控件并发出操作信号；`EmulatorConfigDialog` 负责双页导航组装、状态协调、文件选择、ROI 框选及用户提示。关闭对话框时由协调器停止后台操作，避免迟到回调更新已销毁的控件。
 
 **功能分区**：
 
@@ -1741,7 +1741,7 @@ AI 回复文本（浏览器 inner_text 或 API response）
 | `migrate_legacy_api_config()` | 首启迁移：存在旧 `DEEPSEEK_*` 三件套时自动落成 `deepseek-main` 档案 |
 | `load_pricing_config()` / `save_pricing_config()` / `get_model_pricing(model)` | `config/model_pricing.json` 读/写/按模型取价（损坏/缺失回退空表，负价格/非数字/布尔误判拒绝） |
 | `get_runtime_params()` | 获取运行时参数（含 `log_to_file: bool`），一行委托 `_config_with_defaults(config, "runtime")` |
-| `get_mumu_config()` | 获取模拟器（MuMu）ADB/OCR 配置，一行委托 `_config_with_defaults(config, "mumu")` |
+| `get_emulator_config()` | 获取模拟器（MuMu）ADB/OCR 配置，一行委托 `_config_with_defaults(config, "mumu")` |
 | `save_env_file(env_path, data)` | 原子写入 .env 文件 |
 
 路径常量集中收敛在 `env.py`：`IS_FROZEN`、`PROJECT_ROOT`（可写根）、`BUNDLE_ROOT`（打包只读根 `_internal`）、`DEFAULT_ENV_FILE`、`DEFAULT_PRICING_FILE`（`PROJECT_ROOT/config/model_pricing.json`，6b21d75 换根）、`DEFAULT_PROFILES_FILE`、`IMAGES_DIR` / `IMAGES_OUTPUT_DIR`、`SCREENSHOTS_DIR`。打包态下资源只读、数据可写，两者分离（读取侧统一运行时根，见"当前代码基线"节的读写根治理）。
@@ -1761,7 +1761,7 @@ class _EnvKeySpec(NamedTuple):
 _ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 38 键
 ```
 
-三个消费方：`load_env_config()` 按 `spec.type` 统一转换；`get_runtime_params()` / `get_mumu_config()` 经 `_config_with_defaults()` 按域补默认值。测试侧 `tests/test_env_config.py` 维护 `_SENTINELS` 全量键哨兵表（独立手抄期望值，防漏登记复发）。
+三个消费方：`load_env_config()` 按 `spec.type` 统一转换；`get_runtime_params()` / `get_emulator_config()` 经 `_config_with_defaults()` 按域补默认值。测试侧 `tests/test_env_config.py` 维护 `_SENTINELS` 全量键哨兵表（独立手抄期望值，防漏登记复发）。
 
 38 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 21 键**（多品牌连接键 2026-10 新增 6 个：`emulator_type`（品牌/连接方式，取值域 `src.capture.emulator_discovery.EMULATOR_TYPES` 五品牌 + `pc_client`）/ `emulator_brand`（切 PC 客户端期间记住上次模拟器品牌）/ `pc_window_title`（PC 直连目标窗口标题，默认"名将杀"）/ `emulator_adb_path` / `emulator_adb_port` / `emulator_screenshot_mode`（三键 `default_from` 回退旧 `mumu_*` 实配值，老 config.env 不改字平滑升级；持久化始终写新键）+ 既有 15 键 `mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 11 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）。转型失败使用默认值并打 warning。
 
@@ -2434,7 +2434,7 @@ def _engine(self):
 ```
 用户点击选将推荐面板「识别当前阵容」或「更多 > 从图片导入」
   │
-  ├── ADB 未配置？→ 弹出 MumuConfigDialog 配置
+  ├── ADB 未配置？→ 弹出 EmulatorConfigDialog 配置
   │
   ├── CaptureService.do_capture(hero_names, force_ocr=True)   [当前模拟器画面识别]
   │   ├── AdbCapture 连接（未连接时自动连接）
@@ -2464,7 +2464,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 
 用户勾选「持续轮询」→ 保存配置
   │
-  └─ MainWindow._open_mumu_config() → 仅记录配置
+  └─ MainWindow._open_emulator_config() → 仅记录配置
        │
        └─ ADB 连接状态变为 connected → start_poll(interval_ms)
        │
@@ -3310,7 +3310,7 @@ CardSyncDialog
 | **三十四** | **运维工具链** | **2026-10** | **doctor 一键自检（12 组，`check_environment` 于 2026-10-23 拆为 `check_dev_toolchain` 与 `check_runtime_env` 以适配打包态）；ops 周更编排（weekly/health/retry-failed/clean）；任务台账 task_ledger；版本单一来源 version.py；QProcess 看门狗；启动自动公告检查与截图回收** |
 | **三十五** | **B1 OCR 全量切换** | **2026-10** | **RapidOCR 双套件（v6 主 + v4 复核）替代 paddle 全栈；engine_loader 替代 paddle_loader；fetch_recheck_models v4 预取；白名单 10 对基线与简繁对退役；回退触发线 0.75；打包 763→608MB** |
 | **三十六** | **数据健壮性与 prompt 强化** | **2026-10** | **json_repository 三基元与全库原子写收敛；写前快照接入；Skill 空串禁令；采集四道守卫与增量硬停；httpx 超时分层；--retry-failed 定向重试；相性四层决策门/锚例、攻略 JSON 纪律、guide 温度 0.55** |
-| **三十七** | **竞态守卫原语定稿与连接域出仓** | **2026-10** | **session_guard 三原语（SessionGuard/BusyGate/OneShotToken）定稿，全仓五处裸旗标语义不变收口；CaptureConnectionManager 连接域出仓（capture_service 575→479 行）；巅峰赛 _clear_session_state 统一与过场坏帧扣住一拍复核；mumu_config_coordinator shutdown 断连修复** |
+| **三十七** | **竞态守卫原语定稿与连接域出仓** | **2026-10** | **session_guard 三原语（SessionGuard/BusyGate/OneShotToken）定稿，全仓五处裸旗标语义不变收口；CaptureConnectionManager 连接域出仓（capture_service 575→479 行）；巅峰赛 _clear_session_state 统一与过场坏帧扣住一拍复核；emulator_config_coordinator shutdown 断连修复** |
 | **三十八** | **数据新鲜度芯片** | **2026-10** | **freshness.py 逐武将核对判定核心（修正全局 max 误绿漏报四缺陷）；状态栏第三枚 DataFreshnessChip 胶囊（六路信号 + 目录监听去抖、三组菜单、建议动作直达采集入口）；DATA_FRESHNESS_TIMELINE_STALE_DAYS 配置键** |
 | **三十九** | **RAG 编码器 ONNX 化** | **2026-10** | **embedder.py 编码器抽象层（OnnxEmbedder 默认 + STEmbedder 回滚档，三件套 sha256 熔断）；export_embedding_onnx 导出链；索引整目录重建（80.9→14.8MB）；检索 trace 可观测与检索诊断抽屉；评估历史 JSONL；doctor「RAG索引」检查组；精简包自带 RAG（658.9/764.1MB）；发版四连门禁** |
 | **四十** | **巅峰赛面板稳定性与公告启动加载** | **2026-10** | **卡位逐拍漂移抑制与面板跳变治理（`card_grid_detector` 参考几何 + `_normalize_card` 主路径归一 + `_refit_card_width(min_run_ratio=0.8)` + `layout_is_plausible` / `board_row_sizes` 排布校验 + `_restore_missing_cards` 漏检补齐，`BOARD_EXIT_TICKS` 2→4）；对局攻略退出衔接收敛至 PollCoordinator（删除 watcher 侧恢复双头）；公告管理器启动即加载（已处理公告重启后不再反复提示待更新）** |
@@ -3392,7 +3392,7 @@ release.py 在打包前新增四道串行门禁（任一不过即终止）：
 
 ```
 段 1 环境自检        段 2 模拟器连接与分辨率体检      段 3 试识别
-  EnvCheckWorker        懒构造 MumuConfigCoordinator    预热门禁（OCR 就绪）
+  EnvCheckWorker        懒构造 EmulatorConfigCoordinator    预热门禁（OCR 就绪）
   （后台线程 + LIVE_      -> 深链端口探测                -> CaptureService.capture_for_poll()
     WORKERS 防 GC）       -> 分辨率体检（2560x1440 等比） -> OcrWorker 识别
   -> doctor 修复映射     -> 首启体检槽位占用              -> parse_pool() -> 结果展示

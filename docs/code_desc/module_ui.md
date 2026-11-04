@@ -78,11 +78,11 @@ src/ui/
 ├── configuration/              # 应用、势力与模拟器配置
 │   ├── settings_dialog.py
 │   ├── faction_color_dialog.py
-│   ├── mumu_config_dialog.py
-│   ├── mumu_device_page.py         # 模拟器配置·设备与连接页（信号接线与控件状态；
+│   ├── emulator_config_dialog.py
+│   ├── emulator_device_page.py         # 模拟器配置·设备与连接页（信号接线与控件状态；
 │   │                               #   2026-10-25 起连接类别单选「模拟器 / 官方 PC 客户端」双形态）
-│   ├── mumu_recognition_page.py    # 模拟器配置·识别与自动化页（模板/ROI/轮询参数）
-│   ├── mumu_config_sections.py     # 配置区块组装（品牌行五家下拉 + 特性 ⓘ 悬停提示 + ADB 区块）
+│   ├── emulator_recognition_page.py    # 模拟器配置·识别与自动化页（模板/ROI/轮询参数）
+│   ├── emulator_config_sections.py     # 配置区块组装（品牌行五家下拉 + 特性 ⓘ 悬停提示 + ADB 区块）
 │   ├── roi_selector.py
 │   └── whitelist_config_dialog.py     # 白名单配置对话框（错法观察清单 + 用户层白名单维护）
 ├── data_admin/                 # 数据维护、官方榜单导入与公告更新
@@ -132,7 +132,7 @@ src/ui/
 阶段六新增常驻状态与服务装配的收敛点（1f9417b 进一步拆分）：
 
 - **`AppServices`** — `MainWindow` 的协作对象组合根。构造 `DataFacade` / 三个 Fetch 服务 / `AiGenerationWorkflow` / `CaptureService` / `OcrService` / `PollCoordinator` / `AnnouncementManager` / `AnnouncementService` / `CardRepository` / `CardSyncService` / `WinRatesProvider` / `PeakWinRatesProvider` / `PeakPickRanksProvider` / `CardPointsRepository`，并在 `attach(parent)` 中一次性挂载 QObject 父子与 `AiGenerationWorkflow.set_window(parent)`（组合根无头构造时窗口引用为 None，只 `setParent` 会漏弹窗归属）。`MainWindow.__init__` 从 `_services` 解包到 `_fetch_service` / `_guide_service` / `_capture_service` 等惯用属性，其余接线/建 UI 代码零感知；`__new__` 式测试与属性替换依赖普通实例属性，刻意不做 property 委托。
-- **`StatusChips`** — 底部状态栏的常驻胶囊（模拟器 ADB / OCR 轮询），自足组件点击默认发出 `mumu_config_requested` 由主窗口连到 `_open_mumu_config`，轮询处于 `idle_paused` 时点击改为发出 `poll_resume_requested` 恢复轮询。胶囊文案/色/背景由内部 `_EMULATOR_STYLES` / `_POLL_STYLES` 常量表驱动，`set_emulator_state()` 与 `set_poll_state()` 在业务回调中渲染。
+- **`StatusChips`** — 底部状态栏的常驻胶囊（模拟器 ADB / OCR 轮询），自足组件点击默认发出 `emulator_config_requested` 由主窗口连到 `_open_emulator_config`，轮询处于 `idle_paused` 时点击改为发出 `poll_resume_requested` 恢复轮询。胶囊文案/色/背景由内部 `_EMULATOR_STYLES` / `_POLL_STYLES` 常量表驱动，`set_emulator_state()` 与 `set_poll_state()` 在业务回调中渲染。
 - **`ProgressReporter`** — 状态栏全局消息文本与业务进度条的统一渲染出口。业务侧只调 `show_message()` / `show_event_message()` / `show_progress()` / `set_default_message()` 等 API，不直接摸状态栏控件；`show_message()` 设置普通状态文本，`show_event_message()` 显示事件提示并 5 秒后回落到默认统计文案，`show_progress(current, total)` 设置确定进度条，`show_indeterminate_progress(text)` 设置不确定进度条，`hide_progress()` 隐藏进度条。完成/事件类消息的停留时长由 `EVENT_MESSAGE_DURATION_MS=5000` 控制。`ProgressReporter` 在 `MainWindow.__init__` 中早于信号接线创建，`_setup_status_bar()` 只负责挂载到状态栏。
 - **`PollCoordinator`** — OCR 轮询管线已从 `MainWindow` 下沉为独立协调器（1f9417b）。轮询后台线程与结果过滤全部在 `PollCoordinator` 内完成，`MainWindow` 只消费三条界面出口信号：`hero_selection_matched`（选将命中 → 推荐页灌入）、`match_guide_matched`（对局命中 → 攻略页灌入）、`page_switch_requested`（自动跳转工作区）。`set_peak_recognizing_provider()` 注入巅峰赛识别会话查询，供轮询路由丢弃会话中的泄漏结果。
 - **`AnnouncementUpdateCoordinator`** — 公告管线与武将更新阶段机已从 `MainWindow` 下沉为独立协调器（1f9417b）。承接公告驱动的武将更新全流程编排：公告检查、横幅三态、确认流程与多阶段采集令牌机。`attach(window, banner, update_button)` 挂载横幅控件与更新按钮作为其刷新目标与弹窗归属；`check_announcements()` / `open_announcement_dialog()` / `update_hero_data_from_announcements()` 三个公开方法分别对应菜单入口、公告记录入口和横幅更新入口。
@@ -235,7 +235,7 @@ MainWindow
 
 工作流负责 `status_changed`、完成、错误和进度信号，创建后端选择与进度对话框；后端选择对话框同时返回 `(backend, use_rag)`（API/浏览器 + RAG 增强/经典模式），工作流将 `use_rag` 透传给攻略/相性获取服务；成功后重载对应 Manager，再发出 `guides_changed` 或 `synergies_changed`。主窗口将状态写入状态栏，并在相性变更后刷新武将浏览与选将推荐页面。
 
-底部状态栏按职责分为三部分：`ProgressReporter` 承载普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度，以及 `QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击默认经 `mumu_config_requested` 打开模拟器配置（唯一例外：轮询闲置暂停态点击发出 `poll_resume_requested` 恢复轮询）；`DataFreshnessChip` 常驻显示四类数据的新鲜度聚合档位，点击弹出详情与建议操作菜单（详见 3.14 节）。任务消息不会覆盖后两类连接状态与数据新鲜度胶囊。
+底部状态栏按职责分为三部分：`ProgressReporter` 承载普通状态文本显示数据统计及采集、生成、截图、OCR 预热等当前任务进度，以及 `QProgressBar` 用于公告检查（不确定）与武将采集子进程 `[n/N]` 阶段（确定）；`StatusChips` 常驻显示模拟器 ADB 与 OCR 轮询状态胶囊，点击默认经 `emulator_config_requested` 打开模拟器配置（唯一例外：轮询闲置暂停态点击发出 `poll_resume_requested` 恢复轮询）；`DataFreshnessChip` 常驻显示四类数据的新鲜度聚合档位，点击弹出详情与建议操作菜单（详见 3.14 节）。任务消息不会覆盖后两类连接状态与数据新鲜度胶囊。
 
 攻略全量、增量、指定与相性指定配对计算、落后相性刷新、选定武将、实战配队批量共七个菜单入口保留在 `MainWindow`，但均只委托对应的 `AiGenerationWorkflow.request_*()` 方法。增量攻略仅向服务传递缺少攻略的武将，因此成本估算和进度对话框总数与实际任务一致。
 
@@ -372,7 +372,7 @@ def update_recommendations(self, data: list[dict]) -> None
 
 配置文件 `config/faction_colors.json` 已从 dict 结构升级为数组结构 `[{faction, color}, ...]`（1398692），数组位置即筛选界面的势力展示顺序——配置方按所需展示次序排列条目，无需额外排序字段。`load_faction_colors()` 返回 dict（字典插入顺序即配置顺序），`sort_factions_by_config(factions)` 按配置顺序排序势力名列表，配置外的势力按码点序追加尾部。`save_faction_colors()` 输出 `[{faction, color}, ...]` 数组。
 
-模拟器配置使用“设备与连接”“识别与自动化”两个左侧导航页，顶部共享 ADB 状态和底部保存栏固定显示。识别页先显示 OCR/轮询开关（含“长时间无画面变化时自动暂停轮询”，随持续轮询开关联动启用/禁用），再由 `MumuTemplateSection` 将武将选择、对局攻略各自的模板、阈值和 ROI 操作组织在同一任务面板中；窄窗口上下排列，宽窗口双列展示。`MumuDeviceSection`、`MumuTemplateSection` 和 `MumuOcrPollingSection` 只构造控件并发出用户操作信号；设备侧交互收敛在 `MumuDevicePage`、模板/ROI/轮询交互收敛在 `MumuRecognitionPage`（各自连接 Section 请求信号与协调器回执信号），`MumuConfigDialog` 只做页面装配、页头 ADB 总状态与保存编排，`MumuConfigCoordinator` 仍是唯一业务协调器。两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击，后台自动建立连接并获取截图，只有未配置 ADB 或正在连接时禁用模板制作；“恢复轮询”仅在轮询暂停时显示。
+模拟器配置使用“设备与连接”“识别与自动化”两个左侧导航页，顶部共享 ADB 状态和底部保存栏固定显示。识别页先显示 OCR/轮询开关（含“长时间无画面变化时自动暂停轮询”，随持续轮询开关联动启用/禁用），再由 `EmulatorTemplateSection` 将武将选择、对局攻略各自的模板、阈值和 ROI 操作组织在同一任务面板中；窄窗口上下排列，宽窗口双列展示。`EmulatorDeviceSection`、`EmulatorTemplateSection` 和 `EmulatorOcrPollingSection` 只构造控件并发出用户操作信号；设备侧交互收敛在 `EmulatorDevicePage`、模板/ROI/轮询交互收敛在 `EmulatorRecognitionPage`（各自连接 Section 请求信号与协调器回执信号），`EmulatorConfigDialog` 只做页面装配、页头 ADB 总状态与保存编排，`EmulatorConfigCoordinator` 仍是唯一业务协调器。两个模板制作按钮在 ADB 已配置但尚未连接时仍可点击，后台自动建立连接并获取截图，只有未配置 ADB 或正在连接时禁用模板制作；“恢复轮询”仅在轮询暂停时显示。
 
 保存流程如下：
 
@@ -393,7 +393,7 @@ ColorPicker.color()
 
 卡片分离识别状态与敌我席位状态，使用互斥“我方 / 敌方 / 未定”分段控件，并稳定显示“我、队友、敌方 1、敌方 2”。蓝色仅表达我方和可执行信息，红色仅表达敌方与威胁，势力色只保留阵营归属语义。新 OCR 结果会清除旧分析并回到总览，任何调整都要求重新确认。
 
-选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。OCR 结果携带原文、候选、确认状态和多路证据。选将推荐的待确认卡片不加载推荐指数、胜率或相性，只允许在当前候选集合中人工确认；其他已确认卡片照常更新。对局攻略保留未决槽位，替换窗口优先只显示该槽候选，人工替换后标记为 `manual`；任何名称未决时阵容确认按钮保持禁用。未配置 ADB 时通过 `request_mumu_config` 信号打开模拟器配置。
+选将推荐与对局攻略的“识别当前阵容”均通过 `CaptureService` 截图并强制执行对应模板的 OCR；本地图片导入复用同一识别流程。OCR 结果携带原文、候选、确认状态和多路证据。选将推荐的待确认卡片不加载推荐指数、胜率或相性，只允许在当前候选集合中人工确认；其他已确认卡片照常更新。对局攻略保留未决槽位，替换窗口优先只显示该槽候选，人工替换后标记为 `manual`；任何名称未决时阵容确认按钮保持禁用。未配置 ADB 时通过 `request_emulator_config` 信号打开模拟器配置。
 
 后台轮询命中独立模板后只刷新对应页面数据，不自动切换 Tab，避免抢占用户当前页面。
 
@@ -594,10 +594,10 @@ PeakSelectPanel
 
 **段 2 模拟器与画面**（`_start_device_check`）：
 
-- 懒构造 `MumuConfigCoordinator(config=get_mumu_config(), capture_service, ocr_service, parent=self)`，连接 `adb_detected` / `devices_changed` / `device_refresh_failed` / `connection_finished` / `roi_layout_screenshot_ready` / `roi_layout_screenshot_failed` 六个信号。
+- 懒构造 `EmulatorConfigCoordinator(config=get_emulator_config(), capture_service, ocr_service, parent=self)`，连接 `adb_detected` / `devices_changed` / `device_refresh_failed` / `connection_finished` / `roi_layout_screenshot_ready` / `roi_layout_screenshot_failed` 六个信号。
 - 未配置 ADB → `coordinator.detect_adb()`；已配置 → `coordinator.refresh_devices()`。单实例自动连接；多实例弹下拉选择（`_device_combo` + `_device_connect_button`）；无实例提示启动 MuMu。
 - 连接成功后 `mark_step("device")`（`src/config/onboarding_state.py`），再 `coordinator.start_roi_layout_capture("hero_selection")` 截取选将页截图，经 `compare_resolution()`（`src/business/emulator/layout_resolution.py`）体检分辨率并返回 `(status, detail, hint)` 三态。截图即用即弃：`finally` 块调 `coordinator.finish_roi_layout_capture(page_type)` 释放槽位——不释放会让该页永久留在 in-progress 集合、之后每次"连接并体检"都静默失效。
-- 深链模拟器配置（`_open_mumu_config`）：嵌套 `self._window._dialogs.open_mumu_config()` 返回后重建协调器——旧草稿已过期（含端口变更），`update_adb_path` 式半刷新只同步路径键、残留旧端口草稿会把共享会话倒退回旧端口。
+- 深链模拟器配置（`_open_emulator_config`）：嵌套 `self._window._dialogs.open_emulator_config()` 返回后重建协调器——旧草稿已过期（含端口变更），`update_adb_path` 式半刷新只同步路径键、残留旧端口草稿会把共享会话倒退回旧端口。
 
 **段 3 试识别**（`_start_recognize`）：
 
@@ -632,7 +632,7 @@ PeakSelectPanel
 
 **备份服务依赖**：`src/business/maintenance/backup_restore_service.py` 提供 `BackupEntry` / `RestoreTarget` / `BackupPreview` / `RestoreResult` 数据模型与 `default_targets` / `restore_targets` / `list_backups` / `inspect_current` / `preview_backup` / `restore_backup` / `select_group_entries` 七个函数。
 
-### 3.17 设备配置页连接类别双形态（MumuDevicePage，8f2e70a → ed8b4ac）
+### 3.17 设备配置页连接类别双形态（EmulatorDevicePage，8f2e70a → ed8b4ac）
 
 模拟器配置对话框的设备与连接页在 2026-10-24/25 两轮改造后支持**连接类别单选双形态**——「模拟器」（五品牌 ADB）与「官方 PC 客户端」（窗口直连）：
 
@@ -641,7 +641,7 @@ PeakSelectPanel
 - **PC 客户端形态**：隐藏品牌行与 ADB 区块并切换说明文案（仅支持窗口化模式，游戏内设置或 Alt+Enter 切换，工具不会代为切换）；跳过 ADB 自动探测；**设备下拉复用为窗口候选列表**——同步枚举 `probe_pc_windows()` 窗口三态填充（空列表提示未启动 / 唯一窗口自动选定 / 多窗列出候选供选择），候选 label 为"标题（客户区分辨率）"，720p/900p 低分辨率档位放行并附非阻断提示，状态行展示窗口分辨率。
 - **连接状态标签按形态展示**：「● ADB：…」或「● PC 客户端：…」，与连接层事件文案（`CaptureConnectionManager`）同口径。
 
-配置经 `MumuConfigCoordinator` 持久化，键集 12 → 14（新增 `emulator_brand` / `pc_window_title`）；连接方式取值域为 `emulator_discovery.EMULATOR_TYPES`（五品牌 + `pc_client`），非法值由 `normalize_emulator_type()` 回退默认品牌。
+配置经 `EmulatorConfigCoordinator` 持久化，键集 12 → 14（新增 `emulator_brand` / `pc_window_title`）；连接方式取值域为 `emulator_discovery.EMULATOR_TYPES`（五品牌 + `pc_client`），非法值由 `normalize_emulator_type()` 回退默认品牌。
 
 ---
 
@@ -755,10 +755,10 @@ def update_recommendations(self, data: list[dict]) -> None:
 |--------|------|
 | `SettingsDialog` | API 档案列表 + 运行参数 + 价格配置编辑 |
 | `DataManagementDialog` | 备份后批量清空攻略或相性数据 |
-| `MumuConfigDialog` | 页面装配（导航/双页/页脚）、页头 ADB 总状态与保存编排 |
-| `MumuDevicePage` | 设备与连接页：ADB 探测/设备列表/连接管理/连通性测试的接线与控件状态 |
-| `MumuRecognitionPage` | 识别与自动化页：模板选择制作/ROI 识别区域/轮询参数的接线与控件状态 |
-| `MumuDeviceSection` / `MumuTemplateSection` / `MumuOcrPollingSection` | 设备、模板和 OCR 参数控件及用户操作信号，不调用业务服务 |
+| `EmulatorConfigDialog` | 页面装配（导航/双页/页脚）、页头 ADB 总状态与保存编排 |
+| `EmulatorDevicePage` | 设备与连接页：ADB 探测/设备列表/连接管理/连通性测试的接线与控件状态 |
+| `EmulatorRecognitionPage` | 识别与自动化页：模板选择制作/ROI 识别区域/轮询参数的接线与控件状态 |
+| `EmulatorDeviceSection` / `EmulatorTemplateSection` / `EmulatorOcrPollingSection` | 设备、模板和 OCR 参数控件及用户操作信号，不调用业务服务 |
 | `BackendChooseDialog` | AI 后端选择（API/浏览器）+ 语料增强（RAG/经典），返回 `(backend, use_rag)` |
 | `GuideProgressDialog` | 攻略/相性生成进度显示 |
 | `HeroEditDialog` | 武将信息编辑 |
@@ -802,7 +802,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.analysis.peak_ban_advice` | 巅峰赛禁选建议 |
 | 依赖 | `src.business.recognition.peak_select_watcher` | 巅峰赛识别循环驱动 |
 | 依赖 | `src.business.recognition.pending_stats` | OCR 未决错法频次记录与人工确认答案收集（白名单治理） |
-| 依赖 | `src.business.emulator.mumu_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
+| 依赖 | `src.business.emulator.emulator_config_coordinator` | 模拟器配置对话框委托配置草稿、设备和模板协调 |
 | 依赖 | `src.business.maintenance.data_management_service` | 武将/攻略/相性变更的快照与备份写入 |
 | 依赖 | `src.business.maintenance.backup_restore_service` | 备份恢复服务（`BackupRestoreDialog` 消费 `default_targets` / `list_backups` / `preview_backup` / `restore_backup` / `select_group_entries` 等） |
 | 依赖 | `src.business.maintenance.corpus_services` | 实战配队/专属牌/分类写路径服务 |
@@ -878,7 +878,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 自基线 `a63bc3c`（2026-10-11 校准）以来的变更：
 
 **新功能**
-- **首启向导三段体检**（6962151 / 12c7efb）：新文件 `src/ui/app/onboarding_dialog.py`（551 行）+ `onboarding_fixes.py`（45 行）。单页三段布局——① 运行环境（`EnvCheckWorker` 后台跑 doctor 四项离线检查 + 数据三态行，`LIVE_WORKERS` 防 GC 析构 running QThread，`fix_action()` 将开发者 fix 文案映射为中文一键修复按钮，frozen 下安装类命令降级为详情）；② 模拟器连接（懒构造 `MumuConfigCoordinator`，多实例下拉选择，`compare_resolution()` 体检分辨率，深链配置返回后整只重建协调器防端口倒退）；③ 试识别（预热门禁 + `WARMUP_HANG_MS=150s` 悬挂复位经 `reset_warmup()`，结果按 `ocr_results` 有无/预热态分派 pass/warn/fail）。`closeEvent` 顺序保护：先置 `_closing` 停新请求再 shutdown 协调器。`DialogCoordinator.open_onboarding()` 外层异常保护（记日志 + 告警后照常收尾，不演变为启动失败）；菜单「帮助 → 重看首启引导」入口（详见 3.15 节）。新测试 `test_onboarding_dialog.py`（664 行）
+- **首启向导三段体检**（6962151 / 12c7efb）：新文件 `src/ui/app/onboarding_dialog.py`（551 行）+ `onboarding_fixes.py`（45 行）。单页三段布局——① 运行环境（`EnvCheckWorker` 后台跑 doctor 四项离线检查 + 数据三态行，`LIVE_WORKERS` 防 GC 析构 running QThread，`fix_action()` 将开发者 fix 文案映射为中文一键修复按钮，frozen 下安装类命令降级为详情）；② 模拟器连接（懒构造 `EmulatorConfigCoordinator`，多实例下拉选择，`compare_resolution()` 体检分辨率，深链配置返回后整只重建协调器防端口倒退）；③ 试识别（预热门禁 + `WARMUP_HANG_MS=150s` 悬挂复位经 `reset_warmup()`，结果按 `ocr_results` 有无/预热态分派 pass/warn/fail）。`closeEvent` 顺序保护：先置 `_closing` 停新请求再 shutdown 协调器。`DialogCoordinator.open_onboarding()` 外层异常保护（记日志 + 告警后照常收尾，不演变为启动失败）；菜单「帮助 → 重看首启引导」入口（详见 3.15 节）。新测试 `test_onboarding_dialog.py`（664 行）
 - **备份恢复入口**（eead74c）：新文件 `src/ui/data_admin/backup_restore_dialog.py`（410 行）。`data/backups/` 自动快照的浏览、预览与一键恢复——顶部 `QComboBox` 切换四类核心数据文件（武将/相性/攻略/实战配队），表格首列「← 当前」伪行 + 其后快照（新→旧，`_relative_time()` 相对描述），选中即预览键级差异（`+N / -M / 改 K 条`）；恢复前自动快照当前状态（双向可回退），`GROUP_KEYS=("heroes","synergies","guides")` 内文件默认整组恢复到同一时间点（跨文件引用一致），非组文件简单单文件恢复；整组恢复逐文件恢复、单文件失败不回滚其余文件，部分失败如实列出成功与失败清单。恢复完成发射 `restored(Signal(str))` 经 `DialogCoordinator._on_backup_restored()` 按数据类型走与导入/清空一致的刷新链（详见 3.16 节）。新测试 `test_backup_restore_dialog.py`（190 行 10 用例）
 - **相性指定获取入口拆分**（c4d547a / 2f4a966）：`SynergyPairDialog` 移除策略面板（`_skip_existing_radio` / `_overwrite_existing_radio`）改为状态标注 + 自动组装——新增 `SynergyStatus(Enum)` 枚举（`MISSING`/`OUTDATED`/`CURRENT`），`_build_status_map()` 逐武将汇总名下相性记录状态（无记录=未生成、任一落后=待更新、否则最新），`_list_item_text()` 在列表项标注状态（纯信息展示不可筛选）；`_build_selected_pairs()` 按"缺啥补啥"策略组装精确配对清单（缺失的补、落后的刷、最新的不动），`selected_pairs` 取代 `selected_heroes` 作为输出；`_pair_breakdown()` 返回 `(总组数, 将生成数)` 实时统计。新增 `SynergyRefreshDialog`（200 行，独立 `QDialog` 不继承 `BaseHeroSelectDialog`，列表项是配对而非武将）：构造时经 `SynergyManager.list_outdated_synergies()` 预计算所有已有但落后于武将资料的配对（跳过引用武将已删除的孤儿记录），按最后生成日期升序展示（日期无法解析视为最旧排最前），支持按武将名搜索（命中任一侧即显示）、全选/清空、逐行勾选。`AiGenerationWorkflow.request_synergy_pair()` 改为消费 `selected_pairs` 经 `fetch_pairs_list()` 恒定 `overwrite=True` 提交；新增 `request_synergy_refresh()` 同链路。菜单文案：`synergy_pair` 由「指定获取」改「指定配对计算」，新增 `synergy_refresh`「落后相性刷新」（详见 3.2 / 3.10 节）
 - **公告管理器启动加载**（788e297）：`AppServices.__init__` 新增 `announcement_manager.load()`——此前漏加载让磁盘上的已处理状态不可见，已 applied 的公告每次检查都被当新公告重新入库、反复提示待更新
@@ -912,9 +912,9 @@ def update_recommendations(self, data: list[dict]) -> None:
 自基线 `a63bc3c`（2026-10-23 校准）以来的变更（覆盖 366303c / 8c0f871 / 8f2e70a / feee42b / 514b4f8 / 4eb3445 / ed8b4ac 中涉及 UI 的部分）：
 
 **设备配置页双形态（8f2e70a / feee42b / 514b4f8 / 4eb3445 / ed8b4ac）**——新增 §3.17
-- `ui/configuration/mumu_device_page.py`（+166 行）：页顶「模拟器 / 官方 PC 客户端」连接类别单选（用户点击才触发，程序装载不产生副作用）；PC 形态隐藏品牌行与 ADB 区块、跳过 ADB 自动探测、连接状态标签按形态展示；设备下拉复用为 PC 窗口候选列表（枚举三态填充、唯一窗口自动选定、720p/900p 档位放行附非阻断提示）；品牌切换记忆（`emulator_brand`）与重复切换判无操作
-- `ui/configuration/mumu_config_sections.py`（+129 行）：品牌行五家下拉（`EMULATOR_BRANDS`，展示名不带版本号）+ 特性 ⓘ 悬停提示（`EMULATOR_HINTS`，enter/click 主动 `QToolTip.showText`——原生悬停驻留在真机不出 tooltip）+ 按所选方式联动
-- `ui/configuration/mumu_config_dialog.py`：配置持久化链路 12 键 → 14 键（`emulator_brand` / `pc_window_title`）
+- `ui/configuration/emulator_device_page.py`（+166 行）：页顶「模拟器 / 官方 PC 客户端」连接类别单选（用户点击才触发，程序装载不产生副作用）；PC 形态隐藏品牌行与 ADB 区块、跳过 ADB 自动探测、连接状态标签按形态展示；设备下拉复用为 PC 窗口候选列表（枚举三态填充、唯一窗口自动选定、720p/900p 档位放行附非阻断提示）；品牌切换记忆（`emulator_brand`）与重复切换判无操作
+- `ui/configuration/emulator_config_sections.py`（+129 行）：品牌行五家下拉（`EMULATOR_BRANDS`，展示名不带版本号）+ 特性 ⓘ 悬停提示（`EMULATOR_HINTS`，enter/click 主动 `QToolTip.showText`——原生悬停驻留在真机不出 tooltip）+ 按所选方式联动
+- `ui/configuration/emulator_config_dialog.py`：配置持久化链路 12 键 → 14 键（`emulator_brand` / `pc_window_title`）
 - `ui/app/onboarding_dialog.py`：首启向导第二步补充官方 PC 客户端直连说明（需先安装客户端并以窗口化模式运行）
 - 连接域业务侧变更（`CaptureConnectionManager` 双形态、事件文案分立）记录于 [`./module_business.md`](./module_business.md)；探测层与 `pc_client.py` 记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)
 

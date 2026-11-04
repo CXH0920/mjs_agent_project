@@ -56,7 +56,7 @@ _BANNED_CHIP_STYLE = (
 class PeakSelectPanel(QWidget):
     """巅峰赛选将工作台：开始后随牌面变化自动刷新候选池。"""
 
-    request_mumu_config = Signal()
+    request_emulator_config = Signal()
     board_exited = Signal()
 
     # 共享配队条（ComboStrip）内管理对话框的增删改经此透传上行，
@@ -241,7 +241,7 @@ class PeakSelectPanel(QWidget):
             return
         if not self._capture_service.capture:
             self._action_bar.set_status("未连接模拟器，请先完成 ADB 连接配置", TONE_WARNING)
-            self.request_mumu_config.emit()
+            self.request_emulator_config.emit()
             return
         self._watcher.start()
         self._reset_view()
@@ -301,7 +301,7 @@ class PeakSelectPanel(QWidget):
         """从模拟器截取一帧保存到 screenshots 目录，不做识别。"""
         if not self._capture_service.capture:
             self._action_bar.set_status("未连接模拟器，请先完成 ADB 连接配置", TONE_WARNING)
-            self.request_mumu_config.emit()
+            self.request_emulator_config.emit()
             return
         if not self._capture_lock.begin(CaptureSource.ADB_SAVE, owner=self):
             # 共享锁被其他页面在途请求占用（识别/导入），避免广播回调错配消费

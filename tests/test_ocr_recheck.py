@@ -34,7 +34,7 @@ _V4_MODEL_FILES = (
 def _enable_recheck(monkeypatch, engine) -> None:
     """打开复核开关并注入复核引擎，主引擎加载路径不被触碰。"""
     monkeypatch.setattr(
-        "src.config.env.get_mumu_config",
+        "src.config.env.get_emulator_config",
         lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr("src.ocr.engine_loader.get_recheck_ocr_engine", lambda: engine)
@@ -113,7 +113,7 @@ def test_recheck_occupies_confirmed_names_across_pending_slots(monkeypatch) -> N
 
 def test_recheck_disabled_never_touches_engine(monkeypatch) -> None:
     monkeypatch.setattr(
-        "src.config.env.get_mumu_config",
+        "src.config.env.get_emulator_config",
         lambda: {"mumu_ocr_recheck_enabled": False},
     )
 
@@ -368,7 +368,7 @@ def _make_fake_rapidocr_module(tmp_path, with_models: bool):
 
 def _pin_threads(monkeypatch) -> None:
     monkeypatch.setattr(
-        "src.config.env.get_mumu_config",
+        "src.config.env.get_emulator_config",
         lambda: {"mumu_ocr_cpu_threads": 4},
     )
 
@@ -463,7 +463,7 @@ def test_primary_and_recheck_suites_swap_by_config(monkeypatch) -> None:
     import src.ocr.engine_loader as loader
 
     monkeypatch.setattr(
-        "src.config.env.get_mumu_config",
+        "src.config.env.get_emulator_config",
         lambda: {"mumu_ocr_primary_engine": "v4"},
     )
     calls = []
@@ -478,7 +478,7 @@ def test_primary_and_recheck_suites_swap_by_config(monkeypatch) -> None:
 
 def test_primary_suite_falls_back_to_v6_on_invalid_value(monkeypatch) -> None:
     monkeypatch.setattr(
-        "src.config.env.get_mumu_config",
+        "src.config.env.get_emulator_config",
         lambda: {"mumu_ocr_primary_engine": "v7"},
     )
     assert primary_suite() == "v6"
@@ -530,7 +530,7 @@ def _make_engines() -> engines_mod.OfficialOcrEngines:
 
 def test_rare_char_engine_uses_recheck_when_enabled(monkeypatch) -> None:
     monkeypatch.setattr(
-        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_emulator_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr(
         "src.ocr.engine_loader.get_recheck_ocr_engine", lambda: "recheck-engine",
@@ -541,7 +541,7 @@ def test_rare_char_engine_uses_recheck_when_enabled(monkeypatch) -> None:
 
 def test_rare_char_engine_breaks_when_recheck_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(
-        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_emulator_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr("src.ocr.engine_loader.get_recheck_ocr_engine", lambda: None)
     engines = _make_engines()
@@ -553,7 +553,7 @@ def test_rare_char_engine_breaks_when_recheck_unavailable(monkeypatch) -> None:
 
 def test_rare_char_engine_returns_none_when_recheck_disabled(monkeypatch) -> None:
     """复核关闭：不加载任何第二引擎，保留原结果待复核（cht 链已退役）。"""
-    monkeypatch.setattr(engines_mod, "get_mumu_config", lambda: {})
+    monkeypatch.setattr(engines_mod, "get_emulator_config", lambda: {})
 
     def _boom():
         raise AssertionError("复核关闭时不应请求复核引擎")
@@ -572,7 +572,7 @@ def test_rare_char_circuit_requires_consecutive_failures(monkeypatch) -> None:
     不在词表触发整批校验失败、全量转待复核。
     """
     monkeypatch.setattr(
-        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_emulator_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     engines = _make_engines()
 
@@ -593,7 +593,7 @@ def test_rare_char_circuit_requires_consecutive_failures(monkeypatch) -> None:
 def test_rare_char_circuit_recovers_after_cooldown(monkeypatch) -> None:
     """熔断带冷却窗口：期满后下一次访问自动解除并恢复重试。"""
     monkeypatch.setattr(
-        engines_mod, "get_mumu_config", lambda: {"mumu_ocr_recheck_enabled": True},
+        engines_mod, "get_emulator_config", lambda: {"mumu_ocr_recheck_enabled": True},
     )
     monkeypatch.setattr(
         "src.ocr.engine_loader.get_recheck_ocr_engine", lambda: "recheck-engine",

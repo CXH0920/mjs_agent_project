@@ -16,8 +16,8 @@ from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
 from src.data.synergy_manager import SynergyManager
+from src.ui.configuration.emulator_config_dialog import EmulatorConfigDialog
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
-from src.ui.configuration.mumu_config_dialog import MumuConfigDialog
 from src.ui.configuration.roi_selector import RoiSelectorDialog
 from src.ui.configuration.settings_dialog import SettingsDialog
 from src.ui.data_admin.data_management_dialog import DataManagementDialog
@@ -44,7 +44,7 @@ class _CaptureService(QObject):
     official_import_failed = Signal(str)
 
 
-class _MumuCaptureService(QObject):
+class _EmulatorCaptureService(QObject):
     connection_changed = Signal(str, str)
 
     def __init__(self) -> None:
@@ -56,7 +56,7 @@ class _MumuCaptureService(QObject):
         pass
 
 
-class _MumuOperationService(QObject):
+class _EmulatorOperationService(QObject):
     adb_detected = Signal(bool, str, str)
     adb_reprobed = Signal(str)
     devices_refreshed = Signal(object, str)
@@ -77,7 +77,7 @@ class _MumuOperationService(QObject):
         pass
 
 
-class _MumuOcrService:
+class _EmulatorOcrService:
     poll_state = "stopped"
 
     def __init__(self, root: Path) -> None:
@@ -132,7 +132,7 @@ def test_representative_dialog_shells_keep_header_and_footer_visible(tmp_path) -
     dialogs = [
         SettingsDialog(tmp_path / "config.env", pricing_path=tmp_path / "pricing.json"),
         FactionColorDialog(tmp_path / "faction_colors.json"),
-        MumuConfigDialog(
+        EmulatorConfigDialog(
             {
                 "mumu_adb_path": "adb.exe", "mumu_adb_port": 0,
                 "mumu_ocr_enabled": False, "mumu_ocr_poll_mode": False,
@@ -141,9 +141,9 @@ def test_representative_dialog_shells_keep_header_and_footer_visible(tmp_path) -
                 "mumu_hero_selection_cooldown": 180, "mumu_match_guide_threshold": 0.8,
                 "mumu_ocr_use_gpu": False, "mumu_ocr_cpu_threads": 6,
             },
-            capture_service=_MumuCaptureService(),
-            ocr_service=_MumuOcrService(tmp_path),
-            operation_service=_MumuOperationService(),
+            capture_service=_EmulatorCaptureService(),
+            ocr_service=_EmulatorOcrService(tmp_path),
+            operation_service=_EmulatorOperationService(),
         ),
         RoiSelectorDialog(QPixmap(1280, 720)),
         BackendChooseDialog(),

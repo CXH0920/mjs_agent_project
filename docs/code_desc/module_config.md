@@ -146,11 +146,11 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 38 键：runtime 6 + mumu 21 + 透传 11）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判），多品牌连接三键（`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`）未配置时回退旧 `MUMU_ADB_*` 实配值（老 config.env 不改字平滑升级，持久化始终写新键）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_mumu_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
+`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 38 键：runtime 6 + mumu 21 + 透传 11）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判），多品牌连接三键（`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`）未配置时回退旧 `MUMU_ADB_*` 实配值（老 config.env 不改字平滑升级，持久化始终写新键）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_emulator_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
 
 `get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(32768，cf9c927 由 16384 上调；P1-7 起单源于 `env.DEFAULT_MAX_OUTPUT_TOKENS`，`api_generator.MAX_OUTPUT_TOKENS` 仅引用) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
-`get_mumu_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_screenshot_mode`("auto"，MUMU_SCREENSHOT_MODE，透传给 capture_service；063dc47 补回返回字典——此前该键漏出、文档承诺的排障手段实为死开关) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_primary_engine`("v6"，B1 新增，v4 为回滚档且主复核引擎互换) / `mumu_ocr_cpu_threads`(6，钉入 onnxruntime intra_op) / `mumu_ocr_recheck_enabled`(False，复核引擎开关) / `mumu_ocr_poll_idle_pause`(True，轮询闲置自动暂停开关，bca4092 新增)。`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键（doctor `DEAD_CONFIG_KEYS` 登记）。OCR 推理配置（主引擎套件、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `engine_loader.create_rapidocr_ocr()`。2026-09 起（cd35c98）另新增模板匹配分层加速与 ADB raw 帧截图提速相关配置参数，详见 `config.env.example`。
+`get_emulator_config()` 返回模拟器配置：`mumu_adb_path`("") / `mumu_adb_port`(0) / `mumu_screenshot_mode`("auto"，MUMU_SCREENSHOT_MODE，透传给 capture_service；063dc47 补回返回字典——此前该键漏出、文档承诺的排障手段实为死开关) / `mumu_ocr_enabled`(False) / `mumu_ocr_poll_mode`(False) / `mumu_ocr_auto_switch_tab`(False) / `mumu_ocr_poll_interval`(2) / `mumu_ocr_match_threshold`(0.8) / `mumu_hero_selection_threshold`(回退 match_threshold) / `mumu_hero_selection_cooldown`(180) / `mumu_match_guide_threshold`(0.8) / `mumu_ocr_primary_engine`("v6"，B1 新增，v4 为回滚档且主复核引擎互换) / `mumu_ocr_cpu_threads`(6，钉入 onnxruntime intra_op) / `mumu_ocr_recheck_enabled`(False，复核引擎开关) / `mumu_ocr_poll_idle_pause`(True，轮询闲置自动暂停开关，bca4092 新增)。`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键（doctor `DEAD_CONFIG_KEYS` 登记）。OCR 推理配置（主引擎套件、CPU 线程数）由 `load_env_config()` 完成类型转型后提供给 `engine_loader.create_rapidocr_ocr()`。2026-09 起（cd35c98）另新增模板匹配分层加速与 ADB raw 帧截图提速相关配置参数，详见 `config.env.example`。
 
 闲置暂停阈值分钟数不走配置键：早先的 `MUMU_OCR_POLL_IDLE_MINUTES` 已移除，现为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5` 类常量（`src/ui/app/poll_coordinator.py`），配置面只保留 `MUMU_OCR_POLL_IDLE_PAUSE` 开关。
 
@@ -326,7 +326,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 
 ## 五、接口说明
 
-本模块不提供外部 API 接口，但提供以下公共函数/常量。多数经 `src.config.__init__.py` 统一导出；`IS_FROZEN` / `PROJECT_ROOT` / `BUNDLE_ROOT` / `IMAGES_DIR` / `IMAGES_OUTPUT_DIR` / `SCREENSHOTS_DIR` / `OCR_CONFUSION_OVERRIDES_PATH` / `is_full_build()` / `get_mumu_config()` / `has_available_api_profile()` 不经 `__init__.py`，调用方直接从 `src.config.env` 导入；`disclaimer_state` / `onboarding_state` 各函数的调用方亦直接从对应子模块导入（不经 `__init__.py`）：
+本模块不提供外部 API 接口，但提供以下公共函数/常量。多数经 `src.config.__init__.py` 统一导出；`IS_FROZEN` / `PROJECT_ROOT` / `BUNDLE_ROOT` / `IMAGES_DIR` / `IMAGES_OUTPUT_DIR` / `SCREENSHOTS_DIR` / `OCR_CONFUSION_OVERRIDES_PATH` / `is_full_build()` / `get_emulator_config()` / `has_available_api_profile()` 不经 `__init__.py`，调用方直接从 `src.config.env` 导入；`disclaimer_state` / `onboarding_state` 各函数的调用方亦直接从对应子模块导入（不经 `__init__.py`）：
 
 | 函数 / 常量 | 文件 | 返回 | 说明 |
 |-------------|------|------|------|
@@ -342,7 +342,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 | `load_env_config(path)` | `env.py` | `dict` | 解析并完成类型转型（整数/布尔/浮点） |
 | `get_api_config()` | `profiles.py` | `dict` | 三段式获取 API 配置：首个可用档案 → 仅环境变量+默认值（档案文件存在但无可用档案）→ 旧链（`config.env` → 环境变量 → 默认值） |
 | `get_runtime_params()` | `env.py` | `dict` | 运行参数：RPM / 重试 / max_output_tokens / 超时 / 日志等级 / log_to_file |
-| `get_mumu_config()` | `env.py` | `dict` | 模拟器配置（ADB / OCR / 阈值 / 冷却） |
+| `get_emulator_config()` | `env.py` | `dict` | 模拟器配置（ADB / OCR / 阈值 / 冷却） |
 | `save_env_file(path, data)` | `env.py` | `None` | 原子写入 .env（保留注释与无关键） |
 | `load_pricing_config(path)` | `env.py` | `dict` | 加载模型价格配置 |
 | `save_pricing_config(path, data)` | `env.py` | `None` | 原子保存模型价格配置 |
@@ -382,7 +382,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 | 被依赖 | `src.rag.indexer` | 索引构建 CLI 入口调用 `setup_logging()` |
 | 被依赖 | `src.business.ai_cost` / `src.scraper.ai.prompt_utils` | `get_api_config()["model"]` 取当前生效模型做成本估算；`get_model_pricing()` 查单价 |
 | 被依赖 | `src.business.rag.refinement_service` | `resolve_api_config(profile_name)` + `PROVIDER_PRESETS` 解析指定档案 |
-| 被依赖 | `src.ui.app.main_window` / `src.ui.app.app_services` | `get_mumu_config()` 注入 `CaptureService` / `OcrService.update_config()`；`_open_mumu_config()` 经 `mumu_config_coordinator.persist_mumu_env_config()`（内部 `save_env_file()`）回写；`is_full_build()` 守卫 RAG 维护页 |
+| 被依赖 | `src.ui.app.main_window` / `src.ui.app.app_services` | `get_emulator_config()` 注入 `CaptureService` / `OcrService.update_config()`；`_open_emulator_config()` 经 `emulator_config_coordinator.persist_emulator_env_config()`（内部 `save_env_file()`）回写；`is_full_build()` 守卫 RAG 维护页 |
 | 被依赖 | `src.ocr.character_similarity` / `src.ui.configuration.whitelist_config_dialog` | 共享 `OCR_CONFUSION_OVERRIDES_PATH` 作为 OCR 混淆白名单路径单一事实源（识别侧读取、白名单界面写入） |
 | 被依赖 | `src.ocr.engine_loader` | `primary_suite()` 读 `mumu_ocr_primary_engine`（默认 v6）选主引擎套件；`_cpu_threads()` 读 `mumu_ocr_cpu_threads` 钉 onnxruntime intra_op 线程 |
 | 被依赖 | `src.rag.config` | RAG 语料/向量索引与预算配置（RAG_ENABLED / RAG_TOP_K / RAG_PROMPT_CHARS / RAG_BROWSER_PROMPT_CHARS / RAG_SYNERGY_PROMPT_CHARS / RAG_MODEL_DIR），由 AI 批量生成模块使用 |
@@ -407,7 +407,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 - 首启资料部署标记 `data/.deployed`（b3327f1）：签名一致跳过约 280MB 逐文件扫描
 
 **修正**
-- `get_mumu_config()` 补回 `mumu_screenshot_mode`（063dc47）——此前返回字典漏掉该键，`MUMU_SCREENSHOT_MODE` 排障手段实为死开关
+- `get_emulator_config()` 补回 `mumu_screenshot_mode`（063dc47）——此前返回字典漏掉该键，`MUMU_SCREENSHOT_MODE` 排障手段实为死开关
 - `save_pricing_config` / `save_env_file` 写盘收敛到 `json_repository.atomic_write_text`（9737d52/063dc47，mkstemp 唯一临时名根治固定名 `.tmp` 并发互截；函数内延迟导入避免 config↔data 循环初始化）
 - `get_runtime_params` 的 `max_output_tokens` 默认 16384 → 32768（cf9c927，与 `AIBatchGenerator.MAX_OUTPUT_TOKENS` 对齐）
 - 配置键面：新增 `MUMU_OCR_PRIMARY_ENGINE`（默认 "v6"）、`MJS_DATA_REPO`（私有数据仓位置）；`MUMU_OCR_USE_GPU` 随 paddle 退役转死键（doctor `DEAD_CONFIG_KEYS` 登记）
@@ -421,7 +421,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 自基线 `0ffed36`（2026-10-06 校准）以来的变更：
 
 **重构收口（行为零变化）**
-- **env.py 键元表单源化**（1bfd65b）：`_EnvKeySpec` NamedTuple 五字段（`cfg_key` / `type` / `default` / `getter` / `default_from`）+ `_ENV_KEY_SPECS` 注册表（现 30 键：runtime 6 + mumu 15 + 透传 9）唯一事实源，替代四处手工同步；`load_env_config()` 按 `spec.type` 统一转换（int/float 失败告警并丢弃该键）；新增 `_config_with_defaults(config, getter)` 按域补默认，`default_from` 表达级联默认（`mumu_hero_selection_threshold` 未配置回退 `mumu_ocr_match_threshold` 实配值，消除 getter 特判）；`get_runtime_params` / `get_mumu_config` 缩为一行委托。`DEFAULT_MAX_OUTPUT_TOKENS = 32_768` 单源（`api_generator.MAX_OUTPUT_TOKENS` 引用同对象）。测试补 `_SENTINELS` 全量键哨兵表 + 8 函数（bool 七变体 / 级联 / 单源 `is` 断言 / 分域划分），详见 3.3 节
+- **env.py 键元表单源化**（1bfd65b）：`_EnvKeySpec` NamedTuple 五字段（`cfg_key` / `type` / `default` / `getter` / `default_from`）+ `_ENV_KEY_SPECS` 注册表（现 30 键：runtime 6 + mumu 15 + 透传 9）唯一事实源，替代四处手工同步；`load_env_config()` 按 `spec.type` 统一转换（int/float 失败告警并丢弃该键）；新增 `_config_with_defaults(config, getter)` 按域补默认，`default_from` 表达级联默认（`mumu_hero_selection_threshold` 未配置回退 `mumu_ocr_match_threshold` 实配值，消除 getter 特判）；`get_runtime_params` / `get_emulator_config` 缩为一行委托。`DEFAULT_MAX_OUTPUT_TOKENS = 32_768` 单源（`api_generator.MAX_OUTPUT_TOKENS` 引用同对象）。测试补 `_SENTINELS` 全量键哨兵表 + 8 函数（bool 七变体 / 级联 / 单源 `is` 断言 / 分域划分），详见 3.3 节
 - **main.py 注释措辞清理**（683fca6）：OCR 预热注释“Paddle 初始化…”→“OCR 引擎初始化…”（纯文档，无行为变化）
 
 **新增配置键**

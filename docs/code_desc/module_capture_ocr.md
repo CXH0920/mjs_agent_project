@@ -559,7 +559,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | 被调用方 | `src.business.recognition.ocr_service` | 管理 TemplateManager 和 GeneralRecognizer |
 | 被调用方 | `src.business.recognition.peak_select_watcher` | 调用 `detect_selection_cards` 与 `derive_name_rois` 做 2v2 牌面识别；`_restore_missing_cards()` 补齐漏检后以 `layout_is_plausible()` / `board_row_sizes()` 校验排布合理性，不可信排布既不发布也不计入缺席 |
 | 被调用方 | `src.business.recognition.ocr_worker` | 未决错法调 `pending_stats.record_pending()`；B2 复核引擎由 recognizer 内部调用 |
-| 被调用方 | `src.ui.configuration.mumu_config_dialog` | 连接管理（模拟器品牌下拉 / PC 客户端单选双形态）、模板制作（ROI 框选） |
+| 被调用方 | `src.ui.configuration.emulator_config_dialog` | 连接管理（模拟器品牌下拉 / PC 客户端单选双形态）、模板制作（ROI 框选） |
 | 被调用方 | `src.ui.app.main_window` | 轮询流程使用截图和 OCR |
 
 ---

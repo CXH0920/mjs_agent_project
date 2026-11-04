@@ -97,10 +97,10 @@ def test_runtime_params_defaults_snapshot(monkeypatch, tmp_path) -> None:
     }
 
 
-def test_mumu_config_defaults_snapshot(monkeypatch, tmp_path) -> None:
-    """get_mumu_config 输出 schema 与默认值快照（键集缺一不可）。"""
+def test_emulator_config_defaults_snapshot(monkeypatch, tmp_path) -> None:
+    """get_emulator_config 输出 schema 与默认值快照（键集缺一不可）。"""
     _use_absent_env_file(monkeypatch, tmp_path)
-    assert env.get_mumu_config() == {
+    assert env.get_emulator_config() == {
         "emulator_type": "mumu",
         "emulator_brand": "mumu",
         "pc_window_title": "名将杀",
@@ -132,7 +132,7 @@ def test_emulator_connection_keys_fall_back_to_legacy_mumu_keys(monkeypatch, tmp
         monkeypatch, tmp_path,
         "MUMU_ADB_PATH=G:/mumu/adb.exe\nMUMU_ADB_PORT=16448\nMUMU_SCREENSHOT_MODE=raw\n",
     )
-    config = env.get_mumu_config()
+    config = env.get_emulator_config()
     assert config["emulator_adb_path"] == "G:/mumu/adb.exe"
     assert config["emulator_adb_port"] == 16448
     assert config["emulator_screenshot_mode"] == "raw"
@@ -145,7 +145,7 @@ def test_emulator_keys_take_precedence_over_legacy(monkeypatch, tmp_path) -> Non
         monkeypatch, tmp_path,
         "MUMU_ADB_PORT=16448\nEMULATOR_TYPE=ldplayer\nEMULATOR_ADB_PORT=5555\n",
     )
-    config = env.get_mumu_config()
+    config = env.get_emulator_config()
     assert config["emulator_type"] == "ldplayer"
     assert config["emulator_adb_port"] == 5555
 
@@ -153,7 +153,7 @@ def test_emulator_keys_take_precedence_over_legacy(monkeypatch, tmp_path) -> Non
 def test_hero_selection_threshold_cascades_from_match_threshold(monkeypatch, tmp_path) -> None:
     """未显式配置时，武将选择阈值缺省跟随 match_threshold 的实配值。"""
     _use_env_file(monkeypatch, tmp_path, "MUMU_OCR_MATCH_THRESHOLD=0.65\n")
-    config = env.get_mumu_config()
+    config = env.get_emulator_config()
     assert config["mumu_ocr_match_threshold"] == 0.65
     assert config["mumu_hero_selection_threshold"] == 0.65
 
@@ -161,14 +161,14 @@ def test_hero_selection_threshold_cascades_from_match_threshold(monkeypatch, tmp
         monkeypatch, tmp_path,
         "MUMU_OCR_MATCH_THRESHOLD=0.65\nMUMU_HERO_SELECTION_THRESHOLD=0.9\n",
     )
-    assert env.get_mumu_config()["mumu_hero_selection_threshold"] == 0.9
+    assert env.get_emulator_config()["mumu_hero_selection_threshold"] == 0.9
 
 
 def test_invalid_numeric_values_fall_back_to_defaults(monkeypatch, tmp_path) -> None:
     """非法 int/float 值丢弃并回退默认值（沿用解析期告警语义）。"""
     _use_env_file(monkeypatch, tmp_path, "REQUESTS_PER_MINUTE=abc\nMUMU_OCR_MATCH_THRESHOLD=xyz\n")
     assert env.get_runtime_params()["requests_per_minute"] == 30
-    assert env.get_mumu_config()["mumu_ocr_match_threshold"] == 0.8
+    assert env.get_emulator_config()["mumu_ocr_match_threshold"] == 0.8
 
 
 @pytest.mark.parametrize(
@@ -192,7 +192,7 @@ def test_max_output_tokens_single_source() -> None:
 def test_table_keys_partition_into_getters_and_passthrough(monkeypatch, tmp_path) -> None:
     """元表键要么被某个 getter 服务，要么是登记在册的透传键——不允许无人认领。"""
     _use_absent_env_file(monkeypatch, tmp_path)
-    getter_keys = set(env.get_runtime_params()) | set(env.get_mumu_config())
+    getter_keys = set(env.get_runtime_params()) | set(env.get_emulator_config())
     table_keys = {spec.cfg_key for spec in env._ENV_KEY_SPECS.values()}
     assert table_keys - getter_keys == {
         "api_key", "api_url", "model", "mjs_data_repo",

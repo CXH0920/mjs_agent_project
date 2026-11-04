@@ -297,7 +297,7 @@ class _FakeWindow(QWidget):
         self._capture_service = capture
         self._ocr_service = SimpleNamespace()
         self._data = data
-        self._dialogs = SimpleNamespace(_data_error=None, open_mumu_config=self._open_mumu)
+        self._dialogs = SimpleNamespace(_data_error=None, open_emulator_config=self._open_mumu)
         self._reporter = SimpleNamespace(show_event_message=lambda m: None)
         self.open_calls: list[str] = []
         self.reporter_events: list[str] = []
@@ -326,8 +326,8 @@ def wizard(monkeypatch, tmp_path):
     capture = _FakeCaptureService()
     window = _FakeWindow(capture, _fake_data())
     monkeypatch.setattr(onboarding_dialog, "EnvCheckWorker", _NoopEnvWorker)
-    monkeypatch.setattr(onboarding_dialog, "MumuConfigCoordinator", _FakeCoordinator)
-    monkeypatch.setattr(onboarding_dialog, "get_mumu_config",
+    monkeypatch.setattr(onboarding_dialog, "EmulatorConfigCoordinator", _FakeCoordinator)
+    monkeypatch.setattr(onboarding_dialog, "get_emulator_config",
                         lambda: {"mumu_adb_path": "C:/adb.exe"})
     steps: list[str] = []
     skips: list[bool] = []
@@ -514,7 +514,7 @@ def test_roi_screenshot_failed_shows_retry(wizard):
 def test_deep_link_reruns_section2(wizard):
     d = wizard.dialog
     coordinator = d._ensure_coordinator()
-    d._open_mumu_config()
+    d._open_emulator_config()
     assert wizard.window.open_calls == ["opened"]
     # 旧协调器整只退役（半刷新会残留旧端口草稿，把共享会话倒退）
     assert ("shutdown",) in coordinator.calls
@@ -527,10 +527,10 @@ def test_deep_link_after_port_change_uses_fresh_config(wizard, monkeypatch):
     """多实例换端口场景（P1 回归）：深链保存新端口后，重建的协调器草稿必须是新值。"""
     d = wizard.dialog
     d._ensure_coordinator()
-    # 深链期间配置对话框保存了新端口（open_mumu_config 推共享会话 + persist）
-    monkeypatch.setattr(onboarding_dialog, "get_mumu_config",
+    # 深链期间配置对话框保存了新端口（open_emulator_config 推共享会话 + persist）
+    monkeypatch.setattr(onboarding_dialog, "get_emulator_config",
                         lambda: {"mumu_adb_path": "C:/adb.exe", "mumu_adb_port": 16416})
-    d._open_mumu_config()
+    d._open_emulator_config()
 
     fresh = d._coordinator
     assert fresh is not None
@@ -811,8 +811,8 @@ def test_dialog_starts_real_worker_without_crash(monkeypatch):
     monkeypatch.setattr(
         onboarding_dialog, "run_checks",
         lambda offline=False, checks=None: [Finding("环境", "依赖", "PASS", "ok")])
-    monkeypatch.setattr(onboarding_dialog, "MumuConfigCoordinator", _FakeCoordinator)
-    monkeypatch.setattr(onboarding_dialog, "get_mumu_config",
+    monkeypatch.setattr(onboarding_dialog, "EmulatorConfigCoordinator", _FakeCoordinator)
+    monkeypatch.setattr(onboarding_dialog, "get_emulator_config",
                         lambda: {"mumu_adb_path": ""})
 
     dialog = OnboardingDialog(window)

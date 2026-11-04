@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
-from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator, persist_mumu_env_config
+from src.business.emulator.emulator_config_coordinator import EmulatorConfigCoordinator, persist_emulator_env_config
 from src.capture.emulator_discovery import EmulatorDeviceInfo
 from src.ocr.roi_config import DEFAULT_ROI_CONFIG_PATH, OcrRoiConfig
 
@@ -107,11 +107,11 @@ class _OperationService(QObject):
         self.closed = True
 
 
-def _coordinator(tmp_path: Path) -> tuple[MumuConfigCoordinator, _CaptureService, _OcrService, _OperationService]:
+def _coordinator(tmp_path: Path) -> tuple[EmulatorConfigCoordinator, _CaptureService, _OcrService, _OperationService]:
     capture = _CaptureService()
     ocr = _OcrService(tmp_path)
     operation = _OperationService()
-    coordinator = MumuConfigCoordinator(
+    coordinator = EmulatorConfigCoordinator(
         {"emulator_adb_path": "adb.exe", "emulator_adb_port": 0},
         capture,
         ocr,
@@ -195,7 +195,7 @@ def test_roi_layout_capture_and_save_are_separate_from_template_lifecycle(tmp_pa
     ocr = _OcrService(tmp_path)
     operation = _OperationService()
     roi_config = OcrRoiConfig(DEFAULT_ROI_CONFIG_PATH, tmp_path / "ocr_rois.json")
-    coordinator = MumuConfigCoordinator(
+    coordinator = EmulatorConfigCoordinator(
         {"emulator_adb_path": "adb.exe", "emulator_adb_port": 0},
         capture,
         ocr,
@@ -239,7 +239,7 @@ def test_shutdown_disconnects_connection_state_relay(tmp_path: Path) -> None:
     assert relayed == [("connected", "127.0.0.1:16448")]
 
 
-def test_persist_mumu_env_config_writes_fourteen_dialog_keys(monkeypatch) -> None:
+def test_persist_emulator_env_config_writes_fourteen_dialog_keys(monkeypatch) -> None:
     """env 持久化固定写对话框可编辑的 14 键（5 连接键 + 9 OCR 键），部署键不落盘。
 
     连接键自 2026-10 起写 EMULATOR_*（含品牌 EMULATOR_TYPE）；PC 直连
@@ -248,11 +248,11 @@ def test_persist_mumu_env_config_writes_fourteen_dialog_keys(monkeypatch) -> Non
     """
     recorded: list[tuple[object, dict]] = []
     monkeypatch.setattr(
-        "src.business.emulator.mumu_config_coordinator.save_env_file",
+        "src.business.emulator.emulator_config_coordinator.save_env_file",
         lambda path, data: recorded.append((path, dict(data))),
     )
 
-    persist_mumu_env_config({
+    persist_emulator_env_config({
         "emulator_type": "ldplayer",
         "emulator_brand": "ldplayer",
         "pc_window_title": "名将杀",

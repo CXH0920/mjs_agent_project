@@ -157,9 +157,9 @@ def parse_env_file(env_path=None):
 
 # config.env 全量键登记的唯一事实源：键映射、类型转换、两个 getter 的
 # 默认值全部由此派生。此前四处分头登记（key_mapping / 三张类型转换清单 /
-# get_runtime_params 与 get_mumu_config 默认值），截图模式键两次漏登记
+# get_runtime_params 与 get_emulator_config 默认值），截图模式键两次漏登记
 # 成死开关（063dc47、T1 运维加固），故收口为单表，新键只改这里。
-# getter 域：runtime → get_runtime_params；mumu → get_mumu_config；
+# getter 域：runtime → get_runtime_params；mumu → get_emulator_config；
 # 空 → 透传键（调用方直接从 load_env_config 取值，无默认值登记）。
 class _EnvKeySpec(NamedTuple):
     cfg_key: str            # 内部小写键名
@@ -177,7 +177,7 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     "HTTP_TIMEOUT": _EnvKeySpec("http_timeout", int, 300, "runtime"),
     "LOG_LEVEL": _EnvKeySpec("log_level", str, "INFO", "runtime"),
     "LOG_TO_FILE": _EnvKeySpec("log_to_file", bool, True, "runtime"),
-    # ── get_mumu_config 域（输出键序即本域登记序）──
+    # ── get_emulator_config 域（输出键序即本域登记序）──
     # 多品牌连接键（EMULATOR_*，2026-10）：TYPE 为品牌标识（取值域见
     # src.capture.emulator_discovery.EMULATOR_TYPES）；连接三键经 default_from 回退
     # 读取旧 MUMU_* 键实配值，老 config.env 不改字即可平滑升级；持久化
@@ -336,7 +336,7 @@ def get_runtime_params():
     return _config_with_defaults(load_env_config(), "runtime")
 
 
-def get_mumu_config():
+def get_emulator_config():
     """从 config.env 获取模拟器配置（键集与默认值见 _ENV_KEY_SPECS 的 mumu 域）"""
     return _config_with_defaults(load_env_config(), "mumu")
 

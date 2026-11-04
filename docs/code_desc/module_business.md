@@ -56,7 +56,7 @@ src/business/
 │   ├── official_import_gateway.py     # 官方榜单导入网关（提交/排他/进度转发/结果分派，审计 G8 刀 1）
 │   ├── image_save_scheduler.py        # PNG 后台保存调度（单线程执行器，审计 G8 刀 2）
 │   ├── emulator_operation_service.py  # 模拟器后台操作
-│   └── mumu_config_coordinator.py     # MuMu 配置状态协调
+│   └── emulator_config_coordinator.py     # MuMu 配置状态协调
 ├── recognition/
 │   ├── name_resolution.py             # 武将名纠错与词表消解纯规则（HeroNameResolver）；白名单静态冲突检查（find_whitelist_conflicts）
 │   ├── ocr_service.py                 # OCR 控制、模板和轮询
@@ -287,16 +287,16 @@ OcrService (QObject)
 > **架构防火墙声明（637102b）**：模块文档字符串明确声明 `EmulatorOperationService` 不包含 ADB 输入能力（不提供 `input_tap` / `input_swipe` / `input_text` 等 ADB 输入方法），仅承担设备探测、连接管理与截图获取。此声明是合规化改造的一部分，确保业务层无法被调用方误用为自动化操作入口。
 
 ```
-MumuConfigDialog
-  -> MumuConfigCoordinator.detect_adb() / refresh_devices()
+EmulatorConfigDialog
+  -> EmulatorConfigCoordinator.detect_adb() / refresh_devices()
   -> EmulatorOperationService 的后台结果
-  -> MumuConfigCoordinator 转发设备、连接和模板截图状态
+  -> EmulatorConfigCoordinator 转发设备、连接和模板截图状态
   -> UI 渲染状态或打开 RoiSelectorDialog
-  -> MumuConfigCoordinator.create_template(image, roi, template_name)
+  -> EmulatorConfigCoordinator.create_template(image, roi, template_name)
   -> OcrService.create_template(image, roi, template_name)
 ```
 
-`MumuConfigCoordinator` 持有配置草稿、已探测设备和模板截图进行状态；设备刷新失败时视图保留上一次成功的列表与选择。ROI 框选和文件选择保留在 UI 线程，模板保存、运行时 ADB 配置和轮询恢复均由协调器委托服务完成；关闭对话框后协调器停止后台操作，避免迟到回调更新已销毁控件。`shutdown()` 还会显式断开 `CaptureService.connection_changed` → `self.connection_state_changed.emit` 的中继连接（6ea1866）——`signal.emit` 形式的连接没有 QObject receiver，不随对话框销毁自动解除，残留连接会在下次 ADB 连接状态广播时对已销毁的对话框抛 "Signal source has been deleted"。
+`EmulatorConfigCoordinator` 持有配置草稿、已探测设备和模板截图进行状态；设备刷新失败时视图保留上一次成功的列表与选择。ROI 框选和文件选择保留在 UI 线程，模板保存、运行时 ADB 配置和轮询恢复均由协调器委托服务完成；关闭对话框后协调器停止后台操作，避免迟到回调更新已销毁控件。`shutdown()` 还会显式断开 `CaptureService.connection_changed` → `self.connection_state_changed.emit` 的中继连接（6ea1866）——`signal.emit` 形式的连接没有 QObject receiver，不随对话框销毁自动解除，残留连接会在下次 ADB 连接状态广播时对已销毁的对话框抛 "Signal source has been deleted"。
 
 ### 3.5 OfficialDataImportService（官方榜单导入）
 
@@ -970,7 +970,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 - peak_select_watcher 会话世代 `_session` 裸 int → SessionGuard、三处手抄重置统一 `_clear_session_state()`（4542244，P0-1，详见 [`./module_peak_combos.md`](./module_peak_combos.md)）
 
 **修正**
-- mumu_config_coordinator shutdown 断连（6ea1866，行为修复）：`shutdown()` 显式 `disconnect` 掉 `CaptureService.connection_changed` → `self.connection_state_changed.emit` 的中继连接——emit 形式的连接无 QObject receiver，不随对话框销毁自动解除，残留连接在下次 ADB 连接状态广播时对已销毁对话框抛 "Signal source has been deleted"；配套回归测试
+- emulator_config_coordinator shutdown 断连（6ea1866，行为修复）：`shutdown()` 显式 `disconnect` 掉 `CaptureService.connection_changed` → `self.connection_state_changed.emit` 的中继连接——emit 形式的连接无 QObject receiver，不随对话框销毁自动解除，残留连接在下次 ADB 连接状态广播时对已销毁对话框抛 "Signal source has been deleted"；配套回归测试
 - match_guide 兜底 OCR 批次零产出短路（6ea1866，recognizer 批次零文本行时短路逐槽双证据与阵营逐槽重试链；详见 [`./module_capture_ocr.md`](./module_capture_ocr.md)，同提交含上述 shutdown 修复）
 - 巅峰赛过场坏帧扣住一拍复核（036d0ae，行为修复，详见 [`./module_peak_combos.md`](./module_peak_combos.md)）
 - 测试规模台账：145 文件 / 1626 个 `test_*` 函数（原 129 / 1481）
@@ -999,7 +999,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 - `emulator/capture_service.py`（a2f6ecb / e790a9f）：截图终止信号保证（`_handle_capture_result` 整体包 try/except，漏接会让在途锁永不释放，界面永久停在"正在截图"）；轮询截图等待上界（`_POLL_CAPTURE_TIMEOUT_S = 120.0` 秒，执行器积压时轮询线程不再无限期静默）；重连路径统一（`_reconnect_if_needed()` 手动/轮询共用，TD-A2-001）
 - `emulator/ocr_task_coordinator.py`（e790a9f / 0fff5e2）：shutdown 后拒绝复活 worker（`_worker_retired` 锁内复检，消除"Destroyed while thread is still running"崩溃 VUL-B2-001）；预热弃单（`OcrTask.abandon()` 置 `cancelled` 并释放整帧引用，worker 取出弃单任务短路）；`reset_warmup()` 预热悬挂出口（同时复位 worker 的 `_warmup_queued` 标志，VUL-B4-002）
 - `emulator/official_import_gateway.py`（cb2b47d）：`cancelled` outcome 静默收尾（应用关闭排空队列时被取消不是失败，避免误导性错误弹窗）
-- `emulator/mumu_config_coordinator.py`（7e88f63）：端口保存规则注释补全（显式选择/自动模式/固定端口未显式选择三档）
+- `emulator/emulator_config_coordinator.py`（7e88f63）：端口保存规则注释补全（显式选择/自动模式/固定端口未显式选择三档）
 
 **修正（识别域）**
 - `recognition/ocr_worker.py`（4e0cafe / cb2b47d / 0fff5e2）：白名单缓存失效（`reset_recognizer_cache()` 同步清 `_page_cache`——页面缓存里的结果同样是旧白名单下的纠错结论，不清会让同指纹页面继续复用旧结果）；轮询异常兜底（`OcrTask.abandon()` + `reset_warmup_state()`）；调试产物落盘降级（先挂 `result["ocr_results"]` 再 `try/except` 写 `latest.json`，磁盘满/目录不可写只损失调试产物、不连坐识别结果）
@@ -1035,7 +1035,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 
 **连接域双形态（8f2e70a / ed8b4ac）**
 - `emulator/capture_connection.py`：`CaptureConnectionManager` 按 `emulator_type` 构建模拟器 `AdbCapture` 或 PC 客户端 `PcClientCapture`（PC 形态不要求 ADB 配置，窗口标题变更或跨形态切换时重建）；连接键读取统一 `_conn_key()` 兼容（`emulator_*` 新键优先、`mumu_*` 旧键回退）；`connect_capture(capture, validate_capture=)` 用户触发路径连通后截帧校验、自动重连等高频路径保持 False 免付一帧；连接/断开事件与失败前缀按形态分立（「ADB 已连接 / PC 客户端已连接」，PC 形态不再出现"ADB"字样，R3.2 显示诚实）；`AdbCapture | PcClientCapture` 类型注解统一放宽（capture_service 会话与轮询路径）
-- `emulator/mumu_config_coordinator.py`：设备持久化链路 12 键 → 14 键（新增 `emulator_brand` 品牌记忆与 `pc_window_title`）；重复切换到当前连接类别判为无操作，不触发设备列表作废重建
+- `emulator/emulator_config_coordinator.py`：设备持久化链路 12 键 → 14 键（新增 `emulator_brand` 品牌记忆与 `pc_window_title`）；重复切换到当前连接类别判为无操作，不触发设备列表作废重建
 - `emulator/emulator_operation_service.py`：探测执行器同键任务去重（连点刷新不累积排队）；探测调用透传 `emulator_type`
 
 **官方榜单导入提速（366303c / 28fa11b / 8c0f871）**

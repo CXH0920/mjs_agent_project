@@ -114,7 +114,7 @@ SynergyFetchService -> subprocess.ai.stdout / stderr
 
 模型价格是成本估算数据，不是模型能力默认值：模型未配置价格时必须返回“无法自动估算”，不得套用其他模型价格。模拟器配置中的模板阈值、轮询间隔、冷却和自动跳转必须独立保存，缺失或类型错误时回退默认值而不阻断启动。
 
-模拟器配置页由 `MumuConfigCoordinator` 持有配置草稿、设备列表、共享 ADB 会话状态和模板截图生命周期。`MumuConfigDialog` 只负责表单控件、文件选择、ROI 框选和状态渲染；不得直接调用 `CaptureService`、`OcrService` 或 `EmulatorOperationService` 的业务方法。
+模拟器配置页由 `EmulatorConfigCoordinator` 持有配置草稿、设备列表、共享 ADB 会话状态和模板截图生命周期。`EmulatorConfigDialog` 只负责表单控件、文件选择、ROI 框选和状态渲染；不得直接调用 `CaptureService`、`OcrService` 或 `EmulatorOperationService` 的业务方法。
 
 ### 5.2 验收
 

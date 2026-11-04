@@ -115,7 +115,7 @@ card.set_unrecognized_name(name, confidence)
 
 ### 规则 4.1：共享 CaptureService 的 AdbCapture 实例
 
-`MumuConfigDialog` 通过 `capture_service` 使用唯一的 ADB 会话，但不直接调用 `AdbCapture`；连接、断开、设备测试和模板截图均委托 `EmulatorOperationService`，再由 `CaptureService` 发布会话状态。
+`EmulatorConfigDialog` 通过 `capture_service` 使用唯一的 ADB 会话，但不直接调用 `AdbCapture`；连接、断开、设备测试和模板截图均委托 `EmulatorOperationService`，再由 `CaptureService` 发布会话状态。
 
 **为什么：** 如果对话框持有独立的 `AdbCapture`，而 `CaptureService` 也持有另一个，会出现"对话框中断开了，但截图按钮还在用旧连接"的状态不一致。共享引用确保了单点真相。
 

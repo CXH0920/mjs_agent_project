@@ -125,8 +125,8 @@ class GeneralRecognizer:
     @property
     def _recheck_engine(self):
         """复核引擎（与主引擎互为异构，B1 起为 v4）；开关关闭或不可用时返回 None。"""
-        from src.config.env import get_mumu_config
-        if not get_mumu_config().get("mumu_ocr_recheck_enabled", False):
+        from src.config.env import get_emulator_config
+        if not get_emulator_config().get("mumu_ocr_recheck_enabled", False):
             return None
         from src.ocr.engine_loader import get_recheck_ocr_engine
         return get_recheck_ocr_engine()

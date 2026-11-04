@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """模拟器配置·设备与连接页（审计 G2 切片 4.1a）。
 
-从 MumuConfigDialog 拆出：ADB 探测/设备刷新/连接管理/连通性测试的信号接线
+从 EmulatorConfigDialog 拆出：ADB 探测/设备刷新/连接管理/连通性测试的信号接线
 与控件状态收敛到本页；对话框只负责页面装配、页头 ADB 总状态与保存编排。
-控件来自 MumuDeviceSection（构建层），后台操作全部委托
-MumuConfigCoordinator（业务层）。弹窗与 Toast 以 self.window()（对话框）
+控件来自 EmulatorDeviceSection（构建层），后台操作全部委托
+EmulatorConfigCoordinator（业务层）。弹窗与 Toast 以 self.window()（对话框）
 为父级，保持拆分前的呈现位置与共享 overlay 语义。
 """
 
@@ -14,28 +14,28 @@ import logging
 
 from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout, QWidget
-from src.business.emulator.mumu_config_coordinator import (
+from src.business.emulator.emulator_config_coordinator import (
     CONNECTION_TYPE_PC,
     EMULATOR_BRANDS,
     EMULATOR_HINTS,
     EMULATOR_LABELS,
+    EmulatorConfigCoordinator,
     EmulatorDeviceInfo,
-    MumuConfigCoordinator,
     PcWindowInfo,
 )
 from src.config.env import connection_key
-from src.ui.configuration.mumu_config_sections import MumuDeviceSection
+from src.ui.configuration.emulator_config_sections import EmulatorDeviceSection
 from src.ui.shared.widgets import show_toast
 
 logger = logging.getLogger(__name__)
 
 
-class MumuDevicePage(QWidget):
+class EmulatorDevicePage(QWidget):
     """「设备与连接」页：ADB 探测、设备列表、连接管理与连通性测试。"""
 
     ui_refresh_requested = Signal()
 
-    def __init__(self, coordinator: MumuConfigCoordinator, parent=None) -> None:
+    def __init__(self, coordinator: EmulatorConfigCoordinator, parent=None) -> None:
         super().__init__(parent)
         self._coordinator = coordinator
         self._device_selected_explicitly = False
@@ -45,7 +45,7 @@ class MumuDevicePage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.section = MumuDeviceSection(self)
+        self.section = EmulatorDeviceSection(self)
         layout.addWidget(self.section)
 
         self.section.browse_requested.connect(self._browse_adb)

@@ -315,7 +315,7 @@ def test_panel_start_without_capture_prompts_config(qapp):
     """未连接模拟器时点开始，提示配置且不启动循环。"""
     panel = _make_panel(capture=None)
     requested = []
-    panel.request_mumu_config.connect(lambda: requested.append(True))
+    panel.request_emulator_config.connect(lambda: requested.append(True))
 
     panel._toggle_button.click()
 
@@ -344,7 +344,7 @@ def test_panel_save_screenshot_without_capture_prompts_config(qapp):
     """未连接模拟器时保存截图引导配置，不发捕获请求。"""
     panel = _make_panel(capture=None, do_capture=lambda **kwargs: pytest.fail("不应触发截图"))
     requested = []
-    panel.request_mumu_config.connect(lambda: requested.append(True))
+    panel.request_emulator_config.connect(lambda: requested.append(True))
 
     panel._save_action.trigger()
 

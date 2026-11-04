@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import time
 
-from src.config.env import get_mumu_config
+from src.config.env import get_emulator_config
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class OfficialOcrEngines:
             self._rare_char_fail_streak = 0
             logger.info("罕见字兜底冷却结束，恢复重试")
         if self._rare_char_ocr is None:
-            if not get_mumu_config().get("mumu_ocr_recheck_enabled", False):
+            if not get_emulator_config().get("mumu_ocr_recheck_enabled", False):
                 return None
             from src.ocr.engine_loader import get_recheck_ocr_engine
 

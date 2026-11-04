@@ -72,7 +72,7 @@ class RecommendationPanel(QWidget):
     支持外部数据源（OCR 截图识别）导入武将数据。
     """
 
-    request_mumu_config = Signal()
+    request_emulator_config = Signal()
 
     # 横条内配队管理对话框的增删改经此透传上行（combo_strip.combos_edited），
     # 主窗口分发到共享数据视图（武将资料库相性表）
@@ -182,7 +182,7 @@ class RecommendationPanel(QWidget):
         self._error_notice.add_action(self._error_retry_btn, ROLE_SECONDARY)
         self._error_config_btn = QPushButton("打开模拟器配置")
         self._error_config_btn.setObjectName("recommendationOpenConfigButton")
-        self._error_config_btn.clicked.connect(self.request_mumu_config.emit)
+        self._error_config_btn.clicked.connect(self.request_emulator_config.emit)
         self._error_notice.add_action(self._error_config_btn, ROLE_SECONDARY)
         layout.addWidget(self._error_notice)
         self._error_notice.hide()
@@ -695,7 +695,7 @@ class RecommendationPanel(QWidget):
             self._notify_capture_busy()
             return
         if not self._capture_service or not self._capture_service.capture:
-            self.request_mumu_config.emit()
+            self.request_emulator_config.emit()
             return
 
         if not self._begin_capture_request("adb_recognize"):
@@ -713,7 +713,7 @@ class RecommendationPanel(QWidget):
             self._notify_capture_busy()
             return
         if not self._capture_service or not self._capture_service.capture:
-            self.request_mumu_config.emit()
+            self.request_emulator_config.emit()
             return
 
         if not self._begin_capture_request("adb_save"):

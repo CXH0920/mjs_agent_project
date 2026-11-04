@@ -28,18 +28,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.business.emulator.capture_service import CaptureService
+from src.business.emulator.emulator_config_coordinator import EmulatorConfigCoordinator
 from src.business.emulator.emulator_operation_service import EmulatorOperationService
-from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
 from src.business.recognition.ocr_service import OcrService
 from src.config.env import connection_key
-from src.ui.configuration.mumu_device_page import MumuDevicePage
-from src.ui.configuration.mumu_recognition_page import MumuRecognitionPage
+from src.ui.configuration.emulator_device_page import EmulatorDevicePage
+from src.ui.configuration.emulator_recognition_page import EmulatorRecognitionPage
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 
 logger = logging.getLogger(__name__)
 
 
-class MumuConfigDialog(QDialog):
+class EmulatorConfigDialog(QDialog):
     """模拟器配置对话框"""
 
     def __init__(
@@ -53,7 +53,7 @@ class MumuConfigDialog(QDialog):
         super().__init__(parent)
         self._capture_service = capture_service
         self._ocr_service = ocr_service
-        self._coordinator = MumuConfigCoordinator(
+        self._coordinator = EmulatorConfigCoordinator(
             config,
             self._capture_service,
             self._ocr_service,
@@ -108,12 +108,12 @@ class MumuConfigDialog(QDialog):
         self._page_stack = QStackedWidget()
         body.addWidget(self._page_stack, 1)
 
-        self._device_page = MumuDevicePage(self._coordinator, self)
+        self._device_page = EmulatorDevicePage(self._coordinator, self)
         self._device_page.ui_refresh_requested.connect(self._update_ui)
         device_scroll = self._page_scroll(self._device_page)
         self._page_stack.addWidget(device_scroll)
 
-        self._recognition_page = MumuRecognitionPage(self._coordinator, self)
+        self._recognition_page = EmulatorRecognitionPage(self._coordinator, self)
         self._recognition_page.ui_refresh_requested.connect(self._update_ui)
         recognition_scroll = self._page_scroll(self._recognition_page)
         self._page_stack.addWidget(recognition_scroll)
@@ -154,7 +154,7 @@ class MumuConfigDialog(QDialog):
             self._device_page.start_detect()
 
     # ────────────────────────────────────────────────
-    # ADB 连接管理（设备页内，见 mumu_device_page.py）
+    # ADB 连接管理（设备页内，见 emulator_device_page.py）
     # ────────────────────────────────────────────────
 
     def _on_connection_changed(self, _state: str, _detail: str) -> None:

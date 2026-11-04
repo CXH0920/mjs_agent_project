@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """模拟器配置·识别与自动化页（审计 G2 切片 4.1b）。
 
-从 MumuConfigDialog 拆出：模板选择/制作、ROI 识别区域编辑与轮询参数的
+从 EmulatorConfigDialog 拆出：模板选择/制作、ROI 识别区域编辑与轮询参数的
 信号接线与控件状态收敛到本页；对话框只负责页面装配、页头 ADB 总状态与
-保存编排。控件来自 MumuTemplateSection + MumuOcrPollingSection（构建层，
-后者已内嵌前者），后台操作全部委托 MumuConfigCoordinator（业务层）。
+保存编排。控件来自 EmulatorTemplateSection + EmulatorOcrPollingSection（构建层，
+后者已内嵌前者），后台操作全部委托 EmulatorConfigCoordinator（业务层）。
 弹窗与 Toast 以 self.window()（对话框）为父级，保持拆分前的呈现位置与
 共享 overlay 语义。
 """
@@ -15,11 +15,11 @@ import logging
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox, QVBoxLayout, QWidget
-from src.business.emulator.mumu_config_coordinator import MumuConfigCoordinator
+from src.business.emulator.emulator_config_coordinator import EmulatorConfigCoordinator
 from src.config.env import BUNDLE_ROOT, SCREENSHOTS_DIR
-from src.ui.configuration.mumu_config_sections import (
-    MumuOcrPollingSection,
-    MumuTemplateSection,
+from src.ui.configuration.emulator_config_sections import (
+    EmulatorOcrPollingSection,
+    EmulatorTemplateSection,
 )
 from src.ui.shared.image_utils import pil_to_qpixmap
 from src.ui.shared.widgets import show_toast
@@ -30,19 +30,19 @@ DEFAULT_TEMPLATE_DIR = BUNDLE_ROOT / "templates"
 DEFAULT_SCREENSHOTS_DIR = SCREENSHOTS_DIR
 
 
-class MumuRecognitionPage(QWidget):
+class EmulatorRecognitionPage(QWidget):
     """「识别与自动化」页：模板管理、ROI 识别区域与轮询参数。"""
 
     ui_refresh_requested = Signal()
 
-    def __init__(self, coordinator: MumuConfigCoordinator, parent=None) -> None:
+    def __init__(self, coordinator: EmulatorConfigCoordinator, parent=None) -> None:
         super().__init__(parent)
         self._coordinator = coordinator
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.template_section = MumuTemplateSection(self)
-        self.ocr_polling_section = MumuOcrPollingSection(self.template_section, self)
+        self.template_section = EmulatorTemplateSection(self)
+        self.ocr_polling_section = EmulatorOcrPollingSection(self.template_section, self)
         layout.addWidget(self.ocr_polling_section)
 
         self.template_section.hero_select_requested.connect(self._on_select_template)
@@ -93,7 +93,7 @@ class MumuRecognitionPage(QWidget):
         polling.poll_mode_check.setChecked(config.get("mumu_ocr_poll_mode", False))
         polling.poll_idle_pause_check.setChecked(config.get("mumu_ocr_poll_idle_pause", True))
         polling.auto_switch_tab_check.setChecked(config.get("mumu_ocr_auto_switch_tab", False))
-        # 配置出自 get_mumu_config() 全键字典（协调器持有），默认值以 env 层为唯一权威，直接取键
+        # 配置出自 get_emulator_config() 全键字典（协调器持有），默认值以 env 层为唯一权威，直接取键
         polling.poll_interval_spin.setValue(config["mumu_ocr_poll_interval"])
         polling.threshold_spin.setValue(config["mumu_hero_selection_threshold"])
         polling.match_guide_threshold_spin.setValue(config["mumu_match_guide_threshold"])
@@ -127,7 +127,7 @@ class MumuRecognitionPage(QWidget):
         self._update_parameter_controls()
 
     def collect_parameters(self) -> dict:
-        """收集识别页表单值（不含 ADB 路径，设备侧归 MumuDevicePage）。"""
+        """收集识别页表单值（不含 ADB 路径，设备侧归 EmulatorDevicePage）。"""
         polling = self.ocr_polling_section
         return {
             "mumu_ocr_enabled": polling.ocr_enabled_check.isChecked(),

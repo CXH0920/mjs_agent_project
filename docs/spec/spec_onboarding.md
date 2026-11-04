@@ -62,7 +62,7 @@
 | 检查编排（含单组异常隔离） | `run_checks(offline: bool)` | `src/scripts/doctor.py:618-629` |
 | 运行环境检查 | `check_environment()`（依赖导入 + OCR 模型齐备） | `src/scripts/doctor.py:78-130` |
 | 配置 / 白名单 / RAG 索引检查 | `check_config()` / `check_whitelist()` / `check_rag_index()` | `doctor.py:330` / `:582` / `:476` |
-| 模拟器协调器（business 层，UI 可直连） | `MumuConfigCoordinator(config, capture_service, ocr_service, operation_service=None, parent=None, roi_config=None)` | `src/business/emulator/mumu_config_coordinator.py:48-56` |
+| 模拟器协调器（business 层，UI 可直连） | `EmulatorConfigCoordinator(config, capture_service, ocr_service, operation_service=None, parent=None, roi_config=None)` | `src/business/emulator/emulator_config_coordinator.py:48-56` |
 | ADB 探测 / 设备刷新 / 连接 / 测试 | `detect_adb()`、`refresh_devices()`、`connect(device, selected_explicitly)->str`、`test_device(adb_path, device)->str` | 同上 `:120`、`:123`、`:126-138`、`:143-150` |
 | 整屏截图（不落盘、不 OCR，正是 ROI 框选用的那张图） | `start_roi_layout_capture(page_type)->bool` → `roi_layout_screenshot_ready(page_type, image)` | 同上 `:173-184`、`:273-277` |
 | 参考分辨率（经 business 取，不碰 `src.ocr`） | `roi_layout(page_type).reference_size` = `[2560,1440]` | 同上 `:194-195`；`config/ocr_rois.default.json:5` |
@@ -149,8 +149,8 @@ check_environment()  →  check_dev_toolchain() + check_runtime_env()
 
 ### 3.4 段 2 · 模拟器与画面（连接 + 分辨率体检）
 
-1. **取配置**：`get_mumu_config()` 拿 `mumu_adb_path`；未配置时按钮显示「自动探测」→ `coordinator.detect_adb()`。
-2. **刷设备**：`coordinator.refresh_devices()` → `devices_changed`（**信号类型是 `object`，实际载荷为 `tuple[MuMuDeviceInfo, ...]`，不是 list**，见 `mumu_config_coordinator.py:34`、`:94-97`）；0 台提示"请先启动 MuMu 模拟器"；多台**不擅自选择**（协调器硬约束 `_device_selection_error`，`:298-302`；UI 纪律见 `src/ui/configuration/mumu_device_page.py:194-246`）。→ **需要设备下拉 + "请选择运行中的实例"占位**，这是额外的 UI 成本，已计入 T5 工时。
+1. **取配置**：`get_emulator_config()` 拿 `mumu_adb_path`；未配置时按钮显示「自动探测」→ `coordinator.detect_adb()`。
+2. **刷设备**：`coordinator.refresh_devices()` → `devices_changed`（**信号类型是 `object`，实际载荷为 `tuple[MuMuDeviceInfo, ...]`，不是 list**，见 `emulator_config_coordinator.py:34`、`:94-97`）；0 台提示"请先启动 MuMu 模拟器"；多台**不擅自选择**（协调器硬约束 `_device_selection_error`，`:298-302`；UI 纪律见 `src/ui/configuration/emulator_device_page.py:194-246`）。→ **需要设备下拉 + "请选择运行中的实例"占位**，这是额外的 UI 成本，已计入 T5 工时。
 3. **连接**：`coordinator.connect(device, selected_explicitly=True)` → `connection_finished(ok, message)`。
 4. **分辨率体检**（不动 `capture_service.py`）：
    - `coordinator.start_roi_layout_capture("hero_selection")` 取整屏截图（该路径不落盘、不 OCR）；
@@ -170,10 +170,10 @@ check_environment()  →  check_dev_toolchain() + check_runtime_env()
 **关键点**：等比缩放是设计内行为（`src/ocr/recognizer.py` 的 ROI 缩放路径按参考尺寸换算），所以 1920×1080 必须判 **WARN 而非 FAIL**，否则误伤大批用户。
 
 **协调器构造的两个注意点**：
-- `__init__` 末尾会调 `sync_capture_config()`（`mumu_config_coordinator.py:86`、`:111-114`），把配置草稿推给**共享**截图会话——用同一份 `get_mumu_config()` 构造时值相同，无副作用，但不要拿它去推一份未保存的草稿。
-- `operation_service=None` 时协调器自建 `EmulatorOperationService`（`:61-64`），这正是我们要的线程池隔离（`shutdown()` 只关自己）。**传参一律用关键字**：现库唯一使用方 `MumuConfigDialog` 是位置传 5 个参数（`src/ui/configuration/mumu_config_dialog.py:55-61`），跟随位置传参容易踩坑。
+- `__init__` 末尾会调 `sync_capture_config()`（`emulator_config_coordinator.py:86`、`:111-114`），把配置草稿推给**共享**截图会话——用同一份 `get_emulator_config()` 构造时值相同，无副作用，但不要拿它去推一份未保存的草稿。
+- `operation_service=None` 时协调器自建 `EmulatorOperationService`（`:61-64`），这正是我们要的线程池隔离（`shutdown()` 只关自己）。**传参一律用关键字**：现库唯一使用方 `EmulatorConfigDialog` 是位置传 5 个参数（`src/ui/configuration/emulator_config_dialog.py:55-61`），跟随位置传参容易踩坑。
 
-「去重新框选」的深链：**`window._dialogs.open_mumu_config()`**，不在向导内嵌 `RoiSelectorDialog`（那需要复刻 `mumu_recognition_page.py:260-263`、`:290-291` 的截图→pixmap→对话框管道）。**深链的交互语义要写死**：
+「去重新框选」的深链：**`window._dialogs.open_emulator_config()`**，不在向导内嵌 `RoiSelectorDialog`（那需要复刻 `emulator_recognition_page.py:260-263`、`:290-291` 的截图→pixmap→对话框管道）。**深链的交互语义要写死**：
 - 该调用是**嵌套 `exec()`**；父窗口以向导自身为 parent，或先隐藏向导再开，避免 z-order 错乱；
 - 配置对话框关闭后**向导重新显示并自动重跑段 2**（不做"记忆半完成状态"）；
 - 若用户直接关掉向导，段 2 记为未完成，`steps.device` 不写。
@@ -261,8 +261,8 @@ def run_checks(offline: bool = False, checks=None) -> list[Finding]:
 class OnboardingDialog(QDialog):
     def __init__(self, window) -> None: ...
     # 段 1：EnvCheckWorker(QThread) → run_checks(checks=ONBOARDING_CHECKS)
-    # 段 2：self._coordinator = MumuConfigCoordinator(
-    #           config=get_mumu_config(),
+    # 段 2：self._coordinator = EmulatorConfigCoordinator(
+    #           config=get_emulator_config(),
     #           capture_service=window._capture_service,
     #           ocr_service=window._ocr_service,
     #           parent=self)                      # 一律关键字传参
@@ -278,7 +278,7 @@ class OnboardingDialog(QDialog):
 def open_onboarding(self) -> None:
     w = self._window
     OnboardingDialog(w).exec()
-    w._poll_coordinator.sync_with_connection()   # 与 open_mumu_config 同款收尾
+    w._poll_coordinator.sync_with_connection()   # 与 open_emulator_config 同款收尾
 ```
 
 `coordinator.shutdown()` 已核实只关自己的线程池，不动共享 ADB 会话；它同时显式断开 `connection_changed` 中继，不调用会踩"Signal source has been deleted"。
@@ -421,8 +421,8 @@ def open_onboarding(self) -> None:
 | 8 | 段 3 门禁"`!= ready` 禁用" | **先例引用错误**：`peak_select_panel.py:355-365` 是"仅 warming 禁用"，且 failed 态 `warmup_ocr_model` 会重新入队可用。改为仅 warming 禁用 | §3.5、§六 |
 | 9 | 未覆盖"预热悬挂" | **必须补**：`wait_warmup` 超时不动状态机（`ocr_task_coordinator.py:112-114`），而 `warmup_ocr_model` 在 warming 是 no-op（`capture_service.py:295-298`）→ 用户被永久锁死。补 150 秒阈值 + 状态机复位接口（落点 167 行、无预算约束） | §3.5、§六、§七 T6 |
 | 10 | 段 3 分派"详见 §六" | 精度不足：需写明未命中走 `capture_completed`（`ocr_matched`）而非 `capture_failed`；补 `retryable_ocr`；写明 `hero_names` 来源为全量武将名 | §3.5 |
-| 11 | `devices_changed(list)` | **类型错误**：信号载荷是 `tuple`（`mumu_config_coordinator.py:34`、`:94-97`）；多设备下拉的 UI 成本未计 | §3.4、§七 T5 |
-| 12 | 协调器构造与传参 | 补充：`__init__` 会 `sync_capture_config()` 推共享配置（`:86`、`:111-114`）；`MumuConfigDialog` 是位置传参 5 个（`:55-61`），本项目一律用关键字 | §3.4、§四 |
+| 11 | `devices_changed(list)` | **类型错误**：信号载荷是 `tuple`（`emulator_config_coordinator.py:34`、`:94-97`）；多设备下拉的 UI 成本未计 | §3.4、§七 T5 |
+| 12 | 协调器构造与传参 | 补充：`__init__` 会 `sync_capture_config()` 推共享配置（`:86`、`:111-114`）；`EmulatorConfigDialog` 是位置传参 5 个（`:55-61`），本项目一律用关键字 | §3.4、§四 |
 | 13 | OnnxEmbedder 耗时 | 高估：构造只做侧车哈希（`embedder.py:45-51`、`:88-91`），实测 0.2–0.5 秒。仍放 worker，理由改为 I/O 密集 | §3.3、§十 R8 |
 | 14 | `closeEvent` 时序 | 补：shutdown 后 `_submit`/`_complete` 静默吞请求（`emulator_operation_service.py:129-141`），顺序必须"先停发起后 shutdown" | §四伪码、§十 R11 |
 | 15 | `checks` 形参默认值 | 补实现注意：必须函数体内读全局 `CHECK_GROUPS`，否则 `test_doctor.py:93/:108` 的 monkeypatch 静默失效 | §3.3、§四伪码、§八 |
