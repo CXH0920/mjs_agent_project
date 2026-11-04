@@ -456,3 +456,26 @@ def test_brand_hint_icon_follows_selected_brand() -> None:
     # 点击同样显示（离屏下 Leave 淡出需事件循环，隐藏行为不作离屏断言）
     QTest.mouseClick(section.brand_hint_icon, Qt.MouseButton.LeftButton)
     assert "稳定版雷电 9" in QToolTip.text()
+
+
+def test_reject_with_unsaved_changes_requires_confirmation(monkeypatch) -> None:
+    """改过识别参数后 reject（取消/Esc/X 共同终点）须先确认，拒绝则留在对话框。"""
+    _app()
+    dialog = _dialog({"emulator_adb_path": "adb.exe"}, [EmulatorDeviceInfo("1", "实例 A", 16448, True)])
+    calls: list[int] = []
+
+    def _decline() -> bool:
+        calls.append(1)
+        return False
+
+    monkeypatch.setattr(dialog, "_confirm_discard", _decline)
+
+    dialog._recognition_page.ocr_polling_section.threshold_spin.setValue(0.9)
+    dialog.reject()
+    assert calls == [1]
+    assert dialog.result() == 0  # 用户拒绝丢弃：未关闭
+
+    dialog._recognition_page.ocr_polling_section.threshold_spin.setValue(0.8)  # 改回装载值判净
+    dialog.reject()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert len(calls) == 1

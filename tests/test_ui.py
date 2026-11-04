@@ -3,9 +3,11 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QTabWidget
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QTabWidget
 from src.config.env import parse_env_file, save_env_file
 from src.ui.configuration.settings_dialog import SettingsDialog
 from src.ui.generation.backend_choose_dialog import BackendChooseDialog
@@ -40,6 +42,56 @@ class TestEnvFileParsing:
             save_env_file(env_path, {"K": "v"})
             assert env_path.exists()
             assert not env_path.with_suffix(".env.tmp").exists()
+
+
+def _settings_paths(tmp_path):
+    env_path = tmp_path / "config.env"
+    pricing_path = tmp_path / "model_pricing.json"
+    profiles_path = tmp_path / "api_profiles.json"
+    env_path.write_text("", encoding="utf-8")
+    pricing_path.write_text(
+        json.dumps(
+            {"currency": "CNY", "unit": "per_million_tokens", "updated_at": "", "models": {}}
+        ),
+        encoding="utf-8",
+    )
+    profiles_path.write_text("{}", encoding="utf-8")
+    return env_path, pricing_path, profiles_path
+
+
+def test_settings_dialog_reject_with_changes_requires_confirmation(tmp_path, monkeypatch):
+    """改过草稿后 reject（取消/Esc/X 共同终点）须先确认，拒绝则留在对话框。"""
+    _app()
+    env_path, pricing_path, profiles_path = _settings_paths(tmp_path)
+    dialog = SettingsDialog(env_path=env_path, pricing_path=pricing_path, profiles_path=profiles_path)
+    calls: list[int] = []
+
+    def _decline() -> bool:
+        calls.append(1)
+        return False
+
+    monkeypatch.setattr(dialog, "_confirm_discard", _decline)
+
+    dialog._spin_widgets["REQUESTS_PER_MINUTE"].setValue(60)
+    dialog.reject()
+    assert calls == [1]
+    assert dialog.result() == 0  # 用户拒绝丢弃：未关闭
+
+    dialog._spin_widgets["REQUESTS_PER_MINUTE"].setValue(30)  # 改回装载值判净
+    dialog.reject()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert len(calls) == 1  # 第二次未再弹确认
+
+
+def test_settings_pricing_rejects_non_finite_cached_price(tmp_path):
+    _app()
+    env_path, pricing_path, profiles_path = _settings_paths(tmp_path)
+    dialog = SettingsDialog(env_path=env_path, pricing_path=pricing_path, profiles_path=profiles_path)
+    dialog._add_pricing_row("test-model")
+    dialog._pricing_table.cellWidget(0, 3).setText("nan")
+
+    with pytest.raises(ValueError, match="有限数字"):
+        dialog._collect_pricing_config()
 
 
 def test_settings_dialog_has_parameter_and_pricing_tabs(tmp_path, monkeypatch):

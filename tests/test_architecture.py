@@ -800,7 +800,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 防记事本「带 BOM 的 UTF-8」保存污染首键
     # 410 → 421：新增 runtime_root/runtime_data_dir 调用时求值函数——
     # 路径快照常量的根治出口，守护测试不再依赖 importlib.reload
-    "config/env.py": 421,
+    # 421 → 423：MUMU_OCR_MATCH_THRESHOLD 键退役注释（第16批遗留 P3 双阈值
+    # 收敛）——UI/persist 不再写该键，default_from 回退源语义显式化
+    "config/env.py": 423,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示
@@ -840,7 +842,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/match/match_guide_panel.py": 856,
     # 584 → 593：跨供应商空 model 保存硬校验（2026-10-27）——无预设默认模型
     # 的供应商（openai/ollama/openai-compatible）model 必填拦截 + 占位文案按供应商同步
-    "ui/configuration/settings_dialog.py": 593,
+    # 593 → 621：草稿丢弃保护接入（DirtyGuardDialogMixin，第16批遗留 P2）——
+    # draft_state 快照 + mark_draft_loaded 装载基线；另补价格缓存命中
+    # nan/inf 有限性校验（isfinite）
+    "ui/configuration/settings_dialog.py": 621,
     # P0-1 会话状态收口（2026-10）：SessionGuard 替换裸 _session 比对，
     # _clear_session_state 统一 start/stop/牌面退出三处手抄重置清单（567 → 566）
     # 566 → 593：候选期卡数回升防抖——过场坏帧（模拟器旧帧/撕裂帧）扣住一拍

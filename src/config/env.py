@@ -201,6 +201,8 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     "MUMU_OCR_POLL_IDLE_PAUSE": _EnvKeySpec("mumu_ocr_poll_idle_pause", bool, True, "mumu"),
     "MUMU_OCR_AUTO_SWITCH_TAB": _EnvKeySpec("mumu_ocr_auto_switch_tab", bool, False, "mumu"),
     "MUMU_OCR_POLL_INTERVAL": _EnvKeySpec("mumu_ocr_poll_interval", int, 2, "mumu"),
+    # 已退役为 hero 键的回退源（default_from 级联保留，老配置不改字继续生效）；
+    # UI 与 persist 不再写入该键——历史双写曾把手调差异抹平为同值
     "MUMU_OCR_MATCH_THRESHOLD": _EnvKeySpec("mumu_ocr_match_threshold", float, 0.8, "mumu"),
     "MUMU_HERO_SELECTION_THRESHOLD": _EnvKeySpec(
         "mumu_hero_selection_threshold", float, 0.8, "mumu",

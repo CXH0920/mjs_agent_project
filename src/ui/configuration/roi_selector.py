@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.ocr.roi_config import OcrRoiLayout, OcrRoiSlot
+from src.ui.shared.dirty_guard import DirtyGuardDialogMixin
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
@@ -220,7 +221,7 @@ class RoiSelectorDialog(QDialog):
         return self._roi
 
 
-class RoiLayoutEditorDialog(QDialog):
+class RoiLayoutEditorDialog(DirtyGuardDialogMixin, QDialog):
     """在截图上编辑一个 OCR 页面的全部名称和阵营识别区域。"""
 
     def __init__(self, pixmap: QPixmap, layout: OcrRoiLayout, page_type: str, parent=None) -> None:
@@ -238,6 +239,11 @@ class RoiLayoutEditorDialog(QDialog):
         self._drag_end: QPoint | None = None
         self._is_dragging = False
         self._setup_ui()
+        self.mark_draft_loaded()
+
+    def draft_state(self):
+        """草稿快照：全部席位区域当前值（mixin deepcopy 基线隔离可变结构）。"""
+        return self._slots
 
     @property
     def canvas_pixmap(self) -> QPixmap:

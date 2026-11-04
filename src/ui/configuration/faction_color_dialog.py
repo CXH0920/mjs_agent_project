@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from src.data.json_repository import atomic_write_text
+from src.ui.shared.dirty_guard import DirtyGuardDialogMixin
 from src.ui.shared.faction_colors import FACTION_COLORS_FILE as COLORS_FILE
 from src.ui.shared.faction_colors import load_faction_colors
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
@@ -132,7 +133,7 @@ class ColorPicker(QWidget):
             self._refresh_display()
 
 
-class FactionColorDialog(QDialog):
+class FactionColorDialog(DirtyGuardDialogMixin, QDialog):
     """列表式势力配色配置对话框。"""
 
     def __init__(self, path: Path = COLORS_FILE, parent=None):
@@ -146,6 +147,11 @@ class FactionColorDialog(QDialog):
         self.setWindowTitle("势力配色")
         self.setMinimumSize(460, 520)
         self._setup_ui()
+        self.mark_draft_loaded()
+
+    def draft_state(self) -> tuple:
+        """草稿快照：势力颜色与展示顺序（_pickers 插入顺序即行序）。"""
+        return tuple((name, picker.color()) for name, picker in self._pickers.items())
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)

@@ -34,12 +34,13 @@ from src.business.recognition.ocr_service import OcrService
 from src.config.env import connection_key
 from src.ui.configuration.emulator_device_page import EmulatorDevicePage
 from src.ui.configuration.emulator_recognition_page import EmulatorRecognitionPage
+from src.ui.shared.dirty_guard import DirtyGuardDialogMixin
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 
 logger = logging.getLogger(__name__)
 
 
-class EmulatorConfigDialog(QDialog):
+class EmulatorConfigDialog(DirtyGuardDialogMixin, QDialog):
     """模拟器配置对话框"""
 
     def __init__(
@@ -152,6 +153,19 @@ class EmulatorConfigDialog(QDialog):
         self._update_ui()
         if should_auto_detect and not self._coordinator.is_pc_client:
             self._device_page.start_detect()
+        self.mark_draft_loaded()
+
+    def draft_state(self) -> tuple:
+        """草稿快照：ADB 路径 + 品牌 + 识别参数。
+
+        设备下拉不在此列——其内容随异步探测刷新，属环境状态而非用户
+        草稿，纳入会把「探测完成自动高亮」误判为有未保存修改。
+        """
+        return (
+            self._device_page.adb_path_edit.property("raw_path") or "",
+            self._device_page.brand_combo.currentData(),
+            self._recognition_page.collect_parameters(),
+        )
 
     # ────────────────────────────────────────────────
     # ADB 连接管理（设备页内，见 emulator_device_page.py）

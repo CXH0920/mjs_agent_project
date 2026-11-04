@@ -6,7 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import src.ui.shared.faction_colors as faction_colors
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from src.ui.configuration.faction_color_dialog import (
     FactionColorDialog,
     load_faction_colors,
@@ -157,3 +157,29 @@ def test_save_faction_colors_uses_atomic_write(tmp_path, monkeypatch) -> None:
     save_faction_colors({"东汉": "#ABCDEF"}, path)
     assert calls == [path]
     assert load_faction_colors(path) == {"东汉": "#ABCDEF"}
+
+
+def test_reject_with_unsaved_changes_requires_confirmation(tmp_path, monkeypatch) -> None:
+    """改过颜色后 reject（取消/Esc/X 共同终点）须先确认，拒绝则留在对话框。"""
+    _app()
+    path = tmp_path / "faction_colors.json"
+    save_faction_colors({"东汉": "#ABCDEF"}, path)
+    dialog = FactionColorDialog(path)
+    calls: list[int] = []
+
+    def _decline() -> bool:
+        calls.append(1)
+        return False
+
+    monkeypatch.setattr(dialog, "_confirm_discard", _decline)
+
+    picker = next(iter(dialog._pickers.values()))
+    picker.set_color("#123456")
+    dialog.reject()
+    assert calls == [1]
+    assert dialog.result() == 0  # 用户拒绝丢弃：未关闭
+
+    picker.set_color("#ABCDEF")  # 改回装载值判净
+    dialog.reject()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert len(calls) == 1

@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 from src.ocr.roi_config import OcrRoiConfig
 from src.ui.configuration.roi_selector import (
     RoiLayoutEditorDialog,
@@ -63,3 +63,27 @@ def test_dialog_minimum_size_does_not_scale_with_the_screenshot() -> None:
     assert large.layout().totalMinimumSize() == editor_min
     assert editor_min.height() < 1000
     assert selector.layout().totalMinimumSize().height() < 1000
+
+
+def test_layout_editor_reject_with_unsaved_changes_requires_confirmation(monkeypatch) -> None:
+    """拖拽改过席位区域后 reject 须先确认，拒绝则留在编辑器。"""
+    _app()
+    layout = OcrRoiConfig().layout_for("hero_selection")
+    dialog = RoiLayoutEditorDialog(QPixmap(1280, 720), layout, "hero_selection")
+    calls: list[int] = []
+
+    def _decline() -> bool:
+        calls.append(1)
+        return False
+
+    monkeypatch.setattr(dialog, "_confirm_discard", _decline)
+
+    dialog._slots[0][0]["roi"] = [11, 22, 33, 44]  # 模拟拖拽落位（原地改可变结构）
+    dialog.reject()
+    assert calls == [1]
+    assert dialog.result() == 0  # 用户拒绝丢弃：未关闭
+
+    dialog._slots[0][0]["roi"] = list(dialog._initial_slots[0][0]["roi"])  # 改回装载值判净
+    dialog.reject()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert len(calls) == 1

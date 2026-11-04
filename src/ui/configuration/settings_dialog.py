@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +48,7 @@ from src.config.profiles import (
     load_api_profiles,
     save_api_profiles,
 )
+from src.ui.shared.dirty_guard import DirtyGuardDialogMixin
 from src.ui.shared.widgets import DialogFooter, PageHeader, close_after_toast
 
 logger = logging.getLogger(__name__)
@@ -61,7 +63,7 @@ SPIN_FIELDS = [
 ]
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(DirtyGuardDialogMixin, QDialog):
     """API 配置编辑对话框
 
     以档案列表 + 编辑面板管理多套 API 配置（api_profiles.json），
@@ -500,6 +502,28 @@ class SettingsDialog(QDialog):
             if isinstance(values, dict):
                 self._add_pricing_row(model, values)
 
+        self.mark_draft_loaded()
+
+    def draft_state(self) -> tuple:
+        """草稿快照：档案 + 运行参数 + 价格页全部输入（丢弃保护比对用）。"""
+        pricing_rows = []
+        for row in range(self._pricing_table.rowCount()):
+            name_item = self._pricing_table.item(row, 0)
+            pricing_rows.append((
+                name_item.text().strip() if name_item else "",
+                self._pricing_table.cellWidget(row, 1).value(),
+                self._pricing_table.cellWidget(row, 2).value(),
+                self._pricing_table.cellWidget(row, 3).text().strip(),
+            ))
+        return (
+            self._profiles_data,
+            tuple(widget.value() for widget in self._spin_widgets.values()),
+            (self._currency_widget.text().strip(),
+             self._unit_widget.text().strip(),
+             self._updated_at_widget.text().strip()),
+            tuple(pricing_rows),
+        )
+
     @staticmethod
     def _price_spinbox(value=0.0) -> QDoubleSpinBox:
         widget = QDoubleSpinBox()
@@ -555,6 +579,10 @@ class SettingsDialog(QDialog):
                     raise ValueError(f"模型 {model} 的缓存输入价格无效") from error
                 if cached_price < 0:
                     raise ValueError(f"模型 {model} 的缓存输入价格不能为负数")
+                if not math.isfinite(cached_price):
+                    # float("nan")/float("inf") 能通过上面的解析与负数校验，
+                    # json.dumps 会写出非标准字面量并让费用预估 NaN 传播
+                    raise ValueError(f"模型 {model} 的缓存输入价格必须是有限数字")
                 values["cached_input_per_million"] = cached_price
             models[model] = values
 

@@ -127,7 +127,11 @@ class EmulatorRecognitionPage(QWidget):
         self._update_parameter_controls()
 
     def collect_parameters(self) -> dict:
-        """收集识别页表单值（不含 ADB 路径，设备侧归 EmulatorDevicePage）。"""
+        """收集识别页表单值（不含 ADB 路径，设备侧归 EmulatorDevicePage）。
+
+        匹配阈值只写 hero 键：mumu_ocr_match_threshold 已退役为 env 层
+        回退源（hero 键 default_from），UI 不再双写以免抹平手调差异。
+        """
         polling = self.ocr_polling_section
         return {
             "mumu_ocr_enabled": polling.ocr_enabled_check.isChecked(),
@@ -135,7 +139,6 @@ class EmulatorRecognitionPage(QWidget):
             "mumu_ocr_poll_idle_pause": polling.poll_idle_pause_check.isChecked(),
             "mumu_ocr_auto_switch_tab": polling.auto_switch_tab_check.isChecked(),
             "mumu_ocr_poll_interval": polling.poll_interval_spin.value(),
-            "mumu_ocr_match_threshold": round(polling.threshold_spin.value(), 2),
             "mumu_hero_selection_threshold": round(polling.threshold_spin.value(), 2),
             "mumu_match_guide_threshold": round(polling.match_guide_threshold_spin.value(), 2),
             "mumu_hero_selection_cooldown": polling.hero_cooldown_spin.value(),

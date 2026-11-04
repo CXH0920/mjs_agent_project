@@ -435,7 +435,6 @@ def persist_emulator_env_config(new_config: dict) -> None:
         "MUMU_OCR_POLL_IDLE_PAUSE": "true" if new_config["mumu_ocr_poll_idle_pause"] else "false",
         "MUMU_OCR_AUTO_SWITCH_TAB": "true" if new_config["mumu_ocr_auto_switch_tab"] else "false",
         "MUMU_OCR_POLL_INTERVAL": str(new_config["mumu_ocr_poll_interval"]),
-        "MUMU_OCR_MATCH_THRESHOLD": str(new_config["mumu_ocr_match_threshold"]),
         "MUMU_HERO_SELECTION_THRESHOLD": str(new_config["mumu_hero_selection_threshold"]),
         "MUMU_HERO_SELECTION_COOLDOWN": str(new_config["mumu_hero_selection_cooldown"]),
         "MUMU_MATCH_GUIDE_THRESHOLD": str(new_config["mumu_match_guide_threshold"]),
