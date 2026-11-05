@@ -131,3 +131,25 @@ def test_completed_toast_distinguishes_peak_from_2v2_stale_hint() -> None:
     v2_text = v2_dialog._shared_toast_overlay.text()
     assert "2v2数据：2 张图片，已导入 340 条" in v2_text
     assert "推荐指数已标记为待重建" in v2_text
+
+
+def test_reject_blocked_with_notice_while_task_running(monkeypatch) -> None:
+    """任务运行中 Esc/X 被拦截并明确提示，任务完成后放行关闭。"""
+    _app()
+    dialog = OfficialDataImportDialog(_FakeCaptureService())
+    dialog._task = OfficialImportTask({"exile": ("a.png",)})
+    notices: list = []
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: notices.append(args)
+    )
+    rejected: list[bool] = []
+    dialog.rejected.connect(lambda: rejected.append(True))
+
+    dialog.reject()
+
+    assert notices, "任务运行中关闭应给出明确提示而非静默吞掉"
+    assert rejected == [], "任务未完成时不得关闭"
+
+    dialog._task.completed.set()
+    dialog.reject()
+    assert rejected == [True], "任务完成后正常放行关闭"

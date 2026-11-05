@@ -219,5 +219,10 @@ class OfficialDataImportDialog(QDialog):
 
     def reject(self) -> None:
         if self._task and not self._task.completed.is_set():
+            # OCR 识别中无安全中止通路：拦截关闭时给明确反馈，避免被当成死机
+            QMessageBox.information(
+                self, "任务进行中",
+                "官方榜单导入仍在识别中，暂时无法关闭窗口；任务结束（或失败）后即可关闭。",
+            )
             return
         super().reject()

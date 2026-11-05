@@ -8,6 +8,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 from src.ui.data_admin.combos_import_dialog import CombosImportDialog
@@ -108,3 +109,25 @@ def test_import_dialog_reports_failure(tmp_path: Path, monkeypatch) -> None:
     assert emitted == []
     assert criticals, "导入失败应弹出错误提示"
     assert dialog._report_browser.toPlainText().startswith("导入失败")
+
+
+def test_reject_blocked_with_notice_while_import_running(monkeypatch) -> None:
+    """导入运行中 Esc/X 被拦截并明确提示，无任务或已结束后放行关闭。"""
+    _app()
+    dialog = CombosImportDialog()
+    dialog._worker = SimpleNamespace(isRunning=lambda: True)
+    notices: list = []
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: notices.append(args)
+    )
+    rejected: list[bool] = []
+    dialog.rejected.connect(lambda: rejected.append(True))
+
+    dialog.reject()
+
+    assert notices, "导入运行中关闭应给出明确提示而非静默关窗丢报告"
+    assert rejected == [], "导入未完成时不得关闭"
+
+    dialog._worker = None
+    dialog.reject()
+    assert rejected == [True], "无任务时正常放行关闭"

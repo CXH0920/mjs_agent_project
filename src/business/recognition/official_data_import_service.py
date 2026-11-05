@@ -21,6 +21,7 @@ from src.business.recognition.official_cell_recognition import OfficialCellRecog
 from src.business.recognition.official_ocr_engines import OfficialOcrEngines
 from src.config.atomic_write import atomic_write_bytes, atomic_write_json, atomic_write_text
 from src.config.env import PROJECT_ROOT
+from src.data.json_repository import snapshot_to_backups
 from src.data.recommendation_index_repository import notify_official_outputs_written
 from src.ocr import official_board_parser
 from src.ocr.official_board_parser import LAYOUTS, OfficialBoardLayout
@@ -263,7 +264,7 @@ class OfficialDataImportService:
             raise ValueError("官方榜单名称校验失败：" + "；".join(validation_errors))
         for output_name, batch in outputs.items():
             records = batch["records"]
-            self._write_csv(DATA_DIR / output_name, list(records[0]), records)
+            self._write_official_csv(output_name, list(records[0]), records)
         notify_official_outputs_written(outputs)
         record_count = sum(len(batch["records"]) for batch in outputs.values())
         review_count = sum(len(batch["reviews"]) for batch in outputs.values())
@@ -401,6 +402,14 @@ class OfficialDataImportService:
         writer.writeheader()
         writer.writerows(rows)
         atomic_write_text(path, buffer.getvalue())
+
+    def _write_official_csv(self, output_name: str, fieldnames: list[str], rows: list[dict]) -> None:
+        """覆盖正式榜单 CSV 前先快照旧数据（写前快照纪律，同配队导入/备份恢复）。
+
+        待复核明细 CSV 是每次导入重新生成的中间产物，仍走 _write_csv 不快照。
+        """
+        snapshot_to_backups(DATA_DIR / output_name)
+        self._write_csv(DATA_DIR / output_name, fieldnames, rows)
     def _save_pending_session(
         self,
         key: str,
@@ -468,7 +477,7 @@ class OfficialDataImportService:
             records = batch["records"]
             if not records:
                 raise ValueError(f"{output_name} 未识别到任何数据行")
-            self._write_csv(DATA_DIR / output_name, list(records[0]), records)
+            self._write_official_csv(output_name, list(records[0]), records)
         notify_official_outputs_written(outputs)
         clear_pending_session(session_path)
         record_count = sum(len(batch["records"]) for batch in outputs.values())

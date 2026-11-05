@@ -888,6 +888,101 @@ def test_apply_reviewed_records_rejects_duplicate_after_fix(tmp_path, monkeypatc
 
     assert not (tmp_path / "2v2胜率排行.csv").exists()
 
+
+def test_apply_reviewed_records_snapshots_existing_csv_before_overwrite(tmp_path, monkeypatch) -> None:
+    """覆盖正式榜单 CSV 前先快照旧数据：坏导入可从 backups/ 回退上一版。"""
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    pending = {
+        "outputs": {
+            "2v2胜率排行.csv": {
+                "review_name": "2v2胜率排行_待复核.csv",
+                "records": [{"排名": 1, "武将": "夏候", "胜率": "54.40%"}],
+                "reviews": [],
+            },
+        },
+    }
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        lambda *_: None,
+    )
+    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+    old_csv = tmp_path / "2v2胜率排行.csv"
+    old_csv.write_text("排名,武将,胜率\n1,旧榜单,50.00%\n", encoding="utf-8")
+
+    service.apply_reviewed_records(pending, {("2v2胜率排行.csv", 1): "夏侯惇"})
+
+    snapshots = list((tmp_path / "backups").glob("2v2胜率排行-[0-9]*.csv"))
+    assert len(snapshots) == 1, "覆盖前应把旧榜单快照到 backups/"
+    assert snapshots[0].read_text(encoding="utf-8") == "排名,武将,胜率\n1,旧榜单,50.00%\n"
+    rows = list(csv.DictReader(old_csv.open(encoding="utf-8")))
+    assert rows[0]["武将"] == "夏侯惇"
+
+
+def test_apply_reviewed_records_skips_snapshot_when_csv_absent(tmp_path, monkeypatch) -> None:
+    """首次导入无旧数据可备：不产生快照也不建 backups 目录。"""
+    service = OfficialDataImportService(hero_names=["夏侯惇"])
+    pending = {
+        "outputs": {
+            "2v2胜率排行.csv": {
+                "review_name": "2v2胜率排行_待复核.csv",
+                "records": [{"排名": 1, "武将": "夏侯惇", "胜率": "54.40%"}],
+                "reviews": [],
+            },
+        },
+    }
+    monkeypatch.setattr(import_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        "src.data.recommendation_index_repository.mark_recommendation_index_stale",
+        lambda *_: None,
+    )
+    monkeypatch.setattr("src.data.win_rate_repository.clear_win_rate_cache", lambda: None)
+
+    service.apply_reviewed_records(pending, {})
+
+    assert (tmp_path / "2v2胜率排行.csv").exists()
+    assert not (tmp_path / "backups").exists()
+
+
+def test_import_pages_snapshots_formal_csv_only_before_overwrite(
+    tmp_path, monkeypatch, import_env
+) -> None:
+    """导入主路径逐文件快照正式榜单 CSV；待复核明细是可再生中间产物，不快照。"""
+    service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
+    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    panel = np.zeros((60, 100, 3), dtype=np.uint8)
+
+    _stub_parser(
+        monkeypatch,
+        service=service,
+        read_image=image,
+        extract_panels=[(0, 0, panel), (100, 0, panel)],
+        find_data_boundaries=[0, 20, 40],
+        recognize_row=[
+            {"排名": ("1", 0.99), "武将": ("夏候", 0.79), "胜率": ("54.40%", 0.99)},
+            {"排名": ("2", 0.99), "武将": ("白起", 0.99), "胜率": ("50.00%", 0.99)},
+            {"排名": ("1", 0.99), "武将": ("夏候怀", 0.70)},
+            {"排名": ("2", 0.99), "武将": ("白起", 0.99)},
+        ],
+        prepare_rate_templates=({1: ("54.40%", 0.99), 2: ("50.00%", 0.99)}, 2),
+        recognize_rate_with_templates=[("54.40%", 0.99), ("50.00%", 0.99)],
+    )
+    old_win = tmp_path / "2v2胜率排行.csv"
+    old_appear = tmp_path / "2v2出场排行.csv"
+    old_win.write_text("排名,武将,胜率\n1,旧武将,50.00%\n", encoding="utf-8")
+    old_appear.write_text("排名,武将\n1,旧武将\n", encoding="utf-8")
+
+    service.import_pages("2v2", [tmp_path / "official.png"])
+
+    win_snapshots = list((tmp_path / "backups").glob("2v2胜率排行-[0-9]*.csv"))
+    appear_snapshots = list((tmp_path / "backups").glob("2v2出场排行-[0-9]*.csv"))
+    assert len(win_snapshots) == 1
+    assert win_snapshots[0].read_text(encoding="utf-8") == "排名,武将,胜率\n1,旧武将,50.00%\n"
+    assert len(appear_snapshots) == 1
+    assert appear_snapshots[0].read_text(encoding="utf-8") == "排名,武将\n1,旧武将\n"
+    assert list((tmp_path / "backups").glob("*待复核*.csv")) == []
+    assert (tmp_path / "2v2胜率排行_待复核.csv").exists()
+
 def test_import_succeeds_when_confusion_swap_resolves_names(tmp_path, monkeypatch, import_env) -> None:
     service = OfficialDataImportService(hero_names=["夏侯惇", "白起"])
     image = np.zeros((200, 200, 3), dtype=np.uint8)

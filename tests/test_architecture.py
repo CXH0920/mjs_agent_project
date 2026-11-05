@@ -825,7 +825,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # OfficialCellRecognizer（独立变更原因：OCR 质量调优 vs 导入编排）；
     # 同步长图切分/逐版式行数校验抽私有方法、panel 任务元组改 _PanelTask
     # 消除魔法下标；本文件只留导入编排、校验复核与持久化会话
-    "business/recognition/official_data_import_service.py": 504,
+    # 504 → 513：正式榜单 CSV 写前快照补口（第 17 批二轮 P2-1）——新增
+    # _write_official_csv（快照 + 原子写编排），两个正式写盘点换用
+    "business/recognition/official_data_import_service.py": 513,
     # 首次入册（417 → 524 越过 500 绊线）：split_stitched_image 拼接长图切分
     # （20261022 版式兼容：静默带定位 + 补边 + 分页结构校验）；固定版式解析
     # 算法族（LAYOUTS/PAGED_LAYOUTS + 切行/切格/数字模板）高内聚且仅依赖

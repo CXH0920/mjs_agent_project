@@ -181,6 +181,16 @@ class CombosImportDialog(QDialog):
         self._report_browser.setPlainText(f"导入失败：{error}")
         QMessageBox.critical(self, "导入失败", f"无法完成导入：\n{error}")
 
+    def reject(self) -> None:
+        # 导入线程无安全中止通路：运行中锁关并告知原因，完成显示报告后可正常关闭
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(
+                self, "导入进行中",
+                "配队导入正在后台执行，暂时无法关闭窗口；完成后将在此显示导入报告。",
+            )
+            return
+        super().reject()
+
     # ---------------------------------------------------------------
     # 报告
     # ---------------------------------------------------------------
