@@ -24,7 +24,7 @@ from src.data.hero_timeline import (
     save_timeline,
 )
 from src.scraper.official_source.announcement import build_timeline_events
-from src.scripts.rag_common import load_json, project_path, setup_stdout
+from src.scripts.rag_script_io import load_json, project_path, setup_stdout
 
 setup_stdout()
 

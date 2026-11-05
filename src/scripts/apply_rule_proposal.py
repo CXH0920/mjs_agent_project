@@ -26,7 +26,7 @@ import sys
 from src.business.rag.rule_doc_service import build_faq_revise_row
 from src.config.env import PROJECT_ROOT as ROOT
 from src.data.json_repository import atomic_write_text
-from src.scripts.rag_common import HEADING_RE, SEPARATOR_RE, install_crash_logger, setup_stdout
+from src.scripts.rag_script_io import HEADING_RE, SEPARATOR_RE, install_crash_logger, setup_stdout
 
 DEFAULT_DOC = os.path.join(ROOT, 'docs', '元规则整理-完整版.md')
 DEFAULT_CHANGELOG = os.path.join(ROOT, 'docs', 'changelog', '元规则changelog.md')

@@ -2,7 +2,7 @@
 """生成卡牌点数花色语料（从 data/card_points.json 读取，补充 RAG 知识库）"""
 import collections
 
-from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
+from src.scripts.rag_script_io import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 install_crash_logger("build_cardpts")

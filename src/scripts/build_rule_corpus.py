@@ -9,7 +9,7 @@
 """
 import re
 
-from src.scripts.rag_common import (
+from src.scripts.rag_script_io import (
     CORPUS,
     HEADING_RE,
     SEPARATOR_RE,

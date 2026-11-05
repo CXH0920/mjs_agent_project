@@ -23,7 +23,7 @@ import re
 import sys
 
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import get_script_logger, install_crash_logger, setup_stdout
+from src.scripts.rag_script_io import get_script_logger, install_crash_logger, setup_stdout
 
 logger = get_script_logger("propose_rule_changes")
 

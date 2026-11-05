@@ -32,7 +32,7 @@ from src.business.diagnostics.data_repo_status import (
     verify_entries,
 )
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import install_crash_logger
+from src.scripts.rag_script_io import install_crash_logger
 
 # 与 .gitignore「抓取数据出库」段保持同步
 PRIVATE_PATHS = [

@@ -119,7 +119,7 @@ src/ui/
 
 ### 2.1 UI 设计系统基础
 
-`src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。资料库二级页签（librarySectionTabs）与页面内分区页签（sectionTabs）共用的四条下划线页签 QSS 规则（pane / tab / :hover:!selected / :selected）由 `_section_tabs_qss(object_name)` 参数化生成（b5e8e4f），等价性由 `tests/test_style_qss.py` 锁定。
+`src.ui.shared.style` 集中定义颜色、字号、间距、圆角、控件高度和图标尺寸。按钮通过 `uiRole` 动态属性区分 `primary`、`secondary`、`ghost`、`danger`；展示状态通过 `tone` 区分 `neutral`、`info`、`success`、`warning`、`danger`。`set_ui_role()` 和 `set_tone()` 会在运行时刷新 QSS，适用于状态变化后的即时反馈。资料库二级页签（librarySectionTabs）与页面内分区页签（sectionTabs）共用的四条下划线页签 QSS 规则（pane / tab / :hover:!selected / :selected）由 `_section_tabs_qss(object_name)` 参数化生成（b5e8e4f），等价性由 `tests/test_style.py` 锁定。
 
 `src.ui.shared.widgets` 提供 `PageHeader`、`PageActionBar`、`EmptyState`、`StatusBadge`、`NoticeBanner`、`DialogFooter`、`ToastOverlay` 和 `show_toast()`；`ScriptRunner` 由 UI 层直连 `src.business.execution.script_runner` 使用（原 #A3 迁移期的 widgets 再导出已移除）。这些组件只负责稳定的布局与语义属性，不持有业务服务，也不读写数据。`DialogFooter.set_busy()` 统一提交中的按钮禁用与文案恢复；同一父窗口复用一个 Toast 并重置隐藏计时器。`PageActionBar` 已用于选将推荐和对局攻略，避免在应用外壳标题下重复页面标题。`close_after_toast()` 用于三个配置对话框（模拟器 / API / 数据管理）的保存成功路径，先弹 Toast 再延迟关闭，避免立即关闭丢失提示。
 
@@ -860,7 +860,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 **重构收口（行为不变）**
 - **IgnoreableDiffListMixin 骨架收口**（cd97677）：新文件 `src/ui/data_admin/ignoreable_diff_list.py`（108 行），收口 `CardSyncDialog` 与 `HeroUpdateConfirmDialog` 逐字复制且已偏移的忽略入口/详情对比/选中联动骨架；偏移语义提升为钩子（`_detail_dialog_class` / `_ignore_candidate` / `_after_ignore_removed` / `_exec_ignore_manager` / `_ignored_count` 必须实现，`_update_ignore_button_state` / `_summary_text_for` 可覆盖；详情对话框类经钩子取宿主命名空间避免循环导入）。card 版选中即可忽略、入口恒显；hero 版 `ignore_ui_optional=True`（无服务整组隐藏入口）、保留 content_hash 门控与三态 summary（详见 3.8.1 / 3.9 节）；13 项既有用例原样通过
 - **公告更新阶段令牌 BusyGate**（76875dd）：`announcement_update_coordinator._phase_in_flight` 裸 bool → `_phase_gate = BusyGate()`（来自 `src/business/recognition/session_guard.py`），完成回调只消费已发起阶段的语义不变（详见 3.9 节）；测试桩同步改 BusyGate
-- **页签 QSS 参数化**（b5e8e4f）：`style.py` 新增 `_section_tabs_qss(object_name)`，资料库二级页签与页面内分区页签共用的四条 QSS 规则参数化提取；刻意选参数化而非逗号合并以保留 sectionTabs 在级联中的原有位置，`GLOBAL_STYLE` 渲染逐字节一致；守护测试 `tests/test_style_qss.py`
+- **页签 QSS 参数化**（b5e8e4f）：`style.py` 新增 `_section_tabs_qss(object_name)`，资料库二级页签与页面内分区页签共用的四条 QSS 规则参数化提取；刻意选参数化而非逗号合并以保留 sectionTabs 在级联中的原有位置，`GLOBAL_STYLE` 渲染逐字节一致；守护测试 `tests/test_style.py`
 - **OCR 注释措辞清理**（683fca6）：`main_window.py` 预热注释“Paddle 初始化…”→“OCR 引擎初始化…”，`peak_select_panel.py` L136 同改（纯文档，无行为变化）
 
 **打包态资源归位**（6b21d75）

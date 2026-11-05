@@ -94,7 +94,7 @@ def _section_tabs_qss(object_name: str) -> str:
     """资料库二级页签与页面内分区页签共用的下划线页签视觉。
 
     两组页签规则此前在 GLOBAL_STYLE 内逐字符重复（仅 objectName 不同），
-    等价性由 tests/test_style_qss.py 锁定。
+    等价性由 tests/test_style.py 锁定。
     """
     return f"""QTabWidget#{object_name}::pane {{
     background-color: {CANVAS};

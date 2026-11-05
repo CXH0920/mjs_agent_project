@@ -151,7 +151,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 ### 3.1 语料构建管线
 
-语料由 `src/scripts/` 下的生成脚本产出，全部依赖 `rag_common.py` 提供的公共工具：`setup_stdout()` 统一 stdout UTF-8、`load_json()` 带 UTF-8-SIG（带 BOM 的 UTF-8）容错、`save_json()` 委托原子写。脚本日志分两层：`get_script_logger()` 只取命名 logger 并阻断传播（惰性——import 时不 mkdir、不开 FileHandler，避免 Windows 句柄锁栓住测试进程），`install_crash_logger()` 在脚本入口装好 FileHandler（DEBUG+ 写 `logs/rag/<script>.log`）并把未处理异常落文件、stdout 只留一行 ❌，返回恢复函数供测试 `finally` 还原 `sys.excepthook`。stdout 是 QProcess 进度契约，诊断信息一律走 logger 不占 stdout 协议通道。
+语料由 `src/scripts/` 下的生成脚本产出，全部依赖 `rag_script_io.py` 提供的公共工具：`setup_stdout()` 统一 stdout UTF-8、`load_json()` 带 UTF-8-SIG（带 BOM 的 UTF-8）容错、`save_json()` 委托原子写。脚本日志分两层：`get_script_logger()` 只取命名 logger 并阻断传播（惰性——import 时不 mkdir、不开 FileHandler，避免 Windows 句柄锁栓住测试进程），`install_crash_logger()` 在脚本入口装好 FileHandler（DEBUG+ 写 `logs/rag/<script>.log`）并把未处理异常落文件、stdout 只留一行 ❌，返回恢复函数供测试 `finally` 还原 `sys.excepthook`。stdout 是 QProcess 进度契约，诊断信息一律走 logger 不占 stdout 协议通道。
 
 **块 ID 稳定性是设计红线**，因为索引精化按 `block_id` 定位块：武将技能块用 `hero_{id}_skill_{技能名}`（用技能名而非数组序号，技能调序或增删不改变精化块定位）；元规则章节块 `rule_section_{章}` / `rule_section_{章}_{节}`、FAQ 块 `faq_%03d`（编号单调递增不回收，废弃条目划线保留编号）、术语块 `term_{名称}`；组合块 `combo_{A}_{B}`（武将名排序保证唯一；孟尝君+黄月英深解按曲拆 `_1..4`）；攻略块 `guide_{hero}_{i}`（按 `##` 章节序号）。
 
@@ -277,7 +277,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 `sync_rule_stats.py` 处理六个数据段 `SECTION_NAMES = ('0.1', '0.2', '3.1', '3.2', '3.5', '5.2')`，其中 `3.1/3.2` 是时机频次、`3.5` 是"每种牌限 1 次 / 首次类 / 累计阈值"（checkpoint 段仅报告不自动应用）。`rule_doc_service._doc_lines()` 带 mtime 缓存，文档未变化时不重复整文件读取。
 
-**快照读写公共层 snapshot_common.py（commit `d43d549` 下沉）**：
+**快照读写公共层 rule_doc_snapshot.py（commit `d43d549` 下沉）**：
 
 `.rule_doc_snapshot.json` 的格式与读写（构建 / 写入 / 加载 / 计数）原先分居 `audit_rule_doc.py` 与 `sync_rule_stats.py` 并互相函数内延迟导入，形成运行期互引环（`scripts.sync_rule_stats` ↔ `scripts.audit_rule_doc`）；下沉至本模块后两个脚本均只向下依赖，环消除。私有助手（`norm` / `chapters`）在此即为跨脚本 API，故去掉下划线前缀。
 
@@ -567,7 +567,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `run_synergy_drift.py` | 10 对 × 3 次相性漂移采样 | `--out-prefix`；`--rounds`（默认 3）；`--pairs`；`--heroes` | 只读（产物可删） |
 | `build_*.py`（10 个） | 语料生成（各 build 脚本产出前调用 `rag_curated.merge_curated()` 保留精化成果，仅卡牌/武将两个） | 无参数 | DWD |
 
-> `src/scripts/` 下另有六个跨模块脚本，参数与职责归其所属模块文档：`import_combos.py`（巅峰赛配队，见 `module_peak_combos.md`）、`build_character_feature_cache.py`（武将特征缓存，见 `module_capture_ocr.md`）、`capture_ui_baselines.py`（UI 基线截图，见 `module_ui.md`）、`migrate_excel_to_json.py`（xlsx 应急导入，见 `module_data.md`）、`ocr_baseline.py`（OCR 回归基线工具，见 `module_capture_ocr.md`，cd35c98 新增）、`calibrate_idle_threshold.py`（闲置阈值校准工具，见 `module_config.md`，bca4092 新增）；`rag_common.py`（公共基建）、`rag_curated.py`（curated 合并）与 `snapshot_common.py`（快照读写公共层）无 CLI 入口。
+> `src/scripts/` 下另有六个跨模块脚本，参数与职责归其所属模块文档：`import_combos.py`（巅峰赛配队，见 `module_peak_combos.md`）、`build_character_feature_cache.py`（武将特征缓存，见 `module_capture_ocr.md`）、`capture_ui_baselines.py`（UI 基线截图，见 `module_ui.md`）、`migrate_excel_to_json.py`（xlsx 应急导入，见 `module_data.md`）、`ocr_baseline.py`（OCR 回归基线工具，见 `module_capture_ocr.md`，cd35c98 新增）、`calibrate_idle_threshold.py`（闲置阈值校准工具，见 `module_config.md`，bca4092 新增）；`rag_script_io.py`（公共基建）、`rag_curated.py`（curated 合并）与 `rule_doc_snapshot.py`（快照读写公共层）无 CLI 入口。
 
 ---
 
@@ -771,7 +771,7 @@ TASKS: list[dict] = [
 ## 七、待确认信息清单
 
 1. **【已核定 2026-10-05】武将语料块数口径**：磁盘 `data/rag_corpus/武将RAG语料.json` 实测 **647** 块（2026-09-30 新增谢灵运、陶渊明后重建，74234a8），与 `heroes.json`（186 武将）匹配。`task_defs.py` 的 `expected` 已改 `"snapshot"`（af8cd06），快照基线 647（加将自动适应，丢块仍按"低于快照基线"拦截）；**不再需要随加将手动同步 `expected`**，本条由"待确认"转为"已解决"。
-2. **【已解决 2026-10-05】语料快照基线存储**：`corpus_counts` 段（`武将RAG语料.json: 647` / `特殊机制语料.json: 85`）写入 `.rule_doc_snapshot.json`，`snapshot_common.snapshot_counts()` 合并 `counts`（元规则三件）与 `corpus_counts` 两段返回；`audit_rule_doc` 重建快照时保留 `corpus_counts` 段，避免元规则刷新抹掉语料基线。
+2. **【已解决 2026-10-05】语料快照基线存储**：`corpus_counts` 段（`武将RAG语料.json: 647` / `特殊机制语料.json: 85`）写入 `.rule_doc_snapshot.json`，`rule_doc_snapshot.snapshot_counts()` 合并 `counts`（元规则三件）与 `corpus_counts` 两段返回；`audit_rule_doc` 重建快照时保留 `corpus_counts` 段，避免元规则刷新抹掉语料基线。
 3. **【已解决 2026-10-06】模块间文档的过期数字**：`module_data.md` 的"组合 RAG 语料块数"已更新为实测 **509** 块（`expected=None` 动态值）；`module_ui.md` 第七节与 `equip_attrs_panel.py` docstring 记"26 件装备"，与仓储常量 `EXPECTED_EQUIP_COUNT=26` 一致，但语料块数为 **27**——差额 1 块是 `build_equip_attr.py` 额外追加的 `equipattr_规则_距离计算` 规则块（已在 3.1 核实）。
 4. **【假设】`rag_curated.py` 字段集与新版精化模型不一致**：`rag_curated.INDEX_FIELDS` 含 5 个字段 `("timing", "trigger_condition", "keywords", "related", "target")`，而新版 `corpus_fields.py` 将精化字段改为 `CARD_FIELDS=("timing","trigger_condition")` 与 `HERO_FIELDS=("timing","trigger_condition","target","special_rules")`（`keywords/related` 已退出精化模型，`special_rules` 新增）。重建时 `merge_curated()` 仍会把旧 `curated` 中的 `keywords/related` 覆盖回块顶层。`rag_curated.py` 的字段集是否应同步收敛至新版字段集，待确认。
 5. **【假设】`build_cardpts.py` 块数与牌行数关系**：`card_points.json` 有 72 行牌面明细（`count` 合计 162），脚本按**牌名去重聚合**产出 49 块（与 `expected=49` 一致）。聚合规则已核实，但 72 行的 `suit`/`point` 组合维度在聚合中是否仍有信息丢失，属设计取舍，未进一步核对。
@@ -789,7 +789,7 @@ TASKS: list[dict] = [
 **语料块数校验切快照基线**（af8cd06，根治口径过期）
 - `task_defs.py` 的 `expected` 三态语义：`int` 精确匹配 / `"snapshot"` 快照基线只增不删 / `None` 动态只报不校验；"武将语料"与"特殊机制语料"由 627/83 改 `"snapshot"`
 - `maintain_rag.verify_outputs()` snapshot 分支：基线未建立不拦 / `n>=基线` 通过 / `n<基线` 判"低于快照基线疑似丢块"；`_record_corpus_baseline()` 把实际块数写入快照 `corpus_counts` 通用段（失败不部分写）
-- `snapshot_common.snapshot_counts()` 合并 `counts`（元规则三件）与 `corpus_counts` 两段；`audit_rule_doc` 重建快照时保留 `corpus_counts`
+- `rule_doc_snapshot.snapshot_counts()` 合并 `counts`（元规则三件）与 `corpus_counts` 两段；`audit_rule_doc` 重建快照时保留 `corpus_counts`
 - 台账 reason 携带详情（"块数校验未通过: 实际647/期望627"），可区分数据问题与口径过期
 - **maintain_rag 主循环误报修复**（80cc75b）：`else`（块数校验失败）块缩进归位——修复前全部任务成功时最后一个任务被误记块数校验未通过（台账恒失败、指纹不记录致重复重跑、索引联动永不触发），真实失败反而漏记
 

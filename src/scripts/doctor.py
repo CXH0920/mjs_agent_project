@@ -17,7 +17,7 @@ import sys
 import time
 
 from src.business.diagnostics.doctor_checks import FAIL, render, run_checks
-from src.scripts.rag_common import install_crash_logger
+from src.scripts.rag_script_io import install_crash_logger
 
 
 def main() -> None:

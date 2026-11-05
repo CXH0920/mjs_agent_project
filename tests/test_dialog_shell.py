@@ -12,15 +12,12 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 from src.business.card_catalog import CardCatalogService
 from src.data.card_catalog import CardAnnotationRepository, CardFieldSchemaRepository, CardRepository
-from src.data.guide_manager import GuideManager
 from src.data.hero_manager import HeroManager
 from src.data.models import Hero, HeroGuide
-from src.data.synergy_manager import SynergyManager
 from src.ui.configuration.emulator_config_dialog import EmulatorConfigDialog
 from src.ui.configuration.faction_color_dialog import FactionColorDialog
 from src.ui.configuration.roi_selector import RoiSelectorDialog
 from src.ui.configuration.settings_dialog import SettingsDialog
-from src.ui.data_admin.data_management_dialog import DataManagementDialog
 from src.ui.data_admin.official_data_import_dialog import OfficialDataImportDialog
 from src.ui.generation.backend_choose_dialog import BackendChooseDialog
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
@@ -28,7 +25,7 @@ from src.ui.library.card_management_panel import CardAnnotationEditDialog
 from src.ui.library.hero_edit_dialog import HeroEditDialog
 from src.ui.shared.guide_detail_dialog import GuideDetailDialog
 from src.ui.shared.hero_select_dialog import BaseHeroSelectDialog
-from src.ui.shared.style import GLOBAL_STYLE, ROLE_DANGER, ROLE_PRIMARY, ROLE_SECONDARY
+from src.ui.shared.style import GLOBAL_STYLE, ROLE_PRIMARY, ROLE_SECONDARY
 from src.ui.shared.widgets import DialogFooter, EmptyState, PageHeader, show_toast
 
 
@@ -166,23 +163,6 @@ def test_representative_dialog_shells_keep_header_and_footer_visible(tmp_path) -
         for dialog in dialogs:
             dialog.resize(width, height)
             _assert_dialog_shell(dialog, app)
-
-
-def test_dangerous_data_action_has_distinct_role_and_requires_selection(tmp_path) -> None:
-    _app()
-    dialog = DataManagementDialog(
-        GuideManager(tmp_path / "guides.json"),
-        SynergyManager(tmp_path / "synergies.json"),
-        lambda: False,
-    )
-
-    assert dialog._clear_button.property("uiRole") == ROLE_DANGER
-    assert dialog._footer.cancel_button.property("uiRole") == ROLE_SECONDARY
-    assert not dialog._clear_button.isEnabled()
-
-    dialog._guide_checkbox.setChecked(True)
-
-    assert dialog._clear_button.isEnabled()
 
 
 def test_empty_hero_selection_uses_explicit_empty_state(tmp_path) -> None:

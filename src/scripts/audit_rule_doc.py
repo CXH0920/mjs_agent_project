@@ -27,8 +27,8 @@ import sys
 
 from src.scripts import build_rule_corpus as brc
 from src.scripts import sync_rule_stats as srs
-from src.scripts.rag_common import get_script_logger, install_crash_logger
-from src.scripts.snapshot_common import (
+from src.scripts.rag_script_io import get_script_logger, install_crash_logger
+from src.scripts.rule_doc_snapshot import (
     DEFAULT_SNAPSHOT,
     build_snapshot,
     chapters,

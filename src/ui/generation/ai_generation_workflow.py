@@ -249,7 +249,6 @@ class AiGenerationWorkflow(QObject):
             return
         estimation = estimate_generation_cost(len(heroes), "guide")
         estimation["mode"] = mode
-        estimation["heroes"] = heroes
         estimation["estimate_kind"] = "guide"
         choice = self._choose_backend(title, estimation)
         if choice is None:

@@ -27,7 +27,7 @@ import time
 from datetime import date
 
 from src.config.env import PROJECT_ROOT as ROOT
-from src.scripts.rag_common import install_crash_logger
+from src.scripts.rag_script_io import install_crash_logger
 
 
 def _run(cmd: list[str], *, timeout: int | None = None) -> int:

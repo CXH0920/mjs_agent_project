@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -231,19 +232,46 @@ def restore_backup(target: RestoreTarget, entry: BackupEntry) -> RestoreResult:
     return RestoreResult(preview, snapshot_path)
 
 
+# 解析结果缓存：键 (路径, mtime_ns, size)，值为解析结果（含 None=内容级损坏）。
+# 预览在选中行变化时对备份与当前文件各做一遍全量 pydantic 校验，数据规模
+# 增长后是主线程主要卡顿源；文件一经写入 mtime 即变、缓存天然失效。上限按
+# 4 目标 ×（当前文件 + keep=10 快照）留余量；调用全部来自 GUI 主线程，无并发。
+_PARSE_CACHE_LIMIT = 64
+_parse_cache: OrderedDict[tuple[str, int, int], tuple[list[BaseModel], int] | None] = OrderedDict()
+
+
 def _parse_records(path: Path, target: RestoreTarget) -> tuple[list[BaseModel], int] | None:
-    """按目标模型逐条解析 JSON 列表，返回 (记录, 坏记录数)；结构级损坏返回 None。"""
+    """按目标模型逐条解析 JSON 列表，返回 (记录, 坏记录数)；结构级损坏返回 None。
+
+    结果按 (mtime_ns, size) 缓存并只读共享——预览仅做 key_of/相等比较，不改写
+    记录；瞬时 OSError 不缓存，占用解除后同 mtime 仍应重试。
+    """
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    cache_key = (str(path), stat.st_mtime_ns, stat.st_size)
+    if cache_key in _parse_cache:
+        _parse_cache.move_to_end(cache_key)
+        return _parse_cache[cache_key]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+    except OSError:
         return None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        data = None
     if not isinstance(data, list):
-        return None
-    records: list[BaseModel] = []
-    invalid = 0
-    for raw in data:
-        try:
-            records.append(target.model.model_validate(raw))
-        except Exception:
-            invalid += 1
-    return records, invalid
+        parsed: tuple[list[BaseModel], int] | None = None
+    else:
+        records: list[BaseModel] = []
+        invalid = 0
+        for raw in data:
+            try:
+                records.append(target.model.model_validate(raw))
+            except Exception:
+                invalid += 1
+        parsed = (records, invalid)
+    _parse_cache[cache_key] = parsed
+    while len(_parse_cache) > _PARSE_CACHE_LIMIT:
+        _parse_cache.popitem(last=False)
+    return parsed

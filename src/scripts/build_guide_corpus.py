@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 from src.data.hero_timeline import CORPUS_BASE_DATE, load_timeline, stamp_guide_block
-from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
+from src.scripts.rag_script_io import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 install_crash_logger("build_guide_corpus")

@@ -77,13 +77,26 @@ class OfficialImportReviewDialog(QDialog):
         layout.addWidget(footer)
 
     def _populate(self) -> None:
-        for output_name, batch in self._pending["outputs"].items():
-            records = {int(record["排名"]): record for record in batch["records"]}
-            for review in batch["reviews"]:
-                rank = int(review["期望排名"])
-                record = records.get(rank, {})
-                current = record.get("武将") or review.get("OCR名称") or ""
-                self._rows.append((output_name, rank, review, current))
+        try:
+            for output_name, batch in self._pending["outputs"].items():
+                records = {int(record["排名"]): record for record in batch["records"]}
+                for review in batch["reviews"]:
+                    rank = int(review["期望排名"])
+                    record = records.get(rank, {})
+                    current = record.get("武将") or review.get("OCR名称") or ""
+                    self._rows.append((output_name, rank, review, current))
+        except (KeyError, TypeError, ValueError) as error:
+            # 会话由自家 save_pending_session 写入，内层字段缺失只在外部改写或
+            # 写盘半途损坏时出现；与 load 层「损坏返回 None」语义接续：提示后
+            # 不打开，会话文件保留，可用原榜单图片重新导入覆盖
+            logger.exception("待复核会话内层结构损坏")
+            QMessageBox.critical(
+                self, "会话已损坏",
+                f"待复核会话结构异常，无法打开修正：\n{error}\n\n"
+                "可用原榜单图片重新导入生成新会话。",
+            )
+            self.reject()
+            return
         self._table.setRowCount(len(self._rows))
         for row_index, (output_name, rank, review, current) in enumerate(self._rows):
             ocr_name = review.get("OCR名称") or ""

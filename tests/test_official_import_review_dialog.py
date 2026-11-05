@@ -7,7 +7,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from src.business.recognition import name_resolution
 from src.business.recognition import official_data_import_service as import_module
 from src.business.recognition.name_resolution import HeroNameResolver
@@ -65,3 +65,25 @@ def test_review_dialog_applies_corrections_and_emits_applied(tmp_path, monkeypat
     rows = list(csv.DictReader((tmp_path / "2v2胜率排行.csv").open(encoding="utf-8")))
     assert rows[0]["武将"] == "夏侯惇"
     assert emitted == [1]
+
+
+def test_corrupt_pending_session_rejects_dialog_with_notice(monkeypatch) -> None:
+    """内层字段缺失的坏会话：构造即弹损坏提示并 reject，不再抛 KeyError 打不开。"""
+    _app()
+    pending = {
+        "key": "2v2",
+        "outputs": {
+            "2v2胜率排行.csv": {
+                "records": [{"排名": 1, "武将": "夏候", "胜率": "54.40%"}],
+                "reviews": [{"OCR名称": "夏候"}],   # 缺「期望排名」键
+            },
+        },
+    }
+    monkeypatch.setattr(name_resolution, "_load_hero_names", lambda: ["夏侯惇"])
+    criticals: list = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: criticals.append(args))
+
+    dialog = OfficialImportReviewDialog(pending)
+
+    assert criticals, "坏会话应弹损坏提示"
+    assert dialog.result() == QDialog.DialogCode.Rejected

@@ -25,7 +25,7 @@ import time
 from src.business.rag.task_defs import TASKS
 from src.config.env import PROJECT_ROOT as ROOT
 from src.scripts import audit_rule_doc, rag_audit
-from src.scripts.rag_common import get_script_logger, install_crash_logger
+from src.scripts.rag_script_io import get_script_logger, install_crash_logger
 
 logger = get_script_logger("maintain_rag")
 

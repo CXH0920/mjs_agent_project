@@ -93,7 +93,7 @@ def test_no_upward_layer_dependency() -> None:
 # 历史：审计 F3 的循环簇（manager <-> json_repository/三个 manager，根因是
 # DataIssue/DataFacade 放置在 manager.py）已随 issues.py / facade.py 拆分修复；
 # scripts.sync_rule_stats <-> scripts.audit_rule_doc 互引环已随快照读写下沉
-# snapshot_common.py 消除。白名单保持为空：发现任何循环一律直接修复。
+# rule_doc_snapshot.py 消除。白名单保持为空：发现任何循环一律直接修复。
 # 2026-09 审计 C1：manager.py 的 TYPE_CHECKING 反向导入三个子 Manager 构成
 # 类型级环（运行期不可见，上面的运行期 SCC 检测漏掉），随
 # apply_incremental_update 迁 facade.py 消解；守护同步扩展到类型边

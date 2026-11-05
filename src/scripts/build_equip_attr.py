@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """装备属性落地：生成装备属性语料 + 注入卡牌语料（数据源 data/equip_attrs.json，由 xlsx 迁移而来）"""
 
-from src.scripts.rag_common import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
+from src.scripts.rag_script_io import CORPUS, install_crash_logger, load_json, project_path, save_json, setup_stdout
 
 setup_stdout()
 install_crash_logger("build_equip_attr")

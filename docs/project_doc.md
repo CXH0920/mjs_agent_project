@@ -1935,7 +1935,7 @@ QProcess 子进程统一设置 `MJS_QPROCESS_CHILD=1` 后不直接打开文件 H
 
 ### 10.5 脚本日志（CLI）
 
-语料构建与维护脚本经 `src/scripts/rag_common.py` 统一取 logger：
+语料构建与维护脚本经 `src/scripts/rag_script_io.py` 统一取 logger：
 
 - `get_script_logger(script_name)` —— 惰性装载，import 时不 `mkdir`、不开 `FileHandler`（避免 Windows 句柄锁住测试进程）；首次写日志时才经 `_ensure_script_logger_handlers` 幂等挂上 `logs/rag/<script>.log`（DEBUG+）与 stderr 镜像（WARNING+）；
 - `install_crash_logger(script_name)` —— 替换 `sys.excepthook`，未捕获异常先 `logger.exception` 落盘，再向 stderr 打印 `❌ 执行失败，详见 logs/rag/<script>.log`，返回 `_restore()` 供收尾恢复。

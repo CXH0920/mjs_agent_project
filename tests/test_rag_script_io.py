@@ -1,4 +1,4 @@
-"""rag_common.install_crash_logger 行为锚（批次7步骤3）。
+"""rag_script_io.install_crash_logger 行为锚（批次7步骤3）。
 
 锁四条契约：未处理异常 → ①traceback 落入 logs/rag/<script>.log；②stdout 打
 "❌ 执行失败"标记行；③KeyboardInterrupt 透传给系统 excepthook（不吞 Ctrl+C）；
@@ -12,7 +12,7 @@ import logging
 import sys
 
 from src.config.env import PROJECT_ROOT
-from src.scripts.rag_common import install_crash_logger
+from src.scripts.rag_script_io import install_crash_logger
 
 
 def _cleanup_script_logger(name: str) -> None:

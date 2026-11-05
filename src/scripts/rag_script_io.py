@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""RAG 语料构建公共工具（rag_common.py，#63/#64/#66）。
+"""scripts 域脚本 IO 公共件（rag_script_io.py，原 rag_common，#63/#64/#66）。
 
-统一 8 个 build 脚本的：
+供 src/scripts 全部脚本（语料构建、doctor/ops 等运维 CLI、私有仓同步、
+评估工具——非仅 RAG 语料语境）共用：
 - stdout UTF-8 包装（setup_stdout，消除三种写法）；
 - 路径基准（ROOT 基于 __file__，消除"必须 cwd=项目根"的相对路径）；
 - JSON 读取（load_json：UTF-8-SIG 容错 + 缺失/解析失败统一告警或退出）；
-- JSON 写入（save_json：原子写，复用 src.data.json_repository.atomic_write_json）。
+- JSON 写入（save_json：原子写，复用 src.data.json_repository.atomic_write_json）；
+- 脚本日志与崩溃钩子（get_script_logger / install_crash_logger）；
+- 元规则文档结构解析正则（HEADING_RE / SEPARATOR_RE，三脚本共用同一口径）。
 """
 from __future__ import annotations
 

@@ -17,9 +17,9 @@ import os
 import re
 
 from src.scripts import build_rule_corpus as brc
-from src.scripts.rag_common import get_script_logger
+from src.scripts.rag_script_io import get_script_logger
 
-logger = get_script_logger("snapshot_common")
+logger = get_script_logger("rule_doc_snapshot")
 
 from src.config.env import PROJECT_ROOT as ROOT
 

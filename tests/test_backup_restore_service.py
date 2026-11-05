@@ -194,3 +194,50 @@ def test_backup_source_annotation_differs_for_combos(tmp_path: Path) -> None:
     assert "手工编辑不产生快照" in targets["combos"].backup_source
     for key in ("heroes", "synergies", "guides"):
         assert "自动快照" in targets[key].backup_source
+
+
+def test_parse_cache_reuses_result_until_file_changes(tmp_path: Path, monkeypatch) -> None:
+    """预览缓存命中时同一文件不再重复解析；文件写入后 mtime 变化自动失效。"""
+    heroes = restore_targets(tmp_path)["heroes"]
+    _write(tmp_path / "heroes.json", _heroes((1, "刘备")))
+    _make_backup(tmp_path, "20261018-141819-000002", _heroes((1, "孙权")))
+    entry = list_backups(heroes)[0]
+
+    loads_calls: list = []
+    real_loads = json.loads
+    monkeypatch.setattr(
+        "src.business.maintenance.backup_restore_service.json.loads",
+        lambda text: (loads_calls.append(text), real_loads(text))[1],
+    )
+
+    preview_backup(heroes, entry)   # 备份 + 当前文件各解析一次
+    assert len(loads_calls) == 2
+    preview_backup(heroes, entry)   # 两次全命中缓存，零解析
+    assert len(loads_calls) == 2
+
+    _write(tmp_path / "heroes.json", _heroes((1, "曹操"), (2, "孙权")))  # 当前文件被改写
+    refreshed = preview_backup(heroes, entry)
+    assert len(loads_calls) == 3    # 仅当前文件按新 mtime 重解析，备份仍命中
+    assert refreshed.current_count == 2   # 新内容生效，缓存无脏读
+
+
+def test_parse_cache_also_caches_corrupt_backup(tmp_path: Path, monkeypatch) -> None:
+    """内容级损坏的解析结果同样缓存：坏备份反复选中只读盘一次。"""
+    heroes = restore_targets(tmp_path)["heroes"]
+    _write(tmp_path / "heroes.json", _heroes((1, "刘备")))
+    backup_path = tmp_path / "backups" / "heroes-20261018-141819-000002.json"
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path.write_text("{broken", encoding="utf-8")
+    entry = list_backups(heroes)[0]
+
+    loads_calls: list = []
+    real_loads = json.loads
+    monkeypatch.setattr(
+        "src.business.maintenance.backup_restore_service.json.loads",
+        lambda text: (loads_calls.append(text), real_loads(text))[1],
+    )
+
+    assert preview_backup(heroes, entry).valid is False
+    assert preview_backup(heroes, entry).valid is False
+    # 坏备份在解析阶段即短路（不碰当前文件），第二次预览命中缓存零解析
+    assert len(loads_calls) == 1

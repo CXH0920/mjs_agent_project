@@ -26,7 +26,7 @@ from collections import Counter, defaultdict
 
 from src.config.env import PROJECT_ROOT as ROOT
 from src.data.json_repository import atomic_write_text
-from src.scripts.rag_common import (
+from src.scripts.rag_script_io import (
     HEADING_RE,
     SEPARATOR_RE,
     get_script_logger,
@@ -34,7 +34,7 @@ from src.scripts.rag_common import (
     save_json,
     setup_stdout,
 )
-from src.scripts.snapshot_common import DEFAULT_SNAPSHOT, build_snapshot, write_snapshot
+from src.scripts.rule_doc_snapshot import DEFAULT_SNAPSHOT, build_snapshot, write_snapshot
 
 logger = get_script_logger("sync_rule_stats")
 
