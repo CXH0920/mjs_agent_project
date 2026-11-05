@@ -703,7 +703,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/recommendation/recommendation_panel.py": 860,
     # 940 → 955：崩溃/启动失败码不再进业务回调——_on_finished 标记
     # _last_run_ok，audit/sync 回调侧短路（第 15 批审查 P2-1 修复）
-    "ui/maintenance/rule_doc_panel.py": 956,
+    # 955 → 993：三处防御性修复（第二轮第 15 批移交项）——refresh_all 入口
+    # 未应用勾选/确认值编辑确认框 + _unsaved_diff_edit_count、提案 approved
+    # 全类型非空校验、_add_pending 写盘 OSError 兜底
+    "ui/maintenance/rule_doc_panel.py": 993,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
     "ui/maintenance/index_refinement_dialog.py": 790,

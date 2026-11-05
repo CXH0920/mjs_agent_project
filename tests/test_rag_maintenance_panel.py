@@ -448,3 +448,19 @@ def test_rule_doc_output_forwards_to_workspace_log(tmp_path: Path) -> None:
     assert "$ python -m src.scripts.audit_rule_doc.py" in log_text
     assert "✔ 完成" in log_text
     panel.close()
+
+
+def test_nav_task_names_cover_all_tasks() -> None:
+    """左栏导航任务名与 task_defs 全集一致：任务改名或新增未同步 UI 即红。
+
+    set_task_states 按任务名查状态，失配时静默降级为「—」（单项重建按钮
+    也不出现），无此守护则改名静默失配且测试全绿。
+    """
+    from src.business.rag.task_defs import TASKS
+    from src.ui.maintenance.rag_maintenance_panel import (
+        EDITABLE_SOURCE_ITEMS,
+        READONLY_CORPUS_ITEMS,
+    )
+
+    ui_names = {task for _, task in EDITABLE_SOURCE_ITEMS + READONLY_CORPUS_ITEMS}
+    assert ui_names == {task["name"] for task in TASKS}

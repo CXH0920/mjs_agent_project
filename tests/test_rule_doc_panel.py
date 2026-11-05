@@ -491,3 +491,109 @@ def test_failure_codes_still_invoke_callback(tmp_path):
     panel._on_finished(1, None, lambda: called.append(True),
                        failure_codes={1: "应用失败"})
     assert called == [True]
+
+
+def test_refresh_all_cancel_keeps_edits(tmp_path, monkeypatch):
+    """刷新前检测未应用的勾选/确认值编辑；答「否」不启动刷新。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    _app()
+    root = _make_root(tmp_path)
+    _write_sync_report(root)
+    panel = RuleDocPanel(root)
+    panel._on_sync_finished()
+    # 宽检测两种偏离：手动勾选候选行（未改值）+ 修改确认值
+    panel._diff_table.cellWidget(1, 0).setChecked(True)
+    panel._diff_table.item(0, 5).setText("| 武将数 | 200 |")
+    asked = []
+    monkeypatch.setattr(
+        "src.ui.maintenance.rule_doc_panel.QMessageBox.question",
+        lambda *a, **k: (asked.append(a), QMessageBox.StandardButton.No)[1])
+    started = []
+    monkeypatch.setattr(panel, "refresh_audit", lambda: started.append(True))
+    panel.refresh_all()
+    assert asked and "2 处" in asked[0][2]
+    assert not started
+    assert panel._pending_sync is False  # 取消时串行链未启动
+
+
+def test_refresh_all_confirm_proceeds(tmp_path, monkeypatch):
+    """有未应用编辑但用户确认刷新：照常启动 audit。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    _app()
+    root = _make_root(tmp_path)
+    _write_sync_report(root)
+    panel = RuleDocPanel(root)
+    panel._on_sync_finished()
+    panel._diff_table.item(0, 5).setText("| 武将数 | 200 |")
+    monkeypatch.setattr(
+        "src.ui.maintenance.rule_doc_panel.QMessageBox.question",
+        lambda *a, **k: QMessageBox.StandardButton.Yes)
+    started = []
+    monkeypatch.setattr(panel, "refresh_audit", lambda: started.append(True))
+    panel.refresh_all()
+    assert started == [True]
+    assert panel._pending_sync is True
+
+
+def test_refresh_all_without_edits_skips_confirm(tmp_path, monkeypatch):
+    """差异表全为默认状态时刷新不弹确认。"""
+    _app()
+    root = _make_root(tmp_path)
+    _write_sync_report(root)
+    panel = RuleDocPanel(root)
+    panel._on_sync_finished()
+    asked = []
+    monkeypatch.setattr(
+        "src.ui.maintenance.rule_doc_panel.QMessageBox.question",
+        lambda *a, **k: asked.append(a))
+    started = []
+    monkeypatch.setattr(panel, "refresh_audit", lambda: started.append(True))
+    panel.refresh_all()
+    assert not asked
+    assert started == [True]
+
+
+def test_confirm_dialog_rejects_empty_approved_text(monkeypatch):
+    """清空合入文本后「通过」与「修改后通过」同样被拦截；非空则通过。"""
+    from src.ui.maintenance.rule_doc_panel import ProposalItemConfirmDialog
+
+    _app()
+    warned = []
+    monkeypatch.setattr("src.ui.maintenance.rule_doc_panel.QMessageBox.warning",
+                        lambda *a, **k: warned.append(a))
+    dialog = ProposalItemConfirmDialog(
+        {"id": "P-01", "type": "faq_new", "target": "5.2", "suggested_text": "新裁定"})
+    dialog._text_edit.setPlainText("   ")
+    dialog._choose("approved")
+    assert warned and dialog._status == ""
+    dialog._choose("revised")
+    assert len(warned) == 2
+    dialog._text_edit.setPlainText("有效合入文本")
+    dialog._choose("approved")
+    assert dialog._status == "approved"
+
+
+def test_add_pending_write_failure_shows_error(tmp_path, monkeypatch):
+    """疑难登记写盘失败弹失败提示，不崩溃、表格保持原状。"""
+    _app()
+    root = _make_root(tmp_path)
+    panel = RuleDocPanel(root)
+    monkeypatch.setattr(
+        "src.ui.maintenance.rule_doc_panel.QInputDialog.getMultiLineText",
+        lambda *a, **k: ("新疑难描述", True))
+    monkeypatch.setattr(
+        "src.ui.maintenance.rule_doc_panel.QInputDialog.getText",
+        lambda *a, **k: ("", True))
+
+    def _raise(*args, **kwargs):
+        raise OSError("文件被占用")
+
+    monkeypatch.setattr("src.business.rag.rule_doc_service.add_pending", _raise)
+    errors = []
+    monkeypatch.setattr("src.ui.maintenance.rule_doc_panel.QMessageBox.critical",
+                        lambda *a, **k: errors.append(a))
+    panel._add_pending()
+    assert errors and "文件被占用" in errors[0][2]
+    assert panel._pending_table.rowCount() == 1  # 原有一条不变，未误刷新

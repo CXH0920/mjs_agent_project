@@ -162,8 +162,10 @@ class ProposalItemConfirmDialog(QDialog):
         if status in ("approved", "revised") and self._item.get("type") in _TABLE_TYPES and "|" in text:
             QMessageBox.warning(self, "校验失败", "合入文本含竖线会破坏表格行，请移除后重试")
             return
-        if status == "revised" and not text:
-            QMessageBox.warning(self, "校验失败", "「修改后通过」需要填写合入文本")
+        # approved 与 revised 同样校验非空：空合入文本对任何类型都无意义
+        # （脚本侧仅部分类型有空拒绝，不能作为唯一防线）
+        if status in ("approved", "revised") and not text:
+            QMessageBox.warning(self, "校验失败", "「通过 / 修改后通过」需要填写合入文本")
             return
         original = (self._item.get("edited_text") or self._item.get("suggested_text") or "").strip()
         self._status = status
@@ -515,6 +517,18 @@ class RuleDocPanel(QWidget):
 
     def refresh_all(self) -> None:
         """串行刷新：先 audit，完成后 sync（避免并发 QProcess 冲突）。"""
+        pending = self._unsaved_diff_edit_count()
+        if pending:
+            # 勾选与「确认值」都是用户输入，audit+sync 完成后差异表整表重建会
+            # 丢弃；刷新前必须确认（与编辑器类控件的脏确认同等保护）
+            answer = QMessageBox.question(
+                self, "未应用的差异编辑",
+                "检测到 %d 处未应用的勾选/确认值修改，刷新后将被丢弃。仍要刷新？" % pending,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self._pending_sync = True
         self.refresh_audit()
 
@@ -657,7 +671,13 @@ class RuleDocPanel(QWidget):
             return
         involved, ok2 = QInputDialog.getText(self, "新增疑难登记", "涉及技能/卡牌（可空）：")
         involved = involved.strip() if ok2 else ""
-        rds.add_pending(self._root, desc, involved)
+        try:
+            rds.add_pending(self._root, desc, involved)
+        except OSError as exc:
+            # atomic_write_json 失败原样抛出（读侧 load_pending 已吞读异常）
+            logger.exception("新增疑难登记写盘失败")
+            QMessageBox.critical(self, "登记失败", "无法写入疑难登记文件：%s" % exc)
+            return
         self._refresh_pending()
 
     def _to_proposal(self) -> None:
@@ -889,6 +909,23 @@ class RuleDocPanel(QWidget):
                 "message": d.get("message", ""),
             })
         return rows
+
+    def _unsaved_diff_edit_count(self) -> int:
+        """统计差异表偏离默认状态的行数：勾选被手动改过或确认值 ≠ 建议值。
+
+        刷新会整表重建（_on_sync_finished），这些用户输入随之丢失；
+        checkpoint 行勾选与确认值均不可改，天然不会偏离默认。
+        """
+        count = 0
+        for row, d in enumerate(self._diffs):
+            widget = self._diff_table.cellWidget(row, 0)
+            if widget is not None and widget.isChecked() != (d["kind"] == "full"):
+                count += 1
+                continue
+            value_item = self._diff_table.item(row, 5)
+            if value_item is not None and value_item.text().strip() != (d.get("new") or ""):
+                count += 1
+        return count
 
     def _compose_next_step(self, diffs: list[dict]) -> tuple[str, str]:
         """按审计/差异/提案/疑难状态给出下一步建议（A3）。"""
