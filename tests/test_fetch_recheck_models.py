@@ -36,7 +36,7 @@ def fetch_env(tmp_path, monkeypatch):
     """隔离目标目录与假模型清单，mock urlopen 并记录调用。"""
     target = tmp_path / "models"
     target.mkdir()
-    monkeypatch.setattr(fetch_mod, "_models_dir", lambda: target)
+    monkeypatch.setattr(fetch_mod, "models_dir", lambda: target)
     payload = b"fake-v4-model-bytes"
     monkeypatch.setattr(
         fetch_mod,

@@ -3329,9 +3329,9 @@ CardSyncDialog
 
 2026-10-03 至 10-06 的运维批次（b3327f1 / 1426686 / c88bf63 / 31f59be / 80cc75b）与数据出库（7bdf075 / 8d23493 / 9958c79，详见 14.8 节）构成项目的日常运维面。数据出库链路见 14.8，本章覆盖工具链。
 
-### 18.1 doctor 一键自检（`src/scripts/doctor.py`）
+### 18.1 doctor 一键自检（CLI：`src/scripts/doctor.py`；检查逻辑：`src/business/diagnostics/doctor_checks.py`）
 
-只读体检，无 FAIL 即环境健康。用法：`python -m src.scripts.doctor [--offline] [--json]`；有 FAIL 退出码 1（可接周更门禁）。12 组检查：**环境**（ruff 版本三处一致、onnxruntime/rapidocr 钉版、v6/v4 模型就位）、**设备**（ADB 路径与在线设备）、**私有仓**（仓存在、manifest 预检、sha256 校验、工作区逐文件同步三态）、**数据**（data/*.json 可解析、关键三件非空数组、备份基线年龄、Manager load_issues 出口）、**RAG索引**（2081b5b 新增：索引目录存在性、体积 ≤25MB、集合段目录唯一性、ONNX 三件套哈希——st 回滚档 SKIP；只读不打开 chroma 数据库）、**配置**（死键检测 `DEAD_CONFIG_KEYS=("RAG_PROJECT_DIR","MUMU_MATCH_GUIDE_COOLDOWN","MUMU_OCR_USE_GPU")`、可选键提示、本地与 example 默认相反键、模型计价核对）、**白名单**（`whitelist_conflicts_with_roster` 武将库冲突重检）、**AI 链路**（近 7 天日志故障模式统计，`"HTTP 401"` 精确匹配防 token 统计行误计）、**日志**（超时转储位置、rag 日志钩子）、**磁盘**（大目录 ≥500MB、截图回收）、**合规**（GitHub fork/star 升级触发器）、**安全**（config.env / api_profiles.json 不被 git 跟踪）。单组失败转 FAIL 条目不拖垮整份报告（`except (Exception, SystemExit)`，80cc75b 收紧防 `sys.exit` 穿透）。
+检查逻辑自 2026-11-05 起下沉 business/diagnostics/（首启向导与 CLI 共用，scripts 顶层入口不再被 ui import），doctor.py 只剩 argparse/报告打印/退出码装配。只读体检，无 FAIL 即环境健康。用法：`python -m src.scripts.doctor [--offline] [--json]`；有 FAIL 退出码 1（可接周更门禁）。12 组检查：**环境**（ruff 版本三处一致、onnxruntime/rapidocr 钉版、v6/v4 模型就位）、**设备**（ADB 路径与在线设备）、**私有仓**（仓存在、manifest 预检、sha256 校验、工作区逐文件同步三态）、**数据**（data/*.json 可解析、关键三件非空数组、备份基线年龄、Manager load_issues 出口）、**RAG索引**（2081b5b 新增：索引目录存在性、体积 ≤25MB、集合段目录唯一性、ONNX 三件套哈希——st 回滚档 SKIP；只读不打开 chroma 数据库）、**配置**（死键检测 `DEAD_CONFIG_KEYS=("RAG_PROJECT_DIR","MUMU_MATCH_GUIDE_COOLDOWN","MUMU_OCR_USE_GPU")`、可选键提示、本地与 example 默认相反键、模型计价核对）、**白名单**（`whitelist_conflicts_with_roster` 武将库冲突重检）、**AI 链路**（近 7 天日志故障模式统计，`"HTTP 401"` 精确匹配防 token 统计行误计）、**日志**（超时转储位置、rag 日志钩子）、**磁盘**（大目录 ≥500MB、截图回收）、**合规**（GitHub fork/star 升级触发器）、**安全**（config.env / api_profiles.json 不被 git 跟踪）。单组失败转 FAIL 条目不拖垮整份报告（`except (Exception, SystemExit)`，80cc75b 收紧防 `sys.exit` 穿透）。
 
 ### 18.2 ops 周更运维统一入口（`src/scripts/ops.py`）
 

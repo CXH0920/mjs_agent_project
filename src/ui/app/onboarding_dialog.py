@@ -22,12 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from src.business.emulator.emulator_config_coordinator import EMULATOR_LABELS, EmulatorConfigCoordinator
-from src.business.emulator.layout_resolution import compare_resolution
-from src.business.execution.script_runner import ScriptRunner
-from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_emulator_config
-from src.config.onboarding_state import mark_completed, mark_skipped, mark_step
-from src.scripts.doctor import (
+from src.business.diagnostics.doctor_checks import (
     FAIL,
     PASS,
     SKIP,
@@ -38,6 +33,11 @@ from src.scripts.doctor import (
     check_whitelist,
     run_checks,
 )
+from src.business.emulator.emulator_config_coordinator import EMULATOR_LABELS, EmulatorConfigCoordinator
+from src.business.emulator.layout_resolution import compare_resolution
+from src.business.execution.script_runner import ScriptRunner
+from src.config.env import IS_FROZEN, PROJECT_ROOT, connection_key, get_emulator_config
+from src.config.onboarding_state import mark_completed, mark_skipped, mark_step
 from src.ui.app.onboarding_fixes import fix_action, sanitize_runtime_detail
 from src.ui.shared.style import (
     ROLE_SECONDARY,

@@ -1,0 +1,683 @@
+# -*- coding: utf-8 -*-
+"""doctor 检查逻辑（doctor_checks.py）——doctor CLI 与首启向导共用的体检域。
+
+把环境/设备/数据/配置/日志/合规问题压缩成一页 PASS/WARN/FAIL findings，
+FAIL/WARN 均附修复动作。检查全部只读；网络检查失败标记 SKIP 不阻塞报告。
+（CLI 入口在 src/scripts/doctor.py：argparse + 报告打印 + 退出码；
+首启向导消费 ONBOARDING_CHECKS 子集，见 src/ui/app/onboarding_dialog.py）
+"""
+from __future__ import annotations
+
+import contextlib
+import importlib.metadata
+import importlib.util
+import json
+import re
+import subprocess
+import time
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+from src.config.env import PROJECT_ROOT as ROOT
+
+PASS, WARN, FAIL, SKIP = "PASS", "WARN", "FAIL", "SKIP"
+
+REPO_SLUG = "CXH0920/mjs_agent_project"
+# retrospective.md「升级触发器」：满足任一立即转全量历史重写预案
+COMPLIANCE_TRIGGERS = "fork > 0 ｜ stars > 50 ｜ 权利人联系 ｜ takedown ｜ 商业化"
+DEAD_CONFIG_KEYS = ("RAG_PROJECT_DIR", "MUMU_MATCH_GUIDE_COOLDOWN", "MUMU_OCR_USE_GPU")
+OPTIONAL_CONFIG_KEYS = (
+    "RECOMMENDATION_P_FLOOR", "RECOMMENDATION_BAN_WEIGHT",
+    "RECOMMENDATION_SIGMOID_K", "RECOMMENDATION_LOW_WIN_RATE_GAP",
+    "LOG_LEVEL", "LOG_TO_FILE",
+)
+DIVERGING_DEFAULT_KEYS = ("MUMU_OCR_RECHECK_ENABLED", "MUMU_OCR_AUTO_SWITCH_TAB")
+BACKUP_STEMS = ("heroes", "guides", "synergies")
+KEY_DATA_FILES = ("data/heroes.json", "data/guides.json", "data/synergies.json")
+# "HTTP 401" 精确匹配故障主行（api_generator 每次不可重试 401 必打）；
+# 裸 "401" 会误伤 token 统计行（如 completion=4012）
+AI_LOG_PATTERNS = ("HTTP 401", "思考过程耗尽", "超过最大重试", "10061")
+
+
+@dataclass
+class Finding:
+    group: str
+    name: str
+    status: str
+    detail: str = ""
+    fix: str = ""
+
+
+def _env_file_lines(path: Path) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+
+
+def _env_keys(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in _env_file_lines(path):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            out[key.strip()] = value.strip()
+    return out
+
+
+# ── 环境 ──────────────────────────────────────────────────────────────
+
+def check_environment() -> list[Finding]:
+    return check_dev_toolchain() + check_runtime_env()
+
+
+def check_dev_toolchain() -> list[Finding]:
+    findings = []
+    versions = {}
+    for label, path, pattern in (
+        ("pre-commit", ROOT / ".pre-commit-config.yaml", r"ruff check src tests \((\d+\.\d+\.\d+)"),
+        ("environment.yml", ROOT / "environment.yml", r"ruff==(\d+\.\d+\.\d+)"),
+        ("environment-ci.yml", ROOT / "environment-ci.yml", r"ruff==(\d+\.\d+\.\d+)"),
+    ):
+        m = re.search(pattern, "\n".join(_env_file_lines(path)))
+        versions[label] = m.group(1) if m else None
+    distinct = {v for v in versions.values() if v}
+    if len(distinct) == 1 and None not in versions.values():
+        findings.append(Finding("环境", "ruff 版本三处一致", PASS, f"ruff=={distinct.pop()}"))
+    else:
+        findings.append(Finding(
+            "环境", "ruff 版本三处一致", FAIL, f"各处={versions}",
+            fix="同步 .pre-commit-config.yaml / environment.yml / environment-ci.yml 的 ruff 版本，否则钩子与 CI 判定分叉"))
+    return findings
+
+
+def check_runtime_env() -> list[Finding]:
+    findings = []
+    # B1 起唯一 OCR 栈：onnxruntime + rapidocr（v6 主引擎内置 + v4 复核预取模型）
+    rapidocr_spec = importlib.util.find_spec("rapidocr")
+    for pkg, pin, spec in (
+        ("onnxruntime", "1.23.2", importlib.util.find_spec("onnxruntime")),
+        ("rapidocr", "3.9.2", rapidocr_spec),
+    ):
+        if spec is None:
+            findings.append(Finding("环境", f"{pkg} 可导入", FAIL, "未安装",
+                                    fix=f"按 environment.yml 安装 {pkg}=={pin}（OCR 引擎依赖）"))
+            continue
+        with contextlib.suppress(importlib.metadata.PackageNotFoundError):
+            version = importlib.metadata.version(pkg)
+            if version == pin:
+                findings.append(Finding("环境", f"{pkg} 版本", PASS, version))
+            else:
+                findings.append(Finding("环境", f"{pkg} 版本", WARN, f"{version}（钉死 {pin}）",
+                                        fix=f"OCR 行为对 rapidocr 小版本敏感，安装 {pkg}=={pin}"))
+    if rapidocr_spec is not None:
+        import rapidocr
+        from src.ocr.recheck_model_assets import verify_v4_models
+
+        models_dir = Path(rapidocr.__file__).resolve().parent / "models"
+        problems = verify_v4_models() + [
+            f"缺失 {name}" for name in (
+                "PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx",
+                "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+            ) if not (models_dir / name).is_file()
+        ]
+        if problems:
+            findings.append(Finding(
+                "环境", "OCR 模型（v6 内置 + v4 预取）", WARN, "；".join(problems),
+                fix="python -m src.scripts.fetch_recheck_models 预取 v4；v6 缺失则重装 rapidocr==3.9.2"))
+        else:
+            findings.append(Finding("环境", "OCR 模型（v6 内置 + v4 预取）", PASS, "双套件模型齐备"))
+    return findings
+
+
+# ── 设备 ──────────────────────────────────────────────────────────────
+
+def check_devices() -> list[Finding]:
+    findings = []
+    from src.config.env import connection_key, get_emulator_config
+
+    config = get_emulator_config()
+    adb_path = connection_key(config, "emulator_adb_path")
+    if not adb_path or not Path(adb_path).exists():
+        findings.append(Finding(
+            "设备", "ADB 路径", FAIL, f"配置的 ADB 不存在: {adb_path}",
+            fix="检查 config.env 的 EMULATOR_ADB_PATH，或运行模拟器后自动探测"))
+        return findings
+    findings.append(Finding("设备", "ADB 路径", PASS, str(adb_path)))
+
+    try:
+        result = subprocess.run([str(adb_path), "devices"], capture_output=True,
+                                text=True, timeout=10)
+        # 雷电等品牌可能注册为 emulator-<n> 序列号（adb 主动扫描区命名）
+        serials = re.findall(r"^(127\.0\.0\.1:\d+|emulator-\d+)\s+device\b", result.stdout, re.M)
+    except (OSError, subprocess.SubprocessError) as error:
+        findings.append(Finding("设备", "adb devices", WARN, f"执行失败: {error}",
+                                fix="确认模拟器已启动且 ADB 服务正常"))
+        return findings
+    if not serials:
+        findings.append(Finding("设备", "模拟器在线", WARN, "无在线模拟器设备",
+                                fix="启动模拟器后重试（蓝叠需先在设置中开启 ADB）"))
+    elif len(serials) > 1:
+        findings.append(Finding(
+            "设备", "模拟器在线", WARN, f"检测到 {len(serials)} 台设备 {serials}",
+            fix="多设备冲突会触发 more-than-one-device 错误，只保留一个模拟器实例或在配置中固定端口"))
+    else:
+        findings.append(Finding("设备", "模拟器在线", PASS, serials[0]))
+
+    findings.extend(check_adb_versions(adb_path))
+    return findings
+
+
+def check_adb_versions(configured_adb: str) -> list[Finding]:
+    """PATH adb 与已配置 adb 的版本一致性：混版会反复重启 adb server，
+    造成连接漂移/设备反复离线（多模拟器品牌共存时的高发根因）。"""
+    import shutil
+
+    path_adb = shutil.which("adb")
+    if not path_adb:
+        return [Finding("设备", "ADB 版本一致性", PASS, "PATH 无 adb，无混版风险")]
+
+    def _version(executable: str) -> str:
+        result = subprocess.run([executable, "version"], capture_output=True,
+                                text=True, timeout=10)
+        return (result.stdout or "").splitlines()[0].strip() if result.stdout else ""
+
+    try:
+        path_version = _version(path_adb)
+        same_file = str(Path(path_adb).resolve()) == str(Path(configured_adb).resolve())
+        if same_file:
+            return [Finding("设备", "ADB 版本一致性", PASS, f"PATH 与配置指向同一 adb: {path_version}")]
+        configured_version = _version(str(configured_adb))
+    except (OSError, subprocess.SubprocessError) as error:
+        return [Finding("设备", "ADB 版本一致性", WARN, f"版本查询失败: {error}")]
+
+    if path_version == configured_version:
+        return [Finding("设备", "ADB 版本一致性", PASS, f"版本一致: {path_version}")]
+    return [Finding(
+        "设备", "ADB 版本一致性", WARN,
+        f"PATH adb 与配置 adb 版本不同\n  PATH: {path_adb} → {path_version}\n  配置: {configured_adb} → {configured_version}",
+        fix="统一使用同一份 adb（建议保留较新版本并让配置指向它），避免 adb server 反复重启")]
+
+
+# ── 私有数据仓 ────────────────────────────────────────────────────────
+
+def check_private_repo() -> list[Finding]:
+    from src.business.diagnostics import data_repo_status
+
+    findings = []
+    try:
+        repo = data_repo_status.resolve_data_repo()
+    except Exception as error:  # noqa: BLE001 — 检查器不得因单组失败中断
+        findings.append(Finding("私有仓", "路径解析", FAIL, str(error)))
+        return findings
+    if not (repo / ".git").is_dir():
+        findings.append(Finding(
+            "私有仓", "存在性", FAIL, f"{repo} 不存在或未初始化",
+            fix="git clone https://gitee.com/chen-xianghao920/mjs_data_private.git 到项目同级；"
+                "位置不同时设置 MJS_DATA_REPO"))
+        return findings
+    findings.append(Finding("私有仓", "存在性", PASS, str(repo)))
+
+    # manifest 缺失时 data_repo_status.load_manifest 会 sys.exit，SystemExit
+    # 不是 Exception 子类、能穿透 run_checks 的兜底，必须先预检转成 FAIL finding
+    if not (repo / "manifest.json").is_file():
+        findings.append(Finding(
+            "私有仓", "manifest 一致性", FAIL, f"{repo / 'manifest.json'} 不存在",
+            fix="在私有仓运行 scripts/gen_manifest.py 后重试"))
+        return findings
+    code, message = data_repo_status.verify_entries(repo)
+    if code == 0:
+        findings.append(Finding("私有仓", "manifest 一致性", PASS, message))
+    else:
+        findings.append(Finding(
+            "私有仓", "manifest 一致性", FAIL, message,
+            fix="在私有仓重跑 scripts/gen_manifest.py；若工作区文件损坏，从远端重新 clone"))
+
+    findings.append(_check_worktree_sync(repo))
+    return findings
+
+
+def _check_worktree_sync(repo: Path) -> Finding:
+    """工作区数据文件 vs 私有仓 manifest：把"未 push 的本地修改"变成可见项。"""
+    from src.business.diagnostics import data_repo_status
+
+    try:
+        entries = json.loads(
+            (repo / "manifest.json").read_text(encoding="utf-8"))["files"]
+    except (OSError, KeyError, ValueError):
+        return Finding("私有仓", "工作区同步", SKIP, "manifest.json 不可读")
+    diverged, absent = [], []
+    for item in entries:
+        local = ROOT / item["path"]
+        if not local.exists():
+            absent.append(item["path"])
+        elif data_repo_status.file_sha256(local) != item["sha256"]:
+            diverged.append(item["path"])
+    if absent and diverged:
+        return Finding(
+            "私有仓", "工作区同步", WARN,
+            f"{len(diverged)} 个文件与私有仓不同（未 push 的修改？）、{len(absent)} 个缺失",
+            fix="push 后再 pull；pull 覆盖前会自动备份到 data/backups")
+    if diverged:
+        return Finding(
+            "私有仓", "工作区同步", WARN,
+            f"与私有仓不同（可能是未 push 的本地修改）：{'、'.join(diverged[:5])}",
+            fix="python -m src.scripts.pull_data push 回推；或确认后 pull（覆盖前自动备份）")
+    if absent:
+        return Finding("私有仓", "工作区同步", WARN, f"{len(absent)} 个文件尚未落位",
+                       fix="python -m src.scripts.pull_data pull")
+    return Finding("私有仓", "工作区同步", PASS, f"{len(entries)} 个文件与私有仓一致")
+
+
+# ── 数据 ──────────────────────────────────────────────────────────────
+
+def check_data() -> list[Finding]:
+    findings = []
+    broken = []
+    for path in sorted((ROOT / "data").glob("*.json")):
+        try:
+            json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            broken.append(f"{path.name}: {error}")
+    if broken:
+        findings.append(Finding(
+            "数据", "data/*.json 可解析", FAIL, "；".join(broken),
+            fix="从 data/backups 恢复对应文件，或重跑 pull_data pull"))
+    else:
+        count = len(list((ROOT / "data").glob("*.json")))
+        findings.append(Finding("数据", "data/*.json 可解析", PASS, f"{count} 个文件"))
+
+    for rel in KEY_DATA_FILES:
+        path = ROOT / rel
+        if not path.exists():
+            findings.append(Finding(
+                "数据", rel, FAIL, "文件缺失",
+                fix="运行 python -m src.scripts.pull_data pull 从私有仓恢复"))
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue  # 上一条已报
+        if not isinstance(data, list) or not data:
+            findings.append(Finding(
+                "数据", rel, FAIL, "内容为空或顶层非数组（置空保存会不可逆丢失）",
+                fix="勿保存；从 data/backups 或私有仓恢复"))
+
+    backup_dir = ROOT / "data" / "backups"
+    for stem in BACKUP_STEMS:
+        snapshots = sorted(backup_dir.glob(f"{stem}-*.json"))
+        if not snapshots:
+            findings.append(Finding(
+                "数据", f"backups/{stem}", WARN, "无任何基线",
+                fix="在数据管理界面做一次修改触发备份，或跑一次周更采集"))
+            continue
+        age_days = (time.time() - snapshots[-1].stat().st_mtime) / 86400
+        if age_days > 30:
+            findings.append(Finding(
+                "数据", f"backups/{stem}", WARN, f"最新基线已滞后 {age_days:.0f} 天",
+                fix=f"重跑一次 {stem} 的生成/采集流程刷新基线"))
+        else:
+            findings.append(Finding(
+                "数据", f"backups/{stem}", PASS, f"最新基线 {age_days:.0f} 天前"))
+
+    findings.append(_check_load_issues())
+    return findings
+
+
+def _check_load_issues() -> Finding:
+    """DataManager 族 load_issues 的出口（此前已产出但零消费）。
+
+    与"可解析"互补：那条只看 JSON 语法，这里覆盖模型级问题
+    （invalid_record / duplicate_key / invalid_root 等）。
+    """
+    from src.data.guide_manager import GuideManager
+    from src.data.hero_manager import HeroManager
+    from src.data.synergy_manager import SynergyManager
+
+    issues = []
+    try:
+        for manager in (
+            HeroManager(ROOT / "data" / "heroes.json"),
+            GuideManager(ROOT / "data" / "guides.json"),
+            SynergyManager(ROOT / "data" / "synergies.json"),
+        ):
+            manager.load()
+            issues.extend(manager.load_issues)
+    except Exception as error:  # noqa: BLE001 — 数据文件缺失/异常不拖垮整组
+        return Finding("数据", "load_issues", SKIP, f"无法实例化管理器: {error!r}")
+
+    errors = [i for i in issues if i.severity == "error"]
+    if errors:
+        kinds = "；".join(f"{i.kind}({Path(i.file_path).name})" for i in errors[:5])
+        return Finding(
+            "数据", "load_issues", FAIL,
+            f"{len(errors)} 条 error 级加载问题：{kinds}",
+            fix="在数据管理界面核对对应记录；损坏文件可从 data/backups 恢复")
+    if issues:
+        return Finding("数据", "load_issues", WARN, f"{len(issues)} 条 warning 级加载问题")
+    return Finding("数据", "load_issues", PASS, "无")
+
+
+# ── 配置 ──────────────────────────────────────────────────────────────
+
+def check_config() -> list[Finding]:
+    findings = []
+    user_env = _env_keys(ROOT / "config.env")
+    example_env = _env_keys(ROOT / "config.env.example")
+
+    dead = [key for key in DEAD_CONFIG_KEYS if key in user_env]
+    if dead:
+        findings.append(Finding(
+            "配置", "死键", WARN, f"{'、'.join(dead)} 已无代码消费者",
+            fix="从 config.env 删除，避免误以为配置生效"))
+    else:
+        findings.append(Finding("配置", "死键", PASS, "无"))
+
+    missing = [key for key in OPTIONAL_CONFIG_KEYS if key not in user_env]
+    if missing:
+        findings.append(Finding(
+            "配置", "可选键未配置", WARN, f"{'、'.join(missing)} 走代码默认值",
+            fix="需要调整时按 config.env.example 注释添加"))
+    else:
+        findings.append(Finding("配置", "可选键未配置", PASS, "无"))
+
+    diverging = [key for key in DIVERGING_DEFAULT_KEYS
+                 if key in user_env and key in example_env
+                 and user_env[key].lower() != example_env[key].lower()]
+    if diverging:
+        findings.append(Finding(
+            "配置", "与 example 默认相反", WARN,
+            f"{'、'.join(diverging)}（本地与模板默认相反，属有意覆盖请忽略；否则核对）"))
+
+    try:
+        from src.config.profiles import get_api_config
+
+        model = get_api_config().get("model")
+    except Exception as error:  # noqa: BLE001
+        findings.append(Finding("配置", "生效模型", SKIP, f"读取失败: {error}"))
+        return findings
+    from src.config.env import get_model_pricing
+
+    if model and get_model_pricing(model) is None:
+        findings.append(Finding(
+            "配置", "定价覆盖", WARN, f"生效模型 {model} 不在 model_pricing.json",
+            fix="补充价格条目，消除每次调用的'价格配置不可用'告警并保证费用估算准确"))
+    else:
+        findings.append(Finding("配置", "定价覆盖", PASS, f"生效模型 {model} 已有价格"))
+    return findings
+
+
+# ── AI 链路 ───────────────────────────────────────────────────────────
+
+def check_ai_link() -> list[Finding]:
+    findings = []
+    cutoff = time.time() - 7 * 86400
+    date_prefix_floor = time.strftime("%Y-%m-%d", time.localtime(cutoff))
+    counts: dict[str, int] = {}
+    log_files = [ROOT / "logs" / "app.log", ROOT / "logs" / "scraper" / "ai_generation.log"]
+    for path in log_files:
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if line[:10] < date_prefix_floor:
+                continue
+            for pattern in AI_LOG_PATTERNS:
+                if pattern in line:
+                    counts[pattern] = counts.get(pattern, 0) + 1
+    hits = {k: v for k, v in counts.items() if v}
+    if hits:
+        findings.append(Finding(
+            "AI链路", "近 7 天故障信号", WARN,
+            "；".join(f"{k}×{v}" for k, v in sorted(hits.items())),
+            fix="401=Key 失效；额度耗尽=调大 MAX_OUTPUT_TOKENS 或换模型；详见对应日志"))
+    else:
+        findings.append(Finding("AI链路", "近 7 天故障信号", PASS, "无 401/额度耗尽/重试耗尽记录"))
+    return findings
+
+
+# ── 日志健康 ──────────────────────────────────────────────────────────
+
+def check_logs() -> list[Finding]:
+    findings = []
+    stale_dumps = list((ROOT / "logs").glob("pytest-timeout-*.log"))
+    if stale_dumps:
+        findings.append(Finding(
+            "日志", "timeout 转储位置", WARN,
+            f"logs/ 下残留 {len(stale_dumps)} 个 pytest-timeout 转储（现应落 .tmp_test/timeout_dumps）",
+            fix="删除 logs/pytest-timeout-*.log"))
+    else:
+        findings.append(Finding("日志", "timeout 转储位置", PASS, "logs/ 干净"))
+
+    rag_logs = list((ROOT / "logs" / "rag").glob("*.log"))
+    empty = [p.name for p in rag_logs if p.stat().st_size == 0]
+    if rag_logs and len(empty) == len(rag_logs):
+        findings.append(Finding(
+            "日志", "logs/rag 落盘", WARN, f"{len(rag_logs)} 个日志全部 0 字节（维护脚本未跑过或钩子未装）",
+            fix="跑一次 python -m src.scripts.maintain_rag --check 验证落盘"))
+    else:
+        findings.append(Finding(
+            "日志", "logs/rag 落盘", PASS,
+            f"{len(rag_logs) - len(empty)}/{len(rag_logs)} 个有内容"))
+    return findings
+
+
+# ── 磁盘 ──────────────────────────────────────────────────────────────
+
+def check_disk() -> list[Finding]:
+    findings = []
+    targets = ["dist", "build", "build_deps", "env_backup", "screenshots", ".tmp_test", "logs"]
+    sizes: dict[str, float] = {}
+    try:
+        result = subprocess.run(["du", "-sm", *(ROOT / t for t in targets)],
+                                capture_output=True, text=True, timeout=60, cwd=ROOT)
+        for line in result.stdout.splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                sizes[Path(parts[1].strip()).name] = float(parts[0])
+    except (OSError, subprocess.SubprocessError):
+        findings.append(Finding("磁盘", "目录占用", SKIP, "du 不可用"))
+        return findings
+    heavy = {name: mb for name, mb in sizes.items() if mb >= 500}
+    if heavy:
+        findings.append(Finding(
+            "磁盘", "大目录", WARN,
+            "；".join(f"{name} {mb:.0f}MB" for name, mb in sorted(heavy.items())),
+            fix="env_backup 可归档；dist/build 可清理；screenshots 见回收任务"))
+    else:
+        findings.append(Finding(
+            "磁盘", "目录占用", PASS, "；".join(f"{k} {v:.0f}MB" for k, v in sorted(sizes.items()))))
+
+    shots = list((ROOT / "screenshots").rglob("*.png"))
+    if shots:
+        oldest = min(p.stat().st_mtime for p in shots)
+        age_days = (time.time() - oldest) / 86400
+        total_mb = sum(p.stat().st_size for p in shots) / 1048576
+        if age_days > 30 or total_mb > 300:
+            findings.append(Finding(
+                "磁盘", "screenshots 堆积", WARN,
+                f"{len(shots)} 个文件 / {total_mb:.0f}MB / 最早 {age_days:.0f} 天前（零回收机制）",
+                fix="等 P1-6 磁盘回收任务，或手动清理"))
+        else:
+            findings.append(Finding(
+                "磁盘", "screenshots", PASS, f"{len(shots)} 个文件"))
+    return findings
+
+
+# ── RAG 索引 ──────────────────────────────────────────────────────────
+
+def check_rag_index() -> list[Finding]:
+    """RAG 检索资产健康（只读，不打开 chroma 数据库——「索引块数==语料块数」
+    的深校验放发版流程做，那里本来就要打开索引）。"""
+    from src.rag import config
+
+    findings: list[Finding] = []
+    chroma_dir = config.CHROMA_DIR
+    if not chroma_dir.is_dir():
+        return [Finding("RAG索引", "索引目录", WARN, f"{chroma_dir} 不存在",
+                        fix="python -m src.rag.indexer 重建索引")]
+
+    size_mb = sum(p.stat().st_size for p in config.RAG_INDEX_DIR.rglob("*")
+                  if p.is_file()) / 1048576
+    if size_mb <= 25:
+        findings.append(Finding("RAG索引", "索引体积", PASS, f"{size_mb:.1f}MB"))
+    else:
+        findings.append(Finding(
+            "RAG索引", "索引体积", WARN, f"{size_mb:.1f}MB（应 ≤25MB）",
+            fix="python -m src.rag.indexer 整目录重建（清理历次残留的孤立段）"))
+
+    seg_dirs = [p for p in chroma_dir.iterdir() if p.is_dir()]
+    if len(seg_dirs) == 1:
+        findings.append(Finding(
+            "RAG索引", "集合段目录", PASS, f"{seg_dirs[0].name[:8]}…（1 组）"))
+    else:
+        findings.append(Finding(
+            "RAG索引", "集合段目录", WARN,
+            f"{len(seg_dirs)} 组（孤立段残留，历次 delete_collection 遗留）",
+            fix="python -m src.rag.indexer 整目录重建"))
+
+    if config.EMBEDDING_BACKEND != "onnx":
+        findings.append(Finding(
+            "RAG索引", "ONNX 编码器", SKIP,
+            f"backend={config.EMBEDDING_BACKEND}（st 回滚档，不检查 ONNX 产物）"))
+        return findings
+    problems = _check_onnx_artifacts(config.ONNX_MODEL_DIR)
+    if problems:
+        findings.append(Finding(
+            "RAG索引", "ONNX 编码器", FAIL, "；".join(problems),
+            fix="python -m src.scripts.export_embedding_onnx 重新导出"))
+    else:
+        findings.append(Finding("RAG索引", "ONNX 编码器", PASS, "三件套哈希一致"))
+    return findings
+
+
+def _check_onnx_artifacts(model_dir: Path) -> list[str]:
+    """ONNX 三件套（model.onnx / tokenizer.json / sha256.json）哈希校验。"""
+    if not (model_dir / "sha256.json").is_file():
+        return [f"缺少 {model_dir / 'sha256.json'}（未导出过）"]
+    try:
+        from src.rag.embedder import OnnxEmbedder
+
+        OnnxEmbedder(model_dir)  # 构造即校验
+    except RuntimeError as error:
+        return [str(error)]
+    return []
+
+
+# ── 合规触发器 ────────────────────────────────────────────────────────
+
+def check_compliance() -> list[Finding]:
+    url = f"https://api.github.com/repos/{REPO_SLUG}"
+    request = urllib.request.Request(url, headers={"User-Agent": "mjs-doctor"})
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as error:  # noqa: BLE001 — 离线/限流时降级 SKIP
+        return [Finding("合规", "GitHub 触发器", SKIP, f"查询失败: {error}")]
+
+    forks, stars = payload.get("forks_count", 0), payload.get("stargazers_count", 0)
+    if forks > 0 or stars > 50:
+        return [Finding(
+            "合规", "GitHub 触发器", WARN, f"forks={forks}, stars={stars}",
+            fix=f"触发升级预案（{COMPLIANCE_TRIGGERS}）→ 立即执行全量历史重写，见 retrospective.md")]
+    return [Finding("合规", "GitHub 触发器", PASS, f"forks={forks}, stars={stars}（阈值内）")]
+
+
+# ── 安全 ──────────────────────────────────────────────────────────────
+
+def check_security() -> list[Finding]:
+    findings = []
+    sensitive = ["config.env", "config/api_profiles.json"]
+    for rel in sensitive:
+        path = ROOT / rel
+        if not path.exists():
+            findings.append(Finding("安全", rel, PASS, "不存在（无需检查）"))
+            continue
+        result = subprocess.run(["git", "check-ignore", rel], cwd=ROOT,
+                                capture_output=True, text=True)
+        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", rel],
+                                 cwd=ROOT, capture_output=True, text=True)
+        if tracked.returncode == 0:
+            findings.append(Finding(
+                "安全", rel, FAIL, "被 git 跟踪（含敏感内容却会随仓库分发）",
+                fix="git rm --cached 并加入 .gitignore"))
+        elif result.returncode == 0:
+            findings.append(Finding("安全", rel, PASS, "已被 .gitignore 忽略，不会入库"))
+        else:
+            findings.append(Finding(
+                "安全", rel, WARN, "未被 ignore 也未被跟踪（git add -A 会带入）",
+                fix=f"把 {rel} 加入 .gitignore"))
+    return findings
+
+
+# ── 白名单 ────────────────────────────────────────────────────────────
+
+def check_whitelist() -> list[Finding]:
+    """基线+用户层白名单与武将库的冲突重检（武将库扩充/换引擎后必查，红线 6）。"""
+    heroes_path = ROOT / "data" / "heroes.json"
+    if not heroes_path.exists():
+        return [Finding("白名单", "冲突重检", SKIP, "data/heroes.json 未入库（私有数据仓同步后生效）")]
+    from src.ocr.character_similarity import CharacterSimilarityService, whitelist_conflicts_with_roster
+
+    document = json.loads(heroes_path.read_text(encoding="utf-8"))
+    if isinstance(document, dict):
+        document = document.get("heroes", document)
+    names = [h["name"] if isinstance(h, dict) else h for h in document]
+    service = CharacterSimilarityService()
+    conflicts = whitelist_conflicts_with_roster(service.effective_whitelist, names)
+    if conflicts:
+        return [Finding("白名单", "冲突重检", FAIL, "；".join(conflicts),
+                        fix="在「白名单配置」界面移除冲突对，或核对新武将用字后再启用")]
+    return [Finding("白名单", "冲突重检", PASS,
+                    f"{len(service.effective_whitelist)} 对 × {len(names)} 武将，无冲突")]
+
+
+CHECK_GROUPS = [
+    ("环境", check_environment),
+    ("设备", check_devices),
+    ("私有仓", check_private_repo),
+    ("数据", check_data),
+    ("RAG索引", check_rag_index),
+    ("配置", check_config),
+    ("白名单", check_whitelist),
+    ("AI链路", check_ai_link),
+    ("日志", check_logs),
+    ("磁盘", check_disk),
+    ("合规", check_compliance),
+    ("安全", check_security),
+]
+
+
+def run_checks(offline: bool = False, checks=None) -> list[Finding]:
+    # checks 默认值必须在函数体内读模块级 CHECK_GROUPS：形参默认值会在定义时
+    # 绑定旧列表引用，monkeypatch.setattr(doctor_checks, "CHECK_GROUPS", …) 将静默失效
+    selected = checks if checks is not None else CHECK_GROUPS
+    findings: list[Finding] = []
+    for group, checker in selected:
+        if offline and group == "合规":
+            findings.append(Finding(group, "GitHub 触发器", SKIP, "--offline 跳过"))
+            continue
+        try:
+            findings.extend(checker())
+        except (Exception, SystemExit) as error:  # noqa: BLE001 — 单组失败不得拖垮整份报告
+            findings.append(Finding(group, checker.__name__, FAIL,
+                                    f"检查器异常: {error!r}"))
+    return findings
+
+
+def render(findings: list[Finding], elapsed: float) -> str:
+    lines = ["═" * 30, "名将杀 doctor 自检报告", "═" * 30]
+    for f in findings:
+        line = f"[{f.status}] {f.group}/{f.name}: {f.detail}" if f.detail else f"[{f.status}] {f.group}/{f.name}"
+        lines.append(line)
+        if f.fix:
+            lines.append(f"         ↳ 修复: {f.fix}")
+    tally = {status: sum(1 for f in findings if f.status == status)
+             for status in (PASS, WARN, FAIL, SKIP)}
+    lines.append("─" * 30)
+    lines.append(
+        f"结论：{tally[PASS]} PASS / {tally[WARN]} WARN / {tally[FAIL]} FAIL / {tally[SKIP]} SKIP"
+        f"（耗时 {elapsed:.1f}s；WARN/FAIL 的修复动作见上方 ↳ 行）")
+    return "\n".join(lines)

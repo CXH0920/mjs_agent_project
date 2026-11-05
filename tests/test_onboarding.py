@@ -197,7 +197,7 @@ from types import SimpleNamespace
 import src.ui.app.onboarding_dialog as onboarding_dialog
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QWidget
-from src.scripts.doctor import Finding
+from src.business.diagnostics.doctor_checks import Finding
 from src.ui.app.onboarding_dialog import OnboardingDialog
 
 
@@ -361,7 +361,7 @@ def test_dialog_constructs_with_three_sections(wizard):
 
 def test_env_findings_rendered_with_data_states(wizard):
     d = wizard.dialog
-    from src.scripts import doctor as doctor_mod
+    from src.business.diagnostics import doctor_checks as doctor_mod
     findings = [
         Finding("环境", "onnxruntime 版本", doctor_mod.PASS, "1.23.2"),
         Finding("环境", "OCR 模型", doctor_mod.WARN, "v4 缺失", "python -m src.scripts.fetch_recheck_models 预取 v4"),

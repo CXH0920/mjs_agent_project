@@ -740,7 +740,13 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 2026-10-24 多品牌连接：check_devices 读 EMULATOR_* 键（双键回退）+ 序列号
     # 正则纳入 emulator-<n> 形态 + 新增 check_adb_versions 版本一致性诊断
     # （PATH adb 与配置 adb 混版是连接漂移高发根因），682 → 716
-    "scripts/doctor.py": 716,
+    # 2026-11-05 第18批二轮 P1 修复：检查逻辑整体迁出至 business/diagnostics/
+    # doctor_checks.py（scripts 顶层入口不再被 ui import），本文件只剩 CLI 壳
+    "scripts/doctor.py": 45,
+    # 2026-11-05 第18批二轮 P1 修复：自 scripts/doctor.py 迁入的检查逻辑
+    # （Finding/12 组检查/CHECK_GROUPS/run_checks/render），716 → 683 为
+    # main 与 argparse 装配留在 CLI 壳所致；纯搬移，职责单一（体检域）
+    "business/diagnostics/doctor_checks.py": 683,
     # 2026-09-30 审计补种（种子 = 当前实测值，只许收紧）
     # 877 → 900：版本调整编辑对话框补未保存关闭确认（快照比对 + reject
     # 拦截，第 14 批审查 P2-1），长文本效果草稿不再被 Esc 静默丢弃

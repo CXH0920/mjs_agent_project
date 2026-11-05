@@ -587,7 +587,7 @@ PeakSelectPanel
 
 **段 1 运行环境**（`_start_env_check`）：
 
-- `EnvCheckWorker(QThread)` 后台执行 `run_checks(offline=True, checks=ONBOARDING_CHECKS)` 四项（`check_runtime_env` / `check_config` / `check_whitelist` / `check_rag_index`，位于 `src/scripts/doctor.py`）；`result_ready = Signal(object)` 回传 `list[Finding]`，`failed = Signal(str)` 回传异常文本。
+- `EnvCheckWorker(QThread)` 后台执行 `run_checks(offline=True, checks=ONBOARDING_CHECKS)` 四项（`check_runtime_env` / `check_config` / `check_whitelist` / `check_rag_index`，位于 `src/business/diagnostics/doctor_checks.py`，2026-11-05 自 `src/scripts/doctor.py` 迁入）；`result_ready = Signal(object)` 回传 `list[Finding]`，`failed = Signal(str)` 回传异常文本。
 - `LIVE_WORKERS: set` 全程引用集合：`__init__` 即入集合，`finished` 后 `deleteLater()` 安全退场——若等 `run()` 内才 add，`start()` 与 `run()` 之间的窗口期 GC 会析构 running `QThread`（Qt6 qFatal，实测闪退）。
 - 每项 Finding 渲染为 `StatusBadge` + `QLabel` + 可选修复按钮；`fix_action(fix, IS_FROZEN)`（`onboarding_fixes.py`）将 doctor 的开发者口吻 fix 文案映射为中文动作名 + `-m` 模块名：可一键执行的（`fetch_recheck_models` / `rag.indexer` / `export_embedding_onnx`）经 `ScriptRunner.run(sys.executable, None, ["-m", module], PROJECT_ROOT)` 走 exe 的 `-m` 分发通道异步执行；frozen 下无意义的安装类命令（含 `pip|conda|python -m`）不渲染修复按钮、原文仅作详情；开发态保留原文按钮。
 - 末尾追加数据三态行：优先读 `DialogCoordinator._data_error` 标记（`MainWindow._load_data` 失败时外移至 `note_load_failed()` 写入），有则 FAIL 态；其次读 `last_load_report.issues` 有则 WARN 态；无则 PASS 态。`last_load_report` 在 `load_all()` 抛异常时不会被覆盖（存在假阴性），故失败态以 `_data_error` 为准。

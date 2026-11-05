@@ -6,6 +6,8 @@
 guides/synergies 为 AI 生成物，不入仓。
 
 私有仓位置解析：环境变量 MJS_DATA_REPO > config.env 的 MJS_DATA_REPO > 项目同级默认。
+只读查询（位置解析/manifest 校验/文件指纹）住 src/business/diagnostics/data_repo_status.py，
+与 doctor 体检共用；本模块承载 pull/push 写路径与 CLI。
 
 用法：
     python -m src.scripts.pull_data pull                # 拉取 + sha256 校验 + 原子落位工作区
@@ -15,9 +17,7 @@ guides/synergies 为 AI 生成物，不入仓。
 """
 import argparse
 import datetime
-import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -25,11 +25,15 @@ import tempfile
 import time
 from pathlib import Path
 
+from src.business.diagnostics.data_repo_status import (
+    file_sha256,
+    load_manifest,
+    resolve_data_repo,
+    verify_entries,
+)
 from src.config.env import PROJECT_ROOT as ROOT
-from src.config.env import load_env_config
 from src.scripts.rag_common import install_crash_logger
 
-DEFAULT_DATA_REPO = ROOT.parent / "mjs_data_private"
 # 与 .gitignore「抓取数据出库」段保持同步
 PRIVATE_PATHS = [
     "data/heroes.json", "data/combos.json", "data/cards.json",
@@ -44,17 +48,6 @@ PRIVATE_PATHS = [
 MIN_HERO_COUNT = 100
 
 
-def resolve_data_repo() -> Path:
-    """私有仓根目录：环境变量 MJS_DATA_REPO > config.env 的 MJS_DATA_REPO > 同级默认。"""
-    override = os.environ.get("MJS_DATA_REPO")
-    if override:
-        return Path(override)
-    configured = load_env_config().get("mjs_data_repo")
-    if configured:
-        return Path(str(configured))
-    return DEFAULT_DATA_REPO
-
-
 def _repo() -> Path:
     repo = resolve_data_repo()
     if not (repo / ".git").is_dir():
@@ -65,10 +58,6 @@ def _repo() -> Path:
             "  详见 README「数据与合规」章节。"
         )
     return repo
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -83,30 +72,11 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _manifest(repo: Path) -> dict:
-    manifest = repo / "manifest.json"
-    if not manifest.exists():
-        sys.exit(f"FAIL: 找不到 {manifest}——先在私有仓运行 scripts/gen_manifest.py")
-    try:
-        return json.loads(manifest.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        sys.exit(
-            f"FAIL: manifest 损坏不可解析: {manifest}\n  {error}\n"
-            "  修复：在私有仓重跑 scripts/gen_manifest.py"
-        )
-
-
 def verify(repo: Path | None = None) -> int:
-    repo = repo or resolve_data_repo()
-    entries = _manifest(repo)["files"]
-    bad = [f["path"] for f in entries
-           if not (repo / f["path"]).exists()
-           or _sha256(repo / f["path"]) != f["sha256"]]
-    if bad:
-        print("FAIL: " + ", ".join(bad))
-        return 1
-    print(f"PASS: {len(entries)} 个文件与 manifest 一致")
-    return 0
+    """CLI 输出壳：库层 verify_entries 只返回 (code, message)，打印留在脚本层。"""
+    code, message = verify_entries(repo or resolve_data_repo())
+    print(message)
+    return code
 
 
 def _backup_dirty_file(dst: Path, rel: str) -> bool:
@@ -135,7 +105,7 @@ def pull(repo: Path | None = None, dry_run: bool = False) -> int:
         _git(repo, "pull", "--ff-only")
         if verify(repo):
             return 1
-    entries = _manifest(repo)["files"]
+    entries = load_manifest(repo)["files"]
     if dry_run:
         for item in entries:
             print(f"[dry-run] 将落位: {item['path']}")
@@ -156,7 +126,7 @@ def pull(repo: Path | None = None, dry_run: bool = False) -> int:
         for item in entries:
             dst = ROOT / item["path"]
             # 本地与私有仓不同 = 未 push 的本地修改会被本次覆盖，先留副本再替换
-            if dst.exists() and _sha256(dst) != _sha256(staging / item["path"]):
+            if dst.exists() and file_sha256(dst) != file_sha256(staging / item["path"]):
                 if _backup_dirty_file(dst, item["path"]):
                     dirty.append(item["path"])
             dst.parent.mkdir(parents=True, exist_ok=True)

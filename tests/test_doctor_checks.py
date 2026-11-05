@@ -1,8 +1,11 @@
-"""doctor 自检核心检查函数回归：坏数据必须 FAIL，输出格式稳定。"""
+"""doctor 自检核心检查函数回归：坏数据必须 FAIL，输出格式稳定。
+
+被测体为 src/business/diagnostics/doctor_checks.py（doctor CLI 与首启向导共用）。
+"""
 
 from __future__ import annotations
 
-from src.scripts import doctor
+from src.business.diagnostics import doctor_checks as doctor
 
 
 def test_check_data_flags_broken_json(tmp_path, monkeypatch):
@@ -338,7 +341,7 @@ def test_check_runtime_env_flags_missing_models(monkeypatch, tmp_path):
     import sys
     import types
 
-    from src.scripts import fetch_recheck_models
+    from src.ocr import recheck_model_assets
 
     fake_rapidocr = types.ModuleType("rapidocr")
     fake_rapidocr.__file__ = str(tmp_path / "rapidocr" / "__init__.py")
@@ -348,7 +351,7 @@ def test_check_runtime_env_flags_missing_models(monkeypatch, tmp_path):
         importlib.util, "find_spec",
         lambda name: (importlib.machinery.ModuleSpec("rapidocr", None)
                       if name == "rapidocr" else real_find_spec(name)))
-    monkeypatch.setattr(fetch_recheck_models, "verify_v4_models",
+    monkeypatch.setattr(recheck_model_assets, "verify_v4_models",
                         lambda: ["v4 rec 模型缺失"])
 
     findings = doctor.check_runtime_env()
