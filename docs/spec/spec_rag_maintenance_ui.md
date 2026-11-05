@@ -14,10 +14,10 @@
 - 主导航第 4 页「知识库维护」（`src/ui/maintenance/rag_maintenance_panel.py`，`MainWindow.PAGE_CONTEXTS` 与 `NavigationRail.PAGE_LABELS` 同步追加）。
 - 页面为多页签结构（复用 `librarySectionTabs` 样式），五个页签：
   1. **语料状态**：PageActionBar（状态文字 + 刷新状态 / 重建武将语料 / 重建全部语料 / 重建语料+索引）+ 任务状态表（ragTableSurface 卡片，8 个语料任务 × 状态/输出块数/数据源）+ 人工维护 NoticeBanner（未归类武将、专属牌引用未知武将、点数/装备/结算回填校验等 warning；无问题时显示成功）+ 执行日志区（ragLogSurface 卡片内只读等宽 QPlainTextEdit，QProcess 实时追加）；
-  2. **专属牌维护**：复用 `src/ui/library/special_cards_panel.py` 的 `SpecialCardsPanel`（从资料库移入，数据源 `data/special_cards.json`；专属牌/专属战法牌条目含牌面事实字段：花色/点数/攻击范围/结算详情，由原 xlsx【专属牌】sheet 迁移回填）；
+  2. **专属牌维护**：复用 `src/ui/maintenance/special_cards_panel.py` 的 `SpecialCardsPanel`（从资料库移入，数据源 `data/special_cards.json`；专属牌/专属战法牌条目含牌面事实字段：花色/点数/攻击范围/结算详情，由原 xlsx【专属牌】sheet 迁移回填）；
   3. **卡牌点数维护**：`src/ui/maintenance/card_points_panel.py`，维护 `data/card_points.json`（原 xlsx sheet1 + 硬编码判定规则迁移）——牌面明细 162 张（只读浏览 + 新增/编辑/删除牌行）、卜卦判定规则（12 条，增删改）；「从 xlsx 导入」按钮调用 `scripts/migrate_excel_to_json.py --only points` 基于归档 xlsx 全量覆盖点数数据；
   4. **装备属性维护**：`src/ui/maintenance/equip_attrs_panel.py`，维护 `data/equip_attrs.json`（原 xlsx sheet2 与 build_equip_attr.py 硬编码迁移）——26 件装备表格编辑（名称/备注只读，细分类型/攻击范围/距离修正可编辑，保存时校验）；
-  5. **武将分类维护**：`src/ui/library/hero_classification_panel.py`，维护 `data/hero_classification.json` 的三个子页签——分类管理（分类 CRUD，删除时清理归类/克制链引用）、克制链（分类 → 克制说明文本）、武将归类（全部/未归类/已归类筛选 + 分类多选 + 未归类定位）。
+  5. **武将分类维护**：`src/ui/maintenance/hero_classification_panel.py`，维护 `data/hero_classification.json` 的三个子页签——分类管理（分类 CRUD，删除时清理归类/克制链引用）、克制链（分类 → 克制说明文本）、武将归类（全部/未归类/已归类筛选 + 分类多选 + 未归类定位）。
 - 子面板保存后发 `data_changed`，知识库维护页自动刷新「语料状态」并标记待重建。
 - 武将分类数据约束：分类 `name` 唯一；`hero_categories` 与 `counter_chain` 引用的分类必须存在；`updated_at` 保存时自动刷新为当天。
 

@@ -2,7 +2,8 @@
 """武将分类维护面板（知识库维护 → 武将分类维护）。
 
 维护 data/hero_classification.json：分类管理 / 克制链 / 武将归类。
-三个页签的交互收敛在 src/ui/library/classification/ 下（审计 G6 切片 4.5），
+三个页签的交互收敛在 src/ui/maintenance/classification/ 下（审计 G6 切片 4.5；
+2026-11 自 library 迁入 maintenance——唯一消费者是知识库维护工作台），
 本面板只负责页签装配、加载错误防护、dirty 协议与保存编排；保存后发
 data_changed 供知识库维护页刷新语料状态。
 """
@@ -17,9 +18,9 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget
 from src.business.maintenance.corpus_services import ClassificationService
 from src.business.rag.hero_brief import load_hero_briefs
-from src.ui.library.classification.category_tab import CategoryTab
-from src.ui.library.classification.chain_tab import ChainTab
-from src.ui.library.classification.hero_tab import HeroTab
+from src.ui.maintenance.classification.category_tab import CategoryTab
+from src.ui.maintenance.classification.chain_tab import ChainTab
+from src.ui.maintenance.classification.hero_tab import HeroTab
 from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO, TONE_SUCCESS, TONE_WARNING
 from src.ui.shared.widgets import PageActionBar, show_toast
 

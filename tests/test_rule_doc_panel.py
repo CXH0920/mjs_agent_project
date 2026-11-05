@@ -49,12 +49,12 @@ def test_panel_renders_and_local_refresh(tmp_path):
     assert [panel._tabs.tabText(i) for i in range(panel._tabs.count())] == [
         "文档状态", "数据段差异", "提案工作台", "疑难登记",
     ]
-    assert panel._proposal_combo.count() == 1
+    assert panel._proposal_tab._combo.count() == 1
     # 提案详情已加载
-    assert panel._proposal_table.rowCount() == 1
+    assert panel._proposal_tab._table.rowCount() == 1
     # 疑难登记已加载
-    assert panel._pending_table.rowCount() == 1
-    assert panel._pending_table.item(0, 2).text() == "组合盲点"
+    assert panel._pending_tab._table.rowCount() == 1
+    assert panel._pending_tab._table.item(0, 2).text() == "组合盲点"
 
 
 def test_add_pending_refreshes_table(tmp_path):
@@ -65,7 +65,7 @@ def test_add_pending_refreshes_table(tmp_path):
     from src.business.rag import rule_doc_service as rds
     rds.add_pending(root, "新疑难", "武将X", "测试")
     panel.refresh()
-    assert panel._pending_table.rowCount() == 2
+    assert panel._pending_tab._table.rowCount() == 2
 
 
 def test_to_proposal_updates_combo(tmp_path):
@@ -76,7 +76,7 @@ def test_to_proposal_updates_combo(tmp_path):
     path = rds.pending_to_proposal(root, 1)
     assert path.exists()
     panel.refresh()
-    assert panel._proposal_combo.count() == 2
+    assert panel._proposal_tab._combo.count() == 2
 
 
 def test_sync_sentinel_exit_code(tmp_path):
@@ -121,19 +121,19 @@ def test_audit_detail_renders(tmp_path):
         "  [WARN] 数据段一致性：8 处全自动差异（段：0.2、3.5、5.2）\n"
         "  [INFO] 数据段候选：17 处半自动候选差异（段：3.1、3.2）\n"
         "汇总：ERROR 0 / WARN 1 / INFO 2".encode("utf-8"))
-    panel._on_audit_finished()
-    assert panel._audit_table.item(1, 1).text() == "1"
-    assert panel._audit_detail_table.rowCount() == 1
-    button = panel._audit_detail_table.cellWidget(0, 2)
+    panel._on_audit_done()
+    assert panel._audit_tab._table.item(1, 1).text() == "1"
+    assert panel._audit_tab._detail_table.rowCount() == 1
+    button = panel._audit_tab._detail_table.cellWidget(0, 2)
     assert button is not None and button.text() == "去同步"
     assert panel._tabs.tabText(0) == "文档状态（1）"
-    assert panel._audit_detail_empty.isHidden()
+    assert panel._audit_tab._detail_empty.isHidden()
     # 无 ERROR/WARN 时明细表为空提示可见
     panel._clear_script_output()
     panel._append_log("汇总：ERROR 0 / WARN 0 / INFO 0".encode("utf-8"))
-    panel._on_audit_finished()
-    assert panel._audit_detail_table.rowCount() == 0
-    assert not panel._audit_detail_empty.isHidden()
+    panel._on_audit_done()
+    assert panel._audit_tab._detail_table.rowCount() == 0
+    assert not panel._audit_tab._detail_empty.isHidden()
     assert panel._tabs.tabText(0) == "文档状态"
 
 
@@ -152,14 +152,14 @@ def test_sync_status_suggests_next_step(tmp_path):
         {"section": "3.1", "line_no": 158, "kind": "candidate", "old": "c", "new": "d",
          "message": "时机频次候选"},
     ], ensure_ascii=False), encoding="utf-8")
-    panel._audit_counts = {"ERROR": 0, "WARN": 1, "INFO": 2}
-    panel._on_sync_finished()
-    assert panel._diff_table.item(0, 3).text() == "全自动"
-    assert panel._diff_table.item(1, 3).text() == "候选"
+    panel._audit_tab._counts = {"ERROR": 0, "WARN": 1, "INFO": 2}
+    panel._on_sync_done()
+    assert panel._diff_tab._table.item(0, 3).text() == "全自动"
+    assert panel._diff_tab._table.item(1, 3).text() == "候选"
     assert panel._tabs.tabText(1) == "数据段差异（2）"
     assert "全自动差异 1 处可一键应用" in panel._action_bar.status_label.text()
     assert panel._checked is True
-    assert panel._diff_empty_label.isHidden()
+    assert panel._diff_tab._empty_label.isHidden()
 
 
 def test_compose_clean_status(tmp_path):
@@ -168,8 +168,8 @@ def test_compose_clean_status(tmp_path):
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
     # _make_root 自带 1 条 open 疑难，先清零待办计数
-    panel._proposal_pending = 0
-    panel._pending_open = 0
+    panel._proposal_tab._proposal_pending = 0
+    panel._pending_tab._pending_open = 0
     status, tone = panel._compose_next_step([])
     assert "校验通过、数据一致、无待办" in status
 
@@ -224,23 +224,23 @@ def test_diff_table_renders_b2(tmp_path):
     from PySide6.QtCore import Qt
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._audit_counts = {"ERROR": 0, "WARN": 1, "INFO": 2}
-    panel._on_sync_finished()
-    assert panel._diff_table.columnCount() == 7
-    assert panel._diff_table.rowCount() == 3
-    full_check = panel._diff_table.cellWidget(0, 0)
-    cand_check = panel._diff_table.cellWidget(1, 0)
-    ckpt_check = panel._diff_table.cellWidget(2, 0)
+    panel._audit_tab._counts = {"ERROR": 0, "WARN": 1, "INFO": 2}
+    panel._on_sync_done()
+    assert panel._diff_tab._table.columnCount() == 7
+    assert panel._diff_tab._table.rowCount() == 3
+    full_check = panel._diff_tab._table.cellWidget(0, 0)
+    cand_check = panel._diff_tab._table.cellWidget(1, 0)
+    ckpt_check = panel._diff_tab._table.cellWidget(2, 0)
     assert full_check.isChecked() and full_check.isEnabled()
     assert not cand_check.isChecked() and cand_check.isEnabled()
     assert not ckpt_check.isChecked() and not ckpt_check.isEnabled()
     # 确认值默认 = new；checkpoint 不可编辑
-    assert panel._diff_table.item(0, 5).text() == "| 武将数 | 172 |"
-    assert not (panel._diff_table.item(2, 5).flags() & Qt.ItemFlag.ItemIsEditable)
+    assert panel._diff_tab._table.item(0, 5).text() == "| 武将数 | 172 |"
+    assert not (panel._diff_tab._table.item(2, 5).flags() & Qt.ItemFlag.ItemIsEditable)
     # 统计与按钮
-    assert "全自动 1 · 候选 1 · 校验点 1 ｜ 已勾选 1 项可应用" in panel._diff_summary_label.text()
-    assert panel._apply_diff_button.text() == "应用已确认差异（1）"
-    assert panel._apply_diff_button.isEnabled()
+    assert "全自动 1 · 候选 1 · 校验点 1 ｜ 已勾选 1 项可应用" in panel._diff_tab._summary_label.text()
+    assert panel._diff_tab._apply_button.text() == "应用已确认差异（1）"
+    assert panel._diff_tab._apply_button.isEnabled()
 
 
 def test_collect_confirmed_rows_payload(tmp_path):
@@ -249,9 +249,9 @@ def test_collect_confirmed_rows_payload(tmp_path):
     root = _make_root(tmp_path)
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
-    panel._diff_table.cellWidget(1, 0).setChecked(True)  # 勾选候选行
-    rows = panel._collect_confirmed_rows()
+    panel._on_sync_done()
+    panel._diff_tab._table.cellWidget(1, 0).setChecked(True)  # 勾选候选行
+    rows = panel._diff_tab._collect_confirmed_rows()
     assert len(rows) == 2
     payload = rows[1]
     assert payload["section"] == "3.1"
@@ -267,15 +267,15 @@ def test_collect_confirmed_rows_rejects_invalid(monkeypatch, tmp_path):
     root = _make_root(tmp_path)
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
+    panel._on_sync_done()
     warned = []
-    monkeypatch.setattr("src.ui.maintenance.rule_doc_panel.QMessageBox.warning",
+    monkeypatch.setattr("src.ui.maintenance.rule_doc.diff_tab.QMessageBox.warning",
                         lambda *a, **k: warned.append(a))
-    panel._diff_table.item(0, 5).setText("")
-    assert panel._collect_confirmed_rows() is None
+    panel._diff_tab._table.item(0, 5).setText("")
+    assert panel._diff_tab._collect_confirmed_rows() is None
     assert warned
-    panel._diff_table.item(0, 5).setText("| 武将数 | 172 | 多列")
-    assert panel._collect_confirmed_rows() is None
+    panel._diff_tab._table.item(0, 5).setText("| 武将数 | 172 | 多列")
+    assert panel._diff_tab._collect_confirmed_rows() is None
     assert len(warned) == 2
 
 
@@ -288,15 +288,15 @@ def test_proposal_table_renders_b3(tmp_path):
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    assert panel._proposal_table.columnCount() == 6
-    assert panel._proposal_table.rowCount() == 1
+    assert panel._proposal_tab._table.columnCount() == 6
+    assert panel._proposal_tab._table.rowCount() == 1
     # _make_root 的提案项为 approved（P-01）
-    assert panel._proposal_table.item(0, 4).text() == "已确认"
-    assert panel._proposal_table.item(0, 1).text() == "新增FAQ"
+    assert panel._proposal_tab._table.item(0, 4).text() == "已确认"
+    assert panel._proposal_tab._table.item(0, 1).text() == "新增FAQ"
     from PySide6.QtWidgets import QPushButton
-    actions = panel._proposal_table.cellWidget(0, 5)
+    actions = panel._proposal_tab._table.cellWidget(0, 5)
     assert [b.text() for b in actions.findChildren(QPushButton)] == ["查看", "确认"]
-    assert "待确认 0 · 已确认 1 · 已驳回 0" in panel._proposal_summary_label.text()
+    assert "待确认 0 · 已确认 1 · 已驳回 0" in panel._proposal_tab._summary_label.text()
 
 
 def test_proposal_actions_two_buttons(tmp_path):
@@ -305,7 +305,7 @@ def test_proposal_actions_two_buttons(tmp_path):
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
     from PySide6.QtWidgets import QPushButton
-    actions = panel._proposal_table.cellWidget(0, 5)
+    actions = panel._proposal_tab._table.cellWidget(0, 5)
     buttons = [b.text() for b in actions.findChildren(QPushButton)]
     assert buttons == ["查看", "确认"]
 
@@ -320,7 +320,7 @@ def test_proposal_detail_dialog_diff(tmp_path):
                    "| # | 裁定 | 来源 |\n|---|---|---|\n"
                    "| 61 | 限定技=本局限1次，描述以\"限定，\"开头（31个技能） | 数据统计 |\n",
                    encoding="utf-8")
-    from src.ui.maintenance.rule_doc_panel import ProposalDetailDialog
+    from src.ui.maintenance.rule_doc.proposal_tab import ProposalDetailDialog
     item = {"id": "P-01", "type": "faq_revise", "target": "faq_61",
             "suggested_text": "限定技=本局限1次，描述以\"限定，\"开头（32个技能）",
             "source": "公告", "basis": "官方公告", "rationale": "统计修订", "status": "pending"}
@@ -341,14 +341,14 @@ def test_diff_table_readonly_columns(tmp_path):
     from PySide6.QtCore import Qt
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
+    panel._on_sync_done()
     editable = Qt.ItemFlag.ItemIsEditable
-    assert not (panel._diff_table.item(0, 1).flags() & editable)  # 段
-    assert not (panel._diff_table.item(0, 2).flags() & editable)  # 行号
-    assert not (panel._diff_table.item(0, 3).flags() & editable)  # 类型
-    assert not (panel._diff_table.item(0, 4).flags() & editable)  # 摘要
-    assert panel._diff_table.item(0, 5).flags() & editable        # 确认值（full 行）
-    assert not (panel._diff_table.item(2, 5).flags() & editable)  # 确认值（checkpoint 行）
+    assert not (panel._diff_tab._table.item(0, 1).flags() & editable)  # 段
+    assert not (panel._diff_tab._table.item(0, 2).flags() & editable)  # 行号
+    assert not (panel._diff_tab._table.item(0, 3).flags() & editable)  # 类型
+    assert not (panel._diff_tab._table.item(0, 4).flags() & editable)  # 摘要
+    assert panel._diff_tab._table.item(0, 5).flags() & editable        # 确认值（full 行）
+    assert not (panel._diff_tab._table.item(2, 5).flags() & editable)  # 确认值（checkpoint 行）
 
 
 def test_diff_table_view_button(tmp_path):
@@ -357,9 +357,9 @@ def test_diff_table_view_button(tmp_path):
     root = _make_root(tmp_path)
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
+    panel._on_sync_done()
     for row in range(3):
-        button = panel._diff_table.cellWidget(row, 6)
+        button = panel._diff_tab._table.cellWidget(row, 6)
         assert button is not None and button.text() == "查看"
 
 
@@ -369,7 +369,7 @@ def test_diff_detail_dialog_full(tmp_path):
     root = _make_root(tmp_path)
     doc = root / "docs" / "元规则整理-完整版.md"
     doc.write_text("| 武将数 | 171 |\n| 阵营 | 17 种 |\n| 定位 | 6 种 |\n", encoding="utf-8")
-    from src.ui.maintenance.rule_doc_panel import DiffDetailDialog
+    from src.ui.maintenance.rule_doc.diff_tab import DiffDetailDialog
     diff = {"section": "0.2", "line_no": 0, "kind": "full", "old": "| 武将数 | 171 |",
             "new": "| 武将数 | 172 |", "message": "武将体系统计不一致"}
     dialog = DiffDetailDialog(root, diff, "| 武将数 | 172 |")
@@ -387,7 +387,7 @@ def test_diff_detail_stale_warning(tmp_path):
     root = _make_root(tmp_path)
     doc = root / "docs" / "元规则整理-完整版.md"
     doc.write_text("| 武将数 | 999 |\n", encoding="utf-8")  # 已被其他途径修改
-    from src.ui.maintenance.rule_doc_panel import DiffDetailDialog
+    from src.ui.maintenance.rule_doc.diff_tab import DiffDetailDialog
     diff = {"section": "0.2", "line_no": 0, "kind": "full", "old": "| 武将数 | 171 |",
             "new": "| 武将数 | 172 |", "message": "m"}
     dialog = DiffDetailDialog(root, diff, "| 武将数 | 172 |")
@@ -400,7 +400,7 @@ def test_diff_detail_checkpoint(tmp_path):
     """checkpoint 行详情：无自动建议值说明。"""
     _app()
     root = _make_root(tmp_path)
-    from src.ui.maintenance.rule_doc_panel import DiffDetailDialog
+    from src.ui.maintenance.rule_doc.diff_tab import DiffDetailDialog
     diff = {"section": "3.5", "line_no": 0, "kind": "checkpoint", "old": "x", "new": None,
             "message": "每种牌限1次处数：文档 5 vs 数据 6"}
     dialog = DiffDetailDialog(root, diff)
@@ -413,12 +413,12 @@ def test_confirm_proposal_updates_json(tmp_path):
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    path = panel._proposal_combo.currentData()
+    path = panel._proposal_tab._combo.currentData()
     from src.business.rag import rule_doc_service as rds
     rds.update_proposal_item(root, path, "P-01", "rejected")
-    panel._load_proposal_detail()
-    assert panel._proposal_table.item(0, 4).text() == "已驳回"
-    assert "待确认 0 · 已确认 0 · 已驳回 1" in panel._proposal_summary_label.text()
+    panel._proposal_tab.load_detail()
+    assert panel._proposal_tab._table.item(0, 4).text() == "已驳回"
+    assert "待确认 0 · 已确认 0 · 已驳回 1" in panel._proposal_tab._summary_label.text()
 
 
 # ---------------------------------------------------------------------------
@@ -456,15 +456,15 @@ def test_audit_crash_not_rendered_as_pass(tmp_path):
     from src.business.execution.script_runner import FAILED_TO_START_EXIT_CODE
     for code in (3, FAILED_TO_START_EXIT_CODE):
         panel._clear_script_output()
-        panel._on_finished(code, None, panel._on_audit_finished)
-        banner = panel._audit_banner.message_label.text()
+        panel._on_finished(code, None, panel._on_audit_done)
+        banner = panel._audit_tab._banner.message_label.text()
         assert "未完成" in banner
         assert "通过" not in banner
     # 成功路径不受影响：正常解析汇总行并显示通过
     panel._clear_script_output()
     panel._append_log("汇总：ERROR 0 / WARN 0 / INFO 0".encode("utf-8"))
-    panel._on_finished(0, None, panel._on_audit_finished)
-    assert "文档校验通过" in panel._audit_banner.message_label.text()
+    panel._on_finished(0, None, panel._on_audit_done)
+    assert "文档校验通过" in panel._audit_tab._banner.message_label.text()
 
 
 def test_sync_crash_keeps_previous_diff_state(tmp_path):
@@ -472,12 +472,12 @@ def test_sync_crash_keeps_previous_diff_state(tmp_path):
     _app()
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
-    panel._diff_table.setRowCount(2)  # 模拟上次差异表仍有内容
-    panel._on_finished(2, None, panel._on_sync_finished)
+    panel._diff_tab._table.setRowCount(2)  # 模拟上次差异表仍有内容
+    panel._on_finished(2, None, panel._on_sync_done)
     assert panel._checked is False
-    assert panel._diff_table.rowCount() == 2
+    assert panel._diff_tab._table.rowCount() == 2
     # 哨兵码（检测到差异）仍正常走回调
-    panel._on_finished(1, None, panel._on_sync_finished,
+    panel._on_finished(1, None, panel._on_sync_done,
                        sentinel_codes={1}, sentinel_note="检测到差异")
     assert panel._checked is True
 
@@ -501,10 +501,10 @@ def test_refresh_all_cancel_keeps_edits(tmp_path, monkeypatch):
     root = _make_root(tmp_path)
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
+    panel._on_sync_done()
     # 宽检测两种偏离：手动勾选候选行（未改值）+ 修改确认值
-    panel._diff_table.cellWidget(1, 0).setChecked(True)
-    panel._diff_table.item(0, 5).setText("| 武将数 | 200 |")
+    panel._diff_tab._table.cellWidget(1, 0).setChecked(True)
+    panel._diff_tab._table.item(0, 5).setText("| 武将数 | 200 |")
     asked = []
     monkeypatch.setattr(
         "src.ui.maintenance.rule_doc_panel.QMessageBox.question",
@@ -525,8 +525,8 @@ def test_refresh_all_confirm_proceeds(tmp_path, monkeypatch):
     root = _make_root(tmp_path)
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
-    panel._diff_table.item(0, 5).setText("| 武将数 | 200 |")
+    panel._on_sync_done()
+    panel._diff_tab._table.item(0, 5).setText("| 武将数 | 200 |")
     monkeypatch.setattr(
         "src.ui.maintenance.rule_doc_panel.QMessageBox.question",
         lambda *a, **k: QMessageBox.StandardButton.Yes)
@@ -543,7 +543,7 @@ def test_refresh_all_without_edits_skips_confirm(tmp_path, monkeypatch):
     root = _make_root(tmp_path)
     _write_sync_report(root)
     panel = RuleDocPanel(root)
-    panel._on_sync_finished()
+    panel._on_sync_done()
     asked = []
     monkeypatch.setattr(
         "src.ui.maintenance.rule_doc_panel.QMessageBox.question",
@@ -557,11 +557,11 @@ def test_refresh_all_without_edits_skips_confirm(tmp_path, monkeypatch):
 
 def test_confirm_dialog_rejects_empty_approved_text(monkeypatch):
     """清空合入文本后「通过」与「修改后通过」同样被拦截；非空则通过。"""
-    from src.ui.maintenance.rule_doc_panel import ProposalItemConfirmDialog
+    from src.ui.maintenance.rule_doc.proposal_tab import ProposalItemConfirmDialog
 
     _app()
     warned = []
-    monkeypatch.setattr("src.ui.maintenance.rule_doc_panel.QMessageBox.warning",
+    monkeypatch.setattr("src.ui.maintenance.rule_doc.proposal_tab.QMessageBox.warning",
                         lambda *a, **k: warned.append(a))
     dialog = ProposalItemConfirmDialog(
         {"id": "P-01", "type": "faq_new", "target": "5.2", "suggested_text": "新裁定"})
@@ -581,10 +581,10 @@ def test_add_pending_write_failure_shows_error(tmp_path, monkeypatch):
     root = _make_root(tmp_path)
     panel = RuleDocPanel(root)
     monkeypatch.setattr(
-        "src.ui.maintenance.rule_doc_panel.QInputDialog.getMultiLineText",
+        "src.ui.maintenance.rule_doc.pending_tab.QInputDialog.getMultiLineText",
         lambda *a, **k: ("新疑难描述", True))
     monkeypatch.setattr(
-        "src.ui.maintenance.rule_doc_panel.QInputDialog.getText",
+        "src.ui.maintenance.rule_doc.pending_tab.QInputDialog.getText",
         lambda *a, **k: ("", True))
 
     def _raise(*args, **kwargs):
@@ -592,8 +592,8 @@ def test_add_pending_write_failure_shows_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr("src.business.rag.rule_doc_service.add_pending", _raise)
     errors = []
-    monkeypatch.setattr("src.ui.maintenance.rule_doc_panel.QMessageBox.critical",
+    monkeypatch.setattr("src.ui.maintenance.rule_doc.pending_tab.QMessageBox.critical",
                         lambda *a, **k: errors.append(a))
-    panel._add_pending()
+    panel._pending_tab._add_pending()
     assert errors and "文件被占用" in errors[0][2]
-    assert panel._pending_table.rowCount() == 1  # 原有一条不变，未误刷新
+    assert panel._pending_tab._table.rowCount() == 1  # 原有一条不变，未误刷新

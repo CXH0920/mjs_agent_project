@@ -8,8 +8,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 from src.data.hero_classification_repository import HeroClassificationRepository
-from src.ui.library.classification.category_tab import CategoryEditDialog
-from src.ui.library.hero_classification_panel import HeroClassificationPanel
+from src.ui.maintenance.classification.category_tab import CategoryEditDialog
+from src.ui.maintenance.hero_classification_panel import HeroClassificationPanel
 
 
 def _app() -> QApplication:

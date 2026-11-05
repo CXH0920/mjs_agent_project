@@ -2,7 +2,7 @@
 
 > 适用范围：主导航第 4 页「知识库维护」（`src/ui/maintenance/rag_maintenance_panel.py`）及其全部页签/对话框：
 > `src/ui/maintenance/rule_doc_panel.py`、`src/ui/maintenance/card_points_panel.py`、`src/ui/maintenance/equip_attrs_panel.py`、
-> `src/ui/library/special_cards_panel.py`、`src/ui/library/hero_classification_panel.py`、`src/ui/maintenance/index_refinement_dialog.py`。
+> `src/ui/maintenance/special_cards_panel.py`、`src/ui/maintenance/hero_classification_panel.py`、`src/ui/maintenance/index_refinement_dialog.py`。
 > 状态：第一步（纯布局改造：元规则子页签化 + 语料状态页调整 + 页签顺序）已实施；审计联动为后续步骤。
 
 ## 背景与现状
@@ -170,8 +170,8 @@
 - `src/ui/maintenance/rule_doc_panel.py`
 - `src/ui/maintenance/card_points_panel.py`
 - `src/ui/maintenance/equip_attrs_panel.py`
-- `src/ui/library/special_cards_panel.py`
-- `src/ui/library/hero_classification_panel.py`
+- `src/ui/maintenance/special_cards_panel.py`
+- `src/ui/maintenance/hero_classification_panel.py`
 - `src/ui/maintenance/index_refinement_dialog.py`
 - `src/ui/shared/style.py`（知识库维护样式段）
 - `docs/spec/spec_rag_maintenance_ui.md`

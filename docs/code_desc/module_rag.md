@@ -753,7 +753,7 @@ TASKS: list[dict] = [
 | 依赖 | `src.scraper.ai.json_extract` | `extract_json()` 解析 LLM 输出 |
 | 依赖 | `src.config.env` | `PROJECT_ROOT` / `parse_env_file()` / `resolve_api_config()` / `PROVIDER_PRESETS` |
 | 依赖 | `src.ui.shared.widgets` | `ScriptRunner`（QProcess 异步执行脚本）/ `PageActionBar` / `StatusBadge` / `DialogFooter` |
-| 依赖 | `src.ui.library.hero_classification_panel` / `special_cards_panel` | 两个维护对象面板（物理位置在 library 下） |
+| 依赖 | `src.ui.maintenance.hero_classification_panel` / `special_cards_panel` | 两个维护对象面板（2026-11 自 library 迁入 maintenance） |
 | 依赖 | `chromadb` / `onnxruntime` + `tokenizers`（onnx 默认档）/ `sentence-transformers`（st 回滚档）/ `tqdm` | 向量库客户端、本地编码器栈、进度条；运行期默认不 import torch 栈 |
 | 被调用方 | `src.scraper.ai.rag_prompt` | 经 `Retriever.search()` / `hero_blocks()` 取召回块并拼装提示词（提示词拼装归 `module_ai_batch.md`） |
 | 被调用方 | `src.ui.app.main_window` | 主导航第 4 页挂载 `RagMaintenancePanel` |

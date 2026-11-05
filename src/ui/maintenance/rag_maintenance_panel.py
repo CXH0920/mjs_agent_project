@@ -31,13 +31,13 @@ from src.business.rag.hero_brief import load_hero_briefs
 from src.business.rag.refinement_service import list_pending
 from src.business.rag.task_defs import TASKS as _RAG_TASKS
 from src.config.env import PROJECT_ROOT
-from src.ui.library.hero_classification_panel import HeroClassificationPanel
-from src.ui.library.special_cards_panel import SpecialCardsPanel
 from src.ui.maintenance.card_points_panel import CardPointsPanel
 from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
+from src.ui.maintenance.hero_classification_panel import HeroClassificationPanel
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
 from src.ui.maintenance.maintenance_workspace import MaintenanceWorkspace
 from src.ui.maintenance.rule_doc_panel import RuleDocPanel
+from src.ui.maintenance.special_cards_panel import SpecialCardsPanel
 from src.ui.shared.style import (
     ROLE_PRIMARY,
     ROLE_SECONDARY,

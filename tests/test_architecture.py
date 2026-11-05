@@ -319,9 +319,8 @@ CLASS_FIELD_BUDGETS: dict[str, int] = {
     # _matched_combos/_combo_title/_combo_manage_btn/_combo_toggle_btn/
     # _combo_chips_container/_combo_chip_flow/_combo_chips_collapsed 七字段
     "ui/match/peak_select_panel.py:PeakSelectPanel": 34,
-    # 35 → 36：_last_run_ok 标志封堵脚本崩溃时业务回调把空输出渲染成
-    # 假结论（audit 崩溃显示「文档校验通过」，第 15 批审查 P2-1）
-    "ui/maintenance/rule_doc_panel.py:RuleDocPanel": 36,
+    # RuleDocPanel 36 → 26：四页签拆入 rule_doc/ 子包（第二轮第 15 批审查），
+    # 26 低于默认预算 30，条目出表
     "ui/match/match_guide_panel.py:MatchGuidePanel": 34,
     # index_refinement_dialog 34 → 12：清单/编辑控件拆入两个 pane（审计 G4 切片 4.3），
     # 12 低于默认预算 30，条目出表
@@ -706,7 +705,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 955 → 993：三处防御性修复（第二轮第 15 批移交项）——refresh_all 入口
     # 未应用勾选/确认值编辑确认框 + _unsaved_diff_edit_count、提案 approved
     # 全类型非空校验、_add_pending 写盘 OSError 兜底
-    "ui/maintenance/rule_doc_panel.py": 993,
+    # 993 → 337：四页签（audit/diff/proposal/pending）+ 三个对话框拆入
+    # rule_doc/ 子包（第二轮第 15 批审查 P2，页签行数见台账登记）
+    "ui/maintenance/rule_doc_panel.py": 337,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
     "ui/maintenance/index_refinement_dialog.py": 790,
@@ -750,7 +751,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 分级），保存/新增/修改/归档失败不再是无日志留痕的哑失败
     "ui/library/card_management_panel.py": 913,
     # hero_classification_panel.py（原 827）出表：三页签拆入
-    # library/classification/ 后仅余 181 行装配壳（审计 G6 切片 4.5）
+    # classification/（2026-11 自 library 迁入 maintenance）后仅余
+    # 181 行装配壳（审计 G6 切片 4.5）
     # 699 → 742：公告翻页补拉（第一轮审查 P2-5 修复）——两次检查间新增
     # 超过单页 5 条的公告靠翻页补回，known_keys 整页已知即停 + 上限防失控
     "scraper/official_source/announcement.py": 742,
@@ -922,7 +924,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # （reload 根治工单：榜单路径不再依赖 import 时快照）
     "data/recommendation_index_repository.py": 544,
     # 517 → 542：专属牌编辑对话框补未保存关闭确认（第 14 批审查 P2-1）
-    "ui/library/special_cards_panel.py": 542,
+    "ui/maintenance/special_cards_panel.py": 542,
     # 514 → 547：指定模式（pair/single）武将条目字段校验——坏条目记
     # 失败项跳过不再裸 KeyError 中断整任务，同 id 去重防自配对（第 6 批
     # 审查 P2-3）
