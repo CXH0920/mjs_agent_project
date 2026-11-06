@@ -618,15 +618,33 @@ def test_memu_config_reads_real_ports_and_running_state(monkeypatch, tmp_path) -
 
 
 def test_memu_config_without_adb_forwarding_reports_config_error(monkeypatch, tmp_path) -> None:
-    """VMs 目录在但读不到 ADB 转发 → 显性报配置错误，不误报未安装。"""
+    """VMs 目录在但读不到 ADB 转发 → 先端口带补充，仍无开放端口才显性报配置错误。"""
     vms_dir = tmp_path / "MEmuHyperv VMs"
     _make_memu_instance(vms_dir, "MEmu", adb_port=21503, with_adb=False)
     monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
+    monkeypatch.setattr(port_scan, "discover_devices_via_ports",
+                        lambda emulator_type, label: [])
 
     devices, error = memu.discover_devices()
 
     assert devices == []
     assert "未读到实例 ADB 端口" in error
+
+
+def test_memu_zero_instances_supplements_via_port_scan(monkeypatch, tmp_path) -> None:
+    """配置在但零实例：端口带内确有开放端口时以扫描结果补充（第一轮审查 P2-1）。"""
+    vms_dir = tmp_path / "MEmuHyperv VMs"
+    _make_memu_instance(vms_dir, "MEmu", adb_port=21503, with_adb=False)  # 解析为零实例
+    monkeypatch.setattr(memu, "_find_vms_dirs", lambda: [vms_dir])
+    monkeypatch.setattr(
+        port_scan, "discover_devices_via_ports",
+        lambda emulator_type, label: [EmulatorDeviceInfo("1", "逍遥 实例 1（端口扫描·品牌未验证）", 21503, True)],
+    )
+
+    devices, error = memu.discover_devices()
+
+    assert error == ""
+    assert devices[0].adb_port == 21503
 
 
 def test_memu_missing_config_dir_falls_back_to_port_scan(monkeypatch) -> None:

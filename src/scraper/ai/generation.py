@@ -131,7 +131,7 @@ def _run_synergy_pairs(
 
     Args:
         skip_existing: 已有相性是否跳过（全量模式为 False，永不跳过）
-        score_threshold: 评分下限；None 不设限，设定时低于下限移除旧记录（仅全量模式）
+        score_threshold: 评分下限；None 不设限，设定时低于下限移除旧记录
         label_of: (ha, hb) → 协议行展示名（单武将模式用对方单名，其余 a <-> b）
         fail_label_of: (ha, hb) → failed_items 条目格式
         missing_score_text: OK 行评分缺失时的占位（全量 "0"，其余 "?"）
@@ -342,6 +342,7 @@ def run_synergy_pair_generation(
     existing_synergy_dict: dict,
     existing_synergy_keys: set,
     update_mode: bool = False,
+    score_threshold=None,
 ):
     """执行相性配对生成（指定 2~8 个武将，两两配对）
 
@@ -356,6 +357,7 @@ def run_synergy_pair_generation(
         existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合
         update_mode: True 时重新生成已有相性；False 时跳过已有相性。
+        score_threshold: 评分下限（None 不设限）；低于下限移除旧记录，与全量同语义。
 
     Returns:
         GenerationResult: 本次生成的结构化结果。
@@ -389,7 +391,7 @@ def run_synergy_pair_generation(
         existing_synergy_dict,
         existing_synergy_keys,
         skip_existing=not update_mode,
-        score_threshold=None,
+        score_threshold=score_threshold,
         label_of=_pair_label,
         fail_label_of=_pair_fail_label,
         missing_score_text="?",
@@ -414,6 +416,7 @@ def run_synergy_single_generation(
     synergy_path,
     existing_synergy_dict: dict,
     existing_synergy_keys: set,
+    score_threshold=None,
 ):
     """执行相性单武将配对生成（选定武将 vs 所有其他武将）
 
@@ -427,6 +430,7 @@ def run_synergy_single_generation(
         synergy_path: 相性输出路径
         existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合
+        score_threshold: 评分下限（None 不设限）；低于下限移除旧记录，与全量同语义。
 
     Returns:
         GenerationResult: 本次生成的结构化结果。
@@ -457,7 +461,7 @@ def run_synergy_single_generation(
         existing_synergy_dict,
         existing_synergy_keys,
         skip_existing=True,
-        score_threshold=None,
+        score_threshold=score_threshold,
         label_of=lambda _ha, hb: hb["name"],
         fail_label_of=lambda _ha, hb: hb["name"],
         missing_score_text="?",
@@ -483,6 +487,7 @@ def run_synergy_list_generation(
     existing_synergy_dict: dict,
     existing_synergy_keys: set,
     update_mode: bool = False,
+    score_threshold=None,
 ):
     """执行实战配队清单相性生成（显式配对列表）
 
@@ -498,6 +503,7 @@ def run_synergy_list_generation(
         existing_synergy_dict: 已有相性 {(a_id, b_id): dict}
         existing_synergy_keys: 已有相性 key 集合
         update_mode: True 时重新生成已有相性；False 时跳过已有相性。
+        score_threshold: 评分下限（None 不设限）；低于下限移除旧记录，与全量同语义。
 
     Returns:
         GenerationResult: 本次生成的结构化结果。
@@ -533,7 +539,7 @@ def run_synergy_list_generation(
         existing_synergy_dict,
         existing_synergy_keys,
         skip_existing=not update_mode,
-        score_threshold=None,
+        score_threshold=score_threshold,
         label_of=_pair_label,
         fail_label_of=_pair_fail_label,
         missing_score_text="?",

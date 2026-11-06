@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 from src.ui.shared.style import (
     ROLE_PRIMARY,
     ROLE_SECONDARY,
@@ -424,6 +425,15 @@ def show_toast(
 
 
 def close_after_toast(dialog, message: str, delay_ms: int) -> None:
-    """保存成功后先弹短暂 toast 再延迟关闭对话框（三个配置对话框共用，#E7）。"""
+    """保存成功后先弹短暂 toast 再延迟关闭对话框（三个配置对话框共用，#E7）。
+
+    到点先判活：延迟窗口内父窗口关闭/应用退出可能已销毁对话框，对已亡
+    对象调用 accept 会抛 RuntimeError（isValid 守卫与 checkable_combo 弹层同款）。
+    """
     show_toast(dialog, message, duration=delay_ms)
-    QTimer.singleShot(delay_ms, dialog.accept)
+
+    def _accept_if_alive():
+        if isValid(dialog):
+            dialog.accept()
+
+    QTimer.singleShot(delay_ms, _accept_if_alive)

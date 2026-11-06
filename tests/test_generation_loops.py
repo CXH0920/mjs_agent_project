@@ -275,3 +275,59 @@ def test_single_mode_rejects_entry_missing_fields(tmp_path: Path) -> None:
     assert "选定武将第 1 条缺少 id/name 字段，已跳过" in summary.failed_items
     # 坏条目被跳过后数量不足 1，随后按既有数量校验收尾
     assert "指定武将数量无效" in summary.failed_items
+
+
+def test_targeted_mode_applies_score_threshold_like_full_mode(tmp_path: Path) -> None:
+    """定向模式透传评分下限（第 6 批审查 P2）：低于下限移除旧记录，不低于则保存，与全量同语义。"""
+    synergy_path = tmp_path / "synergies.json"
+    pair_file = tmp_path / "pair.json"
+    pair_file.write_text(
+        json.dumps([{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}]), encoding="utf-8")
+    heroes = [{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}]
+    old = {"hero_a_id": 1, "hero_b_id": 2, "score": 1}
+
+    # pair 模式 update_mode 重生成：新评分 3 < 5 → 旧记录被移除
+    result = run_synergy_pair_generation(
+        pair_file=str(pair_file), heroes=heroes,
+        generator=FakeGenerator([{"hero_a_id": 1, "hero_b_id": 2, "score": 3}]),
+        synergy_path=synergy_path,
+        existing_synergy_dict={(1, 2): dict(old)},
+        existing_synergy_keys={(1, 2)},
+        update_mode=True,
+        score_threshold=5,
+    )
+    assert result.completed == 1
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == []
+
+    # 同场景新评分 7 >= 5 → 新结果落盘
+    run_synergy_pair_generation(
+        pair_file=str(pair_file), heroes=heroes,
+        generator=FakeGenerator([{"hero_a_id": 1, "hero_b_id": 2, "score": 7}]),
+        synergy_path=synergy_path,
+        existing_synergy_dict={(1, 2): dict(old)},
+        existing_synergy_keys={(1, 2)},
+        update_mode=True,
+        score_threshold=5,
+    )
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == [
+        {"hero_a_id": 1, "hero_b_id": 2, "score": 7, "last_updated": date.today().isoformat()},
+    ]
+
+
+def test_single_mode_score_threshold_blocks_new_low_score(tmp_path: Path) -> None:
+    """single 模式透传评分下限：新对评分低于下限不入库（第 6 批审查 P2）。"""
+    synergy_path = tmp_path / "synergies.json"
+    single_file = tmp_path / "single.json"
+    single_file.write_text(json.dumps([{"id": 1, "name": "甲"}]), encoding="utf-8")
+
+    result = run_synergy_single_generation(
+        single_file=str(single_file),
+        heroes=[{"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}],
+        generator=FakeGenerator([{"hero_a_id": 1, "hero_b_id": 2, "score": 2}]),
+        synergy_path=synergy_path,
+        existing_synergy_dict={},
+        existing_synergy_keys=set(),
+        score_threshold=5,
+    )
+    assert result.completed == 1  # 生成校验成功（协议行 OK），仅不达下限不入库
+    assert json.loads(synergy_path.read_text(encoding="utf-8")) == []

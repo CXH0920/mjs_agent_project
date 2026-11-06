@@ -422,6 +422,7 @@ def main():
                 existing_synergy_dict=existing_synergy_dict,
                 existing_synergy_keys=existing_synergy_keys,
                 update_mode=args.update,
+                score_threshold=args.score_threshold,
             ))
 
         if args.synergy_single:
@@ -431,6 +432,7 @@ def main():
                 synergy_path=synergy_path,
                 existing_synergy_dict=existing_synergy_dict,
                 existing_synergy_keys=existing_synergy_keys,
+                score_threshold=args.score_threshold,
             ))
 
         if args.synergy_list:
@@ -441,6 +443,7 @@ def main():
                 existing_synergy_dict=existing_synergy_dict,
                 existing_synergy_keys=existing_synergy_keys,
                 update_mode=args.update,
+                score_threshold=args.score_threshold,
             ))
     except (Exception, KeyboardInterrupt) as exc:
         # 不可重试状态（401/403 等）与 Ctrl+C 中断都直接冒泡到此处：记录后走统一

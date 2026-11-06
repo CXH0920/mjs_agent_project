@@ -936,7 +936,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 514 → 547：指定模式（pair/single）武将条目字段校验——坏条目记
     # 失败项跳过不再裸 KeyError 中断整任务，同 id 去重防自配对（第 6 批
     # 审查 P2-3）
-    "scraper/ai/generation.py": 547,
+    # 547 → 553：三定向模式接入 --score-threshold 透传（第 6 批审查 P2-1，
+    # 形参 + docstring）
+    "scraper/ai/generation.py": 553,
     # 502 → 568：审计收集函数行级结构守卫 + audit_summary 自身失败兜底
     # （TD-A5-001 修复，2026-10-21：坏数据降级为提示条目而非穿透崩溃）
     # 568 → 571：collect_timeline_risk_messages 显式传 root 下时间轴路径给

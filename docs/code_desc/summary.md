@@ -402,7 +402,7 @@ test_project/
 
 **多模拟器五品牌连接**（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b）
 - `src/capture/` 原单文件探测模块拆包为 `src/capture/emulator_discovery/`（10 文件）：函数式注册表 `EMULATOR_DISCOVERY_MODULES`（每品牌统一契约 `discover_devices(retries)` / `find_adb()`，不引入 Protocol）+ `models.py` 品牌无关值对象 `EmulatorDeviceInfo` + `port_scan.py` 端口段兜底（8 并发 socket 试连，`PORT_RULES` 品牌端口带，结果标注"品牌未验证"防 5555 共用端口误标）+ `console_utils.py`（console 工具 UTF-8→GBK 解码 + `find_process_dir` 进程反查安装目录）
-- 五品牌探测器：MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat VM PID 精确关联 62001+24n）/ 逍遥（`.memu` 配置直读 ADB 转发 hostport，console 为 GUI 无 stdout 死路径已移除）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）
+- 五品牌探测器：MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat VM PID 精确关联 62001+24n）/ 逍遥（`.memu` 配置直读 ADB 转发 hostport，console 为 GUI 无 stdout 死路径已移除；配置在但零实例时经端口段补充扫描兜底）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）
 - `AdbCapture` 品牌参数化（`emulator_type` 构造参数）+ `connect(validate_capture=)` 连接后截帧校验 + `_reconcile_emulator_serial()` 雷电 adb 主动扫描区 `emulator-<n>` 序列号双查
 - 探测提速（真机计时）：逍遥 10.5s → 0.08s（console 死路径移除 + 同键任务去重）、雷电/夜神 3.8s → 0.6s（进程反查 tasklist 门控 + PowerShell 合并查询；端口扫描并行化）；五品牌全部 <1s
 - 配置键 `MUMU_*` → `EMULATOR_*` 平滑升级（`default_from` 回退旧键，持久化始终写新键）+ `EMULATOR_BRAND` 品牌记忆 + `PC_WINDOW_TITLE`，env 键元表 32 → 38 键

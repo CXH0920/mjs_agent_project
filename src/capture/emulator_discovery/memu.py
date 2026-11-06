@@ -5,7 +5,8 @@
 hostport，2026-10-25 真机 9.5.8.0 实证）；MEmuConsole 为 GUI 程序无
 stdout（PE 子系统 2，真机取证 list 挂起不退出），console 调用属永远
 超时的死路径，已移除（原实现每次探测固定烧 10 秒超时后走端口扫描）。
-配置定位失败时回退端口段扫描（port_scan.py）。
+配置定位失败时回退端口段扫描（port_scan.py）；配置目录在但零实例时
+经端口段补充扫描兜底（supplement_when_empty）。
 """
 
 from __future__ import annotations
@@ -181,6 +182,11 @@ def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
         devices = _list_config_instances(vms_dirs)
         if devices:
             logger.info("探测到 %d 个逍遥实例（.memu 配置直读）", len(devices))
+            return devices, ""
+        # 配置目录在但零实例：主路径未失败，走与其他品牌同款的补充扫描
+        # （console 枚举为空场景，第一轮审查 P2-1）；带内仍无开放端口才报配置错误
+        devices = port_scan.supplement_when_empty("memu", _LABEL, devices)
+        if devices:
             return devices, ""
         return [], '逍遥配置中未读到实例 ADB 端口（MEmuHyperv VMs 下 .memu 的 ADB 转发）'
     return port_scan.fallback_result("memu", _LABEL, "未找到逍遥实例配置目录（MEmuHyperv VMs）")
