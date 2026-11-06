@@ -194,3 +194,27 @@ def test_roi_layout_capture_reports_on_dedicated_channel() -> None:
     assert roi_results == [("hero_selection", "image")]
     assert template_results == []  # 双通道隔离：模板信号不收 ROI 结果
     service.shutdown()
+
+
+def test_connect_with_capture_snapshot_uses_connect_capture() -> None:
+    """PC 多窗口路径：实例快照随连接入队，走 connect_capture 且 validate=True。"""
+    service = EmulatorOperationService(_CaptureService())
+    calls: list[tuple[object, bool]] = []
+
+    def _connect_capture(capture, validate_capture=False):
+        calls.append((capture, validate_capture))
+        return True, "已连接"
+
+    service._capture_service.connect_capture = _connect_capture
+    done = Event()
+    results: list[tuple[bool, str]] = []
+    service.connection_finished.connect(
+        lambda ok, message: (results.append((ok, message)), done.set()))
+
+    sentinel = object()
+    service.connect(capture=sentinel)
+
+    assert _wait(done)
+    assert calls == [(sentinel, True)]
+    assert results == [(True, "已连接")]
+    service.shutdown()

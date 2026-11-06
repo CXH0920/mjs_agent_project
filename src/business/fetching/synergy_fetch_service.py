@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import tempfile
+from pathlib import Path
 
 from PySide6.QtCore import Signal
 from src.business.fetching.base_fetch_service import BaseFetchService
@@ -147,10 +148,20 @@ class SynergyFetchService(BaseFetchService):
         """payload 写临时文件 → 拼 CLI 参数 → 启动子进程（三段公共流程）。"""
         if self._is_busy():
             return False
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(payload, tmp, ensure_ascii=False, indent=2)
-        tmp_path = tmp.name
-        tmp.close()
+        # dump 中途抛错时 with 保证句柄关闭，半截文件就地删除不残留、
+        # 不进入 busy（第一轮审查临时文件失败路径遗留）
+        tmp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False,
+                                             encoding="utf-8") as tmp:
+                tmp_path = tmp.name
+                json.dump(payload, tmp, ensure_ascii=False, indent=2)
+        except (OSError, TypeError, ValueError) as error:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+            logger.error("写入配对清单临时文件失败: %s", error)
+            self.error_occurred.emit(f"写入配对清单临时文件失败：{error}")
+            return False
         self._context = {
             "mode": mode,
             "tmp_path": tmp_path,

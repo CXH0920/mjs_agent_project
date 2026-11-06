@@ -27,6 +27,7 @@ from src.capture.emulator_discovery import (
     resolve_adb_path,
     test_adb_path,
 )
+from src.capture.pc_client import PcClientCapture
 
 logger = logging.getLogger(__name__)
 
@@ -105,11 +106,21 @@ class EmulatorOperationService(QObject):
             dedup_key=f"refresh_devices:{emulator_type}",
         )
 
-    def connect(self) -> None:
+    def connect(self, capture: AdbCapture | PcClientCapture | None = None) -> None:
+        """发起连接；capture 为绑定了目标窗口的实例快照（PC 多窗口选择路径）。
+
+        快照实例在连接期间被配置热更换掉时，connect_capture 的过期检测
+        拒绝本次结果（"连接配置已变更，请重试"），不会连错目标。
+        """
+        def _run() -> tuple[bool, str]:
+            if capture is None:
+                return self._capture_service.connect_emulator()
+            return self._capture_service.connect_capture(capture, validate_capture=True)
+
         self._submit(
             self._adb_executor,
             "connect",
-            self._capture_service.connect_emulator,
+            _run,
             lambda result: self.connection_finished.emit(*result),
         )
 

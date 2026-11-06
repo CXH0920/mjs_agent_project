@@ -101,3 +101,40 @@ def test_connect_capture_failure_keeps_disconnected_and_status_message() -> None
     assert message == "超时"
     assert manager.connection_state == ("disconnected", "超时")
     assert events["status"][-1] == "连接失败：超时"
+
+
+def test_bind_pc_window_binds_target_and_returns_snapshot() -> None:
+    """锁内绑定 PC 目标窗口并返回实例快照，供连接入队（第 7 批审查 P3-4）。"""
+    from src.capture.pc_client import PcClientCapture
+
+    manager, _events = _make_manager()
+    capture = PcClientCapture(window_title="测试窗口")
+    manager.capture = capture
+
+    returned = manager.bind_pc_window(4242)
+
+    assert returned is capture
+    assert capture._hwnd == 4242
+
+
+def test_bind_pc_window_ignores_invalid_hwnd_and_non_pc_session() -> None:
+    """hwnd 无效或当前非 PC 会话：不绑定，原样返回当前实例（与旧 connect 行为一致）。"""
+    manager, _events = _make_manager()
+    adb = _FakeAdbCapture()
+    manager.capture = adb
+
+    assert manager.bind_pc_window(0) is adb
+    assert manager.bind_pc_window(4242) is adb
+
+
+def test_set_target_port_updates_port_and_unconfigured_guard() -> None:
+    """端口切换：未配置 ADB 时置 unconfigured；已配置时更新端口（读取全程持锁）。"""
+    manager, events = _make_manager()
+
+    manager.set_target_port(21503)
+    assert manager.connection_state[0] == "unconfigured"  # 初始即 unconfigured：无变化不广播
+
+    manager.update_config({"emulator_adb_path": "C:/adb.exe", "emulator_adb_port": 16384,
+                           "emulator_type": "mumu"})
+    manager.set_target_port(21503)
+    assert manager.config["emulator_adb_port"] == 21503

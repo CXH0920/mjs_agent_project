@@ -278,3 +278,34 @@ def test_submit_rejected_while_reload_running(monkeypatch) -> None:
     assert service.is_busy is True
     assert service.fetch_pairs_list([{"hero_a_id": 1, "hero_b_id": 2}]) is False
     assert started == []
+
+
+def test_submit_dump_failure_emits_error_and_removes_tmp(monkeypatch, tmp_path) -> None:
+    """临时配对清单写失败：句柄关闭、半截文件删除、发错误信号、返回未启动。"""
+    import tempfile
+    from pathlib import Path
+
+    from src.business.fetching import synergy_fetch_service as synergy_module
+
+    service = SynergyFetchService(SimpleNamespace(file_path=str(tmp_path / "synergies.json")))
+    errors: list[str] = []
+    service.error_occurred.connect(errors.append)
+    monkeypatch.setattr(service, "_start_process", lambda args: None)
+    created: list[str] = []
+    real_ntf = tempfile.NamedTemporaryFile
+
+    def _spy(*args, **kwargs):
+        handle = real_ntf(*args, **kwargs)
+        created.append(handle.name)
+        return handle
+
+    monkeypatch.setattr(synergy_module.tempfile, "NamedTemporaryFile", _spy)
+
+    started = service.fetch_pair(
+        [{"id": 1, "name": "甲", "bad": {1}}, {"id": 2, "name": "乙"}],
+        backend="api", overwrite=False, use_rag=True,
+    )
+
+    assert started is False
+    assert errors and "失败" in errors[0]
+    assert created and not Path(created[0]).exists()

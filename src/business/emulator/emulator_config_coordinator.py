@@ -203,12 +203,13 @@ class EmulatorConfigCoordinator(QObject):
     ) -> str:
         """连接当前选择的设备（模拟器实例或 PC 客户端窗口），返回无法发起连接时的提示。"""
         if self.is_pc_client:
-            # 多窗口时把用户选择传入采集会话定向；单/零窗口由采集侧三态解析
-            capture = self._capture_service.capture
-            hwnd = getattr(device, "hwnd", 0)
-            if isinstance(capture, PcClientCapture) and hwnd:
-                capture.set_target_window(int(hwnd))
-            self._operation_service.connect()
+            # 多窗口时把用户选择传入采集会话定向；单/零窗口由采集侧三态解析。
+            # 锁内绑定并把实例快照随连接入队：热更换实例时 connect_capture
+            # 过期检测拒绝（"连接配置已变更，请重试"），不连错窗口（第 7 批
+            # 审查 P3-4）
+            capture = self._capture_service.bind_pc_window(getattr(device, "hwnd", 0))
+            self._operation_service.connect(
+                capture if isinstance(capture, PcClientCapture) else None)
             return ""
 
         error = self._device_selection_error(selected_explicitly)

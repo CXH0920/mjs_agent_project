@@ -115,12 +115,30 @@ class CaptureConnectionManager:
 
     def set_target_port(self, port: int) -> None:
         """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
-        if not connection_key(self._config, "emulator_adb_path"):
-            self.set_connection_state("unconfigured")
-            return
-        config = dict(self._config)
+        # 配置读取与复制持锁：同文件其余方法均在 _session_lock 内访问
+        # _config，锁外读会在并发热更时读到改到一半的配置（第 7 批审查 P3-3）
+        with self._session_lock:
+            if not connection_key(self._config, "emulator_adb_path"):
+                self.set_connection_state("unconfigured")
+                return
+            config = dict(self._config)
         config["emulator_adb_port"] = port
         self.update_config(config)
+
+    def bind_pc_window(self, hwnd: int) -> AdbCapture | PcClientCapture | None:
+        """锁内读取当前 PC 会话并绑定目标窗口，返回该实例供连接入队。
+
+        绑定与连接入队之间存在配置热更窗口：update_config 按新标题重建
+        PcClientCapture 实例后，锁外绑定会落在被换下的旧实例上丢失
+        （第 7 批审查 P3-4）。入队方持有本实例时，热更导致的实例替换由
+        connect_capture 的过期检测拒绝（"连接配置已变更，请重试"），
+        不会连错窗口。hwnd 无效或当前非 PC 会话时原样返回当前实例。
+        """
+        with self._session_lock:
+            capture = self._capture
+            if isinstance(capture, PcClientCapture) and hwnd:
+                capture.set_target_window(int(hwnd))
+            return capture
 
     @property
     def config(self) -> dict:

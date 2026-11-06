@@ -597,3 +597,19 @@ def test_add_pending_write_failure_shows_error(tmp_path, monkeypatch):
     panel._pending_tab._add_pending()
     assert errors and "文件被占用" in errors[0][2]
     assert panel._pending_tab._table.rowCount() == 1  # 原有一条不变，未误刷新
+
+
+def test_diff_tab_corrupt_report_degrades_to_empty_table(tmp_path):
+    """差异报告损坏（半截 JSON）：空表呈现而非页面崩溃（第 9 批审查 P3-4）。"""
+    _app()
+    root = _make_root(tmp_path)
+    from src.business.rag import rule_doc_service as rds
+    panel = RuleDocPanel(root)
+    report = rds.sync_json_path(root)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text('{"section": "0.2",  ', encoding="utf-8")  # 手改半截的坏 JSON
+
+    panel._on_sync_done()  # 内部经 diff_tab.apply_diff_result 解析
+
+    assert panel._diff_tab._diffs == []
+    assert panel._diff_tab._table.rowCount() == 0

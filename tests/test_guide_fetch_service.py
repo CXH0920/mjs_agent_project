@@ -36,3 +36,33 @@ def test_fetch_all_omits_no_rag_when_rag_enabled(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(service, "_start_process", lambda args: captured.setdefault("args", args))
     service.fetch_all([{"id": 1, "name": "曹操"}], backend="api", use_rag=True)
     assert "--no-rag" not in captured["args"]
+
+
+def test_fetch_specific_dump_failure_emits_error_and_removes_tmp(monkeypatch, tmp_path) -> None:
+    """临时清单写失败（不可序列化对象）：句柄关闭、半截文件删除、发错误信号、不启动子进程。"""
+    import tempfile
+    from pathlib import Path
+
+    from src.business.fetching import guide_fetch_service as guide_module
+
+    service = GuideFetchService(GuideManager(tmp_path / "guides.json"))
+    errors: list[str] = []
+    service.error_occurred.connect(errors.append)
+    started: list[list[str]] = []
+    monkeypatch.setattr(service, "_start_process", lambda args: started.append(args))
+    created: list[str] = []
+    real_ntf = tempfile.NamedTemporaryFile
+
+    def _spy(*args, **kwargs):
+        handle = real_ntf(*args, **kwargs)
+        created.append(handle.name)
+        return handle
+
+    monkeypatch.setattr(guide_module.tempfile, "NamedTemporaryFile", _spy)
+
+    service.fetch_specific([{"id": 1, "name": "曹操", "bad": {1, 2}}])  # set 不可 JSON 序列化
+
+    assert errors and "失败" in errors[0]
+    assert started == []
+    assert "tmp_path" not in service._context
+    assert created and not Path(created[0]).exists()

@@ -9,7 +9,6 @@ ProposalItemConfirmDialog 与 ProposalDetailDialog 随迁。提案的生成与�
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
@@ -289,7 +288,9 @@ class ProposalTab(QWidget):
             return
         try:
             proposal = rds.parse_proposal(path)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
+            # ValueError 覆盖 JSONDecodeError 与 UnicodeDecodeError——手改
+            # 坏的提案文件（含 GBK 等错编码保存）降级为空态而非崩溃
             self._table.setRowCount(0)
             self._empty_label.setVisible(True)
             self._summary_label.setText("待确认 0 · 已确认 0 · 已驳回 0")
@@ -339,7 +340,7 @@ class ProposalTab(QWidget):
         try:
             proposal = rds.parse_proposal(self._current_proposal_path)
             item = proposal["items"][row]
-        except (OSError, json.JSONDecodeError, KeyError, IndexError):
+        except (OSError, ValueError, KeyError, IndexError):
             QMessageBox.warning(self, "读取失败", "无法读取提案文件")
             return
         dialog = ProposalDetailDialog(self._root, item, self)
@@ -352,7 +353,7 @@ class ProposalTab(QWidget):
         try:
             proposal = rds.parse_proposal(self._current_proposal_path)
             item = proposal["items"][row]
-        except (OSError, json.JSONDecodeError, KeyError, IndexError):
+        except (OSError, ValueError, KeyError, IndexError):
             QMessageBox.warning(self, "读取失败", "无法读取提案文件")
             return
         dialog = ProposalItemConfirmDialog(item, self)

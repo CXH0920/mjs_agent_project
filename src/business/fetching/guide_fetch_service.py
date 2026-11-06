@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from pathlib import Path
 
 from PySide6.QtCore import Signal
 from src.business.fetching.base_fetch_service import BaseFetchService
@@ -89,10 +90,20 @@ class GuideFetchService(BaseFetchService):
             base_args.append("--browser")
 
         if mode in ("incremental", "specific"):
-            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-            json.dump(heroes, tmp, ensure_ascii=False, indent=2)
-            tmp_path = tmp.name
-            tmp.close()
+            # dump 中途抛错时 with 保证句柄关闭，半截文件就地删除不残留、
+            # 不进入 busy（第一轮审查临时文件失败路径遗留）
+            tmp_path = ""
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False,
+                                                 encoding="utf-8") as tmp:
+                    tmp_path = tmp.name
+                    json.dump(heroes, tmp, ensure_ascii=False, indent=2)
+            except (OSError, TypeError, ValueError) as error:
+                if tmp_path:
+                    Path(tmp_path).unlink(missing_ok=True)
+                logger.error("写入武将清单临时文件失败: %s", error)
+                self.error_occurred.emit(f"写入武将清单临时文件失败：{error}")
+                return
             self._context["tmp_path"] = tmp_path
             self.status_changed.emit(f"正在生成攻略 ({mode})...")
             self._start_process([*base_args, "--heroes-file", tmp_path])

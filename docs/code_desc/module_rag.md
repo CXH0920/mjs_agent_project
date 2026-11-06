@@ -277,7 +277,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 变更提案 | `propose_rule_changes.py` / `apply_rule_proposal.py` | `list_proposals()` / `parse_proposal()` / `doc_target_line()` / `doc_section_context()` / `doc_line_at()` / `doc_context_around()`；`update_proposal_item()` 原位更新条目 |
 | 疑难登记 | 无脚本（本地待办） | `load_pending()` / `add_pending()` / `pending_to_proposal()`（转 FAQ 新增提案） |
 
-`sync_rule_stats.py` 处理六个数据段 `SECTION_NAMES = ('0.1', '0.2', '3.1', '3.2', '3.5', '5.2')`，其中 `3.1/3.2` 是时机频次、`3.5` 是"每种牌限 1 次 / 首次类 / 累计阈值"（checkpoint 段仅报告不自动应用）。`rule_doc_service._doc_lines()` 带 mtime 缓存，文档未变化时不重复整文件读取。
+`sync_rule_stats.py` 处理六个数据段 `SECTION_NAMES = ('0.1', '0.2', '3.1', '3.2', '3.5', '5.2')`，其中 `3.1/3.2` 是时机频次、`3.5` 是"每种牌限 1 次 / 首次类 / 累计阈值"（checkpoint 段仅报告不自动应用）。`rule_doc_service._doc_lines()` 带 mtime 缓存，文档未变化时不重复整文件读取；缓存键在读取之后再取 stat 且读取期间 mtime 变化即重读，杜绝 stat→read 两步竞态把新内容配旧键。
 
 **快照读写公共层 rule_doc_snapshot.py（commit `d43d549` 下沉）**：
 

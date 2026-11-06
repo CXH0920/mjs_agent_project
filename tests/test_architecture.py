@@ -775,7 +775,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 永不释放导致界面永久停在"正在截图"
     # 506 → 511：官方 PC 客户端直连（2026-10-25）——采集会话注解放宽为
     # AdbCapture | PcClientCapture 双形态 + 连接失败前缀按形态分立（PC 无 ADB 字样）
-    "business/emulator/capture_service.py": 511,
+    # 511 → 520：bind_pc_window / connect_capture 门面透传（第 7 批审查 P3-4，
+    # PC 多窗口实例快照入队）
+    "business/emulator/capture_service.py": 520,
     # 官方 PC 客户端直连采集模块（2026-10-25 首次入册，544 行）：窗口枚举
     # （EnumWindows ctypes 签名声明块）+ WGC 会话 + BitBlt 兜底 + 黑帧检测
     # + 客户区裁剪单文件内聚——接口对齐 adb_screen.py（431 行）惯例，Win32

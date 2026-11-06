@@ -2,6 +2,7 @@
 """元规则维护服务测试：audit 解析、sync 差异解析、提案/疑难、FAQ 评估集。"""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -188,3 +189,37 @@ def test_eval_generate_and_run(tmp_path):
     report = erf.run_eval(ds, FakeRetriever(), top_k=2)
     assert report["passed"] == 2
     assert report["hit_rate"] == 1.0
+
+def test_doc_lines_cache_invalidates_on_file_change(tmp_path) -> None:
+    """mtime 缓存失效：文件变更后下次读取返回新内容（第 9 批审查 P3-4）。"""
+    rds._DOC_LINES_CACHE.clear()
+    doc = tmp_path / "doc.md"
+    doc.write_text("旧内容\n", encoding="utf-8")
+
+    assert rds._doc_lines(doc) == ["旧内容"]
+    doc.write_text("新内容\n更多\n", encoding="utf-8")
+    stamp = doc.stat().st_mtime
+    os.utime(doc, (stamp + 10, stamp + 10))  # Windows 同 tick 写入 mtime 不变，强制失效
+    assert rds._doc_lines(doc) == ["新内容", "更多"]
+    rds._DOC_LINES_CACHE.clear()
+
+
+def test_doc_lines_cache_hit_returns_same_object_without_reread(tmp_path) -> None:
+    rds._DOC_LINES_CACHE.clear()
+    doc = tmp_path / "doc.md"
+    doc.write_text("内容\n", encoding="utf-8")
+
+    first = rds._doc_lines(doc)
+
+    assert rds._doc_lines(doc) is first  # 命中缓存：同一列表对象，零重读
+    rds._DOC_LINES_CACHE.clear()
+
+
+def test_doc_lines_non_utf8_returns_none(tmp_path) -> None:
+    """GBK 等错编码文件：读侧按不可读降级返回 None，不抛 UnicodeDecodeError。"""
+    rds._DOC_LINES_CACHE.clear()
+    doc = tmp_path / "gbk.md"
+    doc.write_bytes("中文内容".encode("gbk"))
+
+    assert rds._doc_lines(doc) is None
+    rds._DOC_LINES_CACHE.clear()

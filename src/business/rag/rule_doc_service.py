@@ -113,19 +113,32 @@ _DOC_LINES_CACHE: dict[str, tuple[float, list[str]]] = {}
 
 
 def _doc_lines(doc_path: Path) -> list[str] | None:
-    """读取文档行列表（带 mtime 缓存）；文件缺失/不可读返回 None。"""
+    """读取文档行列表（带 mtime 缓存）；文件缺失/不可读返回 None。
+
+    缓存键在读取之后再取 stat：原 stat→read 两步间文件被改会把新内容
+    配旧 mtime 落缓存，读到一半被改时重读一次并重取键，保证「键-内容」
+    同源（第 9 批审查 P3-4）。
+    """
     try:
-        stat = doc_path.stat()
+        stat_before = doc_path.stat().st_mtime
     except OSError:
         return None
     cached = _DOC_LINES_CACHE.get(str(doc_path))
-    if cached is not None and cached[0] == stat.st_mtime:
+    if cached is not None and cached[0] == stat_before:
         return cached[1]
     try:
         lines = doc_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
+        stat_after = doc_path.stat().st_mtime
+    except (OSError, ValueError):
         return None
-    _DOC_LINES_CACHE[str(doc_path)] = (stat.st_mtime, lines)
+    if stat_after != stat_before:
+        # 读取期间文件被改：本次内容可能撕裂，重读一遍再取键
+        try:
+            lines = doc_path.read_text(encoding="utf-8").splitlines()
+            stat_after = doc_path.stat().st_mtime
+        except (OSError, ValueError):
+            return None
+    _DOC_LINES_CACHE[str(doc_path)] = (stat_after, lines)
     return lines
 
 

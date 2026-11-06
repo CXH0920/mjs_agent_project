@@ -103,6 +103,10 @@ class CaptureService(QObject):
         """切换下一次连接使用的 ADB 端口，并废弃旧会话。"""
         self._connection.set_target_port(port)
 
+    def bind_pc_window(self, hwnd: int) -> AdbCapture | PcClientCapture | None:
+        """锁内绑定 PC 客户端目标窗口并返回该会话实例（详见 CaptureConnectionManager）。"""
+        return self._connection.bind_pc_window(hwnd)
+
     @property
     def config(self) -> dict:
         """返回当前截图配置的副本。"""
@@ -420,6 +424,11 @@ class CaptureService(QObject):
     def connect_emulator(self) -> tuple[bool, str]:
         """连接模拟器。"""
         return self._connection.connect_emulator()
+
+    def connect_capture(self, capture: AdbCapture | PcClientCapture,
+                        validate_capture: bool = False) -> tuple[bool, str]:
+        """连接指定采集会话实例（PC 多窗口选择入队快照路径，详见 CaptureConnectionManager）。"""
+        return self._connection.connect_capture(capture, validate_capture=validate_capture)
 
     def disconnect_emulator(self) -> tuple[bool, str]:
         """断开模拟器。"""

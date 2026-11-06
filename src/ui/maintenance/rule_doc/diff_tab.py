@@ -185,7 +185,14 @@ class DiffTab(QWidget):
     # ---------------------------------------------------------------
     def apply_diff_result(self) -> None:
         """解析 sync --json 产物并整表重建（解析源在磁盘，重入即恢复）。"""
-        self._diffs = rds.parse_sync_diff(rds.sync_json_path(self._root))
+        try:
+            diffs = rds.parse_sync_diff(rds.sync_json_path(self._root))
+        except (OSError, ValueError) as error:
+            # 手改/半截写坏的差异报告降级为空表而非页面崩溃（第 9 批审查
+            # P3-4；ValueError 覆盖 JSONDecodeError 与 UnicodeDecodeError）
+            logger.warning("差异报告解析失败：%s", error)
+            diffs = []
+        self._diffs = diffs
         self._table.setRowCount(len(self._diffs))
         for i, d in enumerate(self._diffs):
             check = QCheckBox()
