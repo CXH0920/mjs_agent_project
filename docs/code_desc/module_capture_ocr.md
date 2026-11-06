@@ -2,7 +2,7 @@
 
 > 对应目录：`src/capture/` + `src/ocr/`
 > 职责：屏幕采集双形态（ADB 连接模拟器截图含 raw 帧提速 / 官方 PC 客户端窗口直连 WGC+BitBlt）、多品牌模拟器探测（emulator_discovery 包，五品牌）与 PC 客户端窗口枚举、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
-> 文档日期：2026-10-25（基线 ed8b4ac）
+> 文档日期：2026-11-06（基线 65dff21）
 
 ---
 
@@ -12,7 +12,7 @@
 
 - **屏幕采集**（`src/capture/`）— 双形态图像源，下游管线无感复用：
   - **模拟器 ADB 截图**：通过 ADB 连接安卓模拟器（五品牌），执行 `exec-out screencap` 全屏截图，全程内存中处理；支持 raw 帧模式跳过 PNG 编解码提速
-  - **官方 PC 客户端直连**（`pc_client.py`，2026-10-25）：枚举客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件），Windows.Graphics.Capture 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测；模块全程只读窗口画面，不发送任何输入（法律红线）
+  - **官方 PC 客户端直连**（`pc_client.py`，2026-10-25）：枚举客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件），Windows.Graphics.Capture 主路径 + GDI BitBlt 兜底 + 黑帧双指标检测；模块全程只读窗口画面，不发送任何输入（法律红线）。**注：该入口自 `f48c9b0`（2026-10-25）起在设备页「连接类别」单选中暂隐藏**——直连画面排版与模拟器端存在界面元素位置差异（非分辨率/配色问题），模板与 ROI 均按模拟器端排版标定，直连画面下自动轮询持续空转（识别前置相似度 0.79 < 0.80 闸门）；多套模板/ROI 变体适配方案已评估并暂缓，恢复入口仅需还原 `emulator_config_sections.py` 中一行控件可见性，`pc_client.py` / `CaptureConnectionManager` 采集与识别链路本身零改动
 - **设备探测**（`src/capture/emulator_discovery/`）— 自动查找 ADB 路径和五品牌（MuMu/雷电/夜神/逍遥/蓝叠）实例的 ADB 端口，函数式注册表分发
 - **模板匹配**（`src/ocr/`）— OpenCV 模板匹配快速过滤非武将选择页画面，分层加速先粗筛后精匹配
 - **OCR 识别**（`src/ocr/`）— RapidOCR/ONNX 双套件批量识别名称区域（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，均 CPU），按字数门禁、候选闭包和候选内汉字特征评分确认名称；未决槽位由复核引擎做候选内确认
@@ -101,9 +101,9 @@ ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回�
 
 **raw 帧模式提速（cd35c98）**：构造时 `screenshot_mode` 参数支持 `auto`（默认，raw 优先失败回退 PNG）、`raw`（仅 raw）和 `png`（仅 PNG）。raw 模式直接解析 Android screencap 输出的裸像素帧（16 字节头：宽/高/像素格式/色彩空间各 u32 小端 + RGBA_8888 或 RGBX_8888 裸像素），跳过 PNG 编解码，减少约 50-70% 的截图耗时。校验（头长度、像素格式、尺寸、字节数一致性）任一不满足时返回 `None`，由 `_capture_and_decode()` 自动回退 PNG 模式。`CaptureService.capture_for_poll()` 在轮询路径直接复用 raw 帧解码结果，避免额外的 PIL 解码。
 
-### 3.1.1 官方 PC 客户端直连（pc_client.py，2026-10-25）
+### 3.1.1 官方 PC 客户端直连（pc_client.py，2026-10-25；入口自 f48c9b0 起暂隐藏）
 
-不依赖 ADB 的第二条图像源：直接读取官方 PC 客户端窗口画面（Unity 客户端 `0.9.3002.144`，2026-10-25 真机取证定稿，选型依据见 `docs/design/pc_official_client_capture_design.md`）。接口对齐 `AdbCapture`（`connected` / `device_serial` / `connect` / `disconnect` / `screencap_full`），`CaptureConnectionManager` 按形态构建对应实例，下游 OCR 管线无感复用。
+不依赖 ADB 的第二条图像源：直接读取官方 PC 客户端窗口画面（Unity 客户端 `0.9.3002.144`，2026-10-25 真机取证定稿，选型依据见 `docs/design/pc_official_client_capture_design.md`）。接口对齐 `AdbCapture`（`connected` / `device_serial` / `connect` / `disconnect` / `screencap_full`），`CaptureConnectionManager` 按形态构建对应实例，下游 OCR 管线无感复用。**注：该形态 UI 入口自 `f48c9b0` 起暂隐藏**——直连画面排版与模拟器端存在界面元素位置差异，模板/ROI 按模拟器端标定致自动轮询空转，代码保留，恢复入口仅需还原设备页控件可见性，详见 §3.1 末段。
 
 **窗口识别（双条件，R1 定稿）**：进程名 `mjs.exe` + 窗口类 `UnityWndClass` 经 `EnumWindows` 枚举；标题仅作展示与配置键（`PC_WINDOW_TITLE`，默认"名将杀"），不作为匹配键（标题可被同名进程伪造）。`probe_pc_windows()` 返回 `PcWindowInfo` 候选列表（hwnd/pid/标题/客户区尺寸/是否最小化），三态语义：空列表 = 未启动（提示先启动客户端）、单窗自动选定、多窗要求用户在设备列表显式选择（不支持多开）。
 
@@ -586,7 +586,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 
 **其它**
 - ocr_worker 预热文案引擎中性化；退役 worker 强杀兜底先 `logging.shutdown()`、退出码改 0（b3327f1）
-- 陈旧文案说明：recognizer.py / ocr_loader.py / batch_canvas.py / ocr_service.py / ocr_task_coordinator.py 中仍有少量 paddle 时代注释字样未清（如 recognizer.py :300/:400 docstring 写"v6 复核引擎"实义为"复核引擎（当前 v4）"），功能无影响，本文档不照抄
+- 陈旧文案说明：recognizer.py / template_registry.py（原名 ocr_loader.py，`ba139f6` 改名）/ batch_canvas.py / ocr_service.py / ocr_task_coordinator.py 中仍有少量 paddle 时代注释字样未清（如 recognizer.py :300/:400 docstring 写"v6 复核引擎"实义为"复核引擎（当前 v4）"），功能无影响，本文档不照抄
 - 424 字特征缓存口径不变（实测仍 424 字）
 
 ---
@@ -611,7 +611,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 
 **特征缓存与文档勘误**
 - `char_info_cache.json` 424 → 437 字（6b21d75 运行时动态补齐条目回填）；`character_feature_repository.py` 登记随包只读基线写入根风险——`save()` frozen 下无触发链属理论债，将来维护页接入勿简单换 `PROJECT_ROOT`（详见 3.8 节）
-- 683fca6 清理代码内 paddle 时代引擎指代（recognizer / ocr_loader / ocr_service / ocr_worker / image_preprocessor 等 docstring 改 RapidOCR 口径），上一轮校准「陈旧文案说明」条目已落地清零；随文勘正本文档 3.6 证据族命名（`batch_enhanced` → 生产代码实际的 `batch_plain`，生产从未产生过 batch_enhanced source）与 4.2 日志示例（补 `name` 类别段，实际格式为 `武将 6 name OCR 原始结果`）
+- 683fca6 清理代码内 paddle 时代引擎指代（recognizer / template_registry（原名 ocr_loader）/ ocr_service / ocr_worker / image_preprocessor 等 docstring 改 RapidOCR 口径），上一轮校准「陈旧文案说明」条目已落地清零；随文勘正本文档 3.6 证据族命名（`batch_enhanced` → 生产代码实际的 `batch_plain`，生产从未产生过 batch_enhanced source）与 4.2 日志示例（补 `name` 类别段，实际格式为 `武将 6 name OCR 原始结果`）
 - 本轮范围（0ffed36..2081b5b）内另有 P0-3 竞态守卫原语（BusyGate / OneShotToken）、CaptureConnectionManager 出仓、巅峰赛 SessionGuard、状态栏数据新鲜度芯片、RAG 编码器 ONNX 化等变更，分别归属 module_business / module_emulator / module_rag 等文档；本模块公共接口未受影响
 
 ---
@@ -659,3 +659,13 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 - `AdbCapture` / `CaptureConnectionManager` / `OcrService.update_config` / `doctor.py` 连接键读取统一兼容 `emulator_*` 新键优先、`mumu_*` 旧键回退（升级过渡期）
 
 **本模块其余文件**（`src/ocr/`）本轮无代码变更；模板匹配、OCR 识别链、ROI、特征缓存与白名单口径全部延续 2026-10-23 基线。
+
+## 十一、本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **`src/ocr/ocr_loader.py` → `template_registry.py`**（`ba139f6`，模板单例模块改名 + 词表候选规则收口，纯结构债修复行为零变化）——本文 §七/八历史校准小节中对该文件的旧名引用已随文勘正
+- **`src/capture/probers/` → `src/capture/emulator_discovery/`**（`9864ec4`，包改名，函数式注册表与五品牌探测器一并迁入新包名）——本文档已使用新包名，无残留旧路径
+- **新增 `src/ocr/recheck_model_assets.py`**：v4 复核三件套官方清单预取（URL+SHA256 钉死、幂等、`.part` 原子替换），与既有 `src/scripts/fetch_recheck_models.py` 协作
+- **PC 客户端直连入口暂隐藏**（`f48c9b0`）：`pc_client.py` / `CaptureConnectionManager` 代码保留，仅设备页「连接类别」单选中的「官方 PC 客户端」选项隐藏；原因与解冻步骤见 §3.1 末段与 §3.1.1。采集与识别链路零改动
+- 模板匹配、RapidOCR 双套件识别链、卡位检测、白名单口径全部延续 2026-10-25 基线，无行为变更

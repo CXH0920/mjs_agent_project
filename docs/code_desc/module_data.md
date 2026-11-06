@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
-> 文档日期：2026-10-23（基线 a63bc3c）
+> 文档日期：2026-11-06（基线 `65dff21`）
 
 ---
 
@@ -759,3 +759,15 @@ class SpecialCardRepository(JsonRepository):
 **保存守卫（两种基类同口径）**：`JsonRepository.save_payload` 与 `DataManager._check_save_allowed` 都在「加载存在磁盘来源 error」时拒绝覆盖保存（坏记录已留底 backups/，覆盖即静默丢弃）。三处细化：`DataIssue.from_disk=False` 的 error（爬虫坏记录、跨实体引用缺失）不拦——公告合并靠跳过坏记录继续工作；DataManager 侧 `invalid_json`/`file_read_error`（整体不可用、内存为空）不拦——此时的保存必是有意重建（公告损坏按首跑重建，TD-A5-102），原文件已整份留底，无「静默丢记录」可言；调用方已自行留底、有意覆盖时用显式豁免口 `save(force=True)`（AI 批量生成的 `_preserve_invalid_data_file`：坏文件改名 `.corrupt-*` 后把校验通过的子集写回原路径）。
 
 **锁纪律（两种基类一致声明）**：`DataManager` 的 CRUD 全程持 RLock；`JsonRepository._lock` 仅保单次 IO 互斥，CRUD 序列不默认持锁，**调用方须保证仓储实例单线程访问**。唯一例外：存在跨线程读者的仓储（`CardRepository` 被 CardSyncService 检查线程读内存做 diff）须在子类对读写方法自行包锁（RLock 可重入）。新增后台读者时必须回头补锁。
+
+## 本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **`DataManager.save` 保存守卫 + `force` 显式豁免**（`b24cfbd` / `a5c1a37`）：保存前校验对象来自完整加载（`save_payload()` 守卫），`force=True` 显式豁免用于备份恢复、坏文件改名后写回子集等有意覆盖场景；来源标记同步补齐。
+- **`CardRepository` 读写锁 + 置位**（`b24cfbd`）：补 `threading.RLock` 包读写方法（被 CardSyncService 检查线程跨线程读内存做 diff 的唯一例外），`available` 置位延迟到全部结构校验通过后；写盘模式文档化。
+- **相性重载对文件被删误判修复**（`69fe226`，第一轮审查 P3-1）：`_reload_stale` 的 OSError 分支改判"已变化"并放弃写回——消除重载完成把启动时旧快照（或空数据）写回内存、经 UI 保存复活已删文件的残留路径。
+- **`atomic_write.py` 新增**（`src/config/`）：全库原子写收敛基元（`atomic_write_json` / `atomic_write_text` / `snapshot_to_backups`），数据层落盘链路统一引用。
+- **`special_cards_panel` / `hero_classification_panel` UI 路径迁入 `maintenance`**（`977a9dc`）：UI 侧路径变更，`src/data/` 数据仓储层无函数签名变化。
+
+本模块其余链路（Pydantic 模型、DataFacade/manager/issues 解环、json_repository 四基元、武将变更时间轴 `hero_timeline`、卡牌百科快照 `card_sync_store`、百科忽略名单 `baike_ignore_store`、私有数据仓同步 `pull_data`）函数签名本轮无变更。

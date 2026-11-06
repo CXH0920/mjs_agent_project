@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理、备份恢复
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-10-23（代码基线 a63bc3c）
+> 文档日期：2026-11-06（代码基线 65dff21）
 
 ---
 
@@ -1050,3 +1050,17 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 - `announcement/announcement_service.py`：公告检查与获取武将变更冷却窗口分立（`_gate` / `_prepare_gate` 各自独立 60 秒窗口，忙碌判定两闸门共用；新增 `prepare_cooldown_remaining` 属性），见 §3.6
 
 **本轮范围外**：`src/capture/`（pc_client.py / emulator_discovery/ 包）与 `src/ocr/official_board_parser.py` 的变更记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)；设备配置 UI 变更记录于 [`./module_ui.md`](./module_ui.md)；配置键与日志队列化记录于 [`./module_config.md`](./module_config.md)。
+
+## 十一、本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **`business/common` 解散归位**（`7319d50`）：`check_cooldown` 独立为 `src/business/access_cooldown/`、`script_runner` 与 `task_ledger` 合组 `src/business/execution/`（新增 `process_termination.py` 看门狗树杀原语）；`task_ledger` 随后下沉 `src/config/`（`85804ce`，修复 Import contracts 越层违规）。§一文件结构与§3.1 子进程链路路径同步更名。
+- **新增 `business/diagnostics/`**（`28ce24f`）：`doctor_checks.py` / `data_repo_status.py` 承接 doctor 体检判定逻辑，`src/scripts/doctor.py` 为入口消费之；首启向导同步解除对 `scripts` 顶层入口的越层引用。
+- **新增 `business/recognition/`**：`official_cell_recognition.py`（官方榜单单格识别规则）、`peak_board_rules.py`（巅峰赛板面识别规则）出仓为纯业务模块。
+- **`emulator/mumu_config_coordinator.py` → `emulator_config_coordinator.py`**（`3615e54`）：模块路径更名，类名 `EmulatorConfigCoordinator` 不变。
+- **数据域保护对齐**（`a5c1a37` / `b24cfbd`）：`DataManager.save(force=…)` 保存守卫显式豁免 + 来源标记；`CardRepository` 补置位与读写锁——细节见 [`./module_data.md`](./module_data.md)。
+- **相性重载对文件被删误判修复**（`69fe226`）：`_reload_stale` OSError 分支改判已变化并放弃写回，消除旧快照复活——细节见 [`./module_data.md`](./module_data.md)。
+- **第 18 批命名债**（`65dff21`）：备份预览解析缓存、待复核会话损坏防御（`backup_restore_service.py` / `official_import_review_dialog.py` 配套）；`scripts/rag_common`→`rag_script_io`、`snapshot_common`→`rule_doc_snapshot` 见 [`./module_rag.md`](./module_rag.md)。
+
+本模块其余链路（QProcess 终态契约、官方榜单导入编排、轮询串联、巅峰赛识别编排、竞态守卫三原语、连接域 `CaptureConnectionManager`、新鲜度判定）函数签名本轮无变更。

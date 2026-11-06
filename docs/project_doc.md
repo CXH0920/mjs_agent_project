@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-10-25（`ed8b4ac`）
+> 代码基线：2026-11-06（`65dff21`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-10-25
+> 文档日期：2026-11-06
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -33,11 +33,11 @@
 
 ---
 
-## 当前代码基线与业务不变量（2026-10-25）
+## 当前代码基线与业务不变量（2026-11-06）
 
 > 本节的粗体小节按提交时间倒序追加；2026-10-11（`2081b5b`）之前的描述对应历史基线，
 > **子进程启动失败终态契约（14bffaf / 07606ce，VUL-B2-001）** 及其后各小节为
-> 2026-10-12 至 10-25 新增，与后续各章冲突时以本节为准。
+> 2026-10-12 至 11-06 新增，与后续各章冲突时以本节为准。
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载，支持模拟器 ADB 与官方 PC 客户端双形态图像源），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心。
 
@@ -122,13 +122,35 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 
 **访问冷却与并发守卫（d5cceeb）**：`src/business/access_cooldown/check_cooldown.py`（106 行）统一公告域官网访问的冷却限频与并发守卫。
 
-**官方 PC 客户端直连（ed8b4ac，2026-10-25）**：新增 `src/capture/pc_client.py`（577 行）——不经 ADB 的第二条图像源，枚举官方 PC 客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件，标题仅展示；三态：未启动提示 / 单窗自动选定 / 多窗 UI 显式选择，不支持多开）并只读其画面。采集主路径 Windows.Graphics.Capture（`windows-capture==2.0.1`，Win10 1903+，遮挡可采集），WGC 会话**窗口句柄定向**（库的标题连接为子串匹配，"名将杀 Agent" 包含"名将杀"会命中工具自身窗口，真机事故后句柄定向根治）+ GDI BitBlt 客户区裁剪兜底（PrintWindow 真机取证稳定失败不采用）+ 黑帧双指标检测（均值 <8.0 且近黑占比 >98% 同时命中）与窗口化引导。`PcClientCapture` 接口对齐 `AdbCapture`，`CaptureConnectionManager` 按 `emulator_type=pc_client` 构建后下游 OCR 管线无感复用；设备页顶部「模拟器 / 官方 PC 客户端」单选双形态（PC 形态隐藏品牌与 ADB 区块、设备下拉复用为窗口候选列表、`EMULATOR_BRAND` 品牌记忆）。进程级 Per-Monitor-V2 DPI 声明硬前置（未声明进程在 >100% DPI 屏上坐标被系统谎报）。**模块全程只读窗口画面，不向客户端或系统发送任何输入（法律红线）**。设计文档：`docs/design/pc_official_client_capture_design.md` / `pc_official_client_requirements.md`。
+**官方 PC 客户端直连（ed8b4ac，2026-10-25；入口自 `f48c9b0` 起暂隐藏）**：新增 `src/capture/pc_client.py`（577 行）——不经 ADB 的第二条图像源，枚举官方 PC 客户端窗口（进程 `mjs.exe` + 窗口类 `UnityWndClass` 双条件，标题仅展示；三态：未启动提示 / 单窗自动选定 / 多窗 UI 显式选择，不支持多开）并只读其画面。采集主路径 Windows.Graphics.Capture（`windows-capture==2.0.1`，Win10 1903+，遮挡可采集），WGC 会话**窗口句柄定向**（库的标题连接为子串匹配，"名将杀 Agent" 包含"名将杀"会命中工具自身窗口，真机事故后句柄定向根治）+ GDI BitBlt 客户区裁剪兜底（PrintWindow 真机取证稳定失败不采用）+ 黑帧双指标检测（均值 <8.0 且近黑占比 >98% 同时命中）与窗口化引导。`PcClientCapture` 接口对齐 `AdbCapture`，`CaptureConnectionManager` 按 `emulator_type=pc_client` 构建后下游 OCR 管线无感复用；设备页顶部「模拟器 / 官方 PC 客户端」单选双形态（PC 形态隐藏品牌与 ADB 区块、设备下拉复用为窗口候选列表、`EMULATOR_BRAND` 品牌记忆）。进程级 Per-Monitor-V2 DPI 声明硬前置（未声明进程在 >100% DPI 屏上坐标被系统谎报）。**模块全程只读窗口画面，不向客户端或系统发送任何输入（法律红线）**。**入口暂隐藏（`f48c9b0`，2026-10-25）**：直连画面排版与模拟器端存在界面元素位置差异（非分辨率/配色问题），模板与 ROI 均按模拟器端排版标定，直连画面下自动轮询持续空转（识别前置相似度 0.79 < 0.80 闸门阈值，读字环节从未执行）；同页多套模板/ROI 变体适配方案已评估并暂缓，决策原因与解冻步骤在代码注释留档，恢复入口仅需还原一行控件可见性，`pc_client.py` / `CaptureConnectionManager` 采集与识别链路本身零改动。设计文档：`docs/design/pc_official_client_capture_design.md` / `pc_official_client_requirements.md`。
 
 **多模拟器五品牌连接（8f2e70a / feee42b / 514b4f8 / 4eb3445 / 282ed5b，2026-10-24/25）**：`src/capture/` 原单文件探测模块拆包为 `src/capture/emulator_discovery/`（函数式注册表 `EMULATOR_DISCOVERY_MODULES`，每品牌统一契约 `discover_devices(retries)` / `find_adb()`）——MuMu（MuMuManager JSON）/ 雷电（ldconsole list2 + 5555+2n 推导）/ 夜神（NoxConsole list 七列 + netstat 按 VM PID 精确关联端口）/ 逍遥（`.memu` 配置直读，MEmuConsole 为 GUI 无 stdout 的死路径已移除）/ 蓝叠（注册表 BstAdbPort → bluestacks.conf，国内版 5.22 适配）+ `port_scan.py` 端口段兜底（8 并发，结果标注"品牌未验证"防 5555 共用端口误标）+ `console_utils.py`（UTF-8→GBK 解码 + 进程反查）。`AdbCapture` 品牌参数化（`emulator_type` 构造参数；端口 0 时按品牌自动探测唯一实例）+ `connect(validate_capture=)` 连接后截帧校验 + `_reconcile_emulator_serial()`（雷电等 adb 主动扫描区端口双查 `emulator-<n>` 序列号）。配置键 `MUMU_*` → `EMULATOR_*` 平滑升级（`default_from` 回退旧键）+ `EMULATOR_BRAND`，env 键元表 32 → 38 键。探测提速（真机计时）：逍遥 10.5s → 0.08s、雷电/夜神 3.8s → 0.6s，五品牌全部 <1s。
 
 **官方榜单导入提速（366303c / 28fa11b / 8c0f871，2026-10-24）**：①拼接长图兼容——`official_board_parser.split_stitched_image()` 把 20261022 拼接长图按静默带切分为补边虚拟分页（std<8、带长 ≥40px 区分旧版长图行隙 15~19px；每栏 ≥30 行结构校验拦截头部图例区伪段），导入服务切分归一化后复用既有分页链路，行截图坐标经段 y 偏移还原；②单格识别 2× 快通道——`_fast_numeric_cell`（纯排名/胜率格式）/ `_fast_name_cell`（词表精确命中）置信度 ≥0.90 才采信，未过门回退 4× 双候选原路径，精度下界不变，整板导入提速约 4.6 倍；③待复核行截图改为仅保留武将名称格（原整行画面无复核价值）。
 
 **控制台日志队列化与杂项修复（79fc4a0 / 39ec62b / 4bd9586，2026-10-24）**：①`logging_config._QueuedConsoleHandler` 把控制台写移出调用线程——Windows 经典控制台快速编辑选中会无限期阻塞 `WriteConsoleW`（GUI 主线程在 `logger.info` 上悬死的卡死事故根治），文件 handler 仍同步落盘；②`AnnouncementService` 公告检查与获取武将变更冷却窗口分立（`_gate` / `_prepare_gate` 各自 60 秒，公告检查后首次获取武将变更不再被牵连）；③`BaseFetchService._on_finished` 完成钩子重入进程保护（钩子经直连信号同步发起下一阶段时不误释放新 QProcess，消除 0xF291 强杀）；④爬虫 robots（5s）/头像（15s）下载超时与主数据（30s）解耦。
+
+**第 18 批命名债清偿与结构域出仓（65dff21，2026-11-06）**：`src/scripts/rag_common.py` → `rag_script_io.py`、`src/scripts/snapshot_common.py` → `rule_doc_snapshot.py`；备份预览解析缓存（`BackupRestoreDialog` 键级差异解析结果缓存，避免重复快照反复解析）；待复核会话损坏防御（`OfficialImportReviewDialog` 会话状态损坏时降级而非崩溃）；9 处测试去冗余前缀。
+
+**相性重载对文件被删误判修复（69fe226，第一轮审查 P3-1）**：`_reload_stale` 的 OSError 分支改判「已变化」并放弃写回——原分支判「未变化」会在重载完成时把启动时旧快照（或空数据）写回内存，经 UI 保存复活已被删除的文件，消除该残留路径。
+
+**doctor 体检下沉 + 首启向导去越层（28ce24f，第 18 批审查 P1）**：doctor 体检逻辑自 `src/scripts/doctor.py` 下沉至 `src/business/diagnostics/`（`doctor_checks.py` 各检查组纯函数 + `data_repo_status.py` 私有数据仓状态判定），`doctor.py` 仅作 CLI 入口消费业务层；首启向导解除对 `scripts` 顶层入口的越层引用（`onboarding_fixes` 改经业务层/配置层调用，符合 Import contracts 分层）。
+
+**数据域保护对齐（a5c1a37 / b24cfbd）**：`DataManager.save` 新增 `force` 参数显式豁免保存守卫（默认仍守卫）+ 来源标记；`CardRepository` 补置位与读写锁（防止并发读看到半写入状态）；写盘模式文档化。配套守护测试覆盖守卫触发与 `force` 豁免路径。
+
+**配置域 mumu_*→emulator_*（3615e54，第 16 批二轮命名拍板项）**：模拟器**连接域**全量更名——`src/ui/configuration/mumu_config_dialog.py` / `mumu_config_sections.py` / `mumu_device_page.py` / `mumu_recognition_page.py` → `emulator_*`；`src/business/emulator/mumu_config_coordinator.py` → `emulator_config_coordinator.py`；配置键 `MUMU_ADB_PATH` / `MUMU_ADB_PORT` / `MUMU_SCREENSHOT_MODE` → `EMULATOR_*`（`default_from` 回退旧键，持久化始终写新键）。**`MUMU_OCR_*` 系列键保留不改**（本轮仅更名连接域，OCR 域键名稳定）。
+
+**新模块落地（9864ec4 / ba139f6 / 7319d50 / 85804ce / 977a8dc / 65dff21）**：
+- `src/capture/probers/` → `src/capture/emulator_discovery/`（`9864ec4`，函数式注册表与五品牌探测器一并迁入新包名）
+- `src/business/common/` 解散（`7319d50`）：`check_cooldown` 独立 `src/business/access_cooldown/`、`script_runner` 与 `task_ledger` 合组 `src/business/execution/`（新增 `process_termination.py` 看门狗树杀原语）；`task_ledger` 随后下沉 `src/config/`（`85804ce`，修复 Import contracts 越层违规）
+- `src/ocr/ocr_loader.py` → `src/ocr/template_registry.py`（`ba139f6`，模板单例模块改名 + 词表候选规则收口）
+- `src/business/diagnostics/`（`doctor_checks.py` / `data_repo_status.py`，doctor 体检逻辑下沉）
+- `src/business/recognition/`（`official_cell_recognition.py` 官方榜单单格识别规则 / `peak_board_rules.py` 巅峰赛牌面规则，识别域纯业务规则出仓）
+- `src/config/atomic_write.py`（全库原子写收敛基元）
+- `src/ocr/recheck_model_assets.py`（v4 复核三件套官方清单预取，URL+SHA256 钉死）
+- `src/ui/shared/dirty_guard.py`（脏数据守卫）
+- `src/ui/app/chinese_translator.py` → `src/ui/shared/chinese_translator.py`（`350191b`，破除组合根包级环）
+- `src/ui/maintenance/rule_doc/`（`audit_tab` / `diff_tab` / `pending_tab` / `proposal_tab` 四子页签，`977a8dc` 元规则面板 `rule_doc_panel.py` 拆分出仓，879 行瘦身）；`src/ui/library/classification/` / `hero_classification_panel.py` / `special_cards_panel.py` 自 `library` 迁入 `maintenance`（`977a8dc`）
 
 ---
 
@@ -673,7 +695,7 @@ class CaptureService(QObject):
 | `connect_emulator()` | 连接模拟器 |
 | `disconnect_emulator()` | 断开模拟器 |
 | `capture_screenshot()` | 通过共享会话获取截图，不写文件、不执行 OCR；供模板制作后台任务使用 |
-| `capture_for_poll()` | 轮询专用截图（2026-09 新增）：直接返回 numpy 数组，跳过 PIL Image 转换；根据 `MUMU_SCREENSHOT_MODE` 选择 raw/PNG 路径 |
+| `capture_for_poll()` | 轮询专用截图（2026-09 新增）：直接返回 numpy 数组，跳过 PIL Image 转换；根据 `EMULATOR_SCREENSHOT_MODE` 选择 raw/PNG 路径（旧 `MUMU_SCREENSHOT_MODE` 回退读取） |
 | `reset_ocr_recognizer_cache()` | 清除 OCR 识别器缓存（2026-09 新增）：白名单配置写入后调用，使新白名单立即生效（委托 OcrTaskCoordinator） |
 
 **手动截图全流程**：
@@ -1070,9 +1092,9 @@ def apply_incremental_update(data_dir, update)
 | generation/synergy_single_dialog.py | 30 | QDialog（选定武将 × 全体） |
 | library/hero_browser.py | 607 | QWidget（资料左栏、身份头部、上下文操作和详情协调） |
 | library/hero_detail_views.py | 534 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
-| library/hero_classification_panel.py | 805 | QWidget（分类 / 克制链 / 武将归类维护） |
+| maintenance/hero_classification_panel.py | 805 | QWidget（分类 / 克制链 / 武将归类维护，自 library 迁入） |
 | library/card_management_panel.py | 877 | QWidget（卡牌浏览、版本调整与字段配置） |
-| library/special_cards_panel.py | 499 | QWidget（专属牌 / 战法牌 / 状态·标记 / 概念维护） |
+| maintenance/special_cards_panel.py | 499 | QWidget（专属牌 / 战法牌 / 状态·标记 / 概念维护，自 library 迁入） |
 | library/combo_management_dialog.py | 202 | QDialog（实战配队管理） |
 | library/combo_edit_dialog.py | 231 | QDialog（实战配队编辑） |
 | library/hero_edit_dialog.py | 82 | QDialog（武将编辑） |
@@ -1391,7 +1413,7 @@ HeroDetailPanel._on_synergy_edit()
 - 武将信息、攻略和相性详情均关闭横向滚动，只允许内容区纵向滚动或文本换行。
 - 武将浏览器完成列表信号连接后会主动同步首个默认选中武将，确保启动后右侧详情不会停留在“请选择一个武将”。
 
-**知识库归类/专属牌名单同步（2026-09 新增）**：爬虫更新 `heroes.json` 后，`hero_classification_repository.py` / `hero_classification_panel.py` / `special_cards_panel.py` / `rag_maintenance_panel.py` 随刷新入口同步加载归类/专属牌名单，确保新增武将在分类和专属牌页面中即时可见。
+**知识库归类/专属牌名单同步（2026-09 新增）**：爬虫更新 `heroes.json` 后，`hero_classification_repository.py` / `hero_classification_panel.py` / `special_cards_panel.py` / `rag_maintenance_panel.py` 随刷新入口同步加载归类/专属牌名单，确保新增武将在分类和专属牌页面中即时可见。（`hero_classification_panel.py` 与 `special_cards_panel.py` 自 `977a8dc` 起由 `library/` 迁入 `maintenance/`。）
 
 #### 5.8.2 卡牌图鉴（CardManagementPanel）
 
@@ -3525,6 +3547,8 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 **性能**（真机计时）：逍遥 10.5s → 0.08s（console 死路径移除 + 探测执行器同键任务去重防连点累积）；雷电/夜神 3.8s → 0.6s（进程反查重构 + 端口扫描 8 并发，防御回环被防火墙静默丢弃的环境）；五品牌全部 <1s。
 
 ### 20.2 官方 PC 客户端直连
+
+> **入口暂隐藏（`f48c9b0`，2026-10-25）**：本节描述的能力已实现并保留在代码中，但设备页「连接类别」单选的桌面窗口直连选项已隐藏。直连画面排版与模拟器端存在界面元素位置差异（非分辨率/配色问题），模板与 ROI 均按模拟器端排版标定，直连画面下自动轮询持续空转（识别前置相似度 0.79 < 0.80 闸门阈值，读字环节从未执行）；同页多套模板/ROI 变体适配方案已评估并暂缓，决策原因与解冻步骤在 `emulator_config_sections.py` 代码注释留档，恢复入口仅需还原一行控件可见性，`pc_client.py` / `CaptureConnectionManager` 采集与识别链路本身零改动。以下技术描述对应代码现状，供解冻时参考。
 
 **需求边界**：官方 PC 客户端（Unity）与模拟器并存，部分用户无模拟器环境。支持**单一图像源**（客户端窗口）直连，全程只读（不发送任何输入，法律红线）、下游复用（`PcClientCapture` 接口对齐 `AdbCapture`，OCR 管线无感）、显示诚实（错误消息按形态分立，PC 形态不出现"ADB"字样）、不支持多开（多窗要求用户显式选择）。
 

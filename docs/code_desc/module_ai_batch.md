@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/ai/`
 > 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律、生成任务互斥锁
-> 文档日期：2026-10-23（基线 a63bc3c）
+> 文档日期：2026-11-06（基线 `65dff21`）
 
 ---
 
@@ -546,3 +546,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 - **自动化访问披露措辞中性化**（9180cf0）：`_random_rest()` 注释由"避免触发风控"改为"拉开请求间隔、降低访问密度"，`DEFAULT_BROWSER_CONFIG` 与 `_random_rest()` 均指向 TERMS.md 第 7 节「自动化访问与访问频率披露」（外部行为不变）。见 3.9 节注
 - **父进程侧联动（非本模块）**：看门狗改"无进度上限"（f1b13f8）、取消链路 Starting 阶段/清理轮询/取消期间出错三处修复（f10b477）、退出经 `shutdown_fetch_services` 限时等进程树真正退出（1d8334a）、相性指定获取四策略 + 三态筛选组装精确配对清单经 `--synergy-list` 提交（2f4a966）。见 3.8 节与 六 节
 - **范围提示**：`f1b13f8` / `f10b477` / `1d8334a` / `2f4a966` 的主体改动在 `src/business/fetching/` 与 `src/ui/generation/`，不属本模块；本模块侧仅消费其经由 `--synergy-list` / 进度行协议 / 取消信号传入的行为，本文仅在 3.8 / 3.9 / 六 节做交叉引用，不复制实现细节
+
+## 本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），`src/scraper/ai/` 域本轮无函数级签名变更：`generation_lock.py` OS 级互斥锁（msvcrt/fcntl + holder 旁路文件）、httpx 超时分层（connect/pool=5s、read 配置值）、`normalize_and_validate_guide` / `normalize_and_validate_synergy` 共享管线、`MAX_OUTPUT_TOKENS` 单源 env 键元表、`--retry-failed` 定向重试、浏览器会话超时自动重建等链路口径延续。基线标记对齐 `65dff21`。

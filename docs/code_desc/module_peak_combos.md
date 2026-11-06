@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/ui/match/match_guide_panel.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/analysis/win_rate_ranking.py` + `src/business/analysis/match_analysis_service.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
 > 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、容差签名去重、标准轮询互斥持有、参考几何漂移抑制与漏检扣帧）、禁选建议象限判定、胜率名次单一事实源、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染、胜率榜按对局链路区分（2v2 / 巅峰赛）
-> 代码基线：2026-10-23（基线 `a63bc3c`）
+> 代码基线：2026-11-06（基线 `65dff21`）
 > 测试规模：153 个含 `test_*` 函数的测试文件 / 1936 个 test_* 函数（2026-10-11 基线为 145 / 1626）
 
 ---
@@ -586,3 +586,13 @@ class _ImportWorker(QThread):
 - 文件规模：`peak_select_watcher.py` 现 **669 行**、`card_grid_detector.py` 现 **318 行**、`peak_ban_advice.py` **70 行**、`win_rate_ranking.py` **31 行**
 - 测试规模台账：**153 个含 `test_*` 函数的测试文件 / 1936 个 `test_*` 函数**（原 145 / 1626；`tests/` 下 py 文件共 157 个）
 - 本机私有数据仓同步快照（不入版本库，仅为当前工作区实测值）：`combos.json` **1827 条**（原 1570）、`巅峰赛胜率排行.csv` **187 条**（原 183）、`巅峰赛出场排行.csv` **187 条**（原 131）
+
+## 本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **`business/recognition/peak_board_rules.py` 出仓**：巅峰赛板面识别纯业务规则自原识别链路下沉为独立模块，`peak_select_watcher` 调用路径同步；函数签名无对外变更。
+- **`business/recognition/official_cell_recognition.py` 出仓**：官方榜单单格识别规则出仓，与本调用链主链路（巅峰赛实时识别循环）无直接耦合，仅作交叉引用登记。
+- **`win_rate_ranking.py`** 仍位于 `src/business/analysis/`，本轮无变更。
+
+本模块其余链路（会话制互斥 + 世代校验、容差签名去重、卡位逐拍漂移抑制与漏检扣帧、人工确认残留修复、禁选建议象限判定、实战配队数据管理与座次解析、胜率榜按对局链路区分）函数签名本轮无变更。

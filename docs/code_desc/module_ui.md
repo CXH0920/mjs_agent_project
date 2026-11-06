@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-10-23（基线 a63bc3c）
+> 文档日期：2026-11-06（基线 65dff21）
 
 ---
 
@@ -632,9 +632,9 @@ PeakSelectPanel
 
 **备份服务依赖**：`src/business/maintenance/backup_restore_service.py` 提供 `BackupEntry` / `RestoreTarget` / `BackupPreview` / `RestoreResult` 数据模型与 `default_targets` / `restore_targets` / `list_backups` / `inspect_current` / `preview_backup` / `restore_backup` / `select_group_entries` 七个函数。
 
-### 3.17 设备配置页连接类别双形态（EmulatorDevicePage，8f2e70a → ed8b4ac）
+### 3.17 设备配置页连接类别双形态（EmulatorDevicePage，8f2e70a → ed8b4ac；PC 单选项自 f48c9b0 起暂隐藏）
 
-模拟器配置对话框的设备与连接页在 2026-10-24/25 两轮改造后支持**连接类别单选双形态**——「模拟器」（五品牌 ADB）与「官方 PC 客户端」（窗口直连）：
+模拟器配置对话框的设备与连接页在 2026-10-24/25 两轮改造后支持**连接类别单选双形态**——「模拟器」（五品牌 ADB）与「官方 PC 客户端」（窗口直连）。**注：自 `f48c9b0`（2026-10-25）起，「官方 PC 客户端」单选项在设备页隐藏**——直连画面排版与模拟器端存在界面元素位置差异（非分辨率/配色问题），模板与 ROI 均按模拟器端排版标定，直连画面下自动轮询持续空转（识别前置相似度 0.79 < 0.80 闸门）；同页多套模板/ROI 变体适配方案已评估并暂缓，决策原因与解冻步骤在 `emulator_config_sections.py` 代码注释留档，恢复入口仅需还原一行控件可见性，`pc_client.py` / `CaptureConnectionManager` 采集与识别链路零改动。下方双形态控件描述保留以备恢复后参考：
 
 - **顶层单选**：页顶新增「模拟器 / 官方 PC 客户端」单选组，**用户点击才触发**形态切换（程序装载配置时只同步选中态，不产生副作用）。切到 PC 客户端前把当前模拟器品牌存入 `emulator_brand`，切回模拟器时恢复记忆品牌（无记录回退 `mumu`）；重复切换到当前类别判为无操作，不触发设备列表作废重建。
 - **模拟器形态**：品牌下拉仅列五家（`emulator_discovery.EMULATOR_BRANDS`，展示名不带版本号：MuMu/雷电/夜神/逍遥/蓝叠），品牌行 ⓘ 图标悬停展示该品牌连接特性提示（`EMULATOR_HINTS`，如"默认端口 16384（多开 +32 递增）"；原生悬停驻留路径在部分环境不出 tooltip，改为 enter/click 主动 `QToolTip.showText` 即时显示）；ADB 区块（路径/端口/探测/测试按钮）正常展示。
@@ -919,3 +919,15 @@ def update_recommendations(self, data: list[dict]) -> None:
 - 连接域业务侧变更（`CaptureConnectionManager` 双形态、事件文案分立）记录于 [`./module_business.md`](./module_business.md)；探测层与 `pc_client.py` 记录于 [`./module_capture_ocr.md`](./module_capture_ocr.md)
 
 **本轮其余 UI 文件**（主窗口、推荐面板、浏览器、巅峰赛面板等）无代码变更。
+
+## 十三、本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **`mumu_config_*` → `emulator_config_*`**（`3615e54`）：`ui/configuration/mumu_config_dialog.py` / `mumu_config_sections.py` / `mumu_device_page.py` / `mumu_recognition_page.py` 全量改名为 `emulator_*`——本文档已使用新名，无残留旧路径
+- **`chinese_translator.py` 下沉 `ui/shared`**（`350191b`）：自 `ui/app/` 迁入 `ui/shared/`，破除组合根包级环；`CheckableComboBox` 弹层关闭改为仅隐藏不释放
+- **武将分类与专属牌面板自 `library` 迁入 `maintenance`**（`977a8dc`）：`library/classification/` → `maintenance/classification/`、`library/hero_classification_panel.py` → `maintenance/`、`library/special_cards_panel.py` → `maintenance/`
+- **元规则面板四页签拆分出仓**（`977a8dc`）：`rule_doc_panel.py`（原 879 行）拆出 `ui/maintenance/rule_doc/`（`audit_tab.py` / `diff_tab.py` / `pending_tab.py` / `proposal_tab.py` 四子页签），面板本体瘦身
+- **新增 `ui/shared/dirty_guard.py`**：脏数据守卫
+- **PC 客户端直连入口暂隐藏**（`f48c9b0`）：`EmulatorDevicePage` 顶部「官方 PC 客户端」单选项隐藏，详见 §3.17；采集与识别链路零改动
+- 主窗口、推荐面板、武将浏览器、巅峰赛面板、对话框体系等其余 UI 延续 2026-10-25 基线，无行为变更

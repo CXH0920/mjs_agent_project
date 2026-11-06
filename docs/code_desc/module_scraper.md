@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**
-> 文档日期：2026-10-23（基线 a63bc3c）
+> 文档日期：2026-11-06（基线 `65dff21`）
 
 ---
 
@@ -545,3 +545,7 @@ def transform(raw: dict) -> dict | None:
 
 - **robots 与头像下载超时解耦**（79fc4a0）：`crawler.py` 新增 `ROBOTS_FETCH_TIMEOUT = 5` 与 `IMAGE_DOWNLOAD_TIMEOUT = 15` 两个独立超时——robots.txt 是百字节小文件，复用主数据 `TIMEOUT = 30` 过于保守，站点异常时每个采集子进程都要等满额才降级放行，短超时快速失败即降级（`_fetch_host_rules()` / `cache_robots_txt()` 两处接入）；头像 PNG 仅数百 KB，短于主数据的超时使 CDN 握手挂起时单张等待上限减半（`_open_image_response()` 接入）。主数据 `TIMEOUT = 30` 不变
 - 本轮其余爬虫域文件无代码变更；`base_fetch_service` 的完成钩子重入进程保护（4bd9586）虽影响爬虫父进程侧，实现位于 `src/business/fetching/`，记录于 [`./module_business.md`](./module_business.md)
+
+## 本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），`src/scraper/official_source/` 域本轮无函数级签名变更：如实爬虫 UA `mjs-agent/1.0`、robots.txt 24 小时缓存与逐 URL `Disallow` 执行、`hero_fields.py` 官网字段清洗守卫、写入前守卫（全量五道规模守卫 + 增量损坏硬停）、抓取输出默认路径归运行时可写根等链路口径延续。基线标记对齐 `65dff21`。

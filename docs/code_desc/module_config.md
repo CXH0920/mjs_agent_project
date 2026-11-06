@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-10-23（基线 a63bc3c）
+> 文档日期：2026-11-06（基线 `65dff21`）
 
 ---
 
@@ -461,3 +461,14 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 - **environment.yml / environment-ci.yml**（ed8b4ac）：新增 `windows-capture==2.0.1`（PC 客户端 WGC 采集主路径，Win10 1903+，失败自动退 BitBlt）
 
 **本轮其余 config 域文件**（version.py / onboarding_state.py / disclaimer_state.py 等）无代码变更。
+
+## 十一、本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **模拟器配置域 `mumu_*` 全量更名 `emulator_*`**（`3615e54`，第 16 批二轮命名拍板）：连接域键 `MUMU_ADB_PATH` / `MUMU_ADB_PORT` / `MUMU_SCREENSHOT_MODE` → `EMULATOR_*`（`default_from` 回退旧键、持久化始终写新键）；**`MUMU_OCR_*` 系列键保留不改**（`MUMU_OCR_ENABLED` / `MUMU_OCR_POLL_*` / `MUMU_OCR_PRIMARY_ENGINE` / `MUMU_OCR_CPU_THREADS` / `MUMU_OCR_RECHECK_ENABLED` / `MUMU_OCR_MATCH_THRESHOLD` 等仍为现役键）。UI 配置文件 `mumu_config_dialog` / `mumu_config_sections` / `mumu_device_page` / `mumu_recognition_page` → `emulator_*`。
+- **`task_ledger` 下沉 `src/config/`**（`85804ce`）：自 `business/common`（后 `business/execution/`）迁入 `src/config/task_ledger.py`，修复 Import contracts 越层违规；任务台账 JSONL 写入点路径同步。
+- **新增 `src/config/atomic_write.py`**：全库原子写收敛基元（`atomic_write_json` / `atomic_write_text` / `snapshot_to_backups` 自 `json_repository` 上提为 config 域共享原语）。
+- **首启向导去越层**（`28ce24f`）：`onboarding_state.py` / `onboarding_fixes.py` 解除对 `scripts` 顶层入口的越层引用，config 侧无新对外函数签名。
+
+本模块其余 config 域（`env.py` 键元表、`profiles.py` API 档案、`logging_config.py` 控制台队列化、`version.py` 版本单一来源、`disclaimer_state.py` 免责声明状态）函数签名本轮无变更。

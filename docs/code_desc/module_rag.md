@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
+> 代码基线：`65dff21`（2026-11-06）。历史增量：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -872,3 +872,15 @@ TASKS: list[dict] = [
 **其他**
 - `25606a8`：放宽 `rule_doc_panel.py` 行数预算至 935（配合测试）
 - `9ccc2fc`：第二梯队审查修复批（含数据回滚/子进程工作目录）
+
+## 本轮文档校准（2026-11-06）
+
+自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），本模块受影响项：
+
+- **元规则面板四页签拆分出仓**（`977a9dc`）：`ui/maintenance/rule_doc_panel.py`（原 879 行）拆出 `ui/maintenance/rule_doc/`（`audit_tab.py` / `diff_tab.py` / `pending_tab.py` / `proposal_tab.py` 四子页签），面板本体瘦身；`rule_doc_service`（纯函数）+ `audit_service` 业务侧无签名变更，UI 装配链路引用同步。
+- **scripts 共用模块更名**（`65dff21`，第 18 批命名债）：`scripts/rag_common.py` → `scripts/rag_script_io.py`、`scripts/snapshot_common.py` → `scripts/rule_doc_snapshot.py`——语料构建与元规则维护脚本的 IO/快照共用模块按命名规范收口（`rag_common` 专指 RAG 语料 IO、`rule_doc_snapshot` 专指元规则快照），import 路径与 monkeypatch/spec 字符串路径同步更名。
+- **武将分类与专属牌面板自 `library` 迁入 `maintenance`**（`977a9dc`）：`ui/library/classification/` → `ui/maintenance/classification/`、`special_cards_panel` / `hero_classification_panel` → `ui/maintenance/`——知识库维护工作台左栏维护对象导航引用同步。
+- **`atomic_write.py` 新增**（`src/config/`）：全库原子写收敛基元，RAG 语料写前快照与索引重建落盘统一引用。
+- **RAG 评估历史 / 检索诊断 / 索引精化三层架构**（`refinement_service` + `RefinementSession` + `SuggestController`）：本轮无函数签名变更，2026-10-11 基线口径延续。
+
+本模块其余链路（语料构建 ODS/DWD/mart 分层 10 任务、向量索引、混合检索、编码器抽象层 `embedder.py`、检索 trace、武将变更时间轴驱动版本戳）函数签名本轮无变更。
