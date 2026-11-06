@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """Retriever.search 过滤语义测试（内存块索引，不依赖 chromadb）。"""
+import sys
+from types import SimpleNamespace
 
+import pytest
+from src.rag import config as rag_config
+from src.rag import embedder as embedder_mod
 from src.rag.retriever import Retriever
 
 
@@ -68,3 +73,59 @@ def test_stale_blocks_excluded_regardless_of_heroes():
     results = retriever.search("出牌阶段", heroes=["甲", "乙"], top_k=10)
     heroes_in_results = {item["metadata"].get("hero") for item in results}
     assert heroes_in_results == {"甲"}
+
+
+# ---------------------------------------------------------------
+# collection 建连的编码器指纹校验（04 审查 P2：索引-编码器必须同源）
+# ---------------------------------------------------------------
+
+def _patch_chroma(monkeypatch, tmp_path, metadata):
+    """注入假 chromadb：get_collection 返回带指定 metadata 的集合。"""
+    coll = SimpleNamespace(metadata=metadata)
+    client = SimpleNamespace(get_collection=lambda name: coll)
+    monkeypatch.setitem(sys.modules, "chromadb",
+                        SimpleNamespace(PersistentClient=lambda path: client))
+    monkeypatch.setattr(rag_config, "CHROMA_DIR", tmp_path / "chroma")
+    return coll
+
+
+def test_collection_rejects_missing_fingerprint(monkeypatch, tmp_path):
+    """旧版本构建的无章索引：拒绝服务并指引重建，不静默继续查询。"""
+    _patch_chroma(monkeypatch, tmp_path, metadata={})
+    retriever = Retriever()
+    with pytest.raises(RuntimeError, match="缺少编码器指纹"):
+        retriever.collection
+
+
+def test_collection_rejects_fingerprint_mismatch(monkeypatch, tmp_path):
+    """换过编码器的旧索引：拒绝服务，错误信息带两侧指纹与重建指引。"""
+    _patch_chroma(monkeypatch, tmp_path,
+                  metadata={"encoder_fingerprint": "onnx:oldenc"})
+    monkeypatch.setattr(embedder_mod, "encoder_fingerprint",
+                        lambda: "onnx:newenc")
+    retriever = Retriever()
+    with pytest.raises(RuntimeError, match="指纹不匹配") as excinfo:
+        retriever.collection
+    assert "onnx:oldenc" in str(excinfo.value)
+    assert "onnx:newenc" in str(excinfo.value)
+
+
+def test_collection_accepts_matching_fingerprint(monkeypatch, tmp_path):
+    """指纹一致的正常路径：建连成功并缓存，后续访问不再重连。"""
+    coll = SimpleNamespace(metadata={"encoder_fingerprint": "onnx:testfp"})
+    calls = []
+
+    def _get(name):
+        calls.append(name)
+        return coll
+
+    client = SimpleNamespace(get_collection=_get)
+    monkeypatch.setitem(sys.modules, "chromadb",
+                        SimpleNamespace(PersistentClient=lambda path: client))
+    monkeypatch.setattr(rag_config, "CHROMA_DIR", tmp_path / "chroma")
+    monkeypatch.setattr(embedder_mod, "encoder_fingerprint",
+                        lambda: "onnx:testfp")
+    retriever = Retriever()
+    assert retriever.collection is coll
+    assert retriever.collection is coll
+    assert calls == ["mjs_rag_v1"]  # 第二次命中缓存，未重连

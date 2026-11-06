@@ -276,7 +276,9 @@ def build_index(rebuild=True):
     # 4/4 写入 Chroma
     print(f'[4/4] 写入向量库 → {config.CHROMA_DIR}')
     import chromadb
+    from src.rag.embedder import encoder_fingerprint
     coll_name = 'mjs_rag_v1'
+    fingerprint = encoder_fingerprint()
     if rebuild:
         # 索引完全可由语料重建；整目录删除顺带清掉历次 delete_collection 留下的
         # 孤立段目录（实测 21 组 / 80.9MB 里绝大部分是残留）。删不掉（文件被
@@ -291,7 +293,21 @@ def build_index(rebuild=True):
                 ) from error
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     coll = client.get_or_create_collection(
-        coll_name, metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'})
+        coll_name, metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料',
+                             'encoder_fingerprint': fingerprint})
+    if not rebuild:
+        # 增量同步前校验集合指纹：跨编码器的 add/update 只会把异源向量越混越深，
+        # 缺章的旧库同样不可增量——两者都必须先全量重建（04 审查 P2）
+        stored_fp = (coll.metadata or {}).get('encoder_fingerprint')
+        if not stored_fp:
+            raise RuntimeError(
+                f'索引 {coll_name} 缺少编码器指纹（旧版本构建），不能增量同步；'
+                f'请去掉 --no-rebuild 全量重建（python -m src.rag.indexer）')
+        if stored_fp != fingerprint:
+            raise RuntimeError(
+                f'索引 {coll_name} 编码器指纹不匹配：索引为 {stored_fp}，'
+                f'当前为 {fingerprint}；跨编码器不能增量同步，'
+                f'请全量重建（python -m src.rag.indexer）')
     ids = [b[0] for b in all_blocks]
     metas = [b[2] for b in all_blocks]
     BATCH = 200
@@ -333,7 +349,9 @@ def build_index(rebuild=True):
         )
     print('-' * 60)
     print(f'✅ 索引构建完成：集合 {coll_name}，{stored} 块，总耗时 {total:.1f}s')
-    logger.info('索引构建完成：%s %d 块，总耗时 %.1fs', coll_name, stored, total)
+    print(f'   编码器指纹：{fingerprint}')
+    logger.info('索引构建完成：%s %d 块，指纹 %s，总耗时 %.1fs',
+                coll_name, stored, fingerprint, total)
     print(f'   向量库位置：{config.CHROMA_DIR}')
     print('=' * 60)
     return stored, coll_name

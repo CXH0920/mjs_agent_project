@@ -180,18 +180,20 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 - **onnx（默认）**：`OnnxEmbedder` 走 onnxruntime CPU 推理 + `tokenizers` 直读 `tokenizer.json`，运行期完全不 import torch / transformers / sentence-transformers。模型三件套（`model.onnx` / `tokenizer.json` / `sha256.json` 侧车）位于 `data/rag_models/onnx`（`config.ONNX_MODEL_DIR`）；**构造即校验**——三件套缺失或哈希与侧车不符直接 `RuntimeError` 熔断，错误信息带修复指引 `python -m src.scripts.export_embedding_onnx`，阻止"带病运行产出与索引不同源的向量"。推理线程数 `RAG_EMBED_THREADS`（默认 4，`SessionOptions.intra_op_num_threads`），设备恒 CPU。池化取 CLS（`hidden[:, 0]`，右 padding 保证 CLS 恒在 0 位）后 L2 归一化。
 - **st（回滚档）**：`STEmbedder` 保留原 sentence-transformers 行为（`SentenceTransformer(config.EMBEDDING_MODEL, device='cpu')`）。模型查找顺序：项目内 `data/rag_models/modelscope` → 环境变量 `RAG_MODEL_DIR` → 环境变量 `MJS_EMBEDDING_MODEL` → 在线下载 `BAAI/bge-small-zh-v1.5`，由 `_find_local_model()` 定位。`HF_HOME` / `SENTENCE_TRANSFORMERS_HOME` / `HF_ENDPOINT` 三个 setdefault 仅此档需要。
 
-两个实现共享同一 `encode` 契约不变量（供 retriever 的 `q.tolist()` 与 indexer 的批量编码消费）：单字符串返回一维 `(D,)`、列表返回 `(B, D)` 的 `np.float32` ndarray、空列表返回 `(0, 0)`、归一化后余弦相似度等价于内积。`get_embedder()` 锁内按后端单例派发，未知后端直接 `RuntimeError`。三件套由 `src/scripts/export_embedding_onnx.py`（dev 依赖 torch/onnx）从同一份源权重导出：opset 18 + 动态 batch/seq 轴、两条不等长校准样本（防 dynamo 把 batch/seq 维专门化）、`do_lower_case` 按 `sentence_bert_config.json` 对齐 + `strip_accents=False`（保证与 ST 运行时分词逐 token 一致）、权重内联回单文件；`--int8` 追加动态量化（S7 裁决维持 fp32 打包，int8 不入包），导出幂等（文件存在且哈希与侧车一致即跳过）。
+两个实现共享同一 `encode` 契约不变量（供 retriever 的 `q.tolist()` 与 indexer 的批量编码消费）：单字符串返回一维 `(D,)`、列表返回 `(B, D)` 的 `np.float32` ndarray、空列表返回 `(0, 0)`、归一化后余弦相似度等价于内积。`get_embedder()` 锁内按后端单例派发，未知后端直接 `RuntimeError`。模块级 `encoder_fingerprint()` 返回当前编码器身份（onnx = 侧车记录的 `model.onnx` sha256 前 12 个十六进制位；st = 模型名），只读侧车记录值、不实例化模型，供 indexer 建索引盖章与 retriever 建连比对共用。三件套由 `src/scripts/export_embedding_onnx.py`（dev 依赖 torch/onnx）从同一份源权重导出：opset 18 + 动态 batch/seq 轴、两条不等长校准样本（防 dynamo 把 batch/seq 维专门化）、`do_lower_case` 按 `sentence_bert_config.json` 对齐 + `strip_accents=False`（保证与 ST 运行时分词逐 token 一致）、权重内联回单文件；`--int8` 追加动态量化（S7 裁决维持 fp32 打包，int8 不入包），导出幂等（文件存在且哈希与侧车一致即跳过）。
 
 `indexer.build_index(rebuild=True)` 四阶段执行：
 
 1. **加载语料** —— `load_all_blocks()` 遍历 `CORPUS_FILES`（12 个文件 × 对应 `_norm_*` 规范化函数）。缺文件只记 warning 跳过；规范化块数与源数据条数不一致直接抛 `ValueError`；块 ID 重复抛 `ValueError`（重复会让 Chroma 覆盖或写入失败）。统一注入版本元数据 `is_current` / `as_of`（默认 `CORPUS_BASE_DATE`）。
 2. **加载编码器** —— `get_embedder()`（日志报 `backend=onnx|st`）。
 3. **向量化** —— `model.encode(docs, batch_size=32, normalize_embeddings=True)`。
-4. **写入 ChromaDB** —— 集合名固定 `mjs_rag_v1`，`metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料'}`。HNSW（Hierarchical Navigable Small World，可导航小世界图）是 ChromaDB 的向量近似最近邻索引结构；`hnsw:space` 指定距离度量。批量 `BATCH=200`。
+4. **写入 ChromaDB** —— 集合名固定 `mjs_rag_v1`，`metadata={'hnsw:space': 'cosine', 'description': '名将杀 RAG 语料', 'encoder_fingerprint': encoder_fingerprint()}`——给索引盖"出生章"（onnx=侧车 `model.onnx` sha256 前 12 位，st=模型名），使索引向量与编码器的同源性可被代码校验。HNSW（Hierarchical Navigable Small World，可导航小世界图）是 ChromaDB 的向量近似最近邻索引结构；`hnsw:space` 指定距离度量。批量 `BATCH=200`。
 
-**重建与增量语义不同**：`rebuild=True`（2081b5b 起）不再 `delete_collection`，而是 `shutil.rmtree(config.CHROMA_DIR)` 整目录删除 + 新建——`delete_collection` 会遗留孤立段目录（实测累计 21 组，索引体积 80.9MB→14.8MB）；rmtree 抛 `OSError` 时转 `RuntimeError("旧索引目录…删除失败，请关闭占用该目录的程序后重试")` 中止，不静默在残留旧向量上继续；`PersistentClient` 在 rmtree 之后才创建。`rebuild=False` 则做集合同步：新增 `add` / 交集 `update` / 过期 `delete`，保留 collection 结构与 HNSW 索引。
+**重建与增量语义不同**：`rebuild=True`（2081b5b 起）不再 `delete_collection`，而是 `shutil.rmtree(config.CHROMA_DIR)` 整目录删除 + 新建——`delete_collection` 会遗留孤立段目录（实测累计 21 组，索引体积 80.9MB→14.8MB）；rmtree 抛 `OSError` 时转 `RuntimeError("旧索引目录…删除失败，请关闭占用该目录的程序后重试")` 中止，不静默在残留旧向量上继续；`PersistentClient` 在 rmtree 之后才创建。`rebuild=False` 则做集合同步：新增 `add` / 交集 `update` / 过期 `delete`，保留 collection 结构与 HNSW 索引；**同步前先校验集合 `encoder_fingerprint`**——缺章的旧库或指纹失配（换过编码器/重导出）均 `RuntimeError` 中止并指引全量重建，跨编码器的增量 add/update 只会把异源向量越混越深。
 
 ### 3.3 混合检索
+
+`Retriever.collection` 建连（首次访问）即校验集合 `encoder_fingerprint`：缺章（旧版本构建）或与当前编码器失配直接 `RuntimeError` 并带重建指引（`python -m src.rag.indexer`）——换编码器后旧索引的相似度全盘失真且无自曝，宁可拒绝服务也不静默错配；错误经检索诊断抽屉呈现给用户，AI 生成路径（rag_prompt）按既有降级语义转为"无 RAG + 告警日志"。
 
 `Retriever.search(query, heroes=None, top_k=None)` 三路取块再融合：
 

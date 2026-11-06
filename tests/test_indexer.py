@@ -181,6 +181,7 @@ class _FakeCollection:
         self.deleted_where_count = 0
         self.existing_ids = []
         self.count_value = 0
+        self.metadata = None  # 集合级 metadata（编码器指纹盖章/校验用）
 
     def get(self, include=None):
         return {"ids": list(self.existing_ids)}
@@ -211,6 +212,7 @@ class _FakeClient:
         self.fail_delete = fail_delete
         self.delete_attempts = []
         self.persistent_paths = []
+        self.created_metadata = None
 
     def delete_collection(self, name):
         self.delete_attempts.append(name)
@@ -221,6 +223,7 @@ class _FakeClient:
         return [SimpleNamespace(name=n) for n in self.existing_collections]
 
     def get_or_create_collection(self, name, metadata=None):
+        self.created_metadata = metadata
         return self.collection
 
 
@@ -232,6 +235,9 @@ def _patch_heavy_deps(monkeypatch, client):
     from src.rag import embedder as embedder_mod
 
     monkeypatch.setattr(embedder_mod, "get_embedder", lambda: _FakeEmbedder())
+    # 指桩固定值：断言盖章/校验语义，不依赖本机是否存在真实侧车
+    monkeypatch.setattr(embedder_mod, "encoder_fingerprint",
+                        lambda: "onnx:testfp")
     monkeypatch.setitem(sys.modules, "chromadb",
                         SimpleNamespace(PersistentClient=lambda path: client.persistent_paths.append(path) or client))
 
@@ -262,6 +268,8 @@ def test_build_index_rebuild_writes_all_blocks(monkeypatch, tmp_path) -> None:
     assert "【武将技能】曹操" in documents[0]
     assert metadatas[0]["is_current"] == "false"
     assert collection.count() == 2
+    # 全量重建必须给集合盖编码器指纹章（04 审查 P2）
+    assert client.created_metadata["encoder_fingerprint"] == "onnx:testfp"
 
 
 def test_build_index_rebuild_rmtree_cleans_orphan_segment_dirs(monkeypatch, tmp_path) -> None:
@@ -319,6 +327,7 @@ def test_build_index_incremental_syncs_add_update_delete(monkeypatch, tmp_path) 
     collection = _FakeCollection()
     collection.existing_ids = ["hero_caocao_skill", "hero_stale"]
     collection.count_value = 2  # 库内已有 2 块（其中 1 块已过期）
+    collection.metadata = {"encoder_fingerprint": "onnx:testfp"}  # 同源集合才可增量
     client = _FakeClient(collection)
     _patch_heavy_deps(monkeypatch, client)
 
@@ -328,6 +337,35 @@ def test_build_index_incremental_syncs_add_update_delete(monkeypatch, tmp_path) 
     assert collection.updated and collection.updated[0][0] == ["hero_caocao_skill"]
     assert collection.added and collection.added[0][0] == ["hero_caocao_overview"]
     assert total == 2
+
+
+def test_build_index_incremental_aborts_without_fingerprint(monkeypatch, tmp_path) -> None:
+    """缺章旧库不可增量：继续同步等于在来源不明的向量上越混越深。"""
+    _patch_corpus(monkeypatch, tmp_path)
+    collection = _FakeCollection()
+    collection.existing_ids = ["hero_caocao_skill"]
+    collection.metadata = {}  # 旧版本构建：无 encoder_fingerprint
+    client = _FakeClient(collection)
+    _patch_heavy_deps(monkeypatch, client)
+
+    with pytest.raises(RuntimeError, match="缺少编码器指纹"):
+        indexer.build_index(rebuild=False)
+    assert not collection.added and not collection.updated  # 中止：零写入
+
+
+def test_build_index_incremental_aborts_on_fingerprint_mismatch(monkeypatch, tmp_path) -> None:
+    """跨编码器不可增量：索引与当前编码器不同源时必须中止并指引全量重建。"""
+    _patch_corpus(monkeypatch, tmp_path)
+    collection = _FakeCollection()
+    collection.existing_ids = ["hero_caocao_skill"]
+    collection.metadata = {"encoder_fingerprint": "onnx:otherenc"}
+    client = _FakeClient(collection)
+    _patch_heavy_deps(monkeypatch, client)
+
+    with pytest.raises(RuntimeError, match="指纹不匹配") as excinfo:
+        indexer.build_index(rebuild=False)
+    assert "onnx:otherenc" in str(excinfo.value)  # 错误信息带两侧指纹便于排障
+    assert not collection.added and not collection.updated
 
 
 def test_build_index_rejects_duplicate_block_ids(monkeypatch, tmp_path) -> None:

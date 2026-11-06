@@ -230,3 +230,40 @@ def test_get_embedder_st_backend_uses_sentence_transformers(monkeypatch):
     assert isinstance(emb, embedder.STEmbedder)
     assert created == ["BAAI/bge-small-zh-v1.5"]
     assert out.shape == (3, 4)
+
+
+# ---------------------------------------------------------------
+# encoder_fingerprint：编码器身份指纹（onnx=侧车哈希 / st=模型名）
+# ---------------------------------------------------------------
+
+def test_encoder_fingerprint_onnx_uses_sidecar_sha256(tmp_path, monkeypatch):
+    d = _make_onnx_dir(tmp_path)
+    monkeypatch.setattr(embedder.config, "EMBEDDING_BACKEND", "onnx")
+    monkeypatch.setattr(embedder.config, "ONNX_MODEL_DIR", d)
+
+    sha = json.loads((d / "sha256.json").read_text(encoding="utf-8"))[
+        "model.onnx"]["sha256"]
+
+    assert embedder.encoder_fingerprint() == f"onnx:{sha[:12]}"
+
+
+def test_encoder_fingerprint_onnx_missing_sidecar_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(embedder.config, "EMBEDDING_BACKEND", "onnx")
+    monkeypatch.setattr(embedder.config, "ONNX_MODEL_DIR", tmp_path / "nope")
+
+    with pytest.raises(RuntimeError, match="export_embedding_onnx"):
+        embedder.encoder_fingerprint()
+
+
+def test_encoder_fingerprint_st_uses_model_name(monkeypatch):
+    monkeypatch.setattr(embedder.config, "EMBEDDING_BACKEND", "st")
+    monkeypatch.setattr(embedder.config, "EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+
+    assert embedder.encoder_fingerprint() == "st:BAAI/bge-small-zh-v1.5"
+
+
+def test_encoder_fingerprint_unknown_backend_raises(monkeypatch):
+    monkeypatch.setattr(embedder.config, "EMBEDDING_BACKEND", "bogus")
+
+    with pytest.raises(RuntimeError, match="RAG_EMBEDDING_BACKEND"):
+        embedder.encoder_fingerprint()

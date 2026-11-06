@@ -69,7 +69,22 @@ class Retriever:
         if self._collection is None:
             import chromadb
             client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
-            self._collection = client.get_collection('mjs_rag_v1')
+            coll = client.get_collection('mjs_rag_v1')
+            # 建连即校验编码器指纹：索引向量与查询向量必须同源，换编码器后
+            # 旧索引的相似度全盘失真且无自曝——宁可拒绝服务也不静默错配
+            # （04 审查 P2；错误经诊断抽屉呈现，AI 生成路径降级为无 RAG）
+            stored_fp = (coll.metadata or {}).get('encoder_fingerprint')
+            if not stored_fp:
+                raise RuntimeError(
+                    '索引 mjs_rag_v1 缺少编码器指纹（旧版本构建），'
+                    '请运行 python -m src.rag.indexer 重建')
+            from src.rag.embedder import encoder_fingerprint
+            current_fp = encoder_fingerprint()
+            if stored_fp != current_fp:
+                raise RuntimeError(
+                    f'索引 mjs_rag_v1 编码器指纹不匹配：索引构建时 {stored_fp}，'
+                    f'当前编码器 {current_fp}；请运行 python -m src.rag.indexer 重建')
+            self._collection = coll
         return self._collection
 
     @property

@@ -173,3 +173,30 @@ def get_embedder():
                 raise RuntimeError(
                     f"未知 RAG_EMBEDDING_BACKEND: {backend!r}（可选 onnx / st）")
         return _SINGLETON[backend]
+
+
+def encoder_fingerprint() -> str:
+    """当前编码器身份指纹：onnx = 侧车记录的 model.onnx sha256 前 12 位；
+    st = 模型名。只读侧车记录值，不重算哈希、不实例化模型（构造期校验
+    已保证侧车与文件一致）——供 indexer 建索引盖章与 retriever 建连
+    比对共用，把「索引-编码器同源」从流程约定下沉为代码可校验。"""
+    backend = config.EMBEDDING_BACKEND
+    if backend == "onnx":
+        sidecar_path = config.ONNX_MODEL_DIR / "sha256.json"
+        try:
+            entry = json.loads(sidecar_path.read_text(encoding="utf-8")).get(
+                "model.onnx")
+        except (OSError, ValueError) as error:
+            raise RuntimeError(
+                f"ONNX 编码器侧车缺失或不可读：{sidecar_path}（{error}）；"
+                f"请运行 {FIX_HINT} 重建") from error
+        sha = entry.get("sha256") if isinstance(entry, dict) else entry
+        if not isinstance(sha, str) or not sha:
+            raise RuntimeError(
+                f"侧车未记录 model.onnx 哈希：{sidecar_path}；"
+                f"请运行 {FIX_HINT} 重建")
+        return f"onnx:{sha[:12]}"
+    if backend == "st":
+        return f"st:{config.EMBEDDING_MODEL}"
+    raise RuntimeError(
+        f"未知 RAG_EMBEDDING_BACKEND: {backend!r}（可选 onnx / st）")
