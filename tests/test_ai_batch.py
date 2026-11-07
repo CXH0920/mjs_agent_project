@@ -704,3 +704,68 @@ def test_call_api_payload_thinking_only_for_deepseek():
     gen2._client = _FakeClient()
     gen2._call_api([{"role": "user", "content": "x"}])
     assert "thinking" not in captured["payload"]
+
+
+def test_validation_failure_logs_field_details(caplog) -> None:
+    """校验失败日志带 pydantic 字段级详情（loc/msg），不再只有类型名（第 6 批审查 P3）。"""
+    from src.scraper.ai import utils as ai_utils
+
+    with caplog.at_level("ERROR", logger="src.scraper.ai.utils"):
+        # hero_id 必为 int：非数字字符串触发 int_parsing 错误
+        assert ai_utils.validate_guide({"hero_id": "不是数字"}) is None
+
+    assert "HeroGuide Pydantic 校验失败" in caplog.text
+    assert "loc" in caplog.text  # e.errors() 结构化详情（字段定位），非裸类型名
+
+
+def test_repair_strings_fixes_newlines_not_unescaped_quotes() -> None:
+    """现状锁定（第 6 批审查 P3 docstring 改实）：仅修复字符串内字面换行，引号保守透传。"""
+    from src.scraper.ai.json_extract import extract_json
+
+    # 字符串内字面换行 → 修复为 \n 后可解析
+    assert extract_json('{"description": "行1\n行2"}') == {"description": "行1\n行2"}
+
+    # 未转义引号不做修复：提取失败上抛，而不是"看起来修好了"
+    with pytest.raises(ValueError):
+        extract_json('{"description": "他说"好""}')
+
+
+def test_dry_run_estimates_targeted_modes(tmp_path, capsys) -> None:
+    """dry-run 三定向分支有成本估算，文案多供应商中性（第 6 批审查 P3）。"""
+    from types import SimpleNamespace
+
+    from src.scraper.ai.batch import _show_cost_estimate
+
+    pair_file = tmp_path / "pair.json"
+    pair_file.write_text(json.dumps([{"id": 1}, {"id": 2}, {"id": 3}]), encoding="utf-8")
+    pairs_file = tmp_path / "list.json"
+    pairs_file.write_text(json.dumps([{"hero_a_id": 1, "hero_b_id": 2}] * 5), encoding="utf-8")
+    args = SimpleNamespace(guide=False, synergy=False, synergy_single=True,
+                           synergy_pair=str(pair_file), synergy_list=str(pairs_file))
+
+    _show_cost_estimate([{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}],
+                        {"model": "test"}, args)
+
+    out = capsys.readouterr().out
+    assert "相性评分（选定武将 x 全体）" in out and "3 对" in out    # 4 武将 - 1
+    assert "相性评分（指定武将两两）" in out and "3 对" in out       # C(3,2)
+    assert "相性评分（实战配队清单）" in out and "5 对" in out
+    assert "DEEPSEEK_API_KEY" not in out
+    assert "API 配置" in out
+
+
+def test_dry_run_skips_unreadable_targeted_lists(tmp_path, capsys) -> None:
+    """定向清单读不了：提示跳过该分支估算，dry-run 不因坏输入退出。"""
+    from types import SimpleNamespace
+
+    from src.scraper.ai.batch import _show_cost_estimate
+
+    args = SimpleNamespace(guide=False, synergy=False, synergy_single=False,
+                           synergy_pair=str(tmp_path / "missing.json"),
+                           synergy_list=str(tmp_path / "missing2.json"))
+
+    _show_cost_estimate([{"id": 1}], {"model": "test"}, args)  # 不应抛异常
+
+    out = capsys.readouterr().out
+    assert "指定武将清单不可读" in out
+    assert "配队清单不可读" in out

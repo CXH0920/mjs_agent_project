@@ -1078,3 +1078,40 @@ def test_both_generators_expose_same_public_contract() -> None:
     for cls in (AIBatchGenerator, PlaywrightGenerator):
         for method in ("generate_guide", "generate_synergy", "cancel", "close"):
             assert callable(getattr(cls, method, None)), f"{cls.__name__} 缺 {method}"
+
+
+def test_snapshot_failure_writes_interrupted_state(monkeypatch, tmp_path: Path) -> None:
+    """写前快照失败（读盘异常）走统一收尾：中断标记落盘、非零退出（第 6 批审查 P3）。"""
+    import src.scraper.ai.batch as ai_batch
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    def _boom(_path):
+        raise OSError("disk unavailable")
+
+    class _FakeBrowserGenerator:
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(ai_batch, "load_heroes", lambda _path: [{"id": 1, "name": "甲"}])
+    monkeypatch.setattr(ai_batch, "resolve_api_config",
+                        lambda *a, **k: {"api_key": "k", "api_url": "", "model": "test"})
+    monkeypatch.setattr(
+        ai_batch, "get_runtime_params",
+        lambda: {"log_level": "WARNING", "log_to_file": False,
+                 "requests_per_minute": 1, "max_retries": 0, "http_timeout": 1})
+    monkeypatch.setattr(ai_batch, "snapshot_to_backups", _boom)
+    monkeypatch.setattr(ai_batch, "GENERATION_LOCK_PATH", tmp_path / "gen.lock")
+    failures = tmp_path / "ai_last_failures.json"
+    monkeypatch.setattr(ai_batch, "LAST_FAILURES_PATH", failures)
+    monkeypatch.setattr(ai_playwright, "PlaywrightGenerator", _FakeBrowserGenerator)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["ai_batch", "--guide", "--browser", "--guides-file", str(tmp_path / "guides.json")])
+
+    with pytest.raises(SystemExit) as excinfo:
+        ai_batch.main()
+
+    assert excinfo.value.code == 1
+    state = json.loads(failures.read_text(encoding="utf-8"))
+    assert state["interrupted"] is True
+    assert "OSError" in state["error"]

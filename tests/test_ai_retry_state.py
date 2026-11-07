@@ -149,3 +149,20 @@ def test_ctrl_c_during_generation_writes_interrupted_marker(tmp_path, monkeypatc
     assert state["interrupted"] is True
     assert "KeyboardInterrupt" in state["error"]
     assert "任务因 KeyboardInterrupt 中断" in capsys.readouterr().out
+
+
+def test_save_last_failures_uses_atomic_write(tmp_path, monkeypatch) -> None:
+    """失败清单经 atomic_write_json 落盘（第 6 批审查 P3）：写一半崩溃不再留半截 JSON。"""
+    calls: list = []
+    monkeypatch.setattr(batch, "atomic_write_json",
+                        lambda path, state: calls.append((path, state)))
+    monkeypatch.setattr(batch, "LAST_FAILURES_PATH", tmp_path / "ai_last_failures.json")
+
+    class _Args:
+        guide = True
+        synergy = False
+
+    batch._save_last_failures(_Args(), ["甲"])
+
+    assert len(calls) == 1
+    assert calls[0][1]["failed_items"] == ["甲"]

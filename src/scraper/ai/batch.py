@@ -29,6 +29,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from src.config.atomic_write import atomic_write_json
 from src.config.env import PROJECT_ROOT, PROVIDER_PRESETS, get_runtime_params, runtime_data_dir
 from src.config.profiles import resolve_api_config
 from src.data.guide_manager import GuideManager
@@ -36,7 +37,7 @@ from src.data.json_repository import snapshot_to_backups
 from src.data.synergy_manager import SynergyManager
 from src.scraper.ai.api_generator import AIBatchGenerator
 from src.scraper.ai.generation_lock import acquire_generation_lock
-from src.scraper.ai.prompt_utils import estimate_cost, estimate_cost_by_tokens
+from src.scraper.ai.prompt_utils import estimate_cost, estimate_cost_by_tokens, estimate_item_cost
 from src.scraper.ai.utils import (
     load_heroes,
     safe_url_origin,
@@ -152,8 +153,53 @@ def _show_cost_estimate(heroes: list, api_config: dict, args) -> None:
         _print_mode_estimates(len(heroes), "guide", "攻略生成", api_config["model"])
     if args.synergy:
         _print_mode_estimates(len(heroes), "synergy", "相性评分", api_config["model"])
-    print("  （在 config.env 中配置 DEEPSEEK_API_KEY，然后去除 --dry-run 执行）")
+    # 定向模式按实际配对数直估（第 6 批审查 P3：dry-run 此前不覆盖三分支）
+    if args.synergy_single:
+        _print_item_estimates(len(heroes) - 1, "相性评分（选定武将 x 全体）",
+                              api_config["model"])
+    if args.synergy_pair:
+        pair_count = _count_synergy_pair_items(args.synergy_pair)
+        if pair_count is not None:
+            _print_item_estimates(pair_count, "相性评分（指定武将两两）",
+                                  api_config["model"])
+    if args.synergy_list:
+        list_count = _count_synergy_list_items(args.synergy_list)
+        if list_count is not None:
+            _print_item_estimates(list_count, "相性评分（实战配队清单）",
+                                  api_config["model"])
+    print("  （在「配置 → API 配置」中为所选档案填写 Key，然后去除 --dry-run 执行）")
     print("=" * 55)
+
+
+def _count_synergy_pair_items(pair_file: str) -> int | None:
+    """读指定武将清单条数并换算 C(n,2) 配对数；读不了提示跳过而非退出。"""
+    try:
+        entries = json.loads(Path(pair_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(f"  [提示] 指定武将清单不可读，跳过该分支估算: {pair_file}（{error}）")
+        return None
+    count = len(entries) if isinstance(entries, list) else 0
+    return count * (count - 1) // 2
+
+
+def _count_synergy_list_items(pairs_file: str) -> int | None:
+    """读配队清单条数；读不了提示跳过而非退出。"""
+    try:
+        entries = json.loads(Path(pairs_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(f"  [提示] 配队清单不可读，跳过该分支估算: {pairs_file}（{error}）")
+        return None
+    return len(entries) if isinstance(entries, list) else 0
+
+
+def _print_item_estimates(item_count: int, label: str, model: str) -> None:
+    """按实际请求项数输出 RAG/经典两版估算（定向模式 dry-run 预览）。"""
+    for version, use_rag in (("RAG 增强", True), ("经典模式", False)):
+        est = estimate_item_cost(item_count, "synergy", model, use_rag=use_rag)
+        print(f"  {label}（{version}）: {est['items']:,} 对")
+        print(f"  预估 Token: {est['estimated_tokens']:,} (输入 {est['estimated_input_tokens']:,} + 输出 {est['estimated_output_tokens']:,})")
+        print(_format_cost_estimate(est))
+    print()
 
 
 def _print_mode_estimates(count: int, mode: str, label: str, model: str) -> None:
@@ -187,9 +233,7 @@ def _save_last_failures(args, failed_items: list[str]) -> None:
         "failed_items": failed_items,
     }
     try:
-        LAST_FAILURES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        LAST_FAILURES_PATH.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(LAST_FAILURES_PATH, state)
         print(f"  失败清单已记录: {LAST_FAILURES_PATH}", flush=True)
     except OSError as exc:
         logger.warning("失败清单写入失败: %s", exc)
@@ -210,9 +254,7 @@ def _save_interrupted_state(args, error: BaseException) -> None:
         "failed_items": [],
     }
     try:
-        LAST_FAILURES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        LAST_FAILURES_PATH.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(LAST_FAILURES_PATH, state)
         print(f"  中断状态已记录: {LAST_FAILURES_PATH}", flush=True)
     except OSError as exc:
         logger.warning("中断状态写入失败: %s", exc)
@@ -382,21 +424,22 @@ def main():
         print("  [错误] 已有另一个生成任务正在运行，为避免数据互相覆盖，本次启动被拒绝", flush=True)
         print("  （持有方信息见 logs/ai_generation.lock.holder 与运行日志）", flush=True)
         sys.exit(1)
-    # 写前快照（每次运行一次，而非每 10 条批量提交一次）：生成期间旧数据
-    # 可从 data/backups 找回，避免新一轮生成覆盖后无基线可回滚
-    if args.guide:
-        snapshot_to_backups(guide_path)
-    if has_synergy_mode:
-        snapshot_to_backups(synergy_path)
-    existing_guides = _load_existing_guides(guide_path) if args.guide else {}
-    existing_synergy_dict, existing_synergy_keys = (
-        _load_existing_synergies(synergy_path) if has_synergy_mode
-        else ({}, set())
-    )
-
     task_results = []
     fatal_error: BaseException | None = None
     try:
+        # 写前快照（每次运行一次，而非每 10 条批量提交一次）：生成期间旧数据
+        # 可从 data/backups 找回，避免新一轮生成覆盖后无基线可回滚。
+        # 快照/加载在 try 内（第 6 批审查 P3）：读盘异常同样走统一收尾
+        # （close + release + 中断标记 + 非零退出），不再裸抛带着未释放的锁柄
+        if args.guide:
+            snapshot_to_backups(guide_path)
+        if has_synergy_mode:
+            snapshot_to_backups(synergy_path)
+        existing_guides = _load_existing_guides(guide_path) if args.guide else {}
+        existing_synergy_dict, existing_synergy_keys = (
+            _load_existing_synergies(synergy_path) if has_synergy_mode
+            else ({}, set())
+        )
         if args.guide:
             from src.scraper.ai.generation import run_guide_generation
             task_results.append(run_guide_generation(

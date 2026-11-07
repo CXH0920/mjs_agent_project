@@ -186,7 +186,7 @@ for idx, (ha, hb) in enumerate(pairs, start=1):
 
 单个生成任务每累计 10 条攻略或相性校验成功，即通过临时文件 `replace()` 原子提交到正式 `guides.json` / `synergies.json`；任务结束时会提交不足一批的成功结果。任一失败项只保留原有对应记录，不回滚已成功批次。用户在进度对话框选择中止时会终止子进程，已提交批次保留，正在处理且尚未提交的数据不会写入。浏览器模式没有 token usage，不会因缺少 usage 被误判为失败，也不要求 API Key。
 
-**写前快照（d2c5b83）**：`main()` 在加载既有数据前，`--guide` 模式对 `guide_path`、相性模式对 `synergy_path` 各 `snapshot_to_backups()` 一次——**每次运行一次而非每 10 条批量提交一次**，避免一次全量生成产生大量备份；生成期间旧数据可从 `data/backups/` 找回（AI 子进程按批全量覆盖写，落点是它启动时读入的旧快照）。
+**写前快照（d2c5b83）**：`main()` 在加载既有数据前，`--guide` 模式对 `guide_path`、相性模式对 `synergy_path` 各 `snapshot_to_backups()` 一次——**每次运行一次而非每 10 条批量提交一次**，避免一次全量生成产生大量备份；生成期间旧数据可从 `data/backups/` 找回（AI 子进程按批全量覆盖写，落点是它启动时读入的旧快照）。快照与既有数据加载位于生成循环同一 `try` 块内：读盘异常同样走统一收尾（`close` + `release` + 中断标记 + 非零退出），不再裸抛绕过收尾。
 
 **相性日期标记：** 每次校验成功的相性结果通过 `_with_synergy_updated_date()` 写入 `last_updated` 字段（本次生成日期），用于追踪数据新鲜度。
 
@@ -223,7 +223,7 @@ for idx, (ha, hb) in enumerate(pairs, start=1):
 - **锁文件**：`GENERATION_LOCK_PATH = PROJECT_ROOT/"logs"/"ai_generation.lock"`（运行时状态，已 gitignore），旁路 `ai_generation.lock.holder` 记录持有者 `pid\tISO 时间`。持有信息写在旁路文件而非锁文件本体，因为 Windows 字节锁会拒绝其他句柄对锁文件的常规读取；进程崩溃后 holder 可能残留旧记录，故互斥判定一律以 OS 锁为准（文案用"最近持有记录"而非"持有者"）。
 - **实现**：Windows `msvcrt.locking(fd, LK_NBLCK, 1)` / POSIX `fcntl.flock(fd, LOCK_EX|LOCK_NB)` 对第 0 字节加非阻塞独占锁。持锁进程退出（含崩溃、断电、任务管理器结束）时锁由 OS 自动释放，不留下需要人工清理的残留锁。
 - **拒绝语义**：`acquire_generation_lock()` 被占用返回 `None`，`main()` 打印「已有另一个生成任务正在运行…」并 `sys.exit(1)`（子进程非零退出，进度窗口按失败上报）。锁文件本身不可创建或不可锁定时返回哑锁（`fd=-1`）降级放行——保持无锁旧行为，仅记警告，不因锁机制自身故障阻断生成。
-- **释放时机**：持锁跨越整个生成循环与提交阶段，`main()` 的 `finally` 中 `lock.release()`（在 `generator.close()` 之后）；`--dry-run` 在获取锁之前提前 `return`，不占用锁。
+- **释放时机**：持锁跨越写前快照、既有数据加载与整个生成循环（均在其 `try` 保护圈内），`main()` 的 `finally` 中 `lock.release()`（在 `generator.close()` 之后）；`--dry-run` 在获取锁之前提前 `return`，不占用锁。
 
 ### 3.8 中断状态与取消链路（74ad9b9 / f10b477 / f1b13f8）
 
@@ -441,7 +441,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 | `--synergy-single` | None | 选定武将 vs 全体 |
 | `--synergy-list` | None | 实战配队清单（`[{"hero_a_id": int, "hero_b_id": int}, ...]` JSON 文件） |
 | `--browser` | False | 使用浏览器模式 |
-| `--dry-run` | False | 预览成本（仅 API 模式） |
+| `--dry-run` | False | 预览成本（仅 API 模式；全量与定向模式均输出估算，定向清单不可读时提示跳过） |
 | `--update` | False | 更新模式（重新生成已有数据） |
 | `--heroes-file` | `data/heroes.json` | 武将数据文件（UI 增量/指定模式会传入临时武将文件） |
 | `--guides-file` | `data/guides.json` | 攻略输出路径 |

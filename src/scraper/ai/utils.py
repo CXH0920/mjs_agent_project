@@ -95,6 +95,14 @@ def convert_ids_to_int(data: dict, fields: list[str]) -> dict:
 # ============================================================
 
 
+def _pydantic_error_detail(error: Exception) -> str:
+    """校验异常的字段级详情：pydantic v2 优先 e.errors()（loc/msg/ctx 结构化
+    列表），非 pydantic 异常回退 str——排障要的是"哪个字段、什么值、为什么
+    失败"，不是只有一个类型名（第 6 批审查 P3）。"""
+    errors = getattr(error, "errors", None)
+    return str(errors()) if callable(errors) else str(error)
+
+
 def validate_guide(data: dict) -> dict | None:
     """通过 Pydantic HeroGuide 模型校验攻略数据"""
     try:
@@ -103,7 +111,8 @@ def validate_guide(data: dict) -> dict | None:
         logger.debug("HeroGuide 校验通过")
         return validated.model_dump(mode="json")
     except Exception as e:
-        logger.error("HeroGuide Pydantic 校验失败: %s", type(e).__name__)
+        logger.error("HeroGuide Pydantic 校验失败: %s: %s",
+                     type(e).__name__, _pydantic_error_detail(e))
         return None
 
 
@@ -115,7 +124,8 @@ def validate_synergy(data: dict) -> dict | None:
         logger.debug("SynergyScore 校验通过")
         return validated.model_dump(mode="json")
     except Exception as e:
-        logger.error("SynergyScore Pydantic 校验失败: %s", type(e).__name__)
+        logger.error("SynergyScore Pydantic 校验失败: %s: %s",
+                     type(e).__name__, _pydantic_error_detail(e))
         return None
 
 

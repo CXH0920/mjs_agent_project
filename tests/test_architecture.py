@@ -941,6 +941,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 547 → 553：三定向模式接入 --score-threshold 透传（第 6 批审查 P2-1，
     # 形参 + docstring）
     "scraper/ai/generation.py": 553,
+    # 489 → 532：dry-run 三定向分支成本估算（第 6 批审查 P3：single/pair/list
+    # 按实际配对数直估 + 清单不可读跳过 + 中性 Key 文案）
+    "scraper/ai/batch.py": 532,
     # 502 → 568：审计收集函数行级结构守卫 + audit_summary 自身失败兜底
     # （TD-A5-001 修复，2026-10-21：坏数据降级为提示条目而非穿透崩溃）
     # 568 → 571：collect_timeline_risk_messages 显式传 root 下时间轴路径给
