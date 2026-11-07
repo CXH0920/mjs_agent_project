@@ -105,7 +105,7 @@ ADB 或模拟器渲染通道偶发繁忙时，`stdout` 可能为空或只返回�
 
 不依赖 ADB 的第二条图像源：直接读取官方 PC 客户端窗口画面（Unity 客户端 `0.9.3002.144`，2026-10-25 真机取证定稿，选型依据见 `docs/design/pc_official_client_capture_design.md`）。接口对齐 `AdbCapture`（`connected` / `device_serial` / `connect` / `disconnect` / `screencap_full`），`CaptureConnectionManager` 按形态构建对应实例，下游 OCR 管线无感复用。**注：该形态 UI 入口自 `f48c9b0` 起暂隐藏**——直连画面排版与模拟器端存在界面元素位置差异，模板/ROI 按模拟器端标定致自动轮询空转，代码保留，恢复入口仅需还原设备页控件可见性，详见 §3.1 末段。
 
-**窗口识别（双条件，R1 定稿）**：进程名 `mjs.exe` + 窗口类 `UnityWndClass` 经 `EnumWindows` 枚举；标题仅作展示与配置键（`PC_WINDOW_TITLE`，默认"名将杀"），不作为匹配键（标题可被同名进程伪造）。`probe_pc_windows()` 返回 `PcWindowInfo` 候选列表（hwnd/pid/标题/客户区尺寸/是否最小化），三态语义：空列表 = 未启动（提示先启动客户端）、单窗自动选定、多窗要求用户在设备列表显式选择（不支持多开）。
+**窗口识别（双条件，R1 定稿）**：进程名 `mjs.exe` + 窗口类 `UnityWndClass` 经 `EnumWindows` 枚举；标题仅作展示与配置键（`PC_WINDOW_TITLE`，默认"名将杀"），不作为匹配键（标题可被同名进程伪造）。`discover_pc_windows()` 返回 `PcWindowInfo` 候选列表（hwnd/pid/标题/客户区尺寸/是否最小化），三态语义：空列表 = 未启动（提示先启动客户端）、单窗自动选定、多窗要求用户在设备列表显式选择（不支持多开）。
 
 **DPI 硬前置**：进程级 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` 幂等声明（`ensure_dpi_awareness()`）——未声明进程的窗口坐标在 >100% DPI 屏上被系统虚拟化谎报（真机取证：125% 副屏客户区谎报 2048×1088，真实 2560×1361），所有坐标裁剪都会失准。Qt6 宿主通常已自行声明，重复声明失败无害。
 
@@ -493,7 +493,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 | `AdbCapture.screencap_full(log_success=True)` → `(bool, Image\|str)` | 全屏截图（raw 帧优先失败回退 PNG，关键字参数轮询传 `False` 抑制成功日志） |
 | `PcClientCapture(window_title="名将杀")` | 构造 PC 客户端窗口采集器（接口对齐 AdbCapture，WGC 主路径 + BitBlt 兜底） |
 | `PcClientCapture.set_target_window(hwnd)` | 连接前指定目标窗口（多实例时由 UI 用户选择） |
-| `probe_pc_windows()` → `list[PcWindowInfo]` | 枚举客户端窗口候选（mjs.exe + UnityWndClass 双条件）；`PcWindowInfo.label` 为设备下拉展示文案（标题+客户区分辨率） |
+| `discover_pc_windows()` → `list[PcWindowInfo]` | 枚举客户端窗口候选（mjs.exe + UnityWndClass 双条件）；`PcWindowInfo.label` 为设备下拉展示文案（标题+客户区分辨率） |
 | `is_black_frame(image)` → `bool` | 黑帧双指标判定（灰度均值 <8.0 且近黑占比 >98%） |
 | `ensure_dpi_awareness()` | 进程级 Per-Monitor-V2 DPI 感知幂等声明（坐标物理化的硬前置） |
 | `resolve_adb_path(emulator_type)` → `str` | 探测 ADB 路径（PATH 优先，其次品牌自带 adb；pc_client 返回空串） |

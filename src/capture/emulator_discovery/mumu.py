@@ -21,7 +21,7 @@ from src.capture.emulator_discovery.models import EmulatorDeviceInfo
 logger = logging.getLogger(__name__)
 
 
-def _probe_mumu_registry() -> str | None:
+def _probe_registry() -> str | None:
     """通过 Windows 注册表查找 MuMu 12 安装路径。"""
     try:
         import winreg
@@ -56,7 +56,7 @@ def _get_mumu_candidates() -> list[Path]:
         candidates.append(process_dir.parent)
 
     # 3. Windows 注册表
-    reg_path = _probe_mumu_registry()
+    reg_path = _probe_registry()
     if reg_path:
         p = Path(reg_path)
         if p not in candidates:
@@ -81,7 +81,7 @@ def _get_mumu_candidates() -> list[Path]:
     return candidates
 
 
-def _find_mumu_root() -> Path | None:
+def _find_root() -> Path | None:
     """查找 MuMu 模拟器安装根目录。"""
     for root in _get_mumu_candidates():
         if root.exists() and (root / "nx_main").exists():
@@ -110,7 +110,7 @@ def find_adb() -> str:
 
 def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
     """探测所有 MuMu 模拟器实例；console 失败时回退端口段扫描。"""
-    mumu_root = _find_mumu_root()
+    mumu_root = _find_root()
     if not mumu_root:
         logger.warning("未找到 MuMu 模拟器安装目录")
         return port_scan.fallback_result("mumu", "MuMu", "未找到 MuMu 模拟器安装目录")
@@ -142,7 +142,6 @@ def discover_devices(retries: int = 1) -> tuple[list[EmulatorDeviceInfo], str]:
                         name=vm_info.get("name", f"实例 {index_str}"),
                         adb_port=port,
                         is_running=is_running,
-                        is_main=bool(vm_info.get("is_main")),
                     ))
                 devices = port_scan.supplement_when_empty("mumu", "MuMu", devices)
                 logger.info("探测到 %d 个 MuMu 实例（含端口扫描补充）", len(devices))

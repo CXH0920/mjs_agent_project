@@ -204,7 +204,7 @@ def test_console_failure_reports_error_when_scan_finds_nothing(monkeypatch) -> N
 
 
 def test_mumu_manager_failure_falls_back_to_port_scan(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("src.capture.emulator_discovery.mumu._find_mumu_root", lambda: None)
+    monkeypatch.setattr("src.capture.emulator_discovery.mumu._find_root", lambda: None)
     monkeypatch.setattr(
         port_scan, "discover_devices_via_ports",
         lambda emulator_type, label: [EmulatorDeviceInfo("1", "MuMu 实例 1（端口扫描）", 16384, True)],
@@ -762,7 +762,7 @@ def test_mumu_retries_actually_retries(monkeypatch, tmp_path) -> None:
         from types import SimpleNamespace
         return SimpleNamespace(returncode=1, stdout=b"")
 
-    monkeypatch.setattr(mumu, "_find_mumu_root", lambda: tmp_path)
+    monkeypatch.setattr(mumu, "_find_root", lambda: tmp_path)
     monkeypatch.setattr(mumu, "subprocess", __import__("types").SimpleNamespace(run=always_fail))
     monkeypatch.setattr(mumu, "time", __import__("types").SimpleNamespace(sleep=lambda _s: None))
     monkeypatch.setattr(port_scan, "discover_devices_via_ports", lambda emulator_type, label: [])

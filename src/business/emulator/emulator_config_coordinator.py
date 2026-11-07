@@ -32,7 +32,7 @@ from src.capture.emulator_discovery import EmulatorDeviceInfo as EmulatorDeviceI
 from src.capture.image_validation import load_local_image
 from src.capture.pc_client import PcClientCapture
 from src.capture.pc_client import PcWindowInfo as PcWindowInfo
-from src.capture.pc_client import probe_pc_windows as probe_pc_windows
+from src.capture.pc_client import discover_pc_windows as discover_pc_windows
 from src.config.env import DEFAULT_ENV_FILE, save_env_file
 from src.ocr.roi_config import OcrRoiConfig, OcrRoiLayout
 
@@ -184,7 +184,7 @@ class EmulatorConfigCoordinator(QObject):
 
     def refresh_pc_windows(self) -> list[PcWindowInfo]:
         """同步枚举官方 PC 客户端窗口（纯 Win32 调用，毫秒级，不走后台执行器）。"""
-        return probe_pc_windows()
+        return discover_pc_windows()
 
     def detect_adb(self) -> None:
         self._operation_service.detect_adb(self.emulator_type)

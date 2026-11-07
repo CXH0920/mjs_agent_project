@@ -2031,7 +2031,6 @@ class EmulatorDeviceInfo:
     name: str           # 实例名称
     adb_port: int       # ADB 端口
     is_running: bool    # 是否正在运行
-    is_main: bool       # 是否为主实例
 ```
 
 #### 品牌探测策略
@@ -2096,7 +2095,7 @@ class AdbCapture:
 
 不经 ADB 的第二条图像源：枚举并只读官方 PC 客户端窗口画面（Unity 客户端，真机取证定稿 `0.9.3002.144`），接口对齐 `AdbCapture`（`connected` / `device_serial` / `connect` / `disconnect` / `screencap_full`），由 `CaptureConnectionManager` 按 `emulator_type=pc_client` 构建，下游 OCR 管线无感复用。选型依据与真机取证见 `docs/design/pc_official_client_capture_design.md`。
 
-**窗口识别（双条件）**：进程名 `mjs.exe` + 窗口类 `UnityWndClass` 经 `EnumWindows` 枚举（`probe_pc_windows()`）；标题仅作展示与配置键（`PC_WINDOW_TITLE`，默认"名将杀"），不作为匹配键。三态语义：空列表 = 未启动、单窗自动选定、多窗要求 UI 显式选择（不支持多开）。进程级 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` 幂等声明为硬前置——未声明进程的窗口坐标在 >100% DPI 屏上被系统虚拟化谎报（真机取证 125% 副屏谎报 2048×1088，真实 2560×1361），坐标裁剪会全部失准。
+**窗口识别（双条件）**：进程名 `mjs.exe` + 窗口类 `UnityWndClass` 经 `EnumWindows` 枚举（`discover_pc_windows()`）；标题仅作展示与配置键（`PC_WINDOW_TITLE`，默认"名将杀"），不作为匹配键。三态语义：空列表 = 未启动、单窗自动选定、多窗要求 UI 显式选择（不支持多开）。进程级 `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` 幂等声明为硬前置——未声明进程的窗口坐标在 >100% DPI 屏上被系统虚拟化谎报（真机取证 125% 副屏谎报 2048×1088，真实 2560×1361），坐标裁剪会全部失准。
 
 **采集主路径 WGC**（Windows.Graphics.Capture，经 `windows-capture==2.0.1`，要求 Win10 1903+）：`_WgcSession` 后台线程按**窗口句柄定向**连接，帧回调持续刷新最新 BGRA 帧。必须句柄而非标题连接——库的 `window_name` 是标题**子串匹配**，工具自身主窗口"名将杀 Agent"包含"名将杀"且连接时必在 Z 序顶端，实测会 attach 到工具自身窗口截出工具 UI（真机事故）；句柄定向是唯一根治。WGC 为合成器级取图，窗口被遮挡仍可采集；启动失败（依赖缺失/系统不支持/首帧 5 秒超时）静默降级 BitBlt。
 

@@ -18,4 +18,3 @@ class EmulatorDeviceInfo:
     name: str           # 实例名称
     adb_port: int       # ADB 端口
     is_running: bool    # 是否正在运行
-    is_main: bool = False

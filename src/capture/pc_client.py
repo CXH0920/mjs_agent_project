@@ -189,9 +189,11 @@ def _process_name_of(pid: int) -> str:
         _KERNEL32.CloseHandle(handle)
 
 
-def probe_pc_windows() -> list[PcWindowInfo]:
+def discover_pc_windows() -> list[PcWindowInfo]:
     """枚举运行中的官方 PC 客户端窗口（进程名 + 窗口类名双条件）。
 
+    PC 窗口枚举即 pc_client 形态的设备枚举，并入 discover 词根语义
+    （AGENTS.md 命名条款②；原 probe_pc_windows，第 1 批审查 P3-2 拍板改名）。
     返回候选列表；空列表 = 未运行（R4：调用方按未启动提示）。
     """
     ensure_dpi_awareness()
@@ -450,7 +452,7 @@ class _WgcSession:
             try:
                 control.stop()
             except Exception as e:  # noqa: BLE001
-                logger.debug("WGC 会话停止异常（可忽略）: %s}", e)
+                logger.debug("WGC 会话停止异常（可忽略）: %s", e)
 
 
 class PcClientCapture:
@@ -530,7 +532,7 @@ class PcClientCapture:
                 return self._hwnd
             logger.info("缓存的窗口句柄已失效，按标题重新发现")
             self._hwnd = 0
-        windows = probe_pc_windows()
+        windows = discover_pc_windows()
         if not windows:
             return MSG_CLIENT_NOT_RUNNING
         if len(windows) == 1:

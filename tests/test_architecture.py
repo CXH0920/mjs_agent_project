@@ -790,7 +790,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # sys.platform 守卫与 _NullWinDLL 占位（capture_connection 顶层 import
     # 要求跨平台可导入；占位哑函数按 Win32 失败语义返回 0，调用方既有
     # 容错分支照常生效）
-    "capture/pc_client.py": 599,
+    # 599 → 601：probe_pc_windows 改名 discover_pc_windows 的 docstring 语义
+    # 注记（第 1 批审查 P3-2 拍板改名）
+    "capture/pc_client.py": 601,
     # 641 → 363：API 档案域拆出 profiles.py（审计 G7，2026-09）；
     # 363 → 366：get_emulator_config 补回截图模式键（T1 运维加固，2026-10）；
     # 366 → 368：MJS_DATA_REPO 私有仓位置映射（R3 生命线加固，2026-10）

@@ -231,9 +231,10 @@ class AdbCapture:
             return False, "尚未连接"
         ok, state = self._get_device_state(self._device_serial)
         if not ok or state != "device":
-            detail = state if ok else state
+            # state 两种情况下均为可展示详情（ok=False 时即错误消息，
+            # ok=True 时即异常状态），直接入文案
             self._invalidate_connection()
-            return False, f"设备不可用: {detail}"
+            return False, f"设备不可用: {state}"
         return True, "设备在线"
 
     # ── 截图 ──────────────────────────────────────────────────────────

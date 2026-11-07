@@ -31,7 +31,6 @@ model_config  # pydantic 配置属性（populate_by_name）
 # ── DTO / dataclass 字段（构造器关键字写入，外部读取契约）──────────
 source_field  # match_analysis_service 三个提示 DTO 的来源标注字段
 weight  # PeakBanAdvice.weight，文档化 DTO 契约
-is_main  # EmulatorDeviceInfo.is_main
 first_seen_at  # Announcement.first_seen_at
 checked_at  # BaikeSnapshot / CardSyncState.checked_at
 

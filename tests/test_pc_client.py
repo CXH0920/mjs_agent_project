@@ -65,7 +65,7 @@ def test_black_frame_requires_both_metrics() -> None:
 
 def test_connect_reports_when_client_not_running(monkeypatch) -> None:
     cap = PcClientCapture()
-    monkeypatch.setattr(pc_client, "probe_pc_windows", lambda: [])
+    monkeypatch.setattr(pc_client, "discover_pc_windows", lambda: [])
 
     ok, message = cap.connect()
 
@@ -76,7 +76,7 @@ def test_connect_reports_when_client_not_running(monkeypatch) -> None:
 def test_connect_auto_selects_single_window(monkeypatch) -> None:
     cap = PcClientCapture()
     window = _window(hwnd=42)
-    monkeypatch.setattr(pc_client, "probe_pc_windows", lambda: [window])
+    monkeypatch.setattr(pc_client, "discover_pc_windows", lambda: [window])
     monkeypatch.setattr(pc_client, "_client_metrics", lambda hwnd: ((1920, 1080), (0, 0)))
     monkeypatch.setattr(pc_client._USER32, "IsWindow", lambda _hwnd: True)
     monkeypatch.setattr(pc_client._USER32, "IsIconic", lambda _hwnd: False)
@@ -93,7 +93,7 @@ def test_connect_auto_selects_single_window(monkeypatch) -> None:
 def test_connect_multiple_windows_requires_selection(monkeypatch) -> None:
     cap = PcClientCapture()
     monkeypatch.setattr(
-        pc_client, "probe_pc_windows",
+        pc_client, "discover_pc_windows",
         lambda: [_window(hwnd=1), _window(hwnd=2)],
     )
 
@@ -106,7 +106,7 @@ def test_connect_multiple_windows_requires_selection(monkeypatch) -> None:
 def test_connect_honors_user_selected_window(monkeypatch) -> None:
     cap = PcClientCapture()
     monkeypatch.setattr(
-        pc_client, "probe_pc_windows",
+        pc_client, "discover_pc_windows",
         lambda: [_window(hwnd=1), _window(hwnd=2)],
     )
     monkeypatch.setattr(pc_client, "_client_metrics", lambda hwnd: ((1920, 1080), (0, 0)))
