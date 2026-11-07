@@ -286,7 +286,9 @@ class DeepSeekBrowserSession:
         if self._page is None:
             return False
         selector = self._chat_cfg.get("input_selector", "textarea")
-        timeout = self._chat_cfg.get("login_timeout", 15000)
+        # 回退与 DEFAULT_CHAT_CONFIG 同源：构造合并已保证键存在，此处引用
+        # 单一定义点消灭「120000 vs 15000 双默认」的潜伏分歧（第 6 批审查 P3）
+        timeout = self._chat_cfg.get("login_timeout", DEFAULT_CHAT_CONFIG["login_timeout"])
         logger.info("[登录] 等待输入框 %s ...", selector)
         try:
             self._page.wait_for_selector(selector, timeout=timeout)

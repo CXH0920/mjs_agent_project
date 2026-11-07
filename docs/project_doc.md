@@ -1887,7 +1887,7 @@ DEFAULT_CHAT_CONFIG = {
     "input_selector": "textarea[placeholder*='DeepSeek']",
     "assistant_selector": "div.ds-assistant-message-main-content",
     "content_class": "",
-    "login_timeout": 15000,
+    "login_timeout": 120000,
     "response_timeout": 180000,
 }
 ```

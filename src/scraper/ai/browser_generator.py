@@ -81,6 +81,9 @@ SYNERGY_RETRY_PROMPT = (
 class PlaywrightGenerator:
     """基于 Playwright + Edge 浏览器自动化的 AI 生成器"""
 
+    # 类级默认：object.__new__ 绕过构造器的实例（测试惯用法）也能读到未取消
+    _cancelled: bool = False
+
     def __init__(
         self,
         browser_config: dict | None = None,
@@ -90,8 +93,19 @@ class PlaywrightGenerator:
         # 相邻生成的休息标志：上次已向站点发出请求即置位（见 _random_rest）
         self._guide_rest_required = False
         self._synergy_rest_required = False
+        # 取消标志：与 AIBatchGenerator.cancel 同语义（置位后入口退出，不打断 in-flight）
+        self._cancelled = False
 
         logger.info("[PlaywrightGenerator] 初始化完成")
+
+    def cancel(self) -> None:
+        """请求中断：下一次生成入口直接退出，进行中的休息等待提前结束。
+
+        与 AIBatchGenerator.cancel 语义对齐（第 6 批审查 P3 接口漂移）——
+        不打断进行中的页面等待（靠既有超时退出），置位后由 generate_* 入口
+        与 _random_rest 的小步等待检查。
+        """
+        self._cancelled = True
 
     # ---------------------------------------------------------------
     # 公开接口（与 AIBatchGenerator 保持一致）
@@ -106,11 +120,18 @@ class PlaywrightGenerator:
         """
         hero_name = hero.get("name", "?")
         hero_id = hero.get("id", 0)
+
+        if self._cancelled:
+            logger.info("[攻略] 生成已取消，跳过: %s", hero_name)
+            return None, None
         logger.info("[攻略] 开始生成: %s (id=%s)", hero_name, hero_id)
 
         if self._guide_rest_required:
             self._random_rest()
             self._guide_rest_required = False
+            if self._cancelled:
+                logger.info("[攻略] 休息期间取消，跳过生成: %s", hero_name)
+                return None, None
 
         # 每个武将都重发完整 system prompt + 数据（与 API 模式对齐），
         # 避免网页版会话中首轮格式指令在后续轮次衰减导致输出偏离 JSON
@@ -167,11 +188,18 @@ class PlaywrightGenerator:
         """
         name_a = hero_a.get("name", "?")
         name_b = hero_b.get("name", "?")
+
+        if self._cancelled:
+            logger.info("[相性] 生成已取消，跳过: %s <-> %s", name_a, name_b)
+            return None, None
         logger.info("[相性] 开始生成: %s <-> %s", name_a, name_b)
 
         if self._synergy_rest_required:
             self._random_rest()
             self._synergy_rest_required = False
+            if self._cancelled:
+                logger.info("[相性] 休息期间取消，跳过生成: %s <-> %s", name_a, name_b)
+                return None, None
 
         # 每对武将都重发完整 system prompt + 数据（与 API 模式对齐）
         system_prompt = load_prompt(SYNERGY_PROMPT_FILE)
@@ -224,13 +252,19 @@ class PlaywrightGenerator:
         """相邻两次生成之间随机休息 60-180 秒，拉开请求间隔、降低访问密度。
 
         自动化访问与频率控制的完整披露见 TERMS.md「自动化访问与访问频率」。
+        小步等待并在每步检查取消标志：用户主动中断后不再有下一次生成，
+        提前结束等待不违背间隔披露（间隔约束的是相邻两次生成）。
         """
         rest = random.randint(60, 180)
         # 进度窗口靠解析 stdout 的 [休息] 行展示冷却倒计时；
         # 子进程 root 日志级别为 WARNING，logger.info 到不了 stdout，必须 print
         print(f"  [休息] 随机休息 {rest} 秒...", flush=True)
         logger.info("[休息] 随机休息 %d 秒...", rest)
-        time.sleep(rest)
+        for _ in range(rest * 2):  # 0.5s 步进凑满 rest 秒
+            if self._cancelled:
+                logger.info("[休息] 已取消，提前结束等待")
+                return
+            time.sleep(0.5)
 
     def close(self):
         """关闭浏览器上下文"""
@@ -238,6 +272,7 @@ class PlaywrightGenerator:
         self._session.close()
         self._guide_rest_required = False
         self._synergy_rest_required = False
+        self._cancelled = False
         logger.info("[PlaywrightGenerator] 浏览器已关闭")
 
     def _send_and_wait(self, prompt: str) -> str | None:

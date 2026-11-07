@@ -1012,3 +1012,69 @@ def test_synergy_list_generation_reports_invalid_pairs(tmp_path: Path) -> None:
     assert result.completed == 0
     assert "配对清单为空或全部无效" in result.failed_items
     assert sum("配对无效" in item for item in result.failed_items) == 2
+
+
+def test_browser_generator_cancel_skips_generation(monkeypatch) -> None:
+    """取消后入口直接退出：不发任何请求（与 AIBatchGenerator.cancel 语义对齐）。"""
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    generator._guide_rest_required = False
+    generator._cancelled = True
+    sent: list[str] = []
+    generator._send_and_wait = lambda prompt: sent.append(prompt) or "reply"
+
+    assert generator.generate_guide({"id": 1, "name": "甲"}) == (None, None)
+    assert sent == []
+
+
+def test_browser_generator_cancel_interrupts_rest(monkeypatch) -> None:
+    """休息等待可被取消打断：小步等待提前结束，不再凑满随机秒数。"""
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    generator._cancelled = False
+    monkeypatch.setattr(ai_playwright.random, "randint", lambda a, b: 60)
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) >= 3:
+            generator._cancelled = True  # 第 3 步后用户取消
+
+    monkeypatch.setattr(ai_playwright.time, "sleep", fake_sleep)
+
+    generator._random_rest()
+
+    assert sleeps == [0.5, 0.5, 0.5]  # 60s 应睡 120 步，3 步后取消即退出
+
+
+def test_browser_generator_cancel_during_rest_skips_send(monkeypatch) -> None:
+    """休息期间取消：等待提前结束后，本次生成也不再发送请求。"""
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    generator._guide_rest_required = True
+    generator._cancelled = False
+    sent: list[str] = []
+    generator._send_and_wait = lambda prompt: sent.append(prompt) or "reply"
+
+    def rest_then_cancel() -> None:
+        generator._cancelled = True  # 模拟等待期间用户取消
+
+    generator._random_rest = rest_then_cancel
+    monkeypatch.setattr(ai_playwright, "load_prompt", lambda _path: "system")
+    monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
+
+    assert generator.generate_guide({"id": 1, "name": "甲"}) == (None, None)
+    assert sent == []
+
+
+def test_both_generators_expose_same_public_contract() -> None:
+    """双后端公开合同一致（第 6 批审查 P3 cancel 漂移）：四方法在两生成器齐全。"""
+    from src.scraper.ai.api_generator import AIBatchGenerator
+    from src.scraper.ai.browser_generator import PlaywrightGenerator
+
+    for cls in (AIBatchGenerator, PlaywrightGenerator):
+        for method in ("generate_guide", "generate_synergy", "cancel", "close"):
+            assert callable(getattr(cls, method, None)), f"{cls.__name__} 缺 {method}"
