@@ -72,8 +72,25 @@ jobs:
         # 线程并存时存在 Qt 原生竞态，间歇性 SIGSEGV 杀死 worker（重跑即绿）；
         # 独立进程无线程污染，保住 Linux 全链路覆盖。Windows 走 CreateProcess
         # 无此路径，本地全量跑无需拆分。
+        #
+        # worker 原生崩溃类失败自动串行重跑一次：同 worker 内早前用例泄漏的
+        # 原生资源（QThread/handler.close/fork 竞态等，见 conftest 各 fixture
+        # 注释的 5 起实证）会把 SIGSEGV 记在"崩溃后恰好泵 Qt 事件的无关用例"
+        # 头上（2026-11-06 #286 test_widgets 受害；该用例引入提交 CI 为绿、
+        # 次日无关业务提交复现，非用例自身缺陷）。仅当输出含 worker 崩溃签名
+        # （node down / crashed while running）才用 --lf 串行重跑失败用例：
+        # 间歇崩溃重跑即绿，真实失败换环境仍会红；普通断言失败不触发重跑，
+        # 直接红。日志经 tee 落 .tmp_test/xdist_main.log 供签名比对与排查。
         run: |
-          python -m pytest -q -n auto --timeout=60 --timeout-method=thread -m "not real_process"
+          set -eo pipefail
+          mkdir -p .tmp_test
+          if python -m pytest -q -n auto --timeout=60 --timeout-method=thread -m "not real_process" 2>&1 | tee .tmp_test/xdist_main.log; then
+            :
+          elif grep -qE "node down: Not properly terminated|crashed while running" .tmp_test/xdist_main.log; then
+            python -m pytest -q --timeout=60 --timeout-method=thread --lf
+          else
+            exit 1
+          fi
           python -m pytest -q --timeout=60 --timeout-method=thread -m real_process
       - name: Dump timeout stacks (if any)
         if: always()

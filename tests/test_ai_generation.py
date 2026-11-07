@@ -554,25 +554,23 @@ def test_generation_result_is_successful_without_token_usage() -> None:
 
 
 @pytest.mark.parametrize(
-    ("method_name", "system_sent_attr", "rest_required_attr", "args"),
+    ("method_name", "rest_required_attr", "args"),
     [
-        ("generate_guide", "_guide_system_sent", "_guide_rest_required", ({"id": 1, "name": "甲"},)),
+        ("generate_guide", "_guide_rest_required", ({"id": 1, "name": "甲"},)),
         (
             "generate_synergy",
-            "_synergy_system_sent",
             "_synergy_rest_required",
             ({"id": 1, "name": "甲"}, {"id": 2, "name": "乙"}),
         ),
     ],
 )
 def test_browser_generator_rests_before_next_successful_request(
-    monkeypatch, method_name, system_sent_attr, rest_required_attr, args,
+    monkeypatch, method_name, rest_required_attr, args,
 ) -> None:
     import src.scraper.ai.browser_generator as ai_playwright
 
     events: list[str] = []
     generator = object.__new__(ai_playwright.PlaywrightGenerator)
-    setattr(generator, system_sent_attr, False)
     setattr(generator, rest_required_attr, False)
     generator._send_and_wait = lambda _prompt: events.append("send") or "reply"
     generator._random_rest = lambda: events.append("rest")
@@ -628,6 +626,33 @@ def test_browser_generator_rests_after_failed_request(
 
     method(*args)
     assert events == ["send", "rest", "send"]
+
+
+def test_browser_generator_resends_full_system_prompt_every_request(monkeypatch) -> None:
+    """每个武将都重发完整 system prompt（与 API 模式对齐，防网页版格式指令衰减）。
+
+    这是取代旧「系统提示只发一次」优化的现行设计（此前测试里虚构的
+    _guide_system_sent/_synergy_system_sent 属性即该优化的残留脚手架，
+    实现中已不存在）；改回只发一次应使本测试报红。
+    """
+    import src.scraper.ai.browser_generator as ai_playwright
+
+    prompt_loads: list[str] = []
+    generator = object.__new__(ai_playwright.PlaywrightGenerator)
+    generator._guide_rest_required = False
+    generator._send_and_wait = lambda _prompt: '{"description": "x"}'
+    generator._random_rest = lambda: None  # 第二次生成前标志已置位，屏蔽真实 60~180s 休息
+    monkeypatch.setattr(
+        ai_playwright, "load_prompt",
+        lambda path: prompt_loads.append(path.name) or "system")
+    monkeypatch.setattr(ai_playwright, "build_guide_prompt", lambda _hero, **kwargs: "guide")
+    monkeypatch.setattr(ai_playwright, "extract_json", lambda _reply: {"description": "测试描述"})
+    monkeypatch.setattr(ai_playwright, "normalize_and_validate_guide", lambda raw, hero, **_: raw)
+
+    generator.generate_guide({"id": 1, "name": "甲"})
+    generator.generate_guide({"id": 2, "name": "乙"})
+
+    assert prompt_loads == ["hero_guide.md", "hero_guide.md"]
 
 
 def test_browser_mode_does_not_require_api_key(monkeypatch, tmp_path: Path) -> None:
@@ -761,7 +786,6 @@ def test_browser_generator_logs_no_reply_or_parsed_content(monkeypatch, caplog) 
     secret_reply = "SECRET_REPLY_CONTENT"
     secret_parsed = "SECRET_PARSED_CONTENT"
     generator = object.__new__(browser_generator.PlaywrightGenerator)
-    generator._guide_system_sent = False
     generator._guide_rest_required = False
     generator._send_and_wait = lambda _prompt: secret_reply
     monkeypatch.setattr(browser_generator, "load_prompt", lambda _path: "system")
