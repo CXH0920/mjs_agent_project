@@ -113,7 +113,7 @@
 
 ## 缓存分层（基线 + 用户层）
 
-- 基线：`src/data/char_info_cache.json` 入库，保证确定性与 CI 契约测试（`tests/test_ocr_components.py` 校验覆盖当前武将名与常见误识字）。
+- 基线：`src/data/char_info_cache.json` 入库，保证确定性与 CI 契约测试（`tests/test_character_feature_repository.py` 校验覆盖当前武将名与常见误识字，D5 锚点迁移自 test_ocr_components）。
 - 用户层：`data/char_info_cache.json`（gitignored）。运行时 `get_feature`/`warmup_characters` 动态构建的缺失字符会原子写入用户层，下次启动加载时自动合并（用户层覆盖基线）。
 - 新增武将后无需手动操作：识别预热按当前 `heroes.json` 武将名自动补齐并落盘用户层；仅在武将数据提交时重跑 `python scripts/build_character_feature_cache.py` 同步基线，CI 契约测试会拦截遗漏。
 
