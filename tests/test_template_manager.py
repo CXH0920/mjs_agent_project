@@ -80,3 +80,29 @@ def test_template_scale_history_shared_across_instances(tmp_path) -> None:
 
     assert matched
     assert second.last_match_strategy == "cached_local"
+
+
+def test_template_coarse_probe_rejects_unrelated_page_with_single_scale(tmp_path, monkeypatch) -> None:
+    """完全非目标页由基准档单档粗扫直接判否，不再展开其余档位粗扫（A2）。"""
+    source = np.zeros((144, 256, 3), dtype=np.uint8)
+    rng = np.random.default_rng(42)
+    source[40:80, 90:150] = rng.integers(0, 256, (40, 60, 3), dtype=np.uint8)
+    manager = TemplateManager(tmp_path / "template.png")
+    manager.set_template(source, (90, 40, 60, 40))
+
+    unrelated = np.zeros_like(source)
+    unrelated[10:50, 20:80] = rng.integers(0, 256, (40, 60, 3), dtype=np.uint8)
+    coarse_calls: list[float] = []
+    original = TemplateManager._match_at_coarse_scale
+
+    def _counting_coarse(self, coarse_gray, coarse_scale):
+        coarse_calls.append(coarse_scale)
+        return original(self, coarse_gray, coarse_scale)
+
+    monkeypatch.setattr(TemplateManager, "_match_at_coarse_scale", _counting_coarse)
+    matched, confidence = manager.match(unrelated, threshold=0.8)
+
+    assert not matched
+    assert confidence < 0.65
+    assert manager.last_match_strategy == "coarse_reject_probe"
+    assert len(coarse_calls) == 1  # 仅基准档一次粗扫，其余档位全部免去

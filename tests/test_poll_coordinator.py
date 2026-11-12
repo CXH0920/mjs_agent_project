@@ -296,3 +296,182 @@ def test_poll_worker_exception_completes_poll_and_releases_gate() -> None:
     assert coordinator._idle_unchanged_count == 0  # 异常后闲置观察回到干净状态
     assert coordinator._poll_thread_lock.acquire(blocking=False)
     coordinator._poll_thread_lock.release()
+
+
+class _ReusePollOcrService(_OcrService):
+    """支持 do_poll_work 全流程的桩：可控到期任务、记录 complete_poll。"""
+
+    def __init__(self, tasks: list[str]) -> None:
+        super().__init__()
+        self.poll_cancel_event = threading.Event()
+        self.poll_generation = 8
+        self.due_tasks = tasks
+
+    def begin_poll(self) -> int:
+        return 8
+
+    def due_poll_tasks(self) -> list[str]:
+        return list(self.due_tasks)
+
+
+class _StubOcrTask:
+    """已完成的 OCR 任务桩：等待立即返回，outcome 可定制。"""
+
+    def __init__(self, outcome: str) -> None:
+        self.completed = threading.Event()
+        self.completed.set()
+        self.result = {"outcome": outcome}
+
+
+class _StillCaptureService(_CaptureService):
+    """固定画面截图桩：记录任务提交，返回指定 outcome 的已完成任务。"""
+
+    def __init__(self, capture, image):
+        super().__init__(capture)
+        self._image = image
+        self.submitted: list[str] = []
+        self.outcomes: dict[str, str] = {}
+
+    def start_ocr_worker(self) -> None:
+        pass
+
+    def capture_for_poll(self, capture):
+        return True, self._image, ""
+
+    def submit_ocr_task(self, image, **kwargs) -> _StubOcrTask:
+        name = kwargs.get("template_name", "hero_selection")
+        self.submitted.append(name)
+        return _StubOcrTask(self.outcomes.get(name, "healthy_no_match"))
+
+
+def _wait_poll_settled(coordinator, capture_service, submitted_at_least: int) -> None:
+    """等轮询线程跑完（锁空闲）且提交数达到预期；Qt 信号在无事件循环的测试
+    环境不投递，完成信号只能以锁与提交数为同步点。"""
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if coordinator._poll_thread_lock.acquire(blocking=False):
+            try:
+                if len(capture_service.submitted) >= submitted_at_least:
+                    return
+            finally:
+                coordinator._poll_thread_lock.release()
+        time.sleep(0.01)
+
+
+def _skip_log_count(caplog) -> int:
+    return sum("画面未变化" in record.getMessage() for record in caplog.records)
+
+
+def _wait_skip_logged(caplog, count: int) -> None:
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if _skip_log_count(caplog) >= count:
+            return
+        time.sleep(0.01)
+
+
+def test_static_frame_skips_ocr_after_all_rejected_poll(caplog) -> None:
+    """画面静止且上一拍同任务集全部健康拒识时整拍跳过识别，不再提交任务。"""
+    import logging
+
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService(["hero_selection"])
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    with caplog.at_level(logging.DEBUG, logger="src.ui.app.poll_coordinator"):
+        coordinator._on_poll_tick()  # 首拍：提交并拒识
+        _wait_poll_settled(coordinator, capture_service, 1)
+        assert capture_service.submitted == ["hero_selection"]
+
+        coordinator._on_poll_tick()  # 同画面第二拍：跳过，不提交
+        _wait_skip_logged(caplog, 1)
+        coordinator._on_poll_tick()  # 第三拍：跳过状态延续
+        _wait_skip_logged(caplog, 2)
+
+    assert capture_service.submitted == ["hero_selection"]  # 后两拍零提交
+    assert _skip_log_count(caplog) == 2
+
+
+def test_static_frame_skip_not_triggered_when_task_set_changes() -> None:
+    """任务集变化（如 match_guide 激活）后画面静止也不跳过：新任务从未执行过，
+    上一拍的拒识结论不构成它的结果预判。"""
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService(["hero_selection"])
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    coordinator._on_poll_tick()
+    _wait_poll_settled(coordinator, capture_service, 1)
+
+    ocr_service.due_tasks = ["hero_selection", "match_guide"]
+    coordinator._on_poll_tick()
+    _wait_poll_settled(coordinator, capture_service, 3)
+
+    assert capture_service.submitted == ["hero_selection", "hero_selection", "match_guide"]
+
+
+def test_changed_frame_still_submits() -> None:
+    """画面变化后正常提交：指纹判定有变化即不满足跳过条件。"""
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService(["hero_selection"])
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    coordinator._on_poll_tick()
+    _wait_poll_settled(coordinator, capture_service, 1)
+
+    capture_service._image = Image.new("RGB", (64, 36), (200, 10, 10))
+    coordinator._on_poll_tick()
+    _wait_poll_settled(coordinator, capture_service, 2)
+
+    assert capture_service.submitted == ["hero_selection", "hero_selection"]
+
+
+def test_static_frame_skip_works_with_idle_pause_disabled(caplog) -> None:
+    """闲置暂停关闭时指纹仍计算，帧静止跳过照常生效。"""
+    import logging
+
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService(["hero_selection"])
+    ocr_service.config["mumu_ocr_poll_idle_pause"] = False
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    with caplog.at_level(logging.DEBUG, logger="src.ui.app.poll_coordinator"):
+        coordinator._on_poll_tick()
+        _wait_poll_settled(coordinator, capture_service, 1)
+
+        coordinator._on_poll_tick()
+        _wait_skip_logged(caplog, 1)
+
+    assert capture_service.submitted == ["hero_selection"]
+    assert _skip_log_count(caplog) == 1
+
+
+def test_skipped_poll_result_completes_poll_and_feeds_idle_watch() -> None:
+    """跳过拍形态的结果走正常消费链路：complete_poll 释放忙碌闸，且与闲置
+    暂停计数衔接（静止跳过拍持续累计，5 分钟阈值照常生效）。"""
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _OcrService()
+    ocr_service.poll_generation = 8
+    coordinator = PollCoordinator(_CaptureService(capture), ocr_service, lambda: [])
+
+    coordinator._consume_poll_result(PollResult(
+        8,
+        PollOutcome.HEALTHY_NO_MATCH,
+        "画面未变化，跳过识别",
+        capture,
+        frame_unchanged=True,
+    ))
+
+    assert ocr_service.completed == [(8, "healthy_no_match", "画面未变化，跳过识别")]
+    assert coordinator._idle_unchanged_count == 1

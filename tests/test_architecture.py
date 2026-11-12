@@ -727,7 +727,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 回退随包模板（第 2 批审查 P2-1 修复，封堵写入中断致页面判定持续失效）
     # 716 → 734：锚点加载失败告警负面缓存（同一清单版本只告警一次，
     # 防回退态轮询每拍刷 WARNING 挤爆日志轮转，第 13 批审查 P2-1）
-    "ocr/template_manager.py": 734,
+    # 734 → 750：A2 粗扫单档探测——完全非目标页由基准档一档粗扫判否，
+    # 免去其余档位粗扫（实测拒识 50ms → ~13ms）
+    "ocr/template_manager.py": 750,
     # 2026-10-05 修复批：补齐 load_issues 出口与工作区同步检查（491 → 568，
     # 补提交说明承诺而未实现的两项检查），超 500 行 tripwire 入册
     # 2026-10-05 运维收尾：AI_LOG_PATTERNS "401"→"HTTP 401" 精确匹配注释（568 → 570）
@@ -912,7 +914,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
     # 508 → 511：wait_for_ocr_task 超时即弃单（VUL-B3-002 审查缺口 2）——置取消
     # 并释放整帧引用，滞留队列的任务被 worker 短路，不再执行过期识别
-    "ui/app/poll_coordinator.py": 511,
+    # 511 → 540：A1 帧静止跳过——画面静止且任务集不变时整拍跳过识别，
+    # 指纹改为无条件计算（闲置暂停关闭时仍服务跳过判定）
+    "ui/app/poll_coordinator.py": 540,
     # 545 → 640：新增 robots.txt 解析与抓取前校验（VUL-B6-001 合规修复，
     # 2026-10-18）。不拆独立模块：6 个测试 monkeypatch 锚点（ROBOTS_CACHE_DIR /
     # _robots_rules_by_host / crawler.urllib.request）均在 crawler 命名空间，

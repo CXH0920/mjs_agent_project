@@ -450,9 +450,25 @@ class TemplateManager:
                 interpolation=cv2.INTER_AREA,
             )
             coarse_threshold = max(0.0, threshold - _COARSE_SCAN_MARGIN)
+            # 单档探测：轮询常态是完全非目标页，全部档位粗扫的最大得分也远低于
+            # 判否线（实测 P50 0.525 / max 0.640 < 0.65），基准缩放一档即可判否；
+            # 逼近判否线（布局偏移等边界页）才展开完整多档兜底，行为与旧版一致
+            probe_value = self._match_at_coarse_scale(coarse_gray, base_scale * _COARSE_SCAN_RATIO)
+            if probe_value is not None and probe_value < coarse_threshold:
+                if probe_value > best_value:
+                    best_value = probe_value
+                    best_scale = base_scale
+                self._set_match_details(best_scale, "coarse_reject_probe")
+                return False, float(best_value)
             best_coarse_value = -1.0
             best_coarse_scale: float | None = None
             for scale in fallback_scales:
+                if probe_value is not None and round(scale, 4) == round(base_scale, 4):
+                    # 基准档已由探测跑过，结果直接并入最优粗扫记录
+                    if probe_value > best_coarse_value:
+                        best_coarse_value = probe_value
+                        best_coarse_scale = scale
+                    continue
                 value = self._match_at_coarse_scale(coarse_gray, scale * _COARSE_SCAN_RATIO)
                 if value is not None and value > best_value:
                     best_value = value

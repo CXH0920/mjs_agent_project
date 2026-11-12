@@ -129,6 +129,11 @@ class PollCoordinator(QObject):
         self._poll_thread_lock = threading.Lock()
         self._last_fingerprint: bytes | None = None
         self._idle_unchanged_count = 0
+        # 帧静止跳过：上一拍到期的任务集及其是否全部健康拒识。仅在持
+        # _poll_thread_lock 的轮询线程读写（每拍串行）；画面静止且任务集不变时
+        # 整拍跳过识别——同一帧对各任务的模板匹配结论必然相同
+        self._last_poll_task_names: tuple[str, ...] = ()
+        self._last_poll_all_rejected = False
         # ── 路由状态（选将/对局页的激活与跳转去重）──
         self._selection_page_active = False
         self._match_guide_page_active = False
@@ -203,9 +208,6 @@ class PollCoordinator(QObject):
             return
 
         hero_names = self._hero_names_provider()
-        idle_watch_enabled = bool(
-            self._ocr_service.config.get("mumu_ocr_poll_idle_pause", True)
-        )
 
         def do_poll_work() -> None:
             try:
@@ -227,10 +229,30 @@ class PollCoordinator(QObject):
 
                 image = result
                 # 指纹状态仅由持锁的 poll 线程串行读写；GUI 线程 _reset_idle_watch
-                # 的并发清空只是原子赋值，最坏情况多比一对陈旧帧，无碍正确性
-                fingerprint = compute_fingerprint(image) if idle_watch_enabled else None
+                # 的并发清空只是原子赋值，最坏情况多比一对陈旧帧，无碍正确性。
+                # 指纹还服务帧静止跳过，闲置暂停关闭时也照常计算（实测约 7ms/拍）
+                fingerprint = compute_fingerprint(image)
                 frame_unchanged = frames_match(fingerprint, self._last_fingerprint)
                 self._last_fingerprint = fingerprint
+                # 帧静止跳过：画面与上一拍一致且上一拍同任务集全部健康拒识时，
+                # 本拍模板匹配结论必然相同，整拍跳过（含 match_guide 兜底 OCR）；
+                # 任务集变化（冷却到期、任务激活/失活）不满足条件，自然全速执行
+                if (frame_unchanged
+                        and self._last_poll_all_rejected
+                        and self._last_poll_task_names == tuple(task_names)):
+                    if cancel_event.is_set():
+                        return
+                    self._last_poll_task_names = tuple(task_names)
+                    self._last_poll_all_rejected = True
+                    logger.debug("画面未变化，跳过本轮识别: %s", task_names)
+                    self._poll_result_received.emit(PollResult(
+                        generation,
+                        PollOutcome.HEALTHY_NO_MATCH,
+                        "画面未变化，跳过识别",
+                        capture=capture,
+                        frame_unchanged=True,
+                    ))
+                    return
                 task_results: dict[str, PollTaskResult] = {}
                 has_match = False
                 has_retryable_error = False
@@ -260,6 +282,11 @@ class PollCoordinator(QObject):
                     PollOutcome.RETRYABLE_OCR if has_retryable_error
                     else PollOutcome.MATCHED if has_match
                     else PollOutcome.HEALTHY_NO_MATCH
+                )
+                self._last_poll_task_names = tuple(task_names)
+                self._last_poll_all_rejected = bool(task_results) and all(
+                    result.outcome is PollOutcome.HEALTHY_NO_MATCH
+                    for result in task_results.values()
                 )
                 self._poll_result_received.emit(PollResult(
                     generation, outcome, capture=capture, task_results=task_results,
@@ -506,6 +533,8 @@ class PollCoordinator(QObject):
         self._ocr_service.pause_for_idle(self.IDLE_PAUSE_MINUTES)
 
     def _reset_idle_watch(self) -> None:
-        """清空闲置计数与指纹缓存；恢复、停启和任何异常结果后都必须回到干净状态。"""
+        """清空闲置计数、指纹缓存与帧静止跳过状态；恢复、停启和任何异常结果后都必须回到干净状态。"""
         self._idle_unchanged_count = 0
         self._last_fingerprint = None
+        self._last_poll_task_names = ()
+        self._last_poll_all_rejected = False
