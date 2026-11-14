@@ -68,6 +68,9 @@ class _OcrService:
     def due_poll_tasks(self) -> list[str]:
         return list(self.due_tasks)
 
+    def due_probe_tasks(self) -> list[str]:
+        return []  # 闲置暂停场景无冷却任务，探测队恒空
+
 
 class _CaptureService:
     def __init__(self, capture) -> None:
