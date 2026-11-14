@@ -30,6 +30,7 @@ class _OcrService:
         self.started: list[int] = []
         self.completed: list[tuple] = []
         self.stop_count = 0
+        self.probe_tasks: list[str] = []
 
     def start_poll(self, interval: int) -> None:
         self.started.append(interval)
@@ -39,6 +40,9 @@ class _OcrService:
 
     def complete_poll(self, *args) -> None:
         self.completed.append(args)
+
+    def due_probe_tasks(self) -> list[str]:
+        return list(self.probe_tasks)
 
 
 class _CaptureService:
@@ -299,13 +303,15 @@ def test_poll_worker_exception_completes_poll_and_releases_gate() -> None:
 
 
 class _ReusePollOcrService(_OcrService):
-    """支持 do_poll_work 全流程的桩：可控到期任务、记录 complete_poll。"""
+    """支持 do_poll_work 全流程的桩：可控到期/探测任务、记录 complete_poll。"""
 
-    def __init__(self, tasks: list[str]) -> None:
+    def __init__(self, tasks: list[str], probe_tasks: list[str] | None = None) -> None:
         super().__init__()
         self.poll_cancel_event = threading.Event()
         self.poll_generation = 8
         self.due_tasks = tasks
+        self.probe_tasks = list(probe_tasks or [])
+        self.cleared_cooldowns: list[str] = []
 
     def begin_poll(self) -> int:
         return 8
@@ -313,24 +319,31 @@ class _ReusePollOcrService(_OcrService):
     def due_poll_tasks(self) -> list[str]:
         return list(self.due_tasks)
 
+    def clear_task_cooldown(self, task_name: str) -> None:
+        self.cleared_cooldowns.append(task_name)
+
 
 class _StubOcrTask:
-    """已完成的 OCR 任务桩：等待立即返回，outcome 可定制。"""
+    """已完成的 OCR 任务桩：等待立即返回，outcome 与 probe 标记可定制。"""
 
-    def __init__(self, outcome: str) -> None:
+    def __init__(self, outcome: str, probe: bool = False) -> None:
         self.completed = threading.Event()
         self.completed.set()
         self.result = {"outcome": outcome}
+        if probe:
+            self.result["probe"] = True
 
 
 class _StillCaptureService(_CaptureService):
-    """固定画面截图桩：记录任务提交，返回指定 outcome 的已完成任务。"""
+    """固定画面截图桩：记录任务提交（含 recognize 标志），返回定制结果。"""
 
     def __init__(self, capture, image):
         super().__init__(capture)
         self._image = image
         self.submitted: list[str] = []
+        self.submissions: list[tuple[str, bool]] = []
         self.outcomes: dict[str, str] = {}
+        self.probe_rejects: set[str] = set()
 
     def start_ocr_worker(self) -> None:
         pass
@@ -340,7 +353,13 @@ class _StillCaptureService(_CaptureService):
 
     def submit_ocr_task(self, image, **kwargs) -> _StubOcrTask:
         name = kwargs.get("template_name", "hero_selection")
+        recognize = bool(kwargs.get("recognize", True))
         self.submitted.append(name)
+        self.submissions.append((name, recognize))
+        if not recognize:
+            # 探测任务：默认命中（仍在目标页），拒识场景经 probe_rejects 定制
+            outcome = "healthy_no_match" if name in self.probe_rejects else "matched"
+            return _StubOcrTask(outcome, probe=True)
         return _StubOcrTask(self.outcomes.get(name, "healthy_no_match"))
 
 
@@ -474,4 +493,97 @@ def test_skipped_poll_result_completes_poll_and_feeds_idle_watch() -> None:
     ))
 
     assert ocr_service.completed == [(8, "healthy_no_match", "画面未变化，跳过识别")]
+    assert coordinator._idle_unchanged_count == 1
+
+
+def _wait_poll_state(coordinator, task_names, all_rejected: bool) -> None:
+    """等待 do_poll_work 写入跳过状态（emit 之前的最后写入之一）。"""
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if (coordinator._last_poll_task_names == task_names
+                and coordinator._last_poll_all_rejected is all_rejected):
+            return
+        time.sleep(0.01)
+
+
+def test_route_probe_rejection_clears_cooldown() -> None:
+    """探测拒识=用户已离开选将页：提前解除冷却并撤销选将页激活态。"""
+    router, ocr, switched, loaded, guide_matched = _make_router()
+    router._selection_page_active = True
+
+    router._route_result(PollResult(4, PollOutcome.HEALTHY_NO_MATCH, task_results={
+        "hero_selection": PollTaskResult(PollOutcome.HEALTHY_NO_MATCH, probe=True),
+    }))
+
+    assert ocr.transitions == [("clear", "hero_selection")]
+    assert router._selection_page_active is False
+    assert switched == [] and loaded == [] and guide_matched == []
+
+
+def test_route_probe_hit_keeps_cooldown_and_skips_match_routing() -> None:
+    """探测命中=用户仍在选将页：只维持冷却，不重设冷却、不激活对局任务、
+    不跳页、不灌推荐（探测每拍命中，走命中路由等于冷却失效）。"""
+    router, ocr, switched, loaded, guide_matched = _make_router()
+    router._selection_page_active = True
+
+    router._route_result(PollResult(4, PollOutcome.HEALTHY_NO_MATCH, task_results={
+        "hero_selection": PollTaskResult(PollOutcome.MATCHED, probe=True),
+    }))
+
+    assert ocr.transitions == []
+    assert switched == [] and loaded == [] and guide_matched == []
+    assert router._selection_page_active is True
+
+
+def test_probe_poll_submits_without_recognition() -> None:
+    """冷却期探测任务以 recognize=False 提交；命中结果不计入全部拒识状态
+    （A1 因此不会跳过探测拍，冷却期探测每拍照跑）。"""
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService([], probe_tasks=["hero_selection"])
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    coordinator._on_poll_tick()
+    _wait_poll_state(coordinator, ("hero_selection",), all_rejected=False)
+
+    # 唯一一次提交是探测（仅模板匹配），全速任务零提交
+    assert capture_service.submissions == [("hero_selection", False)]
+
+
+def test_probe_poll_rejection_counts_as_all_rejected() -> None:
+    """探测拒识结果计入全部拒识状态：下一拍若画面静止且任务集未变，
+    A1 可安全接管（同画面模板结论必然相同）。"""
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService([], probe_tasks=["hero_selection"])
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    capture_service.probe_rejects = {"hero_selection"}
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    coordinator._on_poll_tick()
+    _wait_poll_state(coordinator, ("hero_selection",), all_rejected=True)
+
+    assert capture_service.submissions == [("hero_selection", False)]
+
+
+def test_probe_hit_poll_keeps_idle_watch_counting() -> None:
+    """探测命中拍 PollResult.outcome 保持 HEALTHY_NO_MATCH：闲置暂停计数
+    不被冷却期常态命中清零（否则停留选将页期间闲置暂停永不触发）。"""
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _OcrService()
+    ocr_service.poll_generation = 4
+    coordinator = PollCoordinator(_CaptureService(capture), ocr_service, lambda: [])
+
+    coordinator._consume_poll_result(PollResult(
+        4,
+        PollOutcome.HEALTHY_NO_MATCH,
+        capture=capture,
+        task_results={"hero_selection": PollTaskResult(PollOutcome.MATCHED, probe=True)},
+        frame_unchanged=True,
+    ))
+
+    assert ocr_service.completed == [(4, "healthy_no_match", "")]
     assert coordinator._idle_unchanged_count == 1

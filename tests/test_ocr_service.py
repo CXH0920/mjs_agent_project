@@ -195,3 +195,21 @@ def test_select_template_clears_stale_reference_metadata(tmp_path: Path, monkeyp
     assert manager.template_path.read_bytes() == b"external-template"
     assert not metadata_path.exists()
     assert manager.reloaded
+
+
+def test_due_probe_tasks_returns_active_tasks_in_cooldown() -> None:
+    """due_probe_tasks：活跃且冷却中的任务以探测模式出队（D2 冷却期探测），
+    与 due_poll_tasks 互补，巅峰会话持有（active=False）期间不出队。"""
+    _app()
+    service = OcrService()
+    service.start_poll(1_000)  # start_poll 激活 hero_selection（match_guide 保持失活）
+
+    assert service.due_probe_tasks() == []  # 活跃但无冷却
+    assert service.due_poll_tasks() == ["hero_selection"]
+
+    service.set_task_cooldown("hero_selection", 60)
+    assert service.due_probe_tasks() == ["hero_selection"]
+    assert service.due_poll_tasks() == []  # 冷却中不出全速队
+
+    service.set_task_hold("hero_selection", True)
+    assert service.due_probe_tasks() == []  # 巅峰会话持有：active=False

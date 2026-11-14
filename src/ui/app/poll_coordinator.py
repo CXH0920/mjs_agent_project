@@ -38,6 +38,9 @@ class PollTaskResult:
     # 模板未命中但走兜底 OCR 时为 False：此类结果的读数来自错位 ROI，
     # 不得作为 match_guide 命中触发自动导入/跳转
     template_matched: bool = True
+    # 冷却期探测任务（仅模板匹配不 OCR）为 True：路由据此区分探测与真实命中，
+    # 探测命中只维持冷却，不走命中路由
+    probe: bool = False
 
     @classmethod
     def from_raw(cls, value: object) -> "PollTaskResult":
@@ -53,6 +56,7 @@ class PollTaskResult:
             str(raw.get("detail", "")),
             list(raw.get("ocr_results") or []),
             bool(raw.get("template_matched", True)),
+            bool(raw.get("probe", False)),
         )
 
 
@@ -183,7 +187,8 @@ class PollCoordinator(QObject):
             return
         cancel_event = self._ocr_service.poll_cancel_event
         task_names = self._ocr_service.due_poll_tasks()
-        if not task_names:
+        probe_names = self._ocr_service.due_probe_tasks()
+        if not task_names and not probe_names:
             # 无帧可比对，按约定清零闲置计数（宁漏暂停不误暂停）
             self._reset_idle_watch()
             self._ocr_service.complete_poll(
@@ -236,13 +241,15 @@ class PollCoordinator(QObject):
                 self._last_fingerprint = fingerprint
                 # 帧静止跳过：画面与上一拍一致且上一拍同任务集全部健康拒识时，
                 # 本拍模板匹配结论必然相同，整拍跳过（含 match_guide 兜底 OCR）；
-                # 任务集变化（冷却到期、任务激活/失活）不满足条件，自然全速执行
+                # 任务集含探测任务（全速集 + 探测集），任务集变化（冷却到期、
+                # 探测拒识清冷却、任务激活/失活）不满足条件，自然全速执行
+                poll_signature = tuple(task_names) + tuple(probe_names)
                 if (frame_unchanged
                         and self._last_poll_all_rejected
-                        and self._last_poll_task_names == tuple(task_names)):
+                        and self._last_poll_task_names == poll_signature):
                     if cancel_event.is_set():
                         return
-                    self._last_poll_task_names = tuple(task_names)
+                    self._last_poll_task_names = poll_signature
                     self._last_poll_all_rejected = True
                     logger.debug("画面未变化，跳过本轮识别: %s", task_names)
                     self._poll_result_received.emit(PollResult(
@@ -278,12 +285,29 @@ class PollCoordinator(QObject):
                         has_retryable_error = True
                     task_results[task_name] = task_result
 
+                # 冷却期探测：仅模板匹配（recognize=False），跟踪用户是否仍在
+                # 目标页。结果不参与 has_match——探测命中是冷却期常态，若计入
+                # 会让 PollResult.outcome=MATCHED，闲置暂停计数被每拍清零而失效
+                for task_name in probe_names:
+                    if cancel_event.is_set():
+                        return
+                    ocr_task = self._capture_service.submit_ocr_task(
+                        image,
+                        hero_names=hero_names,
+                        template_name=task_name,
+                        recognize=False,
+                    )
+                    task_result = self.wait_for_ocr_task(ocr_task, cancel_event)
+                    if task_result is None:
+                        return
+                    task_results[task_name] = task_result
+
                 outcome = (
                     PollOutcome.RETRYABLE_OCR if has_retryable_error
                     else PollOutcome.MATCHED if has_match
                     else PollOutcome.HEALTHY_NO_MATCH
                 )
-                self._last_poll_task_names = tuple(task_names)
+                self._last_poll_task_names = poll_signature
                 self._last_poll_all_rejected = bool(task_results) and all(
                     result.outcome is PollOutcome.HEALTHY_NO_MATCH
                     for result in task_results.values()
@@ -427,7 +451,15 @@ class PollCoordinator(QObject):
             return
 
         hero_result = task_results.get("hero_selection")
-        if hero_result and hero_result.outcome is PollOutcome.TEMPLATE_MISSING:
+        if hero_result and hero_result.probe:
+            # 冷却期探测结果：命中=用户仍在选将页，只维持冷却（不重设冷却、
+            # 不激活对局任务、不跳页、不灌推荐——探测每拍命中，走命中路由
+            # 等于冷却失效）；拒识=已离开选将页，提前解除冷却恢复全速识别
+            if hero_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
+                self._selection_page_active = False
+                self._ocr_service.clear_task_cooldown("hero_selection")
+                logger.info("选将页已离开，识别冷却提前解除")
+        elif hero_result and hero_result.outcome is PollOutcome.TEMPLATE_MISSING:
             self._ocr_service.deactivate_task("hero_selection")
         elif hero_result and hero_result.outcome is PollOutcome.HEALTHY_NO_MATCH:
             self._selection_page_active = False

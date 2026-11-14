@@ -266,6 +266,15 @@ class OcrService(QObject):
             if task.active and (task.cooldown_until is None or now >= task.cooldown_until)
         ]
 
+    def due_probe_tasks(self) -> list[str]:
+        """返回冷却中的活跃任务名（探测模式）：冷却期间以仅模板匹配的轻量探测
+        跟踪页面状态，探测拒识即"已离开目标页"，由路由层提前解除冷却。"""
+        now = datetime.now()
+        return [
+            name for name, task in self._poll_tasks.items()
+            if task.active and task.cooldown_until is not None and now < task.cooldown_until
+        ]
+
     def set_task_hold(self, task_name: str, held: bool) -> None:
         """设置任务的巅峰赛会话持有标记；持有期间任务不得被任何入口激活。
 

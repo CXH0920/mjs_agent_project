@@ -909,14 +909,17 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 到不了 warmup_failed 复位点，标志悬挂会让重新预热永久无效
     # 556 → 564：整批官方导入部分失败时 detail 明示已生效组（第 8 批
     # 审查 P2-1），消除「弹窗报失败、数据已半生效」的认知矛盾
-    "business/recognition/ocr_worker.py": 564,
+    # 564 → 572：D2 冷却期探测——recognize=False 出口带显式 probe 标记
+    "business/recognition/ocr_worker.py": 572,
     # 首次入册（498 → 508 越过 500 绊线）：do_poll_work 补 except 兜底，未预期
     # 异常也回写 complete_poll，避免在途忙碌闸永久占用、轮询静默卡死（VUL-B3-001）
     # 508 → 511：wait_for_ocr_task 超时即弃单（VUL-B3-002 审查缺口 2）——置取消
     # 并释放整帧引用，滞留队列的任务被 worker 短路，不再执行过期识别
     # 511 → 540：A1 帧静止跳过——画面静止且任务集不变时整拍跳过识别，
     # 指纹改为无条件计算（闲置暂停关闭时仍服务跳过判定）
-    "ui/app/poll_coordinator.py": 540,
+    # 540 → 572：D2 冷却期探测——探测任务循环（仅模板匹配）、
+    # 路由探测分支（拒识清冷却/命中维持）与 A1 任务集口径扩展
+    "ui/app/poll_coordinator.py": 572,
     # 545 → 640：新增 robots.txt 解析与抓取前校验（VUL-B6-001 合规修复，
     # 2026-10-18）。不拆独立模块：6 个测试 monkeypatch 锚点（ROBOTS_CACHE_DIR /
     # _robots_rules_by_host / crawler.urllib.request）均在 crawler 命名空间，

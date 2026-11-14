@@ -1091,3 +1091,57 @@ def test_official_partial_failure_detail_lists_completed_groups(monkeypatch, tmp
     assert "版式校验失败" in result["detail"]
     assert "2v2数据 已导入生效" in result["detail"]
     assert "失败组可单独重试" in result["detail"]
+
+
+def test_probe_task_results_carry_explicit_marker(monkeypatch) -> None:
+    """recognize=False 的探测任务（D2 冷却期探测）：命中与拒识两个出口都带
+    显式 probe 标记供轮询路由区分探测与真实命中；全程不执行 OCR。"""
+    recognized: list[object] = []
+
+    class FakeTemplateManager:
+        is_loaded = True
+        last_match_scale = 1.0
+        last_match_strategy = "base_local"
+        matched = True  # 类属性由用例切换，覆盖两个出口
+
+        def __init__(self, *, template_name: str) -> None:
+            pass
+
+        def match(self, image, threshold: float):
+            return self.matched, 0.9
+
+    class FakeRecognizer:
+        timing_ms = {}
+
+        def __init__(self, hero_names, page_type, layout) -> None:
+            pass
+
+        def recognize(self, image):
+            recognized.append(image)
+            return []
+
+        @staticmethod
+        def save_results(results, path, page_type="wujiang_select") -> None:
+            return None
+
+    monkeypatch.setattr("src.business.recognition.ocr_worker.TemplateManager", FakeTemplateManager)
+    monkeypatch.setattr("src.business.recognition.ocr_worker.GeneralRecognizer", FakeRecognizer)
+
+    def _probe() -> dict:
+        return OcrWorker()._execute(OcrTask(
+            image="image", hero_names=("曹操",), rois=None,
+            template_name="hero_selection", threshold=0.8, recognize=False,
+        ))
+
+    FakeTemplateManager.matched = True
+    hit = _probe()
+    assert hit["outcome"] == "matched"
+    assert hit["probe"] is True
+    assert "ocr_results" not in hit  # 未走识别，无结果键
+
+    FakeTemplateManager.matched = False
+    rejected = _probe()
+    assert rejected["outcome"] == "healthy_no_match"
+    assert rejected["probe"] is True
+
+    assert recognized == []  # 探测全程不触发 OCR

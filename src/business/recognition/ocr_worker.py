@@ -323,10 +323,15 @@ class OcrWorker(QThread):
                         result = {"outcome": "matched", "confidence": confidence}
                     else:
                         self._log_timing(task, task_started, outcome="healthy_no_match", **stage_timing)
-                        return {
+                        no_match = {
                             "outcome": "healthy_no_match",
                             "confidence": confidence,
                         }
+                        if not task.recognize:
+                            # 探测任务（冷却期仅模板匹配）的拒识：带显式标记供
+                            # 轮询路由识别"用户已离开目标页"，提前解除冷却
+                            no_match["probe"] = True
+                        return no_match
                 # 未命中但 fallback 放行时 matched=False：轮询侧校验器据此拦截
                 # 兜底结果，防止错位 ROI 的垃圾读数触发对局攻略自动导入
                 result = {
@@ -338,7 +343,9 @@ class OcrWorker(QThread):
                 result = {"outcome": "matched"}
             if not task.recognize:
                 self._log_timing(task, task_started, outcome="matched", **stage_timing)
-                return result
+                # 探测命中（仍在目标页）：同样带显式标记，路由据此只维持冷却，
+                # 不触发命中的全套动作（重设冷却/激活对局任务/跳页）
+                return {**result, "probe": True}
 
             layout = task.roi_layout or OcrRoiConfig().layout_for(task.template_name)
             if task.rois is not None:
@@ -465,10 +472,11 @@ class OcrWorker(QThread):
             f"{timings.get('det_empty_calls', 0)}/{det_calls}" if det_calls is not None else "-/-"
         )
         # healthy_no_match / matched_reused 是轮询常态（未发生真实识别），降 DEBUG
-        # 避免每轮心跳刷 INFO；仅真实识别与异常路径保留 INFO
+        # 避免每轮心跳刷 INFO；仅真实识别与异常路径保留 INFO。
+        # 探测任务（recognize=False）的命中同属冷却期常态（每拍一次），一并降 DEBUG
         log_timing = (
             logger.debug
-            if outcome in ("healthy_no_match", "matched_reused")
+            if outcome in ("healthy_no_match", "matched_reused") or not task.recognize
             else logger.info
         )
         log_timing(
