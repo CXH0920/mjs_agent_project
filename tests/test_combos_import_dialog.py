@@ -62,6 +62,8 @@ def test_import_dialog_runs_and_reports(tmp_path: Path, monkeypatch) -> None:
     assert "未知武将" in report_text
     assert output.exists()
     assert dialog._footer.accept_button.isEnabled()
+    # finished 已派发：引用须摘除，否则后续 isRunning() 触已删 C++ 对象
+    assert dialog._worker is None
 
 
 def test_import_dialog_blocks_empty_source(monkeypatch) -> None:
@@ -109,6 +111,8 @@ def test_import_dialog_reports_failure(tmp_path: Path, monkeypatch) -> None:
     assert emitted == []
     assert criticals, "导入失败应弹出错误提示"
     assert dialog._report_browser.toPlainText().startswith("导入失败")
+    # 失败路径同样经 finished 销号：引用摘除对成功/失败两路都必须成立
+    assert dialog._worker is None
 
 
 def test_reject_blocked_with_notice_while_import_running(monkeypatch) -> None:
@@ -131,3 +135,38 @@ def test_reject_blocked_with_notice_while_import_running(monkeypatch) -> None:
     dialog._worker = None
     dialog.reject()
     assert rejected == [True], "无任务时正常放行关闭"
+
+
+def test_reject_and_restart_after_real_import(tmp_path: Path, monkeypatch) -> None:
+    """真实 worker 走完 finished→deleteLater 全链路后，关窗与二次导入
+    不再触悬空 C++ 对象（区别于 SimpleNamespace 桩，桩绕开了该链路）。"""
+    _app()
+    source = tmp_path / "data.json"
+    heroes = tmp_path / "heroes.json"
+    output = tmp_path / "combos.json"
+    _write_json(source, {"version": 1, "combos": SOURCE_COMBOS[:1]})
+    _write_json(heroes, HEROES)
+
+    dialog = CombosImportDialog(heroes_path=heroes, output_path=output)
+    dialog._source_edit.setText(str(source))
+    notices: list = []
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *args, **kwargs: notices.append(args)
+    )
+    rejected: list[bool] = []
+    dialog.rejected.connect(lambda: rejected.append(True))
+
+    dialog._on_accept()
+    assert dialog._worker is not None
+    dialog._worker.wait()
+    _app().processEvents()  # 派发结果信号与 finished→_retire（排队 deleteLater）
+    _app().processEvents()  # DeferredDelete 生效，C++ 对象销毁
+    assert dialog._worker is None, "线程结束后应摘引用，否则 isRunning 抛 RuntimeError"
+
+    dialog.reject()  # 修复前此处抛错，super().reject() 执行不到、对话框关不掉
+    assert rejected == [True], "导入完成后应放行关闭"
+
+    dialog._on_accept()  # 修复前此处同样触悬空引用
+    assert dialog._worker is not None, "二次导入应能启动新 worker"
+    dialog._worker.wait()
+    _app().processEvents()

@@ -168,6 +168,7 @@ class CombosImportDialog(QDialog):
         self._worker = _ImportWorker(Path(source_text), self._heroes_path, self._output_path)
         self._worker.finished_ok.connect(self._on_import_finished)
         self._worker.failed.connect(self._on_import_failed)
+        self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
 
     def _on_import_finished(self, report: dict) -> None:
@@ -180,6 +181,11 @@ class CombosImportDialog(QDialog):
         self._footer.set_busy(False)
         self._report_browser.setPlainText(f"导入失败：{error}")
         QMessageBox.critical(self, "导入失败", f"无法完成导入：\n{error}")
+
+    def _on_worker_finished(self) -> None:
+        """线程结束即摘引用：worker 经 finished→_retire 自回收（deleteLater），
+        残留引用会让 reject/_on_accept 的 isRunning() 触已删 C++ 对象而抛错。"""
+        self._worker = None
 
     def reject(self) -> None:
         # 导入线程无安全中止通路：运行中锁关并告知原因，完成显示报告后可正常关闭
