@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-11-06（`65dff21`）
+> 代码基线：2026-11-14（`d1ff679`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-11-06
+> 文档日期：2026-11-14
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -30,14 +30,15 @@
 - [十八、运维工具链与数据出库](#十八运维工具链与数据出库)
 - [十九、首启向导、备份恢复与生成互斥](#十九首启向导备份恢复与生成互斥2026-10-23-基线新增)
 - [二十、多模拟器连接与官方 PC 客户端直连](#二十多模拟器连接与官方-pc-客户端直连2026-10-25-基线新增)
+- [二十一、OCR 轮询链路提速与选将冷却期探测](#二十一ocr-轮询链路提速与选将冷却期探测2026-11-14-基线新增)
 
 ---
 
-## 当前代码基线与业务不变量（2026-11-06）
+## 当前代码基线与业务不变量（2026-11-14）
 
 > 本节的粗体小节按提交时间倒序追加；2026-10-11（`2081b5b`）之前的描述对应历史基线，
 > **子进程启动失败终态契约（14bffaf / 07606ce，VUL-B2-001）** 及其后各小节为
-> 2026-10-12 至 11-06 新增，与后续各章冲突时以本节为准。
+> 2026-10-12 至 11-14 新增，与后续各章冲突时以本节为准。
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载，支持模拟器 ADB 与官方 PC 客户端双形态图像源），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心。
 
@@ -52,7 +53,7 @@
 | 备份恢复 | 「数据」菜单 → `BackupRestoreDialog` | `backup_restore_service.list_snapshots()` -> 选择快照 -> `preview_diff()`（当前文件 + 最近快照键级差异）-> `restore()`（先 `snapshot_to_backups()` 自快照 -> 原子写替换） | 浏览 `data/backups/` 自动快照，预览键级差异后一键恢复；恢复前自快照实现双向可回退；坏备份在预览与恢复两侧都拒绝；跨文件引用组默认整组恢复到同一时间点 |
 | 首启向导 | `main.py` 启动流 / 「帮助」→ 重看首启引导 | `should_show_state()` -> `OnboardingDialog`（段 1 环境自检 -> 段 2 模拟器连接与分辨率体检 -> 段 3 试识别）-> 失败时 `onboarding_fixes` 提供唯一可点修复动作 -> `mark_step()` / `mark_skipped()` 落 `config/.onboarding_state.json` | 三段体检每步失败给出唯一可点修复动作；界面明示"本工具只读屏幕，不操作游戏"；跳过/完成后不再自动弹出，版本升版则重弹 |
 | 官方榜单导入 | `MainWindow._open_official_data_import()` | 暂停自动轮询 -> `OfficialDataImportDialog` 有序多选 -> `CaptureService.submit_official_import()` -> `OcrWorker` 队列 -> `OfficialDataImportService.import_pages()` -> `official_board_parser` 新旧版式识别/行分割/数字模板 + 排名顺序校验 + 名称兜底 | 与常规 OCR 共享同一 `OcrWorker` 的 FIFO 队列（互斥由 `OcrService._import_busy` 串行化，并非独占 worker）；2v2 各页左右表分别合并到胜率、出场排行 CSV，放逐榜按页内左右顺序合并，全部校验后覆盖并生成带来源页的待复核数据 |
-| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` →（`CaptureConnectionManager` 按连接形态）`AdbCapture.screencap_full()`/`screencap_raw()`（模拟器 ADB）或 `PcClientCapture.screencap_full()`（官方 PC 客户端 WGC+BitBlt）→ `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复）；双形态图像源对下游管线无感复用 |
+| 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` →（`CaptureConnectionManager` 按连接形态）`AdbCapture.screencap_full()`/`screencap_raw()`（模拟器 ADB）或 `PcClientCapture.screencap_full()`（官方 PC 客户端 WGC+BitBlt）→ `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复）并服务帧静止整拍跳过（画面未变且上一拍同任务集全部拒识时不重复识别）；冷却期以仅模板匹配探测跟踪页面状态，拒识提前解除冷却；双形态图像源对下游管线无感复用 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 | 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> SessionGuard 世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；候选期卡数回升拍扣住一拍复核（过场坏帧拦截）；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时经 `_clear_session_state` 清空确认表与牌面引用 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
@@ -80,11 +81,13 @@ DataFacade.load_all()
 
 `BaseFetchService` 的 QProcess 生命周期为 `_start_process()` -> `readyReadStandardOutput` / `readyReadStandardError` -> `_on_finished()` 或 `_on_error()`。stdout 先进入字节缓冲，只对完整换行行解码并交给子类解析，进程结束时再 flush 最后一行，避免 Qt 分块读取造成进度丢失或中文乱码。取消只调用 `kill()`，由 `finished` 信号统一清理上下文和发送状态，GUI 线程不做同步等待。成功以 CLI 退出码判定，AI CLI 有失败项会 `exit(1)`，不依赖 `RESULT: FAIL=` 文本协议。`_dispatch_stdout_line` 在转发每行 stdout 时同步用正则收集 `[i/N] 名字 FAIL` 行的失败项名到 `failed_items`，工作流出错弹窗据此在"查看详情"中列出失败武将/相性对清单。`_start_process` 为所有 QProcess 子进程统一注入 `MJS_QPROCESS_CHILD=1`（含 AI 子进程），使其不直写文件、stdout/stderr 交由父进程统一记录；429/length/JSON 等失败原因由父进程 `scraper/ai_generation.log` handler 的 `keep_debug=True`（级别固定 DEBUG、不跟随用户级别）保留，即使 root level≥WARNING 也不丢。AI 生成每批校验成功结果原子提交到 `guides.json`、`synergies.json`，失败项保留对应旧数据。
 
-OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
+OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询、冷却、退避与模板生命周期，`PollCoordinator` 负责轮询任务的后台编排、过期结果过滤、帧静止整拍跳过、冷却期探测编排和状态提交；`CaptureService` 通过单一后台执行器串行执行 ADB 连接和截图，手动截图与轮询不会并发访问同一会话。`match_guide` 由 `hero_selection` 命中一次性解锁，识别成功后停用，直到下次选将命中才重新激活；每次选将命中都会重置对局攻略页的自动跳转边沿，因此每局首次命中均可跳转。
 
 **OCR 双套件引擎（B1，2026-10 切换）**：主引擎为 RapidOCR/PP-OCRv6-small（ONNX，随 rapidocr wheel 内置）；对未决识别槽位，`GeneralRecognizer` 调用 `engine_loader.get_recheck_ocr_engine()` 惰性加载复核引擎——与主引擎互为异构（主 v6 时复核 v4-mobile，v4 三件套经 `src/scripts/fetch_recheck_models.py` 从官方清单预取），在候选闭包内做二次确认。设备固定 CPU（GPU 已否决），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径，ORT 线程钉为 `MUMU_OCR_CPU_THREADS`。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 false）控制复核开关、`MUMU_OCR_PRIMARY_ENGINE`（默认 v6，可切 v4 作回滚档）控制主引擎。paddle/paddleocr 已全量退役。设计文档：`docs/design/ocr_engine_upgrade_eval.md`。
 
 **轮询闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。`PollCoordinator` 在闲置暂停 5 分钟（`IDLE_PAUSE_MINUTES=5`）后自动暂停轮询，用户交互（点击导航、打开配置等）触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关。阈值校准工具：`src/scripts/calibrate_idle_threshold.py`。
+
+**帧静止整拍跳过与冷却期探测（2026-11-14 新增，9dea904 / d1ff679）**：每拍指纹判同后，画面与上一拍一致且上一拍同任务集（全速集 + 探测集合成的 `poll_signature`）全部健康拒识时，本拍整拍跳过识别（含 `match_guide` 兜底 OCR）——同一帧对各任务的模板匹配结论必然相同；指纹计算不再受 `MUMU_OCR_POLL_IDLE_PAUSE` 开关控制（实测约 7ms/拍）。`hero_selection` 命中进入冷却后，`OcrService.due_probe_tasks()` 返回冷却中的活跃任务，经 `recognize=False` 仅模板匹配的轻量探测（结果带 `probe=True`，不计入 `has_match`，避免闲置暂停计数被每拍命中清零）跟踪页面状态：探测命中只维持冷却（不重设冷却/不激活对局任务/不跳页/不灌推荐），拒识即 `clear_task_cooldown("hero_selection")` 提前解除冷却恢复全速识别。
 
 **未决错法频次记录（2026-09 新增）**：`pending_stats.py` 记录 OCR 未决错法频次与人工确认答案，供白名单配置界面消费。双事件流（识别线程 `record_pending` + GUI `record_confirmation`）汇入同一文件 `data/ocr_name_pending_stats.json`。60 秒节流窗口防虚增，原子替换写入。
 
@@ -720,7 +723,7 @@ do_capture_from_file()
 
 ### 3.6 OcrService（OCR 控制服务）
 
-选将推荐自动跳转由 `MainWindow._on_poll_result()` 负责。模板首次匹配成功时，如果当前尚未处于选将页面，则切换到“选将推荐”Tab；冷却期间再次匹配只更新 OCR 推荐内容，不重复切换。只有 `healthy_no_match` 明确表示模板未匹配时，才清除页面状态。截图失败、连接重试和 OCR 重试不会清除该状态。
+选将推荐自动跳转路由收敛在 `PollCoordinator._route_result()`（任务状态写者一处；主窗口只消费 `hero_selection_matched` / `match_guide_matched` / `page_switch_requested` 三条出口信号）。模板首次匹配成功时，如果当前尚未处于选将页面，则切换到“选将推荐”Tab；冷却期间再次匹配只更新 OCR 推荐内容，不重复切换。只有 `healthy_no_match` 明确表示模板未匹配时，才清除页面状态。截图失败、连接重试和 OCR 重试不会清除该状态。
 
 ```python
 class OcrService(QObject):
@@ -746,6 +749,8 @@ class OcrService(QObject):
 | `is_poll_idle_paused() → bool` | 检查轮询是否处于闲置暂停状态 |
 | `begin_poll()` / `complete_poll(generation, outcome)` | 轮询世代管理（2026-09 新增）：`begin_poll()` 递增世代号，`complete_poll()` 提交结果；过期世代的结果被丢弃 |
 | `due_poll_tasks()` | 查询当前到期的轮询任务列表 |
+| `due_probe_tasks()` | 查询冷却中的活跃轮询任务（探测集：冷却期仅模板匹配跟踪页面状态，拒识由路由层提前解除冷却） |
+| `activate_task(name)` / `deactivate_task(name)` / `set_task_cooldown(name, seconds)` / `clear_task_cooldown(name)` | 任务级激活与冷却维护（冷却彼此独立；探测拒识经 clear 提前解除） |
 | `poll_cancel_event` / `poll_generation` | 取消事件与世代属性（供 `PollCoordinator` 检查） |
 
 **异常处理**：所有 except 块记录 `logger.error` + `logger.debug(traceback.format_exc())`，不允许静默异常。
@@ -1078,7 +1083,7 @@ def apply_incremental_update(data_dir, update)
 | app/main_window.py | 1161 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
 | app/app_services.py | 102 | 组合根（聚合业务服务实例并注入主窗口与各面板） |
 | app/shell_widgets.py | 209 | QWidget（左侧 NavigationRail 与顶部 ContextHeader） |
-| app/poll_coordinator.py | 324 | QObject（轮询编排、后台任务与结果状态迁移；含闲置暂停检测） |
+| app/poll_coordinator.py | 572 | QObject（轮询编排、后台任务与结果状态迁移；含闲置暂停检测、帧静止整拍跳过、冷却期探测路由） |
 | app/frame_fingerprint.py | 33 | 整帧降采样指纹（32×18 灰度，MAD 阈值 3.0） |
 | app/status_chips.py | 75 | 状态栏胶囊（常驻状态展示与点击打开配置） |
 | app/disclaimer_dialog.py | 68 | QDialog（免责声明对话框） |
@@ -1178,7 +1183,7 @@ def apply_incremental_update(data_dir, update)
 | ① | `AppServices`（组合根） | `app/app_services.py`（102 行） | 协作对象装配收敛：集中实例化采集 / OCR / 生成 / 分析等服务并完成信号接线，主窗口只消费其聚合句柄 |
 | ② | `StatusChips`（自足组件） | `app/status_chips.py`（75 行） | 状态栏常驻态：数据统计、当前任务消息、模拟器 ADB 连接状态、OCR 轮询运行状态；点击常驻状态可打开模拟器配置 |
 | ③ | `ProgressReporter`（进度出口） | `app/progress_reporter.py` | 进度出口统一：各服务进度信号经此统一转换为主窗口可消费格式 |
-| ④ | `PollCoordinator` / `AnnouncementUpdateCoordinator`（管线下沉） | `app/poll_coordinator.py`（324 行） | OCR 轮询与公告更新两条管线下沉：轮询编排、后台任务与结果状态迁移；公告更新检查编排 |
+| ④ | `PollCoordinator` / `AnnouncementUpdateCoordinator`（管线下沉） | `app/poll_coordinator.py`（572 行） | OCR 轮询与公告更新两条管线下沉：轮询编排、后台任务与结果状态迁移；公告更新检查编排 |
 
 ```
 MainWindow.__init__
@@ -1261,7 +1266,7 @@ MainWindow.__init__
 - **匹配阈值**：武将选择和对局攻略分别配置；对局攻略在每次选将模板命中后只触发一次
 - **轮询间隔**：1-60 秒；未勾选持续轮询时禁用
 - **恢复轮询**：仅持续轮询已勾选且服务处于暂停状态时显示并可用
-- **闲置暂停（2026-09 新增）**：连续 5 分钟无画面变化时自动暂停轮询，状态芯片显示"闲置暂停"。用户交互（点击导航、打开配置等）触发恢复。`MUMU_OCR_POLL_IDLE_PAUSE` 控制开关（默认 true）
+- **闲置暂停（2026-09 新增）**：连续 5 分钟无画面变化时自动暂停轮询，状态芯片显示"闲置暂停"。用户交互（点击导航、打开配置等）触发恢复。`MUMU_OCR_POLL_IDLE_PAUSE` 控制开关（默认 true）；指纹同时服务帧静止整拍跳过——画面未变且上一拍同任务集全部健康拒识时整拍跳过识别（2026-11-14 新增）
 - **识别区域编辑**：选将推荐编辑 8 个名称区域；对局攻略编辑 5 组名称和阵营区域。可从共享 ADB 截图或本地图片打开编辑器，保存后下一次识别立即使用新布局；恢复默认只清除当前页面的本地覆盖
 - **保存反馈**：保存识别参数时固定底栏进入 busy 状态，成功后显示短暂 Toast 并关闭
 
@@ -2134,7 +2139,7 @@ class AdbCapture:
 ```
 src/ocr/
  ├── __init__.py              # 包 init
- ├── template_manager.py      # TemplateManager — OpenCV 模板匹配（~210 行，含分层加速）
+ ├── template_manager.py      # TemplateManager — OpenCV 模板匹配（750 行，分层加速 + 粗扫单档探测判否）
  ├── image_preprocessor.py    # ImagePreprocessor — 纯图像预处理（含 gamma 差异视图回退证据）
  ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
  ├── card_grid_detector.py    # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI（HSV 掩码 + 连通域过滤）
@@ -2183,6 +2188,8 @@ match(image, threshold=0.8)
 **匹配算法**：`cv2.TM_CCOEFF_NORMED`（归一化相关系数匹配），输出 0~1 的置信度。
 
 **模板匹配分层加速（2026-09 新增）**：先以低分辨率粗筛缩小搜索范围，再在粗筛区域内进行高分辨率精匹配。粗筛阶段将模板和输入图像同时缩小至 1/4 尺寸执行 `TM_CCOEFF_NORMED`，找到大致位置后扩展搜索窗口，仅在窗口内执行全分辨率匹配。避免了全图全尺度的冗余计算，对 2560×1440 截图匹配速度提升显著。
+
+**粗扫单档探测判否（9dea904 提速）**：全图多尺度兜底的粗扫入口再前移一步——先只对基准缩放一档（`base_scale × _COARSE_SCAN_RATIO`）做单次粗扫探测，探测分低于判否线（`threshold - _COARSE_SCAN_MARGIN`）即整段判否返回（策略 `coarse_reject_probe`，未发生任何多档扫描）；仅当探测分逼近判否线（布局偏移等边界页）才展开完整多档粗扫兜底，行为与旧版一致。依据：轮询常态为完全非目标页，全部档位粗扫最大得分远低于判否线（实测 P50 0.525 / max 0.640 < 0.65）。
 
 **模板制作流程**：
 ```
@@ -2500,9 +2507,16 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
        │
        ├── ① 后台线程 screencap_full()/screencap_raw() → numpy array（全在内存，不写磁盘；raw 帧优先，失败回退 PNG）
        │
-       ├── ② 每个到期页面提交 CaptureService.submit_ocr_task()
+       ├── ②' 帧静止跳过（2026-11-14 新增）：整帧指纹判同且上一拍同任务集全部健康拒识时，
+       │     整拍跳过识别（含 match_guide 兜底 OCR），直接回发 HEALTHY_NO_MATCH
+       │
+       ├── ② 每个到期页面提交 CaptureService.submit_ocr_task()（全速集 recognize=True）
        │     └── OcrWorker._execute() → TemplateManager.match()
        │          └── 命中且需要识别 → GeneralRecognizer.recognize() → latest.json
+       │
+       ├── ②+ 冷却期探测（2026-11-14 新增）：冷却中的活跃任务以 recognize=False 仅模板匹配
+       │     跟踪页面状态（结果带 probe 标记，不计入 has_match）；探测命中只维持冷却，
+       │     拒识即提前解除 hero_selection 冷却恢复全速识别
        │
        ├── ③ PollCoordinator 接收结果并提交轮询状态
        │     ├── complete_poll(generation, outcome)
@@ -2513,7 +2527,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
        ├── ④ RecommendationPanel.load_from_ocr()
        │     └── 填充 8 个推荐槽位（头像/相性/胜率）
        │
-       └── ⑤ hero_selection 进入计时冷却；下一次选将命中会重置 match_guide 任务和对局攻略页跳转边沿
+       └── ⑤ hero_selection 进入计时冷却（冷却期由探测任务轻量跟踪页面状态，离开选将页即提前解除冷却）；下一次选将命中会重置 match_guide 任务和对局攻略页跳转边沿
 ```
 
 **关键设计**：
@@ -2521,6 +2535,7 @@ OcrService 提供 QTimer 驱动，PollCoordinator 编排轮询流程：
 - 模板匹配是前置快速过滤器（<50ms），匹配成功后才执行 OCR 推理（0.5-3 秒）
 - 轮询独立于「启用 OCR 识别」复选框，勾选轮询即可独立运行
 - 轮询定时器永不自杀：条件不满足时 return 等待下一次 tick
+- **帧静止整拍跳过（2026-11-14 新增）**：画面未变且上一拍同任务集全部拒识时整拍跳过识别，指纹计算常开（约 7ms/拍）同时服务闲置暂停
 - **闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。连续 5 分钟无变化自动暂停轮询（`IDLE_PAUSE_MINUTES=5`），用户交互触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关
 
 #### 模板匹配的作用
@@ -2543,7 +2558,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **153 个含 `test_*` 函数的测试文件 / 1936 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开；`tests/` 下 py 文件共 157 个，其余为夹具/辅助模块）；实际收集项以 `pytest --collect-only -q` 为准。基线 2026-10-11（`2081b5b`）为 145 / 1626。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **191 个含 `test_*` 函数的测试文件 / 2306 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开；`tests/` 下 py 文件共 195 个，其余为夹具/辅助模块）；实际收集项以 `pytest --collect-only -q` 为准。基线 2026-10-11（`2081b5b`）为 145 / 1626，2026-11-06（`65dff21`）为 156 / 2042。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -3291,7 +3306,7 @@ CardSyncDialog
 
 ## 十七、开发状态表
 
-本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-10-23 基线，共完成四十五个阶段：
+本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-11-14 基线，共完成四十七个阶段：
 
 | 阶段 | 名称 | 时间 | 主要内容 |
 |------|------|------|----------|
@@ -3340,6 +3355,8 @@ CardSyncDialog
 | **四十三** | **抓取链路健壮性与退出治理** | **2026-10** | **ScriptRunner 启动失败终态契约（`errorOccurred` 统一收尾 + `FAILED_TO_START_EXIT_CODE=-1` + `_start_pending` 区分 Windows 同步 / Linux 异步，封堵面板永久忙死 VUL-B2-001）；看门狗树杀（`taskkill /T /F`）与 `WATCHDOG_RECHECK_MS=2000` 延迟复查；`Starting` 阶段 kill() 改由 `started` 补杀；看门狗无进度上限；取消链路 Starting 兜底与清理轮询上限；主窗口退出 `shutdown_fetch_services()` 杀抓取进程树（VUL-B2-002）；AI 批次中断状态与浏览器会话超时重建** |
 | **四十四** | **爬虫合规加固与访问披露** | **2026-10** | **如实爬虫标识 `mjs-agent/1.0`（弃浏览器 UA 伪装）；robots.txt 24 小时缓存 + 逐 URL `Disallow` 执行（公告接口与图片域名各自校验，获取失败放行告警）；生成任务 OS 级互斥锁 `generation_lock`（msvcrt/fcntl + holder 旁路文件 + 哑锁降级）；官网字段清洗与缺 id 健壮性 `hero_fields`；抓取取消链路与空目标伪成功修复；TERMS.md 1.3 增补自动化访问披露第 7 节，免责声明版本 1.1→1.3** |
 | **四十五** | **数据安全加固与备份恢复入口** | **2026-10** | **三条数据全灭路径封堵（修复清空 / 导入覆盖 / 回滚误导）；坏文件留底第四基元 `preserve_corrupt_file`（JsonRepository + DataManager 双路径，`_corrupt_preserved` 幂等）；`save_payload()` 加载完整性守卫；推荐指数 stale 判定纯读化；备份恢复消费端 `backup_restore_service` + `backup_restore_dialog`（恢复前自快照双向可回退、原子写替换、坏备份双侧拒绝、跨文件引用组整组恢复）；导入前备份与源结构校验加固；公告域官网访问冷却限频 `check_cooldown`；新鲜度损坏留底与阈值可配置（TD-A6-001）；RAG 审计容错、建议线程并发收口与语料写前快照** |
+| **四十六** | **OCR 轮询链路提速** | **2026-11** | **template_manager 粗扫单档探测判否（基准缩放一档低于判否线即整段判否，策略 coarse_reject_probe，逼近判否线才展开完整多档兜底）+ poll_coordinator 帧静止整拍跳过（指纹常开约 7ms/拍 + poll_signature 任务集签名比较，跳过状态仅轮询线程读写）** |
+| **四十七** | **选将冷却期探测** | **2026-11** | **ocr_service 新增 due_probe_tasks() 冷却期探测集；ocr_worker 对 recognize=False 探测任务返回显式 probe 标记（命中不进 ROI/OCR 流程，_log_timing 降 DEBUG）；poll_coordinator 探测分支——命中只维持冷却（不重设冷却/不激活对局任务/不跳页/不灌推荐），拒识提前解除 hero_selection 冷却恢复全速识别** |
 
 > 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。
 
@@ -3572,3 +3589,44 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 | `_ENV_KEY_SPECS` 键 | 32 | 38（+`EMULATOR_TYPE` / `EMULATOR_BRAND` / `PC_WINDOW_TITLE` / `EMULATOR_ADB_*` ×3） |
 | 屏幕采集形态 | 模拟器 ADB 单形态 | 模拟器 ADB（五品牌）+ 官方 PC 客户端窗口直连 |
 | 环境依赖 | — | +`windows-capture==2.0.1`（PC 客户端 WGC） |
+
+---
+
+## 二十一、OCR 轮询链路提速与选将冷却期探测（2026-11-14 基线新增）
+
+本节记录基线 `65dff21`（2026-11-06）→ `d1ff679`（2026-11-14）的两项轮询链路改造，与前文冲突时以本节为准。
+
+### 21.1 OCR 轮询链路提速（9dea904）
+
+两项独立提速叠加，消解轮询常态下的重复计算：
+
+**A1 帧静止整拍跳过（`poll_coordinator.py`）**：`do_poll_work()` 每拍计算的整帧指纹（`frame_fingerprint.compute_fingerprint()`，32×18 灰度 576 字节）不再只服务闲置暂停——画面与上一拍一致（`frames_match` MAD<3 判同）且上一拍同任务集（全速集 + 探测集合成的 `poll_signature = tuple(task_names) + tuple(probe_names)`）全部健康拒识时，同一帧对各任务的模板匹配结论必然相同，本拍整拍跳过（含 `match_guide` 兜底 OCR），直接回发 `HEALTHY_NO_MATCH`（detail「画面未变化，跳过识别」、`frame_unchanged=True`，同样计入闲置累计）。跳过状态（`_last_poll_task_names` / `_last_poll_all_rejected`）仅在持 `_poll_thread_lock` 的轮询线程读写（每拍串行）；任务集变化（冷却到期、探测拒识清冷却、任务激活/失活）与任何画面变化都会让条件失效、自然全速执行；`_reset_idle_watch()` 同步清空两字段，恢复、停启、异常路径回到干净状态。因此**指纹计算常开**（不再受 `MUMU_OCR_POLL_IDLE_PAUSE` 开关控制，实测约 7ms/拍），以约 7ms 的固定开销换取"完全静止画面每拍零 OCR 提交"。
+
+**A2 粗扫单档探测判否（`ocr/template_manager.py`）**：全图多尺度兜底的粗扫入口前移——先只对基准缩放一档（`base_scale × _COARSE_SCAN_RATIO`）做单次粗扫探测，探测分低于判否线（`threshold - _COARSE_SCAN_MARGIN`）即整段判否返回（策略 `coarse_reject_probe`，未发生任何多档扫描）；仅当探测分逼近判否线（布局偏移等边界页）才展开完整多档粗扫兜底，行为与旧版一致。依据：轮询常态为完全非目标页，全部档位粗扫最大得分远低于判否线（实测 P50 0.525 / max 0.640 < 0.65）。探测档结果并入最优粗扫记录，多档循环不重复跑基准档。
+
+### 21.2 选将冷却期探测（d1ff679）
+
+`hero_selection` 命中进入冷却后，轮询不再干等冷却到期，改为冷却期轻量跟踪页面状态：
+
+1. **探测集生成**：`OcrService.due_probe_tasks()` 返回冷却中的活跃任务名（与 `due_poll_tasks()` 的"未冷却到期集"互补）；两者均空时按原约定清零闲置计数并结束本拍。
+2. **轻量探测**：`PollCoordinator` 对探测集提交 `submit_ocr_task(..., recognize=False)`，`OcrWorker` 仅做模板匹配——命中短路返回 `{..., "probe": True}`（不进 ROI/OCR 流程），拒识同样带显式 `probe` 标记；`PollTaskResult.from_raw()` 消费该标记。探测结果**不计入 `has_match`**（探测命中是冷却期常态，计入会让 `PollResult.outcome=MATCHED`、闲置暂停计数被每拍清零失效）；探测任务的 `_log_timing` 命中降 DEBUG 避免刷屏。
+3. **路由分支**：`PollCoordinator._route_result()` 对 `hero_result.probe` 单列分支（优先级高于 `TEMPLATE_MISSING` 失活与普通 `HEALTHY_NO_MATCH` 分支）——探测**命中**=用户仍在选将页，什么都不做（只维持冷却；不重设冷却、不激活对局任务、不跳页、不灌推荐——探测每拍命中，走命中路由等于冷却失效）；探测**拒识**=已离开选将页，`_selection_page_active = False` + `clear_task_cooldown("hero_selection")` 提前解除冷却（日志「选将页已离开，识别冷却提前解除」），下一拍恢复全速识别。
+
+设计意图：冷却窗口内用户可能已离开选将页，旧逻辑必须等满 180 秒冷却才恢复识别，期间真实页面变化无法感知；探测以"每拍一次仅模板匹配"（约几十毫秒）的代价换取离开即恢复，冷却语义不变（命中仍受冷却保护，不会重复抢页）。
+
+### 21.3 本轮基线数字口径（2026-11-06 → 2026-11-14）
+
+| 项 | 2026-11-06 | 2026-11-14 |
+|---|---|---|
+| 提交数 | 基线 | +11（`3c19e7e`…`d1ff679`） |
+| `src` 变更 | — | 28 文件 +447/-90（两项特性 + 审查急修 + capture 域表面债），无新增/删除文件 |
+| `poll_coordinator.py` | 511 行 | 572 行 |
+| `template_manager.py` | 734 行 | 750 行 |
+| `ocr_service.py` | 366 行 | 375 行 |
+| `ocr_worker.py` | 564 行 | 572 行 |
+| 测试文件（含 `test_*`） | 156 | 191（D5 同名锚点迁移 + 五个零覆盖模块冒烟） |
+| `test_*` 函数 | 2042 | 2306 |
+| 新增对外方法 | — | `OcrService.due_probe_tasks()` |
+| 新增数据字段 | — | `PollTaskResult.probe` |
+| 新增匹配策略 | — | `coarse_reject_probe`（粗扫单档探测判否） |
+| RAG 索引校验 | — | 建索引盖编码器指纹章、建连与增量同步前双端比对（`3c19e7e`） |

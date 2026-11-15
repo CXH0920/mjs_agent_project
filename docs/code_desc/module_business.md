@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理、备份恢复
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-11-06（代码基线 65dff21）
+> 文档日期：2026-11-14（代码基线 d1ff679）
 
 ---
 
@@ -59,11 +59,13 @@ src/business/
 │   └── emulator_config_coordinator.py     # MuMu 配置状态协调
 ├── recognition/
 │   ├── name_resolution.py             # 武将名纠错与词表消解纯规则（HeroNameResolver）；白名单静态冲突检查（find_whitelist_conflicts）
-│   ├── ocr_service.py                 # OCR 控制、模板和轮询
-│   ├── ocr_worker.py                  # 唯一后台识别队列（弃单任务短路 + 预热标志复位）
+│   ├── ocr_service.py                 # OCR 控制、模板和轮询（含冷却期探测任务查询 due_probe_tasks）
+│   ├── ocr_worker.py                  # 唯一后台识别队列（弃单任务短路 + 预热标志复位；探测任务带 probe 标记）
+│   ├── official_cell_recognition.py   # 官方榜单单格识别纯规则（2× 快通道判据与回退门，62f40d8 出仓）
 │   ├── official_data_import_service.py # 官方榜单导入（识别编排 + 面板守卫 + 批量写回）
 │   ├── official_ocr_engines.py        # 官方导入双 OCR 引擎懒加载与跨任务移交（OfficialOcrEngines，罕见字计数熔断 + 冷却）
 │   ├── pending_stats.py               # OCR 未决错法频次与人工确认答案记录
+│   ├── peak_board_rules.py            # 巅峰赛牌面纯规则（行划分/排布校验/槽位语义，62f40d8 出仓）
 │   ├── peak_select_watcher.py         # 巅峰赛（2v2）选将实时识别循环
 │   └── session_guard.py               # 竞态守卫原语（SessionGuard/BusyGate/OneShotToken，P0-3 定稿；BusyGate 增 reset）
 ├── analysis/
@@ -264,6 +266,7 @@ OcrService (QObject)
   ├── activate_task(name) / deactivate_task(name)
   ├── set_task_cooldown(name, seconds=None) / clear_task_cooldown(name)
   ├── due_poll_tasks() -> list[str]              → 获取当前到期任务
+  ├── due_probe_tasks() -> list[str]             → 获取冷却中的活跃任务（探测模式，d1ff679）
   ├── get_task_state(name) -> PollTaskState      → 供调度与测试读取
 ```
 
@@ -276,7 +279,9 @@ OcrService (QObject)
 - 其他可重试失败（连接、截图、OCR、超时）：失败计数 +1，连续达到 `POLL_MAX_FAILURES = 5` 转 `paused`，否则把定时器间隔动态拉长为 `max(基础间隔, POLL_BACKOFF_DELAYS_MS[计数-1])`（`2s / 5s / 15s / 30s`）并转 `backing_off`，提示剩余重试次数。定时器持续运行（Qt 对激活中的定时器改间隔会重启计数），因此不再需要"单次触发 + 重新排程"。
 - **`idle_paused`（2026-09 新增）**：连续 5 分钟无画面变化时由 `PollCoordinator` 检测帧指纹不变后调 `pause_for_idle()` 进入。独立于故障 `paused`，由整帧指纹判闲（`frame_fingerprint` 32×18 灰度、MAD<3 判同）驱动。恢复路径：点击状态栏闲置暂停胶囊、重新激活主窗口、或触发 `sync_with_connection()`（配置保存/连接变化/导入对话框关闭）。
 
-`start_poll()` 把间隔钳到 `max(interval_ms, 1000)`，并把任务状态重置为 `hero_selection` 激活、`match_guide` 停用；两个任务各自维护 `PollTaskState(active, cooldown_until, consecutive_failures)`，冷却彼此独立，任一任务冷却只跳过自己。任务级冷却缺省取 `POLL_MATCH_COOLDOWN_MS = 180_000`（3 分钟）。
+`start_poll()` 把间隔钳到 `max(interval_ms, 1000)`，并把任务状态重置为 `hero_selection` 激活、`match_guide` 停用；两个任务各自维护 `PollTaskState(active, cooldown_until, consecutive_failures)`，冷却彼此独立，任一任务冷却只跳过自己（冷却中的任务不进入 `due_poll_tasks()` 全速识别，但经 `due_probe_tasks()` 以仅模板匹配的轻量探测跟踪页面状态，拒识由路由层提前解除冷却——见 [`./module_ui.md`](./module_ui.md) §3.1.1）。任务级冷却缺省取 `POLL_MATCH_COOLDOWN_MS = 180_000`（3 分钟）。
+
+**冷却期探测协议（d1ff679）**：探测任务经 `submit_ocr_task(..., recognize=False)` 走同一 FIFO 队列，`OcrWorker` 对 `recognize=False` 的任务在模板命中/拒识时都返回显式 `"probe": True` 标记（命中只返回模板匹配结果，不进入 ROI/OCR 流程；拒识同样带标记），`PollTaskResult.from_raw()` 消费该标记供路由区分探测与真实命中。探测任务的 `_log_timing` 命中同属冷却期常态，降 DEBUG 避免刷屏。
 
 模板按名称独立管理：武将选择模板继续使用 `templates/wujiang_select.png`，对局攻略模板使用 `templates/match_guide/template.png`。模板缺失时对应任务返回 `template_missing`，由消费端停用该任务，不影响另一个任务。
 
@@ -928,8 +933,8 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 
 | 指标 | 数量 |
 |------|------|
-| 测试模块数 | 153 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 157 个） |
-| 测试用例数 | 1936 个 `test_*` 函数 |
+| 测试模块数 | 191 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 195 个） |
+| 测试用例数 | 2306 个 `test_*` 函数 |
 
 > 注：grep 静态计数，未计入 `parametrize` 展开；实际收集项以 `pytest --collect-only -q` 为准。2026-10-11 基线为 145 文件 / 1626 函数，本轮（2026-10-23）新增的备份恢复、访问冷却限频、ScriptRunner 状态机与启动失败终态、任务台账、看门狗树杀与无进度上限等回归测试已计入上表。
 
@@ -1064,3 +1069,14 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 - **第 18 批命名债**（`65dff21`）：备份预览解析缓存、待复核会话损坏防御（`backup_restore_service.py` / `official_import_review_dialog.py` 配套）；`scripts/rag_common`→`rag_script_io`、`snapshot_common`→`rule_doc_snapshot` 见 [`./module_rag.md`](./module_rag.md)。
 
 本模块其余链路（QProcess 终态契约、官方榜单导入编排、轮询串联、巅峰赛识别编排、竞态守卫三原语、连接域 `CaptureConnectionManager`、新鲜度判定）函数签名本轮无变更。
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），本模块受影响项：
+
+- **选将冷却期探测**（`d1ff679`）：`ocr_service.py` 新增 `due_probe_tasks()`（返回冷却中的活跃任务名）；`ocr_worker.py` 对 `recognize=False` 的探测任务在命中/拒识时都返回显式 `"probe": True` 标记，命中不进入 ROI/OCR 流程，`_log_timing` 探测命中降 DEBUG——见 §3.3 冷却期探测协议段；UI 侧路由消费见 [`./module_ui.md`](./module_ui.md)
+- §二文件树补登记 `recognition/official_cell_recognition.py` / `peak_board_rules.py`（`62f40d8` 出仓的识别域纯业务规则，此前遗漏）
+- **抓取临时文件失败自清理**（`5849094`）：`guide_fetch_service` / `synergy_fetch_service` 的清单临时文件改 with 管理——dump 中途抛错即关句柄、半截文件就地删除并 `error_occurred`，不残留也不进入 busy
+- **连接竞态锁内读与 PC 绑窗快照入队**（`5849094`）：`capture_connection.py` 的 `set_target_port()` 配置读取持 `_session_lock`；新增 `bind_pc_window(hwnd)` 锁内绑定目标窗口并返回实例快照（`CaptureService.bind_pc_window` / `connect_capture(capture)` 门面转发，PC 多窗口选择经连接入队防热更绑窗丢失）
+- **`rule_doc_service._doc_lines()` 缓存键-内容同源**（`5849094`）：读取后重取 stat，mtime 变化即重读再落键
+- `df113e0`（`emulator_config_coordinator` 私有函数去品牌前缀）为内部改名，无调用链变更；测试域两笔迁移（`38fee32` / `3dea9b3`）不触及 `src/business/`

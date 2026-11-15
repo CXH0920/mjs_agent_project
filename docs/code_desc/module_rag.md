@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：`65dff21`（2026-11-06）。历史增量：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
+> 代码基线：`d1ff679`（2026-11-14）。历史增量：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -35,8 +35,8 @@
 
 ### 代码规模
 
-- 测试模块：153 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 157 个）
-- 测试用例：1936 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
+- 测试模块：191 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 195 个）
+- 测试用例：2306 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
 
 ---
 
@@ -886,3 +886,13 @@ TASKS: list[dict] = [
 - **RAG 评估历史 / 检索诊断 / 索引精化三层架构**（`refinement_service` + `RefinementSession` + `SuggestController`）：本轮无函数签名变更，2026-10-11 基线口径延续。
 
 本模块其余链路（语料构建 ODS/DWD/mart 分层 10 任务、向量索引、混合检索、编码器抽象层 `embedder.py`、检索 trace、武将变更时间轴驱动版本戳）函数签名本轮无变更。
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），本模块受影响项：
+
+- **RAG 索引编码器指纹双端校验**（`3c19e7e`）：`embedder.encoder_fingerprint()` / `indexer.build_index()` 盖章与增量前校验 / `Retriever.collection` 建连校验——§三（编码器抽象层）与索引构建流程段已含此口径
+- **元规则坏 JSON 消费侧降级**（`5849094`）：`ui/maintenance/rule_doc/diff_tab.py` 的 `apply_diff_result()` 对手改/半截写坏的差异报告解析失败（`OSError/ValueError`，覆盖 JSONDecodeError 与 UnicodeDecodeError）降级为空表而非页面崩溃；`proposal_tab.py` 提案解析异常放宽为 `ValueError`（错编码坏提案降级为空态/提示框）
+- **`rule_doc_service._doc_lines()` 缓存键-内容同源**（`5849094`）：stat→read 竞态窗口读取后重取 stat，mtime 变化即重读再落键
+- **AI 失败清单原子写**（`25bbd08`）：`logs/ai_last_failures.json` 经 `config/atomic_write.atomic_write_json` 原子替换——`--retry-failed` 读侧不再可能读到半截清单；`ai_batch --rebuild-rag-index` 链路无变化
+- 其余链路（语料构建、注入、索引精化三层架构、元规则 audit/sync/propose/apply 工作流）无函数级变更；测试域两笔迁移（`38fee32` / `3dea9b3`）不触及本模块源码

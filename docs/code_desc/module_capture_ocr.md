@@ -2,7 +2,7 @@
 
 > 对应目录：`src/capture/` + `src/ocr/`
 > 职责：屏幕采集双形态（ADB 连接模拟器截图含 raw 帧提速 / 官方 PC 客户端窗口直连 WGC+BitBlt）、多品牌模拟器探测（emulator_discovery 包，五品牌）与 PC 客户端窗口枚举、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
-> 文档日期：2026-11-06（基线 65dff21）
+> 文档日期：2026-11-14（基线 d1ff679）
 
 ---
 
@@ -44,7 +44,7 @@ src/capture/
 
 src/ocr/
 ├── __init__.py
-├── template_manager.py    # TemplateManager — OpenCV 模板匹配（分层加速）
+├── template_manager.py    # TemplateManager — OpenCV 模板匹配（分层加速 + 单档探测判否）
 ├── image_preprocessor.py  # ImagePreprocessor — 放大、灰度、gamma 差异视图回退
 ├── official_board_parser.py # 官方榜单新旧版式、数据行锚点、单元格与数字模板算法
 ├── card_grid_detector.py   # 2v2 巅峰赛牌面内容驱动卡位检测 + 派生名条 ROI
@@ -143,9 +143,11 @@ match(image, threshold=0.8)
   └── cv2.minMaxLoc() → max_val ≥ threshold → (True, confidence)
 ```
 
-**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `coarse_reject_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 OCR 推理。
+**为什么先做模板匹配：** 基础比例局部匹配可快速过滤正常页面；局部不命中或旧模板仍会全屏多尺度回退，保证识别率。任务日志记录 `outcome`、最高置信度、缩放与匹配策略（`base_local` / `base_full` / `fallback_full_multiscale` / `fallback_multiscale` / `coarse_reject_probe` / `coarse_reject_multiscale` / `unmatched`），便于判断是否需要重新制作模板或调整阈值；只有模板命中后才执行昂贵的 OCR 推理。
 
 **分层加速（cd35c98）**：全屏多尺度回退阶段新增粗扫粗筛——先将原图降采样至 1/4 尺寸（`_COARSE_SCAN_RATIO=0.25`），在降采样图上遍历全部候选缩放比例做粗匹配，仅当最优粗扫得分 ≥ `threshold - _COARSE_SCAN_MARGIN` 时才回到原尺寸做全图精扫。非目标页（轮询常态）粗扫即可判否，避免每拍付整幅多尺度扫描的几百毫秒；匹配策略记录 `coarse_reject_multiscale` 区分"粗扫即判否"与"精扫确认不匹配"。局部匹配路径不受此优化影响，仍按原始全尺寸执行。
+
+**单档探测判否（9dea904 提速）**：粗扫入口再前移一步——先只对基准缩放一档（`base_scale × _COARSE_SCAN_RATIO`）做单次粗扫探测，探测分低于判否线（`threshold - _COARSE_SCAN_MARGIN`）即整段判否返回（策略 `coarse_reject_probe`，未发生任何多档扫描）；仅当探测分逼近判否线（布局偏移等边界页）才展开完整多档粗扫兜底，行为与旧版一致。依据是轮询常态为完全非目标页，全部档位粗扫的最大得分也远低于判否线（实测 P50 0.525 / max 0.640 < 0.65 判否线）；探测档的结果会并入最优粗扫记录，多档循环不再重复跑基准档。
 
 **人工识别例外：** 用户从页面点击"识别当前阵容"或导入本地图片时会传入 `force_ocr=True`，此类已明确指定识别页类型的请求跳过模板匹配，直接执行 OCR。只有自动轮询仍将模板匹配作为前置门禁，避免对无关游戏画面反复执行 OCR。
 
@@ -170,7 +172,7 @@ ADB 截图需要 OCR 时，`CaptureService` 会先复制图像并提交 OCR work
 
 **修复**：删除 `POLL_MATCH_COOLDOWN_SECONDS` 常量、`_poll_cooldown_until` 字段、冷却跳过分支、`_queue_capture_ocr` 的 `is_poll` 参数与 pending 键；`should_ocr` 同步移除 `or is_poll` 项。手动识别恢复为"每次点击即执行 OCR"的预期行为。
 
-**真实轮询冷却**：由 `OcrService.set_task_cooldown(task_name, seconds)` 承担。`main_window.py` 在轮询命中 `hero_selection` 后调用该方法，时长取 `mumu_hero_selection_cooldown` 配置（默认 180 秒）；冷却中的任务不进入 `due_poll_tasks()`，窗口期内该任务不再匹配、不 OCR。该机制仅作用于自动轮询路径，不影响手动识别。
+**真实轮询冷却**：由 `OcrService.set_task_cooldown(task_name, seconds)` 承担。`main_window.py` 在轮询命中 `hero_selection` 后调用该方法，时长取 `mumu_hero_selection_cooldown` 配置（默认 180 秒）；冷却中的任务不进入 `due_poll_tasks()`（不参与全速识别），但自 d1ff679 起经 `due_probe_tasks()` 以仅模板匹配的轻量探测跟踪页面状态（不 OCR），探测拒识即提前解除冷却。该机制仅作用于自动轮询路径，不影响手动识别。
 
 ### 3.3 2v2 巅峰赛卡位检测（card_grid_detector.py）
 
@@ -669,3 +671,12 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 - **新增 `src/ocr/recheck_model_assets.py`**：v4 复核三件套官方清单预取（URL+SHA256 钉死、幂等、`.part` 原子替换），与既有 `src/scripts/fetch_recheck_models.py` 协作
 - **PC 客户端直连入口暂隐藏**（`f48c9b0`）：`pc_client.py` / `CaptureConnectionManager` 代码保留，仅设备页「连接类别」单选中的「官方 PC 客户端」选项隐藏；原因与解冻步骤见 §3.1 末段与 §3.1.1。采集与识别链路零改动
 - 模板匹配、RapidOCR 双套件识别链、卡位检测、白名单口径全部延续 2026-10-25 基线，无行为变更
+
+## 十二、本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），本模块受影响项：
+
+- **模板匹配单档探测判否**（`9dea904`）：`template_manager.py` 粗扫入口前移——基准缩放单档粗扫探测低于判否线即整段判否（策略 `coarse_reject_probe`），逼近判否线才展开完整多档兜底；见 §3.2 分层加速段
+- 冷却中任务经 `due_probe_tasks()` 以 `recognize=False` 仅模板匹配探测（不 OCR），§3.2.1 冷却口径已同步；探测链路的 UI 编排侧见 [`./module_ui.md`](./module_ui.md) §3.1.1
+- **逍遥（MEmu）零实例端口兜底**（`d1392e6`）：`emulator_discovery/memu.py` 配置目录在但零实例时经 `port_scan.supplement_when_empty` 补充扫描兜底，带内仍无开放端口才报配置错误（见 §2.2 探测策略要点）
+- `df113e0`（capture 域表面债：`discover_pc_windows` 改名、`is_main` 死字段删除、mumu 私有函数去品牌前缀）已随提交同步入档，无残留旧名；测试域两笔迁移（`38fee32` / `3dea9b3`）不触及 `src/capture/`、`src/ocr/`

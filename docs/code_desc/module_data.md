@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
-> 文档日期：2026-11-06（基线 `65dff21`）
+> 文档日期：2026-11-14（基线 `d1ff679`）
 
 ---
 
@@ -771,3 +771,7 @@ class SpecialCardRepository(JsonRepository):
 - **`special_cards_panel` / `hero_classification_panel` UI 路径迁入 `maintenance`**（`977a9dc`）：UI 侧路径变更，`src/data/` 数据仓储层无函数签名变化。
 
 本模块其余链路（Pydantic 模型、DataFacade/manager/issues 解环、json_repository 四基元、武将变更时间轴 `hero_timeline`、卡牌百科快照 `card_sync_store`、百科忽略名单 `baike_ignore_store`、私有数据仓同步 `pull_data`）函数签名本轮无变更。
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），`src/data/` 域无代码变更——DataFacade 门面、manager/issues 解环拆分、hero_timeline / card_sync_store / baike_ignore_store 与 json_repository 三基元口径延续；测试域两笔迁移（`38fee32` / `3dea9b3`）仅触及 `tests/`。

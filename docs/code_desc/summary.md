@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-11-06（基线 `65dff21`）
+> 文档日期：2026-11-14（基线 `d1ff679`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -24,7 +24,7 @@
 - **AI 攻略生成** — 通过多供应商 API（DeepSeek / OpenAI / Ollama / OpenAI 兼容档案）或浏览器自动化批量生成武将攻略，默认 RAG 官方规则语料增强，可切换经典模式（无 RAG 注入）；API 模式支持扩展额度与思考重试
 - **AI 相性评分** — 全量/指定武将的相性评分；RAG 注入双方武将语料块与规则/FAQ/卡牌跨类块，支持 RAG 增强/经典双版本。指定获取自 2026-10-20 起拆为两个入口：「指定配对计算」（`SynergyPairDialog`，按状态筛选武将后按策略组装精确配对清单，支持 2~8 武将两两配对）与「落后相性刷新」（`SynergyRefreshDialog`，列出已有但落后于武将资料的配对、按最后生成日期升序，勾选后只刷这批）
 - **屏幕采集与 OCR** — 双形态图像源：ADB 连接五品牌模拟器截图，或官方 PC 客户端窗口直连（WGC 主路径 + BitBlt 兜底，全程只读不发送输入；**该入口自 `f48c9b0` 起暂隐藏**，直连画面排版与模拟器端存在位置差异致自动识别暂缓适配，恢复仅需还原一行控件可见性）；OpenCV 模板匹配 + RapidOCR/ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎）识别武将名；v4 三件套经 `fetch_recheck_models.py` / `recheck_model_assets.py` 官方清单预取（URL+SHA256 钉死），运行时离线纪律绝不联网下载
-- **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间
+- **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间；冷却期以仅模板匹配的轻量探测跟踪页面状态，探测拒识即提前解除冷却（d1ff679）；画面静止且上一拍同任务集全部拒识时整拍跳过识别（9dea904）
 - **官方数据导入** — 可独立或同时导入 2v2/巅峰赛/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
 - **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费
 - **卡牌百科变更捕获** — 手动检查官网手牌库与本地卡牌差异，勾选后应用官网文本覆盖本地（`card_amount` 保留）；快照（`card_snapshot.json`）与变更记录（`card_changes.json`）持久化，驱动卡牌精化时效检查
@@ -33,7 +33,7 @@
 - **索引精化** — RAG 语料索引字段（timing / trigger_condition / keywords / related）精化工作台，架构下沉为三层纯业务代码：`refinement_service.py`（纯函数：清单扫描/LLM 建议生成/磁盘读写）+ `RefinementSession`（纯 Python 状态层：pending/curated/normal 三池清单、磁盘基线与 LLM 基线双基线、行状态 pending/suggested/modified/refined/generated）+ `SuggestController`（QObject，LLM 线程编排，SuggestWorker 批量建议，含 LIVE_WORKERS 全局僵尸防护列表防止 dialog 销毁后 QThread 运行中析构）
 - **B2 复核模式** — 对未决识别槽位，使用 PP-OCRv6-small/ONNX 引擎（RapidOCR）做候选内确认；惰性加载+失败熔断，模型缺失不联网下载，设备固定 CPU；`RapidOcrEngine` 包装层将 RapidOCR 结果翻译为 paddleocr 2.x 风格
 - **白名单治理** — OCR 未决错法频次记录（`pending_stats.py`，双事件流 + 60 秒节流窗口 + 原子替换写入）+ 用户层白名单维护界面（`whitelist_config_dialog.py`，错法观察清单 A+/A/B/C 分类 + `ocr_confusion_overrides.json` 静态冲突检查 + `reset_ocr_recognizer_cache()` 即时生效）
-- **轮询闲置自动暂停** — 整帧降采样指纹（`frame_fingerprint.py`，32×18 灰度 576 字节，MAD 阈值 3.0）+ 轮询协调器（`poll_coordinator.py`，连续 5 分钟无画面变化自动暂停，三路交互恢复）+ 阈值校准工具（`calibrate_idle_threshold.py`）
+- **轮询闲置自动暂停** — 整帧降采样指纹（`frame_fingerprint.py`，32×18 灰度 576 字节，MAD 阈值 3.0）+ 轮询协调器（`poll_coordinator.py`，连续 5 分钟无画面变化自动暂停，三路交互恢复；指纹同时服务帧静止整拍跳过）+ 阈值校准工具（`calibrate_idle_threshold.py`）
 - **合规化改造** — 免责声明弹窗（`disclaimer_dialog.py` + `disclaimer_state.py`，版本感知仅条款更新时重新确认，当前版本 **1.3**，对应 TERMS.md 1.3）+ 附加法律条款（LICENSE 第 8 条授权终止）+ robots.txt 存档（`logs/robots_cache/`，24 小时内不重复请求）**并逐 URL 按已解析规则执行**（`Disallow` 路径拒绝抓取，公告接口与图片域名按各自 robots.txt 校验，获取失败放行并告警）+ 如实爬虫标识 `mjs-agent/1.0`（不再伪装浏览器 UA）+ 自动化访问方式披露（TERMS.md 第 7 节：Playwright 附加 `--disable-blink-features=AutomationControlled`、相邻两次生成随机休息 60~180 秒）+ 架构防火墙声明（代码不含 ADB 输入能力）+ **数据出库**（抓取与维护数据自 2026-10-03 起不入版本库，经私有数据仓同步，`data/SOURCES.md` 登记来源）
 - **数据新鲜度芯片** — 状态栏第三枚常驻胶囊（`data_freshness_chip.py`）+ 纯业务判定核心（`src/business/freshness.py`，无 Qt 依赖）：按档位判定武将/攻略/相性/榜单四项数据年龄，**档位自 2026-10 起可配**（`DATA_FRESHNESS_STALE_GREEN_DAYS` 默认 7 / `DATA_FRESHNESS_STALE_RED_DAYS` 默认 14；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）；武将项**逐事件逐武将核对**（事件落后 ⇔ 该武将在 heroes.json 缺失或 `last_updated` 早于事件日期，批次按公告 ref 去重），修正旧全局 max 对比下"指定获取洗绿"与"混合批次只推增量"两类误绿漏报；时间轴不健康（含损坏留底判定）时退化为纯年龄兜底并出警示行；点击弹「内容年龄 / 数据源周期 / 建议操作」三组菜单，建议动作（增量获取 / 指定获取）可点击直达采集入口（忙碌时 toast 拦截）；刷新自足（六路服务信号 + QFileSystemWatcher 监听 data/ 目录 mtime 快照 500ms 去抖，无轮询定时器）；精简版只判武将+榜单两项
 - **首启向导三段体检** — `src/ui/app/onboarding_dialog.py`（551 行，一页式三段：环境自检 → 模拟器连接与分辨率体检 → 试识别）+ `src/config/onboarding_state.py`（`config/.onboarding_state.json`，`ONBOARDING_VERSION="1"` 版本感知，状态缺失/损坏/版本不符一律重弹，跳过不再打扰）+ `src/ui/app/onboarding_fixes.py`（失败修复动作库，`OnboardingFix`/`OnboardingFixResult`）。合规边界写死在模块 docstring：只做只读检查文件与依赖、通过 ADB 读屏、调用 OCR 识别，界面明示"本工具只读屏幕，不操作游戏"。入口：`main.py` 在 `show()` 后调用 `should_show_state()` 弹向导（预热已完成，避免 90~120 秒预热窗口内遮挡）；`MJS_ONBOARDING_FORCE=1` 强制在预热前弹出（发版 smoke 用）；「帮助 → 重看首启引导」可随时重开。设计规格见 `docs/spec/spec_onboarding.md`
@@ -52,7 +52,7 @@
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | RapidOCR 3.9.2 / ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，`onnxruntime` 1.23.2，CPU 固定、线程可钉）+ 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，437 字特征缓存）；paddle 全栈已退役 |
 | 数据持久化 | JSON + CSV 文件（`json_repository` 原子写/写前快照基元，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（156 文件 / 2042 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
+| 测试与静态检查 | pytest 9.0.3（191 文件 / 2306 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -388,7 +388,7 @@ test_project/
 - `docs/spec/spec_onboarding.md`（新增 446 行）：首启向导目标/验收口径/合规边界规格
 
 **修正的失效描述**
-- 代码规模台账：153 文件 / 1936 个 `test_*` 函数（原 145 / 1626）；`src` 共 274 个 py 文件 / 56123 行
+- 代码规模台账：191 文件 / 2306 个 `test_*` 函数（原 153 / 1936）；`src` 共 299 个 py 文件 / 63201 行
 - 免责声明版本 1.1 → 1.3；TERMS.md 1.1 → 1.3（新增第 7 节自动化访问披露，原第 8/9/10 节顺移为 9/10/11 节）
 - env 键元表 30 → 32 键；`rule_doc_panel.py` 行数预算 927 → 935
 - 数据规模（当前私有数据仓同步快照）：heroes 192 / combos 1827 / cards 49 / special_cards 85 / equip_attrs 26 / hero_classification 7 键（categories 16 + hero_categories 192）/ mjs_adjustments 150 事件 / char_info_cache 随包基线 437 字（用户层覆盖 135 字）
@@ -426,7 +426,7 @@ test_project/
 - doctor 设备检查适配多品牌：读取 `emulator_adb_path` 新键、`adb devices` 序列号匹配放宽为 `127.0.0.1:<port>` 或 `emulator-<n>`、空结果修复文案按品牌分立（蓝叠提示开启 ADB）
 
 **修正的失效描述**
-- 代码规模台账：156 文件 / 2042 个 `test_*` 函数（原 153 / 1936）
+- 代码规模台账：191 文件 / 2306 个 `test_*` 函数（原 156 / 2042）
 - 技术栈：屏幕采集新增 `windows-capture==2.0.1`（PC 客户端 WGC）；env 键元表 32 → 38 键
 - 设备探测为五品牌注册表 + PC 客户端窗口枚举（原"MuMu 实例探测"）；`AdbCapture` 接口对齐 `PcClientCapture` 双形态
 
@@ -470,3 +470,12 @@ test_project/
 - `capture/probers/` 已改名 `emulator_discovery/`；`ocr/ocr_loader.py` 已改名 `template_registry.py`
 - `ui/configuration/mumu_config_*` 已改名 `emulator_config_*`；`ui/library/classification` 与 `special_cards_panel` / `hero_classification_panel` 已迁入 `ui/maintenance/`
 - 官方 PC 客户端直连入口暂隐藏（代码保留，恢复一行可见性）
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），全库涉及部分：
+
+- **OCR 轮询链路提速**（`9dea904`）：`template_manager.py` 粗扫单档探测判否（基准缩放一档粗扫低于判否线即整段判否，策略 `coarse_reject_probe`，逼近判否线才展开完整多档兜底）+ `poll_coordinator.py` 帧静止整拍跳过（画面未变且上一拍同任务集全部健康拒识时整拍跳过识别，含 `match_guide` 兜底 OCR；指纹计算不再受 `mumu_ocr_poll_idle_pause` 开关控制）
+- **选将冷却期探测**（`d1ff679`）：`ocr_service.py` 新增 `due_probe_tasks()`；`ocr_worker.py` 对 `recognize=False` 探测任务返回显式 `probe` 标记（命中不进 ROI/OCR）；`poll_coordinator.py` 冷却期对探测任务仅模板匹配跟踪页面状态，探测命中只维持冷却，拒识即 `clear_task_cooldown("hero_selection")` 提前解除冷却恢复全速识别
+- **测试域迁移**（`38fee32` / `3dea9b3`）：38 例散落用例迁入八个同名锚点、限定前缀测试文件归位同名约定、五个零覆盖模块补最小冒烟——测试规模 156 文件 / 2042 用例 → 191 文件 / 2306 用例
+- **修正的失效描述**：基线 `65dff21` → `d1ff679`（2026-11-14）；`module_business.md` §二文件树补登记 `official_cell_recognition.py` / `peak_board_rules.py`

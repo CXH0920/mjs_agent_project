@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/ai/`
 > 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律、生成任务互斥锁
-> 文档日期：2026-11-06（基线 `65dff21`）
+> 文档日期：2026-11-14（基线 `d1ff679`）
 
 ---
 
@@ -87,7 +87,7 @@ close()                 → None
 | 会话/连接健壮性 | 连接类异常（`_CONN_ERRORS`）关闭并重建 httpx.Client（分层超时在重建时保持） | 等待/提取失败置 `_started=False`，下次请求先释放旧上下文再重建浏览器（见 3.9） |
 | RAG 预算 | `RAG_PROMPT_CHARS`（默认 6000 字符）/ `RAG_SYNERGY_PROMPT_CHARS`（相性，默认 6000） | `RAG_BROWSER_PROMPT_CHARS`（默认 3000 字符） |
 
-浏览器模式按职责拆为两层：`PlaywrightGenerator` 负责提示词、JSON 提取、ID 转换和 Pydantic 校验；`DeepSeekBrowserSession` 负责 Edge/Playwright 生命周期、登录等待、页面诊断、消息发送和流式回复稳定检测。`PlaywrightGenerator._send_and_wait()` 保留为兼容委托入口，不再直接操作页面。
+浏览器模式按职责拆为两层：`PlaywrightGenerator` 负责提示词、JSON 提取、ID 转换和 Pydantic 校验；`DeepSeekBrowserSession` 负责 Edge/Playwright 生命周期、登录等待、页面诊断、消息发送和流式回复稳定检测。`PlaywrightGenerator._send_and_wait()` 保留为兼容委托入口，不再直接操作页面。`PlaywrightGenerator.cancel()` 与 `AIBatchGenerator.cancel` 同语义（766dc0f 补齐公开合同）：置位后 `generate_*` 入口与随机休息小步等待检查退出，不打断 in-flight 页面等待（靠既有超时退出）；类级 `_cancelled = False` 兜底 `object.__new__` 绕过构造器的测试实例。
 
 每个武将/武将对都重发完整 system prompt + 数据（与 API 模式对齐），避免网页版会话中首轮格式指令在后续轮次衰减导致输出偏离 JSON；另在消息末尾追加 `GUIDE_FORMAT_REMINDER` / `SYNERGY_FORMAT_REMINDER` 利用"最近指令权重最高"特性稳住 JSON 输出结构。
 
@@ -550,3 +550,13 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 ## 本轮文档校准（2026-11-06）
 
 自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），`src/scraper/ai/` 域本轮无函数级签名变更：`generation_lock.py` OS 级互斥锁（msvcrt/fcntl + holder 旁路文件）、httpx 超时分层（connect/pool=5s、read 配置值）、`normalize_and_validate_guide` / `normalize_and_validate_synergy` 共享管线、`MAX_OUTPUT_TOKENS` 单源 env 键元表、`--retry-failed` 定向重试、浏览器会话超时自动重建等链路口径延续。基线标记对齐 `65dff21`。
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），本模块受影响项：
+
+- **PlaywrightGenerator 补齐 cancel 公开合同**（`766dc0f`，第 6 批审查）：新增 `cancel()`（见 §二 浏览器两层说明）；`login_timeout` 读侧单源引用消灭双默认，`DEFAULT_CHAT_CONFIG` 的 `login_timeout` 15000→120000
+- **失败清单原子写**（`25bbd08`，第 6 批审查）：`_save_last_failures()` / `_save_interrupted_state()` 经 `src/config/atomic_write.atomic_write_json` 原子替换——写失败清单途中中断不留半截 JSON，`--retry-failed` 读侧不再可能解析失败；快照/加载移入 try 收尾、校验日志附字段级详情
+- **dry-run 定向估算补齐**（`25bbd08`）：`_show_cost_estimate()` 对 `synergy_single` / `synergy_pair`（按 C(n,2) 换算）/ `synergy_list` 三分支按实际请求项数直估 RAG/经典双版本（`estimate_item_cost`），清单不可读提示跳过而非退出
+- **定向模式阈值透传**（`d1392e6`）：`main()` 向 `run_synergy_pair/single/list_generation` 透传 `args.score_threshold`（原先 pair 固定 `None`），定向配对低于下限移除旧记录与全量模式同语义
+- 其余链路（API 生成器 429 退避、`normalize_and_validate_*` 共享管线、`generation_lock` OS 级互斥）无函数级变更；测试域两笔迁移（`38fee32` / `3dea9b3`）新增 `test_api_generator` 等同名锚点

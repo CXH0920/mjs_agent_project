@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**
-> 文档日期：2026-11-06（基线 `65dff21`）
+> 文档日期：2026-11-14（基线 `d1ff679`）
 
 ---
 
@@ -499,8 +499,8 @@ def transform(raw: dict) -> dict | None:
 
 - `src/scraper/official_source/` 共 8 文件 2248 行（`crawler.py` 635 / `announcement.py` 699 / `incremental.py` 328 / `full.py` 218 / `adapter.py` 194 / `card_baike.py` 109 / `hero_fields.py` 64 / `__init__.py` 1）
 - `tests/test_crawler.py` 共 53 个 `test_*` 函数（覆盖状态机解析、写入守卫、robots 规则执行、本地字段保护、HTML 清洗、增量健壮性）
-- 测试模块数：153 文件（`tests/test_*.py`）
-- 测试用例数：1936 个 `test_*` 函数
+- 测试模块数：191 文件（`tests/test_*.py`）
+- 测试用例数：2306 个 `test_*` 函数
 
 ---
 
@@ -535,7 +535,7 @@ def transform(raw: dict) -> dict | None:
 - **官网清洗 / 缺 id 健壮性**（74ad9b9）：`clean_html()` 迁入 `hero_fields.py` 并改写为「多轮实体解码 + 像标签识别」（`_TAG_LIKE_RE` + `_unescape_and_strip_tags`，覆盖 `&amp;lt;` 双层编码，同时保留 `<5` / `->` 等正文比较符）；`_load_heroes_file()` 逐条校验 id（新增 `_hero_id_is_valid()`），缺 id 条目的本地文件按损坏语义备份并返回 `None`，避免替换/追加模式在全量抓取后抛 `KeyError`
 - **空目标伪成功丢数据修复**（1d8334a）：`incremental.main()` 筛选后 `target_raw` 为空时由 `return`（退出码 0）改为 `[错误] 无目标武将...` + `sys.exit(1)`——防 QProcess 读作成功、公告 `mark_applied` 静默吞掉待更新武将
 - **抓取素材清理**（29ae6d6）：`images/*.png` 抓取产物移出版本库（抓取数据自 2026-10-03 起经 `src/scripts/pull_data.py` 从私有仓同步，`data/SOURCES.md` 登记来源）；合规条款与访问频率控制披露同步更新至 `TERMS.md`
-- 测试规模台账：153 文件 / 1936 个 `test_*` 函数（原 145 / 1626）；`tests/test_crawler.py` 10 → 53 例
+- 测试规模台账：191 文件 / 2306 个 `test_*` 函数（原 153 / 1936）；`tests/test_crawler.py` 10 → 53 例
 
 ---
 
@@ -549,3 +549,7 @@ def transform(raw: dict) -> dict | None:
 ## 本轮文档校准（2026-11-06）
 
 自基线 `ed8b4ac`（2026-10-25）以来共 13 个提交（至 `65dff21`），`src/scraper/official_source/` 域本轮无函数级签名变更：如实爬虫 UA `mjs-agent/1.0`、robots.txt 24 小时缓存与逐 URL `Disallow` 执行、`hero_fields.py` 官网字段清洗守卫、写入前守卫（全量五道规模守卫 + 增量损坏硬停）、抓取输出默认路径归运行时可写根等链路口径延续。基线标记对齐 `65dff21`。
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），官网采集域（`src/scraper/` 顶层与 `official_source/`）无代码变更——爬虫链路、robots 校验、`hero_fields` 清洗守卫、卡牌百科抓取口径延续。`src/scraper/ai/` 子域三笔变更（`766dc0f` / `25bbd08` / `d1392e6`）记录于 [`./module_ai_batch.md`](./module_ai_batch.md)。

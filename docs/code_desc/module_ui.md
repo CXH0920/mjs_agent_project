@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-11-06（基线 65dff21）
+> 文档日期：2026-11-14（基线 d1ff679）
 
 ---
 
@@ -29,7 +29,7 @@ src/ui/
 │   ├── dialog_coordinator.py   # 主窗口对话框/采集入口编排（10 个对话框 + 3 个采集入口）
 │   ├── menu_builder.py         # 菜单动作创建与菜单栏装配（纯构建函数）
 │   ├── shell_widgets.py        # NavigationRail 左侧导航外壳组件
-│   ├── poll_coordinator.py     # 轮询后台编排、结果过滤、闲置暂停判定与状态提交
+│   ├── poll_coordinator.py     # 轮询后台编排、结果过滤、闲置暂停判定与状态提交（含帧静止整拍跳过、冷却期探测路由）
 │   ├── frame_fingerprint.py    # 轮询闲置检测的整帧指纹（降采样灰度 + MAD 判等）
 │   ├── app_services.py         # 协作对象组合根（可无头构造，一次挂载 QObject 父子与窗口引用）
 │   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
@@ -203,11 +203,17 @@ self._capture_service.official_import_failed.connect(self._on_failed)
 
 轮询冷却期间的重复匹配不会重复抢占用户当前页面；截图为空、图像截断等可重试结果也不会重置选将页面状态。对局攻略任务在后台线程经 `_validate_match_guide_result()` 校验：只有 `MATCHED` 且已确认角色数 `>= MATCH_GUIDE_MIN_CONFIRMED_NAMES=3` 才视作命中，不足时降级为 `HEALTHY_NO_MATCH` 并写入 detail。
 
+**冷却期探测（d1ff679 新增）**：`hero_selection` 命中进入冷却后，轮询不再干等冷却到期——`OcrService.due_probe_tasks()` 返回冷却中的活跃任务，`PollCoordinator` 对其提交 `recognize=False` 的仅模板匹配探测（结果 `PollTaskResult.probe=True`，不执行 OCR、不计入 `has_match`——探测命中是冷却期常态，若计入会让 `PollResult.outcome=MATCHED`，闲置暂停计数被每拍清零而失效）。路由层对探测结果单列分支：命中（`MATCHED`）= 用户仍在选将页，只维持冷却，不重设冷却、不激活对局任务、不跳页、不灌推荐（探测每拍命中，走命中路由等于冷却失效）；拒识（`HEALTHY_NO_MATCH`）= 已离开选将页，调 `clear_task_cooldown("hero_selection")` 提前解除冷却并复位 `_selection_page_active`，下一拍恢复全速识别。
+
 ### 3.1.2 轮询闲置自动暂停（idle_paused）
 
 开启 `mumu_ocr_poll_idle_pause`（默认开）后，轮询在画面长时间无变化时自动进入待机。`PollCoordinator.do_poll_work()` 每拍用 `frame_fingerprint`（32×18 灰度降采样、MAD<3 判同，阈值由 `src/scripts/calibrate_idle_threshold.py` 依据真实截图分布标定）与上一拍比较，经 `PollResult.frame_unchanged` 随结果回传；`_consume_poll_result()` 末尾的 `_track_idle_watch()` 只有 `HEALTHY_NO_MATCH` 且 `frame_unchanged` 的拍才累计 `IDLE_PAUSE_MINUTES=5` 分钟（对局长考仅数十秒，留数倍余量），MATCHED、截图失败、无到期任务等其余结果一律清零——宁漏暂停不误暂停。**设备离线例外（f9f3b53）**：`RETRYABLE_CONNECTION`（设备离线）不再清零闲置计数、按"无进展"累计——旧逻辑"非健康即清零"导致离线期间闲置暂停永不达成、轮询以约 2 秒间隔无限重连刷 ERROR（2026-09 两天 1,617 条；修复后约 12 条/小时），连接恢复后由既有恢复机制自动继续。达到阈值即调 `OcrService.pause_for_idle()`：停轮询、保留 ADB 连接、状态迁移为 `idle_paused`（独立于故障 `paused`，chip 用中性灰区分）。
 
 恢复入口三条，均经 `resume_from_idle_pause()`（仅在闲置暂停态生效）回到 `sync_with_connection()`：点击状态栏闲置暂停胶囊（`StatusChips.poll_resume_requested`，其余状态点击仍是打开配置）、重新激活主窗口（`MainWindow.changeEvent` 的 ActivationChange）、以及既有配置保存/连接变化/导入对话框关闭触发的 `sync_with_connection()`。`sync_with_connection()` 会无条件清空指纹与计数；指纹基线只在会话边界（sync/停启/无到期任务拍）清除，结果消费路径只清计数不动基线，否则相邻比较会失去前帧。手动截图链路与本功能完全无关，不承担恢复职责。
+
+### 3.1.3 帧静止整拍跳过（9dea904 新增）
+
+每拍计算的整帧指纹除服务闲置暂停外，还服务**帧静止整拍跳过**——画面与上一拍一致（`frames_match` 判同）且上一拍同任务集（全速集 + 探测集合成 `poll_signature`）全部健康拒识时，同一帧对各任务的模板匹配结论必然相同，本拍整拍跳过（含 `match_guide` 兜底 OCR），直接回发 `HEALTHY_NO_MATCH`（detail「画面未变化，跳过识别」、`frame_unchanged=True`，同样计入闲置累计）。跳过状态（`_last_poll_task_names` / `_last_poll_all_rejected`）仅在持 `_poll_thread_lock` 的轮询线程读写（每拍串行）；任务集变化（冷却到期、探测拒识清冷却、任务激活/失活）与任何画面变化都会让条件失效、自然全速执行。`_reset_idle_watch()` 同步清空这两个字段，恢复、停启和异常路径回到干净状态。因此指纹计算不再受 `mumu_ocr_poll_idle_pause` 开关控制——闲置暂停关闭时也照常计算（实测约 7ms/拍）。
 
 ### 3.1 主窗口信号拓扑
 
@@ -822,8 +828,8 @@ def update_recommendations(self, data: list[dict]) -> None:
 
 ## 七、代码规模（2026-10-23 基线）
 
-- **测试模块数**：153 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 157 个）
-- **测试用例数**：1936 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
+- **测试模块数**：191 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 195 个）
+- **测试用例数**：2306 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
 - **`main_window.py` 行数预算**：575 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口棘轮上调）
 
 ## 八、知识库维护界面（已迁出）
@@ -902,7 +908,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 - **DataManagementDialog 忙碌守卫传递**：`DataManagementService` 构造新增 `is_busy=is_generation_busy` 参数，与对话框层的 `is_generation_busy` 回调一致传递到服务层
 
 **数字口径**
-- 测试规模：153 个含 `test_*` 函数的测试文件 / 1936 个 `test_*` 函数（原 145 / 1626；`tests/` 下 py 文件共 157 个）
+- 测试规模：191 个含 `test_*` 函数的测试文件 / 2306 个 `test_*` 函数（原 145 / 1626；`tests/` 下 py 文件共 195 个）
 - `main_window.py` 预算 575 → 575（本轮新增入口（备份恢复/首启向导/相性刷新）经 `DialogCoordinator` / `AiGenerationWorkflow` 委托，主窗口新增 3 个 `_actions` 键映射 + 1 行 busy_check 回调扩展，预算维持）
 
 ---
@@ -931,3 +937,11 @@ def update_recommendations(self, data: list[dict]) -> None:
 - **新增 `ui/shared/dirty_guard.py`**：脏数据守卫
 - **PC 客户端直连入口暂隐藏**（`f48c9b0`）：`EmulatorDevicePage` 顶部「官方 PC 客户端」单选项隐藏，详见 §3.17；采集与识别链路零改动
 - 主窗口、推荐面板、武将浏览器、巅峰赛面板、对话框体系等其余 UI 延续 2026-10-25 基线，无行为变更
+
+## 十四、本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），本模块受影响项：
+
+- **帧静止整拍跳过**（`9dea904`）：`poll_coordinator.py` 每拍指纹判同且上一拍同任务集全部健康拒识时整拍跳过识别（含 `match_guide` 兜底 OCR），见 §3.1.3；指纹计算不再受 `mumu_ocr_poll_idle_pause` 开关控制（同时服务闲置暂停与本跳过）
+- **选将冷却期探测**（`d1ff679`）：冷却中的活跃任务经 `OcrService.due_probe_tasks()` 进入仅模板匹配的轻量探测，拒识即提前解除冷却，见 §3.1.1 冷却期探测段；`PollTaskResult` 新增 `probe` 字段，探测命中只维持冷却不走命中路由
+- 其余 UI 文件无代码变更；`df113e0`（capture 域表面债）与测试域两笔迁移（`38fee32` / `3dea9b3`）均不触及 `src/ui/`

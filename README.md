@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-2042%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-2306%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景，定位为**资料查阅与复盘学习辅助工具**。项目重点探索：
@@ -29,15 +29,15 @@
 
 ## 技术亮点
 
-1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
+1. **多模态屏幕识别** — OpenCV 模板匹配作前置过滤（<50ms，粗扫单档探测判否：基准缩放一档低于判否线即整段判否，逼近判否线才展开多档兜底），命中后才执行 RapidOCR 全屏识别；基于四角号码、部首、笔画、拼音的汉字特征库做 OCR 名称纠错；轮询全程内存处理不写磁盘，多板块共享一次截图。
 2. **双形态图像源** — 模拟器 ADB 截图（五品牌：MuMu/雷电/夜神/逍遥/蓝叠，`emulator_discovery/` 函数式注册表探测 + 端口段兜底 + 进程反查，五品牌探测全部 <1s）或桌面窗口画面只读采集（面向窗口化运行的本地应用；**该入口暂隐藏**，自动识别暂缓适配，恢复一行可见性）；两种采集会话接口对齐，下游 OCR 管线无感复用。
 3. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 4. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-5. **测试与交付工程化** — 156 个测试模块 / 2042 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
-6. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
+5. **测试与交付工程化** — 191 个测试模块 / 2306 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底，xdist worker 原生崩溃类失败（SIGSEGV）按日志签名串行重跑一次兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
+6. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，索引建库盖编码器指纹章、建连与增量同步前双端比对（缺章/失配拒绝服务并指引重建），对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
 7. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
 8. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
-9. **轮询闲置自动暂停** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复。
+9. **轮询闲置自动暂停与帧静止跳过** — 整帧降采样指纹（32×18 灰度，576 字节）MAD 阈值判闲，连续 5 分钟无画面变化自动暂停，三路交互恢复；画面未变且上一拍同任务集全部拒识时整拍跳过识别（同一帧结论必然相同）；选将冷却期以仅模板匹配的轻量探测跟踪页面状态，离开选将页即提前解除冷却恢复全速识别。
 10. **首启向导三段体检** — 环境自检 → 模拟器连接与分辨率体检 → 试识别，一页式对话框；任一步失败给出唯一可点修复动作，界面明示「本工具只读屏幕，不操作游戏」；状态持久化到 `config/.onboarding_state.json` 且版本感知，跳过或完成不再打扰，可从「帮助 → 重看首启引导」找回。
 11. **数据可靠性与备份恢复** — 写前快照 + 原子写 + 坏文件留底 + 导入前备份与源结构校验构成完整写保护链；`data/backups/` 自动快照可在「数据 → 从备份恢复」按「当前文件 + 最近快照」对照预览键级差异并一键恢复，恢复前先快照当前状态（双向可回退），坏备份在预览与恢复两侧都拒绝。
 12. **合规执行与访问披露** — robots.txt 24 小时缓存 + 抓取前逐 URL 按已解析规则校验（Disallow 路径拒绝抓取，获取失败放行并告警）；官网采集改用如实爬虫标识 `mjs-agent/1.0`（不伪装浏览器 UA）；Playwright 生成附加 `--disable-blink-features=AutomationControlled` 且相邻两次生成间随机休息 60~180 秒，条款集中登记于 [TERMS.md](TERMS.md) 第 7 节。
@@ -241,7 +241,7 @@ test_project/
 ├── images/                     # 武将头像（从官网下载，不入版本库）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（153 个测试模块 / 1936 个测试函数）
+├── tests/                      # 测试用例（191 个测试模块 / 2306 个测试函数）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -352,7 +352,7 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **实战配队**：外部导出 JSON 或 UI 手工维护 1570 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
 - **卡牌百科变更捕获**：`CardSyncService` 手动检查官网手牌库更新（60 秒冷却防密集请求），快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，支持差异条目级忽略名单（`baike_ignore.json`），audit_service 复核时效。
 - **白名单配置**：未决错法观察清单（A+/A/B/C 分类排序）+ 用户层白名单维护（`ocr_confusion_overrides.json`），静态冲突检查与即时生效（`reset_ocr_recognizer_cache()`）。
-- **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。
+- **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。画面未变且上一拍同任务集全部拒识时整拍跳过识别；选将冷却期以仅模板匹配的轻量探测跟踪页面状态，探测拒识（已离开选将页）即提前解除冷却。
 - **数据新鲜度芯片**：状态栏常驻胶囊按档位判定武将/攻略/相性/榜单四项数据年龄（默认 7/14 天，经 `DATA_FRESHNESS_STALE_GREEN_DAYS` / `DATA_FRESHNESS_STALE_RED_DAYS` 可配，榜单类数据周期较长时可调宽避免长期黄/红盖掉武将信号），武将项逐事件逐武将核对，杜绝"指定获取洗绿"与"混合批次只推增量"漏报；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口；刷新由服务信号 + data/ 目录监听驱动，无轮询定时器。
 - **首启向导三段体检**：双击启动后依次完成环境自检 → 模拟器连接与分辨率体检 → 试识别；任一步失败给出唯一的下一步动作文案，且该动作在当前构建形态下可执行；界面明示"本工具只读屏幕，不操作游戏"。状态落 `config/.onboarding_state.json`（版本感知，跳过或完成后不再自动弹出），可从「帮助 → 重看首启引导」重新打开。设计规格见 [docs/spec/spec_onboarding.md](docs/spec/spec_onboarding.md)。
 - **备份与恢复**：全部数据写入路径（编辑事务、配队导入覆盖、坏文件留底、AI 生成与官网采集覆盖前快照）都先写快照到 `data/backups/`（扁平命名，keep=10 轮转）；「数据 → 从备份恢复」按"当前文件 + 最近快照"对照预览键级差异，恢复前先快照当前状态（双向可回退），恢复用原子写替换、失败不留半截文件，坏备份在预览与恢复两侧都拒绝；武将/相性/攻略存在跨文件引用，确认时默认提供整组恢复到同一时间点。
@@ -460,7 +460,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-11-06） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-11-14） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/design/](docs/design/) | 设计决策记录 |
@@ -521,8 +521,10 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 四十五 | 相性指定获取双入口拆分（指定配对计算 + 落后相性刷新，按状态筛选按策略组装配对清单） | ✅ 已完成 |
 | 四十六 | 多模拟器五品牌连接（MuMu/雷电/夜神/逍遥/蓝叠 emulator_discovery 注册表探测 + 端口段兜底 + 进程反查 + EMULATOR_* 配置键平滑升级；五品牌探测全部 <1s，适配见 docs/design/emulator_multi_brand_requirements.md） | ✅ 已完成 |
 | 四十七 | 桌面窗口图像源接入（只读窗口画面采集 + 连接方式/设备页双形态） | ✅ 已完成 |
+| 四十八 | OCR 轮询链路提速（模板匹配粗扫单档探测判否 + 帧静止整拍跳过，指纹常开约 7ms/拍） | ✅ 已完成 |
+| 四十九 | 选将冷却期探测（冷却期仅模板匹配轻量跟踪页面状态，离开选将页提前解除冷却恢复全速识别） | ✅ 已完成 |
 
-> 文档基线：2026-11-06（`65dff21`）。测试 156 个测试模块 / 2042 个测试函数（grep 统计），Ruff 0.12.0 全通过。
+> 文档基线：2026-11-14（`d1ff679`）。测试 191 个测试模块 / 2306 个测试函数（grep 统计），Ruff 0.12.0 全通过。
 
 ---
 

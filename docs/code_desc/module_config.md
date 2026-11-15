@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-11-06（基线 `65dff21`）
+> 文档日期：2026-11-14（基线 `d1ff679`）
 
 ---
 
@@ -472,3 +472,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 - **首启向导去越层**（`28ce24f`）：`onboarding_state.py` / `onboarding_fixes.py` 解除对 `scripts` 顶层入口的越层引用，config 侧无新对外函数签名。
 
 本模块其余 config 域（`env.py` 键元表、`profiles.py` API 档案、`logging_config.py` 控制台队列化、`version.py` 版本单一来源、`disclaimer_state.py` 免责声明状态）函数签名本轮无变更。
+
+## 本轮文档校准（2026-11-14）
+
+自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），config 域无代码变更——键元表（38 键）、runtime 键、`atomic_write` / `task_ledger` / `version.py` / `onboarding_state` / `disclaimer_state` 口径延续。`atomic_write.atomic_write_json` 新增消费方（AI 失败清单原子写，`25bbd08`）记录于 [`./module_ai_batch.md`](./module_ai_batch.md)。
