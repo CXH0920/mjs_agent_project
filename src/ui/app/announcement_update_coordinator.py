@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 from src.business.announcement.announcement_service import AnnouncementCheckResult
 from src.business.recognition.session_guard import BusyGate
 from src.config.env import PROJECT_ROOT
-from src.data.announcement_manager import AnnouncementStatus
+from src.data.announcement_manager import Announcement, AnnouncementStatus
 from src.ui.app.progress_reporter import ProgressReporter
 from src.ui.data_admin.announcement_dialog import AnnouncementDialog
 from src.ui.data_admin.hero_update_confirm_dialog import HeroUpdateConfirmDialog
@@ -60,6 +60,11 @@ class AnnouncementUpdateCoordinator(QObject):
         self._update_button: QPushButton | None = None
         self._dialog: AnnouncementDialog | None = None
         self._last_diff: dict = {"added": [], "modified": [], "removed": []}
+        # 横幅关闭指纹（会话级）：记录用户已"看过"的横幅状态，判定重弹时机
+        self._banner_dismissed = False
+        self._seen_banner_keys: set[str] = set()
+        self._seen_diff_total = 0
+        self._seen_ready_count = 0
         self._pending_phases: list[tuple[str, list[int] | None]] | None = None
         # 阶段忙碌闸（P0-3 收口，原裸 bool 阶段令牌）：只有成功发起的阶段
         # 采集才占用，完成回调据此只消费对应阶段
@@ -81,6 +86,12 @@ class AnnouncementUpdateCoordinator(QObject):
     # ---------------------------------------------------------------
     # 公开入口（菜单 / 横幅按钮）
     # ---------------------------------------------------------------
+
+    def dismiss_banner(self) -> None:
+        """用户关闭横幅：隐藏并保持隐藏，直到指纹判定出现"新东西"才重弹。"""
+        self._banner_dismissed = True
+        if self._banner is not None:
+            self._banner.hide()
 
     def check_announcements(self) -> None:
         """手动触发一次公告与百科 diff 检查；忙碌/冷却中给出提示弹窗。"""
@@ -250,6 +261,10 @@ class AnnouncementUpdateCoordinator(QObject):
         ready = [a for a in announcements if a.status is AnnouncementStatus.READY]
         pending = [a for a in announcements if a.status is AnnouncementStatus.PENDING]
         diff = self._last_diff
+        self._update_banner_fingerprint(ready, pending, diff)
+        if self._banner_dismissed:
+            self._banner.hide()
+            return
         if ready:
             self._banner.set_tone(TONE_SUCCESS)
             self._banner.title_label.setText("武将数据可更新")
@@ -280,6 +295,29 @@ class AnnouncementUpdateCoordinator(QObject):
             self._banner.show()
         else:
             self._banner.hide()
+
+    def _update_banner_fingerprint(self, ready, pending, diff: dict) -> None:
+        """记录横幅状态指纹，出现"新东西"时解除关闭标记。
+
+        重弹三条件（任一满足）：出现从未见过的 READY/PENDING 公告、diff 三计数
+        之和比上次记录增大、READY 公告数比上次记录增多（pending→ready 升级走
+        current_names 兜底时 diff 可能不变，只有 READY 计数能捕捉）。判定只认
+        "变多"：更新成功后 diff 归零、ready 被 mark_applied 消化属预期回落，
+        不得把用户已关闭的横幅再顶出来。数量类记录跟随当前值（先判后记），
+        diff 5→3→5 的波动会因重新变多而重弹。指纹只取横幅实际展示的公告
+        （READY/PENDING），无关的非武将公告不会触发重弹。
+        """
+        diff_total = sum(len(diff.get(group) or []) for group in ("added", "modified", "removed"))
+        keys = {Announcement.stable_key(announcement) for announcement in (*ready, *pending)}
+        if self._banner_dismissed and (
+            keys - self._seen_banner_keys
+            or diff_total > self._seen_diff_total
+            or len(ready) > self._seen_ready_count
+        ):
+            self._banner_dismissed = False
+        self._seen_banner_keys |= keys
+        self._seen_diff_total = diff_total
+        self._seen_ready_count = len(ready)
 
     @staticmethod
     def _announcement_names(announcements) -> list[str]:

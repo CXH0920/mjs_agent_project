@@ -176,6 +176,43 @@ class CombosImportDialog(QDialog):
         self._report_browser.setPlainText(self._format_report(report))
         if report["imported"]:
             self.combos_imported.emit(report["imported"])
+        self._show_result_box(report)
+
+    def _show_result_box(self, report: dict) -> None:
+        """导入结束弹完成提示：正文为条数摘要，完整报告进可折叠明细（可选中复制）。
+
+        无论写入条数是否为 0 都弹——静默完成会让用户误以为无反应。点确定
+        accept 关闭对话框（报告已同步写入界面浏览器，重开可再看）；失败路径
+        不走此处（_on_import_failed 弹 critical 且保持对话框打开以便换文件重试）。
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle("导入完成")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(self._build_summary(report))
+        box.setDetailedText(self._format_report(report))
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+        self.accept()
+
+    @staticmethod
+    def _build_summary(report: dict) -> str:
+        """弹窗正文摘要：主句 + 座次解析 + 非空明细块计数（空块不列）。"""
+        seats = report["seat_stats"]
+        lines = [
+            f"源 {report['total']} 条 → 写入 {report['imported']} 条",
+            f"座次解析：成功 {seats['parsed']} + 无要求 {seats['none']}"
+            f" + 部分 {seats['partial']} + 失败 {seats['unparsed']}",
+        ]
+        blocks = (
+            ("未匹配", "unmatched"), ("重复", "duplicates"), ("校验失败", "invalid"),
+            ("座次复核", "seat_review"), ("座次不一致", "position_mismatch"),
+            ("手工保留", "manual_kept"), ("手工冲突", "manual_collisions"),
+            ("跳过已删除", "deleted_skipped"), ("清理过期", "removed_stale"),
+        )
+        notable = [f"{label} {len(report[key])}" for label, key in blocks if report[key]]
+        if notable:
+            lines.append("明细：" + " · ".join(notable) + "（详见详细信息）")
+        return "\n".join(lines)
 
     def _on_import_failed(self, error: str) -> None:
         self._footer.set_busy(False)

@@ -46,7 +46,7 @@ from src.ui.match.peak_select_panel import PeakSelectPanel
 from src.ui.recommendation.recommendation_panel import RecommendationPanel
 from src.ui.shared.capture_lock import CaptureRequestLock
 from src.ui.shared.portrait import load_portrait
-from src.ui.shared.style import ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO
+from src.ui.shared.style import ROLE_GHOST, ROLE_PRIMARY, ROLE_SECONDARY, TONE_INFO
 from src.ui.shared.widgets import NoticeBanner, show_toast
 
 
@@ -342,6 +342,10 @@ class MainWindow(QMainWindow):
             self._announcement_coordinator.update_hero_data_from_announcements
         )
         self._announcement_banner.add_action(self._announcement_update_button, role=ROLE_PRIMARY)
+        dismiss_button = QPushButton("×")
+        dismiss_button.setToolTip("关闭横幅；出现新公告或差异变化时会再次提示")
+        dismiss_button.clicked.connect(self._announcement_coordinator.dismiss_banner)
+        self._announcement_banner.add_action(dismiss_button, role=ROLE_GHOST)
         self._announcement_banner.hide()
         workspace_layout.addWidget(self._announcement_banner)
         # 横幅建好后挂载到协调器，作为其刷新目标与弹窗归属

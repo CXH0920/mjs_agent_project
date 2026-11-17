@@ -683,7 +683,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 620 → 626：配队管理对话框增删改经面板 combos_edited 信号上行，主窗口
     # 桥接到 hero_browser.refresh_synergies（相性表此前无刷新钩子，改配队后
     # 要等切换武将才自愈；与 synergies_changed 分发同模式）
-    "ui/app/main_window.py": 626,
+    # 626 → 630：公告横幅增加关闭按钮（连线 coordinator.dismiss_banner，
+    # 重弹判定与指纹全部内聚在协调器，主窗口只增按钮装配）
+    "ui/app/main_window.py": 630,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，

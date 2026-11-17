@@ -1549,6 +1549,114 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         qapp.processEvents()
 
 
+def test_banner_dismiss_fingerprint(tmp_path, monkeypatch, qapp) -> None:
+    """横幅关闭与状态指纹：状态未变保持隐藏，仅新公告/diff 变多/ready 升级重弹。
+
+    直接改内存公告状态驱动刷新（不经 mark_applied，避免真实 save 写盘）。
+    """
+    from src.data.guide_manager import GuideManager
+    from src.data.synergy_manager import SynergyManager
+
+    heroes_file, synergies_file, guides_file = _small_corpus(tmp_path)
+    window = MainWindow(
+        HeroManager(heroes_file=heroes_file),
+        SynergyManager(synergies_file=synergies_file),
+        GuideManager(guides_file=guides_file),
+    )
+    window.show()
+    qapp.processEvents()
+    coordinator = window._announcement_coordinator
+    banner = window._announcement_banner
+    try:
+        ready_ann = Announcement(
+            id=311,
+            title="已确认公告",
+            url="https://mjs.ztgame.com/news/ready.html",
+            hero_related=True,
+            status=AnnouncementStatus.READY,
+            matched_heroes=[HeroChange(name="贾诩", change="增强", known=True)],
+        )
+        pending_ann = Announcement(
+            id=312,
+            title="待生效公告",
+            url="https://mjs.ztgame.com/news/pending.html",
+            hero_related=True,
+            status=AnnouncementStatus.PENDING,
+            matched_heroes=[HeroChange(name="马钧", change="增强", known=True)],
+        )
+        manager = coordinator._manager
+        manager._items.clear()
+        manager._items[ready_ann.url] = ready_ann
+        manager._items[pending_ann.url] = pending_ann
+        coordinator._last_diff = {
+            "added": [{"name": "东方朔"}],
+            "modified": [],
+            "removed": [],
+        }
+
+        # ready+pending 并存：显示"武将数据可更新"；关闭后同状态刷新保持隐藏
+        coordinator._refresh_banner()
+        assert banner.isVisible()
+        coordinator.dismiss_banner()
+        assert not banner.isVisible()
+        coordinator._refresh_banner()
+        assert not banner.isVisible()
+
+        # 陷阱回归：更新成功（ready→applied、diff 清零）属预期回落，不得重弹
+        ready_ann.status = AnnouncementStatus.APPLIED
+        coordinator._last_diff = {"added": [], "modified": [], "removed": []}
+        coordinator._refresh_banner()
+        assert not banner.isVisible()
+
+        # 从未见过的公告出现 → 重弹
+        new_ann = Announcement(
+            id=313,
+            title="新公告",
+            url="https://mjs.ztgame.com/news/new.html",
+            hero_related=True,
+            status=AnnouncementStatus.PENDING,
+            matched_heroes=[HeroChange(name="贾诩", change="新增", known=True)],
+        )
+        manager._items[new_ann.url] = new_ann
+        coordinator._refresh_banner()
+        assert banner.isVisible()
+        coordinator.dismiss_banner()
+
+        # 已见 pending 升级 ready（无新公告、diff 不变）→ 重弹可更新横幅
+        pending_ann.status = AnnouncementStatus.READY
+        coordinator._refresh_banner()
+        assert banner.isVisible()
+        assert banner.title_label.text() == "武将数据可更新"
+        coordinator.dismiss_banner()
+
+        # diff 总量增大 → 重弹；回落不重弹（跟随式记录），再次变多仍重弹
+        coordinator._last_diff = {
+            "added": [{"name": "东方朔"}, {"name": "武将甲"}, {"name": "武将乙"}],
+            "modified": [],
+            "removed": [],
+        }
+        coordinator._refresh_banner()
+        assert banner.isVisible()
+        coordinator.dismiss_banner()
+        coordinator._last_diff = {
+            "added": [{"name": "东方朔"}],
+            "modified": [],
+            "removed": [],
+        }
+        coordinator._refresh_banner()
+        assert not banner.isVisible()
+        coordinator._last_diff = {
+            "added": [{"name": "东方朔"}, {"name": "武将甲"}, {"name": "武将乙"}],
+            "modified": [],
+            "removed": [],
+        }
+        coordinator._refresh_banner()
+        assert banner.isVisible()
+    finally:
+        window.close()
+        qapp.processEvents()
+
+
 # ============================================================
 # 字段级差异摘要与更新候选
 # ============================================================

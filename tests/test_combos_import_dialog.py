@@ -47,6 +47,9 @@ def test_import_dialog_runs_and_reports(tmp_path: Path, monkeypatch) -> None:
     dialog._source_edit.setText(str(source))
     emitted: list[int] = []
     dialog.combos_imported.connect(emitted.append)
+    # 完成弹窗为模态：桩掉避免无人点 Ok 卡死，仅记录是否被调用
+    result_boxes: list[dict] = []
+    monkeypatch.setattr(dialog, "_show_result_box", lambda report: result_boxes.append(report))
 
     dialog._on_accept()
 
@@ -56,6 +59,7 @@ def test_import_dialog_runs_and_reports(tmp_path: Path, monkeypatch) -> None:
     _app().processEvents()
 
     assert emitted == [1]
+    assert len(result_boxes) == 1, "导入结束应触发完成弹窗"
     report_text = dialog._report_browser.toPlainText()
     assert "导入完成：源 2 条 → 写入 1 条" in report_text
     assert "⚠ 未匹配武将 1 条" in report_text
@@ -153,6 +157,7 @@ def test_reject_and_restart_after_real_import(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr(
         QMessageBox, "information", lambda *args, **kwargs: notices.append(args)
     )
+    monkeypatch.setattr(dialog, "_show_result_box", lambda report: None)
     rejected: list[bool] = []
     dialog.rejected.connect(lambda: rejected.append(True))
 
@@ -170,3 +175,46 @@ def test_reject_and_restart_after_real_import(tmp_path: Path, monkeypatch) -> No
     assert dialog._worker is not None, "二次导入应能启动新 worker"
     dialog._worker.wait()
     _app().processEvents()
+
+
+def _sample_report(imported: int) -> dict:
+    """最小完整报告结构（键与 run_import 的初始 dict 对齐）。"""
+    return {
+        "total": 2,
+        "imported": imported,
+        "unmatched": [{"index": 1, "hero1": "未知武将", "hero2": "刘备"}],
+        "duplicates": [],
+        "invalid": [],
+        "seat_stats": {"parsed": 1, "none": 0, "partial": 0, "unparsed": 1},
+        "seat_review": [],
+        "position_mismatch": [],
+        "manual_kept": [],
+        "manual_collisions": [],
+        "deleted_skipped": [],
+        "removed_stale": [],
+    }
+
+
+def test_import_result_box_summary_counts() -> None:
+    """摘要正文：主句 + 座次解析 + 非空明细块计数，空块不列。"""
+    summary = CombosImportDialog._build_summary(_sample_report(imported=1))
+    assert "源 2 条 → 写入 1 条" in summary
+    assert "成功 1 + 无要求 0 + 部分 0 + 失败 1" in summary
+    assert "未匹配 1" in summary
+    assert "重复" not in summary, "空明细块不应出现在摘要"
+
+
+def test_import_result_box_shown_and_accepts_on_ok(monkeypatch) -> None:
+    """导入结束弹完成提示，点确定后 accept 关闭对话框（imported=0 同样弹）。"""
+    _app()
+    dialog = CombosImportDialog()
+    exec_calls: list = []
+    accepted: list = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: exec_calls.append(1))
+    monkeypatch.setattr(CombosImportDialog, "accept", lambda self: accepted.append(1))
+
+    dialog._show_result_box(_sample_report(imported=0))
+
+    assert exec_calls, "写入 0 条也应弹出完成提示"
+    assert accepted, "点确定应关闭对话框"
+    assert "写入 0 条" in CombosImportDialog._build_summary(_sample_report(imported=0))
