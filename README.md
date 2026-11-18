@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](environment.yml)
-[![Tests](https://img.shields.io/badge/Tests-2306%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/Tests-2316%20funcs-brightgreen.svg)](.github/workflows/verify.yml)
 [![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-261230.svg)](pyproject.toml)
 
 一个基于 **OCR + RAG** 的多模态桌面应用，以《名将杀》手游为应用场景，定位为**资料查阅与复盘学习辅助工具**。项目重点探索：
@@ -33,7 +33,7 @@
 2. **双形态图像源** — 模拟器 ADB 截图（五品牌：MuMu/雷电/夜神/逍遥/蓝叠，`emulator_discovery/` 函数式注册表探测 + 端口段兜底 + 进程反查，五品牌探测全部 <1s）或桌面窗口画面只读采集（面向窗口化运行的本地应用；**该入口暂隐藏**，自动识别暂缓适配，恢复一行可见性）；两种采集会话接口对齐，下游 OCR 管线无感复用。
 3. **RAG 语料分层架构** — ODS（官网原始 JSON / 官方榜单）→ DWD（10 种语料任务加工，`task_defs.py` 单一事实源）→ mart（生成注入语料与检索索引）三层数仓分层；语料块携带 `as_of`/`is_current` 版本戳，检索层默认只召当前版本，过时块带失效原因。
 4. **多供应商 LLM 集成** — API 模式（httpx + 多供应商档案：deepseek / openai / ollama / openai-compatible）与浏览器自动化模式（Playwright + Edge）双后端，输出格式一致；429 限流退避、token 拆分统计与费用预估。
-5. **测试与交付工程化** — 191 个测试模块 / 2306 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底，xdist worker 原生崩溃类失败（SIGSEGV）按日志签名串行重跑一次兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
+5. **测试与交付工程化** — 191 个测试模块 / 2316 个测试函数；CI 以 pytest-xdist 并行执行 + 60 秒单测超时兜底，xdist worker 原生崩溃类失败（SIGSEGV）按日志签名串行重跑一次兜底；ruff 静态检查前移至 pre-commit 本地门禁；PyInstaller 精简/完整双模式打包配发版烟雾测试（精简包自带 RAG，torch/transformers 已整体退出打包链）。
 6. **RAG 编码器 ONNX 化** — bge-small-zh-v1.5 经 torch 导出为 ONNX（opset 18），运行期仅依赖 onnxruntime + tokenizers（torch/transformers 退出打包链）；侧车哈希自校验、缺件熔断，索引建库盖编码器指纹章、建连与增量同步前双端比对（缺章/失配拒绝服务并指引重建），对齐门禁（fp32 逐条余弦 ≥0.999 / top-30 重合 ≥29/30）保证与 ST 语义等价，发版流程强制「语料-索引-编码器」同源。
 7. **B1 RapidOCR 双套件** — paddle 全栈退役，PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎（均 ONNX/CPU，rapidocr 3.9.2）；对未决识别槽位由复核引擎做候选内确认；惰性加载+失败熔断，模型缺失不联网下载（v4 三件套经 `fetch_recheck_models.py` 官方清单预取）。
 8. **白名单治理** — OCR 未决错法频次记录（60 秒节流窗口）+ 人工确认答案收集，用户层白名单维护界面含静态冲突检查与即时生效。
@@ -241,7 +241,7 @@ test_project/
 ├── images/                     # 武将头像（从官网下载，不入版本库）
 ├── templates/                  # OCR 模板截图
 ├── config/                     # api_profiles.json / model_pricing.json / ocr_rois.json / faction_colors.json
-├── tests/                      # 测试用例（191 个测试模块 / 2306 个测试函数）
+├── tests/                      # 测试用例（191 个测试模块 / 2316 个测试函数）
 ├── docs/                       # 文档（见下方文档导航）
 ├── config.env                  # 用户配置（已 gitignore）
 ├── environment.yml             # Conda 环境定义
@@ -344,12 +344,12 @@ API 模式 (默认)     → AIBatchGenerator → httpx → 多供应商档案（
 - **武将资料库**：左侧列表搜索+势力筛选，右侧三 Tab（武将信息/攻略指南/武将相性）；支持武将、攻略、相性的编辑与删除（备份+原子写入，失败恢复原数据）；卡牌图鉴只读浏览与版本调整维护。
 - **AI 攻略/相性生成**：全量/增量/指定三种范围；攻略指定获取支持按"未生成/待更新/已有攻略"筛选；相性支持选定武将×全体，以及两个独立入口——「指定配对计算」（按状态筛选武将后按策略组装精确配对清单）与「落后相性刷新」（列出已有但落后于武将资料的配对，按最后生成日期升序，勾选后只刷这批）。生成失败时弹窗详情列出失败武将/相性对清单。
 - **屏幕采集与 OCR**：双形态图像源——模拟器 ADB 截图（MuMu/雷电/夜神/逍遥/蓝叠五品牌，配置页品牌下拉切换）或官方 PC 客户端窗口直连（WGC 主路径 + BitBlt 兜底，仅支持窗口化模式，全程只读不发送输入；**该入口暂隐藏**——直连画面排版与模拟器端存在位置差异致自动识别暂缓适配，恢复仅需还原一行控件可见性）；模板匹配作前置过滤（<50ms），命中后执行 RapidOCR/ONNX 双套件（v6 主 + v4 复核，未决槽位候选闭包内确认）；轮询全程内存处理不写磁盘。模板与 ROI 按参考分辨率自适应缩放。
-- **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护、索引精化（LLM 建议+人工补全 timing/trigger_condition/target/special_rules）、检索诊断只读抽屉（候选去向表：得分/RRF/剔除原因中文映射）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
+- **知识库维护**：语料状态（10 任务 / 12 语料文件 / 2128 块 + 审计跳转）、元规则 T0 母本维护（audit/差异/提案/疑难）、专属牌/卡牌点数/装备属性/武将分类数据源维护（分类详情页展示实际归类武将名单，badge 实际计数、超 8 名收起/展开）、索引精化（LLM 建议+人工补全 timing/trigger_condition/target/special_rules）、检索诊断只读抽屉（候选去向表：得分/RRF/剔除原因中文映射）。布局为重排后的「左栏 10 项维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」。
 - **语料版本戳**：公告 diff 落地 `data/mjs_adjustments.json` 武将变更时间轴，RAG 语料块打 `as_of` / `is_current` 戳，检索层默认只召当前版本，过时块带 `staleness_reason` 提示。
 - **官方榜单导入**：2v2 / 巅峰赛胜率与出场及武将放逐榜图片导入，按视觉行 OCR 并原子覆盖 CSV；名称歧义时按词表候选+逐字+复核引擎候选闭包兜底，未确认写入待复核。
-- **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`），主窗口提供「百科忽略名单管理」入口。
+- **公告监控**：仅 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示"可更新"，支持指定获取+增量精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`），主窗口提供「百科忽略名单管理」入口；横幅可经右侧「×」关闭，协调器维护状态指纹（已见公告 stable_key 集合 + 百科差异总量 + READY 计数），仅出现未见公告、差异增大或 READY 增多时重新弹出，规避"更新成功后 diff 归零误重弹"。
 - **巅峰赛选将**：2v2 牌面实时识别（内容驱动卡位检测，非固定 ROI），会话制互斥 + SessionGuard 会话世代校验，候选期卡数回升拍扣住一拍复核（拦截场景切换期过场坏帧致面板跳变），候选池、禁选建议（出场热度 × 胜率强度象限）与实战配队横条联动。人工确认残留修复：图片导入前按当前牌面校验旧确认（可定位则迁移槽位，不可定位则丢弃），停止识别/牌面退出后经 `_clear_session_state` 清空确认表与禁将基线，牌面在位守卫防止跨板污染，同名槽位显性告警。
-- **实战配队**：外部导出 JSON 或 UI 手工维护 1570 条配队，座次解析 + position 交叉校验，落盘稳定排序；选将推荐横条与巅峰赛卡片角标共用同一数据源。
+- **实战配队**：外部导出 JSON 或 UI 手工维护配队（当前私有仓同步 2204 条），座次解析 + position 交叉校验，落盘稳定排序；导入结束弹「导入完成」摘要提示框（源/写入条数 + 座次解析 + 明细计数，完整报告可折叠复制，失败路径保持对话框重试）；选将推荐横条与巅峰赛卡片角标共用同一数据源。
 - **卡牌百科变更捕获**：`CardSyncService` 手动检查官网手牌库更新（60 秒冷却防密集请求），快照与变更记录持久化（`data/card_snapshot.json` / `data/card_changes.json`），`CardSyncDialog` 确认后应用更新，支持差异条目级忽略名单（`baike_ignore.json`），audit_service 复核时效。
 - **白名单配置**：未决错法观察清单（A+/A/B/C 分类排序）+ 用户层白名单维护（`ocr_confusion_overrides.json`），静态冲突检查与即时生效（`reset_ocr_recognizer_cache()`）。
 - **轮询闲置自动暂停**：整帧降采样指纹判闲，连续 5 分钟无画面变化自动暂停轮询，用户交互（点击/键盘/鼠标移动）恢复；闲置暂停状态芯片实时显示。画面未变且上一拍同任务集全部拒识时整拍跳过识别；选将冷却期以仅模板匹配的轻量探测跟踪页面状态，探测拒识（已离开选将页）即提前解除冷却。
@@ -409,7 +409,7 @@ DATA_FRESHNESS_STALE_GREEN_DAYS=7
 DATA_FRESHNESS_STALE_RED_DAYS=14
 ```
 
-**多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。生成链路经 `resolve_api_config()` 解析（启用档案优先，否则回退 `config.env` → 环境变量 → 默认值）。价格参考来自 `config/model_pricing.json`，势力配色经「配置 → 势力配色」可视化编辑（`faction_colors.json` 为数组结构 `[{faction, color}, ...]`，数组位置即筛选界面展示顺序）。
+**多 API 档案**（`config/api_profiles.json`，已 gitignore）：支持多供应商/多账号（`deepseek` / `openai` / `ollama` / `openai-compatible`），同时只允许一个启用档案；首次启动若存在旧 `DEEPSEEK_*` 三件套自动迁移为 `deepseek-main` 档案。生成链路经 `resolve_api_config()` 解析（启用档案优先，否则回退 `config.env` → 环境变量 → 默认值）。价格参考来自 `config/model_pricing.json`，势力配色经「配置 → 势力配色」可视化编辑（`faction_colors.json` 为数组结构 `[{faction, color}, ...]`，数组位置即筛选界面展示顺序；现 19 势力，`925aa25` 新增刘宋专属色并统一多行缩进格式）。
 
 定价参考：输入 CNY 3/百万 tokens，输出 CNY 6/百万 tokens（deepseek-v4-flash，缓存未命中）。
 
@@ -460,7 +460,7 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 
 | 文档 | 内容 |
 |------|------|
-| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-11-14） |
+| [docs/project_doc.md](docs/project_doc.md) | 完整项目细节与业务处理逻辑（基线 2026-11-18，新增第二十二章本轮改造入档） |
 | [docs/code_desc/](docs/code_desc/) | 按模块的职责/核心逻辑/接口/关键代码（9 模块 + [总览](docs/code_desc/summary.md)，知识库 RAG 为独立模块） |
 | [docs/spec/](docs/spec/) | 设计规格文档 |
 | [docs/design/](docs/design/) | 设计决策记录 |
@@ -523,8 +523,10 @@ debug.log（与 logs/ 平级）   # 跨模块全量留底
 | 四十七 | 桌面窗口图像源接入（只读窗口画面采集 + 连接方式/设备页双形态） | ✅ 已完成 |
 | 四十八 | OCR 轮询链路提速（模板匹配粗扫单档探测判否 + 帧静止整拍跳过，指纹常开约 7ms/拍） | ✅ 已完成 |
 | 四十九 | 选将冷却期探测（冷却期仅模板匹配轻量跟踪页面状态，离开选将页提前解除冷却恢复全速识别） | ✅ 已完成 |
+| 五十 | 公告横幅关闭指纹与配队导入完成提示（横幅可关闭 + 状态指纹决定重弹；导入结束摘要弹窗 + worker 引用治理；势力配色补刘宋） | ✅ 已完成 |
+| 五十一 | 分类管理详情实名化（仓储反查 heroes_in_category + 实际归类名单展示/收起展开；typical_heroes 字段彻底移除与数据迁移清洗） | ✅ 已完成 |
 
-> 文档基线：2026-11-14（`d1ff679`）。测试 191 个测试模块 / 2306 个测试函数（grep 统计），Ruff 0.12.0 全通过。
+> 文档基线：2026-11-18（`a5fde97`）。测试 191 个测试模块 / 2316 个测试函数（grep 统计），Ruff 0.12.0 全通过。
 
 ---
 

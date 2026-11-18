@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-11-14（`d1ff679`）
+> 代码基线：2026-11-18（`a5fde97`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-11-14
+> 文档日期：2026-11-18
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -31,14 +31,15 @@
 - [十九、首启向导、备份恢复与生成互斥](#十九首启向导备份恢复与生成互斥2026-10-23-基线新增)
 - [二十、多模拟器连接与官方 PC 客户端直连](#二十多模拟器连接与官方-pc-客户端直连2026-10-25-基线新增)
 - [二十一、OCR 轮询链路提速与选将冷却期探测](#二十一ocr-轮询链路提速与选将冷却期探测2026-11-14-基线新增)
+- [二十二、公告横幅关闭指纹、配队导入完成提示与分类管理详情实名化](#二十二公告横幅关闭指纹配队导入完成提示与分类管理详情实名化2026-11-18-基线新增)
 
 ---
 
-## 当前代码基线与业务不变量（2026-11-14）
+## 当前代码基线与业务不变量（2026-11-18）
 
 > 本节的粗体小节按提交时间倒序追加；2026-10-11（`2081b5b`）之前的描述对应历史基线，
 > **子进程启动失败终态契约（14bffaf / 07606ce，VUL-B2-001）** 及其后各小节为
-> 2026-10-12 至 11-14 新增，与后续各章冲突时以本节为准。
+> 2026-10-12 至 11-18 新增，与后续各章冲突时以本节为准。
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载，支持模拟器 ADB 与官方 PC 客户端双形态图像源），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心。
 
@@ -56,7 +57,7 @@
 | 截图与 OCR | 推荐页操作或 `OcrService.poll_tick` | `PollCoordinator` → `CaptureService` →（`CaptureConnectionManager` 按连接形态）`AdbCapture.screencap_full()`/`screencap_raw()`（模拟器 ADB）或 `PcClientCapture.screencap_full()`（官方 PC 客户端 WGC+BitBlt）→ `OcrWorker` → 模板匹配 → `GeneralRecognizer`（含 B2 复核） | 将识别结果分发到推荐页或对局攻略页；整帧指纹检测闲置（连续 5 分钟无变化自动暂停，交互恢复）并服务帧静止整拍跳过（画面未变且上一拍同任务集全部拒识时不重复识别）；冷却期以仅模板匹配探测跟踪页面状态，拒识提前解除冷却；双形态图像源对下游管线无感复用 |
 | 数据浏览与编辑 | `HeroBrowser` | `HeroListPanel` -> `HeroDetailPanel` -> `DataMutationService` -> Manager 保存 | 创建备份后写入对应 JSON，并在失败时恢复 |
 | 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> SessionGuard 世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；候选期卡数回升拍扣住一拍复核（过场坏帧拦截）；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时经 `_clear_session_state` 清空确认表与牌面引用 |
-| 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json | 手工管理 / 外部工具导入合并，幂等 |
+| 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json -> 导入结束弹「导入完成」摘要弹窗（925aa25） | 手工管理 / 外部工具导入合并，幂等 |
 | 卡牌百科同步 | 「数据」菜单 → `CardSyncDialog` | `CardSyncService.check_now()`（后台抓官网手牌库）→ `card_baike.fetch_cards()` → diff 快照 → `apply_updates()`（确认应用）→ `card_sync_store` 持久化 | 更新确认对话框展示变更明细，确认后原子写入 `data/cards.json`，快照和变更记录落盘 |
 | 数据新鲜度 | 状态栏 `DataFreshnessChip` | 信号驱动 + 目录监听：三类采集完成 / `ai_workflow.guides/synergies_changed` / 公告检查完成 + `QFileSystemWatcher`（data/ 目录 mtime 快照 500ms 去抖）→ `compute_freshness_report()`（`src/business/freshness.py` 逐武将核对）→ 芯片取色与菜单 | 胶囊按 7/14 天档位显绿/黄/红；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口（忙碌 toast 拦截） |
 
@@ -86,6 +87,8 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 **OCR 双套件引擎（B1，2026-10 切换）**：主引擎为 RapidOCR/PP-OCRv6-small（ONNX，随 rapidocr wheel 内置）；对未决识别槽位，`GeneralRecognizer` 调用 `engine_loader.get_recheck_ocr_engine()` 惰性加载复核引擎——与主引擎互为异构（主 v6 时复核 v4-mobile，v4 三件套经 `src/scripts/fetch_recheck_models.py` 从官方清单预取），在候选闭包内做二次确认。设备固定 CPU（GPU 已否决），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径，ORT 线程钉为 `MUMU_OCR_CPU_THREADS`。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 false）控制复核开关、`MUMU_OCR_PRIMARY_ENGINE`（默认 v6，可切 v4 作回滚档）控制主引擎。paddle/paddleocr 已全量退役。设计文档：`docs/design/ocr_engine_upgrade_eval.md`。
 
 **轮询闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。`PollCoordinator` 在闲置暂停 5 分钟（`IDLE_PAUSE_MINUTES=5`）后自动暂停轮询，用户交互（点击导航、打开配置等）触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关。阈值校准工具：`src/scripts/calibrate_idle_threshold.py`。
+
+**公告横幅关闭指纹、配队导入完成提示与分类管理详情实名化（2026-11-15 至 11-18 新增，40c4666 / 925aa25 / 5f5268c / a5fde97）**：① 公告横幅右侧新增「×」关闭按钮（`MainWindow` 装配，`ROLE_GHOST`；`main_window.py` 行数预算 626→630），`AnnouncementUpdateCoordinator.dismiss_banner()` 记录关闭标记，`_update_banner_fingerprint()` 在 `_refresh_banner()` 三个调用点（检查完成 / 采集完成 / 更新预备）统一维护状态指纹——已见公告 `stable_key` 集合 + 百科差异总量 + READY 公告数，先判后记；仅当出现未见公告、diff 总量增大或 READY 数增多（任一）才解除关闭重弹，规避"更新成功后 diff 归零误重弹"陷阱，pending→ready 升级（含 `current_names` 兜底路径 diff 不变场景）靠 READY 计数捕捉。② 实战配队导入结束（含写入 0 条）弹「导入完成」模态框——`CombosImportDialog._show_result_box()` 正文为 `_build_summary()` 条数摘要（源/写入条数、座次解析四计数、非空明细块），完整报告经 `setDetailedText` 折叠复制，点确定 `accept()` 关窗；失败路径维持 critical 弹窗且对话框不关闭。worker 引用治理：`_on_accept` 补连 `worker.finished → _on_worker_finished()`，线程结束即置 `_worker = None`——worker 经 `finished → _retire` 自回收（deleteLater），残留引用会让 `reject/_on_accept` 的 `isRunning()` 触已删 C++ 对象抛 RuntimeError（对话框关不掉、每次点击重复报错）；写法对齐 `retrieval_diagnostic_dialog` / `hero_tab` 先例，全库同模式七处仅此一处漏清引用。③ 分类管理详情实名化：`HeroClassificationRepository.heroes_in_category()` 反查内存态归类，`CategoryTab` 详情区改展示「该分类下的武将」实际名单（badge「已归类 N 名」零计数隐藏、超 8 名收起/展开、切换选中自动收起）；随后 `ClassificationCategory.typical_heroes` 字段彻底移除（`CategoryEditDialog` 撤表单行、详情页撤「（典型）」后缀与「典型（未归类）」差集提示；数据文件一次性迁移清洗，pydantic 宽松配置兜底旧格式加载；RAG 语料生成与 LLM 建议归类均不消费）；宿主 `_hero_tab.changed` 改接 `_on_hero_tab_changed()`（刷新分类管理详情 + 标记未保存）。④ 势力配色新增「刘宋」专属色 `#363636`（18 → 19 势力），`config/faction_colors.json` 统一多行缩进格式。
 
 **帧静止整拍跳过与冷却期探测（2026-11-14 新增，9dea904 / d1ff679）**：每拍指纹判同后，画面与上一拍一致且上一拍同任务集（全速集 + 探测集合成的 `poll_signature`）全部健康拒识时，本拍整拍跳过识别（含 `match_guide` 兜底 OCR）——同一帧对各任务的模板匹配结论必然相同；指纹计算不再受 `MUMU_OCR_POLL_IDLE_PAUSE` 开关控制（实测约 7ms/拍）。`hero_selection` 命中进入冷却后，`OcrService.due_probe_tasks()` 返回冷却中的活跃任务，经 `recognize=False` 仅模板匹配的轻量探测（结果带 `probe=True`，不计入 `has_match`，避免闲置暂停计数被每拍命中清零）跟踪页面状态：探测命中只维持冷却（不重设冷却/不激活对局任务/不跳页/不灌推荐），拒识即 `clear_task_cooldown("hero_selection")` 提前解除冷却恢复全速识别。
 
@@ -920,7 +923,7 @@ class CardSyncService(QObject):
 | `data/card_points.json` | CardPointsRepository | 162 张牌花色点数（72 组合）+ 12 条判定规则 |
 | `data/equip_attrs.json` | EquipAttrsRepository | 26 件装备属性（细分/攻击范围/距离修正） |
 | `data/special_cards.json` | SpecialCardRepository | 专属牌/专属战法牌/特殊牌区/状态·标记/概念（83 条） |
-| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（16 类、180 条武将归类；AI 从技能文本总结，属 DWD 中间产物，非 ODS） |
+| `data/hero_classification.json` | HeroClassificationRepository | 武将分类/克制链/武将归类（16 类、200 条武将归类；AI 从技能文本总结，属 DWD 中间产物，非 ODS；`a5fde97` 起分类条目不再携带 `typical_heroes` 字段，仓储提供 `heroes_in_category()` 反查） |
 | `data/mjs_adjustments.json` | hero_timeline（`load_timeline` / `append_announcement_events`） | 武将变更时间轴：144 条事件（126 初始化 + 18 公告追加）；RAG 语料块 `as_of` 版本戳的事实源，不属"裁定权威 6 JSON" |
 | `data/combos.json` | ComboManager | 实战配队 1570 条（座次 + position 交叉校验，落盘按 `(-rating, hero1_id, hero2_id)` 稳定排序；含逻辑删除字段 `deleted` / `deleted_at`） |
 | `data/card_snapshot.json` | card_sync_store | 卡牌百科快照（`CardSnapshot`，全量卡片当前状态） |
@@ -1080,7 +1083,7 @@ def apply_incremental_update(data_dir, update)
 
 | 文件 | 行数 | 组件层级 |
 |------|------|----------|
-| app/main_window.py | 1161 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定） |
+| app/main_window.py | 630 | QMainWindow（顶层装配、菜单、应用外壳与界面绑定；横幅关闭按钮装配，重弹判定内聚协调器） |
 | app/app_services.py | 102 | 组合根（聚合业务服务实例并注入主窗口与各面板） |
 | app/shell_widgets.py | 209 | QWidget（左侧 NavigationRail 与顶部 ContextHeader） |
 | app/poll_coordinator.py | 572 | QObject（轮询编排、后台任务与结果状态迁移；含闲置暂停检测、帧静止整拍跳过、冷却期探测路由） |
@@ -1097,7 +1100,7 @@ def apply_incremental_update(data_dir, update)
 | generation/synergy_single_dialog.py | 30 | QDialog（选定武将 × 全体） |
 | library/hero_browser.py | 607 | QWidget（资料左栏、身份头部、上下文操作和详情协调） |
 | library/hero_detail_views.py | 534 | QWidget（信息、攻略摘要和相性 Tab 渲染） |
-| maintenance/hero_classification_panel.py | 805 | QWidget（分类 / 克制链 / 武将归类维护，自 library 迁入） |
+| maintenance/hero_classification_panel.py | 188 | QWidget（武将分类维护装配壳：页签/保存编排，审计 G6 拆分后三页签入 classification/；归类变更信号联动刷新分类详情） |
 | library/card_management_panel.py | 877 | QWidget（卡牌浏览、版本调整与字段配置） |
 | maintenance/special_cards_panel.py | 499 | QWidget（专属牌 / 战法牌 / 状态·标记 / 概念维护，自 library 迁入） |
 | library/combo_management_dialog.py | 202 | QDialog（实战配队管理） |
@@ -1122,7 +1125,7 @@ def apply_incremental_update(data_dir, update)
 | configuration/roi_selector.py | 403 | QDialog（框选模板区域，不随底图原始分辨率撑高） |
 | data_admin/official_data_import_dialog.py | 224 | QDialog（榜单图片选择、进度条、完成/失败提示） |
 | data_admin/official_import_review_dialog.py | 145 | QDialog（待复核逐条确认） |
-| data_admin/combos_import_dialog.py | 230 | QDialog（实战配队异步导入） |
+| data_admin/combos_import_dialog.py | 296 | QDialog（实战配队异步导入；完成摘要弹窗 + worker 引用治理） |
 | data_admin/announcement_dialog.py | 176 | QDialog（公告检查与逐武将 diff） |
 | data_admin/hero_update_confirm_dialog.py | 213 | QDialog（武将更新确认） |
 | data_admin/data_management_dialog.py | 133 | QDialog（攻略/相性清空与恢复） |
@@ -2558,7 +2561,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **191 个含 `test_*` 函数的测试文件 / 2306 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开；`tests/` 下 py 文件共 195 个，其余为夹具/辅助模块）；实际收集项以 `pytest --collect-only -q` 为准。基线 2026-10-11（`2081b5b`）为 145 / 1626，2026-11-06（`65dff21`）为 156 / 2042。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **191 个含 `test_*` 函数的测试文件 / 2316 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开；`tests/` 下 py 文件共 195 个，其余为夹具/辅助模块）；实际收集项以 `pytest --collect-only -q` 为准。基线 2026-10-11（`2081b5b`）为 145 / 1626，2026-11-06（`65dff21`）为 156 / 2042，2026-11-14（`d1ff679`）为 191 / 2306。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -3306,7 +3309,7 @@ CardSyncDialog
 
 ## 十七、开发状态表
 
-本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-11-14 基线，共完成四十七个阶段：
+本项目按阶段推进，每阶段完成一个相对独立的架构或功能迭代。截至 2026-11-18 基线，共完成四十九个阶段：
 
 | 阶段 | 名称 | 时间 | 主要内容 |
 |------|------|------|----------|
@@ -3357,6 +3360,8 @@ CardSyncDialog
 | **四十五** | **数据安全加固与备份恢复入口** | **2026-10** | **三条数据全灭路径封堵（修复清空 / 导入覆盖 / 回滚误导）；坏文件留底第四基元 `preserve_corrupt_file`（JsonRepository + DataManager 双路径，`_corrupt_preserved` 幂等）；`save_payload()` 加载完整性守卫；推荐指数 stale 判定纯读化；备份恢复消费端 `backup_restore_service` + `backup_restore_dialog`（恢复前自快照双向可回退、原子写替换、坏备份双侧拒绝、跨文件引用组整组恢复）；导入前备份与源结构校验加固；公告域官网访问冷却限频 `check_cooldown`；新鲜度损坏留底与阈值可配置（TD-A6-001）；RAG 审计容错、建议线程并发收口与语料写前快照** |
 | **四十六** | **OCR 轮询链路提速** | **2026-11** | **template_manager 粗扫单档探测判否（基准缩放一档低于判否线即整段判否，策略 coarse_reject_probe，逼近判否线才展开完整多档兜底）+ poll_coordinator 帧静止整拍跳过（指纹常开约 7ms/拍 + poll_signature 任务集签名比较，跳过状态仅轮询线程读写）** |
 | **四十七** | **选将冷却期探测** | **2026-11** | **ocr_service 新增 due_probe_tasks() 冷却期探测集；ocr_worker 对 recognize=False 探测任务返回显式 probe 标记（命中不进 ROI/OCR 流程，_log_timing 降 DEBUG）；poll_coordinator 探测分支——命中只维持冷却（不重设冷却/不激活对局任务/不跳页/不灌推荐），拒识提前解除 hero_selection 冷却恢复全速识别** |
+| **四十八** | **公告横幅关闭指纹与配队导入完成提示** | **2026-11** | **公告横幅「×」关闭按钮 + 协调器状态指纹（已见公告 stable_key 集合 + 百科差异总量 + READY 计数，仅"变多"解除关闭重弹，规避 diff 归零误重弹）；配队导入结束弹「导入完成」摘要弹窗（写入 0 条也弹）+ worker finished 摘引用消除 deleteLater 悬空崩溃（40c4666）；势力配色新增刘宋 #363636（19 势力）** |
+| **四十九** | **分类管理详情实名化与典型武将移除** | **2026-11** | **仓储新增 heroes_in_category() 反查；分类详情区展示实际归类武将名单（badge「已归类 N 名」零计数隐藏、超 8 名收起/展开、切换自动收起）；ClassificationCategory.typical_heroes 字段彻底移除（编辑表单撤行、详情撤后缀与差集提示、数据一次性迁移清洗、旧格式 JSON 兜底加载）；宿主归类变更信号联动刷新分类详情** |
 
 > 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。
 
@@ -3544,7 +3549,7 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 | `BOARD_EXIT_TICKS` | 2 | 4 |
 | 随包字符特征缓存 | 437 字 | 437 字（不变） |
 
-当前私有数据仓同步快照：heroes 192 / combos 1827 / cards 49 / special_cards 85 / equip_attrs 26 / hero_classification（categories 16 + hero_categories 192）/ mjs_adjustments 150 事件。
+当前私有数据仓同步快照（2026-11-18）：heroes 200 / combos 2204 / cards 49 / special_cards 85 / equip_attrs 26 / hero_classification（categories 16 + hero_categories 200，分类条目已移除 typical_heroes 字段）/ mjs_adjustments 161 事件。
 
 ---
 
@@ -3630,3 +3635,53 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 | 新增数据字段 | — | `PollTaskResult.probe` |
 | 新增匹配策略 | — | `coarse_reject_probe`（粗扫单档探测判否） |
 | RAG 索引校验 | — | 建索引盖编码器指纹章、建连与增量同步前双端比对（`3c19e7e`） |
+
+---
+
+## 二十二、公告横幅关闭指纹、配队导入完成提示与分类管理详情实名化（2026-11-18 基线新增）
+
+本节记录基线 `d1ff679`（2026-11-14）→ `a5fde97`（2026-11-18）共 4 个提交的 UI 交互与数据模型改造，与前文冲突时以本节为准。
+
+### 22.1 公告横幅关闭按钮与状态指纹（925aa25）
+
+横幅此前一经提示就常驻（只能点「更新武将数据」消化），本轮补齐关闭出口并解决"何时允许重弹"：
+
+- **关闭入口**：`MainWindow` 在 `NoticeBanner` 右侧装配「×」按钮（`ROLE_GHOST`，tooltip「关闭横幅；出现新公告或差异变化时会再次提示」），`clicked -> AnnouncementUpdateCoordinator.dismiss_banner()`——置 `_banner_dismissed = True` 并 `banner.hide()`。`main_window.py` 行数预算 626→630（`test_architecture.py` 棘轮同步上调并附注理由：重弹判定全部内聚协调器，主窗口只加 4 行控件装配）。
+- **状态指纹**：`_update_banner_fingerprint(ready, pending, diff)` 在 `_refresh_banner()` 内统一执行（检查完成 / 采集完成 / 更新预备三个调用点天然全覆盖）。指纹三元组：已见公告 `stable_key` 集合、百科差异总量（`added/modified/removed` 长度之和）、READY 公告数——**先判后记**。
+- **重弹三条件**（已关闭状态下任一满足即解除关闭标记）：① 出现从未见过的 READY/PENDING 公告（`keys - seen_keys` 非空）；② diff 总量比上次记录增大；③ READY 数比上次记录增多——pending→ready 升级走 `current_names` 兜底路径时 diff 可能不变，只有 READY 计数能捕捉。
+- **只认"变多"**：更新成功后 diff 归零、ready 被 `mark_applied` 消化属预期回落，不解除关闭（规避"更新成功后 diff 归零误重弹"陷阱）；diff 5→3→5 的波动会因重新变多而重弹。指纹只取横幅实际展示的公告（READY/PENDING），无关非武将公告不触发重弹。
+
+### 22.2 配队导入完成提示与 worker 引用治理（925aa25 / 40c4666）
+
+- **完成提示框**：`CombosImportDialog._on_import_finished()` 在报告写入界面浏览器、发出 `combos_imported` 之后调用 `_show_result_box(report)`——模态 `QMessageBox("导入完成")`，正文 `_build_summary(report)` 条数摘要（主句「源 N 条 → 写入 M 条」+ 座次解析四计数「成功 + 无要求 + 部分 + 失败」+ 非空明细块一行「明细：未匹配 x · 重复 y · …（详见详细信息）」），完整报告经 `setDetailedText` 折叠展开且文本可选中复制；**写入 0 条同样弹**（静默完成会让用户误以为无反应）。点确定 `accept()` 关闭对话框（报告已同步写入界面浏览器，重开可再看）。失败路径不走此处：`_on_import_failed` 弹 critical 且保持对话框打开，便于换文件重试。
+- **worker 引用治理**：`_ImportWorker` 经 `finished -> _retire` 自回收（`deleteLater` 销毁 C++ 对象）。此前 `_on_accept` 未连 `finished`，`self._worker` 残留指向已删对象——导入完成后关窗或再次导入时 `reject/_on_accept` 调 `isRunning()` 触已删 C++ 对象抛 `RuntimeError`，且异常发生在 `super().reject()` 之前导致**对话框关不掉、每次点击重复报错**。修复：补连 `worker.finished -> _on_worker_finished()`，线程结束即置 `self._worker = None`。写法对齐 `retrieval_diagnostic_dialog` 与 `hero_tab` 先例，全库同模式七处仅此一处漏清引用。测试盲区注记：既有用例以 `SimpleNamespace` 桩替代真 worker，恰好绕开 C++ 生命周期——测试全绿而生产必现；新增 `test_reject_and_restart_after_real_import` 走真实 worker 全链路（start→finished→deleteLater→DeferredDelete 两轮 `processEvents` 泵事件）覆盖两个崩溃场景。
+
+### 22.3 分类管理详情实名化与典型武将移除（5f5268c / a5fde97）
+
+- **反查仓储方法**：`HeroClassificationRepository.heroes_in_category(category)` 按名称排序返回实际归类到该分类的武将名单，与 `list_classified` 同口径不过滤已移除武将的脏数据（`sorted(hero for hero, cats in self._hero_categories.items() if category in cats)`）。
+- **详情区实名化**（`5f5268c`）：`CategoryTab._show_category_detail()` 撤下原「典型武将」区块，改为「该分类下的武将」——反查**内存态**归类（与「武将归类」页签同源，未保存修改即时反映）。标题 badge 由「N 名典型武将」改「已归类 N 名」，与名单同源；计数为 0 时整枚隐藏（与名单区空态「该分类下暂无已归类武将」的反误导口径一致）。名单超 `_MEMBER_PREVIEW_COUNT = 8` 名默认收起仅列前 8，「展开全部（共 N 名）/收起」往返（`_expanded_category` 记录展开中的分类，切换选中自动收起；`_toggle_member_list()` 重渲染详情区，按钮随重建自回收）。
+- **典型武将字段移除**（`a5fde97`）：`5f5268c` 曾以「（典型）」后缀保留字段语义，终审裁定举例字段冗余——`ClassificationCategory` 删除 `typical_heroes` 字段（docstring 同步为「机制分类：核心特征 / 占比仅供参考展示」），`CategoryEditDialog` 撤下「典型武将」表单行，详情页移除「（典型）」后缀与「典型（未归类）」差集提示。数据文件 `hero_classification.json` 已按一次性迁移清洗（16 分类 / 归类 / 克制链内容零 diff）；pydantic 宽松配置兜底使未迁移机器的旧格式 JSON 仍可加载、保存后该键消失。该字段 RAG 语料生成（`build_classification_corpus.py` 只读 `name`/`core_features`）与 LLM 建议归类（`classification_suggest.suggest_hero_categories` 只传分类名与核心特征）均不消费，删除无下游影响。
+- **跨页签联动**（`5f5268c`）：宿主 `HeroClassificationPanel` 将 `_hero_tab.changed` 由直连 `_mark_dirty` 改接 `_on_hero_tab_changed()` = `_category_tab.refresh()` + `_mark_dirty()`——归类变更后分类管理详情的名单反查内存态即时刷新（所见即所得），并保持标记未保存的原有语义。
+
+### 22.4 势力配色补充（925aa25）
+
+`config/faction_colors.json` 新增「刘宋」专属色 `#363636`（18 → 19 势力，数组尾部追加即筛选界面展示顺序尾部），配置文件统一为多行缩进 JSON 格式（键集与数组顺序语义不变）。读取链路 `ui/shared/faction_colors.py` 无变更。
+
+### 22.5 本轮基线数字口径（2026-11-14 → 2026-11-18）
+
+| 项 | 2026-11-14 | 2026-11-18 |
+|---|---|---|
+| 提交数 | 基线 | +4（`40c4666`…`a5fde97`） |
+| `src`+`config` 变更 | — | 7 文件 +216/-43，无新增/删除文件 |
+| `src` 规模 | 299 文件 / 63201 行 | 299 文件 / 63316 行 |
+| `main_window.py` | 626 行（预算 626） | 630 行（预算 630） |
+| `announcement_update_coordinator.py` | 365 行 | 403 行 |
+| `combos_import_dialog.py` | 253 行 | 296 行 |
+| `category_tab.py` | 343 行 | 364 行 |
+| `hero_classification_repository.py` | 230 行 | 233 行 |
+| 测试文件（含 `test_*`） | 191 | 191 |
+| `test_*` 函数 | 2306 | 2316 |
+| 新增对外方法 | — | `HeroClassificationRepository.heroes_in_category()` |
+| 删除模型字段 | — | `ClassificationCategory.typical_heroes`（含 UI 表单/展示残留） |
+| 势力配色 | 18 势力（单行 JSON） | 19 势力（`+刘宋 #363636`，多行 JSON） |
+| 数据快照（私有仓同步） | heroes 192 / hero_categories 192 / combos 1827 / adjustments 150 事件 | heroes 200 / hero_categories 200 / combos 2204 / adjustments 161 事件 |

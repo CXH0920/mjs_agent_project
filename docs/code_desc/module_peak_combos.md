@@ -2,8 +2,8 @@
 
 > 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/ui/match/match_guide_panel.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/analysis/win_rate_ranking.py` + `src/business/analysis/match_analysis_service.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
 > 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、容差签名去重、标准轮询互斥持有、参考几何漂移抑制与漏检扣帧）、禁选建议象限判定、胜率名次单一事实源、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染、胜率榜按对局链路区分（2v2 / 巅峰赛）
-> 文档日期：2026-11-14（基线 `d1ff679`）
-> 测试规模：191 个含 `test_*` 函数的测试文件 / 2306 个 test_* 函数（2026-10-11 基线为 145 / 1626）
+> 文档日期：2026-11-18（基线 `a5fde97`）
+> 测试规模：191 个含 `test_*` 函数的测试文件 / 2316 个 test_* 函数（2026-10-11 基线为 145 / 1626）
 
 ---
 
@@ -214,7 +214,7 @@ def evaluate_peak_ban_advice(
 
 报告 dict 含 12 个区块：`total` / `imported` / `unmatched` / `duplicates` / `invalid` / `seat_stats`（parsed/none/partial/unparsed 计数）/ `seat_review` / `position_mismatch` / `manual_kept` / `manual_collisions` / `deleted_skipped` / `removed_stale`。保留判据是「手工记录未进入 merged」而非「不在源导出中」，因此同 key 发生手工冲突的条目会同时出现在 `manual_collisions` 与 `manual_kept`（保留的正是手工版本）；逻辑删除记录同理，同 key 源记录进 `deleted_skipped`，删除记录无条件保留。
 
-**UI 层** `CombosImportDialog`（异步化）：通过 `_ImportWorker(QThread)` 后台执行 `run_import`，主线程不冻结。导入完成后 `combos_imported(int)` 信号通知调用方（main_window 侧栏刷新）。`_LIVE_WORKERS` 集合持有运行中 worker，防止对话框销毁后 QThread 被 GC 析构。报告渲染到 QTextBrowser，预览上限 50 条，超限省略剩余。
+**UI 层** `CombosImportDialog`（异步化）：通过 `_ImportWorker(QThread)` 后台执行 `run_import`，主线程不冻结。导入完成后 `combos_imported(int)` 信号通知调用方（main_window 侧栏刷新），随后弹「导入完成」模态提示框（`_show_result_box`，925aa25）——正文 `_build_summary(report)` 条数摘要（源/写入条数、座次解析 parsed/none/partial/unparsed 四计数、非空明细块计数一行「明细：…（详见详细信息）」），完整报告经 `setDetailedText` 折叠展开且文本可选中复制；无论写入条数是否为 0 都弹（静默完成会让用户误以为无反应），点确定 `accept()` 关闭对话框（报告已同步写入界面浏览器，重开可再看）；失败路径不走此处（`_on_import_failed` 弹 critical 且保持对话框打开以便换文件重试）。worker 引用治理（40c4666）：`_on_accept` 补连 `worker.finished → _on_worker_finished`，线程结束即置 `self._worker = None`——worker 经 `finished → _retire` 自回收（deleteLater 销毁 C++ 对象），残留引用会让 `reject/_on_accept` 的 `isRunning()` 触已删对象抛 RuntimeError，且异常发生在 `super().reject()` 之前导致对话框关不掉、每次点击重复报错；写法对齐 `retrieval_diagnostic_dialog` 与 `hero_tab` 先例，全库同模式七处仅此一处漏清引用。`_LIVE_WORKERS` 集合持有运行中 worker，防止对话框销毁后 QThread 被 GC 析构。报告渲染到 QTextBrowser，预览上限 50 条，超限省略剩余。
 
 ### 3.6 对局攻略阵容状态（match_lineup_state.py）
 
@@ -600,3 +600,7 @@ class _ImportWorker(QThread):
 ## 本轮文档校准（2026-11-14）
 
 自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），巅峰赛识别域无代码变更——`PeakSelectWatcher` 会话制挂起、卡位检测（`card_grid_detector`）、`peak_board_rules` 纯规则、实战配队链路口径延续。
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），巅峰赛识别域无代码变更——会话制互斥、卡位检测、禁选建议象限判定与实战配队数据管理链路口径延续。实战配队导入对话框两笔变更（`925aa25` 导入完成提示框 / `40c4666` worker 引用治理）见 §3.5 UI 层段。

@@ -1,6 +1,6 @@
 # 名将杀 Agent — 项目总览
 
-> 文档日期：2026-11-14（基线 `d1ff679`）
+> 文档日期：2026-11-18（基线 `a5fde97`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`
 
@@ -26,7 +26,7 @@
 - **屏幕采集与 OCR** — 双形态图像源：ADB 连接五品牌模拟器截图，或官方 PC 客户端窗口直连（WGC 主路径 + BitBlt 兜底，全程只读不发送输入；**该入口自 `f48c9b0` 起暂隐藏**，直连画面排版与模拟器端存在位置差异致自动识别暂缓适配，恢复仅需还原一行控件可见性）；OpenCV 模板匹配 + RapidOCR/ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎）识别武将名；v4 三件套经 `fetch_recheck_models.py` / `recheck_model_assets.py` 官方清单预取（URL+SHA256 钉死），运行时离线纪律绝不联网下载
 - **实时轮询** — 统一截图后独立检测武将选择页和对局攻略页，分别维护任务激活状态与冷却时间；冷却期以仅模板匹配的轻量探测跟踪页面状态，探测拒识即提前解除冷却（d1ff679）；画面静止且上一拍同任务集全部拒识时整拍跳过识别（9dea904）
 - **官方数据导入** — 可独立或同时导入 2v2/巅峰赛/武将放逐榜单图片；按表格行写入三份 CSV，显示 OCR 进度，并以词表候选、逐字补识别和待复核保证名称可靠性
-- **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费
+- **公告更新监控** — 手动检查官方公告，仅对 `【新增武将】/【武将调整】` 章节相关公告提醒；百科逐武将 diff 确认后才提示”可更新”，并提供”指定获取+增量”一键精准更新；差异条目可条目级加入忽略名单（`baike_ignore.json`，state+hash 定位同一差异，恢复忽略后自动重现），主窗口提供「百科忽略名单管理」入口；更新流程引入阶段令牌与本地回查防止跨阶段误消费；横幅右新增「×」关闭按钮，关闭后由协调器维护状态指纹（已见公告 stable_key 集合 + 百科差异总量 + READY 计数），仅出现未见公告、差异总量增大或 READY 数增多时才重弹（925aa25）
 - **卡牌百科变更捕获** — 手动检查官网手牌库与本地卡牌差异，勾选后应用官网文本覆盖本地（`card_amount` 保留）；快照（`card_snapshot.json`）与变更记录（`card_changes.json`）持久化，驱动卡牌精化时效检查
 - **知识库维护（RAG）** — 本地 RAG 语料维护工作台，布局为重排的「左栏维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志」：左栏 10 项（5 个可编辑数据源 专属牌/卡牌点数/装备属性/武将分类/元规则母本 + 5 个只读语料，状态点对齐其语料任务状态）；支持单项 `--only` / 全部 / 加索引三级重建、保存后左栏状态点即时变「待重建」并可就地重建、结构化审计提示并支持跳转定位、10 个语料任务状态常驻可见；**「检索诊断」只读抽屉**（9 列候选去向表：得分/RRF/当前版/as_of/剔除原因，top_k 可调，显示编码后端与耗时，五种丢弃原因中文映射）；源数据已从 xlsx 迁移为 JSON（`data/special_cards.json` / `data/card_points.json` / `data/equip_attrs.json`，xlsx 归档 `data/archive/`）
 - **元规则 T0 文档维护** — 以 `docs/元规则整理-完整版.md` 为规则知识库母本（只增不删、机器校验），提供文档校验（audit）、数据段差异同步（sync）、变更提案起草/合入（propose/apply）与疑难登记（pending）完整工作流，并在「知识库维护 → 元规则母本」维护对象（内嵌四个子页签）可视化操作
@@ -52,7 +52,7 @@
 | 图像处理 | OpenCV（模板匹配、表格横线检测）、Pillow（图像格式转换） |
 | OCR 识别 | RapidOCR 3.9.2 / ONNX 双套件（PP-OCRv6-small 主引擎 + PP-OCRv4-mobile 复核引擎，`onnxruntime` 1.23.2，CPU 固定、线程可钉）+ 编辑距离矫正 + 汉字特征评分（`unihan_etl` / `cnradical` / `pypinyin`，437 字特征缓存）；paddle 全栈已退役 |
 | 数据持久化 | JSON + CSV 文件（`json_repository` 原子写/写前快照基元，无数据库依赖） |
-| 测试与静态检查 | pytest 9.0.3（191 文件 / 2306 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
+| 测试与静态检查 | pytest 9.0.3（191 文件 / 2316 个 `test_*` 函数，CI `-n auto --timeout=60`）+ Ruff 0.12.0（`F` / `T201` / `I` / `B905`）+ vulture / pyright（CI report-only） |
 | 异步通信 | QProcess（子进程管理）+ Qt Signal/Slot |
 
 ## 整体目录结构
@@ -479,3 +479,13 @@ test_project/
 - **选将冷却期探测**（`d1ff679`）：`ocr_service.py` 新增 `due_probe_tasks()`；`ocr_worker.py` 对 `recognize=False` 探测任务返回显式 `probe` 标记（命中不进 ROI/OCR）；`poll_coordinator.py` 冷却期对探测任务仅模板匹配跟踪页面状态，探测命中只维持冷却，拒识即 `clear_task_cooldown("hero_selection")` 提前解除冷却恢复全速识别
 - **测试域迁移**（`38fee32` / `3dea9b3`）：38 例散落用例迁入八个同名锚点、限定前缀测试文件归位同名约定、五个零覆盖模块补最小冒烟——测试规模 156 文件 / 2042 用例 → 191 文件 / 2306 用例
 - **修正的失效描述**：基线 `65dff21` → `d1ff679`（2026-11-14）；`module_business.md` §二文件树补登记 `official_cell_recognition.py` / `peak_board_rules.py`
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），全库涉及部分：
+
+- **公告横幅关闭按钮与状态指纹**（`925aa25`）：`main_window.py` 装配「×」关闭按钮（行数预算 626→630）；`announcement_update_coordinator.py` 新增 `dismiss_banner()` 与 `_update_banner_fingerprint()`——指纹 = 已见公告 stable_key 集合 + 百科差异总量 + READY 计数，仅"变多"（未见公告 / diff 总量增大 / READY 数增多）解除关闭重弹，规避"更新成功后 diff 归零误重弹"陷阱
+- **实战配队导入完成提示框**（`925aa25` / `40c4666`）：`combos_import_dialog.py` 导入结束弹「导入完成」模态框（`_show_result_box` 条数摘要 + `setDetailedText` 完整报告，写入 0 条也弹，点确定关窗）；`_on_accept` 补连 `worker.finished → _on_worker_finished` 摘除 deleteLater 悬空引用，消除关窗与二次导入崩溃
+- **分类管理详情实名化与典型武将移除**（`5f5268c` / `a5fde97`）：仓储新增 `heroes_in_category()` 反查；`category_tab.py` 详情区展示实际归类武将名单（badge 改「已归类 N 名」且零计数隐藏、超 8 名收起/展开、切换自动收起）；随后 `ClassificationCategory.typical_heroes` 字段彻底移除（编辑对话框撤表单行、详情页撤「（典型）」后缀与「典型（未归类）」差集提示；数据文件一次性迁移清洗，RAG 语料与 LLM 建议归类均不消费）；宿主归类变更信号改接 `_on_hero_tab_changed` 联动刷新
+- **势力配色**（`925aa25`）：`config/faction_colors.json` 新增「刘宋」#363636（18 → 19 势力），文件统一为多行缩进 JSON 格式
+- **测试规模**：2306 → 2316 个 `test_*` 函数（横幅指纹回归 / 导入完成弹窗 / 分类面板与仓储用例；`test_architecture.py` main_window 预算 626→630）；数据快照刷新（私有仓同步推进，非本轮代码变更）：heroes 192 → 200、hero_categories 192 → 200

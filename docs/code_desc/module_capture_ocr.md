@@ -2,7 +2,7 @@
 
 > 对应目录：`src/capture/` + `src/ocr/`
 > 职责：屏幕采集双形态（ADB 连接模拟器截图含 raw 帧提速 / 官方 PC 客户端窗口直连 WGC+BitBlt）、多品牌模拟器探测（emulator_discovery 包，五品牌）与 PC 客户端窗口枚举、图像处理、模板匹配（分层加速）、RapidOCR 双套件武将名识别（v6 主 + v4 复核，页型模板方法 `_recognize_page`）与未决槽位复核、白名单治理
-> 文档日期：2026-11-14（基线 d1ff679）
+> 文档日期：2026-11-18（基线 a5fde97）
 
 ---
 
@@ -680,3 +680,7 @@ def preprocess_roi_enhanced(roi: np.ndarray) -> np.ndarray:
 - 冷却中任务经 `due_probe_tasks()` 以 `recognize=False` 仅模板匹配探测（不 OCR），§3.2.1 冷却口径已同步；探测链路的 UI 编排侧见 [`./module_ui.md`](./module_ui.md) §3.1.1
 - **逍遥（MEmu）零实例端口兜底**（`d1392e6`）：`emulator_discovery/memu.py` 配置目录在但零实例时经 `port_scan.supplement_when_empty` 补充扫描兜底，带内仍无开放端口才报配置错误（见 §2.2 探测策略要点）
 - `df113e0`（capture 域表面债：`discover_pc_windows` 改名、`is_main` 死字段删除、mumu 私有函数去品牌前缀）已随提交同步入档，无残留旧名；测试域两笔迁移（`38fee32` / `3dea9b3`）不触及 `src/capture/`、`src/ocr/`
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），采集与 OCR 域（`src/capture/` + `src/ocr/`）无代码变更——双形态图像源、轮询提速两项特性与白名单治理口径延续。

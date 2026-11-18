@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-11-14（基线 d1ff679）
+> 文档日期：2026-11-18（基线 a5fde97）
 
 ---
 
@@ -35,7 +35,7 @@ src/ui/
 │   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
 │   ├── data_freshness_chip.py  # 数据新鲜度常驻胶囊（四类数据健康度聚合，点击弹详情菜单）
 │   ├── progress_reporter.py    # 状态栏全局消息文本与业务进度条（统一渲染出口）
-│   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器
+│   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器（含横幅关闭状态指纹）
 │   ├── disclaimer_dialog.py    # 免责声明对话框（637102b 合规化改造）
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
 │   ├── onboarding_dialog.py    # 首启向导：三段一页式体检（环境自检 → 模拟器连接 → 试识别）
@@ -50,12 +50,7 @@ src/ui/
 │   ├── fetch_dialog.py
 │   ├── card_management_panel.py
 │   ├── combo_edit_dialog.py           # 实战配队新增/编辑表单
-│   ├── combo_management_dialog.py     # 实战配队全量列表 + 增删改
-│   ├── hero_classification_panel.py   # 武将分类维护装配壳（页签/保存编排，审计 G6 拆分）
-│   └── classification/                # 武将分类维护三页签
-│       ├── category_tab.py            # 分类管理页签 + CategoryEditDialog
-│       ├── chain_tab.py               # 克制链页签（校验回滚 #19）
-│       └── hero_tab.py                # 武将归类页签 + LLM 建议 worker
+│   └── combo_management_dialog.py     # 实战配队全量列表 + 增删改
 ├── recommendation/             # 选将推荐页面与推荐卡片
 │   ├── recommendation_panel.py
 │   ├── combo_strip.py              # 实战配队横条（chip 流/管理入口/详情；评级经信号回传宿主）
@@ -510,6 +505,7 @@ PeakSelectPanel
 - `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单，非模态；`check_requested` / `update_requested` 两个信号分别驱动检查与更新入口。
 - “更新武将数据”先由 `AnnouncementService.collect_base_candidates()` 预判候选，无候选时状态栏提示；有候选则调用 `prepare_update_candidates()` 后台拉取官网数据并计算字段级差异，结果经 `update_candidates_prepared` 信号回到 `_on_hero_update_prepared()`。
 - `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。确认后按勾选执行：`_pending_update_phases` 构造为 `[("specific", ids)]` 与 `[("incremental", None)]` 两阶段队列，`_start_next_update_phase()` 逐个 `_dispatch_update_phase()` → `fetch_specific(ids)` / `fetch_incremental()`，`_on_fetch_completed` 消费阶段（完成回调只消费已发起阶段——在途标记由 `_phase_gate = BusyGate()` 闸门承载，76875dd 收口：发起成功 `acquire()`、完成消费 `release()`、中止 `_abort_pending_phases` 也 `release()`），任一阶段失败或采集忙中断整条流并 `mark_applied` 保持横幅可见。全取消仅 `mark_applied()` 刷新快照、不执行采集。忽略骨架与 `CardSyncDialog` 共用 `IgnoreableDiffListMixin`（`ignore_ui_optional=True`：无 `AnnouncementService` 时整组隐藏忽略入口；保留 content_hash 门控——官网获取失败的差异忽略后无法匹配压制，不提供忽略；三态 summary 文案；忽略后过滤 `_candidates` 维持基数）。
+- **横幅关闭与状态指纹（925aa25 新增）**：横幅右侧新增「×」按钮（`ROLE_GHOST`，tooltip「关闭横幅；出现新公告或差异变化时会再次提示」），点击经 `dismiss_banner()` 置 `_banner_dismissed` 并隐藏横幅。重弹判定内聚在 `_update_banner_fingerprint()`（`_refresh_banner` 三处调用点——检查完成/采集完成/更新预备——天然全覆盖）：指纹 = 已见公告 `stable_key` 集合 + 百科差异总量（added/modified/removed 之和）+ READY 公告数，先判后记；已关闭状态下任一条件满足即解除关闭——①出现从未见过的 READY/PENDING 公告、②diff 总量比上次记录增大、③READY 数比上次记录增多（pending→ready 升级走 `current_names` 兜底时 diff 可能不变，只有 READY 计数能捕捉）。判定只认"变多"：更新成功后 diff 归零、ready 被 `mark_applied` 消化属预期回落，不会把用户已关闭的横幅再顶出来；diff 5→3→5 的波动会因重新变多而重弹。指纹只取横幅实际展示的公告（READY/PENDING），无关非武将公告不触发重弹。
 - 状态栏 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
 
 ### 3.10 实战配队维护、批量生成与分类建议
@@ -519,9 +515,9 @@ PeakSelectPanel
 - **手工维护** — `ComboManagementDialog`（选将推荐面板“实战配队”横条右上角“管理”打开）。列表用轻量 `QListWidget` 承载上千条配队（不做逐行控件渲染），支持按武将筛选（下拉框可编辑，`QCompleter` 包含匹配）与“仅看手工”；每行显示 `★rating 武将1[座次] + 武将2[座次]  🖊 手工/📥 导入  note`，双击行等同编辑。增删改后发 `combos_changed` 供面板刷新横条与卡片角标。
 - **单条编辑** — `ComboEditDialog` 承载双人选择（`BaseHeroSelectDialog` `SINGLE` 模式，两个位置不能相同）+ 实战评级 1–10 + 每个武将的四号座次复选 + note 备注。保存时若两个武将均未勾选座次会提示是否按“不限座次”保存；已存在同配对时提示覆盖（编辑同配对视为直接改，不提示）。保存前把 `hero1_id < hero2_id` 规范化并把座次取并集写入 `position` 字段；标记 `manual=True` 使下次官方导入时优先保留。
 - **批量生成** — `SynergyCombosDialog`（菜单“数据 → 武将相性 → 实战配队生成”）从 combos 数据集按武将（筛选行最前的“武将:”下拉框，可编辑 + `QCompleter` 包含匹配，首项哨兵“全部武将”，其余按 `hero.id` 排序）/ 评级 / 座次 / 生成状态筛选配对清单，确认后 `AiGenerationWorkflow.request_synergy_combos()` 把选中的 pairs 列表交给 `SynergyFetchService.fetch_pairs_list()`，进度对话框以“相性评分”为 item 文案，`overwrite_existing` 决定覆盖已有 AI 评分。武将筛选按 `hero_id` 精确匹配 `combo.hero1_id` / `combo.hero2_id` 两个位置（免疫重名与孤儿 id），与评级/座次/生成状态筛选叠加（1a765da）。
-- **导入** — `CombosImportDialog`（菜单“数据 → 实战配队导入”）导入外部配队，成功后 `DialogCoordinator._on_combos_imported()` 刷新共享 combos 数据、相性视图与选将推荐横条。
+- **导入** — `CombosImportDialog`（菜单“数据 → 实战配队导入”）导入外部配队，成功后 `DialogCoordinator._on_combos_imported()` 刷新共享 combos 数据、相性视图与选将推荐横条。导入结束（含写入 0 条）弹「导入完成」模态提示框（`_show_result_box`）：正文 `_build_summary` 条数摘要（源/写入条数、座次解析四计数、非空明细块一行），完整报告进 `setDetailedText` 可折叠复制，点确定 `accept()` 关闭对话框；失败路径维持 critical 弹窗且对话框不关闭，便于换文件重试。worker 引用治理（40c4666）：`_on_accept` 补连 `worker.finished → _on_worker_finished`，线程结束即置 `self._worker = None`——worker 经 `finished → _retire` 自回收（deleteLater），残留引用会让 `reject/_on_accept` 的 `isRunning()` 触已删 C++ 对象抛 RuntimeError，对话框关不掉、每次点击重复报错；写法对齐 `retrieval_diagnostic_dialog` / `hero_tab` 先例，全库同模式七处仅此一处漏清引用
 
-**分类建议 worker**（`classification/hero_tab.py`，原 `hero_classification_panel.py`）— 武将分类维护面板的“LLM 建议分类”按钮把当前武将的技能文本、定位、现有分类清单交给 `_HeroCategoryWorker(QThread)` 后台线程执行 `suggest_hero_categories()`。生命周期与面板解耦：worker `parent=None`，`_LIVE_WORKERS` 集合持有运行中的线程防止 Python 引用丢失导致 QThread 被 GC 析构，`run()` 结束时 `_LIVE_WORKERS.discard(self)` + 释放 generator；`finished` 连接 `deleteLater()` 让页签销毁后线程也能自回收。建议返回时若 `hero != self._current_hero` 则只弹 Toast 提示“已切换武将，X 的建议未应用”；否则 `set_checked(suggested)` 写回勾选（`set_checked` 不发信号，手动走归类变更路径写 repo 并经 `changed` 信号让宿主 `mark_dirty`）。
+**分类建议 worker**（`classification/hero_tab.py`，原 `hero_classification_panel.py`）— 武将分类维护面板的“LLM 建议分类”按钮把当前武将的技能文本、定位、现有分类清单交给 `_HeroCategoryWorker(QThread)` 后台线程执行 `suggest_hero_categories()`。生命周期与面板解耦：worker `parent=None`，`_LIVE_WORKERS` 集合持有运行中的线程防止 Python 引用丢失导致 QThread 被 GC 析构，`run()` 结束时 `_LIVE_WORKERS.discard(self)` + 释放 generator；`finished` 连接 `deleteLater()` 让页签销毁后线程也能自回收。建议返回时若 `hero != self._current_hero` 则只弹 Toast 提示“已切换武将，X 的建议未应用”；否则 `set_checked(suggested)` 写回勾选（`set_checked` 不发信号，手动走归类变更路径写 repo 并经 `changed` 信号让宿主联动）。宿主 `_on_hero_tab_changed`（5f5268c）= `_category_tab.refresh()` + `_mark_dirty()`——归类变更后分类管理详情页的武将名单反查内存态即时刷新（所见即所得），并保持标记未保存的原有语义（面板细节见 [`./module_rag.md`](./module_rag.md)）
 
 ### 3.11 白名单配置对话框（whitelist_config_dialog.py，9ca1b91 新增）
 
@@ -829,8 +825,8 @@ def update_recommendations(self, data: list[dict]) -> None:
 ## 七、代码规模（2026-10-23 基线）
 
 - **测试模块数**：191 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 195 个）
-- **测试用例数**：2306 个 `test_*` 函数（2026-10-11 基线为 145 / 1626）
-- **`main_window.py` 行数预算**：575 行（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口棘轮上调）
+- **测试用例数**：2316 个 `test_*` 函数（2026-10-11 基线为 145 / 1626，2026-11-14 基线为 191 / 2306）
+- **`main_window.py` 行数预算**：630 行（925aa25 随横幅关闭按钮装配自 626 上调并附注理由；重弹判定全部内聚协调器，主窗口只加 4 行控件装配）（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口棘轮上调）
 
 ## 八、知识库维护界面（已迁出）
 
@@ -945,3 +941,13 @@ def update_recommendations(self, data: list[dict]) -> None:
 - **帧静止整拍跳过**（`9dea904`）：`poll_coordinator.py` 每拍指纹判同且上一拍同任务集全部健康拒识时整拍跳过识别（含 `match_guide` 兜底 OCR），见 §3.1.3；指纹计算不再受 `mumu_ocr_poll_idle_pause` 开关控制（同时服务闲置暂停与本跳过）
 - **选将冷却期探测**（`d1ff679`）：冷却中的活跃任务经 `OcrService.due_probe_tasks()` 进入仅模板匹配的轻量探测，拒识即提前解除冷却，见 §3.1.1 冷却期探测段；`PollTaskResult` 新增 `probe` 字段，探测命中只维持冷却不走命中路由
 - 其余 UI 文件无代码变更；`df113e0`（capture 域表面债）与测试域两笔迁移（`38fee32` / `3dea9b3`）均不触及 `src/ui/`
+
+## 十五、本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），本模块受影响项：
+
+- **公告横幅关闭按钮与状态指纹**（`925aa25`）：`main_window.py` 横幅装配新增「×」关闭按钮（`ROLE_GHOST`；行数预算 626→630，重弹判定全部内聚协调器）；`announcement_update_coordinator.py` 新增 `dismiss_banner()` 与 `_update_banner_fingerprint()` 状态指纹（已见 stable_key 集合 + 百科差异总量 + READY 计数，先判后记），重弹三条件与"只认变多"口径见 §3.9；`test_architecture.py` 预算棘轮同步上调
+- **配队导入完成提示框与 worker 引用治理**（`925aa25` / `40c4666`）：`combos_import_dialog.py` 新增 `_show_result_box()` / `_build_summary()` 完成弹窗（含写入 0 条也弹），`_on_accept` 补连 `worker.finished → _on_worker_finished` 摘除 deleteLater 悬空引用（消除关窗与二次导入崩溃），见 §3.10
+- **武将归类变更跨页签联动**（`5f5268c`）：`hero_classification_panel.py` 的 `_hero_tab.changed` 改接 `_on_hero_tab_changed()`（刷新分类管理详情 + 标记未保存），见 §3.10 分类建议 worker 段
+- **文件树勘正**：`hero_classification_panel.py` 与 `classification/` 三页签自 `977a8dc` 起已迁 `src/ui/maintenance/`（文档归 [`./module_rag.md`](./module_rag.md)），§二文件树 library/ 块残留条目本轮移除
+- 其余 UI 文件无代码变更；本轮新增测试（横幅指纹回归 / 导入完成弹窗 / 分类面板与仓储用例）随对应模块入档

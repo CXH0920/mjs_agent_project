@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：`d1ff679`（2026-11-14）。历史增量：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
+> 代码基线：`a5fde97`（2026-11-18）。历史基线：`d1ff679`（2026-11-14，含 `3c19e7e` RAG 索引编码器指纹双端校验）。历史增量：commit `a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -84,7 +84,7 @@ mart（AI 生成产物，只写不读，绝不反喂 DWD）
 | `data/rag_models/` | 嵌入模型缓存，**不入 git** |
 | `data/raw_guides/jinxia/guides/` | 社区侧攻略 45 篇，已被 `build_guide_corpus.py` 加工成检索块 |
 | `data/raw_guides/jinxia/combos/` | 社区侧配队素材（4 个 md + 2 个 csv），已被 `build_combo_corpus.py` 加工 |
-| `data/hero_classification.json` | AI 全量修订产物（文件自述 `note`：基于 `heroes.json` 技能文本逐将核对；`source` 指向 `data/武将分类20260724.md`，标注"2026-08-15 AI 全量修订"），`hero_categories` 186 键、`categories` 16 类 |
+| `data/hero_classification.json` | AI 全量修订产物（文件自述 `note`：基于 `heroes.json` 技能文本逐将核对；`source` 指向 `data/武将分类20260724.md`，标注"2026-08-15 AI 全量修订"），`hero_categories` 200 键、`categories` 16 类（2026-11-18 快照；`a5fde97` 起分类条目不再携带 `typical_heroes` 字段） |
 
 > **入库 ≠ ODS**：`hero_classification.json` 虽在 `data/` 下，但它是 AI 修订成果，权威性不成立，故归 DWD。链路为 `heroes.json`(ODS) → 分类快照 MD → `hero_classification.json` → `武将分类语料.json`(检索块)。
 
@@ -141,7 +141,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
                                   #   + rag_eval_history.py（评估历史 JSONL，纯库无 CLI）
 ```
 
-> **物理位置说明**：知识库数据源维护面板的文件**跨目录分布**。`hero_classification_panel.py`（武将分类）与 `special_cards_panel.py`（专属牌）位于 `src/ui/library/`，而非 `src/ui/maintenance/`；但两者的宿主都是 `src/ui/maintenance/maintenance_workspace.py` 装配的同一个工作台，由 `rag_maintenance_panel.py` 统一创建实例并接入左栏导航。精化字段契约 `corpus_fields.py` 已迁至 `src/data/`（字段集单一事实源归数据层，见 4.2）。
+> **物理位置说明**：知识库数据源维护面板的文件**跨目录分布**。`hero_classification_panel.py`（武将分类）与 `special_cards_panel.py`（专属牌）自 `977a8dc` 起位于 `src/ui/maintenance/`；两者的宿主都是 `src/ui/maintenance/maintenance_workspace.py` 装配的同一个工作台，由 `rag_maintenance_panel.py` 统一创建实例并接入左栏导航。精化字段契约 `corpus_fields.py` 已迁至 `src/data/`（字段集单一事实源归数据层，见 4.2）。
 
 ---
 
@@ -544,7 +544,7 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | `card_points_panel.py` | `CardPointsPanel(repository, root)`，信号 `data_changed`；牌行 + `judge_rules` 判定规则增删改；「从 xlsx 导入」经 `ScriptRunner` 异步执行 |
 | `equip_attrs_panel.py` | `EquipAttrsPanel(repository)`，信号 `data_changed`；列 `("名称","细分类型","攻击范围","距离修正","备注")`，名称/备注只读 |
 
-> 另外两个维护对象面板位于 `src/ui/library/`：`hero_classification_panel.py`（`HeroClassificationPanel`，含 `focus_unclassified()`）、`special_cards_panel.py`（`SpecialCardsPanel`，含 `focus_item(category, name)`）。
+> 另外两个维护对象面板位于 `src/ui/maintenance/`：`hero_classification_panel.py`（`HeroClassificationPanel`，含 `focus_unclassified()`）、`special_cards_panel.py`（`SpecialCardsPanel`，含 `focus_item(category, name)`）。
 
 **启动失败统一处理（2f4a529）**：`ScriptRunner.run()` 返回 `False` 表示本次未启动（已有任务在跑或启动失败），此时**不会**发 `finished`——调用方须据此自行复位忙碌状态，否则面板按钮永久禁用。三个维护面板（`rule_doc_panel.py` / `rag_maintenance_panel.py` / `card_points_panel.py`）均按此模式处理：检查 `run()` 返回值，`False` 时复位 `_set_busy(False)` 或按钮状态，并输出"启动失败"日志。`rule_doc_panel.py` 额外引入 `FAILED_TO_START_EXIT_CODE`（`-1`），经 `_on_finished(FAILED_TO_START_EXIT_CODE, ...)` 走统一失败收尾链路。
 
@@ -896,3 +896,12 @@ TASKS: list[dict] = [
 - **`rule_doc_service._doc_lines()` 缓存键-内容同源**（`5849094`）：stat→read 竞态窗口读取后重取 stat，mtime 变化即重读再落键
 - **AI 失败清单原子写**（`25bbd08`）：`logs/ai_last_failures.json` 经 `config/atomic_write.atomic_write_json` 原子替换——`--retry-failed` 读侧不再可能读到半截清单；`ai_batch --rebuild-rag-index` 链路无变化
 - 其余链路（语料构建、注入、索引精化三层架构、元规则 audit/sync/propose/apply 工作流）无函数级变更；测试域两笔迁移（`38fee32` / `3dea9b3`）不触及本模块源码
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），本模块受影响项（均属 `src/ui/maintenance/classification/` 与武将归类页签，RAG 语料构建链路无变更——`build_classification_corpus.py` 只读 `name` / `core_features`，`typical_heroes` 移除无下游影响）：
+
+- **分类管理详情页实名化**（`5f5268c`）：`CategoryTab` 详情区撤下「典型武将」区块，改为「该分类下的武将」——`HeroClassificationRepository.heroes_in_category()` 反查内存态归类（与武将归类页签同源，未保存修改即时反映）；标题 badge 由「N 名典型武将」改「已归类 N 名」（计数为 0 整枚隐藏）；名单超 8 名默认收起（`_MEMBER_PREVIEW_COUNT = 8`），「展开全部（共 N 名）/收起」往返，切换选中分类自动收起
+- **典型武将字段移除**（`a5fde97`）：`CategoryEditDialog` 撤下「典型武将」表单行；详情页移除「（典型）」后缀与「典型（未归类）」差集提示——实际归类名单已完整展示，该举例字段冗余且无消费方；`hero_classification.json` 数据已迁移清洗
+- **武将归类变更跨页签联动**（`5f5268c`）：宿主 `_hero_tab.changed` 改接 `_on_hero_tab_changed()`（`_category_tab.refresh()` + `_mark_dirty()`），未保存的内存修改即时反映
+- **勘正与快照刷新**：§二物理位置说明与维护面板小节两处"位于 `src/ui/library/`"历史残留勘正为 `src/ui/maintenance/`；`hero_categories` 数据快照 186 → 200 键（私有仓同步推进，非本轮代码变更）

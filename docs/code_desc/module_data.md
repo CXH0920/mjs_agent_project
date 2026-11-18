@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
-> 文档日期：2026-11-14（基线 `d1ff679`）
+> 文档日期：2026-11-18（基线 `a5fde97`）
 
 ---
 
@@ -51,7 +51,7 @@ src/data/
 
 四个维护仓库（`card_points` / `equip_attrs` / `hero_classification` / `special_cards`）由 RAG 语料构建脚本（`build_cardpts.py` / `build_equip_attr.py` / `build_classification_corpus.py` / `build_special_corpus.py`）读取生成向量库语料，是**唯一的人工维护源**，不再从 xlsx 归档读取。2026-09 起（241e965），`hero_classification_repository.py` 在爬虫更新 `heroes.json` 后，归类/专属牌名单随刷新入口同步加载，无需手动重建语料。`card_catalog.py` 独立承担卡牌基础与追加信息仓储，其 `CardRepository` 只读加载 `data/cards.json`；`CardFieldSchemaRepository` 与 `CardAnnotationRepository` 分别维护 `card_field_schema.json` 与 `card_annotations.json`。`CardViewModel` 将基础卡牌与追加字段合并为可展示视图，`CardFieldDefinition` 支持字段归档（`archived`）与旧记录迁移（`EffectEntry.migrate_legacy_fields` 将 `effective_from` 映射为 `created_at/updated_at`）。基础文件从不提供保存入口。
 
-四个维护仓库的磁盘实测规模（2026-10-01）：`card_points.json`（72 行牌面 + 12 条判定规则）、`equip_attrs.json`（26 件装备）、`special_cards.json`（85 条专属牌/战法/状态/概念）、`hero_classification.json`（7 个顶层键：`version` 2.0 / `updated_at` / `source` / `note` / `categories` 16 项分类定义 / `hero_categories` 186 键武将归类映射 / `counter_chain` 8 键克制链）。**仓库口径注意**：上述数据文件连同 heroes/combos/cards 等源数据自 2026-10-03 起不入版本库（见 3.14 节），全新 clone 需先经 `pull_data pull` 获取。
+四个维护仓库的磁盘实测规模（2026-11-18）：`card_points.json`（72 行牌面 + 12 条判定规则）、`equip_attrs.json`（26 件装备）、`special_cards.json`（85 条专属牌/战法/状态/概念）、`hero_classification.json`（7 个顶层键：`version` 2.0 / `updated_at` / `source` / `note` / `categories` 16 项分类定义（`a5fde97` 起条目不再携带 `typical_heroes` 字段）/ `hero_categories` 200 键武将归类映射 / `counter_chain` 8 键克制链）。**仓库口径注意**：上述数据文件连同 heroes/combos/cards 等源数据自 2026-10-03 起不入版本库（见 3.14 节），全新 clone 需先经 `pull_data pull` 获取。
 
 百科 diff 忽略名单 `baike_ignore_store.py`（0007fc4 新增）管理 `data/baike_ignore.json`，为 `AnnouncementService`（武将）与 `CardSyncService`（卡牌）提供"用户显式压制的差异"持久化。`BaikeIgnoreStore` 模型含 `version` 与 `heroes` / `cards` 两段 `dict[str, IgnoreEntry]`，覆盖式保存；`IgnoreEntry` 以 `state`（added/modified/removed）+ `hash` 共同定位"同一差异"，`filter_ignored()` 在检查链路上过滤被压制条目——`modified/added` 需 state 匹配且 hash 等于当前官网哈希（官网内容再变即重现），`removed` 仅按 state 匹配（官网再上线会以 `added` 出现，state 不匹配自然重现）。忽略不影响基线快照推进，也不影响武将时间轴（时间轴数据源是公告列表，与 diff 无关）。
 
@@ -581,7 +581,7 @@ class SpecialCardRepository(JsonRepository):
 |------|----------|-----------|
 | `CardPointsRepository` | `data/card_points.json` | `add_card/replace_card/delete_card` + `add_rule/update_rule/delete_rule` |
 | `EquipAttrsRepository` | `data/equip_attrs.json` | `add_equip/update_equip` |
-| `HeroClassificationRepository` | `data/hero_classification.json` | `add_category/update_category/delete_category` + `set_counter_chain` + `set_hero_categories` + `list_unclassified` |
+| `HeroClassificationRepository` | `data/hero_classification.json` | `add_category/update_category/delete_category` + `set_counter_chain` + `set_hero_categories` + `list_unclassified` + `list_classified` + `heroes_in_category`（按分类反查实际归类名单，5f5268c） |
 | `SpecialCardRepository` | `data/special_cards.json` | `add_item/update_item/delete_item`（同类别同名不可重复） |
 
 ### 武将变更时间轴（`hero_timeline.py` 模块级函数）
@@ -775,3 +775,11 @@ class SpecialCardRepository(JsonRepository):
 ## 本轮文档校准（2026-11-14）
 
 自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），`src/data/` 域无代码变更——DataFacade 门面、manager/issues 解环拆分、hero_timeline / card_sync_store / baike_ignore_store 与 json_repository 三基元口径延续；测试域两笔迁移（`38fee32` / `3dea9b3`）仅触及 `tests/`。
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），本模块受影响项：
+
+- **`ClassificationCategory` 删除 `typical_heroes` 字段**（`a5fde97`）：模型 docstring 同步为「机制分类：核心特征 / 占比仅供参考展示」；pydantic 宽松配置兜底使旧格式 JSON（含典型字段）仍可加载、保存后该键消失；数据文件已一次性迁移清洗（categories 16 项 / hero_categories 200 键 / counter_chain 8 键内容零 diff）。该字段 RAG 语料生成与 LLM 建议归类均不消费，删除无下游影响
+- **新增 `heroes_in_category(category)` 反查方法**（`5f5268c`）：按名称排序返回实际归类到该分类的武将名单，与 `list_classified` 同口径不过滤已移除武将的脏数据；消费方 `ui/maintenance/classification/category_tab.py` 详情区名单展示
+- 数据快照刷新（私有仓同步推进，非本轮代码变更）：`hero_categories` 186 → 200 键，规模口径日期 2026-10-01 → 2026-11-18

@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理、备份恢复
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-11-14（代码基线 d1ff679）
+> 文档日期：2026-11-18（代码基线 a5fde97）
 
 ---
 
@@ -1080,3 +1080,7 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 - **连接竞态锁内读与 PC 绑窗快照入队**（`5849094`）：`capture_connection.py` 的 `set_target_port()` 配置读取持 `_session_lock`；新增 `bind_pc_window(hwnd)` 锁内绑定目标窗口并返回实例快照（`CaptureService.bind_pc_window` / `connect_capture(capture)` 门面转发，PC 多窗口选择经连接入队防热更绑窗丢失）
 - **`rule_doc_service._doc_lines()` 缓存键-内容同源**（`5849094`）：读取后重取 stat，mtime 变化即重读再落键
 - `df113e0`（`emulator_config_coordinator` 私有函数去品牌前缀）为内部改名，无调用链变更；测试域两笔迁移（`38fee32` / `3dea9b3`）不触及 `src/business/`
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），`src/business/` 域无代码变更——服务编排、采集/OCR 调度、公告检查与备份恢复口径延续。公告横幅关闭指纹与配队导入完成提示均为 UI 层变更，记录于 [`./module_ui.md`](./module_ui.md)；`hero_classification_repository` 变更记录于 [`./module_data.md`](./module_data.md)。

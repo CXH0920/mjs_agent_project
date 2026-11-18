@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-11-14（基线 `d1ff679`）
+> 文档日期：2026-11-18（基线 `a5fde97`）
 
 ---
 
@@ -223,9 +223,12 @@ root 级别下限 WARNING（`root.setLevel(max(level, logging.WARNING))`，即�
   {"faction": "蜀汉", "color": "#921822"},
   {"faction": "孙吴", "color": "#297540"},
   {"faction": "西晋", "color": "#3A5E89"},
-  {"faction": "东晋", "color": "#566D81"}
+  {"faction": "东晋", "color": "#566D81"},
+  {"faction": "刘宋", "color": "#363636"}
 ]
 ```
+
+**内容更新**（925aa25，2026-11-17）：新增「刘宋」专属色 `#363636`（现 19 势力）；配置文件统一为多行缩进 JSON 格式（键集与数组顺序语义不变，上方示例保留单行紧凑写法仅作结构示意）。
 
 **结构升级说明**（2026-09-15）：原 dict 结构 `{"秦": "#8B4513", "汉": "#B22222", ...}` 升级为数组结构 `[{faction, color}, ...]`。数组位置即筛选界面的势力展示顺序——配置方按所需展示次序排列条目，无需额外排序字段。`load_faction_colors()` 返回 dict（字典插入顺序即配置顺序），`get_faction_colors()` 带缓存，`reload_faction_colors()` 清缓存重读。`sort_factions_by_config(factions)` 按配置顺序排序势力名列表，配置外的势力按码点序追加尾部。
 
@@ -476,3 +479,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 ## 本轮文档校准（2026-11-14）
 
 自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），config 域无代码变更——键元表（38 键）、runtime 键、`atomic_write` / `task_ledger` / `version.py` / `onboarding_state` / `disclaimer_state` 口径延续。`atomic_write.atomic_write_json` 新增消费方（AI 失败清单原子写，`25bbd08`）记录于 [`./module_ai_batch.md`](./module_ai_batch.md)。
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），config 域代码无变更；`config/faction_colors.json` 数据文件新增「刘宋」专属色并统一多行缩进格式（`925aa25`，见 §3.6）——`faction_colors.py` 读取链路与键集口径不变。

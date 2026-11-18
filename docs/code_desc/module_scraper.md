@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**
-> 文档日期：2026-11-14（基线 `d1ff679`）
+> 文档日期：2026-11-18（基线 `a5fde97`）
 
 ---
 
@@ -553,3 +553,7 @@ def transform(raw: dict) -> dict | None:
 ## 本轮文档校准（2026-11-14）
 
 自基线 `65dff21`（2026-11-06）以来共 11 个提交（至 `d1ff679`），官网采集域（`src/scraper/` 顶层与 `official_source/`）无代码变更——爬虫链路、robots 校验、`hero_fields` 清洗守卫、卡牌百科抓取口径延续。`src/scraper/ai/` 子域三笔变更（`766dc0f` / `25bbd08` / `d1392e6`）记录于 [`./module_ai_batch.md`](./module_ai_batch.md)。
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），官网采集域（`src/scraper/official_source/` 与根 CLI）无代码变更——爬虫链路、robots 校验与写入前守卫口径延续。

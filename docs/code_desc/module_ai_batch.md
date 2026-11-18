@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/ai/`
 > 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律、生成任务互斥锁
-> 文档日期：2026-11-14（基线 `d1ff679`）
+> 文档日期：2026-11-18（基线 `a5fde97`）
 
 ---
 
@@ -560,3 +560,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 - **dry-run 定向估算补齐**（`25bbd08`）：`_show_cost_estimate()` 对 `synergy_single` / `synergy_pair`（按 C(n,2) 换算）/ `synergy_list` 三分支按实际请求项数直估 RAG/经典双版本（`estimate_item_cost`），清单不可读提示跳过而非退出
 - **定向模式阈值透传**（`d1392e6`）：`main()` 向 `run_synergy_pair/single/list_generation` 透传 `args.score_threshold`（原先 pair 固定 `None`），定向配对低于下限移除旧记录与全量模式同语义
 - 其余链路（API 生成器 429 退避、`normalize_and_validate_*` 共享管线、`generation_lock` OS 级互斥）无函数级变更；测试域两笔迁移（`38fee32` / `3dea9b3`）新增 `test_api_generator` 等同名锚点
+
+## 本轮文档校准（2026-11-18）
+
+自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），AI 生成域（`src/scraper/ai/`）无代码变更——API/浏览器双后端、429 退避、四层决策门与失败清单口径延续。
