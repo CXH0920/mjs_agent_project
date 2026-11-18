@@ -24,8 +24,8 @@ def _panel(tmp_path: Path) -> tuple[HeroClassificationPanel, Path]:
     path = tmp_path / "hero_classification.json"
     _write(path, {
         "categories": [
-            {"name": "高爆发型", "core_features": "一回合多段输出", "typical_heroes": ["庞煖"], "ratio": "~8%"},
-            {"name": "防御/保核型", "core_features": "抗压", "typical_heroes": [], "ratio": ""},
+            {"name": "高爆发型", "core_features": "一回合多段输出", "ratio": "~8%"},
+            {"name": "防御/保核型", "core_features": "抗压", "ratio": ""},
         ],
         "hero_categories": {"庞煖": ["高爆发型"]},
         "counter_chain": {"高爆发型": "防御/保核型"},
@@ -138,7 +138,7 @@ def test_category_detail_shows_actual_members(tmp_path: Path) -> None:
     surface = _detail_surface(panel)
     texts = [label.text() for label in surface.findChildren(QLabel)]
     assert "已归类 2 名" in texts
-    assert "典韦、庞煖（典型）" in texts
+    assert "典韦、庞煖" in texts
     assert surface.findChild(QLabel, "statusBadge").isHidden() is False
     # ≤8 人全量展示，无需展开按钮
     assert not any("展开全部" in b.text() for b in surface.findChildren(QPushButton))
@@ -159,23 +159,6 @@ def test_category_detail_empty_members_hides_zero_badge(tmp_path: Path) -> None:
     assert not any("0 名" in text for text in visible_texts)
 
 
-def test_category_detail_lists_unclassified_typical(tmp_path: Path) -> None:
-    """typical 中未归类成员以差集提示展示（新建分类先填典型、归类被移除的场景）。"""
-    _app()
-    panel, _ = _panel(tmp_path)
-    panel._repo.set_hero_categories("典韦", ["高爆发型"])
-    panel._category_tab.current_category = "高爆发型"
-    panel._category_tab.refresh()
-    texts = [label.text() for label in _detail_surface(panel).findChildren(QLabel)]
-    assert "典韦、庞煖（典型）" in texts
-    assert not any("典型（未归类）" in text for text in texts)
-    panel._repo.set_hero_categories("庞煖", [])
-    panel._category_tab.refresh()
-    texts = [label.text() for label in _detail_surface(panel).findChildren(QLabel)]
-    assert "典型（未归类）：庞煖" in texts
-    assert "典韦、庞煖（典型）" not in texts
-
-
 def test_hero_categorization_updates_category_detail(tmp_path: Path) -> None:
     """归类页签变更后，分类管理详情名单随内存态即时刷新（所见即所得）。"""
     _app()
@@ -187,7 +170,7 @@ def test_hero_categorization_updates_category_detail(tmp_path: Path) -> None:
     panel._hero_tab.hero_combo.set_checked(["高爆发型"])
     panel._hero_tab.on_hero_categories_changed()
     texts = [label.text() for label in _detail_surface(panel).findChildren(QLabel)]
-    assert "典韦、庞煖（典型）" in texts
+    assert "典韦、庞煖" in texts
     assert "已归类 2 名" in texts
 
 

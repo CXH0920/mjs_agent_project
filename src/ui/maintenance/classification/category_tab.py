@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidgetItem,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -56,7 +55,6 @@ class CategoryEditDialog(QDialog):
         return {
             "name": self._name_edit.text() if not self._category else None,
             "features": self._features_edit.toPlainText(),
-            "heroes": self._heroes_edit.toPlainText(),
             "ratio": self._ratio_edit.text(),
         }
 
@@ -80,11 +78,6 @@ class CategoryEditDialog(QDialog):
         if self._category:
             self._features_edit.setPlainText(self._category.core_features)
         form.addRow("核心特征:", self._features_edit)
-        self._heroes_edit = QPlainTextEdit()
-        self._heroes_edit.setFixedHeight(120)
-        if self._category:
-            self._heroes_edit.setPlainText("\n".join(self._category.typical_heroes))
-        form.addRow("典型武将:", self._heroes_edit)
         self._ratio_edit = QLineEdit()
         if self._category:
             self._ratio_edit.setText(self._category.ratio)
@@ -100,11 +93,9 @@ class CategoryEditDialog(QDialog):
         if not name:
             QMessageBox.warning(self, "校验失败", "分类名称不能为空")
             return
-        heroes = [line.strip() for line in self._heroes_edit.toPlainText().splitlines() if line.strip()]
         self._category = ClassificationCategory(
             name=name,
             core_features=self._features_edit.toPlainText().strip(),
-            typical_heroes=heroes,
             ratio=self._ratio_edit.text().strip(),
         )
         self.accept()
@@ -264,12 +255,11 @@ class CategoryTab(QWidget):
         section.setObjectName("sectionTitle")
         surface_layout.addWidget(section)
         # 名单反查内存态归类（与「武将归类」页签同源，未保存修改即时反映）；
-        # 超过预览条数默认收起，点「展开全部」查看全量；典型成员加后缀保留字段语义
+        # 超过预览条数默认收起，点「展开全部」查看全量
         expanded = cat.name == self._expanded_category
         if members:
-            typical = set(cat.typical_heroes)
             shown = members if expanded or len(members) <= _MEMBER_PREVIEW_COUNT else members[:_MEMBER_PREVIEW_COUNT]
-            body_text = "、".join(f"{hero}（典型）" if hero in typical else hero for hero in shown)
+            body_text = "、".join(shown)
         else:
             body_text = "该分类下暂无已归类武将"
         body = QLabel(body_text)
@@ -286,13 +276,6 @@ class CategoryTab(QWidget):
             toggle_row.addWidget(toggle)
             toggle_row.addStretch(1)
             surface_layout.addLayout(toggle_row)
-        missing = sorted(set(cat.typical_heroes) - set(members))
-        if missing:
-            note = QLabel(f"典型（未归类）：{'、'.join(missing)}")
-            note.setObjectName("metaText")
-            note.setTextFormat(Qt.TextFormat.PlainText)
-            note.setWordWrap(True)
-            surface_layout.addWidget(note)
 
         actions = QHBoxLayout()
         edit_button = QPushButton("编辑")

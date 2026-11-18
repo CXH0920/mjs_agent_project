@@ -25,8 +25,8 @@ def _repo(tmp_path: Path) -> HeroClassificationRepository:
         "updated_at": "2026-08-01",
         "source": "data/武将分类20260724.md",
         "categories": [
-            {"name": "高爆发型", "core_features": "一回合多段输出", "typical_heroes": ["庞煖"], "ratio": "~8%"},
-            {"name": "防御/保核型", "core_features": "抗压保核", "typical_heroes": [], "ratio": ""},
+            {"name": "高爆发型", "core_features": "一回合多段输出", "ratio": "~8%"},
+            {"name": "防御/保核型", "core_features": "抗压保核", "ratio": ""},
         ],
         "hero_categories": {"庞煖": ["高爆发型"]},
         "counter_chain": {"高爆发型": "防御/保核型（不给发育时间）"},
@@ -64,6 +64,26 @@ def test_heroes_in_category(tmp_path: Path) -> None:
     assert repo.heroes_in_category("高爆发型") == ["典韦", "已移除武将", "庞煖"]
     assert repo.heroes_in_category("防御/保核型") == ["典韦"]
     assert repo.heroes_in_category("不存在的分类") == []
+
+
+def test_load_ignores_typical_heroes(tmp_path: Path) -> None:
+    """旧格式 JSON（含已废弃的 typical_heroes）加载不报错，保存后该键消失。
+
+    typical_heroes 字段已删除（口径 C，一次性迁移）；本用例锁定 pydantic
+    extra-ignore 兜底，防止将来收紧模型 config 使未迁移机器的旧文件加载崩。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {
+        "categories": [{"name": "高爆发型", "typical_heroes": ["庞煖"], "ratio": "~8%"}],
+        "hero_categories": {"庞煖": ["高爆发型"]},
+        "counter_chain": {},
+    })
+    repo = HeroClassificationRepository(path, hero_names={"庞煖"})
+    assert repo.load() == []
+    assert repo.get_category("高爆发型") is not None
+    repo.save()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert "typical_heroes" not in data["categories"][0]
+    assert data["hero_categories"] == {"庞煖": ["高爆发型"]}
 
 
 def test_load_reports_duplicate_and_unknown_refs(tmp_path: Path) -> None:

@@ -23,11 +23,10 @@ DEFAULT_HERO_CLASSIFICATION_FILE = DEFAULT_DATA_DIR / "hero_classification.json"
 
 
 class ClassificationCategory(BaseModel):
-    """机制分类：核心特征 / 典型武将 / 占比仅供参考展示。"""
+    """机制分类：核心特征 / 占比仅供参考展示。"""
 
     name: str = Field(..., min_length=1)
     core_features: str = ""
-    typical_heroes: list[str] = Field(default_factory=list)
     ratio: str = ""
 
     @field_validator("name")
