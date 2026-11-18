@@ -36,6 +36,9 @@ from src.ui.shared.widgets import DialogFooter, clear_layout, confirm_discard_ed
 
 logger = logging.getLogger(__name__)
 
+# 名单默认收起时的预览条数；超出需点「展开全部」查看
+_MEMBER_PREVIEW_COUNT = 8
+
 
 class CategoryEditDialog(QDialog):
     """新增/编辑机制分类；name 作为唯一标识，编辑时不可修改。"""
@@ -121,6 +124,8 @@ class CategoryTab(QWidget):
         self._service = service
         self._repo = service.repository
         self._current_category: str | None = None
+        # 名单展开中的分类名；切换选中分类后不匹配即自然收起，联动刷新不受影响
+        self._expanded_category: str | None = None
         self._setup_ui()
 
     # ────────────────────────────────────────────────
@@ -228,9 +233,12 @@ class CategoryTab(QWidget):
         title.setObjectName("cardIdentityName")
         title.setTextFormat(Qt.TextFormat.PlainText)
         title_row.addWidget(title)
-        badge = QLabel(f"{len(cat.typical_heroes)} 名典型武将")
+        members = self._repo.heroes_in_category(cat.name)
+        badge = QLabel(f"已归类 {len(members)} 名")
         badge.setObjectName("statusBadge")
         set_tone(badge, TONE_INFO)
+        # 0 时隐藏而非显示「已归类 0 名」，与名单区空态的反误导口径一致
+        badge.setVisible(bool(members))
         title_row.addWidget(badge)
         title_row.addStretch()
         surface_layout.addLayout(title_row)
@@ -252,16 +260,39 @@ class CategoryTab(QWidget):
             body.setWordWrap(True)
             body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             surface_layout.addWidget(body)
-        if cat.typical_heroes:
-            section = QLabel("典型武将")
-            section.setObjectName("sectionTitle")
-            surface_layout.addWidget(section)
-            body = QLabel("、".join(cat.typical_heroes))
-            body.setObjectName("specialCardFieldBody")
-            body.setTextFormat(Qt.TextFormat.PlainText)
-            body.setWordWrap(True)
-            body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            surface_layout.addWidget(body)
+        section = QLabel("该分类下的武将")
+        section.setObjectName("sectionTitle")
+        surface_layout.addWidget(section)
+        # 名单反查内存态归类（与「武将归类」页签同源，未保存修改即时反映）；
+        # 超过预览条数默认收起，点「展开全部」查看全量；典型成员加后缀保留字段语义
+        expanded = cat.name == self._expanded_category
+        if members:
+            typical = set(cat.typical_heroes)
+            shown = members if expanded or len(members) <= _MEMBER_PREVIEW_COUNT else members[:_MEMBER_PREVIEW_COUNT]
+            body_text = "、".join(f"{hero}（典型）" if hero in typical else hero for hero in shown)
+        else:
+            body_text = "该分类下暂无已归类武将"
+        body = QLabel(body_text)
+        body.setObjectName("specialCardFieldBody")
+        body.setTextFormat(Qt.TextFormat.PlainText)
+        body.setWordWrap(True)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        surface_layout.addWidget(body)
+        if len(members) > _MEMBER_PREVIEW_COUNT:
+            toggle_row = QHBoxLayout()
+            toggle = QPushButton("收起" if expanded else f"展开全部（共 {len(members)} 名）")
+            set_ui_role(toggle, ROLE_SECONDARY)
+            toggle.clicked.connect(self._toggle_member_list)
+            toggle_row.addWidget(toggle)
+            toggle_row.addStretch(1)
+            surface_layout.addLayout(toggle_row)
+        missing = sorted(set(cat.typical_heroes) - set(members))
+        if missing:
+            note = QLabel(f"典型（未归类）：{'、'.join(missing)}")
+            note.setObjectName("metaText")
+            note.setTextFormat(Qt.TextFormat.PlainText)
+            note.setWordWrap(True)
+            surface_layout.addWidget(note)
 
         actions = QHBoxLayout()
         edit_button = QPushButton("编辑")
@@ -276,6 +307,13 @@ class CategoryTab(QWidget):
         surface_layout.addLayout(actions)
         self._category_detail_layout.addWidget(surface)
         self._category_detail_layout.addStretch(1)
+
+    def _toggle_member_list(self) -> None:
+        """展开/收起当前分类的武将名单（重渲染详情区，按钮随重建自回收）。"""
+        self._expanded_category = None if self._expanded_category == self._current_category else self._current_category
+        cat = self._repo.get_category(self._current_category or "")
+        if cat is not None:
+            self._show_category_detail(cat)
 
     # ---------------------------------------------------------------
     # 增删改（变更后发 changed，由宿主联动克制链下拉与 dirty 标记）

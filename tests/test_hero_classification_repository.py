@@ -47,6 +47,25 @@ def test_load_and_query(tmp_path: Path) -> None:
     assert repo.list_classified() == ["庞煖"]
 
 
+def test_heroes_in_category(tmp_path: Path) -> None:
+    """反查分类成员：sorted、多分类归属不去重、脏数据不过滤（与 list_classified 同口径）。"""
+    path = tmp_path / "hero_classification.json"
+    _write(path, {
+        "categories": [{"name": "高爆发型"}, {"name": "防御/保核型"}],
+        "hero_categories": {
+            "典韦": ["高爆发型", "防御/保核型"],
+            "庞煖": ["高爆发型"],
+            "已移除武将": ["高爆发型"],  # load 途径的脏数据：不在武将库也保留
+        },
+        "counter_chain": {},
+    })
+    repo = HeroClassificationRepository(path, hero_names={"庞煖", "典韦"})
+    assert repo.load() == []
+    assert repo.heroes_in_category("高爆发型") == ["典韦", "已移除武将", "庞煖"]
+    assert repo.heroes_in_category("防御/保核型") == ["典韦"]
+    assert repo.heroes_in_category("不存在的分类") == []
+
+
 def test_load_reports_duplicate_and_unknown_refs(tmp_path: Path) -> None:
     path = tmp_path / "hero_classification.json"
     _write(path, {

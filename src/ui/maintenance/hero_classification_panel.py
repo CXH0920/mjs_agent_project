@@ -83,13 +83,19 @@ class HeroClassificationPanel(QWidget):
         self._chain_tab.changed.connect(self._mark_dirty)
         self._tabs.addTab(self._chain_tab, "克制链")
         self._hero_tab = HeroTab(self._service, self)
-        self._hero_tab.changed.connect(self._mark_dirty)
+        # 归类变更后联动：分类管理详情的武将名单随内存态刷新（所见即所得）
+        self._hero_tab.changed.connect(self._on_hero_tab_changed)
         self._tabs.addTab(self._hero_tab, "武将归类")
         layout.addWidget(self._tabs, 1)
 
     def _on_category_tab_changed(self) -> None:
         """分类增删改后联动：克制链下拉随分类集刷新，并标记未保存。"""
         self._chain_tab.refresh_options()
+        self._mark_dirty()
+
+    def _on_hero_tab_changed(self) -> None:
+        """归类变更后联动：分类管理详情的名单反查内存态，需刷新后才反映，并标记未保存。"""
+        self._category_tab.refresh()
         self._mark_dirty()
 
     # ---------------------------------------------------------------

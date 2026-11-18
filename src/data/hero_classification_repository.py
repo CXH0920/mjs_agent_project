@@ -207,6 +207,10 @@ class HeroClassificationRepository(JsonRepository):
     def list_classified(self) -> list[str]:
         return sorted(self._hero_categories)
 
+    def heroes_in_category(self, category: str) -> list[str]:
+        """反查归类到指定分类的武将（sorted；与 list_classified 同口径，不过滤脏数据）。"""
+        return sorted(hero for hero, cats in self._hero_categories.items() if category in cats)
+
     # ---------------------------------------------------------------
     # 持久化
     # ---------------------------------------------------------------

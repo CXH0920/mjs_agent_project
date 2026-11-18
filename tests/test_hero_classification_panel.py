@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton, QWidget
 from src.data.hero_classification_repository import HeroClassificationRepository
 from src.ui.maintenance.classification.category_tab import CategoryEditDialog
 from src.ui.maintenance.hero_classification_panel import HeroClassificationPanel
@@ -121,6 +121,109 @@ def test_delete_category_cleans_references(tmp_path: Path, monkeypatch) -> None:
     assert panel._repo.get_category("高爆发型") is None
     assert panel._repo.get_chain_description("高爆发型") == ""
     assert panel._repo.get_hero_categories("庞煖") == []
+
+
+def _detail_surface(panel: HeroClassificationPanel) -> QWidget:
+    """取分类详情区第一块 surface（QFrame），供收集其中 QLabel。"""
+    return panel._category_tab._category_detail_layout.itemAt(0).widget()
+
+
+def test_category_detail_shows_actual_members(tmp_path: Path) -> None:
+    """详情区展示实际归类名单：典型后缀、badge 实际计数。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._repo.set_hero_categories("典韦", ["高爆发型"])
+    panel._category_tab.current_category = "高爆发型"
+    panel._category_tab.refresh()
+    surface = _detail_surface(panel)
+    texts = [label.text() for label in surface.findChildren(QLabel)]
+    assert "已归类 2 名" in texts
+    assert "典韦、庞煖（典型）" in texts
+    assert surface.findChild(QLabel, "statusBadge").isHidden() is False
+    # ≤8 人全量展示，无需展开按钮
+    assert not any("展开全部" in b.text() for b in surface.findChildren(QPushButton))
+
+
+def test_category_detail_empty_members_hides_zero_badge(tmp_path: Path) -> None:
+    """空分类：空态文案、badge 隐藏，不出现「0 名」计数。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._category_tab.current_category = "防御/保核型"
+    panel._category_tab.refresh()
+    surface = _detail_surface(panel)
+    texts = [label.text() for label in surface.findChildren(QLabel)]
+    assert "该分类下暂无已归类武将" in texts
+    assert surface.findChild(QLabel, "statusBadge").isHidden()
+    # 隐藏的 badge 仍持有「已归类 0 名」文本，验收口径是可见文本中不出现 0 计数
+    visible_texts = [label.text() for label in surface.findChildren(QLabel) if not label.isHidden()]
+    assert not any("0 名" in text for text in visible_texts)
+
+
+def test_category_detail_lists_unclassified_typical(tmp_path: Path) -> None:
+    """typical 中未归类成员以差集提示展示（新建分类先填典型、归类被移除的场景）。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._repo.set_hero_categories("典韦", ["高爆发型"])
+    panel._category_tab.current_category = "高爆发型"
+    panel._category_tab.refresh()
+    texts = [label.text() for label in _detail_surface(panel).findChildren(QLabel)]
+    assert "典韦、庞煖（典型）" in texts
+    assert not any("典型（未归类）" in text for text in texts)
+    panel._repo.set_hero_categories("庞煖", [])
+    panel._category_tab.refresh()
+    texts = [label.text() for label in _detail_surface(panel).findChildren(QLabel)]
+    assert "典型（未归类）：庞煖" in texts
+    assert "典韦、庞煖（典型）" not in texts
+
+
+def test_hero_categorization_updates_category_detail(tmp_path: Path) -> None:
+    """归类页签变更后，分类管理详情名单随内存态即时刷新（所见即所得）。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._category_tab.current_category = "高爆发型"
+    panel._category_tab.refresh()
+    panel._hero_tab.hero_filter.setCurrentText("未归类")
+    panel._hero_tab.hero_list.setCurrentRow(0)
+    panel._hero_tab.hero_combo.set_checked(["高爆发型"])
+    panel._hero_tab.on_hero_categories_changed()
+    texts = [label.text() for label in _detail_surface(panel).findChildren(QLabel)]
+    assert "典韦、庞煖（典型）" in texts
+    assert "已归类 2 名" in texts
+
+
+def test_category_detail_member_list_collapsed_by_default(tmp_path: Path) -> None:
+    """>8 人名单默认只列前 8 名，「展开全部」显示全量，「收起」还原，切分类自动收起。"""
+    _app()
+    panel, _ = _panel(tmp_path)
+    panel._repo.update_hero_names({"庞煖"} | {f"武将{i}" for i in range(1, 10)})
+    panel._repo.set_hero_categories("庞煖", ["高爆发型"])
+    for i in range(1, 10):
+        panel._repo.set_hero_categories(f"武将{i}", ["高爆发型"])
+    panel._category_tab.current_category = "高爆发型"
+    panel._category_tab.refresh()
+
+    def _member_items() -> list[str]:
+        surface = _detail_surface(panel)
+        body = next(label for label in surface.findChildren(QLabel) if "、" in label.text())
+        return body.text().split("、")
+
+    def _toggle_button() -> QPushButton:
+        return next(b for b in _detail_surface(panel).findChildren(QPushButton)
+                    if b.text() in ("收起",) or "展开全部" in b.text())
+
+    assert len(_member_items()) == 8
+    assert "共 10 名" in _toggle_button().text()
+    _toggle_button().click()
+    assert len(_member_items()) == 10
+    assert _toggle_button().text() == "收起"
+    _toggle_button().click()
+    assert len(_member_items()) == 8
+    # 切到其他分类再切回：默认收起
+    panel._category_tab.current_category = "防御/保核型"
+    panel._category_tab.refresh()
+    panel._category_tab.current_category = "高爆发型"
+    panel._category_tab.refresh()
+    assert len(_member_items()) == 8
 
 
 def test_popup_callback_after_combo_destroyed() -> None:
