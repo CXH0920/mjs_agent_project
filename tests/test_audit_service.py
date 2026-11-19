@@ -153,3 +153,24 @@ def test_audit_summary_self_failure_degrades_to_single_issue(
     assert [issue.kind for issue in issues] == ["audit_self_failed"]
     assert "审计自身失败" in issues[0].message
     assert any("审计自身失败" in r.message for r in caplog.records)
+
+
+def test_curated_stale_issue_carries_structured_target(tmp_path: Path) -> None:
+    """P1-1：curated_stale 条目携带结构化命中清单（hero/skill/日期），供跳转定位。"""
+    from src.business.rag.audit_service import audit_summary
+
+    root = _make_root(tmp_path / "proj", [{"name": "诸葛亮"}])
+    _write(root / "data" / "mjs_adjustments.json", {
+        "events": [{"date": "2026-11-05", "hero": "诸葛亮", "change_type": "调整",
+                    "skills": [{"skill": "观星"}]}],
+    })
+    _write(root / "data" / "rag_corpus" / "武将RAG语料.json", [
+        {"block_id": "hero_1_观星", "hero": "诸葛亮", "skill": "观星",
+         "curated": {"updated_at": "2026-10-01", "method": "manual"}},
+    ])
+    issues = audit_summary(root)
+    stale = next(issue for issue in issues if issue.kind == "curated_stale")
+    assert stale.target == [{
+        "level": "skill", "hero": "诸葛亮", "skill": "观星",
+        "curated_at": "2026-10-01", "changed_at": "2026-11-05",
+    }]

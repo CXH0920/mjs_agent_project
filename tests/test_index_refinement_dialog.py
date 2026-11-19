@@ -800,3 +800,26 @@ def test_reject_with_dirty_edit_during_single_suggest_prompts_discard(tmp_path: 
     monkeypatch.setattr(dialog_module.QMessageBox, "question", lambda *a, **k: next(answers))
     dialog.reject()
     assert closed == [1]
+
+
+def test_focus_query_switches_scope_and_selects_match(tmp_path: Path) -> None:
+    """P1-1 时效跳转定位：切「全部」范围、预填搜索、自动选中目标并加载右侧。"""
+    _app()
+    dialog = IndexRefinementDialog(_curated_corpus(tmp_path), focus_query="已精化")
+    assert dialog._scope == "all"
+    assert dialog._scope_group.button(2).isChecked()  # 程序切范围后按钮高亮同步
+    assert dialog._search_edit.text() == "已精化"
+    assert dialog._current is not None
+    assert dialog._current.block_id == "card_3_已精化"
+    assert dialog._editor_title.text() == "已精化"  # 右侧工作区已加载该块
+    dialog.close()
+
+
+def test_focus_query_without_match_keeps_query_and_empty_state(tmp_path: Path) -> None:
+    """P1-1 定位目标不存在：保留搜索词显示空态，不静默清空（用户可见原因）。"""
+    _app()
+    dialog = IndexRefinementDialog(_corpus(tmp_path), focus_query="不存在的块")
+    assert dialog._search_edit.text() == "不存在的块"
+    assert dialog._current is None
+    assert dialog._list_pane.empty_state.isVisibleTo(dialog)
+    dialog.close()

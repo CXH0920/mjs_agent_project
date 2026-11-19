@@ -286,20 +286,34 @@ def test_jump_to_card_curated_stale_opens_refinement(tmp_path: Path, monkeypatch
 
     回归背景：card_curated_stale 曾不在 _jump_to_issue 直连名单内，落入
     target_tab fallback 而左栏无「索引精化」维护对象，按钮点击静默无效。
+    P1-1：结构化命中清单随跳转传给弹窗入口，供定位到具体块。
     """
     _app()
     panel = _panel(_make_root(tmp_path))
-    calls: list[int] = []
-    monkeypatch.setattr(panel, "_open_refinement", lambda: calls.append(1))
+    calls: list = []
+    monkeypatch.setattr(panel, "_open_refinement", lambda focus=None: calls.append(focus))
+    target = [{"card": "多多益善", "curated_at": "2026-10-01", "changed_at": "2026-11-05"}]
 
     panel._jump_to_issue(AuditIssue(
         kind="card_curated_stale",
         message="1 个卡牌块的精化早于该卡最近官网同步：多多益善",
         target_tab="索引精化",
+        target=target,
     ))
 
-    assert calls == [1]
+    assert calls == [target]
     panel.close()
+
+
+def test_refinement_focus_query_prefers_skill_then_hero_or_card() -> None:
+    """命中清单 → 定位搜索词：技能名优先（精确到块），回退武将/卡牌名。"""
+    assert RagMaintenancePanel._refinement_focus_query(
+        [{"skill": "观星", "hero": "诸葛亮"}]) == "观星"
+    assert RagMaintenancePanel._refinement_focus_query([{"hero": "张飞"}]) == "张飞"
+    assert RagMaintenancePanel._refinement_focus_query([{"card": "多多益善"}]) == "多多益善"
+    assert RagMaintenancePanel._refinement_focus_query(None) == ""
+    assert RagMaintenancePanel._refinement_focus_query([]) == ""
+    assert RagMaintenancePanel._refinement_focus_query(["非字典"]) == ""
 
 
 def test_audit_reports_pending_refinement(tmp_path: Path) -> None:

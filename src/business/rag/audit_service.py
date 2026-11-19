@@ -507,6 +507,7 @@ def _audit_summary(root: Path, pending_refinement: list | None = None) -> list[A
             kind="curated_stale",
             message=f"{len(skill_hits)} 个技能块的精化早于该技能最近调整：{examples}{more}，建议在索引精化中复核",
             target_tab="索引精化",
+            target=skill_hits,  # 结构化命中清单（hero/skill/日期），供跳转定位
         ))
     hero_hits = [h for h in stale_hits if h["level"] == "hero"]
     if hero_hits:
@@ -518,6 +519,7 @@ def _audit_summary(root: Path, pending_refinement: list | None = None) -> list[A
             kind="curated_stale_possible",
             message=f"{detail} 的精化早于武将级调整记录（公告未注明技能，建议整将复核）",
             target_tab="索引精化",
+            target=hero_hits,  # 武将级命中（hero/skill/日期），供跳转按武将名定位
         ))
     # 卡牌精化时效：curated 精化早于该卡最近官网同步（官网同步通道的应用记录）
     card_stale_hits = collect_stale_card_curated(root)
@@ -530,6 +532,7 @@ def _audit_summary(root: Path, pending_refinement: list | None = None) -> list[A
             kind="card_curated_stale",
             message=f"{len(card_stale_hits)} 个卡牌块的精化早于该卡最近官网同步：{examples}{more}，建议在索引精化中复核",
             target_tab="索引精化",
+            target=card_stale_hits,  # 卡牌命中（card/日期），供跳转按卡牌名定位
         ))
     # 武将变更时间轴一致性（heroes.json 疑未同步），无跳转页签
     timeline_messages = collect_timeline_risk_messages(root)

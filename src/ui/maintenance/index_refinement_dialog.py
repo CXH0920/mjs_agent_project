@@ -74,7 +74,8 @@ _FIELD_STATE_TONES = FIELD_STATE_TONES
 class IndexRefinementDialog(QDialog):
     """索引精化工作台对话框。"""
 
-    def __init__(self, corpus_dir: Path = DEFAULT_CORPUS_DIR, parent=None):
+    def __init__(self, corpus_dir: Path = DEFAULT_CORPUS_DIR, parent=None,
+                 *, focus_query: str = ""):
         super().__init__(parent)
         self._corpus_dir = Path(corpus_dir)
         # 清单三池/双基线/行状态本体归 RefinementSession（纯状态层，见业务层模块）
@@ -92,7 +93,23 @@ class IndexRefinementDialog(QDialog):
         # 恢复（取消最大化）时的常规尺寸；默认以最大化打开（见 _open_refinement）
         self.resize(1160, 720)
         self._setup_ui()
-        self._refresh_table()
+        if focus_query:
+            self._apply_focus_query(focus_query)
+        else:
+            self._refresh_table()
+
+    def _apply_focus_query(self, query: str) -> None:
+        """审计时效跳转定位：切「全部」范围 + 预填搜索词并立即过滤。
+
+        过期块都是已精化块，默认「待精化」范围里没有它们；render 过滤后
+        自动选中首行并经 currentCellChanged 加载右侧工作区。无匹配时保留
+        搜索词显示空态（用户可见搜索内容，比静默清空诚实）。
+        """
+        self._scope = "all"
+        # _set_scope 只由按钮单向驱动，程序切范围须回写按钮高亮防视觉错位
+        self._scope_group.button(2).setChecked(True)
+        self._search_edit.setText(query)  # 同步触发 250ms 防抖（同词重滤幂等）
+        self._apply_filter()
 
     # ---------------------------------------------------------------
     # 状态委托：清单/基线/行状态本体归 RefinementSession，此处只读透出

@@ -259,7 +259,7 @@ CLASS_BUDGETS: dict[str, int] = {
     # 文件 953 → 781 行）；方法数上涨全部来自 ~20 个单行 property 控件桥——
     # 为保持 151+ 处既有测试锚点名（dialog._table 等）不改动，编排留对话框经
     # property 读写 pane 控件。属机械膨胀非职责增加，后续测试锚点迁移后可回落。
-    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 62,
+    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 63,  # 62 → 63：_apply_focus_query（P1-1 审计时效跳转定位）
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,
     # EmulatorConfigCoordinator 40 → 42：官方 PC 客户端直连（2026-10-25）——
     # is_pc_client property 与 refresh_pc_windows 枚举封装两个薄方法，职责
@@ -712,7 +712,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     "ui/maintenance/rule_doc_panel.py": 337,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
-    "ui/maintenance/index_refinement_dialog.py": 790,
+    # 790 → 806：构造加 focus_query 参数与 _apply_focus_query 定位（P1-1 审计
+    # 时效跳转：切「全部」范围 + 预填搜索，复用既有搜索/选中链路）
+    "ui/maintenance/index_refinement_dialog.py": 806,
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试
@@ -960,15 +962,17 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 568 → 571：collect_timeline_risk_messages 显式传 root 下时间轴路径给
     # load_timeline（44837e3）——修复 root != PROJECT_ROOT（测试 tmp_path）时
     # 存在性检查与实际加载文件不一致导致的审计误报
-    "business/rag/audit_service.py": 571,
+    # 571 → 574：三类时效条目补挂结构化 target（P1-1，各 +1 行，供跳转定位）
+    "business/rag/audit_service.py": 574,
     # 首次入册（实测 548 越过 500 绊线）：向量索引新鲜度（index_state 判定 +
     # 左栏第 11 项 ↻ 分派 _run_index，P0-1）与审计横幅展开/收起（P1-3）——
     # 两者均为本面板既有职责（语料状态计算与审计提示）的自然延伸
     # 548 → 705：执行历史内存快照（两路输出各留一条，历史下拉弹窗回看，
     # P1-4）与只读语料内容查看器入口/向量索引行元信息（P1-5）——同为
     # 「执行与语料状态的呈现职责」在本面板内的延伸，查看器本体已出仓到
-    # readonly_viewer_dialog.py
-    "ui/maintenance/rag_maintenance_panel.py": 706,
+    # readonly_viewer_dialog.py；706 → 723：审计时效跳转携带结构化命中定位
+    # （P1-1，_open_refinement(focus) + 搜索词提取）
+    "ui/maintenance/rag_maintenance_panel.py": 723,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }
