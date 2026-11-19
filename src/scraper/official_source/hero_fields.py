@@ -29,6 +29,9 @@ SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能�
 # 「像标签」序列：< 后必须是字母、/字母、!-- 或 !；`<5`、`->` 不匹配故保留为正文。
 _TAG_LIKE_RE = re.compile(r"<(?:/?[a-zA-Z][^>]*|!--.*?--|![^>]*)>", re.DOTALL)
 
+# <br> 换行视同段边界：官网有「标题与正文同 <p>、中间 <br /> 换行」的录入形态；大小写不敏感兜 <BR>
+_BR_SPLIT_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
 
 def _unescape_and_strip_tags(text: str, rounds: int = 3) -> str:
     """解码实体并剥离随之显形的标签，交替多轮以覆盖 `&amp;lt;` 多层编码。"""
@@ -85,10 +88,14 @@ def carry_over_local_fields(new_heroes: list[dict], existing: list[dict] | None)
 
 def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     """
-    先按 HTML 段落结构拆分原始 HTML，再逐段清洗。
+    先按 </p> 切行、行内 <br> 切片，标题以纯文本等值匹配词表——判定不依赖标签形式，
+    官网人工编辑的排版变体（<b> 包裹/漏包加粗/标题与正文同 <p> 以 <br /> 换行）不再
+    导致描述丢失；行内无标题片时整行清洗，输出与历史行为逐字节一致（hero_content_hash
+    纳入 description/settlement，文本差异会误报「武将资料更新」公告并使忽略名单失配）。
     描述取值按 技能描述 -> 技能详情 -> 技能详解 顺序认领首个命中
     （官网人工编辑，标题措辞不统一）；结算详情/结算详解 -> settlement
     丢弃：技能典故、设计思路
+    首个标题前的正文攒入 prelude，描述认领全落空时兜底（漏写首标题不再静默丢正文）。
     """
     if not raw_desc:
         return {"description": "", "settlement": ""}
@@ -97,48 +104,39 @@ def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     # 预处理：合并相邻的 <strong> 标签
     text = re.sub(r"</strong>\s*<strong>", "", text)
 
-    # 构建段落标题正则；<strong> 按可选处理——官网标题偶尔漏包加粗（裸 <p>标题</p>）
-    titles = "|".join(re.escape(t) for t in SKILL_SECTION_TITLES)
-    section_pattern = re.compile(
-        rf"<p>(?:<[^>]+>)*\s*(?:<strong>\s*)?({titles})(?:\s*</strong>)?(?:<[^>]+>)*\s*</p>",
-        re.IGNORECASE,
-    )
-
-    sections = {}
-    current_title = None
-    current_parts = []
+    sections: dict[str, str] = {}
+    prelude: list[str] = []
+    current_title: str | None = None
 
     for line in text.split("</p>"):
-        line = line.strip()
-        if not line:
+        pieces = [clean_html(piece) for piece in _BR_SPLIT_RE.split(line)]
+        if not any(piece in SKILL_SECTION_TITLES for piece in pieces):
+            # 行内无标题片：整行清洗，与历史行为逐字节一致（正文段内 <br> 处不加空格）
+            part = clean_html(line)
+            if not part:
+                continue
+            if current_title is None:
+                prelude.append(part)
+            else:
+                sections[current_title] = (sections[current_title] + " " + part).strip()
             continue
-        # 检查是否为段落标题
-        m = section_pattern.search(line + "</p>")
-        if m:
-            # 保存上一段
-            if current_title and current_parts:
-                sections[current_title] = " ".join(current_parts)
-            current_title = m.group(1)
-            current_parts = []
-            # 标题后的内容
-            rest = section_pattern.split(line + "</p>")[-1]
-            if rest and rest != "</p>":
-                cleaned = clean_html(rest)
-                if cleaned:
-                    current_parts.append(cleaned)
-        else:
-            cleaned = clean_html(line)
-            if cleaned:
-                current_parts.append(cleaned)
+        for piece in pieces:
+            if not piece:
+                continue
+            if piece in SKILL_SECTION_TITLES:
+                current_title = piece
+                sections[current_title] = ""
+            elif current_title is None:
+                prelude.append(piece)
+            else:
+                sections[current_title] = (sections[current_title] + " " + piece).strip()
 
-    # 保存最后一段
-    if current_title and current_parts:
-        sections[current_title] = " ".join(current_parts)
+    # 空正文段不参与认领：「技能描述」标题下无正文时，认领链继续落到「技能详情」
+    sections = {key: value for key, value in sections.items() if value}
 
     # 没有标题的情况：整段作为描述
     if not sections:
-        full = clean_html(text)
-        return {"description": full, "settlement": ""}
+        return {"description": clean_html(text), "settlement": ""}
 
     # 获取描述和结算；结算跳过已被描述认领的段落，避免同一段文字两处重复
     description = ""
@@ -154,6 +152,10 @@ def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
         if key != desc_key and key in sections:
             settlement = sections[key]
             break
+
+    # 描述认领全落空：用首个标题前攒下的正文兜底
+    if not description and prelude:
+        description = " ".join(prelude)
 
     return {"description": description, "settlement": settlement}
 
@@ -203,7 +205,15 @@ def transform(raw: dict) -> dict | None:
             sk_name = clean_html(sk.get("skill_name", ""))
             if not sk_name:
                 continue
-            sk_parts = split_skill_desc(sk.get("skill_desc", ""))
+            sk_desc_raw = sk.get("skill_desc", "")
+            sk_parts = split_skill_desc(sk_desc_raw)
+            # 原文有正文但描述解析为空：疑似词表外新排版，告警定位到武将与技能，
+            # 避免只靠下游 Pydantic 校验报错倒查（clean_html 真值判断排除本就无描述的技能）
+            if not sk_parts["description"] and clean_html(sk_desc_raw):
+                logger.warning(
+                    "技能描述解析为空（疑似官网新排版）: id=%s (%s) 技能=%s 原文=%.80s",
+                    hero_id, name, sk_name, str(sk_desc_raw),
+                )
             skills.append({
                 "name": sk_name,
                 "description": sk_parts["description"],

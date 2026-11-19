@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 from datetime import datetime, timedelta
 from email.message import Message
@@ -592,6 +593,101 @@ class TestSplitSkillDesc:
         parts = crawler.split_skill_desc(raw)
         assert parts["description"] == "锁定技，你不能使用锦囊牌。"
         assert parts["settlement"] == "1.装备牌不受限制。"
+
+    def test_title_and_body_in_same_paragraph_br(self) -> None:
+        """官网样本（萧思话·松石间意，2026-11-19 实抓）：标题与正文同 <p> 以 <br /> 换行，描述不得为空"""
+        raw = (
+            "<p><strong>技能描述</strong><br />\n"
+            "当你打出牌时，若牌堆顶和牌堆底的牌花色或点数相同，则你获得这两张牌，并打乱牌堆。</p>\n\n"
+            "<p>&nbsp;</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>顶牌与底牌只需花色或点数有一项相同。例如&diams;5与&diams;7、&diams;5与&hearts;5均满足条件。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == (
+            "当你打出牌时，若牌堆顶和牌堆底的牌花色或点数相同，则你获得这两张牌，并打乱牌堆。"
+        )
+        assert parts["settlement"] == (
+            "顶牌与底牌只需花色或点数有一项相同。例如♦5与♦7、♦5与♥5均满足条件。"
+        )
+
+    def test_b_tag_title_with_fullwidth_spaces(self) -> None:
+        """标题换 <b> 包裹并带全角空白：标题识别只看纯文本等值，不依赖标签形式"""
+        raw = (
+            "<p>　<b>技能描述</b>　</p>\n\n"
+            "<p>变体正文。</p>\n\n"
+            "<p><b>结算详情</b></p>\n\n"
+            "<p>变体结算。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "变体正文。"
+        assert parts["settlement"] == "变体结算。"
+
+    def test_missing_first_title_falls_back_to_prelude(self) -> None:
+        """漏写首个标题：标题前正文兜底为描述，不再被静默丢弃导致整条校验失败"""
+        raw = (
+            "<p>锁定技。出牌阶段限一次，你可以弃置一张牌。</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>结算文字。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "锁定技。出牌阶段限一次，你可以弃置一张牌。"
+        assert parts["settlement"] == "结算文字。"
+
+    def test_uppercase_br_also_splits(self) -> None:
+        """大写 <BR> 换行同样视为段边界（编辑器标签大小写不定的兜底）"""
+        raw = (
+            "<p><strong>技能描述</strong><BR>当你出牌时，摸一张牌。</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>结算。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "当你出牌时，摸一张牌。"
+        assert parts["settlement"] == "结算。"
+
+    def test_empty_title_section_does_not_block_claim_chain(self) -> None:
+        """守卫：「技能描述」标题下无正文时，认领链须继续落到「技能详情」而非截断为空"""
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p><strong>技能详情</strong></p>\n\n"
+            "<p>正文内容。</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>结算内容。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "正文内容。"
+        assert parts["settlement"] == "结算内容。"
+
+    def test_mid_content_br_joining_unchanged(self) -> None:
+        """守卫（零差异承诺）：正文段内 <br /> 断行不加空格，存量 heroes.json 文本须逐字节不变
+
+        hero_content_hash 纳入 description/settlement，多一个空格即触发「武将资料更新」
+        公告误报并使忽略名单哈希失配，故此处锁死与旧行为一致。
+        """
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>当你出牌时<br />造成一点伤害。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "当你出牌时造成一点伤害。"
+
+    def test_transform_warns_when_description_empty_but_raw_has_text(self, caplog) -> None:
+        """配套告警：原文有正文但描述解析为空时，须带武将/技能名告警（新排版可见不静默）"""
+        raw = {
+            "id": 1,
+            "name": "测试武将",
+            "skill": [
+                {"skill_name": "测试技能", "skill_desc": "<p><strong>技能典故</strong></p><p>典故正文。</p>"}
+            ],
+        }
+        with caplog.at_level(logging.WARNING, logger="src.scraper.official_source.hero_fields"):
+            hero = crawler.transform(raw)
+
+        assert hero is not None
+        assert hero["skills"][0]["description"] == ""
+        warning_text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "测试武将" in warning_text
+        assert "测试技能" in warning_text
 
 
 def _hero_dict(hero_id: int, skills: list[dict]) -> dict:
