@@ -6,13 +6,15 @@
   与 1 个向量索引），每项状态点对齐其语料任务状态，「待重建/待同步」时显示
   单项重建按钮；
 - MaintenanceWorkspace：左栏 + QStackedWidget（现有 5 个面板实例复用切换）+
-  底部日志（默认折叠 32px，构建时自动展开 180px，折叠态显示未读输出条数）。
+  底部日志（默认折叠 32px，构建时自动展开 180px，折叠态显示未读输出条数；
+  头部历史下拉可回看最近执行，数据与弹窗由宿主提供）。
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -199,6 +201,7 @@ class MaintenanceWorkspace(QWidget):
 
     rebuild_requested = Signal(str)
     meta_requested = Signal(str)
+    history_selected = Signal(int)  # 历史下拉选中（userData 为执行快照索引）
 
     LOG_COLLAPSED_HEIGHT = 32
     LOG_EXPANDED_HEIGHT = 180
@@ -238,6 +241,16 @@ class MaintenanceWorkspace(QWidget):
         self.log_unread_badge.hide()
         header_layout.addWidget(self.log_unread_badge)
         header_layout.addStretch(1)
+        # 历史下拉：条目数据（label + 快照索引）由宿主喂入，仅用户点选时上报
+        self.log_history_combo = QComboBox()
+        self.log_history_combo.setObjectName("scriptLogHistory")
+        self.log_history_combo.setToolTip("查看历史执行的完整输出")
+        self.log_history_combo.setMaximumWidth(260)
+        self.log_history_combo.activated.connect(
+            lambda row: self.history_selected.emit(
+                self.log_history_combo.itemData(row)))
+        self.log_history_combo.hide()
+        header_layout.addWidget(self.log_history_combo)
         self.log_meta_label = QLabel("")
         self.log_meta_label.setObjectName("scriptLogMeta")
         header_layout.addWidget(self.log_meta_label)
@@ -350,3 +363,17 @@ class MaintenanceWorkspace(QWidget):
     def set_log_meta(self, text: str) -> None:
         """日志标题栏右侧元信息（退出码 · 耗时）。"""
         self.log_meta_label.setText(text)
+
+    def set_log_history(self, items: list[tuple[str, int]]) -> None:
+        """刷新历史下拉（(label, 快照索引)，最新在上）；空列表隐藏。
+
+        程序重建不触发 history_selected（activated 仅用户点选发出），
+        避免刷新下拉误弹历史弹窗。
+        """
+        self.log_history_combo.blockSignals(True)
+        self.log_history_combo.clear()
+        for label, run_index in items:
+            self.log_history_combo.addItem(label, run_index)
+        self.log_history_combo.setCurrentIndex(0)
+        self.log_history_combo.blockSignals(False)
+        self.log_history_combo.setVisible(bool(items))

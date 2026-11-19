@@ -5,12 +5,14 @@
 5 个只读语料 + 1 个向量索引，状态点对齐语料任务/索引状态）+ 右侧数据源工作区
 （复用现有 5 个面板）+ 底部折叠执行日志。本面板只保留业务逻辑：语料与索引
 状态计算、审计提示、索引精化与本地一键执行 scripts/maintain_rag.py /
-src.rag.indexer（ScriptRunner，实时输出日志）。
+src.rag.indexer（ScriptRunner，实时输出日志；面板只显示当前执行，历史留
+内存快照经下拉弹窗回看）、只读语料内容查看（readonly_viewer_dialog）。
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -37,6 +39,7 @@ from src.ui.maintenance.equip_attrs_panel import EquipAttrsPanel
 from src.ui.maintenance.hero_classification_panel import HeroClassificationPanel
 from src.ui.maintenance.index_refinement_dialog import IndexRefinementDialog
 from src.ui.maintenance.maintenance_workspace import MaintenanceWorkspace
+from src.ui.maintenance.readonly_viewer_dialog import ReadonlyViewerDialog
 from src.ui.maintenance.rule_doc_panel import RuleDocPanel
 from src.ui.maintenance.special_cards_panel import SpecialCardsPanel
 from src.ui.shared.style import (
@@ -78,6 +81,18 @@ READONLY_CORPUS_ITEMS: list[tuple[str, str]] = [
 READONLY_TASK_BY_KEY = dict(READONLY_CORPUS_ITEMS)
 
 PYTHON = sys.executable
+
+# 执行历史内存快照上限（条数丢最旧 / 单次正文字符截断防长会话膨胀）
+_MAX_LOG_RUNS = 10
+_MAX_RUN_TEXT_CHARS = 100_000
+
+# 元规则脚本名 → 历史条目友好名（解析快照正文首行的 "$ python -m ..." 命令）
+_RULE_DOC_SCRIPT_LABELS = {
+    "audit_rule_doc": "元规则文档检查",
+    "sync_rule_stats": "元规则数据同步",
+    "propose_rule_changes": "生成元规则提案",
+    "apply_rule_proposal": "合入元规则提案",
+}
 
 # 语料块数缓存：path -> (mtime, size, count)，mtime/size 未变时不重复解析
 _COUNT_CACHE: dict[str, tuple[float, int, int | None]] = {}
@@ -192,6 +207,9 @@ class RagMaintenancePanel(QWidget):
         self._hero_names, self._hero_positions, self._hero_skills = self._load_heroes(self._root, hero_names)
         # 合并后的名单回填 classification 仓储（原直接以 self._hero_names 构造仓储的语义）
         self._repositories.classification.update_hero_names(self._hero_names)
+        # 执行历史内存快照（会话内）：底部日志面板只显示当前执行，历史经下拉弹窗回看
+        self._log_runs: list[dict] = []
+        self._active_run: dict | None = None
         self._setup_ui()
         self.refresh()
 
@@ -265,6 +283,7 @@ class RagMaintenancePanel(QWidget):
         self._setup_sources()
         self._workspace.rebuild_requested.connect(self._on_rebuild_requested)
         self._workspace.meta_requested.connect(self._show_corpus_meta)
+        self._workspace.history_selected.connect(self._show_log_run)
         layout.addWidget(self._workspace, 1)
 
     def _setup_sources(self) -> None:
@@ -321,14 +340,18 @@ class RagMaintenancePanel(QWidget):
     def _on_rule_doc_script_started(self) -> None:
         self._workspace.expand_log()
         self._workspace.set_log_meta("执行中…")
+        # 命令行此刻拿不到（script_started 无参），封口时从快照正文首行解析
+        self._begin_log_run("元规则脚本")
 
     def _on_rule_doc_output(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
         self._workspace.on_log_output(text)
         self._workspace.log.appendPlainText(text.rstrip("\n"))
+        self._append_log_run_text(text)
 
     def _on_rule_doc_script_finished(self, code: int) -> None:
         self._workspace.set_log_meta(f"退出码 {code}")
+        self._finish_log_run(code, None)
 
     def reload_data(self) -> None:
         """重新加载语料状态与四个子维护面板。"""
@@ -460,7 +483,10 @@ class RagMaintenancePanel(QWidget):
             self._special_cards.focus_item(*issue.target)
 
     def _show_corpus_meta(self, key: str) -> None:
-        """只读语料项点击：弹出该语料的元信息（不切右侧）。"""
+        """只读语料项点击：弹出该语料的元信息与内容查看器（不切右侧）。"""
+        if key == INDEX_TASK_NAME:
+            self._show_index_meta()
+            return
         row = self._task_rows.get(READONLY_TASK_BY_KEY.get(key, ""))
         if row is None:
             return
@@ -474,13 +500,71 @@ class RagMaintenancePanel(QWidget):
                 built = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(path.stat().st_mtime))
                 break
         count = "—" if row["count"] is None else str(row["count"])
-        QMessageBox.information(
-            self, f"语料信息 · {key}",
-            f"任务：{row['name']}\n状态：{row['status']}\n"
-            f"输出块数：{count}（期望 {expect_text}）\n"
+        body, note, body_meta = self._load_corpus_text(row, key)
+        meta_text = (
+            f"任务：{row['name']}｜状态：{row['status']}｜输出块数：{count}（期望 {expect_text}）\n"
             f"来源文件：{'、'.join(row['sources'])}\n"
-            f"上次构建：{built or '尚未构建'}",
+            f"上次构建：{built or '尚未构建'}{body_meta}"
         )
+        dialog = ReadonlyViewerDialog(
+            f"语料内容 · {key}", row["name"], meta_text, body, note=note, parent=self)
+        dialog.exec()
+
+    def _load_corpus_text(self, row: dict, key: str) -> tuple[str, str, str]:
+        """读语料正文：优先同名 .md 伴文件（与 json 同次构建生成），缺失降级 json 摘要。
+
+        返回 (body, note, body_meta)；武将攻略语料的 .md 构建时按块截断至 150 字
+        （build_guide_corpus.py），如实标注不冒充全量。
+        """
+        rel = row["outputs"][0]
+        md_path = self._root / CORPUS_DIR / (rel.rsplit(".", 1)[0] + ".md")
+        try:
+            body = md_path.read_text(encoding="utf-8")
+        except OSError:
+            return self._summarize_corpus_json(rel)
+        note = "本语料正文为前 150 字预览（构建时截断），完整内容见同名 json" if key == "武将攻略" else ""
+        return body, note, f"\n正文：{len(body)} 字符（{md_path.name}）"
+
+    def _summarize_corpus_json(self, rel: str) -> tuple[str, str, str]:
+        """.md 伴文件缺失/不可读时的降级：json 前 50 块的 block_id 摘要。"""
+        path = self._root / CORPUS_DIR / rel
+        try:
+            blocks = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            return f"（正文不可读：{error}）", "", "\n正文：读取失败"
+        lines = [
+            f"{block.get('block_id', '?')}｜"
+            f"{block.get('name') or block.get('hero') or block.get('skill') or ''}"
+            for block in blocks[:50] if isinstance(block, dict)
+        ]
+        body = "\n".join(lines) or "（语料为空）"
+        return body, "", "\n正文：json 前 50 块摘要（.md 伴文件缺失）"
+
+    def _show_index_meta(self) -> None:
+        """向量索引左栏行点击：弹索引元信息与段目录文件清单。"""
+        row = self._task_rows.get(INDEX_TASK_NAME)
+        if row is None:
+            return
+        built = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["built"]))
+                 if row["built"] else "尚未构建")
+        seg_root = self._root / INDEX_DIR
+        files: list[str] = []
+        total = 0
+        if seg_root.is_dir():
+            for sub in sorted(seg_root.iterdir()):
+                if not sub.is_dir():
+                    continue
+                for file in sorted(sub.iterdir()):
+                    if file.is_file():
+                        size = file.stat().st_size
+                        total += size
+                        files.append(f"{sub.name}/{file.name}  {size / 1024:.1f} KB")
+        meta_text = (f"状态：{row['status']}｜上次构建：{built}\n"
+                     f"目录：{seg_root}｜总大小：{total / 1024 / 1024:.1f} MB")
+        dialog = ReadonlyViewerDialog(
+            "向量索引", "检索用向量库（chroma）", meta_text,
+            "\n".join(files) if files else "（索引目录为空）", parent=self)
+        dialog.exec()
 
     def _open_refinement(self) -> None:
         dialog = IndexRefinementDialog(self._root / "data" / "rag_corpus", self)
@@ -515,8 +599,11 @@ class RagMaintenancePanel(QWidget):
         self._set_busy(True)
         self._workspace.expand_log()
         self._workspace.set_log_meta("执行中…")
+        self._begin_log_run(self._friendly_label(module, extra_args))
+        command_line = "$ python -m " + module + " " + " ".join(extra_args)
+        self._active_run["text"] = command_line  # 快照首行即命令行（路②经输出转发自然带入）
         self._log.clear()
-        self._log.appendPlainText("$ python -m " + module + " " + " ".join(extra_args))
+        self._log.appendPlainText(command_line)
         self._run_started = time.monotonic()
         if self._runner.run(PYTHON, None, ['-m', module] + extra_args, self._root) is False:
             # 启动失败不再走 finished（避免与 run() 返回值抢语义），
@@ -524,11 +611,13 @@ class RagMaintenancePanel(QWidget):
             self._set_busy(False)
             self._workspace.set_log_meta("启动失败")
             self._log.appendPlainText("\n✘ 任务启动失败，请查看日志")
+            self._finish_log_run(-1, None)
 
     def _append_log(self, data: bytes) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
         self._workspace.on_log_output(text)
         self._log.appendPlainText(text.rstrip("\n"))
+        self._append_log_run_text(text)
 
     def _on_finished(self, code: int) -> None:
         self._set_busy(False)
@@ -538,7 +627,76 @@ class RagMaintenancePanel(QWidget):
             self._log.appendPlainText("\n✔ 执行完成")
         else:
             self._log.appendPlainText(f"\n✘ 执行失败（退出码 {code}）")
+        self._finish_log_run(code, elapsed)
         self.refresh()
+
+    # ---------------------------------------------------------------
+    # 执行历史快照（会话内）：面板只显示当前执行，历史经下拉弹窗回看
+    # ---------------------------------------------------------------
+    @staticmethod
+    def _friendly_label(module: str, args: list[str]) -> str:
+        """路①命令 → 历史条目友好名（与操作栏/左栏 ↻ 的动作名对齐）。"""
+        if module.endswith("indexer"):
+            return "重建向量索引"
+        if "--build-index" in args:
+            return "重建语料+索引"
+        if "--only" in args:
+            return f"重建{args[args.index('--only') + 1]}"
+        return "语料维护"
+
+    @staticmethod
+    def _rule_doc_script_label(text: str) -> str:
+        """路②快照正文首行（"$ python -m src.scripts.<脚本>.py …"）→ 友好名。"""
+        match = re.search(r"(\w+)\.py", text.splitlines()[0] if text else "")
+        if match:
+            return _RULE_DOC_SCRIPT_LABELS.get(match.group(1), "元规则脚本")
+        return "元规则脚本"
+
+    def _begin_log_run(self, label: str) -> None:
+        run = {"label": label, "started": time.strftime("%m-%d %H:%M:%S"),
+               "code": None, "elapsed": None, "text": ""}
+        self._log_runs.append(run)
+        del self._log_runs[:-_MAX_LOG_RUNS]  # 丢最旧
+        self._active_run = run
+        self._sync_history_combo()
+
+    def _append_log_run_text(self, text: str) -> None:
+        if self._active_run is None:
+            return
+        merged = self._active_run["text"] + text
+        self._active_run["text"] = merged[:_MAX_RUN_TEXT_CHARS]
+
+    def _finish_log_run(self, code: int, elapsed: float | None) -> None:
+        run, self._active_run = self._active_run, None
+        if run is None:
+            return
+        run["code"], run["elapsed"] = code, elapsed
+        if run["label"] == "元规则脚本":
+            run["label"] = self._rule_doc_script_label(run["text"])
+        if elapsed is not None:
+            run["label"] += f" ✔ {elapsed:.1f}s" if code == 0 else f" ✘ {elapsed:.1f}s"
+        else:
+            run["label"] += " ✔" if code == 0 else " ✘"
+        self._sync_history_combo()
+
+    def _sync_history_combo(self) -> None:
+        """倒序喂给历史下拉（最新在上，userData 为快照索引）。"""
+        self._workspace.set_log_history(
+            [(run["label"], index) for index, run in reversed(list(enumerate(self._log_runs)))])
+
+    def _show_log_run(self, index) -> None:
+        """历史下拉选中：弹只读查看器显示该次执行的完整输出。"""
+        if not isinstance(index, int) or not 0 <= index < len(self._log_runs):
+            return
+        run = self._log_runs[index]
+        first_line = run["text"].splitlines()[0] if run["text"] else "（无输出）"
+        code_text = "执行中…" if run["code"] is None else f"退出码 {run['code']}"
+        elapsed_text = "" if run["elapsed"] is None else f" · {run['elapsed']:.1f}s"
+        dialog = ReadonlyViewerDialog(
+            "执行历史", run["label"],
+            f"{first_line}\n开始 {run['started']} · {code_text}{elapsed_text}",
+            run["text"], parent=self)
+        dialog.exec()
 
     def _set_busy(self, busy: bool) -> None:
         # 执行期间一并禁用「索引精化」入口（#55）与左栏切换/单项重建

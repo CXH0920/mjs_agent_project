@@ -964,7 +964,11 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 首次入册（实测 548 越过 500 绊线）：向量索引新鲜度（index_state 判定 +
     # 左栏第 11 项 ↻ 分派 _run_index，P0-1）与审计横幅展开/收起（P1-3）——
     # 两者均为本面板既有职责（语料状态计算与审计提示）的自然延伸
-    "ui/maintenance/rag_maintenance_panel.py": 548,
+    # 548 → 705：执行历史内存快照（两路输出各留一条，历史下拉弹窗回看，
+    # P1-4）与只读语料内容查看器入口/向量索引行元信息（P1-5）——同为
+    # 「执行与语料状态的呈现职责」在本面板内的延伸，查看器本体已出仓到
+    # readonly_viewer_dialog.py
+    "ui/maintenance/rag_maintenance_panel.py": 706,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

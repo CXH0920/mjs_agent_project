@@ -65,12 +65,14 @@ def _make_root(tmp_path: Path) -> Path:
     _write(root / "data" / "raw_guides" / "jinxia" / "combos" / "孟尝君 + 黄月英.md", "# combo")
     # 武将攻略语料源（目录源，建目录+占位即可）
     _write(root / "data" / "raw_guides" / "jinxia" / "guides" / "曹操.md", "# guide")
-    # 语料输出（全部已生成）
+    # 语料输出（全部已生成；.md 伴文件与 json 同批写，供内容查看器用例断言）
     for name in ("武将RAG语料.json", "卡牌RAG语料.json", "卡牌点数花色语料.json",
                  "装备属性语料.json", "加强削弱语料.json", "元规则RAG语料-章节块.json",
                  "术语表.json", "FAQ裁定块.json", "特殊机制语料.json", "武将分类语料.json",
                  "组合RAG语料.json", "武将攻略RAG语料.json"):
         _write(root / "data" / "rag_corpus" / name, [{"block_id": "x"}])
+        (root / "data" / "rag_corpus" / name).with_suffix(".md").write_text(
+            f"# {name} 正文", encoding="utf-8")
     # 向量索引段文件（index_state 判定源；与语料同 mtime → 状态「最新」）
     seg = root / "data" / "rag_index" / "chroma" / "seg-uuid" / "data_level0.bin"
     seg.parent.mkdir(parents=True, exist_ok=True)
@@ -545,3 +547,126 @@ def test_nav_task_names_cover_all_tasks() -> None:
 
     ui_names = {task for _, task in EDITABLE_SOURCE_ITEMS + READONLY_CORPUS_ITEMS}
     assert ui_names == {task["name"] for task in TASKS}
+
+
+# ---------------------------------------------------------------
+# 执行历史快照与历史下拉（P1-4）
+# ---------------------------------------------------------------
+
+def test_log_run_snapshot_captures_two_runs(tmp_path: Path) -> None:
+    """两路执行各留一条快照：正文齐全、label 带结论与耗时、元规则占位名被首行解析。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    # 路①：语料单项重建（直调快照原语模拟一次完整执行）
+    panel._begin_log_run(panel._friendly_label(
+        "src.scripts.maintain_rag", ["--force", "--only", "武将语料"]))
+    panel._active_run["text"] = "$ python -m src.scripts.maintain_rag --force --only 武将语料"
+    panel._append_log_run_text("\n[执行] 武将语料\n✅ 生成与校验通过")
+    panel._finish_log_run(0, 12.3)
+    # 路②：元规则脚本（开始时拿不到命令，封口时从正文首行解析替换占位名）
+    panel._begin_log_run("元规则脚本")
+    panel._append_log_run_text("$ python -m src.scripts.audit_rule_doc.py\n✔ 执行完成")
+    panel._finish_log_run(0, None)
+    assert len(panel._log_runs) == 2
+    first, second = panel._log_runs
+    assert first["label"] == "重建武将语料 ✔ 12.3s"
+    assert "生成与校验通过" in first["text"]
+    assert second["label"] == "元规则文档检查 ✔"
+    panel.close()
+
+
+def test_log_history_combo_lists_runs_newest_first(tmp_path: Path) -> None:
+    """历史下拉倒序（最新在上）、userData 指向快照索引；无历史时隐藏。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    combo = panel._workspace.log_history_combo
+    assert not combo.isVisibleTo(panel)
+    panel._begin_log_run("重建特殊机制语料")
+    panel._finish_log_run(0, 1.0)
+    panel._begin_log_run("元规则文档检查")
+    panel._finish_log_run(1, None)
+    labels = [combo.itemText(i) for i in range(combo.count())]
+    assert labels == ["元规则文档检查 ✘", "重建特殊机制语料 ✔ 1.0s"]
+    assert [combo.itemData(i) for i in range(combo.count())] == [1, 0]
+    assert combo.isVisibleTo(panel)
+    panel.close()
+
+
+def test_history_selected_opens_viewer_with_full_text(tmp_path: Path, monkeypatch) -> None:
+    """历史下拉点选：弹只读查看器显示该次完整输出（含失败明细与退出码）。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    panel._begin_log_run("重建武将语料")
+    panel._active_run["text"] = "$ python -m src.scripts.maintain_rag --force --only 武将语料"
+    panel._append_log_run_text("\n❌ 执行失败：build_rag_corpus.py")
+    panel._finish_log_run(1, 8.2)
+    opened: list = []
+    monkeypatch.setattr(
+        "src.ui.maintenance.readonly_viewer_dialog.ReadonlyViewerDialog.exec",
+        lambda self: opened.append(self))
+    panel._show_log_run(0)
+    assert opened
+    assert "执行失败：build_rag_corpus.py" in opened[0].body.toPlainText()
+    assert "退出码 1" in opened[0].meta_label.text()
+    # 越界索引静默忽略（下拉重建期间的迟到信号）
+    panel._show_log_run(99)
+    assert len(opened) == 1
+    panel.close()
+
+
+# ---------------------------------------------------------------
+# 只读语料内容查看器与向量索引行（P1-5）
+# ---------------------------------------------------------------
+
+def _capture_viewer(monkeypatch) -> list:
+    """拦截查看器 exec，返回捕获的对话框列表（防真实模态）。"""
+    opened: list = []
+    monkeypatch.setattr(
+        "src.ui.maintenance.readonly_viewer_dialog.ReadonlyViewerDialog.exec",
+        lambda self: opened.append(self))
+    return opened
+
+
+def test_corpus_meta_opens_content_viewer(tmp_path: Path, monkeypatch) -> None:
+    """点只读语料行：弹内容查看器，正文为 .md 伴文件、头部含块数元信息。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    opened = _capture_viewer(monkeypatch)
+    panel._show_corpus_meta("武将语料")
+    assert len(opened) == 1
+    dialog = opened[0]
+    assert "输出块数" in dialog.meta_label.text()
+    assert "武将RAG语料.md" in dialog.meta_label.text()
+    assert dialog.body.toPlainText() == "# 武将RAG语料.json 正文"
+    assert not hasattr(dialog, "note_label")  # 非攻略语料无截断提示
+    # 攻略语料的 .md 构建时按块截断，头部如实标注预览属性
+    panel._show_corpus_meta("武将攻略")
+    assert len(opened) == 2
+    assert opened[1].note_label.text().startswith("⚠ 本语料正文为前 150 字预览")
+    panel.close()
+
+
+def test_corpus_meta_falls_back_without_md(tmp_path: Path, monkeypatch) -> None:
+    """.md 伴文件缺失：降级为 json 前 50 块摘要，不显示空白。"""
+    _app()
+    root = _make_root(tmp_path)
+    (root / "data" / "rag_corpus" / "武将RAG语料.md").unlink()
+    panel = _panel(root)
+    opened = _capture_viewer(monkeypatch)
+    panel._show_corpus_meta("武将语料")
+    assert len(opened) == 1
+    assert "x" in opened[0].body.toPlainText()  # fixture json 的 block_id
+    assert "json 前 50 块摘要" in opened[0].meta_label.text()
+    panel.close()
+
+
+def test_index_meta_opens_viewer(tmp_path: Path, monkeypatch) -> None:
+    """向量索引行点击不再静默：弹索引元信息（状态/构建时间/段文件清单）。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    opened = _capture_viewer(monkeypatch)
+    panel._show_corpus_meta("向量索引")
+    assert len(opened) == 1
+    assert "状态：最新" in opened[0].meta_label.text()
+    assert "data_level0.bin" in opened[0].body.toPlainText()
+    panel.close()
