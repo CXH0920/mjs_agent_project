@@ -48,6 +48,7 @@ from src.ui.maintenance.refinement_vocab import (
     FIELD_STATE_TONES,
     NOT_APPLICABLE_HINT,
 )
+from src.ui.maintenance.suggest_progress_dialog import SuggestProgressDialog
 from src.ui.shared.style import (
     ROLE_GHOST,
     TONE_INFO,
@@ -92,6 +93,8 @@ class IndexRefinementDialog(QDialog):
         self._controller = SuggestController(self)
         self._controller.result_ready.connect(self._on_suggest_result)
         self._controller.finished.connect(self._on_suggest_finished)
+        # 批量建议进度小窗（P1-2）：仅在批量建议运行期间存在
+        self._suggest_progress_dialog: SuggestProgressDialog | None = None
         self.setWindowTitle("索引精化")
         self.setObjectName("indexRefineDialog")
         # 恢复（取消最大化）时的常规尺寸；默认以最大化打开（见 _open_refinement）
@@ -595,6 +598,11 @@ class IndexRefinementDialog(QDialog):
         # 禁用属有意语义收紧
         batch_running = self._controller.is_running
         self._suggest_one_button.setEnabled(has_current and not batch_running)
+        # 单块建议运行中按钮文字反馈（P1-2）：finished/取消两路径都经
+        # _update_overview 到此恢复，文字与可用性同点收口
+        self._suggest_one_button.setText(
+            "建议中…" if batch_running and self._controller.is_single
+            else "LLM 建议（当前）")
         self._skip_button.setEnabled(is_pending and has_current and not batch_running)
         self._clear_button.setEnabled(has_current and bool(self._current.method))
         self._save_button.setEnabled(has_current and not batch_running)
@@ -635,8 +643,10 @@ class IndexRefinementDialog(QDialog):
         if generator is None:
             return
         logger.info("单块建议启动：%s", self._current.name)
-        self._suggest_one_button.setEnabled(False)
         self._controller.start([self._current], generator, single=True)
+        # 「建议中…」文字与禁用态统一在 _update_overview_buttons 收口，
+        # finished/取消两路径都经 _update_overview 到此恢复
+        self._update_overview()
 
     def _suggest_all(self) -> None:
         """批量生成建议：LLM 调用放后台线程，窗口不冻结；覆盖全部块（含当前选中）。
@@ -655,11 +665,27 @@ class IndexRefinementDialog(QDialog):
         logger.info("批量建议启动：%d 块", len(self._pending))
         self._suggest_one_button.setEnabled(False)
         self._suggest_all_button.setEnabled(False)
+        # 进度小窗先建后启动：同步替身在 start() 内跑完全程并经
+        # _on_suggest_finished 关闭小窗（置 None），身份比对防已关闭的窗复活
+        total = len(self._pending)
+        progress = SuggestProgressDialog(total, self)
+        progress.cancelled.connect(self._cancel_suggest)
+        self._suggest_progress_dialog = progress
         self._controller.start(self._pending, generator)
+        if self._suggest_progress_dialog is progress:
+            progress.update_progress(0, total, 0, None)
+            progress.show()
 
     def _on_suggest_result(self, block: PendingBlock, update: RefinementUpdate | None,
                            is_single: bool) -> None:
         """后台线程逐块结果回主线程：只更新 baseline/行状态，不强切当前编辑。"""
+        # 进度小窗先于丢弃守卫喂数：被丢弃的块 controller.done 照样前进，
+        # 计数不应因个别块被丢弃而停滞（最新完成只记成功块）
+        if self._suggest_progress_dialog is not None and not is_single:
+            self._suggest_progress_dialog.update_progress(
+                self._controller.done, self._controller.total,
+                len(self._controller.failed),
+                block.name if update is not None else None)
         # 已离开待精化清单的块（运行中被跳过/保存）丢弃结果，防止 row_states 回写"复活"；
         # 单块建议在已精化/全部模式下针对 curated 块，经"仍是当前块"放行
         is_current = (
@@ -683,9 +709,38 @@ class IndexRefinementDialog(QDialog):
         # finished 仅在正常结束时发出（取消路径由 cancel_and_shutdown 复位 _running，
         # 不发 finished）；按钮恢复统一走 _update_overview：手写条件曾与按钮区不一致，
         # "已精化/全部"范围下 _pending 为空时单块建议按钮被永久禁用
+        # 小窗随任务结束关闭，结果反馈交给 _finish_suggest_all 汇总弹窗，不重复
+        self._close_suggest_progress()
         if not is_single:
             self._finish_suggest_all()
         self._update_overview()
+
+    # ---------------------------------------------------------------
+    # 进度小窗（P1-2）：任务结束 / 取消 / 宿主关闭三路径共用关闭善后
+    # ---------------------------------------------------------------
+    def _close_suggest_progress(self) -> None:
+        """关闭并释放进度小窗（不存在时为无操作）。"""
+        dialog = self._suggest_progress_dialog
+        self._suggest_progress_dialog = None
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+
+    def _cancel_suggest(self) -> None:
+        """进度小窗「取消」：中止建议但留在对话框继续操作（区别于 reject 整窗关闭）。
+
+        cancel_and_shutdown 有意不发 finished，按钮恢复由本方法经 _update_overview
+        兜底；取消前已返回的结果保留在清单——取消后 worker 末块迟到结果仍会正常
+        应用（丢弃守卫只拦"已离开待精化池"的块），已完成建议不浪费。
+        """
+        if not self._controller.is_running:
+            return
+        done, total = self._controller.done, self._controller.total
+        self._controller.cancel_and_shutdown()
+        self._close_suggest_progress()
+        self._update_overview()
+        logger.info("批量建议取消：已完成 %d/%d", done, total)
+        show_toast(self, f"已取消（已完成 {done}/{total}，已返回的建议保留在清单）")
 
     def _finish_suggest_all(self) -> None:
         # 失败汇总按"仍在待精化池"过滤：运行中已被跳过的块即使建议失败，
@@ -832,8 +887,10 @@ class IndexRefinementDialog(QDialog):
 
     def reject(self) -> None:
         # 建议进行中（单块或批量）：中止 worker 并释放 generator 后关闭（#22）；
+        # 进度小窗随宿主先行关闭（任务中止善后由 cancel_and_shutdown 承担）；
         # 中止后仍需脏确认——单块建议运行时用户可能有未保存编辑（原实现 elif
         # 结构在单块场景会漏确认、静默丢编辑，步骤1 迁移时曾回归）
+        self._close_suggest_progress()
         if self._controller.is_running:
             self._controller.cancel_and_shutdown()
         if self._dirty and self._current is not None:

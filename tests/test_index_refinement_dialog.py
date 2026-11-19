@@ -855,3 +855,131 @@ def test_focus_navigation_hidden_without_targets(tmp_path: Path) -> None:
     assert not dialog._focus_nav_label.isVisibleTo(dialog)
     assert not dialog._focus_next_button.isVisibleTo(dialog)
     dialog.close()
+
+
+# ---------------------------------------------------------------------------
+# P1-2 批量建议进度小窗：同步链路关闭、逐块喂进度、取消善后、单块按钮文字
+# ---------------------------------------------------------------------------
+
+
+def test_suggest_all_sync_closes_progress_dialog(tmp_path: Path, monkeypatch) -> None:
+    """批量建议同步链路：小窗先建后启动，替身跑完全程即被关闭置空，不 show 不复活。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    _fake_generator(monkeypatch)
+    monkeypatch.setattr(sc_module, "suggest_one", lambda block, gen: RefinementUpdate(
+        timing=["出牌阶段"], trigger_condition=["打出时"], method="llm"))
+    _suggest_all_sync(dialog, monkeypatch)
+    # 同步替身在 start() 内跑完全程并经 _on_suggest_finished 关闭小窗；
+    # 身份比对守卫防止 start 返回后对已关闭的窗 update/show 复活
+    assert dialog._suggest_progress_dialog is None
+    assert dialog._suggest_all_button.isEnabled()
+    dialog.close()
+
+
+def test_suggest_result_feeds_progress_dialog(tmp_path: Path) -> None:
+    """逐块结果回调喂进度小窗：计数/失败数/最新完成随 controller 状态刷新。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._suggest_progress_dialog = dialog_module.SuggestProgressDialog(2, dialog)
+    controller = dialog._controller
+    controller._running = True
+    controller._single = False
+    controller._total = 2
+    controller._done = 0
+
+    block = dialog._pending[0]
+    controller._on_result_ready(
+        block, RefinementUpdate(timing=["x"], trigger_condition=[], method="llm"))
+    progress = dialog._suggest_progress_dialog
+    assert progress._progress.maximum() == 2
+    assert progress._progress.value() == 1
+    assert "最新完成：测试牌" in progress._status_label.text()
+
+    # 失败块：计数前进、失败数 +1、不覆盖「最新完成」
+    controller._on_result_ready(block, None)
+    assert progress._progress.value() == 2
+    assert "失败 1" in progress._status_label.text()
+    assert "最新完成：测试牌" in progress._status_label.text()
+
+    controller._running = False
+    dialog._close_suggest_progress()
+    assert dialog._suggest_progress_dialog is None
+    dialog.close()
+
+
+def test_cancel_suggest_restores_buttons_and_keeps_dialog_open(
+        tmp_path: Path, monkeypatch) -> None:
+    """进度小窗「取消」：中止建议、关小窗、按钮恢复，对话框保持可继续操作。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._suggest_progress_dialog = dialog_module.SuggestProgressDialog(2, dialog)
+    controller = dialog._controller
+    controller._running = True
+    controller._single = False
+    controller._total = 2
+    controller._done = 1
+    cancelled: list[bool] = []
+
+    def _fake_cancel() -> None:
+        controller._running = False  # 镜像生产语义：cancel_and_shutdown 复位运行态
+        cancelled.append(True)
+
+    monkeypatch.setattr(controller, "cancel_and_shutdown", _fake_cancel)
+    toasts: list[tuple] = []
+    monkeypatch.setattr(dialog_module, "show_toast", lambda *a, **k: toasts.append(a))
+
+    dialog._cancel_suggest()
+
+    assert cancelled == [True]
+    assert dialog._suggest_progress_dialog is None
+    assert dialog._suggest_all_button.isEnabled()
+    assert dialog._save_button.isEnabled()
+    assert toasts and "1/2" in toasts[0][1]
+
+
+def test_single_suggest_button_text_feedback(tmp_path: Path) -> None:
+    """单块建议运行中按钮文字「建议中…」，结束/取消恢复原文案；批量运行不改文字。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    dialog._table.selectRow(0)
+    controller = dialog._controller
+
+    controller._running = True
+    controller._single = True
+    dialog._update_overview()
+    assert dialog._suggest_one_button.text() == "建议中…"
+
+    # 批量建议运行中：单块按钮只禁用不改文字（进度由小窗承载）
+    controller._single = False
+    dialog._update_overview()
+    assert dialog._suggest_one_button.text() == "LLM 建议（当前）"
+
+    controller._running = False
+    dialog._update_overview()
+    assert dialog._suggest_one_button.text() == "LLM 建议（当前）"
+    dialog.close()
+
+
+def test_reject_closes_progress_dialog_first(tmp_path: Path, monkeypatch) -> None:
+    """建议进行中整窗关闭：进度小窗先行关闭，任务中止善后仍由 cancel_and_shutdown 承担。"""
+    _app()
+    root = _corpus(tmp_path)
+    dialog = IndexRefinementDialog(root)
+    progress = dialog_module.SuggestProgressDialog(2, dialog)
+    dialog._suggest_progress_dialog = progress
+    controller = dialog._controller
+    controller._running = True
+    controller._single = False
+    controller._total = 2
+    controller._done = 0
+    monkeypatch.setattr(controller, "cancel_and_shutdown", lambda: None)
+
+    dialog.reject()
+
+    assert dialog._suggest_progress_dialog is None
+    assert not progress.isVisible()

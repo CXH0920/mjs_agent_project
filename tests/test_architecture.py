@@ -259,7 +259,7 @@ CLASS_BUDGETS: dict[str, int] = {
     # 文件 953 → 781 行）；方法数上涨全部来自 ~20 个单行 property 控件桥——
     # 为保持 151+ 处既有测试锚点名（dialog._table 等）不改动，编排留对话框经
     # property 读写 pane 控件。属机械膨胀非职责增加，后续测试锚点迁移后可回落。
-    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 64,  # 62 → 63：_apply_focus_query（P1-1 i）；63 → 64：_goto_next_focus（P1-1 ii 下一条导航）
+    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 66,  # 62 → 63：_apply_focus_query（P1-1 i）；63 → 64：_goto_next_focus（P1-1 ii 下一条导航）；64 → 66：进度小窗取消善后与关闭收口（P1-2 _cancel_suggest/_close_suggest_progress）
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,
     # EmulatorConfigCoordinator 40 → 42：官方 PC 客户端直连（2026-10-25）——
     # is_pc_client property 与 refresh_pc_windows 枚举封装两个薄方法，职责
@@ -716,7 +716,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 时效跳转：切「全部」范围 + 预填搜索，复用既有搜索/选中链路）
     # 806 → 842：总览条加"过期复核 i/N [下一条]"导航行 + _goto_next_focus
     # 环形循环（P1-1 ii，复用 _apply_focus_query 定位原语与 _update_overview 刷新）
-    "ui/maintenance/index_refinement_dialog.py": 842,
+    # 842 → 899：批量建议进度小窗接线（P1-2）——创建/逐块喂进度/取消善后
+    # _cancel_suggest 与三路径关闭收口 _close_suggest_progress、单块按钮文字反馈
+    "ui/maintenance/index_refinement_dialog.py": 899,
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试

@@ -84,6 +84,11 @@ class SuggestController(QObject):
         return self._running
 
     @property
+    def is_single(self) -> bool:
+        """当前轮是否单块建议（宿主区分单块/批量渲染按钮反馈，P1-2）。"""
+        return self._single
+
+    @property
     def total(self) -> int:
         return self._total
 
