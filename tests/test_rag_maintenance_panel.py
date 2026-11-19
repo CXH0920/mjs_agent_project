@@ -316,6 +316,20 @@ def test_refinement_focus_query_prefers_skill_then_hero_or_card() -> None:
     assert RagMaintenancePanel._refinement_focus_query(["非字典"]) == ""
 
 
+def test_refinement_focus_queries_dedup_keeps_order() -> None:
+    """P1-1 ii：命中清单 → 导航站列表（去重保序，同武将多块只留一站）。"""
+    assert RagMaintenancePanel._refinement_focus_queries([
+        {"skill": "观星", "hero": "诸葛亮"},
+        {"hero": "张飞"},
+        {"hero": "张飞"},  # hero 级多块同武将 → 去重
+        {"card": "多多益善"},
+        {"skill": "观星"},  # 技能重名 → 去重
+    ]) == ["观星", "张飞", "多多益善"]
+    assert RagMaintenancePanel._refinement_focus_queries(None) == []
+    assert RagMaintenancePanel._refinement_focus_queries([]) == []
+    assert RagMaintenancePanel._refinement_focus_queries(["非字典", {"skill": ""}]) == []
+
+
 def test_audit_reports_pending_refinement(tmp_path: Path) -> None:
     root = _make_root(tmp_path)
     issues = audit_summary(root)

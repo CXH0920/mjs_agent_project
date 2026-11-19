@@ -259,7 +259,7 @@ CLASS_BUDGETS: dict[str, int] = {
     # 文件 953 → 781 行）；方法数上涨全部来自 ~20 个单行 property 控件桥——
     # 为保持 151+ 处既有测试锚点名（dialog._table 等）不改动，编排留对话框经
     # property 读写 pane 控件。属机械膨胀非职责增加，后续测试锚点迁移后可回落。
-    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 63,  # 62 → 63：_apply_focus_query（P1-1 审计时效跳转定位）
+    "ui/maintenance/index_refinement_dialog.py:IndexRefinementDialog": 64,  # 62 → 63：_apply_focus_query（P1-1 i）；63 → 64：_goto_next_focus（P1-1 ii 下一条导航）
     "ui/recommendation/recommendation_panel.py:RecommendationPanel": 41,
     # EmulatorConfigCoordinator 40 → 42：官方 PC 客户端直连（2026-10-25）——
     # is_pc_client property 与 refresh_pc_windows 枚举封装两个薄方法，职责
@@ -714,7 +714,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
     # 790 → 806：构造加 focus_query 参数与 _apply_focus_query 定位（P1-1 审计
     # 时效跳转：切「全部」范围 + 预填搜索，复用既有搜索/选中链路）
-    "ui/maintenance/index_refinement_dialog.py": 806,
+    # 806 → 842：总览条加"过期复核 i/N [下一条]"导航行 + _goto_next_focus
+    # 环形循环（P1-1 ii，复用 _apply_focus_query 定位原语与 _update_overview 刷新）
+    "ui/maintenance/index_refinement_dialog.py": 842,
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试
@@ -972,7 +974,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 「执行与语料状态的呈现职责」在本面板内的延伸，查看器本体已出仓到
     # readonly_viewer_dialog.py；706 → 723：审计时效跳转携带结构化命中定位
     # （P1-1，_open_refinement(focus) + 搜索词提取）
-    "ui/maintenance/rag_maintenance_panel.py": 723,
+    "ui/maintenance/rag_maintenance_panel.py": 733,  # 723 → 733：_refinement_focus_queries 复数版（P1-1 ii 导航站列表，去重保序）
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

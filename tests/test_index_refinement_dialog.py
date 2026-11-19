@@ -805,7 +805,7 @@ def test_reject_with_dirty_edit_during_single_suggest_prompts_discard(tmp_path: 
 def test_focus_query_switches_scope_and_selects_match(tmp_path: Path) -> None:
     """P1-1 时效跳转定位：切「全部」范围、预填搜索、自动选中目标并加载右侧。"""
     _app()
-    dialog = IndexRefinementDialog(_curated_corpus(tmp_path), focus_query="已精化")
+    dialog = IndexRefinementDialog(_curated_corpus(tmp_path), focus_queries=["已精化"])
     assert dialog._scope == "all"
     assert dialog._scope_group.button(2).isChecked()  # 程序切范围后按钮高亮同步
     assert dialog._search_edit.text() == "已精化"
@@ -818,8 +818,40 @@ def test_focus_query_switches_scope_and_selects_match(tmp_path: Path) -> None:
 def test_focus_query_without_match_keeps_query_and_empty_state(tmp_path: Path) -> None:
     """P1-1 定位目标不存在：保留搜索词显示空态，不静默清空（用户可见原因）。"""
     _app()
-    dialog = IndexRefinementDialog(_corpus(tmp_path), focus_query="不存在的块")
+    dialog = IndexRefinementDialog(_corpus(tmp_path), focus_queries=["不存在的块"])
     assert dialog._search_edit.text() == "不存在的块"
     assert dialog._current is None
     assert dialog._list_pane.empty_state.isVisibleTo(dialog)
+    dialog.close()
+
+
+def test_focus_navigation_cycles_through_targets(tmp_path: Path) -> None:
+    """P1-1 ii「下一条」导航：逐站循环定位、文案 i/N、手动改搜索后自动重置、环形回绕。"""
+    _app()
+    dialog = IndexRefinementDialog(
+        _curated_corpus(tmp_path), focus_queries=["已精化", "测试牌"])
+    # 初始站 1/2：定位第一个目标
+    assert dialog._focus_nav_label.isVisibleTo(dialog)
+    assert dialog._focus_nav_label.text() == "过期复核 1/2"
+    assert dialog._current is not None and dialog._current.block_id == "card_3_已精化"
+    # 下一站：搜索词切换、定位第二目标
+    dialog._focus_next_button.click()
+    assert dialog._search_edit.text() == "测试牌"
+    assert dialog._current is not None and dialog._current.block_id == "card_1_测试牌"
+    assert dialog._focus_nav_label.text() == "过期复核 2/2"
+    # 手动改搜索词后点「下一条」：导航重置搜索并回到目标站（环形回绕到 1/2）
+    dialog._search_edit.setText("随便看看")
+    dialog._focus_next_button.click()
+    assert dialog._search_edit.text() == "已精化"
+    assert dialog._focus_nav_label.text() == "过期复核 1/2"
+    assert dialog._current is not None and dialog._current.block_id == "card_3_已精化"
+    dialog.close()
+
+
+def test_focus_navigation_hidden_without_targets(tmp_path: Path) -> None:
+    """普通打开（无导航目标）：导航行不出现。"""
+    _app()
+    dialog = IndexRefinementDialog(_curated_corpus(tmp_path))
+    assert not dialog._focus_nav_label.isVisibleTo(dialog)
+    assert not dialog._focus_next_button.isVisibleTo(dialog)
     dialog.close()

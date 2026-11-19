@@ -568,10 +568,10 @@ class RagMaintenancePanel(QWidget):
         dialog.exec()
 
     def _open_refinement(self, focus: object = None) -> None:
-        """打开索引精化弹窗；focus 为时效命中清单时定位到第一个过期块（P1-1）。"""
+        """打开索引精化弹窗；focus 为时效命中清单时定位并可逐站循环（P1-1）。"""
         dialog = IndexRefinementDialog(
             self._root / "data" / "rag_corpus", self,
-            focus_query=self._refinement_focus_query(focus))
+            focus_queries=self._refinement_focus_queries(focus))
         # 工作台内容的最小尺寸接近整屏，固定 1160x720 会在显示后被最小尺寸约束
         # 撑大（感知为"小窗一闪再变大"）；按主窗口大小预置尺寸，一次到位不跳变
         dialog.resize(self.window().size())
@@ -579,17 +579,27 @@ class RagMaintenancePanel(QWidget):
         self.refresh()
 
     @staticmethod
-    def _refinement_focus_query(focus: object) -> str:
-        """时效命中清单 → 定位搜索词：技能名优先（精确到块），回退武将/卡牌名。
+    def _refinement_focus_queries(focus: object) -> list[str]:
+        """时效命中清单 → 定位搜索词列表（去重保序），供弹窗逐站导航。
 
-        清单为空或结构异常时返回空串（弹窗按普通方式打开，不定位）。
+        同武将多块（hero 级命中）只留一站；清单为空或结构异常返回空列表
+        （弹窗按普通方式打开，无导航行）。
         """
         if not focus or not isinstance(focus, list):
-            return ""
-        first = focus[0]
-        if isinstance(first, dict):
-            return str(first.get("skill") or first.get("hero") or first.get("card") or "")
-        return ""
+            return []
+        queries = []
+        for hit in focus:
+            if isinstance(hit, dict):
+                query = str(hit.get("skill") or hit.get("hero") or hit.get("card") or "")
+                if query:
+                    queries.append(query)
+        return list(dict.fromkeys(queries))
+
+    @staticmethod
+    def _refinement_focus_query(focus: object) -> str:
+        """时效命中清单 → 首个定位搜索词（技能名优先，回退武将/卡牌名）。"""
+        queries = RagMaintenancePanel._refinement_focus_queries(focus)
+        return queries[0] if queries else ""
 
     def _open_diagnostic(self) -> None:
         from src.ui.maintenance.retrieval_diagnostic_dialog import (

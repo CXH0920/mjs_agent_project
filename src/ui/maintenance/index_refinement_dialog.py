@@ -53,6 +53,7 @@ from src.ui.shared.style import (
     TONE_INFO,
     TONE_NEUTRAL,
     TONE_SUCCESS,
+    TONE_WARNING,
     set_style_property,
     set_tone,
     set_ui_role,
@@ -75,7 +76,7 @@ class IndexRefinementDialog(QDialog):
     """索引精化工作台对话框。"""
 
     def __init__(self, corpus_dir: Path = DEFAULT_CORPUS_DIR, parent=None,
-                 *, focus_query: str = ""):
+                 *, focus_queries: list[str] | None = None):
         super().__init__(parent)
         self._corpus_dir = Path(corpus_dir)
         # 清单三池/双基线/行状态本体归 RefinementSession（纯状态层，见业务层模块）
@@ -83,6 +84,9 @@ class IndexRefinementDialog(QDialog):
         self._scope = "pending"  # 范围筛选：pending / curated / all
         self._current: PendingBlock | None = None
         self._dirty = False  # 当前条目存在未保存的人工修改
+        # 时效复核导航站（P1-1 ii）：搜索词列表 + 当前站游标；空列表无导航行
+        self._focus_queries = [query for query in (focus_queries or []) if query]
+        self._focus_index = 0
         # 批量/单块建议由 SuggestController 后台线程驱动，避免同步循环冻结 UI；
         # worker 生命周期与取消善后归控制器，对话框只接信号渲染
         self._controller = SuggestController(self)
@@ -93,8 +97,8 @@ class IndexRefinementDialog(QDialog):
         # 恢复（取消最大化）时的常规尺寸；默认以最大化打开（见 _open_refinement）
         self.resize(1160, 720)
         self._setup_ui()
-        if focus_query:
-            self._apply_focus_query(focus_query)
+        if self._focus_queries:
+            self._apply_focus_query(self._focus_queries[0])
         else:
             self._refresh_table()
 
@@ -110,6 +114,18 @@ class IndexRefinementDialog(QDialog):
         self._scope_group.button(2).setChecked(True)
         self._search_edit.setText(query)  # 同步触发 250ms 防抖（同词重滤幂等）
         self._apply_filter()
+
+    def _goto_next_focus(self) -> None:
+        """「下一条」环形推进到下一站并定位（支持回头复查跳过的块）。
+
+        复用 _apply_focus_query：循环中用户手动改过的搜索词/范围会被自动
+        重置回可定位状态，导航不被手动浏览打断。
+        """
+        if not self._focus_queries:
+            return
+        self._focus_index = (self._focus_index + 1) % len(self._focus_queries)
+        self._apply_focus_query(self._focus_queries[self._focus_index])
+        self._update_overview()
 
     # ---------------------------------------------------------------
     # 状态委托：清单/基线/行状态本体归 RefinementSession，此处只读透出
@@ -212,6 +228,19 @@ class IndexRefinementDialog(QDialog):
         self._overview_label = QLabel()
         self._overview_label.setObjectName("indexRefineOverviewText")
         bar_layout.addWidget(self._overview_label, 1)
+
+        # 时效复核导航（P1-1 ii）：审计跳转携带多目标时逐站循环定位；
+        # 无目标时隐藏整组（普通打开不出现）
+        self._focus_nav_label = QLabel("")
+        self._focus_nav_label.setObjectName("indexRefineOverviewText")
+        set_tone(self._focus_nav_label, TONE_WARNING)
+        self._focus_next_button = QPushButton("下一条 ▸")
+        set_ui_role(self._focus_next_button, ROLE_GHOST)
+        self._focus_next_button.clicked.connect(self._goto_next_focus)
+        self._focus_nav_label.hide()
+        self._focus_next_button.hide()
+        bar_layout.addWidget(self._focus_nav_label)
+        bar_layout.addWidget(self._focus_next_button)
 
         # 模式切换：待精化 / 已精化 / 全部（overview_label 占 stretch，按钮组靠右）
         self._scope_group = QButtonGroup(self)
@@ -500,6 +529,13 @@ class IndexRefinementDialog(QDialog):
         """总览刷新编排：进度文字/空态（_update_overview_text）+ 按钮态（_update_overview_buttons）。"""
         self._update_overview_text()
         self._update_overview_buttons()
+        # 时效复核导航：有目标站才显示，文案常显当前位置（i/N）
+        has_focus = bool(self._focus_queries)
+        self._focus_nav_label.setVisible(has_focus)
+        self._focus_next_button.setVisible(has_focus)
+        if has_focus:
+            self._focus_nav_label.setText(
+                f"过期复核 {self._focus_index + 1}/{len(self._focus_queries)}")
 
     def _update_overview_text(self) -> None:
         """总览条文字、表格可见性与空态提示。"""
