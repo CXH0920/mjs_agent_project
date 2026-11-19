@@ -2,8 +2,9 @@
 """知识库维护工作台外壳：左栏维护对象导航 + 右侧数据源工作区 + 底部折叠执行日志。
 
 布局重排方案的布局载体（业务逻辑保留在 rag_maintenance_panel.py）：
-- MaintenanceSourceNav：左栏 10 项（上组 5 个可编辑维护对象 + 下组 5 个只读语料），
-  每项状态点对齐其语料任务状态，「待重建」时显示单项重建按钮（--only）；
+- MaintenanceSourceNav：左栏 11 项（上组 5 个可编辑维护对象 + 下组 5 个只读语料
+  与 1 个向量索引），每项状态点对齐其语料任务状态，「待重建/待同步」时显示
+  单项重建按钮；
 - MaintenanceWorkspace：左栏 + QStackedWidget（现有 5 个面板实例复用切换）+
   底部日志（默认折叠 32px，构建时自动展开 180px，折叠态显示未读输出条数）。
 """
@@ -36,8 +37,9 @@ from src.ui.shared.style import (
 )
 from src.ui.shared.widgets import StatusBadge
 
-# 状态词 → 通知色调（最新=neutral / 待重建=warning / 缺源=danger）
-_STATUS_TONE = {"最新": TONE_NEUTRAL, "待重建": TONE_WARNING, "缺源": TONE_DANGER}
+# 状态词 → 通知色调（最新=neutral / 待重建·待同步=warning / 缺源·未构建=danger）
+_STATUS_TONE = {"最新": TONE_NEUTRAL, "待重建": TONE_WARNING, "缺源": TONE_DANGER,
+                "待同步": TONE_WARNING, "未构建": TONE_DANGER}
 
 
 class _NavItem(QFrame):
@@ -93,7 +95,8 @@ class _NavItem(QFrame):
         set_tone(self.dot_label, tone)
         set_tone(self.status_label, tone)
         self.status_label.setText(status)
-        self.rebuild_button.setVisible(status == "待重建")
+        # 待同步（向量索引）与待重建同走单项重建入口（host 按任务名分派命令）
+        self.rebuild_button.setVisible(status in ("待重建", "待同步"))
 
 
 class MaintenanceSourceNav(QFrame):

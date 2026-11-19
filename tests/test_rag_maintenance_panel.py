@@ -13,7 +13,9 @@ from PySide6.QtWidgets import QApplication
 from src.business.maintenance.maintenance_repositories import build
 from src.business.rag.audit_service import AuditIssue, audit_summary
 from src.ui.maintenance.rag_maintenance_panel import (
+    INDEX_TASK_NAME,
     RagMaintenancePanel,
+    index_state,
     task_states,
 )
 
@@ -69,6 +71,10 @@ def _make_root(tmp_path: Path) -> Path:
                  "术语表.json", "FAQ裁定块.json", "特殊机制语料.json", "武将分类语料.json",
                  "组合RAG语料.json", "武将攻略RAG语料.json"):
         _write(root / "data" / "rag_corpus" / name, [{"block_id": "x"}])
+    # 向量索引段文件（index_state 判定源；与语料同 mtime → 状态「最新」）
+    seg = root / "data" / "rag_index" / "chroma" / "seg-uuid" / "data_level0.bin"
+    seg.parent.mkdir(parents=True, exist_ok=True)
+    seg.write_text("x", encoding="utf-8")
     for path in root.rglob("*"):
         _utime(path, now - 100)
     return root
@@ -144,10 +150,11 @@ def test_panel_renders(tmp_path: Path) -> None:
     _app()
     root = _make_root(tmp_path)
     panel = _panel(root)
-    # 布局重排：左栏 10 项（5 维护对象 + 5 只读语料），右侧复用 5 个现有面板
+    # 布局重排：左栏 11 项（5 维护对象 + 5 只读语料 + 向量索引），右侧复用 5 个现有面板
     nav = panel._workspace.nav
     assert nav.item_keys()[:5] == ["武将分类", "专属牌", "卡牌点数", "装备属性", "元规则母本"]
-    assert nav.item_keys()[5:] == ["武将语料", "卡牌语料", "加强削弱", "组合语料", "武将攻略"]
+    assert nav.item_keys()[5:] == ["武将语料", "卡牌语料", "加强削弱", "组合语料", "武将攻略",
+                                   "向量索引"]
     assert panel._workspace.stack.count() == 5
     assert nav.current_key() == "武将分类"  # 默认选中首个维护对象
     assert "所有语料与数据源一致" in panel._status_label.text()
@@ -357,8 +364,48 @@ def test_rebuild_button_runs_only_matching_task(tmp_path: Path) -> None:
     panel.close()
 
 
+# ---------------------------------------------------------------
+# 向量索引新鲜度（index_state）与 ↻ 分派
+# ---------------------------------------------------------------
+
+def test_index_state_fresh(tmp_path: Path) -> None:
+    """段文件与语料同 mtime（fixture 统一设定）→ 索引最新。"""
+    root = _make_root(tmp_path)
+    row = index_state(root)
+    assert row["name"] == INDEX_TASK_NAME
+    assert row["status"] == "最新"
+    assert row["built"] > 0
+
+
+def test_index_state_missing_dir(tmp_path: Path) -> None:
+    """索引目录不存在 → 未构建（不与语料比较）。"""
+    import shutil
+
+    root = _make_root(tmp_path)
+    shutil.rmtree(root / "data" / "rag_index")
+    assert index_state(root)["status"] == "未构建"
+
+
+def test_index_rebuild_button_runs_indexer(tmp_path: Path, monkeypatch) -> None:
+    """索引落后：左栏「向量索引」待同步、↻ 可见且分派到 _run_index（indexer）。"""
+    _app()
+    root = _make_root(tmp_path)
+    seg = next((root / "data" / "rag_index" / "chroma").glob("*/*"))
+    _utime(seg, time.time() - 10000)  # 索引远旧于语料（语料为 now-100）
+    assert index_state(root)["status"] == "待同步"
+    panel = _panel(root)
+    assert panel._workspace.nav.status_text(INDEX_TASK_NAME) == "待同步"
+    assert panel._workspace.nav.rebuild_button(INDEX_TASK_NAME).isVisibleTo(panel)
+    assert "索引待同步" in panel._status_label.text()
+    calls: list[str] = []
+    monkeypatch.setattr(panel, "_run_index", lambda: calls.append(1))
+    panel._workspace.nav.rebuild_button(INDEX_TASK_NAME).click()
+    assert calls == [1]
+    panel.close()
+
+
 def test_audit_banner_limits_rows_and_folds_rest(tmp_path: Path) -> None:
-    """审计提示最多显示 3 条，超出折叠为「还有 N 条提示」。"""
+    """审计提示默认显示 3 条，超出折叠为「展开全部（还有 N 条）」按钮。"""
     _app()
     root = _make_root(tmp_path)
     _write(root / "data" / "special_cards.json", [
@@ -368,13 +415,46 @@ def test_audit_banner_limits_rows_and_folds_rest(tmp_path: Path) -> None:
     panel = _panel(root)
     issues = audit_summary(root)
     assert len(issues) > 3
+    assert len(panel._audit_rows) == 4  # 3 条提示 + 切换按钮
     note = next(row for row in panel._audit_rows
-                if "还有" in getattr(row, "text", lambda: "")())
-    assert note.text() == f"还有 {len(issues) - 3} 条提示，处理后点击「刷新状态」查看全部"
+                if "展开全部" in getattr(row, "text", lambda: "")())
+    assert note.text() == f"展开全部（还有 {len(issues) - 3} 条）"
     assert all(row.isVisibleTo(panel) for row in panel._audit_rows)
     # 无提示时横幅整体隐藏
     panel._refresh_audit_banner([])
     assert not panel._audit_banner.isVisibleTo(panel)
+    panel.close()
+
+
+def test_audit_banner_expand_and_collapse(tmp_path: Path) -> None:
+    """点「展开全部」显示全部提示行；再点「收起」回到 3 条；展开态跨刷新保留。"""
+    _app()
+    root = _make_root(tmp_path)
+    _write(root / "data" / "special_cards.json", [
+        {"category": "专属牌", "name": "龙泉剑", "hero": "白蹄乌", "settlement": ""},
+        {"category": "专属牌", "name": "青釭剑", "hero": "乐广", "settlement": ""},
+    ])
+    panel = _panel(root)
+    issues = audit_summary(root)
+    assert len(issues) > 3
+
+    def find_toggle():
+        return next(row for row in panel._audit_rows
+                    if "展开全部" in getattr(row, "text", lambda: "")()
+                    or getattr(row, "text", lambda: "")() == "收起")
+
+    find_toggle().click()  # 展开
+    assert panel._banner_expanded is True
+    assert len(panel._audit_rows) == len(issues) + 1
+    assert all(row.isVisibleTo(panel) for row in panel._audit_rows)
+    assert find_toggle().text() == "收起"
+    # 展开态跨刷新保留（切页/保存触发的 refresh 不把处理中的清单折叠回去）
+    panel._refresh_audit_banner(audit_summary(root))
+    assert panel._banner_expanded is True
+    assert len(panel._audit_rows) == len(issues) + 1
+    find_toggle().click()  # 收起
+    assert panel._banner_expanded is False
+    assert len(panel._audit_rows) == 4
     panel.close()
 
 
@@ -454,7 +534,8 @@ def test_nav_task_names_cover_all_tasks() -> None:
     """左栏导航任务名与 task_defs 全集一致：任务改名或新增未同步 UI 即红。
 
     set_task_states 按任务名查状态，失配时静默降级为「—」（单项重建按钮
-    也不出现），无此守护则改名静默失配且测试全绿。
+    也不出现），无此守护则改名静默失配且测试全绿。向量索引为额外只读项
+    （非 maintain_rag 任务，↻ 走 indexer 命令）。
     """
     from src.business.rag.task_defs import TASKS
     from src.ui.maintenance.rag_maintenance_panel import (

@@ -961,6 +961,10 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # load_timeline（44837e3）——修复 root != PROJECT_ROOT（测试 tmp_path）时
     # 存在性检查与实际加载文件不一致导致的审计误报
     "business/rag/audit_service.py": 571,
+    # 首次入册（实测 548 越过 500 绊线）：向量索引新鲜度（index_state 判定 +
+    # 左栏第 11 项 ↻ 分派 _run_index，P0-1）与审计横幅展开/收起（P1-3）——
+    # 两者均为本面板既有职责（语料状态计算与审计提示）的自然延伸
+    "ui/maintenance/rag_maintenance_panel.py": 548,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

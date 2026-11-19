@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """知识库维护工作台（主导航第 4 页）。
 
-布局重排后由 MaintenanceWorkspace 承载结构：左栏 10 项（5 个可编辑维护对象 +
-5 个只读语料，状态点对齐语料任务状态）+ 右侧数据源工作区（复用现有 5 个面板）+
-底部折叠执行日志。本面板只保留业务逻辑：语料状态计算、审计提示、索引精化与
-本地一键执行 scripts/maintain_rag.py（ScriptRunner，实时输出日志）。
+布局重排后由 MaintenanceWorkspace 承载结构：左栏 11 项（5 个可编辑维护对象 +
+5 个只读语料 + 1 个向量索引，状态点对齐语料任务/索引状态）+ 右侧数据源工作区
+（复用现有 5 个面板）+ 底部折叠执行日志。本面板只保留业务逻辑：语料与索引
+状态计算、审计提示、索引精化与本地一键执行 scripts/maintain_rag.py /
+src.rag.indexer（ScriptRunner，实时输出日志）。
 """
 
 from __future__ import annotations
@@ -132,9 +133,52 @@ def task_states(root: Path) -> list[dict]:
     return rows
 
 
+# 向量索引左栏项（不是 maintain_rag 语料任务，↻ 走 indexer 命令而非 --only）
+INDEX_TASK_NAME = "向量索引"
+INDEX_DIR = "data/rag_index/chroma"
+
+
+def index_state(root: Path) -> dict:
+    """计算向量索引新鲜度；供 UI 展示与测试。
+
+    构建时间取段目录（chroma/<uuid>/）二进制文件的 mtime——chroma.sqlite3 的
+    mtime 会被查询路径的 PersistentClient（无只读设置）触碰，实测查询后即变，
+    不能作判定信号；段文件 mtime 与构建台账（task_results.jsonl）精确吻合。
+    """
+    seg_root = root / INDEX_DIR
+    built = 0.0
+    if seg_root.is_dir():
+        for sub in seg_root.iterdir():
+            if not sub.is_dir():
+                continue  # chroma.sqlite3 落在根层，只遍历段子目录
+            for file in sub.iterdir():
+                if file.is_file():
+                    try:
+                        built = max(built, file.stat().st_mtime)
+                    except OSError:
+                        continue
+    if built == 0.0:
+        status = "未构建"
+    else:
+        corpus_max = 0.0
+        for _name, _sources, outputs in TASK_DEFS:
+            for rel in outputs:
+                try:
+                    corpus_max = max(corpus_max, (root / CORPUS_DIR / rel).stat().st_mtime)
+                except OSError:
+                    continue
+        # 容差与 task_states 的 +1 同口径，避免同秒写入的抖动误报
+        status = "待同步" if corpus_max > built + 1 else "最新"
+    return {"name": INDEX_TASK_NAME, "status": status, "built": built}
+
+
 class RagMaintenancePanel(QWidget):
     """知识库维护工作台。"""
 
+    # 预留信号：维护对象保存后发射。当前全仓无消费方——维护页 5 个数据文件
+    # 在 UI 展示层零消费，状态视图已由 _on_child_changed 的 refresh() 兜底。
+    # 未来消费者方向：状态栏「语料待重建」类跨页联动，接线时在组合根
+    # （main_window）桥接，先例见 synergies_changed（main_window.py 顶部连接区）。
     data_changed = Signal()
 
     def __init__(self, root: Path = PROJECT_ROOT, hero_names: set[str] | None = None,
@@ -190,7 +234,9 @@ class RagMaintenancePanel(QWidget):
         self._action_bar.add_action(self._index_button, ROLE_PRIMARY)
         layout.addWidget(self._action_bar)
 
-        # 审计提示条：跨数据源人工维护清单，有提示才出现（最多 3 条 + 折叠剩余）
+        # 审计提示条：跨数据源人工维护清单，有提示才出现（默认 3 条，可展开全部）
+        self._banner_expanded = False  # 展开/收起跨刷新保留（处理中不被折叠回去）
+        self._audit_issues: list[AuditIssue] = []  # 最近一次清单（切换按钮重渲染用）
         self._audit_banner = QFrame()
         self._audit_banner.setObjectName("noticeBanner")
         banner_layout = QHBoxLayout(self._audit_banner)
@@ -217,8 +263,7 @@ class RagMaintenancePanel(QWidget):
         self._workspace = MaintenanceWorkspace(self)
         self._log = self._workspace.log
         self._setup_sources()
-        self._workspace.rebuild_requested.connect(
-            lambda task: self._run(["--force", "--only", task]))
+        self._workspace.rebuild_requested.connect(self._on_rebuild_requested)
         self._workspace.meta_requested.connect(self._show_corpus_meta)
         layout.addWidget(self._workspace, 1)
 
@@ -255,9 +300,18 @@ class RagMaintenancePanel(QWidget):
         self._workspace.add_group("维护对象", len(EDITABLE_SOURCE_ITEMS))
         for key, task_name in EDITABLE_SOURCE_ITEMS:
             self._workspace.add_source(key, task_name, panels[key])
-        self._workspace.add_group("只读语料", len(READONLY_CORPUS_ITEMS))
+        self._workspace.add_group("语料与索引", len(READONLY_CORPUS_ITEMS) + 1)
         for key, task_name in READONLY_CORPUS_ITEMS:
             self._workspace.add_source(key, task_name)
+        # 向量索引非语料任务：只读行 + 待同步时 ↻ 走 indexer（见 _on_rebuild_requested）
+        self._workspace.add_source(INDEX_TASK_NAME, INDEX_TASK_NAME)
+
+    def _on_rebuild_requested(self, task: str) -> None:
+        """左栏 ↻ 分派：语料任务走 maintain_rag --only，向量索引走 indexer。"""
+        if task == INDEX_TASK_NAME:
+            self._run_index()
+        else:
+            self._run(["--force", "--only", task])
 
     def _on_child_changed(self) -> None:
         """维护对象保存后：刷新语料状态（左栏状态点即时变化）并转发 data_changed。"""
@@ -292,17 +346,21 @@ class RagMaintenancePanel(QWidget):
         pending_count = len(pending)
         self._refine_button.setText(f"索引精化（{pending_count}）" if pending_count else "索引精化 ✓")
         self._task_rows = {row["name"]: row for row in rows}
+        # 向量索引状态并入左栏（set_task_states 按任务名匹配，同 dict 机制）
+        self._task_rows[INDEX_TASK_NAME] = index_state(self._root)
         self._workspace.set_task_states(self._task_rows)
         issues = audit_summary(self._root, pending)
-        self._refresh_status_summary(rows, issues)
+        self._refresh_status_summary(rows, issues, self._task_rows[INDEX_TASK_NAME])
         self._refresh_audit_banner(issues)
 
-    def _refresh_status_summary(self, rows: list[dict], issues: list[AuditIssue]) -> None:
-        """全局操作栏状态摘要：语料 N 最新 · N 待重建 · 提示 N。"""
+    def _refresh_status_summary(self, rows: list[dict], issues: list[AuditIssue],
+                                index_row: dict) -> None:
+        """全局操作栏状态摘要：语料 N 最新 · N 待重建 · 提示 N · 索引状态。"""
         fresh = sum(row["status"] == "最新" for row in rows)
         stale = sum(row["status"] == "待重建" for row in rows)
         missing = sum(row["status"] == "缺源" for row in rows)
-        if stale or missing:
+        index_stale = index_row["status"] != "最新"
+        if stale or missing or index_stale:
             parts = [f"语料 {fresh} 最新"]
             if stale:
                 parts.append(f"{stale} 待重建")
@@ -310,6 +368,8 @@ class RagMaintenancePanel(QWidget):
                 parts.append(f"{missing} 缺源")
             if issues:
                 parts.append(f"提示 {len(issues)}")
+            if index_stale:
+                parts.append(f"索引{index_row['status']}")
             self._action_bar.set_status(" · ".join(parts), TONE_WARNING)
         else:
             summary = "所有语料与数据源一致"
@@ -331,27 +391,36 @@ class RagMaintenancePanel(QWidget):
     }
 
     def _refresh_audit_banner(self, issues: list[AuditIssue]) -> None:
+        self._audit_issues = issues
         if not issues:
             self._audit_banner.hide()
             return
         set_tone(self._audit_banner, TONE_WARNING)
         self._audit_label.setText("人工维护提示")
-        hidden = len(issues) - self._MAX_AUDIT_ROWS
         for row in self._audit_rows:
             row.setParent(None)
             row.deleteLater()
         self._audit_rows.clear()
-        for issue in issues[:self._MAX_AUDIT_ROWS]:
+        shown = issues if self._banner_expanded else issues[:self._MAX_AUDIT_ROWS]
+        for issue in shown:
             row = self._build_audit_row(issue)
             self._audit_list_layout.addWidget(row)
             self._audit_rows.append(row)
-        if hidden > 0:
-            note = QLabel(f"还有 {hidden} 条提示，处理后点击「刷新状态」查看全部")
-            note.setObjectName("noticeBannerMessage")
-            self._audit_list_layout.addWidget(note)
-            self._audit_rows.append(note)
+        if len(issues) > self._MAX_AUDIT_ROWS:
+            toggle = QPushButton(
+                "收起" if self._banner_expanded
+                else f"展开全部（还有 {len(issues) - self._MAX_AUDIT_ROWS} 条）")
+            set_ui_role(toggle, ROLE_SECONDARY)
+            toggle.clicked.connect(self._toggle_audit_banner)
+            self._audit_list_layout.addWidget(toggle)
+            self._audit_rows.append(toggle)
         self._audit_list.setVisible(True)
         self._audit_banner.show()
+
+    def _toggle_audit_banner(self) -> None:
+        """展开/收起全部审计提示（按钮行随 _audit_rows 重建自回收）。"""
+        self._banner_expanded = not self._banner_expanded
+        self._refresh_audit_banner(self._audit_issues)
 
     def _build_audit_row(self, issue: AuditIssue) -> QWidget:
         row = QWidget()
@@ -433,6 +502,13 @@ class RagMaintenancePanel(QWidget):
     # 本地执行（ScriptRunner 封装 QProcess）
     # ---------------------------------------------------------------
     def _run(self, args: list[str]) -> None:
+        self._run_module("src.scripts.maintain_rag", args)
+
+    def _run_index(self) -> None:
+        """全量重建向量索引（分钟级，含编码器加载与全量重嵌入）。"""
+        self._run_module("src.rag.indexer", [])
+
+    def _run_module(self, module: str, extra_args: list[str]) -> None:
         if self._runner.is_running():
             QMessageBox.information(self, "正在执行", "已有维护任务运行中，请等待完成。")
             return
@@ -440,9 +516,9 @@ class RagMaintenancePanel(QWidget):
         self._workspace.expand_log()
         self._workspace.set_log_meta("执行中…")
         self._log.clear()
-        self._log.appendPlainText("$ python -m src.scripts.maintain_rag " + " ".join(args))
+        self._log.appendPlainText("$ python -m " + module + " " + " ".join(extra_args))
         self._run_started = time.monotonic()
-        if self._runner.run(PYTHON, None, ['-m', 'src.scripts.maintain_rag'] + args, self._root) is False:
+        if self._runner.run(PYTHON, None, ['-m', module] + extra_args, self._root) is False:
             # 启动失败不再走 finished（避免与 run() 返回值抢语义），
             # 忙状态必须在此复位，否则整页按钮永久禁用
             self._set_busy(False)
