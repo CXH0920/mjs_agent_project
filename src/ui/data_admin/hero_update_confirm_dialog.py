@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
 from src.ui.data_admin.baike_ignore_manager_dialog import BaikeIgnoreManagerDialog
 from src.ui.data_admin.ignoreable_diff_list import IgnoreableDiffListMixin
 from src.ui.shared.rich_diff import build_diff_rows, rows_to_html
-from src.ui.shared.widgets import DialogFooter, PageHeader
+from src.ui.shared.style import TONE_WARNING
+from src.ui.shared.widgets import DialogFooter, NoticeBanner, PageHeader
 
 CHANGE_LABELS = {
     "增强": "增强",
@@ -73,11 +74,17 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
         candidates: list[dict],
         parent=None,
         ignore_service=None,
+        official_ok: bool = True,
     ) -> None:
-        """ignore_service：AnnouncementService（提供 ignore_hero/ignored_hero_count），None 时隐藏忽略入口。"""
+        """ignore_service：AnnouncementService（提供 ignore_hero/ignored_hero_count），None 时隐藏忽略入口。
+
+        official_ok：本批候选是否基于成功的官网拉取；False 时顶部展示
+        降级原因提示条（无差异摘要、忽略禁用、无 id 候选禁勾的统一解释）。
+        """
         super().__init__(parent)
         self._candidates = list(candidates)
         self._ignore_service = ignore_service
+        self._official_ok = official_ok
         self.selected_ids: list[int] = []
         self.selected_candidates: list[dict] = []
         self.setWindowTitle("更新武将数据确认")
@@ -98,6 +105,12 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
             "勾选要覆盖的武将；未勾选的保留本地内容，下次检查仍会提示，"
             "不再需要提示请使用「忽略此条差异」。",
         ))
+        if not self._official_ok:
+            layout.addWidget(NoticeBanner(
+                "官网数据获取失败",
+                "以下候选基于上次检查结果，差异摘要与忽略功能暂不可用，建议稍后重试。",
+                tone=TONE_WARNING,
+            ))
 
         self._count_label = QLabel()
         layout.addWidget(self._count_label)

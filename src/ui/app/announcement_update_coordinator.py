@@ -385,7 +385,14 @@ class AnnouncementUpdateCoordinator(QObject):
         if not candidates:
             self._reporter.show_message("没有需要更新的武将数据")
             return
-        dialog = HeroUpdateConfirmDialog(candidates, self._window, ignore_service=self._service)
+        official_ok = payload.get("official_ok", True)
+        if not official_ok:
+            # 官网拉取失败：候选是降级产物（无摘要/忽略禁用/无 id 候选禁勾），
+            # 弹框前先说明原因，确认框顶部亦有同款提示条
+            self._reporter.show_message("官网数据获取失败，以下候选基于上次检查结果")
+        dialog = HeroUpdateConfirmDialog(
+            candidates, self._window, ignore_service=self._service, official_ok=official_ok
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             self._reporter.show_message("已取消更新武将数据")
             return

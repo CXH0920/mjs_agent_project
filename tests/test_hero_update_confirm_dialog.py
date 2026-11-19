@@ -90,6 +90,23 @@ def test_accept_selection_includes_checked_new() -> None:
     assert [c["name"] for c in dialog.selected_candidates] == ["贾诩", "东方朔"]
 
 
+def test_official_unavailable_banner_shown() -> None:
+    """官网获取失败（official_ok=False）时顶部展示降级原因提示条；正常时不展示。"""
+    from src.ui.shared.widgets import NoticeBanner
+
+    _app()
+    dialog = HeroUpdateConfirmDialog([_candidate()], official_ok=False)
+    banners = dialog.findChildren(NoticeBanner)
+    assert len(banners) == 1
+    assert banners[0].title_label.text() == "官网数据获取失败"
+    assert "忽略功能暂不可用" in banners[0].message_label.text()
+    dialog.close()
+
+    normal = HeroUpdateConfirmDialog([_candidate()])
+    assert not normal.findChildren(NoticeBanner)
+    normal.close()
+
+
 def test_unfetchable_candidate_disabled_and_identical_default_unchecked() -> None:
     """无 id 候选灰显禁勾（官网不可用无法采集）；内容一致候选默认不勾。"""
     _app()

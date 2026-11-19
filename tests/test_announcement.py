@@ -1363,7 +1363,7 @@ def test_hero_update_all_cancelled_consumes_batch_and_guides_ignore(monkeypatch)
         selected_ids = []
         selected_candidates = []
 
-        def __init__(self, candidates, parent=None, ignore_service=None):
+        def __init__(self, candidates, parent=None, ignore_service=None, official_ok=True):
             pass
 
         def exec(self):
@@ -1386,6 +1386,39 @@ def test_hero_update_all_cancelled_consumes_batch_and_guides_ignore(monkeypatch)
     assert applied == [()]
     assert window._last_diff == {"added": [], "modified": [], "removed": []}
     assert any("忽略此条差异" in message for message in toasts)
+
+
+def test_hero_update_prepared_official_unavailable_notifies_and_degrades(monkeypatch) -> None:
+    """官网拉取失败（official_ok=False）：弹框透传降级标记并先说明原因。"""
+    from PySide6.QtWidgets import QDialog
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    messages = []
+    constructed = []
+
+    class _Dialog:
+        def __init__(self, candidates, parent=None, ignore_service=None, official_ok=True):
+            constructed.append({"official_ok": official_ok, "count": len(candidates)})
+
+        def exec(self):
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _Dialog)
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(
+            show_message=lambda text: messages.append(text), hide_progress=lambda: None
+        ),
+        _service=object(),
+    )
+
+    AnnouncementUpdateCoordinator._on_hero_update_prepared(
+        window,
+        {"candidates": [{"name": "贾诩", "hero_id": 1}], "official_ok": False},
+    )
+
+    assert constructed == [{"official_ok": False, "count": 1}]
+    assert any("官网数据获取失败" in message for message in messages)
 
 
 def test_announcement_names_excludes_consumed_heroes() -> None:
@@ -1612,7 +1645,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
 
         # 确认流程：勾选全部（调整 + 新增武将官网 id）→ 单阶段指定采集（所见即所得）
         class _AcceptDialog:
-            def __init__(self, candidates, parent=None, ignore_service=None):
+            def __init__(self, candidates, parent=None, ignore_service=None, official_ok=True):
                 self.selected_candidates = list(candidates)
                 self.selected_ids = [jia_id, ma_id, 188]
 
@@ -1636,7 +1669,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
             selected_ids = []
             selected_candidates = []
 
-            def __init__(self, candidates, parent=None, ignore_service=None):
+            def __init__(self, candidates, parent=None, ignore_service=None, official_ok=True):
                 pass
 
             def exec(self):
@@ -1651,7 +1684,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
 
         # 用户取消：不采集、不刷新
         class _RejectDialog:
-            def __init__(self, candidates, parent=None, ignore_service=None):
+            def __init__(self, candidates, parent=None, ignore_service=None, official_ok=True):
                 pass
 
             def exec(self):
