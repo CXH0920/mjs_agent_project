@@ -769,7 +769,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 181 行装配壳（审计 G6 切片 4.5）
     # 699 → 742：公告翻页补拉（第一轮审查 P2-5 修复）——两次检查间新增
     # 超过单页 5 条的公告靠翻页补回，known_keys 整页已知即停 + 上限防失控
-    "scraper/official_source/announcement.py": 742,
+    # 742 → 750：更新候选接入武将粒度消费——公告已消费武将过滤 +
+    # 本地未收录候选补官网 id（所见即所得指定采集）
+    "scraper/official_source/announcement.py": 750,
     # 670 → 570：官方导入网关 official_import_gateway、图像保存调度
     # image_save_scheduler、OCR 协调器 ocr_task_coordinator 依次出仓（审计 G8）
     # 570 → 575：截图存盘失败补 warning 日志（修复批 2026-10-05，+1 行，留余量）

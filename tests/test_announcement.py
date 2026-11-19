@@ -19,6 +19,7 @@ from src.data.announcement_manager import (
     Announcement,
     AnnouncementManager,
     AnnouncementStatus,
+    BaikeHeroEntry,
     BaikeSnapshot,
     HeroChange,
     load_baike_snapshot,
@@ -534,6 +535,47 @@ def test_announcement_manager_mark_applied_keeps_pending(tmp_path) -> None:
     assert manager.list_all()[0].status is AnnouncementStatus.PENDING
 
 
+def test_announcement_manager_mark_applied_partial_consumption(tmp_path) -> None:
+    """武将粒度消费：只记名单内武将，公告提及武将全部消费完才置 APPLIED。
+
+    部分勾选更新后跳过武将所在公告保持 READY（萧思话场景回归），
+    下次检查仍会作为候选提示。
+    """
+    manager = AnnouncementManager(tmp_path / "announcements.json")
+    announcement = Announcement(
+        id=213,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/partial.html",
+        hero_related=True,
+        matched_heroes=[
+            HeroChange(name="贾诩", change="增强", known=True),
+            HeroChange(name="萧思话", change="调整", known=True),
+        ],
+    )
+    manager.merge_new([announcement.model_dump()])
+    manager.mark_ready_if_updated(
+        {"modified": [{"name": "贾诩", "id": 1}, {"name": "萧思话", "id": 2}]}
+    )
+
+    # 只更新贾诩：公告保持 READY，萧思话仍在提示范围
+    manager.mark_applied({"贾诩"})
+    stored = manager.list_all()[0]
+    assert stored.status is AnnouncementStatus.READY
+    assert stored.applied_heroes == ["贾诩"]
+
+    # 名单与公告武将无交集：不消费
+    manager.mark_applied({"马钧"})
+    stored = manager.list_all()[0]
+    assert stored.status is AnnouncementStatus.READY
+    assert stored.applied_heroes == ["贾诩"]
+
+    # 补上萧思话：全部消费完 → APPLIED
+    manager.mark_applied({"萧思话"})
+    stored = manager.list_all()[0]
+    assert stored.status is AnnouncementStatus.APPLIED
+    assert set(stored.applied_heroes) == {"贾诩", "萧思话"}
+
+
 def test_announcement_manager_reload_keeps_applied_status(tmp_path) -> None:
     """重启后新实例须 load 磁盘公告：已 applied 状态保留，同 URL 不再当新公告。
 
@@ -959,6 +1001,57 @@ def test_service_finalize_check_save_failure_still_emits(tmp_path, monkeypatch) 
     assert finished == [result]
 
 
+def test_service_mark_applied_partial_merges_baseline_by_hero(tmp_path) -> None:
+    """武将粒度基线前移：只更新已消费武将的快照哈希，跳过武将的旧基线保留。
+
+    跳过武将下次检查 diff 仍会报（基线未前移）；全取消路径（无参）回归
+    现状——整批消费 + 基线全量前移。
+    """
+    service, manager = _make_service(tmp_path)
+    save_baike_snapshot(
+        BaikeSnapshot(
+            heroes={
+                "1": BaikeHeroEntry(name="贾诩", hash="old-jia"),
+                "2": BaikeHeroEntry(name="萧思话", hash="old-xiao"),
+            }
+        ),
+        tmp_path / "baike_snapshot.json",
+    )
+    service._last_snapshot = BaikeSnapshot(
+        heroes={
+            "1": BaikeHeroEntry(name="贾诩", hash="new-jia"),
+            "2": BaikeHeroEntry(name="萧思话", hash="new-xiao"),
+        }
+    )
+    announcement = Announcement(
+        id=213,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/partial.html",
+        hero_related=True,
+        matched_heroes=[
+            HeroChange(name="贾诩", change="增强", known=True),
+            HeroChange(name="萧思话", change="调整", known=True),
+        ],
+    )
+    manager.merge_new([announcement.model_dump()])
+    manager.mark_ready_if_updated(
+        {"modified": [{"name": "贾诩", "id": 1}, {"name": "萧思话", "id": 2}]}
+    )
+
+    # 只更新贾诩（id 1）：基线仅贾诩哈希前移
+    service.mark_applied({"贾诩"}, {1})
+    stored = load_baike_snapshot(tmp_path / "baike_snapshot.json")
+    assert stored.heroes["1"].hash == "new-jia"
+    assert stored.heroes["2"].hash == "old-xiao"
+    assert manager.list_all()[0].status is AnnouncementStatus.READY
+
+    # 全取消路径（无参）：整批消费 + 基线全量前移（现状回归）
+    service.mark_applied()
+    stored = load_baike_snapshot(tmp_path / "baike_snapshot.json")
+    assert stored.heroes["2"].hash == "new-xiao"
+    assert manager.list_all()[0].status is AnnouncementStatus.APPLIED
+
+
 def test_service_prepare_update_candidates_cooldown(tmp_path, monkeypatch) -> None:
     """prepare 自身冷却期内被拦截：返回 False 且不启动线程（TD-A6-001 回归）。"""
     service, _manager = _make_service(tmp_path)
@@ -1206,7 +1299,11 @@ def test_on_announcement_check_finished_hero_related_toast(monkeypatch) -> None:
 
 
 def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> None:
-    """令牌未置位时，无关采集的完成事件不得消费公告更新阶段（H5 回归）。"""
+    """令牌未置位时，无关采集的完成事件不得消费公告更新阶段（H5 回归）。
+
+    成功收尾按 _pending_consume 武将粒度消费：mark_applied 收到勾选名单，
+    diff 只清已消费条目、剩余武将保留。
+    """
     from src.ui.app import announcement_update_coordinator as coordinator_module
 
     toasts = []
@@ -1218,26 +1315,94 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
         _window=None,
         _heroes_provider=lambda: [],
         _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
-        _pending_phases=[("incremental", None)],
+        _pending_phases=[("specific", [161])],
+        _pending_consume=[{"name": "贾诩", "hero_id": 161}],
         _phase_gate=BusyGate(),
-        _service=SimpleNamespace(mark_applied=lambda: applied.append(1)),
-        _last_diff={"added": [1], "modified": [], "removed": []},
+        _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
+        _last_diff={
+            "added": [{"name": "贾诩", "id": 161}, {"name": "马钧", "id": 184}],
+            "modified": [],
+            "removed": [],
+        },
         _refresh_banner=lambda: None,
         _refresh_dialog=lambda: None,
     )
 
     AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
 
-    assert window._pending_phases == [("incremental", None)]
+    assert window._pending_phases == [("specific", [161])]
     assert applied == []
     assert toasts == ["武将数据已采集完成，请重新加载数据。"]
 
     window._phase_gate.acquire()
+    # 非绑定调用下把真实 diff 过滤接回假对象，断言才覆盖真实现
+    window._filter_consumed_diff = AnnouncementUpdateCoordinator._filter_consumed_diff
     AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
 
     assert window._pending_phases is None
-    assert applied == [1]
+    assert applied == [({"贾诩"}, {161})]
+    assert window._last_diff == {
+        "added": [{"name": "马钧", "id": 184}],
+        "modified": [],
+        "removed": [],
+    }
+
+
+def test_hero_update_all_cancelled_consumes_batch_and_guides_ignore(monkeypatch) -> None:
+    """全取消视为已查看本版本：整批消费（无参 mark_applied）并 toast 引导忽略。"""
+    from PySide6.QtWidgets import QDialog
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    toasts = []
+    monkeypatch.setattr(
+        coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+    )
+    applied = []
+
+    class _AllUncheckedDialog:
+        selected_ids = []
+        selected_candidates = []
+
+        def __init__(self, candidates, parent=None, ignore_service=None):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _AllUncheckedDialog)
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
+        _last_diff={"added": [1], "modified": [], "removed": []},
+        _refresh_banner=lambda: None,
+        _refresh_dialog=lambda: None,
+    )
+
+    AnnouncementUpdateCoordinator._on_hero_update_prepared(
+        window, {"candidates": [{"name": "贾诩", "hero_id": 1}]}
+    )
+
+    assert applied == [()]
     assert window._last_diff == {"added": [], "modified": [], "removed": []}
+    assert any("忽略此条差异" in message for message in toasts)
+
+
+def test_announcement_names_excludes_consumed_heroes() -> None:
+    """横幅武将标签过滤已消费武将：部分更新后只提示剩余待更新武将。"""
+    announcement = Announcement(
+        id=215,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/filter.html",
+        hero_related=True,
+        matched_heroes=[
+            HeroChange(name="贾诩", change="增强", known=True),
+            HeroChange(name="萧思话", change="调整", known=True),
+        ],
+        applied_heroes=["贾诩"],
+    )
+    names = AnnouncementUpdateCoordinator._announcement_names([announcement])
+    assert names == ["萧思话（调整）"]
 
 
 def test_update_phase_aborts_when_fetch_service_busy(monkeypatch) -> None:
@@ -1415,7 +1580,9 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         assert "东方朔（新增）·未收录" in full_text
 
         calls = []
-        monkeypatch.setattr(window._announcement_coordinator._service, "mark_applied", lambda: None)
+        monkeypatch.setattr(
+            window._announcement_coordinator._service, "mark_applied", lambda *args: None
+        )
 
         class _FakeFetchService:
             is_busy = False
@@ -1443,29 +1610,31 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         assert by_name["东方朔"]["known"] is False
         assert by_name["马钧"]["source"] == "百科 diff"
 
-        # 确认流程：勾选部分（调整+新增）→ 链式执行
+        # 确认流程：勾选全部（调整 + 新增武将官网 id）→ 单阶段指定采集（所见即所得）
         class _AcceptDialog:
             def __init__(self, candidates, parent=None, ignore_service=None):
-                self.selected_ids = [jia_id, ma_id]
-                self.update_new = True
+                self.selected_candidates = list(candidates)
+                self.selected_ids = [jia_id, ma_id, 188]
 
             def exec(self):
                 return QDialog.DialogCode.Accepted
 
         monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _AcceptDialog)
         window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
-        assert calls == [("specific", [jia_id, ma_id])]
-        window._announcement_coordinator._on_fetch_completed(True)  # 模拟子进程完成，驱动下一阶段
-        assert calls == [("specific", [jia_id, ma_id]), ("incremental", None)]
-        window._announcement_coordinator._on_fetch_completed(True)  # 第二阶段完成：队列清空并 mark_applied
+        assert calls == [("specific", [jia_id, ma_id, 188])]
+        window._announcement_coordinator._on_fetch_completed(True)  # 单阶段完成：队列清空并按勾选消费
 
-        # 全取消：不采集，但刷新快照（mark_applied）
+        # 全取消：不采集，但整批消费刷新快照（mark_applied 无参全量）
         applied = []
-        monkeypatch.setattr(window._announcement_coordinator._service, "mark_applied", lambda: applied.append(1))
+        monkeypatch.setattr(
+            window._announcement_coordinator._service,
+            "mark_applied",
+            lambda *args: applied.append(args),
+        )
 
         class _AllUncheckedDialog:
             selected_ids = []
-            update_new = False
+            selected_candidates = []
 
             def __init__(self, candidates, parent=None, ignore_service=None):
                 pass
@@ -1478,7 +1647,7 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         window._announcement_coordinator._pending_phases = None
         window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
         assert calls == []
-        assert applied == [1]
+        assert applied == [()]
 
         # 用户取消：不采集、不刷新
         class _RejectDialog:
@@ -1876,6 +2045,37 @@ def test_service_do_check_suppresses_ignored_heroes(tmp_path, monkeypatch) -> No
     result2 = _run_check(service)
     assert result2.ready_count == 1
     assert [entry["id"] for entry in result2.diff["modified"]] == [2]
+
+
+def test_build_update_candidates_skips_consumed_announcement_heroes() -> None:
+    """公告已消费武将（applied_heroes）不再作为候选：部分更新后不反复提示。"""
+    announcement = Announcement(
+        id=209,
+        title="8月13日停服更新预告",
+        url="https://mjs.ztgame.com/news/008.html",
+        hero_related=True,
+        status=AnnouncementStatus.READY,
+        matched_heroes=[HeroChange(name="贾诩", change="增强", known=True)],
+        applied_heroes=["贾诩"],
+    )
+    empty_diff = {"added": [], "modified": [], "removed": []}
+    assert build_update_candidates([announcement], [], None, empty_diff) == []
+
+
+def test_build_update_candidates_backfills_official_id_for_new_hero() -> None:
+    """公告来源新增武将在官网可用时补官网 id：确认框按 id 指定采集（所见即所得）。"""
+    announcement = Announcement(
+        id=214,
+        title="新武将公告",
+        url="https://mjs.ztgame.com/news/new-hero.html",
+        hero_related=True,
+        status=AnnouncementStatus.READY,
+        matched_heroes=[HeroChange(name="东方朔", change="新增", known=False)],
+    )
+    official = [_hero_dict(188, "东方朔")]
+    empty_diff = {"added": [], "modified": [], "removed": []}
+    candidates = build_update_candidates([announcement], [], official, empty_diff)
+    assert candidates[0]["hero_id"] == 188
 
 
 def test_build_update_candidates_suppresses_announcement_source_by_ignore() -> None:

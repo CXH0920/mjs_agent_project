@@ -66,6 +66,8 @@ class AnnouncementUpdateCoordinator(QObject):
         self._seen_diff_total = 0
         self._seen_ready_count = 0
         self._pending_phases: list[tuple[str, list[int] | None]] | None = None
+        # 本批待消费的勾选候选（武将粒度）：采集成功后据此精确消费公告/差异/基线
+        self._pending_consume: list[dict] | None = None
         # 阶段忙碌闸（P0-3 收口，原裸 bool 阶段令牌）：只有成功发起的阶段
         # 采集才占用，完成回调据此只消费对应阶段
         self._phase_gate = BusyGate()
@@ -192,6 +194,8 @@ class AnnouncementUpdateCoordinator(QObject):
 
         只有阶段令牌在位的完成事件才消费更新队列：无关采集（如手动采集）
         的完成不得冒领阶段结果，否则公告武将会被静默跳过并 mark_applied。
+        成功后按本批勾选候选武将粒度消费——公告只记已更新武将、diff 只清
+        已更新条目、基线只前移已更新武将，用户跳过的武将下次检查仍会提示。
         """
         self._reporter.hide_progress()
         if self._pending_phases is not None and self._phase_gate.is_busy:
@@ -201,9 +205,17 @@ class AnnouncementUpdateCoordinator(QObject):
                 self._start_next_phase()
                 return
             self._pending_phases = None
+            consume = self._pending_consume
+            self._pending_consume = None
             if success:
-                self._service.mark_applied()
-                self._last_diff = {"added": [], "modified": [], "removed": []}
+                names = {candidate["name"] for candidate in consume or []}
+                hero_ids = {
+                    candidate["hero_id"]
+                    for candidate in consume or []
+                    if candidate.get("hero_id") is not None
+                }
+                self._service.mark_applied(names, hero_ids)
+                self._last_diff = self._filter_consumed_diff(self._last_diff, names, hero_ids)
                 self._refresh_banner()
                 self._refresh_dialog()
                 show_toast(self._window, "武将数据已更新，请重新加载数据（F5）。", duration=4000)
@@ -214,6 +226,26 @@ class AnnouncementUpdateCoordinator(QObject):
             show_toast(self._window, "武将数据已采集完成，请重新加载数据。", duration=3000)
         else:
             QMessageBox.warning(self._window, "采集失败", "武将数据采集失败")
+
+    @staticmethod
+    def _filter_consumed_diff(
+        diff: dict, names: set[str], hero_ids: set[int]
+    ) -> dict:
+        """从内存 diff 中剔除本批已消费武将的条目（removed 不在更新流程内，保留）。
+
+        id 优先、按名兜底，与忽略名单过滤（baike_ignore_store._entry_for）同口径。
+        """
+        consumed: dict = {}
+        for group in ("added", "modified"):
+            kept = []
+            for entry in diff.get(group) or []:
+                entry_id = entry.get("id")
+                if (entry_id is not None and entry_id in hero_ids) or entry.get("name") in names:
+                    continue
+                kept.append(entry)
+            consumed[group] = kept
+        consumed["removed"] = list(diff.get("removed") or [])
+        return consumed
 
     def _on_check_started(self) -> None:
         self._reporter.show_message("正在检查公告更新...")
@@ -321,10 +353,13 @@ class AnnouncementUpdateCoordinator(QObject):
 
     @staticmethod
     def _announcement_names(announcements) -> list[str]:
-        """汇总公告涉及的武将展示标签。"""
+        """汇总公告涉及的武将展示标签（已消费武将不展示，横幅只提示剩余待更新）。"""
         names = []
         for announcement in announcements:
+            consumed = set(announcement.applied_heroes)
             for change in announcement.matched_heroes:
+                if change.name in consumed:
+                    continue
                 label = change.name
                 if change.change:
                     label += f"（{change.change}）"
@@ -355,21 +390,22 @@ class AnnouncementUpdateCoordinator(QObject):
             self._reporter.show_message("已取消更新武将数据")
             return
         selected_ids = dialog.selected_ids
-        update_new = dialog.update_new
-        if not selected_ids and not update_new:
+        if not selected_ids:
             # 全取消：保留本地内容，刷新快照视为“本版本已查看”
             self._service.mark_applied()
             self._last_diff = {"added": [], "modified": [], "removed": []}
             self._refresh_banner()
             self._refresh_dialog()
-            show_toast(self._window, "已保留本地武将内容，本次未更新", duration=3000)
+            show_toast(
+                self._window,
+                "已保留本地武将内容，本次未更新。若不想再次收到提示，"
+                "可选择武将后点击「忽略此条差异」。",
+                duration=4000,
+            )
             return
-        phases: list[tuple[str, list[int] | None]] = []
-        if selected_ids:
-            phases.append(("specific", selected_ids))
-        if update_new:
-            phases.append(("incremental", None))
-        self._pending_phases = phases
+        # 所见即所得：勾选即采集目标（新增武将的 id 为官网 id），单阶段指定采集
+        self._pending_consume = dialog.selected_candidates
+        self._pending_phases = [("specific", selected_ids)]
         self._start_next_phase()
 
     def _start_next_phase(self) -> None:
@@ -395,8 +431,9 @@ class AnnouncementUpdateCoordinator(QObject):
         return self._fetch_service.fetch_incremental()
 
     def _abort_pending_phases(self) -> None:
-        """作废整条公告更新流：清队列与令牌，不 mark_applied（横幅保留可重试）。"""
+        """作废整条公告更新流：清队列、令牌与消费名单，不 mark_applied（横幅保留可重试）。"""
         self._pending_phases = None
+        self._pending_consume = None
         self._phase_gate.reset()  # 作废在途阶段的占用，非持有者释放
         self._reporter.hide_progress()
         self._reporter.show_message("公告更新已取消：武将采集正在进行")

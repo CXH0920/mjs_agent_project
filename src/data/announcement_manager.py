@@ -47,6 +47,8 @@ class Announcement(BaseModel):
     publishdate: str = ""
     hero_related: bool = False
     matched_heroes: list[HeroChange] = Field(default_factory=list)
+    # 已消费武将名（武将粒度更新：matched_heroes 全部消费完才置 APPLIED）
+    applied_heroes: list[str] = Field(default_factory=list)
     content_missing: bool = False
     status: AnnouncementStatus = AnnouncementStatus.PENDING
     first_seen_at: str = Field(default_factory=lambda: date.today().isoformat())
@@ -158,16 +160,33 @@ class AnnouncementManager(DataManager[Announcement]):
                 self.save()
         return changed
 
-    def mark_applied(self) -> None:
-        """采集完成后将 ready 公告置为已处理；pending 公告保留待百科确认。
+    def mark_applied(self, hero_names: set[str] | None = None) -> None:
+        """采集完成后消费 ready 公告；pending 公告保留待百科确认。
 
         pending 公告可能仍处于百科滞后窗口（采集子进程成功不代表数据已落地），
         此时推进为终态会永久吞掉公告，故仅在百科已确认（ready）时推进。
+        hero_names 为 None 时整批消费（全取消"视为已查看"）；否则按武将消费——
+        只记录名单内武将，公告提及的武将全部消费完才置 APPLIED，否则保持
+        READY（用户跳过的武将下次检查仍会提示）。
         """
         changed = False
         with self._lock:
             for announcement in list(self._items.values()):
-                if announcement.status is AnnouncementStatus.READY:
+                if announcement.status is not AnnouncementStatus.READY:
+                    continue
+                if hero_names is None:
+                    announcement.status = AnnouncementStatus.APPLIED
+                    changed = True
+                    continue
+                matched_names = {change.name for change in announcement.matched_heroes}
+                consumed = matched_names & hero_names
+                if consumed:
+                    announcement.applied_heroes = sorted(
+                        set(announcement.applied_heroes) | consumed
+                    )
+                    changed = True
+                # 无提及武将的 READY 公告无可跳过对象，直接整条消费（与全量语义一致）
+                if not matched_names or matched_names <= set(announcement.applied_heroes):
                     announcement.status = AnnouncementStatus.APPLIED
                     changed = True
             if changed:

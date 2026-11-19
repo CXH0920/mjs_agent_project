@@ -683,7 +683,11 @@ def build_update_candidates(
     for announcement in announcements or []:
         if getattr(announcement, "status", None) is not AnnouncementStatus.READY:
             continue
+        consumed = set(getattr(announcement, "applied_heroes", None) or [])
         for change in announcement.matched_heroes or []:
+            # 已消费武将（武将粒度更新）不再作为候选提示
+            if change.name in consumed:
+                continue
             hero_id = None
             local = local_by_name.get(change.name)
             if local is not None:
@@ -722,6 +726,8 @@ def build_update_candidates(
         official = official_by_name.get(candidate["name"])
         if official is not None:
             candidate["content_hash"] = hero_content_hash(official)
+            # 公告来源的本地未收录候选补官网 id 作指定采集目标（所见即所得）
+            candidate["hero_id"] = candidate["hero_id"] or int(official["id"])
         if candidate["change"] == "新增" and local is None:
             if official is not None:
                 candidate["summary"] = [

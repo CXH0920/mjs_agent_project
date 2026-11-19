@@ -159,8 +159,16 @@ class AnnouncementService(QObject):
         self._thread.start()
         return True
 
-    def mark_applied(self) -> None:
-        """武将数据更新完成后调用：公告置已处理并刷新百科快照。
+    def mark_applied(
+        self,
+        hero_names: set[str] | None = None,
+        hero_ids: set[int] | None = None,
+    ) -> None:
+        """武将数据更新完成后调用：消费公告并推进百科快照基线。
+
+        hero_names 为 None 时整批消费（全取消"视为已查看"），快照全量前移
+        （现状语义）；否则按武将消费——公告只记录名单内武将，快照只前移
+        名单内武将的哈希条目，用户跳过的武将差异保留待下次检查提示。
 
         检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态
         推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
@@ -168,16 +176,43 @@ class AnnouncementService(QObject):
         if self.is_busy:
             logger.warning("公告检查/候选准备进行中，跳过 mark_applied")
             return
-        self._announcements.mark_applied()
-        if self._last_snapshot is not None:
+        self._announcements.mark_applied(hero_names)
+        if self._last_snapshot is None:
+            return
+        try:
+            if hero_names is None:
+                save_baike_snapshot(self._last_snapshot, self._snapshot_path)
+            else:
+                self._merge_snapshot_baseline(hero_ids or set())
+        except Exception as error:
             # 与 _finalize_check 同款兜底：此处抛错会冒泡到 Qt 槽，其后的
             # 横幅刷新/对话框刷新/成功提示全部被跳过，用户只看到"没反应"
-            try:
-                save_baike_snapshot(self._last_snapshot, self._snapshot_path)
-            except Exception as error:
-                logger.error("百科快照保存失败（公告已置已处理）: %s", error)
-            else:
-                logger.info("已刷新百科快照")
+            logger.error("百科快照保存失败（公告已置已处理）: %s", error)
+        else:
+            logger.info("已刷新百科快照")
+
+    def _merge_snapshot_baseline(self, hero_ids: set[int]) -> None:
+        """把已消费武将的快照哈希合入当前基线（武将粒度前移）。
+
+        只动 hero_ids 内的条目，跳过武将的旧基线哈希保留——下次检查
+        diff 仍会报它。id 不在最近快照中（如公告来源武将未上百科）记
+        警告跳过；基线为空（首跑未初始化/损坏重建中）同样跳过，避免
+        把部分合并写成"只剩这些武将"的残缺基线。
+        """
+        baseline = load_baike_snapshot(self._snapshot_path)
+        if not baseline.heroes:
+            logger.warning("百科基线为空，跳过武将粒度基线前移")
+            return
+        merged = 0
+        for hero_id in hero_ids:
+            entry = self._last_snapshot.heroes.get(str(hero_id))
+            if entry is None:
+                logger.warning("最近快照无武将 %s，基线前移跳过", hero_id)
+                continue
+            baseline.heroes[str(hero_id)] = entry
+            merged += 1
+        if merged:
+            save_baike_snapshot(baseline, self._snapshot_path)
 
     # ---------------------------------------------------------------
     # 忽略名单（UI 经服务操作不触数据层）

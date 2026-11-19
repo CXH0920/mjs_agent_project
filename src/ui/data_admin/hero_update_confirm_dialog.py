@@ -63,7 +63,7 @@ class HeroDiffDetailDialog(QDialog):
 
 
 class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
-    """列出待更新武将，用户勾选要覆盖的；未勾选的保留本地内容。"""
+    """列出待更新武将，用户勾选要覆盖的；未勾选的保留本地内容，下次检查仍会提示。"""
 
     # 未注入 AnnouncementService（如独立复用对话框）时隐藏忽略入口
     ignore_ui_optional = True
@@ -79,7 +79,7 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
         self._candidates = list(candidates)
         self._ignore_service = ignore_service
         self.selected_ids: list[int] = []
-        self.update_new = False
+        self.selected_candidates: list[dict] = []
         self.setWindowTitle("更新武将数据确认")
         self.setMinimumSize(720, 520)
         self._build_ui()
@@ -95,7 +95,8 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(PageHeader(
             "更新武将数据确认",
-            "勾选要覆盖的武将；未勾选的保留本地内容，本次不会被覆盖。",
+            "勾选要覆盖的武将；未勾选的保留本地内容，下次检查仍会提示，"
+            "不再需要提示请使用「忽略此条差异」。",
         ))
 
         self._count_label = QLabel()
@@ -147,9 +148,25 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
             label += f" — {candidate.get('source', '')}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, candidate)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked)
             summary = candidate.get("summary") or []
+            if candidate.get("hero_id") is None:
+                # 无采集目标（官网不可用且本地未收录）：灰显禁勾，
+                # 避免勾选后被静默跳过——所见即所得，不能采的选不了
+                item.setFlags(
+                    item.flags()
+                    & ~Qt.ItemFlag.ItemIsUserCheckable
+                    & ~Qt.ItemFlag.ItemIsEnabled
+                )
+                item.setToolTip("\n".join(["官网数据不可用，无法采集", *summary]))
+                self._list.addItem(item)
+                continue
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            # 与官网内容一致的候选默认不勾（无差异可覆盖，需要时可手动勾选）
+            item.setCheckState(
+                Qt.CheckState.Unchecked
+                if summary == ["本地与官网内容一致"]
+                else Qt.CheckState.Checked
+            )
             if summary:
                 item.setToolTip("\n".join(summary))
             self._list.addItem(item)
@@ -173,7 +190,10 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
     def _select_all(self) -> None:
         self._list.blockSignals(True)
         for index in range(self._list.count()):
-            self._list.item(index).setCheckState(Qt.CheckState.Checked)
+            item = self._list.item(index)
+            # 禁勾项（无采集目标）不可程序性置选，否则会被计入已选但采不到
+            if item.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+                item.setCheckState(Qt.CheckState.Checked)
         self._list.blockSignals(False)
         self._update_count_label()
 
@@ -236,10 +256,12 @@ class HeroUpdateConfirmDialog(IgnoreableDiffListMixin, QDialog):
 
     def _accept_selection(self) -> None:
         selected = self._selected_candidates()
+        # 新增武将的 hero_id 为官网 id（候选构建时已补齐），与本地 id 同空间，
+        # 统一走指定采集；无 id 候选已在列表层禁勾，不会出现在已选中
+        self.selected_candidates = list(selected)
         self.selected_ids = [
             int(candidate["hero_id"])
             for candidate in selected
-            if candidate.get("hero_id") is not None and candidate.get("change") != "新增"
+            if candidate.get("hero_id") is not None
         ]
-        self.update_new = any(candidate.get("change") == "新增" for candidate in selected)
         self.accept()

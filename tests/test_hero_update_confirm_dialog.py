@@ -66,27 +66,51 @@ def test_clear_and_select_all() -> None:
     dialog.close()
 
 
-def test_accept_selection_excludes_unchecked_and_new() -> None:
+def test_accept_selection_excludes_unchecked() -> None:
     _app()
     dialog = HeroUpdateConfirmDialog([
         _candidate(),
-        _candidate(name="东方朔", hero_id=None, change="新增", known=False),
+        _candidate(name="马钧", hero_id=184, change="削弱"),
     ])
     dialog._list.item(1).setCheckState(Qt.CheckState.Unchecked)
     dialog._accept_selection()
     assert dialog.selected_ids == [161]
-    assert dialog.update_new is False
+    assert [c["name"] for c in dialog.selected_candidates] == ["贾诩"]
 
 
 def test_accept_selection_includes_checked_new() -> None:
+    """勾选的新增武将（官网 id）直接进入指定采集名单（所见即所得）。"""
     _app()
     dialog = HeroUpdateConfirmDialog([
         _candidate(),
-        _candidate(name="东方朔", hero_id=None, change="新增", known=False),
+        _candidate(name="东方朔", hero_id=188, change="新增", known=False),
     ])
     dialog._accept_selection()
-    assert dialog.selected_ids == [161]
-    assert dialog.update_new is True
+    assert dialog.selected_ids == [161, 188]
+    assert [c["name"] for c in dialog.selected_candidates] == ["贾诩", "东方朔"]
+
+
+def test_unfetchable_candidate_disabled_and_identical_default_unchecked() -> None:
+    """无 id 候选灰显禁勾（官网不可用无法采集）；内容一致候选默认不勾。"""
+    _app()
+    dialog = HeroUpdateConfirmDialog([
+        _candidate(hero_id=None, summary=[]),
+        _candidate(name="苏武", hero_id=193, summary=["本地与官网内容一致"]),
+        _candidate(),
+    ])
+    disabled_item = dialog._list.item(0)
+    assert not (disabled_item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+    assert not (disabled_item.flags() & Qt.ItemFlag.ItemIsEnabled)
+    assert "无法采集" in disabled_item.toolTip()
+    assert dialog._list.item(1).checkState() == Qt.CheckState.Unchecked
+    assert dialog._list.item(2).checkState() == Qt.CheckState.Checked
+
+    # 全选不波及禁勾项；禁勾项不会进入采集名单
+    dialog._select_all()
+    assert not (dialog._list.item(0).flags() & Qt.ItemFlag.ItemIsUserCheckable)
+    dialog._accept_selection()
+    assert dialog.selected_ids == [193, 161]
+    dialog.close()
 
 
 def test_diff_detail_dialog_has_tabs_and_diff_view() -> None:
