@@ -1,8 +1,8 @@
 # 模块：爬虫与数据采集
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
-> 职责：从官网解析武将数据、数据清洗与校验、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**
-> 文档日期：2026-11-18（基线 `a5fde97`）
+> 职责：从官网解析武将数据、数据清洗与校验（**技能描述拆段纯文本标题等值判定**）、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**、**公告更新候选武将粒度过滤**
+> 文档日期：2026-11-20（基线 `1acaa76`）
 
 ---
 
@@ -167,11 +167,16 @@ def extract_js_array(js_text: str) -> str:
 | _(固定值)_ | `hero.last_updated` | 当日 `date.today().isoformat()` |
 | _(回填)_ | `hero.title` / `hero.difficulty` / `hero.mode_viability` | 官网不提供，`transform()` 不再输出；由 `carry_over_local_fields()` 从旧 `heroes.json` 按 id 回填（详见 3.10 节） |
 
-**技能拆分逻辑（`split_skill_desc`）：**
-按 HTML 的 `<p>[<strong>]段落标题[/strong]</p>` 结构拆分——`<strong>` 按可选处理，兼容官网人工编辑偶尔漏包加粗（裸 `<p>标题</p>`）的异常标题格式（a78e801）：
+**技能拆分逻辑（`split_skill_desc`，4367444 重写为逐行混合式）：**
+判定不再依赖标签结构——按 `</p>` 切行、行内 `<br>`（含大写 `<BR>`，`_BR_SPLIT_RE` 大小写不敏感）切片，标题以**纯文本等值匹配词表** `SKILL_SECTION_TITLES`（`技能描述/技能详情/技能详解/结算详情/结算详解/技能典故/设计思路` 等）：`<b>` 包裹 / 漏包加粗 / 标题与正文同段以 `<br />` 换行（官网「萧思话·松石间意」事故形态——旧正则把整段判为非标题段，空描述且典故污染结算）均免疫：
+- 行内无标题片时整行清洗（与历史行为逐字节一致——正文段内 `<br>` 切片不加空格拼接，`hero_content_hash` 纳入 description/settlement，文本差异会误报「武将资料更新」公告并使忽略名单失配）；首个标题前的正文攒入 `prelude`
 - 描述按「技能描述」→「技能详情」→「技能详解」顺序认领首个命中（官网标题措辞不统一）→ `description`
 - 保留「结算详情/结算详解/技能详解/技能详情」→ `settlement`（取第一个**未被描述认领**的命中，避免同一段文字两处重复）
 - 丢弃「技能典故」「设计思路」（lore 文本，对游戏策略无帮助）
+- **空正文标题段不参与认领**：「技能描述」标题下无正文时认领链继续落到「技能详情」，不再截断为空描述导致增量采集中止
+- **prelude 兜底**：描述认领全落空时用首个标题前攒下的正文兜底（官网漏写首标题不再静默丢正文）
+- `transform()` 新增空描述告警：原文有正文但解析为空时带武将名/技能名打 warning（疑似官网新排版，日志直接可见，不必等 Pydantic 校验报错倒查）
+- 存量输出逐字节一致（实网对照 201 武将 499 技能仅 3 条差异且全部为修复：id=217 空描述、id=190/id=177 典故正文混入结算字段的存量污染）
 
 ### 3.2.1 全量采集写入前守卫（full.py，1fbfce4 新增 / a78e801 第五道）
 
@@ -237,7 +242,7 @@ python -m src.scraper.incremental --hero-id 52,114      # 按 ID 采集
 - `fetch_baike_heroes()` — 复用 `fetch_all_raw() → transform() → validate_heroes()` 获取清洗后百科武将，失败返回 `None` 不中断。
 - `hero_field_diff_summary(local, official)` — 字段级差异摘要（势力/定位/性别/体力/手牌/技能描述与结算，含新增/移除技能），中文、每行限长截断。
 - `format_hero_full_text(hero)` — 武将只读全文（用于确认对话框的本地 vs 官网对比）。
-- `build_update_candidates(announcements, local_heroes, official_heroes, diff)` — 组装"更新武将数据"确认候选：ready 公告解析武将与 diff `added`/`modified` 并集、按名称去重（后续来源补充缺失 ID）、附带摘要与本地/官网全文；`official_heroes=None` 时跳过摘要计算（降级）。
+- `build_update_candidates(announcements, local_heroes, official_heroes, diff)` — 组装"更新武将数据"确认候选：ready 公告解析武将与 diff `added`/`modified` 并集、按名称去重（后续来源补充缺失 ID）、附带摘要与本地/官网全文；`official_heroes=None` 时跳过摘要计算（降级）。**武将粒度过滤（e435cb0）**：ready 公告已消费的武将（`applied_heroes` 消费记录）不再作为候选提示；**公告来源候选补官网 id**——本地未收录的公告来源武将在官网可用时补 `hero_id = int(official["id"])` 作指定采集目标（所见即所得，配合确认框统一走指定采集）
 
 **公告状态机修复（避免本地已采集武将误报新增 + 滞后窗口期公告被永久吞掉）：**
 
@@ -467,7 +472,7 @@ def transform(raw: dict) -> dict | None:
 | `fetch_baike_heroes()` | `announcement.py` | 获取并清洗百科武将，失败返回 None |
 | `hero_field_diff_summary(local, official)` | `announcement.py` | 字段级差异中文摘要 |
 | `format_hero_full_text(hero)` | `announcement.py` | 只读全文（用于确认对话框对比） |
-| `build_update_candidates(announcements, local_heroes, official_heroes, diff)` | `announcement.py` | 组装"更新武将数据"确认候选 |
+| `build_update_candidates(announcements, local_heroes, official_heroes, diff)` | `announcement.py` | 组装"更新武将数据"确认候选；跳过 `applied_heroes` 已消费武将，公告来源候选补官网 id（e435cb0） |
 | `fetch_official_cards()` | `card_baike.py` | 从官网手牌库获取全部卡牌原始数据（复用 `adapter.parse_heroes_chunk`） |
 | `normalize_text(text)` | `card_baike.py` | NFKC 统一化 + 去标签解码 |
 | `clean_card_detail(detail)` | `card_baike.py` | card_detail 去 HTML 保留分段结构 |
@@ -495,12 +500,12 @@ def transform(raw: dict) -> dict | None:
 
 ---
 
-## 七、代码规模（2026-10-23）
+## 七、代码规模（2026-11-20）
 
-- `src/scraper/official_source/` 共 8 文件 2248 行（`crawler.py` 635 / `announcement.py` 699 / `incremental.py` 328 / `full.py` 218 / `adapter.py` 194 / `card_baike.py` 109 / `hero_fields.py` 64 / `__init__.py` 1）
-- `tests/test_crawler.py` 共 53 个 `test_*` 函数（覆盖状态机解析、写入守卫、robots 规则执行、本地字段保护、HTML 清洗、增量健壮性）
-- 测试模块数：191 文件（`tests/test_*.py`）
-- 测试用例数：2306 个 `test_*` 函数
+- `src/scraper/official_source/` 共 8 文件 2406 行（`announcement.py` 748 / `crawler.py` 532 / `incremental.py` 340 / `hero_fields.py` 255 / `full.py` 220 / `adapter.py` 201 / `card_baike.py` 109 / `__init__.py` 1）
+- `tests/test_crawler.py` 共 73 个 `test_*` 函数（覆盖状态机解析、写入守卫、robots 规则执行、本地字段保护、HTML 清洗、增量健壮性）；`tests/test_announcement.py` 共 87 个（覆盖章节分类、候选构建、武将粒度消费、降级过滤等）
+- 测试模块数：194 文件（`tests/` 含 `test_*` 函数的 py 文件）
+- 测试用例数：2375 个 `test_*` 函数
 
 ---
 
@@ -557,3 +562,12 @@ def transform(raw: dict) -> dict | None:
 ## 本轮文档校准（2026-11-18）
 
 自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），官网采集域（`src/scraper/official_source/` 与根 CLI）无代码变更——爬虫链路、robots 校验与写入前守卫口径延续。
+
+## 本轮文档校准（2026-11-20）
+
+自基线 `a5fde97`（2026-11-18）以来共 9 个提交（11-19 至 11-20，至 `1acaa76`），本模块受影响项：
+
+- **技能描述拆段重写为逐行混合式**（`4367444`）：`split_skill_desc()` 判定不再依赖标签结构——按 `</p>` 切行、行内 `<br>`（含大写 `<BR>`）切片、标题纯文本等值匹配词表，`<b>` 包裹/漏包加粗/标题与正文同段换行均免疫；空正文标题段不参与认领、prelude 兜底、`transform()` 空描述告警（见 §3.2）。存量输出逐字节一致（`hero_content_hash` 不变，避免公告「武将资料更新」误报与忽略名单失配）；实网对照 201 武将 499 技能仅 3 条差异且全部为修复
+- **公告更新候选武将粒度过滤**（`e435cb0`）：`build_update_candidates()` 跳过 ready 公告 `applied_heroes` 已消费武将；公告来源的本地未收录候选在官网可用时补官网 `hero_id` 作指定采集目标（见 §3.5）
+- `announcement.py` 行数预算 742 → 750（棘轮登记）；代码规模 8 文件 2406 行
+- `src/scraper/ai/` 子域本轮无代码变更（生成前语料知情提示为 UI 层变更，见 [`./module_ui.md`](./module_ui.md) §3.6）

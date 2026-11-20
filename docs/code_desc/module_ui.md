@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-11-18（基线 a5fde97）
+> 文档日期：2026-11-20（基线 1acaa76）
 
 ---
 
@@ -33,9 +33,9 @@ src/ui/
 │   ├── frame_fingerprint.py    # 轮询闲置检测的整帧指纹（降采样灰度 + MAD 判等）
 │   ├── app_services.py         # 协作对象组合根（可无头构造，一次挂载 QObject 父子与窗口引用）
 │   ├── status_chips.py         # 模拟器 ADB / OCR 轮询两个常驻状态胶囊
-│   ├── data_freshness_chip.py  # 数据新鲜度常驻胶囊（四类数据健康度聚合，点击弹详情菜单）
+│   ├── data_freshness_chip.py  # 数据新鲜度常驻胶囊（四类数据健康度聚合，点击弹详情菜单；语料状态可点跳转行）
 │   ├── progress_reporter.py    # 状态栏全局消息文本与业务进度条（统一渲染出口）
-│   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器（含横幅关闭状态指纹）
+│   ├── announcement_update_coordinator.py # 公告管线与武将更新阶段机协调器（含横幅关闭状态指纹与武将粒度精确消费）
 │   ├── disclaimer_dialog.py    # 免责声明对话框（637102b 合规化改造）
 │   ├── app_icon.py             # 应用图标加载、缓存与窗口图标维护
 │   ├── onboarding_dialog.py    # 首启向导：三段一页式体检（环境自检 → 模拟器连接 → 试识别）
@@ -62,10 +62,10 @@ src/ui/
 │   ├── peak_select_panel.py    # 巅峰赛（2v2）选将工作台：实时识别 + 候选卡片 + 实战配队
 │   └── peak_hero_card.py       # 巅峰赛候选武将卡片（复用对局攻略阵容卡 objectName 样式）
 ├── generation/                 # AI 攻略/相性生成流程及专用对话框
-│   ├── ai_generation_workflow.py
+│   ├── ai_generation_workflow.py   # 生成流程编排（含 RAG 语料欠账毫秒级预检与知情提示，1acaa76）
 │   ├── backend_choose_dialog.py
 │   ├── guide_fetch_dialog.py
-│   ├── guide_progress_dialog.py
+│   ├── guide_progress_dialog.py    # 生成进度对话框（语料欠账常驻黄字知情提示，1acaa76）
 │   ├── synergy_pair_dialog.py
 │   ├── synergy_refresh_dialog.py    # 落后相性刷新配对清单勾选
 │   ├── synergy_single_dialog.py
@@ -85,7 +85,7 @@ src/ui/
 │   ├── official_data_import_dialog.py
 │   ├── combos_import_dialog.py         # 实战配队导入对话框
 │   ├── official_import_review_dialog.py # 官方榜单导入待复核数据审查
-│   ├── hero_update_confirm_dialog.py   # 公告更新武将确认对话框
+│   ├── hero_update_confirm_dialog.py   # 公告更新武将确认对话框（所见即所得勾选采集 + official_ok 降级提示条）
 │   ├── card_sync_dialog.py             # 卡牌百科变更捕获与同步确认
 │   ├── ignoreable_diff_list.py         # 两对话框共用的忽略/详情/选中联动骨架（P0-2 收口，
 │   │                                      偏移语义为钩子：hero 忽略需 content_hash、无服务隐藏入口）
@@ -430,6 +430,8 @@ GuideProgressDialog（实时进度条 + 中止按钮 + 完成/失败提示）
 
 **语料增强选择**：`BackendChooseDialog` 顶部新增「语料增强：RAG 语料增强（推荐）/ 经典模式（无 RAG 注入）」单选组，默认 RAG 增强；`get_selected_rag()` 返回选择，`AiGenerationWorkflow._choose_backend()` 组合为 `(backend, use_rag)` 元组。API Tab 的成本估算在切换选择时按 `estimate_item_cost(..., use_rag=...)` 实时重算（经典模式输入 token 更少）。
 
+**生成前语料欠账知情提示（1acaa76，P0-2）**：`AiGenerationWorkflow._rag_stale_hint(use_rag)` 在模态进度框 `exec()` **之前**毫秒级预检语料欠账（`corpus_freshness.stale_summary()` mtime-only，不解析语料 JSON）——RAG 增强且语料待重建或索引待同步时返回警示文案（`⚠ 本次 RAG 增强基于 <构建时间> 的语料（<待重建任务名>待重建，向量索引待同步），生成内容可能不含最新调整`）；经典模式（`use_rag=False`）、`RAG_ENABLED=false`（`rag_generation_enabled()` 判定，子进程本就会自动降级经典模式）、语料与索引全部最新三者均不提示。文案经构造参数 `rag_stale_hint` 传入 `GuideProgressDialog`，以**独立常驻黄字标签**呈现在进度条上方（`_status_label` / `_detail_label` 会被流式输出持续覆写，不能承载常驻信息）；全程不阻断生成。攻略四入口与相性四入口（全量/刷新/单将/配队清单）全覆盖，相性侧经 `_run_synergy_flow(..., use_rag=...)` 透传。
+
 ### 3.6.1 巅峰赛选将页面（PeakSelectPanel，2026-08 新增）
 
 `PeakSelectPanel` 是左侧导航中新增的独立工作区（第 4 页），专用于 2v2 巅峰赛选将辅助：
@@ -501,10 +503,11 @@ PeakSelectPanel
 
 ### 3.9 公告更新对话框与横幅
 
-- 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：可更新公告显示“武将数据可更新 · 百科已更新，涉及：…”（success 色调），待生效公告显示“检测到武将相关公告 · 公告已发布，官网百科数据通常滞后半天到一天”（info 色调），纯 diff 变化显示“检测到百科数据变化”（warning 色调）。
+- 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：可更新公告显示“武将数据可更新 · 百科已更新，涉及：…”（success 色调），待生效公告显示“检测到武将相关公告 · 公告已发布，官网百科数据通常滞后半天到一天”（info 色调），纯 diff 变化显示“检测到百科数据变化”（warning 色调）。横幅武将标签由 `_announcement_names()` 汇总，**已消费武将不再展示**（e435cb0：跳过 `applied_heroes` 内名字，横幅只提示剩余待更新武将）。
 - `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单，非模态；`check_requested` / `update_requested` 两个信号分别驱动检查与更新入口。
-- “更新武将数据”先由 `AnnouncementService.collect_base_candidates()` 预判候选，无候选时状态栏提示；有候选则调用 `prepare_update_candidates()` 后台拉取官网数据并计算字段级差异，结果经 `update_candidates_prepared` 信号回到 `_on_hero_update_prepared()`。
-- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。确认后按勾选执行：`_pending_update_phases` 构造为 `[("specific", ids)]` 与 `[("incremental", None)]` 两阶段队列，`_start_next_update_phase()` 逐个 `_dispatch_update_phase()` → `fetch_specific(ids)` / `fetch_incremental()`，`_on_fetch_completed` 消费阶段（完成回调只消费已发起阶段——在途标记由 `_phase_gate = BusyGate()` 闸门承载，76875dd 收口：发起成功 `acquire()`、完成消费 `release()`、中止 `_abort_pending_phases` 也 `release()`），任一阶段失败或采集忙中断整条流并 `mark_applied` 保持横幅可见。全取消仅 `mark_applied()` 刷新快照、不执行采集。忽略骨架与 `CardSyncDialog` 共用 `IgnoreableDiffListMixin`（`ignore_ui_optional=True`：无 `AnnouncementService` 时整组隐藏忽略入口；保留 content_hash 门控——官网获取失败的差异忽略后无法匹配压制，不提供忽略；三态 summary 文案；忽略后过滤 `_candidates` 维持基数）。
+- “更新武将数据”先由 `AnnouncementService.collect_base_candidates()` 预判候选，无候选时状态栏提示；有候选则调用 `prepare_update_candidates()` 后台拉取官网数据并计算字段级差异，结果经 `update_candidates_prepared` 信号回到 `_on_hero_update_prepared()`。**官网获取失败降级提示（4ff8d68）**：payload 的 `official_ok` 字段（此前仅赋值未读取）激活为活信号——`False` 时弹框前状态栏说明“官网数据获取失败，以下候选基于上次检查结果”，并向确认框透传 `official_ok=False`。
+- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。**所见即所得勾选（e435cb0）**：勾选即采集目标——新增武将按官网 id 统一走指定采集（公告流程移除 `incremental` 阶段，副标题明确“未勾选武将下次检查仍会提示”）；`selected_candidates`（勾选候选全量）与 `selected_ids`（含新增武将的官网 id）一同输出；无采集目标的候选（官网不可用且本地未收录）**灰显禁勾**并标注原因（避免“可勾选却被静默丢弃”），`_select_all` 跳过禁勾项；与官网内容一致的候选默认不勾（`summary == ["本地与官网内容一致"]`），避免多余采集请求。**official_ok 降级提示条（4ff8d68）**：`official_ok=False` 时顶部 `NoticeBanner`（warning 色调）统一解释降级框中摘要缺失、忽略禁用、无采集目标候选禁勾三项异常。全取消改为 toast 引导使用忽略名单（“已保留本地武将内容，本次未更新。若不想再次收到提示，可选择武将后点击「忽略此条差异」”）。忽略骨架与 `CardSyncDialog` 共用 `IgnoreableDiffListMixin`（`ignore_ui_optional=True`：无 `AnnouncementService` 时整组隐藏忽略入口；保留 content_hash 门控——官网获取失败的差异忽略后无法匹配压制，不提供忽略；三态 summary 文案；忽略后过滤 `_candidates` 维持基数）。
+- **武将粒度精确消费（e435cb0）**：修复“勾选武将级、消费批次级”粒度错配——确认框留个别武将不勾时，旧逻辑更新成功后整批公告/差异/基线仍被全量消费，跳过武将的差异永久丢失且重查公告无法找回。协调器新增勾选名单传递链：`_on_hero_update_prepared` 把 `dialog.selected_candidates` 存入 `_pending_consume`，`_pending_phases` 收敛为单阶段 `[("specific", selected_ids)]`；`_on_fetch_completed` 采集成功后按名单精确消费（完成回调只消费已发起阶段——在途标记由 `_phase_gate = BusyGate()` 闸门承载，76875dd 收口）——① `AnnouncementService.mark_applied(names, hero_ids)` 公告只记名单内武将（`applied_heroes` 消费记录，提及武将全部消费完才置 APPLIED，否则保持 READY 继续提示）；② `_filter_consumed_diff()` 从内存 diff 剔除已消费条目（id 优先、按名兜底，与忽略名单过滤同口径；`removed` 不在更新流程内保留）；③ 百科快照基线**合并式前移**（服务层 `_merge_snapshot_baseline()`，只前移已消费武将的哈希条目，跳过武将旧基线保留，下次检查 diff 仍会报告其差异）。任一阶段失败或采集忙中断整条流，不清名单不消费（横幅保留可重试）。
 - **横幅关闭与状态指纹（925aa25 新增）**：横幅右侧新增「×」按钮（`ROLE_GHOST`，tooltip「关闭横幅；出现新公告或差异变化时会再次提示」），点击经 `dismiss_banner()` 置 `_banner_dismissed` 并隐藏横幅。重弹判定内聚在 `_update_banner_fingerprint()`（`_refresh_banner` 三处调用点——检查完成/采集完成/更新预备——天然全覆盖）：指纹 = 已见公告 `stable_key` 集合 + 百科差异总量（added/modified/removed 之和）+ READY 公告数，先判后记；已关闭状态下任一条件满足即解除关闭——①出现从未见过的 READY/PENDING 公告、②diff 总量比上次记录增大、③READY 数比上次记录增多（pending→ready 升级走 `current_names` 兜底时 diff 可能不变，只有 READY 计数能捕捉）。判定只认"变多"：更新成功后 diff 归零、ready 被 `mark_applied` 消化属预期回落，不会把用户已关闭的横幅再顶出来；diff 5→3→5 的波动会因重新变多而重弹。指纹只取横幅实际展示的公告（READY/PENDING），无关非武将公告不触发重弹。
 - 状态栏 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
 
@@ -578,8 +581,9 @@ PeakSelectPanel
 
 - **刷新自足，无轮询定时器** — 双路驱动：①六路服务信号订阅（hero/guide/synergy 三类 `fetch_completed`，lambda 归一 `Signal(bool)` 与 `Signal(bool, str)` 签名差异；`ai_workflow.guides_changed` / `synergies_changed`；`announcement_service.check_finished`）；②`QFileSystemWatcher` 监听 `data/` 目录（`WATCH_DIR`），`directoryChanged` 触发 500ms 单发 `QTimer` 去抖，超时回调做 mtime 快照比对——仅 `WATCHED_FILE_NAMES` 10 个目标文件（核心 json 与五份榜单 csv）变化才刷新，覆盖终端 `pull_data` 同步的原子落盘。
 - **点击 / 键盘菜单** — 点击或 Space / Return / Enter / Down（`StrongFocus`）在芯片下方弹 `QMenu` 三组：内容年龄（四项 detail 禁用行 + 时间轴警示行）、数据源周期（`SOURCE_CYCLE_ROWS` 三条静态文案）、建议操作（可点动作与禁用建议行并存；非武将项黄/红档给禁用建议行）。
+- **语料状态可点跳转行（1acaa76，P0-2）** — 菜单末尾新增「语料状态」section（`_add_corpus_section()`）：有 `stale_summary().stale_tasks` 欠账**且**主窗口有维护页（`hasattr(window, "_rag_maintenance")`，精简版无维护页不显示——提示无操作出口不如不显示）时出现，文案「语料 N 项待重建（前 3 个任务名等→ 前往知识库维护）」，点击发 `rag_maintenance_requested = Signal()`。菜单打开时现算摘要（`stale_summary` mtime-only 毫秒级，无需随 `_refresh` 缓存）；维护是本地页内操作而非采集任务，无忙碌守卫。
 - **建议动作路由与忙碌守卫** — 武将落后事件按模式能力路由：`SUGGEST_INCREMENTAL` → “增量获取武将数据（拉取新增武将）”、`SUGGEST_SPECIFIC` → “指定获取武将数据（替换模式，刷新过期武将）…”，混合批次两者并给。`_request_incremental()` / `_request_specific()` 先查 `hero_fetch_service.is_busy`，忙则 `show_toast` 拦截不发信号。
-- **接线** — 构造签名 `__init__(hero_fetch_service, guide_fetch_service, synergy_fetch_service, ai_workflow, announcement_service, parent=None)`；`main_window.py` 完成构造与两信号 `fetch_incremental_requested` / `fetch_specific_requested` 回接 `DialogCoordinator.request_fetch_incremental` / `request_fetch_specific`（L28 导入、L463-474 接线），动作不注册菜单栏。测试 `tests/test_data_freshness_chip.py`（279 行 13 用例）。
+- **接线** — 构造签名 `__init__(hero_fetch_service, guide_fetch_service, synergy_fetch_service, ai_workflow, announcement_service, parent=None)`；`main_window.py` 完成构造与三条信号 `fetch_incremental_requested` / `fetch_specific_requested` / `rag_maintenance_requested` 回接 `DialogCoordinator.request_fetch_incremental` / `request_fetch_specific` / `_goto_rag_maintenance`，动作不注册菜单栏。`_goto_rag_maintenance()`（主窗口新增，639 行预算）切 `QTabWidget` 到维护页——切页回调 `_on_workspace_page_changed` 会自动触发维护面板 `refresh()`，精简版无该页静默忽略。测试 `tests/test_data_freshness_chip.py`。
 
 ### 3.15 首启向导（OnboardingDialog，6962151 / 12c7efb 新增）
 
@@ -776,7 +780,9 @@ def update_recommendations(self, data: list[dict]) -> None:
 | `HeroUpdateConfirmDialog` / `HeroDiffDetailDialog` | 公告更新武将确认与本地 vs 官网 diff 详情 |
 | `AnnouncementDialog` | 公告列表、全文与百科 diff 只读查看（非模态） |
 | `OfficialImportReviewDialog` | 官方榜单导入待复核数据审查 |
-| `IndexRefinementDialog` | 索引精化：LLM 建议/人工补全卡牌与武将语料索引字段（curated，重建不覆盖） |
+| `IndexRefinementDialog` | 索引精化：LLM 建议/人工补全卡牌与武将语料索引字段（curated，重建不覆盖）；审计时效跳转定位 + 过期复核逐站导航 + 批量建议进度小窗（详见 [`./module_rag.md`](./module_rag.md) §4.4） |
+| `SuggestProgressDialog` | 批量 LLM 建议非模态进度小窗（进度/失败数/最新完成 + 取消善后，归 `module_rag.md`） |
+| `ReadonlyViewerDialog` | 只读长文本查看器（语料内容查看与执行历史回看共用，归 `module_rag.md`） |
 | `ProposalDetailDialog` | 元规则提案项差异对比 + 文档上下文（只读） |
 | `ProposalItemConfirmDialog` | 元规则提案项逐条确认（approved/revised/rejected + 可编辑文本） |
 | `DiffDetailDialog` | 数据段差异详情（行号定位 + Git 风格 diff + 文档过期警示） |
@@ -813,6 +819,7 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 依赖 | `src.business.card_sync` | 卡牌百科变更检查与同步（`CardSyncDialog`） |
 | 依赖 | `src.business.announcement` | 公告与百科 diff 检查 |
 | 依赖 | `src.business.freshness` | 数据新鲜度判定（`DataFreshnessChip` 消费 `compute_freshness_report()` / `FreshnessReport` / 档位与菜单常量） |
+| 依赖 | `src.business.rag.corpus_freshness` | 语料欠账判定（1acaa76：`DataFreshnessChip` 语料状态行、`AiGenerationWorkflow._rag_stale_hint()` 生成前预检、`AnnouncementUpdateCoordinator._corpus_stale_suffix()` 采集 toast 尾串共用 `stale_summary()`） |
 | 依赖 | `src.config.env` | 配置文件读取 |
 | 依赖 | `src.config.disclaimer_state` | 免责声明状态管理（版本控制与确认记录） |
 | 依赖 | `src.config.onboarding_state` | 首启向导状态管理（`mark_step` / `mark_skipped` / `should_show_state`） |
@@ -822,11 +829,11 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 
-## 七、代码规模（2026-10-23 基线）
+## 七、代码规模（2026-11-20 基线）
 
-- **测试模块数**：191 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 195 个）
-- **测试用例数**：2316 个 `test_*` 函数（2026-10-11 基线为 145 / 1626，2026-11-14 基线为 191 / 2306）
-- **`main_window.py` 行数预算**：630 行（925aa25 随横幅关闭按钮装配自 626 上调并附注理由；重弹判定全部内聚协调器，主窗口只加 4 行控件装配）（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口棘轮上调）
+- **测试模块数**：194 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 198 个）
+- **测试用例数**：2375 个 `test_*` 函数（2026-10-11 基线为 145 / 1626，2026-11-18 基线为 191 / 2316）
+- **`main_window.py` 行数预算**：639 行（1acaa76 随 `_goto_rag_maintenance` 语料欠账跳转桥接自 630 上调并附注理由）（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口、横幅关闭按钮棘轮上调）
 
 ## 八、知识库维护界面（已迁出）
 
@@ -951,3 +958,20 @@ def update_recommendations(self, data: list[dict]) -> None:
 - **武将归类变更跨页签联动**（`5f5268c`）：`hero_classification_panel.py` 的 `_hero_tab.changed` 改接 `_on_hero_tab_changed()`（刷新分类管理详情 + 标记未保存），见 §3.10 分类建议 worker 段
 - **文件树勘正**：`hero_classification_panel.py` 与 `classification/` 三页签自 `977a8dc` 起已迁 `src/ui/maintenance/`（文档归 [`./module_rag.md`](./module_rag.md)），§二文件树 library/ 块残留条目本轮移除
 - 其余 UI 文件无代码变更；本轮新增测试（横幅指纹回归 / 导入完成弹窗 / 分类面板与仓储用例）随对应模块入档
+
+## 本轮文档校准（2026-11-20）
+
+自基线 `a5fde97`（2026-11-18）以来共 9 个提交（11-19 至 11-20，至 `1acaa76`），本模块受影响项：
+
+**公告更新武将粒度精确消费**（`e435cb0`）——见 §3.9
+- `HeroUpdateConfirmDialog`：`update_new` 字段移除，`selected_candidates`（勾选候选全量）与 `selected_ids`（含新增武将官网 id）一同输出——所见即所得，勾选即采集目标；副标题改"未勾选的保留本地内容，下次检查仍会提示"；无采集目标候选灰显禁勾（官网不可用且本地未收录，tooltip 标注原因），`_select_all` 跳过禁勾项；与官网内容一致候选默认不勾
+- `AnnouncementUpdateCoordinator`：新增 `_pending_consume` 勾选名单传递链（对话框 → 阶段机 → 完成回调），`_pending_phases` 收敛为单阶段 `[("specific", ids)]`（`incremental` 阶段移除）；采集成功后 `_filter_consumed_diff()` 按名单精确消费内存 diff（id 优先按名兜底）；`_announcement_names()` 横幅标签过滤已消费武将；全取消 toast 引导使用忽略名单
+- **官网获取失败降级提示**（`4ff8d68`）：确认框新增 `official_ok` 参数（默认 True 兼容旧 payload），`False` 时顶部 `NoticeBanner` 警告提示条统一解释降级三项异常（摘要缺失/忽略禁用/无采集目标禁勾）；协调器消费此前仅赋值未读取的 `official_ok` 字段，弹框前状态栏说明原因并透传
+
+**语料欠账采集联动提醒与生成前知情提示**（`1acaa76`，P0-2）——判定核心 `corpus_freshness.py` 见 [`./module_rag.md`](./module_rag.md)
+- `AiGenerationWorkflow._rag_stale_hint(use_rag)`：生成前毫秒级预检语料欠账，攻略/相性进度框常驻黄字知情提示「生成内容可能不含最新调整」；经典模式、RAG 关闭、语料与索引全部最新均不提示，全程不阻断生成（见 §3.6）
+- `GuideProgressDialog` 构造签名新增 `rag_stale_hint=""` 参数，独立黄字常驻标签（不被流式输出覆写）
+- `AnnouncementUpdateCoordinator._corpus_stale_suffix()`：采集成功 toast 按语料欠账追加「N 项语料待重建（前 3 个任务名等）」尾串，公告多阶段与普通采集两条成功路径全覆盖，无欠账保持原文案
+- `DataFreshnessChip` 新增 `rag_maintenance_requested` 信号与菜单「语料状态」可点跳转行（见 §3.14）；`MainWindow._goto_rag_maintenance()` 桥接（行数预算 630→639，切页回调自动刷新面板状态）
+- 维护台本体（向量索引左栏项 / 执行历史回看 / 只读查看器 / 索引精化定位导航 / 建议进度小窗）记录于 [`./module_rag.md`](./module_rag.md) §3.10 / §4.4
+- 架构棘轮：`main_window.py` 630→639；代码规模 194 文件 / 2375 个 `test_*` 函数（新增 `test_hero_update_confirm_dialog` 扩展 / `test_ai_generation_workflow` 预检用例 / `test_data_freshness_chip` 跳转行三态 / `test_announcement` 部分消费与降级用例等）

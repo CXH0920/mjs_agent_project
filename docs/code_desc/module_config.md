@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-11-18（基线 `a5fde97`）
+> 文档日期：2026-11-20（基线 `1acaa76`）
 
 ---
 
@@ -483,3 +483,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 ## 本轮文档校准（2026-11-18）
 
 自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），config 域代码无变更；`config/faction_colors.json` 数据文件新增「刘宋」专属色并统一多行缩进格式（`925aa25`，见 §3.6）——`faction_colors.py` 读取链路与键集口径不变。
+
+## 本轮文档校准（2026-11-20）
+
+自基线 `a5fde97`（2026-11-18）以来共 9 个提交（至 `1acaa76`），config 域代码无变更——键元表（38 键）、`atomic_write` / `task_ledger` / `version.py` / `onboarding_state` / `disclaimer_state` 口径延续。

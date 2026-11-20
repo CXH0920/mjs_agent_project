@@ -2,7 +2,7 @@
 
 > 对应目录：`src/data/`
 > 职责：定义项目核心数据模型，提供对 JSON 数据文件的增删改查和原子持久化操作；承载"数据出库 + 私有数据仓同步"合规口径（源数据不入版本库）
-> 文档日期：2026-11-18（基线 `a5fde97`）
+> 文档日期：2026-11-20（基线 `1acaa76`）
 
 ---
 
@@ -212,10 +212,10 @@ def _save_unlocked(self) -> None:
 
 `AnnouncementManager(DataManager[Announcement])` 管理 `data/announcements.json`；`Announcement` / `AnnouncementStatus` / `HeroChange` / `BaikeSnapshot` 均在本文件定义（不在 `models.py`）：
 
-- `Announcement` 模型字段：`id/title/content/url/publishdate/hero_related/matched_heroes/content_missing/status/first_seen_at`；
+- `Announcement` 模型字段：`id/title/content/url/publishdate/hero_related/matched_heroes/applied_heroes/content_missing/status/first_seen_at`（`applied_heroes` 为 e435cb0 新增的已消费武将名列表——武将粒度更新下 `matched_heroes` 全部消费完才置 APPLIED）；
 - `AnnouncementStatus` 枚举：`PENDING("pending"，待生效) → READY("ready"，可更新) → APPLIED("applied"，已处理)`；
 - 以 `url` 为主键去重（`stable_key()` 回退到 `f"id:{id}"`）；`merge_new(items, baseline=False)` 用于首次运行基线：只落盘、不返回、不提醒，非武将相关公告直接置 `APPLIED`。合并先 `snapshot_items()` 快照内存，逐条 `Announcement.model_validate` 失败仅记 error 并跳过（`from_disk=False`，坏的是爬虫产出而非磁盘文件），整批写盘失败则 `restore_items()` 回滚内存后重抛——避免 UI 报"失败"后内存已含未确认合并的脏状态。
-- 状态推进：`mark_ready_if_updated(diff, current_names)`（公告提及的武将名与百科 diff 变更集匹配 → READY，或新增武将已全部落地百科 → READY）；`mark_applied()`（仅将 READY 推进到 APPLIED，PENDING 因可能仍在百科滞后窗口内保留不动）。
+- 状态推进：`mark_ready_if_updated(diff, current_names)`（公告提及的武将名与百科 diff 变更集匹配 → READY，或新增武将已全部落地百科 → READY）；`mark_applied(hero_names=None)`（仅将 READY 推进到 APPLIED，PENDING 因可能仍在百科滞后窗口内保留不动。**武将粒度消费（e435cb0）**：`hero_names` 为 None 整批消费（全取消"视为已查看"）；否则只记录名单内武将到 `applied_heroes`（并集去重排序），公告提及武将全部消费完才置 APPLIED，否则保持 READY 继续提示；无提及武将的 READY 公告无可跳过对象直接整条消费）。
 
 `BaikeSnapshot` / `BaikeHeroEntry` / `load_baike_snapshot()` / `save_baike_snapshot()` 管理 `data/baike_snapshot.json`（覆盖式，结构 `{checked_at, heroes:{id:{name, hash}}}`）。快照解析失败时返回空快照（由调用方重建基线），失败前调 `preserve_corrupt_file()` 按原字节留底——否则调用方把空快照当"首次启用"重建基线并覆盖写回，损坏前的官网基线就不可逆丢失；`save_baike_snapshot()` 用 `mkstemp` 生成唯一中转名（固定 `.tmp` 名在并发时会互相覆盖）。
 
@@ -563,7 +563,7 @@ class SpecialCardRepository(JsonRepository):
 | `ready_count()` | — | `int` | 可更新公告数 |
 | `merge_new(items, baseline=False)` | list[dict], bool | `list[Announcement]` | 合并并返回新增列表 |
 | `mark_ready_if_updated(diff, current_names=None)` | dict | `bool` | pending→ready 状态推进 |
-| `mark_applied()` | — | `None` | ready→applied 状态推进 |
+| `mark_applied(hero_names=None)` | `set[str] \| None` | `None` | ready→applied 状态推进；传名单时按武将粒度消费（`applied_heroes` 记录，全部消费完才置 APPLIED，e435cb0） |
 
 ### CardRepository / CardFieldSchemaRepository / CardAnnotationRepository
 
@@ -783,3 +783,11 @@ class SpecialCardRepository(JsonRepository):
 - **`ClassificationCategory` 删除 `typical_heroes` 字段**（`a5fde97`）：模型 docstring 同步为「机制分类：核心特征 / 占比仅供参考展示」；pydantic 宽松配置兜底使旧格式 JSON（含典型字段）仍可加载、保存后该键消失；数据文件已一次性迁移清洗（categories 16 项 / hero_categories 200 键 / counter_chain 8 键内容零 diff）。该字段 RAG 语料生成与 LLM 建议归类均不消费，删除无下游影响
 - **新增 `heroes_in_category(category)` 反查方法**（`5f5268c`）：按名称排序返回实际归类到该分类的武将名单，与 `list_classified` 同口径不过滤已移除武将的脏数据；消费方 `ui/maintenance/classification/category_tab.py` 详情区名单展示
 - 数据快照刷新（私有仓同步推进，非本轮代码变更）：`hero_categories` 186 → 200 键，规模口径日期 2026-10-01 → 2026-11-18
+
+## 本轮文档校准（2026-11-20）
+
+自基线 `a5fde97`（2026-11-18）以来共 9 个提交（11-19 至 11-20，至 `1acaa76`），本模块受影响项：
+
+- **`announcement_manager.py`（236 行，+25）武将粒度消费**（`e435cb0`，见 §3.6 / §五）：`Announcement` 模型新增 `applied_heroes` 消费记录字段；`mark_applied(hero_names=None)` 支持按武将名单消费——只记录名单内武将（并集去重排序），公告提及武将全部消费完才置 APPLIED，否则保持 READY；无参调用保留整批语义（全取消"视为已查看"）
+- 百科快照（`baike_snapshot.json`）本身**格式与读写无变更**——"合并式前移"由服务层 `AnnouncementService._merge_snapshot_baseline()` 实现（读-合并-写，见 [`./module_business.md`](./module_business.md) §3.6），仓储口径不变
+- 其余仓储/门面/时间轴/基元无代码变更

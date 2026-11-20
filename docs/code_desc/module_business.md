@@ -1,9 +1,9 @@
 # 模块：业务服务层
 
 > 对应目录：`src/business/`
-> 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff、卡牌百科同步与忽略名单管理、备份恢复
-> 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-11-18（代码基线 a5fde97）
+> 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff（含武将粒度精确消费与基线合并式前移）、卡牌百科同步与忽略名单管理、备份恢复
+> 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、语料新鲜度判定、分类建议）见 [`./module_rag.md`](./module_rag.md)
+> 文档日期：2026-11-20（代码基线 1acaa76）
 
 ---
 
@@ -18,7 +18,7 @@
 5. **官方榜单导入** — 解析固定版式的 2v2 胜率/出场榜、巅峰赛胜率/出场榜与武将放逐榜，按表格行安全覆盖 CSV；名称校验不通过时保存复核会话供人工修正后复用（不重新 OCR）
 6. **推荐数据组装** — 一次读取胜率与推荐指数快照，并提供数值化的卡片排名数据
 7. **卡牌图鉴服务** — 跨仓储视图组装、取值校验与追加内容写编排
-8. **公告检查与百科 diff** — 手动触发公告更新检查，百科内容哈希 diff 与忽略名单过滤；首次基线本地化、阶段令牌跨线程统一持久化
+8. **公告检查与百科 diff** — 手动触发公告更新检查，百科内容哈希 diff 与忽略名单过滤；首次基线本地化、阶段令牌跨线程统一持久化；**更新完成按勾选武将名单精确消费**（`mark_applied(hero_names, hero_ids)` 武将粒度公告消费 + `_merge_snapshot_baseline()` 基线合并式前移，e435cb0）
 9. **卡牌百科同步** — 手动触发官网同步检查（非定时轮询），差异比对与忽略名单管理；首跑基线本地化、变更记录追加驱动 curated 精化
 10. **忽略名单基础设施** — `baike_ignore_store` 统一管理卡牌与武将百科差异的忽略/恢复/查询，CardSyncService 与 AnnouncementService 共享
 11. **数据新鲜度判定** — `freshness.py` 无 Qt 依赖纯业务层：武将/攻略/相性/官方榜单四项健康判定与建议操作路由，供状态栏数据新鲜度芯片（`src/ui/app/data_freshness_chip.py`）消费；损坏文件留底与档位阈值可配置
@@ -402,7 +402,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 一次检查 = 拉公告（`fetch_latest_announcements`）→ 章节标题分类（`classify_hero_related`）→ `AnnouncementManager.merge_new` 去重落盘 → 拉百科（`fetch_baike_heroes`）→ 内容哈希 diff（`build_hero_snapshot`/`diff_heroes`）→ **忽略名单过滤**（`baike_ignore_store.filter_ignored` 扣除已忽略差异，`ready` 判定一致压制）→ `mark_ready_if_updated` → `_sync_timeline` 武将变更时间轴同步。公告或百科拉取异常只写入 `result.error` / `baike_ok=False` 并记日志，不覆盖旧快照、不中断应用。
 
-**阶段令牌（`_last_snapshot` / `pending_saves`）**：worker 线程计算的百科快照不直接写盘，而是通过 `AnnouncementCheckResult.snapshot` / `pending_saves` 字段带回到 `_finalize_check()`，由 GUI 线程统一持久化并更新 `_last_snapshot`。`mark_applied()` 在"更新武将数据"完成后由主窗口调用：公告置已处理，并把 `_last_snapshot` 写回快照使差异归零。**忙时跳过（801c9f1）**：`mark_applied()` 在检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
+**阶段令牌（`_last_snapshot` / `pending_saves`）**：worker 线程计算的百科快照不直接写盘，而是通过 `AnnouncementCheckResult.snapshot` / `pending_saves` 字段带回到 `_finalize_check()`，由 GUI 线程统一持久化并更新 `_last_snapshot`。`mark_applied()` 在"更新武将数据"完成后由协调器调用：公告消费并把快照写回使差异归零。**武将粒度精确消费（e435cb0）**：签名扩展为 `mark_applied(hero_names=None, hero_ids=None)`——`hero_names` 为 `None` 时保留原整批语义（全取消"视为已查看"，快照全量前移）；否则按武将消费：公告只记录名单内武将（`Announcement.applied_heroes` 消费记录，公告提及武将**全部**消费完才置 APPLIED，否则保持 READY 继续提示；无提及武将的 READY 公告无可跳过对象直接整条消费），快照走 `_merge_snapshot_baseline(hero_ids)` **合并式前移**——加载当前基线后只把已消费武将的哈希条目从最近快照合入（id 不在最近快照记警告跳过；基线为空整体跳过防"只剩这些武将"的残缺基线），跳过武将旧基线保留、下次检查 diff 仍会报告其差异。**忙时跳过（801c9f1）**：`mark_applied()` 在检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
 
 **首次基线本地化（801c9f1 首跑语义修正）**：首次启用百科基线时优先用本地 `heroes.json` 初始化，避免官网快照被用作基线从而掩盖本地缺失（否则 diff 恒空、新增/调整永远不会提示）。若本地数据文件存在但加载为空则不写快照并记录警告；全新安装（无任何本地武将数据文件）则以当前百科为基线不提醒。**首跑判定扩展**：`_is_first_run()` 不再只看文件是否存在——文件存在但加载报错且内存为空（内容不可用，如损坏后留底）也按首跑处理；此时若按非首跑处理，全部历史公告会被当作新公告重新入库并覆盖写回，用户此前"已处理"的进度与历史记录一并丢失。「内存为空」不可省：`load_issues` 只在 `load()` 时清空而 `load()` 仅启动调一次，`merge_new` 跳过坏爬虫记录记的 error 与损坏恢复重建后的过期 error 都会残留在列表里——只看 error 会把同会话后续检查全部误判为首跑，新公告被静默吞掉。
 
@@ -1084,3 +1084,11 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 ## 本轮文档校准（2026-11-18）
 
 自基线 `d1ff679`（2026-11-14）以来共 4 个提交（至 `a5fde97`），`src/business/` 域无代码变更——服务编排、采集/OCR 调度、公告检查与备份恢复口径延续。公告横幅关闭指纹与配队导入完成提示均为 UI 层变更，记录于 [`./module_ui.md`](./module_ui.md)；`hero_classification_repository` 变更记录于 [`./module_data.md`](./module_data.md)。
+
+## 本轮文档校准（2026-11-20）
+
+自基线 `a5fde97`（2026-11-18）以来共 9 个提交（11-19 至 11-20，至 `1acaa76`），本模块受影响项：
+
+- **`announcement/announcement_service.py`（469 行，+55）武将粒度精确消费**（`e435cb0`，见 §3.6）：`mark_applied()` 签名扩展 `(hero_names=None, hero_ids=None)`——按武将消费公告（`applied_heroes` 消费记录，提及武将全部消费完才置 APPLIED）与快照基线合并式前移 `_merge_snapshot_baseline()`（只前移已消费武将的哈希条目；id 不在最近快照警告跳过、基线为空整体跳过防残缺基线）；无参调用保留整批语义
+- **`business/rag/corpus_freshness.py`（163 行，新增）**（`1acaa76`，P0-2）：语料新鲜度判定单一事实源（`task_states` / `index_state` / `stale_summary` / `rag_generation_enabled`），归 [`./module_rag.md`](./module_rag.md) §3.10——本模块文档仅登记其位于 `src/business/rag/` 的归属；数据新鲜度判定核心 `freshness.py` 本轮无变更
+- 公告检查/候选准备线程模型、冷却闸门（`CheckCooldown` 双窗口）、`_sync_timeline` 时间轴同步、备份恢复等其余链路无函数级变更
