@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 from src.business.announcement.announcement_service import AnnouncementCheckResult
+from src.business.rag.corpus_freshness import stale_summary
 from src.business.recognition.session_guard import BusyGate
 from src.config.env import PROJECT_ROOT
 from src.data.announcement_manager import Announcement, AnnouncementStatus
@@ -35,6 +36,24 @@ def is_auto_check_due(marker_path: Path, today: str) -> bool:
         return json.loads(marker_path.read_text(encoding="utf-8")).get("date") != today
     except (OSError, json.JSONDecodeError):
         return True
+
+
+def _corpus_stale_suffix() -> str:
+    """采集成功后按语料欠账拼 toast 尾串（P0-2：欠账当场说出口）。
+
+    模块级函数（非方法）：无实例状态，且 tests/test_announcement 以
+    SimpleNamespace 假协调器直调 _on_fetch_completed，方法属性在假对象上
+    不存在。无欠账返回空串（toast 保持原文案）；有欠账换行附任务名（前 3 个 +
+    「等」）。stale_summary 为 mtime-only 毫秒级；「缺源」态不算欠账
+    （首装未部署资料 ≠ 过期），由判定函数天然排除。
+    """
+    summary = stale_summary()
+    if not summary.stale_tasks:
+        return ""
+    names = "、".join(summary.stale_tasks[:3])
+    if len(summary.stale_tasks) > 3:
+        names += "等"
+    return f"\n{len(summary.stale_tasks)} 项语料待重建（{names}）"
 
 
 class AnnouncementUpdateCoordinator(QObject):
@@ -218,12 +237,18 @@ class AnnouncementUpdateCoordinator(QObject):
                 self._last_diff = self._filter_consumed_diff(self._last_diff, names, hero_ids)
                 self._refresh_banner()
                 self._refresh_dialog()
-                show_toast(self._window, "武将数据已更新，请重新加载数据（F5）。", duration=4000)
+                show_toast(
+                    self._window,
+                    "武将数据已更新，请重新加载数据（F5）。" + _corpus_stale_suffix(),
+                    duration=4000)
             else:
                 QMessageBox.warning(self._window, "采集失败", "武将数据更新失败")
             return
         if success:
-            show_toast(self._window, "武将数据已采集完成，请重新加载数据。", duration=3000)
+            show_toast(
+                self._window,
+                "武将数据已采集完成，请重新加载数据。" + _corpus_stale_suffix(),
+                duration=3000)
         else:
             QMessageBox.warning(self._window, "采集失败", "武将数据采集失败")
 

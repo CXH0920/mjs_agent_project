@@ -134,10 +134,12 @@ class _BackendDialog:
 class _ProgressDialog:
     instances: list["_ProgressDialog"] = []
 
-    def __init__(self, item_count: int, title: str = "攻略生成进度", item_label: str = "攻略", parent=None) -> None:
+    def __init__(self, item_count: int, title: str = "攻略生成进度", item_label: str = "攻略",
+                 rag_stale_hint: str = "", parent=None) -> None:
         self.item_count = item_count
         self.title = title
         self.item_label = item_label
+        self.rag_stale_hint = rag_stale_hint
         self.finished: list[tuple[bool, str]] = []
         self.cancel_requested = _CallbackSignal()
         _ProgressDialog.instances.append(self)
@@ -519,3 +521,81 @@ def test_progress_dialog_shows_wait_seconds_during_silence() -> None:
     dialog.close()
 
 
+
+
+# ---------------------------------------------------------------
+# P0-2 生成前语料知情提示（_rag_stale_hint → GuideProgressDialog 常驻行）
+# ---------------------------------------------------------------
+
+
+def _stale_summary(stale: list[str], index_status: str = "最新") -> object:
+    from src.business.rag.corpus_freshness import CorpusStaleSummary
+
+    return CorpusStaleSummary(
+        stale_tasks=stale, index_status=index_status, corpus_built_at="11-02 08:00")
+
+
+def test_rag_stale_hint_shown_when_corpus_stale(tmp_path: Path, monkeypatch) -> None:
+    """语料/索引落后：提示传入进度框，且不阻断生成（服务调用照常）。"""
+    workflow, guide_service, _ = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr(
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "estimated_cost_cny": 0.0},
+    )
+    monkeypatch.setattr(workflow_module, "rag_generation_enabled", lambda: True)
+    monkeypatch.setattr(
+        workflow_module, "stale_summary",
+        lambda: _stale_summary(["武将语料", "卡牌语料"], index_status="待同步"))
+
+    workflow.request_guide_incremental()
+
+    hint = _ProgressDialog.instances[-1].rag_stale_hint
+    assert "武将语料" in hint and "待重建" in hint
+    assert "向量索引待同步" in hint
+    assert "11-02 08:00" in hint
+    assert guide_service.calls[0][0] == "incremental"  # 提示不阻断生成
+
+
+def test_rag_stale_hint_empty_when_corpus_fresh(tmp_path: Path, monkeypatch) -> None:
+    """语料与索引全最新：不提示（hint 为空串）。"""
+    workflow, _, _ = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _BackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr(
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "estimated_cost_cny": 0.0},
+    )
+    monkeypatch.setattr(workflow_module, "rag_generation_enabled", lambda: True)
+    monkeypatch.setattr(workflow_module, "stale_summary", lambda: _stale_summary([]))
+
+    workflow.request_guide_incremental()
+
+    assert _ProgressDialog.instances[-1].rag_stale_hint == ""
+
+
+def test_rag_stale_hint_skipped_for_classic_mode(tmp_path: Path, monkeypatch) -> None:
+    """经典模式（use_rag=False）：不消费语料，预检不调用、无提示。"""
+
+    class _ClassicBackendDialog(_BackendDialog):
+        def get_selected_rag(self) -> bool:
+            return False
+
+    workflow, _, _ = _workflow(tmp_path)
+    monkeypatch.setattr(workflow_module, "BackendChooseDialog", _ClassicBackendDialog)
+    monkeypatch.setattr(workflow_module, "GuideProgressDialog", _ProgressDialog)
+    monkeypatch.setattr(
+        workflow_module, "estimate_generation_cost",
+        lambda count, kind, model=None, use_rag=None: {"items": count, "estimated_cost_cny": 0.0},
+    )
+    checks: list[int] = []
+    monkeypatch.setattr(
+        workflow_module, "stale_summary",
+        lambda: checks.append(1) or _stale_summary([]))
+    monkeypatch.setattr(workflow_module, "rag_generation_enabled", lambda: True)
+
+    workflow.request_guide_incremental()
+
+    assert checks == []  # 经典模式短路，不触发语料预检
+    assert _ProgressDialog.instances[-1].rag_stale_hint == ""

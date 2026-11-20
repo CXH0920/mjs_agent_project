@@ -30,6 +30,12 @@ from PySide6.QtWidgets import (
 from src.business.execution.script_runner import ScriptRunner
 from src.business.maintenance.maintenance_repositories import MaintenanceRepositories
 from src.business.rag.audit_service import CORPUS_DIR, AuditIssue, audit_summary
+from src.business.rag.corpus_freshness import (  # noqa: F401 — re-export，模块级名字保持兼容
+    INDEX_DIR,
+    INDEX_TASK_NAME,
+    index_state,
+    task_states,
+)
 from src.business.rag.hero_brief import load_hero_briefs
 from src.business.rag.refinement_service import list_pending
 from src.business.rag.task_defs import TASKS as _RAG_TASKS
@@ -54,11 +60,9 @@ from src.ui.shared.style import (
 )
 from src.ui.shared.widgets import PageActionBar
 
-# 语料任务：名称 -> (源文件, 输出语料文件)；定义与 scripts/maintain_rag.py 共用
-# （单一事实源见 src/business/rag/task_defs.py，改动请同步维护该处）
-TASK_DEFS: list[tuple[str, list[str], list[str]]] = [
-    (task["name"], task["sources"], task["outputs"]) for task in _RAG_TASKS
-]
+# 语料任务/索引新鲜度判定（TASK_DEFS、task_states、INDEX_*、index_state、块数缓存）
+# 已下沉 src/business/rag/corpus_freshness.py（P0-2：采集完成提醒/芯片菜单/生成
+# 预检多方共用的单一事实源），顶部 import 兼容 re-export 保持模块级名字不变。
 
 # 左栏上组「维护对象」：(key/显示名, 语料任务名)；key 与 AuditIssue.target_tab
 # 去掉「维护」后缀同名（如「武将分类维护」→「武将分类」），audit_service 无需改动
@@ -93,98 +97,6 @@ _RULE_DOC_SCRIPT_LABELS = {
     "propose_rule_changes": "生成元规则提案",
     "apply_rule_proposal": "合入元规则提案",
 }
-
-# 语料块数缓存：path -> (mtime, size, count)，mtime/size 未变时不重复解析
-_COUNT_CACHE: dict[str, tuple[float, int, int | None]] = {}
-
-
-def _output_count(path: Path) -> int | None:
-    """读取语料文件的块数（带 (mtime, size) 缓存，避免每次切页全量解析）。"""
-    try:
-        stat = path.stat()
-    except OSError:
-        return None
-    cached = _COUNT_CACHE.get(str(path))
-    if cached is not None and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
-        return cached[2]
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        count = len(data) if isinstance(data, list) else None
-    except (OSError, json.JSONDecodeError):
-        count = None
-    _COUNT_CACHE[str(path)] = (stat.st_mtime, stat.st_size, count)
-    return count
-
-
-def task_states(root: Path) -> list[dict]:
-    """计算各语料任务状态；供 UI 展示与测试。"""
-    rows = []
-    for name, sources, outputs in TASK_DEFS:
-        source_mtime = 0.0
-        missing_sources = []
-        for rel in sources:
-            path = root / rel
-            if path.exists():
-                source_mtime = max(source_mtime, path.stat().st_mtime)
-            else:
-                missing_sources.append(rel)
-        output_mtimes = []
-        for rel in outputs:
-            path = root / CORPUS_DIR / rel
-            output_mtimes.append(path.stat().st_mtime if path.exists() else 0.0)
-        if missing_sources:
-            status = "缺源"
-        elif not output_mtimes or any(t == 0.0 for t in output_mtimes):
-            status = "待重建"
-        elif source_mtime > max(output_mtimes) + 1:
-            status = "待重建"
-        else:
-            status = "最新"
-        count = None
-        if output_mtimes and output_mtimes[0] > 0:
-            count = _output_count(root / CORPUS_DIR / outputs[0])
-        rows.append({"name": name, "status": status, "count": count,
-                     "sources": sources, "outputs": outputs})
-    return rows
-
-
-# 向量索引左栏项（不是 maintain_rag 语料任务，↻ 走 indexer 命令而非 --only）
-INDEX_TASK_NAME = "向量索引"
-INDEX_DIR = "data/rag_index/chroma"
-
-
-def index_state(root: Path) -> dict:
-    """计算向量索引新鲜度；供 UI 展示与测试。
-
-    构建时间取段目录（chroma/<uuid>/）二进制文件的 mtime——chroma.sqlite3 的
-    mtime 会被查询路径的 PersistentClient（无只读设置）触碰，实测查询后即变，
-    不能作判定信号；段文件 mtime 与构建台账（task_results.jsonl）精确吻合。
-    """
-    seg_root = root / INDEX_DIR
-    built = 0.0
-    if seg_root.is_dir():
-        for sub in seg_root.iterdir():
-            if not sub.is_dir():
-                continue  # chroma.sqlite3 落在根层，只遍历段子目录
-            for file in sub.iterdir():
-                if file.is_file():
-                    try:
-                        built = max(built, file.stat().st_mtime)
-                    except OSError:
-                        continue
-    if built == 0.0:
-        status = "未构建"
-    else:
-        corpus_max = 0.0
-        for _name, _sources, outputs in TASK_DEFS:
-            for rel in outputs:
-                try:
-                    corpus_max = max(corpus_max, (root / CORPUS_DIR / rel).stat().st_mtime)
-                except OSError:
-                    continue
-        # 容差与 task_states 的 +1 同口径，避免同秒写入的抖动误报
-        status = "待同步" if corpus_max > built + 1 else "最新"
-    return {"name": INDEX_TASK_NAME, "status": status, "built": built}
 
 
 class RagMaintenancePanel(QWidget):

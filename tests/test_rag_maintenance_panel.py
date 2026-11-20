@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""知识库维护工作台测试：任务状态计算、审计摘要与面板渲染。"""
+"""知识库维护工作台测试：审计摘要与面板渲染。
+
+task_states / index_state 纯函数用例已随判定下沉迁往
+tests/test_corpus_freshness.py（P0-2）；此处保留面板 UI 用例。
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,6 @@ from src.ui.maintenance.rag_maintenance_panel import (
     INDEX_TASK_NAME,
     RagMaintenancePanel,
     index_state,
-    task_states,
 )
 
 
@@ -80,53 +83,6 @@ def _make_root(tmp_path: Path) -> Path:
     for path in root.rglob("*"):
         _utime(path, now - 100)
     return root
-
-
-def test_all_tasks_up_to_date(tmp_path: Path) -> None:
-    root = _make_root(tmp_path)
-    rows = task_states(root)
-    assert len(rows) == 10
-    assert all(row["status"] == "最新" for row in rows)
-    assert all(row["count"] == 1 for row in rows)
-
-
-def test_stale_when_source_newer(tmp_path: Path) -> None:
-    root = _make_root(tmp_path)
-    _utime(root / "data" / "heroes.json", time.time() + 60)
-    rows = {row["name"]: row["status"] for row in task_states(root)}
-    assert rows["武将语料"] == "待重建"
-    assert rows["武将分类语料"] == "待重建"
-    assert rows["卡牌语料"] == "最新"
-
-
-def test_missing_output_marks_rebuild(tmp_path: Path) -> None:
-    root = _make_root(tmp_path)
-    (root / "data" / "rag_corpus" / "特殊机制语料.json").unlink()
-    rows = {row["name"]: row["status"] for row in task_states(root)}
-    assert rows["特殊机制语料"] == "待重建"
-
-
-def test_missing_source(tmp_path: Path) -> None:
-    root = _make_root(tmp_path)
-    (root / "data" / "special_cards.json").unlink()
-    rows = {row["name"]: row["status"] for row in task_states(root)}
-    assert rows["特殊机制语料"] == "缺源"
-
-
-def test_task_defs_include_card_corpus_link(tmp_path: Path) -> None:
-    """#1 回归：任务表为单一事实源，装备属性语料必须声明对卡牌语料的依赖。"""
-    from src.business.rag.task_defs import TASKS
-    equip = next(t for t in TASKS if t["name"] == "装备属性语料")
-    assert "data/rag_corpus/卡牌RAG语料.json" in equip["sources"]
-
-
-def test_equip_task_tracks_card_corpus_dependency(tmp_path: Path) -> None:
-    """#1 回归：卡牌RAG语料.json 变更后装备属性语料应标记待重建（跨语料联动）。"""
-    root = _make_root(tmp_path)
-    _utime(root / "data" / "rag_corpus" / "卡牌RAG语料.json", time.time() + 60)
-    rows = {row["name"]: row["status"] for row in task_states(root)}
-    assert rows["装备属性语料"] == "待重建"
-    assert rows["卡牌语料"] == "最新"
 
 
 def test_audit_reports_unclassified_and_unknown_hero(tmp_path: Path) -> None:
@@ -395,26 +351,8 @@ def test_rebuild_button_runs_only_matching_task(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------
-# 向量索引新鲜度（index_state）与 ↻ 分派
+# 向量索引 ↻ 分派（index_state 纯函数用例见 test_corpus_freshness）
 # ---------------------------------------------------------------
-
-def test_index_state_fresh(tmp_path: Path) -> None:
-    """段文件与语料同 mtime（fixture 统一设定）→ 索引最新。"""
-    root = _make_root(tmp_path)
-    row = index_state(root)
-    assert row["name"] == INDEX_TASK_NAME
-    assert row["status"] == "最新"
-    assert row["built"] > 0
-
-
-def test_index_state_missing_dir(tmp_path: Path) -> None:
-    """索引目录不存在 → 未构建（不与语料比较）。"""
-    import shutil
-
-    root = _make_root(tmp_path)
-    shutil.rmtree(root / "data" / "rag_index")
-    assert index_state(root)["status"] == "未构建"
-
 
 def test_index_rebuild_button_runs_indexer(tmp_path: Path, monkeypatch) -> None:
     """索引落后：左栏「向量索引」待同步、↻ 可见且分派到 _run_index（indexer）。"""

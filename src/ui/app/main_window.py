@@ -519,11 +519,20 @@ class MainWindow(QMainWindow):
             self._dialogs.request_fetch_incremental)
         self._freshness_chip.fetch_specific_requested.connect(
             self._dialogs.request_fetch_specific)
+        self._freshness_chip.rag_maintenance_requested.connect(
+            self._goto_rag_maintenance)
         bar.addPermanentWidget(self._freshness_chip)
         self.setStatusBar(bar)
         state, detail = self._capture_service.connection_state
         self._update_emulator_status(state, detail)
         self._update_poll_status(self._ocr_service.poll_state, "轮询未启用")
+
+    def _goto_rag_maintenance(self) -> None:
+        """语料欠账跳转知识库维护页（P0-2；精简版无该页，静默忽略）。"""
+        if not hasattr(self, "_rag_maintenance"):
+            return
+        # 切页回调（_on_workspace_page_changed）会自动触发维护页 refresh
+        self._tabs.setCurrentWidget(self._rag_maintenance)
 
     def _update_emulator_status(self, state: str, detail: str = "") -> None:
         """渲染不受业务进度覆盖的常驻 ADB 状态。"""

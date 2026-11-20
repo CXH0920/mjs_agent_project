@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 from src.business.fetching.fetch_utils import parse_generation_event
-from src.ui.shared.style import TONE_DANGER, TONE_SUCCESS, set_tone
+from src.ui.shared.style import TONE_DANGER, TONE_SUCCESS, TONE_WARNING, set_tone
 from src.ui.shared.widgets import DialogFooter, PageHeader
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class GuideProgressDialog(QDialog):
         hero_count: int,
         title: str = "攻略生成进度",
         item_label: str = "攻略",
+        rag_stale_hint: str = "",
         parent=None,
     ):
         super().__init__(parent)
@@ -49,12 +50,21 @@ class GuideProgressDialog(QDialog):
         self.setMinimumHeight(260)
         self.resize(520, 280)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        self._setup_ui(hero_count)
+        self._setup_ui(hero_count, rag_stale_hint)
 
-    def _setup_ui(self, hero_count: int) -> None:
+    def _setup_ui(self, hero_count: int, rag_stale_hint: str = "") -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.addWidget(PageHeader(self.windowTitle(), "任务运行期间可中止，完成后可关闭"))
+
+        # 语料欠账常驻警示（P0-2 生成前知情）：独立控件——_status_label/
+        # _detail_label 会被流式输出持续覆写，不能承载常驻信息
+        if rag_stale_hint:
+            hint_label = QLabel(rag_stale_hint)
+            hint_label.setObjectName("progressStaleHintLabel")
+            hint_label.setWordWrap(True)
+            set_tone(hint_label, TONE_WARNING)
+            layout.addWidget(hint_label)
 
         # 状态文字
         self._status_label = QLabel("正在准备...")

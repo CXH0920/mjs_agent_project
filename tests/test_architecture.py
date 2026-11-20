@@ -685,7 +685,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 要等切换武将才自愈；与 synergies_changed 分发同模式）
     # 626 → 630：公告横幅增加关闭按钮（连线 coordinator.dismiss_banner，
     # 重弹判定与指纹全部内聚在协调器，主窗口只增按钮装配）
-    "ui/app/main_window.py": 630,
+    # 630 → 639：语料欠账跳转桥接 _goto_rag_maintenance（P0-2；芯片菜单行
+    # 信号 → 切页知识库维护，切页回调自动 refresh，属组合根桥接既定模式）
+    "ui/app/main_window.py": 639,
     # 首启向导主体（spec_onboarding T4–T6 三段体检 + T9 一键修复接线）。
     # 546 为复核修复后实测值（EnvCheckWorker 引用 GC 窗口修复 + 深链协调器
     # 整只重建防端口倒退）；三段渲染/协调器/预热接线为单一对话框内聚职责，
@@ -978,7 +980,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 「执行与语料状态的呈现职责」在本面板内的延伸，查看器本体已出仓到
     # readonly_viewer_dialog.py；706 → 723：审计时效跳转携带结构化命中定位
     # （P1-1，_open_refinement(focus) + 搜索词提取）
-    "ui/maintenance/rag_maintenance_panel.py": 733,  # 723 → 733：_refinement_focus_queries 复数版（P1-1 ii 导航站列表，去重保序）
+    "ui/maintenance/rag_maintenance_panel.py": 645,  # 723 → 733：_refinement_focus_queries 复数版（P1-1 ii 导航站列表，去重保序）；733 → 645：task_states/index_state 判定下沉 src/business/rag/corpus_freshness.py（P0-2 多消费方单一事实源），顶部 re-export 保模块级名字
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

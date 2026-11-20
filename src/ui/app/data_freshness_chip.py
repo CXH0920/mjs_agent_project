@@ -25,6 +25,7 @@ from src.business.freshness import (
     compute_freshness_report,
     watch_dir,
 )
+from src.business.rag.corpus_freshness import stale_summary
 from src.ui.shared.style import TONE_WARNING
 from src.ui.shared.widgets import show_toast
 
@@ -52,6 +53,7 @@ class DataFreshnessChip(QLabel):
 
     fetch_incremental_requested = Signal()
     fetch_specific_requested = Signal()
+    rag_maintenance_requested = Signal()  # 语料欠账 → 前往知识库维护（P0-2）
 
     def __init__(
         self,
@@ -163,7 +165,30 @@ class DataFreshnessChip(QLabel):
                     menu.addAction(text).triggered.connect(self._request_specific)
                 else:
                     self._add_disabled_row(menu, text)
+        self._add_corpus_section(menu)
         return menu
+
+    def _add_corpus_section(self, menu: QMenu) -> None:
+        """语料欠账 section（P0-2）：有待重建任务且主窗口有维护页（完整版）才出现。
+
+        stale_summary 为 mtime-only 毫秒级，菜单打开时现算即可（无需随 _refresh
+        缓存）。维护是本地页内操作而非采集任务，无忙碌守卫；精简版无维护页，
+        提示无操作出口，不显示。
+        """
+        window = self.window()
+        if not hasattr(window, "_rag_maintenance"):
+            return
+        summary = stale_summary()
+        if not summary.stale_tasks:
+            return
+        names = "、".join(summary.stale_tasks[:3])
+        if len(summary.stale_tasks) > 3:
+            names += "等"
+        menu.addSeparator()
+        menu.addSection("语料状态")
+        action = menu.addAction(
+            f"语料 {len(summary.stale_tasks)} 项待重建（{names}→ 前往知识库维护）")
+        action.triggered.connect(self.rag_maintenance_requested.emit)
 
     @staticmethod
     def _add_disabled_row(menu: QMenu, text: str) -> QAction:

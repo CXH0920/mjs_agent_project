@@ -1310,6 +1310,8 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
     monkeypatch.setattr(
         coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
     )
+    # P0-2 尾串读真实数据盘（stale_summary），patch 隔离避免断言随数据状态漂移
+    monkeypatch.setattr(coordinator_module, "_corpus_stale_suffix", lambda: "")
     applied = []
     window = SimpleNamespace(
         _window=None,
@@ -2306,3 +2308,27 @@ def test_service_runtime_bad_record_does_not_poison_first_run(tmp_path, monkeypa
     monkeypatch.setattr(service_module, "fetch_latest_announcements", lambda **_: [good, fresh])
     second = _run_check(service)
     assert [ann.id for ann in second.new_announcements] == [209]
+
+
+def test_fetch_completed_toast_appends_corpus_stale_suffix(monkeypatch) -> None:
+    """P0-2：采集成功 toast 按语料欠账追加尾串（SimpleNamespace 直调真方法）。"""
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+    from src.ui.app.announcement_update_coordinator import AnnouncementUpdateCoordinator
+
+    toasts = []
+    monkeypatch.setattr(
+        coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+    )
+    monkeypatch.setattr(
+        coordinator_module, "_corpus_stale_suffix",
+        lambda: "\n4 项语料待重建（武将语料、武将分类语料、组合语料等）")
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _pending_phases=None,
+    )
+
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
+
+    assert toasts == [
+        "武将数据已采集完成，请重新加载数据。\n4 项语料待重建（武将语料、武将分类语料、组合语料等）"]

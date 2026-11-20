@@ -281,3 +281,56 @@ def test_mouse_and_key_open_menu(qapp, monkeypatch, tmp_path) -> None:
     )
     chip.keyPressEvent(event_down)
     assert opened == [1, 1, 1]
+
+
+# ---------------------------------------------------------------
+# P0-2 语料欠账 section（_add_corpus_section）
+# ---------------------------------------------------------------
+
+
+def _stale_summary(stale: list[str]) -> object:
+    from src.business.rag.corpus_freshness import CorpusStaleSummary
+
+    return CorpusStaleSummary(
+        stale_tasks=stale, index_status="最新", corpus_built_at="11-02 08:00")
+
+
+def _full_build_chip(monkeypatch, tmp_path, stale: list[str]):
+    """挂到带 _rag_maintenance 属性的顶层窗口上的芯片（完整版形态）。"""
+    from PySide6.QtWidgets import QWidget
+
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), {"n": 0})
+    window = QWidget()
+    window._rag_maintenance = object()  # 完整版主窗口标记
+    chip.setParent(window)
+    monkeypatch.setattr(data_freshness_chip, "stale_summary", lambda: _stale_summary(stale))
+    return chip, window  # 调用方须持有 window：父窗口被 GC 会级联销毁子芯片
+
+
+def test_menu_corpus_section_lists_stale_tasks(qapp, monkeypatch, tmp_path) -> None:
+    """有待重建任务且主窗口有维护页：出现可点行，点击发 rag_maintenance_requested。"""
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, ["武将语料", "卡牌语料"])
+    menu = chip._build_menu(chip._report)
+    action = next(
+        (a for a in menu.actions() if "语料 2 项待重建" in a.text()), None)
+    assert action is not None and action.isEnabled()
+    assert "武将语料" in action.text() and "卡牌语料" in action.text()
+    emitted: list[bool] = []
+    chip.rag_maintenance_requested.connect(lambda: emitted.append(True))
+    action.trigger()
+    assert emitted == [True]
+
+
+def test_menu_corpus_section_hidden_when_fresh(qapp, monkeypatch, tmp_path) -> None:
+    """语料全最新：不出现语料 section。"""
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, [])
+    menu = chip._build_menu(chip._report)
+    assert not any("语料" in a.text() and "待重建" in a.text() for a in menu.actions())
+
+
+def test_menu_corpus_section_hidden_in_lite_build(qapp, monkeypatch, tmp_path) -> None:
+    """精简版（window 无 _rag_maintenance）：即便有欠账也不显示（无操作出口）。"""
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), {"n": 0})  # 无父窗口 → 自身为 window
+    monkeypatch.setattr(data_freshness_chip, "stale_summary", lambda: _stale_summary(["武将语料"]))
+    menu = chip._build_menu(chip._report)
+    assert not any("待重建" in a.text() for a in menu.actions())

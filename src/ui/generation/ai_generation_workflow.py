@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 from src.business.ai_cost import estimate_generation_cost
 from src.business.fetching.guide_fetch_service import GuideFetchService
 from src.business.fetching.synergy_fetch_service import SynergyFetchService
+from src.business.rag.corpus_freshness import rag_generation_enabled, stale_summary
 from src.ui.generation.backend_choose_dialog import BackendChooseDialog
 from src.ui.generation.guide_fetch_dialog import GuideFetchDialog
 from src.ui.generation.guide_progress_dialog import GuideProgressDialog
@@ -141,6 +142,7 @@ class AiGenerationWorkflow(QObject):
                 overwrite=True,
                 use_rag=use_rag,
             ),
+            use_rag=use_rag,
         )
 
     def request_synergy_refresh(self) -> None:
@@ -172,6 +174,7 @@ class AiGenerationWorkflow(QObject):
                 overwrite=True,
                 use_rag=use_rag,
             ),
+            use_rag=use_rag,
         )
 
     def request_synergy_single(self) -> None:
@@ -198,6 +201,7 @@ class AiGenerationWorkflow(QObject):
                 backend=backend,
                 use_rag=use_rag,
             ),
+            use_rag=use_rag,
         )
 
     def request_synergy_combos(self) -> None:
@@ -229,6 +233,7 @@ class AiGenerationWorkflow(QObject):
                 overwrite=dialog.overwrite_existing,
                 use_rag=use_rag,
             ),
+            use_rag=use_rag,
         )
 
     def _require_heroes(self) -> list[dict]:
@@ -236,6 +241,29 @@ class AiGenerationWorkflow(QObject):
         if not heroes:
             QMessageBox.warning(self._window, "提示", "没有武将数据，请先采集武将")
         return heroes
+
+    def _rag_stale_hint(self, use_rag: bool) -> str:
+        """生成前语料知情提示（P0-2）：RAG 增强且语料/索引落后时返回警示文案。
+
+        stale_summary 为 mtime-only 毫秒级，在模态 exec 之前调用不阻塞；经典
+        模式（use_rag=False）或 RAG_ENABLED=false（子进程会自动降级经典模式）
+        不提示——两者都不消费语料。
+        """
+        if not use_rag or not rag_generation_enabled():
+            return ""
+        summary = stale_summary()
+        if not summary.stale_tasks and summary.index_status != "待同步":
+            return ""
+        parts = []
+        if summary.stale_tasks:
+            names = "、".join(summary.stale_tasks[:3])
+            if len(summary.stale_tasks) > 3:
+                names += "等"
+            parts.append(f"{names}待重建")
+        if summary.index_status == "待同步":
+            parts.append("向量索引待同步")
+        return (f"⚠ 本次 RAG 增强基于 {summary.corpus_built_at} 的语料"
+                f"（{'，'.join(parts)}），生成内容可能不含最新调整")
 
     def _start_guide_generation(
         self,
@@ -254,12 +282,14 @@ class AiGenerationWorkflow(QObject):
         if choice is None:
             return
         backend, use_rag = choice
+        rag_hint = self._rag_stale_hint(use_rag)
 
         # 未启动子进程（忙碌/无需生成）不会有完成信号，必须确认启动成功后再进
         # 模态 exec，否则进度框将永久卡死只能杀进程
         if not fetch(heroes, backend, use_rag):
             return
-        self._guide_progress_dialog = GuideProgressDialog(len(heroes), parent=self._window)
+        self._guide_progress_dialog = GuideProgressDialog(
+            len(heroes), rag_stale_hint=rag_hint, parent=self._window)
         self._guide_progress_dialog.cancel_requested.connect(self._guide_service.cancel)
         self._guide_progress_dialog.exec()
         self._guide_progress_dialog = None
@@ -269,10 +299,12 @@ class AiGenerationWorkflow(QObject):
         item_count: int,
         title: str,
         start: Callable[[], bool],
+        use_rag: bool = True,
     ) -> None:
         if self._synergy_service.is_busy:
             QMessageBox.warning(self._window, "生成进行中", "已有相性生成任务在运行，请等待完成。")
             return
+        rag_hint = self._rag_stale_hint(use_rag)
         if not start():
             # 同攻略流程：未启动子进程不会有完成信号，不能进入模态 exec
             return
@@ -280,6 +312,7 @@ class AiGenerationWorkflow(QObject):
             item_count,
             title=title,
             item_label="相性评分",
+            rag_stale_hint=rag_hint,
             parent=self._window,
         )
         self._synergy_progress_dialog.cancel_requested.connect(self._synergy_service.cancel)
