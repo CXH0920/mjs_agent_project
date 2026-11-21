@@ -68,6 +68,8 @@ _SENTINELS: dict[str, tuple[str, str, object]] = {
     "DATA_FRESHNESS_TIMELINE_STALE_DAYS": ("21", "data_freshness_timeline_stale_days", 21),
     "DATA_FRESHNESS_STALE_GREEN_DAYS": ("10", "data_freshness_stale_green_days", 10),
     "DATA_FRESHNESS_STALE_RED_DAYS": ("20", "data_freshness_stale_red_days", 20),
+    "DATA_FRESHNESS_DISABLED_ITEMS": (
+        "guides,corpus", "data_freshness_disabled_items", "guides,corpus"),
 }
 
 
@@ -200,6 +202,7 @@ def test_table_keys_partition_into_getters_and_passthrough(monkeypatch, tmp_path
         "recommendation_sigmoid_k", "recommendation_low_win_rate_gap",
         "data_freshness_timeline_stale_days",
         "data_freshness_stale_green_days", "data_freshness_stale_red_days",
+        "data_freshness_disabled_items",
     }
 
 

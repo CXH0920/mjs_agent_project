@@ -23,9 +23,11 @@ from src.business.freshness import (
     YELLOW,
     FreshnessReport,
     compute_freshness_report,
+    load_disabled_items,
     watch_dir,
 )
 from src.business.rag.corpus_freshness import stale_summary
+from src.config.env import DEFAULT_ENV_FILE, is_full_build, save_env_file
 from src.ui.shared.style import TONE_WARNING
 from src.ui.shared.widgets import show_toast
 
@@ -46,6 +48,17 @@ _ADVICE_ROWS = {
     "synergies": "相性落后或未生成：建议在资料库重新生成相性",
     "rankings": "榜单过期或缺失：建议通过 OCR 导入最新榜单",
 }
+
+# 监测项开关定义：key -> 菜单显示名；可见性按构建形态在 _visible_item_keys 裁剪。
+# 开关行必须常驻（禁用后判定 item 消失，但开关仍在才能重新勾回），
+# 可见性据此独立判定，不随 report.items 派生。
+_ITEM_LABELS = (
+    ("heroes", "武将"),
+    ("guides", "攻略"),
+    ("synergies", "相性"),
+    ("rankings", "官方榜单"),
+    ("corpus", "语料欠账提醒"),
+)
 
 
 class DataFreshnessChip(QLabel):
@@ -166,6 +179,7 @@ class DataFreshnessChip(QLabel):
                 else:
                     self._add_disabled_row(menu, text)
         self._add_corpus_section(menu)
+        self._add_monitor_section(menu)
         return menu
 
     def _add_corpus_section(self, menu: QMenu) -> None:
@@ -173,10 +187,13 @@ class DataFreshnessChip(QLabel):
 
         stale_summary 为 mtime-only 毫秒级，菜单打开时现算即可（无需随 _refresh
         缓存）。维护是本地页内操作而非采集任务，无忙碌守卫；精简版无维护页，
-        提示无操作出口，不显示。
+        提示无操作出口，不显示。监测项开关取消 corpus 后同样静音（勾选状态
+        本身即痕迹，不另出「已隐藏」提示）。
         """
         window = self.window()
         if not hasattr(window, "_rag_maintenance"):
+            return
+        if "corpus" in load_disabled_items():
             return
         summary = stale_summary()
         if not summary.stale_tasks:
@@ -189,6 +206,56 @@ class DataFreshnessChip(QLabel):
         action = menu.addAction(
             f"语料 {len(summary.stale_tasks)} 项待重建（{names}→ 前往知识库维护）")
         action.triggered.connect(self.rag_maintenance_requested.emit)
+
+    def _add_monitor_section(self, menu: QMenu) -> None:
+        """「监测项」开关 section：取消项完全退出判定与显示，默认全选。
+
+        勾选态每次打开菜单现读 config.env（菜单本就全量重建，UI 零缓存）；
+        点击后 QMenu 默认关闭，写回成功经 _refresh 更新胶囊，重开菜单见新态。
+        """
+        disabled = load_disabled_items()
+        labels = dict(_ITEM_LABELS)
+        menu.addSeparator()
+        menu.addSection("监测项")
+        for key in self._visible_item_keys():
+            action = menu.addAction(labels[key])
+            action.setCheckable(True)
+            action.setChecked(key not in disabled)
+            action.triggered.connect(lambda _checked=False, k=key: self._toggle_item(k))
+
+    def _visible_item_keys(self) -> tuple[str, ...]:
+        """可见开关：武将/榜单恒见；攻略/相性/语料仅完整版，语料还需维护页。
+
+        守卫（至少保留一项）按此可见项计数，corpus 计入——禁到只剩 corpus 时
+        判定层 fail-safe 回全量监测兜底。
+        """
+        visible = {"heroes", "rankings"}
+        if is_full_build():
+            visible |= {"guides", "synergies", "corpus"}
+        if "corpus" in visible and not hasattr(self.window(), "_rag_maintenance"):
+            visible.discard("corpus")
+        return tuple(key for key, _ in _ITEM_LABELS if key in visible)  # 保显示序
+
+    def _toggle_item(self, key: str) -> None:
+        """切换监测项：守卫 → 单键集合增删 → 原子写回 → 成功刷新胶囊。
+
+        写失败（OSError）env 未变，改动不保留、只 toast；菜单已随点击关闭，
+        重开时现读 env 自然显示真实勾选态，无需回滚。
+        """
+        disabled = load_disabled_items()
+        visible = self._visible_item_keys()
+        if key not in disabled and len(set(visible) - disabled) == 1:
+            show_toast(self.window(), "至少保留一项监测", TONE_WARNING)
+            return
+        new = (disabled - {key}) if key in disabled else (disabled | {key})
+        try:
+            save_env_file(DEFAULT_ENV_FILE, {
+                "DATA_FRESHNESS_DISABLED_ITEMS": ",".join(sorted(new))})
+        except OSError:
+            logger.warning("监测项配置写回失败，改动不保留: %s", key)
+            show_toast(self.window(), "保存失败，改动将不保留", TONE_WARNING)
+            return
+        self._refresh()
 
     @staticmethod
     def _add_disabled_row(menu: QMenu, text: str) -> QAction:

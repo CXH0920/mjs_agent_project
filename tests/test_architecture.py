@@ -833,7 +833,8 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 路径快照常量的根治出口，守护测试不再依赖 importlib.reload
     # 421 → 423：MUMU_OCR_MATCH_THRESHOLD 键退役注释（第16批遗留 P3 双阈值
     # 收敛）——UI/persist 不再写该键，default_from 回退源语义显式化
-    "config/env.py": 423,
+    # 423 → 426：DATA_FRESHNESS_DISABLED_ITEMS 透传键登记（监测项可配置）
+    "config/env.py": 426,
     # 638 → 642：罕见字兜底改计数熔断（TD-A5-001）——单次瞬时异常只损失本格
     # 兜底，连续 3 次才熔断（熔断本体在 official_ocr_engines.py，含 60s 冷却），
     # 降级期间经 status_callback 明示
@@ -952,7 +953,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 首次入册（实测 503 越过 500 绊线）：榜单路径聚合 RANKING_CSV_PATHS 与
     # WATCH_DIR 改 ranking_csv_paths()/watch_dir() 调用时求值（reload 根治
     # 工单），判定逻辑未变
-    "business/freshness.py": 503,
+    # 503 → 543：监测项禁用 denylist——DISABLED_ITEM_KEYS 常量 +
+    # load_disabled_items 解析 + compute 增参分流与全禁 fail-safe
+    "business/freshness.py": 543,
     # 526 → 544：七路径常量函数化（调用时求值）+ 公开函数默认参数哨兵化
     # （reload 根治工单：榜单路径不再依赖 import 时快照）
     "data/recommendation_index_repository.py": 544,

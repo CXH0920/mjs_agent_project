@@ -116,7 +116,7 @@ class FreshnessItem:
 
 @dataclass(frozen=True)
 class FreshnessReport:
-    items: tuple[FreshnessItem, ...]   # 固定序：heroes, guides, synergies, rankings
+    items: tuple[FreshnessItem, ...]   # 固定序子集：heroes, guides, synergies, rankings（禁用项剔除）
     state: str
     headline: str                      # 芯片最终文案，含「数据：」前缀
     timeline_warning: str | None
@@ -151,6 +151,30 @@ def _stale_thresholds() -> tuple[int, int]:
         )
         return STALE_GREEN_DAYS, STALE_RED_DAYS
     return green, red
+
+
+# 监测项开关：config.env 的 DATA_FRESHNESS_DISABLED_ITEMS 合法 key。
+# corpus 仅 UI 侧静音（语料欠账 section），不参与本模块判定。
+DISABLED_ITEM_KEYS = frozenset({"heroes", "guides", "synergies", "rankings", "corpus"})
+
+
+def load_disabled_items() -> frozenset[str]:
+    """读禁用监测项集合；缺失/空/全非法 = frozenset()（全选）。
+
+    denylist 语义：键缺失或空串即未禁用任何项，与无配置时的现状行为一致；
+    未知 key 只记 debug 忽略，未来新增监测类别默认参与（不写不静音）。
+    """
+    raw = load_env_config().get("data_freshness_disabled_items") or ""
+    keys = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if token in DISABLED_ITEM_KEYS:
+            keys.add(token)
+        else:
+            logger.debug("未知监测项 key %r，忽略", token)
+    return frozenset(keys)
 
 
 def _load_records(path: Path) -> list | None:
@@ -482,22 +506,38 @@ def compute_freshness_report(
     full_build: bool = is_full_build(),
     today: date | None = None,
     thresholds: tuple[int, int] | None = None,
+    disabled_items: frozenset[str] | None = None,
 ) -> FreshnessReport:
-    """汇总四类数据的新鲜度判定；路径/日期/档位阈值显式注入供测试。
+    """汇总四类数据的新鲜度判定；路径/日期/档位阈值/禁用项显式注入供测试。
 
     thresholds 为 (绿档上限, 红档下限)，None 时读 config.env（默认 7/14）。
+    disabled_items 为禁用监测项集合，None 时读 config.env（默认全选）；禁用项
+    跳过 item 生成与建议产出（corpus 不属判定层可判项，在集合中无效果）。
     """
     ranking_paths = ranking_paths or ranking_csv_paths()
     today = today or date.today()
     thresholds = thresholds or _stale_thresholds()
+    disabled = disabled_items if disabled_items is not None else load_disabled_items()
+    # fail-safe：disabled 覆盖当前构建全部可判项 → 回全量（_aggregate 空集兜底）
+    judgeable = {"heroes", "rankings"} | ({"guides", "synergies"} if full_build else set())
+    if judgeable <= disabled:
+        logger.warning("监测项全被禁用（%s），回退全量监测", sorted(disabled))
+        disabled = frozenset()
+    # hero_entries 基准照常加载：guides/synergies 判定依赖它，与武将项是否禁用无关
     hero_entries = _load_hero_entries(heroes_path)
-    heroes, timeline_warning, suggestions = _judge_heroes(
-        hero_entries, load_timeline(timeline_path), today, _timeline_stale_days(),
-        thresholds,
-    )
-    items = [heroes]
-    if full_build:
+    timeline_warning: str | None = None
+    suggestions: tuple[str, ...] = ()
+    items: list[FreshnessItem] = []
+    if "heroes" not in disabled:
+        heroes, timeline_warning, suggestions = _judge_heroes(
+            hero_entries, load_timeline(timeline_path), today, _timeline_stale_days(),
+            thresholds,
+        )
+        items.append(heroes)
+    if full_build and "guides" not in disabled:
         items.append(_judge_guides(guides_path, hero_entries, today, thresholds))
+    if full_build and "synergies" not in disabled:
         items.append(_judge_synergies(synergies_path, hero_entries, today, thresholds))
-    items.append(_judge_rankings(ranking_paths, thresholds))
+    if "rankings" not in disabled:
+        items.append(_judge_rankings(ranking_paths, thresholds))
     return _aggregate(items, timeline_warning, suggestions)

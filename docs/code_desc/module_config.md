@@ -146,7 +146,7 @@ PROVIDER_LABELS: dict[str, str] = {
 
 ### 3.3 运行时与模拟器配置
 
-`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 38 键：runtime 6 + mumu 21 + 透传 11）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判），多品牌连接三键（`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`）未配置时回退旧 `MUMU_ADB_*` 实配值（老 config.env 不改字平滑升级，持久化始终写新键）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_emulator_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
+`load_env_config(env_path)` 解析 `.env` 后按键元表 `_ENV_KEY_SPECS`（env.py 内唯一事实源，P1-4/P1-7 收口；1bfd65b 定稿为 `_EnvKeySpec` NamedTuple 五字段 `cfg_key` / `type` / `default` / `getter` / `default_from`，现 39 键：runtime 6 + mumu 21 + 透传 12）完成大写 KEY → 内部小写 key 映射与类型转换（int/bool/float/str 四型，str 不经转型透传；int/float 转换失败告警并丢弃该键，由 getter 补默认值）；两个 getter 缩为一行委托 `_config_with_defaults(config, getter)` 按域补默认，键集与默认值同源于该表，新键只登记元表一处。`default_from` 表达级联默认：`mumu_hero_selection_threshold` 未配置时回退 `mumu_ocr_match_threshold` 实配值（消除 getter 特判），多品牌连接三键（`EMULATOR_ADB_PATH` / `EMULATOR_ADB_PORT` / `EMULATOR_SCREENSHOT_MODE`）未配置时回退旧 `MUMU_ADB_*` 实配值（老 config.env 不改字平滑升级，持久化始终写新键）。此前 key_mapping / 三张类型清单 / `get_runtime_params` 与 `get_emulator_config` 默认值四处分头登记，063dc47（截图模式键漏出 getter 成死开关）即漏登记事故，单源后由 `tests/test_env_config.py` 键全集断言守护（`_SENTINELS` 全量键哨兵表 + 8 函数：bool 七变体 / 级联默认 / 单源 `is` 断言 / 分域划分）。
 
 `get_runtime_params()` 返回：`requests_per_minute`(30) / `max_retries`(3) / `max_output_tokens`(32768，cf9c927 由 16384 上调；P1-7 起单源于 `env.DEFAULT_MAX_OUTPUT_TOKENS`，`api_generator.MAX_OUTPUT_TOKENS` 仅引用) / `http_timeout`(300) / `log_level`("INFO") / `log_to_file`(True)。
 
@@ -154,7 +154,7 @@ PROVIDER_LABELS: dict[str, str] = {
 
 闲置暂停阈值分钟数不走配置键：早先的 `MUMU_OCR_POLL_IDLE_MINUTES` 已移除，现为 `PollCoordinator.IDLE_PAUSE_MINUTES = 5` 类常量（`src/ui/app/poll_coordinator.py`），配置面只保留 `MUMU_OCR_POLL_IDLE_PAUSE` 开关。
 
-元表其余 11 键为透传键（无 getter，调用方直接从 `load_env_config()` 取值，不进 UI 配置对话框）：`api_key` / `api_url` / `model`（旧 `DEEPSEEK_*` 三件套，profiles 域旧链兜底消费）、`mjs_data_repo`（pull_data 私有仓位置）、`recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`（推荐指数计算参数）、`data_freshness_timeline_stale_days`（ae92c1d 随数据新鲜度芯片新增：公告时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄估算，非正整数回退默认 14；`config.env.example` 文件尾新增「数据新鲜度（状态栏芯片）」段）、`data_freshness_stale_green_days` / `data_freshness_stale_red_days`（数据新鲜度档位阈值：[0,绿) 绿 / [绿,红) 黄 / ≥红 红，默认 7/14；官方榜单约每半月更新，写死 14 天会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001），由 `business/freshness.py::_stale_thresholds()` 消费）。
+元表其余 12 键为透传键（无 getter，调用方直接从 `load_env_config()` 取值，不进 UI 配置对话框）：`api_key` / `api_url` / `model`（旧 `DEEPSEEK_*` 三件套，profiles 域旧链兜底消费）、`mjs_data_repo`（pull_data 私有仓位置）、`recommendation_p_floor` / `recommendation_ban_weight` / `recommendation_sigmoid_k` / `recommendation_low_win_rate_gap`（推荐指数计算参数）、`data_freshness_timeline_stale_days`（ae92c1d 随数据新鲜度芯片新增：公告时间轴距今天数超过该值视为不健康，武将新鲜度退化为纯年龄估算，非正整数回退默认 14；`config.env.example` 文件尾新增「数据新鲜度（状态栏芯片）」段）、`data_freshness_stale_green_days` / `data_freshness_stale_red_days`（数据新鲜度档位阈值：[0,绿) 绿 / [绿,红) 黄 / ≥红 红，默认 7/14；官方榜单约每半月更新，写死 14 天会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001），由 `business/freshness.py::_stale_thresholds()` 消费）、`data_freshness_disabled_items`（2026-11-21 随监测项可配置新增：denylist 逗号分隔禁用监测项 key，缺失/空 = 全选，由 `business/freshness.py::load_disabled_items()` 消费——chip 菜单 toggle 经 `save_env_file` 写回该单键，corpus 仅静音 UI 语料欠账提示不进判定层）。
 
 ### 3.4 日志系统
 
@@ -487,3 +487,7 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 ## 本轮文档校准（2026-11-20）
 
 自基线 `a5fde97`（2026-11-18）以来共 9 个提交（至 `1acaa76`），config 域代码无变更——键元表（38 键）、`atomic_write` / `task_ledger` / `version.py` / `onboarding_state` / `disclaimer_state` 口径延续。
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）起新鲜度胶囊监测项可配置：键元表新增透传键 `DATA_FRESHNESS_DISABLED_ITEMS`（str、default=None，不进 getter 域与 UI 配置对话框；denylist 逗号分隔禁用监测项 key，缺失/空 = 全选），38 → **39 键**（runtime 6 + mumu 21 + 透传 12），`_SENTINELS` 哨兵表与透传键集合断言同步 +1。消费与写回语义见 [`./module_business.md`](./module_business.md) 与 §3.3；`config.env.example`「数据新鲜度」段追加注释样例。

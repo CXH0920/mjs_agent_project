@@ -1795,12 +1795,12 @@ class _EnvKeySpec(NamedTuple):
     getter: str = ""    # 归属域："runtime" / "mumu" / 空（透传键）
     default_from: str = ""  # 缺省回退到另一键的实配值（级联默认）
 
-_ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 38 键
+_ENV_KEY_SPECS: dict[str, _EnvKeySpec]  # 环境变量名 → 键元，共 39 键
 ```
 
 三个消费方：`load_env_config()` 按 `spec.type` 统一转换；`get_runtime_params()` / `get_emulator_config()` 经 `_config_with_defaults()` 按域补默认值。测试侧 `tests/test_env_config.py` 维护 `_SENTINELS` 全量键哨兵表（独立手抄期望值，防漏登记复发）。
 
-38 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 21 键**（多品牌连接键 2026-10 新增 6 个：`emulator_type`（品牌/连接方式，取值域 `src.capture.emulator_discovery.EMULATOR_TYPES` 五品牌 + `pc_client`）/ `emulator_brand`（切 PC 客户端期间记住上次模拟器品牌）/ `pc_window_title`（PC 直连目标窗口标题，默认"名将杀"）/ `emulator_adb_path` / `emulator_adb_port` / `emulator_screenshot_mode`（三键 `default_from` 回退旧 `mumu_*` 实配值，老 config.env 不改字平滑升级；持久化始终写新键）+ 既有 15 键 `mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 11 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）。转型失败使用默认值并打 warning。
+39 键分域（cfg_key 摘录）：**runtime 域 6 键**（`api_key` / `api_url` / `model` 透传外的 `requests_per_minute` / `http_timeout` / `max_retries` / `max_output_tokens`——默认值单源 `DEFAULT_MAX_OUTPUT_TOKENS = 32_768`，`api_generator.MAX_OUTPUT_TOKENS` 引用同对象，另含 `log_level` / `log_to_file`）；**mumu 域 21 键**（多品牌连接键 2026-10 新增 6 个：`emulator_type`（品牌/连接方式，取值域 `src.capture.emulator_discovery.EMULATOR_TYPES` 五品牌 + `pc_client`）/ `emulator_brand`（切 PC 客户端期间记住上次模拟器品牌）/ `pc_window_title`（PC 直连目标窗口标题，默认"名将杀"）/ `emulator_adb_path` / `emulator_adb_port` / `emulator_screenshot_mode`（三键 `default_from` 回退旧 `mumu_*` 实配值，老 config.env 不改字平滑升级；持久化始终写新键）+ 既有 15 键 `mumu_adb_path` / `mumu_adb_port` / `mumu_ocr_enabled` / `mumu_ocr_poll_mode` / `mumu_ocr_poll_idle_pause` / `mumu_ocr_auto_switch_tab` / `mumu_ocr_poll_interval` / `mumu_ocr_match_threshold` / `mumu_ocr_cpu_threads` / `mumu_ocr_recheck_enabled` / `mumu_screenshot_mode`（`auto`/`raw`/`png`）/ `mumu_ocr_primary_engine`（`v6`/`v4`，B1 新增；`MUMU_OCR_USE_GPU` 已随 paddle 退役转为死键）/ `mumu_hero_selection_threshold`（default_from 级联 `mumu_ocr_match_threshold`）/ `mumu_hero_selection_cooldown` / `mumu_match_guide_threshold`）；**透传键 12 个**（不进 getter 域与 UI 配置对话框）：`api_key` / `api_url` / `model` / `mjs_data_repo`（私有数据仓位置）/ `recommendation_p_floor` / `ban_weight` / `sigmoid_k` / `low_win_rate_gap` / `data_freshness_timeline_stale_days`（ae92c1d 新增，int、默认 None→14，新鲜度时间轴阈值）/ `data_freshness_stale_green_days` / `data_freshness_stale_red_days`（1dc08d5 新增，int、默认 None→7/14，新鲜度档位绿红分界；官方榜单约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号，TD-A6-001）/ `data_freshness_disabled_items`（2026-11-21 新增，str、denylist 逗号分隔禁用监测项，缺失/空=全选，由 `business/freshness.py::load_disabled_items()` 消费，corpus 仅静音 UI 语料欠账提示）。转型失败使用默认值并打 warning。
 
 ### 8.3 优先级链
 
@@ -3374,6 +3374,7 @@ CardSyncDialog
 | **五十二** | **批量 LLM 建议进度小窗** | **2026-11** | **suggest_progress_dialog 非模态进度小窗（进度条 / 失败数 / 最新完成 + 取消善后三路径收口 _close_suggest_progress）；取消后留在对话框、已返回建议保留；单块建议按钮「建议中…」文字反馈（SuggestController.is_single）（dc377e6）** |
 | **五十三** | **公告更新武将粒度精确消费与官网失败降级** | **2026-11** | **Announcement.applied_heroes 消费记录 + mark_applied 按勾选名单消费（全部消费完才 APPLIED）+ 百科基线合并式前移 _merge_snapshot_baseline；确认框所见即所得（勾选即采集目标，新增武将按官网 id 统一指定采集，incremental 阶段移除；无目标候选灰显禁勾、内容一致默认不勾）；official_ok 激活为活信号（降级提示条）；全取消 toast 引导忽略名单；横幅标签过滤已消费项（e435cb0 / 4ff8d68）** |
 | **五十四** | **语料欠账联动与生成前知情提示 + 技能描述拆段修复** | **2026-11** | **corpus_freshness.py 判定下沉单一事实源（with_counts 毫秒级预检 / stale_summary 欠账摘要 / rag_generation_enabled 隔离包装）；采集完成 toast 追加「N 项语料待重建」尾串；数据新鲜度芯片菜单「语料状态」跳转行直达维护页；AI 生成前毫秒级预检 + 进度框常驻黄字知情提示（不阻断）；split_skill_desc 重写纯文本标题等值判定（同段 br 换行空描述与典故污染根治，存量输出逐字节一致）（1acaa76 / 4367444）** |
+| **五十五** | **新鲜度胶囊监测项可配置** | **2026-11** | **胶囊菜单末尾「监测项」5 开关（武将/攻略/相性/榜单/语料欠账提醒，精简版裁剪至武将+榜单）；取消项完全退出判定与显示（不参与聚合、清单/警示行/建议一并消失，硬伤信号随开关静音）；单键 denylist `DATA_FRESHNESS_DISABLED_ITEMS` 持久化（缺失/空=全选）；判定层 compute 增参分流 + 全禁 fail-safe 回全量；最后一项守卫 + 写失败 toast** |
 
 > 阶段编号沿用项目内部迭代记录；部分早期阶段因时间久远未保留精确日期。
 
@@ -3774,3 +3775,23 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 | 新增对外方法/信号 | — | `SuggestController.is_single` / `DataFreshnessChip.rag_maintenance_requested` / `MaintenanceWorkspace.history_selected` / `MaintenanceWorkspace.set_log_history` / `HeroUpdateConfirmDialog.selected_candidates` |
 | 新增模型字段 | — | `Announcement.applied_heroes` |
 | 移除 | — | `HeroUpdateConfirmDialog.update_new`（被 `selected_candidates` 取代） |
+
+## 二十四、新鲜度胶囊监测项可配置（2026-11-21 基线新增）
+
+用户可在胶囊菜单勾选关注的监测对象，**取消项完全退出判定与显示**——不参与胶囊颜色/headline 聚合、菜单不显示其清单行与警示行、其衍生的建议操作一并消失（硬伤信号如「榜单文件缺失」同样随开关静音，胶囊与菜单不提示「已隐藏 N 项」）。默认全选，无配置时行为与现状完全一致（等值断言 `compute(**kwargs) == compute(**kwargs, disabled_items=frozenset())` 守护）。
+
+### 24.1 持久化与语义
+
+- **单键 denylist** `DATA_FRESHNESS_DISABLED_ITEMS`（透传 str 键，键元表 38→39、透传 11→12）：逗号分隔 key，缺失/空 = 全选；未来新增监测类别默认参与。写回是单键内集合运算（读当前集合 → toggle → `",".join(sorted(...))` 原子写回），精简版不可见项的禁用标记天然保留。真相源 = config.env（`load_env_config` 无缓存现读，判定与菜单构建天然同步，手改 env 下次刷新即生效——与阈值键行为一致）。
+- **5 开关**：武将 `heroes`（所有版本）/ 攻略 `guides`、相性 `synergies`（仅完整版）/ 官方榜单 `rankings`（所有版本）/ 语料欠账提醒 `corpus`（仅完整版且主窗口有维护页，开关行常驻——无欠账也可提前静音）。**取消武将 ≠ 不加载基准**：`hero_entries` 照常加载供 guides/synergies 判定，只是不产出武将项；时间轴警示行与增量/指定建议均产自武将判定，随之消失。
+- **corpus 纯 UI 静音**：不进判定层参数（判定层不认识它），只叠加在 `_add_corpus_section` 显示条件上；取消后即使有待重建任务也不出「语料状态」section，`rag_maintenance_requested` 无从触发，知识库维护页本身仍可查。
+
+### 24.2 三层改动
+
+- **判定层** `business/freshness.py`（503→543 行预算）：新增 `DISABLED_ITEM_KEYS` 常量与 `load_disabled_items()` 解析函数（strip/合法 key 过滤/未知 debug 忽略）；`compute_freshness_report` 增第 9 参 `disabled_items: frozenset[str] | None = None`（None 时现读 env，与 `thresholds` 注入模式同构，chip 不传参）；禁用项跳过 item 生成与建议产出。**fail-safe**：disabled 覆盖当前构建全部可判项（精简版 = heroes+rankings）→ `logger.warning` + 按未禁用处理（回全量），杜绝 `_aggregate` 空集 ValueError——UI 守卫正常路径到不了这里，兜底手改 env 场景。
+- **UI 层** `ui/app/data_freshness_chip.py`：菜单末尾新增「监测项」section（5 个 checkable QAction 按可见性裁剪，勾选态每次打开菜单现读 env）；`_toggle_item`：最后一项守卫（可见项仅剩一项启用时勾不掉 + toast「至少保留一项监测」；corpus 计入可见项计数）→ 单键集合增删 → `save_env_file` 原子写回 → 成功 `_refresh()` 立即更新胶囊；写失败（OSError）toast「保存失败，改动将不保留」，env 未变、重开菜单自然显示真实态（无 pending 态、无回滚逻辑）。开关可见性独立判定（`is_full_build()` + `hasattr(window, "_rag_maintenance")`），**不随 report.items 派生**——禁用后 item 消失但开关常驻才能重新勾回。
+- **配置层** `config/env.py`（423→426 行预算）：键元表登记透传键；`config.env.example`「数据新鲜度」段追加注释样例。
+
+### 24.3 测试与验收
+
+判定层 7 例（禁用排除/等值现状/基准不受影响/warning 与建议随 heroes 消失/fail-safe 三组合含「4 可判项全禁 + corpus」/解析健壮性）+ UI 层 9 例（toggle 写回与刷新/完整版与精简版守卫/写失败/精简版裁剪/corpus 常驻与静音/勾选态现读/精简版写回保留不可见项），`test_env_config.py` 哨兵表与透传键集合断言同步 +1 键。验收口径：无配置等值现状、取消榜单删 CSV 不变红、取消武将攻略相性判定不变、取消语料欠账不出 section、重启保持、最后一项守卫、精简版两开关、手改 env 全禁回全量 + warning 不崩溃、写失败 toast 不保留。

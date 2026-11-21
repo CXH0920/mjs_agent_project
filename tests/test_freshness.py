@@ -604,3 +604,115 @@ def test_guides_minor_band_follows_green_threshold(tmp_path: Path) -> None:
     assert guides.state == GREEN
     assert "小幅落后" in guides.detail
 
+
+# ============================================================
+# 监测项禁用（denylist，DATA_FRESHNESS_DISABLED_ITEMS）
+# ============================================================
+
+
+def test_disabled_rankings_excluded_from_report(tmp_path: Path) -> None:
+    """取消榜单：item 与聚合都不含榜单，删 CSV 也不再变红。"""
+    kwargs = _prepare(tmp_path, timeline=[_event("2026-10-08", ref="r0")])
+    os.remove(tmp_path / "2v2胜率排行.csv")
+
+    baseline = compute_freshness_report(**kwargs)
+    assert _item(baseline, "rankings").state == RED
+    assert baseline.state == RED
+
+    silenced = compute_freshness_report(
+        **kwargs, disabled_items=frozenset({"rankings"}))
+    assert [item.key for item in silenced.items] == ["heroes", "guides", "synergies"]
+    assert silenced.state == GREEN
+
+
+def test_disabled_empty_equals_legacy_behavior(tmp_path: Path) -> None:
+    """等值现状：显式空禁用集与不传参（无配置）输出完全一致。"""
+    kwargs = _prepare(
+        tmp_path, timeline=[_event("2026-10-08", ref="r0")],
+        guides="2026-10-01", rankings_days=15.0,
+    )
+    assert compute_freshness_report(**kwargs) == compute_freshness_report(
+        **kwargs, disabled_items=frozenset())
+
+
+def test_disabled_heroes_keeps_baseline_for_guides_and_synergies(
+    tmp_path: Path,
+) -> None:
+    """取消武将≠不加载基准：攻略/相性判定以 hero_entries 为基准，结果不变。"""
+    kwargs = _prepare(
+        tmp_path, timeline=[_event("2026-10-08", ref="r0")],
+        guides="2026-10-01", synergies=[(1, 2, "2026-09-30")],
+    )
+    baseline = compute_freshness_report(**kwargs)
+    silenced = compute_freshness_report(
+        **kwargs, disabled_items=frozenset({"heroes"}))
+    assert _item(silenced, "guides") == _item(baseline, "guides")
+    assert _item(silenced, "synergies") == _item(baseline, "synergies")
+    assert [item.key for item in silenced.items] == ["guides", "synergies", "rankings"]
+
+
+def test_disabled_heroes_hides_timeline_warning(tmp_path: Path) -> None:
+    """时间轴警示行产自武将判定：取消武将后 warning 一并消失。"""
+    kwargs = _prepare(tmp_path, timeline=None)  # 时间轴缺失 → 不健康
+    assert compute_freshness_report(**kwargs).timeline_warning is not None
+    silenced = compute_freshness_report(
+        **kwargs, disabled_items=frozenset({"heroes"}))
+    assert silenced.timeline_warning is None
+
+
+def test_disabled_heroes_hides_suggestions(tmp_path: Path) -> None:
+    """增量/指定建议产自武将判定：取消武将后 suggested_actions 为空。"""
+    kwargs = _prepare(
+        tmp_path, heroes=None, guides=None, synergies=None,
+        timeline=[
+            _event("2026-10-09", hero="武将丙", change="新增", ref="r1"),
+            _event("2026-10-09", hero="武将甲", change="调整", ref="r1"),
+        ],
+    )
+    _write_heroes(tmp_path / "heroes.json", (1, "武将甲", "2026-10-01"))
+    assert compute_freshness_report(**kwargs).suggested_actions == (
+        SUGGEST_INCREMENTAL, SUGGEST_SPECIFIC)
+    silenced = compute_freshness_report(
+        **kwargs, disabled_items=frozenset({"heroes"}))
+    assert silenced.suggested_actions == ()
+
+
+def test_disabled_all_judgeable_falls_back_to_full(caplog, tmp_path: Path) -> None:
+    """fail-safe：disabled 覆盖当前构建全部可判项 → 等同全选 + warning 日志。"""
+    kwargs = _prepare(tmp_path, timeline=[_event("2026-10-08", ref="r0")],
+                      rankings_days=15.0)
+    expected = compute_freshness_report(**kwargs)
+
+    import logging
+    with caplog.at_level(logging.WARNING, logger="src.business.freshness"):
+        # 完整版全 4 可判项禁（含 corpus 未禁的组合，corpus 不属可判项）
+        assert compute_freshness_report(
+            **kwargs,
+            disabled_items=frozenset({"heroes", "guides", "synergies", "rankings"}),
+        ) == expected
+        assert compute_freshness_report(
+            **kwargs, disabled_items=frozenset(
+                {"heroes", "guides", "synergies", "rankings", "corpus"}),
+        ) == expected
+        # 精简版可判项仅 heroes+rankings，全禁同样回全量
+        assert compute_freshness_report(
+            **{**kwargs, "full_build": False},
+            disabled_items=frozenset({"heroes", "rankings"}),
+        ) == compute_freshness_report(**{**kwargs, "full_build": False})
+    assert len(caplog.records) == 3
+    assert all("回退全量监测" in record.message for record in caplog.records)
+
+
+def test_load_disabled_items_parsing(monkeypatch) -> None:
+    """解析健壮性：逗号分隔 + strip，未知 key 忽略；缺失/空 = 全选。"""
+    monkeypatch.setattr(freshness, "load_env_config", lambda: {
+        "data_freshness_disabled_items": " guides , corpus ,,bogus "})
+    assert freshness.load_disabled_items() == frozenset({"guides", "corpus"})
+
+    monkeypatch.setattr(freshness, "load_env_config", lambda: {})
+    assert freshness.load_disabled_items() == frozenset()
+
+    monkeypatch.setattr(freshness, "load_env_config", lambda: {
+        "data_freshness_disabled_items": ""})
+    assert freshness.load_disabled_items() == frozenset()
+

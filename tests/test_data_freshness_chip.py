@@ -334,3 +334,145 @@ def test_menu_corpus_section_hidden_in_lite_build(qapp, monkeypatch, tmp_path) -
     monkeypatch.setattr(data_freshness_chip, "stale_summary", lambda: _stale_summary(["武将语料"]))
     menu = chip._build_menu(chip._report)
     assert not any("待重建" in a.text() for a in menu.actions())
+
+
+# ---------------------------------------------------------------
+# 监测项开关（_add_monitor_section / _toggle_item）
+# ---------------------------------------------------------------
+
+
+def _patch_items(monkeypatch, disabled: frozenset) -> list[dict]:
+    """patch 禁用集合现读与写回记录器（写回同步更新集合，模拟真实 env）；返回 save 记录。"""
+    state = {"disabled": frozenset(disabled)}
+    monkeypatch.setattr(
+        data_freshness_chip, "load_disabled_items", lambda: state["disabled"])
+    saved: list[dict] = []
+
+    def _save(_path, data):
+        saved.append(data)
+        value = data["DATA_FRESHNESS_DISABLED_ITEMS"]
+        state["disabled"] = frozenset(v for v in value.split(",") if v)
+
+    monkeypatch.setattr(data_freshness_chip, "save_env_file", _save)
+    return saved
+
+
+def _capture_toasts(monkeypatch) -> list[str]:
+    toasts: list[str] = []
+    monkeypatch.setattr(
+        data_freshness_chip, "show_toast",
+        lambda parent, message, tone=None, duration=None: toasts.append(message))
+    return toasts
+
+
+def _switch_texts(menu) -> list[str]:
+    """菜单中全部 checkable 开关行的文案（按显示序）。"""
+    return [action.text() for action in menu.actions() if action.isCheckable()]
+
+
+def test_toggle_writes_env_and_refreshes(qapp, monkeypatch, tmp_path) -> None:
+    """toggle 成功：写回新集合（sorted 逗号串）+ 胶囊刷新。"""
+    counts = {"n": 0}
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), counts)
+    saved = _patch_items(monkeypatch, frozenset())
+    chip._toggle_item("guides")
+    assert saved == [{"DATA_FRESHNESS_DISABLED_ITEMS": "guides"}]
+    assert counts["n"] == 2  # 初次渲染 1 次 + toggle 后 _refresh 1 次
+
+    chip._toggle_item("guides")  # 再点勾回 → 写空串（= 全选，幂等）
+    assert saved[-1] == {"DATA_FRESHNESS_DISABLED_ITEMS": ""}
+
+
+def test_toggle_last_enabled_item_is_blocked(qapp, monkeypatch, tmp_path) -> None:
+    """最后一项守卫（完整版）：可见项仅剩一项启用时勾不掉 + toast，env 不动。"""
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, [])
+    saved = _patch_items(
+        monkeypatch, frozenset({"guides", "synergies", "rankings", "corpus"}))
+    toasts = _capture_toasts(monkeypatch)
+    chip._toggle_item("heroes")
+    assert saved == []
+    assert toasts == ["至少保留一项监测"]
+
+
+def test_toggle_last_enabled_item_blocked_in_lite(qapp, monkeypatch, tmp_path) -> None:
+    """最后一项守卫（精简版）：可见仅 武将+榜单 两项，禁到剩 1 时同样阻止。"""
+    monkeypatch.setattr(data_freshness_chip, "is_full_build", lambda: False)
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), {"n": 0})
+    saved = _patch_items(monkeypatch, frozenset({"rankings"}))
+    toasts = _capture_toasts(monkeypatch)
+    chip._toggle_item("heroes")
+    assert saved == []
+    assert toasts == ["至少保留一项监测"]
+
+
+def test_toggle_save_failure_toasts_and_keeps_chip(qapp, monkeypatch, tmp_path) -> None:
+    """写失败：OSError → toast、env 未变、胶囊不变（未 _refresh）、无异常外泄。"""
+    counts = {"n": 0}
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), counts)
+    monkeypatch.setattr(
+        data_freshness_chip, "load_disabled_items", lambda: frozenset())
+
+    def _raise(_path, _data):
+        raise OSError("disk full")
+    monkeypatch.setattr(data_freshness_chip, "save_env_file", _raise)
+    toasts = _capture_toasts(monkeypatch)
+
+    chip._toggle_item("guides")
+    assert toasts == ["保存失败，改动将不保留"]
+    assert counts["n"] == 1          # _refresh 未被调，仍只有初次渲染
+    assert chip.text() == "数据：2天前"
+
+
+def test_lite_build_shows_only_two_switches(qapp, monkeypatch, tmp_path) -> None:
+    """精简版裁剪：监测项 section 只出现 武将/榜单 两个开关。"""
+    monkeypatch.setattr(data_freshness_chip, "is_full_build", lambda: False)
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), {"n": 0})
+    _patch_items(monkeypatch, frozenset())
+    menu = chip._build_menu(chip._report)
+    assert _switch_texts(menu) == ["武将", "官方榜单"]
+
+
+def test_corpus_switch_always_visible_for_full_build(qapp, monkeypatch, tmp_path) -> None:
+    """corpus 开关常驻（Q6）：完整版 + 维护页，无欠账也显示且默认勾选。"""
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, [])
+    menu = chip._build_menu(chip._report)
+    assert _switch_texts(menu) == ["武将", "攻略", "相性", "官方榜单", "语料欠账提醒"]
+    assert "语料状态" not in _menu_texts(menu)  # 无欠账 → section 不出现
+
+
+def test_corpus_disabled_hides_section_but_keeps_switch(
+    qapp, monkeypatch, tmp_path,
+) -> None:
+    """corpus disabled：有欠账也不出「语料状态」，开关行仍在且未勾选。"""
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, ["武将语料"])
+    _patch_items(monkeypatch, frozenset({"corpus"}))
+    menu = chip._build_menu(chip._report)
+    assert "语料状态" not in _menu_texts(menu)
+    assert not any("待重建" in action.text() for action in menu.actions())
+    corpus_switch = next(
+        action for action in menu.actions() if action.text() == "语料欠账提醒")
+    assert corpus_switch.isCheckable() and not corpus_switch.isChecked()
+
+
+def test_switch_checked_state_reads_env(qapp, monkeypatch, tmp_path) -> None:
+    """勾选态每次打开菜单现读 env：disabled 含 guides → 「攻略」未勾选。
+
+    chip 无父窗口（window 为自身）→ corpus 开关不可见，开关恰为 4 行。
+    """
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), {"n": 0})
+    _patch_items(monkeypatch, frozenset({"guides"}))
+    menu = chip._build_menu(chip._report)
+    states = {action.text(): action.isChecked()
+              for action in menu.actions() if action.isCheckable()}
+    assert states == {"武将": True, "攻略": False, "相性": True, "官方榜单": True}
+
+
+def test_lite_toggle_preserves_invisible_disabled_marks(
+    qapp, monkeypatch, tmp_path,
+) -> None:
+    """精简版写回保留不可见项（Q3）：toggle rankings 不洗掉 guides 禁用标记。"""
+    monkeypatch.setattr(data_freshness_chip, "is_full_build", lambda: False)
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), {"n": 0})
+    saved = _patch_items(monkeypatch, frozenset({"guides"}))
+    chip._toggle_item("rankings")
+    assert saved == [{"DATA_FRESHNESS_DISABLED_ITEMS": "guides,rankings"}]

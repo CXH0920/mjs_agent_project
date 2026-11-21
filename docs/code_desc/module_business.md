@@ -709,6 +709,8 @@ check_now() -> bool
 
 `compute_freshness_report()` 返回 `FreshnessReport(items, state, headline, timeline_warning, suggested_actions)`；建议操作按采集模式能力路由：落后事件武将缺失 → `SUGGEST_INCREMENTAL`（增量获取，按 ID 缺失拉新）、已存在且过期 → `SUGGEST_SPECIFIC`（指定获取替换模式刷新），混合批次两者并给。精简版（`full_build=False`）只判武将 + 榜单。`WATCH_DIR` / `WATCHED_FILE_NAMES` 供 UI 芯片的 `QFileSystemWatcher` 监听 data/ 目录（与判定路径同源维护，覆盖终端 pull_data 原子落盘）。
 
+**监测项禁用（2026-11-21）**：`load_disabled_items()` 读 `config.env` 的 `DATA_FRESHNESS_DISABLED_ITEMS`（单键 denylist，逗号分隔 key，缺失/空 = 全选；合法 key 集 `DISABLED_ITEM_KEYS`，corpus 仅 UI 静音不进判定），`compute_freshness_report` 增参 `disabled_items: frozenset[str] | None = None`（None 时现读，与阈值注入模式同构）——禁用项跳过 item 生成与建议产出，`timeline_warning` / `suggested_actions` 均产自武将判定随 heroes 禁用一并消失，`hero_entries` 基准照常加载供 guides/synergies。fail-safe：disabled 覆盖当前构建全部可判项（精简版 = heroes+rankings）→ `logger.warning` + 回全量（`_aggregate` 空集兜底，防手改 env）。消费与写回（chip 菜单 toggle）见 `data_freshness_chip.py` 与 [./module_config.md](./module_config.md) §3.3。
+
 ### 3.20 手动检查冷却闸门（check_cooldown.py）
 
 `CheckCooldown`（106 行，无 Qt 依赖）把手动检查的忙碌判定与最小间隔收口为单一事实源（d5cceeb，TD-A2-001）。公告检查与卡牌百科检查此前各自持有一份逐行同构的实现（`CHECK_COOLDOWN_SECONDS = 60`、`_last_check_started_at`、`is_busy`、`cooldown_remaining`、`check_now` 的"忙碌→冷却→置位→起线程"四步），两侧阈值一旦分叉，用户看到的"60 秒冷却"提示会与实际行为不符。

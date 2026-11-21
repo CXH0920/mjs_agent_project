@@ -229,6 +229,9 @@ _ENV_KEY_SPECS: dict[str, _EnvKeySpec] = {
     # 约每半月更新，7/14 写死会让榜单长期停在黄/红并盖掉武将信号（TD-A6-001）
     "DATA_FRESHNESS_STALE_GREEN_DAYS": _EnvKeySpec("data_freshness_stale_green_days", int, None),
     "DATA_FRESHNESS_STALE_RED_DAYS": _EnvKeySpec("data_freshness_stale_red_days", int, None),
+    # 监测项禁用清单（denylist：逗号分隔 key，缺失/空 = 全选；合法 key 与
+    # 解析见 business/freshness.py 的 DISABLED_ITEM_KEYS，corpus 仅静音 UI 语料欠账提示）
+    "DATA_FRESHNESS_DISABLED_ITEMS": _EnvKeySpec("data_freshness_disabled_items", str, None),
 }
 
 
