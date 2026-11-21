@@ -200,7 +200,10 @@ class RagMaintenancePanel(QWidget):
 
     def _setup_sources(self) -> None:
         """创建 5 个现有面板实例并装配左栏两组导航项。"""
-        self._rule_doc = RuleDocPanel(self._root)
+        # 注入语料构建互斥检查：两路脚本共享底部日志与执行历史快照（单
+        # _active_run），并发会让快照归属错乱，入口处双向拦截
+        self._rule_doc = RuleDocPanel(
+            self._root, external_busy_check=lambda: self._runner.is_running())
         self._rule_doc.data_changed.connect(self._on_child_changed)
         # 元规则脚本输出汇入工作台底部日志（模块单一日志出口）
         self._rule_doc.script_started.connect(self._on_rule_doc_script_started)
@@ -250,6 +253,8 @@ class RagMaintenancePanel(QWidget):
         self.data_changed.emit()
 
     def _on_rule_doc_script_started(self) -> None:
+        # 元规则脚本与语料构建互斥（共享日志出口与快照），启动即锁页面执行入口
+        self._set_busy(True)
         self._workspace.expand_log()
         self._workspace.set_log_meta("执行中…")
         # 命令行此刻拿不到（script_started 无参），封口时从快照正文首行解析
@@ -262,6 +267,7 @@ class RagMaintenancePanel(QWidget):
         self._append_log_run_text(text)
 
     def _on_rule_doc_script_finished(self, code: int) -> None:
+        self._set_busy(False)
         self._workspace.set_log_meta(f"退出码 {code}")
         self._finish_log_run(code, None)
 
@@ -532,7 +538,7 @@ class RagMaintenancePanel(QWidget):
         self._run_module("src.rag.indexer", [])
 
     def _run_module(self, module: str, extra_args: list[str]) -> None:
-        if self._runner.is_running():
+        if self._runner.is_running() or self._rule_doc.is_script_running():
             QMessageBox.information(self, "正在执行", "已有维护任务运行中，请等待完成。")
             return
         self._set_busy(True)
@@ -638,8 +644,9 @@ class RagMaintenancePanel(QWidget):
         dialog.exec()
 
     def _set_busy(self, busy: bool) -> None:
-        # 执行期间一并禁用「索引精化」入口（#55）与左栏切换/单项重建
+        # 执行期间一并禁用「索引精化」入口（#55）、左栏切换/单项重建与元规则脚本入口
         for button in (self._refresh_button, self._corpus_button,
                        self._index_button, self._refine_button):
             button.setEnabled(not busy)
         self._workspace.set_interactive(not busy)
+        self._rule_doc.set_scripts_enabled(not busy)

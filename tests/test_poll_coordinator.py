@@ -587,3 +587,38 @@ def test_probe_hit_poll_keeps_idle_watch_counting() -> None:
 
     assert ocr_service.completed == [(4, "healthy_no_match", "")]
     assert coordinator._idle_unchanged_count == 1
+
+
+def _drain(coordinator: PollCoordinator, qapp, timeout_seconds: float = 5.0) -> None:
+    """等在途 poll 线程结束并泵事件，把后台线程队列化的结果投递回消费端
+    （无事件循环时跨线程 Qt 信号不投递，仿 test_poll_idle_pause 的同名模式）。"""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if not coordinator._poll_thread_lock.locked():
+            qapp.processEvents()
+            return
+        time.sleep(0.01)
+    raise AssertionError("poll 工作线程未在时限内完成")
+
+
+def test_probe_hit_poll_outcome_stays_healthy_no_match(qapp) -> None:
+    """探测命中拍走完整生产路径：do_poll_work 产出的 outcome 保持
+    HEALTHY_NO_MATCH（探测结果不计入 has_match，闲置暂停计数不被冷却期
+    常态命中清零）。手工构造 PollResult 的姊妹用例守不住这条生产逻辑——
+    若回归把 probe 命中误计入 has_match，此处 complete_poll 将收到
+    "matched" 而失败。"""
+    from PIL import Image
+
+    capture = SimpleNamespace(connected=True)
+    ocr_service = _ReusePollOcrService([], probe_tasks=["hero_selection"])
+    capture_service = _StillCaptureService(capture, Image.new("RGB", (64, 36), (30, 30, 30)))
+    coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
+
+    coordinator._on_poll_tick()
+    _wait_poll_state(coordinator, ("hero_selection",), all_rejected=False)
+    _drain(coordinator, qapp)
+
+    # 桩默认探测命中（matched + probe=True），顶层 outcome 不得因此变 MATCHED
+    assert capture_service.submissions == [("hero_selection", False)]
+    assert ocr_service.completed == [(8, "healthy_no_match", "")]

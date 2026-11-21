@@ -581,6 +581,70 @@ def test_history_selected_opens_viewer_with_full_text(tmp_path: Path, monkeypatc
 
 
 # ---------------------------------------------------------------
+# 双运行器互斥（语料构建 × 元规则脚本共享日志出口与快照）
+# ---------------------------------------------------------------
+
+class _BusyRunner:
+    """恒忙的运行器桩：模拟另一路脚本正在执行（仅 is_running 被查询）。"""
+
+    def is_running(self) -> bool:
+        return True
+
+
+def test_rule_doc_script_running_blocks_panel_rebuild(
+        tmp_path: Path, monkeypatch) -> None:
+    """元规则脚本执行中：语料构建被入口拦截，不进忙态、不污染快照。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    monkeypatch.setattr(panel._rule_doc, "_runner", _BusyRunner())
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "src.ui.maintenance.rag_maintenance_panel.QMessageBox.information",
+        lambda *args, **kwargs: messages.append(args[-1]))
+    panel._run_module("src.scripts.maintain_rag", ["--force"])
+    assert messages == ["已有维护任务运行中，请等待完成。"]
+    assert panel._index_button.isEnabled()  # 未误进忙态
+    assert panel._log_runs == []  # 快照未被污染
+    panel.close()
+
+
+def test_panel_rebuild_running_blocks_rule_doc_script(
+        tmp_path: Path, monkeypatch) -> None:
+    """语料构建执行中：元规则脚本被入口拦截，script_started 不发射。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    monkeypatch.setattr(panel, "_runner", _BusyRunner())
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "src.ui.maintenance.rule_doc_panel.QMessageBox.information",
+        lambda *args, **kwargs: messages.append(args[-1]))
+    started: list[bool] = []
+    panel._rule_doc.script_started.connect(lambda: started.append(True))
+    panel._rule_doc._run_script(["audit_rule_doc.py"], on_finished=lambda: None)
+    assert started == []
+    assert messages == ["已有任务运行中，请等待完成。"]
+    panel.close()
+
+
+def test_rule_doc_script_lifecycle_locks_panel_and_rule_doc_refresh(
+        tmp_path: Path) -> None:
+    """元规则脚本启动即锁页面执行入口（含规则面板刷新按钮），结束全部恢复。"""
+    _app()
+    panel = _panel(_make_root(tmp_path))
+    panel._on_rule_doc_script_started()
+    assert not panel._corpus_button.isEnabled()
+    assert not panel._index_button.isEnabled()
+    assert not panel._workspace.nav.isEnabled()
+    assert not panel._rule_doc._refresh_button.isEnabled()
+    panel._on_rule_doc_script_finished(0)
+    assert panel._corpus_button.isEnabled()
+    assert panel._index_button.isEnabled()
+    assert panel._workspace.nav.isEnabled()
+    assert panel._rule_doc._refresh_button.isEnabled()
+    panel.close()
+
+
+# ---------------------------------------------------------------
 # 只读语料内容查看器与向量索引行（P1-5）
 # ---------------------------------------------------------------
 

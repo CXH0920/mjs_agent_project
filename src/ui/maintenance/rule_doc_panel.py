@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -69,9 +70,13 @@ class RuleDocPanel(QWidget):
     script_output = Signal(bytes)
     script_finished = Signal(int)
 
-    def __init__(self, root: Path, parent=None):
+    def __init__(self, root: Path, parent=None, *,
+                 external_busy_check: Callable[[], bool] | None = None):
         super().__init__(parent)
         self._root = root
+        # 宿主注入的跨面板互斥检查（如知识库维护面板的语料构建是否在执行）；
+        # None 时本面板独立复用，仅自身 runner 互斥
+        self._external_busy_check = external_busy_check
         self._runner = ScriptRunner(self)
         self._runner.output.connect(self._append_log)
         self._runner.finished.connect(self._on_runner_finished)
@@ -237,6 +242,18 @@ class RuleDocPanel(QWidget):
     # ---------------------------------------------------------------
     # 脚本执行（ScriptRunner 封装 QProcess；页签的意图信号在此启动）
     # ---------------------------------------------------------------
+    def is_script_running(self) -> bool:
+        """本面板脚本运行器是否在执行（供宿主做跨面板互斥检查）。"""
+        return self._runner.is_running()
+
+    def set_scripts_enabled(self, enabled: bool) -> None:
+        """宿主构建执行期间禁用本面板脚本入口。
+
+        仅管壳上「刷新状态」按钮：子页签脚本按钮的启用随勾选数/提案状态
+        实时重算，外壳强禁会被覆盖，由 _run_script 的入口拦截兜底。
+        """
+        self._refresh_button.setEnabled(enabled)
+
     def _generate_proposal(self) -> None:
         self._run_script(["propose_rule_changes.py", "--no-llm"], self._on_generate_done)
 
@@ -259,7 +276,9 @@ class RuleDocPanel(QWidget):
         """启动脚本；sentinel_codes 为"业务性非零退出码"（如 sync 的 1=有差异），
         failure_codes 为"业务失败但需定制文案"的退出码映射。
         """
-        if self._runner.is_running():
+        if self._runner.is_running() or (
+            self._external_busy_check is not None and self._external_busy_check()
+        ):
             QMessageBox.information(self, "正在执行", "已有任务运行中，请等待完成。")
             return
         # 清空上一轮输出缓冲，否则 _on_audit_done 解析到累积的多轮 WARN 行，

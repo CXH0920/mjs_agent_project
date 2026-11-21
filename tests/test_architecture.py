@@ -711,7 +711,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 全类型非空校验、_add_pending 写盘 OSError 兜底
     # 993 → 337：四页签（audit/diff/proposal/pending）+ 三个对话框拆入
     # rule_doc/ 子包（第二轮第 15 批审查 P2，页签行数见台账登记）
-    "ui/maintenance/rule_doc_panel.py": 337,
+    # 337 → 356：双运行器互斥——external_busy_check 入口拦截、
+    # is_script_running/set_scripts_enabled 公共方法（P1-3）
+    "ui/maintenance/rule_doc_panel.py": 356,
     # 953 → 781：清单/编辑构建与纯渲染拆入 refinement_list_pane / refinement_editor_pane
     # （审计 G4 切片 4.3；字段 34 → 12，方法数经 property 桥说明见 CLASS_BUDGETS 注释）
     # 790 → 806：构造加 focus_query 参数与 _apply_focus_query 定位（P1-1 审计
@@ -980,7 +982,7 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 「执行与语料状态的呈现职责」在本面板内的延伸，查看器本体已出仓到
     # readonly_viewer_dialog.py；706 → 723：审计时效跳转携带结构化命中定位
     # （P1-1，_open_refinement(focus) + 搜索词提取）
-    "ui/maintenance/rag_maintenance_panel.py": 645,  # 723 → 733：_refinement_focus_queries 复数版（P1-1 ii 导航站列表，去重保序）；733 → 645：task_states/index_state 判定下沉 src/business/rag/corpus_freshness.py（P0-2 多消费方单一事实源），顶部 re-export 保模块级名字
+    "ui/maintenance/rag_maintenance_panel.py": 652,  # 723 → 733：_refinement_focus_queries 复数版（P1-1 ii 导航站列表，去重保序）；733 → 645：task_states/index_state 判定下沉 src/business/rag/corpus_freshness.py（P0-2 多消费方单一事实源），顶部 re-export 保模块级名字；645 → 652：元规则脚本忙碌联动（互斥锁入口 + 双向拦截，P1-3）
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }
