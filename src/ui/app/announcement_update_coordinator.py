@@ -239,7 +239,8 @@ class AnnouncementUpdateCoordinator(QObject):
                 self._refresh_dialog()
                 show_toast(
                     self._window,
-                    "武将数据已更新，请重新加载数据（F5）。" + _corpus_stale_suffix(),
+                    "武将数据已更新，请重新加载数据（F5）。"
+                    "未勾选的武将下次检查仍会提示。" + _corpus_stale_suffix(),
                     duration=4000)
             else:
                 QMessageBox.warning(self._window, "采集失败", "武将数据更新失败")
@@ -399,7 +400,7 @@ class AnnouncementUpdateCoordinator(QObject):
             self._dialog.set_diff(self._last_diff)
 
     def _on_hero_update_prepared(self, payload: dict) -> None:
-        """展示更新确认对话框，按用户勾选执行；全取消视为已查看本版本。"""
+        """展示更新确认对话框，按用户勾选执行；全不勾视为本次不处理，留待下次提示。"""
         self._reporter.hide_progress()
         error = payload.get("error")
         if error:
@@ -423,15 +424,12 @@ class AnnouncementUpdateCoordinator(QObject):
             return
         selected_ids = dialog.selected_ids
         if not selected_ids:
-            # 全取消：保留本地内容，刷新快照视为“本版本已查看”
-            self._service.mark_applied()
-            self._last_diff = {"added": [], "modified": [], "removed": []}
-            self._refresh_banner()
-            self._refresh_dialog()
+            # 全不勾：本次不处理，公告与差异原样保留（下次检查仍会提示，
+            # 界面文案承诺与系统行为一致）；零消费故无需刷新横幅/对话框
             show_toast(
                 self._window,
-                "已保留本地武将内容，本次未更新。若不想再次收到提示，"
-                "可选择武将后点击「忽略此条差异」。",
+                "百科尚未同步更新，下次检查仍会提示；"
+                "若不再需要提示，选中相应条目点击「忽略此条差异」。",
                 duration=4000,
             )
             return

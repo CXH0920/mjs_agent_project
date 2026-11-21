@@ -521,7 +521,7 @@ def test_announcement_manager_status_transitions(tmp_path) -> None:
     assert len(pending) == 1
 
     # 采集完成只推进 ready 公告；pending 公告保留，等待百科落地确认
-    manager.mark_applied()
+    manager.mark_applied({"贾诩"})
     ready_announcement, pending_announcement = manager.list_all()
     assert ready_announcement.status is AnnouncementStatus.APPLIED
     assert pending_announcement.status is AnnouncementStatus.PENDING
@@ -531,7 +531,7 @@ def test_announcement_manager_mark_applied_keeps_pending(tmp_path) -> None:
     """pending 公告可能仍处百科滞后窗口（采集成功不代表落地），不得吞成终态。"""
     manager = AnnouncementManager(tmp_path / "announcements.json")
     manager.merge_new([_hero_related_raw()])
-    manager.mark_applied()
+    manager.mark_applied({"贾诩"})
     assert manager.list_all()[0].status is AnnouncementStatus.PENDING
 
 
@@ -586,7 +586,7 @@ def test_announcement_manager_reload_keeps_applied_status(tmp_path) -> None:
     first = AnnouncementManager(path)
     first.merge_new([_hero_related_raw()])
     first.mark_ready_if_updated({"modified": [{"name": "贾诩", "id": 1}]})
-    first.mark_applied()
+    first.mark_applied({"贾诩"})
 
     restarted = AnnouncementManager(path)
     restarted.load()
@@ -713,8 +713,9 @@ def test_service_do_check_flow(tmp_path, monkeypatch) -> None:
     assert result3.ready_count == 1
     assert [entry["id"] for entry in result3.diff["modified"]] == [2]
 
-    # 采集完成 → applied 且快照刷新，再次检查 diff 归零、不重复提醒
-    service.mark_applied()
+    # 采集完成（全勾选：公告 matched 的东方朔/贾诩/马钧全部消费）→ applied
+    # 且快照按勾选前移，再次检查 diff 归零、不重复提醒
+    service.mark_applied({"东方朔", "贾诩", "马钧"}, {1, 2})
     assert manager.pending_count() == 0
     assert manager.ready_count() == 0
     result4 = _run_check(service)
@@ -1004,8 +1005,7 @@ def test_service_finalize_check_save_failure_still_emits(tmp_path, monkeypatch) 
 def test_service_mark_applied_partial_merges_baseline_by_hero(tmp_path) -> None:
     """武将粒度基线前移：只更新已消费武将的快照哈希，跳过武将的旧基线保留。
 
-    跳过武将下次检查 diff 仍会报（基线未前移）；全取消路径（无参）回归
-    现状——整批消费 + 基线全量前移。
+    跳过武将下次检查 diff 仍会报（基线未前移）。
     """
     service, manager = _make_service(tmp_path)
     save_baike_snapshot(
@@ -1044,12 +1044,6 @@ def test_service_mark_applied_partial_merges_baseline_by_hero(tmp_path) -> None:
     assert stored.heroes["1"].hash == "new-jia"
     assert stored.heroes["2"].hash == "old-xiao"
     assert manager.list_all()[0].status is AnnouncementStatus.READY
-
-    # 全取消路径（无参）：整批消费 + 基线全量前移（现状回归）
-    service.mark_applied()
-    stored = load_baike_snapshot(tmp_path / "baike_snapshot.json")
-    assert stored.heroes["2"].hash == "new-xiao"
-    assert manager.list_all()[0].status is AnnouncementStatus.APPLIED
 
 
 def test_service_prepare_update_candidates_cooldown(tmp_path, monkeypatch) -> None:
@@ -1174,7 +1168,7 @@ def test_service_mark_applied_skipped_when_busy(tmp_path, monkeypatch) -> None:
             return True
 
     service._thread = _AliveThread()
-    service.mark_applied()
+    service.mark_applied({"山涛"}, {1})
     assert manager.ready_count() == 1  # 状态未推进
     assert saved == []  # 快照未写
 
@@ -1350,8 +1344,8 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
     }
 
 
-def test_hero_update_all_cancelled_consumes_batch_and_guides_ignore(monkeypatch) -> None:
-    """全取消视为已查看本版本：整批消费（无参 mark_applied）并 toast 引导忽略。"""
+def test_hero_update_all_unchecked_defers_batch_and_guides_ignore(monkeypatch) -> None:
+    """全不勾 + 确定：零消费（公告/基线/diff 原样，下次检查仍提示），toast 引导忽略。"""
     from PySide6.QtWidgets import QDialog
     from src.ui.app import announcement_update_coordinator as coordinator_module
 
@@ -1377,17 +1371,59 @@ def test_hero_update_all_cancelled_consumes_batch_and_guides_ignore(monkeypatch)
         _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
         _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
         _last_diff={"added": [1], "modified": [], "removed": []},
-        _refresh_banner=lambda: None,
-        _refresh_dialog=lambda: None,
     )
 
     AnnouncementUpdateCoordinator._on_hero_update_prepared(
         window, {"candidates": [{"name": "贾诩", "hero_id": 1}]}
     )
 
-    assert applied == [()]
-    assert window._last_diff == {"added": [], "modified": [], "removed": []}
-    assert any("忽略此条差异" in message for message in toasts)
+    assert applied == []  # 零消费：公告/已处理名单/比对基准均未动
+    assert window._last_diff == {"added": [1], "modified": [], "removed": []}
+    assert any(
+        "下次检查仍会提示" in message and "忽略此条差异" in message
+        for message in toasts
+    )
+
+
+def test_hero_update_fetch_failure_consumes_nothing(monkeypatch) -> None:
+    """整批采集失败：零消费、无消费后刷新（横幅保留可重试），仅弹失败警告。"""
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    warnings = []
+    monkeypatch.setattr(
+        coordinator_module, "QMessageBox",
+        SimpleNamespace(warning=lambda *args, **kwargs: warnings.append(args)),
+    )
+    applied = []
+    refreshed = []
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _pending_phases=[("specific", [161])],
+        _pending_consume=[{"name": "贾诩", "hero_id": 161}],
+        _phase_gate=BusyGate(),
+        _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
+        _last_diff={
+            "added": [{"name": "贾诩", "id": 161}, {"name": "马钧", "id": 184}],
+            "modified": [],
+            "removed": [],
+        },
+        _refresh_banner=lambda: refreshed.append("banner"),
+        _refresh_dialog=lambda: refreshed.append("dialog"),
+    )
+
+    window._phase_gate.acquire()
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, False)
+
+    assert applied == []  # 零消费：勾选武将下次检查照常提示
+    assert window._pending_phases is None  # 更新队列作废，重试需重新确认
+    assert window._last_diff == {
+        "added": [{"name": "贾诩", "id": 161}, {"name": "马钧", "id": 184}],
+        "modified": [],
+        "removed": [],
+    }
+    assert refreshed == []  # 无消费后刷新，横幅保持原状可重试
+    assert [call[1:] for call in warnings] == [("采集失败", "武将数据更新失败")]
 
 
 def test_hero_update_prepared_official_unavailable_notifies_and_degrades(monkeypatch) -> None:
@@ -1658,8 +1694,9 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
         assert calls == [("specific", [jia_id, ma_id, 188])]
         window._announcement_coordinator._on_fetch_completed(True)  # 单阶段完成：队列清空并按勾选消费
+        assert any("未勾选的武将下次检查仍会提示" in message for message in toasts)
 
-        # 全取消：不采集，但整批消费刷新快照（mark_applied 无参全量）
+        # 全不勾 + 确定：零消费（不采集、不推进公告/基线），diff 原样、横幅保留
         applied = []
         monkeypatch.setattr(
             window._announcement_coordinator._service,
@@ -1680,9 +1717,17 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
         monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _AllUncheckedDialog)
         calls.clear()
         window._announcement_coordinator._pending_phases = None
+        window._announcement_coordinator._last_diff = {
+            "added": [{"name": "东方朔", "id": 188}],
+            "modified": [],
+            "removed": [],
+        }
+        unchecked_diff = window._announcement_coordinator._last_diff
         window._announcement_coordinator._on_hero_update_prepared({"candidates": base, "official_ok": True})
         assert calls == []
-        assert applied == [()]
+        assert applied == []
+        assert window._announcement_coordinator._last_diff is unchecked_diff
+        assert window._announcement_banner.isVisible()
 
         # 用户取消：不采集、不刷新
         class _RejectDialog:
@@ -2190,6 +2235,11 @@ def test_service_mark_applied_save_failure_does_not_raise(tmp_path, monkeypatch)
         matched_heroes=[HeroChange(name="山涛", change="调整", known=True)],
     )
     manager.merge_new([announcement.model_dump()])
+    # 预置非空基线：merge 路径对空基线直接跳过，写盘不会被触发
+    save_baike_snapshot(
+        BaikeSnapshot(heroes={"1": BaikeHeroEntry(name="贾诩", hash="old")}),
+        tmp_path / "baike_snapshot.json",
+    )
     service._last_snapshot = BaikeSnapshot(heroes={"1": {"name": "贾诩", "hash": "h1"}})
 
     def _boom(snapshot, path):
@@ -2197,7 +2247,7 @@ def test_service_mark_applied_save_failure_does_not_raise(tmp_path, monkeypatch)
 
     monkeypatch.setattr(service_module, "save_baike_snapshot", _boom)
 
-    service.mark_applied()  # 不抛错
+    service.mark_applied({"山涛"}, {1})  # 不抛错
 
     assert manager.ready_count() == 0  # 公告状态照常推进
 

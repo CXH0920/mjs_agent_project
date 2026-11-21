@@ -161,14 +161,13 @@ class AnnouncementService(QObject):
 
     def mark_applied(
         self,
-        hero_names: set[str] | None = None,
+        hero_names: set[str],
         hero_ids: set[int] | None = None,
     ) -> None:
-        """武将数据更新完成后调用：消费公告并推进百科快照基线。
+        """武将数据更新完成后调用：按勾选武将消费公告并推进百科快照基线。
 
-        hero_names 为 None 时整批消费（全取消"视为已查看"），快照全量前移
-        （现状语义）；否则按武将消费——公告只记录名单内武将，快照只前移
-        名单内武将的哈希条目，用户跳过的武将差异保留待下次检查提示。
+        公告只记录名单内武将，快照只前移名单内武将的哈希条目，用户跳过
+        的武将差异保留待下次检查提示。
 
         检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态
         推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
@@ -180,10 +179,7 @@ class AnnouncementService(QObject):
         if self._last_snapshot is None:
             return
         try:
-            if hero_names is None:
-                save_baike_snapshot(self._last_snapshot, self._snapshot_path)
-            else:
-                self._merge_snapshot_baseline(hero_ids or set())
+            self._merge_snapshot_baseline(hero_ids or set())
         except Exception as error:
             # 与 _finalize_check 同款兜底：此处抛错会冒泡到 Qt 槽，其后的
             # 横幅刷新/对话框刷新/成功提示全部被跳过，用户只看到"没反应"
