@@ -425,13 +425,22 @@ class AnnouncementUpdateCoordinator(QObject):
         selected_ids = dialog.selected_ids
         if not selected_ids:
             # 全不勾：本次不处理，公告与差异原样保留（下次检查仍会提示，
-            # 界面文案承诺与系统行为一致）；零消费故无需刷新横幅/对话框
-            show_toast(
-                self._window,
-                "百科尚未同步更新，下次检查仍会提示；"
-                "若不再需要提示，选中相应条目点击「忽略此条差异」。",
-                duration=4000,
-            )
+            # 界面文案承诺与系统行为一致）；零消费故无需刷新横幅/对话框。
+            # 降级模式忽略入口已禁（候选无 content_hash，写入无法匹配压制），
+            # toast 不给不可达的忽略指引
+            if official_ok:
+                show_toast(
+                    self._window,
+                    "百科尚未同步更新，下次检查仍会提示；"
+                    "若不再需要提示，选中相应条目点击「忽略此条差异」。",
+                    duration=4000,
+                )
+            else:
+                show_toast(
+                    self._window,
+                    "官网数据获取失败，本次未做更改，下次检查仍会提示。",
+                    duration=4000,
+                )
             return
         # 所见即所得：勾选即采集目标（新增武将的 id 为官网 id），单阶段指定采集
         self._pending_consume = dialog.selected_candidates

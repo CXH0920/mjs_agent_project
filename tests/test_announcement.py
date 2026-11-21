@@ -1385,6 +1385,50 @@ def test_hero_update_all_unchecked_defers_batch_and_guides_ignore(monkeypatch) -
     )
 
 
+def test_hero_update_all_unchecked_degraded_toast_omits_ignore_guidance(monkeypatch) -> None:
+    """降级模式（official_ok=False）全不勾：同样零消费，但 toast 不指引忽略
+    ——降级候选无 content_hash，忽略入口已禁，指引不可达。"""
+    from PySide6.QtWidgets import QDialog
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    toasts = []
+    monkeypatch.setattr(
+        coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+    )
+    applied = []
+
+    class _AllUncheckedDialog:
+        selected_ids = []
+        selected_candidates = []
+
+        def __init__(self, candidates, parent=None, ignore_service=None, official_ok=True):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(coordinator_module, "HeroUpdateConfirmDialog", _AllUncheckedDialog)
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
+        _last_diff={"added": [1], "modified": [], "removed": []},
+    )
+
+    AnnouncementUpdateCoordinator._on_hero_update_prepared(
+        window,
+        {"candidates": [{"name": "贾诩", "hero_id": 1}], "official_ok": False},
+    )
+
+    assert applied == []  # 零消费：公告/已处理名单/比对基准均未动
+    assert window._last_diff == {"added": [1], "modified": [], "removed": []}
+    assert any(
+        "官网数据获取失败" in message and "下次检查仍会提示" in message
+        for message in toasts
+    )
+    assert all("忽略此条差异" not in message for message in toasts)
+
+
 def test_hero_update_fetch_failure_consumes_nothing(monkeypatch) -> None:
     """整批采集失败：零消费、无消费后刷新（横幅保留可重试），仅弹失败警告。"""
     from src.ui.app import announcement_update_coordinator as coordinator_module
